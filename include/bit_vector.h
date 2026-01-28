@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -20,33 +20,40 @@
 #ifndef __BIT_VECTOR_H__
 #define __BIT_VECTOR_H__
 
-#include <stdint.h>
+#ifdef __cplusplus
+extern "C" { 
+#endif
 
-#include "ds_common.h"
-#include "allocator.h"
+#include "ds_allocator.h"
 
 #define BIT_VEC_BLOCK_SIZE 	64
 #define BIT_VEC_GROWABLE	1
 	
 /* bit indexing starts at 0, up to bit_count-1. */
-struct bit_vec {
-	u64 	block_count;
-	u64 	bit_count;
-	u64 * 	bits;
-	u32 	growable;
+struct bitVec 
+{
+	u64 		block_count;
+	u64 		bit_count;
+	u64 * 		bits;
+	u32 		growable;
+	struct memSlot 	mem_slot;
 };
 
 /* return a bit vector with bit_count >= bit_count, with all bits cleared to clear_bit. On failure, the zero vector is returned. */
-struct bit_vec	bit_vec_alloc(struct arena *mem, const u64 bit_count, const u64 clear_bit, const u32 growable);
+struct bitVec	BitVecAlloc(struct arena *mem, const u64 bit_count, const u64 clear_bit, const u32 growable);
 /* free the vectors resources.  */
-void 		bit_vec_free(struct bit_vec *bvec);
+void 		BitVecFree(struct bitVec *bvec);
 /* increase the bit vector size and clear any newly allocated blocks with the clear bit. */
-void 		bit_vec_increase_size(struct bit_vec *bvec, const u64 bit_count, const u64 clear_bit);
+void 		BitVecIncreaseSize(struct bitVec *bvec, const u64 bit_count, const u64 clear_bit);
 /* Clear the bit vector with the given bit value  */
-void 		bit_vec_clear(struct bit_vec* bvec, const u64 clear_bit);
+void 		BitVecClear(struct bitVec* bvec, const u64 clear_bit);
 /* return the bit value of the given bit  */
-uint8_t 	bit_vec_get_bit(const struct bit_vec* bvec, const u64 bit);
+uint8_t 	BitVecGetBit(const struct bitVec* bvec, const u64 bit);
 /* set the bit value of the given bit */
-void 		bit_vec_set_bit(const struct bit_vec* bvec, const u64 bit, const u64 bit_value);
+void 		BitVecSetBit(const struct bitVec* bvec, const u64 bit, const u64 bit_value);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

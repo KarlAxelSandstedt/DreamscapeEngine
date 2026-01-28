@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025,2026 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -20,8 +20,7 @@
 #ifndef __MIN_QUEUE_H__
 #define __MIN_QUEUE_H__
 
-#include "ds_common.h"
-#include "allocator.h"
+#include "ds_allocator.h"
 
 /*
 min_queue
@@ -36,40 +35,40 @@ HOW-TO-USE:
 	extract minimum => returns external index corresponding to minimum (user_id = queue->object_index[i])
 */
 
-struct queue_object
+struct queueObject
 {
 	POOL_SLOT_STATE;
 	u32 	external_index;
 	u32	queue_index;
 };
 
-struct queue_element 
+struct queueElement 
 {
 	f32	priority;
 	u32 	object_index;
 };
 
-struct min_queue 
+struct minQueue 
 {
 	struct pool 		object_pool;
-	struct queue_element *	elements;
+	struct queueElement *	elements;
 	u32			growable;
-	u32			heap_allocated;
+	struct memSlot		mem_elements;
 };
 
 /* Allocate a new priority queue. */
-struct min_queue	min_queue_new(struct arena *arena, const u32 initial_length, const u32 growable);
+struct minQueue	MinQueueAlloc(struct arena *arena, const u32 initial_length, const u32 growable);
 /* Free a queue and all it's resources. */
-void 			min_queue_free(struct min_queue * const queue);
+void 		MinQueueDealloc(struct minQueue * const queue);
 /* append new element with given priority to queue, return its object index */
-u32 			min_queue_insert(struct min_queue * const queue, const f32 priority, const u32 external_index);
+u32 		MinQueuePush(struct minQueue * const queue, const f32 priority, const u32 external_index);
 /* return external index corresponding to extracted queue element */
-u32 			min_queue_extract_min(struct min_queue * const queue);
+u32 		MinQueuePop(struct minQueue * const queue);
 /* Decrease the priority of the object corresponding to queue_index if the priority is smaller than it's
    current priority. If changes are made in the queue, the queue is updated and kept coherent.  */ 
-void 			min_queue_decrease_priority(struct min_queue * const queue, const u32 object_index, const f32 priority);
+void 		MinQueueDecreasePriority(struct minQueue * const queue, const u32 object_index, const f32 priority);
 /* flush min_queue */
-void 			min_queue_flush(struct min_queue * const queue);
+void 		MinQueueFlush(struct minQueue * const queue);
 
 /*
 min_queue_fixed
@@ -77,30 +76,30 @@ min_queue_fixed
 Simplified min queue for the case when re-insertion of elements (changing the priority) isn't needed.
 */
 
-struct min_queue_fixed 
+struct minQueueFixed 
 {
-	u32f32 *element;
-	u32 	count;
-	u32	length;
-	u32	growable;
-	u32 	heap_allocated;
+	u32f32 *	element;
+	u32 		count;
+	u32		length;
+	u32		growable;
+	struct memSlot	mem_element;
 };
 
 /* Alocate a new priority queue */
-struct min_queue_fixed	min_queue_fixed_alloc(struct arena *mem, const u32 initial_length, const u32 growable);
+struct minQueueFixed	MinQueueFixedAlloc(struct arena *mem, const u32 initial_length, const u32 growable);
 /* Alocate a new priority queue using whole arena */
-struct min_queue_fixed	min_queue_fixed_alloc_all(struct arena *mem);
+struct minQueueFixed	MinQueueFixedAllocAll(struct arena *mem);
 /* Free (if heap allocated) allocated memory */
-void 			min_queue_fixed_dealloc(struct min_queue_fixed *queue);
+void 			MinQueueFixedDealloc(struct minQueueFixed *queue);
 /* Flush queue resources */
-void			min_queue_fixed_flush(struct min_queue_fixed *queue);
+void			MinQueueFixedFlush(struct minQueueFixed *queue);
 /* Debug print */
-void 			min_queue_fixed_print(FILE *Log, const struct min_queue_fixed *queue);
+void 			MinQueueFixedPrint(FILE *Log, const struct minQueueFixed *queue);
 /* Push (id, priority) pair onto queue. */
-void 			min_queue_fixed_push(struct min_queue_fixed *queue, const u32 id, const f32 priority);
+void 			MinQueueFixedPush(struct minQueueFixed *queue, const u32 id, const f32 priority);
 /* pop minimum element */
-u32f32 			min_queue_fixed_pop(struct min_queue_fixed *heap);
+u32f32 			MinQueueFixedPop(struct minQueueFixed *heap);
 /* peek minimum element */
-u32f32 			min_queue_fixed_peek(const struct min_queue_fixed *heap);
+u32f32 			MinQueueFixedPeek(const struct minQueueFixed *heap);
 
 #endif

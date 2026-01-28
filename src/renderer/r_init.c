@@ -130,7 +130,7 @@ void r_lightning_buffer_layout_setter(void)
 	ds_glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, (GLsizei)  stride, (void *)(sizeof(vec3) + sizeof(vec4)));
 }
 
-void r_init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u64 core_unit_count, struct string_database *mesh_database)
+void r_init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u64 core_unit_count, struct strdb *mesh_database)
 {
 	g_r_core->frames_elapsed = 0;	
 	g_r_core->ns_elapsed = 0;	
@@ -167,14 +167,14 @@ void r_init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_siz
 		FatalCleanupAndExit(0);
 	}
 
-	g_r_core->proxy3d_hierarchy = hierarchy_index_alloc(NULL, core_unit_count, sizeof(struct r_proxy3d), HI_GROWABLE);
+	g_r_core->proxy3d_hierarchy = hi_Alloc(NULL, core_unit_count, sizeof(struct r_proxy3d), GROWABLE);
 	if (g_r_core->proxy3d_hierarchy == NULL)
 	{
 		LogString(T_SYSTEM, S_FATAL, "Failed to allocate r_core unit hierarchy, exiting.");
 		FatalCleanupAndExit(ds_ThreadSelfTid());
 	}
 
-	struct slot slot3d = hierarchy_index_add(g_r_core->proxy3d_hierarchy, HI_NULL_INDEX);
+	struct slot slot3d = hi_Add(g_r_core->proxy3d_hierarchy, HI_NULL_INDEX);
 	g_r_core->proxy3d_root = slot3d.index;
 	ds_Assert(g_r_core->proxy3d_root == PROXY3D_ROOT);
 	struct r_proxy3d *stub3d = slot3d.address;
@@ -188,7 +188,7 @@ void r_init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_siz
 	stub3d->flags = 0;
 
 	g_r_core->mesh_database = mesh_database; 
-	struct r_mesh *stub = string_database_address(g_r_core->mesh_database, STRING_DATABASE_STUB_INDEX);
+	struct r_mesh *stub = strdb_Address(g_r_core->mesh_database, STRING_DATABASE_STUB_INDEX);
 	r_mesh_set_stub_box(stub);
 
 
@@ -262,8 +262,8 @@ void r_core_flush(void)
 	g_r_core->frames_elapsed = 0;	
 	g_r_core->ns_elapsed = 0;	
 
-	hierarchy_index_flush(g_r_core->proxy3d_hierarchy);
-	struct slot slot3d = hierarchy_index_add(g_r_core->proxy3d_hierarchy, HI_NULL_INDEX);
+	hi_Flush(g_r_core->proxy3d_hierarchy);
+	struct slot slot3d = hi_Add(g_r_core->proxy3d_hierarchy, HI_NULL_INDEX);
 	g_r_core->proxy3d_root = slot3d.index;
 	ds_Assert(g_r_core->proxy3d_root == PROXY3D_ROOT);
 	struct r_proxy3d *stub3d = slot3d.address;

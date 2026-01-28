@@ -25,7 +25,7 @@
 void system_window_event_handler(struct system_window *sys_win)
 {
 	struct system_event *event = NULL;
-	for (u32 i = sys_win->ui->event_list.first; i != DLL_NULL; i = DLL_NEXT(event))
+	for (u32 i = sys_win->ui->event_list.first; i != DLL_NULL; i = dll_Next(event))
 	{
 		event = PoolAddress(&sys_win->ui->event_pool, i);
 		switch (event->keycode)
@@ -238,7 +238,7 @@ void system_process_events(void)
 				else
 				{
 					struct slot slot = PoolAdd(&sys_win->ui->event_pool);
-					dll_append(&sys_win->ui->event_list, sys_win->ui->event_pool.buf, slot.index);
+					dll_Append(&sys_win->ui->event_list, sys_win->ui->event_pool.buf, slot.index);
 					struct system_event *new = slot.address;
 					new->scancode = event.scancode;
 					new->keycode = event.keycode;
@@ -257,7 +257,7 @@ void system_process_events(void)
 				else
 				{
 					struct slot slot = PoolAdd(&sys_win->ui->event_pool);
-					dll_append(&sys_win->ui->event_list, sys_win->ui->event_pool.buf, slot.index);
+					dll_Append(&sys_win->ui->event_list, sys_win->ui->event_pool.buf, slot.index);
 					struct system_event *new = slot.address;
 					new->scancode = event.scancode;
 					new->keycode = event.keycode;

@@ -26,7 +26,7 @@ void r_ui_draw(struct ui *ui)
 	const vec3 zero3 = { 0.0f, 0.0f, 0.0f };
 
 	struct ui_draw_bucket *b = PoolAddress(&ui->bucket_pool, ui->bucket_list.first);
-	for (u32 i = DLL_NEXT(b); i != DLL_NULL; i = DLL_NEXT(b)) 
+	for (u32 i = dll_Next(b); i != DLL_NULL; i = dll_Next(b)) 
 	{
 		b = PoolAddress(&ui->bucket_pool, i);
 		/* we reverse depth since in ui, larger depths goes infront, but in renderer lower depths drawn last */
@@ -52,7 +52,7 @@ void r_ui_draw(struct ui *ui)
 			struct ui_draw_node *draw_node = instance->ui_bucket->list;
 			for (u32 i = 0; i < instance->ui_bucket->count; ++i)
 			{
-				const struct ui_node *n = hierarchy_index_address(ui->node_hierarchy, draw_node->index);
+				const struct ui_node *n = hi_Address(ui->node_hierarchy, draw_node->index);
 				draw_node = draw_node->next;
 				struct textLine *line = n->layout_text->line;
 				for (u32 l = 0; l < n->layout_text->line_count; ++l)

@@ -692,7 +692,7 @@ void ds_glGenTextures(const GLsizei count, GLuint tx[])
 		}
 
 		tx_in_use += 1;
-		tx_ptr->binding_list = dll_init(struct texture_unit_binding);
+		tx_ptr->binding_list = dll_Init(struct texture_unit_binding);
 		tx_ptr->wrap_s = GL_REPEAT;
 		tx_ptr->wrap_t = GL_REPEAT;
 		tx_ptr->mag_filter = GL_LINEAR;
@@ -709,7 +709,7 @@ void ds_glDeleteTextures(const GLsizei count, const GLuint tx[])
 		{
 			struct gl_texture *tx_ptr = array_list_address(tx_list, tx[i]);
 			struct texture_unit_binding *binding;
-			for (u32 k = tx_ptr->binding_list.first; k != DLL_NULL; k = DLL_NEXT(binding))
+			for (u32 k = tx_ptr->binding_list.first; k != DLL_NULL; k = dll_Next(binding))
 			{
 				binding = PoolAddress(&g_binding_pool, k);
 				struct gl_state *local_state = array_list_intrusive_address(g_gl_state_list, binding->context);
@@ -772,7 +772,7 @@ void ds_glBindTexture(const GLenum target, const GLuint tx)
 			texture->binding_list.first = binding->dll_next;
 		}
 		//fprintf(stderr, "context; %p\t DEL binding (UNIT,TEXTURE) : (%u,%u)\n", g_gl_state, gl_state->tx_unit_active, texture->name);
-		dll_remove(&texture->binding_list, g_binding_pool.buf, unit->binding);
+		dll_Remove(&texture->binding_list, g_binding_pool.buf, unit->binding);
 		PoolRemove(&g_binding_pool, unit->binding);
 		unit->binding = DLL_NULL;
 	}
@@ -804,7 +804,7 @@ void ds_glBindTexture(const GLenum target, const GLuint tx)
 					}
 					gl_state->tx_unit[binding->tx_unit].binding = DLL_NULL;
 
-					dll_remove(&texture->binding_list, g_binding_pool.buf, i);
+					dll_Remove(&texture->binding_list, g_binding_pool.buf, i);
 					PoolRemove(&g_binding_pool, i);
 					//fprintf(stderr, "context; %p\t DEL binding (UNIT,TEXTURE) : (%u,%u)\n", g_gl_state, binding->tx_unit, texture->name);
 				//}
@@ -814,7 +814,7 @@ void ds_glBindTexture(const GLenum target, const GLuint tx)
 
 		struct slot slot;
 		slot = PoolAdd(&g_binding_pool);
-	 	dll_prepend(&texture->binding_list, g_binding_pool.buf, slot.index);
+	 	dll_Prepend(&texture->binding_list, g_binding_pool.buf, slot.index);
 		
 		binding = slot.address;
 		binding->context = g_gl_state;
@@ -1113,7 +1113,7 @@ void gl_state_free(const u32 gl_state_index)
 				struct texture_unit_binding *binding = PoolAddress(&g_binding_pool, texture->binding_list.first);
 				texture->binding_list.first = binding->dll_next;
 			}
-			dll_remove(&texture->binding_list, g_binding_pool.buf, gl_state->tx_unit[i].binding);
+			dll_Remove(&texture->binding_list, g_binding_pool.buf, gl_state->tx_unit[i].binding);
 			PoolRemove(&g_binding_pool, gl_state->tx_unit[i].binding);
 		}
 	}

@@ -87,7 +87,7 @@ void task_main(dsThread *thr)
 		/* If there is work, we plow through it continuously */
 		while (SemaphoreTryWait(&g_task_ctx->tasks->able_for_reservation))
 		{
-			task_run(fifo_spmc_pop(g_task_ctx->tasks), w);
+			task_run(FifoSpmcPop(g_task_ctx->tasks), w);
 		}
 
 		/* No more work, we go to sleep and wait until we aquire new work.
@@ -95,7 +95,7 @@ void task_main(dsThread *thr)
 		 */
 		while (!SemaphoreWait(&g_task_ctx->tasks->able_for_reservation));
 
-		task_run(fifo_spmc_pop(g_task_ctx->tasks), w);
+		task_run(FifoSpmcPop(g_task_ctx->tasks), w);
 	};
 }
 
@@ -104,7 +104,7 @@ void task_main_master_run_available_jobs(void)
 	struct worker *master = g_task_ctx->workers + 0;
 	while (SemaphoreTryWait(&g_task_ctx->tasks->able_for_reservation))
 	{
-		task_run(fifo_spmc_pop(g_task_ctx->tasks), master);
+		task_run(FifoSpmcPop(g_task_ctx->tasks), master);
 	}
 }
 
@@ -136,7 +136,7 @@ void task_context_init(struct arena *mem_persistent, const u32 thread_count)
 	*g_task_ctx = ctx;
 	g_task_ctx->bundle = task_bundle_init();
 	g_task_ctx->workers = ArenaPush(mem_persistent, thread_count * sizeof(struct worker));	
-	g_task_ctx->tasks = fifo_spmc_init(mem_persistent, TASK_MAX_COUNT);
+	g_task_ctx->tasks = FifoSpmcInit(mem_persistent, TASK_MAX_COUNT);
 
 	for (u32 i = 0; i < thread_count; ++i)
 	{
@@ -169,7 +169,7 @@ void task_context_destroy(struct task_context *ctx)
 	for (u32 i = 1; i < ctx->worker_count; ++i)
 	{
 		exit_tasks[i].task = &worker_exit;
-		fifo_spmc_push(ctx->tasks, exit_tasks + i);
+		FifoSpmcPush(ctx->tasks, exit_tasks + i);
 	}
 
 	for (u32 i = 1; i < ctx->worker_count; ++i)
@@ -185,7 +185,7 @@ void task_context_destroy(struct task_context *ctx)
 
 	
 	task_bundle_destroy(&ctx->bundle);
-	fifo_spmc_destroy(ctx->tasks);
+	FifoSpmcDestroy(ctx->tasks);
 	free(exit_tasks);
 }
 
@@ -225,7 +225,7 @@ struct task_bundle *task_bundle_split_range(struct arena *mem_task_lifetime, TAS
 	/* Sync points, we release tasks->data, threads aquire tasks->data => threads will see all previous writes */
 	for (u32 i = 0; i < splits; ++i)
 	{
-		fifo_spmc_push(g_task_ctx->tasks, bundle->tasks + i);
+		FifoSpmcPush(g_task_ctx->tasks, bundle->tasks + i);
 	}
 
 	return bundle;
@@ -259,7 +259,7 @@ void task_stream_dispatch(struct arena *mem, struct task_stream *stream, TASK fu
 	task->batch = stream;
 	
 	stream->task_count += 1;
-	fifo_spmc_push(g_task_ctx->tasks, task);
+	FifoSpmcPush(g_task_ctx->tasks, task);
 }
 
 void task_stream_spin_wait(struct task_stream *stream)

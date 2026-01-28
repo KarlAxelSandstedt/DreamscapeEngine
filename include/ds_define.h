@@ -56,24 +56,24 @@ extern "C" {
 	#define ds_Align(alignment) __attribute__((aligned(alignment)))
 	#undef DS_PROFILE
 
-#elif defined(__GNUC__)
+#elif defined(__clang__)
 
-	#define __DS_COMPILER__	__DS_GCC__
-	#if (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN)
+	#define __DS_COMPILER__	__DS_CLANG__
+	#if (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
 		#define DS_LITTLE_ENDIAN
-	#elif (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN)
+	#elif (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
 		#define DS_BIG_ENDIAN
 	#endif
 	#define dsThreadLocal	__thread
 	#define ds_StaticAssert(assertion, str)	_Static_assert(assertion, str)
 	#define ds_Align(alignment) __attribute__((aligned(alignment)))
 
-#elif defined(__clang__)
+#elif defined(__GNUC__)
 
-	#define __DS_COMPILER__	__DS_CLANG__
-	#if (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN)
+	#define __DS_COMPILER__	__DS_GCC__
+	#if (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
 		#define DS_LITTLE_ENDIAN
-	#elif (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN)
+	#elif (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
 		#define DS_BIG_ENDIAN
 	#endif
 	#define dsThreadLocal	__thread

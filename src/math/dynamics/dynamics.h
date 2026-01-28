@@ -25,7 +25,7 @@
 #include "list.h"
 #include "collision.h"
 #include "hash_map.h"
-#include "bit_vector.h"
+#include "bitVector.h"
 #include "array_list.h"
 #include "ds_math.h"
 
@@ -81,22 +81,22 @@ struct contact_database
 	 * i.e. the smaller index owns slot 0 and the larger index owns slot 1.
 	 */
 	struct nll	contact_net;
-	struct hash_map *contact_map;		
+	struct hashMap *contact_map;		
 
 	/*
 	 * frame-cached separation axes 
 	 */
 	struct pool	sat_cache_pool;
 	struct dll	sat_cache_list;
-	struct hash_map *sat_cache_map;		
+	struct hashMap *sat_cache_map;		
 
 	/* PERSISTENT DATA, GROWABLE, keeps track of which slots in contacts are currently being used. */
-	struct bit_vec 	contacts_persistent_usage; /* At end of frame, is set to contacts_frame_usage + any 
+	struct bitVec 	contacts_persistent_usage; /* At end of frame, is set to contacts_frame_usage + any 
 						     new appended contacts resulting in appending the 
 						     contacts array.  */
 
 	/* FRAME DATA, NOT GROWABLE, keeps track of which slots in contacts are currently being used. */
-	struct bit_vec 	contacts_frame_usage;	/* bit-array showing which of the previous frame link indices
+	struct bitVec 	contacts_frame_usage;	/* bit-array showing which of the previous frame link indices
 						   are reused. Thus, all links in the current frame are the
 						   ones in the bit array + any appended contacts which resu-
 						   -lted in growing the array. */
@@ -267,7 +267,7 @@ struct is_index_entry
 struct island_database
 {
 	/* PERSISTENT DATA */
-	struct bit_vec island_usage;			/* NOT GROWABLE, bit vector for islands in use */
+	struct bitVec island_usage;			/* NOT GROWABLE, bit vector for islands in use */
 	struct array_list *islands;			/* NOT GROWABLE, set to max_body_count 	*/
 	struct array_list *island_contact_lists;	/* GROWABLE, list nodes to contacts 	*/
 	struct array_list *island_body_lists;		/* NOT GROWABLE, list nodes to bodies   */
@@ -690,8 +690,8 @@ struct physics_pipeline
 	u64			ns_tick;		/* ns per game tick */
 	u64 			frames_completed;	/* number of completed physics frames */ 
 
-	struct string_database *shape_db;		/* externally owned */
-	struct string_database *prefab_db;		/* externally owned */
+	struct strdb *shape_db;		/* externally owned */
+	struct strdb *prefab_db;		/* externally owned */
 
 	struct pool		body_pool;
 	struct dll		body_marked_list;	/* bodies marked for removal */
@@ -745,7 +745,7 @@ struct physics_pipeline
 /**************** PHYISCS PIPELINE API ****************/
 
 /* Initialize a new growable physics pipeline; ns_tick is the duration of a physics frame. */
-struct physics_pipeline	physics_pipeline_alloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct string_database *shape_db, struct string_database *prefab_db);
+struct physics_pipeline	physics_pipeline_alloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct strdb *shape_db, struct strdb *prefab_db);
 /* free pipeline resources */
 void 			physics_pipeline_free(struct physics_pipeline *physics_pipeline);
 /* flush pipeline resources */

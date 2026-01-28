@@ -261,7 +261,7 @@ static struct r_mesh *bounding_boxes_mesh(struct arena *mem, const struct physic
 
 	u64 mem_left = mesh->vertex_count * L_COLOR_STRIDE;
 	struct rigid_body *body = NULL;
-	for (u32 i = pipeline->body_non_marked_list.first; i != DLL_NULL; i = DLL_NEXT(body))
+	for (u32 i = pipeline->body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 	{
 		body = PoolAddress(&pipeline->body_pool, i);
 		struct AABB bbox = body->local_box;
@@ -315,7 +315,7 @@ static struct r_mesh *bvh_mesh(struct arena *mem, const struct bvh *bvh, const v
 		vertex_data += bytes_written;
 		mem_left -= bytes_written;
 
-		if (!BT_IS_LEAF(nodes + i))
+		if (!bt_LeafCheck(nodes + i))
 		{
 			sc += 1;
 			if (sc == arr.len)
@@ -345,7 +345,7 @@ static void r_led_draw(const struct led *led)
 	ProfZone;
 
 	//{
-	//	struct slot slot = string_database_lookup(&led->render_mesh_db, Utf8Inline("rm_map"));
+	//	struct slot slot = strdb_Lookup(&led->render_mesh_db, Utf8Inline("rm_map"));
 	//	ds_Assert(slot.index != STRING_DATABASE_STUB_INDEX);
 	//	if (slot.index != STRING_DATABASE_STUB_INDEX)
 	//	{
@@ -363,12 +363,12 @@ static void r_led_draw(const struct led *led)
 
 	r_proxy3d_hierarchy_speculate(&g_r_core->frame, led->ns - led->ns_engine_paused);
 
-	struct hierarchy_index_iterator it = hierarchy_index_iterator_init(&g_r_core->frame, g_r_core->proxy3d_hierarchy, PROXY3D_ROOT);
+	struct hiIterator it = hi_IteratorInit(&g_r_core->frame, g_r_core->proxy3d_hierarchy, PROXY3D_ROOT);
 	// skip root stub 
-	hierarchy_index_iterator_next_df(&it);
+	hi_IteratorNextDf(&it);
 	while (it.count)
 	{
-		const u32 index = hierarchy_index_iterator_next_df(&it);
+		const u32 index = hi_IteratorNextDf(&it);
 		struct r_proxy3d *proxy = r_proxy3d_address(index);
 
 		const f32 dist = vec3_distance(proxy->spec_position, led->cam.position);
@@ -382,14 +382,14 @@ static void r_led_draw(const struct led *led)
 			: R_CMD_TRANSPARENCY_ADDITIVE;
 
 		const u64 material = r_material_construct(PROGRAM_PROXY3D, proxy->mesh, TEXTURE_NONE);
-		const struct r_mesh *r_mesh = string_database_address(&led->render_mesh_db, proxy->mesh);
+		const struct r_mesh *r_mesh = strdb_Address(&led->render_mesh_db, proxy->mesh);
 		const u64 command = (r_mesh->index_data)
 			? r_command_key(R_CMD_SCREEN_LAYER_GAME, depth, transparency, material, R_CMD_PRIMITIVE_TRIANGLE, R_CMD_INSTANCED, R_CMD_ELEMENTS)
 			: r_command_key(R_CMD_SCREEN_LAYER_GAME, depth, transparency, material, R_CMD_PRIMITIVE_TRIANGLE, R_CMD_INSTANCED, R_CMD_ARRAYS);
 		
 		r_instance_add(index, command);
 	}
-	hierarchy_index_iterator_release(&it);
+	hi_IteratorRelease(&it);
 
 	if (led->physics.draw_dbvh)
 	{
@@ -417,7 +417,7 @@ static void r_led_draw(const struct led *led)
 		const u64 depth = 0x7fffff;
 		const u64 cmd = r_command_key(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
 		struct rigid_body *body = NULL;
-		for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = DLL_NEXT(body))
+		for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 		{
 			body = PoolAddress(&led->physics.body_pool, i);
 			if (body->shape_type != COLLISION_SHAPE_TRI_MESH)
@@ -425,7 +425,7 @@ static void r_led_draw(const struct led *led)
 				continue;
 			}
 
-			const struct collision_shape *shape = string_database_address(led->physics.shape_db, body->shape_handle);
+			const struct collision_shape *shape = strdb_Address(led->physics.shape_db, body->shape_handle);
 			struct r_mesh *mesh = bvh_mesh(&g_r_core->frame, &shape->mesh_bvh.bvh, body->position, body->rotation, led->physics.sbvh_color);
 			if (mesh)
 			{
@@ -736,10 +736,10 @@ void r_led_main(const struct led *led)
 			//fprintf(stderr, "spec:   %lu\n", led->ns - led->ns_engine_paused);
 
 			struct system_window *win = NULL;
-			struct hierarchy_index_iterator	it = hierarchy_index_iterator_init(&tmp, g_window_hierarchy, g_process_root_window);
+			struct hiIterator	it = hi_IteratorInit(&tmp, g_window_hierarchy, g_process_root_window);
 			while (it.count)
 			{
-				const u32 window = hierarchy_index_iterator_next_df(&it);
+				const u32 window = hi_IteratorNextDf(&it);
 				win = system_window_address(window);
 				if (!win->tagged_for_destruction)
 				{
@@ -761,7 +761,7 @@ void r_led_main(const struct led *led)
 					r_scene_render(led, window);
 				}
 			}
-			hierarchy_index_iterator_release(&it);
+			hi_IteratorRelease(&it);
 
 			/* NOTE: main context must be set in the case of creating new contexts sharing state. */
 			system_window_set_current_gl_context(g_process_root_window);

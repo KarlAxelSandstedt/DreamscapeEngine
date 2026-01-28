@@ -24,7 +24,7 @@
 #include "Log.h"
 #include "r_public.h"
 #include "hierarchy_index.h"
-#include "bit_vector.h"
+#include "bitVector.h"
 #include "asset_public.h"
 #include "string_database.h"
 #include "array_list.h"
@@ -121,9 +121,9 @@ struct r_core
 
 	struct pool		unit_pool;
 
-	struct string_database *mesh_database;		/* mesh storage (external) */
+	struct strdb *mesh_database;		/* mesh storage (external) */
 
-	struct hierarchy_index *proxy3d_hierarchy;	/* proxy3d storage */
+	struct hi *proxy3d_hierarchy;	/* proxy3d storage */
 	u32			proxy3d_root;
 };
 extern struct r_core *g_r_core;

@@ -31,7 +31,7 @@
  ********************************************************/
 
 /* initiate render state, ns_tick is ns per draw frame, or, if 0, redraw on every r_main() entry,  should be a power of 2 */
-void 	r_init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u64 core_unit_count, struct string_database *mesh_database);
+void 	r_init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u64 core_unit_count, struct strdb *mesh_database);
 
 /********************************************************
  *			r_main.c			*
@@ -253,7 +253,7 @@ struct r_proxy3d_config
  */
 struct r_proxy3d
 {
-	struct hierarchy_index_node	header; /* DO NOT MOVE! */
+	struct hiNode	header; /* DO NOT MOVE! */
 
 	u32	flags;
 	vec3	spec_position;
@@ -396,7 +396,7 @@ struct r_scene
 	struct arena *		mem_frame;
 	u64 			frame;
 
-	struct hash_map *	proxy3d_to_instance_map;	/* map[ generation(32) | index(32) ] -> instance */
+	struct hashMap *	proxy3d_to_instance_map;	/* map[ generation(32) | index(32) ] -> instance */
 	struct array_list_intrusive *instance_list;		/* instance storage 					   */
 
 	u32 			instance_new_first;	/* non-cached instance [ instance_dll ]	*/

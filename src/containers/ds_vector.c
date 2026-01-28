@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025,2026 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,28 +17,13 @@
 ==========================================================================
 */
 
-#ifndef __DS_DEBUG_H__
-#define __DS_DEBUG_H__
+#include "ds_vector.h"
 
-/* Should be included at top of file */
+DEFINE_STACK(u64);
+DEFINE_STACK(u32);
+DEFINE_STACK(f32);
+DEFINE_STACK(ptr);
+DEFINE_STACK(intv);
 
-/*** synchronization debug definitions ***/
-//#define FORCE_SEQ_CST
-
-#include <stdio.h>
-#include <assert.h>
-
-#define DS_PHYSICS_DEBUG	/* Physics debug events, physics debug rendering	*/
-
-#ifdef DS_DEBUG
-
-#define DS_ASSERT_DEBUG 	/* Asserts on 						*/
-
-#endif
-
-/*** enables opengl debugging ***/
-
-//TODO  How does debug callbacks work multi-context, context local func_ptrs?
-//#define DS_GL_DEBUG		/* graphics debugging */
-
-#endif
+//DEFINE_STACK_VEC(vec3);
+//DEFINE_STACK_VEC(vec4);

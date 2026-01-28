@@ -327,7 +327,7 @@ static void led_input_handler(struct led *led, struct ui_node *viewport)
 	for (u32 i = sys_win->ui->event_list.first; i != DLL_NULL; )
 	{
 		struct system_event *event = PoolAddress(&sys_win->ui->event_pool, i);
-		const u32 next = DLL_NEXT(event);
+		const u32 next = dll_Next(event);
 		u32 event_consumed = 1;
 		if (event->type == SYSTEM_KEY_PRESSED)
 		{
@@ -357,7 +357,7 @@ static void led_input_handler(struct led *led, struct ui_node *viewport)
 
 		if (event_consumed)
 		{
-			dll_remove(&sys_win->ui->event_list, sys_win->ui->event_pool.buf, i);
+			dll_Remove(&sys_win->ui->event_list, sys_win->ui->event_pool.buf, i);
 			PoolRemove(&sys_win->ui->event_pool, i);
 		}
 		i = next;
@@ -564,9 +564,9 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 
 					const struct collision_shape *shape;
 					ui_list(&led->cs_list, "###%p", &led->cs_list)
-					for (u32 i = led->cs_db.allocated_dll.first; i != DLL_NULL; i = DB_NEXT(shape))
+					for (u32 i = led->cs_db.allocated_dll.first; i != DLL_NULL; i = strdb_Next(shape))
 					{
-						shape = string_database_address(&led->cs_db, i);
+						shape = strdb_Address(&led->cs_db, i);
 						struct slot entry = ui_list_entry_alloc_f(&led->cs_list, "###%p_%u", &led->cs_list, i);
 						if (entry.index)
 						ui_parent(entry.index)
@@ -595,7 +595,7 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 					{
 						ui_pad();
 
-						struct collision_shape *shape = string_database_address(&led->cs_db, shape_selected);
+						struct collision_shape *shape = strdb_Address(&led->cs_db, shape_selected);
 						ui_height(ui_size_pixel(24.0f, 1.0f))
 						ui_node_alloc_f(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW | UI_DRAW_BORDER, "%k##shape_selected", &shape->id);
 
@@ -704,9 +704,9 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 
 					const struct rigid_body_prefab *prefab;
 					ui_list(&led->rb_prefab_list, "###%p", &led->rb_prefab_list)
-					for (u32 i = led->rb_prefab_db.allocated_dll.first; i != DLL_NULL; i = DB_NEXT(prefab))
+					for (u32 i = led->rb_prefab_db.allocated_dll.first; i != DLL_NULL; i = strdb_Next(prefab))
 					{
-						prefab = string_database_address(&led->rb_prefab_db, i);
+						prefab = strdb_Address(&led->rb_prefab_db, i);
 						struct slot entry = ui_list_entry_alloc_f(&led->rb_prefab_list, "###%p_%u", &led->rb_prefab_list, i);
 						if (entry.index)
 						ui_parent(entry.index)
@@ -735,7 +735,7 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 					{
 						ui_pad();
 
-						struct rigid_body_prefab *prefab = string_database_address(&led->rb_prefab_db, prefab_selected);
+						struct rigid_body_prefab *prefab = strdb_Address(&led->rb_prefab_db, prefab_selected);
 						struct collision_shape *shape = NULL;
 						ui_height(ui_size_pixel(24.0f, 1.0f))
 						ui_node_alloc_f(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW | UI_DRAW_BORDER, "%k##prefab_selected", &prefab->id);
@@ -811,23 +811,23 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 				
 								ui_pad_fill();
 
-								shape = string_database_address(&led->cs_db, prefab->shape);
+								shape = strdb_Address(&led->cs_db, prefab->shape);
 								ui_width(ui_size_pixel(110.0f, 1.0f))
 								if (ui_dropdown_menu_f(&led->rb_prefab_mesh_menu, "%k###%p_sel", &shape->id, &led->rb_prefab_mesh_menu))
 								{
 									ui_dropdown_menu_push(&led->rb_prefab_mesh_menu);
 
 									const struct collision_shape *s;
-									for (u32 i = led->cs_db.allocated_dll.first; i != DLL_NULL; i = DB_NEXT(s))
+									for (u32 i = led->cs_db.allocated_dll.first; i != DLL_NULL; i = strdb_Next(s))
 									{
-										s = string_database_address(&led->cs_db, i);
+										s = strdb_Address(&led->cs_db, i);
 										struct ui_node *drop;
 										ui_flags(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW)
 										drop = ui_dropdown_menu_entry_f(&led->rb_prefab_mesh_menu, "%k##%p_%u", &s->id, &led->rb_prefab_mesh_menu, i).address;
 										if (drop->inter & UI_INTER_SELECT)
 										{
-											string_database_dereference(&led->cs_db, prefab->shape);
-											prefab->shape = string_database_reference(&led->cs_db, s->id).index;
+											strdb_Dereference(&led->cs_db, prefab->shape);
+											prefab->shape = strdb_Reference(&led->cs_db, s->id).index;
 										}
 									}
 
@@ -1002,7 +1002,7 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 					//struct led_node *node = NULL;
 					//ui_height(ui_size_pixel(256.0f, 1.0f))
 					//ui_list(&led->node_ui_list, "###%p", &led->node_ui_list)
-					//for (u32 i = led->node_non_marked_list.first; i != DLL_NULL; i = DLL_NEXT(node))
+					//for (u32 i = led->node_non_marked_list.first; i != DLL_NULL; i = dll_Next(node))
 					//{
 					//	node = GPoolAddress(&led->node_pool, i);
 					//	ui_child_layout_axis(AXIS_2_X)
@@ -1021,22 +1021,22 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 					//	struct ui_node *ui_node = node->cache.frame_node;
 					//	if (ui_node->inter & UI_INTER_SELECT)
 					//	{
-					//		if (!DLL2_IN_LIST(node))
+					//		if (!dll2_InList(node))
 					//		{
-					//			dll_append(&led->node_selected_list, led->node_pool.buf, i);
+					//			dll_Append(&led->node_selected_list, led->node_pool.buf, i);
 					//		}
 					//	}
 					//	else
 					//	{
-					//		if (DLL2_IN_LIST(node))
+					//		if (dll2_InList(node))
 					//		{
-					//			dll_remove(&led->node_selected_list, led->node_pool.buf, i);
+					//			dll_Remove(&led->node_selected_list, led->node_pool.buf, i);
 					//		}
 					//	}
 					//}
 
 					//ui_list(&led->node_selected_ui_list, "###%p", &led->node_selected_ui_list)
-					//for (u32 i = led->node_selected_list.first; i != DLL_NULL; i = DLL2_NEXT(node))
+					//for (u32 i = led->node_selected_list.first; i != DLL_NULL; i = dll2_Next(node))
 					//{
 					//	node = GPoolAddress(&led->node_pool, i);
 					//	ui_child_layout_axis(AXIS_2_Y)

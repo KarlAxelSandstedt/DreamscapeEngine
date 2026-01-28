@@ -268,7 +268,7 @@ i32 wi, he, co;
 			struct ssff_sprite *spr = (struct ssff_sprite *) (((u8 *) header) + c[i].sprite_offset);
 			spr[s].pixel_offset = (u32) ((u64) sprite_pixel - (u64) header);
 
-			struct serialize_stream stream = ss_buffered(sprite_pixel, c[i].bit_depth*width*height);
+			struct serialStream stream = ss_Buffered(sprite_pixel, c[i].bit_depth*width*height);
 			
 			for (u32 y = sprite[i][s].y0; y <= sprite[i][s].y1; ++y)
 			{
@@ -289,7 +289,7 @@ i32 wi, he, co;
 						}
 					}
 					//TODO ds_Assert(ci != U32_MAX);
-					ss_write_u32_be_partial(&stream, ci, c[i].bit_depth);
+					ss_WriteU32BePartial(&stream, ci, c[i].bit_depth);
 				}
 			}
 
@@ -369,13 +369,13 @@ struct ssff_texture_return ssff_texture(struct arena *mem, const struct ssff_hea
 			const u32 sprite_width = sprite[j].x1 - sprite[j].x0 + 1;
 			const u32 sprite_height = sprite[j].y1 - sprite[j].y0 + 1;
 			void *sprite_pixel = (((u8 *) ssff) + sprite[j].pixel_offset);
-			struct serialize_stream stream = ss_buffered(sprite_pixel, c[i].bit_depth*width*height);
+			struct serialStream stream = ss_Buffered(sprite_pixel, c[i].bit_depth*width*height);
 			for (u32 y = 0; y < sprite_height; ++y)
 			{
 				for (u32 x = 0; x < sprite_width; ++x)
 				{
 					ds_AssertString(x_offset + x < width, "trying to write outside of row");
-					const u32 ci = ss_read_u32_be_partial(&stream, c->bit_depth);
+					const u32 ci = ss_ReadU32BePartial(&stream, c->bit_depth);
 					const u32 color = color_table[ci];
 					pixel[4*((y_offset + y)*width + (x_offset + x)) + 0] = (u8) (color >> 24);
 					pixel[4*((y_offset + y)*width + (x_offset + x)) + 1] = (u8) (color >> 16);

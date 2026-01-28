@@ -31,7 +31,7 @@ struct r_scene *r_scene_alloc(void)
 	scene->mem_frame = scene->mem_frame_arr + 0;
 	scene->frame = 0;
 
-	scene->proxy3d_to_instance_map = hash_map_alloc(NULL, 4096, 4096, HASH_GROWABLE);
+	scene->proxy3d_to_instance_map = HashMapAlloc(NULL, 4096, 4096, GROWABLE);
 	scene->instance_list = array_list_intrusive_alloc(NULL, 4096, sizeof(struct r_instance), ARRAY_LIST_GROWABLE);
 
 	scene->instance_new_first = U32_MAX;
@@ -47,7 +47,7 @@ struct r_scene *r_scene_alloc(void)
 void r_scene_free(struct r_scene *scene)
 {
 	array_list_intrusive_free(scene->instance_list);
-	hash_map_free(scene->proxy3d_to_instance_map);
+	HashMapFree(scene->proxy3d_to_instance_map);
 	ArenaFree(scene->mem_frame_arr + 0),
 	ArenaFree(scene->mem_frame_arr + 1),
 	free(scene);
@@ -183,7 +183,7 @@ static void r_scene_sort_commands_and_prune_instances(void)
 			{
 				if (cached_instance->type == R_INSTANCE_PROXY3D)
 				{
-					hash_map_remove(g_scene->proxy3d_to_instance_map, cached_instance->unit, index);
+					HashMapRemove(g_scene->proxy3d_to_instance_map, cached_instance->unit, index);
 				}
 				array_list_intrusive_remove(g_scene->instance_list, cached_instance);
 				g_scene->cmd_cache[cache_i].allocated = 0;
@@ -221,7 +221,7 @@ static void r_scene_sort_commands_and_prune_instances(void)
 		{
 			if (cached_instance->type == R_INSTANCE_PROXY3D)
 			{
-				hash_map_remove(g_scene->proxy3d_to_instance_map, cached_instance->unit, index);
+				HashMapRemove(g_scene->proxy3d_to_instance_map, cached_instance->unit, index);
 			}
 			array_list_intrusive_remove(g_scene->instance_list, cached_instance);
 			g_scene->cmd_cache[cache_i].allocated = 0;
@@ -364,7 +364,7 @@ void r_scene_generate_bucket_list(void)
 			case R_INSTANCE_PROXY3D:
 			{
 				const struct r_proxy3d *proxy = r_proxy3d_address(instance->unit);
-				const struct r_mesh *mesh = string_database_address(g_r_core->mesh_database, proxy->mesh);
+				const struct r_mesh *mesh = strdb_Address(g_r_core->mesh_database, proxy->mesh);
 				buf_constructor.last->index_count = mesh->index_count;
 				buf_constructor.last->local_size = mesh->vertex_count * L_PROXY3D_STRIDE;
 				r_buffer_constructor_buffer_add_size(&buf_constructor, 
@@ -442,7 +442,7 @@ static void r_scene_bucket_generate_draw_data(struct r_bucket *b)
 					{
 						for (u32 i = 0; i < ui_b->count; )
 						{
-							const struct ui_node *n = hierarchy_index_address(g_ui->node_hierarchy, draw_node->index);
+							const struct ui_node *n = hi_Address(g_ui->node_hierarchy, draw_node->index);
 							draw_node = draw_node->next;
 							const vec4 visible_rect =
 							{
@@ -646,7 +646,7 @@ static void r_scene_bucket_generate_draw_data(struct r_bucket *b)
 					{
 						for (u32 i = 0; i < ui_b->count; ++i)
 						{
-							const struct ui_node *n = hierarchy_index_address(g_ui->node_hierarchy, draw_node->index);
+							const struct ui_node *n = hi_Address(g_ui->node_hierarchy, draw_node->index);
 							draw_node = draw_node->next;
 							const struct sprite *spr = g_sprite + n->sprite;
 							const vec4 node_rect =
@@ -692,7 +692,7 @@ static void r_scene_bucket_generate_draw_data(struct r_bucket *b)
 			case R_INSTANCE_PROXY3D:
 			{
 				const struct r_proxy3d *proxy = r_proxy3d_address(instance->unit);
-				const struct r_mesh *mesh = string_database_address(g_r_core->mesh_database, proxy->mesh);
+				const struct r_mesh *mesh = strdb_Address(g_r_core->mesh_database, proxy->mesh);
 				buf->shared_data = ArenaPush(g_scene->mem_frame, buf->shared_size);
 				buf->local_data = mesh->vertex_data;
 				buf->index_data = mesh->index_data;
@@ -755,8 +755,8 @@ struct r_instance *r_instance_add(const u32 unit, const u64 cmd)
 	struct r_instance *instance = NULL;
 	const u32 key = unit;
 
-	u32 index = hash_map_first(g_scene->proxy3d_to_instance_map, key);
-	for (; index != HASH_NULL; index = hash_map_next(g_scene->proxy3d_to_instance_map, index))
+	u32 index = HashMapFirst(g_scene->proxy3d_to_instance_map, key);
+	for (; index != HASH_NULL; index = HashMapNext(g_scene->proxy3d_to_instance_map, index))
 	{
 		instance = array_list_intrusive_address(g_scene->instance_list, index);
 		if (instance->unit == key)
@@ -770,7 +770,7 @@ struct r_instance *r_instance_add(const u32 unit, const u64 cmd)
 		index = array_list_intrusive_reserve_index(g_scene->instance_list);
 		instance = array_list_intrusive_address(g_scene->instance_list, index);
 		instance->header.next = g_scene->instance_new_first;	
-		hash_map_add(g_scene->proxy3d_to_instance_map, key, index);
+		HashMapAdd(g_scene->proxy3d_to_instance_map, key, index);
 
 		g_scene->instance_new_first = index;
 		g_scene->cmd_new_count += 1;

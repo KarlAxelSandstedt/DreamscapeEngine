@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025,2026 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,8 +19,7 @@
 
 #include <stdlib.h>
 
-#include "sys_public.h"
-#include "serialize.h"
+#include <ds_base.h>
 
 /*
 	===== Derivation of Lookup table for bytes touched =====
@@ -137,9 +136,9 @@ static const u32 aligned_table[8] = { 1, 0, 0, 0, 0, 0, 0, 0, };
 
 static const u32 *bytes_touched_lookup = bytes_touched_table + 7;
 
-struct serialize_stream ss_alloc(struct arena *mem, const u64 bufsize)
+struct serialStream ss_Alloc(struct arena *mem, const u64 bufsize)
 {
-	struct serialize_stream ss = { 0 };
+	struct serialStream ss = { 0 };
 	ss.buf = (mem)
 		? ArenaPush(mem, bufsize)
 		: malloc(bufsize);
@@ -153,9 +152,9 @@ struct serialize_stream ss_alloc(struct arena *mem, const u64 bufsize)
 	return ss;
 }
 
-struct serialize_stream ss_buffered(void *buf, const u64 bufsize)
+struct serialStream ss_Buffered(void *buf, const u64 bufsize)
 {
-	struct serialize_stream ss =
+	struct serialStream ss =
 	{
 		.bit_count = bufsize * 8,
 		.bit_index = 0,
@@ -165,23 +164,23 @@ struct serialize_stream ss_buffered(void *buf, const u64 bufsize)
 	return ss;
 }
 
-u64 ss_bytes_left(const struct serialize_stream *ss)
+u64 ss_BytesLeft(const struct serialStream *ss)
 {
 	return (ss->bit_count - ss->bit_index) >> 3;
 }
 
-u64 ss_bits_left(const struct serialize_stream *ss)
+u64 ss_BitsLeft(const struct serialStream *ss)
 {
 	return ss->bit_count - ss->bit_index;
 }
 
-static inline b16 endian_shift_16(const b16 be)
+static inline b16 EndianShift16(const b16 be)
 {
 	const b16 shift = { .u =  (be.u << 8) | (be.u >> 8), };
 	return shift; 
 }
 
-static inline b32 endian_shift_32(const b32 le)
+static inline b32 EndianShift32(const b32 le)
 {
 	const u32 mask1 = 0x00ff00ff;
 	const u32 mask2 = 0xff00ff00;
@@ -192,7 +191,7 @@ static inline b32 endian_shift_32(const b32 le)
 	return shift; 
 }
 
-static inline b64 endian_shift_64(const b64 le)
+static inline b64 EndianShift64(const b64 le)
 {
 	const u64 mask1 = 0x0000ffff0000ffff;
 	const u64 mask2 = 0xffff0000ffff0000;
@@ -210,39 +209,39 @@ static inline b64 endian_shift_64(const b64 le)
 }
 
 #if defined(DS_LITTLE_ENDIAN)
-#define		na_to_le_16(val)	(val)
-#define		na_to_le_32(val)	(val)
-#define		na_to_le_64(val)	(val)
-#define		na_to_be_16(val)	endian_shift_16(val)	
-#define		na_to_be_32(val)	endian_shift_32(val)	
-#define		na_to_be_64(val)	endian_shift_64(val)	
-#define		le_to_na_16(val)	(val)
-#define		le_to_na_32(val)	(val)
-#define		le_to_na_64(val)	(val)
-#define		be_to_na_16(val)	endian_shift_16(val)	
-#define		be_to_na_32(val)	endian_shift_32(val)	
-#define		be_to_na_64(val)	endian_shift_64(val)	
+#define		NaToLe16(val)	(val)
+#define		NaToLe32(val)	(val)
+#define		NaToLe64(val)	(val)
+#define		NaToBe16(val)	EndianShift16(val)	
+#define		NaToBe32(val)	EndianShift32(val)	
+#define		NaToBe64(val)	EndianShift64(val)	
+#define		LeToNa16(val)	(val)
+#define		LeToNa32(val)	(val)
+#define		LeToNa64(val)	(val)
+#define		BeToNa16(val)	EndianShift16(val)	
+#define		BeToNa32(val)	EndianShift32(val)	
+#define		BeToNa64(val)	EndianShift64(val)	
 #elif defined(DS_BIG_ENDIAN)
-#define		na_to_le_16(val)	endian_shift_16(val)	
-#define		na_to_le_32(val)	endian_shift_32(val)	
-#define		na_to_le_64(val)	endian_shift_64(val)	
-#define		na_to_be_16(val)	(val)
-#define		na_to_be_32(val)	(val)
-#define		na_to_be_64(val)	(val)
-#define		le_to_na_16(val)	endian_shift_16(val)	
-#define		le_to_na_32(val)	endian_shift_32(val)	
-#define		le_to_na_64(val)	endian_shift_64(val)	
-#define		be_to_na_16(val)	(val)
-#define		be_to_na_32(val)	(val)
-#define		be_to_na_64(val)	(val)
+#define		NaToLe16(val)	EndianShift16(val)	
+#define		NaToLe32(val)	EndianShift32(val)	
+#define		NaToLe64(val)	EndianShift64(val)	
+#define		NaToBe16(val)	(val)
+#define		NaToBe32(val)	(val)
+#define		NaToBe64(val)	(val)
+#define		LeToNa16(val)	EndianShift16(val)	
+#define		LeToNa32(val)	EndianShift32(val)	
+#define		LeToNa64(val)	EndianShift64(val)	
+#define		BeToNa16(val)	(val)
+#define		BeToNa32(val)	(val)
+#define		BeToNa64(val)	(val)
 #endif
 
-void ss_free(struct serialize_stream *ss)
+void ss_Free(struct serialStream *ss)
 {
 	free(ss->buf);
 }
 
-b8 ss_read8(struct serialize_stream *ss)
+b8 ss_Read8(struct serialStream *ss)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert(ss->bit_index + 8 <= ss->bit_count);
@@ -253,7 +252,7 @@ b8 ss_read8(struct serialize_stream *ss)
 	return val;
 }
 
-void ss_write8(struct serialize_stream *ss, const b8 val)
+void ss_Write8(struct serialStream *ss, const b8 val)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert(ss->bit_index + 8 <= ss->bit_count);
@@ -263,133 +262,133 @@ void ss_write8(struct serialize_stream *ss, const b8 val)
 	*((b8 *) (ss->buf + offset)) = val;
 }
 
-b16 ss_read16_le(struct serialize_stream *ss)
+b16 ss_Read16Le(struct serialStream *ss)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 16) <= ss->bit_count);
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 16;
-	b16 val = le_to_na_16(*((b16 *) (ss->buf + offset)));
+	b16 val = LeToNa16(*((b16 *) (ss->buf + offset)));
 	return val;
 }
 
-void ss_write16_le(struct serialize_stream *ss, const b16 val)
+void ss_Write16Le(struct serialStream *ss, const b16 val)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 16) <= ss->bit_count);
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 16;
-	*((b16 *) (ss->buf + offset)) = na_to_le_16(val);
+	*((b16 *) (ss->buf + offset)) = NaToLe16(val);
 }
 
-b16 ss_read16_be(struct serialize_stream *ss)
+b16 ss_Read16Be(struct serialStream *ss)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 16) <= ss->bit_count);
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 16;
-	b16 val = be_to_na_16(*((b16 *) (ss->buf + offset)));
+	b16 val = BeToNa16(*((b16 *) (ss->buf + offset)));
 	return val;
 }
 
-void ss_write16_be(struct serialize_stream *ss, const b16 val)
+void ss_Write16Be(struct serialStream *ss, const b16 val)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 16) <= ss->bit_count);
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 16;
-	*((b16 *) (ss->buf + offset)) = na_to_be_16(val);
+	*((b16 *) (ss->buf + offset)) = NaToBe16(val);
 }
 
-b32 ss_read32_le(struct serialize_stream *ss)
+b32 ss_Read32Le(struct serialStream *ss)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 32) <= ss->bit_count);
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 32;
-	b32 val = le_to_na_32(*((b32 *) (ss->buf + offset)));
+	b32 val = LeToNa32(*((b32 *) (ss->buf + offset)));
 	return val;
 }
 
-void ss_write32_le(struct serialize_stream *ss, const b32 val)
+void ss_Write32Le(struct serialStream *ss, const b32 val)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 32) <= ss->bit_count);
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 32;
-	*((b32 *) (ss->buf + offset)) = na_to_le_32(val);
+	*((b32 *) (ss->buf + offset)) = NaToLe32(val);
 }
 
-b32 ss_read32_be(struct serialize_stream *ss)
+b32 ss_Read32Be(struct serialStream *ss)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 32) <= ss->bit_count);
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 32;
-	b32 val = be_to_na_32(*((b32 *) (ss->buf + offset)));
+	b32 val = BeToNa32(*((b32 *) (ss->buf + offset)));
 	return val;
 }
 
-void ss_write32_be(struct serialize_stream *ss, const b32 val)
+void ss_Write32Be(struct serialStream *ss, const b32 val)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 32) <= ss->bit_count);
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 32;
-	*((b32 *) (ss->buf + offset)) = na_to_be_32(val);
+	*((b32 *) (ss->buf + offset)) = NaToBe32(val);
 }
 
-b64 ss_read64_le(struct serialize_stream *ss)
+b64 ss_Read64Le(struct serialStream *ss)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 64) <= ss->bit_count);
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 64;
-	b64 val = le_to_na_64(*((b64 *) (ss->buf + offset)));
+	b64 val = LeToNa64(*((b64 *) (ss->buf + offset)));
 	return val;
 }
 
-void ss_write64_le(struct serialize_stream *ss, const b64 val)
+void ss_Write64Le(struct serialStream *ss, const b64 val)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 64) <= ss->bit_count);
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 64;
-	*((b64 *) (ss->buf + offset)) = na_to_le_64(val);
+	*((b64 *) (ss->buf + offset)) = NaToLe64(val);
 }
 
-b64 ss_read64_be(struct serialize_stream *ss)
+b64 ss_Read64Be(struct serialStream *ss)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 64) <= ss->bit_count);
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 64;
-	b64 val = be_to_na_64(*((b64 *) (ss->buf + offset)));
+	b64 val = BeToNa64(*((b64 *) (ss->buf + offset)));
 	return val;
 }
 
-void ss_write64_be(struct serialize_stream *ss, const b64 val)
+void ss_Write64Be(struct serialStream *ss, const b64 val)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 64) <= ss->bit_count);
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 64;
-	*((b64 *) (ss->buf + offset)) = na_to_be_64(val);
+	*((b64 *) (ss->buf + offset)) = NaToBe64(val);
 }
 
-void ss_read8_array(b8 *buf, struct serialize_stream *ss, const u64 len)
+void ss_Read8N(b8 *buf, struct serialStream *ss, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 8*len) <= ss->bit_count);
@@ -403,7 +402,7 @@ void ss_read8_array(b8 *buf, struct serialize_stream *ss, const u64 len)
 	}
 }
 
-void ss_write8_array(struct serialize_stream *ss, const b8 *buf, const u64 len)
+void ss_Write8N(struct serialStream *ss, const b8 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 8*len) <= ss->bit_count);
@@ -417,7 +416,7 @@ void ss_write8_array(struct serialize_stream *ss, const b8 *buf, const u64 len)
 	}
 }
 
-void ss_read16_le_array(b16 *buf, struct serialize_stream *ss, const u64 len)
+void ss_Read16LeN(b16 *buf, struct serialStream *ss, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 16*len) <= ss->bit_count);
@@ -427,11 +426,11 @@ void ss_read16_le_array(b16 *buf, struct serialize_stream *ss, const u64 len)
 	const b16 *src = (b16 *) (ss->buf + offset);
 	for (u64 i = 0; i < len; ++i)
 	{
-		buf[i] = le_to_na_16(src[i]);
+		buf[i] = LeToNa16(src[i]);
 	}
 }
 
-void ss_write16_le_array(struct serialize_stream *ss, const b16 *buf, const u64 len)
+void ss_Write16LeN(struct serialStream *ss, const b16 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 16*len) <= ss->bit_count);
@@ -441,11 +440,11 @@ void ss_write16_le_array(struct serialize_stream *ss, const b16 *buf, const u64 
 	b16 *dst = (b16 *) (ss->buf + offset);
 	for (u64 i = 0; i < len; ++i)
 	{
-		dst[i] = na_to_le_16(buf[i]);
+		dst[i] = NaToLe16(buf[i]);
 	}
 }
 
-void ss_read16_be_array(b16 *buf, struct serialize_stream *ss, const u64 len)
+void ss_Read16BeN(b16 *buf, struct serialStream *ss, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 16*len) <= ss->bit_count);
@@ -455,11 +454,11 @@ void ss_read16_be_array(b16 *buf, struct serialize_stream *ss, const u64 len)
 	const b16 *src = (b16 *) (ss->buf + offset);
 	for (u64 i = 0; i < len; ++i)
 	{
-		buf[i] = be_to_na_16(src[i]);
+		buf[i] = BeToNa16(src[i]);
 	}
 }
 
-void ss_write16_be_array(struct serialize_stream *ss, const b16 *buf, const u64 len)
+void ss_Write16BeN(struct serialStream *ss, const b16 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 16*len) <= ss->bit_count);
@@ -469,11 +468,11 @@ void ss_write16_be_array(struct serialize_stream *ss, const b16 *buf, const u64 
 	b16 *dst = (b16 *) (ss->buf + offset);
 	for (u64 i = 0; i < len; ++i)
 	{
-		dst[i] = na_to_be_16(buf[i]);
+		dst[i] = NaToBe16(buf[i]);
 	}
 }
 
-void ss_read32_le_array(b32 *buf, struct serialize_stream *ss, const u64 len)
+void ss_Read32LeN(b32 *buf, struct serialStream *ss, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 32*len) <= ss->bit_count);
@@ -483,11 +482,11 @@ void ss_read32_le_array(b32 *buf, struct serialize_stream *ss, const u64 len)
 	const b32 *src = (b32 *) (ss->buf + offset);
 	for (u64 i = 0; i < len; ++i)
 	{
-		buf[i] = le_to_na_32(src[i]);
+		buf[i] = LeToNa32(src[i]);
 	}
 }
 
-void ss_write32_le_array(struct serialize_stream *ss, const b32 *buf, const u64 len)
+void ss_Write32LeN(struct serialStream *ss, const b32 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 32*len) <= ss->bit_count);
@@ -497,11 +496,11 @@ void ss_write32_le_array(struct serialize_stream *ss, const b32 *buf, const u64 
 	b32 *dst = (b32 *) (ss->buf + offset);
 	for (u64 i = 0; i < len; ++i)
 	{
-		dst[i] = na_to_le_32(buf[i]);
+		dst[i] = NaToLe32(buf[i]);
 	}
 }
 
-void ss_read32_be_array(b32 *buf, struct serialize_stream *ss, const u64 len)
+void ss_Read32BeN(b32 *buf, struct serialStream *ss, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 32*len) <= ss->bit_count);
@@ -511,11 +510,11 @@ void ss_read32_be_array(b32 *buf, struct serialize_stream *ss, const u64 len)
 	const b32 *src = (b32 *) (ss->buf + offset);
 	for (u64 i = 0; i < len; ++i)
 	{
-		buf[i] = be_to_na_32(src[i]);
+		buf[i] = BeToNa32(src[i]);
 	}
 }
 
-void ss_write32_be_array(struct serialize_stream *ss, const b32 *buf, const u64 len)
+void ss_Write32BeN(struct serialStream *ss, const b32 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 32*len) <= ss->bit_count);
@@ -525,11 +524,11 @@ void ss_write32_be_array(struct serialize_stream *ss, const b32 *buf, const u64 
 	b32 *dst = (b32 *) (ss->buf + offset);
 	for (u64 i = 0; i < len; ++i)
 	{
-		dst[i] = na_to_be_32(buf[i]);
+		dst[i] = NaToBe32(buf[i]);
 	}
 }
 
-void ss_read64_le_array(b64 *buf, struct serialize_stream *ss, const u64 len)
+void ss_Read64LeN(b64 *buf, struct serialStream *ss, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 64*len) <= ss->bit_count);
@@ -539,11 +538,11 @@ void ss_read64_le_array(b64 *buf, struct serialize_stream *ss, const u64 len)
 	const b64 *src = (b64 *) (ss->buf + offset);
 	for (u64 i = 0; i < len; ++i)
 	{
-		buf[i] = le_to_na_64(src[i]);
+		buf[i] = LeToNa64(src[i]);
 	}
 }
 
-void ss_write64_le_array(struct serialize_stream *ss, const b64 *buf, const u64 len)
+void ss_Write64LeN(struct serialStream *ss, const b64 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 64*len) <= ss->bit_count);
@@ -553,11 +552,11 @@ void ss_write64_le_array(struct serialize_stream *ss, const b64 *buf, const u64 
 	b64 *dst = (b64 *) (ss->buf + offset);
 	for (u64 i = 0; i < len; ++i)
 	{
-		dst[i] = na_to_le_64(buf[i]);
+		dst[i] = NaToLe64(buf[i]);
 	}
 }
 
-void ss_read64_be_array(b64 *buf, struct serialize_stream *ss, const u64 len)
+void ss_Read64BeN(b64 *buf, struct serialStream *ss, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 64*len) <= ss->bit_count);
@@ -567,11 +566,11 @@ void ss_read64_be_array(b64 *buf, struct serialize_stream *ss, const u64 len)
 	const b64 *src = (b64 *) (ss->buf + offset);
 	for (u64 i = 0; i < len; ++i)
 	{
-		buf[i] = be_to_na_64(src[i]);
+		buf[i] = BeToNa64(src[i]);
 	}
 }
 
-void ss_write64_be_array(struct serialize_stream *ss, const b64 *buf, const u64 len)
+void ss_Write64BeN(struct serialStream *ss, const b64 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 64*len) <= ss->bit_count);
@@ -581,7 +580,7 @@ void ss_write64_be_array(struct serialize_stream *ss, const b64 *buf, const u64 
 	b64 *dst = (b64 *) (ss->buf + offset);
 	for (u64 i = 0; i < len; ++i)
 	{
-		dst[i] = na_to_be_64(buf[i]);
+		dst[i] = NaToBe64(buf[i]);
 	}
 }
 
@@ -1196,7 +1195,7 @@ static void internal_write_9_le_straddling(u8 *ptr, const u32 byte_lower_mask_si
 //	},
 //};
 
-void ss_write_u64_le_partial(struct serialize_stream *ss, const u64 val, const u64 bit_count)
+void ss_WriteU64LePartial(struct serialStream *ss, const u64 val, const u64 bit_count)
 {
 	ds_Assert((ss->bit_index + bit_count) <= ss->bit_count);
 	ds_Assert(1 <= bit_count && bit_count <= 64);
@@ -1242,7 +1241,7 @@ void ss_write_u64_le_partial(struct serialize_stream *ss, const u64 val, const u
 	ss->bit_index += bit_count;
 }
 
-u64 ss_read_u64_le_partial(struct serialize_stream *ss, const u64 bit_count)
+u64 ss_ReadU64LePartial(struct serialStream *ss, const u64 bit_count)
 {
 	ds_Assert((ss->bit_index + bit_count) <= ss->bit_count);
 	ds_Assert(1 <= bit_count && bit_count <= 64);
@@ -1585,7 +1584,7 @@ static void internal_write_9_be_straddling(u8 *ptr, const u32 byte_lower_mask_si
 	ptr[8]  = (u8) (bits << (new_lower_mask_size));
 }
 
-u64 ss_read_u64_be_partial(struct serialize_stream *ss, const u64 bit_count)
+u64 ss_ReadU64BePartial(struct serialStream *ss, const u64 bit_count)
 {
 	ds_Assert((ss->bit_index + bit_count) <= ss->bit_count);
 	ds_Assert(1 <= bit_count && bit_count <= 64);
@@ -1685,7 +1684,7 @@ u64 ss_read_u64_be_partial(struct serialize_stream *ss, const u64 bit_count)
 	return val;
 }
 
-void ss_write_u64_be_partial(struct serialize_stream *ss, const u64 val, const u64 bit_count)
+void ss_WriteU64BePartial(struct serialStream *ss, const u64 val, const u64 bit_count)
 {
 	ds_Assert((ss->bit_index + bit_count) <= ss->bit_count);
 	ds_Assert(1 <= bit_count && bit_count <= 64);
@@ -1783,33 +1782,33 @@ void ss_write_u64_be_partial(struct serialize_stream *ss, const u64 val, const u
 	//fprintf(stderr, "[%u%u%u%u%u%u%u%u]\n\n", (ptr[8] >> 7) & 0x1, (ptr[8] >> 6) & 0x1, (ptr[8] >> 5) & 0x1, (ptr[8] >> 4) & 0x1, (ptr[8] >> 3) & 0x1, (ptr[8] >> 2) & 0x1, (ptr[8] >> 1) & 0x1, (ptr[8] >> 0) & 0x1);
 }
 
-void ss_write_i64_le_partial(struct serialize_stream *ss, const i64 val, const u64 bit_count)
+void ss_WriteI64LePartial(struct serialStream *ss, const i64 val, const u64 bit_count)
 {
 	b64 trunc = { .i = val };
 	const u64 mask = (0x7fffffffffffffff) >> (64 - bit_count);
 	trunc.u = (trunc.u & mask) | ((trunc.u & 0x8000000000000000) >> (64 - bit_count));
-	ss_write_u64_le_partial(ss, trunc.u, bit_count);
+	ss_WriteU64LePartial(ss, trunc.u, bit_count);
 }
 
-void ss_write_i64_be_partial(struct serialize_stream *ss, const i64 val, const u64 bit_count)
+void ss_WriteI64BePartial(struct serialStream *ss, const i64 val, const u64 bit_count)
 {
 	b64 trunc = { .i = val };
 	const u64 mask = (0x7fffffffffffffff) >> (64 - bit_count);
 	trunc.u = (trunc.u & mask) | ((trunc.u & 0x8000000000000000) >> (64 - bit_count));
-	ss_write_u64_be_partial(ss, trunc.u, bit_count);
+	ss_WriteU64BePartial(ss, trunc.u, bit_count);
 }
 
-i64 ss_read_i64_le_partial(struct serialize_stream *ss, const u64 bit_count)
+i64 ss_ReadI64LePartial(struct serialStream *ss, const u64 bit_count)
 {
-	b64 trunc = { .u = ss_read_u64_le_partial(ss, bit_count) };
+	b64 trunc = { .u = ss_ReadU64LePartial(ss, bit_count) };
 	const u64 sign = trunc.u >> (bit_count-1);
 	trunc.u |= ((0xffffffffffffffff * sign) << (bit_count-1));
 	return trunc.i;
 }
 
-i64 ss_read_i64_be_partial(struct serialize_stream *ss, const u64 bit_count)
+i64 ss_ReadI64BePartial(struct serialStream *ss, const u64 bit_count)
 {
-	b64 trunc = { .u = ss_read_u64_be_partial(ss, bit_count) };
+	b64 trunc = { .u = ss_ReadU64BePartial(ss, bit_count) };
 	const u64 sign = trunc.u >> (bit_count-1);
 	trunc.u |= ((0xffffffffffffffff * sign) << (bit_count-1));
 	return trunc.i;

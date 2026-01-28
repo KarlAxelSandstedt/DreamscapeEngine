@@ -113,7 +113,7 @@ struct csg
 {
 	struct arena 		frame;		/* frame lifetime */
 
-	struct string_database	brush_db;
+	struct strdb	brush_db;
 	struct pool		instance_pool;
 	struct pool		node_pool;
 
@@ -132,9 +132,9 @@ void		csg_dealloc(struct csg *csg);
 /* flush a csg structure's resources */
 void		csg_flush(struct csg *csg);
 /* serialize a csg structure and its resources */
-void		csg_serialize(struct serialize_stream *ss, const struct csg *csg);
+void		csg_serialize(struct serialStream *ss, const struct csg *csg);
 /* deserialize a csg stream and return the csg struct. If mem is not NULL, alloc fixed size csg on arena.  */
-struct csg	csg_deserialize(struct arena *mem, struct serialize_stream *ss, const u32 growable);		
+struct csg	csg_deserialize(struct arena *mem, struct serialStream *ss, const u32 growable);		
 /* csg main method; apply deltas and update csg internals */
 void		csg_main(struct csg *csg);
 

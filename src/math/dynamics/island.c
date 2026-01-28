@@ -70,9 +70,9 @@ struct island *is_db_init_island_from_body(struct physics_pipeline *pipeline, co
 	PHYSICS_EVENT_ISLAND_NEW(pipeline, b->island_index);
 	if (pipeline->is_db.island_usage.bit_count <= b->island_index)
 	{
-		bit_vec_increase_size(&pipeline->is_db.island_usage, PowerOfTwoCeil(b->island_index+1), 0);
+		BitVecIncreaseSize(&pipeline->is_db.island_usage, PowerOfTwoCeil(b->island_index+1), 0);
 	}
-	bit_vec_set_bit(&pipeline->is_db.island_usage, b->island_index, 1);
+	BitVecSetBit(&pipeline->is_db.island_usage, b->island_index, 1);
 
 	struct island *is = array_list_address(pipeline->is_db.islands, b->island_index);
 	is->contact_first = ISLAND_NULL;
@@ -122,7 +122,7 @@ void is_db_print_island(FILE *file, const struct island_database *is_db, const s
 	for (u32 i = is->contact_first; i != ISLAND_NULL; i = entry->next)
 	{
 		entry = array_list_address(is_db->island_contact_lists, i);
-		const struct contact *c = nll_address(&c_db->contact_net, entry->index);
+		const struct contact *c = nll_Address(&c_db->contact_net, entry->index);
 		fprintf(file, "(%u,%u) ", c->cm.i1, c->cm.i2);
 	}
 	fprintf(file, "}\n");
@@ -140,7 +140,7 @@ struct island_database is_db_alloc(struct arena *mem_persistent, const u32 initi
 {
 	struct island_database is_db = { 0 };
 
-	is_db.island_usage = bit_vec_alloc(NULL, initial_size, 0, 1);
+	is_db.island_usage = BitVecAlloc(NULL, initial_size, 0, 1);
 	is_db.islands = array_list_alloc(NULL, initial_size, sizeof(struct island), ARRAY_LIST_GROWABLE);
 	is_db.island_contact_lists = array_list_alloc(NULL, initial_size, sizeof(struct is_index_entry), ARRAY_LIST_GROWABLE);
 	is_db.island_body_lists = array_list_alloc(NULL, initial_size, sizeof(struct is_index_entry), ARRAY_LIST_GROWABLE);
@@ -153,13 +153,13 @@ void is_db_free(struct island_database *is_db)
 	array_list_free(is_db->island_contact_lists);
 	array_list_free(is_db->island_body_lists);
 	array_list_free(is_db->islands);
-	bit_vec_free(&is_db->island_usage);
+	BitVecFree(&is_db->island_usage);
 }
 
 void is_db_flush(struct island_database *is_db)
 {
 	is_db_clear_frame(is_db);
-	bit_vec_clear(&is_db->island_usage, 0);	
+	BitVecClear(&is_db->island_usage, 0);	
 	array_list_flush(is_db->islands);
 	array_list_flush(is_db->island_contact_lists);
 	array_list_flush(is_db->island_body_lists);
@@ -237,7 +237,7 @@ void is_db_validate(const struct physics_pipeline *pipeline)
 				{
 					list_length += 1;
 					entry = array_list_address(is_db->island_contact_lists, index);
-					struct contact *c = nll_address(&c_db->contact_net, entry->index);
+					struct contact *c = nll_Address(&c_db->contact_net, entry->index);
 					const struct rigid_body *b1 = PoolAddress(&pipeline->body_pool, c->cm.i1);
 					const struct rigid_body *b2 = PoolAddress(&pipeline->body_pool, c->cm.i2);
 					ds_Assert(PoolSlotAllocated(c));
@@ -257,7 +257,7 @@ void is_db_validate(const struct physics_pipeline *pipeline)
 		struct rigid_body *body = PoolAddress(&pipeline->body_pool, i);
 		if (PoolSlotAllocated(body) && body->island_index != ISLAND_NULL && body->island_index != ISLAND_STATIC)
 		{
-			const u32 island_valid = bit_vec_get_bit(&is_db->island_usage, body->island_index);
+			const u32 island_valid = BitVecGetBit(&is_db->island_usage, body->island_index);
 			ds_Assert(island_valid == 1);
 		}
 	}
@@ -380,7 +380,7 @@ void is_db_merge_islands(struct physics_pipeline *pipeline, const u32 ci, const 
 		is_merge->contact_count = 0;
 		is_merge->body_count = 0;
 		array_list_remove_index(pipeline->is_db.islands, merge);
-		bit_vec_set_bit(&pipeline->is_db.island_usage, merge, 0);
+		BitVecSetBit(&pipeline->is_db.island_usage, merge, 0);
 		PHYSICS_EVENT_ISLAND_EXPANDED(pipeline, expand);
 		PHYSICS_EVENT_ISLAND_REMOVED(pipeline, merge);
 	}
@@ -419,13 +419,13 @@ void is_db_island_remove(struct physics_pipeline *pipeline, struct island *islan
 	island->body_count = 0;
 	array_list_remove(pipeline->is_db.islands, island);
 	const u32 island_index = array_list_index(pipeline->is_db.islands, island);
-	bit_vec_set_bit(&pipeline->is_db.island_usage, island_index, 0);
+	BitVecSetBit(&pipeline->is_db.island_usage, island_index, 0);
 	PHYSICS_EVENT_ISLAND_REMOVED(pipeline, island_index);
 }
 
 void is_db_island_remove_body_resources(struct physics_pipeline *pipeline, const u32 island_index, const u32 body)
 {
-	ds_Assert(bit_vec_get_bit(&pipeline->is_db.island_usage, island_index));
+	ds_Assert(BitVecGetBit(&pipeline->is_db.island_usage, island_index));
 
 	struct island *island = array_list_address(pipeline->is_db.islands, island_index);
 	struct is_index_entry *entry = NULL;
@@ -436,7 +436,7 @@ void is_db_island_remove_body_resources(struct physics_pipeline *pipeline, const
 	{
 		entry = array_list_address(pipeline->is_db.island_contact_lists, i);
 		const u32 next = entry->next;
-		const struct contact *c = nll_address(&pipeline->c_db.contact_net, entry->index);
+		const struct contact *c = nll_Address(&pipeline->c_db.contact_net, entry->index);
 		if (body == CONTACT_KEY_TO_BODY_0(c->key) || body == CONTACT_KEY_TO_BODY_1(c->key))
 		{
 			if (prev)
@@ -503,7 +503,7 @@ void is_db_island_remove_body_resources(struct physics_pipeline *pipeline, const
 		ds_Assert(island->contact_count == 0);
 		ds_Assert(island->body_count == 0);
 		array_list_remove_index(pipeline->is_db.islands, island_index);
-		bit_vec_set_bit(&pipeline->is_db.island_usage, island_index, 0);
+		BitVecSetBit(&pipeline->is_db.island_usage, island_index, 0);
 		PHYSICS_EVENT_ISLAND_REMOVED(pipeline, island_index);
 	}
 }
@@ -541,14 +541,14 @@ void is_db_split_island(struct arena *mem_tmp, struct physics_pipeline *pipeline
 				b = PoolAddress(&pipeline->body_pool, body);
 				u32 ci = b->first_contact_index;
 				ds_Assert(ci == NLL_NULL ||
-					((body == CONTACT_KEY_TO_BODY_0(((struct contact *) nll_address(&pipeline->c_db.contact_net, ci))->key)) 
-					 && ((struct contact *) nll_address(&pipeline->c_db.contact_net, ci))->nll_prev[0] == NLL_NULL) ||
-					((body == CONTACT_KEY_TO_BODY_1(((struct contact *) nll_address(&pipeline->c_db.contact_net, ci))->key)) 
-					 && ((struct contact *) nll_address(&pipeline->c_db.contact_net, ci))->nll_prev[1] == NLL_NULL));
+					((body == CONTACT_KEY_TO_BODY_0(((struct contact *) nll_Address(&pipeline->c_db.contact_net, ci))->key)) 
+					 && ((struct contact *) nll_Address(&pipeline->c_db.contact_net, ci))->nll_prev[0] == NLL_NULL) ||
+					((body == CONTACT_KEY_TO_BODY_1(((struct contact *) nll_Address(&pipeline->c_db.contact_net, ci))->key)) 
+					 && ((struct contact *) nll_Address(&pipeline->c_db.contact_net, ci))->nll_prev[1] == NLL_NULL));
 				while (ci != NLL_NULL)
 				{
-					const struct contact *c = nll_address(&pipeline->c_db.contact_net, ci);
-					ds_Assert(ci >= pipeline->c_db.contacts_frame_usage.bit_count ||  bit_vec_get_bit(&pipeline->c_db.contacts_frame_usage, ci) == 1)
+					const struct contact *c = nll_Address(&pipeline->c_db.contact_net, ci);
+					ds_Assert(ci >= pipeline->c_db.contacts_frame_usage.bit_count ||  BitVecGetBit(&pipeline->c_db.contacts_frame_usage, ci) == 1)
 					
 					const u32 neighbour_index = (body == c->cm.i1) ? c->cm.i2 : c->cm.i1;
 					b = PoolAddress(&pipeline->body_pool, neighbour_index);
@@ -586,9 +586,9 @@ void is_db_split_island(struct arena *mem_tmp, struct physics_pipeline *pipeline
 		i = entry->next;
 		const u32 index = entry->index;
 
-		if (index >= pipeline->c_db.contacts_frame_usage.bit_count || bit_vec_get_bit(&pipeline->c_db.contacts_frame_usage, index) == 1)
+		if (index >= pipeline->c_db.contacts_frame_usage.bit_count || BitVecGetBit(&pipeline->c_db.contacts_frame_usage, index) == 1)
 		{
-			const struct contact *c = nll_address(&pipeline->c_db.contact_net, index);
+			const struct contact *c = nll_Address(&pipeline->c_db.contact_net, index);
 			ds_Assert(PoolSlotAllocated(c));
 			const struct rigid_body *b1 = PoolAddress(&pipeline->body_pool, c->cm.i1);
 			const struct rigid_body *b2 = PoolAddress(&pipeline->body_pool, c->cm.i2);
@@ -647,7 +647,7 @@ static u32 *island_solve(struct arena *mem_frame, struct physics_pipeline *pipel
 		for (u32 i = 0; i < is->contact_count; ++i)
 		{
 			entry = array_list_address(pipeline->is_db.island_contact_lists, k);
-			is->contacts[i] = nll_address(&pipeline->c_db.contact_net, entry->index);
+			is->contacts[i] = nll_Address(&pipeline->c_db.contact_net, entry->index);
  			k = entry->next;
 		}
 

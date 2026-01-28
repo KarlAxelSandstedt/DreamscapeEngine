@@ -30,16 +30,16 @@ struct csg csg_alloc(void)
 {
 	struct csg csg;
 
-	csg.brush_db = string_database_alloc(NULL, 32, 32, struct csg_brush, GROWABLE);
+	csg.brush_db = strdb_Alloc(NULL, 32, 32, struct csg_brush, GROWABLE);
 	csg.instance_pool = PoolAlloc(NULL, 32, struct csg_instance, GROWABLE);
 	csg.node_pool = PoolAlloc(NULL, 32, struct csg_instance, GROWABLE);
 	csg.frame = ArenaAlloc(1024*1024);
-	csg.brush_marked_list = dll_init(struct csg_brush);
-	csg.instance_marked_list = dll_init(struct csg_instance);
-	csg.instance_non_marked_list = dll_init(struct csg_instance);
+	csg.brush_marked_list = dll_Init(struct csg_brush);
+	csg.instance_marked_list = dll_Init(struct csg_instance);
+	csg.instance_non_marked_list = dll_Init(struct csg_instance);
 	//csg.dcel_allocator = dcel_allocator_alloc(32, 32);
 
-	struct csg_brush *stub_brush = string_database_address(&csg.brush_db, STRING_DATABASE_STUB_INDEX);
+	struct csg_brush *stub_brush = strdb_Address(&csg.brush_db, STRING_DATABASE_STUB_INDEX);
 	stub_brush->primitive = CSG_PRIMITIVE_BOX;
 	stub_brush->dcel = dcel_box_stub();
 	stub_brush->flags = CSG_CONSTANT;
@@ -53,7 +53,7 @@ struct csg csg_alloc(void)
 
 void csg_dealloc(struct csg *csg)
 {
-	string_database_free(&csg->brush_db);
+	strdb_Dealloc(&csg->brush_db);
 	PoolDealloc(&csg->instance_pool);
 	PoolDealloc(&csg->node_pool);
 	ArenaFree(&csg->frame);
@@ -62,22 +62,22 @@ void csg_dealloc(struct csg *csg)
 
 void csg_flush(struct csg *csg)
 {
-	string_database_flush(&csg->brush_db);
+	strdb_Flush(&csg->brush_db);
 	PoolFlush(&csg->instance_pool);
 	PoolFlush(&csg->node_pool);
 	ArenaFlush(&csg->frame);
-	dll_flush(&csg->brush_marked_list);
-	dll_flush(&csg->instance_marked_list);
-	dll_flush(&csg->instance_non_marked_list);
+	dll_Flush(&csg->brush_marked_list);
+	dll_Flush(&csg->instance_marked_list);
+	dll_Flush(&csg->instance_non_marked_list);
 	//dcel_allocator_flush(csg->dcel_allocator);
 }
 
-void csg_serialize(struct serialize_stream *ss, const struct csg *csg)
+void csg_serialize(struct serialStream *ss, const struct csg *csg)
 {
 
 }
 
-struct csg csg_deserialize(struct arena *mem, struct serialize_stream *ss, const u32 growable)
+struct csg csg_deserialize(struct arena *mem, struct serialStream *ss, const u32 growable)
 {
 	ds_Assert(!mem || !growable);
 }
@@ -90,23 +90,23 @@ static void csg_apply_delta(struct csg *csg)
 static void csg_remove_marked_structs(struct csg *csg)
 {
 	struct csg_brush *brush = NULL;
-	for (u32 i = csg->brush_marked_list.first; i != DLL_NULL; i = DLL_NEXT(brush))
+	for (u32 i = csg->brush_marked_list.first; i != DLL_NULL; i = dll_Next(brush))
 	{
-		brush = string_database_address(&csg->brush_db, i);
+		brush = strdb_Address(&csg->brush_db, i);
 		if ((brush->flags & CSG_CONSTANT) || brush->reference_count)
 		{
 			brush->flags &= ~CSG_MARKED_FOR_REMOVAL;
-			dll_remove(&csg->brush_marked_list, csg->brush_db.pool.buf, i);
+			dll_Remove(&csg->brush_marked_list, csg->brush_db.pool.buf, i);
 			continue;
 		}
 
 		utf8 id = brush->id;
-		string_database_remove(&csg->brush_db, id);
+		strdb_Remove(&csg->brush_db, id);
 		ThreadFree256B(id.buf);
 	}
 
-	dll_flush(&csg->brush_marked_list);
-	dll_flush(&csg->instance_marked_list);
+	dll_Flush(&csg->brush_marked_list);
+	dll_Flush(&csg->instance_marked_list);
 }
 
 void csg_main(struct csg *csg)
@@ -131,7 +131,7 @@ struct slot csg_brush_add(struct csg *csg, const utf8 id)
 
 	void *buf = ThreadAlloc256B();
 	const utf8 heap_id = Utf8CopyBuffered(buf, 256, id);
-	struct slot slot = string_database_add_and_alias(&csg->brush_db, heap_id);
+	struct slot slot = strdb_AddAndAlias(&csg->brush_db, heap_id);
 	if (!slot.address)
 	{
 		Log(T_CSG, S_WARNING, "Failed to create csg_brush, brush with id %k already exist.", &id);
@@ -153,11 +153,11 @@ struct slot csg_brush_add(struct csg *csg, const utf8 id)
 
 void csg_brush_mark_for_removal(struct csg *csg, const utf8 id)
 {
-	struct slot slot = string_database_lookup(&csg->brush_db, id);
+	struct slot slot = strdb_Lookup(&csg->brush_db, id);
 	struct csg_brush *brush = slot.address;
 	if (brush && !(brush->flags & (CSG_CONSTANT | CSG_MARKED_FOR_REMOVAL)))
 	{
 		brush->flags |= CSG_MARKED_FOR_REMOVAL;
-		dll_append(&csg->brush_marked_list, csg->brush_db.pool.buf, slot.index);
+		dll_Append(&csg->brush_marked_list, csg->brush_db.pool.buf, slot.index);
 	}
 }

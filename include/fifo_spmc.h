@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -20,14 +20,13 @@
 #ifndef __FIFO_SPMC_H__
 #define __FIFO_SPMC_H__
 
-#include "ds_common.h"
-#include "allocator.h"
-#include "sys_public.h"
+#include "ds_allocator.h"
+#include "ds_semaphore.h"
 
 /*
  * To be placed in user node structure 
  */
-struct fifo_spmc_entry
+struct fifoSpmcEntry
 {
 	// PAD CACHELINE?
 	u32 in_use;
@@ -35,7 +34,7 @@ struct fifo_spmc_entry
 };
 
 /*
- * fifo_spmc - first in first out single producer multiple consumer queue.
+ * fifoSpmc - first in first out single producer multiple consumer queue.
  *
  * Invariant: 	(1) a_first always points to the next entry to be reserved 
  * 	     	(2) if able_for_reservation > 0, there must be equally many valid entries starting from a_first
@@ -43,9 +42,9 @@ struct fifo_spmc_entry
  * 	     	(4) Before entry[a_alloc] is allocated, the entry may not be in_use
  * 	     	(5) Before incrementing the semaphore, we must have allocated a new entry and incremented a_alloc
  */
-struct fifo_spmc
+struct fifoSpmc
 {
-	struct fifo_spmc_entry *entries;
+	struct fifoSpmcEntry *entries;
 	/* TODO CACHELINE */
 	semaphore able_for_reservation; 	/* Master publishes work able for reservation */
 	/* TODO CACHELINE */
@@ -80,15 +79,15 @@ struct fifo_spmc
  * done with the entry, it removes the mark.
  */
 
-struct fifo_spmc *	fifo_spmc_init(struct arena *mem_persistent, const u32 max_entry_count);
-void 			fifo_spmc_destroy(struct fifo_spmc *q);
+struct fifoSpmc *	FifoSpmcInit(struct arena *mem_persistent, const u32 max_entry_count);
+void 			FifoSpmcDestroy(struct fifoSpmc *q);
 /* returns NULL on pop failure, otherwise pointer to producer memory */
-void *			fifo_spmc_pop(struct fifo_spmc *q);
+void *			FifoSpmcPop(struct fifoSpmc *q);
 /* returns 0 push failure, otherwise return 1 */
-u32 			fifo_spmc_try_push(struct fifo_spmc *q, void *data);
+u32 			FifoSpmcTryPush(struct fifoSpmc *q, void *data);
 /* spinlock push data */
-void			fifo_spmc_push(struct fifo_spmc *q, void *data);
+void			FifoSpmcPush(struct fifoSpmc *q, void *data);
 /* return the current number of slots ready to be pushed */
-u32 			fifo_spmc_pushable_count(const struct fifo_spmc *q);
+u32 			FifoSpmcPushableCount(const struct fifoSpmc *q);
 
 #endif

@@ -29,7 +29,7 @@ DECLARE_STACK(cmd_function);
 DEFINE_STACK(cmd_function);
 
 static struct arena mem_persistent;
-static struct hash_map *g_name_to_cmd_f_map;
+static struct hashMap *g_name_to_cmd_f_map;
 struct cmd_queue *g_queue = NULL;
 static stack_cmd_function g_cmd_f;
 u32			  g_cmd_internal_debug_print_index;	
@@ -42,7 +42,7 @@ static void cmd_internal_debug_print(void)
 
 void cmd_alloc(void)
 {
-	g_name_to_cmd_f_map = hash_map_alloc(NULL, 128, 128, HASH_GROWABLE);
+	g_name_to_cmd_f_map = HashMapAlloc(NULL, 128, 128, GROWABLE);
 	g_cmd_f = stack_cmd_function_alloc(NULL, 128, STACK_GROWABLE);
 	mem_persistent = ArenaAlloc1MB();
 
@@ -52,7 +52,7 @@ void cmd_alloc(void)
 
 void cmd_free(void)
 {
-	hash_map_free(g_name_to_cmd_f_map);
+	HashMapFree(g_name_to_cmd_f_map);
 	stack_cmd_function_free(&g_cmd_f);
 	ArenaFree1MB(&mem_persistent);
 }
@@ -339,7 +339,7 @@ struct slot cmd_function_register(const utf8 name, const u32 args_count, void (*
 		stack_cmd_function_push(&g_cmd_f, cmd_f);
 	
 		const u32 key = Utf8Hash(name);
-		hash_map_add(g_name_to_cmd_f_map, key, slot.index);
+		HashMapAdd(g_name_to_cmd_f_map, key, slot.index);
 	}
 	else
 	{
@@ -352,8 +352,8 @@ struct slot cmd_function_register(const utf8 name, const u32 args_count, void (*
 struct slot cmd_function_lookup(const utf8 name)
 {
 	const u32 key = Utf8Hash(name);
-	struct slot slot = { .index = hash_map_first(g_name_to_cmd_f_map, key), .address = NULL };
-	for (; slot.index != U32_MAX; slot.index = hash_map_next(g_name_to_cmd_f_map, slot.index))
+	struct slot slot = { .index = HashMapFirst(g_name_to_cmd_f_map, key), .address = NULL };
+	for (; slot.index != U32_MAX; slot.index = HashMapNext(g_name_to_cmd_f_map, slot.index))
 	{
 		if (Utf8Equivalence(g_cmd_f.arr[slot.index].name, name))
 		{

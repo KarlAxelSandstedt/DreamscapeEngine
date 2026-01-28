@@ -63,7 +63,6 @@ if (DEFINED EMSCRIPTEN)
 	endif ()
 
 	if (DS_DEBUG)
-		add_compile_options(-W -Wall -Wno-switch -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function)
 		# Add debug information and C<->wasm mapping
 		add_compile_options(-g)
 		add_link_options(-g -gsource-map)
@@ -86,6 +85,8 @@ if (DEFINED EMSCRIPTEN)
 		add_compile_options(-O0)
 	endif ()	
 	
+	add_compile_options(-W -Wall -Wextra -Wno-switch -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function)
+
 elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 
 	if (DS_ASAN)
@@ -104,7 +105,7 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 	endif ()
 
 	if (DS_DEBUG)
-		add_compile_options(-gdwarf -W -Wall -Wextra)
+		add_compile_options(-gdwarf)
 	endif()
 
 	if (DS_OPTIMIZE)
@@ -113,10 +114,10 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 		add_compile_options(-O0)
 	endif ()	
 
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -rdynamic")
-
 	# avoids x87 fp-instructions entirely (extended precision bad for consistency)
 	add_compile_options(-mfpmath=sse)
+
+	add_compile_options(-W -Wall -Wextra -Wno-switch -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function)
 
 elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 
@@ -144,13 +145,16 @@ endif ()
 
 add_subdirectory("${DS_INCLUDE_PATH}")
 add_subdirectory("${DS_SRC_PATH}/base")
+add_subdirectory("${DS_SRC_PATH}/containers")
 add_subdirectory("${DS_LIB_PATH}")
 
 add_library(${PROJECT_NAME} INTERFACE)
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 
 target_link_libraries(${PROJECT_NAME} 
-	INTERFACE "${PROJECT_NAME}::Base"
+	INTERFACE 
+		"${PROJECT_NAME}::Base"
+		"${PROJECT_NAME}::Containers"
 )
 
 #TODO remove, consider using DS_DEBUG instead, or if required, add DS_DEV

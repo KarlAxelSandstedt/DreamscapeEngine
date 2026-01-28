@@ -47,7 +47,7 @@ struct bvh_node
 struct bvh
 {
 	struct bt		tree;
-	struct min_queue	cost_queue;	/* dynamic specific */
+	struct minQueue	cost_queue;	/* dynamic specific */
 	u32			heap_allocated;
 };
 
@@ -102,13 +102,13 @@ To implement raycast using external primitives, one can use the following code:
 	struct bvh_raycast_info info = bvh_raycast_init(mem, bvh, ray);
 	while (info.hit_queue.count)
 	{
-		const u32f32 tuple = min_queue_fixed_pop(&info.hit_queue);
+		const u32f32 tuple = MinQueueFixedPop(&info.hit_queue);
 		if (info.hit.f < tuple.f)
 		{
 			break;	
 		}
 
-		if (BT_IS_LEAF(info.node + tuple.u))
+		if (bt_LeafCheck(info.node + tuple.u))
 		{
 			//TODO: Here you implement raycasting against your external primitive.
 			const f32 t = external_primitive_raycast(...);
@@ -130,7 +130,7 @@ struct bvh_raycast_info
 	u32f32			hit;
 	vec3 			multiplier;
 	vec3u32 		dir_sign_bit;
-	struct min_queue_fixed	hit_queue;
+	struct minQueueFixed	hit_queue;
 	const struct ray *	ray;
 	const struct bvh *	bvh;
 	const struct bvh_node *	node;

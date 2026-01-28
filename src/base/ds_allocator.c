@@ -64,6 +64,14 @@ u64 PowerOfTwoCeil(const u64 n)
 	return (u64) 0x8000000000000000 >> (lz-1);
 }
 
+u64 ds_AllocSizeCeil(const u64 size)
+{
+	const u64 mod = size & (g_mem_config->page_size - 1);
+	return (mod) 
+		? size + g_mem_config->alloc_size_min - mod
+		: size;
+}
+
 static void ds_MemApiInitShared(const u32 count_256B, const u32 count_1MB)
 {
 	ds_StaticAssert(((u64) &((struct threadBlockAllocator *) 0)->a_next % DS_CACHE_LINE_UB) == 0, "Expected Alignment");
@@ -85,6 +93,7 @@ void ds_MemApiShutdown(void)
 void ds_MemApiInit(const u32 count_256B, const u32 count_1MB)
 {
 	g_mem_config->page_size = getpagesize();
+	g_mem_config->alloc_size_min = g_mem_config->page_size;
 	ds_MemApiInitShared(count_256B, count_1MB);
 }
 
@@ -92,10 +101,7 @@ void *ds_Alloc(struct memSlot *slot, const u64 size, const u32 huge_pages)
 {
 	ds_Assert(size); 
 
-	const u64 mod = size & (g_mem_config->page_size - 1);
-	u64 size_used = (mod) 
-		? size + g_mem_config->page_size - mod
-		: size;
+	u64 size_used = ds_AllocSizeCeil(size);
 	void *addr = mmap(NULL, size_used, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (addr == MAP_FAILED)
 	{
@@ -118,28 +124,29 @@ void *ds_Alloc(struct memSlot *slot, const u64 size, const u32 huge_pages)
 
 void *ds_Realloc(struct memSlot *slot, const u64 size)
 {
-	ds_Assert(size > slot->size);
-
-	if (slot->huge_pages)
+	if (size < slot->size)
 	{
-		struct memSlot newSlot;
-		if (ds_Alloc(&newSlot, size, HUGE_PAGES))
+		if (slot->huge_pages)
 		{
-			memcpy(newSlot.address, slot->address, slot->size);
+			struct memSlot newSlot;
+			if (ds_Alloc(&newSlot, size, HUGE_PAGES))
+			{
+				memcpy(newSlot.address, slot->address, slot->size);
+			}
+			ds_Free(slot);
+			*slot = newSlot;
 		}
-		ds_Free(slot);
-		*slot = newSlot;
-	}
-	else
-	{
-		slot->address = mremap(slot->address, slot->size, size, MREMAP_MAYMOVE);
-		slot->size = size;
-	}
+		else
+		{
+			slot->address = mremap(slot->address, slot->size, size, MREMAP_MAYMOVE);
+			slot->size = size;
+		}
 
-	if (slot->address == MAP_FAILED || slot->address == NULL)
-	{
-		LogString(T_SYSTEM, S_FATAL, "Failed to reallocate memSlot in ds_Realloc, exiting.");
-		FatalCleanupAndExit();
+		if (slot->address == MAP_FAILED || slot->address == NULL)
+		{
+			LogString(T_SYSTEM, S_FATAL, "Failed to reallocate memSlot in ds_Realloc, exiting.");
+			FatalCleanupAndExit();
+		}
 	}
 
 	return slot->address;
@@ -161,6 +168,7 @@ void ds_Free(struct memSlot *slot)
 void ds_MemApiInit(const u32 count_256B, const u32 count_1MB)
 {
 	g_mem_config->page_size = getpagesize();
+	g_mem_config->alloc_size_min = g_mem_config->page_size;
 	ds_MemApiInitShared(count_256B, count_1MB);
 }
 
@@ -168,10 +176,7 @@ void *ds_Alloc(struct memSlot *slot, const u64 size, const u32 garbage)
 {
 	ds_Assert(size); 
 
-	const u64 mod = size & (g_mem_config->page_size - 1);
-	u64 size_used = (mod) 
-		? size + g_mem_config->page_size - mod
-		: size;
+	u64 size_used = ds_AllocSizeCeil(size);
 	void *addr = mmap(NULL, size_used, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (addr == MAP_FAILED)
 	{
@@ -424,15 +429,13 @@ void ThreadBlockAllocatorAlloc(struct threadBlockAllocator *allocator, const u64
 	ds_StaticAssert(1 <= LOCAL_FREE_LOW, "");
 
 	const u64 mod = (block_size % DS_CACHE_LINE_UB);
-	u64 actual_block_size = (mod)
+	allocator->block_size = (mod)
 		? DS_CACHE_LINE_UB + block_size + (DS_CACHE_LINE_UB - mod)
 		: DS_CACHE_LINE_UB + block_size;
 
-	allocator->block_size = actual_block_size;
-	allocator->block = ds_Alloc(&allocator->mem_slot, block_count * allocator->block_size, HUGE_PAGES);
-
-	const u64 actual_block_count = allocator->mem_slot.size / actual_block_size;
-	allocator->max_count = actual_block_count;
+	const u64 size_used = ds_AllocSizeCeil(block_count * allocator->block_size);
+	allocator->max_count = size_used / allocator->block_size;
+	allocator->block = ds_Alloc(&allocator->mem_slot, size_used, HUGE_PAGES);
 
 	ds_AssertString(((u64) allocator->block & (DS_CACHE_LINE_UB-1)) == 0, "allocator block array should be cacheline aligned");
 	if (!allocator->block)
@@ -987,7 +990,7 @@ struct poolExternal PoolExternalAlloc(void **external_buf, const u32 length, con
 	struct pool pool = PoolAlloc(NULL, length, struct poolExternal_slot, growable);
 	if (pool.length)
 	{
-		*external_buf = malloc(length * slot_size);
+		*external_buf = ds_Alloc(&ext.mem_external, pool.length*slot_size, HUGE_PAGES);
 		if (*external_buf)
 		{
 			ext.slot_size = slot_size;
@@ -1007,7 +1010,7 @@ struct poolExternal PoolExternalAlloc(void **external_buf, const u32 length, con
 void PoolExternalDealloc(struct poolExternal *pool)
 {
 	PoolDealloc(&pool->pool);
-	free(*pool->external_buf);
+	ds_Free(&pool->mem_external);
 }
 
 void PoolExternalFlush(struct poolExternal *pool)
@@ -1025,7 +1028,7 @@ struct slot PoolExternalAdd(struct poolExternal *pool)
 	{
 		if (old_length != pool->pool.length)
 		{
-			*pool->external_buf = realloc(*pool->external_buf, pool->pool.slot_size*pool->pool.length);
+			*pool->external_buf = ds_Realloc(&pool->mem_external, pool->pool.slot_size*pool->pool.length);
 			if (*pool->external_buf == NULL)
 			{
 				LogString(T_SYSTEM, S_FATAL, "Failed to reallocate external pool buffer");

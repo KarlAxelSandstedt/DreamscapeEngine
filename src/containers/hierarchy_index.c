@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,182 +17,202 @@
 ==========================================================================
 */
 
+#include "ds_base.h"
 #include "hierarchy_index.h"
-#include "sys_public.h"
 
 #include <string.h>
 
-struct hierarchy_index *hierarchy_index_alloc(struct arena *mem, const u32 length, const u64 data_size, const u32 growable)
+#define hi_ParentPtr(hi, index)		((u32 *) ((hi)->pool.buf + (index)*(hi)->pool.slot_size + (hi)->parent_offset))
+#define hi_NextPtr(hi, index)		((u32 *) ((hi)->pool.buf + (index)*(hi)->pool.slot_size + (hi)->next_offset))
+#define hi_PrevPtr(hi, index)		((u32 *) ((hi)->pool.buf + (index)*(hi)->pool.slot_size + (hi)->prev_offset))
+#define hi_FirstPtr(hi, index)		((u32 *) ((hi)->pool.buf + (index)*(hi)->pool.slot_size + (hi)->first_offset))
+#define hi_LastPtr(hi, index)		((u32 *) ((hi)->pool.buf + (index)*(hi)->pool.slot_size + (hi)->last_offset))
+#define hi_ChildCountPtr(hi, index)	((u32 *) ((hi)->pool.buf + (index)*(hi)->pool.slot_size + (hi)->child_count_offset))
+
+struct hi hi_AllocInternal(struct arena *mem
+			, const u32 length
+			, const u64 data_size
+			, const u32 growable
+			, const u32 slot_allocation_offset	
+			, const u32 parent_offset	
+			, const u32 next_offset	
+			, const u32 prev_offset	
+			, const u32 first_offset	
+			, const u32 last_offset	
+			, const u32 child_count_offset)
 {
 	ds_Assert(length > 0);
 
-	struct hierarchy_index *hi;
+	struct hi hi = 
+	{  
+		.parent_offset = parent_offset,
+		.next_offset = next_offset,
+		.prev_offset = prev_offset,
+		.first_offset = first_offset,
+		.last_offset = last_offset,
+		.child_count_offset = child_count_offset,
+	};
+	hi.pool = PoolAllocInternal(mem, length, data_size, slot_allocation_offset, U64_MAX, growable);
+	if (hi.pool.buf)
+	{
+		const u32 root_stub = (u32) PoolAdd(&hi.pool).index;
+		*hi_ParentPtr(&hi, root_stub) = HI_NULL_INDEX;
+		*hi_NextPtr(&hi, root_stub) = HI_NULL_INDEX;
+		*hi_PrevPtr(&hi, root_stub) = HI_NULL_INDEX;
+		*hi_FirstPtr(&hi, root_stub) = HI_NULL_INDEX;
+		*hi_LastPtr(&hi, root_stub) = HI_NULL_INDEX;
+		*hi_ChildCountPtr(&hi, root_stub) = 0;
 
-	if (mem)
-	{
-		ArenaPushRecord(mem);
-		hi = ArenaPush(mem, sizeof(struct hierarchy_index));
-		if (hi == NULL || (hi->list = array_list_alloc(mem, length, data_size, growable)) == NULL)
-		{	
-			ArenaPopRecord(mem);
-			hi = NULL;
-		}
-	}
-	else
-	{
-		hi = malloc(sizeof(struct hierarchy_index));
-		if (hi != NULL)
-		{
-			hi->list = array_list_alloc(NULL, length, data_size, growable);
-			if (hi->list == NULL)
-			{
-				free(hi);
-				hi = NULL;
-			}
-		} 
-	}
+		const u32 orphan_stub = (u32) PoolAdd(&hi.pool).index;
+		*hi_ParentPtr(&hi, orphan_stub) = HI_NULL_INDEX;
+		*hi_NextPtr(&hi, orphan_stub) = HI_NULL_INDEX;
+		*hi_PrevPtr(&hi, orphan_stub) = HI_NULL_INDEX;
+		*hi_FirstPtr(&hi, orphan_stub) = HI_NULL_INDEX;
+		*hi_LastPtr(&hi, orphan_stub) = HI_NULL_INDEX;
+		*hi_ChildCountPtr(&hi, orphan_stub) = 0;
 
-	if (hi && hi->list)
-	{
-		const u32 root_stub = (u32) array_list_reserve_index(hi->list);
 		ds_Assert(root_stub == HI_ROOT_STUB_INDEX);
-		struct hierarchy_index_node *root = array_list_address(hi->list, root_stub);	
-		root->parent = HI_NULL_INDEX;
-		root->next = HI_NULL_INDEX;
-		root->prev = HI_NULL_INDEX;
-		root->first = HI_NULL_INDEX;
-		root->last = HI_NULL_INDEX;
-
-		const u32 orphan_stub = (u32) array_list_reserve_index(hi->list);
 		ds_Assert(orphan_stub == HI_ORPHAN_STUB_INDEX);
-		struct hierarchy_index_node *orphan = array_list_address(hi->list, orphan_stub);	
-		orphan->parent = HI_NULL_INDEX;
-		orphan->next = HI_NULL_INDEX;
-		orphan->prev = HI_NULL_INDEX;
-		orphan->first = HI_NULL_INDEX;
-		orphan->last = HI_NULL_INDEX;
 	}
 
 	return hi;
 }
 
-void hierarchy_index_free(struct hierarchy_index *hi)
+void hi_Dealloc(struct hi *hi)
 {
-	array_list_free(hi->list);
-	free(hi);
+	PoolDealloc(&hi->pool);
 }
-void hierarchy_index_flush(struct hierarchy_index *hi)
+void hi_Flush(struct hi *hi)
 {
-	array_list_flush(hi->list);
-	const u32 root_stub = (u32) array_list_reserve_index(hi->list);
+	PoolFlush(&hi->pool);
+
+	const u32 root_stub = PoolAdd(&hi->pool).index;
+	*hi_ParentPtr(hi, root_stub) = HI_NULL_INDEX;
+	*hi_NextPtr(hi, root_stub) = HI_NULL_INDEX;
+	*hi_PrevPtr(hi, root_stub) = HI_NULL_INDEX;
+	*hi_FirstPtr(hi, root_stub) = HI_NULL_INDEX;
+	*hi_LastPtr(hi, root_stub) = HI_NULL_INDEX;
+	*hi_ChildCountPtr(hi, root_stub) = 0;
+
+	const u32 orphan_stub = PoolAdd(&hi->pool).index;
+	*hi_ParentPtr(hi, orphan_stub) = HI_NULL_INDEX;
+	*hi_NextPtr(hi, orphan_stub) = HI_NULL_INDEX;
+	*hi_PrevPtr(hi, orphan_stub) = HI_NULL_INDEX;
+	*hi_FirstPtr(hi, orphan_stub) = HI_NULL_INDEX;
+	*hi_LastPtr(hi, orphan_stub) = HI_NULL_INDEX;
+	*hi_ChildCountPtr(hi, orphan_stub) = 0;
+
 	ds_Assert(root_stub == HI_ROOT_STUB_INDEX);
-	struct hierarchy_index_node *root = array_list_address(hi->list, root_stub);
-	root->parent = HI_NULL_INDEX;
-	root->next = HI_NULL_INDEX;
-	root->prev = HI_NULL_INDEX;
-	root->first = HI_NULL_INDEX;
-	root->last = HI_NULL_INDEX;
+	ds_Assert(orphan_stub == HI_ORPHAN_STUB_INDEX);
 }
 
-struct slot hierarchy_index_add(struct hierarchy_index *hi, const u32 parent_index)
+struct slot hi_Add(struct hi *hi, const u32 parent_index)
 {
-	ds_Assert(parent_index <= hi->list->max_count);
+	ds_Assert(parent_index <= hi->pool.count_max);
 
-	const u32 new_index = (u32) array_list_reserve_index(hi->list);
-	if (new_index == U32_MAX)
+	struct slot new = PoolAdd(&hi->pool);
+	if (new.index == U32_MAX)
 	{
 		return (struct slot) { .index = 0, .address = NULL };
 	}
 
-	struct hierarchy_index_node *parent = array_list_address(hi->list, parent_index);
-	struct hierarchy_index_node *new_node = array_list_address(hi->list, new_index);
+	u32 *parent_last = hi_LastPtr(hi, parent_index);
+	*hi_ParentPtr(hi, new.index) = parent_index;
+	*hi_PrevPtr(hi, new.index) = *parent_last;
+	*hi_NextPtr(hi, new.index) = HI_NULL_INDEX;
+	*hi_FirstPtr(hi, new.index) = HI_NULL_INDEX;
+	*hi_LastPtr(hi, new.index) = HI_NULL_INDEX;
+	*hi_ChildCountPtr(hi, new.index) = 0;
 
-	parent->child_count += 1;
-	new_node->child_count = 0;
-
-	new_node->parent = parent_index;
-	new_node->prev = parent->last;
-	new_node->next = HI_NULL_INDEX;
-	new_node->first = HI_NULL_INDEX;
-	new_node->last = HI_NULL_INDEX;
-	if (parent->last)
+	*hi_ChildCountPtr(hi, parent_index) += 1;
+	if (*parent_last)
 	{
-		struct hierarchy_index_node *prev = array_list_address(hi->list, parent->last);
-		ds_Assert(prev->parent == parent_index);
-		ds_Assert(prev->next == HI_NULL_INDEX);
-		parent->last = new_index;
-		prev->next = new_index;
+		ds_Assert(*hi_ParentPtr(hi, *parent_last) == parent_index);
+		ds_Assert(hi_NextPtr(hi, *parent_last) == HI_NULL_INDEX);
+		*hi_NextPtr(hi, *parent_last) = new.index;
+		*hi_LastPtr(hi, parent_index) = new.index;
 	}
 	else
 	{
-		parent->first = new_index;
-		parent->last = new_index;
+		*hi_FirstPtr(hi, parent_index) = new.index;
+		*parent_last = new.index;
 	}
 
-	return (struct slot) { .index = new_index, .address = new_node };
+	return new;
 }
 
-static void internal_remove_recursive(struct hierarchy_index *hi, struct hierarchy_index_node *root)
+static void internal_remove_recursive(struct hi *hi, const u32 root)
 {
-	if (root->first)
+	const u32 first = *hi_FirstPtr(hi, root);
+	const u32 next = *hi_NextPtr(hi, root);
+
+	if (first)
 	{
-		struct hierarchy_index_node *child = array_list_address(hi->list, root->first);
-		internal_remove_recursive(hi, child);	
+		internal_remove_recursive(hi, first);	
 	}
 
-	if (root->next)
+	if (next)
 	{
-		struct hierarchy_index_node *next = array_list_address(hi->list, root->next);
 		internal_remove_recursive(hi, next);	
 	}
 
-	array_list_remove(hi->list, root);
+	PoolRemove(&hi->pool, root);
 }
 
-static void internal_hierarchy_index_remove_sub_hierarchy_recursive(struct hierarchy_index *hi, struct hierarchy_index_node *root)
+static void internal_hierarchy_index_remove_sub_hierarchy_recursive(struct hi *hi, const u32 root)
 {
-	if (root->first)
+	const u32 first = *hi_FirstPtr(hi, root);
+	const u32 next = *hi_NextPtr(hi, root);
+
+	if (first)
 	{
-		struct hierarchy_index_node *child = array_list_address(hi->list, root->first);
-		internal_remove_recursive(hi, child);	
+		internal_remove_recursive(hi, first);	
 	}
 
-	if (root->next)
+	if (next)
 	{
-		struct hierarchy_index_node *next = array_list_address(hi->list, root->next);
 		internal_remove_recursive(hi, next);	
 	}
 }
 
-void hierarchy_index_remove(struct arena *tmp, struct hierarchy_index *hi, const u32 node_index)
+void hi_Remove(struct arena *tmp, struct hi *hi, const u32 node)
 {
-	ds_Assert(0 < node_index && node_index <= hi->list->max_count);
+	ds_Assert(0 < node && node <= hi->pool.count_max);
 
-	struct hierarchy_index_node *node = array_list_address(hi->list, node_index);
+	const u32 first = *hi_FirstPtr(hi, node);
+	const u32 next = *hi_NextPtr(hi, node);
+	const u32 prev = *hi_PrevPtr(hi, node);
 	ArenaPushRecord(tmp);
 	/* remove any nodes it the node's sub-hierarchy */
-	if (node->first)
+	if (first)
 	{
-		u32 *stack = ArenaPush(tmp, hi->list->max_count * sizeof(u32));
+		struct memArray arr = ArenaPushAlignedAll(tmp, sizeof(u32), sizeof(u32));
+		u32 *stack = arr.addr;
 		if (stack)
 		{
 			u32 sc = 1;
-			stack[0] = node->first;
+			stack[0] = first;
 			while (sc--)
 			{
 				const u32 sub_index = stack[sc];
-				const struct hierarchy_index_node *sub_node = array_list_address(hi->list, sub_index);
-				if (sub_node->first)
+				const u32 sub_first = *hi_FirstPtr(hi, sub_index);
+				const u32 sub_next = *hi_NextPtr(hi, sub_index);
+				if (sub_first)
 				{
-					stack[sc++] = sub_node->first;
+					stack[sc++] = sub_first;
 				}
 
-				if (sub_node->next)
+				if (sub_next)
 				{
-					stack[sc++] = sub_node->next;
+					if (sc == arr.len)
+					{
+						LogString(T_SYSTEM, S_FATAL, "Stack OOM in hi_ApplyCustomFreeAndRemove");
+						FatalCleanupAndExit();
+					}
+					stack[sc++] = sub_next;
 				}
 
-				array_list_remove_index(hi->list, sub_index);
+				PoolRemove(&hi->pool, sub_index);
 			}
 		}
 		else
@@ -203,267 +223,277 @@ void hierarchy_index_remove(struct arena *tmp, struct hierarchy_index *hi, const
 	ArenaPopRecord(tmp);
 	
 	/* node is not a first or last child of its parent */
-	if (node->prev && node->next)
+	if (prev && next)
 	{
-		struct hierarchy_index_node *prev = array_list_address(hi->list, node->prev);
-		struct hierarchy_index_node *next = array_list_address(hi->list, node->next);
-		prev->next = node->next;
-		next->prev = node->prev;
+		*hi_NextPtr(hi, prev) = next;
+		*hi_PrevPtr(hi, next) = prev;
 	}
 	else
 	{
-		struct hierarchy_index_node *parent = array_list_address(hi->list, node->parent);
-		parent->child_count -= 1;
+		const u32 parent = *hi_ParentPtr(hi, node);
+		u32 *parent_first = hi_FirstPtr(hi, parent);
+		u32 *parent_last = hi_LastPtr(hi, parent);
+
+		*hi_ChildCountPtr(hi, parent) -= 1;
 		/* node is an only child */
-		if (parent->first == parent->last)
+		if (*parent_first == *parent_last)
 		{
-			parent->first = HI_NULL_INDEX;
-			parent->last = HI_NULL_INDEX;
+			*parent_first = HI_NULL_INDEX;
+			*parent_last = HI_NULL_INDEX;
 		}
-		else if (parent->first == node_index)
+		else if (*parent_first == node)
 		{
-			parent->first = node->next;
-			struct hierarchy_index_node *next = array_list_address(hi->list, node->next);
-			next->prev = HI_NULL_INDEX;
-			ds_Assert(next->parent == node->parent);
+			*parent_first = next;
+			*hi_PrevPtr(hi, next) = HI_NULL_INDEX;
+			ds_Assert(*hi_ParentPtr(hi, next) == parent);
 		}
 		else
 		{
-			ds_Assert(parent->last == node_index);
-			parent->last = node->prev;
-			struct hierarchy_index_node *prev = array_list_address(hi->list, node->prev);
-			ds_Assert(prev->next == node_index);
-			prev->next = HI_NULL_INDEX;
+			ds_Assert(*parent_last == node);
+			*parent_last = prev;
+
+			ds_Assert(*hi_NextPtr(hi, prev) == node);
+			*hi_NextPtr(hi, prev) = HI_NULL_INDEX;
 		}
 	}
 
-	array_list_remove_index(hi->list, node_index);
+	PoolRemove(&hi->pool, node);
 }
 
-void hierarchy_index_adopt_node_exclusive(struct hierarchy_index *hi, const u32 node_index, const u32 new_parent_index)
+void hi_AdoptNodeExclusive(struct hi *hi, const u32 node, const u32 new_parent)
 {
-	ds_Assert(new_parent_index <= hi->list->max_count);
+	ds_Assert(new_parent <= hi->pool.count_max);
 
-	struct hierarchy_index_node *new_parent = array_list_address(hi->list, new_parent_index);
-	struct hierarchy_index_node *node = array_list_address(hi->list, node_index);
-	struct hierarchy_index_node *old_parent = array_list_address(hi->list, node->parent);
-	struct hierarchy_index_node *next = array_list_address(hi->list, node->next);
-	struct hierarchy_index_node *prev = array_list_address(hi->list, node->prev);
-	struct hierarchy_index_node *child;
+	const u32 old_parent = *hi_ParentPtr(hi, node);
+	const u32 next = *hi_NextPtr(hi, node);
+	const u32 prev = *hi_PrevPtr(hi, node);
+	const u32 first = *hi_FirstPtr(hi, node);
+	const u32 last = *hi_LastPtr(hi, node);
 
-	old_parent->child_count += node->child_count - 1;
-	if (old_parent->first == old_parent->last)
+	*hi_ChildCountPtr(hi, old_parent) += *hi_ChildCountPtr(hi, node) - 1;
+	if (*hi_FirstPtr(hi, old_parent) == *hi_LastPtr(hi, old_parent))
 	{
-		next->prev = node->prev;
-		prev->next = node->next;
-		old_parent->first = node->first;
-		old_parent->last = node->last;
+		*hi_PrevPtr(hi, next) = prev;
+		*hi_NextPtr(hi, prev) = next;
+		*hi_FirstPtr(hi, old_parent) = first;
+		*hi_LastPtr(hi, old_parent) = last;
 	}
-	else if (old_parent->first == node_index)
+	else if (*hi_FirstPtr(hi, old_parent) == node)
 	{
-		next->prev = node->last;
-		if (node->first)
+		*hi_PrevPtr(hi, next) = last;
+		if (first)
 		{
-			old_parent->first = node->first;
-			child = array_list_address(hi->list, node->last);
-			child->next = node->next;
+			*hi_FirstPtr(hi, old_parent) = first;
+			*hi_NextPtr(hi, last) = next;
 		}
 		else
 		{
-			old_parent->first = node->next;
+			*hi_FirstPtr(hi, old_parent) = next;
 		}
 	}
-	else if (old_parent->last == node_index)
+	else if (*hi_LastPtr(hi, old_parent) == node)
 	{
-		prev->next = node->first;
-		if (node->last)
+		*hi_NextPtr(hi, prev) = first;	
+		if (last)
 		{
-			old_parent->last = node->last;
-			child = array_list_address(hi->list, node->first);
-			child->prev = node->prev;
+			*hi_LastPtr(hi, old_parent) = last;
+			*hi_PrevPtr(hi, first) = prev;
 		}
 		else
 		{
-			old_parent->last = node->prev;
+			*hi_LastPtr(hi, old_parent) = prev;
 		}
 	}
 	else
 	{
-		if (node->first)
+		if (first)
 		{
-			prev->next = node->first;
-			next->prev = node->last;
-			child = array_list_address(hi->list, node->first);
-			child->prev = node->prev;
-			child = array_list_address(hi->list, node->last);
-			child->next = node->next;
+			*hi_NextPtr(hi, prev) = first;
+			*hi_PrevPtr(hi, next) = last;
+			*hi_PrevPtr(hi, first) = prev;
+			*hi_NextPtr(hi, last) = next;
 		}
 		else
 		{
-			next->prev = node->prev;
-			prev->next = node->next;
+			*hi_PrevPtr(hi, next) = prev;
+			*hi_NextPtr(hi, prev) = next;
 		}
 	}
 
-	for (u32 i = node->first; i != HI_NULL_INDEX; i = child->next)
+	for (u32 child = first; child != HI_NULL_INDEX; child = *hi_NextPtr(hi, child))
 	{
-		child = array_list_address(hi->list, i);
-		child->parent = node->parent;
+		*hi_ParentPtr(hi, child) = old_parent;
 	}
 
-	new_parent->child_count += 1;
-	node->child_count = 0;
+	*hi_ChildCountPtr(hi, new_parent) += 1;
+	*hi_ChildCountPtr(hi, node) = 0;
 
-	node->parent = new_parent_index;
-	node->prev = new_parent->last;
-	node->next = HI_NULL_INDEX;
-	node->first = HI_NULL_INDEX;
-	node->last = HI_NULL_INDEX;
-	if (new_parent->last)
+	const u32 old_last = *hi_LastPtr(hi, new_parent);
+	*hi_ParentPtr(hi, node) = new_parent;
+	*hi_PrevPtr(hi, node) = old_last;
+	*hi_NextPtr(hi, node) = HI_NULL_INDEX;
+	*hi_FirstPtr(hi, node) = HI_NULL_INDEX;
+	*hi_LastPtr(hi, node) = HI_NULL_INDEX;
+
+	if (old_last)
 	{
-		prev = array_list_address(hi->list, new_parent->last);
-		ds_Assert(prev->parent == new_parent_index);
-		ds_Assert(prev->next == HI_NULL_INDEX);
-		new_parent->last = node_index;
-		prev->next = node_index;
-	}
-	else
-	{
-		new_parent->first = node_index;
-		new_parent->last = node_index;
-	}
-}
-
-void hierarchy_index_adopt_node(struct hierarchy_index *hi, const u32 node_index, const u32 new_parent_index)
-{
-	ds_Assert(new_parent_index <= hi->list->max_count);
-
-	struct hierarchy_index_node *new_parent = array_list_address(hi->list, new_parent_index);
-	struct hierarchy_index_node *node = array_list_address(hi->list, node_index);
-	struct hierarchy_index_node *old_parent = array_list_address(hi->list, node->parent);
-	struct hierarchy_index_node *next = array_list_address(hi->list, node->next);
-	struct hierarchy_index_node *prev = array_list_address(hi->list, node->prev);
-
-	old_parent->child_count -= 1;
-	next->prev = node->prev;
-	prev->next = node->next;
-
-	if (old_parent->first == old_parent->last)
-	{
-		old_parent->first = HI_NULL_INDEX;
-		old_parent->last = HI_NULL_INDEX;
-	}
-	else if (old_parent->first == node_index)
-	{
-		old_parent->first = node->next;
-	}
-	else if (old_parent->last == node_index)
-	{
-		old_parent->last = node->prev;
-	}
-
-	new_parent->child_count += 1;
-
-	node->parent = new_parent_index;
-	node->prev = new_parent->last;
-	node->next = HI_NULL_INDEX;
-	if (new_parent->last)
-	{
-		prev = array_list_address(hi->list, new_parent->last);
-		ds_Assert(prev->parent == new_parent_index);
-		ds_Assert(prev->next == HI_NULL_INDEX);
-		new_parent->last = node_index;
-		prev->next = node_index;
+		ds_Assert(*hi_ParentPtr(hi, old_last) == new_parent);
+		ds_Assert(*hi_NextPtr(hi, old_last) == HI_NULL_INDEX);
+		*hi_NextPtr(hi, old_last) = node;
+		*hi_LastPtr(hi, new_parent) = node;
 	}
 	else
 	{
-		new_parent->first = node_index;
-		new_parent->last = node_index;
+		*hi_FirstPtr(hi, new_parent) = node;
+		*hi_LastPtr(hi, new_parent) = node;
 	}
 }
 
-void hierarchy_index_apply_custom_free_and_remove(struct arena *tmp, struct hierarchy_index *hi, const u32 node_index, void (*custom_free)(const struct hierarchy_index *hi, const u32 index, void *data), void *data)
+void hi_AdoptNode(struct hi *hi, const u32 node, const u32 new_parent)
 {
-	ds_Assert(0 < node_index && node_index <= hi->list->max_count);
+	ds_Assert(new_parent <= hi->pool.count_max);
 
-	struct hierarchy_index_node *node = array_list_address(hi->list, node_index);
+	const u32 old_parent = *hi_ParentPtr(hi, node);
+	const u32 next = *hi_NextPtr(hi, node);
+	const u32 prev = *hi_PrevPtr(hi, node);
+
+	*hi_ChildCountPtr(hi, old_parent) -= 1;
+	*hi_PrevPtr(hi, next) = prev;
+	*hi_NextPtr(hi, prev) = next;
+
+	u32 *old_first = hi_FirstPtr(hi, old_parent);
+	u32 *old_last = hi_LastPtr(hi, old_parent);
+	if (*old_first == *old_last)
+	{
+		*old_first = HI_NULL_INDEX;
+		*old_last = HI_NULL_INDEX;
+	}
+	else if (*old_first == node)
+	{
+		*old_first = next;
+	}
+	else if (*old_last == node)
+	{
+		*old_last = prev;
+	}
+
+	*hi_ChildCountPtr(hi, new_parent) += 1;
+
+	
+	u32 *new_first = hi_FirstPtr(hi, new_parent);
+	u32 *new_last = hi_LastPtr(hi, new_parent);
+
+	*hi_ParentPtr(hi, node) = new_parent;
+	*hi_PrevPtr(hi, node) = *new_last;
+	*hi_NextPtr(hi, node) = HI_NULL_INDEX;
+	if (*new_last)
+	{
+		ds_Assert(*hi_ParentPtr(hi, *new_last) == new_parent);
+		ds_Assert(*hi_NextPtr(hi, *new_last) == HI_NULL_INDEX);
+		*hi_NextPtr(hi, *new_last) = node;
+		*new_last = node;
+	}
+	else
+	{
+		*new_first = node;
+		*new_last = node;
+	}
+}
+
+void hi_ApplyCustomFreeAndRemove(struct arena *tmp, struct hi *hi, const u32 node, void (*custom_free)(const struct hi *hi, const u32 index, void *data), void *data)
+{
+	ds_Assert(0 < node && node <= hi->pool.count_max);
+
 	ArenaPushRecord(tmp);
+	const u32 first = *hi_FirstPtr(hi, node);
 	/* remove any nodes it the node's sub-hierarchy */
-	if (node->first)
+	if (first)
 	{
-		u32 *stack = ArenaPush(tmp, hi->list->max_count * sizeof(u32));
+		struct memArray arr = ArenaPushAlignedAll(tmp, sizeof(u32), sizeof(u32));
+		u32 *stack = arr.addr;
 		if (stack)
 		{
 			u32 sc = 1;
-			stack[0] = node->first;
+			stack[0] = first;
 			while (sc)
 			{
-				const u32 sub_index = stack[--sc];
-				const struct hierarchy_index_node *sub_node = array_list_address(hi->list, sub_index);
-				if (sub_node->first)
+				const u32 sub_node = stack[--sc];
+				const u32 sub_first = *hi_FirstPtr(hi, sub_node);
+				const u32 sub_next = *hi_NextPtr(hi, sub_node);
+				if (sub_first)
 				{
-					stack[sc++] = sub_node->first;
+					stack[sc++] = sub_first;
 				}
 
-				if (sub_node->next)
+				if (sub_next)
 				{
-					stack[sc++] = sub_node->next;
+					if (sc == arr.len)
+					{
+						LogString(T_SYSTEM, S_FATAL, "Stack OOM in hi_ApplyCustomFreeAndRemove");
+						FatalCleanupAndExit();
+					}
+					stack[sc++] = sub_next;
 				}
 
-				custom_free(hi, sub_index, data);
-				array_list_remove_index(hi->list, sub_index);
+				custom_free(hi, sub_node, data);
+				PoolRemove(&hi->pool, sub_node);
 			}
 		}
 		else
 		{
-			ds_AssertString(0, "increase arena mem size");
+			LogString(T_SYSTEM, S_FATAL, "Stack OOM in hi_ApplyCustomFreeAndRemove");
+			FatalCleanupAndExit();
 		}
 	}
 	ArenaPopRecord(tmp);
 	
-	struct hierarchy_index_node *parent = array_list_address(hi->list, node->parent);
-	parent->child_count -= 1;
+	const u32 parent = *hi_ParentPtr(hi, node);
+	const u32 prev = *hi_PrevPtr(hi, node);
+	const u32 next = *hi_NextPtr(hi, node);
+	*hi_ChildCountPtr(hi, parent) -= 1;
+	
+	ds_Assert(next == HI_NULL_INDEX || *hi_PrevPtr(hi, next) == node);
+	ds_Assert(prev == HI_NULL_INDEX || *hi_NextPtr(hi, prev) == node);
+	ds_Assert(next == HI_NULL_INDEX || *hi_ParentPtr(hi, next) == parent);
+	ds_Assert(prev == HI_NULL_INDEX || *hi_ParentPtr(hi, prev) == parent);
 
-	struct hierarchy_index_node *prev = array_list_address(hi->list, node->prev);
-	struct hierarchy_index_node *next = array_list_address(hi->list, node->next);
-	ds_Assert(node->next == HI_NULL_INDEX || next->prev == node_index);
-	ds_Assert(node->prev == HI_NULL_INDEX || prev->next == node_index);
-	ds_Assert(node->next == HI_NULL_INDEX || next->parent == node->parent);
-	ds_Assert(node->prev == HI_NULL_INDEX || prev->parent == node->parent);
-	prev->next = node->next;
-	next->prev = node->prev;
+	*hi_NextPtr(hi, prev) = next;
+	*hi_PrevPtr(hi, next) = prev;
+
+	u32 *parent_first = hi_FirstPtr(hi, parent);
+	u32 *parent_last = hi_LastPtr(hi, parent);
 
 	/* node is an only child */
-	if (parent->first == parent->last)
+	if (*parent_first == *parent_last)
 	{
-		parent->first = HI_NULL_INDEX;
-		parent->last = HI_NULL_INDEX;
+		*parent_first = HI_NULL_INDEX;
+		*parent_last = HI_NULL_INDEX;
 	}
-	else if (parent->first == node_index)
+	else if (*parent_first == node)
 	{
-		parent->first = node->next;
+		*parent_first = next;
 	}
-	else if (parent->last == node_index)
+	else if (*parent_last == node)
 	{
-		parent->last = node->prev;
+		*parent_last = prev;
 	}
 
-	custom_free(hi, node_index, data);
-	array_list_remove_index(hi->list, node_index);
+	custom_free(hi, node, data);
+	PoolRemove(&hi->pool, node);
 }
 
-void *hierarchy_index_address(const struct hierarchy_index *hi, const u32 node_index)
+void *hi_Address(const struct hi *hi, const u32 node)
 {
-	ds_Assert(node_index <= hi->list->max_count);
-	return array_list_address(hi->list, node_index);
+	ds_Assert(node <= hi->pool.count_max);
+	return PoolAddress(&hi->pool, node);
 }
 
-struct hierarchy_index_iterator	hierarchy_index_iterator_init(struct arena *mem, struct hierarchy_index *hi, const u32 root)
+struct hiIterator hi_IteratorInit(struct arena *mem, struct hi *hi, const u32 root)
 {
 	ds_Assert(mem);
 	ArenaPushRecord(mem);
 
-	struct hierarchy_index_iterator it;
+	struct hiIterator it;
 	it.hi = hi;
 	it.mem = mem,
 	it.forced_malloc = 0;
@@ -487,7 +517,7 @@ struct hierarchy_index_iterator	hierarchy_index_iterator_init(struct arena *mem,
 	return it;
 }
 
-void hierarchy_index_iterator_release(struct hierarchy_index_iterator *it)
+void hi_IteratorRelease(struct hiIterator *it)
 {
 	if (it->forced_malloc)
 	{
@@ -496,29 +526,31 @@ void hierarchy_index_iterator_release(struct hierarchy_index_iterator *it)
 	ArenaPopRecord(it->mem);
 }
 
-u32 hierarchy_index_iterator_peek(struct hierarchy_index_iterator *it)
+u32 hi_IteratorPeek(struct hiIterator *it)
 {
 	ds_Assert(it->count);
 	return it->stack[it->count];
 }
 
-u32 hierarchy_index_iterator_next_df(struct hierarchy_index_iterator *it)
+u32 hi_IteratorNextDf(struct hiIterator *it)
 {
 	ds_Assert(it->count);
-	const u32 next = it->stack[it->count];
+	const u32 node = it->stack[it->count];
 
-	struct hierarchy_index_node *node = hierarchy_index_address(it->hi, next);
 	u32 push[2];
 	u64 push_count = 0;
 
-	if (node->next)
+	const u32 first = *hi_FirstPtr(it->hi, node);
+	const u32 next = *hi_NextPtr(it->hi, node);
+
+	if (next)
 	{
-		push[push_count++] = node->next;
+		push[push_count++] = next;
 	}
 	
-	if (node->first)
+	if (first)
 	{
-		push[push_count++] = node->first;
+		push[push_count++] = first;
 	}
 
 	if (push_count == 2)
@@ -543,18 +575,17 @@ u32 hierarchy_index_iterator_next_df(struct hierarchy_index_iterator *it)
 
 	it->count = it->count + push_count -1;
 
-	return next;
+	return node;
 }
 
-void hierarchy_index_iterator_skip(struct hierarchy_index_iterator *it)
+void hi_IteratorSkip(struct hiIterator *it)
 {
 	ds_Assert(it->count);
-	const u32 next = it->stack[it->count];
-	/* if it->count */
-	struct hierarchy_index_node *node = hierarchy_index_address(it->hi, next);
-	if (node->next)
+	const u32 node = it->stack[it->count];
+	const u32 next = *hi_NextPtr(it->hi, node);
+	if (next)
 	{
-		it->stack[it->count] = node->next;
+		it->stack[it->count] = next;
 	}
 	else
 	{

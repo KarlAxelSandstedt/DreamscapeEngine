@@ -33,8 +33,8 @@ struct bvh dbvh_alloc(struct arena *mem, const u32 initial_length, const u32 gro
 	ds_Assert(!mem || !growable);
 	struct bvh bvh =
 	{
-		.tree = bt_alloc(mem, initial_length, struct bvh_node, growable),
-		.cost_queue = min_queue_new(NULL, COST_QUEUE_INITIAL_COUNT, growable),
+		.tree = bt_Alloc(mem, initial_length, struct bvh_node, growable),
+		.cost_queue = MinQueueAlloc(NULL, COST_QUEUE_INITIAL_COUNT, growable),
 		.heap_allocated = !mem,	
 	};
 
@@ -45,8 +45,8 @@ void bvh_free(struct bvh *bvh)
 {
 	if (bvh->heap_allocated)
 	{
-		bt_dealloc(&bvh->tree);
-		min_queue_free(&bvh->cost_queue);
+		bt_Dealloc(&bvh->tree);
+		MinQueueDealloc(&bvh->cost_queue);
 	}
 }
 
@@ -60,7 +60,7 @@ static f32 bvh_cost_recursive(const struct bvh *bvh, const u32 index)
 	f32 cost;
 	
 	const struct bvh_node *node = (struct bvh_node *) bvh->tree.pool.buf;
-	if (BT_IS_LEAF(node + index))
+	if (bt_LeafCheck(node + index))
 	{
 		cost = node[index].bt_right * COST_INTERNAL;
 	}
@@ -85,8 +85,8 @@ f32 bvh_cost(const struct bvh *bvh)
 
 void dbvh_flush(struct bvh *bvh)
 {
-	bt_flush(&bvh->tree);
-	min_queue_flush(&bvh->cost_queue);
+	bt_Flush(&bvh->tree);
+	MinQueueFlush(&bvh->cost_queue);
 }
 
 static void dbvh_internal_balance_node(struct bvh *bvh, const u32 node)
@@ -100,7 +100,7 @@ static void dbvh_internal_balance_node(struct bvh *bvh, const u32 node)
 			
 	u32 upper_rotation; /* child to rotate */
 	u32 best_rotation = POOL_NULL; /* best grandchild to rotate */
-	if (!BT_IS_LEAF(nodes + left))
+	if (!bt_LeafCheck(nodes + left))
 	{
 		box_union = bbox_union(nodes[nodes[left].bt_left].bbox, nodes[right].bbox);
 		cost_original = bbox_sah(&nodes[left].bbox);	
@@ -122,7 +122,7 @@ static void dbvh_internal_balance_node(struct bvh *bvh, const u32 node)
 		}
 	}
 
-	if (!BT_IS_LEAF(nodes + right))
+	if (!bt_LeafCheck(nodes + right))
 	{
 		box_union = bbox_union(nodes[nodes[right].bt_left].bbox, nodes[left].bbox);
 		cost_original = bbox_sah(&nodes[right].bbox);
@@ -192,16 +192,16 @@ u32 dbvh_insert(struct bvh *bvh, const u32 id, const struct AABB *bbox)
 	struct slot leaf;
 	if (bvh->tree.root == POOL_NULL)
 	{
-		leaf = bt_node_add_root(&bvh->tree);
-		BT_SET_LEAF(nodes + leaf.index);
+		leaf = bt_NodeAddRoot(&bvh->tree);
+		bt_LeafSet(nodes + leaf.index);
 		/* Store external id's in bt_left of leaves */
 		nodes[leaf.index].bt_left = id;
 		nodes[leaf.index].bbox = *bbox;
 	}
 	else
 	{
-		struct slot internal = bt_node_add(&bvh->tree);
-		leaf = bt_node_add(&bvh->tree);
+		struct slot internal = bt_NodeAdd(&bvh->tree);
+		leaf = bt_NodeAdd(&bvh->tree);
 		nodes[leaf.index].bbox = *bbox;
 		nodes[leaf.index].bt_parent = BT_PARENT_LEAF_MASK | internal.index;
 		nodes[leaf.index].bt_left = id;
@@ -218,7 +218,7 @@ u32 dbvh_insert(struct bvh *bvh, const u32 id, const struct AABB *bbox)
 		f32 best_cost = F32_INFINITY;
 		f32 node_cost = 0.0f; 
 	
-		min_queue_insert(&bvh->cost_queue, node_cost, bvh->tree.root);
+		MinQueuePush(&bvh->cost_queue, node_cost, bvh->tree.root);
 
 		u32 node;
 		f32 inherited_cost, cost;
@@ -227,7 +227,7 @@ u32 dbvh_insert(struct bvh *bvh, const u32 id, const struct AABB *bbox)
 		{
 			/* (i) Get cost of node */
 			inherited_cost = bvh->cost_queue.elements[0].priority; 
-			node = min_queue_extract_min(&bvh->cost_queue);
+			node = MinQueuePop(&bvh->cost_queue);
 			const struct AABB box_union = bbox_union(nodes[leaf.index].bbox, nodes[node].bbox);
 			/* Inherited area cost + expanded node area cost */
 			cost = inherited_cost + bbox_sah(&box_union);
@@ -247,16 +247,16 @@ u32 dbvh_insert(struct bvh *bvh, const u32 id, const struct AABB *bbox)
 			 */
 			cost -= bbox_sah(&nodes[node].bbox);
 
-			if (!BT_IS_LEAF(nodes + node) && cost + bbox_sah(&nodes[leaf.index].bbox) < best_cost)
+			if (!bt_LeafCheck(nodes + node) && cost + bbox_sah(&nodes[leaf.index].bbox) < best_cost)
 			{
-				min_queue_insert(&bvh->cost_queue, cost, nodes[node].bt_left);
-				min_queue_insert(&bvh->cost_queue, cost, nodes[node].bt_right);
+				MinQueuePush(&bvh->cost_queue, cost, nodes[node].bt_left);
+				MinQueuePush(&bvh->cost_queue, cost, nodes[node].bt_right);
 			}
 		}
 
 		/* (2) Setup a new parent node for the new node and its sibling */
 		const u32 best_parent = nodes[best_index].bt_parent & BT_PARENT_INDEX_MASK;
-		if (BT_IS_ROOT(nodes + best_index))
+		if (bt_RootCheck(nodes + best_index))
 		{
 			bvh->tree.root = internal.index;
 		}
@@ -297,13 +297,13 @@ u32 dbvh_insert(struct bvh *bvh, const u32 id, const struct AABB *bbox)
 void dbvh_remove(struct bvh *bvh, const u32 index)
 {
 	struct bvh_node *nodes = (struct bvh_node *) bvh->tree.pool.buf;
-	ds_Assert(BT_IS_LEAF(nodes + index));
+	ds_Assert(bt_LeafCheck(nodes + index));
 
 	u32 parent = nodes[index].bt_parent & BT_PARENT_INDEX_MASK;
 	if (parent == POOL_NULL)
 	{
 		bvh->tree.root = POOL_NULL;
-		bt_node_remove(&bvh->tree, parent);
+		bt_NodeRemove(&bvh->tree, parent);
 	}
 	else
 	{
@@ -314,8 +314,8 @@ void dbvh_remove(struct bvh *bvh, const u32 index)
 		const u32 grand_parent = nodes[parent].bt_parent;
 		nodes[sibling].bt_parent = (nodes[sibling].bt_parent & BT_PARENT_LEAF_MASK) | grand_parent;
 
-		bt_node_remove(&bvh->tree, parent);
-		bt_node_remove(&bvh->tree, index);
+		bt_NodeRemove(&bvh->tree, parent);
+		bt_NodeRemove(&bvh->tree, index);
 
 		/* set new root */
 		if (grand_parent == POOL_NULL)
@@ -359,7 +359,7 @@ u32 dbvh_internal_push_subtree_overlap_pairs(struct arena *mem, struct dbvh_over
 	{
 		if (AABB_test(&nodes[subA].bbox, &nodes[subB].bbox))
 		{
-			if (BT_IS_LEAF(nodes + subA) && BT_IS_LEAF(nodes + subB))
+			if (bt_LeafCheck(nodes + subA) && bt_LeafCheck(nodes + subB))
 			{
 				overlap_count += 1;
 				/* id's */
@@ -378,7 +378,7 @@ u32 dbvh_internal_push_subtree_overlap_pairs(struct arena *mem, struct dbvh_over
 			else
 			{
 				/* if a is larger than b, descend into a first  */
-				if (BT_IS_LEAF(nodes + subB) || (!BT_IS_LEAF(nodes + subA) && bbox_sah(&nodes[subB].bbox) < bbox_sah(&nodes[subA].bbox)))
+				if (bt_LeafCheck(nodes + subB) || (!bt_LeafCheck(nodes + subA) && bbox_sah(&nodes[subB].bbox) < bbox_sah(&nodes[subA].bbox)))
 				{
 					stack[++q].id1 = nodes[subA].bt_left;
 					stack[q].id2 = subB;
@@ -416,7 +416,7 @@ u32 dbvh_internal_push_subtree_overlap_pairs(struct arena *mem, struct dbvh_over
 
 struct dbvh_overlap *dbvh_push_overlap_pairs(struct arena *mem, u32 *count, const struct bvh *bvh)
 {
-	if (bt_leaf_count(&bvh->tree) < 2) { return 0; }
+	if (bt_LeafCount(&bvh->tree) < 2) { return 0; }
 	const struct bvh_node *nodes = (struct bvh_node *) bvh->tree.pool.buf;
 
 	*count = 0;
@@ -438,7 +438,7 @@ struct dbvh_overlap *dbvh_push_overlap_pairs(struct arena *mem, u32 *count, cons
 	{
 		*count += dbvh_internal_push_subtree_overlap_pairs(mem, stack2, arr2.len, bvh, a, b);
 
-		if (!BT_IS_LEAF(nodes + a))
+		if (!bt_LeafCheck(nodes + a))
 		{
 			stack1[++q].id1 = nodes[a].bt_left;
 			stack1[q].id2 = nodes[a].bt_right;	
@@ -449,7 +449,7 @@ struct dbvh_overlap *dbvh_push_overlap_pairs(struct arena *mem, u32 *count, cons
 			}
 		}
 
-		if (!BT_IS_LEAF(nodes + b))
+		if (!bt_LeafCheck(nodes + b))
 		{
 			 a = nodes[b].bt_left;	
 			 b = nodes[b].bt_right;	
@@ -476,7 +476,7 @@ struct dbvh_overlap *dbvh_push_overlap_pairs(struct arena *mem, u32 *count, cons
 void bvh_validate(struct arena *tmp, const struct bvh *bvh)
 {
 	ArenaPushRecord(tmp);
-	bt_validate(tmp, &bvh->tree);
+	bt_Validate(tmp, &bvh->tree);
 	if (bvh->tree.root == POOL_NULL) { return; }
 
 	const struct bvh_node *node = (struct bvh_node *) bvh->tree.pool.buf;
@@ -487,13 +487,13 @@ void bvh_validate(struct arena *tmp, const struct bvh *bvh)
 	while (sc--)
 	{
 		const u32 i = stack[sc];
-		if (!BT_IS_ROOT(node + i))
+		if (!bt_RootCheck(node + i))
 		{
 			const u32 parent = node[i].bt_parent & BT_PARENT_INDEX_MASK;
 			ds_Assert(AABB_contains_margin(&node[parent].bbox, &node[i].bbox, 0.001f));
 		}
 
-		if (!BT_IS_LEAF(node + stack[sc]))
+		if (!bt_LeafCheck(node + stack[sc]))
 		{
 			stack[sc + 0] = node[i].bt_left;
 			stack[sc + 1] = node[i].bt_right;
@@ -521,7 +521,7 @@ struct tri_mesh_bvh tri_mesh_bvh_construct(struct arena *mem, const struct tri_m
 		.mesh = mesh,
 		.bvh = 
 		{ 
-			.tree = bt_alloc(mem, max_node_count_required, struct bvh_node, NOT_GROWABLE),
+			.tree = bt_Alloc(mem, max_node_count_required, struct bvh_node, NOT_GROWABLE),
 			.heap_allocated = 0,
 		},
 		.tri = ArenaPush(mem, mesh->tri_count*sizeof(u32)),
@@ -560,7 +560,7 @@ struct tri_mesh_bvh tri_mesh_bvh_construct(struct arena *mem, const struct tri_m
 	u32 *node_stack = arr.addr;	
 	u32 node_stack_size = arr.len;
 	u32 sc = 1;
-	struct slot root = bt_node_add_root(&mesh_bvh.bvh.tree);
+	struct slot root = bt_NodeAddRoot(&mesh_bvh.bvh.tree);
 	struct bvh_node *node = root.address;
 	/* bt_left = tri_first,
 	 * bt_right = tri_count */
@@ -701,7 +701,7 @@ struct tri_mesh_bvh tri_mesh_bvh_construct(struct arena *mem, const struct tri_m
 
 
 				struct slot slot_left, slot_right;
-				bt_node_add_children(&mesh_bvh.bvh.tree, &slot_left, &slot_right, node_stack[sc]);
+				bt_NodeAddChildren(&mesh_bvh.bvh.tree, &slot_left, &slot_right, node_stack[sc]);
 				ds_Assert(slot_left.address && slot_right.address);
 
 				struct bvh_node *child_left = slot_left.address;
@@ -763,14 +763,14 @@ struct bvh_raycast_info bvh_raycast_init(struct arena *mem, const struct bvh *bv
 		.bvh = bvh,
 	};
 
-	if (bt_node_count(&bvh->tree)) 
+	if (bt_NodeCount(&bvh->tree)) 
 	{
 		AABB_raycast_parameter_ex_setup(info.multiplier, info.dir_sign_bit, info.ray);
 		const f32 root_hit_param = AABB_raycast_parameter_ex(&info.node[info.bvh->tree.root].bbox, info.ray, info.multiplier, info.dir_sign_bit);
 		if (root_hit_param < F32_INFINITY) 
 		{
-			info.hit_queue = min_queue_fixed_alloc_all(mem);
-			min_queue_fixed_push(&info.hit_queue, bvh->tree.root, root_hit_param);
+			info.hit_queue = MinQueueFixedAllocAll(mem);
+			MinQueueFixedPush(&info.hit_queue, bvh->tree.root, root_hit_param);
 		}
 	}
 
@@ -785,7 +785,7 @@ void bvh_raycast_test_and_push_children(struct bvh_raycast_info *info, const u32
 
 	if (distance_left < F32_INFINITY)
 	{
-		min_queue_fixed_push(&info->hit_queue, info->node[popped_tuple.u].bt_left, distance_left);
+		MinQueueFixedPush(&info->hit_queue, info->node[popped_tuple.u].bt_left, distance_left);
 	}
 
 	if (distance_right < F32_INFINITY)
@@ -795,7 +795,7 @@ void bvh_raycast_test_and_push_children(struct bvh_raycast_info *info, const u32
 			LogString(T_SYSTEM, S_FATAL, "distance queue in bvh_raycast OOM, aborting");
 			FatalCleanupAndExit(ds_ThreadSelfTid());
 		}
-		min_queue_fixed_push(&info->hit_queue, info->node[popped_tuple.u].bt_right, distance_right);
+		MinQueueFixedPush(&info->hit_queue, info->node[popped_tuple.u].bt_right, distance_right);
 	}
 }
 
@@ -808,13 +808,13 @@ u32f32 tri_mesh_bvh_raycast(struct arena *tmp, const struct tri_mesh_bvh *mesh_b
 	struct bvh_raycast_info info = bvh_raycast_init(tmp, bvh, ray);
 	while (info.hit_queue.count)
 	{
-		const u32f32 tuple = min_queue_fixed_pop(&info.hit_queue);
+		const u32f32 tuple = MinQueueFixedPop(&info.hit_queue);
 		if (info.hit.f < tuple.f)
 		{
 			break;	
 		}
 
-		if (BT_IS_LEAF(info.node + tuple.u))
+		if (bt_LeafCheck(info.node + tuple.u))
 		{
 			const u32 tri_first = info.node[tuple.u].bt_left;
 			const u32 tri_last = tri_first + info.node[tuple.u].bt_right - 1;

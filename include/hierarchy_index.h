@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -20,52 +20,78 @@
 #ifndef __HIERARCHY_INDEX_H__
 #define __HIERARCHY_INDEX_H__
 
-#include "ds_common.h"
-#include "array_list.h"
-#include "allocator.h"
+#include "ds_allocator.h"
+
+/*
+hierarchy index
+===============
+Intrusive hierarchy data structure for indexed structures supporting 31 bit indices. 
+*/
+
 
 /* root stub is an internal node of the hierarchy; using this we can simplify Logic and have a nice "NULL" index to use */
 #define HI_ROOT_STUB_INDEX	0
 #define	HI_NULL_INDEX		0	
-#define HI_STATIC		0
 #define HI_ORPHAN_STUB_INDEX	1
-#define HI_GROWABLE		1
-/*
- * hierarchy_index_node: Intrusive node to be placed at the top of any data structure in the hierarchy.
- */
-struct hierarchy_index_node
+
+#define HI_SLOT_STATE	u32	hi_parent;	\
+			u32	hi_next;	\
+			u32	hi_prev;	\
+			u32	hi_first;	\
+			u32	hi_last;	\
+			u32	hi_child_count;	\
+			POOL_SLOT_STATE
+
+struct hi
 {
-	u32 	parent;		/* Index of parent 		*/
-	u32 	next;		/* Index of next sibling 	*/
-	u32 	prev;		/* Index of previous sibling 	*/
-	u32 	first;		/* Index of first child 	*/ 
-	u32 	last;		/* Index of last child 		*/
-	u32	child_count;	/* Number of direct children 	*/
+	struct pool	pool;
+	u32		parent_offset;	
+	u32		next_offset;	
+	u32		prev_offset;	
+	u32		first_offset;	
+	u32		last_offset;	
+	u32		child_count_offset;	
 };
 
-struct hierarchy_index
-{
-	struct array_list *	list;
-};
-
-/* alloc array list (on arena if non-NULL and non-growable), returns NULL on failure */
-struct hierarchy_index *hierarchy_index_alloc(struct arena *mem, const u32 length, const u64 data_size, const u32 growable);
+/* alloc and init hierarchy resources (on arena if non-NULL and non-growable), returns { 0 } on failure */
+struct hi 	hi_AllocInternal(struct arena *mem
+			, const u32 length
+			, const u64 data_size
+			, const u32 growable
+			, const u32 slot_allocation_offset	
+			, const u32 parent_offset	
+			, const u32 next_offset	
+			, const u32 prev_offset	
+			, const u32 first_offset	
+			, const u32 last_offset	
+			, const u32 child_count_offset);
+#define		hi_Alloc(mem, length, STRUCT, growable)			\
+		hi_AllocInternal(mem,					\
+			, length					\
+			, sizeof(STRUCT)				\
+			, &((STRUCT *) 0)->slot_allocation_state	\
+			, &((STRUCT *) 0)->hi_parent			\
+			, &((STRUCT *) 0)->hi_next			\
+			, &((STRUCT *) 0)->hi_prev			\
+			, &((STRUCT *) 0)->hi_first			\
+			, &((STRUCT *) 0)->hi_last			\
+			, &((STRUCT *) 0)->hi_child_count)
 /* free hierarchy allocated on the heap */
-void			hierarchy_index_free(struct hierarchy_index *hi);
+void		hi_Dealloc(struct hi *hi);
 /* flush or reset hierarchy */
-void			hierarchy_index_flush(struct hierarchy_index *hi);
+void		hi_Flush(struct hi *hi);
 /* Allocate a hierarchy node and return the allocation slot on success, RETURNS (0, NULL) on failure */
-struct slot		hierarchy_index_add(struct hierarchy_index *hi, const u32 parent_index);
+struct slot	hi_Add(struct hi *hi, const u32 parent_index);
 /* Deallocate a hierarchy node and its whole sub-hierarchy */
-void 			hierarchy_index_remove(struct arena *tmp, struct hierarchy_index *hi, const u32 node_index);
+void 		hi_Remove(struct arena *tmp, struct hi *hi, const u32 node_index);
 /* node's children (and their subtrees) are adopted by node's parent, and node's new parent becomes parent_index */
-void 			hierarchy_index_adopt_node_exclusive(struct hierarchy_index *hi, const u32 node_index, const u32 new_parent_index);
+void 		hi_AdoptNodeExclusive(struct hi *hi, const u32 node_index, const u32 new_parent_index);
 /* node's subtree is removed from current parent and added to new parent*/
-void 			hierarchy_index_adopt_node(struct hierarchy_index *hi, const u32 node_index, const u32 new_parent_index);
+void 		hi_AdoptNode(struct hi *hi, const u32 node_index, const u32 new_parent_index);
 /* apply a custom free to and deallocate a hierarchy node and its whole sub-hierarchy; the custom free takes in the index to remove */
-void			hierarchy_index_apply_custom_free_and_remove(struct arena *tmp, struct hierarchy_index *hi, const u32 node_index, void (*custom_free)(const struct hierarchy_index *hi, const u32, void *data), void *data);
+void		hi_ApplyCustomFreeAndRemove(struct arena *tmp, struct hi *hi, const u32 node_index, void (*custom_free)(const struct hi *hi, const u32, void *data), void *data);
 /* Return node address corresponding to index */
-void *			hierarchy_index_address(const struct hierarchy_index *hi, const u32 node_index);
+void *		hi_Address(const struct hi *hi, const u32 node_index);
 
 /*
  * hierarchy_index_iterator: iterator for traversing a supplied node and it's entire sub-hierarchy in the given
@@ -77,9 +103,9 @@ void *			hierarchy_index_address(const struct hierarchy_index *hi, const u32 nod
  *	LOG_MESSAGE()
  * }
  */
-struct hierarchy_index_iterator
+struct hiIterator
 {
-	struct hierarchy_index *hi; 	/* hierarchy index */
+	struct hi *hi; 	/* hierarchy index */
 	struct arena *mem;		/* iterator memory */
 	u64 stack_len;  		/* max stack size  */
 	u32 *stack;			/* index stack 	   */
@@ -89,14 +115,14 @@ struct hierarchy_index_iterator
 };
 
 /* Setup hierarchy iterator at the given node root */
-struct hierarchy_index_iterator	hierarchy_index_iterator_init(struct arena *ar_alias, struct hierarchy_index *hi, const u32 root);
+struct hiIterator	hi_IteratorInit(struct arena *ar_alias, struct hi *hi, const u32 root);
 /* release / pop any used memory by iterator */
-void 				hierarchy_index_iterator_release(struct hierarchy_index_iterator *it);
+void 			hi_IteratorRelease(struct hiIterator *it);
 /* Given it->count > 0, return the next index in the iterator */
-u32 				hierarchy_index_iterator_peek(struct hierarchy_index_iterator *it);
+u32 			hi_IteratorPeek(struct hiIterator *it);
 /* Given it->count > 0, return the next index in the iterator, and push any new links (depth-first) related to the index */
-u32 				hierarchy_index_iterator_next_df(struct hierarchy_index_iterator *it);
+u32 			hi_IteratorNextDf(struct hiIterator *it);
 /* Given it->count > 0, skip the whole subtree corresponding to the next index in the iterator, and push the subtree's next sibling, if it exists. */
-void				hierarchy_index_iterator_skip(struct hierarchy_index_iterator *it);
+void			hi_IteratorSkip(struct hiIterator *it);
 
 #endif

@@ -27,7 +27,7 @@ struct allocator_debug_index allocator_debug_index_alloc(const u8 *array, const 
 	struct allocator_debug_index debug =
 	{
 		.array = array,
-		.poisoned = bit_vec_alloc(NULL, slot_count, 1, 1),
+		.poisoned = BitVecAlloc(NULL, slot_count, 1, 1),
 		.slot_size = slot_size,
 		.slot_header_size = slot_header_size,
 		.slot_header_offset = slot_header_offset,
@@ -46,20 +46,20 @@ struct allocator_debug_index allocator_debug_index_alloc(const u8 *array, const 
 
 void allocator_debug_index_free(struct allocator_debug_index *debug)
 {
-	bit_vec_free(&debug->poisoned);
+	BitVecFree(&debug->poisoned);
 }
 
 void allocator_debug_index_flush(struct allocator_debug_index *debug)
 {
 	debug->max_unpoisoned_count = 0;	
-	bit_vec_clear(&debug->poisoned, 1);
+	BitVecClear(&debug->poisoned, 1);
 	ASAN_POISON_MEMORY_REGION(debug->array, debug->slot_count*debug->slot_size);
 }
 
 void allocator_debug_index_poison(struct allocator_debug_index *debug, const u32 index)
 {
 	ds_Assert(index < debug->slot_count);
-	ds_Assert(bit_vec_get_bit(&debug->poisoned, index) == 0);
+	ds_Assert(BitVecGetBit(&debug->poisoned, index) == 0);
 
 	if (debug->slot_header_offset)
 	{
@@ -71,13 +71,13 @@ void allocator_debug_index_poison(struct allocator_debug_index *debug, const u32
 	{
 		ASAN_POISON_MEMORY_REGION(debug->array + index*debug->slot_size + debug->slot_header_size, debug->slot_size - debug->slot_header_size);
 	}
-	bit_vec_set_bit(&debug->poisoned, index, 1);
+	BitVecSetBit(&debug->poisoned, index, 1);
 }
 
 void allocator_debug_index_unpoison(struct allocator_debug_index *debug, const u32 index)
 {
 	ds_Assert(index < debug->slot_count);
-	ds_Assert(bit_vec_get_bit(&debug->poisoned, index) == 1);
+	ds_Assert(BitVecGetBit(&debug->poisoned, index) == 1);
 
 	if (debug->max_unpoisoned_count <= index)
 	{
@@ -99,7 +99,7 @@ void allocator_debug_index_unpoison(struct allocator_debug_index *debug, const u
 		}
 
 	}
-	bit_vec_set_bit(&debug->poisoned, index, 0);
+	BitVecSetBit(&debug->poisoned, index, 0);
 }
 
 void allocator_debug_index_alias_and_repoison(struct allocator_debug_index *debug, const u8 *reallocated_array, const u32 new_slot_count)
@@ -107,12 +107,12 @@ void allocator_debug_index_alias_and_repoison(struct allocator_debug_index *debu
 	ds_Assert(debug->slot_count <= new_slot_count);
 	if (debug->poisoned.bit_count < new_slot_count)
 	{
-		bit_vec_increase_size(&debug->poisoned, new_slot_count, 1);
+		BitVecIncreaseSize(&debug->poisoned, new_slot_count, 1);
 	}
 
 	for (u32 i = 0; i < debug->slot_count; ++i)
 	{
-		if (bit_vec_get_bit(&debug->poisoned, i))
+		if (BitVecGetBit(&debug->poisoned, i))
 		{
 			allocator_debug_index_poison(debug, i);
 		}	

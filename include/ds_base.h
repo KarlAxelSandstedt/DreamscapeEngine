@@ -27,6 +27,7 @@ extern "C" {
 #include "ds_define.h"
 #include "ds_types.h"
 #include "ds_atomic.h"
+#include "ds_serialize.h"
 #include "ds_allocator.h"
 #include "ds_string.h"
 #include "ds_error.h"

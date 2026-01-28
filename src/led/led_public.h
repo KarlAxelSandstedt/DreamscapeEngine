@@ -139,18 +139,18 @@ struct led
 	struct ui_list 		brush_list;
 
 	struct physics_pipeline physics;
-	struct string_database 	cs_db;	
+	struct strdb 	cs_db;	
 	struct ui_list 		cs_list;
 	struct ui_dropdown_menu cs_mesh_menu;
 	struct ui_dropdown_menu rb_color_mode_menu;
 
-	struct string_database	rb_prefab_db;
+	struct strdb	rb_prefab_db;
 	struct ui_list 		rb_prefab_list;
 	struct ui_dropdown_menu rb_prefab_mesh_menu;
 
-	struct string_database	render_mesh_db;
+	struct strdb	render_mesh_db;
 
-	struct hash_map *	node_map;
+	struct hashMap *	node_map;
 	struct pool		node_pool;
 	struct dll		node_marked_list;
 	struct dll		node_non_marked_list;

@@ -142,7 +142,7 @@ void font_build(struct arena *mem, const enum font_id id)
 
 	const u32 hash_len = (u32) PowerOfTwoCeil(stack_glyph.next);
 	struct font *font = ArenaPush(mem, sizeof(struct font));
-	font->codepoint_to_glyph_map = hash_map_alloc(mem, hash_len, hash_len, !HASH_GROWABLE);
+	font->codepoint_to_glyph_map = HashMapAlloc(mem, hash_len, hash_len, !GROWABLE);
 	font->glyph_count = stack_glyph.next;
 	font->glyph_unknown_index = glyph_unknown_index;
 	font->glyph = stack_glyph.arr;
@@ -196,7 +196,7 @@ void font_build(struct arena *mem, const enum font_id id)
 		u8 *alpha = font->pixmap;
 
 		struct font_glyph *g = stack_glyph.arr + i;
-		hash_map_add(font->codepoint_to_glyph_map, g->codepoint, i);
+		HashMapAdd(font->codepoint_to_glyph_map, g->codepoint, i);
 		pixels = stack_pixels.arr[i];
 		if (offset[0] + g->size[0] > font->pixmap_width)
 		{
@@ -247,33 +247,33 @@ void font_serialize(const struct asset_font *asset, const struct font *font)
 
 	file_set_size(&file, font->size);
 	void *buf = file_memory_map_partial(&file, font->size, 0, FS_PROT_READ | FS_PROT_WRITE, FS_MAP_SHARED);
-	struct serialize_stream ss = ss_buffered(buf, font->size);
+	struct serialStream ss = ss_Buffered(buf, font->size);
 
-	ss_write_u64_be(&ss, font->size);
-	ss_write_f32_be(&ss, font->ascent);
-	ss_write_f32_be(&ss, font->descent);
-	ss_write_f32_be(&ss, font->linespace);
-	ss_write_u32_be(&ss, font->pixmap_width);
-	ss_write_u32_be(&ss, font->pixmap_height);
-	ss_write_u32_be(&ss, font->glyph_unknown_index);
-	ss_write_u32_be(&ss, font->glyph_count);
+	ss_WriteU64Be(&ss, font->size);
+	ss_WriteF32Be(&ss, font->ascent);
+	ss_WriteF32Be(&ss, font->descent);
+	ss_WriteF32Be(&ss, font->linespace);
+	ss_WriteU32Be(&ss, font->pixmap_width);
+	ss_WriteU32Be(&ss, font->pixmap_height);
+	ss_WriteU32Be(&ss, font->glyph_unknown_index);
+	ss_WriteU32Be(&ss, font->glyph_count);
 
 	for (u32 i = 0; i < font->glyph_count; ++i)
 	{
-		ss_write_i32_be(&ss, font->glyph[i].size[0]);	
-		ss_write_i32_be(&ss, font->glyph[i].size[1]);	
-		ss_write_i32_be(&ss, font->glyph[i].bearing[0]);	
-		ss_write_i32_be(&ss, font->glyph[i].bearing[1]);	
-		ss_write_u32_be(&ss, font->glyph[i].advance);	
-		ss_write_u32_be(&ss, font->glyph[i].codepoint);	
-		ss_write_f32_be(&ss, font->glyph[i].bl[0]);
-		ss_write_f32_be(&ss, font->glyph[i].bl[1]);
-		ss_write_f32_be(&ss, font->glyph[i].tr[0]);
-		ss_write_f32_be(&ss, font->glyph[i].tr[1]);
+		ss_WriteI32Be(&ss, font->glyph[i].size[0]);	
+		ss_WriteI32Be(&ss, font->glyph[i].size[1]);	
+		ss_WriteI32Be(&ss, font->glyph[i].bearing[0]);	
+		ss_WriteI32Be(&ss, font->glyph[i].bearing[1]);	
+		ss_WriteU32Be(&ss, font->glyph[i].advance);	
+		ss_WriteU32Be(&ss, font->glyph[i].codepoint);	
+		ss_WriteF32Be(&ss, font->glyph[i].bl[0]);
+		ss_WriteF32Be(&ss, font->glyph[i].bl[1]);
+		ss_WriteF32Be(&ss, font->glyph[i].tr[0]);
+		ss_WriteF32Be(&ss, font->glyph[i].tr[1]);
 	}
 
-	hash_map_serialize(&ss, font->codepoint_to_glyph_map);
-	ss_write_u8_array(&ss, font->pixmap, font->pixmap_height * font->pixmap_width);
+	HashMapSerialize(&ss, font->codepoint_to_glyph_map);
+	ss_Write8N(&ss, font->pixmap, font->pixmap_height * font->pixmap_width);
 
 	file_memory_unmap(buf, font->size);
 	file_close(&file);
@@ -296,48 +296,48 @@ const struct font *font_deserialize(struct asset_font *asset)
 
 	u64 size = 0;
 	void *buf = file_memory_map(&size, &file, FS_PROT_READ, FS_MAP_SHARED);
-	struct serialize_stream ss = ss_buffered(buf, size);
+	struct serialStream ss = ss_Buffered(buf, size);
 
-	if (ss_bytes_left(&ss) < 8)
+	if (ss_BytesLeft(&ss) < 8)
 	{
 		return NULL;
 	}
 
 	struct font *font = malloc(sizeof(struct font));
-	font->size = ss_read_u64_be(&ss);
+	font->size = ss_ReadU64Be(&ss);
 
-	if (ss_bytes_left(&ss) < font->size-8)
+	if (ss_BytesLeft(&ss) < font->size-8)
 	{
 		free(font);
 		return NULL;
 	}
 
-	font->ascent = ss_read_f32_be(&ss);
-	font->descent = ss_read_f32_be(&ss);
-	font->linespace = ss_read_f32_be(&ss);
-	font->pixmap_width = ss_read_u32_be(&ss);
-	font->pixmap_height = ss_read_u32_be(&ss);
-	font->glyph_unknown_index = ss_read_u32_be(&ss);
-	font->glyph_count = ss_read_u32_be(&ss);
+	font->ascent = ss_ReadF32Be(&ss);
+	font->descent = ss_ReadF32Be(&ss);
+	font->linespace = ss_ReadF32Be(&ss);
+	font->pixmap_width = ss_ReadU32Be(&ss);
+	font->pixmap_height = ss_ReadU32Be(&ss);
+	font->glyph_unknown_index = ss_ReadU32Be(&ss);
+	font->glyph_count = ss_ReadU32Be(&ss);
 	font->glyph = malloc(font->glyph_count * sizeof(struct font_glyph));
 	font->pixmap = malloc(font->pixmap_width * font->pixmap_height);
 
 	for (u32 i = 0; i < font->glyph_count; ++i)
 	{
-		font->glyph[i].size[0] = ss_read_i32_be(&ss);
-		font->glyph[i].size[1] = ss_read_i32_be(&ss);
-		font->glyph[i].bearing[0] = ss_read_i32_be(&ss);
-		font->glyph[i].bearing[1] = ss_read_i32_be(&ss);
-		font->glyph[i].advance = ss_read_u32_be(&ss);
-		font->glyph[i].codepoint = ss_read_u32_be(&ss);
-		font->glyph[i].bl[0] = ss_read_f32_be(&ss);
-		font->glyph[i].bl[1] = ss_read_f32_be(&ss);
-		font->glyph[i].tr[0] = ss_read_f32_be(&ss);
-		font->glyph[i].tr[1] = ss_read_f32_be(&ss);
+		font->glyph[i].size[0] = ss_ReadI32Be(&ss);
+		font->glyph[i].size[1] = ss_ReadI32Be(&ss);
+		font->glyph[i].bearing[0] = ss_ReadI32Be(&ss);
+		font->glyph[i].bearing[1] = ss_ReadI32Be(&ss);
+		font->glyph[i].advance = ss_ReadU32Be(&ss);
+		font->glyph[i].codepoint = ss_ReadU32Be(&ss);
+		font->glyph[i].bl[0] = ss_ReadF32Be(&ss);
+		font->glyph[i].bl[1] = ss_ReadF32Be(&ss);
+		font->glyph[i].tr[0] = ss_ReadF32Be(&ss);
+		font->glyph[i].tr[1] = ss_ReadF32Be(&ss);
 	}
 
-	font->codepoint_to_glyph_map = hash_map_deserialize(NULL, &ss, 0);
-	ss_read_u8_array(font->pixmap, &ss, font->pixmap_height * font->pixmap_width);
+	font->codepoint_to_glyph_map = HashMapDeserialize(NULL, &ss, 0);
+	ss_Read8N(font->pixmap, &ss, font->pixmap_height * font->pixmap_width);
 
 	file_memory_unmap(buf, size);
 	file_close(&file);
@@ -402,8 +402,8 @@ struct asset_font *asset_database_request_font(struct arena *tmp, const enum fon
 const struct font_glyph *glyph_lookup(const struct font *font, const u32 codepoint)
 {
 	const struct font_glyph *g;
-	u32 index = hash_map_first(font->codepoint_to_glyph_map, codepoint);	
-	for (; index != HASH_NULL; index = hash_map_next(font->codepoint_to_glyph_map, index))
+	u32 index = HashMapFirst(font->codepoint_to_glyph_map, codepoint);	
+	for (; index != HASH_NULL; index = HashMapNext(font->codepoint_to_glyph_map, index))
 	{
 		g = font->glyph + index;
 		if (g->codepoint == codepoint)

@@ -206,7 +206,7 @@ void cmd_collision_dcel_add(void)
 void cmd_collision_tri_mesh_bvh_add(void)
 {
 	struct tri_mesh_bvh *mesh_bvh = g_queue->cmd_exec->arg[1].ptr;
-	if (mesh_bvh->mesh->v_count && bt_node_count(&mesh_bvh->bvh.tree))
+	if (mesh_bvh->mesh->v_count && bt_NodeCount(&mesh_bvh->bvh.tree))
 	{
 		struct collision_shape shape =
 		{
@@ -280,7 +280,7 @@ struct slot led_collision_shape_add(struct led *led, const struct collision_shap
 	{
 		LogString(T_LED, S_WARNING, "Failed to allocate collision shape: shape->id must not be empty");
 	} 
-	else if (string_database_lookup(&led->cs_db, shape->id).index != STRING_DATABASE_STUB_INDEX) 
+	else if (strdb_Lookup(&led->cs_db, shape->id).index != STRING_DATABASE_STUB_INDEX) 
 	{
 		LogString(T_LED, S_WARNING, "Failed to allocate collision shape: shape with given id already exist");
 	}
@@ -295,7 +295,7 @@ struct slot led_collision_shape_add(struct led *led, const struct collision_shap
 		}
 		else
 		{
-			slot = string_database_add_and_alias(&led->cs_db, copy);
+			slot = strdb_AddAndAlias(&led->cs_db, copy);
 			struct collision_shape *new_shape = slot.address;
 			new_shape->type = shape->type;
 			new_shape->center_of_mass_localized = shape->center_of_mass_localized;
@@ -334,14 +334,14 @@ void led_collision_shape_remove(struct led *led, const utf8 id)
 	if (slot.index != STRING_DATABASE_STUB_INDEX && shape->reference_count == 0)
 	{
 		void *buf = shape->id.buf;
-		string_database_remove(&led->cs_db, id);
+		strdb_Remove(&led->cs_db, id);
 		ThreadFree256B(buf);
 	}
 }
 
 struct slot led_collision_shape_lookup(struct led *led, const utf8 id)
 {
-	return string_database_lookup(&led->cs_db, id);
+	return strdb_Lookup(&led->cs_db, id);
 }
 
 void cmd_render_mesh_add(void)
@@ -361,7 +361,7 @@ struct slot led_render_mesh_add(struct led *led, const utf8 id, const utf8 shape
 	{
 		LogString(T_LED, S_WARNING, "Failed to allocate render mesh: id must not be empty");
 	} 
-	else if (string_database_lookup(&led->render_mesh_db, id).index != STRING_DATABASE_STUB_INDEX) 
+	else if (strdb_Lookup(&led->render_mesh_db, id).index != STRING_DATABASE_STUB_INDEX) 
 	{
 		LogString(T_LED, S_WARNING, "Failed to allocate render mesh: mesh with given id already exist");
 	}
@@ -376,10 +376,10 @@ struct slot led_render_mesh_add(struct led *led, const utf8 id, const utf8 shape
 		}
 		else
 		{
-			slot = string_database_add_and_alias(&led->render_mesh_db, copy);
+			slot = strdb_AddAndAlias(&led->render_mesh_db, copy);
 			struct r_mesh *mesh = slot.address;
 
-			struct slot ref = string_database_lookup(&led->cs_db, shape);
+			struct slot ref = strdb_Lookup(&led->cs_db, shape);
 			if (ref.index == STRING_DATABASE_STUB_INDEX)
 			{
 				LogString(T_LED, S_WARNING, "In render_mesh_add: shape not found, stub_shape chosen");
@@ -402,19 +402,19 @@ struct slot led_render_mesh_add(struct led *led, const utf8 id, const utf8 shape
 
 void led_render_mesh_remove(struct led *led, const utf8 id)
 {
-	struct slot slot = string_database_lookup(&led->render_mesh_db, id);
+	struct slot slot = strdb_Lookup(&led->render_mesh_db, id);
 	struct r_mesh *mesh = slot.address;
 	if (slot.index != STRING_DATABASE_STUB_INDEX && mesh->reference_count == 0)
 	{
 		void *buf = mesh->id.buf;
-		string_database_remove(&led->render_mesh_db, id);
+		strdb_Remove(&led->render_mesh_db, id);
 		ThreadFree256B(buf);
 	}
 }
 
 struct slot led_render_mesh_lookup(struct led *led, const utf8 id)
 {
-	return string_database_lookup(&led->render_mesh_db, id);
+	return strdb_Lookup(&led->render_mesh_db, id);
 }
 
 void cmd_rb_prefab_add(void)
@@ -441,7 +441,7 @@ struct slot led_rigid_body_prefab_add(struct led *led, const utf8 id, const utf8
 	{
 		LogString(T_LED, S_WARNING, "Failed to allocate rb_prefab: prefab->id must not be empty");
 	} 
-	else if (string_database_lookup(&led->rb_prefab_db, id).index != STRING_DATABASE_STUB_INDEX) 
+	else if (strdb_Lookup(&led->rb_prefab_db, id).index != STRING_DATABASE_STUB_INDEX) 
 	{
 		LogString(T_LED, S_WARNING, "Failed to allocate rb_prefab: prefab with given id already exist");
 	}
@@ -456,12 +456,12 @@ struct slot led_rigid_body_prefab_add(struct led *led, const utf8 id, const utf8
 		}
 		else
 		{
-			struct slot ref = string_database_reference(&led->cs_db, shape);
+			struct slot ref = strdb_Reference(&led->cs_db, shape);
 			if (ref.index == STRING_DATABASE_STUB_INDEX)
 			{
 				LogString(T_LED, S_WARNING, "In rb_prefab: shape not found, stub_shape chosen");
 			}
-			slot = string_database_add_and_alias(&led->rb_prefab_db, copy);
+			slot = strdb_AddAndAlias(&led->rb_prefab_db, copy);
 			struct rigid_body_prefab *prefab = slot.address;
 
 			prefab->shape = ref.index;
@@ -483,15 +483,15 @@ void led_rigid_body_prefab_remove(struct led *led, const utf8 id)
 	if (slot.index != STRING_DATABASE_STUB_INDEX && prefab->reference_count == 0)
 	{
 		void *buf = prefab->id.buf;
-		string_database_dereference(&led->cs_db, prefab->shape);
-		string_database_remove(&led->rb_prefab_db, id);
+		strdb_Dereference(&led->cs_db, prefab->shape);
+		strdb_Remove(&led->rb_prefab_db, id);
 		ThreadFree256B(buf);
 	}	
 }
 
 struct slot led_rigid_body_prefab_lookup(struct led *led, const utf8 id)
 {
-	return string_database_lookup(&led->rb_prefab_db, id);
+	return strdb_Lookup(&led->rb_prefab_db, id);
 }
 
 struct slot led_node_add(struct led *led, const utf8 id)
@@ -518,9 +518,9 @@ struct slot led_node_add(struct led *led, const utf8 id)
 		else
 		{
 			slot = GPoolAdd(&led->node_pool);
-			hash_map_add(led->node_map, key, slot.index);
-			dll_append(&led->node_non_marked_list, led->node_pool.buf, slot.index);
-			dll_slot_set_not_in_list(&led->node_selected_list, slot.address);
+			HashMapAdd(led->node_map, key, slot.index);
+			dll_Append(&led->node_non_marked_list, led->node_pool.buf, slot.index);
+			dll_SlotSetNotInList(&led->node_selected_list, slot.address);
 
 			struct led_node *node = slot.address;
 			node->flags = LED_FLAG_NONE;
@@ -545,7 +545,7 @@ struct slot led_node_lookup(struct led *led, const utf8 id)
 {
 	const u32 key = Utf8Hash(id);
 	struct slot slot = empty_slot;
-	for (u32 i = hash_map_first(led->node_map, key); i != HASH_NULL; i = hash_map_next(led->node_map, i))
+	for (u32 i = HashMapFirst(led->node_map, key); i != HASH_NULL; i = HashMapNext(led->node_map, i))
 	{
 		struct led_node *node = GPoolAddress(&led->node_pool, i);
 		if (Utf8Equivalence(id, node->id))
@@ -562,22 +562,22 @@ struct slot led_node_lookup(struct led *led, const utf8 id)
 static void led_remove_marked_structs(struct led *led)
 {
 	struct led_node *node = NULL;
-	for (u32 i = led->node_marked_list.first; i != DLL_NULL; i = DLL_NEXT(node))
+	for (u32 i = led->node_marked_list.first; i != DLL_NULL; i = dll_Next(node))
 	{
 		node = GPoolAddress(&led->node_pool, i);
 		if (node->flags & LED_CONSTANT)
 		{
 			node->flags &= ~LED_MARKED_FOR_REMOVAL;
-			dll_remove(&led->node_marked_list, led->node_pool.buf, i);
-			dll_append(&led->node_non_marked_list, led->node_pool.buf, i);
+			dll_Remove(&led->node_marked_list, led->node_pool.buf, i);
+			dll_Append(&led->node_non_marked_list, led->node_pool.buf, i);
 			continue;
 		}
 
-		if (DLL2_IN_LIST(node))
+		if (dll2_InList(node))
 		{
 			//fprintf(stderr, "Was selected, removing from list - ");
 			Utf8DebugPrint(node->id);
-			dll_remove(&led->node_selected_list, led->node_pool.buf, i);
+			dll_Remove(&led->node_selected_list, led->node_pool.buf, i);
 		}
 
 		if (node->proxy != HI_NULL_INDEX)
@@ -585,19 +585,19 @@ static void led_remove_marked_structs(struct led *led)
 			r_proxy3d_dealloc(&led->frame, node->proxy);
 		}
 
-		string_database_dereference(&led->rb_prefab_db, node->rb_prefab);
-		string_database_dereference(&led->csg.brush_db, node->csg_brush);
+		strdb_Dereference(&led->rb_prefab_db, node->rb_prefab);
+		strdb_Dereference(&led->csg.brush_db, node->csg_brush);
 
 		node->rb_prefab = STRING_DATABASE_STUB_INDEX;
 		node->csg_brush = STRING_DATABASE_STUB_INDEX;
 		node->proxy = HI_NULL_INDEX;
 
-		hash_map_remove(led->node_map, node->key, i);
+		HashMapRemove(led->node_map, node->key, i);
 		ThreadFree256B(node->id.buf);
 		GPoolRemove(&led->node_pool, i);
 	}
 
-	dll_flush(&led->node_marked_list);
+	dll_Flush(&led->node_marked_list);
 }
 
 void led_node_remove(struct led *led, const utf8 id)
@@ -607,8 +607,8 @@ void led_node_remove(struct led *led, const utf8 id)
 	if (node)
 	{
 		node->flags |= LED_MARKED_FOR_REMOVAL;
-		dll_remove(&led->node_non_marked_list, led->node_pool.buf, slot.index);
-		dll_append(&led->node_marked_list, led->node_pool.buf, slot.index);
+		dll_Remove(&led->node_non_marked_list, led->node_pool.buf, slot.index);
+		dll_Append(&led->node_marked_list, led->node_pool.buf, slot.index);
 	}
 }
 
@@ -644,15 +644,15 @@ void led_node_set_rb_prefab(struct led *led, const utf8 id, const utf8 prefab)
 	}
 	else
 	{
-		slot = string_database_reference(&led->rb_prefab_db, prefab);
+		slot = strdb_Reference(&led->rb_prefab_db, prefab);
 		if (slot.index == STRING_DATABASE_STUB_INDEX)
 		{
 			Log(T_LED, S_WARNING, "Failed to set of led node %k, prefab not found.", &id);
 		}
 		else
 		{
-			string_database_dereference(&led->rb_prefab_db, node->rb_prefab);
-			string_database_dereference(&led->csg.brush_db, node->csg_brush);
+			strdb_Dereference(&led->rb_prefab_db, node->rb_prefab);
+			strdb_Dereference(&led->csg.brush_db, node->csg_brush);
 			node->csg_brush = STRING_DATABASE_STUB_INDEX;
 
 			node->rb_prefab = slot.index;
@@ -676,15 +676,15 @@ void led_node_set_csg_brush(struct led *led, const utf8 id, const utf8 brush)
 	}
 	else
 	{
-		slot = string_database_reference(&led->csg.brush_db, brush);
+		slot = strdb_Reference(&led->csg.brush_db, brush);
 		if (slot.index == STRING_DATABASE_STUB_INDEX)
 		{
 			Log(T_LED, S_WARNING, "Failed to set of led node %k, brush not found.", &id);
 		}
 		else
 		{
-			string_database_dereference(&led->rb_prefab_db, node->rb_prefab);
-			string_database_dereference(&led->csg.brush_db, node->csg_brush);
+			strdb_Dereference(&led->rb_prefab_db, node->rb_prefab);
+			strdb_Dereference(&led->csg.brush_db, node->csg_brush);
 			node->rb_prefab = STRING_DATABASE_STUB_INDEX;
 
 			node->csg_brush = slot.index;
@@ -1416,7 +1416,7 @@ static void led_engine_flush(struct led *led)
 {
 	physics_pipeline_flush(&led->physics);
 	struct led_node *node = NULL;
-	for (u32 i = led->node_non_marked_list.first; i != DLL_NULL; i = DLL_NEXT(node))
+	for (u32 i = led->node_non_marked_list.first; i != DLL_NULL; i = dll_Next(node))
 	{
 		node = PoolAddress(&led->node_pool, i);
 		r_proxy3d_set_linear_speculation(node->position
@@ -1439,12 +1439,12 @@ static void led_engine_init(struct led *led)
 	led->ns_engine_paused = 0;
 
 	struct led_node *node = NULL;
-	for (u32 i = led->node_non_marked_list.first; i != DLL_NULL; i = DLL_NEXT(node))
+	for (u32 i = led->node_non_marked_list.first; i != DLL_NULL; i = dll_Next(node))
 	{
 		node = GPoolAddress(&led->node_pool, i);
 		if (node->flags & LED_PHYSICS)
 		{
-			struct rigid_body_prefab *prefab = string_database_address(&led->rb_prefab_db, node->rb_prefab);
+			struct rigid_body_prefab *prefab = strdb_Address(&led->rb_prefab_db, node->rb_prefab);
 			if (Utf8Equivalence(prefab->id, Utf8Inline("rb_map")))
 			{
 				vec3 axis = { 0.6f, 1.0f, 0.6f };
@@ -1515,7 +1515,7 @@ static void led_engine_run(struct led *led)
 			case RB_COLOR_MODE_BODY: 
 			{ 
 				const struct rigid_body *body = NULL;
-				for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = DLL_NEXT(body))
+				for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 				{
 					body = PoolAddress(&led->physics.body_pool, i);
 					const struct led_node *node = PoolAddress(&led->node_pool, body->entity);
@@ -1527,7 +1527,7 @@ static void led_engine_run(struct led *led)
 			case RB_COLOR_MODE_COLLISION: 
 			{ 
 				const struct rigid_body *body = NULL;
-				for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = DLL_NEXT(body))
+				for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 				{
 					body = PoolAddress(&led->physics.body_pool, i);
 					const struct led_node *node = PoolAddress(&led->node_pool, body->entity);
@@ -1548,7 +1548,7 @@ static void led_engine_run(struct led *led)
 			case RB_COLOR_MODE_SLEEP: 
 			{ 
 				const struct rigid_body *body = NULL;
-				for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = DLL_NEXT(body))
+				for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 				{
 					body = PoolAddress(&led->physics.body_pool, i);
 					const struct led_node *node = PoolAddress(&led->node_pool, body->entity);
@@ -1570,7 +1570,7 @@ static void led_engine_run(struct led *led)
 			case RB_COLOR_MODE_ISLAND: 
 			{ 
 				const struct rigid_body *body = NULL;
-				for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = DLL_NEXT(body))
+				for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 				{
 					body = PoolAddress(&led->physics.body_pool, i);
 					const struct led_node *node = PoolAddress(&led->node_pool, body->entity);
@@ -1589,7 +1589,7 @@ static void led_engine_run(struct led *led)
 	for (u32 i = led->physics.event_list.first; i != DLL_NULL; )
 	{
 		event = PoolAddress(&led->physics.event_pool, i);
-		const u32 next = DLL_NEXT(event);
+		const u32 next = dll_Next(event);
 		switch (event->type)
 		{
 			case PHYSICS_EVENT_CONTACT_NEW:
@@ -1673,7 +1673,7 @@ static void led_engine_run(struct led *led)
 			{
 				if (led->physics.body_color_mode == RB_COLOR_MODE_ISLAND)
 				{
-					if (bit_vec_get_bit(&led->physics.is_db.island_usage, event->island))
+					if (BitVecGetBit(&led->physics.is_db.island_usage, event->island))
 					{
 						const struct island *is = array_list_address(led->physics.is_db.islands, event->island);
 						led_engine_color_bodies(led, event->island, is->color);
@@ -1729,7 +1729,7 @@ static void led_engine_run(struct led *led)
 		i = next;
 	}
 	
-	dll_flush(&led->physics.event_list);
+	dll_Flush(&led->physics.event_list);
 }
 
 void led_core(struct led *led)

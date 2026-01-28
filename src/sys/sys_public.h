@@ -25,7 +25,7 @@
 #include "ds_common.h"
 #include "memory.h"
 #include "ds_math.h"
-#include "bit_vector.h"
+#include "bitVector.h"
 #include "ds_string.h"
 #include "hash_map.h"
 #include "hierarchy_index.h"
@@ -96,13 +96,13 @@ void 	system_graphics_init(void);
 /* free any graphics resources */
 void 	system_graphics_destroy(void);
 
-extern struct hierarchy_index *	g_window_hierarchy;
+extern struct hi *	g_window_hierarchy;
 extern u32 			g_process_root_window;
 extern u32 			g_window;
 
 struct system_window
 {
-	struct hierarchy_index_node 	header;			/* DO NOT MOVE */
+	struct hiNode 	header;			/* DO NOT MOVE */
 	struct native_window *		native;			/* native graphics handle */
 	struct ui *			ui;			/* local ui */
 	struct cmd_queue *		cmd_queue;		/* local command queue */
@@ -261,7 +261,7 @@ extern enum fs_error 	(*directory_try_open_at_cwd)(struct arena *mem, struct fil
 struct directory_navigator
 {
 	utf8			path;				/* directory path  		*/ 
-	struct hash_map * 	relative_path_to_file_map;	/* relative_path -> file index 	*/
+	struct hashMap * 	relative_path_to_file_map;	/* relative_path -> file index 	*/
 	struct arena		mem_string;			/* path memory			*/
 	struct vector		files;				/* file information 		*/
 };
@@ -314,7 +314,7 @@ extern enum fs_error		(*cwd_set)(struct arena *mem, const char *path);
 /* 			       Task System				*/
 /************************************************************************/
 
-#include "fifo_spmc.h"
+#include "fifoSpmc.h"
 
 /* NOTE: WE ASSUME MASTER THREAD/WORKER HAS ID AND INDEX 0. */
 
@@ -372,7 +372,7 @@ struct task
 struct task_context
 {
 	struct task_bundle bundle; /* TODO: Temporary */
-	struct fifo_spmc *tasks;
+	struct fifoSpmc *tasks;
 	struct worker *workers;
 	u32 worker_count;
 };

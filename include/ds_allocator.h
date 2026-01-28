@@ -39,6 +39,8 @@ Memory utility tools.
 u32	PowerOfTwoCheck(const u64 n);
 /* Return smallest value 2^k >= n where k >= 0 */
 u64 	PowerOfTwoCeil(const u64 n);
+/* Return smallest possible allocation size for ds_Alloc that size fits in */
+u64 	ds_AllocSizeCeil(const u64 size);
 
 /*
 memSlot: ds_Alloc return value containing the required information for any sequent ds_Realloc or ds_Free call.
@@ -99,6 +101,7 @@ struct memConfig
 	struct threadBlockAllocator	block_allocator_256B;
 	struct threadBlockAllocator 	block_allocator_1MB;
 	u64				page_size;
+	u64				alloc_size_min;
 };
 extern struct memConfig *g_mem_config;
 
@@ -125,10 +128,10 @@ not as a requirement the platform must adhere to.
 #define NO_HUGE_PAGES	0
 
 /* 
- * Return a page size aligned allocation with at least size bytes. If huge_pages is true, the kernel is
- * advised to use huge pages in the allocation. On success, the function sets the input memSlot and returns
- * a non-NULL valid memory address. On failure, the function returns NULL, and sets slot->address = NULL 
- * and slot->size = 0;
+ * Return a (at least) page size aligned allocation with at least size bytes. If huge_pages is true, the 
+ * kernel is advised to use huge pages in the allocation. On success, the function sets the input memSlot
+ * and returns a non-NULL valid memory address. On failure, the function returns NULL, and sets 
+ * slot->address = NULL * and slot->size = 0;
  */
 void *	ds_Alloc(struct memSlot *slot, const u64 size, const u32 huge_pages);
 /* 
@@ -342,6 +345,7 @@ struct poolExternal
 	u64		slot_size;
 	void **		external_buf;
 	struct pool	pool;
+	struct memSlot	mem_external;
 };
 
 /* Allocation of pool. On error, an empty pool (length == 0), is returned.  */

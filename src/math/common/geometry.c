@@ -1194,7 +1194,7 @@ static void ddcel_face_set(struct ddcel_face *face, const u32 first, const u32 c
 {
 	face->first = first;
 	face->count = count;
-	face->ce_list = dll2_init(struct conflict_edge);
+	face->ce_list = dll2_Init(struct conflict_edge);
 }
 
 static void ddcel_edge_set(struct ddcel_edge *edge, const u32 origin, const u32 twin, const u32 prev, const u32 next, const u32 face_ccw)
@@ -1434,8 +1434,8 @@ static void internal_convex_hull_tetrahedron_conflicts(struct ddcel *ddcel, cons
 			if (vec3_dot(ddcel->f[f_i].normal, b) > tol)
 			{
 				struct slot slot = PoolAdd(&ddcel->ce_pool);
-				dll_append(&cv->ce_list, ddcel->ce_pool.buf, slot.index);
-				dll_append(&ddcel->f[f_i].ce_list, ddcel->ce_pool.buf, slot.index);
+				dll_Append(&cv->ce_list, ddcel->ce_pool.buf, slot.index);
+				dll_Append(&ddcel->f[f_i].ce_list, ddcel->ce_pool.buf, slot.index);
 
 				struct conflict_edge *edge = slot.address;
 				edge->vertex = cv_i;
@@ -1452,7 +1452,7 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 	struct conflict_vertex *cv = ddcel->cv + cvi;
 	struct conflict_edge *ce = NULL;
 
-	for (u32 i = cv->ce_list.first; i != DLL_NULL; i = DLL_NEXT(ce))
+	for (u32 i = cv->ce_list.first; i != DLL_NULL; i = dll_Next(ce))
 	{
 		ce = ddcel->ce + i;
 		const u32 fi = ce->face;
@@ -1469,7 +1469,7 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 	 * At this point, all edges has horizon set to 0. Whenever we visit an edge, 
 	 * we flip the edge and its twin's horizon value. After the loop the horizon
 	 * will consist of the edges with value 1.  */
-	for (u32 i = cv->ce_list.first; i != DLL_NULL; i = DLL_NEXT(ce))
+	for (u32 i = cv->ce_list.first; i != DLL_NULL; i = dll_Next(ce))
 	{
 		ce = ddcel->ce + i;
 		const u32 fi = ce->face;
@@ -1491,7 +1491,7 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 	 */
 	u32 horizon = 0;
 	u32 horizon_count = 0;
-	for (u32 i = cv->ce_list.first; i != DLL_NULL; i = DLL_NEXT(ce))
+	for (u32 i = cv->ce_list.first; i != DLL_NULL; i = dll_Next(ce))
 	{
 		ce = ddcel->ce + i;
 		const u32 fi = ce->face;
@@ -1635,7 +1635,7 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 		
 			/*TODO: We may add same point twich here, need to add a "has_been_mapped" thingy to not add again*/
 			ce = NULL;
-			for (u32 j = f_ccw->ce_list.first; j != DLL_NULL; j = DLL2_NEXT(ce))
+			for (u32 j = f_ccw->ce_list.first; j != DLL_NULL; j = dll2_Next(ce))
 			{
 				ce = ddcel->ce + j;
 				if (ce->vertex != cvi && (ddcel->cv[ce->vertex].last_face != sf.index || ddcel->cv[ce->vertex].last_iter != cvi))
@@ -1647,8 +1647,8 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 					if (vec3_dot(f->normal, diff) > tol)
 					{
 						struct slot slot = PoolAdd(&ddcel->ce_pool);
-						dll_append(&f->ce_list, ddcel->ce_pool.buf, slot.index);
-						dll_append(&ddcel->cv[ce->vertex].ce_list, ddcel->ce_pool.buf, slot.index);
+						dll_Append(&f->ce_list, ddcel->ce_pool.buf, slot.index);
+						dll_Append(&ddcel->cv[ce->vertex].ce_list, ddcel->ce_pool.buf, slot.index);
 
 						struct conflict_edge *new = slot.address;
 						new->vertex = ce->vertex;
@@ -1658,7 +1658,7 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 			}
 
 			ce = NULL;
-			for (u32 j = f_twin->ce_list.first; j != DLL_NULL; j = DLL2_NEXT(ce))
+			for (u32 j = f_twin->ce_list.first; j != DLL_NULL; j = dll2_Next(ce))
 			{
 				ce = ddcel->ce + j;
 				vec3 diff;
@@ -1671,8 +1671,8 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 					if (vec3_dot(f->normal, diff) > tol)
 					{
 						struct slot slot = PoolAdd(&ddcel->ce_pool);
-						dll_append(&f->ce_list, ddcel->ce_pool.buf, slot.index);
-						dll_append(&ddcel->cv[ce->vertex].ce_list, ddcel->ce_pool.buf, slot.index);
+						dll_Append(&f->ce_list, ddcel->ce_pool.buf, slot.index);
+						dll_Append(&ddcel->cv[ce->vertex].ce_list, ddcel->ce_pool.buf, slot.index);
 
 						struct conflict_edge *new = slot.address;
 						new->vertex = ce->vertex;
@@ -1693,7 +1693,7 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 	for (u32 i = cv->ce_list.first; i != DLL_NULL;)
 	{
 		ce = ddcel->ce + i;
-		i = DLL_NEXT(ce);
+		i = dll_Next(ce);
 		const u32 fi = ce->face;
 		struct ddcel_face *f = ddcel->f + fi;
 
@@ -1701,10 +1701,10 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 		for (u32 j = f->ce_list.first; j != DLL_NULL; )
 		{
 			ce = ddcel->ce + j;
-			const u32 next = DLL2_NEXT(ce);
+			const u32 next = dll2_Next(ce);
 
 			struct conflict_vertex *cvj = ddcel->cv + ce->vertex;
-			dll_remove(&cvj->ce_list, ddcel->ce_pool.buf, j);
+			dll_Remove(&cvj->ce_list, ddcel->ce_pool.buf, j);
 			PoolRemove(&ddcel->ce_pool, j);
 
 			j = next;
@@ -1812,7 +1812,7 @@ struct dcel dcel_convex_hull(struct arena *mem, const vec3ptr v, const u32 v_cou
 	/* (1) permutation - Random permutation of remaining points */
 	for (u32 i = 0; i < v_count; ++i)
 	{
-		ddcel.cv[i].ce_list = dll_init(struct conflict_edge);
+		ddcel.cv[i].ce_list = dll_Init(struct conflict_edge);
 		ddcel.cv[i].index = i;
 		ddcel.cv[i].last_iter = U32_MAX;
 		ddcel.cv[i].last_face = U32_MAX;

@@ -523,7 +523,7 @@ struct ui
 
 	struct pool			bucket_pool;
 	struct dll			bucket_list;
-	struct hash_map *		bucket_map;
+	struct hashMap *		bucket_map;
 	u32				bucket_cache;	/* for quick cmd check */
 	u32				bucket_count;
 
@@ -532,8 +532,8 @@ struct ui
 
 	/* node map for all u's  */
 	/* Shared allocator for all nodes  */
-	struct hierarchy_index *node_hierarchy;
-	struct hash_map *	node_map;
+	struct hi *node_hierarchy;
+	struct hashMap *	node_map;
 
 	stack_ui_text_selection	frame_stack_text_selection;
 	vec4			text_cursor_color;
@@ -728,7 +728,7 @@ void		ui_frame_end(void);				/* end ui frame 		*/
 								   violation solving. */
 struct ui_node
 {
-	struct hierarchy_index_node header; 	/* DO NOT MOVE */
+	struct hiNode header; 	/* DO NOT MOVE */
 	utf8			id;		/* unique identifier  */
 	struct ui_text_input	input;		/* text to display OR text to edit */
 

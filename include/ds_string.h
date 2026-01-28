@@ -24,6 +24,10 @@
 #include "ds_define.h"
 #include "ds_allocator.h"
 
+#ifdef __cplusplus
+extern "C" { 
+#endif
+
 /*
  *	String Library 
  *
@@ -257,5 +261,9 @@ struct parseRetval	I64Utf32(const utf32 str); 	/* on under/overflow, return i64 
 // * height calculated according to linespace = ascent - descent + linegap. */
 //struct textLayout *Utf32TextLayout(struct arena *mem, const utf32 *str, const f32 line_width, const u32 tab_size, const struct font *font);
 //struct textLayout *Utf32TextLayoutIncludeWhitespace(struct arena *mem, const utf32 *str, const f32 line_width, const u32 tab_size, const struct font *font);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

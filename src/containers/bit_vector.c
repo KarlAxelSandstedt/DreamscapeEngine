@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,41 +17,46 @@
 ==========================================================================
 */
 
-#include <stdlib.h>
-#include <assert.h>
-
+#include "ds_base.h"
 #include "bit_vector.h"
-#include "sys_public.h"
 
-const struct bit_vec bvec_empty = { 0 };
+const struct bitVec bvec_empty = { 0 };
 
-static void static_assert_bit_vec(void)
+static void StaticAssertBitVec(void)
 {
 	ds_StaticAssert(BIT_VEC_BLOCK_SIZE == 64, "must be a power of two");
 }
 
-struct bit_vec bit_vec_alloc(struct arena *mem, const u64 bit_count, const u64 clear_bit, const u32 growable)
+struct bitVec BitVecAlloc(struct arena *mem, const u64 bit_count, const u64 clear_bit, const u32 growable)
 {
-	ds_AssertString(bit_count >= 1 && clear_bit <= 1, "invalid bit_vec_alloc bit count or clear bit value");
+	ds_AssertString(bit_count >= 1 && clear_bit <= 1, "invalid BitVecAlloc bit count or clear bit value");
 	ds_Assert(!(mem && growable));
 
 	const u64 mod = (bit_count % BIT_VEC_BLOCK_SIZE);
 	const u64 bit_count_req = (mod) ? bit_count + (BIT_VEC_BLOCK_SIZE - mod) : bit_count; 
 
-	struct bit_vec bvec = 
+	struct bitVec bvec = 
 	{ 
 		.block_count = bit_count_req / BIT_VEC_BLOCK_SIZE,
 		.bit_count = bit_count_req,
 		.growable = growable,
 	};
 
-	bvec.bits = (mem)
-		? ArenaPush(mem, bvec.block_count * sizeof(u64))
-		: malloc(bvec.block_count * sizeof(u64));
+	if (mem)
+	{
+		bvec.bits = ArenaPush(mem, bvec.block_count * sizeof(u64));
+	}
+	else
+	{
+		bvec.bits = ds_Alloc(&bvec.mem_slot, bvec.block_count * sizeof(u64), NO_HUGE_PAGES);
+		bvec.block_count = bvec.mem_slot.size / sizeof(u64);
+		bvec.bit_count = bvec.block_count * BIT_VEC_BLOCK_SIZE;
+		ds_Assert(bvec.mem_slot.size % sizeof(u64) == 0);
+	}
 
 	if (bvec.bits == NULL)
 	{
-		bvec = (struct bit_vec) { .block_count = 0, .bit_count = 0, .bits = NULL, .growable = 0 };
+		bvec = (struct bitVec) { 0 };
 	}
 	else
 	{
@@ -64,26 +69,31 @@ struct bit_vec bit_vec_alloc(struct arena *mem, const u64 bit_count, const u64 c
 	return bvec;
 }
 
-void bit_vec_free(struct bit_vec *bvec)
+void BitVecFree(struct bitVec *bvec)
 {
-	free(bvec->bits);
+	ds_Free(&bvec->mem_slot);
 }
 
-void bit_vec_increase_size(struct bit_vec *bvec, const u64 bit_count, const u64 clear_bit)
+void BitVecIncreaseSize(struct bitVec *bvec, const u64 bit_count, const u64 clear_bit)
 {
 	ds_Assert(bvec->bit_count < bit_count);
 	ds_Assert(bvec->growable);
 
 	const u64 new_blocks_start = bvec->block_count;
 	const u64 mod = (bit_count % BIT_VEC_BLOCK_SIZE);
-	bvec->bit_count = (mod) ? bit_count + (BIT_VEC_BLOCK_SIZE - mod) : bit_count; 
-	bvec->block_count = bit_count / BIT_VEC_BLOCK_SIZE;
-	bvec->bits = realloc(bvec->bits, (bvec->block_count * BIT_VEC_BLOCK_SIZE) / 8);
+
+	u64 new_bit_count = (mod) ? bit_count + (BIT_VEC_BLOCK_SIZE - mod) : bit_count; 
+	u64 new_block_count = new_bit_count / BIT_VEC_BLOCK_SIZE;
+
+	bvec->bits = ds_Realloc(&bvec->mem_slot, new_block_count * sizeof(u64));
+	bvec->block_count = bvec->mem_slot.size / sizeof(u64);
+	bvec->bit_count = bvec->block_count * BIT_VEC_BLOCK_SIZE;
+	ds_Assert(bvec->mem_slot.size % sizeof(u64) == 0);
 
 	if (!bvec->bits)
 	{
-		LogString(T_SYSTEM, S_FATAL, "Failed on reallocation in bit_vec_increase_size, exiting");
-		FatalCleanupAndExit(0);
+		LogString(T_SYSTEM, S_FATAL, "Failed on reallocation in BitVecIncreaseSize, exiting");
+		FatalCleanupAndExit();
 	}
 
 	for (u64 i = new_blocks_start; i < bvec->block_count; ++i)
@@ -92,7 +102,7 @@ void bit_vec_increase_size(struct bit_vec *bvec, const u64 bit_count, const u64 
 	}
 }
 
-uint8_t bit_vec_get_bit(const struct bit_vec* bvec, const u64 bit)
+uint8_t BitVecGetBit(const struct bitVec* bvec, const u64 bit)
 {
 	ds_Assert(bit < bvec->bit_count);
 
@@ -102,7 +112,7 @@ uint8_t bit_vec_get_bit(const struct bit_vec* bvec, const u64 bit)
 	return (bvec->bits[block] >> block_bit) & 0x1;
 }
 
-void bit_vec_set_bit(const struct bit_vec* bvec, const u64 bit, const u64 bit_value)
+void BitVecSetBit(const struct bitVec* bvec, const u64 bit, const u64 bit_value)
 {
 	ds_Assert(bit < bvec->bit_count && bit_value <= 1);
 
@@ -114,7 +124,7 @@ void bit_vec_set_bit(const struct bit_vec* bvec, const u64 bit, const u64 bit_va
 	bvec->bits[block] = (bvec->bits[block] & mask) | (bit_value << block_bit);
 }
 
-void bit_vec_clear(struct bit_vec* bvec, const u64 clear_bit)
+void BitVecClear(struct bitVec* bvec, const u64 clear_bit)
 {
 	for (u64 block = 0; block < bvec->block_count; ++block) 
 	{

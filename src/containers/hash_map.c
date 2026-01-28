@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,65 +17,67 @@
 ==========================================================================
 */
 
-#include <stdlib.h>
-
+#include "ds_base.h"
 #include "hash_map.h"
-#include "sys_public.h"
-#include "ds_math.h"
 
-struct hash_map *hash_map_alloc(struct arena *mem, const u32 hash_len, const u32 index_len, const u32 growable)
+static const struct hashMap map_empty = { 0 };
+
+struct hashMap HashMapAlloc(struct arena *mem, const u32 hash_len, const u32 index_len, const u32 growable)
 {
 	ds_Assert(hash_len && index_len && (hash_len >> 31) == 0);
-	const u32 actual_hash_len = (u32) PowerOfTwoCeil(hash_len);
 
-	struct hash_map *map = NULL;
-	u32 *hash = NULL;
-	u32 *index = NULL;
+	struct hashMap map = 
+	{ 
+		.hash = NULL,
+		.index = NULL,
+		.growable = growable,
+	};
+
 	if (mem)
 	{
-
-		map = ArenaPush(mem, sizeof(struct hash_map));
-		hash = ArenaPush(mem, actual_hash_len * sizeof(u32)); 
-		index = ArenaPush(mem, index_len * sizeof(u32)); 
+		map.hash_len = (u32) PowerOfTwoCeil(hash_len);
+		map.index_len = index_len;
+		map.hash = ArenaPush(mem, map.hash_len * sizeof(u32)); 
+		map.index = ArenaPush(mem, map.index_len * sizeof(u32)); 
 	}
 	else
 	{
-		map = malloc(sizeof(struct hash_map));
-		hash = malloc(actual_hash_len * sizeof(u32));
-		index = malloc(index_len * sizeof(u32));
+		map.hash_len = (u32) PowerOfTwoCeil( ds_AllocSizeCeil(hash_len) );
+		map.index_len = (u32) PowerOfTwoCeil( ds_AllocSizeCeil(index_len * sizeof(u32)) ) / sizeof(u32);
+		map.hash = ds_Alloc(&map.mem_hash, map.hash_len * sizeof(u32), HUGE_PAGES);
+		map.index = ds_Alloc(&map.mem_index, map.index_len * sizeof(u32), HUGE_PAGES);
 	}
 
-	if (!hash || !index || !map)
+	if (!map.hash || !map.index)
 	{
-		return NULL;
+		if (map.hash)
+		{
+			ds_Free(&map.mem_hash);
+		}
+		return map_empty;
 	}
 
-	map->hash = hash;
-	map->index = index;
-	map->hash_len = actual_hash_len;
-	map->index_len = index_len;
-	map->growable = growable;
-	map->hash_mask = map->hash_len-1;
+	ds_Assert(PowerOfTwoCheck(map.hash_len));
+	map.hash_mask = map.hash_len-1;
 
-	for (u32 i = 0; i < map->hash_len; ++i)
+	for (u32 i = 0; i < map.hash_len; ++i)
 	{
-		map->hash[i] = HASH_NULL;
+		map.hash[i] = HASH_NULL;
 	}
 
 	return map;
 }
 
-void hash_map_free(struct hash_map *map)
+void HashMapFree(struct hashMap *map)
 {
-	if (map)
+	if (map->mem_hash.address)
 	{
-		free(map->hash);
-		free(map->index);
-		free(map);
+		ds_Free(&map->mem_hash);
+		ds_Free(&map->mem_index);
 	}	
 }
 
-void hash_map_flush(struct hash_map *map)
+void HashMapFlush(struct hashMap *map)
 {
 	for (u32 i = 0; i < map->hash_len; ++i)
 	{
@@ -83,85 +85,90 @@ void hash_map_flush(struct hash_map *map)
 	}
 }
 
-void hash_map_serialize(struct serialize_stream *ss, const struct hash_map *map)
+void HashMapSerialize(struct serialStream *ss, const struct hashMap *map)
 {
-	if ((2 + map->hash_len + map->index_len) * sizeof(u32) <= ss_bytes_left(ss))
+	if ((2 + map->hash_len + map->index_len) * sizeof(u32) <= ss_BytesLeft(ss))
 	{
-		ss_write_u32_be(ss, map->hash_len);
-		ss_write_u32_be(ss, map->index_len);
-		ss_write_u32_be_array(ss, map->hash, map->hash_len);
-		ss_write_u32_be_array(ss, map->index, map->index_len);
+		ss_WriteU32Be(ss, map->hash_len);
+		ss_WriteU32Be(ss, map->index_len);
+		ss_WriteU32BeN(ss, map->hash, map->hash_len);
+		ss_WriteU32BeN(ss, map->index, map->index_len);
 	}
 }
 
-struct hash_map *hash_map_deserialize(struct arena *mem, struct serialize_stream *ss, const u32 growable)
+struct hashMap HashMapDeserialize(struct arena *mem, struct serialStream *ss, const u32 growable)
 {
 	ds_Assert(!(mem && growable));
-	if (2 * sizeof(u32) > ss_bytes_left(ss))
+	if (2 * sizeof(u32) > ss_BytesLeft(ss))
 	{
-		return NULL;
+		Log(T_SYSTEM, S_ERROR, "Deserializing hash map past byte boundary: Trying to read 8B with %luB left.", ss_BytesLeft(ss));
+		return map_empty;
 	}
 
-	const u32 hash_len = ss_read_u32_be(ss);
-	const u32 index_len = ss_read_u32_be(ss);
 
 	u32 *hash;
 	u32 *index;
-	struct hash_map *map;
+	struct hashMap map;
+
+	const u32 hash_len = ss_ReadU32Be(ss);
+	const u32 index_len = ss_ReadU32Be(ss);
 
 	if (mem)
 	{
+		map.hash_len = hash_len;
+		map.index_len = index_len;
 		ArenaPushRecord(mem);
-		hash = ArenaPush(mem, hash_len * sizeof(u32));
-		index = ArenaPush(mem, index_len * sizeof(u32));
-		map = ArenaPush(mem, sizeof(struct hash_map));
-		if (!map || !index || !hash)
+		map.hash = ArenaPush(mem, map.hash_len * sizeof(u32));
+		map.index = ArenaPush(mem, map.index_len * sizeof(u32));
+		if (!map.index || !map.hash)
 		{
 			ArenaPopRecord(mem);
-			return NULL;
+			return map_empty;
 		}
 	}
 	else
 	{
-		hash = malloc(hash_len * sizeof(u32));
-		if (!hash)
+		map.hash_len = (u32) PowerOfTwoCeil( ss_ReadU32Be(ss) );
+		map.index_len = (u32) PowerOfTwoCeil( ds_AllocSizeCeil( ss_ReadU32Be(ss) * sizeof(u32)) ) / sizeof(u32);
+		map.hash = (map.hash_len * sizeof(u32) > 1024*1024) 
+			? ds_Alloc(&map.mem_hash, hash_len * sizeof(u32), HUGE_PAGES)
+			: ds_Alloc(&map.mem_hash, hash_len * sizeof(u32), NO_HUGE_PAGES);
+		if (!map.hash)
 		{
-			return NULL;
+			return map_empty;
 		}
 
-		index = malloc(index_len * sizeof(u32));
-		if (!index)
+		map.index = (map.index_len * sizeof(u32) > 512*1024)
+			? ds_Alloc(&map.mem_index, index_len * sizeof(u32), HUGE_PAGES)
+			: ds_Alloc(&map.mem_index, index_len * sizeof(u32), NO_HUGE_PAGES);
+		if (!map.index)
 		{
-			free(hash);
-			return NULL;
-		}
-
-		map = malloc(sizeof(struct hash_map));
-		if (!map)
-		{
-			free(hash);
-			free(index);
-			return NULL;
+			ds_Free(&map.mem_hash);
+			return map_empty;
 		}
 	}
 
-	map->hash_len = hash_len;
-	map->hash = hash;
-	map->index_len = index_len;
-	map->index = index;
-	map->growable = growable;
-	map->hash_mask = map->hash_len-1;
+	map.growable = growable;
+	map.hash_mask = map.hash_len-1;
 
-	if (map->hash_len + map->index_len * sizeof(u32) <= ss_bytes_left(ss))
+	if (hash_len + index_len * sizeof(u32) > ss_BytesLeft(ss))
 	{
-		ss_read_u32_be_array(map->hash, ss, map->hash_len);
-		ss_read_u32_be_array(map->index, ss, map->index_len);
+		if (map.mem_index.address)
+		{
+			ds_Free(&map.mem_hash);
+			ds_Free(&map.mem_index);
+		}
+		Log(T_SYSTEM, S_ERROR, "Deserializing hash map past byte boundary: Trying to read %luB with %luB left.", hash_len + index_len * sizeof(u32), ss_BytesLeft(ss));
+		return map_empty;
 	}
+
+		ss_ReadU32BeN(map.hash, ss, hash_len);
+		ss_ReadU32BeN(map.index, ss, index_len);
 
 	return map;
 }
 
-u32 hash_map_add(struct hash_map *map, const u32 key, const u32 index)
+u32 HashMapAdd(struct hashMap *map, const u32 key, const u32 index)
 {
 	ds_Assert(index >> 31 == 0);
 
@@ -170,7 +177,8 @@ u32 hash_map_add(struct hash_map *map, const u32 key, const u32 index)
 		if (map->growable)
 		{
 			map->index_len = (u32) PowerOfTwoCeil(index+1);
-			map->index = realloc(map->index, map->index_len * sizeof(u32));
+			map->index = ds_Realloc(&map->mem_index, map->index_len * sizeof(u32));
+			ds_Assert(map->index_len * sizeof(u32) == map->mem_index.size);
 		}
 		else
 		{
@@ -185,7 +193,7 @@ u32 hash_map_add(struct hash_map *map, const u32 key, const u32 index)
 	return 1;
 }
 
-void hash_map_remove(struct hash_map *map, const u32 key, const u32 index)
+void HashMapRemove(struct hashMap *map, const u32 key, const u32 index)
 {
 	ds_Assert(index < map->index_len);
 
@@ -196,7 +204,7 @@ void hash_map_remove(struct hash_map *map, const u32 key, const u32 index)
 	}
 	else
 	{
-		for (u32 i = map->hash[h]; i != HASH_NULL; i = hash_map_next(map, i))
+		for (u32 i = map->hash[h]; i != HASH_NULL; i = HashMapNext(map, i))
 		{
 			if (map->index[i] == index)
 			{
@@ -210,19 +218,19 @@ void hash_map_remove(struct hash_map *map, const u32 key, const u32 index)
 	map->index[index] = HASH_NULL;
 }
 
-u32 hash_map_first(const struct hash_map *map, const u32 key)
+u32 HashMapFirst(const struct hashMap *map, const u32 key)
 {
 	return map->hash[key & map->hash_mask];
 }
 
-u32 hash_map_next(const struct hash_map *map, const u32 index)
+u32 HashMapNext(const struct hashMap *map, const u32 index)
 {
 	return (index < map->index_len)
 		? map->index[index]
 		: HASH_NULL;
 }
 
-u64 key_gen_u32_u32(const u32 k1, const u32 k2)
+u64 KeyGenU32U32(const u32 k1, const u32 k2)
 {
        return ((u64) k1 << 32) | (u64) k2;
 }

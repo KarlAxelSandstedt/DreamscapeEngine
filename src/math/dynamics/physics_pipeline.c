@@ -49,7 +49,7 @@ static void thread_set_collision_debug(void *task_addr)
 	while (AtomicLoadAcq32(&g_a_thread_counter) != pipeline->debug_count);
 }
 
-struct physics_pipeline	physics_pipeline_alloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct string_database *shape_db, struct string_database *prefab_db)
+struct physics_pipeline	physics_pipeline_alloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct strdb *shape_db, struct strdb *prefab_db)
 {
 	struct physics_pipeline pipeline =
 	{
@@ -86,11 +86,11 @@ struct physics_pipeline	physics_pipeline_alloc(struct arena *mem, const u32 init
 	ds_AssertString(PowerOfTwoCheck(initial_size), "For simplicity of future data structures, expect pipeline sizes to be powers of two");
 
 	pipeline.body_pool = PoolAlloc(NULL, initial_size, struct rigid_body, GROWABLE);
-	pipeline.body_marked_list = dll_init(struct rigid_body);
-	pipeline.body_non_marked_list = dll_init(struct rigid_body);
+	pipeline.body_marked_list = dll_Init(struct rigid_body);
+	pipeline.body_non_marked_list = dll_Init(struct rigid_body);
 
 	pipeline.event_pool = PoolAlloc(NULL, 256, struct physics_event, GROWABLE);
-	pipeline.event_list = dll_init(struct physics_event);
+	pipeline.event_list = dll_Init(struct physics_event);
 
 	pipeline.margin_on = 1;
 	pipeline.margin = COLLISION_MARGIN_DEFAULT;
@@ -189,11 +189,11 @@ void physics_pipeline_flush(struct physics_pipeline *pipeline)
 	is_db_flush(&pipeline->is_db);
 	
 	PoolFlush(&pipeline->body_pool);
-	dll_flush(&pipeline->body_marked_list);
-	dll_flush(&pipeline->body_non_marked_list);
+	dll_Flush(&pipeline->body_marked_list);
+	dll_Flush(&pipeline->body_non_marked_list);
 
 	PoolFlush(&pipeline->event_pool);
-	dll_flush(&pipeline->event_list);
+	dll_Flush(&pipeline->event_list);
 
 	ArenaFlush(&pipeline->frame);
 	pipeline->frames_completed = 0;
@@ -272,7 +272,7 @@ struct slot physics_pipeline_rigid_body_alloc(struct physics_pipeline *pipeline,
 	struct slot slot = PoolAdd(&pipeline->body_pool);
 	PHYSICS_EVENT_BODY_NEW(pipeline, slot.index);
 	struct rigid_body *body = slot.address;
-	dll_append(&pipeline->body_non_marked_list, pipeline->body_pool.buf, slot.index);
+	dll_Append(&pipeline->body_non_marked_list, pipeline->body_pool.buf, slot.index);
 
 	body->entity = entity;
 	vec3_copy(body->position, position);
@@ -285,8 +285,8 @@ struct slot physics_pipeline_rigid_body_alloc(struct physics_pipeline *pipeline,
 	body->flags = RB_ACTIVE | (g_solver_config->sleep_enabled * RB_AWAKE) | dynamic_flag;
 	body->margin = 0.25f;
 
-	const struct collision_shape *shape = string_database_address(pipeline->shape_db, prefab->shape);
-	const struct slot shape_slot = string_database_reference(pipeline->shape_db, shape->id);
+	const struct collision_shape *shape = strdb_Address(pipeline->shape_db, prefab->shape);
+	const struct slot shape_slot = strdb_Reference(pipeline->shape_db, shape->id);
 	body->shape_handle = shape_slot.index;
 	body->shape_type = shape->type;
 
@@ -338,12 +338,12 @@ static void internal_update_dynamic_tree(struct physics_pipeline *pipeline)
 
 	const u32 flags = RB_ACTIVE | RB_DYNAMIC | (g_solver_config->sleep_enabled * RB_AWAKE);
 	struct rigid_body *b = NULL;
-	for (u32 i = pipeline->body_non_marked_list.first; i != DLL_NULL; i = DLL_NEXT(b))
+	for (u32 i = pipeline->body_non_marked_list.first; i != DLL_NULL; i = dll_Next(b))
 	{
 		b = PoolAddress(&pipeline->body_pool, i);
 		if ((b->flags & flags) == flags)
 		{
-			const struct collision_shape *shape = string_database_address(pipeline->shape_db, b->shape_handle);
+			const struct collision_shape *shape = strdb_Address(pipeline->shape_db, b->shape_handle);
 			rigid_body_update_local_box(b, shape);
 			vec3_add(world_AABB.center, b->local_box.center, b->position);
 			vec3_copy(world_AABB.hw, b->local_box.hw);
@@ -471,7 +471,7 @@ static void internal_parallel_push_contacts(struct arena *mem_frame, struct phys
 	ArenaPopRecord(mem_frame);
 	ArenaPopPacked(mem_frame, (pipeline->proxy_overlap_count - pipeline->cm_count) * sizeof(struct contact_manifold));
 
-	pipeline->c_db.contacts_frame_usage = bit_vec_alloc(mem_frame, pipeline->c_db.contacts_persistent_usage.bit_count, 0, 0);
+	pipeline->c_db.contacts_frame_usage = BitVecAlloc(mem_frame, pipeline->c_db.contacts_persistent_usage.bit_count, 0, 0);
 	ds_Assert(pipeline->c_db.contacts_frame_usage.block_count == pipeline->c_db.contacts_persistent_usage.block_count);
 	ds_Assert(pipeline->c_db.contacts_frame_usage.bit_count == pipeline->c_db.contacts_persistent_usage.bit_count);
 
@@ -484,9 +484,9 @@ static void internal_parallel_push_contacts(struct arena *mem_frame, struct phys
 		{
 			const struct contact *c = c_db_add_contact(pipeline, pipeline->cm + i, pipeline->cm[i].i1, pipeline->cm[i].i2);
 			/* add to new links if needed */
-			const u32 index = (u32) nll_index(&pipeline->c_db.contact_net, c);
+			const u32 index = (u32) nll_Index(&pipeline->c_db.contact_net, c);
 			if (index >= pipeline->c_db.contacts_persistent_usage.bit_count
-				 || bit_vec_get_bit(&pipeline->c_db.contacts_persistent_usage, index) == 0)
+				 || BitVecGetBit(&pipeline->c_db.contacts_persistent_usage, index) == 0)
 			{
 					pipeline->contact_new_count += 1;
 					ArenaPushPackedMemcpy(mem_frame, &index, sizeof(index));
@@ -507,9 +507,9 @@ static void internal_parallel_push_contacts(struct arena *mem_frame, struct phys
 	//		{
 	//			const struct contact *c = c_db_add_contact(pipeline, out->cm + j, out->cm[j].i1, out->cm[j].i2);
 	//			/* add to new links if needed */
-	//			const u32 index = (u32) nll_index(&pipeline->c_db.contact_net, c);
+	//			const u32 index = (u32) nll_Index(&pipeline->c_db.contact_net, c);
 	//			if (index >= pipeline->c_db.contacts_persistent_usage.bit_count
-	//				 || bit_vec_get_bit(&pipeline->c_db.contacts_persistent_usage, index) == 0)
+	//				 || BitVecGetBit(&pipeline->c_db.contacts_persistent_usage, index) == 0)
 	//			{
 	//					pipeline->contact_new_count += 1;
 	//					ArenaPushPackedMemcpy(mem_frame, &index, sizeof(index));
@@ -527,7 +527,7 @@ static void internal_merge_islands(struct arena *mem_frame, struct physics_pipel
 	ProfZone;
 	for (u32 i = 0; i < pipeline->contact_new_count; ++i)
 	{
-		struct contact *c = nll_address(&pipeline->c_db.contact_net, pipeline->contact_new[i]);
+		struct contact *c = nll_Address(&pipeline->c_db.contact_net, pipeline->contact_new[i]);
 		const struct rigid_body *body1 = PoolAddress(&pipeline->body_pool, c->cm.i1);
 		const struct rigid_body *body2 = PoolAddress(&pipeline->body_pool, c->cm.i2);
 		const u32 is1 = body1->island_index;
@@ -595,7 +595,7 @@ static void internal_remove_contacts_and_tag_split_islands(struct arena *mem_fra
 				: 0;
 		
 			//fprintf(stderr, " %lu", ci);
-			struct contact *c = nll_address(&pipeline->c_db.contact_net, ci);
+			struct contact *c = nll_Address(&pipeline->c_db.contact_net, ci);
 
 			/* tag island, if any exist, to split */
 			const u32 b1 = CONTACT_KEY_TO_BODY_0(c->key);
@@ -725,7 +725,7 @@ void physics_pipeline_enable_sleeping(struct physics_pipeline *pipeline)
 		g_solver_config->sleep_enabled = 1;
 		const u32 body_flags = RB_ACTIVE | RB_DYNAMIC;
 		struct rigid_body *body = NULL;
-		for (u32 i = pipeline->body_non_marked_list.first; i != DLL_NULL; i = DLL_NEXT(body))
+		for (u32 i = pipeline->body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 		{
 			body = PoolAddress(&pipeline->body_pool, i);
 			if (body->flags & body_flags)
@@ -751,7 +751,7 @@ void physics_pipeline_disable_sleeping(struct physics_pipeline *pipeline)
 		g_solver_config->sleep_enabled = 0;
 		const u32 body_flags = RB_ACTIVE | RB_DYNAMIC;
 		struct rigid_body *body = NULL;
-		for (u32 i = pipeline->body_non_marked_list.first; i != DLL_NULL; i = DLL_NEXT(body))
+		for (u32 i = pipeline->body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 		{
 			body = PoolAddress(&pipeline->body_pool, i);
 			if (body->flags & body_flags)
@@ -796,13 +796,13 @@ static void physics_pipeline_rigid_body_dealloc(struct physics_pipeline *pipelin
 	struct rigid_body *body = PoolAddress(&pipeline->body_pool, handle);
 	ds_Assert(PoolSlotAllocated(body));
 
-	string_database_dereference(pipeline->shape_db, body->shape_handle);
+	strdb_Dereference(pipeline->shape_db, body->shape_handle);
 	dbvh_remove(&pipeline->dynamic_tree, body->proxy);
 	if (body->island_index != ISLAND_STATIC)
 	{
 		is_db_island_remove_body_resources(pipeline, body->island_index, handle);
 		c_db_remove_body_contacts(pipeline, handle);
-		if (bit_vec_get_bit(&pipeline->is_db.island_usage, body->island_index) && ((struct island *) array_list_address(pipeline->is_db.islands, body->island_index))->contact_count > 0)
+		if (BitVecGetBit(&pipeline->is_db.island_usage, body->island_index) && ((struct island *) array_list_address(pipeline->is_db.islands, body->island_index))->contact_count > 0)
 		{
 			is_db_split_island(&pipeline->frame, pipeline, body->island_index);
 		}
@@ -823,7 +823,7 @@ static void physics_pipeline_rigid_body_dealloc(struct physics_pipeline *pipelin
 			{
 				entry = array_list_address(pipeline->is_db.island_contact_lists, index);
 				const u32 next = entry->next;
-				if (bit_vec_get_bit(&pipeline->c_db.contacts_persistent_usage, entry->index) == 0)
+				if (BitVecGetBit(&pipeline->c_db.contacts_persistent_usage, entry->index) == 0)
 				{
 					if (prev)
 					{
@@ -874,21 +874,21 @@ void physics_pipeline_rigid_body_tag_for_removal(struct physics_pipeline *pipeli
 	if (!RB_IS_MARKED(b))
 	{
 		b->flags |= RB_MARKED_FOR_REMOVAL;
-		dll_remove(&pipeline->body_non_marked_list, pipeline->body_pool.buf, handle);
-		dll_append(&pipeline->body_marked_list, pipeline->body_pool.buf, handle);
+		dll_Remove(&pipeline->body_non_marked_list, pipeline->body_pool.buf, handle);
+		dll_Append(&pipeline->body_marked_list, pipeline->body_pool.buf, handle);
 	}
 }
 
 static void internal_remove_marked_bodies(struct physics_pipeline *pipeline)
 {
 	struct rigid_body *b = NULL;
-	for (u32 i = pipeline->body_marked_list.first; i != DLL_NULL; i = DLL_NEXT(b))
+	for (u32 i = pipeline->body_marked_list.first; i != DLL_NULL; i = dll_Next(b))
 	{
 		b = PoolAddress(&pipeline->body_pool, i);
 		physics_pipeline_rigid_body_dealloc(pipeline, i);
 	}
 
-	dll_flush(&pipeline->body_marked_list);
+	dll_Flush(&pipeline->body_marked_list);
 }
 
 void internal_physics_pipeline_simulate_frame(struct physics_pipeline *pipeline, const f32 delta)
@@ -933,13 +933,13 @@ u32f32 physics_pipeline_raycast_parameter(struct arena *mem_tmp, const struct ph
 	struct bvh_raycast_info info = bvh_raycast_init(mem_tmp, &pipeline->dynamic_tree, ray);
 	while (info.hit_queue.count)
 	{
-		const u32f32 tuple = min_queue_fixed_pop(&info.hit_queue);
+		const u32f32 tuple = MinQueueFixedPop(&info.hit_queue);
 		if (info.hit.f < tuple.f)
 		{
 			break;	
 		}
 
-		if (BT_IS_LEAF(info.node + tuple.u))
+		if (bt_LeafCheck(info.node + tuple.u))
 		{
 			const u32 bi = info.node[tuple.u].bt_left;
 			const struct rigid_body *body = (struct rigid_body *) pipeline->body_pool.buf + bi;
@@ -963,7 +963,7 @@ u32f32 physics_pipeline_raycast_parameter(struct arena *mem_tmp, const struct ph
 struct physics_event *physics_pipeline_event_push(struct physics_pipeline *pipeline)
 {
 	struct slot slot = PoolAdd(&pipeline->event_pool);
-	dll_append(&pipeline->event_list, pipeline->event_pool.buf, slot.index);
+	dll_Append(&pipeline->event_list, pipeline->event_pool.buf, slot.index);
 	struct physics_event *event = slot.address;
 	event->ns = pipeline->ns_start + pipeline->frames_completed * pipeline->ns_tick;
 	return event;

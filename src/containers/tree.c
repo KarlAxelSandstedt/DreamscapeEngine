@@ -17,9 +17,11 @@
 ==========================================================================
 */
 
+#include "ds_base.h"
+#include "bit_vector.h"
 #include "tree.h"
 
-struct bt bt_alloc_internal(struct arena *mem, const u32 initial_length, const u64 slot_size, const u64 parent_offset, const u64 left_offset, const u64 right_offset, const u64 pool_slot_offset, const u32 growable)
+struct bt bt_AllocInternal(struct arena *mem, const u32 initial_length, const u64 slot_size, const u64 parent_offset, const u64 left_offset, const u64 right_offset, const u64 pool_slot_offset, const u32 growable)
 {
 	ds_Assert(!growable || !mem);
 
@@ -28,7 +30,6 @@ struct bt bt_alloc_internal(struct arena *mem, const u32 initial_length, const u
 		.parent_offset = parent_offset,
 		.left_offset = left_offset,
 		.right_offset = right_offset,
-		.heap_allocated = !mem,
 		.root = POOL_NULL,
 		.pool = PoolAllocInternal(mem, initial_length, slot_size, pool_slot_offset, U64_MAX, growable),
 	};
@@ -36,31 +37,27 @@ struct bt bt_alloc_internal(struct arena *mem, const u32 initial_length, const u
 	return bt;
 }
 
-void bt_dealloc(struct bt *tree)
+void bt_Dealloc(struct bt *tree)
 {
-	if (tree->heap_allocated)
-	{
-		PoolDealloc(&tree->pool);
-	}
+	PoolDealloc(&tree->pool);
 }
 
-void bt_flush(struct bt *tree)
+void bt_Flush(struct bt *tree)
 {
 	PoolFlush(&tree->pool);
 	tree->root = POOL_NULL;
 }
 
-void bt_validate(struct arena *tmp, const struct bt *tree)
+void bt_Validate(struct arena *tmp, const struct bt *tree)
 {
 	if (tree->root == POOL_NULL)
 	{
-		ds_Assert(0 == bt_node_count(tree));
+		ds_Assert(0 == bt_NodeCount(tree));
 		return;
 	}
 
-
 	ArenaPushRecord(tmp);
-	struct bit_vec traversed = bit_vec_alloc(tmp, tree->pool.length, 0, NOT_GROWABLE);
+	struct bitVec traversed = BitVecAlloc(tmp, tree->pool.length, 0, NOT_GROWABLE);
 	struct memArray arr = ArenaPushAlignedAll(tmp, sizeof(u32), 4);
 	u32 *stack = arr.addr;
 	stack[0] = tree->root;
@@ -78,8 +75,8 @@ void bt_validate(struct arena *tmp, const struct bt *tree)
 		u32 *r = (u32 *) (addr + tree->right_offset);
 
 		ds_Assert((*alloc) >> 31);
-		ds_Assert(bit_vec_get_bit(&traversed, stack[sc]) == 0);
-		bit_vec_set_bit(&traversed, stack[sc], 1);
+		ds_Assert(BitVecGetBit(&traversed, stack[sc]) == 0);
+		BitVecSetBit(&traversed, stack[sc], 1);
 
 		if ((BT_PARENT_INDEX_MASK & (*p)) != POOL_NULL)
 		{
@@ -106,25 +103,25 @@ void bt_validate(struct arena *tmp, const struct bt *tree)
 		}
 	};
 
-	const u32 actual_leaf_count = bt_leaf_count(tree);
-	const u32 actual_node_count = bt_node_count(tree);
+	const u32 actual_leaf_count = bt_LeafCount(tree);
+	const u32 actual_node_count = bt_NodeCount(tree);
 	ds_Assert(leaf_count == actual_leaf_count);
 	ds_Assert(node_count == actual_node_count);
 
 	ArenaPopRecord(tmp);
 }
 
-struct slot bt_node_add(struct bt *tree)
+struct slot bt_NodeAdd(struct bt *tree)
 {
 	return PoolAdd(&tree->pool);
 }
 
-void bt_node_remove(struct bt *tree, const u32 index)
+void bt_NodeRemove(struct bt *tree, const u32 index)
 {
 	PoolRemove(&tree->pool, BT_PARENT_INDEX_MASK & index);
 }
 
-struct slot bt_node_add_root(struct bt *tree)
+struct slot bt_NodeAddRoot(struct bt *tree)
 {
 	struct slot slot = PoolAdd(&tree->pool);
 	if (slot.index != POOL_NULL)
@@ -137,7 +134,7 @@ struct slot bt_node_add_root(struct bt *tree)
 	return slot;
 }
 
-void bt_node_add_children(struct bt *tree, struct slot *left, struct slot *right, const u32 parent)
+void bt_NodeAddChildren(struct bt *tree, struct slot *left, struct slot *right, const u32 parent)
 {
 	*left = PoolAdd(&tree->pool);
 	*right = PoolAdd(&tree->pool);
@@ -169,13 +166,13 @@ void bt_node_add_children(struct bt *tree, struct slot *left, struct slot *right
 	}
 }
 
-u32 bt_node_count(const struct bt *tree)
+u32 bt_NodeCount(const struct bt *tree)
 {
 	ds_Assert(tree->pool.count == 0 || (tree->pool.count & 0x1));
 	return tree->pool.count;
 }
 
-u32 bt_leaf_count(const struct bt *tree)
+u32 bt_LeafCount(const struct bt *tree)
 {
 	ds_Assert(tree->pool.count == 0 || (tree->pool.count & 0x1));
 	return (tree->pool.count)

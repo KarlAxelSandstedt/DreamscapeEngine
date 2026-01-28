@@ -65,13 +65,13 @@ void r_proxy3d_set_linear_speculation(const vec3 position, const quat rotation, 
 
 u32 r_proxy3d_alloc(const struct r_proxy3d_config *config)
 {
-	struct slot slot = hierarchy_index_add(g_r_core->proxy3d_hierarchy, config->parent);
+	struct slot slot = hi_Add(g_r_core->proxy3d_hierarchy, config->parent);
 	struct r_proxy3d *proxy = slot.address;
 	proxy->flags = (config->parent != g_r_core->proxy3d_root)
 		? PROXY3D_RELATIVE
 		: 0;
 
-	proxy->mesh = string_database_reference(g_r_core->mesh_database, config->mesh).index;
+	proxy->mesh = strdb_Reference(g_r_core->mesh_database, config->mesh).index;
 	vec4_copy(proxy->color, config->color);
 	proxy->blend = config->blend;
 
@@ -82,13 +82,13 @@ u32 r_proxy3d_alloc(const struct r_proxy3d_config *config)
 void r_proxy3d_dealloc(struct arena *tmp, const u32 proxy_index)
 {
 	struct r_proxy3d *proxy = r_proxy3d_address(proxy_index);
-	string_database_dereference(g_r_core->mesh_database, proxy->mesh);
-	hierarchy_index_remove(tmp, g_r_core->proxy3d_hierarchy, proxy_index);
+	strdb_Dereference(g_r_core->mesh_database, proxy->mesh);
+	hi_Remove(tmp, g_r_core->proxy3d_hierarchy, proxy_index);
 }
 
 struct r_proxy3d *r_proxy3d_address(const u32 proxy)
 {
-	return hierarchy_index_address(g_r_core->proxy3d_hierarchy, proxy);
+	return hi_Address(g_r_core->proxy3d_hierarchy, proxy);
 }
 
 
@@ -127,12 +127,12 @@ static void internal_r_proxy3d_local_speculative_orientation(struct r_proxy3d *p
 
 void r_proxy3d_hierarchy_speculate(struct arena *mem, const u64 ns_time)
 {
-	struct hierarchy_index_iterator it = hierarchy_index_iterator_init(mem, g_r_core->proxy3d_hierarchy, g_r_core->proxy3d_root);
+	struct hiIterator it = hi_IteratorInit(mem, g_r_core->proxy3d_hierarchy, g_r_core->proxy3d_root);
 	// skip root stub 
-	hierarchy_index_iterator_next_df(&it);
+	hi_IteratorNextDf(&it);
 	while (it.count)
 	{
-		const u32 index = hierarchy_index_iterator_next_df(&it);
+		const u32 index = hi_IteratorNextDf(&it);
 		struct r_proxy3d *proxy = r_proxy3d_address(index);
 		if (proxy->flags & PROXY3D_MOVING)
 		{
@@ -154,5 +154,5 @@ void r_proxy3d_hierarchy_speculate(struct arena *mem, const u64 ns_time)
 			quat_mult(proxy->spec_rotation, tmp, parent->spec_rotation);
 		}
 	}
-	hierarchy_index_iterator_release(&it);
+	hi_IteratorRelease(&it);
 }

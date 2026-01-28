@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025,2026 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,17 +17,17 @@
 ==========================================================================
 */
 
-#include "ds_math.h"
+#include "ds_base.h"
 #include "fifo_spmc.h"
 
-struct fifo_spmc *fifo_spmc_init(struct arena *mem_persistent, const u32 max_entry_count)
+struct fifoSpmc *FifoSpmcInit(struct arena *mem_persistent, const u32 max_entry_count)
 {
 	ds_Assert(max_entry_count > 0 && PowerOfTwoCheck(max_entry_count));
-	struct fifo_spmc *q = NULL; 
+	struct fifoSpmc *q = NULL; 
 
-	q = ArenaPush(mem_persistent, sizeof(struct fifo_spmc));
+	q = ArenaPush(mem_persistent, sizeof(struct fifoSpmc));
 	q->max_entry_count = max_entry_count;
-	q->entries = ArenaPush(mem_persistent, q->max_entry_count * sizeof(struct fifo_spmc_entry));
+	q->entries = ArenaPush(mem_persistent, q->max_entry_count * sizeof(struct fifoSpmcEntry));
 	for (u32 i = 0; i < q->max_entry_count; ++i)
 	{
 		q->entries[i].in_use = 0;
@@ -41,12 +41,12 @@ struct fifo_spmc *fifo_spmc_init(struct arena *mem_persistent, const u32 max_ent
 	return q;
 }
 
-void fifo_spmc_destroy(struct fifo_spmc *q)
+void FifoSpmcDestroy(struct fifoSpmc *q)
 {
 	SemaphoreDestroy(&q->able_for_reservation);
 }
 
-void *fifo_spmc_pop(struct fifo_spmc *q)
+void *FifoSpmcPop(struct fifoSpmc *q)
 {
 	/* 
 	 * Whatever index we get, we own. The operation only have to be atomic since the producer 
@@ -67,7 +67,7 @@ void *fifo_spmc_pop(struct fifo_spmc *q)
 	return data;
 }
 
-u32 fifo_spmc_pushable_count(const struct fifo_spmc *q)
+u32 FifoSpmcPushableCount(const struct fifoSpmc *q)
 {
 	u32 count = 0;
 
@@ -86,7 +86,7 @@ u32 fifo_spmc_pushable_count(const struct fifo_spmc *q)
 	return count;
 }
 
-u32 fifo_spmc_try_push(struct fifo_spmc *q, void *data)
+u32 FifoSpmcTryPush(struct fifoSpmc *q, void *data)
 {
 	const u32 next = q->next_alloc % q->max_entry_count;
 	//const u32 next = atomic_load(&q->alloc, ATOMIC_RELAXED) % q->max_entry_count;
@@ -109,7 +109,7 @@ u32 fifo_spmc_try_push(struct fifo_spmc *q, void *data)
 	return 1;
 }
 
-void fifo_spmc_push(struct fifo_spmc *q, void *data)
+void FifoSpmcPush(struct fifoSpmc *q, void *data)
 {
-	while (!fifo_spmc_try_push(q, data));
+	while (!FifoSpmcTryPush(q, data));
 }

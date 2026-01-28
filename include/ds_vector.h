@@ -20,38 +20,7 @@
 #ifndef __DS_VECTOR_H__
 #define __DS_VECTOR_H__
 
-#include "ds_common.h"
-#include "ds_allocator.h"
-
-/****************************************** general vector ******************************************/
-
-#define VECTOR_STATIC		0
-#define VECTOR_GROWABLE		1
-
-/*
- * struct vector: Simple stack-based array, i.e. all of its contiguous memory up until data[next] is valid.
- */
-struct vector
-{
-	u64	blocksize;	/* size of individual block 	*/
-	u8 *	data;		/* memory address base 		*/
-	u32 	length;		/* memory length (in blocks)	*/
-	u32 	next;		/* next index to be pushed 	*/ 
-	u32	growable;	/* Boolean: is memory growable  */
-};
-
-/* allocate and initalize vector: If mem is defined, use arena allocator; given that growable == VECTOR_STATIC */
-struct vector	vector_alloc(struct arena *mem, const u64 blocksize, const u32 length, const u32 growable);
-/* deallocate vector heap memory */
-void		vector_dealloc(struct vector *v);
-/* push block, return index and address on success, otherwise return (0, NULL) */
-struct slot	vector_push(struct vector *v);
-/* pop block  */
-void		vector_pop(struct vector *v);
-/* return address of indexed block */
-void *		vector_address(const struct vector *v, const u32 index);
-/* pop all allocated blocks */
-void		vector_flush(struct vector *v);
+#include "ds_base.h"
 
 /****************************************** FIXED TYPE STACK GENERATION ******************************************/
 
@@ -95,11 +64,11 @@ DECLARE_STACK_ALLOC(type)										\
 		.growable = growable,									\
 	};												\
 	stack.arr = (arena)										\
-		? ArenaPush(arena, sizeof(type)*length)						\
+		? ArenaPush(arena, sizeof(type)*length)							\
 		: malloc(sizeof(type)*length);								\
 	if (length > 0 && !stack.arr)									\
 	{												\
-		FatalCleanupAndExit(ds_ThreadSelfTid());						\
+		FatalCleanupAndExit();									\
 	}												\
 	return stack;											\
 }
@@ -113,55 +82,55 @@ DECLARE_STACK_FREE(type)			\
 	}					\
 }
 
-#define DEFINE_STACK_PUSH(type)											\
-DECLARE_STACK_PUSH(type)											\
-{														\
-	if (stack->next >= stack->length)									\
-	{													\
-		if (stack->growable)										\
-		{												\
-			stack->length *= 2;									\
-			stack->arr = realloc(stack->arr, stack->length*sizeof(stack->arr[0]));			\
-			if (!stack->arr)									\
-			{											\
-				FatalCleanupAndExit(ds_ThreadSelfTid());					\
-			}											\
-		}												\
-		else												\
-		{												\
-			FatalCleanupAndExit(ds_ThreadSelfTid());						\
-		}												\
-	}													\
-	stack->arr[stack->next] = val;										\
-	stack->next += 1;											\
+#define DEFINE_STACK_PUSH(type)									\
+DECLARE_STACK_PUSH(type)									\
+{												\
+	if (stack->next >= stack->length)							\
+	{											\
+		if (stack->growable)								\
+		{										\
+			stack->length *= 2;							\
+			stack->arr = realloc(stack->arr, stack->length*sizeof(stack->arr[0]));	\
+			if (!stack->arr)							\
+			{									\
+				FatalCleanupAndExit();						\
+			}									\
+		}										\
+		else										\
+		{										\
+			FatalCleanupAndExit();							\
+		}										\
+	}											\
+	stack->arr[stack->next] = val;								\
+	stack->next += 1;									\
 }
 
 #define DEFINE_STACK_SET(type)			\
 DECLARE_STACK_SET(type)				\
 {						\
-	ds_Assert(stack->next);		\
+	ds_Assert(stack->next);			\
 	stack->arr[stack->next-1] = val;	\
 }
 
-#define DEFINE_STACK_POP(type)					\
-DECLARE_STACK_POP(type)						\
-{								\
+#define DEFINE_STACK_POP(type)				\
+DECLARE_STACK_POP(type)					\
+{							\
 	ds_Assert(stack->next);				\
-	stack->next -= 1;					\
-	const type val = stack->arr[stack->next];		\
-	return val;						\
+	stack->next -= 1;				\
+	const type val = stack->arr[stack->next];	\
+	return val;					\
 }
 
-#define DEFINE_STACK_FLUSH(type)				\
-DECLARE_STACK_FLUSH(type)					\
-{								\
-	stack->next = 0;					\
+#define DEFINE_STACK_FLUSH(type)			\
+DECLARE_STACK_FLUSH(type)				\
+{							\
+	stack->next = 0;				\
 }
 
 #define DEFINE_STACK_TOP(type)			\
 DECLARE_STACK_TOP(type)				\
 {						\
-	ds_Assert(stack->next);		\
+	ds_Assert(stack->next);			\
 	return stack->arr[stack->next-1];	\
 }
 
@@ -174,14 +143,14 @@ DECLARE_STACK_TOP(type)				\
 	DEFINE_STACK_FLUSH(type)	\
 	DEFINE_STACK_FREE(type)
 
-#define DECLARE_STACK_VEC_STRUCT(vectype)\
-typedef struct				\
-{					\
-	u32 		length;		\
-	u32 		next;		\
-	u32		growable;	\
-	vectype ## ptr	arr;		\
-					\
+#define DECLARE_STACK_VEC_STRUCT(vectype)	\
+typedef struct					\
+{						\
+	u32 		length;			\
+	u32 		next;			\
+	u32		growable;		\
+	vectype ## ptr	arr;			\
+						\
 } stack_ ## vectype
 
 #define DECLARE_STACK_VEC_ALLOC(vectype)	stack_ ## vectype stack_ ## vectype ## _alloc(struct arena *arena, const u32 length, const u32 growable)
@@ -202,23 +171,23 @@ typedef struct				\
 	DECLARE_STACK_VEC_FLUSH(vectype);	\
 	DECLARE_STACK_VEC_FREE(vectype)
 
-#define DEFINE_STACK_VEC_ALLOC(vectype)									\
-DECLARE_STACK_VEC_ALLOC(vectype)									\
-{													\
-	stack_ ## vectype stack =									\
-	{												\
-		.length = length,									\
-		.next = 0,										\
-		.growable = growable,									\
-	};												\
-	stack.arr = (arena)										\
-		? ArenaPush(arena, sizeof(vectype)*length)					\
-		: malloc(sizeof(vectype)*length);							\
-	if (length > 0 && !stack.arr)									\
-	{												\
-		FatalCleanupAndExit(ds_ThreadSelfTid());						\
-	}												\
-	return stack;											\
+#define DEFINE_STACK_VEC_ALLOC(vectype)				\
+DECLARE_STACK_VEC_ALLOC(vectype)				\
+{								\
+	stack_ ## vectype stack =				\
+	{							\
+		.length = length,				\
+		.next = 0,					\
+		.growable = growable,				\
+	};							\
+	stack.arr = (arena)					\
+		? ArenaPush(arena, sizeof(vectype)*length)	\
+		: malloc(sizeof(vectype)*length);		\
+	if (length > 0 && !stack.arr)				\
+	{							\
+		FatalCleanupAndExit();				\
+	}							\
+	return stack;						\
 }
 
 #define DEFINE_STACK_VEC_FREE(vectype)		\
@@ -241,12 +210,12 @@ DECLARE_STACK_VEC_PUSH(vectype)											\
 			stack->arr = realloc(stack->arr, stack->length*sizeof(stack->arr[0]));			\
 			if (!stack->arr)									\
 			{											\
-				FatalCleanupAndExit(ds_ThreadSelfTid());					\
+				FatalCleanupAndExit();								\
 			}											\
 		}												\
 		else												\
 		{												\
-			FatalCleanupAndExit(ds_ThreadSelfTid());						\
+			FatalCleanupAndExit();									\
 		}												\
 	}													\
 	vectype ## _copy(stack->arr[stack->next], val);								\

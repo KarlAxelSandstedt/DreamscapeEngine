@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,10 +17,12 @@
 ==========================================================================
 */
 
-#include "list.h"
-#include "sys_public.h"
+#include <string.h>
 
-struct ll ll_init_internal(const u64 slot_size, const u64 slot_state_offset)
+#include "ds_base.h"
+#include "list.h"
+
+struct ll ll_InitInternal(const u64 slot_size, const u64 slot_state_offset)
 {
 	struct ll ll =  
 	{ 
@@ -34,14 +36,14 @@ struct ll ll_init_internal(const u64 slot_size, const u64 slot_state_offset)
 	return ll;
 }
 
-void ll_flush(struct ll *ll)
+void ll_Flush(struct ll *ll)
 {
 	ll->count = 0;
 	ll->first = LL_NULL;
 	ll->last = LL_NULL;
 }
 
-void ll_append(struct ll *ll, void *array, const u32 index)
+void ll_Append(struct ll *ll, void *array, const u32 index)
 {
 	ll->count += 1;
 	u32 *first = (u32*) ((u8*) array + index*ll->slot_size + ll->slot_state_offset);
@@ -53,7 +55,7 @@ void ll_append(struct ll *ll, void *array, const u32 index)
 	}
 }
 
-void ll_prepend(struct ll *ll, void *array, const u32 index)
+void ll_Prepend(struct ll *ll, void *array, const u32 index)
 {
 	ll->count += 1;
 	if (ll->last == LL_NULL)
@@ -70,7 +72,7 @@ void ll_prepend(struct ll *ll, void *array, const u32 index)
 	*prev = LL_NULL;	
 }
 
-struct dll dll_init_internal(const u64 slot_size, const u64 prev_offset, const u64 next_offset)
+struct dll dll_InitInternal(const u64 slot_size, const u64 prev_offset, const u64 next_offset)
 {
 	struct dll dll =  
 	{ 
@@ -85,14 +87,14 @@ struct dll dll_init_internal(const u64 slot_size, const u64 prev_offset, const u
 	return dll;
 }
 
-void dll_flush(struct dll *dll)
+void dll_Flush(struct dll *dll)
 {
 	dll->count = 0;
 	dll->first = DLL_NULL;
 	dll->last = DLL_NULL;
 }
 
-void dll_append(struct dll *dll, void *array, const u32 index)
+void dll_Append(struct dll *dll, void *array, const u32 index)
 {
 	dll->count += 1;
 	u32 *node_prev = (u32*) ((u8*) array + index*dll->slot_size + dll->prev_offset);
@@ -113,7 +115,7 @@ void dll_append(struct dll *dll, void *array, const u32 index)
 	dll->last = index;
 }
 
-void dll_prepend(struct dll *dll, void *array, const u32 index)
+void dll_Prepend(struct dll *dll, void *array, const u32 index)
 {
 	dll->count += 1;
 	u32 *node_prev = (u32*) ((u8*) array + index*dll->slot_size + dll->prev_offset);
@@ -134,7 +136,7 @@ void dll_prepend(struct dll *dll, void *array, const u32 index)
 	dll->first = index;
 }
 
-void dll_remove(struct dll *dll, void *array, const u32 index)
+void dll_Remove(struct dll *dll, void *array, const u32 index)
 {
 	ds_Assert(dll->count);
 	dll->count -= 1;
@@ -180,7 +182,7 @@ void dll_remove(struct dll *dll, void *array, const u32 index)
 	*node_next = DLL_NOT_IN_LIST;
 }
 
-void dll_slot_set_not_in_list(struct dll *dll, void *slot)
+void dll_SlotSetNotInList(struct dll *dll, void *slot)
 {
 	u32 *node_prev = (u32*) ((u8*) slot + dll->prev_offset);
 	u32 *node_next = (u32*) ((u8*) slot + dll->next_offset);
@@ -189,7 +191,7 @@ void dll_slot_set_not_in_list(struct dll *dll, void *slot)
 	*node_next = DLL_NOT_IN_LIST;
 }
 
-struct nll nll_alloc_internal(struct arena *mem, 
+struct nll nll_AllocInternal(struct arena *mem, 
 		const u32 initial_length, 
 		const u64 data_size, 
 		const u64 pool_slot_offset, 
@@ -210,21 +212,11 @@ struct nll nll_alloc_internal(struct arena *mem,
 		.prev_offset = prev_offset,
 	};
 
-	if (mem)
-	{
-		net.heap_allocated = 0;
-		net.pool = PoolAllocInternal(mem, initial_length, data_size, pool_slot_offset, U64_MAX, 0);
-	}
-	else
-	{
-		net.heap_allocated = 1;
-		net.pool = PoolAllocInternal(mem, initial_length, data_size, pool_slot_offset, U64_MAX, growable);
-	}
-
+	net.pool = PoolAllocInternal(mem, initial_length, data_size, pool_slot_offset, U64_MAX, growable);
 	if (!net.pool.length)
 	{
 		LogString(T_SYSTEM, S_FATAL, "Failed to allocate net list");
-		FatalCleanupAndExit(ds_ThreadSelfTid());
+		FatalCleanupAndExit();
 	}
 
 	struct slot slot = PoolAdd(&net.pool);
@@ -239,7 +231,7 @@ struct nll nll_alloc_internal(struct arena *mem,
 	return net;	
 }
 
-void nll_dealloc(struct nll *net)
+void nll_Dealloc(struct nll *net)
 {
 	if (net->heap_allocated)
 	{
@@ -247,7 +239,7 @@ void nll_dealloc(struct nll *net)
 	}
 }
 
-void nll_flush(struct nll *net)
+void nll_Flush(struct nll *net)
 {
 	PoolFlush(&net->pool);
 	struct slot slot = PoolAdd(&net->pool);
@@ -260,7 +252,7 @@ void nll_flush(struct nll *net)
 	ds_Assert(slot.index == NLL_NULL);
 }
 
-struct slot nll_add(struct nll *net, void *data, const u32 next_0, const u32 next_1)
+struct slot nll_Add(struct nll *net, void *data, const u32 next_0, const u32 next_1)
 {
 	struct slot slot = PoolAdd(&net->pool);
 
@@ -297,7 +289,7 @@ struct slot nll_add(struct nll *net, void *data, const u32 next_0, const u32 nex
 	return slot;
 }
 
-void nll_remove(struct nll *net, const u32 index)
+void nll_Remove(struct nll *net, const u32 index)
 {
 	u8 *node = PoolAddress(&net->pool, index);
 	u32 *node_next = (u32 *)((u8 *) node + net->next_offset);
@@ -327,12 +319,12 @@ void nll_remove(struct nll *net, const u32 index)
 	PoolRemove(&net->pool, index);
 }
 
-void *nll_address(const struct nll *net, const u32 index)
+void *nll_Address(const struct nll *net, const u32 index)
 {
 	return PoolAddress(&net->pool, index);
 }
 
-u32 nll_index(const struct nll *net, const void *address)
+u32 nll_Index(const struct nll *net, const void *address)
 {
 	return PoolIndex(&net->pool, address);
 }

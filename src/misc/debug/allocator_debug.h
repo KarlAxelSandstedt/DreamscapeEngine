@@ -25,7 +25,7 @@
 #if defined(DS_ASAN)
 
 #include "sanitizer/asan_interface.h"
-#include "bit_vector.h"
+#include "bitVector.h"
 
 /*
  * allocator_debug_index: poison/unpoison slots in index allocators.
@@ -33,7 +33,7 @@
 struct allocator_debug_index
 {
 	const u8 *	array;
-	struct bit_vec	poisoned;	
+	struct bitVec	poisoned;	
 	u32		slot_count;
 	u32		max_unpoisoned_count;
 	u64		slot_size;

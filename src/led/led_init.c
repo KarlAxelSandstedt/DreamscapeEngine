@@ -104,14 +104,14 @@ struct led *led_alloc(void)
 	
 	g_editor->viewport_id = Utf8Format(&sys_win->mem_persistent, "viewport_%u", g_editor->window);
 	g_editor->node_pool = GPoolAlloc(NULL, 4096, struct led_node, GROWABLE);
-	g_editor->node_map = hash_map_alloc(NULL, 4096, 4096, GROWABLE);
-	g_editor->node_marked_list = dll_init(struct led_node);
-	g_editor->node_non_marked_list = dll_init(struct led_node);
-	g_editor->node_selected_list = dll2_init(struct led_node);
+	g_editor->node_map = HashMapAlloc(NULL, 4096, 4096, GROWABLE);
+	g_editor->node_marked_list = dll_Init(struct led_node);
+	g_editor->node_non_marked_list = dll_Init(struct led_node);
+	g_editor->node_selected_list = dll2_Init(struct led_node);
 	g_editor->csg = csg_alloc();
-	g_editor->render_mesh_db = string_database_alloc(NULL, 32, 32, struct r_mesh, GROWABLE);
-	g_editor->rb_prefab_db = string_database_alloc(NULL, 32, 32, struct rigid_body_prefab, GROWABLE);
-	g_editor->cs_db = string_database_alloc(NULL, 32, 32, struct collision_shape, GROWABLE);
+	g_editor->render_mesh_db = strdb_Alloc(NULL, 32, 32, struct r_mesh, GROWABLE);
+	g_editor->rb_prefab_db = strdb_Alloc(NULL, 32, 32, struct rigid_body_prefab, GROWABLE);
+	g_editor->cs_db = strdb_Alloc(NULL, 32, 32, struct collision_shape, GROWABLE);
 	g_editor->physics = physics_pipeline_alloc(NULL, 1024, NSEC_PER_SEC / (u64) 60, 1024*1024, &g_editor->cs_db, &g_editor->rb_prefab_db);
 
 	g_editor->pending_engine_running = 0;
@@ -122,15 +122,15 @@ struct led *led_alloc(void)
 	g_editor->engine_paused = 0;
 	g_editor->ns_engine_running = 0;
 
-	struct r_mesh *r_mesh_stub = string_database_address(&g_editor->render_mesh_db, STRING_DATABASE_STUB_INDEX);
+	struct r_mesh *r_mesh_stub = strdb_Address(&g_editor->render_mesh_db, STRING_DATABASE_STUB_INDEX);
 	r_mesh_set_stub_box(r_mesh_stub);
 
-	struct collision_shape *shape_stub = string_database_address(&g_editor->cs_db, STRING_DATABASE_STUB_INDEX);
+	struct collision_shape *shape_stub = strdb_Address(&g_editor->cs_db, STRING_DATABASE_STUB_INDEX);
 	shape_stub->type = COLLISION_SHAPE_CONVEX_HULL;
 	shape_stub->hull = dcel_box(&sys_win->mem_persistent, vec3_inline(0.5f, 0.5f, 0.5f));
 
-	struct rigid_body_prefab *prefab_stub = string_database_address(&g_editor->rb_prefab_db, STRING_DATABASE_STUB_INDEX);
-	prefab_stub->shape = string_database_reference(&g_editor->cs_db, Utf8Inline("")).index;
+	struct rigid_body_prefab *prefab_stub = strdb_Address(&g_editor->rb_prefab_db, STRING_DATABASE_STUB_INDEX);
+	prefab_stub->shape = strdb_Reference(&g_editor->cs_db, Utf8Inline("")).index;
 	prefab_stub->density = 1.0f;
 	prefab_stub->restitution = 0.0f;
 	prefab_stub->friction = 0.0f;
