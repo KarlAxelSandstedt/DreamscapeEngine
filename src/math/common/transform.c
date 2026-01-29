@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,20 +17,22 @@
 ==========================================================================
 */
 
-#include "ds_math.h"
+#include "ds_base.h"
 #include "transform.h"
+#include "float32.h"
+#include "quaternion.h"
 
-void sequential_rotation_matrix(mat3 dst, const vec3 axis_1, const f32 angle_1, const vec3 axis_2, const f32 angle_2)
+void mat3SequentialRotation(mat3 dst, const vec3 axis_1, const f32 angle_1, const vec3 axis_2, const f32 angle_2)
 {
 	vec3 axis_snd;
 	mat3 r_1, r_2;
-	rotation_matrix(r_1, axis_1, angle_1);
+	mat3Rotation(r_1, axis_1, angle_1);
 	mat3_vec_mul(axis_snd, r_1, axis_2);
-	rotation_matrix(r_2, axis_snd, angle_2);
+	mat3Rotation(r_2, axis_snd, angle_2);
 	mat3_mult(dst, r_2, r_1);
 }
 
-void rotation_matrix(mat3 dst, const vec3 axis, const f32 angle)
+void mat3Rotation(mat3 dst, const vec3 axis, const f32 angle)
 {
 	const f32 w = f32_cos(angle / 2.0f);
 	vec3 pure_quat;
@@ -48,7 +50,7 @@ void rotation_matrix(mat3 dst, const vec3 axis, const f32 angle)
 		      q13 + q20, q23 - q10, tr_part + 2.0f*pure_quat[2]*pure_quat[2]);
 }
 
-void vec3_rotate_center(vec3 src_rotated, mat3 rotation, const vec3 center, const vec3 src)
+void Vec3RotateCenter(vec3 src_rotated, mat3 rotation, const vec3 center, const vec3 src)
 {
 	vec3 tmp;
 	Vec3Sub(src_rotated, src, center);
@@ -56,7 +58,7 @@ void vec3_rotate_center(vec3 src_rotated, mat3 rotation, const vec3 center, cons
 	Vec3Add(src_rotated, tmp, center);
 }
 
-void perspective_matrix(mat4 dst, const f32 aspect_ratio, const f32 fov_x, const f32 fz_near, const f32 fz_far)
+void mat4Perspective(mat4 dst, const f32 aspect_ratio, const f32 fov_x, const f32 fz_near, const f32 fz_far)
 {
 	mat4_set(dst, 
 		     1.0f / f32_tan(fov_x / 2.0f), 0.0f, 0.0f, 0.0f,
@@ -65,7 +67,7 @@ void perspective_matrix(mat4 dst, const f32 aspect_ratio, const f32 fov_x, const
 		     0.0f, 0.0f, (2.0f * fz_near * fz_far) / (fz_near - fz_far), 0.0f);
 }
 
-void view_matrix(mat4 dst, const vec3 position, const vec3 left, const vec3 up, const vec3 forward)
+void mat4View(mat4 dst, const vec3 position, const vec3 left, const vec3 up, const vec3 forward)
 {
 	/**
 	 * (1) Translation to camera center 
@@ -87,13 +89,13 @@ void view_matrix(mat4 dst, const vec3 position, const vec3 left, const vec3 up, 
 	mat4_mult(dst, basis_change, translation);
 }
 
-void view_matrix_look_at(mat4 dst, const vec3 position, const vec3 target)
+void mat4ViewLookAt(mat4 dst, const vec3 position, const vec3 target)
 {
 	vec3 tmp, relative, dir;
 	Vec3Sub(relative, target, position);
 	Vec3Normalize(dir, relative);
 	Vec3Set(tmp, 0.0f, 1.0f, 0.0f);
-	const f32 pitch = MM_PI_F / 2.0f - f32_acos(Vec3Dot(tmp, dir));
+	const f32 pitch = F32_PI / 2.0f - f32_acos(Vec3Dot(tmp, dir));
 
 	relative[1] = 0.0f;
 	Vec3Normalize(dir, relative);
@@ -105,10 +107,10 @@ void view_matrix_look_at(mat4 dst, const vec3 position, const vec3 target)
 	} else {
 		yaw  = -f32_acos(Vec3Dot(tmp, dir));	
 	}
-	view_matrix_yaw_pitch(dst, position, yaw, pitch);
+	mat4ViewYawPitch(dst, position, yaw, pitch);
 }
 
-void view_matrix_yaw_pitch(mat4 dst, const vec3 position, const f32 yaw, const f32 pitch)
+void mat4ViewYawPitch(mat4 dst, const vec3 position, const f32 yaw, const f32 pitch)
 {
 	vec3 left, up, forward, tmp;
 	mat3 rot;

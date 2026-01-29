@@ -51,7 +51,7 @@ static utf8 utf8_ascii_random(struct arena *mem, const u32 len)
 	};
 	for (u32 i = 0; i < len; ++i)
 	{
-		substring.buf[i] = (u8) rng_u64_range((u64) 'A', (u64) 'Z');
+		substring.buf[i] = (u8) RngU64Range((u64) 'A', (u64) 'Z');
 	}
 	substring.buf[len] = '\0';
 	return substring;
@@ -98,11 +98,11 @@ static struct test_output utf8_lookup_substring_randomizer(struct test_environme
 	{
 		ArenaPushRecord(env->mem_1);
 
-		const u32 string_len = (u32) rng_u64_range(0, 20);
-		const u32 random_len = (u32) rng_u64_range(2, 4);
-		const u32 substring_len = (u32) rng_u64_range(0, string_len);
+		const u32 string_len = (u32) RngU64Range(0, 20);
+		const u32 random_len = (u32) RngU64Range(2, 4);
+		const u32 substring_len = (u32) RngU64Range(0, string_len);
 		const u32 substring_start = (substring_len)
-					? (u32) rng_u64_range(0, string_len-substring_len)
+					? (u32) RngU64Range(0, string_len-substring_len)
 					: U32_MAX;
 
 		const utf8 string = utf8_ascii_random(env->mem_1, string_len);
@@ -248,7 +248,7 @@ static struct test_output dmg_strtod_dtoa_equivalence(struct test_environment *e
 	u32 skipped = 0;
 	for (u32 i = 0; i < U32_MAX / 100; ++i)
 	{
-		const f64 d = ((b64) { .u = rng_u64() }).f;
+		const f64 d = ((b64) { .u = RngU64() }).f;
 		char *str = dmg_dtoa(d, 0, 0, &decpt, &sign, NULL);
 		const int pw = decpt-1;
 		//if (pw < 0)
@@ -304,7 +304,7 @@ static struct test_output dmg_strtod_utf8_f64_equivalence(struct test_environmen
 	{
 		ArenaPushRecord(env->mem_1);
 
-		const f64 d = ((b64) { .u = rng_u64() }).f;
+		const f64 d = ((b64) { .u = RngU64() }).f;
 		const utf8 str = utf8_f64(env->mem_1, 0, d);
 		const f64 ret = f64_utf8(env->mem_1, str);
 
@@ -343,7 +343,7 @@ static struct test_output dmg_strtod_utf32_f64_equivalence(struct test_environme
 	{
 		ArenaPushRecord(env->mem_1);
 
-		const f64 d = ((b64) { .u = rng_u64() }).f;
+		const f64 d = ((b64) { .u = RngU64() }).f;
 		const utf32 str = utf32_f64(env->mem_1, 0, d);
 		const f64 ret = f64_utf32(env->mem_1, str);
 
@@ -456,7 +456,7 @@ static struct test_output utf8_utf32_u64_i64_equivalence(struct test_environment
 	{
 		ArenaPushRecord(env->mem_1);
 
-		const b64 b = { .u = rng_u64() };
+		const b64 b = { .u = RngU64() };
 
 		const utf8 uf8_u64 = utf8_u64(env->mem_1, b.u);
 		const utf8 uf8_i64 = utf8_i64(env->mem_1, b.i);

@@ -25,7 +25,7 @@ static void thread_local_rng_u64_test(void *void_count)
 {
 	for (u32 i = 0; i < g_rng_count; ++i)
 	{
-		rng_u64();
+		RngU64();
 	}
 }
 
@@ -33,7 +33,7 @@ static void global_rng_u64_test(void *void_count)
 {
 	for (u32 i = 0; i < g_rng_count; ++i)
 	{
-		g_xoshiro_256_next();
+		TestXoshiro256Next();
 	}
 }
 

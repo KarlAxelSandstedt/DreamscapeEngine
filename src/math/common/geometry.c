@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -18,14 +18,13 @@
 */
 
 #include <string.h>
+#include "ds_base.h"
 #include "ds_math.h"
 #include "geometry.h"
 #include "hash_map.h"
-#include "array_list.h"
+#include "list.h"
 #include "queue.h"
 #include "float32.h"
-#include "sys_public.h"
-#include "ds_random.h"
 
 //TODO what to do with this?
 #define MIN_SEGMENT_LENGTH_SQ	(100.0f*F32_EPSILON)
@@ -1819,7 +1818,7 @@ struct dcel dcel_convex_hull(struct arena *mem, const vec3ptr v, const u32 v_cou
 	}
 	for (u32 i = 0; i < v_count; ++i)
 	{
-		const u32 rng = (u32) rng_u64_range(i, v_count-1);
+		const u32 rng = (u32) RngU64Range(i, v_count-1);
 		const u32 tmp = ddcel.cv[i].index;
 		ddcel.cv[i].index = ddcel.cv[rng].index;
 		ddcel.cv[rng].index = tmp;

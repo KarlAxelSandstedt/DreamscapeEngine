@@ -79,7 +79,7 @@ void serial_block_allocator_test_256B(void *null)
 	{
 		if (allocations_left)
 		{
-			if (!head || rng_u64_range(0, 1))
+			if (!head || RngU64Range(0, 1))
 			{
 				allocations_left -= 1;
 				struct list_node *tmp = ThreadAlloc256B();
@@ -110,7 +110,7 @@ void block_allocator_stress_test_256B(void *void_input)
 	{
 		if (input->allocations_left)
 		{
-			if (!head || rng_u64_range(0, 1))
+			if (!head || RngU64Range(0, 1))
 			{
 				input->allocations_left -= 1;
 				struct list_node *tmp = ThreadAlloc256B();
@@ -142,7 +142,7 @@ void block_allocator_stress_test_1MB(void *void_input)
 	{
 		if (input->allocations_left)
 		{
-			if (!head || rng_u64_range(0, 1))
+			if (!head || RngU64Range(0, 1))
 			{
 				struct list_node *tmp = ThreadAlloc1MB();
 				if (!tmp)
@@ -178,7 +178,7 @@ void malloc_stress_test(void *void_input)
 	{
 		if (input->allocations_left)
 		{
-			if (!head || rng_u64_range(0, 1))
+			if (!head || RngU64Range(0, 1))
 			{
 				input->allocations_left -= 1;
 				struct list_node *tmp = malloc(input->block_size);

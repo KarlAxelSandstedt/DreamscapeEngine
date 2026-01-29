@@ -762,7 +762,7 @@ static struct tri_mesh tri_mesh_perlin_noise(struct arena *mem_persistent, const
 		{
 			for (u32 z = 0; z < on; ++z)
 			{
-				const f32 angle = rng_f32_range(0.0f, MM_PI_2_F);
+				const f32 angle = RngF32Range(0.0f, F32_PI2);
 				grad[o][x*on + z][0] = f32_cos(angle);
 				grad[o][x*on + z][1] = f32_sin(angle);
 			}
@@ -962,7 +962,7 @@ void led_wall_smash_simulation_setup(struct led *led)
 	};
 
 	vec3 dsphere_vertices[dsphere_v_count];
-	const f32 phi = MM_PI_F * (3.0f - f32_sqrt(5.0f));
+	const f32 phi = F32_PI * (3.0f - f32_sqrt(5.0f));
 	for (u32 i = 0; i < dsphere_v_count; ++i)
 	{
 		const f32 y = 1.0 - i*2.0f/(dsphere_v_count-1);
@@ -1206,9 +1206,9 @@ void led_wall_smash_simulation_setup(struct led *led)
 	{	
 		vec3 translation;
 		Vec3Copy(translation, dsphere_base_translation);
-		translation[0] += (10.0f - 38.0f * (f32) i / dsphere_count) * f32_cos(i * MM_PI_F*37.0f/197.0f);
+		translation[0] += (10.0f - 38.0f * (f32) i / dsphere_count) * f32_cos(i * F32_PI*37.0f/197.0f);
 		translation[1] += 25.0f + (f32) i / 2.0f;
-		translation[2] += (10.0f - 38.0f * (f32) i / dsphere_count) * f32_sin(i * MM_PI_F*37.0f/197.0f);
+		translation[2] += (10.0f - 38.0f * (f32) i / dsphere_count) * f32_sin(i * F32_PI*37.0f/197.0f);
 
 		utf8 id = Utf8Format(sys_win->ui->mem_frame, "capsule_%u", i);
 		sys_win->cmd_queue->regs[0].utf8 = id;
@@ -1235,9 +1235,9 @@ void led_wall_smash_simulation_setup(struct led *led)
 	{	
 		vec3 translation;
 		Vec3Copy(translation, dsphere_base_translation);
-		translation[0] += (10.0f - 38.0f * (f32) i / dsphere_count) * f32_cos(i * MM_PI_F*37.0f/197.0f);
+		translation[0] += (10.0f - 38.0f * (f32) i / dsphere_count) * f32_cos(i * F32_PI*37.0f/197.0f);
 		translation[1] += 5.0f + (f32) i / 2.0f;
-		translation[2] += (10.0f - 38.0f * (f32) i / dsphere_count) * f32_sin(i * MM_PI_F*37.0f/197.0f);
+		translation[2] += (10.0f - 38.0f * (f32) i / dsphere_count) * f32_sin(i * F32_PI*37.0f/197.0f);
 
 		utf8 id = Utf8Format(sys_win->ui->mem_frame, "dsphere_%u", i);
 		sys_win->cmd_queue->regs[0].utf8 = id;
@@ -1449,7 +1449,7 @@ static void led_engine_init(struct led *led)
 			{
 				vec3 axis = { 0.6f, 1.0f, 0.6f };
 				Vec3ScaleSelf(axis, 1.0f / f32_sqrt(Vec3Length(axis)));
-				const f32 angle = MM_PI_F / 16.0f;
+				const f32 angle = F32_PI / 16.0f;
 				QuatAxisAngle(node->rotation, axis, angle);
 				vec3 linear_velocity = { 0.0f, 0.0f, 0.0f};
 				vec3 angular_velocity = { 0.0f, 0.0f, 0.0f};
@@ -1655,9 +1655,9 @@ static void led_engine_run(struct led *led)
 			{
 				struct island *is = array_list_address(led->physics.is_db.islands, event->island);
 				Vec4Set(is->color, 
-						rng_f32_normalized(), 
-						rng_f32_normalized(), 
-						rng_f32_normalized(), 
+						RngF32Normalized(), 
+						RngF32Normalized(), 
+						RngF32Normalized(), 
 						0.7f);
 				if (led->physics.body_color_mode == RB_COLOR_MODE_ISLAND)
 				{

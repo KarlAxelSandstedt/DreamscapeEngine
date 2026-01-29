@@ -91,8 +91,8 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "Couldn't read from rng source, exiting\n");
 		return 0;
 	}
-	g_xoshiro_256_init(seed);
-	thread_xoshiro_256_init_sequence();
+	Xoshiro256Init(seed);
+	ThreadXoshiro256InitSequence();
 
 	mem_persistent = ArenaAlloc(32*1024*1024);
 	system_resources_init(&mem_persistent);

@@ -74,7 +74,7 @@ static void task_run(struct task *task_info, struct worker *w)
 void task_main(dsThread *thr)
 {
 	struct worker *w = ds_ThreadArguments(thr);
-	thread_xoshiro_256_init_sequence();
+	ThreadXoshiro256InitSequence();
 
 	while (AtomicLoadAcq32(&a_startup_complete) == 0);
 

@@ -80,7 +80,7 @@ struct led *led_alloc(void)
 			0.0250f,
 			1024.0f,
 			(f32) size[0] / size[1],
-			2.0f * MM_PI_F / 3.0f );
+			2.0f * F32_PI / 3.0f );
 
 	g_editor->cam_left_velocity = 0.0f;
 	g_editor->cam_forward_velocity = 0.0f;

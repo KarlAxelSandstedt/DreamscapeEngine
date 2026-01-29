@@ -19,6 +19,7 @@
 
 #include "ds_base.h"
 #include "quaternion.h"
+#include "float32.h"
 
 void QuatSet(quat dst, const f32 x, const f32 y, const f32 z, const f32 w)
 {

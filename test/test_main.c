@@ -68,7 +68,7 @@ static void run_suite(struct suite *suite, struct test_environment *env, const u
 
 	for (u64 i = 0; i < suite->repetition_test_count; ++i)
 	{
-		rng_push_state();
+		RngPushState();
 		struct test_output out;
 		u32 t;
 		for (t = 0; t < suite->repetition_test[i].count; ++t)
@@ -93,7 +93,7 @@ static void run_suite(struct suite *suite, struct test_environment *env, const u
 		{
 			fprintf(stdout, "\tTest %s iteration (%u/%u)\tfailed: %s:%llu\n", out.id, (t+1), suite->repetition_test[i].count, out.file, (long long unsigned int) out.line);
 		}
-		rng_pop_state();
+		RngPopState();
 	}
 
 	if (verbose) { fprintf(stdout, "Tests passed: (%llu/%llu)\n",  
@@ -127,7 +127,7 @@ static void run_performance_suite(struct performance_suite *suite)
 		rt_wave(&tester, suite->serial_test[i].size, freq_rdtsc(), max_time_without_improvement, 1);
 		do
 		{
-			rng_push_state();
+			RngPushState();
 			if (suite->serial_test[i].test_reset)
 			{
 				suite->serial_test[i].test_reset(args);
@@ -137,7 +137,7 @@ static void run_performance_suite(struct performance_suite *suite)
 			suite->serial_test[i].test(args);	
 			rt_end_time(&tester);
 		
-			rng_pop_state();
+			RngPopState();
 		} while (rt_is_testing(&tester));
 
 		if (suite->serial_test[i].test_free)
@@ -169,7 +169,7 @@ static void run_performance_suite(struct performance_suite *suite)
 		rt_wave(&tester, suite->parallel_test[i].size, freq_rdtsc(), max_time_without_improvement, 1);
 		do
 		{
-			rng_push_state();
+			RngPushState();
 			ArenaPushRecord(&mem);
 			AtomicStoreRel32(&a_barrier, 0);
 			struct task_stream *stream = task_stream_init(&mem);
@@ -191,7 +191,7 @@ static void run_performance_suite(struct performance_suite *suite)
 
 			task_stream_cleanup(stream);		
 			ArenaPopRecord(&mem);
-			rng_pop_state();
+			RngPopState();
 		} while (rt_is_testing(&tester));
 
 		if (suite->parallel_test[i].test_free)

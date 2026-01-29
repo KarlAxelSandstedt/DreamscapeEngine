@@ -52,6 +52,6 @@ void led_visual_init_defaults(const u32 window)
 	const f32 fz_near = 0.0125f;
 	const f32 fz_far =  512.0f;
 	const f32 aspect_ratio = (f32) sys_win->size[0] / sys_win->size[1];
-	const f32 fov_x = MM_PI_F / 2.0f;
+	const f32 fov_x = F32_PI / 2.0f;
 	g_visual->cam = r_camera_init(cam_position, cam_direction, fz_near, fz_far, aspect_ratio, fov_x);
 }

@@ -17,16 +17,14 @@
 ==========================================================================
 */
 
-#ifndef __GEOMETRY_H__
-#define __GEOMETRY_H__
+#ifndef __DS_GEOMETRY_H__
+#define __DS_GEOMETRY_H__
 
 #ifdef __cplusplus
 extern "C" { 
 #endif
 
-#include "ds_common.h"
-#include "allocator.h"
-#include "ds_math.h"
+#include "ds_allocator.h"
 
 /****************** GEOMETRIC PRIMITIVES ******************/
 

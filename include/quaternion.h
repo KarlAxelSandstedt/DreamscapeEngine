@@ -24,6 +24,8 @@
 extern "C" { 
 #endif
 
+#include "matrix.h"
+
 /**
  * QUATERNION RULES:
  *	
@@ -59,8 +61,6 @@ void 	QuatUnitAxisAngle(quat dst, const vec3 axis, const f32 angle);
  */
 void 	Mat3Quat(mat3 dst, const quat q);
 void 	Mat4Quat(mat4 dst, const quat q);
-
-
 
 /* Quaternion Operations and Functions */
 void 	QuatSet(quat dst, const f32 x, const f32 y, const f32 z, const f32 w);

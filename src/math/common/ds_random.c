@@ -1,20 +1,22 @@
-#include "ds_random.h"
-#include "sys_public.h"
+#include "ds_base.h"
+
+dsThreadLocal u64 tl_xoshiro_256[4];
+dsThreadLocal u64 tl_pushed_state[4];
 
 /* xoshiro_256** */
 u64 g_xoshiro_256[4];
 u32 a_g_xoshiro_256_lock = 0;
 
 /*  Written in 2018 by David Blackman and Sebastiano Vigna (vigna@acm.org) */
-static u64 rotl(const u64 x, i32 k) 
+static u64 Rotl(const u64 x, i32 k) 
 {
 	return (x << k) | (x >> (64 - k));
 }
 
 /*  Written in 2018 by David Blackman and Sebastiano Vigna (vigna@acm.org) */
-u64 g_xoshiro_256_next(void) 
+u64 TestXoshiro256Next(void) 
 {
-	const u64 result = rotl(g_xoshiro_256[1] * 5, 7) * 9;
+	const u64 result = Rotl(g_xoshiro_256[1] * 5, 7) * 9;
 
 	const u64 t = g_xoshiro_256[1] << 17;
 
@@ -25,12 +27,12 @@ u64 g_xoshiro_256_next(void)
 
 	g_xoshiro_256[2] ^= t;
 
-	g_xoshiro_256[3] = rotl(g_xoshiro_256[3], 45);
+	g_xoshiro_256[3] = Rotl(g_xoshiro_256[3], 45);
 
 	return result;
 }
 
-void g_xoshiro_256_init(const u64 seed[4])
+void Xoshiro256Init(const u64 seed[4])
 {
 	g_xoshiro_256[0] = seed[0];
 	g_xoshiro_256[1] = seed[1];
@@ -38,61 +40,58 @@ void g_xoshiro_256_init(const u64 seed[4])
 	g_xoshiro_256[3] = seed[3];
 }
 
-dsThreadLocal u64 thread_xoshiro_256[4];
-dsThreadLocal u64 thread_pushed_state[4];
-
-void rng_push_state(void)
+void RngPushState(void)
 {
-	thread_pushed_state[0] = thread_xoshiro_256[0];
-	thread_pushed_state[1] = thread_xoshiro_256[1];
-	thread_pushed_state[2] = thread_xoshiro_256[2];
-	thread_pushed_state[3] = thread_xoshiro_256[3];
+	tl_pushed_state[0] = tl_xoshiro_256[0];
+	tl_pushed_state[1] = tl_xoshiro_256[1];
+	tl_pushed_state[2] = tl_xoshiro_256[2];
+	tl_pushed_state[3] = tl_xoshiro_256[3];
 }
 
-void rng_pop_state(void)
+void RngPopState(void)
 {
-	thread_xoshiro_256[0] = thread_pushed_state[0];
-	thread_xoshiro_256[1] = thread_pushed_state[1];
-	thread_xoshiro_256[2] = thread_pushed_state[2];
-	thread_xoshiro_256[3] = thread_pushed_state[3];
+	tl_xoshiro_256[0] = tl_pushed_state[0];
+	tl_xoshiro_256[1] = tl_pushed_state[1];
+	tl_xoshiro_256[2] = tl_pushed_state[2];
+	tl_xoshiro_256[3] = tl_pushed_state[3];
 }
 
 /*  Written in 2018 by David Blackman and Sebastiano Vigna (vigna@acm.org) */
-inline u64 rng_u64(void)
+inline u64 RngU64(void)
 {
-	const u64 result = rotl(thread_xoshiro_256[1] * 5, 7) * 9;
+	const u64 result = Rotl(tl_xoshiro_256[1] * 5, 7) * 9;
 
-	const u64 t = thread_xoshiro_256[1] << 17;
+	const u64 t = tl_xoshiro_256[1] << 17;
 
-	thread_xoshiro_256[2] ^= thread_xoshiro_256[0];
-	thread_xoshiro_256[3] ^= thread_xoshiro_256[1];
-	thread_xoshiro_256[1] ^= thread_xoshiro_256[2];
-	thread_xoshiro_256[0] ^= thread_xoshiro_256[3];
+	tl_xoshiro_256[2] ^= tl_xoshiro_256[0];
+	tl_xoshiro_256[3] ^= tl_xoshiro_256[1];
+	tl_xoshiro_256[1] ^= tl_xoshiro_256[2];
+	tl_xoshiro_256[0] ^= tl_xoshiro_256[3];
 
-	thread_xoshiro_256[2] ^= t;
+	tl_xoshiro_256[2] ^= t;
 
-	thread_xoshiro_256[3] = rotl(thread_xoshiro_256[3], 45);
+	tl_xoshiro_256[3] = Rotl(tl_xoshiro_256[3], 45);
 
 	return result;
 }
 
-u64 rng_u64_range(const u64 min, const u64 max)
+u64 RngU64Range(const u64 min, const u64 max)
 {
 	ds_Assert(min <= max);
-	const u64 r = rng_u64();
+	const u64 r = RngU64();
 	const u64 interval = max-min+1;
 	return (interval == 0) ? r : (r % interval) + min;
 }
 
-f32 rng_f32_normalized(void)
+f32 RngF32Normalized(void)
 {
-	return (f32) rng_u64() / (f32) U64_MAX;
+	return (f32) RngU64() / (f32) U64_MAX;
 }
 
-f32 rng_f32_range(const f32 min, const f32 max)
+f32 RngF32Range(const f32 min, const f32 max)
 {
 	ds_Assert(min <= max);
-	return rng_f32_normalized() * (max-min) + min;
+	return RngF32Normalized() * (max-min) + min;
 }
 
 
@@ -113,7 +112,7 @@ void g_xoshiro_256_jump(void)
 				s2 ^= g_xoshiro_256[2];
 				s3 ^= g_xoshiro_256[3];
 			}
-			g_xoshiro_256_next();	
+			TestXoshiro256Next();	
 		}
 		
 	g_xoshiro_256[0] = s0;
@@ -122,7 +121,7 @@ void g_xoshiro_256_jump(void)
 	g_xoshiro_256[3] = s3;
 }
 
-void thread_xoshiro_256_init_sequence(void)
+void ThreadXoshiro256InitSequence(void)
 {
 	u32 a_wanted_lock_state;
 	AtomicStoreRel32(&a_wanted_lock_state, 0);
@@ -131,10 +130,10 @@ void thread_xoshiro_256_init_sequence(void)
 		AtomicStoreRel32(&a_wanted_lock_state, 0);
 	}
 
-	thread_xoshiro_256[0] = g_xoshiro_256[0];
-	thread_xoshiro_256[1] = g_xoshiro_256[1];
-	thread_xoshiro_256[2] = g_xoshiro_256[2];
-	thread_xoshiro_256[3] = g_xoshiro_256[3];
+	tl_xoshiro_256[0] = g_xoshiro_256[0];
+	tl_xoshiro_256[1] = g_xoshiro_256[1];
+	tl_xoshiro_256[2] = g_xoshiro_256[2];
+	tl_xoshiro_256[3] = g_xoshiro_256[3];
 	g_xoshiro_256_jump();
 
 	AtomicStoreSeqCst32(&a_g_xoshiro_256_lock, 0);

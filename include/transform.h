@@ -27,13 +27,16 @@ extern "C" {
 #include "matrix.h"
 
 /* axes should be normalized */
-void 	sequential_rotation_matrix(mat3 dst, const vec3 axis_1, const f32 angle_1, const vec3 axis_2, const f32 angle_2); /* rotation matrix of axis_1(angle_1) (R) -> [R(axis_2)](angle_2) */
-void 	perspective_matrix(mat4 dst, const f32 aspect_ratio, const f32 fov_x, const f32 fz_near, const f32 fz_far);
-void 	view_matrix(mat4 dst, const vec3 position, const vec3 left, const vec3 up, const vec3 forward);
-void 	view_matrix_look_at(mat4 dst, const vec3 position, const vec3 target);
-void 	view_matrix_yaw_pitch(mat4 dst, const vec3 position, const f32 yaw, const f32 pitch);
-void 	rotation_matrix(mat3 dst, const vec3 axis, const f32 angle);
-void 	vec3_rotate_center(vec3 src_rotated, mat3 rotation, const vec3 center, const vec3 src);
+/* rotation matrix of axis_1(angle_1) (R) -> [R(axis_2)](angle_2) */
+void 	mat3SequentialRotation(mat3 dst, const vec3 axis_1, const f32 angle_1, const vec3 axis_2, const f32 angle_2); 
+void 	mat3Rotation(mat3 dst, const vec3 axis, const f32 angle);
+void 	Vec3RotateCenter(vec3 src_rotated, mat3 rotation, const vec3 center, const vec3 src);
+
+void 	mat4Perspective(mat4 dst, const f32 aspect_ratio, const f32 fov_x, const f32 fz_near, const f32 fz_far);
+
+void 	mat4View(mat4 dst, const vec3 position, const vec3 left, const vec3 up, const vec3 forward);
+void 	mat4ViewLookAt(mat4 dst, const vec3 position, const vec3 target);
+void 	mat4ViewYawPitch(mat4 dst, const vec3 position, const f32 yaw, const f32 pitch);
 
 #ifdef __cplusplus
 } 

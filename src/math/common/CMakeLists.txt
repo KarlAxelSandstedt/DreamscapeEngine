@@ -16,7 +16,7 @@ add_library(ds_math STATIC
 	"${DS_INCLUDE_PATH}/quaternion.h"
 	"${DS_INCLUDE_PATH}/transform.h"
 )
-add_library(Dreamscape::Math Alias ds_math)
+add_library(Dreamscape::Math ALIAS ds_math)
 
 target_link_libraries(ds_math PUBLIC Dreamscape::Base)
 if (UNIX) 

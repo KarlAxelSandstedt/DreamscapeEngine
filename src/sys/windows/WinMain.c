@@ -58,8 +58,8 @@ static void win_init_rng(void)
 		return;
 	}
 #endif
-	g_xoshiro_256_init(seed);
-	thread_xoshiro_256_init_sequence();
+	Xoshiro256Init(seed);
+	ThreadXoshiro256InitSequence();
 }
 
 int CALLBACK WinMain(HINSTANCE h_instance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)

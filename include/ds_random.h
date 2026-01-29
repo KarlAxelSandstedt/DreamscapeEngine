@@ -24,22 +24,22 @@
 extern "C" { 
 #endif
 
-#include "ds_common.h"
+#include "ds_types.h"
 
 /*************************** THREAD-SAFE RNG API ***************************/
 
 /* push current thread local rng state */
-void 	rng_push_state(void);
+void 	RngPushState(void);
 /* pop old rng state */
-void	rng_pop_state(void);
+void	RngPopState(void);
 /* gen [0, U64_MAX] random number */
-u64 	rng_u64(void);
+u64 	RngU64(void);
 /* gen [min, max] random number */
-u64 	rng_u64_range(const u64 min, const u64 max);
+u64 	RngU64Range(const u64 min, const u64 max);
 /* gen [0.0f, 1.0f] random number */
-f32 	rng_f32_normalized(void);
+f32 	RngF32Normalized(void);
 /* gen [min, max] random number */
-f32 	rng_f32_range(const f32 min, const f32 max);
+f32 	RngF32Range(const f32 min, const f32 max);
 
 /*************************** internal rng initiation ***************************/
 
@@ -47,11 +47,11 @@ f32 	rng_f32_range(const f32 min, const f32 max);
  *	xoshiro256** (David Blackman, Sebastiano Vigna)
  */
 /* Call once on main thread before calling thread_init_rng_local on each thread */ 
-void 	g_xoshiro_256_init(const u64 seed[4]);
+void 	Xoshiro256Init(const u64 seed[4]);
 /* Call once on thread to initate thread local xoshiro256** rng sequence  */ 
-void	thread_xoshiro_256_init_sequence(void);
+void	ThreadXoshiro256InitSequence(void);
 /* NOTE: THREAD UNSAFE!!! Exposed for testing purposes. next rng on global rng */ 
-u64 	g_xoshiro_256_next(void);
+u64 	TestXoshiro256Next(void);
 
 #ifdef __cplusplus
 } 

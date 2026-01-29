@@ -54,7 +54,7 @@ void r_camera_debug_print(const struct r_camera *cam)
 
 struct r_camera r_camera_init(const vec3 position, const vec3 direction, const f32 fz_near, const f32 fz_far, const f32 aspect_ratio, const f32 fov_x)
 {
-	ds_Assert(fov_x > 0.0f && fov_x < MM_PI_F);
+	ds_Assert(fov_x > 0.0f && fov_x < F32_PI);
 	ds_Assert(fz_near > 0.0f);
 	ds_Assert(fz_far > fz_near);
 	ds_Assert(aspect_ratio > 0);
@@ -134,7 +134,7 @@ void r_camera_construct(struct r_camera *cam,
 	       	const f32 aspect_ratio,
 	       	const f32 fov_x)
 {
-	ds_Assert(fov_x > 0.0f && fov_x < MM_PI_F);
+	ds_Assert(fov_x > 0.0f && fov_x < F32_PI);
 	ds_Assert(fz_near > 0.0f);
 	ds_Assert(fz_far > fz_near);
 	ds_Assert(aspect_ratio > 0);
@@ -158,7 +158,7 @@ void r_camera_update_axes(struct r_camera *cam)
 	vec3 forward = {0.0f, 0.0f, 1.0f};
 
 	mat3 rot;
-	sequential_rotation_matrix(rot, up, cam->yaw, left, cam->pitch);
+	mat3SequentialRotation(rot, up, cam->yaw, left, cam->pitch);
 
 	mat3_vec_mul(cam->left, rot, left);
 	mat3_vec_mul(cam->up, rot, up);
@@ -168,22 +168,22 @@ void r_camera_update_axes(struct r_camera *cam)
 void r_camera_update_angles(struct r_camera *cam, const f32 yaw_delta, const f32 pitch_delta)
 {
 	cam->yaw += yaw_delta;
-	if (cam->yaw >= MM_PI_F)
+	if (cam->yaw >= F32_PI)
 	{
-		cam->yaw -= MM_PI_2_F;
+		cam->yaw -= F32_PI2;
 	}
-	else if (cam->yaw <= -MM_PI_F)
+	else if (cam->yaw <= -F32_PI)
 	{
-		cam->yaw += MM_PI_2_F;
+		cam->yaw += F32_PI2;
 	}
 
-	if (cam->pitch + pitch_delta > MM_PI_F / 2.0f - 0.50f)
+	if (cam->pitch + pitch_delta > F32_PI / 2.0f - 0.50f)
 	{
-		cam->pitch = MM_PI_F / 2.0f - 0.50f;
+		cam->pitch = F32_PI / 2.0f - 0.50f;
 	}
-	else if (cam->pitch + pitch_delta < 0.50f - MM_PI_F / 2.0f)
+	else if (cam->pitch + pitch_delta < 0.50f - F32_PI / 2.0f)
 	{
-		cam->pitch = 0.50f - MM_PI_F / 2.0f;
+		cam->pitch = 0.50f - F32_PI / 2.0f;
 	}
 	else 
 	{
@@ -214,7 +214,7 @@ void frustum_projection_plane_world_space(vec3 bottom_left, vec3 upper_right, co
 	vec3 left = {1.0f, 0.0f, 0.0f};
 	vec3 up = {0.0f, 1.0f, 0.0f};
 	mat3 rot;
-	sequential_rotation_matrix(rot, up, cam->yaw, left, cam->pitch);
+	mat3SequentialRotation(rot, up, cam->yaw, left, cam->pitch);
 
 	Vec3Set(v, frustum_width / 2.0f, -frustum_height / 2.0f, cam->fz_near);
 	mat3_vec_mul(bottom_left, rot, v);
@@ -233,7 +233,7 @@ void window_space_to_world_space(vec3 world_pixel, const vec2 pixel, const vec2 
 
 	vec3 left = {1.0f, 0.0f, 0.0f};
 	vec3 up = {0.0f, 1.0f, 0.0f};
-	sequential_rotation_matrix(rot, up, cam->yaw, left, cam->pitch);
+	mat3SequentialRotation(rot, up, cam->yaw, left, cam->pitch);
 
 	const vec3 alphas = { 1.0f - ((f32) pixel[0]) / win_size[0], 1.0f - ((f32) pixel[1]) / win_size[1], 1.0f };	
 	frustum_projection_plane_camera_space(bl, tr, cam);

@@ -24,6 +24,8 @@
 extern "C" { 
 #endif
 
+#include <stdio.h>
+
 #include "ds_types.h"
 
 #undef  F32_PI

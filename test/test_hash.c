@@ -153,16 +153,16 @@ void *hash_stress_init(void)
 	struct hash_input *input = malloc(sizeof(struct hash_input));
 	input->size = ARRAY_TEST_SIZE;
 	input->buf = malloc(input->size);
-	input->seed32 = (u32) rng_u64();
-	input->seed64 = rng_u64();
+	input->seed32 = (u32) RngU64();
+	input->seed64 = RngU64();
 	for (u32 i = 0; i < input->size; ++i)
 	{
-		((u8 *) input->buf)[i] = (u8) rng_u64();
+		((u8 *) input->buf)[i] = (u8) RngU64();
 	}
-	input->key.a = (u32) rng_u64();
-	input->key.b = (u32) rng_u64();
-	input->key.c = (u32) rng_u64();
-	input->key.d = (u32) rng_u64();
+	input->key.a = (u32) RngU64();
+	input->key.b = (u32) RngU64();
+	input->key.c = (u32) RngU64();
+	input->key.d = (u32) RngU64();
 	g_sum = 0;
 
 	return input;

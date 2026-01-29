@@ -75,7 +75,7 @@ static void internal_r_mesh_set_sphere(u32 *b_i, u8 *vertex_data, u32 *index_dat
 {
 	const u32 points_per_strip = 2 * refinement;
 	const u32 num_strips = refinement;
-	const f32 inc_angle = MM_PI_F / refinement;
+	const f32 inc_angle = F32_PI / refinement;
 
 	vec3 tmp, vertex = { 0.0f, radius, 0.0f };
 	Vec3Translate(vertex, translation);
@@ -162,7 +162,7 @@ void r_mesh_set_sphere(struct arena *mem, struct r_mesh *mesh, const f32 radius,
 
 	const u32 points_per_strip = 2 * refinement;
 	const u32 num_strips = refinement;
-	const f32 inc_angle = MM_PI_F / refinement;
+	const f32 inc_angle = F32_PI / refinement;
 
 	const u32 vertex_count = 2 + (num_strips - 1) * points_per_strip;
 	const u64 vertex_size = sizeof(vec3) + /*sizeof(vec4) */+ sizeof(vec3);
@@ -211,12 +211,12 @@ void r_mesh_set_capsule(struct arena *mem, struct r_mesh *mesh, const f32 half_h
 
 	for (u32 i = 0; i < n_lat_cap_slice; ++i)
 	{
-		const f32 theta = (i + 1)*(MM_PI_F / 2.0f) / n_lat_cap_slice;
+		const f32 theta = (i + 1)*(F32_PI / 2.0f) / n_lat_cap_slice;
 		const f32 ring_radius = radius * f32_sin(theta);
 		const f32 y = -half_height - radius * f32_cos(theta);
 		for (u32 j = 0; j < n_long_slice; ++j)
 		{
-			const f32 phi = j * 2.0f * MM_PI_F / n_long_slice;
+			const f32 phi = j * 2.0f * F32_PI / n_long_slice;
 			Vec3Set(v[vi++], 
 				ring_radius * f32_cos(phi),
 				y,
@@ -234,7 +234,7 @@ void r_mesh_set_capsule(struct arena *mem, struct r_mesh *mesh, const f32 half_h
 		const f32 y = -half_height + i*half_height / n_lat_cyl_slice;
 		for (u32 j = 0; j < n_long_slice; ++j)
 		{
-			const f32 phi = j * 2.0f * MM_PI_F / n_long_slice;
+			const f32 phi = j * 2.0f * F32_PI / n_long_slice;
 			Vec3Set(v[vi++], 
 				radius * f32_cos(phi),
 				y,

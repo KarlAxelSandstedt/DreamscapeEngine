@@ -146,6 +146,7 @@ endif ()
 add_subdirectory("${DS_INCLUDE_PATH}")
 add_subdirectory("${DS_SRC_PATH}/base")
 add_subdirectory("${DS_SRC_PATH}/containers")
+add_subdirectory("${DS_SRC_PATH}/math")
 add_subdirectory("${DS_LIB_PATH}")
 
 add_library(${PROJECT_NAME} INTERFACE)

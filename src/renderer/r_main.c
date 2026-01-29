@@ -498,8 +498,8 @@ static void internal_r_proxy3d_uniforms(const struct led *led, const u32 window)
 {
 	mat4 perspective, view;
 	const struct r_camera *cam = &led->cam;
-	perspective_matrix(perspective, cam->aspect_ratio, cam->fov_x, cam->fz_near, cam->fz_far);
-	view_matrix(view, cam->position, cam->left, cam->up, cam->forward);
+	mat4Perspective(perspective, cam->aspect_ratio, cam->fov_x, cam->fz_near, cam->fz_far);
+	mat4View(view, cam->position, cam->left, cam->up, cam->forward);
 	
 	ds_glUseProgram(g_r_core->program[PROGRAM_PROXY3D].gl_program);
 	GLint aspect_ratio_addr, view_addr, perspective_addr, light_position_addr;

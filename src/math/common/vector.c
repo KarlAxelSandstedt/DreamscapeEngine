@@ -17,9 +17,12 @@
 ==========================================================================
 */
 
+#include <stdio.h>
 #include <float.h>
 
+#include "ds_base.h"
 #include "float32.h"
+#include "matrix.h"
 #include "vector.h"
 
 void Vec2Print(const char *text, const vec2 v)
@@ -616,9 +619,9 @@ void Vec3RecenterCross(vec3 dst, const vec3 center, const vec3 a, const vec3 b)
 void Vec3RotateY(vec3 dst, const vec3 a, const f32 angle)
 {
 	mat3 rot;
-       	mat3_set(rot, cosf(angle), 0.0f, sinf(angle),
+       	mat3_set(rot, f32_cos(angle), 0.0f, f32_sin(angle),
 			    0.0f, 1.0f, 0.0f, 
-			    -sinf(angle), 0.0f,  cosf(angle));
+			    -f32_sin(angle), 0.0f,  f32_cos(angle));
 	vec3_mat_mul(dst, a, rot);	
 }
 
