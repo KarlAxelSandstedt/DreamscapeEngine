@@ -50,7 +50,7 @@ void bvh_free(struct bvh *bvh)
 	}
 }
 
-static f32 bbox_sah(const struct AABB *box)
+static f32 bbox_sah(const struct aabb *box)
 {
 	return box->hw[0]*(box->hw[1] + box->hw[2]) + box->hw[1]*box->hw[2];
 }
@@ -95,14 +95,14 @@ static void dbvh_internal_balance_node(struct bvh *bvh, const u32 node)
 	/* (1) find best rotation */
 	u32 left = nodes[node].bt_left;
 	u32 right = nodes[node].bt_right;
-	struct AABB box_union;
+	struct aabb box_union;
 	f32 cost_rotation, cost_original, cost_best = F32_INFINITY;
 			
 	u32 upper_rotation; /* child to rotate */
 	u32 best_rotation = POOL_NULL; /* best grandchild to rotate */
 	if (!bt_LeafCheck(nodes + left))
 	{
-		box_union = bbox_union(nodes[nodes[left].bt_left].bbox, nodes[right].bbox);
+		box_union = BboxUnion(nodes[nodes[left].bt_left].bbox, nodes[right].bbox);
 		cost_original = bbox_sah(&nodes[left].bbox);	
 		cost_rotation = bbox_sah(&box_union);
 		if (cost_rotation < cost_original)
@@ -112,7 +112,7 @@ static void dbvh_internal_balance_node(struct bvh *bvh, const u32 node)
 			cost_best = cost_rotation;
 		}
 
-		box_union = bbox_union(nodes[nodes[left].bt_right].bbox, nodes[right].bbox);
+		box_union = BboxUnion(nodes[nodes[left].bt_right].bbox, nodes[right].bbox);
 		cost_rotation = bbox_sah(&box_union);
 		if (cost_rotation < cost_original && cost_rotation < cost_best)
 		{
@@ -124,7 +124,7 @@ static void dbvh_internal_balance_node(struct bvh *bvh, const u32 node)
 
 	if (!bt_LeafCheck(nodes + right))
 	{
-		box_union = bbox_union(nodes[nodes[right].bt_left].bbox, nodes[left].bbox);
+		box_union = BboxUnion(nodes[nodes[right].bt_left].bbox, nodes[left].bbox);
 		cost_original = bbox_sah(&nodes[right].bbox);
 		cost_rotation = bbox_sah(&box_union);
 		if (cost_rotation < cost_best && cost_rotation < cost_original)
@@ -134,7 +134,7 @@ static void dbvh_internal_balance_node(struct bvh *bvh, const u32 node)
 			cost_best = cost_rotation;
 		}
 
-		box_union = bbox_union(nodes[nodes[right].bt_right].bbox, nodes[left].bbox);
+		box_union = BboxUnion(nodes[nodes[right].bt_right].bbox, nodes[left].bbox);
 		cost_rotation = bbox_sah(&box_union);
 		if (cost_rotation < cost_best && cost_rotation < cost_original)
 		{
@@ -154,12 +154,12 @@ static void dbvh_internal_balance_node(struct bvh *bvh, const u32 node)
 			nodes[node].bt_left = best_rotation;
 			if (best_rotation == nodes[right].bt_left)
 			{
-				nodes[right].bbox = bbox_union(nodes[nodes[right].bt_right].bbox, nodes[upper_rotation].bbox);
+				nodes[right].bbox = BboxUnion(nodes[nodes[right].bt_right].bbox, nodes[upper_rotation].bbox);
 				nodes[right].bt_left = upper_rotation;
 			}
 			else
 			{
-				nodes[right].bbox = bbox_union(nodes[nodes[right].bt_left].bbox, nodes[upper_rotation].bbox);
+				nodes[right].bbox = BboxUnion(nodes[nodes[right].bt_left].bbox, nodes[upper_rotation].bbox);
 				nodes[right].bt_right = upper_rotation;
 			}
 			left = best_rotation;
@@ -170,12 +170,12 @@ static void dbvh_internal_balance_node(struct bvh *bvh, const u32 node)
 			nodes[node].bt_right = best_rotation;
 			if (best_rotation == nodes[left].bt_left)
 			{
-				nodes[left].bbox = bbox_union(nodes[nodes[left].bt_right].bbox, nodes[upper_rotation].bbox);
+				nodes[left].bbox = BboxUnion(nodes[nodes[left].bt_right].bbox, nodes[upper_rotation].bbox);
 				nodes[left].bt_left = upper_rotation;
 			}
 			else
 			{
-				nodes[left].bbox = bbox_union(nodes[nodes[left].bt_left].bbox, nodes[upper_rotation].bbox);
+				nodes[left].bbox = BboxUnion(nodes[nodes[left].bt_left].bbox, nodes[upper_rotation].bbox);
 				nodes[left].bt_right = upper_rotation;
 			}
 			right = best_rotation;
@@ -183,10 +183,10 @@ static void dbvh_internal_balance_node(struct bvh *bvh, const u32 node)
 	}
 
 	/* (3) refit node's box */
-	nodes[node].bbox = bbox_union(nodes[left].bbox, nodes[right].bbox);
+	nodes[node].bbox = BboxUnion(nodes[left].bbox, nodes[right].bbox);
 }
 
-u32 dbvh_insert(struct bvh *bvh, const u32 id, const struct AABB *bbox)
+u32 dbvh_insert(struct bvh *bvh, const u32 id, const struct aabb *bbox)
 {
 	struct bvh_node *nodes = (struct bvh_node *) bvh->tree.pool.buf;
 	struct slot leaf;
@@ -228,7 +228,7 @@ u32 dbvh_insert(struct bvh *bvh, const u32 id, const struct AABB *bbox)
 			/* (i) Get cost of node */
 			inherited_cost = bvh->cost_queue.elements[0].priority; 
 			node = MinQueuePop(&bvh->cost_queue);
-			const struct AABB box_union = bbox_union(nodes[leaf.index].bbox, nodes[node].bbox);
+			const struct aabb box_union = BboxUnion(nodes[leaf.index].bbox, nodes[node].bbox);
 			/* Inherited area cost + expanded node area cost */
 			cost = inherited_cost + bbox_sah(&box_union);
 
@@ -275,7 +275,7 @@ u32 dbvh_insert(struct bvh *bvh, const u32 id, const struct AABB *bbox)
 		nodes[internal.index].bt_parent = best_parent;
 		nodes[internal.index].bt_left = best_index;
 		nodes[internal.index].bt_right = leaf.index;
-		nodes[internal.index].bbox = bbox_union(nodes[leaf.index].bbox, nodes[best_index].bbox);
+		nodes[internal.index].bbox = BboxUnion(nodes[leaf.index].bbox, nodes[best_index].bbox);
 		nodes[best_index].bt_parent = (nodes[best_index].bt_parent & BT_PARENT_LEAF_MASK) | internal.index;
 
 		node = nodes[internal.index].bt_parent;
@@ -333,7 +333,7 @@ void dbvh_remove(struct bvh *bvh, const u32 index)
 				nodes[grand_parent].bt_right = sibling;
 			}
 
-			nodes[grand_parent].bbox = bbox_union(nodes[nodes[grand_parent].bt_left].bbox, nodes[nodes[grand_parent].bt_right].bbox);
+			nodes[grand_parent].bbox = BboxUnion(nodes[nodes[grand_parent].bt_left].bbox, nodes[nodes[grand_parent].bt_right].bbox);
 			parent = nodes[grand_parent].bt_parent;
 			while (parent != POOL_NULL)
 			{
@@ -357,7 +357,7 @@ u32 dbvh_internal_push_subtree_overlap_pairs(struct arena *mem, struct dbvh_over
 
 	while (1)
 	{
-		if (AABB_test(&nodes[subA].bbox, &nodes[subB].bbox))
+		if (AabbTest(&nodes[subA].bbox, &nodes[subB].bbox))
 		{
 			if (bt_LeafCheck(nodes + subA) && bt_LeafCheck(nodes + subB))
 			{
@@ -490,7 +490,7 @@ void bvh_validate(struct arena *tmp, const struct bvh *bvh)
 		if (!bt_RootCheck(node + i))
 		{
 			const u32 parent = node[i].bt_parent & BT_PARENT_INDEX_MASK;
-			ds_Assert(AABB_contains_margin(&node[parent].bbox, &node[i].bbox, 0.001f));
+			ds_Assert(AabbContainsMargin(&node[parent].bbox, &node[i].bbox, 0.001f));
 		}
 
 		if (!bt_LeafCheck(node + stack[sc]))
@@ -503,12 +503,12 @@ void bvh_validate(struct arena *tmp, const struct bvh *bvh)
 	ArenaPopRecord(tmp);
 }
 
-struct tri_mesh_bvh tri_mesh_bvh_construct(struct arena *mem, const struct tri_mesh *mesh, const u32 bin_count)
+struct triMesh_bvh tri_mesh_bvh_construct(struct arena *mem, const struct triMesh *mesh, const u32 bin_count)
 {
 	ds_Assert(bin_count);
 	if (!mesh->tri_count)
 	{
-		return (struct tri_mesh_bvh) { 0 };
+		return (struct triMesh_bvh) { 0 };
 	}
 
 	ProfZone;
@@ -516,7 +516,7 @@ struct tri_mesh_bvh tri_mesh_bvh_construct(struct arena *mem, const struct tri_m
 	ArenaPushRecord(mem);
 	const u32 max_node_count_required = 2*mesh->tri_count - 1;
 
-	struct tri_mesh_bvh mesh_bvh = 
+	struct triMesh_bvh mesh_bvh = 
 	{
 		.mesh = mesh,
 		.bvh = 
@@ -529,19 +529,19 @@ struct tri_mesh_bvh tri_mesh_bvh_construct(struct arena *mem, const struct tri_m
 	};
 
 	ArenaPushRecord(mem);
-	struct AABB *axis_bin_bbox[3];
+	struct aabb *axis_bin_bbox[3];
 	u32 *axis_bin_tri_count[3];
 	u8 *centroid_bin_map[3];
 	centroid_bin_map[0] = ArenaPush(mem, mesh->tri_count*sizeof(u8));
 	centroid_bin_map[1] = ArenaPush(mem, mesh->tri_count*sizeof(u8));
 	centroid_bin_map[2] = ArenaPush(mem, mesh->tri_count*sizeof(u8));
-	axis_bin_bbox[0] = ArenaPush(mem, bin_count*sizeof(struct AABB));
-	axis_bin_bbox[1] = ArenaPush(mem, bin_count*sizeof(struct AABB));
-	axis_bin_bbox[2] = ArenaPush(mem, bin_count*sizeof(struct AABB));
+	axis_bin_bbox[0] = ArenaPush(mem, bin_count*sizeof(struct aabb));
+	axis_bin_bbox[1] = ArenaPush(mem, bin_count*sizeof(struct aabb));
+	axis_bin_bbox[2] = ArenaPush(mem, bin_count*sizeof(struct aabb));
 	axis_bin_tri_count[0] = ArenaPush(mem, bin_count*sizeof(u32));
 	axis_bin_tri_count[1] = ArenaPush(mem, bin_count*sizeof(u32));
 	axis_bin_tri_count[2] = ArenaPush(mem, bin_count*sizeof(u32));
-	struct AABB *bbox_tri = ArenaPush(mem, mesh->tri_count*sizeof(struct AABB));
+	struct aabb *bbox_tri = ArenaPush(mem, mesh->tri_count*sizeof(struct aabb));
 	struct memArray arr = ArenaPushAlignedAll(mem, sizeof(u32), 4);
 
 	u32 success = 1;
@@ -566,7 +566,7 @@ struct tri_mesh_bvh tri_mesh_bvh_construct(struct arena *mem, const struct tri_m
 	 * bt_right = tri_count */
 	node->bt_left = 0;
 	node->bt_right = mesh->tri_count;
-	node->bbox = bbox_triangle(
+	node->bbox = BboxTriangle(
 				mesh->v[mesh->tri[0][0]],
 				mesh->v[mesh->tri[0][1]],
 				mesh->v[mesh->tri[0][2]]);
@@ -575,11 +575,11 @@ struct tri_mesh_bvh tri_mesh_bvh_construct(struct arena *mem, const struct tri_m
 	for (u32 i = 0; i < mesh->tri_count; ++i)
 	{
 		mesh_bvh.tri[i] = i;
-		bbox_tri[i] = bbox_triangle(
+		bbox_tri[i] = BboxTriangle(
 				mesh->v[mesh->tri[i][0]],
 				mesh->v[mesh->tri[i][1]],
 				mesh->v[mesh->tri[i][2]]);
-		node->bbox = bbox_union(node->bbox, bbox_tri[i]);
+		node->bbox = BboxUnion(node->bbox, bbox_tri[i]);
 	}
 
 	ds_AssertString(Vec3Length(node->bbox.center) < 0.0001f, "Center should most likely be 0.0, so the root box center defines a local origin!");
@@ -604,8 +604,8 @@ struct tri_mesh_bvh tri_mesh_bvh_construct(struct arena *mem, const struct tri_m
 		u32 best_split = U32_MAX;
 		u32 best_left_count = 0;
 		u32 best_right_count = 0;
-		struct AABB best_bbox_left = { 0 };
-		struct AABB best_bbox_right = { 0 };
+		struct aabb best_bbox_left = { 0 };
+		struct aabb best_bbox_right = { 0 };
 		const f32 parent_sah = bbox_sah(&node->bbox);
 		f32 best_score = F32_INFINITY;
 		for (u32 axis = 0; axis < 3; axis++)
@@ -622,13 +622,13 @@ struct tri_mesh_bvh tri_mesh_bvh_construct(struct arena *mem, const struct tri_m
 				const u8 bi = (u8) f32_clamp(val, 0.0f, bin_count - 0.01f);
 				centroid_bin_map[axis][tri] = bi;
 				axis_bin_bbox[axis][bi] = (axis_bin_tri_count[axis][bi] > 0)
-					? bbox_union(axis_bin_bbox[axis][bi], bbox_tri[tri])
+					? BboxUnion(axis_bin_bbox[axis][bi], bbox_tri[tri])
 					: bbox_tri[tri];
 				axis_bin_tri_count[axis][bi] += 1;
 			}
 
 			//TODO simplify bbox constructing by creating bbox array before loop so we can easily just bbox_left = [], bbox_right = [] 
-			struct AABB bbox_left;
+			struct aabb bbox_left;
 			u32 left_count = 0;
 			for (u32 split = 0; split < bin_count-1; ++split)
 			{
@@ -639,7 +639,7 @@ struct tri_mesh_bvh tri_mesh_bvh_construct(struct arena *mem, const struct tri_m
 
 				bbox_left = (left_count == 0)
 					? axis_bin_bbox[axis][split]
-					: bbox_union(bbox_left, axis_bin_bbox[axis][split]);
+					: BboxUnion(bbox_left, axis_bin_bbox[axis][split]);
 				left_count += axis_bin_tri_count[axis][split];
 
 				const u32 right_count = node->bt_right - left_count;
@@ -651,12 +651,12 @@ struct tri_mesh_bvh tri_mesh_bvh_construct(struct arena *mem, const struct tri_m
 				u32 bi = split + 1;
 				for (; axis_bin_tri_count[axis][bi] == 0; ++bi);
 
-				struct AABB bbox_right = axis_bin_bbox[axis][bi++];
+				struct aabb bbox_right = axis_bin_bbox[axis][bi++];
 				for (; bi < bin_count; bi++)
 				{
 					if (axis_bin_tri_count[axis][bi])
 					{
-						bbox_right = bbox_union(bbox_right, axis_bin_bbox[axis][bi]);
+						bbox_right = BboxUnion(bbox_right, axis_bin_bbox[axis][bi]);
 					}
 				}
 
@@ -740,11 +740,11 @@ end:
 		ArenaPopRecord(mem);
 		const u64 size_required = max_node_count_required*sizeof(struct bvh_node) 
 			+ mesh->tri_count*sizeof(u32) 
-			+ mesh->tri_count*sizeof(struct AABB)
+			+ mesh->tri_count*sizeof(struct aabb)
 			+ 3*mesh->tri_count*sizeof(u8) 
-			+ 3*bin_count*(sizeof(struct AABB) + sizeof(u32));
+			+ 3*bin_count*(sizeof(struct aabb) + sizeof(u32));
 		Log(T_SYSTEM, S_ERROR, "Failed to allocate bvh from triangle mesh, minimum size required: %lu\n", size_required);
-		mesh_bvh = (struct tri_mesh_bvh) { 0 };
+		mesh_bvh = (struct triMesh_bvh) { 0 };
 	}
 
 	bvh_validate(mem, &mesh_bvh.bvh);
@@ -765,8 +765,8 @@ struct bvh_raycast_info bvh_raycast_init(struct arena *mem, const struct bvh *bv
 
 	if (bt_NodeCount(&bvh->tree)) 
 	{
-		AABB_raycast_parameter_ex_setup(info.multiplier, info.dir_sign_bit, info.ray);
-		const f32 root_hit_param = AABB_raycast_parameter_ex(&info.node[info.bvh->tree.root].bbox, info.ray, info.multiplier, info.dir_sign_bit);
+		AabbRaycastParameterExSetup(info.multiplier, info.dir_sign_bit, info.ray);
+		const f32 root_hit_param = AabbRaycastParameterEx(&info.node[info.bvh->tree.root].bbox, info.ray, info.multiplier, info.dir_sign_bit);
 		if (root_hit_param < F32_INFINITY) 
 		{
 			info.hit_queue = MinQueueFixedAllocAll(mem);
@@ -780,8 +780,8 @@ struct bvh_raycast_info bvh_raycast_init(struct arena *mem, const struct bvh *bv
 void bvh_raycast_test_and_push_children(struct bvh_raycast_info *info, const u32f32 popped_tuple)
 {
 	const struct bvh_node *node = info->node;
-	const f32 distance_left = AABB_raycast_parameter_ex(&node[node[popped_tuple.u].bt_left].bbox, info->ray, info->multiplier, info->dir_sign_bit);
-	const f32 distance_right = AABB_raycast_parameter_ex(&node[node[popped_tuple.u].bt_right].bbox, info->ray, info->multiplier, info->dir_sign_bit);
+	const f32 distance_left = AabbRaycastParameterEx(&node[node[popped_tuple.u].bt_left].bbox, info->ray, info->multiplier, info->dir_sign_bit);
+	const f32 distance_right = AabbRaycastParameterEx(&node[node[popped_tuple.u].bt_right].bbox, info->ray, info->multiplier, info->dir_sign_bit);
 
 	if (distance_left < F32_INFINITY)
 	{
@@ -799,7 +799,7 @@ void bvh_raycast_test_and_push_children(struct bvh_raycast_info *info, const u32
 	}
 }
 
-u32f32 tri_mesh_bvh_raycast(struct arena *tmp, const struct tri_mesh_bvh *mesh_bvh, const struct ray *ray)
+u32f32 tri_mesh_bvh_raycast(struct arena *tmp, const struct triMesh_bvh *mesh_bvh, const struct ray *ray)
 {
 	ProfZone;
 	ArenaPushRecord(tmp);
@@ -820,7 +820,7 @@ u32f32 tri_mesh_bvh_raycast(struct arena *tmp, const struct tri_mesh_bvh *mesh_b
 			const u32 tri_last = tri_first + info.node[tuple.u].bt_right - 1;
 			for (u32 i = tri_first; i <= tri_last; ++i)
 			{
-				const f32 distance = tri_ccw_raycast_parameter(mesh_bvh->mesh, mesh_bvh->tri[i], ray);
+				const f32 distance = TriMeshRaycastParameter(mesh_bvh->mesh, mesh_bvh->tri[i], ray);
 				if (distance < info.hit.f)
 				{
 					info.hit = u32f32_inline(mesh_bvh->tri[i], distance);

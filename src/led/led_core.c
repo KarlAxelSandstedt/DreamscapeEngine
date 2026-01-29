@@ -170,7 +170,7 @@ void cmd_collision_box_add(void)
 		{
 			.id = g_queue->cmd_exec->arg[0].utf8,
 			.type = COLLISION_SHAPE_CONVEX_HULL,
-			.hull = dcel_box(&sys_win->mem_persistent, hw), 
+			.hull = DcelBox(&sys_win->mem_persistent, hw), 
 			.center_of_mass_localized = 0,
 		};
 
@@ -205,7 +205,7 @@ void cmd_collision_dcel_add(void)
 
 void cmd_collision_tri_mesh_bvh_add(void)
 {
-	struct tri_mesh_bvh *mesh_bvh = g_queue->cmd_exec->arg[1].ptr;
+	struct triMesh_bvh *mesh_bvh = g_queue->cmd_exec->arg[1].ptr;
 	if (mesh_bvh->mesh->v_count && bt_NodeCount(&mesh_bvh->bvh.tree))
 	{
 		struct collision_shape shape =
@@ -733,13 +733,13 @@ void led_node_set_proxy3d(struct led *led, const utf8 id, const utf8 mesh, const
 	}
 }
 
-static struct tri_mesh tri_mesh_perlin_noise(struct arena *mem_persistent, const u32 n, const f32 width)
+static struct triMesh tri_mesh_perlin_noise(struct arena *mem_persistent, const u32 n, const f32 width)
 {
 	ds_Assert(PowerOfTwoCheck(n) && n >= 32);
 
 	struct arena tmp = ArenaAlloc1MB();
 
-	struct tri_mesh mesh = 
+	struct triMesh mesh = 
 	{
 		.v_count = (n-1)*(n-1),
 		.tri_count = 2*(n-2)*(n-2),
@@ -899,7 +899,7 @@ static struct tri_mesh tri_mesh_perlin_noise(struct arena *mem_persistent, const
 
 	ArenaFree1MB(&tmp);
 
-	struct AABB bbox = tri_mesh_bbox(&mesh);
+	struct aabb bbox = TriMeshBbox(&mesh);
 	vec3 local_origin;
 	Vec3Scale(local_origin, bbox.center, -1.0f);
 	for (u32 i = 0; i < mesh.v_count; ++i)
@@ -945,7 +945,7 @@ void led_wall_smash_simulation_setup(struct led *led)
 	const vec4 map_color = { 0.5f, 0.5f, 0.8f, 0.7f };
 
 	const f32 box_side = 1.0f;
-	struct AABB box_aabb = { .center = { 0.0f, 0.0f, 0.0f }, .hw = { box_side / 2.0f, box_side / 4.0f, box_side / 2.0f} };
+	struct aabb box_aabb = { .center = { 0.0f, 0.0f, 0.0f }, .hw = { box_side / 2.0f, box_side / 4.0f, box_side / 2.0f} };
 
 	const f32 ramp_width = 10.0f;
 	const f32 ramp_length = 60.0f;
@@ -994,20 +994,20 @@ void led_wall_smash_simulation_setup(struct led *led)
 	cmd_queue_submit(sys_win->cmd_queue, cmd_collision_sphere_add_id);
 
 	struct dcel *c_ramp = ArenaPush(&sys_win->mem_persistent, sizeof(struct dcel));
-	*c_ramp = dcel_convex_hull(&sys_win->mem_persistent, ramp_vertices, 6, F32_EPSILON * 100.0f);
+	*c_ramp = DcelConvexHull(&sys_win->mem_persistent, ramp_vertices, 6, F32_EPSILON * 100.0f);
 	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_ramp");
 	sys_win->cmd_queue->regs[1].ptr = c_ramp;
 	cmd_queue_submit(sys_win->cmd_queue, cmd_collision_dcel_add_id);
 
 	struct dcel *c_dsphere = ArenaPush(&sys_win->mem_persistent, sizeof(struct dcel));
-	*c_dsphere = dcel_convex_hull(&sys_win->mem_persistent, dsphere_vertices, dsphere_v_count, F32_EPSILON * 100.0f);
+	*c_dsphere = DcelConvexHull(&sys_win->mem_persistent, dsphere_vertices, dsphere_v_count, F32_EPSILON * 100.0f);
 	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_dsphere");
 	sys_win->cmd_queue->regs[1].ptr = c_dsphere;
 	cmd_queue_submit(sys_win->cmd_queue, cmd_collision_dcel_add_id);
 
-	struct tri_mesh *map = ArenaPush(&led->mem_persistent, sizeof(struct tri_mesh));
+	struct triMesh *map = ArenaPush(&led->mem_persistent, sizeof(struct triMesh));
 	*map = tri_mesh_perlin_noise(&led->mem_persistent, 64, 100.0f);
-	struct tri_mesh_bvh *mesh_bvh = ArenaPush(&led->mem_persistent, sizeof(struct tri_mesh_bvh));
+	struct triMesh_bvh *mesh_bvh = ArenaPush(&led->mem_persistent, sizeof(struct triMesh_bvh));
 	f32 best_cost = F32_INFINITY;
 	u32 best_bin_count = 8;
 	for (u32 i = 8; i < 16; ++i)

@@ -33,7 +33,7 @@ extern "C" {
  * center: center of the box
  * hw: half width of the box in each dimension
  */
-struct AABB 
+struct aabb 
 {
 	vec3 center;
 	vec3 hw;
@@ -103,121 +103,117 @@ struct capsule
 /********************************** sphere **********************************/
 
 /* constructed sphere */
-struct sphere 	sphere_construct(const vec3 center, const f32 radius);
+struct sphere 	SphereConstruct(const vec3 center, const f32 radius);
 /* return t: smallest t >= 0 such that p = origin + t*dir is a point on the sphere, or F32_INF if no such t exist */
-f32 		sphere_raycast_parameter(const struct sphere *sph, const struct ray *ray);
+f32 		SphereRaycastParameter(const struct sphere *sph, const struct ray *ray);
 /* Return 1 if raycast hit sphere, 0 otherwise. If hit, set intersection  */
-u32 		sphere_raycast(vec3 intersection, const struct sphere *sph, const struct ray *ray);
+u32 		SphereRaycast(vec3 intersection, const struct sphere *sph, const struct ray *ray);
 /* Return support of sphere in given direction. sph->position is ignored here, so use pos as the real position */
-void		sphere_support(vec3 support, const vec3 dir, const struct sphere *sph, const vec3 pos);
+void		SphereSupport(vec3 support, const vec3 dir, const struct sphere *sph, const vec3 pos);
 
 /*********************************** ray ************************************/
 
 /* return constructed ray */
-struct ray 	ray_construct(const vec3 origin, const vec3 dir);
+struct ray 	RayConstruct(const vec3 origin, const vec3 dir);
 /* return segment: s.p0 = r.origin, s.p1 = r.origin + t * r.dir */
-struct segment	ray_construct_segment(const struct ray *r, const f32 t);
+struct segment	RayConstructSegment(const struct ray *r, const f32 t);
 /* set r_c = ray.origin + t * ray.dir */
-void		ray_point(vec3 r_c, const struct ray *ray, const f32 t);
+void		RayPoint(vec3 r_c, const struct ray *ray, const f32 t);
 /* return t: closest point on ray to p = origin + t * dir */
-f32 		ray_point_closest_point_parameter(const struct ray *ray, const vec3 p);
-/* return squared distance from p to ray, and set ray_point to the closest point on the ray */
-f32 		ray_point_distance_sq(vec3 ray_point, const struct ray *ray, const vec3 p);
+f32 		RayPointClosestPointParameter(const struct ray *ray, const vec3 p);
+/* return squared distance from p to ray, and set RayPoint to the closest point on the ray */
+f32 		RayPointDistanceSquared(vec3 RayPoint, const struct ray *ray, const vec3 p);
 /* return squared distance from s to ray, and set r_c and s_c to the closest points on the primitives */
-f32 		ray_segment_distance_sq(vec3 r_c, vec3 s_c, const struct ray *ray, const struct segment *s);
+f32 		RaySegmentDistanceSquared(vec3 r_c, vec3 s_c, const struct ray *ray, const struct segment *s);
 
 /********************************* segment **********************************/
 
 /* construct segment */
-struct segment 	segment_construct(const vec3 p0, const vec3 p1);
+struct segment 	SegmentConstruct(const vec3 p0, const vec3 p1);
 /* return squared distance between s1 and s2; set c1, c2 to closest point on s1, s2 respectively  */
-f32 		segment_distance_sq(vec3 c1, vec3 c2, const struct segment *s1, const struct segment *s2);
+f32 		SegmentDistanceSquared(vec3 c1, vec3 c2, const struct segment *s1, const struct segment *s2);
 /* return squared distance between s and p; set c to the closest point on s to p */
-f32 		segment_point_distance_sq(vec3 c, const struct segment *s, const vec3 p);
+f32 		SegmentPointDistanceSquared(vec3 c, const struct segment *s, const vec3 p);
 /* Return parameter t of projected barycentric point p to segment s: PROJECTION_ON_LINE(p) = s.p0*(1-t) + s.p1*t */
-f32		segment_point_projected_bc_parameter(const struct segment *s, const vec3 p);
+f32		SegmentPointProjectedBcParameter(const struct segment *s, const vec3 p);
 /* Return parameter g of closest barycentric point p to segment s: PROJECTION_ON_SEGMENT(p) = s.p0*(1-t) + s.p1*t, 0.0f <= t <= 1.0f */
-f32 		segment_point_closest_bc_parameter(const struct segment *s, const vec3 p);
+f32 		SegmentPointClosestBcParameter(const struct segment *s, const vec3 p);
 /* set bc_p = s.p0*(1-t) + s.p1*t */
-void 		segment_bc(vec3 bc_p, const struct segment *s, const f32 t); 	
+void 		SegmentBc(vec3 bc_p, const struct segment *s, const f32 t); 	
 
 /********************************** plane ***********************************/
 
 /* construct plane with given normal n containing point p */
-struct plane 	plane_construct(const vec3 n, const vec3 p); 
+struct plane 	PlaneConstruct(const vec3 n, const vec3 p); 
 /* construct plane from CCW triangle abc */
-struct plane 	plane_construct_from_ccw_triangle(const vec3 a, const vec3 b, const vec3 c);
+struct plane 	PlaneConstructFromCcwTriangle(const vec3 a, const vec3 b, const vec3 c);
 /* return 1: If p is infront of plane, i.e. a positive signed distance, otherwise 0*/
-u32 		plane_point_is_infront(const struct plane *pl, const vec3 p);
+u32 		PlanePointInfrontCheck(const struct plane *pl, const vec3 p);
 /* return 1: If p is behind plane, i.e. a negative signed distance, otherwise 0*/
-u32 		plane_point_is_behind(const struct plane *pl, const vec3 p);
+u32 		PlanePointBehindCheck(const struct plane *pl, const vec3 p);
  /* return t: s.p0 + t*s.dir is point on plane */
-f32 		plane_segment_clip_parameter(const struct plane *pl, const struct segment *s);
+f32 		PlaneSegmentClipParameter(const struct plane *pl, const struct segment *s);
  /* return 1 if clip happened, otherwise 0. If 1, return valid clip point */
-u32 		plane_segment_clip(vec3 clip, const struct plane *pl, const struct segment *s);
+u32 		PlaneSegmentClip(vec3 clip, const struct plane *pl, const struct segment *s);
 /* return 1 if clip happened, otherwise 0 */
-u32 		plane_segment_test(const struct plane *pl, const struct segment *s); 
+u32 		PlaneSegmentTest(const struct plane *pl, const struct segment *s); 
  /* return signed distance between plane and point (infront of plane == positive) */
-f32 		plane_point_signed_distance(const struct plane *pl, const vec3 p);
+f32 		PlanePointSignedDistance(const struct plane *pl, const vec3 p);
  /* return absolute distance between plane and point */
-f32 		plane_point_distance(const struct plane *pl, const vec3 p);
+f32 		PlanePointDistance(const struct plane *pl, const vec3 p);
 /* Return t such that ray->origin + t*ray->dir is a point on the given plane. If no such t exist, return F32_INFINITY. */
-f32 		plane_raycast_parameter(const struct plane *plane, const struct ray *ray);
+f32 		PlaneRaycastParameter(const struct plane *plane, const struct ray *ray);
 /* Return 1 if raycast hit plane, 0 otherwise. If hit, set intersection  */
-u32 		plane_raycast(vec3 intersection, const struct plane *plane, const struct ray *ray);
+u32 		PlaneRaycast(vec3 intersection, const struct plane *plane, const struct ray *ray);
 
 /********************************** AABB ************************************/
 
 /* Return smallest AABB with a given margin of the input vertex set,   */
-void		AABB_vertex(struct AABB *dst, const vec3ptr v, const u32 v_count, const f32 margin);
+void		AabbVertex(struct aabb *dst, const vec3ptr v, const u32 v_count, const f32 margin);
 /* Return smallest AABB that contains both a and b  */
-void		AABB_union(struct AABB *box_union, const struct AABB *a, const struct AABB *b);
+void		AabbUnion(struct aabb *box_union, const struct aabb *a, const struct aabb *b);
 /* Return AABB of rotated AABB. */
-void		AABB_rotate(struct AABB *dst, const struct AABB *src, mat3 rotation);
+void		AabbRotate(struct aabb *dst, const struct aabb *src, mat3 rotation);
 /* Return 1 if a and b intersect, 0 otherwise  */
-u32 		AABB_test(const struct AABB *a, const struct AABB *b);
+u32 		AabbTest(const struct aabb *a, const struct aabb *b);
 /* Return 1 if a fully contains b, 0 otherwise  */
-u32 		AABB_contains(const struct AABB *a, const struct AABB *b);
+u32 		AabbContains(const struct aabb *a, const struct aabb *b);
 /* Return 1 if a (extended with given margin) fully contains b, 0 otherwise  */
-u32 		AABB_contains_margin(const struct AABB *a, const struct AABB *b, const f32 margin);
+u32 		AabbContainsMargin(const struct aabb *a, const struct aabb *b, const f32 margin);
 /* sets up vertex buffer to use with glDrawArrays. Returns number of bytes written. */
-u64 		AABB_push_lines_buffered(u8 *buf, const u64 bufsize, const struct AABB *box, const vec4 color);
+u64 		AabbPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const vec4 color);
 /* sets up vertex buffer to use with glDrawArrays. Returns number of bytes written. */
-u64 		AABB_transform_push_lines_buffered(u8 *buf, const u64 bufsize, const struct AABB *box, const vec3 translation, mat3 rotation, const vec4 color);
+u64 		AabbTransformPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const vec3 translation, mat3 rotation, const vec4 color);
 
 /* return AABB bounding box of triangle */
-struct AABB	bbox_triangle(const vec3 p0, const vec3 p1, const vec3 p2);
+struct aabb	BboxTriangle(const vec3 p0, const vec3 p1, const vec3 p2);
 /* Return smallest AABB that contains both a and b  */
-struct AABB	bbox_union(const struct AABB a, const struct AABB b);
-
-
-
-/* AABB raycasting */
+struct aabb	BboxUnion(const struct aabb a, const struct aabb b);
 
 /* Setup parameters for extended raycasting functions. */
-void 		AABB_raycast_parameter_ex_setup(vec3 multiplier, vec3u32 dir_sign_bit, const struct ray *ray);
-/* Extended AABB_raycast_parameter optimized for multiple raycasts against AABBs using same ray. 
+void 		AabbRaycastParameterExSetup(vec3 multiplier, vec3u32 dir_sign_bit, const struct ray *ray);
+/* Extended AabbRaycastParameter optimized for multiple raycasts against AABBs using same ray. 
  * return t: smallest t >= 0 such that p = origin + t*dir is a point in the AABB volume, or F32_INF if no such t exist */
-f32 		AABB_raycast_parameter_ex(const struct AABB *aabb, const struct ray *ray, const vec3 multiplier, const vec3u32 dir_sign_bit);
+f32 		AabbRaycastParameterEx(const struct aabb *aabb, const struct ray *ray, const vec3 multiplier, const vec3u32 dir_sign_bit);
 /* return t: smallest t >= 0 such that p = origin + t*dir is a point in the AABB volume, or F32_INF if no such t exist */
-f32 		AABB_raycast_parameter(const struct AABB *a, const struct ray *ray);
-/* Extended AABB_raycast, optimized for multiple raycasts against AABBs using same ray. 
+f32 		AabbRaycastParameter(const struct aabb *a, const struct ray *ray);
+/* Extended AabbRaycast, optimized for multiple raycasts against AABBs using same ray. 
  * If the ray hits aabb, return 1 and set intersection. otherwise return 0. */
-u32 		AABB_raycast_ex(vec3 intersection, const struct AABB *aabb, const struct ray *ray, const vec3 multiplier, const vec3u32 dir_sign_bit);
+u32 		AabbRaycastEx(vec3 intersection, const struct aabb *aabb, const struct ray *ray, const vec3 multiplier, const vec3u32 dir_sign_bit);
 /* If the ray hits aabb, return 1 and set intersection. otherwise return 0. */
-u32 		AABB_raycast(vec3 intersection, const struct AABB *aabb, const struct ray *ray);
+u32 		AabbRaycast(vec3 intersection, const struct aabb *aabb, const struct ray *ray);
 
 /********************************* capsule **********************************/
 
 /* Return support of capsule in given direction. */
-void	capsule_support(vec3 support, const vec3 dir, const struct capsule *cap, mat3 rot, const vec3 pos);
+void		CapsuleSupport(vec3 support, const vec3 dir, const struct capsule *cap, mat3 rot, const vec3 pos);
 
 /********************************* tri_mesh **********************************/
 
 /*
  * triangle mesh (CCW) - set of ungrouped triangles.
  */
-struct tri_mesh
+struct triMesh
 {
 	vec3ptr		v;
 	vec3u32ptr	tri;
@@ -225,29 +221,29 @@ struct tri_mesh
 	u32 		tri_count;
 };
 
-struct AABB	tri_mesh_bbox(const struct tri_mesh *mesh);
-
+/* return bounding box of triMesh */
+struct aabb	TriMeshBbox(const struct triMesh *mesh);
 /* return t: smallest t >= 0 such that p = origin + t*dir is a point on the triangle, or F32_INF if no such t exist */
-f32 	tri_ccw_raycast_parameter(const struct tri_mesh *mesh, const u32 tri, const struct ray *ray);
+f32 		TriMeshRaycastParameter(const struct triMesh *mesh, const u32 tri, const struct ray *ray);
 /* If the ray hits triangle (ccw), return 1 and set intersection. otherwise return 0. */
-u32 	tri_ccw_raycast(vec3 intersection, const struct tri_mesh *mesh, const u32 tri, const struct ray *ray);
+u32 		TriMeshRaycast(vec3 intersection, const struct triMesh *mesh, const u32 tri, const struct ray *ray);
 
 /* get normal of ccw triangle */
-void 	tri_ccw_normal(vec3 normal, const vec3 p0, const vec3 p1, const vec3 p2);
+void 		TriCcwNormal(vec3 normal, const vec3 p0, const vec3 p1, const vec3 p2);
 /* get direction of ccw triangle */
-void 	tri_ccw_direction(vec3 dir, const vec3 p0, const vec3 p1, const vec3 p2);
+void 		TriCcwDirection(vec3 dir, const vec3 p0, const vec3 p1, const vec3 p2);
 
 
 
 /********************************** dcel ************************************/
 
-struct dcel_face
+struct dcelFace
 {
 	u32 first;	/* first half edge */
 	u32 count;	/* edge count */
 };
 
-struct dcel_edge
+struct dcelEdge
 {
 	u32 origin;	/* vertex index origin */
 	u32 twin; 	/* twin half edge */
@@ -262,8 +258,8 @@ struct dcel_edge
  */
 struct dcel
 {
-	struct dcel_face *f;		/* f[i] = half-edge of face i */
-	struct dcel_edge *e;
+	struct dcelFace *f;		/* f[i] = half-edge of face i */
+	struct dcelEdge *e;
 	vec3ptr	v;
 	u32 f_count;
 	u32 e_count;
@@ -271,33 +267,32 @@ struct dcel
 };
 
 /* return dcel { 0 } */
-struct dcel 	dcel_empty(void);
+struct dcel 	DcelEmpty(void);
 /* return dcel box stub */
-struct dcel 	dcel_box_stub(void);
+struct dcel 	DcelBoxStub(void);
 /* return arena allocated dcel box with given half widths */
-struct dcel 	dcel_box(struct arena *mem, const vec3 hw);
+struct dcel 	DcelBox(struct arena *mem, const vec3 hw);
 /* return arena allocated dcel convex hull of input points. On failure, an empty dcel is returned. */
-struct dcel 	dcel_convex_hull(struct arena *mem, const vec3ptr v, const u32 v_count, const f32 tol);
+struct dcel 	DcelConvexHull(struct arena *mem, const vec3ptr v, const u32 v_count, const f32 tol);
 /* Return support of dcel in given direction, and return supporting vertex index */
-u32		dcel_support(vec3 support, const vec3 dir, const struct dcel *hull, mat3 rot, const vec3 pos);
+u32		DcelSupport(vec3 support, const vec3 dir, const struct dcel *hull, mat3 rot, const vec3 pos);
 
 /* TODO: document, go through ... */
-void 		dcel_face_direction(vec3 dir, const struct dcel *h, const u32 fi); /* not normalized */
-void 		dcel_face_normal(vec3 normal, const struct dcel *h, const u32 fi); /* normalized */
-struct plane 	dcel_face_plane(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi);
-struct plane 	dcel_face_clip_plane(const struct dcel *h, mat3 rot, const vec3 pos, const vec3 face_normal, const u32 e0, const u32 e1); /* Return clip plane of face containing edge e0e1, orthogonal to the face normal */
-struct segment 	dcel_face_clip_segment(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi, const struct segment *s); /* clip segment against face fi's edge-planes (No projection onto face plane!) */
-u32 		dcel_face_projected_point_test(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi, const vec3 p); /* Project p onto face plane and test if it is on the face */
+void 		DcelFaceDirection(vec3 dir, const struct dcel *h, const u32 fi); /* not normalized */
+void 		DcelFaceNormal(vec3 normal, const struct dcel *h, const u32 fi); /* normalized */
+struct plane 	DcelFacePlane(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi);
+struct plane 	DcelFaceClipPlane(const struct dcel *h, mat3 rot, const vec3 pos, const vec3 face_normal, const u32 e0, const u32 e1); /* Return clip plane of face containing edge e0e1, orthogonal to the face normal */
+struct segment 	DcelFaceClipSegment(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi, const struct segment *s); /* clip segment against face fi's edge-planes (No projection onto face plane!) */
+u32 		DcelFaceProjectedPointTest(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi, const vec3 p); /* Project p onto face plane and test if it is on the face */
 
-void 		dcel_edge_normal(vec3 dir, const struct dcel *h, const u32 ei);
-void 		dcel_edge_direction(vec3 dir, const struct dcel *h, const u32 ei);
-struct segment 	dcel_edge_segment(const struct dcel *h, mat3 rot, const vec3 pos, const u32 ei);
+void 		DcelEdgeNormal(vec3 dir, const struct dcel *h, const u32 ei);
+void 		DcelEdgeDirection(vec3 dir, const struct dcel *h, const u32 ei);
+struct segment 	DcelEdgeSegment(const struct dcel *h, mat3 rot, const vec3 pos, const u32 ei);
 
-/* TODO: merge with newer commented out dcel_assert_topology... */
-void 		dcel_assert_topology(struct dcel *dcel);
+void 		DcelAssertTopology(struct dcel *dcel);
 
 #ifdef DS_DEBUG
-#define COLLISION_HULL_ASSERT(dcel)	dcel_assert_topology(dcel)
+#define COLLISION_HULL_ASSERT(dcel)	DcelAssertTopology(dcel)
 #else
 #define COLLISION_HULL_ASSERT(dcel)	
 #endif
@@ -305,8 +300,8 @@ void 		dcel_assert_topology(struct dcel *dcel);
 /********************************* vertex operations ***********************************/
 
 /* Return: support of vertex set given the direction, and supporting vertex index */
-u32 	vertex_support(vec3 support, const vec3 dir, const vec3ptr v, const u32 v_count);
-void 	vertex_centroid(vec3 centroid, const vec3ptr vs, const u32 n);
+u32 	VertexSupport(vec3 support, const vec3 dir, const vec3ptr v, const u32 v_count);
+void 	VertexCentroid(vec3 centroid, const vec3ptr vs, const u32 n);
 
 #ifdef __cplusplus
 } 

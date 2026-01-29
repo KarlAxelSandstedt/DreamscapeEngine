@@ -41,7 +41,7 @@ bounding volume hierarchy
 struct bvh_node
 {
 	BT_SLOT_STATE;
-	struct AABB	bbox;
+	struct aabb	bbox;
 };
 
 struct bvh
@@ -71,25 +71,25 @@ struct bvh		dbvh_alloc(struct arena *mem, const u32 initial_length, const u32 gr
 /* flush / reset the hierarchy  */
 void 			dbvh_flush(struct bvh *bvh);
 /* id is an integer identifier from the outside, return index of added value */
-u32 			dbvh_insert(struct bvh *bvh, const u32 id, const struct AABB *bbox);
+u32 			dbvh_insert(struct bvh *bvh, const u32 id, const struct aabb *bbox);
 /* remove leaf corresponding to index from tree */
 void 			dbvh_remove(struct bvh *bvh, const u32 index);
 /* Return overlapping ids ptr, set to NULL if no overlap. if overlap, count is set */
 struct dbvh_overlap *	dbvh_push_overlap_pairs(struct arena *mem, u32 *count, const struct bvh *bvh);
 /* push	id:s of leaves hit by raycast. returns number of hits. -1 == out of memory */
 
-struct tri_mesh_bvh
+struct triMesh_bvh
 {
-	const struct tri_mesh *	mesh;		
+	const struct triMesh *	mesh;		
 	struct bvh		bvh;
 	u32 *			tri;		
 	u32			tri_count;	
 };
 
 /* Return non-empty tri_mesh_bvh on success. */
-struct tri_mesh_bvh 	tri_mesh_bvh_construct(struct arena *mem, const struct tri_mesh *mesh, const u32 bin_count);
+struct triMesh_bvh 	tri_mesh_bvh_construct(struct arena *mem, const struct triMesh *mesh, const u32 bin_count);
 /* Return (index, ray hit parameter) on closest hit, or (U32_MAX, F32_INFINITY) on no hit */
-u32f32 			tri_mesh_bvh_raycast(struct arena *tmp, const struct tri_mesh_bvh *mesh_bvh, const struct ray *ray);
+u32f32 			tri_mesh_bvh_raycast(struct arena *tmp, const struct triMesh_bvh *mesh_bvh, const struct ray *ray);
 
 
 /*
@@ -194,7 +194,7 @@ struct collision_shape
 		struct sphere 		sphere;
 		struct capsule 		capsule;
 		struct dcel		hull;
-		struct tri_mesh_bvh 	mesh_bvh;
+		struct triMesh_bvh 	mesh_bvh;
 	};
 };
 

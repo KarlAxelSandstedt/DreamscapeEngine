@@ -264,9 +264,9 @@ static struct r_mesh *bounding_boxes_mesh(struct arena *mem, const struct physic
 	for (u32 i = pipeline->body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 	{
 		body = PoolAddress(&pipeline->body_pool, i);
-		struct AABB bbox = body->local_box;
+		struct aabb bbox = body->local_box;
 		Vec3Translate(bbox.center, body->position);
-		const u64 bytes_written = AABB_push_lines_buffered(vertex_data, mem_left, &bbox, color);
+		const u64 bytes_written = AabbPushLinesBuffered(vertex_data, mem_left, &bbox, color);
 		vertex_data += bytes_written;
 		mem_left -= bytes_written;
 	}
@@ -311,7 +311,7 @@ static struct r_mesh *bvh_mesh(struct arena *mem, const struct bvh *bvh, const v
 	u64 mem_left = mesh->vertex_count * L_COLOR_STRIDE;
 	while (i != U32_MAX)
 	{
-		const u64 bytes_written = AABB_transform_push_lines_buffered(vertex_data, mem_left, &nodes[i].bbox, translation, rot, color);
+		const u64 bytes_written = AabbTransformPushLinesBuffered(vertex_data, mem_left, &nodes[i].bbox, translation, rot, color);
 		vertex_data += bytes_written;
 		mem_left -= bytes_written;
 

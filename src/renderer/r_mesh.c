@@ -246,7 +246,7 @@ void r_mesh_set_capsule(struct arena *mem, struct r_mesh *mesh, const f32 half_h
 	ArenaPopPacked(mem, (arr.len - vi) * sizeof(vec3));
 
 	struct arena tmp = ArenaAlloc1MB();
-	struct dcel dcel = dcel_convex_hull(&tmp, v, vi, 100.0f * F32_EPSILON);
+	struct dcel dcel = DcelConvexHull(&tmp, v, vi, 100.0f * F32_EPSILON);
 	r_mesh_set_hull(mem, mesh, &dcel);
 	ArenaFree1MB(&tmp);
 }
@@ -260,11 +260,11 @@ void r_mesh_set_hull(struct arena *mem, struct r_mesh *mesh, const struct dcel *
 	for (u32 fi = 0; fi < hull->f_count; ++fi)
 	{
 		vec3 normal;
-		struct dcel_face *f = hull->f + fi;
-		struct dcel_edge *e0 = hull->e + f->first;
-		struct dcel_edge *e1 = hull->e + f->first + 1;
-		struct dcel_edge *e2 = hull->e + f->first + 2;
-		tri_ccw_normal(normal, 
+		struct dcelFace *f = hull->f + fi;
+		struct dcelEdge *e0 = hull->e + f->first;
+		struct dcelEdge *e1 = hull->e + f->first + 1;
+		struct dcelEdge *e2 = hull->e + f->first + 2;
+		TriCcwNormal(normal, 
 				hull->v[e0->origin],
 				hull->v[e1->origin],
 				hull->v[e2->origin]);
@@ -308,7 +308,7 @@ void r_mesh_set_hull(struct arena *mem, struct r_mesh *mesh, const struct dcel *
 		ArenaPushPackedMemcpy(mem, indices, sizeof(indices));
 		mesh->index_count += 3;
 
-		struct dcel_face *f = hull->f + fi;
+		struct dcelFace *f = hull->f + fi;
 		const u32 tri_count = f->count - 2;
 		for (u32 ti = 1; ti < tri_count; ++ti)
 		{
@@ -328,7 +328,7 @@ void r_mesh_set_hull(struct arena *mem, struct r_mesh *mesh, const struct dcel *
 	mesh->index_max_used = m_i - 1;
 }
 
-void r_mesh_set_tri_mesh(struct arena *mem, struct r_mesh *mesh, const struct tri_mesh *tri_mesh)
+void r_mesh_set_tri_mesh(struct arena *mem, struct r_mesh *mesh, const struct triMesh *tri_mesh)
 {
 
 	mesh->vertex_count = 3*tri_mesh->tri_count;
@@ -342,7 +342,7 @@ void r_mesh_set_tri_mesh(struct arena *mem, struct r_mesh *mesh, const struct tr
 	for (u32 t = 0; t < tri_mesh->tri_count; ++t)
 	{
 		vec3 normal;
-		tri_ccw_normal(normal, 
+		TriCcwNormal(normal, 
 				tri_mesh->v[tri_mesh->tri[t][0]],
 				tri_mesh->v[tri_mesh->tri[t][1]],
 				tri_mesh->v[tri_mesh->tri[t][2]]);

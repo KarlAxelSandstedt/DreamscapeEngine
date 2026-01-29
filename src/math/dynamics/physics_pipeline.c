@@ -254,8 +254,8 @@ static void rigid_body_update_local_box(struct rigid_body *body, const struct co
 	else if (body->shape_type == COLLISION_SHAPE_TRI_MESH)
 	{
 		const struct bvh_node *node = (struct bvh_node *) shape->mesh_bvh.bvh.tree.pool.buf;
-		struct AABB bbox; 
-		AABB_rotate(&bbox, &node[shape->mesh_bvh.bvh.tree.root].bbox, rot);
+		struct aabb bbox; 
+		AabbRotate(&bbox, &node[shape->mesh_bvh.bvh.tree.root].bbox, rot);
 		//Vec3Sub(min, bbox.center, bbox.hw);
 		//Vec3Add(max, bbox.center, bbox.hw);
 		Vec3Scale(min, bbox.hw, -1.0f);
@@ -298,7 +298,7 @@ struct slot physics_pipeline_rigid_body_alloc(struct physics_pipeline *pipeline,
 	body->low_velocity_time = 0.0f;
 
 	rigid_body_update_local_box(body, shape);
-	struct AABB proxy;
+	struct aabb proxy;
 	Vec3Add(proxy.center, body->local_box.center, body->position);
 	if (body->shape_type == COLLISION_SHAPE_TRI_MESH)
 	{
@@ -334,7 +334,7 @@ struct slot physics_pipeline_rigid_body_alloc(struct physics_pipeline *pipeline,
 static void internal_update_dynamic_tree(struct physics_pipeline *pipeline)
 {
 	ProfZone;
-	struct AABB world_AABB;
+	struct aabb world_AABB;
 
 	const u32 flags = RB_ACTIVE | RB_DYNAMIC | (g_solver_config->sleep_enabled * RB_AWAKE);
 	struct rigid_body *b = NULL;
@@ -348,8 +348,8 @@ static void internal_update_dynamic_tree(struct physics_pipeline *pipeline)
 			Vec3Add(world_AABB.center, b->local_box.center, b->position);
 			Vec3Copy(world_AABB.hw, b->local_box.hw);
 			const struct bvh_node *node = PoolAddress(&pipeline->dynamic_tree.tree.pool, b->proxy);
-			const struct AABB *proxy = &node->bbox;
-			if (!AABB_contains(proxy, &world_AABB))
+			const struct aabb *proxy = &node->bbox;
+			if (!AabbContains(proxy, &world_AABB))
 			{
 				world_AABB.hw[0] += b->margin;
 				world_AABB.hw[1] += b->margin;
@@ -1038,10 +1038,10 @@ static void statics_internal_calculate_face_integrals(f32 integrals[10], const s
 	vec2 v0, v1, v2;
 
 	vec3ptr v = shape->hull.v;
-	struct dcel_face *f = shape->hull.f + fi;
-	struct dcel_edge *e0 = shape->hull.e + f->first;
-	struct dcel_edge *e1 = shape->hull.e + f->first + 1;
-	struct dcel_edge *e2 = shape->hull.e + f->first + 2;
+	struct dcelFace *f = shape->hull.f + fi;
+	struct dcelEdge *e0 = shape->hull.e + f->first;
+	struct dcelEdge *e1 = shape->hull.e + f->first + 1;
+	struct dcelEdge *e2 = shape->hull.e + f->first + 2;
 
 	Vec3Sub(a, v[e1->origin], v[e0->origin]);
 	Vec3Sub(b, v[e2->origin], v[e0->origin]);

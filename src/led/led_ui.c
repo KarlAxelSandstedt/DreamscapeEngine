@@ -495,7 +495,7 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 						window_space_to_world_space(dir, cursor_viewport_position, node->pixel_size, &led->cam);
 						Vec3TranslateScaled(dir, led->cam.position, -1.0f);
 						Vec3ScaleSelf(dir, 1.0f / Vec3Length(dir));
-						const struct ray ray = ray_construct(led->cam.position, dir);
+						const struct ray ray = RayConstruct(led->cam.position, dir);
 						const u32f32 hit = physics_pipeline_raycast_parameter(g_ui->mem_frame, &led->physics, &ray);
 						if (hit.f < F32_INFINITY)
 						{

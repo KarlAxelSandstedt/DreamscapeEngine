@@ -449,7 +449,7 @@ void 		r_mesh_set_capsule(struct arena *mem, struct r_mesh *mesh, const f32 half
 /* setup mesh from collison hull */
 void 		r_mesh_set_hull(struct arena *mem, struct r_mesh *mesh, const struct dcel *hull);
 /* setup mesh from tri mesh */
-void 		r_mesh_set_tri_mesh(struct arena *mem, struct r_mesh *mesh, const struct tri_mesh *tri_mesh);
+void 		r_mesh_set_tri_mesh(struct arena *mem, struct r_mesh *mesh, const struct triMesh *tri_mesh);
 
 /********************************************************
  *			r_gl.c				*

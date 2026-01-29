@@ -29,7 +29,7 @@
 //TODO what to do with this?
 #define MIN_SEGMENT_LENGTH_SQ	(100.0f*F32_EPSILON)
 
-struct ray ray_construct(const vec3 origin, const vec3 dir)
+struct ray RayConstruct(const vec3 origin, const vec3 dir)
 {
 	ds_Assert(Vec3LengthSquared(dir) > 0.0f);
 
@@ -39,22 +39,22 @@ struct ray ray_construct(const vec3 origin, const vec3 dir)
 	return r;
 }
 
-struct segment ray_construct_segment(const struct ray *r, const f32 t)
+struct segment RayConstructSegment(const struct ray *r, const f32 t)
 {
 	vec3 p;
 	Vec3Copy(p, r->origin);
 	Vec3TranslateScaled(p, r->dir, t);
-	return segment_construct(r->origin, p);
+	return SegmentConstruct(r->origin, p);
 }
 
 
-void ray_point(vec3 ray_point, const struct ray *ray, const f32 t)
+void RayPoint(vec3 RayPoint, const struct ray *ray, const f32 t)
 {
-	Vec3Copy(ray_point, ray->origin);
-	Vec3TranslateScaled(ray_point, ray->dir, t);
+	Vec3Copy(RayPoint, ray->origin);
+	Vec3TranslateScaled(RayPoint, ray->dir, t);
 }
 
-struct sphere sphere_construct(const vec3 center, const f32 radius)
+struct sphere SphereConstruct(const vec3 center, const f32 radius)
 {
 	struct sphere sph = { .radius = radius };
 	Vec3Copy(sph.center, center);
@@ -64,7 +64,7 @@ struct sphere sphere_construct(const vec3 center, const f32 radius)
 /*
  * | r.o + t*r.dir - s.c |^2 = s.r^2 => solve quadratic formula give the following method.
  */
-f32 sphere_raycast_parameter(const struct sphere *sph, const struct ray *ray)
+f32 SphereRaycastParameter(const struct sphere *sph, const struct ray *ray)
 {
 	vec3 diff;
 	Vec3Sub(diff, ray->origin, sph->center);
@@ -85,9 +85,9 @@ f32 sphere_raycast_parameter(const struct sphere *sph, const struct ray *ray)
 	return (t1 >= 0.0f) ? t1 / (2.0f * a) : t2 / (2.0f * a);
 }
 
-u32 sphere_raycast(vec3 intersection, const struct sphere *sph, const struct ray *ray)
+u32 SphereRaycast(vec3 intersection, const struct sphere *sph, const struct ray *ray)
 {
-	const f32 t = sphere_raycast_parameter(sph, ray);
+	const f32 t = SphereRaycastParameter(sph, ray);
 	if (t < 0.0f || t == F32_INFINITY) { return 0; }
 
 	Vec3Copy(intersection, ray->origin);
@@ -95,7 +95,7 @@ u32 sphere_raycast(vec3 intersection, const struct sphere *sph, const struct ray
 	return 1;
 }
 
-f32 ray_point_closest_point_parameter(const struct ray *ray, const vec3 p)
+f32 RayPointClosestPointParameter(const struct ray *ray, const vec3 p)
 { 
 	vec3 diff;
 	Vec3Sub(diff, p, ray->origin);
@@ -103,14 +103,14 @@ f32 ray_point_closest_point_parameter(const struct ray *ray, const vec3 p)
 	return (tr >= 0.0f) ? tr : 0.0f;
 }
 
-f32 ray_point_distance_sq(vec3 r_c, const struct ray *ray, const vec3 p)
+f32 RayPointDistanceSquared(vec3 r_c, const struct ray *ray, const vec3 p)
 {
-	const f32 t = ray_point_closest_point_parameter(ray, p);
-	ray_point(r_c, ray, t);
+	const f32 t = RayPointClosestPointParameter(ray, p);
+	RayPoint(r_c, ray, t);
 	return Vec3DistanceSquared(r_c, p);
 }
 
-f32 ray_segment_distance_sq(vec3 r_c, vec3 s_c, const struct ray *ray, const struct segment *s)
+f32 RaySegmentDistanceSquared(vec3 r_c, vec3 s_c, const struct ray *ray, const struct segment *s)
 {
 	vec3 diff;
 	Vec3Sub(diff, s->p0, ray->origin);
@@ -158,12 +158,12 @@ f32 ray_segment_distance_sq(vec3 r_c, vec3 s_c, const struct ray *ray, const str
 	ds_Assert(0.0f <= tr);
 	ds_Assert(0.0f <= ts && ts <= 1.0f);
 
-	ray_point(r_c, ray, tr);
-	segment_bc(s_c, s, ts);
+	RayPoint(r_c, ray, tr);
+	SegmentBc(s_c, s, ts);
 	return Vec3DistanceSquared(r_c, s_c);
 }
 
-struct segment segment_construct(const vec3 p0, const vec3 p1)
+struct segment SegmentConstruct(const vec3 p0, const vec3 p1)
 {
 	struct segment s;
 	Vec3Copy(s.p0, p0);
@@ -172,7 +172,7 @@ struct segment segment_construct(const vec3 p0, const vec3 p1)
 	return s;
 }
 
-f32 segment_distance_sq(vec3 c1, vec3 c2, const struct segment *s1, const struct segment *s2)
+f32 SegmentDistanceSquared(vec3 c1, vec3 c2, const struct segment *s1, const struct segment *s2)
 {
 	vec3 diff;
 	Vec3Sub(diff, s2->p0, s1->p0);
@@ -239,12 +239,12 @@ f32 segment_distance_sq(vec3 c1, vec3 c2, const struct segment *s1, const struct
 	ds_Assert(0.0f <= t1 && t1 <= 1.0f);
 	ds_Assert(0.0f <= t2 && t2 <= 1.0f);
 
-	segment_bc(c1, s1, t1);
-	segment_bc(c2, s2, t2);
+	SegmentBc(c1, s1, t1);
+	SegmentBc(c2, s2, t2);
 	return Vec3DistanceSquared(c1, c2);
 }
 
-f32 segment_point_distance_sq(vec3 c, const struct segment *s, const vec3 p)
+f32 SegmentPointDistanceSquared(vec3 c, const struct segment *s, const vec3 p)
 {
 	f32 t = 0.0f;
 	
@@ -255,30 +255,30 @@ f32 segment_point_distance_sq(vec3 c, const struct segment *s, const vec3 p)
 		t = f32_clamp(Vec3Dot(diff, s->dir) / Vec3Dot(s->dir, s->dir), 0.0f, 1.0f);
 	}
 
-	segment_bc(c, s, t);
+	SegmentBc(c, s, t);
 	return Vec3DistanceSquared(c, p);
 }
 
-void segment_bc(vec3 bc_p, const struct segment *s, const f32 t)
+void SegmentBc(vec3 bc_p, const struct segment *s, const f32 t)
 {
 	Vec3Interpolate(bc_p, s->p1, s->p0, t);
 }
 
-f32 segment_point_projected_bc_parameter(const struct segment *s, const vec3 p)
+f32 SegmentPointProjectedBcParameter(const struct segment *s, const vec3 p)
 {	
 	vec3 diff;
 	Vec3Sub(diff, p, s->p0);
 	return Vec3Dot(diff, s->dir) / Vec3Dot(s->dir, s->dir);
 }
 
-f32 segment_point_closest_bc_parameter(const struct segment *s, const vec3 p)
+f32 SegmentPointClosestBcParameter(const struct segment *s, const vec3 p)
 {	
 	vec3 diff;
 	Vec3Sub(diff, p, s->p0);
 	return f32_clamp(Vec3Dot(diff, s->dir) / Vec3Dot(s->dir, s->dir), 0.0f, 1.0f);
 }
 
-struct plane plane_construct(const vec3 n, const vec3 p)
+struct plane PlaneConstruct(const vec3 n, const vec3 p)
 {
 	struct plane pl;
 	Vec3Copy(pl.normal, n);
@@ -286,27 +286,27 @@ struct plane plane_construct(const vec3 n, const vec3 p)
 	return pl;
 }
 
-struct plane plane_construct_from_ccw_triangle(const vec3 a, const vec3 b, const vec3 c)
+struct plane PlaneConstructFromCcwTriangle(const vec3 a, const vec3 b, const vec3 c)
 {
 	vec3 ab, ac, cross;
 	Vec3Sub(ab, b, a);
 	Vec3Sub(ac, c, a);
 	Vec3Cross(cross, ab, ac);
 	Vec3ScaleSelf(cross, 1.0f/Vec3Length(cross));
-	return plane_construct(cross, a);
+	return PlaneConstruct(cross, a);
 }
 
-u32 plane_point_is_infront(const struct plane *pl, const vec3 p)
+u32 PlanePointInfrontCheck(const struct plane *pl, const vec3 p)
 {
-	return (plane_point_signed_distance(pl, p) > 0.0f) ? 1 : 0;
+	return (PlanePointSignedDistance(pl, p) > 0.0f) ? 1 : 0;
 }
 
-u32 plane_point_is_behind(const struct plane *pl, const vec3 p)
+u32 PlanePointBehindCheck(const struct plane *pl, const vec3 p)
 {
-	return (plane_point_signed_distance(pl, p) < 0.0f) ? 1 : 0;
+	return (PlanePointSignedDistance(pl, p) < 0.0f) ? 1 : 0;
 }
 
-f32 plane_segment_clip_parameter(const struct plane *pl, const struct segment *s)
+f32 PlaneSegmentClipParameter(const struct plane *pl, const struct segment *s)
 {
 	/*
 	 * 	GIVEN: pl.normal and segment direction not orthogonal.
@@ -321,37 +321,37 @@ f32 plane_segment_clip_parameter(const struct plane *pl, const struct segment *s
 	return (pl->signed_distance - Vec3Dot(pl->normal, s->p0)) / Vec3Dot(pl->normal, s->dir);
 }
 
-u32 plane_segment_clip(vec3 clip, const struct plane *pl, const struct segment *s)
+u32 PlaneSegmentClip(vec3 clip, const struct plane *pl, const struct segment *s)
 {
-	const f32 t = plane_segment_clip_parameter(pl, s);
+	const f32 t = PlaneSegmentClipParameter(pl, s);
 	u32 intersection = 0;
 
 	if (0.0f <= t && t <= 1.0f)
 	{
 		intersection = 0;
-		segment_bc(clip, s, t);
+		SegmentBc(clip, s, t);
 	} 
 	
 	return intersection;
 }
 
-u32 plane_segment_test(const struct plane *pl, const struct segment *s)
+u32 PlaneSegmentTest(const struct plane *pl, const struct segment *s)
 {
-	const f32 t = plane_segment_clip_parameter(pl, s);
+	const f32 t = PlaneSegmentClipParameter(pl, s);
 	return (0.0f <= t && t <= 1.0f) ? 1 : 0;
 }
 
-f32 plane_point_signed_distance(const struct plane *pl, const vec3 p)
+f32 PlanePointSignedDistance(const struct plane *pl, const vec3 p)
 {
 	return Vec3Dot(pl->normal, p) - pl->signed_distance;
 }
 
-f32 plane_point_distance(const struct plane *pl, const vec3 p)
+f32 PlanePointDistance(const struct plane *pl, const vec3 p)
 {
 	return f32_abs(Vec3Dot(pl->normal, p) - pl->signed_distance);
 }
 
-f32 plane_raycast_parameter(const struct plane *plane, const struct ray *ray)
+f32 PlaneRaycastParameter(const struct plane *plane, const struct ray *ray)
 {
 	const f32 dot = Vec3Dot(ray->dir, plane->normal);
 	if (dot == 0.0f) { return F32_INFINITY; }
@@ -359,9 +359,9 @@ f32 plane_raycast_parameter(const struct plane *plane, const struct ray *ray)
 	return (plane->signed_distance - Vec3Dot(ray->origin, plane->normal)) / dot;
 }
 
-u32 plane_raycast(vec3 intersection, const struct plane *plane, const struct ray *ray)
+u32 PlaneRaycast(vec3 intersection, const struct plane *plane, const struct ray *ray)
 {
-	const f32 t = plane_raycast_parameter(plane, ray);
+	const f32 t = PlaneRaycastParameter(plane, ray);
 	if (t < 0.0f || t == F32_INFINITY) { return 0; }
 
 	Vec3Copy(intersection, ray->origin);
@@ -369,7 +369,7 @@ u32 plane_raycast(vec3 intersection, const struct plane *plane, const struct ray
 	return 1;
 }
 
-void AABB_vertex(struct AABB *dst, const vec3ptr v, const u32 v_count, const f32 margin)
+void AabbVertex(struct aabb *dst, const vec3ptr v, const u32 v_count, const f32 margin)
 {
 	vec3 min = { F32_INFINITY, F32_INFINITY, F32_INFINITY };
 	vec3 max = { -F32_INFINITY, -F32_INFINITY, -F32_INFINITY };
@@ -393,7 +393,7 @@ void AABB_vertex(struct AABB *dst, const vec3ptr v, const u32 v_count, const f32
 	dst->hw[2] += margin;
 }
 
-void AABB_union(struct AABB *box_union, const struct AABB *a, const struct AABB *b)
+void AabbUnion(struct aabb *box_union, const struct aabb *a, const struct aabb *b)
 {
 	vec3 min, max;
 	
@@ -410,7 +410,7 @@ void AABB_union(struct AABB *box_union, const struct AABB *a, const struct AABB 
 	Vec3Add(box_union->center, box_union->hw, min);
 }
 
-void AABB_rotate(struct AABB *dst, const struct AABB *src, mat3 rotation)
+void AabbRotate(struct aabb *dst, const struct aabb *src, mat3 rotation)
 {
 	/*
 	 * Since we may pick any sign for hw[k], and the support point in any direction for an AABB is
@@ -428,7 +428,7 @@ void AABB_rotate(struct AABB *dst, const struct AABB *src, mat3 rotation)
 	Vec3Copy(dst->center, src->center);
 }
 
-u32 AABB_test(const struct AABB *a, const struct AABB *b)
+u32 AabbTest(const struct aabb *a, const struct aabb *b)
 {
 	if (b->center[0] - b->hw[0] - (a->center[0] + a->hw[0]) > 0.0f 
 			|| a->center[0] - a->hw[0] - (b->center[0] + b->hw[0]) > 0.0f) { return 0; }
@@ -440,7 +440,7 @@ u32 AABB_test(const struct AABB *a, const struct AABB *b)
 	return 1;
 }
 
-u32 AABB_contains(const struct AABB *a, const struct AABB *b)
+u32 AabbContains(const struct aabb *a, const struct aabb *b)
 {
 	if (b->center[0] - b->hw[0] < a->center[0] - a->hw[0]) { return 0; }
 	if (b->center[1] - b->hw[1] < a->center[1] - a->hw[1]) { return 0; }
@@ -453,7 +453,7 @@ u32 AABB_contains(const struct AABB *a, const struct AABB *b)
 	return 1;
 }
 
-u32 AABB_contains_margin(const struct AABB *a, const struct AABB *b, const f32 margin)
+u32 AabbContainsMargin(const struct aabb *a, const struct aabb *b, const f32 margin)
 {
 	if (b->center[0] - b->hw[0] < a->center[0] - a->hw[0] - margin) { return 0; }
 	if (b->center[1] - b->hw[1] < a->center[1] - a->hw[1] - margin) { return 0; }
@@ -466,7 +466,7 @@ u32 AABB_contains_margin(const struct AABB *a, const struct AABB *b, const f32 m
 	return 1;
 }
 	
-void AABB_raycast_parameter_ex_setup(vec3 multiplier, vec3u32 dir_sign_bit, const struct ray *ray)
+void AabbRaycastParameterExSetup(vec3 multiplier, vec3u32 dir_sign_bit, const struct ray *ray)
 {
 	multiplier[0] = 1.0f / (ray->dir[0]);
 	multiplier[1] = 1.0f / (ray->dir[1]);
@@ -499,7 +499,7 @@ void AABB_raycast_parameter_ex_setup(vec3 multiplier, vec3u32 dir_sign_bit, cons
 
 			1.0f / D[axis]*n[axis] precomputed.
 */
-f32 AABB_raycast_parameter_ex(const struct AABB *aabb, const struct ray *ray, const vec3 multiplier, const vec3u32 dir_sign_bit)
+f32 AabbRaycastParameterEx(const struct aabb *aabb, const struct ray *ray, const vec3 multiplier, const vec3u32 dir_sign_bit)
 {
 	vec3 box_min, box_max;
 	Vec3Sub(box_min, aabb->center, aabb->hw);
@@ -538,17 +538,17 @@ f32 AABB_raycast_parameter_ex(const struct AABB *aabb, const struct ray *ray, co
 	return t_min;
 }
 
-f32 AABB_raycast_parameter(const struct AABB *aabb, const struct ray *ray)
+f32 AabbRaycastParameter(const struct aabb *aabb, const struct ray *ray)
 {
 	vec3 multiplier;
        	vec3u32	dir_sign_bit;
-	AABB_raycast_parameter_ex_setup(multiplier, dir_sign_bit, ray);
-	return AABB_raycast_parameter_ex(aabb, ray, multiplier, dir_sign_bit);
+	AabbRaycastParameterExSetup(multiplier, dir_sign_bit, ray);
+	return AabbRaycastParameterEx(aabb, ray, multiplier, dir_sign_bit);
 }
 
-u32 AABB_raycast_ex(vec3 intersection, const struct AABB *aabb, const struct ray *ray, const vec3 multiplier, const vec3u32 dir_sign_bit)
+u32 AabbRaycastEx(vec3 intersection, const struct aabb *aabb, const struct ray *ray, const vec3 multiplier, const vec3u32 dir_sign_bit)
 {
-	const f32 t = AABB_raycast_parameter_ex(aabb, ray, multiplier, dir_sign_bit);
+	const f32 t = AabbRaycastParameterEx(aabb, ray, multiplier, dir_sign_bit);
 	if (t == F32_INFINITY) { return 0; }
 
 	Vec3Copy(intersection, ray->origin);
@@ -556,15 +556,15 @@ u32 AABB_raycast_ex(vec3 intersection, const struct AABB *aabb, const struct ray
 	return 1;
 }
 
-u32 AABB_raycast(vec3 intersection, const struct AABB *aabb, const struct ray *ray)
+u32 AabbRaycast(vec3 intersection, const struct aabb *aabb, const struct ray *ray)
 {
 	vec3 multiplier; 
 	vec3u32 dir_sign_bit;
-	AABB_raycast_parameter_ex_setup(multiplier, dir_sign_bit, ray);
-	return AABB_raycast_ex(intersection, aabb, ray, multiplier, dir_sign_bit);
+	AabbRaycastParameterExSetup(multiplier, dir_sign_bit, ray);
+	return AabbRaycastEx(intersection, aabb, ray, multiplier, dir_sign_bit);
 }
 
-u64 AABB_push_lines_buffered(u8 *buf, const u64 bufsize, const struct AABB *box, const vec4 color)
+u64 AabbPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const vec4 color)
 {
 	const u64 bytes_written = 3*8*(sizeof(vec3)+sizeof(vec4));
 	if (bufsize < bytes_written)
@@ -615,7 +615,7 @@ u64 AABB_push_lines_buffered(u8 *buf, const u64 bufsize, const struct AABB *box,
 	return bytes_written;
 }
 
-u64 AABB_transform_push_lines_buffered(u8 *buf, const u64 bufsize, const struct AABB *box, const vec3 translation, mat3 rotation, const vec4 color)
+u64 AabbTransformPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const vec3 translation, mat3 rotation, const vec4 color)
 {
 	const u64 bytes_written = 3*8*(sizeof(vec3)+sizeof(vec4));
 	if (bufsize < bytes_written)
@@ -676,9 +676,9 @@ u64 AABB_transform_push_lines_buffered(u8 *buf, const u64 bufsize, const struct 
 	return bytes_written;
 }
 
-struct AABB bbox_triangle(const vec3 p0, const vec3 p1, const vec3 p2)
+struct aabb BboxTriangle(const vec3 p0, const vec3 p1, const vec3 p2)
 {
-	struct AABB bbox;
+	struct aabb bbox;
 
 	vec3 min = { p0[0], p0[1], p0[2] };
 	vec3 max = { p0[0], p0[1], p0[2] };
@@ -706,9 +706,9 @@ struct AABB bbox_triangle(const vec3 p0, const vec3 p1, const vec3 p2)
 	return bbox;
 }
 
-struct AABB bbox_union(const struct AABB a, const struct AABB b)
+struct aabb BboxUnion(const struct aabb a, const struct aabb b)
 {
-	struct AABB bbox;
+	struct aabb bbox;
 	vec3 min, max;
 	
 	min[0] = f32_min(a.center[0] - a.hw[0], b.center[0] - b.hw[0]);
@@ -726,7 +726,7 @@ struct AABB bbox_union(const struct AABB a, const struct AABB b)
 	return bbox;
 }
 
-u32 vertex_support(vec3 support, const vec3 dir, const vec3ptr v, const u32 v_count)
+u32 VertexSupport(vec3 support, const vec3 dir, const vec3ptr v, const u32 v_count)
 {
 	u32 best = U32_MAX;
 	f32 max_dist = -F32_INFINITY;
@@ -745,7 +745,7 @@ u32 vertex_support(vec3 support, const vec3 dir, const vec3ptr v, const u32 v_co
 	return best;
 }
 
-void vertex_centroid(vec3 centroid, const vec3ptr vs, const u32 n)
+void VertexCentroid(vec3 centroid, const vec3ptr vs, const u32 n)
 {
 	Vec3Set(centroid, 0.0f, 0.0f, 0.0f);
 	for (u32 i = 0; i < n; ++i)
@@ -755,7 +755,7 @@ void vertex_centroid(vec3 centroid, const vec3ptr vs, const u32 n)
 	Vec3ScaleSelf(centroid, 1.0f / n);
 }
 
-void tri_ccw_normal(vec3 normal, const vec3 p0, const vec3 p1, const vec3 p2)
+void TriCcwNormal(vec3 normal, const vec3 p0, const vec3 p1, const vec3 p2)
 {
 	vec3 A, B, C;
 	Vec3Sub(A, p1, p0);
@@ -764,7 +764,7 @@ void tri_ccw_normal(vec3 normal, const vec3 p0, const vec3 p1, const vec3 p2)
 	Vec3Normalize(normal, C);
 }
 
-void tri_ccw_direction(vec3 dir, const vec3 p0, const vec3 p1, const vec3 p2)
+void TriCcwDirection(vec3 dir, const vec3 p0, const vec3 p1, const vec3 p2)
 {
 	vec3 A, B;
 	Vec3Sub(A, p1, p0);
@@ -785,7 +785,7 @@ vec3 box_stub_vertex[8] =
 };
 
 
-static struct dcel_face box_face[] =
+static struct dcelFace box_face[] =
 {
 	{ .first  =  0, .count = 4 },
 	{ .first  =  4, .count = 4 },
@@ -795,7 +795,7 @@ static struct dcel_face box_face[] =
 	{ .first  = 20, .count = 4 },
 };
 
-static struct dcel_edge box_edge[] =
+static struct dcelEdge box_edge[] =
 {
 	{ .origin = 0, .twin =  7,  .face_ccw = 0, },
 	{ .origin = 1, .twin = 11,  .face_ccw = 0, },
@@ -828,7 +828,7 @@ static struct dcel_edge box_edge[] =
 	{ .origin = 7, .twin = 13,  .face_ccw = 5, },
 };
 
-struct dcel dcel_box_stub(void)
+struct dcel DcelBoxStub(void)
 {
 	struct dcel box = 
 	{
@@ -843,7 +843,7 @@ struct dcel dcel_box_stub(void)
 	return box; 
 }
 
-struct dcel dcel_box(struct arena *mem, const vec3 hw)
+struct dcel DcelBox(struct arena *mem, const vec3 hw)
 {
 	vec3ptr box_vertex = ArenaPush(mem, 8*sizeof(vec3));
 
@@ -869,51 +869,51 @@ struct dcel dcel_box(struct arena *mem, const vec3 hw)
 	return box; 
 }
 
-void dcel_face_direction(vec3 dir, const struct dcel *h, const u32 fi)
+void DcelFaceDirection(vec3 dir, const struct dcel *h, const u32 fi)
 {
 	vec3 a, b;
-	struct dcel_edge *e0 = h->e + h->f[fi].first;
-	struct dcel_edge *e1 = h->e + h->f[fi].first + 1;
-	struct dcel_edge *e2 = h->e + h->f[fi].first + 2;
+	struct dcelEdge *e0 = h->e + h->f[fi].first;
+	struct dcelEdge *e1 = h->e + h->f[fi].first + 1;
+	struct dcelEdge *e2 = h->e + h->f[fi].first + 2;
 	Vec3Sub(a, h->v[e1->origin], h->v[e0->origin]);
 	Vec3Sub(b, h->v[e2->origin], h->v[e0->origin]);
 	Vec3Cross(dir, a, b);
 }
 
-void dcel_face_normal(vec3 normal, const struct dcel *h, const u32 fi)
+void DcelFaceNormal(vec3 normal, const struct dcel *h, const u32 fi)
 {
-	dcel_face_direction(normal, h, fi);
+	DcelFaceDirection(normal, h, fi);
 	Vec3ScaleSelf(normal, 1.0f/Vec3Length(normal));	
 }
 
-struct plane dcel_face_plane(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi)
+struct plane DcelFacePlane(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi)
 {
 	vec3 n, p;
-	dcel_face_normal(p, h, fi);
+	DcelFaceNormal(p, h, fi);
 	Mat3VecMul(n, rot, p);
 	Mat3VecMul(p, rot, h->v[h->e[h->f[fi].first].origin]);
 	Vec3Translate(p, pos);
-	return plane_construct(n, p);
+	return PlaneConstruct(n, p);
 }
 
-struct segment dcel_face_clip_segment(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi, const struct segment *s)
+struct segment DcelFaceClipSegment(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi, const struct segment *s)
 {
 	vec3 f_n, p_n, p_p0, p_p1;
 
-	dcel_face_normal(p_n, h, fi);
+	DcelFaceNormal(p_n, h, fi);
 	Mat3VecMul(f_n, rot, p_n);
 
 	f32 min_p = 0.0f;
 	f32 max_p = 1.0f;
 
-	struct dcel_face *f = h->f + fi;
+	struct dcelFace *f = h->f + fi;
 	for (u32 i = 0; i < f->count; ++i)
 	{
 		const u32 e0 = f->first + i;
 		const u32 e1 = f->first + ((i + 1) % f->count);
-		struct plane clip_plane = dcel_face_clip_plane(h, rot, pos, f_n, e0, e1);
+		struct plane clip_plane = DcelFaceClipPlane(h, rot, pos, f_n, e0, e1);
 
-		const f32 bc_c = plane_segment_clip_parameter(&clip_plane, s);
+		const f32 bc_c = PlaneSegmentClipParameter(&clip_plane, s);
 		if (min_p <= bc_c && bc_c <= max_p)
 		{
 			if (Vec3Dot(s->dir, clip_plane.normal) >= 0.0f)
@@ -927,16 +927,16 @@ struct segment dcel_face_clip_segment(const struct dcel *h, mat3 rot, const vec3
 		}
 	}	
 
-	segment_bc(p_p0, s, min_p);
-	segment_bc(p_p1, s, max_p);
-	return segment_construct(p_p0, p_p1);
+	SegmentBc(p_p0, s, min_p);
+	SegmentBc(p_p1, s, max_p);
+	return SegmentConstruct(p_p0, p_p1);
 }
 
-struct plane dcel_face_clip_plane(const struct dcel *h, mat3 rot, const vec3 pos, const vec3 face_normal, const u32 e0, const u32 e1)
+struct plane DcelFaceClipPlane(const struct dcel *h, mat3 rot, const vec3 pos, const vec3 face_normal, const u32 e0, const u32 e1)
 {
 	vec3 diff, p0, p1;
-	struct dcel_edge *edge0 = h->e + e0; 
-	struct dcel_edge *edge1 = h->e + e1; 
+	struct dcelEdge *edge0 = h->e + e0; 
+	struct dcelEdge *edge1 = h->e + e1; 
 
 	Mat3VecMul(p0, rot, h->v[edge0->origin]);
 	Mat3VecMul(p1, rot, h->v[edge1->origin]);
@@ -946,25 +946,25 @@ struct plane dcel_face_clip_plane(const struct dcel *h, mat3 rot, const vec3 pos
 	Vec3Cross(p1, diff, face_normal);
 	Vec3ScaleSelf(p1, 1.0f/Vec3Length(p1));
 
-	return plane_construct(p1, p0);
+	return PlaneConstruct(p1, p0);
 }
 
-u32 dcel_face_projected_point_test(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi, const vec3 p)
+u32 DcelFaceProjectedPointTest(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi, const vec3 p)
 {
 	vec3 f_n, p_n;
 
-	dcel_face_normal(p_n, h, fi);
+	DcelFaceNormal(p_n, h, fi);
 	Mat3VecMul(f_n, rot, p_n);
 
 	f32 min_p = 0.0f;
 	f32 max_p = 1.0f;
 
-	struct dcel_face *f = h->f + fi;
+	struct dcelFace *f = h->f + fi;
 	for (u32 i = 0; i < f->count; ++i)
 	{
 		const u32 e0 = f->first + i;
 		const u32 e1 = f->first + ((i + 1) % f->count);
-		struct plane clip_plane = dcel_face_clip_plane(h, rot, pos, f_n, e0, e1);
+		struct plane clip_plane = DcelFaceClipPlane(h, rot, pos, f_n, e0, e1);
 		if (Vec3Dot(clip_plane.normal, p) > clip_plane.signed_distance)
 		{
 			return 0;
@@ -974,22 +974,22 @@ u32 dcel_face_projected_point_test(const struct dcel *h, mat3 rot, const vec3 po
 	return 1;
 }
 
-void dcel_edge_direction(vec3 dir, const struct dcel *h, const u32 ei)
+void DcelEdgeDirection(vec3 dir, const struct dcel *h, const u32 ei)
 {
-	struct dcel_edge *e0 = h->e + ei;
-	struct dcel_face *f = h->f + e0->face_ccw;
+	struct dcelEdge *e0 = h->e + ei;
+	struct dcelFace *f = h->f + e0->face_ccw;
 	const u32 next = f->first + ((ei - f->first + 1) % f->count);
-	struct dcel_edge *e1 = h->e + next;
+	struct dcelEdge *e1 = h->e + next;
 	Vec3Sub(dir, h->v[e1->origin], h->v[e0->origin]);
 }
 
-void dcel_edge_normal(vec3 dir, const struct dcel *h, const u32 ei)
+void DcelEdgeNormal(vec3 dir, const struct dcel *h, const u32 ei)
 {
-	dcel_edge_direction(dir, h, ei);
+	DcelEdgeDirection(dir, h, ei);
 	Vec3ScaleSelf(dir, 1.0f / Vec3Length(dir));
 }
 
-struct segment dcel_edge_segment(const struct dcel *h, mat3 rot, const vec3 pos, const u32 ei)
+struct segment DcelEdgeSegment(const struct dcel *h, mat3 rot, const vec3 pos, const u32 ei)
 {
 	vec3 p0, p1;
 	const u32 first = h->f[h->e[ei].face_ccw].first;
@@ -1002,16 +1002,16 @@ struct segment dcel_edge_segment(const struct dcel *h, mat3 rot, const vec3 pos,
 	Vec3Translate(p0, pos);
 	Vec3Translate(p1, pos);
 
-	return segment_construct(p0, p1);
+	return SegmentConstruct(p0, p1);
 }
 
-void sphere_support(vec3 support, const vec3 dir, const struct sphere *sph, const vec3 pos)
+void SphereSupport(vec3 support, const vec3 dir, const struct sphere *sph, const vec3 pos)
 {
 	Vec3Scale(support, dir, sph->radius / Vec3Length(dir));
 	Vec3Translate(support, pos);
 }
 
-void capsule_support(vec3 support, const vec3 dir, const struct capsule *cap, mat3 rot, const vec3 pos)
+void CapsuleSupport(vec3 support, const vec3 dir, const struct capsule *cap, mat3 rot, const vec3 pos)
 {
 	vec3 p1, p2;
 	p1[0] = rot[1][0] * cap->half_height,	
@@ -1026,7 +1026,7 @@ void capsule_support(vec3 support, const vec3 dir, const struct capsule *cap, ma
 		: Vec3Translate(support, p2);
 }
 
-u32 dcel_support(vec3 support, const vec3 dir, const struct dcel *dcel, mat3 rot, const vec3 pos)
+u32 DcelSupport(vec3 support, const vec3 dir, const struct dcel *dcel, mat3 rot, const vec3 pos)
 {
 	f32 max = -F32_INFINITY;
 	u32 max_index = 0;
@@ -1047,14 +1047,14 @@ u32 dcel_support(vec3 support, const vec3 dir, const struct dcel *dcel, mat3 rot
 	return max_index;
 }
 
-struct dcel dcel_empty(void)
+struct dcel DcelEmpty(void)
 {
 	struct dcel dcel = { 0 };
 
 	return dcel;
 }
 
-void dcel_print(const struct dcel *dcel)
+void DcelPrint(const struct dcel *dcel)
 {	
 	fprintf(stderr, "dcel[%p]\n{\n", dcel);	
 
@@ -1090,10 +1090,10 @@ void dcel_print(const struct dcel *dcel)
 	fprintf(stderr, "}\n");	
 }
 
-void dcel_assert_topology(struct dcel *dcel)
+void DcelAssertTopology(struct dcel *dcel)
 {
-	struct dcel_face *f;
-	struct dcel_edge *e;
+	struct dcelFace *f;
+	struct dcelEdge *e;
 	for (u32 i = 0; i < dcel->f_count; ++i)
 	{
 		f = dcel->f + i;
@@ -1117,7 +1117,7 @@ void dcel_assert_topology(struct dcel *dcel)
 	}
 }
 
-struct ddcel_face
+struct ddcelFace
 {
 	POOL_SLOT_STATE;
 	struct dll	ce_list;
@@ -1126,7 +1126,7 @@ struct ddcel_face
 	u32 		count;	/* edge count */
 };
 
-struct ddcel_edge
+struct ddcelEdge
 {
 	POOL_SLOT_STATE;
 	u32 		origin;		/* vertex index origin */
@@ -1137,7 +1137,7 @@ struct ddcel_edge
 	u32		horizon; /* used in horizon derivation step */
 };
 
-struct conflict_edge
+struct conflictEdge
 {
 	DLL_SLOT_STATE;
 	DLL2_SLOT_STATE;
@@ -1146,7 +1146,7 @@ struct conflict_edge
 	POOL_SLOT_STATE;
 };
 
-struct conflict_vertex
+struct conflictVertex
 {
 	struct dll	ce_list;
 	u32		index;
@@ -1155,7 +1155,7 @@ struct conflict_vertex
 	u32		last_face;	/* last iteration it was added to a face's conflict list*/
 };
 
-struct horizon_vertex
+struct horizionVertex
 {
 	u32	edge1;			/* new edge; going INTO conflict vertex */
 	u32	edge2;			/* new edge; going OUT OF  conflict vertex */
@@ -1176,27 +1176,27 @@ struct ddcel
 	struct pool 		face_pool;
 	struct pool		edge_pool;
 	/* pools are not growable, so safe to use these */
-	struct ddcel_face *	f;		
-	struct ddcel_edge *	e;
+	struct ddcelFace *	f;		
+	struct ddcelEdge *	e;
 	const vec3ptr		v;
 	u32 			v_count;
 
 	/* internal */
 	struct arena		tmp1;
 	struct pool 		ce_pool;
-	struct conflict_edge *	ce;
-	struct conflict_vertex *cv;
-	struct horizon_vertex * hv;
+	struct conflictEdge *	ce;
+	struct conflictVertex *cv;
+	struct horizionVertex * hv;
 };
 
-static void ddcel_face_set(struct ddcel_face *face, const u32 first, const u32 count)
+static void DdcelFaceSet(struct ddcelFace *face, const u32 first, const u32 count)
 {
 	face->first = first;
 	face->count = count;
-	face->ce_list = dll2_Init(struct conflict_edge);
+	face->ce_list = dll2_Init(struct conflictEdge);
 }
 
-static void ddcel_edge_set(struct ddcel_edge *edge, const u32 origin, const u32 twin, const u32 prev, const u32 next, const u32 face_ccw)
+static void DdcelEdgeSet(struct ddcelEdge *edge, const u32 origin, const u32 twin, const u32 prev, const u32 next, const u32 face_ccw)
 {
 	edge->origin = origin;
 	edge->twin = twin;
@@ -1206,7 +1206,7 @@ static void ddcel_edge_set(struct ddcel_edge *edge, const u32 origin, const u32 
 	edge->horizon = 0;
 }
 
-static void ddcel_assert_topology(const struct ddcel *ddcel)
+static void DdcelAssertTopology(const struct ddcel *ddcel)
 {
 	struct arena tmp = ArenaAlloc1MB();
 
@@ -1229,10 +1229,10 @@ static void ddcel_assert_topology(const struct ddcel *ddcel)
 			do
 			{
 				edge_count += 1;
-				const struct ddcel_edge *c = ddcel->e + current;
-				const struct ddcel_edge *p = ddcel->e + c->prev;
-				const struct ddcel_edge *n = ddcel->e + c->next;
-				const struct ddcel_edge *t = ddcel->e + c->twin;
+				const struct ddcelEdge *c = ddcel->e + current;
+				const struct ddcelEdge *p = ddcel->e + c->prev;
+				const struct ddcelEdge *n = ddcel->e + c->next;
+				const struct ddcelEdge *t = ddcel->e + c->twin;
 
 				ds_Assert(c->horizon == 0);
 				ds_Assert(c->origin < ddcel->v_count);
@@ -1277,7 +1277,7 @@ static void ddcel_assert_topology(const struct ddcel *ddcel)
 	ds_Assert(face_count >= 4);
 }
 
-u32 internal_convex_hull_tetrahedron_indices(struct ddcel *ddcel, const f32 tol)
+u32 InternalConvexHullTetrahedronIndices(struct ddcel *ddcel, const f32 tol)
 {
 	vec3 a, b, n;
 
@@ -1328,7 +1328,7 @@ u32 internal_convex_hull_tetrahedron_indices(struct ddcel *ddcel, const f32 tol)
 
 	for (u32 j = 0; j < 4; ++j)
 	{
-		struct conflict_vertex tmp = ddcel->cv[j];
+		struct conflictVertex tmp = ddcel->cv[j];
 		ddcel->cv[j] = ddcel->cv[indices[j]];
 		ddcel->cv[indices[j]] = tmp;
 	}
@@ -1336,7 +1336,7 @@ u32 internal_convex_hull_tetrahedron_indices(struct ddcel *ddcel, const f32 tol)
 	return i < ddcel->v_count;
 }
 
-static void internal_convex_hull_tetrahedron_ddcel(struct ddcel *ddcel, const f32 tol)
+static void InternalConvexHullTetrahedronDdcel(struct ddcel *ddcel, const f32 tol)
 {
 	const vec3ptr v = ddcel->v;
 	const u32 v_count = ddcel->v_count;
@@ -1355,44 +1355,44 @@ static void internal_convex_hull_tetrahedron_ddcel(struct ddcel *ddcel, const f3
 		ddcel->cv[2].index = tmp;
 	}
 
-	struct ddcel_face *f0 = PoolAdd(&ddcel->face_pool).address;
-	struct ddcel_face *f1 = PoolAdd(&ddcel->face_pool).address;
-	struct ddcel_face *f2 = PoolAdd(&ddcel->face_pool).address;
-	struct ddcel_face *f3 = PoolAdd(&ddcel->face_pool).address;
+	struct ddcelFace *f0 = PoolAdd(&ddcel->face_pool).address;
+	struct ddcelFace *f1 = PoolAdd(&ddcel->face_pool).address;
+	struct ddcelFace *f2 = PoolAdd(&ddcel->face_pool).address;
+	struct ddcelFace *f3 = PoolAdd(&ddcel->face_pool).address;
 
-	struct ddcel_edge *e0 = PoolAdd(&ddcel->edge_pool).address;
-	struct ddcel_edge *e1 = PoolAdd(&ddcel->edge_pool).address;
-	struct ddcel_edge *e2 = PoolAdd(&ddcel->edge_pool).address;
-	struct ddcel_edge *e3 = PoolAdd(&ddcel->edge_pool).address;
-	struct ddcel_edge *e4 = PoolAdd(&ddcel->edge_pool).address;
-	struct ddcel_edge *e5 = PoolAdd(&ddcel->edge_pool).address;
-	struct ddcel_edge *e6 = PoolAdd(&ddcel->edge_pool).address;
-	struct ddcel_edge *e7 = PoolAdd(&ddcel->edge_pool).address;
-	struct ddcel_edge *e8 = PoolAdd(&ddcel->edge_pool).address;
-	struct ddcel_edge *e9 = PoolAdd(&ddcel->edge_pool).address;
-	struct ddcel_edge *e10 = PoolAdd(&ddcel->edge_pool).address;
-	struct ddcel_edge *e11 = PoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e0 = PoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e1 = PoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e2 = PoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e3 = PoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e4 = PoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e5 = PoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e6 = PoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e7 = PoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e8 = PoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e9 = PoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e10 = PoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e11 = PoolAdd(&ddcel->edge_pool).address;
 
-	ddcel_face_set(f0, 0, 3);
-	ddcel_face_set(f1, 3, 3);
-	ddcel_face_set(f2, 6, 3);
-	ddcel_face_set(f3, 9, 3);
+	DdcelFaceSet(f0, 0, 3);
+	DdcelFaceSet(f1, 3, 3);
+	DdcelFaceSet(f2, 6, 3);
+	DdcelFaceSet(f3, 9, 3);
 
-	ddcel_edge_set(e0,  ddcel->cv[0].index,  4,  2,  1, 0);
-	ddcel_edge_set(e1,  ddcel->cv[1].index, 10,  0,  2, 0);
-	ddcel_edge_set(e2,  ddcel->cv[2].index,  7,  1,  0, 0);
+	DdcelEdgeSet(e0,  ddcel->cv[0].index,  4,  2,  1, 0);
+	DdcelEdgeSet(e1,  ddcel->cv[1].index, 10,  0,  2, 0);
+	DdcelEdgeSet(e2,  ddcel->cv[2].index,  7,  1,  0, 0);
 
-	ddcel_edge_set(e3,  ddcel->cv[3].index, 11,  5,  4, 1);
-	ddcel_edge_set(e4,  ddcel->cv[1].index,  0,  3,  5, 1);
-	ddcel_edge_set(e5,  ddcel->cv[0].index,  6,  4,  3, 1);
+	DdcelEdgeSet(e3,  ddcel->cv[3].index, 11,  5,  4, 1);
+	DdcelEdgeSet(e4,  ddcel->cv[1].index,  0,  3,  5, 1);
+	DdcelEdgeSet(e5,  ddcel->cv[0].index,  6,  4,  3, 1);
 
-	ddcel_edge_set(e6,  ddcel->cv[3].index,  5,  8,  7, 2);
-	ddcel_edge_set(e7,  ddcel->cv[0].index,  2,  6,  8, 2);
-	ddcel_edge_set(e8,  ddcel->cv[2].index,  9,  7,  6, 2);
+	DdcelEdgeSet(e6,  ddcel->cv[3].index,  5,  8,  7, 2);
+	DdcelEdgeSet(e7,  ddcel->cv[0].index,  2,  6,  8, 2);
+	DdcelEdgeSet(e8,  ddcel->cv[2].index,  9,  7,  6, 2);
 
-	ddcel_edge_set(e9,  ddcel->cv[3].index,  8, 11, 10, 3);
-	ddcel_edge_set(e10, ddcel->cv[2].index,  1,  9, 11, 3);
-	ddcel_edge_set(e11, ddcel->cv[1].index,  3, 10,  9, 3);
+	DdcelEdgeSet(e9,  ddcel->cv[3].index,  8, 11, 10, 3);
+	DdcelEdgeSet(e10, ddcel->cv[2].index,  1,  9, 11, 3);
+	DdcelEdgeSet(e11, ddcel->cv[1].index,  3, 10,  9, 3);
 
 	Vec3Sub(a, ddcel->v[e1->origin], ddcel->v[e0->origin]);
 	Vec3Sub(b, ddcel->v[e2->origin], ddcel->v[e0->origin]);
@@ -1414,17 +1414,17 @@ static void internal_convex_hull_tetrahedron_ddcel(struct ddcel *ddcel, const f3
 	Vec3Cross(cr, a, b);
 	Vec3Normalize(ddcel->f[3].normal, cr);
 
-	ddcel_assert_topology(ddcel);
+	DdcelAssertTopology(ddcel);
 }
 
-static void internal_convex_hull_tetrahedron_conflicts(struct ddcel *ddcel, const f32 tol)
+static void InternalConvexHullTetrahedronConflicts(struct ddcel *ddcel, const f32 tol)
 {
 	const vec3ptr v = ddcel->v;
 	const u32 v_count = ddcel->v_count;
 	vec3 b;
 	for (u32 cv_i = 4; cv_i < v_count; ++cv_i)
 	{
-		struct conflict_vertex *cv = ddcel->cv + cv_i;
+		struct conflictVertex *cv = ddcel->cv + cv_i;
 		for (u32 f_i = 0; f_i < 4; ++f_i)
 		{
 			const u32 v0_i = ddcel->e[ddcel->f[f_i].first].origin;
@@ -1436,7 +1436,7 @@ static void internal_convex_hull_tetrahedron_conflicts(struct ddcel *ddcel, cons
 				dll_Append(&cv->ce_list, ddcel->ce_pool.buf, slot.index);
 				dll_Append(&ddcel->f[f_i].ce_list, ddcel->ce_pool.buf, slot.index);
 
-				struct conflict_edge *edge = slot.address;
+				struct conflictEdge *edge = slot.address;
 				edge->vertex = cv_i;
 				edge->face = f_i;
 			}
@@ -1444,21 +1444,21 @@ static void internal_convex_hull_tetrahedron_conflicts(struct ddcel *ddcel, cons
 	}
 }
 
-void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
+void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 {
 	if (ddcel->cv[cvi].ce_list.count == 0) { return; }
 
-	struct conflict_vertex *cv = ddcel->cv + cvi;
-	struct conflict_edge *ce = NULL;
+	struct conflictVertex *cv = ddcel->cv + cvi;
+	struct conflictEdge *ce = NULL;
 
 	for (u32 i = cv->ce_list.first; i != DLL_NULL; i = dll_Next(ce))
 	{
 		ce = ddcel->ce + i;
 		const u32 fi = ce->face;
-		struct ddcel_edge *e = ddcel->e + ddcel->f[fi].first;
+		struct ddcelEdge *e = ddcel->e + ddcel->f[fi].first;
 		for (u32 j = 0; j < ddcel->f[fi].count; ++j)
 		{
-			struct ddcel_edge *twin = ddcel->e + e->twin;
+			struct ddcelEdge *twin = ddcel->e + e->twin;
 			ds_Assert(e->horizon == 0);
 			ds_Assert(twin->horizon == 0);
 		}
@@ -1472,10 +1472,10 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 	{
 		ce = ddcel->ce + i;
 		const u32 fi = ce->face;
-		struct ddcel_edge *e = ddcel->e + ddcel->f[fi].first;
+		struct ddcelEdge *e = ddcel->e + ddcel->f[fi].first;
 		for (u32 j = 0; j < ddcel->f[fi].count; ++j)
 		{
-			struct ddcel_edge *twin = ddcel->e + e->twin;
+			struct ddcelEdge *twin = ddcel->e + e->twin;
 			//fprintf(stderr, "horizon edge par (%u,%u)\n", PoolIndex(&ddcel->edge_pool, e), e->twin);
 			e->horizon += 1;
 			twin->horizon += 1;
@@ -1494,12 +1494,12 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 	{
 		ce = ddcel->ce + i;
 		const u32 fi = ce->face;
-		struct ddcel_face *f = ddcel->f + fi;
+		struct ddcelFace *f = ddcel->f + fi;
 
 		u32 ej = f->first;
 		for (u32 j = 0; j < f->count; ++j)
 		{
-			struct ddcel_edge *e = ddcel->e + ej;
+			struct ddcelEdge *e = ddcel->e + ej;
 			const u32 next = e->next;
 			if (e->horizon == 2)
 			{
@@ -1508,8 +1508,8 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 			else
 			{
 				//fprintf(stderr, "horizon edge par (%u,%u)\n", ej, e->twin);
-				struct ddcel_edge *e_twin = ddcel->e + e->twin;
-				struct ddcel_face *f_twin = ddcel->f + e_twin->face_ccw;
+				struct ddcelEdge *e_twin = ddcel->e + e->twin;
+				struct ddcelFace *f_twin = ddcel->f + e_twin->face_ccw;
 
 				ds_Assert(e->horizon == 1);
 				ds_Assert(e_twin->horizon == 1);
@@ -1556,14 +1556,14 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 	{	
 		const u32 twin_face = ddcel->hv[horizon].edge_out_twin_face;
 		const u32 ccw_face = ddcel->e[ddcel->hv[horizon].edge_out].face_ccw;
-		struct ddcel_face *f_ccw = ddcel->f + ccw_face;
-		struct ddcel_face *f_twin = ddcel->f + twin_face;
+		struct ddcelFace *f_ccw = ddcel->f + ccw_face;
+		struct ddcelFace *f_twin = ddcel->f + twin_face;
 
 		struct slot se1 = PoolAdd(&ddcel->edge_pool);
 		struct slot se2 = PoolAdd(&ddcel->edge_pool);
 
-		struct ddcel_edge *e1 = se1.address;
-		struct ddcel_edge *e2 = se2.address;
+		struct ddcelEdge *e1 = se1.address;
+		struct ddcelEdge *e2 = se2.address;
 
 		ddcel->hv[horizon].edge1 = se1.index;
 		ddcel->hv[horizon].edge2 = se2.index;
@@ -1604,8 +1604,8 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 				edge = ddcel->hv[horizon].edge_out;
 			} while (ddcel->hv[horizon].edge_out_twin_face == twin_face);
 
-			ddcel_edge_set(e1, horizon, U32_MAX, twin_end_prev, se2.index, twin_face);
-			ddcel_edge_set(e2, cv->index, prev_horizon_edge1, se1.index, twin_start_next, twin_face);
+			DdcelEdgeSet(e1, horizon, U32_MAX, twin_end_prev, se2.index, twin_face);
+			DdcelEdgeSet(e2, cv->index, prev_horizon_edge1, se1.index, twin_start_next, twin_face);
 			ddcel->e[twin_end_prev].next = se1.index;
 			ddcel->e[twin_start_next].prev = se2.index;
 
@@ -1618,14 +1618,14 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 
 			const u32 e0i = ddcel->hv[horizon].edge_out;
 
-			struct ddcel_face *f = sf.address;
-			struct ddcel_edge *e0 = ddcel->e + e0i;
+			struct ddcelFace *f = sf.address;
+			struct ddcelEdge *e0 = ddcel->e + e0i;
 
-			ddcel_edge_set(e2, cv->index, ddcel->hv[prev_horizon].edge1, se1.index, e0i, sf.index);
-			ddcel_edge_set(e1, ddcel->e[e0->twin].origin, U32_MAX, e0i, se2.index, sf.index);
-			ddcel_edge_set(e0, e0->origin, e0->twin, se2.index, se1.index, sf.index);
+			DdcelEdgeSet(e2, cv->index, ddcel->hv[prev_horizon].edge1, se1.index, e0i, sf.index);
+			DdcelEdgeSet(e1, ddcel->e[e0->twin].origin, U32_MAX, e0i, se2.index, sf.index);
+			DdcelEdgeSet(e0, e0->origin, e0->twin, se2.index, se1.index, sf.index);
 
-			ddcel_face_set(f, e0i, 3);
+			DdcelFaceSet(f, e0i, 3);
 			vec3 a, b, cr;
 			Vec3Sub(a, ddcel->v[e1->origin], ddcel->v[e0->origin]);
 			Vec3Sub(b, ddcel->v[e2->origin], ddcel->v[e0->origin]);
@@ -1649,7 +1649,7 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 						dll_Append(&f->ce_list, ddcel->ce_pool.buf, slot.index);
 						dll_Append(&ddcel->cv[ce->vertex].ce_list, ddcel->ce_pool.buf, slot.index);
 
-						struct conflict_edge *new = slot.address;
+						struct conflictEdge *new = slot.address;
 						new->vertex = ce->vertex;
 						new->face = sf.index;
 					}
@@ -1673,7 +1673,7 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 						dll_Append(&f->ce_list, ddcel->ce_pool.buf, slot.index);
 						dll_Append(&ddcel->cv[ce->vertex].ce_list, ddcel->ce_pool.buf, slot.index);
 
-						struct conflict_edge *new = slot.address;
+						struct conflictEdge *new = slot.address;
 						new->vertex = ce->vertex;
 						new->face = sf.index;
 					}
@@ -1694,7 +1694,7 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 		ce = ddcel->ce + i;
 		i = dll_Next(ce);
 		const u32 fi = ce->face;
-		struct ddcel_face *f = ddcel->f + fi;
+		struct ddcelFace *f = ddcel->f + fi;
 
 		ce = NULL;
 		for (u32 j = f->ce_list.first; j != DLL_NULL; )
@@ -1702,7 +1702,7 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 			ce = ddcel->ce + j;
 			const u32 next = dll2_Next(ce);
 
-			struct conflict_vertex *cvj = ddcel->cv + ce->vertex;
+			struct conflictVertex *cvj = ddcel->cv + ce->vertex;
 			dll_Remove(&cvj->ce_list, ddcel->ce_pool.buf, j);
 			PoolRemove(&ddcel->ce_pool, j);
 
@@ -1713,14 +1713,14 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 	}
 }
 
-struct dcel dcel_ddcel(struct arena *mem, const struct ddcel *ddcel)
+struct dcel DcelDdcel(struct arena *mem, const struct ddcel *ddcel)
 {
 	ArenaPushRecord(mem);
 	struct dcel cpy =
 	{
 		.v = ArenaPushMemcpy(mem, ddcel->v, ddcel->v_count*sizeof(vec3)),
-		.e = ArenaPush(mem, ddcel->edge_pool.count*sizeof(struct dcel_edge)),
-		.f = ArenaPush(mem, ddcel->face_pool.count*sizeof(struct dcel_face)),
+		.e = ArenaPush(mem, ddcel->edge_pool.count*sizeof(struct dcelEdge)),
+		.f = ArenaPush(mem, ddcel->face_pool.count*sizeof(struct dcelFace)),
 		.v_count = ddcel->v_count,
 		.e_count = ddcel->edge_pool.count,
 		.f_count = ddcel->face_pool.count,
@@ -1768,23 +1768,23 @@ struct dcel dcel_ddcel(struct arena *mem, const struct ddcel *ddcel)
 			}
 		}
 
-		//dcel_print(&cpy);
-		//dcel_assert_topology(&cpy);
+		//DcelPrint(&cpy);
+		//DcelAssertTopology(&cpy);
 		ArenaPopRecord(mem);
 		ArenaRemoveRecord(mem);
 	}
 	else
 	{
 		ArenaPopRecord(mem);
-		cpy = dcel_empty();
+		cpy = DcelEmpty();
 	}
 
 	return cpy;
 }
 
-struct dcel dcel_convex_hull(struct arena *mem, const vec3ptr v, const u32 v_count, const f32 tol)
+struct dcel DcelConvexHull(struct arena *mem, const vec3ptr v, const u32 v_count, const f32 tol)
 {
-	struct dcel dcel = dcel_empty();
+	struct dcel dcel = DcelEmpty();
 	if (v_count < 4) { goto end; }	
 
 	struct arena tmp1 = ArenaAlloc1MB();
@@ -1794,24 +1794,24 @@ struct dcel dcel_convex_hull(struct arena *mem, const vec3ptr v, const u32 v_cou
 	const u32 face_count_upper_bound = 2*v_count - 4;
 	struct ddcel ddcel =
 	{
-		.face_pool = PoolAlloc(&tmp1, 2*face_count_upper_bound, struct ddcel_face, NOT_GROWABLE),	/* add additional space for easier memory management */
-		.edge_pool = PoolAlloc(&tmp1, 2+edge_count_upper_bound, struct ddcel_edge, NOT_GROWABLE),	/* add additional space for easier memory management */
+		.face_pool = PoolAlloc(&tmp1, 2*face_count_upper_bound, struct ddcelFace, NOT_GROWABLE),	/* add additional space for easier memory management */
+		.edge_pool = PoolAlloc(&tmp1, 2+edge_count_upper_bound, struct ddcelEdge, NOT_GROWABLE),	/* add additional space for easier memory management */
 		.v = v,
 		.v_count = v_count,
-		.ce_pool = PoolAlloc(&tmp2, tmp2.mem_size / sizeof(struct conflict_edge), struct conflict_edge, NOT_GROWABLE),
-		.cv = ArenaPush(&tmp1, v_count * sizeof(struct conflict_vertex)),
-		.hv = ArenaPush(&tmp1, v_count * sizeof(struct horizon_vertex)),
+		.ce_pool = PoolAlloc(&tmp2, tmp2.mem_size / sizeof(struct conflictEdge), struct conflictEdge, NOT_GROWABLE),
+		.cv = ArenaPush(&tmp1, v_count * sizeof(struct conflictVertex)),
+		.hv = ArenaPush(&tmp1, v_count * sizeof(struct horizionVertex)),
 	};
 
 	ddcel.tmp1 = tmp1;
-	ddcel.e = (struct ddcel_edge *) ddcel.edge_pool.buf;
-	ddcel.f = (struct ddcel_face *) ddcel.face_pool.buf;
-	ddcel.ce = (struct conflict_edge *) ddcel.ce_pool.buf;
+	ddcel.e = (struct ddcelEdge *) ddcel.edge_pool.buf;
+	ddcel.f = (struct ddcelFace *) ddcel.face_pool.buf;
+	ddcel.ce = (struct conflictEdge *) ddcel.ce_pool.buf;
 
 	/* (1) permutation - Random permutation of remaining points */
 	for (u32 i = 0; i < v_count; ++i)
 	{
-		ddcel.cv[i].ce_list = dll_Init(struct conflict_edge);
+		ddcel.cv[i].ce_list = dll_Init(struct conflictEdge);
 		ddcel.cv[i].index = i;
 		ddcel.cv[i].last_iter = U32_MAX;
 		ddcel.cv[i].last_face = U32_MAX;
@@ -1825,22 +1825,22 @@ struct dcel dcel_convex_hull(struct arena *mem, const vec3ptr v, const u32 v_cou
 	}
 
 	/* (2) Get inital points for tetrahedron */
-	if (internal_convex_hull_tetrahedron_indices(&ddcel, tol) == 0) { goto end; }
+	if (InternalConvexHullTetrahedronIndices(&ddcel, tol) == 0) { goto end; }
 
 	/* (3) initiate DCEL from points */
-	internal_convex_hull_tetrahedron_ddcel(&ddcel, tol);
+	InternalConvexHullTetrahedronDdcel(&ddcel, tol);
 
 	/* (4) setup conflict graph */
-	internal_convex_hull_tetrahedron_conflicts(&ddcel, tol);
+	InternalConvexHullTetrahedronConflicts(&ddcel, tol);
 
 	/* iteratetively solve and add conflicts until no vertices left */
 	for (u32 i = 4; i < v_count; ++i)
 	{
-		convex_hull_iteration(&ddcel, i, tol);
-		ddcel_assert_topology(&ddcel);
+		ConvexHullIteration(&ddcel, i, tol);
+		DdcelAssertTopology(&ddcel);
 	}
 
-	dcel = dcel_ddcel(mem, &ddcel);	
+	dcel = DcelDdcel(mem, &ddcel);	
 end:
 	ArenaFree1MB(&tmp1);
 	ArenaFree1MB(&tmp2);
@@ -1848,25 +1848,25 @@ end:
 	return dcel;
 }
 
-struct AABB tri_mesh_bbox(const struct tri_mesh *mesh)
+struct aabb TriMeshBbox(const struct triMesh *mesh)
 {
-	struct AABB bbox = { 0 };	
-	AABB_vertex(&bbox, mesh->v, mesh->v_count, 0.0f);	
+	struct aabb bbox = { 0 };	
+	AabbVertex(&bbox, mesh->v, mesh->v_count, 0.0f);	
 	return bbox;
 }
 
-f32 tri_ccw_raycast_parameter(const struct tri_mesh *mesh, const u32 tri, const struct ray *ray)
+f32 TriMeshRaycastParameter(const struct triMesh *mesh, const u32 tri, const struct ray *ray)
 {
 	vec3 intersection;
 	f32 t = F32_INFINITY;
-	if (tri_ccw_raycast(intersection, mesh, tri, ray))
+	if (TriMeshRaycast(intersection, mesh, tri, ray))
 	{
-		t = ray_point_closest_point_parameter(ray, intersection);
+		t = RayPointClosestPointParameter(ray, intersection);
 	}
 	return t;
 }
 
-u32 tri_ccw_raycast(vec3 intersection, const struct tri_mesh *mesh, const u32 tri, const struct ray *ray)
+u32 TriMeshRaycast(vec3 intersection, const struct triMesh *mesh, const u32 tri, const struct ray *ray)
 {
 	/* TODO(Optimization): 
 	 * By precomputation and extending our tri_mesh structure, we can avoid these branches;

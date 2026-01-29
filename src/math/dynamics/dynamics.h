@@ -518,7 +518,7 @@ struct rigid_body
 	DLL_SLOT_STATE;
 	POOL_SLOT_STATE;
 	/* dynamic state */
-	struct AABB	local_box;		/* bounding AABB */
+	struct aabb	local_box;		/* bounding AABB */
 
 	quat 		rotation;		
 	vec3 		velocity;
