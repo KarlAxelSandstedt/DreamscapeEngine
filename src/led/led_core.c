@@ -530,7 +530,7 @@ struct slot led_node_add(struct led *led, const utf8 id)
 
 			const vec3 axis = { 0.0f, 1.0f, 0.0f };
 			Vec3Set(node->position, 0.0f, 0.0f, 0.0f);
-			axis_angle_to_quaternion(node->rotation, axis, 0.0f);
+			QuatAxisAngle(node->rotation, axis, 0.0f);
 
 			node->rb_prefab = STRING_DATABASE_STUB_INDEX;
 			node->proxy = HI_NULL_INDEX;
@@ -727,7 +727,7 @@ void led_node_set_proxy3d(struct led *led, const utf8 id, const utf8 mesh, const
 		Vec4Copy(config.color, color);
 		config.blend = blend; 
 		Vec3Copy(config.position, node->position);
-		quat_copy(config.rotation, node->rotation);
+		QuatCopy(config.rotation, node->rotation);
 		node->proxy = r_proxy3d_alloc(&config);
 		Vec4Copy(node->color, color);
 	}
@@ -1450,7 +1450,7 @@ static void led_engine_init(struct led *led)
 				vec3 axis = { 0.6f, 1.0f, 0.6f };
 				Vec3ScaleSelf(axis, 1.0f / f32_sqrt(Vec3Length(axis)));
 				const f32 angle = MM_PI_F / 16.0f;
-				axis_angle_to_quaternion(node->rotation, axis, angle);
+				QuatAxisAngle(node->rotation, axis, angle);
 				vec3 linear_velocity = { 0.0f, 0.0f, 0.0f};
 				vec3 angular_velocity = { 0.0f, 0.0f, 0.0f};
 				r_proxy3d_set_linear_speculation(node->position

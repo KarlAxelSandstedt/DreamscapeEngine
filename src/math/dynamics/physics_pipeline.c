@@ -217,7 +217,7 @@ static void rigid_body_update_local_box(struct rigid_body *body, const struct co
 
 	vec3 v;
 	mat3 rot;
-	quat_to_mat3(rot, body->rotation);
+	Mat3Quat(rot, body->rotation);
 
 	if (body->shape_type == COLLISION_SHAPE_CONVEX_HULL)
 	{
@@ -276,7 +276,7 @@ struct slot physics_pipeline_rigid_body_alloc(struct physics_pipeline *pipeline,
 
 	body->entity = entity;
 	Vec3Copy(body->position, position);
-	quat_copy(body->rotation, rotation);
+	QuatCopy(body->rotation, rotation);
 	Vec3Set(body->velocity, 0.0f, 0.0f, 0.0f);
 	Vec3Set(body->angular_velocity, 0.0f, 0.0f, 0.0f);
 	Vec3Set(body->linear_momentum, 0.0f, 0.0f, 0.0f);
@@ -605,13 +605,13 @@ static void internal_remove_contacts_and_tag_split_islands(struct arena *mem_fra
 			if (body1->island_index != ISLAND_STATIC)
 			{
 				struct island *is = is_db_body_to_island(pipeline, b1);
-				assert(is->contact_count > 0);
+				ds_Assert(is->contact_count > 0);
 				is_db_tag_for_splitting(pipeline, b1);
 			}
 			else if (body2->island_index != ISLAND_STATIC)
 			{
 				struct island *is = is_db_body_to_island(pipeline, b2);
-				assert(is->contact_count > 0);
+				ds_Assert(is->contact_count > 0);
 				is_db_tag_for_splitting(pipeline, b2);
 			}
 
@@ -719,7 +719,7 @@ static void internal_parallel_solve_islands(struct arena *mem_frame, struct phys
 
 void physics_pipeline_enable_sleeping(struct physics_pipeline *pipeline)
 {
-	assert(g_solver_config->sleep_enabled == 0);
+	ds_Assert(g_solver_config->sleep_enabled == 0);
 	if (!g_solver_config->sleep_enabled)
 	{
 		g_solver_config->sleep_enabled = 1;
@@ -745,7 +745,7 @@ void physics_pipeline_enable_sleeping(struct physics_pipeline *pipeline)
 
 void physics_pipeline_disable_sleeping(struct physics_pipeline *pipeline)
 {
-	assert(g_solver_config->sleep_enabled == 1);
+	ds_Assert(g_solver_config->sleep_enabled == 1);
 	if (g_solver_config->sleep_enabled)
 	{
 		g_solver_config->sleep_enabled = 0;

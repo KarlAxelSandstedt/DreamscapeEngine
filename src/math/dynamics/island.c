@@ -217,7 +217,7 @@ void is_db_validate(const struct physics_pipeline *pipeline)
 			}
 			ds_Assert(list_length == is->body_count);
 
-			/* 3. if island no contacts, assert body.contacts == NULL */
+			/* 3. if island no contacts, ds_Assert body.contacts == NULL */
 			if (is->contact_count == 0)
 			{
 				ds_Assert(is->body_count == 1);
@@ -679,15 +679,15 @@ static u32 *island_solve(struct arena *mem_frame, struct physics_pipeline *pipel
 
 				quat a_vel_quat, rot_delta;
 				Vec3Copy(b->angular_velocity, solver->angular_velocity[i]);	
-				quat_set(a_vel_quat, 
+				QuatSet(a_vel_quat, 
 						solver->angular_velocity[i][0], 
 						solver->angular_velocity[i][1], 
 						solver->angular_velocity[i][2],
 					      	0.0f);
-				quat_mult(rot_delta, a_vel_quat, b->rotation);
-				quat_scale(rot_delta, timestep / 2.0f);
-				quat_translate(b->rotation, rot_delta);
-				quat_normalize(b->rotation);
+				QuatMul(rot_delta, a_vel_quat, b->rotation);
+				QuatScale(rot_delta, timestep / 2.0f);
+				QuatTranslate(b->rotation, rot_delta);
+				QuatNormalize(b->rotation);
 
 				/* Always set RB_AWAKE, if island should sleep, we set it later,
 				 * but the bodies may come in sleeping if island just woke up 
@@ -720,15 +720,15 @@ static u32 *island_solve(struct arena *mem_frame, struct physics_pipeline *pipel
 
 				quat a_vel_quat, rot_delta;
 				Vec3Copy(b->angular_velocity, solver->angular_velocity[i]);	
-				quat_set(a_vel_quat, 
+				QuatSet(a_vel_quat, 
 						solver->angular_velocity[i][0], 
 						solver->angular_velocity[i][1], 
 						solver->angular_velocity[i][2],
 					      	0.0f);
-				quat_mult(rot_delta, a_vel_quat, b->rotation);
-				quat_scale(rot_delta, timestep / 2.0f);
-				quat_translate(b->rotation, rot_delta);
-				quat_normalize(b->rotation);
+				QuatMul(rot_delta, a_vel_quat, b->rotation);
+				QuatScale(rot_delta, timestep / 2.0f);
+				QuatTranslate(b->rotation, rot_delta);
+				QuatNormalize(b->rotation);
 			}
 		}
 	}

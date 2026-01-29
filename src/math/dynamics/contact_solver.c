@@ -32,7 +32,7 @@ struct contact_solver_config *g_solver_config = &config_storage;
 
 void contact_solver_config_init(const u32 iteration_count, const u32 block_solver, const u32 warmup_solver, const vec3 gravity, const f32 baumgarte_constant, const f32 max_condition, const f32 linear_dampening, const f32 angular_dampening, const f32 linear_slop, const f32 restitution_threshold, const u32 sleep_enabled, const f32 sleep_time_threshold, const f32 sleep_linear_velocity_sq_limit, const f32 sleep_angular_velocity_sq_limit)
 {
-	assert(iteration_count >= 1);
+	ds_Assert(iteration_count >= 1);
 
 	g_solver_config->iteration_count = iteration_count;
 	g_solver_config->block_solver = block_solver;
@@ -95,7 +95,7 @@ struct contact_solver *contact_solver_init_body_data(struct arena *mem, struct i
 
 		/* setup inverted world intertia tensors */
 		mat3ptr mi = solver->Iw_inv + i;
-		quat_to_mat3(rot, b->rotation);
+		Mat3Quat(rot, b->rotation);
 		mat3_mult(tmp1, rot, ((struct rigid_body *) b)->inv_inertia_tensor);
 		mat3_transpose_to(tmp2, rot);
 		mat3_mult(*mi, tmp1, tmp2);

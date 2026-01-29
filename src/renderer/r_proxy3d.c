@@ -52,9 +52,9 @@ void r_proxy3d_set_linear_speculation(const vec3 position, const quat rotation, 
 	proxy->flags |= PROXY3D_SPECULATE_LINEAR;
 	proxy->ns_at_update = ns_time;
 	Vec3Copy(proxy->position, position);
-	quat_copy(proxy->rotation, rotation);
+	QuatCopy(proxy->rotation, rotation);
 	Vec3Copy(proxy->spec_position, position);
-	quat_copy(proxy->spec_rotation, rotation);
+	QuatCopy(proxy->spec_rotation, rotation);
 	Vec3Copy(proxy->linear.linear_velocity, linear_velocity);
 	Vec3Copy(proxy->linear.angular_velocity, angular_velocity);
 	if (Vec3Dot(linear_velocity, linear_velocity) + Vec3Dot(angular_velocity, angular_velocity) > 0.0f)
@@ -106,21 +106,21 @@ static void internal_r_proxy3d_local_speculative_orientation(struct r_proxy3d *p
 			proxy->spec_position[2] = proxy->position[2] + proxy->linear.linear_velocity[1] * timestep;
 
 			quat a_vel_quat, rot_delta;
-			quat_set(a_vel_quat, 
+			QuatSet(a_vel_quat, 
 					proxy->linear.angular_velocity[0], 
 					proxy->linear.angular_velocity[1], 
 					proxy->linear.angular_velocity[2],
 				      	0.0f);
-			quat_mult(rot_delta, a_vel_quat, proxy->rotation);
-			quat_scale(rot_delta, timestep / 2.0f);
-			quat_add(proxy->spec_rotation, proxy->rotation, rot_delta);
-			quat_normalize(proxy->spec_rotation);	
+			QuatMul(rot_delta, a_vel_quat, proxy->rotation);
+			QuatScale(rot_delta, timestep / 2.0f);
+			QuatAdd(proxy->spec_rotation, proxy->rotation, rot_delta);
+			QuatNormalize(proxy->spec_rotation);	
 		} break;
 		
 		default:
 		{
 			Vec3Copy(proxy->spec_position, proxy->position);	
-			quat_copy(proxy->spec_rotation, proxy->rotation);	
+			QuatCopy(proxy->spec_rotation, proxy->rotation);	
 		} break;
 	}	
 }
@@ -145,13 +145,13 @@ void r_proxy3d_hierarchy_speculate(struct arena *mem, const u64 ns_time)
 			if ((proxy->flags & PROXY3D_MOVING) == 0)
 			{
 				Vec3Copy(proxy->spec_position, proxy->position);	
-				quat_copy(proxy->spec_rotation, proxy->rotation);	
+				QuatCopy(proxy->spec_rotation, proxy->rotation);	
 			}
 
 			Vec3Translate(proxy->spec_position, parent->spec_position);
 			quat tmp;
-			quat_copy(tmp, proxy->spec_rotation);
-			quat_mult(proxy->spec_rotation, tmp, parent->spec_rotation);
+			QuatCopy(tmp, proxy->spec_rotation);
+			QuatMul(proxy->spec_rotation, tmp, parent->spec_rotation);
 		}
 	}
 	hi_IteratorRelease(&it);

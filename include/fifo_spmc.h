@@ -73,7 +73,7 @@ struct fifoSpmc
  * Solution(2): 
  * 	Publishing: The producer picks the next entry to publish. Before publication, the entry is marked
  * 		    as in_use. If the entry is in_use when the producer first arrive, it should spin until
- * 		    it is no longer marked, or go to sleep. We should perhaps do an assertion here, as it
+ * 		    it is no longer marked, or go to sleep. We should perhaps do an ds_Assertion here, as it
  * 		    should not happen.
  *
  * 	Releasing: Before the consumer is done with the entry, it should mark the entry as no longer in use,

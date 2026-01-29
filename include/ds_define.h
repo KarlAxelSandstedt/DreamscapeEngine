@@ -52,7 +52,7 @@ extern "C" {
 	#define __DS_COMPILER__ __DS_EMSCRIPTEN__ 
 	#define DS_LITTLE_ENDIAN
 	#define dsThreadLocal __thread
-	#define ds_StaticAssert(assertion, str)	_Static_assert(assertion, str)
+	#define ds_StaticAssert(ds_Assertion, str)	_Static_assert(ds_Assertion, str)
 	#define ds_Align(alignment) __attribute__((aligned(alignment)))
 	#undef DS_PROFILE
 
@@ -65,7 +65,7 @@ extern "C" {
 		#define DS_BIG_ENDIAN
 	#endif
 	#define dsThreadLocal	__thread
-	#define ds_StaticAssert(assertion, str)	_Static_assert(assertion, str)
+	#define ds_StaticAssert(ds_Assertion, str)	_Static_assert(ds_Assertion, str)
 	#define ds_Align(alignment) __attribute__((aligned(alignment)))
 
 #elif defined(__GNUC__)
@@ -77,7 +77,7 @@ extern "C" {
 		#define DS_BIG_ENDIAN
 	#endif
 	#define dsThreadLocal	__thread
-	#define ds_StaticAssert(assertion, str)	_Static_assert(assertion, str)
+	#define ds_StaticAssert(ds_Assertion, str)	_Static_assert(ds_Assertion, str)
 	#define ds_Align(alignment) __attribute__((aligned(alignment)))
 
 #elif defined(_MSC_VER)
@@ -85,7 +85,7 @@ extern "C" {
 	#define __DS_COMPILER__	__MSVC__
 	#define DS_LITTLE_ENDIAN
 	#define dsThreadLocal	__declspec(thread)
-	#define ds_StaticAssert(assertion, str)	static_assert(assertion, str)
+	#define ds_StaticAssert(ds_Assertion, str)	static_assert(ds_Assertion, str)
 	#define ds_Align(alignment) __declspec(align(alignment)) 
 
 #endif

@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,9 +17,10 @@
 ==========================================================================
 */
 
+#include "ds_base.h"
 #include "quaternion.h"
 
-void quat_set(quat dst, const f32 x, const f32 y, const f32 z, const f32 w)
+void QuatSet(quat dst, const f32 x, const f32 y, const f32 z, const f32 w)
 {
 	dst[0] = x;
 	dst[1] = y;
@@ -27,7 +28,7 @@ void quat_set(quat dst, const f32 x, const f32 y, const f32 z, const f32 w)
 	dst[3] = w;
 }
 
-void quat_add(quat dst, const quat p, const quat q)
+void QuatAdd(quat dst, const quat p, const quat q)
 {
 	dst[0] = p[0] + q[0];
 	dst[1] = p[1] + q[1];
@@ -35,7 +36,7 @@ void quat_add(quat dst, const quat p, const quat q)
 	dst[3] = p[3] + q[3];
 }
 
-void quat_translate(quat dst, const quat translation)
+void QuatTranslate(quat dst, const quat translation)
 {
 	dst[0] += translation[0]; 
 	dst[1] += translation[1];
@@ -43,7 +44,7 @@ void quat_translate(quat dst, const quat translation)
 	dst[3] += translation[3];
 }
 
-void quat_sub(quat dst, const quat p, const quat q)
+void QuatSub(quat dst, const quat p, const quat q)
 {
 	dst[0] = p[0] - q[0];
 	dst[1] = p[1] - q[1];
@@ -51,7 +52,7 @@ void quat_sub(quat dst, const quat p, const quat q)
 	dst[3] = p[3] - q[3];
 }
 
-void quat_mult(quat dst, const quat p, const quat q)
+void QuatMul(quat dst, const quat p, const quat q)
 {
 	dst[0] = p[0] * q[3] + p[3] * q[0] + p[1] * q[2] - p[2] * q[1];
 	dst[1] = p[1] * q[3] + p[3] * q[1] + p[2] * q[0] - p[0] * q[2];
@@ -59,7 +60,7 @@ void quat_mult(quat dst, const quat p, const quat q)
 	dst[3] = p[3] * q[3] - p[0] * q[0] - p[1] * q[1] - p[2] * q[2];
 }
 
-void quat_scale(quat dst, const f32 scale)
+void QuatScale(quat dst, const f32 scale)
 {
 	dst[0] = dst[0] * scale;
 	dst[1] = dst[1] * scale;
@@ -67,7 +68,7 @@ void quat_scale(quat dst, const f32 scale)
 	dst[3] = dst[3] * scale;
 }
 
-void quat_copy(quat dst, const quat q)
+void QuatCopy(quat dst, const quat q)
 {
 	dst[0] = q[0];
 	dst[1] = q[1];
@@ -75,7 +76,7 @@ void quat_copy(quat dst, const quat q)
 	dst[3] = q[3];
 }
 
-void quat_conj(quat conj, const quat q)
+void QuatConj(quat conj, const quat q)
 {
 	conj[0] = -q[0];
 	conj[1] = -q[1];
@@ -83,28 +84,28 @@ void quat_conj(quat conj, const quat q)
 	conj[3] = q[3];
 }
 
-f32 quat_norm(const quat q)
+f32 QuatNorm(const quat q)
 {
 	return f32_sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
 }
 
-void quat_inv(quat inv, const quat q)
+void QuatInverse(quat inv, const quat q)
 {
-	f32 norm_2_inv = 1.0f / quat_norm(q);
-	quat_conj(inv, q);
-	quat_scale(inv, norm_2_inv);
+	f32 norm_2_inv = 1.0f / QuatNorm(q);
+	QuatConj(inv, q);
+	QuatScale(inv, norm_2_inv);
 }
 
-void quat_normalize(quat q)
+void QuatNormalize(quat q)
 {
-	f32 norm_2_inv = 1.0f / quat_norm(q);
-	quat_scale(q, norm_2_inv);
+	f32 norm_2_inv = 1.0f / QuatNorm(q);
+	QuatScale(q, norm_2_inv);
 }
 
 /**
  * CCW rot?
  */
-void quat_to_mat3(mat3 dst, const quat q)
+void Mat3Quat(mat3 dst, const quat q)
 {
 	const f32 tr_part = 2.0f*q[3]*q[3] - 1.0f;
 	const f32 q12 = 2.0f*q[0]*q[1];
@@ -121,7 +122,7 @@ void quat_to_mat3(mat3 dst, const quat q)
 /**
  * q is a normalised quaternion representing a CCW rotation.
  */
-void quat_to_mat4(mat4 dst, const quat q)
+void Mat4Quat(mat4 dst, const quat q)
 {
 	const f32 tr_part = 2.0f*q[3]*q[3] - 1.0f;
 	const f32 q12 = 2.0f*q[0]*q[1];
@@ -136,14 +137,14 @@ void quat_to_mat4(mat4 dst, const quat q)
 		      0.0f, 0.0f, 0.0f, 1.0f);
 }
 
-void axis_angle_to_quaternion(quat dst, const vec3 axis, const f32 angle)
+void QuatAxisAngle(quat dst, const vec3 axis, const f32 angle)
 {
 	const f32 scale = f32_sin(angle/2.0f) / Vec3Length(axis);
-	quat_set(dst, scale * axis[0], scale * axis[1], scale * axis[2], f32_cos(angle/2.0f));
+	QuatSet(dst, scale * axis[0], scale * axis[1], scale * axis[2], f32_cos(angle/2.0f));
 }
 
-void unit_axis_angle_to_quaternion(quat dst, const vec3 axis, const f32 angle)
+void QuatUnitAxisAngle(quat dst, const vec3 axis, const f32 angle)
 {
 	const f32 scale = f32_sin(angle/2.0f);
-	quat_set(dst, scale * axis[0], scale * axis[1], scale * axis[2], f32_cos(angle/2.0f));
+	QuatSet(dst, scale * axis[0], scale * axis[1], scale * axis[2], f32_cos(angle/2.0f));
 }

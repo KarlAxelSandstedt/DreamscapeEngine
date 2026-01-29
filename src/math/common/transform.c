@@ -117,8 +117,8 @@ void view_matrix_yaw_pitch(mat4 dst, const vec3 position, const f32 yaw, const f
 	const f32 cp = f32_cos(pitch / 2.0f);
 	const f32 sy = f32_sin(yaw / 2.0f);
 	const f32 sp = f32_sin(pitch / 2.0f);
-	quat_set(q, sy*sp, sy*cp, cy*sp, cy*cp);
-	quat_to_mat3(rot, q);
+	QuatSet(q, sy*sp, sy*cp, cy*sp, cy*cp);
+	Mat3Quat(rot, q);
 
 	/* Assume no rotation is equivalent to looking down positive x-axis */
 	Vec3Set(tmp, 0.0f, 0.0f, -1.0f);

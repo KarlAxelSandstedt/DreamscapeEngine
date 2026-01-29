@@ -32,7 +32,7 @@
 
 struct ray ray_construct(const vec3 origin, const vec3 dir)
 {
-	assert(Vec3LengthSquared(dir) > 0.0f);
+	ds_Assert(Vec3LengthSquared(dir) > 0.0f);
 
 	struct ray r;
 	Vec3Copy(r.origin, origin);
@@ -156,8 +156,8 @@ f32 ray_segment_distance_sq(vec3 r_c, vec3 s_c, const struct ray *ray, const str
 		tr = f32_clamp(Vec3Dot(diff, ray->dir) / drdr, 0.0f, 1.0f);
 	}
 	
-	assert(0.0f <= tr);
-	assert(0.0f <= ts && ts <= 1.0f);
+	ds_Assert(0.0f <= tr);
+	ds_Assert(0.0f <= ts && ts <= 1.0f);
 
 	ray_point(r_c, ray, tr);
 	segment_bc(s_c, s, ts);
@@ -237,8 +237,8 @@ f32 segment_distance_sq(vec3 c1, vec3 c2, const struct segment *s1, const struct
 		t2 = f32_clamp(-Vec3Dot(diff, s2->dir) / d2d2, 0.0f, 1.0f);
 	}
 
-	assert(0.0f <= t1 && t1 <= 1.0f);
-	assert(0.0f <= t2 && t2 <= 1.0f);
+	ds_Assert(0.0f <= t1 && t1 <= 1.0f);
+	ds_Assert(0.0f <= t2 && t2 <= 1.0f);
 
 	segment_bc(c1, s1, t1);
 	segment_bc(c2, s2, t2);
@@ -1101,20 +1101,20 @@ void dcel_assert_topology(struct dcel *dcel)
 		e = dcel->e + f->first;
 		for (u32 j = 0; j < f->count; ++j)
 		{
-			assert(e->face_ccw == i);
+			ds_Assert(e->face_ccw == i);
  			e = dcel->e + f->first + j + 1;
 		}
 
 		if (f->first + f->count < dcel->e_count)
 		{
-			assert(e->face_ccw != i);
+			ds_Assert(e->face_ccw != i);
 		}
 	}
 
 	for (u32 i = 0; i < dcel->e_count; ++i)
 	{
 		e = dcel->e + i;
-		assert(i == (dcel->e + e->twin)->twin);
+		ds_Assert(i == (dcel->e + e->twin)->twin);
 	}
 }
 

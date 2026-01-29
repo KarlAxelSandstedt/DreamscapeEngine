@@ -53,7 +53,7 @@ struct bvh
 
 /* free allocated resources */
 void 		bvh_free(struct bvh *tree);
-/* validate (assert) internal coherence of bvh */
+/* validate (ds_Assert) internal coherence of bvh */
 void 		bvh_validate(struct arena *tmp, const struct bvh *bvh);
 /* return total cost of bvh */
 f32 		bvh_cost(const struct bvh *bvh);

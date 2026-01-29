@@ -826,7 +826,7 @@ static f32 capsule_sphere_distance(vec3 c1, vec3 c2, const struct physics_pipeli
 	f32 r_sum = cap->radius + shape2->sphere.radius + 2.0f * margin;
 
 	mat3 rot;
-	quat_to_mat3(rot, b1->rotation);
+	Mat3Quat(rot, b1->rotation);
 
 	vec3 s_p1, s_p2, diff;
 	Vec3Sub(c2, b2->position, b1->position);
@@ -864,7 +864,7 @@ static f32 capsule_distance(vec3 c1, vec3 c2, const struct physics_pipeline *pip
 	mat3 rot;
 	vec3 p0, p1; /* line points */
 
-	quat_to_mat3(rot, b1->rotation);
+	Mat3Quat(rot, b1->rotation);
 	p0[0] = rot[1][0] * cap1->half_height,	
 	p0[1] = rot[1][1] * cap1->half_height,	
 	p0[2] = rot[1][2] * cap1->half_height,	
@@ -873,7 +873,7 @@ static f32 capsule_distance(vec3 c1, vec3 c2, const struct physics_pipeline *pip
 	Vec3Translate(p1, b1->position);
 	struct segment s1 = segment_construct(p0, p1);
 	
-	quat_to_mat3(rot, b2->rotation);
+	Mat3Quat(rot, b2->rotation);
 	p0[0] = rot[1][0] * cap2->half_height,	
 	p0[1] = rot[1][1] * cap2->half_height,	
 	p0[2] = rot[1][2] * cap2->half_height,	
@@ -905,7 +905,7 @@ static f32 hull_sphere_distance(vec3 c1, vec3 c2, const struct physics_pipeline 
 
 	struct gjk_input g1 = { .v = shape1->hull.v, .v_count = shape1->hull.v_count, };
 	Vec3Copy(g1.pos, b1->position);
-	quat_to_mat3(g1.rot, b1->rotation);
+	Mat3Quat(g1.rot, b1->rotation);
 
 	vec3 n = VEC3_ZERO;
 	struct gjk_input g2 = { .v = &n, .v_count = 1, };
@@ -940,7 +940,7 @@ static f32 hull_capsule_distance(vec3 c1, vec3 c2, const struct physics_pipeline
 
 	struct gjk_input g1 = { .v = shape1->hull.v, .v_count = shape1->hull.v_count, };
 	Vec3Copy(g1.pos, b1->position);
-	quat_to_mat3(g1.rot, b1->rotation);
+	Mat3Quat(g1.rot, b1->rotation);
 
 	vec3 segment[2];
 	Vec3Set(segment[0], 0.0f, shape2->capsule.half_height, 0.0f);
@@ -979,11 +979,11 @@ static f32 hull_distance(vec3 c1, vec3 c2, const struct physics_pipeline *pipeli
 
 	struct gjk_input g1 = { .v = shape1->hull.v, .v_count = shape1->hull.v_count, };
 	Vec3Copy(g1.pos, b1->position);
-	quat_to_mat3(g1.rot, b1->rotation);
+	Mat3Quat(g1.rot, b1->rotation);
 
 	struct gjk_input g2 = { .v = shape2->hull.v, .v_count = shape2->hull.v_count, };
 	Vec3Copy(g2.pos, b2->position);
-	quat_to_mat3(g2.rot, b2->rotation);
+	Mat3Quat(g2.rot, b2->rotation);
 
 	f32 dist_sq = gjk_distance_sq(c1, c2, &g1, &g2);
 	if (dist_sq <= 4.0f*margin*margin)
@@ -1041,7 +1041,7 @@ static u32 capsule_sphere_test(const struct physics_pipeline *pipeline, const st
 	f32 r_sum = cap->radius + shape2->sphere.radius + 2.0f * margin;
 
 	mat3 rot;
-	quat_to_mat3(rot, b1->rotation);
+	Mat3Quat(rot, b1->rotation);
 
 	vec3 c1, c2, s_p1, s_p2;
 	Vec3Sub(c2, b2->position, b1->position);
@@ -1154,7 +1154,7 @@ static u32 capsule_sphere_contact(struct arena *garbage, struct collision_result
 	const f32 r_sum = cap->radius + shape2->sphere.radius + 2.0f * margin;
 
 	mat3 rot;
-	quat_to_mat3(rot, b1->rotation);
+	Mat3Quat(rot, b1->rotation);
 
 	vec3 c1, c2, s_p1, s_p2, diff;
 	Vec3Sub(c2, b2->position, b1->position);
@@ -1220,7 +1220,7 @@ static u32 capsule_contact(struct arena *garbage, struct collision_result *resul
 	mat3 rot;
 	vec3 c1, c2, p0, p1; /* line points */
 
-	quat_to_mat3(rot, b1->rotation);
+	Mat3Quat(rot, b1->rotation);
 	p0[0] = rot[1][0] * cap1->half_height;	
 	p0[1] = rot[1][1] * cap1->half_height;	
 	p0[2] = rot[1][2] * cap1->half_height;	
@@ -1229,7 +1229,7 @@ static u32 capsule_contact(struct arena *garbage, struct collision_result *resul
 	Vec3Translate(p1, b1->position);
 	struct segment s1 = segment_construct(p0, p1);
 	
-	quat_to_mat3(rot, b2->rotation);
+	Mat3Quat(rot, b2->rotation);
 	p0[0] = rot[1][0] * cap2->half_height;	
 	p0[1] = rot[1][1] * cap2->half_height;	
 	p0[2] = rot[1][2] * cap2->half_height;	
@@ -1327,7 +1327,7 @@ static u32 hull_sphere_contact(struct arena *garbage, struct collision_result *r
 
 	struct gjk_input g1 = { .v = shape1->hull.v, .v_count = shape1->hull.v_count, };
 	Vec3Copy(g1.pos, b1->position);
-	quat_to_mat3(g1.rot, b1->rotation);
+	Mat3Quat(g1.rot, b1->rotation);
 
 	vec3 zero = VEC3_ZERO;
 	struct gjk_input g2 = { .v = &zero, .v_count = 1, };
@@ -1406,7 +1406,7 @@ static u32 hull_capsule_contact(struct arena *garbage, struct collision_result *
 	const struct dcel *h = &shape1->hull;
 	struct gjk_input g1 = { .v = h->v, .v_count = h->v_count, };
 	Vec3Copy(g1.pos, b1->position);
-	quat_to_mat3(g1.rot, b1->rotation);
+	Mat3Quat(g1.rot, b1->rotation);
 
 	vec3 segment[2];
 	Vec3Set(segment[0], 0.0f, shape2->capsule.half_height, 0.0f);
@@ -1415,7 +1415,7 @@ static u32 hull_capsule_contact(struct arena *garbage, struct collision_result *
 	struct gjk_input g2 = { .v = segment, .v_count = 2, };
 	Vec3Copy(g2.pos, b2->position);
 	//mat3_identity(g2.rot);
-	quat_to_mat3(g2.rot, b2->rotation);
+	Mat3Quat(g2.rot, b2->rotation);
 
 	vec3 c1, c2;
 	const f32 dist_sq = gjk_distance_sq(c1, c2, &g1, &g2);
@@ -2089,8 +2089,8 @@ static u32 hull_contact(struct arena *tmp, struct collision_result *result, cons
 	ArenaPushRecord(tmp);
 
 	mat3 rot1, rot2;
-	quat_to_mat3(rot1, b1->rotation);
-	quat_to_mat3(rot2, b2->rotation);
+	Mat3Quat(rot1, b1->rotation);
+	Mat3Quat(rot2, b2->rotation);
 
 	struct dcel *h1 = &((struct collision_shape *) strdb_Address(pipeline->shape_db, b1->shape_handle))->hull;
 	struct dcel *h2 = &((struct collision_shape *) strdb_Address(pipeline->shape_db, b2->shape_handle))->hull;
@@ -2378,7 +2378,7 @@ f32 capsule_raycast_parameter(const struct physics_pipeline *pipeline, const str
 	const struct collision_shape *shape = strdb_Address(pipeline->shape_db, b->shape_handle);
 	mat3 rot;
 	vec3 p0, p1;
-	quat_to_mat3(rot, b->rotation);
+	Mat3Quat(rot, b->rotation);
 	p0[0] = rot[1][0] * shape->capsule.half_height;	
 	p0[1] = rot[1][1] * shape->capsule.half_height;	
 	p0[2] = rot[1][2] * shape->capsule.half_height;	
@@ -2401,7 +2401,7 @@ f32 hull_raycast_parameter(const struct physics_pipeline *pipeline, const struct
 
 	vec3 n, p;
 	mat3 rot;
-	quat_to_mat3(rot, b->rotation);
+	Mat3Quat(rot, b->rotation);
 	const struct dcel *h = &((struct collision_shape *) strdb_Address(pipeline->shape_db, b->shape_handle))->hull;
 	f32 t_best = F32_INFINITY;
 
@@ -2432,8 +2432,8 @@ f32 tri_mesh_bvh_raycast_parameter(const struct physics_pipeline *pipeline, cons
 	quat inv_quat;
 	mat3 inv_rot;
 	vec3 tmp;
-	quat_inv(inv_quat, b->rotation);
-	quat_to_mat3(inv_rot, inv_quat);
+	QuatInverse(inv_quat, b->rotation);
+	Mat3Quat(inv_rot, inv_quat);
 
 	const struct tri_mesh_bvh *mesh_bvh = &((struct collision_shape *) strdb_Address(pipeline->shape_db, b->shape_handle))->mesh_bvh;
 	struct ray rotated_ray;

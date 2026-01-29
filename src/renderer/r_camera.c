@@ -101,16 +101,16 @@ struct r_camera r_camera_init(const vec3 position, const vec3 direction, const f
 			:  f32_acos(direction[2] / (direction_xz_len));
 
 		mat3 rot, rot1, rot2;
-		unit_axis_angle_to_quaternion(q1, y, angle1);
-		quat_to_mat3(rot1, q1);
+		QuatUnitAxisAngle(q1, y, angle1);
+		Mat3Quat(rot1, q1);
 
 		const f32 angle2 = (direction[1] > 0.0f)
 			? -f32_acos(direction_xz_len*direction_xz_len / (direction_xz_len * Vec3Length(direction)))
 			:  f32_acos(direction_xz_len*direction_xz_len / (direction_xz_len * Vec3Length(direction)));
 		vec3 v;
 		mat3_vec_mul(v, rot1, x);
-		axis_angle_to_quaternion(q2, v, angle2);
-		quat_to_mat3(rot2, q2);
+		QuatAxisAngle(q2, v, angle2);
+		Mat3Quat(rot2, q2);
 
 		mat3_mult(rot, rot2, rot1);
 

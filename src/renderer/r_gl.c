@@ -37,8 +37,8 @@ struct array_list *	tx_list = NULL;
 static void gl_state_assert_blending(void)
 {
 	struct gl_state *gl_state = array_list_intrusive_address(g_gl_state_list, g_gl_state);
-	//TODO assert blending equations
-	//TODO assert blending funcs 
+	//TODO ds_Assert blending equations
+	//TODO ds_Assert blending funcs 
 	GLint eq_rgb, eq_a, func_s_rgb, func_s_a, func_d_rgb, func_d_a;
 	gl_state->func.glGetIntegerv(GL_BLEND_EQUATION_RGB,   &eq_rgb);
 	gl_state->func.glGetIntegerv(GL_BLEND_EQUATION_ALPHA, &eq_a);

@@ -80,7 +80,7 @@ struct bt	bt_AllocInternal(struct arena *mem,
 void		bt_Dealloc(struct bt *tree);
 /* flush / reset binary tree  */
 void 		bt_Flush(struct bt *tree);
-/* validate (assert correctness) tree state */
+/* validate (ds_Assert correctness) tree state */
 void 		bt_Validate(struct arena *tmp, const struct bt *tree);
 /* return allocated node. On Failure, return empty slot. */
 struct slot 	bt_NodeAdd(struct bt *tree);

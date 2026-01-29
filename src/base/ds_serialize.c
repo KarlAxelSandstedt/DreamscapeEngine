@@ -30,7 +30,7 @@ output: 	bytes_touched
 Case 1:
 If bits_left_in_inital_byte <= bit_count  Then 
 
-		assert(bit_count <= 64);
+		ds_Assert(bit_count <= 64);
 							
 							bits:	  543 210
 		(bit_count - bits_left_in_initial_byte) = 	  BBB bbb

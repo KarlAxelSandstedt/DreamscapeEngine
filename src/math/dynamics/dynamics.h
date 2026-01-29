@@ -756,7 +756,7 @@ void 			physics_pipeline_tick(struct physics_pipeline *pipeline);
 struct slot		physics_pipeline_rigid_body_alloc(struct physics_pipeline *pipeline, struct rigid_body_prefab *prefab, const vec3 position, const quat rotation, const u32 entity);
 /* deallocate a collision shape associated with the given handle. If no shape is found, do nothing */
 void			physics_pipeline_rigid_body_tag_for_removal(struct physics_pipeline *pipeline, const u32 handle);
-/* validate and assert internal state of physics pipeline */
+/* validate and ds_Assert internal state of physics pipeline */
 void			physics_pipeline_validate(const struct physics_pipeline *pipeline);
 /* If hit, return parameter (body,t) of ray at first collision. Otherwise return (U32_MAX, F32_INFINITY) */
 u32f32 			physics_pipeline_raycast_parameter(struct arena *mem_tmp, const struct physics_pipeline *pipeline, const struct ray *ray);

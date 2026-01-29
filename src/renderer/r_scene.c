@@ -114,7 +114,7 @@ void r_scene_assert_cmd_sorted(void)
 		}
 	}
 
-	ds_AssertString(sorted, "r_scene assertion failed: draw commands not sorted");
+	ds_AssertString(sorted, "r_scene ds_Assertion failed: draw commands not sorted");
 }
 
 void r_scene_assert_instance_cmd_bijection(void)

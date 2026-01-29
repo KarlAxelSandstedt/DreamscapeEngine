@@ -1091,7 +1091,7 @@ by drawing a table for the size transformations for each size type:
 		+-----------------------+-------------------------------+-------------------------------------------------------------------------------+
 
 First, note that for PIXEL, TEXT we may immediately calculate their layout sizes (in pixels). Similarily, for PERC_PARENT and UNIT, we may derive
-their percentages immediately (as the viewable interval or parent size (asserted not to be CHILDSUM) are assumed to be present). After the percentages
+their percentages immediately (as the viewable interval or parent size (ds_Asserted not to be CHILDSUM) are assumed to be present). After the percentages
 have been calculated, they are not needed again until the solver phase, at which we simply derive the final node size by taking a percentage of the solved
 parents size. One thing to consider is to merge UNIT and PERC_PARENT into a single type, and instead use a LAYOUT_UNIS_AXIS flag to indicate a preprocess
 step for the percentage calculation. For further discussion regarding the flag below.
@@ -1215,12 +1215,12 @@ If we in addition to our sizes also consider the possibility of FLOATING_AXIS, w
 	       	+------------------------------------------------------------------------------------------------------+
 
 For a unit of PIXEL, TEXT, PERC_PARENT or CHILDSUM, this new approach does not change much; if FLOATING is set, we simply skip laying out the node, 
-and move onto the next child. If the flag isn't set, the parent should have a valid axis set as its child layout axis.  Furthermore, the assertions
+and move onto the next child. If the flag isn't set, the parent should have a valid axis set as its child layout axis.  Furthermore, the ds_Assertions
 still hold regarding CHILDSUM, but they can of course still be removed, as this only affects visual rendering. For the UNIT case, we have an added
-assertion that requires the parent's child layout axis to be invalid, since UNIT enforces its own positioning. we can make a case for this to be a
-real assertion, as in what world would we want to mix UNITS and compact non-UNITS.
+ds_Assertion that requires the parent's child layout axis to be invalid, since UNIT enforces its own positioning. we can make a case for this to be a
+real ds_Assertion, as in what world would we want to mix UNITS and compact non-UNITS.
 
-Thinking a little more about some of these assertions, it would be more applicable to call them "ignore", as these hypothetical worlds will probably
+Thinking a little more about some of these ds_Assertions, it would be more applicable to call them "ignore", as these hypothetical worlds will probably
 prop up and bite us in the ass otherwise. So the better approach may simply be to allow the combinations and just ignore layouts for node specific
 flags/size types. The updated table becomes 
 

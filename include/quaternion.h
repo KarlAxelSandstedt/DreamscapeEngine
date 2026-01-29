@@ -24,8 +24,6 @@
 extern "C" { 
 #endif
 
-#include "ds_math.h"
-
 /**
  * QUATERNION RULES:
  *	
@@ -49,31 +47,33 @@ extern "C" {
  */
 
 /* Quaternion Creation */
-/*(axis does not have to be normalized) */
-void axis_angle_to_quaternion(quat dst, const vec3 axis, const f32 angle);
-/*(axis have to be normalized) */
-void unit_axis_angle_to_quaternion(quat dst, const vec3 axis, const f32 angle);
-
-/* Quaternion Operations and Functions */
-void quat_set(quat dst, const f32 x, const f32 y, const f32 z, const f32 w);
-void quat_add(quat dst, const quat p, const quat q);
-void quat_translate(quat dst, const quat translation);
-void quat_sub(quat dst, const quat p, const quat q);
-void quat_mult(quat dst, const quat p, const quat q);
-void quat_scale(quat dst, const f32 scale);
-void quat_copy(quat dst, const quat src);
-void quat_conj(quat conj, const quat q);
-void quat_inv(quat inv, const quat q);
-f32 quat_norm(const quat q);
-void quat_normalize(quat q);
+/* Return quaternion representing rotation around (non-normalized) axis with given angle */
+void	QuatAxisAngle(quat dst, const vec3 axis, const f32 angle);
+/* Return quaternion representing rotation around (Normalized!) axis with given angle */
+void 	QuatUnitAxisAngle(quat dst, const vec3 axis, const f32 angle);
 
 /**
  * Quaternion Rotation operation matrix Q in: qvq* = Qv
  * q = [cos(t/2), sin(t/2)v] where |v| = 1 and v is the rotation axis. t is wanted angle rotation. For some point
  * v, the achieved rotation is calculated as qvq*.
  */
-void quat_to_mat3(mat3 dst, const quat q);
-void quat_to_mat4(mat4 dst, const quat q);
+void 	Mat3Quat(mat3 dst, const quat q);
+void 	Mat4Quat(mat4 dst, const quat q);
+
+
+
+/* Quaternion Operations and Functions */
+void 	QuatSet(quat dst, const f32 x, const f32 y, const f32 z, const f32 w);
+void 	QuatAdd(quat dst, const quat p, const quat q);
+void 	QuatTranslate(quat dst, const quat translation);
+void 	QuatSub(quat dst, const quat p, const quat q);
+void 	QuatMul(quat dst, const quat p, const quat q);
+void 	QuatScale(quat dst, const f32 scale);
+void 	QuatCopy(quat dst, const quat src);
+void 	QuatConj(quat conj, const quat q);
+void 	QuatInverse(quat inv, const quat q);
+f32 	QuatNorm(const quat q);
+void 	QuatNormalize(quat q);
 
 #ifdef __cplusplus
 } 

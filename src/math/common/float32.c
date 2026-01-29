@@ -30,7 +30,7 @@ static void f32_static_assert(void)
 
 static u32 ieee32_bit(const union ieee32 f, const u32 bit)
 {
-	assert(bit <= 31);
+	ds_Assert(bit <= 31);
 
 	return (f.bits & (1 << bit)) >> bit;
 }

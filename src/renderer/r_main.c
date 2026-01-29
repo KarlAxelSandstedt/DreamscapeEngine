@@ -278,7 +278,7 @@ end:
 static struct r_mesh *bvh_mesh(struct arena *mem, const struct bvh *bvh, const vec3 translation, const quat rotation, const vec4 color)
 {
 	mat3 rot;
-	quat_to_mat3(rot, rotation);
+	Mat3Quat(rot, rotation);
 
 	ArenaPushRecord(mem);
 	const u32 vertex_count = 3*8*bvh->tree.pool.count;
@@ -400,7 +400,7 @@ static void r_led_draw(const struct led *led)
 		const vec3 translation = { 0 };
 		vec3 axis = { 0.0f, 1.0f, 0.0f };
 		const f32 angle = 0.0f;
-		axis_angle_to_quaternion(rotation, axis, angle);
+		QuatAxisAngle(rotation, axis, angle);
 		struct r_mesh *mesh = bvh_mesh(&g_r_core->frame, &led->physics.dynamic_tree, translation, rotation, led->physics.dbvh_color);
 		if (mesh)
 		{
