@@ -20,6 +20,10 @@
 #ifndef __DS_HASH_MAP_H__
 #define __DS_HASH_MAP_H__
 
+#ifdef __cplusplus
+extern "C" { 
+#endif
+
 #include "ds_allocator.h"
 #include "ds_serialize.h"
 
@@ -61,5 +65,9 @@ u32		HashMapNext(const struct hashMap *map, const u32 index);
 
 /* keygen methods */
 u64		KeyGenU32U32(const u32 k1, const u32 k2);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,8 +17,12 @@
 ==========================================================================
 */
 
-#ifndef __VECTOR_MATH__
-#define __VECTOR_MATH__
+#ifndef __DS_VECTOR_MATH__
+#define __DS_VECTOR_MATH__
+
+#ifdef __cplusplus
+extern "C" { 
+#endif
 
 #include "ds_common.h"
 
@@ -211,5 +215,9 @@ void vec4_mul_constant(vec4 dst, const f32 c);
 f32 vec4_dot(const vec4 a, const vec4 b);
 void vec4_interpolate(vec4 dst, const vec4 a, const vec4 b, const f32 alpha);	/* a * alpha + b * (1-alpha) */
 void vec4_interpolate_piecewise(vec4 dst, const vec4 a, const vec4 b, const vec4 alpha);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

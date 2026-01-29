@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,8 +17,12 @@
 ==========================================================================
 */
 
-#ifndef __QUATERNION_H__
-#define __QUATERNION_H__
+#ifndef __DS_QUATERNION_H__
+#define __DS_QUATERNION_H__
+
+#ifdef __cplusplus
+extern "C" { 
+#endif
 
 #include "ds_math.h"
 
@@ -70,5 +74,9 @@ void quat_normalize(quat q);
  */
 void quat_to_mat3(mat3 dst, const quat q);
 void quat_to_mat4(mat4 dst, const quat q);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

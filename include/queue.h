@@ -20,6 +20,10 @@
 #ifndef __MIN_QUEUE_H__
 #define __MIN_QUEUE_H__
 
+#ifdef __cplusplus
+extern "C" { 
+#endif
+
 #include "ds_allocator.h"
 
 /*
@@ -101,5 +105,9 @@ void 			MinQueueFixedPush(struct minQueueFixed *queue, const u32 id, const f32 p
 u32f32 			MinQueueFixedPop(struct minQueueFixed *heap);
 /* peek minimum element */
 u32f32 			MinQueueFixedPeek(const struct minQueueFixed *heap);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

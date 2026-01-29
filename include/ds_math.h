@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,27 +17,22 @@
 ==========================================================================
 */
 
-#ifndef __MORE_MATH_H__
-#define __MORE_MATH_H__
+#ifndef __DS_MATH_H__
+#define __DS_MATH_H__
 
-#include "ds_common.h"
-#include <stdbool.h>
+#ifdef __cplusplus
+extern "C" { 
+#endif
 
-
-#include "matrix.h"
-#include "vector.h"
-#include "quaternion.h"
+#include "ds_random.h"
 #include "float32.h"
+#include "vector.h"
+#include "matrix.h"
+#include "transform.h"
+#include "geometry.h"
 
-#define MM_PI_F       3.14159f
-#define MM_PI_2_F     (2.0f * MM_PI_F)
-
-#define MM_PI       3.14159265358979323846
-#define MM_PI_2     (2.0 * MM_PI)
-
-/* Return 1 if n = 2*k for some k >= 0, otherwise return 0 */
-u32	PowerOfTwoCheck(const u64 n);
-/* Return smallest value 2^k >= n where k >= 0 */
-u64	PowerOfTwoCeil(const u64 n); 
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

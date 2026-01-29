@@ -20,6 +20,10 @@
 #ifndef __FIFO_TICKET_H__
 #define __FIFO_TICKET_H__
 
+#ifdef __cplusplus
+extern "C" { 
+#endif
+
 #include "ds_semaphore.h"
 
 #define TICKET_FACTORY_CLOSED	U32_MAX
@@ -47,5 +51,9 @@ u32	TicketFactoryTryGetTicket(u32 *ticket, struct ticketFactory *tf);
 u32	TicketFactoryGetTicket(struct ticketFactory *tf);
 /* puts ticket range [a_serve, a_serve + count) up for use again  */
 void	TicketFactoryReturnTickets(struct ticketFactory *tf, const u32 count);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

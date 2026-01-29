@@ -20,6 +20,10 @@
 #ifndef __DS_LIST_H__
 #define __DS_LIST_H__
 
+#ifdef __cplusplus
+extern "C" { 
+#endif
+
 #include "ds_allocator.h"
 
 /*
@@ -173,5 +177,9 @@ void 		nll_Remove(struct nll *net, const u32 index);
 void *		nll_Address(const struct nll *net, const u32 index);
 /* get the node index given its address  */
 u32		nll_Index(const struct nll *net, const void *address);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

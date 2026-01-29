@@ -20,6 +20,10 @@
 #ifndef __PD_TREE_H__
 #define __PD_TREE_H__
 
+#ifdef __cplusplus
+extern "C" { 
+#endif
+
 #include "ds_allocator.h"
 
 /*
@@ -91,5 +95,8 @@ u32		bt_NodeCount(const struct bt *tree);
 /* return leaf count */
 u32		bt_LeafCount(const struct bt *tree);
 
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

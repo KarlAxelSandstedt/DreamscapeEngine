@@ -22,6 +22,10 @@
 
 #include "ds_allocator.h"
 
+#ifdef __cplusplus
+extern "C" { 
+#endif
+
 /*
 hierarchy index
 ===============
@@ -124,5 +128,9 @@ u32 			hi_IteratorPeek(struct hiIterator *it);
 u32 			hi_IteratorNextDf(struct hiIterator *it);
 /* Given it->count > 0, skip the whole subtree corresponding to the next index in the iterator, and push the subtree's next sibling, if it exists. */
 void			hi_IteratorSkip(struct hiIterator *it);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,6 +19,10 @@
 
 #ifndef __MATRIX_MATH__
 #define __MATRIX_MATH__
+
+#ifdef __cplusplus
+extern "C" { 
+#endif
 
 #include "vector.h"
 
@@ -95,6 +99,10 @@ f32 mat4_abs_max(mat4 src);
 void mat2_copy(mat2 dst, mat2 src);
 void mat3_copy(mat3 dst, mat3 src);
 void mat4_copy(mat4 dst, mat4 src);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif
 

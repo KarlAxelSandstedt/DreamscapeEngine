@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,6 +19,10 @@
 
 #ifndef __DS_RANDOM_H__
 #define __DS_RANDOM_H__
+
+#ifdef __cplusplus
+extern "C" { 
+#endif
 
 #include "ds_common.h"
 
@@ -48,5 +52,9 @@ void 	g_xoshiro_256_init(const u64 seed[4]);
 void	thread_xoshiro_256_init_sequence(void);
 /* NOTE: THREAD UNSAFE!!! Exposed for testing purposes. next rng on global rng */ 
 u64 	g_xoshiro_256_next(void);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

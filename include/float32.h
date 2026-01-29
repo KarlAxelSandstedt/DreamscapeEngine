@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,6 +19,10 @@
 
 #ifndef __MG_FLOAT32_H__
 #define __MG_FLOAT32_H__
+
+#ifdef __cplusplus
+extern "C" { 
+#endif
 
 #include "ds_common.h"
 
@@ -120,5 +124,9 @@ f32 		f32_max_positive_normal(void);
 f32 		f32_min_positive_normal(void);
 f32 		f32_max_negative_normal(void);
 f32 		f32_min_negative_normal(void);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,6 +19,10 @@
 
 #ifndef __DS_VECTOR_H__
 #define __DS_VECTOR_H__
+
+#ifdef __cplusplus
+extern "C" { 
+#endif
 
 #include "ds_base.h"
 
@@ -267,5 +271,9 @@ DECLARE_STACK(ptr);
 DECLARE_STACK(intv);
 DECLARE_STACK_VEC(vec3);
 DECLARE_STACK_VEC(vec4);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

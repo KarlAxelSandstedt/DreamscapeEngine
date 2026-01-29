@@ -20,6 +20,10 @@
 #ifndef __FIFO_SPMC_H__
 #define __FIFO_SPMC_H__
 
+#ifdef __cplusplus
+extern "C" { 
+#endif
+
 #include "ds_allocator.h"
 #include "ds_semaphore.h"
 
@@ -89,5 +93,9 @@ u32 			FifoSpmcTryPush(struct fifoSpmc *q, void *data);
 void			FifoSpmcPush(struct fifoSpmc *q, void *data);
 /* return the current number of slots ready to be pushed */
 u32 			FifoSpmcPushableCount(const struct fifoSpmc *q);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

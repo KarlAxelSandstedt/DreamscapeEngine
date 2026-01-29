@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,6 +19,10 @@
 
 #ifndef __GEOMETRY_H__
 #define __GEOMETRY_H__
+
+#ifdef __cplusplus
+extern "C" { 
+#endif
 
 #include "ds_common.h"
 #include "allocator.h"
@@ -305,5 +309,9 @@ void 		dcel_assert_topology(struct dcel *dcel);
 /* Return: support of vertex set given the direction, and supporting vertex index */
 u32 	vertex_support(vec3 support, const vec3 dir, const vec3ptr v, const u32 v_count);
 void 	vertex_centroid(vec3 centroid, const vec3ptr vs, const u32 n);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

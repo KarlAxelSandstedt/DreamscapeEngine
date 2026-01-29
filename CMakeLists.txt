@@ -155,6 +155,7 @@ target_link_libraries(${PROJECT_NAME}
 	INTERFACE 
 		"${PROJECT_NAME}::Base"
 		"${PROJECT_NAME}::Containers"
+		"${PROJECT_NAME}::Math"
 )
 
 #TODO remove, consider using DS_DEBUG instead, or if required, add DS_DEV

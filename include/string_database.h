@@ -20,6 +20,10 @@
 #ifndef __STRING_DATABASE_H__
 #define __STRING_DATABASE_H__
 
+#ifdef __cplusplus
+extern "C" { 
+#endif
+
 #include "hash_map.h"
 #include "list.h"
 
@@ -91,5 +95,9 @@ void *		strdb_Address(const struct strdb *db, const u32 handle);
 struct slot 	strdb_Reference(struct strdb *db, const utf8 id);
 /* Lookup the handle in the database. If it exist, decrement the corresponding node's reference count. */
 void		strdb_Dereference(struct strdb *db, const u32 handle);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

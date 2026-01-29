@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,8 +17,12 @@
 ==========================================================================
 */
 
-#ifndef __MATH_TRANSFORMATION__
-#define __MATH_TRANSFORMATION__
+#ifndef __DS_MATH_TRANSFORMATION__
+#define __DS_MATH_TRANSFORMATION__
+
+#ifdef __cplusplus
+extern "C" { 
+#endif
 
 #include "matrix.h"
 
@@ -30,5 +34,9 @@ void 	view_matrix_look_at(mat4 dst, const vec3 position, const vec3 target);
 void 	view_matrix_yaw_pitch(mat4 dst, const vec3 position, const f32 yaw, const f32 pitch);
 void 	rotation_matrix(mat3 dst, const vec3 axis, const f32 angle);
 void 	vec3_rotate_center(vec3 src_rotated, mat3 rotation, const vec3 center, const vec3 src);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif
