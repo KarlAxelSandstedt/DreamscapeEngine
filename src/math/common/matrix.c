@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,14 +19,14 @@
 
 #include "ds_math.h"
 
-void mat2_print(const char *text, mat2 m)
+void Mat2Print(const char *text, mat2 m)
 {
 	printf("%s:\n| %f %f |\n| %f %f |\n", text,
 		       	m[0][0], m[1][0],
 		       	m[0][1], m[1][1]
 			);
 }
-void mat3_print(const char *text, mat3 m)
+void Mat3Print(const char *text, mat3 m)
 {
 	printf("%s:\n| %f %f %f |\n| %f %f %f |\n| %f %f %f |\n", text,
 		       	m[0][0], m[1][0], m[2][0],
@@ -34,7 +34,7 @@ void mat3_print(const char *text, mat3 m)
 		       	m[0][2], m[1][2], m[2][2] 
 			);
 }
-void mat4_print(const char *text, mat4 m)
+void Mat4Print(const char *text, mat4 m)
 {
 	printf("%s:\n| %f %f %f %f |\n| %f %f %f %f |\n| %f %f %f %f |\n| %f %f %f %f |\n", text,
 		       	m[0][0], m[1][0], m[2][0], m[3][0],
@@ -44,14 +44,14 @@ void mat4_print(const char *text, mat4 m)
 			);
 }
 
-void mat2_set(mat2 dst, const f32 a11, const f32 a21,
+void Mat2Set(mat2 dst, const f32 a11, const f32 a21,
 			const f32 a12, const f32 a22)
 {
 	dst[0][0] = a11; dst[0][1] = a21;
 	dst[1][0] = a12; dst[1][1] = a22;
 }
 
-void mat3_set(mat3 dst, const f32 a11, const f32 a21, const f32 a31,
+void Mat3Set(mat3 dst, const f32 a11, const f32 a21, const f32 a31,
 			const f32 a12, const f32 a22, const f32 a32,  
 			const f32 a13, const f32 a23, const f32 a33)
 {
@@ -60,7 +60,7 @@ void mat3_set(mat3 dst, const f32 a11, const f32 a21, const f32 a31,
 	dst[2][0] = a13; dst[2][1] = a23; dst[2][2] = a33;
 }
 
-void mat4_set(mat4 dst, const f32 a11, const f32 a21, const f32 a31, const f32 a41,
+void Mat4Set(mat4 dst, const f32 a11, const f32 a21, const f32 a31, const f32 a41,
 			const f32 a12, const f32 a22, const f32 a32, const f32 a42, 
 			const f32 a13, const f32 a23, const f32 a33, const f32 a43, 
 			const f32 a14, const f32 a24, const f32 a34, const f32 a44)
@@ -72,7 +72,7 @@ void mat4_set(mat4 dst, const f32 a11, const f32 a21, const f32 a31, const f32 a
 }
 
 
-void mat2_set_columns(mat2 dst, const vec2 c1, const vec2 c2)
+void Mat2SetColumns(mat2 dst, const vec2 c1, const vec2 c2)
 {
 	dst[0][0] = c1[0];
 	dst[0][1] = c1[1];
@@ -80,7 +80,7 @@ void mat2_set_columns(mat2 dst, const vec2 c1, const vec2 c2)
 	dst[1][1] = c2[1];
 }
 
-void mat3_set_columns(mat3 dst, const vec3 c1, const vec3 c2, const vec3 c3)
+void Mat3SetColumns(mat3 dst, const vec3 c1, const vec3 c2, const vec3 c3)
 {
 
 	dst[0][0] = c1[0];
@@ -94,7 +94,7 @@ void mat3_set_columns(mat3 dst, const vec3 c1, const vec3 c2, const vec3 c3)
 	dst[2][2] = c3[2];
 }
 
-void mat4_set_columns(mat4 dst, const vec4 c1, const vec4 c2, const vec4 c3, const vec4 c4)
+void Mat4SetColumns(mat4 dst, const vec4 c1, const vec4 c2, const vec4 c3, const vec4 c4)
 {
 	dst[0][0] = c1[0];
 	dst[0][1] = c1[1];
@@ -114,7 +114,7 @@ void mat4_set_columns(mat4 dst, const vec4 c1, const vec4 c2, const vec4 c3, con
 	dst[3][3] = c4[3];
 }
 
-void mat2_set_rows(mat2 dst, const vec2 r1, const vec2 r2)
+void Mat2SetRows(mat2 dst, const vec2 r1, const vec2 r2)
 {
 	dst[0][0] = r1[0];
 	dst[1][0] = r1[1];
@@ -122,7 +122,7 @@ void mat2_set_rows(mat2 dst, const vec2 r1, const vec2 r2)
 	dst[1][1] = r2[1];
 }
 
-void mat3_set_rows(mat3 dst, const vec3 r1, const vec3 r2, const vec3 r3)
+void Mat3SetRows(mat3 dst, const vec3 r1, const vec3 r2, const vec3 r3)
 {
 	dst[0][0] = r1[0];
 	dst[1][0] = r1[1];
@@ -135,7 +135,7 @@ void mat3_set_rows(mat3 dst, const vec3 r1, const vec3 r2, const vec3 r3)
 	dst[2][2] = r3[2];
 }
 
-void mat4_set_rows(mat4 dst, const vec4 r1, const vec4 r2, const vec4 r3, const vec4 r4)
+void Mat4SetRows(mat4 dst, const vec4 r1, const vec4 r2, const vec4 r3, const vec4 r4)
 {
 	dst[0][0] = r1[0];
 	dst[1][0] = r1[1];
@@ -155,36 +155,36 @@ void mat4_set_rows(mat4 dst, const vec4 r1, const vec4 r2, const vec4 r3, const 
 	dst[3][3] = r4[3];
 }
 
-void mat2_identity(mat2 dst)
+void Mat2Identity(mat2 dst)
 {
-	mat2_set(dst, 1,0,0,1);
+	Mat2Set(dst, 1,0,0,1);
 }
 
-void mat3_identity(mat3 dst)
+void Mat3Identity(mat3 dst)
 {
-	mat3_set(dst, 1,0,0,0,1,0,0,0,1);
+	Mat3Set(dst, 1,0,0,0,1,0,0,0,1);
 }
 
-void mat4_identity(mat4 dst)
+void Mat4Identity(mat4 dst)
 {
-	mat4_set(dst, 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1);
+	Mat4Set(dst, 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1);
 }
 
 
-void vec2_mat_mul(vec2 dst, const vec2 vec, mat2 mat)
+void Vec2MatMul(vec2 dst, const vec2 vec, mat2 mat)
 {
 	dst[0] = vec[0] * mat[0][0] + vec[1] *  mat[0][1];
 	dst[1] = vec[0] * mat[1][0] + vec[1] *  mat[1][1];
 }
 
-void vec3_mat_mul(vec3 dst, const vec3 vec, mat3 mat)
+void Vec3MatMul(vec3 dst, const vec3 vec, mat3 mat)
 {
 	dst[0] = vec[0] * mat[0][0] + vec[1] *  mat[0][1] + vec[2] * mat[0][2];
 	dst[1] = vec[0] * mat[1][0] + vec[1] *  mat[1][1] + vec[2] * mat[1][2];
 	dst[2] = vec[0] * mat[2][0] + vec[1] *  mat[2][1] + vec[2] * mat[2][2];
 }
 
-void vec4_mat_mul(vec4 dst, const vec4 vec, mat4 mat)
+void Vec4MatMul(vec4 dst, const vec4 vec, mat4 mat)
 {
 	dst[0] = vec[0] * mat[0][0] + vec[1] *  mat[0][1] + vec[2] * mat[0][2] + vec[3] * mat[0][3];
 	dst[1] = vec[0] * mat[1][0] + vec[1] *  mat[1][1] + vec[2] * mat[1][2] + vec[3] * mat[1][3];
@@ -192,20 +192,20 @@ void vec4_mat_mul(vec4 dst, const vec4 vec, mat4 mat)
 	dst[3] = vec[0] * mat[3][0] + vec[1] *  mat[3][1] + vec[2] * mat[3][2] + vec[3] * mat[3][3];
 }
 
-void mat2_vec_mul(vec2 dst, mat2 mat, const vec2 vec)
+void Mat2VecMul(vec2 dst, mat2 mat, const vec2 vec)
 {
 	dst[0] = vec[0] * mat[0][0] + vec[1] *  mat[1][0];
 	dst[1] = vec[0] * mat[0][1] + vec[1] *  mat[1][1];
 }
 
-void mat3_vec_mul(vec3 dst, mat3 mat, const vec3 vec)
+void Mat3VecMul(vec3 dst, mat3 mat, const vec3 vec)
 {
 	dst[0] = vec[0] * mat[0][0] + vec[1] *  mat[1][0] + vec[2] * mat[2][0];
 	dst[1] = vec[0] * mat[0][1] + vec[1] *  mat[1][1] + vec[2] * mat[2][1];
 	dst[2] = vec[0] * mat[0][2] + vec[1] *  mat[1][2] + vec[2] * mat[2][2];
 }
 
-void mat4_vec_mul(vec4 dst, mat4 mat, const vec4 vec)
+void Mat4VecMul(vec4 dst, mat4 mat, const vec4 vec)
 {
 	dst[0] = vec[0] * mat[0][0] + vec[1] *  mat[1][0] + vec[2] * mat[2][0] + vec[3] * mat[3][0];
 	dst[1] = vec[0] * mat[0][1] + vec[1] *  mat[1][1] + vec[2] * mat[2][1] + vec[3] * mat[3][1];
@@ -214,7 +214,7 @@ void mat4_vec_mul(vec4 dst, mat4 mat, const vec4 vec)
 }
 
 // dst = [a][b]
-void mat2_mult(mat2 dst, mat2 a, mat2 b)
+void Mat2Mul(mat2 dst, mat2 a, mat2 b)
 {
 	dst[0][0] = a[0][0]*b[0][0] + a[1][0]*b[0][1];
 	dst[0][1] = a[0][1]*b[0][0] + a[1][1]*b[0][1];
@@ -224,7 +224,7 @@ void mat2_mult(mat2 dst, mat2 a, mat2 b)
 }
 
 // dst = [a][b]
-void mat3_mult(mat3 dst, mat3 a, mat3 b)
+void Mat3Mul(mat3 dst, mat3 a, mat3 b)
 {
 	dst[0][0] = a[0][0]*b[0][0] + a[1][0]*b[0][1] + a[2][0]*b[0][2];
 	dst[0][1] = a[0][1]*b[0][0] + a[1][1]*b[0][1] + a[2][1]*b[0][2];
@@ -240,7 +240,7 @@ void mat3_mult(mat3 dst, mat3 a, mat3 b)
 }
 
 // dst = [a][b]
-void mat4_mult(mat4 dst, mat4 a, mat4 b)
+void Mat4Mul(mat4 dst, mat4 a, mat4 b)
 {
 	dst[0][0] = a[0][0]*b[0][0] + a[1][0]*b[0][1] + a[2][0]*b[0][2] + a[3][0]*b[0][3];
 	dst[0][1] = a[0][1]*b[0][0] + a[1][1]*b[0][1] + a[2][1]*b[0][2] + a[3][1]*b[0][3];
@@ -263,7 +263,7 @@ void mat4_mult(mat4 dst, mat4 a, mat4 b)
 	dst[3][3] = a[0][3]*b[3][0] + a[1][3]*b[3][1] + a[2][3]*b[3][2] + a[3][3]*b[3][3];
 }
 
-void mat2_add(mat2 dst, mat2 a, mat2 b)
+void Mat2Add(mat2 dst, mat2 a, mat2 b)
 {
 	dst[0][0] = a[0][0] + b[0][0];  
         dst[0][1] = a[0][1] + b[0][1];
@@ -272,7 +272,7 @@ void mat2_add(mat2 dst, mat2 a, mat2 b)
         dst[1][1] = a[1][1] + b[1][1];
 }
 
-void mat3_add(mat3 dst, mat3 a, mat3 b)
+void Mat3Add(mat3 dst, mat3 a, mat3 b)
 {
 	dst[0][0] = a[0][0] + b[0][0];  
         dst[0][1] = a[0][1] + b[0][1];
@@ -287,7 +287,7 @@ void mat3_add(mat3 dst, mat3 a, mat3 b)
         dst[2][2] = a[2][2] + b[2][2];
 }
 
-void mat4_add(mat4 dst, mat4 a, mat4 b)
+void Mat4Add(mat4 dst, mat4 a, mat4 b)
 {
 	dst[0][0] = a[0][0] + b[0][0];  
         dst[0][1] = a[0][1] + b[0][1];
@@ -310,7 +310,7 @@ void mat4_add(mat4 dst, mat4 a, mat4 b)
         dst[3][3] = a[3][3] + b[3][3];
 }
 
-void mat2_transpose_to(mat2 dst, mat2 src)
+void Mat2Transpose(mat2 dst, mat2 src)
 {
 	dst[0][0] = src[0][0];
 	dst[1][0] = src[0][1];
@@ -319,7 +319,7 @@ void mat2_transpose_to(mat2 dst, mat2 src)
 	dst[1][1] = src[1][1];
 }
 
-void mat3_transpose_to(mat3 dst, mat3 src)
+void Mat3Transpose(mat3 dst, mat3 src)
 {
 	dst[0][0] = src[0][0];
 	dst[1][0] = src[0][1];
@@ -334,7 +334,7 @@ void mat3_transpose_to(mat3 dst, mat3 src)
 	dst[2][2] = src[2][2];
 }
 
-void mat4_transpose_to(mat4 dst, mat4 src)
+void Mat4Transpose(mat4 dst, mat4 src)
 {
 	dst[0][0] = src[0][0];
 	dst[1][0] = src[0][1];
@@ -359,16 +359,16 @@ void mat4_transpose_to(mat4 dst, mat4 src)
 
 
 
-f32 mat2_inverse(mat2 dst, mat2 src)
+f32 Mat2Inverse(mat2 dst, mat2 src)
 {
 	const f32 det = (src[0][0]*src[1][1] - src[1][0]*src[0][1]);
 	const f32 div = 1.0f / det;
-	mat2_set(dst, div*src[1][1], -div*src[1][0], -div*src[0][1], div*src[0][0]);
+	Mat2Set(dst, div*src[1][1], -div*src[1][0], -div*src[0][1], div*src[0][0]);
 
 	return det;
 }
 
-f32 mat3_inverse(mat3 dst, mat3 src)
+f32 Mat3Inverse(mat3 dst, mat3 src)
 {
 	const f32 s11 = src[0][0];
 	const f32 s12 = src[1][0];
@@ -397,7 +397,7 @@ f32 mat3_inverse(mat3 dst, mat3 src)
 	const f32 det_inv = 1.0f / det;
 
 	/* inv = det^-1 * transpose[Cofactor matrix]*/
-	mat3_set(dst,
+	Mat3Set(dst,
 		c11*det_inv, c12*det_inv, c13*det_inv,
 		c21*det_inv, c22*det_inv, c23*det_inv,
 		c31*det_inv, c32*det_inv, c33*det_inv);
@@ -405,7 +405,7 @@ f32 mat3_inverse(mat3 dst, mat3 src)
 	return det;
 }
 
-f32 mat4_inverse(mat4 dst, mat4 src)
+f32 Mat4Inverse(mat4 dst, mat4 src)
 {
 	const f32 s11 = src[0][0];
 	const f32 s12 = src[1][0];
@@ -466,7 +466,7 @@ f32 mat4_inverse(mat4 dst, mat4 src)
 	f32 det_inv = 1.0f / det;
 
 	/* inv = det^-1 * transpose[Cofactor matrix] */
-	mat4_set(dst,
+	Mat4Set(dst,
 		c11*det_inv, c12*det_inv, c13*det_inv, c14*det_inv,
 		c21*det_inv, c22*det_inv, c23*det_inv, c24*det_inv,
 		c31*det_inv, c32*det_inv, c33*det_inv, c34*det_inv,
@@ -475,7 +475,7 @@ f32 mat4_inverse(mat4 dst, mat4 src)
 	return det;
 }
 
-void mat2_copy(mat2 dst, mat2 src)
+void Mat2Copy(mat2 dst, mat2 src)
 {
 	dst[0][0] = src[0][0];
 	dst[0][1] = src[0][1];
@@ -483,7 +483,7 @@ void mat2_copy(mat2 dst, mat2 src)
 	dst[1][1] = src[1][1];
 }
 
-void mat3_copy(mat3 dst, mat3 src)
+void Mat3Copy(mat3 dst, mat3 src)
 {
 	dst[0][0] = src[0][0];
 	dst[0][1] = src[0][1];
@@ -496,7 +496,7 @@ void mat3_copy(mat3 dst, mat3 src)
 	dst[2][2] = src[2][2];
 }
 
-void mat4_copy(mat4 dst, mat4 src)
+void Mat4Copy(mat4 dst, mat4 src)
 {
 	dst[0][0] = src[0][0];
 	dst[0][1] = src[0][1];
@@ -516,14 +516,14 @@ void mat4_copy(mat4 dst, mat4 src)
 	dst[3][3] = src[3][3];
 }
 
-f32 mat2_abs_min(mat2 src)
+f32 Mat2AbsMin(mat2 src)
 {
 	const f32 a1 = f32_min(f32_abs(src[0][0]), f32_abs(src[0][1]));
 	const f32 a2 = f32_min(f32_abs(src[1][0]), f32_abs(src[1][1]));
 	return f32_min(a1, a2);
 }
 
-f32 mat3_abs_min(mat3 src)
+f32 Mat3AbsMin(mat3 src)
 {
 	const f32 a1 = f32_min(f32_abs(src[0][0]), f32_min(f32_abs(src[0][1]), f32_abs(src[0][2])));
 	const f32 a2 = f32_min(f32_abs(src[1][0]), f32_min(f32_abs(src[1][1]), f32_abs(src[1][2])));
@@ -531,7 +531,7 @@ f32 mat3_abs_min(mat3 src)
 	return f32_min(a1, f32_min(a2, a3));
 }
 
-f32 mat4_abs_min(mat4 src)
+f32 Mat4AbsMin(mat4 src)
 {
 	const f32 a1 = f32_min(f32_abs(src[0][0]), f32_min(f32_abs(src[0][1]), f32_min(f32_abs(src[0][2]), f32_abs(src[0][3]))));
 	const f32 a2 = f32_min(f32_abs(src[1][0]), f32_min(f32_abs(src[1][1]), f32_min(f32_abs(src[1][2]), f32_abs(src[1][3]))));
@@ -541,14 +541,14 @@ f32 mat4_abs_min(mat4 src)
 }
 
 
-f32 mat2_abs_max(mat2 src)
+f32 Mat2AbsMax(mat2 src)
 {
 	const f32 a1 = f32_max(f32_abs(src[0][0]), f32_abs(src[0][1]));
 	const f32 a2 = f32_max(f32_abs(src[1][0]), f32_abs(src[1][1]));
 	return f32_max(a1, a2);
 }
 
-f32 mat3_abs_max(mat3 src)
+f32 Mat3AbsMax(mat3 src)
 {
 	const f32 a1 = f32_max(f32_abs(src[0][0]), f32_max(f32_abs(src[0][1]), f32_abs(src[0][2])));
 	const f32 a2 = f32_max(f32_abs(src[1][0]), f32_max(f32_abs(src[1][1]), f32_abs(src[1][2])));
@@ -556,7 +556,7 @@ f32 mat3_abs_max(mat3 src)
 	return f32_max(a1, f32_max(a2, a3));
 }
 
-f32 mat4_abs_max(mat4 src)
+f32 Mat4AbsMax(mat4 src)
 {
 	const f32 a1 = f32_max(f32_abs(src[0][0]), f32_max(f32_abs(src[0][1]), f32_max(f32_abs(src[0][2]), f32_abs(src[0][3]))));
 	const f32 a2 = f32_max(f32_abs(src[1][0]), f32_max(f32_abs(src[1][1]), f32_max(f32_abs(src[1][2]), f32_abs(src[1][3]))));

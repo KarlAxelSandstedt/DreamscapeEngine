@@ -662,11 +662,11 @@ u64 AABB_transform_push_lines_buffered(u8 *buf, const u64 bufsize, const struct 
 	{
 		vec3 tmp1, tmp2;
 		//Vec3Sub(tmp1, v + 7*i, box->center);
-		//mat3_vec_mul(tmp2, rotation, tmp1);
+		//Mat3VecMul(tmp2, rotation, tmp1);
 		//Vec3Add(v + 7*i, tmp2, box->center);
 		//Vec3Translate(v + 7*i, translation);
 
-		mat3_vec_mul(tmp1, rotation, v + 7*i);
+		Mat3VecMul(tmp1, rotation, v + 7*i);
 		Vec3Add(v + 7*i, tmp1, translation);
 
 
@@ -890,8 +890,8 @@ struct plane dcel_face_plane(const struct dcel *h, mat3 rot, const vec3 pos, con
 {
 	vec3 n, p;
 	dcel_face_normal(p, h, fi);
-	mat3_vec_mul(n, rot, p);
-	mat3_vec_mul(p, rot, h->v[h->e[h->f[fi].first].origin]);
+	Mat3VecMul(n, rot, p);
+	Mat3VecMul(p, rot, h->v[h->e[h->f[fi].first].origin]);
 	Vec3Translate(p, pos);
 	return plane_construct(n, p);
 }
@@ -901,7 +901,7 @@ struct segment dcel_face_clip_segment(const struct dcel *h, mat3 rot, const vec3
 	vec3 f_n, p_n, p_p0, p_p1;
 
 	dcel_face_normal(p_n, h, fi);
-	mat3_vec_mul(f_n, rot, p_n);
+	Mat3VecMul(f_n, rot, p_n);
 
 	f32 min_p = 0.0f;
 	f32 max_p = 1.0f;
@@ -938,8 +938,8 @@ struct plane dcel_face_clip_plane(const struct dcel *h, mat3 rot, const vec3 pos
 	struct dcel_edge *edge0 = h->e + e0; 
 	struct dcel_edge *edge1 = h->e + e1; 
 
-	mat3_vec_mul(p0, rot, h->v[edge0->origin]);
-	mat3_vec_mul(p1, rot, h->v[edge1->origin]);
+	Mat3VecMul(p0, rot, h->v[edge0->origin]);
+	Mat3VecMul(p1, rot, h->v[edge1->origin]);
 	Vec3Translate(p0, pos);
 	Vec3Translate(p1, pos);
 	Vec3Sub(diff, p1, p0);
@@ -954,7 +954,7 @@ u32 dcel_face_projected_point_test(const struct dcel *h, mat3 rot, const vec3 po
 	vec3 f_n, p_n;
 
 	dcel_face_normal(p_n, h, fi);
-	mat3_vec_mul(f_n, rot, p_n);
+	Mat3VecMul(f_n, rot, p_n);
 
 	f32 min_p = 0.0f;
 	f32 max_p = 1.0f;
@@ -997,8 +997,8 @@ struct segment dcel_edge_segment(const struct dcel *h, mat3 rot, const vec3 pos,
 	const u32 e0 = ei;
 	const u32 e1 = first + ((ei - first + 1) % count); 
 
-	mat3_vec_mul(p0, rot, h->v[h->e[e0].origin]);
-	mat3_vec_mul(p1, rot, h->v[h->e[e1].origin]);
+	Mat3VecMul(p0, rot, h->v[h->e[e0].origin]);
+	Mat3VecMul(p1, rot, h->v[h->e[e1].origin]);
 	Vec3Translate(p0, pos);
 	Vec3Translate(p1, pos);
 
@@ -1033,7 +1033,7 @@ u32 dcel_support(vec3 support, const vec3 dir, const struct dcel *dcel, mat3 rot
 	vec3 p;
 	for (u32 i = 0; i < dcel->v_count; ++i)
 	{
-		mat3_vec_mul(p, rot, dcel->v[i]);
+		Mat3VecMul(p, rot, dcel->v[i]);
 		const f32 dot = Vec3Dot(p, dir);
 		if (max < dot)
 		{
@@ -1042,7 +1042,7 @@ u32 dcel_support(vec3 support, const vec3 dir, const struct dcel *dcel, mat3 rot
 		}
 	}
 
-	mat3_vec_mul(support, rot, dcel->v[max_index]);
+	Mat3VecMul(support, rot, dcel->v[max_index]);
 	Vec3Translate(support, pos);
 	return max_index;
 }

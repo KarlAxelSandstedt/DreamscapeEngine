@@ -40,159 +40,151 @@ void Vec4Print(const char *text, const vec4 v)
 	fprintf(stderr, "%s: (%f, %f, %f, %f), \n", text, v[0], v[1], v[2], v[3]);
 }
 
-void Vec2u32Print(const char *text, const vec2u32 v)
+void Vec2U32Print(const char *text, const vec2u32 v)
 {
 	fprintf(stderr, "%s: (%u, %u), \n", text, v[0], v[1]);
 }
 
-void Vec3u32Print(const char *text, const vec3u32 v)
+void Vec3U32Print(const char *text, const vec3u32 v)
 {
 	fprintf(stderr, "%s: (%u, %u, %u), \n", text, v[0], v[1], v[2]);
 }
 
-void Vec4u32Print(const char *text, const vec4u32 v)
+void Vec4U32Print(const char *text, const vec4u32 v)
 {
 	fprintf(stderr, "%s: (%u, %u, %u, %u), \n", text, v[0], v[1], v[2], v[3]);
 }
 
-void Vec2i32Print(const char *text, const vec2i32 v)
+void Vec2I32Print(const char *text, const vec2i32 v)
 {
 	fprintf(stderr, "%s: (%i, %i), \n", text, v[0], v[1]);
 }
 
-void Vec3i32Print(const char *text, const vec3i32 v)
+void Vec3I32Print(const char *text, const vec3i32 v)
 {
 	fprintf(stderr, "%s: (%i, %i, %i), \n", text, v[0], v[1], v[2]);
 }
 
-void Vec4i32Print(const char *text, const vec4i32 v)
+void Vec4I32Print(const char *text, const vec4i32 v)
 {
 	fprintf(stderr, "%s: (%i, %i, %i, %i), \n", text, v[0], v[1], v[2], v[3]);
 }
 
 #if (__DS_COMPILER__ == __DS_GCC__)
-void Vec2i64Print(const char *text, const vec2i64 v)
+void Vec2I64Print(const char *text, const vec2i64 v)
 {
 	fprintf(stderr, "%s: (%li, %li), \n", text, v[0], v[1]);
 }
 
-void Vec3i64Print(const char *text, const vec3i64 v)
+void Vec3I64Print(const char *text, const vec3i64 v)
 {
 	fprintf(stderr, "%s: (%li, %li, %li), \n", text, v[0], v[1], v[2]);
 }
 
-void Vec4i64Print(const char *text, const vec4i64 v)
+void Vec4I64Print(const char *text, const vec4i64 v)
 {
 	fprintf(stderr, "%s: (%li, %li, %li, %li), \n", text, v[0], v[1], v[2], v[3]);
 }
 
-void Vec2u64Print(const char *text, const vec2u64 v)
+void Vec2U64Print(const char *text, const vec2u64 v)
 {
 	fprintf(stderr, "%s: (%lu, %lu), \n", text, v[0], v[1]);
 }
 
-void Vec3u64Print(const char *text, const vec3u64 v)
+void Vec3U64Print(const char *text, const vec3u64 v)
 {
 	fprintf(stderr, "%s: (%lu, %lu, %lu), \n", text, v[0], v[1], v[2]);
 }
 
-void Vec4u64Print(const char *text, const vec4u64 v)
+void Vec4U64Print(const char *text, const vec4u64 v)
 {
 	fprintf(stderr, "%s: (%lu, %lu, %lu, %lu), \n", text, v[0], v[1], v[2], v[3]);
 }
 #elif (__DS_COMPILER__ == __DS_MSVC__ || __DS_COMPILER__ == _DS_CLANG__ || __DS_PLATFORM__ == __DS_WEB__)
-void Vec2i64Print(const char *text, const vec2i64 v)
+void Vec2I64Print(const char *text, const vec2i64 v)
 {
 	fprintf(stderr, "%s: (%lli, %lli), \n", text, v[0], v[1]);
 }
 
-void Vec3i64Print(const char *text, const vec3i64 v)
+void Vec3I64Print(const char *text, const vec3i64 v)
 {
 	fprintf(stderr, "%s: (%lli, %lli, %lli), \n", text, v[0], v[1], v[2]);
 }
 
-void Vec4i64Print(const char *text, const vec4i64 v)
+void Vec4I64Print(const char *text, const vec4i64 v)
 {
 	fprintf(stderr, "%s: (%lli, %lli, %lli, %lli), \n", text, v[0], v[1], v[2], v[3]);
 }
 
-void Vec2u64Print(const char *text, const vec2u64 v)
+void Vec2U64Print(const char *text, const vec2u64 v)
 {
 	fprintf(stderr, "%s: (%llu, %llu), \n", text, v[0], v[1]);
 }
 
-void Vec3u64Print(const char *text, const vec3u64 v)
+void Vec3U64Print(const char *text, const vec3u64 v)
 {
 	fprintf(stderr, "%s: (%llu, %llu, %llu), \n", text, v[0], v[1], v[2]);
 }
 
-void Vec4u64Print(const char *text, const vec4u64 v)
+void Vec4U64Print(const char *text, const vec4u64 v)
 {
 	fprintf(stderr, "%s: (%llu, %llu, %llu, %llu), \n", text, v[0], v[1], v[2], v[3]);
 }
 
 #endif
 
-void Vec2u32Set(vec2u32 dst, const u32 x, const u32 y)
+void Vec2U32Set(vec2u32 dst, const u32 x, const u32 y)
 {
 	dst[0] = x;
 	dst[1] = y;
 }
 
-void Vec2u64Set(vec2u64 dst, const u64 x, const u64 y)
+void Vec2U64Set(vec2u64 dst, const u64 x, const u64 y)
 {
 	dst[0] = x;
 	dst[1] = y;
 }
 
-void Vec2i32Set(vec2i32 dst, const i32 x, const i32 y)
+void Vec2I32Set(vec2i32 dst, const i32 x, const i32 y)
 {
 	dst[0] = x;
 	dst[1] = y;
 }
-void Vec2i64Set(vec2i64 dst, const i64 x, const i64 y)
+void Vec2I64Set(vec2i64 dst, const i64 x, const i64 y)
 {
 	dst[0] = x;
 	dst[1] = y;
 }
 
-void Vec3u32Set(vec3u32 dst, const u32 x, const u32 y, const u32 z)
+void Vec3U32Set(vec3u32 dst, const u32 x, const u32 y, const u32 z)
 {
 	dst[0] = x;
 	dst[1] = y;
 	dst[2] = z;
 }
 
-void Vec3u64Set(vec3u64 dst, const u64 x, const u64 y, const u64 z)
+void Vec3U64Set(vec3u64 dst, const u64 x, const u64 y, const u64 z)
 {
 	dst[0] = x;
 	dst[1] = y;
 	dst[2] = z;
 }
 
-void Vec3i32Set(vec3i32 dst, const i32 x, const i32 y, const i32 z)
+void Vec3I32Set(vec3i32 dst, const i32 x, const i32 y, const i32 z)
 {
 	dst[0] = x;
 	dst[1] = y;
 	dst[2] = z;
 }
 
-void Vec3i64Set(vec3i64 dst, const i64 x, const i64 y, const i64 z)
+void Vec3I64Set(vec3i64 dst, const i64 x, const i64 y, const i64 z)
 {
 	dst[0] = x;
 	dst[1] = y;
 	dst[2] = z;
 }
 
-void Vec4u32Set(vec4u32 dst, const u32 x, const u32 y, const u32 z, const u32 w)
-{
-	dst[0] = x;
-	dst[1] = y;
-	dst[2] = z;
-	dst[3] = w;
-}
-
-void Vec4u64Set(vec4u64 dst, const u64 x, const u64 y, const u64 z, const u64 w)
+void Vec4U32Set(vec4u32 dst, const u32 x, const u32 y, const u32 z, const u32 w)
 {
 	dst[0] = x;
 	dst[1] = y;
@@ -200,7 +192,7 @@ void Vec4u64Set(vec4u64 dst, const u64 x, const u64 y, const u64 z, const u64 w)
 	dst[3] = w;
 }
 
-void Vec4i32Set(vec4i32 dst, const i32 x, const i32 y, const i32 z, const i32 w)
+void Vec4U64Set(vec4u64 dst, const u64 x, const u64 y, const u64 z, const u64 w)
 {
 	dst[0] = x;
 	dst[1] = y;
@@ -208,7 +200,15 @@ void Vec4i32Set(vec4i32 dst, const i32 x, const i32 y, const i32 z, const i32 w)
 	dst[3] = w;
 }
 
-void Vec4i64Set(vec4i64 dst, const i64 x, const i64 y, const i64 z, const i64 w)
+void Vec4I32Set(vec4i32 dst, const i32 x, const i32 y, const i32 z, const i32 w)
+{
+	dst[0] = x;
+	dst[1] = y;
+	dst[2] = z;
+	dst[3] = w;
+}
+
+void Vec4I64Set(vec4i64 dst, const i64 x, const i64 y, const i64 z, const i64 w)
 {
 	dst[0] = x;
 	dst[1] = y;
@@ -216,59 +216,59 @@ void Vec4i64Set(vec4i64 dst, const i64 x, const i64 y, const i64 z, const i64 w)
 	dst[3] = w;
 }                                       
 
-void Vec2u32Copy(vec2u32 dst, const vec2u32 src)
+void Vec2U32Copy(vec2u32 dst, const vec2u32 src)
 {
 	dst[0] = src[0];
 	dst[1] = src[1];
 }
 
-void Vec2u64Copy(vec2u64 dst, const vec2u64 src)
+void Vec2U64Copy(vec2u64 dst, const vec2u64 src)
 {
 	dst[0] = src[0];
 	dst[1] = src[1];
 }
 
-void Vec2i32Copy(vec2i32 dst, const vec2i32 src)
+void Vec2I32Copy(vec2i32 dst, const vec2i32 src)
 {
 	dst[0] = src[0];
 	dst[1] = src[1];
 }
 
-void Vec2i64Copy(vec2i64 dst, const vec2i64 src)
+void Vec2I64Copy(vec2i64 dst, const vec2i64 src)
 {
 	dst[0] = src[0];
 	dst[1] = src[1];
 }
                                        
-void Vec3u32Copy(vec3u32 dst, const vec3u32 src)
+void Vec3U32Copy(vec3u32 dst, const vec3u32 src)
 {
 	dst[0] = src[0];
 	dst[1] = src[1];
 	dst[2] = src[2];
 }
 
-void Vec3u64Copy(vec3u64 dst, const vec3u64 src)
+void Vec3U64Copy(vec3u64 dst, const vec3u64 src)
 {
 	dst[0] = src[0];
 	dst[1] = src[1];
 	dst[2] = src[2];
 }
 
-void Vec3i32Copy(vec3i32 dst, const vec3i32 src)
+void Vec3I32Copy(vec3i32 dst, const vec3i32 src)
 {
 	dst[0] = src[0];
 	dst[1] = src[1];
 	dst[2] = src[2];
 }
 
-void Vec3i64Copy(vec3i64 dst, const vec3i64 src)
+void Vec3I64Copy(vec3i64 dst, const vec3i64 src)
 {
 	dst[0] = src[0];
 	dst[1] = src[1];
 	dst[2] = src[2];
 }
                                       
-void Vec4u32Copy(vec4u32 dst, const vec4u32 src)
+void Vec4U32Copy(vec4u32 dst, const vec4u32 src)
 {
 	dst[0] = src[0];
 	dst[1] = src[1];
@@ -276,7 +276,7 @@ void Vec4u32Copy(vec4u32 dst, const vec4u32 src)
 	dst[3] = src[3];
 }
 
-void Vec4u64Copy(vec4u64 dst, const vec4u64 src)
+void Vec4U64Copy(vec4u64 dst, const vec4u64 src)
 {
 	dst[0] = src[0];
 	dst[1] = src[1];
@@ -284,7 +284,7 @@ void Vec4u64Copy(vec4u64 dst, const vec4u64 src)
 	dst[3] = src[3];
 }
 
-void Vec4i32Copy(vec4i32 dst, const vec4i32 src)
+void Vec4I32Copy(vec4i32 dst, const vec4i32 src)
 {
 	dst[0] = src[0];
 	dst[1] = src[1];
@@ -292,7 +292,7 @@ void Vec4i32Copy(vec4i32 dst, const vec4i32 src)
 	dst[3] = src[3];
 }
 
-void Vec4i64Copy(vec4i64 dst, const vec4i64 src)
+void Vec4I64Copy(vec4i64 dst, const vec4i64 src)
 {
 	dst[0] = src[0];
 	dst[1] = src[1];
@@ -619,10 +619,10 @@ void Vec3RecenterCross(vec3 dst, const vec3 center, const vec3 a, const vec3 b)
 void Vec3RotateY(vec3 dst, const vec3 a, const f32 angle)
 {
 	mat3 rot;
-       	mat3_set(rot, f32_cos(angle), 0.0f, f32_sin(angle),
+       	Mat3Set(rot, f32_cos(angle), 0.0f, f32_sin(angle),
 			    0.0f, 1.0f, 0.0f, 
 			    -f32_sin(angle), 0.0f,  f32_cos(angle));
-	vec3_mat_mul(dst, a, rot);	
+	Vec3MatMul(dst, a, rot);	
 }
 
 void Vec3Interpolate(vec3 dst, const vec3 a, const vec3 b, const f32 alpha)

@@ -39,7 +39,7 @@ void r_camera2d_transform(mat3 W_to_AS, const vec2 view_center, const f32 view_h
 		{ 0.0f, 0.0f, 1.0f },
 	};
 
-	mat3_mult(W_to_AS, C_to_AS, W_to_C);
+	Mat3Mul(W_to_AS, C_to_AS, W_to_C);
 }
 
 void r_camera_debug_print(const struct r_camera *cam)
@@ -108,15 +108,15 @@ struct r_camera r_camera_init(const vec3 position, const vec3 direction, const f
 			? -f32_acos(direction_xz_len*direction_xz_len / (direction_xz_len * Vec3Length(direction)))
 			:  f32_acos(direction_xz_len*direction_xz_len / (direction_xz_len * Vec3Length(direction)));
 		vec3 v;
-		mat3_vec_mul(v, rot1, x);
+		Mat3VecMul(v, rot1, x);
 		QuatAxisAngle(q2, v, angle2);
 		Mat3Quat(rot2, q2);
 
-		mat3_mult(rot, rot2, rot1);
+		Mat3Mul(rot, rot2, rot1);
 
-		mat3_vec_mul(cam.forward, rot, z);
-		mat3_vec_mul(cam.left, rot, x);
-		mat3_vec_mul(cam.up, rot, y);
+		Mat3VecMul(cam.forward, rot, z);
+		Mat3VecMul(cam.left, rot, x);
+		Mat3VecMul(cam.up, rot, y);
 	}
 
 	return cam;
@@ -160,9 +160,9 @@ void r_camera_update_axes(struct r_camera *cam)
 	mat3 rot;
 	mat3SequentialRotation(rot, up, cam->yaw, left, cam->pitch);
 
-	mat3_vec_mul(cam->left, rot, left);
-	mat3_vec_mul(cam->up, rot, up);
-	mat3_vec_mul(cam->forward, rot, forward);
+	Mat3VecMul(cam->left, rot, left);
+	Mat3VecMul(cam->up, rot, up);
+	Mat3VecMul(cam->forward, rot, forward);
 }
 
 void r_camera_update_angles(struct r_camera *cam, const f32 yaw_delta, const f32 pitch_delta)
@@ -217,12 +217,12 @@ void frustum_projection_plane_world_space(vec3 bottom_left, vec3 upper_right, co
 	mat3SequentialRotation(rot, up, cam->yaw, left, cam->pitch);
 
 	Vec3Set(v, frustum_width / 2.0f, -frustum_height / 2.0f, cam->fz_near);
-	mat3_vec_mul(bottom_left, rot, v);
+	Mat3VecMul(bottom_left, rot, v);
 	Vec3Translate(bottom_left, cam->position);
 
 	v[0] -= frustum_width;
 	v[1] += frustum_height;
-	mat3_vec_mul(upper_right, rot, v);
+	Mat3VecMul(upper_right, rot, v);
 	Vec3Translate(upper_right, cam->position);
 }
 
@@ -238,6 +238,6 @@ void window_space_to_world_space(vec3 world_pixel, const vec2 pixel, const vec2 
 	const vec3 alphas = { 1.0f - ((f32) pixel[0]) / win_size[0], 1.0f - ((f32) pixel[1]) / win_size[1], 1.0f };	
 	frustum_projection_plane_camera_space(bl, tr, cam);
 	Vec3InterpolatePiecewise(camera_pixel, bl, tr, alphas);	
-	mat3_vec_mul(world_pixel, rot, camera_pixel);
+	Mat3VecMul(world_pixel, rot, camera_pixel);
 	Vec3Translate(world_pixel, cam->position);
 }

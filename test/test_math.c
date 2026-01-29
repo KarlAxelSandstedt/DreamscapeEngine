@@ -31,9 +31,9 @@ static struct test_output matrix_inverse_assert(struct test_environment *env)
 	struct test_output output = { .success = 1, .id = __func__ };
 
 	mat3 I3, A, A_inv;
-	mat3_set(A, 2,0,1,1,2,1,3,4,2);
-	mat3_inverse(A_inv, A);
-	mat3_mult(I3, A, A_inv);
+	Mat3Set(A, 2,0,1,1,2,1,3,4,2);
+	Mat3Inverse(A_inv, A);
+	Mat3Mul(I3, A, A_inv);
 
 	const f32 eps = 0.0001f;
 
@@ -47,13 +47,13 @@ static struct test_output matrix_inverse_assert(struct test_environment *env)
 	}
 
 	mat4 I4, B, B_inv;
-	mat4_set(B,
+	Mat4Set(B,
 			5,2,6,2, 
 			6,2,6,3,
 			6,2,2,6,
 			8,8,8,7);
-	mat4_inverse(B_inv, B);
-	mat4_mult(I4, B, B_inv);
+	Mat4Inverse(B_inv, B);
+	Mat4Mul(I4, B, B_inv);
 
 	for (u32 i = 0; i < 4; ++i)
 	{

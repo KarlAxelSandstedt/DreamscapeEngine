@@ -305,7 +305,7 @@ void system_process_events(void)
 			//	//gc->win.aspect_ratio = (f32) gc->win.size[0] / gc->win.size[1];
 			//	//gc->win.visible = 1;
 			//	////fprintf(stderr, "visible\n");
-			//	//Vec2u32Print("size:", gc->win.size);
+			//	//Vec2U32Print("size:", gc->win.size);
 			//	//struct r_cmd cmd_viewport = 
 			//	//{
 			//	//	.type = R_CMD_VIEWPORT,

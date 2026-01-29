@@ -51,7 +51,7 @@ struct led *led_alloc(void)
 	led_core_init_commands();
 	g_editor->mem_persistent = ArenaAlloc(16*1024*1024);
 
-	g_editor->window = system_process_root_window_alloc("Level Editor", Vec2u32Inline(400,400), Vec2u32Inline(1280, 720));
+	g_editor->window = system_process_root_window_alloc("Level Editor", Vec2U32Inline(400,400), Vec2U32Inline(1280, 720));
 
 	g_editor->frame = ArenaAlloc(16*1024*1024);
 	g_editor->project_menu = led_project_menu_alloc();

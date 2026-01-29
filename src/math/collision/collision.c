@@ -660,7 +660,7 @@ static void gjk_internal_closest_points(vec3 c1, vec3 c2, struct gjk_input *in1,
 {
 	if (simplex->type == 0)
 	{
-		mat3_vec_mul(c1, in1->rot, in1->v[simplex->id[0] >> 32]);
+		Mat3VecMul(c1, in1->rot, in1->v[simplex->id[0] >> 32]);
 		Vec3Translate(c1, in1->pos);
 		Vec3Sub(c2, c1, simplex->p[0]);
 	}
@@ -671,7 +671,7 @@ static void gjk_internal_closest_points(vec3 c1, vec3 c2, struct gjk_input *in1,
 		Vec3Set(c2, 0.0f, 0.0f, 0.0f);
 		for (u32 i = 0; i <= simplex->type; ++i)
 		{
-			mat3_vec_mul(tmp1, in1->rot, in1->v[simplex->id[i] >> 32]);
+			Mat3VecMul(tmp1, in1->rot, in1->v[simplex->id[i] >> 32]);
 			Vec3Translate(tmp1, in1->pos);
 			Vec3Sub(tmp2, tmp1, simplex->p[i]);
 			Vec3TranslateScaled(c1, tmp1, lambda[i]);
@@ -688,7 +688,7 @@ static u32 gjk_internal_support(vec3 support, const vec3 dir, struct gjk_input *
 	vec3 p;
 	for (u32 i = 0; i < in->v_count; ++i)
 	{
-		mat3_vec_mul(p, in->rot, in->v[i]);
+		Mat3VecMul(p, in->rot, in->v[i]);
 		const f32 dot = Vec3Dot(p, dir);
 		if (max < dot)
 		{
@@ -697,7 +697,7 @@ static u32 gjk_internal_support(vec3 support, const vec3 dir, struct gjk_input *
 		}
 	}
 
-	mat3_vec_mul(support, in->rot, in->v[max_index]);
+	Mat3VecMul(support, in->rot, in->v[max_index]);
 	Vec3Translate(support,in->pos);
 	return max_index;
 
@@ -910,7 +910,7 @@ static f32 hull_sphere_distance(vec3 c1, vec3 c2, const struct physics_pipeline 
 	vec3 n = VEC3_ZERO;
 	struct gjk_input g2 = { .v = &n, .v_count = 1, };
 	Vec3Copy(g2.pos, b2->position);
-	mat3_identity(g2.rot);
+	Mat3Identity(g2.rot);
 
 	f32 dist_sq = gjk_distance_sq(c1, c2, &g1, &g2);
 	const f32 r_sum = shape2->sphere.radius + 2.0f * margin;
@@ -947,7 +947,7 @@ static f32 hull_capsule_distance(vec3 c1, vec3 c2, const struct physics_pipeline
 	Vec3Set(segment[1], 0.0f, -shape2->capsule.half_height, 0.0f);
 	struct gjk_input g2 = { .v = segment, .v_count = 2, };
 	Vec3Copy(g2.pos, b2->position);
-	mat3_identity(g2.rot);
+	Mat3Identity(g2.rot);
 
 	f32 dist_sq = gjk_distance_sq(c1, c2, &g1, &g2);
 	const f32 r_sum = shape2->capsule.radius + 2.0f * margin;
@@ -1332,7 +1332,7 @@ static u32 hull_sphere_contact(struct arena *garbage, struct collision_result *r
 	vec3 zero = VEC3_ZERO;
 	struct gjk_input g2 = { .v = &zero, .v_count = 1, };
 	Vec3Copy(g2.pos, b2->position);
-	mat3_identity(g2.rot);
+	Mat3Identity(g2.rot);
 
 	vec3 c1, c2;
 	const f32 dist_sq = gjk_distance_sq(c1, c2, &g1, &g2);
@@ -1353,8 +1353,8 @@ static u32 hull_sphere_contact(struct arena *garbage, struct collision_result *r
 		for (u32 fi = 0; fi < h->f_count; ++fi)
 		{
 			dcel_face_normal(p, h, fi);
-			mat3_vec_mul(n, g1.rot, p);
-			mat3_vec_mul(p, g1.rot, h->v[h->e[h->f[fi].first].origin]);
+			Mat3VecMul(n, g1.rot, p);
+			Mat3VecMul(p, g1.rot, h->v[h->e[h->f[fi].first].origin]);
 			Vec3Translate(p, b1->position);
 			Vec3Sub(diff, p, b2->position);
 			const f32 depth = Vec3Dot(n, diff);
@@ -1414,7 +1414,7 @@ static u32 hull_capsule_contact(struct arena *garbage, struct collision_result *
 	Vec3Negate(segment[1], segment[0]);
 	struct gjk_input g2 = { .v = segment, .v_count = 2, };
 	Vec3Copy(g2.pos, b2->position);
-	//mat3_identity(g2.rot);
+	//Mat3Identity(g2.rot);
 	Mat3Quat(g2.rot, b2->rotation);
 
 	vec3 c1, c2;
@@ -1426,8 +1426,8 @@ static u32 hull_capsule_contact(struct arena *garbage, struct collision_result *
 		contact_generated = 1;
 
 		vec3 p1, p2, tmp;
-		mat3_vec_mul(p1, g2.rot, g2.v[0]);
-		mat3_vec_mul(p2, g2.rot, g2.v[1]);
+		Mat3VecMul(p1, g2.rot, g2.v[0]);
+		Mat3VecMul(p2, g2.rot, g2.v[1]);
 		Vec3Translate(p1, g2.pos);
 		Vec3Translate(p2, g2.pos);
 		struct segment cap_s = segment_construct(p1, p2);
@@ -1497,7 +1497,7 @@ static u32 hull_capsule_contact(struct arena *garbage, struct collision_result *
 			{
 				result->manifold.v_count = 2;
 				dcel_face_normal(c1, h, best_index);
-				mat3_vec_mul(result->manifold.n, g1.rot, c1);
+				Mat3VecMul(result->manifold.n, g1.rot, c1);
 				struct segment s = dcel_face_clip_segment(h, g1.rot, g1.pos, best_index, &cap_s);
 				const struct plane pl = dcel_face_plane(h, g1.rot, g1.pos, best_index);
 
@@ -1564,9 +1564,9 @@ static u32 hull_capsule_contact(struct arena *garbage, struct collision_result *
 					//if (d1d2*d1d2 <= COLLISION_POINT_DIST_SQ)
 					if (denom >= 1.0f - COLLISION_POINT_DIST_SQ)
 					{	
-						mat3_vec_mul(p2, g2.rot, g2.v[0]);
+						Mat3VecMul(p2, g2.rot, g2.v[0]);
 						Vec3Translate(p2, g2.pos);
-						mat3_vec_mul(p1, g1.rot, h->v[h->e[f->first].origin]);
+						Mat3VecMul(p1, g1.rot, h->v[h->e[f->first].origin]);
 						Vec3Translate(p1, g1.pos);
 						Vec3Sub(diff, p2, p1);
 						
@@ -2100,13 +2100,13 @@ static u32 hull_contact(struct arena *tmp, struct collision_result *result, cons
 
 	for (u32 i = 0; i < h1->v_count; ++i)
 	{
-		mat3_vec_mul(v1_world[i], rot1, h1->v[i]);
+		Mat3VecMul(v1_world[i], rot1, h1->v[i]);
 		Vec3Translate(v1_world[i], b1->position);
 	}
 
 	for (u32 i = 0; i < h2->v_count; ++i)
 	{
-		mat3_vec_mul(v2_world[i], rot2, h2->v[i]);
+		Mat3VecMul(v2_world[i], rot2, h2->v[i]);
 		Vec3Translate(v2_world[i], b2->position);
 	}
 
@@ -2173,13 +2173,13 @@ static u32 hull_contact(struct arena *tmp, struct collision_result *result, cons
 			if (sat_cache->body == 0)
 			{
 				dcel_face_normal(cm_n, h1, sat_cache->face);
-				mat3_vec_mul(ref_n, rot1, cm_n);
+				Mat3VecMul(ref_n, rot1, cm_n);
 				colliding = hull_contact_internal_face_contact(tmp, &result->manifold, ref_n, h1, ref_n, sat_cache->face, v1_world, h2, v2_world);
 			}
 			else
 			{
 				dcel_face_normal(cm_n, h2, sat_cache->face);
-				mat3_vec_mul(ref_n, rot2, cm_n);
+				Mat3VecMul(ref_n, rot2, cm_n);
 				Vec3Negate(cm_n, ref_n);
 				colliding = hull_contact_internal_face_contact(tmp, &result->manifold, cm_n, h2, ref_n, sat_cache->face, v2_world, h1, v1_world);
 			}
@@ -2408,7 +2408,7 @@ f32 hull_raycast_parameter(const struct physics_pipeline *pipeline, const struct
 	for (u32 fi = 0; fi < h->f_count; ++fi)
 	{
 		dcel_face_normal(p, h, fi);
-		mat3_vec_mul(n, rot, p);
+		Mat3VecMul(n, rot, p);
 		Vec3Translate(p, b->position);
 
 		struct plane pl = dcel_face_plane(h, rot, b->position, fi);
@@ -2438,8 +2438,8 @@ f32 tri_mesh_bvh_raycast_parameter(const struct physics_pipeline *pipeline, cons
 	const struct tri_mesh_bvh *mesh_bvh = &((struct collision_shape *) strdb_Address(pipeline->shape_db, b->shape_handle))->mesh_bvh;
 	struct ray rotated_ray;
 	Vec3Sub(tmp, ray->origin, b->position);
-	mat3_vec_mul(rotated_ray.origin, inv_rot, tmp);
-	mat3_vec_mul(rotated_ray.dir, inv_rot, ray->dir);
+	Mat3VecMul(rotated_ray.origin, inv_rot, tmp);
+	Mat3VecMul(rotated_ray.dir, inv_rot, ray->dir);
 
 	return tri_mesh_bvh_raycast((struct arena *) &pipeline->frame, mesh_bvh, &rotated_ray).f;
 }

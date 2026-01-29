@@ -115,7 +115,7 @@ void Mat3Quat(mat3 dst, const quat q)
 	const f32 q23 = 2.0f*q[1]*q[2];
 	const f32 q20 = 2.0f*q[1]*q[3];
 	const f32 q30 = 2.0f*q[2]*q[3];
-	mat3_set(dst, tr_part + 2.0f*q[0]*q[0], q12 + q30, q13 - q20,
+	Mat3Set(dst, tr_part + 2.0f*q[0]*q[0], q12 + q30, q13 - q20,
 		      q12 - q30, tr_part + 2.0f*q[1]*q[1], q23 + q10,
 		      q13 + q20, q23 - q10, tr_part + 2.0f*q[2]*q[2]);
 }
@@ -132,7 +132,7 @@ void Mat4Quat(mat4 dst, const quat q)
 	const f32 q23 = 2.0f*q[1]*q[2];
 	const f32 q20 = 2.0f*q[1]*q[3];
 	const f32 q30 = 2.0f*q[2]*q[3];
-	mat4_set(dst, tr_part + 2.0f*q[0]*q[0], q12 + q30, q13 - q20, 0.0f,
+	Mat4Set(dst, tr_part + 2.0f*q[0]*q[0], q12 + q30, q13 - q20, 0.0f,
 		      q12 - q30, tr_part + 2.0f*q[1]*q[1], q23 + q10, 0.0f,
 		      q13 + q20, q23 - q10, tr_part + 2.0f*q[2]*q[2], 0.0f, 
 		      0.0f, 0.0f, 0.0f, 1.0f);

@@ -802,7 +802,7 @@ void ui_popup_utf8_display(struct ui_popup *popup, const utf8 display, const cha
 {
 	if (popup->state == UI_POPUP_STATE_NULL)
 	{
-		popup->window = system_window_alloc(title, Vec2u32Inline(0,0), Vec2u32Inline(600, 200), g_window);
+		popup->window = system_window_alloc(title, Vec2U32Inline(0,0), Vec2U32Inline(600, 200), g_window);
 		if (popup->window != HI_NULL_INDEX)
 		{
 			struct system_window *win = system_window_address(popup->window);
@@ -821,7 +821,7 @@ void ui_popup_utf8_input(struct ui_popup *popup, utf8 *input, struct ui_text_inp
 {
 	if (popup->state == UI_POPUP_STATE_NULL)
 	{
-		popup->window = system_window_alloc(title, Vec2u32Inline(0,0), Vec2u32Inline(600, 200), g_window);
+		popup->window = system_window_alloc(title, Vec2U32Inline(0,0), Vec2U32Inline(600, 200), g_window);
 		if (popup->window != HI_NULL_INDEX)
 		{
 			struct system_window *win = system_window_address(popup->window);
@@ -843,7 +843,7 @@ void ui_popup_choice(struct ui_popup *popup, const utf8 description, const utf8 
 {
 	if (popup->state == UI_POPUP_STATE_NULL)
 	{
-		popup->window = system_window_alloc(title, Vec2u32Inline(0,0), Vec2u32Inline(600, 200), g_window);
+		popup->window = system_window_alloc(title, Vec2U32Inline(0,0), Vec2U32Inline(600, 200), g_window);
 		if (popup->window != HI_NULL_INDEX)
 		{
 			struct system_window *win = system_window_address(popup->window);

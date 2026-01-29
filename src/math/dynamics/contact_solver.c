@@ -84,7 +84,7 @@ struct contact_solver *contact_solver_init_body_data(struct arena *mem, struct i
 	Vec3Set(solver->linear_velocity[solver->body_count], 0.0f, 0.0f, 0.0f);
 	Vec3Set(solver->angular_velocity[solver->body_count], 0.0f, 0.0f, 0.0f);
 	mi = solver->Iw_inv + solver->body_count;
-	mat3_set(*mi, 0.0f, 0.0f, 0.0f,
+	Mat3Set(*mi, 0.0f, 0.0f, 0.0f,
 			0.0f, 0.0f, 0.0f,
 			0.0f, 0.0f, 0.0f);
 
@@ -96,9 +96,9 @@ struct contact_solver *contact_solver_init_body_data(struct arena *mem, struct i
 		/* setup inverted world intertia tensors */
 		mat3ptr mi = solver->Iw_inv + i;
 		Mat3Quat(rot, b->rotation);
-		mat3_mult(tmp1, rot, ((struct rigid_body *) b)->inv_inertia_tensor);
-		mat3_transpose_to(tmp2, rot);
-		mat3_mult(*mi, tmp1, tmp2);
+		Mat3Mul(tmp1, rot, ((struct rigid_body *) b)->inv_inertia_tensor);
+		Mat3Transpose(tmp2, rot);
+		Mat3Mul(*mi, tmp1, tmp2);
 
 		/* integrate new velocities using external forces */
 		Vec3Copy(solver->linear_velocity[i], b->velocity);
@@ -196,13 +196,13 @@ void contact_solver_init_velocity_constraints(struct arena *mem, struct contact_
 			
 			Vec3Sub(vcp->r1, is->contacts[i]->cm.v[j], b1->position);
 			Vec3Cross(vcp_c1[j], vcp->r1, vc->normal);
-			mat3_vec_mul(vcp_Ic1[j], *Iw_inv1, vcp_c1[j]);
+			Mat3VecMul(vcp_Ic1[j], *Iw_inv1, vcp_c1[j]);
 			vcp->normal_mass = 1.0f / b1->mass + Vec3Dot(vcp_Ic1[j], vcp_c1[j]);
 
 			Vec3Cross(tmp1, vcp->r1, vc->tangent[0]);
 			Vec3Cross(tmp3, vcp->r1, vc->tangent[1]);
-			mat3_vec_mul(tmp2, *Iw_inv1, tmp1);
-			mat3_vec_mul(tmp4, *Iw_inv1, tmp3);
+			Mat3VecMul(tmp2, *Iw_inv1, tmp1);
+			Mat3VecMul(tmp4, *Iw_inv1, tmp3);
 			vcp->tangent_mass[0] = 1.0f / b1->mass + Vec3Dot(tmp1, tmp2);
 			vcp->tangent_mass[1] = 1.0f / b1->mass + Vec3Dot(tmp3, tmp4);
 
@@ -216,13 +216,13 @@ void contact_solver_init_velocity_constraints(struct arena *mem, struct contact_
 			{
 				Vec3Sub(vcp->r2, is->contacts[i]->cm.v[j], b2->position);
 				Vec3Cross(vcp_c2[j], vcp->r2, vc->normal);
-				mat3_vec_mul(vcp_Ic2[j], *Iw_inv2, vcp_c2[j]);
+				Mat3VecMul(vcp_Ic2[j], *Iw_inv2, vcp_c2[j]);
 				vcp->normal_mass += 1.0f / b2->mass + Vec3Dot(vcp_Ic2[j], vcp_c2[j]);
 
 				Vec3Cross(tmp1, vcp->r2, vc->tangent[0]);
 				Vec3Cross(tmp3, vcp->r2, vc->tangent[1]);
-				mat3_vec_mul(tmp2, *Iw_inv2, tmp1);
-				mat3_vec_mul(tmp4, *Iw_inv2, tmp3);
+				Mat3VecMul(tmp2, *Iw_inv2, tmp1);
+				Mat3VecMul(tmp4, *Iw_inv2, tmp3);
 				vcp->tangent_mass[0] += 1.0f / b2->mass + Vec3Dot(tmp1, tmp2);
 				vcp->tangent_mass[1] += 1.0f / b2->mass + Vec3Dot(tmp3, tmp4);
 			}
@@ -273,8 +273,8 @@ void contact_solver_init_velocity_constraints(struct arena *mem, struct contact_
 					const f32 A11 = 1.0f / vc->vcps[0].normal_mass;
 					const f32 A22 = 1.0f / vc->vcps[1].normal_mass;
 					const f32 A12 = mm_inv + Vec3Dot(vcp_c1[0], vcp_Ic1[1]) + Vec3Dot(vcp_c2[0], vcp_Ic2[1]);
-					mat2_set(*((mat2ptr) vc->inv_normal_mass), A11, A12, A12, A22);
-					const f32 det = mat2_inverse(*((mat2ptr) vc->normal_mass), *((mat2ptr) vc->inv_normal_mass));
+					Mat2Set(*((mat2ptr) vc->inv_normal_mass), A11, A12, A12, A22);
+					const f32 det = Mat2Inverse(*((mat2ptr) vc->normal_mass), *((mat2ptr) vc->inv_normal_mass));
 
 					if (f32_abs(det) <= 1000.0f * F32_EPSILON)
 					{
@@ -283,7 +283,7 @@ void contact_solver_init_velocity_constraints(struct arena *mem, struct contact_
 					}
 					
 					/* L_Infinity usually larger than L2 condition number */
-					cond_inf_lb = f32_abs(mat2_abs_max(*((mat2ptr) vc->normal_mass)) / mat2_abs_min(*((mat2ptr) vc->normal_mass)));
+					cond_inf_lb = f32_abs(Mat2AbsMax(*((mat2ptr) vc->normal_mass)) / Mat2AbsMin(*((mat2ptr) vc->normal_mass)));
 				} break;
 
 				case 3: 
@@ -298,11 +298,11 @@ void contact_solver_init_velocity_constraints(struct arena *mem, struct contact_
 					const f32 A13 = mm_inv + Vec3Dot(vcp_Ic1[0], vcp_c1[2]) + Vec3Dot(vcp_Ic2[0], vcp_c2[2]);
 					const f32 A23 = mm_inv + Vec3Dot(vcp_Ic1[1], vcp_c1[2]) + Vec3Dot(vcp_Ic2[1], vcp_c2[2]);
 
-					mat3_set(*((mat3ptr) vc->inv_normal_mass), A11, A12, A13,
+					Mat3Set(*((mat3ptr) vc->inv_normal_mass), A11, A12, A13,
 					   	    A12, A22, A23,
 						    A13, A23, A33);
 					
-					const f32 det = mat3_inverse(*((mat3ptr) vc->normal_mass), *((mat3ptr) vc->inv_normal_mass));
+					const f32 det = Mat3Inverse(*((mat3ptr) vc->normal_mass), *((mat3ptr) vc->inv_normal_mass));
 
 					if (f32_abs(det) <= 1000.0f * F32_EPSILON)
 					{
@@ -310,7 +310,7 @@ void contact_solver_init_velocity_constraints(struct arena *mem, struct contact_
 						break;
 					}
 					
-					cond_inf_lb = f32_abs(mat3_abs_max(*((mat3ptr) vc->normal_mass)) / mat3_abs_min(*((mat3ptr) vc->normal_mass)));
+					cond_inf_lb = f32_abs(Mat3AbsMax(*((mat3ptr) vc->normal_mass)) / Mat3AbsMin(*((mat3ptr) vc->normal_mass)));
 				} break;
 
 				case 4: 
@@ -330,12 +330,12 @@ void contact_solver_init_velocity_constraints(struct arena *mem, struct contact_
 					const f32 A34 = mm_inv + Vec3Dot(vcp_Ic1[2], vcp_c1[3]) + Vec3Dot(vcp_Ic2[2], vcp_c2[3]);
 
 
-					mat4_set(*((mat4ptr) vc->inv_normal_mass),
+					Mat4Set(*((mat4ptr) vc->inv_normal_mass),
 						    A11, A12, A13, A14, 
 						    A12, A22, A23, A24, 
 						    A13, A23, A33, A34, 
 						    A14, A24, A34, A44);
-					const f32 det = mat4_inverse(*((mat4ptr) vc->normal_mass), *((mat4ptr) vc->inv_normal_mass));
+					const f32 det = Mat4Inverse(*((mat4ptr) vc->normal_mass), *((mat4ptr) vc->inv_normal_mass));
 
 					if (f32_abs(det) <= 1000.0f * F32_EPSILON)
 					{
@@ -344,7 +344,7 @@ void contact_solver_init_velocity_constraints(struct arena *mem, struct contact_
 					}
 					
 					/* L_Infinity usually larger than L2 condition number */
-					cond_inf_lb = f32_abs(mat4_abs_max(*((mat4ptr) vc->normal_mass)) / mat4_abs_min(*((mat4ptr) vc->normal_mass)));
+					cond_inf_lb = f32_abs(Mat4AbsMax(*((mat4ptr) vc->normal_mass)) / Mat4AbsMin(*((mat4ptr) vc->normal_mass)));
 
 				} break;
 			}
@@ -408,10 +408,10 @@ void contact_solver_warmup(struct contact_solver *solver, const struct island *i
 					Vec3TranslateScaled(solver->linear_velocity[vc->lb1], tmp1, -1.0f / solver->bodies[vc->lb1]->mass);
 					Vec3TranslateScaled(solver->linear_velocity[vc->lb2], tmp1, 1.0f / solver->bodies[vc->lb2]->mass);
 					Vec3Cross(tmp2, vcp->r1, tmp1);
-					mat3_vec_mul(tmp3, solver->Iw_inv[vc->lb1], tmp2);
+					Mat3VecMul(tmp3, solver->Iw_inv[vc->lb1], tmp2);
 					Vec3TranslateScaled(solver->angular_velocity[vc->lb1], tmp3, -1.0f);
 					Vec3Cross(tmp2, vcp->r2, tmp1);
-					mat3_vec_mul(tmp3, solver->Iw_inv[vc->lb2], tmp2);
+					Mat3VecMul(tmp3, solver->Iw_inv[vc->lb2], tmp2);
 					Vec3Translate(solver->angular_velocity[vc->lb2], tmp3);
 				}
 			}
@@ -488,10 +488,10 @@ void contact_solver_iterate_velocity_constraints(struct contact_solver *solver)
 				Vec3TranslateScaled(solver->linear_velocity[vc->lb1], tmp1, -1.0f / solver->bodies[vc->lb1]->mass);
 				Vec3TranslateScaled(solver->linear_velocity[vc->lb2], tmp1, 1.0f / solver->bodies[vc->lb2]->mass);
 				Vec3Cross(tmp2, vcp->r1, tmp1);
-				mat3_vec_mul(tmp3, solver->Iw_inv[vc->lb1], tmp2);
+				Mat3VecMul(tmp3, solver->Iw_inv[vc->lb1], tmp2);
 				Vec3TranslateScaled(solver->angular_velocity[vc->lb1], tmp3, -1.0f);
 				Vec3Cross(tmp2, vcp->r2, tmp1);
-				mat3_vec_mul(tmp3, solver->Iw_inv[vc->lb2], tmp2);
+				Mat3VecMul(tmp3, solver->Iw_inv[vc->lb2], tmp2);
 				Vec3Translate(solver->angular_velocity[vc->lb2], tmp3);
 			}
 		}
@@ -523,10 +523,10 @@ void contact_solver_iterate_velocity_constraints(struct contact_solver *solver)
 				Vec3TranslateScaled(solver->linear_velocity[vc->lb1], tmp1, -1.0f / solver->bodies[vc->lb1]->mass);
 				Vec3TranslateScaled(solver->linear_velocity[vc->lb2], tmp1, 1.0f / solver->bodies[vc->lb2]->mass);
 				Vec3Cross(tmp2, vcp->r1, tmp1);
-				mat3_vec_mul(tmp3, solver->Iw_inv[vc->lb1], tmp2);
+				Mat3VecMul(tmp3, solver->Iw_inv[vc->lb1], tmp2);
 				Vec3TranslateScaled(solver->angular_velocity[vc->lb1], tmp3, -1.0f);
 				Vec3Cross(tmp2, vcp->r2, tmp1);
-				mat3_vec_mul(tmp3, solver->Iw_inv[vc->lb2], tmp2);
+				Mat3VecMul(tmp3, solver->Iw_inv[vc->lb2], tmp2);
 				Vec3Translate(solver->angular_velocity[vc->lb2], tmp3);
 			}
 		}
@@ -566,7 +566,7 @@ void contact_solver_iterate_velocity_constraints(struct contact_solver *solver)
 					/* (2) vn == 0  
 					 *	=>	x = inv(A)*b
 					 */
-					mat2_vec_mul(new_total_impulse, *normal_mass, b);
+					Mat2VecMul(new_total_impulse, *normal_mass, b);
 					if (new_total_impulse[0] >= 0.0f && new_total_impulse[1] >= 0.0f)
 					{
 						solution_found = 1;
@@ -611,7 +611,7 @@ void contact_solver_iterate_velocity_constraints(struct contact_solver *solver)
 					/* (2) vn == 0  
 					 *	=>	x = inv(A)*b
 					 */
-					mat3_vec_mul(new_total_impulse, *normal_mass, b);
+					Mat3VecMul(new_total_impulse, *normal_mass, b);
 					if (new_total_impulse[0] >= 0.0f && new_total_impulse[1] >= 0.0f && new_total_impulse[2] >= 0.0f)
 					{
 						solution_found = 1;
@@ -657,7 +657,7 @@ void contact_solver_iterate_velocity_constraints(struct contact_solver *solver)
 						vec3 tmp;
 						Vec3Copy(tmp, b);
 						tmp[j] += vnj;
-						mat3_vec_mul(new_total_impulse, vc->normal_mass, tmp);
+						Mat3VecMul(new_total_impulse, vc->normal_mass, tmp);
 						new_total_impulse[j] = 0.0f;
 
 						const u32 i1 = (j+1) % 3;
@@ -689,7 +689,7 @@ void contact_solver_iterate_velocity_constraints(struct contact_solver *solver)
 					/* (2) vn == 0  
 					 *	=>	x = inv(A)*b
 					 */
-					mat4_vec_mul(new_total_impulse, *((mat4ptr) vc->normal_mass), b);
+					Mat4VecMul(new_total_impulse, *((mat4ptr) vc->normal_mass), b);
 					if (new_total_impulse[0] >= 0.0f && new_total_impulse[1] >= 0.0f && new_total_impulse[2] >= 0.0f && new_total_impulse[3] >= 0.0f)
 					{
 						solution_found = 1;
@@ -737,7 +737,7 @@ void contact_solver_iterate_velocity_constraints(struct contact_solver *solver)
 						vec4 tmp;
 						Vec4Copy(tmp, b);
 						tmp[j] += vnj;
-						mat4_vec_mul(new_total_impulse, *normal_mass, tmp);
+						Mat4VecMul(new_total_impulse, *normal_mass, tmp);
 						new_total_impulse[j] = 0.0f;
 
 						const u32 i1 = (j+1) % 4;
@@ -823,9 +823,9 @@ void contact_solver_iterate_velocity_constraints(struct contact_solver *solver)
 					Vec3Cross(tmp2, vcp->r2, tmp1);
 					Vec3Cross(tmp3, vcp->r1, tmp1);
 
-					mat3_vec_mul(tmp1, solver->Iw_inv[vc->lb2], tmp2);
+					Mat3VecMul(tmp1, solver->Iw_inv[vc->lb2], tmp2);
 					Vec3Translate(solver->angular_velocity[vc->lb2], tmp1);
-					mat3_vec_mul(tmp1, solver->Iw_inv[vc->lb1], tmp3);
+					Mat3VecMul(tmp1, solver->Iw_inv[vc->lb1], tmp3);
 					Vec3TranslateScaled(solver->angular_velocity[vc->lb1], tmp1, -1.0f);
 				}
 			}

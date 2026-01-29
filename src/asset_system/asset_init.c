@@ -253,7 +253,7 @@ struct asset_database *g_asset_db = &storage;
 void asset_database_init(struct arena *mem_persistent)
 {
 	g_sprite[SPRITE_NONE].ssff_id = SSFF_NONE_ID;
-	Vec2u32Set(g_sprite[SPRITE_NONE].pixel_size, 1, 1);
+	Vec2U32Set(g_sprite[SPRITE_NONE].pixel_size, 1, 1);
 	Vec2Set(g_sprite[SPRITE_NONE].bl, 0.0f, 0.0f);
 	Vec2Set(g_sprite[SPRITE_NONE].tr, 0.0f, 0.0f);
 

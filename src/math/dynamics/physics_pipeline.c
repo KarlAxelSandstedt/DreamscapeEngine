@@ -223,7 +223,7 @@ static void rigid_body_update_local_box(struct rigid_body *body, const struct co
 	{
 		for (u32 i = 0; i < shape->hull.v_count; ++i)
 		{
-			mat3_vec_mul(v, rot, shape->hull.v[i]);
+			Mat3VecMul(v, rot, shape->hull.v[i]);
 			min[0] = f32_min(min[0], v[0]); 
 			min[1] = f32_min(min[1], v[1]);			
 			min[2] = f32_min(min[2], v[2]);			
@@ -290,8 +290,8 @@ struct slot physics_pipeline_rigid_body_alloc(struct physics_pipeline *pipeline,
 	body->shape_handle = shape_slot.index;
 	body->shape_type = shape->type;
 
-	mat3_copy(body->inertia_tensor, prefab->inertia_tensor);
-	mat3_copy(body->inv_inertia_tensor, prefab->inv_inertia_tensor);
+	Mat3Copy(body->inertia_tensor, prefab->inertia_tensor);
+	Mat3Copy(body->inv_inertia_tensor, prefab->inv_inertia_tensor);
 	body->mass = prefab->mass;
 	body->restitution = prefab->restitution;
 	body->friction = prefab->friction;
@@ -1225,7 +1225,7 @@ void prefab_statics_setup(struct rigid_body_prefab *prefab, struct collision_sha
 		I_xy = density * integrals[T_XY];
 		I_xz = density * integrals[T_ZX];
 		I_yz = density * integrals[T_YZ];
-		mat3_set(prefab->inertia_tensor, I_xx, -I_xy, -I_xz,
+		Mat3Set(prefab->inertia_tensor, I_xx, -I_xy, -I_xz,
 			       		 	 -I_xy,  I_yy, -I_yz,
 						 -I_xz, -I_yz, I_zz);
 
@@ -1246,7 +1246,7 @@ void prefab_statics_setup(struct rigid_body_prefab *prefab, struct collision_sha
 		//I_yz = density * integrals[T_YZ] - prefab->mass * com[1] * com[2];
 	
 		/* set local frame coordinates */
-		//mat3_set(prefab->inertia_tensor, I_xx, -I_xy, -I_xz,
+		//Mat3Set(prefab->inertia_tensor, I_xx, -I_xy, -I_xz,
 		//	       		 	 -I_xy,  I_yy, -I_yz,
 		//				 -I_xz, -I_yz, I_zz);
 	}
@@ -1263,7 +1263,7 @@ void prefab_statics_setup(struct rigid_body_prefab *prefab, struct collision_sha
 		I_yz = 0.0f;
 		I_xz = 0.0f;
 
-		mat3_set(prefab->inertia_tensor, I_xx, -I_xy, -I_xz,
+		Mat3Set(prefab->inertia_tensor, I_xx, -I_xy, -I_xz,
 			       		 	 -I_xy,  I_yy, -I_yz,
 						 -I_xz, -I_yz, I_zz);
 	}
@@ -1290,11 +1290,11 @@ void prefab_statics_setup(struct rigid_body_prefab *prefab, struct collision_sha
 		const f32 I_xz_up = 0;
 
 		/* Derive */
-		mat3_set(prefab->inertia_tensor, I_xx_up, -I_xy_up, -I_xz_up,
+		Mat3Set(prefab->inertia_tensor, I_xx_up, -I_xy_up, -I_xz_up,
 			       		 	 -I_xy_up,  I_yy_up, -I_yz_up,
 						 -I_xz_up, -I_yz_up,  I_zz_up);
 	}
 
 	shape->center_of_mass_localized = 1;
-	mat3_inverse(prefab->inv_inertia_tensor, prefab->inertia_tensor);
+	Mat3Inverse(prefab->inv_inertia_tensor, prefab->inertia_tensor);
 }

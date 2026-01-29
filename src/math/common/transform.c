@@ -27,9 +27,9 @@ void mat3SequentialRotation(mat3 dst, const vec3 axis_1, const f32 angle_1, cons
 	vec3 axis_snd;
 	mat3 r_1, r_2;
 	mat3Rotation(r_1, axis_1, angle_1);
-	mat3_vec_mul(axis_snd, r_1, axis_2);
+	Mat3VecMul(axis_snd, r_1, axis_2);
 	mat3Rotation(r_2, axis_snd, angle_2);
-	mat3_mult(dst, r_2, r_1);
+	Mat3Mul(dst, r_2, r_1);
 }
 
 void mat3Rotation(mat3 dst, const vec3 axis, const f32 angle)
@@ -45,7 +45,7 @@ void mat3Rotation(mat3 dst, const vec3 axis, const f32 angle)
 	const f32 q23 = 2.0f*pure_quat[1]*pure_quat[2];
 	const f32 q20 = 2.0f*pure_quat[1]*w;
 	const f32 q30 = 2.0f*pure_quat[2]*w;
-	mat3_set(dst, tr_part + 2.0f*pure_quat[0]*pure_quat[0], q12 + q30, q13 - q20,
+	Mat3Set(dst, tr_part + 2.0f*pure_quat[0]*pure_quat[0], q12 + q30, q13 - q20,
 		      q12 - q30, tr_part + 2.0f*pure_quat[1]*pure_quat[1], q23 + q10,
 		      q13 + q20, q23 - q10, tr_part + 2.0f*pure_quat[2]*pure_quat[2]);
 }
@@ -54,13 +54,13 @@ void Vec3RotateCenter(vec3 src_rotated, mat3 rotation, const vec3 center, const 
 {
 	vec3 tmp;
 	Vec3Sub(src_rotated, src, center);
-	mat3_vec_mul(tmp, rotation, src_rotated);
+	Mat3VecMul(tmp, rotation, src_rotated);
 	Vec3Add(src_rotated, tmp, center);
 }
 
 void mat4Perspective(mat4 dst, const f32 aspect_ratio, const f32 fov_x, const f32 fz_near, const f32 fz_far)
 {
-	mat4_set(dst, 
+	Mat4Set(dst, 
 		     1.0f / f32_tan(fov_x / 2.0f), 0.0f, 0.0f, 0.0f,
 	             0.0f, aspect_ratio / f32_tan(fov_x / 2.0f), 0.0f, 0.0f,
 		     0.0f, 0.0f, (fz_near + fz_far) / (fz_near - fz_far), -1.0f,
@@ -76,17 +76,17 @@ void mat4View(mat4 dst, const vec3 position, const vec3 left, const vec3 up, con
 	 * Opengl expects camera looking down -Z axis, so mult left, and forward axes by (-1) .
 	 */
 	mat4 basis_change, translation;
-	mat4_set(basis_change,
+	Mat4Set(basis_change,
 			-left[0], up[0], -forward[0], 0.0f,
 			-left[1], up[1], -forward[1], 0.0f,
 			-left[2], up[2], -forward[2], 0.0f,
 			0.0f, 0.0f, 0.0f, 1.0f);
-	mat4_set(translation,
+	Mat4Set(translation,
 			1.0f, 0.0f, 0.0f, 0.0f,
 			0.0f, 1.0f, 0.0f, 0.0f,
 			0.0f, 0.0f, 1.0f, 0.0f,
 			-position[0], -position[1], -position[2], 1.0f);
-	mat4_mult(dst, basis_change, translation);
+	Mat4Mul(dst, basis_change, translation);
 }
 
 void mat4ViewLookAt(mat4 dst, const vec3 position, const vec3 target)
@@ -124,24 +124,24 @@ void mat4ViewYawPitch(mat4 dst, const vec3 position, const f32 yaw, const f32 pi
 
 	/* Assume no rotation is equivalent to looking down positive x-axis */
 	Vec3Set(tmp, 0.0f, 0.0f, -1.0f);
-	mat3_vec_mul(left, rot, tmp);
+	Mat3VecMul(left, rot, tmp);
 
 	Vec3Set(tmp, 0.0f, 1.0f, 0.0f);
-	mat3_vec_mul(up, rot, tmp);
+	Mat3VecMul(up, rot, tmp);
 
 	Vec3Set(tmp, 1.0f, 0.0f, 0.0f);
-	mat3_vec_mul(forward, rot, tmp);
+	Mat3VecMul(forward, rot, tmp);
 
 	mat4 basis_change, translation;
-	mat4_set(basis_change,
+	Mat4Set(basis_change,
 			-left[0], up[0], -forward[0], 0.0f,
 			-left[1], up[1], -forward[1], 0.0f,
 			-left[2], up[2], -forward[2], 0.0f,
 			0.0f, 0.0f, 0.0f, 1.0f);
-	mat4_set(translation,
+	Mat4Set(translation,
 			1.0f, 0.0f, 0.0f, 0.0f,
 			0.0f, 1.0f, 0.0f, 0.0f,
 			0.0f, 0.0f, 1.0f, 0.0f,
 			-position[0], -position[1], -position[2], 1.0f);
-	mat4_mult(dst, basis_change, translation);
+	Mat4Mul(dst, basis_change, translation);
 }
