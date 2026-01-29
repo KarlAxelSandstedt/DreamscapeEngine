@@ -138,7 +138,7 @@ void quat_to_mat4(mat4 dst, const quat q)
 
 void axis_angle_to_quaternion(quat dst, const vec3 axis, const f32 angle)
 {
-	const f32 scale = f32_sin(angle/2.0f) / vec3_length(axis);
+	const f32 scale = f32_sin(angle/2.0f) / Vec3Length(axis);
 	quat_set(dst, scale * axis[0], scale * axis[1], scale * axis[2], f32_cos(angle/2.0f));
 }
 

@@ -178,13 +178,13 @@ void r_init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_siz
 	g_r_core->proxy3d_root = slot3d.index;
 	ds_Assert(g_r_core->proxy3d_root == PROXY3D_ROOT);
 	struct r_proxy3d *stub3d = slot3d.address;
-	vec3_set(stub3d->position, 0.0f, 0.0f, 0.0f);
-	vec3_set(stub3d->spec_position, 0.0f, 0.0f, 0.0f);
+	Vec3Set(stub3d->position, 0.0f, 0.0f, 0.0f);
+	Vec3Set(stub3d->spec_position, 0.0f, 0.0f, 0.0f);
 	const vec3 axis = { 0.0f, 1.0f, 0.0f };
 	unit_axis_angle_to_quaternion(stub3d->rotation, axis, 0.0f);
 	quat_copy(stub3d->spec_rotation, stub3d->rotation);
-	vec3_set(stub3d->linear.linear_velocity, 0.0f, 0.0f, 0.0f);
-	vec3_set(stub3d->linear.angular_velocity, 0.0f, 0.0f, 0.0f);
+	Vec3Set(stub3d->linear.linear_velocity, 0.0f, 0.0f, 0.0f);
+	Vec3Set(stub3d->linear.angular_velocity, 0.0f, 0.0f, 0.0f);
 	stub3d->flags = 0;
 
 	g_r_core->mesh_database = mesh_database; 
@@ -267,13 +267,13 @@ void r_core_flush(void)
 	g_r_core->proxy3d_root = slot3d.index;
 	ds_Assert(g_r_core->proxy3d_root == PROXY3D_ROOT);
 	struct r_proxy3d *stub3d = slot3d.address;
-	vec3_set(stub3d->position, 0.0f, 0.0f, 0.0f);
-	vec3_set(stub3d->spec_position, 0.0f, 0.0f, 0.0f);
+	Vec3Set(stub3d->position, 0.0f, 0.0f, 0.0f);
+	Vec3Set(stub3d->spec_position, 0.0f, 0.0f, 0.0f);
 	const vec3 axis = { 0.0f, 1.0f, 0.0f };
 	unit_axis_angle_to_quaternion(stub3d->rotation, axis, 0.0f);
 	quat_copy(stub3d->spec_rotation, stub3d->rotation);
-	vec3_set(stub3d->linear.linear_velocity, 0.0f, 0.0f, 0.0f);
-	vec3_set(stub3d->linear.angular_velocity, 0.0f, 0.0f, 0.0f);
+	Vec3Set(stub3d->linear.linear_velocity, 0.0f, 0.0f, 0.0f);
+	Vec3Set(stub3d->linear.angular_velocity, 0.0f, 0.0f, 0.0f);
 	stub3d->flags = 0;
 
 	GPoolFlush(&g_r_core->unit_pool);

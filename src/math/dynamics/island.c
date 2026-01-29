@@ -674,11 +674,11 @@ static u32 *island_solve(struct arena *mem_frame, struct physics_pipeline *pipel
 			for (u32 i = 0; i < is->body_count; ++i)
 			{
 				struct rigid_body *b = is->bodies[i];
-				vec3_translate_scaled(b->position, solver->linear_velocity[i], timestep);	
-				vec3_copy(b->velocity, solver->linear_velocity[i]);	
+				Vec3TranslateScaled(b->position, solver->linear_velocity[i], timestep);	
+				Vec3Copy(b->velocity, solver->linear_velocity[i]);	
 
 				quat a_vel_quat, rot_delta;
-				vec3_copy(b->angular_velocity, solver->angular_velocity[i]);	
+				Vec3Copy(b->angular_velocity, solver->angular_velocity[i]);	
 				quat_set(a_vel_quat, 
 						solver->angular_velocity[i][0], 
 						solver->angular_velocity[i][1], 
@@ -694,8 +694,8 @@ static u32 *island_solve(struct arena *mem_frame, struct physics_pipeline *pipel
 				 */
 				b->flags |= RB_AWAKE;
 				b->low_velocity_time = (1-ISLAND_SLEEP_RESET_BIT(is)) * b->low_velocity_time;
-				const f32 lv_sq = vec3_dot(b->velocity, b->velocity);
-				const f32 av_sq = vec3_dot(b->angular_velocity, b->angular_velocity);
+				const f32 lv_sq = Vec3Dot(b->velocity, b->velocity);
+				const f32 av_sq = Vec3Dot(b->angular_velocity, b->angular_velocity);
 				if (lv_sq <= g_solver_config->sleep_linear_velocity_sq_limit && av_sq <= g_solver_config->sleep_angular_velocity_sq_limit)
 				{
 					b->low_velocity_time += timestep;
@@ -715,11 +715,11 @@ static u32 *island_solve(struct arena *mem_frame, struct physics_pipeline *pipel
 			for (u32 i = 0; i < is->body_count; ++i)
 			{
 				struct rigid_body *b = is->bodies[i];
-				vec3_translate_scaled(b->position, solver->linear_velocity[i], timestep);	
-				vec3_copy(b->velocity, solver->linear_velocity[i]);	
+				Vec3TranslateScaled(b->position, solver->linear_velocity[i], timestep);	
+				Vec3Copy(b->velocity, solver->linear_velocity[i]);	
 
 				quat a_vel_quat, rot_delta;
-				vec3_copy(b->angular_velocity, solver->angular_velocity[i]);	
+				Vec3Copy(b->angular_velocity, solver->angular_velocity[i]);	
 				quat_set(a_vel_quat, 
 						solver->angular_velocity[i][0], 
 						solver->angular_velocity[i][1], 

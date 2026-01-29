@@ -58,7 +58,7 @@ struct r_camera r_camera_init(const vec3 position, const vec3 direction, const f
 	ds_Assert(fz_near > 0.0f);
 	ds_Assert(fz_far > fz_near);
 	ds_Assert(aspect_ratio > 0);
-	ds_Assert(vec3_length(direction) > 0.0f);
+	ds_Assert(Vec3Length(direction) > 0.0f);
 	
 	struct r_camera cam = 
 	{
@@ -70,23 +70,23 @@ struct r_camera r_camera_init(const vec3 position, const vec3 direction, const f
 		.fov_x = fov_x,
 	};
 
-	vec3_copy(cam.position, position);
+	Vec3Copy(cam.position, position);
 
 	const vec3 direction_xz = { direction[0], 0.0f, direction[2] };
-	const f32 direction_xz_len = vec3_length(direction_xz);
+	const f32 direction_xz_len = Vec3Length(direction_xz);
 	if (direction_xz_len < 0.001f)
 	{
 		if (direction[1] > 0.0f)
 		{
-			vec3_set(cam.up, 0.0f, 0.0f, -1.0f);
-			vec3_set(cam.forward, 0.0f, 1.0f, 0.0f);
-			vec3_set(cam.left, 1.0f, 0.0f, 0.0f);
+			Vec3Set(cam.up, 0.0f, 0.0f, -1.0f);
+			Vec3Set(cam.forward, 0.0f, 1.0f, 0.0f);
+			Vec3Set(cam.left, 1.0f, 0.0f, 0.0f);
 		}
 		else
 		{
-			vec3_set(cam.up, 0.0f, 0.0f, 1.0f);
-			vec3_set(cam.forward, 0.0f, -1.0f, 0.0f);
-			vec3_set(cam.left, 1.0f, 0.0f, 0.0f);
+			Vec3Set(cam.up, 0.0f, 0.0f, 1.0f);
+			Vec3Set(cam.forward, 0.0f, -1.0f, 0.0f);
+			Vec3Set(cam.left, 1.0f, 0.0f, 0.0f);
 		}
 	}
 	else
@@ -105,8 +105,8 @@ struct r_camera r_camera_init(const vec3 position, const vec3 direction, const f
 		quat_to_mat3(rot1, q1);
 
 		const f32 angle2 = (direction[1] > 0.0f)
-			? -f32_acos(direction_xz_len*direction_xz_len / (direction_xz_len * vec3_length(direction)))
-			:  f32_acos(direction_xz_len*direction_xz_len / (direction_xz_len * vec3_length(direction)));
+			? -f32_acos(direction_xz_len*direction_xz_len / (direction_xz_len * Vec3Length(direction)))
+			:  f32_acos(direction_xz_len*direction_xz_len / (direction_xz_len * Vec3Length(direction)));
 		vec3 v;
 		mat3_vec_mul(v, rot1, x);
 		axis_angle_to_quaternion(q2, v, angle2);
@@ -139,10 +139,10 @@ void r_camera_construct(struct r_camera *cam,
 	ds_Assert(fz_far > fz_near);
 	ds_Assert(aspect_ratio > 0);
 	
-	vec3_copy(cam->position, position);
-	vec3_copy(cam->left, left);
-	vec3_copy(cam->up, up);
-	vec3_copy(cam->forward, forward);
+	Vec3Copy(cam->position, position);
+	Vec3Copy(cam->left, left);
+	Vec3Copy(cam->up, up);
+	Vec3Copy(cam->forward, forward);
 	cam->yaw = yaw;
 	cam->pitch = pitch;
 	cam->fz_near = fz_near;
@@ -201,8 +201,8 @@ void frustum_projection_plane_camera_space(vec3 bottom_left, vec3 upper_right, c
 {
 	f32 frustum_width, frustum_height;
 	frustum_projection_plane_sides(&frustum_width, &frustum_height, cam->fz_near, cam->fov_x, cam->aspect_ratio);
-	vec3_set(bottom_left, frustum_width / 2.0f, -frustum_height / 2.0f, cam->fz_near);
-	vec3_set(upper_right, -frustum_width / 2.0f, frustum_height / 2.0f, cam->fz_near);
+	Vec3Set(bottom_left, frustum_width / 2.0f, -frustum_height / 2.0f, cam->fz_near);
+	Vec3Set(upper_right, -frustum_width / 2.0f, frustum_height / 2.0f, cam->fz_near);
 }
 
 void frustum_projection_plane_world_space(vec3 bottom_left, vec3 upper_right, const struct r_camera *cam)
@@ -216,14 +216,14 @@ void frustum_projection_plane_world_space(vec3 bottom_left, vec3 upper_right, co
 	mat3 rot;
 	sequential_rotation_matrix(rot, up, cam->yaw, left, cam->pitch);
 
-	vec3_set(v, frustum_width / 2.0f, -frustum_height / 2.0f, cam->fz_near);
+	Vec3Set(v, frustum_width / 2.0f, -frustum_height / 2.0f, cam->fz_near);
 	mat3_vec_mul(bottom_left, rot, v);
-	vec3_translate(bottom_left, cam->position);
+	Vec3Translate(bottom_left, cam->position);
 
 	v[0] -= frustum_width;
 	v[1] += frustum_height;
 	mat3_vec_mul(upper_right, rot, v);
-	vec3_translate(upper_right, cam->position);
+	Vec3Translate(upper_right, cam->position);
 }
 
 void window_space_to_world_space(vec3 world_pixel, const vec2 pixel, const vec2 win_size, const struct r_camera * cam)
@@ -237,7 +237,7 @@ void window_space_to_world_space(vec3 world_pixel, const vec2 pixel, const vec2 
 
 	const vec3 alphas = { 1.0f - ((f32) pixel[0]) / win_size[0], 1.0f - ((f32) pixel[1]) / win_size[1], 1.0f };	
 	frustum_projection_plane_camera_space(bl, tr, cam);
-	vec3_interpolate_piecewise(camera_pixel, bl, tr, alphas);	
+	Vec3InterpolatePiecewise(camera_pixel, bl, tr, alphas);	
 	mat3_vec_mul(world_pixel, rot, camera_pixel);
-	vec3_translate(world_pixel, cam->position);
+	Vec3Translate(world_pixel, cam->position);
 }

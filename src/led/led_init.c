@@ -51,7 +51,7 @@ struct led *led_alloc(void)
 	led_core_init_commands();
 	g_editor->mem_persistent = ArenaAlloc(16*1024*1024);
 
-	g_editor->window = system_process_root_window_alloc("Level Editor", vec2u32_inline(400,400), vec2u32_inline(1280, 720));
+	g_editor->window = system_process_root_window_alloc("Level Editor", Vec2u32Inline(400,400), Vec2u32Inline(1280, 720));
 
 	g_editor->frame = ArenaAlloc(16*1024*1024);
 	g_editor->project_menu = led_project_menu_alloc();
@@ -127,7 +127,7 @@ struct led *led_alloc(void)
 
 	struct collision_shape *shape_stub = strdb_Address(&g_editor->cs_db, STRING_DATABASE_STUB_INDEX);
 	shape_stub->type = COLLISION_SHAPE_CONVEX_HULL;
-	shape_stub->hull = dcel_box(&sys_win->mem_persistent, vec3_inline(0.5f, 0.5f, 0.5f));
+	shape_stub->hull = dcel_box(&sys_win->mem_persistent, Vec3Inline(0.5f, 0.5f, 0.5f));
 
 	struct rigid_body_prefab *prefab_stub = strdb_Address(&g_editor->rb_prefab_db, STRING_DATABASE_STUB_INDEX);
 	prefab_stub->shape = strdb_Reference(&g_editor->cs_db, Utf8Inline("")).index;

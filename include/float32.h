@@ -17,17 +17,17 @@
 ==========================================================================
 */
 
-#ifndef __MG_FLOAT32_H__
-#define __MG_FLOAT32_H__
+#ifndef __DS_FLOAT32_H__
+#define __DS_FLOAT32_H__
 
 #ifdef __cplusplus
 extern "C" { 
 #endif
 
-#include "ds_common.h"
+#include "ds_types.h"
 
 #undef  F32_PI
-#undef  F32_PI
+#undef  F32_PI2
 
 #define F32_PI				3.14159274101257324f
 #define F32_PI2    			(2.0f * PI)

@@ -34,7 +34,7 @@ void rotation_matrix(mat3 dst, const vec3 axis, const f32 angle)
 {
 	const f32 w = f32_cos(angle / 2.0f);
 	vec3 pure_quat;
-	vec3_scale(pure_quat, axis, f32_sin(angle / 2.0f));
+	Vec3Scale(pure_quat, axis, f32_sin(angle / 2.0f));
 
 	const f32 tr_part = 2.0f*w*w - 1.0f;
 	const f32 q12 = 2.0f*pure_quat[0]*pure_quat[1];
@@ -51,9 +51,9 @@ void rotation_matrix(mat3 dst, const vec3 axis, const f32 angle)
 void vec3_rotate_center(vec3 src_rotated, mat3 rotation, const vec3 center, const vec3 src)
 {
 	vec3 tmp;
-	vec3_sub(src_rotated, src, center);
+	Vec3Sub(src_rotated, src, center);
 	mat3_vec_mul(tmp, rotation, src_rotated);
-	vec3_add(src_rotated, tmp, center);
+	Vec3Add(src_rotated, tmp, center);
 }
 
 void perspective_matrix(mat4 dst, const f32 aspect_ratio, const f32 fov_x, const f32 fz_near, const f32 fz_far)
@@ -90,20 +90,20 @@ void view_matrix(mat4 dst, const vec3 position, const vec3 left, const vec3 up, 
 void view_matrix_look_at(mat4 dst, const vec3 position, const vec3 target)
 {
 	vec3 tmp, relative, dir;
-	vec3_sub(relative, target, position);
-	vec3_normalize(dir, relative);
-	vec3_set(tmp, 0.0f, 1.0f, 0.0f);
-	const f32 pitch = MM_PI_F / 2.0f - f32_acos(vec3_dot(tmp, dir));
+	Vec3Sub(relative, target, position);
+	Vec3Normalize(dir, relative);
+	Vec3Set(tmp, 0.0f, 1.0f, 0.0f);
+	const f32 pitch = MM_PI_F / 2.0f - f32_acos(Vec3Dot(tmp, dir));
 
 	relative[1] = 0.0f;
-	vec3_normalize(dir, relative);
-	vec3_set(tmp, 1.0f, 0.0f, 0.0f);
+	Vec3Normalize(dir, relative);
+	Vec3Set(tmp, 1.0f, 0.0f, 0.0f);
 
 	f32 yaw;
 	if (dir[2] < 0.0f) {
-		yaw  = f32_acos(vec3_dot(tmp, dir));	
+		yaw  = f32_acos(Vec3Dot(tmp, dir));	
 	} else {
-		yaw  = -f32_acos(vec3_dot(tmp, dir));	
+		yaw  = -f32_acos(Vec3Dot(tmp, dir));	
 	}
 	view_matrix_yaw_pitch(dst, position, yaw, pitch);
 }
@@ -121,13 +121,13 @@ void view_matrix_yaw_pitch(mat4 dst, const vec3 position, const f32 yaw, const f
 	quat_to_mat3(rot, q);
 
 	/* Assume no rotation is equivalent to looking down positive x-axis */
-	vec3_set(tmp, 0.0f, 0.0f, -1.0f);
+	Vec3Set(tmp, 0.0f, 0.0f, -1.0f);
 	mat3_vec_mul(left, rot, tmp);
 
-	vec3_set(tmp, 0.0f, 1.0f, 0.0f);
+	Vec3Set(tmp, 0.0f, 1.0f, 0.0f);
 	mat3_vec_mul(up, rot, tmp);
 
-	vec3_set(tmp, 1.0f, 0.0f, 0.0f);
+	Vec3Set(tmp, 1.0f, 0.0f, 0.0f);
 	mat3_vec_mul(forward, rot, tmp);
 
 	mat4 basis_change, translation;

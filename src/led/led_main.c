@@ -29,7 +29,7 @@ void led_project_menu_main(struct led *led)
 	struct system_window *sys_win;
 	if (menu->window == HI_NULL_INDEX)
 	{
-		menu->window = system_window_alloc("Project Menu", vec2u32_inline(0,0), vec2u32_inline(400, 400), g_process_root_window);
+		menu->window = system_window_alloc("Project Menu", Vec2u32Inline(0,0), Vec2u32Inline(400, 400), g_process_root_window);
 		menu->popup_new_project = ui_popup_null();
 
 		struct system_window *sys_win = system_window_address(menu->window);

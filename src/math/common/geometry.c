@@ -32,33 +32,33 @@
 
 struct ray ray_construct(const vec3 origin, const vec3 dir)
 {
-	assert(vec3_length_squared(dir) > 0.0f);
+	assert(Vec3LengthSquared(dir) > 0.0f);
 
 	struct ray r;
-	vec3_copy(r.origin, origin);
-	vec3_copy(r.dir, dir);
+	Vec3Copy(r.origin, origin);
+	Vec3Copy(r.dir, dir);
 	return r;
 }
 
 struct segment ray_construct_segment(const struct ray *r, const f32 t)
 {
 	vec3 p;
-	vec3_copy(p, r->origin);
-	vec3_translate_scaled(p, r->dir, t);
+	Vec3Copy(p, r->origin);
+	Vec3TranslateScaled(p, r->dir, t);
 	return segment_construct(r->origin, p);
 }
 
 
 void ray_point(vec3 ray_point, const struct ray *ray, const f32 t)
 {
-	vec3_copy(ray_point, ray->origin);
-	vec3_translate_scaled(ray_point, ray->dir, t);
+	Vec3Copy(ray_point, ray->origin);
+	Vec3TranslateScaled(ray_point, ray->dir, t);
 }
 
 struct sphere sphere_construct(const vec3 center, const f32 radius)
 {
 	struct sphere sph = { .radius = radius };
-	vec3_copy(sph.center, center);
+	Vec3Copy(sph.center, center);
 	return sph;	
 }
 
@@ -68,11 +68,11 @@ struct sphere sphere_construct(const vec3 center, const f32 radius)
 f32 sphere_raycast_parameter(const struct sphere *sph, const struct ray *ray)
 {
 	vec3 diff;
-	vec3_sub(diff, ray->origin, sph->center);
+	Vec3Sub(diff, ray->origin, sph->center);
 
-	const f32 a = vec3_dot(ray->dir, ray->dir);
-	const f32 b = 2.0f * vec3_dot(ray->dir, diff);
-	const f32 c = vec3_dot(diff, diff) - sph->radius*sph->radius;
+	const f32 a = Vec3Dot(ray->dir, ray->dir);
+	const f32 b = 2.0f * Vec3Dot(ray->dir, diff);
+	const f32 c = Vec3Dot(diff, diff) - sph->radius*sph->radius;
 
 	const f32 square = (b*b - 4.0f*a*c);
 	if (square < 0.0f) { return F32_INFINITY; }
@@ -91,16 +91,16 @@ u32 sphere_raycast(vec3 intersection, const struct sphere *sph, const struct ray
 	const f32 t = sphere_raycast_parameter(sph, ray);
 	if (t < 0.0f || t == F32_INFINITY) { return 0; }
 
-	vec3_copy(intersection, ray->origin);
-	vec3_translate_scaled(intersection, ray->dir, t);
+	Vec3Copy(intersection, ray->origin);
+	Vec3TranslateScaled(intersection, ray->dir, t);
 	return 1;
 }
 
 f32 ray_point_closest_point_parameter(const struct ray *ray, const vec3 p)
 { 
 	vec3 diff;
-	vec3_sub(diff, p, ray->origin);
-	const f32 tr = vec3_dot(diff, ray->dir) / vec3_dot(ray->dir, ray->dir);
+	Vec3Sub(diff, p, ray->origin);
+	const f32 tr = Vec3Dot(diff, ray->dir) / Vec3Dot(ray->dir, ray->dir);
 	return (tr >= 0.0f) ? tr : 0.0f;
 }
 
@@ -108,24 +108,24 @@ f32 ray_point_distance_sq(vec3 r_c, const struct ray *ray, const vec3 p)
 {
 	const f32 t = ray_point_closest_point_parameter(ray, p);
 	ray_point(r_c, ray, t);
-	return vec3_distance_squared(r_c, p);
+	return Vec3DistanceSquared(r_c, p);
 }
 
 f32 ray_segment_distance_sq(vec3 r_c, vec3 s_c, const struct ray *ray, const struct segment *s)
 {
 	vec3 diff;
-	vec3_sub(diff, s->p0, ray->origin);
-	const f32 drdr = vec3_dot(ray->dir, ray->dir);
-	const f32 dsds = vec3_dot(s->dir, s->dir);
+	Vec3Sub(diff, s->p0, ray->origin);
+	const f32 drdr = Vec3Dot(ray->dir, ray->dir);
+	const f32 dsds = Vec3Dot(s->dir, s->dir);
 
 	f32 tr = 0.0f;
 	f32 ts = 0.0f;
 
 	if (dsds >= MIN_SEGMENT_LENGTH_SQ)
 	{
-		const f32 drds = vec3_dot(ray->dir, s->dir);
-		const f32 diffdr = vec3_dot(diff, ray->dir);
-		const f32 diffds = vec3_dot(diff, s->dir);
+		const f32 drds = Vec3Dot(ray->dir, s->dir);
+		const f32 diffdr = Vec3Dot(diff, ray->dir);
+		const f32 diffds = Vec3Dot(diff, s->dir);
 		const f32 denom = drdr*dsds - drds*drds;
 		/* Check that the ray and segment are not parallel */
 		if (denom > 0.0f)
@@ -153,7 +153,7 @@ f32 ray_segment_distance_sq(vec3 r_c, vec3 s_c, const struct ray *ray, const str
 	}
 	else
 	{
-		tr = f32_clamp(vec3_dot(diff, ray->dir) / drdr, 0.0f, 1.0f);
+		tr = f32_clamp(Vec3Dot(diff, ray->dir) / drdr, 0.0f, 1.0f);
 	}
 	
 	assert(0.0f <= tr);
@@ -161,33 +161,33 @@ f32 ray_segment_distance_sq(vec3 r_c, vec3 s_c, const struct ray *ray, const str
 
 	ray_point(r_c, ray, tr);
 	segment_bc(s_c, s, ts);
-	return vec3_distance_squared(r_c, s_c);
+	return Vec3DistanceSquared(r_c, s_c);
 }
 
 struct segment segment_construct(const vec3 p0, const vec3 p1)
 {
 	struct segment s;
-	vec3_copy(s.p0, p0);
-	vec3_copy(s.p1, p1);
-	vec3_sub(s.dir, p1, p0);
+	Vec3Copy(s.p0, p0);
+	Vec3Copy(s.p1, p1);
+	Vec3Sub(s.dir, p1, p0);
 	return s;
 }
 
 f32 segment_distance_sq(vec3 c1, vec3 c2, const struct segment *s1, const struct segment *s2)
 {
 	vec3 diff;
-	vec3_sub(diff, s2->p0, s1->p0);
-	const f32 d1d1 = vec3_length_squared(s1->dir);
-	const f32 d2d2 = vec3_length_squared(s2->dir);
+	Vec3Sub(diff, s2->p0, s1->p0);
+	const f32 d1d1 = Vec3LengthSquared(s1->dir);
+	const f32 d2d2 = Vec3LengthSquared(s2->dir);
 
 	f32 t1 = 0.0f;
 	f32 t2 = 0.0f;
 
 	if (d1d1 >= MIN_SEGMENT_LENGTH_SQ && d2d2 >= MIN_SEGMENT_LENGTH_SQ)
 	{
-		const f32 d1d2 = vec3_dot(s1->dir, s2->dir);
-		const f32 diffd1 = vec3_dot(diff, s1->dir);
-		const f32 diffd2 = vec3_dot(diff, s2->dir);
+		const f32 d1d2 = Vec3Dot(s1->dir, s2->dir);
+		const f32 diffd1 = Vec3Dot(diff, s1->dir);
+		const f32 diffd2 = Vec3Dot(diff, s2->dir);
 		const f32 denom = d1d1*d2d2 - d1d2*d1d2;
 		/* Check that the segments are not parallel */
 		if (denom > 0.0f)
@@ -230,11 +230,11 @@ f32 segment_distance_sq(vec3 c1, vec3 c2, const struct segment *s1, const struct
 		 * 	= t1*|DIR1|
 		 * => t = DIFF*DIR1 / (DIR1*DIR1) 
 		 */
-		t1 = f32_clamp(vec3_dot(diff, s1->dir) / d1d1, 0.0f, 1.0f);
+		t1 = f32_clamp(Vec3Dot(diff, s1->dir) / d1d1, 0.0f, 1.0f);
 	}
 	else if (d2d2 >= MIN_SEGMENT_LENGTH_SQ)
 	{
-		t2 = f32_clamp(-vec3_dot(diff, s2->dir) / d2d2, 0.0f, 1.0f);
+		t2 = f32_clamp(-Vec3Dot(diff, s2->dir) / d2d2, 0.0f, 1.0f);
 	}
 
 	assert(0.0f <= t1 && t1 <= 1.0f);
@@ -242,58 +242,58 @@ f32 segment_distance_sq(vec3 c1, vec3 c2, const struct segment *s1, const struct
 
 	segment_bc(c1, s1, t1);
 	segment_bc(c2, s2, t2);
-	return vec3_distance_squared(c1, c2);
+	return Vec3DistanceSquared(c1, c2);
 }
 
 f32 segment_point_distance_sq(vec3 c, const struct segment *s, const vec3 p)
 {
 	f32 t = 0.0f;
 	
-	if (vec3_length_squared(s->dir) >= MIN_SEGMENT_LENGTH_SQ)
+	if (Vec3LengthSquared(s->dir) >= MIN_SEGMENT_LENGTH_SQ)
 	{
 		vec3 diff;
-		vec3_sub(diff, p, s->p0);
-		t = f32_clamp(vec3_dot(diff, s->dir) / vec3_dot(s->dir, s->dir), 0.0f, 1.0f);
+		Vec3Sub(diff, p, s->p0);
+		t = f32_clamp(Vec3Dot(diff, s->dir) / Vec3Dot(s->dir, s->dir), 0.0f, 1.0f);
 	}
 
 	segment_bc(c, s, t);
-	return vec3_distance_squared(c, p);
+	return Vec3DistanceSquared(c, p);
 }
 
 void segment_bc(vec3 bc_p, const struct segment *s, const f32 t)
 {
-	vec3_interpolate(bc_p, s->p1, s->p0, t);
+	Vec3Interpolate(bc_p, s->p1, s->p0, t);
 }
 
 f32 segment_point_projected_bc_parameter(const struct segment *s, const vec3 p)
 {	
 	vec3 diff;
-	vec3_sub(diff, p, s->p0);
-	return vec3_dot(diff, s->dir) / vec3_dot(s->dir, s->dir);
+	Vec3Sub(diff, p, s->p0);
+	return Vec3Dot(diff, s->dir) / Vec3Dot(s->dir, s->dir);
 }
 
 f32 segment_point_closest_bc_parameter(const struct segment *s, const vec3 p)
 {	
 	vec3 diff;
-	vec3_sub(diff, p, s->p0);
-	return f32_clamp(vec3_dot(diff, s->dir) / vec3_dot(s->dir, s->dir), 0.0f, 1.0f);
+	Vec3Sub(diff, p, s->p0);
+	return f32_clamp(Vec3Dot(diff, s->dir) / Vec3Dot(s->dir, s->dir), 0.0f, 1.0f);
 }
 
 struct plane plane_construct(const vec3 n, const vec3 p)
 {
 	struct plane pl;
-	vec3_copy(pl.normal, n);
-	pl.signed_distance = vec3_dot(n, p);
+	Vec3Copy(pl.normal, n);
+	pl.signed_distance = Vec3Dot(n, p);
 	return pl;
 }
 
 struct plane plane_construct_from_ccw_triangle(const vec3 a, const vec3 b, const vec3 c)
 {
 	vec3 ab, ac, cross;
-	vec3_sub(ab, b, a);
-	vec3_sub(ac, c, a);
-	vec3_cross(cross, ab, ac);
-	vec3_mul_constant(cross, 1.0f/vec3_length(cross));
+	Vec3Sub(ab, b, a);
+	Vec3Sub(ac, c, a);
+	Vec3Cross(cross, ab, ac);
+	Vec3ScaleSelf(cross, 1.0f/Vec3Length(cross));
 	return plane_construct(cross, a);
 }
 
@@ -319,7 +319,7 @@ f32 plane_segment_clip_parameter(const struct plane *pl, const struct segment *s
 	 *
 	 * degenerate case: segment parallel to plane gives t = +-infinity, which is okay!
 	 */
-	return (pl->signed_distance - vec3_dot(pl->normal, s->p0)) / vec3_dot(pl->normal, s->dir);
+	return (pl->signed_distance - Vec3Dot(pl->normal, s->p0)) / Vec3Dot(pl->normal, s->dir);
 }
 
 u32 plane_segment_clip(vec3 clip, const struct plane *pl, const struct segment *s)
@@ -344,20 +344,20 @@ u32 plane_segment_test(const struct plane *pl, const struct segment *s)
 
 f32 plane_point_signed_distance(const struct plane *pl, const vec3 p)
 {
-	return vec3_dot(pl->normal, p) - pl->signed_distance;
+	return Vec3Dot(pl->normal, p) - pl->signed_distance;
 }
 
 f32 plane_point_distance(const struct plane *pl, const vec3 p)
 {
-	return f32_abs(vec3_dot(pl->normal, p) - pl->signed_distance);
+	return f32_abs(Vec3Dot(pl->normal, p) - pl->signed_distance);
 }
 
 f32 plane_raycast_parameter(const struct plane *plane, const struct ray *ray)
 {
-	const f32 dot = vec3_dot(ray->dir, plane->normal);
+	const f32 dot = Vec3Dot(ray->dir, plane->normal);
 	if (dot == 0.0f) { return F32_INFINITY; }
 
-	return (plane->signed_distance - vec3_dot(ray->origin, plane->normal)) / dot;
+	return (plane->signed_distance - Vec3Dot(ray->origin, plane->normal)) / dot;
 }
 
 u32 plane_raycast(vec3 intersection, const struct plane *plane, const struct ray *ray)
@@ -365,8 +365,8 @@ u32 plane_raycast(vec3 intersection, const struct plane *plane, const struct ray
 	const f32 t = plane_raycast_parameter(plane, ray);
 	if (t < 0.0f || t == F32_INFINITY) { return 0; }
 
-	vec3_copy(intersection, ray->origin);
-	vec3_translate_scaled(intersection, ray->dir, t);
+	Vec3Copy(intersection, ray->origin);
+	Vec3TranslateScaled(intersection, ray->dir, t);
 	return 1;
 }
 
@@ -385,9 +385,9 @@ void AABB_vertex(struct AABB *dst, const vec3ptr v, const u32 v_count, const f32
 		max[2] = f32_max(max[2], v[i][2]);			
 	}
 
-	vec3_sub(dst->hw, max, min);
-	vec3_mul_constant(dst->hw, 0.5f);
-	vec3_add(dst->center, min, dst->hw);
+	Vec3Sub(dst->hw, max, min);
+	Vec3ScaleSelf(dst->hw, 0.5f);
+	Vec3Add(dst->center, min, dst->hw);
 
 	dst->hw[0] += margin;
 	dst->hw[1] += margin;
@@ -406,27 +406,27 @@ void AABB_union(struct AABB *box_union, const struct AABB *a, const struct AABB 
 	max[1] = f32_max(a->center[1] + a->hw[1], b->center[1] + b->hw[1]);
 	max[2] = f32_max(a->center[2] + a->hw[2], b->center[2] + b->hw[2]);
 	
-	vec3_sub(box_union->hw, max, min);
-	vec3_mul_constant(box_union->hw, 0.5f);
-	vec3_add(box_union->center, box_union->hw, min);
+	Vec3Sub(box_union->hw, max, min);
+	Vec3ScaleSelf(box_union->hw, 0.5f);
+	Vec3Add(box_union->center, box_union->hw, min);
 }
 
 void AABB_rotate(struct AABB *dst, const struct AABB *src, mat3 rotation)
 {
 	/*
 	 * Since we may pick any sign for hw[k], and the support point in any direction for an AABB is
-	 * one of its corners, we derive new hw as hw_new[k] = vec3_abs(rot.row[k])*hw_old;
+	 * one of its corners, we derive new hw as hw_new[k] = Vec3AbsSelf(rot.row[k])*hw_old;
 	 */
 
 	const vec3 x = { f32_abs(rotation[0][0]), f32_abs(rotation[1][0]), f32_abs(rotation[2][0]), };
 	const vec3 y = { f32_abs(rotation[0][1]), f32_abs(rotation[1][1]), f32_abs(rotation[2][1]), };
 	const vec3 z = { f32_abs(rotation[0][2]), f32_abs(rotation[1][2]), f32_abs(rotation[2][2]), };
 
-	dst->hw[0] = vec3_dot(x, src->hw);
-	dst->hw[1] = vec3_dot(y, src->hw);
-	dst->hw[2] = vec3_dot(z, src->hw);
+	dst->hw[0] = Vec3Dot(x, src->hw);
+	dst->hw[1] = Vec3Dot(y, src->hw);
+	dst->hw[2] = Vec3Dot(z, src->hw);
 
-	vec3_copy(dst->center, src->center);
+	Vec3Copy(dst->center, src->center);
 }
 
 u32 AABB_test(const struct AABB *a, const struct AABB *b)
@@ -503,8 +503,8 @@ void AABB_raycast_parameter_ex_setup(vec3 multiplier, vec3u32 dir_sign_bit, cons
 f32 AABB_raycast_parameter_ex(const struct AABB *aabb, const struct ray *ray, const vec3 multiplier, const vec3u32 dir_sign_bit)
 {
 	vec3 box_min, box_max;
-	vec3_sub(box_min, aabb->center, aabb->hw);
-	vec3_add(box_max, aabb->center, aabb->hw);
+	Vec3Sub(box_min, aabb->center, aabb->hw);
+	Vec3Add(box_max, aabb->center, aabb->hw);
 
 	f32 t_min = 0.0f;
 	f32 t_max = F32_INFINITY;
@@ -552,8 +552,8 @@ u32 AABB_raycast_ex(vec3 intersection, const struct AABB *aabb, const struct ray
 	const f32 t = AABB_raycast_parameter_ex(aabb, ray, multiplier, dir_sign_bit);
 	if (t == F32_INFINITY) { return 0; }
 
-	vec3_copy(intersection, ray->origin);
-	vec3_translate_scaled(intersection, ray->dir, t);
+	Vec3Copy(intersection, ray->origin);
+	Vec3TranslateScaled(intersection, ray->dir, t);
 	return 1;
 }
 
@@ -574,43 +574,43 @@ u64 AABB_push_lines_buffered(u8 *buf, const u64 bufsize, const struct AABB *box,
 	}
 
 	vec3 end;
-	vec3_sub(end, box->center, box->hw);
+	Vec3Sub(end, box->center, box->hw);
 
 	f32 *v = (f32*) buf;
-	vec3_set(v+7*0, end[0], 		   end[1], 		     end[2]);
-	vec3_set(v+7*1, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
-	vec3_set(v+7*2, end[0], 		   end[1], 		     end[2]);
-	vec3_set(v+7*3, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
-	vec3_set(v+7*4, end[0], 		   end[1], 		     end[2]);
-	vec3_set(v+7*5, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*0, end[0], 		   end[1], 		     end[2]);
+	Vec3Set(v+7*1, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
+	Vec3Set(v+7*2, end[0], 		   end[1], 		     end[2]);
+	Vec3Set(v+7*3, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
+	Vec3Set(v+7*4, end[0], 		   end[1], 		     end[2]);
+	Vec3Set(v+7*5, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
 
-	vec3_set(v+7*6, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
-	vec3_set(v+7*7, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
-	vec3_set(v+7*8, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
-	vec3_set(v+7*9, end[0] + 2.0f*box->hw[0], end[1]                  , end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*6, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
+	Vec3Set(v+7*7, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
+	Vec3Set(v+7*8, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
+	Vec3Set(v+7*9, end[0] + 2.0f*box->hw[0], end[1]                  , end[2] + 2.0f*box->hw[2]);
 
-	vec3_set(v+7*10, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
-	vec3_set(v+7*11, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-	vec3_set(v+7*12, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
-	vec3_set(v+7*13, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
+	Vec3Set(v+7*10, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
+	Vec3Set(v+7*11, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*12, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
+	Vec3Set(v+7*13, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
 
-	vec3_set(v+7*14, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
-	vec3_set(v+7*15, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-	vec3_set(v+7*16, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
-	vec3_set(v+7*17, end[0] + 2.0f*box->hw[0], end[1], 	             end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*14, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*15, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*16, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*17, end[0] + 2.0f*box->hw[0], end[1], 	             end[2] + 2.0f*box->hw[2]);
 
-	vec3_set(v+7*18, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
-	vec3_set(v+7*19, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*18, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
+	Vec3Set(v+7*19, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
 
-	vec3_set(v+7*20, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-	vec3_set(v+7*21, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*20, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*21, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
 
-	vec3_set(v+7*22, end[0] + 2.0f*box->hw[0], end[1], 	             end[2] + 2.0f*box->hw[2]);
-	vec3_set(v+7*23, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*22, end[0] + 2.0f*box->hw[0], end[1], 	             end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*23, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
 
 	for (u32 i = 0; i < 24; ++i)
 	{
-		vec4_copy(v + 7*i + 3, color);
+		Vec4Copy(v + 7*i + 3, color);
 	}
 
 	return bytes_written;
@@ -625,53 +625,53 @@ u64 AABB_transform_push_lines_buffered(u8 *buf, const u64 bufsize, const struct 
 	}
 
 	vec3 end;
-	vec3_sub(end, box->center, box->hw);
+	Vec3Sub(end, box->center, box->hw);
 
 	f32 *v = (f32*) buf;
-	vec3_set(v+7*0, end[0], 		   end[1], 		     end[2]);
-	vec3_set(v+7*1, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
-	vec3_set(v+7*2, end[0], 		   end[1], 		     end[2]);
-	vec3_set(v+7*3, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
-	vec3_set(v+7*4, end[0], 		   end[1], 		     end[2]);
-	vec3_set(v+7*5, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*0, end[0], 		   end[1], 		     end[2]);
+	Vec3Set(v+7*1, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
+	Vec3Set(v+7*2, end[0], 		   end[1], 		     end[2]);
+	Vec3Set(v+7*3, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
+	Vec3Set(v+7*4, end[0], 		   end[1], 		     end[2]);
+	Vec3Set(v+7*5, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
 
-	vec3_set(v+7*6, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
-	vec3_set(v+7*7, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
-	vec3_set(v+7*8, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
-	vec3_set(v+7*9, end[0] + 2.0f*box->hw[0], end[1]                  , end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*6, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
+	Vec3Set(v+7*7, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
+	Vec3Set(v+7*8, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
+	Vec3Set(v+7*9, end[0] + 2.0f*box->hw[0], end[1]                  , end[2] + 2.0f*box->hw[2]);
 
-	vec3_set(v+7*10, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
-	vec3_set(v+7*11, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-	vec3_set(v+7*12, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
-	vec3_set(v+7*13, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
+	Vec3Set(v+7*10, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
+	Vec3Set(v+7*11, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*12, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
+	Vec3Set(v+7*13, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
 
-	vec3_set(v+7*14, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
-	vec3_set(v+7*15, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-	vec3_set(v+7*16, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
-	vec3_set(v+7*17, end[0] + 2.0f*box->hw[0], end[1], 	             end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*14, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*15, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*16, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*17, end[0] + 2.0f*box->hw[0], end[1], 	             end[2] + 2.0f*box->hw[2]);
 
-	vec3_set(v+7*18, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
-	vec3_set(v+7*19, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*18, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
+	Vec3Set(v+7*19, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
 
-	vec3_set(v+7*20, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-	vec3_set(v+7*21, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*20, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*21, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
 
-	vec3_set(v+7*22, end[0] + 2.0f*box->hw[0], end[1], 	             end[2] + 2.0f*box->hw[2]);
-	vec3_set(v+7*23, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*22, end[0] + 2.0f*box->hw[0], end[1], 	             end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*23, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
 
 	for (u32 i = 0; i < 24; ++i)
 	{
 		vec3 tmp1, tmp2;
-		//vec3_sub(tmp1, v + 7*i, box->center);
+		//Vec3Sub(tmp1, v + 7*i, box->center);
 		//mat3_vec_mul(tmp2, rotation, tmp1);
-		//vec3_add(v + 7*i, tmp2, box->center);
-		//vec3_translate(v + 7*i, translation);
+		//Vec3Add(v + 7*i, tmp2, box->center);
+		//Vec3Translate(v + 7*i, translation);
 
 		mat3_vec_mul(tmp1, rotation, v + 7*i);
-		vec3_add(v + 7*i, tmp1, translation);
+		Vec3Add(v + 7*i, tmp1, translation);
 
 
-		vec4_copy(v + 7*i + 3, color);
+		Vec4Copy(v + 7*i + 3, color);
 	}
 
 	return bytes_written;
@@ -700,9 +700,9 @@ struct AABB bbox_triangle(const vec3 p0, const vec3 p1, const vec3 p2)
 	max[1] = f32_max(max[1], p2[1]); 
 	max[2] = f32_max(max[2], p2[2]); 
 
-	vec3_sub(bbox.hw, max, min);
-	vec3_mul_constant(bbox.hw, 0.5f);
-	vec3_add(bbox.center, min, bbox.hw);
+	Vec3Sub(bbox.hw, max, min);
+	Vec3ScaleSelf(bbox.hw, 0.5f);
+	Vec3Add(bbox.center, min, bbox.hw);
 
 	return bbox;
 }
@@ -720,9 +720,9 @@ struct AABB bbox_union(const struct AABB a, const struct AABB b)
 	max[1] = f32_max(a.center[1] + a.hw[1], b.center[1] + b.hw[1]);
 	max[2] = f32_max(a.center[2] + a.hw[2], b.center[2] + b.hw[2]);
 	
-	vec3_sub(bbox.hw, max, min);
-	vec3_mul_constant(bbox.hw, 0.5f);
-	vec3_add(bbox.center, bbox.hw, min);
+	Vec3Sub(bbox.hw, max, min);
+	Vec3ScaleSelf(bbox.hw, 0.5f);
+	Vec3Add(bbox.center, bbox.hw, min);
 
 	return bbox;
 }
@@ -733,7 +733,7 @@ u32 vertex_support(vec3 support, const vec3 dir, const vec3ptr v, const u32 v_co
 	f32 max_dist = -F32_INFINITY;
 	for (u32 i = 0; i < v_count; ++i)
 	{
-		const f32 dist = vec3_dot(dir, v[i]);
+		const f32 dist = Vec3Dot(dir, v[i]);
 
 		if (max_dist < dist)
 		{
@@ -742,35 +742,35 @@ u32 vertex_support(vec3 support, const vec3 dir, const vec3ptr v, const u32 v_co
 		}
 	}
 
-	vec3_copy(support, v[best]);
+	Vec3Copy(support, v[best]);
 	return best;
 }
 
 void vertex_centroid(vec3 centroid, const vec3ptr vs, const u32 n)
 {
-	vec3_set(centroid, 0.0f, 0.0f, 0.0f);
+	Vec3Set(centroid, 0.0f, 0.0f, 0.0f);
 	for (u32 i = 0; i < n; ++i)
 	{
-		vec3_translate(centroid, vs[i]);
+		Vec3Translate(centroid, vs[i]);
 	}
-	vec3_mul_constant(centroid, 1.0f / n);
+	Vec3ScaleSelf(centroid, 1.0f / n);
 }
 
 void tri_ccw_normal(vec3 normal, const vec3 p0, const vec3 p1, const vec3 p2)
 {
 	vec3 A, B, C;
-	vec3_sub(A, p1, p0);
-	vec3_sub(B, p2, p0);
-	vec3_cross(C, A, B);
-	vec3_normalize(normal, C);
+	Vec3Sub(A, p1, p0);
+	Vec3Sub(B, p2, p0);
+	Vec3Cross(C, A, B);
+	Vec3Normalize(normal, C);
 }
 
 void tri_ccw_direction(vec3 dir, const vec3 p0, const vec3 p1, const vec3 p2)
 {
 	vec3 A, B;
-	vec3_sub(A, p1, p0);
-	vec3_sub(B, p2, p0);
-	vec3_cross(dir, A, B);
+	Vec3Sub(A, p1, p0);
+	Vec3Sub(B, p2, p0);
+	Vec3Cross(dir, A, B);
 }
 
 vec3 box_stub_vertex[8] =
@@ -848,14 +848,14 @@ struct dcel dcel_box(struct arena *mem, const vec3 hw)
 {
 	vec3ptr box_vertex = ArenaPush(mem, 8*sizeof(vec3));
 
-	vec3_set(box_vertex[0],  hw[0],  hw[1],  hw[2]); 
-	vec3_set(box_vertex[1],  hw[0],  hw[1], -hw[2]);	
-	vec3_set(box_vertex[2], -hw[0],  hw[1], -hw[2]);	
-	vec3_set(box_vertex[3], -hw[0],  hw[1],  hw[2]);	
-	vec3_set(box_vertex[4],  hw[0], -hw[1],  hw[2]);
-	vec3_set(box_vertex[5],  hw[0], -hw[1], -hw[2]);	
-	vec3_set(box_vertex[6], -hw[0], -hw[1], -hw[2]);	
-	vec3_set(box_vertex[7], -hw[0], -hw[1],  hw[2]);	
+	Vec3Set(box_vertex[0],  hw[0],  hw[1],  hw[2]); 
+	Vec3Set(box_vertex[1],  hw[0],  hw[1], -hw[2]);	
+	Vec3Set(box_vertex[2], -hw[0],  hw[1], -hw[2]);	
+	Vec3Set(box_vertex[3], -hw[0],  hw[1],  hw[2]);	
+	Vec3Set(box_vertex[4],  hw[0], -hw[1],  hw[2]);
+	Vec3Set(box_vertex[5],  hw[0], -hw[1], -hw[2]);	
+	Vec3Set(box_vertex[6], -hw[0], -hw[1], -hw[2]);	
+	Vec3Set(box_vertex[7], -hw[0], -hw[1],  hw[2]);	
 
 	struct dcel box = 
 	{
@@ -876,15 +876,15 @@ void dcel_face_direction(vec3 dir, const struct dcel *h, const u32 fi)
 	struct dcel_edge *e0 = h->e + h->f[fi].first;
 	struct dcel_edge *e1 = h->e + h->f[fi].first + 1;
 	struct dcel_edge *e2 = h->e + h->f[fi].first + 2;
-	vec3_sub(a, h->v[e1->origin], h->v[e0->origin]);
-	vec3_sub(b, h->v[e2->origin], h->v[e0->origin]);
-	vec3_cross(dir, a, b);
+	Vec3Sub(a, h->v[e1->origin], h->v[e0->origin]);
+	Vec3Sub(b, h->v[e2->origin], h->v[e0->origin]);
+	Vec3Cross(dir, a, b);
 }
 
 void dcel_face_normal(vec3 normal, const struct dcel *h, const u32 fi)
 {
 	dcel_face_direction(normal, h, fi);
-	vec3_mul_constant(normal, 1.0f/vec3_length(normal));	
+	Vec3ScaleSelf(normal, 1.0f/Vec3Length(normal));	
 }
 
 struct plane dcel_face_plane(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi)
@@ -893,7 +893,7 @@ struct plane dcel_face_plane(const struct dcel *h, mat3 rot, const vec3 pos, con
 	dcel_face_normal(p, h, fi);
 	mat3_vec_mul(n, rot, p);
 	mat3_vec_mul(p, rot, h->v[h->e[h->f[fi].first].origin]);
-	vec3_translate(p, pos);
+	Vec3Translate(p, pos);
 	return plane_construct(n, p);
 }
 
@@ -917,7 +917,7 @@ struct segment dcel_face_clip_segment(const struct dcel *h, mat3 rot, const vec3
 		const f32 bc_c = plane_segment_clip_parameter(&clip_plane, s);
 		if (min_p <= bc_c && bc_c <= max_p)
 		{
-			if (vec3_dot(s->dir, clip_plane.normal) >= 0.0f)
+			if (Vec3Dot(s->dir, clip_plane.normal) >= 0.0f)
 			{
 				max_p = bc_c;
 			}
@@ -941,11 +941,11 @@ struct plane dcel_face_clip_plane(const struct dcel *h, mat3 rot, const vec3 pos
 
 	mat3_vec_mul(p0, rot, h->v[edge0->origin]);
 	mat3_vec_mul(p1, rot, h->v[edge1->origin]);
-	vec3_translate(p0, pos);
-	vec3_translate(p1, pos);
-	vec3_sub(diff, p1, p0);
-	vec3_cross(p1, diff, face_normal);
-	vec3_mul_constant(p1, 1.0f/vec3_length(p1));
+	Vec3Translate(p0, pos);
+	Vec3Translate(p1, pos);
+	Vec3Sub(diff, p1, p0);
+	Vec3Cross(p1, diff, face_normal);
+	Vec3ScaleSelf(p1, 1.0f/Vec3Length(p1));
 
 	return plane_construct(p1, p0);
 }
@@ -966,7 +966,7 @@ u32 dcel_face_projected_point_test(const struct dcel *h, mat3 rot, const vec3 po
 		const u32 e0 = f->first + i;
 		const u32 e1 = f->first + ((i + 1) % f->count);
 		struct plane clip_plane = dcel_face_clip_plane(h, rot, pos, f_n, e0, e1);
-		if (vec3_dot(clip_plane.normal, p) > clip_plane.signed_distance)
+		if (Vec3Dot(clip_plane.normal, p) > clip_plane.signed_distance)
 		{
 			return 0;
 		}
@@ -981,13 +981,13 @@ void dcel_edge_direction(vec3 dir, const struct dcel *h, const u32 ei)
 	struct dcel_face *f = h->f + e0->face_ccw;
 	const u32 next = f->first + ((ei - f->first + 1) % f->count);
 	struct dcel_edge *e1 = h->e + next;
-	vec3_sub(dir, h->v[e1->origin], h->v[e0->origin]);
+	Vec3Sub(dir, h->v[e1->origin], h->v[e0->origin]);
 }
 
 void dcel_edge_normal(vec3 dir, const struct dcel *h, const u32 ei)
 {
 	dcel_edge_direction(dir, h, ei);
-	vec3_mul_constant(dir, 1.0f / vec3_length(dir));
+	Vec3ScaleSelf(dir, 1.0f / Vec3Length(dir));
 }
 
 struct segment dcel_edge_segment(const struct dcel *h, mat3 rot, const vec3 pos, const u32 ei)
@@ -1000,16 +1000,16 @@ struct segment dcel_edge_segment(const struct dcel *h, mat3 rot, const vec3 pos,
 
 	mat3_vec_mul(p0, rot, h->v[h->e[e0].origin]);
 	mat3_vec_mul(p1, rot, h->v[h->e[e1].origin]);
-	vec3_translate(p0, pos);
-	vec3_translate(p1, pos);
+	Vec3Translate(p0, pos);
+	Vec3Translate(p1, pos);
 
 	return segment_construct(p0, p1);
 }
 
 void sphere_support(vec3 support, const vec3 dir, const struct sphere *sph, const vec3 pos)
 {
-	vec3_scale(support, dir, sph->radius / vec3_length(dir));
-	vec3_translate(support, pos);
+	Vec3Scale(support, dir, sph->radius / Vec3Length(dir));
+	Vec3Translate(support, pos);
 }
 
 void capsule_support(vec3 support, const vec3 dir, const struct capsule *cap, mat3 rot, const vec3 pos)
@@ -1018,13 +1018,13 @@ void capsule_support(vec3 support, const vec3 dir, const struct capsule *cap, ma
 	p1[0] = rot[1][0] * cap->half_height,	
 	p1[1] = rot[1][1] * cap->half_height,	
 	p1[2] = rot[1][2] * cap->half_height,	
-	vec3_negative_to(p2, p1);
+	Vec3Negate(p2, p1);
 
-	vec3_scale(support, dir, cap->radius / vec3_length(dir));
-	vec3_translate(support, pos);
-	(vec3_dot(dir, p1) > vec3_dot(dir, p2))
-		? vec3_translate(support, p1) 
-		: vec3_translate(support, p2);
+	Vec3Scale(support, dir, cap->radius / Vec3Length(dir));
+	Vec3Translate(support, pos);
+	(Vec3Dot(dir, p1) > Vec3Dot(dir, p2))
+		? Vec3Translate(support, p1) 
+		: Vec3Translate(support, p2);
 }
 
 u32 dcel_support(vec3 support, const vec3 dir, const struct dcel *dcel, mat3 rot, const vec3 pos)
@@ -1035,7 +1035,7 @@ u32 dcel_support(vec3 support, const vec3 dir, const struct dcel *dcel, mat3 rot
 	for (u32 i = 0; i < dcel->v_count; ++i)
 	{
 		mat3_vec_mul(p, rot, dcel->v[i]);
-		const f32 dot = vec3_dot(p, dir);
+		const f32 dot = Vec3Dot(p, dir);
 		if (max < dot)
 		{
 			max_index = i;
@@ -1044,7 +1044,7 @@ u32 dcel_support(vec3 support, const vec3 dir, const struct dcel *dcel, mat3 rot
 	}
 
 	mat3_vec_mul(support, rot, dcel->v[max_index]);
-	vec3_translate(support, pos);
+	Vec3Translate(support, pos);
 	return max_index;
 }
 
@@ -1258,18 +1258,18 @@ static void ddcel_assert_topology(const struct ddcel *ddcel)
 	{
 		if (vertex_check[i])
 		{
-			vec3_translate(center, ddcel->v[i]);
+			Vec3Translate(center, ddcel->v[i]);
 		}
 	}
-	vec3_mul_constant(center, 1.0f/vertex_count);
+	Vec3ScaleSelf(center, 1.0f/vertex_count);
 
 	for (u32 i = 0; i < ddcel->face_pool.count_max; ++i)
 	{
 		if (PoolSlotAllocated(ddcel->f + i))
 		{
 			vec3 diff;
-			vec3_sub(diff, center, ddcel->v[ddcel->e[ddcel->f[i].first].origin]);
-			ds_Assert(vec3_dot(diff, ddcel->f[i].normal) < 0.0f);
+			Vec3Sub(diff, center, ddcel->v[ddcel->e[ddcel->f[i].first].origin]);
+			ds_Assert(Vec3Dot(diff, ddcel->f[i].normal) < 0.0f);
 		}
 	}
 
@@ -1288,11 +1288,11 @@ u32 internal_convex_hull_tetrahedron_indices(struct ddcel *ddcel, const f32 tol)
 	/* Find two points not to close to each other */
 	for (; i < ddcel->v_count; ++i)
 	{
-		vec3_sub(a, ddcel->v[ddcel->cv[i].index], ddcel->v[ddcel->cv[0].index]);
-		const f32 dist_sq = vec3_dot(a, a);
+		Vec3Sub(a, ddcel->v[ddcel->cv[i].index], ddcel->v[ddcel->cv[0].index]);
+		const f32 dist_sq = Vec3Dot(a, a);
 		if (dist_sq > tol_sq)
 		{
-			//vec3_mul_constant(a, 1.0f / len);
+			//Vec3ScaleSelf(a, 1.0f / len);
 			indices[1] = i;
 			i += 1;
 			break;
@@ -1302,15 +1302,15 @@ u32 internal_convex_hull_tetrahedron_indices(struct ddcel *ddcel, const f32 tol)
 	/* Find non-collinear point */
 	for (; i < ddcel->v_count; ++i)
 	{
-		vec3_sub(b, ddcel->v[ddcel->cv[i].index], ddcel->v[ddcel->cv[0].index]);
-		vec3_cross(n, a, b);
-		const f32 dist = vec3_length(n);
+		Vec3Sub(b, ddcel->v[ddcel->cv[i].index], ddcel->v[ddcel->cv[0].index]);
+		Vec3Cross(n, a, b);
+		const f32 dist = Vec3Length(n);
 		const f32 area = dist / 2.0f;
 		if (area > tol_sq)
 		{
 			indices[2] = i;
 			i += 1;
-			vec3_mul_constant(n, 1.0f / dist);
+			Vec3ScaleSelf(n, 1.0f / dist);
 			break;
 		}
 	}
@@ -1318,8 +1318,8 @@ u32 internal_convex_hull_tetrahedron_indices(struct ddcel *ddcel, const f32 tol)
 	/* Find non-coplanar point */
 	for (; i < ddcel->v_count; ++i)
 	{
-		vec3_sub(a, ddcel->v[ddcel->cv[i].index], ddcel->v[ddcel->cv[0].index]);
-		const f32 height = vec3_dot(a, n);
+		Vec3Sub(a, ddcel->v[ddcel->cv[i].index], ddcel->v[ddcel->cv[0].index]);
+		const f32 height = Vec3Dot(a, n);
 		if (f32_abs(height) > tol)
 		{
 			indices[3] = i;
@@ -1342,13 +1342,13 @@ static void internal_convex_hull_tetrahedron_ddcel(struct ddcel *ddcel, const f3
 	const vec3ptr v = ddcel->v;
 	const u32 v_count = ddcel->v_count;
 	vec3 a, b, c, cr;
-	vec3_sub(a, v[ddcel->cv[1].index], v[ddcel->cv[0].index]);
-	vec3_sub(b, v[ddcel->cv[2].index], v[ddcel->cv[0].index]);
-	vec3_sub(c, v[ddcel->cv[3].index], v[ddcel->cv[0].index]);
-	vec3_cross(cr, a, b);
+	Vec3Sub(a, v[ddcel->cv[1].index], v[ddcel->cv[0].index]);
+	Vec3Sub(b, v[ddcel->cv[2].index], v[ddcel->cv[0].index]);
+	Vec3Sub(c, v[ddcel->cv[3].index], v[ddcel->cv[0].index]);
+	Vec3Cross(cr, a, b);
 
 	/* CCW == inside gives negative dot product for any polygon on a convex polyhedron */
-	if (vec3_dot(cr, c) > 0.0f)
+	if (Vec3Dot(cr, c) > 0.0f)
 	{
 		/* Make 0->1->2->0 CCW */
 		const u32 tmp = ddcel->cv[1].index;
@@ -1395,25 +1395,25 @@ static void internal_convex_hull_tetrahedron_ddcel(struct ddcel *ddcel, const f3
 	ddcel_edge_set(e10, ddcel->cv[2].index,  1,  9, 11, 3);
 	ddcel_edge_set(e11, ddcel->cv[1].index,  3, 10,  9, 3);
 
-	vec3_sub(a, ddcel->v[e1->origin], ddcel->v[e0->origin]);
-	vec3_sub(b, ddcel->v[e2->origin], ddcel->v[e0->origin]);
-	vec3_cross(cr, a, b);
-	vec3_normalize(ddcel->f[0].normal, cr);
+	Vec3Sub(a, ddcel->v[e1->origin], ddcel->v[e0->origin]);
+	Vec3Sub(b, ddcel->v[e2->origin], ddcel->v[e0->origin]);
+	Vec3Cross(cr, a, b);
+	Vec3Normalize(ddcel->f[0].normal, cr);
 
-	vec3_sub(a, ddcel->v[e4->origin], ddcel->v[e3->origin]);
-	vec3_sub(b, ddcel->v[e5->origin], ddcel->v[e3->origin]);
-	vec3_cross(cr, a, b);
-	vec3_normalize(ddcel->f[1].normal, cr);
+	Vec3Sub(a, ddcel->v[e4->origin], ddcel->v[e3->origin]);
+	Vec3Sub(b, ddcel->v[e5->origin], ddcel->v[e3->origin]);
+	Vec3Cross(cr, a, b);
+	Vec3Normalize(ddcel->f[1].normal, cr);
 
-	vec3_sub(a, ddcel->v[e7->origin], ddcel->v[e6->origin]);
-	vec3_sub(b, ddcel->v[e8->origin], ddcel->v[e6->origin]);
-	vec3_cross(cr, a, b);
-	vec3_normalize(ddcel->f[2].normal, cr);
+	Vec3Sub(a, ddcel->v[e7->origin], ddcel->v[e6->origin]);
+	Vec3Sub(b, ddcel->v[e8->origin], ddcel->v[e6->origin]);
+	Vec3Cross(cr, a, b);
+	Vec3Normalize(ddcel->f[2].normal, cr);
 
-	vec3_sub(a, ddcel->v[e10->origin], ddcel->v[e9->origin]);
-	vec3_sub(b, ddcel->v[e11->origin], ddcel->v[e9->origin]);
-	vec3_cross(cr, a, b);
-	vec3_normalize(ddcel->f[3].normal, cr);
+	Vec3Sub(a, ddcel->v[e10->origin], ddcel->v[e9->origin]);
+	Vec3Sub(b, ddcel->v[e11->origin], ddcel->v[e9->origin]);
+	Vec3Cross(cr, a, b);
+	Vec3Normalize(ddcel->f[3].normal, cr);
 
 	ddcel_assert_topology(ddcel);
 }
@@ -1429,9 +1429,9 @@ static void internal_convex_hull_tetrahedron_conflicts(struct ddcel *ddcel, cons
 		for (u32 f_i = 0; f_i < 4; ++f_i)
 		{
 			const u32 v0_i = ddcel->e[ddcel->f[f_i].first].origin;
-			vec3_sub(b, v[cv->index], v[v0_i]);
+			Vec3Sub(b, v[cv->index], v[v0_i]);
 			/* If point is "in front" of face, we have a conflict */
-			if (vec3_dot(ddcel->f[f_i].normal, b) > tol)
+			if (Vec3Dot(ddcel->f[f_i].normal, b) > tol)
 			{
 				struct slot slot = PoolAdd(&ddcel->ce_pool);
 				dll_Append(&cv->ce_list, ddcel->ce_pool.buf, slot.index);
@@ -1526,8 +1526,8 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 				ddcel->hv[e_twin->origin].edge_in = ej;
 
 				vec3 diff;
-				vec3_sub(diff, ddcel->v[cv->index], ddcel->v[e->origin]);
-				ddcel->hv[e->origin].colinear = (f32_abs(vec3_dot(f_twin->normal, diff)) < tol)
+				Vec3Sub(diff, ddcel->v[cv->index], ddcel->v[e->origin]);
+				ddcel->hv[e->origin].colinear = (f32_abs(Vec3Dot(f_twin->normal, diff)) < tol)
 					? 1
 					: 0;
 			}
@@ -1628,10 +1628,10 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 
 			ddcel_face_set(f, e0i, 3);
 			vec3 a, b, cr;
-			vec3_sub(a, ddcel->v[e1->origin], ddcel->v[e0->origin]);
-			vec3_sub(b, ddcel->v[e2->origin], ddcel->v[e0->origin]);
-			vec3_cross(cr, a, b);
-			vec3_normalize(f->normal, cr);
+			Vec3Sub(a, ddcel->v[e1->origin], ddcel->v[e0->origin]);
+			Vec3Sub(b, ddcel->v[e2->origin], ddcel->v[e0->origin]);
+			Vec3Cross(cr, a, b);
+			Vec3Normalize(f->normal, cr);
 		
 			/*TODO: We may add same point twich here, need to add a "has_been_mapped" thingy to not add again*/
 			ce = NULL;
@@ -1643,8 +1643,8 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 					ddcel->cv[ce->vertex].last_iter = cvi;
 					ddcel->cv[ce->vertex].last_face = sf.index;
 					vec3 diff;
-					vec3_sub(diff, ddcel->v[ddcel->cv[ce->vertex].index], ddcel->v[e0->origin]);
-					if (vec3_dot(f->normal, diff) > tol)
+					Vec3Sub(diff, ddcel->v[ddcel->cv[ce->vertex].index], ddcel->v[e0->origin]);
+					if (Vec3Dot(f->normal, diff) > tol)
 					{
 						struct slot slot = PoolAdd(&ddcel->ce_pool);
 						dll_Append(&f->ce_list, ddcel->ce_pool.buf, slot.index);
@@ -1667,8 +1667,8 @@ void convex_hull_iteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 				{
 					ddcel->cv[ce->vertex].last_iter = cvi;
 					ddcel->cv[ce->vertex].last_face = sf.index;
-					vec3_sub(diff, ddcel->v[ddcel->cv[ce->vertex].index], ddcel->v[e0->origin]);
-					if (vec3_dot(f->normal, diff) > tol)
+					Vec3Sub(diff, ddcel->v[ddcel->cv[ce->vertex].index], ddcel->v[e0->origin]);
+					if (Vec3Dot(f->normal, diff) > tol)
 					{
 						struct slot slot = PoolAdd(&ddcel->ce_pool);
 						dll_Append(&f->ce_list, ddcel->ce_pool.buf, slot.index);
@@ -1881,58 +1881,58 @@ u32 tri_ccw_raycast(vec3 intersection, const struct tri_mesh *mesh, const u32 tr
 
 	vec3 p0, p1, p2, c;
 
-	vec3_sub(p0, mesh->v[mesh->tri[tri][1]],mesh->v[mesh->tri[tri][0]]);
-	vec3_sub(p1, mesh->v[mesh->tri[tri][2]],mesh->v[mesh->tri[tri][0]]);
-	vec3_cross(p2, p0, p1);
+	Vec3Sub(p0, mesh->v[mesh->tri[tri][1]],mesh->v[mesh->tri[tri][0]]);
+	Vec3Sub(p1, mesh->v[mesh->tri[tri][2]],mesh->v[mesh->tri[tri][0]]);
+	Vec3Cross(p2, p0, p1);
 	ds_Assert(p2[1] > 0.0f);
 
-	vec3_sub(p0, mesh->v[mesh->tri[tri][0]], ray->origin);
-	vec3_sub(p1, mesh->v[mesh->tri[tri][1]], ray->origin);
-	vec3_sub(p2, mesh->v[mesh->tri[tri][2]], ray->origin);
+	Vec3Sub(p0, mesh->v[mesh->tri[tri][0]], ray->origin);
+	Vec3Sub(p1, mesh->v[mesh->tri[tri][1]], ray->origin);
+	Vec3Sub(p2, mesh->v[mesh->tri[tri][2]], ray->origin);
 
 	f32 u;
 	if (mesh->tri[tri][0] < mesh->tri[tri][1])
 	{
-		vec3_cross(c, p1, p0);
-		u = vec3_dot(ray->dir, c);
+		Vec3Cross(c, p1, p0);
+		u = Vec3Dot(ray->dir, c);
 	}
 	else
 	{
-		vec3_cross(c, p0, p1);
-		u = -vec3_dot(ray->dir, c);
+		Vec3Cross(c, p0, p1);
+		u = -Vec3Dot(ray->dir, c);
 	}
 	if (u < 0.0f) { return 0; }
 
 	f32 v;
 	if (mesh->tri[tri][1] < mesh->tri[tri][2])
 	{
-		vec3_cross(c, p2, p1);
-		v = vec3_dot(ray->dir, c);
+		Vec3Cross(c, p2, p1);
+		v = Vec3Dot(ray->dir, c);
 	}
 	else
 	{
-		vec3_cross(c, p1, p2);
-		v = -vec3_dot(ray->dir, c);
+		Vec3Cross(c, p1, p2);
+		v = -Vec3Dot(ray->dir, c);
 	}
 	if (v < 0.0f) { return 0; }
 
 	f32 w;
 	if (mesh->tri[tri][2] < mesh->tri[tri][0])
 	{
-		vec3_cross(c, p0, p2);
-		w = vec3_dot(ray->dir, c);
+		Vec3Cross(c, p0, p2);
+		w = Vec3Dot(ray->dir, c);
 	}
 	else
 	{
-		vec3_cross(c, p2, p0);
-		w = -vec3_dot(ray->dir, c);
+		Vec3Cross(c, p2, p0);
+		w = -Vec3Dot(ray->dir, c);
 	}
 	if (w < 0.0f) { return 0; }
 
 	/* TODO: Prob bad, we can go back to this later */
 	if (u + v + w < 100.0f * F32_EPSILON)
 	{
-		vec3_copy(intersection, ray->origin);
+		Vec3Copy(intersection, ray->origin);
 	}
 	else
 	{
@@ -1941,9 +1941,9 @@ u32 tri_ccw_raycast(vec3 intersection, const struct tri_mesh *mesh, const u32 tr
 		v *= denom;
 		w *= 1.0f - u - v;
 
-		vec3_scale(intersection, mesh->v[mesh->tri[tri][0]], v);
-		vec3_translate_scaled(intersection, mesh->v[mesh->tri[tri][1]], w);
-		vec3_translate_scaled(intersection, mesh->v[mesh->tri[tri][2]], u);
+		Vec3Scale(intersection, mesh->v[mesh->tri[tri][0]], v);
+		Vec3TranslateScaled(intersection, mesh->v[mesh->tri[tri][1]], w);
+		Vec3TranslateScaled(intersection, mesh->v[mesh->tri[tri][2]], u);
 	}
 
 	return 1;

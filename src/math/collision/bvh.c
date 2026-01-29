@@ -582,7 +582,7 @@ struct tri_mesh_bvh tri_mesh_bvh_construct(struct arena *mem, const struct tri_m
 		node->bbox = bbox_union(node->bbox, bbox_tri[i]);
 	}
 
-	ds_AssertString(vec3_length(node->bbox.center) < 0.0001f, "Center should most likely be 0.0, so the root box center defines a local origin!");
+	ds_AssertString(Vec3Length(node->bbox.center) < 0.0001f, "Center should most likely be 0.0, so the root box center defines a local origin!");
 	
 	/* Process triangles from left to right, depth-first. */
 	while (sc--)
@@ -597,8 +597,8 @@ struct tri_mesh_bvh tri_mesh_bvh_construct(struct arena *mem, const struct tri_m
 
 		ProfZoneNamed("mesh_bvh.bvh construction iteration");
 		vec3 bbox_min, bbox_max;
-		vec3_add(bbox_max, node->bbox.center, node->bbox.hw);
-		vec3_sub(bbox_min, node->bbox.center, node->bbox.hw);
+		Vec3Add(bbox_max, node->bbox.center, node->bbox.hw);
+		Vec3Sub(bbox_min, node->bbox.center, node->bbox.hw);
 
 		u32 best_axis = U32_MAX;
 		u32 best_split = U32_MAX;

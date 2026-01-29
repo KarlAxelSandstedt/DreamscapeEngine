@@ -51,13 +51,13 @@ void r_proxy3d_set_linear_speculation(const vec3 position, const quat rotation, 
 	proxy->flags &= ~(PROXY3D_SPECULATE_FLAGS | PROXY3D_MOVING);
 	proxy->flags |= PROXY3D_SPECULATE_LINEAR;
 	proxy->ns_at_update = ns_time;
-	vec3_copy(proxy->position, position);
+	Vec3Copy(proxy->position, position);
 	quat_copy(proxy->rotation, rotation);
-	vec3_copy(proxy->spec_position, position);
+	Vec3Copy(proxy->spec_position, position);
 	quat_copy(proxy->spec_rotation, rotation);
-	vec3_copy(proxy->linear.linear_velocity, linear_velocity);
-	vec3_copy(proxy->linear.angular_velocity, angular_velocity);
-	if (vec3_dot(linear_velocity, linear_velocity) + vec3_dot(angular_velocity, angular_velocity) > 0.0f)
+	Vec3Copy(proxy->linear.linear_velocity, linear_velocity);
+	Vec3Copy(proxy->linear.angular_velocity, angular_velocity);
+	if (Vec3Dot(linear_velocity, linear_velocity) + Vec3Dot(angular_velocity, angular_velocity) > 0.0f)
 	{
 		proxy->flags |= PROXY3D_MOVING;
 	}
@@ -72,7 +72,7 @@ u32 r_proxy3d_alloc(const struct r_proxy3d_config *config)
 		: 0;
 
 	proxy->mesh = strdb_Reference(g_r_core->mesh_database, config->mesh).index;
-	vec4_copy(proxy->color, config->color);
+	Vec4Copy(proxy->color, config->color);
 	proxy->blend = config->blend;
 
 	r_proxy3d_set_linear_speculation(config->position, config->rotation, config->linear_velocity, config->angular_velocity, config->ns_time, slot.index);
@@ -119,7 +119,7 @@ static void internal_r_proxy3d_local_speculative_orientation(struct r_proxy3d *p
 		
 		default:
 		{
-			vec3_copy(proxy->spec_position, proxy->position);	
+			Vec3Copy(proxy->spec_position, proxy->position);	
 			quat_copy(proxy->spec_rotation, proxy->rotation);	
 		} break;
 	}	
@@ -144,11 +144,11 @@ void r_proxy3d_hierarchy_speculate(struct arena *mem, const u64 ns_time)
 			const struct r_proxy3d *parent = r_proxy3d_address(proxy->header.parent);
 			if ((proxy->flags & PROXY3D_MOVING) == 0)
 			{
-				vec3_copy(proxy->spec_position, proxy->position);	
+				Vec3Copy(proxy->spec_position, proxy->position);	
 				quat_copy(proxy->spec_rotation, proxy->rotation);	
 			}
 
-			vec3_translate(proxy->spec_position, parent->spec_position);
+			Vec3Translate(proxy->spec_position, parent->spec_position);
 			quat tmp;
 			quat_copy(tmp, proxy->spec_rotation);
 			quat_mult(proxy->spec_rotation, tmp, parent->spec_rotation);

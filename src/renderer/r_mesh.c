@@ -78,7 +78,7 @@ static void internal_r_mesh_set_sphere(u32 *b_i, u8 *vertex_data, u32 *index_dat
 	const f32 inc_angle = MM_PI_F / refinement;
 
 	vec3 tmp, vertex = { 0.0f, radius, 0.0f };
-	vec3_translate(vertex, translation);
+	Vec3Translate(vertex, translation);
 	vec3 n = { 0.0f, 1.0f, 0.0f };
 
 	u64 offset = 0;
@@ -97,13 +97,13 @@ static void internal_r_mesh_set_sphere(u32 *b_i, u8 *vertex_data, u32 *index_dat
 		for (u32 j = 0; j < points_per_strip; ++j)
 		{
 			const f32 t = inc_angle * j;
-			vec3_set(tmp, f32_cos(t), 0.0f, -f32_sin(t));
-			vec3_normalize(vertex, tmp);
-			vec3_mul_constant(vertex, f32_sin(k));
+			Vec3Set(tmp, f32_cos(t), 0.0f, -f32_sin(t));
+			Vec3Normalize(vertex, tmp);
+			Vec3ScaleSelf(vertex, f32_sin(k));
 			vertex[1] = f32_cos(k);
-			vec3_normalize(n, vertex);
-			vec3_mul_constant(vertex, radius);
-			vec3_translate(vertex, translation);
+			Vec3Normalize(n, vertex);
+			Vec3ScaleSelf(vertex, radius);
+			Vec3Translate(vertex, translation);
 
 			memcpy(vertex_data + offset + p_offset, vertex, sizeof(vec3));
 			//memcpy(vertex_data + offset + c_offset, color, sizeof(vec4));
@@ -112,9 +112,9 @@ static void internal_r_mesh_set_sphere(u32 *b_i, u8 *vertex_data, u32 *index_dat
 		}
 	}
 
-	vec3_set(vertex, 0.0f, -radius, 0.0f);
-	vec3_translate(vertex, translation);
-	vec3_normalize(n, vertex);
+	Vec3Set(vertex, 0.0f, -radius, 0.0f);
+	Vec3Translate(vertex, translation);
+	Vec3Normalize(n, vertex);
 	memcpy(vertex_data + offset + p_offset, vertex, sizeof(vec3));
 	//memcpy(vertex_data + offset + c_offset, color, sizeof(vec4));
 	memcpy(vertex_data + offset + n_offset, n, sizeof(vec3));
@@ -206,8 +206,8 @@ void r_mesh_set_capsule(struct arena *mem, struct r_mesh *mesh, const f32 half_h
 	}
 	
 	u32 vi = 0;
-	vec3_set(v[vi++], 0.0f, -half_height, 0.0f);
-	vec3_set(v[vi++], 0.0f, half_height, 0.0f);
+	Vec3Set(v[vi++], 0.0f, -half_height, 0.0f);
+	Vec3Set(v[vi++], 0.0f, half_height, 0.0f);
 
 	for (u32 i = 0; i < n_lat_cap_slice; ++i)
 	{
@@ -217,12 +217,12 @@ void r_mesh_set_capsule(struct arena *mem, struct r_mesh *mesh, const f32 half_h
 		for (u32 j = 0; j < n_long_slice; ++j)
 		{
 			const f32 phi = j * 2.0f * MM_PI_F / n_long_slice;
-			vec3_set(v[vi++], 
+			Vec3Set(v[vi++], 
 				ring_radius * f32_cos(phi),
 				y,
 				ring_radius * f32_sin(phi));
 
-			vec3_set(v[vi++], 
+			Vec3Set(v[vi++], 
 				ring_radius * f32_cos(phi),
 				-y,
 				ring_radius * f32_sin(phi));
@@ -235,7 +235,7 @@ void r_mesh_set_capsule(struct arena *mem, struct r_mesh *mesh, const f32 half_h
 		for (u32 j = 0; j < n_long_slice; ++j)
 		{
 			const f32 phi = j * 2.0f * MM_PI_F / n_long_slice;
-			vec3_set(v[vi++], 
+			Vec3Set(v[vi++], 
 				radius * f32_cos(phi),
 				y,
 				radius * f32_sin(phi));
@@ -270,9 +270,9 @@ void r_mesh_set_hull(struct arena *mem, struct r_mesh *mesh, const struct dcel *
 				hull->v[e2->origin]);
 
 		vec3 p0, p1, p2;
-		vec3_copy(p0, hull->v[e0->origin]); 
-                vec3_copy(p1, hull->v[e1->origin]);
-                vec3_copy(p2, hull->v[e2->origin]);
+		Vec3Copy(p0, hull->v[e0->origin]); 
+                Vec3Copy(p1, hull->v[e1->origin]);
+                Vec3Copy(p2, hull->v[e2->origin]);
 
 		ArenaPushPackedMemcpy(mem, p0, sizeof(vec3));
 		//ArenaPushPackedMemcpy(mem, color, sizeof(vec4));
@@ -290,7 +290,7 @@ void r_mesh_set_hull(struct arena *mem, struct r_mesh *mesh, const struct dcel *
 		{
 			mesh->vertex_count += 1;
 			e2 = hull->e + f->first + ti + 2;
-                	vec3_copy(p2, hull->v[e2->origin]);
+                	Vec3Copy(p2, hull->v[e2->origin]);
 
 			ArenaPushPackedMemcpy(mem, p2, sizeof(vec3));
 			//ArenaPushPackedMemcpy(mem, color, sizeof(vec4));

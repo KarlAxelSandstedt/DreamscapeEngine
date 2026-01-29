@@ -282,10 +282,10 @@ struct slot ui_list_entry_alloc(struct ui_list *list, const utf8 id)
 		{
 			struct ui_node *prev = hi_Address(g_ui->node_hierarchy, list->last_selected);
 			prev->inter &= ~UI_INTER_SELECT;
-			vec4_copy(prev->border_color, node->border_color);
+			Vec4Copy(prev->border_color, node->border_color);
 		}
 
-		vec4_set(node->border_color, 0.1f, 0.55f, 0.8f, 0.8f);
+		Vec4Set(node->border_color, 0.1f, 0.55f, 0.8f, 0.8f);
 		list->last_selected = entry.index;
 		list->last_selection_happened = g_ui->frame;
 	}
@@ -330,10 +330,10 @@ struct ui_node_cache ui_list_entry_alloc_cached(struct ui_list *list, const utf8
 		{
 			struct ui_node *prev = hi_Address(g_ui->node_hierarchy, list->last_selected);
 			prev->inter &= ~UI_INTER_SELECT;
-			vec4_copy(prev->border_color, node->border_color);
+			Vec4Copy(prev->border_color, node->border_color);
 		}
 
-		vec4_set(node->border_color, 0.1f, 0.55f, 0.8f, 0.8f);
+		Vec4Set(node->border_color, 0.1f, 0.55f, 0.8f, 0.8f);
 		list->last_selected = new_cache.index;
 		list->last_selection_happened = g_ui->frame;
 	}
@@ -802,7 +802,7 @@ void ui_popup_utf8_display(struct ui_popup *popup, const utf8 display, const cha
 {
 	if (popup->state == UI_POPUP_STATE_NULL)
 	{
-		popup->window = system_window_alloc(title, vec2u32_inline(0,0), vec2u32_inline(600, 200), g_window);
+		popup->window = system_window_alloc(title, Vec2u32Inline(0,0), Vec2u32Inline(600, 200), g_window);
 		if (popup->window != HI_NULL_INDEX)
 		{
 			struct system_window *win = system_window_address(popup->window);
@@ -821,7 +821,7 @@ void ui_popup_utf8_input(struct ui_popup *popup, utf8 *input, struct ui_text_inp
 {
 	if (popup->state == UI_POPUP_STATE_NULL)
 	{
-		popup->window = system_window_alloc(title, vec2u32_inline(0,0), vec2u32_inline(600, 200), g_window);
+		popup->window = system_window_alloc(title, Vec2u32Inline(0,0), Vec2u32Inline(600, 200), g_window);
 		if (popup->window != HI_NULL_INDEX)
 		{
 			struct system_window *win = system_window_address(popup->window);
@@ -843,7 +843,7 @@ void ui_popup_choice(struct ui_popup *popup, const utf8 description, const utf8 
 {
 	if (popup->state == UI_POPUP_STATE_NULL)
 	{
-		popup->window = system_window_alloc(title, vec2u32_inline(0,0), vec2u32_inline(600, 200), g_window);
+		popup->window = system_window_alloc(title, Vec2u32Inline(0,0), Vec2u32Inline(600, 200), g_window);
 		if (popup->window != HI_NULL_INDEX)
 		{
 			struct system_window *win = system_window_address(popup->window);
@@ -1131,7 +1131,7 @@ struct ui_dropdown_menu ui_dropdown_menu_init(const f32 max_dropdown_height, con
 		.list = ui_list_init(AXIS_2_Y, max_dropdown_height, entry_size[1], UI_SELECTION_UNIQUE),
 	};
 
-	vec2_copy(menu.entry_size, entry_size);
+	Vec2Copy(menu.entry_size, entry_size);
 	menu.max_dropdown_height = max_dropdown_height;
 	menu.position = position;
 

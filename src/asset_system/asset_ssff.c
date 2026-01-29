@@ -384,19 +384,19 @@ struct ssff_texture_return ssff_texture(struct arena *mem, const struct ssff_hea
 				}
 			}
 
-			//vec2_set(ret.uv[ret.count + j].bl, 
+			//Vec2Set(ret.uv[ret.count + j].bl, 
 			//		pixel_hw[0] + (f32) x_offset / width, 
 			//		pixel_hw[1] + (f32) (y_offset + sprite_height - 1) / height);
-			//vec2_set(ret.uv[ret.count + j].tr,
+			//Vec2Set(ret.uv[ret.count + j].tr,
 			//		ret.uv[ret.count + j].bl[0] + (f32) (sprite_width-1) / width,
 			//		pixel_hw[1] + (f32) y_offset / height);
-			vec2_set(ret.sprite[ret.count + j].bl, 
+			Vec2Set(ret.sprite[ret.count + j].bl, 
 					(f32) x_offset / width, 
 					(f32) (y_offset + sprite_height) / height);
-			vec2_set(ret.sprite[ret.count + j].tr,
+			Vec2Set(ret.sprite[ret.count + j].tr,
 					ret.sprite[ret.count + j].bl[0] + (f32) sprite_width / width,
 					(f32) y_offset / height);
-			vec2u32_set(ret.sprite[ret.count + j].pixel_size, sprite_width, sprite_height);
+			Vec2u32Set(ret.sprite[ret.count + j].pixel_size, sprite_width, sprite_height);
 			x_offset += sprite_width;
 		}
 

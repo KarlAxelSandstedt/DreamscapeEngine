@@ -69,7 +69,7 @@ static void led_project_menu_ui(struct led *led, const struct ui_visual *visual)
 		ui_list(&menu->dir_list, "###p", &menu->dir_list)
 		for (u32 f = 0; f < file_count; ++f)
 		{
-			const struct file *file = vector_address(&menu->dir_nav.files, f);
+			const struct file *file = VectorAddress(&menu->dir_nav.files, f);
 			const enum sprite_id spr = (file->type == FILE_DIRECTORY)
 				? SPRITE_LED_FOLDER
 				: SPRITE_LED_FILE;
@@ -208,9 +208,9 @@ static void led_ui_test(struct led *led, const struct ui_visual *visual)
 			ui_height(ui_size_perc(0.1f))
 			ui_parent(ui_node_alloc_f(UI_FLAG_NONE, "###row_%u", r).index)
 			{
-				ui_sprite_color(vec4_inline(0.4f, 0.15f, 0.75f, 0.7f))
+				ui_sprite_color(Vec4Inline(0.4f, 0.15f, 0.75f, 0.7f))
 				ui_sprite(SPRITE_LED_FOLDER)
-				ui_background_color(vec4_inline(204.0f/256.0f, 48.0f/256.0f, 110.0f/256.0f, 0.7f))
+				ui_background_color(Vec4Inline(204.0f/256.0f, 48.0f/256.0f, 110.0f/256.0f, 0.7f))
 				ui_intv_viewable_x(intv_inline(100.0f, 200.0f))	
 				for (u32 i = 0; i <= 10; ++i)
 				{
@@ -231,12 +231,12 @@ static void led_ui_test(struct led *led, const struct ui_visual *visual)
 				for (u32 i = 0; i < 8; ++i)
 				{
 					ui_width(ui_size_pixel(400, 1.0f / (2 << i)))
-					ui_background_color(vec4_inline((214.0f - i*30.0f)/256.0f, (48.0f + i*30.0f)/256.0f, (44.0f + i*30.0f)/256.0f, 0.7f))
+					ui_background_color(Vec4Inline((214.0f - i*30.0f)/256.0f, (48.0f + i*30.0f)/256.0f, (44.0f + i*30.0f)/256.0f, 0.7f))
 					ui_node_alloc_f(UI_DRAW_BACKGROUND, "###box_%u_%u", 6, i);
 				}
 
 				ui_width(ui_size_pixel(400, 1.0f / (2 << 8)))
-				ui_background_color(vec4_inline((204.0f- 8*20.0f)/256.0f, (48.0f + 8*20.0f)/256.0f, (110.0f + 8*10.0f)/256.0f, 0.7f))
+				ui_background_color(Vec4Inline((204.0f- 8*20.0f)/256.0f, (48.0f + 8*20.0f)/256.0f, (110.0f + 8*10.0f)/256.0f, 0.7f))
 				ui_node_alloc_f(UI_DRAW_BACKGROUND, "###box_%u_%u", 6, 8);
 			}
 		}
@@ -251,13 +251,13 @@ static void led_ui_test(struct led *led, const struct ui_visual *visual)
 				ui_height(ui_size_pixel(80, 1.0f))
 				ui_fixed_x(220.0f)
 				ui_fixed_y(220.0f)
-				ui_background_color(vec4_inline(0.1f, 0.3f, 0.6f, 0.7f))
+				ui_background_color(Vec4Inline(0.1f, 0.3f, 0.6f, 0.7f))
 				ui_node_alloc_f(UI_DRAW_BACKGROUND, "###box_%u_%u", 7, 0);
 			}
 		}
 
 		ui_height(ui_size_perc(0.1f))
-		ui_sprite_color(vec4_inline(1.0f, 1.0f, 1.0f, 1.0f))
+		ui_sprite_color(Vec4Inline(1.0f, 1.0f, 1.0f, 1.0f))
 		ui_parent(ui_node_alloc_f(UI_FLAG_NONE, "###row_%u", 8).index)
 		{
 			ui_width(ui_size_text(F32_INFINITY, 1.0f))
@@ -299,18 +299,18 @@ static void led_ui_test(struct led *led, const struct ui_visual *visual)
 		}
 
 		ui_height(ui_size_perc(0.1f))
-		ui_sprite_color(vec4_inline(1.0f, 1.0f, 1.0f, 1.0f))
+		ui_sprite_color(Vec4Inline(1.0f, 1.0f, 1.0f, 1.0f))
 		ui_font(FONT_DEFAULT_SMALL)
 		ui_parent(ui_node_alloc_f(UI_FLAG_NONE, "###row_%u", 9).index)
 		{
 			ui_width(ui_size_text(F32_INFINITY, 1.0f))
 			ui_height(ui_size_perc(1.0f))
-			ui_background_color(vec4_inline(0.2f, 0.2, 0.4f, 0.7f))
+			ui_background_color(Vec4Inline(0.2f, 0.2, 0.4f, 0.7f))
 			ui_node_alloc_f(UI_DRAW_TEXT | UI_DRAW_BACKGROUND | UI_DRAW_BORDER, "###box_%u_%u", 9, 0);
 
 			ui_width(ui_size_text(F32_INFINITY, 1.0f))
 			ui_height(ui_size_perc(1.0f))
-			ui_background_color(vec4_inline(0.2f, 0.2, 0.4f, 0.7f))
+			ui_background_color(Vec4Inline(0.2f, 0.2, 0.4f, 0.7f))
 			ui_node_alloc_f(UI_DRAW_TEXT | UI_DRAW_BACKGROUND | UI_DRAW_BORDER, "awd###box_%u_%u", 9, 1);
 		}
 	}
@@ -321,7 +321,7 @@ static void led_ui_test(struct led *led, const struct ui_visual *visual)
 
 static void led_input_handler(struct led *led, struct ui_node *viewport)
 {
-	vec4_set(viewport->border_color, 0.9f, 0.9f, 0.9f, 1.0f);
+	Vec4Set(viewport->border_color, 0.9f, 0.9f, 0.9f, 1.0f);
 	struct system_window *sys_win = system_window_address(led->window);
 
 	for (u32 i = sys_win->ui->event_list.first; i != DLL_NULL; )
@@ -408,12 +408,12 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 		led->node_ui_list = ui_list_init(AXIS_2_Y, 256.0f, 24.0f, UI_SELECTION_MULTI); 
 		led->node_selected_ui_list = ui_list_init(AXIS_2_Y, 512.0f, 24.0f + 3*24.0f + 12.0f, UI_SELECTION_NONE);
 		led->cs_list = ui_list_init(AXIS_2_Y, 200.0f, 24.0f, UI_SELECTION_UNIQUE);
-		led->cs_mesh_menu = ui_dropdown_menu_init(150.0f, vec2_inline(110.0f, 24.0f), UI_DROPDOWN_BELOW);
+		led->cs_mesh_menu = ui_dropdown_menu_init(150.0f, Vec2Inline(110.0f, 24.0f), UI_DROPDOWN_BELOW);
 
 		led->rb_prefab_list = ui_list_init(AXIS_2_Y, 200.0f, 24.0f, UI_SELECTION_UNIQUE);
-		led->rb_prefab_mesh_menu = ui_dropdown_menu_init(150.0f, vec2_inline(110.0f, 24.0f), UI_DROPDOWN_ABOVE);
+		led->rb_prefab_mesh_menu = ui_dropdown_menu_init(150.0f, Vec2Inline(110.0f, 24.0f), UI_DROPDOWN_ABOVE);
 		
-		led->rb_color_mode_menu = ui_dropdown_menu_init(120.0f, vec2_inline(196.0f, 24.0f), UI_DROPDOWN_BELOW);
+		led->rb_color_mode_menu = ui_dropdown_menu_init(120.0f, Vec2Inline(196.0f, 24.0f), UI_DROPDOWN_BELOW);
 	}
 
 	ui_text_align_x(ALIGN_LEFT)
@@ -431,18 +431,18 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 			{
 				ui_pad_fill();
 
-				ui_background_color(vec4_inline(0.0f, 0.125f, 0.125f, 1.0f))
+				ui_background_color(Vec4Inline(0.0f, 0.125f, 0.125f, 1.0f))
 				ui_flags(UI_DRAW_BACKGROUND)
 				{
 					struct ui_node *button;
 					ui_width(ui_size_pixel(32.0f, 1.0f))
 					ui_flags(UI_DRAW_SPRITE)
-					ui_background_color(vec4_inline(0.5f, 0.5f, 0.5f, 0.5f))
-					ui_sprite_color(vec4_inline(0.0f, 0.0f, 0.0f, 0.1f))
+					ui_background_color(Vec4Inline(0.5f, 0.5f, 0.5f, 0.5f))
+					ui_sprite_color(Vec4Inline(0.0f, 0.0f, 0.0f, 0.1f))
 					ui_sprite(SPRITE_LED_PLAY)
 					if (ui_button_f(UI_DRAW_BACKGROUND | UI_DRAW_SPRITE, "###play") & UI_INTER_LEFT_CLICK)
 					{
-						//ui_background_color(vec4_inline(0.0f, 0.5f, 0.5f, 0.5f))
+						//ui_background_color(Vec4Inline(0.0f, 0.5f, 0.5f, 0.5f))
 						cmd_submit_f(g_ui->mem_frame, "led_compile");
 						cmd_submit_f(g_ui->mem_frame, "led_run");
 					}
@@ -451,7 +451,7 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 
 					ui_width(ui_size_pixel(32.0f, 1.0f))
 					ui_flags(UI_DRAW_SPRITE)
-					ui_sprite_color(vec4_inline(0.0f, 0.0f, 0.0f, 0.1f))
+					ui_sprite_color(Vec4Inline(0.0f, 0.0f, 0.0f, 0.1f))
 					ui_sprite(SPRITE_LED_PAUSE)
 					if (ui_button_f(UI_DRAW_SPRITE, "###pause") & UI_INTER_LEFT_CLICK)
 					{
@@ -462,7 +462,7 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 
 					ui_width(ui_size_pixel(32.0f, 1.0f))
 					ui_flags(UI_DRAW_SPRITE)
-					ui_sprite_color(vec4_inline(0.0f, 0.0f, 0.0f, 0.1f))
+					ui_sprite_color(Vec4Inline(0.0f, 0.0f, 0.0f, 0.1f))
 					ui_sprite(SPRITE_LED_STOP)
 					if (ui_button_f(UI_DRAW_SPRITE, "###stop") & UI_INTER_LEFT_CLICK)
 					{
@@ -493,8 +493,8 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 							g_ui->inter.cursor_position[1] - node->pixel_position[1],
 						};
 						window_space_to_world_space(dir, cursor_viewport_position, node->pixel_size, &led->cam);
-						vec3_translate_scaled(dir, led->cam.position, -1.0f);
-						vec3_mul_constant(dir, 1.0f / vec3_length(dir));
+						Vec3TranslateScaled(dir, led->cam.position, -1.0f);
+						Vec3ScaleSelf(dir, 1.0f / Vec3Length(dir));
 						const struct ray ray = ray_construct(led->cam.position, dir);
 						const u32f32 hit = physics_pipeline_raycast_parameter(g_ui->mem_frame, &led->physics, &ray);
 						if (hit.f < F32_INFINITY)
@@ -895,12 +895,12 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 
 							if (led->physics.draw_dbvh)
 							{
-								vec4_set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
+								Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
 							}
 
 							if (node->inter & UI_INTER_HOVER)
 							{
-								vec4_set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
+								Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
 							}
 						}
 
@@ -918,12 +918,12 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 
 							if (led->physics.draw_sbvh)
 							{
-								vec4_set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
+								Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
 							}
 
 							if (node->inter & UI_INTER_HOVER)
 							{
-								vec4_set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
+								Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
 							}
 						}
 
@@ -941,12 +941,12 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 
 							if (led->physics.draw_bounding_box)
 							{
-								vec4_set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
+								Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
 							}
 
 							if (node->inter & UI_INTER_HOVER)
 							{
-								vec4_set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
+								Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
 							}
 						}
 
@@ -964,12 +964,12 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 
 							if (led->physics.draw_manifold)
 							{
-								vec4_set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
+								Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
 							}
 
 							if (node->inter & UI_INTER_HOVER)
 							{
-								vec4_set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
+								Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
 							}
 						}
 
@@ -987,12 +987,12 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 
 							if (led->physics.draw_lines)
 							{
-								vec4_set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
+								Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
 							}
 
 							if (node->inter & UI_INTER_HOVER)
 							{
-								vec4_set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
+								Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
 							}
 						}
 					}
@@ -1067,7 +1067,7 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 					//				ui_pad_pixel(6.0f);
 					//				
 					//				vec3 p;
-					//				vec3_copy(p, node->position);
+					//				Vec3Copy(p, node->position);
 					//				node->position[0] = ui_field_f32_f(node->position[0], intv_inline(-1000000.0f, 1000000.0f), "%f###field_x_%u", node->position[0], i);
 					//				node->position[1] = ui_field_f32_f(node->position[1], intv_inline(-1000000.0f, 1000000.0f), "%f###field_y_%u", node->position[1], i);
 					//				node->position[2] = ui_field_f32_f(node->position[2], intv_inline(-1000000.0f, 1000000.0f), "%f###field_z_%u", node->position[2], i);

@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,8 +19,8 @@
 
 #include <math.h>
 #include <float.h>
-#include "sys_public.h"
 
+#include "ds_base.h"
 #include "float32.h"
 
 static void f32_static_assert(void)

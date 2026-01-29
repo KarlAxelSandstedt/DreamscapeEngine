@@ -103,14 +103,14 @@ struct physics_pipeline	physics_pipeline_alloc(struct arena *mem, const u32 init
 
 	pipeline.body_color_mode = RB_COLOR_MODE_BODY;
 	pipeline.pending_body_color_mode = RB_COLOR_MODE_COLLISION;
-	vec4_set(pipeline.collision_color, 1.0f, 0.1f, 0.1f, 0.5f);
-	vec4_set(pipeline.static_color, 0.6f, 0.6f, 0.6f, 0.5f);
-	vec4_set(pipeline.sleep_color, 113.0f/256.0f, 241.0f/256.0f, 157.0f/256.0f, 0.7f);
-	vec4_set(pipeline.awake_color, 255.0f/256.0f, 36.0f/256.0f, 48.0f/256.0f, 0.7f);
-	vec4_set(pipeline.manifold_color, 0.6f, 0.6f, 0.9f, 1.0f);
-	vec4_set(pipeline.dbvh_color, 0.8f, 0.1f, 0.0f, 0.6f);
-	vec4_set(pipeline.sbvh_color, 0.0f, 0.8f, 0.1f, 0.6f);
-	vec4_set(pipeline.bounding_box_color, 0.8f, 0.1f, 0.6f, 1.0f);
+	Vec4Set(pipeline.collision_color, 1.0f, 0.1f, 0.1f, 0.5f);
+	Vec4Set(pipeline.static_color, 0.6f, 0.6f, 0.6f, 0.5f);
+	Vec4Set(pipeline.sleep_color, 113.0f/256.0f, 241.0f/256.0f, 157.0f/256.0f, 0.7f);
+	Vec4Set(pipeline.awake_color, 255.0f/256.0f, 36.0f/256.0f, 48.0f/256.0f, 0.7f);
+	Vec4Set(pipeline.manifold_color, 0.6f, 0.6f, 0.9f, 1.0f);
+	Vec4Set(pipeline.dbvh_color, 0.8f, 0.1f, 0.0f, 0.6f);
+	Vec4Set(pipeline.sbvh_color, 0.0f, 0.8f, 0.1f, 0.6f);
+	Vec4Set(pipeline.bounding_box_color, 0.8f, 0.1f, 0.6f, 1.0f);
 
 	pipeline.draw_bounding_box = 0;
 	pipeline.draw_dbvh = 0;
@@ -236,35 +236,35 @@ static void rigid_body_update_local_box(struct rigid_body *body, const struct co
 	else if (body->shape_type == COLLISION_SHAPE_SPHERE)
 	{
 		const f32 r = shape->sphere.radius;
-		vec3_set(min, -r, -r, -r);
-		vec3_set(max, r, r, r);
+		Vec3Set(min, -r, -r, -r);
+		Vec3Set(max, r, r, r);
 	}
 	else if (body->shape_type == COLLISION_SHAPE_CAPSULE)
 	{
 		v[0] = rot[1][0] * shape->capsule.half_height;	
 		v[1] = rot[1][1] * shape->capsule.half_height;	
 		v[2] = rot[1][2] * shape->capsule.half_height;	
-		vec3_set(max, 
+		Vec3Set(max, 
 			f32_max(-v[0], v[0]),
 			f32_max(-v[1], v[1]),
 			f32_max(-v[2], v[2]));
-		vec3_add_constant(max, shape->capsule.radius);
-		vec3_negative_to(min, max);
+		Vec3AddConstant(max, shape->capsule.radius);
+		Vec3Negate(min, max);
 	}
 	else if (body->shape_type == COLLISION_SHAPE_TRI_MESH)
 	{
 		const struct bvh_node *node = (struct bvh_node *) shape->mesh_bvh.bvh.tree.pool.buf;
 		struct AABB bbox; 
 		AABB_rotate(&bbox, &node[shape->mesh_bvh.bvh.tree.root].bbox, rot);
-		//vec3_sub(min, bbox.center, bbox.hw);
-		//vec3_add(max, bbox.center, bbox.hw);
-		vec3_scale(min, bbox.hw, -1.0f);
-		vec3_scale(max, bbox.hw, 1.0f);
+		//Vec3Sub(min, bbox.center, bbox.hw);
+		//Vec3Add(max, bbox.center, bbox.hw);
+		Vec3Scale(min, bbox.hw, -1.0f);
+		Vec3Scale(max, bbox.hw, 1.0f);
 	}
 
-	vec3_sub(body->local_box.hw, max, min);
-	vec3_mul_constant(body->local_box.hw, 0.5f);
-	vec3_add(body->local_box.center, min, body->local_box.hw);
+	Vec3Sub(body->local_box.hw, max, min);
+	Vec3ScaleSelf(body->local_box.hw, 0.5f);
+	Vec3Add(body->local_box.center, min, body->local_box.hw);
 }
 
 struct slot physics_pipeline_rigid_body_alloc(struct physics_pipeline *pipeline, struct rigid_body_prefab *prefab, const vec3 position, const quat rotation, const u32 entity)
@@ -275,11 +275,11 @@ struct slot physics_pipeline_rigid_body_alloc(struct physics_pipeline *pipeline,
 	dll_Append(&pipeline->body_non_marked_list, pipeline->body_pool.buf, slot.index);
 
 	body->entity = entity;
-	vec3_copy(body->position, position);
+	Vec3Copy(body->position, position);
 	quat_copy(body->rotation, rotation);
-	vec3_set(body->velocity, 0.0f, 0.0f, 0.0f);
-	vec3_set(body->angular_velocity, 0.0f, 0.0f, 0.0f);
-	vec3_set(body->linear_momentum, 0.0f, 0.0f, 0.0f);
+	Vec3Set(body->velocity, 0.0f, 0.0f, 0.0f);
+	Vec3Set(body->angular_velocity, 0.0f, 0.0f, 0.0f);
+	Vec3Set(body->linear_momentum, 0.0f, 0.0f, 0.0f);
 
 	const u32 dynamic_flag = (prefab->dynamic) ? RB_DYNAMIC : 0;
 	body->flags = RB_ACTIVE | (g_solver_config->sleep_enabled * RB_AWAKE) | dynamic_flag;
@@ -299,19 +299,19 @@ struct slot physics_pipeline_rigid_body_alloc(struct physics_pipeline *pipeline,
 
 	rigid_body_update_local_box(body, shape);
 	struct AABB proxy;
-	vec3_add(proxy.center, body->local_box.center, body->position);
+	Vec3Add(proxy.center, body->local_box.center, body->position);
 	if (body->shape_type == COLLISION_SHAPE_TRI_MESH)
 	{
-		vec3_print("center", body->local_box.center);
-		vec3_print("center", body->position);
-		vec3_set(proxy.hw, 
+		Vec3Print("center", body->local_box.center);
+		Vec3Print("center", body->position);
+		Vec3Set(proxy.hw, 
 			body->local_box.hw[0],
 			body->local_box.hw[1],
 			body->local_box.hw[2]);
 	}
 	else
 	{
-		vec3_set(proxy.hw, 
+		Vec3Set(proxy.hw, 
 			body->local_box.hw[0] + body->margin,
 			body->local_box.hw[1] + body->margin,
 			body->local_box.hw[2] + body->margin);
@@ -345,8 +345,8 @@ static void internal_update_dynamic_tree(struct physics_pipeline *pipeline)
 		{
 			const struct collision_shape *shape = strdb_Address(pipeline->shape_db, b->shape_handle);
 			rigid_body_update_local_box(b, shape);
-			vec3_add(world_AABB.center, b->local_box.center, b->position);
-			vec3_copy(world_AABB.hw, b->local_box.hw);
+			Vec3Add(world_AABB.center, b->local_box.center, b->position);
+			Vec3Copy(world_AABB.hw, b->local_box.hw);
 			const struct bvh_node *node = PoolAddress(&pipeline->dynamic_tree.tree.pool, b->proxy);
 			const struct AABB *proxy = &node->bbox;
 			if (!AABB_contains(proxy, &world_AABB))
@@ -403,11 +403,11 @@ static void thread_push_contacts(void *task_addr)
 			out->result[out->result_count].manifold.i2 = proxy_overlap[i].id2;
 
 			//vec3 tmp;
-			//vec3_sub(tmp, b2->position, b1->position);
+			//Vec3Sub(tmp, b2->position, b1->position);
 
-			//if (vec3_dot(tmp, out->result[out->result_count].manifold.n) < 0)
+			//if (Vec3Dot(tmp, out->result[out->result_count].manifold.n) < 0)
 			//{
-			//	vec3_mul_constant(out->result[out->result_count].manifold.n, -1.0f);
+			//	Vec3ScaleSelf(out->result[out->result_count].manifold.n, -1.0f);
 			//}
 
 			out->result_count += 1;
@@ -1043,11 +1043,11 @@ static void statics_internal_calculate_face_integrals(f32 integrals[10], const s
 	struct dcel_edge *e1 = shape->hull.e + f->first + 1;
 	struct dcel_edge *e2 = shape->hull.e + f->first + 2;
 
-	vec3_sub(a, v[e1->origin], v[e0->origin]);
-	vec3_sub(b, v[e2->origin], v[e0->origin]);
-	vec3_cross(n, a, b);
-	vec3_mul_constant(n, 1.0f / vec3_length(n));
-	const f32 d = -vec3_dot(n, v[e0->origin]);
+	Vec3Sub(a, v[e1->origin], v[e0->origin]);
+	Vec3Sub(b, v[e2->origin], v[e0->origin]);
+	Vec3Cross(n, a, b);
+	Vec3ScaleSelf(n, 1.0f / Vec3Length(n));
+	const f32 d = -Vec3Dot(n, v[e0->origin]);
 
 	u32 max_index = 0;
 	if (n[max_index]*n[max_index] < n[1]*n[1]) { max_index = 1; }
@@ -1059,7 +1059,7 @@ static void statics_internal_calculate_face_integrals(f32 integrals[10], const s
 	const u32 b_i = (2+max_index) % 3;
 	const u32 y_i = max_index % 3;
 
-	//vec3_set(n, n[a_i], n[b_i], n[y_i]);
+	//Vec3Set(n, n[a_i], n[b_i], n[y_i]);
 
 	/* TODO: REPLACE */
 	union { f32 f; u32 bits; } val = { .f = n[y_i] };
@@ -1072,9 +1072,9 @@ static void statics_internal_calculate_face_integrals(f32 integrals[10], const s
 		e1 = shape->hull.e + f->first + 1 + i;
 		e2 = shape->hull.e + f->first + 2 + i;
 
-		vec2_set(v0, v[e0->origin][a_i], v[e0->origin][b_i]);
-		vec2_set(v1, v[e1->origin][a_i], v[e1->origin][b_i]);
-		vec2_set(v2, v[e2->origin][a_i], v[e2->origin][b_i]);
+		Vec2Set(v0, v[e0->origin][a_i], v[e0->origin][b_i]);
+		Vec2Set(v1, v[e1->origin][a_i], v[e1->origin][b_i]);
+		Vec2Set(v2, v[e2->origin][a_i], v[e2->origin][b_i]);
 		
 		const vec3 delta_a =
 		{
@@ -1185,16 +1185,16 @@ void prefab_statics_setup(struct rigid_body_prefab *prefab, struct collision_sha
 			const f32 mass = integrals[VOL] * density;
 			ds_Assert(mass >= 0.0f);
 			/* center of mass */
-			vec3_set(com,
+			Vec3Set(com,
 				integrals[T_X] * density / mass,
 			       	integrals[T_Y] * density / mass,
 			       	integrals[T_Z] * density / mass
 			);
 
-			vec3_negative(com);
+			Vec3NegateSelf(com);
 			for (u32 i = 0; i < shape->hull.v_count; ++i)
 			{
-				vec3_translate(shape->hull.v[i], com);
+				Vec3Translate(shape->hull.v[i], com);
 			}
 		}
 
@@ -1232,7 +1232,7 @@ void prefab_statics_setup(struct rigid_body_prefab *prefab, struct collision_sha
 
 
 		///* center of mass *//
-		//vec3_set(com,
+		//Vec3Set(com,
 		//	integrals[T_X] * density / prefab->mass,
 		//       	integrals[T_Y] * density / prefab->mass,
 		//       	integrals[T_Z] * density / prefab->mass

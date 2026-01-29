@@ -270,8 +270,8 @@ void system_process_events(void)
 			{
 				vec2 cursor_delta;
 				window_position_native_to_system(sys_win->ui->inter.cursor_position, sys_win->native, event.native_cursor_window_position);
-				vec2_set(cursor_delta, event.native_cursor_window_delta[0], -event.native_cursor_window_delta[1]);
-				vec2_translate(sys_win->ui->inter.cursor_delta, cursor_delta);
+				Vec2Set(cursor_delta, event.native_cursor_window_delta[0], -event.native_cursor_window_delta[1]);
+				Vec2Translate(sys_win->ui->inter.cursor_delta, cursor_delta);
 			} break;
 
 			case SYSTEM_WINDOW_CLOSE:
@@ -305,7 +305,7 @@ void system_process_events(void)
 			//	//gc->win.aspect_ratio = (f32) gc->win.size[0] / gc->win.size[1];
 			//	//gc->win.visible = 1;
 			//	////fprintf(stderr, "visible\n");
-			//	//vec2u32_print("size:", gc->win.size);
+			//	//Vec2u32Print("size:", gc->win.size);
 			//	//struct r_cmd cmd_viewport = 
 			//	//{
 			//	//	.type = R_CMD_VIEWPORT,

@@ -529,7 +529,7 @@ struct slot led_node_add(struct led *led, const utf8 id)
 			node->cache = ui_node_cache_null();
 
 			const vec3 axis = { 0.0f, 1.0f, 0.0f };
-			vec3_set(node->position, 0.0f, 0.0f, 0.0f);
+			Vec3Set(node->position, 0.0f, 0.0f, 0.0f);
 			axis_angle_to_quaternion(node->rotation, axis, 0.0f);
 
 			node->rb_prefab = STRING_DATABASE_STUB_INDEX;
@@ -626,7 +626,7 @@ void led_node_set_position(struct led *led, const utf8 id, const vec3 position)
 	}
 	else
 	{
-		vec3_copy(node->position, position);
+		Vec3Copy(node->position, position);
 	}
 }
 
@@ -724,12 +724,12 @@ void led_node_set_proxy3d(struct led *led, const utf8 id, const utf8 mesh, const
 			.mesh = mesh,
 			.ns_time = led->ns,
 		};
-		vec4_copy(config.color, color);
+		Vec4Copy(config.color, color);
 		config.blend = blend; 
-		vec3_copy(config.position, node->position);
+		Vec3Copy(config.position, node->position);
 		quat_copy(config.rotation, node->rotation);
 		node->proxy = r_proxy3d_alloc(&config);
-		vec4_copy(node->color, color);
+		Vec4Copy(node->color, color);
 	}
 }
 
@@ -818,19 +818,19 @@ static struct tri_mesh tri_mesh_perlin_noise(struct arena *mem_persistent, const
 					mesh.v[x*(n-1) + z][2] - z_high * unit, 	
 				};
 
-				//const f32 bl_dot = vec2_dot(bl_diff, grad[i][(x_low >> i)*on + (z_low >> i)]);
-				//const f32 br_dot = vec2_dot(br_diff, grad[i][(x_high >> i)*on + (z_low >> i)]);
-				//const f32 tl_dot = vec2_dot(tl_diff, grad[i][(x_low >> i)*on + (z_high >> i)]);
-				//const f32 tr_dot = vec2_dot(tr_diff, grad[i][(x_high >> i)*on + (z_high >> i)]);
+				//const f32 bl_dot = Vec2Dot(bl_diff, grad[i][(x_low >> i)*on + (z_low >> i)]);
+				//const f32 br_dot = Vec2Dot(br_diff, grad[i][(x_high >> i)*on + (z_low >> i)]);
+				//const f32 tl_dot = Vec2Dot(tl_diff, grad[i][(x_low >> i)*on + (z_high >> i)]);
+				//const f32 tr_dot = Vec2Dot(tr_diff, grad[i][(x_high >> i)*on + (z_high >> i)]);
 				
 				const u32 xg_low = x_low >> i;
 				const u32 xg_high = xg_low + 1;
 				const u32 zg_low = z_low >> i;
 				const u32 zg_high = zg_low + 1;
-				const f32 bl_dot = vec2_dot(bl_diff, grad[i][xg_low*on  + zg_low]);
-				const f32 br_dot = vec2_dot(br_diff, grad[i][xg_high*on + zg_low]);
-				const f32 tl_dot = vec2_dot(tl_diff, grad[i][xg_low*on  + zg_high]);
-				const f32 tr_dot = vec2_dot(tr_diff, grad[i][xg_high*on + zg_high]);
+				const f32 bl_dot = Vec2Dot(bl_diff, grad[i][xg_low*on  + zg_low]);
+				const f32 br_dot = Vec2Dot(br_diff, grad[i][xg_high*on + zg_low]);
+				const f32 tl_dot = Vec2Dot(tl_diff, grad[i][xg_low*on  + zg_high]);
+				const f32 tr_dot = Vec2Dot(tr_diff, grad[i][xg_high*on + zg_high]);
 
 				//fprintf(stderr, "(%u, %u), (%u, %u)\n",
 				//	(x_low >> i),
@@ -901,10 +901,10 @@ static struct tri_mesh tri_mesh_perlin_noise(struct arena *mem_persistent, const
 
 	struct AABB bbox = tri_mesh_bbox(&mesh);
 	vec3 local_origin;
-	vec3_scale(local_origin, bbox.center, -1.0f);
+	Vec3Scale(local_origin, bbox.center, -1.0f);
 	for (u32 i = 0; i < mesh.v_count; ++i)
 	{
-		vec3_translate(mesh.v[i], local_origin);
+		Vec3Translate(mesh.v[i], local_origin);
 	}
 
 	return mesh;
@@ -966,7 +966,7 @@ void led_wall_smash_simulation_setup(struct led *led)
 	for (u32 i = 0; i < dsphere_v_count; ++i)
 	{
 		const f32 y = 1.0 - i*2.0f/(dsphere_v_count-1);
-		vec3_set(dsphere_vertices[i]
+		Vec3Set(dsphere_vertices[i]
 				, f32_cos(i*phi)*f32_sqrt(1 - y*y)
 				, y
 				, f32_sin(i*phi)*f32_sqrt(1 - y*y));
@@ -1205,7 +1205,7 @@ void led_wall_smash_simulation_setup(struct led *led)
 	for (u32 i = 0; i < capsule_count; ++i)
 	{	
 		vec3 translation;
-		vec3_copy(translation, dsphere_base_translation);
+		Vec3Copy(translation, dsphere_base_translation);
 		translation[0] += (10.0f - 38.0f * (f32) i / dsphere_count) * f32_cos(i * MM_PI_F*37.0f/197.0f);
 		translation[1] += 25.0f + (f32) i / 2.0f;
 		translation[2] += (10.0f - 38.0f * (f32) i / dsphere_count) * f32_sin(i * MM_PI_F*37.0f/197.0f);
@@ -1234,7 +1234,7 @@ void led_wall_smash_simulation_setup(struct led *led)
 	for (u32 i = 0; i < dsphere_count; ++i)
 	{	
 		vec3 translation;
-		vec3_copy(translation, dsphere_base_translation);
+		Vec3Copy(translation, dsphere_base_translation);
 		translation[0] += (10.0f - 38.0f * (f32) i / dsphere_count) * f32_cos(i * MM_PI_F*37.0f/197.0f);
 		translation[1] += 5.0f + (f32) i / 2.0f;
 		translation[2] += (10.0f - 38.0f * (f32) i / dsphere_count) * f32_sin(i * MM_PI_F*37.0f/197.0f);
@@ -1269,7 +1269,7 @@ void led_wall_smash_simulation_setup(struct led *led)
 			{
 				const f32 local_x = j -(pyramid_layers-i-1) * box_side / 2.0f;
 				vec3 translation;
-				vec3_copy(translation, box_base_translation);
+				Vec3Copy(translation, box_base_translation);
 				translation[0] += local_x;
 				translation[1] += local_y;
 				translation[2] += 10.0f * k;
@@ -1304,7 +1304,7 @@ void led_wall_smash_simulation_setup(struct led *led)
 			for (u32 i = 0; i < tower1_box_count; ++i)
 			{
 				vec3 translation;
-				vec3_copy(translation, box_base_translation);
+				Vec3Copy(translation, box_base_translation);
 				translation[2] += 15.0f + 2.0f*k;
 				translation[1] += (f32) i * box_aabb.hw[1] * 2.10f;
 				translation[0] += 15.0f + 2.0f*j;
@@ -1339,7 +1339,7 @@ void led_wall_smash_simulation_setup(struct led *led)
 			for (u32 i = 0; i < tower2_box_count; ++i)
 			{
 				vec3 translation;
-				vec3_copy(translation, box_base_translation);
+				Vec3Copy(translation, box_base_translation);
 				translation[2] += 15.0f + 2.0f*k;
 				translation[1] += (f32) i * box_aabb.hw[1] * 2.10f;
 				translation[0] -= 15.0f + 2.0f*j;
@@ -1426,7 +1426,7 @@ static void led_engine_flush(struct led *led)
 					, led->ns
 					, node->proxy);
 		struct r_proxy3d *proxy = r_proxy3d_address(node->proxy);
-		vec4_copy(proxy->color, node->color);
+		Vec4Copy(proxy->color, node->color);
 	}
 }
 
@@ -1448,7 +1448,7 @@ static void led_engine_init(struct led *led)
 			if (Utf8Equivalence(prefab->id, Utf8Inline("rb_map")))
 			{
 				vec3 axis = { 0.6f, 1.0f, 0.6f };
-				vec3_mul_constant(axis, 1.0f / f32_sqrt(vec3_length(axis)));
+				Vec3ScaleSelf(axis, 1.0f / f32_sqrt(Vec3Length(axis)));
 				const f32 angle = MM_PI_F / 16.0f;
 				axis_angle_to_quaternion(node->rotation, axis, angle);
 				vec3 linear_velocity = { 0.0f, 0.0f, 0.0f};
@@ -1478,7 +1478,7 @@ static void led_engine_color_bodies(struct led *led, const u32 island, const vec
 		const struct rigid_body *body = PoolAddress(&led->physics.body_pool, entry->index);
 		const struct led_node *node = PoolAddress(&led->node_pool, body->entity);
 		struct r_proxy3d *proxy = r_proxy3d_address(node->proxy);
-		vec4_copy(proxy->color, color);
+		Vec4Copy(proxy->color, color);
 	}
 }
 
@@ -1520,7 +1520,7 @@ static void led_engine_run(struct led *led)
 					body = PoolAddress(&led->physics.body_pool, i);
 					const struct led_node *node = PoolAddress(&led->node_pool, body->entity);
 					struct r_proxy3d *proxy = r_proxy3d_address(node->proxy);
-					vec4_copy(proxy->color, node->color);
+					Vec4Copy(proxy->color, node->color);
 				}
 			} break;
 
@@ -1535,12 +1535,12 @@ static void led_engine_run(struct led *led)
 					if (RB_IS_DYNAMIC(body))
 					{
 						(body->first_contact_index == NLL_NULL)
-							? vec4_copy(proxy->color, node->color)
-							: vec4_copy(proxy->color, led->physics.collision_color);
+							? Vec4Copy(proxy->color, node->color)
+							: Vec4Copy(proxy->color, led->physics.collision_color);
 					}
 					else
 					{
-						vec4_copy(proxy->color, led->physics.static_color);
+						Vec4Copy(proxy->color, led->physics.static_color);
 					}
 				}
 			} break;
@@ -1556,13 +1556,13 @@ static void led_engine_run(struct led *led)
 
 					if (!RB_IS_DYNAMIC(body))
 					{						
-						vec4_copy(proxy->color, led->physics.static_color);
+						Vec4Copy(proxy->color, led->physics.static_color);
 					}
 					else
 					{
 						(RB_IS_AWAKE(body))
-							? vec4_copy(proxy->color, led->physics.awake_color)
-							: vec4_copy(proxy->color, led->physics.sleep_color);
+							? Vec4Copy(proxy->color, led->physics.awake_color)
+							: Vec4Copy(proxy->color, led->physics.sleep_color);
 					}
 				}
 			} break;
@@ -1577,8 +1577,8 @@ static void led_engine_run(struct led *led)
 					const struct island *is = array_list_address(led->physics.is_db.islands, body->island_index);
 					struct r_proxy3d *proxy = r_proxy3d_address(node->proxy);
 					(RB_IS_DYNAMIC(body))
-						? vec4_copy(proxy->color, is->color)
-						: vec4_copy(proxy->color, led->physics.static_color);
+						? Vec4Copy(proxy->color, is->color)
+						: Vec4Copy(proxy->color, led->physics.static_color);
 				}
 			} break;
 		}
@@ -1603,12 +1603,12 @@ static void led_engine_run(struct led *led)
 					if (RB_IS_DYNAMIC(body1))
 					{
 						struct r_proxy3d *proxy = r_proxy3d_address(node1->proxy);
-						vec4_copy(proxy->color, led->physics.collision_color);
+						Vec4Copy(proxy->color, led->physics.collision_color);
 					}
 					if (RB_IS_DYNAMIC(body2))
 					{
 						struct r_proxy3d *proxy = r_proxy3d_address(node2->proxy);
-						vec4_copy(proxy->color, led->physics.collision_color);
+						Vec4Copy(proxy->color, led->physics.collision_color);
 					}
 				}
 			} break;
@@ -1628,24 +1628,24 @@ static void led_engine_run(struct led *led)
 					{
 						if (body1->first_contact_index == NLL_NULL)
 						{
-							vec4_copy(proxy1->color, node1->color);
+							Vec4Copy(proxy1->color, node1->color);
 						}
 					}
 					else
 					{
-						vec4_copy(proxy1->color, led->physics.static_color);
+						Vec4Copy(proxy1->color, led->physics.static_color);
 					}
 		
 					if (RB_IS_DYNAMIC(body2))
 					{
 						if (body2->first_contact_index == NLL_NULL)
 						{
-							vec4_copy(proxy2->color, node2->color);
+							Vec4Copy(proxy2->color, node2->color);
 						}
 					}
 					else
 					{
-						vec4_copy(proxy2->color, led->physics.static_color);
+						Vec4Copy(proxy2->color, led->physics.static_color);
 					}
 				}
 			} break;
@@ -1654,7 +1654,7 @@ static void led_engine_run(struct led *led)
 			case PHYSICS_EVENT_ISLAND_NEW:
 			{
 				struct island *is = array_list_address(led->physics.is_db.islands, event->island);
-				vec4_set(is->color, 
+				Vec4Set(is->color, 
 						rng_f32_normalized(), 
 						rng_f32_normalized(), 
 						rng_f32_normalized(), 
@@ -1716,7 +1716,7 @@ static void led_engine_run(struct led *led)
 				struct led_node *node = PoolAddress(&led->node_pool, body->entity);
 
 				vec3 linear_velocity;
-				vec3_scale(linear_velocity, body->linear_momentum, 1.0f / body->mass);
+				Vec3Scale(linear_velocity, body->linear_momentum, 1.0f / body->mass);
 				r_proxy3d_set_linear_speculation(body->position
 						, body->rotation
 						, linear_velocity

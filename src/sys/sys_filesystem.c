@@ -61,7 +61,7 @@ u32 directory_navigator_lookup_substring(struct arena *mem, u32 **index, struct 
 
 	for (u32 i = 0; i < dn->files.next; ++i)
 	{
-		const struct file *file = vector_address(&dn->files, i);
+		const struct file *file = VectorAddress(&dn->files, i);
 		if (Utf8LookupSubstring(&kmp_substring, file->path))
 		{
 			ArenaPushPackedMemcpy(mem, &i, sizeof(i));
@@ -79,7 +79,7 @@ u32 directory_navigator_lookup(const struct directory_navigator *dn, const utf8 
 	u32 index = HASH_NULL;
 	for (u32 i = HashMapFirst(dn->relative_path_to_file_map, key); i != HASH_NULL; i = HashMapNext(dn->relative_path_to_file_map, i))
 	{
-		const struct file *file = vector_address(&dn->files, i);
+		const struct file *file = VectorAddress(&dn->files, i);
 		if (Utf8Equivalence(filename, file->path))
 		{
 			index = i;
@@ -102,7 +102,7 @@ enum fs_error directory_navigator_enter_and_alias_path(struct directory_navigato
 		directory_push_entries(&dn->mem_string, &dn->files, &dir);
 		for (u32 i = 0; i < dn->files.next; ++i)
 		{
-			const struct file *entry = vector_address(&dn->files, i);
+			const struct file *entry = VectorAddress(&dn->files, i);
 			const u32 key = Utf8Hash(entry->path);
 			HashMapAdd(dn->relative_path_to_file_map, key, i);
 		}

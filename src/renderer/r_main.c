@@ -56,31 +56,31 @@ static struct r_mesh *debug_contact_manifold_segments_mesh(struct arena *mem, co
 		{
 			case 1:
 			{
-				vec3_copy(n0, cm[i].v[0]);
-				vec3_add(n1, n0, cm[i].n);
+				Vec3Copy(n0, cm[i].v[0]);
+				Vec3Add(n1, n0, cm[i].n);
 			} break;
 
 			case 2:
 			{
-				vec3_interpolate(n0, cm[i].v[0], cm[i].v[1], 0.5f);
-				vec3_add(n1, n0, cm[i].n);
+				Vec3Interpolate(n0, cm[i].v[0], cm[i].v[1], 0.5f);
+				Vec3Add(n1, n0, cm[i].n);
 			} break;
 
 			case 3:
 			{
-				vec3_scale(n0, cm[i].v[0], 1.0f/3.0f);
-				vec3_translate_scaled(n0, cm[i].v[1], 1.0f/3.0f);
-				vec3_translate_scaled(n0, cm[i].v[2], 1.0f/3.0f);
-				vec3_add(n1, n0, cm[i].n);
+				Vec3Scale(n0, cm[i].v[0], 1.0f/3.0f);
+				Vec3TranslateScaled(n0, cm[i].v[1], 1.0f/3.0f);
+				Vec3TranslateScaled(n0, cm[i].v[2], 1.0f/3.0f);
+				Vec3Add(n1, n0, cm[i].n);
 			} break;
 
 			case 4:
 			{
-				vec3_scale(n0, cm[i].v[0], 1.0f/4.0f);
-				vec3_translate_scaled(n0, cm[i].v[1], 1.0f/4.0f);
-				vec3_translate_scaled(n0, cm[i].v[2], 1.0f/4.0f);
-				vec3_translate_scaled(n0, cm[i].v[3], 1.0f/4.0f);
-				vec3_add(n1, n0, cm[i].n);
+				Vec3Scale(n0, cm[i].v[0], 1.0f/4.0f);
+				Vec3TranslateScaled(n0, cm[i].v[1], 1.0f/4.0f);
+				Vec3TranslateScaled(n0, cm[i].v[2], 1.0f/4.0f);
+				Vec3TranslateScaled(n0, cm[i].v[3], 1.0f/4.0f);
+				Vec3Add(n1, n0, cm[i].n);
 			} break;
 
 			default:
@@ -89,10 +89,10 @@ static struct r_mesh *debug_contact_manifold_segments_mesh(struct arena *mem, co
 			} break;
 		}
 
-		vec3_copy((f32 *) vertex_data +  0, n0);
-		vec4_copy((f32 *) vertex_data +  3, pipeline->manifold_color);
-		vec3_copy((f32 *) vertex_data +  7, n1);
-		vec4_copy((f32 *) vertex_data + 10, pipeline->manifold_color);
+		Vec3Copy((f32 *) vertex_data +  0, n0);
+		Vec4Copy((f32 *) vertex_data +  3, pipeline->manifold_color);
+		Vec3Copy((f32 *) vertex_data +  7, n1);
+		Vec4Copy((f32 *) vertex_data + 10, pipeline->manifold_color);
 		vertex_data += 2*(sizeof(vec3) + sizeof(vec4));
 	}
 end:
@@ -136,46 +136,46 @@ static struct r_mesh *debug_contact_manifold_triangles_mesh(struct arena *mem, c
 		{
 			case 3:
 			{
-				vec3_copy(v[0], cm[i].v[0]);
-				vec3_copy(v[1], cm[i].v[1]);
-				vec3_copy(v[2], cm[i].v[2]);
-				vec3_translate_scaled(v[0], cm[i].n, 0.005f);
-				vec3_translate_scaled(v[1], cm[i].n, 0.005f);
-				vec3_translate_scaled(v[2], cm[i].n, 0.005f);
+				Vec3Copy(v[0], cm[i].v[0]);
+				Vec3Copy(v[1], cm[i].v[1]);
+				Vec3Copy(v[2], cm[i].v[2]);
+				Vec3TranslateScaled(v[0], cm[i].n, 0.005f);
+				Vec3TranslateScaled(v[1], cm[i].n, 0.005f);
+				Vec3TranslateScaled(v[2], cm[i].n, 0.005f);
 
-				vec3_copy((f32 *) vertex_data +  0, v[0]);
-				vec4_copy((f32 *) vertex_data +  3, pipeline->manifold_color);
-				vec3_copy((f32 *) vertex_data +  7, v[1]);
-				vec4_copy((f32 *) vertex_data + 10, pipeline->manifold_color);
-				vec3_copy((f32 *) vertex_data + 14, v[2]);
-				vec4_copy((f32 *) vertex_data + 17, pipeline->manifold_color);
+				Vec3Copy((f32 *) vertex_data +  0, v[0]);
+				Vec4Copy((f32 *) vertex_data +  3, pipeline->manifold_color);
+				Vec3Copy((f32 *) vertex_data +  7, v[1]);
+				Vec4Copy((f32 *) vertex_data + 10, pipeline->manifold_color);
+				Vec3Copy((f32 *) vertex_data + 14, v[2]);
+				Vec4Copy((f32 *) vertex_data + 17, pipeline->manifold_color);
 				vertex_data += 3*(sizeof(vec3) + sizeof(vec4));
 				mesh->vertex_count += 3; 
 			} break;
 
 			case 4:
 			{
-				vec3_copy(v[0], cm[i].v[0]);
-				vec3_copy(v[1], cm[i].v[1]);
-				vec3_copy(v[2], cm[i].v[2]);
-				vec3_copy(v[3], cm[i].v[3]);
-				vec3_translate_scaled(v[0], cm[i].n, 0.005f);
-				vec3_translate_scaled(v[1], cm[i].n, 0.005f);
-				vec3_translate_scaled(v[2], cm[i].n, 0.005f);
-				vec3_translate_scaled(v[3], cm[i].n, 0.005f);
+				Vec3Copy(v[0], cm[i].v[0]);
+				Vec3Copy(v[1], cm[i].v[1]);
+				Vec3Copy(v[2], cm[i].v[2]);
+				Vec3Copy(v[3], cm[i].v[3]);
+				Vec3TranslateScaled(v[0], cm[i].n, 0.005f);
+				Vec3TranslateScaled(v[1], cm[i].n, 0.005f);
+				Vec3TranslateScaled(v[2], cm[i].n, 0.005f);
+				Vec3TranslateScaled(v[3], cm[i].n, 0.005f);
 
-				vec3_copy((f32 *) vertex_data +  0, v[0]);
-				vec4_copy((f32 *) vertex_data +  3, pipeline->manifold_color);
-				vec3_copy((f32 *) vertex_data +  7, v[1]);
-				vec4_copy((f32 *) vertex_data + 10, pipeline->manifold_color);
-				vec3_copy((f32 *) vertex_data + 14, v[2]);
-				vec4_copy((f32 *) vertex_data + 17, pipeline->manifold_color);
-				vec3_copy((f32 *) vertex_data + 21, v[0]);
-				vec4_copy((f32 *) vertex_data + 24, pipeline->manifold_color);
-				vec3_copy((f32 *) vertex_data + 28, v[2]);
-				vec4_copy((f32 *) vertex_data + 31, pipeline->manifold_color);
-				vec3_copy((f32 *) vertex_data + 35, v[3]);
-				vec4_copy((f32 *) vertex_data + 38, pipeline->manifold_color);
+				Vec3Copy((f32 *) vertex_data +  0, v[0]);
+				Vec4Copy((f32 *) vertex_data +  3, pipeline->manifold_color);
+				Vec3Copy((f32 *) vertex_data +  7, v[1]);
+				Vec4Copy((f32 *) vertex_data + 10, pipeline->manifold_color);
+				Vec3Copy((f32 *) vertex_data + 14, v[2]);
+				Vec4Copy((f32 *) vertex_data + 17, pipeline->manifold_color);
+				Vec3Copy((f32 *) vertex_data + 21, v[0]);
+				Vec4Copy((f32 *) vertex_data + 24, pipeline->manifold_color);
+				Vec3Copy((f32 *) vertex_data + 28, v[2]);
+				Vec4Copy((f32 *) vertex_data + 31, pipeline->manifold_color);
+				Vec3Copy((f32 *) vertex_data + 35, v[3]);
+				Vec4Copy((f32 *) vertex_data + 38, pipeline->manifold_color);
 				vertex_data += 6*(sizeof(vec3) + sizeof(vec4));
 				mesh->vertex_count += 6; 
 			} break;
@@ -224,10 +224,10 @@ static struct r_mesh *debug_lines_mesh(struct arena *mem, const struct physics_p
 	{
 		for (u32 j = 0; j < pipeline->debug[i].stack_segment.next; ++j)
 		{
-			vec3_copy((f32 *) vertex_data +  0, pipeline->debug[i].stack_segment.arr[j].segment.p0);
-			vec4_copy((f32 *) vertex_data +  3, pipeline->debug[i].stack_segment.arr[j].color);
-			vec3_copy((f32 *) vertex_data +  7, pipeline->debug[i].stack_segment.arr[j].segment.p1);
-			vec4_copy((f32 *) vertex_data + 10, pipeline->debug[i].stack_segment.arr[j].color);
+			Vec3Copy((f32 *) vertex_data +  0, pipeline->debug[i].stack_segment.arr[j].segment.p0);
+			Vec4Copy((f32 *) vertex_data +  3, pipeline->debug[i].stack_segment.arr[j].color);
+			Vec3Copy((f32 *) vertex_data +  7, pipeline->debug[i].stack_segment.arr[j].segment.p1);
+			Vec4Copy((f32 *) vertex_data + 10, pipeline->debug[i].stack_segment.arr[j].color);
 			vertex_data += 2*(sizeof(vec3) + sizeof(vec4));
 			mem_left -= 2*(sizeof(vec3) + sizeof(vec4));
 		}
@@ -265,7 +265,7 @@ static struct r_mesh *bounding_boxes_mesh(struct arena *mem, const struct physic
 	{
 		body = PoolAddress(&pipeline->body_pool, i);
 		struct AABB bbox = body->local_box;
-		vec3_translate(bbox.center, body->position);
+		Vec3Translate(bbox.center, body->position);
 		const u64 bytes_written = AABB_push_lines_buffered(vertex_data, mem_left, &bbox, color);
 		vertex_data += bytes_written;
 		mem_left -= bytes_written;
@@ -371,7 +371,7 @@ static void r_led_draw(const struct led *led)
 		const u32 index = hi_IteratorNextDf(&it);
 		struct r_proxy3d *proxy = r_proxy3d_address(index);
 
-		const f32 dist = vec3_distance(proxy->spec_position, led->cam.position);
+		const f32 dist = Vec3Distance(proxy->spec_position, led->cam.position);
 		const u32 unit_exponent = f32_exponent_bits(dist);
 		const u64 depth = (unit_exponent <= depth_exponent && unit_exponent > (depth_exponent - 23))
 			? (0x00800000 | f32_mantissa_bits(dist)) >> (depth_exponent - unit_exponent + 1)

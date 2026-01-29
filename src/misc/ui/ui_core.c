@@ -85,13 +85,13 @@ struct ui_visual ui_visual_init(const vec4 background_color
 {
 	struct ui_visual visual = { 0 };
 
-	vec4_copy(visual.background_color, background_color);
-	vec4_copy(visual.border_color, border_color);
-	vec4_copy(visual.gradient_color[0], gradient_color[0]);
-	vec4_copy(visual.gradient_color[1], gradient_color[1]);
-	vec4_copy(visual.gradient_color[2], gradient_color[2]);
-	vec4_copy(visual.gradient_color[3], gradient_color[3]);
-	vec4_copy(visual.sprite_color, sprite_color);
+	Vec4Copy(visual.background_color, background_color);
+	Vec4Copy(visual.border_color, border_color);
+	Vec4Copy(visual.gradient_color[0], gradient_color[0]);
+	Vec4Copy(visual.gradient_color[1], gradient_color[1]);
+	Vec4Copy(visual.gradient_color[2], gradient_color[2]);
+	Vec4Copy(visual.gradient_color[3], gradient_color[3]);
+	Vec4Copy(visual.sprite_color, sprite_color);
 	visual.pad = pad;
 	visual.edge_softness = edge_softness;
 	visual.corner_radius = corner_radius;
@@ -661,10 +661,10 @@ static void ui_layout_absolute_position(void)
 		node = hi_Address(g_ui->node_hierarchy, index);
 
 		//fprintf(stderr, "%s\n", (char *) node->id.buf);
-		//vec2_print("position", node->pixel_position);
-		//vec2_print("size", node->pixel_size);
-		//vec2_print("layout_position", node->layout_position);
-		//vec2_print("layout_size", node->layout_size);
+		//Vec2Print("position", node->pixel_position);
+		//Vec2Print("size", node->pixel_size);
+		//Vec2Print("layout_position", node->layout_position);
+		//Vec2Print("layout_size", node->layout_size);
 		//fprintf(stderr, "visible area: [%f, %f] x [%f, %f]\n"
 		//		,node->pixel_visible[AXIS_2_X].low
 		//		,node->pixel_visible[AXIS_2_X].high
@@ -890,8 +890,8 @@ void ui_frame_begin(const vec2u32 window_size, const struct ui_visual *base)
 	ui_gradient_color_push(BOX_CORNER_BL, base->gradient_color[BOX_CORNER_BL]);
 	ui_sprite_color_push(base->sprite_color);
 
-	vec4_set(g_ui->text_cursor_color, 0.9f, 0.9f, 0.9f, 0.6f);
-	vec4_set(g_ui->text_selection_color, 0.7f, 0.7f, 0.9f, 0.6f);
+	Vec4Set(g_ui->text_cursor_color, 0.9f, 0.9f, 0.9f, 0.6f);
+	Vec4Set(g_ui->text_selection_color, 0.7f, 0.7f, 0.9f, 0.6f);
 
 	ui_fixed_x(0.0f)
 	ui_fixed_y(0.0f)
@@ -1238,7 +1238,7 @@ static u32 internal_ui_pad(const u64 flags, const f32 value, const enum ui_size_
 
 	(node->flags & UI_DRAW_BACKGROUND)
 		? stack_vec4_top(node->background_color, &g_ui->stack_background_color)
-		: vec4_set(node->background_color, 0.0f, 0.0f, 0.0f, 0.0f);
+		: Vec4Set(node->background_color, 0.0f, 0.0f, 0.0f, 0.0f);
 
 	if (node->flags & UI_DRAW_BORDER)
 	{
@@ -1248,7 +1248,7 @@ static u32 internal_ui_pad(const u64 flags, const f32 value, const enum ui_size_
 	else
 	{
 		node->border_size = 0.0f;
-		vec4_set(node->border_color, 0.0f, 0.0f, 0.0f, 0.0f);
+		Vec4Set(node->border_color, 0.0f, 0.0f, 0.0f, 0.0f);
 	}
 
 	if (node->flags & UI_DRAW_GRADIENT)
@@ -1260,10 +1260,10 @@ static u32 internal_ui_pad(const u64 flags, const f32 value, const enum ui_size_
 	}
 	else
 	{
-		vec4_set(node->gradient_color[BOX_CORNER_BR], 0.0f, 0.0f, 0.0f, 0.0f); 
-                vec4_set(node->gradient_color[BOX_CORNER_TR], 0.0f, 0.0f, 0.0f, 0.0f);
-                vec4_set(node->gradient_color[BOX_CORNER_TL], 0.0f, 0.0f, 0.0f, 0.0f);
-                vec4_set(node->gradient_color[BOX_CORNER_BL], 0.0f, 0.0f, 0.0f, 0.0f);
+		Vec4Set(node->gradient_color[BOX_CORNER_BR], 0.0f, 0.0f, 0.0f, 0.0f); 
+                Vec4Set(node->gradient_color[BOX_CORNER_TR], 0.0f, 0.0f, 0.0f, 0.0f);
+                Vec4Set(node->gradient_color[BOX_CORNER_TL], 0.0f, 0.0f, 0.0f, 0.0f);
+                Vec4Set(node->gradient_color[BOX_CORNER_BL], 0.0f, 0.0f, 0.0f, 0.0f);
 	}
 
 	node->edge_softness = (node->flags & UI_DRAW_EDGE_SOFTNESS)
@@ -1557,7 +1557,7 @@ struct ui_node_cache ui_node_alloc_cached(const u64 flags, const utf8 id, const 
 	else
 	{
 		node->input.text = Utf32Empty();
-		vec4_set(node->sprite_color, 0.0f, 0.0f, 0.0f, 0.0f);
+		Vec4Set(node->sprite_color, 0.0f, 0.0f, 0.0f, 0.0f);
 		node->font = NULL;
 		node->layout_text = NULL;
 	}
@@ -1589,7 +1589,7 @@ struct ui_node_cache ui_node_alloc_cached(const u64 flags, const utf8 id, const 
 
 	(node->flags & UI_DRAW_BACKGROUND)
 		? stack_vec4_top(node->background_color, &g_ui->stack_background_color)
-		: vec4_set(node->background_color, 0.0f, 0.0f, 0.0f, 0.0f);
+		: Vec4Set(node->background_color, 0.0f, 0.0f, 0.0f, 0.0f);
 
 	if (node->flags & UI_DRAW_BORDER)
 	{
@@ -1599,7 +1599,7 @@ struct ui_node_cache ui_node_alloc_cached(const u64 flags, const utf8 id, const 
 	else
 	{
 		node->border_size = 0.0f;
-		vec4_set(node->border_color, 0.0f, 0.0f, 0.0f, 0.0f);
+		Vec4Set(node->border_color, 0.0f, 0.0f, 0.0f, 0.0f);
 	}
 
 	if (node->flags & UI_DRAW_GRADIENT)
@@ -1611,10 +1611,10 @@ struct ui_node_cache ui_node_alloc_cached(const u64 flags, const utf8 id, const 
 	}
 	else
 	{
-		vec4_set(node->gradient_color[BOX_CORNER_BR], 0.0f, 0.0f, 0.0f, 0.0f); 
-                vec4_set(node->gradient_color[BOX_CORNER_TR], 0.0f, 0.0f, 0.0f, 0.0f);
-                vec4_set(node->gradient_color[BOX_CORNER_TL], 0.0f, 0.0f, 0.0f, 0.0f);
-                vec4_set(node->gradient_color[BOX_CORNER_BL], 0.0f, 0.0f, 0.0f, 0.0f);
+		Vec4Set(node->gradient_color[BOX_CORNER_BR], 0.0f, 0.0f, 0.0f, 0.0f); 
+                Vec4Set(node->gradient_color[BOX_CORNER_TR], 0.0f, 0.0f, 0.0f, 0.0f);
+                Vec4Set(node->gradient_color[BOX_CORNER_TL], 0.0f, 0.0f, 0.0f, 0.0f);
+                Vec4Set(node->gradient_color[BOX_CORNER_BL], 0.0f, 0.0f, 0.0f, 0.0f);
 	}
 
 	node->edge_softness = (node->flags & UI_DRAW_EDGE_SOFTNESS)
@@ -1869,7 +1869,7 @@ struct slot ui_node_alloc(const u64 flags, const utf8 *formatted)
 	else
 	{
 		node->input.text = Utf32Empty();
-		vec4_set(node->sprite_color, 0.0f, 0.0f, 0.0f, 0.0f);
+		Vec4Set(node->sprite_color, 0.0f, 0.0f, 0.0f, 0.0f);
 		node->font = NULL;
 		node->layout_text = NULL;
 	}
@@ -1901,7 +1901,7 @@ struct slot ui_node_alloc(const u64 flags, const utf8 *formatted)
 
 	(node->flags & UI_DRAW_BACKGROUND)
 		? stack_vec4_top(node->background_color, &g_ui->stack_background_color)
-		: vec4_set(node->background_color, 0.0f, 0.0f, 0.0f, 0.0f);
+		: Vec4Set(node->background_color, 0.0f, 0.0f, 0.0f, 0.0f);
 
 	if (node->flags & UI_DRAW_BORDER)
 	{
@@ -1911,7 +1911,7 @@ struct slot ui_node_alloc(const u64 flags, const utf8 *formatted)
 	else
 	{
 		node->border_size = 0.0f;
-		vec4_set(node->border_color, 0.0f, 0.0f, 0.0f, 0.0f);
+		Vec4Set(node->border_color, 0.0f, 0.0f, 0.0f, 0.0f);
 	}
 
 	if (node->flags & UI_DRAW_GRADIENT)
@@ -1923,10 +1923,10 @@ struct slot ui_node_alloc(const u64 flags, const utf8 *formatted)
 	}
 	else
 	{
-		vec4_set(node->gradient_color[BOX_CORNER_BR], 0.0f, 0.0f, 0.0f, 0.0f); 
-                vec4_set(node->gradient_color[BOX_CORNER_TR], 0.0f, 0.0f, 0.0f, 0.0f);
-                vec4_set(node->gradient_color[BOX_CORNER_TL], 0.0f, 0.0f, 0.0f, 0.0f);
-                vec4_set(node->gradient_color[BOX_CORNER_BL], 0.0f, 0.0f, 0.0f, 0.0f);
+		Vec4Set(node->gradient_color[BOX_CORNER_BR], 0.0f, 0.0f, 0.0f, 0.0f); 
+                Vec4Set(node->gradient_color[BOX_CORNER_TR], 0.0f, 0.0f, 0.0f, 0.0f);
+                Vec4Set(node->gradient_color[BOX_CORNER_TL], 0.0f, 0.0f, 0.0f, 0.0f);
+                Vec4Set(node->gradient_color[BOX_CORNER_BL], 0.0f, 0.0f, 0.0f, 0.0f);
 	}
 
 	node->edge_softness = (node->flags & UI_DRAW_EDGE_SOFTNESS)
@@ -2068,7 +2068,7 @@ void ui_background_color_push(const vec4 color)
 
 void ui_background_color_set(const vec4 color)
 {
-	stack_vec4_set(&g_ui->stack_background_color, color);
+	stack_Vec4Set(&g_ui->stack_background_color, color);
 }
 
 void ui_background_color_pop(void)
@@ -2083,7 +2083,7 @@ void ui_border_color_push(const vec4 color)
 
 void ui_border_color_set(const vec4 color)
 {
-	stack_vec4_set(&g_ui->stack_border_color, color);
+	stack_Vec4Set(&g_ui->stack_border_color, color);
 }
 
 void ui_border_color_pop(void)
@@ -2098,7 +2098,7 @@ void ui_sprite_color_push(const vec4 color)
 
 void ui_sprite_color_set(const vec4 color)
 {
-	stack_vec4_set(&g_ui->stack_sprite_color, color);
+	stack_Vec4Set(&g_ui->stack_sprite_color, color);
 }
 
 void ui_sprite_color_pop(void)
@@ -2113,7 +2113,7 @@ void ui_gradient_color_push(const enum box_corner corner, const vec4 color)
 
 void ui_gradient_color_set(const enum box_corner corner, const vec4 color)
 {
-	stack_vec4_set(g_ui->stack_gradient_color + corner, color);
+	stack_Vec4Set(g_ui->stack_gradient_color + corner, color);
 }
 
 void ui_gradient_color_pop(const enum box_corner corner)
