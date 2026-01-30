@@ -45,7 +45,7 @@ struct led_project_menu
 	u32		projects_folder_allocated; /* Boolean : Is directory contents allocated */
 	u32		projects_folder_refresh; /* Boolean : on main entry, refresh projects folder contents */
 
-	struct directory_navigator	dir_nav;
+	struct directoryNavigator	dir_nav;
 	struct ui_list			dir_list;
 	
 	struct ui_popup		popup_new_project;

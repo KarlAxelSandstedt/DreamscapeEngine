@@ -26,6 +26,35 @@ extern "C" {
 
 #include "ds_base.h"
 
+/****************************************** general vector ******************************************/
+
+/*
+ * struct vector: Simple stack-based array, i.e. all of its contiguous memory up until data[next] is valid.
+ */
+struct vector
+{
+	u64		blocksize;	/* size of individual block 	*/
+	u8 *		data;		/* memory address base 		*/
+	u32 		length;		/* memory length (in blocks)	*/
+	u32 		next;		/* next index to be pushed 	*/ 
+	u32		growable;	/* Boolean: is memory growable  */
+	struct memSlot 	mem_slot;	/* Optionally set if ds_Alloc	*/
+};
+
+/* allocate and initalize vector: If mem is defined, use arena allocator; given that growable == VECTOR_STATIC */
+struct vector	VectorAlloc(struct arena *mem, const u64 blocksize, const u32 length, const u32 growable);
+/* deallocate vector heap memory */
+void		VectorDealloc(struct vector *v);
+/* push block, return index and address on success, otherwise return (0, NULL) */
+struct slot	VectorPush(struct vector *v);
+/* pop block  */
+void		VectorPop(struct vector *v);
+/* return address of indexed block */
+void *		VectorAddress(const struct vector *v, const u32 index);
+/* pop all allocated blocks */
+void		VectorFlush(struct vector *v);
+
+
 /****************************************** FIXED TYPE STACK GENERATION ******************************************/
 
 #define STACK_GROWABLE	1

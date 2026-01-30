@@ -238,15 +238,15 @@ void font_serialize(const struct asset_font *asset, const struct font *font)
 {
 	struct arena tmp = ArenaAlloc1MB();
 
-	struct file file = file_null();
-	if (file_try_create_at_cwd(&tmp, &file, asset->filepath, FILE_TRUNCATE) != FS_SUCCESS)
+	struct file file = FileNull();
+	if (FileTryCreateAtCwd(&tmp, &file, asset->filepath, FILE_TRUNCATE) != FS_SUCCESS)
 	{
 		LogString(T_ASSET, S_FATAL, "Failed to create .font file");
 		FatalCleanupAndExit(ds_ThreadSelfTid());
 	}
 
-	file_set_size(&file, font->size);
-	void *buf = file_memory_map_partial(&file, font->size, 0, FS_PROT_READ | FS_PROT_WRITE, FS_MAP_SHARED);
+	FileSetSize(&file, font->size);
+	void *buf = FileMemoryMapPartial(&file, font->size, 0, FS_PROT_READ | FS_PROT_WRITE, FS_MAP_SHARED);
 	struct serialStream ss = ss_Buffered(buf, font->size);
 
 	ss_WriteU64Be(&ss, font->size);
@@ -275,8 +275,8 @@ void font_serialize(const struct asset_font *asset, const struct font *font)
 	HashMapSerialize(&ss, font->codepoint_to_glyph_map);
 	ss_Write8N(&ss, font->pixmap, font->pixmap_height * font->pixmap_width);
 
-	file_memory_unmap(buf, font->size);
-	file_close(&file);
+	FileMemoryUnmap(buf, font->size);
+	FileClose(&file);
 
 	ArenaFree1MB(&tmp);
 }
@@ -287,15 +287,15 @@ const struct font *font_deserialize(struct asset_font *asset)
 {
 	//TODO remove later;
 	struct arena tmp = ArenaAlloc1MB();
-	struct file file = file_null();
-	file_try_open_at_cwd(&tmp, &file, asset->filepath, FILE_READ);
+	struct file file = FileNull();
+	FileTryOpenAtCwd(&tmp, &file, asset->filepath, FILE_READ);
 	if (file.handle == FILE_HANDLE_INVALID)
 	{
 		return NULL;
 	}
 
 	u64 size = 0;
-	void *buf = file_memory_map(&size, &file, FS_PROT_READ, FS_MAP_SHARED);
+	void *buf = FileMemoryMap(&size, &file, FS_PROT_READ, FS_MAP_SHARED);
 	struct serialStream ss = ss_Buffered(buf, size);
 
 	if (ss_BytesLeft(&ss) < 8)
@@ -339,8 +339,8 @@ const struct font *font_deserialize(struct asset_font *asset)
 	font->codepoint_to_glyph_map = HashMapDeserialize(NULL, &ss, 0);
 	ss_Read8N(font->pixmap, &ss, font->pixmap_height * font->pixmap_width);
 
-	file_memory_unmap(buf, size);
-	file_close(&file);
+	FileMemoryUnmap(buf, size);
+	FileClose(&file);
 
 	ArenaFree1MB(&tmp);
 	asset->loaded = 1;

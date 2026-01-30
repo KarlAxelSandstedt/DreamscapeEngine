@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025,2026 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,64 +17,24 @@
 ==========================================================================
 */
 
-#define	_LARGEFILE64_SOURCE
 #include <dirent.h>
 #include <unistd.h>
 #include <sys/sysmacros.h>
 #include <fcntl.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <errno.h>
+#include <stdio.h>
 
-#include "linux_local.h"
-#include "sys_public.h"
+#include "ds_base.h"
+#include "ds_platform.h"
 
-u32 			(*system_user_is_admin)(void);
-
-u32			(*utf8_path_is_relative)(utf8 path);
-u32			(*cstr_path_is_relative)(const char *path);
-
-enum fs_error 		(*file_try_create)(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 truncate);
-enum fs_error 		(*file_try_create_at_cwd)(struct arena *mem, struct file *file, const char *filename, const u32 truncate);
-enum fs_error 		(*file_try_open)(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 writeable);
-enum fs_error 		(*file_try_open_at_cwd)(struct arena *mem, struct file *file, const char *filename, const u32 writeable);
-enum fs_error 		(*file_try_open_absolute)(struct arena *mem, struct file *file, const char *filename);
-
-enum fs_error 		(*directory_try_create)(struct arena *mem, struct file *dir, const char *filename, const struct file *parent_dir);
-enum fs_error 		(*directory_try_create_at_cwd)(struct arena *mem, struct file *dir, const char *filename);
-enum fs_error 		(*directory_try_open)(struct arena *mem, struct file *dir, const char *filename, const struct file *parent_dir);
-enum fs_error 		(*directory_try_open_at_cwd)(struct arena *mem, struct file *dir, const char *filename);
-enum fs_error		(*directory_push_entries)(struct arena *mem, struct vector *vec, struct file *dir);
-
-u64 			(*file_write_offset)(const struct file *file, const u8 *buf, const u64 bufsize, const u64 offset);
-u64 			(*file_write_append)(const struct file *file, const u8 *buf, const u64 size);
-void 			(*file_sync)(const struct file *file);
-void 			(*file_close)(struct file *file);
-
-void *			(*file_memory_map)(u64 *size, const struct file *file, const u32 prot, const u32 flags);
-void *			(*file_memory_map_partial)(const struct file *file, const u64 length, const u64 offset, const u32 prot, const u32 flags);
-void 			(*file_memory_unmap)(void *addr, const u64 length);
-void 			(*file_memory_sync_unmap)(void *addr, const u64 length);
-
-utf8			(*cwd_get)(struct arena *mem);
-enum fs_error		(*cwd_set)(struct arena *mem, const char *path);
-
-struct ds_buffer 	(*file_dump)(struct arena *mem, const char *path, const struct file *dir);
-struct ds_buffer 	(*file_dump_at_cwd)(struct arena *mem, const char *path);
-
-enum fs_error		(*file_status_path)(file_status *status, const char *path, const struct file *dir);
-enum fs_error		(*file_status_file)(file_status *status, const struct file *file);
-enum file_type		(*file_status_type)(const file_status *status);
-
-void			(*file_status_debug_print)(const file_status *stat);
-
-u32			(*file_set_size)(const struct file *file, const u64 size);
-
-u32 linux_system_user_is_admin(void)
+u32 SystemAdminCheck(void)
 {
 	return getuid() == 0;
 }
 
-u32 linux_utf8_path_is_relative(const utf8 path)
+u32 Utf8PathRelativeCheck(const utf8 path)
 {
 	u32 rel = 1;
 	if (path.len && path.buf[0] == '/')
@@ -84,18 +44,18 @@ u32 linux_utf8_path_is_relative(const utf8 path)
 	return rel;
 }
 
-u32 linux_cstr_path_is_relative(const char *path)
+u32 CstrPathRelativeCheck(const char *path)
 {
 	return (path[0] == '/') ? 0 : 1;
 }
 
-enum fs_error linux_file_try_create(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 truncate)
+enum fsError FileTryCreate(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 truncate)
 {
 	ds_Assert(file->handle == FILE_HANDLE_INVALID);
 	file->handle = FILE_HANDLE_INVALID;
 		
-	enum fs_error err = FS_SUCCESS;
-	if (!cstr_path_is_relative(filename))
+	enum fsError err = FS_SUCCESS;
+	if (!CstrPathRelativeCheck(filename))
 	{
 		err = FS_PATH_INVALID;
 	}
@@ -122,21 +82,21 @@ enum fs_error linux_file_try_create(struct arena *mem, struct file *file, const 
 	if (err == FS_SUCCESS)
 	{
 		file_status status;
-		file_status_file(&status, file);
+		FileStatusFile(&status, file);
 		file->path = Utf8Cstr(mem, filename);
-		file->type = file_status_type(&status);
+		file->type = FileStatusGetType(&status);
 	}
 
 	return err;
 }
 
-enum fs_error linux_file_try_open(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 writeable)
+enum fsError FileTryOpen(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 writeable)
 {
 	ds_Assert(file->handle == FILE_HANDLE_INVALID);
 	file->handle = FILE_HANDLE_INVALID;
 		
-	enum fs_error err = FS_SUCCESS;
-	if (!cstr_path_is_relative(filename))
+	enum fsError err = FS_SUCCESS;
+	if (!CstrPathRelativeCheck(filename))
 	{
 		err = FS_PATH_INVALID;
 	}
@@ -168,13 +128,13 @@ enum fs_error linux_file_try_open(struct arena *mem, struct file *file, const ch
 	return err;
 }
 
-enum fs_error linux_directory_try_create(struct arena *mem, struct file *dir, const char *filename, const struct file *parent_dir)
+enum fsError DirectoryTryCreate(struct arena *mem, struct file *dir, const char *filename, const struct file *parent_dir)
 {	
 	ds_Assert(dir->handle == FILE_HANDLE_INVALID);
 	dir->handle = FILE_HANDLE_INVALID;
 		
-	enum fs_error err = FS_SUCCESS;
-	if (!cstr_path_is_relative(filename))
+	enum fsError err = FS_SUCCESS;
+	if (!CstrPathRelativeCheck(filename))
 	{
 		err = FS_PATH_INVALID;
 	}
@@ -183,7 +143,7 @@ enum fs_error linux_directory_try_create(struct arena *mem, struct file *dir, co
 		const mode_t mode = S_IRWXU | S_IRGRP | S_IROTH;
 		if (mkdirat(parent_dir->handle, filename, mode) == 0)
 		{
-			err = file_try_open(mem, dir, filename, parent_dir, FILE_READ);
+			err = FileTryOpen(mem, dir, filename, parent_dir, FILE_READ);
 		}
 		else
 		{
@@ -206,7 +166,7 @@ enum fs_error linux_directory_try_create(struct arena *mem, struct file *dir, co
 	return err;
 }
 
-enum fs_error linux_file_try_create_at_cwd(struct arena *mem, struct file *file, const char *filename, const u32 truncate)
+enum fsError FileTryCreateAtCwd(struct arena *mem, struct file *file, const char *filename, const u32 truncate)
 {
 	const struct file cwd = 
 	{
@@ -215,10 +175,10 @@ enum fs_error linux_file_try_create_at_cwd(struct arena *mem, struct file *file,
 		.path = Utf8Empty(),
 	};
 
-	return linux_file_try_create(mem, file, filename, &cwd, truncate);
+	return FileTryCreate(mem, file, filename, &cwd, truncate);
 }
 
-enum fs_error linux_file_try_open_at_cwd(struct arena *mem, struct file *file, const char *filename, const u32 writeable)
+enum fsError FileTryOpenAtCwd(struct arena *mem, struct file *file, const char *filename, const u32 writeable)
 {
 	const struct file cwd = 
 	{
@@ -227,10 +187,10 @@ enum fs_error linux_file_try_open_at_cwd(struct arena *mem, struct file *file, c
 		.path = Utf8Empty(),
 	};
 
-	return linux_file_try_open(mem, file, filename, &cwd, writeable);
+	return FileTryOpen(mem, file, filename, &cwd, writeable);
 }
 
-enum fs_error linux_directory_try_create_at_cwd(struct arena *mem, struct file *dir, const char *filename)
+enum fsError DirectoryTryCreateAtCwd(struct arena *mem, struct file *dir, const char *filename)
 {
 	const struct file cwd = 
 	{
@@ -239,20 +199,20 @@ enum fs_error linux_directory_try_create_at_cwd(struct arena *mem, struct file *
 		.path = Utf8Empty(),
 	};
 
-	return linux_directory_try_create(mem, dir, filename, &cwd);
+	return DirectoryTryCreate(mem, dir, filename, &cwd);
 }
 
-enum fs_error linux_directory_try_open(struct arena *mem, struct file *dir, const char *filename, const struct file *parent_dir)
+enum fsError DirectoryTryOpen(struct arena *mem, struct file *dir, const char *filename, const struct file *parent_dir)
 {
-	return linux_file_try_open(mem, dir, filename, parent_dir, 0);
+	return FileTryOpen(mem, dir, filename, parent_dir, 0);
 }
 
-enum fs_error linux_directory_try_open_at_cwd(struct arena *mem, struct file *dir, const char *filename)
+enum fsError DirectoryTryOpenAtCwd(struct arena *mem, struct file *dir, const char *filename)
 {
-	return linux_file_try_open_at_cwd(mem, dir, filename, 0);
+	return FileTryOpenAtCwd(mem, dir, filename, 0);
 }
 
-struct ds_buffer linux_file_dump(struct arena *mem, const char *path, const struct file *dir)
+struct dsBuffer FileDump(struct arena *mem, const char *path, const struct file *dir)
 {
 	const file_handle handle = openat(dir->handle, path, O_RDONLY);
 	if (handle == -1)
@@ -263,13 +223,13 @@ struct ds_buffer linux_file_dump(struct arena *mem, const char *path, const stru
 
 	
 	struct stat stat;
-	if (file_status_file(&stat, &(struct file ) { .handle = handle }) != FS_SUCCESS)
+	if (FileStatusFile(&stat, &(struct file ) { .handle = handle }) != FS_SUCCESS)
 	{
 		close(handle);
 		return ds_buffer_empty;	
 	}
 
-	struct ds_buffer buf =
+	struct dsBuffer buf =
 	{
 		.size = (u64) stat.st_size,
 		.mem_left = (u64) stat.st_size,
@@ -318,13 +278,13 @@ struct ds_buffer linux_file_dump(struct arena *mem, const char *path, const stru
 	return buf;
 }
 
-struct ds_buffer linux_file_dump_at_cwd(struct arena *mem, const char *path)
+struct dsBuffer FileDumpAtCwd(struct arena *mem, const char *path)
 {
 	const struct file dir = { .handle = AT_FDCWD };
-	return linux_file_dump(mem, path, &dir);
+	return FileDump(mem, path, &dir);
 }
 
-u32 linux_file_set_size(const struct file *file, const u64 size)
+u32 FileSetSize(const struct file *file, const u64 size)
 {
 	u32 success = 1;
 	if (ftruncate(file->handle, size) == -1)
@@ -335,21 +295,21 @@ u32 linux_file_set_size(const struct file *file, const u64 size)
 	return success;
 }
 
-void linux_file_close(struct file *file)
+void FileClose(struct file *file)
 {
 	if (close(file->handle) == -1)
 	{
 		LogSystemError(S_ERROR);
 	}
 
-	*file = file_null();
+	*file = FileNull();
 }
 
-u64 linux_file_write_offset(const struct file *file, const u8 *buf, const u64 bufsize, const u64 offset)
+u64 FileWriteOffset(const struct file *file, const u8 *buf, const u64 bufsize, const u64 offset)
 {
 	if (!buf || bufsize == 0) { return 0; }
 
-	const off_t ret = lseek64(file->handle, (off_t) offset, SEEK_SET);
+	const off_t ret = lseek(file->handle, (off_t) offset, SEEK_SET);
 	if (ret == -1)
 	{
 		LogSystemError(S_ERROR);
@@ -375,11 +335,11 @@ u64 linux_file_write_offset(const struct file *file, const u8 *buf, const u64 bu
 	return total;
 }
 
-u64 linux_file_write_append(const struct file *file, const u8 *buf, const u64 bufsize)
+u64 FileWriteAppend(const struct file *file, const u8 *buf, const u64 bufsize)
 {
 	if (!buf || bufsize == 0) { return 0; }
 
-	const off_t ret = lseek64(file->handle, 0, SEEK_END);
+	const off_t ret = lseek(file->handle, 0, SEEK_END);
 	if (ret == -1)
 	{
 		LogSystemError(S_ERROR);
@@ -405,34 +365,34 @@ u64 linux_file_write_append(const struct file *file, const u8 *buf, const u64 bu
 	return total;
 }
 
-void linux_file_sync(const struct file *file)
+void FileSync(const struct file *file)
 {
 	fsync(file->handle);
 }
 
-void *linux_file_memory_map(u64 *size, const struct file *file, const u32 prot, const u32 flags)
+void *FileMemoryMap(u64 *size, const struct file *file, const u32 prot, const u32 flags)
 {
 	*size = 0;
 	void *map = NULL;
 	struct stat stat;
-	if (file_status_file(&stat, file) == FS_SUCCESS)
+	if (FileStatusFile(&stat, file) == FS_SUCCESS)
 	{
 		*size = stat.st_size;
-		map = file_memory_map_partial(file, stat.st_size, 0, prot, flags);
+		map = FileMemoryMapPartial(file, stat.st_size, 0, prot, flags);
 	}
 	return map;
 }
 
-void *linux_file_memory_map_partial(const struct file *file, const u64 length, const u64 offset, const u32 prot, const u32 flags)
+void *FileMemoryMapPartial(const struct file *file, const u64 length, const u64 offset, const u32 prot, const u32 flags)
 {
 	struct stat stat;
-	if (file_status_file(&stat, file) != FS_SUCCESS)
+	if (FileStatusFile(&stat, file) != FS_SUCCESS)
 	{
 		LogSystemError(S_ERROR);
 		return NULL;
 	}
 
-	if ((u64) stat.st_size < length + offset && !linux_file_set_size(file, offset + length))
+	if ((u64) stat.st_size < length + offset && !FileSetSize(file, offset + length))
 	{
 		LogSystemError(S_ERROR);
 		return NULL;
@@ -448,7 +408,7 @@ void *linux_file_memory_map_partial(const struct file *file, const u64 length, c
 	return addr;
 }
 
-void linux_file_memory_unmap(void *addr, const u64 length)
+void FileMemoryUnmap(void *addr, const u64 length)
 {
 	if (munmap(addr, length) == -1)
 	{
@@ -456,7 +416,7 @@ void linux_file_memory_unmap(void *addr, const u64 length)
 	}
 }
 
-void linux_file_memory_sync_unmap(void *addr, const u64 length)
+void FileMemorySyncUnmap(void *addr, const u64 length)
 {
 	if (msync(addr, length, MS_SYNC) == -1)
 	{
@@ -469,7 +429,7 @@ void linux_file_memory_sync_unmap(void *addr, const u64 length)
 	}
 }
 
-utf8 linux_cwd_get(struct arena *mem)
+utf8 CwdGet(struct arena *mem)
 {
 	utf8 cwd =
 	{
@@ -502,7 +462,7 @@ utf8 linux_cwd_get(struct arena *mem)
 	return cwd;
 }
 
-enum fs_error linux_cwd_set(struct arena *mem, const char *path)
+enum fsError CwdSet(struct arena *mem, const char *path)
 {
 	u32 ret = FS_SUCCESS;
 	if (chdir(path) == -1)
@@ -517,7 +477,7 @@ enum fs_error linux_cwd_set(struct arena *mem, const char *path)
 	}
 	else
 	{
-		g_sys_env->cwd.path = linux_cwd_get(mem);
+		g_sys_env->cwd.path = CwdGet(mem);
 		g_sys_env->cwd.type = FILE_DIRECTORY;
 		g_sys_env->cwd.handle = AT_FDCWD;
 	}
@@ -525,7 +485,7 @@ enum fs_error linux_cwd_set(struct arena *mem, const char *path)
 	return ret;
 }
 
-enum fs_error linux_directory_push_entries(struct arena *mem, struct vector *vec, struct file *dir)
+enum fsError DirectoryPushEntries(struct arena *mem, struct vector *vec, struct file *dir)
 {
 	u32 ret = FS_SUCCESS;
 	DIR *dir_stream = fdopendir(dir->handle);
@@ -541,7 +501,7 @@ enum fs_error linux_directory_push_entries(struct arena *mem, struct vector *vec
 	struct dirent *ent;
 	while ((ent = readdir(dir_stream)) != NULL)
 	{
-		struct file *file = vector_push(vec).address;
+		struct file *file = VectorPush(vec).address;
 		file->path = Utf8Cstr(mem, ent->d_name);
 		if (file->path.len == 0)
 		{
@@ -549,13 +509,13 @@ enum fs_error linux_directory_push_entries(struct arena *mem, struct vector *vec
 			break;
 		}
 
-		if (file_status_path(&status, ent->d_name, dir) != FS_SUCCESS)
+		if (FileStatusPath(&status, ent->d_name, dir) != FS_SUCCESS)
 		{
 			ret = FS_ERROR_UNSPECIFIED;
 			break;
 		}
 
-		file->type = file_status_type(&status);
+		file->type = FileStatusGetType(&status);
 	}
 
 	if (ret != FS_SUCCESS)
@@ -564,11 +524,11 @@ enum fs_error linux_directory_push_entries(struct arena *mem, struct vector *vec
 		vec->next = vec_record;
 	}
 	closedir(dir_stream);
-	*dir = file_null();
+	*dir = FileNull();
 	return ret;
 }
 
-enum fs_error linux_file_status_file(file_status *status, const struct file *file)
+enum fsError FileStatusFile(file_status *status, const struct file *file)
 {
 	if (fstat(file->handle, status) == -1)
 	{
@@ -578,10 +538,10 @@ enum fs_error linux_file_status_file(file_status *status, const struct file *fil
 	return FS_SUCCESS;
 }
 
-enum fs_error linux_file_status_path(file_status *status, const char *path, const struct file *dir)
+enum fsError FileStatusPath(file_status *status, const char *path, const struct file *dir)
 {
-	enum fs_error err = FS_SUCCESS;
-	if (!cstr_path_is_relative(path))
+	enum fsError err = FS_SUCCESS;
+	if (!CstrPathRelativeCheck(path))
 	{
 		err = FS_PATH_INVALID;
 	}
@@ -597,7 +557,7 @@ enum fs_error linux_file_status_path(file_status *status, const char *path, cons
 	return err;
 }
 
-void linux_file_status_debug_print(const file_status *stat)
+void FileStatusDebugPrint(const file_status *stat)
 {
 	switch (stat->st_mode & S_IFMT)
 	{
@@ -651,9 +611,9 @@ void linux_file_status_debug_print(const file_status *stat)
 	fprintf(stderr, "\tlast file status change: %s", ctime(&stat->st_ctime));
 }
 
-enum file_type linux_file_status_type(const file_status *status)
+enum fileType FileStatusGetType(const file_status *status)
 {
-	enum file_type type;
+	enum fileType type;
 	switch (status->st_mode & S_IFMT)
 	{
 		case S_IFREG: { type = FILE_REGULAR; 		} break;
@@ -662,47 +622,4 @@ enum file_type linux_file_status_type(const file_status *status)
 	}
 
 	return type;
-}
-
-void filesystem_init_func_ptrs(void)
-{
-	system_user_is_admin = &linux_system_user_is_admin;
-
-	utf8_path_is_relative = &linux_utf8_path_is_relative;
-	cstr_path_is_relative = &linux_cstr_path_is_relative;
-
-	file_try_create = &linux_file_try_create;
-	file_try_create_at_cwd = &linux_file_try_create_at_cwd;
-	file_try_open = &linux_file_try_open;
-	file_try_open_at_cwd = &linux_file_try_open_at_cwd;
-
-	directory_try_create = &linux_directory_try_create;
-	directory_try_create_at_cwd = &linux_directory_try_create_at_cwd;
-	directory_try_open = &linux_directory_try_open;
-	directory_try_open_at_cwd = &linux_directory_try_open_at_cwd;
-	directory_push_entries = &linux_directory_push_entries;
-
-	cwd_get = &linux_cwd_get;
-	cwd_set = &linux_cwd_set;
-
-	file_dump = &linux_file_dump;
-	file_dump_at_cwd = &linux_file_dump_at_cwd;
-
-	file_status_file = &linux_file_status_file;
-        file_status_path = &linux_file_status_path;
-	file_status_debug_print = &linux_file_status_debug_print;
-	file_status_type = linux_file_status_type;
-
-	file_close = &linux_file_close;
-
-	file_write_offset = &linux_file_write_offset;
-	file_write_append = &linux_file_write_append;
-	file_sync = &linux_file_sync;
-
-	file_memory_map = &linux_file_memory_map;
-	file_memory_map_partial = &linux_file_memory_map_partial;
-	file_memory_unmap = &linux_file_memory_unmap;
-	file_memory_sync_unmap = &linux_file_memory_sync_unmap;
-
-	file_set_size = &linux_file_set_size;
 }

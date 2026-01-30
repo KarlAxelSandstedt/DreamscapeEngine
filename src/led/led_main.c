@@ -46,7 +46,7 @@ void led_project_menu_main(struct led *led)
 
 	if (menu->projects_folder_refresh || !menu->projects_folder_allocated)
 	{
-		enum fs_error ret = directory_navigator_enter_and_alias_path(&menu->dir_nav, led->root_folder.path);
+		enum fsError ret = DirectoryNavigatorEnterAndAliasPath(&menu->dir_nav, led->root_folder.path);
 		if (ret == FS_SUCCESS)
 		{
 			menu->projects_folder_allocated = 1;

@@ -150,13 +150,13 @@ typedef vec2 (*mat2ptr)[2];
 typedef vec3 (*mat3ptr)[3];
 typedef vec4 (*mat4ptr)[4];
 
-struct ds_buffer
+struct dsBuffer
 {
 	u8 *	data;
 	u64 	size; 
 	u64 	mem_left;
 };
-#define ds_buffer_empty	(struct ds_buffer) { .data = NULL, .size = 0, .mem_left = 0, }
+#define ds_buffer_empty	(struct dsBuffer) { .data = NULL, .size = 0, .mem_left = 0, }
 
 typedef struct
 {

@@ -1048,7 +1048,7 @@ void ui_text_op(void)
 	/* do any potential clipboard setting before we potentially begin editting the string */
 	if (op.str_copy.len)
 	{
-		cstr_set_clipboard((const char *) Utf8Utf32NullTerminated(g_ui->mem_frame, op.str_copy).buf);
+		CstrSetClipboard((const char *) Utf8Utf32NullTerminated(g_ui->mem_frame, op.str_copy).buf);
 	}
 
 	/* apply text operation */

@@ -21,14 +21,14 @@
 #include "Log.h"
 #include "dtoa.h"
 
-static struct ds_sys_env g_sys_env_storage = { 0 };
-struct ds_sys_env *g_sys_env = &g_sys_env_storage;
+static struct dsSysEnv g_sys_env_storage = { 0 };
+struct dsSysEnv *g_sys_env = &g_sys_env_storage;
 
 void ds_sys_env_init(struct arena *mem)
 {
-	g_sys_env->user_privileged = system_user_is_admin();	
-	g_sys_env->cwd = file_null();
-	if (cwd_set(mem, ".") != FS_SUCCESS)
+	g_sys_env->user_privileged = SystemAdminCheck();	
+	g_sys_env->cwd = FileNull();
+	if (CwdSet(mem, ".") != FS_SUCCESS)
 	{
 		LogString(T_SYSTEM, S_FATAL, "Failed to open the current working directory");
 		FatalCleanupAndExit(0);

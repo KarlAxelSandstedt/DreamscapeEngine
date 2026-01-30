@@ -313,15 +313,15 @@ void ssff_save(const struct asset_ssff *asset, const struct ssff_header *header)
 {
 	struct arena tmp = ArenaAlloc1MB();
 
-	struct file file = file_null();
-	if (file_try_create_at_cwd(&tmp, &file, asset->filepath, FILE_TRUNCATE) != FS_SUCCESS)
+	struct file file = FileNull();
+	if (FileTryCreateAtCwd(&tmp, &file, asset->filepath, FILE_TRUNCATE) != FS_SUCCESS)
 	{
 		LogString(T_ASSET, S_FATAL, "Failed to create .ssff file handle");
 		FatalCleanupAndExit(ds_ThreadSelfTid());
 	}
 
-	file_write_append(&file, (u8 *) header, header->size);
-	file_close(&file);
+	FileWriteAppend(&file, (u8 *) header, header->size);
+	FileClose(&file);
 
 	ArenaFree1MB(&tmp);
 }
@@ -332,7 +332,7 @@ const struct ssff_header *ssff_load(struct asset_ssff *asset)
 {
 	struct arena tmp = ArenaAlloc1MB();
 
-	const struct ssff_header *header = (const struct ssff_header *) file_dump_at_cwd(&tmp, asset->filepath).data;
+	const struct ssff_header *header = (const struct ssff_header *) FileDumpAtCwd(&tmp, asset->filepath).data;
 	asset->loaded = (header) ? 1 : 0;
 
 	ArenaFree1MB(&tmp);

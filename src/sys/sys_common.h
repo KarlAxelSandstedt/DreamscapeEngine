@@ -168,7 +168,8 @@ enum system_event_type
 	SYSTEM_NO_EVENT,
 };
 
-struct system_event {
+struct system_event 
+{
 	POOL_SLOT_STATE;
 	DLL_SLOT_STATE;
 	u64			native_handle;	/* window handle 			*/
@@ -194,46 +195,5 @@ struct system_event {
 
 	utf8	utf8;
 };
-
-/************************************************************************/
-/* 				System IO 				*/
-/************************************************************************/
-
-#define FILE_READ	0
-#define FILE_WRITE	(1 << 0)
-#define FILE_TRUNCATE	(1 << 1)
-
-enum fs_error
-{
-	FS_SUCCESS = 0,
-	FS_BUFFER_TO_SMALL,
-	FS_ALREADY_EXISTS,
-	FS_HANDLE_INVALID,
-	FS_FILE_IS_NOT_DIRECTORY,
-	FS_DIRECTORY_NOT_EMPTY,
-	FS_PERMISSION_DENIED,
-	FS_TYPE_INVALID,
-	FS_PATH_INVALID,
-	FS_ERROR_UNSPECIFIED,
-	FS_COUNT
-};
-
-enum file_type
-{
-	FILE_NONE,
-	FILE_REGULAR,
-	FILE_DIRECTORY,
-	FILE_UNRECOGNIZED,
-	FILE_COUNT
-};
-
-struct file
-{
-	file_handle		handle;	/* WARNING: not necessarily opened 		*/
-	enum file_type		type;	/* file type 					*/
-	utf8			path;	/* context dependent: relative or absolute 	*/
-};
-
-struct file file_null(void);
 
 #endif

@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,41 +17,43 @@
 ==========================================================================
 */
 
-#include "sys_local.h"
+#include "hash_map.h"
+#include "ds_vector.h"
+#include "ds_platform.h"
 
-struct file file_null(void)
+struct file FileNull(void)
 {
 	return (struct file) { .handle = FILE_HANDLE_INVALID, .path = Utf8Empty(), .type = FILE_NONE };
 }
 
-struct directory_navigator directory_navigator_alloc(const u32 initial_memory_string_size, const u32 hash_size, const u32 initial_hash_index_size)
+struct directoryNavigator DirectoryNavigatorAlloc(const u32 initial_memory_string_size, const u32 hash_size, const u32 initial_hash_index_size)
 {
-	struct directory_navigator dn =
+	struct directoryNavigator dn =
 	{
 		.path = Utf8Empty(),
 		.relative_path_to_file_map = HashMapAlloc(NULL, hash_size, initial_hash_index_size, GROWABLE),
 		.mem_string = ArenaAlloc(initial_memory_string_size),
-		.files = vector_alloc(NULL, sizeof(struct file), initial_hash_index_size, VECTOR_GROWABLE),
+		.files = VectorAlloc(NULL, sizeof(struct file), initial_hash_index_size, GROWABLE),
 	};
 
 	return dn;
 }
 
-void directory_navigator_dealloc(struct directory_navigator *dn)
+void DirectoryNavigatorDealloc(struct directoryNavigator *dn)
 {
 	ArenaFree(&dn->mem_string);
-	HashMapFree(dn->relative_path_to_file_map);
-	vector_dealloc(&dn->files);
+	HashMapFree(&dn->relative_path_to_file_map);
+	VectorDealloc(&dn->files);
 }
 
-void directory_navigator_flush(struct directory_navigator *dn)
+void DirectoryNavigatorFlush(struct directoryNavigator *dn)
 {
 	ArenaFlush(&dn->mem_string);
-	HashMapFlush(dn->relative_path_to_file_map);
-	vector_flush(&dn->files);
+	HashMapFlush(&dn->relative_path_to_file_map);
+	VectorFlush(&dn->files);
 }
 
-u32 directory_navigator_lookup_substring(struct arena *mem, u32 **index, struct directory_navigator *dn, const utf8 substring)
+u32 DirectoryNavigatorLookupSubstring(struct arena *mem, u32 **index, struct directoryNavigator *dn, const utf8 substring)
 {
 	ArenaPushRecord(&dn->mem_string);
 
@@ -73,11 +75,11 @@ u32 directory_navigator_lookup_substring(struct arena *mem, u32 **index, struct 
 	return count;
 }
 
-u32 directory_navigator_lookup(const struct directory_navigator *dn, const utf8 filename)
+u32 DirectoryNavigatorLookup(const struct directoryNavigator *dn, const utf8 filename)
 {
 	const u32 key = Utf8Hash(filename);
 	u32 index = HASH_NULL;
-	for (u32 i = HashMapFirst(dn->relative_path_to_file_map, key); i != HASH_NULL; i = HashMapNext(dn->relative_path_to_file_map, i))
+	for (u32 i = HashMapFirst(&dn->relative_path_to_file_map, key); i != HASH_NULL; i = HashMapNext(&dn->relative_path_to_file_map, i))
 	{
 		const struct file *file = VectorAddress(&dn->files, i);
 		if (Utf8Equivalence(filename, file->path))
@@ -90,21 +92,21 @@ u32 directory_navigator_lookup(const struct directory_navigator *dn, const utf8 
 	return index;
 }
 
-enum fs_error directory_navigator_enter_and_alias_path(struct directory_navigator *dn, const utf8 path)
+enum fsError DirectoryNavigatorEnterAndAliasPath(struct directoryNavigator *dn, const utf8 path)
 {
-	directory_navigator_flush(dn);
+	DirectoryNavigatorFlush(dn);
 
-	struct file dir = file_null();
-	const enum fs_error ret = directory_try_open_at_cwd(&dn->mem_string, &dir, CstrUtf8(&dn->mem_string, path));
+	struct file dir = FileNull();
+	const enum fsError ret = DirectoryTryOpenAtCwd(&dn->mem_string, &dir, CstrUtf8(&dn->mem_string, path));
 	if (ret == FS_SUCCESS)
 	{
 		dn->path = path;
-		directory_push_entries(&dn->mem_string, &dn->files, &dir);
+		DirectoryPushEntries(&dn->mem_string, &dn->files, &dir);
 		for (u32 i = 0; i < dn->files.next; ++i)
 		{
 			const struct file *entry = VectorAddress(&dn->files, i);
 			const u32 key = Utf8Hash(entry->path);
-			HashMapAdd(dn->relative_path_to_file_map, key, i);
+			HashMapAdd(&dn->relative_path_to_file_map, key, i);
 		}
 	}
 

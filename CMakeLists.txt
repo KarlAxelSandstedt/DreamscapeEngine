@@ -147,6 +147,7 @@ add_subdirectory("${DS_INCLUDE_PATH}")
 add_subdirectory("${DS_SRC_PATH}/base")
 add_subdirectory("${DS_SRC_PATH}/containers")
 add_subdirectory("${DS_SRC_PATH}/math")
+add_subdirectory("${DS_SRC_PATH}/sys")
 add_subdirectory("${DS_LIB_PATH}")
 
 add_library(${PROJECT_NAME} INTERFACE)
@@ -157,6 +158,7 @@ target_link_libraries(${PROJECT_NAME}
 		"${PROJECT_NAME}::Base"
 		"${PROJECT_NAME}::Containers"
 		"${PROJECT_NAME}::Math"
+		"${PROJECT_NAME}::Platform"
 )
 
 #TODO remove, consider using DS_DEBUG instead, or if required, add DS_DEV

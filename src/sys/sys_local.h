@@ -100,17 +100,4 @@ extern u32 	(*system_enter_text_input_mode)(struct native_window *native);
 /* Disable text input system events */
 extern u32 	(*system_exit_text_input_mode)(struct native_window *native);
 
-/************************************************************************/
-/* 		filesystem navigation and manipulaiton			*/
-/************************************************************************/
-
-/* push directory file paths and states AND CLOSE DIRECTORY! 
- *
- * RETURNS:
- * 	DS_FS_SUCCESS on success,
- * 	DS_FS_BUFFER_TO_SMALL on out-of-memory,
- *	DS_FS_UNSPECIFIED on errors regarding opening and reading the directory.
- */
-extern enum fs_error	(*directory_push_entries)(struct arena *mem, struct vector *vec, struct file *dir);
-
 #endif

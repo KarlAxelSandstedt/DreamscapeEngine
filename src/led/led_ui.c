@@ -127,10 +127,10 @@ static void led_project_menu_ui(struct led *led, const struct ui_visual *visual)
 				else
 				{
 					struct system_window *project_window = system_window_address(led->window);
-					enum fs_error err;
+					enum fsError err;
 
 					const char *cstr_project_name = CstrUtf8(g_ui->mem_frame, menu->utf8_new_project);
-					err = directory_try_create(&project_window->mem_persistent, &led->project.folder, cstr_project_name, &led->root_folder);
+					err = DirectoryTryCreate(&project_window->mem_persistent, &led->project.folder, cstr_project_name, &led->root_folder);
 					if (err != FS_SUCCESS)
 					{
 						switch (err)
@@ -141,7 +141,7 @@ static void led_project_menu_ui(struct led *led, const struct ui_visual *visual)
 					}
 					else
 					{
-						err = file_try_create(&project_window->mem_persistent, &led->project.file, cstr_project_name, &led->project.folder, !FILE_TRUNCATE);
+						err = FileTryCreate(&project_window->mem_persistent, &led->project.file, cstr_project_name, &led->project.folder, !FILE_TRUNCATE);
 						if (err != FS_SUCCESS)
 						{
 							switch (err)

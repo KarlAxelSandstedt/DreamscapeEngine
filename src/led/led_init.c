@@ -30,7 +30,7 @@ struct led_project_menu	led_project_menu_alloc(void)
 		.projects_folder_allocated = 0,
 		.projects_folder_refresh = 0,
 		.selected_path = Utf8Empty(),
-		.dir_nav = directory_navigator_alloc(4096, 64, 64),
+		.dir_nav = DirectoryNavigatorAlloc(4096, 64, 64),
 		.dir_list = ui_list_init(AXIS_2_Y, 200.0f, 24.0f, UI_SELECTION_UNIQUE),
 		.window = HI_NULL_INDEX,
 		.popup_new_project = ui_popup_null(),
@@ -43,7 +43,7 @@ struct led_project_menu	led_project_menu_alloc(void)
 
 void led_project_menu_dealloc(struct led_project_menu *menu)
 {
-	directory_navigator_dealloc(&menu->dir_nav);
+	DirectoryNavigatorDealloc(&menu->dir_nav);
 }
 
 struct led *led_alloc(void)
@@ -57,7 +57,7 @@ struct led *led_alloc(void)
 	g_editor->project_menu = led_project_menu_alloc();
 	g_editor->running = 1;
 	g_editor->ns = ds_TimeNs();
-	g_editor->root_folder = file_null();
+	g_editor->root_folder = FileNull();
 
 	//const vec3 position = {-40.0f, 3.0f, -30.0f};
 	//const vec3 left = {0.0f, 0.0f, 1.0f};
@@ -88,14 +88,14 @@ struct led *led_alloc(void)
 	g_editor->ns_delta_modifier = 1.0f;
 
 	g_editor->project.initialized = 0;
-	g_editor->project.folder = file_null();
-	g_editor->project.file = file_null();
+	g_editor->project.folder = FileNull();
+	g_editor->project.file = FileNull();
 
 	struct system_window *sys_win = system_window_address(g_editor->window);
-	enum fs_error err; 
-	if ((err = directory_try_create_at_cwd(&sys_win->mem_persistent, &g_editor->root_folder, LED_ROOT_FOLDER_PATH)) != FS_SUCCESS)
+	enum fsError err; 
+	if ((err = DirectoryTryCreateAtCwd(&sys_win->mem_persistent, &g_editor->root_folder, LED_ROOT_FOLDER_PATH)) != FS_SUCCESS)
 	{
-		if ((err = directory_try_open_at_cwd(&sys_win->mem_persistent, &g_editor->root_folder, LED_ROOT_FOLDER_PATH)) != FS_SUCCESS)
+		if ((err = DirectoryTryOpenAtCwd(&sys_win->mem_persistent, &g_editor->root_folder, LED_ROOT_FOLDER_PATH)) != FS_SUCCESS)
 		{
 			LogString(T_SYSTEM, S_FATAL, "Failed to open projects folder, exiting.");
 			FatalCleanupAndExit(ds_ThreadSelfTid());

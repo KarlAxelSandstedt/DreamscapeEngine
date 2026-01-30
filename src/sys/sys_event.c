@@ -222,7 +222,7 @@ void system_process_events(void)
 								text_edit_event = 1;
 								sys_win->cmd_queue->regs[0].u32 = 0;
 								sys_win->cmd_queue->regs[1].u32 = key_modifiers;
-								sys_win->cmd_queue->regs[2].utf8 = utf8_get_clipboard(sys_win->ui->mem_frame);
+								sys_win->cmd_queue->regs[2].utf8 = Utf8GetClipboard(sys_win->ui->mem_frame);
 							}	
 						} break;
 

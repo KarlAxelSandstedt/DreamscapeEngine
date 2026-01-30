@@ -26,48 +26,48 @@
 #include <shlwapi.h>
 #include <shlobj_core.h>
 
-u32 			(*system_user_is_admin)(void);
+u32 			(*SystemAdminCheck)(void);
 
-u32			(*utf8_path_is_relative)(utf8 path);
-u32			(*cstr_path_is_relative)(const char *path);
+u32			(*Utf8PathRelativeCheck)(utf8 path);
+u32			(*CstrPathRelativeCheck)(const char *path);
 
-enum fs_error 		(*file_try_create)(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 truncate);
-enum fs_error 		(*file_try_create_at_cwd)(struct arena *mem, struct file *file, const char *filename, const u32 truncate);
-enum fs_error 		(*file_try_open)(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 writeable);
-enum fs_error 		(*file_try_open_at_cwd)(struct arena *mem, struct file *file, const char *filename, const u32 writeable);
-enum fs_error 		(*file_try_open_absolute)(struct arena *mem, struct file *file, const char *filename);
+enum fsError 		(*FileTryCreate)(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 truncate);
+enum fsError 		(*FileTryCreateAtCwd)(struct arena *mem, struct file *file, const char *filename, const u32 truncate);
+enum fsError 		(*FileTryOpen)(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 writeable);
+enum fsError 		(*FileTryOpenAtCwd)(struct arena *mem, struct file *file, const char *filename, const u32 writeable);
+enum fsError 		(*FileTryOpen_absolute)(struct arena *mem, struct file *file, const char *filename);
 
-enum fs_error 		(*directory_try_create)(struct arena *mem, struct file *dir, const char *filename, const struct file *parent_dir);
-enum fs_error 		(*directory_try_create_at_cwd)(struct arena *mem, struct file *dir, const char *filename);
-enum fs_error 		(*directory_try_open)(struct arena *mem, struct file *dir, const char *filename, const struct file *parent_dir);
-enum fs_error 		(*directory_try_open_at_cwd)(struct arena *mem, struct file *dir, const char *filename);
-enum fs_error		(*directory_push_entries)(struct arena *mem, struct vector *vec, struct file *dir);
+enum fsError 		(*DirectoryTryCreate)(struct arena *mem, struct file *dir, const char *filename, const struct file *parent_dir);
+enum fsError 		(*DirectoryTryCreateAtCwd)(struct arena *mem, struct file *dir, const char *filename);
+enum fsError 		(*DirectoryTryOpen)(struct arena *mem, struct file *dir, const char *filename, const struct file *parent_dir);
+enum fsError 		(*DirectoryTryOpenAtCwd)(struct arena *mem, struct file *dir, const char *filename);
+enum fsError		(*DirectoryPushEntries)(struct arena *mem, struct vector *vec, struct file *dir);
 
-u64 			(*file_write_offset)(const struct file *file, const u8 *buf, const u64 bufsize, const u64 offset);
-u64 			(*file_write_append)(const struct file *file, const u8 *buf, const u64 size);
-void 			(*file_sync)(const struct file *file);
-void 			(*file_close)(struct file *file);
+u64 			(*FileWriteOffset)(const struct file *file, const u8 *buf, const u64 bufsize, const u64 offset);
+u64 			(*FileWriteAppend)(const struct file *file, const u8 *buf, const u64 size);
+void 			(*FileSync)(const struct file *file);
+void 			(*FileClose)(struct file *file);
 
-void *			(*file_memory_map)(u64 *size, const struct file *file, const u32 prot, const u32 flags);
-void *			(*file_memory_map_partial)(const struct file *file, const u64 length, const u64 offset, const u32 prot, const u32 flags);
-void 			(*file_memory_unmap)(void *addr, const u64 length);
-void 			(*file_memory_sync_unmap)(void *addr, const u64 length);
+void *			(*FileMemoryMap)(u64 *size, const struct file *file, const u32 prot, const u32 flags);
+void *			(*FileMemoryMapPartial)(const struct file *file, const u64 length, const u64 offset, const u32 prot, const u32 flags);
+void 			(*FileMemoryUnmap)(void *addr, const u64 length);
+void 			(*FileMemorySyncUnmap)(void *addr, const u64 length);
 
-utf8			(*cwd_get)(struct arena *mem);
-enum fs_error		(*cwd_set)(struct arena *mem, const char *path);
+utf8			(*CwdGet)(struct arena *mem);
+enum fsError		(*CwdSet)(struct arena *mem, const char *path);
 
-struct ds_buffer 	(*file_dump)(struct arena *mem, const char *path, const struct file *dir);
-struct ds_buffer 	(*file_dump_at_cwd)(struct arena *mem, const char *path);
+struct dsBuffer 	(*FileDump)(struct arena *mem, const char *path, const struct file *dir);
+struct dsBuffer 	(*FileDumpAtCwd)(struct arena *mem, const char *path);
 
-enum fs_error		(*file_status_path)(file_status *status, const char *path, const struct file *dir);
-enum fs_error		(*file_status_file)(file_status *status, const struct file *file);
-enum file_type		(*file_status_type)(const file_status *status);
+enum fsError		(*FileStatusPath)(file_status *status, const char *path, const struct file *dir);
+enum fsError		(*FileStatusFile)(file_status *status, const struct file *file);
+enum fileType		(*FileStatusGetType)(const file_status *status);
 
-void			(*file_status_debug_print)(const file_status *stat);
+void			(*FileStatusDebugPrint)(const file_status *stat);
 
-u32			(*file_set_size)(const struct file *file, const u64 size);
+u32			(*FileSetSize)(const struct file *file, const u64 size);
 
-static enum fs_error w_absolute_path_from_relative_path_and_directory(WCHAR w_absolute_path[MAX_PATH], const char *relative_path, const struct file *dir)
+static enum fsError w_absolute_path_from_relative_path_and_directory(WCHAR w_absolute_path[MAX_PATH], const char *relative_path, const struct file *dir)
 {
 	WCHAR w_directory_path[MAX_PATH];
 	WCHAR w_relative_path[MAX_PATH];
@@ -123,13 +123,13 @@ u32 win_cstr_path_is_relative(const char *path)
 	return (u32) PathIsRelativeA(path);
 }
 
-enum fs_error win_file_try_create(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 truncate)
+enum fsError win_file_try_create(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 truncate)
 {
 	ds_Assert(file->handle == FILE_HANDLE_INVALID);
 	file->handle = FILE_HANDLE_INVALID;
 		
-	enum fs_error err = FS_SUCCESS;
-	if (!cstr_path_is_relative(filename))
+	enum fsError err = FS_SUCCESS;
+	if (!CstrPathRelativeCheck(filename))
 	{
 		err = FS_PATH_INVALID;
 	}
@@ -175,18 +175,18 @@ enum fs_error win_file_try_create(struct arena *mem, struct file *file, const ch
 	return err;
 }
 
-enum fs_error win_file_try_create_at_cwd(struct arena *mem, struct file *file, const char *filename, const u32 truncate)
+enum fsError win_file_try_create_at_cwd(struct arena *mem, struct file *file, const char *filename, const u32 truncate)
 {
 	return win_file_try_create(mem, file, filename, &g_sys_env->cwd, truncate);
 }
 
-enum fs_error win_file_try_open(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 writeable)
+enum fsError win_file_try_open(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 writeable)
 {
 	ds_Assert(file->handle == FILE_HANDLE_INVALID);
 	file->handle = FILE_HANDLE_INVALID;
 		
-	enum fs_error err = FS_SUCCESS;
-	if (!cstr_path_is_relative(filename))
+	enum fsError err = FS_SUCCESS;
+	if (!CstrPathRelativeCheck(filename))
 	{
 		err = FS_PATH_INVALID;
 	}
@@ -231,18 +231,18 @@ enum fs_error win_file_try_open(struct arena *mem, struct file *file, const char
 	return err;
 }
 
-enum fs_error win_file_try_open_at_cwd(struct arena *mem, struct file *file, const char *filename, const u32 writeable)
+enum fsError win_file_try_open_at_cwd(struct arena *mem, struct file *file, const char *filename, const u32 writeable)
 {
 	return win_file_try_open(mem, file, filename, &g_sys_env->cwd, writeable);
 }
 
-enum fs_error win_directory_try_create(struct arena *mem, struct file *dir, const char *filename, const struct file *parent_dir)
+enum fsError win_directory_try_create(struct arena *mem, struct file *dir, const char *filename, const struct file *parent_dir)
 {
 	ds_Assert(dir->handle == FILE_HANDLE_INVALID);
 	dir->handle = FILE_HANDLE_INVALID;
 		
-	enum fs_error err = FS_SUCCESS;
-	if (!cstr_path_is_relative(filename))
+	enum fsError err = FS_SUCCESS;
+	if (!CstrPathRelativeCheck(filename))
 	{
 		err = FS_PATH_INVALID;
 	}
@@ -286,18 +286,18 @@ enum fs_error win_directory_try_create(struct arena *mem, struct file *dir, cons
 	return err;
 }
 
-enum fs_error win_directory_try_create_at_cwd(struct arena *mem, struct file *dir, const char *filename)
+enum fsError win_directory_try_create_at_cwd(struct arena *mem, struct file *dir, const char *filename)
 {
 	return win_directory_try_create(mem, dir, filename, &g_sys_env->cwd);
 }
 
-enum fs_error win_directory_try_open(struct arena *mem, struct file *dir, const char *filename, const struct file *parent_dir)
+enum fsError win_directory_try_open(struct arena *mem, struct file *dir, const char *filename, const struct file *parent_dir)
 {
 	ds_Assert(dir->handle == FILE_HANDLE_INVALID);
 	dir->handle = FILE_HANDLE_INVALID;
 		
-	enum fs_error err = FS_SUCCESS;
-	if (!cstr_path_is_relative(filename))
+	enum fsError err = FS_SUCCESS;
+	if (!CstrPathRelativeCheck(filename))
 	{
 		err = FS_PATH_INVALID;
 	}
@@ -337,16 +337,16 @@ enum fs_error win_directory_try_open(struct arena *mem, struct file *dir, const 
 	return err;
 }
 
-enum fs_error win_directory_try_open_at_cwd(struct arena *mem, struct file *dir, const char *filename)
+enum fsError win_directory_try_open_at_cwd(struct arena *mem, struct file *dir, const char *filename)
 {
 	return win_directory_try_open(mem, dir, filename, &g_sys_env->cwd); 
 }
 
-struct ds_buffer win_file_dump(struct arena *mem, const char *path, const struct file *dir)
+struct dsBuffer win_file_dump(struct arena *mem, const char *path, const struct file *dir)
 {
-	struct file file = file_null();
-	struct ds_buffer buf = { 0 };
-	if (!file_try_open(mem, &file, path, dir, FILE_READ) == FS_SUCCESS)
+	struct file file = FileNull();
+	struct dsBuffer buf = { 0 };
+	if (!FileTryOpen(mem, &file, path, dir, FILE_READ) == FS_SUCCESS)
 	{
 		return buf;
 	}
@@ -377,12 +377,12 @@ struct ds_buffer win_file_dump(struct arena *mem, const char *path, const struct
 		}
 	}
 	
-	file_close(&file);
+	FileClose(&file);
 
 	return buf;
 }
 
-struct ds_buffer win_file_dump_at_cwd(struct arena *mem, const char *path)
+struct dsBuffer win_file_dump_at_cwd(struct arena *mem, const char *path)
 {
 	return win_file_dump(mem, path, &g_sys_env->cwd);
 }
@@ -439,7 +439,7 @@ u64 win_file_write_offset(const struct file *file, const u8 *buf, const u64 size
 	}
 
 	/* Seems like no memory maps will see our writes if we do not sync... TODO: Fix sane api */
-	file_sync(file);
+	FileSync(file);
 	ds_AssertMessage(bytes_written == size, "bytes_written = %u, size = %u\n", bytes_written, size); 
 	return bytes_written;
 
@@ -462,7 +462,7 @@ u64 win_file_write_append(const struct file *file, const u8 *buf, const u64 size
 	}
 
 	/* Seems like no memory maps will see our writes if we do not sync... TODO: Fix sane api */
-	file_sync(file);
+	FileSync(file);
 
 	ds_AssertMessage(bytes_written == size, "bytes_written = %u, size = %u\n", bytes_written, size); 
 
@@ -491,7 +491,7 @@ void *win_file_memory_map(u64 *size, const struct file *file, const u32 prot, co
 	else
 	{
 		*size = l_size.QuadPart;
-		map = file_memory_map_partial(file, 0, 0, prot, garbage);
+		map = FileMemoryMapPartial(file, 0, 0, prot, garbage);
 	}
 
 	return map;
@@ -605,9 +605,9 @@ utf8 win_cwd_get(struct arena *mem)
 	return str;
 }
 
-enum fs_error win_cwd_set(struct arena *mem, const char *path)
+enum fsError win_cwd_set(struct arena *mem, const char *path)
 {
-	enum fs_error err = FS_SUCCESS;
+	enum fsError err = FS_SUCCESS;
 	HANDLE handle = CreateFileA((char *) path
 			, GENERIC_READ
 			, FILE_SHARE_READ | FILE_SHARE_WRITE
@@ -640,7 +640,7 @@ enum fs_error win_cwd_set(struct arena *mem, const char *path)
 	return err;
 }
 
-enum fs_error win_directory_push_entries(struct arena *mem, struct vector *vec, struct file *dir)
+enum fsError win_directory_push_entries(struct arena *mem, struct vector *vec, struct file *dir)
 {
 	WCHAR w_path[MAX_PATH];
 	if (w_absolute_path_from_relative_path_and_directory(w_path, "*", dir) != FS_SUCCESS)
@@ -660,12 +660,12 @@ enum fs_error win_directory_push_entries(struct arena *mem, struct vector *vec, 
 	ArenaPushRecord(mem);
 	const u32 vec_record = vec->next;
 
-	enum fs_error ret = FS_SUCCESS;
+	enum fsError ret = FS_SUCCESS;
 	file_status status;
 	char cstr_filename[4*MAX_PATH];
 	do
 	{
-		struct file *file = vector_push(vec).address;
+		struct file *file = VectorPush(vec).address;
 
 		int cstr_len = WideCharToMultiByte(CP_UTF8, 0, file_info.cFileName, -1, cstr_filename, sizeof(cstr_filename), NULL, NULL);
 		if (cstr_len == 0)
@@ -676,13 +676,13 @@ enum fs_error win_directory_push_entries(struct arena *mem, struct vector *vec, 
 		}
 
 		file->path = Utf8Cstr(mem, cstr_filename);
-		if (file_status_path(&status, cstr_filename, dir) != FS_SUCCESS)
+		if (FileStatusPath(&status, cstr_filename, dir) != FS_SUCCESS)
 		{
 			ret = FS_ERROR_UNSPECIFIED;
 			break;
 		}
 
-		file->type = file_status_type(&status);
+		file->type = FileStatusGetType(&status);
 
 
 	} while (FindNextFileW(handle, &file_info) != 0);
@@ -694,12 +694,12 @@ enum fs_error win_directory_push_entries(struct arena *mem, struct vector *vec, 
 	}
 
 	FindClose(handle);
-	file_close(dir);
-	*dir = file_null();
+	FileClose(dir);
+	*dir = FileNull();
 	return ret;
 }
 
-enum fs_error win_file_status_file(file_status *status, const struct file *file)
+enum fsError win_file_status_file(file_status *status, const struct file *file)
 {
 	WCHAR w_path[MAX_PATH];
 	if (!GetFinalPathNameByHandleW(file->handle, w_path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS))
@@ -708,7 +708,7 @@ enum fs_error win_file_status_file(file_status *status, const struct file *file)
 		return FS_ERROR_UNSPECIFIED;
 	}
 
-	enum fs_error err = FS_SUCCESS;
+	enum fsError err = FS_SUCCESS;
 	if (!GetFileAttributesExW(w_path, GetFileExInfoStandard, status))
 	{
 		LogSystemError(S_ERROR);
@@ -718,10 +718,10 @@ enum fs_error win_file_status_file(file_status *status, const struct file *file)
 	return err;
 }
 
-enum fs_error win_file_status_path(file_status *status, const char *path, const struct file *dir)
+enum fsError win_file_status_path(file_status *status, const char *path, const struct file *dir)
 {	
 	WCHAR w_path[MAX_PATH];
-	enum fs_error err = w_absolute_path_from_relative_path_and_directory(w_path, path, dir);
+	enum fsError err = w_absolute_path_from_relative_path_and_directory(w_path, path, dir);
 	if (err == FS_SUCCESS)
 	{
 		if (!GetFileAttributesExW(w_path, GetFileExInfoStandard, status))
@@ -734,9 +734,9 @@ enum fs_error win_file_status_path(file_status *status, const char *path, const 
 	return err;
 }
 
-enum file_type win_file_status_type(const file_status *status)
+enum fileType win_file_status_type(const file_status *status)
 {
-	enum file_type type;
+	enum fileType type;
 
 	if (status->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
 	{
@@ -825,43 +825,43 @@ void win_file_status_debug_print(const file_status *stat)
 
 void filesystem_init_func_ptrs(void)
 {
-	system_user_is_admin = &win_system_user_is_admin;
+	SystemAdminCheck = &win_system_user_is_admin;
 
-	utf8_path_is_relative = &win_utf8_path_is_relative;
-	cstr_path_is_relative = &win_cstr_path_is_relative;
+	Utf8PathRelativeCheck = &win_utf8_path_is_relative;
+	CstrPathRelativeCheck = &win_cstr_path_is_relative;
 
-	file_try_create = &win_file_try_create;
-	file_try_create_at_cwd = &win_file_try_create_at_cwd;
-	file_try_open = &win_file_try_open;
-	file_try_open_at_cwd = &win_file_try_open_at_cwd;
+	FileTryCreate = &win_file_try_create;
+	FileTryCreateAtCwd = &win_file_try_create_at_cwd;
+	FileTryOpen = &win_file_try_open;
+	FileTryOpenAtCwd = &win_file_try_open_at_cwd;
 
-	directory_try_create = &win_directory_try_create;
-	directory_try_create_at_cwd = &win_directory_try_create_at_cwd;
-	directory_try_open = &win_directory_try_open;
-	directory_try_open_at_cwd = &win_directory_try_open_at_cwd;
-	directory_push_entries = &win_directory_push_entries;
+	DirectoryTryCreate = &win_directory_try_create;
+	DirectoryTryCreateAtCwd = &win_directory_try_create_at_cwd;
+	DirectoryTryOpen = &win_directory_try_open;
+	DirectoryTryOpenAtCwd = &win_directory_try_open_at_cwd;
+	DirectoryPushEntries = &win_directory_push_entries;
 
-	cwd_get = &win_cwd_get;
-	cwd_set = &win_cwd_set;
+	CwdGet = &win_cwd_get;
+	CwdSet = &win_cwd_set;
 
-	file_dump = &win_file_dump;
-	file_dump_at_cwd = &win_file_dump_at_cwd;
+	FileDump = &win_file_dump;
+	FileDumpAtCwd = &win_file_dump_at_cwd;
 
-	file_status_file = &win_file_status_file;
-        file_status_path = &win_file_status_path;
-	file_status_debug_print = &win_file_status_debug_print;
-	file_status_type = win_file_status_type;
+	FileStatusFile = &win_file_status_file;
+        FileStatusPath = &win_file_status_path;
+	FileStatusDebugPrint = &win_file_status_debug_print;
+	FileStatusGetType = win_file_status_type;
 
-	file_close = &win_file_close;
+	FileClose = &win_file_close;
 
-	file_write_offset = &win_file_write_offset;
-	file_write_append = &win_file_write_append;
-	file_sync = &win_file_sync;
+	FileWriteOffset = &win_file_write_offset;
+	FileWriteAppend = &win_file_write_append;
+	FileSync = &win_file_sync;
 
-	file_memory_map = &win_file_memory_map;
-	file_memory_map_partial = &win_file_memory_map_partial;
-	file_memory_unmap = &win_file_memory_unmap;
-	file_memory_sync_unmap = &win_file_memory_sync_unmap;
+	FileMemoryMap = &win_file_memory_map;
+	FileMemoryMapPartial = &win_file_memory_map_partial;
+	FileMemoryUnmap = &win_file_memory_unmap;
+	FileMemorySyncUnmap = &win_file_memory_sync_unmap;
 
-	file_set_size = &win_file_set_size;
+	FileSetSize = &win_file_set_size;
 }

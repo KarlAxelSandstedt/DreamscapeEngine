@@ -141,15 +141,15 @@ void FatalCleanupAndExit()
 		//	   local_time.wMinute,
 		//	   local_time.wSecond);
     		const char *filename = CstrUtf8(&tmp, utf8_filename);
-		struct file dump = file_null();
-		if (file_try_create_at_cwd(&tmp, &dump, filename, FILE_TRUNCATE) == FS_SUCCESS)
+		struct file dump = FileNull();
+		if (FileTryCreateAtCwd(&tmp, &dump, filename, FILE_TRUNCATE) == FS_SUCCESS)
 		{
 			if (!MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), dump.handle, MiniDumpWithFullMemory, NULL, NULL, NULL))
 			{
 				LogSystemError(S_ERROR);
 			}
 			
-			file_close(&dump);
+			FileClose(&dump);
 		}
 		ArenaFree1MB(&tmp);
 

@@ -56,8 +56,8 @@ void 			(*screen_position_system_to_native)(vec2 nat_pos, struct native_window *
 void 			(*window_position_native_to_system)(vec2 sys_pos, struct native_window *native, const vec2 nat_pos);
 void 			(*window_position_system_to_native)(vec2 nat_pos, struct native_window *native, const vec2 sys_pos);
 
-utf8 			(*utf8_get_clipboard)(struct arena *mem);
-void 			(*cstr_set_clipboard)(const char *str);
+utf8 			(*Utf8GetClipboard)(struct arena *mem);
+void 			(*CstrSetClipboard)(const char *str);
 
 u32 			(*system_enter_text_input_mode)(struct native_window *native);
 u32 			(*system_exit_text_input_mode)(struct native_window *native);
@@ -461,8 +461,8 @@ void sdl3_wrapper_init(void)
 	window_position_native_to_system = &sdl3_wrapper_window_position_native_to_system;
 	window_position_system_to_native = &sdl3_wrapper_window_position_system_to_native;
 
-	utf8_get_clipboard = sdl3_wrapper_utf8_get_clipboard;
-	cstr_set_clipboard = sdl3_wrapper_cstr_set_clipboard;
+	Utf8GetClipboard = sdl3_wrapper_utf8_get_clipboard;
+	CstrSetClipboard = sdl3_wrapper_cstr_set_clipboard;
 
 	system_enter_text_input_mode = &sdl3_wrapper_enter_text_input_mode;
 	system_exit_text_input_mode = &sdl3_wrapper_exit_text_input_mode;
