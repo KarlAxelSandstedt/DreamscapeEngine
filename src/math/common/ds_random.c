@@ -1,4 +1,5 @@
 #include "ds_base.h"
+#include "ds_random.h"
 
 dsThreadLocal u64 tl_xoshiro_256[4];
 dsThreadLocal u64 tl_pushed_state[4];
@@ -96,7 +97,7 @@ f32 RngF32Range(const f32 min, const f32 max)
 
 
 /*  Written in 2018 by David Blackman and Sebastiano Vigna (vigna@acm.org) */
-void g_xoshiro_256_jump(void) 
+static void Xoshiro256Jump(void) 
 {
 	static const u64 JUMP[] = { 0x180ec6d33cfd0aba, 0xd5a61266f0c9392c, 0xa9582618e03fc9aa, 0x39abdc4529b1661c };
 
@@ -134,8 +135,7 @@ void ThreadXoshiro256InitSequence(void)
 	tl_xoshiro_256[1] = g_xoshiro_256[1];
 	tl_xoshiro_256[2] = g_xoshiro_256[2];
 	tl_xoshiro_256[3] = g_xoshiro_256[3];
-	g_xoshiro_256_jump();
+	Xoshiro256Jump();
 
 	AtomicStoreSeqCst32(&a_g_xoshiro_256_lock, 0);
 }
-

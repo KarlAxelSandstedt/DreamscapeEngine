@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -26,26 +26,26 @@
 
 FT_Library g_ft_library = { 0 };
 
-void internal_freetype_init(void)
+void InternalFreetypeInit(void)
 {
 	if (FT_Init_FreeType(&g_ft_library))
 	{
 		LogString(T_ASSET, S_FATAL, "Failed to initiate freetype2 library");
-		FatalCleanupAndExit(ds_ThreadSelfTid());
+		FatalCleanupAndExit();
 	}
 }
 
-void internal_freetype_free(void)
+void InternalFreetypeFree(void)
 {
 	FT_Done_FreeType(g_ft_library);
 }
 
-typedef	struct font_glyph font_glyph;
+typedef	struct fontGlyph font_glyph;
 DECLARE_STACK(font_glyph);
 DEFINE_STACK(font_glyph);
-void font_build(struct arena *mem, const enum font_id id)
+void FontBuild(struct arena *mem, const enum fontId id)
 {
-	struct asset_font *asset = g_asset_db->font[id];
+	struct assetFont *asset = g_asset_db->font[id];
 
 	ArenaPushRecord(mem);
 
@@ -55,14 +55,14 @@ void font_build(struct arena *mem, const enum font_id id)
 	if (error)
 	{
 		LogString(T_ASSET, S_FATAL, "Failed to initiate freetype face");
-		FatalCleanupAndExit(ds_ThreadSelfTid());
+		FatalCleanupAndExit();
 	}
 
 	error = FT_Set_Pixel_Sizes(face, 0, asset->pixel_glyph_height);
 	if (error)
 	{
 		LogString(T_ASSET, S_FATAL, "Failed to set freetype pixel size");
-		FatalCleanupAndExit(ds_ThreadSelfTid());
+		FatalCleanupAndExit();
 	}
 
 	i32 total_glyph_width = 0;
@@ -82,7 +82,7 @@ void font_build(struct arena *mem, const enum font_id id)
 	u8 *pixels = ArenaPushMemcpy(mem, face->glyph->bitmap.buffer, face->glyph->bitmap.width * face->glyph->bitmap.rows);
 	stack_ptr_push(&stack_pixels, pixels);
 	const u32 glyph_unknown_index = stack_glyph.next;
-	stack_font_glyph_push(&stack_glyph, (struct font_glyph)
+	stack_font_glyph_push(&stack_glyph, (struct fontGlyph)
 	{
 		.size = { (i32) face->glyph->bitmap.width, (i32) face->glyph->bitmap.rows },
 		.bearing = { face->glyph->bitmap_left, face->glyph->bitmap_top },
@@ -106,7 +106,7 @@ void font_build(struct arena *mem, const enum font_id id)
 		total_glyph_width += face->glyph->bitmap.width;
 		pixels = ArenaPushMemcpy(mem, face->glyph->bitmap.buffer, face->glyph->bitmap.width * face->glyph->bitmap.rows);
 		stack_ptr_push(&stack_pixels, pixels);
-		stack_font_glyph_push(&stack_glyph, (struct font_glyph)
+		stack_font_glyph_push(&stack_glyph, (struct fontGlyph)
 			{
 				.size = { (i32) face->glyph->bitmap.width, (i32) face->glyph->bitmap.rows },
 				.bearing = { face->glyph->bitmap_left, face->glyph->bitmap_top },
@@ -131,7 +131,7 @@ void font_build(struct arena *mem, const enum font_id id)
 		total_glyph_width += face->glyph->bitmap.width;
 		pixels = ArenaPushMemcpy(mem, face->glyph->bitmap.buffer, face->glyph->bitmap.width * face->glyph->bitmap.rows);
 		stack_ptr_push(&stack_pixels, pixels);
-		stack_font_glyph_push(&stack_glyph, (struct font_glyph)
+		stack_font_glyph_push(&stack_glyph, (struct fontGlyph)
 			{
 				.size = { (i32) face->glyph->bitmap.width, (i32) face->glyph->bitmap.rows },
 				.bearing = { face->glyph->bitmap_left, face->glyph->bitmap_top },
@@ -195,8 +195,8 @@ void font_build(struct arena *mem, const enum font_id id)
 	{
 		u8 *alpha = font->pixmap;
 
-		struct font_glyph *g = stack_glyph.arr + i;
-		HashMapAdd(font->codepoint_to_glyph_map, g->codepoint, i);
+		struct fontGlyph *g = stack_glyph.arr + i;
+		HashMapAdd(&font->codepoint_to_glyph_map, g->codepoint, i);
 		pixels = stack_pixels.arr[i];
 		if (offset[0] + g->size[0] > font->pixmap_width)
 		{
@@ -228,13 +228,13 @@ void font_build(struct arena *mem, const enum font_id id)
 		ds_AssertString(0, "Font supports kerning, but we do not!\n");
 	}
 
-	font_serialize(asset, font);
+	FontSerialize(asset, font);
 
 	FT_Done_Face(face);
 	ArenaPopRecord(mem);
 }
 
-void font_serialize(const struct asset_font *asset, const struct font *font)
+void FontSerialize(const struct assetFont *asset, const struct font *font)
 {
 	struct arena tmp = ArenaAlloc1MB();
 
@@ -242,7 +242,7 @@ void font_serialize(const struct asset_font *asset, const struct font *font)
 	if (FileTryCreateAtCwd(&tmp, &file, asset->filepath, FILE_TRUNCATE) != FS_SUCCESS)
 	{
 		LogString(T_ASSET, S_FATAL, "Failed to create .font file");
-		FatalCleanupAndExit(ds_ThreadSelfTid());
+		FatalCleanupAndExit();
 	}
 
 	FileSetSize(&file, font->size);
@@ -272,7 +272,7 @@ void font_serialize(const struct asset_font *asset, const struct font *font)
 		ss_WriteF32Be(&ss, font->glyph[i].tr[1]);
 	}
 
-	HashMapSerialize(&ss, font->codepoint_to_glyph_map);
+	HashMapSerialize(&ss, &font->codepoint_to_glyph_map);
 	ss_Write8N(&ss, font->pixmap, font->pixmap_height * font->pixmap_width);
 
 	FileMemoryUnmap(buf, font->size);
@@ -283,7 +283,7 @@ void font_serialize(const struct asset_font *asset, const struct font *font)
 
 #endif
 
-const struct font *font_deserialize(struct asset_font *asset)
+const struct font *FontDeserialize(struct assetFont *asset)
 {
 	//TODO remove later;
 	struct arena tmp = ArenaAlloc1MB();
@@ -319,7 +319,7 @@ const struct font *font_deserialize(struct asset_font *asset)
 	font->pixmap_height = ss_ReadU32Be(&ss);
 	font->glyph_unknown_index = ss_ReadU32Be(&ss);
 	font->glyph_count = ss_ReadU32Be(&ss);
-	font->glyph = malloc(font->glyph_count * sizeof(struct font_glyph));
+	font->glyph = malloc(font->glyph_count * sizeof(struct fontGlyph));
 	font->pixmap = malloc(font->pixmap_width * font->pixmap_height);
 
 	for (u32 i = 0; i < font->glyph_count; ++i)
@@ -347,7 +347,7 @@ const struct font *font_deserialize(struct asset_font *asset)
 	return font;
 }
 
-void font_debug_print(FILE *out, const struct font *font)
+void FontDebugPrint(FILE *out, const struct font *font)
 {
 	fprintf(out, "font:\n{\n");
 	fprintf(out, "\tpixmap_width: %u\n", font->pixmap_width);
@@ -369,10 +369,10 @@ void font_debug_print(FILE *out, const struct font *font)
 	fprintf(out, "}\n");
 }
 
-struct asset_font *asset_database_request_font(struct arena *tmp, const enum font_id id)
+struct assetFont *AssetRequestFont(struct arena *tmp, const enum fontId id)
 {
 	ArenaPushRecord(tmp);
-	struct asset_font *asset = g_asset_db->font[id];
+	struct assetFont *asset = g_asset_db->font[id];
 #ifdef DS_DEV
 	if (!asset->valid)
 	{
@@ -383,15 +383,15 @@ struct asset_font *asset_database_request_font(struct arena *tmp, const enum fon
 			free((void *) asset->font);
 		}
 
-		font_build(tmp, id);
+		FontBuild(tmp, id);
 		asset->valid = 1;
 		asset->loaded = 0;
 	}
 #endif
 	if (!asset->loaded)
 	{
-		asset->font = font_deserialize(asset);
-		//font_debug_print(stderr, asset->font);
+		asset->font = FontDeserialize(asset);
+		//FontDebugPrint(stderr, asset->font);
 	}
 
 	ArenaPopRecord(tmp);
@@ -399,11 +399,11 @@ struct asset_font *asset_database_request_font(struct arena *tmp, const enum fon
 	return asset;
 }
 
-const struct font_glyph *glyph_lookup(const struct font *font, const u32 codepoint)
+const struct fontGlyph *GlyphLookup(const struct font *font, const u32 codepoint)
 {
-	const struct font_glyph *g;
-	u32 index = HashMapFirst(font->codepoint_to_glyph_map, codepoint);	
-	for (; index != HASH_NULL; index = HashMapNext(font->codepoint_to_glyph_map, index))
+	const struct fontGlyph *g;
+	u32 index = HashMapFirst(&font->codepoint_to_glyph_map, codepoint);	
+	for (; index != HASH_NULL; index = HashMapNext(&font->codepoint_to_glyph_map, index))
 	{
 		g = font->glyph + index;
 		if (g->codepoint == codepoint)

@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -18,14 +18,14 @@
 */
 
 #include "asset_local.h"
-#include "Log.h"
+#include "ds_log.h"
 
 struct sprite sprite_storage[SPRITE_COUNT];
 struct sprite *g_sprite = sprite_storage;
 
 #ifdef DS_DEV
 
-static struct asset_png led_png_arr[] =
+static struct assetPng led_png_arr[] =
 {
 	{
 		.filepath = "../asset_components/textures/led_sprite_sheet.png",
@@ -37,7 +37,7 @@ static struct asset_png led_png_arr[] =
 	},
 };
 
-static struct asset_png dynamic_png_arr[] =
+static struct assetPng dynamic_png_arr[] =
 {
 	{
 		.filepath = "../asset_components/textures/sorcerer_hero_sprite_sheet.png",
@@ -49,7 +49,7 @@ static struct asset_png dynamic_png_arr[] =
 	},
 };
 
-static struct asset_ttf hack_regular_ttf =
+static struct assetTtf hack_regular_ttf =
 {
 	.filepath = "../asset_components/ttf/Hack-Regular.ttf",
 	.valid = 0,
@@ -59,7 +59,7 @@ static struct asset_ttf hack_regular_ttf =
 #endif
 
 static u8 none_ssff_pixel[4] = { 0, 0, 0, 0 };
-static struct asset_ssff none_ssff = 
+static struct assetSsff none_ssff = 
 { 
 	.filepath = "",
 	.loaded = 1,
@@ -75,7 +75,7 @@ static struct asset_ssff none_ssff =
 #endif
 };
 
-static struct asset_ssff led_ssff =
+static struct assetSsff led_ssff =
 {
 	.filepath = "../assets/sprites/led.ssff",
 	.texture_id = TEXTURE_LED,
@@ -88,12 +88,12 @@ static struct asset_ssff led_ssff =
 	.height = 512,
 #ifdef DS_DEV
 	.valid = 0,
-	.png_count = sizeof(led_png_arr) / sizeof(struct asset_png),
+	.png_count = sizeof(led_png_arr) / sizeof(struct assetPng),
 	.png = led_png_arr,
 #endif
 };
 
-static struct asset_ssff dynamic_ssff =
+static struct assetSsff dynamic_ssff =
 {
 	.filepath = "../assets/sprites/dynamic.ssff",
 	.texture_id = TEXTURE_DYNAMIC,
@@ -106,12 +106,12 @@ static struct asset_ssff dynamic_ssff =
 	.height = 512,
 #ifdef DS_DEV
 	.valid = 0,
-	.png_count = sizeof(dynamic_png_arr) / sizeof(struct asset_png),
+	.png_count = sizeof(dynamic_png_arr) / sizeof(struct assetPng),
 	.png = dynamic_png_arr,
 #endif
 };
 
-static struct asset_font default_font_small =
+static struct assetFont default_font_small =
 {
 	.filepath = "../assets/fonts/default_small.kasfnt",
 	.loaded = 0,
@@ -127,7 +127,7 @@ static struct asset_font default_font_small =
 #endif
 };
 
-static struct asset_font default_font_medium =
+static struct assetFont default_font_medium =
 {
 	.filepath = "../assets/fonts/default_medium.kasfnt",
 	.loaded = 0,
@@ -143,7 +143,7 @@ static struct asset_font default_font_medium =
 #endif
 };
 
-void dynamic_ssff_set_sprite_parameters(struct asset_ssff *dynamic_ssff, const struct ssff_texture_return *param)
+void DynamicSsffSetSpriteParameters(struct assetSsff *dynamic_ssff, const struct ssffTextureReturn *param)
 {
 	dynamic_ssff->pixel = param->pixel;
 	dynamic_ssff->count = param->count;
@@ -189,7 +189,7 @@ void dynamic_ssff_set_sprite_parameters(struct asset_ssff *dynamic_ssff, const s
 	ds_AssertString(count == param->count, "unexpected sprite count in dynamic sprite sheet, or in hardcoded values");
 }
 
-void led_ssff_set_sprite_parameters(struct asset_ssff *led_ssff, const struct ssff_texture_return *param)
+void LedSsffSetSpriteParameters(struct assetSsff *led_ssff, const struct ssffTextureReturn *param)
 {
 	led_ssff->pixel = param->pixel;
 	led_ssff->count = param->count;
@@ -215,13 +215,13 @@ void led_ssff_set_sprite_parameters(struct asset_ssff *led_ssff, const struct ss
 	ds_AssertString(count == param->count, "unexpected sprite count in level editor sprite sheet, or in hardcoded values");
 }
 
-static struct asset_ssff **internal_asset_ssff_array_init(struct arena *mem_persistent)
+static struct assetSsff **InternalAssetSsffArrayInit(struct arena *mem_persistent)
 {
-	struct asset_ssff **ssff = ArenaPush(mem_persistent, SSFF_COUNT * sizeof(struct asset_ssff *));
+	struct assetSsff **ssff = ArenaPush(mem_persistent, SSFF_COUNT * sizeof(struct assetSsff *));
 	if (ssff == NULL)
 	{
 		LogString(T_ASSET, S_FATAL, "Failed to alloc asset ssff array");
-		FatalCleanupAndExit(ds_ThreadSelfTid());
+		FatalCleanupAndExit();
 	}
 
 	ssff[SSFF_NONE_ID] = &none_ssff;
@@ -231,13 +231,13 @@ static struct asset_ssff **internal_asset_ssff_array_init(struct arena *mem_pers
 	return ssff;
 }
 
-static struct asset_font **internal_asset_font_array_init(struct arena *mem_persistent)
+static struct assetFont **InternalAssetFontArrayInit(struct arena *mem_persistent)
 {
-	struct asset_font **font = ArenaPush(mem_persistent, SSFF_COUNT * sizeof(struct asset_font *));
+	struct assetFont **font = ArenaPush(mem_persistent, SSFF_COUNT * sizeof(struct assetFont *));
 	if (font == NULL)
 	{
 		LogString(T_ASSET, S_FATAL, "Failed to alloc asset font array");
-		FatalCleanupAndExit(ds_ThreadSelfTid());
+		FatalCleanupAndExit();
 	}
 
 	font[FONT_NONE] = NULL, 
@@ -247,27 +247,27 @@ static struct asset_font **internal_asset_font_array_init(struct arena *mem_pers
 	return font;
 }
 
-static struct asset_database storage = { 0 };
-struct asset_database *g_asset_db = &storage;
+static struct assetDatabase storage = { 0 };
+struct assetDatabase *g_asset_db = &storage;
 
-void asset_database_init(struct arena *mem_persistent)
+void AssetInit(struct arena *mem_persistent)
 {
 	g_sprite[SPRITE_NONE].ssff_id = SSFF_NONE_ID;
 	Vec2U32Set(g_sprite[SPRITE_NONE].pixel_size, 1, 1);
 	Vec2Set(g_sprite[SPRITE_NONE].bl, 0.0f, 0.0f);
 	Vec2Set(g_sprite[SPRITE_NONE].tr, 0.0f, 0.0f);
 
-	g_asset_db->ssff = internal_asset_ssff_array_init(mem_persistent);
-	g_asset_db->font = internal_asset_font_array_init(mem_persistent);
+	g_asset_db->ssff = InternalAssetSsffArrayInit(mem_persistent);
+	g_asset_db->font = InternalAssetFontArrayInit(mem_persistent);
 
 #if	DS_DEV
-	internal_freetype_init();
+	InternalFreetypeInit();
 #endif
 }
 
-void asset_database_cleanup(void)
+void AssetShutdown(void)
 {
 #if	DS_DEV
-	internal_freetype_free();
+	InternalFreetypeFree();
 #endif
 }

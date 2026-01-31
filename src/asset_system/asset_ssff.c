@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -24,7 +24,6 @@
 #endif
 
 #include "asset_local.h"
-#include "serialize.h"
 
 #ifdef DS_DEV
 
@@ -79,10 +78,10 @@
  * 	ssff[SSFF_ID].collection[index].sprite[SORCERER_WALK_1] = ...;  // DYNAMIC
  * 	ssff[SSFF_ID].collection[index].sprite[SORCERER_WALK_2] = ...;  // DYNAMIC
  *
- *	ssff_build(SSFF_ID) -> Rebuild ssff completely; if first build, set collection_id for each used material.
+ *	SsffBuild(SSFF_ID) -> Rebuild ssff completely; if first build, set collection_id for each used material.
  */
 
-static void internal_get_sprite_parameters(struct arena *mem, struct ssff_sprite *sprite, u32 *color_count, u32 *color, const u8 *pixel, const u32 pixels_per_line, const u32 sprite_width, const u32 sprite_height, const u32 sprite_index)
+static void internal_get_sprite_parameters(struct arena *mem, struct ssffSprite *sprite, u32 *color_count, u32 *color, const u8 *pixel, const u32 pixels_per_line, const u32 sprite_width, const u32 sprite_height, const u32 sprite_index)
 {
 	//TODO  How to handle?
 	const u32 clip_color = 0x0;
@@ -162,9 +161,9 @@ static void internal_get_sprite_parameters(struct arena *mem, struct ssff_sprite
  * sprite_count - number of sprites in png
  * sprite_id	- array of unique string identifiers of each sprite, in order left->right, top->down in png
  */
-void ssff_build(struct arena *mem, const u32 ssff_id)
+void SsffBuild(struct arena *mem, const u32 ssff_id)
 {
-	struct asset_ssff *info = g_asset_db->ssff[ssff_id];
+	struct assetSsff *info = g_asset_db->ssff[ssff_id];
 
 	ArenaPushRecord(mem);
 	
@@ -174,7 +173,7 @@ void ssff_build(struct arena *mem, const u32 ssff_id)
 	u32 *color_count = ArenaPush(mem, info->png_count * sizeof(u32));
 	u32 **color = ArenaPush(mem, info->png_count * sizeof(u32 *));
 	u32 *sprite_count = ArenaPush(mem, info->png_count * sizeof(u32)); 
-	struct ssff_sprite **sprite = ArenaPush(mem, info->png_count * sizeof(struct ssff_sprite *));
+	struct ssffSprite **sprite = ArenaPush(mem, info->png_count * sizeof(struct ssffSprite *));
 
 	for (u32 i = 0; i < info->png_count; ++i)
 	{
@@ -190,7 +189,7 @@ i32 wi, he, co;
 		ds_Assert(comp == 4);
 		ds_Assert(png_width[i] % info->png[i].sprite_width == 0);
 		sprite_count[i] = png_width[i] / info->png[i].sprite_width;
-		sprite[i] = ArenaPushPacked(mem, sprite_count[i] * sizeof(struct ssff_sprite));
+		sprite[i] = ArenaPushPacked(mem, sprite_count[i] * sizeof(struct ssffSprite));
 		color[i] = (void *) mem->stack_ptr;
 		color_count[i] = 0;
 
@@ -231,9 +230,9 @@ i32 wi, he, co;
 			? hb
 			: hb + 1;
 
-		header->size += c[i].color_count * sizeof(u32) + c[i].sprite_count * sizeof(struct ssff_sprite);
+		header->size += c[i].color_count * sizeof(u32) + c[i].sprite_count * sizeof(struct ssffSprite);
 		u32 *color_table = ArenaPushPacked(mem, c[i].color_count * sizeof(u32));
-		struct ssff_sprite *spr = ArenaPushPacked(mem, c[i].sprite_count * sizeof(struct ssff_sprite)); 
+		struct ssffSprite *spr = ArenaPushPacked(mem, c[i].sprite_count * sizeof(struct ssffSprite)); 
 		c[i].color_offset = (u32) ((u64) color_table - (u64) header);
 		c[i].sprite_offset = (u32) ((u64) spr - (u64) header);
 
@@ -265,7 +264,7 @@ i32 wi, he, co;
 			header->size += c[i].bit_depth*width*height / 8 + 1;
 			void *sprite_pixel = ArenaPushPacked(mem, c[i].bit_depth*width*height / 8 + 1);
 			u32 *color_table = (u32 *) (((u8 *) header) + c[i].color_offset);
-			struct ssff_sprite *spr = (struct ssff_sprite *) (((u8 *) header) + c[i].sprite_offset);
+			struct ssffSprite *spr = (struct ssffSprite *) (((u8 *) header) + c[i].sprite_offset);
 			spr[s].pixel_offset = (u32) ((u64) sprite_pixel - (u64) header);
 
 			struct serialStream stream = ss_Buffered(sprite_pixel, c[i].bit_depth*width*height);
@@ -300,7 +299,7 @@ i32 wi, he, co;
 		}
 	}
 
-	ssff_save(info, header);
+	SsffSave(info, header);
 	for (u32 i = 0; i < info->png_count; ++i)
 	{
 		free(pixel[i]);
@@ -309,7 +308,7 @@ i32 wi, he, co;
 	ArenaPopRecord(mem);
 }
 
-void ssff_save(const struct asset_ssff *asset, const struct ssff_header *header)
+void SsffSave(const struct assetSsff *asset, const struct ssff_header *header)
 {
 	struct arena tmp = ArenaAlloc1MB();
 
@@ -317,7 +316,7 @@ void ssff_save(const struct asset_ssff *asset, const struct ssff_header *header)
 	if (FileTryCreateAtCwd(&tmp, &file, asset->filepath, FILE_TRUNCATE) != FS_SUCCESS)
 	{
 		LogString(T_ASSET, S_FATAL, "Failed to create .ssff file handle");
-		FatalCleanupAndExit(ds_ThreadSelfTid());
+		FatalCleanupAndExit();
 	}
 
 	FileWriteAppend(&file, (u8 *) header, header->size);
@@ -328,7 +327,7 @@ void ssff_save(const struct asset_ssff *asset, const struct ssff_header *header)
 
 #endif
 
-const struct ssff_header *ssff_load(struct asset_ssff *asset)
+const struct ssff_header *SsffLoad(struct assetSsff *asset)
 {
 	struct arena tmp = ArenaAlloc1MB();
 
@@ -339,7 +338,7 @@ const struct ssff_header *ssff_load(struct asset_ssff *asset)
 	return header;
 }
 
-struct ssff_texture_return ssff_texture(struct arena *mem, const struct ssff_header *ssff, const u32 width, const u32 height)
+struct ssffTextureReturn SsffTexture(struct arena *mem, const struct ssff_header *ssff, const u32 width, const u32 height)
 {
 	/* NOTE: BAD: if we add/subtract half widths to uv coordinates, then, as those coordinates gets interpolated
 	 * in the fragment shader, we will get half the wanted pixels to represent borders of the sprite. */
@@ -349,7 +348,7 @@ struct ssff_texture_return ssff_texture(struct arena *mem, const struct ssff_hea
 	//	1.0f / (2.0f * height),
 	//};
 	u8 *pixel = malloc(width*height*sizeof(u32));
-	struct ssff_texture_return ret = 
+	struct ssffTextureReturn ret = 
 	{
 		.pixel = pixel,
 		.sprite = (struct sprite *) mem->stack_ptr,
@@ -360,7 +359,7 @@ struct ssff_texture_return ssff_texture(struct arena *mem, const struct ssff_hea
 	{
 		const struct ssff_collection *c = (struct ssff_collection *)(((u8 *) ssff) + ssff->collection_offset) + i;
 		const u32 *color_table = (u32 *)(((u8 *) ssff) + c->color_offset);
-		const struct ssff_sprite *sprite = (struct ssff_sprite *)(((u8 *) ssff) + c->sprite_offset);
+		const struct ssffSprite *sprite = (struct ssffSprite *)(((u8 *) ssff) + c->sprite_offset);
 		ArenaPushPacked(mem, c[i].sprite_count * sizeof(struct sprite));
 		u32 x_offset = 0;
 		u32 y_offset = 0;
@@ -407,7 +406,7 @@ struct ssff_texture_return ssff_texture(struct arena *mem, const struct ssff_hea
 	return ret;
 }
 
-void ssff_debug_print(FILE *out, const struct ssff_header *ssff)
+void SsffDebugPrint(FILE *out, const struct ssff_header *ssff)
 {
 	fprintf(stderr, "ssff[%p]\n{\n", ssff);
 
@@ -435,7 +434,7 @@ void ssff_debug_print(FILE *out, const struct ssff_header *ssff)
 	for (u32 i = 0; i < ssff->collection_count; ++i)
 	{
 		const u32 *color = (u32 *) (((u8 *) ssff) + c[i].color_offset);
-		const struct ssff_sprite *sprite = (const struct ssff_sprite *) (((u8 *) ssff) + c[i].sprite_offset);
+		const struct ssffSprite *sprite = (const struct ssffSprite *) (((u8 *) ssff) + c[i].sprite_offset);
 		fprintf(stderr, "\tcolor_table[%u]\n\t{\n", c[i].color_offset);
 		for (u32 j = 0; j < c[i].color_count; ++j)
 		{
@@ -461,10 +460,10 @@ void ssff_debug_print(FILE *out, const struct ssff_header *ssff)
 	}
 }
 
-struct asset_ssff *asset_database_request_ssff(struct arena *tmp, const enum ssff_id id)
+struct assetSsff *AssetRequestSsff(struct arena *tmp, const enum ssffId id)
 {
 	ArenaPushRecord(tmp);
-	struct asset_ssff *asset = g_asset_db->ssff[id];
+	struct assetSsff *asset = g_asset_db->ssff[id];
 #ifdef DS_DEV
 	if (!asset->valid)
 	{
@@ -474,19 +473,19 @@ struct asset_ssff *asset_database_request_ssff(struct arena *tmp, const enum ssf
 			asset->pixel = NULL;
 		}
 
-		ssff_build(tmp, id);
+		SsffBuild(tmp, id);
 		asset->valid = 1;
 		asset->loaded = 0;
 	}
 #endif
 	if (!asset->loaded)
 	{
-		asset->ssff = ssff_load(asset);
-		const struct ssff_texture_return ret = ssff_texture(tmp, asset->ssff, asset->width, asset->height);
+		asset->ssff = SsffLoad(asset);
+		const struct ssffTextureReturn ret = SsffTexture(tmp, asset->ssff, asset->width, asset->height);
 		switch (id)
 		{
-			case SSFF_DYNAMIC_ID: { dynamic_ssff_set_sprite_parameters(asset, &ret); } break;
-			case SSFF_LED_ID: { led_ssff_set_sprite_parameters(asset, &ret); } break;
+			case SSFF_DYNAMIC_ID: { DynamicSsffSetSpriteParameters(asset, &ret); } break;
+			case SSFF_LED_ID: { LedSsffSetSpriteParameters(asset, &ret); } break;
 			default: { ds_AssertString(0, "unhandled sprite sheet parameter setting"); } break;
 		}
 		asset->loaded = 1;
@@ -496,7 +495,7 @@ struct asset_ssff *asset_database_request_ssff(struct arena *tmp, const enum ssf
 	return asset;
 }
 
-enum r_texture_id asset_database_sprite_get_texture_id(const enum sprite_id sprite)
+enum rTextureId AssetSpriteGetTextureId(const enum spriteId sprite)
 {
 	return g_asset_db->ssff[g_sprite[sprite].ssff_id]->texture_id;
 }

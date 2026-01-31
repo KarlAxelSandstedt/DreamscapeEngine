@@ -34,7 +34,7 @@ f32 ui_field_f32(const f32 value, const intv range, const utf8 formatted)
 		if (!f32_test_nan(parse_value))
 		{
 			ret = f32_clamp(parse_value, range.low, range.high);
-			cmd_submit_f(g_ui->mem_frame, "ui_text_input_mode_disable \"%k\"", &node->id);
+			CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_mode_disable \"%k\"", &node->id);
 		}
 		else
 		{
@@ -65,7 +65,7 @@ u64 ui_field_u64(const u64 value, const intvu64 range, const utf8 formatted)
 				parse.u64 = range.low;
 			}
 			ret = parse.u64;
-			cmd_submit_f(g_ui->mem_frame, "ui_text_input_mode_disable \"%k\"", &node->id);
+			CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_mode_disable \"%k\"", &node->id);
 		}
 		else
 		{
@@ -95,7 +95,7 @@ i64 ui_field_i64(const i64 value, const intvi64 range, const utf8 formatted)
 				parse.i64 = range.high;
 			}
 			ret = parse.i64;
-			cmd_submit_f(g_ui->mem_frame, "ui_text_input_mode_disable \"%k\"", &node->id);
+			CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_mode_disable \"%k\"", &node->id);
 		}
 		else
 		{
@@ -115,7 +115,7 @@ utf8 ui_field_utf8(const utf8 formatted)
 	if ((node->inter & UI_INTER_FOCUS) && g_ui->inter.key_clicked[DS_ENTER])
 	{
 		ret = Utf8Utf32(g_ui->mem_frame, node->input.text);
-		cmd_submit_f(g_ui->mem_frame, "ui_text_input_mode_disable \"%k\"", &node->id);
+		CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_mode_disable \"%k\"", &node->id);
 	}
 
 	return ret;
@@ -592,7 +592,7 @@ void ui_timeline_row_pop(struct timeline_config *config)
 			row_config->depth_visible.high += depth_offset;
 		}
 
-		cmd_submit_f(g_ui->mem_frame, "timeline_drag %p %li %li %u", config, (i64) g_ui->inter.cursor_delta[0], (i64) g_ui->inter.cursor_delta[1], g_ui->inter.key_pressed[DS_CTRL]);
+		CmdSubmitFormat(g_ui->mem_frame, "timeline_drag %p %li %li %u", config, (i64) g_ui->inter.cursor_delta[0], (i64) g_ui->inter.cursor_delta[1], g_ui->inter.key_pressed[DS_CTRL]);
 	}
 	
 	ui_text_align_x_pop();
@@ -657,8 +657,8 @@ void ui_cmd_console(struct cmd_console *console, const char *fmt, ...)
 
 	if ((line->inter & UI_INTER_FOCUS) && g_ui->inter.key_clicked[DS_ENTER])
 	{
-		cmd_submit_utf8(Utf8Utf32(g_ui->mem_frame, console->prompt.text));
-		cmd_submit_f(g_ui->mem_frame, "ui_text_input_flush \"%k\"", &line->id);
+		CmdSubmitUtf8(Utf8Utf32(g_ui->mem_frame, console->prompt.text));
+		CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_flush \"%k\"", &line->id);
 	}
 }
 
@@ -684,7 +684,7 @@ void ui_popup_build(void)
 
 	/* set for the duration of this function, window, ui, cmd globals */
 	system_window_set_global(popup->window);
-	cmd_queue_execute();
+	CmdQueueExecute();
 
 	ui_frame_begin(win->size, visual);
 	ui_text_align_x(ALIGN_X_CENTER)
@@ -717,12 +717,12 @@ void ui_popup_build(void)
 						
 					if (line->inter & UI_INTER_LEFT_CLICK)
 					{
-						cmd_submit_f(g_ui->mem_frame, "ui_text_input_mode_enable \"%k\" %p", &line->id, popup->prompt);
+						CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_mode_enable \"%k\" %p", &line->id, popup->prompt);
 					}
 
 					if ((line->inter & UI_INTER_FOCUS) && g_ui->inter.key_clicked[DS_ENTER] && popup->state != UI_POPUP_STATE_PENDING_VERIFICATION)
 					{
-						cmd_submit_f(g_ui->mem_frame, "ui_text_input_mode_disable \"%k\"", &line->id);
+						CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_mode_disable \"%k\"", &line->id);
 						*popup->input = Utf8Utf32Buffered(popup->input->buf, popup->input->size, popup->prompt->text);
 						popup->state = UI_POPUP_STATE_PENDING_VERIFICATION;
 					}
@@ -779,7 +779,7 @@ void ui_popup_build(void)
 	system_window_set_global(parent);
 	g_queue->regs[0].ptr = popup;
 	g_queue->regs[1].ptr = visual;
-	cmd_submit_next_frame(cmd_ui_popup_build);
+	CmdSubmitNextFrame(cmd_ui_popup_build);
 }
 
 
@@ -812,7 +812,7 @@ void ui_popup_utf8_display(struct ui_popup *popup, const utf8 display, const cha
 
 			g_queue->regs[0].ptr = popup;
 			g_queue->regs[1].ptr = (void *) visual;
-			cmd_submit(cmd_ui_popup_build);
+			CmdSubmit(cmd_ui_popup_build);
 		}
 	}
 }
@@ -834,7 +834,7 @@ void ui_popup_utf8_input(struct ui_popup *popup, utf8 *input, struct ui_text_inp
 
 			g_queue->regs[0].ptr = popup;
 			g_queue->regs[1].ptr = (void *) visual;
-			cmd_submit(cmd_ui_popup_build);
+			CmdSubmit(cmd_ui_popup_build);
 		}
 	}
 }
@@ -858,14 +858,14 @@ void ui_popup_choice(struct ui_popup *popup, const utf8 description, const utf8 
 
 			g_queue->regs[0].ptr = popup;
 			g_queue->regs[1].ptr = (void *) visual;
-			cmd_submit(cmd_ui_popup_build);
+			CmdSubmit(cmd_ui_popup_build);
 		}
 	}
 }
 
 void ui_text_op(void)
 {
-	const enum ds_keycode key = g_queue->cmd_exec->arg[0].u32;
+	const enum dsKeycode key = g_queue->cmd_exec->arg[0].u32;
 	const u32 mod = g_queue->cmd_exec->arg[1].u32;
 	const utf8 replace = g_queue->cmd_exec->arg[2].utf8;
 

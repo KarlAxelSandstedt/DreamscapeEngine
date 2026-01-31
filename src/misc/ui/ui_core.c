@@ -61,12 +61,12 @@ u32	cmd_ui_popup_build;
 
 void ui_init_global_state(void)
 {
-	cmd_function_register(Utf8Inline("timeline_drag"), 4, &timeline_drag);
-	cmd_function_register(Utf8Inline("ui_text_input_mode_enable"), 2, &ui_text_input_mode_enable);
-	cmd_function_register(Utf8Inline("ui_text_input_flush"), 1, &ui_text_input_flush);
-	cmd_function_register(Utf8Inline("ui_text_input_mode_disable"), 1, &ui_text_input_mode_disable);
-	cmd_ui_text_op = cmd_function_register(Utf8Inline("ui_text_op"), 3, &ui_text_op).index;
-	cmd_ui_popup_build = cmd_function_register(Utf8Inline("ui_popup_build"), 2, &ui_popup_build).index;
+	CmdFunctionRegister(Utf8Inline("timeline_drag"), 4, &timeline_drag);
+	CmdFunctionRegister(Utf8Inline("ui_text_input_mode_enable"), 2, &ui_text_input_mode_enable);
+	CmdFunctionRegister(Utf8Inline("ui_text_input_flush"), 1, &ui_text_input_flush);
+	CmdFunctionRegister(Utf8Inline("ui_text_input_mode_disable"), 1, &ui_text_input_mode_disable);
+	cmd_ui_text_op = CmdFunctionRegister(Utf8Inline("ui_text_op"), 3, &ui_text_op).index;
+	cmd_ui_popup_build = CmdFunctionRegister(Utf8Inline("ui_popup_build"), 2, &ui_popup_build).index;
 }
 
 struct ui_visual ui_visual_init(const vec4 background_color
@@ -77,7 +77,7 @@ struct ui_visual ui_visual_init(const vec4 background_color
 		, const f32 edge_softness
 		, const f32 corner_radius
 		, const f32 border_size
-		, const enum font_id font
+		, const enum fontId font
 		, const enum alignment_x text_alignment_x
 		, const enum alignment_y text_alignment_y
 		, const f32 text_pad_x
@@ -128,8 +128,8 @@ struct ui *ui_alloc(void)
 	ui->bucket_pool = PoolAlloc(NULL, 64, struct ui_draw_bucket, GROWABLE);
 	ui->bucket_list = dll_Init(struct ui_draw_bucket);
 	ui->bucket_map = HashMapAlloc(NULL, 128, 128, GROWABLE);
-	ui->event_pool = PoolAlloc(NULL, 32, struct system_event, GROWABLE);
-	ui->event_list = dll_Init(struct system_event);
+	ui->event_pool = PoolAlloc(NULL, 32, struct dsEvent, GROWABLE);
+	ui->event_list = dll_Init(struct dsEvent);
 	ui->frame = 0;
 	ui->root = HI_ROOT_STUB_INDEX;
 	ui->node_count_prev_frame = 0;
@@ -427,7 +427,7 @@ static void ui_childsum_layout_size_and_prune_nodes(void)
 	stack_ptr stack_childsum_x = stack_ptr_alloc(g_ui->mem_frame, g_ui->node_count_frame, 0);
 	stack_ptr stack_childsum_y = stack_ptr_alloc(g_ui->mem_frame, g_ui->node_count_frame, 0);
 
-	struct hiIterator	it = hi_IteratorInit(g_ui->mem_frame, g_ui->node_hierarchy, g_ui->root);
+	struct hiIterator	it = hi_IteratorAlloc(g_ui->mem_frame, g_ui->node_hierarchy, g_ui->root);
 	while(it.count)
 	{
 		//const u32 potential_next = hi_IteratorPeek(&it);
@@ -629,7 +629,7 @@ static void ui_node_solve_child_violation(struct ui_node *node, const enum axis_
 static void ui_solve_violations(void)
 {
 	struct arena tmp = ArenaAlloc1MB();
-	struct hiIterator	it = hi_IteratorInit(&tmp, g_ui->node_hierarchy, g_ui->root);
+	struct hiIterator	it = hi_IteratorAlloc(&tmp, g_ui->node_hierarchy, g_ui->root);
 	while(it.count)
 	{
 		const u32 index = hi_IteratorNextDf(&it);
@@ -645,7 +645,7 @@ static void ui_solve_violations(void)
 static void ui_layout_absolute_position(void)
 {
 	struct arena tmp = ArenaAlloc1MB();
-	struct hiIterator	it = hi_IteratorInit(&tmp, g_ui->node_hierarchy, g_ui->root);
+	struct hiIterator	it = hi_IteratorAlloc(&tmp, g_ui->node_hierarchy, g_ui->root);
 
 	struct ui_node *node = hi_Address(g_ui->node_hierarchy, g_ui->root);
 	node->pixel_position[0] = node->layout_position[0];
@@ -1000,7 +1000,7 @@ static struct slot ui_text_selection_alloc(const struct ui_node *node, const vec
 	const u32 index = g_ui->frame_stack_text_selection.next;
 	stack_ui_text_selection_push(&g_ui->frame_stack_text_selection, selection);
 
-	const u32 draw_key = UI_DRAW_COMMAND(node->depth, UI_CMD_LAYER_TEXT_SELECTION, asset_database_sprite_get_texture_id(node->sprite));
+	const u32 draw_key = UI_DRAW_COMMAND(node->depth, UI_CMD_LAYER_TEXT_SELECTION, AssetSpriteGetTextureId(node->sprite));
 	ui_draw_bucket_add_node(draw_key, index);
 	return (struct slot) { .index = index, .address = g_ui->frame_stack_text_selection.arr + index };
 }
@@ -1076,7 +1076,7 @@ void ui_frame_end(void)
 
 		if (text_input->last_frame_touched != g_ui->frame || (text_input->inter & UI_INTER_FOCUS) == 0)
 		{
-			cmd_submit_f(g_ui->mem_frame, "ui_text_input_mode_disable \"%k\"", &g_ui->inter.text_edit_id);
+			CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_mode_disable \"%k\"", &g_ui->inter.text_edit_id);
 		}
 		else
 		{
@@ -1223,8 +1223,8 @@ static u32 internal_ui_pad(const u64 flags, const f32 value, const enum ui_size_
 	if (node->flags & UI_DRAW_FLAGS)
 	{
 		const u32 draw_key = (node->flags & UI_INTER_FLAGS)
-			? UI_DRAW_COMMAND(node->depth, UI_CMD_LAYER_INTER, asset_database_sprite_get_texture_id(node->sprite))
-			: UI_DRAW_COMMAND(node->depth, UI_CMD_LAYER_VISUAL, asset_database_sprite_get_texture_id(node->sprite));
+			? UI_DRAW_COMMAND(node->depth, UI_CMD_LAYER_INTER, AssetSpriteGetTextureId(node->sprite))
+			: UI_DRAW_COMMAND(node->depth, UI_CMD_LAYER_VISUAL, AssetSpriteGetTextureId(node->sprite));
 		ui_draw_bucket_add_node(draw_key, slot.index);
 	}
 
@@ -1456,14 +1456,14 @@ struct ui_node_cache ui_node_alloc_cached(const u64 flags, const utf8 id, const 
 	if (node->flags & UI_DRAW_FLAGS)
 	{
 		const u32 draw_key = (node->flags & UI_INTER_FLAGS)
-			? UI_DRAW_COMMAND(node->depth, UI_CMD_LAYER_INTER, asset_database_sprite_get_texture_id(node->sprite))
-			: UI_DRAW_COMMAND(node->depth, UI_CMD_LAYER_VISUAL, asset_database_sprite_get_texture_id(node->sprite));
+			? UI_DRAW_COMMAND(node->depth, UI_CMD_LAYER_INTER, AssetSpriteGetTextureId(node->sprite))
+			: UI_DRAW_COMMAND(node->depth, UI_CMD_LAYER_VISUAL, AssetSpriteGetTextureId(node->sprite));
 		ui_draw_bucket_add_node(draw_key, slot.index);
 	}
 
 	if (node->flags & UI_DRAW_TEXT)
 	{
-		const struct asset_font *asset = stack_ptr_top(&g_ui->stack_font);
+		const struct assetFont *asset = stack_ptr_top(&g_ui->stack_font);
 		stack_vec4_top(node->sprite_color, &g_ui->stack_sprite_color);
 		node->flags |= UI_TEXT_ATTACHED;
 		node->font = asset->font;
@@ -1501,11 +1501,11 @@ struct ui_node_cache ui_node_alloc_cached(const u64 flags, const utf8 id, const 
 							node->input.cursor = copy.len;
 						}
 					}
-					cmd_submit_f(g_ui->mem_frame, "ui_text_input_mode_enable \"%k\" %p", &node->id, &node->input);
+					CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_mode_enable \"%k\" %p", &node->id, &node->input);
 				}
 				else
 				{
-					cmd_submit_f(g_ui->mem_frame, "ui_text_input_mode_enable \"%k\" %p", &node->id, stack_ptr_top(&g_ui->stack_external_text_input));
+					CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_mode_enable \"%k\" %p", &node->id, stack_ptr_top(&g_ui->stack_external_text_input));
 				}
 			}
 			else
@@ -1769,14 +1769,14 @@ struct slot ui_node_alloc(const u64 flags, const utf8 *formatted)
 	if (node->flags & UI_DRAW_FLAGS)
 	{
 		const u32 draw_key = (node->flags & UI_INTER_FLAGS)
-			? UI_DRAW_COMMAND(node->depth, UI_CMD_LAYER_INTER, asset_database_sprite_get_texture_id(node->sprite))
-			: UI_DRAW_COMMAND(node->depth, UI_CMD_LAYER_VISUAL, asset_database_sprite_get_texture_id(node->sprite));
+			? UI_DRAW_COMMAND(node->depth, UI_CMD_LAYER_INTER, AssetSpriteGetTextureId(node->sprite))
+			: UI_DRAW_COMMAND(node->depth, UI_CMD_LAYER_VISUAL, AssetSpriteGetTextureId(node->sprite));
 		ui_draw_bucket_add_node(draw_key, slot.index);
 	}
 
 	if (node->flags & UI_DRAW_TEXT)
 	{
-		const struct asset_font *asset = stack_ptr_top(&g_ui->stack_font);
+		const struct assetFont *asset = stack_ptr_top(&g_ui->stack_font);
 		stack_vec4_top(node->sprite_color, &g_ui->stack_sprite_color);
 		node->flags |= UI_TEXT_ATTACHED;
 		node->font = asset->font;
@@ -1814,11 +1814,11 @@ struct slot ui_node_alloc(const u64 flags, const utf8 *formatted)
 							node->input.cursor = copy.len;
 						}
 					}
-					cmd_submit_f(g_ui->mem_frame, "ui_text_input_mode_enable \"%k\" %p", &node->id, &node->input);
+					CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_mode_enable \"%k\" %p", &node->id, &node->input);
 				}
 				else
 				{
-					cmd_submit_f(g_ui->mem_frame, "ui_text_input_mode_enable \"%k\" %p", &node->id, stack_ptr_top(&g_ui->stack_external_text_input));
+					CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_mode_enable \"%k\" %p", &node->id, stack_ptr_top(&g_ui->stack_external_text_input));
 				}
 			}
 			else
@@ -2121,15 +2121,15 @@ void ui_gradient_color_pop(const enum box_corner corner)
 	stack_vec4_pop(g_ui->stack_gradient_color + corner);
 }
 
-void ui_font_push(const enum font_id font)
+void ui_font_push(const enum fontId font)
 {
-	struct asset_font *asset = asset_database_request_font(g_ui->mem_frame, font);
+	struct assetFont *asset = AssetRequestFont(g_ui->mem_frame, font);
 	stack_ptr_push(&g_ui->stack_font, asset);
 }
 
-void ui_font_set(const enum font_id font)
+void ui_font_set(const enum fontId font)
 {
-	struct asset_font *asset = asset_database_request_font(g_ui->mem_frame, font);
+	struct assetFont *asset = AssetRequestFont(g_ui->mem_frame, font);
 	stack_ptr_set(&g_ui->stack_font, asset);
 }
 
@@ -2138,12 +2138,12 @@ void ui_font_pop(void)
 	stack_ptr_pop(&g_ui->stack_font);
 }
 
-void ui_sprite_push(const enum sprite_id sprite)
+void ui_sprite_push(const enum spriteId sprite)
 {
 	stack_u32_push(&g_ui->stack_sprite, sprite);
 }
 
-void ui_sprite_set(const enum sprite_id sprite)
+void ui_sprite_set(const enum spriteId sprite)
 {
 	stack_u32_set(&g_ui->stack_sprite, sprite);
 }

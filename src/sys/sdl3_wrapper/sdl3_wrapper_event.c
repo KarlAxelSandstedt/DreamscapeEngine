@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -18,9 +18,8 @@
 */
 
 #include "sdl3_wrapper_local.h"
-#include "sys_public.h"
 
-u32 sdl3_wrapper_event_consume(struct system_event *event)
+u32 sdl3_EventConsume(struct dsEvent *event)
 {
 	u32 event_exists = 0; 
 
@@ -34,7 +33,7 @@ u32 sdl3_wrapper_event_consume(struct system_event *event)
 		{
 			case SDL_EVENT_TEXT_INPUT:
 			{
-				event->type = SYSTEM_TEXT_INPUT;
+				event->type = DS_TEXT_INPUT;
 				//event->utf32 = decode_utf8_null_terminated_buffered(ThreadAlloc256B(), 256 / 4, (u8 *) ev.text.text);
 				event->utf8.buf = (u8 *) ev.text.text;
 				event->utf8.len = 0;
@@ -48,73 +47,73 @@ u32 sdl3_wrapper_event_consume(struct system_event *event)
 
 			case SDL_EVENT_WINDOW_MOUSE_ENTER:
 			{
-				event->type = SYSTEM_WINDOW_CURSOR_ENTER;
+				event->type = DS_WINDOW_CURSOR_ENTER;
 			} break;
 
 			case SDL_EVENT_WINDOW_MOUSE_LEAVE:
 			{
-				event->type = SYSTEM_WINDOW_CURSOR_LEAVE;
+				event->type = DS_WINDOW_CURSOR_LEAVE;
 			} break;
 
 			case SDL_EVENT_WINDOW_FOCUS_GAINED:
 			{
-				event->type = SYSTEM_WINDOW_FOCUS_IN;
+				event->type = DS_WINDOW_FOCUS_IN;
 			} break;
 
 			case SDL_EVENT_WINDOW_FOCUS_LOST:
 			{
-				event->type = SYSTEM_WINDOW_FOCUS_OUT;
+				event->type = DS_WINDOW_FOCUS_OUT;
 			} break;
 
 			case SDL_EVENT_WINDOW_MOVED:
 			case SDL_EVENT_WINDOW_RESIZED:
 			{
-				event->type = SYSTEM_WINDOW_CONFIG;
+				event->type = DS_WINDOW_CONFIG;
 			} break;
 
 			case SDL_EVENT_MOUSE_MOTION:
 			{
-				event->type = SYSTEM_CURSOR_POSITION;
+				event->type = DS_CURSOR_POSITION;
 				Vec2Set(event->native_cursor_window_position, ev.motion.x, ev.motion.y);
 				Vec2Set(event->native_cursor_window_delta,  ev.motion.xrel, ev.motion.yrel);
 			} break;
 
 			case SDL_EVENT_MOUSE_WHEEL:
 			{
-				event->type = SYSTEM_SCROLL;
+				event->type = DS_SCROLL;
 				event->scroll.direction = (ev.wheel.y > 0.0f) ? MOUSE_SCROLL_UP : MOUSE_SCROLL_DOWN;
 				event->scroll.count= (ev.wheel.integer_y > 0) ? ev.wheel.integer_y : -ev.wheel.integer_y;
 			} break;
 
 			case SDL_EVENT_MOUSE_BUTTON_UP:
 			{
-				event->type = SYSTEM_BUTTON_RELEASED;
-				event->button = sdl3_wrapper_to_system_mouse_button(ev.button.button);
+				event->type = DS_BUTTON_RELEASED;
+				event->button = sdl3_DsMouseButton(ev.button.button);
 			} break;
 
 			case SDL_EVENT_MOUSE_BUTTON_DOWN:
 			{
-				event->type = SYSTEM_BUTTON_PRESSED;
-				event->button = sdl3_wrapper_to_system_mouse_button(ev.button.button);
+				event->type = DS_BUTTON_PRESSED;
+				event->button = sdl3_DsMouseButton(ev.button.button);
 			} break;
 
 			case SDL_EVENT_KEY_UP:
 			{
-				event->type = SYSTEM_KEY_RELEASED;
-				event->keycode = sdl3_wrapper_to_system_keycode(ev.key.key);
-				event->scancode = sdl3_wrapper_to_system_scancode(ev.key.scancode);
+				event->type = DS_KEY_RELEASED;
+				event->keycode = sdl3_DsKeycode(ev.key.key);
+				event->scancode = sdl3_DsScancode(ev.key.scancode);
 			} break;
 
 			case SDL_EVENT_KEY_DOWN:
 			{
-				event->type = SYSTEM_KEY_PRESSED;
-				event->keycode = sdl3_wrapper_to_system_keycode(ev.key.key);
-				event->scancode = sdl3_wrapper_to_system_scancode(ev.key.scancode);
+				event->type = DS_KEY_PRESSED;
+				event->keycode = sdl3_DsKeycode(ev.key.key);
+				event->scancode = sdl3_DsScancode(ev.key.scancode);
 			} break;
 
 			case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
 			{
-				event->type = SYSTEM_WINDOW_CLOSE;
+				event->type = DS_WINDOW_CLOSE;
 			} break;
 
 			default:

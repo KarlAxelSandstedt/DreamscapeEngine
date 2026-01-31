@@ -127,7 +127,7 @@ static void internal_r_proxy3d_local_speculative_orientation(struct r_proxy3d *p
 
 void r_proxy3d_hierarchy_speculate(struct arena *mem, const u64 ns_time)
 {
-	struct hiIterator it = hi_IteratorInit(mem, g_r_core->proxy3d_hierarchy, g_r_core->proxy3d_root);
+	struct hiIterator it = hi_IteratorAlloc(mem, g_r_core->proxy3d_hierarchy, g_r_core->proxy3d_root);
 	// skip root stub 
 	hi_IteratorNextDf(&it);
 	while (it.count)

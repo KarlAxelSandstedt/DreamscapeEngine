@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -20,21 +20,26 @@
 #ifndef __DS_SDL3_WRAPPER_LOCAL_H__
 #define __DS_SDL3_WRAPPER_LOCAL_H__
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "SDL3/SDL.h"
 
 #undef LogWriteMessage
 
-#include "sys_common.h"
-#include "sys_gl.h"
+#include "ds_platform.h"
 #include "sdl3_wrapper_public.h"
 
-u32 			sdl3_wrapper_event_consume(struct system_event *event);
+void			sdl3_GlFunctionsInit(struct gl_functions *func);
+u32 			sdl3_EventConsume(struct dsEvent *event);
+u32 			sdl3_KeyModifiers(void);
+enum mouseButton	sdl3_DsMouseButton(const u8 mouse_button);
+enum dsKeycode		sdl3_DsKeycode(const SDL_Keycode sdl_key);
+enum dsKeycode 	sdl3_DsScancode(const SDL_Scancode sdl_key);
 
-u32 			sdl3_wrapper_key_modifiers(void);
-enum mouse_button	sdl3_wrapper_to_system_mouse_button(const u8 mouse_button);
-enum ds_keycode	sdl3_wrapper_to_system_keycode(const SDL_Keycode sdl_key);
-enum ds_keycode 	sdl3_wrapper_to_system_scancode(const SDL_Scancode sdl_key);
-
-void 			sdl3_wrapper_gl_functions_init(struct gl_functions *func);
+#ifdef __cplusplus
+}
+#endif
 
 #endif

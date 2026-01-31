@@ -198,7 +198,7 @@ void r_init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_siz
 	g_r_core->texture[TEXTURE_STUB].handle = 0;
 
 	ArenaPushRecord(mem_persistent);
-	const struct asset_font *a_f = asset_database_request_font(&g_r_core->frame, FONT_DEFAULT_SMALL);
+	const struct assetFont *a_f = AssetRequestFont(&g_r_core->frame, FONT_DEFAULT_SMALL);
 	u32 w = a_f->font->pixmap_width;
 	u32 h = a_f->font->pixmap_height;
 	u8 *pixel8 = a_f->font->pixmap;
@@ -217,7 +217,7 @@ void r_init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_siz
 	ds_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	ds_glGenerateMipmap(GL_TEXTURE_2D);
 
-	a_f = asset_database_request_font(&g_r_core->frame, FONT_DEFAULT_MEDIUM);
+	a_f = AssetRequestFont(&g_r_core->frame, FONT_DEFAULT_MEDIUM);
 	w = a_f->font->pixmap_width;
 	h = a_f->font->pixmap_height;
 	pixel8 = a_f->font->pixmap;
@@ -238,7 +238,7 @@ void r_init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_siz
 
 	ArenaPopRecord(mem_persistent);
 
-	struct asset_ssff *asset = asset_database_request_ssff(&g_r_core->frame, SSFF_LED_ID);
+	struct assetSsff *asset = AssetRequestSsff(&g_r_core->frame, SSFF_LED_ID);
 	ds_glGenTextures(1, &g_r_core->texture[TEXTURE_LED].handle);
 	ds_glActiveTexture(GL_TEXTURE0 + 2);
 	ds_glBindTexture(GL_TEXTURE_2D, g_r_core->texture[TEXTURE_LED].handle);
@@ -247,7 +247,7 @@ void r_init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_siz
 	ds_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	ds_glGenerateMipmap(GL_TEXTURE_2D);
 
-	asset = asset_database_request_ssff(&g_r_core->frame, SSFF_NONE_ID);
+	asset = AssetRequestSsff(&g_r_core->frame, SSFF_NONE_ID);
 	ds_glGenTextures(1, &g_r_core->texture[TEXTURE_NONE].handle);
 	ds_glActiveTexture(GL_TEXTURE0 + 3);
 	ds_glBindTexture(GL_TEXTURE_2D, g_r_core->texture[TEXTURE_NONE].handle);

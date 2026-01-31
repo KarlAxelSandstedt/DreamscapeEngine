@@ -29,7 +29,7 @@
 #include "string_database.h"
 #include "array_list.h"
 #include "list.h"
-#include "sys_gl.h"
+#include "ds_gl.h"
 
 #define L_POSITION_OFFSET	0
 #define L_COLOR_OFFSET		(sizeof(vec3))

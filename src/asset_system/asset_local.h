@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,12 +17,17 @@
 ==========================================================================
 */
 
-#ifndef __ASSET_LOCAL_H__
-#define __ASSET_LOCAL_H__
+#ifndef __DS_ASSET_LOCAL_H__
+#define __DS_ASSET_LOCAL_H__
 
+#ifdef __cplusplus
+extern "C" { 
+#endif
+
+#include <stdio.h>
+
+#include "ds_base.h"
 #include "asset_public.h"
-#include "sys_public.h"
-#include "serialize.h"
 
 /***************************** SPIRTE SHEET FILE FORMAT *****************************/
 
@@ -76,7 +81,7 @@ struct ssff_collection
 };
 
 /*
- * ssff_sprite - local sprite within a ssff_collection; indexable according to the ssff_collection's hardcoded
+ * ssffSprite - local sprite within a ssff_collection; indexable according to the ssff_collection's hardcoded
  * 	identififer. For example, collection[sorcerer_collection_id].sprite[SORCERER_WALK_1]. pixel coordinates
  * 	follows the following rule: x0 < x1, y0 < y1 and 
  *
@@ -88,7 +93,7 @@ struct ssff_collection
  * 	   |					|
  * 	(x0,y1) --------------------------- (x1, y1) 
  */
-struct ssff_sprite
+struct ssffSprite
 {
 	u32 	x0;		
 	u32 	x1;
@@ -97,7 +102,7 @@ struct ssff_sprite
 	u32	pixel_offset;		/* file offest to pixel data, stored left-right, top-down */
 };
 
-struct ssff_texture_return
+struct ssffTextureReturn
 {
 	void *		pixel;	/* pixel opengl texture data 				*/
 	struct sprite *	sprite;	/* sprite information is order of sprite generation 	*/
@@ -106,16 +111,16 @@ struct ssff_texture_return
 
 #ifdef	DS_DEV
 /* build a ssff file header and save it to disk. replace clip color with { 0, 0, 0, 0 } color */
-void				ssff_build(struct arena *mem, const u32 ssff_id);
+void				SsffBuild(struct arena *mem, const u32 ssff_id);
 /* save ssff to disk  */
-void 				ssff_save(const struct asset_ssff *asset, const struct ssff_header *ssff);
+void 				SsffSave(const struct assetSsff *asset, const struct ssff_header *ssff);
 #endif
 /* heap allocate and load ssff from disk on success, return NULL on failure */
-const struct ssff_header *	ssff_load(struct asset_ssff *asset);
+const struct ssff_header *	SsffLoad(struct assetSsff *asset);
 /* heap allocate and construct texture with given width and height from ssff data. push, in order of generation, texture coordinates onto arena, and return values. */
-struct ssff_texture_return 	ssff_texture(struct arena *mem, const struct ssff_header *ssff, const u32 width, const u32 height);
+struct ssffTextureReturn 	SsffTexture(struct arena *mem, const struct ssff_header *ssff, const u32 width, const u32 height);
 /* verbosely print ssff contents */
-void				ssff_debug_print(FILE *out, const struct ssff_header *ssff);
+void				SsffDebugPrint(FILE *out, const struct ssff_header *ssff);
 
 /***************************** asset_font.c *****************************/
 
@@ -149,23 +154,27 @@ void				ssff_debug_print(FILE *out, const struct ssff_header *ssff);
 
 #ifdef	DS_DEV
 /* initalize freetype library resources */
-void				internal_freetype_init(void);
+void				InternalFreetypeInit(void);
 /* release freetype library resources */
-void				internal_freetype_free(void);
+void				InternalFreetypeFree(void);
 /* build a font file header and save it to disk. */
-void				font_build(struct arena *mem, const u32 font_id);
+void				FontBuild(struct arena *mem, const u32 font_id);
 /* save font to disk  */
-void 				font_serialize(const struct asset_font *asset, const struct font *font);
+void 				FontSerialize(const struct assetFont *asset, const struct font *font);
 #endif
 /* heap allocate and load font from disk on success, return NULL on failure */
-const struct font *		font_deserialize(struct asset_font *asset);
+const struct font *		FontDeserialize(struct assetFont *asset);
 /* debug print .kasfnt file to console */
-void 				font_debug_print(FILE *out, const struct font *font);
+void 				FontDebugPrint(FILE *out, const struct font *font);
 
 /***************************** asset_init.c *****************************/
 
 /* set parameters of hardcoded order of sprites in ssff */
-void 	dynamic_ssff_set_sprite_parameters(struct asset_ssff *dynamic_ssff, const struct ssff_texture_return *param);
-void 	led_ssff_set_sprite_parameters(struct asset_ssff *led_ssff, const struct ssff_texture_return *param);
+void 	DynamicSsffSetSpriteParameters(struct assetSsff *dynamic_ssff, const struct ssffTextureReturn *param);
+void 	LedSsffSetSpriteParameters(struct assetSsff *led_ssff, const struct ssffTextureReturn *param);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

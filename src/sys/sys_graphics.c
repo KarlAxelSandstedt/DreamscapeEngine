@@ -32,9 +32,9 @@ static void system_window_free_resources(struct system_window *sys_win)
 	gl_state_free(sys_win->gl_state);
 	ui_dealloc(sys_win->ui);
 	r_scene_free(sys_win->r_scene);
-	cmd_queue_free(sys_win->cmd_queue);
+	CmdQueueDealloc(sys_win->cmd_queue);
 	ArenaFree1MB(&sys_win->mem_persistent);
-	native_window_destroy(sys_win->native);
+	NativeWindowDestroy(sys_win->native);
 }
 
 u32 system_window_alloc(const char *title, const vec2u32 position, const vec2u32 size, const u32 parent)
@@ -45,11 +45,11 @@ u32 system_window_alloc(const char *title, const vec2u32 position, const vec2u32
 	struct system_window *sys_win = slot.address;
 
 	sys_win->mem_persistent = ArenaAlloc1MB();
-	sys_win->native = native_window_create(&sys_win->mem_persistent, (const char *) title, position, size);
+	sys_win->native = NativeWindowCreate(&sys_win->mem_persistent, (const char *) title, position, size);
 
 	sys_win->ui = ui_alloc();
 	sys_win->r_scene = r_scene_alloc();
-	sys_win->cmd_queue = cmd_queue_alloc();
+	sys_win->cmd_queue = CmdQueueAlloc();
 	sys_win->cmd_console = ArenaPushZero(&sys_win->mem_persistent, sizeof(struct cmd_console));
 	sys_win->cmd_console->prompt = ui_text_input_alloc(&sys_win->mem_persistent, 256);
 	sys_win->tagged_for_destruction = 0;
@@ -58,7 +58,7 @@ u32 system_window_alloc(const char *title, const vec2u32 position, const vec2u32
 	if (slot.index == 2)
 	{
 		/* root window */
-		native_window_gl_set_current(sys_win->native);
+		NativeWindowGlSetCurrent(sys_win->native);
 		sys_win->gl_state = gl_state_alloc();
 		gl_state_set_current(sys_win->gl_state);
 	}
@@ -66,11 +66,11 @@ u32 system_window_alloc(const char *title, const vec2u32 position, const vec2u32
 	{
 		/* set context before we initalize gl function pointers ***POSSIBLY*** Local to the new context on 
 		 * som platforms */
-		native_window_gl_set_current(sys_win->native);
+		NativeWindowGlSetCurrent(sys_win->native);
 		sys_win->gl_state = gl_state_alloc();
 
 		struct system_window *root = hi_Address(g_window_hierarchy, g_process_root_window);
-		native_window_gl_set_current(root->native);
+		NativeWindowGlSetCurrent(root->native);
 	}
 
 	system_window_config_update(slot.index);
@@ -81,7 +81,7 @@ u32 system_window_alloc(const char *title, const vec2u32 position, const vec2u32
 void system_window_tag_sub_hierarchy_for_destruction(const u32 root)
 {
 	struct arena tmp = ArenaAlloc1MB();
-	struct hiIterator	it = hi_IteratorInit(&tmp, g_window_hierarchy, root);
+	struct hiIterator	it = hi_IteratorAlloc(&tmp, g_window_hierarchy, root);
 	while (it.count)
 	{
 		const u32 index = hi_IteratorNextDf(&it);
@@ -104,7 +104,7 @@ void system_free_tagged_windows(void)
 {
 	struct arena tmp1 = ArenaAlloc1MB();
 	struct arena tmp2 = ArenaAlloc1MB();
-	struct hiIterator	it = hi_IteratorInit(&tmp1, g_window_hierarchy, g_process_root_window);
+	struct hiIterator	it = hi_IteratorAlloc(&tmp1, g_window_hierarchy, g_process_root_window);
 	while (it.count)
 	{
 		const u32 index = hi_IteratorPeek(&it);
@@ -131,12 +131,12 @@ struct slot system_window_lookup(const u64 native_handle)
 	u32 index = U32_MAX;
 
 	struct arena tmp = ArenaAlloc1MB();
-	struct hiIterator	it = hi_IteratorInit(&tmp, g_window_hierarchy, g_process_root_window);
+	struct hiIterator	it = hi_IteratorAlloc(&tmp, g_window_hierarchy, g_process_root_window);
 	while (it.count)
 	{
 		const u32 win_index = hi_IteratorNextDf(&it);
 		struct system_window *sys_win = hi_Address(g_window_hierarchy, win_index);
-		if (native_window_get_native_handle(sys_win->native) == native_handle)
+		if (NativeWindowGetNativeHandle(sys_win->native) == native_handle)
 		{
 			win = sys_win;
 			index = win_index;
@@ -161,7 +161,7 @@ u32 system_process_root_window_alloc(const char *title, const vec2u32 position, 
 void system_window_config_update(const u32 window)
 {
 	struct system_window *sys_win = hi_Address(g_window_hierarchy, window);
-	native_window_config_update(sys_win->position, sys_win->size, sys_win->native);
+	NativeWindowConfigUpdate(sys_win->position, sys_win->size, sys_win->native);
 }
 
 void system_window_size(vec2u32 size, const u32 window)
@@ -184,14 +184,14 @@ u32 system_window_index(const struct system_window *win)
 void system_window_set_current_gl_context(const u32 window)
 {
 	struct system_window *sys_win = system_window_address(window);
-	native_window_gl_set_current(sys_win->native);
+	NativeWindowGlSetCurrent(sys_win->native);
 	gl_state_set_current(sys_win->gl_state);
 }
 
 void system_window_swap_gl_buffers(const u32 window)
 {
 	struct system_window *sys_win = system_window_address(window);
-	native_window_gl_swap_buffers(sys_win->native);
+	NativeWindowGlSwapBuffers(sys_win->native);
 }
 
 void system_window_set_global(const u32 index)
@@ -199,13 +199,13 @@ void system_window_set_global(const u32 index)
 	g_window = index;
 	struct system_window *sys_win = hi_Address(g_window_hierarchy, index);
 	ui_set(sys_win->ui);
-	cmd_queue_set(sys_win->cmd_queue);
+	CmdQueueSet(sys_win->cmd_queue);
 }
 
 void system_graphics_init(void)
 {
 #if __GAPI__ == __DS_SDL3__
-	sdl3_wrapper_init();
+	sdl3_WrapperInit();
 #endif
 	g_window_hierarchy = hi_Alloc(NULL, 8, sizeof(struct system_window), ARRAY_LIST_GROWABLE);
 	
@@ -225,7 +225,7 @@ void system_graphics_destroy(void)
 void system_window_text_input_mode_enable(void)
 {
 	struct system_window *sys_win = hi_Address(g_window_hierarchy, g_window);
-	if (system_enter_text_input_mode(sys_win->native))
+	if (EnterTextInputMode(sys_win->native))
 	{
 		sys_win->text_input_mode = 1;
 	}
@@ -238,7 +238,7 @@ void system_window_text_input_mode_enable(void)
 void system_window_text_input_mode_disable(void)
 {
 	struct system_window *sys_win = hi_Address(g_window_hierarchy, g_window);
-	if (system_exit_text_input_mode(sys_win->native))
+	if (ExitTextInputMode(sys_win->native))
 	{
 		sys_win->text_input_mode = 0;
 	}
@@ -250,43 +250,43 @@ void system_window_text_input_mode_disable(void)
 
 u32 cursor_is_locked(struct system_window *sys_win)
 {
-	return native_cursor_is_locked(sys_win->native);
+	return NativeCursorLockedCheck(sys_win->native);
 }
 
 u32 cursor_lock(struct system_window *sys_win)
 {
-	return native_cursor_lock(sys_win->native);
+	return NativeCursorLock(sys_win->native);
 }
 
 u32 cursor_unlock(struct system_window *sys_win)
 {
 	cursor_unset_rect(sys_win);
-	return native_cursor_unlock(sys_win->native);
+	return NativeCursorUnlock(sys_win->native);
 }
 
 u32 cursor_is_visible(struct system_window *sys_win)
 {
-	return native_cursor_is_visible(sys_win->native);
+	return NativeCursorVisibleCheck(sys_win->native);
 }
 
 void cursor_show(struct system_window *sys_win)
 {
-	native_cursor_show(sys_win->native);
+	NativeCursorShow(sys_win->native);
 }
 
 void cursor_hide(struct system_window *sys_win)
 {
-	native_cursor_hide(sys_win->native);
+	NativeCursorHide(sys_win->native);
 }
 
 void cursor_set_rect(struct system_window *sys_win, const vec2 sys_position, const vec2 size)
 {
 	vec2 nat_pos;
-	window_position_system_to_native(nat_pos, sys_win->native, sys_position);
-	native_cursor_set_rect(sys_win->native, nat_pos, size);
+	WindowPositionEngineToNative(nat_pos, sys_win->native, sys_position);
+	NativeCursorSetRectangle(sys_win->native, nat_pos, size);
 }
 
 void cursor_unset_rect(struct system_window *sys_win)
 {
-	native_cursor_unset_rect(sys_win->native);
+	NativeCursorUnsetRectangle(sys_win->native);
 }

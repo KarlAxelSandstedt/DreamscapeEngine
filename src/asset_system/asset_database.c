@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,12 +19,12 @@
 
 #include "asset_local.h"
 
-void asset_database_flush_full(void)
+void AssetFlush(void)
 {
 	/* id 0 == SSFF_NONE */
 	for (u32 id = 1; id < SSFF_COUNT; ++id)
 	{
-		struct asset_ssff *asset = g_asset_db->ssff[id];
+		struct assetSsff *asset = g_asset_db->ssff[id];
 #ifdef DS_DEV
 		asset->valid = 0;
 #endif

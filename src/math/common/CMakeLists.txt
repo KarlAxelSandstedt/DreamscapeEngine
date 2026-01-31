@@ -8,6 +8,7 @@ add_library(ds_math STATIC
 	"${DS_SRC_PATH}/math/common/geometry.c"
 	"${DS_SRC_PATH}/math/common/quaternion.c"
 	"${DS_SRC_PATH}/math/common/transform.c"
+	"${DS_SRC_PATH}/math/common/ds_random.c"
 	"${DS_INCLUDE_PATH}/matrix.h"
 	"${DS_INCLUDE_PATH}/vector.h"
 	"${DS_INCLUDE_PATH}/ds_math.h"
@@ -15,6 +16,7 @@ add_library(ds_math STATIC
 	"${DS_INCLUDE_PATH}/geometry.h"
 	"${DS_INCLUDE_PATH}/quaternion.h"
 	"${DS_INCLUDE_PATH}/transform.h"
+	"${DS_INCLUDE_PATH}/ds_random.h"
 )
 add_library(Dreamscape::Math ALIAS ds_math)
 

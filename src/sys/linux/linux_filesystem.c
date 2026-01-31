@@ -236,15 +236,8 @@ struct dsBuffer FileDump(struct arena *mem, const char *path, const struct file 
 	};
 
 	struct arena record;
-	if (mem)
-	{
-		record = *mem;
-		buf.data = ArenaPush(mem, (u64) stat.st_size);
-	}
-	else
-	{
-		buf.data = malloc((u64) stat.st_size);
-	}
+	record = *mem;
+	buf.data = ArenaPush(mem, (u64) stat.st_size);
 
 	if (!buf.data)
 	{
@@ -261,14 +254,7 @@ struct dsBuffer FileDump(struct arena *mem, const char *path, const struct file 
 		{
 			LogSystemError(S_ERROR);
 			buf = ds_buffer_empty;
-			if (mem)
-			{
-				*mem = record;
-			}
-			else
-			{
- 				free(buf.data);
-			}
+			*mem = record;
 			break;
 		}
 		bytes_left -= (u64) bytes_read_in_call;	

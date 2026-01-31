@@ -25,7 +25,7 @@ static void led_project_menu_ui(struct led *led, const struct ui_visual *visual)
 	struct led_project_menu *menu = &led->project_menu;
 
 	system_window_set_global(menu->window);
-	cmd_queue_execute();
+	CmdQueueExecute();
 
 	struct system_window *win = system_window_address(menu->window);
 	ui_frame_begin(win->size, visual);
@@ -70,7 +70,7 @@ static void led_project_menu_ui(struct led *led, const struct ui_visual *visual)
 		for (u32 f = 0; f < file_count; ++f)
 		{
 			const struct file *file = VectorAddress(&menu->dir_nav.files, f);
-			const enum sprite_id spr = (file->type == FILE_DIRECTORY)
+			const enum spriteId spr = (file->type == FILE_DIRECTORY)
 				? SPRITE_LED_FOLDER
 				: SPRITE_LED_FILE;
 
@@ -175,14 +175,14 @@ static void led_project_menu_ui(struct led *led, const struct ui_visual *visual)
 		}
 	}
 
-	system_window_event_handler(win);
+	DsWindowEventHandler(win);
 	ui_frame_end();
 }
 
 static void led_ui_test(struct led *led, const struct ui_visual *visual)
 {
 	system_window_set_global(led->window);
-	cmd_queue_execute();
+	CmdQueueExecute();
 
 	struct system_window *win = system_window_address(led->window);
 	ui_frame_begin(win->size, visual);
@@ -315,7 +315,7 @@ static void led_ui_test(struct led *led, const struct ui_visual *visual)
 		}
 	}
 
-	system_window_event_handler(win);
+	DsWindowEventHandler(win);
 	ui_frame_end();
 }
 
@@ -326,10 +326,10 @@ static void led_input_handler(struct led *led, struct ui_node *viewport)
 
 	for (u32 i = sys_win->ui->event_list.first; i != DLL_NULL; )
 	{
-		struct system_event *event = PoolAddress(&sys_win->ui->event_pool, i);
+		struct dsEvent *event = PoolAddress(&sys_win->ui->event_pool, i);
 		const u32 next = dll_Next(event);
 		u32 event_consumed = 1;
-		if (event->type == SYSTEM_KEY_PRESSED)
+		if (event->type == DS_KEY_PRESSED)
 		{
 			switch (event->scancode)
 			{
@@ -393,7 +393,7 @@ static void led_input_handler(struct led *led, struct ui_node *viewport)
 static void led_ui(struct led *led, const struct ui_visual *visual)
 {
 	system_window_set_global(led->window);
-	cmd_queue_execute();
+	CmdQueueExecute();
 
 	struct system_window *win = system_window_address(led->window);
 	ui_frame_begin(win->size, visual);
@@ -443,8 +443,8 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 					if (ui_button_f(UI_DRAW_BACKGROUND | UI_DRAW_SPRITE, "###play") & UI_INTER_LEFT_CLICK)
 					{
 						//ui_background_color(Vec4Inline(0.0f, 0.5f, 0.5f, 0.5f))
-						cmd_submit_f(g_ui->mem_frame, "led_compile");
-						cmd_submit_f(g_ui->mem_frame, "led_run");
+						CmdSubmitFormat(g_ui->mem_frame, "led_compile");
+						CmdSubmitFormat(g_ui->mem_frame, "led_run");
 					}
 					
 					ui_pad();
@@ -455,7 +455,7 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 					ui_sprite(SPRITE_LED_PAUSE)
 					if (ui_button_f(UI_DRAW_SPRITE, "###pause") & UI_INTER_LEFT_CLICK)
 					{
-						cmd_submit_f(g_ui->mem_frame, "led_pause");
+						CmdSubmitFormat(g_ui->mem_frame, "led_pause");
 					}
 
 					ui_pad();
@@ -466,7 +466,7 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 					ui_sprite(SPRITE_LED_STOP)
 					if (ui_button_f(UI_DRAW_SPRITE, "###stop") & UI_INTER_LEFT_CLICK)
 					{
-						cmd_submit_f(g_ui->mem_frame, "led_stop");
+						CmdSubmitFormat(g_ui->mem_frame, "led_stop");
 					}
 				}
 
@@ -557,7 +557,7 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 					{
 						Utf8DebugPrint(new_shape_id);
 						g_queue->cmd_exec->arg[0].utf8 = new_shape_id;
-						cmd_submit_f(g_ui->mem_frame, "collision_shape_add \"%k\"", &new_shape_id);
+						CmdSubmitFormat(g_ui->mem_frame, "collision_shape_add \"%k\"", &new_shape_id);
 					}
 
 					ui_pad();
@@ -697,7 +697,7 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 					if (new_prefab_id.len)
 					{
 						g_queue->cmd_exec->arg[0].utf8 = new_prefab_id;
-						cmd_submit_f(g_ui->mem_frame, "rigid_body_prefab_add \"%k\" \"c_box\" 1.0 0.0 0.0 0", &new_prefab_id);
+						CmdSubmitFormat(g_ui->mem_frame, "rigid_body_prefab_add \"%k\" \"c_box\" 1.0 0.0 0.0 0", &new_prefab_id);
 					}
 
 					ui_pad();
@@ -1106,7 +1106,7 @@ static void led_ui(struct led *led, const struct ui_visual *visual)
 		}	
 	}
 
-	system_window_event_handler(win);
+	DsWindowEventHandler(win);
 	ui_frame_end();
 
 	struct ui_node *node = ui_node_lookup(&led->viewport_id).address;

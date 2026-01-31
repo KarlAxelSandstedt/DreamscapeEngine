@@ -67,10 +67,10 @@ int CALLBACK WinMain(HINSTANCE h_instance, HINSTANCE hPrevInstance, LPSTR lpCmdL
 	win_init_rng();
 
 	struct arena mem_persistent = ArenaAlloc(32*1024*1024);
-	system_resources_init(&mem_persistent);
-	cmd_alloc();
+	ds_PlatformApiInit(&mem_persistent);
+	ds_CmdApiInit();
 	ui_init_global_state();
-	asset_database_init(&mem_persistent);
+	AssetInit(&mem_persistent);
 #if defined(DS_TEST_CORRECTNESS) || defined(DS_TEST_PERFORMANCE)
 	test_main();
 #else
@@ -92,7 +92,7 @@ int CALLBACK WinMain(HINSTANCE h_instance, HINSTANCE hPrevInstance, LPSTR lpCmdL
 		const u64 ns_tick = new_time - old_time;
 		old_time = new_time;
 
-		system_process_events();
+		ds_ProcessEvents();
 
 		led_main(editor, ns_tick);
 		led_ui_main(editor);
@@ -100,9 +100,9 @@ int CALLBACK WinMain(HINSTANCE h_instance, HINSTANCE hPrevInstance, LPSTR lpCmdL
 	}
 
 	led_dealloc(editor);
-	asset_database_cleanup();
-	cmd_free();
-	system_resources_cleanup();
+	AssetShutdown();
+	ds_CmdApiShutdown();
+	ds_PlatformApiShutdown();
 	ArenaFree(&mem_persistent);
 #endif
 	return 0;

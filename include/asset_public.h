@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,8 +17,14 @@
 ==========================================================================
 */
 
-#ifndef __ASSET_PUBLIC_H__
-#define __ASSET_PUBLIC_H__
+#ifndef __DS_ASSET_PUBLIC_H__
+#define __DS_ASSET_PUBLIC_H__
+
+#include "ds_platform.h"
+
+#ifdef __cplusplus
+extern "C" { 
+#endif
 
 /*
  * TODO: currently we build ssff's by loading png's containing collections of sprites in a row. This is 
@@ -26,7 +32,7 @@
  * 	 sprite sheet, say for a level editor, this is not the absolute best. Instead, we actually want 
  * 	 to just hardcode each sprite's position in the sheet, as their positions are unlikely to change.
  */
-enum r_program_id
+enum rProgramId
 {
 	PROGRAM_PROXY3D,
 	PROGRAM_UI,
@@ -35,7 +41,7 @@ enum r_program_id
 	PROGRAM_COUNT
 };
 
-enum r_texture_id
+enum rTextureId
 {
 	TEXTURE_STUB,
 	TEXTURE_NONE,
@@ -46,7 +52,7 @@ enum r_texture_id
 	TEXTURE_COUNT
 };
 
-enum sprite_id
+enum spriteId
 {
 	SPRITE_NONE,
 
@@ -82,7 +88,7 @@ enum sprite_id
 };
 
 /* sprite sheet material id */
-enum animation_id
+enum animationId
 {
 	ANIMATION_SORCERER_IDLE,
 	ANIMATION_SORCERER_CAST_TRANSITION,
@@ -93,7 +99,7 @@ enum animation_id
 };
 
 /* sprite sheet material id */
-enum ssff_id
+enum ssffId
 {
 	SSFF_NONE_ID = 0,
 	SSFF_DYNAMIC_ID,
@@ -101,7 +107,7 @@ enum ssff_id
 	SSFF_COUNT
 };
 
-enum font_id
+enum fontId
 {
 	FONT_NONE,
 	FONT_DEFAULT_SMALL,
@@ -109,13 +115,11 @@ enum font_id
 	FONT_COUNT
 };
 
-#include "sys_public.h"
-
 /***************************** GLOBAL SPRITE ARRAY *****************************/
 
 struct sprite
 {
-	enum ssff_id	ssff_id;	/* sprite sheet identifer	*/
+	enum ssffId	ssff_id;	/* sprite sheet identifer	*/
 	vec2u32		pixel_size;	/* size in pixels		*/
 	vec2		bl;		/* lower-left uv coordinate 	*/
 	vec2		tr;		/* upper-right uv coordinate	*/
@@ -127,7 +131,7 @@ extern struct sprite *	g_sprite;
 
 #ifdef	DS_DEV
 
-struct asset_png
+struct assetPng
 {
 	const char *	filepath;	/* relative file path */
 	u32 		width;		/* pixel width */
@@ -141,7 +145,7 @@ struct asset_png
 
 /***************************** SSFF ASSET DEFINITIONS AND GLOBALS *****************************/
 
-struct asset_ssff
+struct assetSsff
 {
 	const char *		filepath;	/* relative file path */
 	u32			loaded;		/* is the asset loaded? */
@@ -152,24 +156,24 @@ struct asset_ssff
 	void *			pixel;		/* pixel opengl texture data 			*/
 	struct sprite *		sprite_info;	/* sprite information is order of sprite generation */
 	u32 			count;		/* uv[count] 					*/
-	enum r_texture_id	texture_id;	/* texture id to use in draw command pipeline   */
+	enum rTextureId	texture_id;	/* texture id to use in draw command pipeline   */
 #ifdef	DS_DEV
 	u32			valid;		/* is the asset valid? (if not, we must rebuilt it) */
 	u32			png_count;	/* number of png sources that this ssff is constructed from */
-	struct asset_png *	png;		/* png sources  */
+	struct assetPng *	png;		/* png sources  */
 #endif
 }; 
 
 /* Return valid to use asset_ssff. If request fails, the returned asset is a dummy with dummy pixel parameters */
-struct asset_ssff *	asset_database_request_ssff(struct arena *tmp, const enum ssff_id id);
+struct assetSsff *	AssetRequestSsff(struct arena *tmp, const enum ssffId id);
 /* return texture id of sprite */
-enum r_texture_id	asset_database_sprite_get_texture_id(const enum sprite_id sprite);
+enum rTextureId		AssetSpriteGetTextureId(const enum spriteId sprite);
 
 /***************************** TTF ASSET DEFINITIONS AND GLOBALS *****************************/
 
 #ifdef	DS_DEV
 
-struct asset_ttf
+struct assetTtf
 {
 	const char *		filepath;	/* relative file path */
 	u32			valid;		/* is the asset valid? */
@@ -180,7 +184,7 @@ struct asset_ttf
 
 /***************************** SSFF ASSET DEFINITIONS AND GLOBALS *****************************/
 
-struct font_glyph
+struct fontGlyph
 {
 	vec2i32		size;		/* glyph size 			*/
 	vec2i32		bearing;	/* glyph offset from baseline 	*/
@@ -196,9 +200,9 @@ struct font
 	f32			ascent;			/* max distance from baseline to the highest coordinate used to place an outline point */
 	f32			descent;		/* min distance (is negative) from baseline to the lowest coordinate used to place an outline point */
 	f32			linespace;		/* baseline-to-baseline offset ( > = 0.0f)  */
-	struct hashMap *	codepoint_to_glyph_map;	/* map codepoint -> glyph. If codepoint not found, return "box" glyph" */
+	struct hashMap 		codepoint_to_glyph_map;	/* map codepoint -> glyph. If codepoint not found, return "box" glyph" */
 
-	struct font_glyph *	glyph;			/* glyphs in font; glyph[0] represents glyphs not found */
+	struct fontGlyph *	glyph;			/* glyphs in font; glyph[0] represents glyphs not found */
 	u32			glyph_count;
 	u32			glyph_unknown_index;	/* unknown glyph to use when encountering unmapped codepoint */
 
@@ -209,41 +213,45 @@ struct font
 	u8			data[];
 };
 
-struct asset_font
+struct assetFont
 {
 	const char *		filepath;	/* relative file path */
 	u32			loaded;		/* is the asset loaded? */
 	const struct font *	font;		/* loaded ssff header  */
 	const u32 		pixel_glyph_height;
 	/* if loaded and valid */
-	enum r_texture_id	texture_id;	/* texture id to use in draw command pipeline   */
+	enum rTextureId	texture_id;	/* texture id to use in draw command pipeline   */
 #ifdef	DS_DEV
 	u32			valid;		/* is the asset valid? (if not, we must rebuilt it) */
-	struct asset_ttf *	ttf;		/* ttf source  */
+	struct assetTtf *	ttf;		/* ttf source  */
 #endif
 }; 
 
 /* Return valid to use asset_ssff. If request fails, the returned asset is a dummy with dummy pixel parameters */
-struct asset_font *asset_database_request_font(struct arena *tmp, const enum font_id id);
+struct assetFont *	AssetRequestFont(struct arena *tmp, const enum fontId id);
 /* return glyph metrics of the corresponding codepoint. */
-const struct font_glyph *glyph_lookup(const struct font *font, const u32 codepoint);
+const struct fontGlyph *GlyphLookup(const struct font *font, const u32 codepoint);
 
 /******************** ASSET DATABASE ********************/
 
-struct asset_database
+struct assetDatabase
 {
-	struct asset_ssff **ssff;	/* immutable ssff array, indexable with SSFF_**_ID */
-	struct asset_font **font;	/* immutable ssff array, indexable with FONT_**_ID */
+	struct assetSsff **ssff;	/* immutable ssff array, indexable with SSFF_**_ID */
+	struct assetFont **font;	/* immutable ssff array, indexable with FONT_**_ID */
 };
 
-extern struct asset_database *g_asset_db;
+extern struct assetDatabase *g_asset_db;
 
 /* Full flush of asset database; all assets will be reloaded (and rebuilt if DS_DEV) on next request */
-void 	asset_database_flush_full(void);
+void 	AssetFlush(void);
 
 /******************** asset_init.c ********************/
 
-void asset_database_init(struct arena *mem_persistent);
-void asset_database_cleanup(void);
+void AssetInit(struct arena *mem_persistent);
+void AssetShutdown(void);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

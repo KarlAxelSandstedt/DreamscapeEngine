@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -20,10 +20,16 @@
 #ifndef __DS_SDL3_WRAPPER_PUBLIC_H__
 #define __DS_SDL3_WRAPPER_PUBLIC_H__
 
-#include "ds_common.h"
-#include "allocator.h"
-#include "ds_string.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-void	sdl3_wrapper_init(void);
+#include "ds_gl.h"
+
+void	sdl3_WrapperInit(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -151,7 +151,7 @@
  *	in pow5mult, ensures lazy evaluation of only one copy of high
  *	powers of 5; omitting this lock would introduce a small
  *	probability of wasting memory, but would otherwise be harmless.)
- *	You must also invoke freedtoa(s) to free the value s returned by
+ *	You must also invoke DmgDtoaFree(s) to free the value s returned by
  *	dtoa.  You may do so whether or not MULTIPLE_THREADS is #defined.
 
  *	When MULTIPLE_THREADS is #defined, this source file provides
@@ -230,7 +230,7 @@ static pthread_mutex_t g_lock[2] = { PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_IN
 #define ACQUIRE_DTOA_LOCK(n) 	pthread_mutex_lock(g_lock + n)
 #define FREE_DTOA_LOCK(n) 	pthread_mutex_unlock(g_lock + n)
 #define dtoa_get_threadno 	pthread_self
-void dmg_dtoa_init(const u32 max_thread_count)
+void DmgDtoaInit(const u32 max_thread_count)
 {
 	set_max_dtoa_threads(max_thread_count);
 }
@@ -244,7 +244,7 @@ static pthread_mutex_t g_lock[2] = { PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_IN
 #define ACQUIRE_DTOA_LOCK(n) 	pthread_mutex_lock(g_lock + n)
 #define FREE_DTOA_LOCK(n) 	pthread_mutex_unlock(g_lock + n)
 #define dtoa_get_threadno 	gettid
-void dmg_dtoa_init(const u32 max_thread_count)
+void DmgDtoaInit(const u32 max_thread_count)
 {
 	set_max_dtoa_threads(max_thread_count);
 }
@@ -256,7 +256,7 @@ static CRITICAL_SECTION g_lock[2];
 #define ACQUIRE_DTOA_LOCK(n) 	EnterCriticalSection(g_lock + n)
 #define FREE_DTOA_LOCK(n) 	LeaveCriticalSection(g_lock + n)
 #define dtoa_get_threadno 	GetCurrentThreadId
-void dmg_dtoa_init(const u32 max_thread_count)
+void DmgDtoaInit(const u32 max_thread_count)
 {
 	InitializeCriticalSection(g_lock + 0);
 	InitializeCriticalSection(g_lock + 1);
@@ -1561,8 +1561,8 @@ static unsigned int maxthreads = 0;
 #define Kmax 7
 
 #ifdef __cplusplus
-extern "C" double dmg_strtod(const char *s00, char **se);
-extern "C" char *dmg_dtoa(double d, int mode, int ndigits,
+extern "C" double DmgStrtod(const char *s00, char **se);
+extern "C" char *DmgDtoa(double d, int mode, int ndigits,
 			int *decpt, int *sign, char **rve);
 #endif
 
@@ -3530,7 +3530,7 @@ retlow1:
 #endif /* NO_STRTOD_BIGCOMP */
 
  double
-dmg_strtod(const char *s00, char **se)
+DmgStrtod(const char *s00, char **se)
 {
 	int bb2, bb5, bbe, bd2, bd5, bbbits, bs2, c, e, e1;
 	int esign, i, j, k, nd, nd0, nf, nz, nz0, nz1, sign;
@@ -4996,14 +4996,14 @@ nrv_alloc(const char *s, char *s0, size_t s0len, char **rve, int n MTd)
 	return rv;
 	}
 
-/* freedtoa(s) must be used to free values s returned by dtoa
+/* DmgDtoaFree(s) must be used to free values s returned by dtoa
  * when MULTIPLE_THREADS is #defined.  It should be used in all cases,
  * but for consistency with earlier versions of dtoa, it is optional
  * when MULTIPLE_THREADS is not defined.
  */
 
  void
-freedtoa(char *s)
+DmgDtoaFree(char *s)
 {
 #ifdef MULTIPLE_THREADS
 	ThInfo *TI = 0;
@@ -5091,7 +5091,7 @@ dtoa_r(double dd, int mode, int ndigits, int *decpt, int *sign, char **rve, char
 	should succeed in returning buf.
 
 	When buf is NULL, sufficient space is allocated for the return value,
-	which, when done using, the caller should pass to freedtoa().
+	which, when done using, the caller should pass to DmgDtoaFree().
 
 	USE_BF is automatically defined when neither NO_LONG_LONG nor NO_BF96
 	is defined.
@@ -6290,7 +6290,7 @@ dtoa_r(double dd, int mode, int ndigits, int *decpt, int *sign, char **rve, char
 	}
 
  char *
-dmg_dtoa(double dd, int mode, int ndigits, int *decpt, int *sign, char **rve)
+DmgDtoa(double dd, int mode, int ndigits, int *decpt, int *sign, char **rve)
 {
 	/*	Sufficient space is allocated to the return value
 		to hold the suppressed trailing zeros.
@@ -6298,7 +6298,7 @@ dmg_dtoa(double dd, int mode, int ndigits, int *decpt, int *sign, char **rve)
 	*/
 #ifndef MULTIPLE_THREADS
 	if (dtoa_result)
-		freedtoa(dtoa_result);
+		DmgDtoaFree(dtoa_result);
 #endif
 	return dtoa_r(dd, mode, ndigits, decpt, sign, rve, 0, 0);
 	}

@@ -73,7 +73,7 @@
 
 struct ui;
 struct r_scene;
-struct native_window;
+struct nativeWindow;
 
 /* init function pointers */
 void 	system_graphics_init(void);
@@ -87,7 +87,7 @@ extern u32 			g_window;
 struct system_window
 {
 	struct hiNode 	header;			/* DO NOT MOVE */
-	struct native_window *		native;			/* native graphics handle */
+	struct nativeWindow *		native;			/* native graphics handle */
 	struct ui *			ui;			/* local ui */
 	struct cmd_queue *		cmd_queue;		/* local command queue */
 	struct cmd_console *		cmd_console;		/* console */
@@ -107,7 +107,7 @@ u32 			system_window_alloc(const char *title, const vec2u32 position, const vec2
 /* alloc system_window resources AND set window to global root process window, if no gl context exist, allocate context as well. */
 u32 			system_process_root_window_alloc(const char *title, const vec2u32 position, const vec2u32 size);
 /* handle sys_win->ui events */
-void 			system_window_event_handler(struct system_window *sys_win);
+void 			DsWindowEventHandler(struct system_window *sys_win);
 /* Tag sub-hierachy of root (including root itself) for destruction on next frame. */
 void system_window_tag_sub_hierarchy_for_destruction(const u32 root);
 /* free system windows tagged for destruction */
@@ -150,30 +150,6 @@ u32 			cursor_is_visible(struct system_window *sys_win);
 void 			cursor_show(struct system_window *sys_win);
 /* hide cursor  */
 void 			cursor_hide(struct system_window *sys_win);
-
-/************************************************************************/
-/* 				System Inititation			*/
-/************************************************************************/
-
-/* Initiate/cleanup system resources such as timers, input handling, system events, ... */
-void 		system_resources_init(struct arena *mem);
-void 		system_resources_cleanup(void);
-
-/************************************************************************/
-/* 				System Events 				*/
-/************************************************************************/
-
-/* process native window events and update corresponding system window states */
-void		system_process_events(void);
-
-/************************************************************************/
-/* 			system mouse/keyboard handling 			*/
-/************************************************************************/
-
-extern u32	(*system_key_modifiers)(void);
-	
-const char *	ds_keycode_to_string(const enum ds_keycode key);
-const char *	ds_button_to_string(const enum mouse_button button);
 
 /************************************************************************/
 /* 			       Task System				*/

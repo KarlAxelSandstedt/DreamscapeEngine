@@ -41,15 +41,16 @@ f32 	RngF32Normalized(void);
 /* gen [min, max] random number */
 f32 	RngF32Range(const f32 min, const f32 max);
 
-/*************************** internal rng initiation ***************************/
+/*************************** internal rng initialization ***************************/
 
 /*
  *	xoshiro256** (David Blackman, Sebastiano Vigna)
  */
-/* Call once on main thread before calling thread_init_rng_local on each thread */ 
+/* Call once on main thread before calling ThreadXoshiro256InitSequence on each thread */ 
 void 	Xoshiro256Init(const u64 seed[4]);
 /* Call once on thread to initate thread local xoshiro256** rng sequence  */ 
 void	ThreadXoshiro256InitSequence(void);
+
 /* NOTE: THREAD UNSAFE!!! Exposed for testing purposes. next rng on global rng */ 
 u64 	TestXoshiro256Next(void);
 

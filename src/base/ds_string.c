@@ -25,6 +25,11 @@
 #define XXH_INLINE_ALL
 #include "xxhash.h"
 
+void ds_StringApiInit(const u32 logical_core_count)
+{
+	DmgDtoaInit(logical_core_count);
+}
+
 u32 WordbreakCheck(const u32 codepoint)
 {
 	u32 wordbreak = 0;
@@ -159,7 +164,7 @@ u32 Utf8ReadCodepoint(u64 *new_offset, const utf8 *str, const u64 offset)
 //{
 //	u32 pixels = 0;
 //
-//	const struct font_glyph *glyph = glyph_lookup(font, (u32) ' ');
+//	const struct fontGlyph *glyph = GlyphLookup(font, (u32) ' ');
 //	const u32 space_pixels = glyph->advance;
 //	const u32 tab_pixels = tab_size*space_pixels;
 //	u32 new_line = 0;
@@ -199,13 +204,13 @@ u32 Utf8ReadCodepoint(u64 *new_offset, const utf8 *str, const u64 offset)
 //	const u32 pixels_left = line_width - x_offset;
 //	u32 substring_pixels = 0;
 //
-//	const struct font_glyph *linebreak = glyph_lookup(font, (u32) '-');
+//	const struct fontGlyph *linebreak = GlyphLookup(font, (u32) '-');
 //	u32 substring_with_wordbreak_len = 0;
 //	u32 substring_pixels_with_wordbreak = 0;
 //	
 //	for (; sub.len < text->len; ++sub.len)
 //	{
-//		const struct font_glyph *glyph = glyph_lookup(font, text->buf[sub.len]);
+//		const struct fontGlyph *glyph = GlyphLookup(font, text->buf[sub.len]);
 //		if (substring_pixels + glyph->bearing[0] + glyph->size[0] > pixels_left)
 //		{
 //			break;
@@ -276,7 +281,7 @@ u32 Utf8ReadCodepoint(u64 *new_offset, const utf8 *str, const u64 offset)
 //				line->glyph[line->glyph_count].x = x;
 //				line->glyph[line->glyph_count].codepoint = sub.buf[i];
 //				line->glyph_count += 1;
-//				x += glyph_lookup(font, sub.buf[i])->advance;
+//				x += GlyphLookup(font, sub.buf[i])->advance;
 //			}
 //
 //			/* couldn't fit whole word on row */
@@ -320,7 +325,7 @@ u32 Utf8ReadCodepoint(u64 *new_offset, const utf8 *str, const u64 offset)
 //
 //	const u32 line_pixels = (line_width == F32_INFINITY) ? U32_MAX : (u32) line_width;
 //
-//	const struct font_glyph *glyph = glyph_lookup(font, (u32) ' ');
+//	const struct fontGlyph *glyph = GlyphLookup(font, (u32) ' ');
 //	const u32 space_pixels = glyph->advance;
 //	const u32 tab_pixels = tab_size*space_pixels;
 //
@@ -389,7 +394,7 @@ u32 Utf8ReadCodepoint(u64 *new_offset, const utf8 *str, const u64 offset)
 //				line->glyph[line->glyph_count].x = x;
 //				line->glyph[line->glyph_count].codepoint = sub.buf[i];
 //				line->glyph_count += 1;
-//				x += glyph_lookup(font, sub.buf[i])->advance;
+//				x += GlyphLookup(font, sub.buf[i])->advance;
 //			}
 //
 //			/* couldn't fit whole word on row */
@@ -436,12 +441,12 @@ char *CstrUtf8(struct arena *mem, const utf8 utf8)
 
 f32 F32Cstr(char **new_offset, const char *str)
 {
-	return (f32) dmg_strtod(str, new_offset);
+	return (f32) DmgStrtod(str, new_offset);
 }
 
 f64 F64Cstr(char **new_offset, const char *str)
 {
-	return dmg_strtod(str, new_offset);
+	return DmgStrtod(str, new_offset);
 }
 
 f32 F32Utf8(struct arena *tmp, const utf8 str)
@@ -457,7 +462,7 @@ f64 F64Utf8(struct arena *tmp, const utf8 str)
 	}
 
 	const char *cstr = CstrUtf8(tmp, str);
-	const f64 val = dmg_strtod(cstr, NULL);
+	const f64 val = DmgStrtod(cstr, NULL);
 
 	return val;
 }
@@ -478,7 +483,7 @@ f64 F64Utf32(struct arena *tmp, const utf32 str)
 			buf[i] = (char) str.buf[i];	
 		}
 		buf[str.len] = '\0';
-		ret = dmg_strtod(buf, NULL);
+		ret = DmgStrtod(buf, NULL);
 		ArenaPopPacked(tmp, str.len+1);
 	}
 	return ret;
@@ -505,7 +510,7 @@ utf8 Utf8F64Buffered(u8 buf[], const u64 bufsize, const u32 decimals, const f64 
 
 	i32 sign;
 	i32 decpt;
-	char *dmg_str = dmg_dtoa((f64) val, 0, 0, &decpt, &sign, NULL);
+	char *dmg_str = DmgDtoa((f64) val, 0, 0, &decpt, &sign, NULL);
 
 	/* INF / Nan */
 	if (decpt == 9999)
@@ -622,7 +627,7 @@ utf8 Utf8F64Buffered(u8 buf[], const u64 bufsize, const u32 decimals, const f64 
 		}
 	}
 
-	freedtoa(dmg_str);
+	DmgDtoaFree(dmg_str);
 
 	return str;
 }
@@ -882,7 +887,7 @@ utf32 Utf32F64Buffered(u32 buf[], const u64 buflen, const u32 decimals, const f6
 
 	i32 sign;
 	i32 decpt;
-	char *dmg_str = dmg_dtoa((f64) val, 0, 0, &decpt, &sign, NULL);
+	char *dmg_str = DmgDtoa((f64) val, 0, 0, &decpt, &sign, NULL);
 
 	/* INF / Nan */
 	if (decpt == 9999)
@@ -999,7 +1004,7 @@ utf32 Utf32F64Buffered(u32 buf[], const u64 buflen, const u32 decimals, const f6
 		}
 	}
 
-	freedtoa(dmg_str);
+	DmgDtoaFree(dmg_str);
 
 	return str;
 }

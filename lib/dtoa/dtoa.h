@@ -23,7 +23,7 @@
 #include "ds_types.h"
 
 /* Initalize dtoa/strod locks and thread count */
-void	dmg_dtoa_init(const u32 max_thread_count);
+void	DmgDtoaInit(const u32 max_thread_count);
 
 /*
  * Returns nearest machine number to the input decimal string. Ties are broken by the IEEE round-even rule.
@@ -31,7 +31,7 @@ void	dmg_dtoa_init(const u32 max_thread_count);
  * s00 - string to double
  * se - output pointer to first unconverted character 
  */
-double 	dmg_strtod(const char *s00, char **se);
+double 	DmgStrtod(const char *s00, char **se);
 
 /*
  * Returns a heap-allocated string using malloc representing the double.
@@ -47,9 +47,9 @@ double 	dmg_strtod(const char *s00, char **se);
  * 		
  * 		dtoa(dd, 0, 0, &decpt, &sign, NULL)
  */
-char *  dmg_dtoa(double dd, int mode, int ndigits, int *decpt, int *sign, char **rve);
-/* free dmg_dtoa string */
-void 	freedtoa(char *s);
+char *  DmgDtoa(double dd, int mode, int ndigits, int *decpt, int *sign, char **rve);
+/* free DmgDtoa string */
+void 	DmgDtoaFree(char *s);
 
 #endif
 

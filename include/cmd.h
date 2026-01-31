@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -20,6 +20,10 @@
 #ifndef __DS_CMD_H__
 #define __DS_CMD_H__
 
+#ifdef __cplusplus
+extern "C" { 
+#endif
+
 /*
    ========================================== CMP API ==========================================
 
@@ -31,8 +35,8 @@
 	normally would take in 2 arguments. For utf8, we format and submit a command executing the function by
 	calling either one of the two following methods:
 
-   		cmd_submit_utf8_f("func %arg0 %arg1", arg0, arg1)
-   		cmd_submit_utf8("func str(arg0) str(arg1)")
+   		CmdSubmitUtf8_f("func %arg0 %arg1", arg0, arg1)
+   		CmdSubmitUtf8("func str(arg0) str(arg1)")
 	
 	The format string should, if the command in registered at compile time, determined at the same time. So
 	we extend our triple to 
@@ -40,16 +44,15 @@
 	{ cmd_func : u32, str(func) : utf8, str(func_format) : utf8,  func() : void(*)(void) }
 		
 	If we wish to sumbit a command using function's index, we manually "push" arguments by
-	setting the registers to their corresponding arguments before calling cmd_submit:
+	setting the registers to their corresponding arguments before calling CmdSubmit:
 
 		g_cmd_q->reg[0].arg0_type = arg0;
 		g_cmd_q->reg[1].arg1_type = arg1;
-		cmd_submit(cmd_index)
+		CmdSubmit(cmd_index)
  */
 
-#include "allocator.h"
-#include "array_list.h"
-#include "ds_string.h"
+#include "ds_base.h"
+#include "list.h"
 
 enum cmd_args_type
 {
@@ -91,9 +94,10 @@ typedef struct cmd_function
 
 struct cmd
 {
-	struct array_list_intrusive_node	header;
+	POOL_SLOT_STATE;
+	LL_SLOT_STATE;
 
-	const struct cmd_function*	function;
+	const struct cmd_function *	function;
 	utf8				string;				/* defined if args_type == TOKEN */
 	union cmd_register		arg[CMD_REGISTER_COUNT];	/* defined if args_type == REGISTER */
 	enum cmd_args_type		args_type;	
@@ -101,47 +105,42 @@ struct cmd
 
 struct cmd_queue
 {
-	struct array_list_intrusive_node header;
+	struct pool		cmd_pool;
+	struct ll		cmd_list;
+	struct ll		cmd_list_next_frame;
 
-	struct array_list_intrusive *	cmd_list;
-	u32				cmd_first;
-	u32				cmd_last;
+	struct cmd *		cmd_exec;
 
-	u32				cmd_first_next_frame;
-	u32				cmd_last_next_frame;
-
-	struct cmd *			cmd_exec;
-
-	union cmd_register		regs[CMD_REGISTER_COUNT];	/* defined if args_type == REGISTER */
+	union cmd_register	regs[CMD_REGISTER_COUNT];	/* defined if args_type == REGISTER */
 };
 
 extern struct cmd_queue *	g_queue;
 
 /* init cmd infrastrucutre */
-void 			cmd_alloc(void);
+void 			ds_CmdApiInit(void);
 /* free cmd infrastrucutre */
-void 			cmd_free(void);
+void 			ds_CmdApiShutdown(void);
 
-struct cmd_queue *	cmd_queue_alloc(void);
-void 			cmd_queue_free(struct cmd_queue *queue);
+struct cmd_queue 	CmdQueueAlloc(void);
+void 			CmdQueueDealloc(struct cmd_queue *queue);
 /* set queue to current global queue */
-void			cmd_queue_set(struct cmd_queue *queue);
+void			CmdQueueSet(struct cmd_queue *queue);
 /* Execute commands in global queue */
-void 			cmd_queue_execute(void);
+void 			CmdQueueExecute(void);
 /* flush any commands in queue */
-void 			cmd_queue_flush(struct cmd_queue *queue);
+void 			CmdQueueFlush(struct cmd_queue *queue);
 
 /* Register the command function (or overwrite existing one) */
-struct slot		cmd_function_register(const utf8 name, const u32 args_count, void (*call)(void));
+struct slot		CmdFunctionRegister(const utf8 name, const u32 args_count, void (*call)(void));
 /* Lookup command function; if function not found, return { .index = U32_MAX, .address = NULL } */
-struct slot 		cmd_function_lookup(const utf8 name);
+struct slot 		CmdFunctionLookup(const utf8 name);
 
 /* push current global register values as command arguments and submit the command */
-void			cmd_submit(const u32 cmd_function);
+void			CmdSubmit(const u32 cmd_function);
 /* format a cmd string and submit the command */
-void			cmd_submit_f(struct arena *mem, const char *format, ...);
+void			CmdSubmitFormat(struct arena *mem, const char *format, ...);
 /* submit a cmd string */
-void			cmd_submit_utf8(const utf8 string);
+void			CmdSubmitUtf8(const utf8 string);
 
 /*
  * As above, but sumbit command for next frame being built. This is useful when we want to continuously spawn
@@ -149,21 +148,24 @@ void			cmd_submit_utf8(const utf8 string);
  * current frame, so any calls to these functions will construct a command for the next wave of commands,
  * as to not fall into an infinite loop.
  */
-void			cmd_submit_next_frame(const u32 cmd_function);
-void			cmd_submit_f_next_frame(struct arena *mem, const char *format, ...);
-void			cmd_submit_utf8_next_frame(const utf8 string);
+void			CmdSubmitNextFrame(const u32 cmd_function);
+void			CmdSubmitFormatNextFrame(struct arena *mem, const char *format, ...);
+void			CmdSubmitUtf8NextFrame(const utf8 string);
 
 /* push current local register values as command arguments and submit the command */
-void			cmd_queue_submit(struct cmd_queue *queue, const u32 cmd_function);
+void			CmdQueueSubmit(struct cmd_queue *queue, const u32 cmd_function);
 /* format a cmd string and submit the command to the given command queue */
-void 			cmd_queue_submit_f(struct arena *mem, struct cmd_queue *queue, const char *format, ...);
+void 			CmdQueueSubmitFormat(struct arena *mem, struct cmd_queue *queue, const char *format, ...);
 /* submit a cmd string to the given command queue */
-void			cmd_queue_submit_utf8(struct cmd_queue *queue, const utf8 string);
+void			CmdQueueSubmitUtf8(struct cmd_queue *queue, const utf8 string);
 
 /* similar to above but for next frame command submission */
-void			cmd_queue_submit_next_frame(struct cmd_queue *queue, const u32 cmd_function);
-void			cmd_queue_submit_f_next_frame(struct arena *mem, struct cmd_queue *queue, const char *format, ...);
-void			cmd_queue_submit_utf8_next_frame(struct cmd_queue *queue, const utf8 string);
+void			CmdQueueSubmitNextFrame(struct cmd_queue *queue, const u32 cmd_function);
+void			CmdQueueSubmitFormatNextFrame(struct arena *mem, struct cmd_queue *queue, const char *format, ...);
+void			CmdQueueSubmitUtf8NextFrame(struct cmd_queue *queue, const utf8 string);
 
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

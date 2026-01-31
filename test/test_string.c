@@ -154,88 +154,88 @@ static struct test_output utf8_lookup_substring_randomizer(struct test_environme
 	return output;
 }
 
-static struct test_output dmg_dtoa_functionallity_check(struct test_environment *env)
+static struct test_output DmgDtoa_functionallity_check(struct test_environment *env)
 {
 	struct test_output output = { .success = 1, .id = __func__ };
 
 	char *str;
 	i32 decpt, sign;
 
-	str = dmg_dtoa(1.25, 0, 0, &decpt, &sign, NULL);
+	str = DmgDtoa(1.25, 0, 0, &decpt, &sign, NULL);
 	TEST_EQUAL(sign, 0);
 	TEST_EQUAL(decpt, 1)
 	TEST_EQUAL(str[0], '1');
 	TEST_EQUAL(str[1], '2');
 	TEST_EQUAL(str[2], '5');
 	TEST_EQUAL(str[3], '\0');
-	freedtoa(str);
+	DmgDtoaFree(str);
 
-	str = dmg_dtoa(-1.25, 0, 0, &decpt, &sign, NULL);
+	str = DmgDtoa(-1.25, 0, 0, &decpt, &sign, NULL);
 	TEST_EQUAL(sign, 1);
 	TEST_EQUAL(decpt, 1)
 	TEST_EQUAL(str[0], '1');
 	TEST_EQUAL(str[1], '2');
 	TEST_EQUAL(str[2], '5');
 	TEST_EQUAL(str[3], '\0');
-	freedtoa(str);
+	DmgDtoaFree(str);
 
 
-	str = dmg_dtoa(1.25, 2, 3, &decpt, &sign, NULL);
+	str = DmgDtoa(1.25, 2, 3, &decpt, &sign, NULL);
 	TEST_EQUAL(sign, 0);
 	TEST_EQUAL(decpt, 1)
 	TEST_EQUAL(str[0], '1');
 	TEST_EQUAL(str[1], '2');
 	TEST_EQUAL(str[2], '5');
 	TEST_EQUAL(str[3], '\0');
-	freedtoa(str);
+	DmgDtoaFree(str);
 
-	str = dmg_dtoa(-1.25, 2, 3, &decpt, &sign, NULL);
+	str = DmgDtoa(-1.25, 2, 3, &decpt, &sign, NULL);
 	TEST_EQUAL(sign, 1);
 	TEST_EQUAL(decpt, 1)
 	TEST_EQUAL(str[0], '1');
 	TEST_EQUAL(str[1], '2');
 	TEST_EQUAL(str[2], '5');
 	TEST_EQUAL(str[3], '\0');
-	freedtoa(str);
+	DmgDtoaFree(str);
 
-	str = dmg_dtoa(1.0625, 3, 3, &decpt, &sign, NULL);
+	str = DmgDtoa(1.0625, 3, 3, &decpt, &sign, NULL);
 	TEST_EQUAL(sign, 0);
 	TEST_EQUAL(decpt, 1)
 	TEST_EQUAL(str[0], '1');
 	TEST_EQUAL(str[1], '0');
 	TEST_EQUAL(str[2], '6');
 	TEST_EQUAL(str[3], '2');
-	freedtoa(str);
+	DmgDtoaFree(str);
 
-	str = dmg_dtoa(1.0, 0, 0, &decpt, &sign, NULL);
+	str = DmgDtoa(1.0, 0, 0, &decpt, &sign, NULL);
 	TEST_EQUAL(sign, 0);
 	TEST_EQUAL(decpt, 1)
 	TEST_EQUAL(str[0], '1');
 	TEST_EQUAL(str[1], '\0');
-	freedtoa(str);
+	DmgDtoaFree(str);
 
-	str = dmg_dtoa(0.125, 0, 0, &decpt, &sign, NULL);
+	str = DmgDtoa(0.125, 0, 0, &decpt, &sign, NULL);
 	TEST_EQUAL(sign, 0);
 	TEST_EQUAL(decpt, 0)
 	TEST_EQUAL(str[0], '1');
 	TEST_EQUAL(str[1], '2');
 	TEST_EQUAL(str[2], '5');
 	TEST_EQUAL(str[3], '\0');
-	freedtoa(str);
+	DmgDtoaFree(str);
 
-	str = dmg_dtoa(0.0625, 0, 0, &decpt, &sign, NULL);
+	str = DmgDtoa(0.0625, 0, 0, &decpt, &sign, NULL);
 	TEST_EQUAL(sign, 0);
 	TEST_EQUAL(decpt, -1)
 	TEST_EQUAL(str[0], '6');
 	TEST_EQUAL(str[1], '2');
 	TEST_EQUAL(str[2], '5');
 	TEST_EQUAL(str[3], '\0');
-	freedtoa(str);
+	DmgDtoaFree(str);
 
 	return output;
 }
 
-static struct test_output dmg_strtod_dtoa_equivalence(struct test_environment *env)
+static struct test_output DmgStrtod_dtoa_equivalence(struct test_environment *env)
 {
 	struct test_output output = { .success = 1, .id = __func__ };
 
@@ -249,7 +249,7 @@ static struct test_output dmg_strtod_dtoa_equivalence(struct test_environment *e
 	for (u32 i = 0; i < U32_MAX / 100; ++i)
 	{
 		const f64 d = ((b64) { .u = RngU64() }).f;
-		char *str = dmg_dtoa(d, 0, 0, &decpt, &sign, NULL);
+		char *str = DmgDtoa(d, 0, 0, &decpt, &sign, NULL);
 		const int pw = decpt-1;
 		//if (pw < 0)
 		{
@@ -271,7 +271,7 @@ static struct test_output dmg_strtod_dtoa_equivalence(struct test_environment *e
 		//	buf = str;
 		//}
 		//fprintf(stderr, "Expected:\t%.21e\nReturned:\t%s\n", d, buf);
-		const f64 ret = dmg_strtod(buf, &tmp);
+		const f64 ret = DmgStrtod(buf, &tmp);
 		if (-F32_INFINITY < ret && ret < F32_INFINITY)
 		{
 			TEST_EQUAL(d, ret);
@@ -281,7 +281,7 @@ static struct test_output dmg_strtod_dtoa_equivalence(struct test_environment *e
 		{
 			skipped += 1;
 		}
-		freedtoa(str);
+		DmgDtoaFree(str);
 	}
 
 	//fprintf(stderr, "Passed: %u, Skipped: %u\n", passed, skipped);
@@ -289,7 +289,7 @@ static struct test_output dmg_strtod_dtoa_equivalence(struct test_environment *e
 	return output;
 }
 
-static struct test_output dmg_strtod_utf8_f64_equivalence(struct test_environment *env)
+static struct test_output DmgStrtod_utf8_f64_equivalence(struct test_environment *env)
 {
 	struct test_output output = { .success = 1, .id = __func__ };
 
@@ -328,7 +328,7 @@ static struct test_output dmg_strtod_utf8_f64_equivalence(struct test_environmen
 	return output;
 }
 
-static struct test_output dmg_strtod_utf32_f64_equivalence(struct test_environment *env)
+static struct test_output DmgStrtod_utf32_f64_equivalence(struct test_environment *env)
 {
 	struct test_output output = { .success = 1, .id = __func__ };
 
@@ -491,10 +491,10 @@ static struct test_output utf8_utf32_u64_i64_equivalence(struct test_environment
 
 static struct test_output(*kas_string_tests[])(struct test_environment *) =
 {
-	dmg_strtod_utf32_f64_equivalence,
-	dmg_strtod_utf8_f64_equivalence,
-	dmg_dtoa_functionallity_check,
-	dmg_strtod_dtoa_equivalence,
+	DmgStrtod_utf32_f64_equivalence,
+	DmgStrtod_utf8_f64_equivalence,
+	DmgDtoa_functionallity_check,
+	DmgStrtod_dtoa_equivalence,
 	utf8_utf32_u64_i64_equivalence,
 	utf8_lookup_substring_randomizer,
 };

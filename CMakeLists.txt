@@ -146,8 +146,10 @@ endif ()
 add_subdirectory("${DS_INCLUDE_PATH}")
 add_subdirectory("${DS_SRC_PATH}/base")
 add_subdirectory("${DS_SRC_PATH}/containers")
+add_subdirectory("${DS_SRC_PATH}/asset_system")
 add_subdirectory("${DS_SRC_PATH}/math")
 add_subdirectory("${DS_SRC_PATH}/sys")
+add_subdirectory("${DS_SRC_PATH}/misc")
 add_subdirectory("${DS_LIB_PATH}")
 
 add_library(${PROJECT_NAME} INTERFACE)
@@ -159,11 +161,12 @@ target_link_libraries(${PROJECT_NAME}
 		"${PROJECT_NAME}::Containers"
 		"${PROJECT_NAME}::Math"
 		"${PROJECT_NAME}::Platform"
+		"${PROJECT_NAME}::Asset"
 )
 
 #TODO remove, consider using DS_DEBUG instead, or if required, add DS_DEV
 if (NOT CMAKE_BUILD_TYPE STREQUAL "Release")
-	add_compile_definitions(KAS_DEV)
+	add_compile_definitions(DS_DEV)
 endif()
 
 #TODO How do we expose library testing for the user, (Or developer)?
@@ -192,11 +195,6 @@ set(DS_TEST_PATH "${CMAKE_CURRENT_SOURCE_DIR}/test")
 
 #add_subdirectory("${DS_SRC_PATH}/misc")
 #add_subdirectory("${DS_SRC_PATH}/misc/ui")
-#add_subdirectory("${DS_SRC_PATH}/misc/debug")
-#add_subdirectory("${DS_SRC_PATH}/common")
-#add_subdirectory("${DS_SRC_PATH}/math")
-#add_subdirectory("${DS_SRC_PATH}/containers")
-#add_subdirectory("${DS_SRC_PATH}/memory")
 #add_subdirectory("${DS_SRC_PATH}/renderer")
 #add_subdirectory("${DS_SRC_PATH}/sys")
 #add_subdirectory("${DS_SRC_PATH}/sys/sdl3_wrapper")

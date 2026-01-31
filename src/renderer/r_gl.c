@@ -1008,7 +1008,7 @@ u32 gl_state_alloc(void)
 	const u32 gl_state_index = array_list_intrusive_reserve_index(g_gl_state_list);
 	g_gl_state = gl_state_index;
 	struct gl_state *gl_state = array_list_intrusive_address(g_gl_state_list, gl_state_index);
-	gl_functions_init(&gl_state->func);
+	GlFunctionsInit(&gl_state->func);
 
 	static u32 once = 1;
 	if (once)

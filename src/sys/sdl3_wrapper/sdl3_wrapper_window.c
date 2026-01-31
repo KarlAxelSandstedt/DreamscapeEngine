@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,55 +19,55 @@
 
 #include "sdl3_wrapper_local.h"
 
-struct native_window
+struct nativeWindow
 {
 	SDL_Window *	sdl_win;
 	SDL_GLContext	gl_context;	
 };
 
 /* GLOBAL FUNCTION POINTERS */
-struct native_window *	(*native_window_create)(struct arena *mem, const char *title, const vec2u32 position, const vec2u32 size);
-void 			(*native_window_destroy)(struct native_window *native);
+struct nativeWindow *	(*NativeWindowCreate)(struct arena *mem, const char *title, const vec2u32 position, const vec2u32 size);
+void 			(*NativeWindowDestroy)(struct nativeWindow *native);
 
-u64 			(*native_window_get_native_handle)(const struct native_window *native);
+u64 			(*NativeWindowGetNativeHandle)(const struct nativeWindow *native);
 
-void 			(*native_window_gl_set_current)(struct native_window *native);
-void 			(*native_window_gl_swap_buffers)(struct native_window *native);
+void 			(*NativeWindowGlSetCurrent)(struct nativeWindow *native);
+void 			(*NativeWindowGlSwapBuffers)(struct nativeWindow *native);
 
-void 			(*native_window_config_update)(vec2u32 position, vec2u32 size, struct native_window *native);
-void 			(*native_window_fullscreen)(struct native_window *native);
-void 			(*native_window_windowed)(struct native_window *native);
-void 			(*native_window_bordered)(struct native_window *native);
-void 			(*native_window_borderless)(struct native_window *native);
-u32 			(*native_window_is_fullscreen)(const struct native_window *native);
-u32 			(*native_window_is_bordered)(const struct native_window *native);
+void 			(*NativeWindowConfigUpdate)(vec2u32 position, vec2u32 size, struct nativeWindow *native);
+void 			(*NativeWindowFullscreen)(struct nativeWindow *native);
+void 			(*NativeWindowWindowed)(struct nativeWindow *native);
+void 			(*NativeWindowBordered)(struct nativeWindow *native);
+void 			(*NativeWindowBorderless)(struct nativeWindow *native);
+u32 			(*NativeWindowFullscreenCheck)(const struct nativeWindow *native);
+u32 			(*NativeWindowBorderedCheck)(const struct nativeWindow *native);
 
-void			(*native_cursor_show)(struct native_window *native);
-void			(*native_cursor_hide)(struct native_window *native);
-u32 			(*native_cursor_is_locked)(struct native_window *native);
-u32 			(*native_cursor_is_visible)(struct native_window *native);
-u32 			(*native_cursor_lock)(struct native_window *native);
-u32 			(*native_cursor_unlock)(struct native_window *native);
-void 			(*native_cursor_set_rect)(struct native_window *native, const vec2 nat_position, const vec2 size);
-void 			(*native_cursor_unset_rect)(struct native_window *native);
+void			(*NativeCursorShow)(struct nativeWindow *native);
+void			(*NativeCursorHide)(struct nativeWindow *native);
+u32 			(*NativeCursorLockedCheck)(struct nativeWindow *native);
+u32 			(*NativeCursorVisibleCheck)(struct nativeWindow *native);
+u32 			(*NativeCursorLock)(struct nativeWindow *native);
+u32 			(*NativeCursorUnlock)(struct nativeWindow *native);
+void 			(*NativeCursorSetRectangle)(struct nativeWindow *native, const vec2 nat_position, const vec2 size);
+void 			(*NativeCursorUnsetRectangle)(struct nativeWindow *native);
 
-void 			(*screen_position_native_to_system)(vec2 sys_pos, struct native_window *native, const vec2 nat_pos);
-void 			(*screen_position_system_to_native)(vec2 nat_pos, struct native_window *native, const vec2 sys_pos);
-void 			(*window_position_native_to_system)(vec2 sys_pos, struct native_window *native, const vec2 nat_pos);
-void 			(*window_position_system_to_native)(vec2 nat_pos, struct native_window *native, const vec2 sys_pos);
+void 			(*ScreenPositionNativeToEngine)(vec2 sys_pos, struct nativeWindow *native, const vec2 nat_pos);
+void 			(*ScreenPositionEngineToNative)(vec2 nat_pos, struct nativeWindow *native, const vec2 sys_pos);
+void 			(*WindowPositionNativeToEngine)(vec2 sys_pos, struct nativeWindow *native, const vec2 nat_pos);
+void 			(*WindowPositionEngineToNative)(vec2 nat_pos, struct nativeWindow *native, const vec2 sys_pos);
 
 utf8 			(*Utf8GetClipboard)(struct arena *mem);
 void 			(*CstrSetClipboard)(const char *str);
 
-u32 			(*system_enter_text_input_mode)(struct native_window *native);
-u32 			(*system_exit_text_input_mode)(struct native_window *native);
-u32 			(*system_key_modifiers)(void);
+u32 			(*EnterTextInputMode)(struct nativeWindow *native);
+u32 			(*ExitTextInputMode)(struct nativeWindow *native);
+u32 			(*KeyModifiers)(void);
 
-u32 			(*system_event_consume)(struct system_event *event);
+u32 			(*EventConsume)(struct dsEvent *event);
 
-void 			(*gl_functions_init)(struct gl_functions *func);
+void 			(*GlFunctionsInit)(struct gl_functions *func);
 
-static void sdl3_wrapper_native_window_gl_set_current(struct native_window *native)
+static void sdl3_NativeWindowGlSetCurrent(struct nativeWindow *native)
 {
 	if (!SDL_GL_MakeCurrent(native->sdl_win, native->gl_context))
 	{
@@ -75,7 +75,7 @@ static void sdl3_wrapper_native_window_gl_set_current(struct native_window *nati
 	}	
 }
 
-static void sdl3_wrapper_native_window_gl_swap_buffers(struct native_window *native)
+static void sdl3_NativeWindowGlSwapBuffers(struct nativeWindow *native)
 {
 	if (!SDL_GL_SwapWindow(native->sdl_win))
 	{
@@ -83,12 +83,12 @@ static void sdl3_wrapper_native_window_gl_swap_buffers(struct native_window *nat
 	}
 }
 
-static u64 sdl3_wrapper_native_window_get_native_handle(const struct native_window *native)
+static u64 sdl3_NativeWindowGetNativeHandle(const struct nativeWindow *native)
 {
 	return (u64) native->sdl_win;
 }
 
-static void sdl3_wrapper_native_cursor_show(struct native_window *native)
+static void sdl3_NativeCursorShow(struct nativeWindow *native)
 {
 	if (!SDL_ShowCursor())
 	{
@@ -96,7 +96,7 @@ static void sdl3_wrapper_native_cursor_show(struct native_window *native)
 	}
 }
 
-static void sdl3_wrapper_native_cursor_hide(struct native_window *native)
+static void sdl3_NativeCursorHide(struct nativeWindow *native)
 {
 	if (!SDL_HideCursor())
 	{
@@ -104,7 +104,7 @@ static void sdl3_wrapper_native_cursor_hide(struct native_window *native)
 	}
 }
 
-static u32 sdl3_wrapper_native_cursor_lock(struct native_window *native)
+static u32 sdl3_NativeCursorLock(struct nativeWindow *native)
 {
 	u32 lock = 1;
 	if (!SDL_SetWindowRelativeMouseMode(native->sdl_win, 1))
@@ -116,7 +116,7 @@ static u32 sdl3_wrapper_native_cursor_lock(struct native_window *native)
 	return lock;
 }
 
-static u32 sdl3_wrapper_native_cursor_unlock(struct native_window *native)
+static u32 sdl3_NativeCursorUnlock(struct nativeWindow *native)
 {
 	u32 lock = 0;
 	if (!SDL_SetWindowRelativeMouseMode(native->sdl_win, 0))
@@ -128,7 +128,7 @@ static u32 sdl3_wrapper_native_cursor_unlock(struct native_window *native)
 	return lock;
 }
 
-void sdl3_wrapper_cursor_set_rect(struct native_window *native, const vec2 nat_position, const vec2 size)
+void sdl3_NativeCursorSetRectangle(struct nativeWindow *native, const vec2 nat_position, const vec2 size)
 {
 	const SDL_Rect rect = 
 	{ 
@@ -144,7 +144,7 @@ void sdl3_wrapper_cursor_set_rect(struct native_window *native, const vec2 nat_p
 	}
 }
 
-void sdl3_wrapper_cursor_unset_rect(struct native_window *native)
+void sdl3_NativeCursorUnsetRectangle(struct nativeWindow *native)
 {
 	if (!SDL_SetWindowMouseRect(native->sdl_win, NULL))
 	{
@@ -152,23 +152,23 @@ void sdl3_wrapper_cursor_unset_rect(struct native_window *native)
 	}
 }
 
-static u32 sdl3_wrapper_native_cursor_is_visible(struct native_window *native)
+static u32 sdl3_NativeCursorVisibleCheck(struct nativeWindow *native)
 {
 	return (SDL_CursorVisible()) ? 1 : 0;
 }
 
-static u32 sdl3_wrapper_native_cursor_is_locked(struct native_window *native)
+static u32 sdl3_NativeCursorLockedCheck(struct nativeWindow *native)
 {
 	return SDL_GetWindowRelativeMouseMode(native->sdl_win);
 }
 
-static void sdl3_wrapper_native_window_config_update(vec2u32 position, vec2u32 size, struct native_window *native)
+static void sdl3_NativeWindowConfigUpdate(vec2u32 position, vec2u32 size, struct nativeWindow *native)
 {
 	int w, h;
 	if (!SDL_GetWindowSize(native->sdl_win, &w, &h))
 	{
 		LogString(T_SYSTEM, S_FATAL, SDL_GetError());
-		FatalCleanupAndExit(0);
+		FatalCleanupAndExit();
 	}
 
 	int x = (int) position[0];
@@ -184,7 +184,7 @@ static void sdl3_wrapper_native_window_config_update(vec2u32 position, vec2u32 s
 	position[1] = (u32) y;
 }
 
-static void sdl3_wrapper_native_window_fullscreen(struct native_window *native)
+static void sdl3_NativeWindowFullscreen(struct nativeWindow *native)
 {
 	if (!SDL_SetWindowFullscreen(native->sdl_win, 1))
 	{
@@ -192,7 +192,7 @@ static void sdl3_wrapper_native_window_fullscreen(struct native_window *native)
 	}
 }
 
-static void sdl3_wrapper_native_window_windowed(struct native_window *native)
+static void sdl3_NativeWindowWindowed(struct nativeWindow *native)
 {
 	if (!SDL_SetWindowFullscreen(native->sdl_win, 0))
 	{
@@ -200,7 +200,7 @@ static void sdl3_wrapper_native_window_windowed(struct native_window *native)
 	}
 }
 
-static void sdl3_wrapper_native_window_bordered(struct native_window *native)
+static void sdl3_NativeWindowBordered(struct nativeWindow *native)
 {
 	if (!SDL_SetWindowBordered(native->sdl_win, 1))
 	{
@@ -208,7 +208,7 @@ static void sdl3_wrapper_native_window_bordered(struct native_window *native)
 	}
 }
 
-static void sdl3_wrapper_native_window_borderless(struct native_window *native)
+static void sdl3_NativeWindowBorderless(struct nativeWindow *native)
 {
 	if (!SDL_SetWindowBordered(native->sdl_win, 0))
 	{
@@ -216,75 +216,75 @@ static void sdl3_wrapper_native_window_borderless(struct native_window *native)
 	}
 }
 
-static u32 sdl3_wrapper_native_window_is_fullscreen(const struct native_window *native)
+static u32 sdl3_NativeWindowFullscreenCheck(const struct nativeWindow *native)
 {
 	return (SDL_GetWindowFlags(native->sdl_win) & SDL_WINDOW_FULLSCREEN) ? 1 : 0;
 }
 
-static u32 sdl3_wrapper_native_window_is_bordered(const struct native_window *native)
+static u32 sdl3_NativeWindowBorderedCheck(const struct nativeWindow *native)
 {
 	return (SDL_GetWindowFlags(native->sdl_win) & SDL_WINDOW_BORDERLESS) ? 0 : 1;
 }
 
-void sdl3_wrapper_screen_position_native_to_system(vec2 sys_pos, struct native_window *native, const vec2 nat_pos)
+void sdl3_ScreenPositionNativeToEngine(vec2 sys_pos, struct nativeWindow *native, const vec2 nat_pos)
 {
-       fprintf(stderr, "implement %s\n", __func__);
+       ds_AssertMessage(0, "#implement %s\n", __func__);
 }
 
-void sdl3_wrapper_screen_position_system_to_native(vec2 nat_pos, struct native_window *native, const vec2 sys_pos)
+void sdl3_ScreenPositionEngineToNative(vec2 nat_pos, struct nativeWindow *native, const vec2 sys_pos)
 {
-       fprintf(stderr, "implement %s\n", __func__);
+       ds_AssertMessage(0, "#implement %s\n", __func__);
 }
 
-void sdl3_wrapper_window_position_native_to_system(vec2 sys_pos, struct native_window *native, const vec2 nat_pos)
+void sdl3_WindowPositionNativeToEngine(vec2 sys_pos, struct nativeWindow *native, const vec2 nat_pos)
 {
 	int w, h;
 	if (!SDL_GetWindowSize(native->sdl_win, &w, &h))
 	{
 		LogString(T_SYSTEM, S_FATAL, SDL_GetError());
-		FatalCleanupAndExit(0);
+		FatalCleanupAndExit();
 	}
 
 	sys_pos[0] = nat_pos[0];
 	sys_pos[1] = h - 1.0f - nat_pos[1];
 }
 
-void sdl3_wrapper_window_position_system_to_native(vec2 nat_pos, struct native_window *native, const vec2 sys_pos)
+void sdl3_WindowPositionEngineToNative(vec2 nat_pos, struct nativeWindow *native, const vec2 sys_pos)
 {
 	int w, h;
 	if (!SDL_GetWindowSize(native->sdl_win, &w, &h))
 	{
 		LogString(T_SYSTEM, S_FATAL, SDL_GetError());
-		FatalCleanupAndExit(0);
+		FatalCleanupAndExit();
 	}
 
 	nat_pos[0] = sys_pos[0];
 	nat_pos[1] = h - 1.0f - sys_pos[1];
 }
 
-static void sdl3_destroy_gl_context(struct native_window *native)
+static void sdl3_DestroyGlContext(struct nativeWindow *native)
 {
 	if (!SDL_GL_DestroyContext(native->gl_context))
 	{
 		LogString(T_SYSTEM, S_FATAL, SDL_GetError());
-		FatalCleanupAndExit(0);
+		FatalCleanupAndExit();
 	}
 }
 
-static void sdl3_create_gl_context(struct native_window *native)
+static void sdl3_CreateGlContext(struct nativeWindow *native)
 {
 	native->gl_context = SDL_GL_CreateContext(native->sdl_win);
 	if (native->gl_context == NULL)
 	{
 		LogString(T_SYSTEM, S_FATAL, SDL_GetError());
-		FatalCleanupAndExit(0);
+		FatalCleanupAndExit();
 	}
 
 	/* turn off vsync for context (dont block on SWAP until window refresh (or something...) */
 	if (!SDL_GL_SetSwapInterval(0))
 	{
 		LogString(T_SYSTEM, S_FATAL, SDL_GetError());
-		FatalCleanupAndExit(0);
+		FatalCleanupAndExit();
 	}
 
 	static u64 once = 1;
@@ -295,27 +295,27 @@ static void sdl3_create_gl_context(struct native_window *native)
 	}
 }
 
-static struct native_window *sdl3_wrapper_native_window_create(struct arena *mem, const char *title, const vec2u32 position, const vec2u32 size)
+static struct nativeWindow *sdl3_NativeWindowCreate(struct arena *mem, const char *title, const vec2u32 position, const vec2u32 size)
 {
-	struct native_window *native = ArenaPush(mem, sizeof(struct native_window));
+	struct nativeWindow *native = ArenaPush(mem, sizeof(struct nativeWindow));
 	native->sdl_win = SDL_CreateWindow(title, (i32) size[0], (i32) size[1], SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
 	if (native->sdl_win == NULL)
 	{
 		LogString(T_SYSTEM, S_FATAL, SDL_GetError());
-		FatalCleanupAndExit(0);
+		FatalCleanupAndExit();
 	}
 
-	sdl3_create_gl_context(native);
+	sdl3_CreateGlContext(native);
 	return native;
 }
 
-static void sdl3_wrapper_native_window_destroy(struct native_window *native)
+static void sdl3_NativeWindowDestroy(struct nativeWindow *native)
 {
-	sdl3_destroy_gl_context(native);
+	sdl3_DestroyGlContext(native);
 	SDL_DestroyWindow(native->sdl_win);
 }
 
-u32 sdl3_wrapper_enter_text_input_mode(struct native_window *native)
+u32 sdl3_EnterTextInputMode(struct nativeWindow *native)
 {
 	u32 success = 1;
 	if (!SDL_TextInputActive(native->sdl_win) && !SDL_StartTextInput(native->sdl_win))
@@ -327,7 +327,7 @@ u32 sdl3_wrapper_enter_text_input_mode(struct native_window *native)
 	return success;
 }
 
-u32 sdl3_wrapper_exit_text_input_mode(struct native_window *native)
+u32 sdl3_ExitTextInputMode(struct nativeWindow *native)
 {
 	u32 success = 1;
 	if (SDL_TextInputActive(native->sdl_win) && !SDL_StopTextInput(native->sdl_win))
@@ -339,7 +339,7 @@ u32 sdl3_wrapper_exit_text_input_mode(struct native_window *native)
 	return success;
 }
 
-utf8 sdl3_wrapper_utf8_get_clipboard(struct arena *mem)
+utf8 sdl3_Utf8GetClipboard(struct arena *mem)
 {
 	utf8 ret = Utf8Empty();
 	if (SDL_HasClipboardText())
@@ -372,7 +372,7 @@ utf8 sdl3_wrapper_utf8_get_clipboard(struct arena *mem)
 	return ret;
 }
 
-void sdl3_wrapper_cstr_set_clipboard(const char *str)
+void sdl3_CstrSetClipboard(const char *str)
 {
 	if (!SDL_SetClipboardText(str))
 	{
@@ -380,12 +380,12 @@ void sdl3_wrapper_cstr_set_clipboard(const char *str)
 	}
 }
 
-void sdl3_wrapper_init(void)
+void sdl3_WrapperInit(void)
 {
 	if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS))
 	{
 		LogString(T_SYSTEM, S_FATAL, SDL_GetError());
-		FatalCleanupAndExit(0);
+		FatalCleanupAndExit();
 	}
 
 #if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WIN64__
@@ -396,7 +396,7 @@ void sdl3_wrapper_init(void)
 		)
 	{
 		LogString(T_SYSTEM, S_FATAL, SDL_GetError());
-		FatalCleanupAndExit(0);
+		FatalCleanupAndExit();
 	}
 
 	i32 major, minor;
@@ -405,7 +405,7 @@ void sdl3_wrapper_init(void)
 	if (major < 3 || minor < 3)
 	{
 		LogString(T_SYSTEM, S_FATAL, "Requires GL 3.3 or greater, exiting\n");
-		FatalCleanupAndExit(0);
+		FatalCleanupAndExit();
 	}
 #elif __DS_PLATFORM__ == __DS_WEB__
 	SDL_SetHint(SDL_HINT_OPENGL_ES_DRIVER, "1");
@@ -416,7 +416,7 @@ void sdl3_wrapper_init(void)
 		)
 	{
 		LogString(T_SYSTEM, S_FATAL, SDL_GetError());
-		FatalCleanupAndExit(0);
+		FatalCleanupAndExit();
 	}
 
 	i32 major, minor;
@@ -425,50 +425,50 @@ void sdl3_wrapper_init(void)
 	if (major < 3)
 	{
 		LogString(T_SYSTEM, S_FATAL, "Requires GLES 3.0 or greater, exiting\n");
-		FatalCleanupAndExit(0);
+		FatalCleanupAndExit();
 	}
 #endif
 	/* Must be done after initalizing the video driver but before creating any opengl windows */
 	if (!SDL_GL_LoadLibrary(NULL))
 	{
 		LogString(T_SYSTEM, S_FATAL, SDL_GetError());
-		FatalCleanupAndExit(0);
+		FatalCleanupAndExit();
 	}
-	native_window_create = &sdl3_wrapper_native_window_create;
-	native_window_destroy = &sdl3_wrapper_native_window_destroy;
-	native_window_get_native_handle = &sdl3_wrapper_native_window_get_native_handle;
-	native_window_gl_set_current = sdl3_wrapper_native_window_gl_set_current;
-	native_window_gl_swap_buffers = &sdl3_wrapper_native_window_gl_swap_buffers;
-	native_window_config_update = &sdl3_wrapper_native_window_config_update;
-	native_window_fullscreen = &sdl3_wrapper_native_window_fullscreen;
-	native_window_windowed = &sdl3_wrapper_native_window_windowed;
-	native_window_bordered = &sdl3_wrapper_native_window_bordered;
-	native_window_borderless = &sdl3_wrapper_native_window_borderless;
-	native_window_is_fullscreen = &sdl3_wrapper_native_window_is_fullscreen;
-	native_window_is_bordered = &sdl3_wrapper_native_window_is_bordered;
+	NativeWindowCreate = &sdl3_NativeWindowCreate;
+	NativeWindowDestroy = &sdl3_NativeWindowDestroy;
+	NativeWindowGetNativeHandle = &sdl3_NativeWindowGetNativeHandle;
+	NativeWindowGlSetCurrent = sdl3_NativeWindowGlSetCurrent;
+	NativeWindowGlSwapBuffers = &sdl3_NativeWindowGlSwapBuffers;
+	NativeWindowConfigUpdate = &sdl3_NativeWindowConfigUpdate;
+	NativeWindowFullscreen = &sdl3_NativeWindowFullscreen;
+	NativeWindowWindowed = &sdl3_NativeWindowWindowed;
+	NativeWindowBordered = &sdl3_NativeWindowBordered;
+	NativeWindowBorderless = &sdl3_NativeWindowBorderless;
+	NativeWindowFullscreenCheck = &sdl3_NativeWindowFullscreenCheck;
+	NativeWindowBorderedCheck = &sdl3_NativeWindowBorderedCheck;
 
-	native_cursor_show = &sdl3_wrapper_native_cursor_show;
-	native_cursor_hide = &sdl3_wrapper_native_cursor_hide;
-	native_cursor_is_visible = &sdl3_wrapper_native_cursor_is_visible;
-	native_cursor_is_locked = &sdl3_wrapper_native_cursor_is_locked;
-	native_cursor_lock = &sdl3_wrapper_native_cursor_lock;
-	native_cursor_unlock = &sdl3_wrapper_native_cursor_unlock;
- 	native_cursor_set_rect = &sdl3_wrapper_cursor_set_rect;
- 	native_cursor_unset_rect = &sdl3_wrapper_cursor_unset_rect;
+	NativeCursorShow = &sdl3_NativeCursorShow;
+	NativeCursorHide = &sdl3_NativeCursorHide;
+	NativeCursorVisibleCheck = &sdl3_NativeCursorVisibleCheck;
+	NativeCursorLockedCheck = &sdl3_NativeCursorLockedCheck;
+	NativeCursorLock = &sdl3_NativeCursorLock;
+	NativeCursorUnlock = &sdl3_NativeCursorUnlock;
+ 	NativeCursorSetRectangle = &sdl3_NativeCursorSetRectangle;
+ 	NativeCursorUnsetRectangle = &sdl3_NativeCursorUnsetRectangle;
 
-	screen_position_native_to_system = &sdl3_wrapper_screen_position_native_to_system;
-	screen_position_system_to_native = &sdl3_wrapper_screen_position_system_to_native;
-	window_position_native_to_system = &sdl3_wrapper_window_position_native_to_system;
-	window_position_system_to_native = &sdl3_wrapper_window_position_system_to_native;
+	ScreenPositionNativeToEngine = &sdl3_ScreenPositionNativeToEngine;
+	ScreenPositionEngineToNative = &sdl3_ScreenPositionEngineToNative;
+	WindowPositionNativeToEngine = &sdl3_WindowPositionNativeToEngine;
+	WindowPositionEngineToNative = &sdl3_WindowPositionEngineToNative;
 
-	Utf8GetClipboard = sdl3_wrapper_utf8_get_clipboard;
-	CstrSetClipboard = sdl3_wrapper_cstr_set_clipboard;
+	Utf8GetClipboard = sdl3_Utf8GetClipboard;
+	CstrSetClipboard = sdl3_CstrSetClipboard;
 
-	system_enter_text_input_mode = &sdl3_wrapper_enter_text_input_mode;
-	system_exit_text_input_mode = &sdl3_wrapper_exit_text_input_mode;
-	system_key_modifiers = &sdl3_wrapper_key_modifiers;
+	EnterTextInputMode = &sdl3_EnterTextInputMode;
+	ExitTextInputMode = &sdl3_ExitTextInputMode;
+	KeyModifiers = &sdl3_KeyModifiers;
 
-	system_event_consume = &sdl3_wrapper_event_consume;
+	EventConsume = &sdl3_EventConsume;
 
-	gl_functions_init = &sdl3_wrapper_gl_functions_init;
+	GlFunctionsInit = &sdl3_GlFunctionsInit;
 }

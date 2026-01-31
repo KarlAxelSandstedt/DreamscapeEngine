@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.14.3)
 add_library(DreamscapeDefine INTERFACE "${DS_INCLUDE_PATH}/ds_define.h")
 add_library(Dreamscape::Define ALIAS DreamscapeDefine)
 
+target_link_libraries(DreamscapeDefine INTERFACE opengl_headers)
 target_compile_definitions(DreamscapeDefine INTERFACE DS_VERSION_CSTR="${CPACK_PACKAGE_VERSION}")
 target_include_directories(DreamscapeDefine INTERFACE ${DS_INCLUDE_PATH})
 

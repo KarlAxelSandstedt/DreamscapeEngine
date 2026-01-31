@@ -363,7 +363,7 @@ static void r_led_draw(const struct led *led)
 
 	r_proxy3d_hierarchy_speculate(&g_r_core->frame, led->ns - led->ns_engine_paused);
 
-	struct hiIterator it = hi_IteratorInit(&g_r_core->frame, g_r_core->proxy3d_hierarchy, PROXY3D_ROOT);
+	struct hiIterator it = hi_IteratorAlloc(&g_r_core->frame, g_r_core->proxy3d_hierarchy, PROXY3D_ROOT);
 	// skip root stub 
 	hi_IteratorNextDf(&it);
 	while (it.count)
@@ -736,7 +736,7 @@ void r_led_main(const struct led *led)
 			//fprintf(stderr, "spec:   %lu\n", led->ns - led->ns_engine_paused);
 
 			struct system_window *win = NULL;
-			struct hiIterator	it = hi_IteratorInit(&tmp, g_window_hierarchy, g_process_root_window);
+			struct hiIterator	it = hi_IteratorAlloc(&tmp, g_window_hierarchy, g_process_root_window);
 			while (it.count)
 			{
 				const u32 window = hi_IteratorNextDf(&it);

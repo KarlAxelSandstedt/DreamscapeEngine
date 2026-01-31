@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025,2026 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,10 +17,14 @@
 ==========================================================================
 */
 
-#ifndef __SYS_GL_H__
-#define __SYS_GL_H__
+#ifndef __DS_GL_H__
+#define __DS_GL_H__
 
-#include "ds_common.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include "ds_types.h"
 
 #if __DS_PLATFORM__ == __DS_WIN64__ || __DS_PLATFORM__ == __DS_LINUX__
 #include "GL/glcorearb.h"
@@ -212,6 +216,11 @@ struct gl_functions
 };
 
 /* init gl function pointers (for single context on some windows implementations) */
-extern void 	(*gl_functions_init)(struct gl_functions *func);
+extern void 	(*GlFunctionsInit)(struct gl_functions *func);
+
+#ifdef __cplusplus
+}
+#endif
+
  
 #endif

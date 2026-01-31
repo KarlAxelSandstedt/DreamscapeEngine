@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,7 +19,7 @@
 
 #include "sdl3_wrapper_local.h"
 
-u32 sdl3_wrapper_key_modifiers(void)
+u32 sdl3_KeyModifiers(void)
 {
 	const u32 sdl_modifiers = SDL_GetModState();
 	return (KEY_MOD_LSHIFT * !!(sdl_modifiers & SDL_KMOD_LSHIFT))
@@ -36,9 +36,9 @@ u32 sdl3_wrapper_key_modifiers(void)
 		| (KEY_MOD_SCROLL * !!(sdl_modifiers & SDL_KMOD_SCROLL));
 }
 
-enum mouse_button sdl3_wrapper_to_system_mouse_button(const u8 mouse_button)
+enum mouseButton sdl3_DsMouseButton(const u8 mouse_button)
 {
-	enum mouse_button button = MOUSE_BUTTON_NONMAPPED;
+	enum mouseButton button = MOUSE_BUTTON_NONMAPPED;
 	switch (mouse_button)
 	{
 		case SDL_BUTTON_LEFT: { button = MOUSE_BUTTON_LEFT; } break;
@@ -49,9 +49,9 @@ enum mouse_button sdl3_wrapper_to_system_mouse_button(const u8 mouse_button)
 	return button;
 }
 
-enum ds_keycode sdl3_wrapper_to_system_keycode(const SDL_Keycode sdl_key)
+enum dsKeycode sdl3_DsKeycode(const SDL_Keycode sdl_key)
 {
-	enum ds_keycode key = DS_NO_SYMBOL;
+	enum dsKeycode key = DS_NO_SYMBOL;
 
 	if (SDLK_0 <= sdl_key && sdl_key <= SDLK_9)
 	{
@@ -85,9 +85,9 @@ enum ds_keycode sdl3_wrapper_to_system_keycode(const SDL_Keycode sdl_key)
 	return key;
 }
 
-enum ds_keycode sdl3_wrapper_to_system_scancode(const SDL_Scancode sdl_key)
+enum dsKeycode sdl3_DsScancode(const SDL_Scancode sdl_key)
 {
-	enum ds_keycode key = DS_NO_SYMBOL;
+	enum dsKeycode key = DS_NO_SYMBOL;
 
 	if (SDL_SCANCODE_0 <= sdl_key && sdl_key <= SDL_SCANCODE_9)
 	{

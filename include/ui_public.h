@@ -20,11 +20,9 @@
 #ifndef __UI_PUBLIC_H__
 #define __UI_PUBLIC_H__
 
-#include "ds_common.h"
+#include "ds_base.h"
 #include "ds_math.h"
-#include "allocator.h"
 #include "asset_public.h"
-#include "array_list.h"
 #include "hierarchy_index.h"
 #include "ds_vector.h"
 #include "list.h"
@@ -56,7 +54,7 @@ struct ui_visual
 	f32			border_size;
 
 	/* default text visual values */
-	enum font_id		font;
+	enum fontId		font;
 	enum alignment_x	text_alignment_x;
 	enum alignment_y	text_alignment_y;
 	f32			text_pad_x;
@@ -71,7 +69,7 @@ struct ui_visual ui_visual_init(const vec4 background_color
 		, const f32 edge_softness
 		, const f32 corner_radius
 		, const f32 border_size
-		, const enum font_id font
+		, const enum fontId font
 		, const enum alignment_x text_alignment_x
 		, const enum alignment_y text_alignment_y
 		, const f32 text_pad_x
@@ -742,7 +740,7 @@ struct ui_node
 	u64		inter;			/* interactions during frame */
 
 	const struct font *font;
-	enum sprite_id	sprite;
+	enum spriteId	sprite;
 
 	enum axis_2	child_layout_axis;
 	struct ui_size 	semantic_size[AXIS_2_COUNT];
@@ -908,8 +906,8 @@ void 	ui_gradient_color_push(const enum box_corner, const vec4 color);
 void 	ui_gradient_color_set(const enum box_corner, const vec4 color);
 void 	ui_gradient_color_pop(const enum box_corner);
 
-void 	ui_font_push(const enum font_id font);
-void 	ui_font_set(const enum font_id font);
+void 	ui_font_push(const enum fontId font);
+void 	ui_font_set(const enum fontId font);
 void 	ui_font_pop(void);
 
 void 	ui_edge_softness_push(const f32 softness);
@@ -924,8 +922,8 @@ void 	ui_border_size_push(const f32 pixels);
 void 	ui_border_size_set(const f32 pixels);
 void 	ui_border_size_pop(void);
 
-void 	ui_sprite_push(const enum sprite_id sprite);
-void 	ui_sprite_set(const enum sprite_id sprite);
+void 	ui_sprite_push(const enum spriteId sprite);
+void 	ui_sprite_set(const enum spriteId sprite);
 void 	ui_sprite_pop(void);
 
 void 	ui_text_align_x_push(const enum alignment_x align);

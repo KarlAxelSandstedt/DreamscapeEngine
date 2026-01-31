@@ -17,10 +17,7 @@
 ==========================================================================
 */
 
-#include "ds_common.h"
-#include "sys_public.h"
-#include "sys_local.h"
-#include "ds_string.h"
+#include "ds_platform.h"
 
 const char *ds_button_string_map[] =
 {
@@ -101,12 +98,12 @@ const char *ds_keycode_string_map[] =
 	"DS_KEY_COUN"
 };
 
-const char *ds_keycode_to_string(const enum ds_keycode key)
+const char *CstrDsKeycode(const enum dsKeycode key)
 {
 	return ds_keycode_string_map[key];
 }
 
-const char *ds_button_to_string(const enum mouse_button button)
+const char *CstrButton(const enum mouseButton button)
 {
 	return ds_button_string_map[button];
 }

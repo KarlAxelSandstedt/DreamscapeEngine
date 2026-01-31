@@ -504,7 +504,7 @@ static void r_scene_bucket_generate_draw_data(struct r_bucket *b)
 								i += line->glyph_count;
 								for (u32 t = 0; t < line->glyph_count; ++t)
 								{
-									const struct font_glyph *glyph = glyph_lookup(n->font, line->glyph[t].codepoint);
+									const struct fontGlyph *glyph = GlyphLookup(n->font, line->glyph[t].codepoint);
 									const vec2 local_offset = 
 									{ 
 										global_baseline[0] + (f32) glyph->bearing[0] + line->glyph[t].x,
@@ -592,7 +592,7 @@ static void r_scene_bucket_generate_draw_data(struct r_bucket *b)
 							ds_Assert(sel->layout->line_count == 1);
 							ds_Assert(sel->high <= line->glyph_count + 1);
 
-							const struct font_glyph *glyph = glyph_lookup(n->font, (u32) ' ');
+							const struct fontGlyph *glyph = GlyphLookup(n->font, (u32) ' ');
 							f32 height = n->font->linespace;
 							f32 width = glyph->advance;
 							if (sel->low != sel->high)
@@ -602,7 +602,7 @@ static void r_scene_bucket_generate_draw_data(struct r_bucket *b)
 
 							if (0 < sel->low && sel->low <= line->glyph_count)
 							{
-								const struct font_glyph *end_glyph = glyph_lookup(n->font, line->glyph[sel->low-1].codepoint);
+								const struct fontGlyph *end_glyph = GlyphLookup(n->font, line->glyph[sel->low-1].codepoint);
 								global_offset[0] += line->glyph[sel->low-1].x + end_glyph->advance;
 							}
 

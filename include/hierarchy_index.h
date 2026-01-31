@@ -99,29 +99,18 @@ void *		hi_Address(const struct hi *hi, const u32 node_index);
 
 /*
  * hierarchy_index_iterator: iterator for traversing a supplied node and it's entire sub-hierarchy in the given
- * hierarchy. SHOULD always be supplied an arena large enough to store the sub-hierarchy. To check if memory
- * ran out, and forced heap allocations took place, simply run the following check after you are done iterating.
- *
- * if (iterator.forced_malloc)
- * {
- *	LOG_MESSAGE()
- * }
+ * hierarchy. 
  */
 struct hiIterator
 {
-	struct hi *hi; 	/* hierarchy index */
-	struct arena *mem;		/* iterator memory */
-	u64 stack_len;  		/* max stack size  */
-	u32 *stack;			/* index stack 	   */
-	u64 count;			/* stack count 	   */
-	//u32 next;			/* next index	   */
-	u32 forced_malloc;		/* internal state to use heap allocation if arena runs out of memory */
+	struct hi *	hi; 		/* hierarchy index */
+	u64 		stack_len;  	/* max stack size  */
+	u32 *		stack;		/* index stack 	   */
+	u64 		count;		/* stack count 	   */
 };
 
 /* Setup hierarchy iterator at the given node root */
-struct hiIterator	hi_IteratorInit(struct arena *ar_alias, struct hi *hi, const u32 root);
-/* release / pop any used memory by iterator */
-void 			hi_IteratorRelease(struct hiIterator *it);
+struct hiIterator	hi_IteratorAlloc(struct arena *ar_alias, struct hi *hi, const u32 root);
 /* Given it->count > 0, return the next index in the iterator */
 u32 			hi_IteratorPeek(struct hiIterator *it);
 /* Given it->count > 0, return the next index in the iterator, and push any new links (depth-first) related to the index */

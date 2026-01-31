@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -18,11 +18,11 @@
 */
 
 #include "sdl3_wrapper_local.h"
-#include "sys_gl.h"
+#include "ds_gl.h"
 
 #ifdef GL_DEBUG
 
-void GLAPIENTRY gl_debug_message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar *message, const void *user_param)
+void GLAPIENTRY GlDebugMessageCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar *message, const void *user_param)
 {
 	char *src_str = "";
 	switch (source)
@@ -63,16 +63,16 @@ void GLAPIENTRY gl_debug_message_callback(GLenum source, GLenum type, GLuint id,
 	LOG_MESSAGE(T_RENDERER, sev, 0, "opengl debug message [%s, %s, %s ] - %s\n", src_str, type_str, severity_str, message);
 }
 
-void gl_debug_init(void)
+void GlDebugInit(void)
 {
 	glEnable(GL_DEBUG_OUTPUT);
 	glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-	glDebugMessageCallback(&gl_debug_message_callback, NULL);
+	glDebugMessageCallback(&GlDebugMessageCallback, NULL);
 }
 
 #endif
 
-SDL_FunctionPointer load_proc(const char *proc)
+SDL_FunctionPointer LoadProc(const char *proc)
 {
 	SDL_FunctionPointer fp = SDL_GL_GetProcAddress(proc); 				
 	if (fp == NULL) 									
@@ -88,8 +88,8 @@ a subset of opengl 3.3 (webgl 2), perhaps we can assume that it is supported...
 We should check the GL version of the context and verify that the loaded functions
 are supported. 
  */
-#define	LOAD_PROC(gl_fp)	(type_ ## gl_fp) load_proc(#gl_fp) 								
-void sdl3_wrapper_gl_functions_init(struct gl_functions *func)
+#define	LOAD_PROC(gl_fp)	(type_ ## gl_fp) LoadProc(#gl_fp) 								
+void sdl3_GlFunctionsInit(struct gl_functions *func)
 {	
 	func->glGetIntegerv = LOAD_PROC(glGetIntegerv);
 	func->glGetString = LOAD_PROC(glGetString);
@@ -180,6 +180,6 @@ void sdl3_wrapper_gl_functions_init(struct gl_functions *func)
 	func->glGetProgramiv = LOAD_PROC(glGetProgramiv);
 	func->glGetProgramInfoLog = LOAD_PROC(glGetProgramInfoLog);
 #if GL_DEBUG
-	gl_debug_init();
+	GlDebugInit();
 #endif
 }

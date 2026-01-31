@@ -488,15 +488,13 @@ void *hi_Address(const struct hi *hi, const u32 node)
 	return PoolAddress(&hi->pool, node);
 }
 
-struct hiIterator hi_IteratorInit(struct arena *mem, struct hi *hi, const u32 root)
+struct hiIterator hi_IteratorAlloc(struct arena *mem, struct hi *hi, const u32 root)
 {
 	ds_Assert(mem);
 	ArenaPushRecord(mem);
 
 	struct hiIterator it;
 	it.hi = hi;
-	it.mem = mem,
-	it.forced_malloc = 0;
 
 	struct memArray alloc = ArenaPushAlignedAll(mem, sizeof(u32), sizeof(u32));
 	it.stack_len = alloc.len;
@@ -504,9 +502,8 @@ struct hiIterator hi_IteratorInit(struct arena *mem, struct hi *hi, const u32 ro
 
 	if (it.stack == NULL)
 	{
-		it.forced_malloc = 1;
-		it.stack_len = 64;
-		it.stack = malloc(it.stack_len * sizeof(u32));	
+		LogString(T_SYSTEM, S_FATAL, "Stack OOM in hi_IteratorAlloc");
+		FatalCleanupAndExit();
 	}
 
 	ds_Assert(root != HI_NULL_INDEX);
@@ -515,15 +512,6 @@ struct hiIterator hi_IteratorInit(struct arena *mem, struct hi *hi, const u32 ro
 	it.count = 1;
 
 	return it;
-}
-
-void hi_IteratorRelease(struct hiIterator *it)
-{
-	if (it->forced_malloc)
-	{
-		free(it->stack);
-	}
-	ArenaPopRecord(it->mem);
 }
 
 u32 hi_IteratorPeek(struct hiIterator *it)
@@ -558,11 +546,8 @@ u32 hi_IteratorNextDf(struct hiIterator *it)
 		/* count doesnt take initial stub into account {  (1 + it->count - 1 + push_count) } */
 		if (it->count + push_count > it->stack_len)
 		{
-			it->forced_malloc = 1;
-			it->stack_len += 64;
-			u32 *new_arr = malloc(it->stack_len * sizeof(u32));
-			memcpy(new_arr, it->stack, it->count * sizeof(u32));
-			it->stack = new_arr;
+			LogString(T_SYSTEM, S_FATAL, "Stack OOM in hi_IteratorNextDf");
+			FatalCleanupAndExit();
 		}
 
 		it->stack[it->count + 0] = push[0];
