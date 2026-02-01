@@ -26,10 +26,10 @@
 struct rigidBody static_body = { 0 };
 
 
-struct contact_solver_config config_storage = { 0 };
-struct contact_solver_config *g_solver_config = &config_storage;
+struct solverConfig config_storage = { 0 };
+struct solverConfig *g_solver_config = &config_storage;
 
-void contact_solver_config_init(const u32 iteration_count, const u32 block_solver, const u32 warmup_solver, const vec3 gravity, const f32 baumgarte_constant, const f32 max_condition, const f32 linear_dampening, const f32 angular_dampening, const f32 linear_slop, const f32 restitution_threshold, const u32 sleep_enabled, const f32 sleep_time_threshold, const f32 sleep_linear_velocity_sq_limit, const f32 sleep_angular_velocity_sq_limit)
+void SolverConfigInit(const u32 iteration_count, const u32 block_solver, const u32 warmup_solver, const vec3 gravity, const f32 baumgarte_constant, const f32 max_condition, const f32 linear_dampening, const f32 angular_dampening, const f32 linear_slop, const f32 restitution_threshold, const u32 sleep_enabled, const f32 sleep_time_threshold, const f32 sleep_linear_velocity_sq_limit, const f32 sleep_angular_velocity_sq_limit)
 {
 	ds_Assert(iteration_count >= 1);
 
@@ -63,9 +63,9 @@ void contact_solver_config_init(const u32 iteration_count, const u32 block_solve
 	static_body.restitution = 0.0f;
 }
 
-struct contact_solver *contact_solver_init_body_data(struct arena *mem, struct island *is, const f32 timestep)
+struct solver *SolverInitBodyData(struct arena *mem, struct island *is, const f32 timestep)
 {
-	struct contact_solver *solver = ArenaPush(mem, sizeof(struct contact_solver));
+	struct solver *solver = ArenaPush(mem, sizeof(struct solver));
 
 	solver->bodies = is->bodies;
 	solver->timestep = timestep;
@@ -134,9 +134,9 @@ struct contact_solver *contact_solver_init_body_data(struct arena *mem, struct i
 	return solver;
 }
 
-void contact_solver_init_velocity_constraints(struct arena *mem, struct contact_solver *solver, const struct physicsPipeline *pipeline, const struct island *is)
+void SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, const struct physicsPipeline *pipeline, const struct island *is)
 {
-	solver->vcs = ArenaPush(mem, solver->contact_count * sizeof(struct velocity_constraint));
+	solver->vcs = ArenaPush(mem, solver->contact_count * sizeof(struct velocityConstraint));
 
 	vec3 tmp1, tmp2, tmp3, tmp4;
 	vec3 vcp_Ic1[4]; 	/* Temporary storage for Inw(I_1)(r1 x n) */
@@ -145,7 +145,7 @@ void contact_solver_init_velocity_constraints(struct arena *mem, struct contact_
 	vec3 vcp_c2[4];		/* Temporary storage for(r2 x n) */
 	for (u32 i = 0; i < solver->contact_count; ++i)
 	{			
-		struct velocity_constraint *vc = solver->vcs + i;
+		struct velocityConstraint *vc = solver->vcs + i;
 
 		const struct rigidBody *b1 = PoolAddress(&pipeline->body_pool, is->contacts[i]->cm.i1);
 		const struct rigidBody *b2 = PoolAddress(&pipeline->body_pool, is->contacts[i]->cm.i2);
@@ -184,11 +184,11 @@ void contact_solver_init_velocity_constraints(struct arena *mem, struct contact_
 		vc->block_solve = 0;
 		vc->restitution = f32_max(b1->restitution, b2->restitution);
 		vc->friction = f32_sqrt(b1_friction*b2_friction);
-		vc->vcps = ArenaPush(mem, vc->vcp_count * sizeof(struct velocity_constraint_point));
+		vc->vcps = ArenaPush(mem, vc->vcp_count * sizeof(struct velocityConstraintPoint));
 
 		for (u32 j = 0; j < vc->vcp_count; ++j)
 		{
-			struct velocity_constraint_point *vcp = vc->vcps + j;
+			struct velocityConstraintPoint *vcp = vc->vcps + j;
 			vcp->normal_impulse = 0.0f;
 			vcp->tangent_impulse[0] = 0.0f;
 			vcp->tangent_impulse[1] = 0.0f;
@@ -361,20 +361,20 @@ void contact_solver_init_velocity_constraints(struct arena *mem, struct contact_
 	}
 }
 
-void contact_solver_warmup(struct contact_solver *solver, const struct island *is)
+void SolverWarmup(struct solver *solver, const struct island *is)
 {
 
 	vec3 tmp1, tmp2, tmp3;
 	for (u32 i = 0; i < solver->contact_count; ++i)
 	{			
 		struct contact *c = is->contacts[i];
-		struct velocity_constraint *vc = solver->vcs + i;
+		struct velocityConstraint *vc = solver->vcs + i;
 	
 		if (vc->vcp_count == c->cached_count)
 		{
 			for (u32 j = 0; j < vc->vcp_count; ++j)
 			{
-				struct velocity_constraint_point *vcp = vc->vcps + j;
+				struct velocityConstraintPoint *vcp = vc->vcps + j;
 				u32 best = U32_MAX;
 				f32 closest_dist_sq = 0.01f * 0.01f;
 				for (u32 k = 0; k < c->cached_count; ++k)
@@ -418,12 +418,12 @@ void contact_solver_warmup(struct contact_solver *solver, const struct island *i
 	}
 }
 
-void contact_solver_cache_impulse_data(struct contact_solver *solver, const struct island *is)
+void SolverCacheImpulse(struct solver *solver, const struct island *is)
 {
 	for (u32 i = 0; i < solver->contact_count; ++i)
 	{			
 		struct contact *c = is->contacts[i];
-		struct velocity_constraint *vc = solver->vcs + i;
+		struct velocityConstraint *vc = solver->vcs + i;
 
 		c->cached_count = vc->vcp_count;
 		Vec3Copy(c->normal_cache, vc->normal);
@@ -449,19 +449,19 @@ void contact_solver_cache_impulse_data(struct contact_solver *solver, const stru
 	}
 }
 
-void contact_solver_iterate_velocity_constraints(struct contact_solver *solver)
+void SolverIterateVelocityConstraints(struct solver *solver)
 {
 	vec4 b, new_total_impulse;
 	vec3 tmp1, tmp2, tmp3;
 	vec3 relative_velocity;
 	for (u32 i = 0; i < solver->contact_count; ++i)
 	{
-		struct velocity_constraint *vc = solver->vcs + i;
+		struct velocityConstraint *vc = solver->vcs + i;
 
 		/* solve friction constraints first, since normal constraints are more important */
 		for (u32 j = 0; j < vc->vcp_count; ++j)
 		{
-			struct velocity_constraint_point *vcp = vc->vcps + j;
+			struct velocityConstraintPoint *vcp = vc->vcps + j;
 			const f32 impulse_bound = vc->friction * vcp->normal_impulse;
 
 			for (u32 k = 0; k < 2; ++k)
@@ -499,7 +499,7 @@ void contact_solver_iterate_velocity_constraints(struct contact_solver *solver)
 		{
 			for (u32 j = 0; j < vc->vcp_count; ++j)
 			{
-				struct velocity_constraint_point *vcp = vc->vcps + j;
+				struct velocityConstraintPoint *vcp = vc->vcps + j;
 
 				/* Calculate seperating velocity at point: JV */
 				Vec3Sub(relative_velocity, 
@@ -534,7 +534,7 @@ void contact_solver_iterate_velocity_constraints(struct contact_solver *solver)
 			Vec3Sub(tmp1, solver->linear_velocity[vc->lb2], solver->linear_velocity[vc->lb1]);
 			for (u32 j = 0; j < vc->vcp_count; ++j)
 			{
-				struct velocity_constraint_point *vcp = vc->vcps + j;
+				struct velocityConstraintPoint *vcp = vc->vcps + j;
 				/* Calculate seperating velocity at point: JV */
 				Vec3Cross(tmp2, solver->angular_velocity[vc->lb2], vcp->r2);
 				Vec3Cross(tmp3, solver->angular_velocity[vc->lb1], vcp->r1);
@@ -579,7 +579,7 @@ void contact_solver_iterate_velocity_constraints(struct contact_solver *solver)
 					 */
 					for (u32 j = 0; j < vc->vcp_count; ++j)
 					{
-						struct velocity_constraint_point *vcp = vc->vcps + j;
+						struct velocityConstraintPoint *vcp = vc->vcps + j;
 						const f32 xj = vcp->normal_mass * b[j];
 						const u32 i1 = (j+1) % 2;
 						if (xj >= 0.0f && (xj*(*inv_normal_mass)[j][i1] - b[i1]) >= 0.0f)
@@ -624,7 +624,7 @@ void contact_solver_iterate_velocity_constraints(struct contact_solver *solver)
 					 */
 					for (u32 j = 0; j < vc->vcp_count; ++j)
 					{
-						struct velocity_constraint_point *vcp = vc->vcps + j;
+						struct velocityConstraintPoint *vcp = vc->vcps + j;
 						const f32 xj = vcp->normal_mass * b[j];
 						const u32 i1 = (j+1) % 3;
 						const u32 i2 = (j+2) % 3;
@@ -648,7 +648,7 @@ void contact_solver_iterate_velocity_constraints(struct contact_solver *solver)
 					 */
 					for (u32 j = 0; j < vc->vcp_count; ++j)
 					{
-						struct velocity_constraint_point *vcp = vc->vcps + j;
+						struct velocityConstraintPoint *vcp = vc->vcps + j;
 						const f32 vnj = -((*normal_mass)[0][j]*b[0] + (*normal_mass)[1][j]*b[1] + (*normal_mass)[2][j]*b[2]) / (*normal_mass)[j][j];
 						
 						if (vnj < 0.0f) { continue; }
@@ -702,7 +702,7 @@ void contact_solver_iterate_velocity_constraints(struct contact_solver *solver)
 					 */
 					for (u32 j = 0; j < vc->vcp_count; ++j)
 					{
-						struct velocity_constraint_point *vcp = vc->vcps + j;
+						struct velocityConstraintPoint *vcp = vc->vcps + j;
 						const f32 xj = b[j] * vcp->normal_mass;
 						const u32 i1 = (j+1) % 4;
 						const u32 i2 = (j+2) % 4;
@@ -728,7 +728,7 @@ void contact_solver_iterate_velocity_constraints(struct contact_solver *solver)
 					 */
 					for (u32 j = 0; j < vc->vcp_count; ++j)
 					{
-						struct velocity_constraint_point *vcp = vc->vcps + j;
+						struct velocityConstraintPoint *vcp = vc->vcps + j;
 						const f32 vnj = -((*normal_mass)[0][j]*b[0] + (*normal_mass)[1][j]*b[1] + (*normal_mass)[2][j]*b[2] + (*normal_mass)[3][j]*b[3]) / vcp->normal_mass;
 						
 						if (vnj < 0.0f) { continue; }
@@ -811,7 +811,7 @@ void contact_solver_iterate_velocity_constraints(struct contact_solver *solver)
 			{
 				for (u32 j = 0; j < vc->vcp_count; ++j)
 				{
-					struct velocity_constraint_point *vcp = vc->vcps + j;
+					struct velocityConstraintPoint *vcp = vc->vcps + j;
 					const f32 delta_impulse = new_total_impulse[j] - vcp->normal_impulse;
 					vcp->normal_impulse = new_total_impulse[j];
 					

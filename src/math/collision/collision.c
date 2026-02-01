@@ -2122,7 +2122,7 @@ static u32 HullContact(struct arena *tmp, struct collisionResult *result, const 
 			consider better ways of creating body pair keys");
 
 	u32 cache_found = 1;	
-	if ((sat_cache = sat_cache_lookup(&pipeline->c_db, bi1, bi2)) == NULL)
+	if ((sat_cache = SatCacheLookup(&pipeline->c_db, bi1, bi2)) == NULL)
 	{
 		cache_found = 0;	
 		sat_cache = &result->sat_cache;

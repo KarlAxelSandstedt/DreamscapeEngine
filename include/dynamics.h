@@ -66,14 +66,14 @@ and current contacts, and if necessary, invalidate any contact data.
 Frame layout:
 	1. generate_contacts
  	2. c_db_new_frame(contact_count)	// alloc memory for frame contacts
- 	3. c_db_add_contact(i1, i2, contact)	// add all new contacts 
+ 	3. cdb_ContactAdd(i1, i2, contact)	// add all new contacts 
  	4. solve
  	5. invalidate any contacts before caching them.
  	6. switch frame and cache 
  	7. reset frame
 */
 
-struct contact_database
+struct cdb
 {
 	/*
 	 * contact net list nodes are owned as follows:
@@ -108,26 +108,26 @@ struct contact_database
 #define CONTACT_KEY_TO_BODY_0(key) 	((key) >> 32)
 #define CONTACT_KEY_TO_BODY_1(key) 	((key) & U32_MAX)
 
-struct contact_database c_db_alloc(struct arena *mem_persistent, const u32 initial_size);
-void 			c_db_free(struct contact_database *c_db);
-void			c_db_flush(struct contact_database *c_db);
-void			c_db_validate(const struct physicsPipeline *pipeline);
-void			c_db_clear_frame(struct contact_database *c_db);
+struct cdb 	cdb_Alloc(struct arena *mem_persistent, const u32 initial_size);
+void 		cdb_Free(struct cdb *c_db);
+void		cdb_Flush(struct cdb *c_db);
+void		cdb_Validate(const struct physicsPipeline *pipeline);
+void		cdb_ClearFrame(struct cdb *c_db);
 /* Update or add new contact depending on if the contact persisted from prevous frame. */
-struct contact *	c_db_add_contact(struct physicsPipeline *pipeline, const struct contactManifold *cm, const u32 i1, const u32 i2);
-void 			c_db_remove_contact(struct physicsPipeline *pipeline, const u64 key, const u32 index);
+struct contact *cdb_ContactAdd(struct physicsPipeline *pipeline, const struct contactManifold *cm, const u32 i1, const u32 i2);
+void 		cdb_ContactRemove(struct physicsPipeline *pipeline, const u64 key, const u32 index);
 /* Remove all contacts associated with the given body */
-void			c_db_remove_body_contacts(struct physicsPipeline *pipeline, const u32 body_index);
+void		cdb_BodyRemoveContacts(struct physicsPipeline *pipeline, const u32 body_index);
 /* Remove all contacts associated with the given static body and store affected islands */
-u32 *			c_db_remove_static_contacts_and_store_affected_islands(struct arena *mem, u32 *count, struct physicsPipeline *pipeline, const u32 static_index);
-struct contact *	c_db_lookup_contact(const struct contact_database *c_db, const u32 b1, const u32 b2);
-u32 			c_db_lookup_contact_index(const struct contact_database *c_db, const u32 i1, const u32 i2);
-void 			c_db_update_persistent_contacts_usage(struct contact_database *c_db);
+u32 *		cdb_StaticRemoveContactsAndStoreAffectedIslands(struct arena *mem, u32 *count, struct physicsPipeline *pipeline, const u32 static_index);
+struct contact *cdb_ContactLookup(const struct cdb *c_db, const u32 b1, const u32 b2);
+u32 		cdb_ContactLookupIndex(const struct cdb *c_db, const u32 i1, const u32 i2);
+void 		cdb_UpdatePersistentContactsUsage(struct cdb *c_db);
 
 /* add sat_cache to pipeline; if it already exists, reset the cache. */
-void 			sat_cache_add(struct contact_database *c_db, const struct satCache *sat_cache);
+void 			SatCacheAdd(struct cdb *c_db, const struct satCache *sat_cache);
 /* lookup sat_cache to pipeline; if it does't exist, return NULL. */
-struct satCache *	sat_cache_lookup(const struct contact_database *c_db, const u32 b1, const u32 b2);
+struct satCache *	SatCacheLookup(const struct cdb *c_db, const u32 b1, const u32 b2);
 
 /*
 =================================================================================================================
@@ -305,31 +305,29 @@ void 		isdb_TagForSplitting(struct physicsPipeline *pipeline, const u32 body);
 void 		isdb_MergeIslands(struct physicsPipeline *pipeline, const u32 ci, const u32 b1, const u32 b2);
 /* Split island, or remake if no split happens: TODO: Make thread-safe  */
 void 		isdb_SplitIsland(struct arena *mem_tmp, struct physicsPipeline *pipeline, const u32 island_to_split);
-/* Solve island constraints, and update bodies in pipeline */
-//void 		island_solve(struct arena *mem_frame, struct physicsPipeline *pipeline, struct island *is, const f32 timestep);
 
 /********* Threaded Island API *********/
 
-struct island_solve_output
+struct islandSolveOutput
 {
 	u32 island;
 	u32 island_asleep;
 	u32 body_count;
 	u32 *bodies;		/* bodies simulated in island */ 
-	struct island_solve_output *next;
+	struct islandSolveOutput *next;
 };
 
-struct island_solve_input
+struct islandSolveInput
 {
 	struct island *is;
 	struct physicsPipeline *pipeline;
-	struct island_solve_output *out;
+	struct islandSolveOutput *out;
 	f32 timestep;
 };
 
 /*
  * Input: struct island_solve_in 
- * Output: struct island_solve_output
+ * Output: struct islandSolveOutput
  *
  * Solves the given island using the global solver config. Since no island shares any contacts or bodies, and every
  * island is a unique task, no shared variables are being written to.
@@ -339,7 +337,7 @@ struct island_solve_input
  * - writes to island->contacts (unique to thread, memory in c_db)
  * - writes to island->bodies	(unique to thread, memory in pipeline)
  */
-void	thread_island_solve(void *task_input);
+void	ThreadIslandSolve(void *task_input);
 
 /*
 =================================================================================================================
@@ -368,7 +366,7 @@ Mumerical parameters configuration for solving islands.
  * () threshold for forces
  * (O) conditioning number of normal mass, must ensure stability.
  */
-struct contact_solver_config
+struct solverConfig
 {
 	u32 	iteration_count;	/* velocity solver iteration count */
 	u32 	block_solver;		/* bool : Use block solver when applicable */
@@ -381,36 +379,36 @@ struct contact_solver_config
 	f32 	angular_dampening;	/* Range[0.0, inf] : coefficient in diff. eq. dv/dt = -coeff*v */
 	f32 	linear_slop;		/* Range[0.0, inf] : Allowed penetration before velocity steering gradually
 					   sets in. */
-	f32 restitution_threshold; 	/* Range[0.0, inf] : If -seperating_velocity >= threshold, we apply the 
+	f32 	restitution_threshold; 	/* Range[0.0, inf] : If -seperating_velocity >= threshold, we apply the 
 					   restitution effect */
 
-	u32 sleep_enabled;		/* bool : enable sleeping of bodies  */
-	f32 sleep_time_threshold; /* Range(0.0, inf] :  Time threshold for which a body must have low velocity before being able to fall asleep */
-	f32 sleep_linear_velocity_sq_limit; /* Range (0.0f, inf] : maximum linear velocity squared that a body falling asleep may have */
-	f32 sleep_angular_velocity_sq_limit; /* Range (0.0f, inf] : maximum angular velocity squared that a body falling asleep may have */
+	u32 	sleep_enabled;		/* bool : enable sleeping of bodies  */
+	f32 	sleep_time_threshold; /* Range(0.0, inf] :  Time threshold for which a body must have low velocity before being able to fall asleep */
+	f32 	sleep_linear_velocity_sq_limit; /* Range (0.0f, inf] : maximum linear velocity squared that a body falling asleep may have */
+	f32 	sleep_angular_velocity_sq_limit; /* Range (0.0f, inf] : maximum angular velocity squared that a body falling asleep may have */
 
 	/* Pending updates */
-	u32 pending_block_solver;		
-	u32 pending_warmup_solver;		
-	u32 pending_sleep_enabled;		
-	u32 pending_iteration_count;
-	f32 pending_baumgarte_constant;
-	f32 pending_linear_slop;
-	f32 pending_restitution_threshold;
-	f32 pending_linear_dampening;
-	f32 pending_angular_dampening;
+	u32 	pending_block_solver;		
+	u32 	pending_warmup_solver;		
+	u32 	pending_sleep_enabled;		
+	u32 	pending_iteration_count;
+	f32 	pending_baumgarte_constant;
+	f32 	pending_linear_slop;
+	f32 	pending_restitution_threshold;
+	f32 	pending_linear_dampening;
+	f32 	pending_angular_dampening;
 };
 
-extern struct contact_solver_config *g_solver_config;
+extern struct solverConfig *g_solver_config;
 
-void	contact_solver_config_init(const u32 iteration_count, const u32 block_solver, const u32 warmup_solver, const vec3 gravity, const f32 baumgarte_constant, const f32 max_condition, const f32 linear_dampening, const f32 angular_dampening, const f32 linear_slop, const f32 restitution_threshold, const u32 sleep_enabled, const f32 sleep_time_threshold, const f32 sleep_linear_velocity_sq_limit, const f32 sleep_angular_velocity_sq_limit);
+void	SolverConfigInit(const u32 iteration_count, const u32 block_solver, const u32 warmup_solver, const vec3 gravity, const f32 baumgarte_constant, const f32 max_condition, const f32 linear_dampening, const f32 angular_dampening, const f32 linear_slop, const f32 restitution_threshold, const u32 sleep_enabled, const f32 sleep_time_threshold, const f32 sleep_linear_velocity_sq_limit, const f32 sleep_angular_velocity_sq_limit);
 
 
 /*
  * Memory layout: Three distictions
  *
- * struct velocity_constraint_point 	- constraint point local data (body center to manifold point, and so on)
- * struct velocity_constraint 		- contact local data (manifold normal, body indices, and so on)
+ * struct velocityConstraintPoint 	- constraint point local data (body center to manifold point, and so on)
+ * struct velocityConstraint 		- contact local data (manifold normal, body indices, and so on)
  * solver->array			- shared data between contacts, i.e temporary body changes (velocities, ...)
  */
 
@@ -420,7 +418,7 @@ velocity_constraint_point
 individual constraint for one point in the contact manifold
  */
 
-struct velocity_constraint_point
+struct velocityConstraintPoint
 {
 	vec3 	r1;		/* vector from body 1's center to manifold point */
 	vec3 	r2;		/* vector from body 2's center to manifold point */
@@ -431,9 +429,9 @@ struct velocity_constraint_point
 	f32	tangent_impulse[2]; /* the tangent impulses produced by the contact */
 };
 
-struct velocity_constraint
+struct velocityConstraint
 {
-	struct velocity_constraint_point *vcps;
+	struct velocityConstraintPoint *vcps;
 	void * 	normal_mass;	/* mat2, mat3 or mat4 normal mass for block solver = Inv(J*Inv(M)*J^T) */
 	void * 	inv_normal_mass;/* mat2, mat3 or mat4 inv normal mass for block solver = J*Inv(M)*J^T */
 
@@ -450,7 +448,7 @@ struct velocity_constraint
 	u32	block_solve;	/* if config->block_solver && condition number of block normal mass is ok, then = 1 */
 };
 
-struct contact_solver
+struct solver
 {
 	f32 			timestep;
 	u32			body_count;
@@ -458,18 +456,18 @@ struct contact_solver
 
 	struct rigidBody **	bodies;
 	mat3ptr			Iw_inv;		/* inverted world inertia tensors */
-	struct velocity_constraint *vcs;	
+	struct velocityConstraint *vcs;	
 
 	/* temporary state of bodies in island, static bodies index last element */
 	vec3ptr			linear_velocity;
 	vec3ptr			angular_velocity;
 };
 
-struct contact_solver *	contact_solver_init_body_data(struct arena *mem, struct island *is, const f32 timestep);
-void 			contact_solver_init_velocity_constraints(struct arena *mem, struct contact_solver *solver, const struct physicsPipeline *pipeline, const struct island *is);
-void 			contact_solver_iterate_velocity_constraints(struct contact_solver *solver);
-void 			contact_solver_warmup(struct contact_solver *solver, const struct island *is);
-void 			contact_solver_cache_impulse_data(struct contact_solver *solver, const struct island *is);
+struct solver *	SolverInitBodyData(struct arena *mem, struct island *is, const f32 timestep);
+void 		SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, const struct physicsPipeline *pipeline, const struct island *is);
+void 		SolverIterateVelocityConstraints(struct solver *solver);
+void 		SolverWarmup(struct solver *solver, const struct island *is);
+void 		SolverCacheImpulse(struct solver *solver, const struct island *is);
 
 /*
 =================================================================================================================
@@ -544,22 +542,22 @@ rigid_body_prefab
 rigid body prefabs: used within editor and level editor file format, contains resuable preset values for creating
 new bodies.
 */
-struct rigidBody_prefab
+struct rigidBodyPrefab
 {
 	STRING_DATABASE_SLOT_STATE;
-	u32		shape;
+	u32	shape;
 
-	mat3 		inertia_tensor;		/* intertia tensor of body frame */
-	mat3 		inv_inertia_tensor;
-	f32 		mass;			/* total body mass */
-	f32		density;
-	f32 		restitution;
-	f32 		friction;		/* Range [0.0, 1.0f] : bound tangent impulses to 
+	mat3 	inertia_tensor;		/* intertia tensor of body frame */
+	mat3 	inv_inertia_tensor;
+	f32 	mass;			/* total body mass */
+	f32	density;
+	f32 	restitution;
+	f32 	friction;		/* Range [0.0, 1.0f] : bound tangent impulses to 
 						   mix(b1->friction, b2->friction)*(normal impuse) */
-	u32		dynamic;		/* dynamic body is true, static if false */
+	u32	dynamic;		/* dynamic body is true, static if false */
 };
 
-void 	prefab_statics_setup(struct rigidBody_prefab *prefab, struct collisionShape *shape, const f32 density);
+void 	PrefabStaticsSetup(struct rigidBodyPrefab *prefab, struct collisionShape *shape, const f32 density);
 
 #define UNITS_PER_METER		1.0f
 #define UNITS_PER_DECIMETER	0.1f
@@ -573,37 +571,37 @@ void 	prefab_statics_setup(struct rigidBody_prefab *prefab, struct collisionShap
 
 #define PHYSICS_EVENT_BODY(pipeline, event_type, body_index)						\
 	{												\
-		struct physics_event *__physics_debug_event = physics_pipeline_event_push(pipeline);	\
+		struct physicsEvent *__physics_debug_event = PhysicsPipelineEventPush(pipeline);	\
 		__physics_debug_event->type = event_type;						\
 		__physics_debug_event->body = body_index;						\
 	}
 
 #define PHYSICS_EVENT_ISLAND(pipeline, event_type, island_index)					\
 	{												\
-		struct physics_event *__physics_debug_event = physics_pipeline_event_push(pipeline);	\
+		struct physicsEvent *__physics_debug_event = PhysicsPipelineEventPush(pipeline);	\
 		__physics_debug_event->type = event_type;						\
 		__physics_debug_event->island = island_index;						\
 	}
 
 #ifdef DS_PHYSICS_DEBUG
 
-#define	PHYSICS_EVENT_BODY_NEW(pipeline, body)			PHYSICS_EVENT_BODY(pipeline, PHYSICS_EVENT_BODY_NEW, body)
-#define	PHYSICS_EVENT_BODY_REMOVED(pipeline, body)		PHYSICS_EVENT_BODY(pipeline, PHYSICS_EVENT_BODY_REMOVED, body)
-#define	PHYSICS_EVENT_ISLAND_ASLEEP(pipeline, island)		PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_ASLEEP, island)
-#define	PHYSICS_EVENT_ISLAND_AWAKE(pipeline, island)		PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_AWAKE, island)
-#define	PHYSICS_EVENT_ISLAND_NEW(pipeline, island)		PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_NEW, island)
-#define	PHYSICS_EVENT_ISLAND_EXPANDED(pipeline, island)		PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_EXPANDED, island)
-#define	PHYSICS_EVENT_ISLAND_REMOVED(pipeline, island)		PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_REMOVED, island)
-#define PHYSICS_EVENT_CONTACT_NEW(pipeline, body1_index, body2_index)					\
+#define	PhysicsEventBodyNew(pipeline, body)		PHYSICS_EVENT_BODY(pipeline, PHYSICS_EVENT_BODY_NEW, body)
+#define	PhysicsEventBodyRemoved(pipeline, body)		PHYSICS_EVENT_BODY(pipeline, PHYSICS_EVENT_BODY_REMOVED, body)
+#define	PhysicsEventIslandAsleep(pipeline, island)	PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_ASLEEP, island)
+#define	PhysicsEventIslandAwake(pipeline, island)	PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_AWAKE, island)
+#define	PhysicsEventIslandNew(pipeline, island)		PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_NEW, island)
+#define	PhysicsEventIslandExpanded(pipeline, island)	PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_EXPANDED, island)
+#define	PhysicsEventIslandRemoved(pipeline, island)	PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_REMOVED, island)
+#define PhysicsEventContactNew(pipeline, body1_index, body2_index)					\
 	{												\
-		struct physics_event *__physics_debug_event = physics_pipeline_event_push(pipeline);	\
+		struct physicsEvent *__physics_debug_event = PhysicsPipelineEventPush(pipeline);	\
 		__physics_debug_event->type = PHYSICS_EVENT_CONTACT_NEW;				\
 		__physics_debug_event->contact_bodies.body1 = body1_index;				\
 		__physics_debug_event->contact_bodies.body2 = body2_index;				\
 	}
-#define PHYSICS_EVENT_CONTACT_REMOVED(pipeline, body1_index, body2_index)				\
+#define PhysicsEventContactRemoved(pipeline, body1_index, body2_index)				\
 	{												\
-		struct physics_event *__physics_debug_event = physics_pipeline_event_push(pipeline);	\
+		struct physicsEvent *__physics_debug_event = PhysicsPipelineEventPush(pipeline);	\
 		__physics_debug_event->type = PHYSICS_EVENT_CONTACT_REMOVED;				\
 		__physics_debug_event->contact_bodies.body1 = body1_index;				\
 		__physics_debug_event->contact_bodies.body2 = body2_index;				\
@@ -611,19 +609,19 @@ void 	prefab_statics_setup(struct rigidBody_prefab *prefab, struct collisionShap
 
 #else
 
-#define	PHYSICS_EVENT_BODY_NEW(pipeline, body)
-#define	PHYSICS_EVENT_BODY_REMOVED(pipeline, body)
-#define	PHYSICS_EVENT_ISLAND_ASLEEP(pipeline, island)
-#define	PHYSICS_EVENT_ISLAND_AWAKE(pipeline, island) 
-#define	PHYSICS_EVENT_ISLAND_NEW(pipeline, island)   
-#define	PHYSICS_EVENT_ISLAND_EXPANDED(pipeline, island)   
-#define	PHYSICS_EVENT_ISLAND_REMOVED(pipeline, island)
-#define PHYSICS_EVENT_CONTACT_NEW(pipeline, contact)
-#define PHYSICS_EVENT_CONTACT_REMOVED(pipeline, body1, body2)
+#define	PhysicsEventBodyNew(pipeline, body)
+#define	PhysicsEventBodyRemoved(pipeline, body)
+#define	PhysicsEventIslandAsleep(pipeline, island)
+#define	PhysicsEventIslandAwake(pipeline, island) 
+#define	PhysicsEventIslandNew(pipeline, island)   
+#define	PhysicsEventIslandExpanded(pipeline, island)   
+#define	PhysicsEventIslandRemoved(pipeline, island)
+#define PhysicsEventContactNew(pipeline, contact)
+#define PhysicsEventContactRemoved(pipeline, body1, body2)
 
 #endif
 
-enum physics_event_type
+enum physicsEventType
 {
 	PHYSICS_EVENT_CONTACT_NEW,
 	PHYSICS_EVENT_CONTACT_REMOVED,
@@ -638,13 +636,13 @@ enum physics_event_type
 	PHYSICS_EVENT_COUNT
 };
 
-struct physics_event
+struct physicsEvent
 {
 	POOL_SLOT_STATE;
 	DLL_SLOT_STATE;
 
 	u64			ns;	/* time of event */
-	enum physics_event_type type;
+	enum physicsEventType type;
 	union
 	{
 		u32 island;
@@ -657,7 +655,7 @@ struct physics_event
 	};
 };
 
-enum rigid_body_color_mode
+enum rigidBodyColorMode
 {
 	RB_COLOR_MODE_BODY = 0,
 	RB_COLOR_MODE_COLLISION,
@@ -691,7 +689,7 @@ struct physicsPipeline
 
 	struct bvh 		dynamic_tree;
 
-	struct contact_database	c_db;
+	struct cdb	c_db;
 	struct isdb 	is_db;
 
 	struct collisionDebug *debug;
@@ -712,50 +710,50 @@ struct physicsPipeline
 	struct contactManifold *cm;
 
 	/* debug */
-	enum rigid_body_color_mode	pending_body_color_mode;
-	enum rigid_body_color_mode	body_color_mode;
-	vec4				collision_color;
-	vec4				static_color;
-	vec4				sleep_color;
-	vec4				awake_color;
+	enum rigidBodyColorMode	pending_body_color_mode;
+	enum rigidBodyColorMode	body_color_mode;
+	vec4			collision_color;
+	vec4			static_color;
+	vec4			sleep_color;
+	vec4			awake_color;
 
-	vec4				bounding_box_color;
-	vec4				dbvh_color;
-	vec4				sbvh_color;
-	vec4				manifold_color;
+	vec4			bounding_box_color;
+	vec4			dbvh_color;
+	vec4			sbvh_color;
+	vec4			manifold_color;
 
-	u32				draw_bounding_box;
-	u32				draw_dbvh;
-	u32				draw_sbvh;
-	u32				draw_manifold;
-	u32				draw_lines;
+	u32			draw_bounding_box;
+	u32			draw_dbvh;
+	u32			draw_sbvh;
+	u32			draw_manifold;
+	u32			draw_lines;
 };
 
 /**************** PHYISCS PIPELINE API ****************/
 
 /* Initialize a new growable physics pipeline; ns_tick is the duration of a physics frame. */
-struct physicsPipeline	physics_pipeline_alloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct strdb *shape_db, struct strdb *prefab_db);
+struct physicsPipeline	PhysicsPipelineAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct strdb *shape_db, struct strdb *prefab_db);
 /* free pipeline resources */
-void 			physics_pipeline_free(struct physicsPipeline *physics_pipeline);
+void 			PhysicsPipelineFree(struct physicsPipeline *physics_pipeline);
 /* flush pipeline resources */
-void			physics_pipeline_flush(struct physicsPipeline *physics_pipeline);
+void			PhysicsPipelineFlush(struct physicsPipeline *physics_pipeline);
 /* pipeline main method: simulate a single physics frame and update internal state  */
-void 			physics_pipeline_tick(struct physicsPipeline *pipeline);
+void 			PhysicsPipelineTick(struct physicsPipeline *pipeline);
 /* allocate new rigid body in pipeline and return its slot */
-struct slot		physics_pipeline_rigid_body_alloc(struct physicsPipeline *pipeline, struct rigidBody_prefab *prefab, const vec3 position, const quat rotation, const u32 entity);
+struct slot		PhysicsPipelineRigidBodyAlloc(struct physicsPipeline *pipeline, struct rigidBodyPrefab *prefab, const vec3 position, const quat rotation, const u32 entity);
 /* deallocate a collision shape associated with the given handle. If no shape is found, do nothing */
-void			physics_pipeline_rigid_body_tag_for_removal(struct physicsPipeline *pipeline, const u32 handle);
+void			PhysicsPipelineRigidBodyTagForRemoval(struct physicsPipeline *pipeline, const u32 handle);
 /* validate and ds_Assert internal state of physics pipeline */
-void			physics_pipeline_validate(const struct physicsPipeline *pipeline);
+void			PhysicsPipelineValidate(const struct physicsPipeline *pipeline);
 /* If hit, return parameter (body,t) of ray at first collision. Otherwise return (U32_MAX, F32_INFINITY) */
-u32f32 			physics_pipeline_raycast_parameter(struct arena *mem_tmp, const struct physicsPipeline *pipeline, const struct ray *ray);
+u32f32 			PhysicsPipelineRaycastParameter(struct arena *mem_tmp, const struct physicsPipeline *pipeline, const struct ray *ray);
 /* enable sleeping in pipeline */
-void 			physics_pipeline_enable_sleeping(struct physicsPipeline *pipeline);
+void 			PhysicsPipelineSleepEnable(struct physicsPipeline *pipeline);
 /* disable sleeping in pipeline */
-void 			physics_pipeline_disable_sleeping(struct physicsPipeline *pipeline);
+void 			PhysicsPipelineSleepDisable(struct physicsPipeline *pipeline);
 
 #ifdef DS_PHYSICS_DEBUG
-#define PHYSICS_PIPELINE_VALIDATE(pipeline)	physics_pipeline_validate(pipeline)
+#define PHYSICS_PIPELINE_VALIDATE(pipeline)	PhysicsPipelineValidate(pipeline)
 #else
 #define PHYSICS_PIPELINE_VALIDATE(pipeline)	
 #endif
@@ -763,7 +761,7 @@ void 			physics_pipeline_disable_sleeping(struct physicsPipeline *pipeline);
 /**************** PHYISCS PIPELINE INTERNAL API ****************/
 
 /* push physics event into pipeline memory and return pointer to allocated event */
-struct physics_event *	physics_pipeline_event_push(struct physicsPipeline *pipeline);
+struct physicsEvent *	PhysicsPipelineEventPush(struct physicsPipeline *pipeline);
 
 #ifdef __cplusplus
 } 

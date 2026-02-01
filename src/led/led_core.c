@@ -462,14 +462,14 @@ struct slot led_rigid_body_prefab_add(struct led *led, const utf8 id, const utf8
 				LogString(T_LED, S_WARNING, "In rb_prefab: shape not found, stub_shape chosen");
 			}
 			slot = strdb_AddAndAlias(&led->rb_prefab_db, copy);
-			struct rigidBody_prefab *prefab = slot.address;
+			struct rigidBodyPrefab *prefab = slot.address;
 
 			prefab->shape = ref.index;
 			prefab->restitution = restitution;
 			prefab->friction = friction;
 			prefab->dynamic = dynamic;
 			prefab->density = density;
-			prefab_statics_setup(prefab, ref.address, density);
+			PrefabStaticsSetup(prefab, ref.address, density);
 		}
 	}
 
@@ -479,7 +479,7 @@ struct slot led_rigid_body_prefab_add(struct led *led, const utf8 id, const utf8
 void led_rigid_body_prefab_remove(struct led *led, const utf8 id)
 {
 	struct slot slot = led_rigid_body_prefab_lookup(led, id);
-	struct rigidBody_prefab *prefab = slot.address;
+	struct rigidBodyPrefab *prefab = slot.address;
 	if (slot.index != STRING_DATABASE_STUB_INDEX && prefab->reference_count == 0)
 	{
 		void *buf = prefab->id.buf;
@@ -1414,7 +1414,7 @@ void led_stop(struct led *led)
 
 static void led_engine_flush(struct led *led)
 {
-	physics_pipeline_flush(&led->physics);
+	PhysicsPipelineFlush(&led->physics);
 	struct led_node *node = NULL;
 	for (u32 i = led->node_non_marked_list.first; i != DLL_NULL; i = dll_Next(node))
 	{
@@ -1433,7 +1433,7 @@ static void led_engine_flush(struct led *led)
 static void led_engine_init(struct led *led)
 {
 	//TODO move this into engine flush
-	physics_pipeline_flush(&led->physics);		
+	PhysicsPipelineFlush(&led->physics);		
 	led->physics.ns_start = led->ns;
 	led->physics.ns_elapsed = -led->ns_delta;
 	led->ns_engine_paused = 0;
@@ -1444,7 +1444,7 @@ static void led_engine_init(struct led *led)
 		node = GPoolAddress(&led->node_pool, i);
 		if (node->flags & LED_PHYSICS)
 		{
-			struct rigidBody_prefab *prefab = strdb_Address(&led->rb_prefab_db, node->rb_prefab);
+			struct rigidBodyPrefab *prefab = strdb_Address(&led->rb_prefab_db, node->rb_prefab);
 			if (Utf8Equivalence(prefab->id, Utf8Inline("rb_map")))
 			{
 				vec3 axis = { 0.6f, 1.0f, 0.6f };
@@ -1460,7 +1460,7 @@ static void led_engine_init(struct led *led)
 						, led->ns 
 						, node->proxy);
 			}
-			physics_pipeline_rigid_body_alloc(&led->physics, prefab, node->position, node->rotation, i);
+			PhysicsPipelineRigidBodyAlloc(&led->physics, prefab, node->position, node->rotation, i);
 		}
 	}
 }
@@ -1503,7 +1503,7 @@ static void led_engine_run(struct led *led)
 		//}
 		//else
 		//{
-			physics_pipeline_tick(&led->physics);
+			PhysicsPipelineTick(&led->physics);
 			ns_next_physics_frame += led->physics.ns_tick;
 		//}
 	}
@@ -1585,14 +1585,14 @@ static void led_engine_run(struct led *led)
 	}
 	led->physics.body_color_mode = led->physics.pending_body_color_mode;
 
-	struct physics_event *event = NULL;
+	struct physicsEvent *event = NULL;
 	for (u32 i = led->physics.event_list.first; i != DLL_NULL; )
 	{
 		event = PoolAddress(&led->physics.event_pool, i);
 		const u32 next = dll_Next(event);
 		switch (event->type)
 		{
-			case PHYSICS_EVENT_CONTACT_NEW:
+			case PhysicsEventContactNew:
 			{
 				if (led->physics.body_color_mode == RB_COLOR_MODE_COLLISION)
 				{
@@ -1613,7 +1613,7 @@ static void led_engine_run(struct led *led)
 				}
 			} break;
 
-			case PHYSICS_EVENT_CONTACT_REMOVED:
+			case PhysicsEventContactRemoved:
 			{
 				if (led->physics.body_color_mode == RB_COLOR_MODE_COLLISION)
 				{
@@ -1651,7 +1651,7 @@ static void led_engine_run(struct led *led)
 			} break;
 
 #ifdef DS_PHYSICS_DEBUG
-			case PHYSICS_EVENT_ISLAND_NEW:
+			case PhysicsEventIslandNew:
 			{
 				struct island *is = array_list_address(led->physics.is_db.islands, event->island);
 				Vec4Set(is->color, 
@@ -1669,7 +1669,7 @@ static void led_engine_run(struct led *led)
 				}
 			} break;
 
-			case PHYSICS_EVENT_ISLAND_EXPANDED:
+			case PhysicsEventIslandExpanded:
 			{
 				if (led->physics.body_color_mode == RB_COLOR_MODE_ISLAND)
 				{
@@ -1682,11 +1682,11 @@ static void led_engine_run(struct led *led)
 			} break;
 #endif
 
-			case PHYSICS_EVENT_ISLAND_REMOVED:
+			case PhysicsEventIslandRemoved:
 			{
 			} break;
 
-			case PHYSICS_EVENT_ISLAND_AWAKE:
+			case PhysicsEventIslandAwake:
 			{
 				if (led->physics.body_color_mode == RB_COLOR_MODE_SLEEP)
 				{
@@ -1694,7 +1694,7 @@ static void led_engine_run(struct led *led)
 				}
 			} break;
 
-			case PHYSICS_EVENT_ISLAND_ASLEEP:
+			case PhysicsEventIslandAsleep:
 			{
 				if (led->physics.body_color_mode == RB_COLOR_MODE_SLEEP)
 				{
@@ -1702,11 +1702,11 @@ static void led_engine_run(struct led *led)
 				}
 			} break;
 			
-			case PHYSICS_EVENT_BODY_NEW:
+			case PhysicsEventBodyNew:
 			{
 			} break;
 
-			case PHYSICS_EVENT_BODY_REMOVED:
+			case PhysicsEventBodyRemoved:
 			{
 			} break;
 

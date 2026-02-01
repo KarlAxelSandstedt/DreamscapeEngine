@@ -51,7 +51,7 @@ struct island *isdb_InitIslandFromBody(struct physicsPipeline *pipeline, const u
 	struct slot slot = PoolAdd(&pipeline->is_db.island_pool);
 	struct rigidBody *b = PoolAddress(&pipeline->body_pool, body);
 	b->island_index = slot.index;
-	PHYSICS_EVENT_ISLAND_NEW(pipeline, b->island_index);
+	PhysicsEventIslandNew(pipeline, b->island_index);
 
 	struct island *is = slot.address;
 	is->contact_list = ll_Init(struct contact);
@@ -138,7 +138,7 @@ void isdb_ClearFrame(struct isdb *is_db)
 void isdb_Validate(const struct physicsPipeline *pipeline)
 {
 	const struct isdb *is_db = &pipeline->is_db;
-	const struct contact_database *c_db = &pipeline->c_db;
+	const struct cdb *c_db = &pipeline->c_db;
 
 	const struct island *is = NULL;
 	const struct rigidBody *body = NULL;
@@ -278,7 +278,7 @@ void isdb_MergeIslands(struct physicsPipeline *pipeline, const u32 ci, const u32
 			{
 				if (!ISLAND_AWAKE_BIT(is_expand))
 				{
-					PHYSICS_EVENT_ISLAND_AWAKE(pipeline, expand);	
+					PhysicsEventIslandAwake(pipeline, expand);	
 				}
 				is_expand->flags = ISLAND_AWAKE | ISLAND_SLEEP_RESET;
 			}
@@ -314,8 +314,8 @@ void isdb_MergeIslands(struct physicsPipeline *pipeline, const u32 ci, const u32
 		}
 
 		PoolRemove(&pipeline->is_db.island_pool, merge);
-		PHYSICS_EVENT_ISLAND_EXPANDED(pipeline, expand);
-		PHYSICS_EVENT_ISLAND_REMOVED(pipeline, merge);
+		PhysicsEventIslandExpanded(pipeline, expand);
+		PhysicsEventIslandRemoved(pipeline, merge);
 	}
 }
 
@@ -323,7 +323,7 @@ void isdb_IslandRemove(struct physicsPipeline *pipeline, struct island *island)
 {
 	const u32 island_index = PoolIndex(&pipeline->is_db.island_pool, island);
 	PoolRemove(&pipeline->is_db.island_pool, island_index);
-	PHYSICS_EVENT_ISLAND_REMOVED(pipeline, island_index);
+	PhysicsEventIslandRemoved(pipeline, island_index);
 }
 
 void isdb_IslandRemoveBodyResources(struct physicsPipeline *pipeline, const u32 island_index, const u32 body)
@@ -396,7 +396,7 @@ void isdb_IslandRemoveBodyResources(struct physicsPipeline *pipeline, const u32 
 		ds_Assert(island->contact_list.count == 0);
 		ds_Assert(island->body_list.count == 0);
 		PoolRemove(&pipeline->is_db.island_pool, island_index);
-		PHYSICS_EVENT_ISLAND_REMOVED(pipeline, island_index);
+		PhysicsEventIslandRemoved(pipeline, island_index);
 	}
 }
 
@@ -523,7 +523,7 @@ static u32 *island_solve(struct arena *mem_frame, struct physicsPipeline *pipeli
 			struct rigidBody *b = is->bodies[i];
 			b->flags ^= RB_AWAKE;
 		}
-		PHYSICS_EVENT_ISLAND_ASLEEP(pipeline, PoolIndex(&pipeline->is_db.island_pool, is));	
+		PhysicsEventIslandAsleep(pipeline, PoolIndex(&pipeline->is_db.island_pool, is));	
 	}
 	/* Island low energy state was interrupted, or island is simply awake */
 	else
@@ -536,20 +536,20 @@ static u32 *island_solve(struct arena *mem_frame, struct physicsPipeline *pipeli
 		}
 
 		/* init solver and velocity constraints */
-		struct contact_solver *solver = contact_solver_init_body_data(mem_frame, is, timestep);
-		contact_solver_init_velocity_constraints(mem_frame, solver, pipeline, is);
+		struct solver *solver = SolverInitBodyData(mem_frame, is, timestep);
+		SolverInitVelocityConstraints(mem_frame, solver, pipeline, is);
 		
 		if (g_solver_config->warmup_solver)
 		{
-			contact_solver_warmup(solver, is);
+			SolverWarmup(solver, is);
 		}
 
 		for (u32 i = 0; i < g_solver_config->iteration_count; ++i)
 		{
-			contact_solver_iterate_velocity_constraints(solver);
+			SolverIterateVelocityConstraints(solver);
 		}
 
-		contact_solver_cache_impulse_data(solver, is);
+		SolverCacheImpulse(solver, is);
 
 		/* integrate final solver velocities and update bodies and find lowest low_velocity time */
 		if (g_solver_config->sleep_enabled)
@@ -621,12 +621,12 @@ static u32 *island_solve(struct arena *mem_frame, struct physicsPipeline *pipeli
 	return bodies_simulated;
 }
 
-void thread_island_solve(void *task_input)
+void ThreadIslandSolve(void *task_input)
 {
 	ProfZone;
 
 	struct task *t_ctx = task_input;
-	struct island_solve_input *args = t_ctx->input;
+	struct islandSolveInput *args = t_ctx->input;
 	args->out->body_count = args->is->body_list.count;
 	args->out->bodies = island_solve(&t_ctx->executor->mem_frame, args->pipeline, args->is, args->timestep);
 
