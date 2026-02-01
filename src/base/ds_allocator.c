@@ -859,8 +859,8 @@ struct slot PoolAdd(struct pool *pool)
 			allocation.index = pool->next_free;
 
 			slot_state = (u32 *) ((u8 *) allocation.address + pool->slot_allocation_offset);
-			pool->next_free = *slot_state & 0x7fffffff;
-			ds_Assert((*slot_state & 0x80000000) == 0);
+			pool->next_free = *slot_state & POOL_INDEX_MASK;
+			ds_Assert(*slot_state & POOL_ALLOCATION_MASK);
 		}
 		else
 		{
@@ -870,7 +870,7 @@ struct slot PoolAdd(struct pool *pool)
 			slot_state = (u32 *) ((u8 *) allocation.address + pool->slot_allocation_offset);
 			pool->count_max += 1;
 		}	
-		*slot_state = 0x80000000;
+		*slot_state = 0;
 		pool->count += 1;
 	}
 	else if (pool->growable)
@@ -880,7 +880,7 @@ struct slot PoolAdd(struct pool *pool)
 		allocation.address = pool->buf + pool->slot_size*pool->count_max;
 		allocation.index = pool->count_max;
 		slot_state = (u32 *) ((u8 *) allocation.address + pool->slot_allocation_offset);
-		*slot_state = 0x80000000;
+		*slot_state = 0;
 		pool->count_max += 1;
 		pool->count += 1;
 	}
@@ -904,10 +904,10 @@ struct slot GPoolAdd(struct pool *pool)
 			allocation.index = pool->next_free;
 
 			slot_state = (u32 *) ((u8 *) allocation.address + pool->slot_allocation_offset);
-			pool->next_free = *slot_state & 0x7fffffff;
+			pool->next_free = *slot_state & POOL_ALLOCATION_MASK;
 			u32 *gen_state = (u32 *) ((u8 *) allocation.address + pool->slot_generation_offset);
 			*gen_state += 1;
-			ds_Assert((*slot_state & 0x80000000) == 0);
+			ds_Assert(*slot_state & POOL_ALLOCATION_MASK);
 		}
 		else
 		{
@@ -919,7 +919,7 @@ struct slot GPoolAdd(struct pool *pool)
 			*gen_state = 0;
 			pool->count_max += 1;
 		}	
-		*slot_state = 0x80000000;
+		*slot_state = 0;
 		pool->count += 1;
 	}
 	else if (pool->growable)
@@ -930,7 +930,7 @@ struct slot GPoolAdd(struct pool *pool)
 		allocation.index = pool->count_max;
 		slot_state = (u32 *) ((u8 *) allocation.address + pool->slot_allocation_offset);
 		u32 *gen_state = (u32 *) ((u8 *) allocation.address + pool->slot_generation_offset);
-		*slot_state = 0x80000000;
+		*slot_state = 0;
 		*gen_state = 0;
 		pool->count_max += 1;
 		pool->count += 1;

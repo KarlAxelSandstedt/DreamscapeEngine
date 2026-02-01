@@ -27,7 +27,7 @@ extern "C" {
 #include "ds_allocator.h"
 #include "ds_serialize.h"
 
-#define HASH_NULL 	U32_MAX
+#define HASH_NULL 	POOL_NULL	
 
 /*
  * hash map storing mapping a key to a set of possible indices. User dereferences indices to check for equality between identifiers 

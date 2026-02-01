@@ -89,9 +89,13 @@ enum dsKeycode sdl3_DsScancode(const SDL_Scancode sdl_key)
 {
 	enum dsKeycode key = DS_NO_SYMBOL;
 
-	if (SDL_SCANCODE_0 <= sdl_key && sdl_key <= SDL_SCANCODE_9)
+	if (sdl_key == SDL_SCANCODE_0)
 	{
-		key = DS_0 + (sdl_key - SDL_SCANCODE_0);
+		key = DS_0;
+	}
+	else if (SDL_SCANCODE_1 <= sdl_key && sdl_key <= SDL_SCANCODE_9)
+	{
+		key = DS_1 + (sdl_key - SDL_SCANCODE_1);
 	}
 	else if (SDL_SCANCODE_A <= sdl_key && sdl_key <= SDL_SCANCODE_Z)
 	{

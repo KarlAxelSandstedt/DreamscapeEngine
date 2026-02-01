@@ -125,7 +125,7 @@ void		led_node_set_csg_brush(struct led *led, const utf8 id, const utf8 brush);
 void		led_node_set_proxy3d(struct led *led, const utf8 id, const utf8 mesh, const vec4 color, const f32 transparency);
 
 /* Allocate node with the given id. Returns (NULL, U32_MAX) if id.size > 256B or bad shape paramters */
-struct slot	led_collision_shape_add(struct led *led, const struct collision_shape *shape);
+struct slot	led_collision_shape_add(struct led *led, const struct collisionShape *shape);
 /* Remove node if it exists and is not being referenced; otherwise no-op.  */
 void 		led_collision_shape_remove(struct led *led, const utf8 id);
 /* Return node with the given id if it exist; otherwise return (STUB_ADDRESS, STUB_INDEX).  */

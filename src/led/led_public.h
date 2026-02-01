@@ -138,7 +138,7 @@ struct led
 	struct csg 		csg;
 	struct ui_list 		brush_list;
 
-	struct physics_pipeline physics;
+	struct physicsPipeline physics;
 	struct strdb 	cs_db;	
 	struct ui_list 		cs_list;
 	struct ui_dropdown_menu cs_mesh_menu;

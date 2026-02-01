@@ -13,8 +13,7 @@ add_library(DreamscapePlatform
 		"sys_init.c"
 		"sys_input.c"
 		#"sys_graphics"
-		#"tasc.c"
-	)
+)
 add_library(Dreamscape::Platform ALIAS DreamscapePlatform)
 target_link_libraries(DreamscapePlatform 
 	PUBLIC 
@@ -22,6 +21,14 @@ target_link_libraries(DreamscapePlatform
 	PRIVATE
 		sdl3_wrapper
 )
+
+add_library(DreamscapeJob STATIC 
+	"${DS_INCLUDE_PATH}/ds_job.h"
+	ds_job.c
+)
+add_library(Dreamscape::Job ALIAS DreamscapeJob)
+target_link_libraries(DreamscapeJob PUBLIC Dreamscape::Containers)
+
 
 #add_library(system_graphics
 #	STATIC

@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,9 +17,8 @@
 ==========================================================================
 */
 
-#include "sys_public.h"
-#include "Log.h"
 #include "ds_random.h"
+#include "ds_job.h"
 
 struct task_context t_ctx;
 struct task_context *g_task_ctx = &t_ctx;
@@ -34,7 +33,7 @@ static void worker_init(struct worker *w)
 static void worker_exit(void *void_task)
 {
 	struct task *task = void_task;
-	ds_ThreadExit(task->executor->thr);
+	ds_ThreadExit();
 }
 
 static void task_run(struct task *task_info, struct worker *w)
@@ -175,7 +174,6 @@ void task_context_destroy(struct task_context *ctx)
 	for (u32 i = 1; i < ctx->worker_count; ++i)
 	{
 		ds_ThreadWait(ctx->workers[i].thr);
-		ds_ThreadRelease(ctx->workers[i].thr);
 	}
 
 	for (u32 i = 0; i < ctx->worker_count; ++i)

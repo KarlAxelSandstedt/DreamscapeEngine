@@ -74,11 +74,11 @@ void bt_Validate(struct arena *tmp, const struct bt *tree)
 		u32 *l = (u32 *) (addr + tree->left_offset);
 		u32 *r = (u32 *) (addr + tree->right_offset);
 
-		ds_Assert((*alloc) >> 31);
+		ds_Assert((*alloc) >> 31 == 0);
 		ds_Assert(BitVecGetBit(&traversed, stack[sc]) == 0);
 		BitVecSetBit(&traversed, stack[sc], 1);
 
-		if ((BT_PARENT_INDEX_MASK & (*p)) != POOL_NULL)
+		if ((BT_PARENT_INDEX_MASK & (*p)) != BT_PARENT_INDEX_MASK)
 		{
 			u8 *parent = PoolAddress(&tree->pool, BT_PARENT_INDEX_MASK & (*p));
 			u32 *p_alloc = (u32 *) (parent + tree->pool.slot_allocation_offset);
@@ -129,7 +129,7 @@ struct slot bt_NodeAddRoot(struct bt *tree)
 		ds_Assert(tree->root == POOL_NULL);
 		tree->root = slot.index;
 		u32 *parent = (u32 *) (((u8 *) slot.address) + tree->parent_offset);	
-		*parent = BT_PARENT_LEAF_MASK | POOL_NULL;
+		*parent = BT_PARENT_LEAF_MASK | BT_PARENT_INDEX_MASK;
 	}
 	return slot;
 }

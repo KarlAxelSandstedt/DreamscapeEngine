@@ -267,19 +267,21 @@ Pool Allocator
 ==============
 Intrusive pool allocator that handles allocation and deallocation of a specific struct. In order to use the
 pool allocator for a specific struct, the struct should contain the POOL_SLOT_STATE macro; it defines
-internal slot state for the struct. The pool allocator can allocate at most 2^31 - 1 slots. u32 generation
+internal slot state for the struct. The pool allocator can allocate at most 2^31 slots. u32 generation
 slots are supported by instead using the GPool Api instead, and replacing POOL_SLOT_STATE with 
 GENERATIONAL_POOL_SLOT_STATE.
 
-Internal: each struct contains a slot state variable (u32). For allocated slots the state is 0x80000000.
-For unallocated slots, the variable represents an index < 0x7fffffff to the next free slot in the chain.
-The end of the free chain is represented by POOL_NULL.
+Internal: each struct contains a slot state variable (u32). For allocated slots the state is <= 0x7fffffff.
+For unallocated slots, the most signficicant bit is set and the 31 lower bits represents an index to the 
+next free slot in the chain. The end of the free chain is represented by POOL_NULL.
 */
 
-#define POOL_NULL		0x7fffffff
 #define POOL_SLOT_STATE 	u32 slot_allocation_state
-#define PoolSlotAllocated(ptr)	((ptr)->slot_allocation_state & 0x80000000)
-#define PoolSlotNext(ptr)	((ptr)->slot_allocation_state & 0x7fffffff)
+#define POOL_NULL		0xffffffff
+#define POOL_ALLOCATION_MASK	0x80000000
+#define POOL_INDEX_MASK		0x7fffffff
+#define PoolSlotAllocated(ptr)	(!((ptr)->slot_allocation_state & POOL_ALLOCATION_MASK))
+#define PoolSlotNext(ptr)	((ptr)->slot_allocation_state & POOL_INDEX_MASK)
 #define PoolSlotGeneration(ptr)	((ptr)->slot_generation_state)
 
 #define GENERATIONAL_POOL_SLOT_STATE	u32 slot_allocation_state;	\

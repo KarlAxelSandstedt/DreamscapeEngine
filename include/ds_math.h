@@ -30,6 +30,7 @@ extern "C" {
 #include "matrix.h"
 #include "transform.h"
 #include "geometry.h"
+#include "quaternion.h"
 
 #ifdef __cplusplus
 } 

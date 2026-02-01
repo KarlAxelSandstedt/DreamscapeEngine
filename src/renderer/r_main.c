@@ -23,9 +23,9 @@
 #include "transform.h"
 #include "led_public.h"
 
-static struct r_mesh *debug_contact_manifold_segments_mesh(struct arena *mem, const struct physics_pipeline *pipeline)
+static struct r_mesh *debug_contact_manifold_segments_mesh(struct arena *mem, const struct physicsPipeline *pipeline)
 {
-	const struct contact_manifold *cm = pipeline->cm;
+	const struct contactManifold *cm = pipeline->cm;
 	const u32 cm_count = pipeline->cm_count;
 
 	ArenaPushRecord(mem);
@@ -100,9 +100,9 @@ end:
 
 }
 
-static struct r_mesh *debug_contact_manifold_triangles_mesh(struct arena *mem, const struct physics_pipeline *pipeline)
+static struct r_mesh *debug_contact_manifold_triangles_mesh(struct arena *mem, const struct physicsPipeline *pipeline)
 {
-	const struct contact_manifold *cm = pipeline->cm;
+	const struct contactManifold *cm = pipeline->cm;
 	const u32 cm_count = pipeline->cm_count;
 
 	ArenaPushRecord(mem);
@@ -190,7 +190,7 @@ end:
 	return mesh;
 }
 
-static struct r_mesh *debug_lines_mesh(struct arena *mem, const struct physics_pipeline *pipeline)
+static struct r_mesh *debug_lines_mesh(struct arena *mem, const struct physicsPipeline *pipeline)
 {
 	ArenaPushRecord(mem);
 
@@ -237,7 +237,7 @@ end:
 	return mesh;
 }
 
-static struct r_mesh *bounding_boxes_mesh(struct arena *mem, const struct physics_pipeline *pipeline, const vec4 color)
+static struct r_mesh *bounding_boxes_mesh(struct arena *mem, const struct physicsPipeline *pipeline, const vec4 color)
 {
 	ArenaPushRecord(mem);
 	const u32 vertex_count = 3*8*pipeline->body_pool.count;
@@ -260,7 +260,7 @@ static struct r_mesh *bounding_boxes_mesh(struct arena *mem, const struct physic
 	mesh->local_stride = L_COLOR_STRIDE;
 
 	u64 mem_left = mesh->vertex_count * L_COLOR_STRIDE;
-	struct rigid_body *body = NULL;
+	struct rigidBody *body = NULL;
 	for (u32 i = pipeline->body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 	{
 		body = PoolAddress(&pipeline->body_pool, i);
@@ -307,7 +307,7 @@ static struct r_mesh *bvh_mesh(struct arena *mem, const struct bvh *bvh, const v
 	u32 sc = U32_MAX;
 
 
-	const struct bvh_node *nodes = (struct bvh_node *) bvh->tree.pool.buf;
+	const struct bvhNode *nodes = (struct bvhNode *) bvh->tree.pool.buf;
 	u64 mem_left = mesh->vertex_count * L_COLOR_STRIDE;
 	while (i != U32_MAX)
 	{
@@ -416,7 +416,7 @@ static void r_led_draw(const struct led *led)
 		const u64 material = r_material_construct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
 		const u64 cmd = r_command_key(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		struct rigid_body *body = NULL;
+		struct rigidBody *body = NULL;
 		for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 		{
 			body = PoolAddress(&led->physics.body_pool, i);
@@ -425,7 +425,7 @@ static void r_led_draw(const struct led *led)
 				continue;
 			}
 
-			const struct collision_shape *shape = strdb_Address(led->physics.shape_db, body->shape_handle);
+			const struct collisionShape *shape = strdb_Address(led->physics.shape_db, body->shape_handle);
 			struct r_mesh *mesh = bvh_mesh(&g_r_core->frame, &shape->mesh_bvh.bvh, body->position, body->rotation, led->physics.sbvh_color);
 			if (mesh)
 			{

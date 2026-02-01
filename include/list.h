@@ -34,7 +34,7 @@ LL_SLOT_STATE in the structure. It is meant to be used for arrays < U32_MAX
 indices, where all structs are allocated in the same array. 
  */
 
-#define LL_NULL				U32_MAX
+#define LL_NULL				POOL_NULL
 #define LL_SLOT_STATE			u32 ll_next
 #define ll_Next(structure_addr)		((structure_addr)->ll_next)
 
@@ -65,7 +65,7 @@ put DLL_SLOT_STATE in the structure. It is meant to be used for arrays < U32_MAX
 indices, where all structs are allocated in the same array. 
  */
 
-#define DLL_NULL			U32_MAX
+#define DLL_NULL			POOL_NULL
 #define DLL_NOT_IN_LIST			U32_MAX-1	/* if next, prev == DLL_STUB, then node is not in list */
 
 #define DLL_SLOT_STATE			u32 dll_prev;			\

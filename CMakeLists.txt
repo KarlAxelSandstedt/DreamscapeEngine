@@ -160,6 +160,7 @@ target_link_libraries(${PROJECT_NAME}
 		"${PROJECT_NAME}::Base"
 		"${PROJECT_NAME}::Containers"
 		"${PROJECT_NAME}::Math"
+		"${PROJECT_NAME}::Collision"
 		"${PROJECT_NAME}::Platform"
 		"${PROJECT_NAME}::Asset"
 )

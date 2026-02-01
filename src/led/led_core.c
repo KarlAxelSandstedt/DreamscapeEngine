@@ -166,7 +166,7 @@ void cmd_collision_box_add(void)
 
 	if (hw[0] > 0.0f && hw[1] > 0.0f && hw[2] > 0.0f)
 	{
-		struct collision_shape shape =
+		struct collisionShape shape =
 		{
 			.id = g_queue->cmd_exec->arg[0].utf8,
 			.type = COLLISION_SHAPE_CONVEX_HULL,
@@ -187,7 +187,7 @@ void cmd_collision_dcel_add(void)
 	struct dcel *dcel = g_queue->cmd_exec->arg[1].ptr;
 	if (dcel->v_count)
 	{
-		struct collision_shape shape =
+		struct collisionShape shape =
 		{
 			.id = g_queue->cmd_exec->arg[0].utf8,
 			.type = COLLISION_SHAPE_CONVEX_HULL,
@@ -205,10 +205,10 @@ void cmd_collision_dcel_add(void)
 
 void cmd_collision_tri_mesh_bvh_add(void)
 {
-	struct triMesh_bvh *mesh_bvh = g_queue->cmd_exec->arg[1].ptr;
+	struct triMeshBvh *mesh_bvh = g_queue->cmd_exec->arg[1].ptr;
 	if (mesh_bvh->mesh->v_count && bt_NodeCount(&mesh_bvh->bvh.tree))
 	{
-		struct collision_shape shape =
+		struct collisionShape shape =
 		{
 			.id = g_queue->cmd_exec->arg[0].utf8,
 			.type = COLLISION_SHAPE_TRI_MESH,
@@ -226,7 +226,7 @@ void cmd_collision_tri_mesh_bvh_add(void)
 
 void cmd_collision_sphere_add(void)
 {
-	struct collision_shape shape =
+	struct collisionShape shape =
 	{
 		.id = g_queue->cmd_exec->arg[0].utf8,
 		.type = COLLISION_SHAPE_SPHERE,
@@ -246,7 +246,7 @@ void cmd_collision_sphere_add(void)
 
 void cmd_collision_capsule_add(void)
 {
-	struct collision_shape shape =
+	struct collisionShape shape =
 	{
 		.id = g_queue->cmd_exec->arg[0].utf8,
 		.type = COLLISION_SHAPE_CAPSULE,
@@ -273,7 +273,7 @@ void cmd_collision_shape_remove(void)
 	led_collision_shape_remove(g_editor, g_queue->cmd_exec->arg[0].utf8);
 }
 
-struct slot led_collision_shape_add(struct led *led, const struct collision_shape *shape)
+struct slot led_collision_shape_add(struct led *led, const struct collisionShape *shape)
 {
 	struct slot slot = empty_slot;
 	if (!shape->id.len)
@@ -296,7 +296,7 @@ struct slot led_collision_shape_add(struct led *led, const struct collision_shap
 		else
 		{
 			slot = strdb_AddAndAlias(&led->cs_db, copy);
-			struct collision_shape *new_shape = slot.address;
+			struct collisionShape *new_shape = slot.address;
 			new_shape->type = shape->type;
 			new_shape->center_of_mass_localized = shape->center_of_mass_localized;
 			switch (shape->type)
@@ -330,7 +330,7 @@ struct slot led_collision_shape_add(struct led *led, const struct collision_shap
 void led_collision_shape_remove(struct led *led, const utf8 id)
 {
 	struct slot slot = led_collision_shape_lookup(led, id);
-	struct collision_shape *shape = slot.address;
+	struct collisionShape *shape = slot.address;
 	if (slot.index != STRING_DATABASE_STUB_INDEX && shape->reference_count == 0)
 	{
 		void *buf = shape->id.buf;
@@ -386,7 +386,7 @@ struct slot led_render_mesh_add(struct led *led, const utf8 id, const utf8 shape
 			}
 
 			struct system_window *sys_win = system_window_address(g_editor->window);
-			const struct collision_shape *s = ref.address;
+			const struct collisionShape *s = ref.address;
 			switch (s->type)
 			{
 				case COLLISION_SHAPE_SPHERE: { r_mesh_set_sphere(&sys_win->mem_persistent, mesh, s->sphere.radius, 12); } break;
@@ -462,7 +462,7 @@ struct slot led_rigid_body_prefab_add(struct led *led, const utf8 id, const utf8
 				LogString(T_LED, S_WARNING, "In rb_prefab: shape not found, stub_shape chosen");
 			}
 			slot = strdb_AddAndAlias(&led->rb_prefab_db, copy);
-			struct rigid_body_prefab *prefab = slot.address;
+			struct rigidBody_prefab *prefab = slot.address;
 
 			prefab->shape = ref.index;
 			prefab->restitution = restitution;
@@ -479,7 +479,7 @@ struct slot led_rigid_body_prefab_add(struct led *led, const utf8 id, const utf8
 void led_rigid_body_prefab_remove(struct led *led, const utf8 id)
 {
 	struct slot slot = led_rigid_body_prefab_lookup(led, id);
-	struct rigid_body_prefab *prefab = slot.address;
+	struct rigidBody_prefab *prefab = slot.address;
 	if (slot.index != STRING_DATABASE_STUB_INDEX && prefab->reference_count == 0)
 	{
 		void *buf = prefab->id.buf;
@@ -1007,14 +1007,14 @@ void led_wall_smash_simulation_setup(struct led *led)
 
 	struct triMesh *map = ArenaPush(&led->mem_persistent, sizeof(struct triMesh));
 	*map = tri_mesh_perlin_noise(&led->mem_persistent, 64, 100.0f);
-	struct triMesh_bvh *mesh_bvh = ArenaPush(&led->mem_persistent, sizeof(struct triMesh_bvh));
+	struct triMeshBvh *mesh_bvh = ArenaPush(&led->mem_persistent, sizeof(struct triMeshBvh));
 	f32 best_cost = F32_INFINITY;
 	u32 best_bin_count = 8;
 	for (u32 i = 8; i < 16; ++i)
 	{
 		ArenaPushRecord(&led->mem_persistent);
-		*mesh_bvh = tri_mesh_bvh_construct(&led->mem_persistent, map, i);
-		const f32 cost = bvh_cost(&mesh_bvh->bvh);
+		*mesh_bvh = TriMeshBvhConstruct(&led->mem_persistent, map, i);
+		const f32 cost = BvhCost(&mesh_bvh->bvh);
 		if (cost < best_cost)
 		{
 			best_cost = cost;
@@ -1022,7 +1022,7 @@ void led_wall_smash_simulation_setup(struct led *led)
 		}
 		ArenaPopRecord(&led->mem_persistent);
 	}
-	*mesh_bvh = tri_mesh_bvh_construct(&led->mem_persistent, map, best_bin_count);
+	*mesh_bvh = TriMeshBvhConstruct(&led->mem_persistent, map, best_bin_count);
 	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_map");
 	sys_win->cmd_queue->regs[1].ptr = mesh_bvh;
 	CmdQueueSubmit(sys_win->cmd_queue, cmd_collision_tri_mesh_bvh_add_id);
@@ -1444,7 +1444,7 @@ static void led_engine_init(struct led *led)
 		node = GPoolAddress(&led->node_pool, i);
 		if (node->flags & LED_PHYSICS)
 		{
-			struct rigid_body_prefab *prefab = strdb_Address(&led->rb_prefab_db, node->rb_prefab);
+			struct rigidBody_prefab *prefab = strdb_Address(&led->rb_prefab_db, node->rb_prefab);
 			if (Utf8Equivalence(prefab->id, Utf8Inline("rb_map")))
 			{
 				vec3 axis = { 0.6f, 1.0f, 0.6f };
@@ -1475,7 +1475,7 @@ static void led_engine_color_bodies(struct led *led, const u32 island, const vec
 		entry = array_list_address(led->physics.is_db.island_body_lists, k);
 		k = entry->next;
 
-		const struct rigid_body *body = PoolAddress(&led->physics.body_pool, entry->index);
+		const struct rigidBody *body = PoolAddress(&led->physics.body_pool, entry->index);
 		const struct led_node *node = PoolAddress(&led->node_pool, body->entity);
 		struct r_proxy3d *proxy = r_proxy3d_address(node->proxy);
 		Vec4Copy(proxy->color, color);
@@ -1514,7 +1514,7 @@ static void led_engine_run(struct led *led)
 		{
 			case RB_COLOR_MODE_BODY: 
 			{ 
-				const struct rigid_body *body = NULL;
+				const struct rigidBody *body = NULL;
 				for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 				{
 					body = PoolAddress(&led->physics.body_pool, i);
@@ -1526,7 +1526,7 @@ static void led_engine_run(struct led *led)
 
 			case RB_COLOR_MODE_COLLISION: 
 			{ 
-				const struct rigid_body *body = NULL;
+				const struct rigidBody *body = NULL;
 				for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 				{
 					body = PoolAddress(&led->physics.body_pool, i);
@@ -1547,7 +1547,7 @@ static void led_engine_run(struct led *led)
 
 			case RB_COLOR_MODE_SLEEP: 
 			{ 
-				const struct rigid_body *body = NULL;
+				const struct rigidBody *body = NULL;
 				for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 				{
 					body = PoolAddress(&led->physics.body_pool, i);
@@ -1569,7 +1569,7 @@ static void led_engine_run(struct led *led)
 
 			case RB_COLOR_MODE_ISLAND: 
 			{ 
-				const struct rigid_body *body = NULL;
+				const struct rigidBody *body = NULL;
 				for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 				{
 					body = PoolAddress(&led->physics.body_pool, i);
@@ -1596,8 +1596,8 @@ static void led_engine_run(struct led *led)
 			{
 				if (led->physics.body_color_mode == RB_COLOR_MODE_COLLISION)
 				{
-					const struct rigid_body *body1 = PoolAddress(&led->physics.body_pool, event->contact_bodies.body1);
-					const struct rigid_body *body2 = PoolAddress(&led->physics.body_pool, event->contact_bodies.body2);
+					const struct rigidBody *body1 = PoolAddress(&led->physics.body_pool, event->contact_bodies.body1);
+					const struct rigidBody *body2 = PoolAddress(&led->physics.body_pool, event->contact_bodies.body2);
 					const struct led_node *node1 = PoolAddress(&led->node_pool, body1->entity);
 					const struct led_node *node2 = PoolAddress(&led->node_pool, body2->entity);
 					if (RB_IS_DYNAMIC(body1))
@@ -1617,8 +1617,8 @@ static void led_engine_run(struct led *led)
 			{
 				if (led->physics.body_color_mode == RB_COLOR_MODE_COLLISION)
 				{
-					const struct rigid_body *body1 = PoolAddress(&led->physics.body_pool, event->contact_bodies.body1);
-					const struct rigid_body *body2 = PoolAddress(&led->physics.body_pool, event->contact_bodies.body2);
+					const struct rigidBody *body1 = PoolAddress(&led->physics.body_pool, event->contact_bodies.body1);
+					const struct rigidBody *body2 = PoolAddress(&led->physics.body_pool, event->contact_bodies.body2);
 					const struct led_node *node1 = PoolAddress(&led->node_pool, body1->entity);
 					const struct led_node *node2 = PoolAddress(&led->node_pool, body2->entity);
 
@@ -1712,7 +1712,7 @@ static void led_engine_run(struct led *led)
 
 			case PHYSICS_EVENT_BODY_ORIENTATION:
 			{
-				const struct rigid_body *body = PoolAddress(&led->physics.body_pool, event->body);
+				const struct rigidBody *body = PoolAddress(&led->physics.body_pool, event->body);
 				struct led_node *node = PoolAddress(&led->node_pool, body->entity);
 
 				vec3 linear_velocity;

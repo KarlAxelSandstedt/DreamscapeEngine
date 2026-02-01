@@ -21,10 +21,9 @@
 
 #include "collision.h"
 #include "dynamics.h"
-#include "sys_public.h"
 
 /* used in contact solver to cleanup the code from if-statements */
-struct rigid_body static_body = { 0 };
+struct rigidBody static_body = { 0 };
 
 
 struct contact_solver_config config_storage = { 0 };
@@ -70,12 +69,12 @@ struct contact_solver *contact_solver_init_body_data(struct arena *mem, struct i
 
 	solver->bodies = is->bodies;
 	solver->timestep = timestep;
-	solver->body_count = is->body_count;
-	solver->contact_count = is->contact_count;
+	solver->body_count = is->body_list.count;
+	solver->contact_count = is->contact_list.count;
 
-	solver->Iw_inv = ArenaPush(mem, (is->body_count + 1) * sizeof(mat3));
-	solver->linear_velocity = ArenaPush(mem,  (is->body_count + 1) * sizeof(vec3));	/* last element is for static bodies with 0-value data */
-	solver->angular_velocity = ArenaPush(mem, (is->body_count + 1) * sizeof(vec3));
+	solver->Iw_inv = ArenaPush(mem, (is->body_list.count + 1) * sizeof(mat3));
+	solver->linear_velocity = ArenaPush(mem,  (is->body_list.count + 1) * sizeof(vec3));	/* last element is for static bodies with 0-value data */
+	solver->angular_velocity = ArenaPush(mem, (is->body_list.count + 1) * sizeof(vec3));
 
 	mat3ptr mi;
 	mat3 rot, tmp1, tmp2;
@@ -89,14 +88,14 @@ struct contact_solver *contact_solver_init_body_data(struct arena *mem, struct i
 			0.0f, 0.0f, 0.0f);
 
 
-	for (u32 i = 0; i < is->body_count; ++i)
+	for (u32 i = 0; i < is->body_list.count; ++i)
 	{	
-		const struct rigid_body *b = solver->bodies[i];
+		const struct rigidBody *b = solver->bodies[i];
 
 		/* setup inverted world intertia tensors */
 		mat3ptr mi = solver->Iw_inv + i;
 		Mat3Quat(rot, b->rotation);
-		Mat3Mul(tmp1, rot, ((struct rigid_body *) b)->inv_inertia_tensor);
+		Mat3Mul(tmp1, rot, ((struct rigidBody *) b)->inv_inertia_tensor);
 		Mat3Transpose(tmp2, rot);
 		Mat3Mul(*mi, tmp1, tmp2);
 
@@ -135,7 +134,7 @@ struct contact_solver *contact_solver_init_body_data(struct arena *mem, struct i
 	return solver;
 }
 
-void contact_solver_init_velocity_constraints(struct arena *mem, struct contact_solver *solver, const struct physics_pipeline *pipeline, const struct island *is)
+void contact_solver_init_velocity_constraints(struct arena *mem, struct contact_solver *solver, const struct physicsPipeline *pipeline, const struct island *is)
 {
 	solver->vcs = ArenaPush(mem, solver->contact_count * sizeof(struct velocity_constraint));
 
@@ -148,8 +147,8 @@ void contact_solver_init_velocity_constraints(struct arena *mem, struct contact_
 	{			
 		struct velocity_constraint *vc = solver->vcs + i;
 
-		const struct rigid_body *b1 = PoolAddress(&pipeline->body_pool, is->contacts[i]->cm.i1);
-		const struct rigid_body *b2 = PoolAddress(&pipeline->body_pool, is->contacts[i]->cm.i2);
+		const struct rigidBody *b1 = PoolAddress(&pipeline->body_pool, is->contacts[i]->cm.i1);
+		const struct rigidBody *b2 = PoolAddress(&pipeline->body_pool, is->contacts[i]->cm.i2);
 			
 		const u32 b1_static = (b1->island_index == ISLAND_STATIC) ? 1 : 0; 
 		const u32 b2_static = (b2->island_index == ISLAND_STATIC) ? 1 : 0; 

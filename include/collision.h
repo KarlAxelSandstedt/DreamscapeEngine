@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,16 +17,17 @@
 ==========================================================================
 */
 
-#ifndef __COLLISION_H__
-#define __COLLISION_H__
+#ifndef __DS_COLLISION_H__
+#define __DS_COLLISION_H__
 
-#include "ds_common.h"
-#include "allocator.h"
+#ifdef __cplusplus
+extern "C" { 
+#endif
+
+#include "ds_base.h"
 #include "ds_math.h"
-#include "geometry.h"
-#include "sys_public.h"
 #include "string_database.h"
-#include "float32.h"
+#include "ds_vector.h"
 #include "queue.h"
 #include "tree.h"
 
@@ -38,7 +39,7 @@ bounding volume hierarchy
 =========================
 */
 
-struct bvh_node
+struct bvhNode
 {
 	BT_SLOT_STATE;
 	struct aabb	bbox;
@@ -52,33 +53,33 @@ struct bvh
 };
 
 /* free allocated resources */
-void 		bvh_free(struct bvh *tree);
+void 		BvhFree(struct bvh *tree);
 /* validate (ds_Assert) internal coherence of bvh */
-void 		bvh_validate(struct arena *tmp, const struct bvh *bvh);
+void 		BvhValidate(struct arena *tmp, const struct bvh *bvh);
 /* return total cost of bvh */
-f32 		bvh_cost(const struct bvh *bvh);
+f32 		BvhCost(const struct bvh *bvh);
 
 #define COST_QUEUE_INITIAL_COUNT 	64 
 
 //TODO remove
-struct dbvh_overlap
+struct dbvhOverlap
 {
 	u32 id1;
 	u32 id2;	
 };
 
-struct bvh		dbvh_alloc(struct arena *mem, const u32 initial_length, const u32 growable);
+struct bvh		DbvhAlloc(struct arena *mem, const u32 initial_length, const u32 growable);
 /* flush / reset the hierarchy  */
-void 			dbvh_flush(struct bvh *bvh);
+void 			DbvhFlush(struct bvh *bvh);
 /* id is an integer identifier from the outside, return index of added value */
-u32 			dbvh_insert(struct bvh *bvh, const u32 id, const struct aabb *bbox);
+u32 			DbvhInsert(struct bvh *bvh, const u32 id, const struct aabb *bbox);
 /* remove leaf corresponding to index from tree */
-void 			dbvh_remove(struct bvh *bvh, const u32 index);
+void 			DbvhRemove(struct bvh *bvh, const u32 index);
 /* Return overlapping ids ptr, set to NULL if no overlap. if overlap, count is set */
-struct dbvh_overlap *	dbvh_push_overlap_pairs(struct arena *mem, u32 *count, const struct bvh *bvh);
+struct dbvhOverlap *	DbvhPushOverlapPairs(struct arena *mem, u32 *count, const struct bvh *bvh);
 /* push	id:s of leaves hit by raycast. returns number of hits. -1 == out of memory */
 
-struct triMesh_bvh
+struct triMeshBvh
 {
 	const struct triMesh *	mesh;		
 	struct bvh		bvh;
@@ -87,9 +88,9 @@ struct triMesh_bvh
 };
 
 /* Return non-empty tri_mesh_bvh on success. */
-struct triMesh_bvh 	tri_mesh_bvh_construct(struct arena *mem, const struct triMesh *mesh, const u32 bin_count);
+struct triMeshBvh 	TriMeshBvhConstruct(struct arena *mem, const struct triMesh *mesh, const u32 bin_count);
 /* Return (index, ray hit parameter) on closest hit, or (U32_MAX, F32_INFINITY) on no hit */
-u32f32 			tri_mesh_bvh_raycast(struct arena *tmp, const struct triMesh_bvh *mesh_bvh, const struct ray *ray);
+u32f32 			TriMeshBvhRaycast(struct arena *tmp, const struct triMeshBvh *mesh_bvh, const struct ray *ray);
 
 
 /*
@@ -99,7 +100,7 @@ To implement raycast using external primitives, one can use the following code:
 
 	ArenaPushRecord(mem);
 
-	struct bvh_raycast_info info = bvh_raycast_init(mem, bvh, ray);
+	struct bvhRaycastInfo info = BvhRaycastInit(mem, bvh, ray);
 	while (info.hit_queue.count)
 	{
 		const u32f32 tuple = MinQueueFixedPop(&info.hit_queue);
@@ -119,13 +120,13 @@ To implement raycast using external primitives, one can use the following code:
 		}
 		else
 		{
-			bvh_raycast_test_and_push_children(&info, tuple);
+			BvhRaycastTestAndPushChildren(&info, tuple);
 		}
 	}
 
 	ArenaPopRecord(mem);
 */
-struct bvh_raycast_info
+struct bvhRaycastInfo
 {
 	u32f32			hit;
 	vec3 			multiplier;
@@ -133,39 +134,39 @@ struct bvh_raycast_info
 	struct minQueueFixed	hit_queue;
 	const struct ray *	ray;
 	const struct bvh *	bvh;
-	const struct bvh_node *	node;
+	const struct bvhNode *	node;
 };
 
 /* Initiate raycast information */
-struct bvh_raycast_info	bvh_raycast_init(struct arena *mem, const struct bvh *bvh, const struct ray *ray);
+struct bvhRaycastInfo	BvhRaycastInit(struct arena *mem, const struct bvh *bvh, const struct ray *ray);
 /* test Raycasting against child nodes and push hit children onto queue */
-void 			bvh_raycast_test_and_push_children(struct bvh_raycast_info *info, const u32f32 popped_tuple);
+void 			BvhRaycastTestAndPushChildren(struct bvhRaycastInfo *info, const u32f32 popped_tuple);
 
 
 /********************************** COLLISION DEBUG **********************************/
 
-typedef struct visual_segment
+typedef struct visualSegment
 {
 	struct segment	segment;
 	vec4		color;
 } visual_segment;
 DECLARE_STACK(visual_segment);
 
-struct visual_segment	visual_segment_construct(const struct segment segment, const vec4 color);
+struct visualSegment	VisualSegmentConstruct(const struct segment segment, const vec4 color);
 
-struct collision_debug
+struct collisionDebug
 {
 	stack_visual_segment	stack_segment;
 
 	u8			pad[64];
 };
 
-extern dsThreadLocal struct collision_debug *tl_debug;
+extern dsThreadLocal struct collisionDebug *tl_debug;
 
 #ifdef DS_PHYSICS_DEBUG
 
 #define COLLISION_DEBUG_ADD_SEGMENT(segment, color)							\
-	stack_visual_segment_push(&tl_debug->stack_segment,  visual_segment_construct(segment, color))
+	stack_visual_segment_push(&tl_debug->stack_segment,  VisualSegmentConstruct(segment, color))
 
 #else
 
@@ -175,7 +176,7 @@ extern dsThreadLocal struct collision_debug *tl_debug;
 
 /********************************** COLLISION SHAPES **********************************/
 
-enum collision_shape_type
+enum collisionShapeType
 {
 	COLLISION_SHAPE_SPHERE,
 	COLLISION_SHAPE_CAPSULE,
@@ -184,21 +185,21 @@ enum collision_shape_type
 	COLLISION_SHAPE_COUNT,
 };
 
-struct collision_shape
+struct collisionShape
 {
 	STRING_DATABASE_SLOT_STATE;
 	u32 			center_of_mass_localized; /* Has the shape translated its vertices into COM space? */
-	enum collision_shape_type type;
+	enum collisionShapeType type;
 	union
 	{
 		struct sphere 		sphere;
 		struct capsule 		capsule;
 		struct dcel		hull;
-		struct triMesh_bvh 	mesh_bvh;
+		struct triMeshBvh 	mesh_bvh;
 	};
 };
 
-enum collision_result_type
+enum collisionResultType
 {
 	COLLISION_NONE,		/* No collision, no sat cache stored */
 	COLLISION_SAT_CACHE,	/* No collision, sat cache stored    */
@@ -206,7 +207,7 @@ enum collision_result_type
 	COLLISION_COUNT
 };
 
-struct contact_manifold
+struct contactManifold
 {
 	vec3 	v[4];
 	f32 	depth[4];
@@ -216,7 +217,7 @@ struct contact_manifold
 	u32 	i2;
 };
 
-enum sat_cache_type
+enum satCacheType
 {
 	SAT_CACHE_SEPARATION,
 	SAT_CACHE_CONTACT_FV,
@@ -224,13 +225,13 @@ enum sat_cache_type
 	SAT_CACHE_COUNT,
 };
 
-struct sat_cache
+struct satCache
 {
 	POOL_SLOT_STATE;
 	u32	touched;
 	DLL_SLOT_STATE;
 
-	enum sat_cache_type	type;
+	enum satCacheType	type;
 	union
 	{
 		struct
@@ -255,29 +256,33 @@ struct sat_cache
 	u64	key;
 };
 
-struct collision_result
+struct collisionResult
 {
-	enum collision_result_type	type;
-	struct sat_cache		sat_cache;
-	struct contact_manifold 	manifold;
+	enum collisionResultType	type;
+	struct satCache			sat_cache;
+	struct contactManifold 		manifold;
 };
 
-void 	contact_manifold_debug_print(FILE *file, const struct contact_manifold *cm);
+void 	ContactManifoldDebugPrint(FILE *file, const struct contactManifold *cm);
 
 /********************************** RIGID BODY METHODS  **********************************/
 
-struct physics_pipeline;
-struct rigid_body;
+struct physicsPipeline;
+struct rigidBody;
 
 /* test for intersection between bodies, with each body having the given margin. returns 1 if intersection. */
-u32	body_body_test(const struct physics_pipeline *pipeline, const struct rigid_body *b1, const struct rigid_body *b2, const f32 margin);
+u32	BodyBodyTest(const struct physicsPipeline *pipeline, const struct rigidBody *b1, const struct rigidBody *b2, const f32 margin);
 /* return closest points c1 and c2 on bodies b1 and b2 (with no margin), respectively, given no intersection */
-f32 	body_body_distance(vec3 c1, vec3 c2, const struct physics_pipeline *pipeline, const struct rigid_body *b1, const struct rigid_body *b2, const f32 margin);
+f32 	BodyBodyDistance(vec3 c1, vec3 c2, const struct physicsPipeline *pipeline, const struct rigidBody *b1, const struct rigidBody *b2, const f32 margin);
 /* returns contact manifold or sat cache pointing from b1 to b2, given that the bodies are colliding  */
-u32 	body_body_contact_manifold(struct arena *tmp, struct collision_result *result, const struct physics_pipeline *pipeline, const struct rigid_body *b1, const struct rigid_body *b2, const f32 margin);
+u32 	BodyBodyContactManifold(struct arena *tmp, struct collisionResult *result, const struct physicsPipeline *pipeline, const struct rigidBody *b1, const struct rigidBody *b2, const f32 margin);
 /* Return t such that ray.origin + t*ray.dir == closest point on rigid body */
-f32 	body_raycast_parameter(const struct physics_pipeline *pipeline, const struct rigid_body *b, const struct ray *ray);
+f32 	BodyRaycastParameter(const struct physicsPipeline *pipeline, const struct rigidBody *b, const struct ray *ray);
 /* Return 1 if ray hit body, 0 otherwise. If hit, we return the closest intersection point */
-u32 	body_raycast(vec3 intersection, const struct physics_pipeline *pipeline, const struct rigid_body *b, const struct ray *ray);
+u32 	BodyRaycast(vec3 intersection, const struct physicsPipeline *pipeline, const struct rigidBody *b, const struct ray *ray);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

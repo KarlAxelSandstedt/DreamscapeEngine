@@ -43,8 +43,8 @@ used as arbitrary u32's storing external information.
 #define BT_PARENT_LEAF_MASK		0x80000000
 #define bt_LeafSet(node_addr)		(node_addr)->bt_parent |= BT_PARENT_LEAF_MASK;
 #define bt_LeafCheck(node_addr)		((node_addr)->bt_parent & BT_PARENT_LEAF_MASK)
-#define bt_RootCheck(node_addr)		(((node_addr)->bt_parent & BT_PARENT_INDEX_MASK) == POOL_NULL)
-#define bt_NotRootCheck(node_addr)	(((node_addr)->bt_parent & BT_PARENT_INDEX_MASK) != POOL_NULL)
+#define bt_RootCheck(node_addr)		(((node_addr)->bt_parent & BT_PARENT_INDEX_MASK) == BT_PARENT_INDEX_MASK)
+#define bt_NotRootCheck(node_addr)	(((node_addr)->bt_parent & BT_PARENT_INDEX_MASK) != BT_PARENT_INDEX_MASK)
 #define	BT_SLOT_STATE	u32	bt_parent;	\
 			u32	bt_left;	\
 			u32	bt_right;	\

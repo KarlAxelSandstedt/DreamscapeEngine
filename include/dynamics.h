@@ -20,17 +20,19 @@
 #ifndef __DS_DYNAMICS_H__
 #define __DS_DYNAMICS_H__
 
-#include "ds_common.h"
-#include "allocator.h"
+#ifdef __cplusplus
+extern "C" { 
+#endif
+
+#include "ds_allocator.h"
+#include "ds_math.h"
 #include "list.h"
 #include "collision.h"
 #include "hash_map.h"
-#include "bitVector.h"
-#include "array_list.h"
-#include "ds_math.h"
+#include "bit_vector.h"
 
-struct rigid_body;
-struct physics_pipeline;
+struct rigidBody;
+struct physicsPipeline;
 
 /*
 =================================================================================================================
@@ -40,8 +42,9 @@ struct physics_pipeline;
 
 struct contact
 {
+	LL_SLOT_STATE;
 	NLL_SLOT_STATE;
-	struct contact_manifold cm;
+	struct contactManifold 	cm;
 	u64 			key;
 
 	vec3 			normal_cache;
@@ -81,14 +84,14 @@ struct contact_database
 	 * i.e. the smaller index owns slot 0 and the larger index owns slot 1.
 	 */
 	struct nll	contact_net;
-	struct hashMap *contact_map;		
+	struct hashMap	contact_map;		
 
 	/*
 	 * frame-cached separation axes 
 	 */
 	struct pool	sat_cache_pool;
 	struct dll	sat_cache_list;
-	struct hashMap *sat_cache_map;		
+	struct hashMap	sat_cache_map;		
 
 	/* PERSISTENT DATA, GROWABLE, keeps track of which slots in contacts are currently being used. */
 	struct bitVec 	contacts_persistent_usage; /* At end of frame, is set to contacts_frame_usage + any 
@@ -108,23 +111,23 @@ struct contact_database
 struct contact_database c_db_alloc(struct arena *mem_persistent, const u32 initial_size);
 void 			c_db_free(struct contact_database *c_db);
 void			c_db_flush(struct contact_database *c_db);
-void			c_db_validate(const struct physics_pipeline *pipeline);
+void			c_db_validate(const struct physicsPipeline *pipeline);
 void			c_db_clear_frame(struct contact_database *c_db);
 /* Update or add new contact depending on if the contact persisted from prevous frame. */
-struct contact *	c_db_add_contact(struct physics_pipeline *pipeline, const struct contact_manifold *cm, const u32 i1, const u32 i2);
-void 			c_db_remove_contact(struct physics_pipeline *pipeline, const u64 key, const u32 index);
+struct contact *	c_db_add_contact(struct physicsPipeline *pipeline, const struct contactManifold *cm, const u32 i1, const u32 i2);
+void 			c_db_remove_contact(struct physicsPipeline *pipeline, const u64 key, const u32 index);
 /* Remove all contacts associated with the given body */
-void			c_db_remove_body_contacts(struct physics_pipeline *pipeline, const u32 body_index);
+void			c_db_remove_body_contacts(struct physicsPipeline *pipeline, const u32 body_index);
 /* Remove all contacts associated with the given static body and store affected islands */
-u32 *			c_db_remove_static_contacts_and_store_affected_islands(struct arena *mem, u32 *count, struct physics_pipeline *pipeline, const u32 static_index);
+u32 *			c_db_remove_static_contacts_and_store_affected_islands(struct arena *mem, u32 *count, struct physicsPipeline *pipeline, const u32 static_index);
 struct contact *	c_db_lookup_contact(const struct contact_database *c_db, const u32 b1, const u32 b2);
 u32 			c_db_lookup_contact_index(const struct contact_database *c_db, const u32 i1, const u32 i2);
 void 			c_db_update_persistent_contacts_usage(struct contact_database *c_db);
 
 /* add sat_cache to pipeline; if it already exists, reset the cache. */
-void 			sat_cache_add(struct contact_database *c_db, const struct sat_cache *sat_cache);
+void 			sat_cache_add(struct contact_database *c_db, const struct satCache *sat_cache);
 /* lookup sat_cache to pipeline; if it does't exist, return NULL. */
-struct sat_cache *	sat_cache_lookup(const struct contact_database *c_db, const u32 b1, const u32 b2);
+struct satCache *	sat_cache_lookup(const struct contact_database *c_db, const u32 b1, const u32 b2);
 
 /*
 =================================================================================================================
@@ -226,99 +229,84 @@ data (ListData) is kept throughout [2], [3], and discarded at [4] when islands a
 #define ISLAND_SPLIT_BIT(is)		(((is)->flags & ISLAND_SPLIT) >> 2u)
 #define ISLAND_TRY_SLEEP_BIT(is)	(((is)->flags & ISLAND_TRY_SLEEP) >> 3u)
 
-#define ISLAND_NULL	U32_MAX 
-#define ISLAND_STATIC	U32_MAX-1	/* static bodies are mapped to "island" ISLAND_STATIC */
+#define ISLAND_NULL	POOL_NULL 
+#define ISLAND_STATIC	POOL_NULL-1	/* static bodies are mapped to "island" ISLAND_STATIC */
 
 struct island
 {
-	struct rigid_body **	bodies;	
+	POOL_SLOT_STATE;
+	DLL_SLOT_STATE;
+
+	struct rigidBody **	bodies;	
 	struct contact 	**	contacts;
 	u32 *			body_index_map; /* body_index -> local indices of bodies in island:
 						 * is->bodies[i] = pipeline->bodies[b] => 
 						 * is->body_index_map[b] = i 
 						 */
 
-	//TODO REMOVE
-	u32 cm_count;
-
 	/* Persistent Island */
 	u32 flags;
 
-	u32 body_first;			/* index into first node in island_body_lists 		*/
-	u32 contact_first;		/* index into first node in island_contact_lists 	*/
-
-	u32 body_last;			/* index into last node in island_body_lists 		*/
-	u32 contact_last;		/* index into last node in island_contact_lists 	*/
-
-	u32 body_count;
-	u32 contact_count;
+	struct ll	body_list;
+	struct ll	contact_list;
 
 #ifdef DS_PHYSICS_DEBUG
 	vec4 color;
 #endif
 };
 
-struct is_index_entry
-{
-	u32 index;
-	u32 next;
-};
-
-struct island_database
+struct isdb
 {
 	/* PERSISTENT DATA */
-	struct bitVec island_usage;			/* NOT GROWABLE, bit vector for islands in use */
-	struct array_list *islands;			/* NOT GROWABLE, set to max_body_count 	*/
-	struct array_list *island_contact_lists;	/* GROWABLE, list nodes to contacts 	*/
-	struct array_list *island_body_lists;		/* NOT GROWABLE, list nodes to bodies   */
-
+	struct pool 	island_pool;	/* GROWABLE, list nodes of contacts and bodies	*/
+	struct dll	island_list;
 	/* FRAME DATA */
-	u32 *possible_splits;				/* Islands in which a contact has been broken during frame */
-	u32 possible_splits_count;
+	u32 *		possible_splits;				/* Islands in which a contact has been broken during frame */
+	u32 		possible_splits_count;
 };
 
 #ifdef DS_PHYSICS_DEBUG
-#define IS_DB_VALIDATE(pipeline)	is_db_validate((pipeline)
+#define IS_DB_VALIDATE(pipeline)	isdb_Validate((pipeline)
 #else
 #define IS_DB_VALIDATE(pipeline)	
 #endif
 
-struct physics_pipeline;
+struct physicsPipeline;
 
 /* Setup and allocate memory for new database */
-struct island_database 	is_db_alloc(struct arena *mem_persistent, const u32 initial_size);
+struct isdb 	isdb_Alloc(struct arena *mem_persistent, const u32 initial_size);
 /* Free any heap memory */
-void		       	is_db_free(struct island_database *is_db);
+void	       	isdb_Dealloc(struct isdb *is_db);
 /* Flush / reset the island database */
-void			is_db_flush(struct island_database *is_db);
+void		isdb_Flush(struct isdb *is_db);
 /* Clear any frame related data */
-void			is_db_clear_frame(struct island_database *is_db);
+void		isdb_ClearFrame(struct isdb *is_db);
 /* remove island resources from database */
-void 			is_db_island_remove(struct physics_pipeline *pipeline, struct island *is);
+void 		isdb_IslandRemove(struct physicsPipeline *pipeline, struct island *is);
 /* remove island resources related to body, and possibly the whole island, from database */
-void 			is_db_island_remove_body_resources(struct physics_pipeline *pipeline, const u32 island_index, const u32 body);
+void 		isdb_IslandRemoveBodyResources(struct physicsPipeline *pipeline, const u32 island_index, const u32 body);
 /* Debug printing of island */
-void is_db_print_island(FILE *file, const struct island_database *is_db, const struct contact_database *c_db, const u32 island, const char *desc);
+void 		isdb_PrintIsland(FILE *file, const struct physicsPipeline *pipeline, const u32 island, const char *desc);
 /* Check if the database appears to be valid */
-void 			is_db_validate(const struct physics_pipeline *pipeline);
+void 		isdb_Validate(const struct physicsPipeline *pipeline);
 /* Setup new island from single body */
-struct island *		is_db_init_island_from_body(struct physics_pipeline *pipeline, const u32 body);
+struct island *	isdb_InitIslandFromBody(struct physicsPipeline *pipeline, const u32 body);
 /* Add contact to island */
-void 			is_db_add_contact_to_island(struct island_database *is_db, const u32 island, const u32 contact);
+void 		isdb_AddContactToIsland(struct physicsPipeline *pipeline, const u32 island, const u32 contact);
 /* Return island that body is assigned to */
-struct island *		is_db_body_to_island(struct physics_pipeline *pipeline, const u32 body);
+struct island *	isdb_BodyToIsland(struct physicsPipeline *pipeline, const u32 body);
 /* Reserve enough memory to fit all possible split */
-void			is_db_reserve_splits_memory(struct arena *mem_frame, struct island_database *is_db);
+void		isdb_ReserveSplitsMemory(struct arena *mem_frame, struct isdb *is_db);
 /* Release any unused reserved possible split memory */
-void			is_db_release_unused_splits_memory(struct arena *mem_frame, struct island_database *is_db);
+void		isdb_ReleaseUnusedSplitsMemory(struct arena *mem_frame, struct isdb *is_db);
 /* Tag the island that the body is in for splitting and push it onto split memory (if we havn't already) */
-void 			is_db_tag_for_splitting(struct physics_pipeline *pipeline, const u32 body);
+void 		isdb_TagForSplitting(struct physicsPipeline *pipeline, const u32 body);
 /* Merge islands (Or simply update if new local contact) using new contact */
-void 			is_db_merge_islands(struct physics_pipeline *pipeline, const u32 ci, const u32 b1, const u32 b2);
+void 		isdb_MergeIslands(struct physicsPipeline *pipeline, const u32 ci, const u32 b1, const u32 b2);
 /* Split island, or remake if no split happens: TODO: Make thread-safe  */
-void 			is_db_split_island(struct arena *mem_tmp, struct physics_pipeline *pipeline, const u32 island_to_split);
+void 		isdb_SplitIsland(struct arena *mem_tmp, struct physicsPipeline *pipeline, const u32 island_to_split);
 /* Solve island constraints, and update bodies in pipeline */
-//void 			island_solve(struct arena *mem_frame, struct physics_pipeline *pipeline, struct island *is, const f32 timestep);
+//void 		island_solve(struct arena *mem_frame, struct physicsPipeline *pipeline, struct island *is, const f32 timestep);
 
 /********* Threaded Island API *********/
 
@@ -334,7 +322,7 @@ struct island_solve_output
 struct island_solve_input
 {
 	struct island *is;
-	struct physics_pipeline *pipeline;
+	struct physicsPipeline *pipeline;
 	struct island_solve_output *out;
 	f32 timestep;
 };
@@ -468,7 +456,7 @@ struct contact_solver
 	u32			body_count;
 	u32			contact_count;
 
-	struct rigid_body **	bodies;
+	struct rigidBody **	bodies;
 	mat3ptr			Iw_inv;		/* inverted world inertia tensors */
 	struct velocity_constraint *vcs;	
 
@@ -478,7 +466,7 @@ struct contact_solver
 };
 
 struct contact_solver *	contact_solver_init_body_data(struct arena *mem, struct island *is, const f32 timestep);
-void 			contact_solver_init_velocity_constraints(struct arena *mem, struct contact_solver *solver, const struct physics_pipeline *pipeline, const struct island *is);
+void 			contact_solver_init_velocity_constraints(struct arena *mem, struct contact_solver *solver, const struct physicsPipeline *pipeline, const struct island *is);
 void 			contact_solver_iterate_velocity_constraints(struct contact_solver *solver);
 void 			contact_solver_warmup(struct contact_solver *solver, const struct island *is);
 void 			contact_solver_cache_impulse_data(struct contact_solver *solver, const struct island *is);
@@ -513,9 +501,10 @@ physics engine entity
 #define IS_ISLAND(flags)	((flags & RB_ISLAND) >> 3u)
 #define IS_MARKED(flags)	((flags & RB_MARKED_FOR_REMOVAL) >> 4u)
 
-struct rigid_body
+struct rigidBody
 {
-	DLL_SLOT_STATE;
+	LL_SLOT_STATE;		/* island_list_node */
+	DLL_SLOT_STATE;		/* body marked/non-marked list node */
 	POOL_SLOT_STATE;
 	/* dynamic state */
 	struct aabb	local_box;		/* bounding AABB */
@@ -537,7 +526,7 @@ struct rigid_body
 	i32 		proxy;
 	f32 		margin;
 
-	enum collision_shape_type shape_type;
+	enum collisionShapeType shape_type;
 	u32		shape_handle;
 
 	mat3 		inertia_tensor;		/* intertia tensor of body frame */
@@ -555,7 +544,7 @@ rigid_body_prefab
 rigid body prefabs: used within editor and level editor file format, contains resuable preset values for creating
 new bodies.
 */
-struct rigid_body_prefab
+struct rigidBody_prefab
 {
 	STRING_DATABASE_SLOT_STATE;
 	u32		shape;
@@ -570,7 +559,7 @@ struct rigid_body_prefab
 	u32		dynamic;		/* dynamic body is true, static if false */
 };
 
-void 	prefab_statics_setup(struct rigid_body_prefab *prefab, struct collision_shape *shape, const f32 density);
+void 	prefab_statics_setup(struct rigidBody_prefab *prefab, struct collisionShape *shape, const f32 density);
 
 #define UNITS_PER_METER		1.0f
 #define UNITS_PER_DECIMETER	0.1f
@@ -681,7 +670,7 @@ extern const char **body_color_mode_str;
 /*
  * Physics Pipeline
  */
-struct physics_pipeline 
+struct physicsPipeline 
 {
 	struct arena 		frame;			/* frame memory */
 
@@ -703,9 +692,9 @@ struct physics_pipeline
 	struct bvh 		dynamic_tree;
 
 	struct contact_database	c_db;
-	struct island_database 	is_db;
+	struct isdb 	is_db;
 
-	struct collision_debug *debug;
+	struct collisionDebug *debug;
 	u32			debug_count;
 
 	//TODO temporary, move somewhere else.
@@ -719,8 +708,8 @@ struct physics_pipeline
 	u32			proxy_overlap_count;
 	u32			cm_count;
 	u32 *			contact_new;
-	struct dbvh_overlap *	proxy_overlap;
-	struct contact_manifold *cm;
+	struct dbvhOverlap *	proxy_overlap;
+	struct contactManifold *cm;
 
 	/* debug */
 	enum rigid_body_color_mode	pending_body_color_mode;
@@ -745,25 +734,25 @@ struct physics_pipeline
 /**************** PHYISCS PIPELINE API ****************/
 
 /* Initialize a new growable physics pipeline; ns_tick is the duration of a physics frame. */
-struct physics_pipeline	physics_pipeline_alloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct strdb *shape_db, struct strdb *prefab_db);
+struct physicsPipeline	physics_pipeline_alloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct strdb *shape_db, struct strdb *prefab_db);
 /* free pipeline resources */
-void 			physics_pipeline_free(struct physics_pipeline *physics_pipeline);
+void 			physics_pipeline_free(struct physicsPipeline *physics_pipeline);
 /* flush pipeline resources */
-void			physics_pipeline_flush(struct physics_pipeline *physics_pipeline);
+void			physics_pipeline_flush(struct physicsPipeline *physics_pipeline);
 /* pipeline main method: simulate a single physics frame and update internal state  */
-void 			physics_pipeline_tick(struct physics_pipeline *pipeline);
+void 			physics_pipeline_tick(struct physicsPipeline *pipeline);
 /* allocate new rigid body in pipeline and return its slot */
-struct slot		physics_pipeline_rigid_body_alloc(struct physics_pipeline *pipeline, struct rigid_body_prefab *prefab, const vec3 position, const quat rotation, const u32 entity);
+struct slot		physics_pipeline_rigid_body_alloc(struct physicsPipeline *pipeline, struct rigidBody_prefab *prefab, const vec3 position, const quat rotation, const u32 entity);
 /* deallocate a collision shape associated with the given handle. If no shape is found, do nothing */
-void			physics_pipeline_rigid_body_tag_for_removal(struct physics_pipeline *pipeline, const u32 handle);
+void			physics_pipeline_rigid_body_tag_for_removal(struct physicsPipeline *pipeline, const u32 handle);
 /* validate and ds_Assert internal state of physics pipeline */
-void			physics_pipeline_validate(const struct physics_pipeline *pipeline);
+void			physics_pipeline_validate(const struct physicsPipeline *pipeline);
 /* If hit, return parameter (body,t) of ray at first collision. Otherwise return (U32_MAX, F32_INFINITY) */
-u32f32 			physics_pipeline_raycast_parameter(struct arena *mem_tmp, const struct physics_pipeline *pipeline, const struct ray *ray);
+u32f32 			physics_pipeline_raycast_parameter(struct arena *mem_tmp, const struct physicsPipeline *pipeline, const struct ray *ray);
 /* enable sleeping in pipeline */
-void 			physics_pipeline_enable_sleeping(struct physics_pipeline *pipeline);
+void 			physics_pipeline_enable_sleeping(struct physicsPipeline *pipeline);
 /* disable sleeping in pipeline */
-void 			physics_pipeline_disable_sleeping(struct physics_pipeline *pipeline);
+void 			physics_pipeline_disable_sleeping(struct physicsPipeline *pipeline);
 
 #ifdef DS_PHYSICS_DEBUG
 #define PHYSICS_PIPELINE_VALIDATE(pipeline)	physics_pipeline_validate(pipeline)
@@ -774,6 +763,10 @@ void 			physics_pipeline_disable_sleeping(struct physics_pipeline *pipeline);
 /**************** PHYISCS PIPELINE INTERNAL API ****************/
 
 /* push physics event into pipeline memory and return pointer to allocated event */
-struct physics_event *	physics_pipeline_event_push(struct physics_pipeline *pipeline);
+struct physics_event *	physics_pipeline_event_push(struct physicsPipeline *pipeline);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

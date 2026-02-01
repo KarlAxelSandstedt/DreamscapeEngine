@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025,2026 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -28,12 +28,12 @@
 #define COST_INTERNAL 	1.5f	/* Overhead of triangle intersection tests */
 
 
-struct bvh dbvh_alloc(struct arena *mem, const u32 initial_length, const u32 growable)
+struct bvh DbvhAlloc(struct arena *mem, const u32 initial_length, const u32 growable)
 {
 	ds_Assert(!mem || !growable);
 	struct bvh bvh =
 	{
-		.tree = bt_Alloc(mem, initial_length, struct bvh_node, growable),
+		.tree = bt_Alloc(mem, initial_length, struct bvhNode, growable),
 		.cost_queue = MinQueueAlloc(NULL, COST_QUEUE_INITIAL_COUNT, growable),
 		.heap_allocated = !mem,	
 	};
@@ -41,7 +41,7 @@ struct bvh dbvh_alloc(struct arena *mem, const u32 initial_length, const u32 gro
 	return bvh;
 }
 
-void bvh_free(struct bvh *bvh)
+void BvhFree(struct bvh *bvh)
 {
 	if (bvh->heap_allocated)
 	{
@@ -50,27 +50,27 @@ void bvh_free(struct bvh *bvh)
 	}
 }
 
-static f32 bbox_sah(const struct aabb *box)
+static f32 BodySah(const struct aabb *box)
 {
 	return box->hw[0]*(box->hw[1] + box->hw[2]) + box->hw[1]*box->hw[2];
 }
 
-static f32 bvh_cost_recursive(const struct bvh *bvh, const u32 index)
+static f32 BvhCostRecursive(const struct bvh *bvh, const u32 index)
 {
 	f32 cost;
 	
-	const struct bvh_node *node = (struct bvh_node *) bvh->tree.pool.buf;
+	const struct bvhNode *node = (struct bvhNode *) bvh->tree.pool.buf;
 	if (bt_LeafCheck(node + index))
 	{
 		cost = node[index].bt_right * COST_INTERNAL;
 	}
 	else
 	{
-		const f32 cost_left = bvh_cost_recursive(bvh, node[index].bt_left);
-		const f32 cost_right = bvh_cost_recursive(bvh, node[index].bt_right);
+		const f32 cost_left = BvhCostRecursive(bvh, node[index].bt_left);
+		const f32 cost_right = BvhCostRecursive(bvh, node[index].bt_right);
 
-		const f32 probability_left = bbox_sah(&node[node[index].bt_left].bbox) /  bbox_sah(&node[index].bbox);
-		const f32 probability_right = bbox_sah(&node[node[index].bt_right].bbox) / bbox_sah(&node[index].bbox);
+		const f32 probability_left = BodySah(&node[node[index].bt_left].bbox) /  BodySah(&node[index].bbox);
+		const f32 probability_right = BodySah(&node[node[index].bt_right].bbox) / BodySah(&node[index].bbox);
 
 		cost = COST_TRAVERSAL + probability_left*cost_left + probability_right*cost_right; 
 	}
@@ -78,20 +78,20 @@ static f32 bvh_cost_recursive(const struct bvh *bvh, const u32 index)
 	return cost;
 }
 
-f32 bvh_cost(const struct bvh *bvh)
+f32 BvhCost(const struct bvh *bvh)
 {
-	return bvh_cost_recursive(bvh, bvh->tree.root);
+	return BvhCostRecursive(bvh, bvh->tree.root);
 }
 
-void dbvh_flush(struct bvh *bvh)
+void DbvhFlush(struct bvh *bvh)
 {
 	bt_Flush(&bvh->tree);
 	MinQueueFlush(&bvh->cost_queue);
 }
 
-static void dbvh_internal_balance_node(struct bvh *bvh, const u32 node)
+static void DbvhInternalBalanceNode(struct bvh *bvh, const u32 node)
 {
-	struct bvh_node *nodes = (struct bvh_node *) bvh->tree.pool.buf;
+	struct bvhNode *nodes = (struct bvhNode *) bvh->tree.pool.buf;
 	/* (1) find best rotation */
 	u32 left = nodes[node].bt_left;
 	u32 right = nodes[node].bt_right;
@@ -103,8 +103,8 @@ static void dbvh_internal_balance_node(struct bvh *bvh, const u32 node)
 	if (!bt_LeafCheck(nodes + left))
 	{
 		box_union = BboxUnion(nodes[nodes[left].bt_left].bbox, nodes[right].bbox);
-		cost_original = bbox_sah(&nodes[left].bbox);	
-		cost_rotation = bbox_sah(&box_union);
+		cost_original = BodySah(&nodes[left].bbox);	
+		cost_rotation = BodySah(&box_union);
 		if (cost_rotation < cost_original)
 		{
 			upper_rotation = right;
@@ -113,7 +113,7 @@ static void dbvh_internal_balance_node(struct bvh *bvh, const u32 node)
 		}
 
 		box_union = BboxUnion(nodes[nodes[left].bt_right].bbox, nodes[right].bbox);
-		cost_rotation = bbox_sah(&box_union);
+		cost_rotation = BodySah(&box_union);
 		if (cost_rotation < cost_original && cost_rotation < cost_best)
 		{
 			upper_rotation = right;
@@ -125,8 +125,8 @@ static void dbvh_internal_balance_node(struct bvh *bvh, const u32 node)
 	if (!bt_LeafCheck(nodes + right))
 	{
 		box_union = BboxUnion(nodes[nodes[right].bt_left].bbox, nodes[left].bbox);
-		cost_original = bbox_sah(&nodes[right].bbox);
-		cost_rotation = bbox_sah(&box_union);
+		cost_original = BodySah(&nodes[right].bbox);
+		cost_rotation = BodySah(&box_union);
 		if (cost_rotation < cost_best && cost_rotation < cost_original)
 		{
 			upper_rotation = left;
@@ -135,7 +135,7 @@ static void dbvh_internal_balance_node(struct bvh *bvh, const u32 node)
 		}
 
 		box_union = BboxUnion(nodes[nodes[right].bt_right].bbox, nodes[left].bbox);
-		cost_rotation = bbox_sah(&box_union);
+		cost_rotation = BodySah(&box_union);
 		if (cost_rotation < cost_best && cost_rotation < cost_original)
 		{
 			upper_rotation = left;
@@ -186,9 +186,9 @@ static void dbvh_internal_balance_node(struct bvh *bvh, const u32 node)
 	nodes[node].bbox = BboxUnion(nodes[left].bbox, nodes[right].bbox);
 }
 
-u32 dbvh_insert(struct bvh *bvh, const u32 id, const struct aabb *bbox)
+u32 DbvhInsert(struct bvh *bvh, const u32 id, const struct aabb *bbox)
 {
-	struct bvh_node *nodes = (struct bvh_node *) bvh->tree.pool.buf;
+	struct bvhNode *nodes = (struct bvhNode *) bvh->tree.pool.buf;
 	struct slot leaf;
 	if (bvh->tree.root == POOL_NULL)
 	{
@@ -230,7 +230,7 @@ u32 dbvh_insert(struct bvh *bvh, const u32 id, const struct aabb *bbox)
 			node = MinQueuePop(&bvh->cost_queue);
 			const struct aabb box_union = BboxUnion(nodes[leaf.index].bbox, nodes[node].bbox);
 			/* Inherited area cost + expanded node area cost */
-			cost = inherited_cost + bbox_sah(&box_union);
+			cost = inherited_cost + BodySah(&box_union);
 
 			if (cost < best_cost)
 			{
@@ -245,9 +245,9 @@ u32 dbvh_insert(struct bvh *bvh, const u32 id, const struct aabb *bbox)
 			 * consider them as viable siblings. Their priorities become the increase in cost 
 			 * to node's path when adding the new box (the inherited cost).
 			 */
-			cost -= bbox_sah(&nodes[node].bbox);
+			cost -= BodySah(&nodes[node].bbox);
 
-			if (!bt_LeafCheck(nodes + node) && cost + bbox_sah(&nodes[leaf.index].bbox) < best_cost)
+			if (!bt_LeafCheck(nodes + node) && cost + BodySah(&nodes[leaf.index].bbox) < best_cost)
 			{
 				MinQueuePush(&bvh->cost_queue, cost, nodes[node].bt_left);
 				MinQueuePush(&bvh->cost_queue, cost, nodes[node].bt_right);
@@ -282,21 +282,21 @@ u32 dbvh_insert(struct bvh *bvh, const u32 id, const struct aabb *bbox)
 		/* (3) Traverse from grandparent of leaf, refitting and rotating node up to the root */
 		while (node != POOL_NULL)
 		{
-			dbvh_internal_balance_node(bvh, node);
+			DbvhInternalBalanceNode(bvh, node);
 			node = nodes[node].bt_parent;
 		}
 	}
 
 	//struct arena tmp = ArenaAlloc1MB();
-	//bvh_validate(&tmp, bvh);
+	//BvhValidate(&tmp, bvh);
 	//ArenaFree1MB(&tmp);
 
 	return leaf.index;
 }
 
-void dbvh_remove(struct bvh *bvh, const u32 index)
+void DbvhRemove(struct bvh *bvh, const u32 index)
 {
-	struct bvh_node *nodes = (struct bvh_node *) bvh->tree.pool.buf;
+	struct bvhNode *nodes = (struct bvhNode *) bvh->tree.pool.buf;
 	ds_Assert(bt_LeafCheck(nodes + index));
 
 	u32 parent = nodes[index].bt_parent & BT_PARENT_INDEX_MASK;
@@ -337,22 +337,22 @@ void dbvh_remove(struct bvh *bvh, const u32 index)
 			parent = nodes[grand_parent].bt_parent;
 			while (parent != POOL_NULL)
 			{
-				dbvh_internal_balance_node(bvh, parent);
+				DbvhInternalBalanceNode(bvh, parent);
 				parent = nodes[parent].bt_parent;
 			}
 		}
 	}
 
 	//struct arena tmp = ArenaAlloc1MB();
-	//bvh_validate(&tmp, bvh);
+	//BvhValidate(&tmp, bvh);
 	//ArenaFree1MB(&tmp);
 }
 
-u32 dbvh_internal_push_subtree_overlap_pairs(struct arena *mem, struct dbvh_overlap *stack, const u64 stack_len, const struct bvh *bvh, u32 subA, u32 subB)
+u32 DbvhInternalPushSubtreeOverlapPairs(struct arena *mem, struct dbvhOverlap *stack, const u64 stack_len, const struct bvh *bvh, u32 subA, u32 subB)
 {
-	struct bvh_node *nodes = (struct bvh_node *) bvh->tree.pool.buf;
+	struct bvhNode *nodes = (struct bvhNode *) bvh->tree.pool.buf;
 	u32 overlap_count = 0;
-	struct dbvh_overlap overlap;
+	struct dbvhOverlap overlap;
 	u32 q = U32_MAX;
 
 	while (1)
@@ -378,7 +378,7 @@ u32 dbvh_internal_push_subtree_overlap_pairs(struct arena *mem, struct dbvh_over
 			else
 			{
 				/* if a is larger than b, descend into a first  */
-				if (bt_LeafCheck(nodes + subB) || (!bt_LeafCheck(nodes + subA) && bbox_sah(&nodes[subB].bbox) < bbox_sah(&nodes[subA].bbox)))
+				if (bt_LeafCheck(nodes + subB) || (!bt_LeafCheck(nodes + subA) && BodySah(&nodes[subB].bbox) < BodySah(&nodes[subA].bbox)))
 				{
 					stack[++q].id1 = nodes[subA].bt_left;
 					stack[q].id2 = subB;
@@ -394,7 +394,7 @@ u32 dbvh_internal_push_subtree_overlap_pairs(struct arena *mem, struct dbvh_over
 				if (q+1 >= stack_len)
 				{
 					LogString(T_PHYSICS, S_FATAL, "out-of-memory in arena based stack, increase arena size!");		
-					FatalCleanupAndExit(ds_ThreadSelfTid());
+					FatalCleanupAndExit();
 				}
 				continue;
 			}
@@ -414,10 +414,10 @@ u32 dbvh_internal_push_subtree_overlap_pairs(struct arena *mem, struct dbvh_over
 	return overlap_count;
 }
 
-struct dbvh_overlap *dbvh_push_overlap_pairs(struct arena *mem, u32 *count, const struct bvh *bvh)
+struct dbvhOverlap *DbvhPushOverlapPairs(struct arena *mem, u32 *count, const struct bvh *bvh)
 {
 	if (bt_LeafCount(&bvh->tree) < 2) { return 0; }
-	const struct bvh_node *nodes = (struct bvh_node *) bvh->tree.pool.buf;
+	const struct bvhNode *nodes = (struct bvhNode *) bvh->tree.pool.buf;
 
 	*count = 0;
 	u32 a = nodes[bvh->tree.root].bt_left;
@@ -427,16 +427,16 @@ struct dbvh_overlap *dbvh_push_overlap_pairs(struct arena *mem, u32 *count, cons
 	struct arena tmp1 = ArenaAlloc1MB();
 	struct arena tmp2 = ArenaAlloc1MB();
 
-	struct memArray arr1 = ArenaPushAlignedAll(&tmp1, sizeof(struct dbvh_overlap), 4); 
-	struct memArray arr2 = ArenaPushAlignedAll(&tmp2, sizeof(struct dbvh_overlap), 4); 
+	struct memArray arr1 = ArenaPushAlignedAll(&tmp1, sizeof(struct dbvhOverlap), 4); 
+	struct memArray arr2 = ArenaPushAlignedAll(&tmp2, sizeof(struct dbvhOverlap), 4); 
 
-	struct dbvh_overlap *stack1 = arr1.addr;
-	struct dbvh_overlap *stack2 = arr2.addr;
-	struct dbvh_overlap *overlaps = (struct dbvh_overlap *) mem->stack_ptr; 
+	struct dbvhOverlap *stack1 = arr1.addr;
+	struct dbvhOverlap *stack2 = arr2.addr;
+	struct dbvhOverlap *overlaps = (struct dbvhOverlap *) mem->stack_ptr; 
 
 	while (1)
 	{
-		*count += dbvh_internal_push_subtree_overlap_pairs(mem, stack2, arr2.len, bvh, a, b);
+		*count += DbvhInternalPushSubtreeOverlapPairs(mem, stack2, arr2.len, bvh, a, b);
 
 		if (!bt_LeafCheck(nodes + a))
 		{
@@ -445,7 +445,7 @@ struct dbvh_overlap *dbvh_push_overlap_pairs(struct arena *mem, u32 *count, cons
 			if (q >= arr1.len)
 			{
 				LogString(T_PHYSICS, S_FATAL, "out-of-memory in arena based stack, increase arena size!");		
-				FatalCleanupAndExit(ds_ThreadSelfTid());
+				FatalCleanupAndExit();
 			}
 		}
 
@@ -473,13 +473,13 @@ struct dbvh_overlap *dbvh_push_overlap_pairs(struct arena *mem, u32 *count, cons
 	return (*count) ? overlaps : NULL;
 }
 
-void bvh_validate(struct arena *tmp, const struct bvh *bvh)
+void BvhValidate(struct arena *tmp, const struct bvh *bvh)
 {
 	ArenaPushRecord(tmp);
 	bt_Validate(tmp, &bvh->tree);
 	if (bvh->tree.root == POOL_NULL) { return; }
 
-	const struct bvh_node *node = (struct bvh_node *) bvh->tree.pool.buf;
+	const struct bvhNode *node = (struct bvhNode *) bvh->tree.pool.buf;
 	struct memArray arr = ArenaPushAlignedAll(tmp, sizeof(u32), 4);
 	u32 *stack = arr.addr;
 	stack[0] = bvh->tree.root;
@@ -503,12 +503,12 @@ void bvh_validate(struct arena *tmp, const struct bvh *bvh)
 	ArenaPopRecord(tmp);
 }
 
-struct triMesh_bvh tri_mesh_bvh_construct(struct arena *mem, const struct triMesh *mesh, const u32 bin_count)
+struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *mesh, const u32 bin_count)
 {
 	ds_Assert(bin_count);
 	if (!mesh->tri_count)
 	{
-		return (struct triMesh_bvh) { 0 };
+		return (struct triMeshBvh) { 0 };
 	}
 
 	ProfZone;
@@ -516,12 +516,12 @@ struct triMesh_bvh tri_mesh_bvh_construct(struct arena *mem, const struct triMes
 	ArenaPushRecord(mem);
 	const u32 max_node_count_required = 2*mesh->tri_count - 1;
 
-	struct triMesh_bvh mesh_bvh = 
+	struct triMeshBvh mesh_bvh = 
 	{
 		.mesh = mesh,
 		.bvh = 
 		{ 
-			.tree = bt_Alloc(mem, max_node_count_required, struct bvh_node, NOT_GROWABLE),
+			.tree = bt_Alloc(mem, max_node_count_required, struct bvhNode, NOT_GROWABLE),
 			.heap_allocated = 0,
 		},
 		.tri = ArenaPush(mem, mesh->tri_count*sizeof(u32)),
@@ -561,7 +561,7 @@ struct triMesh_bvh tri_mesh_bvh_construct(struct arena *mem, const struct triMes
 	u32 node_stack_size = arr.len;
 	u32 sc = 1;
 	struct slot root = bt_NodeAddRoot(&mesh_bvh.bvh.tree);
-	struct bvh_node *node = root.address;
+	struct bvhNode *node = root.address;
 	/* bt_left = tri_first,
 	 * bt_right = tri_count */
 	node->bt_left = 0;
@@ -606,7 +606,7 @@ struct triMesh_bvh tri_mesh_bvh_construct(struct arena *mem, const struct triMes
 		u32 best_right_count = 0;
 		struct aabb best_bbox_left = { 0 };
 		struct aabb best_bbox_right = { 0 };
-		const f32 parent_sah = bbox_sah(&node->bbox);
+		const f32 parent_sah = BodySah(&node->bbox);
 		f32 best_score = F32_INFINITY;
 		for (u32 axis = 0; axis < 3; axis++)
 		{
@@ -662,8 +662,8 @@ struct triMesh_bvh tri_mesh_bvh_construct(struct arena *mem, const struct triMes
 
 				const f32 cost_traversal = COST_TRAVERSAL;
 				const f32 cost_internal = COST_INTERNAL;
-				const f32 left_cost = left_count*bbox_sah(&bbox_left)/parent_sah;
-				const f32 right_cost = right_count*bbox_sah(&bbox_right)/parent_sah;
+				const f32 left_cost = left_count*BodySah(&bbox_left)/parent_sah;
+				const f32 right_cost = right_count*BodySah(&bbox_right)/parent_sah;
 				const f32 score = cost_traversal + cost_internal*(left_cost + right_cost);
 				if (score < best_score)
 				{
@@ -704,8 +704,8 @@ struct triMesh_bvh tri_mesh_bvh_construct(struct arena *mem, const struct triMes
 				bt_NodeAddChildren(&mesh_bvh.bvh.tree, &slot_left, &slot_right, node_stack[sc]);
 				ds_Assert(slot_left.address && slot_right.address);
 
-				struct bvh_node *child_left = slot_left.address;
-				struct bvh_node *child_right = slot_right.address;
+				struct bvhNode *child_left = slot_left.address;
+				struct bvhNode *child_right = slot_right.address;
 
 				child_left->bbox = best_bbox_left;
 				child_left->bt_left = tri_first;
@@ -738,27 +738,27 @@ end:
 	else
 	{
 		ArenaPopRecord(mem);
-		const u64 size_required = max_node_count_required*sizeof(struct bvh_node) 
+		const u64 size_required = max_node_count_required*sizeof(struct bvhNode) 
 			+ mesh->tri_count*sizeof(u32) 
 			+ mesh->tri_count*sizeof(struct aabb)
 			+ 3*mesh->tri_count*sizeof(u8) 
 			+ 3*bin_count*(sizeof(struct aabb) + sizeof(u32));
 		Log(T_SYSTEM, S_ERROR, "Failed to allocate bvh from triangle mesh, minimum size required: %lu\n", size_required);
-		mesh_bvh = (struct triMesh_bvh) { 0 };
+		mesh_bvh = (struct triMeshBvh) { 0 };
 	}
 
-	bvh_validate(mem, &mesh_bvh.bvh);
+	BvhValidate(mem, &mesh_bvh.bvh);
 
 	ProfZoneEnd;
 	return mesh_bvh;
 }
 
-struct bvh_raycast_info bvh_raycast_init(struct arena *mem, const struct bvh *bvh, const struct ray *ray)
+struct bvhRaycastInfo BvhRaycastInit(struct arena *mem, const struct bvh *bvh, const struct ray *ray)
 {
-	struct bvh_raycast_info info =
+	struct bvhRaycastInfo info =
 	{
 		.hit = u32f32_inline(U32_MAX, F32_INFINITY),
-		.node = (struct bvh_node *) bvh->tree.pool.buf,
+		.node = (struct bvhNode *) bvh->tree.pool.buf,
 		.ray = ray,
 		.bvh = bvh,
 	};
@@ -777,9 +777,9 @@ struct bvh_raycast_info bvh_raycast_init(struct arena *mem, const struct bvh *bv
 	return info;
 }
 
-void bvh_raycast_test_and_push_children(struct bvh_raycast_info *info, const u32f32 popped_tuple)
+void BvhRaycastTestAndPushChildren(struct bvhRaycastInfo *info, const u32f32 popped_tuple)
 {
-	const struct bvh_node *node = info->node;
+	const struct bvhNode *node = info->node;
 	const f32 distance_left = AabbRaycastParameterEx(&node[node[popped_tuple.u].bt_left].bbox, info->ray, info->multiplier, info->dir_sign_bit);
 	const f32 distance_right = AabbRaycastParameterEx(&node[node[popped_tuple.u].bt_right].bbox, info->ray, info->multiplier, info->dir_sign_bit);
 
@@ -793,19 +793,19 @@ void bvh_raycast_test_and_push_children(struct bvh_raycast_info *info, const u32
 		if (info->hit_queue.count == info->hit_queue.length)
 		{
 			LogString(T_SYSTEM, S_FATAL, "distance queue in bvh_raycast OOM, aborting");
-			FatalCleanupAndExit(ds_ThreadSelfTid());
+			FatalCleanupAndExit();
 		}
 		MinQueueFixedPush(&info->hit_queue, info->node[popped_tuple.u].bt_right, distance_right);
 	}
 }
 
-u32f32 tri_mesh_bvh_raycast(struct arena *tmp, const struct triMesh_bvh *mesh_bvh, const struct ray *ray)
+u32f32 TriMeshBvhRaycast(struct arena *tmp, const struct triMeshBvh *mesh_bvh, const struct ray *ray)
 {
 	ProfZone;
 	ArenaPushRecord(tmp);
 
 	const struct bvh *bvh = &mesh_bvh->bvh;
-	struct bvh_raycast_info info = bvh_raycast_init(tmp, bvh, ray);
+	struct bvhRaycastInfo info = BvhRaycastInit(tmp, bvh, ray);
 	while (info.hit_queue.count)
 	{
 		const u32f32 tuple = MinQueueFixedPop(&info.hit_queue);
@@ -830,7 +830,7 @@ u32f32 tri_mesh_bvh_raycast(struct arena *tmp, const struct triMesh_bvh *mesh_bv
 		}
 		else
 		{
-			bvh_raycast_test_and_push_children(&info, tuple);
+			BvhRaycastTestAndPushChildren(&info, tuple);
 		}
 	}
 
