@@ -8,6 +8,15 @@ add_library(cmd
 add_library(Dreamscape::Command ALIAS cmd)
 target_link_libraries(cmd PUBLIC Dreamscape::Containers)
 
+add_library(DreamscapeFont 
+	STATIC 
+		"${DS_INCLUDE_PATH}/ds_font.h"
+		ds_font.c
+	)
+add_library(Dreamscape::Font ALIAS DreamscapeFont)
+target_link_libraries(DreamscapeFont PUBLIC Dreamscape::Asset)
+
+
 #add_library(ui 
 #	STATIC 
 #		"${DS_INCLUDE_PATH}/ui_public.h"
@@ -20,4 +29,5 @@ target_link_libraries(cmd PUBLIC Dreamscape::Containers)
 #	PUBLIC
 #		Dreamscape::Asset
 #		Dreamscape::Command
+#		Dreamscape::Font
 #)
