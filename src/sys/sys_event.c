@@ -228,7 +228,7 @@
 //
 //						case DS_ESCAPE: 
 //						{ 
-//							CmdQueueSubmitFormat(sys_win->ui->mem_frame, sys_win->cmd_queue, "ui_text_input_mode_disable \"%k\"", &sys_win->ui->inter.text_edit_id);
+//							CmdQueueSubmitFormat(sys_win->ui->mem_frame, sys_win->cmd_queue, "ui_TextInputModeDisable \"%k\"", &sys_win->ui->inter.text_edit_id);
 //						 } break;
 //
 //						default: { } break;

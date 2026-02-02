@@ -62,11 +62,11 @@ void		VectorFlush(struct vector *v);
 #define DECLARE_STACK_STRUCT(type)	\
 typedef struct				\
 {					\
-	u32 	length;			\
-	u32 	next;			\
-	u32	growable;		\
-	type *	arr;			\
-					\
+	u32 		length;		\
+	u32 		next;		\
+	u32		growable;	\
+	type *		arr;		\
+	struct memSlot	mem_slot;	\
 } stack_ ## type
 
 #define DECLARE_STACK_ALLOC(type)	stack_ ## type stack_ ## type ## _alloc(struct arena *arena, const u32 length, const u32 growable)
@@ -90,15 +90,25 @@ typedef struct				\
 #define DEFINE_STACK_ALLOC(type)									\
 DECLARE_STACK_ALLOC(type)										\
 {													\
+	ds_Assert(!arena || !growable);									\
 	stack_ ## type stack =										\
 	{												\
-		.length = length,									\
 		.next = 0,										\
 		.growable = growable,									\
 	};												\
-	stack.arr = (arena)										\
-		? ArenaPush(arena, sizeof(type)*length)							\
-		: malloc(sizeof(type)*length);								\
+	if (arena)											\
+	{												\
+		stack.length = length;									\
+		stack.arr = ArenaPush(arena, sizeof(stack.arr[0])*stack.length);			\
+	}												\
+	else												\
+	{												\
+		const u64 size = PowerOfTwoCeil( ds_AllocSizeCeil( sizeof(stack.arr[0])*length ) );	\
+		stack.length = (u32) (size / sizeof(stack.arr[0]));					\
+		stack.arr = (size >= 1024*1024) 							\
+			? ds_Alloc(&stack.mem_slot, size, HUGE_PAGES)					\
+			: ds_Alloc(&stack.mem_slot, size, NO_HUGE_PAGES);				\
+	}												\
 	if (length > 0 && !stack.arr)									\
 	{												\
 		FatalCleanupAndExit();									\
@@ -109,9 +119,9 @@ DECLARE_STACK_ALLOC(type)										\
 #define DEFINE_STACK_FREE(type)			\
 DECLARE_STACK_FREE(type)			\
 {						\
-	if (stack->arr)				\
+	if (stack->mem_slot.address)		\
 	{					\
-		free(stack->arr);		\
+		ds_Free(&stack->mem_slot);	\
 	}					\
 }
 
@@ -122,8 +132,8 @@ DECLARE_STACK_PUSH(type)									\
 	{											\
 		if (stack->growable)								\
 		{										\
-			stack->length *= 2;							\
-			stack->arr = realloc(stack->arr, stack->length*sizeof(stack->arr[0]));	\
+			stack->arr = ds_Realloc(&stack->mem_slot, 2*stack->mem_slot.size);	\
+			stack->length = (u32) (stack->mem_slot.size / sizeof(stack->arr[0]));	\
 			if (!stack->arr)							\
 			{									\
 				FatalCleanupAndExit();						\
@@ -176,121 +186,6 @@ DECLARE_STACK_TOP(type)				\
 	DEFINE_STACK_FLUSH(type)	\
 	DEFINE_STACK_FREE(type)
 
-#define DECLARE_STACK_VEC_STRUCT(vectype)	\
-typedef struct					\
-{						\
-	u32 		length;			\
-	u32 		next;			\
-	u32		growable;		\
-	vectype ## ptr	arr;			\
-						\
-} stack_ ## vectype
-
-#define DECLARE_STACK_VEC_ALLOC(vectype)	stack_ ## vectype stack_ ## vectype ## _alloc(struct arena *arena, const u32 length, const u32 growable)
-#define DECLARE_STACK_VEC_FREE(vectype)		void stack_ ## vectype ## _free(stack_ ## vectype *stack)
-#define DECLARE_STACK_VEC_PUSH(vectype)		void stack_ ## vectype ## _push(stack_ ## vectype *stack, const vectype val)
-#define DECLARE_STACK_VEC_SET(vectype)		void stack_ ## vectype ## _set(stack_ ## vectype *stack, const vectype val)
-#define DECLARE_STACK_VEC_POP(vectype)		void stack_ ## vectype ## _pop(stack_ ## vectype *stack)
-#define DECLARE_STACK_VEC_FLUSH(vectype)	void stack_ ## vectype ## _flush(stack_ ## vectype *stack)
-#define DECLARE_STACK_VEC_TOP(vectype)		void stack_ ## vectype ## _top(vectype ret_val, stack_ ## vectype *stack)
-
-#define DECLARE_STACK_VEC(vectype)		\
-	DECLARE_STACK_VEC_STRUCT(vectype);	\
-	DECLARE_STACK_VEC_ALLOC(vectype);	\
-	DECLARE_STACK_VEC_PUSH(vectype);	\
-	DECLARE_STACK_VEC_POP(vectype);		\
-	DECLARE_STACK_VEC_TOP(vectype);		\
-	DECLARE_STACK_VEC_SET(vectype);		\
-	DECLARE_STACK_VEC_FLUSH(vectype);	\
-	DECLARE_STACK_VEC_FREE(vectype)
-
-#define DEFINE_STACK_VEC_ALLOC(vectype)				\
-DECLARE_STACK_VEC_ALLOC(vectype)				\
-{								\
-	stack_ ## vectype stack =				\
-	{							\
-		.length = length,				\
-		.next = 0,					\
-		.growable = growable,				\
-	};							\
-	stack.arr = (arena)					\
-		? ArenaPush(arena, sizeof(vectype)*length)	\
-		: malloc(sizeof(vectype)*length);		\
-	if (length > 0 && !stack.arr)				\
-	{							\
-		FatalCleanupAndExit();				\
-	}							\
-	return stack;						\
-}
-
-#define DEFINE_STACK_VEC_FREE(vectype)		\
-DECLARE_STACK_VEC_FREE(vectype)			\
-{						\
-	if (stack->arr)				\
-	{					\
-		free(stack->arr);		\
-	}					\
-}
-
-#define DEFINE_STACK_VEC_PUSH(vectype)										\
-DECLARE_STACK_VEC_PUSH(vectype)											\
-{														\
-	if (stack->next >= stack->length)									\
-	{													\
-		if (stack->growable)										\
-		{												\
-			stack->length *= 2;									\
-			stack->arr = realloc(stack->arr, stack->length*sizeof(stack->arr[0]));			\
-			if (!stack->arr)									\
-			{											\
-				FatalCleanupAndExit();								\
-			}											\
-		}												\
-		else												\
-		{												\
-			FatalCleanupAndExit();									\
-		}												\
-	}													\
-	vectype ## _copy(stack->arr[stack->next], val);								\
-	stack->next += 1;											\
-}
-
-#define DEFINE_STACK_VEC_SET(vectype)				\
-DECLARE_STACK_VEC_SET(vectype)					\
-{								\
-	ds_Assert(stack->next);				\
-	vectype ## _copy(stack->arr[stack->next-1], val);	\
-}
-
-#define DEFINE_STACK_VEC_POP(vectype)				\
-DECLARE_STACK_VEC_POP(vectype)					\
-{								\
-	ds_Assert(stack->next);				\
-	stack->next -= 1;					\
-}
-
-#define DEFINE_STACK_VEC_FLUSH(vectype)				\
-DECLARE_STACK_VEC_FLUSH(vectype)				\
-{								\
-	stack->next = 0;					\
-}
-
-#define DEFINE_STACK_VEC_TOP(vectype)				\
-DECLARE_STACK_VEC_TOP(vectype)					\
-{								\
-	ds_Assert(stack->next);				\
-	vectype ## _copy(ret_val, stack->arr[stack->next-1]);	\
-}
-
-#define DEFINE_STACK_VEC(vectype)		\
-	DEFINE_STACK_VEC_ALLOC(vectype)		\
-	DEFINE_STACK_VEC_PUSH(vectype)		\
-	DEFINE_STACK_VEC_POP(vectype)		\
-	DEFINE_STACK_VEC_TOP(vectype)		\
-	DEFINE_STACK_VEC_SET(vectype)		\
-	DEFINE_STACK_VEC_FLUSH(vectype)		\
-	DEFINE_STACK_VEC_FREE(vectype)
-
 typedef void * ptr;
 
 DECLARE_STACK(u64);
@@ -298,8 +193,45 @@ DECLARE_STACK(u32);
 DECLARE_STACK(f32);
 DECLARE_STACK(ptr);
 DECLARE_STACK(intv);
-DECLARE_STACK_VEC(vec3);
-DECLARE_STACK_VEC(vec4);
+
+/*
+Vector stacks
+=============
+*/
+
+struct stackVec3
+{						
+	u32 		length;			
+	u32 		next;			
+	u32		growable;		
+	vec3ptr		arr;			
+	struct memSlot 	mem_slot;
+};
+
+struct stackVec3 	stackVec3Alloc(struct arena *arena, const u32 length, const u32 growable);
+void 			stackVec3Free(struct stackVec3 *stack);
+void 			stackVec3Push(struct stackVec3 *stack, const vec3 val);
+void 			stackVec3Set(struct stackVec3 *stack, const vec3 val);
+void 			stackVec3Pop(struct stackVec3 *stack);
+void 			stackVec3Flush(struct stackVec3 *stack);
+void 			stackVec3Top(vec3 ret_val, const struct stackVec3 *stack);
+
+struct stackVec4
+{						
+	u32 	length;			
+	u32 	next;			
+	u32	growable;		
+	vec4ptr	arr;			
+	struct memSlot 	mem_slot;
+};
+
+struct stackVec4 	stackVec4Alloc(struct arena *arena, const u32 length, const u32 growable);
+void 			stackVec4Free(struct stackVec4 *stack);
+void 			stackVec4Push(struct stackVec4 *stack, const vec4 val);
+void 			stackVec4Set(struct stackVec4 *stack, const vec4 val);
+void 			stackVec4Pop(struct stackVec4 *stack);
+void 			stackVec4Flush(struct stackVec4 *stack);
+void 			stackVec4Top(vec4 ret_val, const struct stackVec4 *stack);
 
 #ifdef __cplusplus
 } 

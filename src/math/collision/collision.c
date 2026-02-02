@@ -1659,9 +1659,9 @@ static u32 HullContactInternalFaceContact(struct arena *mem_tmp, struct contactM
 	struct dcelFace *inc_face = inc_dcel->f + inc_fi;
 
 	/* (2) Setup world polygons */
-	stack_vec3 clip_stack[2];
-	clip_stack[0] = stack_vec3_alloc(mem_tmp, 2*inc_face->count + ref_face->count, NOT_GROWABLE);
-	clip_stack[1] = stack_vec3_alloc(mem_tmp, 2*inc_face->count + ref_face->count, NOT_GROWABLE);
+	struct stackVec3 clip_stack[2];
+	clip_stack[0] = stackVec3Alloc(mem_tmp, 2*inc_face->count + ref_face->count, NOT_GROWABLE);
+	clip_stack[1] = stackVec3Alloc(mem_tmp, 2*inc_face->count + ref_face->count, NOT_GROWABLE);
 	u32 cur = 0;
 	vec3ptr ref_v = ArenaPush(mem_tmp, ref_face->count * sizeof(vec3));
 	vec3ptr cp = ArenaPush(mem_tmp, (2*inc_face->count + ref_face->count) * sizeof(vec3));
@@ -1675,7 +1675,7 @@ static u32 HullContactInternalFaceContact(struct arena *mem_tmp, struct contactM
 	for (u32 i = 0; i < inc_face->count; ++i)
 	{
 		const u32 vi = inc_dcel->e[inc_face->first + i].origin;
-		stack_vec3_push(clip_stack + cur, v_inc[vi]);
+		stackVec3Push(clip_stack + cur, v_inc[vi]);
 	}
 
 	/* (4) clip incident_face to reference_face */
@@ -1688,7 +1688,7 @@ static u32 HullContactInternalFaceContact(struct arena *mem_tmp, struct contactM
 	{
 		const u32 prev = cur;
 		cur = 1 - cur;
-		stack_vec3_flush(clip_stack + cur);
+		stackVec3Flush(clip_stack + cur);
 
 		Vec3Sub(tmp1, ref_v[(j+1) % ref_face->count], ref_v[j]);
 		Vec3Cross(n, tmp1, n_ref);
@@ -1705,15 +1705,15 @@ static u32 HullContactInternalFaceContact(struct arena *mem_tmp, struct contactM
 
 			if (PlanePointBehindCheck(&clip_plane, clip_edge.p0))
 			{
-				stack_vec3_push(clip_stack + cur, clip_edge.p0);
+				stackVec3Push(clip_stack + cur, clip_edge.p0);
 				if (0.0f < t && t < 1.0f)
 				{
-					stack_vec3_push(clip_stack + cur, inter);
+					stackVec3Push(clip_stack + cur, inter);
 				}
 			}
 			else if (PlanePointBehindCheck(&clip_plane, clip_edge.p1))
 			{
-				stack_vec3_push(clip_stack + cur, inter);
+				stackVec3Push(clip_stack + cur, inter);
 			}
 		}
 	}

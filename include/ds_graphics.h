@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,31 +17,18 @@
 ==========================================================================
 */
 
-#ifndef __SYS_INFO_H__
-#define __SYS_INFO_H__
+#ifndef __DS_GRAPHICS_H__
+#define __DS_GRAPHICS_H__
 
-#include <stdio.h>
-#include "sys_common.h"
-#include "ds_common.h"
-#include "memory.h"
-#include "ds_math.h"
-#include "bitVector.h"
+#ifdef __cplusplus
+extern "C" { 
+#endif
+
+#include "ds_base.h"
 #include "ds_string.h"
 #include "hash_map.h"
 #include "hierarchy_index.h"
-#include "ds_vector.h"
-
-#if __DS_PLATFORM__ == __DS_LINUX__
-#include "linux_public.h"
-#elif __DS_PLATFORM__ == __DS_WIN64__
-#include "win_public.h"
-#elif __DS_PLATFORM__ == __DS_WEB__
-#include "wasm_public.h"
-#endif
-
-/************************************************************************/
-/* 			Graphics abstraction layer 			*/
-/************************************************************************/
+#include "cmd.h"
 
 /*
  * system window coordinate system:
@@ -67,11 +54,7 @@
  *            / 
  *	     V (Z)
  */
-#include "ui_public.h"
-#include "array_list.h"
-#include "cmd.h"
 
-struct ui;
 struct r_scene;
 struct nativeWindow;
 
@@ -81,25 +64,25 @@ void 	system_graphics_init(void);
 void 	system_graphics_destroy(void);
 
 extern struct hi *	g_window_hierarchy;
-extern u32 			g_process_root_window;
-extern u32 			g_window;
+extern u32 		g_process_root_window;
+extern u32 		g_window;
 
 struct system_window
 {
-	struct hiNode 	header;			/* DO NOT MOVE */
-	struct nativeWindow *		native;			/* native graphics handle */
-	struct ui *			ui;			/* local ui */
-	struct cmd_queue *		cmd_queue;		/* local command queue */
-	struct cmd_console *		cmd_console;		/* console */
-	struct r_scene *		r_scene;
-	struct arena 			mem_persistent;		/* peristent 1MB arena */
+	HI_SLOT_STATE;
+	struct nativeWindow *	native;			/* native graphics handle */
+	struct ui *		ui;			/* local ui */
+	struct cmd_queue 	cmd_queue;		/* local command queue */
+	struct cmd_console *	cmd_console;		/* console */
+	struct r_scene *	r_scene;
+	struct arena 		mem_persistent;		/* peristent 1MB arena */
 
-	u32				tagged_for_destruction; /* If tagged, free on next start of frame */
-	u32				text_input_mode;	/* If on, window is receiving text input events */ 
-	vec2u32				position;
-	vec2u32				size;
+	u32			tagged_for_destruction; /* If tagged, free on next start of frame */
+	u32			text_input_mode;	/* If on, window is receiving text input events */ 
+	vec2u32			position;
+	vec2u32			size;
 
-	u32				gl_state;
+	u32			gl_state;
 };
 
 /* alloc system_window resources, if no gl context exist, allocate context as well. */
@@ -150,5 +133,9 @@ u32 			cursor_is_visible(struct system_window *sys_win);
 void 			cursor_show(struct system_window *sys_win);
 /* hide cursor  */
 void 			cursor_hide(struct system_window *sys_win);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

@@ -70,16 +70,17 @@ struct hi 	hi_AllocInternal(struct arena *mem
 			, const u32 last_offset	
 			, const u32 child_count_offset);
 #define		hi_Alloc(mem, length, STRUCT, growable)			\
-		hi_AllocInternal(mem,					\
+		hi_AllocInternal(mem					\
 			, length					\
 			, sizeof(STRUCT)				\
-			, &((STRUCT *) 0)->slot_allocation_state	\
-			, &((STRUCT *) 0)->hi_parent			\
-			, &((STRUCT *) 0)->hi_next			\
-			, &((STRUCT *) 0)->hi_prev			\
-			, &((STRUCT *) 0)->hi_first			\
-			, &((STRUCT *) 0)->hi_last			\
-			, &((STRUCT *) 0)->hi_child_count)
+			, growable					\
+			, (u64) &(((STRUCT *) 0)->slot_allocation_state)\
+			, (u64) &(((STRUCT *) 0)->hi_parent)		\
+			, (u64) &(((STRUCT *) 0)->hi_next)		\
+			, (u64) &(((STRUCT *) 0)->hi_prev)		\
+			, (u64) &(((STRUCT *) 0)->hi_first)		\
+			, (u64) &(((STRUCT *) 0)->hi_last)		\
+			, (u64) &(((STRUCT *) 0)->hi_child_count))
 /* free hierarchy allocated on the heap */
 void		hi_Dealloc(struct hi *hi);
 /* flush or reset hierarchy */

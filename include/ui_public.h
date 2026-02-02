@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025,2026 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@
 
 #include "ds_base.h"
 #include "ds_math.h"
+#include "ds_graphics.h"
 #include "asset_public.h"
 #include "hierarchy_index.h"
 #include "ds_vector.h"
@@ -517,21 +518,21 @@ DECLARE_STACK(utf32);
 /* Per window ui struct */
 struct ui
 {
-	struct ui_interaction		inter;
+	struct ui_interaction	inter;
 
-	struct pool			bucket_pool;
-	struct dll			bucket_list;
-	struct hashMap *		bucket_map;
-	u32				bucket_cache;	/* for quick cmd check */
-	u32				bucket_count;
+	struct pool		bucket_pool;
+	struct dll		bucket_list;
+	struct hashMap 		bucket_map;
+	u32			bucket_cache;	/* for quick cmd check */
+	u32			bucket_count;
 
-	struct pool			event_pool;
-	struct dll			event_list;
+	struct pool		event_pool;
+	struct dll		event_list;
 
 	/* node map for all u's  */
 	/* Shared allocator for all nodes  */
-	struct hi *node_hierarchy;
-	struct hashMap *	node_map;
+	struct hi 		node_hierarchy;
+	struct hashMap 		node_map;
 
 	stack_ui_text_selection	frame_stack_text_selection;
 	vec4			text_cursor_color;
@@ -575,10 +576,10 @@ struct ui
 	stack_ui_size	stack_ui_size[AXIS_2_COUNT];
 	stack_intv	stack_viewable[AXIS_2_COUNT];
 	stack_u32	stack_child_layout_axis;
-	stack_vec4	stack_background_color;
-	stack_vec4	stack_border_color;
-	stack_vec4	stack_gradient_color[BOX_CORNER_COUNT];
-	stack_vec4	stack_sprite_color;
+	struct stackVec4	stack_background_color;
+	struct stackVec4	stack_border_color;
+	struct stackVec4	stack_gradient_color[BOX_CORNER_COUNT];
+	struct stackVec4	stack_sprite_color;
 	stack_f32	stack_edge_softness;
 	stack_f32	stack_corner_radius;
 	stack_f32	stack_border_size;
@@ -726,7 +727,7 @@ void		ui_frame_end(void);				/* end ui frame 		*/
 								   violation solving. */
 struct ui_node
 {
-	struct hiNode header; 	/* DO NOT MOVE */
+	HI_SLOT_STATE;
 	utf8			id;		/* unique identifier  */
 	struct ui_text_input	input;		/* text to display OR text to edit */
 

@@ -124,7 +124,7 @@ struct physicsPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 initial
 	struct task_stream *stream = task_stream_init(&pipeline.frame);
 
 	pipeline.debug_count = g_arch_config->logical_core_count;
-	pipeline.debug = malloc(g_arch_config->logical_core_count * sizeof(struct collisionDebug));
+	pipeline.debug = ArenaPush(mem, g_arch_config->logical_core_count * sizeof(struct collisionDebug));
 	for (u32 i = 0; i < pipeline.debug_count; ++i)
 	{
 		pipeline.debug[i].stack_segment = stack_visual_segment_alloc(NULL, 1024, GROWABLE);

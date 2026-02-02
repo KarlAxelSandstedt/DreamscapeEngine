@@ -139,13 +139,24 @@ static const u32 *bytes_touched_lookup = bytes_touched_table + 7;
 struct serialStream ss_Alloc(struct arena *mem, const u64 bufsize)
 {
 	struct serialStream ss = { 0 };
-	ss.buf = (mem)
-		? ArenaPush(mem, bufsize)
-		: malloc(bufsize);
+
+	u64 actual_bufsize;
+	if (mem)
+	{
+		actual_bufsize = bufsize;
+		ss.buf = ArenaPush(mem, actual_bufsize);
+	}
+	else
+	{
+		actual_bufsize = ds_AllocSizeCeil(bufsize);
+		ss.buf = (actual_bufsize >= 1024*1024) 
+			? ds_Alloc(&ss.mem_slot, actual_bufsize, HUGE_PAGES)
+			: ds_Alloc(&ss.mem_slot, actual_bufsize, NO_HUGE_PAGES);
+	}
 
 	if (ss.buf)
 	{
-		ss.bit_count = bufsize * 8;
+		ss.bit_count = actual_bufsize * 8;
 		ss.bit_index = 0;	
 	}
 
@@ -238,7 +249,10 @@ static inline b64 EndianShift64(const b64 le)
 
 void ss_Free(struct serialStream *ss)
 {
-	free(ss->buf);
+	if (ss->mem_slot.address)
+	{
+		ds_Free(&ss->mem_slot);
+	}
 }
 
 b8 ss_Read8(struct serialStream *ss)

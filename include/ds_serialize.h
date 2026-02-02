@@ -120,9 +120,10 @@ extern "C" {
  */
 struct serialStream
 {
-	u64 bit_index;	
-	u64 bit_count;
-	u8 *buf;
+	struct memSlot 	mem_slot;
+	u64 		bit_index;	
+	u64 		bit_count;
+	u8 *		buf;
 };
 
 /* Allocates a stream on the arena if mem != NULL, otherwise heap allocation. On failure, we return stream = { 0 } */

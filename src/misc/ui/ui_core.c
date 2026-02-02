@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025,2026 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 #include <string.h>
 
 #include "ui_local.h"
+#include "ds_font.h"
 #include "hash_map.h"
 
 #define INITIAL_UNIT_COUNT	1024
@@ -61,11 +62,11 @@ u32	cmd_ui_popup_build;
 
 void ui_init_global_state(void)
 {
-	CmdFunctionRegister(Utf8Inline("timeline_drag"), 4, &timeline_drag);
-	CmdFunctionRegister(Utf8Inline("ui_text_input_mode_enable"), 2, &ui_text_input_mode_enable);
-	CmdFunctionRegister(Utf8Inline("ui_text_input_flush"), 1, &ui_text_input_flush);
-	CmdFunctionRegister(Utf8Inline("ui_text_input_mode_disable"), 1, &ui_text_input_mode_disable);
-	cmd_ui_text_op = CmdFunctionRegister(Utf8Inline("ui_text_op"), 3, &ui_text_op).index;
+	CmdFunctionRegister(Utf8Inline("ui_TimelineDrag"), 4, &ui_TimelineDrag);
+	CmdFunctionRegister(Utf8Inline("ui_TextInputModeEnable"), 2, &ui_TextInputModeEnable);
+	CmdFunctionRegister(Utf8Inline("ui_TextInputFlush"), 1, &ui_TextInputFlush);
+	CmdFunctionRegister(Utf8Inline("ui_TextInputModeDisable"), 1, &ui_TextInputModeDisable);
+	cmd_ui_text_op = CmdFunctionRegister(Utf8Inline("ui_TextOp"), 3, &ui_TextOp).index;
 	cmd_ui_popup_build = CmdFunctionRegister(Utf8Inline("ui_popup_build"), 2, &ui_popup_build).index;
 }
 
@@ -123,7 +124,7 @@ struct ui *ui_alloc(void)
 
 	struct ui *ui = malloc(sizeof(struct ui));
 	memset(ui, 0, sizeof(struct ui));
-	ui->node_hierarchy = hi_Alloc(NULL, INITIAL_UNIT_COUNT, sizeof(struct ui_node), GROWABLE);
+	ui->node_hierarchy = hi_Alloc(NULL, INITIAL_UNIT_COUNT, struct ui_node, GROWABLE);
 	ui->node_map = HashMapAlloc(NULL, U16_MAX, U16_MAX, GROWABLE);
 	ui->bucket_pool = PoolAlloc(NULL, 64, struct ui_draw_bucket, GROWABLE);
 	ui->bucket_list = dll_Init(struct ui_draw_bucket);
@@ -151,16 +152,16 @@ struct ui *ui_alloc(void)
 	ui->stack_floating[AXIS_2_Y] = stack_f32_alloc(NULL, 16, GROWABLE);
 	ui->stack_ui_size[AXIS_2_X] = stack_ui_size_alloc(NULL, 16, GROWABLE);
 	ui->stack_ui_size[AXIS_2_Y] = stack_ui_size_alloc(NULL, 16, GROWABLE);
-	ui->stack_gradient_color[BOX_CORNER_BR] = stack_vec4_alloc(NULL, 16, GROWABLE);
-	ui->stack_gradient_color[BOX_CORNER_TR] = stack_vec4_alloc(NULL, 16, GROWABLE);
-	ui->stack_gradient_color[BOX_CORNER_TL] = stack_vec4_alloc(NULL, 16, GROWABLE);
-	ui->stack_gradient_color[BOX_CORNER_BL] = stack_vec4_alloc(NULL, 16, GROWABLE);
+	ui->stack_gradient_color[BOX_CORNER_BR] = stackVec4Alloc(NULL, 16, GROWABLE);
+	ui->stack_gradient_color[BOX_CORNER_TR] = stackVec4Alloc(NULL, 16, GROWABLE);
+	ui->stack_gradient_color[BOX_CORNER_TL] = stackVec4Alloc(NULL, 16, GROWABLE);
+	ui->stack_gradient_color[BOX_CORNER_BL] = stackVec4Alloc(NULL, 16, GROWABLE);
 	ui->stack_viewable[AXIS_2_X] = stack_intv_alloc(NULL, 8, GROWABLE);
 	ui->stack_viewable[AXIS_2_Y] = stack_intv_alloc(NULL, 8, GROWABLE);
 	ui->stack_child_layout_axis = stack_u32_alloc(NULL, 16, GROWABLE);
-	ui->stack_background_color = stack_vec4_alloc(NULL, 16, GROWABLE);
-	ui->stack_border_color = stack_vec4_alloc(NULL, 16, GROWABLE);
-	ui->stack_sprite_color = stack_vec4_alloc(NULL, 16, GROWABLE);
+	ui->stack_background_color = stackVec4Alloc(NULL, 16, GROWABLE);
+	ui->stack_border_color = stackVec4Alloc(NULL, 16, GROWABLE);
+	ui->stack_sprite_color = stackVec4Alloc(NULL, 16, GROWABLE);
 	ui->stack_edge_softness = stack_f32_alloc(NULL, 16, GROWABLE);
 	ui->stack_corner_radius = stack_f32_alloc(NULL, 16, GROWABLE);
 	ui->stack_border_size = stack_f32_alloc(NULL, 16, GROWABLE);
@@ -179,7 +180,7 @@ struct ui *ui_alloc(void)
 
 	/* setup root stub values */
 	stack_u32_push(&ui->stack_parent, HI_ROOT_STUB_INDEX);
-	struct ui_node *stub = hi_Address(ui->node_hierarchy, HI_ROOT_STUB_INDEX);
+	struct ui_node *stub = hi_Address(&ui->node_hierarchy, HI_ROOT_STUB_INDEX);
 	stub->id = Utf8Empty();
 	stub->semantic_size[AXIS_2_X] = ui_size_pixel(0.0f, 0.0f);
 	stub->semantic_size[AXIS_2_Y] = ui_size_pixel(0.0f, 0.0f);
@@ -191,7 +192,7 @@ struct ui *ui_alloc(void)
 	stub->inter_recursive_mask = 0;
 	stub->last_frame_touched = U64_MAX;
 
-	struct ui_node *orphan_root = hi_Address(ui->node_hierarchy, HI_ORPHAN_STUB_INDEX);
+	struct ui_node *orphan_root = hi_Address(&ui->node_hierarchy, HI_ORPHAN_STUB_INDEX);
 	orphan_root->id = Utf8Empty();
 	orphan_root->semantic_size[AXIS_2_X] = ui_size_pixel(0.0f, 0.0f);
 	orphan_root->semantic_size[AXIS_2_Y] = ui_size_pixel(0.0f, 0.0f);
@@ -245,24 +246,24 @@ void ui_dealloc(struct ui *ui)
 	stack_f32_free(ui->stack_floating + AXIS_2_Y);
 	stack_ui_size_free(ui->stack_ui_size + AXIS_2_X);
 	stack_ui_size_free(ui->stack_ui_size + AXIS_2_Y);
-	stack_vec4_free(ui->stack_gradient_color + BOX_CORNER_BR);
-	stack_vec4_free(ui->stack_gradient_color + BOX_CORNER_TR);
-	stack_vec4_free(ui->stack_gradient_color + BOX_CORNER_TL);
-	stack_vec4_free(ui->stack_gradient_color + BOX_CORNER_BL);
+	stackVec4Free(ui->stack_gradient_color + BOX_CORNER_BR);
+	stackVec4Free(ui->stack_gradient_color + BOX_CORNER_TR);
+	stackVec4Free(ui->stack_gradient_color + BOX_CORNER_TL);
+	stackVec4Free(ui->stack_gradient_color + BOX_CORNER_BL);
 	stack_intv_free(ui->stack_viewable + AXIS_2_X);
 	stack_intv_free(ui->stack_viewable + AXIS_2_Y);
 	stack_u32_free(&ui->stack_child_layout_axis);
-	stack_vec4_free(&ui->stack_background_color);
-	stack_vec4_free(&ui->stack_border_color);
-	stack_vec4_free(&ui->stack_sprite_color);
+	stackVec4Free(&ui->stack_background_color);
+	stackVec4Free(&ui->stack_border_color);
+	stackVec4Free(&ui->stack_sprite_color);
 	stack_u32_free(&ui->stack_floating_node);
 	stack_u32_free(&ui->stack_floating_depth);
 	stack_u32_free(&ui->stack_fixed_depth);
-	HashMapFree(ui->node_map);
+	HashMapFree(&ui->node_map);
 	PoolDealloc(&ui->event_pool);
 	PoolDealloc(&ui->bucket_pool);
-	HashMapFree(ui->bucket_map);
-	hi_Dealloc(ui->node_hierarchy);
+	HashMapFree(&ui->bucket_map);
+	hi_Dealloc(&ui->node_hierarchy);
 	free(ui);
 	if (g_ui == ui)
 	{
@@ -275,8 +276,8 @@ static void ui_draw_bucket_add_node(const u32 cmd, const u32 index)
 	struct ui_draw_bucket *bucket = PoolAddress(&g_ui->bucket_pool, g_ui->bucket_cache);
 	if (bucket->cmd != cmd)
 	{
-		u32 bi = HashMapFirst(g_ui->bucket_map, cmd);
-		for (; bi != HASH_NULL; bi = HashMapNext(g_ui->bucket_map, bi))
+		u32 bi = HashMapFirst(&g_ui->bucket_map, cmd);
+		for (; bi != HASH_NULL; bi = HashMapNext(&g_ui->bucket_map, bi))
 		{
 			bucket = PoolAddress(&g_ui->bucket_pool, bi);
 			if (bucket->cmd == cmd)
@@ -289,7 +290,7 @@ static void ui_draw_bucket_add_node(const u32 cmd, const u32 index)
 		{
 			struct slot slot = PoolAdd(&g_ui->bucket_pool);
 			bi = slot.index;
-			HashMapAdd(g_ui->bucket_map, cmd, bi);
+			HashMapAdd(&g_ui->bucket_map, cmd, bi);
 			dll_Append(&g_ui->bucket_list, g_ui->bucket_pool.buf, bi);
 			bucket = slot.address;
 			bucket->cmd = cmd;
@@ -326,11 +327,11 @@ static void ui_node_dealloc(const struct hi *node_hierarchy, const u32 index, vo
 	if ((node->flags & UI_NON_HASHED) == 0)
 	{
 		//fprintf(stderr, "pruning hashed orphan %s\n",(char*) ((struct ui_node *) node)->id.buf);
-		HashMapRemove(g_ui->node_map, node->key, index);
+		HashMapRemove(&g_ui->node_map, node->key, index);
 	}
 }
 
-void ui_text_input_mode_enable(void)
+void ui_TextInputModeEnable(void)
 {
 	const utf8 id = g_queue->cmd_exec->arg[0].utf8;
 	struct ui_text_input *text_edit = g_queue->cmd_exec->arg[1].ptr;
@@ -370,7 +371,7 @@ void ui_text_input_mode_enable(void)
 		: text_edit->text.len;
 }
 
-void ui_text_input_mode_disable(void)
+void ui_TextInputModeDisable(void)
 {
 	const utf8 id = g_queue->cmd_exec->arg[0].utf8;
 	if (Utf8Equivalence(id, g_ui->inter.text_edit_id))
@@ -390,7 +391,7 @@ void ui_text_input_mode_disable(void)
 	}
 }
 
-void ui_text_input_flush(void)
+void ui_TextInputFlush(void)
 {
 	const utf8 id = g_queue->cmd_exec->arg[0].utf8;
 	if (Utf8Equivalence(g_ui->inter.text_edit_id, id))
@@ -427,11 +428,12 @@ static void ui_childsum_layout_size_and_prune_nodes(void)
 	stack_ptr stack_childsum_x = stack_ptr_alloc(g_ui->mem_frame, g_ui->node_count_frame, 0);
 	stack_ptr stack_childsum_y = stack_ptr_alloc(g_ui->mem_frame, g_ui->node_count_frame, 0);
 
-	struct hiIterator	it = hi_IteratorAlloc(g_ui->mem_frame, g_ui->node_hierarchy, g_ui->root);
+	ArenaPushRecord(g_ui->mem_frame);
+	struct hiIterator it = hi_IteratorAlloc(g_ui->mem_frame, &g_ui->node_hierarchy, g_ui->root);
 	while(it.count)
 	{
 		//const u32 potential_next = hi_IteratorPeek(&it);
-		//struct ui_node *node = hi_Address(g_ui->node_hierarchy, potential_next);
+		//struct ui_node *node = hi_Address(&g_ui->node_hierarchy, potential_next);
 		//if (node->last_frame_touched != g_ui->frame)
 		//{
 		//	//fprintf(stderr, "FRAME UNTOUCHED:%lu\tID:%s\tKEY:%u\tINDEX:%u\n", g_ui->frame, node->id.buf, node->key, potential_next);
@@ -440,7 +442,7 @@ static void ui_childsum_layout_size_and_prune_nodes(void)
 		//	continue;
 		//}
 		//hi_IteratorNextDf(&it);
-		struct ui_node *node = hi_Address(g_ui->node_hierarchy, hi_IteratorNextDf(&it));
+		struct ui_node *node = hi_Address(&g_ui->node_hierarchy, hi_IteratorNextDf(&it));
 
 		if (node->semantic_size[AXIS_2_X].type == UI_SIZE_CHILDSUM)
 		{
@@ -452,17 +454,16 @@ static void ui_childsum_layout_size_and_prune_nodes(void)
 			stack_ptr_push(&stack_childsum_y, node);
 		}
 	}
-
-	hi_IteratorRelease(&it);
+	ArenaPopRecord(g_ui->mem_frame);
 
 	while (stack_childsum_y.next)
 	{
 		struct ui_node *node = stack_ptr_pop(&stack_childsum_y);
 		node->layout_size[AXIS_2_Y] = 0.0f;
 		struct ui_node *child = NULL;
-		for (u32 i = node->header.first; i != HI_NULL_INDEX; i = child->header.next)
+		for (u32 i = node->hi_first; i != HI_NULL_INDEX; i = child->hi_next)
 		{
-			child = hi_Address(g_ui->node_hierarchy, i);
+			child = hi_Address(&g_ui->node_hierarchy, i);
 			node->layout_size[AXIS_2_Y] += child->layout_size[AXIS_2_Y];
 		}
 	}
@@ -472,9 +473,9 @@ static void ui_childsum_layout_size_and_prune_nodes(void)
 		struct ui_node *node = stack_ptr_pop(&stack_childsum_x);
 		node->layout_size[AXIS_2_X] = 0.0f;
 		struct ui_node *child = NULL;
-		for (u32 i = node->header.first; i != HI_NULL_INDEX; i = child->header.next)
+		for (u32 i = node->hi_first; i != HI_NULL_INDEX; i = child->hi_next)
 		{
-			child = hi_Address(g_ui->node_hierarchy, i);
+			child = hi_Address(&g_ui->node_hierarchy, i);
 			node->layout_size[AXIS_2_X] += child->layout_size[AXIS_2_X];
 		}
 	}
@@ -484,25 +485,25 @@ static void ui_childsum_layout_size_and_prune_nodes(void)
 
 static void ui_node_solve_child_violation(struct ui_node *node, const enum axis_2 axis)
 {
-	if (!node->header.child_count)
+	if (!node->hi_child_count)
 	{
 		return; 
 	}
 
 	ArenaPushRecord(g_ui->mem_frame);
-	struct ui_node **child = ArenaPush(g_ui->mem_frame, node->header.child_count * sizeof(struct ui_node *));
-	f32 *new_size = ArenaPush(g_ui->mem_frame, node->header.child_count  * sizeof(f32));
-	u32 *shrink = ArenaPush(g_ui->mem_frame, node->header.child_count * sizeof(u32));
+	struct ui_node **child = ArenaPush(g_ui->mem_frame, node->hi_child_count * sizeof(struct ui_node *));
+	f32 *new_size = ArenaPush(g_ui->mem_frame, node->hi_child_count  * sizeof(f32));
+	u32 *shrink = ArenaPush(g_ui->mem_frame, node->hi_child_count * sizeof(u32));
 	f32 child_size_sum = 0.0f;
-	u32 children_to_shrink = node->header.child_count;
-	u32 index = node->header.first;
+	u32 children_to_shrink = node->hi_child_count;
+	u32 index = node->hi_first;
 
 	u32 pad_fill_count = 0;
-	u32 *pad_fill_index = ArenaPush(g_ui->mem_frame, node->header.child_count * sizeof(u32));
+	u32 *pad_fill_index = ArenaPush(g_ui->mem_frame, node->hi_child_count * sizeof(u32));
 
-	for (u32 i = 0; i < node->header.child_count; ++i)
+	for (u32 i = 0; i < node->hi_child_count; ++i)
 	{
-		child[i] = hi_Address(g_ui->node_hierarchy, index);
+		child[i] = hi_Address(&g_ui->node_hierarchy, index);
 
 		new_size[i] = child[i]->layout_size[axis];
 		//child_size_sum += child[i]->layout_size[axis];
@@ -525,12 +526,12 @@ static void ui_node_solve_child_violation(struct ui_node *node, const enum axis_
 			children_to_shrink -= 1;
 			shrink[i] =  0;
 		}
-		index = child[i]->header.next;
+		index = child[i]->hi_next;
 	}
 
 	if (node->child_layout_axis != axis && (node->flags & (UI_ALLOW_VIOLATION_X << axis)) == 0)
 	{
-		for (u32 i = 0; i < node->header.child_count; ++i)
+		for (u32 i = 0; i < node->hi_child_count; ++i)
 		{
 			const f32 perc = f32_max(child[i]->semantic_size[axis].strictness, f32_min(1.0f, child[i]->layout_size[axis] / node->layout_size[axis]));
 			new_size[i] = (shrink[i])
@@ -554,7 +555,7 @@ static void ui_node_solve_child_violation(struct ui_node *node, const enum axis_
 					/* sum of new sizes of children we may NOT shrink again */
 					f32 new_unshrinkable_size = 0.0f;
 					u32 can_shrink_again_count = 0;
-					for (u32 i = 0; i < node->header.child_count; ++i)
+					for (u32 i = 0; i < node->hi_child_count; ++i)
 					{
 						if (shrink[i])
 						{
@@ -604,7 +605,7 @@ static void ui_node_solve_child_violation(struct ui_node *node, const enum axis_
 	if (axis == AXIS_2_X)
 	{
 		//TODO clamp positions to pixels, (or something)
-		for (u32 i = 0; i < node->header.child_count; ++i)
+		for (u32 i = 0; i < node->hi_child_count; ++i)
 		{
 			if ((child[i]->flags & (UI_TEXT_ALLOW_OVERFLOW | UI_TEXT_ATTACHED)) == UI_TEXT_ATTACHED 
 					&& (child[i]->layout_size[axis] != new_size[i]))
@@ -617,7 +618,7 @@ static void ui_node_solve_child_violation(struct ui_node *node, const enum axis_
 	else
 	{
 		//TODO clamp positions to pixels, (or something)
-		for (u32 i = 0; i < node->header.child_count; ++i)
+		for (u32 i = 0; i < node->hi_child_count; ++i)
 		{
 			child[i]->layout_size[axis] = new_size[i];
 		}
@@ -629,25 +630,24 @@ static void ui_node_solve_child_violation(struct ui_node *node, const enum axis_
 static void ui_solve_violations(void)
 {
 	struct arena tmp = ArenaAlloc1MB();
-	struct hiIterator	it = hi_IteratorAlloc(&tmp, g_ui->node_hierarchy, g_ui->root);
+	struct hiIterator it = hi_IteratorAlloc(&tmp, &g_ui->node_hierarchy, g_ui->root);
 	while(it.count)
 	{
 		const u32 index = hi_IteratorNextDf(&it);
-		struct ui_node *node = hi_Address(g_ui->node_hierarchy, index);
+		struct ui_node *node = hi_Address(&g_ui->node_hierarchy, index);
 
 		ui_node_solve_child_violation(node, AXIS_2_X);
 		ui_node_solve_child_violation(node, AXIS_2_Y);
 	}
-	hi_IteratorRelease(&it);
 	ArenaFree1MB(&tmp);
 }
 
 static void ui_layout_absolute_position(void)
 {
 	struct arena tmp = ArenaAlloc1MB();
-	struct hiIterator	it = hi_IteratorAlloc(&tmp, g_ui->node_hierarchy, g_ui->root);
+	struct hiIterator it = hi_IteratorAlloc(&tmp, &g_ui->node_hierarchy, g_ui->root);
 
-	struct ui_node *node = hi_Address(g_ui->node_hierarchy, g_ui->root);
+	struct ui_node *node = hi_Address(&g_ui->node_hierarchy, g_ui->root);
 	node->pixel_position[0] = node->layout_position[0];
 	node->pixel_position[1] = node->layout_position[1];
 	node->pixel_size[0] = node->layout_size[0];
@@ -658,7 +658,7 @@ static void ui_layout_absolute_position(void)
 	while(it.count)
 	{
 		const u32 index = hi_IteratorNextDf(&it);
-		node = hi_Address(g_ui->node_hierarchy, index);
+		node = hi_Address(&g_ui->node_hierarchy, index);
 
 		//fprintf(stderr, "%s\n", (char *) node->id.buf);
 		//Vec2Print("position", node->pixel_position);
@@ -675,9 +675,9 @@ static void ui_layout_absolute_position(void)
 			? 0.0f
 			: node->pixel_size[1];
 		const u32 non_layout_axis = 1 - node->child_layout_axis;
-		for (u32 next = node->header.first; next != HI_NULL_INDEX; next = child->header.next)
+		for (u32 next = node->hi_first; next != HI_NULL_INDEX; next = child->hi_next)
 		{
-			child = hi_Address(g_ui->node_hierarchy, next);
+			child = hi_Address(&g_ui->node_hierarchy, next);
 			f32 new_child_layout_axis_offset = child_layout_axis_offset;
 
 			if (child->flags & (UI_PERC_POSTPONED_X << node->child_layout_axis))
@@ -752,7 +752,6 @@ static void ui_layout_absolute_position(void)
 		}
 	}
 
-	hi_IteratorRelease(&it);
 	ArenaFree1MB(&tmp);
 }
 
@@ -806,7 +805,7 @@ static u64 ui_node_set_interactions(const struct ui_node *node, const u64 inter_
 	{
 		for (u32 i = g_ui->stack_parent.next-1; i; --i)
 		{
-			struct ui_node *ancestor = hi_Address(g_ui->node_hierarchy, g_ui->stack_parent.arr[i]);
+			struct ui_node *ancestor = hi_Address(&g_ui->node_hierarchy, g_ui->stack_parent.arr[i]);
 			if ((ancestor->inter_recursive_mask & node_inter) == 0)
 			{
 				break;
@@ -843,7 +842,7 @@ void ui_frame_begin(const vec2u32 window_size, const struct ui_visual *base)
 	ArenaFlush(g_ui->mem_frame);
 	dll_Flush(&g_ui->bucket_list);
 	PoolFlush(&g_ui->bucket_pool);
-	HashMapFlush(g_ui->bucket_map);
+	HashMapFlush(&g_ui->bucket_map);
 	
 	/* setup stub bucket */
 	struct slot slot = PoolAdd(&g_ui->bucket_pool);
@@ -898,7 +897,7 @@ void ui_frame_begin(const vec2u32 window_size, const struct ui_visual *base)
 	ui_width(ui_size_pixel((f32) g_ui->window_size[0], 1.0f))
 	ui_height(ui_size_pixel((f32) g_ui->window_size[1], 1.0f))
 	g_ui->root = ui_root_f("###root_%p", &g_ui->root).index;
-	struct ui_node *root = hi_Address(g_ui->node_hierarchy, g_ui->root);
+	struct ui_node *root = hi_Address(&g_ui->node_hierarchy, g_ui->root);
 	root->pixel_visible[AXIS_2_X] = intv_inline(0.0f, (f32) window_size[0]);
 	root->pixel_visible[AXIS_2_Y] = intv_inline(0.0f, (f32) window_size[1]);
 	
@@ -912,9 +911,9 @@ static void ui_identify_hovered_node(void)
 	if (node)
 	{
 		node->inter &= ~UI_INTER_HOVER;
-		while (node->header.parent != HI_NULL_INDEX)
+		while (node->hi_parent != HI_NULL_INDEX)
 		{
-			node = ui_node_address(node->header.parent);
+			node = ui_node_address(node->hi_parent);
 			node->inter &= ~(UI_INTER_HOVER & node->inter_recursive_flags);
 		}
 	}
@@ -930,7 +929,7 @@ static void ui_identify_hovered_node(void)
 		if (depth < (i32) new_depth)
 		{
 			const u32 new_index = g_ui->stack_floating_node.arr[i];
-			node = hi_Address(g_ui->node_hierarchy, new_index);
+			node = hi_Address(&g_ui->node_hierarchy, new_index);
 			if (node->pixel_visible[0].low <= x && x <= node->pixel_visible[0].high &&  
 		    	    node->pixel_visible[1].low <= y && y <= node->pixel_visible[1].high &&
 			    (node->flags & (UI_NON_HASHED | UI_SKIP_HOVER_SEARCH)) == 0)
@@ -949,12 +948,12 @@ static void ui_identify_hovered_node(void)
 	
 	/* search floating subtree for deepest node we are hovering that is hashed */
 	u32 deepest_non_hashed_hover_index = index;
-	node = hi_Address(g_ui->node_hierarchy, index);
+	node = hi_Address(&g_ui->node_hierarchy, index);
 	ds_Assert((node->flags & (UI_NON_HASHED | UI_SKIP_HOVER_SEARCH)) == 0);
-	index = node->header.first;
+	index = node->hi_first;
 	while (index != HI_NULL_INDEX)
 	{
-		node = hi_Address(g_ui->node_hierarchy, index);
+		node = hi_Address(&g_ui->node_hierarchy, index);
 		if (node->pixel_visible[0].low <= x && x <= node->pixel_visible[0].high &&  
 	    	    node->pixel_visible[1].low <= y && y <= node->pixel_visible[1].high &&
 		    (node->flags & UI_SKIP_HOVER_SEARCH) == 0)
@@ -964,21 +963,21 @@ static void ui_identify_hovered_node(void)
 				deepest_non_hashed_hover_index = index;
 			}
 
-			index = node->header.first;
+			index = node->hi_first;
 			continue;
 		}
 
-		index = node->header.next;
+		index = node->hi_next;
 	}
 
-	node = hi_Address(g_ui->node_hierarchy, deepest_non_hashed_hover_index);
+	node = hi_Address(&g_ui->node_hierarchy, deepest_non_hashed_hover_index);
 	ds_Assert((node->flags & (UI_NON_HASHED | UI_SKIP_HOVER_SEARCH)) == 0);
 	node->inter |= (UI_INTER_HOVER & node->flags);
 	g_ui->inter.node_hovered = node->id;
 
-	while (node->header.parent != HI_NULL_INDEX)
+	while (node->hi_parent != HI_NULL_INDEX)
 	{
-		node = ui_node_address(node->header.parent);
+		node = ui_node_address(node->hi_parent);
 		node->inter |= (UI_INTER_HOVER & node->inter_recursive_flags);
 	}
 }
@@ -1076,7 +1075,7 @@ void ui_frame_end(void)
 
 		if (text_input->last_frame_touched != g_ui->frame || (text_input->inter & UI_INTER_FOCUS) == 0)
 		{
-			CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_mode_disable \"%k\"", &g_ui->inter.text_edit_id);
+			CmdSubmitFormat(g_ui->mem_frame, "ui_TextInputModeDisable \"%k\"", &g_ui->inter.text_edit_id);
 		}
 		else
 		{
@@ -1100,16 +1099,16 @@ void ui_frame_end(void)
 		}
 	}
 
-	struct hiNode *orphan = hi_Address(g_ui->node_hierarchy, HI_ORPHAN_STUB_INDEX);
-	struct hiNode *node; 
-	for (u32 index = orphan->first; index != HI_NULL_INDEX;)
+	struct ui_node *orphan = hi_Address(&g_ui->node_hierarchy, HI_ORPHAN_STUB_INDEX);
+	struct ui_node *node; 
+	for (u32 index = orphan->hi_first; index != HI_NULL_INDEX;)
 	{
-		struct ui_node *node = hi_Address(g_ui->node_hierarchy, index);
-		const u32 next = node->header.next;
-		hi_ApplyCustomFreeAndRemove(g_ui->mem_frame, g_ui->node_hierarchy, index, &ui_node_dealloc, NULL);
+		struct ui_node *node = hi_Address(&g_ui->node_hierarchy, index);
+		const u32 next = node->hi_next;
+		hi_ApplyCustomFreeAndRemove(g_ui->mem_frame, &g_ui->node_hierarchy, index, &ui_node_dealloc, NULL);
 		index = next;
 	}
-	hi_AdoptNode(g_ui->node_hierarchy, g_ui->root, HI_ORPHAN_STUB_INDEX);
+	hi_AdoptNode(&g_ui->node_hierarchy, g_ui->root, HI_ORPHAN_STUB_INDEX);
 }
 
 /* Calculate sizes known at time of creation, i.e. every size expect CHILDSUM */
@@ -1139,7 +1138,7 @@ static void ui_node_calculate_immediate_layout(struct ui_node *node, const enum 
 
 		case UI_SIZE_PERC_PARENT:
 		{
-			const struct ui_node *parent = hi_Address(g_ui->node_hierarchy, node->header.parent);
+			const struct ui_node *parent = hi_Address(&g_ui->node_hierarchy, node->hi_parent);
 			if (parent->semantic_size[axis].type == UI_SIZE_CHILDSUM || (parent->flags & (UI_PERC_POSTPONED_X << axis)))
 			{
 				node->layout_size[axis] = 0.0f;
@@ -1153,7 +1152,7 @@ static void ui_node_calculate_immediate_layout(struct ui_node *node, const enum 
 
 		case UI_SIZE_UNIT:
 		{
-			const struct ui_node *parent = hi_Address(g_ui->node_hierarchy, node->header.parent);
+			const struct ui_node *parent = hi_Address(&g_ui->node_hierarchy, node->hi_parent);
 			const intv visible = stack_intv_top(g_ui->stack_viewable + axis);
 			const f32 pixels_per_unit = parent->pixel_size[axis] / (visible.high - visible.low);
 
@@ -1188,11 +1187,11 @@ static u32 internal_ui_pad(const u64 flags, const f32 value, const enum ui_size_
 		return HI_ORPHAN_STUB_INDEX;
 	}
 
-	struct slot slot = hi_Add(g_ui->node_hierarchy, parent_index);
+	struct slot slot = hi_Add(&g_ui->node_hierarchy, parent_index);
 	struct ui_node *node = slot.address;
 	g_ui->node_count_frame += 1;
 
-	struct ui_node *parent = hi_Address(g_ui->node_hierarchy, parent_index);
+	struct ui_node *parent = hi_Address(&g_ui->node_hierarchy, parent_index);
 	const u32 non_layout_axis = 1 - parent->child_layout_axis;
 
 	node->id = Utf8Empty();
@@ -1213,7 +1212,7 @@ static u32 internal_ui_pad(const u64 flags, const f32 value, const enum ui_size_
 	if (node->flags & UI_DRAW_SPRITE)
 	{
 		node->sprite = stack_u32_top(&g_ui->stack_sprite);
-		stack_vec4_top(node->sprite_color, &g_ui->stack_sprite_color);
+		stackVec4Top(node->sprite_color, &g_ui->stack_sprite_color);
 	}
 	else
 	{
@@ -1237,13 +1236,13 @@ static u32 internal_ui_pad(const u64 flags, const f32 value, const enum ui_size_
 	ui_node_calculate_immediate_layout(node, AXIS_2_Y);
 
 	(node->flags & UI_DRAW_BACKGROUND)
-		? stack_vec4_top(node->background_color, &g_ui->stack_background_color)
+		? stackVec4Top(node->background_color, &g_ui->stack_background_color)
 		: Vec4Set(node->background_color, 0.0f, 0.0f, 0.0f, 0.0f);
 
 	if (node->flags & UI_DRAW_BORDER)
 	{
 		node->border_size = stack_f32_top(&g_ui->stack_border_size);
-		stack_vec4_top(node->border_color, &g_ui->stack_border_color);
+		stackVec4Top(node->border_color, &g_ui->stack_border_color);
 	}
 	else
 	{
@@ -1253,10 +1252,10 @@ static u32 internal_ui_pad(const u64 flags, const f32 value, const enum ui_size_
 
 	if (node->flags & UI_DRAW_GRADIENT)
 	{
-		stack_vec4_top(node->gradient_color[BOX_CORNER_BR], g_ui->stack_gradient_color + BOX_CORNER_BR);
-		stack_vec4_top(node->gradient_color[BOX_CORNER_TR], g_ui->stack_gradient_color + BOX_CORNER_TR);
-		stack_vec4_top(node->gradient_color[BOX_CORNER_TL], g_ui->stack_gradient_color + BOX_CORNER_TL);
-		stack_vec4_top(node->gradient_color[BOX_CORNER_BL], g_ui->stack_gradient_color + BOX_CORNER_BL);
+		stackVec4Top(node->gradient_color[BOX_CORNER_BR], g_ui->stack_gradient_color + BOX_CORNER_BR);
+		stackVec4Top(node->gradient_color[BOX_CORNER_TR], g_ui->stack_gradient_color + BOX_CORNER_TR);
+		stackVec4Top(node->gradient_color[BOX_CORNER_TL], g_ui->stack_gradient_color + BOX_CORNER_TL);
+		stackVec4Top(node->gradient_color[BOX_CORNER_BL], g_ui->stack_gradient_color + BOX_CORNER_BL);
 	}
 	else
 	{
@@ -1305,7 +1304,7 @@ struct slot ui_node_alloc_non_hashed(const u64 flags)
 
 struct ui_node *ui_node_address(const u32 node)
 {
-	return array_list_address(g_ui->node_hierarchy->list, node);
+	return PoolAddress(&g_ui->node_hierarchy.pool, node);
 }
 
 struct slot ui_node_lookup(const utf8 *id)
@@ -1313,10 +1312,10 @@ struct slot ui_node_lookup(const utf8 *id)
 	struct slot slot = { .address = NULL, .index = U32_MAX };
 	struct ui_node *node;
 	const u32 key = Utf8Hash(*id);
-	u32 index = HashMapFirst(g_ui->node_map, key);
-	for (; index != HASH_NULL; index = HashMapNext(g_ui->node_map, index))
+	u32 index = HashMapFirst(&g_ui->node_map, key);
+	for (; index != HASH_NULL; index = HashMapNext(&g_ui->node_map, index))
 	{
-		node = hi_Address(g_ui->node_hierarchy, index);
+		node = hi_Address(&g_ui->node_hierarchy, index);
 		if (Utf8Equivalence(node->id, *id))
 		{
 			slot.address = node;
@@ -1345,7 +1344,7 @@ struct ui_node_cache ui_node_cache_orphan_root(void)
 	struct ui_node_cache cache =
 	{
 		.last_frame_touched = U64_MAX,
-		.frame_node = hi_Address(g_ui->node_hierarchy, UI_NON_CACHED_INDEX),
+		.frame_node = hi_Address(&g_ui->node_hierarchy, UI_NON_CACHED_INDEX),
 		.index = UI_NON_CACHED_INDEX,
 	};
 
@@ -1355,7 +1354,7 @@ struct ui_node_cache ui_node_cache_orphan_root(void)
 struct ui_node_cache ui_node_alloc_cached(const u64 flags, const utf8 id, const utf8 text, const struct ui_node_cache cache)
 {
 	const u32 parent_index = stack_u32_top(&g_ui->stack_parent);
-	struct ui_node *parent = hi_Address(g_ui->node_hierarchy, parent_index);
+	struct ui_node *parent = hi_Address(&g_ui->node_hierarchy, parent_index);
 
 	/* Parent failed to alloc */
 	if (parent_index == HI_ORPHAN_STUB_INDEX)
@@ -1367,8 +1366,8 @@ struct ui_node_cache ui_node_alloc_cached(const u64 flags, const utf8 id, const 
 
 	/* If not cached, index should be != STUB_INDEX */
 	struct ui_node *node = (cache.last_frame_touched+1 == g_ui->frame)
-				? hi_Address(g_ui->node_hierarchy, cache.index)
-				: hi_Address(g_ui->node_hierarchy, HI_ORPHAN_STUB_INDEX);
+				? hi_Address(&g_ui->node_hierarchy, cache.index)
+				: hi_Address(&g_ui->node_hierarchy, HI_ORPHAN_STUB_INDEX);
 
 	ds_Assert(node->last_frame_touched != g_ui->frame);
 	struct ui_size size_x = stack_ui_size_top(g_ui->stack_ui_size + AXIS_2_X);
@@ -1415,16 +1414,16 @@ struct ui_node_cache ui_node_alloc_cached(const u64 flags, const utf8 id, const 
 	if (cache.last_frame_touched+1 != g_ui->frame)
 	{
 		key = Utf8Hash(id);
-		slot = hi_Add(g_ui->node_hierarchy, stack_u32_top(&g_ui->stack_parent));
+		slot = hi_Add(&g_ui->node_hierarchy, stack_u32_top(&g_ui->stack_parent));
 		node = slot.address;
-		HashMapAdd(g_ui->node_map, key, slot.index);
+		HashMapAdd(&g_ui->node_map, key, slot.index);
 	}
 	else
 	{
 		key = node->key;
 		slot.address = node;
 		slot.index = cache.index;
-		hi_AdoptNodeExclusive(g_ui->node_hierarchy, slot.index, stack_u32_top(&g_ui->stack_parent));
+		hi_AdoptNodeExclusive(&g_ui->node_hierarchy, slot.index, stack_u32_top(&g_ui->stack_parent));
 		inter = ui_node_set_interactions(node, node_flags, inter_recursive_mask);
 	}
 	
@@ -1446,7 +1445,7 @@ struct ui_node_cache ui_node_alloc_cached(const u64 flags, const utf8 id, const 
 	if (node->flags & UI_DRAW_SPRITE)
 	{
 		node->sprite = stack_u32_top(&g_ui->stack_sprite);
-		stack_vec4_top(node->sprite_color, &g_ui->stack_sprite_color);
+		stackVec4Top(node->sprite_color, &g_ui->stack_sprite_color);
 	}
 	else
 	{
@@ -1464,7 +1463,7 @@ struct ui_node_cache ui_node_alloc_cached(const u64 flags, const utf8 id, const 
 	if (node->flags & UI_DRAW_TEXT)
 	{
 		const struct assetFont *asset = stack_ptr_top(&g_ui->stack_font);
-		stack_vec4_top(node->sprite_color, &g_ui->stack_sprite_color);
+		stackVec4Top(node->sprite_color, &g_ui->stack_sprite_color);
 		node->flags |= UI_TEXT_ATTACHED;
 		node->font = asset->font;
 		node->text_align_x = stack_u32_top(&g_ui->stack_text_alignment_x);
@@ -1501,11 +1500,11 @@ struct ui_node_cache ui_node_alloc_cached(const u64 flags, const utf8 id, const 
 							node->input.cursor = copy.len;
 						}
 					}
-					CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_mode_enable \"%k\" %p", &node->id, &node->input);
+					CmdSubmitFormat(g_ui->mem_frame, "ui_TextInputModeEnable \"%k\" %p", &node->id, &node->input);
 				}
 				else
 				{
-					CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_mode_enable \"%k\" %p", &node->id, stack_ptr_top(&g_ui->stack_external_text_input));
+					CmdSubmitFormat(g_ui->mem_frame, "ui_TextInputModeEnable \"%k\" %p", &node->id, stack_ptr_top(&g_ui->stack_external_text_input));
 				}
 			}
 			else
@@ -1588,13 +1587,13 @@ struct ui_node_cache ui_node_alloc_cached(const u64 flags, const utf8 id, const 
 	}
 
 	(node->flags & UI_DRAW_BACKGROUND)
-		? stack_vec4_top(node->background_color, &g_ui->stack_background_color)
+		? stackVec4Top(node->background_color, &g_ui->stack_background_color)
 		: Vec4Set(node->background_color, 0.0f, 0.0f, 0.0f, 0.0f);
 
 	if (node->flags & UI_DRAW_BORDER)
 	{
 		node->border_size = stack_f32_top(&g_ui->stack_border_size);
-		stack_vec4_top(node->border_color, &g_ui->stack_border_color);
+		stackVec4Top(node->border_color, &g_ui->stack_border_color);
 	}
 	else
 	{
@@ -1604,10 +1603,10 @@ struct ui_node_cache ui_node_alloc_cached(const u64 flags, const utf8 id, const 
 
 	if (node->flags & UI_DRAW_GRADIENT)
 	{
-		stack_vec4_top(node->gradient_color[BOX_CORNER_BR], g_ui->stack_gradient_color + BOX_CORNER_BR);
-		stack_vec4_top(node->gradient_color[BOX_CORNER_TR], g_ui->stack_gradient_color + BOX_CORNER_TR);
-		stack_vec4_top(node->gradient_color[BOX_CORNER_TL], g_ui->stack_gradient_color + BOX_CORNER_TL);
-		stack_vec4_top(node->gradient_color[BOX_CORNER_BL], g_ui->stack_gradient_color + BOX_CORNER_BL);
+		stackVec4Top(node->gradient_color[BOX_CORNER_BR], g_ui->stack_gradient_color + BOX_CORNER_BR);
+		stackVec4Top(node->gradient_color[BOX_CORNER_TR], g_ui->stack_gradient_color + BOX_CORNER_TR);
+		stackVec4Top(node->gradient_color[BOX_CORNER_TL], g_ui->stack_gradient_color + BOX_CORNER_TL);
+		stackVec4Top(node->gradient_color[BOX_CORNER_BL], g_ui->stack_gradient_color + BOX_CORNER_BL);
 	}
 	else
 	{
@@ -1640,11 +1639,11 @@ struct ui_node_cache ui_node_alloc_cached(const u64 flags, const utf8 id, const 
 struct slot ui_node_alloc(const u64 flags, const utf8 *formatted)
 {
 	const u32 parent_index = stack_u32_top(&g_ui->stack_parent);
-	struct ui_node *parent = hi_Address(g_ui->node_hierarchy, parent_index);
+	struct ui_node *parent = hi_Address(&g_ui->node_hierarchy, parent_index);
 
 	if (parent_index == HI_ORPHAN_STUB_INDEX)
 	{
-		return (struct slot) { .index = HI_ORPHAN_STUB_INDEX, .address = hi_Address(g_ui->node_hierarchy, HI_ORPHAN_STUB_INDEX) };
+		return (struct slot) { .index = HI_ORPHAN_STUB_INDEX, .address = hi_Address(&g_ui->node_hierarchy, HI_ORPHAN_STUB_INDEX) };
 	}
 
 	u32 hash_count = 0;
@@ -1703,7 +1702,7 @@ struct slot ui_node_alloc(const u64 flags, const utf8 *formatted)
 		const intv visible = stack_intv_top(g_ui->stack_viewable + AXIS_2_X);
 		if ((size_x.intv.high < visible.low || size_x.intv.low > visible.high) && node && !(node->inter & UI_INTER_ACTIVE))
 		{
-			return (struct slot) { .index = HI_ORPHAN_STUB_INDEX, .address = hi_Address(g_ui->node_hierarchy, HI_ORPHAN_STUB_INDEX) };
+			return (struct slot) { .index = HI_ORPHAN_STUB_INDEX, .address = hi_Address(&g_ui->node_hierarchy, HI_ORPHAN_STUB_INDEX) };
 		}
 	}
 
@@ -1715,20 +1714,20 @@ struct slot ui_node_alloc(const u64 flags, const utf8 *formatted)
 		const intv visible = stack_intv_top(g_ui->stack_viewable + AXIS_2_Y);
 		if ((size_y.intv.high < visible.low || size_y.intv.low > visible.high) && node && !(node->inter & UI_INTER_ACTIVE))
 		{
-			return (struct slot) { .index = HI_ORPHAN_STUB_INDEX, .address = hi_Address(g_ui->node_hierarchy, HI_ORPHAN_STUB_INDEX) };
+			return (struct slot) { .index = HI_ORPHAN_STUB_INDEX, .address = hi_Address(&g_ui->node_hierarchy, HI_ORPHAN_STUB_INDEX) };
 		}
 	}
 
 	u64 inter = 0;
 	if (!slot.address)
 	{
-		slot = hi_Add(g_ui->node_hierarchy, parent_index);
-		parent = hi_Address(g_ui->node_hierarchy, parent_index);
+		slot = hi_Add(&g_ui->node_hierarchy, parent_index);
+		parent = hi_Address(&g_ui->node_hierarchy, parent_index);
 		node = slot.address;
 		if ((flags & UI_NON_HASHED) == 0)
 		{
 			key = Utf8Hash(id);
-			HashMapAdd(g_ui->node_map, key, slot.index);
+			HashMapAdd(&g_ui->node_map, key, slot.index);
 		}
 		ds_Assert((flags & UI_NON_HASHED) == UI_NON_HASHED || id.len > 0);
 	}
@@ -1736,7 +1735,7 @@ struct slot ui_node_alloc(const u64 flags, const utf8 *formatted)
 	{
 		ds_Assert(node->last_frame_touched != g_ui->frame);
 		key = node->key;
-		hi_AdoptNodeExclusive(g_ui->node_hierarchy, slot.index, stack_u32_top(&g_ui->stack_parent));
+		hi_AdoptNodeExclusive(&g_ui->node_hierarchy, slot.index, stack_u32_top(&g_ui->stack_parent));
 		inter = ui_node_set_interactions(node, node_flags, inter_recursive_mask);
 	}
 
@@ -1759,7 +1758,7 @@ struct slot ui_node_alloc(const u64 flags, const utf8 *formatted)
 	if (node->flags & UI_DRAW_SPRITE)
 	{
 		node->sprite = stack_u32_top(&g_ui->stack_sprite);
-		stack_vec4_top(node->sprite_color, &g_ui->stack_sprite_color);
+		stackVec4Top(node->sprite_color, &g_ui->stack_sprite_color);
 	}
 	else
 	{
@@ -1777,7 +1776,7 @@ struct slot ui_node_alloc(const u64 flags, const utf8 *formatted)
 	if (node->flags & UI_DRAW_TEXT)
 	{
 		const struct assetFont *asset = stack_ptr_top(&g_ui->stack_font);
-		stack_vec4_top(node->sprite_color, &g_ui->stack_sprite_color);
+		stackVec4Top(node->sprite_color, &g_ui->stack_sprite_color);
 		node->flags |= UI_TEXT_ATTACHED;
 		node->font = asset->font;
 		node->text_align_x = stack_u32_top(&g_ui->stack_text_alignment_x);
@@ -1814,11 +1813,11 @@ struct slot ui_node_alloc(const u64 flags, const utf8 *formatted)
 							node->input.cursor = copy.len;
 						}
 					}
-					CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_mode_enable \"%k\" %p", &node->id, &node->input);
+					CmdSubmitFormat(g_ui->mem_frame, "ui_TextInputModeEnable \"%k\" %p", &node->id, &node->input);
 				}
 				else
 				{
-					CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_mode_enable \"%k\" %p", &node->id, stack_ptr_top(&g_ui->stack_external_text_input));
+					CmdSubmitFormat(g_ui->mem_frame, "ui_TextInputModeEnable \"%k\" %p", &node->id, stack_ptr_top(&g_ui->stack_external_text_input));
 				}
 			}
 			else
@@ -1900,13 +1899,13 @@ struct slot ui_node_alloc(const u64 flags, const utf8 *formatted)
 	}
 
 	(node->flags & UI_DRAW_BACKGROUND)
-		? stack_vec4_top(node->background_color, &g_ui->stack_background_color)
+		? stackVec4Top(node->background_color, &g_ui->stack_background_color)
 		: Vec4Set(node->background_color, 0.0f, 0.0f, 0.0f, 0.0f);
 
 	if (node->flags & UI_DRAW_BORDER)
 	{
 		node->border_size = stack_f32_top(&g_ui->stack_border_size);
-		stack_vec4_top(node->border_color, &g_ui->stack_border_color);
+		stackVec4Top(node->border_color, &g_ui->stack_border_color);
 	}
 	else
 	{
@@ -1916,10 +1915,10 @@ struct slot ui_node_alloc(const u64 flags, const utf8 *formatted)
 
 	if (node->flags & UI_DRAW_GRADIENT)
 	{
-		stack_vec4_top(node->gradient_color[BOX_CORNER_BR], g_ui->stack_gradient_color + BOX_CORNER_BR);
-		stack_vec4_top(node->gradient_color[BOX_CORNER_TR], g_ui->stack_gradient_color + BOX_CORNER_TR);
-		stack_vec4_top(node->gradient_color[BOX_CORNER_TL], g_ui->stack_gradient_color + BOX_CORNER_TL);
-		stack_vec4_top(node->gradient_color[BOX_CORNER_BL], g_ui->stack_gradient_color + BOX_CORNER_BL);
+		stackVec4Top(node->gradient_color[BOX_CORNER_BR], g_ui->stack_gradient_color + BOX_CORNER_BR);
+		stackVec4Top(node->gradient_color[BOX_CORNER_TR], g_ui->stack_gradient_color + BOX_CORNER_TR);
+		stackVec4Top(node->gradient_color[BOX_CORNER_TL], g_ui->stack_gradient_color + BOX_CORNER_TL);
+		stackVec4Top(node->gradient_color[BOX_CORNER_BL], g_ui->stack_gradient_color + BOX_CORNER_BL);
 	}
 	else
 	{
@@ -1968,7 +1967,7 @@ void ui_node_pop(void)
 
 struct ui_node *ui_node_top(void)
 {
-	return array_list_address(g_ui->node_hierarchy->list, stack_u32_top(&g_ui->stack_parent));
+	return PoolAddress(&g_ui->node_hierarchy.pool, stack_u32_top(&g_ui->stack_parent));
 }
 
 void ui_size_push(const enum axis_2 axis, const struct ui_size size)
@@ -2063,62 +2062,62 @@ void ui_intv_viewable_pop(const enum axis_2 axis)
 
 void ui_background_color_push(const vec4 color)
 {
-	stack_vec4_push(&g_ui->stack_background_color, color);
+	stackVec4Push(&g_ui->stack_background_color, color);
 }
 
 void ui_background_color_set(const vec4 color)
 {
-	stack_Vec4Set(&g_ui->stack_background_color, color);
+	stackVec4Set(&g_ui->stack_background_color, color);
 }
 
 void ui_background_color_pop(void)
 {
-	stack_vec4_pop(&g_ui->stack_background_color);
+	stackVec4Pop(&g_ui->stack_background_color);
 }
 
 void ui_border_color_push(const vec4 color)
 {
-	stack_vec4_push(&g_ui->stack_border_color, color);
+	stackVec4Push(&g_ui->stack_border_color, color);
 }
 
 void ui_border_color_set(const vec4 color)
 {
-	stack_Vec4Set(&g_ui->stack_border_color, color);
+	stackVec4Set(&g_ui->stack_border_color, color);
 }
 
 void ui_border_color_pop(void)
 {
-	stack_vec4_pop(&g_ui->stack_border_color);
+	stackVec4Pop(&g_ui->stack_border_color);
 }
 
 void ui_sprite_color_push(const vec4 color)
 {
-	stack_vec4_push(&g_ui->stack_sprite_color, color);
+	stackVec4Push(&g_ui->stack_sprite_color, color);
 }
 
 void ui_sprite_color_set(const vec4 color)
 {
-	stack_Vec4Set(&g_ui->stack_sprite_color, color);
+	stackVec4Set(&g_ui->stack_sprite_color, color);
 }
 
 void ui_sprite_color_pop(void)
 {
-	stack_vec4_pop(&g_ui->stack_sprite_color);
+	stackVec4Pop(&g_ui->stack_sprite_color);
 }
 
 void ui_gradient_color_push(const enum box_corner corner, const vec4 color)
 {
-	stack_vec4_push(g_ui->stack_gradient_color + corner, color);
+	stackVec4Push(g_ui->stack_gradient_color + corner, color);
 }
 
 void ui_gradient_color_set(const enum box_corner corner, const vec4 color)
 {
-	stack_Vec4Set(g_ui->stack_gradient_color + corner, color);
+	stackVec4Set(g_ui->stack_gradient_color + corner, color);
 }
 
 void ui_gradient_color_pop(const enum box_corner corner)
 {
-	stack_vec4_pop(g_ui->stack_gradient_color + corner);
+	stackVec4Pop(g_ui->stack_gradient_color + corner);
 }
 
 void ui_font_push(const enum fontId font)

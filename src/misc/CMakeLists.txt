@@ -17,17 +17,18 @@ add_library(Dreamscape::Font ALIAS DreamscapeFont)
 target_link_libraries(DreamscapeFont PUBLIC Dreamscape::Asset)
 
 
-#add_library(ui 
-#	STATIC 
-#		"${DS_INCLUDE_PATH}/ui_public.h"
-#		"ui/ui_core.c"
-#		"ui/ui_build.c" 
-#		"ui/ui_local.h"
-#)
-#add_library(Dreamscape::UI ALIAS ui)
-#target_link_libraries(ui
-#	PUBLIC
-#		Dreamscape::Asset
-#		Dreamscape::Command
-#		Dreamscape::Font
-#)
+add_library(ui 
+	STATIC 
+		"${DS_INCLUDE_PATH}/ui_public.h"
+		"ui/ui_core.c"
+		"ui/ui_build.c" 
+		"ui/ui_local.h"
+)
+add_library(Dreamscape::UI ALIAS ui)
+target_link_libraries(ui
+	PUBLIC
+		Dreamscape::Asset
+		Dreamscape::Command
+		Dreamscape::Font
+		Dreamscape::Graphics
+)

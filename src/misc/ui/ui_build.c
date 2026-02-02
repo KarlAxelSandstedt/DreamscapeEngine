@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025,2026 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -20,7 +20,6 @@
 #include <string.h>
 
 #include "ui_local.h"
-#include "sys_public.h"
 
 f32 ui_field_f32(const f32 value, const intv range, const utf8 formatted)
 {
@@ -34,7 +33,7 @@ f32 ui_field_f32(const f32 value, const intv range, const utf8 formatted)
 		if (!f32_test_nan(parse_value))
 		{
 			ret = f32_clamp(parse_value, range.low, range.high);
-			CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_mode_disable \"%k\"", &node->id);
+			CmdSubmitFormat(g_ui->mem_frame, "ui_TextInputModeDisable \"%k\"", &node->id);
 		}
 		else
 		{
@@ -65,7 +64,7 @@ u64 ui_field_u64(const u64 value, const intvu64 range, const utf8 formatted)
 				parse.u64 = range.low;
 			}
 			ret = parse.u64;
-			CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_mode_disable \"%k\"", &node->id);
+			CmdSubmitFormat(g_ui->mem_frame, "ui_TextInputModeDisable \"%k\"", &node->id);
 		}
 		else
 		{
@@ -95,7 +94,7 @@ i64 ui_field_i64(const i64 value, const intvi64 range, const utf8 formatted)
 				parse.i64 = range.high;
 			}
 			ret = parse.i64;
-			CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_mode_disable \"%k\"", &node->id);
+			CmdSubmitFormat(g_ui->mem_frame, "ui_TextInputModeDisable \"%k\"", &node->id);
 		}
 		else
 		{
@@ -115,7 +114,7 @@ utf8 ui_field_utf8(const utf8 formatted)
 	if ((node->inter & UI_INTER_FOCUS) && g_ui->inter.key_clicked[DS_ENTER])
 	{
 		ret = Utf8Utf32(g_ui->mem_frame, node->input.text);
-		CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_mode_disable \"%k\"", &node->id);
+		CmdSubmitFormat(g_ui->mem_frame, "ui_TextInputModeDisable \"%k\"", &node->id);
 	}
 
 	return ret;
@@ -280,7 +279,7 @@ struct slot ui_list_entry_alloc(struct ui_list *list, const utf8 id)
 				&& list->last_selection_happened + 1 >= g_ui->frame
 				&& list->last_selected != entry.index)
 		{
-			struct ui_node *prev = hi_Address(g_ui->node_hierarchy, list->last_selected);
+			struct ui_node *prev = hi_Address(&g_ui->node_hierarchy, list->last_selected);
 			prev->inter &= ~UI_INTER_SELECT;
 			Vec4Copy(prev->border_color, node->border_color);
 		}
@@ -328,7 +327,7 @@ struct ui_node_cache ui_list_entry_alloc_cached(struct ui_list *list, const utf8
 				&& list->last_selection_happened + 1 >= g_ui->frame
 				&& list->last_selected)
 		{
-			struct ui_node *prev = hi_Address(g_ui->node_hierarchy, list->last_selected);
+			struct ui_node *prev = hi_Address(&g_ui->node_hierarchy, list->last_selected);
 			prev->inter &= ~UI_INTER_SELECT;
 			Vec4Copy(prev->border_color, node->border_color);
 		}
@@ -426,7 +425,7 @@ void ui_timeline(struct timeline_config *config)
 		ui_height(ui_size_childsum(0.0f))
 		config->timeline = ui_node_alloc_f(UI_DRAW_BACKGROUND, "timeline_rows_%p", config).index;
 		
-		const struct ui_node *timeline_node = hi_Address(g_ui->node_hierarchy, config->timeline);
+		const struct ui_node *timeline_node = hi_Address(&g_ui->node_hierarchy, config->timeline);
 		config->width = timeline_node->layout_size[0];
 		const f32 half_pixel_count = (2.0f * config->width * (1.0f - config->perc_width_row_title_column));
 		config->ns_half_pixel = (f32) (config->ns_interval_end - config->ns_interval_start) / half_pixel_count;
@@ -539,7 +538,7 @@ void ui_timeline_row_push(struct timeline_config *config, const u32 row, const c
 	ui_node_push(ui_node_alloc_f(UI_INTER_RECURSIVE_ROOT | UI_DRAW_BORDER | UI_INTER_DRAG, "%k##task_bar", &title).index);
 }
 
-void timeline_drag(void)
+void ui_TimelineDrag(void)
 {
 	struct timeline_config *config = g_queue->cmd_exec->arg[0].ptr;
 	const i64 drag_delta_x = g_queue->cmd_exec->arg[1].i64;
@@ -592,7 +591,7 @@ void ui_timeline_row_pop(struct timeline_config *config)
 			row_config->depth_visible.high += depth_offset;
 		}
 
-		CmdSubmitFormat(g_ui->mem_frame, "timeline_drag %p %li %li %u", config, (i64) g_ui->inter.cursor_delta[0], (i64) g_ui->inter.cursor_delta[1], g_ui->inter.key_pressed[DS_CTRL]);
+		CmdSubmitFormat(g_ui->mem_frame, "ui_TimelineDrag %p %li %li %u", config, (i64) g_ui->inter.cursor_delta[0], (i64) g_ui->inter.cursor_delta[1], g_ui->inter.key_pressed[DS_CTRL]);
 	}
 	
 	ui_text_align_x_pop();
@@ -658,7 +657,7 @@ void ui_cmd_console(struct cmd_console *console, const char *fmt, ...)
 	if ((line->inter & UI_INTER_FOCUS) && g_ui->inter.key_clicked[DS_ENTER])
 	{
 		CmdSubmitUtf8(Utf8Utf32(g_ui->mem_frame, console->prompt.text));
-		CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_flush \"%k\"", &line->id);
+		CmdSubmitFormat(g_ui->mem_frame, "ui_TextInputFlush \"%k\"", &line->id);
 	}
 }
 
@@ -717,12 +716,12 @@ void ui_popup_build(void)
 						
 					if (line->inter & UI_INTER_LEFT_CLICK)
 					{
-						CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_mode_enable \"%k\" %p", &line->id, popup->prompt);
+						CmdSubmitFormat(g_ui->mem_frame, "ui_TextInputModeEnable \"%k\" %p", &line->id, popup->prompt);
 					}
 
 					if ((line->inter & UI_INTER_FOCUS) && g_ui->inter.key_clicked[DS_ENTER] && popup->state != UI_POPUP_STATE_PENDING_VERIFICATION)
 					{
-						CmdSubmitFormat(g_ui->mem_frame, "ui_text_input_mode_disable \"%k\"", &line->id);
+						CmdSubmitFormat(g_ui->mem_frame, "ui_TextInputModeDisable \"%k\"", &line->id);
 						*popup->input = Utf8Utf32Buffered(popup->input->buf, popup->input->size, popup->prompt->text);
 						popup->state = UI_POPUP_STATE_PENDING_VERIFICATION;
 					}
@@ -863,7 +862,7 @@ void ui_popup_choice(struct ui_popup *popup, const utf8 description, const utf8 
 	}
 }
 
-void ui_text_op(void)
+void ui_TextOp(void)
 {
 	const enum dsKeycode key = g_queue->cmd_exec->arg[0].u32;
 	const u32 mod = g_queue->cmd_exec->arg[1].u32;

@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025,2026 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -24,11 +24,11 @@
 #include "cmd.h"
 
 /* UI CMDS */
-void 	timeline_drag(void);
-void	ui_text_input_mode_enable(void);
-void	ui_text_input_mode_disable(void);
-void 	ui_text_input_flush(void);
-void 	ui_text_op(void);
+void 	ui_TimelineDrag(void);
+void	ui_TextInputModeEnable(void);
+void	ui_TextInputModeDisable(void);
+void 	ui_TextInputFlush(void);
+void 	ui_TextOp(void);
 
 void 		ui_popup_build(void);
 extern u32	cmd_ui_popup_build;

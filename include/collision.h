@@ -157,7 +157,6 @@ struct visualSegment	VisualSegmentConstruct(const struct segment segment, const 
 struct collisionDebug
 {
 	stack_visual_segment	stack_segment;
-
 	u8			pad[64];
 };
 

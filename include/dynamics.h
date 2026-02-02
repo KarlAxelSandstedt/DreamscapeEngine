@@ -692,7 +692,7 @@ struct physicsPipeline
 	struct cdb	c_db;
 	struct isdb 	is_db;
 
-	struct collisionDebug *debug;
+	struct collisionDebug *	debug;
 	u32			debug_count;
 
 	//TODO temporary, move somewhere else.
