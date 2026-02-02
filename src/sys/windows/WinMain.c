@@ -69,7 +69,7 @@ int CALLBACK WinMain(HINSTANCE h_instance, HINSTANCE hPrevInstance, LPSTR lpCmdL
 	struct arena mem_persistent = ArenaAlloc(32*1024*1024);
 	ds_PlatformApiInit(&mem_persistent);
 	ds_CmdApiInit();
-	ui_init_global_state();
+	ds_UiApiInit();
 	AssetInit(&mem_persistent);
 #if defined(DS_TEST_CORRECTNESS) || defined(DS_TEST_PERFORMANCE)
 	test_main();

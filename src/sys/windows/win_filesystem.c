@@ -640,7 +640,7 @@ enum fsError win_cwd_set(struct arena *mem, const char *path)
 	return err;
 }
 
-enum fsError win_directory_push_entries(struct arena *mem, struct vector *vec, struct file *dir)
+enum fsError win_directoryPush_entries(struct arena *mem, struct vector *vec, struct file *dir)
 {
 	WCHAR w_path[MAX_PATH];
 	if (w_absolute_path_from_relative_path_and_directory(w_path, "*", dir) != FS_SUCCESS)
@@ -839,7 +839,7 @@ void filesystem_init_func_ptrs(void)
 	DirectoryTryCreateAtCwd = &win_directory_try_create_at_cwd;
 	DirectoryTryOpen = &win_directory_try_open;
 	DirectoryTryOpenAtCwd = &win_directory_try_open_at_cwd;
-	DirectoryPushEntries = &win_directory_push_entries;
+	DirectoryPushEntries = &win_directoryPush_entries;
 
 	CwdGet = &win_cwd_get;
 	CwdSet = &win_cwd_set;

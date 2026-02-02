@@ -120,7 +120,7 @@ void		led_node_set_position(struct led *led, const utf8 id, const vec3 position)
 /* Set node to be a physics instance if the node and the prefab exist */
 void		led_node_set_rb_prefab(struct led *led, const utf8 id, const utf8 prefab);
 /* Set node to be a csg instance if the node and the csg brush exist */
-void		led_node_set_csg_brush(struct led *led, const utf8 id, const utf8 brush);
+void		led_node_set_csgBRush(struct led *led, const utf8 id, const utf8 brush);
 /* Set node's render mesh if the node and mesh exists */
 void		led_node_set_proxy3d(struct led *led, const utf8 id, const utf8 mesh, const vec4 color, const f32 transparency);
 
@@ -150,7 +150,7 @@ extern u32 	cmd_led_node_add_id;
 extern u32 	cmd_led_node_remove_id;
 extern u32 	cmd_led_node_set_position_id;
 extern u32 	cmd_led_node_set_rb_prefab_id;
-extern u32 	cmd_led_node_set_csg_brush_id;
+extern u32 	cmd_led_node_set_csgBRush_id;
 extern u32 	cmd_led_node_set_r_unit_id;
 
 extern u32	cmd_led_compile_id;

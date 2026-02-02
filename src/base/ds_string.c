@@ -810,7 +810,7 @@ utf32 Utf32F64(struct arena *mem, const u32 decimals, const f64 val)
 	}
 	else
 	{
-		ArenaPopPacked(mem, alloc.mem_pushed);
+		ArenaPopPacked(mem, alloc.memPushed);
 	}
 	
 	return str;
@@ -828,7 +828,7 @@ utf32 Utf32U64(struct arena *mem, const u64 val)
 	}
 	else
 	{
-		ArenaPopPacked(mem, alloc.mem_pushed);
+		ArenaPopPacked(mem, alloc.memPushed);
 	}
 	
 	return str;
@@ -847,7 +847,7 @@ utf32 Utf32I64(struct arena *mem, const i64 val)
 	}
 	else
 	{
-		ArenaPopPacked(mem, alloc.mem_pushed);
+		ArenaPopPacked(mem, alloc.memPushed);
 	}
 	
 	return str;
@@ -1268,7 +1268,7 @@ utf32 Utf32Cstr(struct arena *mem, const char *cstr)
 	
 	(ret.len)
 		? ArenaPopPacked(mem, sizeof(u32) * (ret.max_len - ret.len))
-		: ArenaPopPacked(mem, alloc.mem_pushed);
+		: ArenaPopPacked(mem, alloc.memPushed);
 
 	ret.max_len = ret.len;
 	return ret;

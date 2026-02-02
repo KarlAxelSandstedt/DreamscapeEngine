@@ -20,13 +20,14 @@
 #ifndef __DS_ASSET_PUBLIC_H__
 #define __DS_ASSET_PUBLIC_H__
 
-#include "ds_platform.h"
-
 #ifdef __cplusplus
 extern "C" { 
 #endif
 
+#include "ds_platform.h"
+
 /*
+
  * TODO: currently we build ssff's by loading png's containing collections of sprites in a row. This is 
  * 	 the wanted behaviour pngs constructed when animating, but for the purpose of creating a "static"
  * 	 sprite sheet, say for a level editor, this is not the absolute best. Instead, we actually want 

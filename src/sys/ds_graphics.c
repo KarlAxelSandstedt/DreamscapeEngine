@@ -33,7 +33,7 @@ u32 g_process_root_window = HI_NULL_INDEX;
 static void system_window_free_resources(struct system_window *sys_win)
 {
 	//gl_state_free(sys_win->gl_state);
-	ui_dealloc(sys_win->ui);
+	ui_Dealloc(sys_win->ui);
 	//r_scene_free(sys_win->r_scene);
 	CmdQueueDealloc(&sys_win->cmd_queue);
 	ArenaFree1MB(&sys_win->mem_persistent);
@@ -50,11 +50,11 @@ u32 system_window_alloc(const char *title, const vec2u32 position, const vec2u32
 	sys_win->mem_persistent = ArenaAlloc1MB();
 	sys_win->native = NativeWindowCreate(&sys_win->mem_persistent, (const char *) title, position, size);
 
-	sys_win->ui = ui_alloc();
+	sys_win->ui = ui_Alloc();
 	//sys_win->r_scene = r_scene_alloc();
 	sys_win->cmd_queue = CmdQueueAlloc();
-	sys_win->cmd_console = ArenaPushZero(&sys_win->mem_persistent, sizeof(struct cmd_console));
-	sys_win->cmd_console->prompt = ui_text_input_alloc(&sys_win->mem_persistent, 256);
+	sys_win->cmd_console = ArenaPushZero(&sys_win->mem_persistent, sizeof(struct ui_CmdConsole));
+	sys_win->cmd_console->prompt = ui_TextInputAlloc(&sys_win->mem_persistent, 256);
 	sys_win->tagged_for_destruction = 0;
 	sys_win->text_input_mode = 0;
 	
@@ -197,7 +197,7 @@ void system_window_set_global(const u32 index)
 {
 	g_window = index;
 	struct system_window *sys_win = hi_Address(g_window_hierarchy, index);
-	ui_set(sys_win->ui);
+	ui_Set(sys_win->ui);
 	CmdQueueSet(&sys_win->cmd_queue);
 }
 

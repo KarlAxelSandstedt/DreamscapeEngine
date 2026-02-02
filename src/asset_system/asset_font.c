@@ -80,9 +80,9 @@ void FontBuild(struct arena *mem, const enum fontId id)
 
 	total_glyph_width += face->glyph->bitmap.width;
 	u8 *pixels = ArenaPushMemcpy(mem, face->glyph->bitmap.buffer, face->glyph->bitmap.width * face->glyph->bitmap.rows);
-	stack_ptr_push(&stack_pixels, pixels);
+	stack_ptrPush(&stack_pixels, pixels);
 	const u32 glyph_unknown_index = stack_glyph.next;
-	stack_font_glyph_push(&stack_glyph, (struct fontGlyph)
+	stack_font_glyphPush(&stack_glyph, (struct fontGlyph)
 	{
 		.size = { (i32) face->glyph->bitmap.width, (i32) face->glyph->bitmap.rows },
 		.bearing = { face->glyph->bitmap_left, face->glyph->bitmap_top },
@@ -105,8 +105,8 @@ void FontBuild(struct arena *mem, const enum fontId id)
 
 		total_glyph_width += face->glyph->bitmap.width;
 		pixels = ArenaPushMemcpy(mem, face->glyph->bitmap.buffer, face->glyph->bitmap.width * face->glyph->bitmap.rows);
-		stack_ptr_push(&stack_pixels, pixels);
-		stack_font_glyph_push(&stack_glyph, (struct fontGlyph)
+		stack_ptrPush(&stack_pixels, pixels);
+		stack_font_glyphPush(&stack_glyph, (struct fontGlyph)
 			{
 				.size = { (i32) face->glyph->bitmap.width, (i32) face->glyph->bitmap.rows },
 				.bearing = { face->glyph->bitmap_left, face->glyph->bitmap_top },
@@ -130,8 +130,8 @@ void FontBuild(struct arena *mem, const enum fontId id)
 
 		total_glyph_width += face->glyph->bitmap.width;
 		pixels = ArenaPushMemcpy(mem, face->glyph->bitmap.buffer, face->glyph->bitmap.width * face->glyph->bitmap.rows);
-		stack_ptr_push(&stack_pixels, pixels);
-		stack_font_glyph_push(&stack_glyph, (struct fontGlyph)
+		stack_ptrPush(&stack_pixels, pixels);
+		stack_font_glyphPush(&stack_glyph, (struct fontGlyph)
 			{
 				.size = { (i32) face->glyph->bitmap.width, (i32) face->glyph->bitmap.rows },
 				.bearing = { face->glyph->bitmap_left, face->glyph->bitmap_top },

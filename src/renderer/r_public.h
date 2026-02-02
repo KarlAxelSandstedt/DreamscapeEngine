@@ -309,7 +309,7 @@ struct r_instance
 	union
 	{
 		u32		       unit;	
-		struct ui_draw_bucket *ui_bucket;
+		struct ui_DrawBucket *ui_bucket;
 		struct r_mesh	      *mesh;
 	};
 };

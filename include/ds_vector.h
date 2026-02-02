@@ -69,13 +69,13 @@ typedef struct				\
 	struct memSlot	mem_slot;	\
 } stack_ ## type
 
-#define DECLARE_STACK_ALLOC(type)	stack_ ## type stack_ ## type ## _alloc(struct arena *arena, const u32 length, const u32 growable)
-#define DECLARE_STACK_FREE(type)	void stack_ ## type ## _free(stack_ ## type *stack)
-#define DECLARE_STACK_PUSH(type)	void stack_ ## type ## _push(stack_ ## type *stack, const type val)
-#define DECLARE_STACK_SET(type)		void stack_ ## type ## _set(stack_ ## type *stack, const type val)
-#define DECLARE_STACK_POP(type)		type stack_ ## type ## _pop(stack_ ## type *stack)
-#define DECLARE_STACK_TOP(type)		type stack_ ## type ## _top(stack_ ## type *stack)
-#define DECLARE_STACK_FLUSH(type)	void stack_ ## type ## _flush(stack_ ## type *stack)
+#define DECLARE_STACK_ALLOC(type)	stack_ ## type stack_ ## type ## Alloc(struct arena *arena, const u32 length, const u32 growable)
+#define DECLARE_STACK_FREE(type)	void stack_ ## type ## Free(stack_ ## type *stack)
+#define DECLARE_STACK_PUSH(type)	void stack_ ## type ## Push(stack_ ## type *stack, const type val)
+#define DECLARE_STACK_SET(type)		void stack_ ## type ## Set(stack_ ## type *stack, const type val)
+#define DECLARE_STACK_POP(type)		type stack_ ## type ## Pop(stack_ ## type *stack)
+#define DECLARE_STACK_TOP(type)		type stack_ ## type ## Top(stack_ ## type *stack)
+#define DECLARE_STACK_FLUSH(type)	void stack_ ## type ## Flush(stack_ ## type *stack)
 
 #define DECLARE_STACK(type)		\
 	DECLARE_STACK_STRUCT(type);	\

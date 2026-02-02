@@ -2,7 +2,7 @@
 #include "ds_random.h"
 
 dsThreadLocal u64 tl_xoshiro_256[4];
-dsThreadLocal u64 tl_pushed_state[4];
+dsThreadLocal u64 tlPushed_state[4];
 
 /* xoshiro_256** */
 u64 g_xoshiro_256[4];
@@ -43,18 +43,18 @@ void Xoshiro256Init(const u64 seed[4])
 
 void RngPushState(void)
 {
-	tl_pushed_state[0] = tl_xoshiro_256[0];
-	tl_pushed_state[1] = tl_xoshiro_256[1];
-	tl_pushed_state[2] = tl_xoshiro_256[2];
-	tl_pushed_state[3] = tl_xoshiro_256[3];
+	tlPushed_state[0] = tl_xoshiro_256[0];
+	tlPushed_state[1] = tl_xoshiro_256[1];
+	tlPushed_state[2] = tl_xoshiro_256[2];
+	tlPushed_state[3] = tl_xoshiro_256[3];
 }
 
 void RngPopState(void)
 {
-	tl_xoshiro_256[0] = tl_pushed_state[0];
-	tl_xoshiro_256[1] = tl_pushed_state[1];
-	tl_xoshiro_256[2] = tl_pushed_state[2];
-	tl_xoshiro_256[3] = tl_pushed_state[3];
+	tl_xoshiro_256[0] = tlPushed_state[0];
+	tl_xoshiro_256[1] = tlPushed_state[1];
+	tl_xoshiro_256[2] = tlPushed_state[2];
+	tl_xoshiro_256[3] = tlPushed_state[3];
 }
 
 /*  Written in 2018 by David Blackman and Sebastiano Vigna (vigna@acm.org) */

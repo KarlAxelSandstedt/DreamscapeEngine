@@ -29,7 +29,7 @@ void cmd_led_node_add(void);
 void cmd_led_node_remove(void);
 void cmd_led_node_set_position(void);
 void cmd_led_node_set_rb_prefab(void);
-void cmd_led_node_set_csg_brush(void);
+void cmd_led_node_set_csgBRush(void);
 void cmd_led_node_set_proxy3d(void);
 
 void cmd_collision_shape_add(void);
@@ -50,7 +50,7 @@ u32 cmd_led_node_add_id;
 u32 cmd_led_node_remove_id;
 u32 cmd_led_node_set_position_id;
 u32 cmd_led_node_set_rb_prefab_id;
-u32 cmd_led_node_set_csg_brush_id;
+u32 cmd_led_node_set_csgBRush_id;
 u32 cmd_led_node_set_proxy3d_id;
 
 u32	cmd_led_compile_id;
@@ -78,7 +78,7 @@ void led_core_init_commands(void)
 	cmd_led_node_remove_id = CmdFunctionRegister(Utf8Inline("led_node_remove"), 1, &cmd_led_node_remove).index;
 	cmd_led_node_set_position_id = CmdFunctionRegister(Utf8Inline("led_node_set_position"), 4, &cmd_led_node_set_position).index;
 	cmd_led_node_set_rb_prefab_id = CmdFunctionRegister(Utf8Inline("led_node_set_rb_prefab"), 2, &cmd_led_node_set_rb_prefab).index;
-	cmd_led_node_set_csg_brush_id = CmdFunctionRegister(Utf8Inline("led_node_set_csg_brush"), 2, &cmd_led_node_set_csg_brush).index;
+	cmd_led_node_set_csgBRush_id = CmdFunctionRegister(Utf8Inline("led_node_set_csgBRush"), 2, &cmd_led_node_set_csgBRush).index;
 	cmd_led_node_set_proxy3d_id = CmdFunctionRegister(Utf8Inline("led_node_set_proxy3d"), 7, &cmd_led_node_set_proxy3d).index;
 
 	cmd_led_compile_id = CmdFunctionRegister(Utf8Inline("led_compile"), 0, &cmd_led_compile).index;
@@ -127,9 +127,9 @@ void cmd_led_node_set_rb_prefab(void)
 	led_node_set_rb_prefab(g_editor, g_queue->cmd_exec->arg[0].utf8, g_queue->cmd_exec->arg[1].utf8);
 }
 
-void cmd_led_node_set_csg_brush(void)
+void cmd_led_node_set_csgBRush(void)
 {
-	led_node_set_csg_brush(g_editor, g_queue->cmd_exec->arg[0].utf8, g_queue->cmd_exec->arg[1].utf8);
+	led_node_set_csgBRush(g_editor, g_queue->cmd_exec->arg[0].utf8, g_queue->cmd_exec->arg[1].utf8);
 }
 
 void cmd_led_node_set_proxy3d(void)
@@ -526,7 +526,7 @@ struct slot led_node_add(struct led *led, const utf8 id)
 			node->flags = LED_FLAG_NONE;
 			node->id = copy;
 			node->key = key;
-			node->cache = ui_node_cache_null();
+			node->cache = ui_NodeCacheNull();
 
 			const vec3 axis = { 0.0f, 1.0f, 0.0f };
 			Vec3Set(node->position, 0.0f, 0.0f, 0.0f);
@@ -534,7 +534,7 @@ struct slot led_node_add(struct led *led, const utf8 id)
 
 			node->rb_prefab = STRING_DATABASE_STUB_INDEX;
 			node->proxy = HI_NULL_INDEX;
-			node->csg_brush = STRING_DATABASE_STUB_INDEX;
+			node->csgBRush = STRING_DATABASE_STUB_INDEX;
 		}
 	}
 
@@ -586,10 +586,10 @@ static void led_remove_marked_structs(struct led *led)
 		}
 
 		strdb_Dereference(&led->rb_prefab_db, node->rb_prefab);
-		strdb_Dereference(&led->csg.brush_db, node->csg_brush);
+		strdb_Dereference(&led->csg.brush_db, node->csgBRush);
 
 		node->rb_prefab = STRING_DATABASE_STUB_INDEX;
-		node->csg_brush = STRING_DATABASE_STUB_INDEX;
+		node->csgBRush = STRING_DATABASE_STUB_INDEX;
 		node->proxy = HI_NULL_INDEX;
 
 		HashMapRemove(led->node_map, node->key, i);
@@ -652,8 +652,8 @@ void led_node_set_rb_prefab(struct led *led, const utf8 id, const utf8 prefab)
 		else
 		{
 			strdb_Dereference(&led->rb_prefab_db, node->rb_prefab);
-			strdb_Dereference(&led->csg.brush_db, node->csg_brush);
-			node->csg_brush = STRING_DATABASE_STUB_INDEX;
+			strdb_Dereference(&led->csg.brush_db, node->csgBRush);
+			node->csgBRush = STRING_DATABASE_STUB_INDEX;
 
 			node->rb_prefab = slot.index;
 			node->flags &= ~(LED_CSG | LED_PHYSICS);
@@ -662,7 +662,7 @@ void led_node_set_rb_prefab(struct led *led, const utf8 id, const utf8 prefab)
 	}
 }
 
-void led_node_set_csg_brush(struct led *led, const utf8 id, const utf8 brush)
+void led_node_set_csgBRush(struct led *led, const utf8 id, const utf8 brush)
 {
 	struct slot slot = led_node_lookup(led, id);
 	struct led_node *node = slot.address;
@@ -684,10 +684,10 @@ void led_node_set_csg_brush(struct led *led, const utf8 id, const utf8 brush)
 		else
 		{
 			strdb_Dereference(&led->rb_prefab_db, node->rb_prefab);
-			strdb_Dereference(&led->csg.brush_db, node->csg_brush);
+			strdb_Dereference(&led->csg.brush_db, node->csgBRush);
 			node->rb_prefab = STRING_DATABASE_STUB_INDEX;
 
-			node->csg_brush = slot.index;
+			node->csgBRush = slot.index;
 			node->flags &= ~(LED_CSG | LED_PHYSICS);
 			node->flags |= LED_CSG;
 		}

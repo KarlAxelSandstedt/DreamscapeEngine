@@ -127,7 +127,7 @@ struct physicsPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 initial
 	pipeline.debug = ArenaPush(mem, g_arch_config->logical_core_count * sizeof(struct collisionDebug));
 	for (u32 i = 0; i < pipeline.debug_count; ++i)
 	{
-		pipeline.debug[i].stack_segment = stack_visual_segment_alloc(NULL, 1024, GROWABLE);
+		pipeline.debug[i].stack_segment = stack_visualSegmentAlloc(NULL, 1024, GROWABLE);
 		task_stream_dispatch(&pipeline.frame, stream, ThreadSetCollisionDebug, &pipeline);
 	}
 
@@ -147,7 +147,7 @@ void PhysicsPipelineFree(struct physicsPipeline *pipeline)
 #ifdef DS_PHYSICS_DEBUG
 	for (u32 i = 0; i < pipeline->debug_count; ++i)
 	{
-		stack_visual_segment_free(&pipeline->debug[i].stack_segment);
+		stack_visualSegmentFree(&pipeline->debug[i].stack_segment);
 	}
 #endif
 	BvhFree(&pipeline->dynamic_tree);
@@ -162,7 +162,7 @@ static void InternalPhysicsPipelineClearFrame(struct physicsPipeline *pipeline)
 #ifdef DS_PHYSICS_DEBUG
 	for (u32 i = 0; i < pipeline->debug_count; ++i)
 	{
-		stack_visual_segment_flush(&pipeline->debug[i].stack_segment);
+		stack_visualSegmentFlush(&pipeline->debug[i].stack_segment);
 	}
 #endif
 	pipeline->proxy_overlap_count = 0;
@@ -181,7 +181,7 @@ void PhysicsPipelineFlush(struct physicsPipeline *pipeline)
 #ifdef DS_PHYSICS_DEBUG
 	for (u32 i = 0; i < pipeline->debug_count; ++i)
 	{
-		stack_visual_segment_flush(&pipeline->debug[i].stack_segment);
+		stack_visualSegmentFlush(&pipeline->debug[i].stack_segment);
 	}
 #endif
 	DbvhFlush(&pipeline->dynamic_tree);

@@ -40,7 +40,7 @@ static void CmdDebugPrint(void)
 void ds_CmdApiInit(void)
 {
 	g_name_to_cmd_f_map = HashMapAlloc(NULL, 128, 128, GROWABLE);
-	g_cmd_f = stack_cmd_function_alloc(NULL, 128, STACK_GROWABLE);
+	g_cmd_f = stack_cmd_functionAlloc(NULL, 128, STACK_GROWABLE);
 
 	const utf8 debug_print_str = Utf8Inline("debug_print");
 	g_cmd_internal_debug_print_index = CmdFunctionRegister(debug_print_str, 1, &CmdDebugPrint).index;
@@ -49,7 +49,7 @@ void ds_CmdApiInit(void)
 void ds_CmdApiShutdown(void)
 {
 	HashMapFree(&g_name_to_cmd_f_map);
-	stack_cmd_function_free(&g_cmd_f);
+	stack_cmd_functionFree(&g_cmd_f);
 }
 
 struct cmd_queue CmdQueueAlloc(void)
@@ -324,7 +324,7 @@ struct slot CmdFunctionRegister(const utf8 name, const u32 args_count, void (*ca
 	{
 		slot.index = g_cmd_f.next;
 		slot.address = g_cmd_f.arr + g_cmd_f.next;
-		stack_cmd_function_push(&g_cmd_f, cmd_f);
+		stack_cmd_functionPush(&g_cmd_f, cmd_f);
 	
 		const u32 key = Utf8Hash(name);
 		HashMapAdd(&g_name_to_cmd_f_map, key, slot.index);

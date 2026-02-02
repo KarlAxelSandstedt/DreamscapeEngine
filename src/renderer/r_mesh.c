@@ -200,7 +200,7 @@ void r_mesh_set_capsule(struct arena *mem, struct r_mesh *mesh, const f32 half_h
 	const u32 n = 2*n_lat_cap_slice*n_long_slice + n_lat_cyl_slice*n_long_slice + 2;
 	if (arr.len < n)
 	{
-		ArenaPopPacked(mem, arr.mem_pushed);
+		ArenaPopPacked(mem, arr.memPushed);
 		r_mesh_set_stub_box(mesh);
 		return;
 	}

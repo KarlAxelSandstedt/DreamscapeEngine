@@ -25,34 +25,34 @@ void r_ui_draw(struct ui *ui)
 	const vec4 zero4 = { 0.0f, 0.0f, 0.0f, 0.0f };
 	const vec3 zero3 = { 0.0f, 0.0f, 0.0f };
 
-	struct ui_draw_bucket *b = PoolAddress(&ui->bucket_pool, ui->bucket_list.first);
+	struct ui_DrawBucket *b = PoolAddress(&ui->bucket_pool, ui->bucket_list.first);
 	for (u32 i = dll_Next(b); i != DLL_NULL; i = dll_Next(b)) 
 	{
 		b = PoolAddress(&ui->bucket_pool, i);
 		/* we reverse depth since in ui, larger depths goes infront, but in renderer lower depths drawn last */
-		const u64 depth = ((1 << R_CMD_DEPTH_BITS) - 1) - (UI_CMD_DEPTH_GET(b->cmd) << UI_CMD_LAYER_BITS);
-		const u64 transparency = (UI_CMD_DEPTH_GET(b->cmd) == UI_CMD_LAYER_TEXT_SELECTION)
+		const u64 depth = ((1 << R_CMD_DEPTH_BITS) - 1) - (ui_CmdDepthGet(b->cmd) << UI_CMD_LAYER_BITS);
+		const u64 transparency = (ui_CmdDepthGet(b->cmd) == UI_CMD_LAYER_TEXT_SELECTION)
 			? R_CMD_TRANSPARENCY_SUBTRACTIVE
 			: R_CMD_TRANSPARENCY_ADDITIVE;
 		struct r_instance *instance = r_instance_add_non_cached(
 				r_command_key(
 					R_CMD_SCREEN_LAYER_HUD,
-					depth + UI_CMD_LAYER_GET(b->cmd),	
+					depth + ui_CmdLayerGet(b->cmd),	
 					R_CMD_TRANSPARENCY_ADDITIVE,
-					r_material_construct(PROGRAM_UI, MESH_NONE, UI_CMD_TEXTURE_GET(b->cmd)),
+					r_material_construct(PROGRAM_UI, MESH_NONE, ui_CmdTextureGet(b->cmd)),
 					R_CMD_PRIMITIVE_TRIANGLE,
 					R_CMD_INSTANCED,
 					R_CMD_ELEMENTS));
 		instance->type = R_INSTANCE_UI;
 		instance->ui_bucket = b;
 
-		if (UI_CMD_LAYER_GET(b->cmd) == UI_CMD_LAYER_TEXT)
+		if (ui_CmdLayerGet(b->cmd) == UI_CMD_LAYER_TEXT)
 		{
 			u64 total_glyph_count = 0;
-			struct ui_draw_node *draw_node = instance->ui_bucket->list;
+			struct ui_DrawNode *draw_node = instance->ui_bucket->list;
 			for (u32 i = 0; i < instance->ui_bucket->count; ++i)
 			{
-				const struct ui_node *n = hi_Address(ui->node_hierarchy, draw_node->index);
+				const struct ui_Node *n = hi_Address(ui->node_hierarchy, draw_node->index);
 				draw_node = draw_node->next;
 				struct textLine *line = n->layout_text->line;
 				for (u32 l = 0; l < n->layout_text->line_count; ++l)

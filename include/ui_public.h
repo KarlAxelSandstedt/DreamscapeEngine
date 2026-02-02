@@ -20,6 +20,10 @@
 #ifndef __UI_PUBLIC_H__
 #define __UI_PUBLIC_H__
 
+#ifdef __cplusplus
+extern "C" { 
+#endif
+
 #include "ds_base.h"
 #include "ds_math.h"
 #include "ds_graphics.h"
@@ -32,13 +36,16 @@
 
 #define TAB_SIZE	8
 
+/* allocate ui resources */
+void	ds_UiApiInit(void);
+
 /*
 ui_visual
 =========
 */
 
 /* Visual values push at the start of every ui_frame. */
-struct ui_visual
+struct ui_Visual
 {
 	/* default colors */
 	vec4			background_color;
@@ -62,7 +69,7 @@ struct ui_visual
 	f32			text_pad_y;
 };
 
-struct ui_visual ui_visual_init(const vec4 background_color
+struct ui_Visual ui_VisualInit(const vec4 background_color
 		, const vec4 border_color
 		, const vec4 gradient_color[BOX_CORNER_COUNT]
 		, const vec4 sprite_color
@@ -81,17 +88,17 @@ struct ui_visual ui_visual_init(const vec4 background_color
 /********************************************************************************************************/
 
 /*
-ui_text_input
+ui_TextInput
 =============
-ui_text_input is a helper struct that contains text and text selection state. The ui core stores an ui_text_input
-alias when editing text. This alias either points to a ui_node's internal ui_text_input (if the flag
-UI_TEXT_EDIT_INTER_BUF_ON_FOCUS is set in the node) or an externally provided ui_text_input. 
+ui_TextInput is a helper struct that contains text and text selection state. The ui core stores an ui_TextInput
+alias when editing text. This alias either points to a ui_node's internal ui_TextInput (if the flag
+UI_TEXT_EDIT_INTER_BUF_ON_FOCUS is set in the node) or an externally provided ui_TextInput. 
 If an external structure is provided, make sure the structure cannot be freed or reallocated during the time
 from when it was last built in a ui frame to the time of the next command queue execution.
 
 */
 
-struct ui_text_input
+struct ui_TextInput
 {
 	u32	focused; 	
 	u32	cursor;		/* cursor position */
@@ -99,12 +106,12 @@ struct ui_text_input
 	utf32	text;
 };
 
-struct ui_text_input 	ui_text_input_empty(void);
-struct ui_text_input 	ui_text_input_buffered(u32 buf[], const u32 len);
-struct ui_text_input 	ui_text_input_alloc(struct arena *mem, const u32 max_len);
+struct ui_TextInput 	ui_TextInputEmpty(void);
+struct ui_TextInput 	ui_TextInputBuffered(u32 buf[], const u32 len);
+struct ui_TextInput 	ui_TextInputAlloc(struct arena *mem, const u32 max_len);
 
-struct slot 		ui_text_input_f(struct ui_text_input *input, const utf32 unfocused_text, const char *fmt, ...);
-struct slot 		ui_text_input(struct ui_text_input *input, const utf32 unfocused_text, const utf8 id);
+struct slot 		ui_TextInputF(struct ui_TextInput *input, const utf32 unfocused_text, const char *fmt, ...);
+struct slot 		ui_TextInput(struct ui_TextInput *input, const utf32 unfocused_text, const utf8 id);
 
 /*
 ui_field
@@ -113,17 +120,17 @@ ui_field widgets are Input areas to display various types as strings. If interac
 a modification of the input value.
 */
 
-f32	ui_field_f32(const f32 value, const intv range, const utf8 id);
-f32	ui_field_f32_f(const f32 value, const intv range, const char *fmt, ...);
+f32	ui_FieldF32(const f32 value, const intv range, const utf8 id);
+f32	ui_FieldF32F(const f32 value, const intv range, const char *fmt, ...);
 
-u64	ui_field_u64(const u64 value, const intvu64 range, const utf8 id);
-u64	ui_field_u64_f(const u64 value, const intvu64 range, const char *fmt, ...);
+u64	ui_FieldU64(const u64 value, const intvu64 range, const utf8 id);
+u64	ui_FieldU64F(const u64 value, const intvu64 range, const char *fmt, ...);
 
-i64	ui_field_i64(const i64 value, const intvi64 range, const utf8 id);
-i64	ui_field_i64_f(const i64 value, const intvi64 range, const char *fmt, ...);
+i64	ui_FieldI64(const i64 value, const intvi64 range, const utf8 id);
+i64	ui_FieldI64F(const i64 value, const intvi64 range, const char *fmt, ...);
 
-utf8	ui_field_utf8(const utf8 id);
-utf8	ui_field_utf8_f(const char *fmt, ...);
+utf8	ui_FieldUtf8(const utf8 id);
+utf8	ui_FieldUtf8F(const char *fmt, ...);
 
 /*
 ui_list
@@ -132,7 +139,7 @@ ui_list widgets are areas that displays selectable rows or columns of a specifie
 Only rows within the visible range are actually constructed.
 */
 
-enum ui_selection_type
+enum ui_SelectionType
 {
 	UI_SELECTION_NONE,	/* Entries or non-selectable. 			  */
 	UI_SELECTION_UNIQUE,	/* Only a single entry can be selected at a time. */
@@ -140,17 +147,17 @@ enum ui_selection_type
 	UI_SELECTION_COUNT
 };
 
-struct ui_list
+struct ui_List
 {
 	u64			last_build_frame;		/* laft frame list was built */
 	u64			last_selection_happened; 	/* Last frame a entry was selected */
 	u32			last_selected;			/* last entry in current frame to be selected */
-	enum ui_selection_type	selection_type;			/* MULTI or UNIQUE; If unique, only one entry can
+	enum ui_SelectionType	selection_type;			/* MULTI or UNIQUE; If unique, only one entry can
 								   be selected  */
 
 	u32			cache_count;			/* cached count from previous frame */
 	u32			frame_count;			/* current count in current frame */
-	struct ui_node *	frame_node_address;
+	struct ui_Node *	frame_node_address;
 	u32			frame_node;
 
 	intv 			visible;		/* visible pixel range in list 
@@ -160,23 +167,23 @@ struct ui_list
 	enum axis_2		axis;			/* child layout axis 			*/
 };
 
-#define ui_list(list, fmt, ...)		UI_SCOPE(ui_list_push(list, fmt,  __VA_ARGS__), ui_list_pop(list))
+#define ui_list(list, fmt, ...)		UI_SCOPE(ui_ListPush(list, fmt,  __VA_ARGS__), ui_ListPop(list))
 
-struct ui_list 		ui_list_init(enum axis_2 axis, const f32 max_pixel_size, const f32 entry_pixel_size, const enum ui_selection_type unique_selection);
-void			ui_list_push(struct ui_list *list, const char *format, ...);
-void			ui_list_pop(struct ui_list *list);
-struct ui_node_cache	ui_list_entry_alloc_cached(struct ui_list *list, const utf8 id, const struct ui_node_cache cache);
-struct slot 		ui_list_entry_alloc(struct ui_list *list, const utf8 id);
-struct slot 		ui_list_entry_alloc_f(struct ui_list *list, const char *format, ...);
+struct ui_List 		ui_ListInit(enum axis_2 axis, const f32 max_pixel_size, const f32 entry_pixel_size, const enum ui_SelectionType unique_selection);
+void			ui_ListPush(struct ui_List *list, const char *format, ...);
+void			ui_ListPop(struct ui_List *list);
+struct ui_NodeCache	ui_ListEntryAllocCached(struct ui_List *list, const utf8 id, const struct ui_NodeCache cache);
+struct slot 		ui_ListEntryAlloc(struct ui_List *list, const utf8 id);
+struct slot 		ui_ListEntryAllocF(struct ui_List *list, const char *format, ...);
 
 /*
-ui_dropdown_menu
+ui_DropdownMenu
 ================
-ui_dropdown_menu is a widget that displays a string in its box. When the box is hovered, a list of entries is attached
+ui_DropdownMenu is a widget that displays a string in its box. When the box is hovered, a list of entries is attached
 to some choosen side of the menu.
 */
 
-enum ui_dropdown_position
+enum ui_DropdownPosition
 {
 	UI_DROPDOWN_BELOW,
 	UI_DROPDOWN_ABOVE,
@@ -184,10 +191,10 @@ enum ui_dropdown_position
 	UI_DROPDOWN_RIGHT,
 };
 
-struct ui_dropdown_menu
+struct ui_DropdownMenu
 {
 	u64				flags;
-	enum ui_dropdown_position	position;
+	enum ui_DropdownPosition	position;
 
 	u32				root;
 
@@ -196,17 +203,17 @@ struct ui_dropdown_menu
 	f32				dropdown_x;
 	f32				dropdown_y;
 
-	struct ui_list	list;
+	struct ui_List			list;
 };
 
-struct ui_dropdown_menu ui_dropdown_menu_init(const f32 max_dropdown_height, const vec2 entry_size, const enum ui_dropdown_position position);
-u32			ui_dropdown_menu(struct ui_dropdown_menu *menu, const utf8 id);
-u32			ui_dropdown_menu_f(struct ui_dropdown_menu *menu, const char *format, ...);
-void			ui_dropdown_menu_push(struct ui_dropdown_menu *menu);
-void			ui_dropdown_menu_pop(struct ui_dropdown_menu *menu);
+struct ui_DropdownMenu 	ui_DropdownMenuInit(const f32 max_dropdown_height, const vec2 entry_size, const enum ui_DropdownPosition position);
+u32			ui_DropdownMenu(struct ui_DropdownMenu *menu, const utf8 id);
+u32			ui_DropdownMenuF(struct ui_DropdownMenu *menu, const char *format, ...);
+void			ui_DropdownMenuPush(struct ui_DropdownMenu *menu);
+void			ui_DropdownMenuPop(struct ui_DropdownMenu *menu);
 
-struct slot		ui_dropdown_menu_entry(struct ui_dropdown_menu *menu, const utf8 id);
-struct slot		ui_dropdown_menu_entry_f(struct ui_dropdown_menu *menu, const char *format, ...);
+struct slot		ui_DropdownMenuEntry(struct ui_DropdownMenu *menu, const utf8 id);
+struct slot		ui_DropdownMenuEntryF(struct ui_DropdownMenu *menu, const char *format, ...);
 
 /*
 ui_tooltip
@@ -216,25 +223,25 @@ ui_tooltip
 
 /***************************************** ######TODO *****************************************/
 
-struct cmd_console
+struct ui_CmdConsole
 {
-	struct ui_text_input	prompt;
+	struct ui_TextInput	prompt;
 	u32			visible;
 };
 
-void 			ui_cmd_console(struct cmd_console *console, const char *fmt, ...);
+void	ui_CmdConsoleF(struct ui_CmdConsole *console, const char *fmt, ...);
 
-u64			ui_button_f(const u64 flags, const char *fmt, ...);
+u64	ui_ButtonF(const u64 flags, const char *fmt, ...);
 
-/***************************************** ui_timeline ******************************************/
+/***************************************** ui_Timeline ******************************************/
 
-struct timeline_row_config
+struct ui_TimelineRowConfig
 {
 	f32	height;		/* pixel_height */
 	intv	depth_visible;	/* visible task depth */
 };
 
-struct timeline_config
+struct ui_TimelineConfig
 {
 	u64 	ns_interval_start;	/* start of interval covered by timeline window */
 	u64 	ns_interval_end;	/* end of interval covered by timeline window   */
@@ -243,8 +250,8 @@ struct timeline_config
 	u32	fixed;			/* helper: should the ns interval be continuously updated? */
 
 	u32 	row_count;
-	u32	row_pushed;
-	struct timeline_row_config *row;
+	u32	rowPushed;
+	struct ui_TimelineRowConfig *row;
 
 	/* display geometry */
 	f32	width;			/* pixel width of timeline */
@@ -284,15 +291,15 @@ struct timeline_config
 	u32	task_window;		
 };
 
-#define ui_timeline_row(config, row, format, ...) UI_SCOPE(ui_timeline_row_push(config, row, format, __VA_ARGS__), ui_timeline_row_pop(config))
+#define ui_TimelineRow(config, row, format, ...) UI_SCOPE(ui_TimelineRowPush(config, row, format, __VA_ARGS__), ui_TimelineRowPop(config))
 
-void 			ui_timeline(struct timeline_config *config);
-void 			ui_timeline_row_push(struct timeline_config *config, const u32 row, const char *format, ...);
-void 			ui_timeline_row_pop(struct timeline_config *config);
+void 	ui_Timeline(struct ui_TimelineConfig *config);
+void 	ui_TimelineRowPush(struct ui_TimelineConfig *config, const u32 row, const char *format, ...);
+void 	ui_TimelineRowPop(struct ui_TimelineConfig *config);
 
 /***************************************** Popup Windows *****************************************/
 
-enum ui_popup_type
+enum ui_PopupType
 {
 	UI_POPUP_CHOICE,	
 	UI_POPUP_UTF8_DISPLAY,
@@ -300,7 +307,7 @@ enum ui_popup_type
 	UI_POPUP_COUNT
 };
 
-enum ui_popup_state
+enum ui_PopupState
 {
 	UI_POPUP_STATE_NULL,			/* popup is not allocated 				*/
 	UI_POPUP_STATE_RUNNING,			/* popup is displaying contents				*/
@@ -312,17 +319,17 @@ enum ui_popup_state
 /*
  * TODO Usage: 
  */
-struct ui_popup
+struct ui_Popup
 {
 	u32 			window;
-	enum ui_popup_type	type;
-	enum ui_popup_state	state;
+	enum ui_PopupType	type;
+	enum ui_PopupState	state;
 
 	utf8			display1;
 	utf8			display2;
 	utf8			display3;
 
-	struct ui_text_input	*prompt;
+	struct ui_TextInput	*prompt;
 	utf8			*input;
 
 	union
@@ -342,21 +349,12 @@ struct ui_popup
 	};
 };
 
-struct ui_popup ui_popup_null(void);
-void		ui_popup_try_destroy_and_set_to_null(struct ui_popup *popup);
+struct ui_Popup ui_PopupNull(void);
+void		ui_PopupTryDestroyAndSetToNull(struct ui_Popup *popup);
 
-void 		ui_popup_utf8_display(struct ui_popup *popup, const utf8 display, const char *title, const struct ui_visual *visual);
-void 		ui_popup_utf8_input(struct ui_popup *popup, utf8 *input, struct ui_text_input *line, const utf8 description, const utf8 prefix, const char *title, const struct ui_visual *visual);
-void 		ui_popup_choice(struct ui_popup *popup, const utf8 description, const utf8 positive, const utf8 negative, const char *title, const struct ui_visual *visual);
-
-/********************************************************************************************************/
-/*					       UI CORE							*/
-/********************************************************************************************************/
-
-/* allocate ui resources */
-void ui_init_global_state(void);
-/* free ui resources */
-void ui_free_global_state(void);
+void 		ui_PopupUtf8Display(struct ui_Popup *popup, const utf8 display, const char *title, const struct ui_Visual *visual);
+void 		ui_PopupUtf8Input(struct ui_Popup *popup, utf8 *input, struct ui_TextInput *line, const utf8 description, const utf8 prefix, const char *title, const struct ui_Visual *visual);
+void 		ui_PopupChoice(struct ui_Popup *popup, const utf8 description, const utf8 positive, const utf8 negative, const char *title, const struct ui_Visual *visual);
 
 /********************************************************************************************************/
 /*				      UI DRAW COMMANDS AND BUCKETING					*/
@@ -374,46 +372,46 @@ void ui_free_global_state(void);
 #define UI_CMD_LAYER_MASK	((((u32) 1 << UI_CMD_LAYER_BITS) - (u32) 1) << UI_CMD_LAYER_LOW_BIT)
 #define UI_CMD_DEPTH_MASK	((((u32) 1 << UI_CMD_DEPTH_BITS) - (u32) 1) << UI_CMD_DEPTH_LOW_BIT)
 
-#define UI_CMD_TEXTURE_GET(val32)	((val32 & UI_CMD_TEXTURE_MASK) >> UI_CMD_TEXTURE_LOW_BIT)
-#define UI_CMD_LAYER_GET(val32)		((val32 & UI_CMD_LAYER_MASK) >> UI_CMD_LAYER_LOW_BIT)
-#define UI_CMD_DEPTH_GET(val32)		((val32 & UI_CMD_DEPTH_MASK) >> UI_CMD_DEPTH_LOW_BIT)
+#define ui_CmdTextureGet(val32)	((val32 & UI_CMD_TEXTURE_MASK) >> UI_CMD_TEXTURE_LOW_BIT)
+#define ui_CmdLayerGet(val32)		((val32 & UI_CMD_LAYER_MASK) >> UI_CMD_LAYER_LOW_BIT)
+#define ui_CmdDepthGet(val32)		((val32 & UI_CMD_DEPTH_MASK) >> UI_CMD_DEPTH_LOW_BIT)
 
 #define UI_CMD_LAYER_VISUAL		((u32) 0x3)
 #define UI_CMD_LAYER_INTER		((u32) 0x2)
 #define UI_CMD_LAYER_TEXT_SELECTION 	((u32) 0x1)
 #define UI_CMD_LAYER_TEXT		((u32) 0x0)
 
-#define UI_DRAW_COMMAND(depth, layer, texture)	 					\
+#define ui_DrawCommand(depth, layer, texture)	 					\
 					(	  ((depth) << UI_CMD_DEPTH_LOW_BIT)	\
 						| ((layer) << UI_CMD_LAYER_LOW_BIT)	\
 						| ((texture) << UI_CMD_TEXTURE_LOW_BIT)	\
 					)
-struct ui_node;
-typedef struct ui_text_selection
+struct ui_Node;
+typedef struct ui_TextSelection
 {
-	const struct ui_node *	node;
+	const struct ui_Node *	node;
 	struct textLayout *	layout;
 	vec4			color;
 	u32			low;
 	u32			high;
-} ui_text_selection;
-DECLARE_STACK(ui_text_selection);
+} ui_TextSelection;
+DECLARE_STACK(ui_TextSelection);
 
-struct ui_text_selection ui_text_selection_empty(void);
+struct ui_TextSelection ui_TextSelectionEmpty(void);
 
-struct ui_draw_node
+struct ui_DrawNode
 {
-	struct ui_draw_node *	next;
+	struct ui_DrawNode *	next;
 	u32 			index;	/* index to node if CMD_LAYER != TEXT_SELECTION, otherwise index to text selection stack. */
 };
 
-struct ui_draw_bucket
+struct ui_DrawBucket
 {
 	POOL_SLOT_STATE;
 	DLL_SLOT_STATE;
 	u32 			cmd;
 	u32 			count;
-	struct ui_draw_node *	list;
+	struct ui_DrawNode *	list;
 };
 
 /********************************************************************************************************/
@@ -432,7 +430,7 @@ extern u32 cmd_ui_text_op;
  * 	and any text after the selection, i.e. the contents in [high, end], is either shifted downwards or upwards
  * 	depending on the context. 
  */
-struct text_op
+struct ui_TextOp
 {
 	utf32	str_copy;	/* If not empty, we cope contents to clipboard 		*/
 	utf32	str_replace;	/* Replace [low, high) with contents (Even if Empty) 	*/
@@ -443,7 +441,7 @@ struct text_op
 };
 
 /* UI Interaction state, contains both persistent and frame state */
-struct ui_interaction
+struct ui_Interaction
 {
 	/* ui interactions */
 	u64 	interactions;
@@ -454,7 +452,7 @@ struct ui_interaction
 	u32			text_internal_buf[256];
 	u32 			text_edit_mode;
 	utf8			text_edit_id;		
-	struct ui_text_input *	text_edit;	/* aliasing external ui_text_input. */
+	struct ui_TextInput *	text_edit;	/* aliasing external ui_TextInput. */
 
 	vec2	cursor_delta;
 	vec2 	cursor_position;    /* window bottom left = (0.0f, 0.0f) */
@@ -480,7 +478,7 @@ struct ui_interaction
 /********************************************************************************************************/
 
 /* ui node size type for each axis */
-enum ui_size_type
+enum ui_SizeType
 {
 	UI_SIZE_NONE,		/* No size type, //TODO Explicitly set hardcoded size??? */
 	UI_SIZE_PIXEL,		/* Wanted size is given in pixels on node creation */
@@ -494,10 +492,10 @@ enum ui_size_type
 	UI_SIZE_COUNT
 };
 
-/* ui_size: semantic size type per axis of a ui_node. */
-typedef struct ui_size
+/* ui_Size: semantic size type per axis of a ui_node. */
+typedef struct ui_Size
 {
-	enum ui_size_type	type;		/* size type */
+	enum ui_SizeType	type;		/* size type */
 	f32			strictness;	/* lower bound of final size in percentage of computed size */
 	union
 	{
@@ -506,8 +504,8 @@ typedef struct ui_size
 		f32		line_width;	/* line width in pixels */
 		intv		intv;		/* unit interval 	*/
 	};
-} ui_size;
-DECLARE_STACK(ui_size);
+} ui_Size;
+DECLARE_STACK(ui_Size);
 
 /********************************************************************************************************/
 /*				               UI STATE 						*/
@@ -518,7 +516,8 @@ DECLARE_STACK(utf32);
 /* Per window ui struct */
 struct ui
 {
-	struct ui_interaction	inter;
+	struct memSlot		mem_slot;
+	struct ui_Interaction	inter;
 
 	struct pool		bucket_pool;
 	struct dll		bucket_list;
@@ -534,7 +533,7 @@ struct ui
 	struct hi 		node_hierarchy;
 	struct hashMap 		node_map;
 
-	stack_ui_text_selection	frame_stack_text_selection;
+	stack_ui_TextSelection	frame_stack_text_selection;
 	vec4			text_cursor_color;
 	vec4			text_selection_color;
 
@@ -573,7 +572,7 @@ struct ui
 
 	stack_u32	stack_fixed_depth;
 	stack_f32	stack_floating[AXIS_2_COUNT];	
-	stack_ui_size	stack_ui_size[AXIS_2_COUNT];
+	stack_ui_Size	stack_ui_Size[AXIS_2_COUNT];
 	stack_intv	stack_viewable[AXIS_2_COUNT];
 	stack_u32	stack_child_layout_axis;
 	struct stackVec4	stack_background_color;
@@ -587,11 +586,11 @@ struct ui
 
 extern struct ui *g_ui;
 
-struct ui *	ui_alloc(void);					/* allocate a new ui 		*/
-void		ui_dealloc(struct ui *ui);			/* dealloc an ui 		*/
-void		ui_set(struct ui *ui);				/* set global ui within ui_*.c 	*/
-void		ui_frame_begin(const vec2u32 window_size, const struct ui_visual *base); /* begin new ui frame */
-void		ui_frame_end(void);				/* end ui frame 		*/
+struct ui *	ui_Alloc(void);					/* allocate a new ui 		*/
+void		ui_Dealloc(struct ui *ui);			/* dealloc an ui 		*/
+void		ui_Set(struct ui *ui);				/* set global ui within ui_*.c 	*/
+void		ui_FrameBegin(const vec2u32 window_size, const struct ui_Visual *base); /* begin new ui frame */
+void		ui_FrameEnd(void);				/* end ui frame 		*/
 
 /********************************************************************************************************/
 /*					 ui_node internals 						*/
@@ -679,7 +678,7 @@ void		ui_frame_end(void);				/* end ui frame 		*/
 #define		UI_INTER_RECURSIVE_SELECT	(UI_INTER_SELECT | UI_INTER_LEFT_CLICK)
 
 /******************** General control flags ********************/
-#define		UI_UNIT_POSITIVE_DOWN		((u64) 1 << 34) /* Default Y-layout of ui_size_unit's is that y grow
+#define		UI_UNIT_POSITIVE_DOWN		((u64) 1 << 34) /* Default Y-layout of ui_SizeUnit's is that y grow
 							  	   upwards, by setting this flag, node unit sizes
 								   will be interpreted with Y growing downwards.  */
 #define		UI_SKIP_HOVER_SEARCH		((u64) 1 << 35) /* Skip searching if cursor is hovering the node 
@@ -725,11 +724,11 @@ void		ui_frame_end(void);				/* end ui frame 		*/
 								   when parent is childsum  */
 #define		UI_PERC_POSTPONED_Y		((u64) 1 << 60) /* perc calculations are postponed (in Y) until after 
 								   violation solving. */
-struct ui_node
+struct ui_Node
 {
 	HI_SLOT_STATE;
 	utf8			id;		/* unique identifier  */
-	struct ui_text_input	input;		/* text to display OR text to edit */
+	struct ui_TextInput	input;		/* text to display OR text to edit */
 
 	u64		flags;			/* interaction, draw flags */
 	u64		last_frame_touched;	/* if not touched within new frame, the node is pruned at the end */
@@ -744,7 +743,7 @@ struct ui_node
 	enum spriteId	sprite;
 
 	enum axis_2	child_layout_axis;
-	struct ui_size 	semantic_size[AXIS_2_COUNT];
+	struct ui_Size 	semantic_size[AXIS_2_COUNT];
 
 	/* text layout values */
 	enum alignment_x	text_align_x;
@@ -772,198 +771,198 @@ struct ui_node
 	f32		corner_radius;
 };
 
-struct ui_node_cache
+struct ui_NodeCache
 {
 	u64		last_frame_touched;
-	struct ui_node *frame_node;	
+	struct ui_Node *frame_node;	
 	u32		index;	
 };
 
-struct ui_node_cache	ui_node_cache_null(void);
+struct ui_NodeCache	ui_NodeCacheNull(void);
 
 #define UI_NON_CACHED_INDEX 	HI_ORPHAN_STUB_INDEX
-struct ui_node_cache 	ui_node_alloc_cached(const u64 flags, const utf8 id, const utf8 text, const struct ui_node_cache cache);
+struct ui_NodeCache 	ui_NodeAllocCached(const u64 flags, const utf8 id, const utf8 text, const struct ui_NodeCache cache);
 
 /* allocate new node, values are set according to stack values */
-struct slot	ui_node_alloc(const u64 flags, const utf8 *formatted);
+struct slot	ui_NodeAlloc(const u64 flags, const utf8 *formatted);
 /* format input string and allocate new node, values are set according to stack values */
-struct slot	ui_node_alloc_f(const u64 flags, const char *format, ...);
+struct slot	ui_NodeAllocF(const u64 flags, const char *format, ...);
 /* allocate a new non-hashed node, values are set according to stack values */
-struct slot	ui_node_alloc_non_hashed(const u64 flags);
+struct slot	ui_NodeAllocNonHashed(const u64 flags);
 /* get node address */
-struct ui_node *ui_node_address(const u32 node);
+struct ui_Node *ui_NodeAddress(const u32 node);
 /* lookup node using id; returns (NULL, U32_MAX) on not found. */
-struct slot	ui_node_lookup(const utf8 *id);
+struct slot	ui_NodeLookup(const utf8 *id);
 /* push node stack; any new node created becomes a decendant */
-void 		ui_node_push(const u32 node);		
+void 		ui_NodePush(const u32 node);		
 /* pop node stack */
-void 		ui_node_pop(void);			
+void 		ui_NodePop(void);			
 /* get top node address (parent address) */
-struct ui_node *ui_node_top(void);
+struct ui_Node *ui_NodeTop(void);
 
 
 /* add layout node padding given number of pixels according to stack_pad (non-cacheable) */
-u32	ui_pad();
+u32	ui_Pad();
 /* add layout node padding given number of pixels (non-cacheable) */
-u32	ui_pad_pixel(const f32 pixels);
+u32	ui_PadPixel(const f32 pixels);
 /* add layout node padding given percentage of parent (non-cacheable) */
-u32	ui_pad_perc(const f32 perc);
+u32	ui_PadPerc(const f32 perc);
 /* add layout node padding parent space until it is filled, (non-cacheable)  */
-u32	ui_pad_fill(void);
+u32	ui_PadFill(void);
 
 /********************************************************************************************************/
-/*					 ui_size initalizers 						*/
+/*					 ui_Size initalizers 						*/
 /********************************************************************************************************/
 
-#define ui_size_pixel(_pixels, _strictness) 	((struct ui_size) { .type = UI_SIZE_PIXEL, .pixels = _pixels, .strictness = _strictness })
-#define ui_size_perc(_percentage)		((struct ui_size) { .type = UI_SIZE_PERC_PARENT, .percentage = _percentage, .strictness = 0.0f })	
-#define ui_size_childsum(_strictness)		((struct ui_size) { .type = UI_SIZE_CHILDSUM, .strictness = _strictness })
-#define ui_size_unit(_intv)			((struct ui_size) { .type = UI_SIZE_UNIT, .intv = _intv, .strictness = 0.0f })
-#define ui_size_text(_line_width, _strictness)	((struct ui_size) { .type = UI_SIZE_TEXT, .line_width = _line_width, .strictness = _strictness })
+#define ui_SizePixel(_pixels, _strictness) 	((struct ui_Size) { .type = UI_SIZE_PIXEL, .pixels = _pixels, .strictness = _strictness })
+#define ui_SizePerc(_percentage)		((struct ui_Size) { .type = UI_SIZE_PERC_PARENT, .percentage = _percentage, .strictness = 0.0f })	
+#define ui_SizeChildsum(_strictness)		((struct ui_Size) { .type = UI_SIZE_CHILDSUM, .strictness = _strictness })
+#define ui_SizeUnit(_intv)			((struct ui_Size) { .type = UI_SIZE_UNIT, .intv = _intv, .strictness = 0.0f })
+#define ui_SizeText(_line_width, _strictness)	((struct ui_Size) { .type = UI_SIZE_TEXT, .line_width = _line_width, .strictness = _strictness })
 
 /********************************************************************************************************/
 /*					 Push/Pop global state  					*/
 /********************************************************************************************************/
 
-#define ui_parent(parent)			UI_SCOPE(ui_node_push(parent), ui_node_pop())
-#define ui_size(axis, size)			UI_SCOPE(ui_size_push(axis, size), ui_size_pop(axis))
-#define ui_width(size)				UI_SCOPE(ui_width_push(size), ui_width_pop())
-#define ui_height(size)				UI_SCOPE(ui_height_push(size), ui_height_pop())
-#define ui_floating(axis, pixel)		UI_SCOPE(ui_floating_push(axis, pixel), ui_floating_pop(axis))
-#define ui_floating_x(pixel)			ui_floating(AXIS_2_X, pixel)
-#define ui_floating_y(pixel)			ui_floating(AXIS_2_Y, pixel)
-#define ui_fixed_x(pixel)			ui_flags(UI_FIXED_X)		\
-						ui_floating_x(pixel)
-#define ui_fixed_y(pixel)			ui_flags(UI_FIXED_Y)		\
-						ui_floating_y(pixel)
-#define ui_child_layout_axis(axis)		UI_SCOPE(ui_child_layout_axis_push(axis), ui_child_layout_axis_pop())
-#define ui_background_color(color)		UI_SCOPE(ui_background_color_push(color), ui_background_color_pop())
-#define ui_border_color(color)			UI_SCOPE(ui_border_color_push(color), ui_border_color_pop())
-#define ui_sprite_color(color)			UI_SCOPE(ui_sprite_color_push(color), ui_sprite_color_pop())
-#define ui_gradient_color_br(color)		UI_SCOPE(ui_gradient_color_push(BOX_CORNER_BR, color), ui_gradient_color_pop(BOX_CORNER_BR))
-#define ui_gradient_color_tr(color)		UI_SCOPE(ui_gradient_color_push(BOX_CORNER_TR, color), ui_gradient_color_pop(BOX_CORNER_TR))
-#define ui_gradient_color_tl(color)		UI_SCOPE(ui_gradient_color_push(BOX_CORNER_TL, color), ui_gradient_color_pop(BOX_CORNER_TL))
-#define ui_gradient_color_bl(color)		UI_SCOPE(ui_gradient_color_push(BOX_CORNER_BL, color), ui_gradient_color_pop(BOX_CORNER_BL))
-#define ui_edge_softness(val)			UI_SCOPE(ui_edge_softness_push(val), ui_edge_softness_pop())
-#define ui_corner_radius(val)			UI_SCOPE(ui_corner_radius_push(val), ui_corner_radius_pop())
-#define ui_border_size(val)			UI_SCOPE(ui_border_size_push(val), ui_border_size_pop())
-#define ui_font(font)				UI_SCOPE(ui_font_push(font), ui_font_pop())
-#define ui_sprite(sprite)			UI_SCOPE(ui_sprite_push(sprite), ui_sprite_pop())
-#define ui_sprite_color(color)			UI_SCOPE(ui_sprite_color_push(color), ui_sprite_color_pop())
-#define ui_intv_viewable(axis, inv)		UI_SCOPE(ui_intv_viewable_push(axis,(inv)), ui_intv_viewable_pop(axis))
-#define ui_intv_viewable_x(inv)			ui_intv_viewable(AXIS_2_X, (inv))
-#define ui_intv_viewable_y(inv)			ui_intv_viewable(AXIS_2_Y, (inv))
-#define ui_text_align_x(align)			UI_SCOPE(ui_text_align_x_push(align), ui_text_align_x_pop())
-#define ui_text_align_y(align)			UI_SCOPE(ui_text_align_y_push(align), ui_text_align_y_pop())
-#define ui_text_pad(axis, pad)			UI_SCOPE(ui_text_pad_push(axis, pad), ui_text_pad_pop(axis))
-#define ui_text_pad_x(pad)			ui_text_pad(AXIS_2_X, pad)
-#define ui_text_pad_y(pad)			ui_text_pad(AXIS_2_Y, pad)
-#define ui_flags(flags)				UI_SCOPE(ui_flags_push(flags), ui_flags_pop())
-#define ui_fixed_depth(depth)			UI_SCOPE(ui_fixed_depth_push(depth), ui_fixed_depth_pop())
-#define ui_recursive_interaction(flags) 	UI_SCOPE(ui_recursive_interaction_push(flags), ui_recursive_interaction_pop())
-#define ui_external_text(text)			UI_SCOPE(ui_external_text_push(text), ui_external_text_pop())
-#define ui_external_text_layout(layout, text)	UI_SCOPE(ui_external_text_layout_push(layout, text), ui_external_text_layout_pop())
-#define ui_external_text_input(input)		UI_SCOPE(ui_external_text_input_push(input), ui_external_text_input_pop())
+#define ui_Parent(parent)			UI_SCOPE(ui_NodePush(parent), ui_NodePop())
+#define ui_Size(axis, size)			UI_SCOPE(ui_SizePush(axis, size), ui_SizePop(axis))
+#define ui_Width(size)				UI_SCOPE(ui_WidthPush(size), ui_WidthPop())
+#define ui_Height(size)				UI_SCOPE(ui_HeightPush(size), ui_HeightPop())
+#define ui_Floating(axis, pixel)		UI_SCOPE(ui_FloatingPush(axis, pixel), ui_FloatingPop(axis))
+#define ui_FloatingX(pixel)			ui_Floating(AXIS_2_X, pixel)
+#define ui_FloatingY(pixel)			ui_Floating(AXIS_2_Y, pixel)
+#define ui_FixedX(pixel)			ui_Flags(UI_FIXED_X)		\
+						ui_FloatingX(pixel)
+#define ui_FixedY(pixel)			ui_Flags(UI_FIXED_Y)		\
+						ui_FloatingY(pixel)
+#define ui_ChildLayoutAxis(axis)		UI_SCOPE(ui_ChildLayoutAxisPush(axis), ui_ChildLayoutAxisPop())
+#define ui_BackgroundColor(color)		UI_SCOPE(ui_BackgroundColorPush(color), ui_BackgroundColorPop())
+#define ui_BorderColor(color)			UI_SCOPE(ui_BorderColorPush(color), ui_BorderColorPop())
+#define ui_SpriteColor(color)			UI_SCOPE(ui_SpriteColorPush(color), ui_SpriteColorPop())
+#define ui_GradientColorBr(color)		UI_SCOPE(ui_GradientColorPush(BOX_CORNER_BR, color), ui_GradientColorPop(BOX_CORNER_BR))
+#define ui_GradientColorTr(color)		UI_SCOPE(ui_GradientColorPush(BOX_CORNER_TR, color), ui_GradientColorPop(BOX_CORNER_TR))
+#define ui_GradientColorTl(color)		UI_SCOPE(ui_GradientColorPush(BOX_CORNER_TL, color), ui_GradientColorPop(BOX_CORNER_TL))
+#define ui_GradientColorBl(color)		UI_SCOPE(ui_GradientColorPush(BOX_CORNER_BL, color), ui_GradientColorPop(BOX_CORNER_BL))
+#define ui_EdgeSoftness(val)			UI_SCOPE(ui_EdgeSoftnessPush(val), ui_EdgeSoftnessPop())
+#define ui_CornerRadius(val)			UI_SCOPE(ui_CornerRadiusPush(val), ui_CornerRadiusPop())
+#define ui_BorderSize(val)			UI_SCOPE(ui_BorderSizePush(val), ui_BorderSizePop())
+#define ui_Font(font)				UI_SCOPE(ui_FontPush(font), ui_FontPop())
+#define ui_Sprite(sprite)			UI_SCOPE(ui_SpritePush(sprite), ui_SpritePop())
+#define ui_SpriteColor(color)			UI_SCOPE(ui_SpriteColorPush(color), ui_SpriteColorPop())
+#define ui_IntvViewable(axis, inv)		UI_SCOPE(ui_IntvViewablePush(axis,(inv)), ui_IntvViewablePop(axis))
+#define ui_IntvViewableX(inv)			ui_IntvViewable(AXIS_2_X, (inv))
+#define ui_IntvViewableY(inv)			ui_IntvViewable(AXIS_2_Y, (inv))
+#define ui_TextAlignX(align)			UI_SCOPE(ui_TextAlignXPush(align), ui_TextAlignXPop())
+#define ui_TextAlignY(align)			UI_SCOPE(ui_TextAlignYPush(align), ui_TextAlignYPop())
+#define ui_TextPad(axis, pad)			UI_SCOPE(ui_TextPadPush(axis, pad), ui_TextPadPop(axis))
+#define ui_TextPadX(pad)			ui_TextPad(AXIS_2_X, pad)
+#define ui_TextPadY(pad)			ui_TextPad(AXIS_2_Y, pad)
+#define ui_Flags(flags)				UI_SCOPE(ui_FlagsPush(flags), ui_FlagsPop())
+#define ui_FixedDepth(depth)			UI_SCOPE(ui_FixedDepthPush(depth), ui_FixedDepthPop())
+#define ui_RecursiveInteraction(flags) 	UI_SCOPE(ui_RecursiveInteractionPush(flags), ui_RecursiveInteractionPop())
+#define ui_ExternalText(text)			UI_SCOPE(ui_ExternalTextPush(text), ui_ExternalTextPop())
+#define ui_ExternalTextLayout(layout, text)	UI_SCOPE(ui_ExternalTextLayoutPush(layout, text), ui_ExternalTextLayoutPop())
+#define ui_ExternalTextInput(input)		UI_SCOPE(ui_ExternalTextInputPush(input), ui_ExternalTextInputPop())
 
-void 	ui_size_push(const enum axis_2 axis, const struct ui_size size);
-void 	ui_size_set(const enum axis_2 axis, const struct ui_size size);
-void 	ui_size_pop(const enum axis_2 axis);
+void 	ui_SizePush(const enum axis_2 axis, const struct ui_Size size);
+void 	ui_SizeSet(const enum axis_2 axis, const struct ui_Size size);
+void 	ui_SizePop(const enum axis_2 axis);
 
-void 	ui_width_push(const struct ui_size size);
-void 	ui_width_set(const struct ui_size size);
-void 	ui_width_pop(void);
+void 	ui_WidthPush(const struct ui_Size size);
+void 	ui_WidthSet(const struct ui_Size size);
+void 	ui_WidthPop(void);
 
-void 	ui_height_push(const struct ui_size size);
-void 	ui_height_set(const struct ui_size size);
-void 	ui_height_pop(void);
+void 	ui_HeightPush(const struct ui_Size size);
+void 	ui_HeightSet(const struct ui_Size size);
+void 	ui_HeightPop(void);
 
-void 	ui_floating_push(const enum axis_2 axis, const f32 pixel);
-void 	ui_floating_set(const enum axis_2 axis, const f32 pixel);
-void 	ui_floating_pop(const enum axis_2 axis);
+void 	ui_FloatingPush(const enum axis_2 axis, const f32 pixel);
+void 	ui_FloatingSet(const enum axis_2 axis, const f32 pixel);
+void 	ui_FloatingPop(const enum axis_2 axis);
 
-void 	ui_child_layout_axis_push(const enum axis_2 axis);
-void 	ui_child_layout_axis_set(const enum axis_2 axis);
-void 	ui_child_layout_axis_pop(void);
+void 	ui_ChildLayoutAxisPush(const enum axis_2 axis);
+void 	ui_ChildLayoutAxisSet(const enum axis_2 axis);
+void 	ui_ChildLayoutAxisPop(void);
 
-void 	ui_intv_viewable_push(const enum axis_2 axis, const intv inv);
-void 	ui_intv_viewable_set(const enum axis_2 axis, const intv inv);
-void 	ui_intv_viewable_pop(const enum axis_2 axis);
-#define ui_intv_viewable_x_set(inv)	ui_intv_viewable_set(AXIS_2_X, inv)
-#define ui_intv_viewable_y_set(inv)	ui_intv_viewable_set(AXIS_2_Y, inv)
+void 	ui_IntvViewablePush(const enum axis_2 axis, const intv inv);
+void 	ui_IntvViewableSet(const enum axis_2 axis, const intv inv);
+void 	ui_IntvViewablePop(const enum axis_2 axis);
+#define ui_IntvViewableXSet(inv)	ui_IntvViewableSet(AXIS_2_X, inv)
+#define ui_IntvViewableYSet(inv)	ui_IntvViewableSet(AXIS_2_Y, inv)
 
-void 	ui_background_color_push(const vec4 color);
-void 	ui_background_color_set(const vec4 color);
-void 	ui_background_color_pop(void);
+void 	ui_BackgroundColorPush(const vec4 color);
+void 	ui_BackgroundColorSet(const vec4 color);
+void 	ui_BackgroundColorPop(void);
 
-void 	ui_border_color_push(const vec4 color);
-void 	ui_border_color_set(const vec4 color);
-void 	ui_border_color_pop(void);
+void 	ui_BorderColorPush(const vec4 color);
+void 	ui_BorderColorSet(const vec4 color);
+void 	ui_BorderColorPop(void);
 
-void 	ui_sprite_color_push(const vec4 color);
-void 	ui_sprite_color_set(const vec4 color);
-void 	ui_sprite_color_pop(void);
+void 	ui_SpriteColorPush(const vec4 color);
+void 	ui_SpriteColorSet(const vec4 color);
+void 	ui_SpriteColorPop(void);
 
-void 	ui_gradient_color_push(const enum box_corner, const vec4 color);
-void 	ui_gradient_color_set(const enum box_corner, const vec4 color);
-void 	ui_gradient_color_pop(const enum box_corner);
+void 	ui_GradientColorPush(const enum box_corner, const vec4 color);
+void 	ui_GradientColorSet(const enum box_corner, const vec4 color);
+void 	ui_GradientColorPop(const enum box_corner);
 
-void 	ui_font_push(const enum fontId font);
-void 	ui_font_set(const enum fontId font);
-void 	ui_font_pop(void);
+void 	ui_FontPush(const enum fontId font);
+void 	ui_FontSet(const enum fontId font);
+void 	ui_FontPop(void);
 
-void 	ui_edge_softness_push(const f32 softness);
-void 	ui_edge_softness_set(const f32 softness);
-void 	ui_edge_softness_pop(void);
+void 	ui_EdgeSoftnessPush(const f32 softness);
+void 	ui_EdgeSoftnessSet(const f32 softness);
+void 	ui_EdgeSoftnessPop(void);
 
-void 	ui_corner_radius_push(const f32 radius);
-void 	ui_corner_radius_set(const f32 radius);
-void 	ui_corner_radius_pop(void);
+void 	ui_CornerRadiusPush(const f32 radius);
+void 	ui_CornerRadiusSet(const f32 radius);
+void 	ui_CornerRadiusPop(void);
 
-void 	ui_border_size_push(const f32 pixels);
-void 	ui_border_size_set(const f32 pixels);
-void 	ui_border_size_pop(void);
+void 	ui_BorderSizePush(const f32 pixels);
+void 	ui_BorderSizeSet(const f32 pixels);
+void 	ui_BorderSizePop(void);
 
-void 	ui_sprite_push(const enum spriteId sprite);
-void 	ui_sprite_set(const enum spriteId sprite);
-void 	ui_sprite_pop(void);
+void 	ui_SpritePush(const enum spriteId sprite);
+void 	ui_SpriteSet(const enum spriteId sprite);
+void 	ui_SpritePop(void);
 
-void 	ui_text_align_x_push(const enum alignment_x align);
-void 	ui_text_align_x_set(const enum alignment_x align);
-void 	ui_text_align_x_pop(void);
+void 	ui_TextAlignXPush(const enum alignment_x align);
+void 	ui_TextAlignX_set(const enum alignment_x align);
+void 	ui_TextAlignXPop(void);
 
-void 	ui_text_align_y_push(const enum alignment_y align);
-void 	ui_text_align_y_set(const enum alignment_y align);
-void 	ui_text_align_y_pop(void);
+void 	ui_TextAlignYPush(const enum alignment_y align);
+void 	ui_TextAlignY_set(const enum alignment_y align);
+void 	ui_TextAlignYPop(void);
 
-void 	ui_text_pad_push(const enum axis_2 axis, const enum alignment_x align);
-void 	ui_text_pad_set(const enum axis_2 axis, const enum alignment_x align);
-void 	ui_text_pad_pop(const enum axis_2 axis);
+void 	ui_TextPadPush(const enum axis_2 axis, const enum alignment_x align);
+void 	ui_TextPadSet(const enum axis_2 axis, const enum alignment_x align);
+void 	ui_TextPadPop(const enum axis_2 axis);
 
-void 	ui_flags_push(const u64 flags);
-void 	ui_flags_set(const u64 flags);
-void 	ui_flags_pop(void);
+void 	ui_FlagsPush(const u64 flags);
+void 	ui_FlagsSet(const u64 flags);
+void 	ui_FlagsPop(void);
 
-void 	ui_recursive_interaction_push(const u64 flags);
-void 	ui_recursive_interaction_pop(void);
+void 	ui_RecursiveInteractionPush(const u64 flags);
+void 	ui_RecursiveInteractionPop(void);
 
-void 	ui_padding_push(const f32 pad);
-void 	ui_padding_set(const f32 pad);
-void 	ui_padding_pop(void);
+void 	ui_PaddingPush(const f32 pad);
+void 	ui_PaddingSet(const f32 pad);
+void 	ui_PaddingPop(void);
 
-void 	ui_fixed_depth_push(const u32 depth);
-void 	ui_fixed_depth_set(const u32 depth);
-void	ui_fixed_depth_pop(void);
+void 	ui_FixedDepthPush(const u32 depth);
+void 	ui_FixedDepthSet(const u32 depth);
+void	ui_FixedDepthPop(void);
 
-void	ui_external_text_push(const utf32 text);
-void	ui_external_text_set(const utf32 text);
-void	ui_external_text_pop();
+void	ui_ExternalTextPush(const utf32 text);
+void	ui_ExternalTextSet(const utf32 text);
+void	ui_ExternalTextPop();
 
-void	ui_external_text_layout_push(struct textLayout *textLayout, const utf32 text);
-void	ui_external_text_layout_set(struct textLayout *textLayout, const utf32 text);
-void	ui_external_text_layout_pop();
+void	ui_ExternalTextLayoutPush(struct textLayout *textLayout, const utf32 text);
+void	ui_ExternalTextLayoutSet(struct textLayout *textLayout, const utf32 text);
+void	ui_ExternalTextLayoutPop();
 
-void	ui_external_text_input_push(struct ui_text_input *text_input);
-void	ui_external_text_input_pop();
+void	ui_ExternalTextInputPush(struct ui_TextInput *text_input);
+void	ui_ExternalTextInputPop();
 
 /********************************************************************************************************/
 /*					  SIZES AND AUTOLAYOUT						*/
@@ -973,7 +972,7 @@ void	ui_external_text_input_pop();
 Some notes of autolayout and the different size types.  Since we have sizes depending on both children and parents,
 we require some ordering of how we compute each node's size. 
 
-	enum ui_size
+	enum ui_Size
 	{
 		UI_SIZE_NONE,		// No size type 
 		UI_SIZE_PIXEL,		// Wanted size is given in pixels on node creation 
@@ -1042,7 +1041,7 @@ Interesting variables/values:
 							; offset and size of the parent.
 
 Interesting functions:
-	unit_viewable_interval_push/pop()	(push/pop current unit interval we are working with)
+	unit_viewable_intervalPush/pop()	(push/pop current unit interval we are working with)
 
 
 	This problem may be approached from two different sides; one way is to define a new size_type, size_unit.
@@ -1122,14 +1121,14 @@ UNIT_INTERVAL_AXIS: The node's size and position is dependant on its unit interv
 
 			------ user ------							------ core ------
                                                                                                                                                          
-			(ui_unit_visible_x(visible_low, visible_high))			        ui_node_alloc()
+			(ui_unit_visible_x(visible_low, visible_high))			        ui_NodeAlloc()
 			{                                                                       {
-				ui_size_x_set(ui_unit_x(low1, high1))                           	layout_position = { 0 }
-				ui_node_alloc()                                                 	layout_size = { 0 }
-				ui_size_x_set(ui_unit_x(low2, high2))                           	implicit_flags = UI_FLAGS_NONE 
-				ui_node_alloc()                                                 	if (size_type == UNIT)
-				ui_size_x_set(ui_unit_x(low3, high3))                           	{
-				ui_node_alloc()                                                 		layout_position= ...
+				ui_Size_x_set(ui_unit_x(low1, high1))                           	layout_position = { 0 }
+				ui_NodeAlloc()                                                 	layout_size = { 0 }
+				ui_Size_x_set(ui_unit_x(low2, high2))                           	implicit_flags = UI_FLAGS_NONE 
+				ui_NodeAlloc()                                                 	if (size_type == UNIT)
+				ui_Size_x_set(ui_unit_x(low3, high3))                           	{
+				ui_NodeAlloc()                                                 		layout_position= ...
 			}                                                                       		layout_size = ...
                                                                                                 		if (not visible)
 			                                                                        			return nil
@@ -1340,7 +1339,7 @@ we need several values. The process looks like
 	the timeline and all of its decendants store a recursive interaction DRAGGABLE_X. Since each node within
 	the rows are clickable, they store CLICKABLE in its local interactions.
 
-	local interactions can easily be set using the ui_flags, and we can act upon the as soon as the node allocation
+	local interactions can easily be set using the ui_Flags, and we can act upon the as soon as the node allocation
 	is done. Recursive interactions must somehow be set in a way to differentiate them from local interactions; in
 	our example, it is set at the creation of the timeline, and we do not check it (singular!) until the timeline
 	is complete. Any recursive interactions happending to any affected nodes set the recursive interaction_node.
@@ -1350,56 +1349,56 @@ we need several values. The process looks like
 	
 	A helper could be created to help with this:
 
-		ui_node_inter_rec_alloc_f(FLAGS, INTER_FLAGS, format, ...) => ui_node_alloc(FLAGS, INTER_FLAGS, id)
+		ui_node_inter_rec_alloc_f(FLAGS, INTER_FLAGS, format, ...) => ui_NodeAlloc(FLAGS, INTER_FLAGS, id)
 
 Text input handling
 ===================
 
-Context: The ui aliases some ui_text_input state owned by some external system. 
+Context: The ui aliases some ui_TextInput state owned by some external system. 
 Whenever a text operation happens, the ui will in its command queue execute these
 operation on that alias. We show issues with this approach and develop a better
 solution.
 
 
-Issue 1: (aliasing ui_text_input in reallocatable address space)
+Issue 1: (aliasing ui_TextInput in reallocatable address space)
 ----------------------------------------------------------------
-Suppose we have nodes in some subsystem where each node contains a ui_text_input
+Suppose we have nodes in some subsystem where each node contains a ui_TextInput
 struct. Furthermore, suppose that the subsystem is growable and may reallocate the
-node's address. If we only provide the ui an alias of the node's ui_text_input when
+node's address. If we only provide the ui an alias of the node's ui_TextInput when
 focus is gained, the alias will be invalidated on a future reallocation.
 
 
 Solution:
 ---------
-We reset the ui's ui_text_input alias each frame: 
+We reset the ui's ui_TextInput alias each frame: 
 
-	ui_text_input_push(&subsystem_node.ui_text_input)
-	ui_node_alloc()		<----- ui alises ui_text_input if node focused 
-	ui_text_input_pop()
+	ui_TextInputPush(&subsystem_node.ui_TextInput)
+	ui_NodeAlloc()		<----- ui alises ui_TextInput if node focused 
+	ui_TextInputPop()
 
 
-Issue 2: (Freeing aliased ui_text_input)
+Issue 2: (Freeing aliased ui_TextInput)
 ----------------------------------------
-Suppose we have nodes in some subsystem where each node contains a ui_text_input
-struct. When the node is being focused, the ui aliases the ui_text_input struct
+Suppose we have nodes in some subsystem where each node contains a ui_TextInput
+struct. When the node is being focused, the ui aliases the ui_TextInput struct
 to modify the text edit state. It follows that the subsystem node's lifetime MUST
 AT LEAST extent 1 ui frame into the future. The following example illustrates the
 aliasing:
 
 FRAME N: 
 	--- UI_FRAME ---
-	ui_text_input_push(&subsystem_node.ui_text_input)
-	ui_node_alloc()		<----- ui alises ui_text_input if node focused 
-	ui_text_input_pop()
+	ui_TextInputPush(&subsystem_node.ui_TextInput)
+	ui_NodeAlloc()		<----- ui alises ui_TextInput if node focused 
+	ui_TextInputPop()
 	(...)
 	--- SUBSYSTEM_FRAME ---
 	(...)
 	subsystem_node_free(subsystem_node)	<----- the subsystem determines that it should free the
-						       aliased node, invalidating the ui's ui_text_input
+						       aliased node, invalidating the ui's ui_TextInput
 						       alias.
 FRAME N+1:
 	--- UI_FRAME ---
-	ui_process_commands() <---- text_ops executed; WILL modify invalid ui_text_input! 
+	ui_process_commands() <---- text_ops executed; WILL modify invalid ui_TextInput! 
 
 
 Workaround 2:
@@ -1409,18 +1408,22 @@ case for text editing will be editting small utf32 strings; for example, when
 modifying u64/i64/f32 values. In those cases we only require buffers containing 32 
 codepoints. Issue 2 would most certainly come up here; suppose we are editing some
 level editor node's positional value, and while editing we remove the node. We are
-now keeping an invalid ui_text_input alias going into the next frame.
+now keeping an invalid ui_TextInput alias going into the next frame.
 
 Since the common case is modifying / creating small strings, and since we can only
 edit one text at a time, we may as well just store an internal buffer in the ui
-that is used if no external ui_text_input is provided. The only downside to
+that is used if no external ui_TextInput is provided. The only downside to
 this is that when we lose focus of a node that "owns" the internal buffer, the
 buffer contents is lost. 
 
-We can still provide the ui system an external ui_text_input, we just have to make
+We can still provide the ui system an external ui_TextInput, we just have to make
 sure in those few cases that the address stays valid for the remainder to the last
 frame it was provided. This works fine for cases like per-window command consoles
 whose address stays constant for the lifetime of the window.
 */
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

@@ -30,23 +30,23 @@ struct csg csg_alloc(void)
 {
 	struct csg csg;
 
-	csg.brush_db = strdb_Alloc(NULL, 32, 32, struct csg_brush, GROWABLE);
+	csg.brush_db = strdb_Alloc(NULL, 32, 32, struct csgBRush, GROWABLE);
 	csg.instance_pool = PoolAlloc(NULL, 32, struct csg_instance, GROWABLE);
 	csg.node_pool = PoolAlloc(NULL, 32, struct csg_instance, GROWABLE);
 	csg.frame = ArenaAlloc(1024*1024);
-	csg.brush_marked_list = dll_Init(struct csg_brush);
+	csg.brush_marked_list = dll_Init(struct csgBRush);
 	csg.instance_marked_list = dll_Init(struct csg_instance);
 	csg.instance_non_marked_list = dll_Init(struct csg_instance);
 	//csg.dcel_allocator = dcel_allocator_alloc(32, 32);
 
-	struct csg_brush *stub_brush = strdb_Address(&csg.brush_db, STRING_DATABASE_STUB_INDEX);
-	stub_brush->primitive = CSG_PRIMITIVE_BOX;
-	stub_brush->dcel = DcelBoxStub();
-	stub_brush->flags = CSG_CONSTANT;
-	stub_brush->delta = NULL;
-	stub_brush->cache = ui_node_cache_null();
+	struct csgBRush *stubBRush = strdb_Address(&csg.brush_db, STRING_DATABASE_STUB_INDEX);
+	stubBRush->primitive = CSG_PRIMITIVE_BOX;
+	stubBRush->dcel = DcelBoxStub();
+	stubBRush->flags = CSG_CONSTANT;
+	stubBRush->delta = NULL;
+	stubBRush->cache = ui_NodeCacheNull();
 
-	DcelAssertTopology(&stub_brush->dcel);
+	DcelAssertTopology(&stubBRush->dcel);
 
 	return csg;
 }
@@ -89,7 +89,7 @@ static void csg_apply_delta(struct csg *csg)
 
 static void csg_remove_marked_structs(struct csg *csg)
 {
-	struct csg_brush *brush = NULL;
+	struct csgBRush *brush = NULL;
 	for (u32 i = csg->brush_marked_list.first; i != DLL_NULL; i = dll_Next(brush))
 	{
 		brush = strdb_Address(&csg->brush_db, i);
@@ -121,11 +121,11 @@ void csg_main(struct csg *csg)
 	csg_remove_marked_structs(csg);
 }
 
-struct slot csg_brush_add(struct csg *csg, const utf8 id)
+struct slot csgBRush_add(struct csg *csg, const utf8 id)
 {
 	if (id.size > 256)
 	{
-		Log(T_CSG, S_WARNING, "Failed to create csg_brush, id %k requires size > 256B.", &id);
+		Log(T_CSG, S_WARNING, "Failed to create csgBRush, id %k requires size > 256B.", &id);
 		return empty_slot; 
 	}
 
@@ -134,27 +134,27 @@ struct slot csg_brush_add(struct csg *csg, const utf8 id)
 	struct slot slot = strdb_AddAndAlias(&csg->brush_db, heap_id);
 	if (!slot.address)
 	{
-		Log(T_CSG, S_WARNING, "Failed to create csg_brush, brush with id %k already exist.", &id);
+		Log(T_CSG, S_WARNING, "Failed to create csgBRush, brush with id %k already exist.", &id);
 		ThreadFree256B(buf);
 	}
 	else
 	{
-		struct csg_brush *brush = slot.address;
+		struct csgBRush *brush = slot.address;
 		brush->primitive = CSG_PRIMITIVE_BOX;
 		brush->dcel = DcelBoxStub();
 		brush->flags = CSG_FLAG_NONE;
 		brush->delta = NULL;
 
-		brush->cache = ui_node_cache_null();
+		brush->cache = ui_NodeCacheNull();
 	}
 
 	return slot;
 }
 
-void csg_brush_mark_for_removal(struct csg *csg, const utf8 id)
+void csgBRush_mark_for_removal(struct csg *csg, const utf8 id)
 {
 	struct slot slot = strdb_Lookup(&csg->brush_db, id);
-	struct csg_brush *brush = slot.address;
+	struct csgBRush *brush = slot.address;
 	if (brush && !(brush->flags & (CSG_CONSTANT | CSG_MARKED_FOR_REMOVAL)))
 	{
 		brush->flags |= CSG_MARKED_FOR_REMOVAL;

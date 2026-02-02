@@ -31,11 +31,11 @@ struct led_project_menu	led_project_menu_alloc(void)
 		.projects_folder_refresh = 0,
 		.selected_path = Utf8Empty(),
 		.dir_nav = DirectoryNavigatorAlloc(4096, 64, 64),
-		.dir_list = ui_list_init(AXIS_2_Y, 200.0f, 24.0f, UI_SELECTION_UNIQUE),
+		.dir_list = ui_ListInit(AXIS_2_Y, 200.0f, 24.0f, UI_SELECTION_UNIQUE),
 		.window = HI_NULL_INDEX,
-		.popup_new_project = ui_popup_null(),
+		.popup_new_project = ui_PopupNull(),
 		.utf8_new_project = Utf8Empty(),
-		.input_line_new_project = ui_text_input_empty(),
+		.input_line_new_project = ui_TextInputEmpty(),
 	};
 
 	return menu;	

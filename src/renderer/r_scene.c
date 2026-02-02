@@ -436,13 +436,13 @@ static void r_scene_bucket_generate_draw_data(struct r_bucket *b)
 					r_cmd = g_scene->cmd_frame + i;
 					instance = array_list_intrusive_address(g_scene->instance_list, r_cmd->instance);
 
-					const struct ui_draw_bucket *ui_b = instance->ui_bucket;
-					struct ui_draw_node *draw_node = ui_b->list;
-					if (UI_CMD_LAYER_GET(ui_b->cmd) == UI_CMD_LAYER_TEXT)
+					const struct ui_DrawBucket *ui_b = instance->ui_bucket;
+					struct ui_DrawNode *draw_node = ui_b->list;
+					if (ui_CmdLayerGet(ui_b->cmd) == UI_CMD_LAYER_TEXT)
 					{
 						for (u32 i = 0; i < ui_b->count; )
 						{
-							const struct ui_node *n = hi_Address(g_ui->node_hierarchy, draw_node->index);
+							const struct ui_Node *n = hi_Address(g_ui->node_hierarchy, draw_node->index);
 							draw_node = draw_node->next;
 							const vec4 visible_rect =
 							{
@@ -540,12 +540,12 @@ static void r_scene_bucket_generate_draw_data(struct r_bucket *b)
 							}
 						}
 					}
-					else if (UI_CMD_LAYER_GET(ui_b->cmd) == UI_CMD_LAYER_TEXT_SELECTION)
+					else if (ui_CmdLayerGet(ui_b->cmd) == UI_CMD_LAYER_TEXT_SELECTION)
 					{
 						for (u32 i = 0; i < ui_b->count; ++i)
 						{
-							const struct ui_text_selection *sel = g_ui->frame_stack_text_selection.arr + draw_node->index;
-							const struct ui_node *n = sel->node;
+							const struct ui_TextSelection *sel = g_ui->frame_stack_text_selection.arr + draw_node->index;
+							const struct ui_Node *n = sel->node;
 							draw_node = draw_node->next;
 
 							vec2 global_offset;
@@ -646,7 +646,7 @@ static void r_scene_bucket_generate_draw_data(struct r_bucket *b)
 					{
 						for (u32 i = 0; i < ui_b->count; ++i)
 						{
-							const struct ui_node *n = hi_Address(g_ui->node_hierarchy, draw_node->index);
+							const struct ui_Node *n = hi_Address(g_ui->node_hierarchy, draw_node->index);
 							draw_node = draw_node->next;
 							const struct sprite *spr = g_sprite + n->sprite;
 							const vec4 node_rect =

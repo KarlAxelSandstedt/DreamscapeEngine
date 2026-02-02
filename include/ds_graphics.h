@@ -73,7 +73,7 @@ struct system_window
 	struct nativeWindow *	native;			/* native graphics handle */
 	struct ui *		ui;			/* local ui */
 	struct cmd_queue 	cmd_queue;		/* local command queue */
-	struct cmd_console *	cmd_console;		/* console */
+	struct ui_CmdConsole *	cmd_console;		/* console */
 	struct r_scene *	r_scene;
 	struct arena 		mem_persistent;		/* peristent 1MB arena */
 

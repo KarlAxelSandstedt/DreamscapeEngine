@@ -149,14 +149,14 @@ typedef struct visualSegment
 {
 	struct segment	segment;
 	vec4		color;
-} visual_segment;
-DECLARE_STACK(visual_segment);
+} visualSegment;
+DECLARE_STACK(visualSegment);
 
 struct visualSegment	VisualSegmentConstruct(const struct segment segment, const vec4 color);
 
 struct collisionDebug
 {
-	stack_visual_segment	stack_segment;
+	stack_visualSegment	stack_segment;
 	u8			pad[64];
 };
 
@@ -165,7 +165,7 @@ extern dsThreadLocal struct collisionDebug *tl_debug;
 #ifdef DS_PHYSICS_DEBUG
 
 #define COLLISION_DEBUG_ADD_SEGMENT(segment, color)							\
-	stack_visual_segment_push(&tl_debug->stack_segment,  VisualSegmentConstruct(segment, color))
+	stack_visualSegmentPush(&tl_debug->stack_segment,  VisualSegmentConstruct(segment, color))
 
 #else
 

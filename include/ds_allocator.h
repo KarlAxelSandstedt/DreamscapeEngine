@@ -154,7 +154,7 @@ Arena: contiguous memory allocator used for stack-like memory management.
 /*
  * memArray: ArenaPushAlignedAll return value. To pop all memory acquired in the allocation, call
  *	
- *	ArenaPopPacked(arena, ret.mem_pushed).
+ *	ArenaPopPacked(arena, ret.memPushed).
  *
  * If you wish to keep N elements in the array, then call
  *
@@ -164,7 +164,7 @@ struct memArray
 {
 	void *	addr;
 	u64	len;		/* */
-	u64	mem_pushed;	/* NOTE: recorded pushed number of bytes to be used in ArenaPopPacked(*) */
+	u64	memPushed;	/* NOTE: recorded pushed number of bytes to be used in ArenaPopPacked(*) */
 };
 
 /* 

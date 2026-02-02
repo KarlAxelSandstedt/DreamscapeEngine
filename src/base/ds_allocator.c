@@ -359,7 +359,7 @@ struct memArray ArenaPushAlignedAll(struct arena *ar, const u64 slot_size, const
 {
 	ds_Assert(PowerOfTwoCheck(alignment) == 1 && slot_size > 0);
 
-	struct memArray array = { .len = 0, .addr = NULL, .mem_pushed = 0 };
+	struct memArray array = { .len = 0, .addr = NULL, .memPushed = 0 };
 	const u64 mod = ((u64) ar->stack_ptr) & (alignment - 1);
 	const u64 push_alignment = (!!mod) * (alignment - mod);
 	if (push_alignment + slot_size <= ar->mem_left)
@@ -367,7 +367,7 @@ struct memArray ArenaPushAlignedAll(struct arena *ar, const u64 slot_size, const
 		array.len = (ar->mem_left - push_alignment) / slot_size;
 		array.addr = ar->stack_ptr + push_alignment;
 		UnpoisonAddress(ar->stack_ptr + push_alignment, array.len * slot_size);
-		array.mem_pushed = push_alignment + array.len * slot_size;
+		array.memPushed = push_alignment + array.len * slot_size;
 		ar->mem_left  -= push_alignment + array.len * slot_size;
 		ar->stack_ptr += push_alignment + array.len * slot_size;
 	}

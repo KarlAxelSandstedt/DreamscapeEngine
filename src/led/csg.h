@@ -55,10 +55,10 @@ enum csg_op
 csg_bursh
 =========  
 */
-struct csg_brush
+struct csgBRush
 {
 	u64			flags;
-	struct csg_brush *	delta;
+	struct csgBRush *	delta;
 	enum csg_primitive	primitive;		/* primitive type 	*/
 	struct dcel		dcel;
 
@@ -66,7 +66,7 @@ struct csg_brush
 	STRING_DATABASE_SLOT_STATE;
 
 	/* ui caching neeeded for proper list interactions */
-	struct ui_node_cache	cache;
+	struct ui_NodeCache	cache;
 };
 
 /*
@@ -139,14 +139,14 @@ struct csg	csg_deserialize(struct arena *mem, struct serialStream *ss, const u32
 void		csg_main(struct csg *csg);
 
 
-/* Add a new csg_brush and copy the id onto the heap on success. 
+/* Add a new csgBRush and copy the id onto the heap on success. 
  *
  * Failure 1: id requires a buffer size > 256.
  * Failure 2: An existing brush with the same id already exist.
  */
-struct slot 	csg_brush_add(struct csg *csg, const utf8 id);
+struct slot 	csgBRush_add(struct csg *csg, const utf8 id);
 /* Tag a brush for removal. If the reference count is not zero, this is a no op. */
-void 		csg_brush_mark_for_removal(struct csg *csg, const utf8 id);
+void 		csgBRush_mark_for_removal(struct csg *csg, const utf8 id);
 
 /*
 global command identifiers
@@ -160,21 +160,21 @@ global command identifiers
 csg_primitive
 -------------
 csg_primitives are predefined geometric primitives; When building geometry
-the user begins working with csg_brushes defined by these primitives and
+the user begins working with csgBRushes defined by these primitives and
 iteratively construct more complex shapes. 
 
-csg_brush
+csgBRush
 ---------
-csg_brushes are explicit versions of csg_primitives, or the calculated result 
+csgBRushes are explicit versions of csg_primitives, or the calculated result 
 of a csg_node's tree. csg_nodes that are leaves have their geometries defined
 by brushes.
 
 csg_node
 --------
 A csg_node is a node in a binary tree; If it is a leaf, it is defined by
-a csg_brush. Otherwise, its geometry is defined by (csg_op, child1, child2).
+a csgBRush. Otherwise, its geometry is defined by (csg_op, child1, child2).
 When iteratively building a world using csg, it seems reasonable to save
-a csg_node as a csg_brush if the geometry is to be used multiple times.
+a csg_node as a csgBRush if the geometry is to be used multiple times.
 
 csg_instance
 ------------
@@ -219,12 +219,12 @@ if (brush->flags & (CSG_FLAG_CONSTANT | CSG_FLAG_DIRTY) == CSG_FLAG_NONE)
 // If delta is already allocated 
 if (brush->flags & CSG_FLAG_DIRTY)
 {
-	struct csg_brush *brush_delta = brush_delta(csg, brush_handle);
+	struct csgBRush *brush_delta = brush_delta(csg, brush_handle);
 
 	//Apply changes... 
 }
 
-This system should work fine for small structs like csg_brush and 
+This system should work fine for small structs like csgBRush and 
 csg_instance and in scenarios where we won't be applying deltas to often;
 ui code and such. We must make sure to not mix csg state change; partially
 modifying structures themselves, partially creating deltas of them.  One

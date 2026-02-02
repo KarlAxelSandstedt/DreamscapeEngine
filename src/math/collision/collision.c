@@ -20,7 +20,7 @@
 #include "dynamics.h"
 #include "collision.h"
 
-DEFINE_STACK(visual_segment);
+DEFINE_STACK(visualSegment);
 
 dsThreadLocal struct collisionDebug *debug;
 

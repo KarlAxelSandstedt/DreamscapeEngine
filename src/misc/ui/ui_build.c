@@ -21,10 +21,10 @@
 
 #include "ui_local.h"
 
-f32 ui_field_f32(const f32 value, const intv range, const utf8 formatted)
+f32 ui_FieldF32(const f32 value, const intv range, const utf8 formatted)
 {
-	struct slot slot = ui_node_alloc(UI_INTER_LEFT_CLICK | UI_INTER_FOCUS_FLAGS | UI_TEXT_EDIT | UI_TEXT_EDIT_INTER_BUF_ON_FOCUS | UI_TEXT_EDIT_COPY_ON_FOCUS | UI_DRAW_BORDER | UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, &formatted);
-	struct ui_node *node = slot.address;
+	struct slot slot = ui_NodeAlloc(UI_INTER_LEFT_CLICK | UI_INTER_FOCUS_FLAGS | UI_TEXT_EDIT | UI_TEXT_EDIT_INTER_BUF_ON_FOCUS | UI_TEXT_EDIT_COPY_ON_FOCUS | UI_DRAW_BORDER | UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, &formatted);
+	struct ui_Node *node = slot.address;
 
 	f32 ret = value;
 	if (node->input.focused && g_ui->inter.key_pressed[DS_ENTER])
@@ -44,10 +44,10 @@ f32 ui_field_f32(const f32 value, const intv range, const utf8 formatted)
 	return ret;
 }
 
-u64 ui_field_u64(const u64 value, const intvu64 range, const utf8 formatted)
+u64 ui_FieldU64(const u64 value, const intvu64 range, const utf8 formatted)
 {
-	struct slot slot = ui_node_alloc(UI_INTER_LEFT_CLICK | UI_INTER_FOCUS_FLAGS | UI_TEXT_EDIT | UI_TEXT_EDIT_INTER_BUF_ON_FOCUS | UI_TEXT_EDIT_COPY_ON_FOCUS | UI_DRAW_BORDER | UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, &formatted);
-	struct ui_node *node = slot.address;
+	struct slot slot = ui_NodeAlloc(UI_INTER_LEFT_CLICK | UI_INTER_FOCUS_FLAGS | UI_TEXT_EDIT | UI_TEXT_EDIT_INTER_BUF_ON_FOCUS | UI_TEXT_EDIT_COPY_ON_FOCUS | UI_DRAW_BORDER | UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, &formatted);
+	struct ui_Node *node = slot.address;
 
 	u64 ret = value;
 	if ((node->inter & UI_INTER_FOCUS) && g_ui->inter.key_pressed[DS_ENTER])
@@ -74,10 +74,10 @@ u64 ui_field_u64(const u64 value, const intvu64 range, const utf8 formatted)
 	return ret;
 }
 
-i64 ui_field_i64(const i64 value, const intvi64 range, const utf8 formatted)
+i64 ui_FieldI64(const i64 value, const intvi64 range, const utf8 formatted)
 {
-	struct slot slot = ui_node_alloc(UI_INTER_LEFT_CLICK | UI_INTER_FOCUS_FLAGS | UI_TEXT_EDIT | UI_TEXT_EDIT_INTER_BUF_ON_FOCUS | UI_TEXT_EDIT_COPY_ON_FOCUS | UI_DRAW_BORDER | UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, &formatted);
-	struct ui_node *node = slot.address;
+	struct slot slot = ui_NodeAlloc(UI_INTER_LEFT_CLICK | UI_INTER_FOCUS_FLAGS | UI_TEXT_EDIT | UI_TEXT_EDIT_INTER_BUF_ON_FOCUS | UI_TEXT_EDIT_COPY_ON_FOCUS | UI_DRAW_BORDER | UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, &formatted);
+	struct ui_Node *node = slot.address;
 
 	i64 ret = value;
 	if ((node->inter & UI_INTER_FOCUS) && g_ui->inter.key_pressed[DS_ENTER])
@@ -105,10 +105,10 @@ i64 ui_field_i64(const i64 value, const intvi64 range, const utf8 formatted)
 	return ret;
 }
 
-utf8 ui_field_utf8(const utf8 formatted)
+utf8 ui_FieldUtf8(const utf8 formatted)
 {
-	struct slot slot = ui_node_alloc(UI_INTER_LEFT_CLICK | UI_INTER_FOCUS_FLAGS | UI_TEXT_EDIT | UI_TEXT_EDIT_INTER_BUF_ON_FOCUS | UI_DRAW_BORDER | UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, &formatted);
-	struct ui_node *node = slot.address;
+	struct slot slot = ui_NodeAlloc(UI_INTER_LEFT_CLICK | UI_INTER_FOCUS_FLAGS | UI_TEXT_EDIT | UI_TEXT_EDIT_INTER_BUF_ON_FOCUS | UI_DRAW_BORDER | UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, &formatted);
+	struct ui_Node *node = slot.address;
 
 	utf8 ret = Utf8Empty();
 	if ((node->inter & UI_INTER_FOCUS) && g_ui->inter.key_clicked[DS_ENTER])
@@ -121,49 +121,49 @@ utf8 ui_field_utf8(const utf8 formatted)
 
 }
 
-f32 ui_field_f32_f(const f32 value, const intv range, const char *fmt, ...)
+f32 ui_FieldF32F(const f32 value, const intv range, const char *fmt, ...)
 {
 	va_list args;
 	va_start(args, fmt);
 	const utf8 id = Utf8FormatVariadic(g_ui->mem_frame, fmt, args);
 	va_end(args);
 
-	return ui_field_f32(value, range, id);
+	return ui_FieldF32(value, range, id);
 }
 
-u64 ui_field_u64_f(const u64 value, const intvu64 range, const char *fmt, ...)
+u64 ui_FieldU64F(const u64 value, const intvu64 range, const char *fmt, ...)
 {
 	va_list args;
 	va_start(args, fmt);
 	const utf8 id = Utf8FormatVariadic(g_ui->mem_frame, fmt, args);
 	va_end(args);
 
-	return ui_field_u64(value, range, id);
+	return ui_FieldU64(value, range, id);
 }
 
-i64 ui_field_i64_f(const i64 value, const intvi64 range, const char *fmt, ...)
+i64 ui_FieldI64F(const i64 value, const intvi64 range, const char *fmt, ...)
 {
 	va_list args;
 	va_start(args, fmt);
 	const utf8 id = Utf8FormatVariadic(g_ui->mem_frame, fmt, args);
 	va_end(args);
 
-	return ui_field_i64(value, range, id);
+	return ui_FieldI64(value, range, id);
 }
 
-utf8 ui_field_utf8_f(const char *fmt, ...)
+utf8 ui_FieldUtf8F(const char *fmt, ...)
 {
 	va_list args;
 	va_start(args, fmt);
 	const utf8 id = Utf8FormatVariadic(g_ui->mem_frame, fmt, args);
 	va_end(args);
 
-	return ui_field_utf8(id);
+	return ui_FieldUtf8(id);
 }
 
-struct ui_list ui_list_init(enum axis_2 axis, const f32 max_pixel_size, const f32 entry_pixel_size, const enum ui_selection_type selection_type)
+struct ui_List ui_ListInit(enum axis_2 axis, const f32 max_pixel_size, const f32 entry_pixel_size, const enum ui_SelectionType selection_type)
 {
-	struct ui_list list = 
+	struct ui_List list = 
 	{  
 		.max_pixel_size = max_pixel_size,
 		.entry_pixel_size = entry_pixel_size,
@@ -177,7 +177,7 @@ struct ui_list ui_list_init(enum axis_2 axis, const f32 max_pixel_size, const f3
 	return list;
 }
 
-void ui_list_push(struct ui_list *list, const char *format, ...)
+void ui_ListPush(struct ui_List *list, const char *format, ...)
 {	
 	va_list args;
 	va_start(args, format);
@@ -189,7 +189,7 @@ void ui_list_push(struct ui_list *list, const char *format, ...)
 	f32 cached_axis_pixel_size; 
 	if (list->last_build_frame + 1 == g_ui->frame)
 	{
-		struct ui_node *node = ui_node_address(list->frame_node);
+		struct ui_Node *node = ui_NodeAddress(list->frame_node);
 		wanted_axis_pixel_size = list->cache_count*list->entry_pixel_size;
 		wanted_axis_pixel_size = f32_min(wanted_axis_pixel_size, list->max_pixel_size);
 		cached_axis_pixel_size = node->pixel_size[list->axis];
@@ -203,27 +203,27 @@ void ui_list_push(struct ui_list *list, const char *format, ...)
 	list->last_build_frame = g_ui->frame;
 	list->frame_count = 0;
 
-	ui_child_layout_axis(list->axis)
-	ui_size(list->axis, ui_size_pixel(wanted_axis_pixel_size, 0.0f))
-	ui_recursive_interaction(UI_INTER_DRAG | UI_INTER_SCROLL)
-	list->frame_node = ui_node_alloc(UI_INTER_RECURSIVE_ROOT | UI_DRAW_BACKGROUND | UI_DRAW_BORDER, &id).index;
+	ui_ChildLayoutAxis(list->axis)
+	ui_Size(list->axis, ui_SizePixel(wanted_axis_pixel_size, 0.0f))
+	ui_RecursiveInteraction(UI_INTER_DRAG | UI_INTER_SCROLL)
+	list->frame_node = ui_NodeAlloc(UI_INTER_RECURSIVE_ROOT | UI_DRAW_BACKGROUND | UI_DRAW_BORDER, &id).index;
 
 	list->visible.high = f32_min(list->visible.high, list->cache_count*list->entry_pixel_size);
 	list->visible.high = f32_max(list->visible.high, cached_axis_pixel_size);
 	list->visible.low = list->visible.high - cached_axis_pixel_size;
 
-	ui_child_layout_axis_push(list->axis);
-	ui_intv_viewable_push(list->axis, list->visible);
-	ui_node_push(list->frame_node);
+	ui_ChildLayoutAxisPush(list->axis);
+	ui_IntvViewablePush(list->axis, list->visible);
+	ui_NodePush(list->frame_node);
 }
 
-void ui_list_pop(struct ui_list *list)
+void ui_ListPop(struct ui_List *list)
 {	
-	ui_child_layout_axis_pop();
-	ui_intv_viewable_pop(list->axis);
-	ui_node_pop();
+	ui_ChildLayoutAxisPop();
+	ui_IntvViewablePop(list->axis);
+	ui_NodePop();
 
-	struct ui_node *node = ui_node_address(list->frame_node);
+	struct ui_Node *node = ui_NodeAddress(list->frame_node);
 	if (node->inter & UI_INTER_DRAG)
 	{
 		if (list->axis == AXIS_2_X)
@@ -255,7 +255,7 @@ void ui_list_pop(struct ui_list *list)
 	}
 }
 
-struct slot ui_list_entry_alloc(struct ui_list *list, const utf8 id)
+struct slot ui_ListEntryAlloc(struct ui_List *list, const utf8 id)
 {
 	const intv intv_entry =
 	{
@@ -267,19 +267,19 @@ struct slot ui_list_entry_alloc(struct ui_list *list, const utf8 id)
 		? UI_INTER_RECURSIVE_SELECT
 		: 0;
 	struct slot entry;
-	ui_size(list->axis, ui_size_unit(intv_entry))
-	ui_size(1-list->axis, ui_size_perc(1.0f))
-	ui_recursive_interaction(rec_flags)
-	entry = ui_node_alloc(UI_INTER_RECURSIVE_ROOT | UI_UNIT_POSITIVE_DOWN | UI_DRAW_BORDER, &id);
+	ui_Size(list->axis, ui_SizeUnit(intv_entry))
+	ui_Size(1-list->axis, ui_SizePerc(1.0f))
+	ui_RecursiveInteraction(rec_flags)
+	entry = ui_NodeAlloc(UI_INTER_RECURSIVE_ROOT | UI_UNIT_POSITIVE_DOWN | UI_DRAW_BORDER, &id);
 
-	struct ui_node *node = entry.address;
+	struct ui_Node *node = entry.address;
 	if (node->inter & UI_INTER_SELECT)
 	{
 		if (list->selection_type == UI_SELECTION_UNIQUE 
 				&& list->last_selection_happened + 1 >= g_ui->frame
 				&& list->last_selected != entry.index)
 		{
-			struct ui_node *prev = hi_Address(&g_ui->node_hierarchy, list->last_selected);
+			struct ui_Node *prev = hi_Address(&g_ui->node_hierarchy, list->last_selected);
 			prev->inter &= ~UI_INTER_SELECT;
 			Vec4Copy(prev->border_color, node->border_color);
 		}
@@ -293,17 +293,17 @@ struct slot ui_list_entry_alloc(struct ui_list *list, const utf8 id)
 	return entry;
 }
 
-struct slot ui_list_entry_alloc_f(struct ui_list *list, const char *format, ...)
+struct slot ui_ListEntryAllocF(struct ui_List *list, const char *format, ...)
 {
 	va_list args;
 	va_start(args, format);
 	utf8 id = Utf8FormatVariadic(g_ui->mem_frame, format, args);
 	va_end(args);
 
-	return ui_list_entry_alloc(list, id);
+	return ui_ListEntryAlloc(list, id);
 }
 
-struct ui_node_cache ui_list_entry_alloc_cached(struct ui_list *list, const utf8 id, const struct ui_node_cache cache)
+struct ui_NodeCache ui_ListEntryAllocCached(struct ui_List *list, const utf8 id, const struct ui_NodeCache cache)
 {
 	const intv intv_entry =
 	{
@@ -314,20 +314,20 @@ struct ui_node_cache ui_list_entry_alloc_cached(struct ui_list *list, const utf8
 	const u64 rec_flags = (list->selection_type != UI_SELECTION_NONE)
 		? UI_INTER_RECURSIVE_SELECT
 		: 0;
-	struct ui_node_cache new_cache;
-	ui_size(list->axis, ui_size_unit(intv_entry))
-	ui_size(1-list->axis, ui_size_perc(1.0f))
-	ui_recursive_interaction(rec_flags)
-	new_cache = ui_node_alloc_cached(UI_INTER_RECURSIVE_ROOT | UI_UNIT_POSITIVE_DOWN | UI_DRAW_BORDER, id, Utf8Empty(), cache);
+	struct ui_NodeCache new_cache;
+	ui_Size(list->axis, ui_SizeUnit(intv_entry))
+	ui_Size(1-list->axis, ui_SizePerc(1.0f))
+	ui_RecursiveInteraction(rec_flags)
+	new_cache = ui_NodeAllocCached(UI_INTER_RECURSIVE_ROOT | UI_UNIT_POSITIVE_DOWN | UI_DRAW_BORDER, id, Utf8Empty(), cache);
 
-	struct ui_node *node = new_cache.frame_node;
+	struct ui_Node *node = new_cache.frame_node;
 	if (node->inter & UI_INTER_SELECT)
 	{
 		if (list->selection_type == UI_SELECTION_UNIQUE 
 				&& list->last_selection_happened + 1 >= g_ui->frame
 				&& list->last_selected)
 		{
-			struct ui_node *prev = hi_Address(&g_ui->node_hierarchy, list->last_selected);
+			struct ui_Node *prev = hi_Address(&g_ui->node_hierarchy, list->last_selected);
 			prev->inter &= ~UI_INTER_SELECT;
 			Vec4Copy(prev->border_color, node->border_color);
 		}
@@ -355,7 +355,7 @@ const utf8 utf8_us = { .buf = buf_us, .len = 2 , .size = 4};
 const utf8 utf8_ms = { .buf = buf_ms, .len = 2 , .size = 3};
 const utf8 utf8_s  = { .buf = buf_s,  .len = 1 , .size = 1};
 
-static void time_unit_config_generate(struct timeline_config *config)
+static void time_unit_config_generate(struct ui_TimelineConfig *config)
 {
 	if (config->unit_line_preferred_count == 0 || config->unit_line_preferred_count > (u32) config->width)
 	{
@@ -414,45 +414,45 @@ static void time_unit_config_generate(struct timeline_config *config)
 	}
 }
 
-void ui_timeline(struct timeline_config *config)
+void ui_Timeline(struct ui_TimelineConfig *config)
 {
-	ui_child_layout_axis(AXIS_2_Y)
-	ui_parent(ui_node_alloc_non_hashed(UI_DRAW_BORDER).index)
-	ui_background_color(config->background_color)
-	ui_sprite_color(config->text_color)
-	ui_intv_viewable_x(intv_inline(config->ns_interval_start, config->ns_interval_end))
+	ui_ChildLayoutAxis(AXIS_2_Y)
+	ui_Parent(ui_NodeAllocNonHashed(UI_DRAW_BORDER).index)
+	ui_BackgroundColor(config->background_color)
+	ui_SpriteColor(config->text_color)
+	ui_IntvViewableX(intv_inline(config->ns_interval_start, config->ns_interval_end))
 	{
-		ui_height(ui_size_childsum(0.0f))
-		config->timeline = ui_node_alloc_f(UI_DRAW_BACKGROUND, "timeline_rows_%p", config).index;
+		ui_Height(ui_SizeChildsum(0.0f))
+		config->timeline = ui_NodeAllocF(UI_DRAW_BACKGROUND, "timeline_rows_%p", config).index;
 		
-		const struct ui_node *timeline_node = hi_Address(&g_ui->node_hierarchy, config->timeline);
+		const struct ui_Node *timeline_node = hi_Address(&g_ui->node_hierarchy, config->timeline);
 		config->width = timeline_node->layout_size[0];
 		const f32 half_pixel_count = (2.0f * config->width * (1.0f - config->perc_width_row_title_column));
 		config->ns_half_pixel = (f32) (config->ns_interval_end - config->ns_interval_start) / half_pixel_count;
 
 		time_unit_config_generate(config);
 
-		ui_parent(config->timeline)
-		ui_child_layout_axis(AXIS_2_X)
-		ui_background_color(config->unit_line_color)
-		ui_height(ui_size_perc(1.0f))
-		ui_width(ui_size_perc(1.0f))
-		ui_flags(UI_SKIP_HOVER_SEARCH)
-		ui_parent(ui_node_alloc_non_hashed(UI_FLAG_NONE).index)
+		ui_Parent(config->timeline)
+		ui_ChildLayoutAxis(AXIS_2_X)
+		ui_BackgroundColor(config->unit_line_color)
+		ui_Height(ui_SizePerc(1.0f))
+		ui_Width(ui_SizePerc(1.0f))
+		ui_Flags(UI_SKIP_HOVER_SEARCH)
+		ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
 		{
-			ui_pad_perc(config->perc_width_row_title_column);	
+			ui_PadPerc(config->perc_width_row_title_column);	
 
-			ui_width(ui_size_perc(1.0f - config->perc_width_row_title_column))
-			ui_parent(ui_node_alloc_non_hashed(UI_FLAG_NONE).index)
+			ui_Width(ui_SizePerc(1.0f - config->perc_width_row_title_column))
+			ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
 			{
 				for (u64 i = 0; i < config->unit_line_count; ++i)
 				{
 					const u64 ns_line = config->unit_line_first + i*config->unit_line_interval;
-					ui_width(ui_size_unit(intv_inline(ns_line - config->unit_line_width * config->ns_half_pixel, ns_line + config->unit_line_width * config->ns_half_pixel)))
-					ui_node_alloc_non_hashed(UI_DRAW_BACKGROUND);
+					ui_Width(ui_SizeUnit(intv_inline(ns_line - config->unit_line_width * config->ns_half_pixel, ns_line + config->unit_line_width * config->ns_half_pixel)))
+					ui_NodeAllocNonHashed(UI_DRAW_BACKGROUND);
 				}
 
-				ui_background_color(config->subline_color)
+				ui_BackgroundColor(config->subline_color)
 				if (config->draw_sublines)
 				{
 					for (u64 i = 0; i <= config->unit_line_count; ++i)
@@ -461,86 +461,86 @@ void ui_timeline(struct timeline_config *config)
 						for (u64 j = 1; j <= config->sublines_per_line; ++j)
 						{
 							const u64 ns_subline = ns_line + j * config->unit_line_interval / config->sublines_per_line;
-							ui_width(ui_size_unit(intv_inline(ns_subline - config->subline_width * config->ns_half_pixel, ns_subline + config->subline_width * config->ns_half_pixel)))
-							ui_node_alloc_non_hashed(UI_DRAW_BACKGROUND);
+							ui_Width(ui_SizeUnit(intv_inline(ns_subline - config->subline_width * config->ns_half_pixel, ns_subline + config->subline_width * config->ns_half_pixel)))
+							ui_NodeAllocNonHashed(UI_DRAW_BACKGROUND);
 						}
 					}
 				}
 			}
 		}
 
-		ui_child_layout_axis(AXIS_2_X)
-		ui_height(ui_size_pixel(32.0f, 1.0f))
-		ui_parent(ui_node_alloc_non_hashed(UI_FLAG_NONE).index)
+		ui_ChildLayoutAxis(AXIS_2_X)
+		ui_Height(ui_SizePixel(32.0f, 1.0f))
+		ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
 		{
-			ui_pad_perc(config->perc_width_row_title_column);	
+			ui_PadPerc(config->perc_width_row_title_column);	
 
-			ui_width(ui_size_perc(1.0f - config->perc_width_row_title_column))
-			ui_parent(ui_node_alloc_f(UI_DRAW_BACKGROUND | UI_DRAW_BORDER | UI_DRAW_ROUNDED_CORNERS, "timeline_units_bar_%p", config).index)
+			ui_Width(ui_SizePerc(1.0f - config->perc_width_row_title_column))
+			ui_Parent(ui_NodeAllocF(UI_DRAW_BACKGROUND | UI_DRAW_BORDER | UI_DRAW_ROUNDED_CORNERS, "timeline_units_bar_%p", config).index)
 			{
-				ui_background_color(config->unit_line_color)
-				ui_height(ui_size_perc(1.0f))
+				ui_BackgroundColor(config->unit_line_color)
+				ui_Height(ui_SizePerc(1.0f))
 				for (u64 i = 0; i < config->unit_line_count; ++i)
 				{
 					const u64 ns_line = config->unit_line_first + i*config->unit_line_interval;
-					ui_child_layout_axis(AXIS_2_Y)
-					ui_width(ui_size_unit(intv_inline(ns_line - config->ns_half_pixel, ns_line + config->ns_half_pixel)))
-					ui_parent(ui_node_alloc_non_hashed(UI_FLAG_NONE).index)
-					ui_width(ui_size_perc(1.0f))
-					ui_height(ui_size_perc(0.25f))
-					ui_node_alloc_non_hashed(UI_DRAW_BACKGROUND);
+					ui_ChildLayoutAxis(AXIS_2_Y)
+					ui_Width(ui_SizeUnit(intv_inline(ns_line - config->ns_half_pixel, ns_line + config->ns_half_pixel)))
+					ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+					ui_Width(ui_SizePerc(1.0f))
+					ui_Height(ui_SizePerc(0.25f))
+					ui_NodeAllocNonHashed(UI_DRAW_BACKGROUND);
 					
-					ui_width(ui_size_unit(intv_inline(
+					ui_Width(ui_SizeUnit(intv_inline(
 							  ns_line - config->unit_line_interval / 2
 							, ns_line + config->unit_line_interval / 2)))
-					ui_node_alloc_f(UI_DRAW_TEXT, "%lu%k##%p", ns_line / config->unit_to_ns_multiplier, &config->unit, config);
+					ui_NodeAllocF(UI_DRAW_TEXT, "%lu%k##%p", ns_line / config->unit_to_ns_multiplier, &config->unit, config);
 				}
 			}
 		}
 	}
 }
 
-void ui_timeline_row_push(struct timeline_config *config, const u32 row, const char *title_format, ...)
+void ui_TimelineRowPush(struct ui_TimelineConfig *config, const u32 row, const char *title_format, ...)
 {
-	const struct timeline_row_config *row_config = config->row + row;
-	config->row_pushed = row;
+	const struct ui_TimelineRowConfig *row_config = config->row + row;
+	config->rowPushed = row;
 
-	ui_flags_push(UI_TEXT_ALLOW_OVERFLOW | UI_UNIT_POSITIVE_DOWN);
-	ui_gradient_color_push(BOX_CORNER_BR, config->task_gradient_br);
-	ui_gradient_color_push(BOX_CORNER_TR, config->task_gradient_tr);
-	ui_gradient_color_push(BOX_CORNER_TL, config->task_gradient_tl);
-	ui_gradient_color_push(BOX_CORNER_BL, config->task_gradient_bl);
-	ui_intv_viewable_push(AXIS_2_X, intv_inline(config->ns_interval_start, config->ns_interval_end));
-	ui_intv_viewable_push(AXIS_2_Y, row_config->depth_visible);
-	ui_child_layout_axis_push(AXIS_2_X);
-	ui_node_push(config->timeline);
-	ui_text_align_x_push(ALIGN_LEFT);
+	ui_FlagsPush(UI_TEXT_ALLOW_OVERFLOW | UI_UNIT_POSITIVE_DOWN);
+	ui_GradientColorPush(BOX_CORNER_BR, config->task_gradient_br);
+	ui_GradientColorPush(BOX_CORNER_TR, config->task_gradient_tr);
+	ui_GradientColorPush(BOX_CORNER_TL, config->task_gradient_tl);
+	ui_GradientColorPush(BOX_CORNER_BL, config->task_gradient_bl);
+	ui_IntvViewablePush(AXIS_2_X, intv_inline(config->ns_interval_start, config->ns_interval_end));
+	ui_IntvViewablePush(AXIS_2_Y, row_config->depth_visible);
+	ui_ChildLayoutAxisPush(AXIS_2_X);
+	ui_NodePush(config->timeline);
+	ui_TextAlignXPush(ALIGN_LEFT);
 
 	va_list args;
 	va_start(args, title_format);
 	utf8 title = Utf8FormatVariadic(g_ui->mem_frame, title_format, args);
 	va_end(args);
 	
-	ui_width(ui_size_perc(1.0f))
-	ui_height(ui_size_pixel(row_config->height, 1.0f))
-	ui_node_push(ui_node_alloc_f(UI_DRAW_BORDER | UI_DRAW_ROUNDED_CORNERS, "%k##title", &title).index);
+	ui_Width(ui_SizePerc(1.0f))
+	ui_Height(ui_SizePixel(row_config->height, 1.0f))
+	ui_NodePush(ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_ROUNDED_CORNERS, "%k##title", &title).index);
 
-	ui_text_align_y(ALIGN_TOP)
-	ui_text_pad_x(8.0f)
-	ui_width(ui_size_perc(config->perc_width_row_title_column))
-	ui_height(ui_size_perc(1.0f))
-	ui_node_alloc_f(UI_DRAW_TEXT, "%k", &title);
+	ui_TextAlignY(ALIGN_TOP)
+	ui_TextPadX(8.0f)
+	ui_Width(ui_SizePerc(config->perc_width_row_title_column))
+	ui_Height(ui_SizePerc(1.0f))
+	ui_NodeAllocF(UI_DRAW_TEXT, "%k", &title);
 
-	ui_recursive_interaction(UI_INTER_DRAG)
-	ui_width(ui_size_perc(1.0f-config->perc_width_row_title_column))
-	ui_height(ui_size_perc(1.0f))
-	ui_background_color(config->background_color)
-	ui_node_push(ui_node_alloc_f(UI_INTER_RECURSIVE_ROOT | UI_DRAW_BORDER | UI_INTER_DRAG, "%k##task_bar", &title).index);
+	ui_RecursiveInteraction(UI_INTER_DRAG)
+	ui_Width(ui_SizePerc(1.0f-config->perc_width_row_title_column))
+	ui_Height(ui_SizePerc(1.0f))
+	ui_BackgroundColor(config->background_color)
+	ui_NodePush(ui_NodeAllocF(UI_INTER_RECURSIVE_ROOT | UI_DRAW_BORDER | UI_INTER_DRAG, "%k##task_bar", &title).index);
 }
 
 void ui_TimelineDrag(void)
 {
-	struct timeline_config *config = g_queue->cmd_exec->arg[0].ptr;
+	struct ui_TimelineConfig *config = g_queue->cmd_exec->arg[0].ptr;
 	const i64 drag_delta_x = g_queue->cmd_exec->arg[1].i64;
 	const i64 drag_delta_y = g_queue->cmd_exec->arg[2].i64;
 	const u64 ctrl_pressed = g_queue->cmd_exec->arg[3].u64;
@@ -579,10 +579,10 @@ void ui_TimelineDrag(void)
 	}
 }
 
-void ui_timeline_row_pop(struct timeline_config *config)
+void ui_TimelineRowPop(struct ui_TimelineConfig *config)
 {
-	struct timeline_row_config *row_config = config->row + config->row_pushed;
-	if (ui_node_top()->inter & UI_INTER_DRAG)
+	struct ui_TimelineRowConfig *row_config = config->row + config->rowPushed;
+	if (ui_NodeTop()->inter & UI_INTER_DRAG)
 	{
 		if (!g_ui->inter.key_pressed[DS_CTRL])
 		{
@@ -594,28 +594,28 @@ void ui_timeline_row_pop(struct timeline_config *config)
 		CmdSubmitFormat(g_ui->mem_frame, "ui_TimelineDrag %p %li %li %u", config, (i64) g_ui->inter.cursor_delta[0], (i64) g_ui->inter.cursor_delta[1], g_ui->inter.key_pressed[DS_CTRL]);
 	}
 	
-	ui_text_align_x_pop();
-	ui_flags_pop();
-	ui_gradient_color_pop(BOX_CORNER_BR);
-	ui_gradient_color_pop(BOX_CORNER_TR);
-	ui_gradient_color_pop(BOX_CORNER_TL);
-	ui_gradient_color_pop(BOX_CORNER_BL);
-	ui_intv_viewable_pop(AXIS_2_X);
-	ui_child_layout_axis_pop();
-	ui_node_pop();
-	ui_node_pop();
+	ui_TextAlignXPop();
+	ui_FlagsPop();
+	ui_GradientColorPop(BOX_CORNER_BR);
+	ui_GradientColorPop(BOX_CORNER_TR);
+	ui_GradientColorPop(BOX_CORNER_TL);
+	ui_GradientColorPop(BOX_CORNER_BL);
+	ui_IntvViewablePop(AXIS_2_X);
+	ui_ChildLayoutAxisPop();
+	ui_NodePop();
+	ui_NodePop();
 
-	ui_child_layout_axis(AXIS_2_X)
-	ui_height(ui_size_pixel(10.0f, 1.0f))
-	ui_parent(ui_node_alloc_non_hashed(UI_FLAG_NONE).index)
-	ui_height(ui_size_perc(1.0f))
+	ui_ChildLayoutAxis(AXIS_2_X)
+	ui_Height(ui_SizePixel(10.0f, 1.0f))
+	ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+	ui_Height(ui_SizePerc(1.0f))
 	{
-		ui_pad_perc(config->perc_width_row_title_column);	
+		ui_PadPerc(config->perc_width_row_title_column);	
 
-		const struct ui_node *drag_node;
-		ui_background_color(config->draggable_color)
-		ui_width(ui_size_perc(1.0f - config->perc_width_row_title_column))
-		drag_node = ui_node_alloc_f(UI_DRAW_BACKGROUND | UI_DRAW_BORDER | UI_DRAW_ROUNDED_CORNERS | UI_INTER_DRAG, "drag_area_%u", config->row_pushed).address;
+		const struct ui_Node *drag_node;
+		ui_BackgroundColor(config->draggable_color)
+		ui_Width(ui_SizePerc(1.0f - config->perc_width_row_title_column))
+		drag_node = ui_NodeAllocF(UI_DRAW_BACKGROUND | UI_DRAW_BORDER | UI_DRAW_ROUNDED_CORNERS | UI_INTER_DRAG, "drag_area_%u", config->rowPushed).address;
 		if (drag_node->inter & UI_INTER_DRAG)
 		{
 			row_config->height -= (g_ui->inter.cursor_delta[1] <= row_config->height)
@@ -627,21 +627,21 @@ void ui_timeline_row_pop(struct timeline_config *config)
 		}
 	}
 
-	ui_node_pop();
+	ui_NodePop();
 }
 
-u64 ui_button_f(const u64 flags, const char *fmt, ...)
+u64 ui_ButtonF(const u64 flags, const char *fmt, ...)
 {
 	va_list args;
 	va_start(args, fmt);
 	utf8 id = Utf8FormatVariadic(g_ui->mem_frame, fmt, args);
 	va_end(args);
 
-	struct ui_node *button = ui_node_alloc(UI_INTER_LEFT_CLICK | flags, &id).address;
+	struct ui_Node *button = ui_NodeAlloc(UI_INTER_LEFT_CLICK | flags, &id).address;
 	return button->inter;
 }
 
-void ui_cmd_console(struct cmd_console *console, const char *fmt, ...)
+void ui_CmdConsoleF(struct ui_CmdConsole *console, const char *fmt, ...)
 {
 	va_list args;
 	va_start(args, fmt);
@@ -649,9 +649,9 @@ void ui_cmd_console(struct cmd_console *console, const char *fmt, ...)
 	va_end(args);
 
 	struct slot slot;
-	struct ui_node *line;
-	ui_flags(UI_DRAW_BACKGROUND | UI_DRAW_BORDER | UI_DRAW_ROUNDED_CORNERS)
-	slot = ui_text_input(&console->prompt, Utf32Utf8(g_ui->mem_frame, Utf8Inline("Command Line...")), id);
+	struct ui_Node *line;
+	ui_Flags(UI_DRAW_BACKGROUND | UI_DRAW_BORDER | UI_DRAW_ROUNDED_CORNERS)
+	slot = ui_TextInput(&console->prompt, Utf32Utf8(g_ui->mem_frame, Utf8Inline("Command Line...")), id);
 	line = slot.address;
 
 	if ((line->inter & UI_INTER_FOCUS) && g_ui->inter.key_clicked[DS_ENTER])
@@ -661,15 +661,15 @@ void ui_cmd_console(struct cmd_console *console, const char *fmt, ...)
 	}
 }
 
-void ui_popup_build(void)
+void uiPopup_build(void)
 {
 	const u32 parent = g_window;
-	struct ui_popup *popup = g_queue->cmd_exec->arg[0].ptr;
-	struct ui_visual *visual = g_queue->cmd_exec->arg[1].ptr;
+	struct ui_Popup *popup = g_queue->cmd_exec->arg[0].ptr;
+	struct ui_Visual *visual = g_queue->cmd_exec->arg[1].ptr;
 
 	if (popup->window == HI_NULL_INDEX)
 	{
-		*popup = ui_popup_null();
+		*popup = ui_PopupNull();
 		return;
 	}
 
@@ -677,7 +677,7 @@ void ui_popup_build(void)
 	if (win->tagged_for_destruction || popup->state == UI_POPUP_STATE_COMPLETED)
 	{
 		system_window_tag_sub_hierarchy_for_destruction(popup->window);
-		*popup = ui_popup_null();
+		*popup = ui_PopupNull();
 		return;
 	}
 
@@ -685,34 +685,34 @@ void ui_popup_build(void)
 	system_window_set_global(popup->window);
 	CmdQueueExecute();
 
-	ui_frame_begin(win->size, visual);
-	ui_text_align_x(ALIGN_X_CENTER)
-	ui_text_align_y(ALIGN_Y_CENTER)
-	ui_parent(ui_node_alloc_f(UI_DRAW_BACKGROUND | UI_DRAW_BORDER, "###popup_%u", popup->window).index)
+	ui_FrameBegin(win->size, visual);
+	ui_TextAlignX(ALIGN_X_CENTER)
+	ui_TextAlignY(ALIGN_Y_CENTER)
+	ui_Parent(ui_NodeAllocF(UI_DRAW_BACKGROUND | UI_DRAW_BORDER, "###popup_%u", popup->window).index)
 	{
 		if (popup->type == UI_POPUP_UTF8_DISPLAY)
 		{
-			ui_node_alloc_f(UI_DRAW_TEXT, "%k###popup_display_%u", &popup->display1, popup->window);
+			ui_NodeAllocF(UI_DRAW_TEXT, "%k###popup_display_%u", &popup->display1, popup->window);
 		}
 		else if (popup->type == UI_POPUP_UTF8_INPUT)
 		{
-			ui_child_layout_axis(AXIS_2_Y)
-			ui_parent(ui_node_alloc_non_hashed(UI_FLAG_NONE).index)
+			ui_ChildLayoutAxis(AXIS_2_Y)
+			ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
 			{
-				ui_height(ui_size_pixel(96.0f, 0.0f))
-				ui_node_alloc_f(UI_DRAW_TEXT, "%k###popup_display1_%u", &popup->display1, popup->window);
+				ui_Height(ui_SizePixel(96.0f, 0.0f))
+				ui_NodeAllocF(UI_DRAW_TEXT, "%k###popup_display1_%u", &popup->display1, popup->window);
 
-				ui_child_layout_axis(AXIS_2_X)
-				ui_height(ui_size_pixel(32.0f, 1.0f))
-				ui_parent(ui_node_alloc_non_hashed(UI_FLAG_NONE).index)
+				ui_ChildLayoutAxis(AXIS_2_X)
+				ui_Height(ui_SizePixel(32.0f, 1.0f))
+				ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
 				{
-					ui_width(ui_size_text(F32_INFINITY, 1.0f))
-					ui_node_alloc_f(UI_DRAW_TEXT, "%k###popup_display2_%u", &popup->display2, popup->window);
-					struct ui_node *line;
-					ui_flags(UI_DRAW_BORDER | UI_DRAW_ROUNDED_CORNERS)
-					ui_width(ui_size_perc(1.0f))
-					ui_text_align_x(ALIGN_LEFT)
-					line = ui_text_input_f(popup->prompt, Utf32Empty(), "###popup_input_%u", popup->window).address;
+					ui_Width(ui_SizeText(F32_INFINITY, 1.0f))
+					ui_NodeAllocF(UI_DRAW_TEXT, "%k###popup_display2_%u", &popup->display2, popup->window);
+					struct ui_Node *line;
+					ui_Flags(UI_DRAW_BORDER | UI_DRAW_ROUNDED_CORNERS)
+					ui_Width(ui_SizePerc(1.0f))
+					ui_TextAlignX(ALIGN_LEFT)
+					line = ui_TextInputF(popup->prompt, Utf32Empty(), "###popup_input_%u", popup->window).address;
 						
 					if (line->inter & UI_INTER_LEFT_CLICK)
 					{
@@ -726,26 +726,26 @@ void ui_popup_build(void)
 						popup->state = UI_POPUP_STATE_PENDING_VERIFICATION;
 					}
 
-					ui_pad();
+					ui_Pad();
 				}
 			}
 		}
 		else if (popup->type == UI_POPUP_CHOICE)
 		{
-			ui_child_layout_axis(AXIS_2_Y)
-			ui_parent(ui_node_alloc_non_hashed(UI_FLAG_NONE).index)
+			ui_ChildLayoutAxis(AXIS_2_Y)
+			ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
 			{
-				ui_height(ui_size_pixel(96.0f, 0.0f))
-				ui_node_alloc_f(UI_DRAW_TEXT, "%k###popup_display1_%u", &popup->display1);
+				ui_Height(ui_SizePixel(96.0f, 0.0f))
+				ui_NodeAllocF(UI_DRAW_TEXT, "%k###popup_display1_%u", &popup->display1);
 
-				ui_child_layout_axis(AXIS_2_X)
-				ui_height(ui_size_pixel(48.0f, 1.0f))
-				ui_parent(ui_node_alloc_non_hashed(UI_FLAG_NONE).index)
+				ui_ChildLayoutAxis(AXIS_2_X)
+				ui_Height(ui_SizePixel(48.0f, 1.0f))
+				ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
 				{
-					ui_pad_fill();
+					ui_PadFill();
 
-					ui_width(ui_size_pixel(128.0f, 1.0f))
-					if (ui_button_f(UI_DRAW_TEXT | UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_DRAW_ROUNDED_CORNERS, "%k###popup_display2_%u", &popup->display2, popup->window) & UI_INTER_LEFT_CLICK)
+					ui_Width(ui_SizePixel(128.0f, 1.0f))
+					if (ui_ButtonF(UI_DRAW_TEXT | UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_DRAW_ROUNDED_CORNERS, "%k###popup_display2_%u", &popup->display2, popup->window) & UI_INTER_LEFT_CLICK)
 					{
 						if (popup->state != UI_POPUP_STATE_PENDING_VERIFICATION)
 						{
@@ -755,10 +755,10 @@ void ui_popup_build(void)
 						}
 					}
 
-					ui_pad_fill();
+					ui_PadFill();
 
-					ui_width(ui_size_pixel(128.0f, 1.0f))
-					if (ui_button_f(UI_DRAW_TEXT | UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_DRAW_ROUNDED_CORNERS, "%k###popup_display3_%u", &popup->display3, popup->window) & UI_INTER_LEFT_CLICK)
+					ui_Width(ui_SizePixel(128.0f, 1.0f))
+					if (ui_ButtonF(UI_DRAW_TEXT | UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_DRAW_ROUNDED_CORNERS, "%k###popup_display3_%u", &popup->display3, popup->window) & UI_INTER_LEFT_CLICK)
 					{
 						if (popup->state != UI_POPUP_STATE_PENDING_VERIFICATION)
 						{
@@ -768,36 +768,36 @@ void ui_popup_build(void)
 						}
 					}
 					
-					ui_pad_fill();
+					ui_PadFill();
 				}
 			}
 		}
 	}
-	ui_frame_end();
+	ui_FrameEnd();
 
 	system_window_set_global(parent);
 	g_queue->regs[0].ptr = popup;
 	g_queue->regs[1].ptr = visual;
-	CmdSubmitNextFrame(cmd_ui_popup_build);
+	CmdSubmitNextFrame(cmd_uiPopup_build);
 }
 
 
-struct ui_popup ui_popup_null(void)
+struct ui_Popup ui_PopupNull(void)
 {
-	return (struct ui_popup) { .window = HI_NULL_INDEX, .state = UI_POPUP_STATE_NULL };
+	return (struct ui_Popup) { .window = HI_NULL_INDEX, .state = UI_POPUP_STATE_NULL };
 }
 
-void ui_popup_try_destroy_and_set_to_null(struct ui_popup *popup)
+void ui_PopupTryDestroyAndSetToNull(struct ui_Popup *popup)
 {
 	if (popup->window != HI_NULL_INDEX)
 	{
 		struct system_window *win = system_window_address(popup->window);
 		system_window_tag_sub_hierarchy_for_destruction(popup->window);
 	}
-	*popup = ui_popup_null();
+	*popup = ui_PopupNull();
 }
 
-void ui_popup_utf8_display(struct ui_popup *popup, const utf8 display, const char *title, const struct ui_visual *visual)
+void ui_PopupUtf8Display(struct ui_Popup *popup, const utf8 display, const char *title, const struct ui_Visual *visual)
 {
 	if (popup->state == UI_POPUP_STATE_NULL)
 	{
@@ -811,12 +811,12 @@ void ui_popup_utf8_display(struct ui_popup *popup, const utf8 display, const cha
 
 			g_queue->regs[0].ptr = popup;
 			g_queue->regs[1].ptr = (void *) visual;
-			CmdSubmit(cmd_ui_popup_build);
+			CmdSubmit(cmd_uiPopup_build);
 		}
 	}
 }
 
-void ui_popup_utf8_input(struct ui_popup *popup, utf8 *input, struct ui_text_input *line, const utf8 description, const utf8 prefix, const char *title, const struct ui_visual *visual)
+void ui_PopupUtf8Input(struct ui_Popup *popup, utf8 *input, struct ui_TextInput *line, const utf8 description, const utf8 prefix, const char *title, const struct ui_Visual *visual)
 {
 	if (popup->state == UI_POPUP_STATE_NULL)
 	{
@@ -833,12 +833,12 @@ void ui_popup_utf8_input(struct ui_popup *popup, utf8 *input, struct ui_text_inp
 
 			g_queue->regs[0].ptr = popup;
 			g_queue->regs[1].ptr = (void *) visual;
-			CmdSubmit(cmd_ui_popup_build);
+			CmdSubmit(cmd_uiPopup_build);
 		}
 	}
 }
 
-void ui_popup_choice(struct ui_popup *popup, const utf8 description, const utf8 positive, const utf8 negative, const char *title, const struct ui_visual *visual)
+void ui_PopupChoice(struct ui_Popup *popup, const utf8 description, const utf8 positive, const utf8 negative, const char *title, const struct ui_Visual *visual)
 {
 	if (popup->state == UI_POPUP_STATE_NULL)
 	{
@@ -857,7 +857,7 @@ void ui_popup_choice(struct ui_popup *popup, const utf8 description, const utf8 
 
 			g_queue->regs[0].ptr = popup;
 			g_queue->regs[1].ptr = (void *) visual;
-			CmdSubmit(cmd_ui_popup_build);
+			CmdSubmit(cmd_uiPopup_build);
 		}
 	}
 }
@@ -873,7 +873,7 @@ void ui_TextOp(void)
 	utf32 *edit = &g_ui->inter.text_edit->text;
 
 	/* start constructing text operation */ 
-	struct text_op op =
+	struct ui_TextOp op =
 	{
 		.str_copy = Utf32Empty(),
 		.str_replace = Utf32Empty(),
@@ -1087,18 +1087,18 @@ void ui_TextOp(void)
 	g_ui->inter.text_edit->mark = op.mark_new;
 }
 
-struct slot ui_text_input(struct ui_text_input *input, const utf32 unfocused_text, const utf8 id)
+struct slot ui_TextInput(struct ui_TextInput *input, const utf32 unfocused_text, const utf8 id)
 {
 	const utf32 external_text = (input->focused)
 		? input->text
 		: unfocused_text;
 
 	struct slot slot;
-	ui_external_text(external_text)
-	ui_external_text_input(input)
-	slot = ui_node_alloc(UI_INTER_LEFT_CLICK | UI_INTER_FOCUS_FLAGS | UI_TEXT_EDIT | UI_TEXT_EXTERNAL | UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, &id);
+	ui_ExternalText(external_text)
+	ui_ExternalTextInput(input)
+	slot = ui_NodeAlloc(UI_INTER_LEFT_CLICK | UI_INTER_FOCUS_FLAGS | UI_TEXT_EDIT | UI_TEXT_EXTERNAL | UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, &id);
 
-	struct ui_node *node = slot.address;
+	struct ui_Node *node = slot.address;
 	if (node->inter & UI_INTER_FOCUS)
 	{
 		node->background_color[0] += 0.03125f;
@@ -1112,22 +1112,22 @@ struct slot ui_text_input(struct ui_text_input *input, const utf32 unfocused_tex
 	return slot;
 }
 
-struct slot ui_text_input_f(struct ui_text_input *input, const utf32 unfocused_text, const char *fmt, ...)
+struct slot ui_TextInputF(struct ui_TextInput *input, const utf32 unfocused_text, const char *fmt, ...)
 {
 	va_list args;
 	va_start(args, fmt);
 	utf8 id = Utf8FormatVariadic(g_ui->mem_frame, fmt, args);
 	va_end(args);
 
-	return ui_text_input(input, unfocused_text, id);
+	return ui_TextInput(input, unfocused_text, id);
 }
 
-struct ui_dropdown_menu ui_dropdown_menu_init(const f32 max_dropdown_height, const vec2 entry_size, const enum ui_dropdown_position position)
+struct ui_DropdownMenu ui_DropdownMenuInit(const f32 max_dropdown_height, const vec2 entry_size, const enum ui_DropdownPosition position)
 {
-	struct ui_dropdown_menu menu = 
+	struct ui_DropdownMenu menu = 
 	{
 		.flags = 0,
-		.list = ui_list_init(AXIS_2_Y, max_dropdown_height, entry_size[1], UI_SELECTION_UNIQUE),
+		.list = ui_ListInit(AXIS_2_Y, max_dropdown_height, entry_size[1], UI_SELECTION_UNIQUE),
 	};
 
 	Vec2Copy(menu.entry_size, entry_size);
@@ -1158,53 +1158,53 @@ struct ui_dropdown_menu ui_dropdown_menu_init(const f32 max_dropdown_height, con
 	return menu;	
 }
 
-u32 ui_dropdown_menu(struct ui_dropdown_menu *menu, const utf8 id)
+u32 ui_DropdownMenu(struct ui_DropdownMenu *menu, const utf8 id)
 {
 	struct slot slot;
-	ui_text_align_x(ALIGN_X_CENTER)
-	ui_text_align_y(ALIGN_BOTTOM)
-	ui_recursive_interaction(UI_INTER_HOVER)
-	ui_width(ui_size_pixel(menu->entry_size[0], 1.0f))
-	ui_height(ui_size_pixel(menu->entry_size[1], 1.0f))
-	slot = ui_node_alloc(UI_INTER_RECURSIVE_ROOT | UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW | UI_DRAW_BORDER, &id);
+	ui_TextAlignX(ALIGN_X_CENTER)
+	ui_TextAlignY(ALIGN_BOTTOM)
+	ui_RecursiveInteraction(UI_INTER_HOVER)
+	ui_Width(ui_SizePixel(menu->entry_size[0], 1.0f))
+	ui_Height(ui_SizePixel(menu->entry_size[1], 1.0f))
+	slot = ui_NodeAlloc(UI_INTER_RECURSIVE_ROOT | UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW | UI_DRAW_BORDER, &id);
 
 	menu->root = slot.index;
-	struct ui_node *node = slot.address;
+	struct ui_Node *node = slot.address;
 	return node->inter & (UI_INTER_HOVER);
 }
 
-u32 ui_dropdown_menu_f(struct ui_dropdown_menu *menu, const char *format, ...)
+u32 ui_DropdownMenuF(struct ui_DropdownMenu *menu, const char *format, ...)
 {
 	va_list args;
 	va_start(args, format);
 	utf8 id = Utf8FormatVariadic(g_ui->mem_frame, format, args);
 	va_end(args);
 
-	return ui_dropdown_menu(menu, id);
+	return ui_DropdownMenu(menu, id);
 }
 
-void ui_dropdown_menu_push(struct ui_dropdown_menu *menu)
+void ui_DropdownMenuPush(struct ui_DropdownMenu *menu)
 {
-	ui_node_push(menu->root);
+	ui_NodePush(menu->root);
 
-	ui_floating_x(menu->dropdown_x)
-	ui_floating_y(menu->dropdown_y)
-	ui_fixed_depth(64)
-	ui_width(ui_size_pixel(menu->entry_size[0], 1.0f))
-	ui_height(ui_size_pixel(menu->max_dropdown_height, 1.0f))
-	ui_child_layout_axis(AXIS_2_Y)
-	ui_node_push(ui_node_alloc_f(UI_FLAG_NONE, "###dropdown_%p", menu).index);
+	ui_FloatingX(menu->dropdown_x)
+	ui_FloatingY(menu->dropdown_y)
+	ui_FixedDepth(64)
+	ui_Width(ui_SizePixel(menu->entry_size[0], 1.0f))
+	ui_Height(ui_SizePixel(menu->max_dropdown_height, 1.0f))
+	ui_ChildLayoutAxis(AXIS_2_Y)
+	ui_NodePush(ui_NodeAllocF(UI_FLAG_NONE, "###dropdown_%p", menu).index);
 
 	if (menu->position == UI_DROPDOWN_ABOVE)
 	{
-		ui_pad_fill();
+		ui_PadFill();
 	}
-	ui_list_push(&menu->list, "###list_%p", menu);
+	ui_ListPush(&menu->list, "###list_%p", menu);
 }
 
-void ui_dropdown_menu_pop(struct ui_dropdown_menu *menu)
+void ui_DropdownMenuPop(struct ui_DropdownMenu *menu)
 {
-	ui_list_pop(&menu->list);
+	ui_ListPop(&menu->list);
 
 	switch (menu->position)
 	{
@@ -1212,25 +1212,25 @@ void ui_dropdown_menu_pop(struct ui_dropdown_menu *menu)
 		case UI_DROPDOWN_RIGHT:
 		case UI_DROPDOWN_LEFT:
 		{
-			ui_pad_fill();
+			ui_PadFill();
 		} break;
 	}
 
-	ui_node_pop();
-	ui_node_pop();
+	ui_NodePop();
+	ui_NodePop();
 }
 
-struct slot ui_dropdown_menu_entry(struct ui_dropdown_menu *menu, const utf8 id)
+struct slot ui_DropdownMenuEntry(struct ui_DropdownMenu *menu, const utf8 id)
 {
-	return ui_list_entry_alloc(&menu->list, id);
+	return ui_ListEntryAlloc(&menu->list, id);
 }
 
-struct slot ui_dropdown_menu_entry_f(struct ui_dropdown_menu *menu, const char *format, ...)
+struct slot ui_DropdownMenuEntryF(struct ui_DropdownMenu *menu, const char *format, ...)
 {
 	va_list args;
 	va_start(args, format);
 	utf8 id = Utf8FormatVariadic(g_ui->mem_frame, format, args);
 	va_end(args);
 
-	return ui_dropdown_menu_entry(menu, id);
+	return ui_DropdownMenuEntry(menu, id);
 }

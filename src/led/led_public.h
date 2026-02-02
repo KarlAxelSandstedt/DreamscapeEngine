@@ -46,12 +46,12 @@ struct led_project_menu
 	u32		projects_folder_refresh; /* Boolean : on main entry, refresh projects folder contents */
 
 	struct directoryNavigator	dir_nav;
-	struct ui_list			dir_list;
+	struct ui_List			dir_list;
 	
-	struct ui_popup		popup_new_project;
-	struct ui_popup		popup_new_project_extra;
+	struct ui_Popup		popup_new_project;
+	struct ui_Popup		popup_new_project_extra;
 	utf8			utf8_new_project;
-	struct ui_text_input 	input_line_new_project;
+	struct ui_TextInput 	input_line_new_project;
 };
 
 struct led_project
@@ -82,7 +82,7 @@ struct led_node
 
 	u64			flags;
 	utf8			id;
-	struct ui_node_cache	cache;
+	struct ui_NodeCache	cache;
 	u32			key;
 
 	vec3			position;
@@ -91,7 +91,7 @@ struct led_node
 
 	u32			rb_prefab; 
 	u32 			proxy;	
-	u32			csg_brush;	
+	u32			csgBRush;	
 };
 
 /*
@@ -136,17 +136,17 @@ struct led
 	/* TODO move stuff into led project/led_core or something */
 	struct arena 		frame;
 	struct csg 		csg;
-	struct ui_list 		brush_list;
+	struct ui_List 		brush_list;
 
 	struct physicsPipeline physics;
 	struct strdb 	cs_db;	
-	struct ui_list 		cs_list;
-	struct ui_dropdown_menu cs_mesh_menu;
-	struct ui_dropdown_menu rb_color_mode_menu;
+	struct ui_List 		cs_list;
+	struct ui_DropdownMenu cs_mesh_menu;
+	struct ui_DropdownMenu rb_color_mode_menu;
 
 	struct strdb	rb_prefab_db;
-	struct ui_list 		rb_prefab_list;
-	struct ui_dropdown_menu rb_prefab_mesh_menu;
+	struct ui_List 		rb_prefab_list;
+	struct ui_DropdownMenu rb_prefab_mesh_menu;
 
 	struct strdb	render_mesh_db;
 
@@ -155,8 +155,8 @@ struct led
 	struct dll		node_marked_list;
 	struct dll		node_non_marked_list;
 	struct dll		node_selected_list;
-	struct ui_list		node_ui_list;
-	struct ui_list		node_selected_ui_list;
+	struct ui_List		node_ui_list;
+	struct ui_List		node_selected_ui_list;
 };
 
 /* Allocate initial led resources */
