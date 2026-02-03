@@ -54,13 +54,13 @@ void		HashMapFlush(struct hashMap *map);
 void 		HashMapSerialize(struct serialStream *ss, const struct hashMap *map);
 /* deserialize and construct hash_map on arena if defined, otherwise alloc on heap. On failure, returns NULL  */
 struct hashMap	HashMapDeserialize(struct arena *mem, struct serialStream *ss, const u32 growable);
-/* add the key-index pair to the hash map. return 1 on success, 0 on out-of-memory. */
-u32		HashMapAdd(struct hashMap *map, const u32 key, const u32 index);
-/* remove  key-index pair to the hash map. If the pair is not found, do nothing. */
-void		HashMapRemove(struct hashMap *map, const u32 key, const u32 index);
-/* Get the first (key,index) pair of the map. If HASH_NULL is returned, no more pairs exist */
-u32		HashMapFirst(const struct hashMap *map, const u32 key);
-/* Get the next (key,index) pair of the map. If HASH_NULL is returnsd, no more pairs exist */
+/* add the hash(key)-index pair to the hash map. return 1 on success, 0 on out-of-memory. */
+u32		HashMapAdd(struct hashMap *map, const u32 hash, const u32 index);
+/* remove  hash(key)-index pair to the hash map. If the pair is not found, do nothing. */
+void		HashMapRemove(struct hashMap *map, const u32 hash, const u32 index);
+/* Get the first (hash,index) pair of the map. If HASH_NULL is returned, no more pairs exist */
+u32		HashMapFirst(const struct hashMap *map, const u32 hash);
+/* Get the next (hash,index) pair of the map. If HASH_NULL is returnsd, no more pairs exist */
 u32		HashMapNext(const struct hashMap *map, const u32 index);
 
 /* keygen methods */

@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -20,18 +20,22 @@
 #ifndef __R_PUBLIC_H__
 #define __R_PUBLIC_H__
 
-#include "asset_public.h"
-#include "array_list.h"
-#include "allocator.h"
+#ifdef __cplusplus
+extern "C" { 
+#endif
+
+#include "ds_base.h"
 #include "string_database.h"
+#include "hierarchy_index.h"
 #include "geometry.h"
+#include "list.h"
 
 /********************************************************
- *			r_init.c			*
+ *			r_Init.c			*
  ********************************************************/
 
 /* initiate render state, ns_tick is ns per draw frame, or, if 0, redraw on every r_main() entry,  should be a power of 2 */
-void 	r_init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u64 core_unit_count, struct strdb *mesh_database);
+void 	r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u64 core_unit_count, struct strdb *mesh_database);
 
 /********************************************************
  *			r_main.c			*
@@ -40,13 +44,13 @@ void 	r_init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_si
 struct led;
 
 /* rendering entrypoint (level editor) */
-void 	r_led_main(const struct led *led);
+void 	r_EditorMain(const struct led *led);
 
 /********************************************************
  *			r_camera.c			*
  ********************************************************/
 
-struct r_camera 
+struct r_Camera 
 {
 	vec3 position;
 	vec3 up;
@@ -70,7 +74,7 @@ struct r_camera
  * fz_far - distance to farther frustum plane (AFFECTS Depth calculations, see Z-fighting)
  * aspect_ratio - w/h
  */
-void r_camera_construct(struct r_camera *cam,
+void r_CameraConstruct(struct r_Camera *cam,
 		const vec3 position,
 	       	const vec3 left,
 	       	const vec3 up,
@@ -91,13 +95,13 @@ void r_camera_construct(struct r_camera *cam,
  * fz_far - distance to farther frustum plane (AFFECTS Depth calculations, see Z-fighting)
  * aspect_ratio - w/h
  */
-struct r_camera	r_camera_init(const vec3 position, const vec3 direction, const f32 fz_near, const f32 fz_far, const f32 aspect_ratio, const f32 fov_x);
+struct r_Camera	r_CameraInit(const vec3 position, const vec3 direction, const f32 fz_near, const f32 fz_far, const f32 aspect_ratio, const f32 fov_x);
 /* update camera axes from its rotation */
-void 		r_camera_update_axes(struct r_camera *cam);
+void 		r_CameraUpdateAxes(struct r_Camera *cam);
 /* update camera angles */
-void 		r_camera_update_angles(struct r_camera *cam, const f32 yaw_delta, const f32 pitch_delta);
+void 		r_CameraUpdateAngles(struct r_Camera *cam, const f32 yaw_delta, const f32 pitch_delta);
 /* camera print state to stderr */
-void 		r_camera_debug_print(const struct r_camera *cam);
+void 		r_CameraDebugPrint(const struct r_Camera *cam);
 
 /*
  * camera2d transform: transform world space coordinates to screen space
@@ -106,17 +110,17 @@ void 		r_camera_debug_print(const struct r_camera *cam);
  * view_center: center of viewable zone 
  * view_size: size of viewable zone 
  */
-void 		r_camera2d_transform(mat3 W_to_AS, const vec2 view_center, const f32 view_height, const f32 view_aspect_ratio);
+void 		r_Camera2dTransform(mat3 W_to_AS, const vec2 view_center, const f32 view_height, const f32 view_aspect_ratio);
 
 /* Retrieve side lengths of frustum projection plane */
-void 		frustum_projection_plane_sides(f32 *width, f32 *height, const f32 plane_distance, const f32 fov_x, const f32 aspect_ratio);
+void 		FrustumProjectionPlaneSides(f32 *width, f32 *height, const f32 plane_distance, const f32 fov_x, const f32 aspect_ratio);
 /* Retreive camera frustum plane in world space coordinates */
-void 		frustum_projection_plane_world_space(vec3 bottom_left, vec3 upper_right, const struct r_camera *cam);
+void 		FrustumProjectionPlaneWorldSpace(vec3 bottom_left, vec3 upper_right, const struct r_Camera *cam);
 /* Retreive camera frustum plane in camera space coordinates */
-void 		frustum_projection_plane_camera_space(vec3 bottom_left, vec3 upper_right, const struct r_camera *cam);
+void 		FrustumProjectionPlaneCameraSpace(vec3 bottom_left, vec3 upper_right, const struct r_Camera *cam);
 
 /* maps window pixel to position in world */
-void 		window_space_to_world_space(vec3 world_pixel, const vec2 pixel, const vec2 win_size, const struct r_camera *cam);
+void 		WindowSpaceToWorldSpace(vec3 world_pixel, const vec2 pixel, const vec2 win_size, const struct r_Camera *cam);
 
 /************************************** Draw Command Key Layout and Macros ***************************************/
 
@@ -124,16 +128,16 @@ void 		window_space_to_world_space(vec3 world_pixel, const vec2 pixel, const vec
  * Larger values indicates priority in drawing.  
  */
 
-struct r_command
+struct r_Command
 {
 	u64	key;		/* render command key, see render command layout and discussion above 	*/
 	u32	instance;	/* render instance index 						*/
 	u32	allocated;	/* boolean : is the command allocated 					*/
 };
 
-u64 	r_command_key(const u64 screen, const u64 depth, const u64 transparency, const u64 material, const u64 primitive, const u64 instanced, const u64 elements);
-void 	r_command_key_print(const u64 key);
-u64 	r_material_construct(const u64 program, const u64 mesh, const u64 texture);
+u64 	r_CommandKey(const u64 screen, const u64 depth, const u64 transparency, const u64 material, const u64 primitive, const u64 instanced, const u64 elements);
+void 	r_CommandKeyPrint(const u64 key);
+u64 	r_MaterialConstruct(const u64 program, const u64 mesh, const u64 texture);
 
 #define	R_CMD_SCREEN_LAYER_BITS		1
 #define	R_CMD_DEPTH_BITS		23
@@ -233,7 +237,7 @@ we must speculate on future positions.
 					  | PROXY3D_SPECULATE_LINEAR	\
 					)
 
-struct r_proxy3d_config
+struct r_Proxy3d_config
 {
 	u64	ns_time;
 	u32	parent;
@@ -251,9 +255,9 @@ struct r_proxy3d_config
 /*
  * r_proxy3d - proxy structure containing information for speculatively drawing. 
  */
-struct r_proxy3d
+struct r_Proxy3d
 {
-	struct hiNode	header; /* DO NOT MOVE! */
+	HI_SLOT_STATE;
 
 	u32	flags;
 	vec3	spec_position;
@@ -278,13 +282,13 @@ struct r_proxy3d
 };
 
 /* return the handle of a newly allocated proxy3d. */
-u32 			r_proxy3d_alloc(const struct r_proxy3d_config *config);
+u32 			r_Proxy3dAlloc(const struct r_Proxy3d_config *config);
 /* dealloc the given proxy3d unit. */
-void			r_proxy3d_dealloc(struct arena *tmp, const u32 proxy);
+void			r_Proxy3dDealloc(struct arena *tmp, const u32 proxy);
 /* return the proxy3d of the unit given that the unit exist and has a proxy3d; otherwise return NULL. */
-struct r_proxy3d *	r_proxy3d_address(const u32 proxy);
+struct r_Proxy3d *	r_Proxy3dAddress(const u32 proxy);
 /* set the proxy */
-void 			r_proxy3d_set_linear_speculation(const vec3 position, const quat rotation, const vec3 linear_velocity, const vec3 angular_velocity, const u64 ns_time, const u32 proxy);
+void 			r_Proxy3dLinearSpeculationSet(const vec3 position, const quat rotation, const vec3 linear_velocity, const vec3 angular_velocity, const u64 ns_time, const u32 proxy);
 
 /********************************************************
  *			r_scene.c			*
@@ -298,32 +302,33 @@ enum r_instance_type
 	R_INSTANCE_COUNT
 };
 
-struct r_instance
+struct r_Instance
 {
-	struct array_list_intrusive_node header;
+	POOL_SLOT_STATE;
+	LL_SLOT_STATE;
 
 	u64			frame_last_touched;	/* last scene frame it was touched; if not touched during frame, then prune */
-	struct r_command *	cmd;			/* points into arena, so safe to dereference */
+	struct r_Command *	cmd;			/* points into arena, so safe to dereference */
 
 	enum r_instance_type	type;			/* draw type of unit 				*/
 	union
 	{
 		u32		       unit;	
 		struct ui_DrawBucket *ui_bucket;
-		struct r_mesh	      *mesh;
+		struct r_Mesh	      *mesh;
 	};
 };
 
-struct r_instance *	r_instance_add(const u32 unit, const u64 cmd);
-struct r_instance *	r_instance_add_non_cached(const u64 cmd); /* add non cached instance with no unit. This
+struct r_Instance *	r_InstanceAdd(const u32 unit, const u64 cmd);
+struct r_Instance *	r_InstanceAddNonCached(const u64 cmd); /* add non cached instance with no unit. This
 								     gives us an immediate mode option that can
 								     simplify what we want. */
 
 /********************** Render Buffer  *************************/
 
-struct r_buffer
+struct r_Buffer
 {
-	struct r_buffer *	next;
+	struct r_Buffer *	next;
 	u32 			shared_vbo;
 	u32 			local_vbo;
 	u32 			ebo;
@@ -345,33 +350,33 @@ struct r_buffer
 /********************** Render Buffer Constructor  *************************/
  
 /* r_buffer_constructor - utility to construct r_buffer arrays for r_buckets.  */
-struct r_buffer_constructor
+struct r_BufferConstructor
 {
-	struct r_buffer *first;
-	struct r_buffer *last;	
+	struct r_Buffer *first;
+	struct r_Buffer *last;	
 
 	u32 count;
 };
 
 /* reset a r_buffer array constructor */
-void			r_buffer_constructor_reset(struct r_buffer_constructor *constructor);
+void			r_BufferConstructorReset(struct r_BufferConstructor *constructor);
 /* Alloc the next r_buffer beginning at command c_l and finish (if exists) the current r_buffer */
-void			r_buffer_constructor_buffer_alloc(struct r_buffer_constructor *constructor, const u32 c_new_l);
+void			r_BufferConstructorBufferAlloc(struct r_BufferConstructor *constructor, const u32 c_new_l);
 /* add size to the current buffer being constructed  */
-void 			r_buffer_constructor_buffer_add_size(struct r_buffer_constructor *constructor, const u64 local_size, const u64 shared_size, const u32 instance_count, const u32 index_count);
+void 			r_BufferConstructorBufferAddSize(struct r_BufferConstructor *constructor, const u64 local_size, const u64 shared_size, const u32 instance_count, const u32 index_count);
 /* finish constructing the current r_buffer array with its upper bound draw command */
-struct r_buffer **	r_buffer_constructor_finish( struct r_buffer_constructor *constructor, const u32 c_h);
+struct r_Buffer **	r_BufferConstructorFinish( struct r_BufferConstructor *constructor, const u32 c_h);
 
 /********************** Render Bucket *************************
  * r_bucket - A render bucket is a set of render commands or draw commands that can be drawn in a single 
  * 	      draw call. A bucket contains zero or more draw call instructions that determines how to draw
  * 	      the vertex data inside the bucket.
  */
-struct r_bucket
+struct r_Bucket
 {
-	struct r_bucket *	next;
+	struct r_Bucket *	next;
 
-	struct r_buffer **	buffer_array;
+	struct r_Buffer **	buffer_array;
 	u32			buffer_count;
 
 	u32	c_l;			/* index of first r_command in bucket 	*/
@@ -390,44 +395,42 @@ struct r_bucket
  * a set of draw commands for some render units. Each frame caches its new r_instances, and prunes ant instaces 
  * not recreated during the frame. */
 
-struct r_scene
+struct r_Scene
 {
 	struct arena 		mem_frame_arr[2];
 	struct arena *		mem_frame;
 	u64 			frame;
 
-	struct hashMap *	proxy3d_to_instance_map;	/* map[ generation(32) | index(32) ] -> instance */
-	struct array_list_intrusive *instance_list;		/* instance storage 					   */
+	struct hashMap 		proxy3d_to_instance_map;/* map[ generation(32) | index(32) ] -> instance */
+	struct pool 		instance_pool;		/* instance storage */
+	struct ll		instance_new_list;	/* non-cached instance 	*/
 
-	u32 			instance_new_first;	/* non-cached instance [ instance_dll ]	*/
-
-	struct r_command *	cmd_cache;		/* cached commands 		*/
-	struct r_command *	cmd_frame;		/* current frame commands 	*/
+	struct r_Command *	cmd_cache;		/* cached commands 		*/
+	struct r_Command *	cmd_frame;		/* current frame commands 	*/
 	u32			cmd_cache_count;	
 	u32			cmd_frame_count;
-	u32			cmd_new_count;		/* new command count (includes updated cached cmd's) */
 
-	struct r_bucket *	frame_bucket_list;
+	struct r_Bucket *	frame_bucket_list;
 };
 
-extern struct r_scene *g_scene;
+extern struct r_Scene *g_scene;
 
 /* alloc r_scene resources 				*/
-struct r_scene *r_scene_alloc(void);
+struct r_Scene *r_SceneAlloc(void);
 /* free r_scene resources 				*/
-void		r_scene_free(struct r_scene *scene);
+void		r_SceneDealloc(struct r_Scene *scene);
 /* set scene to be the current global scene 		*/
-void		r_scene_set(struct r_scene *scene);
+void		r_SceneSetGlobal(struct r_Scene *scene);
 /* begin new frame 					*/
-void		r_scene_frame_begin(void);
+void		r_SceneFrameBegin(void);
 /* set global scene to NULL and process draw commands  	*/
-void		r_scene_frame_end(void);
+void		r_SceneFrameEnd(void);
 
 /********************************************************
  *			r_mesh.c			*
  ********************************************************/
 
-struct r_mesh
+struct r_Mesh
 {
 	STRING_DATABASE_SLOT_STATE;				/* internal header, MAY NOT BE MOVED */
 	u32				index_count;		
@@ -441,30 +444,30 @@ struct r_mesh
 /**************** TEMPORARY: quick and dirty mesh generation *****************/
 
 /* setup mesh stub */
-void 		r_mesh_set_stub_box(struct r_mesh *mesh_stub);
+void 		r_MeshStubBox(struct r_Mesh *mesh_stub);
 /* setup mesh from sphere parameters */
-void 		r_mesh_set_sphere(struct arena *mem, struct r_mesh *mesh, const f32 radius, const u32 refinement);
+void 		r_MeshSphere(struct arena *mem, struct r_Mesh *mesh, const f32 radius, const u32 refinement);
 /* setup mesh from capsule parameters */
-void 		r_mesh_set_capsule(struct arena *mem, struct r_mesh *mesh, const f32 half_height, const f32 radius, const u32 refinement);
+void 		r_MeshCapsule(struct arena *mem, struct r_Mesh *mesh, const f32 half_height, const f32 radius, const u32 refinement);
 /* setup mesh from collison hull */
-void 		r_mesh_set_hull(struct arena *mem, struct r_mesh *mesh, const struct dcel *hull);
+void 		r_MeshHull(struct arena *mem, struct r_Mesh *mesh, const struct dcel *hull);
 /* setup mesh from tri mesh */
-void 		r_mesh_set_tri_mesh(struct arena *mem, struct r_mesh *mesh, const struct triMesh *tri_mesh);
+void 		r_MeshTriMesh(struct arena *mem, struct r_Mesh *mesh, const struct triMesh *tri_mesh);
 
 /********************************************************
  *			r_gl.c				*
  ********************************************************/
 
 /* alloc global gl state list */
-void 	gl_state_list_alloc(void);
+void 	gl_StatePoolAlloc(void);
 /* free global gl state list */
-void 	gl_state_list_free(void);
+void 	gl_StatePoolDealloc(void);
 /* alloc a new gl_state  */
-u32	gl_state_alloc(void);
+u32	gl_StateAlloc(void);
 /* free a gl_state  */
-void 	gl_state_free(const u32 gl_state);
+void 	gl_StateDealloc(const u32 gl_state);
 /* set gl state to current global */
-void 	gl_state_set_current(const u32 gl_state);
+void 	gl_StateSetCurrent(const u32 gl_state);
 
 /*
    Some notes in order of development; initial documentation is wrong and should instead be viewed as the thought
@@ -819,18 +822,18 @@ ui for example. In those cases, setting up r_units for every ui batch is unecess
 r_instance API directly to add units. This essentially becomes a fully Immediate API; Every frame our old  direct 
 r_instance calls have their data cleaned up.
 
-struct r_core
+struct r_Core
 {
 	//shared data
 }
 
-struct r_scene
+struct r_Scene
 {
 	struct array_list_intrusive *instances;
 }
 
 [array allocator: intrusive double linked list}
-struct r_instance
+struct r_Instance
 {
 	0 = NULL
 	U32 = MAX 
@@ -848,5 +851,9 @@ struct r_cmd
 	u32	allocated;
 }
 */
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

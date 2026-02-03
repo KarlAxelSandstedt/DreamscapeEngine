@@ -89,7 +89,7 @@ We should check the GL version of the context and verify that the loaded functio
 are supported. 
  */
 #define	LOAD_PROC(gl_fp)	(type_ ## gl_fp) LoadProc(#gl_fp) 								
-void sdl3_GlFunctionsInit(struct gl_functions *func)
+void sdl3_GlFunctionsInit(struct gl_Functions *func)
 {	
 	func->glGetIntegerv = LOAD_PROC(glGetIntegerv);
 	func->glGetString = LOAD_PROC(glGetString);

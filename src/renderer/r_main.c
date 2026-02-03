@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -23,7 +23,7 @@
 #include "transform.h"
 #include "led_public.h"
 
-static struct r_mesh *debug_contact_manifold_segments_mesh(struct arena *mem, const struct physicsPipeline *pipeline)
+static struct r_Mesh *DebugContactManifoldSegmentsMesh(struct arena *mem, const struct physicsPipeline *pipeline)
 {
 	const struct contactManifold *cm = pipeline->cm;
 	const u32 cm_count = pipeline->cm_count;
@@ -31,8 +31,8 @@ static struct r_mesh *debug_contact_manifold_segments_mesh(struct arena *mem, co
 	ArenaPushRecord(mem);
 
 	const u32 vertex_count = 2*pipeline->cm_count;
-	struct r_mesh *mesh = NULL;
- 	struct r_mesh *tmp = ArenaPush(mem, sizeof(struct r_mesh));
+	struct r_Mesh *mesh = NULL;
+ 	struct r_Mesh *tmp = ArenaPush(mem, sizeof(struct r_Mesh));
 	u8 *vertex_data = ArenaPush(mem, vertex_count*L_COLOR_STRIDE);
 	if (!tmp || !vertex_data) 
 	{ 
@@ -100,7 +100,7 @@ end:
 
 }
 
-static struct r_mesh *debug_contact_manifold_triangles_mesh(struct arena *mem, const struct physicsPipeline *pipeline)
+static struct r_Mesh *DebugContactManifoldTrianglesMesh(struct arena *mem, const struct physicsPipeline *pipeline)
 {
 	const struct contactManifold *cm = pipeline->cm;
 	const u32 cm_count = pipeline->cm_count;
@@ -109,8 +109,8 @@ static struct r_mesh *debug_contact_manifold_triangles_mesh(struct arena *mem, c
 
 	u32 vertex_count = 6*pipeline->cm_count;
 
-	struct r_mesh *mesh = NULL;
- 	struct r_mesh *tmp = ArenaPush(mem, sizeof(struct r_mesh));
+	struct r_Mesh *mesh = NULL;
+ 	struct r_Mesh *tmp = ArenaPush(mem, sizeof(struct r_Mesh));
 	u8 *vertex_data = ArenaPush(mem, vertex_count*L_COLOR_STRIDE);
 	if (!tmp || !vertex_data) 
 	{ 
@@ -190,7 +190,7 @@ end:
 	return mesh;
 }
 
-static struct r_mesh *debug_lines_mesh(struct arena *mem, const struct physicsPipeline *pipeline)
+static struct r_Mesh *DebugLinesMesh(struct arena *mem, const struct physicsPipeline *pipeline)
 {
 	ArenaPushRecord(mem);
 
@@ -200,8 +200,8 @@ static struct r_mesh *debug_lines_mesh(struct arena *mem, const struct physicsPi
 		vertex_count += 2*pipeline->debug[i].stack_segment.next;
 	}
 
-	struct r_mesh *mesh = NULL;
- 	struct r_mesh *tmp = ArenaPush(mem, sizeof(struct r_mesh));
+	struct r_Mesh *mesh = NULL;
+ 	struct r_Mesh *tmp = ArenaPush(mem, sizeof(struct r_Mesh));
 	u8 *vertex_data = ArenaPush(mem, vertex_count*L_COLOR_STRIDE);
 	if (!tmp || !vertex_data) 
 	{ 
@@ -237,12 +237,12 @@ end:
 	return mesh;
 }
 
-static struct r_mesh *bounding_boxes_mesh(struct arena *mem, const struct physicsPipeline *pipeline, const vec4 color)
+static struct r_Mesh *BoundingBoxesMesh(struct arena *mem, const struct physicsPipeline *pipeline, const vec4 color)
 {
 	ArenaPushRecord(mem);
 	const u32 vertex_count = 3*8*pipeline->body_pool.count;
-	struct r_mesh *mesh = NULL;
- 	struct r_mesh *tmp = ArenaPush(mem, sizeof(struct r_mesh));
+	struct r_Mesh *mesh = NULL;
+ 	struct r_Mesh *tmp = ArenaPush(mem, sizeof(struct r_Mesh));
 	u8 *vertex_data = ArenaPush(mem, vertex_count * L_COLOR_STRIDE);
 	if (!tmp || !vertex_data) 
 	{ 
@@ -275,15 +275,15 @@ end:
 	return mesh;
 }
 
-static struct r_mesh *bvh_mesh(struct arena *mem, const struct bvh *bvh, const vec3 translation, const quat rotation, const vec4 color)
+static struct r_Mesh *bvh_Mesh(struct arena *mem, const struct bvh *bvh, const vec3 translation, const quat rotation, const vec4 color)
 {
 	mat3 rot;
 	Mat3Quat(rot, rotation);
 
 	ArenaPushRecord(mem);
 	const u32 vertex_count = 3*8*bvh->tree.pool.count;
- 	struct r_mesh *mesh = NULL;
-	struct r_mesh *tmp = ArenaPush(mem, sizeof(struct r_mesh));
+ 	struct r_Mesh *mesh = NULL;
+	struct r_Mesh *tmp = ArenaPush(mem, sizeof(struct r_Mesh));
 	u8 *vertex_data = ArenaPush(mem, vertex_count * L_COLOR_STRIDE);
 	if (!tmp || !vertex_data) 
 	{ 
@@ -340,7 +340,7 @@ end:
 	return mesh;
 }
 
-static void r_led_draw(const struct led *led)
+static void r_EditorDraw(const struct led *led)
 {
 	ProfZone;
 
@@ -349,10 +349,10 @@ static void r_led_draw(const struct led *led)
 	//	ds_Assert(slot.index != STRING_DATABASE_STUB_INDEX);
 	//	if (slot.index != STRING_DATABASE_STUB_INDEX)
 	//	{
-	//		const u64 material = r_material_construct(PROGRAM_LIGHTNING, slot.index, TEXTURE_NONE);
+	//		const u64 material = r_MaterialConstruct(PROGRAM_LIGHTNING, slot.index, TEXTURE_NONE);
 	//		const u64 depth = 0x7fffff;
-	//		const u64 cmd = r_command_key(R_CMD_SCREEN_LAYER_GAME, 0, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_TRIANGLE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-	//		struct r_instance *instance = r_instance_add_non_cached(cmd);
+	//		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, 0, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_TRIANGLE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
+	//		struct r_Instance *instance = r_InstanceAddNonCached(cmd);
 	//		instance->type = R_INSTANCE_MESH;
 	//		instance->mesh = slot.address;
 	//	}
@@ -361,15 +361,16 @@ static void r_led_draw(const struct led *led)
 	const u32 depth_exponent = 1 + f32_exponent_bits(led->cam.fz_far);
 	ds_Assert(depth_exponent >= 23);
 
-	r_proxy3d_hierarchy_speculate(&g_r_core->frame, led->ns - led->ns_engine_paused);
+	r_Proxy3dHierarchySpeculate(&g_r_core->frame, led->ns - led->ns_engine_paused);
 
-	struct hiIterator it = hi_IteratorAlloc(&g_r_core->frame, g_r_core->proxy3d_hierarchy, PROXY3D_ROOT);
+	ArenaPushRecord(&g_r_core->frame);
+	struct hiIterator it = hi_IteratorAlloc(&g_r_core->frame, &g_r_core->proxy3d_hierarchy, PROXY3D_ROOT);
 	// skip root stub 
 	hi_IteratorNextDf(&it);
 	while (it.count)
 	{
 		const u32 index = hi_IteratorNextDf(&it);
-		struct r_proxy3d *proxy = r_proxy3d_address(index);
+		struct r_Proxy3d *proxy = r_Proxy3dAddress(index);
 
 		const f32 dist = Vec3Distance(proxy->spec_position, led->cam.position);
 		const u32 unit_exponent = f32_exponent_bits(dist);
@@ -381,30 +382,30 @@ static void r_led_draw(const struct led *led)
 			? R_CMD_TRANSPARENCY_OPAQUE
 			: R_CMD_TRANSPARENCY_ADDITIVE;
 
-		const u64 material = r_material_construct(PROGRAM_PROXY3D, proxy->mesh, TEXTURE_NONE);
-		const struct r_mesh *r_mesh = strdb_Address(&led->render_mesh_db, proxy->mesh);
+		const u64 material = r_MaterialConstruct(PROGRAM_PROXY3D, proxy->mesh, TEXTURE_NONE);
+		const struct r_Mesh *r_mesh = strdb_Address(&led->render_mesh_db, proxy->mesh);
 		const u64 command = (r_mesh->index_data)
-			? r_command_key(R_CMD_SCREEN_LAYER_GAME, depth, transparency, material, R_CMD_PRIMITIVE_TRIANGLE, R_CMD_INSTANCED, R_CMD_ELEMENTS)
-			: r_command_key(R_CMD_SCREEN_LAYER_GAME, depth, transparency, material, R_CMD_PRIMITIVE_TRIANGLE, R_CMD_INSTANCED, R_CMD_ARRAYS);
+			? r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, transparency, material, R_CMD_PRIMITIVE_TRIANGLE, R_CMD_INSTANCED, R_CMD_ELEMENTS)
+			: r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, transparency, material, R_CMD_PRIMITIVE_TRIANGLE, R_CMD_INSTANCED, R_CMD_ARRAYS);
 		
-		r_instance_add(index, command);
+		r_InstanceAdd(index, command);
 	}
-	hi_IteratorRelease(&it);
+	ArenaPopRecord(&g_r_core->frame);
 
 	if (led->physics.draw_dbvh)
 	{
-		const u64 material = r_material_construct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
+		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
-		const u64 cmd = r_command_key(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
+		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
 		quat rotation;
 		const vec3 translation = { 0 };
 		vec3 axis = { 0.0f, 1.0f, 0.0f };
 		const f32 angle = 0.0f;
 		QuatAxisAngle(rotation, axis, angle);
-		struct r_mesh *mesh = bvh_mesh(&g_r_core->frame, &led->physics.dynamic_tree, translation, rotation, led->physics.dbvh_color);
+		struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &led->physics.dynamic_tree, translation, rotation, led->physics.dbvh_color);
 		if (mesh)
 		{
-			struct r_instance *instance = r_instance_add_non_cached(cmd);
+			struct r_Instance *instance = r_InstanceAddNonCached(cmd);
 			instance->type = R_INSTANCE_MESH;
 			instance->mesh = mesh;
 		}
@@ -413,9 +414,9 @@ static void r_led_draw(const struct led *led)
 	if (led->physics.draw_sbvh)
 	{
 
-		const u64 material = r_material_construct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
+		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
-		const u64 cmd = r_command_key(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
+		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
 		struct rigidBody *body = NULL;
 		for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 		{
@@ -426,10 +427,10 @@ static void r_led_draw(const struct led *led)
 			}
 
 			const struct collisionShape *shape = strdb_Address(led->physics.shape_db, body->shape_handle);
-			struct r_mesh *mesh = bvh_mesh(&g_r_core->frame, &shape->mesh_bvh.bvh, body->position, body->rotation, led->physics.sbvh_color);
+			struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &shape->mesh_bvh.bvh, body->position, body->rotation, led->physics.sbvh_color);
 			if (mesh)
 			{
-				struct r_instance *instance = r_instance_add_non_cached(cmd);
+				struct r_Instance *instance = r_InstanceAddNonCached(cmd);
 				instance->type = R_INSTANCE_MESH;
 				instance->mesh = mesh;
 			}
@@ -439,13 +440,13 @@ static void r_led_draw(const struct led *led)
 
 	if (led->physics.draw_bounding_box)
 	{
-		const u64 material = r_material_construct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
+		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
-		const u64 cmd = r_command_key(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		struct r_mesh *mesh = bounding_boxes_mesh(&g_r_core->frame, &led->physics, led->physics.bounding_box_color);
+		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
+		struct r_Mesh *mesh = BoundingBoxesMesh(&g_r_core->frame, &led->physics, led->physics.bounding_box_color);
 		if (mesh)
 		{
-			struct r_instance *instance = r_instance_add_non_cached(cmd);
+			struct r_Instance *instance = r_InstanceAddNonCached(cmd);
 			instance->type = R_INSTANCE_MESH;
 			instance->mesh = mesh;
 		}
@@ -453,13 +454,13 @@ static void r_led_draw(const struct led *led)
 
 	if (led->physics.draw_lines)
 	{
-		const u64 material = r_material_construct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
+		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
-		const u64 cmd = r_command_key(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		struct r_mesh *mesh = debug_lines_mesh(&g_r_core->frame, &led->physics);
+		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
+		struct r_Mesh *mesh = DebugLinesMesh(&g_r_core->frame, &led->physics);
 		if (mesh)
 		{
-			struct r_instance *instance = r_instance_add_non_cached(cmd);
+			struct r_Instance *instance = r_InstanceAddNonCached(cmd);
 			instance->type = R_INSTANCE_MESH;
 			instance->mesh = mesh;
 		}
@@ -468,23 +469,23 @@ static void r_led_draw(const struct led *led)
 	if (led->physics.draw_manifold)
 	{
 
-		const u64 material = r_material_construct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
+		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
 
-		const u64 cmd1 = r_command_key(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_TRIANGLE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		struct r_mesh *mesh = debug_contact_manifold_triangles_mesh(&g_r_core->frame, &led->physics);
+		const u64 cmd1 = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_TRIANGLE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
+		struct r_Mesh *mesh = DebugContactManifoldTrianglesMesh(&g_r_core->frame, &led->physics);
 		if (mesh)
 		{
-			struct r_instance *instance = r_instance_add_non_cached(cmd1);
+			struct r_Instance *instance = r_InstanceAddNonCached(cmd1);
 			instance->type = R_INSTANCE_MESH;
 			instance->mesh = mesh;
 		}
 
-		const u64 cmd2 = r_command_key(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		mesh = debug_contact_manifold_segments_mesh(&g_r_core->frame, &led->physics);
+		const u64 cmd2 = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
+		mesh = DebugContactManifoldSegmentsMesh(&g_r_core->frame, &led->physics);
 		if (mesh)
 		{
-			struct r_instance *instance = r_instance_add_non_cached(cmd2);
+			struct r_Instance *instance = r_InstanceAddNonCached(cmd2);
 			instance->type = R_INSTANCE_MESH;
 			instance->mesh = mesh;
 		}
@@ -494,10 +495,10 @@ static void r_led_draw(const struct led *led)
 	ProfZoneEnd;
 }
 
-static void internal_r_proxy3d_uniforms(const struct led *led, const u32 window)
+static void r_InternalProxy3dUniforms(const struct led *led, const u32 window)
 {
 	mat4 perspective, view;
-	const struct r_camera *cam = &led->cam;
+	const struct r_Camera *cam = &led->cam;
 	mat4Perspective(perspective, cam->aspect_ratio, cam->fov_x, cam->fz_near, cam->fz_far);
 	mat4View(view, cam->position, cam->left, cam->up, cam->forward);
 	
@@ -532,27 +533,27 @@ static void internal_r_proxy3d_uniforms(const struct led *led, const u32 window)
 	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, (f32 *) view);
 }
 
-static void internal_r_ui_uniforms(const u32 window)
+static void r_InternalUiUniforms(const u32 window)
 {
 	vec2u32 resolution;
-	system_window_size(resolution, window);
+	ds_WindowSize(resolution, window);
 
 	ds_glUseProgram(g_r_core->program[PROGRAM_UI].gl_program);
 	GLint resolution_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_UI].gl_program, "resolution");
 	ds_glUniform2f(resolution_addr, (f32) resolution[0], (f32) resolution[1]);
 }
 
-static void r_scene_render(const struct led *led, const u32 window)
+static void r_SceneRender(const struct led *led, const u32 window)
 {
 	ProfZone;
 
-	struct system_window *sys_win = system_window_address(window);
+	struct ds_Window *sys_win = ds_WindowAddress(window);
 	ds_glViewport(0, 0, (i32) sys_win->size[0], (i32) sys_win->size[1]); 
 
 	ds_glClearColor(0.08f, 0.08f, 0.08f, 1.0f);
 	ds_glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	for (struct r_bucket *b = sys_win->r_scene->frame_bucket_list; b; b = b->next)
+	for (struct r_Bucket *b = sys_win->r_scene->frame_bucket_list; b; b = b->next)
 	{
 		ProfZoneNamed("render bucket");
 		switch (b->screen_layer)
@@ -641,7 +642,7 @@ static void r_scene_render(const struct led *led, const u32 window)
 		ds_glBindVertexArray(vao);
 		for (u32 i = 0; i < b->buffer_count; ++i)
 		{	
-			struct r_buffer *buf = b->buffer_array[i];
+			struct r_Buffer *buf = b->buffer_array[i];
 			ds_glGenBuffers(1, &buf->local_vbo);
 			ds_glBindBuffer(GL_ARRAY_BUFFER, buf->local_vbo);
 			ds_glBufferData(GL_ARRAY_BUFFER, buf->local_size, buf->local_data, GL_STATIC_DRAW);
@@ -710,12 +711,12 @@ static void r_scene_render(const struct led *led, const u32 window)
 		ProfZoneEnd;
 	}
 
-	system_window_swap_gl_buffers(window);
+	ds_WindowSwapGlBuffers(window);
 	GL_STATE_ASSERT;
 	ProfZoneEnd;
 }
 
-void r_led_main(const struct led *led)
+void r_EditorMain(const struct led *led)
 {
 	g_r_core->ns_elapsed = led->ns;
 	if (g_r_core->ns_tick)
@@ -725,8 +726,6 @@ void r_led_main(const struct led *led)
 		{
 			ProfZoneNamed("render frame");
 			ArenaFlush(&g_r_core->frame);
-			struct arena tmp = ArenaAlloc1MB();
-
 			g_r_core->frames_elapsed += frames_elapsed_since_last_draw;
 
 			//fprintf(stderr, "led ns: %lu\n", led->ns);
@@ -735,38 +734,39 @@ void r_led_main(const struct led *led)
 			//fprintf(stderr, "p f ns: %lu\n", led->physics.frames_completed * led->physics.ns_tick);
 			//fprintf(stderr, "spec:   %lu\n", led->ns - led->ns_engine_paused);
 
-			struct system_window *win = NULL;
-			struct hiIterator	it = hi_IteratorAlloc(&tmp, g_window_hierarchy, g_process_root_window);
+			struct ds_Window *win = NULL;
+
+			struct arena tmp = ArenaAlloc1MB();
+			struct hiIterator it = hi_IteratorAlloc(&tmp, g_window_hierarchy, g_process_root_window);
 			while (it.count)
 			{
 				const u32 window = hi_IteratorNextDf(&it);
-				win = system_window_address(window);
+				win = ds_WindowAddress(window);
 				if (!win->tagged_for_destruction)
 				{
-					system_window_set_current_gl_context(window);
-					system_window_set_global(window);
+					ds_WindowSetCurrentGlContext(window);
+					ds_WindowSetGlobal(window);
 
-					r_scene_set(win->r_scene);
-					r_scene_frame_begin();
+					r_SceneSetGlobal(win->r_scene);
+					r_SceneFrameBegin();
 					{
-						r_ui_draw(win->ui);
-						internal_r_ui_uniforms(window);
+						r_UiDraw(win->ui);
+						r_InternalUiUniforms(window);
 						if (window == g_process_root_window)
 						{
-							r_led_draw(led);
-							internal_r_proxy3d_uniforms(led, window);
+							r_EditorDraw(led);
+							r_InternalProxy3dUniforms(led, window);
 						}
 					}
-					r_scene_frame_end();
-					r_scene_render(led, window);
+					r_SceneFrameEnd();
+					r_SceneRender(led, window);
 				}
 			}
-			hi_IteratorRelease(&it);
+			ArenaFree1MB(&tmp);
 
 			/* NOTE: main context must be set in the case of creating new contexts sharing state. */
-			system_window_set_current_gl_context(g_process_root_window);
+			ds_WindowSetCurrentGlContext(g_process_root_window);
 
-			ArenaFree1MB(&tmp);
 			ProfZoneEnd;
 		}
 	}

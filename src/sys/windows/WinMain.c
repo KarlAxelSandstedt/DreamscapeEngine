@@ -77,14 +77,14 @@ int CALLBACK WinMain(HINSTANCE h_instance, HINSTANCE hPrevInstance, LPSTR lpCmdL
 	struct led *editor = led_alloc();
 	
 	const u64 renderer_framerate = 144;	
-	r_init(&mem_persistent, NSEC_PER_SEC / renderer_framerate, 16*1024*1024, 1024, &editor->render_mesh_db);
+	r_Init(&mem_persistent, NSEC_PER_SEC / renderer_framerate, 16*1024*1024, 1024, &editor->render_mesh_db);
 	
 	u64 old_time = editor->ns;
 	while (editor->running)
 	{
 		ProfFrameMark;
 
-		system_free_tagged_windows();
+		ds_DeallocTaggedWindows();
 
 		task_context_frame_clear();
 
@@ -96,7 +96,7 @@ int CALLBACK WinMain(HINSTANCE h_instance, HINSTANCE hPrevInstance, LPSTR lpCmdL
 
 		led_main(editor, ns_tick);
 		led_ui_main(editor);
-		r_led_main(editor);
+		r_EditorMain(editor);
 	}
 
 	led_dealloc(editor);

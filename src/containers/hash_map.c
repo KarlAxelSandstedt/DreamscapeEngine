@@ -168,7 +168,7 @@ struct hashMap HashMapDeserialize(struct arena *mem, struct serialStream *ss, co
 	return map;
 }
 
-u32 HashMapAdd(struct hashMap *map, const u32 key, const u32 index)
+u32 HashMapAdd(struct hashMap *map, const u32 hash, const u32 index)
 {
 	ds_Assert(index >> 31 == 0);
 
@@ -186,18 +186,18 @@ u32 HashMapAdd(struct hashMap *map, const u32 key, const u32 index)
 		}
 	}
 
-	const u32 h = key & map->hash_mask;
+	const u32 h = hash & map->hash_mask;
 	
 	map->index[index] = map->hash[h];
 	map->hash[h] = index;
 	return 1;
 }
 
-void HashMapRemove(struct hashMap *map, const u32 key, const u32 index)
+void HashMapRemove(struct hashMap *map, const u32 hash, const u32 index)
 {
 	ds_Assert(index < map->index_len);
 
-	const u32 h = key & map->hash_mask;
+	const u32 h = hash & map->hash_mask;
 	if (map->hash[h] == index)
 	{
 		map->hash[h] = map->index[index];
@@ -218,9 +218,9 @@ void HashMapRemove(struct hashMap *map, const u32 key, const u32 index)
 	map->index[index] = HASH_NULL;
 }
 
-u32 HashMapFirst(const struct hashMap *map, const u32 key)
+u32 HashMapFirst(const struct hashMap *map, const u32 hash)
 {
-	return map->hash[key & map->hash_mask];
+	return map->hash[hash & map->hash_mask];
 }
 
 u32 HashMapNext(const struct hashMap *map, const u32 index)

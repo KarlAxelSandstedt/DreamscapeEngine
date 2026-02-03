@@ -21,7 +21,6 @@
 #define __LED_LOCAL_H__
 
 #include "led_public.h"
-#include "sys_public.h"
 #include "r_public.h"
 #include "ui_public.h"
 
@@ -34,7 +33,7 @@
 struct led_visual
 {
 	//TODO seperate cameras for seperate modes 
-	struct r_camera	cam;	
+	struct r_Camera	cam;	
 
 	/* general visual aspects */
 

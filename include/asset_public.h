@@ -25,6 +25,7 @@ extern "C" {
 #endif
 
 #include "ds_platform.h"
+#include "ds_font.h"
 
 /*
 

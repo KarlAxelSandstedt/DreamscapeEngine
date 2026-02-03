@@ -26,18 +26,18 @@ static void led_project_menu_window_interaction(struct led *led)
 void led_project_menu_main(struct led *led)
 {
 	struct led_project_menu *menu = &led->project_menu;
-	struct system_window *sys_win;
+	struct ds_Window *sys_win;
 	if (menu->window == HI_NULL_INDEX)
 	{
-		menu->window = system_window_alloc("Project Menu", Vec2U32Inline(0,0), Vec2U32Inline(400, 400), g_process_root_window);
+		menu->window = ds_WindowAlloc("Project Menu", Vec2U32Inline(0,0), Vec2U32Inline(400, 400), g_process_root_window);
 		menu->popup_new_project = ui_PopupNull();
 
-		struct system_window *sys_win = system_window_address(menu->window);
+		struct ds_Window *sys_win = ds_WindowAddress(menu->window);
 		menu->input_line_new_project = ui_TextInputAlloc(&sys_win->mem_persistent, 32);
 		menu->utf8_new_project = Utf8Alloc(&sys_win->mem_persistent, 32*sizeof(u32));
 	}
 
-	sys_win = system_window_address(menu->window);
+	sys_win = ds_WindowAddress(menu->window);
 	if (menu->window != HI_NULL_INDEX && sys_win->tagged_for_destruction)
 	{
 		menu->window = HI_NULL_INDEX;
@@ -64,8 +64,8 @@ void led_project_menu_main(struct led *led)
 
 	if (led->project.initialized)
 	{
-		struct system_window *win = system_window_address(menu->window);
-		system_window_tag_sub_hierarchy_for_destruction(menu->window);
+		struct ds_Window *win = ds_WindowAddress(menu->window);
+		ds_WindowTagSubHierarchyForDestruction(menu->window);
 		menu->window = HI_NULL_INDEX;
 		menu->input_line_new_project = ui_TextInputEmpty();
 	}

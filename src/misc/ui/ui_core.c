@@ -58,7 +58,7 @@ struct ui *g_ui = NULL;
 /* ui allocator  */
 
 u32	cmd_ui_text_op;
-u32	cmd_uiPopup_build;
+u32	cmd_ui_popup_build;
 
 void ds_UiApiInit(void)
 {
@@ -67,7 +67,7 @@ void ds_UiApiInit(void)
 	CmdFunctionRegister(Utf8Inline("ui_TextInputFlush"), 1, &ui_TextInputFlush);
 	CmdFunctionRegister(Utf8Inline("ui_TextInputModeDisable"), 1, &ui_TextInputModeDisable);
 	cmd_ui_text_op = CmdFunctionRegister(Utf8Inline("ui_TextOp"), 3, &ui_TextOp).index;
-	cmd_uiPopup_build = CmdFunctionRegister(Utf8Inline("uiPopup_build"), 2, &uiPopup_build).index;
+	cmd_ui_popup_build = CmdFunctionRegister(Utf8Inline("ui_PopupBuild"), 2, &ui_PopupBuild).index;
 }
 
 struct ui_Visual ui_VisualInit(const vec4 background_color
@@ -348,7 +348,7 @@ void ui_TextInputModeEnable(void)
 	}
 	else
 	{
-		system_window_text_input_mode_enable();
+		ds_WindowTextInputModeEnable();
 	}
 
 	node = ui_NodeLookup(&id).address;
@@ -379,7 +379,7 @@ void ui_TextInputModeDisable(void)
 	const utf8 id = g_queue->cmd_exec->arg[0].utf8;
 	if (Utf8Equivalence(id, g_ui->inter.text_edit_id))
 	{
-		system_window_text_input_mode_disable();
+		ds_WindowTextInputModeDisable();
 		struct ui_Node *node = ui_NodeLookup(&g_ui->inter.text_edit_id).address;
 		if (node)
 		{

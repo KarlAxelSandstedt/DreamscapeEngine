@@ -68,7 +68,7 @@ extern u32			(*NativeWindowBorderedCheck)(const struct nativeWindow *native);
 extern void 			(*NativeCursorShow)(struct nativeWindow *native);
 /* hide cursor  */
 extern void 			(*NativeCursorHide)(struct nativeWindow *native);
-/* return 1 if cursor is hidden, 0 otherwise */
+/* return 1 if cursor is visible, 0 otherwise */
 extern u32  			(*NativeCursorVisibleCheck)(struct nativeWindow *native);
 /* return 1 if cursor is locked, 0 otherwise */
 extern u32  			(*NativeCursorLockedCheck)(struct nativeWindow *native);

@@ -55,26 +55,26 @@ extern "C" {
  *	     V (Z)
  */
 
-struct r_scene;
+struct r_Scene;
 struct nativeWindow;
 
 /* init function pointers */
-void 	system_graphics_init(void);
+void 	ds_GraphicsApiInit(void);
 /* free any graphics resources */
-void 	system_graphics_destroy(void);
+void 	ds_GraphicsApiShutdown(void);
 
 extern struct hi *	g_window_hierarchy;
 extern u32 		g_process_root_window;
 extern u32 		g_window;
 
-struct system_window
+struct ds_Window
 {
 	HI_SLOT_STATE;
 	struct nativeWindow *	native;			/* native graphics handle */
 	struct ui *		ui;			/* local ui */
-	struct cmd_queue 	cmd_queue;		/* local command queue */
+	struct cmdQueue 	cmd_queue;		/* local command queue */
 	struct ui_CmdConsole *	cmd_console;		/* console */
-	struct r_scene *	r_scene;
+	struct r_Scene *	r_scene;
 	struct arena 		mem_persistent;		/* peristent 1MB arena */
 
 	u32			tagged_for_destruction; /* If tagged, free on next start of frame */
@@ -86,53 +86,53 @@ struct system_window
 };
 
 /* alloc system_window resources, if no gl context exist, allocate context as well. */
-u32 			system_window_alloc(const char *title, const vec2u32 position, const vec2u32 size, const u32 parent);
+u32 			ds_WindowAlloc(const char *title, const vec2u32 position, const vec2u32 size, const u32 parent);
 /* alloc system_window resources AND set window to global root process window, if no gl context exist, allocate context as well. */
-u32 			system_process_root_window_alloc(const char *title, const vec2u32 position, const vec2u32 size);
+u32 			ds_RootWindowAlloc(const char *title, const vec2u32 position, const vec2u32 size);
 /* handle sys_win->ui events */
-void 			DsWindowEventHandler(struct system_window *sys_win);
+void 			ds_WindowEventHandler(struct ds_Window *sys_win);
 /* Tag sub-hierachy of root (including root itself) for destruction on next frame. */
-void system_window_tag_sub_hierarchy_for_destruction(const u32 root);
+void 			ds_WindowTagSubHierarchyForDestruction(const u32 root);
 /* free system windows tagged for destruction */
-void			system_free_tagged_windows(void);
+void			ds_DeallocTaggedWindows(void);
 /* get system window index  */
-u32			system_window_index(const struct system_window *sys_win);
+u32			ds_WindowIndex(const struct ds_Window *sys_win);
 /* get system window address  */
-struct system_window *	system_window_address(const u32 index);
+struct ds_Window *	ds_WindowAddress(const u32 index);
 /* Return system window containing the given native window handle, or an empty allocation slot if no window found */
-struct slot		system_window_lookup(const u64 native_handle);
+struct slot		ds_WindowLookup(const u64 native_handle);
 /* Set window to current (global pointers to window, ui and cmd_queue is set) */
-void			system_window_set_global(const u32 window);
+void			ds_WindowSetGlobal(const u32 window);
 /* enable text input mode for current window */
-void 			system_window_text_input_mode_enable(void);
+void 			ds_WindowTextInputModeEnable(void);
 /* disable text input mode for current window */
-void 			system_window_text_input_mode_disable(void);
+void 			ds_WindowTextInputModeDisable(void);
 /* Set system window to be the current gl context */
-void			system_window_set_current_gl_context(const u32 window);
+void			ds_WindowSetCurrentGlContext(const u32 window);
 /* opengl swap buffers */
-void 			system_window_swap_gl_buffers(const u32 window);
+void 			ds_WindowSwapGlBuffers(const u32 window);
 /* update system_window configuration */
-void			system_window_config_update(const u32 window);
+void			ds_WindowConfigUpdate(const u32 window);
 /* get system_window size */
-void			system_window_size(vec2u32 size, const u32 window);
+void			ds_WindowSize(vec2u32 size, const u32 window);
 
 
 /* set rectangle within window that cursor is restricted to */
-void 			cursor_set_rect(struct system_window *sys_win, const vec2 sys_position, const vec2 size);
+void 			ds_CursorSetRectangle(struct ds_Window *sys_win, const vec2 sys_position, const vec2 size);
 /* release any rectangle restriction */
-void 			cursor_unset_rect(struct system_window *sys_win);
-/* lock cursor to rectangle */
-u32  			cursor_is_locked(struct system_window *sys_win);
+void 			ds_CursorUnsetRectangle(struct ds_Window *sys_win);
+/* return 1 if cursor is locked, 0 otherwise */
+u32  			ds_CursorLockedCheck(struct ds_Window *sys_win);
 /* return 1 on success, 0 otherwise */
-u32 			cursor_lock(struct system_window *sys_win);
+u32 			ds_CursorLock(struct ds_Window *sys_win);
 /* return 1 on success, 0 otherwise */
-u32 			cursor_unlock(struct system_window *sys_win);
-/* return 1 on visible, 0 on hidden  */
-u32 			cursor_is_visible(struct system_window *sys_win);
+u32 			ds_CursorUnlock(struct ds_Window *sys_win);
+/* return 1 if cursor is visible, 0 otherwise */
+u32 			ds_CursorVisibleCheck(struct ds_Window *sys_win);
 /* show cursor  */
-void 			cursor_show(struct system_window *sys_win);
+void 			ds_CursorShow(struct ds_Window *sys_win);
 /* hide cursor  */
-void 			cursor_hide(struct system_window *sys_win);
+void 			ds_CursorHide(struct ds_Window *sys_win);
 
 #ifdef __cplusplus
 } 

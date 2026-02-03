@@ -61,7 +61,7 @@ void	RngSystem(void *buf, const u64 size);
 	typedef struct stat	file_status;
 	typedef int 		file_handle;
 	
-	#define FILE_HANDLE_INVALID 	-1
+	#define FILE_HANDLE_INVALID 	(-1)
 	
 	#define FS_PROT_READ         PROT_READ
 	#define FS_PROT_WRITE        PROT_WRITE

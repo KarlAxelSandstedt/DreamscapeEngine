@@ -45,12 +45,12 @@ void ds_PlatformApiInit(struct arena *mem)
 		Log(T_SYSTEM, S_NOTE, "core %u tsc skew (reltive to core 0): %lu", i, g_tsc_skew[i]);
 	}
 #endif
-	//system_graphics_init();
+	//ds_GraphicsApiInit();
 	//task_context_init(mem, g_arch_config->Logical_core_count);
 }
 
 void ds_PlatformApiShutdown(void)
 {
 	//task_context_destroy(g_task_ctx);
-	//system_graphics_destroy();
+	//ds_GraphicsApiShutdown();
 }

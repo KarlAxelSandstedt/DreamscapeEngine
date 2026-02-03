@@ -21,7 +21,7 @@
 
 #include "ds_platform.h"
 
-//void DsWindowEventHandler(struct system_window *sys_win)
+//void ds_WindowEventHandler(struct ds_Window *sys_win)
 //{
 //	struct dsEvent *event = NULL;
 //	for (u32 i = sys_win->ui->event_list.first; i != DLL_NULL; i = dll_Next(event))
@@ -31,16 +31,16 @@
 //		{
 //			case DS_L:
 //			{
-//				(cursor_is_locked(sys_win))
-//					? cursor_unlock(sys_win)
-//					: cursor_lock(sys_win);
+//				(ds_CursorLockedCheck(sys_win))
+//					? ds_CursorUnlock(sys_win)
+//					: ds_CursorLock(sys_win);
 //			} break;
 //
 //			case DS_F10: 
 //			{
-//				(cursor_is_visible(sys_win))
-//				      ? cursor_hide(sys_win) 
-//				      : cursor_show(sys_win);
+//				(ds_CursorVisibleCheck(sys_win))
+//				      ? ds_CursorHide(sys_win) 
+//				      : ds_CursorShow(sys_win);
 //			} break;
 //
 //			case DS_F11: 
@@ -59,7 +59,7 @@
 //
 //			case DS_C: 
 //			{
-//				system_window_tag_sub_hierarchy_for_destruction(system_window_index(sys_win));
+//				ds_WindowTagSubHierarchyForDestruction(ds_WindowIndex(sys_win));
 //			} break;	
 //
 //			default:
@@ -76,8 +76,8 @@
 //	struct dsEvent event;
 //	while (EventConsume(&event)) 
 //	{
-//		struct slot slot = system_window_lookup(event.native_handle);
-//		struct system_window *sys_win = slot.address;
+//		struct slot slot = ds_WindowLookup(event.native_handle);
+//		struct ds_Window *sys_win = slot.address;
 //		if (!sys_win)
 //		{
 //			continue;
@@ -275,7 +275,7 @@
 //
 //			case DS_WINDOW_CLOSE:
 //			{
-//				system_window_tag_sub_hierarchy_for_destruction(slot.index);
+//				ds_WindowTagSubHierarchyForDestruction(slot.index);
 //			} break;
 //
 //			case DS_WINDOW_CURSOR_ENTER:
@@ -314,7 +314,7 @@
 //
 //			case DS_WINDOW_CONFIG:
 //			{
-//				system_window_config_update(array_list_index(g_window_hierarchy->list, sys_win));
+//				ds_WindowConfigUpdate(array_list_index(g_window_hierarchy->list, sys_win));
 //			} break;
 //
 //			//case DS_WINDOW_MINIMIZE:

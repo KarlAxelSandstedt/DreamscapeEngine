@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,10 +17,9 @@
 ==========================================================================
 */
 
-#include "r_local.h"
-#include "r_public.h"
-
 #include <string.h>
+
+#include "r_local.h"
 
 //TODO MOVE into asset_manager
 #if __DS_PLATFORM__ == __DS_WIN64__ || __DS_PLATFORM__ ==  __DS_LINUX__
@@ -43,7 +42,73 @@
 #define fragment_lightning	"../assets/shaders/gles_lightning.frag"
 #endif
 
-static void shader_source_and_compile(GLuint shader, const char *filepath)
+struct r_Core r_core_storage = { 0 };
+struct r_Core *g_r_core = &r_core_storage;
+
+static void r_CmdStaticAssert(void)
+{
+	ds_StaticAssert(R_CMD_SCREEN_LAYER_BITS
+			+ R_CMD_DEPTH_BITS
+			+ R_CMD_TRANSPARENCY_BITS
+			+ R_CMD_MATERIAL_BITS
+			+ R_CMD_PRIMITIVE_BITS
+			+ R_CMD_INSTANCED_BITS
+			+ R_CMD_ELEMENTS_BITS
+			+ R_CMD_UNUSED_BITS == 64, "r_cmd definitions should span whole 64 bits");
+
+	//TODO Show no overlap between masks
+	ds_StaticAssert((R_CMD_SCREEN_LAYER_MASK & R_CMD_DEPTH_MASK) == 0, "R_CMD_*_MASK values should not overlap");
+	ds_StaticAssert((R_CMD_SCREEN_LAYER_MASK & R_CMD_TRANSPARENCY_MASK) == 0, "R_CMD_*_MASK values should not overlap");
+	ds_StaticAssert((R_CMD_SCREEN_LAYER_MASK & R_CMD_MATERIAL_MASK) == 0, "R_CMD_*_MASK values should not overlap");
+	ds_StaticAssert((R_CMD_SCREEN_LAYER_MASK & R_CMD_PRIMITIVE_MASK) == 0, "R_CMD_*_MASK values should not overlap");
+	ds_StaticAssert((R_CMD_SCREEN_LAYER_MASK & R_CMD_INSTANCED_MASK) == 0, "R_CMD_*_MASK values should not overlap");
+	ds_StaticAssert((R_CMD_SCREEN_LAYER_MASK & R_CMD_ELEMENTS_MASK) == 0, "R_CMD_*_MASK values should not overlap");
+	ds_StaticAssert((R_CMD_DEPTH_MASK & R_CMD_TRANSPARENCY_MASK) == 0, "R_CMD_*_MASK values should not overlap");
+	ds_StaticAssert((R_CMD_DEPTH_MASK & R_CMD_MATERIAL_MASK) == 0, "R_CMD_*_MASK values should not overlap");
+	ds_StaticAssert((R_CMD_DEPTH_MASK & R_CMD_PRIMITIVE_MASK) == 0, "R_CMD_*_MASK values should not overlap");
+	ds_StaticAssert((R_CMD_DEPTH_MASK & R_CMD_INSTANCED_MASK) == 0, "R_CMD_*_MASK values should not overlap");
+	ds_StaticAssert((R_CMD_DEPTH_MASK & R_CMD_ELEMENTS_MASK) == 0, "R_CMD_*_MASK values should not overlap");
+	ds_StaticAssert((R_CMD_TRANSPARENCY_MASK & R_CMD_MATERIAL_MASK) == 0, "R_CMD_*_MASK values should not overlap");
+	ds_StaticAssert((R_CMD_TRANSPARENCY_MASK & R_CMD_PRIMITIVE_MASK) == 0, "R_CMD_*_MASK values should not overlap");
+	ds_StaticAssert((R_CMD_TRANSPARENCY_MASK & R_CMD_INSTANCED_MASK) == 0, "R_CMD_*_MASK values should not overlap");
+	ds_StaticAssert((R_CMD_TRANSPARENCY_MASK & R_CMD_ELEMENTS_MASK) == 0, "R_CMD_*_MASK values should not overlap");
+	ds_StaticAssert((R_CMD_MATERIAL_MASK & R_CMD_PRIMITIVE_MASK) == 0, "R_CMD_*_MASK values should not overlap");
+	ds_StaticAssert((R_CMD_MATERIAL_MASK & R_CMD_INSTANCED_MASK) == 0, "R_CMD_*_MASK values should not overlap");
+	ds_StaticAssert((R_CMD_MATERIAL_MASK & R_CMD_ELEMENTS_MASK) == 0, "R_CMD_*_MASK values should not overlap");
+	ds_StaticAssert((R_CMD_PRIMITIVE_MASK & R_CMD_INSTANCED_MASK) == 0, "R_CMD_*_MASK values should not overlap");
+	ds_StaticAssert((R_CMD_PRIMITIVE_MASK & R_CMD_ELEMENTS_MASK) == 0, "R_CMD_*_MASK values should not overlap");
+
+	ds_StaticAssert(R_CMD_SCREEN_LAYER_MASK
+			+ R_CMD_DEPTH_MASK
+			+ R_CMD_TRANSPARENCY_MASK
+			+ R_CMD_MATERIAL_MASK
+			+ R_CMD_PRIMITIVE_MASK
+			+ R_CMD_INSTANCED_MASK
+			+ R_CMD_ELEMENTS_MASK
+			+ R_CMD_UNUSED_MASK == U64_MAX, "sum of r_cmd masks should be U64");
+}
+
+static void r_MaterialStaticAssert(void)
+{
+	ds_StaticAssert(MATERIAL_PROGRAM_BITS + MATERIAL_MESH_BITS + MATERIAL_TEXTURE_BITS + MATERIAL_UNUSED_BITS 
+			== R_CMD_MATERIAL_BITS, "material definitions should span whole material bit range");
+
+	ds_StaticAssert((MATERIAL_PROGRAM_MASK & MATERIAL_TEXTURE_MASK) == 0
+			, "MATERIAL_*_MASK values should not overlap");
+	ds_StaticAssert((MATERIAL_PROGRAM_MASK & MATERIAL_MESH_MASK) == 0
+			, "MATERIAL_*_MASK values should not overlap");
+	ds_StaticAssert((MATERIAL_TEXTURE_MASK & MATERIAL_MESH_MASK) == 0
+			, "MATERIAL_*_MASK values should not overlap");
+
+	ds_StaticAssert(MATERIAL_PROGRAM_MASK + MATERIAL_MESH_MASK + MATERIAL_TEXTURE_MASK + MATERIAL_UNUSED_MASK
+			== (R_CMD_MATERIAL_MASK >> R_CMD_MATERIAL_LOW_BIT)
+			, "sum of material masks should fill the material mask");
+
+	ds_StaticAssert(PROGRAM_COUNT <= (1 << MATERIAL_PROGRAM_BITS), "Material program mask to small, increase size");
+	ds_StaticAssert(TEXTURE_COUNT <= (1 << MATERIAL_TEXTURE_BITS), "Material program mask to small, increase size");
+}
+
+static void r_ShaderSourceAndCompile(GLuint shader, const char *filepath)
 {
 	FILE *file = fopen(filepath, "r");
 
@@ -69,17 +134,17 @@ static void shader_source_and_compile(GLuint shader, const char *filepath)
 		ds_glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &len);
 		ds_glGetShaderInfoLog(shader, len, &len, buf);
 		Log(T_RENDERER, S_FATAL, "Failed to compile %s, %s", filepath, buf);
-		FatalCleanupAndExit(ds_ThreadSelfTid());
+		FatalCleanupAndExit();
 	}
 }
 
-void r_compile_shader(u32 *prg, const char *v_filepath, const char *f_filepath)
+void r_ShaderCompile(u32 *prg, const char *v_filepath, const char *f_filepath)
 {
 	GLuint v_sh = ds_glCreateShader(GL_VERTEX_SHADER);
 	GLuint f_sh = ds_glCreateShader(GL_FRAGMENT_SHADER);
 
-	shader_source_and_compile(v_sh, v_filepath);
-	shader_source_and_compile(f_sh, f_filepath);
+	r_ShaderSourceAndCompile(v_sh, v_filepath);
+	r_ShaderSourceAndCompile(f_sh, f_filepath);
 
 	*prg = ds_glCreateProgram();
 
@@ -96,7 +161,7 @@ void r_compile_shader(u32 *prg, const char *v_filepath, const char *f_filepath)
 		ds_glGetProgramiv(*prg, GL_INFO_LOG_LENGTH, &len);
 		ds_glGetProgramInfoLog(*prg, len, &len, buf);
 		Log(T_RENDERER, S_FATAL, "Failed to Link program: %s", buf);
-		FatalCleanupAndExit(ds_ThreadSelfTid());
+		FatalCleanupAndExit();
 	}
 
 	ds_glDetachShader(*prg, v_sh);
@@ -106,7 +171,7 @@ void r_compile_shader(u32 *prg, const char *v_filepath, const char *f_filepath)
 	ds_glDeleteShader(f_sh);
 }
 
-void r_color_buffer_layout_setter(void)
+void r_ColorBufferLayoutSetter(void)
 {
 	ds_glEnableVertexAttribArray(0);
 	ds_glEnableVertexAttribArray(1);
@@ -117,7 +182,7 @@ void r_color_buffer_layout_setter(void)
 	ds_glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, (GLsizei)  stride, (void *)(sizeof(vec3)));
 }
 
-void r_lightning_buffer_layout_setter(void)
+void r_LightningBufferLayoutSetter(void)
 {
 	ds_glEnableVertexAttribArray(0);
 	ds_glEnableVertexAttribArray(1);
@@ -130,54 +195,54 @@ void r_lightning_buffer_layout_setter(void)
 	ds_glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, (GLsizei)  stride, (void *)(sizeof(vec3) + sizeof(vec4)));
 }
 
-void r_init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u64 core_unit_count, struct strdb *mesh_database)
+void r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u64 core_unit_count, struct strdb *mesh_database)
 {
 	g_r_core->frames_elapsed = 0;	
 	g_r_core->ns_elapsed = 0;	
 	g_r_core->ns_tick = ns_tick;	
 
-	r_compile_shader(&g_r_core->program[PROGRAM_UI].gl_program, vertex_ui, fragment_ui);
+	r_ShaderCompile(&g_r_core->program[PROGRAM_UI].gl_program, vertex_ui, fragment_ui);
 	g_r_core->program[PROGRAM_UI].shared_stride = S_UI_STRIDE;
 	g_r_core->program[PROGRAM_UI].local_stride = L_UI_STRIDE;
-	g_r_core->program[PROGRAM_UI].buffer_shared_layout_setter = r_ui_buffer_shared_layout_setter;
-	g_r_core->program[PROGRAM_UI].buffer_local_layout_setter = r_ui_buffer_local_layout_setter;
+	g_r_core->program[PROGRAM_UI].buffer_shared_layout_setter = r_UiBufferSharedLayoutSetter;
+	g_r_core->program[PROGRAM_UI].buffer_local_layout_setter = r_UiBufferLocalLayoutSetter;
 
-	r_compile_shader(&g_r_core->program[PROGRAM_PROXY3D].gl_program, vertex_proxy3d, fragment_proxy3d);
+	r_ShaderCompile(&g_r_core->program[PROGRAM_PROXY3D].gl_program, vertex_proxy3d, fragment_proxy3d);
 	g_r_core->program[PROGRAM_PROXY3D].shared_stride = S_PROXY3D_STRIDE;
 	g_r_core->program[PROGRAM_PROXY3D].local_stride = L_PROXY3D_STRIDE;
-	g_r_core->program[PROGRAM_PROXY3D].buffer_shared_layout_setter = r_proxy3d_buffer_shared_layout_setter;
-	g_r_core->program[PROGRAM_PROXY3D].buffer_local_layout_setter = r_proxy3d_buffer_local_layout_setter;
+	g_r_core->program[PROGRAM_PROXY3D].buffer_shared_layout_setter = r_Proxy3dBufferSharedLayoutSet;
+	g_r_core->program[PROGRAM_PROXY3D].buffer_local_layout_setter = r_Proxy3dBufferLocalLayoutSet;
 
-	r_compile_shader(&g_r_core->program[PROGRAM_COLOR].gl_program, vertex_color, fragment_color);
+	r_ShaderCompile(&g_r_core->program[PROGRAM_COLOR].gl_program, vertex_color, fragment_color);
 	g_r_core->program[PROGRAM_COLOR].shared_stride = S_COLOR_STRIDE;
 	g_r_core->program[PROGRAM_COLOR].local_stride = L_COLOR_STRIDE;
 	g_r_core->program[PROGRAM_COLOR].buffer_shared_layout_setter = NULL;
-	g_r_core->program[PROGRAM_COLOR].buffer_local_layout_setter = r_color_buffer_layout_setter;
+	g_r_core->program[PROGRAM_COLOR].buffer_local_layout_setter = r_ColorBufferLayoutSetter;
 
-	r_compile_shader(&g_r_core->program[PROGRAM_LIGHTNING].gl_program, vertex_lightning, fragment_lightning);
+	r_ShaderCompile(&g_r_core->program[PROGRAM_LIGHTNING].gl_program, vertex_lightning, fragment_lightning);
 	g_r_core->program[PROGRAM_LIGHTNING].shared_stride = S_LIGHTNING_STRIDE;
 	g_r_core->program[PROGRAM_LIGHTNING].local_stride = L_LIGHTNING_STRIDE;
 	g_r_core->program[PROGRAM_LIGHTNING].buffer_shared_layout_setter = NULL;
-	g_r_core->program[PROGRAM_LIGHTNING].buffer_local_layout_setter = r_lightning_buffer_layout_setter;
+	g_r_core->program[PROGRAM_LIGHTNING].buffer_local_layout_setter = r_LightningBufferLayoutSetter;
 
 	g_r_core->frame = ArenaAlloc(frame_size); 
 	if (g_r_core->frame.mem_size == 0)
 	{
 		LogString(T_SYSTEM, S_FATAL, "Failed to allocate renderer frame, exiting.");
-		FatalCleanupAndExit(0);
+		FatalCleanupAndExit();
 	}
 
-	g_r_core->proxy3d_hierarchy = hi_Alloc(NULL, core_unit_count, sizeof(struct r_proxy3d), GROWABLE);
-	if (g_r_core->proxy3d_hierarchy == NULL)
+	g_r_core->proxy3d_hierarchy = hi_Alloc(NULL, core_unit_count, struct r_Proxy3d, GROWABLE);
+	if (g_r_core->proxy3d_hierarchy.pool.length == 0)
 	{
 		LogString(T_SYSTEM, S_FATAL, "Failed to allocate r_core unit hierarchy, exiting.");
-		FatalCleanupAndExit(ds_ThreadSelfTid());
+		FatalCleanupAndExit();
 	}
 
-	struct slot slot3d = hi_Add(g_r_core->proxy3d_hierarchy, HI_NULL_INDEX);
+	struct slot slot3d = hi_Add(&g_r_core->proxy3d_hierarchy, HI_NULL_INDEX);
 	g_r_core->proxy3d_root = slot3d.index;
 	ds_Assert(g_r_core->proxy3d_root == PROXY3D_ROOT);
-	struct r_proxy3d *stub3d = slot3d.address;
+	struct r_Proxy3d *stub3d = slot3d.address;
 	Vec3Set(stub3d->position, 0.0f, 0.0f, 0.0f);
 	Vec3Set(stub3d->spec_position, 0.0f, 0.0f, 0.0f);
 	const vec3 axis = { 0.0f, 1.0f, 0.0f };
@@ -188,8 +253,8 @@ void r_init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_siz
 	stub3d->flags = 0;
 
 	g_r_core->mesh_database = mesh_database; 
-	struct r_mesh *stub = strdb_Address(g_r_core->mesh_database, STRING_DATABASE_STUB_INDEX);
-	r_mesh_set_stub_box(stub);
+	struct r_Mesh *stub = strdb_Address(g_r_core->mesh_database, STRING_DATABASE_STUB_INDEX);
+	r_MeshStubBox(stub);
 
 
 
@@ -257,16 +322,16 @@ void r_init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_siz
 	ds_glGenerateMipmap(GL_TEXTURE_2D);
 }
 
-void r_core_flush(void)
+void r_CoreFlush(void)
 {
 	g_r_core->frames_elapsed = 0;	
 	g_r_core->ns_elapsed = 0;	
 
-	hi_Flush(g_r_core->proxy3d_hierarchy);
-	struct slot slot3d = hi_Add(g_r_core->proxy3d_hierarchy, HI_NULL_INDEX);
+	hi_Flush(&g_r_core->proxy3d_hierarchy);
+	struct slot slot3d = hi_Add(&g_r_core->proxy3d_hierarchy, HI_NULL_INDEX);
 	g_r_core->proxy3d_root = slot3d.index;
 	ds_Assert(g_r_core->proxy3d_root == PROXY3D_ROOT);
-	struct r_proxy3d *stub3d = slot3d.address;
+	struct r_Proxy3d *stub3d = slot3d.address;
 	Vec3Set(stub3d->position, 0.0f, 0.0f, 0.0f);
 	Vec3Set(stub3d->spec_position, 0.0f, 0.0f, 0.0f);
 	const vec3 axis = { 0.0f, 1.0f, 0.0f };

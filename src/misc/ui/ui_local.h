@@ -30,8 +30,8 @@ void	ui_TextInputModeDisable(void);
 void 	ui_TextInputFlush(void);
 void 	ui_TextOp(void);
 
-void 		uiPopup_build(void);
-extern u32	cmd_uiPopup_build;
+void 		ui_PopupBuild(void);
+extern u32	cmd_ui_popup_build;
 
 /* internal */
 struct ui_TextInput *text_edit_stub_ptr(void);

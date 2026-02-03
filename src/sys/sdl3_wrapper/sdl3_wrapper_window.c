@@ -17,6 +17,7 @@
 ==========================================================================
 */
 
+#include <stdlib.h>
 #include "sdl3_wrapper_local.h"
 
 struct nativeWindow
@@ -65,7 +66,7 @@ u32 			(*KeyModifiers)(void);
 
 u32 			(*EventConsume)(struct dsEvent *event);
 
-void 			(*GlFunctionsInit)(struct gl_functions *func);
+void 			(*GlFunctionsInit)(struct gl_Functions *func);
 
 static void sdl3_NativeWindowGlSetCurrent(struct nativeWindow *native)
 {

@@ -23,12 +23,12 @@
 #include "hash_map.h"
 #include "ds_vector.h"
 
-DECLARE_STACK(cmd_function);
-DEFINE_STACK(cmd_function);
+DECLARE_STACK(cmdFunction);
+DEFINE_STACK(cmdFunction);
 
 static struct hashMap g_name_to_cmd_f_map;
-struct cmd_queue *g_queue = NULL;
-static stack_cmd_function g_cmd_f;
+struct cmdQueue *g_queue = NULL;
+static stack_cmdFunction g_cmd_f;
 u32			  g_cmd_internal_debug_print_index;	
 
 static void CmdDebugPrint(void)
@@ -40,7 +40,7 @@ static void CmdDebugPrint(void)
 void ds_CmdApiInit(void)
 {
 	g_name_to_cmd_f_map = HashMapAlloc(NULL, 128, 128, GROWABLE);
-	g_cmd_f = stack_cmd_functionAlloc(NULL, 128, STACK_GROWABLE);
+	g_cmd_f = stack_cmdFunctionAlloc(NULL, 128, STACK_GROWABLE);
 
 	const utf8 debug_print_str = Utf8Inline("debug_print");
 	g_cmd_internal_debug_print_index = CmdFunctionRegister(debug_print_str, 1, &CmdDebugPrint).index;
@@ -49,19 +49,19 @@ void ds_CmdApiInit(void)
 void ds_CmdApiShutdown(void)
 {
 	HashMapFree(&g_name_to_cmd_f_map);
-	stack_cmd_functionFree(&g_cmd_f);
+	stack_cmdFunctionFree(&g_cmd_f);
 }
 
-struct cmd_queue CmdQueueAlloc(void)
+struct cmdQueue CmdQueueAlloc(void)
 {
-	struct cmd_queue queue = { 0 };
+	struct cmdQueue queue = { 0 };
 	queue.cmd_pool = PoolAlloc(NULL, 64, struct cmd, GROWABLE);
 	queue.cmd_list = ll_Init(struct cmd);
 	queue.cmd_list_next_frame = ll_Init(struct cmd);
 	return queue;
 }
 
-void CmdQueueDealloc(struct cmd_queue *queue)
+void CmdQueueDealloc(struct cmdQueue *queue)
 {
 	if (queue)
 	{
@@ -69,7 +69,7 @@ void CmdQueueDealloc(struct cmd_queue *queue)
 	}
 }
 
-void CmdQueueSet(struct cmd_queue *queue)
+void CmdQueueSet(struct cmdQueue *queue)
 {
 	g_queue = queue;
 }
@@ -304,7 +304,7 @@ void CmdQueueExecute(void)
 	ArenaFree1MB(&tmp);
 }
 
-void CmdQueueFlush(struct cmd_queue *queue)
+void CmdQueueFlush(struct cmdQueue *queue)
 {
 	PoolFlush(&queue->cmd_pool);
 	ll_Flush(&g_queue->cmd_list);
@@ -318,13 +318,13 @@ struct slot CmdFunctionRegister(const utf8 name, const u32 args_count, void (*ca
 		return (struct slot) { .index = U32_MAX, .address = NULL };
 	}
 
-	const struct cmd_function cmd_f = { .name = name, .args_count = args_count, .call = call };
+	const struct cmdFunction cmd_f = { .name = name, .args_count = args_count, .call = call };
 	struct slot slot = CmdFunctionLookup(name);
 	if (!slot.address)
 	{
 		slot.index = g_cmd_f.next;
 		slot.address = g_cmd_f.arr + g_cmd_f.next;
-		stack_cmd_functionPush(&g_cmd_f, cmd_f);
+		stack_cmdFunctionPush(&g_cmd_f, cmd_f);
 	
 		const u32 key = Utf8Hash(name);
 		HashMapAdd(&g_name_to_cmd_f_map, key, slot.index);
@@ -363,7 +363,7 @@ void CmdSubmitFormat(struct arena *mem, const char *format, ...)
 	va_end(args);
 }
 
-void CmdQueueSubmitFormat(struct arena *mem, struct cmd_queue *queue, const char *format, ...)
+void CmdQueueSubmitFormat(struct arena *mem, struct cmdQueue *queue, const char *format, ...)
 {
 	va_list args;
 	va_start(args, format);
@@ -378,7 +378,7 @@ void CmdSubmitUtf8(const utf8 string)
 	CmdQueueSubmitUtf8(g_queue, string);
 }
 
-void CmdQueueSubmitUtf8(struct cmd_queue *queue, const utf8 string)
+void CmdQueueSubmitUtf8(struct cmdQueue *queue, const utf8 string)
 {
 	struct slot slot = PoolAdd(&queue->cmd_pool);
 	struct cmd *cmd = slot.address;
@@ -388,17 +388,17 @@ void CmdQueueSubmitUtf8(struct cmd_queue *queue, const utf8 string)
 	ll_Append(&queue->cmd_list, queue->cmd_pool.buf, slot.index);
 }
 
-void CmdSubmit(const u32 cmd_function)
+void CmdSubmit(const u32 cmdFunction)
 {
-	CmdQueueSubmit(g_queue, cmd_function);
+	CmdQueueSubmit(g_queue, cmdFunction);
 }
 
-void CmdQueueSubmit(struct cmd_queue *queue, const u32 cmd_function)
+void CmdQueueSubmit(struct cmdQueue *queue, const u32 cmdFunction)
 {
 	struct slot slot = PoolAdd(&queue->cmd_pool);
 	struct cmd *cmd = slot.address;
 	cmd->args_type = CMD_ARGS_REGISTER;
-	cmd->function = g_cmd_f.arr + cmd_function;
+	cmd->function = g_cmd_f.arr + cmdFunction;
 
 	for (u32 i = 0; i < cmd->function->args_count; ++i)
 	{
@@ -408,12 +408,12 @@ void CmdQueueSubmit(struct cmd_queue *queue, const u32 cmd_function)
 	ll_Append(&queue->cmd_list, queue->cmd_pool.buf, slot.index);
 }
 
-void CmdQueueSubmitNextFrame(struct cmd_queue *queue, const u32 cmd_function)
+void CmdQueueSubmitNextFrame(struct cmdQueue *queue, const u32 cmdFunction)
 {
 	struct slot slot = PoolAdd(&queue->cmd_pool);
 	struct cmd *cmd = slot.address;
 	cmd->args_type = CMD_ARGS_REGISTER;
-	cmd->function = g_cmd_f.arr + cmd_function;
+	cmd->function = g_cmd_f.arr + cmdFunction;
 
 	for (u32 i = 0; i < cmd->function->args_count; ++i)
 	{
@@ -423,12 +423,12 @@ void CmdQueueSubmitNextFrame(struct cmd_queue *queue, const u32 cmd_function)
 	ll_Append(&queue->cmd_list_next_frame, queue->cmd_pool.buf, slot.index);
 }
 
-void CmdSubmitNextFrame(const u32 cmd_function)
+void CmdSubmitNextFrame(const u32 cmdFunction)
 {
-	CmdQueueSubmitNextFrame(g_queue, cmd_function);
+	CmdQueueSubmitNextFrame(g_queue, cmdFunction);
 }
 
-void CmdQueueSubmitFormatNextFrame(struct arena *mem, struct cmd_queue *queue, const char *format, ...)
+void CmdQueueSubmitFormatNextFrame(struct arena *mem, struct cmdQueue *queue, const char *format, ...)
 {
 	va_list args;
 	va_start(args, format);
@@ -448,7 +448,7 @@ void CmdSubmitFormatNextFrame(struct arena *mem, const char *format, ...)
 	va_end(args);
 }
 
-void CmdQueueSubmitUtf8NextFrame(struct cmd_queue *queue, const utf8 string)
+void CmdQueueSubmitUtf8NextFrame(struct cmdQueue *queue, const utf8 string)
 {
 	struct slot slot = PoolAdd(&queue->cmd_pool);
 	struct cmd *cmd = slot.address;

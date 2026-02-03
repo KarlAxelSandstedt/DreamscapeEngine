@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -20,9 +20,11 @@
 #ifndef __DS_CSG_H__
 #define __DS_CSG_H__
 
-#include "ds_common.h"
-#include "ds_string.h"
-#include "allocator.h"
+#ifdef __cplusplus
+extern "C" { 
+#endif
+
+#include "ds_base.h"
 #include "string_database.h"
 #include "list.h"
 #include "quaternion.h"
@@ -284,5 +286,9 @@ csg_update()               \\\\\\\\\\\\\\\\\
 
 3. get intersection volume polygons 
 */
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

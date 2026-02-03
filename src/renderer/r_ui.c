@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -20,7 +20,7 @@
 #include "r_local.h"
 #include "ui_public.h"
 
-void r_ui_draw(struct ui *ui)
+void r_UiDraw(struct ui *ui)
 {
 	const vec4 zero4 = { 0.0f, 0.0f, 0.0f, 0.0f };
 	const vec3 zero3 = { 0.0f, 0.0f, 0.0f };
@@ -34,12 +34,12 @@ void r_ui_draw(struct ui *ui)
 		const u64 transparency = (ui_CmdDepthGet(b->cmd) == UI_CMD_LAYER_TEXT_SELECTION)
 			? R_CMD_TRANSPARENCY_SUBTRACTIVE
 			: R_CMD_TRANSPARENCY_ADDITIVE;
-		struct r_instance *instance = r_instance_add_non_cached(
-				r_command_key(
+		struct r_Instance *instance = r_InstanceAddNonCached(
+				r_CommandKey(
 					R_CMD_SCREEN_LAYER_HUD,
 					depth + ui_CmdLayerGet(b->cmd),	
 					R_CMD_TRANSPARENCY_ADDITIVE,
-					r_material_construct(PROGRAM_UI, MESH_NONE, ui_CmdTextureGet(b->cmd)),
+					r_MaterialConstruct(PROGRAM_UI, MESH_NONE, ui_CmdTextureGet(b->cmd)),
 					R_CMD_PRIMITIVE_TRIANGLE,
 					R_CMD_INSTANCED,
 					R_CMD_ELEMENTS));
@@ -52,7 +52,7 @@ void r_ui_draw(struct ui *ui)
 			struct ui_DrawNode *draw_node = instance->ui_bucket->list;
 			for (u32 i = 0; i < instance->ui_bucket->count; ++i)
 			{
-				const struct ui_Node *n = hi_Address(ui->node_hierarchy, draw_node->index);
+				const struct ui_Node *n = hi_Address(&ui->node_hierarchy, draw_node->index);
 				draw_node = draw_node->next;
 				struct textLine *line = n->layout_text->line;
 				for (u32 l = 0; l < n->layout_text->line_count; ++l)
@@ -66,7 +66,7 @@ void r_ui_draw(struct ui *ui)
 	}
 }
 
-void r_ui_buffer_shared_layout_setter(void)
+void r_UiBufferSharedLayoutSetter(void)
 {
 	ds_glEnableVertexAttribArray(0);
 	ds_glEnableVertexAttribArray(1);
@@ -105,6 +105,6 @@ void r_ui_buffer_shared_layout_setter(void)
 	ds_glVertexAttribDivisor(10, 1);
 }
 
-void r_ui_buffer_local_layout_setter(void)
+void r_UiBufferLocalLayoutSetter(void)
 {
 }

@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -61,7 +61,7 @@ u32 stub_indices[] =
 	16 + 1, 16 + 4, 16 + 7, 16 + 1, 16 + 7, 16 + 2,
 };
 
-void r_mesh_set_stub_box(struct r_mesh *mesh_stub)
+void r_MeshStubBox(struct r_Mesh *mesh_stub)
 {
 	mesh_stub->index_max_used = 16 + 7;
 	mesh_stub->index_count = sizeof(stub_indices) / sizeof(stub_indices[0]); 
@@ -71,7 +71,7 @@ void r_mesh_set_stub_box(struct r_mesh *mesh_stub)
 	mesh_stub->local_stride = sizeof(stub_vertices[0]);
 }
 
-static void internal_r_mesh_set_sphere(u32 *b_i, u8 *vertex_data, u32 *index_data, const f32 radius, const vec3 translation, const u32 refinement)
+static void r_InternalMeshSphere(u32 *b_i, u8 *vertex_data, u32 *index_data, const f32 radius, const vec3 translation, const u32 refinement)
 {
 	const u32 points_per_strip = 2 * refinement;
 	const u32 num_strips = refinement;
@@ -156,7 +156,7 @@ static void internal_r_mesh_set_sphere(u32 *b_i, u8 *vertex_data, u32 *index_dat
 }
 
 /* const_circle_points - number of vertices on single circle of sphere */
-void r_mesh_set_sphere(struct arena *mem, struct r_mesh *mesh, const f32 radius, const u32 refinement)
+void r_MeshSphere(struct arena *mem, struct r_Mesh *mesh, const f32 radius, const u32 refinement)
 {
 	ds_Assert(refinement >= 3);
 
@@ -173,7 +173,7 @@ void r_mesh_set_sphere(struct arena *mem, struct r_mesh *mesh, const f32 radius,
 
 	u32 max_used = 0;
 	const vec3 translation = { 0.0f, 0.0f, 0.0f };
-	internal_r_mesh_set_sphere(&max_used, vertex_data, index_data, radius, translation, refinement);
+	r_InternalMeshSphere(&max_used, vertex_data, index_data, radius, translation, refinement);
 
 	mesh->index_max_used = max_used;
 	mesh->index_count = index_count;
@@ -183,7 +183,7 @@ void r_mesh_set_sphere(struct arena *mem, struct r_mesh *mesh, const f32 radius,
 	mesh->local_stride = vertex_size;
 }
 
-void r_mesh_set_capsule(struct arena *mem, struct r_mesh *mesh, const f32 half_height, const f32 radius, const u32 refinement)
+void r_MeshCapsule(struct arena *mem, struct r_Mesh *mesh, const f32 half_height, const f32 radius, const u32 refinement)
 {
 	ds_Assert(refinement >= 2);
 	ds_Assert(half_height > 0.0f && radius > 0.0f);
@@ -201,7 +201,7 @@ void r_mesh_set_capsule(struct arena *mem, struct r_mesh *mesh, const f32 half_h
 	if (arr.len < n)
 	{
 		ArenaPopPacked(mem, arr.memPushed);
-		r_mesh_set_stub_box(mesh);
+		r_MeshStubBox(mesh);
 		return;
 	}
 	
@@ -247,11 +247,11 @@ void r_mesh_set_capsule(struct arena *mem, struct r_mesh *mesh, const f32 half_h
 
 	struct arena tmp = ArenaAlloc1MB();
 	struct dcel dcel = DcelConvexHull(&tmp, v, vi, 100.0f * F32_EPSILON);
-	r_mesh_set_hull(mem, mesh, &dcel);
+	r_MeshHull(mem, mesh, &dcel);
 	ArenaFree1MB(&tmp);
 }
 
-void r_mesh_set_hull(struct arena *mem, struct r_mesh *mesh, const struct dcel *hull)
+void r_MeshHull(struct arena *mem, struct r_Mesh *mesh, const struct dcel *hull)
 {
 	mesh->vertex_data = mem->stack_ptr;
 	mesh->vertex_count = 0;
@@ -328,9 +328,8 @@ void r_mesh_set_hull(struct arena *mem, struct r_mesh *mesh, const struct dcel *
 	mesh->index_max_used = m_i - 1;
 }
 
-void r_mesh_set_tri_mesh(struct arena *mem, struct r_mesh *mesh, const struct triMesh *tri_mesh)
+void r_MeshTriMesh(struct arena *mem, struct r_Mesh *mesh, const struct triMesh *tri_mesh)
 {
-
 	mesh->vertex_count = 3*tri_mesh->tri_count;
 	mesh->vertex_data = mem->stack_ptr;
 	mesh->index_count = 0;

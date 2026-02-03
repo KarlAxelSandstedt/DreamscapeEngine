@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,7 +19,7 @@
 
 #include "r_local.h"
 
-void r_proxy3d_buffer_local_layout_setter(void)
+void r_Proxy3dBufferLocalLayoutSet(void)
 {
 	ds_glEnableVertexAttribArray(3);
 	ds_glEnableVertexAttribArray(4);
@@ -28,7 +28,7 @@ void r_proxy3d_buffer_local_layout_setter(void)
 	ds_glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, L_PROXY3D_STRIDE, (void *) L_PROXY3D_NORMAL_OFFSET);
 }
 
-void r_proxy3d_buffer_shared_layout_setter(void)
+void r_Proxy3dBufferSharedLayoutSet(void)
 {
 
 	ds_glEnableVertexAttribArray(0);
@@ -44,9 +44,9 @@ void r_proxy3d_buffer_shared_layout_setter(void)
 	ds_glVertexAttribDivisor(2, 1);
 }
 
-void r_proxy3d_set_linear_speculation(const vec3 position, const quat rotation, const vec3 linear_velocity, const vec3 angular_velocity, const u64 ns_time, const u32 proxy_index)
+void r_Proxy3dLinearSpeculationSet(const vec3 position, const quat rotation, const vec3 linear_velocity, const vec3 angular_velocity, const u64 ns_time, const u32 proxy_index)
 {
-	struct r_proxy3d *proxy = r_proxy3d_address(proxy_index);
+	struct r_Proxy3d *proxy = r_Proxy3dAddress(proxy_index);
 
 	proxy->flags &= ~(PROXY3D_SPECULATE_FLAGS | PROXY3D_MOVING);
 	proxy->flags |= PROXY3D_SPECULATE_LINEAR;
@@ -63,10 +63,10 @@ void r_proxy3d_set_linear_speculation(const vec3 position, const quat rotation, 
 	}
 }
 
-u32 r_proxy3d_alloc(const struct r_proxy3d_config *config)
+u32 r_Proxy3dAlloc(const struct r_Proxy3d_config *config)
 {
-	struct slot slot = hi_Add(g_r_core->proxy3d_hierarchy, config->parent);
-	struct r_proxy3d *proxy = slot.address;
+	struct slot slot = hi_Add(&g_r_core->proxy3d_hierarchy, config->parent);
+	struct r_Proxy3d *proxy = slot.address;
 	proxy->flags = (config->parent != g_r_core->proxy3d_root)
 		? PROXY3D_RELATIVE
 		: 0;
@@ -75,25 +75,26 @@ u32 r_proxy3d_alloc(const struct r_proxy3d_config *config)
 	Vec4Copy(proxy->color, config->color);
 	proxy->blend = config->blend;
 
-	r_proxy3d_set_linear_speculation(config->position, config->rotation, config->linear_velocity, config->angular_velocity, config->ns_time, slot.index);
+	r_Proxy3dLinearSpeculationSet(config->position, config->rotation, config->linear_velocity, config->angular_velocity, config->ns_time, slot.index);
 
 	return slot.index;
 }
-void r_proxy3d_dealloc(struct arena *tmp, const u32 proxy_index)
+
+void r_Proxy3dDealloc(struct arena *tmp, const u32 proxy_index)
 {
-	struct r_proxy3d *proxy = r_proxy3d_address(proxy_index);
+	struct r_Proxy3d *proxy = r_Proxy3dAddress(proxy_index);
 	strdb_Dereference(g_r_core->mesh_database, proxy->mesh);
-	hi_Remove(tmp, g_r_core->proxy3d_hierarchy, proxy_index);
+	hi_Remove(tmp, &g_r_core->proxy3d_hierarchy, proxy_index);
 }
 
-struct r_proxy3d *r_proxy3d_address(const u32 proxy)
+struct r_Proxy3d *r_Proxy3dAddress(const u32 proxy)
 {
-	return hi_Address(g_r_core->proxy3d_hierarchy, proxy);
+	return hi_Address(&g_r_core->proxy3d_hierarchy, proxy);
 }
 
 
 /* Calculate the speculative movement of the proxy locally, i.e., the position of the proxy not counting any position type effects */
-static void internal_r_proxy3d_local_speculative_orientation(struct r_proxy3d *proxy, const u64 ns_time)
+static void r_InternalProxy3dLocalSpeculativeOrientation(struct r_Proxy3d *proxy, const u64 ns_time)
 {
 	const f32 timestep = (f32) (ns_time - proxy->ns_at_update) / NSEC_PER_SEC;
 
@@ -125,23 +126,24 @@ static void internal_r_proxy3d_local_speculative_orientation(struct r_proxy3d *p
 	}	
 }
 
-void r_proxy3d_hierarchy_speculate(struct arena *mem, const u64 ns_time)
+void r_Proxy3dHierarchySpeculate(struct arena *mem, const u64 ns_time)
 {
-	struct hiIterator it = hi_IteratorAlloc(mem, g_r_core->proxy3d_hierarchy, g_r_core->proxy3d_root);
+	ArenaPushRecord(mem);
+	struct hiIterator it = hi_IteratorAlloc(mem, &g_r_core->proxy3d_hierarchy, g_r_core->proxy3d_root);
 	// skip root stub 
 	hi_IteratorNextDf(&it);
 	while (it.count)
 	{
 		const u32 index = hi_IteratorNextDf(&it);
-		struct r_proxy3d *proxy = r_proxy3d_address(index);
+		struct r_Proxy3d *proxy = r_Proxy3dAddress(index);
 		if (proxy->flags & PROXY3D_MOVING)
 		{
-			internal_r_proxy3d_local_speculative_orientation(proxy, ns_time);
+			r_InternalProxy3dLocalSpeculativeOrientation(proxy, ns_time);
 		}
 
-		if (proxy->header.parent != g_r_core->proxy3d_root)
+		if (proxy->hi_parent != g_r_core->proxy3d_root)
 		{
-			const struct r_proxy3d *parent = r_proxy3d_address(proxy->header.parent);
+			const struct r_Proxy3d *parent = r_Proxy3dAddress(proxy->hi_parent);
 			if ((proxy->flags & PROXY3D_MOVING) == 0)
 			{
 				Vec3Copy(proxy->spec_position, proxy->position);	
@@ -154,5 +156,5 @@ void r_proxy3d_hierarchy_speculate(struct arena *mem, const u64 ns_time)
 			QuatMul(proxy->spec_rotation, tmp, parent->spec_rotation);
 		}
 	}
-	hi_IteratorRelease(&it);
+	ArenaPopRecord(mem);
 }

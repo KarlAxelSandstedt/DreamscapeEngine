@@ -25,6 +25,7 @@ extern "C" {
 #endif
 
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "ds_base.h"
 #include "asset_public.h"

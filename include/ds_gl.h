@@ -125,7 +125,7 @@ typedef void 		(APIENTRY *type_glBlendFuncSeparate)(GLenum sfactorRGB, GLenum df
 typedef void 		(APIENTRY *type_glBlendEquationSeparate)(GLenum modeRGB, GLenum modeAlpha);
 typedef GLboolean 	(APIENTRY *type_glIsEnabled)(GLenum cap);
 
-struct gl_functions
+struct gl_Functions
 {
 	type_glGetIntegerv		glGetIntegerv;
 	type_glGetString		glGetString;
@@ -216,7 +216,7 @@ struct gl_functions
 };
 
 /* init gl function pointers (for single context on some windows implementations) */
-extern void 	(*GlFunctionsInit)(struct gl_functions *func);
+extern void 	(*GlFunctionsInit)(struct gl_Functions *func);
 
 #ifdef __cplusplus
 }

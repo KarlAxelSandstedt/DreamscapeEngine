@@ -17,9 +17,8 @@
 ==========================================================================
 */
 
+#include "ds_base.h"
 #include "csg.h"
-#include "sys_public.h"
-#include "Log.h"
 
 /*
 global command identifiers

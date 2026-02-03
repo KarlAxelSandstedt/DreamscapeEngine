@@ -150,6 +150,8 @@ add_subdirectory("${DS_SRC_PATH}/asset_system")
 add_subdirectory("${DS_SRC_PATH}/math")
 add_subdirectory("${DS_SRC_PATH}/sys")
 add_subdirectory("${DS_SRC_PATH}/misc")
+add_subdirectory("${DS_SRC_PATH}/renderer")
+add_subdirectory("${DS_SRC_PATH}/led")
 add_subdirectory("${DS_LIB_PATH}")
 
 add_library(${PROJECT_NAME} INTERFACE)
@@ -160,9 +162,14 @@ target_link_libraries(${PROJECT_NAME}
 		"${PROJECT_NAME}::Base"
 		"${PROJECT_NAME}::Containers"
 		"${PROJECT_NAME}::Math"
-		"${PROJECT_NAME}::Collision"
 		"${PROJECT_NAME}::Platform"
 		"${PROJECT_NAME}::Asset"
+		"${PROJECT_NAME}::Job"
+		"${PROJECT_NAME}::Collision"
+		"${PROJECT_NAME}::Dynamics"
+		"${PROJECT_NAME}::Graphics"
+		"${PROJECT_NAME}::Renderer"
+		"${PROJECT_NAME}::Editor"
 )
 
 #TODO remove, consider using DS_DEBUG instead, or if required, add DS_DEV

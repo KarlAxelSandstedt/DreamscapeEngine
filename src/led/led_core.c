@@ -156,7 +156,7 @@ void cmd_collision_shape_add(void)
 void cmd_collision_box_add(void)
 {
 	//TODO Need to come up with a memory allocation strategy for dcels
-	struct system_window *sys_win = system_window_address(g_editor->window);
+	struct ds_Window *sys_win = ds_WindowAddress(g_editor->window);
 	const vec3 hw =
 	{
 		g_queue->cmd_exec->arg[1].f32,
@@ -377,7 +377,7 @@ struct slot led_render_mesh_add(struct led *led, const utf8 id, const utf8 shape
 		else
 		{
 			slot = strdb_AddAndAlias(&led->render_mesh_db, copy);
-			struct r_mesh *mesh = slot.address;
+			struct r_Mesh *mesh = slot.address;
 
 			struct slot ref = strdb_Lookup(&led->cs_db, shape);
 			if (ref.index == STRING_DATABASE_STUB_INDEX)
@@ -385,14 +385,14 @@ struct slot led_render_mesh_add(struct led *led, const utf8 id, const utf8 shape
 				LogString(T_LED, S_WARNING, "In render_mesh_add: shape not found, stub_shape chosen");
 			}
 
-			struct system_window *sys_win = system_window_address(g_editor->window);
+			struct ds_Window *sys_win = ds_WindowAddress(g_editor->window);
 			const struct collisionShape *s = ref.address;
 			switch (s->type)
 			{
-				case COLLISION_SHAPE_SPHERE: { r_mesh_set_sphere(&sys_win->mem_persistent, mesh, s->sphere.radius, 12); } break;
-				case COLLISION_SHAPE_CAPSULE: { r_mesh_set_capsule(&sys_win->mem_persistent, mesh, s->capsule.half_height, s->capsule.radius, 16); } break;
-				case COLLISION_SHAPE_CONVEX_HULL: { r_mesh_set_hull(&sys_win->mem_persistent, mesh, &s->hull); } break;
-				case COLLISION_SHAPE_TRI_MESH: { r_mesh_set_tri_mesh(&sys_win->mem_persistent, mesh, s->mesh_bvh.mesh); } break;
+				case COLLISION_SHAPE_SPHERE: { r_MeshSphere(&sys_win->mem_persistent, mesh, s->sphere.radius, 12); } break;
+				case COLLISION_SHAPE_CAPSULE: { r_MeshCapsule(&sys_win->mem_persistent, mesh, s->capsule.half_height, s->capsule.radius, 16); } break;
+				case COLLISION_SHAPE_CONVEX_HULL: { r_MeshHull(&sys_win->mem_persistent, mesh, &s->hull); } break;
+				case COLLISION_SHAPE_TRI_MESH: { r_MeshTriMesh(&sys_win->mem_persistent, mesh, s->mesh_bvh.mesh); } break;
 			}
 		}
 	}
@@ -403,7 +403,7 @@ struct slot led_render_mesh_add(struct led *led, const utf8 id, const utf8 shape
 void led_render_mesh_remove(struct led *led, const utf8 id)
 {
 	struct slot slot = strdb_Lookup(&led->render_mesh_db, id);
-	struct r_mesh *mesh = slot.address;
+	struct r_Mesh *mesh = slot.address;
 	if (slot.index != STRING_DATABASE_STUB_INDEX && mesh->reference_count == 0)
 	{
 		void *buf = mesh->id.buf;
@@ -518,7 +518,7 @@ struct slot led_node_add(struct led *led, const utf8 id)
 		else
 		{
 			slot = GPoolAdd(&led->node_pool);
-			HashMapAdd(led->node_map, key, slot.index);
+			HashMapAdd(&led->node_map, key, slot.index);
 			dll_Append(&led->node_non_marked_list, led->node_pool.buf, slot.index);
 			dll_SlotSetNotInList(&led->node_selected_list, slot.address);
 
@@ -545,7 +545,7 @@ struct slot led_node_lookup(struct led *led, const utf8 id)
 {
 	const u32 key = Utf8Hash(id);
 	struct slot slot = empty_slot;
-	for (u32 i = HashMapFirst(led->node_map, key); i != HASH_NULL; i = HashMapNext(led->node_map, i))
+	for (u32 i = HashMapFirst(&led->node_map, key); i != HASH_NULL; i = HashMapNext(&led->node_map, i))
 	{
 		struct led_node *node = GPoolAddress(&led->node_pool, i);
 		if (Utf8Equivalence(id, node->id))
@@ -582,7 +582,7 @@ static void led_remove_marked_structs(struct led *led)
 
 		if (node->proxy != HI_NULL_INDEX)
 		{
-			r_proxy3d_dealloc(&led->frame, node->proxy);
+			r_Proxy3dDealloc(&led->frame, node->proxy);
 		}
 
 		strdb_Dereference(&led->rb_prefab_db, node->rb_prefab);
@@ -592,7 +592,7 @@ static void led_remove_marked_structs(struct led *led)
 		node->csgBRush = STRING_DATABASE_STUB_INDEX;
 		node->proxy = HI_NULL_INDEX;
 
-		HashMapRemove(led->node_map, node->key, i);
+		HashMapRemove(&led->node_map, node->key, i);
 		ThreadFree256B(node->id.buf);
 		GPoolRemove(&led->node_pool, i);
 	}
@@ -711,12 +711,12 @@ void led_node_set_proxy3d(struct led *led, const utf8 id, const utf8 mesh, const
 		if (node->proxy != HI_NULL_INDEX)
 		{
 			struct arena tmp = ArenaAlloc1MB();
-			r_proxy3d_dealloc(&tmp, node->proxy);
+			r_Proxy3dDealloc(&tmp, node->proxy);
 			node->proxy = HI_NULL_INDEX;
 			ArenaFree1MB(&tmp);
 		}
 
-		struct r_proxy3d_config config =
+		struct r_Proxy3d_config config =
 		{
 			.parent = PROXY3D_ROOT,
 			.linear_velocity = { 0.0f, 0.0f, 0.0f },
@@ -728,7 +728,7 @@ void led_node_set_proxy3d(struct led *led, const utf8 id, const utf8 mesh, const
 		config.blend = blend; 
 		Vec3Copy(config.position, node->position);
 		QuatCopy(config.rotation, node->rotation);
-		node->proxy = r_proxy3d_alloc(&config);
+		node->proxy = r_Proxy3dAlloc(&config);
 		Vec4Copy(node->color, color);
 	}
 }
@@ -912,7 +912,7 @@ static struct triMesh tri_mesh_perlin_noise(struct arena *mem_persistent, const 
 
 void led_wall_smash_simulation_setup(struct led *led)
 {
-	struct system_window *sys_win = system_window_address(g_editor->window);
+	struct ds_Window *sys_win = ds_WindowAddress(g_editor->window);
 
 #define dsphere_v_count 	30
 	const u32 dsphere_count = 40;
@@ -972,38 +972,38 @@ void led_wall_smash_simulation_setup(struct led *led)
 				, f32_sin(i*phi)*f32_sqrt(1 - y*y));
 	}
 
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_floor");
-	sys_win->cmd_queue->regs[1].f32 = 8.0f * ramp_width;
-	sys_win->cmd_queue->regs[2].f32 = 0.5f;
-	sys_win->cmd_queue->regs[3].f32 = ramp_length;
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_collision_box_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_floor");
+	sys_win->cmd_queue.regs[1].f32 = 8.0f * ramp_width;
+	sys_win->cmd_queue.regs[2].f32 = 0.5f;
+	sys_win->cmd_queue.regs[3].f32 = ramp_length;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_collision_box_add_id);
 
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_capsule");
-	sys_win->cmd_queue->regs[1].f32 = 0.5f;
-	sys_win->cmd_queue->regs[2].f32 = 1.0f;
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_collision_capsule_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_capsule");
+	sys_win->cmd_queue.regs[1].f32 = 0.5f;
+	sys_win->cmd_queue.regs[2].f32 = 1.0f;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_collision_capsule_add_id);
 
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_box");
-	sys_win->cmd_queue->regs[1].f32 = box_side / 2.0f;
-	sys_win->cmd_queue->regs[2].f32 = box_side / 4.0f;
-	sys_win->cmd_queue->regs[3].f32 = box_side / 2.0f;
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_collision_box_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_box");
+	sys_win->cmd_queue.regs[1].f32 = box_side / 2.0f;
+	sys_win->cmd_queue.regs[2].f32 = box_side / 4.0f;
+	sys_win->cmd_queue.regs[3].f32 = box_side / 2.0f;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_collision_box_add_id);
 
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_sphere");
-	sys_win->cmd_queue->regs[1].f32 = 2.0f;
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_collision_sphere_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_sphere");
+	sys_win->cmd_queue.regs[1].f32 = 2.0f;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_collision_sphere_add_id);
 
 	struct dcel *c_ramp = ArenaPush(&sys_win->mem_persistent, sizeof(struct dcel));
 	*c_ramp = DcelConvexHull(&sys_win->mem_persistent, ramp_vertices, 6, F32_EPSILON * 100.0f);
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_ramp");
-	sys_win->cmd_queue->regs[1].ptr = c_ramp;
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_collision_dcel_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_ramp");
+	sys_win->cmd_queue.regs[1].ptr = c_ramp;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_collision_dcel_add_id);
 
 	struct dcel *c_dsphere = ArenaPush(&sys_win->mem_persistent, sizeof(struct dcel));
 	*c_dsphere = DcelConvexHull(&sys_win->mem_persistent, dsphere_vertices, dsphere_v_count, F32_EPSILON * 100.0f);
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_dsphere");
-	sys_win->cmd_queue->regs[1].ptr = c_dsphere;
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_collision_dcel_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_dsphere");
+	sys_win->cmd_queue.regs[1].ptr = c_dsphere;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_collision_dcel_add_id);
 
 	struct triMesh *map = ArenaPush(&led->mem_persistent, sizeof(struct triMesh));
 	*map = tri_mesh_perlin_noise(&led->mem_persistent, 64, 100.0f);
@@ -1023,101 +1023,101 @@ void led_wall_smash_simulation_setup(struct led *led)
 		ArenaPopRecord(&led->mem_persistent);
 	}
 	*mesh_bvh = TriMeshBvhConstruct(&led->mem_persistent, map, best_bin_count);
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_map");
-	sys_win->cmd_queue->regs[1].ptr = mesh_bvh;
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_collision_tri_mesh_bvh_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_map");
+	sys_win->cmd_queue.regs[1].ptr = mesh_bvh;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_collision_tri_mesh_bvh_add_id);
 
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_map");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_map");
-	sys_win->cmd_queue->regs[2].f32 = 1.0f;
-	sys_win->cmd_queue->regs[3].f32 = 0.0f;
-	sys_win->cmd_queue->regs[4].f32 = floor_friction;
-	sys_win->cmd_queue->regs[5].u64 = 0;
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_rb_prefab_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_map");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_map");
+	sys_win->cmd_queue.regs[2].f32 = 1.0f;
+	sys_win->cmd_queue.regs[3].f32 = 0.0f;
+	sys_win->cmd_queue.regs[4].f32 = floor_friction;
+	sys_win->cmd_queue.regs[5].u64 = 0;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_add_id);
 
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_floor");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_floor");
-	sys_win->cmd_queue->regs[2].f32 = 1.0f;
-	sys_win->cmd_queue->regs[3].f32 = 0.0f;
-	sys_win->cmd_queue->regs[4].f32 = floor_friction;
-	sys_win->cmd_queue->regs[5].u32 = 0;
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_rb_prefab_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_floor");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_floor");
+	sys_win->cmd_queue.regs[2].f32 = 1.0f;
+	sys_win->cmd_queue.regs[3].f32 = 0.0f;
+	sys_win->cmd_queue.regs[4].f32 = floor_friction;
+	sys_win->cmd_queue.regs[5].u32 = 0;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_add_id);
 
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_box");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_box");
-	sys_win->cmd_queue->regs[2].f32 = 1.0f;
-	sys_win->cmd_queue->regs[3].f32 = 0.0f;
-	sys_win->cmd_queue->regs[4].f32 = box_friction;
-	sys_win->cmd_queue->regs[5].u32 = 1;
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_rb_prefab_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_box");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_box");
+	sys_win->cmd_queue.regs[2].f32 = 1.0f;
+	sys_win->cmd_queue.regs[3].f32 = 0.0f;
+	sys_win->cmd_queue.regs[4].f32 = box_friction;
+	sys_win->cmd_queue.regs[5].u32 = 1;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_add_id);
 
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_capsule");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_capsule");
-	sys_win->cmd_queue->regs[2].f32 = 1.0f;
-	sys_win->cmd_queue->regs[3].f32 = 0.0f;
-	sys_win->cmd_queue->regs[4].f32 = capsule_friction;
-	sys_win->cmd_queue->regs[5].u32 = 1;
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_rb_prefab_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_capsule");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_capsule");
+	sys_win->cmd_queue.regs[2].f32 = 1.0f;
+	sys_win->cmd_queue.regs[3].f32 = 0.0f;
+	sys_win->cmd_queue.regs[4].f32 = capsule_friction;
+	sys_win->cmd_queue.regs[5].u32 = 1;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_add_id);
 
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_sphere");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_sphere");
-	sys_win->cmd_queue->regs[2].f32 = 100.0f;
-	sys_win->cmd_queue->regs[3].f32 = 0.0f;
-	sys_win->cmd_queue->regs[4].f32 = sphere_friction;
-	sys_win->cmd_queue->regs[5].u32 = 1;
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_rb_prefab_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_sphere");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_sphere");
+	sys_win->cmd_queue.regs[2].f32 = 100.0f;
+	sys_win->cmd_queue.regs[3].f32 = 0.0f;
+	sys_win->cmd_queue.regs[4].f32 = sphere_friction;
+	sys_win->cmd_queue.regs[5].u32 = 1;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_add_id);
 
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_dsphere");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_dsphere");
-	sys_win->cmd_queue->regs[2].f32 = 1.0f;
-	sys_win->cmd_queue->regs[3].f32 = 0.0f;
-	sys_win->cmd_queue->regs[4].f32 = sphere_friction;
-	sys_win->cmd_queue->regs[5].u32 = 1;
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_rb_prefab_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_dsphere");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_dsphere");
+	sys_win->cmd_queue.regs[2].f32 = 1.0f;
+	sys_win->cmd_queue.regs[3].f32 = 0.0f;
+	sys_win->cmd_queue.regs[4].f32 = sphere_friction;
+	sys_win->cmd_queue.regs[5].u32 = 1;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_add_id);
 
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_ramp");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_ramp");
-	sys_win->cmd_queue->regs[2].f32 = 1.0f;
-	sys_win->cmd_queue->regs[3].f32 = 0.0f;
-	sys_win->cmd_queue->regs[4].f32 = ramp_friction;
-	sys_win->cmd_queue->regs[5].u32 = 0;
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_rb_prefab_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_ramp");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_ramp");
+	sys_win->cmd_queue.regs[2].f32 = 1.0f;
+	sys_win->cmd_queue.regs[3].f32 = 0.0f;
+	sys_win->cmd_queue.regs[4].f32 = ramp_friction;
+	sys_win->cmd_queue.regs[5].u32 = 0;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_add_id);
 
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_map");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_map");
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_render_mesh_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_map");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_map");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_render_mesh_add_id);
 
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_floor");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_floor");
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_render_mesh_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_floor");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_floor");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_render_mesh_add_id);
 
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_ramp");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_ramp");
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_render_mesh_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_ramp");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_ramp");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_render_mesh_add_id);
 	
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_capsule");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_capsule");
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_render_mesh_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_capsule");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_capsule");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_render_mesh_add_id);
 
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_tower1");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_box");
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_render_mesh_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_tower1");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_box");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_render_mesh_add_id);
 	
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_tower2");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_box");
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_render_mesh_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_tower2");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_box");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_render_mesh_add_id);
 
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_box");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_box");
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_render_mesh_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_box");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_box");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_render_mesh_add_id);
 
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_sphere");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_sphere");
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_render_mesh_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_sphere");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_sphere");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_render_mesh_add_id);
 
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_dsphere");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_dsphere");
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_render_mesh_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_dsphere");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_dsphere");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_render_mesh_add_id);
 
 	vec3 sphere_translation = { -0.5, 0.5f + ramp_height, -ramp_length };
 	vec3 box_translation =  {-0.5f, 0.0f, -0.5f};
@@ -1126,81 +1126,81 @@ void led_wall_smash_simulation_setup(struct led *led)
 	vec3 box_base_translation = { 0.0f, floor_translation[1] + 1.0f, floor_translation[2] / 2.0f};
 	vec3 dsphere_base_translation = { -15.0f, floor_translation[1] + 1.0f, floor_translation[2] / 2.0f + 20.0f};
 
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_floor");
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_add_id);
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_floor");
-	sys_win->cmd_queue->regs[1].f32 = floor_translation[0];
-	sys_win->cmd_queue->regs[2].f32 = floor_translation[1];
-	sys_win->cmd_queue->regs[3].f32 = floor_translation[2];
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_position_id);
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_floor");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_floor");
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_rb_prefab_id);
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_floor");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_floor");
-	sys_win->cmd_queue->regs[2].f32 = floor_color[0];
-	sys_win->cmd_queue->regs[3].f32 = floor_color[1];
-	sys_win->cmd_queue->regs[4].f32 = floor_color[2];
-	sys_win->cmd_queue->regs[5].f32 = floor_color[3];
-	sys_win->cmd_queue->regs[6].f32 = 1.0f;
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_proxy3d_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_floor");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_floor");
+	sys_win->cmd_queue.regs[1].f32 = floor_translation[0];
+	sys_win->cmd_queue.regs[2].f32 = floor_translation[1];
+	sys_win->cmd_queue.regs[3].f32 = floor_translation[2];
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_position_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_floor");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_floor");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_rb_prefab_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_floor");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_floor");
+	sys_win->cmd_queue.regs[2].f32 = floor_color[0];
+	sys_win->cmd_queue.regs[3].f32 = floor_color[1];
+	sys_win->cmd_queue.regs[4].f32 = floor_color[2];
+	sys_win->cmd_queue.regs[5].f32 = floor_color[3];
+	sys_win->cmd_queue.regs[6].f32 = 1.0f;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_proxy3d_id);
 	
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_map");
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_add_id);
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_map");
-	sys_win->cmd_queue->regs[1].f32 = 0.0f;
-	sys_win->cmd_queue->regs[2].f32 = -20.0f;
-	sys_win->cmd_queue->regs[3].f32 = 0.0f;
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_position_id);
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_map");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_map");
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_rb_prefab_id);
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_map");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_map");
-	sys_win->cmd_queue->regs[2].f32 = map_color[0];
-	sys_win->cmd_queue->regs[3].f32 = map_color[1];
-	sys_win->cmd_queue->regs[4].f32 = map_color[2];
-	sys_win->cmd_queue->regs[5].f32 = map_color[3];
-	sys_win->cmd_queue->regs[6].f32 = 1.0f;
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_proxy3d_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_map");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_map");
+	sys_win->cmd_queue.regs[1].f32 = 0.0f;
+	sys_win->cmd_queue.regs[2].f32 = -20.0f;
+	sys_win->cmd_queue.regs[3].f32 = 0.0f;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_position_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_map");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_map");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_rb_prefab_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_map");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_map");
+	sys_win->cmd_queue.regs[2].f32 = map_color[0];
+	sys_win->cmd_queue.regs[3].f32 = map_color[1];
+	sys_win->cmd_queue.regs[4].f32 = map_color[2];
+	sys_win->cmd_queue.regs[5].f32 = map_color[3];
+	sys_win->cmd_queue.regs[6].f32 = 1.0f;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_proxy3d_id);
 
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_ramp");
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_add_id);
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_ramp");
-	sys_win->cmd_queue->regs[1].f32 = ramp_translation[0];
-	sys_win->cmd_queue->regs[2].f32 = ramp_translation[1];
-	sys_win->cmd_queue->regs[3].f32 = ramp_translation[2];
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_position_id);
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_ramp");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_ramp");
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_rb_prefab_id);
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_ramp");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_ramp");
-	sys_win->cmd_queue->regs[2].f32 = ramp_color[0];
-	sys_win->cmd_queue->regs[3].f32 = ramp_color[1];
-	sys_win->cmd_queue->regs[4].f32 = ramp_color[2];
-	sys_win->cmd_queue->regs[5].f32 = ramp_color[3];
-	sys_win->cmd_queue->regs[6].f32 = 1.0f;
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_proxy3d_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_ramp");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_ramp");
+	sys_win->cmd_queue.regs[1].f32 = ramp_translation[0];
+	sys_win->cmd_queue.regs[2].f32 = ramp_translation[1];
+	sys_win->cmd_queue.regs[3].f32 = ramp_translation[2];
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_position_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_ramp");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_ramp");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_rb_prefab_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_ramp");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_ramp");
+	sys_win->cmd_queue.regs[2].f32 = ramp_color[0];
+	sys_win->cmd_queue.regs[3].f32 = ramp_color[1];
+	sys_win->cmd_queue.regs[4].f32 = ramp_color[2];
+	sys_win->cmd_queue.regs[5].f32 = ramp_color[3];
+	sys_win->cmd_queue.regs[6].f32 = 1.0f;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_proxy3d_id);
 
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_sphere");
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_add_id);
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_sphere");
-	sys_win->cmd_queue->regs[1].f32 = sphere_translation[0];
-	sys_win->cmd_queue->regs[2].f32 = sphere_translation[1];
-	sys_win->cmd_queue->regs[3].f32 = sphere_translation[2];
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_position_id);
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_sphere");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_sphere");
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_rb_prefab_id);
-	sys_win->cmd_queue->regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_sphere");
-	sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_sphere");
-	sys_win->cmd_queue->regs[2].f32 = sphere_color[0];
-	sys_win->cmd_queue->regs[3].f32 = sphere_color[1];
-	sys_win->cmd_queue->regs[4].f32 = sphere_color[2];
-	sys_win->cmd_queue->regs[5].f32 = sphere_color[3];
-	sys_win->cmd_queue->regs[6].f32 = 1.0f;
-	CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_proxy3d_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_sphere");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_add_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_sphere");
+	sys_win->cmd_queue.regs[1].f32 = sphere_translation[0];
+	sys_win->cmd_queue.regs[2].f32 = sphere_translation[1];
+	sys_win->cmd_queue.regs[3].f32 = sphere_translation[2];
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_position_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_sphere");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_sphere");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_rb_prefab_id);
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "led_sphere");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_sphere");
+	sys_win->cmd_queue.regs[2].f32 = sphere_color[0];
+	sys_win->cmd_queue.regs[3].f32 = sphere_color[1];
+	sys_win->cmd_queue.regs[4].f32 = sphere_color[2];
+	sys_win->cmd_queue.regs[5].f32 = sphere_color[3];
+	sys_win->cmd_queue.regs[6].f32 = 1.0f;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_proxy3d_id);
 	
 	for (u32 i = 0; i < capsule_count; ++i)
 	{	
@@ -1211,24 +1211,24 @@ void led_wall_smash_simulation_setup(struct led *led)
 		translation[2] += (10.0f - 38.0f * (f32) i / dsphere_count) * f32_sin(i * F32_PI*37.0f/197.0f);
 
 		utf8 id = Utf8Format(sys_win->ui->mem_frame, "capsule_%u", i);
-		sys_win->cmd_queue->regs[0].utf8 = id;
-		CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_add_id);
-		sys_win->cmd_queue->regs[0].utf8 = id;
-		sys_win->cmd_queue->regs[1].f32 = translation[0];
-		sys_win->cmd_queue->regs[2].f32 = translation[1];
-		sys_win->cmd_queue->regs[3].f32 = translation[2];
-		CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_position_id);
-		sys_win->cmd_queue->regs[0].utf8 = id;
-		sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_capsule");
-		CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_rb_prefab_id);
-		sys_win->cmd_queue->regs[0].utf8 = id;
-		sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_capsule");
-		sys_win->cmd_queue->regs[2].f32 = capsule_color[0];
-		sys_win->cmd_queue->regs[3].f32 = capsule_color[1];
-		sys_win->cmd_queue->regs[4].f32 = capsule_color[2];
-		sys_win->cmd_queue->regs[5].f32 = capsule_color[3];
-		sys_win->cmd_queue->regs[6].f32 = 1.0f;
-		CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_proxy3d_id);
+		sys_win->cmd_queue.regs[0].utf8 = id;
+		CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_add_id);
+		sys_win->cmd_queue.regs[0].utf8 = id;
+		sys_win->cmd_queue.regs[1].f32 = translation[0];
+		sys_win->cmd_queue.regs[2].f32 = translation[1];
+		sys_win->cmd_queue.regs[3].f32 = translation[2];
+		CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_position_id);
+		sys_win->cmd_queue.regs[0].utf8 = id;
+		sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_capsule");
+		CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_rb_prefab_id);
+		sys_win->cmd_queue.regs[0].utf8 = id;
+		sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_capsule");
+		sys_win->cmd_queue.regs[2].f32 = capsule_color[0];
+		sys_win->cmd_queue.regs[3].f32 = capsule_color[1];
+		sys_win->cmd_queue.regs[4].f32 = capsule_color[2];
+		sys_win->cmd_queue.regs[5].f32 = capsule_color[3];
+		sys_win->cmd_queue.regs[6].f32 = 1.0f;
+		CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_proxy3d_id);
 	}
 
 	for (u32 i = 0; i < dsphere_count; ++i)
@@ -1240,24 +1240,24 @@ void led_wall_smash_simulation_setup(struct led *led)
 		translation[2] += (10.0f - 38.0f * (f32) i / dsphere_count) * f32_sin(i * F32_PI*37.0f/197.0f);
 
 		utf8 id = Utf8Format(sys_win->ui->mem_frame, "dsphere_%u", i);
-		sys_win->cmd_queue->regs[0].utf8 = id;
-		CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_add_id);
-		sys_win->cmd_queue->regs[0].utf8 = id;
-		sys_win->cmd_queue->regs[1].f32 = translation[0];
-		sys_win->cmd_queue->regs[2].f32 = translation[1];
-		sys_win->cmd_queue->regs[3].f32 = translation[2];
-		CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_position_id);
-		sys_win->cmd_queue->regs[0].utf8 = id;
-		sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_dsphere");
-		CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_rb_prefab_id);
-		sys_win->cmd_queue->regs[0].utf8 = id;
-		sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_dsphere");
-		sys_win->cmd_queue->regs[2].f32 = dsphere_color[0];
-		sys_win->cmd_queue->regs[3].f32 = dsphere_color[1];
-		sys_win->cmd_queue->regs[4].f32 = dsphere_color[2];
-		sys_win->cmd_queue->regs[5].f32 = dsphere_color[3];
-		sys_win->cmd_queue->regs[6].f32 = 1.0f;
-		CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_proxy3d_id);
+		sys_win->cmd_queue.regs[0].utf8 = id;
+		CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_add_id);
+		sys_win->cmd_queue.regs[0].utf8 = id;
+		sys_win->cmd_queue.regs[1].f32 = translation[0];
+		sys_win->cmd_queue.regs[2].f32 = translation[1];
+		sys_win->cmd_queue.regs[3].f32 = translation[2];
+		CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_position_id);
+		sys_win->cmd_queue.regs[0].utf8 = id;
+		sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_dsphere");
+		CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_rb_prefab_id);
+		sys_win->cmd_queue.regs[0].utf8 = id;
+		sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_dsphere");
+		sys_win->cmd_queue.regs[2].f32 = dsphere_color[0];
+		sys_win->cmd_queue.regs[3].f32 = dsphere_color[1];
+		sys_win->cmd_queue.regs[4].f32 = dsphere_color[2];
+		sys_win->cmd_queue.regs[5].f32 = dsphere_color[3];
+		sys_win->cmd_queue.regs[6].f32 = 1.0f;
+		CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_proxy3d_id);
 	}
 
 	for (u32 k = 0; k < pyramid_count; ++k)
@@ -1275,24 +1275,24 @@ void led_wall_smash_simulation_setup(struct led *led)
 				translation[2] += 10.0f * k;
 
 				utf8 id = Utf8Format(sys_win->ui->mem_frame, "pyramid_%u_%u_%u", i, j, k);
-				sys_win->cmd_queue->regs[0].utf8 = id;
-				CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_add_id);
-				sys_win->cmd_queue->regs[0].utf8 = id;
-				sys_win->cmd_queue->regs[1].f32 = translation[0];
-				sys_win->cmd_queue->regs[2].f32 = translation[1];
-				sys_win->cmd_queue->regs[3].f32 = translation[2];
-				CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_position_id);
-				sys_win->cmd_queue->regs[0].utf8 = id;
-				sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_box");
-				CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_rb_prefab_id);
-				sys_win->cmd_queue->regs[0].utf8 = id;
-				sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_box");
-				sys_win->cmd_queue->regs[2].f32 = pyramid_color[0];
-				sys_win->cmd_queue->regs[3].f32 = pyramid_color[1];
-				sys_win->cmd_queue->regs[4].f32 = pyramid_color[2];
-				sys_win->cmd_queue->regs[5].f32 = pyramid_color[3];
-				sys_win->cmd_queue->regs[6].f32 = 1.0f;
-				CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_proxy3d_id);
+				sys_win->cmd_queue.regs[0].utf8 = id;
+				CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_add_id);
+				sys_win->cmd_queue.regs[0].utf8 = id;
+				sys_win->cmd_queue.regs[1].f32 = translation[0];
+				sys_win->cmd_queue.regs[2].f32 = translation[1];
+				sys_win->cmd_queue.regs[3].f32 = translation[2];
+				CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_position_id);
+				sys_win->cmd_queue.regs[0].utf8 = id;
+				sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_box");
+				CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_rb_prefab_id);
+				sys_win->cmd_queue.regs[0].utf8 = id;
+				sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_box");
+				sys_win->cmd_queue.regs[2].f32 = pyramid_color[0];
+				sys_win->cmd_queue.regs[3].f32 = pyramid_color[1];
+				sys_win->cmd_queue.regs[4].f32 = pyramid_color[2];
+				sys_win->cmd_queue.regs[5].f32 = pyramid_color[3];
+				sys_win->cmd_queue.regs[6].f32 = 1.0f;
+				CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_proxy3d_id);
 			}
 		}
 	}
@@ -1310,24 +1310,24 @@ void led_wall_smash_simulation_setup(struct led *led)
 				translation[0] += 15.0f + 2.0f*j;
 
 				utf8 id = Utf8Format(sys_win->ui->mem_frame, "tower1_%u_%u_%u", i, j, k);
-				sys_win->cmd_queue->regs[0].utf8 = id;
-				CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_add_id);
-				sys_win->cmd_queue->regs[0].utf8 = id;
-				sys_win->cmd_queue->regs[1].f32 = translation[0];
-				sys_win->cmd_queue->regs[2].f32 = translation[1];
-				sys_win->cmd_queue->regs[3].f32 = translation[2];
-				CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_position_id);
-				sys_win->cmd_queue->regs[0].utf8 = id;
-				sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_box");
-				CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_rb_prefab_id);
-				sys_win->cmd_queue->regs[0].utf8 = id;
-				sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_box");
-				sys_win->cmd_queue->regs[2].f32 = tower1_color[0];
-				sys_win->cmd_queue->regs[3].f32 = tower1_color[1];
-				sys_win->cmd_queue->regs[4].f32 = tower1_color[2];
-				sys_win->cmd_queue->regs[5].f32 = tower1_color[3];
-				sys_win->cmd_queue->regs[6].f32 = 1.0f;
-				CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_proxy3d_id);
+				sys_win->cmd_queue.regs[0].utf8 = id;
+				CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_add_id);
+				sys_win->cmd_queue.regs[0].utf8 = id;
+				sys_win->cmd_queue.regs[1].f32 = translation[0];
+				sys_win->cmd_queue.regs[2].f32 = translation[1];
+				sys_win->cmd_queue.regs[3].f32 = translation[2];
+				CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_position_id);
+				sys_win->cmd_queue.regs[0].utf8 = id;
+				sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_box");
+				CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_rb_prefab_id);
+				sys_win->cmd_queue.regs[0].utf8 = id;
+				sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_box");
+				sys_win->cmd_queue.regs[2].f32 = tower1_color[0];
+				sys_win->cmd_queue.regs[3].f32 = tower1_color[1];
+				sys_win->cmd_queue.regs[4].f32 = tower1_color[2];
+				sys_win->cmd_queue.regs[5].f32 = tower1_color[3];
+				sys_win->cmd_queue.regs[6].f32 = 1.0f;
+				CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_proxy3d_id);
 			}
 		}
 	}
@@ -1345,24 +1345,24 @@ void led_wall_smash_simulation_setup(struct led *led)
 				translation[0] -= 15.0f + 2.0f*j;
 			
 				utf8 id = Utf8Format(sys_win->ui->mem_frame, "tower2_%u_%u_%u", i, j, k);
-				sys_win->cmd_queue->regs[0].utf8 = id;
-				CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_add_id);
-				sys_win->cmd_queue->regs[0].utf8 = id;
-				sys_win->cmd_queue->regs[1].f32 = translation[0];
-				sys_win->cmd_queue->regs[2].f32 = translation[1];
-				sys_win->cmd_queue->regs[3].f32 = translation[2];
-				CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_position_id);
-				sys_win->cmd_queue->regs[0].utf8 = id;
-				sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_box");
-				CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_rb_prefab_id);
-				sys_win->cmd_queue->regs[0].utf8 = id;
-				sys_win->cmd_queue->regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_box");
-				sys_win->cmd_queue->regs[2].f32 = tower2_color[0];
-				sys_win->cmd_queue->regs[3].f32 = tower2_color[1];
-				sys_win->cmd_queue->regs[4].f32 = tower2_color[2];
-				sys_win->cmd_queue->regs[5].f32 = tower2_color[3];
-				sys_win->cmd_queue->regs[6].f32 = 1.0f;
-				CmdQueueSubmit(sys_win->cmd_queue, cmd_led_node_set_proxy3d_id);
+				sys_win->cmd_queue.regs[0].utf8 = id;
+				CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_add_id);
+				sys_win->cmd_queue.regs[0].utf8 = id;
+				sys_win->cmd_queue.regs[1].f32 = translation[0];
+				sys_win->cmd_queue.regs[2].f32 = translation[1];
+				sys_win->cmd_queue.regs[3].f32 = translation[2];
+				CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_position_id);
+				sys_win->cmd_queue.regs[0].utf8 = id;
+				sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_box");
+				CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_rb_prefab_id);
+				sys_win->cmd_queue.regs[0].utf8 = id;
+				sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_box");
+				sys_win->cmd_queue.regs[2].f32 = tower2_color[0];
+				sys_win->cmd_queue.regs[3].f32 = tower2_color[1];
+				sys_win->cmd_queue.regs[4].f32 = tower2_color[2];
+				sys_win->cmd_queue.regs[5].f32 = tower2_color[3];
+				sys_win->cmd_queue.regs[6].f32 = 1.0f;
+				CmdQueueSubmit(&sys_win->cmd_queue, cmd_led_node_set_proxy3d_id);
 			}
 		}
 	}
@@ -1419,13 +1419,13 @@ static void led_engine_flush(struct led *led)
 	for (u32 i = led->node_non_marked_list.first; i != DLL_NULL; i = dll_Next(node))
 	{
 		node = PoolAddress(&led->node_pool, i);
-		r_proxy3d_set_linear_speculation(node->position
+		r_Proxy3dLinearSpeculationSet(node->position
 					, node->rotation
 					, (vec3) { 0 } 
 					, (vec3) { 0 } 
 					, led->ns
 					, node->proxy);
-		struct r_proxy3d *proxy = r_proxy3d_address(node->proxy);
+		struct r_Proxy3d *proxy = r_Proxy3dAddress(node->proxy);
 		Vec4Copy(proxy->color, node->color);
 	}
 }
@@ -1453,7 +1453,7 @@ static void led_engine_init(struct led *led)
 				QuatAxisAngle(node->rotation, axis, angle);
 				vec3 linear_velocity = { 0.0f, 0.0f, 0.0f};
 				vec3 angular_velocity = { 0.0f, 0.0f, 0.0f};
-				r_proxy3d_set_linear_speculation(node->position
+				r_Proxy3dLinearSpeculationSet(node->position
 						, node->rotation
 						, linear_velocity
 						, angular_velocity
@@ -1467,17 +1467,13 @@ static void led_engine_init(struct led *led)
 
 static void led_engine_color_bodies(struct led *led, const u32 island, const vec4 color)
 {
-	struct island *is = array_list_address(led->physics.is_db.islands, island);
-	struct is_index_entry *entry = NULL;
-	u32 k = is->body_first;
-	for (u32 i = 0; i < is->body_count; ++i)
+	struct island *is = PoolAddress(&led->physics.is_db.island_pool, island);
+	const struct rigidBody *body;
+	for (u32 i = is->body_list.first; i != LL_NULL; i = body->ll_next)
 	{
-		entry = array_list_address(led->physics.is_db.island_body_lists, k);
-		k = entry->next;
-
-		const struct rigidBody *body = PoolAddress(&led->physics.body_pool, entry->index);
+		body = PoolAddress(&led->physics.body_pool, i);
 		const struct led_node *node = PoolAddress(&led->node_pool, body->entity);
-		struct r_proxy3d *proxy = r_proxy3d_address(node->proxy);
+		struct r_Proxy3d *proxy = r_Proxy3dAddress(node->proxy);
 		Vec4Copy(proxy->color, color);
 	}
 }
@@ -1519,7 +1515,7 @@ static void led_engine_run(struct led *led)
 				{
 					body = PoolAddress(&led->physics.body_pool, i);
 					const struct led_node *node = PoolAddress(&led->node_pool, body->entity);
-					struct r_proxy3d *proxy = r_proxy3d_address(node->proxy);
+					struct r_Proxy3d *proxy = r_Proxy3dAddress(node->proxy);
 					Vec4Copy(proxy->color, node->color);
 				}
 			} break;
@@ -1531,7 +1527,7 @@ static void led_engine_run(struct led *led)
 				{
 					body = PoolAddress(&led->physics.body_pool, i);
 					const struct led_node *node = PoolAddress(&led->node_pool, body->entity);
-					struct r_proxy3d *proxy = r_proxy3d_address(node->proxy);
+					struct r_Proxy3d *proxy = r_Proxy3dAddress(node->proxy);
 					if (RB_IS_DYNAMIC(body))
 					{
 						(body->first_contact_index == NLL_NULL)
@@ -1552,7 +1548,7 @@ static void led_engine_run(struct led *led)
 				{
 					body = PoolAddress(&led->physics.body_pool, i);
 					const struct led_node *node = PoolAddress(&led->node_pool, body->entity);
-					struct r_proxy3d *proxy = r_proxy3d_address(node->proxy);
+					struct r_Proxy3d *proxy = r_Proxy3dAddress(node->proxy);
 
 					if (!RB_IS_DYNAMIC(body))
 					{						
@@ -1574,8 +1570,8 @@ static void led_engine_run(struct led *led)
 				{
 					body = PoolAddress(&led->physics.body_pool, i);
 					const struct led_node *node = PoolAddress(&led->node_pool, body->entity);
-					const struct island *is = array_list_address(led->physics.is_db.islands, body->island_index);
-					struct r_proxy3d *proxy = r_proxy3d_address(node->proxy);
+					const struct island *is = PoolAddress(&led->physics.is_db.island_pool, body->island_index);
+					struct r_Proxy3d *proxy = r_Proxy3dAddress(node->proxy);
 					(RB_IS_DYNAMIC(body))
 						? Vec4Copy(proxy->color, is->color)
 						: Vec4Copy(proxy->color, led->physics.static_color);
@@ -1592,7 +1588,7 @@ static void led_engine_run(struct led *led)
 		const u32 next = dll_Next(event);
 		switch (event->type)
 		{
-			case PhysicsEventContactNew:
+			case PHYSICS_EVENT_CONTACT_NEW:
 			{
 				if (led->physics.body_color_mode == RB_COLOR_MODE_COLLISION)
 				{
@@ -1602,18 +1598,18 @@ static void led_engine_run(struct led *led)
 					const struct led_node *node2 = PoolAddress(&led->node_pool, body2->entity);
 					if (RB_IS_DYNAMIC(body1))
 					{
-						struct r_proxy3d *proxy = r_proxy3d_address(node1->proxy);
+						struct r_Proxy3d *proxy = r_Proxy3dAddress(node1->proxy);
 						Vec4Copy(proxy->color, led->physics.collision_color);
 					}
 					if (RB_IS_DYNAMIC(body2))
 					{
-						struct r_proxy3d *proxy = r_proxy3d_address(node2->proxy);
+						struct r_Proxy3d *proxy = r_Proxy3dAddress(node2->proxy);
 						Vec4Copy(proxy->color, led->physics.collision_color);
 					}
 				}
 			} break;
 
-			case PhysicsEventContactRemoved:
+			case PHYSICS_EVENT_CONTACT_REMOVED:
 			{
 				if (led->physics.body_color_mode == RB_COLOR_MODE_COLLISION)
 				{
@@ -1622,8 +1618,8 @@ static void led_engine_run(struct led *led)
 					const struct led_node *node1 = PoolAddress(&led->node_pool, body1->entity);
 					const struct led_node *node2 = PoolAddress(&led->node_pool, body2->entity);
 
-					struct r_proxy3d *proxy1 = r_proxy3d_address(node1->proxy);
-					struct r_proxy3d *proxy2 = r_proxy3d_address(node2->proxy);
+					struct r_Proxy3d *proxy1 = r_Proxy3dAddress(node1->proxy);
+					struct r_Proxy3d *proxy2 = r_Proxy3dAddress(node2->proxy);
 					if (RB_IS_DYNAMIC(body1))
 					{
 						if (body1->first_contact_index == NLL_NULL)
@@ -1651,9 +1647,9 @@ static void led_engine_run(struct led *led)
 			} break;
 
 #ifdef DS_PHYSICS_DEBUG
-			case PhysicsEventIslandNew:
+			case PHYSICS_EVENT_ISLAND_NEW:
 			{
-				struct island *is = array_list_address(led->physics.is_db.islands, event->island);
+				struct island *is = PoolAddress(&led->physics.is_db.island_pool, event->island);
 				Vec4Set(is->color, 
 						RngF32Normalized(), 
 						RngF32Normalized(), 
@@ -1669,24 +1665,24 @@ static void led_engine_run(struct led *led)
 				}
 			} break;
 
-			case PhysicsEventIslandExpanded:
+			case PHYSICS_EVENT_ISLAND_EXPANDED:
 			{
 				if (led->physics.body_color_mode == RB_COLOR_MODE_ISLAND)
 				{
-					if (BitVecGetBit(&led->physics.is_db.island_usage, event->island))
+					const struct island *is = PoolAddress(&led->physics.is_db.island_pool, event->island);
+					if (PoolSlotAllocated(is))
 					{
-						const struct island *is = array_list_address(led->physics.is_db.islands, event->island);
 						led_engine_color_bodies(led, event->island, is->color);
 					}
 				}
 			} break;
 #endif
 
-			case PhysicsEventIslandRemoved:
+			case PHYSICS_EVENT_ISLAND_REMOVED:
 			{
 			} break;
 
-			case PhysicsEventIslandAwake:
+			case PHYSICS_EVENT_ISLAND_AWAKE:
 			{
 				if (led->physics.body_color_mode == RB_COLOR_MODE_SLEEP)
 				{
@@ -1694,7 +1690,7 @@ static void led_engine_run(struct led *led)
 				}
 			} break;
 
-			case PhysicsEventIslandAsleep:
+			case PHYSICS_EVENT_ISLAND_ASLEEP:
 			{
 				if (led->physics.body_color_mode == RB_COLOR_MODE_SLEEP)
 				{
@@ -1702,11 +1698,11 @@ static void led_engine_run(struct led *led)
 				}
 			} break;
 			
-			case PhysicsEventBodyNew:
+			case PHYSICS_EVENT_BODY_NEW:
 			{
 			} break;
 
-			case PhysicsEventBodyRemoved:
+			case PHYSICS_EVENT_BODY_REMOVED:
 			{
 			} break;
 
@@ -1717,7 +1713,7 @@ static void led_engine_run(struct led *led)
 
 				vec3 linear_velocity;
 				Vec3Scale(linear_velocity, body->linear_momentum, 1.0f / body->mass);
-				r_proxy3d_set_linear_speculation(body->position
+				r_Proxy3dLinearSpeculationSet(body->position
 						, body->rotation
 						, linear_velocity
 						, body->angular_velocity
@@ -1735,7 +1731,7 @@ static void led_engine_run(struct led *led)
 void led_core(struct led *led)
 {
 	static u32 once = 1;
-	struct system_window *sys_win = system_window_address(g_editor->window);
+	struct ds_Window *sys_win = ds_WindowAddress(g_editor->window);
 	if (once && sys_win)
 	{
 		once = 0;

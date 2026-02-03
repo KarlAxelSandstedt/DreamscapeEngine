@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -18,9 +18,8 @@
 */
 
 #include "r_local.h"
-#include "transform.h"
 
-void r_camera2d_transform(mat3 W_to_AS, const vec2 view_center, const f32 view_height, const f32 view_aspect_ratio)
+void r_Camera2dTransform(mat3 W_to_AS, const vec2 view_center, const f32 view_height, const f32 view_aspect_ratio)
 {
 	const f32 view_width = view_height * view_aspect_ratio;
 	/* world-to-camera, gles2 expects column-major */
@@ -42,7 +41,7 @@ void r_camera2d_transform(mat3 W_to_AS, const vec2 view_center, const f32 view_h
 	Mat3Mul(W_to_AS, C_to_AS, W_to_C);
 }
 
-void r_camera_debug_print(const struct r_camera *cam)
+void r_CameraDebugPrint(const struct r_Camera *cam)
 {
 	fprintf(stderr, "POS: (%f, %f, %f)\n", cam->position[0], cam->position[1], cam->position[2]);
 	fprintf(stderr, "RIGHT: (%f, %f, %f)\n", cam->left[0], cam->left[1], cam->left[2]);
@@ -52,7 +51,7 @@ void r_camera_debug_print(const struct r_camera *cam)
 	fprintf(stderr, "YAW, PITCH: (%f, %f)\n", cam->yaw, cam->pitch);
 }
 
-struct r_camera r_camera_init(const vec3 position, const vec3 direction, const f32 fz_near, const f32 fz_far, const f32 aspect_ratio, const f32 fov_x)
+struct r_Camera r_CameraInit(const vec3 position, const vec3 direction, const f32 fz_near, const f32 fz_far, const f32 aspect_ratio, const f32 fov_x)
 {
 	ds_Assert(fov_x > 0.0f && fov_x < F32_PI);
 	ds_Assert(fz_near > 0.0f);
@@ -60,7 +59,7 @@ struct r_camera r_camera_init(const vec3 position, const vec3 direction, const f
 	ds_Assert(aspect_ratio > 0);
 	ds_Assert(Vec3Length(direction) > 0.0f);
 	
-	struct r_camera cam = 
+	struct r_Camera cam = 
 	{
 		.yaw = 0.0f,
 		.pitch = 0.0f,
@@ -122,7 +121,7 @@ struct r_camera r_camera_init(const vec3 position, const vec3 direction, const f
 	return cam;
 }
 
-void r_camera_construct(struct r_camera *cam,
+void r_CameraConstruct(struct r_Camera *cam,
 		const vec3 position,
 	       	const vec3 left,
 	       	const vec3 up,
@@ -151,7 +150,7 @@ void r_camera_construct(struct r_camera *cam,
 	cam->fov_x = fov_x;
 }
 
-void r_camera_update_axes(struct r_camera *cam)
+void r_CameraUpdateAxes(struct r_Camera *cam)
 {
 	vec3 left = {1.0f, 0.0f, 0.0f};
 	vec3 up = {0.0f, 1.0f, 0.0f};
@@ -165,7 +164,7 @@ void r_camera_update_axes(struct r_camera *cam)
 	Mat3VecMul(cam->forward, rot, forward);
 }
 
-void r_camera_update_angles(struct r_camera *cam, const f32 yaw_delta, const f32 pitch_delta)
+void r_CameraUpdateAngles(struct r_Camera *cam, const f32 yaw_delta, const f32 pitch_delta)
 {
 	cam->yaw += yaw_delta;
 	if (cam->yaw >= F32_PI)
@@ -191,24 +190,24 @@ void r_camera_update_angles(struct r_camera *cam, const f32 yaw_delta, const f32
 	}
 }
 
-void frustum_projection_plane_sides(f32 *width, f32 *height, const f32 plane_distance, const f32 fov_x, const f32 aspect_ratio)
+void FrustumProjectionPlaneSides(f32 *width, f32 *height, const f32 plane_distance, const f32 fov_x, const f32 aspect_ratio)
 {
 	*width = 2.0f * plane_distance * f32_tan(fov_x / 2.0f);
 	*height = *width / aspect_ratio;
 }
 
-void frustum_projection_plane_camera_space(vec3 bottom_left, vec3 upper_right, const struct r_camera *cam)
+void FrustumProjectionPlaneCameraSpace(vec3 bottom_left, vec3 upper_right, const struct r_Camera *cam)
 {
 	f32 frustum_width, frustum_height;
-	frustum_projection_plane_sides(&frustum_width, &frustum_height, cam->fz_near, cam->fov_x, cam->aspect_ratio);
+	FrustumProjectionPlaneSides(&frustum_width, &frustum_height, cam->fz_near, cam->fov_x, cam->aspect_ratio);
 	Vec3Set(bottom_left, frustum_width / 2.0f, -frustum_height / 2.0f, cam->fz_near);
 	Vec3Set(upper_right, -frustum_width / 2.0f, frustum_height / 2.0f, cam->fz_near);
 }
 
-void frustum_projection_plane_world_space(vec3 bottom_left, vec3 upper_right, const struct r_camera *cam)
+void FrustumProjectionPlaneWorldSpace(vec3 bottom_left, vec3 upper_right, const struct r_Camera *cam)
 {
 	f32 frustum_width, frustum_height;
-	frustum_projection_plane_sides(&frustum_width, &frustum_height, cam->fz_near, cam->fov_x, cam->aspect_ratio);
+	FrustumProjectionPlaneSides(&frustum_width, &frustum_height, cam->fz_near, cam->fov_x, cam->aspect_ratio);
 
 	vec3 v;
 	vec3 left = {1.0f, 0.0f, 0.0f};
@@ -226,7 +225,7 @@ void frustum_projection_plane_world_space(vec3 bottom_left, vec3 upper_right, co
 	Vec3Translate(upper_right, cam->position);
 }
 
-void window_space_to_world_space(vec3 world_pixel, const vec2 pixel, const vec2 win_size, const struct r_camera * cam)
+void WindowSpaceToWorldSpace(vec3 world_pixel, const vec2 pixel, const vec2 win_size, const struct r_Camera * cam)
 {
 	mat3 rot;
 	vec3 bl, tr, camera_pixel;
@@ -236,7 +235,7 @@ void window_space_to_world_space(vec3 world_pixel, const vec2 pixel, const vec2 
 	mat3SequentialRotation(rot, up, cam->yaw, left, cam->pitch);
 
 	const vec3 alphas = { 1.0f - ((f32) pixel[0]) / win_size[0], 1.0f - ((f32) pixel[1]) / win_size[1], 1.0f };	
-	frustum_projection_plane_camera_space(bl, tr, cam);
+	FrustumProjectionPlaneCameraSpace(bl, tr, cam);
 	Vec3InterpolatePiecewise(camera_pixel, bl, tr, alphas);	
 	Mat3VecMul(world_pixel, rot, camera_pixel);
 	Vec3Translate(world_pixel, cam->position);

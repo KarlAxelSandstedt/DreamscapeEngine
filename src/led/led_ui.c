@@ -18,16 +18,15 @@
 */
 
 #include "led_local.h"
-#include "sys_public.h"
 
 static void led_project_menu_ui(struct led *led, const struct ui_Visual *visual)
 {
 	struct led_project_menu *menu = &led->project_menu;
 
-	system_window_set_global(menu->window);
+	ds_WindowSetGlobal(menu->window);
 	CmdQueueExecute();
 
-	struct system_window *win = system_window_address(menu->window);
+	struct ds_Window *win = ds_WindowAddress(menu->window);
 	ui_FrameBegin(win->size, visual);
 
 	ui_TextAlignX(ALIGN_LEFT)
@@ -126,7 +125,7 @@ static void led_project_menu_ui(struct led *led, const struct ui_Visual *visual)
 				}
 				else
 				{
-					struct system_window *project_window = system_window_address(led->window);
+					struct ds_Window *project_window = ds_WindowAddress(led->window);
 					enum fsError err;
 
 					const char *cstr_project_name = CstrUtf8(g_ui->mem_frame, menu->utf8_new_project);
@@ -175,16 +174,16 @@ static void led_project_menu_ui(struct led *led, const struct ui_Visual *visual)
 		}
 	}
 
-	DsWindowEventHandler(win);
+	ds_WindowEventHandler(win);
 	ui_FrameEnd();
 }
 
 static void led_ui_test(struct led *led, const struct ui_Visual *visual)
 {
-	system_window_set_global(led->window);
+	ds_WindowSetGlobal(led->window);
 	CmdQueueExecute();
 
-	struct system_window *win = system_window_address(led->window);
+	struct ds_Window *win = ds_WindowAddress(led->window);
 	ui_FrameBegin(win->size, visual);
 
 	ui_TextAlignX(ALIGN_LEFT)
@@ -315,14 +314,14 @@ static void led_ui_test(struct led *led, const struct ui_Visual *visual)
 		}
 	}
 
-	DsWindowEventHandler(win);
+	ds_WindowEventHandler(win);
 	ui_FrameEnd();
 }
 
 static void led_input_handler(struct led *led, struct ui_Node *viewport)
 {
 	Vec4Set(viewport->border_color, 0.9f, 0.9f, 0.9f, 1.0f);
-	struct system_window *sys_win = system_window_address(led->window);
+	struct ds_Window *sys_win = ds_WindowAddress(led->window);
 
 	for (u32 i = sys_win->ui->event_list.first; i != DLL_NULL; )
 	{
@@ -383,8 +382,8 @@ static void led_input_handler(struct led *led, struct ui_Node *viewport)
 	    	led->cam_left_velocity -= 9.0f; 
 	} 
 
-	r_camera_update_angles(&led->cam, -sys_win->ui->inter.cursor_delta[0] / 300.0f, -sys_win->ui->inter.cursor_delta[1] / 300.0f);
-	r_camera_update_axes(&led->cam);
+	r_CameraUpdateAngles(&led->cam, -sys_win->ui->inter.cursor_delta[0] / 300.0f, -sys_win->ui->inter.cursor_delta[1] / 300.0f);
+	r_CameraUpdateAxes(&led->cam);
 
 	sys_win->ui->inter.cursor_delta[0] = 0.0f;
 	sys_win->ui->inter.cursor_delta[1] = 0.0f;
@@ -392,10 +391,10 @@ static void led_input_handler(struct led *led, struct ui_Node *viewport)
 
 static void led_ui(struct led *led, const struct ui_Visual *visual)
 {
-	system_window_set_global(led->window);
+	ds_WindowSetGlobal(led->window);
 	CmdQueueExecute();
 
-	struct system_window *win = system_window_address(led->window);
+	struct ds_Window *win = ds_WindowAddress(led->window);
 	ui_FrameBegin(win->size, visual);
 
 	static u32 count = 0;
@@ -492,7 +491,7 @@ static void led_ui(struct led *led, const struct ui_Visual *visual)
 							g_ui->inter.cursor_position[0] - node->pixel_position[0],
 							g_ui->inter.cursor_position[1] - node->pixel_position[1],
 						};
-						window_space_to_world_space(dir, cursor_viewport_position, node->pixel_size, &led->cam);
+						WindowSpaceToWorldSpace(dir, cursor_viewport_position, node->pixel_size, &led->cam);
 						Vec3TranslateScaled(dir, led->cam.position, -1.0f);
 						Vec3ScaleSelf(dir, 1.0f / Vec3Length(dir));
 						const struct ray ray = RayConstruct(led->cam.position, dir);
@@ -519,18 +518,18 @@ static void led_ui(struct led *led, const struct ui_Visual *visual)
 							node->pixel_position[0],
 							node->pixel_position[1] + node->pixel_size[1],
 						};
-						cursor_set_rect(win, pos, node->pixel_size);
+						ds_CursorSetRectangle(win, pos, node->pixel_size);
 						led_input_handler(led, node);
 					}
 
 					if (node->inter & UI_INTER_FOCUS_IN)
 					{
-						cursor_lock(win);	
+						ds_CursorLock(win);	
 					}
 
 					if (node->inter & UI_INTER_FOCUS_OUT)
 					{
-						cursor_unlock(win);	
+						ds_CursorUnlock(win);	
 					}
 				}
 			}
@@ -1075,7 +1074,7 @@ static void led_ui(struct led *led, const struct ui_Visual *visual)
 					//				if (p[0] != node->position[0] || p[1] != node->position[1] || p[2] != node->position[2])
 					//				{
 					//					vec3 zero = { 0 };
-					//					r_proxy3d_set_linear_speculation(node->position
+					//					r_Proxy3dLinearSpeculationSet(node->position
 					//							, node->rotation
 					//							, zero 
 					//							, zero 
@@ -1106,7 +1105,7 @@ static void led_ui(struct led *led, const struct ui_Visual *visual)
 		}	
 	}
 
-	DsWindowEventHandler(win);
+	ds_WindowEventHandler(win);
 	ui_FrameEnd();
 
 	struct ui_Node *node = ui_NodeLookup(&led->viewport_id).address;

@@ -31,4 +31,5 @@ target_link_libraries(ui
 		Dreamscape::Command
 		Dreamscape::Font
 		Dreamscape::Graphics
+		Dreamscape::Math
 )

@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -20,10 +20,11 @@
 #ifndef __LED_PUBLIC_H__
 #define __LED_PUBLIC_H__
 
-#include "ds_common.h"
-#include "ds_string.h"
-#include "sys_public.h"
-#include "allocator.h"
+#ifdef __cplusplus
+extern "C" { 
+#endif
+
+#include "ds_base.h"
 #include "csg.h"
 #include "dynamics.h"
 #include "hash_map.h"
@@ -109,7 +110,7 @@ struct led
 	struct led_project	project;
 	struct led_project_menu project_menu;
 
-	struct r_camera		cam;
+	struct r_Camera		cam;
 	f32			cam_left_velocity;
 	f32			cam_forward_velocity;
 		
@@ -150,7 +151,7 @@ struct led
 
 	struct strdb	render_mesh_db;
 
-	struct hashMap *	node_map;
+	struct hashMap 		node_map;
 	struct pool		node_pool;
 	struct dll		node_marked_list;
 	struct dll		node_non_marked_list;
@@ -183,5 +184,9 @@ void		led_main(struct led *led, const u64 ns_delta);
 
 /* level editor ui entrypoint */
 void 		led_ui_main(struct led *led);
+
+#ifdef __cplusplus
+} 
+#endif
 
 #endif

@@ -51,7 +51,7 @@ struct led *led_alloc(void)
 	led_core_init_commands();
 	g_editor->mem_persistent = ArenaAlloc(16*1024*1024);
 
-	g_editor->window = system_process_root_window_alloc("Level Editor", Vec2U32Inline(400,400), Vec2U32Inline(1280, 720));
+	g_editor->window = ds_RootWindowAlloc("Level Editor", Vec2U32Inline(400,400), Vec2U32Inline(1280, 720));
 
 	g_editor->frame = ArenaAlloc(16*1024*1024);
 	g_editor->project_menu = led_project_menu_alloc();
@@ -70,7 +70,7 @@ struct led *led_alloc(void)
 	const vec3 up = {0.0f, 1.0f, 0.0f};
 	const vec3 dir = {0.0f, 0.0f, 1.0f};
 	vec2 size = { 1280.0f, 720.0f };
-	r_camera_construct(&g_editor->cam, 
+	r_CameraConstruct(&g_editor->cam, 
 			position, 
 			left,
 			up,
@@ -91,14 +91,14 @@ struct led *led_alloc(void)
 	g_editor->project.folder = FileNull();
 	g_editor->project.file = FileNull();
 
-	struct system_window *sys_win = system_window_address(g_editor->window);
+	struct ds_Window *sys_win = ds_WindowAddress(g_editor->window);
 	enum fsError err; 
 	if ((err = DirectoryTryCreateAtCwd(&sys_win->mem_persistent, &g_editor->root_folder, LED_ROOT_FOLDER_PATH)) != FS_SUCCESS)
 	{
 		if ((err = DirectoryTryOpenAtCwd(&sys_win->mem_persistent, &g_editor->root_folder, LED_ROOT_FOLDER_PATH)) != FS_SUCCESS)
 		{
 			LogString(T_SYSTEM, S_FATAL, "Failed to open projects folder, exiting.");
-			FatalCleanupAndExit(ds_ThreadSelfTid());
+			FatalCleanupAndExit();
 		}
 	}
 	
@@ -109,7 +109,7 @@ struct led *led_alloc(void)
 	g_editor->node_non_marked_list = dll_Init(struct led_node);
 	g_editor->node_selected_list = dll2_Init(struct led_node);
 	g_editor->csg = csg_alloc();
-	g_editor->render_mesh_db = strdb_Alloc(NULL, 32, 32, struct r_mesh, GROWABLE);
+	g_editor->render_mesh_db = strdb_Alloc(NULL, 32, 32, struct r_Mesh, GROWABLE);
 	g_editor->rb_prefab_db = strdb_Alloc(NULL, 32, 32, struct rigidBodyPrefab, GROWABLE);
 	g_editor->cs_db = strdb_Alloc(NULL, 32, 32, struct collisionShape, GROWABLE);
 	g_editor->physics = PhysicsPipelineAlloc(NULL, 1024, NSEC_PER_SEC / (u64) 60, 1024*1024, &g_editor->cs_db, &g_editor->rb_prefab_db);
@@ -122,8 +122,8 @@ struct led *led_alloc(void)
 	g_editor->engine_paused = 0;
 	g_editor->ns_engine_running = 0;
 
-	struct r_mesh *r_mesh_stub = strdb_Address(&g_editor->render_mesh_db, STRING_DATABASE_STUB_INDEX);
-	r_mesh_set_stub_box(r_mesh_stub);
+	struct r_Mesh *r_mesh_stub = strdb_Address(&g_editor->render_mesh_db, STRING_DATABASE_STUB_INDEX);
+	r_MeshStubBox(r_mesh_stub);
 
 	struct collisionShape *shape_stub = strdb_Address(&g_editor->cs_db, STRING_DATABASE_STUB_INDEX);
 	shape_stub->type = COLLISION_SHAPE_CONVEX_HULL;
@@ -145,6 +145,7 @@ void led_dealloc(struct led *led)
 	ArenaFree(&led->mem_persistent);
 	led_project_menu_dealloc(&led->project_menu);
 	csg_dealloc(&led->csg);
+	HashMapFree(&led->node_map);
 	GPoolDealloc(&led->node_pool);
 	ArenaFree(&g_editor->frame);
 }

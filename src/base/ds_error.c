@@ -41,7 +41,6 @@ void FatalCleanupAndExit(void)
 	
 	if (AtomicCompareExchangeAcq32(&a_fatal_cleanup_initiated, &desired, 1))
 	{
-
 #if __DS_PLATFORM__ == __DS_LINUX__
 		void *buf[STACKTRACE_BUFSIZE];
 		char **strings;

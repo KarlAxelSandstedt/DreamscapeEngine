@@ -355,7 +355,7 @@ const utf8 utf8_us = { .buf = buf_us, .len = 2 , .size = 4};
 const utf8 utf8_ms = { .buf = buf_ms, .len = 2 , .size = 3};
 const utf8 utf8_s  = { .buf = buf_s,  .len = 1 , .size = 1};
 
-static void time_unit_config_generate(struct ui_TimelineConfig *config)
+static void TimeUnitConfigGenerate(struct ui_TimelineConfig *config)
 {
 	if (config->unit_line_preferred_count == 0 || config->unit_line_preferred_count > (u32) config->width)
 	{
@@ -430,7 +430,7 @@ void ui_Timeline(struct ui_TimelineConfig *config)
 		const f32 half_pixel_count = (2.0f * config->width * (1.0f - config->perc_width_row_title_column));
 		config->ns_half_pixel = (f32) (config->ns_interval_end - config->ns_interval_start) / half_pixel_count;
 
-		time_unit_config_generate(config);
+		TimeUnitConfigGenerate(config);
 
 		ui_Parent(config->timeline)
 		ui_ChildLayoutAxis(AXIS_2_X)
@@ -661,7 +661,7 @@ void ui_CmdConsoleF(struct ui_CmdConsole *console, const char *fmt, ...)
 	}
 }
 
-void uiPopup_build(void)
+void ui_PopupBuild(void)
 {
 	const u32 parent = g_window;
 	struct ui_Popup *popup = g_queue->cmd_exec->arg[0].ptr;
@@ -673,16 +673,16 @@ void uiPopup_build(void)
 		return;
 	}
 
-	struct system_window *win = system_window_address(popup->window);
+	struct ds_Window *win = ds_WindowAddress(popup->window);
 	if (win->tagged_for_destruction || popup->state == UI_POPUP_STATE_COMPLETED)
 	{
-		system_window_tag_sub_hierarchy_for_destruction(popup->window);
+		ds_WindowTagSubHierarchyForDestruction(popup->window);
 		*popup = ui_PopupNull();
 		return;
 	}
 
 	/* set for the duration of this function, window, ui, cmd globals */
-	system_window_set_global(popup->window);
+	ds_WindowSetGlobal(popup->window);
 	CmdQueueExecute();
 
 	ui_FrameBegin(win->size, visual);
@@ -775,12 +775,11 @@ void uiPopup_build(void)
 	}
 	ui_FrameEnd();
 
-	system_window_set_global(parent);
+	ds_WindowSetGlobal(parent);
 	g_queue->regs[0].ptr = popup;
 	g_queue->regs[1].ptr = visual;
-	CmdSubmitNextFrame(cmd_uiPopup_build);
+	CmdSubmitNextFrame(cmd_ui_popup_build);
 }
-
 
 struct ui_Popup ui_PopupNull(void)
 {
@@ -791,8 +790,8 @@ void ui_PopupTryDestroyAndSetToNull(struct ui_Popup *popup)
 {
 	if (popup->window != HI_NULL_INDEX)
 	{
-		struct system_window *win = system_window_address(popup->window);
-		system_window_tag_sub_hierarchy_for_destruction(popup->window);
+		struct ds_Window *win = ds_WindowAddress(popup->window);
+		ds_WindowTagSubHierarchyForDestruction(popup->window);
 	}
 	*popup = ui_PopupNull();
 }
@@ -801,17 +800,17 @@ void ui_PopupUtf8Display(struct ui_Popup *popup, const utf8 display, const char 
 {
 	if (popup->state == UI_POPUP_STATE_NULL)
 	{
-		popup->window = system_window_alloc(title, Vec2U32Inline(0,0), Vec2U32Inline(600, 200), g_window);
+		popup->window = ds_WindowAlloc(title, Vec2U32Inline(0,0), Vec2U32Inline(600, 200), g_window);
 		if (popup->window != HI_NULL_INDEX)
 		{
-			struct system_window *win = system_window_address(popup->window);
+			struct ds_Window *win = ds_WindowAddress(popup->window);
 			popup->display1 = Utf8Copy(&win->mem_persistent, display);
 			popup->type = UI_POPUP_UTF8_DISPLAY;
 			popup->state = UI_POPUP_STATE_RUNNING,
 
 			g_queue->regs[0].ptr = popup;
 			g_queue->regs[1].ptr = (void *) visual;
-			CmdSubmit(cmd_uiPopup_build);
+			CmdSubmit(cmd_ui_popup_build);
 		}
 	}
 }
@@ -820,10 +819,10 @@ void ui_PopupUtf8Input(struct ui_Popup *popup, utf8 *input, struct ui_TextInput 
 {
 	if (popup->state == UI_POPUP_STATE_NULL)
 	{
-		popup->window = system_window_alloc(title, Vec2U32Inline(0,0), Vec2U32Inline(600, 200), g_window);
+		popup->window = ds_WindowAlloc(title, Vec2U32Inline(0,0), Vec2U32Inline(600, 200), g_window);
 		if (popup->window != HI_NULL_INDEX)
 		{
-			struct system_window *win = system_window_address(popup->window);
+			struct ds_Window *win = ds_WindowAddress(popup->window);
 			popup->display1 = Utf8Copy(&win->mem_persistent, description);
 			popup->display2 = Utf8Copy(&win->mem_persistent, prefix);
 			popup->type = UI_POPUP_UTF8_INPUT;
@@ -833,7 +832,7 @@ void ui_PopupUtf8Input(struct ui_Popup *popup, utf8 *input, struct ui_TextInput 
 
 			g_queue->regs[0].ptr = popup;
 			g_queue->regs[1].ptr = (void *) visual;
-			CmdSubmit(cmd_uiPopup_build);
+			CmdSubmit(cmd_ui_popup_build);
 		}
 	}
 }
@@ -842,10 +841,10 @@ void ui_PopupChoice(struct ui_Popup *popup, const utf8 description, const utf8 p
 {
 	if (popup->state == UI_POPUP_STATE_NULL)
 	{
-		popup->window = system_window_alloc(title, Vec2U32Inline(0,0), Vec2U32Inline(600, 200), g_window);
+		popup->window = ds_WindowAlloc(title, Vec2U32Inline(0,0), Vec2U32Inline(600, 200), g_window);
 		if (popup->window != HI_NULL_INDEX)
 		{
-			struct system_window *win = system_window_address(popup->window);
+			struct ds_Window *win = ds_WindowAddress(popup->window);
 
 			popup->display1 = Utf8Copy(&win->mem_persistent, description);
 			popup->display2 = Utf8Copy(&win->mem_persistent, positive);
@@ -857,7 +856,7 @@ void ui_PopupChoice(struct ui_Popup *popup, const utf8 description, const utf8 p
 
 			g_queue->regs[0].ptr = popup;
 			g_queue->regs[1].ptr = (void *) visual;
-			CmdSubmit(cmd_uiPopup_build);
+			CmdSubmit(cmd_ui_popup_build);
 		}
 	}
 }

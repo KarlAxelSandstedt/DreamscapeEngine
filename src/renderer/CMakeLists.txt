@@ -1,29 +1,25 @@
 cmake_minimum_required(VERSION 3.14.3)
 
-add_library(renderer STATIC
-	r_public.h
+add_library(DreamscapeRenderer STATIC
+	"${DS_INCLUDE_PATH}/r_public.h"
 	r_local.h
 	r_init.c
 	r_main.c
 	r_mesh.c
 	r_camera.c
 	r_proxy3d.c
-	r_core.c
 	r_scene.c
 	r_ui.c
 	r_gl.c
 )
+add_library(Dreamscape::Renderer ALIAS DreamscapeRenderer)
 
-target_link_libraries(renderer
+target_link_libraries(DreamscapeRenderer
 	PUBLIC
-		memory
-		led
-		physics
+		Dreamscape::Base
+		Dreamscape::Dynamics
+		Dreamscape::Editor
+		Dreamscape::Asset
 	PRIVATE
-		system
-		system_gl
-		asset_system
-		ui
+		Dreamscape::UI
 )
-
-target_include_directories(renderer INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})

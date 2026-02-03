@@ -31,7 +31,7 @@ extern "C" {
 #include "ds_platform.h"
 #include "sdl3_wrapper_public.h"
 
-void			sdl3_GlFunctionsInit(struct gl_functions *func);
+void			sdl3_GlFunctionsInit(struct gl_Functions *func);
 u32 			sdl3_EventConsume(struct dsEvent *event);
 u32 			sdl3_KeyModifiers(void);
 enum mouseButton	sdl3_DsMouseButton(const u8 mouse_button);

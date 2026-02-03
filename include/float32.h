@@ -28,11 +28,8 @@ extern "C" {
 
 #include "ds_types.h"
 
-#undef  F32_PI
-#undef  F32_PI2
-
 #define F32_PI				3.14159274101257324f
-#define F32_PI2    			(2.0f * PI)
+#define F32_PI2    			(2.0f * F32_PI)
 
 #define	F32_SIGN_LENGTH			1
 #define	F32_EXPONENT_LENGTH		8

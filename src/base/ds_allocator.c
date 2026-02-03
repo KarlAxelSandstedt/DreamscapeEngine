@@ -945,7 +945,7 @@ void PoolRemove(struct pool *pool, const u32 index)
 
 	u8 *address = pool->buf + index*pool->slot_size;
 	u32 *slot_state = (u32 *) (address + pool->slot_allocation_offset);
-	ds_Assert(*slot_state);
+	ds_Assert(*slot_state <= 0x7fffffff);
 
 	*slot_state = pool->next_free;
 	pool->next_free = index;
