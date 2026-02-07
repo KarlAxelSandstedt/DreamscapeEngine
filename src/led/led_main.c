@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,13 +19,9 @@
 
 #include "led_local.h"
 
-static void led_project_menu_window_interaction(struct led *led)
+void led_ProjectMenuMain(struct led *led)
 {
-}
-
-void led_project_menu_main(struct led *led)
-{
-	struct led_project_menu *menu = &led->project_menu;
+	struct led_ProjectMenu *menu = &led->project_menu;
 	struct ds_Window *sys_win;
 	if (menu->window == HI_NULL_INDEX)
 	{
@@ -72,7 +68,7 @@ void led_project_menu_main(struct led *led)
 }
 
 
-void led_main(struct led *led, const u64 ns_delta)
+void led_Main(struct led *led, const u64 ns_delta)
 {
 	led->ns_delta = ns_delta * led->ns_delta_modifier;
 	led->ns += led->ns_delta;
@@ -80,11 +76,11 @@ void led_main(struct led *led, const u64 ns_delta)
 
 	if (!led->project.initialized)
 	{
-		//led_project_menu_main(led);		
+		//led_ProjectMenuMain(led);		
 	}
 
 	/*
-	 * (1) process user input => (2) build ui => (3) led_core(): process systems in order
+	 * (1) process user input => (2) build ui => (3) led_Core(): process systems in order
 	 */
-	led_core(led);
+	led_Core(led);
 }

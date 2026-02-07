@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025,2026 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -72,19 +72,19 @@ u32 cmd_collision_sphere_add_id;
 u32 cmd_collision_capsule_add_id;
 u32 cmd_collision_tri_mesh_bvh_add_id;
 
-void led_core_init_commands(void)
+void led_CoreInitCommands(void)
 {
-	cmd_led_node_add_id = CmdFunctionRegister(Utf8Inline("led_node_add"), 1, &cmd_led_node_add).index;
-	cmd_led_node_remove_id = CmdFunctionRegister(Utf8Inline("led_node_remove"), 1, &cmd_led_node_remove).index;
-	cmd_led_node_set_position_id = CmdFunctionRegister(Utf8Inline("led_node_set_position"), 4, &cmd_led_node_set_position).index;
-	cmd_led_node_set_rb_prefab_id = CmdFunctionRegister(Utf8Inline("led_node_set_rb_prefab"), 2, &cmd_led_node_set_rb_prefab).index;
-	cmd_led_node_set_csgBRush_id = CmdFunctionRegister(Utf8Inline("led_node_set_csgBRush"), 2, &cmd_led_node_set_csgBRush).index;
-	cmd_led_node_set_proxy3d_id = CmdFunctionRegister(Utf8Inline("led_node_set_proxy3d"), 7, &cmd_led_node_set_proxy3d).index;
+	cmd_led_node_add_id = CmdFunctionRegister(Utf8Inline("led_NodeAdd"), 1, &cmd_led_node_add).index;
+	cmd_led_node_remove_id = CmdFunctionRegister(Utf8Inline("led_NodeRemove"), 1, &cmd_led_node_remove).index;
+	cmd_led_node_set_position_id = CmdFunctionRegister(Utf8Inline("led_NodeSetPosition"), 4, &cmd_led_node_set_position).index;
+	cmd_led_node_set_rb_prefab_id = CmdFunctionRegister(Utf8Inline("led_NodeSetRigidBodyPrefab"), 2, &cmd_led_node_set_rb_prefab).index;
+	cmd_led_node_set_csgBRush_id = CmdFunctionRegister(Utf8Inline("led_NodeSetCsgBrush"), 2, &cmd_led_node_set_csgBRush).index;
+	cmd_led_node_set_proxy3d_id = CmdFunctionRegister(Utf8Inline("led_NodeSetProxy3d"), 7, &cmd_led_node_set_proxy3d).index;
 
-	cmd_led_compile_id = CmdFunctionRegister(Utf8Inline("led_compile"), 0, &cmd_led_compile).index;
-	cmd_led_run_id = CmdFunctionRegister(Utf8Inline("led_run"), 0, &cmd_led_run).index;
-	cmd_led_pause_id = CmdFunctionRegister(Utf8Inline("led_pause"), 0, &cmd_led_pause).index;
-	cmd_led_stop_id = CmdFunctionRegister(Utf8Inline("led_stop"), 0, &cmd_led_stop).index;
+	cmd_led_compile_id = CmdFunctionRegister(Utf8Inline("led_Compile"), 0, &cmd_led_compile).index;
+	cmd_led_run_id = CmdFunctionRegister(Utf8Inline("led_Run"), 0, &cmd_led_run).index;
+	cmd_led_pause_id = CmdFunctionRegister(Utf8Inline("led_Pause"), 0, &cmd_led_pause).index;
+	cmd_led_stop_id = CmdFunctionRegister(Utf8Inline("led_Stop"), 0, &cmd_led_stop).index;
 
 	cmd_rb_prefab_add_id = CmdFunctionRegister(Utf8Inline("rb_prefab_add"), 6, &cmd_rb_prefab_add).index;
 	cmd_rb_prefab_remove_id = CmdFunctionRegister(Utf8Inline("rb_prefab_remove"), 1, &cmd_rb_prefab_remove).index;
@@ -103,12 +103,12 @@ void led_core_init_commands(void)
 
 void cmd_led_node_add(void)
 {
-	led_node_add(g_editor, g_queue->cmd_exec->arg[0].utf8);
+	led_NodeAdd(g_editor, g_queue->cmd_exec->arg[0].utf8);
 }
 
 void cmd_led_node_remove(void)
 {
-	led_node_remove(g_editor, g_queue->cmd_exec->arg[0].utf8);
+	led_NodeRemove(g_editor, g_queue->cmd_exec->arg[0].utf8);
 }
 
 void cmd_led_node_set_position(void)
@@ -119,17 +119,17 @@ void cmd_led_node_set_position(void)
 		g_queue->cmd_exec->arg[2].f32,
 		g_queue->cmd_exec->arg[3].f32,
 	};
-	led_node_set_position(g_editor, g_queue->cmd_exec->arg[0].utf8, position);
+	led_NodeSetPosition(g_editor, g_queue->cmd_exec->arg[0].utf8, position);
 }
 
 void cmd_led_node_set_rb_prefab(void)
 {
-	led_node_set_rb_prefab(g_editor, g_queue->cmd_exec->arg[0].utf8, g_queue->cmd_exec->arg[1].utf8);
+	led_NodeSetRigidBodyPrefab(g_editor, g_queue->cmd_exec->arg[0].utf8, g_queue->cmd_exec->arg[1].utf8);
 }
 
 void cmd_led_node_set_csgBRush(void)
 {
-	led_node_set_csgBRush(g_editor, g_queue->cmd_exec->arg[0].utf8, g_queue->cmd_exec->arg[1].utf8);
+	led_NodeSetCsgBrush(g_editor, g_queue->cmd_exec->arg[0].utf8, g_queue->cmd_exec->arg[1].utf8);
 }
 
 void cmd_led_node_set_proxy3d(void)
@@ -142,7 +142,7 @@ void cmd_led_node_set_proxy3d(void)
 		g_queue->cmd_exec->arg[5].f32,
 	};
 	const f32 blend = g_queue->cmd_exec->arg[6].f32;
-	led_node_set_proxy3d(g_editor, g_queue->cmd_exec->arg[0].utf8, g_queue->cmd_exec->arg[1].utf8, color, blend);
+	led_NodeSetProxy3d(g_editor, g_queue->cmd_exec->arg[0].utf8, g_queue->cmd_exec->arg[1].utf8, color, blend);
 }
 
 void cmd_collision_shape_add(void)
@@ -174,7 +174,7 @@ void cmd_collision_box_add(void)
 			.center_of_mass_localized = 0,
 		};
 
-		led_collision_shape_add(g_editor, &shape);
+		led_CollisionShapeAdd(g_editor, &shape);
 	}
 	else
 	{
@@ -195,7 +195,7 @@ void cmd_collision_dcel_add(void)
 			.center_of_mass_localized = 0,
 		};
 
-		led_collision_shape_add(g_editor, &shape);
+		led_CollisionShapeAdd(g_editor, &shape);
 	}
 	else
 	{
@@ -216,7 +216,7 @@ void cmd_collision_tri_mesh_bvh_add(void)
 			.center_of_mass_localized = 1,
 		};
 
-		led_collision_shape_add(g_editor, &shape);
+		led_CollisionShapeAdd(g_editor, &shape);
 	}
 	else
 	{
@@ -236,7 +236,7 @@ void cmd_collision_sphere_add(void)
 
 	if (shape.sphere.radius > 0.0f)
 	{
-		led_collision_shape_add(g_editor, &shape);
+		led_CollisionShapeAdd(g_editor, &shape);
 	}
 	else
 	{
@@ -260,7 +260,7 @@ void cmd_collision_capsule_add(void)
 
 	if (shape.capsule.radius > 0.0f && shape.capsule.half_height > 0.0f)
 	{
-		led_collision_shape_add(g_editor, &shape);
+		led_CollisionShapeAdd(g_editor, &shape);
 	}
 	else
 	{
@@ -270,10 +270,10 @@ void cmd_collision_capsule_add(void)
 
 void cmd_collision_shape_remove(void)
 {
-	led_collision_shape_remove(g_editor, g_queue->cmd_exec->arg[0].utf8);
+	led_CollisionShapeRemove(g_editor, g_queue->cmd_exec->arg[0].utf8);
 }
 
-struct slot led_collision_shape_add(struct led *led, const struct collisionShape *shape)
+struct slot led_CollisionShapeAdd(struct led *led, const struct collisionShape *shape)
 {
 	struct slot slot = empty_slot;
 	if (!shape->id.len)
@@ -327,9 +327,9 @@ struct slot led_collision_shape_add(struct led *led, const struct collisionShape
 	return slot;
 }
 
-void led_collision_shape_remove(struct led *led, const utf8 id)
+void led_CollisionShapeRemove(struct led *led, const utf8 id)
 {
-	struct slot slot = led_collision_shape_lookup(led, id);
+	struct slot slot = led_CollisionShapeLookup(led, id);
 	struct collisionShape *shape = slot.address;
 	if (slot.index != STRING_DATABASE_STUB_INDEX && shape->reference_count == 0)
 	{
@@ -339,22 +339,22 @@ void led_collision_shape_remove(struct led *led, const utf8 id)
 	}
 }
 
-struct slot led_collision_shape_lookup(struct led *led, const utf8 id)
+struct slot led_CollisionShapeLookup(struct led *led, const utf8 id)
 {
 	return strdb_Lookup(&led->cs_db, id);
 }
 
 void cmd_render_mesh_add(void)
 {
-	led_render_mesh_add(g_editor, g_queue->cmd_exec->arg[0].utf8, g_queue->cmd_exec->arg[1].utf8);
+	led_RenderMeshAdd(g_editor, g_queue->cmd_exec->arg[0].utf8, g_queue->cmd_exec->arg[1].utf8);
 }
 
 void cmd_render_mesh_remove(void)
 {
-	led_render_mesh_remove(g_editor, g_queue->cmd_exec->arg[0].utf8);
+	led_RenderMeshRemove(g_editor, g_queue->cmd_exec->arg[0].utf8);
 }
 
-struct slot led_render_mesh_add(struct led *led, const utf8 id, const utf8 shape)
+struct slot led_RenderMeshAdd(struct led *led, const utf8 id, const utf8 shape)
 {
 	struct slot slot = empty_slot;
 	if (!id.len)
@@ -400,7 +400,7 @@ struct slot led_render_mesh_add(struct led *led, const utf8 id, const utf8 shape
 	return slot;
 }
 
-void led_render_mesh_remove(struct led *led, const utf8 id)
+void led_RenderMeshRemove(struct led *led, const utf8 id)
 {
 	struct slot slot = strdb_Lookup(&led->render_mesh_db, id);
 	struct r_Mesh *mesh = slot.address;
@@ -412,7 +412,7 @@ void led_render_mesh_remove(struct led *led, const utf8 id)
 	}
 }
 
-struct slot led_render_mesh_lookup(struct led *led, const utf8 id)
+struct slot led_RenderMeshLookup(struct led *led, const utf8 id)
 {
 	return strdb_Lookup(&led->render_mesh_db, id);
 }
@@ -426,15 +426,15 @@ void cmd_rb_prefab_add(void)
 	const f32 friction = g_queue->cmd_exec->arg[4].f32;
 	const u32 dynamic = (u32) g_queue->cmd_exec->arg[5].u64;
 
-	led_rigid_body_prefab_add(g_editor, id, shape, density, restitution, friction, dynamic);
+	led_RigidBodyPrefabAdd(g_editor, id, shape, density, restitution, friction, dynamic);
 }
 
 void cmd_rb_prefab_remove(void)
 {
-	led_rigid_body_prefab_remove(g_editor, g_queue->cmd_exec->arg[0].utf8);
+	led_RigidBodyPrefabRemove(g_editor, g_queue->cmd_exec->arg[0].utf8);
 }
 
-struct slot led_rigid_body_prefab_add(struct led *led, const utf8 id, const utf8 shape, const f32 density, const f32 restitution, const f32 friction, const u32 dynamic)
+struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const utf8 shape, const f32 density, const f32 restitution, const f32 friction, const u32 dynamic)
 {
 	struct slot slot = empty_slot;	
 	if (!id.len)
@@ -476,9 +476,9 @@ struct slot led_rigid_body_prefab_add(struct led *led, const utf8 id, const utf8
 	return slot;
 }
 
-void led_rigid_body_prefab_remove(struct led *led, const utf8 id)
+void led_RigidBodyPrefabRemove(struct led *led, const utf8 id)
 {
-	struct slot slot = led_rigid_body_prefab_lookup(led, id);
+	struct slot slot = led_RigidBodyPrefabLookup(led, id);
 	struct rigidBodyPrefab *prefab = slot.address;
 	if (slot.index != STRING_DATABASE_STUB_INDEX && prefab->reference_count == 0)
 	{
@@ -489,19 +489,19 @@ void led_rigid_body_prefab_remove(struct led *led, const utf8 id)
 	}	
 }
 
-struct slot led_rigid_body_prefab_lookup(struct led *led, const utf8 id)
+struct slot led_RigidBodyPrefabLookup(struct led *led, const utf8 id)
 {
 	return strdb_Lookup(&led->rb_prefab_db, id);
 }
 
-struct slot led_node_add(struct led *led, const utf8 id)
+struct slot led_NodeAdd(struct led *led, const utf8 id)
 {
 	struct slot slot = empty_slot;
 	if (!id.len)
 	{
 		LogString(T_LED, S_WARNING, "Failed to allocate led_node: id must not be empty");
 	} 
-	else if (led_node_lookup(led, id).address != STRING_DATABASE_STUB_INDEX) 
+	else if (led_NodeLookup(led, id).address != STRING_DATABASE_STUB_INDEX) 
 	{
 		LogString(T_LED, S_WARNING, "Failed to allocate led_node: node with given id already exist");
 	}
@@ -541,7 +541,7 @@ struct slot led_node_add(struct led *led, const utf8 id)
 	return slot;
 }
 
-struct slot led_node_lookup(struct led *led, const utf8 id)
+struct slot led_NodeLookup(struct led *led, const utf8 id)
 {
 	const u32 key = Utf8Hash(id);
 	struct slot slot = empty_slot;
@@ -559,7 +559,7 @@ struct slot led_node_lookup(struct led *led, const utf8 id)
 	return slot;
 }
 
-static void led_remove_marked_structs(struct led *led)
+static void led_RemoveMarkedStructs(struct led *led)
 {
 	struct led_node *node = NULL;
 	for (u32 i = led->node_marked_list.first; i != DLL_NULL; i = dll_Next(node))
@@ -600,9 +600,9 @@ static void led_remove_marked_structs(struct led *led)
 	dll_Flush(&led->node_marked_list);
 }
 
-void led_node_remove(struct led *led, const utf8 id)
+void led_NodeRemove(struct led *led, const utf8 id)
 {
-	struct slot slot = led_node_lookup(led, id);
+	struct slot slot = led_NodeLookup(led, id);
 	struct led_node *node = slot.address;
 	if (node)
 	{
@@ -612,9 +612,9 @@ void led_node_remove(struct led *led, const utf8 id)
 	}
 }
 
-void led_node_set_position(struct led *led, const utf8 id, const vec3 position)
+void led_NodeSetPosition(struct led *led, const utf8 id, const vec3 position)
 {
-	struct slot slot = led_node_lookup(led, id);
+	struct slot slot = led_NodeLookup(led, id);
 	struct led_node *node = slot.address;
 	if (!node)
 	{
@@ -630,9 +630,9 @@ void led_node_set_position(struct led *led, const utf8 id, const vec3 position)
 	}
 }
 
-void led_node_set_rb_prefab(struct led *led, const utf8 id, const utf8 prefab)
+void led_NodeSetRigidBodyPrefab(struct led *led, const utf8 id, const utf8 prefab)
 {
-	struct slot slot = led_node_lookup(led, id);
+	struct slot slot = led_NodeLookup(led, id);
 	struct led_node *node = slot.address;
 	if (!node)
 	{
@@ -662,9 +662,9 @@ void led_node_set_rb_prefab(struct led *led, const utf8 id, const utf8 prefab)
 	}
 }
 
-void led_node_set_csgBRush(struct led *led, const utf8 id, const utf8 brush)
+void led_NodeSetCsgBrush(struct led *led, const utf8 id, const utf8 brush)
 {
-	struct slot slot = led_node_lookup(led, id);
+	struct slot slot = led_NodeLookup(led, id);
 	struct led_node *node = slot.address;
 	if (!node)
 	{
@@ -694,9 +694,9 @@ void led_node_set_csgBRush(struct led *led, const utf8 id, const utf8 brush)
 	}
 }
 
-void led_node_set_proxy3d(struct led *led, const utf8 id, const utf8 mesh, const vec4 color, const f32 blend)
+void led_NodeSetProxy3d(struct led *led, const utf8 id, const utf8 mesh, const vec4 color, const f32 blend)
 {
-	struct slot slot = led_node_lookup(led, id);
+	struct slot slot = led_NodeLookup(led, id);
 	struct led_node *node = slot.address;
 	if (!node)
 	{
@@ -733,7 +733,7 @@ void led_node_set_proxy3d(struct led *led, const utf8 id, const utf8 mesh, const
 	}
 }
 
-static struct triMesh tri_mesh_perlin_noise(struct arena *mem_persistent, const u32 n, const f32 width)
+static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32 n, const f32 width)
 {
 	ds_Assert(PowerOfTwoCheck(n) && n >= 32);
 
@@ -746,7 +746,7 @@ static struct triMesh tri_mesh_perlin_noise(struct arena *mem_persistent, const 
 	};
 	mesh.v = ArenaPush(mem_persistent, mesh.v_count*sizeof(vec3));
 	mesh.tri = ArenaPush(mem_persistent, mesh.tri_count*sizeof(vec3u32));
-	//TODO move out functino to tri_mesh_perlin_noise method
+	//TODO move out functino to TriMeshPerlinNoise method
 	//TODO return stub mesh
 	ds_Assert(mesh.v && mesh.tri);
 
@@ -910,7 +910,7 @@ static struct triMesh tri_mesh_perlin_noise(struct arena *mem_persistent, const 
 	return mesh;
 }
 
-void led_wall_smash_simulation_setup(struct led *led)
+void led_WallSmashSimulationSetup(struct led *led)
 {
 	struct ds_Window *sys_win = ds_WindowAddress(g_editor->window);
 
@@ -1006,7 +1006,7 @@ void led_wall_smash_simulation_setup(struct led *led)
 	CmdQueueSubmit(&sys_win->cmd_queue, cmd_collision_dcel_add_id);
 
 	struct triMesh *map = ArenaPush(&led->mem_persistent, sizeof(struct triMesh));
-	*map = tri_mesh_perlin_noise(&led->mem_persistent, 64, 100.0f);
+	*map = TriMeshPerlinNoise(&led->mem_persistent, 64, 100.0f);
 	struct triMeshBvh *mesh_bvh = ArenaPush(&led->mem_persistent, sizeof(struct triMeshBvh));
 	f32 best_cost = F32_INFINITY;
 	u32 best_bin_count = 8;
@@ -1370,49 +1370,49 @@ void led_wall_smash_simulation_setup(struct led *led)
 
 void cmd_led_compile(void)
 {
-	return led_compile(g_editor);
+	return led_Compile(g_editor);
 }
 
 void cmd_led_run(void)
 {
-	return led_run(g_editor);
+	return led_Run(g_editor);
 }
 
 void cmd_led_pause(void)
 {
-	return led_pause(g_editor);
+	return led_Pause(g_editor);
 }
 
 void cmd_led_stop(void)
 {
-	return led_stop(g_editor);
+	return led_Stop(g_editor);
 }
 
-void led_compile(struct led *led)
+void led_Compile(struct led *led)
 {
 }
 
-void led_run(struct led *led)
+void led_Run(struct led *led)
 {
 	led->pending_engine_initalized = 1;
 	led->pending_engine_running = 1;
 	led->pending_engine_paused = 0;
 }
 
-void led_pause(struct led *led)
+void led_Pause(struct led *led)
 {
 	led->pending_engine_paused = 1;
 	led->pending_engine_running = 0;
 }
 
-void led_stop(struct led *led)
+void led_Stop(struct led *led)
 {
 	led->pending_engine_initalized = 0;
 	led->pending_engine_running = 0;
 	led->pending_engine_paused = 0;
 }
 
-static void led_engine_flush(struct led *led)
+static void led_EngineFlush(struct led *led)
 {
 	PhysicsPipelineFlush(&led->physics);
 	struct led_node *node = NULL;
@@ -1430,7 +1430,7 @@ static void led_engine_flush(struct led *led)
 	}
 }
 
-static void led_engine_init(struct led *led)
+static void led_EngineInit(struct led *led)
 {
 	//TODO move this into engine flush
 	PhysicsPipelineFlush(&led->physics);		
@@ -1465,7 +1465,7 @@ static void led_engine_init(struct led *led)
 	}
 }
 
-static void led_engine_color_bodies(struct led *led, const u32 island, const vec4 color)
+static void led_EngineColorBodies(struct led *led, const u32 island, const vec4 color)
 {
 	struct island *is = PoolAddress(&led->physics.is_db.island_pool, island);
 	const struct rigidBody *body;
@@ -1657,11 +1657,11 @@ static void led_engine_run(struct led *led)
 						0.7f);
 				if (led->physics.body_color_mode == RB_COLOR_MODE_ISLAND)
 				{
-					led_engine_color_bodies(led, event->island, is->color);
+					led_EngineColorBodies(led, event->island, is->color);
 				}
 				else if (led->physics.body_color_mode == RB_COLOR_MODE_SLEEP)
 				{
-					led_engine_color_bodies(led, event->island, led->physics.awake_color);
+					led_EngineColorBodies(led, event->island, led->physics.awake_color);
 				}
 			} break;
 
@@ -1672,7 +1672,7 @@ static void led_engine_run(struct led *led)
 					const struct island *is = PoolAddress(&led->physics.is_db.island_pool, event->island);
 					if (PoolSlotAllocated(is))
 					{
-						led_engine_color_bodies(led, event->island, is->color);
+						led_EngineColorBodies(led, event->island, is->color);
 					}
 				}
 			} break;
@@ -1686,7 +1686,7 @@ static void led_engine_run(struct led *led)
 			{
 				if (led->physics.body_color_mode == RB_COLOR_MODE_SLEEP)
 				{
-					led_engine_color_bodies(led, event->island, led->physics.awake_color);
+					led_EngineColorBodies(led, event->island, led->physics.awake_color);
 				}
 			} break;
 
@@ -1694,7 +1694,7 @@ static void led_engine_run(struct led *led)
 			{
 				if (led->physics.body_color_mode == RB_COLOR_MODE_SLEEP)
 				{
-					led_engine_color_bodies(led, event->island, led->physics.sleep_color);
+					led_EngineColorBodies(led, event->island, led->physics.sleep_color);
 				}
 			} break;
 			
@@ -1728,25 +1728,25 @@ static void led_engine_run(struct led *led)
 	dll_Flush(&led->physics.event_list);
 }
 
-void led_core(struct led *led)
+void led_Core(struct led *led)
 {
 	static u32 once = 1;
 	struct ds_Window *sys_win = ds_WindowAddress(g_editor->window);
 	if (once && sys_win)
 	{
 		once = 0;
-		led_wall_smash_simulation_setup(led);
+		led_WallSmashSimulationSetup(led);
 	}
-	led_remove_marked_structs(led);
+	led_RemoveMarkedStructs(led);
 
 	if (led->engine_initalized && !led->pending_engine_initalized)
 	{
-		led_engine_flush(led);
+		led_EngineFlush(led);
 	}
 
 	if (!led->engine_initalized && led->pending_engine_initalized)
 	{
-		led_engine_init(led);
+		led_EngineInit(led);
 	}
 	led->engine_initalized = led->pending_engine_initalized;
 	led->engine_running = led->pending_engine_running;

@@ -37,7 +37,7 @@ extern "C" {
 /*******************************************/
 
 /* project navigation menu */
-struct led_project_menu
+struct led_ProjectMenu
 {
 	u32		window;
 
@@ -108,7 +108,7 @@ struct led
 	struct arena		mem_persistent;
 
 	struct led_project	project;
-	struct led_project_menu project_menu;
+	struct led_ProjectMenu project_menu;
 
 	struct r_Camera		cam;
 	f32			cam_left_velocity;
@@ -134,7 +134,7 @@ struct led
 	vec2			viewport_position;
 	vec2			viewport_size;
 
-	/* TODO move stuff into led project/led_core or something */
+	/* TODO move stuff into led project/led_Core or something */
 	struct arena 		frame;
 	struct csg 		csg;
 	struct ui_List 		brush_list;
@@ -161,22 +161,22 @@ struct led
 };
 
 /* Allocate initial led resources */
-struct led *	led_alloc(void);
+struct led *	led_Alloc(void);
 /* deallocate led resources */
-void		led_dealloc(struct led *led);
+void		led_Dealloc(struct led *led);
 
 /*******************************************/
 /*                 led_utility.c              */
 /*******************************************/
 
-u32		led_filename_valid(const utf8 filename);
+u32		led_FilenameValid(const utf8 filename);
 
 /*******************************************/
-/*                 led_main.c              */
+/*                 led_Main.c              */
 /*******************************************/
 
 /* level editor entrypoint; handle ui interactions and update led state */
-void		led_main(struct led *led, const u64 ns_delta);
+void		led_Main(struct led *led, const u64 ns_delta);
 
 /*******************************************/
 /*                 led_ui.c                */

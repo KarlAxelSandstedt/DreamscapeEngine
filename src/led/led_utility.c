@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,7 +19,7 @@
 
 #include "led_local.h"
 
-u32 led_filename_valid(const utf8 filename)
+u32 led_FilenameValid(const utf8 filename)
 {
 	u32 valid = 1;
 	for (u32 i = 0; i < filename.len; ++i)

@@ -74,7 +74,7 @@ int CALLBACK WinMain(HINSTANCE h_instance, HINSTANCE hPrevInstance, LPSTR lpCmdL
 #if defined(DS_TEST_CORRECTNESS) || defined(DS_TEST_PERFORMANCE)
 	test_main();
 #else
-	struct led *editor = led_alloc();
+	struct led *editor = led_Alloc();
 	
 	const u64 renderer_framerate = 144;	
 	r_Init(&mem_persistent, NSEC_PER_SEC / renderer_framerate, 16*1024*1024, 1024, &editor->render_mesh_db);
@@ -94,12 +94,12 @@ int CALLBACK WinMain(HINSTANCE h_instance, HINSTANCE hPrevInstance, LPSTR lpCmdL
 
 		ds_ProcessEvents();
 
-		led_main(editor, ns_tick);
+		led_Main(editor, ns_tick);
 		led_ui_main(editor);
 		r_EditorMain(editor);
 	}
 
-	led_dealloc(editor);
+	led_Dealloc(editor);
 	AssetShutdown();
 	ds_CmdApiShutdown();
 	ds_PlatformApiShutdown();

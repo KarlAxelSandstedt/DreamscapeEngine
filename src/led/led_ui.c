@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,9 +19,9 @@
 
 #include "led_local.h"
 
-static void led_project_menu_ui(struct led *led, const struct ui_Visual *visual)
+static void led_ProjectMenuUi(struct led *led, const struct ui_Visual *visual)
 {
-	struct led_project_menu *menu = &led->project_menu;
+	struct led_ProjectMenu *menu = &led->project_menu;
 
 	ds_WindowSetGlobal(menu->window);
 	CmdQueueExecute();
@@ -119,7 +119,7 @@ static void led_project_menu_ui(struct led *led, const struct ui_Visual *visual)
 
 				const char *error_string = NULL;
 
-				if (menu->utf8_new_project.len == 0 || !led_filename_valid(menu->utf8_new_project))
+				if (menu->utf8_new_project.len == 0 || !led_FilenameValid(menu->utf8_new_project))
 				{
 					error_string = "Invalid project name!";
 				}
@@ -178,7 +178,7 @@ static void led_project_menu_ui(struct led *led, const struct ui_Visual *visual)
 	ui_FrameEnd();
 }
 
-static void led_ui_test(struct led *led, const struct ui_Visual *visual)
+static void led_UiTest(struct led *led, const struct ui_Visual *visual)
 {
 	ds_WindowSetGlobal(led->window);
 	CmdQueueExecute();
@@ -318,7 +318,7 @@ static void led_ui_test(struct led *led, const struct ui_Visual *visual)
 	ui_FrameEnd();
 }
 
-static void led_input_handler(struct led *led, struct ui_Node *viewport)
+static void led_InputHandler(struct led *led, struct ui_Node *viewport)
 {
 	Vec4Set(viewport->border_color, 0.9f, 0.9f, 0.9f, 1.0f);
 	struct ds_Window *sys_win = ds_WindowAddress(led->window);
@@ -389,7 +389,7 @@ static void led_input_handler(struct led *led, struct ui_Node *viewport)
 	sys_win->ui->inter.cursor_delta[1] = 0.0f;
 }
 
-static void led_ui(struct led *led, const struct ui_Visual *visual)
+static void led_Ui(struct led *led, const struct ui_Visual *visual)
 {
 	ds_WindowSetGlobal(led->window);
 	CmdQueueExecute();
@@ -442,8 +442,8 @@ static void led_ui(struct led *led, const struct ui_Visual *visual)
 					if (ui_ButtonF(UI_DRAW_BACKGROUND | UI_DRAW_SPRITE, "###play") & UI_INTER_LEFT_CLICK)
 					{
 						//ui_BackgroundColor(Vec4Inline(0.0f, 0.5f, 0.5f, 0.5f))
-						CmdSubmitFormat(g_ui->mem_frame, "led_compile");
-						CmdSubmitFormat(g_ui->mem_frame, "led_run");
+						CmdSubmitFormat(g_ui->mem_frame, "led_Compile");
+						CmdSubmitFormat(g_ui->mem_frame, "led_Run");
 					}
 					
 					ui_Pad();
@@ -454,7 +454,7 @@ static void led_ui(struct led *led, const struct ui_Visual *visual)
 					ui_Sprite(SPRITE_LED_PAUSE)
 					if (ui_ButtonF(UI_DRAW_SPRITE, "###pause") & UI_INTER_LEFT_CLICK)
 					{
-						CmdSubmitFormat(g_ui->mem_frame, "led_pause");
+						CmdSubmitFormat(g_ui->mem_frame, "led_Pause");
 					}
 
 					ui_Pad();
@@ -465,7 +465,7 @@ static void led_ui(struct led *led, const struct ui_Visual *visual)
 					ui_Sprite(SPRITE_LED_STOP)
 					if (ui_ButtonF(UI_DRAW_SPRITE, "###stop") & UI_INTER_LEFT_CLICK)
 					{
-						CmdSubmitFormat(g_ui->mem_frame, "led_stop");
+						CmdSubmitFormat(g_ui->mem_frame, "led_Stop");
 					}
 				}
 
@@ -519,7 +519,7 @@ static void led_ui(struct led *led, const struct ui_Visual *visual)
 							node->pixel_position[1] + node->pixel_size[1],
 						};
 						ds_CursorSetRectangle(win, pos, node->pixel_size);
-						led_input_handler(led, node);
+						led_InputHandler(led, node);
 					}
 
 					if (node->inter & UI_INTER_FOCUS_IN)
@@ -1129,7 +1129,7 @@ static void led_ui(struct led *led, const struct ui_Visual *visual)
 	}
 }
 
-void led_ui_main(struct led *led)
+void led_UiMain(struct led *led)
 {
 	ProfZone;
 
@@ -1153,12 +1153,12 @@ void led_ui_main(struct led *led)
 
 	const struct ui_Visual visual = ui_VisualInit(bg, br, gr, sp, pad, edge_softness, corner_radius, border_size, FONT_DEFAULT_SMALL, ALIGN_X_CENTER, ALIGN_Y_CENTER, text_pad_x, text_pad_y);
 
-	//led_ui_test(led, &visual);
-	led_ui(led, &visual);
+	//led_UiTest(led, &visual);
+	led_Ui(led, &visual);
 
 	if (led->project_menu.window)
 	{
-		led_project_menu_ui(led, &visual);
+		led_ProjectMenuUi(led, &visual);
 	}
 
 	ProfZoneEnd;

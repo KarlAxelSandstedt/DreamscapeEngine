@@ -40,9 +40,9 @@ void ds_StringApiInit(const u32 logical_core_count);
 
 #define Utf8Inline(cstr) (utf8)  		\
 	{					\
-		.len =	sizeof(cstr)-1,		\
-		.size =	sizeof(cstr),		\
 		.buf =  (u8 *) cstr,		\
+		.size =	sizeof(cstr),		\
+		.len =	sizeof(cstr)-1,		\
 	}
 
 typedef struct utf8 utf8;

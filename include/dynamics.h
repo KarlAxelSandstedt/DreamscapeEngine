@@ -677,8 +677,8 @@ struct physicsPipeline
 	u64			ns_tick;		/* ns per game tick */
 	u64 			frames_completed;	/* number of completed physics frames */ 
 
-	struct strdb *shape_db;		/* externally owned */
-	struct strdb *prefab_db;		/* externally owned */
+	struct strdb *		shape_db;		/* externally owned */
+	struct strdb *		prefab_db;		/* externally owned */
 
 	struct pool		body_pool;
 	struct dll		body_marked_list;	/* bodies marked for removal */
@@ -689,8 +689,8 @@ struct physicsPipeline
 
 	struct bvh 		dynamic_tree;
 
-	struct cdb	c_db;
-	struct isdb 	is_db;
+	struct cdb		c_db;
+	struct isdb 		is_db;
 
 	struct collisionDebug *	debug;
 	u32			debug_count;

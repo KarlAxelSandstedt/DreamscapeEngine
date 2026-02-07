@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -25,20 +25,20 @@ global command identifiers
 ==========================
 */
 
-struct csg csg_alloc(void)
+struct csg csg_Alloc(void)
 {
 	struct csg csg;
 
-	csg.brush_db = strdb_Alloc(NULL, 32, 32, struct csgBRush, GROWABLE);
-	csg.instance_pool = PoolAlloc(NULL, 32, struct csg_instance, GROWABLE);
-	csg.node_pool = PoolAlloc(NULL, 32, struct csg_instance, GROWABLE);
+	csg.brush_db = strdb_Alloc(NULL, 32, 32, struct csg_Brush, GROWABLE);
+	csg.instance_pool = PoolAlloc(NULL, 32, struct csg_Instance, GROWABLE);
+	csg.node_pool = PoolAlloc(NULL, 32, struct csg_Instance, GROWABLE);
 	csg.frame = ArenaAlloc(1024*1024);
-	csg.brush_marked_list = dll_Init(struct csgBRush);
-	csg.instance_marked_list = dll_Init(struct csg_instance);
-	csg.instance_non_marked_list = dll_Init(struct csg_instance);
+	csg.brush_marked_list = dll_Init(struct csg_Brush);
+	csg.instance_marked_list = dll_Init(struct csg_Instance);
+	csg.instance_non_marked_list = dll_Init(struct csg_Instance);
 	//csg.dcel_allocator = dcel_allocator_alloc(32, 32);
 
-	struct csgBRush *stubBRush = strdb_Address(&csg.brush_db, STRING_DATABASE_STUB_INDEX);
+	struct csg_Brush *stubBRush = strdb_Address(&csg.brush_db, STRING_DATABASE_STUB_INDEX);
 	stubBRush->primitive = CSG_PRIMITIVE_BOX;
 	stubBRush->dcel = DcelBoxStub();
 	stubBRush->flags = CSG_CONSTANT;
@@ -50,7 +50,7 @@ struct csg csg_alloc(void)
 	return csg;
 }
 
-void csg_dealloc(struct csg *csg)
+void csg_Dealloc(struct csg *csg)
 {
 	strdb_Dealloc(&csg->brush_db);
 	PoolDealloc(&csg->instance_pool);
@@ -59,7 +59,7 @@ void csg_dealloc(struct csg *csg)
 	//dcel_allocator_dealloc(csg->dcel_allocator);
 }
 
-void csg_flush(struct csg *csg)
+void csg_Flush(struct csg *csg)
 {
 	strdb_Flush(&csg->brush_db);
 	PoolFlush(&csg->instance_pool);
@@ -71,24 +71,24 @@ void csg_flush(struct csg *csg)
 	//dcel_allocator_flush(csg->dcel_allocator);
 }
 
-void csg_serialize(struct serialStream *ss, const struct csg *csg)
+void csg_Serialize(struct serialStream *ss, const struct csg *csg)
 {
 
 }
 
-struct csg csg_deserialize(struct arena *mem, struct serialStream *ss, const u32 growable)
+struct csg csg_Deserialize(struct arena *mem, struct serialStream *ss, const u32 growable)
 {
 	ds_Assert(!mem || !growable);
 }
 
-static void csg_apply_delta(struct csg *csg)
+static void csg_ApplyDelta(struct csg *csg)
 {
 
 }
 
-static void csg_remove_marked_structs(struct csg *csg)
+static void csg_RemoveMarkedStructs(struct csg *csg)
 {
-	struct csgBRush *brush = NULL;
+	struct csg_Brush *brush = NULL;
 	for (u32 i = csg->brush_marked_list.first; i != DLL_NULL; i = dll_Next(brush))
 	{
 		brush = strdb_Address(&csg->brush_db, i);
@@ -108,19 +108,19 @@ static void csg_remove_marked_structs(struct csg *csg)
 	dll_Flush(&csg->instance_marked_list);
 }
 
-void csg_main(struct csg *csg)
+void csg_Main(struct csg *csg)
 {
 	/* (1) Apply deltas */
-	csg_apply_delta(csg);
+	csg_ApplyDelta(csg);
 
 	/* (2) Safe to flush frame now */
 	ArenaFlush(&csg->frame);
 
 	/* (3) Remove markged csg structs */
-	csg_remove_marked_structs(csg);
+	csg_RemoveMarkedStructs(csg);
 }
 
-struct slot csgBRush_add(struct csg *csg, const utf8 id)
+struct slot csg_BrushAdd(struct csg *csg, const utf8 id)
 {
 	if (id.size > 256)
 	{
@@ -138,7 +138,7 @@ struct slot csgBRush_add(struct csg *csg, const utf8 id)
 	}
 	else
 	{
-		struct csgBRush *brush = slot.address;
+		struct csg_Brush *brush = slot.address;
 		brush->primitive = CSG_PRIMITIVE_BOX;
 		brush->dcel = DcelBoxStub();
 		brush->flags = CSG_FLAG_NONE;
@@ -150,10 +150,10 @@ struct slot csgBRush_add(struct csg *csg, const utf8 id)
 	return slot;
 }
 
-void csgBRush_mark_for_removal(struct csg *csg, const utf8 id)
+void csg_BrushMarkForRemoval(struct csg *csg, const utf8 id)
 {
 	struct slot slot = strdb_Lookup(&csg->brush_db, id);
-	struct csgBRush *brush = slot.address;
+	struct csg_Brush *brush = slot.address;
 	if (brush && !(brush->flags & (CSG_CONSTANT | CSG_MARKED_FOR_REMOVAL)))
 	{
 		brush->flags |= CSG_MARKED_FOR_REMOVAL;

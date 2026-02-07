@@ -37,14 +37,14 @@ extern "C" {
 	           			   	   is available. */
 #define CSG_MARKED_FOR_REMOVAL	((u64) 1 << 2)	/* If set, the struct should be removed as soon as possible */
 
-enum csg_primitive
+enum csg_Primitive
 {
 	CSG_PRIMITIVE_BOX,	
 	CSG_PRIMITIVE_CUSTOM,	/* custom primitive constructed using csg_op */
 	CSG_PRIMITIVE_COUNT
 };
 
-enum csg_op
+enum csg_Op
 {
 	CSG_OP_NONE,		/* No op, csg_node is leaf 			*/
 	CSG_OP_UNION,		/* node is union of left and right 		*/
@@ -57,11 +57,11 @@ enum csg_op
 csg_bursh
 =========  
 */
-struct csgBRush
+struct csg_Brush
 {
 	u64			flags;
-	struct csgBRush *	delta;
-	enum csg_primitive	primitive;		/* primitive type 	*/
+	struct csg_Brush *	delta;
+	enum csg_Primitive	primitive;		/* primitive type 	*/
 	struct dcel		dcel;
 
 	DLL_SLOT_STATE;
@@ -75,7 +75,7 @@ struct csgBRush
 csg_instance
 ============  
 */
-struct csg_instance
+struct csg_Instance
 {
 	u64			flags;
 	struct csg_instace *	delta;
@@ -94,14 +94,14 @@ struct csg_instance
 csg_node
 ========  
 */
-struct csg_node
+struct csg_Node
 {
 	//TODO place below into a binary_tree_macro
 	u32 		parent;
 	u32		left;
 	u32		right;
 
-	enum csg_op	op;
+	enum csg_Op	op;
 
 	DLL_SLOT_STATE;
 	POOL_SLOT_STATE;
@@ -113,32 +113,30 @@ csg
 */
 struct csg
 {
-	struct arena 		frame;		/* frame lifetime */
+	struct arena 	frame;		/* frame lifetime */
 
 	struct strdb	brush_db;
-	struct pool		instance_pool;
-	struct pool		node_pool;
+	struct pool	instance_pool;
+	struct pool	node_pool;
 
-	struct dll		brush_marked_list;
+	struct dll	brush_marked_list;
 
-	struct dll		instance_non_marked_list;
-	struct dll		instance_marked_list;
-
-	//struct dcel_allocator *	dcel_allocator;
+	struct dll	instance_non_marked_list;
+	struct dll	instance_marked_list;
 };
 
 /* allocate a csg structure */
-struct csg 	csg_alloc(void);
+struct csg 	csg_Alloc(void);
 /* deallocate a csg structure */
-void		csg_dealloc(struct csg *csg);
+void		csg_Dealloc(struct csg *csg);
 /* flush a csg structure's resources */
-void		csg_flush(struct csg *csg);
+void		csg_Flush(struct csg *csg);
 /* serialize a csg structure and its resources */
-void		csg_serialize(struct serialStream *ss, const struct csg *csg);
+void		csg_Serialize(struct serialStream *ss, const struct csg *csg);
 /* deserialize a csg stream and return the csg struct. If mem is not NULL, alloc fixed size csg on arena.  */
-struct csg	csg_deserialize(struct arena *mem, struct serialStream *ss, const u32 growable);		
+struct csg	csg_Deserialize(struct arena *mem, struct serialStream *ss, const u32 growable);		
 /* csg main method; apply deltas and update csg internals */
-void		csg_main(struct csg *csg);
+void		csg_Main(struct csg *csg);
 
 
 /* Add a new csgBRush and copy the id onto the heap on success. 
@@ -146,9 +144,9 @@ void		csg_main(struct csg *csg);
  * Failure 1: id requires a buffer size > 256.
  * Failure 2: An existing brush with the same id already exist.
  */
-struct slot 	csgBRush_add(struct csg *csg, const utf8 id);
+struct slot 	csg_BrushAdd(struct csg *csg, const utf8 id);
 /* Tag a brush for removal. If the reference count is not zero, this is a no op. */
-void 		csgBRush_mark_for_removal(struct csg *csg, const utf8 id);
+void 		csg_BrushMarkForRemoval(struct csg *csg, const utf8 id);
 
 /*
 global command identifiers
@@ -221,7 +219,7 @@ if (brush->flags & (CSG_FLAG_CONSTANT | CSG_FLAG_DIRTY) == CSG_FLAG_NONE)
 // If delta is already allocated 
 if (brush->flags & CSG_FLAG_DIRTY)
 {
-	struct csgBRush *brush_delta = brush_delta(csg, brush_handle);
+	struct csg_Brush *brush_delta = brush_delta(csg, brush_handle);
 
 	//Apply changes... 
 }

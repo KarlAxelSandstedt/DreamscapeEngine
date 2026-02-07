@@ -175,9 +175,7 @@ struct slot strdb_Lookup(const struct strdb *db, const utf8 id)
 
 void *strdb_Address(const struct strdb *db, const u32 handle)
 {
-	u8 *address = PoolAddress(&db->pool, handle);
-	ds_Assert((*(u32 *)(address + db->pool.slot_allocation_offset)) & 0x80000000);
-	return address;
+	return PoolAddress(&db->pool, handle);
 }
 
 struct slot strdb_Reference(struct strdb *db, const utf8 id)

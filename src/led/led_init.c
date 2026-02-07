@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -23,9 +23,9 @@
 struct led g_editor_storage = { 0 };
 struct led *g_editor = &g_editor_storage;
 
-struct led_project_menu	led_project_menu_alloc(void)
+struct led_ProjectMenu led_ProjectMenuAlloc(void)
 {
-	struct led_project_menu menu =
+	struct led_ProjectMenu menu =
 	{
 		.projects_folder_allocated = 0,
 		.projects_folder_refresh = 0,
@@ -41,20 +41,20 @@ struct led_project_menu	led_project_menu_alloc(void)
 	return menu;	
 }
 
-void led_project_menu_dealloc(struct led_project_menu *menu)
+void led_ProjectMenuDealloc(struct led_ProjectMenu *menu)
 {
 	DirectoryNavigatorDealloc(&menu->dir_nav);
 }
 
-struct led *led_alloc(void)
+struct led *led_Alloc(void)
 {
-	led_core_init_commands();
+	led_CoreInitCommands();
 	g_editor->mem_persistent = ArenaAlloc(16*1024*1024);
 
 	g_editor->window = ds_RootWindowAlloc("Level Editor", Vec2U32Inline(400,400), Vec2U32Inline(1280, 720));
 
 	g_editor->frame = ArenaAlloc(16*1024*1024);
-	g_editor->project_menu = led_project_menu_alloc();
+	g_editor->project_menu = led_ProjectMenuAlloc();
 	g_editor->running = 1;
 	g_editor->ns = ds_TimeNs();
 	g_editor->root_folder = FileNull();
@@ -108,7 +108,7 @@ struct led *led_alloc(void)
 	g_editor->node_marked_list = dll_Init(struct led_node);
 	g_editor->node_non_marked_list = dll_Init(struct led_node);
 	g_editor->node_selected_list = dll2_Init(struct led_node);
-	g_editor->csg = csg_alloc();
+	g_editor->csg = csg_Alloc();
 	g_editor->render_mesh_db = strdb_Alloc(NULL, 32, 32, struct r_Mesh, GROWABLE);
 	g_editor->rb_prefab_db = strdb_Alloc(NULL, 32, 32, struct rigidBodyPrefab, GROWABLE);
 	g_editor->cs_db = strdb_Alloc(NULL, 32, 32, struct collisionShape, GROWABLE);
@@ -140,11 +140,11 @@ struct led *led_alloc(void)
 	return g_editor;
 }
 
-void led_dealloc(struct led *led)
+void led_Dealloc(struct led *led)
 {
 	ArenaFree(&led->mem_persistent);
-	led_project_menu_dealloc(&led->project_menu);
-	csg_dealloc(&led->csg);
+	led_ProjectMenuDealloc(&led->project_menu);
+	csg_Dealloc(&led->csg);
 	HashMapFree(&led->node_map);
 	GPoolDealloc(&led->node_pool);
 	ArenaFree(&g_editor->frame);

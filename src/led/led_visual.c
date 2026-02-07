@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,10 +19,10 @@
 
 #include "led_local.h"
 
-struct led_visual 	visual_storage = { 0 };
-struct led_visual *	g_visual = &visual_storage;
+struct led_Visual 	visual_storage = { 0 };
+struct led_Visual *	g_visual = &visual_storage;
 
-void led_visual_init_defaults(const u32 window)
+void led_VisualInitDefaults(const u32 window)
 {
 	const struct ds_Window *sys_win = ds_WindowAddress(window);
 	Vec4Set(g_visual->unit_grid_color, 0.8f, 0.8f, 0.8f, 0.8f);

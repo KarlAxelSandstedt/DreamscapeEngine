@@ -24,6 +24,7 @@
 extern "C" { 
 #endif
 
+#include <stdio.h>
 #include "ds_allocator.h"
 
 /*
