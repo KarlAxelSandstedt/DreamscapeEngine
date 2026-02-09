@@ -21,9 +21,9 @@
 #include <string.h>
 
 #include "ds_graphics.h"
-#include "ui_public.h"
+#include "ds_ui.h"
 #include "sys_local.h"
-#include "r_public.h"
+#include "ds_renderer.h"
 
 struct hi g_window_hierarchy_storage = { 0 };
 struct hi *g_window_hierarchy = &g_window_hierarchy_storage;

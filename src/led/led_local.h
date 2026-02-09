@@ -20,9 +20,9 @@
 #ifndef __LED_LOCAL_H__
 #define __LED_LOCAL_H__
 
-#include "led_public.h"
-#include "r_public.h"
-#include "ui_public.h"
+#include "ds_led.h"
+#include "ds_renderer.h"
+#include "ds_ui.h"
 
 #define LED_ROOT_FOLDER_PATH	"../asset_components/led_projects"
 

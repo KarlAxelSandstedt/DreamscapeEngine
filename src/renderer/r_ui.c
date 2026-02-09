@@ -18,7 +18,7 @@
 */
 
 #include "r_local.h"
-#include "ui_public.h"
+#include "ds_ui.h"
 
 void r_UiDraw(struct ui *ui)
 {

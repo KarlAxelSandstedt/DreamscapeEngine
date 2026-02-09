@@ -57,8 +57,6 @@ void		VectorFlush(struct vector *v);
 
 /****************************************** FIXED TYPE STACK GENERATION ******************************************/
 
-#define STACK_GROWABLE	1
-
 #define DECLARE_STACK_STRUCT(type)	\
 typedef struct				\
 {					\
@@ -87,33 +85,34 @@ typedef struct				\
 	DECLARE_STACK_FLUSH(type);	\
 	DECLARE_STACK_FREE(type)
 
-#define DEFINE_STACK_ALLOC(type)									\
-DECLARE_STACK_ALLOC(type)										\
-{													\
-	ds_Assert(!arena || !growable);									\
-	stack_ ## type stack =										\
-	{												\
-		.next = 0,										\
-		.growable = growable,									\
-	};												\
-	if (arena)											\
-	{												\
-		stack.length = length;									\
-		stack.arr = ArenaPush(arena, sizeof(stack.arr[0])*stack.length);			\
-	}												\
-	else												\
-	{												\
-		const u64 size = PowerOfTwoCeil( ds_AllocSizeCeil( sizeof(stack.arr[0])*length ) );	\
-		stack.length = (u32) (size / sizeof(stack.arr[0]));					\
-		stack.arr = (size >= 1024*1024) 							\
-			? ds_Alloc(&stack.mem_slot, size, HUGE_PAGES)					\
-			: ds_Alloc(&stack.mem_slot, size, NO_HUGE_PAGES);				\
-	}												\
-	if (length > 0 && !stack.arr)									\
-	{												\
-		FatalCleanupAndExit();									\
-	}												\
-	return stack;											\
+#define DEFINE_STACK_ALLOC(type)							\
+DECLARE_STACK_ALLOC(type)								\
+{											\
+	ds_Assert(!arena || !growable);							\
+	stack_ ## type stack =								\
+	{										\
+		.next = 0,								\
+		.growable = growable,							\
+	};										\
+	if (arena)									\
+	{										\
+		stack.length = length;							\
+		stack.arr = ArenaPush(arena, sizeof(stack.arr[0])*stack.length);	\
+	}										\
+	else										\
+	{										\
+		const u64 size = ds_AllocSizeCeil( sizeof(stack.arr[0])*length );	\
+		stack.length = (u32) (size / sizeof(stack.arr[0]));			\
+		stack.arr = (size >= 1024*1024) 					\
+			? ds_Alloc(&stack.mem_slot, size, HUGE_PAGES)			\
+			: ds_Alloc(&stack.mem_slot, size, NO_HUGE_PAGES);		\
+	}										\
+	PoisonAddress(stack.arr, stack.length*sizeof(stack.arr[0]));			\
+	if (length > 0 && !stack.arr)							\
+	{										\
+		FatalCleanupAndExit();							\
+	}										\
+	return stack;									\
 }
 
 #define DEFINE_STACK_FREE(type)			\
@@ -133,6 +132,8 @@ DECLARE_STACK_PUSH(type)									\
 		if (stack->growable)								\
 		{										\
 			stack->arr = ds_Realloc(&stack->mem_slot, 2*stack->mem_slot.size);	\
+			PoisonAddress(stack->arr, stack->mem_slot.size);			\
+			UnpoisonAddress(stack->arr, stack->length*sizeof(stack->arr[0]));	\
 			stack->length = (u32) (stack->mem_slot.size / sizeof(stack->arr[0]));	\
 			if (!stack->arr)							\
 			{									\
@@ -144,6 +145,7 @@ DECLARE_STACK_PUSH(type)									\
 			FatalCleanupAndExit();							\
 		}										\
 	}											\
+	UnpoisonAddress(stack->arr + stack->next, sizeof(stack->arr[0]));			\
 	stack->arr[stack->next] = val;								\
 	stack->next += 1;									\
 }
@@ -155,19 +157,21 @@ DECLARE_STACK_SET(type)				\
 	stack->arr[stack->next-1] = val;	\
 }
 
-#define DEFINE_STACK_POP(type)				\
-DECLARE_STACK_POP(type)					\
-{							\
-	ds_Assert(stack->next);				\
-	stack->next -= 1;				\
-	const type val = stack->arr[stack->next];	\
-	return val;					\
+#define DEFINE_STACK_POP(type)						\
+DECLARE_STACK_POP(type)							\
+{									\
+	ds_Assert(stack->next);						\
+	stack->next -= 1;						\
+	const type val = stack->arr[stack->next];			\
+	PoisonAddress(stack->arr + stack->next, sizeof(stack->arr[0]));	\
+	return val;							\
 }
 
-#define DEFINE_STACK_FLUSH(type)			\
-DECLARE_STACK_FLUSH(type)				\
-{							\
-	stack->next = 0;				\
+#define DEFINE_STACK_FLUSH(type)				\
+DECLARE_STACK_FLUSH(type)					\
+{								\
+	PoisonAddress(stack->arr, stack->mem_slot.size);	\
+	stack->next = 0;					\
 }
 
 #define DEFINE_STACK_TOP(type)			\

@@ -36,14 +36,19 @@ struct hashMap HashMapAlloc(struct arena *mem, const u32 hash_len, const u32 ind
 	if (mem)
 	{
 		map.hash_len = (u32) PowerOfTwoCeil(hash_len);
-		map.index_len = index_len;
+		map.index_len = (map.hash_len <= index_len)
+			? index_len
+			: map.hash_len;
 		map.hash = ArenaPush(mem, map.hash_len * sizeof(u32)); 
 		map.index = ArenaPush(mem, map.index_len * sizeof(u32)); 
 	}
 	else
 	{
-		map.hash_len = (u32) PowerOfTwoCeil( ds_AllocSizeCeil(hash_len) );
-		map.index_len = (u32) PowerOfTwoCeil( ds_AllocSizeCeil(index_len * sizeof(u32)) ) / sizeof(u32);
+		map.hash_len = (u32) PowerOfTwoCeil( ds_AllocSizeCeil(hash_len * sizeof(u32))  / sizeof(u32) );
+		map.index_len = (u32) ds_AllocSizeCeil(index_len * sizeof(u32)) / sizeof(u32);
+		map.index_len = (map.hash_len <= map.index_len)
+			? map.index_len
+			: map.hash_len;
 		map.hash = ds_Alloc(&map.mem_hash, map.hash_len * sizeof(u32), HUGE_PAGES);
 		map.index = ds_Alloc(&map.mem_index, map.index_len * sizeof(u32), HUGE_PAGES);
 	}
@@ -57,13 +62,13 @@ struct hashMap HashMapAlloc(struct arena *mem, const u32 hash_len, const u32 ind
 		return map_empty;
 	}
 
-	ds_Assert(PowerOfTwoCheck(map.hash_len));
 	map.hash_mask = map.hash_len-1;
 
 	for (u32 i = 0; i < map.hash_len; ++i)
 	{
 		map.hash[i] = HASH_NULL;
 	}
+
 
 	return map;
 }
@@ -112,6 +117,7 @@ struct hashMap HashMapDeserialize(struct arena *mem, struct serialStream *ss, co
 
 	const u32 hash_len = ss_ReadU32Be(ss);
 	const u32 index_len = ss_ReadU32Be(ss);
+	ds_Assert(PowerOfTwoCheck(hash_len));
 
 	if (mem)
 	{
@@ -128,8 +134,8 @@ struct hashMap HashMapDeserialize(struct arena *mem, struct serialStream *ss, co
 	}
 	else
 	{
-		map.hash_len = (u32) PowerOfTwoCeil( ss_ReadU32Be(ss) );
-		map.index_len = (u32) PowerOfTwoCeil( ds_AllocSizeCeil( ss_ReadU32Be(ss) * sizeof(u32)) ) / sizeof(u32);
+		map.hash_len = hash_len;
+		map.index_len = (u32) ds_AllocSizeCeil( index_len * sizeof(u32) ) / sizeof(u32);
 		map.hash = (map.hash_len * sizeof(u32) > 1024*1024) 
 			? ds_Alloc(&map.mem_hash, hash_len * sizeof(u32), HUGE_PAGES)
 			: ds_Alloc(&map.mem_hash, hash_len * sizeof(u32), NO_HUGE_PAGES);
@@ -151,7 +157,7 @@ struct hashMap HashMapDeserialize(struct arena *mem, struct serialStream *ss, co
 	map.growable = growable;
 	map.hash_mask = map.hash_len-1;
 
-	if (hash_len + index_len * sizeof(u32) > ss_BytesLeft(ss))
+	if ((hash_len + index_len) * sizeof(u32) > ss_BytesLeft(ss))
 	{
 		if (map.mem_index.address)
 		{
@@ -168,6 +174,7 @@ struct hashMap HashMapDeserialize(struct arena *mem, struct serialStream *ss, co
 	return map;
 }
 
+#include <stdio.h>
 u32 HashMapAdd(struct hashMap *map, const u32 hash, const u32 index)
 {
 	ds_Assert(index >> 31 == 0);
@@ -176,9 +183,11 @@ u32 HashMapAdd(struct hashMap *map, const u32 hash, const u32 index)
 	{
 		if (map->growable)
 		{
-			map->index_len = (u32) PowerOfTwoCeil(index+1);
-			map->index = ds_Realloc(&map->mem_index, map->index_len * sizeof(u32));
-			ds_Assert(map->index_len * sizeof(u32) == map->mem_index.size);
+			const u64 size = (index < 2*map->index_len)
+				? 2*map->mem_index.size
+				: (index+1) * sizeof(u32);
+			map->index = ds_Realloc(&map->mem_index, size);
+			map->index_len = (u32) size / sizeof(u32);
 		}
 		else
 		{
@@ -190,6 +199,7 @@ u32 HashMapAdd(struct hashMap *map, const u32 hash, const u32 index)
 	
 	map->index[index] = map->hash[h];
 	map->hash[h] = index;
+
 	return 1;
 }
 
@@ -225,9 +235,8 @@ u32 HashMapFirst(const struct hashMap *map, const u32 hash)
 
 u32 HashMapNext(const struct hashMap *map, const u32 index)
 {
-	return (index < map->index_len)
-		? map->index[index]
-		: HASH_NULL;
+	ds_Assert(index < map->index_len);
+	return map->index[index];
 }
 
 u64 KeyGenU32U32(const u32 k1, const u32 k2)

@@ -18,10 +18,10 @@
 */
 
 #include "r_local.h"
-#include "r_public.h"
-#include "asset_public.h"
+#include "ds_renderer.h"
+#include "ds_asset.h"
 #include "transform.h"
-#include "led_public.h"
+#include "ds_led.h"
 
 static struct r_Mesh *DebugContactManifoldSegmentsMesh(struct arena *mem, const struct physicsPipeline *pipeline)
 {

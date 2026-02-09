@@ -756,7 +756,7 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 	vec2ptr grad[OCTAVES];
 	for (u32 o = 0; o < OCTAVES; ++o)
 	{
-		const u32 on = n >> o;
+		const u32 on = (n >> o) + 1;
 		grad[o] = ArenaPush(&tmp, on*on*sizeof(vec2));
 		for (u32 x = 0; x < on; ++x)
 		{
@@ -787,7 +787,7 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 			f32 amplitude = 1.0f / (1 << OCTAVES);
 			for (u32 i = 0; i < OCTAVES; ++i)
 			{
-				const u32 on = n >> i;
+				const u32 on = (n >> i) + 1;
 				const u32 x_low = x - (x % (1 << i));
 				const u32 z_low = z - (z % (1 << i));
 
@@ -827,6 +827,12 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 				const u32 xg_high = xg_low + 1;
 				const u32 zg_low = z_low >> i;
 				const u32 zg_high = zg_low + 1;
+
+				ds_Assert(xg_low*on  + zg_low  < on*on);
+				ds_Assert(xg_high*on + zg_low  < on*on);
+				ds_Assert(xg_low*on  + zg_high < on*on);
+				ds_Assert(xg_high*on + zg_high < on*on);
+
 				const f32 bl_dot = Vec2Dot(bl_diff, grad[i][xg_low*on  + zg_low]);
 				const f32 br_dot = Vec2Dot(br_diff, grad[i][xg_high*on + zg_low]);
 				const f32 tl_dot = Vec2Dot(tl_diff, grad[i][xg_low*on  + zg_high]);
@@ -1469,7 +1475,7 @@ static void led_EngineColorBodies(struct led *led, const u32 island, const vec4 
 {
 	struct island *is = PoolAddress(&led->physics.is_db.island_pool, island);
 	const struct rigidBody *body;
-	for (u32 i = is->body_list.first; i != LL_NULL; i = body->ll_next)
+	for (u32 i = is->body_list.first; i != DLL_NULL; i = body->dll2_next)
 	{
 		body = PoolAddress(&led->physics.body_pool, i);
 		const struct led_node *node = PoolAddress(&led->node_pool, body->entity);
@@ -1530,7 +1536,7 @@ static void led_engine_run(struct led *led)
 					struct r_Proxy3d *proxy = r_Proxy3dAddress(node->proxy);
 					if (RB_IS_DYNAMIC(body))
 					{
-						(body->first_contact_index == NLL_NULL)
+						(body->contact_first == NLL_NULL)
 							? Vec4Copy(proxy->color, node->color)
 							: Vec4Copy(proxy->color, led->physics.collision_color);
 					}
@@ -1622,7 +1628,7 @@ static void led_engine_run(struct led *led)
 					struct r_Proxy3d *proxy2 = r_Proxy3dAddress(node2->proxy);
 					if (RB_IS_DYNAMIC(body1))
 					{
-						if (body1->first_contact_index == NLL_NULL)
+						if (body1->contact_first == NLL_NULL)
 						{
 							Vec4Copy(proxy1->color, node1->color);
 						}
@@ -1634,7 +1640,7 @@ static void led_engine_run(struct led *led)
 		
 					if (RB_IS_DYNAMIC(body2))
 					{
-						if (body2->first_contact_index == NLL_NULL)
+						if (body2->contact_first == NLL_NULL)
 						{
 							Vec4Copy(proxy2->color, node2->color);
 						}

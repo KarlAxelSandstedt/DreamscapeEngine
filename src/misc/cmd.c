@@ -40,7 +40,7 @@ static void CmdDebugPrint(void)
 void ds_CmdApiInit(void)
 {
 	g_name_to_cmd_f_map = HashMapAlloc(NULL, 128, 128, GROWABLE);
-	g_cmd_f = stack_cmdFunctionAlloc(NULL, 128, STACK_GROWABLE);
+	g_cmd_f = stack_cmdFunctionAlloc(NULL, 128, GROWABLE);
 
 	const utf8 debug_print_str = Utf8Inline("debug_print");
 	g_cmd_internal_debug_print_index = CmdFunctionRegister(debug_print_str, 1, &CmdDebugPrint).index;
@@ -63,10 +63,7 @@ struct cmdQueue CmdQueueAlloc(void)
 
 void CmdQueueDealloc(struct cmdQueue *queue)
 {
-	if (queue)
-	{
-		PoolDealloc(&queue->cmd_pool);
-	}
+	PoolDealloc(&queue->cmd_pool);
 }
 
 void CmdQueueSet(struct cmdQueue *queue)
@@ -284,6 +281,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 void CmdQueueExecute(void)
 {
 	struct arena tmp = ArenaAlloc1MB();
+
 	u32 next = U32_MAX;
 	for (u32 i = g_queue->cmd_list.first; i != LL_NULL; i = next)
 	{

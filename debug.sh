@@ -10,7 +10,7 @@ else
 	CMAKE_GENERATOR="Unix Makefiles"
 fi
 
-cmake -S . -B build -Dkas_debug=ON -DCMAKE_BUILD_TYPE=Debug -G $CMAKE_GENERATOR
+cmake -S . -B build -Dkas_debug=ON -DDS_TEST_PHYSICS=ON -DDS_PROFILE=ON -DCMAKE_BUILD_TYPE=Debug -G $CMAKE_GENERATOR
 cd build
 cmake --build . --parallel
 
@@ -19,5 +19,5 @@ if [ -z $(pgrep -f "tracy-profiler")]; then
 	nohup "$TRACY_PROFILER" > /dev/null 2>&1 &
 fi
 
-gdb ./engine_sandbox
+gdb ./DreamscapeTest
 cd ..

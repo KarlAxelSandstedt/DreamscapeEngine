@@ -30,7 +30,7 @@ struct bt bt_AllocInternal(struct arena *mem, const u32 initial_length, const u6
 		.parent_offset = parent_offset,
 		.left_offset = left_offset,
 		.right_offset = right_offset,
-		.root = POOL_NULL,
+		.root = BT_PARENT_INDEX_MASK,
 		.pool = PoolAllocInternal(mem, initial_length, slot_size, pool_slot_offset, U64_MAX, growable),
 	};
 
@@ -45,12 +45,12 @@ void bt_Dealloc(struct bt *tree)
 void bt_Flush(struct bt *tree)
 {
 	PoolFlush(&tree->pool);
-	tree->root = POOL_NULL;
+	tree->root = BT_PARENT_INDEX_MASK;
 }
 
 void bt_Validate(struct arena *tmp, const struct bt *tree)
 {
-	if (tree->root == POOL_NULL)
+	if (tree->root == BT_PARENT_INDEX_MASK)
 	{
 		ds_Assert(0 == bt_NodeCount(tree));
 		return;
@@ -74,7 +74,7 @@ void bt_Validate(struct arena *tmp, const struct bt *tree)
 		u32 *l = (u32 *) (addr + tree->left_offset);
 		u32 *r = (u32 *) (addr + tree->right_offset);
 
-		ds_Assert((*alloc) >> 31 == 0);
+		ds_Assert((*alloc & POOL_ALLOCATION_MASK) == 0);
 		ds_Assert(BitVecGetBit(&traversed, stack[sc]) == 0);
 		BitVecSetBit(&traversed, stack[sc], 1);
 
@@ -86,7 +86,7 @@ void bt_Validate(struct arena *tmp, const struct bt *tree)
 			u32 *p_l = (u32 *) (parent + tree->left_offset);
 			u32 *p_r = (u32 *) (parent + tree->right_offset);
 
-			ds_Assert((*p_alloc) >> 31);
+			ds_Assert((*p_alloc & POOL_ALLOCATION_MASK) == 0);
 			ds_Assert(!(BT_PARENT_LEAF_MASK & (*p_p)));
 			ds_Assert(*p_l == stack[sc] || *p_r == stack[sc]);
 		}
@@ -126,7 +126,7 @@ struct slot bt_NodeAddRoot(struct bt *tree)
 	struct slot slot = PoolAdd(&tree->pool);
 	if (slot.index != POOL_NULL)
 	{
-		ds_Assert(tree->root == POOL_NULL);
+		ds_Assert(tree->root == BT_PARENT_INDEX_MASK);
 		tree->root = slot.index;
 		u32 *parent = (u32 *) (((u8 *) slot.address) + tree->parent_offset);	
 		*parent = BT_PARENT_LEAF_MASK | BT_PARENT_INDEX_MASK;

@@ -42,8 +42,8 @@ struct physicsPipeline;
 
 struct contact
 {
-	LL_SLOT_STATE;
-	NLL_SLOT_STATE;
+	DLL_SLOT_STATE;		/* island->contact_list node */
+	NLL_SLOT_STATE;		/* body->contact_net node */
 	struct contactManifold 	cm;
 	u64 			key;
 
@@ -118,8 +118,8 @@ struct contact *cdb_ContactAdd(struct physicsPipeline *pipeline, const struct co
 void 		cdb_ContactRemove(struct physicsPipeline *pipeline, const u64 key, const u32 index);
 /* Remove all contacts associated with the given body */
 void		cdb_BodyRemoveContacts(struct physicsPipeline *pipeline, const u32 body_index);
-/* Remove all contacts associated with the given static body and store affected islands */
-u32 *		cdb_StaticRemoveContactsAndStoreAffectedIslands(struct arena *mem, u32 *count, struct physicsPipeline *pipeline, const u32 static_index);
+/* Remove all contacts associated with the given static body and update affected islands */
+void		cdb_StaticRemoveContactsAndUpdateIslands(struct physicsPipeline *pipeline, const u32 static_index);
 struct contact *cdb_ContactLookup(const struct cdb *c_db, const u32 b1, const u32 b2);
 u32 		cdb_ContactLookupIndex(const struct cdb *c_db, const u32 i1, const u32 i2);
 void 		cdb_UpdatePersistentContactsUsage(struct cdb *c_db);
@@ -247,8 +247,8 @@ struct island
 	/* Persistent Island */
 	u32 flags;
 
-	struct ll	body_list;
-	struct ll	contact_list;
+	struct dll	body_list;
+	struct dll	contact_list;
 
 #ifdef DS_PHYSICS_DEBUG
 	vec4 color;
@@ -501,7 +501,7 @@ physics engine entity
 
 struct rigidBody
 {
-	LL_SLOT_STATE;		/* island_list_node */
+	DLL2_SLOT_STATE;	/* island body_list node */
 	DLL_SLOT_STATE;		/* body marked/non-marked list node */
 	POOL_SLOT_STATE;
 	/* dynamic state */
@@ -515,7 +515,7 @@ struct rigidBody
 	vec3 		position;		/* center of mass world frame position */
 	vec3 		linear_momentum;   	/* L = mv */
 
-	u32		first_contact_index;
+	u32		contact_first;
 	u32		island_index;
 
 	/* static state */

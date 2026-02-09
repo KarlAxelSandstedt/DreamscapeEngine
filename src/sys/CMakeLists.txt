@@ -38,7 +38,7 @@ add_library(DreamscapeGraphics
 add_library(Dreamscape::Graphics ALIAS DreamscapeGraphics)
 target_link_libraries(DreamscapeGraphics
 	PRIVATE
-		#renderer
-		sdl3_wrapper
+		Dreamscape::Renderer
 		Dreamscape::UI
+		sdl3_wrapper
 	)

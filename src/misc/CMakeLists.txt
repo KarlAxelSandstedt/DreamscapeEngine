@@ -19,7 +19,7 @@ target_link_libraries(DreamscapeFont PUBLIC Dreamscape::Asset)
 
 add_library(ui 
 	STATIC 
-		"${DS_INCLUDE_PATH}/ui_public.h"
+		"${DS_INCLUDE_PATH}/ds_ui.h"
 		"ui/ui_core.c"
 		"ui/ui_build.c" 
 		"ui/ui_local.h"

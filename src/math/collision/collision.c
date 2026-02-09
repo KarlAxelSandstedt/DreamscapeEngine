@@ -714,7 +714,7 @@ static f32 GjkDistanceSquared(vec3 c1, vec3 c2, struct gjkInput *in1, struct gjk
 	vec4 lambda;
 	u64 support_id;
 	f32 ma; /* max dot product of current simplex */
-	f32 dist_sq = F32_INFINITY; 
+	f32 dist_sq = F32_MAX_POSITIVE_NORMAL; 
 	const f32 rel = tol * tol;
 
 	/* arbitrary starting search direction */

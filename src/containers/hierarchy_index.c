@@ -56,6 +56,8 @@ struct hi hi_AllocInternal(struct arena *mem
 	if (hi.pool.buf)
 	{
 		const u32 root_stub = (u32) PoolAdd(&hi.pool).index;
+		const u32 orphan_stub = (u32) PoolAdd(&hi.pool).index;
+
 		*hi_ParentPtr(&hi, root_stub) = HI_NULL_INDEX;
 		*hi_NextPtr(&hi, root_stub) = HI_NULL_INDEX;
 		*hi_PrevPtr(&hi, root_stub) = HI_NULL_INDEX;
@@ -63,7 +65,6 @@ struct hi hi_AllocInternal(struct arena *mem
 		*hi_LastPtr(&hi, root_stub) = HI_NULL_INDEX;
 		*hi_ChildCountPtr(&hi, root_stub) = 0;
 
-		const u32 orphan_stub = (u32) PoolAdd(&hi.pool).index;
 		*hi_ParentPtr(&hi, orphan_stub) = HI_NULL_INDEX;
 		*hi_NextPtr(&hi, orphan_stub) = HI_NULL_INDEX;
 		*hi_PrevPtr(&hi, orphan_stub) = HI_NULL_INDEX;
@@ -87,6 +88,8 @@ void hi_Flush(struct hi *hi)
 	PoolFlush(&hi->pool);
 
 	const u32 root_stub = PoolAdd(&hi->pool).index;
+	const u32 orphan_stub = PoolAdd(&hi->pool).index;
+
 	*hi_ParentPtr(hi, root_stub) = HI_NULL_INDEX;
 	*hi_NextPtr(hi, root_stub) = HI_NULL_INDEX;
 	*hi_PrevPtr(hi, root_stub) = HI_NULL_INDEX;
@@ -94,7 +97,6 @@ void hi_Flush(struct hi *hi)
 	*hi_LastPtr(hi, root_stub) = HI_NULL_INDEX;
 	*hi_ChildCountPtr(hi, root_stub) = 0;
 
-	const u32 orphan_stub = PoolAdd(&hi->pool).index;
 	*hi_ParentPtr(hi, orphan_stub) = HI_NULL_INDEX;
 	*hi_NextPtr(hi, orphan_stub) = HI_NULL_INDEX;
 	*hi_PrevPtr(hi, orphan_stub) = HI_NULL_INDEX;
@@ -108,7 +110,7 @@ void hi_Flush(struct hi *hi)
 
 struct slot hi_Add(struct hi *hi, const u32 parent_index)
 {
-	ds_Assert(parent_index <= hi->pool.count_max);
+	ds_Assert(parent_index < hi->pool.count_max);
 
 	struct slot new = PoolAdd(&hi->pool);
 	if (new.index == U32_MAX)
@@ -128,9 +130,9 @@ struct slot hi_Add(struct hi *hi, const u32 parent_index)
 	if (*parent_last)
 	{
 		ds_Assert(*hi_ParentPtr(hi, *parent_last) == parent_index);
-		ds_Assert(hi_NextPtr(hi, *parent_last) == HI_NULL_INDEX);
+		ds_Assert(*hi_NextPtr(hi, *parent_last) == HI_NULL_INDEX);
 		*hi_NextPtr(hi, *parent_last) = new.index;
-		*hi_LastPtr(hi, parent_index) = new.index;
+		*parent_last = new.index;
 	}
 	else
 	{
@@ -177,7 +179,7 @@ static void internal_hierarchy_index_remove_sub_hierarchy_recursive(struct hi *h
 
 void hi_Remove(struct arena *tmp, struct hi *hi, const u32 node)
 {
-	ds_Assert(0 < node && node <= hi->pool.count_max);
+	ds_Assert(0 < node && node < hi->pool.count_max);
 
 	const u32 first = *hi_FirstPtr(hi, node);
 	const u32 next = *hi_NextPtr(hi, node);
@@ -262,7 +264,7 @@ void hi_Remove(struct arena *tmp, struct hi *hi, const u32 node)
 
 void hi_AdoptNodeExclusive(struct hi *hi, const u32 node, const u32 new_parent)
 {
-	ds_Assert(new_parent <= hi->pool.count_max);
+	ds_Assert(new_parent < hi->pool.count_max);
 
 	const u32 old_parent = *hi_ParentPtr(hi, node);
 	const u32 next = *hi_NextPtr(hi, node);
@@ -351,7 +353,7 @@ void hi_AdoptNodeExclusive(struct hi *hi, const u32 node, const u32 new_parent)
 
 void hi_AdoptNode(struct hi *hi, const u32 node, const u32 new_parent)
 {
-	ds_Assert(new_parent <= hi->pool.count_max);
+	ds_Assert(new_parent < hi->pool.count_max);
 
 	const u32 old_parent = *hi_ParentPtr(hi, node);
 	const u32 next = *hi_NextPtr(hi, node);
@@ -402,7 +404,7 @@ void hi_AdoptNode(struct hi *hi, const u32 node, const u32 new_parent)
 
 void hi_ApplyCustomFreeAndRemove(struct arena *tmp, struct hi *hi, const u32 node, void (*custom_free)(const struct hi *hi, const u32 index, void *data), void *data)
 {
-	ds_Assert(0 < node && node <= hi->pool.count_max);
+	ds_Assert(0 < node && node < hi->pool.count_max);
 
 	ArenaPushRecord(tmp);
 	const u32 first = *hi_FirstPtr(hi, node);
@@ -484,7 +486,7 @@ void hi_ApplyCustomFreeAndRemove(struct arena *tmp, struct hi *hi, const u32 nod
 
 void *hi_Address(const struct hi *hi, const u32 node)
 {
-	ds_Assert(node <= hi->pool.count_max);
+	ds_Assert(node < hi->pool.count_max);
 	return PoolAddress(&hi->pool, node);
 }
 
@@ -541,6 +543,7 @@ u32 hi_IteratorNextDf(struct hiIterator *it)
 		push[push_count++] = first;
 	}
 
+	it->stack[it->count] = push[0];
 	if (push_count == 2)
 	{
 		/* count doesnt take initial stub into account {  (1 + it->count - 1 + push_count) } */
@@ -550,12 +553,7 @@ u32 hi_IteratorNextDf(struct hiIterator *it)
 			FatalCleanupAndExit();
 		}
 
-		it->stack[it->count + 0] = push[0];
 		it->stack[it->count + 1] = push[1];
-	}
-	else if (push_count == 1)
-	{
-		it->stack[it->count + 0] = push[0];
 	}
 
 	it->count = it->count + push_count -1;

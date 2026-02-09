@@ -24,7 +24,7 @@
 extern "C" { 
 #endif
 
-#include "asset_public.h"
+#include "ds_asset.h"
 
 struct textGlyph
 {

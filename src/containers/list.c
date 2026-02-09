@@ -43,7 +43,7 @@ void ll_Flush(struct ll *ll)
 	ll->last = LL_NULL;
 }
 
-void ll_Append(struct ll *ll, void *array, const u32 index)
+void ll_Prepend(struct ll *ll, void *array, const u32 index)
 {
 	ll->count += 1;
 	u32 *first = (u32*) ((u8*) array + index*ll->slot_size + ll->slot_state_offset);
@@ -55,7 +55,7 @@ void ll_Append(struct ll *ll, void *array, const u32 index)
 	}
 }
 
-void ll_Prepend(struct ll *ll, void *array, const u32 index)
+void ll_Append(struct ll *ll, void *array, const u32 index)
 {
 	ll->count += 1;
 	if (ll->last == LL_NULL)
@@ -68,8 +68,8 @@ void ll_Prepend(struct ll *ll, void *array, const u32 index)
 		*last = index;
 	}
 	ll->last = index;
-	u32 *prev = (u32*) ((u8*) array + index*ll->slot_size + ll->slot_state_offset);
-	*prev = LL_NULL;	
+	u32 *next = (u32*) ((u8*) array + index*ll->slot_size + ll->slot_state_offset);
+	*next = LL_NULL;	
 }
 
 struct dll dll_InitInternal(const u64 slot_size, const u64 prev_offset, const u64 next_offset)

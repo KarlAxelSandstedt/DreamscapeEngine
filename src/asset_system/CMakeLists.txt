@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.14.3)
 
 add_library(asset_system STATIC 
-	"${DS_INCLUDE_PATH}/asset_public.h"
+	"${DS_INCLUDE_PATH}/ds_asset.h"
 	asset_local.h
 	asset_ssff.c
 	asset_font.c

@@ -29,7 +29,7 @@ extern "C" {
 #include "list.h"
 #include "quaternion.h"
 #include "geometry.h"
-#include "ui_public.h"
+#include "ds_ui.h"
 
 #define CSG_FLAG_NONE		((u64) 0)
 #define CSG_CONSTANT		((u64) 1 << 0)	/* If set, the struct's state is to be viewed as constant   */

@@ -207,10 +207,8 @@ struct ui *ui_Alloc(void)
 	orphan_root->inter_recursive_mask = 0;
 	orphan_root->last_frame_touched = U64_MAX;
 
-	ui->stack_flags.next = 1;
-	ui->stack_flags.arr[0] = UI_FLAG_NONE;
-	ui->stack_recursive_interaction_flags.next = 1;
-	ui->stack_recursive_interaction_flags.arr[0] = UI_FLAG_NONE;
+	stack_u64Push(&ui->stack_flags, UI_FLAG_NONE);
+	stack_u64Push(&ui->stack_recursive_interaction_flags, UI_FLAG_NONE);
 
 	/* setup stub bucket */
 	struct slot slot = PoolAdd(&ui->bucket_pool);
@@ -330,7 +328,7 @@ static void ui_NodeDealloc(const struct hi *node_hierarchy, const u32 index, voi
 	if ((node->flags & UI_NON_HASHED) == 0)
 	{
 		//fprintf(stderr, "pruning hashed orphan %s\n",(char*) ((struct ui_Node *) node)->id.buf);
-		HashMapRemove(&g_ui->node_map, node->key, index);
+		HashMapRemove(&g_ui->node_map, node->hash, index);
 	}
 }
 
@@ -439,7 +437,7 @@ static void ui_ChildsumLayoutSizeAndPruneNodes(void)
 		//struct ui_Node *node = hi_Address(&g_ui->node_hierarchy, potential_next);
 		//if (node->last_frame_touched != g_ui->frame)
 		//{
-		//	//fprintf(stderr, "FRAME UNTOUCHED:%lu\tID:%s\tKEY:%u\tINDEX:%u\n", g_ui->frame, node->id.buf, node->key, potential_next);
+		//	//fprintf(stderr, "FRAME UNTOUCHED:%lu\tID:%s\tKEY:%u\tINDEX:%u\n", g_ui->frame, node->id.buf, node->hash, potential_next);
 		//	stack_u32Push(&stackFree, potential_next);
 		//	hi_IteratorSkip(&it);
 		//	continue;
@@ -1314,8 +1312,8 @@ struct slot ui_NodeLookup(const utf8 *id)
 {
 	struct slot slot = { .address = NULL, .index = U32_MAX };
 	struct ui_Node *node;
-	const u32 key = Utf8Hash(*id);
-	u32 index = HashMapFirst(&g_ui->node_map, key);
+	const u32 hash = Utf8Hash(*id);
+	u32 index = HashMapFirst(&g_ui->node_map, hash);
 	for (; index != HASH_NULL; index = HashMapNext(&g_ui->node_map, index))
 	{
 		node = hi_Address(&g_ui->node_hierarchy, index);
@@ -1412,18 +1410,18 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 		? stack_u32Top(&g_ui->stack_fixed_depth)
 		: parent->depth + 1;
 
-	u32 key;
+	u32 hash;
 	struct slot slot;
 	if (cache.last_frame_touched+1 != g_ui->frame)
 	{
-		key = Utf8Hash(id);
+		hash = Utf8Hash(id);
 		slot = hi_Add(&g_ui->node_hierarchy, stack_u32Top(&g_ui->stack_parent));
 		node = slot.address;
-		HashMapAdd(&g_ui->node_map, key, slot.index);
+		HashMapAdd(&g_ui->node_map, hash, slot.index);
 	}
 	else
 	{
-		key = node->key;
+		hash = node->hash;
 		slot.address = node;
 		slot.index = cache.index;
 		hi_AdoptNodeExclusive(&g_ui->node_hierarchy, slot.index, stack_u32Top(&g_ui->stack_parent));
@@ -1434,7 +1432,7 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 	g_ui->node_count_frame += 1;
 
 	node->id = id;
-	node->key = key;
+	node->hash = hash;
 	node->flags = node_flags;
 	node->inter_recursive_flags = inter_recursive_flags;
 	node->inter_recursive_mask = inter_recursive_mask;
@@ -1686,7 +1684,7 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 	const utf8 id = (utf8) { .buf = formatted->buf + hash_begin_offset, .len = formatted->len - hash_begin_index, .size = formatted->size - hash_begin_offset };
 	struct slot slot = ui_NodeLookup(&id);
 	struct ui_Node *node = slot.address;
-	u32 key = 0;
+	u32 hash = 0;
 
 	const u64 inter_recursive_flags = (flags & UI_INTER_RECURSIVE_ROOT)
 		? stack_u64Top(&g_ui->stack_recursive_interaction_flags)
@@ -1729,15 +1727,15 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 		node = slot.address;
 		if ((flags & UI_NON_HASHED) == 0)
 		{
-			key = Utf8Hash(id);
-			HashMapAdd(&g_ui->node_map, key, slot.index);
+			hash = Utf8Hash(id);
+			HashMapAdd(&g_ui->node_map, hash, slot.index);
 		}
 		ds_Assert((flags & UI_NON_HASHED) == UI_NON_HASHED || id.len > 0);
 	}
 	else
 	{
 		ds_Assert(node->last_frame_touched != g_ui->frame);
-		key = node->key;
+		hash = node->hash;
 		hi_AdoptNodeExclusive(&g_ui->node_hierarchy, slot.index, stack_u32Top(&g_ui->stack_parent));
 		inter = ui_NodeSetInteractions(node, node_flags, inter_recursive_mask);
 	}
@@ -1745,7 +1743,7 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 	g_ui->node_count_frame += 1;
 
 	node->id = id;
-	node->key = key;
+	node->hash = hash;
 	node->flags = node_flags;
 	node->inter_recursive_flags = inter_recursive_flags;
 	node->inter_recursive_mask = inter_recursive_mask;
@@ -2230,14 +2228,14 @@ void ui_TextAlignYPop(void)
 	stack_u32Pop(&g_ui->stack_text_alignment_y);
 }
 
-void ui_TextPadPush(const enum axis_2 axis, const enum alignment_x align)
+void ui_TextPadPush(const enum axis_2 axis, const f32 pad)
 {
-	stack_f32Push(g_ui->stack_text_pad + axis, align);
+	stack_f32Push(g_ui->stack_text_pad + axis, pad);
 }
 
-void ui_TextPadSet(const enum axis_2 axis, const enum alignment_x align)
+void ui_TextPadSet(const enum axis_2 axis, const f32 pad)
 {
-	stack_f32Set(g_ui->stack_text_pad + axis, align);
+	stack_f32Set(g_ui->stack_text_pad + axis, pad);
 }
 
 void ui_TextPadPop(const enum axis_2 axis)

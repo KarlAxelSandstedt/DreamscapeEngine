@@ -27,7 +27,7 @@ extern "C" {
 #include "ds_base.h"
 #include "ds_math.h"
 #include "ds_graphics.h"
-#include "asset_public.h"
+#include "ds_asset.h"
 #include "hierarchy_index.h"
 #include "ds_vector.h"
 #include "list.h"
@@ -732,7 +732,7 @@ struct ui_Node
 
 	u64		flags;			/* interaction, draw flags */
 	u64		last_frame_touched;	/* if not touched within new frame, the node is pruned at the end */
-	u32		key;			/* hashed key */
+	u32		hash;			/* hashed id */
 	u32		depth;			/* parent->depth + 1 or fixed depth */
 
 	u64		inter_recursive_mask;	/* union of ancestor and node recursive_flags */
@@ -934,8 +934,8 @@ void 	ui_TextAlignYPush(const enum alignment_y align);
 void 	ui_TextAlignY_set(const enum alignment_y align);
 void 	ui_TextAlignYPop(void);
 
-void 	ui_TextPadPush(const enum axis_2 axis, const enum alignment_x align);
-void 	ui_TextPadSet(const enum axis_2 axis, const enum alignment_x align);
+void 	ui_TextPadPush(const enum axis_2 axis, const f32 pad);
+void 	ui_TextPadSet(const enum axis_2 axis, const f32 pad);
 void 	ui_TextPadPop(const enum axis_2 axis);
 
 void 	ui_FlagsPush(const u64 flags);

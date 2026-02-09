@@ -30,7 +30,7 @@ extern "C" {
 #include "hash_map.h"
 #include "list.h"
 #include "cmd.h"
-#include "r_public.h"
+#include "ds_renderer.h"
 
 /*******************************************/
 /*                 led_init.c              */
@@ -183,7 +183,7 @@ void		led_Main(struct led *led, const u64 ns_delta);
 /*******************************************/
 
 /* level editor ui entrypoint */
-void 		led_ui_main(struct led *led);
+void 		led_UiMain(struct led *led);
 
 #ifdef __cplusplus
 } 

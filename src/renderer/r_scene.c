@@ -186,7 +186,8 @@ static void r_scene_sort_commands_and_prune_instances(void)
 			{
 				if (cached_instance->type == R_INSTANCE_PROXY3D)
 				{
-					HashMapRemove(&g_scene->proxy3d_to_instance_map, cached_instance->unit, index);
+					const u32 hash = (u32) XXH3_64bits(&cached_instance->unit, sizeof(u32));
+					HashMapRemove(&g_scene->proxy3d_to_instance_map, hash, index);
 				}
 				PoolRemove(&g_scene->instance_pool, index);
 				g_scene->cmd_cache[cache_i].allocated = 0;
@@ -224,7 +225,8 @@ static void r_scene_sort_commands_and_prune_instances(void)
 		{
 			if (cached_instance->type == R_INSTANCE_PROXY3D)
 			{
-				HashMapRemove(&g_scene->proxy3d_to_instance_map, cached_instance->unit, index);
+				const u32 hash = (u32) XXH3_64bits(&cached_instance->unit, sizeof(u32));
+				HashMapRemove(&g_scene->proxy3d_to_instance_map, hash, index);
 			}
 			PoolRemove(&g_scene->instance_pool, index);
 			g_scene->cmd_cache[cache_i].allocated = 0;
@@ -768,7 +770,7 @@ struct r_Instance *r_InstanceAdd(const u32 unit, const u64 cmd)
 		}
 	}
 
-	if (instance == NULL)
+	if (index == HASH_NULL)
 	{
 		struct slot slot = PoolAdd(&g_scene->instance_pool);
 		HashMapAdd(&g_scene->proxy3d_to_instance_map, hash, slot.index);

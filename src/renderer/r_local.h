@@ -26,10 +26,10 @@ extern "C" {
 
 #include "ds_base.h"
 #include "ds_math.h"
-#include "r_public.h"
+#include "ds_renderer.h"
 #include "bit_vector.h"
-#include "ui_public.h"
-#include "asset_public.h"
+#include "ds_ui.h"
+#include "ds_asset.h"
 #include "ds_gl.h"
 
 #define L_POSITION_OFFSET	0

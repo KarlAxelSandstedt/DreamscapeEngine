@@ -66,7 +66,7 @@ u64 PowerOfTwoCeil(const u64 n)
 
 u64 ds_AllocSizeCeil(const u64 size)
 {
-	const u64 mod = size & (g_mem_config->page_size - 1);
+	const u64 mod = size & (g_mem_config->alloc_size_min - 1);
 	return (mod) 
 		? size + g_mem_config->alloc_size_min - mod
 		: size;
@@ -95,6 +95,7 @@ void ds_MemApiInit(const u32 count_256B, const u32 count_1MB)
 	g_mem_config->page_size = getpagesize();
 	g_mem_config->alloc_size_min = g_mem_config->page_size;
 	ds_MemApiInitShared(count_256B, count_1MB);
+	ds_Assert( PowerOfTwoCheck( g_mem_config->alloc_size_min ) );
 }
 
 void *ds_Alloc(struct memSlot *slot, const u64 size, const u32 huge_pages)
@@ -124,17 +125,17 @@ void *ds_Alloc(struct memSlot *slot, const u64 size, const u32 huge_pages)
 
 void *ds_Realloc(struct memSlot *slot, const u64 size)
 {
-	if (size < slot->size)
+	if (slot->size < size)
 	{
 		if (slot->huge_pages)
 		{
-			struct memSlot newSlot;
-			if (ds_Alloc(&newSlot, size, HUGE_PAGES))
+			struct memSlot new_slot;
+			if (ds_Alloc(&new_slot, size, HUGE_PAGES))
 			{
-				memcpy(newSlot.address, slot->address, slot->size);
+				memcpy(new_slot.address, slot->address, slot->size);
 			}
 			ds_Free(slot);
-			*slot = newSlot;
+			*slot = new_slot;
 		}
 		else
 		{
@@ -790,7 +791,7 @@ struct pool PoolAllocInternal(struct arena *mem, const u32 length, const u64 slo
 		pool.length = length_used;
 		pool.count = 0;
 		pool.count_max = 0;
-		pool.next_free = POOL_NULL;
+		pool.next_free = POOL_INDEX_MASK;
 		pool.growable = growable;
 		PoisonAddress(pool.buf, pool.slot_size * pool.length);
 	}
@@ -810,7 +811,7 @@ void PoolFlush(struct pool *pool)
 {
 	pool->count = 0;
 	pool->count_max = 0;
-	pool->next_free = POOL_NULL;
+	pool->next_free = POOL_INDEX_MASK;
 	PoisonAddress(pool->buf, pool->slot_size * pool->length);
 }
 
@@ -847,10 +848,10 @@ struct slot PoolAdd(struct pool *pool)
 
 	struct slot allocation = { .address = NULL, .index = POOL_NULL };
 
-	u32* slot_state;
 	if (pool->count < pool->length)
 	{
-		if (pool->next_free != POOL_NULL)
+		u32 *slot_state;
+		if (pool->next_free != POOL_INDEX_MASK)
 		{
 			UnpoisonAddress(pool->buf + pool->next_free*pool->slot_size, pool->slot_allocation_offset);
 			UnpoisonAddress(pool->buf + pool->next_free*pool->slot_size + pool->slot_allocation_offset + sizeof(u32), pool->slot_size - pool->slot_allocation_offset - sizeof(u32));
@@ -879,7 +880,7 @@ struct slot PoolAdd(struct pool *pool)
 		UnpoisonAddress(pool->buf + pool->count_max*pool->slot_size, pool->slot_size);
 		allocation.address = pool->buf + pool->slot_size*pool->count_max;
 		allocation.index = pool->count_max;
-		slot_state = (u32 *) ((u8 *) allocation.address + pool->slot_allocation_offset);
+		u32 *slot_state = (u32 *) ((u8 *) allocation.address + pool->slot_allocation_offset);
 		*slot_state = 0;
 		pool->count_max += 1;
 		pool->count += 1;
@@ -897,7 +898,7 @@ struct slot GPoolAdd(struct pool *pool)
 	u32* slot_state;
 	if (pool->count < pool->length)
 	{
-		if (pool->next_free != POOL_NULL)
+		if (pool->next_free != POOL_INDEX_MASK)
 		{
 			UnpoisonAddress(pool->buf + pool->next_free*pool->slot_size, pool->slot_size);
 			allocation.address = pool->buf + pool->next_free*pool->slot_size;
@@ -945,9 +946,9 @@ void PoolRemove(struct pool *pool, const u32 index)
 
 	u8 *address = pool->buf + index*pool->slot_size;
 	u32 *slot_state = (u32 *) (address + pool->slot_allocation_offset);
-	ds_Assert(*slot_state <= 0x7fffffff);
+	ds_Assert( (*slot_state & POOL_ALLOCATION_MASK) == 0);
 
-	*slot_state = pool->next_free;
+	*slot_state = POOL_ALLOCATION_MASK | pool->next_free;
 	pool->next_free = index;
 	pool->count -= 1;
 

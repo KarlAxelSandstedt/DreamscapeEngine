@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14.3)
 
-project(Dreamscape LANGUAGES C)
+project(Dreamscape LANGUAGES C CXX)
 set(CPACK_PACKAGE_MAJOR "0")
 set(CPACK_PACKAGE_MINOR "1")
 set(CPACK_PACKAGE_PATCH "2")
@@ -170,6 +170,7 @@ target_link_libraries(${PROJECT_NAME}
 		"${PROJECT_NAME}::Graphics"
 		"${PROJECT_NAME}::Renderer"
 		"${PROJECT_NAME}::Editor"
+		"${PROJECT_NAME}::Asset"
 )
 
 #TODO remove, consider using DS_DEBUG instead, or if required, add DS_DEV
@@ -177,12 +178,39 @@ if (NOT CMAKE_BUILD_TYPE STREQUAL "Release")
 	add_compile_definitions(DS_DEV)
 endif()
 
-#TODO How do we expose library testing for the user, (Or developer)?
-#     For both the developer and the user, we want to expose the interative
-#     porting process: both the user and the developer is interested in what
-#     progressively more coupled sub-system is not working as expected, and
-#     this should be exposed in some form or another.
+######################### Testing ###########################
+
 set(DS_TEST_PATH "${CMAKE_CURRENT_SOURCE_DIR}/test")
+set(DS_TEST_EXECUTABLE "DreamscapeTest")
+
+option(DS_TEST OFF)
+option(DS_TEST_PHYSICS "Run physics engine tests" OFF)
+
+if (DS_TEST_PHYSICS)
+	set(DS_TEST ON)
+	set(DS_TEST_MODULE_PATH "${DS_TEST_PATH}/dynamics")
+endif ()
+
+if (DS_TEST)
+
+	if (DEFINED EMSCRIPTEN)
+
+		set(CMAKE_EXECUTABLE_SUFFIX ".html")
+		add_executable(${DS_TEST_EXECUTABLE} "${DS_TEST_MODULE_PATH}/wasm/main.c")
+
+	elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+
+		add_executable(${DS_TEST_EXECUTABLE} "${DS_TEST_MODULE_PATH}/linux/main.c")
+		
+	elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
+
+		add_executable(${DS_TEST_EXECUTABLE} WIN32 "${DS_TEST_MODULE_PATH}/windows/WinMain.c")
+
+	endif()
+
+	target_link_libraries(${DS_TEST_EXECUTABLE} PRIVATE Dreamscape)
+endif ()
+
 #if (kas_test_correctness)
 #	add_compile_definitions(KAS_TEST_CORRECTNESS)
 #	add_subdirectory("${TEST_PATH}")
@@ -193,53 +221,6 @@ set(DS_TEST_PATH "${CMAKE_CURRENT_SOURCE_DIR}/test")
 #	target_link_libraries(${PROJECT_NAME} PUBLIC kas_test)
 #endif ()
 
-#TODO: link to base, so it propagates WITHIN LIBRARY but nowhere else
-#if (TRACY_ENABLE)
-#	link_libraries(Tracy::TracyClient)
-#	include_directories(tracy/public)
-#	add_compile_definitions(DS_PROFILE)
-#endif ()
-
-
-#add_subdirectory("${DS_SRC_PATH}/misc")
-#add_subdirectory("${DS_SRC_PATH}/misc/ui")
-#add_subdirectory("${DS_SRC_PATH}/renderer")
-#add_subdirectory("${DS_SRC_PATH}/sys")
-#add_subdirectory("${DS_SRC_PATH}/sys/sdl3_wrapper")
-#add_subdirectory("${DS_SRC_PATH}/led")
-#add_subdirectory("${DS_SRC_PATH}/asset_system")
-#
-#link_libraries(kas_common)
-#link_libraries(log)
-
-#target_link_libraries(${PROJECT_NAME}
-#	INTERFACE
-#		system_graphics
-#		renderer
-#		asset_system
-#		led
-#	)
-#if (DEFINED EMSCRIPTEN)
-#	add_subdirectory(${DS_SRC_PATH}/sys/wasm)
-#	target_link_libraries(${PROJECT_NAME} PUBLIC wasm_interface)
-#elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-#	add_subdirectory(${DS_SRC_PATH}/sys/linux)
-#	target_link_libraries(${PROJECT_NAME} INTERFACE linux_interface)
-#elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
-#	add_subdirectory(${DS_SRC_PATH}/sys/windows)
-#	target_link_libraries(${PROJECT_NAME} INTERFACE windows_interface bcrypt)
-#
-#	# DLLs must be in same folder as exe? Not as on linux where we have rpath and such...
-#	add_custom_command(
-#		TARGET	${PROJECT_NAME} POST_BUILD
-#		COMMAND ${CMAKE_COMMAND} -E copy_if_different
-#			$<TARGET_FILE:SDL3::SDL3-shared>
-#			$<TARGET_FILE_DIR:${PROJECT_NAME}>
-#		VERBATIM
-#	)
-#endif ()
-
-#
 # For CPack and installation process, good information can be found at:
 # https://martin-fieber.de/blog/cmake-cpack-cross-platform-distributables/
 #

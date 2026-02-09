@@ -21,15 +21,15 @@
 #include <bcrypt.h>
 #include <stdio.h>
 
-#include "ds_common.h"
-#include "ds_random.h"
+#include "kas_common.h"
+#include "kas_random.h"
 #include "sys_public.h"
 #include "ds_led.h"
 #include "ds_renderer.h"
 
 static void win_init_rng(void)
 {
-#if defined(DS_TEST_CORRECTNESS)
+#if defined(KAS_TEST_CORRECTNESS)
 	u64 seed[4] = { 6712394175642371735lu, 15709062239796375561lu, 2231484769219996854lu, 779317575278281131lu };
 #else
 	u64 seed[4];
@@ -58,52 +58,52 @@ static void win_init_rng(void)
 		return;
 	}
 #endif
-	Xoshiro256Init(seed);
-	ThreadXoshiro256InitSequence();
+	g_xoshiro_256_init(seed);
+	thread_xoshiro_256_init_sequence();
 }
 
 int CALLBACK WinMain(HINSTANCE h_instance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
 {
 	win_init_rng();
 
-	struct arena mem_persistent = ArenaAlloc(32*1024*1024);
-	ds_PlatformApiInit(&mem_persistent);
-	ds_CmdApiInit();
-	ds_UiApiInit();
-	AssetInit(&mem_persistent);
-#if defined(DS_TEST_CORRECTNESS) || defined(DS_TEST_PERFORMANCE)
+	struct arena mem_persistent = arena_alloc(32*1024*1024);
+	system_resources_init(&mem_persistent);
+	cmd_alloc();
+	ui_init_global_state();
+	asset_database_init(&mem_persistent);
+#if defined(KAS_TEST_CORRECTNESS) || defined(KAS_TEST_PERFORMANCE)
 	test_main();
 #else
-	struct led *editor = led_Alloc();
+	struct led *editor = led_alloc();
 	
 	const u64 renderer_framerate = 144;	
-	r_Init(&mem_persistent, NSEC_PER_SEC / renderer_framerate, 16*1024*1024, 1024, &editor->render_mesh_db);
+	r_init(&mem_persistent, NSEC_PER_SEC / renderer_framerate, 16*1024*1024, 1024, &editor->render_mesh_db);
 	
 	u64 old_time = editor->ns;
 	while (editor->running)
 	{
-		ProfFrameMark;
+		PROF_FRAME_MARK;
 
-		ds_DeallocTaggedWindows();
+		system_free_tagged_windows();
 
 		task_context_frame_clear();
 
-		const u64 new_time = ds_TimeNs();
+		const u64 new_time = time_ns();
 		const u64 ns_tick = new_time - old_time;
 		old_time = new_time;
 
-		ds_ProcessEvents();
+		system_process_events();
 
-		led_Main(editor, ns_tick);
+		led_main(editor, ns_tick);
 		led_ui_main(editor);
-		r_EditorMain(editor);
+		r_led_main(editor);
 	}
 
-	led_Dealloc(editor);
-	AssetShutdown();
-	ds_CmdApiShutdown();
-	ds_PlatformApiShutdown();
-	ArenaFree(&mem_persistent);
+	led_dealloc(editor);
+	asset_database_cleanup();
+	cmd_free();
+	system_resources_cleanup();
+	arena_free(&mem_persistent);
 #endif
 	return 0;
 }

@@ -188,6 +188,7 @@ DWORD WINAPI ds_ThreadCloneStart(LPVOID void_thr)
 	struct dsThread *thr = void_thr;
 	thr->tid = GetCurrentThreadId();
 	thr->index = AtomicFetchAddRlx32(&a_index_counter, 1);
+	ThreadXoshiro256InitSequence();
 	ProfThreadNamed(thread_profiler_id[thr->index]);
 	thr->start(thr);
 

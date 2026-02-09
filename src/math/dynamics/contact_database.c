@@ -103,7 +103,7 @@ void cdb_Validate(const struct physicsPipeline *pipeline)
 
 			u32 prev, k, found; 
 			prev = NLL_NULL;
-			k = b1->first_contact_index;
+			k = b1->contact_first;
 			found = 0;
 			while (k != NLL_NULL)
 			{
@@ -132,7 +132,7 @@ void cdb_Validate(const struct physicsPipeline *pipeline)
 			ds_Assert(found);
  
 			prev = NLL_NULL;
-			k = b2->first_contact_index;
+			k = b2->contact_first;
 			found = 0;
 			while (k != NLL_NULL)
 			{
@@ -242,12 +242,12 @@ struct contact *cdb_ContactAdd(struct physicsPipeline *pipeline, const struct co
 			.key = key,
 			.cached_count = 0,
 		};
-		struct slot slot = nll_Add(&pipeline->c_db.contact_net, &cpy, body1->first_contact_index, body2->first_contact_index);
+		struct slot slot = nll_Add(&pipeline->c_db.contact_net, &cpy, body1->contact_first, body2->contact_first);
 		const u32 ci = slot.index; 
 		struct contact *c = slot.address; 
 
-		body1->first_contact_index = ci;
-		body2->first_contact_index = ci;
+		body1->contact_first = ci;
+		body2->contact_first = ci;
 
 		HashMapAdd(&pipeline->c_db.contact_map, (u32) key, ci);
 
@@ -274,14 +274,14 @@ void cdb_ContactRemove(struct physicsPipeline *pipeline, const u64 key, const u3
 	struct rigidBody *body0 = PoolAddress(&pipeline->body_pool, (u32) CONTACT_KEY_TO_BODY_0(c->key));
 	struct rigidBody *body1 = PoolAddress(&pipeline->body_pool, (u32) CONTACT_KEY_TO_BODY_1(c->key));
 	
-	if (body0->first_contact_index == index)
+	if (body0->contact_first == index)
 	{
-		body0->first_contact_index = c->nll_next[0];
+		body0->contact_first = c->nll_next[0];
 	}
 
-	if (body1->first_contact_index == index)
+	if (body1->contact_first == index)
 	{
-		body1->first_contact_index = c->nll_next[1];
+		body1->contact_first = c->nll_next[1];
 	}
 
 	PhysicsEventContactRemoved(pipeline, (u32) CONTACT_KEY_TO_BODY_0(c->key), (u32) CONTACT_KEY_TO_BODY_1(c->key));
@@ -292,8 +292,8 @@ void cdb_ContactRemove(struct physicsPipeline *pipeline, const u64 key, const u3
 void cdb_BodyRemoveContacts(struct physicsPipeline *pipeline, const u32 body_index)
 {
 	struct rigidBody *body = PoolAddress(&pipeline->body_pool, body_index);
-	u32 ci = body->first_contact_index;
-	body->first_contact_index = NLL_NULL;
+	u32 ci = body->contact_first;
+	body->contact_first = NLL_NULL;
 	while (ci != NLL_NULL)
 	{
 		struct contact *c = nll_Address(&pipeline->c_db.contact_net, ci);
@@ -318,9 +318,9 @@ void cdb_BodyRemoveContacts(struct physicsPipeline *pipeline, const u32 body_ind
 			body = PoolAddress(&pipeline->body_pool, CONTACT_KEY_TO_BODY_0(c->key));
 		}
 
-		if (body->first_contact_index == ci)
+		if (body->contact_first == ci)
 		{
-			body->first_contact_index = c->nll_next[1-next_i];
+			body->contact_first = c->nll_next[1-next_i];
 		}
 		const u32 ci_next = c->nll_next[next_i];
 
@@ -332,15 +332,18 @@ void cdb_BodyRemoveContacts(struct physicsPipeline *pipeline, const u32 body_ind
 	}
 }
 
-u32 *cdb_StaticRemoveContactsAndStoreAffectedIslands(struct arena *mem, u32 *count, struct physicsPipeline *pipeline, const u32 static_index)
+void cdb_StaticRemoveContactsAndUpdateIslands(struct physicsPipeline *pipeline, const u32 static_index)
 {
-	u32 *array = (u32 *) mem->stack_ptr;
-	*count = 0;
+	ArenaPushRecord(&pipeline->frame);
+
+	struct memArray arr = ArenaPushAlignedAll(&pipeline->frame, sizeof(u32), sizeof(u32));
+	u32 *island = arr.addr;
+	u32 island_count = 0;
 
 	struct rigidBody *body = PoolAddress(&pipeline->body_pool, static_index);
 	ds_Assert(body->island_index == ISLAND_STATIC);
-	u32 ci = body->first_contact_index;
-	body->first_contact_index = NLL_NULL;
+	u32 ci = body->contact_first;
+	body->contact_first = NLL_NULL;
 	while (ci != NLL_NULL)
 	{
 		struct contact *c = nll_Address(&pipeline->c_db.contact_net, ci);
@@ -356,17 +359,24 @@ u32 *cdb_StaticRemoveContactsAndStoreAffectedIslands(struct arena *mem, u32 *cou
 			body = PoolAddress(&pipeline->body_pool, CONTACT_KEY_TO_BODY_0(c->key));
 		}
 
-		if (body->first_contact_index == ci)
+		if (body->contact_first == ci)
 		{
-			body->first_contact_index = c->nll_next[1-next_i];
+			body->contact_first = c->nll_next[1-next_i];
 		}
 		const u32 ci_next = c->nll_next[next_i];
 		struct island *is = PoolAddress(&pipeline->is_db.island_pool, body->island_index);
+
 		if ((is->flags & ISLAND_SPLIT) == 0)
 		{
-			ArenaPushPackedMemcpy(mem, &body->island_index, sizeof(body->island_index));
+			if (island_count == arr.len)
+			{
+				LogString(T_SYSTEM, S_FATAL, "Stack OOM in cdb_StaticRemoveContactsAndUpdateIslands");
+				FatalCleanupAndExit();
+			}
+			island[island_count++] = body->island_index;
+			
 			is->flags |= ISLAND_SPLIT;
-			*count += 1;
+			dll_Remove(&is->contact_list, pipeline->c_db.contact_net.pool.buf, ci);
 		}
 
 		PhysicsEventContactRemoved(pipeline, (u32) CONTACT_KEY_TO_BODY_0(c->key), (u32) CONTACT_KEY_TO_BODY_1(c->key));
@@ -376,7 +386,25 @@ u32 *cdb_StaticRemoveContactsAndStoreAffectedIslands(struct arena *mem, u32 *cou
 		ci = ci_next;
 	}
 
-	return array;
+	for (u32 i = 0; i < island_count; ++i)
+	{
+		struct island *is = PoolAddress(&pipeline->is_db.island_pool, island[i]);
+		if (is->contact_list.count > 0)
+		{
+			isdb_SplitIsland(&pipeline->frame, pipeline, island[i]);
+		}
+		else
+		{
+			is->flags &= ~(ISLAND_SPLIT);
+			if (!(is->flags & ISLAND_AWAKE))
+			{
+				PhysicsEventIslandAwake(pipeline, island[i]);	
+			}
+			is->flags |= ISLAND_SLEEP_RESET | ISLAND_AWAKE;
+		}
+	}
+
+	ArenaPopRecord(&pipeline->frame);
 }
 
 struct contact *cdb_ContactLookup(const struct cdb *c_db, const u32 i1, const u32 i2)

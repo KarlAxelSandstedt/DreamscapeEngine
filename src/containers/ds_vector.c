@@ -128,13 +128,13 @@ struct stackVec3 stackVec3Alloc(struct arena *arena, const u32 length, const u32
 	}
 	else
 	{
-		const u64 size = PowerOfTwoCeil( sizeof(stack.arr[0]) * ds_AllocSizeCeil(length) );
+		const u64 size = ds_AllocSizeCeil( sizeof(stack.arr[0])*length );
 		stack.length = (u32) (size / sizeof(stack.arr[0]));
-
 		stack.arr = (size >= 1024*1024) 
 			? ds_Alloc(&stack.mem_slot, size, HUGE_PAGES)
 			: ds_Alloc(&stack.mem_slot, size, NO_HUGE_PAGES);
 	}
+	PoisonAddress(stack.arr, stack.length*sizeof(stack.arr[0]));
 
 	if (length > 0 && !stack.arr)				
 	{							
@@ -158,6 +158,8 @@ void stackVec3Push(struct stackVec3 *stack, const vec3 val)
 		if (stack->growable)										
 		{												
 			stack->arr = ds_Realloc(&stack->mem_slot, 2*stack->mem_slot.size);			
+			PoisonAddress(stack->arr, stack->mem_slot.size);
+			UnpoisonAddress(stack->arr, stack->length*sizeof(stack->arr[0]));
 			stack->length = (u32) (stack->mem_slot.size / sizeof(stack->arr[0]));
 			if (!stack->arr)									
 			{											
@@ -169,6 +171,7 @@ void stackVec3Push(struct stackVec3 *stack, const vec3 val)
 			FatalCleanupAndExit();									
 		}												
 	}													
+	UnpoisonAddress(stack->arr + stack->next, sizeof(stack->arr[0]));
 	stack->arr[stack->next][0] = val[0];
 	stack->arr[stack->next][1] = val[1];
 	stack->arr[stack->next][2] = val[2];
@@ -187,10 +190,12 @@ void stackVec3Pop(struct stackVec3 *stack)
 {								
 	ds_Assert(stack->next);					
 	stack->next -= 1;					
+	PoisonAddress(stack->arr + stack->next, sizeof(stack->arr[0]));
 }
 
 void stackVec3Flush(struct stackVec3 *stack)
 {								
+	PoisonAddress(stack->arr, stack->length*sizeof(stack->arr[0]));
 	stack->next = 0;					
 }
 
@@ -219,14 +224,14 @@ struct stackVec4 stackVec4Alloc(struct arena *arena, const u32 length, const u32
 	}
 	else
 	{
-		const u64 size = PowerOfTwoCeil( ds_AllocSizeCeil( sizeof(stack.arr[0])*length ) );
+		const u64 size = ds_AllocSizeCeil( sizeof(stack.arr[0])*length );
 		stack.length = (u32) (size / sizeof(stack.arr[0]));
 
 		stack.arr = (size >= 1024*1024) 
 			? ds_Alloc(&stack.mem_slot, size, HUGE_PAGES)
 			: ds_Alloc(&stack.mem_slot, size, NO_HUGE_PAGES);
 	}
-
+	PoisonAddress(stack.arr, stack.length*sizeof(stack.arr[0]));
 	if (length > 0 && !stack.arr)				
 	{							
 		FatalCleanupAndExit();				
@@ -249,6 +254,8 @@ void stackVec4Push(struct stackVec4 *stack, const vec4 val)
 		if (stack->growable)										
 		{												
 			stack->arr = ds_Realloc(&stack->mem_slot, 2*stack->mem_slot.size);			
+			PoisonAddress(stack->arr, stack->mem_slot.size);
+			UnpoisonAddress(stack->arr, stack->length*sizeof(stack->arr[0]));
 			stack->length = (u32) (stack->mem_slot.size / sizeof(stack->arr[0]));
 			if (!stack->arr)									
 			{											
@@ -260,6 +267,7 @@ void stackVec4Push(struct stackVec4 *stack, const vec4 val)
 			FatalCleanupAndExit();									
 		}												
 	}													
+	UnpoisonAddress(stack->arr + stack->next, sizeof(stack->arr[0]));
 	stack->arr[stack->next][0] = val[0];
 	stack->arr[stack->next][1] = val[1];
 	stack->arr[stack->next][2] = val[2];
@@ -280,10 +288,12 @@ void stackVec4Pop(struct stackVec4 *stack)
 {								
 	ds_Assert(stack->next);					
 	stack->next -= 1;					
+	PoisonAddress(stack->arr + stack->next, sizeof(stack->arr[0]));
 }
 
 void stackVec4Flush(struct stackVec4 *stack)
 {								
+	PoisonAddress(stack->arr, stack->length*sizeof(stack->arr[0]));
 	stack->next = 0;					
 }
 

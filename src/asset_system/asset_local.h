@@ -28,7 +28,7 @@ extern "C" {
 #include <stdlib.h>
 
 #include "ds_base.h"
-#include "asset_public.h"
+#include "ds_asset.h"
 
 /***************************** SPIRTE SHEET FILE FORMAT *****************************/
 

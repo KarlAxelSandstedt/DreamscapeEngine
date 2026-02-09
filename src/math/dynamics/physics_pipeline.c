@@ -124,7 +124,7 @@ struct physicsPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 initial
 	struct task_stream *stream = task_stream_init(&pipeline.frame);
 
 	pipeline.debug_count = g_arch_config->logical_core_count;
-	pipeline.debug = ArenaPush(mem, g_arch_config->logical_core_count * sizeof(struct collisionDebug));
+	pipeline.debug = malloc(g_arch_config->logical_core_count * sizeof(struct collisionDebug));
 	for (u32 i = 0; i < pipeline.debug_count; ++i)
 	{
 		pipeline.debug[i].stack_segment = stack_visualSegmentAlloc(NULL, 1024, GROWABLE);
@@ -149,6 +149,7 @@ void PhysicsPipelineFree(struct physicsPipeline *pipeline)
 	{
 		stack_visualSegmentFree(&pipeline->debug[i].stack_segment);
 	}
+	free(pipeline->debug);
 #endif
 	BvhFree(&pipeline->dynamic_tree);
 	cdb_Free(&pipeline->c_db);
@@ -302,8 +303,6 @@ struct slot PhysicsPipelineRigidBodyAlloc(struct physicsPipeline *pipeline, stru
 	Vec3Add(proxy.center, body->local_box.center, body->position);
 	if (body->shape_type == COLLISION_SHAPE_TRI_MESH)
 	{
-		Vec3Print("center", body->local_box.center);
-		Vec3Print("center", body->position);
 		Vec3Set(proxy.hw, 
 			body->local_box.hw[0],
 			body->local_box.hw[1],
@@ -318,7 +317,7 @@ struct slot PhysicsPipelineRigidBodyAlloc(struct physicsPipeline *pipeline, stru
 	}
 	body->proxy = DbvhInsert(&pipeline->dynamic_tree, slot.index, &proxy);
 
-	body->first_contact_index = NLL_NULL;
+	body->contact_first = NLL_NULL;
 	if (body->flags & RB_DYNAMIC)
 	{
 		isdb_InitIslandFromBody(pipeline, slot.index);
@@ -545,13 +544,15 @@ static void InternalMergeIslands(struct arena *mem_frame, struct physicsPipeline
 			/* dynamic-static */
 			case 0x2:
 			{
-				isdb_AddContactToIsland(pipeline, is1, pipeline->contact_new[i]);
+				struct island *is = PoolAddress(&pipeline->is_db.island_pool, is1);
+				dll_Append(&is->contact_list, pipeline->c_db.contact_net.pool.buf, pipeline->contact_new[i]);
 			} break;
 
 			/* static-dynamic */
 			case 0x1:
 			{
-				isdb_AddContactToIsland(pipeline, is2, pipeline->contact_new[i]);
+				struct island *is = PoolAddress(&pipeline->is_db.island_pool, is2);
+				dll_Append(&is->contact_list, pipeline->c_db.contact_net.pool.buf, pipeline->contact_new[i]);
 			} break;
 		}
 	}
@@ -563,7 +564,7 @@ static void InternalRemoveContactsAndTagSplitIslands(struct arena *mem_frame, st
 	ProfZone;
 	if (pipeline->c_db.contact_net.pool.count == 0) 
 	{ 
-	ProfZoneEnd;
+		ProfZoneEnd;
 		return; 
 	}
 
@@ -602,17 +603,11 @@ static void InternalRemoveContactsAndTagSplitIslands(struct arena *mem_frame, st
 			const u32 b2 = CONTACT_KEY_TO_BODY_1(c->key);
 			const struct rigidBody *body1 = PoolAddress(&pipeline->body_pool, b1);
 			const struct rigidBody *body2 = PoolAddress(&pipeline->body_pool, b2);
-			if (body1->island_index != ISLAND_STATIC)
+			if (body1->island_index != ISLAND_STATIC && body2->island_index != ISLAND_STATIC)
 			{
 				struct island *is = isdb_BodyToIsland(pipeline, b1);
 				ds_Assert(is->contact_list.count > 0);
 				isdb_TagForSplitting(pipeline, b1);
-			}
-			else if (body2->island_index != ISLAND_STATIC)
-			{
-				struct island *is = isdb_BodyToIsland(pipeline, b2);
-				ds_Assert(is->contact_list.count > 0);
-				isdb_TagForSplitting(pipeline, b2);
 			}
 
 			cdb_ContactRemove(pipeline, c->key, (u32) ci);
@@ -795,54 +790,7 @@ static void PhysicsPipelineRigidBodyDealloc(struct physicsPipeline *pipeline, co
 	}
 	else
 	{
-		ArenaPushRecord(&pipeline->frame);
-		u32 island_count;
-		u32 *island = cdb_StaticRemoveContactsAndStoreAffectedIslands(&pipeline->frame, &island_count, pipeline, handle);
-		for (u32 i = 0; i < island_count; ++i)
-		{
-			struct island *is = PoolAddress(&pipeline->is_db.island_pool, island[i]);
-			struct contact *prev = NULL;
-			struct contact *entry;
-			u32 prev_index = ISLAND_NULL;
-
-			for (u32 index = is->contact_list.first; index != LL_NULL; index = ll_Next(entry))
-			{
-				entry = nll_Address(&pipeline->c_db.contact_net, index);
-				if (BitVecGetBit(&pipeline->c_db.contacts_persistent_usage, index) == 0)
-				{
-					if (prev)
-					{
-						prev->ll_next = entry->ll_next;
-					}
-					else
-					{
-						is->contact_list.first = entry->ll_next;
-					}
-					is->contact_list.count -= 1;
-				}
-				else
-				{
-					prev_index = index;
-					prev = entry;
-				}
-			} 
-
-			is->contact_list.last = prev_index;
-			if (is->contact_list.count > 0)
-			{
-				isdb_SplitIsland(&pipeline->frame, pipeline, island[i]);
-			}
-			else
-			{
-				is->flags &= ~(ISLAND_SPLIT);
-				if (!(is->flags & ISLAND_AWAKE))
-				{
-					PhysicsEventIslandAwake(pipeline, island[i]);	
-				}
-				is->flags |= ISLAND_SLEEP_RESET | ISLAND_AWAKE;
-			}
-		}
-		ArenaPopRecord(&pipeline->frame);
+		cdb_StaticRemoveContactsAndUpdateIslands(pipeline, handle);	
 	}
 	PoolRemove(&pipeline->body_pool, handle);
 	PhysicsEventBodyRemoved(pipeline, handle);
@@ -873,6 +821,8 @@ static void InternalRemoveMarkedBodies(struct physicsPipeline *pipeline)
 
 void InternalPhysicsPipelineSimulateFrame(struct physicsPipeline *pipeline, const f32 delta)
 {
+	fprintf(stderr, "%lu\n", pipeline->frames_completed);
+
 	InternalRemoveMarkedBodies(pipeline);
 
 	/* update, if possible, any pending values in contact solver config */

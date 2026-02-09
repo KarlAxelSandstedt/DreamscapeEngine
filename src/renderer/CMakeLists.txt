@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.14.3)
 
 add_library(DreamscapeRenderer STATIC
-	"${DS_INCLUDE_PATH}/r_public.h"
+	"${DS_INCLUDE_PATH}/ds_renderer.h"
 	r_local.h
 	r_init.c
 	r_main.c

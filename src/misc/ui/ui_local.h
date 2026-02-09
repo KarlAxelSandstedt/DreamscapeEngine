@@ -20,7 +20,7 @@
 #ifndef __UI_LOCAL_H__
 #define __UI_LOCAL_H__
 
-#include "ui_public.h"
+#include "ds_ui.h"
 #include "cmd.h"
 
 /* UI CMDS */
