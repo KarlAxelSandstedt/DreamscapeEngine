@@ -10,8 +10,8 @@ else
 	CMAKE_GENERATOR="Unix Makefiles"
 fi
 
-cmake -S . -B build -Dthread_sanitizer=ON -Dkas_debug=ON -G $CMAKE_GENERATOR
+cmake -S . -B build -Dkas_debug=ON -DDS_TEST_PHYSICS=ON -DDS_TSAN=ON -DDS_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Debug -G $CMAKE_GENERATOR
 cd build
 cmake --build . --parallel
-./engine_sandbox
-cd ..
+./DreamscapeTest
+cDreamscapeTestd ..

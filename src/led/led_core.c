@@ -1576,11 +1576,16 @@ static void led_engine_run(struct led *led)
 				{
 					body = PoolAddress(&led->physics.body_pool, i);
 					const struct led_node *node = PoolAddress(&led->node_pool, body->entity);
-					const struct island *is = PoolAddress(&led->physics.is_db.island_pool, body->island_index);
 					struct r_Proxy3d *proxy = r_Proxy3dAddress(node->proxy);
-					(RB_IS_DYNAMIC(body))
-						? Vec4Copy(proxy->color, is->color)
-						: Vec4Copy(proxy->color, led->physics.static_color);
+					if (body->island_index == ISLAND_STATIC)
+					{
+						Vec4Copy(proxy->color, led->physics.static_color);
+					}
+					else
+					{
+						const struct island *is = PoolAddress(&led->physics.is_db.island_pool, body->island_index);
+						Vec4Copy(proxy->color, is->color);
+					}
 				}
 			} break;
 		}
@@ -1656,18 +1661,21 @@ static void led_engine_run(struct led *led)
 			case PHYSICS_EVENT_ISLAND_NEW:
 			{
 				struct island *is = PoolAddress(&led->physics.is_db.island_pool, event->island);
-				Vec4Set(is->color, 
-						RngF32Normalized(), 
-						RngF32Normalized(), 
-						RngF32Normalized(), 
-						0.7f);
-				if (led->physics.body_color_mode == RB_COLOR_MODE_ISLAND)
+				if (PoolSlotAllocated(is))
 				{
-					led_EngineColorBodies(led, event->island, is->color);
-				}
-				else if (led->physics.body_color_mode == RB_COLOR_MODE_SLEEP)
-				{
-					led_EngineColorBodies(led, event->island, led->physics.awake_color);
+					Vec4Set(is->color, 
+							RngF32Normalized(), 
+							RngF32Normalized(), 
+							RngF32Normalized(), 
+							0.7f);
+					if (led->physics.body_color_mode == RB_COLOR_MODE_ISLAND)
+					{
+						led_EngineColorBodies(led, event->island, is->color);
+					}
+					else if (led->physics.body_color_mode == RB_COLOR_MODE_SLEEP)
+					{
+						led_EngineColorBodies(led, event->island, led->physics.awake_color);
+					}
 				}
 			} break;
 

@@ -603,13 +603,24 @@ static void InternalRemoveContactsAndTagSplitIslands(struct arena *mem_frame, st
 			const u32 b2 = CONTACT_KEY_TO_BODY_1(c->key);
 			const struct rigidBody *body1 = PoolAddress(&pipeline->body_pool, b1);
 			const struct rigidBody *body2 = PoolAddress(&pipeline->body_pool, b2);
-			if (body1->island_index != ISLAND_STATIC && body2->island_index != ISLAND_STATIC)
+			ds_Assert(body1->island_index != ISLAND_STATIC || body2->island_index != ISLAND_STATIC);
+
+			struct island *is;
+			if (body1->island_index != ISLAND_STATIC)
 			{
-				struct island *is = isdb_BodyToIsland(pipeline, b1);
-				ds_Assert(is->contact_list.count > 0);
-				isdb_TagForSplitting(pipeline, b1);
+				is = isdb_BodyToIsland(pipeline, b1);
+				if (body2->island_index != ISLAND_STATIC)
+				{
+					isdb_TagForSplitting(pipeline, b1);
+				}
+			}
+			else
+			{
+				is = isdb_BodyToIsland(pipeline, b2);
 			}
 
+			ds_Assert(is->contact_list.count > 0);
+			dll_Remove(&is->contact_list, pipeline->c_db.contact_net.pool.buf, ci);
 			cdb_ContactRemove(pipeline, c->key, (u32) ci);
 		}
 		bit += 64;
@@ -821,8 +832,6 @@ static void InternalRemoveMarkedBodies(struct physicsPipeline *pipeline)
 
 void InternalPhysicsPipelineSimulateFrame(struct physicsPipeline *pipeline, const f32 delta)
 {
-	fprintf(stderr, "%lu\n", pipeline->frames_completed);
-
 	InternalRemoveMarkedBodies(pipeline);
 
 	/* update, if possible, any pending values in contact solver config */
