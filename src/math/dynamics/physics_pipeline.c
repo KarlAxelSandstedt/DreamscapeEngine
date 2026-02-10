@@ -42,16 +42,16 @@ static void ThreadSetCollisionDebug(void *task_addr)
 {
 	struct task *task = task_addr;
 	struct worker *worker = task->executor;
-	const struct physicsPipeline *pipeline = task->input;
+	const struct ds_RigidBodyPipeline *pipeline = task->input;
 	tl_debug = pipeline->debug + ds_ThreadSelfIndex();
 
 	AtomicFetchAddRel32(&g_a_thread_counter, 1);
 	while (AtomicLoadAcq32(&g_a_thread_counter) != pipeline->debug_count);
 }
 
-struct physicsPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct strdb *shape_db, struct strdb *prefab_db)
+struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct strdb *shape_db, struct strdb *prefab_db)
 {
-	struct physicsPipeline pipeline =
+	struct ds_RigidBodyPipeline pipeline =
 	{
 		.gravity = { 0.0f, -GRAVITY_CONSTANT_DEFAULT, 0.0f },
 		.ns_tick = ns_tick,
@@ -85,9 +85,11 @@ struct physicsPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 initial
 
 	ds_AssertString(PowerOfTwoCheck(initial_size), "For simplicity of future data structures, expect pipeline sizes to be powers of two");
 
-	pipeline.body_pool = PoolAlloc(NULL, initial_size, struct rigidBody, GROWABLE);
-	pipeline.body_marked_list = dll_Init(struct rigidBody);
-	pipeline.body_non_marked_list = dll_Init(struct rigidBody);
+	pipeline.body_pool = PoolAlloc(NULL, initial_size, struct ds_RigidBody, GROWABLE);
+	pipeline.body_marked_list = dll_Init(struct ds_RigidBody);
+	pipeline.body_non_marked_list = dll_Init(struct ds_RigidBody);
+
+	pipeline.shape_pool = PoolAlloc(NULL, initial_size, struct ds_Shape, GROWABLE);
 
 	pipeline.event_pool = PoolAlloc(NULL, 256, struct physicsEvent, GROWABLE);
 	pipeline.event_list = dll_Init(struct physicsEvent);
@@ -142,7 +144,7 @@ struct physicsPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 initial
 	return pipeline;
 }
 
-void PhysicsPipelineFree(struct physicsPipeline *pipeline)
+void PhysicsPipelineFree(struct ds_RigidBodyPipeline *pipeline)
 {
 #ifdef DS_PHYSICS_DEBUG
 	for (u32 i = 0; i < pipeline->debug_count; ++i)
@@ -156,9 +158,10 @@ void PhysicsPipelineFree(struct physicsPipeline *pipeline)
 	isdb_Dealloc(&pipeline->is_db);
 	PoolDealloc(&pipeline->body_pool);
 	PoolDealloc(&pipeline->event_pool);
+	PoolDealloc(&pipeline->shape_pool);
 }
 
-static void InternalPhysicsPipelineClearFrame(struct physicsPipeline *pipeline)
+static void InternalPhysicsPipelineClearFrame(struct ds_RigidBodyPipeline *pipeline)
 {
 #ifdef DS_PHYSICS_DEBUG
 	for (u32 i = 0; i < pipeline->debug_count; ++i)
@@ -177,7 +180,7 @@ static void InternalPhysicsPipelineClearFrame(struct physicsPipeline *pipeline)
 }
 
 
-void PhysicsPipelineFlush(struct physicsPipeline *pipeline)
+void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
 {
 #ifdef DS_PHYSICS_DEBUG
 	for (u32 i = 0; i < pipeline->debug_count; ++i)
@@ -193,6 +196,8 @@ void PhysicsPipelineFlush(struct physicsPipeline *pipeline)
 	dll_Flush(&pipeline->body_marked_list);
 	dll_Flush(&pipeline->body_non_marked_list);
 
+	PoolFlush(&pipeline->shape_pool);
+
 	PoolFlush(&pipeline->event_pool);
 	dll_Flush(&pipeline->event_list);
 
@@ -201,7 +206,7 @@ void PhysicsPipelineFlush(struct physicsPipeline *pipeline)
 	pipeline->ns_elapsed = 0;
 }
 
-void PhysicsPipelineValidate(const struct physicsPipeline *pipeline)
+void PhysicsPipelineValidate(const struct ds_RigidBodyPipeline *pipeline)
 {
 	ProfZone;
 
@@ -211,7 +216,7 @@ void PhysicsPipelineValidate(const struct physicsPipeline *pipeline)
 	ProfZoneEnd;
 }
 
-static void RigidBodyUpdateLocalBox(struct rigidBody *body, const struct collisionShape *shape)
+static void RigidBodyUpdateLocalBox(struct ds_RigidBody *body, const struct collisionShape *shape)
 {
 	vec3 min = { F32_INFINITY, F32_INFINITY, F32_INFINITY };
 	vec3 max = { -F32_INFINITY, -F32_INFINITY, -F32_INFINITY };
@@ -268,12 +273,16 @@ static void RigidBodyUpdateLocalBox(struct rigidBody *body, const struct collisi
 	Vec3Add(body->local_box.center, min, body->local_box.hw);
 }
 
-struct slot PhysicsPipelineRigidBodyAlloc(struct physicsPipeline *pipeline, struct rigidBodyPrefab *prefab, const vec3 position, const quat rotation, const u32 entity)
+struct slot PhysicsPipelineRigidBodyAlloc(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBodyPrefab *prefab, const vec3 position, const quat rotation, const u32 entity)
 {
 	struct slot slot = PoolAdd(&pipeline->body_pool);
 	PhysicsEventBodyNew(pipeline, slot.index);
-	struct rigidBody *body = slot.address;
+	struct ds_RigidBody *body = slot.address;
 	dll_Append(&pipeline->body_non_marked_list, pipeline->body_pool.buf, slot.index);
+
+	body->shape_list = dll_Init(struct ds_Shape);
+	QuatCopy(body->t_world.rotation, rotation);
+	Vec3Copy(body->t_world.position, position);
 
 	body->entity = entity;
 	Vec3Copy(body->position, position);
@@ -330,13 +339,13 @@ struct slot PhysicsPipelineRigidBodyAlloc(struct physicsPipeline *pipeline, stru
 	return slot;
 }
 
-static void InternalUpdateDynamicTree(struct physicsPipeline *pipeline)
+static void InternalUpdateDynamicTree(struct ds_RigidBodyPipeline *pipeline)
 {
 	ProfZone;
 	struct aabb world_AABB;
 
 	const u32 flags = RB_ACTIVE | RB_DYNAMIC | (g_solver_config->sleep_enabled * RB_AWAKE);
-	struct rigidBody *b = NULL;
+	struct ds_RigidBody *b = NULL;
 	for (u32 i = pipeline->body_non_marked_list.first; i != DLL_NULL; i = dll_Next(b))
 	{
 		b = PoolAddress(&pipeline->body_pool, i);
@@ -361,7 +370,7 @@ static void InternalUpdateDynamicTree(struct physicsPipeline *pipeline)
 	ProfZoneEnd;
 }
 
-static void InternalPushProxyOverlaps(struct arena *mem_frame, struct physicsPipeline *pipeline)
+static void InternalPushProxyOverlaps(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline)
 {
 	ProfZone;
 	pipeline->proxy_overlap = DbvhPushOverlapPairs(mem_frame, &pipeline->proxy_overlap_count, &pipeline->dynamic_tree);
@@ -381,7 +390,7 @@ static void ThreadPushContacts(void *task_addr)
 	struct task *task = task_addr;
 	struct worker *worker = task->executor;
 	const struct task_range *range = task->range;
-	const struct physicsPipeline *pipeline = task->input;
+	const struct ds_RigidBodyPipeline *pipeline = task->input;
 	const struct dbvhOverlap *proxy_overlap = range->base;
 
 	struct tpcOutput *out = ArenaPush(&worker->mem_frame, sizeof(struct tpcOutput));
@@ -389,7 +398,7 @@ static void ThreadPushContacts(void *task_addr)
 	out->result = ArenaPush(&worker->mem_frame, range->count * sizeof(struct collisionResult));
 
 	const f32 margin = (pipeline->margin_on) ? pipeline->margin : 0.0f;
-	const struct rigidBody *b1, *b2;
+	const struct ds_RigidBody *b1, *b2;
 
 	for (u64 i = 0; i < range->count; ++i)
 	{
@@ -423,7 +432,7 @@ static void ThreadPushContacts(void *task_addr)
 	ProfZoneEnd;
 }
 
-static void InternalParallelPushContacts(struct arena *mem_frame, struct physicsPipeline *pipeline)
+static void InternalParallelPushContacts(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline)
 {
 	struct task_bundle *bundle = task_bundle_split_range(
 			mem_frame, 
@@ -521,14 +530,14 @@ static void InternalParallelPushContacts(struct arena *mem_frame, struct physics
 	ProfZoneEnd;
 }
 
-static void InternalMergeIslands(struct arena *mem_frame, struct physicsPipeline *pipeline)
+static void InternalMergeIslands(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline)
 {
 	ProfZone;
 	for (u32 i = 0; i < pipeline->contact_new_count; ++i)
 	{
 		struct contact *c = nll_Address(&pipeline->c_db.contact_net, pipeline->contact_new[i]);
-		const struct rigidBody *body1 = PoolAddress(&pipeline->body_pool, c->cm.i1);
-		const struct rigidBody *body2 = PoolAddress(&pipeline->body_pool, c->cm.i2);
+		const struct ds_RigidBody *body1 = PoolAddress(&pipeline->body_pool, c->cm.i1);
+		const struct ds_RigidBody *body2 = PoolAddress(&pipeline->body_pool, c->cm.i2);
 		const u32 is1 = body1->island_index;
 		const u32 is2 = body2->island_index;
 		const u32 d1 = (is1 != ISLAND_STATIC) ? 0x2 : 0x0;
@@ -559,7 +568,7 @@ static void InternalMergeIslands(struct arena *mem_frame, struct physicsPipeline
 	ProfZoneEnd;
 }
 
-static void InternalRemoveContactsAndTagSplitIslands(struct arena *mem_frame, struct physicsPipeline *pipeline)
+static void InternalRemoveContactsAndTagSplitIslands(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline)
 {
 	ProfZone;
 	if (pipeline->c_db.contact_net.pool.count == 0) 
@@ -601,8 +610,8 @@ static void InternalRemoveContactsAndTagSplitIslands(struct arena *mem_frame, st
 			/* tag island, if any exist, to split */
 			const u32 b1 = CONTACT_KEY_TO_BODY_0(c->key);
 			const u32 b2 = CONTACT_KEY_TO_BODY_1(c->key);
-			const struct rigidBody *body1 = PoolAddress(&pipeline->body_pool, b1);
-			const struct rigidBody *body2 = PoolAddress(&pipeline->body_pool, b2);
+			const struct ds_RigidBody *body1 = PoolAddress(&pipeline->body_pool, b1);
+			const struct ds_RigidBody *body2 = PoolAddress(&pipeline->body_pool, b2);
 			ds_Assert(body1->island_index != ISLAND_STATIC || body2->island_index != ISLAND_STATIC);
 
 			struct island *is;
@@ -630,7 +639,7 @@ static void InternalRemoveContactsAndTagSplitIslands(struct arena *mem_frame, st
 	ProfZoneEnd;
 }
 
-static void InternalSplitIslands(struct arena *mem_frame, struct physicsPipeline *pipeline)
+static void InternalSplitIslands(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline)
 {
 	ProfZone;
 	/* TODO: Parallelize island splitting */
@@ -645,7 +654,7 @@ static void InternalSplitIslands(struct arena *mem_frame, struct physicsPipeline
 	ProfZoneEnd;
 }
 
-static void InternalParallelSolveIslands(struct arena *mem_frame, struct physicsPipeline *pipeline, const f32 delta) {
+static void InternalParallelSolveIslands(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, const f32 delta) {
 	ProfZone;
 
 	/* acquire any task resources */
@@ -705,14 +714,14 @@ static void InternalParallelSolveIslands(struct arena *mem_frame, struct physics
 	ProfZoneEnd;
 }
 
-void PhysicsPipelineSleepEnable(struct physicsPipeline *pipeline)
+void PhysicsPipelineSleepEnable(struct ds_RigidBodyPipeline *pipeline)
 {
 	ds_Assert(g_solver_config->sleep_enabled == 0);
 	if (!g_solver_config->sleep_enabled)
 	{
 		g_solver_config->sleep_enabled = 1;
 		const u32 body_flags = RB_ACTIVE | RB_DYNAMIC;
-		struct rigidBody *body = NULL;
+		struct ds_RigidBody *body = NULL;
 		for (u32 i = pipeline->body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 		{
 			body = PoolAddress(&pipeline->body_pool, i);
@@ -732,14 +741,14 @@ void PhysicsPipelineSleepEnable(struct physicsPipeline *pipeline)
 	}
 }
 
-void PhysicsPipelineSleepDisable(struct physicsPipeline *pipeline)
+void PhysicsPipelineSleepDisable(struct ds_RigidBodyPipeline *pipeline)
 {
 	ds_Assert(g_solver_config->sleep_enabled == 1);
 	if (g_solver_config->sleep_enabled)
 	{
 		g_solver_config->sleep_enabled = 0;
 		const u32 body_flags = RB_ACTIVE | RB_DYNAMIC;
-		struct rigidBody *body = NULL;
+		struct ds_RigidBody *body = NULL;
 		for (u32 i = pipeline->body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 		{
 			body = PoolAddress(&pipeline->body_pool, i);
@@ -759,7 +768,7 @@ void PhysicsPipelineSleepDisable(struct physicsPipeline *pipeline)
 	}
 }
 
-static void InternalUpdateSolverConfig(struct physicsPipeline *pipeline)
+static void InternalUpdateSolverConfig(struct ds_RigidBodyPipeline *pipeline)
 {
 	g_solver_config->warmup_solver = g_solver_config->pending_warmup_solver;
 	g_solver_config->block_solver = g_solver_config->pending_block_solver;
@@ -781,9 +790,9 @@ static void InternalUpdateSolverConfig(struct physicsPipeline *pipeline)
 
 }
 
-static void PhysicsPipelineRigidBodyDealloc(struct physicsPipeline *pipeline, const u32 handle)
+static void PhysicsPipelineRigidBodyDealloc(struct ds_RigidBodyPipeline *pipeline, const u32 handle)
 {
-	struct rigidBody *body = PoolAddress(&pipeline->body_pool, handle);
+	struct ds_RigidBody *body = PoolAddress(&pipeline->body_pool, handle);
 	ds_Assert(PoolSlotAllocated(body));
 
 	strdb_Dereference(pipeline->shape_db, body->shape_handle);
@@ -807,9 +816,9 @@ static void PhysicsPipelineRigidBodyDealloc(struct physicsPipeline *pipeline, co
 	PhysicsEventBodyRemoved(pipeline, handle);
 }
 
-void PhysicsPipelineRigidBodyTagForRemoval(struct physicsPipeline *pipeline, const u32 handle)
+void PhysicsPipelineRigidBodyTagForRemoval(struct ds_RigidBodyPipeline *pipeline, const u32 handle)
 {
-	struct rigidBody *b = PoolAddress(&pipeline->body_pool, handle);
+	struct ds_RigidBody *b = PoolAddress(&pipeline->body_pool, handle);
 	if (!RB_IS_MARKED(b))
 	{
 		b->flags |= RB_MARKED_FOR_REMOVAL;
@@ -818,9 +827,9 @@ void PhysicsPipelineRigidBodyTagForRemoval(struct physicsPipeline *pipeline, con
 	}
 }
 
-static void InternalRemoveMarkedBodies(struct physicsPipeline *pipeline)
+static void InternalRemoveMarkedBodies(struct ds_RigidBodyPipeline *pipeline)
 {
-	struct rigidBody *b = NULL;
+	struct ds_RigidBody *b = NULL;
 	for (u32 i = pipeline->body_marked_list.first; i != DLL_NULL; i = dll_Next(b))
 	{
 		b = PoolAddress(&pipeline->body_pool, i);
@@ -830,7 +839,7 @@ static void InternalRemoveMarkedBodies(struct physicsPipeline *pipeline)
 	dll_Flush(&pipeline->body_marked_list);
 }
 
-void InternalPhysicsPipelineSimulateFrame(struct physicsPipeline *pipeline, const f32 delta)
+void InternalPhysicsPipelineSimulateFrame(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
 {
 	InternalRemoveMarkedBodies(pipeline);
 
@@ -850,7 +859,7 @@ void InternalPhysicsPipelineSimulateFrame(struct physicsPipeline *pipeline, cons
 	PHYSICS_PIPELINE_VALIDATE(pipeline);
 }
 
-void PhysicsPipelineTick(struct physicsPipeline *pipeline)
+void PhysicsPipelineTick(struct ds_RigidBodyPipeline *pipeline)
 {
 	ProfZone;
 
@@ -865,7 +874,7 @@ void PhysicsPipelineTick(struct physicsPipeline *pipeline)
 	ProfZoneEnd;
 }
 
-u32f32 PhysicsPipelineRaycastParameter(struct arena *mem_tmp, const struct physicsPipeline *pipeline, const struct ray *ray)
+u32f32 PhysicsPipelineRaycastParameter(struct arena *mem_tmp, const struct ds_RigidBodyPipeline *pipeline, const struct ray *ray)
 {
 	ArenaPushRecord(mem_tmp);
 
@@ -881,7 +890,7 @@ u32f32 PhysicsPipelineRaycastParameter(struct arena *mem_tmp, const struct physi
 		if (bt_LeafCheck(info.node + tuple.u))
 		{
 			const u32 bi = info.node[tuple.u].bt_left;
-			const struct rigidBody *body = (struct rigidBody *) pipeline->body_pool.buf + bi;
+			const struct ds_RigidBody *body = (struct ds_RigidBody *) pipeline->body_pool.buf + bi;
 			const f32 t = BodyRaycastParameter(pipeline, body, ray);
 			if (t < info.hit.f)
 			{
@@ -899,7 +908,7 @@ u32f32 PhysicsPipelineRaycastParameter(struct arena *mem_tmp, const struct physi
 	return info.hit;
 }
 
-struct physicsEvent *PhysicsPipelineEventPush(struct physicsPipeline *pipeline)
+struct physicsEvent *PhysicsPipelineEventPush(struct ds_RigidBodyPipeline *pipeline)
 {
 	struct slot slot = PoolAdd(&pipeline->event_pool);
 	dll_Append(&pipeline->event_list, pipeline->event_pool.buf, slot.index);
@@ -1101,7 +1110,7 @@ static void StaticsInternalCalculateFaceIntegrals(f32 integrals[10], const struc
 	integrals[T_XY + y_i] += S_yya * n[y_i] / 2.0f;
 }
 
-void PrefabStaticsSetup(struct rigidBodyPrefab *prefab, struct collisionShape *shape, const f32 density)
+void PrefabStaticsSetup(struct ds_RigidBodyPrefab *prefab, struct collisionShape *shape, const f32 density)
 {
 	f32 I_xx = 0.0f;
 	f32 I_yy = 0.0f;

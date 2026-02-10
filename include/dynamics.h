@@ -31,8 +31,185 @@ extern "C" {
 #include "hash_map.h"
 #include "bit_vector.h"
 
-struct rigidBody;
-struct physicsPipeline;
+struct ds_RigidBodyPipeline;
+
+/*
+ds_Shape
+========
+ds_Shapes are convex building blocks for constructing a ds_RigidBody. The structure
+describes the volume's physical properties and its orientation within the local
+frame of the body. A non-convex ds_RigidBody can be constructed by using multiple 
+ds_Shapes.
+
+
+::: Internals :::
+When a user wishes to add a shape to a body, we will be working in some arbitrary 
+space. For example, If we are working within blender and constructing our rigid
+body by placing and rotating a set of shapes. Then, our arbitrary space is the one 
+within blender. When we place this body within our world, we expect each sequence 
+of transformation of the shape to be	
+
+	Shape => Local Rotate => Local Offset	(Orientation within body frame)
+	      => Body Rotate => Body Offset	(Orientation within world space)
+
+Now, if at runtime we wish to add an additional shape to the body, we still expect
+the transform we supply with the shape to refer to this arbitrary space (unless we
+have updated to a new arbitrary space at some point, which would have entailed 
+updating the body's position and mass properties, and recalculating the local 
+transforms of all of its shapes). For this to work, we must allow the local frame
+of the body to be arbitrary; it is up to the user to update the local frame if he
+or she so wishes. Hence, we cannot readjust the local frame of the body to always
+have the center of mass as its origin; by doing so. Thus, in addition to storing 
+the local-to-world transform, ds_RigidBody must also store its center of mass:
+
+	ds_RigidBody
+	{
+		(...)
+		ds_Transform	transform;	// Local frame to World transform
+		vec3		center_of_mass;	
+	}
+
+We now derive the transformations needed assuming an arbitrary center of mass.
+
+*/
+
+struct ds_Shape
+{
+	POOL_SLOT_STATE;
+	DLL_SLOT_STATE;				/* Node links in ds_RigidBody shape_list 	local*/
+
+	u32 			body;		/* ds_RigidBody owner of node 			*/
+	u32			contact_first;	/* index to first contact in shape's list (nll) */
+
+	enum collisionShapeType cshape_type;	/* collisionShape type 				*/
+	u32			cshape_handle;	/* handle to referenced collisionShape 		*/
+
+	f32			density;	/* kg/m^3					*/
+	f32 			restitution;	/* Range [0.0, 1.0] : bounciness  		*/
+	f32 			friction;	/* Range [0.0, 1.0] : bound tangent impulses to 
+						   mix(b1->friction, b2->friction)*(normal impuse) */
+
+	ds_Transform		t_local;	/* local body frame transform 			*/
+
+	/* DYNAMIC STATE */
+	struct aabb		local_box;		/* bounding AABB */
+};
+
+struct ds_ShapePrefab
+{
+	utf8			cshape_id;	/* utf8 identifier of collisionShape 		*/
+	f32			density;	/* kg/m^3					*/
+	f32 			restitution;	/* Range [0.0, 1.0] : bounciness  		*/
+	f32 			friction;	/* Range [0.0, 1.0] : bound tangent impulses to 
+						   mix(b1->friction, b2->friction)*(normal impuse) */
+};
+
+/* 
+ * Allocates a shape according to the values set in Prefab and with given local body frame transform. On success, 
+ * a valid address and index to the shape is returned. If the ID is invalid, a default collisionShape is assigned
+ * to the shape. On failure, (NULL, POOL_NULL) is returned. 
+ */
+struct slot 	ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_ShapePrefab *prefab, const ds_Transform *t, const u32 body);
+/*
+ * Remove the specified shape and update the physics state into a valid state.
+ */
+void		ds_ShapeRemove(struct ds_RigidBodyPipeline *pipeline, const u32 shape);
+
+
+/*
+rigid_body
+========== 
+physics engine entity 
+*/
+
+#define RB_ACTIVE		((u32) 1 << 0)
+#define RB_DYNAMIC		((u32) 1 << 1)
+#define RB_AWAKE		((u32) 1 << 2)
+#define RB_ISLAND		((u32) 1 << 3)
+#define RB_MARKED_FOR_REMOVAL	((u32) 1 << 4)
+
+#define RB_IS_ACTIVE(b)		((b->flags & RB_ACTIVE) >> 0u)
+#define RB_IS_DYNAMIC(b)	((b->flags & RB_DYNAMIC) >> 1u)
+#define RB_IS_AWAKE(b)		((b->flags & RB_AWAKE) >> 2u)
+#define RB_IS_ISLAND(b)		((b->flags & RB_ISLAND) >> 3u)
+#define RB_IS_MARKED(b)		((b->flags & RB_MARKED_FOR_REMOVAL) >> 4u)
+
+#define IS_ACTIVE(flags)	((flags & RB_ACTIVE) >> 0u)
+#define IS_DYNAMIC(flags)	((flags & RB_DYNAMIC) >> 1u)
+#define IS_AWAKE(flags)		((flags & RB_AWAKE) >> 2u)
+#define IS_ISLAND(flags)	((flags & RB_ISLAND) >> 3u)
+#define IS_MARKED(flags)	((flags & RB_MARKED_FOR_REMOVAL) >> 4u)
+
+struct ds_RigidBody
+{
+	DLL2_SLOT_STATE;	/* island body_list node */
+	DLL_SLOT_STATE;		/* body marked/non-marked list node */
+	POOL_SLOT_STATE;
+
+	struct dll	shape_list;		/* list of convex shapes constructing the rigid body 	*/
+	ds_Transform	t_world;		/* local body frame to world transform 			*/
+	vec3		local_center_of_mass;	/* local body frame center of mass 			*/
+
+	/* dynamic state */
+
+	struct aabb	local_box;		/* bounding AABB */
+
+	quat 		rotation;		
+	vec3 		velocity;
+	vec3 		angular_velocity;
+
+	quat 		angular_momentum;	/* TODO: */
+	vec3 		position;		/* center of mass world frame position */
+	vec3 		linear_momentum;   	/* L = mv */
+
+	u32		contact_first;
+	u32		island_index;
+
+	/* static state */
+	u32 		entity;
+	u32 		flags;
+	i32 		proxy;
+	f32 		margin;
+
+	enum collisionShapeType shape_type;
+	u32		shape_handle;
+
+	mat3 		inertia_tensor;		/* intertia tensor of body frame */
+	mat3 		inv_inertia_tensor;
+	f32 		mass;			/* total body mass */
+	f32 		restitution;
+	f32 		friction;		/* Range [0.0, 1.0f] : bound tangent impulses to 
+						   mix(b1->friction, b2->friction)*(normal impuse) */
+	f32 		low_velocity_time;	/* Current uninterrupted time body has been in a low velocity state */
+};
+
+/* Process the body's shape list and set its internal mass properties accordingly. */
+void ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, const u32 body);
+
+/*
+rigid_body_prefab
+=================
+rigid body prefabs: used within editor and level editor file format, contains resuable preset values for creating
+new bodies.
+*/
+struct ds_RigidBodyPrefab
+{
+	STRING_DATABASE_SLOT_STATE;
+	u32	shape;
+
+	mat3 	inertia_tensor;		/* intertia tensor of body frame */
+	mat3 	inv_inertia_tensor;
+	f32 	mass;			/* total body mass */
+	f32	density;
+	f32 	restitution;
+	f32 	friction;		/* Range [0.0, 1.0f] : bound tangent impulses to 
+						   mix(b1->friction, b2->friction)*(normal impuse) */
+	u32	dynamic;		/* dynamic body is true, static if false */
+};
+
+void 	PrefabStaticsSetup(struct ds_RigidBodyPrefab *prefab, struct collisionShape *shape, const f32 density);
+
+
 
 /*
 =================================================================================================================
@@ -111,15 +288,15 @@ struct cdb
 struct cdb 	cdb_Alloc(struct arena *mem_persistent, const u32 initial_size);
 void 		cdb_Free(struct cdb *c_db);
 void		cdb_Flush(struct cdb *c_db);
-void		cdb_Validate(const struct physicsPipeline *pipeline);
+void		cdb_Validate(const struct ds_RigidBodyPipeline *pipeline);
 void		cdb_ClearFrame(struct cdb *c_db);
 /* Update or add new contact depending on if the contact persisted from prevous frame. */
-struct contact *cdb_ContactAdd(struct physicsPipeline *pipeline, const struct contactManifold *cm, const u32 i1, const u32 i2);
-void 		cdb_ContactRemove(struct physicsPipeline *pipeline, const u64 key, const u32 index);
+struct contact *cdb_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct contactManifold *cm, const u32 i1, const u32 i2);
+void 		cdb_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u64 key, const u32 index);
 /* Remove all contacts associated with the given body */
-void		cdb_BodyRemoveContacts(struct physicsPipeline *pipeline, const u32 body_index);
+void		cdb_BodyRemoveContacts(struct ds_RigidBodyPipeline *pipeline, const u32 body_index);
 /* Remove all contacts associated with the given static body and update affected islands */
-void		cdb_StaticRemoveContactsAndUpdateIslands(struct physicsPipeline *pipeline, const u32 static_index);
+void		cdb_StaticRemoveContactsAndUpdateIslands(struct ds_RigidBodyPipeline *pipeline, const u32 static_index);
 struct contact *cdb_ContactLookup(const struct cdb *c_db, const u32 b1, const u32 b2);
 u32 		cdb_ContactLookupIndex(const struct cdb *c_db, const u32 i1, const u32 i2);
 void 		cdb_UpdatePersistentContactsUsage(struct cdb *c_db);
@@ -237,7 +414,7 @@ struct island
 	POOL_SLOT_STATE;
 	DLL_SLOT_STATE;
 
-	struct rigidBody **	bodies;	
+	struct ds_RigidBody **	bodies;	
 	struct contact 	**	contacts;
 	u32 *			body_index_map; /* body_index -> local indices of bodies in island:
 						 * is->bodies[i] = pipeline->bodies[b] => 
@@ -271,7 +448,7 @@ struct isdb
 #define IS_DB_VALIDATE(pipeline)	
 #endif
 
-struct physicsPipeline;
+struct ds_RigidBodyPipeline;
 
 /* Setup and allocate memory for new database */
 struct isdb 	isdb_Alloc(struct arena *mem_persistent, const u32 initial_size);
@@ -282,29 +459,29 @@ void		isdb_Flush(struct isdb *is_db);
 /* Clear any frame related data */
 void		isdb_ClearFrame(struct isdb *is_db);
 /* remove island resources from database */
-void 		isdb_IslandRemove(struct physicsPipeline *pipeline, struct island *is);
+void 		isdb_IslandRemove(struct ds_RigidBodyPipeline *pipeline, struct island *is);
 /* remove island resources related to body, and possibly the whole island, from database */
-void 		isdb_IslandRemoveBodyResources(struct physicsPipeline *pipeline, const u32 island_index, const u32 body);
+void 		isdb_IslandRemoveBodyResources(struct ds_RigidBodyPipeline *pipeline, const u32 island_index, const u32 body);
 /* Debug printing of island */
-void 		isdb_PrintIsland(FILE *file, const struct physicsPipeline *pipeline, const u32 island, const char *desc);
+void 		isdb_PrintIsland(FILE *file, const struct ds_RigidBodyPipeline *pipeline, const u32 island, const char *desc);
 /* Check if the database appears to be valid */
-void 		isdb_Validate(const struct physicsPipeline *pipeline);
+void 		isdb_Validate(const struct ds_RigidBodyPipeline *pipeline);
 /* Setup new island from single body */
-struct island *	isdb_InitIslandFromBody(struct physicsPipeline *pipeline, const u32 body);
+struct island *	isdb_InitIslandFromBody(struct ds_RigidBodyPipeline *pipeline, const u32 body);
 /* Add contact to island */
-void 		isdb_AddContactToIsland(struct physicsPipeline *pipeline, const u32 island, const u32 contact);
+void 		isdb_AddContactToIsland(struct ds_RigidBodyPipeline *pipeline, const u32 island, const u32 contact);
 /* Return island that body is assigned to */
-struct island *	isdb_BodyToIsland(struct physicsPipeline *pipeline, const u32 body);
+struct island *	isdb_BodyToIsland(struct ds_RigidBodyPipeline *pipeline, const u32 body);
 /* Reserve enough memory to fit all possible split */
 void		isdb_ReserveSplitsMemory(struct arena *mem_frame, struct isdb *is_db);
 /* Release any unused reserved possible split memory */
 void		isdb_ReleaseUnusedSplitsMemory(struct arena *mem_frame, struct isdb *is_db);
 /* Tag the island that the body is in for splitting and push it onto split memory (if we havn't already) */
-void 		isdb_TagForSplitting(struct physicsPipeline *pipeline, const u32 body);
+void 		isdb_TagForSplitting(struct ds_RigidBodyPipeline *pipeline, const u32 body);
 /* Merge islands (Or simply update if new local contact) using new contact */
-void 		isdb_MergeIslands(struct physicsPipeline *pipeline, const u32 ci, const u32 b1, const u32 b2);
+void 		isdb_MergeIslands(struct ds_RigidBodyPipeline *pipeline, const u32 ci, const u32 b1, const u32 b2);
 /* Split island, or remake if no split happens: TODO: Make thread-safe  */
-void 		isdb_SplitIsland(struct arena *mem_tmp, struct physicsPipeline *pipeline, const u32 island_to_split);
+void 		isdb_SplitIsland(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, const u32 island_to_split);
 
 /********* Threaded Island API *********/
 
@@ -320,7 +497,7 @@ struct islandSolveOutput
 struct islandSolveInput
 {
 	struct island *is;
-	struct physicsPipeline *pipeline;
+	struct ds_RigidBodyPipeline *pipeline;
 	struct islandSolveOutput *out;
 	f32 timestep;
 };
@@ -454,7 +631,7 @@ struct solver
 	u32			body_count;
 	u32			contact_count;
 
-	struct rigidBody **	bodies;
+	struct ds_RigidBody **	bodies;
 	mat3ptr			Iw_inv;		/* inverted world inertia tensors */
 	struct velocityConstraint *vcs;	
 
@@ -464,7 +641,7 @@ struct solver
 };
 
 struct solver *	SolverInitBodyData(struct arena *mem, struct island *is, const f32 timestep);
-void 		SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, const struct physicsPipeline *pipeline, const struct island *is);
+void 		SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, const struct ds_RigidBodyPipeline *pipeline, const struct island *is);
 void 		SolverIterateVelocityConstraints(struct solver *solver);
 void 		SolverWarmup(struct solver *solver, const struct island *is);
 void 		SolverCacheImpulse(struct solver *solver, const struct island *is);
@@ -474,90 +651,6 @@ void 		SolverCacheImpulse(struct solver *solver, const struct island *is);
 |						Physics Pipeline			  	      	    	|
 =================================================================================================================
 */
-
-/*
-rigid_body
-========== 
-physics engine entity 
-*/
-
-#define RB_ACTIVE		((u32) 1 << 0)
-#define RB_DYNAMIC		((u32) 1 << 1)
-#define RB_AWAKE		((u32) 1 << 2)
-#define RB_ISLAND		((u32) 1 << 3)
-#define RB_MARKED_FOR_REMOVAL	((u32) 1 << 4)
-
-#define RB_IS_ACTIVE(b)		((b->flags & RB_ACTIVE) >> 0u)
-#define RB_IS_DYNAMIC(b)	((b->flags & RB_DYNAMIC) >> 1u)
-#define RB_IS_AWAKE(b)		((b->flags & RB_AWAKE) >> 2u)
-#define RB_IS_ISLAND(b)		((b->flags & RB_ISLAND) >> 3u)
-#define RB_IS_MARKED(b)		((b->flags & RB_MARKED_FOR_REMOVAL) >> 4u)
-
-#define IS_ACTIVE(flags)	((flags & RB_ACTIVE) >> 0u)
-#define IS_DYNAMIC(flags)	((flags & RB_DYNAMIC) >> 1u)
-#define IS_AWAKE(flags)		((flags & RB_AWAKE) >> 2u)
-#define IS_ISLAND(flags)	((flags & RB_ISLAND) >> 3u)
-#define IS_MARKED(flags)	((flags & RB_MARKED_FOR_REMOVAL) >> 4u)
-
-struct rigidBody
-{
-	DLL2_SLOT_STATE;	/* island body_list node */
-	DLL_SLOT_STATE;		/* body marked/non-marked list node */
-	POOL_SLOT_STATE;
-	/* dynamic state */
-	struct aabb	local_box;		/* bounding AABB */
-
-	quat 		rotation;		
-	vec3 		velocity;
-	vec3 		angular_velocity;
-
-	quat 		angular_momentum;	/* TODO: */
-	vec3 		position;		/* center of mass world frame position */
-	vec3 		linear_momentum;   	/* L = mv */
-
-	u32		contact_first;
-	u32		island_index;
-
-	/* static state */
-	u32 		entity;
-	u32 		flags;
-	i32 		proxy;
-	f32 		margin;
-
-	enum collisionShapeType shape_type;
-	u32		shape_handle;
-
-	mat3 		inertia_tensor;		/* intertia tensor of body frame */
-	mat3 		inv_inertia_tensor;
-	f32 		mass;			/* total body mass */
-	f32 		restitution;
-	f32 		friction;		/* Range [0.0, 1.0f] : bound tangent impulses to 
-						   mix(b1->friction, b2->friction)*(normal impuse) */
-	f32 		low_velocity_time;	/* Current uninterrupted time body has been in a low velocity state */
-};
-
-/*
-rigid_body_prefab
-=================
-rigid body prefabs: used within editor and level editor file format, contains resuable preset values for creating
-new bodies.
-*/
-struct rigidBodyPrefab
-{
-	STRING_DATABASE_SLOT_STATE;
-	u32	shape;
-
-	mat3 	inertia_tensor;		/* intertia tensor of body frame */
-	mat3 	inv_inertia_tensor;
-	f32 	mass;			/* total body mass */
-	f32	density;
-	f32 	restitution;
-	f32 	friction;		/* Range [0.0, 1.0f] : bound tangent impulses to 
-						   mix(b1->friction, b2->friction)*(normal impuse) */
-	u32	dynamic;		/* dynamic body is true, static if false */
-};
-
-void 	PrefabStaticsSetup(struct rigidBodyPrefab *prefab, struct collisionShape *shape, const f32 density);
 
 #define UNITS_PER_METER		1.0f
 #define UNITS_PER_DECIMETER	0.1f
@@ -668,7 +761,7 @@ extern const char **body_color_mode_str;
 /*
  * Physics Pipeline
  */
-struct physicsPipeline 
+struct ds_RigidBodyPipeline 
 {
 	struct arena 		frame;			/* frame memory */
 
@@ -683,6 +776,8 @@ struct physicsPipeline
 	struct pool		body_pool;
 	struct dll		body_marked_list;	/* bodies marked for removal */
 	struct dll		body_non_marked_list;	/* bodies alive and non-marked  */
+
+	struct pool		shape_pool;
 
 	struct pool		event_pool;
 	struct dll		event_list;
@@ -732,25 +827,25 @@ struct physicsPipeline
 /**************** PHYISCS PIPELINE API ****************/
 
 /* Initialize a new growable physics pipeline; ns_tick is the duration of a physics frame. */
-struct physicsPipeline	PhysicsPipelineAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct strdb *shape_db, struct strdb *prefab_db);
+struct ds_RigidBodyPipeline	PhysicsPipelineAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct strdb *shape_db, struct strdb *prefab_db);
 /* free pipeline resources */
-void 			PhysicsPipelineFree(struct physicsPipeline *physics_pipeline);
+void 			PhysicsPipelineFree(struct ds_RigidBodyPipeline *physics_pipeline);
 /* flush pipeline resources */
-void			PhysicsPipelineFlush(struct physicsPipeline *physics_pipeline);
+void			PhysicsPipelineFlush(struct ds_RigidBodyPipeline *physics_pipeline);
 /* pipeline main method: simulate a single physics frame and update internal state  */
-void 			PhysicsPipelineTick(struct physicsPipeline *pipeline);
+void 			PhysicsPipelineTick(struct ds_RigidBodyPipeline *pipeline);
 /* allocate new rigid body in pipeline and return its slot */
-struct slot		PhysicsPipelineRigidBodyAlloc(struct physicsPipeline *pipeline, struct rigidBodyPrefab *prefab, const vec3 position, const quat rotation, const u32 entity);
+struct slot		PhysicsPipelineRigidBodyAlloc(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBodyPrefab *prefab, const vec3 position, const quat rotation, const u32 entity);
 /* deallocate a collision shape associated with the given handle. If no shape is found, do nothing */
-void			PhysicsPipelineRigidBodyTagForRemoval(struct physicsPipeline *pipeline, const u32 handle);
+void			PhysicsPipelineRigidBodyTagForRemoval(struct ds_RigidBodyPipeline *pipeline, const u32 handle);
 /* validate and ds_Assert internal state of physics pipeline */
-void			PhysicsPipelineValidate(const struct physicsPipeline *pipeline);
+void			PhysicsPipelineValidate(const struct ds_RigidBodyPipeline *pipeline);
 /* If hit, return parameter (body,t) of ray at first collision. Otherwise return (U32_MAX, F32_INFINITY) */
-u32f32 			PhysicsPipelineRaycastParameter(struct arena *mem_tmp, const struct physicsPipeline *pipeline, const struct ray *ray);
+u32f32 			PhysicsPipelineRaycastParameter(struct arena *mem_tmp, const struct ds_RigidBodyPipeline *pipeline, const struct ray *ray);
 /* enable sleeping in pipeline */
-void 			PhysicsPipelineSleepEnable(struct physicsPipeline *pipeline);
+void 			PhysicsPipelineSleepEnable(struct ds_RigidBodyPipeline *pipeline);
 /* disable sleeping in pipeline */
-void 			PhysicsPipelineSleepDisable(struct physicsPipeline *pipeline);
+void 			PhysicsPipelineSleepDisable(struct ds_RigidBodyPipeline *pipeline);
 
 #ifdef DS_PHYSICS_DEBUG
 #define PHYSICS_PIPELINE_VALIDATE(pipeline)	PhysicsPipelineValidate(pipeline)
@@ -761,7 +856,7 @@ void 			PhysicsPipelineSleepDisable(struct physicsPipeline *pipeline);
 /**************** PHYISCS PIPELINE INTERNAL API ****************/
 
 /* push physics event into pipeline memory and return pointer to allocated event */
-struct physicsEvent *	PhysicsPipelineEventPush(struct physicsPipeline *pipeline);
+struct physicsEvent *	PhysicsPipelineEventPush(struct ds_RigidBodyPipeline *pipeline);
 
 #ifdef __cplusplus
 } 

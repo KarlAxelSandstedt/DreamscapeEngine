@@ -23,7 +23,7 @@
 #include "dynamics.h"
 
 /* used in contact solver to cleanup the code from if-statements */
-struct rigidBody static_body = { 0 };
+struct ds_RigidBody static_body = { 0 };
 
 
 struct solverConfig config_storage = { 0 };
@@ -90,12 +90,12 @@ struct solver *SolverInitBodyData(struct arena *mem, struct island *is, const f3
 
 	for (u32 i = 0; i < is->body_list.count; ++i)
 	{	
-		const struct rigidBody *b = solver->bodies[i];
+		const struct ds_RigidBody *b = solver->bodies[i];
 
 		/* setup inverted world intertia tensors */
 		mat3ptr mi = solver->Iw_inv + i;
 		Mat3Quat(rot, b->rotation);
-		Mat3Mul(tmp1, rot, ((struct rigidBody *) b)->inv_inertia_tensor);
+		Mat3Mul(tmp1, rot, ((struct ds_RigidBody *) b)->inv_inertia_tensor);
 		Mat3Transpose(tmp2, rot);
 		Mat3Mul(*mi, tmp1, tmp2);
 
@@ -134,7 +134,7 @@ struct solver *SolverInitBodyData(struct arena *mem, struct island *is, const f3
 	return solver;
 }
 
-void SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, const struct physicsPipeline *pipeline, const struct island *is)
+void SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, const struct ds_RigidBodyPipeline *pipeline, const struct island *is)
 {
 	solver->vcs = ArenaPush(mem, solver->contact_count * sizeof(struct velocityConstraint));
 
@@ -147,8 +147,8 @@ void SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, con
 	{			
 		struct velocityConstraint *vc = solver->vcs + i;
 
-		const struct rigidBody *b1 = PoolAddress(&pipeline->body_pool, is->contacts[i]->cm.i1);
-		const struct rigidBody *b2 = PoolAddress(&pipeline->body_pool, is->contacts[i]->cm.i2);
+		const struct ds_RigidBody *b1 = PoolAddress(&pipeline->body_pool, is->contacts[i]->cm.i1);
+		const struct ds_RigidBody *b2 = PoolAddress(&pipeline->body_pool, is->contacts[i]->cm.i2);
 			
 		const u32 b1_static = (b1->island_index == ISLAND_STATIC) ? 1 : 0; 
 		const u32 b2_static = (b2->island_index == ISLAND_STATIC) ? 1 : 0; 

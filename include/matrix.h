@@ -67,9 +67,35 @@ void Mat2VecMul(vec2 dst, mat2 mat, const vec2 vec);
 void Mat3VecMul(vec3 dst, mat3 mat, const vec3 vec);
 void Mat4VecMul(vec4 dst, mat4 mat, const vec4 vec);
 
+/* dst = a + b */
 void Mat2Add(mat2 dst, mat2 a, mat2 b);
 void Mat3Add(mat3 dst, mat3 a, mat3 b);
 void Mat4Add(mat4 dst, mat4 a, mat4 b);
+
+/* dst += to_add */
+void Mat2AddSelf(mat2 dst, mat2 to_add);
+void Mat3AddSelf(mat3 dst, mat3 to_add);
+void Mat4AddSelf(mat4 dst, mat4 to_add);
+
+/* dst = a - b */
+void Mat2Sub(mat2 dst, mat2 a, mat2 b);
+void Mat3Sub(mat3 dst, mat3 a, mat3 b);
+void Mat4Sub(mat4 dst, mat4 a, mat4 b);
+
+/* dst -= to_sub */
+void Mat2SubSelf(mat2 dst, mat2 to_sub);
+void Mat3SubSelf(mat3 dst, mat3 to_sub);
+void Mat4SubSelf(mat4 dst, mat4 to_sub);
+
+/* dst = src*val */
+void Mat2Scale(mat2 dst, mat2 src, const f32 val);
+void Mat3Scale(mat3 dst, mat3 src, const f32 val);
+void Mat4Scale(mat4 dst, mat4 src, const f32 val);
+
+/* dst *= val */
+void Mat2ScaleSelf(mat2 dst, const f32 val);
+void Mat3ScaleSelf(mat3 dst, const f32 val);
+void Mat4ScaleSelf(mat4 dst, const f32 val);
 
 /* dst = a*b */
 void Mat2Mul(mat2 dst, mat2 a, mat2 b);
@@ -99,6 +125,11 @@ f32 Mat4AbsMax(mat4 src);
 void Mat2Copy(mat2 dst, mat2 src);
 void Mat3Copy(mat3 dst, mat3 src);
 void Mat4Copy(mat4 dst, mat4 src);
+
+/* Matrix = a * b^T */
+void Mat2OuterProduct(mat2 dst, const vec2 a, const vec2 b);
+void Mat3OuterProduct(mat3 dst, const vec3 a, const vec3 b);
+void Mat4OuterProduct(mat4 dst, const vec4 a, const vec4 b);
 
 #ifdef __cplusplus
 } 

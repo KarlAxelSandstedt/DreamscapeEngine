@@ -32,6 +32,12 @@ extern "C" {
 #include "geometry.h"
 #include "quaternion.h"
 
+typedef struct
+{
+	quat	rotation;
+	vec3	position;
+} ds_Transform;
+
 #ifdef __cplusplus
 } 
 #endif

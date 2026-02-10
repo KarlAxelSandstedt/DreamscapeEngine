@@ -23,7 +23,7 @@
 #include "transform.h"
 #include "ds_led.h"
 
-static struct r_Mesh *DebugContactManifoldSegmentsMesh(struct arena *mem, const struct physicsPipeline *pipeline)
+static struct r_Mesh *DebugContactManifoldSegmentsMesh(struct arena *mem, const struct ds_RigidBodyPipeline *pipeline)
 {
 	const struct contactManifold *cm = pipeline->cm;
 	const u32 cm_count = pipeline->cm_count;
@@ -100,7 +100,7 @@ end:
 
 }
 
-static struct r_Mesh *DebugContactManifoldTrianglesMesh(struct arena *mem, const struct physicsPipeline *pipeline)
+static struct r_Mesh *DebugContactManifoldTrianglesMesh(struct arena *mem, const struct ds_RigidBodyPipeline *pipeline)
 {
 	const struct contactManifold *cm = pipeline->cm;
 	const u32 cm_count = pipeline->cm_count;
@@ -190,7 +190,7 @@ end:
 	return mesh;
 }
 
-static struct r_Mesh *DebugLinesMesh(struct arena *mem, const struct physicsPipeline *pipeline)
+static struct r_Mesh *DebugLinesMesh(struct arena *mem, const struct ds_RigidBodyPipeline *pipeline)
 {
 	ArenaPushRecord(mem);
 
@@ -237,7 +237,7 @@ end:
 	return mesh;
 }
 
-static struct r_Mesh *BoundingBoxesMesh(struct arena *mem, const struct physicsPipeline *pipeline, const vec4 color)
+static struct r_Mesh *BoundingBoxesMesh(struct arena *mem, const struct ds_RigidBodyPipeline *pipeline, const vec4 color)
 {
 	ArenaPushRecord(mem);
 	const u32 vertex_count = 3*8*pipeline->body_pool.count;
@@ -260,7 +260,7 @@ static struct r_Mesh *BoundingBoxesMesh(struct arena *mem, const struct physicsP
 	mesh->local_stride = L_COLOR_STRIDE;
 
 	u64 mem_left = mesh->vertex_count * L_COLOR_STRIDE;
-	struct rigidBody *body = NULL;
+	struct ds_RigidBody *body = NULL;
 	for (u32 i = pipeline->body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 	{
 		body = PoolAddress(&pipeline->body_pool, i);
@@ -417,7 +417,7 @@ static void r_EditorDraw(const struct led *led)
 		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
 		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		struct rigidBody *body = NULL;
+		struct ds_RigidBody *body = NULL;
 		for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 		{
 			body = PoolAddress(&led->physics.body_pool, i);

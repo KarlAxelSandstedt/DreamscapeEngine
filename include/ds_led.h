@@ -139,17 +139,17 @@ struct led
 	struct csg 		csg;
 	struct ui_List 		brush_list;
 
-	struct physicsPipeline physics;
-	struct strdb 	cs_db;	
+	struct ds_RigidBodyPipeline physics;
+	struct strdb 		cs_db;	
 	struct ui_List 		cs_list;
 	struct ui_DropdownMenu cs_mesh_menu;
 	struct ui_DropdownMenu rb_color_mode_menu;
 
-	struct strdb	rb_prefab_db;
+	struct strdb		rb_prefab_db;
 	struct ui_List 		rb_prefab_list;
 	struct ui_DropdownMenu rb_prefab_mesh_menu;
 
-	struct strdb	render_mesh_db;
+	struct strdb		render_mesh_db;
 
 	struct hashMap 		node_map;
 	struct pool		node_pool;

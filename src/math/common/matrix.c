@@ -310,6 +310,147 @@ void Mat4Add(mat4 dst, mat4 a, mat4 b)
         dst[3][3] = a[3][3] + b[3][3];
 }
 
+void Mat2AddSelf(mat2 dst, mat2 to_add)
+{
+	dst[0][0] += to_add[0][0];  
+        dst[0][1] += to_add[0][1];
+
+        dst[1][0] += to_add[1][0];
+        dst[1][1] += to_add[1][1];
+}
+
+void Mat3AddSelf(mat3 dst, mat3 to_add)
+{
+	dst[0][0] += to_add[0][0];  
+        dst[0][1] += to_add[0][1];
+        dst[0][2] += to_add[0][2];
+
+        dst[1][0] += to_add[1][0];
+        dst[1][1] += to_add[1][1];
+        dst[1][2] += to_add[1][2];
+
+        dst[2][0] += to_add[2][0];
+        dst[2][1] += to_add[2][1];
+        dst[2][2] += to_add[2][2];
+}
+
+void Mat4AddSelf(mat4 dst, mat4 to_add)
+{
+	dst[0][0] += to_add[0][0];  
+        dst[0][1] += to_add[0][1];
+        dst[0][2] += to_add[0][2];
+        dst[0][3] += to_add[0][3];
+
+        dst[1][0] += to_add[1][0];
+        dst[1][1] += to_add[1][1];
+        dst[1][2] += to_add[1][2];
+        dst[1][3] += to_add[1][3];
+
+        dst[2][0] += to_add[2][0];
+        dst[2][1] += to_add[2][1];
+        dst[2][2] += to_add[2][2];
+        dst[2][3] += to_add[2][3];
+	
+        dst[3][0] += to_add[3][0];
+        dst[3][1] += to_add[3][1];
+        dst[3][2] += to_add[3][2];
+        dst[3][3] += to_add[3][3];
+}
+
+void Mat2Sub(mat2 dst, mat2 a, mat2 b)
+{
+	dst[0][0] = a[0][0] - b[0][0];  
+        dst[0][1] = a[0][1] - b[0][1];
+
+        dst[1][0] = a[1][0] - b[1][0];
+        dst[1][1] = a[1][1] - b[1][1];
+}
+
+void Mat3Sub(mat3 dst, mat3 a, mat3 b)
+{
+	dst[0][0] = a[0][0] - b[0][0];  
+        dst[0][1] = a[0][1] - b[0][1];
+        dst[0][2] = a[0][2] - b[0][2];
+
+        dst[1][0] = a[1][0] - b[1][0];
+        dst[1][1] = a[1][1] - b[1][1];
+        dst[1][2] = a[1][2] - b[1][2];
+
+        dst[2][0] = a[2][0] - b[2][0];
+        dst[2][1] = a[2][1] - b[2][1];
+        dst[2][2] = a[2][2] - b[2][2];
+}
+
+void Mat4Sub(mat4 dst, mat4 a, mat4 b)
+{
+	dst[0][0] = a[0][0] - b[0][0];  
+        dst[0][1] = a[0][1] - b[0][1];
+        dst[0][2] = a[0][2] - b[0][2];
+        dst[0][3] = a[0][3] - b[0][3];
+
+        dst[1][0] = a[1][0] - b[1][0];
+        dst[1][1] = a[1][1] - b[1][1];
+        dst[1][2] = a[1][2] - b[1][2];
+        dst[1][3] = a[1][3] - b[1][3];
+
+        dst[2][0] = a[2][0] - b[2][0];
+        dst[2][1] = a[2][1] - b[2][1];
+        dst[2][2] = a[2][2] - b[2][2];
+        dst[2][3] = a[2][3] - b[2][3];
+	
+        dst[3][0] = a[3][0] - b[3][0];
+        dst[3][1] = a[3][1] - b[3][1];
+        dst[3][2] = a[3][2] - b[3][2];
+        dst[3][3] = a[3][3] - b[3][3];
+}
+
+void Mat2SubSelf(mat2 dst, mat2 to_sub)
+{
+	dst[0][0] -= to_sub[0][0];  
+        dst[0][1] -= to_sub[0][1];
+
+        dst[1][0] -= to_sub[1][0];
+        dst[1][1] -= to_sub[1][1];
+}
+
+void Mat3SubSelf(mat3 dst, mat3 to_sub)
+{
+	dst[0][0] -= to_sub[0][0];  
+        dst[0][1] -= to_sub[0][1];
+        dst[0][2] -= to_sub[0][2];
+
+        dst[1][0] -= to_sub[1][0];
+        dst[1][1] -= to_sub[1][1];
+        dst[1][2] -= to_sub[1][2];
+
+        dst[2][0] -= to_sub[2][0];
+        dst[2][1] -= to_sub[2][1];
+        dst[2][2] -= to_sub[2][2];
+}
+
+void Mat4SubSelf(mat4 dst, mat4 to_sub)
+{
+	dst[0][0] -= to_sub[0][0];  
+        dst[0][1] -= to_sub[0][1];
+        dst[0][2] -= to_sub[0][2];
+        dst[0][3] -= to_sub[0][3];
+
+        dst[1][0] -= to_sub[1][0];
+        dst[1][1] -= to_sub[1][1];
+        dst[1][2] -= to_sub[1][2];
+        dst[1][3] -= to_sub[1][3];
+
+        dst[2][0] -= to_sub[2][0];
+        dst[2][1] -= to_sub[2][1];
+        dst[2][2] -= to_sub[2][2];
+        dst[2][3] -= to_sub[2][3];
+	
+        dst[3][0] -= to_sub[3][0];
+        dst[3][1] -= to_sub[3][1];
+        dst[3][2] -= to_sub[3][2];
+        dst[3][3] -= to_sub[3][3];
+}
+
 void Mat2Transpose(mat2 dst, mat2 src)
 {
 	dst[0][0] = src[0][0];
@@ -540,7 +681,6 @@ f32 Mat4AbsMin(mat4 src)
 	return f32_min(a1, f32_min(a2, f32_min(a3, a4)));
 }
 
-
 f32 Mat2AbsMax(mat2 src)
 {
 	const f32 a1 = f32_max(f32_abs(src[0][0]), f32_abs(src[0][1]));
@@ -563,4 +703,145 @@ f32 Mat4AbsMax(mat4 src)
 	const f32 a3 = f32_max(f32_abs(src[2][0]), f32_max(f32_abs(src[2][1]), f32_max(f32_abs(src[2][2]), f32_abs(src[2][3]))));
 	const f32 a4 = f32_max(f32_abs(src[3][0]), f32_max(f32_abs(src[3][1]), f32_max(f32_abs(src[3][2]), f32_abs(src[3][3]))));
 	return f32_max(a1, f32_max(a2, f32_max(a3, a4)));
+}
+
+void Mat2Scale(mat2 dst, mat2 src, const f32 val)
+{	
+	dst[0][0] = src[0][0] * val;
+	dst[0][1] = src[0][1] * val;
+                             
+	dst[1][0] = src[1][0] * val;
+	dst[1][1] = src[1][1] * val;
+}
+
+void Mat3Scale(mat3 dst, mat3 src, const f32 val)
+{	
+	dst[0][0] = src[0][0] * val;
+	dst[0][1] = src[0][1] * val;
+	dst[0][2] = src[0][2] * val;
+                             
+	dst[1][0] = src[1][0] * val;
+	dst[1][1] = src[1][1] * val;
+	dst[1][2] = src[1][2] * val;
+                             
+	dst[2][0] = src[2][0] * val;
+	dst[2][1] = src[2][1] * val;
+	dst[2][2] = src[2][2] * val;
+}
+
+void Mat4Scale(mat4 dst, mat4 src, const f32 val)
+{
+	dst[0][0] = src[0][0] * val;
+	dst[0][1] = src[0][1] * val;
+	dst[0][2] = src[0][2] * val;
+	dst[0][3] = src[0][3] * val;
+                             
+	dst[1][0] = src[1][0] * val;
+	dst[1][1] = src[1][1] * val;
+	dst[1][2] = src[1][2] * val;
+	dst[1][3] = src[1][3] * val;
+                             
+	dst[2][0] = src[2][0] * val;
+	dst[2][1] = src[2][1] * val;
+	dst[2][2] = src[2][2] * val;
+	dst[2][3] = src[2][3] * val;
+                             
+	dst[3][0] = src[3][0] * val;
+	dst[3][1] = src[3][1] * val;
+	dst[3][2] = src[3][2] * val;
+	dst[3][3] = src[3][3] * val;
+}
+
+void Mat2ScaleSelf(mat2 dst, const f32 val)
+{
+	dst[0][0] *= val;
+	dst[0][1] *= val;
+
+	dst[1][0] *= val;
+	dst[1][1] *= val;
+}
+
+void Mat3ScaleSelf(mat3 dst, const f32 val)
+{
+	dst[0][0] *= val;
+	dst[0][1] *= val;
+	dst[0][2] *= val;
+
+	dst[1][0] *= val;
+	dst[1][1] *= val;
+	dst[1][2] *= val;
+
+	dst[2][0] *= val;
+	dst[2][1] *= val;
+	dst[2][2] *= val;
+}
+
+void Mat4ScaleSelf(mat4 dst, const f32 val)
+{
+	dst[0][0] *= val;
+	dst[0][1] *= val;
+	dst[0][2] *= val;
+	dst[0][3] *= val;
+
+	dst[1][0] *= val;
+	dst[1][1] *= val;
+	dst[1][2] *= val;
+	dst[1][3] *= val;
+
+	dst[2][0] *= val;
+	dst[2][1] *= val;
+	dst[2][2] *= val;
+	dst[2][3] *= val;
+
+	dst[3][0] *= val;
+	dst[3][1] *= val;
+	dst[3][2] *= val;
+	dst[3][3] *= val;
+}
+
+void Mat2OuterProduct(mat2 dst, const vec2 a, const vec2 b)
+{
+	dst[0][0] = a[0]*b[0];
+	dst[0][1] = a[1]*b[0];
+
+	dst[1][0] = a[0]*b[1];
+	dst[1][1] = a[1]*b[1];
+}
+
+void Mat3OuterProduct(mat3 dst, const vec3 a, const vec3 b)
+{
+	dst[0][0] = a[0]*b[0];
+	dst[0][1] = a[1]*b[0];
+	dst[0][2] = a[2]*b[0];
+
+	dst[1][0] = a[0]*b[1];
+	dst[1][1] = a[1]*b[1];
+	dst[1][2] = a[2]*b[1];
+
+	dst[2][0] = a[0]*b[2];
+	dst[2][1] = a[1]*b[2];
+	dst[2][2] = a[2]*b[2];
+}
+
+void Mat4OuterProduct(mat4 dst, const vec4 a, const vec4 b)
+{
+	dst[0][0] = a[0]*b[0];
+	dst[0][1] = a[1]*b[0];
+	dst[0][2] = a[2]*b[0];
+	dst[0][3] = a[3]*b[0];
+
+	dst[1][0] = a[0]*b[1];
+	dst[1][1] = a[1]*b[1];
+	dst[1][2] = a[2]*b[1];
+	dst[1][3] = a[3]*b[1];
+
+	dst[2][0] = a[0]*b[2];
+	dst[2][1] = a[1]*b[2];
+	dst[2][2] = a[2]*b[2];
+	dst[2][3] = a[3]*b[2];
+
+	dst[3][0] = a[0]*b[3];
+	dst[3][1] = a[1]*b[3];
+	dst[3][2] = a[2]*b[3];
+	dst[3][3] = a[3]*b[3];
 }

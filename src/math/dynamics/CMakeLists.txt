@@ -6,6 +6,8 @@ add_library(dynamics STATIC
 	contact_database.c
 	contact_solver.c
 	island.c
+	ds_shape.c
+	ds_body.c
 )
 add_library(Dreamscape::Dynamics ALIAS dynamics)
 target_link_libraries(dynamics PUBLIC Dreamscape::Collision Dreamscape::Job)

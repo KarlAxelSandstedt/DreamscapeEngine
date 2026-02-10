@@ -498,7 +498,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 						const u32f32 hit = PhysicsPipelineRaycastParameter(g_ui->mem_frame, &led->physics, &ray);
 						if (hit.f < F32_INFINITY)
 						{
-							const struct rigidBody *body = PoolAddress(&led->physics.body_pool, hit.u);	
+							const struct ds_RigidBody *body = PoolAddress(&led->physics.body_pool, hit.u);	
 							const struct led_node *entity = PoolAddress(&led->node_pool, body->entity);
 							const char *body_id = CstrUtf8(g_ui->mem_frame, entity->id);
 
@@ -701,7 +701,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 					ui_Pad();
 
-					const struct rigidBodyPrefab *prefab;
+					const struct ds_RigidBodyPrefab *prefab;
 					ui_list(&led->rb_prefab_list, "###%p", &led->rb_prefab_list)
 					for (u32 i = led->rb_prefab_db.allocated_dll.first; i != DLL_NULL; i = strdb_Next(prefab))
 					{
@@ -734,7 +734,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 					{
 						ui_Pad();
 
-						struct rigidBodyPrefab *prefab = strdb_Address(&led->rb_prefab_db, prefab_selected);
+						struct ds_RigidBodyPrefab *prefab = strdb_Address(&led->rb_prefab_db, prefab_selected);
 						struct collisionShape *shape = NULL;
 						ui_Height(ui_SizePixel(24.0f, 1.0f))
 						ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW | UI_DRAW_BORDER, "%k##prefab_selected", &prefab->id);

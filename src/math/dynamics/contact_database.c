@@ -82,7 +82,7 @@ void cdb_Flush(struct cdb *c_db)
 	BitVecClear(&c_db->contacts_persistent_usage, 0);
 }
 
-void cdb_Validate(const struct physicsPipeline *pipeline)
+void cdb_Validate(const struct ds_RigidBodyPipeline *pipeline)
 {
 	for (u64 i = 0; i < pipeline->c_db.contacts_persistent_usage.bit_count; ++i)
 	{
@@ -98,8 +98,8 @@ void cdb_Validate(const struct physicsPipeline *pipeline)
 			//	       c->nll_prev[0],	
 			//	       c->nll_prev[1]);
 
-			const struct rigidBody *b1 = PoolAddress(&pipeline->body_pool, c->cm.i1);
-			const struct rigidBody *b2 = PoolAddress(&pipeline->body_pool, c->cm.i2);
+			const struct ds_RigidBody *b1 = PoolAddress(&pipeline->body_pool, c->cm.i1);
+			const struct ds_RigidBody *b2 = PoolAddress(&pipeline->body_pool, c->cm.i2);
 
 			u32 prev, k, found; 
 			prev = NLL_NULL;
@@ -209,7 +209,7 @@ void cdb_ClearFrame(struct cdb *c_db)
 	}
 }
 
-struct contact *cdb_ContactAdd(struct physicsPipeline *pipeline, const struct contactManifold *cm, const u32 i1, const u32 i2)
+struct contact *cdb_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct contactManifold *cm, const u32 i1, const u32 i2)
 {
 	u32 b1, b2;
 	if (i1 < i2)
@@ -223,8 +223,8 @@ struct contact *cdb_ContactAdd(struct physicsPipeline *pipeline, const struct co
 		b2 = i1;
 	}
 
-	struct rigidBody *body1 = PoolAddress(&pipeline->body_pool, b1);
-	struct rigidBody *body2 = PoolAddress(&pipeline->body_pool, b2);
+	struct ds_RigidBody *body1 = PoolAddress(&pipeline->body_pool, b1);
+	struct ds_RigidBody *body2 = PoolAddress(&pipeline->body_pool, b2);
 
 	const u64 key = KeyGenU32U32(b1, b2);
 	ds_Assert(b1 == CONTACT_KEY_TO_BODY_0(key));
@@ -268,11 +268,11 @@ struct contact *cdb_ContactAdd(struct physicsPipeline *pipeline, const struct co
 	}
 }
 
-void cdb_ContactRemove(struct physicsPipeline *pipeline, const u64 key, const u32 index)
+void cdb_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u64 key, const u32 index)
 {
 	struct contact *c = nll_Address(&pipeline->c_db.contact_net, index);
-	struct rigidBody *body0 = PoolAddress(&pipeline->body_pool, (u32) CONTACT_KEY_TO_BODY_0(c->key));
-	struct rigidBody *body1 = PoolAddress(&pipeline->body_pool, (u32) CONTACT_KEY_TO_BODY_1(c->key));
+	struct ds_RigidBody *body0 = PoolAddress(&pipeline->body_pool, (u32) CONTACT_KEY_TO_BODY_0(c->key));
+	struct ds_RigidBody *body1 = PoolAddress(&pipeline->body_pool, (u32) CONTACT_KEY_TO_BODY_1(c->key));
 	
 	if (body0->contact_first == index)
 	{
@@ -289,9 +289,9 @@ void cdb_ContactRemove(struct physicsPipeline *pipeline, const u64 key, const u3
 	nll_Remove(&pipeline->c_db.contact_net, index);
 }
 
-void cdb_BodyRemoveContacts(struct physicsPipeline *pipeline, const u32 body_index)
+void cdb_BodyRemoveContacts(struct ds_RigidBodyPipeline *pipeline, const u32 body_index)
 {
-	struct rigidBody *body = PoolAddress(&pipeline->body_pool, body_index);
+	struct ds_RigidBody *body = PoolAddress(&pipeline->body_pool, body_index);
 	u32 ci = body->contact_first;
 	body->contact_first = NLL_NULL;
 	while (ci != NLL_NULL)
@@ -332,7 +332,7 @@ void cdb_BodyRemoveContacts(struct physicsPipeline *pipeline, const u32 body_ind
 	}
 }
 
-void cdb_StaticRemoveContactsAndUpdateIslands(struct physicsPipeline *pipeline, const u32 static_index)
+void cdb_StaticRemoveContactsAndUpdateIslands(struct ds_RigidBodyPipeline *pipeline, const u32 static_index)
 {
 	ArenaPushRecord(&pipeline->frame);
 
@@ -340,7 +340,7 @@ void cdb_StaticRemoveContactsAndUpdateIslands(struct physicsPipeline *pipeline, 
 	u32 *island = arr.addr;
 	u32 island_count = 0;
 
-	struct rigidBody *body = PoolAddress(&pipeline->body_pool, static_index);
+	struct ds_RigidBody *body = PoolAddress(&pipeline->body_pool, static_index);
 	ds_Assert(body->island_index == ISLAND_STATIC);
 	u32 ci = body->contact_first;
 	body->contact_first = NLL_NULL;

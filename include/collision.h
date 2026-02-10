@@ -187,7 +187,16 @@ enum collisionShapeType
 struct collisionShape
 {
 	STRING_DATABASE_SLOT_STATE;
+	
+	mat3	inertia_tensor;		/* local shape frame intertia tensor (Assumes density=1.0, 
+					   to get the interia tensor given a density, just multiply
+					   the matrix with the given density. */
+	vec3	center_of_mass;		/* local shape frame center of mass */
+	f32	volume;
+
+	//TODO remove
 	u32 			center_of_mass_localized; /* Has the shape translated its vertices into COM space? */
+
 	enum collisionShapeType type;
 	union
 	{
@@ -197,6 +206,10 @@ struct collisionShape
 		struct triMeshBvh 	mesh_bvh;
 	};
 };
+
+
+void	CollisionShapeUpdateMassProperties(struct collisionShape *shape);
+
 
 enum collisionResultType
 {
@@ -266,19 +279,19 @@ void 	ContactManifoldDebugPrint(FILE *file, const struct contactManifold *cm);
 
 /********************************** RIGID BODY METHODS  **********************************/
 
-struct physicsPipeline;
-struct rigidBody;
+struct ds_RigidBodyPipeline;
+struct ds_RigidBody;
 
 /* test for intersection between bodies, with each body having the given margin. returns 1 if intersection. */
-u32	BodyBodyTest(const struct physicsPipeline *pipeline, const struct rigidBody *b1, const struct rigidBody *b2, const f32 margin);
+u32	BodyBodyTest(const struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBody *b1, const struct ds_RigidBody *b2, const f32 margin);
 /* return closest points c1 and c2 on bodies b1 and b2 (with no margin), respectively, given no intersection */
-f32 	BodyBodyDistance(vec3 c1, vec3 c2, const struct physicsPipeline *pipeline, const struct rigidBody *b1, const struct rigidBody *b2, const f32 margin);
+f32 	BodyBodyDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBody *b1, const struct ds_RigidBody *b2, const f32 margin);
 /* returns contact manifold or sat cache pointing from b1 to b2, given that the bodies are colliding  */
-u32 	BodyBodyContactManifold(struct arena *tmp, struct collisionResult *result, const struct physicsPipeline *pipeline, const struct rigidBody *b1, const struct rigidBody *b2, const f32 margin);
+u32 	BodyBodyContactManifold(struct arena *tmp, struct collisionResult *result, const struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBody *b1, const struct ds_RigidBody *b2, const f32 margin);
 /* Return t such that ray.origin + t*ray.dir == closest point on rigid body */
-f32 	BodyRaycastParameter(const struct physicsPipeline *pipeline, const struct rigidBody *b, const struct ray *ray);
+f32 	BodyRaycastParameter(const struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBody *b, const struct ray *ray);
 /* Return 1 if ray hit body, 0 otherwise. If hit, we return the closest intersection point */
-u32 	BodyRaycast(vec3 intersection, const struct physicsPipeline *pipeline, const struct rigidBody *b, const struct ray *ray);
+u32 	BodyRaycast(vec3 intersection, const struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBody *b, const struct ray *ray);
 
 #ifdef __cplusplus
 } 
