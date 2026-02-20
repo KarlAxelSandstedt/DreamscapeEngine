@@ -1471,7 +1471,15 @@ static void led_EngineInit(struct led *led)
 						, led->ns 
 						, node->proxy);
 			}
-			PhysicsPipelineRigidBodyAlloc(&led->physics, prefab, node->position, node->rotation, i);
+
+            ds_Transform t;
+            Vec3Set(t.position, 0.0f, 0.0f, 0.0f);
+            QuatAxisAngle(t.rotation, Vec3Inline(0.0f, 1.0f, 0.0f), 0.0f);
+			struct slot slot = ds_RigidBodyAdd(&led->physics, prefab, node->position, node->rotation, i);
+            const struct ds_ShapePrefab *shape_prefab =  NULL;
+            return;
+            ds_AssertString(0, "Setup ShapePrefab DB");
+            ds_ShapeAdd(&led->physics, shape_prefab, &t, slot.index);
 		}
 	}
 }

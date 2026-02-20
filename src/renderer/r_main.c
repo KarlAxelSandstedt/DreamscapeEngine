@@ -411,6 +411,25 @@ static void r_EditorDraw(const struct led *led)
 		}
 	}
 
+	{
+		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
+		const u64 depth = 0x7fffff;
+		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
+		quat rotation;
+		const vec3 translation = { 0 };
+		vec3 axis = { 0.0f, 1.0f, 0.0f };
+		const f32 angle = 0.0f;
+		QuatAxisAngle(rotation, axis, angle);
+        struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &led->physics.shape_bvh, translation, rotation, led->physics.dbvh_color);
+
+        if (mesh)
+        {
+		    struct r_Instance *instance = r_InstanceAddNonCached(cmd);
+		    instance->type = R_INSTANCE_MESH;
+		    instance->mesh = mesh;
+        }
+	}
+
 	if (led->physics.draw_sbvh)
 	{
 

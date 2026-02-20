@@ -50,7 +50,7 @@ within blender. When we place this body within our world, we expect each sequenc
 of transformation of the shape to be	
 
 	Shape => Local Rotate => Local Offset	(Orientation within body frame)
-	      => Body Rotate => Body Offset	(Orientation within world space)
+	      => Body Rotate  => Body Offset	(Orientation within world space)
 
 Now, if at runtime we wish to add an additional shape to the body, we still expect
 the transform we supply with the shape to refer to this arbitrary space (unless we
@@ -65,8 +65,8 @@ the local-to-world transform, ds_RigidBody must also store its center of mass:
 	ds_RigidBody
 	{
 		(...)
-		ds_Transform	transform;	// Local frame to World transform
-		vec3		center_of_mass;	
+		ds_Transform	transform;	    // Local frame to World transform
+		vec3            center_of_mass;	
 	}
 
 We now derive the transformations needed assuming an arbitrary center of mass.
@@ -76,32 +76,34 @@ We now derive the transformations needed assuming an arbitrary center of mass.
 struct ds_Shape
 {
 	POOL_SLOT_STATE;
-	DLL_SLOT_STATE;				/* Node links in ds_RigidBody shape_list 	local*/
+	DLL_SLOT_STATE;				            /* Node links in ds_RigidBody shape_list 	local   */
 
-	u32 			body;		/* ds_RigidBody owner of node 			*/
-	u32			contact_first;	/* index to first contact in shape's list (nll) */
+	u32 			body;		            /* ds_RigidBody owner of node 			            */
+	u32			    contact_first;	        /* index to first contact in shape's list (nll)     */
 
-	enum collisionShapeType cshape_type;	/* collisionShape type 				*/
-	u32			cshape_handle;	/* handle to referenced collisionShape 		*/
+	enum collisionShapeType cshape_type;	/* collisionShape type 				                */
+	u32			    cshape_handle;	        /* handle to referenced collisionShape 		        */
 
-	f32			density;	/* kg/m^3					*/
-	f32 			restitution;	/* Range [0.0, 1.0] : bounciness  		*/
-	f32 			friction;	/* Range [0.0, 1.0] : bound tangent impulses to 
-						   mix(b1->friction, b2->friction)*(normal impuse) */
+	f32			    density;	            /* kg/m^3					                        */
+	f32 			restitution;            /* Range [0.0, 1.0] : bounciness  		            */
+	f32 			friction;	            /* Range [0.0, 1.0] : bound tangent impulses to 
+						                       mix(b1->friction, b2->friction)*(normal impuse)  */
+	f32		        margin;		            /* bouding box margin for dynamic BVH proxies 	    */
 
-	ds_Transform		t_local;	/* local body frame transform 			*/
+	ds_Transform	t_local;	            /* local body frame transform 			            */
 
 	/* DYNAMIC STATE */
-	struct aabb		local_box;		/* bounding AABB */
+	u32			proxy;		                /* BVH index 					                    */
 };
 
 struct ds_ShapePrefab
 {
-	utf8			cshape_id;	/* utf8 identifier of collisionShape 		*/
-	f32			density;	/* kg/m^3					*/
-	f32 			restitution;	/* Range [0.0, 1.0] : bounciness  		*/
-	f32 			friction;	/* Range [0.0, 1.0] : bound tangent impulses to 
-						   mix(b1->friction, b2->friction)*(normal impuse) */
+	utf8	cshape_id;	    /* utf8 identifier of collisionShape 		        */
+	f32		density;	    /* kg/m^3					                        */
+	f32 	restitution;	/* Range [0.0, 1.0] : bounciness  		            */
+	f32 	friction;	    /* Range [0.0, 1.0] : bound tangent impulses to 
+						       mix(b1->friction, b2->friction)*(normal impuse)  */
+	f32		margin;	        /* bouding box margin for dynamic BVH proxies 	    */
 };
 
 /* 
@@ -109,11 +111,13 @@ struct ds_ShapePrefab
  * a valid address and index to the shape is returned. If the ID is invalid, a default collisionShape is assigned
  * to the shape. On failure, (NULL, POOL_NULL) is returned. 
  */
-struct slot 	ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_ShapePrefab *prefab, const ds_Transform *t, const u32 body);
-/*
- * Remove the specified shape and update the physics state into a valid state.
- */
-void		ds_ShapeRemove(struct ds_RigidBodyPipeline *pipeline, const u32 shape);
+struct slot ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_ShapePrefab *prefab, const ds_Transform *t, const u32 body);
+/* Remove the specified shape of a DYNAMIC body and update the physics state into a valid state.  */
+void		ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, const u32 shape);
+/* Remove the specified shape of a STATIC body and update the physics state into a valid state. */
+void		ds_ShapeStaticRemove(struct ds_RigidBodyPipeline *pipeline, const u32 shape);
+/* Calculate the world bounding box of the shape, taking into account the shape and its body's Transform. */
+struct aabb ds_ShapeWorldBbox(const struct ds_RigidBodyPipeline *pipeline, struct ds_Shape *shape);
 
 
 /*
@@ -183,9 +187,6 @@ struct ds_RigidBody
 	f32 		low_velocity_time;	/* Current uninterrupted time body has been in a low velocity state */
 };
 
-/* Process the body's shape list and set its internal mass properties accordingly. */
-void ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, const u32 body);
-
 /*
 rigid_body_prefab
 =================
@@ -195,21 +196,31 @@ new bodies.
 struct ds_RigidBodyPrefab
 {
 	STRING_DATABASE_SLOT_STATE;
-	u32	shape;
+
+    //TODO Make multishape possible
+	u32     shape;
 
 	mat3 	inertia_tensor;		/* intertia tensor of body frame */
 	mat3 	inv_inertia_tensor;
 	f32 	mass;			/* total body mass */
-	f32	density;
+	f32     density;
 	f32 	restitution;
 	f32 	friction;		/* Range [0.0, 1.0f] : bound tangent impulses to 
 						   mix(b1->friction, b2->friction)*(normal impuse) */
 	u32	dynamic;		/* dynamic body is true, static if false */
 };
 
-void 	PrefabStaticsSetup(struct ds_RigidBodyPrefab *prefab, struct collisionShape *shape, const f32 density);
+//TODO remove 
+void    PrefabStaticsSetup(struct ds_RigidBodyPrefab *prefab, struct collisionShape *shape, const f32 density);
+void    RigidBodyUpdateLocalBox(struct ds_RigidBody *body, const struct collisionShape *shape);
 
 
+//TODO
+struct slot ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBodyPrefab *prefab, const vec3 position, const quat rotation, const u32 entity);
+/* Free the body at the given index */
+void		ds_RigidBodyRemove(struct ds_RigidBodyPipeline *pipeline, const u32 body);
+/* Process the body's shape list and set its internal mass properties accordingly. */
+void		ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, const u32 body);
 
 /*
 =================================================================================================================
@@ -765,13 +776,13 @@ struct ds_RigidBodyPipeline
 {
 	struct arena 		frame;			/* frame memory */
 
-	u64			ns_start;		/* external ns at start of physics pipeline */
-	u64			ns_elapsed;		/* actual ns elasped in pipeline (= 0 at start) */
-	u64			ns_tick;		/* ns per game tick */
+	u64				ns_start;		/* external ns at start of physics pipeline */
+	u64				ns_elapsed;		/* actual ns elasped in pipeline (= 0 at start) */
+	u64				ns_tick;		/* ns per game tick */
 	u64 			frames_completed;	/* number of completed physics frames */ 
 
-	struct strdb *		shape_db;		/* externally owned */
-	struct strdb *		prefab_db;		/* externally owned */
+	struct strdb *	shape_db;		/* externally owned */
+	struct strdb *	prefab_db;		/* externally owned */
 
 	struct pool		body_pool;
 	struct dll		body_marked_list;	/* bodies marked for removal */
@@ -782,10 +793,13 @@ struct ds_RigidBodyPipeline
 	struct pool		event_pool;
 	struct dll		event_list;
 
+	//TODO remove 
 	struct bvh 		dynamic_tree;
 
+	struct bvh 		shape_bvh;
+
 	struct cdb		c_db;
-	struct isdb 		is_db;
+	struct isdb 	is_db;
 
 	struct collisionDebug *	debug;
 	u32			debug_count;

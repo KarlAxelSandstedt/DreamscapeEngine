@@ -98,6 +98,7 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 	pipeline.margin = COLLISION_MARGIN_DEFAULT;
 
 	pipeline.dynamic_tree = DbvhAlloc(NULL, 2*initial_size, 1);
+	pipeline.shape_bvh = DbvhAlloc(NULL, 2*initial_size, 1);
 
 	pipeline.c_db = cdb_Alloc(mem, initial_size);
 	pipeline.is_db = isdb_Alloc(mem, initial_size);
@@ -154,6 +155,7 @@ void PhysicsPipelineFree(struct ds_RigidBodyPipeline *pipeline)
 	free(pipeline->debug);
 #endif
 	BvhFree(&pipeline->dynamic_tree);
+	BvhFree(&pipeline->shape_bvh);
 	cdb_Free(&pipeline->c_db);
 	isdb_Dealloc(&pipeline->is_db);
 	PoolDealloc(&pipeline->body_pool);
@@ -188,6 +190,7 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
 		stack_visualSegmentFlush(&pipeline->debug[i].stack_segment);
 	}
 #endif
+	DbvhFlush(&pipeline->shape_bvh);
 	DbvhFlush(&pipeline->dynamic_tree);
 	cdb_Flush(&pipeline->c_db);
 	isdb_Flush(&pipeline->is_db);
@@ -214,129 +217,6 @@ void PhysicsPipelineValidate(const struct ds_RigidBodyPipeline *pipeline)
 	isdb_Validate(pipeline);
 
 	ProfZoneEnd;
-}
-
-static void RigidBodyUpdateLocalBox(struct ds_RigidBody *body, const struct collisionShape *shape)
-{
-	vec3 min = { F32_INFINITY, F32_INFINITY, F32_INFINITY };
-	vec3 max = { -F32_INFINITY, -F32_INFINITY, -F32_INFINITY };
-
-	vec3 v;
-	mat3 rot;
-	Mat3Quat(rot, body->rotation);
-
-	if (body->shape_type == COLLISION_SHAPE_CONVEX_HULL)
-	{
-		for (u32 i = 0; i < shape->hull.v_count; ++i)
-		{
-			Mat3VecMul(v, rot, shape->hull.v[i]);
-			min[0] = f32_min(min[0], v[0]); 
-			min[1] = f32_min(min[1], v[1]);			
-			min[2] = f32_min(min[2], v[2]);			
-                                                   
-			max[0] = f32_max(max[0], v[0]);			
-			max[1] = f32_max(max[1], v[1]);			
-			max[2] = f32_max(max[2], v[2]);			
-		}
-	}
-	else if (body->shape_type == COLLISION_SHAPE_SPHERE)
-	{
-		const f32 r = shape->sphere.radius;
-		Vec3Set(min, -r, -r, -r);
-		Vec3Set(max, r, r, r);
-	}
-	else if (body->shape_type == COLLISION_SHAPE_CAPSULE)
-	{
-		v[0] = rot[1][0] * shape->capsule.half_height;	
-		v[1] = rot[1][1] * shape->capsule.half_height;	
-		v[2] = rot[1][2] * shape->capsule.half_height;	
-		Vec3Set(max, 
-			f32_max(-v[0], v[0]),
-			f32_max(-v[1], v[1]),
-			f32_max(-v[2], v[2]));
-		Vec3AddConstant(max, shape->capsule.radius);
-		Vec3Negate(min, max);
-	}
-	else if (body->shape_type == COLLISION_SHAPE_TRI_MESH)
-	{
-		const struct bvhNode *node = (struct bvhNode *) shape->mesh_bvh.bvh.tree.pool.buf;
-		struct aabb bbox; 
-		AabbRotate(&bbox, &node[shape->mesh_bvh.bvh.tree.root].bbox, rot);
-		//Vec3Sub(min, bbox.center, bbox.hw);
-		//Vec3Add(max, bbox.center, bbox.hw);
-		Vec3Scale(min, bbox.hw, -1.0f);
-		Vec3Scale(max, bbox.hw, 1.0f);
-	}
-
-	Vec3Sub(body->local_box.hw, max, min);
-	Vec3ScaleSelf(body->local_box.hw, 0.5f);
-	Vec3Add(body->local_box.center, min, body->local_box.hw);
-}
-
-struct slot PhysicsPipelineRigidBodyAlloc(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBodyPrefab *prefab, const vec3 position, const quat rotation, const u32 entity)
-{
-	struct slot slot = PoolAdd(&pipeline->body_pool);
-	PhysicsEventBodyNew(pipeline, slot.index);
-	struct ds_RigidBody *body = slot.address;
-	dll_Append(&pipeline->body_non_marked_list, pipeline->body_pool.buf, slot.index);
-
-	body->shape_list = dll_Init(struct ds_Shape);
-	QuatCopy(body->t_world.rotation, rotation);
-	Vec3Copy(body->t_world.position, position);
-
-	body->entity = entity;
-	Vec3Copy(body->position, position);
-	QuatCopy(body->rotation, rotation);
-	Vec3Set(body->velocity, 0.0f, 0.0f, 0.0f);
-	Vec3Set(body->angular_velocity, 0.0f, 0.0f, 0.0f);
-	Vec3Set(body->linear_momentum, 0.0f, 0.0f, 0.0f);
-
-	const u32 dynamic_flag = (prefab->dynamic) ? RB_DYNAMIC : 0;
-	body->flags = RB_ACTIVE | (g_solver_config->sleep_enabled * RB_AWAKE) | dynamic_flag;
-	body->margin = 0.25f;
-
-	const struct collisionShape *shape = strdb_Address(pipeline->shape_db, prefab->shape);
-	const struct slot shape_slot = strdb_Reference(pipeline->shape_db, shape->id);
-	body->shape_handle = shape_slot.index;
-	body->shape_type = shape->type;
-
-	Mat3Copy(body->inertia_tensor, prefab->inertia_tensor);
-	Mat3Copy(body->inv_inertia_tensor, prefab->inv_inertia_tensor);
-	body->mass = prefab->mass;
-	body->restitution = prefab->restitution;
-	body->friction = prefab->friction;
-	body->low_velocity_time = 0.0f;
-
-	RigidBodyUpdateLocalBox(body, shape);
-	struct aabb proxy;
-	Vec3Add(proxy.center, body->local_box.center, body->position);
-	if (body->shape_type == COLLISION_SHAPE_TRI_MESH)
-	{
-		Vec3Set(proxy.hw, 
-			body->local_box.hw[0],
-			body->local_box.hw[1],
-			body->local_box.hw[2]);
-	}
-	else
-	{
-		Vec3Set(proxy.hw, 
-			body->local_box.hw[0] + body->margin,
-			body->local_box.hw[1] + body->margin,
-			body->local_box.hw[2] + body->margin);
-	}
-	body->proxy = DbvhInsert(&pipeline->dynamic_tree, slot.index, &proxy);
-
-	body->contact_first = NLL_NULL;
-	if (body->flags & RB_DYNAMIC)
-	{
-		isdb_InitIslandFromBody(pipeline, slot.index);
-	}
-	else
-	{
-		body->island_index = ISLAND_STATIC;
-	}
-	
-	return slot;
 }
 
 static void InternalUpdateDynamicTree(struct ds_RigidBodyPipeline *pipeline)
@@ -790,32 +670,6 @@ static void InternalUpdateSolverConfig(struct ds_RigidBodyPipeline *pipeline)
 
 }
 
-static void PhysicsPipelineRigidBodyDealloc(struct ds_RigidBodyPipeline *pipeline, const u32 handle)
-{
-	struct ds_RigidBody *body = PoolAddress(&pipeline->body_pool, handle);
-	ds_Assert(PoolSlotAllocated(body));
-
-	strdb_Dereference(pipeline->shape_db, body->shape_handle);
-	DbvhRemove(&pipeline->dynamic_tree, body->proxy);
-	if (body->island_index != ISLAND_STATIC)
-	{
-		isdb_IslandRemoveBodyResources(pipeline, body->island_index, handle);
-		cdb_BodyRemoveContacts(pipeline, handle);
-
-		const struct island *is = PoolAddress(&pipeline->is_db.island_pool, body->island_index);
-		if (PoolSlotAllocated(is) && is->contact_list.count > 0)
-		{
-			isdb_SplitIsland(&pipeline->frame, pipeline, body->island_index);
-		}
-	}
-	else
-	{
-		cdb_StaticRemoveContactsAndUpdateIslands(pipeline, handle);	
-	}
-	PoolRemove(&pipeline->body_pool, handle);
-	PhysicsEventBodyRemoved(pipeline, handle);
-}
-
 void PhysicsPipelineRigidBodyTagForRemoval(struct ds_RigidBodyPipeline *pipeline, const u32 handle)
 {
 	struct ds_RigidBody *b = PoolAddress(&pipeline->body_pool, handle);
@@ -833,7 +687,7 @@ static void InternalRemoveMarkedBodies(struct ds_RigidBodyPipeline *pipeline)
 	for (u32 i = pipeline->body_marked_list.first; i != DLL_NULL; i = dll_Next(b))
 	{
 		b = PoolAddress(&pipeline->body_pool, i);
-		PhysicsPipelineRigidBodyDealloc(pipeline, i);
+		ds_RigidBodyRemove(pipeline, i);
 	}
 
 	dll_Flush(&pipeline->body_marked_list);

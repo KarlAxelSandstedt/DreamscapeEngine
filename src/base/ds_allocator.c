@@ -866,7 +866,7 @@ struct slot PoolAdd(struct pool *pool)
 		else
 		{
 			UnpoisonAddress(pool->buf + pool->count_max*pool->slot_size, pool->slot_size);
-			allocation.address = (u8 *) pool->buf + pool->slot_size * pool->count_max;
+			allocation.address = (u8 *) pool->buf + pool->count_max*pool->slot_size;
 			allocation.index = pool->count_max;
 			slot_state = (u32 *) ((u8 *) allocation.address + pool->slot_allocation_offset);
 			pool->count_max += 1;
