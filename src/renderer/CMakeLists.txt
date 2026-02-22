@@ -22,4 +22,5 @@ target_link_libraries(DreamscapeRenderer
 		Dreamscape::Asset
 	PRIVATE
 		Dreamscape::UI
+		xxHash
 )

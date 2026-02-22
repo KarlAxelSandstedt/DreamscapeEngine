@@ -17,13 +17,6 @@
 ==========================================================================
 */
 
-/*
- * TODO:
- * Issue:
- * 	We deal with three spaces: World space, Local body space, and the arbitrary body construction space.
- */
-
-
 #include "dynamics.h"
 
 struct slot ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_ShapePrefab *prefab, const ds_Transform *t, const u32 body)
@@ -54,9 +47,7 @@ struct slot ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_S
 		{
 			Vec3Translate(bbox_proxy.hw, Vec3Inline(shape->margin, shape->margin, shape->margin));
 		}
-        UnpoisonAddress(&pipeline->shape_bvh.tree.pool.slot_size, sizeof(u64));
 		shape->proxy = DbvhInsert(&pipeline->shape_bvh, slot.index, &bbox_proxy);
-        PoisonAddress(&pipeline->shape_bvh.tree.pool.slot_size, sizeof(u64));
 	}
 
 	return slot;
