@@ -70,9 +70,7 @@ the local-to-world transform, ds_RigidBody must also store its center of mass:
 	}
 
 We now derive the transformations needed assuming an arbitrary center of mass.
-
 */
-
 struct ds_Shape
 {
 	POOL_SLOT_STATE;
@@ -96,16 +94,43 @@ struct ds_Shape
 	u32			    proxy;		            /* BVH index 					                    */
 };
 
+/*
+ds_ShapePrefab
+==============
+ds_ShapePrefabs are ds_Shape blueprints. When adding a ds_Shape, you will most likely
+use the same set of parameters for multiple shapes. This warrants the use of a 
+ds_ShapePrefab which stores a common set of parameters, and can be referenced using
+a utf8 identifier.
+*/
 struct ds_ShapePrefab
 {
 	STRING_DATABASE_SLOT_STATE;
 
-	u32	    cshape;	        /* utf8 identifier of collisionShape 		        */
+	u32	    cshape;	        /* referenced collisionShape handle  		        */
 	f32		density;	    /* kg/m^3					                        */
 	f32 	restitution;	/* Range [0.0, 1.0] : bounciness  		            */
 	f32 	friction;	    /* Range [0.0, 1.0] : bound tangent impulses to 
 						       mix(b1->friction, b2->friction)*(normal impuse)  */
 	f32		margin;	        /* bouding box margin for dynamic BVH proxies 	    */
+};
+
+/*
+ds_ShapePrefabInstance
+======================
+ds_ShapePrefabInstances are helpers for constructing ds_RigidBodyPrefabs. Since a
+body may contain multiple shapes, the ds_RigidBodyPrefab struct contains a list of
+ds_ShapePrefabInstances. Each instance contains an identifier local to the
+ds_RigidBodyPrefab, a local transform, and a reference to the instanced ds_Shape.
+*/
+#define SHAPE_PREFAB_INSTANCE_BUFSIZE  32
+struct ds_ShapePrefabInstance
+{
+    POOL_SLOT_STATE;
+    DLL_SLOT_STATE;             /* ds_RigidBodyPrefab instance list                 */
+    u8              id_buf[SHAPE_PREFAB_INSTANCE_BUFSIZE];
+    utf8            id;         /* local identifier within a body: (body_id).(id)   */
+    u32             shape;      /* ds_ShapePrefab reference                         */
+	ds_Transform	t_local;	/* local body frame transform                       */
 };
 
 /* 
@@ -168,8 +193,8 @@ struct ds_RigidBody
 	vec3 		position;		/* center of mass world frame position */
 	vec3 		linear_momentum;   	/* L = mv */
 
-	u32		contact_first;
-	u32		island_index;
+	u32		    contact_first;
+	u32		    island_index;
 
 	/* static state */
 	u32 		entity;
@@ -178,7 +203,7 @@ struct ds_RigidBody
 	f32 		margin;
 
 	enum collisionShapeType shape_type;
-	u32		shape_handle;
+	u32		    shape_handle;
 
 	mat3 		inertia_tensor;		/* intertia tensor of body frame */
 	mat3 		inv_inertia_tensor;
@@ -199,12 +224,16 @@ struct ds_RigidBodyPrefab
 {
 	STRING_DATABASE_SLOT_STATE;
 
-    //TODO Make multishape possible
+    struct dll  shape_list;     /* shape prefab instance list */
+
+    //TODO remove
 	u32     shape;
+
 
 	mat3 	inertia_tensor;		/* intertia tensor of body frame */
 	mat3 	inv_inertia_tensor;
 	f32 	mass;			/* total body mass */
+    //TODO remove
 	f32     density;
 	f32 	restitution;
 	f32 	friction;		/* Range [0.0, 1.0f] : bound tangent impulses to 

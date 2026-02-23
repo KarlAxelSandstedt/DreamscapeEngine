@@ -104,11 +104,11 @@ void		led_Pause(struct led *led);
 void		led_Stop(struct led *led);
 
 /* Allocate node with the given id. Returns (NULL, U32_MAX) if id.size > 256B or id.len == 0 */
-struct slot 	led_NodeAdd(struct led *led, const utf8 id);
+struct slot led_NodeAdd(struct led *led, const utf8 id);
 /* Mark node for remval if it exist; otherwise no-op.  */
 void 		led_NodeRemove(struct led *led, const utf8 id);
 /* Return node with the given id if it exist; otherwise return (NULL, U32_MAX).  */
-struct slot 	led_NodeLookup(struct led *led, const utf8 id);
+struct slot led_NodeLookup(struct led *led, const utf8 id);
 /* Set node position if it exist. */
 void		led_NodeSetPosition(struct led *led, const utf8 id, const vec3 position);
 /* Set node to be a physics instance if the node and the prefab exist */
@@ -138,13 +138,23 @@ struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const utf8 sh
 void        led_RigidBodyPrefabRemove(struct led *led, const utf8 id);
 /* Return prefab with the given id if it exist; otherwise return (STUB_ADDRESS, STUB_INDEX).  */
 struct slot led_RigidBodyPrefabLookup(struct led *led, const utf8 id);
+/* Create and attach a shape prefab to the given body prefab if the body and shape exist; otherwise no-op. 
+ * The body's local instance of the shape can be identified by local_id. */
+void        led_RigidBodyPrefabAttachShape(struct led *led, const utf8 rb_id, const utf8 shape_id, const utf8 local_id);
+/* Detach any shape prefab of the given body with local identifier local_id. On failure to lookup body or 
+ * local shape, the call results in a no-op. */
+void        led_RigidBodyPrefabDetachShape(struct led *led, const utf8 rb_id, const utf8 local_id);
+/* Return shape of prefab with the given local_shape_id if the ds_RigidBodyPrefab rb_id exists and contains a shape
+ * instance with the given local_shape_id. Otherwise return (NULL, POOL_NULL).  */
+struct slot led_RigidBodyPrefabLookupShape(struct led *led, const utf8 rb_id, const utf8 local_shape_id);
+
 
 /* Allocate node with the given id. Returns (NULL, U32_MAX) if id.size > 256B or bad shape paramters */
 struct slot	led_RenderMeshAdd(struct led *led, const utf8 id, const utf8 shape);
 /* Remove render mesh if it exists and is not being referenced; otherwise no-op.  */
 void 		led_RenderMeshRemove(struct led *led, const utf8 id);
 /* Return node with the given id if it exist; otherwise return (STUB_ADDRESS, STUB_INDEX).  */
-struct slot 	led_RenderMeshLookup(struct led *led, const utf8 id);
+struct slot led_RenderMeshLookup(struct led *led, const utf8 id);
 
 /* command identifiers */
 extern u32 	cmd_led_node_add_id;

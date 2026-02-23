@@ -45,6 +45,8 @@ void cmd_shape_prefab_remove(void);
 
 void cmd_rb_prefab_add(void);
 void cmd_rb_prefab_remove(void);
+void cmd_rb_prefab_attach_shape(void);
+void cmd_rb_prefab_detach_shape(void);
 
 void cmd_render_mesh_add(void);
 void cmd_render_mesh_remove(void);
@@ -66,6 +68,8 @@ u32 cmd_shape_prefab_remove_id;
 
 u32 cmd_rb_prefab_add_id;
 u32 cmd_rb_prefab_remove_id;
+u32 cmd_rb_prefab_attach_shape_id;
+u32 cmd_rb_prefab_detach_shape_id;
 
 u32 cmd_render_mesh_add_id;
 u32 cmd_render_mesh_remove_id;
@@ -95,8 +99,10 @@ void led_CoreInitCommands(void)
 	cmd_shape_prefab_add_id = CmdFunctionRegister(Utf8Inline("shape_prefab_add"), 5, &cmd_shape_prefab_add).index;
 	cmd_shape_prefab_remove_id = CmdFunctionRegister(Utf8Inline("shape_prefab_remove"), 1, &cmd_shape_prefab_remove).index;
 
-	cmd_rb_prefab_add_id = CmdFunctionRegister(Utf8Inline("rb_prefab_add"), 6, &cmd_rb_prefab_add).index;
-	cmd_rb_prefab_remove_id = CmdFunctionRegister(Utf8Inline("rb_prefab_remove"), 1, &cmd_rb_prefab_remove).index;
+	cmd_rb_prefab_add_id = CmdFunctionRegister(Utf8Inline("rb_prefab_add"), 2, &cmd_rb_prefab_add).index;
+	cmd_rb_prefab_remove_id = CmdFunctionRegister(Utf8Inline("rb_prefab_remove"), 2, &cmd_rb_prefab_remove).index;
+    cmd_rb_prefab_attach_shape_id = CmdFunctionRegister(Utf8Inline("rb_prefab_attach_shape"), 3, &cmd_rb_prefab_attach_shape).index;
+    cmd_rb_prefab_detach_shape_id = CmdFunctionRegister(Utf8Inline("rb_prefab_detach_shape"), 2, &cmd_rb_prefab_detach_shape).index;
 
 	cmd_render_mesh_add_id = CmdFunctionRegister(Utf8Inline("render_mesh_add"), 2, &cmd_render_mesh_add).index;
 	cmd_render_mesh_remove_id = CmdFunctionRegister(Utf8Inline("render_mesh_remove"), 1, &cmd_render_mesh_remove).index;
@@ -522,6 +528,23 @@ void cmd_rb_prefab_remove(void)
 	led_RigidBodyPrefabRemove(g_editor, g_queue->cmd_exec->arg[0].utf8);
 }
 
+void cmd_rb_prefab_attach_shape(void)
+{
+    const utf8 rb_id = g_queue->cmd_exec->arg[0].utf8;
+    const utf8 shape_id = g_queue->cmd_exec->arg[1].utf8;
+    const utf8 local_id = g_queue->cmd_exec->arg[2].utf8; 
+
+    led_RigidBodyPrefabAttachShape(g_editor, rb_id, shape_id, local_id);
+}
+
+void cmd_rb_prefab_detach_shape(void)
+{
+    const utf8 rb_id = g_queue->cmd_exec->arg[0].utf8;
+    const utf8 local_id = g_queue->cmd_exec->arg[1].utf8; 
+
+    led_RigidBodyPrefabDetachShape(g_editor, rb_id, local_id);
+}
+
 struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const utf8 shape, const f32 density, const f32 restitution, const f32 friction, const u32 dynamic)
 {
 	struct slot slot = empty_slot;	
@@ -552,6 +575,9 @@ struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const utf8 sh
 			slot = strdb_AddAndAlias(&led->rb_prefab_db, copy);
 			struct ds_RigidBodyPrefab *prefab = slot.address;
 
+            prefab->shape_list = dll_Init(struct ds_ShapePrefabInstance);
+
+            /* TODO remove */
 			prefab->shape = ref.index;
 			prefab->restitution = restitution;
 			prefab->friction = friction;
@@ -564,12 +590,26 @@ struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const utf8 sh
 	return slot;
 }
 
+static void led_ShapePrefabInstanceRemove(struct led *led, const u32 i)
+{
+    const struct ds_ShapePrefabInstance *instance = PoolAddress(&led->shape_prefab_instance_pool, i);
+    strdb_Dereference(&led->shape_prefab_db, instance->shape);
+    PoolRemove(&led->shape_prefab_instance_pool, i);
+}
+
 void led_RigidBodyPrefabRemove(struct led *led, const utf8 id)
 {
 	struct slot slot = led_RigidBodyPrefabLookup(led, id);
 	struct ds_RigidBodyPrefab *prefab = slot.address;
 	if (slot.index != STRING_DATABASE_STUB_INDEX && prefab->reference_count == 0)
 	{
+        for (u32 i = prefab->shape_list.first; i != DLL_NULL; )
+        {
+            const struct ds_ShapePrefabInstance *instance = PoolAddress(&led->shape_prefab_instance_pool, i);
+            i = instance->dll_next;
+            led_ShapePrefabInstanceRemove(led, i);
+        }
+
 		void *buf = prefab->id.buf;
 		strdb_Dereference(&led->cs_db, prefab->shape);
 		strdb_Remove(&led->rb_prefab_db, id);
@@ -580,6 +620,87 @@ void led_RigidBodyPrefabRemove(struct led *led, const utf8 id)
 struct slot led_RigidBodyPrefabLookup(struct led *led, const utf8 id)
 {
 	return strdb_Lookup(&led->rb_prefab_db, id);
+}
+
+void led_RigidBodyPrefabAttachShape(struct led *led, const utf8 rb_id, const utf8 shape_id, const utf8 local_shape_id)
+{
+    struct ds_RigidBodyPrefab *rb_prefab = led_RigidBodyPrefabLookup(led, rb_id).address;
+    struct ds_RigidBodyPrefab *shape_prefab = led_ShapePrefabLookup(led, shape_id).address;
+    const u64 id_reqsize = Utf8SizeRequired(local_shape_id);
+    if (!rb_prefab)
+    {
+		Log(T_LED, S_WARNING, "Failed to attach shape to ds_RigidBodyPrefab %k, prefab doesn't exist", &rb_id);
+    } 
+    else if (!shape_prefab)
+    {
+		LogString(T_LED, S_WARNING, "Failed to attach shape to ds_RigidBodyPrefab %k, ds_ShapePrefab %k does not exist.", &rb_id, &shape_id);
+    }
+    else if (led_RigidBodyPrefabLookupShape(led, rb_id, local_shape_id).address != NULL)
+    {
+		LogString(T_LED, S_WARNING, "Failed to attach shape to to ds_RigidBodyPrefab %k, a shape instance with local id %k already exists in the body.", &rb_id, &local_id);
+    }
+    else if (SHAPE_PREFAB_INSTANCE_BUFSIZE < id_reqsize)
+    {
+		LogString(T_LED, S_WARNING, "Failed to attach shape to to ds_RigidBodyPrefab %k, identifier buffer size is %luB but requires %luB.", &rb_id, ID_BUFSIZE, id_reqsize);
+    }
+    else
+    {
+        struct slot slot = PoolAdd(&led->shape_prefab_instance_pool);
+        struct ds_ShapePrefabInstance *instance = slot.address;
+        slot = strdb_Reference(&led->shape_prefab_db, shape_id);
+
+        dll_Prepend(&rb_prefab->shape_list, led->shape_prefab_instance_pool.buf, slot.index);
+        instance->id = Utf8CopyBuffered(instance->id_buf, SHAPE_PREFAB_INSTANCE_BUFSIZE, local_shape_id);
+        instance->shape = slot.index;
+
+        quat quat;
+        QuatAxisAngle(quat, Vec3Inline(0.0f, 1.0f, 0.0f), 0.0f);
+        Vec3Set(instance->t_local.position, 0.0f, 0.0f, 0.0f);
+        QuatCopy(instance->t_local.rotation, quat);
+    }
+}
+
+void led_RigidBodyPrefabDetachShape(struct led *led, const utf8 rb_id, const utf8 local_shape_id)
+{
+    struct ds_RigidBodyPrefab *rb_prefab = led_RigidBodyPrefabLookup(led, rb_id).address;
+    struct slot slot = led_RigidBodyPrefabLookupShape(led, rb_id, local_shape_id);
+    struct ds_ShapePrefabInstance *instance = slot.address;
+    if (!rb_prefab)
+    {
+		Log(T_LED, S_WARNING, "Failed to deattach shape to ds_RigidBodyPrefab %k, prefab doesn't exist", &rb_id);
+    } 
+    else if (!instance)
+    {
+		LogString(T_LED, S_WARNING, "Failed to attach shape to to ds_RigidBodyPrefab %k, a shape instance with local id %k does not exist in the body.", &rb_id, &local_id);
+    }
+    else
+    {
+        strdb_Dereference(&led->shape_prefab_db, instance->shape);
+        dll_Remove(&rb_prefab->shape_list, led->shape_prefab_instance_pool.buf, slot.index);
+    }
+}
+
+struct slot led_RigidBodyPrefabLookupShape(struct led *led, const utf8 rb_id, const utf8 local_shape_id)
+{
+    struct slot slot = { .address = NULL, .index = POOL_NULL };
+    struct slot prefab_slot = led_RigidBodyPrefabLookup(led, rb_id);
+    if (prefab_slot.index != STRING_DATABASE_STUB_INDEX)
+    {
+        const struct ds_RigidBodyPrefab *prefab = prefab_slot.address;
+        struct ds_ShapePrefabInstance *instance = NULL;
+        for (u32 i = prefab->shape_list.first; i != DLL_NULL; i = instance->dll_next)
+        {
+            instance = PoolAddress(&led->shape_prefab_instance_pool, i);
+            if (Utf8Equivalence(instance->id, local_shape_id))
+            {
+                slot.index = i;
+                slot.address = instance;
+                break;
+            }
+        }
+    }
+
+    return slot;
 }
 
 struct slot led_NodeAdd(struct led *led, const utf8 id)

@@ -146,6 +146,7 @@ struct led
 	struct ui_DropdownMenu  rb_color_mode_menu;
 
 	struct strdb		    shape_prefab_db;
+    struct pool             shape_prefab_instance_pool;    
 
 	struct strdb		    rb_prefab_db;
 	struct ui_List 		    rb_prefab_list;
