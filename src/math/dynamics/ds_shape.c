@@ -37,8 +37,8 @@ struct slot ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_S
 		shape->t_local = *t;
 		shape->margin = prefab->margin;
 
-		const struct slot cshape_slot = strdb_Reference(pipeline->shape_db, prefab->cshape_id);
-		const struct collisionShape *cshape = slot.address;
+		const struct collisionShape *cshape = strdb_Address(pipeline->cshape_db, prefab->cshape);
+		const struct slot cshape_slot = strdb_Reference(pipeline->cshape_db, cshape->id);
 		shape->cshape_handle = cshape_slot.index;
 		shape->cshape_type = cshape->type;
 
@@ -70,7 +70,7 @@ void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, const u32 shap
 	//	isdb_SplitIsland(&pipeline->frame, pipeline, body->island_index);
 	//}
 
-	strdb_Dereference(pipeline->shape_db, shape->cshape_handle);
+	strdb_Dereference(pipeline->cshape_db, shape->cshape_handle);
 	DbvhRemove(&pipeline->shape_bvh, shape->proxy);
 	PoolRemove(&pipeline->shape_pool, shape_index);
 }
@@ -83,7 +83,7 @@ void ds_ShapeStaticRemove(struct ds_RigidBodyPipeline *pipeline, const u32 shape
 	//TODO
 	//cdb_StaticRemoveContactsAndUpdateIslands(pipeline, shape_index);	
 
-	strdb_Dereference(pipeline->shape_db, shape->cshape_handle);
+	strdb_Dereference(pipeline->cshape_db, shape->cshape_handle);
 	DbvhRemove(&pipeline->shape_bvh, shape->proxy);
 	PoolRemove(&pipeline->shape_pool, shape_index);
 }
@@ -94,7 +94,7 @@ struct aabb ds_ShapeWorldBbox(const struct ds_RigidBodyPipeline *pipeline, struc
 	vec3 max = { -F32_INFINITY, -F32_INFINITY, -F32_INFINITY };
 
 	const struct ds_RigidBody *body = PoolAddress(&pipeline->body_pool, shape->body);
-	const struct collisionShape *cshape = strdb_Address(pipeline->shape_db, shape->cshape_handle);
+	const struct collisionShape *cshape = strdb_Address(pipeline->cshape_db, shape->cshape_handle);
 	mat3 shape_rot, body_rot;
 	Mat3Quat(shape_rot, shape->t_local.rotation);
 	Mat3Quat(body_rot, body->t_world.rotation);

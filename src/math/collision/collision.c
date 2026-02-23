@@ -1091,8 +1091,8 @@ static f32 SphereDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipeline *p
 {
 	ds_Assert(b1->shape_type == COLLISION_SHAPE_SPHERE && b2->shape_type == COLLISION_SHAPE_SPHERE);
 
-	const struct collisionShape *shape1 = strdb_Address(pipeline->shape_db, b1->shape_handle);
-	const struct collisionShape *shape2 = strdb_Address(pipeline->shape_db, b2->shape_handle);
+	const struct collisionShape *shape1 = strdb_Address(pipeline->cshape_db, b1->shape_handle);
+	const struct collisionShape *shape2 = strdb_Address(pipeline->cshape_db, b2->shape_handle);
 
 	f32 dist_sq = 0.0f;
 
@@ -1116,9 +1116,9 @@ static f32 CapsuleSphereDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipe
 {
 	ds_Assert(b1->shape_type == COLLISION_SHAPE_CAPSULE && b2->shape_type == COLLISION_SHAPE_SPHERE);
 
-	const struct collisionShape *shape2 = strdb_Address(pipeline->shape_db, b2->shape_handle);
+	const struct collisionShape *shape2 = strdb_Address(pipeline->cshape_db, b2->shape_handle);
 
-	const struct capsule *cap = &((struct collisionShape *) strdb_Address(pipeline->shape_db, b1->shape_handle))->capsule;
+	const struct capsule *cap = &((struct collisionShape *) strdb_Address(pipeline->cshape_db, b1->shape_handle))->capsule;
 	f32 r_sum = cap->radius + shape2->sphere.radius + 2.0f * margin;
 
 	mat3 rot;
@@ -1153,8 +1153,8 @@ static f32 CapsuleDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipeline *
 	ds_Assert(b1->shape_type == COLLISION_SHAPE_CAPSULE && b2->shape_type == COLLISION_SHAPE_CAPSULE);
 
 
-	struct capsule *cap1 = &((struct collisionShape *) strdb_Address(pipeline->shape_db, b1->shape_handle))->capsule;
-	struct capsule *cap2 = &((struct collisionShape *) strdb_Address(pipeline->shape_db, b2->shape_handle))->capsule;
+	struct capsule *cap1 = &((struct collisionShape *) strdb_Address(pipeline->cshape_db, b1->shape_handle))->capsule;
+	struct capsule *cap2 = &((struct collisionShape *) strdb_Address(pipeline->cshape_db, b2->shape_handle))->capsule;
 	f32 r_sum = cap1->radius + cap2->radius + 2.0f * margin;
 
 	mat3 rot;
@@ -1196,8 +1196,8 @@ static f32 HullSphereDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipelin
 	ds_Assert(b1->shape_type == COLLISION_SHAPE_CONVEX_HULL);
 	ds_Assert(b2->shape_type == COLLISION_SHAPE_SPHERE);
 
-	const struct collisionShape *shape1 = strdb_Address(pipeline->shape_db, b1->shape_handle);
-	const struct collisionShape *shape2 = strdb_Address(pipeline->shape_db, b2->shape_handle);
+	const struct collisionShape *shape1 = strdb_Address(pipeline->cshape_db, b1->shape_handle);
+	const struct collisionShape *shape2 = strdb_Address(pipeline->cshape_db, b2->shape_handle);
 
 	struct gjkInput g1 = { .v = shape1->hull.v, .v_count = shape1->hull.v_count, };
 	Vec3Copy(g1.pos, b1->position);
@@ -1231,8 +1231,8 @@ static f32 HullCapsuleDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipeli
 	ds_Assert(b1->shape_type == COLLISION_SHAPE_CONVEX_HULL);
 	ds_Assert(b2->shape_type == COLLISION_SHAPE_CAPSULE);
 
-	const struct collisionShape *shape1 = strdb_Address(pipeline->shape_db, b1->shape_handle);
-	const struct collisionShape *shape2 = strdb_Address(pipeline->shape_db, b2->shape_handle);
+	const struct collisionShape *shape1 = strdb_Address(pipeline->cshape_db, b1->shape_handle);
+	const struct collisionShape *shape2 = strdb_Address(pipeline->cshape_db, b2->shape_handle);
 
 	struct gjkInput g1 = { .v = shape1->hull.v, .v_count = shape1->hull.v_count, };
 	Vec3Copy(g1.pos, b1->position);
@@ -1270,8 +1270,8 @@ static f32 HullDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipeline *pip
 	ds_Assert (b1->shape_type == COLLISION_SHAPE_CONVEX_HULL);
 	ds_Assert (b2->shape_type == COLLISION_SHAPE_CONVEX_HULL);
 
-	const struct collisionShape *shape1 = strdb_Address(pipeline->shape_db, b1->shape_handle);
-	const struct collisionShape *shape2 = strdb_Address(pipeline->shape_db, b2->shape_handle);
+	const struct collisionShape *shape1 = strdb_Address(pipeline->cshape_db, b1->shape_handle);
+	const struct collisionShape *shape2 = strdb_Address(pipeline->cshape_db, b2->shape_handle);
 
 	struct gjkInput g1 = { .v = shape1->hull.v, .v_count = shape1->hull.v_count, };
 	Vec3Copy(g1.pos, b1->position);
@@ -1319,8 +1319,8 @@ static u32 SphereTest(const struct ds_RigidBodyPipeline *pipeline, const struct 
 {
 	ds_Assert(b1->shape_type == COLLISION_SHAPE_SPHERE && b2->shape_type == COLLISION_SHAPE_SPHERE);
 
-	const struct collisionShape *shape1 = strdb_Address(pipeline->shape_db, b1->shape_handle);
-	const struct collisionShape *shape2 = strdb_Address(pipeline->shape_db, b2->shape_handle);
+	const struct collisionShape *shape1 = strdb_Address(pipeline->cshape_db, b1->shape_handle);
+	const struct collisionShape *shape2 = strdb_Address(pipeline->cshape_db, b2->shape_handle);
 	
 	const f32 r_sum = shape1->sphere.radius + shape2->sphere.radius + 2.0f * margin;
 	return Vec3DistanceSquared(b1->position, b2->position) <= r_sum*r_sum;
@@ -1330,8 +1330,8 @@ static u32 CapsuleSphereTest(const struct ds_RigidBodyPipeline *pipeline, const 
 {
 	ds_Assert(b1->shape_type == COLLISION_SHAPE_CAPSULE && b2->shape_type == COLLISION_SHAPE_SPHERE);
 
-	const struct collisionShape *shape1 = strdb_Address(pipeline->shape_db, b1->shape_handle);
-	const struct collisionShape *shape2 = strdb_Address(pipeline->shape_db, b2->shape_handle);
+	const struct collisionShape *shape1 = strdb_Address(pipeline->cshape_db, b1->shape_handle);
+	const struct collisionShape *shape2 = strdb_Address(pipeline->cshape_db, b2->shape_handle);
 
 	const struct capsule *cap = &shape1->capsule;
 	f32 r_sum = cap->radius + shape2->sphere.radius + 2.0f * margin;
@@ -1399,8 +1399,8 @@ static u32 SphereContact(struct arena *garbage, struct collisionResult *result, 
 	ds_Assert(b1->shape_type == COLLISION_SHAPE_SPHERE);
 	ds_Assert(b2->shape_type == COLLISION_SHAPE_SPHERE);
 
-	const struct collisionShape *shape1 = strdb_Address(pipeline->shape_db, b1->shape_handle);
-	const struct collisionShape *shape2 = strdb_Address(pipeline->shape_db, b2->shape_handle);
+	const struct collisionShape *shape1 = strdb_Address(pipeline->cshape_db, b1->shape_handle);
+	const struct collisionShape *shape2 = strdb_Address(pipeline->cshape_db, b2->shape_handle);
 
 	result->type = COLLISION_NONE;
 	u32 contact_generated = 0;
@@ -1440,8 +1440,8 @@ static u32 CapsuleSphereContact(struct arena *garbage, struct collisionResult *r
 	ds_Assert(b1->shape_type == COLLISION_SHAPE_CAPSULE);
 	ds_Assert(b2->shape_type == COLLISION_SHAPE_SPHERE);
 
-	const struct collisionShape *shape1 = strdb_Address(pipeline->shape_db, b1->shape_handle);
-	const struct collisionShape *shape2 = strdb_Address(pipeline->shape_db, b2->shape_handle);
+	const struct collisionShape *shape1 = strdb_Address(pipeline->cshape_db, b1->shape_handle);
+	const struct collisionShape *shape2 = strdb_Address(pipeline->cshape_db, b2->shape_handle);
 
 	result->type = COLLISION_NONE;
 	u32 contact_generated = 0;
@@ -1509,8 +1509,8 @@ static u32 CapsuleContact(struct arena *garbage, struct collisionResult *result,
 	u32 contact_generated = 0;
 	result->type = COLLISION_NONE;
 
-	const struct capsule *cap1 = &((struct collisionShape *) strdb_Address(pipeline->shape_db, b1->shape_handle))->capsule;
-	const struct capsule *cap2 = &((struct collisionShape *) strdb_Address(pipeline->shape_db, b2->shape_handle))->capsule;
+	const struct capsule *cap1 = &((struct collisionShape *) strdb_Address(pipeline->cshape_db, b1->shape_handle))->capsule;
+	const struct capsule *cap2 = &((struct collisionShape *) strdb_Address(pipeline->cshape_db, b2->shape_handle))->capsule;
 	f32 r_sum = cap1->radius + cap2->radius + 2.0f * margin;
 
 	mat3 rot;
@@ -1615,8 +1615,8 @@ static u32 HullSphereContact(struct arena *garbage, struct collisionResult *resu
 	ds_Assert (b1->shape_type == COLLISION_SHAPE_CONVEX_HULL);
 	ds_Assert (b2->shape_type == COLLISION_SHAPE_SPHERE);
 
-	const struct collisionShape *shape1 = strdb_Address(pipeline->shape_db, b1->shape_handle);
-	const struct collisionShape *shape2 = strdb_Address(pipeline->shape_db, b2->shape_handle);
+	const struct collisionShape *shape1 = strdb_Address(pipeline->cshape_db, b1->shape_handle);
+	const struct collisionShape *shape2 = strdb_Address(pipeline->cshape_db, b2->shape_handle);
 
 	result->type = COLLISION_NONE;
 	u32 contact_generated = 0;
@@ -1696,8 +1696,8 @@ static u32 HullCapsuleContact(struct arena *garbage, struct collisionResult *res
 	result->type = COLLISION_NONE;
 	u32 contact_generated = 0;
 
-	const struct collisionShape *shape1 = strdb_Address(pipeline->shape_db, b1->shape_handle);
-	const struct collisionShape *shape2 = strdb_Address(pipeline->shape_db, b2->shape_handle);
+	const struct collisionShape *shape1 = strdb_Address(pipeline->cshape_db, b1->shape_handle);
+	const struct collisionShape *shape2 = strdb_Address(pipeline->cshape_db, b2->shape_handle);
 
 	const struct dcel *h = &shape1->hull;
 	struct gjkInput g1 = { .v = h->v, .v_count = h->v_count, };
@@ -2388,8 +2388,8 @@ static u32 HullContact(struct arena *tmp, struct collisionResult *result, const 
 	Mat3Quat(rot1, b1->rotation);
 	Mat3Quat(rot2, b2->rotation);
 
-	struct dcel *h1 = &((struct collisionShape *) strdb_Address(pipeline->shape_db, b1->shape_handle))->hull;
-	struct dcel *h2 = &((struct collisionShape *) strdb_Address(pipeline->shape_db, b2->shape_handle))->hull;
+	struct dcel *h1 = &((struct collisionShape *) strdb_Address(pipeline->cshape_db, b1->shape_handle))->hull;
+	struct dcel *h2 = &((struct collisionShape *) strdb_Address(pipeline->cshape_db, b2->shape_handle))->hull;
 
 	vec3ptr v1_world = ArenaPush(tmp, h1->v_count * sizeof(vec3));
 	vec3ptr v2_world = ArenaPush(tmp, h2->v_count * sizeof(vec3));
@@ -2580,8 +2580,8 @@ static u32 TriMeshBvhSphereContact(struct arena *tmp, struct collisionResult *re
 	ds_Assert(b1->shape_type == COLLISION_SHAPE_TRI_MESH);
 	ds_Assert(b2->shape_type == COLLISION_SHAPE_SPHERE);
 
-	struct triMeshBvh *mesh_bvh = &((struct collisionShape *) strdb_Address(pipeline->shape_db, b1->shape_handle))->mesh_bvh;
-	struct sphere *sph = &((struct collisionShape *) strdb_Address(pipeline->shape_db, b2->shape_handle))->sphere;
+	struct triMeshBvh *mesh_bvh = &((struct collisionShape *) strdb_Address(pipeline->cshape_db, b1->shape_handle))->mesh_bvh;
+	struct sphere *sph = &((struct collisionShape *) strdb_Address(pipeline->cshape_db, b2->shape_handle))->sphere;
 
 	struct aabb bbox_transform;
 	Vec3Sub(bbox_transform.center, b2->position, b1->position);
@@ -2662,7 +2662,7 @@ static u32 TriMeshBvhHullContact(struct arena *tmp, struct collisionResult *resu
 static f32 _SphereRaycastParameter(const struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBody *b, const struct ray *ray)
 {
 	ds_Assert(b->shape_type == COLLISION_SHAPE_SPHERE);
-	const struct collisionShape *shape = strdb_Address(pipeline->shape_db, b->shape_handle);
+	const struct collisionShape *shape = strdb_Address(pipeline->cshape_db, b->shape_handle);
 	struct sphere sph = SphereConstruct(b->position, shape->sphere.radius);
 	return SphereRaycastParameter(&sph, ray);	
 }
@@ -2671,7 +2671,7 @@ static f32 CapsuleRaycastParameter(const struct ds_RigidBodyPipeline *pipeline, 
 {
 	ds_Assert(b->shape_type == COLLISION_SHAPE_CAPSULE);
 
-	const struct collisionShape *shape = strdb_Address(pipeline->shape_db, b->shape_handle);
+	const struct collisionShape *shape = strdb_Address(pipeline->cshape_db, b->shape_handle);
 	mat3 rot;
 	vec3 p0, p1;
 	Mat3Quat(rot, b->rotation);
@@ -2698,7 +2698,7 @@ static f32 HullRaycastParameter(const struct ds_RigidBodyPipeline *pipeline, con
 	vec3 n, p;
 	mat3 rot;
 	Mat3Quat(rot, b->rotation);
-	const struct dcel *h = &((struct collisionShape *) strdb_Address(pipeline->shape_db, b->shape_handle))->hull;
+	const struct dcel *h = &((struct collisionShape *) strdb_Address(pipeline->cshape_db, b->shape_handle))->hull;
 	f32 t_best = F32_INFINITY;
 
 	for (u32 fi = 0; fi < h->f_count; ++fi)
@@ -2731,7 +2731,7 @@ static f32 TriMeshBvhRaycastParameter(const struct ds_RigidBodyPipeline *pipelin
 	QuatInverse(inv_quat, b->rotation);
 	Mat3Quat(inv_rot, inv_quat);
 
-	const struct triMeshBvh *mesh_bvh = &((struct collisionShape *) strdb_Address(pipeline->shape_db, b->shape_handle))->mesh_bvh;
+	const struct triMeshBvh *mesh_bvh = &((struct collisionShape *) strdb_Address(pipeline->cshape_db, b->shape_handle))->mesh_bvh;
 	struct ray rotated_ray;
 	Vec3Sub(tmp, ray->origin, b->position);
 	Mat3VecMul(rotated_ray.origin, inv_rot, tmp);

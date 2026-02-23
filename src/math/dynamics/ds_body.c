@@ -99,8 +99,8 @@ struct slot ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Rig
 	body->flags = RB_ACTIVE | (g_solver_config->sleep_enabled * RB_AWAKE) | dynamic_flag;
 	body->margin = 0.25f;
 
-	const struct collisionShape *shape = strdb_Address(pipeline->shape_db, prefab->shape);
-	const struct slot shape_slot = strdb_Reference(pipeline->shape_db, shape->id);
+	const struct collisionShape *shape = strdb_Address(pipeline->cshape_db, prefab->shape);
+	const struct slot shape_slot = strdb_Reference(pipeline->cshape_db, shape->id);
 	body->shape_handle = shape_slot.index;
 	body->shape_type = shape->type;
 
@@ -203,7 +203,7 @@ void ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, con
 	{
 		shape = PoolAddress(&pipeline->shape_pool, s);
 		s = shape->dll_next;
-		const struct collisionShape *cshape = strdb_Address(pipeline->shape_db, shape->cshape_handle);
+		const struct collisionShape *cshape = strdb_Address(pipeline->cshape_db, shape->cshape_handle);
 
 		mass[i] = shape->density * cshape->volume;
 		body->mass += mass[i];
@@ -222,7 +222,6 @@ void ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, con
 		Mat3Scale(tmp1, cshape->inertia_tensor, shape->density);
 		Mat3Mul(tmp2, rot_local, tmp1);
 		Mat3Mul(inertia_tensor[i], tmp2, rot_local_inv);
-
 	}
 
 	Vec3ScaleSelf(body->local_center_of_mass, 1.0f / body->mass);

@@ -93,12 +93,14 @@ struct ds_Shape
 	ds_Transform	t_local;	            /* local body frame transform 			            */
 
 	/* DYNAMIC STATE */
-	u32			proxy;		                /* BVH index 					                    */
+	u32			    proxy;		            /* BVH index 					                    */
 };
 
 struct ds_ShapePrefab
 {
-	utf8	cshape_id;	    /* utf8 identifier of collisionShape 		        */
+	STRING_DATABASE_SLOT_STATE;
+
+	u32	    cshape;	        /* utf8 identifier of collisionShape 		        */
 	f32		density;	    /* kg/m^3					                        */
 	f32 	restitution;	/* Range [0.0, 1.0] : bounciness  		            */
 	f32 	friction;	    /* Range [0.0, 1.0] : bound tangent impulses to 
@@ -781,8 +783,8 @@ struct ds_RigidBodyPipeline
 	u64				ns_tick;		/* ns per game tick */
 	u64 			frames_completed;	/* number of completed physics frames */ 
 
-	struct strdb *	shape_db;		/* externally owned */
-	struct strdb *	prefab_db;		/* externally owned */
+	struct strdb *	cshape_db;		    /* externally owned */
+	struct strdb *	body_prefab_db;		/* externally owned */
 
 	struct pool		body_pool;
 	struct dll		body_marked_list;	/* bodies marked for removal */
@@ -841,7 +843,7 @@ struct ds_RigidBodyPipeline
 /**************** PHYISCS PIPELINE API ****************/
 
 /* Initialize a new growable physics pipeline; ns_tick is the duration of a physics frame. */
-struct ds_RigidBodyPipeline	PhysicsPipelineAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct strdb *shape_db, struct strdb *prefab_db);
+struct ds_RigidBodyPipeline	PhysicsPipelineAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct strdb *cshape_db, struct strdb *prefab_db);
 /* free pipeline resources */
 void 			PhysicsPipelineFree(struct ds_RigidBodyPipeline *physics_pipeline);
 /* flush pipeline resources */

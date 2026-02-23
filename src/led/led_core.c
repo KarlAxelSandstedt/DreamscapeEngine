@@ -40,6 +40,9 @@ void cmd_collision_box_add(void);
 void cmd_collision_sphere_add(void);
 void cmd_collision_capsule_add(void);
 
+void cmd_shape_prefab_add(void);
+void cmd_shape_prefab_remove(void);
+
 void cmd_rb_prefab_add(void);
 void cmd_rb_prefab_remove(void);
 
@@ -57,6 +60,9 @@ u32	cmd_led_compile_id;
 u32	cmd_led_run_id;
 u32	cmd_led_pause_id;
 u32	cmd_led_stop_id;
+
+u32 cmd_shape_prefab_add_id;
+u32 cmd_shape_prefab_remove_id;
 
 u32 cmd_rb_prefab_add_id;
 u32 cmd_rb_prefab_remove_id;
@@ -85,6 +91,9 @@ void led_CoreInitCommands(void)
 	cmd_led_run_id = CmdFunctionRegister(Utf8Inline("led_Run"), 0, &cmd_led_run).index;
 	cmd_led_pause_id = CmdFunctionRegister(Utf8Inline("led_Pause"), 0, &cmd_led_pause).index;
 	cmd_led_stop_id = CmdFunctionRegister(Utf8Inline("led_Stop"), 0, &cmd_led_stop).index;
+
+	cmd_shape_prefab_add_id = CmdFunctionRegister(Utf8Inline("shape_prefab_add"), 5, &cmd_shape_prefab_add).index;
+	cmd_shape_prefab_remove_id = CmdFunctionRegister(Utf8Inline("shape_prefab_remove"), 1, &cmd_shape_prefab_remove).index;
 
 	cmd_rb_prefab_add_id = CmdFunctionRegister(Utf8Inline("rb_prefab_add"), 6, &cmd_rb_prefab_add).index;
 	cmd_rb_prefab_remove_id = CmdFunctionRegister(Utf8Inline("rb_prefab_remove"), 1, &cmd_rb_prefab_remove).index;
@@ -420,6 +429,80 @@ void led_RenderMeshRemove(struct led *led, const utf8 id)
 struct slot led_RenderMeshLookup(struct led *led, const utf8 id)
 {
 	return strdb_Lookup(&led->render_mesh_db, id);
+}
+
+void cmd_shape_prefab_add(void)
+{
+	const utf8 id = g_queue->cmd_exec->arg[0].utf8;
+	const utf8 shape = g_queue->cmd_exec->arg[1].utf8;
+	const f32 density = g_queue->cmd_exec->arg[2].f32;
+	const f32 restitution = g_queue->cmd_exec->arg[3].f32;
+	const f32 friction = g_queue->cmd_exec->arg[4].f32;
+
+	led_ShapePrefabAdd(g_editor, id, shape, density, restitution, friction);
+}
+
+void cmd_shape_prefab_remove(void)
+{
+	led_ShapePrefabRemove(g_editor, g_queue->cmd_exec->arg[0].utf8);
+}
+
+struct slot led_ShapePrefabAdd(struct led *led, const utf8 id, const utf8 cshape, const f32 density, const f32 restitution, const f32 friction)
+{
+	struct slot slot = empty_slot;	
+	if (!id.len)
+	{
+		LogString(T_LED, S_WARNING, "Failed to allocate ds_ShapePrefab: prefab->id must not be empty");
+	} 
+	else if (strdb_Lookup(&led->shape_prefab_db, id).index != STRING_DATABASE_STUB_INDEX) 
+	{
+		LogString(T_LED, S_WARNING, "Failed to allocate ds_ShapePrefab: prefab with given id already exist");
+	}
+	else
+	{ 
+		u8 *buf = ThreadAlloc256B();
+		const utf8 copy = Utf8CopyBuffered(buf, 256, id);	
+		if (!copy.len)
+		{
+			LogString(T_LED, S_WARNING, "Failed to allocate ds_ShapePrefab: prefab->id size must be <= 256B");
+			ThreadFree256B(buf);
+		}
+		else
+		{
+			struct slot ref = strdb_Reference(&led->cs_db, cshape);
+			if (ref.index == STRING_DATABASE_STUB_INDEX)
+			{
+				LogString(T_LED, S_WARNING, "In ds_ShapePrefab: shape not found, stub_shape chosen");
+			}
+			slot = strdb_AddAndAlias(&led->shape_prefab_db, copy);
+			struct ds_ShapePrefab *prefab = slot.address;
+
+			prefab->cshape = ref.index;
+			prefab->restitution = restitution;
+			prefab->friction = friction;
+			prefab->density = density;
+		}
+	}
+
+	return slot;
+}
+
+void led_ShapePrefabRemove(struct led *led, const utf8 id)
+{
+	struct slot slot = led_ShapePrefabLookup(led, id);
+	struct ds_ShapePrefab *prefab = slot.address;
+	if (slot.index != STRING_DATABASE_STUB_INDEX && prefab->reference_count == 0)
+	{
+		void *buf = prefab->id.buf;
+		strdb_Dereference(&led->cs_db, prefab->cshape);
+		strdb_Remove(&led->shape_prefab_db, id);
+		ThreadFree256B(buf);
+	}	
+}
+
+struct slot led_ShapePrefabLookup(struct led *led, const utf8 id)
+{
+	return strdb_Lookup(&led->shape_prefab_db, id);
 }
 
 void cmd_rb_prefab_add(void)
@@ -1037,6 +1120,65 @@ void led_WallSmashSimulationSetup(struct led *led)
 	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_map");
 	sys_win->cmd_queue.regs[1].ptr = mesh_bvh;
 	CmdQueueSubmit(&sys_win->cmd_queue, cmd_collision_tri_mesh_bvh_add_id);
+
+
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_map");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_map");
+	sys_win->cmd_queue.regs[2].f32 = 1.0f;
+	sys_win->cmd_queue.regs[3].f32 = 0.0f;
+	sys_win->cmd_queue.regs[4].f32 = floor_friction;
+	sys_win->cmd_queue.regs[5].u64 = 0;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_shape_prefab_add_id);
+
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_floor");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_floor");
+	sys_win->cmd_queue.regs[2].f32 = 1.0f;
+	sys_win->cmd_queue.regs[3].f32 = 0.0f;
+	sys_win->cmd_queue.regs[4].f32 = floor_friction;
+	sys_win->cmd_queue.regs[5].u32 = 0;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_shape_prefab_add_id);
+
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_box");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_box");
+	sys_win->cmd_queue.regs[2].f32 = 1.0f;
+	sys_win->cmd_queue.regs[3].f32 = 0.0f;
+	sys_win->cmd_queue.regs[4].f32 = box_friction;
+	sys_win->cmd_queue.regs[5].u32 = 1;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_shape_prefab_add_id);
+
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_capsule");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_capsule");
+	sys_win->cmd_queue.regs[2].f32 = 1.0f;
+	sys_win->cmd_queue.regs[3].f32 = 0.0f;
+	sys_win->cmd_queue.regs[4].f32 = capsule_friction;
+	sys_win->cmd_queue.regs[5].u32 = 1;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_shape_prefab_add_id);
+
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_sphere");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_sphere");
+	sys_win->cmd_queue.regs[2].f32 = 100.0f;
+	sys_win->cmd_queue.regs[3].f32 = 0.0f;
+	sys_win->cmd_queue.regs[4].f32 = sphere_friction;
+	sys_win->cmd_queue.regs[5].u32 = 1;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_shape_prefab_add_id);
+
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_dsphere");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_dsphere");
+	sys_win->cmd_queue.regs[2].f32 = 1.0f;
+	sys_win->cmd_queue.regs[3].f32 = 0.0f;
+	sys_win->cmd_queue.regs[4].f32 = sphere_friction;
+	sys_win->cmd_queue.regs[5].u32 = 1;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_shape_prefab_add_id);
+
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_ramp");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_ramp");
+	sys_win->cmd_queue.regs[2].f32 = 1.0f;
+	sys_win->cmd_queue.regs[3].f32 = 0.0f;
+	sys_win->cmd_queue.regs[4].f32 = ramp_friction;
+	sys_win->cmd_queue.regs[5].u32 = 0;
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_shape_prefab_add_id);
+
+
 
 	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_map");
 	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_map");

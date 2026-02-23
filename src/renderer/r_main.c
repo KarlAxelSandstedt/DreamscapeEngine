@@ -445,7 +445,7 @@ static void r_EditorDraw(const struct led *led)
 				continue;
 			}
 
-			const struct collisionShape *shape = strdb_Address(led->physics.shape_db, body->shape_handle);
+			const struct collisionShape *shape = strdb_Address(led->physics.cshape_db, body->shape_handle);
 			struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &shape->mesh_bvh.bvh, body->position, body->rotation, led->physics.sbvh_color);
 			if (mesh)
 			{

@@ -110,6 +110,7 @@ struct led *led_Alloc(void)
 	g_editor->node_selected_list = dll2_Init(struct led_node);
 	g_editor->csg = csg_Alloc();
 	g_editor->render_mesh_db = strdb_Alloc(NULL, 32, 32, struct r_Mesh, GROWABLE);
+	g_editor->shape_prefab_db = strdb_Alloc(NULL, 32, 32, struct ds_ShapePrefab, GROWABLE);
 	g_editor->rb_prefab_db = strdb_Alloc(NULL, 32, 32, struct ds_RigidBodyPrefab, GROWABLE);
 	g_editor->cs_db = strdb_Alloc(NULL, 32, 32, struct collisionShape, GROWABLE);
 	g_editor->physics = PhysicsPipelineAlloc(NULL, 1024, NSEC_PER_SEC / (u64) 60, 1024*1024, &g_editor->cs_db, &g_editor->rb_prefab_db);

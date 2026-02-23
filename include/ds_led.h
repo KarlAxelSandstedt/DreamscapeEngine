@@ -81,18 +81,18 @@ struct led_node
 	DLL_SLOT_STATE;		/* marked/non_marked state */
 	DLL2_SLOT_STATE;	/* selected list state */
 
-	u64			flags;
-	utf8			id;
+	u64			        flags;
+	utf8			    id;
 	struct ui_NodeCache	cache;
-	u32			key;
+	u32			        key;
 
-	vec3			position;
-	quat			rotation;
-	vec4			color;
+	vec3			    position;
+	quat			    rotation;
+	vec4			    color;
 
-	u32			rb_prefab; 
-	u32 			proxy;	
-	u32			csgBRush;	
+	u32			        rb_prefab; 
+	u32 			    proxy;	
+	u32			        csgBRush;	
 };
 
 /*
@@ -102,62 +102,64 @@ level editor main structure
  */
 struct led
 {
-	u32			window;
-	struct file		root_folder;
+	u32			            window;
+	struct file		        root_folder;
 
-	struct arena		mem_persistent;
+	struct arena		    mem_persistent;
 
-	struct led_project	project;
-	struct led_ProjectMenu project_menu;
+	struct led_project	    project;
+	struct led_ProjectMenu  project_menu;
 
-	struct r_Camera		cam;
-	f32			cam_left_velocity;
-	f32			cam_forward_velocity;
+	struct r_Camera		    cam;
+	f32			            cam_left_velocity;
+	f32			            cam_forward_velocity;
 		
-	u64			ns;		/* current time in ns */
-	u64			ns_delta;
-	f32			ns_delta_modifier;
-	u32			running;
+	u64			            ns;		/* current time in ns */
+	u64			            ns_delta;
+	f32			            ns_delta_modifier;
+	u32			            running;
 
-	u64			ns_engine_running;
-	u64			ns_engine_paused;
+	u64			            ns_engine_running;
+	u64			            ns_engine_paused;
 
-	u32			pending_engine_paused;
-	u32			pending_engine_running;
-	u32			pending_engine_initalized;
+	u32			            pending_engine_paused;
+	u32			            pending_engine_running;
+	u32			            pending_engine_initalized;
 
-	u32			engine_paused;
-	u32			engine_running;		
-	u32			engine_initalized;
+	u32			            engine_paused;
+	u32			            engine_running;		
+	u32			            engine_initalized;
 
-	utf8			viewport_id;
-	vec2			viewport_position;
-	vec2			viewport_size;
+	utf8		           	viewport_id;
+	vec2		           	viewport_position;
+	vec2		           	viewport_size;
 
 	/* TODO move stuff into led project/led_Core or something */
-	struct arena 		frame;
-	struct csg 		csg;
-	struct ui_List 		brush_list;
+	struct arena 		    frame;
+	struct csg 		        csg;
+	struct ui_List 		    brush_list;
 
 	struct ds_RigidBodyPipeline physics;
-	struct strdb 		cs_db;	
-	struct ui_List 		cs_list;
-	struct ui_DropdownMenu cs_mesh_menu;
-	struct ui_DropdownMenu rb_color_mode_menu;
+	struct strdb 		    cs_db;	
+	struct ui_List 		    cs_list;
+	struct ui_DropdownMenu  cs_mesh_menu;
+	struct ui_DropdownMenu  rb_color_mode_menu;
 
-	struct strdb		rb_prefab_db;
-	struct ui_List 		rb_prefab_list;
-	struct ui_DropdownMenu rb_prefab_mesh_menu;
+	struct strdb		    shape_prefab_db;
 
-	struct strdb		render_mesh_db;
+	struct strdb		    rb_prefab_db;
+	struct ui_List 		    rb_prefab_list;
+	struct ui_DropdownMenu  rb_prefab_mesh_menu;
 
-	struct hashMap 		node_map;
-	struct pool		node_pool;
-	struct dll		node_marked_list;
-	struct dll		node_non_marked_list;
-	struct dll		node_selected_list;
-	struct ui_List		node_ui_list;
-	struct ui_List		node_selected_ui_list;
+	struct strdb		    render_mesh_db;
+
+	struct hashMap 		    node_map;
+	struct pool		        node_pool;
+	struct dll		        node_marked_list;
+	struct dll		        node_non_marked_list;
+	struct dll		        node_selected_list;
+	struct ui_List		    node_ui_list;
+	struct ui_List		    node_selected_ui_list;
 };
 
 /* Allocate initial led resources */

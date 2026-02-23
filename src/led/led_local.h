@@ -123,14 +123,21 @@ struct slot	led_CollisionShapeAdd(struct led *led, const struct collisionShape *
 /* Remove node if it exists and is not being referenced; otherwise no-op.  */
 void 		led_CollisionShapeRemove(struct led *led, const utf8 id);
 /* Return node with the given id if it exist; otherwise return (STUB_ADDRESS, STUB_INDEX).  */
-struct slot 	led_CollisionShapeLookup(struct led *led, const utf8 id);
+struct slot led_CollisionShapeLookup(struct led *led, const utf8 id);
 
 /* Allocate prefab with the given id. Returns (NULL, U32_MAX) if id.size > 256B or bad shape identifier */
-struct slot 	led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const utf8 shape, const f32 density, const f32 restitution, const f32 friction, const u32 dynamic);
+struct slot	led_ShapePrefabAdd(struct led *led, const utf8 id, const utf8 shape, const f32 density, const f32 restitution, const f32 friction);
 /* Remove prefab if it exists and is not being referenced; otherwise no-op.  */
-void 		led_RigidBodyPrefabRemove(struct led *led, const utf8 id);
+void 		led_ShapePrefabRemove(struct led *led, const utf8 id);
 /* Return prefab with the given id if it exist; otherwise return (STUB_ADDRESS, STUB_INDEX).  */
-struct slot 	led_RigidBodyPrefabLookup(struct led *led, const utf8 id);
+struct slot led_ShapePrefabLookup(struct led *led, const utf8 id);
+
+/* Allocate prefab with the given id. Returns (NULL, U32_MAX) if id.size > 256B or bad shape identifier */
+struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const utf8 shape, const f32 density, const f32 restitution, const f32 friction, const u32 dynamic);
+/* Remove prefab if it exists and is not being referenced; otherwise no-op.  */
+void        led_RigidBodyPrefabRemove(struct led *led, const utf8 id);
+/* Return prefab with the given id if it exist; otherwise return (STUB_ADDRESS, STUB_INDEX).  */
+struct slot led_RigidBodyPrefabLookup(struct led *led, const utf8 id);
 
 /* Allocate node with the given id. Returns (NULL, U32_MAX) if id.size > 256B or bad shape paramters */
 struct slot	led_RenderMeshAdd(struct led *led, const utf8 id, const utf8 shape);

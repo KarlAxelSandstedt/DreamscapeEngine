@@ -49,7 +49,7 @@ static void ThreadSetCollisionDebug(void *task_addr)
 	while (AtomicLoadAcq32(&g_a_thread_counter) != pipeline->debug_count);
 }
 
-struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct strdb *shape_db, struct strdb *prefab_db)
+struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct strdb *cshape_db, struct strdb *prefab_db)
 {
 	struct ds_RigidBodyPipeline pipeline =
 	{
@@ -102,7 +102,7 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 
 	pipeline.c_db = cdb_Alloc(mem, initial_size);
 	pipeline.is_db = isdb_Alloc(mem, initial_size);
-	pipeline.shape_db = shape_db;
+	pipeline.cshape_db = cshape_db;
 
 	pipeline.body_color_mode = RB_COLOR_MODE_BODY;
 	pipeline.pending_body_color_mode = RB_COLOR_MODE_COLLISION;
@@ -231,7 +231,7 @@ static void InternalUpdateDynamicTree(struct ds_RigidBodyPipeline *pipeline)
 		b = PoolAddress(&pipeline->body_pool, i);
 		if ((b->flags & flags) == flags)
 		{
-			const struct collisionShape *shape = strdb_Address(pipeline->shape_db, b->shape_handle);
+			const struct collisionShape *shape = strdb_Address(pipeline->cshape_db, b->shape_handle);
 			RigidBodyUpdateLocalBox(b, shape);
 			Vec3Add(world_AABB.center, b->local_box.center, b->position);
 			Vec3Copy(world_AABB.hw, b->local_box.hw);
