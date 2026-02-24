@@ -36,24 +36,23 @@ struct led_Visual
 	struct r_Camera	cam;	
 
 	/* general visual aspects */
+	vec4		    unit_grid_color;
+	f32		        unit_grid_equidistance;
+	u32		        unit_grid_lines_per_axis;
+	u32		        unit_grid_draw;			/* Boolean */
+	u32		        unit_r_handle;
 
-	vec4		unit_grid_color;
-	f32		unit_grid_equidistance;
-	u32		unit_grid_lines_per_axis;
-	u32		unit_grid_draw;			/* Boolean */
-	u32		unit_r_handle;
+	u32		        axes_draw;
+	u32		        axes_r_handle;
 
-	u32		axes_draw;
-	u32		axes_r_handle;
-
-	vec4		border_color;
-	vec4		background_color;
-	vec4		background_highlight_color;
-	vec4		background_invalid_color;
-	vec4		text_color;
-	i32		border_size;
-	f32		edge_softness;
-	f32		corner_radius;
+	vec4		    border_color;
+	vec4		    background_color;
+	vec4		    background_highlight_color;
+	vec4		    background_invalid_color;
+	vec4		    text_color;
+	i32		        border_size;
+	f32		        edge_softness;
+	f32		        corner_radius;
 };
 
 extern struct led_Visual *	g_visual;
@@ -126,14 +125,14 @@ void 		led_CollisionShapeRemove(struct led *led, const utf8 id);
 struct slot led_CollisionShapeLookup(struct led *led, const utf8 id);
 
 /* Allocate prefab with the given id. Returns (NULL, U32_MAX) if id.size > 256B or bad shape identifier */
-struct slot	led_ShapePrefabAdd(struct led *led, const utf8 id, const utf8 shape, const f32 density, const f32 restitution, const f32 friction);
+struct slot	led_ShapePrefabAdd(struct led *led, const utf8 id, const utf8 shape, const f32 density, const f32 restitution, const f32 friction, const f32 margin);
 /* Remove prefab if it exists and is not being referenced; otherwise no-op.  */
 void 		led_ShapePrefabRemove(struct led *led, const utf8 id);
 /* Return prefab with the given id if it exist; otherwise return (STUB_ADDRESS, STUB_INDEX).  */
 struct slot led_ShapePrefabLookup(struct led *led, const utf8 id);
 
 /* Allocate prefab with the given id. Returns (NULL, U32_MAX) if id.size > 256B or bad shape identifier */
-struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const utf8 shape, const f32 density, const f32 restitution, const f32 friction, const u32 dynamic);
+struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const u32 dynamic);
 /* Remove prefab if it exists and is not being referenced; otherwise no-op.  */
 void        led_RigidBodyPrefabRemove(struct led *led, const utf8 id);
 /* Return prefab with the given id if it exist; otherwise return (STUB_ADDRESS, STUB_INDEX).  */

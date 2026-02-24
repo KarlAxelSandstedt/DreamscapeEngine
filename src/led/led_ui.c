@@ -837,7 +837,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 						if (prefab->density != density_prev || prefab->shape != shape_prev)
 						{
-							PrefabStaticsSetup(prefab, shape, prefab->density);
+                            ds_AssertString(0, "TODO");
 						}
 
 						ui_PadFill();

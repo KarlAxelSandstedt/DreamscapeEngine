@@ -144,7 +144,7 @@ void		ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, const u32 sha
 /* Remove the specified shape of a STATIC body and update the physics state into a valid state. */
 void		ds_ShapeStaticRemove(struct ds_RigidBodyPipeline *pipeline, const u32 shape);
 /* Calculate the world bounding box of the shape, taking into account the shape and its body's Transform. */
-struct aabb ds_ShapeWorldBbox(const struct ds_RigidBodyPipeline *pipeline, struct ds_Shape *shape);
+struct aabb ds_ShapeWorldBbox(const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape);
 
 
 /*
@@ -177,13 +177,9 @@ struct ds_RigidBody
 	DLL_SLOT_STATE;		/* body marked/non-marked list node */
 	POOL_SLOT_STATE;
 
-	struct dll	shape_list;		/* list of convex shapes constructing the rigid body 	*/
-	ds_Transform	t_world;		/* local body frame to world transform 			*/
-	vec3		local_center_of_mass;	/* local body frame center of mass 			*/
-
-	/* dynamic state */
-
-	struct aabb	local_box;		/* bounding AABB */
+	struct dll  shape_list;		        /* list of convex shapes constructing the rigid body 	*/
+	ds_Transform t_world;		        /* local body frame to world transform 			        */
+	vec3		local_center_of_mass;	/* local body frame center of mass 			            */
 
 	quat 		rotation;		
 	vec3 		velocity;
@@ -193,15 +189,14 @@ struct ds_RigidBody
 	vec3 		position;		/* center of mass world frame position */
 	vec3 		linear_momentum;   	/* L = mv */
 
-	u32		    contact_first;
 	u32		    island_index;
 
 	/* static state */
 	u32 		entity;
 	u32 		flags;
-	i32 		proxy;
 	f32 		margin;
 
+    //TODO remove 
 	enum collisionShapeType shape_type;
 	u32		    shape_handle;
 
@@ -232,19 +227,13 @@ struct ds_RigidBodyPrefab
 
 	mat3 	inertia_tensor;		/* intertia tensor of body frame */
 	mat3 	inv_inertia_tensor;
-	f32 	mass;			/* total body mass */
-    //TODO remove
+	f32 	mass;			    /* total body mass */
 	f32     density;
 	f32 	restitution;
 	f32 	friction;		/* Range [0.0, 1.0f] : bound tangent impulses to 
-						   mix(b1->friction, b2->friction)*(normal impuse) */
-	u32	dynamic;		/* dynamic body is true, static if false */
+						       mix(b1->friction, b2->friction)*(normal impuse) */
+	u32	    dynamic;		/* dynamic body is true, static if false */
 };
-
-//TODO remove 
-void    PrefabStaticsSetup(struct ds_RigidBodyPrefab *prefab, struct collisionShape *shape, const f32 density);
-void    RigidBodyUpdateLocalBox(struct ds_RigidBody *body, const struct collisionShape *shape);
-
 
 //TODO
 struct slot ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBodyPrefab *prefab, const vec3 position, const quat rotation, const u32 entity);
@@ -493,9 +482,9 @@ struct isdb
 struct ds_RigidBodyPipeline;
 
 /* Setup and allocate memory for new database */
-struct isdb 	isdb_Alloc(struct arena *mem_persistent, const u32 initial_size);
+struct isdb	isdb_Alloc(struct arena *mem_persistent, const u32 initial_size);
 /* Free any heap memory */
-void	       	isdb_Dealloc(struct isdb *is_db);
+void	   	isdb_Dealloc(struct isdb *is_db);
 /* Flush / reset the island database */
 void		isdb_Flush(struct isdb *is_db);
 /* Clear any frame related data */
@@ -720,26 +709,26 @@ void 		SolverCacheImpulse(struct solver *solver, const struct island *is);
 
 #ifdef DS_PHYSICS_DEBUG
 
-#define	PhysicsEventBodyNew(pipeline, body)		PHYSICS_EVENT_BODY(pipeline, PHYSICS_EVENT_BODY_NEW, body)
-#define	PhysicsEventBodyRemoved(pipeline, body)		PHYSICS_EVENT_BODY(pipeline, PHYSICS_EVENT_BODY_REMOVED, body)
-#define	PhysicsEventIslandAsleep(pipeline, island)	PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_ASLEEP, island)
-#define	PhysicsEventIslandAwake(pipeline, island)	PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_AWAKE, island)
-#define	PhysicsEventIslandNew(pipeline, island)		PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_NEW, island)
+#define	PhysicsEventBodyNew(pipeline, body)		        PHYSICS_EVENT_BODY(pipeline, PHYSICS_EVENT_BODY_NEW, body)
+#define	PhysicsEventBodyRemoved(pipeline, body)		    PHYSICS_EVENT_BODY(pipeline, PHYSICS_EVENT_BODY_REMOVED, body)
+#define	PhysicsEventIslandAsleep(pipeline, island)	    PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_ASLEEP, island)
+#define	PhysicsEventIslandAwake(pipeline, island)	    PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_AWAKE, island)
+#define	PhysicsEventIslandNew(pipeline, island)		    PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_NEW, island)
 #define	PhysicsEventIslandExpanded(pipeline, island)	PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_EXPANDED, island)
-#define	PhysicsEventIslandRemoved(pipeline, island)	PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_REMOVED, island)
-#define PhysicsEventContactNew(pipeline, body1_index, body2_index)					\
-	{												\
+#define	PhysicsEventIslandRemoved(pipeline, island)	    PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_REMOVED, island)
+#define PhysicsEventContactNew(pipeline, body1_index, body2_index)					        \
+	{												                                        \
 		struct physicsEvent *__physics_debug_event = PhysicsPipelineEventPush(pipeline);	\
-		__physics_debug_event->type = PHYSICS_EVENT_CONTACT_NEW;				\
-		__physics_debug_event->contact_bodies.body1 = body1_index;				\
-		__physics_debug_event->contact_bodies.body2 = body2_index;				\
+		__physics_debug_event->type = PHYSICS_EVENT_CONTACT_NEW;				            \
+		__physics_debug_event->contact_bodies.body1 = body1_index;				            \
+		__physics_debug_event->contact_bodies.body2 = body2_index;				            \
 	}
-#define PhysicsEventContactRemoved(pipeline, body1_index, body2_index)				\
-	{												\
+#define PhysicsEventContactRemoved(pipeline, body1_index, body2_index)				        \
+	{												                                        \
 		struct physicsEvent *__physics_debug_event = PhysicsPipelineEventPush(pipeline);	\
-		__physics_debug_event->type = PHYSICS_EVENT_CONTACT_REMOVED;				\
-		__physics_debug_event->contact_bodies.body1 = body1_index;				\
-		__physics_debug_event->contact_bodies.body2 = body2_index;				\
+		__physics_debug_event->type = PHYSICS_EVENT_CONTACT_REMOVED;				        \
+		__physics_debug_event->contact_bodies.body1 = body1_index;				            \
+		__physics_debug_event->contact_bodies.body2 = body2_index;				            \
 	}
 
 #else
@@ -805,29 +794,27 @@ extern const char **body_color_mode_str;
  */
 struct ds_RigidBodyPipeline 
 {
-	struct arena 		frame;			/* frame memory */
+	struct arena 	frame;			        /* frame memory */
 
-	u64				ns_start;		/* external ns at start of physics pipeline */
-	u64				ns_elapsed;		/* actual ns elasped in pipeline (= 0 at start) */
-	u64				ns_tick;		/* ns per game tick */
-	u64 			frames_completed;	/* number of completed physics frames */ 
+	u64				ns_start;		        /* external ns at start of physics pipeline */
+	u64				ns_elapsed;		        /* actual ns elasped in pipeline (= 0 at start) */
+	u64				ns_tick;		        /* ns per game tick */
+	u64 			frames_completed;	    /* number of completed physics frames */ 
 
-	struct strdb *	cshape_db;		    /* externally owned */
-	struct strdb *	body_prefab_db;		/* externally owned */
+	struct strdb *	cshape_db;		        /* externally owned */
+	struct strdb *	body_prefab_db;		    /* externally owned */
 
 	struct pool		body_pool;
-	struct dll		body_marked_list;	/* bodies marked for removal */
+	struct dll		body_marked_list;	    /* bodies marked for removal */
 	struct dll		body_non_marked_list;	/* bodies alive and non-marked  */
 
 	struct pool		shape_pool;
+	struct bvh 		shape_bvh;              /* dynamic bvh of shapes */
 
 	struct pool		event_pool;
 	struct dll		event_list;
 
-	//TODO remove 
-	struct bvh 		dynamic_tree;
 
-	struct bvh 		shape_bvh;
 
 	struct cdb		c_db;
 	struct isdb 	is_db;
@@ -838,13 +825,13 @@ struct ds_RigidBodyPipeline
 	//TODO temporary, move somewhere else.
 	vec3 			gravity;	/* gravity constant */
 
-	u32			margin_on;
-	f32			margin;
+	u32			    margin_on;
+	f32			    margin;
 
 	/* frame data */
-	u32			contact_new_count;
-	u32			proxy_overlap_count;
-	u32			cm_count;
+	u32			    contact_new_count;
+	u32			    proxy_overlap_count;
+	u32			    cm_count;
 	u32 *			contact_new;
 	struct dbvhOverlap *	proxy_overlap;
 	struct contactManifold *cm;

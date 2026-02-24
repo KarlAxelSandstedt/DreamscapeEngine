@@ -277,9 +277,9 @@ next free slot in the chain. The end of the free chain is represented by POOL_NU
 */
 
 #define POOL_SLOT_STATE 	u32 slot_allocation_state
-#define POOL_NULL		0xffffffff
+#define POOL_NULL		        0xffffffff
 #define POOL_ALLOCATION_MASK	0x80000000
-#define POOL_INDEX_MASK		0x7fffffff
+#define POOL_INDEX_MASK		    0x7fffffff
 #define PoolSlotAllocated(ptr)	(!((ptr)->slot_allocation_state & POOL_ALLOCATION_MASK))
 #define PoolSlotNext(ptr)	((ptr)->slot_allocation_state & POOL_INDEX_MASK)
 #define PoolSlotGeneration(ptr)	((ptr)->slot_generation_state)

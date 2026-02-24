@@ -264,11 +264,15 @@ static struct r_Mesh *BoundingBoxesMesh(struct arena *mem, const struct ds_Rigid
 	for (u32 i = pipeline->body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 	{
 		body = PoolAddress(&pipeline->body_pool, i);
-		struct aabb bbox = body->local_box;
-		Vec3Translate(bbox.center, body->position);
-		const u64 bytes_written = AabbPushLinesBuffered(vertex_data, mem_left, &bbox, color);
-		vertex_data += bytes_written;
-		mem_left -= bytes_written;
+        struct ds_Shape *shape = NULL;
+        for (u32 j = body->shape_list.first; j != DLL_NULL; j = shape->dll_next)
+        {
+            shape = PoolAddress(&pipeline->shape_pool, j);
+            const struct aabb bbox = ds_ShapeWorldBbox(pipeline, shape);
+		    const u64 bytes_written = AabbPushLinesBuffered(vertex_data, mem_left, &bbox, color);
+		    vertex_data += bytes_written;
+		    mem_left -= bytes_written;
+        }
 	}
 	ds_Assert(mem_left == 0);
 end:
@@ -402,32 +406,13 @@ static void r_EditorDraw(const struct led *led)
 		vec3 axis = { 0.0f, 1.0f, 0.0f };
 		const f32 angle = 0.0f;
 		QuatAxisAngle(rotation, axis, angle);
-		struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &led->physics.dynamic_tree, translation, rotation, led->physics.dbvh_color);
+		struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &led->physics.shape_bvh, translation, rotation, led->physics.dbvh_color);
 		if (mesh)
 		{
 			struct r_Instance *instance = r_InstanceAddNonCached(cmd);
 			instance->type = R_INSTANCE_MESH;
 			instance->mesh = mesh;
 		}
-	}
-
-	{
-		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
-		const u64 depth = 0x7fffff;
-		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		quat rotation;
-		const vec3 translation = { 0 };
-		vec3 axis = { 0.0f, 1.0f, 0.0f };
-		const f32 angle = 0.0f;
-		QuatAxisAngle(rotation, axis, angle);
-        struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &led->physics.shape_bvh, translation, rotation, led->physics.dbvh_color);
-
-        if (mesh)
-        {
-		    struct r_Instance *instance = r_InstanceAddNonCached(cmd);
-		    instance->type = R_INSTANCE_MESH;
-		    instance->mesh = mesh;
-        }
 	}
 
 	if (led->physics.draw_sbvh)
@@ -454,7 +439,6 @@ static void r_EditorDraw(const struct led *led)
 				instance->mesh = mesh;
 			}
 		}
-
 	}
 
 	if (led->physics.draw_bounding_box)

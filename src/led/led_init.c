@@ -127,18 +127,31 @@ struct led *led_Alloc(void)
 	struct r_Mesh *r_mesh_stub = strdb_Address(&g_editor->render_mesh_db, STRING_DATABASE_STUB_INDEX);
 	r_MeshStubBox(r_mesh_stub);
 
-	struct collisionShape *shape_stub = strdb_Address(&g_editor->cs_db, STRING_DATABASE_STUB_INDEX);
-	shape_stub->type = COLLISION_SHAPE_CONVEX_HULL;
-	shape_stub->hull = DcelBox(&sys_win->mem_persistent, Vec3Inline(0.5f, 0.5f, 0.5f));
-	CollisionShapeUpdateMassProperties(shape_stub);
+	struct collisionShape *cshape_stub = strdb_Address(&g_editor->cs_db, STRING_DATABASE_STUB_INDEX);
+	cshape_stub->type = COLLISION_SHAPE_CONVEX_HULL;
+	cshape_stub->hull = DcelBox(&sys_win->mem_persistent, Vec3Inline(0.5f, 0.5f, 0.5f));
+	CollisionShapeUpdateMassProperties(cshape_stub);
+
+    struct ds_ShapePrefab *shape_stub = strdb_Address(&g_editor->shape_prefab_db, STRING_DATABASE_STUB_INDEX);
+    shape_stub->cshape = strdb_Reference(&g_editor->cs_db, Utf8Inline("")).index;
+	shape_stub->density = 1.0f;
+	shape_stub->restitution = 0.0f;
+	shape_stub->friction = 0.0f;
+
+    struct slot slot = PoolAdd(&g_editor->shape_prefab_instance_pool);
+    const u32 instance_index = slot.index;
+    struct ds_ShapePrefabInstance *instance = slot.address;
+    instance->id = Utf8CstrBuffered(instance->id_buf, SHAPE_PREFAB_INSTANCE_BUFSIZE, "Stub");
+	instance->shape = strdb_Reference(&g_editor->cs_db, Utf8Inline("")).index;
+    quat quat;
+    QuatAxisAngle(quat, Vec3Inline(0.0f, 1.0f, 0.0f), 0.0f);
+    Vec3Set(instance->t_local.position, 0.0f, 0.0f, 0.0f);
+    QuatCopy(instance->t_local.rotation, quat);
 
 	struct ds_RigidBodyPrefab *prefab_stub = strdb_Address(&g_editor->rb_prefab_db, STRING_DATABASE_STUB_INDEX);
-	prefab_stub->shape = strdb_Reference(&g_editor->cs_db, Utf8Inline("")).index;
-	prefab_stub->density = 1.0f;
-	prefab_stub->restitution = 0.0f;
-	prefab_stub->friction = 0.0f;
 	prefab_stub->dynamic = 1;
-	PrefabStaticsSetup(prefab_stub, shape_stub, prefab_stub->density);
+    prefab_stub->shape_list = dll_Init(struct ds_ShapePrefabInstance);
+    dll_Append(&prefab_stub->shape_list, g_editor->shape_prefab_instance_pool.buf, instance_index);
 
 	return g_editor;
 }

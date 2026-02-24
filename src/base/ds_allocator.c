@@ -860,7 +860,7 @@ struct slot PoolAdd(struct pool *pool)
 			allocation.index = pool->next_free;
 
 			slot_state = (u32 *) ((u8 *) allocation.address + pool->slot_allocation_offset);
-			pool->next_free = *slot_state & POOL_INDEX_MASK;
+			pool->next_free = (*slot_state) & POOL_INDEX_MASK;
 			ds_Assert(*slot_state & POOL_ALLOCATION_MASK);
 		}
 		else
@@ -905,7 +905,7 @@ struct slot GPoolAdd(struct pool *pool)
 			allocation.index = pool->next_free;
 
 			slot_state = (u32 *) ((u8 *) allocation.address + pool->slot_allocation_offset);
-			pool->next_free = *slot_state & POOL_ALLOCATION_MASK;
+			pool->next_free = (*slot_state) & POOL_ALLOCATION_MASK;
 			u32 *gen_state = (u32 *) ((u8 *) allocation.address + pool->slot_generation_offset);
 			*gen_state += 1;
 			ds_Assert(*slot_state & POOL_ALLOCATION_MASK);

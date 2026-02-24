@@ -96,7 +96,7 @@ void led_CoreInitCommands(void)
 	cmd_led_pause_id = CmdFunctionRegister(Utf8Inline("led_Pause"), 0, &cmd_led_pause).index;
 	cmd_led_stop_id = CmdFunctionRegister(Utf8Inline("led_Stop"), 0, &cmd_led_stop).index;
 
-	cmd_shape_prefab_add_id = CmdFunctionRegister(Utf8Inline("shape_prefab_add"), 5, &cmd_shape_prefab_add).index;
+	cmd_shape_prefab_add_id = CmdFunctionRegister(Utf8Inline("shape_prefab_add"), 6, &cmd_shape_prefab_add).index;
 	cmd_shape_prefab_remove_id = CmdFunctionRegister(Utf8Inline("shape_prefab_remove"), 1, &cmd_shape_prefab_remove).index;
 
 	cmd_rb_prefab_add_id = CmdFunctionRegister(Utf8Inline("rb_prefab_add"), 2, &cmd_rb_prefab_add).index;
@@ -444,8 +444,9 @@ void cmd_shape_prefab_add(void)
 	const f32 density = g_queue->cmd_exec->arg[2].f32;
 	const f32 restitution = g_queue->cmd_exec->arg[3].f32;
 	const f32 friction = g_queue->cmd_exec->arg[4].f32;
+	const f32 margin = g_queue->cmd_exec->arg[5].f32;
 
-	led_ShapePrefabAdd(g_editor, id, shape, density, restitution, friction);
+	led_ShapePrefabAdd(g_editor, id, shape, density, restitution, friction, margin);
 }
 
 void cmd_shape_prefab_remove(void)
@@ -453,7 +454,7 @@ void cmd_shape_prefab_remove(void)
 	led_ShapePrefabRemove(g_editor, g_queue->cmd_exec->arg[0].utf8);
 }
 
-struct slot led_ShapePrefabAdd(struct led *led, const utf8 id, const utf8 cshape, const f32 density, const f32 restitution, const f32 friction)
+struct slot led_ShapePrefabAdd(struct led *led, const utf8 id, const utf8 cshape, const f32 density, const f32 restitution, const f32 friction, const f32 margin)
 {
 	struct slot slot = empty_slot;	
 	if (!id.len)
@@ -487,6 +488,7 @@ struct slot led_ShapePrefabAdd(struct led *led, const utf8 id, const utf8 cshape
 			prefab->restitution = restitution;
 			prefab->friction = friction;
 			prefab->density = density;
+            prefab->margin = margin;
 		}
 	}
 
@@ -514,13 +516,9 @@ struct slot led_ShapePrefabLookup(struct led *led, const utf8 id)
 void cmd_rb_prefab_add(void)
 {
 	const utf8 id = g_queue->cmd_exec->arg[0].utf8;
-	const utf8 shape = g_queue->cmd_exec->arg[1].utf8;
-	const f32 density = g_queue->cmd_exec->arg[2].f32;
-	const f32 restitution = g_queue->cmd_exec->arg[3].f32;
-	const f32 friction = g_queue->cmd_exec->arg[4].f32;
-	const u32 dynamic = (u32) g_queue->cmd_exec->arg[5].u64;
+	const u32 dynamic = (u32) g_queue->cmd_exec->arg[1].u64;
 
-	led_RigidBodyPrefabAdd(g_editor, id, shape, density, restitution, friction, dynamic);
+	led_RigidBodyPrefabAdd(g_editor, id, dynamic);
 }
 
 void cmd_rb_prefab_remove(void)
@@ -545,7 +543,7 @@ void cmd_rb_prefab_detach_shape(void)
     led_RigidBodyPrefabDetachShape(g_editor, rb_id, local_id);
 }
 
-struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const utf8 shape, const f32 density, const f32 restitution, const f32 friction, const u32 dynamic)
+struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const u32 dynamic)
 {
 	struct slot slot = empty_slot;	
 	if (!id.len)
@@ -567,23 +565,10 @@ struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const utf8 sh
 		}
 		else
 		{
-			struct slot ref = strdb_Reference(&led->cs_db, shape);
-			if (ref.index == STRING_DATABASE_STUB_INDEX)
-			{
-				LogString(T_LED, S_WARNING, "In rb_prefab: shape not found, stub_shape chosen");
-			}
-			slot = strdb_AddAndAlias(&led->rb_prefab_db, copy);
-			struct ds_RigidBodyPrefab *prefab = slot.address;
-
+			struct ds_RigidBodyPrefab *prefab = strdb_AddAndAlias(&led->rb_prefab_db, copy).address;
             prefab->shape_list = dll_Init(struct ds_ShapePrefabInstance);
-
-            /* TODO remove */
-			prefab->shape = ref.index;
-			prefab->restitution = restitution;
-			prefab->friction = friction;
+			prefab->shape = POOL_NULL;
 			prefab->dynamic = dynamic;
-			prefab->density = density;
-			PrefabStaticsSetup(prefab, ref.address, density);
 		}
 	}
 
@@ -611,7 +596,6 @@ void led_RigidBodyPrefabRemove(struct led *led, const utf8 id)
         }
 
 		void *buf = prefab->id.buf;
-		strdb_Dereference(&led->cs_db, prefab->shape);
 		strdb_Remove(&led->rb_prefab_db, id);
 		ThreadFree256B(buf);
 	}	
@@ -625,7 +609,7 @@ struct slot led_RigidBodyPrefabLookup(struct led *led, const utf8 id)
 void led_RigidBodyPrefabAttachShape(struct led *led, const utf8 rb_id, const utf8 shape_id, const utf8 local_shape_id)
 {
     struct ds_RigidBodyPrefab *rb_prefab = led_RigidBodyPrefabLookup(led, rb_id).address;
-    struct ds_RigidBodyPrefab *shape_prefab = led_ShapePrefabLookup(led, shape_id).address;
+    struct ds_ShapePrefab *shape_prefab = led_ShapePrefabLookup(led, shape_id).address;
     const u64 id_reqsize = Utf8SizeRequired(local_shape_id);
     if (!rb_prefab)
     {
@@ -647,11 +631,10 @@ void led_RigidBodyPrefabAttachShape(struct led *led, const utf8 rb_id, const utf
     {
         struct slot slot = PoolAdd(&led->shape_prefab_instance_pool);
         struct ds_ShapePrefabInstance *instance = slot.address;
-        slot = strdb_Reference(&led->shape_prefab_db, shape_id);
 
         dll_Prepend(&rb_prefab->shape_list, led->shape_prefab_instance_pool.buf, slot.index);
         instance->id = Utf8CopyBuffered(instance->id_buf, SHAPE_PREFAB_INSTANCE_BUFSIZE, local_shape_id);
-        instance->shape = slot.index;
+        instance->shape = strdb_Reference(&led->shape_prefab_db, shape_id).index;
 
         quat quat;
         QuatAxisAngle(quat, Vec3Inline(0.0f, 1.0f, 0.0f), 0.0f);
@@ -1248,7 +1231,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 	sys_win->cmd_queue.regs[2].f32 = 1.0f;
 	sys_win->cmd_queue.regs[3].f32 = 0.0f;
 	sys_win->cmd_queue.regs[4].f32 = floor_friction;
-	sys_win->cmd_queue.regs[5].u64 = 0;
+	sys_win->cmd_queue.regs[5].f32 = 0.5f;
 	CmdQueueSubmit(&sys_win->cmd_queue, cmd_shape_prefab_add_id);
 
 	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_floor");
@@ -1256,7 +1239,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 	sys_win->cmd_queue.regs[2].f32 = 1.0f;
 	sys_win->cmd_queue.regs[3].f32 = 0.0f;
 	sys_win->cmd_queue.regs[4].f32 = floor_friction;
-	sys_win->cmd_queue.regs[5].u32 = 0;
+	sys_win->cmd_queue.regs[5].f32 = 0.5f;
 	CmdQueueSubmit(&sys_win->cmd_queue, cmd_shape_prefab_add_id);
 
 	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_box");
@@ -1264,7 +1247,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 	sys_win->cmd_queue.regs[2].f32 = 1.0f;
 	sys_win->cmd_queue.regs[3].f32 = 0.0f;
 	sys_win->cmd_queue.regs[4].f32 = box_friction;
-	sys_win->cmd_queue.regs[5].u32 = 1;
+	sys_win->cmd_queue.regs[5].f32 = 0.5f;
 	CmdQueueSubmit(&sys_win->cmd_queue, cmd_shape_prefab_add_id);
 
 	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_capsule");
@@ -1272,7 +1255,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 	sys_win->cmd_queue.regs[2].f32 = 1.0f;
 	sys_win->cmd_queue.regs[3].f32 = 0.0f;
 	sys_win->cmd_queue.regs[4].f32 = capsule_friction;
-	sys_win->cmd_queue.regs[5].u32 = 1;
+	sys_win->cmd_queue.regs[5].f32 = 0.5f;
 	CmdQueueSubmit(&sys_win->cmd_queue, cmd_shape_prefab_add_id);
 
 	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_sphere");
@@ -1280,7 +1263,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 	sys_win->cmd_queue.regs[2].f32 = 100.0f;
 	sys_win->cmd_queue.regs[3].f32 = 0.0f;
 	sys_win->cmd_queue.regs[4].f32 = sphere_friction;
-	sys_win->cmd_queue.regs[5].u32 = 1;
+	sys_win->cmd_queue.regs[5].f32 = 0.5f;
 	CmdQueueSubmit(&sys_win->cmd_queue, cmd_shape_prefab_add_id);
 
 	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_dsphere");
@@ -1288,7 +1271,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 	sys_win->cmd_queue.regs[2].f32 = 1.0f;
 	sys_win->cmd_queue.regs[3].f32 = 0.0f;
 	sys_win->cmd_queue.regs[4].f32 = sphere_friction;
-	sys_win->cmd_queue.regs[5].u32 = 1;
+	sys_win->cmd_queue.regs[5].f32 = 0.5f;
 	CmdQueueSubmit(&sys_win->cmd_queue, cmd_shape_prefab_add_id);
 
 	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_ramp");
@@ -1296,66 +1279,74 @@ void led_WallSmashSimulationSetup(struct led *led)
 	sys_win->cmd_queue.regs[2].f32 = 1.0f;
 	sys_win->cmd_queue.regs[3].f32 = 0.0f;
 	sys_win->cmd_queue.regs[4].f32 = ramp_friction;
-	sys_win->cmd_queue.regs[5].u32 = 0;
+	sys_win->cmd_queue.regs[5].f32 = 0.5f;
 	CmdQueueSubmit(&sys_win->cmd_queue, cmd_shape_prefab_add_id);
 
 
-
 	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_map");
-	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_map");
-	sys_win->cmd_queue.regs[2].f32 = 1.0f;
-	sys_win->cmd_queue.regs[3].f32 = 0.0f;
-	sys_win->cmd_queue.regs[4].f32 = floor_friction;
-	sys_win->cmd_queue.regs[5].u64 = 0;
+	sys_win->cmd_queue.regs[1].u64 = 0;
 	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_add_id);
 
 	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_floor");
-	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_floor");
-	sys_win->cmd_queue.regs[2].f32 = 1.0f;
-	sys_win->cmd_queue.regs[3].f32 = 0.0f;
-	sys_win->cmd_queue.regs[4].f32 = floor_friction;
-	sys_win->cmd_queue.regs[5].u32 = 0;
+	sys_win->cmd_queue.regs[1].u64 = 0;
 	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_add_id);
 
 	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_box");
-	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_box");
-	sys_win->cmd_queue.regs[2].f32 = 1.0f;
-	sys_win->cmd_queue.regs[3].f32 = 0.0f;
-	sys_win->cmd_queue.regs[4].f32 = box_friction;
-	sys_win->cmd_queue.regs[5].u32 = 1;
+	sys_win->cmd_queue.regs[1].u64 = 1;
 	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_add_id);
 
 	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_capsule");
-	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_capsule");
-	sys_win->cmd_queue.regs[2].f32 = 1.0f;
-	sys_win->cmd_queue.regs[3].f32 = 0.0f;
-	sys_win->cmd_queue.regs[4].f32 = capsule_friction;
-	sys_win->cmd_queue.regs[5].u32 = 1;
+	sys_win->cmd_queue.regs[1].u64 = 1;
 	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_add_id);
 
 	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_sphere");
-	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_sphere");
-	sys_win->cmd_queue.regs[2].f32 = 100.0f;
-	sys_win->cmd_queue.regs[3].f32 = 0.0f;
-	sys_win->cmd_queue.regs[4].f32 = sphere_friction;
-	sys_win->cmd_queue.regs[5].u32 = 1;
+	sys_win->cmd_queue.regs[1].u64 = 1;
 	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_add_id);
 
 	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_dsphere");
-	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_dsphere");
-	sys_win->cmd_queue.regs[2].f32 = 1.0f;
-	sys_win->cmd_queue.regs[3].f32 = 0.0f;
-	sys_win->cmd_queue.regs[4].f32 = sphere_friction;
-	sys_win->cmd_queue.regs[5].u32 = 1;
+	sys_win->cmd_queue.regs[1].u64 = 1;
 	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_add_id);
 
 	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_ramp");
-	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_ramp");
-	sys_win->cmd_queue.regs[2].f32 = 1.0f;
-	sys_win->cmd_queue.regs[3].f32 = 0.0f;
-	sys_win->cmd_queue.regs[4].f32 = ramp_friction;
-	sys_win->cmd_queue.regs[5].u32 = 0;
+	sys_win->cmd_queue.regs[1].u64 = 0;
 	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_add_id);
+
+
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_map");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_map");
+	sys_win->cmd_queue.regs[2].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "l_s_map");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_attach_shape_id);
+
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_floor");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_floor");
+	sys_win->cmd_queue.regs[2].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "l_s_floor");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_attach_shape_id);
+
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_box");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_box");
+	sys_win->cmd_queue.regs[2].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "l_s_box");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_attach_shape_id);
+
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_capsule");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "l_capsule");
+	sys_win->cmd_queue.regs[2].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_l_capsule");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_attach_shape_id);
+
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_sphere");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_sphere");
+	sys_win->cmd_queue.regs[2].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "l_s_sphere");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_attach_shape_id);
+
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_dsphere");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_dsphere");
+	sys_win->cmd_queue.regs[2].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "l_s_dsphere");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_attach_shape_id);
+
+	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_ramp");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_ramp");
+	sys_win->cmd_queue.regs[2].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "l_s_ramp");
+	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_attach_shape_id);
+
 
 	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rm_map");
 	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_map");
@@ -1735,13 +1726,21 @@ static void led_EngineInit(struct led *led)
 						, node->proxy);
 			}
 
-            		ds_Transform t;
-            		Vec3Set(t.position, 0.0f, 0.0f, 0.0f);
-            		QuatAxisAngle(t.rotation, Vec3Inline(0.0f, 1.0f, 0.0f), 0.0f);
-	    		    	struct slot slot = ds_RigidBodyAdd(&led->physics, prefab, node->position, node->rotation, i);
-            		const struct ds_ShapePrefab *shape_prefab =  NULL;
-            		ds_AssertString(0, "Setup ShapePrefab DB");
-            		ds_ShapeAdd(&led->physics, shape_prefab, &t, slot.index);
+            ds_Transform t;
+            Vec3Set(t.position, 0.0f, 0.0f, 0.0f);
+            QuatAxisAngle(t.rotation, Vec3Inline(0.0f, 1.0f, 0.0f), 0.0f);
+	    	const u32 body = ds_RigidBodyAdd(&led->physics, prefab, node->position, node->rotation, i).index;
+    
+            struct ds_ShapePrefabInstance *instance = NULL;
+            struct ds_ShapePrefab *shape_prefab = NULL;
+            for (u32 j = prefab->shape_list.first; j != DLL_NULL; j = instance->dll_next)
+            {
+                instance = PoolAddress(&led->shape_prefab_instance_pool, j);
+                shape_prefab = strdb_Address(&led->shape_prefab_db, instance->shape);
+                ds_ShapeAdd(&led->physics, shape_prefab, &instance->t_local, body);
+            }
+
+            ds_RigidBodyUpdateMassProperties(&led->physics, body);
 		}
 	}
 }
@@ -1807,18 +1806,19 @@ static void led_engine_run(struct led *led)
 				for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 				{
 					body = PoolAddress(&led->physics.body_pool, i);
-					const struct led_node *node = PoolAddress(&led->node_pool, body->entity);
-					struct r_Proxy3d *proxy = r_Proxy3dAddress(node->proxy);
-					if (RB_IS_DYNAMIC(body))
-					{
-						(body->contact_first == NLL_NULL)
-							? Vec4Copy(proxy->color, node->color)
-							: Vec4Copy(proxy->color, led->physics.collision_color);
-					}
-					else
-					{
-						Vec4Copy(proxy->color, led->physics.static_color);
-					}
+                    //TODO;
+					//const struct led_node *node = PoolAddress(&led->node_pool, body->entity);
+					//struct r_Proxy3d *proxy = r_Proxy3dAddress(node->proxy);
+					//if (RB_IS_DYNAMIC(body))
+					//{
+					//	(body->contact_first == NLL_NULL)
+					//		? Vec4Copy(proxy->color, node->color)
+					//		: Vec4Copy(proxy->color, led->physics.collision_color);
+					//}
+					//else
+					//{
+					//	Vec4Copy(proxy->color, led->physics.static_color);
+					//}
 				}
 			} break;
 
@@ -1899,36 +1899,37 @@ static void led_engine_run(struct led *led)
 			{
 				if (led->physics.body_color_mode == RB_COLOR_MODE_COLLISION)
 				{
-					const struct ds_RigidBody *body1 = PoolAddress(&led->physics.body_pool, event->contact_bodies.body1);
-					const struct ds_RigidBody *body2 = PoolAddress(&led->physics.body_pool, event->contact_bodies.body2);
-					const struct led_node *node1 = PoolAddress(&led->node_pool, body1->entity);
-					const struct led_node *node2 = PoolAddress(&led->node_pool, body2->entity);
+                    ds_AssertString(0, "TODO");
+					//const struct ds_RigidBody *body1 = PoolAddress(&led->physics.body_pool, event->contact_bodies.body1);
+					//const struct ds_RigidBody *body2 = PoolAddress(&led->physics.body_pool, event->contact_bodies.body2);
+					//const struct led_node *node1 = PoolAddress(&led->node_pool, body1->entity);
+					//const struct led_node *node2 = PoolAddress(&led->node_pool, body2->entity);
 
-					struct r_Proxy3d *proxy1 = r_Proxy3dAddress(node1->proxy);
-					struct r_Proxy3d *proxy2 = r_Proxy3dAddress(node2->proxy);
-					if (RB_IS_DYNAMIC(body1))
-					{
-						if (body1->contact_first == NLL_NULL)
-						{
-							Vec4Copy(proxy1->color, node1->color);
-						}
-					}
-					else
-					{
-						Vec4Copy(proxy1->color, led->physics.static_color);
-					}
+					//struct r_Proxy3d *proxy1 = r_Proxy3dAddress(node1->proxy);
+					//struct r_Proxy3d *proxy2 = r_Proxy3dAddress(node2->proxy);
+					//if (RB_IS_DYNAMIC(body1))
+					//{
+					//	if (body1->contact_first == NLL_NULL)
+					//	{
+					//		Vec4Copy(proxy1->color, node1->color);
+					//	}
+					//}
+					//else
+					//{
+					//	Vec4Copy(proxy1->color, led->physics.static_color);
+					//}
 		
-					if (RB_IS_DYNAMIC(body2))
-					{
-						if (body2->contact_first == NLL_NULL)
-						{
-							Vec4Copy(proxy2->color, node2->color);
-						}
-					}
-					else
-					{
-						Vec4Copy(proxy2->color, led->physics.static_color);
-					}
+					//if (RB_IS_DYNAMIC(body2))
+					//{
+					//	if (body2->contact_first == NLL_NULL)
+					//	{
+					//		Vec4Copy(proxy2->color, node2->color);
+					//	}
+					//}
+					//else
+					//{
+					//	Vec4Copy(proxy2->color, led->physics.static_color);
+					//}
 				}
 			} break;
 

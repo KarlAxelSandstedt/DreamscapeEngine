@@ -19,64 +19,6 @@
 
 #include "dynamics.h"
 
-//TODO remove
-void RigidBodyUpdateLocalBox(struct ds_RigidBody *body, const struct collisionShape *shape)
-{
-	vec3 min = { F32_INFINITY, F32_INFINITY, F32_INFINITY };
-	vec3 max = { -F32_INFINITY, -F32_INFINITY, -F32_INFINITY };
-
-	vec3 v;
-	mat3 rot;
-	Mat3Quat(rot, body->rotation);
-
-	if (body->shape_type == COLLISION_SHAPE_CONVEX_HULL)
-	{
-		for (u32 i = 0; i < shape->hull.v_count; ++i)
-		{
-			Mat3VecMul(v, rot, shape->hull.v[i]);
-			min[0] = f32_min(min[0], v[0]); 
-			min[1] = f32_min(min[1], v[1]);			
-			min[2] = f32_min(min[2], v[2]);			
-                                                   
-			max[0] = f32_max(max[0], v[0]);			
-			max[1] = f32_max(max[1], v[1]);			
-			max[2] = f32_max(max[2], v[2]);			
-		}
-	}
-	else if (body->shape_type == COLLISION_SHAPE_SPHERE)
-	{
-		const f32 r = shape->sphere.radius;
-		Vec3Set(min, -r, -r, -r);
-		Vec3Set(max, r, r, r);
-	}
-	else if (body->shape_type == COLLISION_SHAPE_CAPSULE)
-	{
-		v[0] = rot[1][0] * shape->capsule.half_height;	
-		v[1] = rot[1][1] * shape->capsule.half_height;	
-		v[2] = rot[1][2] * shape->capsule.half_height;	
-		Vec3Set(max, 
-			f32_max(-v[0], v[0]),
-			f32_max(-v[1], v[1]),
-			f32_max(-v[2], v[2]));
-		Vec3AddConstant(max, shape->capsule.radius);
-		Vec3Negate(min, max);
-	}
-	else if (body->shape_type == COLLISION_SHAPE_TRI_MESH)
-	{
-		const struct bvhNode *node = (struct bvhNode *) shape->mesh_bvh.bvh.tree.pool.buf;
-		struct aabb bbox; 
-		AabbRotate(&bbox, &node[shape->mesh_bvh.bvh.tree.root].bbox, rot);
-		//Vec3Sub(min, bbox.center, bbox.hw);
-		//Vec3Add(max, bbox.center, bbox.hw);
-		Vec3Scale(min, bbox.hw, -1.0f);
-		Vec3Scale(max, bbox.hw, 1.0f);
-	}
-
-	Vec3Sub(body->local_box.hw, max, min);
-	Vec3ScaleSelf(body->local_box.hw, 0.5f);
-	Vec3Add(body->local_box.center, min, body->local_box.hw);
-}
-
 struct slot ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBodyPrefab *prefab, const vec3 position, const quat rotation, const u32 entity)
 {
 	struct slot slot = PoolAdd(&pipeline->body_pool);
@@ -99,11 +41,6 @@ struct slot ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Rig
 	body->flags = RB_ACTIVE | (g_solver_config->sleep_enabled * RB_AWAKE) | dynamic_flag;
 	body->margin = 0.25f;
 
-	const struct collisionShape *shape = strdb_Address(pipeline->cshape_db, prefab->shape);
-	const struct slot shape_slot = strdb_Reference(pipeline->cshape_db, shape->id);
-	body->shape_handle = shape_slot.index;
-	body->shape_type = shape->type;
-
 	Mat3Copy(body->inertia_tensor, prefab->inertia_tensor);
 	Mat3Copy(body->inv_inertia_tensor, prefab->inv_inertia_tensor);
 	body->mass = prefab->mass;
@@ -111,26 +48,6 @@ struct slot ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Rig
 	body->friction = prefab->friction;
 	body->low_velocity_time = 0.0f;
 
-	RigidBodyUpdateLocalBox(body, shape);
-	struct aabb proxy;
-	Vec3Add(proxy.center, body->local_box.center, body->position);
-	if (body->shape_type == COLLISION_SHAPE_TRI_MESH)
-	{
-		Vec3Set(proxy.hw, 
-			body->local_box.hw[0],
-			body->local_box.hw[1],
-			body->local_box.hw[2]);
-	}
-	else
-	{
-		Vec3Set(proxy.hw, 
-			body->local_box.hw[0] + body->margin,
-			body->local_box.hw[1] + body->margin,
-			body->local_box.hw[2] + body->margin);
-	}
-	body->proxy = DbvhInsert(&pipeline->dynamic_tree, slot.index, &proxy);
-
-	body->contact_first = NLL_NULL;
 	if (body->flags & RB_DYNAMIC)
 	{
 		isdb_InitIslandFromBody(pipeline, slot.index);

@@ -26,7 +26,7 @@ struct slot ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_S
 	{
 		struct ds_RigidBody *body_ptr = PoolAddress(&pipeline->body_pool, body);
 		ds_Assert(PoolSlotAllocated(body_ptr));
-		dll_Append(&body_ptr->shape_list, &pipeline->shape_pool, slot.index);
+		dll_Append(&body_ptr->shape_list, pipeline->shape_pool.buf, slot.index);
 
 		struct ds_Shape *shape = slot.address;
 		shape->body = body;
@@ -47,6 +47,8 @@ struct slot ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_S
 		{
 			Vec3Translate(bbox_proxy.hw, Vec3Inline(shape->margin, shape->margin, shape->margin));
 		}
+        fprintf(stderr, "%f\n", shape->margin);
+
 		shape->proxy = DbvhInsert(&pipeline->shape_bvh, slot.index, &bbox_proxy);
 	}
 
@@ -88,7 +90,7 @@ void ds_ShapeStaticRemove(struct ds_RigidBodyPipeline *pipeline, const u32 shape
 	PoolRemove(&pipeline->shape_pool, shape_index);
 }
 
-struct aabb ds_ShapeWorldBbox(const struct ds_RigidBodyPipeline *pipeline, struct ds_Shape *shape)
+struct aabb ds_ShapeWorldBbox(const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape)
 {
 	vec3 min = { F32_INFINITY, F32_INFINITY, F32_INFINITY };
 	vec3 max = { -F32_INFINITY, -F32_INFINITY, -F32_INFINITY };
