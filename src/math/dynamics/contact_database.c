@@ -52,9 +52,9 @@ struct cdb cdb_Alloc(struct arena *mem_persistent, const u32 size)
 	struct cdb c_db = { 0 };
 	ds_Assert(PowerOfTwoCheck(size));
 
-	c_db.sat_cache_list = dll_Init(struct satCache);
+	c_db.sat_cache_list = dll_Init(struct sat_Cache);
 	c_db.sat_cache_map = HashMapAlloc(NULL, size, size, GROWABLE);
-	c_db.sat_cache_pool = PoolAlloc(NULL, size, struct satCache, GROWABLE);
+	c_db.sat_cache_pool = PoolAlloc(NULL, size, struct sat_Cache, GROWABLE);
 	c_db.contact_net = nll_Alloc(NULL, size, struct contact, cdb_IndexInPreviousConctactNode, cdb_IndexInNextConctactNode, GROWABLE);
 	c_db.contact_map = HashMapAlloc(NULL, size, size, GROWABLE);
 	c_db.contacts_persistent_usage = BitVecAlloc(NULL, size, 0, 1);
@@ -193,7 +193,7 @@ void cdb_ClearFrame(struct cdb *c_db)
 	//fprintf(stderr, "count: %u\n", c_db->sat_cache_pool.count);
 	for (u32 i = c_db->sat_cache_list.first; i != DLL_NULL; )
 	{
-		struct satCache *cache = PoolAddress(&c_db->sat_cache_pool, i);
+		struct sat_Cache *cache = PoolAddress(&c_db->sat_cache_pool, i);
 		const u32 next = dll_Next(cache);
 		if (cache->touched)
 		{
@@ -297,7 +297,7 @@ void cdb_ClearFrame(struct cdb *c_db)
 //	while (ci != NLL_NULL)
 //	{
 //		struct contact *c = nll_Address(&pipeline->c_db.contact_net, ci);
-//		struct satCache *sat = SatCacheLookup(&pipeline->c_db, CONTACT_KEY_TO_BODY_0(c->key), CONTACT_KEY_TO_BODY_1(c->key));
+//		struct sat_Cache *sat = sat_CacheLookup(&pipeline->c_db, CONTACT_KEY_TO_BODY_0(c->key), CONTACT_KEY_TO_BODY_1(c->key));
 //		if (sat)
 //		{
 //			const u32 sat_index = PoolIndex(&pipeline->c_db.sat_cache_pool, sat);
@@ -463,15 +463,15 @@ void cdb_ClearFrame(struct cdb *c_db)
 //	return ret;
 //}
 
-void SatCacheAdd(struct cdb *c_db, const struct satCache *sat_cache)
+void sat_CacheAdd(struct cdb *c_db, const struct sat_Cache *sat_cache)
 {
 	const u32 b0 = CONTACT_KEY_TO_BODY_0(sat_cache->key);
 	const u32 b1 = CONTACT_KEY_TO_BODY_1(sat_cache->key);
-	ds_Assert(SatCacheLookup(c_db, b0, b1) == NULL);
+	ds_Assert(sat_CacheLookup(c_db, b0, b1) == NULL);
 
 	//Breakpoint(b0 == 62 && b1 == 66);
 	struct slot slot = PoolAdd(&c_db->sat_cache_pool);
-	struct satCache *sat = slot.address;
+	struct sat_Cache *sat = slot.address;
 	const u32 slot_allocation_state = sat->slot_allocation_state;
 	*sat = *sat_cache;
 	sat->slot_allocation_state = slot_allocation_state;
@@ -480,14 +480,14 @@ void SatCacheAdd(struct cdb *c_db, const struct satCache *sat_cache)
 	sat->touched = 1;
 }
 
-struct satCache *SatCacheLookup(const struct cdb *c_db, const u32 b1, const u32 b2)
+struct sat_Cache *sat_CacheLookup(const struct cdb *c_db, const u32 b1, const u32 b2)
 {
 	ds_Assert(b1 < b2);
 	const u64 key = KeyGenU32U32(b1, b2);
-	struct satCache *ret = NULL;
+	struct sat_Cache *ret = NULL;
 	for (u32 i = HashMapFirst(&c_db->sat_cache_map, (u32) key); i != HASH_NULL; i = HashMapNext(&c_db->sat_cache_map, i))
 	{
-		struct satCache *sat = PoolAddress(&c_db->sat_cache_pool, i);
+		struct sat_Cache *sat = PoolAddress(&c_db->sat_cache_pool, i);
 		if (sat->key == key)
 		{
 			ret = sat;

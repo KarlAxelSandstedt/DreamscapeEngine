@@ -391,6 +391,8 @@ static void led_InputHandler(struct led *led, struct ui_Node *viewport)
 
 static void led_Ui(struct led *led, const struct ui_Visual *visual)
 {
+    struct arena mem_tmp = ArenaAlloc1MB();
+
 	ds_WindowSetGlobal(led->window);
 	CmdQueueExecute();
 
@@ -495,7 +497,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 						Vec3TranslateScaled(dir, led->cam.position, -1.0f);
 						Vec3ScaleSelf(dir, 1.0f / Vec3Length(dir));
 						const struct ray ray = RayConstruct(led->cam.position, dir);
-						const u32f32 hit = PhysicsPipelineRaycastParameter(g_ui->mem_frame, &led->physics, &ray);
+						const u32f32 hit = PhysicsPipelineRaycastParameter(g_ui->mem_frame, &mem_tmp, &led->physics, &ray);
 						if (hit.f < F32_INFINITY)
 						{
 							const struct ds_RigidBody *body = PoolAddress(&led->physics.body_pool, hit.u);	
@@ -561,7 +563,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 					ui_Pad();
 
-					const struct collisionShape *shape;
+					const struct c_Shape *shape;
 					ui_list(&led->cs_list, "###%p", &led->cs_list)
 					for (u32 i = led->cs_db.allocated_dll.first; i != DLL_NULL; i = strdb_Next(shape))
 					{
@@ -594,7 +596,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 					{
 						ui_Pad();
 
-						struct collisionShape *shape = strdb_Address(&led->cs_db, shape_selected);
+						struct c_Shape *shape = strdb_Address(&led->cs_db, shape_selected);
 						ui_Height(ui_SizePixel(24.0f, 1.0f))
 						ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW | UI_DRAW_BORDER, "%k##shape_selected", &shape->id);
 
@@ -602,7 +604,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 						switch (shape->type)
 						{
-							case COLLISION_SHAPE_SPHERE:
+							case C_SHAPE_SPHERE:
 							{
 								ui_Height(ui_SizePixel(24.0f, 1.0f))
 								ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, "type: SPHERE");
@@ -622,7 +624,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 							} break;
 
-							case COLLISION_SHAPE_CAPSULE:
+							case C_SHAPE_CAPSULE:
 							{
 								ui_Height(ui_SizePixel(24.0f, 1.0f))
 								ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, "type: CAPSULE");
@@ -660,13 +662,13 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 							} break;
 
-							case COLLISION_SHAPE_CONVEX_HULL:
+							case C_SHAPE_CONVEX_HULL:
 							{
 								ui_Height(ui_SizePixel(24.0f, 1.0f))
 								ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, "type: CONVEX HULL");
 							} break;
 			
-							case COLLISION_SHAPE_TRI_MESH:
+							case C_SHAPE_TRI_MESH:
 							{
 								ui_Height(ui_SizePixel(24.0f, 1.0f))
 								ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, "type: TRIANGLE MESH");
@@ -735,7 +737,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 						ui_Pad();
 
 						struct ds_RigidBodyPrefab *prefab = strdb_Address(&led->rb_prefab_db, prefab_selected);
-						struct collisionShape *shape = NULL;
+						struct c_Shape *shape = NULL;
 						ui_Height(ui_SizePixel(24.0f, 1.0f))
 						ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW | UI_DRAW_BORDER, "%k##prefab_selected", &prefab->id);
 
@@ -816,7 +818,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 								{
 									ui_DropdownMenuPush(&led->rb_prefab_mesh_menu);
 
-									const struct collisionShape *s;
+									const struct c_Shape *s;
 									for (u32 i = led->cs_db.allocated_dll.first; i != DLL_NULL; i = strdb_Next(s))
 									{
 										s = strdb_Address(&led->cs_db, i);
@@ -1127,6 +1129,8 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 	{
 		led->running = 0;
 	}
+
+    ArenaFree1MB(&mem_tmp);
 }
 
 void led_UiMain(struct led *led)

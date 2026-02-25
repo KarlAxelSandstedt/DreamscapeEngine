@@ -181,12 +181,11 @@ void cmd_collision_box_add(void)
 
 	if (hw[0] > 0.0f && hw[1] > 0.0f && hw[2] > 0.0f)
 	{
-		struct collisionShape shape =
+		struct c_Shape shape =
 		{
 			.id = g_queue->cmd_exec->arg[0].utf8,
-			.type = COLLISION_SHAPE_CONVEX_HULL,
+			.type = C_SHAPE_CONVEX_HULL,
 			.hull = DcelBox(&sys_win->mem_persistent, hw), 
-			.center_of_mass_localized = 0,
 		};
 
 		led_CollisionShapeAdd(g_editor, &shape);
@@ -202,12 +201,11 @@ void cmd_collision_dcel_add(void)
 	struct dcel *dcel = g_queue->cmd_exec->arg[1].ptr;
 	if (dcel->v_count)
 	{
-		struct collisionShape shape =
+		struct c_Shape shape =
 		{
 			.id = g_queue->cmd_exec->arg[0].utf8,
-			.type = COLLISION_SHAPE_CONVEX_HULL,
+			.type = C_SHAPE_CONVEX_HULL,
 			.hull = *dcel, 
-			.center_of_mass_localized = 0,
 		};
 
 		led_CollisionShapeAdd(g_editor, &shape);
@@ -223,12 +221,11 @@ void cmd_collision_tri_mesh_bvh_add(void)
 	struct triMeshBvh *mesh_bvh = g_queue->cmd_exec->arg[1].ptr;
 	if (mesh_bvh->mesh->v_count && bt_NodeCount(&mesh_bvh->bvh.tree))
 	{
-		struct collisionShape shape =
+		struct c_Shape shape =
 		{
 			.id = g_queue->cmd_exec->arg[0].utf8,
-			.type = COLLISION_SHAPE_TRI_MESH,
+			.type = C_SHAPE_TRI_MESH,
 			.mesh_bvh = *mesh_bvh, 
-			.center_of_mass_localized = 1,
 		};
 
 		led_CollisionShapeAdd(g_editor, &shape);
@@ -241,12 +238,11 @@ void cmd_collision_tri_mesh_bvh_add(void)
 
 void cmd_collision_sphere_add(void)
 {
-	struct collisionShape shape =
+	struct c_Shape shape =
 	{
 		.id = g_queue->cmd_exec->arg[0].utf8,
-		.type = COLLISION_SHAPE_SPHERE,
+		.type = C_SHAPE_SPHERE,
 		.sphere = { .radius = g_queue->cmd_exec->arg[1].f32 },
-		.center_of_mass_localized = 1,
 	};
 
 	if (shape.sphere.radius > 0.0f)
@@ -261,11 +257,10 @@ void cmd_collision_sphere_add(void)
 
 void cmd_collision_capsule_add(void)
 {
-	struct collisionShape shape =
+	struct c_Shape shape =
 	{
 		.id = g_queue->cmd_exec->arg[0].utf8,
-		.type = COLLISION_SHAPE_CAPSULE,
-		.center_of_mass_localized = 1,
+		.type = C_SHAPE_CAPSULE,
 		.capsule = 
 		{ 
 			.radius = g_queue->cmd_exec->arg[1].f32,
@@ -288,7 +283,7 @@ void cmd_collision_shape_remove(void)
 	led_CollisionShapeRemove(g_editor, g_queue->cmd_exec->arg[0].utf8);
 }
 
-struct slot led_CollisionShapeAdd(struct led *led, const struct collisionShape *shape)
+struct slot led_CollisionShapeAdd(struct led *led, const struct c_Shape *shape)
 {
 	struct slot slot = empty_slot;
 	if (!shape->id.len)
@@ -311,33 +306,32 @@ struct slot led_CollisionShapeAdd(struct led *led, const struct collisionShape *
 		else
 		{
 			slot = strdb_AddAndAlias(&led->cs_db, copy);
-			struct collisionShape *new_shape = slot.address;
+			struct c_Shape *new_shape = slot.address;
 			new_shape->type = shape->type;
-			new_shape->center_of_mass_localized = shape->center_of_mass_localized;
 			switch (shape->type)
 			{
-				case COLLISION_SHAPE_SPHERE: 
+				case C_SHAPE_SPHERE: 
 				{ 
 					new_shape->sphere = shape->sphere; 
 				} break;
 
-				case COLLISION_SHAPE_CAPSULE: 
+				case C_SHAPE_CAPSULE: 
 				{ 
 					new_shape->capsule = shape->capsule; 
 				} break;
 
-				case COLLISION_SHAPE_CONVEX_HULL: 
+				case C_SHAPE_CONVEX_HULL: 
 				{ 
 					new_shape->hull = shape->hull; 
 				} break;
 
-				case COLLISION_SHAPE_TRI_MESH: 
+				case C_SHAPE_TRI_MESH: 
 				{ 
 					new_shape->mesh_bvh = shape->mesh_bvh; 
 				} break;
 			};
 
-			if (shape->type != COLLISION_SHAPE_TRI_MESH)
+			if (shape->type != C_SHAPE_TRI_MESH)
 			{
 				CollisionShapeUpdateMassProperties(new_shape);
 			}
@@ -350,7 +344,7 @@ struct slot led_CollisionShapeAdd(struct led *led, const struct collisionShape *
 void led_CollisionShapeRemove(struct led *led, const utf8 id)
 {
 	struct slot slot = led_CollisionShapeLookup(led, id);
-	struct collisionShape *shape = slot.address;
+	struct c_Shape *shape = slot.address;
 	if (slot.index != STRING_DATABASE_STUB_INDEX && shape->reference_count == 0)
 	{
 		void *buf = shape->id.buf;
@@ -406,13 +400,13 @@ struct slot led_RenderMeshAdd(struct led *led, const utf8 id, const utf8 shape)
 			}
 
 			struct ds_Window *sys_win = ds_WindowAddress(g_editor->window);
-			const struct collisionShape *s = ref.address;
+			const struct c_Shape *s = ref.address;
 			switch (s->type)
 			{
-				case COLLISION_SHAPE_SPHERE: { r_MeshSphere(&sys_win->mem_persistent, mesh, s->sphere.radius, 12); } break;
-				case COLLISION_SHAPE_CAPSULE: { r_MeshCapsule(&sys_win->mem_persistent, mesh, s->capsule.half_height, s->capsule.radius, 16); } break;
-				case COLLISION_SHAPE_CONVEX_HULL: { r_MeshHull(&sys_win->mem_persistent, mesh, &s->hull); } break;
-				case COLLISION_SHAPE_TRI_MESH: { r_MeshTriMesh(&sys_win->mem_persistent, mesh, s->mesh_bvh.mesh); } break;
+				case C_SHAPE_SPHERE: { r_MeshSphere(&sys_win->mem_persistent, mesh, s->sphere.radius, 12); } break;
+				case C_SHAPE_CAPSULE: { r_MeshCapsule(&sys_win->mem_persistent, mesh, s->capsule.half_height, s->capsule.radius, 16); } break;
+				case C_SHAPE_CONVEX_HULL: { r_MeshHull(&sys_win->mem_persistent, mesh, &s->hull); } break;
+				case C_SHAPE_TRI_MESH: { r_MeshTriMesh(&sys_win->mem_persistent, mesh, s->mesh_bvh.mesh); } break;
 			}
 		}
 	}
@@ -1328,8 +1322,8 @@ void led_WallSmashSimulationSetup(struct led *led)
 	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_attach_shape_id);
 
 	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_capsule");
-	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "l_capsule");
-	sys_win->cmd_queue.regs[2].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_l_capsule");
+	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_capsule");
+	sys_win->cmd_queue.regs[2].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "l_s_capsule");
 	CmdQueueSubmit(&sys_win->cmd_queue, cmd_rb_prefab_attach_shape_id);
 
 	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "rb_sphere");

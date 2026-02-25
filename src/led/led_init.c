@@ -113,7 +113,7 @@ struct led *led_Alloc(void)
 	g_editor->shape_prefab_db = strdb_Alloc(NULL, 32, 32, struct ds_ShapePrefab, GROWABLE);
     g_editor->shape_prefab_instance_pool = PoolAlloc(NULL, 4096, struct ds_ShapePrefabInstance, GROWABLE);
 	g_editor->rb_prefab_db = strdb_Alloc(NULL, 32, 32, struct ds_RigidBodyPrefab, GROWABLE);
-	g_editor->cs_db = strdb_Alloc(NULL, 32, 32, struct collisionShape, GROWABLE);
+	g_editor->cs_db = strdb_Alloc(NULL, 32, 32, struct c_Shape, GROWABLE);
 	g_editor->physics = PhysicsPipelineAlloc(NULL, 1024, NSEC_PER_SEC / (u64) 60, 1024*1024, &g_editor->cs_db, &g_editor->rb_prefab_db);
 
 	g_editor->pending_engine_running = 0;
@@ -127,8 +127,8 @@ struct led *led_Alloc(void)
 	struct r_Mesh *r_mesh_stub = strdb_Address(&g_editor->render_mesh_db, STRING_DATABASE_STUB_INDEX);
 	r_MeshStubBox(r_mesh_stub);
 
-	struct collisionShape *cshape_stub = strdb_Address(&g_editor->cs_db, STRING_DATABASE_STUB_INDEX);
-	cshape_stub->type = COLLISION_SHAPE_CONVEX_HULL;
+	struct c_Shape *cshape_stub = strdb_Address(&g_editor->cs_db, STRING_DATABASE_STUB_INDEX);
+	cshape_stub->type = C_SHAPE_CONVEX_HULL;
 	cshape_stub->hull = DcelBox(&sys_win->mem_persistent, Vec3Inline(0.5f, 0.5f, 0.5f));
 	CollisionShapeUpdateMassProperties(cshape_stub);
 

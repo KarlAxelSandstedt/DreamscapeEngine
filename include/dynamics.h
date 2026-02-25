@@ -79,7 +79,7 @@ struct ds_Shape
 	u32 			body;		            /* ds_RigidBody owner of node 			            */
 	u32			    contact_first;	        /* index to first contact in shape's list (nll)     */
 
-	enum collisionShapeType cshape_type;	/* collisionShape type 				                */
+	enum c_ShapeType cshape_type;	/* collisionShape type 				                */
 	u32			    cshape_handle;	        /* handle to referenced collisionShape 		        */
 
 	f32			    density;	            /* kg/m^3					                        */
@@ -139,12 +139,46 @@ struct ds_ShapePrefabInstance
  * to the shape. On failure, (NULL, POOL_NULL) is returned. 
  */
 struct slot ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_ShapePrefab *prefab, const ds_Transform *t, const u32 body);
-/* Remove the specified shape of a DYNAMIC body and update the physics state into a valid state.  */
+/* 
+ * Remove the specified shape of a DYNAMIC body and update the physics state into a valid state.  
+ */
 void		ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, const u32 shape);
-/* Remove the specified shape of a STATIC body and update the physics state into a valid state. */
+/* 
+ * Remove the specified shape of a STATIC body and update the physics state into a valid state. 
+ */
 void		ds_ShapeStaticRemove(struct ds_RigidBodyPipeline *pipeline, const u32 shape);
-/* Calculate the world bounding box of the shape, taking into account the shape and its body's Transform. */
+/*
+ * Calculate the world transform of the shape.
+ */
+void        ds_ShapeWorldTransform(ds_Transform *t, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape);
+/* 
+ * Calculate the world bounding box of the shape, taking into account the shape and its body's Transform. 
+ */
 struct aabb ds_ShapeWorldBbox(const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape);
+/* 
+ * Test for intersection between shapes, with each shape having the given margin. returns 1 if intersecting, else 0 
+ */
+u32	        ds_ShapeTest(const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2, const f32 margin);
+/* 
+ * Return, if no intersection was found, the distance between shapes s1 and s2 (with no margin) and their 
+ * respective closest points c1 and c2. If the shapes are intersecting, return 0.0f. 
+ */
+f32 	    ds_ShapeDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2, const f32 margin);
+/* 
+ * Returns 1 if the shapes are colliding, 0 otherwise. If a collision is found, return a contact manifold
+ * with normal pointing from s1 to s2 (and a sat_cache if sat cache if hull-hull contact) pointing from s1 
+ * to s2. 
+ */
+u32         ds_ShapeContact(struct arena *tmp, struct c_Result *result, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2, const f32 margin);
+/* 
+ * Return, if ray intersects shape, t such that ray.origin + t*ray.dir == closest point on shape. 
+ *         Otherwise, return F32_INFINITY.
+ */
+f32 	    ds_ShapeRaycastParameter(struct arena *tmp, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray);
+/* 
+ * Return 1 if ray hit shape, 0 otherwise. If hit, we return the closest intersection point 
+ */
+u32 	    ds_ShapeRaycast(struct arena *tmp, vec3 intersection, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray);
 
 
 /*
@@ -194,10 +228,9 @@ struct ds_RigidBody
 	/* static state */
 	u32 		entity;
 	u32 		flags;
-	f32 		margin;
 
     //TODO remove 
-	enum collisionShapeType shape_type;
+	enum c_ShapeType shape_type;
 	u32		    shape_handle;
 
 	mat3 		inertia_tensor;		/* intertia tensor of body frame */
@@ -297,8 +330,8 @@ struct cdb
 	/*
 	 * frame-cached separation axes 
 	 */
-	struct pool	sat_cache_pool;
-	struct dll	sat_cache_list;
+	struct pool	    sat_cache_pool;
+	struct dll	    sat_cache_list;
 	struct hashMap	sat_cache_map;		
 
 	/* PERSISTENT DATA, GROWABLE, keeps track of which slots in contacts are currently being used. */
@@ -333,9 +366,9 @@ u32 		cdb_ContactLookupIndex(const struct cdb *c_db, const u32 i1, const u32 i2)
 void 		cdb_UpdatePersistentContactsUsage(struct cdb *c_db);
 
 /* add sat_cache to pipeline; if it already exists, reset the cache. */
-void 			SatCacheAdd(struct cdb *c_db, const struct satCache *sat_cache);
+void 			    sat_CacheAdd(struct cdb *c_db, const struct sat_Cache *sat_cache);
 /* lookup sat_cache to pipeline; if it does't exist, return NULL. */
-struct satCache *	SatCacheLookup(const struct cdb *c_db, const u32 b1, const u32 b2);
+struct sat_Cache *	sat_CacheLookup(const struct cdb *c_db, const u32 b1, const u32 b2);
 
 /*
 =================================================================================================================
@@ -873,7 +906,7 @@ void			PhysicsPipelineRigidBodyTagForRemoval(struct ds_RigidBodyPipeline *pipeli
 /* validate and ds_Assert internal state of physics pipeline */
 void			PhysicsPipelineValidate(const struct ds_RigidBodyPipeline *pipeline);
 /* If hit, return parameter (body,t) of ray at first collision. Otherwise return (U32_MAX, F32_INFINITY) */
-u32f32 			PhysicsPipelineRaycastParameter(struct arena *mem_tmp, const struct ds_RigidBodyPipeline *pipeline, const struct ray *ray);
+u32f32 			PhysicsPipelineRaycastParameter(struct arena *mem_tmp1, struct arena *mem_tmp2, const struct ds_RigidBodyPipeline *pipeline, const struct ray *ray);
 /* enable sleeping in pipeline */
 void 			PhysicsPipelineSleepEnable(struct ds_RigidBodyPipeline *pipeline);
 /* disable sleeping in pipeline */

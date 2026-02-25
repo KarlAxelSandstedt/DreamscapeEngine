@@ -31,6 +31,8 @@ extern "C" {
 #include "queue.h"
 #include "tree.h"
 
+struct ds_RigidBodyPipeline;
+
 #define COLLISION_DEFAULT_MARGIN	(100.0f * F32_EPSILON)
 #define COLLISION_POINT_DIST_SQ		(10000.0f * F32_EPSILON)
 
@@ -175,40 +177,36 @@ extern dsThreadLocal struct collisionDebug *tl_debug;
 
 /********************************** COLLISION SHAPES **********************************/
 
-enum collisionShapeType
+enum c_ShapeType
 {
-	COLLISION_SHAPE_SPHERE,
-	COLLISION_SHAPE_CAPSULE,
-	COLLISION_SHAPE_CONVEX_HULL,
-	COLLISION_SHAPE_TRI_MESH,	
-	COLLISION_SHAPE_COUNT,
+	C_SHAPE_SPHERE,
+	C_SHAPE_CAPSULE,
+	C_SHAPE_CONVEX_HULL,
+	C_SHAPE_TRI_MESH,	
+	C_SHAPE_COUNT,
 };
 
-struct collisionShape
+struct c_Shape
 {
 	STRING_DATABASE_SLOT_STATE;
 	
-	mat3	inertia_tensor;		/* local shape frame intertia tensor (Assumes density=1.0, 
-					   to get the interia tensor given a density, just multiply
-					   the matrix with the given density. */
-	vec3	center_of_mass;		/* local shape frame center of mass */
-	f32	volume;
+	mat3	                inertia_tensor;		/* local shape frame intertia tensor (Assumes density=1.0, 
+			                		                to get the interia tensor given a density, just multiply
+			                		                the matrix with the given density. */
+	vec3	                center_of_mass;		/* local shape frame center of mass */
+	f32	                    volume;
 
-	//TODO remove
-	u32 			center_of_mass_localized; /* Has the shape translated its vertices into COM space? */
-
-	enum collisionShapeType type;
+	enum c_ShapeType        type;
 	union
 	{
 		struct sphere 		sphere;
 		struct capsule 		capsule;
-		struct dcel		hull;
+		struct dcel		    hull;
 		struct triMeshBvh 	mesh_bvh;
 	};
 };
 
-
-void	CollisionShapeUpdateMassProperties(struct collisionShape *shape);
+void	CollisionShapeUpdateMassProperties(struct c_Shape *shape);
 
 
 enum collisionResultType
@@ -229,7 +227,7 @@ struct contactManifold
 	u32 	i2;
 };
 
-enum satCacheType
+enum sat_CacheType
 {
 	SAT_CACHE_SEPARATION,
 	SAT_CACHE_CONTACT_FV,
@@ -237,13 +235,13 @@ enum satCacheType
 	SAT_CACHE_COUNT,
 };
 
-struct satCache
+struct sat_Cache
 {
 	POOL_SLOT_STATE;
 	u32	touched;
 	DLL_SLOT_STATE;
 
-	enum satCacheType	type;
+	enum sat_CacheType	type;
 	union
 	{
 		struct
@@ -260,38 +258,87 @@ struct satCache
 
 		struct
 		{
-			vec3	separation_axis;
-			f32	separation;
+			vec3    separation_axis;
+			f32	    separation;
 		};
 	};
 
 	u64	key;
 };
 
-struct collisionResult
+struct c_Result
 {
 	enum collisionResultType	type;
-	struct satCache			sat_cache;
+	struct sat_Cache			sat_cache;
 	struct contactManifold 		manifold;
 };
 
 void 	ContactManifoldDebugPrint(FILE *file, const struct contactManifold *cm);
 
-/********************************** RIGID BODY METHODS  **********************************/
+/********************************** INTERSECTION TESTS **********************************/
+
+u32     c_SphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+u32     c_CapsuleSphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+u32     c_CapsuleTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+u32     c_HullSphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+u32     c_HullCapsuleTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+u32     c_HullTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+u32     c_TriMeshBvhSphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+u32     c_TriMeshBvhCapsuleTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+u32     c_TriMeshBvhHullTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+
+/********************************** DISTANCE METHODS **********************************/
+
+f32     c_SphereDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+f32     c_CapsuleSphereDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+f32     c_CapsuleDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+f32     c_HullSphereDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+f32     c_HullCapsuleDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+f32     c_HullDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+f32     c_TriMeshBvhSphereDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+f32     c_TriMeshBvhCapsuleDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+f32     c_TriMeshBvhHullDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+
+/********************************** CONTACT MANIFOLD METHODS **********************************/
+
+u32     c_SphereContact(struct arena *not_used1, struct c_Result *result, const struct ds_RigidBodyPipeline *not_used2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+u32     c_CapsuleSphereContact(struct arena *not_used1, struct c_Result *result, const struct ds_RigidBodyPipeline *not_used2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+u32     c_CapsuleContact(struct arena *not_used1, struct c_Result *result, const struct ds_RigidBodyPipeline *not_used2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+u32     c_HullSphereContact(struct arena *not_used1, struct c_Result *result, const struct ds_RigidBodyPipeline *not_used2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+u32     c_HullCapsuleContact(struct arena *not_used1, struct c_Result *result, const struct ds_RigidBodyPipeline *not_used2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+u32     c_HullContact(struct arena *tmp, struct c_Result *result, const struct ds_RigidBodyPipeline *pipeline, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+u32     c_TriMeshBvhSphereContact(struct arena *tmp, struct c_Result *result, const struct ds_RigidBodyPipeline *not_used2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+u32     c_TriMeshBvhCapsuleContact(struct arena *tmp, struct c_Result *result, const struct ds_RigidBodyPipeline *not_used2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+u32     c_TriMeshBvhHullContact(struct arena *tmp, struct c_Result *result, const struct ds_RigidBodyPipeline *not_used2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+
+/********************************** RAYCAST **********************************/
+
+f32 c_SphereRaycastParameter(struct arena *not_used, const struct c_Shape *shape, const ds_Transform *transform, const struct ray *ray);
+f32 c_CapsuleRaycastParameter(struct arena *not_used, const struct c_Shape *shape, const ds_Transform *transform, const struct ray *ray);
+f32 c_HullRaycastParameter(struct arena *not_used, const struct c_Shape *shape, const ds_Transform *transform, const struct ray *ray);
+f32 c_TriMeshBvhRaycastParameter(struct arena *mem_tmp, const struct c_Shape *shape, const ds_Transform *transform, const struct ray *ray);
+
+
+
 
 struct ds_RigidBodyPipeline;
 struct ds_RigidBody;
 
-/* test for intersection between bodies, with each body having the given margin. returns 1 if intersection. */
-u32	BodyBodyTest(const struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBody *b1, const struct ds_RigidBody *b2, const f32 margin);
-/* return closest points c1 and c2 on bodies b1 and b2 (with no margin), respectively, given no intersection */
+/* Test for intersection between shapes, with each shape having the given margin. returns 1 if intersecting, else 0 */
+u32	    BodyBodyTest(const struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBody *b1, const struct ds_RigidBody *b2, const f32 margin);
+/* Return, if no intersection was found, the distance between shapes s1 and s2 (with no margin) and their 
+ * respective closest points c1 and c2. If the shapes are intersecting, return 0.0f. */
 f32 	BodyBodyDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBody *b1, const struct ds_RigidBody *b2, const f32 margin);
-/* returns contact manifold or sat cache pointing from b1 to b2, given that the bodies are colliding  */
-u32 	BodyBodyContactManifold(struct arena *tmp, struct collisionResult *result, const struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBody *b1, const struct ds_RigidBody *b2, const f32 margin);
-/* Return t such that ray.origin + t*ray.dir == closest point on rigid body */
+/* Returns 1 if the shapes are colliding, 0 otherwise. If a collision is found, return a contact manifold
+ * or sat cache pointing from s1 to s2 */
+u32 	BodyBodyContactManifold(struct arena *tmp, struct c_Result *result, const struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBody *b1, const struct ds_RigidBody *b2, const f32 margin);
+/* Return t such that ray.origin + t*ray.dir == closest point on shape */
 f32 	BodyRaycastParameter(const struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBody *b, const struct ray *ray);
-/* Return 1 if ray hit body, 0 otherwise. If hit, we return the closest intersection point */
+/* Return 1 if ray hit shape, 0 otherwise. If hit, we return the closest intersection point */
 u32 	BodyRaycast(vec3 intersection, const struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBody *b, const struct ray *ray);
+
+
+
 
 #ifdef __cplusplus
 } 

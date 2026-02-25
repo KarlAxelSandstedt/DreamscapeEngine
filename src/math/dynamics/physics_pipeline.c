@@ -95,13 +95,13 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 	pipeline.event_pool = PoolAlloc(NULL, 256, struct physicsEvent, GROWABLE);
 	pipeline.event_list = dll_Init(struct physicsEvent);
 
-	pipeline.margin_on = 1;
-	pipeline.margin = COLLISION_MARGIN_DEFAULT;
-
 	pipeline.cshape_db = cshape_db;
 
 	pipeline.c_db = cdb_Alloc(mem, initial_size);
 	pipeline.is_db = isdb_Alloc(mem, initial_size);
+
+    pipeline.margin_on = 0;
+	pipeline.margin = COLLISION_DEFAULT_MARGIN;
 
 	pipeline.body_color_mode = RB_COLOR_MODE_BODY;
 	pipeline.pending_body_color_mode = RB_COLOR_MODE_COLLISION;
@@ -258,7 +258,7 @@ static void InternalPushProxyOverlaps(struct arena *mem_frame, struct ds_RigidBo
 
 struct tpcOutput
 {
-	struct collisionResult *result;
+	struct c_Result *result;
 	u32 result_count;
 };
 
@@ -274,29 +274,25 @@ static void ThreadPushContacts(void *task_addr)
 
 	struct tpcOutput *out = ArenaPush(&worker->mem_frame, sizeof(struct tpcOutput));
 	out->result_count = 0;
-	out->result = ArenaPush(&worker->mem_frame, range->count * sizeof(struct collisionResult));
+	out->result = ArenaPush(&worker->mem_frame, range->count * sizeof(struct c_Result));
 
 	const f32 margin = (pipeline->margin_on) ? pipeline->margin : 0.0f;
-	const struct ds_RigidBody *b1, *b2;
+	const struct ds_Shape *s1, *s2;
 
 	for (u64 i = 0; i < range->count; ++i)
 	{
-		b1 = PoolAddress(&pipeline->body_pool, proxy_overlap[i].id1);
-		b2 = PoolAddress(&pipeline->body_pool, proxy_overlap[i].id2);
+		s1 = PoolAddress(&pipeline->shape_pool, proxy_overlap[i].id1);
+		s2 = PoolAddress(&pipeline->shape_pool, proxy_overlap[i].id2);
 
-		if (BodyBodyContactManifold(&worker->mem_frame, out->result + out->result_count, pipeline, b1, b2, margin))
+        if (s1->body == s2->body)
+        {
+            continue;
+        }
+
+		if (ds_ShapeContact(&worker->mem_frame, out->result + out->result_count, pipeline, s1, s2, margin))
 		{
 			out->result[out->result_count].manifold.i1 = proxy_overlap[i].id1;
 			out->result[out->result_count].manifold.i2 = proxy_overlap[i].id2;
-
-			//vec3 tmp;
-			//Vec3Sub(tmp, b2->position, b1->position);
-
-			//if (Vec3Dot(tmp, out->result[out->result_count].manifold.n) < 0)
-			//{
-			//	Vec3ScaleSelf(out->result[out->result_count].manifold.n, -1.0f);
-			//}
-
 			out->result_count += 1;
 		}	
 		else if (out->result[out->result_count].type == COLLISION_SAT_CACHE)
@@ -305,7 +301,7 @@ static void ThreadPushContacts(void *task_addr)
 		}
 	}
 
-	ArenaPopPacked(&worker->mem_frame, (range->count - out->result_count) * sizeof(struct collisionResult));
+	ArenaPopPacked(&worker->mem_frame, (range->count - out->result_count) * sizeof(struct c_Result));
 
 	task->output = out;
 	ProfZoneEnd;
@@ -384,31 +380,9 @@ static void ThreadPushContacts(void *task_addr)
 //	}
 //	//fprintf(stderr, " } ");
 //
-//	//if (bundle)
-//	//{
-//	//	//fprintf(stderr, "A: {");
-//	//	for (u32 i = 0; i < bundle->task_count; ++i)
-//	//	{
-//	//		struct tpcOutput *out = (struct tpcOutput *) AtomicLoadAcq64(&bundle->tasks[i].output);
-//	//		for (u32 j = 0; j < out->cm_count; ++j)
-//	//		{
-//	//			const struct contact *c = cdb_ContactAdd(pipeline, out->cm + j, out->cm[j].i1, out->cm[j].i2);
-//	//			/* add to new links if needed */
-//	//			const u32 index = (u32) nll_Index(&pipeline->c_db.contact_net, c);
-//	//			if (index >= pipeline->c_db.contacts_persistent_usage.bit_count
-//	//				 || BitVecGetBit(&pipeline->c_db.contacts_persistent_usage, index) == 0)
-//	//			{
-//	//					pipeline->contact_new_count += 1;
-//	//					ArenaPushPackedMemcpy(mem_frame, &index, sizeof(index));
-//	//			}
-//	//			//fprintf(stderr, " %u", index);
-//	//		}	
-//	//	}
-//	//	//fprintf(stderr, " } ");
-//	//}
 //	ProfZoneEnd;
 //}
-//
+
 //static void InternalMergeIslands(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline)
 //{
 //	ProfZone;
@@ -701,7 +675,7 @@ void InternalPhysicsPipelineSimulateFrame(struct ds_RigidBodyPipeline *pipeline,
 
 	/* broadphase => narrowphase => solve => integrate */
 	InternalUpdateShapeBvh(pipeline);
-	//InternalPushProxyOverlaps(&pipeline->frame, pipeline);
+	InternalPushProxyOverlaps(&pipeline->frame, pipeline);
 	//InternalParallelPushContacts(&pipeline->frame, pipeline);
 
 	//InternalMergeIslands(&pipeline->frame, pipeline);
@@ -727,11 +701,12 @@ void PhysicsPipelineTick(struct ds_RigidBodyPipeline *pipeline)
 	ProfZoneEnd;
 }
 
-u32f32 PhysicsPipelineRaycastParameter(struct arena *mem_tmp, const struct ds_RigidBodyPipeline *pipeline, const struct ray *ray)
+u32f32 PhysicsPipelineRaycastParameter(struct arena *mem_tmp1, struct arena *mem_tmp2, const struct ds_RigidBodyPipeline *pipeline, const struct ray *ray)
 {
-	ArenaPushRecord(mem_tmp);
+	ArenaPushRecord(mem_tmp1);
+	ArenaPushRecord(mem_tmp2);
 
-	struct bvhRaycastInfo info = BvhRaycastInit(mem_tmp, &pipeline->shape_bvh, ray);
+	struct bvhRaycastInfo info = BvhRaycastInit(mem_tmp1, &pipeline->shape_bvh, ray);
 	while (info.hit_queue.count)
 	{
 		const u32f32 tuple = MinQueueFixedPop(&info.hit_queue);
@@ -742,12 +717,12 @@ u32f32 PhysicsPipelineRaycastParameter(struct arena *mem_tmp, const struct ds_Ri
 
 		if (bt_LeafCheck(info.node + tuple.u))
 		{
-			const u32 bi = info.node[tuple.u].bt_left;
-			const struct ds_RigidBody *body = (struct ds_RigidBody *) pipeline->body_pool.buf + bi;
-			const f32 t = BodyRaycastParameter(pipeline, body, ray);
+			const u32 si = info.node[tuple.u].bt_left;
+			const struct ds_Shape *shape = (struct ds_Shape *) pipeline->shape_pool.buf + si;
+			const f32 t = ds_ShapeRaycastParameter(mem_tmp2, pipeline, shape, ray);
 			if (t < info.hit.f)
 			{
-				info.hit = u32f32_inline(bi, t);
+				info.hit = u32f32_inline(si, t);
 			}
 		}
 		else
@@ -756,7 +731,8 @@ u32f32 PhysicsPipelineRaycastParameter(struct arena *mem_tmp, const struct ds_Ri
 		}
 	}
 
-	ArenaPopRecord(mem_tmp);
+	ArenaPopRecord(mem_tmp1);
+	ArenaPopRecord(mem_tmp2);
 
 	return info.hit;
 }

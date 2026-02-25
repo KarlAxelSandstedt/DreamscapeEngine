@@ -39,7 +39,6 @@ struct slot ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Rig
 
 	const u32 dynamic_flag = (prefab->dynamic) ? RB_DYNAMIC : 0;
 	body->flags = RB_ACTIVE | (g_solver_config->sleep_enabled * RB_AWAKE) | dynamic_flag;
-	body->margin = 0.25f;
 
 	Mat3Copy(body->inertia_tensor, prefab->inertia_tensor);
 	Mat3Copy(body->inv_inertia_tensor, prefab->inv_inertia_tensor);
@@ -120,7 +119,7 @@ void ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, con
 	{
 		shape = PoolAddress(&pipeline->shape_pool, s);
 		s = shape->dll_next;
-		const struct collisionShape *cshape = strdb_Address(pipeline->cshape_db, shape->cshape_handle);
+		const struct c_Shape *cshape = strdb_Address(pipeline->cshape_db, shape->cshape_handle);
 
 		mass[i] = shape->density * cshape->volume;
 		body->mass += mass[i];

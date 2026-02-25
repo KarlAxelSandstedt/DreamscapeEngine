@@ -425,12 +425,12 @@ static void r_EditorDraw(const struct led *led)
 		for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 		{
 			body = PoolAddress(&led->physics.body_pool, i);
-			if (body->shape_type != COLLISION_SHAPE_TRI_MESH)
+			if (body->shape_type != C_SHAPE_TRI_MESH)
 			{
 				continue;
 			}
 
-			const struct collisionShape *shape = strdb_Address(led->physics.cshape_db, body->shape_handle);
+			const struct c_Shape *shape = strdb_Address(led->physics.cshape_db, body->shape_handle);
 			struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &shape->mesh_bvh.bvh, body->position, body->rotation, led->physics.sbvh_color);
 			if (mesh)
 			{
