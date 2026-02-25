@@ -169,7 +169,7 @@ f32 	    ds_ShapeDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipeline *p
  * with normal pointing from s1 to s2 (and a sat_cache if sat cache if hull-hull contact) pointing from s1 
  * to s2. 
  */
-u32         ds_ShapeContact(struct arena *tmp, struct c_Result *result, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2, const f32 margin);
+u32         ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2, const f32 margin);
 /* 
  * Return, if ray intersects shape, t such that ray.origin + t*ray.dir == closest point on shape. 
  *         Otherwise, return F32_INFINITY.
@@ -184,7 +184,7 @@ u32 	    ds_ShapeRaycast(struct arena *tmp, vec3 intersection, const struct ds_R
 /*
 rigid_body
 ========== 
-physics engine entity 
+//TODO
 */
 
 #define RB_ACTIVE		((u32) 1 << 0)
@@ -245,6 +245,7 @@ struct ds_RigidBody
 /*
 rigid_body_prefab
 =================
+TODO
 rigid body prefabs: used within editor and level editor file format, contains resuable preset values for creating
 new bodies.
 */
@@ -276,26 +277,45 @@ void		ds_RigidBodyRemove(struct ds_RigidBodyPipeline *pipeline, const u32 body);
 void		ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, const u32 body);
 
 /*
-=================================================================================================================
-|						Contact Database						|
-=================================================================================================================
+ds_ContactKey
+=============
+ds_ContactKey is the unique key for a contact, and it used in the contact database
+hash map. Since the key must be unique for a contact, we require it to be in 
+canonical form, i.e. you may always assume that body1 > body2.  The shapes are the
+subshapes of their respective bodys making contact. 
 */
-
-struct contact
+struct ds_ContactKey
 {
-	DLL_SLOT_STATE;		/* island->contact_list node */
-	NLL_SLOT_STATE;		/* body->contact_net node */
-	struct contactManifold 	cm;
-	u64 			key;
+    u32 body0;      /* (body0 < body1)      */
+    u32 shape0;     /* subshape of body0    */
+    u32 body1;      /* (body0 < body1)      */
+    u32 shape1;     /* subshape of body1    */
+};
 
-	vec3 			normal_cache;
-	vec3 			tangent_cache[2];
-	vec3 			v_cache[4];			/* previous contact manifold vertices, 
-								   or { F32_MAX, F32_MAX, F32_MAX }  */
-	f32 			tangent_impulse_cache[4][2];
-	f32 			normal_impulse_cache[4];	/* contact_solver solution to contact constraint, 
-								   or 0.0f */
-	u32 			cached_count;			/* number of vertices in cache */
+/* Return the Canonical key of (bodyA,shapeA) (bodyB,shapeB) */
+struct ds_ContactKey    ds_ContactKeyCanonical(const u32 bodyA, const u32 shapeA, const u32 bodyB, const u32 shapeB);
+
+/*
+ds_Contact
+==========
+ds_Contact is the value mapped by a ds_ContactKey, and contains current and 
+cached contact data and additional list node state. 
+*/
+struct ds_Contact
+{
+	DLL_SLOT_STATE;		                                /* island->contact_list node            */
+	NLL_SLOT_STATE;		                                /* shape->contact_net node              */
+    struct ds_ContactKey    key;                        /* canonical-form key                   */
+	struct c_Manifold 	    cm;                         /* Current contact manifold             */
+
+	vec3 			        normal_cache;
+	vec3 			        tangent_cache[2];
+	vec3 			        v_cache[4];			        /* previous contact manifold vertices, 
+					        			                   or { F32_MAX, F32_MAX, F32_MAX }     */
+	f32 			        tangent_impulse_cache[4][2];
+	f32 			        normal_impulse_cache[4];	/* contact_solver solution to contact 
+                                                           constraint, or 0.0f                  */
+	u32 			        cached_count;			    /* number of vertices in cache          */
 };
 
 /*
@@ -306,7 +326,7 @@ and current contacts, and if necessary, invalidate any contact data.
 
 Frame layout:
 	1. generate_contacts
- 	2. c_db_new_frame(contact_count)	// alloc memory for frame contacts
+ 	2. cdb_new_frame(contact_count)	// alloc memory for frame contacts
  	3. cdb_ContactAdd(i1, i2, contact)	// add all new contacts 
  	4. solve
  	5. invalidate any contacts before caching them.
@@ -319,8 +339,8 @@ struct cdb
 	/*
 	 * contact net list nodes are owned as follows:
 	 *
-	 * contact->key & (0xffffffff00000000) >> 32 identifier owns slot 0
-	 * contact->key & (0x00000000ffffffff) >>  0 identifier owns slot 1
+	 * contact->key.shape0 owns slot 0
+	 * contact->key.shape1 owns slot 1
 	 *
 	 * i.e. the smaller index owns slot 0 and the larger index owns slot 1.
 	 */
@@ -334,41 +354,81 @@ struct cdb
 	struct dll	    sat_cache_list;
 	struct hashMap	sat_cache_map;		
 
-	/* PERSISTENT DATA, GROWABLE, keeps track of which slots in contacts are currently being used. */
-	struct bitVec 	contacts_persistent_usage; /* At end of frame, is set to contacts_frame_usage + any 
-						     new appended contacts resulting in appending the 
-						     contacts array.  */
+	/* PERSISTENT DATA, GROWABLE, keeps track of which slots in contacts are currently being used.
+       At end of frame, it is set to contacts_frame_usage and any new appended contacts resulting 
+       in appending the contacts array.  */
+	struct bitVec 	contacts_persistent_usage; 
 
-	/* FRAME DATA, NOT GROWABLE, keeps track of which slots in contacts are currently being used. */
-	struct bitVec 	contacts_frame_usage;	/* bit-array showing which of the previous frame link indices
-						   are reused. Thus, all links in the current frame are the
-						   ones in the bit array + any appended contacts which resu-
-						   -lted in growing the array. */
+	/* FRAME DATA, NOT GROWABLE, keeps track of which slots in contacts are currently being used.
+       bit-array showing which of the previous frame link indices are reused. Thus, all links in
+       the current frame are the ones in the bit array + any appended contacts which resulted in
+       growing the array. */
+	struct bitVec 	contacts_frame_usage;	
 };
 
-#define CONTACT_KEY_TO_BODY_0(key) 	((key) >> 32)
-#define CONTACT_KEY_TO_BODY_1(key) 	((key) & U32_MAX)
-
 struct cdb 	cdb_Alloc(struct arena *mem_persistent, const u32 initial_size);
-void 		cdb_Free(struct cdb *c_db);
-void		cdb_Flush(struct cdb *c_db);
+void 		cdb_Free(struct cdb *cdb);
+void		cdb_Flush(struct cdb *cdb);
 void		cdb_Validate(const struct ds_RigidBodyPipeline *pipeline);
-void		cdb_ClearFrame(struct cdb *c_db);
+void		cdb_ClearFrame(struct cdb *cdb);
 /* Update or add new contact depending on if the contact persisted from prevous frame. */
-struct contact *cdb_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct contactManifold *cm, const u32 i1, const u32 i2);
+struct ds_Contact *cdb_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct c_Manifold *cm, const u32 i1, const u32 i2);
 void 		cdb_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u64 key, const u32 index);
 /* Remove all contacts associated with the given body */
 void		cdb_BodyRemoveContacts(struct ds_RigidBodyPipeline *pipeline, const u32 body_index);
 /* Remove all contacts associated with the given static body and update affected islands */
 void		cdb_StaticRemoveContactsAndUpdateIslands(struct ds_RigidBodyPipeline *pipeline, const u32 static_index);
-struct contact *cdb_ContactLookup(const struct cdb *c_db, const u32 b1, const u32 b2);
-u32 		cdb_ContactLookupIndex(const struct cdb *c_db, const u32 i1, const u32 i2);
-void 		cdb_UpdatePersistentContactsUsage(struct cdb *c_db);
+struct ds_Contact *cdb_ContactLookup(const struct cdb *cdb, const u32 b1, const u32 b2);
+u32 		cdb_ContactLookupIndex(const struct cdb *cdb, const u32 i1, const u32 i2);
+void 		cdb_UpdatePersistentContactsUsage(struct cdb *cdb);
 
-/* add sat_cache to pipeline; if it already exists, reset the cache. */
-void 			    sat_CacheAdd(struct cdb *c_db, const struct sat_Cache *sat_cache);
-/* lookup sat_cache to pipeline; if it does't exist, return NULL. */
-struct sat_Cache *	sat_CacheLookup(const struct cdb *c_db, const u32 b1, const u32 b2);
+
+/*
+sat_Cache
+=========
+TODO
+*/
+enum sat_CacheType
+{
+	SAT_CACHE_SEPARATION,
+	SAT_CACHE_CONTACT_FV,
+	SAT_CACHE_CONTACT_EE,
+	SAT_CACHE_COUNT,
+};
+
+struct sat_Cache
+{
+	POOL_SLOT_STATE;
+	DLL_SLOT_STATE;
+	u32	                    touched;
+	struct ds_ContactKey    key;
+	enum sat_CacheType	    type;
+	union
+	{
+		struct
+		{
+			u32 body;	/* body (0,1) containing face   */
+			u32	face;	/* reference face 	            */
+		};
+
+		struct
+		{
+			u32	edge1;	/* body0 edge, body0 < body1    */
+			u32	edge2;	/* body1 edge                   */
+		};
+
+		struct
+		{
+			vec3    separation_axis;
+			f32	    separation;
+		};
+	};
+};
+
+/* Alloc sat_Cache in pipeline. */
+struct slot sat_CacheAdd(struct cdb *cdb, const struct ds_ContactKey *key);
+/* Lookup sat_Cache in pipeline. If found, return (index, address). Otherwise (POOL_NULL, NULL). */
+struct slot sat_CacheLookup(const struct cdb *cdb, const struct ds_ContactKey *key);
 
 /*
 =================================================================================================================
@@ -479,7 +539,7 @@ struct island
 	DLL_SLOT_STATE;
 
 	struct ds_RigidBody **	bodies;	
-	struct contact 	**	contacts;
+	struct ds_Contact 	**	contacts;
 	u32 *			body_index_map; /* body_index -> local indices of bodies in island:
 						 * is->bodies[i] = pipeline->bodies[b] => 
 						 * is->body_index_map[b] = i 
@@ -573,9 +633,9 @@ struct islandSolveInput
  * Solves the given island using the global solver config. Since no island shares any contacts or bodies, and every
  * island is a unique task, no shared variables are being written to.
  *
- * - reads pipeline, solver config, c_db, is_db (basically everything)
- * - writes to island,		(unique to thread, memory in c_db)
- * - writes to island->contacts (unique to thread, memory in c_db)
+ * - reads pipeline, solver config, cdb, is_db (basically everything)
+ * - writes to island,		(unique to thread, memory in cdb)
+ * - writes to island->contacts (unique to thread, memory in cdb)
  * - writes to island->bodies	(unique to thread, memory in pipeline)
  */
 void	ThreadIslandSolve(void *task_input);
@@ -849,7 +909,7 @@ struct ds_RigidBodyPipeline
 
 
 
-	struct cdb		c_db;
+	struct cdb		cdb;
 	struct isdb 	is_db;
 
 	struct collisionDebug *	debug;
@@ -867,7 +927,7 @@ struct ds_RigidBodyPipeline
 	u32			    cm_count;
 	u32 *			contact_new;
 	struct dbvhOverlap *	proxy_overlap;
-	struct contactManifold *cm;
+	struct c_Manifold *cm;
 
 	/* debug */
 	enum rigidBodyColorMode	pending_body_color_mode;

@@ -135,7 +135,7 @@ void ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, con
 		Vec3TranslateScaled(body->local_center_of_mass, center_of_mass[i], mass[i]);
 
 		/* I_Shape(i) = R * Shape_Inertia * R^-1 */
-		Mat3Scale(tmp1, cshape->inertia_tensor, shape->density);
+		Mat3Scale(tmp1, *((mat3ptr) &cshape->inertia_tensor), shape->density);
 		Mat3Mul(tmp2, rot_local, tmp1);
 		Mat3Mul(inertia_tensor[i], tmp2, rot_local_inv);
 	}

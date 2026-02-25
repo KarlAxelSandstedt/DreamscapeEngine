@@ -367,7 +367,7 @@ void SolverWarmup(struct solver *solver, const struct island *is)
 	vec3 tmp1, tmp2, tmp3;
 	for (u32 i = 0; i < solver->contact_count; ++i)
 	{			
-		struct contact *c = is->contacts[i];
+		struct ds_Contact *c = is->contacts[i];
 		struct velocityConstraint *vc = solver->vcs + i;
 	
 		if (vc->vcp_count == c->cached_count)
@@ -422,7 +422,7 @@ void SolverCacheImpulse(struct solver *solver, const struct island *is)
 {
 	for (u32 i = 0; i < solver->contact_count; ++i)
 	{			
-		struct contact *c = is->contacts[i];
+		struct ds_Contact *c = is->contacts[i];
 		struct velocityConstraint *vc = solver->vcs + i;
 
 		c->cached_count = vc->vcp_count;

@@ -130,7 +130,7 @@ struct led *led_Alloc(void)
 	struct c_Shape *cshape_stub = strdb_Address(&g_editor->cs_db, STRING_DATABASE_STUB_INDEX);
 	cshape_stub->type = C_SHAPE_CONVEX_HULL;
 	cshape_stub->hull = DcelBox(&sys_win->mem_persistent, Vec3Inline(0.5f, 0.5f, 0.5f));
-	CollisionShapeUpdateMassProperties(cshape_stub);
+	c_ShapeUpdateMassProperties(cshape_stub);
 
     struct ds_ShapePrefab *shape_stub = strdb_Address(&g_editor->shape_prefab_db, STRING_DATABASE_STUB_INDEX);
     shape_stub->cshape = strdb_Reference(&g_editor->cs_db, Utf8Inline("")).index;

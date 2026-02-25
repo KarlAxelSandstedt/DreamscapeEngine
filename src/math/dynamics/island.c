@@ -36,7 +36,7 @@ static struct slot isdb_IslandEmpty(struct ds_RigidBodyPipeline *pipeline)
 	PhysicsEventIslandNew(pipeline, slot.index);
 
 	struct island *is = slot.address;
-	is->contact_list = dll_Init(struct contact);
+	is->contact_list = dll_Init(struct ds_Contact);
 	is->body_list = dll2_Init(struct ds_RigidBody);
 	is->flags = g_solver_config->sleep_enabled * (ISLAND_AWAKE | ISLAND_SLEEP_RESET);
 
@@ -59,7 +59,7 @@ void isdb_PrintIsland(FILE *file, const struct ds_RigidBodyPipeline *pipeline, c
 	const struct island *is = PoolAddress(&pipeline->is_db.island_pool, island);
 	if (!is) { return; }
 
-	const struct contact *c;
+	const struct ds_Contact *c;
 	const struct ds_RigidBody *b;
 
 	fprintf(file, "Island %u %s:\n{\n", island, desc);
@@ -79,14 +79,14 @@ void isdb_PrintIsland(FILE *file, const struct ds_RigidBodyPipeline *pipeline, c
 	for (u32 i = is->contact_list.first; i != DLL_NULL; i = dll_Next(c))
 	{
 		fprintf(file, "(%u) ", i);
-		c = nll_Address(&pipeline->c_db.contact_net, i);
+		c = nll_Address(&pipeline->cdb.contact_net, i);
 	}
 	fprintf(file, "}\n");
 
 	fprintf(file, "\tContacts (Body, Body2):     { ");
 	for (u32 i = is->contact_list.first; i != DLL_NULL; i = dll_Next(c))
 	{
-		c = nll_Address(&pipeline->c_db.contact_net, i);
+		c = nll_Address(&pipeline->cdb.contact_net, i);
 		fprintf(file, "(%u,%u) ", c->cm.i1, c->cm.i2);
 	}
 	fprintf(file, "}\n");
@@ -131,11 +131,11 @@ void isdb_ClearFrame(struct isdb *is_db)
 //void isdb_Validate(const struct ds_RigidBodyPipeline *pipeline)
 //{
 //	const struct isdb *is_db = &pipeline->is_db;
-//	const struct cdb *c_db = &pipeline->c_db;
+//	const struct cdb *c_db = &pipeline->cdb;
 //
 //	const struct island *is = NULL;
 //	const struct ds_RigidBody *body = NULL;
-//	const struct contact *c = NULL;
+//	const struct ds_Contact *c = NULL;
 //	for (u32 i = pipeline->is_db.island_list.first; i != DLL_NULL; i = dll_Next(is))
 //	{
 //		is = PoolAddress(&pipeline->is_db.island_pool, i);
@@ -178,7 +178,7 @@ void isdb_ClearFrame(struct isdb *is_db)
 //			 * 	2. check bodies in contact are mapped to island
 //			 */
 //			list_length = 0;
-//			struct contact *c = NULL;
+//			struct ds_Contact *c = NULL;
 //			for (u32 index = is->contact_list.first; index != DLL_NULL; index = dll_Next(c))
 //			{
 //				list_length += 1;
@@ -256,7 +256,7 @@ void isdb_ClearFrame(struct isdb *is_db)
 //		ds_Assert(is->contact_list.count != 0);
 //		ds_Assert(is->contact_list.last != DLL_NULL);
 //
-//		dll_Append(&is->contact_list, pipeline->c_db.contact_net.pool.buf, ci);
+//		dll_Append(&is->contact_list, pipeline->cdb.contact_net.pool.buf, ci);
 //	}
 //	/* new contact between distinct islands */
 //	else
@@ -279,7 +279,7 @@ void isdb_ClearFrame(struct isdb *is_db)
 //			}
 //		}
 //
-//		struct contact *contact_new = nll_Address(&pipeline->c_db.contact_net, ci);
+//		struct ds_Contact *contact_new = nll_Address(&pipeline->cdb.contact_net, ci);
 //		if (is_expand->contact_list.count == 0)
 //		{
 //			is_expand->contact_list.first = ci;
@@ -287,7 +287,7 @@ void isdb_ClearFrame(struct isdb *is_db)
 //		}
 //		else
 //		{
-//			struct contact *contact = nll_Address(&pipeline->c_db.contact_net, is_expand->contact_list.last);
+//			struct ds_Contact *contact = nll_Address(&pipeline->cdb.contact_net, is_expand->contact_list.last);
 //			ds_Assert(contact->dll_next == DLL_NULL);
 //			contact->dll_next = ci;
 //			contact_new->dll_prev = is_expand->contact_list.last;
@@ -301,7 +301,7 @@ void isdb_ClearFrame(struct isdb *is_db)
 //		else
 //		{
 //			is_expand->contact_list.last = is_merge->contact_list.last;
-//			struct contact *contact = nll_Address(&pipeline->c_db.contact_net, is_merge->contact_list.first);
+//			struct ds_Contact *contact = nll_Address(&pipeline->cdb.contact_net, is_merge->contact_list.first);
 //			ds_Assert(contact->dll_prev == DLL_NULL);
 //			contact->dll_prev = ci;
 //			contact_new->dll_next = is_merge->contact_list.first;
@@ -347,11 +347,11 @@ void isdb_ClearFrame(struct isdb *is_db)
 //	struct ds_RigidBody *b = PoolAddress(&pipeline->body_pool, body);
 //	for (u32 i = b->contact_first; i != NLL_NULL; )
 //	{
-//		const struct contact *c = nll_Address(&pipeline->c_db.contact_net, i);
+//		const struct ds_Contact *c = nll_Address(&pipeline->cdb.contact_net, i);
 //		const u32 next = (body == CONTACT_KEY_TO_BODY_0(c->key))
 //			? c->nll_next[0] 
 //			: c->nll_next[1];
-//		dll_Remove(&island->contact_list, pipeline->c_db.contact_net.pool.buf, i);
+//		dll_Remove(&island->contact_list, pipeline->cdb.contact_net.pool.buf, i);
 //		i = next;
 //	}
 //
@@ -393,16 +393,16 @@ void isdb_ClearFrame(struct isdb *is_db)
 //			struct ds_RigidBody *body = PoolAddress(&pipeline->body_pool, next);
 //			u32 ci = body->contact_first;
 //			ds_Assert(ci == NLL_NULL ||
-//				((next == CONTACT_KEY_TO_BODY_0(((struct contact *) nll_Address(&pipeline->c_db.contact_net, ci))->key)) 
-//				 && ((struct contact *) nll_Address(&pipeline->c_db.contact_net, ci))->nll_prev[0] == NLL_NULL) ||
-//				((next == CONTACT_KEY_TO_BODY_1(((struct contact *) nll_Address(&pipeline->c_db.contact_net, ci))->key)) 
-//				 && ((struct contact *) nll_Address(&pipeline->c_db.contact_net, ci))->nll_prev[1] == NLL_NULL));
+//				((next == CONTACT_KEY_TO_BODY_0(((struct ds_Contact *) nll_Address(&pipeline->cdb.contact_net, ci))->key)) 
+//				 && ((struct ds_Contact *) nll_Address(&pipeline->cdb.contact_net, ci))->nll_prev[0] == NLL_NULL) ||
+//				((next == CONTACT_KEY_TO_BODY_1(((struct ds_Contact *) nll_Address(&pipeline->cdb.contact_net, ci))->key)) 
+//				 && ((struct ds_Contact *) nll_Address(&pipeline->cdb.contact_net, ci))->nll_prev[1] == NLL_NULL));
 //
 //			while (ci != NLL_NULL)
 //			{
-//				const struct contact *c = nll_Address(&pipeline->c_db.contact_net, ci);
-//				ds_Assert(ci >= pipeline->c_db.contacts_frame_usage.bit_count 
-//						||  BitVecGetBit(&pipeline->c_db.contacts_frame_usage, ci) == 1)
+//				const struct ds_Contact *c = nll_Address(&pipeline->cdb.contact_net, ci);
+//				ds_Assert(ci >= pipeline->cdb.contacts_frame_usage.bit_count 
+//						||  BitVecGetBit(&pipeline->cdb.contacts_frame_usage, ci) == 1)
 //				
 //				const u32 neighbour_index = (next == c->cm.i1) 
 //							? c->cm.i2 
@@ -440,15 +440,15 @@ void isdb_ClearFrame(struct isdb *is_db)
 //	}
 //
 //	/* create contact lists of new islands */
-//	struct contact *c;
+//	struct ds_Contact *c;
 //	u32 next;
 //	for (u32 i = split_island->contact_list.first; i != DLL_NULL; i = next)
 //	{
-//		c = nll_Address(&pipeline->c_db.contact_net, i);
+//		c = nll_Address(&pipeline->cdb.contact_net, i);
 //		ds_Assert(PoolSlotAllocated(c));
 //		next = dll_Next(c);
 //
-//		if (i >= pipeline->c_db.contacts_frame_usage.bit_count || BitVecGetBit(&pipeline->c_db.contacts_frame_usage, i) == 1)
+//		if (i >= pipeline->cdb.contacts_frame_usage.bit_count || BitVecGetBit(&pipeline->cdb.contacts_frame_usage, i) == 1)
 //		{
 //			const struct ds_RigidBody *b1 = PoolAddress(&pipeline->body_pool, c->cm.i1);
 //			const struct ds_RigidBody *b2 = PoolAddress(&pipeline->body_pool, c->cm.i2);
@@ -457,7 +457,7 @@ void isdb_ClearFrame(struct isdb *is_db)
 //			struct island *is = (island1 != ISLAND_STATIC)
 //				? PoolAddress(&pipeline->is_db.island_pool, island1)
 //				: PoolAddress(&pipeline->is_db.island_pool, island2);
-//			dll_Append(&is->contact_list, pipeline->c_db.contact_net.pool.buf, i);
+//			dll_Append(&is->contact_list, pipeline->cdb.contact_net.pool.buf, i);
 //		}
 //	}
 //
@@ -473,7 +473,7 @@ void isdb_ClearFrame(struct isdb *is_db)
 //
 //	/* Important: Reserve extra space for static body defaults used in contact solver */
 //	is->bodies = ArenaPush(mem_frame, (is->body_list.count + 1) * sizeof(struct ds_RigidBody *));
-//	is->contacts = ArenaPush(mem_frame, is->contact_list.count * sizeof(struct contact *));
+//	is->contacts = ArenaPush(mem_frame, is->contact_list.count * sizeof(struct ds_Contact *));
 //	is->body_index_map = ArenaPush(mem_frame, pipeline->body_pool.count_max * sizeof(u32));
 //
 //	/* init body and contact arrays */
@@ -503,7 +503,7 @@ void isdb_ClearFrame(struct isdb *is_db)
 //		k = is->contact_list.first;
 //		for (u32 i = 0; i < is->contact_list.count; ++i)
 //		{
-//			is->contacts[i] = nll_Address(&pipeline->c_db.contact_net, k);
+//			is->contacts[i] = nll_Address(&pipeline->cdb.contact_net, k);
 // 			k = is->contacts[i]->dll_next;
 //		}
 //

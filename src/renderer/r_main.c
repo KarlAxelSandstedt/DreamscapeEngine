@@ -25,7 +25,7 @@
 
 static struct r_Mesh *DebugContactManifoldSegmentsMesh(struct arena *mem, const struct ds_RigidBodyPipeline *pipeline)
 {
-	const struct contactManifold *cm = pipeline->cm;
+	const struct c_Manifold *cm = pipeline->cm;
 	const u32 cm_count = pipeline->cm_count;
 
 	ArenaPushRecord(mem);
@@ -102,7 +102,7 @@ end:
 
 static struct r_Mesh *DebugContactManifoldTrianglesMesh(struct arena *mem, const struct ds_RigidBodyPipeline *pipeline)
 {
-	const struct contactManifold *cm = pipeline->cm;
+	const struct c_Manifold *cm = pipeline->cm;
 	const u32 cm_count = pipeline->cm_count;
 
 	ArenaPushRecord(mem);

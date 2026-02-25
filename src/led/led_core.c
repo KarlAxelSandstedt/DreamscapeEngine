@@ -333,7 +333,7 @@ struct slot led_CollisionShapeAdd(struct led *led, const struct c_Shape *shape)
 
 			if (shape->type != C_SHAPE_TRI_MESH)
 			{
-				CollisionShapeUpdateMassProperties(new_shape);
+				c_ShapeUpdateMassProperties(new_shape);
 			}
 		}
 	}
