@@ -114,7 +114,7 @@ struct led *led_Alloc(void)
     g_editor->shape_prefab_instance_pool = PoolAlloc(NULL, 4096, struct ds_ShapePrefabInstance, GROWABLE);
 	g_editor->rb_prefab_db = strdb_Alloc(NULL, 32, 32, struct ds_RigidBodyPrefab, GROWABLE);
 	g_editor->cs_db = strdb_Alloc(NULL, 32, 32, struct c_Shape, GROWABLE);
-	g_editor->physics = PhysicsPipelineAlloc(NULL, 1024, NSEC_PER_SEC / (u64) 60, 1024*1024, &g_editor->cs_db, &g_editor->rb_prefab_db);
+	g_editor->physics = PhysicsPipelineAlloc(NULL, 1024, NSEC_PER_SEC / (u64) 60, 16*1024*1024, &g_editor->cs_db, &g_editor->rb_prefab_db);
 
 	g_editor->pending_engine_running = 0;
 	g_editor->pending_engine_initalized = 0;

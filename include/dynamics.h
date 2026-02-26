@@ -166,10 +166,9 @@ u32	        ds_ShapeTest(const struct ds_RigidBodyPipeline *pipeline, const stru
 f32 	    ds_ShapeDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2, const f32 margin);
 /* 
  * Returns 1 if the shapes are colliding, 0 otherwise. If a collision is found, return a contact manifold
- * with normal pointing from s1 to s2 (and a sat_cache if sat cache if hull-hull contact) pointing from s1 
- * to s2. 
+ * with normal pointing from s1 to s2 (and set the sat_cache if non-null and applicable). 
  */
-u32         ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2, const f32 margin);
+u32         ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2, const f32 margin);
 /* 
  * Return, if ray intersects shape, t such that ray.origin + t*ray.dir == closest point on shape. 
  *         Otherwise, return F32_INFINITY.
@@ -351,7 +350,6 @@ struct cdb
 	 * frame-cached separation axes 
 	 */
 	struct pool	    sat_cache_pool;
-	struct dll	    sat_cache_list;
 	struct hashMap	sat_cache_map;		
 
 	/* PERSISTENT DATA, GROWABLE, keeps track of which slots in contacts are currently being used.
@@ -390,6 +388,7 @@ TODO
 */
 enum sat_CacheType
 {
+    SAT_CACHE_NOT_SET,
 	SAT_CACHE_SEPARATION,
 	SAT_CACHE_CONTACT_FV,
 	SAT_CACHE_CONTACT_EE,
@@ -399,8 +398,6 @@ enum sat_CacheType
 struct sat_Cache
 {
 	POOL_SLOT_STATE;
-	DLL_SLOT_STATE;
-	u32	                    touched;
 	struct ds_ContactKey    key;
 	enum sat_CacheType	    type;
 	union

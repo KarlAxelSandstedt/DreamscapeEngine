@@ -62,11 +62,12 @@ struct cdb cdb_Alloc(struct arena *mem_persistent, const u32 size)
 	struct cdb cdb = { 0 };
 	ds_Assert(PowerOfTwoCheck(size));
 
-	cdb.sat_cache_list = dll_Init(struct sat_Cache);
 	cdb.sat_cache_map = HashMapAlloc(NULL, size, size, GROWABLE);
-	cdb.sat_cache_pool = PoolAlloc(NULL, size, struct sat_Cache, GROWABLE);
+	cdb.sat_cache_pool = PoolAlloc(NULL, 20000, struct sat_Cache, GROWABLE);
+	//cdb.sat_cache_pool = PoolAlloc(NULL, size, struct sat_Cache, GROWABLE);
 	cdb.contact_net = nll_Alloc(NULL, size, struct ds_Contact, cdb_IndexInPreviousConctactNode, cdb_IndexInNextConctactNode, GROWABLE);
-	cdb.contact_map = HashMapAlloc(NULL, size, size, GROWABLE);
+	//cdb.contact_map = HashMapAlloc(NULL, size, size, GROWABLE);
+	cdb.contact_map = HashMapAlloc(NULL, size, 20000, GROWABLE);
 	cdb.contacts_persistent_usage = BitVecAlloc(NULL, size, 0, GROWABLE);
 
 	return cdb;
@@ -84,7 +85,6 @@ void cdb_Free(struct cdb *cdb)
 void cdb_Flush(struct cdb *cdb)
 {
 	cdb_ClearFrame(cdb);
-	dll_Flush(&cdb->sat_cache_list);
 	PoolFlush(&cdb->sat_cache_pool);
 	HashMapFlush(&cdb->sat_cache_map);
 	nll_Flush(&cdb->contact_net);
@@ -198,26 +198,7 @@ void cdb_ClearFrame(struct cdb *cdb)
 {
 	cdb->contacts_frame_usage.bits = NULL;
 	cdb->contacts_frame_usage.bit_count = 0;
-	cdb->contacts_frame_usage.block_count = 0;
-
-	//fprintf(stderr, "count: %u\n", cdb->sat_cache_pool.count);
-	for (u32 i = cdb->sat_cache_list.first; i != DLL_NULL; )
-	{
-		struct sat_Cache *cache = PoolAddress(&cdb->sat_cache_pool, i);
-		const u32 next = dll_Next(cache);
-		if (cache->touched)
-		{
-			cache->touched = 0;
-		}
-		else
-		{
-            const u32 hash = (u32) XXH3_64bits(&cache->key, sizeof(cache->key));
-			dll_Remove(&cdb->sat_cache_list, cdb->sat_cache_pool.buf, i);
-			HashMapRemove(&cdb->sat_cache_map, hash, i);
-			PoolRemove(&cdb->sat_cache_pool, i);
-		}
-		i = next;
-	}
+	cdb->contacts_frame_usage.block_count = 0;	
 }
 //
 //struct ds_Contact *cdb_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct c_Manifold *cm, const u32 i1, const u32 i2)
@@ -295,6 +276,24 @@ void cdb_ClearFrame(struct cdb *cdb)
 //		body1->contact_first = c->nll_next[1];
 //	}
 //
+//  TODO: if contact HULL-HULL, remove sat_cache
+//  for (u32 i = cdb->sat_cache_list.first; i != DLL_NULL; )
+//	{
+//		struct sat_Cache *cache = PoolAddress(&cdb->sat_cache_pool, i);
+//		const u32 next = dll_Next(cache);
+//		if (cache->touched)
+//		{
+//			cache->touched = 0;
+//		}
+//		else
+//		{
+//            const u32 hash = (u32) XXH3_64bits(&cache->key, sizeof(cache->key));
+//			dll_Remove(&cdb->sat_cache_list, cdb->sat_cache_pool.buf, i);
+//			HashMapRemove(&cdb->sat_cache_map, hash, i);
+//			PoolRemove(&cdb->sat_cache_pool, i);
+//		}
+//		i = next;
+//	}
 //	PhysicsEventContactRemoved(pipeline, (u32) CONTACT_KEY_TO_BODY_0(c->key), (u32) CONTACT_KEY_TO_BODY_1(c->key));
 //	HashMapRemove(&pipeline->cdb.contact_map, (u32) key, index);
 //	nll_Remove(&pipeline->cdb.contact_net, index);
@@ -478,14 +477,19 @@ struct slot sat_CacheAdd(struct cdb *cdb, const struct ds_ContactKey *key)
 {
 	ds_Assert(sat_CacheLookup(cdb, key).address == NULL);
 
+    ds_AssertString(cdb->sat_cache_pool.count < cdb->sat_cache_pool.length, "Temporary: Currently   \
+            we add new sat caches as we continuously dispatch contact calculation jobs to worker    \
+            threads. Thus, if we happen to realloc here, we invalidate our thread pointers (most    \
+            likely). The solution is to either make a pool allocator viable for multihtreading, or  \
+            allocating all caches beforehand.");
+
     const u32 hash = (u32) XXH3_64bits(key, sizeof(*key));
 	struct slot slot = PoolAdd(&cdb->sat_cache_pool);
 	HashMapAdd(&cdb->sat_cache_map, hash, slot.index);
-	dll_Append(&cdb->sat_cache_list, cdb->sat_cache_pool.buf, slot.index);
 
 	struct sat_Cache *sat = slot.address;
     sat->key = *key;
-	sat->touched = 1;
+    sat->type = SAT_CACHE_NOT_SET;
 
     return slot;
 }
@@ -498,7 +502,7 @@ struct slot sat_CacheLookup(const struct cdb *cdb, const struct ds_ContactKey *k
 	for (u32 i = HashMapFirst(&cdb->sat_cache_map, hash); i != HASH_NULL; i = HashMapNext(&cdb->sat_cache_map, i))
 	{
 		struct sat_Cache *sat = PoolAddress(&cdb->sat_cache_pool, i);
-		if (memcmp(&sat->key, key, sizeof(*key)))
+		if (memcmp(&sat->key, key, sizeof(*key)) == 0)
 		{
 			slot.address = sat;
             slot.index = i;

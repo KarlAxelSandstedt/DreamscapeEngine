@@ -249,113 +249,122 @@ static void InternalUpdateShapeBvh(struct ds_RigidBodyPipeline *pipeline)
 	ProfZoneEnd;
 }
 
-static void InternalPushProxyOverlaps(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline)
+static void InternalPushProxyOverlaps(struct ds_RigidBodyPipeline *pipeline)
 {
 	ProfZone;
-	pipeline->proxy_overlap = DbvhPushOverlapPairs(mem_frame, &pipeline->proxy_overlap_count, &pipeline->shape_bvh);
+	pipeline->proxy_overlap = DbvhPushOverlapPairs(&pipeline->frame, &pipeline->proxy_overlap_count, &pipeline->shape_bvh);
 	ProfZoneEnd;
 }
 
-struct tpcOutput
+struct tcc_Output
 {
-	struct c_Manifold * manifold;
-	u32                 manifold_count;
+    struct tcc_Output * next;
+    struct sat_Cache *  cache;
+	struct c_Manifold   manifold;
+    u32                 collision;
 };
 
-static void ThreadPushContacts(void *task_addr)
+struct tcc_Input
+{
+    struct tcc_Output *             out;
+    struct ds_RigidBodyPipeline *   pipeline;
+    struct ds_Shape *               s1;
+    struct ds_Shape *               s2;
+    f32                             margin;
+};
+
+static void ThreadCalculateContact(void *task_addr)
 {
 	ProfZone;
 
 	struct task *task = task_addr;
 	struct worker *worker = task->executor;
-	struct ds_RigidBodyPipeline *pipeline = task->input;
-	const struct task_range *range = task->range;
-	const struct dbvhOverlap *proxy_overlap = range->base;
+    struct tcc_Input *in = task->input;
+    struct tcc_Output *out = in->out;
 
-	struct tpcOutput *out = ArenaPush(&worker->mem_frame, range->count*sizeof(struct tpcOutput));
-	out->manifold_count = 0;
-	out->manifold = ArenaPush(&worker->mem_frame, range->count * sizeof(struct c_Manifold));
+    ds_Assert(in->s1->body != in->s2->body);
+    out->collision = ds_ShapeContact(&worker->mem_frame, &out->manifold, out->cache, in->pipeline, in->s1, in->s2, in->margin);
+	//if (data->collision)
+	//{
+    //    //TODO
+	//	data->manifold->i1 = proxy_overlap[i].id1;
+	//	data->manifold->i2 = proxy_overlap[i].id2;
+	//}	
 
-	const f32 margin = (pipeline->margin_on) ? pipeline->margin : 0.0f;
-	const struct ds_Shape *s1, *s2;
+	ProfZoneEnd;
+}
 
-	for (u64 i = 0; i < range->count; ++i)
+static void InternalCalculateContacts(struct ds_RigidBodyPipeline *pipeline)
+{
+	ProfZone;
+
+	/* acquire any task resources */
+	struct task_stream *stream = task_stream_init(&pipeline->frame);
+	struct tcc_Output *output = NULL;
+	struct tcc_Output **next = &output;
+
+    const f32 margin = (pipeline->margin_on)
+        ? pipeline->margin
+        : 0.0f;
+
+	for (u32 i = 0; i < pipeline->proxy_overlap_count; ++i)
 	{
-		s1 = PoolAddress(&pipeline->shape_pool, proxy_overlap[i].id1);
-		s2 = PoolAddress(&pipeline->shape_pool, proxy_overlap[i].id2);
-
+        struct ds_Shape *s1 = PoolAddress(&pipeline->shape_pool, pipeline->proxy_overlap[i].id1);
+        struct ds_Shape *s2 = PoolAddress(&pipeline->shape_pool, pipeline->proxy_overlap[i].id2);
         if (s1->body == s2->body)
         {
             continue;
         }
 
-		if (ds_ShapeContact(&worker->mem_frame, out->manifold + out->manifold_count, pipeline, s1, s2, margin))
-		{
-			out->manifold[out->manifold_count].i1 = proxy_overlap[i].id1;
-			out->manifold[out->manifold_count].i2 = proxy_overlap[i].id2;
-			out->manifold_count += 1;
-		}	
+        struct sat_Cache *cache = NULL;
+        if (s1->cshape_type == C_SHAPE_CONVEX_HULL && s2->cshape_type == C_SHAPE_CONVEX_HULL)
+        {
+            const struct ds_ContactKey key = ds_ContactKeyCanonical(s1->body, 
+                                                                    pipeline->proxy_overlap[i].id1, 
+                                                                    s2->body, 
+                                                                    pipeline->proxy_overlap[i].id2);
+            cache = sat_CacheLookup(&pipeline->cdb, &key).address;
+            if (!cache)
+            {
+                cache = sat_CacheAdd(&pipeline->cdb, &key).address;
+            }
+        }
+
+        struct tcc_Output *out = ArenaPushAligned(&pipeline->frame, sizeof(struct tcc_Output), g_arch_config->cacheline);
+        struct tcc_Input *args = ArenaPushAligned(&pipeline->frame, sizeof(struct tcc_Input), g_arch_config->cacheline);
+
+        out->cache = cache;
+        out->next = NULL;
+
+        args->out = out;
+        args->pipeline = pipeline;
+        args->s1 = s1;
+        args->s2 = s2;
+        args->margin = margin;
+
+		task_stream_dispatch(&pipeline->frame, stream, ThreadCalculateContact, args);
+        *next = out;
+        next = &out->next;
 	}
 
-	ArenaPopPacked(&worker->mem_frame, (range->count - out->manifold_count)*sizeof(struct tpcOutput));
+	task_main_master_run_available_jobs();
 
-	task->output = out;
-	ProfZoneEnd;
-}
+	/* spin wait until last job completes */
+	task_stream_spin_wait(stream);
+	/* release any task resources */
+	task_stream_cleanup(stream);		
 
-static void InternalParallelPushContacts(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline)
-{
-//	struct task_bundle *bundle = task_bundle_split_range(
-//			mem_frame, 
-//			&ThreadPushContacts, 
-//			g_task_ctx->worker_count, 
-//			pipeline->proxy_overlap, 
-//			pipeline->proxy_overlap_count, 
-//			sizeof(struct dbvhOverlap), 
-//			pipeline);
-//
-//	ProfZone;
-//	pipeline->cm = (struct c_Manifold *) ArenaPush(mem_frame, pipeline->proxy_overlap_count * sizeof(struct c_Manifold));
-//	ArenaPushRecord(mem_frame);
-//
-//	pipeline->cm_count = 0;
-//	if (bundle)
-//	{	
-//		task_main_master_run_available_jobs();
-//		task_bundle_wait(bundle);
-//
-//		for (u32 i = 0; i < bundle->task_count; ++i)
-//		{
-//			struct tpcOutput *out = (struct tpcOutput *) AtomicLoadAcq64(&bundle->tasks[i].output);
-//			for (u32 j = 0; j < out->result_count; ++j)
-//			{
-//				if (out->result[j].type == COLLISION_SAT_CACHE)
-//				{
-//					sat_CacheAdd(&pipeline->cdb, &out->result[j].sat_cache);
-//					if (out->result[j].sat_cache.type != SAT_CACHE_SEPARATION)
-//					{
-//						pipeline->cm[pipeline->cm_count++] = out->result[j].manifold;
-//					}
-//				}
-//				else
-//				{
-//					pipeline->cm[pipeline->cm_count++] = out->result[j].manifold;
-//				}
-//			}
-//		}
-//	
-//		task_bundle_release(bundle);
-//	}
-//	
-//	ArenaPopRecord(mem_frame);
-//	ArenaPopPacked(mem_frame, (pipeline->proxy_overlap_count - pipeline->cm_count) * sizeof(struct c_Manifold));
-//
-//	pipeline->cdb.contacts_frame_usage = BitVecAlloc(mem_frame, pipeline->cdb.contacts_persistent_usage.bit_count, 0, 0);
-//	ds_Assert(pipeline->cdb.contacts_frame_usage.block_count == pipeline->cdb.contacts_persistent_usage.block_count);
-//	ds_Assert(pipeline->cdb.contacts_frame_usage.bit_count == pipeline->cdb.contacts_persistent_usage.bit_count);
-//
+	for (; output; output = output->next)
+	{
+	}
+
+    
+	pipeline->cdb.contacts_frame_usage = BitVecAlloc(&pipeline->frame, pipeline->cdb.contacts_persistent_usage.bit_count, 0, 0);
+	ds_Assert(pipeline->cdb.contacts_frame_usage.block_count == pipeline->cdb.contacts_persistent_usage.block_count);
+	ds_Assert(pipeline->cdb.contacts_frame_usage.bit_count == pipeline->cdb.contacts_persistent_usage.bit_count);
+
 //	pipeline->contact_new_count = 0;
-//	pipeline->contact_new = (u32 *) mem_frame->stack_ptr;
+//	pipeline->contact_new = (u32 *) &pipeline->frame.stack_ptr;
 //	//fprintf(stderr, "A: {");
 //	{
 //		ProfZoneNamed("internal_gather_real_contacts");
@@ -368,18 +377,19 @@ static void InternalParallelPushContacts(struct arena *mem_frame, struct ds_Rigi
 //				 || BitVecGetBit(&pipeline->cdb.contacts_persistent_usage, index) == 0)
 //			{
 //					pipeline->contact_new_count += 1;
-//					ArenaPushPackedMemcpy(mem_frame, &index, sizeof(index));
+//					ArenaPushPackedMemcpy(&pipeline->frame, &index, sizeof(index));
 //			}
 //			//fprintf(stderr, " %u", index);
 //		}
 //		ProfZoneEnd;
 //	}
 //	//fprintf(stderr, " } ");
-//
-//	ProfZoneEnd;
+
+	ProfZoneEnd;
 }
 
-//static void InternalMergeIslands(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline)
+
+//static void InternalMergeIslands(struct ds_RigidBodyPipeline *pipeline)
 //{
 //	ProfZone;
 //	for (u32 i = 0; i < pipeline->contact_new_count; ++i)
@@ -417,7 +427,7 @@ static void InternalParallelPushContacts(struct arena *mem_frame, struct ds_Rigi
 //	ProfZoneEnd;
 //}
 //
-//static void InternalRemoveContactsAndTagSplitIslands(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline)
+//static void InternalRemoveContactsAndTagSplitIslands(struct ds_RigidBodyPipeline *pipeline)
 //{
 //	ProfZone;
 //	if (pipeline->cdb.contact_net.pool.count == 0) 
@@ -435,7 +445,7 @@ static void InternalParallelPushContacts(struct arena *mem_frame, struct ds_Rigi
 //	/* Remove any contacts that were not persistent */
 //	//fprintf(stderr, " R: {");
 //	u32 bit = 0;
-//	isdb_ReserveSplitsMemory(mem_frame, &pipeline->is_db);
+//	isdb_ReserveSplitsMemory(&pipeline->frame, &pipeline->is_db);
 //	for (u64 block = 0; block < pipeline->cdb.contacts_frame_usage.block_count; ++block)
 //	{
 //		u64 broken_link_block = 
@@ -483,32 +493,35 @@ static void InternalParallelPushContacts(struct arena *mem_frame, struct ds_Rigi
 //		}
 //		bit += 64;
 //	}	
-//	isdb_ReleaseUnusedSplitsMemory(mem_frame, &pipeline->is_db);
+//	isdb_ReleaseUnusedSplitsMemory(&pipeline->frame, &pipeline->is_db);
 //	//fprintf(stderr, " }\tcontacts: %u\n", pipeline->cdb.contacts->count-2);
 //	ProfZoneEnd;
 //}
 //
-//static void InternalSplitIslands(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline)
+//static void InternalSplitIslands(struct ds_RigidBodyPipeline *pipeline)
 //{
 //	ProfZone;
+//  struct arena tmp = ArenaAlloc1MB();
+//
 //	/* TODO: Parallelize island splitting */
 //
 //	for (u32 i = 0; i < pipeline->is_db.possible_splits_count; ++i)
 //	{
-//		isdb_SplitIsland(mem_frame, pipeline, pipeline->is_db.possible_splits[i]);
+//		isdb_SplitIsland(&tmp, pipeline, pipeline->is_db.possible_splits[i]);
 //	}
 //
 //	cdb_UpdatePersistentContactsUsage(&pipeline->cdb);
 //
+//	ArenaFree1MB(&tmp);
 //	ProfZoneEnd;
 //}
 //
-//static void InternalParallelSolveIslands(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, const f32 delta) 
+//static void InternalParallelSolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta) 
 //{
 //	ProfZone;
 //
 //	/* acquire any task resources */
-//	struct task_stream *stream = task_stream_init(mem_frame);
+//	struct task_stream *stream = task_stream_init(&pipeline->frame);
 //	struct islandSolveOutput *output = NULL;
 //	struct islandSolveOutput **next = &output;
 //
@@ -518,8 +531,8 @@ static void InternalParallelPushContacts(struct arena *mem_frame, struct ds_Rigi
 //		is = PoolAddress(&pipeline->is_db.island_pool, i);
 //		if (!g_solver_config->sleep_enabled || ISLAND_AWAKE_BIT(is))
 //		{
-//			struct islandSolveInput *args = ArenaPush(mem_frame, sizeof(struct islandSolveInput));
-//			*next = ArenaPush(mem_frame, sizeof(struct islandSolveOutput));
+//			struct islandSolveInput *args = ArenaPush(&pipeline->frame, sizeof(struct islandSolveInput));
+//			*next = ArenaPush(&pipeline->frame, sizeof(struct islandSolveOutput));
 //			(*next)->island = i;
 //			(*next)->island_asleep = 0;
 //			(*next)->next = NULL;
@@ -527,7 +540,7 @@ static void InternalParallelPushContacts(struct arena *mem_frame, struct ds_Rigi
 //			args->is = is;
 //			args->pipeline = pipeline;
 //			args->timestep = delta;
-//			task_stream_dispatch(mem_frame, stream, ThreadIslandSolve, args);
+//			task_stream_dispatch(&pipeline->frame, stream, ThreadIslandSolve, args);
 //
 //			next = &(*next)->next;
 //		}
@@ -671,13 +684,13 @@ void InternalPhysicsPipelineSimulateFrame(struct ds_RigidBodyPipeline *pipeline,
 
 	/* broadphase => narrowphase => solve => integrate */
 	InternalUpdateShapeBvh(pipeline);
-	InternalPushProxyOverlaps(&pipeline->frame, pipeline);
-	InternalParallelPushContacts(&pipeline->frame, pipeline);
+	InternalPushProxyOverlaps(pipeline);
+    InternalCalculateContacts(pipeline);
 
-	//InternalMergeIslands(&pipeline->frame, pipeline);
-	//InternalRemoveContactsAndTagSplitIslands(&pipeline->frame, pipeline);
-	//InternalSplitIslands(&pipeline->frame, pipeline);
-	//InternalParallelSolveIslands(&pipeline->frame, pipeline, delta);
+	//InternalMergeIslands(pipeline);
+	//InternalRemoveContactsAndTagSplitIslands(pipeline);
+	//InternalSplitIslands(pipeline);
+	//InternalParallelSolveIslands(pipeline, delta);
 
 	//PHYSICS_PIPELINE_VALIDATE(pipeline);
 }

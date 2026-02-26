@@ -2316,7 +2316,7 @@ void sat_EdgeQueryCollisionResult(struct c_Manifold *manifold, struct sat_Cache 
  * 	(Game Physics Pearls, Chapter 4)
  *	(GDC 2013 Dirk Gregorius, https://www.gdcvault.com/play/1017646/Physics-for-Game-Programmers-The)
  */
-u32 c_HullContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *cache, const struct sat_Cache *cache_copy, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin)
+u32 c_HullContact(struct arena *mem_tmp, struct c_Manifold *manifold, struct sat_Cache *cache, const struct sat_Cache *cache_copy, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin)
 {
 	ds_Assert(s1->type == C_SHAPE_CONVEX_HULL);
 	ds_Assert(s2->type == C_SHAPE_CONVEX_HULL);
@@ -2337,7 +2337,7 @@ u32 c_HullContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cac
 
 	//TODO: Implemented Margins
     
-	ArenaPushRecord(tmp);
+	ArenaPushRecord(mem_tmp);
 
 	mat3 rot1, rot2;
 	Mat3Quat(rot1, t1->rotation);
@@ -2346,8 +2346,8 @@ u32 c_HullContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cac
 	const struct dcel *h1 = &s1->hull;
 	const struct dcel *h2 = &s2->hull;
 
-	vec3ptr v1_world = ArenaPush(tmp, h1->v_count * sizeof(vec3));
-	vec3ptr v2_world = ArenaPush(tmp, h2->v_count * sizeof(vec3));
+	vec3ptr v1_world = ArenaPush(mem_tmp, h1->v_count * sizeof(vec3));
+	vec3ptr v2_world = ArenaPush(mem_tmp, h2->v_count * sizeof(vec3));
 
 	for (u32 i = 0; i < h1->v_count; ++i)
 	{
@@ -2365,63 +2365,68 @@ u32 c_HullContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cac
 	struct sat_EdgeQuery e_query = { .depth = -F32_INFINITY };
 
 	u32 colliding = 0;
-    if (cache_copy)
-	{
-		if (cache_copy->type == SAT_CACHE_SEPARATION)
-		{
-			vec3 support1, support2, tmp;
-			Vec3Negate(tmp, cache_copy->separation_axis);
+    switch (cache_copy->type)
+    {
+        case SAT_CACHE_SEPARATION:
+	    {
+	    	vec3 support1, support2, tmp;
+	    	Vec3Negate(tmp, cache_copy->separation_axis);
 
-			VertexSupport(support1, cache_copy->separation_axis, v1_world, h1->v_count);
-			VertexSupport(support2, tmp, v2_world, h2->v_count);
+	    	VertexSupport(support1, cache_copy->separation_axis, v1_world, h1->v_count);
+	    	VertexSupport(support2, tmp, v2_world, h2->v_count);
 
-			const f32 dot1 = Vec3Dot(support1, cache_copy->separation_axis);
-			const f32 dot2 = Vec3Dot(support2, cache_copy->separation_axis);
-			const f32 separation = dot2 - dot1;
-			if (separation > 0.0f)
-			{
-				cache->separation = separation;
+	    	const f32 dot1 = Vec3Dot(support1, cache_copy->separation_axis);
+	    	const f32 dot2 = Vec3Dot(support2, cache_copy->separation_axis);
+	    	const f32 separation = dot2 - dot1;
+	    	if (separation > 0.0f)
+	    	{
+	    		cache->separation = separation;
                 goto sat_cleanup;
-			}
-		}
-		else if (cache_copy->type == SAT_CACHE_CONTACT_EE)
-		{
-			HullContactInternalEECheck(&e_query, h1, v1_world, cache_copy->edge1, h2, v2_world, cache_copy->edge2, t1->position);
-			if (-F32_INFINITY < e_query.depth && e_query.depth < 0.0f)
-			{
-				sat_EdgeQueryCollisionResult(manifold, cache, &e_query);
+	    	}
+	    } break;
+
+        case SAT_CACHE_CONTACT_EE:
+	    {
+	    	HullContactInternalEECheck(&e_query, h1, v1_world, cache_copy->edge1, h2, v2_world, cache_copy->edge2, t1->position);
+	    	if (-F32_INFINITY < e_query.depth && e_query.depth < 0.0f)
+	    	{
+	    		sat_EdgeQueryCollisionResult(manifold, cache, &e_query);
                 colliding = 1;
                 goto sat_cleanup;
-			}
-			e_query.depth = -F32_INFINITY;
-		}
-		else 
-		{
-			//TODO BUG to fix: when removing body's all contacts, ALSO remove any cache; otherwise 
-			// it may be wrongfully alised the next frame by new indices.
-			//TODO Should we check that the manifold is still stable? if not, we throw it away.
+	    	}
+	    	e_query.depth = -F32_INFINITY;
+	    } break;
+
+        case SAT_CACHE_CONTACT_FV:
+	    {
+	    	//TODO Should we check that the manifold is still stable? if not, we throw it away.
             ds_Assert(cache_copy->type == SAT_CACHE_CONTACT_FV);
 
-			vec3 ref_n, cm_n;
-			if (cache_copy->body == 0)
-			{
-				DcelFaceNormal(cm_n, h1, cache_copy->face);
-				Mat3VecMul(ref_n, rot1, cm_n);
-				colliding = HullContactInternalFaceContact(tmp, manifold, ref_n, h1, ref_n, cache_copy->face, v1_world, h2, v2_world);
-			}
-			else
-			{
-				DcelFaceNormal(cm_n, h2, cache_copy->face);
-				Mat3VecMul(ref_n, rot2, cm_n);
-				Vec3Negate(cm_n, ref_n);
-				colliding = HullContactInternalFaceContact(tmp, manifold, cm_n, h2, ref_n, cache_copy->face, v2_world, h1, v1_world);
-			}
+	    	vec3 ref_n, cm_n;
+	    	if (cache_copy->body == 0)
+	    	{
+	    		DcelFaceNormal(cm_n, h1, cache_copy->face);
+	    		Mat3VecMul(ref_n, rot1, cm_n);
+	    		colliding = HullContactInternalFaceContact(mem_tmp, manifold, ref_n, h1, ref_n, cache_copy->face, v1_world, h2, v2_world);
+	    	}
+	    	else
+	    	{
+	    		DcelFaceNormal(cm_n, h2, cache_copy->face);
+	    		Mat3VecMul(ref_n, rot2, cm_n);
+	    		Vec3Negate(cm_n, ref_n);
+	    		colliding = HullContactInternalFaceContact(mem_tmp, manifold, cm_n, h2, ref_n, cache_copy->face, v2_world, h1, v1_world);
+	    	}
 
             if (colliding)
             {
                 goto sat_cleanup;
             }
-		}
+	    } break;
+
+        case SAT_CACHE_NOT_SET:
+        {
+
+        } break;
 	}
 
 	if (HullContactInternalFVSeparation(&f_query[0], h1, v1_world, h2, v2_world))
@@ -2455,7 +2460,7 @@ u32 c_HullContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cac
 		{
 			cache->body = 0;
 			cache->face = f_query[0].fi;
-			colliding = HullContactInternalFaceContact(tmp, manifold, f_query[0].normal, h1, f_query[0].normal, f_query[0].fi, v1_world, h2, v2_world);
+			colliding = HullContactInternalFaceContact(mem_tmp, manifold, f_query[0].normal, h1, f_query[0].normal, f_query[0].fi, v1_world, h2, v2_world);
 		}
 		else
 		{
@@ -2463,7 +2468,7 @@ u32 c_HullContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cac
 			cache->body = 1;
 			cache->face = f_query[1].fi;
 			Vec3Negate(cm_n, f_query[1].normal);
-			colliding = HullContactInternalFaceContact(tmp, manifold, cm_n, h2, f_query[1].normal, f_query[1].fi, v2_world, h1, v1_world);
+			colliding = HullContactInternalFaceContact(mem_tmp, manifold, cm_n, h2, f_query[1].normal, f_query[1].fi, v2_world, h1, v1_world);
 		}
 
 		if (colliding)
@@ -2491,7 +2496,7 @@ u32 c_HullContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cac
 	}
 
 sat_cleanup:
-	ArenaPopRecord(tmp);
+	ArenaPopRecord(mem_tmp);
 	return colliding;
 }
 

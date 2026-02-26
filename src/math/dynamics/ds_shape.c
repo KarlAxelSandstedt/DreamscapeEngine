@@ -242,7 +242,7 @@ f32 ds_ShapeDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipeline *pipeli
 		: c_distance_methods[c_s2->type][c_s1->type](c2, c1, c_s2, &t2, c_s1, &t1, margin);
 }
 
-u32 ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2, const f32 margin)
+u32 ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2, const f32 margin)
 {
 	ds_Assert(margin >= 0.0f);
 
@@ -253,27 +253,12 @@ u32 ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct ds_Ri
     const struct c_Shape *c_s1 = strdb_Address(pipeline->cshape_db, s1->cshape_handle);
     const struct c_Shape *c_s2 = strdb_Address(pipeline->cshape_db, s2->cshape_handle);
 
-    struct sat_Cache *cache = NULL;
     struct sat_Cache *cache_copy = NULL;
     struct sat_Cache cache_copy_mem;
-    if (c_s1->type == C_SHAPE_CONVEX_HULL && c_s2->type == C_SHAPE_CONVEX_HULL)
+    if (cache)
     {
-        const struct ds_ContactKey key = ds_ContactKeyCanonical(
-                s1->body, 
-                PoolIndex(&pipeline->shape_pool, s1), 
-                s2->body, 
-                PoolIndex(&pipeline->shape_pool, s2));
-        cache = sat_CacheLookup(&pipeline->cdb, &key).address;
-        if (cache)
-        {
-            cache->touched = 1;
-            cache_copy = &cache_copy_mem;
-            *cache_copy = *cache;
-        }
-        else
-        {
-            cache = sat_CacheAdd(&pipeline->cdb, &key).address;
-        }
+        cache_copy = &cache_copy_mem;
+        cache_copy_mem = *cache;
     }
 
 	u32 collision;
