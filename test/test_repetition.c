@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -20,7 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "test_local.h"
+#include "ds_test.h"
 
 //#ifdef __linux__
 //#include <linux/perf_event.h>
@@ -39,7 +39,7 @@
 //	u64 cycles;
 //};
 //
-//static void os_get_counters(const struct repetition_tester *tester, const i32 group_fd, struct os_event_format *fm)
+//static void os_get_counters(const struct rt *tester, const i32 group_fd, struct os_event_format *fm)
 //{
 //	struct 
 //	{
@@ -105,18 +105,18 @@
 //}
 //
 //
-//static void os_enable_counters(struct repetition_tester *tester)
+//static void os_enable_counters(struct rt *tester)
 //{
 //	//ioctl(tester->pf_fd, PERF_EVENT_IOC_RESET, PERF_IOC_FLAG_GROUP);
 //	ioctl(tester->pf_fd, PERF_EVENT_IOC_ENABLE, PERF_IOC_FLAG_GROUP);
 //}
 //
-//static void os_disable_counters(struct repetition_tester *tester)
+//static void os_disable_counters(struct rt *tester)
 //{
 //	ioctl(tester->pf_fd, PERF_EVENT_IOC_DISABLE, PERF_IOC_FLAG_GROUP);
 //}
 //
-//static void os_init_performance_events(struct repetition_tester *tester)
+//static void os_init_performance_events(struct rt *tester)
 //{
 //	const i32 pid = 0; /* this process on any cpu */
 //	const i32 cpu = -1;
@@ -287,15 +287,15 @@
 //}
 //#endif
 
-void repetition_error(struct repetition_tester *tester, const char *file, const u32 line, const char *msg)
+static void rt_Error(struct rt *tester, const char *file, const u32 line, const char *msg)
 {
 	fprintf(stderr, "Error %s:%d - %s\n", file, line, msg);
 	tester->state = RT_ERROR;
 }
 
-i32 rt_is_testing(struct repetition_tester *tester)
+u32 rt_TestingCheck(struct rt *tester)
 {
-	i32 status = 0;
+	u32 status = 0;
 
 	if (tester->state == RT_TESTING)
 	{
@@ -303,12 +303,12 @@ i32 rt_is_testing(struct repetition_tester *tester)
 		{
 			if (tester->enter_count != tester->exit_count)
 			{
-				repetition_error(tester, __FILE__, __LINE__, "Timed regions in test in not enclosed properly");
+				rt_Error(tester, __FILE__, __LINE__, "Timed regions in test in not enclosed properly");
 			}
 
 			if (tester->bytes_in_current_test != tester->bytes_to_process)
 			{
-				repetition_error(tester, __FILE__, __LINE__, "Proper amount of bytes not processed");
+				rt_Error(tester, __FILE__, __LINE__, "Proper amount of bytes not processed");
 			}
 
 			if (tester->state == RT_TESTING)
@@ -323,7 +323,7 @@ i32 rt_is_testing(struct repetition_tester *tester)
 					tester->cycles_max_time = tester->cycles_in_current_test;
 				}
 
-				u64 tsc = rdtsc();
+				u64 tsc = Rdtsc();
 				if (tester->tsc_in_current_test < tester->tsc_iteration_min)
 				{
 					tester->tsc_start = tsc;
@@ -366,14 +366,14 @@ i32 rt_is_testing(struct repetition_tester *tester)
 		}
 		else
 		{
-			repetition_error(tester, __FILE__, __LINE__, "No timed region in test");
+			rt_Error(tester, __FILE__, __LINE__, "No timed region in test");
 		}
 	}	
 
 	return status;
 }
 
-void rt_wave(struct repetition_tester *tester, const u64 bytes_to_process, const u64 tsc_freq, const u64 tsc_retry_max, const u32 print)
+void rt_Wave(struct rt *tester, const u64 bytes_to_process, const u64 tsc_freq, const u64 tsc_retry_max, const u32 print)
 {
 	if (tester->state == RT_UNINITIALIZED)
 	{
@@ -387,20 +387,20 @@ void rt_wave(struct repetition_tester *tester, const u64 bytes_to_process, const
 	{
 		if (bytes_to_process != tester->bytes_to_process)
 		{
-			repetition_error(tester, __FILE__, __LINE__, "Expected bytes to process changed");
+			rt_Error(tester, __FILE__, __LINE__, "Expected bytes to process changed");
 			return;
 		}
 
 		if (tsc_freq != tester->tsc_freq)
 		{
-			repetition_error(tester, __FILE__, __LINE__, "Expected cpu frequency changed");
+			rt_Error(tester, __FILE__, __LINE__, "Expected cpu frequency changed");
 			return;
 		}
 	}
 		
 	tester->state = RT_TESTING;
 	tester->tsc_retry_max = tsc_retry_max;
-	tester->tsc_start = rdtsc();
+	tester->tsc_start = Rdtsc();
 	tester->enter_count = 1;
 	tester->exit_count = 1;
 	tester->bytes_in_current_test = bytes_to_process;
@@ -412,7 +412,7 @@ void rt_wave(struct repetition_tester *tester, const u64 bytes_to_process, const
 	tester->cycles_in_current_test = 0;
 }
 
-void rt_begin_time(struct repetition_tester *tester)
+void rt_BeginTime(struct rt *tester)
 {
 	//os_enable_counters(tester);
 	//struct os_event_format format = { 0 };
@@ -423,12 +423,12 @@ void rt_begin_time(struct repetition_tester *tester)
 	//tester->backend_stalled_cycles_in_current_test -= format.backend_stalled_cycles;
 	//tester->cycles_in_current_test -= format.cycles;
 	tester->enter_count += 1;
-	tester->tsc_in_current_test -= rdtsc();
+	tester->tsc_in_current_test -= Rdtsc();
 }
 
-void rt_end_time(struct repetition_tester *tester)
+void rt_EndTime(struct rt *tester)
 {
-	tester->tsc_in_current_test += rdtsc();
+	tester->tsc_in_current_test += Rdtsc();
 	tester->exit_count += 1;
 	//struct os_event_format format = { 0 };
 	//os_get_counters(tester, tester->pf_fd, &format);
@@ -440,11 +440,11 @@ void rt_end_time(struct repetition_tester *tester)
 	//os_disable_counters(tester);
 }
 
-void rt_print_statistics(const struct repetition_tester *tester, FILE *file)
+void rt_PrintStatistics(const struct rt *tester, FILE *file)
 {
-	const f64 ns_max = (f64) ns_from_tsc(tester->tsc_iteration_max);
-	const f64 ns_min = (f64) ns_from_tsc(tester->tsc_iteration_min);
-	const f64 ns_avg = (f64) ns_from_tsc(tester->time / tester->test_count);
+	const f64 ns_max = (f64) NsFromTsc(tester->tsc_iteration_max);
+	const f64 ns_min = (f64) NsFromTsc(tester->tsc_iteration_min);
+	const f64 ns_avg = (f64) NsFromTsc(tester->time / tester->test_count);
 
 	const f64 ms_max = ns_max / (1000.0f * 1000.0f); 
 	const f64 ms_min = ns_min / (1000.0f * 1000.0f);

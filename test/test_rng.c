@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,8 +17,8 @@
 ==========================================================================
 */
 
-#include "test_local.h"
-#include "kas_random.h"
+#include "ds_test.h"
+#include "ds_math.h"
 
 static const u64 g_rng_count = 1024*1024;
 static void thread_local_rng_u64_test(void *void_count)
@@ -37,7 +37,7 @@ static void global_rng_u64_test(void *void_count)
 	}
 }
 
-struct serial_test rng_serial_test[] =
+struct test_PerformanceSerial rng_serial_test[] =
 {
 	{ 
 		.id = "thread_local_rng_u64", 
@@ -58,12 +58,12 @@ struct serial_test rng_serial_test[] =
 	},
 };
 
-struct performance_suite storage_performance_rng_suite =
+struct suite_Performance storage_performance_rng_suite =
 {
 	.id = "RNG Performance",
 	.serial_test = rng_serial_test,
 	.serial_test_count = sizeof(rng_serial_test) / sizeof(rng_serial_test[0]),
 };
 
-struct performance_suite *rng_performance_suite = &storage_performance_rng_suite;
+struct suite_Performance *rng_performance_suite = &storage_performance_rng_suite;
 

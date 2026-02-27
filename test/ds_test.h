@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,26 +17,40 @@
 ==========================================================================
 */
 
-#ifndef __TEST_LOCAL_H__
-#define __TEST_LOCAL_H__
+#ifndef __DS_TEST_H__
+#define __DS_TEST_H__
 
-#include "test_public.h"
+#ifdef __cplusplus
+extern "C" { 
+#endif
 
-#include "kas_common.h"
-#include "kas_random.h"
-#include "sys_public.h"
-#include "memory.h"
+#include <stdio.h>
+
+#include "ds_base.h"
+#include "ds_math.h"
+#include "ds_job.h"
+
+/* Correctness Test framework entry point */
+void ds_TestMainCorrectness(void);
+/* Performance Test framework entry point */
+void ds_TestMainPerformance(void);
 
 /********************************** Performance Testing ************************************/
 
-enum repetition_tester_type
+/*
+rt
+==
+Repetition Tester: TODO
+*/
+
+enum rt_Type
 {
-	RT_TEST_PERFORMANCE,		/* single threaded perfomance 		*/
+	RT_TEST_PERFORMANCE,		    /* single threaded perfomance 		    */
 	RT_TEST_PARALLEL_PERFORMANCE,	/* multithreaded threaded perfomance 	*/
 	RT_TEST_COUNT
 };
 
-enum repetition_tester_state
+enum rt_State
 {
 	RT_UNINITIALIZED = 0,
 	RT_TESTING,
@@ -44,13 +58,13 @@ enum repetition_tester_state
 	RT_ERROR,
 };
 
-struct repetition_tester
+struct rt
 {
 	u64 time;
 	u64 bytes;
 	u64 tsc_in_current_test;
 	u64 bytes_in_current_test;
-	enum repetition_tester_state state;
+	enum rt_State state;
 	u32 enter_count;
 	u32 exit_count;
 	u32 print : 1;
@@ -109,21 +123,15 @@ struct repetition_tester
 #endif
 };
 
-i32 rt_is_testing(struct repetition_tester *tester);
-void rt_wave(struct repetition_tester *tester, const u64 bytes_to_process, const u64 tsc_freq, const u64 tsc_retry_max, const u32 print);
-void rt_begin_time(struct repetition_tester *tester);
-void rt_end_time(struct repetition_tester *tester);
-void rt_print_statistics(const struct repetition_tester *tester, FILE *file);
+u32     rt_TestingCheck(struct rt *tester);
+void    rt_Wave(struct rt *tester, const u64 bytes_to_process, const u64 tsc_freq, const u64 tsc_retry_max, const u32 print);
+void    rt_BeginTime(struct rt *tester);
+void    rt_EndTime(struct rt *tester);
+void    rt_PrintStatistics(const struct rt *tester, FILE *file);
 
-
-extern struct performance_suite *hash_performance_suite;
-extern struct performance_suite *rng_performance_suite;
-extern struct performance_suite *serialize_performance_suite;
-extern struct performance_suite *allocator_performance_suite;
-
-struct serial_test
+struct test_PerformanceSerial
 {
-	const char *		id;
+	const char *	id;
 	const u64		size;
 	void *			(*test_init)(void);
 	void 			(*test_reset)(void *);
@@ -131,9 +139,9 @@ struct serial_test
 	void 			(*test)(void *);
 };
 
-struct parallel_test
+struct test_PerformanceParallel
 {
-	const char *	id;
+	const char *id;
 	const u64	size;
 	void *		(*test_init)(void);
 	void 		(*test_reset)(void *);
@@ -141,64 +149,56 @@ struct parallel_test
 	TASK		test;
 };
 
-struct performance_test_caller_input
+struct test_PerformanceInput
 {
 	u32 *	a_barrier;
 	void *	args;
 	TASK	test;
 };
 
-struct performance_suite
+struct suite_Performance
 {
-	const char *			id;
-	const struct serial_test	*serial_test;
-	const const u32 		serial_test_count;
-	const struct parallel_test	*parallel_test;
-	const const u32 		parallel_test_count;
+	const char *			                id;
+	const struct test_PerformanceSerial *   serial_test;
+	const u32 		                        serial_test_count;
+	const struct test_PerformanceParallel * parallel_test;
+	const u32 		                        parallel_test_count;
 };
-
 
 /********************************** Correctness Testing  ************************************/
 
+struct test_Environment
+{
+	struct arena *  mem_1;
+	struct arena *  mem_2;
+	struct arena *  mem_3;
+	struct arena *  mem_4;
+	struct arena *  mem_5;
+	struct arena *  mem_6;
+	const u64       seed;
+};
 
-extern struct suite *array_list_suite;
-extern struct suite *hierarchy_index_suite;
-extern struct suite *math_suite;
-extern struct suite *kas_string_suite;
-extern struct suite *serialize_suite;
-
-struct test_output
+struct test_Output
 {
 	const char *id;
 	const char *file;
-	u64 line;
-	u64 success;
+	u64         line;
+	u64         success;
 };
 
-struct test_environment
+struct test_CorrectnessRepetition
 {
-	struct arena *mem_1;
-	struct arena *mem_2;
-	struct arena *mem_3;
-	struct arena *mem_4;
-	struct arena *mem_5;
-	struct arena *mem_6;
-	const u64 seed;
+	struct test_Output  (*test)(void);
+	const u32           count;
 };
 
-struct repetition_test
+struct suite_Correctness
 {
-	struct test_output (*test)(void);
-	const u32 count;
-};
-
-struct suite
-{
-	char *id;
-	struct test_output (**unit_test)(struct test_environment *);
-	const u64 unit_test_count;
-	const struct repetition_test *repetition_test;
-	const u64 repetition_test_count;
+	char *                                      id;
+	struct test_Output                          (**unit_test)(struct test_Environment *);
+	const u64                                   unit_test_count;
+	const struct test_CorrectnessRepetition *   repetition_test;
+	const u64                                   repetition_test_count;
 };
 
 #ifdef KAS_DEBUG
@@ -221,5 +221,23 @@ struct suite
 
 #define TEST_FALSE(exp) if (exp) { TEST_FAILURE } else { output.success = 1; }
 #define TEST_TRUE(exp) if (!(exp)) { TEST_FAILURE } else { output.success = 1; }
+
+#ifdef __cplusplus
+} 
+#endif
+
+/********************************** Suites *********************************/
+
+extern struct suite_Performance *hash_performance_suite;
+extern struct suite_Performance *rng_performance_suite;
+extern struct suite_Performance *serialize_performance_suite;
+extern struct suite_Performance *allocator_performance_suite;
+
+//extern struct suite_Correctness *array_list_suite;
+//extern struct suite_Correctness *hierarchy_index_suite;
+extern struct suite_Correctness *allocator_suite;
+extern struct suite_Correctness *math_suite;
+extern struct suite_Correctness *kas_string_suite;
+extern struct suite_Correctness *serialize_suite;
 
 #endif

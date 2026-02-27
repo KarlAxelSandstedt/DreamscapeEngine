@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,13 +19,13 @@
 
 #include <stdio.h>
 
-#include "test_local.h"
+#include "ds_test.h"
 #include "array_list.h"
 #include "hierarchy_index.h"
 
-static struct test_output array_list_slot_size(struct test_environment *env)
+static struct test_Output array_list_slot_size(struct test_Environment *env)
 {
-	struct test_output output = { .success = 1, .id = __func__ };
+	struct test_Output output = { .success = 1, .id = __func__ };
 	struct array_list *list;
 
 	list = array_list_alloc(env->mem_1, 4, 1, 0);
@@ -50,9 +50,9 @@ static struct test_output array_list_slot_size(struct test_environment *env)
 	return output;
 }
 
-static struct test_output array_list_try_overflow(struct test_environment *env)
+static struct test_Output array_list_try_overflow(struct test_Environment *env)
 {
-	struct test_output output = { .success = 1, .id = __func__ };
+	struct test_Output output = { .success = 1, .id = __func__ };
 	struct array_list *list = array_list_alloc(env->mem_1, 4, 16, 0);
 	TEST_NOT_EQUAL(list, NULL);
 
@@ -68,9 +68,9 @@ static struct test_output array_list_try_overflow(struct test_environment *env)
 	return output;
 }
 
-static struct test_output array_list_add_remove_add(struct test_environment *env)
+static struct test_Output array_list_add_remove_add(struct test_Environment *env)
 {
-	struct test_output output = { .success = 1, .id = __func__ };
+	struct test_Output output = { .success = 1, .id = __func__ };
 	struct array_list *list = array_list_alloc(env->mem_1, 4, 16, 0);
 
 	array_list_reserve(list);
@@ -120,9 +120,9 @@ struct test_struct
 	u32 val[10];	
 };
 
-static struct test_output hierarchy_index_add_remove_single(struct test_environment *env)
+static struct test_Output hierarchy_index_add_remove_single(struct test_Environment *env)
 {
-	struct test_output output = { .success = 1, .id = __func__ };
+	struct test_Output output = { .success = 1, .id = __func__ };
 
 	struct hierarchy_index *hi = hierarchy_index_alloc(env->mem_1, 64, sizeof(struct test_struct), 0);
 	struct hierarchy_index_node *root = hierarchy_index_address(hi, HI_ROOT_STUB_INDEX);
@@ -275,9 +275,9 @@ static struct test_output hierarchy_index_add_remove_single(struct test_environm
 	return output;
 }
 
-static struct test_output hierarchy_index_add_remove_sub_hierarchy(struct test_environment *env)
+static struct test_Output hierarchy_index_add_remove_sub_hierarchy(struct test_Environment *env)
 {
-	struct test_output output = { .success = 1, .id = __func__ };
+	struct test_Output output = { .success = 1, .id = __func__ };
 
 	struct hierarchy_index *hi = hierarchy_index_alloc(env->mem_1, 64, sizeof(struct test_struct), 0);
 
@@ -394,9 +394,9 @@ static struct test_output hierarchy_index_add_remove_sub_hierarchy(struct test_e
 	return output;
 }
 
-static struct test_output hierarchy_index_add_remove_sub_hierarchy_recursive(struct test_environment *env)
+static struct test_Output hierarchy_index_add_remove_sub_hierarchy_recursive(struct test_Environment *env)
 {
-	struct test_output output = { .success = 1, .id = __func__ };
+	struct test_Output output = { .success = 1, .id = __func__ };
 
 	struct hierarchy_index *hi = hierarchy_index_alloc(env->mem_1, 64, sizeof(struct test_struct), 0);
 
@@ -435,35 +435,35 @@ static struct test_output hierarchy_index_add_remove_sub_hierarchy_recursive(str
 	return output;
 }
 
-static struct test_output (*array_list_tests[])(struct test_environment *) =
+static struct test_Output (*array_list_tests[])(struct test_Environment *) =
 {
 	array_list_slot_size,
 	array_list_try_overflow,
 	array_list_add_remove_add,	
 };
 
-static struct test_output(*hierarchy_index_tests[])(struct test_environment *) =
+static struct test_Output(*hierarchy_index_tests[])(struct test_Environment *) =
 {
 	hierarchy_index_add_remove_single,
 	hierarchy_index_add_remove_sub_hierarchy,
 	hierarchy_index_add_remove_sub_hierarchy_recursive,
 };
 
-struct suite m_array_list_suite =
+struct test_CorrectnessRepetition_Correctness m_array_list_suite =
 {
 	.id = "array_list",
 	.unit_test = array_list_tests,
 	.unit_test_count = sizeof(array_list_tests) / sizeof(array_list_tests[0]),
 };
 
-struct suite m_hierarchy_index_suite =
+struct test_CorrectnessRepetition_Correctness m_hierarchy_index_suite =
 {
 	.id = "hierarchy_index",
 	.unit_test = hierarchy_index_tests,
 	.unit_test_count = sizeof(hierarchy_index_tests) / sizeof(hierarchy_index_tests[0]),
 };
 
-struct suite *array_list_suite = &m_array_list_suite;
-struct suite *hierarchy_index_suite = &m_hierarchy_index_suite;
+struct test_CorrectnessRepetition_Correctness *array_list_suite = &m_array_list_suite;
+struct test_CorrectnessRepetition_Correctness *hierarchy_index_suite = &m_hierarchy_index_suite;
 
 

@@ -18,7 +18,7 @@
 */
 
 #define XXH_INLINE_ALL
-#include "test_local.h"
+#include "ds_test.h"
 #include "xxhash.h"
 
 #define ARRAY_TEST_SIZE 	(1024*1024)
@@ -265,7 +265,7 @@ void xxHash3_struct_stress_test(void *void_input)
 	}
 }
 
-struct serial_test hash_serial_test[] =
+struct test_PerformanceSerial hash_serial_test[] =
 {
 	{
 		.id = "xxHash32_struct_test",
@@ -376,7 +376,7 @@ struct serial_test hash_serial_test[] =
 	},
 };
 
-struct performance_suite storage_performance_hash_suite =
+struct suite_Performance storage_performance_hash_suite =
 {
 	.id = "xxHash Performance",
 	.parallel_test = NULL,
@@ -385,5 +385,5 @@ struct performance_suite storage_performance_hash_suite =
 	.serial_test_count = sizeof(hash_serial_test) / sizeof(hash_serial_test[0]),
 };
 
-struct performance_suite *hash_performance_suite = &storage_performance_hash_suite;
+struct suite_Performance *hash_performance_suite = &storage_performance_hash_suite;
 

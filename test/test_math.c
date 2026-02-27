@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -22,13 +22,12 @@
 #include <float.h>
 #include <fenv.h>
 
-#include "test_local.h"
-#include "kas_math.h"
+#include "ds_test.h"
 #include "matrix.h"
 
-static struct test_output matrix_inverse_assert(struct test_environment *env)
+static struct test_Output matrix_inverse_assert(struct test_Environment *env)
 {
-	struct test_output output = { .success = 1, .id = __func__ };
+	struct test_Output output = { .success = 1, .id = __func__ };
 
 	mat3 I3, A, A_inv;
 	Mat3Set(A, 2,0,1,1,2,1,3,4,2);
@@ -39,7 +38,7 @@ static struct test_output matrix_inverse_assert(struct test_environment *env)
 
 	for (u32 i = 0; i < 3; ++i)
 	{
-		assert(1.0f - eps <= I3[i][i] && I3[i][i] <= 1.0f + eps);
+		ds_assert(1.0f - eps <= I3[i][i] && I3[i][i] <= 1.0f + eps);
 		for (u32 j = i+1; j < 3; ++j)
 		{
 			assert(-eps <= I3[i][j] && I3[j][i] <= eps);
@@ -68,16 +67,16 @@ static struct test_output matrix_inverse_assert(struct test_environment *env)
 	return output;
 }
 
-static struct test_output (*math_tests[])(struct test_environment *) =
+static struct test_Output (*math_tests[])(struct test_Environment *) =
 {
 	matrix_inverse_assert,
 };
 
-struct suite m_math_suite =
+struct suite_Correctness m_math_suite =
 {
 	.id = "math",
 	.unit_test = math_tests,
 	.unit_test_count = sizeof(math_tests) / sizeof(math_tests[0]),
 };
 
-struct suite *math_suite = &m_math_suite;
+struct suite_Correctness *math_suite = &m_math_suite;

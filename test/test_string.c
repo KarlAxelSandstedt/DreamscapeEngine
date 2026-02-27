@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -20,8 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "test_local.h"
-#include "kas_string.h"
+#include "ds_test.h"
 #include "dtoa.h"
 
 static utf8 utf8_substring(struct arena *mem, const utf8 *string, const u32 start, const u32 len)
@@ -36,7 +35,7 @@ static utf8 utf8_substring(struct arena *mem, const utf8 *string, const u32 star
 	}
 	else
 	{
-		substring = utf8_empty();
+		substring = Utf8Empty();
 	}
 	return substring;
 }
@@ -57,7 +56,7 @@ static utf8 utf8_ascii_random(struct arena *mem, const u32 len)
 	return substring;
 }
 
-static u32 utf8_ascii_substring_naive(const utf8 *string, const utf8 *substring)
+static u32 Utf8AsciiSubstringNaive(const utf8 *string, const utf8 *substring)
 {
 	if (substring->len > string->len)
 	{
@@ -90,9 +89,9 @@ static u32 utf8_ascii_substring_naive(const utf8 *string, const utf8 *substring)
 	return found;
 }	
 
-static struct test_output utf8_lookup_substring_randomizer(struct test_environment *env)
+static struct test_Output utf8_lookup_substring_randomizer(struct test_Environment *env)
 {
-	struct test_output output = { .success = 1, .id = __func__ };
+	struct test_Output output = { .success = 1, .id = __func__ };
 
 	for (u32 i = 0; i < 1000000; ++i)
 	{
@@ -109,8 +108,8 @@ static struct test_output utf8_lookup_substring_randomizer(struct test_environme
 		const utf8 random = utf8_ascii_random(env->mem_1, random_len);
 		const utf8 substring = utf8_substring(env->mem_1, &string, substring_start, substring_len);
 
-		struct kmp_substring kmp_random = utf8_lookup_substring_init(env->mem_1, random);
-		struct kmp_substring kmp_substring = utf8_lookup_substring_init(env->mem_1, substring);
+		struct kmpSubstring kmp_random = Utf8LookupSubstringInit(env->mem_1, random);
+		struct kmpSubstring kmpSubstring = Utf8LookupSubstringInit(env->mem_1, substring);
 
 		//if (substring_start != U32_MAX)
 		//{
@@ -121,9 +120,9 @@ static struct test_output utf8_lookup_substring_randomizer(struct test_environme
 		//}
 		//for (u32 i = 0; i < substring_len; ++i)
 		//{
-		//	if (kmp_substring.backtrack[i] != U32_MAX)
+		//	if (kmpSubstring.backtrack[i] != U32_MAX)
 		//	{
-		//		fprintf(stderr, "%u", kmp_substring.backtrack[i]);
+		//		fprintf(stderr, "%u", kmpSubstring.backtrack[i]);
 		//	}
 		//	else
 		//	{
@@ -142,11 +141,11 @@ static struct test_output utf8_lookup_substring_randomizer(struct test_environme
 		//fprintf(stderr, "%s\n", (char *) string.buf);
 		//fprintf(stderr, "%s\n", (char *) random.buf);
 
-		const u32 random_found = utf8_lookup_substring(&kmp_random, string);	
-		const u32 substring_found = utf8_lookup_substring(&kmp_substring, string);	
+		const u32 random_found = Utf8LookupSubstring(&kmp_random, string);	
+		const u32 substring_found = Utf8LookupSubstring(&kmpSubstring, string);	
 
 		TEST_EQUAL(substring_found, 1);
-		TEST_EQUAL(random_found, utf8_ascii_substring_naive(&string, &random));
+		TEST_EQUAL(random_found, Utf8AsciiSubstringNaive(&string, &random));
 
 		ArenaPopRecord(env->mem_1);
 	}
@@ -154,9 +153,9 @@ static struct test_output utf8_lookup_substring_randomizer(struct test_environme
 	return output;
 }
 
-static struct test_output DmgDtoa_functionallity_check(struct test_environment *env)
+static struct test_Output DmgDtoa_functionallity_check(struct test_Environment *env)
 {
-	struct test_output output = { .success = 1, .id = __func__ };
+	struct test_Output output = { .success = 1, .id = __func__ };
 
 	char *str;
 	i32 decpt, sign;
@@ -235,9 +234,9 @@ static struct test_output DmgDtoa_functionallity_check(struct test_environment *
 	return output;
 }
 
-static struct test_output DmgStrtod_dtoa_equivalence(struct test_environment *env)
+static struct test_Output DmgStrtod_dtoa_equivalence(struct test_Environment *env)
 {
-	struct test_output output = { .success = 1, .id = __func__ };
+	struct test_Output output = { .success = 1, .id = __func__ };
 
 	char text[4096];
 	char *buf = text;
@@ -289,9 +288,9 @@ static struct test_output DmgStrtod_dtoa_equivalence(struct test_environment *en
 	return output;
 }
 
-static struct test_output DmgStrtod_utf8_f64_equivalence(struct test_environment *env)
+static struct test_Output DmgStrtod_utf8_f64_equivalence(struct test_Environment *env)
 {
-	struct test_output output = { .success = 1, .id = __func__ };
+	struct test_Output output = { .success = 1, .id = __func__ };
 
 	char text[4096];
 	char *buf = text;
@@ -305,8 +304,8 @@ static struct test_output DmgStrtod_utf8_f64_equivalence(struct test_environment
 		ArenaPushRecord(env->mem_1);
 
 		const f64 d = ((b64) { .u = RngU64() }).f;
-		const utf8 str = utf8_f64(env->mem_1, 0, d);
-		const f64 ret = f64_utf8(env->mem_1, str);
+		const utf8 str = Utf8F64(env->mem_1, 0, d);
+		const f64 ret = F64Utf8(env->mem_1, str);
 
 		//fprintf(stderr, "expected:\t%.27e\ngot:     \t%.27e\n", d, ret);
 
@@ -328,9 +327,9 @@ static struct test_output DmgStrtod_utf8_f64_equivalence(struct test_environment
 	return output;
 }
 
-static struct test_output DmgStrtod_utf32_f64_equivalence(struct test_environment *env)
+static struct test_Output DmgStrtod_utf32_f64_equivalence(struct test_Environment *env)
 {
-	struct test_output output = { .success = 1, .id = __func__ };
+	struct test_Output output = { .success = 1, .id = __func__ };
 
 	char text[4096];
 	char *buf = text;
@@ -344,8 +343,8 @@ static struct test_output DmgStrtod_utf32_f64_equivalence(struct test_environmen
 		ArenaPushRecord(env->mem_1);
 
 		const f64 d = ((b64) { .u = RngU64() }).f;
-		const utf32 str = utf32_f64(env->mem_1, 0, d);
-		const f64 ret = f64_utf32(env->mem_1, str);
+		const utf32 str = Utf32F64(env->mem_1, 0, d);
+		const f64 ret = F64Utf32(env->mem_1, str);
 
 		//fprintf(stderr, "expected:\t%.27e\ngot:     \t%.27e\n", d, ret);
 
@@ -367,9 +366,9 @@ static struct test_output DmgStrtod_utf32_f64_equivalence(struct test_environmen
 	return output;
 }
 
-static struct test_output utf8_utf32_u64_i64_equivalence(struct test_environment *env)
+static struct test_Output utf8_Utf32U64_i64_equivalence(struct test_Environment *env)
 {
-	struct test_output output = { .success = 1, .id = __func__ };
+	struct test_Output output = { .success = 1, .id = __func__ };
 
 	char text[4096];
 	char *buf = text;
@@ -377,80 +376,80 @@ static struct test_output utf8_utf32_u64_i64_equivalence(struct test_environment
 	int decpt, sign;
 	char *tmp;
 
-	TEST_EQUAL(0, u64_utf8(utf8_u64(env->mem_1, 0)).u64);
-	TEST_EQUAL(0, i64_utf8(utf8_i64(env->mem_1, 0)).i64);
-	TEST_EQUAL(0, u64_utf32(utf32_u64(env->mem_1, 0)).u64);
-	TEST_EQUAL(0, u64_utf32(utf32_i64(env->mem_1, 0)).i64);
+	TEST_EQUAL(0, U64Utf8(Utf8U64(env->mem_1, 0)).u64);
+	TEST_EQUAL(0, I64Utf8(Utf8I64(env->mem_1, 0)).i64);
+	TEST_EQUAL(0, U64Utf32(Utf32U64(env->mem_1, 0)).u64);
+	TEST_EQUAL(0, U64Utf32(Utf32I64(env->mem_1, 0)).i64);
 
-	TEST_EQUAL(U64_MAX, u64_utf8(utf8_u64(env->mem_1,   U64_MAX)).u64);
-	TEST_EQUAL(I64_MAX, i64_utf8(utf8_i64(env->mem_1,   I64_MAX)).i64);
-	TEST_EQUAL(U64_MAX, u64_utf32(utf32_u64(env->mem_1, U64_MAX)).u64);
-	TEST_EQUAL(I64_MAX, i64_utf32(utf32_i64(env->mem_1, I64_MAX)).i64);
+	TEST_EQUAL(U64_MAX, U64Utf8(Utf8U64(env->mem_1,   U64_MAX)).u64);
+	TEST_EQUAL(I64_MAX, I64Utf8(Utf8I64(env->mem_1,   I64_MAX)).i64);
+	TEST_EQUAL(U64_MAX, U64Utf32(Utf32U64(env->mem_1, U64_MAX)).u64);
+	TEST_EQUAL(I64_MAX, I64Utf32(Utf32I64(env->mem_1, I64_MAX)).i64);
 
-	TEST_EQUAL(I64_MIN, i64_utf8(utf8_i64(env->mem_1,   I64_MIN)).u64);
-	TEST_EQUAL(I64_MIN, i64_utf32(utf32_i64(env->mem_1, I64_MIN)).i64);
-	TEST_EQUAL(-1, i64_utf8(utf8_i64(env->mem_1,   -1)).u64);
-	TEST_EQUAL(-1, i64_utf32(utf32_i64(env->mem_1, -1)).i64);
+	TEST_EQUAL(I64_MIN, I64Utf8(Utf8I64(env->mem_1,   I64_MIN)).i64);
+	TEST_EQUAL(I64_MIN, I64Utf32(Utf32I64(env->mem_1, I64_MIN)).i64);
+	TEST_EQUAL(-1,      I64Utf8(Utf8I64(env->mem_1,   -1)).i64);
+	TEST_EQUAL(-1,      I64Utf32(Utf32I64(env->mem_1, -1)).i64);
 	
-	TEST_EQUAL(PARSE_SUCCESS, u64_utf8(utf8_u64(env->mem_1, 0)).op_result);
-	TEST_EQUAL(PARSE_SUCCESS, i64_utf8(utf8_i64(env->mem_1, 0)).op_result);
-	TEST_EQUAL(PARSE_SUCCESS, u64_utf32(utf32_u64(env->mem_1, 0)).op_result);
-	TEST_EQUAL(PARSE_SUCCESS, u64_utf32(utf32_i64(env->mem_1, 0)).op_result);
+	TEST_EQUAL(PARSE_SUCCESS, U64Utf8(Utf8U64(env->mem_1, 0)).op_result);
+	TEST_EQUAL(PARSE_SUCCESS, I64Utf8(Utf8I64(env->mem_1, 0)).op_result);
+	TEST_EQUAL(PARSE_SUCCESS, U64Utf32(Utf32U64(env->mem_1, 0)).op_result);
+	TEST_EQUAL(PARSE_SUCCESS, U64Utf32(Utf32I64(env->mem_1, 0)).op_result);
 
-	TEST_EQUAL(PARSE_SUCCESS,   u64_utf8( utf8_u64(env->mem_1,  U64_MAX)).op_result);
-	TEST_EQUAL(PARSE_SUCCESS,   i64_utf8( utf8_i64(env->mem_1,  I64_MAX)).op_result);
-	TEST_EQUAL(PARSE_SUCCESS, u64_utf32(utf32_u64(env->mem_1, U64_MAX)).op_result);
-	TEST_EQUAL(PARSE_SUCCESS, i64_utf32(utf32_i64(env->mem_1, I64_MAX)).op_result);
+	TEST_EQUAL(PARSE_SUCCESS, U64Utf8(Utf8U64(env->mem_1,  U64_MAX)).op_result);
+	TEST_EQUAL(PARSE_SUCCESS, I64Utf8(Utf8I64(env->mem_1,  I64_MAX)).op_result);
+	TEST_EQUAL(PARSE_SUCCESS, U64Utf32(Utf32U64(env->mem_1, U64_MAX)).op_result);
+	TEST_EQUAL(PARSE_SUCCESS, I64Utf32(Utf32I64(env->mem_1, I64_MAX)).op_result);
 
-	TEST_EQUAL(PARSE_SUCCESS, i64_utf8(utf8_i64(env->mem_1,   I64_MIN)).op_result);
-	TEST_EQUAL(PARSE_SUCCESS, i64_utf32(utf32_i64(env->mem_1, I64_MIN)).op_result);
-	TEST_EQUAL(PARSE_SUCCESS, i64_utf8(utf8_i64(env->mem_1,   -1)).op_result);
-	TEST_EQUAL(PARSE_SUCCESS, i64_utf32(utf32_i64(env->mem_1, -1)).op_result);
+	TEST_EQUAL(PARSE_SUCCESS, I64Utf8(Utf8I64(env->mem_1,   I64_MIN)).op_result);
+	TEST_EQUAL(PARSE_SUCCESS, I64Utf32(Utf32I64(env->mem_1, I64_MIN)).op_result);
+	TEST_EQUAL(PARSE_SUCCESS, I64Utf8(Utf8I64(env->mem_1,   -1)).op_result);
+	TEST_EQUAL(PARSE_SUCCESS, I64Utf32(Utf32I64(env->mem_1, -1)).op_result);
 	
 	utf8 str;
 	utf32 str32;
 
-	str = (utf8) { .buf = "18446744073709551616", .len = strlen("18446744073709551616") };
-	str32 = utf32_utf8(env->mem_1, str);
-	TEST_EQUAL(PARSE_OVERFLOW, u64_utf8(str).op_result);
-	TEST_EQUAL(PARSE_OVERFLOW, u64_utf32(str32).op_result);
+	str = (utf8) { .buf = (u8 *) "18446744073709551616", .len = strlen("18446744073709551616") };
+	str32 = Utf32Utf8(env->mem_1, str);
+	TEST_EQUAL(PARSE_OVERFLOW, U64Utf8(str).op_result);
+	TEST_EQUAL(PARSE_OVERFLOW, U64Utf32(str32).op_result);
 
-	str = (utf8) { .buf = "18446744073709551616000", .len = strlen("18446744073709551616000") };
-	str32 = utf32_utf8(env->mem_1, str);
-	TEST_EQUAL(PARSE_OVERFLOW, u64_utf8(str).op_result);
-	TEST_EQUAL(PARSE_OVERFLOW, u64_utf32(str32).op_result);
+	str = (utf8) { .buf = (u8 *) "18446744073709551616000", .len = strlen("18446744073709551616000") };
+	str32 = Utf32Utf8(env->mem_1, str);
+	TEST_EQUAL(PARSE_OVERFLOW, U64Utf8(str).op_result);
+	TEST_EQUAL(PARSE_OVERFLOW, U64Utf32(str32).op_result);
 	  
-	str = (utf8) { .buf = "-0", .len = strlen("-0") };
-	str32 = utf32_utf8(env->mem_1, str);
-	TEST_EQUAL(PARSE_STRING_INVALID, u64_utf8(str).op_result);
-	TEST_EQUAL(PARSE_STRING_INVALID, u64_utf32(str32).op_result);
+	str = (utf8) { .buf = (u8 *) "-0", .len = strlen("-0") };
+	str32 = Utf32Utf8(env->mem_1, str);
+	TEST_EQUAL(PARSE_STRING_INVALID, U64Utf8(str).op_result);
+	TEST_EQUAL(PARSE_STRING_INVALID, U64Utf32(str32).op_result);
 
-	str = (utf8) { .buf = "-0", .len = strlen("-0") };
-	str32 = utf32_utf8(env->mem_1, str);
-	TEST_EQUAL(PARSE_SUCCESS, i64_utf8(str).op_result);
-	TEST_EQUAL(PARSE_SUCCESS, i64_utf32(str32).op_result);
-	TEST_EQUAL(0, i64_utf8(str).i64);
-	TEST_EQUAL(0, i64_utf32(str32).i64);
+	str = (utf8) { .buf = (u8 *) "-0", .len = strlen("-0") };
+	str32 = Utf32Utf8(env->mem_1, str);
+	TEST_EQUAL(PARSE_SUCCESS, I64Utf8(str).op_result);
+	TEST_EQUAL(PARSE_SUCCESS, I64Utf32(str32).op_result);
+	TEST_EQUAL(0, I64Utf8(str).i64);
+	TEST_EQUAL(0, I64Utf32(str32).i64);
 
-	str = (utf8) { .buf = "-9223372036854775809", .len = strlen("-9223372036854775809") };
-	str32 = utf32_utf8(env->mem_1, str);
-	TEST_EQUAL(PARSE_UNDERFLOW, i64_utf8(str).op_result);
-	TEST_EQUAL(PARSE_UNDERFLOW, i64_utf32(str32).op_result);
+	str = (utf8) { .buf = (u8 *) "-9223372036854775809", .len = strlen("-9223372036854775809") };
+	str32 = Utf32Utf8(env->mem_1, str);
+	TEST_EQUAL(PARSE_UNDERFLOW, I64Utf8(str).op_result);
+	TEST_EQUAL(PARSE_UNDERFLOW, I64Utf32(str32).op_result);
 
-	str = (utf8) { .buf = "-9223372036854775809000", .len = strlen("-9223372036854775809000") };
-	str32 = utf32_utf8(env->mem_1, str);
-	TEST_EQUAL(PARSE_UNDERFLOW, i64_utf8(str).op_result);
-	TEST_EQUAL(PARSE_UNDERFLOW, i64_utf32(str32).op_result);
+	str = (utf8) { .buf = (u8 *) "-9223372036854775809000", .len = strlen("-9223372036854775809000") };
+	str32 = Utf32Utf8(env->mem_1, str);
+	TEST_EQUAL(PARSE_UNDERFLOW, I64Utf8(str).op_result);
+	TEST_EQUAL(PARSE_UNDERFLOW, I64Utf32(str32).op_result);
 
-	str = (utf8) { .buf = "9223372036854775808", .len = strlen("9223372036854775808") };
-	str32 = utf32_utf8(env->mem_1, str);
-	TEST_EQUAL(PARSE_OVERFLOW, i64_utf8(str).op_result);
-	TEST_EQUAL(PARSE_OVERFLOW, i64_utf32(str32).op_result);
+	str = (utf8) { .buf = (u8 *) "9223372036854775808", .len = strlen("9223372036854775808") };
+	str32 = Utf32Utf8(env->mem_1, str);
+	TEST_EQUAL(PARSE_OVERFLOW, I64Utf8(str).op_result);
+	TEST_EQUAL(PARSE_OVERFLOW, I64Utf32(str32).op_result);
 	  
-	str = (utf8) { .buf = "92233720368547758080", .len = strlen("92233720368547758080") };
-	str32 = utf32_utf8(env->mem_1, str);
-	TEST_EQUAL(PARSE_OVERFLOW, i64_utf8(str).op_result);
-	TEST_EQUAL(PARSE_OVERFLOW, i64_utf32(str32).op_result);
+	str = (utf8) { .buf = (u8 *) "92233720368547758080", .len = strlen("92233720368547758080") };
+	str32 = Utf32Utf8(env->mem_1, str);
+	TEST_EQUAL(PARSE_OVERFLOW, I64Utf8(str).op_result);
+	TEST_EQUAL(PARSE_OVERFLOW, I64Utf32(str32).op_result);
 
 	for (u32 i = 0; i < U32_MAX / 1000; ++i)
 	{
@@ -458,20 +457,20 @@ static struct test_output utf8_utf32_u64_i64_equivalence(struct test_environment
 
 		const b64 b = { .u = RngU64() };
 
-		const utf8 uf8_u64 = utf8_u64(env->mem_1, b.u);
-		const utf8 uf8_i64 = utf8_i64(env->mem_1, b.i);
-		const utf32 uf32_u64 = utf32_u64(env->mem_1, b.u);
-		const utf32 uf32_i64 = utf32_i64(env->mem_1, b.i);
+		const utf8 uf8_u64 = Utf8U64(env->mem_1, b.u);
+		const utf8 uf8_i64 = Utf8I64(env->mem_1, b.i);
+		const utf32 uf32_u64 = Utf32U64(env->mem_1, b.u);
+		const utf32 uf32_i64 = Utf32I64(env->mem_1, b.i);
 
-		const struct parse_retval ret1 = u64_utf8(uf8_u64);
-		const struct parse_retval ret2 = i64_utf8(uf8_i64);
-		const struct parse_retval ret3 = u64_utf32(uf32_u64);
-		const struct parse_retval ret4 = i64_utf32(uf32_i64);
+		const struct parseRetval ret1 = U64Utf8(uf8_u64);
+		const struct parseRetval ret2 = I64Utf8(uf8_i64);
+		const struct parseRetval ret3 = U64Utf32(uf32_u64);
+		const struct parseRetval ret4 = I64Utf32(uf32_i64);
 
 		const u64 u1 = ret1.u64;
-		const u64 i1 = ret2.i64;
+		const i64 i1 = ret2.i64;
 		const u64 u2 = ret3.u64;
-		const u64 i2 = ret4.i64;
+		const i64 i2 = ret4.i64;
 		
 		TEST_EQUAL(ret1.op_result, PARSE_SUCCESS);
 		TEST_EQUAL(ret2.op_result, PARSE_SUCCESS);
@@ -489,21 +488,21 @@ static struct test_output utf8_utf32_u64_i64_equivalence(struct test_environment
 	return output;
 }
 
-static struct test_output(*kas_string_tests[])(struct test_environment *) =
+static struct test_Output(*kas_string_tests[])(struct test_Environment *) =
 {
 	DmgStrtod_utf32_f64_equivalence,
 	DmgStrtod_utf8_f64_equivalence,
 	DmgDtoa_functionallity_check,
 	DmgStrtod_dtoa_equivalence,
-	utf8_utf32_u64_i64_equivalence,
+	utf8_Utf32U64_i64_equivalence,
 	utf8_lookup_substring_randomizer,
 };
 
-struct suite m_kas_string_suite =
+struct suite_Correctness m_kas_string_suite =
 {
 	.id = "string",
 	.unit_test = kas_string_tests,
 	.unit_test_count = sizeof(kas_string_tests) / sizeof(kas_string_tests[0]),
 };
 
-struct suite *kas_string_suite = &m_kas_string_suite;
+struct suite_Correctness *kas_string_suite = &m_kas_string_suite;

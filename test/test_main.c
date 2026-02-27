@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -20,17 +20,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "test_local.h"
+#include "ds_test.h"
 
-#ifdef __GNUC__
-#include "linux_local.h"
-#else
-#include "win_local.h"
-#endif
-
-#include "log.h"
-
-static void run_suite(struct suite *suite, struct test_environment *env, const u64 verbose)
+static void run_suite(struct suite_Correctness *suite, struct test_Environment *env, const u64 verbose)
 {
 	if (verbose) { fprintf(stdout, ":::::::::: Running suite %s ::::::::::\n", suite->id); }
 
@@ -44,7 +36,7 @@ static void run_suite(struct suite *suite, struct test_environment *env, const u
 		struct arena record_5 = *env->mem_5;
 		struct arena record_6 = *env->mem_6;
 
-		struct test_output out = suite->unit_test[i](env);
+		struct test_Output out = suite->unit_test[i](env);
 		if (out.success)
 		{
 			success_count += 1;
@@ -69,7 +61,7 @@ static void run_suite(struct suite *suite, struct test_environment *env, const u
 	for (u64 i = 0; i < suite->repetition_test_count; ++i)
 	{
 		RngPushState();
-		struct test_output out;
+		struct test_Output out;
 		u32 t;
 		for (t = 0; t < suite->repetition_test[i].count; ++t)
 		{
@@ -104,17 +96,17 @@ static void run_suite(struct suite *suite, struct test_environment *env, const u
 void test_caller(void *task_input)
 {
 	struct task *t_ctx = task_input;
-	struct performance_test_caller_input *input = t_ctx->input;
+	struct test_PerformanceInput *input = t_ctx->input;
 	while (!AtomicLoadAcq32(input->a_barrier));
 	input->test(input->args);
 }
 
-static void run_performance_suite(struct performance_suite *suite)
+static void run_performance_suite(struct suite_Performance *suite)
 {
 	fprintf(stdout, ":::::::::: Running peformance suite %s ::::::::::\n", suite->id);
 
-	const u64 max_time_without_improvement = 10*freq_rdtsc();
-	struct repetition_tester tester;
+	const u64 max_time_without_improvement = 10*TscFrequency();
+	struct rt tester;
 	for (u32 i = 0; i < suite->serial_test_count; ++i)
 	{
 		memset(&tester, 0, sizeof(tester));
@@ -124,7 +116,7 @@ static void run_performance_suite(struct performance_suite *suite)
 			? suite->serial_test[i].test_init()
 			: NULL;
 
-		rt_wave(&tester, suite->serial_test[i].size, freq_rdtsc(), max_time_without_improvement, 1);
+		rt_Wave(&tester, suite->serial_test[i].size, TscFrequency(), max_time_without_improvement, 1);
 		do
 		{
 			RngPushState();
@@ -133,18 +125,18 @@ static void run_performance_suite(struct performance_suite *suite)
 				suite->serial_test[i].test_reset(args);
 			}		
 
-			rt_begin_time(&tester);	
+			rt_BeginTime(&tester);	
 			suite->serial_test[i].test(args);	
-			rt_end_time(&tester);
+			rt_EndTime(&tester);
 		
 			RngPopState();
-		} while (rt_is_testing(&tester));
+		} while (rt_TestingCheck(&tester));
 
 		if (suite->serial_test[i].test_free)
 		{
 			suite->serial_test[i].test_free(args);
 		}
-		rt_print_statistics(&tester, stdout);
+		rt_PrintStatistics(&tester, stdout);
 	}
 
 	struct arena mem = ArenaAlloc1MB();
@@ -154,7 +146,7 @@ static void run_performance_suite(struct performance_suite *suite)
 		fprintf(stdout, "\t::: %s ::: \n", suite->parallel_test[i].id);
 
 		ArenaFlush(&mem);
-		struct performance_test_caller_input *args = ArenaPush(&mem, g_task_ctx->worker_count * sizeof(struct performance_test_caller_input));
+		struct test_PerformanceInput *args = ArenaPush(&mem, g_task_ctx->worker_count * sizeof(struct test_PerformanceInput));
 		u32 a_barrier;
 
 		for (u32 k = 0; k < g_task_ctx->worker_count; ++k)
@@ -166,7 +158,7 @@ static void run_performance_suite(struct performance_suite *suite)
 				: NULL;
 		}
 
-		rt_wave(&tester, suite->parallel_test[i].size, freq_rdtsc(), max_time_without_improvement, 1);
+		rt_Wave(&tester, suite->parallel_test[i].size, TscFrequency(), max_time_without_improvement, 1);
 		do
 		{
 			RngPushState();
@@ -183,16 +175,16 @@ static void run_performance_suite(struct performance_suite *suite)
 				task_stream_dispatch(&mem, stream, test_caller, args + k);
 			}
 
-			rt_begin_time(&tester);	
+			rt_BeginTime(&tester);	
 			AtomicStoreRel32(&a_barrier, 1);
 			task_main_master_run_available_jobs();
 			task_stream_spin_wait(stream);
-			rt_end_time(&tester);
+			rt_EndTime(&tester);
 
 			task_stream_cleanup(stream);		
 			ArenaPopRecord(&mem);
 			RngPopState();
-		} while (rt_is_testing(&tester));
+		} while (rt_TestingCheck(&tester));
 
 		if (suite->parallel_test[i].test_free)
 		{
@@ -202,12 +194,12 @@ static void run_performance_suite(struct performance_suite *suite)
 			}
 		}
 
-		rt_print_statistics(&tester, stdout);
+		rt_PrintStatistics(&tester, stdout);
 	}
 	ArenaFree1MB(&mem);
 }
 
-void test_main(void)
+void ds_TestMainCorrectness(void)
 {
 	struct arena mem_1 = ArenaAlloc(16*1024*1024);
 	struct arena mem_2 = ArenaAlloc(1024*1024);
@@ -216,7 +208,7 @@ void test_main(void)
 	struct arena mem_5 = ArenaAlloc(1024*1024);
 	struct arena mem_6 = ArenaAlloc(1024*1024);
 
-	struct test_environment env = 
+	struct test_Environment env = 
 	{
 		.mem_1 = &mem_1,
 		.mem_2 = &mem_2,
@@ -227,16 +219,17 @@ void test_main(void)
 		.seed = 2984395893,
 	};
 
-#if defined(KAS_TEST_CORRECTNESS)
 	run_suite(kas_string_suite, &env, 1);
 	run_suite(serialize_suite, &env, 1);
-	run_suite(array_list_suite, &env, 1);
-	run_suite(hierarchy_index_suite, &env, 1);
+	//run_suite(array_list_suite, &env, 1);
+	//run_suite(hierarchy_index_suite, &env, 1);
 	//run_suite(math_suite, &env, 1);
-#elif defined(KAS_TEST_PERFORMANCE)
-	run_performance_suite(hash_performance_suite);
+}
+
+void ds_TestMainPerformance(void)
+{
+	run_performance_suite(allocator_performance_suite);
+	//run_performance_suite(hash_performance_suite);
 	//run_performance_suite(rng_performance_suite);
-	//run_performance_suite(allocator_performance_suite);
 	//run_performance_suite(serialize_performance_suite);
-#endif
 }
