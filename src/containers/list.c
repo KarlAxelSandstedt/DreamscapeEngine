@@ -212,14 +212,14 @@ struct nll nll_AllocInternal(struct arena *mem,
 		.prev_offset = prev_offset,
 	};
 
-	net.pool = PoolAllocInternal(mem, initial_length, data_size, pool_slot_offset, U64_MAX, growable);
+	net.pool = ds_PoolAllocInternal(mem, initial_length, data_size, pool_slot_offset, U64_MAX, growable);
 	if (!net.pool.length)
 	{
 		LogString(T_SYSTEM, S_FATAL, "Failed to allocate net list");
 		FatalCleanupAndExit();
 	}
 
-	struct slot slot = PoolAdd(&net.pool);
+	struct slot slot = ds_PoolAdd(&net.pool);
 	u32 *next = (u32 *)((u8 *) slot.address + net.next_offset);
 	u32 *prev = (u32 *)((u8 *) slot.address + net.prev_offset);
 	next[0] = NLL_NULL;
@@ -235,14 +235,14 @@ void nll_Dealloc(struct nll *net)
 {
 	if (net->heap_allocated)
 	{
-		PoolDealloc(&net->pool);
+		ds_PoolDealloc(&net->pool);
 	}
 }
 
 void nll_Flush(struct nll *net)
 {
-	PoolFlush(&net->pool);
-	struct slot slot = PoolAdd(&net->pool);
+	ds_PoolFlush(&net->pool);
+	struct slot slot = ds_PoolAdd(&net->pool);
 	u32 *next = (u32 *)((u8 *) slot.address + net->next_offset);
 	u32 *prev = (u32 *)((u8 *) slot.address + net->prev_offset);
 	next[0] = NLL_NULL;
@@ -254,7 +254,7 @@ void nll_Flush(struct nll *net)
 
 struct slot nll_Add(struct nll *net, void *data, const u32 next_0, const u32 next_1)
 {
-	struct slot slot = PoolAdd(&net->pool);
+	struct slot slot = ds_PoolAdd(&net->pool);
 
 	/* copy over internal data required in index_in_prev_node function call */
 	memcpy((u8*) data + net->pool.slot_allocation_offset, (u8*) slot.address + net->pool.slot_allocation_offset, sizeof(u32));
@@ -291,7 +291,7 @@ struct slot nll_Add(struct nll *net, void *data, const u32 next_0, const u32 nex
 
 void nll_Remove(struct nll *net, const u32 index)
 {
-	u8 *node = PoolAddress(&net->pool, index);
+	u8 *node = ds_PoolAddress(&net->pool, index);
 	u32 *node_next = (u32 *)((u8 *) node + net->next_offset);
 	u32 *node_prev = (u32 *)((u8 *) node + net->prev_offset);
 
@@ -316,15 +316,15 @@ void nll_Remove(struct nll *net, const u32 index)
 	*node_next_0_prev = node_prev[0];
 	*node_next_1_prev = node_prev[1];
 
-	PoolRemove(&net->pool, index);
+	ds_PoolRemove(&net->pool, index);
 }
 
 void *nll_Address(const struct nll *net, const u32 index)
 {
-	return PoolAddress(&net->pool, index);
+	return ds_PoolAddress(&net->pool, index);
 }
 
 u32 nll_Index(const struct nll *net, const void *address)
 {
-	return PoolIndex(&net->pool, address);
+	return ds_PoolIndex(&net->pool, address);
 }

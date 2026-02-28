@@ -103,7 +103,7 @@ struct led *led_Alloc(void)
 	}
 	
 	g_editor->viewport_id = Utf8Format(&sys_win->mem_persistent, "viewport_%u", g_editor->window);
-	g_editor->node_pool = GPoolAlloc(NULL, 4096, struct led_node, GROWABLE);
+	g_editor->node_pool = ds_GPoolAlloc(NULL, 4096, struct led_node, GROWABLE);
 	g_editor->node_map = HashMapAlloc(NULL, 4096, 4096, GROWABLE);
 	g_editor->node_marked_list = dll_Init(struct led_node);
 	g_editor->node_non_marked_list = dll_Init(struct led_node);
@@ -111,7 +111,7 @@ struct led *led_Alloc(void)
 	g_editor->csg = csg_Alloc();
 	g_editor->render_mesh_db = strdb_Alloc(NULL, 32, 32, struct r_Mesh, GROWABLE);
 	g_editor->shape_prefab_db = strdb_Alloc(NULL, 32, 32, struct ds_ShapePrefab, GROWABLE);
-    g_editor->shape_prefab_instance_pool = PoolAlloc(NULL, 4096, struct ds_ShapePrefabInstance, GROWABLE);
+    g_editor->shape_prefab_instance_pool = ds_PoolAlloc(NULL, 4096, struct ds_ShapePrefabInstance, GROWABLE);
 	g_editor->rb_prefab_db = strdb_Alloc(NULL, 32, 32, struct ds_RigidBodyPrefab, GROWABLE);
 	g_editor->cs_db = strdb_Alloc(NULL, 32, 32, struct c_Shape, GROWABLE);
 	g_editor->physics = PhysicsPipelineAlloc(NULL, 1024, NSEC_PER_SEC / (u64) 60, 16*1024*1024, &g_editor->cs_db, &g_editor->rb_prefab_db);
@@ -138,7 +138,7 @@ struct led *led_Alloc(void)
 	shape_stub->restitution = 0.0f;
 	shape_stub->friction = 0.0f;
 
-    struct slot slot = PoolAdd(&g_editor->shape_prefab_instance_pool);
+    struct slot slot = ds_PoolAdd(&g_editor->shape_prefab_instance_pool);
     const u32 instance_index = slot.index;
     struct ds_ShapePrefabInstance *instance = slot.address;
     instance->id = Utf8CstrBuffered(instance->id_buf, SHAPE_PREFAB_INSTANCE_BUFSIZE, "Stub");
@@ -162,6 +162,6 @@ void led_Dealloc(struct led *led)
 	led_ProjectMenuDealloc(&led->project_menu);
 	csg_Dealloc(&led->csg);
 	HashMapFree(&led->node_map);
-	GPoolDealloc(&led->node_pool);
+	ds_GPoolDealloc(&led->node_pool);
 	ArenaFree(&g_editor->frame);
 }

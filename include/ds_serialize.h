@@ -118,24 +118,24 @@ extern "C" {
 	Register : [ S S S S S S S S | S S b5 b4 b3 b2 b1 b0 ]
 
  */
-struct serialStream
+struct ss
 {
-	struct memSlot 	mem_slot;
-	u64 		bit_index;	
-	u64 		bit_count;
-	u8 *		buf;
+	struct ds_MemSlot   mem_slot;
+	u64 		        bit_index;	
+	u64 		        bit_count;
+	u8 *		        buf;
 };
 
 /* Allocates a stream on the arena if mem != NULL, otherwise heap allocation. On failure, we return stream = { 0 } */
-struct serialStream	ss_Alloc(struct arena *mem, const u64 bufsize);
+struct ss ss_Alloc(struct arena *mem, const u64 bufsize);
 /* Initiates a stream that aliases the buf */
-struct serialStream 	ss_Buffered(void *buf, const u64 bufsize);
+struct ss ss_Buffered(void *buf, const u64 bufsize);
 /* free stream resources (when using malloc) */
-void 			ss_Free(struct serialStream *ss);
+void 			    ss_Free(struct ss *ss);
 /* return number of whole bytes left */
-u64			ss_BytesLeft(const struct serialStream *ss);
+u64			        ss_BytesLeft(const struct ss *ss);
 /* return number of bits left */
-u64			ss_BitsLeft(const struct serialStream *ss);
+u64			        ss_BitsLeft(const struct ss *ss);
 
 
 /*
@@ -147,20 +147,20 @@ u64			ss_BitsLeft(const struct serialStream *ss);
  *		unaligned read/writes are unhandled ERRORS! 
  *		buffer overruns are unhandled ERRORS! 
  */
-b8 	ss_Read8(struct serialStream *ss);
-void 	ss_Write8(struct serialStream *ss, const b8 val);
-b16 	ss_Read16Le(struct serialStream *ss);
-void 	ss_Write16Le(struct serialStream *ss, const b16 val);
-b16 	ss_Read16Be(struct serialStream *ss);
-void 	ss_Write16Be(struct serialStream *ss, const b16 val);
-b32 	ss_Read32Le(struct serialStream *ss);
-void 	ss_Write32Le(struct serialStream *ss, const b32 val);
-b32 	ss_Read32Be(struct serialStream *ss);
-void 	ss_Write32Be(struct serialStream *ss, const b32 val);
-b64 	ss_Read64Le(struct serialStream *ss);
-void 	ss_Write64Le(struct serialStream *ss, const b64 val);
-b64 	ss_Read64Be(struct serialStream *ss);
-void 	ss_Write64Be(struct serialStream *ss, const b64 val);
+b8 	    ss_Read8(struct ss *ss);
+void 	ss_Write8(struct ss *ss, const b8 val);
+b16 	ss_Read16Le(struct ss *ss);
+void 	ss_Write16Le(struct ss *ss, const b16 val);
+b16 	ss_Read16Be(struct ss *ss);
+void 	ss_Write16Be(struct ss *ss, const b16 val);
+b32 	ss_Read32Le(struct ss *ss);
+void 	ss_Write32Le(struct ss *ss, const b32 val);
+b32 	ss_Read32Be(struct ss *ss);
+void 	ss_Write32Be(struct ss *ss, const b32 val);
+b64 	ss_Read64Le(struct ss *ss);
+void 	ss_Write64Le(struct ss *ss, const b64 val);
+b64 	ss_Read64Be(struct ss *ss);
+void 	ss_Write64Be(struct ss *ss, const b64 val);
 
 #define ss_ReadU8(ss)      	ss_Read8(ss).u
 #define ss_WriteU8(ss, val)     ss_Write8(ss, (b8) { .u = val })
@@ -205,20 +205,20 @@ void 	ss_Write64Be(struct serialStream *ss, const b64 val);
  *		unaligned read/writes are unhandled ERRORS! 
  *		buffer overruns are unhandled ERRORS! 
  */
-void	ss_Read8N(b8 *buf, struct serialStream *ss, const u64 len);
-void 	ss_Write8N(struct serialStream *ss, const b8 *buf, const u64 len);
-void 	ss_Read16LeN(b16 *buf, struct serialStream *ss, const u64 len);
-void 	ss_Write16LeN(struct serialStream *ss, const b16 *buf, const u64 len);
-void 	ss_Read16BeN(b16 *buf, struct serialStream *ss, const u64 len);
-void 	ss_Write16BeN(struct serialStream *ss, const b16 *buf, const u64 len);
-void 	ss_Read32LeN(b32 *buf, struct serialStream *ss, const u64 len);
-void 	ss_Write32LeN(struct serialStream *ss, const b32 *buf, const u64 len);
-void 	ss_Read32BeN(b32 *buf, struct serialStream *ss, const u64 len);
-void 	ss_Write32BeN(struct serialStream *ss, const b32 *buf, const u64 len);
-void 	ss_Read64LeN(b64 *buf, struct serialStream *ss, const u64 len);
-void 	ss_Write64LeN(struct serialStream *ss, const b64 *buf, const u64 len);
-void	ss_Read64BeN(b64 *buf, struct serialStream *ss, const u64 len);
-void 	ss_Write64BeN(struct serialStream *ss, const b64 *buf, const u64 len);
+void	ss_Read8N(b8 *buf, struct ss *ss, const u64 len);
+void 	ss_Write8N(struct ss *ss, const b8 *buf, const u64 len);
+void 	ss_Read16LeN(b16 *buf, struct ss *ss, const u64 len);
+void 	ss_Write16LeN(struct ss *ss, const b16 *buf, const u64 len);
+void 	ss_Read16BeN(b16 *buf, struct ss *ss, const u64 len);
+void 	ss_Write16BeN(struct ss *ss, const b16 *buf, const u64 len);
+void 	ss_Read32LeN(b32 *buf, struct ss *ss, const u64 len);
+void 	ss_Write32LeN(struct ss *ss, const b32 *buf, const u64 len);
+void 	ss_Read32BeN(b32 *buf, struct ss *ss, const u64 len);
+void 	ss_Write32BeN(struct ss *ss, const b32 *buf, const u64 len);
+void 	ss_Read64LeN(b64 *buf, struct ss *ss, const u64 len);
+void 	ss_Write64LeN(struct ss *ss, const b64 *buf, const u64 len);
+void	ss_Read64BeN(b64 *buf, struct ss *ss, const u64 len);
+void 	ss_Write64BeN(struct ss *ss, const b64 *buf, const u64 len);
 
 #define ss_ReadU8N(buf, ss, len)		ss_Read8N((b8 *) (buf), ss, len)
 #define ss_WritUe8N(ss, buf, len)		ss_Write8N(ss, (b8 *) (buf), len)
@@ -262,34 +262,34 @@ void 	ss_Write64BeN(struct serialStream *ss, const b64 *buf, const u64 len);
 /*	read / write bit(s): 
  *		buffer overruns are unhandled ERRORS! 
  */
-void 	ss_WriteU64LePartial(struct serialStream *ss, const u64 val, const u64 bit_count);
+void 	ss_WriteU64LePartial(struct ss *ss, const u64 val, const u64 bit_count);
 #define ss_WriteU32LePartial(ss, val, bit_count)	ss_WriteU64LePartial(ss, val, bit_count)
 #define ss_WriteU16LePartial(ss, val, bit_count)	ss_WriteU64LePartial(ss, val, bit_count)
-void 	ss_WriteU64BePartial(struct serialStream *ss, const u64 val, const u64 bit_count);
+void 	ss_WriteU64BePartial(struct ss *ss, const u64 val, const u64 bit_count);
 #define ss_WriteU32BePartial(ss, val, bit_count)	ss_WriteU64BePartial(ss, val, bit_count)
 #define ss_WriteU16BePartial(ss, val, bit_count)	ss_WriteU64BePartial(ss, val, bit_count)
 #define ss_WriteU8Partial(ss, val, bit_count)		ss_WriteU64BePartial(ss, val, bit_count)
 
-u64 	ss_ReadU64LePartial(struct serialStream *ss, const u64 bit_count);
+u64 	ss_ReadU64LePartial(struct ss *ss, const u64 bit_count);
 #define ss_ReadU32LePartial(ss, bit_count)		((u32) ss_ReadU64LePartial(ss, bit_count));
 #define ss_ReadU16LePartial(ss, bit_count)		((u16) ss_ReadU64LePartial(ss, bit_count));
-u64 	ss_ReadU64BePartial(struct serialStream *ss, const u64 bit_count);
+u64 	ss_ReadU64BePartial(struct ss *ss, const u64 bit_count);
 #define ss_ReadU32BePartial(ss, bit_count)		((u32) ss_ReadU64BePartial(ss, bit_count));
 #define ss_ReadU16BePartial(ss, bit_count)		((u16) ss_ReadU64BePartial(ss, bit_count));
 #define ss_ReadU8Partial(ss, bit_count)			((u8) ss_ReadU64BePartial(ss, bit_count));
 
-void 	ss_WriteI64LePartial(struct serialStream *ss, const i64 val, const u64 bit_count);
+void 	ss_WriteI64LePartial(struct ss *ss, const i64 val, const u64 bit_count);
 #define ss_WriteI32LePartial(ss, val, bit_count)	ss_WriteI64LePartial(ss, val, bit_count)
 #define ss_WriteI16LePartial(ss, val, bit_count)	ss_WriteI64LePartial(ss, val, bit_count)
-void 	ss_WriteI64BePartial(struct serialStream *ss, const i64 val, const u64 bit_count);
+void 	ss_WriteI64BePartial(struct ss *ss, const i64 val, const u64 bit_count);
 #define ss_WriteI32BePartial(ss, val, bit_count)	ss_WriteI64BePartial(ss, val, bit_count)
 #define ss_WriteI16BePartial(ss, val, bit_count)	ss_WriteI64BePartial(ss, val, bit_count)
 #define ss_WriteI8Partial(ss, val, bit_count)		ss_WriteI64BePartial(ss, val, bit_count)
 
-i64 	ss_ReadI64LePartial(struct serialStream *ss, const u64 bit_count);
+i64 	ss_ReadI64LePartial(struct ss *ss, const u64 bit_count);
 #define ss_ReadI32LePartial(ss, bit_count)		((i32) ss_ReadI64LePartial(ss, bit_count));
 #define ss_ReadI16LePartial(ss, bit_count)		((i16) ss_ReadI64LePartial(ss, bit_count));
-i64 	ss_ReadI64BePartial(struct serialStream *ss, const u64 bit_count);
+i64 	ss_ReadI64BePartial(struct ss *ss, const u64 bit_count);
 #define ss_ReadI32BePartial(ss, bit_count)		((i32) ss_ReadI64BePartial(ss, bit_count));
 #define ss_ReadI16BePartial(ss, bit_count)		((i16) ss_ReadI64BePartial(ss, bit_count));
 #define ss_ReadI8Partial(ss, bit_count)			((i8) ss_ReadI64BePartial(ss, bit_count));

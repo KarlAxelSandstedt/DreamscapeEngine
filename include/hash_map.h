@@ -40,8 +40,8 @@ struct hashMap
 	u32		index_len;
 	u32		hash_mask;
 	u32		growable;
-	struct memSlot	mem_hash;
-	struct memSlot	mem_index;
+	struct ds_MemSlot	mem_hash;
+	struct ds_MemSlot	mem_index;
 };
 
 /* allocate hash map on heap if mem == NULL, otherwise push memory onto arena. On failure, returns NULL  */
@@ -51,9 +51,9 @@ void		HashMapFree(struct hashMap *map);
 /* flush / reset the hash map, removing any allocations within it */
 void		HashMapFlush(struct hashMap *map);
 /* serialize hash map into stream  */
-void 		HashMapSerialize(struct serialStream *ss, const struct hashMap *map);
+void 		HashMapSerialize(struct ss *ss, const struct hashMap *map);
 /* deserialize and construct hash_map on arena if defined, otherwise alloc on heap. On failure, returns NULL  */
-struct hashMap	HashMapDeserialize(struct arena *mem, struct serialStream *ss, const u32 growable);
+struct hashMap	HashMapDeserialize(struct arena *mem, struct ss *ss, const u32 growable);
 /* add the hash(key)-index pair to the hash map. return 1 on success, 0 on out-of-memory. */
 u32		HashMapAdd(struct hashMap *map, const u32 hash, const u32 index);
 /* remove  hash(key)-index pair to the hash map. If the pair is not found, do nothing. */

@@ -587,7 +587,7 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
 	/* Process triangles from left to right, depth-first. */
 	while (sc--)
 	{
-		node = PoolAddress(&mesh_bvh.bvh.tree.pool, node_stack[sc]);
+		node = ds_PoolAddress(&mesh_bvh.bvh.tree.pool, node_stack[sc]);
 		const u32 tri_first = node->bt_left;
 		const u32 tri_count = node->bt_right;
 		if (tri_count == 1)

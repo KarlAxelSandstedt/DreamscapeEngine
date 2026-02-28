@@ -167,12 +167,12 @@ void ds_WindowSize(vec2u32 size, const u32 window)
 
 struct ds_Window *ds_WindowAddress(const u32 index)
 {
-	return PoolAddress(&g_window_hierarchy->pool, index);
+	return ds_PoolAddress(&g_window_hierarchy->pool, index);
 }
 
 u32 ds_WindowIndex(const struct ds_Window *win)
 {
-	return PoolIndex(&g_window_hierarchy->pool, win);
+	return ds_PoolIndex(&g_window_hierarchy->pool, win);
 }
 
 void ds_WindowSetCurrentGlContext(const u32 window)

@@ -36,20 +36,20 @@ Memory utility tools.
 */
 
 /* Return 1 if n = 2*k for some k >= 0, otherwise return 0 */
-u32	PowerOfTwoCheck(const u64 n);
+u32 PowerOfTwoCheck(const u64 n);
 /* Return smallest value 2^k >= n where k >= 0 */
-u64 	PowerOfTwoCeil(const u64 n);
+u64	PowerOfTwoCeil(const u64 n);
 /* Return smallest possible allocation size for ds_Alloc that size fits in */
-u64 	ds_AllocSizeCeil(const u64 size);
+u64	ds_AllocSizeCeil(const u64 size);
 
 /*
 memSlot: ds_Alloc return value containing the required information for any sequent ds_Realloc or ds_Free call.
  */
-struct memSlot
+struct ds_MemSlot
 {
-	void *	address;	/* base memory address */
-	u64	size;		/* memory size (>= requested size)  */
-	u32	huge_pages;	/* huge memory pages were requested (Up to the kernel to decide) */
+	void *  address;	/* base memory address */
+	u64	    size;		/* memory size (>= requested size)  */
+	u32	    huge_pages;	/* huge memory pages were requested (Up to the kernel to decide) */
 };
 
 
@@ -68,7 +68,7 @@ struct threadBlockAllocator
 	u8 *				block;
 	u64				block_size;
 	u64				max_count;
-	struct memSlot			mem_slot;
+	struct ds_MemSlot			mem_slot;
 };
 
 /* initalize allocator with at least the given block count */
@@ -133,16 +133,16 @@ not as a requirement the platform must adhere to.
  * and returns a non-NULL valid memory address. On failure, the function returns NULL, and sets 
  * slot->address = NULL * and slot->size = 0;
  */
-void *	ds_Alloc(struct memSlot *slot, const u64 size, const u32 huge_pages);
+void *	ds_Alloc(struct ds_MemSlot *slot, const u64 size, const u32 huge_pages);
 /* 
  * Reallocates the ds_Alloc memSlot, advising the kernel to use the same page policy for the new allocation. 
  * On failure, the application fatally cleans up and exit. 
  */
-void *	ds_Realloc(struct memSlot *slot, const u64 size);
+void *	ds_Realloc(struct ds_MemSlot *slot, const u64 size);
 /*
  * Free a ds_Alloc memSlot. 
  */
-void	ds_Free(struct memSlot *slot);
+void	ds_Free(struct ds_MemSlot *slot);
 
 
 /*
@@ -184,7 +184,7 @@ struct arena
 	u64 			mem_size;
 	u64 			mem_left;
 	struct arenaRecord *	record;		/* NULL == no record */
-	struct memSlot		slot;
+	struct ds_MemSlot		slot;
 };
 
 /* setup arena using global block allocator */
@@ -254,9 +254,9 @@ void 		RingDealloc(struct ring *ring);
 /* flush ring memory and set offset to 0 */
 void		RingFlush(struct ring *ring);
 /* return allocaction[size], and do not advance the ring write offset on success; empty buffer on FAILURE. */
-struct memSlot 	RingPushStart(struct ring *ring, const u64 size);
+struct ds_MemSlot 	RingPushStart(struct ring *ring, const u64 size);
 /* return allocaction[size], and advance the ring write offset on success; empty buffer on FAILURE. */
-struct memSlot 	RingPushEnd(struct ring *ring, const u64 size);
+struct ds_MemSlot 	RingPushEnd(struct ring *ring, const u64 size);
 /* release bytes in ring in fifo order. */
 void 		RingPopStart(struct ring *ring, const u64 size); 
 /* release bytes in ring in lifo order. */
@@ -287,9 +287,9 @@ next free slot in the chain. The end of the free chain is represented by POOL_NU
 #define GENERATIONAL_POOL_SLOT_STATE	u32 slot_allocation_state;	\
 					u32 slot_generation_state
 
-struct pool
+struct ds_Pool
 {
-	struct memSlot mem_slot;	/* If heap allocated, mem_slot.address set to  
+	struct ds_MemSlot mem_slot;	/* If heap allocated, mem_slot.address set to  
 					   valid address, otherwise NULL.		*/
 	u64	slot_size;		/* size of struct containing POOL_SLOT_STATE 	*/
 	u64	slot_allocation_offset;	/* offset of pool_slot_state variable in struct	*/
@@ -304,35 +304,35 @@ struct pool
 
 };
 
-/* internal allocation of pool, use PoolAlloc macro instead */
-struct pool 	PoolAllocInternal(struct arena *mem, const u32 length, const u64 slot_size, const u64 slot_allocation_offset, const u64 slot_generation_offset, const u32 growable);
+/* internal allocation of pool, use ds_PoolAlloc macro instead */
+struct ds_Pool 	ds_PoolAllocInternal(struct arena *mem, const u32 length, const u64 slot_size, const u64 slot_allocation_offset, const u64 slot_generation_offset, const u32 growable);
 /* Allocation of pool. On error, an empty pool (length == 0), is returned.  */
-#define 	PoolAlloc(mem, length, STRUCT, growable)	PoolAllocInternal(mem, length, sizeof(STRUCT), ((u64)&((STRUCT *)0)->slot_allocation_state), U64_MAX, growable)
+#define 	ds_PoolAlloc(mem, length, STRUCT, growable)	ds_PoolAllocInternal(mem, length, sizeof(STRUCT), ((u64)&((STRUCT *)0)->slot_allocation_state), U64_MAX, growable)
 /* dealloc pool */
-void		PoolDealloc(struct pool *pool);
+void		ds_PoolDealloc(struct ds_Pool *pool);
 /* dealloc all slot allocations */
-void		PoolFlush(struct pool *pool);
+void		ds_PoolFlush(struct ds_Pool *pool);
 /* alloc new slot; on error return (NULL, U32_MAX) */
-struct slot	PoolAdd(struct pool *pool);
+struct slot	ds_PoolAdd(struct ds_Pool *pool);
 /* remove slot given index */
-void		PoolRemove(struct pool *pool, const u32 index);
+void		ds_PoolRemove(struct ds_Pool *pool, const u32 index);
 /* remove slot given address */
-void		PoolRemoveAddress(struct pool *pool, void *slot);
+void		ds_PoolRemoveAddress(struct ds_Pool *pool, void *address);
 /* return address of index */
-void *		PoolAddress(const struct pool *pool, const u32 index);
+void *		ds_PoolAddress(const struct ds_Pool *pool, const u32 index);
 /* return index of address */
-u32		PoolIndex(const struct pool *pool, const void *slot);
+u32		ds_PoolIndex(const struct ds_Pool *pool, const void *address);
 
-#define GPoolAlloc(mem, length, STRUCT, growable)	PoolAllocInternal(mem, length, sizeof(STRUCT), ((u64)&((STRUCT *)0)->slot_allocation_state), ((u64)&((STRUCT *)0)->slot_generation_state), growable)
-#define GPoolDealloc(PoolAddr)				PoolDealloc(PoolAddr)
-#define	GPoolFlush(PoolAddr)				PoolFlush(PoolAddr)
+#define ds_GPoolAlloc(mem, length, STRUCT, growable)	ds_PoolAllocInternal(mem, length, sizeof(STRUCT), ((u64)&((STRUCT *)0)->slot_allocation_state), ((u64)&((STRUCT *)0)->slot_generation_state), growable)
+#define ds_GPoolDealloc(ds_PoolAddr)				ds_PoolDealloc(ds_PoolAddr)
+#define	ds_GPoolFlush(ds_PoolAddr)				ds_PoolFlush(ds_PoolAddr)
 /* Alloc new generational slot. On error return (NULL, U32_MAX) */
-struct slot	GPoolAddGenerational(struct pool *pool);
-#define GPoolAdd(pol_addr)				GPoolAddGenerational(pol_addr)
-#define	GPoolRemove(PoolAddr, index)			PoolRemove(PoolAddr, index)
-#define	GPoolRemove_address(PoolAddr, addr)		PoolRemoveAddress(PoolAddr, addr)
-#define GPoolAddress(PoolAddr, index)			PoolAddress(PoolAddr, index)
-#define GPoolIndex(PoolAddr, addr)			PoolIndex(PoolAddr, addr)
+struct slot	ds_GPoolAddGenerational(struct ds_Pool *pool);
+#define ds_GPoolAdd(pol_addr)				ds_GPoolAddGenerational(pol_addr)
+#define	ds_GPoolRemove(ds_PoolAddr, index)			ds_PoolRemove(ds_PoolAddr, index)
+#define	ds_GPoolRemove_address(ds_PoolAddr, addr)		ds_PoolRemoveAddress(ds_PoolAddr, addr)
+#define ds_GPoolAddress(ds_PoolAddr, index)			ds_PoolAddress(ds_PoolAddr, index)
+#define ds_GPoolIndex(ds_PoolAddr, addr)			ds_PoolIndex(ds_PoolAddr, addr)
 
 
 /*
@@ -342,30 +342,135 @@ An extension of the pool allocator to handle an outside buffer instead of an int
 It can be useful for cases when we want to pool C types such as f32, u32.
 */
 
-struct poolExternal
+struct ds_ds_PoolExternal
 {
 	u64		slot_size;
 	void **		external_buf;
-	struct pool	pool;
-	struct memSlot	mem_external;
+	struct ds_Pool	pool;
+	struct ds_MemSlot	mem_external;
 };
 
 /* Allocation of pool. On error, an empty pool (length == 0), is returned.  */
-struct poolExternal 	PoolExternalAlloc(void **external_buf, const u32 length, const u64 slot_size, const u32 growable);
+struct ds_ds_PoolExternal 	ds_PoolExternalAlloc(void **external_buf, const u32 length, const u64 slot_size, const u32 growable);
 /* dealloc poolExternal */
-void			PoolExternalDealloc(struct poolExternal *pool);
+void			ds_PoolExternalDealloc(struct ds_ds_PoolExternal *pool);
 /* dealloc all slot allocations */
-void			PoolExternalFlush(struct poolExternal *pool);
+void			ds_PoolExternalFlush(struct ds_ds_PoolExternal *pool);
 /* alloc new slot; on error return (NULL, U32_MAX) */
-struct slot		PoolExternalAdd(struct poolExternal *pool);
+struct slot		ds_PoolExternalAdd(struct ds_ds_PoolExternal *pool);
 /* remove slot given index */
-void			PoolExternalRemove(struct poolExternal *pool, const u32 index);
+void			ds_PoolExternalRemove(struct ds_ds_PoolExternal *pool, const u32 index);
 /* remove slot given address */
-void			PoolExternalRemoveAddress(struct poolExternal *pool, void *slot);
+void			ds_PoolExternalRemoveAddress(struct ds_ds_PoolExternal *pool, void *slot);
 /* return address of index */
-void *			PoolExternalAddress(const struct poolExternal *pool, const u32 index);
+void *			ds_PoolExternalAddress(const struct ds_ds_PoolExternal *pool, const u32 index);
 /* return index of address */
-u32			PoolExternalIndex(const struct poolExternal *pool, const void *slot);
+u32			ds_PoolExternalIndex(const struct ds_ds_PoolExternal *pool, const void *slot);
+
+/*
+ds_TPool
+=====
+A thread-safe pool allocator where every operation can be called by any thread, at any time.
+
+Usage:
+
+Internal:
+
+Indexing:
+                                                                        N
+    1.  assume initial block contain PowerOfTwo slots   length: (0b0...010...0)
+                                                        mask:   (0b0...001...1)
+    2.  assume each block doubles the max_count, so we get the following sequence of blocksizes
+
+             0  1  2   3   4   5  
+            [I][I][2I][4I][8I][16I] ...
+
+        Then, the address of index k is (... TODO ...)
+
+    3 support 32 blocks => TODO: TEST: begin with length 1, => all blocks used in the end.
+         
+Allocation Steps:
+
+TPoolAdd:
+    
+    1. While(NotEmpty) 
+        TryPopBottom();             (Quickest, should hopefully avoid CAS
+
+    2. TrySteal()                   (Fallback 1, Try steal)
+
+    3. index = GlobalIncrement()    (Fallback 2, globally increase the maximum count and get new index)
+        while (index >= (volatile) TPool->length)
+        TryAllocNewBlock()
+
+TODO:
+    Resources:
+        :: Art of MultiProcessor Programming
+
+    () Extensive Test-Suite for Correctness
+    () Extensive Test-Suite for Performance 
+
+    Optimization:
+        :: Compare with Pool:
+            () Ground truth is Pool Usage (ns) / logical_core_count;
+        :: Verify hardware-counters using
+            () AMD uProf
+            () IntelV Tune
+            () Perf
+            () Tracy?
+            () Derive a resuable workflow using this programs.
+        :: Force align/pad struct to cacheline size?
+            () TODO:
+
+*/
+
+//TODO assert alignent 
+struct ds_TPool
+{
+    //TODO u8      pad[64];
+
+    u32     a_count_max;
+    u32     a_length;
+    u32     a_adding_memory;   /* Bool: Is allocating additional memory */
+    u32     block_count;
+    u32     block_length_next; 
+
+    u32     initial_length;
+    u32     shift;
+    u64     slot_size;
+
+    struct ds_MemSlot mem[32];
+
+    //TODO u8      pad[64];
+};
+
+
+//TODO
+void        ds_TPoolAlloc(struct ds_TPool *pool, const u32 initial_count, const u64 slot_size);
+//TODO
+void        ds_TPoolDealloc(struct ds_TPool *pool);
+//TODO
+void        ds_TPoolFlush(struct ds_TPool *pool);
+//TODO
+struct slot ds_TPoolAdd(struct ds_TPool *pool);
+//TODO
+void		ds_TPoolRemove(struct ds_TPool *pool, const u32 index);
+//TODO
+void		ds_TPoolRemoveAddress(struct ds_TPool *pool, void *slot);
+//TODO
+void *		ds_TPoolAddress(const struct ds_TPool *pool, const u32 index);
+//TODO
+u32		    ds_TPoolIndex(const struct ds_TPool *pool, const void *address);
+
+/*
+ * Allocate a previously untouched slot by increment the global TPool a_count_max
+ * counter. If additional memory is needed, the thread synchronizes with other 
+ * threads to allocate the needed memory.
+ *  
+ * NOTE: Exposed for testing purposes.
+ */
+struct slot ds_TPoolIncrement(struct ds_TPool *pool);
+
+
 
 /***************************** Address sanitizing and poisoning ***************************/
 

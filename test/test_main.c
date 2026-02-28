@@ -105,41 +105,10 @@ static void run_performance_suite(struct suite_Performance *suite)
 {
 	fprintf(stdout, ":::::::::: Running peformance suite %s ::::::::::\n", suite->id);
 
-	const u64 max_time_without_improvement = 10*TscFrequency();
+	const u64 max_time_without_improvement = 30*TscFrequency();
 	struct rt tester;
-	for (u32 i = 0; i < suite->serial_test_count; ++i)
-	{
-		memset(&tester, 0, sizeof(tester));
-		fprintf(stdout, "\t::: %s ::: \n", suite->serial_test[i].id);
-
-		void *args = (suite->serial_test[i].test_init)
-			? suite->serial_test[i].test_init()
-			: NULL;
-
-		rt_Wave(&tester, suite->serial_test[i].size, TscFrequency(), max_time_without_improvement, 1);
-		do
-		{
-			RngPushState();
-			if (suite->serial_test[i].test_reset)
-			{
-				suite->serial_test[i].test_reset(args);
-			}		
-
-			rt_BeginTime(&tester);	
-			suite->serial_test[i].test(args);	
-			rt_EndTime(&tester);
-		
-			RngPopState();
-		} while (rt_TestingCheck(&tester));
-
-		if (suite->serial_test[i].test_free)
-		{
-			suite->serial_test[i].test_free(args);
-		}
-		rt_PrintStatistics(&tester, stdout);
-	}
-
 	struct arena mem = ArenaAlloc1MB();
+
 	for (u32 i = 0; i < suite->parallel_test_count; ++i)
 	{
 		memset(&tester, 0, sizeof(tester));
@@ -196,6 +165,39 @@ static void run_performance_suite(struct suite_Performance *suite)
 
 		rt_PrintStatistics(&tester, stdout);
 	}
+
+    for (u32 i = 0; i < suite->serial_test_count; ++i)
+	{
+		memset(&tester, 0, sizeof(tester));
+		fprintf(stdout, "\t::: %s ::: \n", suite->serial_test[i].id);
+
+		void *args = (suite->serial_test[i].test_init)
+			? suite->serial_test[i].test_init()
+			: NULL;
+
+		rt_Wave(&tester, suite->serial_test[i].size, TscFrequency(), max_time_without_improvement, 1);
+		do
+		{
+			RngPushState();
+			if (suite->serial_test[i].test_reset)
+			{
+				suite->serial_test[i].test_reset(args);
+			}		
+
+			rt_BeginTime(&tester);	
+			suite->serial_test[i].test(args);	
+			rt_EndTime(&tester);
+		
+			RngPopState();
+		} while (rt_TestingCheck(&tester));
+
+		if (suite->serial_test[i].test_free)
+		{
+			suite->serial_test[i].test_free(args);
+		}
+		rt_PrintStatistics(&tester, stdout);
+	}
+
 	ArenaFree1MB(&mem);
 }
 

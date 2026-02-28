@@ -31,7 +31,7 @@ struct bt bt_AllocInternal(struct arena *mem, const u32 initial_length, const u6
 		.left_offset = left_offset,
 		.right_offset = right_offset,
 		.root = BT_PARENT_INDEX_MASK,
-		.pool = PoolAllocInternal(mem, initial_length, slot_size, pool_slot_offset, U64_MAX, growable),
+		.pool = ds_PoolAllocInternal(mem, initial_length, slot_size, pool_slot_offset, U64_MAX, growable),
 	};
 
 	return bt;
@@ -39,12 +39,12 @@ struct bt bt_AllocInternal(struct arena *mem, const u32 initial_length, const u6
 
 void bt_Dealloc(struct bt *tree)
 {
-	PoolDealloc(&tree->pool);
+	ds_PoolDealloc(&tree->pool);
 }
 
 void bt_Flush(struct bt *tree)
 {
-	PoolFlush(&tree->pool);
+	ds_PoolFlush(&tree->pool);
 	tree->root = BT_PARENT_INDEX_MASK;
 }
 
@@ -68,7 +68,7 @@ void bt_Validate(struct arena *tmp, const struct bt *tree)
 	while (sc--)
 	{
 		node_count += 1;
-		u8 *addr = PoolAddress(&tree->pool, stack[sc]);
+		u8 *addr = ds_PoolAddress(&tree->pool, stack[sc]);
 		u32 *alloc = (u32 *) (addr + tree->pool.slot_allocation_offset);
 		u32 *p = (u32 *) (addr + tree->parent_offset);
 		u32 *l = (u32 *) (addr + tree->left_offset);
@@ -80,7 +80,7 @@ void bt_Validate(struct arena *tmp, const struct bt *tree)
 
 		if ((BT_PARENT_INDEX_MASK & (*p)) != BT_PARENT_INDEX_MASK)
 		{
-			u8 *parent = PoolAddress(&tree->pool, BT_PARENT_INDEX_MASK & (*p));
+			u8 *parent = ds_PoolAddress(&tree->pool, BT_PARENT_INDEX_MASK & (*p));
 			u32 *p_alloc = (u32 *) (parent + tree->pool.slot_allocation_offset);
 			u32 *p_p = (u32 *) (parent + tree->parent_offset);
 			u32 *p_l = (u32 *) (parent + tree->left_offset);
@@ -113,17 +113,17 @@ void bt_Validate(struct arena *tmp, const struct bt *tree)
 
 struct slot bt_NodeAdd(struct bt *tree)
 {
-	return PoolAdd(&tree->pool);
+	return ds_PoolAdd(&tree->pool);
 }
 
 void bt_NodeRemove(struct bt *tree, const u32 index)
 {
-	PoolRemove(&tree->pool, BT_PARENT_INDEX_MASK & index);
+	ds_PoolRemove(&tree->pool, BT_PARENT_INDEX_MASK & index);
 }
 
 struct slot bt_NodeAddRoot(struct bt *tree)
 {
-	struct slot slot = PoolAdd(&tree->pool);
+	struct slot slot = ds_PoolAdd(&tree->pool);
 	if (slot.index != POOL_NULL)
 	{
 		ds_Assert(tree->root == BT_PARENT_INDEX_MASK);
@@ -136,14 +136,14 @@ struct slot bt_NodeAddRoot(struct bt *tree)
 
 void bt_NodeAddChildren(struct bt *tree, struct slot *left, struct slot *right, const u32 parent)
 {
-	*left = PoolAdd(&tree->pool);
-	*right = PoolAdd(&tree->pool);
+	*left = ds_PoolAdd(&tree->pool);
+	*right = ds_PoolAdd(&tree->pool);
 
 	if (!right->address)
 	{
 		if (left->address)
 		{
-			PoolRemove(&tree->pool, left->index);
+			ds_PoolRemove(&tree->pool, left->index);
 			*left = empty_slot;
 		}
 	}

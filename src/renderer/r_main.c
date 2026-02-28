@@ -263,11 +263,11 @@ static struct r_Mesh *BoundingBoxesMesh(struct arena *mem, const struct ds_Rigid
 	struct ds_RigidBody *body = NULL;
 	for (u32 i = pipeline->body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 	{
-		body = PoolAddress(&pipeline->body_pool, i);
+		body = ds_PoolAddress(&pipeline->body_pool, i);
         struct ds_Shape *shape = NULL;
         for (u32 j = body->shape_list.first; j != DLL_NULL; j = shape->dll_next)
         {
-            shape = PoolAddress(&pipeline->shape_pool, j);
+            shape = ds_PoolAddress(&pipeline->shape_pool, j);
             const struct aabb bbox = ds_ShapeWorldBbox(pipeline, shape);
 		    const u64 bytes_written = AabbPushLinesBuffered(vertex_data, mem_left, &bbox, color);
 		    vertex_data += bytes_written;
@@ -424,7 +424,7 @@ static void r_EditorDraw(const struct led *led)
 		struct ds_RigidBody *body = NULL;
 		for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 		{
-			body = PoolAddress(&led->physics.body_pool, i);
+			body = ds_PoolAddress(&led->physics.body_pool, i);
 			if (body->shape_type != C_SHAPE_TRI_MESH)
 			{
 				continue;

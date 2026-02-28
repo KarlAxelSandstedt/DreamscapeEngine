@@ -185,14 +185,26 @@ set(DS_TEST_EXECUTABLE "DreamscapeTest")
 
 option(DS_TEST OFF)
 option(DS_TEST_PHYSICS "Run physics engine tests" OFF)
+option(DS_TEST_CORRECTNESS "Run tests to verify correctness" OFF)
+option(DS_TEST_PERFORMANCE "Run performance measuring tests" OFF)
+
 
 if (DS_TEST_PHYSICS)
 	set(DS_TEST ON)
 	set(DS_TEST_MODULE_PATH "${DS_TEST_PATH}/dynamics")
 endif ()
 
-if (DS_TEST)
+if (DS_TEST_CORRECTNESS)
+	set(DS_TEST ON)
+	set(DS_TEST_MODULE_PATH "${DS_TEST_PATH}/correctness")
+endif ()
 
+if (DS_TEST_PERFORMANCE)
+	set(DS_TEST ON)
+	set(DS_TEST_MODULE_PATH "${DS_TEST_PATH}/performance")
+endif ()
+
+if (DS_TEST)
 	if (DEFINED EMSCRIPTEN)
 
 		set(CMAKE_EXECUTABLE_SUFFIX ".html")
@@ -208,18 +220,10 @@ if (DS_TEST)
 
 	endif()
 
+    add_subdirectory(${DS_TEST_PATH})
+    target_link_libraries(${DS_TEST_EXECUTABLE} PRIVATE Dreamscape::Test)
 	target_link_libraries(${DS_TEST_EXECUTABLE} PRIVATE Dreamscape)
 endif ()
-
-#if (kas_test_correctness)
-#	add_compile_definitions(KAS_TEST_CORRECTNESS)
-#	add_subdirectory("${TEST_PATH}")
-#	target_link_libraries(${PROJECT_NAME} PUBLIC kas_test)
-#elseif (kas_test_performance)
-#	add_compile_definitions(KAS_TEST_PERFORMANCE)
-#	add_subdirectory("${TEST_PATH}")
-#	target_link_libraries(${PROJECT_NAME} PUBLIC kas_test)
-#endif ()
 
 # For CPack and installation process, good information can be found at:
 # https://martin-fieber.de/blog/cmake-cpack-cross-platform-distributables/

@@ -48,7 +48,7 @@ Intrusive hierarchy data structure for indexed structures supporting 31 bit indi
 
 struct hi
 {
-	struct pool	pool;
+	struct ds_Pool	pool;
 	u32		parent_offset;	
 	u32		next_offset;	
 	u32		prev_offset;	

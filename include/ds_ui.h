@@ -516,16 +516,16 @@ DECLARE_STACK(utf32);
 /* Per window ui struct */
 struct ui
 {
-	struct memSlot		mem_slot;
+	struct ds_MemSlot		mem_slot;
 	struct ui_Interaction	inter;
 
-	struct pool		bucket_pool;
+	struct ds_Pool		bucket_pool;
 	struct dll		bucket_list;
 	struct hashMap 		bucket_map;
 	u32			bucket_cache;	/* for quick cmd check */
 	u32			bucket_count;
 
-	struct pool		event_pool;
+	struct ds_Pool		event_pool;
 	struct dll		event_list;
 
 	/* node map for all u's  */

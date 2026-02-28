@@ -98,7 +98,7 @@ void ds_MemApiInit(const u32 count_256B, const u32 count_1MB)
 	ds_Assert( PowerOfTwoCheck( g_mem_config->alloc_size_min ) );
 }
 
-void *ds_Alloc(struct memSlot *slot, const u64 size, const u32 huge_pages)
+void *ds_Alloc(struct ds_MemSlot *slot, const u64 size, const u32 huge_pages)
 {
 	ds_Assert(size); 
 
@@ -123,13 +123,13 @@ void *ds_Alloc(struct memSlot *slot, const u64 size, const u32 huge_pages)
 	return slot->address;
 }
 
-void *ds_Realloc(struct memSlot *slot, const u64 size)
+void *ds_Realloc(struct ds_MemSlot *slot, const u64 size)
 {
 	if (slot->size < size)
 	{
 		if (slot->huge_pages)
 		{
-			struct memSlot new_slot;
+			struct ds_MemSlot new_slot;
 			if (ds_Alloc(&new_slot, size, HUGE_PAGES))
 			{
 				memcpy(new_slot.address, slot->address, slot->size);
@@ -153,7 +153,7 @@ void *ds_Realloc(struct memSlot *slot, const u64 size)
 	return slot->address;
 }
 
-void ds_Free(struct memSlot *slot)
+void ds_Free(struct ds_MemSlot *slot)
 {
 	munmap(slot->address, slot->size);	
 	slot->address = NULL;
@@ -173,7 +173,7 @@ void ds_MemApiInit(const u32 count_256B, const u32 count_1MB)
 	ds_MemApiInitShared(count_256B, count_1MB);
 }
 
-void *ds_Alloc(struct memSlot *slot, const u64 size, const u32 garbage)
+void *ds_Alloc(struct ds_MemSlot *slot, const u64 size, const u32 garbage)
 {
 	ds_Assert(size); 
 
@@ -194,11 +194,11 @@ void *ds_Alloc(struct memSlot *slot, const u64 size, const u32 garbage)
 	return slot->address;
 }
 
-void *ds_Realloc(struct memSlot *slot, const u64 size)
+void *ds_Realloc(struct ds_MemSlot *slot, const u64 size)
 {
 	ds_Assert(size > slot->size);
 
-	struct memSlot newSlot;
+	struct ds_MemSlot newSlot;
 	if (ds_Alloc(&newSlot, size, 0))
 	{
 		memcpy(newSlot.address, slot->address, slot->size);
@@ -215,7 +215,7 @@ void *ds_Realloc(struct memSlot *slot, const u64 size)
 	return slot->address;
 }
 
-void ds_Free(struct memSlot *slot)
+void ds_Free(struct ds_MemSlot *slot)
 {
 	munmap(slot->address, slot->size);	
 	slot->address = NULL;
@@ -719,11 +719,11 @@ void RingFlush(struct ring *ring)
 	ring->offset = 0;
 }
 
-struct memSlot RingPushStart(struct ring *ring, const u64 size)
+struct ds_MemSlot RingPushStart(struct ring *ring, const u64 size)
 {
 	ds_AssertString(size <= ring->mem_left, "ring allocator OOM");
 
-	struct memSlot buf = { 0 };
+	struct ds_MemSlot buf = { 0 };
 	if (size <= ring->mem_left)
 	{
 		ring->mem_left -= size;
@@ -734,11 +734,11 @@ struct memSlot RingPushStart(struct ring *ring, const u64 size)
 	return buf;
 }
 
-struct memSlot RingPushEnd(struct ring *ring, const u64 size)
+struct ds_MemSlot RingPushEnd(struct ring *ring, const u64 size)
 {
 	ds_AssertString(size <= ring->mem_left, "ring allocator OOM");
 
-	struct memSlot buf = { 0 };
+	struct ds_MemSlot buf = { 0 };
 	if (size <= ring->mem_left)
 	{
 		buf.address = ring->buf + ring->offset;
@@ -763,12 +763,12 @@ void RingPopEnd(struct ring *ring, const u64 size)
 	ring->offset = (ring->mem_total + ring->offset - size) % ring->mem_total;
 }
 
-/* internal allocation of pool, use PoolAlloc macro instead */
-struct pool PoolAllocInternal(struct arena *mem, const u32 length, const u64 slot_size, const u64 slot_allocation_offset, const u64 slot_generation_offset, const u32 growable)
+/* internal allocation of pool, use ds_PoolAlloc macro instead */
+struct ds_Pool ds_PoolAllocInternal(struct arena *mem, const u32 length, const u64 slot_size, const u64 slot_allocation_offset, const u64 slot_generation_offset, const u32 growable)
 {
 	ds_Assert(!growable || !mem);
 
-	struct pool pool = { 0 };
+	struct ds_Pool pool = { 0 };
 
 	void *buf;
 	u32 length_used = length;
@@ -799,7 +799,7 @@ struct pool PoolAllocInternal(struct arena *mem, const u32 length, const u64 slo
 	return pool;
 }
 
-void PoolDealloc(struct pool *pool)
+void ds_PoolDealloc(struct ds_Pool *pool)
 {
 	if (pool->mem_slot.address)
 	{
@@ -807,7 +807,7 @@ void PoolDealloc(struct pool *pool)
 	}	
 }
 
-void PoolFlush(struct pool *pool)
+void ds_PoolFlush(struct ds_Pool *pool)
 {
 	pool->count = 0;
 	pool->count_max = 0;
@@ -815,7 +815,7 @@ void PoolFlush(struct pool *pool)
 	PoisonAddress(pool->buf, pool->slot_size * pool->length);
 }
 
-static void PoolReallocInternal(struct pool *pool)
+static void ds_PoolReallocInternal(struct ds_Pool *pool)
 {
 	const u32 length_max = (U32_MAX >> 1);
 	if (pool->length == length_max)
@@ -842,7 +842,7 @@ static void PoolReallocInternal(struct pool *pool)
 	PoisonAddress(pool->buf + old_length*pool->slot_size, (pool->length-old_length)*pool->slot_size);
 }
 
-struct slot PoolAdd(struct pool *pool)
+struct slot ds_PoolAdd(struct ds_Pool *pool)
 {
 	ds_Assert(pool->slot_generation_offset == U64_MAX);
 
@@ -876,7 +876,7 @@ struct slot PoolAdd(struct pool *pool)
 	}
 	else if (pool->growable)
 	{
-		PoolReallocInternal(pool);
+		ds_PoolReallocInternal(pool);
 		UnpoisonAddress(pool->buf + pool->count_max*pool->slot_size, pool->slot_size);
 		allocation.address = pool->buf + pool->slot_size*pool->count_max;
 		allocation.index = pool->count_max;
@@ -889,7 +889,7 @@ struct slot PoolAdd(struct pool *pool)
 	return allocation;
 }
 
-struct slot GPoolAdd(struct pool *pool)
+struct slot ds_GPoolAdd(struct ds_Pool *pool)
 {
 	ds_Assert(pool->slot_generation_offset != U64_MAX);
 
@@ -925,7 +925,7 @@ struct slot GPoolAdd(struct pool *pool)
 	}
 	else if (pool->growable)
 	{
-		PoolReallocInternal(pool);
+		ds_PoolReallocInternal(pool);
 		UnpoisonAddress(pool->buf + pool->count_max*pool->slot_size, pool->slot_size);
 		allocation.address = pool->buf + pool->slot_size*pool->count_max;
 		allocation.index = pool->count_max;
@@ -940,7 +940,7 @@ struct slot GPoolAdd(struct pool *pool)
 	return allocation;
 }
 
-void PoolRemove(struct pool *pool, const u32 index)
+void ds_PoolRemove(struct ds_Pool *pool, const u32 index)
 {
 	ds_Assert(index < pool->length);
 
@@ -956,19 +956,19 @@ void PoolRemove(struct pool *pool, const u32 index)
 	PoisonAddress(pool->buf + index*pool->slot_size + pool->slot_allocation_offset + sizeof(u32), pool->slot_size - pool->slot_allocation_offset - sizeof(u32));
 }
 
-void PoolRemoveAddress(struct pool *pool, void *slot)
+void ds_PoolRemoveAddress(struct ds_Pool *pool, void *slot)
 {
-	const u32 index = PoolIndex(pool, slot);
-	PoolRemove(pool, index);
+	const u32 index = ds_PoolIndex(pool, slot);
+	ds_PoolRemove(pool, index);
 }
 
-void *PoolAddress(const struct pool *pool, const u32 index)
+void *ds_PoolAddress(const struct ds_Pool *pool, const u32 index)
 {
 	ds_Assert(index <= pool->count_max);
 	return (u8 *) pool->buf + index*pool->slot_size;
 }
 
-u32 PoolIndex(const struct pool *pool, const void *slot)
+u32 ds_PoolIndex(const struct ds_Pool *pool, const void *slot)
 {
 	ds_Assert((u64) slot >= (u64) pool->buf);
 	ds_Assert((u64) slot < (u64) pool->buf + pool->length*pool->slot_size);
@@ -976,19 +976,19 @@ u32 PoolIndex(const struct pool *pool, const void *slot)
 	return (u32) (((u64) slot - (u64) pool->buf) / pool->slot_size);
 }
 
-struct poolExternal_slot
+struct ds_ds_PoolExternal_slot
 {
 	POOL_SLOT_STATE;
 };
 
-struct poolExternal PoolExternalAlloc(void **external_buf, const u32 length, const u64 slot_size, const u32 growable)
+struct ds_ds_PoolExternal ds_PoolExternalAlloc(void **external_buf, const u32 length, const u64 slot_size, const u32 growable)
 {
-	ds_StaticAssert(sizeof(struct poolExternal_slot) == 4, "Expect size of poolExternal_slot is 4");
+	ds_StaticAssert(sizeof(struct ds_ds_PoolExternal_slot) == 4, "Expect size of poolExternal_slot is 4");
 
 	*external_buf = NULL;
-	struct poolExternal ext = { 0 };
+	struct ds_ds_PoolExternal ext = { 0 };
 
-	struct pool pool = PoolAlloc(NULL, length, struct poolExternal_slot, growable);
+	struct ds_Pool pool = ds_PoolAlloc(NULL, length, struct ds_ds_PoolExternal_slot, growable);
 	if (pool.length)
 	{
 		*external_buf = ds_Alloc(&ext.mem_external, pool.length*slot_size, HUGE_PAGES);
@@ -1001,29 +1001,29 @@ struct poolExternal PoolExternalAlloc(void **external_buf, const u32 length, con
 		}
 		else
 		{
-			PoolDealloc(&pool);
+			ds_PoolDealloc(&pool);
 		}
 	}
 
 	return ext;
 }
 
-void PoolExternalDealloc(struct poolExternal *pool)
+void ds_PoolExternalDealloc(struct ds_ds_PoolExternal *pool)
 {
-	PoolDealloc(&pool->pool);
+	ds_PoolDealloc(&pool->pool);
 	ds_Free(&pool->mem_external);
 }
 
-void PoolExternalFlush(struct poolExternal *pool)
+void ds_PoolExternalFlush(struct ds_ds_PoolExternal *pool)
 {
-	PoolFlush(&pool->pool);
+	ds_PoolFlush(&pool->pool);
 	PoisonAddress(*pool->external_buf, pool->slot_size * pool->pool.length);
 }
 
-struct slot PoolExternalAdd(struct poolExternal *pool)
+struct slot ds_PoolExternalAdd(struct ds_ds_PoolExternal *pool)
 {
 	const u32 old_length = pool->pool.length;
-	struct slot slot = PoolAdd(&pool->pool);
+	struct slot slot = ds_PoolAdd(&pool->pool);
 
 	if (slot.index != POOL_NULL)
 	{
@@ -1045,29 +1045,172 @@ struct slot PoolExternalAdd(struct poolExternal *pool)
 	return slot;
 }
 
-void PoolExternalRemove(struct poolExternal *pool, const u32 index)
+void ds_PoolExternalRemove(struct ds_ds_PoolExternal *pool, const u32 index)
 {
-	PoolRemove(&pool->pool, index);
+	ds_PoolRemove(&pool->pool, index);
 	PoisonAddress(((u8*)*pool->external_buf) + index*pool->slot_size, pool->slot_size);
 }
 
-void PoolExternalRemoveAddress(struct poolExternal *pool, void *slot)
+void ds_PoolExternalRemoveAddress(struct ds_ds_PoolExternal *pool, void *slot)
 {
-	const u32 index = PoolIndex(&pool->pool, slot);
-	PoolRemove(&pool->pool, index);
+	const u32 index = ds_PoolIndex(&pool->pool, slot);
+	ds_PoolRemove(&pool->pool, index);
 	PoisonAddress(((u8*)*pool->external_buf) + index*pool->slot_size, pool->slot_size);
 }
 
-void *PoolExternalAddress(const struct poolExternal *pool, const u32 index)
+void *ds_PoolExternalAddress(const struct ds_ds_PoolExternal *pool, const u32 index)
 {
 	ds_Assert(index <= pool->pool.count_max);
 	return ((u8*)*pool->external_buf) + index*pool->slot_size;
 }
 
-u32 PoolExternalIndex(const struct poolExternal *pool, const void *slot)
+u32 ds_PoolExternalIndex(const struct ds_ds_PoolExternal *pool, const void *slot)
 {
 	ds_Assert((u64) slot >= (u64) (*pool->external_buf));
 	ds_Assert((u64) slot < (u64) *pool->external_buf + pool->pool.length*pool->slot_size);
 	ds_Assert(((u64) slot - (u64) *pool->external_buf) % pool->slot_size == 0); 
 	return (u32) (((u64) slot - (u64) *pool->external_buf) / pool->slot_size);
+}
+
+void ds_TPoolAlloc(struct ds_TPool *pool, const u32 initial_count, const u64 slot_size)
+{
+    ds_Assert(initial_count <= 0x80000000);
+
+    memset(pool, 0, sizeof(struct ds_TPool));
+
+    pool->block_count = 1;
+    pool->block_length_next = PowerOfTwoCeil(initial_count);
+    pool->initial_length = pool->block_length_next;
+    pool->shift = Ctz32(pool->initial_length);
+    pool->slot_size = slot_size;
+
+    const u64 memsize = pool->block_length_next*slot_size;
+
+    (memsize < 1024*1024)
+        ? ds_Alloc(pool->mem + 0, memsize, NO_HUGE_PAGES)
+        : ds_Alloc(pool->mem + 0, memsize, HUGE_PAGES);
+
+    if (!pool->mem[0].address)
+    {
+			Log(T_SYSTEM, S_FATAL, "Failed to Allocate ds_TPool with initial size %lu, exiting.", memsize);
+			FatalCleanupAndExit();
+    }
+
+    AtomicStoreRel32(&pool->a_length, pool->block_length_next);
+}
+
+void ds_TPoolDealloc(struct ds_TPool *pool)
+{
+    const u32 force_read = AtomicLoadAcq32(&pool->a_adding_memory);
+    ds_Assert(force_read == 0);
+    for (u32 i = 0; i < pool->block_count; ++i)
+    {
+        ds_Free(pool->mem + i);
+    }
+}
+
+void ds_TPoolFlush(struct ds_TPool *pool)
+{
+
+}
+
+struct slot ds_TPoolIncrement(struct ds_TPool *pool)
+{
+    struct slot slot;
+    slot.index = AtomicFetchAddRlx32(&pool->a_count_max, 1);
+    while (slot.index >= AtomicLoadAcq32(&pool->a_length))
+    {
+        /* If we succeed to swap here, we get a filly up-to-date view of TPool in 
+         * our memory and also own the relevant parts of it.
+         */
+        u32 cmp_val = 0;
+        const u32 exch_val = 1;
+        if (AtomicCompareExchangeAcq32(&pool->a_adding_memory, &cmp_val, exch_val))
+        {
+            if (slot.index >= pool->a_length)
+            {
+                ds_Assert(pool->a_length < 0x80000000);
+                const u32 new_length = 2*pool->a_length;
+
+                const u64 memsize = pool->block_length_next*pool->slot_size;
+                (memsize < 1024*1024)
+                    ? ds_Alloc(pool->mem + pool->block_count, memsize, NO_HUGE_PAGES)
+                    : ds_Alloc(pool->mem + pool->block_count, memsize, HUGE_PAGES);
+
+                if (!pool->mem[pool->block_count].address)
+                {
+	            		Log(T_SYSTEM, S_FATAL, "Failed to Allocate ds_TPool block with size %lu, exiting.", memsize);
+	            		FatalCleanupAndExit();
+                }
+
+                pool->block_count += 1;
+                pool->block_length_next *= 2;
+                AtomicStoreRel32(&pool->a_length, new_length);
+            }
+            AtomicStoreRel32(&pool->a_adding_memory, cmp_val);
+        }
+    }
+
+    slot.address = ds_TPoolAddress(pool, slot.index);
+    return slot;
+}
+
+struct slot ds_TPoolAdd(struct ds_TPool *pool)
+{
+    //TODO
+
+    return ds_TPoolIncrement(pool);
+}
+
+void ds_TPoolRemove(struct ds_TPool *pool, const u32 index)
+{
+
+}
+
+void ds_TPoolRemoveAddress(struct ds_TPool *pool, void *slot)
+{
+
+}
+
+void *ds_TPoolAddress(const struct ds_TPool *pool, const u32 index)
+{
+    /*
+        n :  power of two
+
+        n_index_mask  : n-1
+        n_block_mask  : U32_MAX - n_index_mask      
+        
+        if (index < n_block_mask)
+            block = 0
+        else
+            mask >>= shift
+            index >>= shift
+            block = 32 - CLZ(index & mask)
+
+
+
+                 4321 000000000000
+            001xxxxxx n_index_mask
+    */
+
+    u32 bi;
+    u32 i;
+    if (index < pool->initial_length)
+    {
+        bi = 0;
+        i = index;
+    }
+    else
+    {
+        bi = 32 - Clz32(index >> pool->shift);
+        const u32 mask = (pool->initial_length << (bi-1)) - 1;
+        i = index & mask;
+    }
+
+    return (void *) ((u8 *) pool->mem[bi].address + i*pool->slot_size);
+}
+
+u32	ds_TPoolIndex(const struct ds_TPool *pool, const void *slot)
+{
+
 }

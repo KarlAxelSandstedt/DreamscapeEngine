@@ -120,7 +120,7 @@ struct r_Core
 	struct r_Program	program[PROGRAM_COUNT];
 	struct r_Texture	texture[TEXTURE_COUNT];
 
-	struct pool		unit_pool;
+	struct ds_Pool		unit_pool;
 
 	struct strdb *mesh_database;		/* mesh storage (external) */
 

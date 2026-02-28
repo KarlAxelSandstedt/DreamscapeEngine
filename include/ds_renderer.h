@@ -402,7 +402,7 @@ struct r_Scene
 	u64 			frame;
 
 	struct hashMap 		proxy3d_to_instance_map;/* map[ generation(32) | index(32) ] -> instance */
-	struct pool 		instance_pool;		/* instance storage */
+	struct ds_Pool 		instance_pool;		/* instance storage */
 	struct ll		instance_new_list;	/* non-cached instance 	*/
 
 	struct r_Command *	cmd_cache;		/* cached commands 		*/

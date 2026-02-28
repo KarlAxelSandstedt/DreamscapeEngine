@@ -35,7 +35,7 @@ struct r_Scene *r_SceneAlloc(void)
 	scene->frame = 0;
 
 	scene->proxy3d_to_instance_map = HashMapAlloc(NULL, 4096, 4096, GROWABLE);
-	scene->instance_pool = PoolAlloc(NULL, 4096, struct r_Instance, GROWABLE);
+	scene->instance_pool = ds_PoolAlloc(NULL, 4096, struct r_Instance, GROWABLE);
 
 	scene->instance_new_list = ll_Init(struct r_Instance);
 
@@ -49,7 +49,7 @@ struct r_Scene *r_SceneAlloc(void)
 
 void r_SceneDealloc(struct r_Scene *scene)
 {
-	PoolDealloc(&scene->instance_pool);
+	ds_PoolDealloc(&scene->instance_pool);
 	HashMapFree(&scene->proxy3d_to_instance_map);
 	ArenaFree(scene->mem_frame_arr + 0),
 	ArenaFree(scene->mem_frame_arr + 1),
@@ -124,7 +124,7 @@ void r_SceneAssertInstanceCommandBijection(void)
 	for (u32 i = 0; i < g_scene->cmd_frame_count; ++i)
 	{
 		struct r_Command *cmd = g_scene->cmd_frame + i;
-		struct r_Instance *instance = PoolAddress(&g_scene->instance_pool, cmd->instance);
+		struct r_Instance *instance = ds_PoolAddress(&g_scene->instance_pool, cmd->instance);
 		ds_Assert(PoolSlotAllocated(instance));
 		ds_Assert(((u64) instance->cmd - (u64) cmd) == 0);
 	}
@@ -181,7 +181,7 @@ static void r_scene_sort_commands_and_prune_instances(void)
 		for (; cache_i < g_scene->cmd_cache_count; cache_i++) 
 		{
 			const u32 index = g_scene->cmd_cache[cache_i].instance;
-			struct r_Instance *cached_instance = PoolAddress(&g_scene->instance_pool, index);
+			struct r_Instance *cached_instance = ds_PoolAddress(&g_scene->instance_pool, index);
 			if (cached_instance->frame_last_touched != g_scene->frame)
 			{
 				if (cached_instance->type == R_INSTANCE_PROXY3D)
@@ -189,7 +189,7 @@ static void r_scene_sort_commands_and_prune_instances(void)
 					const u32 hash = (u32) XXH3_64bits(&cached_instance->unit, sizeof(u32));
 					HashMapRemove(&g_scene->proxy3d_to_instance_map, hash, index);
 				}
-				PoolRemove(&g_scene->instance_pool, index);
+				ds_PoolRemove(&g_scene->instance_pool, index);
 				g_scene->cmd_cache[cache_i].allocated = 0;
 			}
 
@@ -212,7 +212,7 @@ static void r_scene_sort_commands_and_prune_instances(void)
 			g_scene->cmd_frame[i] = cmd_new[new_i++];
 		}
 
-		struct r_Instance *instance = PoolAddress(&g_scene->instance_pool, g_scene->cmd_frame[i].instance);
+		struct r_Instance *instance = ds_PoolAddress(&g_scene->instance_pool, g_scene->cmd_frame[i].instance);
 		instance->cmd = g_scene->cmd_frame + i;
 	}
 
@@ -220,7 +220,7 @@ static void r_scene_sort_commands_and_prune_instances(void)
 	for (; cache_i < g_scene->cmd_cache_count; cache_i++) 
 	{
 		const u32 index = g_scene->cmd_cache[cache_i].instance;
-		struct r_Instance *cached_instance = PoolAddress(&g_scene->instance_pool, index);
+		struct r_Instance *cached_instance = ds_PoolAddress(&g_scene->instance_pool, index);
 		if (cached_instance->frame_last_touched != g_scene->frame)
 		{
 			if (cached_instance->type == R_INSTANCE_PROXY3D)
@@ -228,7 +228,7 @@ static void r_scene_sort_commands_and_prune_instances(void)
 				const u32 hash = (u32) XXH3_64bits(&cached_instance->unit, sizeof(u32));
 				HashMapRemove(&g_scene->proxy3d_to_instance_map, hash, index);
 			}
-			PoolRemove(&g_scene->instance_pool, index);
+			ds_PoolRemove(&g_scene->instance_pool, index);
 			g_scene->cmd_cache[cache_i].allocated = 0;
 		}
 	}
@@ -319,7 +319,7 @@ void r_SceneBucketListGenerate(void)
 	for (u32 i = 0; i < g_scene->cmd_frame_count; ++i)
 	{
 		struct r_Command *cmd = g_scene->cmd_frame + i;
-		struct r_Instance *instance = PoolAddress(&g_scene->instance_pool, cmd->instance);
+		struct r_Instance *instance = ds_PoolAddress(&g_scene->instance_pool, cmd->instance);
 
 		/* TODO: can just compare u64 masked keys here... */
 		if (b->transparency != R_CMD_TRANSPARENCY_GET(cmd->key)
@@ -413,7 +413,7 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 	const vec3 zero3 = { 0.0f, 0.0f, 0.0f };
 
 	const struct r_Command *r_cmd = g_scene->cmd_frame + b->c_l;
-	const struct r_Instance *instance = PoolAddress(&g_scene->instance_pool, r_cmd->instance);
+	const struct r_Instance *instance = ds_PoolAddress(&g_scene->instance_pool, r_cmd->instance);
 
 	for (u32 bi = 0; bi < b->buffer_count; bi++)
 	{	
@@ -439,7 +439,7 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 				for (u32 i = buf->c_l; i <= buf->c_h; ++i)
 				{
 					r_cmd = g_scene->cmd_frame + i;
-					instance = PoolAddress(&g_scene->instance_pool, r_cmd->instance);
+					instance = ds_PoolAddress(&g_scene->instance_pool, r_cmd->instance);
 
 					const struct ui_DrawBucket *ui_b = instance->ui_bucket;
 					struct ui_DrawNode *draw_node = ui_b->list;
@@ -706,7 +706,7 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 				for (u32 i = buf->c_l; i <= buf->c_h; ++i)
 				{
 					r_cmd = g_scene->cmd_frame + i;
-					instance = PoolAddress(&g_scene->instance_pool, r_cmd->instance);
+					instance = ds_PoolAddress(&g_scene->instance_pool, r_cmd->instance);
 					proxy = r_Proxy3dAddress(instance->unit);
 
 					memcpy(shared_data + S_PROXY3D_TRANSLATION_BLEND_OFFSET, proxy->spec_position, sizeof(vec3));
@@ -726,7 +726,7 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 				for (u32 i = buf->c_l; i <= buf->c_h; ++i)
 				{
 					r_cmd = g_scene->cmd_frame + i;
-					instance = PoolAddress(&g_scene->instance_pool, r_cmd->instance);
+					instance = ds_PoolAddress(&g_scene->instance_pool, r_cmd->instance);
 					memcpy(local_data, instance->mesh->vertex_data, instance->mesh->vertex_count * instance->mesh->local_stride);
 					local_data += instance->mesh->vertex_count * instance->mesh->local_stride;
 				}
@@ -763,7 +763,7 @@ struct r_Instance *r_InstanceAdd(const u32 unit, const u64 cmd)
 	u32 index = HashMapFirst(&g_scene->proxy3d_to_instance_map, hash);
 	for (; index != HASH_NULL; index = HashMapNext(&g_scene->proxy3d_to_instance_map, index))
 	{
-		instance = PoolAddress(&g_scene->instance_pool, index);
+		instance = ds_PoolAddress(&g_scene->instance_pool, index);
 		if (instance->unit == unit)
 		{
 			break;
@@ -772,11 +772,11 @@ struct r_Instance *r_InstanceAdd(const u32 unit, const u64 cmd)
 
 	if (index == HASH_NULL)
 	{
-		struct slot slot = PoolAdd(&g_scene->instance_pool);
+		struct slot slot = ds_PoolAdd(&g_scene->instance_pool);
 		HashMapAdd(&g_scene->proxy3d_to_instance_map, hash, slot.index);
 		ll_Prepend(&g_scene->instance_new_list, g_scene->instance_pool.buf, slot.index);
 
-		instance = PoolAddress(&g_scene->instance_pool, slot.index);
+		instance = ds_PoolAddress(&g_scene->instance_pool, slot.index);
 		instance->unit = unit;
 		instance->cmd = ArenaPush(g_scene->mem_frame, sizeof(struct r_Command));
 		instance->cmd->key = cmd;
@@ -803,10 +803,10 @@ struct r_Instance *r_InstanceAdd(const u32 unit, const u64 cmd)
 
 struct r_Instance *r_InstanceAddNonCached(const u64 cmd)
 {
-	struct slot slot = PoolAdd(&g_scene->instance_pool);
+	struct slot slot = ds_PoolAdd(&g_scene->instance_pool);
 	ll_Prepend(&g_scene->instance_new_list, g_scene->instance_pool.buf, slot.index);
 
-	struct r_Instance *instance = PoolAddress(&g_scene->instance_pool, slot.index);
+	struct r_Instance *instance = ds_PoolAddress(&g_scene->instance_pool, slot.index);
 	instance->cmd = ArenaPush(g_scene->mem_frame, sizeof(struct r_Command));
 	instance->cmd->key = cmd;
 	instance->cmd->instance = slot.index;

@@ -133,7 +133,7 @@ which list owns prev_1, next_1.
 
 struct nll
 {
-	struct pool	pool;
+	struct ds_Pool	pool;
 
 	/* user provided identifier methods: 
 	 *

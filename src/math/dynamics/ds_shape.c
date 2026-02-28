@@ -21,10 +21,10 @@
 
 struct slot ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_ShapePrefab *prefab, const ds_Transform *t, const u32 body)
 {
-	struct slot slot = PoolAdd(&pipeline->shape_pool);
+	struct slot slot = ds_PoolAdd(&pipeline->shape_pool);
 	if (slot.address)
 	{
-		struct ds_RigidBody *body_ptr = PoolAddress(&pipeline->body_pool, body);
+		struct ds_RigidBody *body_ptr = ds_PoolAddress(&pipeline->body_pool, body);
 		ds_Assert(PoolSlotAllocated(body_ptr));
 		dll_Append(&body_ptr->shape_list, pipeline->shape_pool.buf, slot.index);
 
@@ -55,7 +55,7 @@ struct slot ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_S
 
 void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, const u32 shape_index)
 {
-	struct ds_Shape *shape = PoolAddress(&pipeline->shape_pool, shape_index);
+	struct ds_Shape *shape = ds_PoolAddress(&pipeline->shape_pool, shape_index);
 	ds_Assert(PoolSlotAllocated(shape));
 
 	//TODO Island is per-body specific, so it should not be here
@@ -64,7 +64,7 @@ void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, const u32 shap
 	
 	//isdb_IslandRemoveBodyResources(pipeline, body->island_index, shape_index);
 	//cdb_BodyRemoveContacts(pipeline, shape_index);
-	//const struct island *is = PoolAddress(&pipeline->is_db.island_pool, body->island_index);
+	//const struct island *is = ds_PoolAddress(&pipeline->is_db.island_pool, body->island_index);
 	//if (PoolSlotAllocated(is) && is->contact_list.count > 0)
 	//{
 	//	isdb_SplitIsland(&pipeline->frame, pipeline, body->island_index);
@@ -72,12 +72,12 @@ void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, const u32 shap
 
 	strdb_Dereference(pipeline->cshape_db, shape->cshape_handle);
 	DbvhRemove(&pipeline->shape_bvh, shape->proxy);
-	PoolRemove(&pipeline->shape_pool, shape_index);
+	ds_PoolRemove(&pipeline->shape_pool, shape_index);
 }
 
 void ds_ShapeStaticRemove(struct ds_RigidBodyPipeline *pipeline, const u32 shape_index)
 {
-	struct ds_Shape *shape = PoolAddress(&pipeline->shape_pool, shape_index);
+	struct ds_Shape *shape = ds_PoolAddress(&pipeline->shape_pool, shape_index);
 	ds_Assert(PoolSlotAllocated(shape));
 
 	//TODO
@@ -85,12 +85,12 @@ void ds_ShapeStaticRemove(struct ds_RigidBodyPipeline *pipeline, const u32 shape
 
 	strdb_Dereference(pipeline->cshape_db, shape->cshape_handle);
 	DbvhRemove(&pipeline->shape_bvh, shape->proxy);
-	PoolRemove(&pipeline->shape_pool, shape_index);
+	ds_PoolRemove(&pipeline->shape_pool, shape_index);
 }
 
 void ds_ShapeWorldTransform(ds_Transform *t, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape)
 {
-	const struct ds_RigidBody *body = PoolAddress(&pipeline->body_pool, shape->body);
+	const struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, shape->body);
     mat3 rot;
     Mat3Quat(rot, body->t_world.rotation);
 
@@ -104,7 +104,7 @@ struct aabb ds_ShapeWorldBbox(const struct ds_RigidBodyPipeline *pipeline, const
 	vec3 min = { F32_INFINITY, F32_INFINITY, F32_INFINITY };
 	vec3 max = { -F32_INFINITY, -F32_INFINITY, -F32_INFINITY };
 
-	const struct ds_RigidBody *body = PoolAddress(&pipeline->body_pool, shape->body);
+	const struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, shape->body);
 	const struct c_Shape *cshape = strdb_Address(pipeline->cshape_db, shape->cshape_handle);
 
     mat3 rot;

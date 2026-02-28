@@ -147,8 +147,8 @@ void SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, con
 	{			
 		struct velocityConstraint *vc = solver->vcs + i;
 
-		const struct ds_RigidBody *b1 = PoolAddress(&pipeline->body_pool, is->contacts[i]->cm.i1);
-		const struct ds_RigidBody *b2 = PoolAddress(&pipeline->body_pool, is->contacts[i]->cm.i2);
+		const struct ds_RigidBody *b1 = ds_PoolAddress(&pipeline->body_pool, is->contacts[i]->cm.i1);
+		const struct ds_RigidBody *b2 = ds_PoolAddress(&pipeline->body_pool, is->contacts[i]->cm.i2);
 			
 		const u32 b1_static = (b1->island_index == ISLAND_STATIC) ? 1 : 0; 
 		const u32 b2_static = (b2->island_index == ISLAND_STATIC) ? 1 : 0; 

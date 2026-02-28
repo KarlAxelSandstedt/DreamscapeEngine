@@ -38,7 +38,7 @@ struct vector
 	u32 		length;		/* memory length (in blocks)	*/
 	u32 		next;		/* next index to be pushed 	*/ 
 	u32		growable;	/* Boolean: is memory growable  */
-	struct memSlot 	mem_slot;	/* Optionally set if ds_Alloc	*/
+	struct ds_MemSlot 	mem_slot;	/* Optionally set if ds_Alloc	*/
 };
 
 /* allocate and initalize vector: If mem is defined, use arena allocator; given that growable == VECTOR_STATIC */
@@ -64,7 +64,7 @@ typedef struct				\
 	u32 		next;		\
 	u32		growable;	\
 	type *		arr;		\
-	struct memSlot	mem_slot;	\
+	struct ds_MemSlot	mem_slot;	\
 } stack_ ## type
 
 #define DECLARE_STACK_ALLOC(type)	stack_ ## type stack_ ## type ## Alloc(struct arena *arena, const u32 length, const u32 growable)
@@ -209,7 +209,7 @@ struct stackVec3
 	u32 		next;			
 	u32		growable;		
 	vec3ptr		arr;			
-	struct memSlot 	mem_slot;
+	struct ds_MemSlot 	mem_slot;
 };
 
 struct stackVec3 	stackVec3Alloc(struct arena *arena, const u32 length, const u32 growable);
@@ -226,7 +226,7 @@ struct stackVec4
 	u32 	next;			
 	u32	growable;		
 	vec4ptr	arr;			
-	struct memSlot 	mem_slot;
+	struct ds_MemSlot 	mem_slot;
 };
 
 struct stackVec4 	stackVec4Alloc(struct arena *arena, const u32 length, const u32 growable);

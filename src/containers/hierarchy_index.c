@@ -52,11 +52,11 @@ struct hi hi_AllocInternal(struct arena *mem
 		.last_offset = last_offset,
 		.child_count_offset = child_count_offset,
 	};
-	hi.pool = PoolAllocInternal(mem, length, data_size, slot_allocation_offset, U64_MAX, growable);
+	hi.pool = ds_PoolAllocInternal(mem, length, data_size, slot_allocation_offset, U64_MAX, growable);
 	if (hi.pool.buf)
 	{
-		const u32 root_stub = (u32) PoolAdd(&hi.pool).index;
-		const u32 orphan_stub = (u32) PoolAdd(&hi.pool).index;
+		const u32 root_stub = (u32) ds_PoolAdd(&hi.pool).index;
+		const u32 orphan_stub = (u32) ds_PoolAdd(&hi.pool).index;
 
 		*hi_ParentPtr(&hi, root_stub) = HI_NULL_INDEX;
 		*hi_NextPtr(&hi, root_stub) = HI_NULL_INDEX;
@@ -81,14 +81,14 @@ struct hi hi_AllocInternal(struct arena *mem
 
 void hi_Dealloc(struct hi *hi)
 {
-	PoolDealloc(&hi->pool);
+	ds_PoolDealloc(&hi->pool);
 }
 void hi_Flush(struct hi *hi)
 {
-	PoolFlush(&hi->pool);
+	ds_PoolFlush(&hi->pool);
 
-	const u32 root_stub = PoolAdd(&hi->pool).index;
-	const u32 orphan_stub = PoolAdd(&hi->pool).index;
+	const u32 root_stub = ds_PoolAdd(&hi->pool).index;
+	const u32 orphan_stub = ds_PoolAdd(&hi->pool).index;
 
 	*hi_ParentPtr(hi, root_stub) = HI_NULL_INDEX;
 	*hi_NextPtr(hi, root_stub) = HI_NULL_INDEX;
@@ -112,7 +112,7 @@ struct slot hi_Add(struct hi *hi, const u32 parent_index)
 {
 	ds_Assert(parent_index < hi->pool.count_max);
 
-	struct slot new = PoolAdd(&hi->pool);
+	struct slot new = ds_PoolAdd(&hi->pool);
 	if (new.index == U32_MAX)
 	{
 		return (struct slot) { .index = 0, .address = NULL };
@@ -158,7 +158,7 @@ static void internal_remove_recursive(struct hi *hi, const u32 root)
 		internal_remove_recursive(hi, next);	
 	}
 
-	PoolRemove(&hi->pool, root);
+	ds_PoolRemove(&hi->pool, root);
 }
 
 static void internal_hierarchy_index_remove_sub_hierarchy_recursive(struct hi *hi, const u32 root)
@@ -214,7 +214,7 @@ void hi_Remove(struct arena *tmp, struct hi *hi, const u32 node)
 					stack[sc++] = sub_next;
 				}
 
-				PoolRemove(&hi->pool, sub_index);
+				ds_PoolRemove(&hi->pool, sub_index);
 			}
 		}
 		else
@@ -259,7 +259,7 @@ void hi_Remove(struct arena *tmp, struct hi *hi, const u32 node)
 		}
 	}
 
-	PoolRemove(&hi->pool, node);
+	ds_PoolRemove(&hi->pool, node);
 }
 
 void hi_AdoptNodeExclusive(struct hi *hi, const u32 node, const u32 new_parent)
@@ -438,7 +438,7 @@ void hi_ApplyCustomFreeAndRemove(struct arena *tmp, struct hi *hi, const u32 nod
 				}
 
 				custom_free(hi, sub_node, data);
-				PoolRemove(&hi->pool, sub_node);
+				ds_PoolRemove(&hi->pool, sub_node);
 			}
 		}
 		else
@@ -481,13 +481,13 @@ void hi_ApplyCustomFreeAndRemove(struct arena *tmp, struct hi *hi, const u32 nod
 	}
 
 	custom_free(hi, node, data);
-	PoolRemove(&hi->pool, node);
+	ds_PoolRemove(&hi->pool, node);
 }
 
 void *hi_Address(const struct hi *hi, const u32 node)
 {
 	ds_Assert(node < hi->pool.count_max);
-	return PoolAddress(&hi->pool, node);
+	return ds_PoolAddress(&hi->pool, node);
 }
 
 struct hiIterator hi_IteratorAlloc(struct arena *mem, struct hi *hi, const u32 root)

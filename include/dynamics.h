@@ -349,7 +349,7 @@ struct cdb
 	/*
 	 * frame-cached separation axes 
 	 */
-	struct pool	    sat_cache_pool;
+	struct ds_Pool	    sat_cache_pool;
 	struct hashMap	sat_cache_map;		
 
 	/* PERSISTENT DATA, GROWABLE, keeps track of which slots in contacts are currently being used.
@@ -556,7 +556,7 @@ struct island
 struct isdb
 {
 	/* PERSISTENT DATA */
-	struct pool 	island_pool;	/* GROWABLE, list nodes of contacts and bodies	*/
+	struct ds_Pool 	island_pool;	/* GROWABLE, list nodes of contacts and bodies	*/
 	struct dll	island_list;
 	/* FRAME DATA */
 	u32 *		possible_splits;				/* Islands in which a contact has been broken during frame */
@@ -894,14 +894,14 @@ struct ds_RigidBodyPipeline
 	struct strdb *	cshape_db;		        /* externally owned */
 	struct strdb *	body_prefab_db;		    /* externally owned */
 
-	struct pool		body_pool;
+	struct ds_Pool		body_pool;
 	struct dll		body_marked_list;	    /* bodies marked for removal */
 	struct dll		body_non_marked_list;	/* bodies alive and non-marked  */
 
-	struct pool		shape_pool;
+	struct ds_Pool		shape_pool;
 	struct bvh 		shape_bvh;              /* dynamic bvh of shapes */
 
-	struct pool		event_pool;
+	struct ds_Pool		event_pool;
 	struct dll		event_list;
 
 

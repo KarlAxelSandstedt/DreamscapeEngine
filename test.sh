@@ -10,11 +10,20 @@ else
 	CMAKE_GENERATOR="Unix Makefiles"
 fi
 
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -Dkas_test_correctness=ON -Dthread_sanitizer=ON -Dkas_debug=ON -Dapply_optimization_options=ON -G $CMAKE_GENERATOR
-#cmake -S . -B build -Dkas_test_performance=ON -Dapply_optimization_options=ON -GNinja 
+#cmake -S . -B build -DDS_TEST_PERFORMANCE=ON -DDS_OPTIMIZE=ON -DDS_PROFILE=ON -DCMAKE_BUILD_TYPE=Debug -G $CMAKE_GENERATOR
+#cd build
+#cmake --build . --parallel
+#./DreamscapeTest
+#cd ..
+
+cmake -S . -B build -DDS_TEST_PERFORMANCE=ON -DDS_TSAN=ON -DDS_OPTIMIZE=ON -DDS_PROFILE=ON -DCMAKE_BUILD_TYPE=Debug -G $CMAKE_GENERATOR
 cd build
 cmake --build . --parallel
-#ctest -V CTestTestfile.cmake
-#./game_1
-gdb ./engine_sandbox
+gdb ./DreamscapeTest
 cd ..
+
+#cmake -S . -B build -DDS_TEST_CORRECTNESS=ON -DDS_TSAN=ON -DDS_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Debug -G $CMAKE_GENERATOR
+#cd build
+#cmake --build . --parallel
+#gdb ./DreamscapeTest
+#cd ..

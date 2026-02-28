@@ -247,7 +247,7 @@ void FontSerialize(const struct assetFont *asset, const struct font *font)
 
 	FileSetSize(&file, font->size);
 	void *buf = FileMemoryMapPartial(&file, font->size, 0, FS_PROT_READ | FS_PROT_WRITE, FS_MAP_SHARED);
-	struct serialStream ss = ss_Buffered(buf, font->size);
+	struct ss ss = ss_Buffered(buf, font->size);
 
 	ss_WriteU64Be(&ss, font->size);
 	ss_WriteF32Be(&ss, font->ascent);
@@ -296,7 +296,7 @@ const struct font *FontDeserialize(struct assetFont *asset)
 
 	u64 size = 0;
 	void *buf = FileMemoryMap(&size, &file, FS_PROT_READ, FS_MAP_SHARED);
-	struct serialStream ss = ss_Buffered(buf, size);
+	struct ss ss = ss_Buffered(buf, size);
 
 	if (ss_BytesLeft(&ss) < 8)
 	{

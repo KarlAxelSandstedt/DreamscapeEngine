@@ -21,7 +21,7 @@
 
 struct slot ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBodyPrefab *prefab, const vec3 position, const quat rotation, const u32 entity)
 {
-	struct slot slot = PoolAdd(&pipeline->body_pool);
+	struct slot slot = ds_PoolAdd(&pipeline->body_pool);
 	PhysicsEventBodyNew(pipeline, slot.index);
 	struct ds_RigidBody *body = slot.address;
 	dll_Append(&pipeline->body_non_marked_list, pipeline->body_pool.buf, slot.index);
@@ -61,7 +61,7 @@ struct slot ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Rig
 
 void ds_RigidBodyRemove(struct ds_RigidBodyPipeline *pipeline, const u32 handle)
 {
-	struct ds_RigidBody *body = PoolAddress(&pipeline->body_pool, handle);
+	struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, handle);
 	ds_Assert(PoolSlotAllocated(body));
 
 	struct ds_Shape *shape_ptr;
@@ -69,7 +69,7 @@ void ds_RigidBodyRemove(struct ds_RigidBodyPipeline *pipeline, const u32 handle)
 	{
 		for (u32 shape = body->shape_list.first; shape != DLL_NULL; shape = shape_ptr->dll_next)
 		{
-			shape_ptr = PoolAddress(&pipeline->shape_pool, shape);
+			shape_ptr = ds_PoolAddress(&pipeline->shape_pool, shape);
 			ds_ShapeDynamicRemove(pipeline, shape);
 		}
 	}
@@ -77,11 +77,11 @@ void ds_RigidBodyRemove(struct ds_RigidBodyPipeline *pipeline, const u32 handle)
 	{
 		for (u32 shape = body->shape_list.first; shape != DLL_NULL; shape = shape_ptr->dll_next)
 		{
-			shape_ptr = PoolAddress(&pipeline->shape_pool, shape);
+			shape_ptr = ds_PoolAddress(&pipeline->shape_pool, shape);
 			ds_ShapeStaticRemove(pipeline, shape);
 		}
 	}
-	PoolRemove(&pipeline->body_pool, handle);
+	ds_PoolRemove(&pipeline->body_pool, handle);
 	PhysicsEventBodyRemoved(pipeline, handle);
 }
 
@@ -95,7 +95,7 @@ void ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, con
 {
 	ArenaPushRecord(&pipeline->frame);
 
-	struct ds_RigidBody *body = PoolAddress(&pipeline->body_pool, body_index);
+	struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, body_index);
 	ds_Assert(PoolSlotAllocated(body));
 
 	vec3 tmp;
@@ -117,7 +117,7 @@ void ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, con
 	u32 s = body->shape_list.first;
 	for (u32 i = 0; i < body->shape_list.count; ++i)
 	{
-		shape = PoolAddress(&pipeline->shape_pool, s);
+		shape = ds_PoolAddress(&pipeline->shape_pool, s);
 		s = shape->dll_next;
 		const struct c_Shape *cshape = strdb_Address(pipeline->cshape_db, shape->cshape_handle);
 

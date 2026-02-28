@@ -25,17 +25,17 @@ struct gl_Limits gl_limits_storage = { 0 };
 struct gl_Limits *g_gl_limits = &gl_limits_storage;
 
 u32 g_gl_state = U32_MAX;
-struct pool g_gl_state_pool = { 0 };
-struct pool g_binding_pool = { 0 };
+struct ds_Pool g_gl_state_pool = { 0 };
+struct ds_Pool g_binding_pool = { 0 };
 
 u32 tx_in_use = 0;	/* number of texture names currently allocated (glGen*, glDel*) */
-struct pool tx_pool = { 0 };
+struct ds_Pool tx_pool = { 0 };
 
 #ifdef DS_GL_DEBUG
 
 static void gl_StateAssertBlending(void)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	//TODO ds_Assert blending equations
 	//TODO ds_Assert blending funcs 
 	GLint eq_rgb, eq_a, func_s_rgb, func_s_a, func_d_rgb, func_d_a;
@@ -57,7 +57,7 @@ static void gl_StateAssertBlending(void)
 
 static void gl_StateAssertCulling(void)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	GLint cull_mode, face_front;
 	gl_state->func.glGetIntegerv(GL_CULL_FACE_MODE, &cull_mode);
 	gl_state->func.glGetIntegerv(GL_FRONT_FACE, &face_front);
@@ -69,7 +69,7 @@ static void gl_StateAssertCulling(void)
 
 static void gl_StateAssertTextureUnit(void)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	GLint tx_unit_active;
 	gl_state->func.glGetIntegerv(GL_ACTIVE_TEXTURE, (GLint *) &tx_unit_active);
 	ds_Assert((GLint) gl_state->tx_unit_active == (tx_unit_active - GL_TEXTURE0));
@@ -82,11 +82,11 @@ static void gl_StateAssertTextureUnit(void)
 		struct gl_Texture *tx;
 		if (txi)
 		{
-			tx = PoolAddress(&tx_pool, txi);
+			tx = ds_PoolAddress(&tx_pool, txi);
 			struct gl_TextureUnitBinding *binding = NULL;
 			for (u32 k = tx->binding_list.first; k != DLL_NULL; k = binding->dll_next)
 			{
- 				binding = PoolAddress(&g_binding_pool, k);
+ 				binding = ds_PoolAddress(&g_binding_pool, k);
 				ds_Assert(PoolSlotAllocated(binding));
 				if (binding->context == g_gl_state)
 				{
@@ -101,7 +101,7 @@ static void gl_StateAssertTextureUnit(void)
 		GLint tx_2d, tx_cube, wrap_s, wrap_t, mag_filter, min_filter;
 		if (tx1 != 0)
 		{
-			tx = PoolAddress(&tx_pool, tx1);
+			tx = ds_PoolAddress(&tx_pool, tx1);
 			gl_state->func.glGetIntegerv(GL_TEXTURE_BINDING_2D, &tx_2d);
 			gl_state->func.glGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, &mag_filter);
 			gl_state->func.glGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, &min_filter);
@@ -117,7 +117,7 @@ static void gl_StateAssertTextureUnit(void)
 
 		if (tx2 != 0)
 		{
-			tx = PoolAddress(&tx_pool, tx2);
+			tx = ds_PoolAddress(&tx_pool, tx2);
 			gl_state->func.glGetIntegerv(GL_TEXTURE_BINDING_CUBE_MAP, &tx_cube);
 			gl_state->func.glGetTexParameteriv(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, &mag_filter);
 			gl_state->func.glGetTexParameteriv(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, &min_filter);
@@ -146,385 +146,385 @@ void gl_StateAssert(void)
 
 static void ds_glEnable(GLenum cap)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glEnable(cap);
 }
 
 static void ds_glDisable(GLenum cap)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glDisable(cap);
 }
 
 void ds_glGetTexParameterfv(GLenum target, GLenum pname, GLfloat *params)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glGetTexParameterfv(target, pname, params);
 }
 
 void ds_glGetTexParameteriv(GLenum target, GLenum pname, GLint *params)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glGetTexParameteriv(target, pname, params);
 }
 
 void ds_glGetIntegerv(GLenum pname, GLint *data)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glGetIntegerv(pname, data);
 }
 
 const GLubyte *ds_glGetString(GLenum name)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	return gl_state->func.glGetString(name);
 }
 
 void ds_glClear(GLbitfield mask)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glClear(mask);
 }
 
 void ds_glClearColor(GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glClearColor(red, green, blue, alpha);
 }
 
 void ds_glViewport(GLint x, GLint y, GLsizei width, GLsizei height)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glViewport(x, y, width, height);
 }
 
 void ds_glGenBuffers(GLsizei n, GLuint *buffers)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glGenBuffers(n, buffers);
 }
 
 void ds_glBindBuffer(GLenum target, GLuint buffer)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glBindBuffer(target, buffer);
 }
 
 void ds_glBufferData(GLenum target, GLsizeiptr size, const void *data, GLenum usage)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glBufferData(target, size, data, usage);
 }
 
 void ds_glBufferSubData(GLenum target, GLintptr offset, GLsizeiptr size,  const void *data)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glBufferSubData(target, offset, size, data);
 }
 
 void ds_glDeleteBuffers(GLsizei n, const GLuint *buffers)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glDeleteBuffers(n, buffers);
 }
 
 void ds_glDrawArrays(GLenum mode, GLint first, GLsizei count)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glDrawArrays(mode, first, count);
 }
 
 void ds_glDrawElements(GLenum mode, GLsizei count, GLenum type, const void *indices)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glDrawElements(mode, count, type, indices);
 }
 
 void ds_glDrawArraysInstanced(GLenum mode, GLint first, GLint count, GLsizei primcount)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glDrawArraysInstanced(mode, first, count, primcount);
 }
 
 void ds_glDrawElementsInstanced(GLenum mode, GLsizei count, GLenum type, const void *indices, GLsizei primcount)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glDrawElementsInstanced(mode, count, type, indices, primcount);
 }
 
 void ds_glGenVertexArrays(GLsizei n, GLuint *arrays)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glGenVertexArrays(n, arrays);
 }
 
 void ds_glDeleteVertexArrays(GLsizei n, const GLuint *arrays)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glDeleteVertexArrays(n, arrays);
 }
 
 void ds_glBindVertexArray(GLuint array)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glBindVertexArray(array);
 }
 
 void ds_glEnableVertexAttribArray(GLuint index)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glEnableVertexAttribArray(index);
 }
 
 void ds_glDisableVertexAttribArray(GLuint index)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glDisableVertexAttribArray(index);
 }
 
 void ds_glVertexAttribPointer(GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const void *pointer)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glVertexAttribPointer(index, size, type, normalized, stride, pointer);
 }
 
 void ds_glVertexAttribIPointer(GLuint index, GLint size, GLenum type, GLsizei stride, const void *pointer)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glVertexAttribIPointer(index, size, type, stride, pointer);
 }
 
 void ds_glVertexAttribDivisor(GLuint index, GLuint divisor)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glVertexAttribDivisor(index, divisor);
 }
 
 GLuint ds_glGetUniformLocation(GLuint program, const GLchar *name)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	return gl_state->func.glGetUniformLocation(program, name);
 }
 
 void ds_glUniform1f(GLint location, GLfloat v0)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform1f(location, v0);
 }
 
 void ds_glUniform2f(GLint location, GLfloat v0, GLfloat v1)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform2f(location, v0, v1);
 }
 
 void ds_glUniform3f(GLint location, GLfloat v0, GLfloat v1, GLfloat v2)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform3f(location, v0, v1, v2);
 }
 
 void ds_glUniform4f(GLint location, GLfloat v0, GLfloat v1, GLfloat v2, GLfloat v3)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform4f(location, v0, v1, v2, v3);
 }
 
 void ds_glUniform1i(GLint location, GLint v0)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform1i(location, v0);
 }
 
 void ds_glUniform2i(GLint location, GLint v0, GLint v1)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform2i(location, v0, v1);
 }
 
 void ds_glUniform3i(GLint location, GLint v0, GLint v1, GLint v2)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform3i(location, v0, v1, v2);
 }
 
 void ds_glUniform4i(GLint location, GLint v0, GLint v1, GLint v2, GLint v3)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform4i(location, v0, v1, v2, v3);
 }
 
 void ds_glUniform1ui(GLint location, GLuint v0)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform1ui(location, v0);
 }
 
 void ds_glUniform2ui(GLint location, GLuint v0, GLuint v1)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform2ui(location, v0, v1);
 }
 
 void ds_glUniform3ui(GLint location, GLuint v0, GLuint v1, GLuint v2)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform3ui(location, v0, v1, v2);
 }
 
 void ds_glUniform4ui(GLint location, GLuint v0, GLuint v1, GLuint v2, GLuint v3)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform4ui(location, v0, v1, v2, v3);
 }
 
 void ds_glUniform1fv(GLint location, GLsizei count, const GLfloat *value)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform1fv(location, count, value);
 }
 
 void ds_glUniform2fv(GLint location, GLsizei count, const GLfloat *value)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform2fv(location, count, value);
 }
 
 void ds_glUniform3fv(GLint location, GLsizei count, const GLfloat *value)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform3fv(location, count, value);
 }
 
 void ds_glUniform4fv(GLint location, GLsizei count, const GLfloat *value)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform4fv(location, count, value);
 }
 
 void ds_glUniform1iv(GLint location, GLsizei count, const GLint *value)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform1iv(location, count, value);
 }
 
 void ds_glUniform2iv(GLint location, GLsizei count, const GLint *value)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform2iv(location, count, value);
 }
 
 void ds_glUniform3iv(GLint location, GLsizei count, const GLint *value)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform3iv(location, count, value);
 }
 
 void ds_glUniform4iv(GLint location, GLsizei count, const GLint *value)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform4iv(location, count, value);
 }
 
 void ds_glUniform1uiv(GLint location, GLsizei count, const GLuint *value)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform1uiv(location, count, value);
 }
 
 void ds_glUniform2uiv(GLint location, GLsizei count, const GLuint *value)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform2uiv(location, count, value);
 }
 
 void ds_glUniform3uiv(GLint location, GLsizei count, const GLuint *value)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform3uiv(location, count, value);
 }
 
 void ds_glUniform4uiv(GLint location, GLsizei count, const GLuint *value)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniform4uiv(location, count, value);
 }
 
 void ds_glUniformMatrix2fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniformMatrix2fv(location, count, transpose, value);
 }
 
 void ds_glUniformMatrix3fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniformMatrix3fv(location, count, transpose, value);
 }
 
 void ds_glUniformMatrix4fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glUniformMatrix4fv(location, count, transpose, value);
 }
 
 GLboolean ds_glIsEnabled(GLenum cap)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	return gl_state->func.glIsEnabled(cap);
 }
 
 void ds_glGetShaderiv(GLuint shader, GLenum pname, GLint *params)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glGetShaderiv(shader, pname, params);
 }
 
 void ds_glGetShaderInfoLog(GLuint shader, GLsizei bufSize, GLsizei *length, GLchar *infoLog)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glGetShaderInfoLog(shader, bufSize, length, infoLog);
 }
 
 GLuint ds_glCreateShader(GLenum type)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	return gl_state->func.glCreateShader(type);
 }
 
 void ds_glShaderSource(GLuint shader, GLsizei count, const GLchar **string, const GLint *length)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glShaderSource(shader, count, string, length);
 }
 
 void ds_glCompileShader(GLuint shader)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glCompileShader(shader);
 }
 
 void ds_glAttachShader(GLuint program, GLuint shader)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glAttachShader(program, shader);
 }
 
 void ds_glDetachShader(GLuint program, GLuint shader)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glDetachShader(program, shader);
 }
 
 void ds_glDeleteShader(GLuint shader)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glDeleteShader(shader);
 }
 
 void ds_glDisableBlending(void)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	if (gl_state->blend)
 	{
 		gl_state->func.glDisable(GL_BLEND);
@@ -534,7 +534,7 @@ void ds_glDisableBlending(void)
 
 void ds_glEnableBlending(void)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	if (!gl_state->blend)
 	{
 		gl_state->func.glEnable(GL_BLEND);
@@ -544,7 +544,7 @@ void ds_glEnableBlending(void)
 
 void ds_glBlendEquation(const GLenum eq)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	if (gl_state->eq_rgb != eq || gl_state->eq_a != eq)
 	{
 		gl_state->func.glBlendEquation(eq);
@@ -555,7 +555,7 @@ void ds_glBlendEquation(const GLenum eq)
 
 void ds_glBlendEquationSeparate(const GLenum eq_rgb, const GLenum eq_a)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	if (gl_state->eq_rgb != eq_rgb || gl_state->eq_a != eq_a)
 	{
 		gl_state->func.glBlendEquationSeparate(eq_rgb, eq_a);
@@ -566,7 +566,7 @@ void ds_glBlendEquationSeparate(const GLenum eq_rgb, const GLenum eq_a)
 
 void ds_glBlendFunc(const GLenum sfactor, const GLenum dfactor)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	if (gl_state->func_s_rgb != sfactor
 			|| gl_state->func_s_a != sfactor
 			|| gl_state->func_d_rgb != dfactor
@@ -582,7 +582,7 @@ void ds_glBlendFunc(const GLenum sfactor, const GLenum dfactor)
 
 void ds_glBlendFuncSeparate(const GLenum srcRGB, const GLenum dstRGB, const GLenum srcAlpha, const GLenum dstAlpha)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	if (gl_state->func_s_rgb != srcRGB
 			|| gl_state->func_s_a != srcAlpha
 			|| gl_state->func_d_rgb != dstRGB
@@ -598,7 +598,7 @@ void ds_glBlendFuncSeparate(const GLenum srcRGB, const GLenum dstRGB, const GLen
 
 void ds_glEnableFaceCulling(void)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	if (!gl_state->cull_face)
 	{
 		gl_state->cull_face = 1;
@@ -608,7 +608,7 @@ void ds_glEnableFaceCulling(void)
 
 void ds_glDisableFaceCulling(void)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	if (gl_state->cull_face)
 	{
 		gl_state->cull_face = 0;
@@ -618,7 +618,7 @@ void ds_glDisableFaceCulling(void)
 
 void ds_glCullFace(const GLenum mode)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	if (gl_state->cull_mode != mode)
 	{
 		gl_state->cull_mode = mode;
@@ -628,7 +628,7 @@ void ds_glCullFace(const GLenum mode)
 
 void ds_glFrontFace(const GLenum mode)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	if (gl_state->face_front != mode)
 	{
 		gl_state->face_front = mode;
@@ -638,7 +638,7 @@ void ds_glFrontFace(const GLenum mode)
 
 void ds_glActiveTexture(const GLenum tx_unit)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	const GLuint i = (tx_unit - GL_TEXTURE0);
 	if (gl_state->tx_unit_active != i)
 	{
@@ -649,22 +649,22 @@ void ds_glActiveTexture(const GLenum tx_unit)
 
 void ds_glGenerateMipmap(GLenum target)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glGenerateMipmap(target);
 }
 
 void ds_glGenTextures(const GLsizei count, GLuint tx[])
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	GLsizei i = 0;
 	for (; i < count; ++i)
 	{
-		tx[i] = PoolAdd(&tx_pool).index;
-		struct gl_Texture *tx_ptr = PoolAddress(&tx_pool, tx[i]);
+		tx[i] = ds_PoolAdd(&tx_pool).index;
+		struct gl_Texture *tx_ptr = ds_PoolAddress(&tx_pool, tx[i]);
 		gl_state->func.glGenTextures(1, &tx_ptr->name);
 		if (tx_ptr->name == 0)
 		{
-			PoolRemove(&tx_pool, tx[i]);
+			ds_PoolRemove(&tx_pool, tx[i]);
 			LogString(T_RENDERER, S_ERROR, "GL internal; glGenTexture failed");
 			break;
 		}
@@ -680,17 +680,17 @@ void ds_glGenTextures(const GLsizei count, GLuint tx[])
 
 void ds_glDeleteTextures(const GLsizei count, const GLuint tx[])
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	for (GLsizei i = 0; i < count; ++i)
 	{
 		if (tx[i] > 0)
 		{
-			struct gl_Texture *tx_ptr = PoolAddress(&tx_pool, tx[i]);
+			struct gl_Texture *tx_ptr = ds_PoolAddress(&tx_pool, tx[i]);
 			struct gl_TextureUnitBinding *binding;
 			for (u32 k = tx_ptr->binding_list.first; k != DLL_NULL; k = dll_Next(binding))
 			{
-				binding = PoolAddress(&g_binding_pool, k);
-				struct gl_State *local_state = PoolAddress(&g_gl_state_pool, binding->context);
+				binding = ds_PoolAddress(&g_binding_pool, k);
+				struct gl_State *local_state = ds_PoolAddress(&g_gl_state_pool, binding->context);
 				ds_Assert(binding->tx_unit < g_gl_limits->tx_unit_count);
 				if (local_state->tx_unit[binding->tx_unit].gl_tx_2d_index == tx[i])
 				{
@@ -705,14 +705,14 @@ void ds_glDeleteTextures(const GLsizei count, const GLuint tx[])
 			}
 			tx_in_use -= 1;
 			gl_state->func.glDeleteTextures(1, &tx_ptr->name);
-			PoolRemove(&tx_pool, tx[i]);
+			ds_PoolRemove(&tx_pool, tx[i]);
 		}
 	}
 }
 
 void ds_glBindTexture(const GLenum target, const GLuint tx)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	struct gl_TextureUnit *unit = gl_state->tx_unit + gl_state->tx_unit_active;
 
 	GLuint prev_tx;
@@ -743,25 +743,25 @@ void ds_glBindTexture(const GLenum target, const GLuint tx)
 
 	if (prev_tx)
 	{
-		struct gl_Texture *texture = PoolAddress(&tx_pool, prev_tx);
+		struct gl_Texture *texture = ds_PoolAddress(&tx_pool, prev_tx);
 		if (texture->binding_list.first == unit->binding)
 		{
-			struct gl_TextureUnitBinding *binding = PoolAddress(&g_binding_pool, unit->binding);
+			struct gl_TextureUnitBinding *binding = ds_PoolAddress(&g_binding_pool, unit->binding);
 			texture->binding_list.first = binding->dll_next;
 		}
 		//fprintf(stderr, "context; %p\t DEL binding (UNIT,TEXTURE) : (%u,%u)\n", g_gl_state, gl_state->tx_unit_active, texture->name);
 		dll_Remove(&texture->binding_list, g_binding_pool.buf, unit->binding);
-		PoolRemove(&g_binding_pool, unit->binding);
+		ds_PoolRemove(&g_binding_pool, unit->binding);
 		unit->binding = DLL_NULL;
 	}
 
 	if (tx)
 	{
-		struct gl_Texture *texture = PoolAddress(&tx_pool, tx);
+		struct gl_Texture *texture = ds_PoolAddress(&tx_pool, tx);
 		struct gl_TextureUnitBinding *binding;
 		for (u32 i = texture->binding_list.first; i != DLL_NULL; i = binding->dll_next)
 		{
-			binding = PoolAddress(&g_binding_pool, i);
+			binding = ds_PoolAddress(&g_binding_pool, i);
 			if (binding->context == g_gl_state)
 			{
 				/* if binding->tx_unit == gl_state->tx_unit_active, then tx already bound to current unit, so prev_tx == tx */
@@ -783,7 +783,7 @@ void ds_glBindTexture(const GLenum target, const GLuint tx)
 					gl_state->tx_unit[binding->tx_unit].binding = DLL_NULL;
 
 					dll_Remove(&texture->binding_list, g_binding_pool.buf, i);
-					PoolRemove(&g_binding_pool, i);
+					ds_PoolRemove(&g_binding_pool, i);
 					//fprintf(stderr, "context; %p\t DEL binding (UNIT,TEXTURE) : (%u,%u)\n", g_gl_state, binding->tx_unit, texture->name);
 				//}
 				break;
@@ -791,7 +791,7 @@ void ds_glBindTexture(const GLenum target, const GLuint tx)
 		}
 
 		struct slot slot;
-		slot = PoolAdd(&g_binding_pool);
+		slot = ds_PoolAdd(&g_binding_pool);
 	 	dll_Prepend(&texture->binding_list, g_binding_pool.buf, slot.index);
 		
 		binding = slot.address;
@@ -815,17 +815,17 @@ void ds_glBindTexture(const GLenum target, const GLuint tx)
 
 static struct gl_Texture *InternalTxUnitGetTarget(const GLenum target)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	struct gl_Texture *tx;
 	const GLenum unit = gl_state->tx_unit_active;
 	if (target == GL_TEXTURE_2D)
 	{
-		tx = PoolAddress(&tx_pool, gl_state->tx_unit[unit].gl_tx_2d_index);
+		tx = ds_PoolAddress(&tx_pool, gl_state->tx_unit[unit].gl_tx_2d_index);
 	}
 	else
 	{
 		ds_Assert(target == GL_TEXTURE_CUBE_MAP);
-		tx = PoolAddress(&tx_pool, gl_state->tx_unit[unit].gl_tx_cube_map_index);
+		tx = ds_PoolAddress(&tx_pool, gl_state->tx_unit[unit].gl_tx_cube_map_index);
 	}
 
 	return tx;
@@ -841,7 +841,7 @@ void ds_glTexImage2D(const GLenum target,
 		      const GLenum type,
 		      const void *data)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	struct gl_Texture *tx = InternalTxUnitGetTarget(target);
 
 	tx->level = level;
@@ -875,7 +875,7 @@ void ds_glTexImage2D(const GLenum target,
 
 void ds_glTexParameteri(const GLenum target, const GLenum pname, const GLint param)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	struct gl_Texture *tx = InternalTxUnitGetTarget(target);
 
 	switch (pname)
@@ -892,7 +892,7 @@ void ds_glTexParameteri(const GLenum target, const GLenum pname, const GLint par
 
 void ds_glTexParameterf(const GLenum target, const GLenum pname, const GLfloat param)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	struct gl_Texture *tx = InternalTxUnitGetTarget(target);
 
 	switch (pname)
@@ -909,7 +909,7 @@ void ds_glTexParameterf(const GLenum target, const GLenum pname, const GLfloat p
 
 void ds_glTexParameteriv(const GLenum target, const GLenum pname, const GLint *params)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	struct gl_Texture *tx = InternalTxUnitGetTarget(target);
 
 	switch (pname)
@@ -922,7 +922,7 @@ void ds_glTexParameteriv(const GLenum target, const GLenum pname, const GLint *p
 
 void ds_glTexParameterfv(const GLenum target, const GLenum pname, const GLfloat *params)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	struct gl_Texture *tx = InternalTxUnitGetTarget(target);
 
 	switch (pname)
@@ -935,7 +935,7 @@ void ds_glTexParameterfv(const GLenum target, const GLenum pname, const GLfloat 
 
 void ds_glEnableDepthTesting(void)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	if (!gl_state->depth)
 	{
 		gl_state->func.glEnable(GL_DEPTH_TEST);
@@ -945,7 +945,7 @@ void ds_glEnableDepthTesting(void)
 
 void ds_glDisableDepthTesting(void)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	if (gl_state->depth)
 	{
 		gl_state->func.glDisable(GL_DEPTH_TEST);
@@ -955,19 +955,19 @@ void ds_glDisableDepthTesting(void)
 
 GLuint ds_glCreateProgram(void)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	return gl_state->func.glCreateProgram();
 }
 
 void ds_glLinkProgram(GLuint program)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glLinkProgram(program);
 }
 
 void ds_glUseProgram(GLuint program)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	if (program != gl_state->program)
 	{
 		gl_state->program = program;
@@ -977,7 +977,7 @@ void ds_glUseProgram(GLuint program)
 
 void ds_glDeleteProgram(GLuint program)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	if (program == gl_state->program)
 	{
 		gl_state->program = 0;
@@ -988,20 +988,20 @@ void ds_glDeleteProgram(GLuint program)
 
 void ds_glGetProgramiv(GLuint program, GLenum pname, GLint *params)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glGetProgramiv(program, pname, params);
 }
 
 void ds_glGetProgramInfoLog(GLuint program, GLsizei bufSize, GLsizei *length, GLchar *infoLog)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, g_gl_state);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, g_gl_state);
 	gl_state->func.glGetProgramInfoLog(program, bufSize, length, infoLog);
 }
 
 u32 gl_StateAlloc(void)
 {
 	const u32 g_gl_state_prev = g_gl_state;
-	struct slot slot = PoolAdd(&g_gl_state_pool);
+	struct slot slot = ds_PoolAdd(&g_gl_state_pool);
 	g_gl_state = slot.index;
 	struct gl_State *gl_state = slot.address;
 	GlFunctionsInit(&gl_state->func);
@@ -1094,7 +1094,7 @@ u32 gl_StateAlloc(void)
 
 void gl_StateDealloc(const u32 gl_state_index)
 {
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, gl_state_index);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, gl_state_index);
 	for (u32 i = 0; i < g_gl_limits->tx_unit_count; ++i)
 	{
 		if (gl_state->tx_unit[i].binding != DLL_NULL)
@@ -1102,20 +1102,20 @@ void gl_StateDealloc(const u32 gl_state_index)
 			const GLuint tx1 = gl_state->tx_unit[i].gl_tx_2d_index;
 			const GLuint tx2 = gl_state->tx_unit[i].gl_tx_cube_map_index;
 			const GLuint tx = (tx1) ? tx1 : tx2;
-			struct gl_Texture *texture = PoolAddress(&tx_pool, tx);
+			struct gl_Texture *texture = ds_PoolAddress(&tx_pool, tx);
 
 			if (texture->binding_list.first == gl_state->tx_unit[i].binding)
 			{
-				struct gl_TextureUnitBinding *binding = PoolAddress(&g_binding_pool, texture->binding_list.first);
+				struct gl_TextureUnitBinding *binding = ds_PoolAddress(&g_binding_pool, texture->binding_list.first);
 				texture->binding_list.first = binding->dll_next;
 			}
 			dll_Remove(&texture->binding_list, g_binding_pool.buf, gl_state->tx_unit[i].binding);
-			PoolRemove(&g_binding_pool, gl_state->tx_unit[i].binding);
+			ds_PoolRemove(&g_binding_pool, gl_state->tx_unit[i].binding);
 		}
 	}
 
 	free(gl_state->tx_unit);
-	PoolRemove(&g_gl_state_pool, gl_state_index);
+	ds_PoolRemove(&g_gl_state_pool, gl_state_index);
 
 	if (g_gl_state == gl_state_index)
 	{
@@ -1126,21 +1126,21 @@ void gl_StateDealloc(const u32 gl_state_index)
 void gl_StateSetCurrent(const u32 gl_state_index)
 {
 	g_gl_state = gl_state_index;
-	struct gl_State *gl_state = PoolAddress(&g_gl_state_pool, gl_state_index);
+	struct gl_State *gl_state = ds_PoolAddress(&g_gl_state_pool, gl_state_index);
 }
 
 void gl_StatePoolAlloc(void)
 {
-	tx_pool = PoolAlloc(NULL, 256, struct gl_Texture, GROWABLE);
-	const GLuint stub_index = PoolAdd(&tx_pool).index;
+	tx_pool = ds_PoolAlloc(NULL, 256, struct gl_Texture, GROWABLE);
+	const GLuint stub_index = ds_PoolAdd(&tx_pool).index;
 	ds_AssertString(stub_index == 0, "Reserve first index for stub, that we we can return 0 of *Texture calls to indicate error"); 
-	g_gl_state_pool = PoolAlloc(NULL, 8, struct gl_State, GROWABLE);
-	g_binding_pool = PoolAlloc(NULL, 192, struct gl_TextureUnitBinding, GROWABLE);
+	g_gl_state_pool = ds_PoolAlloc(NULL, 8, struct gl_State, GROWABLE);
+	g_binding_pool = ds_PoolAlloc(NULL, 192, struct gl_TextureUnitBinding, GROWABLE);
 }
 
 void gl_StatePoolDealloc(void)
 {
-	PoolDealloc(&tx_pool);
-	PoolDealloc(&g_gl_state_pool);
-	PoolDealloc(&g_binding_pool);
+	ds_PoolDealloc(&tx_pool);
+	ds_PoolDealloc(&g_gl_state_pool);
+	ds_PoolDealloc(&g_binding_pool);
 }

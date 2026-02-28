@@ -36,7 +36,7 @@ struct bitVec
 	u64 		bit_count;
 	u64 * 		bits;
 	u32 		growable;
-	struct memSlot 	mem_slot;
+	struct ds_MemSlot 	mem_slot;
 };
 
 /* return a bit vector with bit_count >= bit_count, with all bits cleared to clear_bit. On failure, the zero vector is returned. */

@@ -72,7 +72,7 @@ int CALLBACK WinMain(HINSTANCE h_instance, HINSTANCE hPrevInstance, LPSTR lpCmdL
 	ds_UiApiInit();
 	AssetInit(&mem_persistent);
 #if defined(DS_TEST_CORRECTNESS) || defined(DS_TEST_PERFORMANCE)
-	test_main();
+	ds_TestMain();
 #else
 	struct led *editor = led_Alloc();
 	

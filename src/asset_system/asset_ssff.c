@@ -267,7 +267,7 @@ i32 wi, he, co;
 			struct ssffSprite *spr = (struct ssffSprite *) (((u8 *) header) + c[i].sprite_offset);
 			spr[s].pixel_offset = (u32) ((u64) sprite_pixel - (u64) header);
 
-			struct serialStream stream = ss_Buffered(sprite_pixel, c[i].bit_depth*width*height);
+			struct ss stream = ss_Buffered(sprite_pixel, c[i].bit_depth*width*height);
 			
 			for (u32 y = sprite[i][s].y0; y <= sprite[i][s].y1; ++y)
 			{
@@ -368,7 +368,7 @@ struct ssffTextureReturn SsffTexture(struct arena *mem, const struct ssff_header
 			const u32 sprite_width = sprite[j].x1 - sprite[j].x0 + 1;
 			const u32 sprite_height = sprite[j].y1 - sprite[j].y0 + 1;
 			void *sprite_pixel = (((u8 *) ssff) + sprite[j].pixel_offset);
-			struct serialStream stream = ss_Buffered(sprite_pixel, c[i].bit_depth*width*height);
+			struct ss stream = ss_Buffered(sprite_pixel, c[i].bit_depth*width*height);
 			for (u32 y = 0; y < sprite_height; ++y)
 			{
 				for (u32 x = 0; x < sprite_width; ++x)

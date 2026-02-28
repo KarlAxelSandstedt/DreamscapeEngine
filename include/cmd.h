@@ -105,7 +105,7 @@ struct cmd
 
 struct cmdQueue
 {
-	struct pool		cmd_pool;
+	struct ds_Pool		cmd_pool;
 	struct ll		cmd_list;
 	struct ll		cmd_list_next_frame;
 

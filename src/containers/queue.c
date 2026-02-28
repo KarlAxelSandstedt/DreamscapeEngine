@@ -67,8 +67,8 @@ static u32 right_index(const u32 queue_index)
 static void min_queue_change_elements(struct minQueue * const queue, const u32 i1, const u32 i2)
 {
 	/* Update data queue indices */
-	struct queueObject *obj1 = PoolAddress(&queue->object_pool, queue->elements[i1].object_index);
-	struct queueObject *obj2 = PoolAddress(&queue->object_pool, queue->elements[i2].object_index);
+	struct queueObject *obj1 = ds_PoolAddress(&queue->object_pool, queue->elements[i1].object_index);
+	struct queueObject *obj2 = ds_PoolAddress(&queue->object_pool, queue->elements[i2].object_index);
 	obj1->queue_index = i2;
 	obj2->queue_index = i1;
 
@@ -156,12 +156,12 @@ struct minQueue MinQueueAlloc(struct arena *arena, const u32 initial_length, con
 
 	if (arena)
 	{
-		queue.object_pool = PoolAlloc(arena, initial_length, struct queueObject, !GROWABLE);
+		queue.object_pool = ds_PoolAlloc(arena, initial_length, struct queueObject, !GROWABLE);
 		queue.elements = ArenaPush(arena, initial_length * sizeof(struct queueElement));
 	}
 	else
 	{
-		queue.object_pool = PoolAlloc(NULL, initial_length, struct queueObject, !GROWABLE);
+		queue.object_pool = ds_PoolAlloc(NULL, initial_length, struct queueObject, !GROWABLE);
 		queue.elements = ds_Alloc(&queue.mem_elements, queue.object_pool.length * sizeof(struct queueElement), queue.object_pool.mem_slot.huge_pages);
 	}
 
@@ -180,7 +180,7 @@ void MinQueueDealloc(struct minQueue * const queue)
 {
 	if (queue->mem_elements.address)
 	{
-		PoolDealloc(&queue->object_pool);
+		ds_PoolDealloc(&queue->object_pool);
 		ds_Free(&queue->mem_elements);
 	}
 }
@@ -188,7 +188,7 @@ void MinQueueDealloc(struct minQueue * const queue)
 u32 MinQueuePop(struct minQueue * const queue)
 {
 	ds_AssertString(queue->object_pool.count > 0, "Queue should have elements to extract\n");
-	struct queueObject *obj = PoolAddress(&queue->object_pool, queue->elements[0].object_index);
+	struct queueObject *obj = ds_PoolAddress(&queue->object_pool, queue->elements[0].object_index);
 	const u32 external_index = obj->external_index;
 	queue->elements[0].priority = FLT_MAX;
 
@@ -197,7 +197,7 @@ u32 MinQueuePop(struct minQueue * const queue)
 	/* Check coherence of the queue from the start */
 	min_queue_heapify_down(queue, 0);
 
-	PoolRemoveAddress(&queue->object_pool, obj);
+	ds_PoolRemoveAddress(&queue->object_pool, obj);
 
 	return external_index;
 }
@@ -206,7 +206,7 @@ u32 MinQueuePush(struct minQueue * const queue, const f32 priority, const u32 ex
 {
 	const u32 old_length = queue->object_pool.length;
 	const u32 queue_index = queue->object_pool.count;
-	struct slot slot = PoolAdd(&queue->object_pool);
+	struct slot slot = ds_PoolAdd(&queue->object_pool);
 	if (old_length != queue->object_pool.length)
 	{
 		ds_Assert(queue->growable);
@@ -234,7 +234,7 @@ void MinQueueDecreasePriority(struct minQueue * const queue, const u32 object_in
 {
 	ds_AssertString(object_index < queue->object_pool.count, "Queue index should be withing queue bounds");
 
-	struct queueObject *obj = PoolAddress(&queue->object_pool, object_index);
+	struct queueObject *obj = ds_PoolAddress(&queue->object_pool, object_index);
 	if (priority < queue->elements[obj->queue_index].priority) 
 	{
 		queue->elements[obj->queue_index].priority = priority;
@@ -244,7 +244,7 @@ void MinQueueDecreasePriority(struct minQueue * const queue, const u32 object_in
 
 void MinQueueFlush(struct minQueue * const queue)
 {
-	PoolFlush(&queue->object_pool);
+	ds_PoolFlush(&queue->object_pool);
 }
 
 static void min_queue_fixed_heapify_up(struct minQueueFixed * const queue, u32 queue_index)

@@ -30,8 +30,8 @@ struct csg csg_Alloc(void)
 	struct csg csg;
 
 	csg.brush_db = strdb_Alloc(NULL, 32, 32, struct csg_Brush, GROWABLE);
-	csg.instance_pool = PoolAlloc(NULL, 32, struct csg_Instance, GROWABLE);
-	csg.node_pool = PoolAlloc(NULL, 32, struct csg_Instance, GROWABLE);
+	csg.instance_pool = ds_PoolAlloc(NULL, 32, struct csg_Instance, GROWABLE);
+	csg.node_pool = ds_PoolAlloc(NULL, 32, struct csg_Instance, GROWABLE);
 	csg.frame = ArenaAlloc(1024*1024);
 	csg.brush_marked_list = dll_Init(struct csg_Brush);
 	csg.instance_marked_list = dll_Init(struct csg_Instance);
@@ -53,8 +53,8 @@ struct csg csg_Alloc(void)
 void csg_Dealloc(struct csg *csg)
 {
 	strdb_Dealloc(&csg->brush_db);
-	PoolDealloc(&csg->instance_pool);
-	PoolDealloc(&csg->node_pool);
+	ds_PoolDealloc(&csg->instance_pool);
+	ds_PoolDealloc(&csg->node_pool);
 	ArenaFree(&csg->frame);
 	//dcel_allocator_dealloc(csg->dcel_allocator);
 }
@@ -62,8 +62,8 @@ void csg_Dealloc(struct csg *csg)
 void csg_Flush(struct csg *csg)
 {
 	strdb_Flush(&csg->brush_db);
-	PoolFlush(&csg->instance_pool);
-	PoolFlush(&csg->node_pool);
+	ds_PoolFlush(&csg->instance_pool);
+	ds_PoolFlush(&csg->node_pool);
 	ArenaFlush(&csg->frame);
 	dll_Flush(&csg->brush_marked_list);
 	dll_Flush(&csg->instance_marked_list);
@@ -71,12 +71,12 @@ void csg_Flush(struct csg *csg)
 	//dcel_allocator_flush(csg->dcel_allocator);
 }
 
-void csg_Serialize(struct serialStream *ss, const struct csg *csg)
+void csg_Serialize(struct ss *ss, const struct csg *csg)
 {
 
 }
 
-struct csg csg_Deserialize(struct arena *mem, struct serialStream *ss, const u32 growable)
+struct csg csg_Deserialize(struct arena *mem, struct ss *ss, const u32 growable)
 {
 	ds_Assert(!mem || !growable);
 }

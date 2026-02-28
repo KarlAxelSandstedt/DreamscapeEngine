@@ -122,17 +122,17 @@ struct ui *ui_Alloc(void)
 {
 	ds_StaticAssert(sizeof(struct ui_Size) == 16, "Expected size");
 
-	struct memSlot mem_slot;
+	struct ds_MemSlot mem_slot;
 	struct ui *ui = ds_Alloc(&mem_slot, sizeof(struct ui), NO_HUGE_PAGES);
 	ui->mem_slot = mem_slot;
 	
 	memset(ui, 0, sizeof(struct ui));
 	ui->node_hierarchy = hi_Alloc(NULL, INITIAL_UNIT_COUNT, struct ui_Node, GROWABLE);
 	ui->node_map = HashMapAlloc(NULL, U16_MAX, U16_MAX, GROWABLE);
-	ui->bucket_pool = PoolAlloc(NULL, 64, struct ui_DrawBucket, GROWABLE);
+	ui->bucket_pool = ds_PoolAlloc(NULL, 64, struct ui_DrawBucket, GROWABLE);
 	ui->bucket_list = dll_Init(struct ui_DrawBucket);
 	ui->bucket_map = HashMapAlloc(NULL, 128, 128, GROWABLE);
-	ui->event_pool = PoolAlloc(NULL, 32, struct dsEvent, GROWABLE);
+	ui->event_pool = ds_PoolAlloc(NULL, 32, struct dsEvent, GROWABLE);
 	ui->event_list = dll_Init(struct dsEvent);
 	ui->frame = 0;
 	ui->root = HI_ROOT_STUB_INDEX;
@@ -211,7 +211,7 @@ struct ui *ui_Alloc(void)
 	stack_u64Push(&ui->stack_recursive_interaction_flags, UI_FLAG_NONE);
 
 	/* setup stub bucket */
-	struct slot slot = PoolAdd(&ui->bucket_pool);
+	struct slot slot = ds_PoolAdd(&ui->bucket_pool);
 	dll_Append(&ui->bucket_list, ui->bucket_pool.buf, slot.index);
 	ui->bucket_cache = slot.index;
 	struct ui_DrawBucket *bucket = slot.address;
@@ -261,8 +261,8 @@ void ui_Dealloc(struct ui *ui)
 	stack_u32Free(&ui->stack_floating_depth);
 	stack_u32Free(&ui->stack_fixed_depth);
 	HashMapFree(&ui->node_map);
-	PoolDealloc(&ui->event_pool);
-	PoolDealloc(&ui->bucket_pool);
+	ds_PoolDealloc(&ui->event_pool);
+	ds_PoolDealloc(&ui->bucket_pool);
 	HashMapFree(&ui->bucket_map);
 	hi_Dealloc(&ui->node_hierarchy);
 	ds_Free(&ui->mem_slot);
@@ -274,13 +274,13 @@ void ui_Dealloc(struct ui *ui)
 
 static void ui_DrawBucketAddNode(const u32 cmd, const u32 index)
 {
-	struct ui_DrawBucket *bucket = PoolAddress(&g_ui->bucket_pool, g_ui->bucket_cache);
+	struct ui_DrawBucket *bucket = ds_PoolAddress(&g_ui->bucket_pool, g_ui->bucket_cache);
 	if (bucket->cmd != cmd)
 	{
 		u32 bi = HashMapFirst(&g_ui->bucket_map, cmd);
 		for (; bi != HASH_NULL; bi = HashMapNext(&g_ui->bucket_map, bi))
 		{
-			bucket = PoolAddress(&g_ui->bucket_pool, bi);
+			bucket = ds_PoolAddress(&g_ui->bucket_pool, bi);
 			if (bucket->cmd == cmd)
 			{
 				break;
@@ -289,7 +289,7 @@ static void ui_DrawBucketAddNode(const u32 cmd, const u32 index)
 
 		if (bi == HASH_NULL)
 		{
-			struct slot slot = PoolAdd(&g_ui->bucket_pool);
+			struct slot slot = ds_PoolAdd(&g_ui->bucket_pool);
 			bi = slot.index;
 			HashMapAdd(&g_ui->bucket_map, cmd, bi);
 			dll_Append(&g_ui->bucket_list, g_ui->bucket_pool.buf, bi);
@@ -842,11 +842,11 @@ void ui_FrameBegin(const vec2u32 window_size, const struct ui_Visual *base)
 	g_ui->mem_frame = g_ui->mem_frame_arr + (g_ui->frame & 0x1);
 	ArenaFlush(g_ui->mem_frame);
 	dll_Flush(&g_ui->bucket_list);
-	PoolFlush(&g_ui->bucket_pool);
+	ds_PoolFlush(&g_ui->bucket_pool);
 	HashMapFlush(&g_ui->bucket_map);
 	
 	/* setup stub bucket */
-	struct slot slot = PoolAdd(&g_ui->bucket_pool);
+	struct slot slot = ds_PoolAdd(&g_ui->bucket_pool);
 	dll_Append(&g_ui->bucket_list, g_ui->bucket_pool.buf, slot.index);
 	g_ui->bucket_cache = slot.index;
 	struct ui_DrawBucket *bucket = slot.address;
@@ -1008,7 +1008,7 @@ static struct slot ui_TextSelectionAlloc(const struct ui_Node *node, const vec4 
 void ui_FrameEnd(void)
 {	
 	dll_Flush(&g_ui->event_list);
-	PoolFlush(&g_ui->event_pool);
+	ds_PoolFlush(&g_ui->event_pool);
 
 	ui_NodePop();
 
@@ -1305,7 +1305,7 @@ struct slot ui_NodeAllocNonHashed(const u64 flags)
 
 struct ui_Node *ui_NodeAddress(const u32 node)
 {
-	return PoolAddress(&g_ui->node_hierarchy.pool, node);
+	return ds_PoolAddress(&g_ui->node_hierarchy.pool, node);
 }
 
 struct slot ui_NodeLookup(const utf8 *id)
@@ -1968,7 +1968,7 @@ void ui_NodePop(void)
 
 struct ui_Node *ui_NodeTop(void)
 {
-	return PoolAddress(&g_ui->node_hierarchy.pool, stack_u32Top(&g_ui->stack_parent));
+	return ds_PoolAddress(&g_ui->node_hierarchy.pool, stack_u32Top(&g_ui->stack_parent));
 }
 
 void ui_SizePush(const enum axis_2 axis, const struct ui_Size size)

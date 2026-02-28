@@ -63,8 +63,8 @@ struct cdb cdb_Alloc(struct arena *mem_persistent, const u32 size)
 	ds_Assert(PowerOfTwoCheck(size));
 
 	cdb.sat_cache_map = HashMapAlloc(NULL, size, size, GROWABLE);
-	cdb.sat_cache_pool = PoolAlloc(NULL, 20000, struct sat_Cache, GROWABLE);
-	//cdb.sat_cache_pool = PoolAlloc(NULL, size, struct sat_Cache, GROWABLE);
+	cdb.sat_cache_pool = ds_PoolAlloc(NULL, 20000, struct sat_Cache, GROWABLE);
+	//cdb.sat_cache_pool = ds_PoolAlloc(NULL, size, struct sat_Cache, GROWABLE);
 	cdb.contact_net = nll_Alloc(NULL, size, struct ds_Contact, cdb_IndexInPreviousConctactNode, cdb_IndexInNextConctactNode, GROWABLE);
 	//cdb.contact_map = HashMapAlloc(NULL, size, size, GROWABLE);
 	cdb.contact_map = HashMapAlloc(NULL, size, 20000, GROWABLE);
@@ -75,7 +75,7 @@ struct cdb cdb_Alloc(struct arena *mem_persistent, const u32 size)
 
 void cdb_Free(struct cdb *cdb)
 {
-	PoolDealloc(&cdb->sat_cache_pool);
+	ds_PoolDealloc(&cdb->sat_cache_pool);
 	HashMapFree(&cdb->sat_cache_map);
 	nll_Dealloc(&cdb->contact_net);
 	HashMapFree(&cdb->contact_map);
@@ -85,7 +85,7 @@ void cdb_Free(struct cdb *cdb)
 void cdb_Flush(struct cdb *cdb)
 {
 	cdb_ClearFrame(cdb);
-	PoolFlush(&cdb->sat_cache_pool);
+	ds_PoolFlush(&cdb->sat_cache_pool);
 	HashMapFlush(&cdb->sat_cache_map);
 	nll_Flush(&cdb->contact_net);
 	HashMapFlush(&cdb->contact_map);
@@ -108,8 +108,8 @@ void cdb_Flush(struct cdb *cdb)
 //			//	       c->nll_prev[0],	
 //			//	       c->nll_prev[1]);
 //
-//			const struct ds_RigidBody *b1 = PoolAddress(&pipeline->body_pool, c->cm.i1);
-//			const struct ds_RigidBody *b2 = PoolAddress(&pipeline->body_pool, c->cm.i2);
+//			const struct ds_RigidBody *b1 = ds_PoolAddress(&pipeline->body_pool, c->cm.i1);
+//			const struct ds_RigidBody *b2 = ds_PoolAddress(&pipeline->body_pool, c->cm.i2);
 //
 //			u32 prev, k, found; 
 //			prev = NLL_NULL;
@@ -215,8 +215,8 @@ void cdb_ClearFrame(struct cdb *cdb)
 //		b2 = i1;
 //	}
 //
-//	struct ds_RigidBody *body1 = PoolAddress(&pipeline->body_pool, b1);
-//	struct ds_RigidBody *body2 = PoolAddress(&pipeline->body_pool, b2);
+//	struct ds_RigidBody *body1 = ds_PoolAddress(&pipeline->body_pool, b1);
+//	struct ds_RigidBody *body2 = ds_PoolAddress(&pipeline->body_pool, b2);
 //
 //	const u64 key = KeyGenU32U32(b1, b2);
 //	ds_Assert(b1 == CONTACT_KEY_TO_BODY_0(key));
@@ -263,8 +263,8 @@ void cdb_ClearFrame(struct cdb *cdb)
 //void cdb_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u64 key, const u32 index)
 //{
 //	struct ds_Contact *c = nll_Address(&pipeline->cdb.contact_net, index);
-//	struct ds_RigidBody *body0 = PoolAddress(&pipeline->body_pool, (u32) CONTACT_KEY_TO_BODY_0(c->key));
-//	struct ds_RigidBody *body1 = PoolAddress(&pipeline->body_pool, (u32) CONTACT_KEY_TO_BODY_1(c->key));
+//	struct ds_RigidBody *body0 = ds_PoolAddress(&pipeline->body_pool, (u32) CONTACT_KEY_TO_BODY_0(c->key));
+//	struct ds_RigidBody *body1 = ds_PoolAddress(&pipeline->body_pool, (u32) CONTACT_KEY_TO_BODY_1(c->key));
 //	
 //	if (body0->contact_first == index)
 //	{
@@ -279,7 +279,7 @@ void cdb_ClearFrame(struct cdb *cdb)
 //  TODO: if contact HULL-HULL, remove sat_cache
 //  for (u32 i = cdb->sat_cache_list.first; i != DLL_NULL; )
 //	{
-//		struct sat_Cache *cache = PoolAddress(&cdb->sat_cache_pool, i);
+//		struct sat_Cache *cache = ds_PoolAddress(&cdb->sat_cache_pool, i);
 //		const u32 next = dll_Next(cache);
 //		if (cache->touched)
 //		{
@@ -290,7 +290,7 @@ void cdb_ClearFrame(struct cdb *cdb)
 //            const u32 hash = (u32) XXH3_64bits(&cache->key, sizeof(cache->key));
 //			dll_Remove(&cdb->sat_cache_list, cdb->sat_cache_pool.buf, i);
 //			HashMapRemove(&cdb->sat_cache_map, hash, i);
-//			PoolRemove(&cdb->sat_cache_pool, i);
+//			ds_PoolRemove(&cdb->sat_cache_pool, i);
 //		}
 //		i = next;
 //	}
@@ -301,7 +301,7 @@ void cdb_ClearFrame(struct cdb *cdb)
 //
 //void cdb_BodyRemoveContacts(struct ds_RigidBodyPipeline *pipeline, const u32 body_index)
 //{
-//	struct ds_RigidBody *body = PoolAddress(&pipeline->body_pool, body_index);
+//	struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, body_index);
 //	u32 ci = body->contact_first;
 //	body->contact_first = NLL_NULL;
 //	while (ci != NLL_NULL)
@@ -310,22 +310,22 @@ void cdb_ClearFrame(struct cdb *cdb)
 //		struct sat_Cache *sat = sat_CacheLookup(&pipeline->cdb, CONTACT_KEY_TO_BODY_0(c->key), CONTACT_KEY_TO_BODY_1(c->key));
 //		if (sat)
 //		{
-//			const u32 sat_index = PoolIndex(&pipeline->cdb.sat_cache_pool, sat);
+//			const u32 sat_index = ds_PoolIndex(&pipeline->cdb.sat_cache_pool, sat);
 //			dll_Remove(&pipeline->cdb.sat_cache_list, pipeline->cdb.sat_cache_pool.buf, sat_index);
 //			HashMapRemove(&pipeline->cdb.sat_cache_map, (u32) c->key, sat_index);
-//			PoolRemove(&pipeline->cdb.sat_cache_pool, sat_index);
+//			ds_PoolRemove(&pipeline->cdb.sat_cache_pool, sat_index);
 //		}
 //
 //		u32 next_i;
 //		if (body_index == CONTACT_KEY_TO_BODY_0(c->key))
 //		{
 //			next_i = 0;
-//			body = PoolAddress(&pipeline->body_pool, CONTACT_KEY_TO_BODY_1(c->key));
+//			body = ds_PoolAddress(&pipeline->body_pool, CONTACT_KEY_TO_BODY_1(c->key));
 //		}
 //		else
 //		{
 //			next_i = 1;
-//			body = PoolAddress(&pipeline->body_pool, CONTACT_KEY_TO_BODY_0(c->key));
+//			body = ds_PoolAddress(&pipeline->body_pool, CONTACT_KEY_TO_BODY_0(c->key));
 //		}
 //
 //		if (body->contact_first == ci)
@@ -350,7 +350,7 @@ void cdb_ClearFrame(struct cdb *cdb)
 //	u32 *island = arr.addr;
 //	u32 island_count = 0;
 //
-//	struct ds_RigidBody *body = PoolAddress(&pipeline->body_pool, static_index);
+//	struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, static_index);
 //	ds_Assert(body->island_index == ISLAND_STATIC);
 //	u32 ci = body->contact_first;
 //	body->contact_first = NLL_NULL;
@@ -361,12 +361,12 @@ void cdb_ClearFrame(struct cdb *cdb)
 //		if (static_index == CONTACT_KEY_TO_BODY_0(c->key))
 //		{
 //			next_i = 0;
-//			body = PoolAddress(&pipeline->body_pool, CONTACT_KEY_TO_BODY_1(c->key));
+//			body = ds_PoolAddress(&pipeline->body_pool, CONTACT_KEY_TO_BODY_1(c->key));
 //		}
 //		else
 //		{
 //			next_i = 1;
-//			body = PoolAddress(&pipeline->body_pool, CONTACT_KEY_TO_BODY_0(c->key));
+//			body = ds_PoolAddress(&pipeline->body_pool, CONTACT_KEY_TO_BODY_0(c->key));
 //		}
 //
 //		if (body->contact_first == ci)
@@ -374,7 +374,7 @@ void cdb_ClearFrame(struct cdb *cdb)
 //			body->contact_first = c->nll_next[1-next_i];
 //		}
 //		const u32 ci_next = c->nll_next[next_i];
-//		struct island *is = PoolAddress(&pipeline->is_db.island_pool, body->island_index);
+//		struct island *is = ds_PoolAddress(&pipeline->is_db.island_pool, body->island_index);
 //
 //		if ((is->flags & ISLAND_SPLIT) == 0)
 //		{
@@ -398,7 +398,7 @@ void cdb_ClearFrame(struct cdb *cdb)
 //
 //	for (u32 i = 0; i < island_count; ++i)
 //	{
-//		struct island *is = PoolAddress(&pipeline->is_db.island_pool, island[i]);
+//		struct island *is = ds_PoolAddress(&pipeline->is_db.island_pool, island[i]);
 //		if (is->contact_list.count > 0)
 //		{
 //			isdb_SplitIsland(&pipeline->frame, pipeline, island[i]);
@@ -484,7 +484,7 @@ struct slot sat_CacheAdd(struct cdb *cdb, const struct ds_ContactKey *key)
             allocating all caches beforehand.");
 
     const u32 hash = (u32) XXH3_64bits(key, sizeof(*key));
-	struct slot slot = PoolAdd(&cdb->sat_cache_pool);
+	struct slot slot = ds_PoolAdd(&cdb->sat_cache_pool);
 	HashMapAdd(&cdb->sat_cache_map, hash, slot.index);
 
 	struct sat_Cache *sat = slot.address;
@@ -501,7 +501,7 @@ struct slot sat_CacheLookup(const struct cdb *cdb, const struct ds_ContactKey *k
     struct slot slot = { .index = POOL_NULL, .address = NULL };
 	for (u32 i = HashMapFirst(&cdb->sat_cache_map, hash); i != HASH_NULL; i = HashMapNext(&cdb->sat_cache_map, i))
 	{
-		struct sat_Cache *sat = PoolAddress(&cdb->sat_cache_pool, i);
+		struct sat_Cache *sat = ds_PoolAddress(&cdb->sat_cache_pool, i);
 		if (memcmp(&sat->key, key, sizeof(*key)) == 0)
 		{
 			slot.address = sat;

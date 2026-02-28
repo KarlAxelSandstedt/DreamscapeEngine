@@ -341,5 +341,5 @@ void r_CoreFlush(void)
 	Vec3Set(stub3d->linear.angular_velocity, 0.0f, 0.0f, 0.0f);
 	stub3d->flags = 0;
 
-	GPoolFlush(&g_r_core->unit_pool);
+	ds_GPoolFlush(&g_r_core->unit_pool);
 }

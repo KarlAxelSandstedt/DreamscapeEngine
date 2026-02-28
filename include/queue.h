@@ -55,10 +55,10 @@ struct queueElement
 
 struct minQueue 
 {
-	struct pool 		object_pool;
+	struct ds_Pool 		object_pool;
 	struct queueElement *	elements;
 	u32			growable;
-	struct memSlot		mem_elements;
+	struct ds_MemSlot		mem_elements;
 };
 
 /* Allocate a new priority queue. */
@@ -87,7 +87,7 @@ struct minQueueFixed
 	u32 		count;
 	u32		length;
 	u32		growable;
-	struct memSlot	mem_element;
+	struct ds_MemSlot	mem_element;
 };
 
 /* Alocate a new priority queue */

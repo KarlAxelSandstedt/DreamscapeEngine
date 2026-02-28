@@ -85,14 +85,14 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 
 	ds_AssertString(PowerOfTwoCheck(initial_size), "For simplicity of future data structures, expect pipeline sizes to be powers of two");
 
-	pipeline.body_pool = PoolAlloc(NULL, initial_size, struct ds_RigidBody, GROWABLE);
+	pipeline.body_pool = ds_PoolAlloc(NULL, initial_size, struct ds_RigidBody, GROWABLE);
 	pipeline.body_marked_list = dll_Init(struct ds_RigidBody);
 	pipeline.body_non_marked_list = dll_Init(struct ds_RigidBody);
 
-	pipeline.shape_pool = PoolAlloc(NULL, initial_size, struct ds_Shape, GROWABLE);
+	pipeline.shape_pool = ds_PoolAlloc(NULL, initial_size, struct ds_Shape, GROWABLE);
 	pipeline.shape_bvh = DbvhAlloc(NULL, 2*initial_size, 1);
 
-	pipeline.event_pool = PoolAlloc(NULL, 256, struct physicsEvent, GROWABLE);
+	pipeline.event_pool = ds_PoolAlloc(NULL, 256, struct physicsEvent, GROWABLE);
 	pipeline.event_list = dll_Init(struct physicsEvent);
 
 	pipeline.cshape_db = cshape_db;
@@ -156,9 +156,9 @@ void PhysicsPipelineFree(struct ds_RigidBodyPipeline *pipeline)
 	BvhFree(&pipeline->shape_bvh);
 	cdb_Free(&pipeline->cdb);
 	isdb_Dealloc(&pipeline->is_db);
-	PoolDealloc(&pipeline->body_pool);
-	PoolDealloc(&pipeline->event_pool);
-	PoolDealloc(&pipeline->shape_pool);
+	ds_PoolDealloc(&pipeline->body_pool);
+	ds_PoolDealloc(&pipeline->event_pool);
+	ds_PoolDealloc(&pipeline->shape_pool);
 }
 
 static void InternalPhysicsPipelineClearFrame(struct ds_RigidBodyPipeline *pipeline)
@@ -191,14 +191,14 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
 	cdb_Flush(&pipeline->cdb);
 	isdb_Flush(&pipeline->is_db);
 	
-	PoolFlush(&pipeline->body_pool);
+	ds_PoolFlush(&pipeline->body_pool);
 	dll_Flush(&pipeline->body_marked_list);
 	dll_Flush(&pipeline->body_non_marked_list);
 
 	DbvhFlush(&pipeline->shape_bvh);
-	PoolFlush(&pipeline->shape_pool);
+	ds_PoolFlush(&pipeline->shape_pool);
 
-	PoolFlush(&pipeline->event_pool);
+	ds_PoolFlush(&pipeline->event_pool);
 	dll_Flush(&pipeline->event_list);
 
 	ArenaFlush(&pipeline->frame);
@@ -224,15 +224,15 @@ static void InternalUpdateShapeBvh(struct ds_RigidBodyPipeline *pipeline)
 	const struct ds_RigidBody *body = NULL;
 	for (u32 i = pipeline->body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 	{
-		body = PoolAddress(&pipeline->body_pool, i);
+		body = ds_PoolAddress(&pipeline->body_pool, i);
 		if ((body->flags & flags) == flags)
 		{
             struct ds_Shape *shape = NULL;
             for (u32 j = body->shape_list.first; j != DLL_NULL; j = shape->dll_next)
             {
-                shape = PoolAddress(&pipeline->shape_pool, j);
+                shape = ds_PoolAddress(&pipeline->shape_pool, j);
                 struct aabb bbox = ds_ShapeWorldBbox(pipeline, shape);
-                const struct bvhNode *node = PoolAddress(&pipeline->shape_bvh.tree.pool, shape->proxy);
+                const struct bvhNode *node = ds_PoolAddress(&pipeline->shape_bvh.tree.pool, shape->proxy);
 			    const struct aabb *proxy = &node->bbox;
 			    if (!AabbContains(proxy, &bbox))
 			    {
@@ -309,8 +309,8 @@ static void InternalCalculateContacts(struct ds_RigidBodyPipeline *pipeline)
 
 	for (u32 i = 0; i < pipeline->proxy_overlap_count; ++i)
 	{
-        struct ds_Shape *s1 = PoolAddress(&pipeline->shape_pool, pipeline->proxy_overlap[i].id1);
-        struct ds_Shape *s2 = PoolAddress(&pipeline->shape_pool, pipeline->proxy_overlap[i].id2);
+        struct ds_Shape *s1 = ds_PoolAddress(&pipeline->shape_pool, pipeline->proxy_overlap[i].id1);
+        struct ds_Shape *s2 = ds_PoolAddress(&pipeline->shape_pool, pipeline->proxy_overlap[i].id2);
         if (s1->body == s2->body)
         {
             continue;
@@ -395,8 +395,8 @@ static void InternalCalculateContacts(struct ds_RigidBodyPipeline *pipeline)
 //	for (u32 i = 0; i < pipeline->contact_new_count; ++i)
 //	{
 //		struct ds_Contact *c = nll_Address(&pipeline->cdb.contact_net, pipeline->contact_new[i]);
-//		const struct ds_RigidBody *body1 = PoolAddress(&pipeline->body_pool, c->cm.i1);
-//		const struct ds_RigidBody *body2 = PoolAddress(&pipeline->body_pool, c->cm.i2);
+//		const struct ds_RigidBody *body1 = ds_PoolAddress(&pipeline->body_pool, c->cm.i1);
+//		const struct ds_RigidBody *body2 = ds_PoolAddress(&pipeline->body_pool, c->cm.i2);
 //		const u32 is1 = body1->island_index;
 //		const u32 is2 = body2->island_index;
 //		const u32 d1 = (is1 != ISLAND_STATIC) ? 0x2 : 0x0;
@@ -412,14 +412,14 @@ static void InternalCalculateContacts(struct ds_RigidBodyPipeline *pipeline)
 //			/* dynamic-static */
 //			case 0x2:
 //			{
-//				struct island *is = PoolAddress(&pipeline->is_db.island_pool, is1);
+//				struct island *is = ds_PoolAddress(&pipeline->is_db.island_pool, is1);
 //				dll_Append(&is->contact_list, pipeline->cdb.contact_net.pool.buf, pipeline->contact_new[i]);
 //			} break;
 //
 //			/* static-dynamic */
 //			case 0x1:
 //			{
-//				struct island *is = PoolAddress(&pipeline->is_db.island_pool, is2);
+//				struct island *is = ds_PoolAddress(&pipeline->is_db.island_pool, is2);
 //				dll_Append(&is->contact_list, pipeline->cdb.contact_net.pool.buf, pipeline->contact_new[i]);
 //			} break;
 //		}
@@ -469,8 +469,8 @@ static void InternalCalculateContacts(struct ds_RigidBodyPipeline *pipeline)
 //			/* tag island, if any exist, to split */
 //			const u32 b1 = CONTACT_KEY_TO_BODY_0(c->key);
 //			const u32 b2 = CONTACT_KEY_TO_BODY_1(c->key);
-//			const struct ds_RigidBody *body1 = PoolAddress(&pipeline->body_pool, b1);
-//			const struct ds_RigidBody *body2 = PoolAddress(&pipeline->body_pool, b2);
+//			const struct ds_RigidBody *body1 = ds_PoolAddress(&pipeline->body_pool, b1);
+//			const struct ds_RigidBody *body2 = ds_PoolAddress(&pipeline->body_pool, b2);
 //			ds_Assert(body1->island_index != ISLAND_STATIC || body2->island_index != ISLAND_STATIC);
 //
 //			struct island *is;
@@ -528,7 +528,7 @@ static void InternalCalculateContacts(struct ds_RigidBodyPipeline *pipeline)
 //	struct island *is = NULL;
 //	for (u32 i = pipeline->is_db.island_list.first; i != DLL_NULL; i = dll_Next(is))
 //	{
-//		is = PoolAddress(&pipeline->is_db.island_pool, i);
+//		is = ds_PoolAddress(&pipeline->is_db.island_pool, i);
 //		if (!g_solver_config->sleep_enabled || ISLAND_AWAKE_BIT(is))
 //		{
 //			struct islandSolveInput *args = ArenaPush(&pipeline->frame, sizeof(struct islandSolveInput));
@@ -587,7 +587,7 @@ void PhysicsPipelineSleepEnable(struct ds_RigidBodyPipeline *pipeline)
 		struct ds_RigidBody *body = NULL;
 		for (u32 i = pipeline->body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 		{
-			body = PoolAddress(&pipeline->body_pool, i);
+			body = ds_PoolAddress(&pipeline->body_pool, i);
 			if (body->flags & body_flags)
 			{
 				body->flags |= RB_AWAKE;
@@ -597,7 +597,7 @@ void PhysicsPipelineSleepEnable(struct ds_RigidBodyPipeline *pipeline)
 		struct island *is = NULL;
 		for (u32 i = pipeline->is_db.island_list.first; i != DLL_NULL; i = dll_Next(is))
 		{
-			is = PoolAddress(&pipeline->is_db.island_pool, i);
+			is = ds_PoolAddress(&pipeline->is_db.island_pool, i);
 			is->flags |= ISLAND_AWAKE | ISLAND_SLEEP_RESET;
 			is->flags &= ~ISLAND_TRY_SLEEP;
 		}
@@ -614,7 +614,7 @@ void PhysicsPipelineSleepDisable(struct ds_RigidBodyPipeline *pipeline)
 		struct ds_RigidBody *body = NULL;
 		for (u32 i = pipeline->body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 		{
-			body = PoolAddress(&pipeline->body_pool, i);
+			body = ds_PoolAddress(&pipeline->body_pool, i);
 			if (body->flags & body_flags)
 			{
 				body->flags |= RB_AWAKE;
@@ -624,7 +624,7 @@ void PhysicsPipelineSleepDisable(struct ds_RigidBodyPipeline *pipeline)
 		struct island *is = NULL;
 		for (u32 i = pipeline->is_db.island_list.first; i != DLL_NULL; i = dll_Next(is))
 		{
-			is = PoolAddress(&pipeline->is_db.island_pool, i);
+			is = ds_PoolAddress(&pipeline->is_db.island_pool, i);
 			is->flags |= ISLAND_AWAKE;
 			is->flags &= ~(ISLAND_SLEEP_RESET | ISLAND_TRY_SLEEP);
 		}
@@ -654,7 +654,7 @@ static void InternalUpdateSolverConfig(struct ds_RigidBodyPipeline *pipeline)
 
 void PhysicsPipelineRigidBodyTagForRemoval(struct ds_RigidBodyPipeline *pipeline, const u32 handle)
 {
-	struct ds_RigidBody *b = PoolAddress(&pipeline->body_pool, handle);
+	struct ds_RigidBody *b = ds_PoolAddress(&pipeline->body_pool, handle);
 	if (!RB_IS_MARKED(b))
 	{
 		b->flags |= RB_MARKED_FOR_REMOVAL;
@@ -668,7 +668,7 @@ static void InternalRemoveMarkedBodies(struct ds_RigidBodyPipeline *pipeline)
 	struct ds_RigidBody *b = NULL;
 	for (u32 i = pipeline->body_marked_list.first; i != DLL_NULL; i = dll_Next(b))
 	{
-		b = PoolAddress(&pipeline->body_pool, i);
+		b = ds_PoolAddress(&pipeline->body_pool, i);
 		ds_RigidBodyRemove(pipeline, i);
 	}
 
@@ -748,7 +748,7 @@ u32f32 PhysicsPipelineRaycastParameter(struct arena *mem_tmp1, struct arena *mem
 
 struct physicsEvent *PhysicsPipelineEventPush(struct ds_RigidBodyPipeline *pipeline)
 {
-	struct slot slot = PoolAdd(&pipeline->event_pool);
+	struct slot slot = ds_PoolAdd(&pipeline->event_pool);
 	dll_Append(&pipeline->event_list, pipeline->event_pool.buf, slot.index);
 	struct physicsEvent *event = slot.address;
 	event->ns = pipeline->ns_start + pipeline->frames_completed * pipeline->ns_tick;

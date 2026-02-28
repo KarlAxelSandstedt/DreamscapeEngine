@@ -52,7 +52,7 @@ used as arbitrary u32's storing external information.
 
 struct bt
 {
-	struct pool	pool;
+	struct ds_Pool	pool;
 	u64		parent_offset;
 	u64		left_offset;
 	u64		right_offset;

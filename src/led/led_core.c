@@ -571,9 +571,9 @@ struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const u32 dyn
 
 static void led_ShapePrefabInstanceRemove(struct led *led, const u32 i)
 {
-    const struct ds_ShapePrefabInstance *instance = PoolAddress(&led->shape_prefab_instance_pool, i);
+    const struct ds_ShapePrefabInstance *instance = ds_PoolAddress(&led->shape_prefab_instance_pool, i);
     strdb_Dereference(&led->shape_prefab_db, instance->shape);
-    PoolRemove(&led->shape_prefab_instance_pool, i);
+    ds_PoolRemove(&led->shape_prefab_instance_pool, i);
 }
 
 void led_RigidBodyPrefabRemove(struct led *led, const utf8 id)
@@ -584,7 +584,7 @@ void led_RigidBodyPrefabRemove(struct led *led, const utf8 id)
 	{
         for (u32 i = prefab->shape_list.first; i != DLL_NULL; )
         {
-            const struct ds_ShapePrefabInstance *instance = PoolAddress(&led->shape_prefab_instance_pool, i);
+            const struct ds_ShapePrefabInstance *instance = ds_PoolAddress(&led->shape_prefab_instance_pool, i);
             i = instance->dll_next;
             led_ShapePrefabInstanceRemove(led, i);
         }
@@ -623,7 +623,7 @@ void led_RigidBodyPrefabAttachShape(struct led *led, const utf8 rb_id, const utf
     }
     else
     {
-        struct slot slot = PoolAdd(&led->shape_prefab_instance_pool);
+        struct slot slot = ds_PoolAdd(&led->shape_prefab_instance_pool);
         struct ds_ShapePrefabInstance *instance = slot.address;
 
         dll_Prepend(&rb_prefab->shape_list, led->shape_prefab_instance_pool.buf, slot.index);
@@ -667,7 +667,7 @@ struct slot led_RigidBodyPrefabLookupShape(struct led *led, const utf8 rb_id, co
         struct ds_ShapePrefabInstance *instance = NULL;
         for (u32 i = prefab->shape_list.first; i != DLL_NULL; i = instance->dll_next)
         {
-            instance = PoolAddress(&led->shape_prefab_instance_pool, i);
+            instance = ds_PoolAddress(&led->shape_prefab_instance_pool, i);
             if (Utf8Equivalence(instance->id, local_shape_id))
             {
                 slot.index = i;
@@ -703,7 +703,7 @@ struct slot led_NodeAdd(struct led *led, const utf8 id)
 		} 
 		else
 		{
-			slot = GPoolAdd(&led->node_pool);
+			slot = ds_GPoolAdd(&led->node_pool);
 			HashMapAdd(&led->node_map, key, slot.index);
 			dll_Append(&led->node_non_marked_list, led->node_pool.buf, slot.index);
 			dll_SlotSetNotInList(&led->node_selected_list, slot.address);
@@ -733,7 +733,7 @@ struct slot led_NodeLookup(struct led *led, const utf8 id)
 	struct slot slot = empty_slot;
 	for (u32 i = HashMapFirst(&led->node_map, key); i != HASH_NULL; i = HashMapNext(&led->node_map, i))
 	{
-		struct led_node *node = GPoolAddress(&led->node_pool, i);
+		struct led_node *node = ds_GPoolAddress(&led->node_pool, i);
 		if (Utf8Equivalence(id, node->id))
 		{
 			slot.index = i;
@@ -750,7 +750,7 @@ static void led_RemoveMarkedStructs(struct led *led)
 	struct led_node *node = NULL;
 	for (u32 i = led->node_marked_list.first; i != DLL_NULL; i = dll_Next(node))
 	{
-		node = GPoolAddress(&led->node_pool, i);
+		node = ds_GPoolAddress(&led->node_pool, i);
 		if (node->flags & LED_CONSTANT)
 		{
 			node->flags &= ~LED_MARKED_FOR_REMOVAL;
@@ -780,7 +780,7 @@ static void led_RemoveMarkedStructs(struct led *led)
 
 		HashMapRemove(&led->node_map, node->key, i);
 		ThreadFree256B(node->id.buf);
-		GPoolRemove(&led->node_pool, i);
+		ds_GPoolRemove(&led->node_pool, i);
 	}
 
 	dll_Flush(&led->node_marked_list);
@@ -1677,7 +1677,7 @@ static void led_EngineFlush(struct led *led)
 	struct led_node *node = NULL;
 	for (u32 i = led->node_non_marked_list.first; i != DLL_NULL; i = dll_Next(node))
 	{
-		node = PoolAddress(&led->node_pool, i);
+		node = ds_PoolAddress(&led->node_pool, i);
 		r_Proxy3dLinearSpeculationSet(node->position
 					, node->rotation
 					, (vec3) { 0 } 
@@ -1700,7 +1700,7 @@ static void led_EngineInit(struct led *led)
 	struct led_node *node = NULL;
 	for (u32 i = led->node_non_marked_list.first; i != DLL_NULL; i = dll_Next(node))
 	{
-		node = GPoolAddress(&led->node_pool, i);
+		node = ds_GPoolAddress(&led->node_pool, i);
 		if (node->flags & LED_PHYSICS)
 		{
 			struct ds_RigidBodyPrefab *prefab = strdb_Address(&led->rb_prefab_db, node->rb_prefab);
@@ -1729,7 +1729,7 @@ static void led_EngineInit(struct led *led)
             struct ds_ShapePrefab *shape_prefab = NULL;
             for (u32 j = prefab->shape_list.first; j != DLL_NULL; j = instance->dll_next)
             {
-                instance = PoolAddress(&led->shape_prefab_instance_pool, j);
+                instance = ds_PoolAddress(&led->shape_prefab_instance_pool, j);
                 shape_prefab = strdb_Address(&led->shape_prefab_db, instance->shape);
                 ds_ShapeAdd(&led->physics, shape_prefab, &instance->t_local, body);
             }
@@ -1741,12 +1741,12 @@ static void led_EngineInit(struct led *led)
 
 static void led_EngineColorBodies(struct led *led, const u32 island, const vec4 color)
 {
-	struct island *is = PoolAddress(&led->physics.is_db.island_pool, island);
+	struct island *is = ds_PoolAddress(&led->physics.is_db.island_pool, island);
 	const struct ds_RigidBody *body;
 	for (u32 i = is->body_list.first; i != DLL_NULL; i = body->dll2_next)
 	{
-		body = PoolAddress(&led->physics.body_pool, i);
-		const struct led_node *node = PoolAddress(&led->node_pool, body->entity);
+		body = ds_PoolAddress(&led->physics.body_pool, i);
+		const struct led_node *node = ds_PoolAddress(&led->node_pool, body->entity);
 		struct r_Proxy3d *proxy = r_Proxy3dAddress(node->proxy);
 		Vec4Copy(proxy->color, color);
 	}
@@ -1787,8 +1787,8 @@ static void led_engine_run(struct led *led)
 				const struct ds_RigidBody *body = NULL;
 				for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 				{
-					body = PoolAddress(&led->physics.body_pool, i);
-					const struct led_node *node = PoolAddress(&led->node_pool, body->entity);
+					body = ds_PoolAddress(&led->physics.body_pool, i);
+					const struct led_node *node = ds_PoolAddress(&led->node_pool, body->entity);
 					struct r_Proxy3d *proxy = r_Proxy3dAddress(node->proxy);
 					Vec4Copy(proxy->color, node->color);
 				}
@@ -1799,9 +1799,9 @@ static void led_engine_run(struct led *led)
 				const struct ds_RigidBody *body = NULL;
 				for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 				{
-					body = PoolAddress(&led->physics.body_pool, i);
+					body = ds_PoolAddress(&led->physics.body_pool, i);
                     //TODO;
-					//const struct led_node *node = PoolAddress(&led->node_pool, body->entity);
+					//const struct led_node *node = ds_PoolAddress(&led->node_pool, body->entity);
 					//struct r_Proxy3d *proxy = r_Proxy3dAddress(node->proxy);
 					//if (RB_IS_DYNAMIC(body))
 					//{
@@ -1821,8 +1821,8 @@ static void led_engine_run(struct led *led)
 				const struct ds_RigidBody *body = NULL;
 				for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 				{
-					body = PoolAddress(&led->physics.body_pool, i);
-					const struct led_node *node = PoolAddress(&led->node_pool, body->entity);
+					body = ds_PoolAddress(&led->physics.body_pool, i);
+					const struct led_node *node = ds_PoolAddress(&led->node_pool, body->entity);
 					struct r_Proxy3d *proxy = r_Proxy3dAddress(node->proxy);
 
 					if (!RB_IS_DYNAMIC(body))
@@ -1843,8 +1843,8 @@ static void led_engine_run(struct led *led)
 				const struct ds_RigidBody *body = NULL;
 				for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 				{
-					body = PoolAddress(&led->physics.body_pool, i);
-					const struct led_node *node = PoolAddress(&led->node_pool, body->entity);
+					body = ds_PoolAddress(&led->physics.body_pool, i);
+					const struct led_node *node = ds_PoolAddress(&led->node_pool, body->entity);
 					struct r_Proxy3d *proxy = r_Proxy3dAddress(node->proxy);
 					if (body->island_index == ISLAND_STATIC)
 					{
@@ -1852,7 +1852,7 @@ static void led_engine_run(struct led *led)
 					}
 					else
 					{
-						const struct island *is = PoolAddress(&led->physics.is_db.island_pool, body->island_index);
+						const struct island *is = ds_PoolAddress(&led->physics.is_db.island_pool, body->island_index);
 						Vec4Copy(proxy->color, is->color);
 					}
 				}
@@ -1864,7 +1864,7 @@ static void led_engine_run(struct led *led)
 	struct physicsEvent *event = NULL;
 	for (u32 i = led->physics.event_list.first; i != DLL_NULL; )
 	{
-		event = PoolAddress(&led->physics.event_pool, i);
+		event = ds_PoolAddress(&led->physics.event_pool, i);
 		const u32 next = dll_Next(event);
 		switch (event->type)
 		{
@@ -1872,10 +1872,10 @@ static void led_engine_run(struct led *led)
 			{
 				if (led->physics.body_color_mode == RB_COLOR_MODE_COLLISION)
 				{
-					const struct ds_RigidBody *body1 = PoolAddress(&led->physics.body_pool, event->contact_bodies.body1);
-					const struct ds_RigidBody *body2 = PoolAddress(&led->physics.body_pool, event->contact_bodies.body2);
-					const struct led_node *node1 = PoolAddress(&led->node_pool, body1->entity);
-					const struct led_node *node2 = PoolAddress(&led->node_pool, body2->entity);
+					const struct ds_RigidBody *body1 = ds_PoolAddress(&led->physics.body_pool, event->contact_bodies.body1);
+					const struct ds_RigidBody *body2 = ds_PoolAddress(&led->physics.body_pool, event->contact_bodies.body2);
+					const struct led_node *node1 = ds_PoolAddress(&led->node_pool, body1->entity);
+					const struct led_node *node2 = ds_PoolAddress(&led->node_pool, body2->entity);
 					if (RB_IS_DYNAMIC(body1))
 					{
 						struct r_Proxy3d *proxy = r_Proxy3dAddress(node1->proxy);
@@ -1894,10 +1894,10 @@ static void led_engine_run(struct led *led)
 				if (led->physics.body_color_mode == RB_COLOR_MODE_COLLISION)
 				{
                     ds_AssertString(0, "TODO");
-					//const struct ds_RigidBody *body1 = PoolAddress(&led->physics.body_pool, event->contact_bodies.body1);
-					//const struct ds_RigidBody *body2 = PoolAddress(&led->physics.body_pool, event->contact_bodies.body2);
-					//const struct led_node *node1 = PoolAddress(&led->node_pool, body1->entity);
-					//const struct led_node *node2 = PoolAddress(&led->node_pool, body2->entity);
+					//const struct ds_RigidBody *body1 = ds_PoolAddress(&led->physics.body_pool, event->contact_bodies.body1);
+					//const struct ds_RigidBody *body2 = ds_PoolAddress(&led->physics.body_pool, event->contact_bodies.body2);
+					//const struct led_node *node1 = ds_PoolAddress(&led->node_pool, body1->entity);
+					//const struct led_node *node2 = ds_PoolAddress(&led->node_pool, body2->entity);
 
 					//struct r_Proxy3d *proxy1 = r_Proxy3dAddress(node1->proxy);
 					//struct r_Proxy3d *proxy2 = r_Proxy3dAddress(node2->proxy);
@@ -1930,7 +1930,7 @@ static void led_engine_run(struct led *led)
 #ifdef DS_PHYSICS_DEBUG
 			case PHYSICS_EVENT_ISLAND_NEW:
 			{
-				struct island *is = PoolAddress(&led->physics.is_db.island_pool, event->island);
+				struct island *is = ds_PoolAddress(&led->physics.is_db.island_pool, event->island);
 				if (PoolSlotAllocated(is))
 				{
 					Vec4Set(is->color, 
@@ -1953,7 +1953,7 @@ static void led_engine_run(struct led *led)
 			{
 				if (led->physics.body_color_mode == RB_COLOR_MODE_ISLAND)
 				{
-					const struct island *is = PoolAddress(&led->physics.is_db.island_pool, event->island);
+					const struct island *is = ds_PoolAddress(&led->physics.is_db.island_pool, event->island);
 					if (PoolSlotAllocated(is))
 					{
 						led_EngineColorBodies(led, event->island, is->color);
@@ -1992,8 +1992,8 @@ static void led_engine_run(struct led *led)
 
 			case PHYSICS_EVENT_BODY_ORIENTATION:
 			{
-				const struct ds_RigidBody *body = PoolAddress(&led->physics.body_pool, event->body);
-				struct led_node *node = PoolAddress(&led->node_pool, body->entity);
+				const struct ds_RigidBody *body = ds_PoolAddress(&led->physics.body_pool, event->body);
+				struct led_node *node = ds_PoolAddress(&led->node_pool, body->entity);
 
 				vec3 linear_velocity;
 				Vec3Scale(linear_velocity, body->linear_momentum, 1.0f / body->mass);
@@ -2005,7 +2005,7 @@ static void led_engine_run(struct led *led)
 						, node->proxy);
 			} break;
 		}
-		PoolRemove(&led->physics.event_pool, i);
+		ds_PoolRemove(&led->physics.event_pool, i);
 		i = next;
 	}
 	

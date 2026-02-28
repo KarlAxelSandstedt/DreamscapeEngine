@@ -90,7 +90,7 @@ void HashMapFlush(struct hashMap *map)
 	}
 }
 
-void HashMapSerialize(struct serialStream *ss, const struct hashMap *map)
+void HashMapSerialize(struct ss *ss, const struct hashMap *map)
 {
 	if ((2 + map->hash_len + map->index_len) * sizeof(u32) <= ss_BytesLeft(ss))
 	{
@@ -101,7 +101,7 @@ void HashMapSerialize(struct serialStream *ss, const struct hashMap *map)
 	}
 }
 
-struct hashMap HashMapDeserialize(struct arena *mem, struct serialStream *ss, const u32 growable)
+struct hashMap HashMapDeserialize(struct arena *mem, struct ss *ss, const u32 growable)
 {
 	ds_Assert(!(mem && growable));
 	if (2 * sizeof(u32) > ss_BytesLeft(ss))
