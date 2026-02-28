@@ -1111,7 +1111,8 @@ void ds_TPoolDealloc(struct ds_TPool *pool)
 
 void ds_TPoolFlush(struct ds_TPool *pool)
 {
-
+    //TODO reset count_max
+    //TODO flush TPoolLists.... (Need to give them back since they are now up for grabs)
 }
 
 struct slot ds_TPoolIncrement(struct ds_TPool *pool)
@@ -1167,32 +1168,8 @@ void ds_TPoolRemove(struct ds_TPool *pool, const u32 index)
 
 }
 
-void ds_TPoolRemoveAddress(struct ds_TPool *pool, void *slot)
-{
-
-}
-
 void *ds_TPoolAddress(const struct ds_TPool *pool, const u32 index)
 {
-    /*
-        n :  power of two
-
-        n_index_mask  : n-1
-        n_block_mask  : U32_MAX - n_index_mask      
-        
-        if (index < n_block_mask)
-            block = 0
-        else
-            mask >>= shift
-            index >>= shift
-            block = 32 - CLZ(index & mask)
-
-
-
-                 4321 000000000000
-            001xxxxxx n_index_mask
-    */
-
     u32 bi;
     u32 i;
     if (index < pool->initial_length)
@@ -1208,9 +1185,4 @@ void *ds_TPoolAddress(const struct ds_TPool *pool, const u32 index)
     }
 
     return (void *) ((u8 *) pool->mem[bi].address + i*pool->slot_size);
-}
-
-u32	ds_TPoolIndex(const struct ds_TPool *pool, const void *slot)
-{
-
 }

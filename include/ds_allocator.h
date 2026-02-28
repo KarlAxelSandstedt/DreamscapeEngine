@@ -369,25 +369,52 @@ u32			ds_PoolExternalIndex(const struct ds_ds_PoolExternal *pool, const void *sl
 
 /*
 ds_TPool
-=====
+========
 A thread-safe pool allocator where every operation can be called by any thread, at any time.
 
 Usage:
 
-Internal:
+::: Internals :::
 
-Indexing:
-                                                                        N
-    1.  assume initial block contain PowerOfTwo slots   length: (0b0...010...0)
-                                                        mask:   (0b0...001...1)
-    2.  assume each block doubles the max_count, so we get the following sequence of blocksizes
+By enforcing that the pool length is always a power of two, and that the length
+doubles every time we increase the pool's size, we derive addresses from indices
+the following way:
+                                                               bN   
+    1.  Initial block contain PowerOfTwo slots   length: (0...010...0)
+                                                 mask:   (0...001...1)
+
+    2.  Each block doubles the max_count, so we get the following sequence of blocksizes
 
              0  1  2   3   4   5  
             [I][I][2I][4I][8I][16I] ...
 
-        Then, the address of index k is (... TODO ...)
 
-    3 support 32 blocks => TODO: TEST: begin with length 1, => all blocks used in the end.
+The address of index i is derived as follows:
+
+    N denotes the initial length of the pool.
+    bN denotes the bit index of N (starting from 0)
+
+    mask = N-1 
+    shift = CountTrailingZeroes(N) = BitLength(mask)
+
+     // Special case, we are indexing block 0
+    if (i < N)
+        block = 0
+        index = i
+
+     // Common case, we are indexing block m > 0
+    else
+        block = 1 + ( (bit index of leading 1 in i) - bN )
+              = 1 + ( (bit index of leading 1 in (i >> shift) )
+              = 1 + (31 - CountLeadingZeroes(i >> shift))
+              = 32 - CountLeadingZeroes(i >> shift)
+
+        // block 1 shares the same length as block 0 => (block-1)
+        block_index_mask = (bit index of leading 1 in i) - 1
+                         = (N << (block-1)) - 1
+        index = i & block_index_mask
+
+    return pool->mem[ block ].slot[ index ]
          
 Allocation Steps:
 
@@ -444,23 +471,18 @@ struct ds_TPool
 };
 
 
-//TODO
+/* Allocation of pool. */
 void        ds_TPoolAlloc(struct ds_TPool *pool, const u32 initial_count, const u64 slot_size);
-//TODO
+/* Deallocation of pool (passing ptr here since pool contains sync-point) */
 void        ds_TPoolDealloc(struct ds_TPool *pool);
-//TODO
+/* Dealloc all slot allocations, resetting the pool's count_max to 0 */
 void        ds_TPoolFlush(struct ds_TPool *pool);
-//TODO
+/* Alloc new slot */
 struct slot ds_TPoolAdd(struct ds_TPool *pool);
-//TODO
+/* Remove slot given index */
 void		ds_TPoolRemove(struct ds_TPool *pool, const u32 index);
-//TODO
-void		ds_TPoolRemoveAddress(struct ds_TPool *pool, void *slot);
-//TODO
+/* Return address of index */
 void *		ds_TPoolAddress(const struct ds_TPool *pool, const u32 index);
-//TODO
-u32		    ds_TPoolIndex(const struct ds_TPool *pool, const void *address);
-
 /*
  * Allocate a previously untouched slot by increment the global TPool a_count_max
  * counter. If additional memory is needed, the thread synchronizes with other 
