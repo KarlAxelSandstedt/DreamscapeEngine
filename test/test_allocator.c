@@ -35,42 +35,45 @@ struct list_node
 const u64 g_256B_count = 100000;
 const u64 g_1MB_count = 10000;
 
-struct ds_TPoolStruct
+struct ds_Struct
 {
-    u8  pad[64];
+    TPOOL_NODE;
+    u8  pad[52];
 };
 
-void *ds_TPoolIncrementTestInit(void)
+TPOOL_DECLARE(ds_Struct)
+TPOOL_DEFINE(ds_Struct)
+
+void *ds_StructTPoolIncrementTestInit(void)
 {
-   return malloc(sizeof(struct ds_TPool));
+   return malloc(sizeof(struct ds_StructTPool));
 }
 
-void ds_TPoolIncrementTestReset(void *args)
+void ds_StructTPoolIncrementTestReset(void *args)
 {
     static u32 first = 1;
     if (!first)
     {
-        ds_TPoolDealloc(args);
+        ds_StructTPoolDealloc(args);
     }
     first = 0;
 
-    ds_TPoolAlloc(args, 1, sizeof(struct ds_TPoolStruct));
+    ds_StructTPoolAlloc(args, 1);
 }
 
-void ds_TPoolIncrementTestFree(void *args)
+void ds_StructTPoolIncrementTestFree(void *args)
 {
-    ds_TPoolDealloc(args);
+    ds_StructTPoolDealloc(args);
     free(args);
 }
 
-void ds_TPoolIncrementTest(void *void_pool)
+void ds_StructTPoolIncrementTest(void *void_pool)
 {
-	struct ds_TPool *pool = void_pool;
+	struct ds_StructTPool *pool = void_pool;
     for (u32 i = 0; i < 1024*64; ++i)
     {
-        ds_TPoolIncrement(pool);
-        const u32 index = ds_TPoolIncrement(pool).index;
-        struct ds_TPoolStruct *addr = ds_TPoolAddress(pool, index);
+        const u32 index = ds_StructTPoolIncrement(pool).index;
+        struct ds_Struct *addr = ds_StructTPoolAddress(pool, index);
         memset(addr, 0xff, sizeof(*addr));
     }
 }
@@ -258,12 +261,12 @@ struct test_PerformanceSerial allocator_serial_test[] =
 struct test_PerformanceParallel allocator_parallel_test[] =
 {
     {
-        .id = "ds_TPoolIncrementTest",
+        .id = "ds_StructTPoolIncrementTest",
         .size = 1,
-        .test = &ds_TPoolIncrementTest,
-        .test_init = &ds_TPoolIncrementTestInit,
-        .test_reset = &ds_TPoolIncrementTestReset,
-        .test_free = &ds_TPoolIncrementTestFree,
+        .test = &ds_StructTPoolIncrementTest,
+        .test_init = &ds_StructTPoolIncrementTestInit,
+        .test_reset = &ds_StructTPoolIncrementTestReset,
+        .test_free = &ds_StructTPoolIncrementTestFree,
     },
 
 	{
