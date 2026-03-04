@@ -39,7 +39,7 @@ void FatalCleanupAndExit(void)
 	u32 desired = 0;
 	// TODO Somehow stop/force all threads to not continue / shut down program until cleanup is complete 
 	
-	if (AtomicCompareExchangeAcq32(&a_fatal_cleanup_initiated, &desired, 1))
+	if (AtomicCompareExchangeAcqRlx32(&a_fatal_cleanup_initiated, &desired, 1))
 	{
 #if __DS_PLATFORM__ == __DS_LINUX__
 		void *buf[STACKTRACE_BUFSIZE];
@@ -121,7 +121,7 @@ void FatalCleanupAndExit()
 	u32 desired = 0;
 	// TODO Somehow stop/force all threads to not continue / shut down program until cleanup is complete 
 	
-	if (AtomicCompareExchangeAcq32(&a_fatal_cleanup_initiated, &desired, 1))
+	if (AtomicCompareExchangeAcqRlx32(&a_fatal_cleanup_initiated, &desired, 1))
 	{
     		SYSTEMTIME local_time;
     		GetLocalTime(&local_time);

@@ -479,7 +479,7 @@ static enum threadAllocRet ThreadBlockTryAlloc(void **addr, u64 *a_next, struct 
 	 *
 	 * 	If we fail in the exchange, we need to make an aquired read of a_next again; The allocator
 	 * 	may be in a state in which we will read thread written headers.  */
-	if (AtomicCompareExchangeAcq64(&allocator->a_next, a_next, new_next))
+	if (AtomicCompareExchangeAcqRlx64(&allocator->a_next, a_next, new_next))
 	{
 		*addr = (u8 *) header + DS_CACHE_LINE_UB;
 		/* update generation */
@@ -501,7 +501,7 @@ static enum threadAllocRet ThreadBlockTryFree(struct threadBlockHeader *header, 
 	 * On failure, we may do a relaxed load of the next allocation identifier. We are never dereferencing it
 	 * in our pop procedure, so this is okay.
 	 */
-	return (AtomicCompareExchangeRel64(&allocator->a_next, &header->next, new_next))
+	return (AtomicCompareExchangeRelRlx64(&allocator->a_next, &header->next, new_next))
 		? ALLOCATOR_SUCCESS
 		: ALLOCATOR_FAILURE;
 }

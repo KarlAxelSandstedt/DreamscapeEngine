@@ -34,11 +34,13 @@ extern "C" {
 		#define ATOMIC_RELAXED	__ATOMIC_SEQ_CST
 		#define ATOMIC_ACQUIRE	__ATOMIC_SEQ_CST
 		#define ATOMIC_RELEASE	__ATOMIC_SEQ_CST
+        #define ATOMIC_ACQ_REL  __ATOMIC_SEQ_CST
 		#define ATOMIC_SEQ_CST	__ATOMIC_SEQ_CST
 	#else
 		#define ATOMIC_RELAXED	__ATOMIC_RELAXED
 		#define ATOMIC_ACQUIRE	__ATOMIC_ACQUIRE
 		#define ATOMIC_RELEASE	__ATOMIC_RELEASE
+        #define ATOMIC_ACQ_REL  __ATOMIC_ACQ_REL
 		#define ATOMIC_SEQ_CST	__ATOMIC_SEQ_CST
 	#endif
 	
@@ -62,15 +64,19 @@ extern "C" {
 	#define AtomicFetchSubRel64(fetch_addr, val)	__atomic_fetch_sub(fetch_addr, val, ATOMIC_RELAXED)
 	#define AtomicFetchSubSeqCst64(fetch_addr, val)	__atomic_fetch_sub(fetch_addr, val, ATOMIC_SEQ_CST)
 	
-	#define AtomicCompareExchangeRlx32(dst_addr, cmp_addr, exch_val)	__atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_RELAXED, ATOMIC_RELAXED)
-	#define AtomicCompareExchangeAcq32(dst_addr, cmp_addr, exch_val)	__atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_ACQUIRE, ATOMIC_RELAXED)
-	#define AtomicCompareExchangeRel32(dst_addr, cmp_addr, exch_val)	__atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_RELEASE, ATOMIC_RELAXED)
-	#define AtomicCompareExchangeSeqCst32(dst_addr, cmp_addr, exch_val)	__atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST)
+	#define AtomicCompareExchangeRlxRlx32(dst_addr, cmp_addr, exch_val)	    __atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_RELAXED, ATOMIC_RELAXED)
+	#define AtomicCompareExchangeAcqRlx32(dst_addr, cmp_addr, exch_val)	    __atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_ACQUIRE, ATOMIC_RELAXED)
+	#define AtomicCompareExchangeAcqAcq32(dst_addr, cmp_addr, exch_val)	    __atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_ACQUIRE, ATOMIC_ACQUIRE)
+	#define AtomicCompareExchangeRelRlx32(dst_addr, cmp_addr, exch_val)	    __atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_RELEASE, ATOMIC_RELAXED)
+	#define AtomicCompareExchangeAcqRelAcq32(dst_addr, cmp_addr, exch_val)	__atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_ACQ_REL, ATOMIC_ACQUIRE)
+	#define AtomicCompareExchangeSeqCst32(dst_addr, cmp_addr, exch_val)	    __atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST)
 	
-	#define AtomicCompareExchangeRlx64(dst_addr, cmp_addr, exch_val)	__atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_RELAXED, ATOMIC_RELAXED)
-	#define AtomicCompareExchangeAcq64(dst_addr, cmp_addr, exch_val)	__atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_ACQUIRE, ATOMIC_RELAXED)
-	#define AtomicCompareExchangeRel64(dst_addr, cmp_addr, exch_val)	__atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_RELEASE, ATOMIC_ACQUIRE)
-	#define AtomicCompareExchangeSeqCst64(dst_addr, cmp_addr, exch_val)	__atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST)
+	#define AtomicCompareExchangeRlxRlx64(dst_addr, cmp_addr, exch_val)	    __atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_RELAXED, ATOMIC_RELAXED)
+	#define AtomicCompareExchangeAcqRlx64(dst_addr, cmp_addr, exch_val)	    __atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_ACQUIRE, ATOMIC_RELAXED)
+	#define AtomicCompareExchangeAcqAcq64(dst_addr, cmp_addr, exch_val)	    __atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_ACQUIRE, ATOMIC_ACQUIRE)
+	#define AtomicCompareExchangeRelRlx64(dst_addr, cmp_addr, exch_val)	    __atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_RELEASE, ATOMIC_ACQUIRE)
+	#define AtomicCompareExchangeAcqRelAcq64(dst_addr, cmp_addr, exch_val)	__atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_ACQ_REL, ATOMIC_ACQUIRE)
+	#define AtomicCompareExchangeSeqCst64(dst_addr, cmp_addr, exch_val)	    __atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST)
 	
 	#define AtomicStoreRlx32(dst_addr, val)		__atomic_store_n(dst_addr, val, ATOMIC_RELAXED)
 	#define AtomicStoreRel32(dst_addr, val)		__atomic_store_n(dst_addr, val, ATOMIC_RELEASE)
@@ -148,88 +154,49 @@ extern "C" {
 	#include <intrin.h>
 	#include <immintrin.h>
 	
-	#ifdef FORCE_SEQ_CST
-		/* returns signed integers */
-		#define AtomicFetchAddRlx32(fetch_addr, val)	_InterlockedExchangeAdd((long volatile *) (fetch_addr), (long) (val))
-		#define AtomicFetchAddAcq32(fetch_addr, val)	_InterlockedExchangeAdd((long volatile *) (fetch_addr), (long) (val))
-		#define AtomicFetchAddRel32(fetch_addr, val)	_InterlockedExchangeAdd((long volatile *) (fetch_addr), (long) (val))
-		#define AtomicFetchAddSeqCst32(fetch_addr, val)	_InterlockedExchangeAdd((long volatile *) (fetch_addr), (long) (val))
-		
-		#define AtomicFetchAddRlx64(fetch_addr, val)	_InterlockedExchangeAdd64((__int64 volatile *) (fetch_addr), (__int64) (val))
-		#define AtomicFetchAddAcq64(fetch_addr, val)	_InterlockedExchangeAdd64((__int64 volatile *) (fetch_addr), (__int64) (val))
-		#define AtomicFetchAddRel64(fetch_addr, val)	_InterlockedExchangeAdd64((__int64 volatile *) (fetch_addr), (__int64) (val))
-		#define AtomicFetchAddSeqCst64(fetch_addr, val)	_InterlockedExchangeAdd64((__int64 volatile *) (fetch_addr), (__int64) (val))
+	/* returns signed integers  */
+	#define AtomicFetchAddRlx32(fetch_addr, val)	_InterlockedExchangeAdd((long volatile *) (fetch_addr), (long) (val))
+	#define AtomicFetchAddAcq32(fetch_addr, val)	_InterlockedExchangeAdd((long volatile *) (fetch_addr), (long) (val))
+	#define AtomicFetchAddRel32(fetch_addr, val)	_InterlockedExchangeAdd((long volatile *) (fetch_addr), (long) (val))
+	#define AtomicFetchAddSeqCst32(fetch_addr, val)	_InterlockedExchangeAdd((long volatile *) (fetch_addr), (long) (val))
 	
-		#define AtomicFetchSubRlx32(fetch_addr, val)	_InterlockedExchangeAdd((long volatile *) (fetch_addr), -(long) (val))
-		#define AtomicFetchSubAcq32(fetch_addr, val)	_InterlockedExchangeAdd((long volatile *) (fetch_addr), -(long) (val))
-		#define AtomicFetchSubRel32(fetch_addr, val)	_InterlockedExchangeAdd((long volatile *) (fetch_addr), -(long) (val))
-		#define AtomicFetchSubSeqCst32(fetch_addr, val)	_InterlockedExchangeAdd((long volatile *) (fetch_addr), -(long) (val))
-		
-		#define AtomicFetchSubRlx64(fetch_addr, val)	_InterlockedExchangeAdd64((__int64 volatile *) (fetch_addr), -(__int64) (val))
-		#define AtomicFetchSubAcq64(fetch_addr, val)	_InterlockedExchangeAdd64((__int64 volatile *) (fetch_addr), -(__int64) (val))
-		#define AtomicFetchSubRel64(fetch_addr, val)	_InterlockedExchangeAdd64((__int64 volatile *) (fetch_addr), -(__int64) (val))
-		#define AtomicFetchSubSeqCst64(fetch_addr, val)	_InterlockedExchangeAdd64((__int64 volatile *) (fetch_addr), -(__int64) (val))
+	#define AtomicFetchAddRlx64(fetch_addr, val)	_InterlockedExchangeAdd64((__int64 volatile *) (fetch_addr), (__int64) (val))
+	#define AtomicFetchAddAcq64(fetch_addr, val)	_InterlockedExchangeAdd64((__int64 volatile *) (fetch_addr), (__int64) (val))
+	#define AtomicFetchAddRel64(fetch_addr, val)	_InterlockedExchangeAdd64((__int64 volatile *) (fetch_addr), (__int64) (val))
+	#define AtomicFetchAddSeqCst64(fetch_addr, val)	_InterlockedExchangeAdd64((__int64 volatile *) (fetch_addr), (__int64) (val))
 	
-		/* if (dst == cmp) set dst to exch_val, return true if exchanged, otherwise false */
-		#define AtomicCompareExchangeRlx32(dst_addr, cmp_addr, exch_val)	(*(cmp_addr) == _InterlockedCompareExchange((long volatile *) (dst_addr), (long) (exch_val), (long) (*cmp_addr)))
-		#define AtomicCompareExchangeAcq32(dst_addr, cmp_addr, exch_val)	(*(cmp_addr) == _InterlockedCompareExchange((long volatile *) (dst_addr), (long) (exch_val), (long) (*cmp_addr)))
-		#define AtomicCompareExchangeRel32(dst_addr, cmp_addr, exch_val)	(*(cmp_addr) == _InterlockedCompareExchange((long volatile *) (dst_addr), (long) (exch_val), (long) (*cmp_addr)))
-		#define AtomicCompareExchangeSeqCst32(dst_addr, exch_val, cmp_val)	(*(cmp_addr) == _InterlockedCompareExchange((long volatile *) (dst_addr), (long) (exch_val), (long) (*cmp_addr)))
-
-		#define AtomicCompareExchangeRlx64(dst_addr, cmp_addr, exch_val)	(*(cmp_addr) == _InterlockedCompareExchange64((__int64 volatile *) (dst_addr), (__int64) (exch_val), (__int64) (*cmp_addr)))
-		#define AtomicCompareExchangeAcq64(dst_addr, cmp_addr, exch_val)	(*(cmp_addr) == _InterlockedCompareExchange64((__int64 volatile *) (dst_addr), (__int64) (exch_val), (__int64) (*cmp_addr)))
-		#define AtomicCompareExchangeRel64(dst_addr, cmp_addr, exch_val)	(*(cmp_addr) == _InterlockedCompareExchange64((__int64 volatile *) (dst_addr), (__int64) (exch_val), (__int64) (*cmp_addr)))
-		#define AtomicCompareExchangeSeqCst64(dst_addr, exch_val, cmp_val)	(*(cmp_addr) == _InterlockedCompareExchange64((__int64 volatile *) (dst_addr), (__int64) (exch_val), (__int64) (*cmp_addr)))
+	#define AtomicFetchSubRlx32(fetch_addr, val)	_InterlockedExchangeAdd((long volatile *) (fetch_addr), -(long) (val))
+	#define AtomicFetchSubAcq32(fetch_addr, val)	_InterlockedExchangeAdd((long volatile *) (fetch_addr), -(long) (val))
+	#define AtomicFetchSubRel32(fetch_addr, val)	_InterlockedExchangeAdd((long volatile *) (fetch_addr), -(long) (val))
+	#define AtomicFetchSubSeqCst32(fetch_addr, val)	_InterlockedExchangeAdd((long volatile *) (fetch_addr), -(long) (val))
 	
-		#define AtomicStoreRlx32(dst_addr, val)		_InterlockedExchange((long volatile *) (dst_addr), long (val))
-		#define AtomicStoreRel32(dst_addr, val)		_InterlockedExchange((long volatile *) (dst_addr), long (val))
-		#define AtomicStoreSeqCst32(dst_addr, val)	_InterlockedExchange((long volatile *) (dst_addr), long (val))
-		               
-		#define AtomicStoreRlx64(dst_addr, val)		_InterlockedExchange64_HLERelease((__int64 volatile *) (dst_addr), (__int64) (val))
-		#define AtomicStoreRel64(dst_addr, val)		_InterlockedExchange64_HLERelease((__int64 volatile *) (dst_addr), (__int64) (val))
-		#define AtomicStoreSeqCst64(dst_addr, val)	_InterlockedExchange64((__int64 volatile *) (dst_addr), (__int64) (val))
+	#define AtomicFetchSubRlx64(fetch_addr, val)	_InterlockedExchangeAdd64((__int64 volatile *) (fetch_addr), -(__int64) (val))
+	#define AtomicFetchSubAcq64(fetch_addr, val)	_InterlockedExchangeAdd64((__int64 volatile *) (fetch_addr), -(__int64) (val))
+	#define AtomicFetchSubRel64(fetch_addr, val)	_InterlockedExchangeAdd64((__int64 volatile *) (fetch_addr), -(__int64) (val))
+	#define AtomicFetchSubSeqCst64(fetch_addr, val)	_InterlockedExchangeAdd64((__int64 volatile *) (fetch_addr), -(__int64) (val))
 	
-	#else
-		/* returns signed integers  */
-		#define AtomicFetchAddRlx32(fetch_addr, val)	_InterlockedExchangeAdd_HLEAcquire((long volatile *) (fetch_addr), (long) (val))
-		#define AtomicFetchAddAcq32(fetch_addr, val)	_InterlockedExchangeAdd_HLEAcquire((long volatile *) (fetch_addr), (long) (val))
-		#define AtomicFetchAddRel32(fetch_addr, val)	_InterlockedExchangeAdd_HLERelease((long volatile *) (fetch_addr), (long) (val))
-		#define AtomicFetchAddSeqCst32(fetch_addr, val)	_InterlockedExchangeAdd((long volatile *) (fetch_addr), (long) (val))
-		
-		#define AtomicFetchAddRlx64(fetch_addr, val)	_InterlockedExchangeAdd64_HLEAcquire((__int64 volatile *) (fetch_addr), (__int64) (val))
-		#define AtomicFetchAddAcq64(fetch_addr, val)	_InterlockedExchangeAdd64_HLEAcquire((__int64 volatile *) (fetch_addr), (__int64) (val))
-		#define AtomicFetchAddRel64(fetch_addr, val)	_InterlockedExchangeAdd64_HLERelease((__int64 volatile *) (fetch_addr), (__int64) (val))
-		#define AtomicFetchAddSeqCst64(fetch_addr, val)	_InterlockedExchangeAdd64((__int64 volatile *) (fetch_addr), (__int64) (val))
+	/* if (dst == cmp) set dst to exch_val */
+	#define AtomicCompareExchangeRlxRlx32(dst_addr, cmp_addr, exch_val)	(*(cmp_addr)     == _InterlockedCompareExchange((long volatile *) (dst_addr), (long) (exch_val), (long) (*cmp_addr)))
+	#define AtomicCompareExchangeAcqRlx32(dst_addr, cmp_addr, exch_val)	(*(cmp_addr)     == _InterlockedCompareExchange((long volatile *) (dst_addr), (long) (exch_val), (long) (*cmp_addr)))
+	#define AtomicCompareExchangeAcqAcq32(dst_addr, cmp_addr, exch_val)	(*(cmp_addr)     == _InterlockedCompareExchange((long volatile *) (dst_addr), (long) (exch_val), (long) (*cmp_addr)))
+	#define AtomicCompareExchangeRelRlx32(dst_addr, cmp_addr, exch_val)	(*(cmp_addr)     == _InterlockedCompareExchange((long volatile *) (dst_addr), (long) (exch_val), (long) (*cmp_addr)))
+	#define AtomicCompareExchangeAcqRelAcq32(dst_addr, cmp_addr, exch_val)	(*(cmp_addr) == _InterlockedCompareExchange((long volatile *) (dst_addr), (long) (exch_val), (long) (*cmp_addr)))
+	#define AtomicCompareExchangeSeqCst32(dst_addr, cmp_addr, exch_val)	(*(cmp_addr)     == _InterlockedCompareExchange((long volatile *) (dst_addr), (long) (exch_val), (long) (*cmp_addr)))
+	                                                                                                    
+	#define AtomicCompareExchangeRlxRlx64(dst_addr, cmp_addr, exch_val)	(*(cmp_addr)     == _InterlockedCompareExchange64((__int64 volatile *) (dst_addr), (__int64) (exch_val), (__int64) (*cmp_addr)))
+	#define AtomicCompareExchangeAcqRlx64(dst_addr, cmp_addr, exch_val)	(*(cmp_addr)     == _InterlockedCompareExchange64((__int64 volatile *) (dst_addr), (__int64) (exch_val), (__int64) (*cmp_addr)))
+	#define AtomicCompareExchangeAcqAcq64(dst_addr, cmp_addr, exch_val)	(*(cmp_addr)     == _InterlockedCompareExchange64((__int64 volatile *) (dst_addr), (__int64) (exch_val), (__int64) (*cmp_addr)))
+	#define AtomicCompareExchangeRelRlx64(dst_addr, cmp_addr, exch_val)	(*(cmp_addr)     == _InterlockedCompareExchange64((__int64 volatile *) (dst_addr), (__int64) (exch_val), (__int64) (*cmp_addr)))
+	#define AtomicCompareExchangeAcqRelAcq64(dst_addr, cmp_addr, exch_val)	(*(cmp_addr) == _InterlockedCompareExchange64((long volatile *) (dst_addr), (long) (exch_val), (long) (*cmp_addr)))
+	#define AtomicCompareExchangeSeqCst64(dst_addr, cmp_addr, exch_val)	(*(cmp_addr)     == _InterlockedCompareExchange64((__int64 volatile *) (dst_addr), (__int64) (exch_val), (__int64) (*cmp_addr)))
 	
-		#define AtomicFetchSubRlx32(fetch_addr, val)	_InterlockedExchangeAdd_HLEAcquire((long volatile *) (fetch_addr), -(long) (val))
-		#define AtomicFetchSubAcq32(fetch_addr, val)	_InterlockedExchangeAdd_HLEAcquire((long volatile *) (fetch_addr), -(long) (val))
-		#define AtomicFetchSubRel32(fetch_addr, val)	_InterlockedExchangeAdd_HLERelease((long volatile *) (fetch_addr), -(long) (val))
-		#define AtomicFetchSubSeqCst32(fetch_addr, val)	_InterlockedExchangeAdd((long volatile *) (fetch_addr), -(long) (val))
-		
-		#define AtomicFetchSubRlx64(fetch_addr, val)	_InterlockedExchangeAdd64_HLEAcquire((__int64 volatile *) (fetch_addr), -(__int64) (val))
-		#define AtomicFetchSubAcq64(fetch_addr, val)	_InterlockedExchangeAdd64_HLEAcquire((__int64 volatile *) (fetch_addr), -(__int64) (val))
-		#define AtomicFetchSubRel64(fetch_addr, val)	_InterlockedExchangeAdd64_HLERelease((__int64 volatile *) (fetch_addr), -(__int64) (val))
-		#define AtomicFetchSubSeqCst64(fetch_addr, val)	_InterlockedExchangeAdd64((__int64 volatile *) (fetch_addr), -(__int64) (val))
-		
-		/* if (dst == cmp) set dst to exch_val */
-		#define AtomicCompareExchangeRlx32(dst_addr, cmp_addr, exch_val)	(*(cmp_addr) == _InterlockedCompareExchange_HLEAcquire((long volatile *) (dst_addr), (long) (exch_val), (long) (*cmp_addr)))
-		#define AtomicCompareExchangeAcq32(dst_addr, cmp_addr, exch_val)	(*(cmp_addr) == _InterlockedCompareExchange_HLEAcquire((long volatile *) (dst_addr), (long) (exch_val), (long) (*cmp_addr)))
-		#define AtomicCompareExchangeRel32(dst_addr, cmp_addr, exch_val)	(*(cmp_addr) == _InterlockedCompareExchange_HLERelease((long volatile *) (dst_addr), (long) (exch_val), (long) (*cmp_addr)))
-		#define AtomicCompareExchangeSeqCst32(dst_addr, cmp_addr, exch_val)	(*(cmp_addr) == _InterlockedCompareExchange((long volatile *) (dst_addr), (long) (exch_val), (long) (*cmp_addr)))
-	                                                                                                        
-		#define AtomicCompareExchangeRlx64(dst_addr, cmp_addr, exch_val)	(*(cmp_addr) == _InterlockedCompareExchange64_HLEAcquire((__int64 volatile *) (dst_addr), (__int64) (exch_val), (__int64) (*cmp_addr)))
-		#define AtomicCompareExchangeAcq64(dst_addr, cmp_addr, exch_val)	(*(cmp_addr) == _InterlockedCompareExchange64_HLEAcquire((__int64 volatile *) (dst_addr), (__int64) (exch_val), (__int64) (*cmp_addr)))
-		#define AtomicCompareExchangeRel64(dst_addr, cmp_addr, exch_val)	(*(cmp_addr) == _InterlockedCompareExchange64_HLERelease((__int64 volatile *) (dst_addr), (__int64) (exch_val), (__int64) (*cmp_addr)))
-		#define AtomicCompareExchangeSeqCst64(dst_addr, cmp_addr, exch_val)	(*(cmp_addr) == _InterlockedCompareExchange64((__int64 volatile *) (dst_addr), (__int64) (exch_val), (__int64) (*cmp_addr)))
-	
-		#define AtomicStoreRlx32(dst_addr, val)		_InterlockedExchange_HLERelease((long volatile *) (dst_addr), (long) (val))
-		#define AtomicStoreRel32(dst_addr, val)		_InterlockedExchange_HLERelease((long volatile *) (dst_addr), (long) (val))
-		#define AtomicStoreSeqCst32(dst_addr, val)	_InterlockedExchange(dst_addr, val)
-		               
-		#define AtomicStoreRlx64(dst_addr, val)		_InterlockedExchange64_HLERelease((__int64 volatile *) (dst_addr), (__int64) (val))
-		#define AtomicStoreRel64(dst_addr, val)		_InterlockedExchange64_HLERelease((__int64 volatile *) (dst_addr), (__int64) (val))
-		#define AtomicStoreSeqCst64(dst_addr, val)	_InterlockedExchange64((__int64 volatile *) (dst_addr), (__int64) (val))
-	#endif                                             
+	#define AtomicStoreRlx32(dst_addr, val)		_InterlockedExchange((long volatile *) (dst_addr), (long) (val))
+	#define AtomicStoreRel32(dst_addr, val)		_InterlockedExchange((long volatile *) (dst_addr), (long) (val))
+	#define AtomicStoreSeqCst32(dst_addr, val)	_InterlockedExchange(dst_addr, val)
+	               
+	#define AtomicStoreRlx64(dst_addr, val)		_InterlockedExchange64((__int64 volatile *) (dst_addr), (__int64) (val))
+	#define AtomicStoreRel64(dst_addr, val)		_InterlockedExchange64((__int64 volatile *) (dst_addr), (__int64) (val))
+	#define AtomicStoreSeqCst64(dst_addr, val)	_InterlockedExchange64((__int64 volatile *) (dst_addr), (__int64) (val))
 	
 	#define AtomicAddFetchRlx32(fetch_addr, val)	(AtomicFetchAddRlx32(fetch_addr, val) + ((long) val))
 	#define AtomicAddFetchAcq32(fetch_addr, val)	(AtomicFetchAddAcq32(fetch_addr, val) + ((long) val))

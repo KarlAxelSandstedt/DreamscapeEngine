@@ -118,13 +118,13 @@ static void LogTryWriteToDisk(void)
 {
 	u32 desired = 0;
 	/* If we fail, try to write messages to disk and re-publish them  */
-	if (AtomicCompareExchangeAcq32(&g_log.a_writing_to_disk, &desired, 1))
+	if (AtomicCompareExchangeAcqRlx32(&g_log.a_writing_to_disk, &desired, 1))
 	{
 		u32 count = 0;
 		/* we are the single owner of a_serve: sync with any previous disk-writer */
 		u32 serving = AtomicLoadAcq32(&g_log.tf.a_serve) % LOG_MAX_MESSAGES;
 		u32 completed = 1;
-		while (AtomicCompareExchangeAcq32(&g_log.msg[serving].a_in_use_and_completed, &completed, 0))
+		while (AtomicCompareExchangeAcqRlx32(&g_log.msg[serving].a_in_use_and_completed, &completed, 0))
 		{
 			struct Log_message *msg = g_log.msg + serving;
 

@@ -44,7 +44,7 @@ extern dsThreadLocal dsThread *g_tl_self;
 /* Alloc and initiate master thread information; should only be called once! */
 void 		ds_ThreadMasterInit(struct arena *mem);
 /* Alloc and initiate thread. On success, return valid address. On failure, Fatally cleanup and exit */
-dsThread *	ds_ThreadClone(struct arena *mem, void (*start)(dsThread *), void *args, const u64 stack_size);
+dsThread *  ds_ThreadClone(struct arena *mem, void (*start)(dsThread *), void *args, const u64 stack_size);
 /* Exit calling thread */
 void		ds_ThreadExit(void);
 /* Wait for given thread to finish execution */
@@ -52,19 +52,17 @@ void 		ds_ThreadWait(const dsThread *thr);
 /* Get return value address */
 void *		ds_ThreadReturnValue(const dsThread *thr);
 /* Get return value size */
-u64		ds_ThreadReturnValueSize(const dsThread *thr);
+u64		    ds_ThreadReturnValueSize(const dsThread *thr);
 /* Retrieve thread function arguments */
 void *  	ds_ThreadArguments(const dsThread *thr);
 /* Return thread id */
-tid		ds_ThreadTid(const dsThread *thr);
+tid		    ds_ThreadTid(const dsThread *thr);
 /* Return thread tid of caller */
 tid 		ds_ThreadSelfTid(void);
 /* Return index of thread (each created thread increments the global index counter) */
-u32		ds_ThreadIndex(const dsThread *thr);
+u32		    ds_ThreadIndex(const dsThread *thr);
 /* Return index of caller */ 
-u32		ds_ThreadSelfIndex(void);
-
-
+u32		    ds_ThreadSelfIndex(void);
 
 #ifdef __cplusplus
 } 

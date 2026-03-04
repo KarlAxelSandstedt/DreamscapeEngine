@@ -10,13 +10,13 @@ else
 	CMAKE_GENERATOR="Unix Makefiles"
 fi
 
-#cmake -S . -B build -DDS_TEST_PERFORMANCE=ON -DDS_OPTIMIZE=ON -DDS_PROFILE=ON -DCMAKE_BUILD_TYPE=Debug -G $CMAKE_GENERATOR
+#cmake -S . -B build -DDS_TEST_PERFORMANCE=ON -DDS_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Debug -G $CMAKE_GENERATOR
 #cd build
 #cmake --build . --parallel
 #./DreamscapeTest
 #cd ..
 
-cmake -S . -B build -DDS_TEST_PERFORMANCE=ON -DDS_TSAN=ON -DDS_OPTIMIZE=ON -DDS_PROFILE=ON -DCMAKE_BUILD_TYPE=Debug -G $CMAKE_GENERATOR
+cmake -S . -B build -DDS_TEST_PERFORMANCE=ON -DDS_TSAN=ON -DDS_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Debug -G $CMAKE_GENERATOR
 cd build
 cmake --build . --parallel
 gdb ./DreamscapeTest
