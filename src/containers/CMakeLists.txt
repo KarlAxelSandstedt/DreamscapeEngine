@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.14.3)
 
 # files to link to later
 add_library(DreamscapeContainers STATIC
-	"${DS_INCLUDE_PATH}/hash_map.h"
+	"${DS_INCLUDE_PATH}/ds_hash_map.h"
 	"${DS_INCLUDE_PATH}/queue.h"
 	"${DS_INCLUDE_PATH}/bit_vector.h"
 	"${DS_INCLUDE_PATH}/ds_vector.h"
@@ -11,7 +11,7 @@ add_library(DreamscapeContainers STATIC
 	"${DS_INCLUDE_PATH}/string_database.h"
 	"${DS_INCLUDE_PATH}/tree.h"
 	"${DS_INCLUDE_PATH}/fifo_spmc.h"
-	"hash_map.c"
+	"ds_hash_map.c"
 	"queue.c"
 	"bit_vector.c"
 	"ds_vector.c"

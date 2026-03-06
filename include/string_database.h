@@ -24,7 +24,7 @@
 extern "C" { 
 #endif
 
-#include "hash_map.h"
+#include "ds_hash_map.h"
 #include "list.h"
 
 #define STRING_DATABASE_STUB_INDEX	0

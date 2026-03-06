@@ -351,7 +351,7 @@ struct ds_ds_PoolExternal
 };
 
 /* Allocation of pool. On error, an empty pool (length == 0), is returned.  */
-struct ds_ds_PoolExternal 	ds_PoolExternalAlloc(void **external_buf, const u32 length, const u64 slot_size, const u32 growable);
+struct ds_ds_PoolExternal ds_PoolExternalAlloc(void **external_buf, const u32 length, const u64 slot_size, const u32 growable);
 /* dealloc poolExternal */
 void			ds_PoolExternalDealloc(struct ds_ds_PoolExternal *pool);
 /* dealloc all slot allocations */
@@ -365,7 +365,7 @@ void			ds_PoolExternalRemoveAddress(struct ds_ds_PoolExternal *pool, void *slot)
 /* return address of index */
 void *			ds_PoolExternalAddress(const struct ds_ds_PoolExternal *pool, const u32 index);
 /* return index of address */
-u32			ds_PoolExternalIndex(const struct ds_ds_PoolExternal *pool, const void *slot);
+u32			    ds_PoolExternalIndex(const struct ds_ds_PoolExternal *pool, const void *slot);
 
 /*
 TPool
@@ -390,8 +390,9 @@ and write
     TPOOL_DECLARE(ds_Struct)
     TPOOL_DEFINE(ds_Struct)
 
-at the appropriate places. TPOOL_DECLARE declares the ds_StructTPool*** functions
-and TPOOL_DEFINE generates the implementations of each function. The functions
+at the appropriate places. TPOOL_DECLARE declares the dsStructTPool struct and
+the ds_StructTPool*** functions, and TPOOL_DEFINE defines the dsStructTPool
+struct and generates the implementations of each function. The functions
 generated are the following:
 
     // Allocation of pool.
@@ -459,35 +460,6 @@ The address of index i is derived as follows:
         index = i & block_index_mask
 
     return pool->mem[ block ].slot[ index ]
-         
-
-TPoolAdd:
-    
-    1. While(NotEmpty) 
-        TryPopBottom();             (Quickest, should hopefully avoid CAS
-
-    2. TrySteal()                   (Fallback 1, Try steal)
-
-    3. index = GlobalIncrement()    (Fallback 2, globally increase the maximum count and get new index)
-        while (index >= (volatile) TPool->length)
-        TryAllocNewBlock()
-
-
-TODO:
-    () Extensive Test-Suite for Correctness
-    () Extensive Test-Suite for Performance 
-
-    Optimization:
-        :: Compare with Pool:
-            () Ground truth is Pool Usage (ns) / logical_core_count;
-        :: Verify hardware-counters using
-            () AMD uProf
-            () IntelV Tune
-            () Perf
-            () Tracy?
-            () Derive a resuable workflow using this programs.
-        :: Force align/pad struct to cacheline size?
-            () TODO:
 */
 
 #define TPOOL_NODE  TSTACK_NODE(FreeList)

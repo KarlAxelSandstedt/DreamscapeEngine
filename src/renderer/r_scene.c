@@ -50,7 +50,7 @@ struct r_Scene *r_SceneAlloc(void)
 void r_SceneDealloc(struct r_Scene *scene)
 {
 	ds_PoolDealloc(&scene->instance_pool);
-	ds_HashMapFree(&scene->proxy3d_to_instance_map);
+	ds_HashMapDealloc(&scene->proxy3d_to_instance_map);
 	ArenaFree(scene->mem_frame_arr + 0),
 	ArenaFree(scene->mem_frame_arr + 1),
 	free(scene);
@@ -457,7 +457,7 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 								(n->pixel_visible[AXIS_2_Y].high - n->pixel_visible[AXIS_2_Y].low) / 2.0f,
 							};
 
-							vec2 global_offset;
+							vec2 global_offset = { 0 };
 							switch (n->text_align_x)
 							{
 								case ALIGN_X_CENTER: 
@@ -553,7 +553,7 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 							const struct ui_Node *n = sel->node;
 							draw_node = draw_node->next;
 
-							vec2 global_offset;
+							vec2 global_offset = { 0 };
 							switch (n->text_align_x)
 							{
 								case ALIGN_X_CENTER: 

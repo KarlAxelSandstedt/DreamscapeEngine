@@ -26,7 +26,7 @@ extern "C" {
 
 #include "ds_base.h"
 #include "ds_string.h"
-#include "hash_map.h"
+#include "ds_hash_map.h"
 #include "hierarchy_index.h"
 #include "cmd.h"
 

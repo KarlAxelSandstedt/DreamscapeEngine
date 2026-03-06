@@ -28,7 +28,7 @@ extern "C" {
 #include "ds_math.h"
 #include "list.h"
 #include "collision.h"
-#include "hash_map.h"
+#include "ds_hash_map.h"
 #include "bit_vector.h"
 
 struct ds_RigidBodyPipeline;
@@ -293,6 +293,10 @@ struct ds_ContactKey
 
 /* Return the Canonical key of (bodyA,shapeA) (bodyB,shapeB) */
 struct ds_ContactKey    ds_ContactKeyCanonical(const u32 bodyA, const u32 shapeA, const u32 bodyB, const u32 shapeB);
+/* Return a 32-bit hash of the key */
+u32                     ds_ContactKeyHash(const struct ds_ContactKey *key);
+/* Return 1 if the two keys are equivalent, otherwise return  0. */
+u32                     ds_ContactKeyEquivalence(const struct ds_ContactKey *keyA, const struct ds_ContactKey *keyB);
 
 /*
 ds_Contact
@@ -397,7 +401,11 @@ enum sat_CacheType
 
 struct sat_Cache
 {
+    THASH_NODE;
+    TPOOL_NODE;
+
 	POOL_SLOT_STATE;
+
 	struct ds_ContactKey    key;
 	enum sat_CacheType	    type;
 	union
@@ -421,6 +429,9 @@ struct sat_Cache
 		};
 	};
 };
+
+TPOOL_DECLARE(sat_Cache)
+THASH_DECLARE(sat_Cache, struct ds_ContactKey)
 
 /* Alloc sat_Cache in pipeline. */
 struct slot sat_CacheAdd(struct cdb *cdb, const struct ds_ContactKey *key);

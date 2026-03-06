@@ -29,6 +29,16 @@ struct ds_ContactKey ds_ContactKeyCanonical(const u32 bodyA, const u32 shapeA, c
         : (struct ds_ContactKey) { .body0 = bodyB, .shape0 = shapeB, .body1 = bodyA, .shape1 = shapeA };
 }
 
+u32 ds_ContactKeyHash(const struct ds_ContactKey *key)
+{
+    return (u32) XXH3_64bits(key, sizeof(struct ds_ContactKey));
+}
+
+u32 ds_ContactKeyEquivalence(const struct ds_ContactKey *keyA, const struct ds_ContactKey *keyB)
+{
+    return memcmp(keyA, keyB, sizeof(struct ds_ContactKey)) == 0;
+}
+
 static u32 cdb_IndexInPreviousConctactNode(struct nll *net, void **prev_node, const void *cur_node, const u32 cur_index)
 {
 	ds_Assert(cur_index <= 1);
@@ -76,9 +86,9 @@ struct cdb cdb_Alloc(struct arena *mem_persistent, const u32 size)
 void cdb_Free(struct cdb *cdb)
 {
 	ds_PoolDealloc(&cdb->sat_cache_pool);
-	ds_HashMapFree(&cdb->sat_cache_map);
+	ds_HashMapDealloc(&cdb->sat_cache_map);
 	nll_Dealloc(&cdb->contact_net);
-	ds_HashMapFree(&cdb->contact_map);
+	ds_HashMapDealloc(&cdb->contact_map);
 	BitVecFree(&cdb->contacts_persistent_usage);
 }
 
@@ -512,3 +522,6 @@ struct slot sat_CacheLookup(const struct cdb *cdb, const struct ds_ContactKey *k
 
 	return slot;
 }
+
+TPOOL_DEFINE(sat_Cache)
+THASH_DEFINE(sat_Cache, key, struct ds_ContactKey, ds_ContactKeyHash, ds_ContactKeyEquivalence)

@@ -161,7 +161,7 @@ void led_Dealloc(struct led *led)
 	ArenaFree(&led->mem_persistent);
 	led_ProjectMenuDealloc(&led->project_menu);
 	csg_Dealloc(&led->csg);
-	ds_HashMapFree(&led->node_map);
+	ds_HashMapDealloc(&led->node_map);
 	ds_GPoolDealloc(&led->node_pool);
 	ArenaFree(&g_editor->frame);
 }

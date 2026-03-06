@@ -21,7 +21,7 @@
 #include "ds_base.h"
 #include "ds_math.h"
 #include "geometry.h"
-#include "hash_map.h"
+#include "ds_hash_map.h"
 #include "list.h"
 #include "queue.h"
 #include "float32.h"

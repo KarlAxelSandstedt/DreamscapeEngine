@@ -27,7 +27,7 @@ extern "C" {
 #include "ds_base.h"
 #include "csg.h"
 #include "dynamics.h"
-#include "hash_map.h"
+#include "ds_hash_map.h"
 #include "list.h"
 #include "cmd.h"
 #include "ds_renderer.h"

@@ -20,7 +20,7 @@
 #include <stdlib.h> 
 
 #include "cmd.h"
-#include "hash_map.h"
+#include "ds_hash_map.h"
 #include "ds_vector.h"
 
 DECLARE_STACK(cmdFunction);
@@ -48,7 +48,7 @@ void ds_CmdApiInit(void)
 
 void ds_CmdApiShutdown(void)
 {
-	ds_HashMapFree(&g_name_to_cmd_f_map);
+	ds_HashMapDealloc(&g_name_to_cmd_f_map);
 	stack_cmdFunctionFree(&g_cmd_f);
 }
 

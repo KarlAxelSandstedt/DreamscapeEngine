@@ -67,7 +67,7 @@ struct strdb strdb_AllocInternal(struct arena *mem, const u32 hash_size, const u
 void strdb_Dealloc(struct strdb *db)
 {
 	ds_PoolDealloc(&db->pool);
-	ds_HashMapFree(&db->hash);
+	ds_HashMapDealloc(&db->hash);
 }
 
 void strdb_Flush(struct strdb *db)

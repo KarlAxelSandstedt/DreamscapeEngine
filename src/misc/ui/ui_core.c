@@ -21,7 +21,7 @@
 
 #include "ui_local.h"
 #include "ds_font.h"
-#include "hash_map.h"
+#include "ds_hash_map.h"
 
 #define INITIAL_UNIT_COUNT	1024
 #define INITIAL_HASH_COUNT	1024
@@ -260,10 +260,10 @@ void ui_Dealloc(struct ui *ui)
 	stack_u32Free(&ui->stack_floating_node);
 	stack_u32Free(&ui->stack_floating_depth);
 	stack_u32Free(&ui->stack_fixed_depth);
-	ds_HashMapFree(&ui->node_map);
+	ds_HashMapDealloc(&ui->node_map);
 	ds_PoolDealloc(&ui->event_pool);
 	ds_PoolDealloc(&ui->bucket_pool);
-	ds_HashMapFree(&ui->bucket_map);
+	ds_HashMapDealloc(&ui->bucket_map);
 	hi_Dealloc(&ui->node_hierarchy);
 	ds_Free(&ui->mem_slot);
 	if (g_ui == ui)

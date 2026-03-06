@@ -18,7 +18,7 @@
 */
 
 #include "ds_base.h"
-#include "hash_map.h"
+#include "ds_hash_map.h"
 
 static const struct ds_HashMap map_empty = { 0 };
 
@@ -73,7 +73,7 @@ struct ds_HashMap ds_HashMapAlloc(struct arena *mem, const u32 hash_len, const u
 	return map;
 }
 
-void ds_HashMapFree(struct ds_HashMap *map)
+void ds_HashMapDealloc(struct ds_HashMap *map)
 {
 	if (map->mem_hash.address)
 	{

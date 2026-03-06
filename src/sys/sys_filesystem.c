@@ -17,7 +17,7 @@
 ==========================================================================
 */
 
-#include "hash_map.h"
+#include "ds_hash_map.h"
 #include "ds_vector.h"
 #include "ds_platform.h"
 
@@ -42,7 +42,7 @@ struct directoryNavigator DirectoryNavigatorAlloc(const u32 initial_memory_strin
 void DirectoryNavigatorDealloc(struct directoryNavigator *dn)
 {
 	ArenaFree(&dn->mem_string);
-	ds_HashMapFree(&dn->relative_path_to_file_map);
+	ds_HashMapDealloc(&dn->relative_path_to_file_map);
 	VectorDealloc(&dn->files);
 }
 
