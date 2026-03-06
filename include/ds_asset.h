@@ -202,7 +202,7 @@ struct font
 	f32			ascent;			/* max distance from baseline to the highest coordinate used to place an outline point */
 	f32			descent;		/* min distance (is negative) from baseline to the lowest coordinate used to place an outline point */
 	f32			linespace;		/* baseline-to-baseline offset ( > = 0.0f)  */
-	struct hashMap 		codepoint_to_glyph_map;	/* map codepoint -> glyph. If codepoint not found, return "box" glyph" */
+	struct ds_HashMap 		codepoint_to_glyph_map;	/* map codepoint -> glyph. If codepoint not found, return "box" glyph" */
 
 	struct fontGlyph *	glyph;			/* glyphs in font; glyph[0] represents glyphs not found */
 	u32			glyph_count;

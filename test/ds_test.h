@@ -232,12 +232,14 @@ extern struct suite_Performance *hash_performance_suite;
 extern struct suite_Performance *rng_performance_suite;
 extern struct suite_Performance *serialize_performance_suite;
 extern struct suite_Performance *allocator_performance_suite;
+extern struct suite_Performance *THashMap_performance_suite;
 
 //extern struct suite_Correctness *array_list_suite;
 //extern struct suite_Correctness *hierarchy_index_suite;
-extern struct suite_Correctness *allocator_suite;
-extern struct suite_Correctness *math_suite;
-extern struct suite_Correctness *kas_string_suite;
-extern struct suite_Correctness *serialize_suite;
+extern struct suite_Correctness *allocator_correctness_suite;
+//extern struct suite_Correctness *math_correctness_suite;
+extern struct suite_Correctness *kas_string_correctness_suite;
+extern struct suite_Correctness *serialize_correctness_suite;
+extern struct suite_Correctness *THashMap_correctness_suite;
 
 #endif

@@ -390,6 +390,7 @@ void sdl3_WrapperInit(void)
 	}
 
 #if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WIN64__
+    SDL_SetHint(SDL_HINT_VIDEO_FORCE_EGL, "0");
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 	if (!SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1)
 		|| !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3)

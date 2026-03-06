@@ -44,8 +44,8 @@ struct ds_Struct
 TPOOL_DECLARE(ds_Struct)
 TPOOL_DEFINE(ds_Struct)
 
-struct ds_StructTPool *g_tpool;
-u32 first = 1;
+static struct ds_StructTPool *g_tpool;
+static u32 first = 1;
 
 void *ds_StructTPoolIncrementTestInit(void)
 {
@@ -300,6 +300,11 @@ struct test_PerformanceSerial allocator_serial_test[] =
 	},
 };
 
+struct suite_Correctness storage_allocator_correctness_suite =
+{
+    0
+};
+
 struct test_PerformanceParallel allocator_parallel_test[] =
 {
     {
@@ -365,4 +370,6 @@ struct suite_Performance storage_performance_allocator_suite =
 	.serial_test = allocator_serial_test,
 	.serial_test_count = sizeof(allocator_serial_test) / sizeof(allocator_serial_test[0]),
 };
+
 struct suite_Performance *allocator_performance_suite = &storage_performance_allocator_suite;
+struct suite_Correctness *allocator_correctness_suite = &storage_allocator_correctness_suite;

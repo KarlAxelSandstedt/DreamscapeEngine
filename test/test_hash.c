@@ -18,8 +18,8 @@
 */
 
 #define XXH_INLINE_ALL
-#include "ds_test.h"
 #include "xxhash.h"
+#include "ds_test.h"
 
 #define ARRAY_TEST_SIZE 	(1024*1024)
 #define STRUCT_TEST_HASH_COUNT	(1024*1024)

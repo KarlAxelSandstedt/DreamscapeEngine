@@ -128,10 +128,10 @@ struct ui *ui_Alloc(void)
 	
 	memset(ui, 0, sizeof(struct ui));
 	ui->node_hierarchy = hi_Alloc(NULL, INITIAL_UNIT_COUNT, struct ui_Node, GROWABLE);
-	ui->node_map = HashMapAlloc(NULL, U16_MAX, U16_MAX, GROWABLE);
+	ui->node_map = ds_HashMapAlloc(NULL, U16_MAX, U16_MAX, GROWABLE);
 	ui->bucket_pool = ds_PoolAlloc(NULL, 64, struct ui_DrawBucket, GROWABLE);
 	ui->bucket_list = dll_Init(struct ui_DrawBucket);
-	ui->bucket_map = HashMapAlloc(NULL, 128, 128, GROWABLE);
+	ui->bucket_map = ds_HashMapAlloc(NULL, 128, 128, GROWABLE);
 	ui->event_pool = ds_PoolAlloc(NULL, 32, struct dsEvent, GROWABLE);
 	ui->event_list = dll_Init(struct dsEvent);
 	ui->frame = 0;
@@ -260,10 +260,10 @@ void ui_Dealloc(struct ui *ui)
 	stack_u32Free(&ui->stack_floating_node);
 	stack_u32Free(&ui->stack_floating_depth);
 	stack_u32Free(&ui->stack_fixed_depth);
-	HashMapFree(&ui->node_map);
+	ds_HashMapFree(&ui->node_map);
 	ds_PoolDealloc(&ui->event_pool);
 	ds_PoolDealloc(&ui->bucket_pool);
-	HashMapFree(&ui->bucket_map);
+	ds_HashMapFree(&ui->bucket_map);
 	hi_Dealloc(&ui->node_hierarchy);
 	ds_Free(&ui->mem_slot);
 	if (g_ui == ui)
@@ -277,8 +277,8 @@ static void ui_DrawBucketAddNode(const u32 cmd, const u32 index)
 	struct ui_DrawBucket *bucket = ds_PoolAddress(&g_ui->bucket_pool, g_ui->bucket_cache);
 	if (bucket->cmd != cmd)
 	{
-		u32 bi = HashMapFirst(&g_ui->bucket_map, cmd);
-		for (; bi != HASH_NULL; bi = HashMapNext(&g_ui->bucket_map, bi))
+		u32 bi = ds_HashMapFirst(&g_ui->bucket_map, cmd);
+		for (; bi != HASH_NULL; bi = ds_HashMapNext(&g_ui->bucket_map, bi))
 		{
 			bucket = ds_PoolAddress(&g_ui->bucket_pool, bi);
 			if (bucket->cmd == cmd)
@@ -291,7 +291,7 @@ static void ui_DrawBucketAddNode(const u32 cmd, const u32 index)
 		{
 			struct slot slot = ds_PoolAdd(&g_ui->bucket_pool);
 			bi = slot.index;
-			HashMapAdd(&g_ui->bucket_map, cmd, bi);
+			ds_HashMapAdd(&g_ui->bucket_map, cmd, bi);
 			dll_Append(&g_ui->bucket_list, g_ui->bucket_pool.buf, bi);
 			bucket = slot.address;
 			bucket->cmd = cmd;
@@ -328,7 +328,7 @@ static void ui_NodeDealloc(const struct hi *node_hierarchy, const u32 index, voi
 	if ((node->flags & UI_NON_HASHED) == 0)
 	{
 		//fprintf(stderr, "pruning hashed orphan %s\n",(char*) ((struct ui_Node *) node)->id.buf);
-		HashMapRemove(&g_ui->node_map, node->hash, index);
+		ds_HashMapRemove(&g_ui->node_map, node->hash, index);
 	}
 }
 
@@ -843,7 +843,7 @@ void ui_FrameBegin(const vec2u32 window_size, const struct ui_Visual *base)
 	ArenaFlush(g_ui->mem_frame);
 	dll_Flush(&g_ui->bucket_list);
 	ds_PoolFlush(&g_ui->bucket_pool);
-	HashMapFlush(&g_ui->bucket_map);
+	ds_HashMapFlush(&g_ui->bucket_map);
 	
 	/* setup stub bucket */
 	struct slot slot = ds_PoolAdd(&g_ui->bucket_pool);
@@ -1313,8 +1313,8 @@ struct slot ui_NodeLookup(const utf8 *id)
 	struct slot slot = { .address = NULL, .index = U32_MAX };
 	struct ui_Node *node;
 	const u32 hash = Utf8Hash(*id);
-	u32 index = HashMapFirst(&g_ui->node_map, hash);
-	for (; index != HASH_NULL; index = HashMapNext(&g_ui->node_map, index))
+	u32 index = ds_HashMapFirst(&g_ui->node_map, hash);
+	for (; index != HASH_NULL; index = ds_HashMapNext(&g_ui->node_map, index))
 	{
 		node = hi_Address(&g_ui->node_hierarchy, index);
 		if (Utf8Equivalence(node->id, *id))
@@ -1417,7 +1417,7 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 		hash = Utf8Hash(id);
 		slot = hi_Add(&g_ui->node_hierarchy, stack_u32Top(&g_ui->stack_parent));
 		node = slot.address;
-		HashMapAdd(&g_ui->node_map, hash, slot.index);
+		ds_HashMapAdd(&g_ui->node_map, hash, slot.index);
 	}
 	else
 	{
@@ -1728,7 +1728,7 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 		if ((flags & UI_NON_HASHED) == 0)
 		{
 			hash = Utf8Hash(id);
-			HashMapAdd(&g_ui->node_map, hash, slot.index);
+			ds_HashMapAdd(&g_ui->node_map, hash, slot.index);
 		}
 		ds_Assert((flags & UI_NON_HASHED) == UI_NON_HASHED || id.len > 0);
 	}

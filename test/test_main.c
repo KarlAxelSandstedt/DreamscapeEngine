@@ -105,7 +105,7 @@ static void run_performance_suite(struct suite_Performance *suite)
 {
 	fprintf(stdout, ":::::::::: Running peformance suite %s ::::::::::\n", suite->id);
 
-	const u64 max_time_without_improvement = 30*TscFrequency();
+	const u64 max_time_without_improvement = 10*TscFrequency();
 	struct rt tester;
 	struct arena mem = ArenaAlloc1MB();
 
@@ -221,16 +221,19 @@ void ds_TestMainCorrectness(void)
 		.seed = 2984395893,
 	};
 
-	run_suite(kas_string_suite, &env, 1);
-	run_suite(serialize_suite, &env, 1);
-	//run_suite(array_list_suite, &env, 1);
-	//run_suite(hierarchy_index_suite, &env, 1);
-	//run_suite(math_suite, &env, 1);
+	run_suite(THashMap_correctness_suite, &env, 1);
+	run_suite(allocator_correctness_suite, &env, 1);
+	run_suite(kas_string_correctness_suite, &env, 1);
+	run_suite(serialize_correctness_suite, &env, 1);
+	//run_suite(array_list_correctness_suite, &env, 1);
+	//run_suite(hierarchy_correctness_index_suite, &env, 1);
+	//run_suite(math_correctness_suite, &env, 1);
 }
 
 void ds_TestMainPerformance(void)
 {
-	run_performance_suite(allocator_performance_suite);
+	run_performance_suite(THashMap_performance_suite);
+	//run_performance_suite(allocator_performance_suite);
 	//run_performance_suite(hash_performance_suite);
 	//run_performance_suite(rng_performance_suite);
 	//run_performance_suite(serialize_performance_suite);

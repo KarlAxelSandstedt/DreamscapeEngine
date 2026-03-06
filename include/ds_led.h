@@ -154,7 +154,7 @@ struct led
 
 	struct strdb		    render_mesh_db;
 
-	struct hashMap 		    node_map;
+	struct ds_HashMap 		    node_map;
 	struct ds_Pool		        node_pool;
 	struct dll		        node_marked_list;
 	struct dll		        node_non_marked_list;

@@ -9,6 +9,7 @@ add_library(DreamscapeTestAPI
 	test_string.c
 	test_serialize.c
 	test_allocator.c
+    test_hash_map.c
 	test_hash.c
 	test_rng.c
 )

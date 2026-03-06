@@ -197,7 +197,7 @@ enum fsError	DirectoryPushEntries(struct arena *mem, struct vector *vec, struct 
 struct directoryNavigator
 {
 	utf8		path;				/* directory path  		*/ 
-	struct hashMap 	relative_path_to_file_map;	/* relative_path -> file index 	*/
+	struct ds_HashMap 	relative_path_to_file_map;	/* relative_path -> file index 	*/
 	struct arena	mem_string;			/* path memory			*/
 	struct vector	files;				/* file information 		*/
 };

@@ -30,41 +30,42 @@ extern "C" {
 #define HASH_NULL 	POOL_NULL	
 
 /*
- * hash map storing mapping a key to a set of possible indices. User dereferences indices to check for equality between identifiers 
- */
-struct hashMap
+hashMap
+=======
+hash map storing mapping a key to a set of possible indices. User dereferences
+indices to check for equality between identifiers 
+*/
+
+struct ds_HashMap
 {
-	u32 *		hash;
-	u32 *		index;
-	u32		hash_len;
-	u32		index_len;
-	u32		hash_mask;
-	u32		growable;
+	u32 *		        hash;
+	u32 *		        index;
+	u32		            hash_len;
+	u32		            index_len;
+	u32		            hash_mask;
+	u32		            growable;
 	struct ds_MemSlot	mem_hash;
 	struct ds_MemSlot	mem_index;
 };
 
 /* allocate hash map on heap if mem == NULL, otherwise push memory onto arena. On failure, returns NULL  */
-struct hashMap	HashMapAlloc(struct arena *mem, const u32 hash_len, const u32 index_len, const u32 growable);
+struct ds_HashMap	ds_HashMapAlloc(struct arena *mem, const u32 hash_len, const u32 index_len, const u32 growable);
 /* free hash map memory */
-void		HashMapFree(struct hashMap *map);
+void		        ds_HashMapFree(struct ds_HashMap *map);
 /* flush / reset the hash map, removing any allocations within it */
-void		HashMapFlush(struct hashMap *map);
+void		        ds_HashMapFlush(struct ds_HashMap *map);
 /* serialize hash map into stream  */
-void 		HashMapSerialize(struct ss *ss, const struct hashMap *map);
+void 		        ds_HashMapSerialize(struct ss *ss, const struct ds_HashMap *map);
 /* deserialize and construct hash_map on arena if defined, otherwise alloc on heap. On failure, returns NULL  */
-struct hashMap	HashMapDeserialize(struct arena *mem, struct ss *ss, const u32 growable);
+struct ds_HashMap	ds_HashMapDeserialize(struct arena *mem, struct ss *ss, const u32 growable);
 /* add the hash(key)-index pair to the hash map. return 1 on success, 0 on out-of-memory. */
-u32		HashMapAdd(struct hashMap *map, const u32 hash, const u32 index);
+u32		            ds_HashMapAdd(struct ds_HashMap *map, const u32 hash, const u32 index);
 /* remove  hash(key)-index pair to the hash map. If the pair is not found, do nothing. */
-void		HashMapRemove(struct hashMap *map, const u32 hash, const u32 index);
+void		        ds_HashMapRemove(struct ds_HashMap *map, const u32 hash, const u32 index);
 /* Get the first (hash,index) pair of the map. If HASH_NULL is returned, no more pairs exist */
-u32		HashMapFirst(const struct hashMap *map, const u32 hash);
+u32		            ds_HashMapFirst(const struct ds_HashMap *map, const u32 hash);
 /* Get the next (hash,index) pair of the map. If HASH_NULL is returnsd, no more pairs exist */
-u32		HashMapNext(const struct hashMap *map, const u32 index);
-
-/* keygen methods */
-u64		KeyGenU32U32(const u32 k1, const u32 k2);
+u32		            ds_HashMapNext(const struct ds_HashMap *map, const u32 index);
 
 #ifdef __cplusplus
 } 

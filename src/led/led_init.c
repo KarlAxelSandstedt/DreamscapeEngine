@@ -104,7 +104,7 @@ struct led *led_Alloc(void)
 	
 	g_editor->viewport_id = Utf8Format(&sys_win->mem_persistent, "viewport_%u", g_editor->window);
 	g_editor->node_pool = ds_GPoolAlloc(NULL, 4096, struct led_node, GROWABLE);
-	g_editor->node_map = HashMapAlloc(NULL, 4096, 4096, GROWABLE);
+	g_editor->node_map = ds_HashMapAlloc(NULL, 4096, 4096, GROWABLE);
 	g_editor->node_marked_list = dll_Init(struct led_node);
 	g_editor->node_non_marked_list = dll_Init(struct led_node);
 	g_editor->node_selected_list = dll2_Init(struct led_node);
@@ -161,7 +161,7 @@ void led_Dealloc(struct led *led)
 	ArenaFree(&led->mem_persistent);
 	led_ProjectMenuDealloc(&led->project_menu);
 	csg_Dealloc(&led->csg);
-	HashMapFree(&led->node_map);
+	ds_HashMapFree(&led->node_map);
 	ds_GPoolDealloc(&led->node_pool);
 	ArenaFree(&g_editor->frame);
 }

@@ -505,4 +505,4 @@ struct suite_Correctness m_kas_string_suite =
 	.unit_test_count = sizeof(kas_string_tests) / sizeof(kas_string_tests[0]),
 };
 
-struct suite_Correctness *kas_string_suite = &m_kas_string_suite;
+struct suite_Correctness *kas_string_correctness_suite = &m_kas_string_suite;

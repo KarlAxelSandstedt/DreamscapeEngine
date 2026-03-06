@@ -142,7 +142,7 @@ void FontBuild(struct arena *mem, const enum fontId id)
 
 	const u32 hash_len = (u32) PowerOfTwoCeil(stack_glyph.next);
 	struct font *font = ArenaPush(mem, sizeof(struct font));
-	font->codepoint_to_glyph_map = HashMapAlloc(mem, hash_len, hash_len, !GROWABLE);
+	font->codepoint_to_glyph_map = ds_HashMapAlloc(mem, hash_len, hash_len, !GROWABLE);
 	font->glyph_count = stack_glyph.next;
 	font->glyph_unknown_index = glyph_unknown_index;
 	font->glyph = stack_glyph.arr;
@@ -196,7 +196,7 @@ void FontBuild(struct arena *mem, const enum fontId id)
 		u8 *alpha = font->pixmap;
 
 		struct fontGlyph *g = stack_glyph.arr + i;
-		HashMapAdd(&font->codepoint_to_glyph_map, g->codepoint, i);
+		ds_HashMapAdd(&font->codepoint_to_glyph_map, g->codepoint, i);
 		pixels = stack_pixels.arr[i];
 		if (offset[0] + g->size[0] > font->pixmap_width)
 		{
@@ -272,7 +272,7 @@ void FontSerialize(const struct assetFont *asset, const struct font *font)
 		ss_WriteF32Be(&ss, font->glyph[i].tr[1]);
 	}
 
-	HashMapSerialize(&ss, &font->codepoint_to_glyph_map);
+	ds_HashMapSerialize(&ss, &font->codepoint_to_glyph_map);
 	ss_Write8N(&ss, font->pixmap, font->pixmap_height * font->pixmap_width);
 
 	FileMemoryUnmap(buf, font->size);
@@ -336,7 +336,7 @@ const struct font *FontDeserialize(struct assetFont *asset)
 		font->glyph[i].tr[1] = ss_ReadF32Be(&ss);
 	}
 
-	font->codepoint_to_glyph_map = HashMapDeserialize(NULL, &ss, 0);
+	font->codepoint_to_glyph_map = ds_HashMapDeserialize(NULL, &ss, 0);
 	ss_Read8N(font->pixmap, &ss, font->pixmap_height * font->pixmap_width);
 
 	FileMemoryUnmap(buf, size);
@@ -402,8 +402,8 @@ struct assetFont *AssetRequestFont(struct arena *tmp, const enum fontId id)
 const struct fontGlyph *GlyphLookup(const struct font *font, const u32 codepoint)
 {
 	const struct fontGlyph *g;
-	u32 index = HashMapFirst(&font->codepoint_to_glyph_map, codepoint);	
-	for (; index != HASH_NULL; index = HashMapNext(&font->codepoint_to_glyph_map, index))
+	u32 index = ds_HashMapFirst(&font->codepoint_to_glyph_map, codepoint);	
+	for (; index != HASH_NULL; index = ds_HashMapNext(&font->codepoint_to_glyph_map, index))
 	{
 		g = font->glyph + index;
 		if (g->codepoint == codepoint)

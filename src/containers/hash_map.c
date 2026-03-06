@@ -20,13 +20,13 @@
 #include "ds_base.h"
 #include "hash_map.h"
 
-static const struct hashMap map_empty = { 0 };
+static const struct ds_HashMap map_empty = { 0 };
 
-struct hashMap HashMapAlloc(struct arena *mem, const u32 hash_len, const u32 index_len, const u32 growable)
+struct ds_HashMap ds_HashMapAlloc(struct arena *mem, const u32 hash_len, const u32 index_len, const u32 growable)
 {
 	ds_Assert(hash_len && index_len && (hash_len >> 31) == 0);
 
-	struct hashMap map = 
+	struct ds_HashMap map = 
 	{ 
 		.hash = NULL,
 		.index = NULL,
@@ -73,7 +73,7 @@ struct hashMap HashMapAlloc(struct arena *mem, const u32 hash_len, const u32 ind
 	return map;
 }
 
-void HashMapFree(struct hashMap *map)
+void ds_HashMapFree(struct ds_HashMap *map)
 {
 	if (map->mem_hash.address)
 	{
@@ -82,7 +82,7 @@ void HashMapFree(struct hashMap *map)
 	}	
 }
 
-void HashMapFlush(struct hashMap *map)
+void ds_HashMapFlush(struct ds_HashMap *map)
 {
 	for (u32 i = 0; i < map->hash_len; ++i)
 	{
@@ -90,7 +90,7 @@ void HashMapFlush(struct hashMap *map)
 	}
 }
 
-void HashMapSerialize(struct ss *ss, const struct hashMap *map)
+void ds_HashMapSerialize(struct ss *ss, const struct ds_HashMap *map)
 {
 	if ((2 + map->hash_len + map->index_len) * sizeof(u32) <= ss_BytesLeft(ss))
 	{
@@ -101,9 +101,10 @@ void HashMapSerialize(struct ss *ss, const struct hashMap *map)
 	}
 }
 
-struct hashMap HashMapDeserialize(struct arena *mem, struct ss *ss, const u32 growable)
+struct ds_HashMap ds_HashMapDeserialize(struct arena *mem, struct ss *ss, const u32 growable)
 {
 	ds_Assert(!(mem && growable));
+    struct ss local_ss = *ss;
 	if (2 * sizeof(u32) > ss_BytesLeft(ss))
 	{
 		Log(T_SYSTEM, S_ERROR, "Deserializing hash map past byte boundary: Trying to read 8B with %luB left.", ss_BytesLeft(ss));
@@ -113,11 +114,18 @@ struct hashMap HashMapDeserialize(struct arena *mem, struct ss *ss, const u32 gr
 
 	u32 *hash;
 	u32 *index;
-	struct hashMap map;
+	struct ds_HashMap map;
 
 	const u32 hash_len = ss_ReadU32Be(ss);
 	const u32 index_len = ss_ReadU32Be(ss);
 	ds_Assert(PowerOfTwoCheck(hash_len));
+
+    if ((hash_len + index_len) * sizeof(u32) > ss_BytesLeft(ss))
+	{
+        *ss = local_ss;
+		Log(T_SYSTEM, S_ERROR, "Deserializing hash map past byte boundary: Trying to read %luB with %luB left.", (hash_len+index_len) * sizeof(u32), ss_BytesLeft(ss));
+		return map_empty;
+	}
 
 	if (mem)
 	{
@@ -157,25 +165,14 @@ struct hashMap HashMapDeserialize(struct arena *mem, struct ss *ss, const u32 gr
 	map.growable = growable;
 	map.hash_mask = map.hash_len-1;
 
-	if ((hash_len + index_len) * sizeof(u32) > ss_BytesLeft(ss))
-	{
-		if (map.mem_index.address)
-		{
-			ds_Free(&map.mem_hash);
-			ds_Free(&map.mem_index);
-		}
-		Log(T_SYSTEM, S_ERROR, "Deserializing hash map past byte boundary: Trying to read %luB with %luB left.", hash_len + index_len * sizeof(u32), ss_BytesLeft(ss));
-		return map_empty;
-	}
-
-		ss_ReadU32BeN(map.hash, ss, hash_len);
-		ss_ReadU32BeN(map.index, ss, index_len);
+	ss_ReadU32BeN(map.hash, ss, hash_len);
+	ss_ReadU32BeN(map.index, ss, index_len);
 
 	return map;
 }
 
 #include <stdio.h>
-u32 HashMapAdd(struct hashMap *map, const u32 hash, const u32 index)
+u32 ds_HashMapAdd(struct ds_HashMap *map, const u32 hash, const u32 index)
 {
 	ds_Assert(index >> 31 == 0);
 
@@ -203,7 +200,7 @@ u32 HashMapAdd(struct hashMap *map, const u32 hash, const u32 index)
 	return 1;
 }
 
-void HashMapRemove(struct hashMap *map, const u32 hash, const u32 index)
+void ds_HashMapRemove(struct ds_HashMap *map, const u32 hash, const u32 index)
 {
 	ds_Assert(index < map->index_len);
 
@@ -214,7 +211,7 @@ void HashMapRemove(struct hashMap *map, const u32 hash, const u32 index)
 	}
 	else
 	{
-		for (u32 i = map->hash[h]; i != HASH_NULL; i = HashMapNext(map, i))
+		for (u32 i = map->hash[h]; i != HASH_NULL; i = ds_HashMapNext(map, i))
 		{
 			if (map->index[i] == index)
 			{
@@ -228,18 +225,13 @@ void HashMapRemove(struct hashMap *map, const u32 hash, const u32 index)
 	map->index[index] = HASH_NULL;
 }
 
-u32 HashMapFirst(const struct hashMap *map, const u32 hash)
+u32 ds_HashMapFirst(const struct ds_HashMap *map, const u32 hash)
 {
 	return map->hash[hash & map->hash_mask];
 }
 
-u32 HashMapNext(const struct hashMap *map, const u32 index)
+u32 ds_HashMapNext(const struct ds_HashMap *map, const u32 index)
 {
 	ds_Assert(index < map->index_len);
 	return map->index[index];
-}
-
-u64 KeyGenU32U32(const u32 k1, const u32 k2)
-{
-       return ((u64) k1 << 32) | (u64) k2;
 }

@@ -561,7 +561,7 @@ struct suite_Correctness m_serialize_suite =
 	.repetition_test_count = sizeof(repetition_test) / sizeof(repetition_test[0]),
 };
 
-struct suite_Correctness *serialize_suite = &m_serialize_suite;
+struct suite_Correctness *serialize_correctness_suite = &m_serialize_suite;
 
 struct test_PerformanceSerial serialize_serial_test[] =
 {

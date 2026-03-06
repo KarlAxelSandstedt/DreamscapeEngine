@@ -26,7 +26,7 @@
 DECLARE_STACK(cmdFunction);
 DEFINE_STACK(cmdFunction);
 
-static struct hashMap g_name_to_cmd_f_map;
+static struct ds_HashMap g_name_to_cmd_f_map;
 struct cmdQueue *g_queue = NULL;
 static stack_cmdFunction g_cmd_f;
 u32			  g_cmd_internal_debug_print_index;	
@@ -39,7 +39,7 @@ static void CmdDebugPrint(void)
 
 void ds_CmdApiInit(void)
 {
-	g_name_to_cmd_f_map = HashMapAlloc(NULL, 128, 128, GROWABLE);
+	g_name_to_cmd_f_map = ds_HashMapAlloc(NULL, 128, 128, GROWABLE);
 	g_cmd_f = stack_cmdFunctionAlloc(NULL, 128, GROWABLE);
 
 	const utf8 debug_print_str = Utf8Inline("debug_print");
@@ -48,7 +48,7 @@ void ds_CmdApiInit(void)
 
 void ds_CmdApiShutdown(void)
 {
-	HashMapFree(&g_name_to_cmd_f_map);
+	ds_HashMapFree(&g_name_to_cmd_f_map);
 	stack_cmdFunctionFree(&g_cmd_f);
 }
 
@@ -325,7 +325,7 @@ struct slot CmdFunctionRegister(const utf8 name, const u32 args_count, void (*ca
 		stack_cmdFunctionPush(&g_cmd_f, cmd_f);
 	
 		const u32 key = Utf8Hash(name);
-		HashMapAdd(&g_name_to_cmd_f_map, key, slot.index);
+		ds_HashMapAdd(&g_name_to_cmd_f_map, key, slot.index);
 	}
 	else
 	{
@@ -338,8 +338,8 @@ struct slot CmdFunctionRegister(const utf8 name, const u32 args_count, void (*ca
 struct slot CmdFunctionLookup(const utf8 name)
 {
 	const u32 key = Utf8Hash(name);
-	struct slot slot = { .index = HashMapFirst(&g_name_to_cmd_f_map, key), .address = NULL };
-	for (; slot.index != U32_MAX; slot.index = HashMapNext(&g_name_to_cmd_f_map, slot.index))
+	struct slot slot = { .index = ds_HashMapFirst(&g_name_to_cmd_f_map, key), .address = NULL };
+	for (; slot.index != U32_MAX; slot.index = ds_HashMapNext(&g_name_to_cmd_f_map, slot.index))
 	{
 		if (Utf8Equivalence(g_cmd_f.arr[slot.index].name, name))
 		{

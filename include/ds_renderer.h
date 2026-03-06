@@ -401,7 +401,7 @@ struct r_Scene
 	struct arena *		mem_frame;
 	u64 			frame;
 
-	struct hashMap 		proxy3d_to_instance_map;/* map[ generation(32) | index(32) ] -> instance */
+	struct ds_HashMap 		proxy3d_to_instance_map;/* map[ generation(32) | index(32) ] -> instance */
 	struct ds_Pool 		instance_pool;		/* instance storage */
 	struct ll		instance_new_list;	/* non-cached instance 	*/
 

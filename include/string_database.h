@@ -50,7 +50,7 @@ extern "C" {
  */
 struct strdb
 {
-	struct hashMap 	hash;
+	struct ds_HashMap 	hash;
 	struct ds_Pool	pool;
 	struct dll	allocated_dll;
 	u64		id_offset;		/* id offset within db structure 	    */

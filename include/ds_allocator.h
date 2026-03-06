@@ -620,6 +620,7 @@ TPOOL_DEALLOC_DECLARE(struct_name)                                              
 #define TPOOL_FLUSH_DEFINE(struct_name)                                                                     \
 TPOOL_FLUSH_DECLARE(struct_name)                                                                            \
 {                                                                                                           \
+    ds_AssertString(0, "Implement TPoolFlush");                                                             \
 }
 
 #define TPOOL_INCREMENT_DEFINE(struct_name)                                                                 \
@@ -634,7 +635,7 @@ TPOOL_INCREMENT_DECLARE(struct_name)                                            
          */                                                                                                 \
         u32 cmp_val = 0;                                                                                    \
         const u32 exch_val = 1;                                                                             \
-        if (AtomicCompareExchangeAcqRlx32(&pool->a_adding_memory, &cmp_val, exch_val))                         \
+        if (AtomicCompareExchangeAcqRlx32(&pool->a_adding_memory, &cmp_val, exch_val))                      \
         {                                                                                                   \
             if (slot.index >= pool->a_length)                                                               \
             {                                                                                               \
@@ -747,7 +748,7 @@ at the appropriate places. This Declares and Generates the following functions
     // Push a TStack node
     void ds_StructFreeListTStackPush(ds_StructFreeListTStack *stack, const u32 index)
     
-    // Pop a TStack node
+    // Pop a TStack node. On failure, return empty slot { .address = NULL, .index = U32_MAX }
     struct slot ds_StructFreeListTStackPop(struct ds_StructFreeListTStack *stack)
 */
 

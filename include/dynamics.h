@@ -344,13 +344,13 @@ struct cdb
 	 * i.e. the smaller index owns slot 0 and the larger index owns slot 1.
 	 */
 	struct nll	contact_net;
-	struct hashMap	contact_map;		
+	struct ds_HashMap	contact_map;		
 
 	/*
 	 * frame-cached separation axes 
 	 */
 	struct ds_Pool	    sat_cache_pool;
-	struct hashMap	sat_cache_map;		
+	struct ds_HashMap	sat_cache_map;		
 
 	/* PERSISTENT DATA, GROWABLE, keeps track of which slots in contacts are currently being used.
        At end of frame, it is set to contacts_frame_usage and any new appended contacts resulting 

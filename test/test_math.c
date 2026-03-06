@@ -79,4 +79,4 @@ struct suite_Correctness m_math_suite =
 	.unit_test_count = sizeof(math_tests) / sizeof(math_tests[0]),
 };
 
-struct suite_Correctness *math_suite = &m_math_suite;
+struct suite_Correctness *math_correctness_suite = &m_math_suite;

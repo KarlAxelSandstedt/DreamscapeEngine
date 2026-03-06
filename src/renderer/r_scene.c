@@ -34,7 +34,7 @@ struct r_Scene *r_SceneAlloc(void)
 	scene->mem_frame = scene->mem_frame_arr + 0;
 	scene->frame = 0;
 
-	scene->proxy3d_to_instance_map = HashMapAlloc(NULL, 4096, 4096, GROWABLE);
+	scene->proxy3d_to_instance_map = ds_HashMapAlloc(NULL, 4096, 4096, GROWABLE);
 	scene->instance_pool = ds_PoolAlloc(NULL, 4096, struct r_Instance, GROWABLE);
 
 	scene->instance_new_list = ll_Init(struct r_Instance);
@@ -50,7 +50,7 @@ struct r_Scene *r_SceneAlloc(void)
 void r_SceneDealloc(struct r_Scene *scene)
 {
 	ds_PoolDealloc(&scene->instance_pool);
-	HashMapFree(&scene->proxy3d_to_instance_map);
+	ds_HashMapFree(&scene->proxy3d_to_instance_map);
 	ArenaFree(scene->mem_frame_arr + 0),
 	ArenaFree(scene->mem_frame_arr + 1),
 	free(scene);
@@ -187,7 +187,7 @@ static void r_scene_sort_commands_and_prune_instances(void)
 				if (cached_instance->type == R_INSTANCE_PROXY3D)
 				{
 					const u32 hash = (u32) XXH3_64bits(&cached_instance->unit, sizeof(u32));
-					HashMapRemove(&g_scene->proxy3d_to_instance_map, hash, index);
+					ds_HashMapRemove(&g_scene->proxy3d_to_instance_map, hash, index);
 				}
 				ds_PoolRemove(&g_scene->instance_pool, index);
 				g_scene->cmd_cache[cache_i].allocated = 0;
@@ -226,7 +226,7 @@ static void r_scene_sort_commands_and_prune_instances(void)
 			if (cached_instance->type == R_INSTANCE_PROXY3D)
 			{
 				const u32 hash = (u32) XXH3_64bits(&cached_instance->unit, sizeof(u32));
-				HashMapRemove(&g_scene->proxy3d_to_instance_map, hash, index);
+				ds_HashMapRemove(&g_scene->proxy3d_to_instance_map, hash, index);
 			}
 			ds_PoolRemove(&g_scene->instance_pool, index);
 			g_scene->cmd_cache[cache_i].allocated = 0;
@@ -760,8 +760,8 @@ struct r_Instance *r_InstanceAdd(const u32 unit, const u64 cmd)
 	struct r_Instance *instance = NULL;
 	const u32 hash = (u32) XXH3_64bits(&unit, sizeof(u32));
 
-	u32 index = HashMapFirst(&g_scene->proxy3d_to_instance_map, hash);
-	for (; index != HASH_NULL; index = HashMapNext(&g_scene->proxy3d_to_instance_map, index))
+	u32 index = ds_HashMapFirst(&g_scene->proxy3d_to_instance_map, hash);
+	for (; index != HASH_NULL; index = ds_HashMapNext(&g_scene->proxy3d_to_instance_map, index))
 	{
 		instance = ds_PoolAddress(&g_scene->instance_pool, index);
 		if (instance->unit == unit)
@@ -773,7 +773,7 @@ struct r_Instance *r_InstanceAdd(const u32 unit, const u64 cmd)
 	if (index == HASH_NULL)
 	{
 		struct slot slot = ds_PoolAdd(&g_scene->instance_pool);
-		HashMapAdd(&g_scene->proxy3d_to_instance_map, hash, slot.index);
+		ds_HashMapAdd(&g_scene->proxy3d_to_instance_map, hash, slot.index);
 		ll_Prepend(&g_scene->instance_new_list, g_scene->instance_pool.buf, slot.index);
 
 		instance = ds_PoolAddress(&g_scene->instance_pool, slot.index);

@@ -704,7 +704,7 @@ struct slot led_NodeAdd(struct led *led, const utf8 id)
 		else
 		{
 			slot = ds_GPoolAdd(&led->node_pool);
-			HashMapAdd(&led->node_map, key, slot.index);
+			ds_HashMapAdd(&led->node_map, key, slot.index);
 			dll_Append(&led->node_non_marked_list, led->node_pool.buf, slot.index);
 			dll_SlotSetNotInList(&led->node_selected_list, slot.address);
 
@@ -731,7 +731,7 @@ struct slot led_NodeLookup(struct led *led, const utf8 id)
 {
 	const u32 key = Utf8Hash(id);
 	struct slot slot = empty_slot;
-	for (u32 i = HashMapFirst(&led->node_map, key); i != HASH_NULL; i = HashMapNext(&led->node_map, i))
+	for (u32 i = ds_HashMapFirst(&led->node_map, key); i != HASH_NULL; i = ds_HashMapNext(&led->node_map, i))
 	{
 		struct led_node *node = ds_GPoolAddress(&led->node_pool, i);
 		if (Utf8Equivalence(id, node->id))
@@ -778,7 +778,7 @@ static void led_RemoveMarkedStructs(struct led *led)
 		node->csgBRush = STRING_DATABASE_STUB_INDEX;
 		node->proxy = HI_NULL_INDEX;
 
-		HashMapRemove(&led->node_map, node->key, i);
+		ds_HashMapRemove(&led->node_map, node->key, i);
 		ThreadFree256B(node->id.buf);
 		ds_GPoolRemove(&led->node_pool, i);
 	}

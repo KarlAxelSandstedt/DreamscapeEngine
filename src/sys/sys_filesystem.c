@@ -31,7 +31,7 @@ struct directoryNavigator DirectoryNavigatorAlloc(const u32 initial_memory_strin
 	struct directoryNavigator dn =
 	{
 		.path = Utf8Empty(),
-		.relative_path_to_file_map = HashMapAlloc(NULL, hash_size, initial_hash_index_size, GROWABLE),
+		.relative_path_to_file_map = ds_HashMapAlloc(NULL, hash_size, initial_hash_index_size, GROWABLE),
 		.mem_string = ArenaAlloc(initial_memory_string_size),
 		.files = VectorAlloc(NULL, sizeof(struct file), initial_hash_index_size, GROWABLE),
 	};
@@ -42,14 +42,14 @@ struct directoryNavigator DirectoryNavigatorAlloc(const u32 initial_memory_strin
 void DirectoryNavigatorDealloc(struct directoryNavigator *dn)
 {
 	ArenaFree(&dn->mem_string);
-	HashMapFree(&dn->relative_path_to_file_map);
+	ds_HashMapFree(&dn->relative_path_to_file_map);
 	VectorDealloc(&dn->files);
 }
 
 void DirectoryNavigatorFlush(struct directoryNavigator *dn)
 {
 	ArenaFlush(&dn->mem_string);
-	HashMapFlush(&dn->relative_path_to_file_map);
+	ds_HashMapFlush(&dn->relative_path_to_file_map);
 	VectorFlush(&dn->files);
 }
 
@@ -79,7 +79,7 @@ u32 DirectoryNavigatorLookup(const struct directoryNavigator *dn, const utf8 fil
 {
 	const u32 key = Utf8Hash(filename);
 	u32 index = HASH_NULL;
-	for (u32 i = HashMapFirst(&dn->relative_path_to_file_map, key); i != HASH_NULL; i = HashMapNext(&dn->relative_path_to_file_map, i))
+	for (u32 i = ds_HashMapFirst(&dn->relative_path_to_file_map, key); i != HASH_NULL; i = ds_HashMapNext(&dn->relative_path_to_file_map, i))
 	{
 		const struct file *file = VectorAddress(&dn->files, i);
 		if (Utf8Equivalence(filename, file->path))
@@ -106,7 +106,7 @@ enum fsError DirectoryNavigatorEnterAndAliasPath(struct directoryNavigator *dn, 
 		{
 			const struct file *entry = VectorAddress(&dn->files, i);
 			const u32 key = Utf8Hash(entry->path);
-			HashMapAdd(&dn->relative_path_to_file_map, key, i);
+			ds_HashMapAdd(&dn->relative_path_to_file_map, key, i);
 		}
 	}
 

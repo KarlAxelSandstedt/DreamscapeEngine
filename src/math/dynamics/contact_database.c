@@ -62,12 +62,12 @@ struct cdb cdb_Alloc(struct arena *mem_persistent, const u32 size)
 	struct cdb cdb = { 0 };
 	ds_Assert(PowerOfTwoCheck(size));
 
-	cdb.sat_cache_map = HashMapAlloc(NULL, size, size, GROWABLE);
+	cdb.sat_cache_map = ds_HashMapAlloc(NULL, size, size, GROWABLE);
 	cdb.sat_cache_pool = ds_PoolAlloc(NULL, 20000, struct sat_Cache, GROWABLE);
 	//cdb.sat_cache_pool = ds_PoolAlloc(NULL, size, struct sat_Cache, GROWABLE);
 	cdb.contact_net = nll_Alloc(NULL, size, struct ds_Contact, cdb_IndexInPreviousConctactNode, cdb_IndexInNextConctactNode, GROWABLE);
-	//cdb.contact_map = HashMapAlloc(NULL, size, size, GROWABLE);
-	cdb.contact_map = HashMapAlloc(NULL, size, 20000, GROWABLE);
+	//cdb.contact_map = ds_HashMapAlloc(NULL, size, size, GROWABLE);
+	cdb.contact_map = ds_HashMapAlloc(NULL, size, 20000, GROWABLE);
 	cdb.contacts_persistent_usage = BitVecAlloc(NULL, size, 0, GROWABLE);
 
 	return cdb;
@@ -76,9 +76,9 @@ struct cdb cdb_Alloc(struct arena *mem_persistent, const u32 size)
 void cdb_Free(struct cdb *cdb)
 {
 	ds_PoolDealloc(&cdb->sat_cache_pool);
-	HashMapFree(&cdb->sat_cache_map);
+	ds_HashMapFree(&cdb->sat_cache_map);
 	nll_Dealloc(&cdb->contact_net);
-	HashMapFree(&cdb->contact_map);
+	ds_HashMapFree(&cdb->contact_map);
 	BitVecFree(&cdb->contacts_persistent_usage);
 }
 
@@ -86,9 +86,9 @@ void cdb_Flush(struct cdb *cdb)
 {
 	cdb_ClearFrame(cdb);
 	ds_PoolFlush(&cdb->sat_cache_pool);
-	HashMapFlush(&cdb->sat_cache_map);
+	ds_HashMapFlush(&cdb->sat_cache_map);
 	nll_Flush(&cdb->contact_net);
-	HashMapFlush(&cdb->contact_map);
+	ds_HashMapFlush(&cdb->contact_map);
 	BitVecClear(&cdb->contacts_persistent_usage, 0);
 }
 
@@ -241,7 +241,7 @@ void cdb_ClearFrame(struct cdb *cdb)
 //		body1->contact_first = ci;
 //		body2->contact_first = ci;
 //
-//		HashMapAdd(&pipeline->cdb.contact_map, (u32) key, ci);
+//		ds_HashMapAdd(&pipeline->cdb.contact_map, (u32) key, ci);
 //
 //		if (ci < pipeline->cdb.contacts_frame_usage.bit_count)
 //		{
@@ -289,13 +289,13 @@ void cdb_ClearFrame(struct cdb *cdb)
 //		{
 //            const u32 hash = (u32) XXH3_64bits(&cache->key, sizeof(cache->key));
 //			dll_Remove(&cdb->sat_cache_list, cdb->sat_cache_pool.buf, i);
-//			HashMapRemove(&cdb->sat_cache_map, hash, i);
+//			ds_HashMapRemove(&cdb->sat_cache_map, hash, i);
 //			ds_PoolRemove(&cdb->sat_cache_pool, i);
 //		}
 //		i = next;
 //	}
 //	PhysicsEventContactRemoved(pipeline, (u32) CONTACT_KEY_TO_BODY_0(c->key), (u32) CONTACT_KEY_TO_BODY_1(c->key));
-//	HashMapRemove(&pipeline->cdb.contact_map, (u32) key, index);
+//	ds_HashMapRemove(&pipeline->cdb.contact_map, (u32) key, index);
 //	nll_Remove(&pipeline->cdb.contact_net, index);
 //}
 //
@@ -312,7 +312,7 @@ void cdb_ClearFrame(struct cdb *cdb)
 //		{
 //			const u32 sat_index = ds_PoolIndex(&pipeline->cdb.sat_cache_pool, sat);
 //			dll_Remove(&pipeline->cdb.sat_cache_list, pipeline->cdb.sat_cache_pool.buf, sat_index);
-//			HashMapRemove(&pipeline->cdb.sat_cache_map, (u32) c->key, sat_index);
+//			ds_HashMapRemove(&pipeline->cdb.sat_cache_map, (u32) c->key, sat_index);
 //			ds_PoolRemove(&pipeline->cdb.sat_cache_pool, sat_index);
 //		}
 //
@@ -336,7 +336,7 @@ void cdb_ClearFrame(struct cdb *cdb)
 //
 //		PhysicsEventContactRemoved(pipeline, (u32) CONTACT_KEY_TO_BODY_0(c->key), (u32) CONTACT_KEY_TO_BODY_1(c->key));
 //		BitVecSetBit(&pipeline->cdb.contacts_persistent_usage, ci, 0);
-//		HashMapRemove(&pipeline->cdb.contact_map, (u32) c->key, ci);
+//		ds_HashMapRemove(&pipeline->cdb.contact_map, (u32) c->key, ci);
 //		nll_Remove(&pipeline->cdb.contact_net, ci);
 //		ci = ci_next;
 //	}
@@ -391,7 +391,7 @@ void cdb_ClearFrame(struct cdb *cdb)
 //
 //		PhysicsEventContactRemoved(pipeline, (u32) CONTACT_KEY_TO_BODY_0(c->key), (u32) CONTACT_KEY_TO_BODY_1(c->key));
 //		BitVecSetBit(&pipeline->cdb.contacts_persistent_usage, ci, 0);
-//		HashMapRemove(&pipeline->cdb.contact_map, (u32) c->key, ci);
+//		ds_HashMapRemove(&pipeline->cdb.contact_map, (u32) c->key, ci);
 //		nll_Remove(&pipeline->cdb.contact_net, ci);
 //		ci = ci_next;
 //	}
@@ -432,7 +432,7 @@ void cdb_ClearFrame(struct cdb *cdb)
 //	}
 //
 //	const u64 key = KeyGenU32U32(b1, b2);
-//	for (u32 i = HashMapFirst(&cdb->contact_map, (u32) key); i != HASH_NULL; i = HashMapNext(&cdb->contact_map, i))
+//	for (u32 i = ds_HashMapFirst(&cdb->contact_map, (u32) key); i != HASH_NULL; i = ds_HashMapNext(&cdb->contact_map, i))
 //	{
 //		struct ds_Contact *c = nll_Address(&cdb->contact_net, i);
 //		if (c->key == key)
@@ -460,7 +460,7 @@ void cdb_ClearFrame(struct cdb *cdb)
 //
 //	const u64 key = KeyGenU32U32(b1, b2);
 //	u32 ret = NLL_NULL;
-//	for (u32 i = HashMapFirst(&cdb->contact_map, (u32) key); i != HASH_NULL; i = HashMapNext(&cdb->contact_map, i))
+//	for (u32 i = ds_HashMapFirst(&cdb->contact_map, (u32) key); i != HASH_NULL; i = ds_HashMapNext(&cdb->contact_map, i))
 //	{
 //		struct ds_Contact *c = nll_Address(&cdb->contact_net, i);
 //		if (c->key == key)
@@ -485,7 +485,7 @@ struct slot sat_CacheAdd(struct cdb *cdb, const struct ds_ContactKey *key)
 
     const u32 hash = (u32) XXH3_64bits(key, sizeof(*key));
 	struct slot slot = ds_PoolAdd(&cdb->sat_cache_pool);
-	HashMapAdd(&cdb->sat_cache_map, hash, slot.index);
+	ds_HashMapAdd(&cdb->sat_cache_map, hash, slot.index);
 
 	struct sat_Cache *sat = slot.address;
     sat->key = *key;
@@ -499,7 +499,7 @@ struct slot sat_CacheLookup(const struct cdb *cdb, const struct ds_ContactKey *k
 	ds_Assert(key->body0 < key->body1);
     const u32 hash = (u32) XXH3_64bits(key, sizeof(*key));
     struct slot slot = { .index = POOL_NULL, .address = NULL };
-	for (u32 i = HashMapFirst(&cdb->sat_cache_map, hash); i != HASH_NULL; i = HashMapNext(&cdb->sat_cache_map, i))
+	for (u32 i = ds_HashMapFirst(&cdb->sat_cache_map, hash); i != HASH_NULL; i = ds_HashMapNext(&cdb->sat_cache_map, i))
 	{
 		struct sat_Cache *sat = ds_PoolAddress(&cdb->sat_cache_pool, i);
 		if (memcmp(&sat->key, key, sizeof(*key)) == 0)

@@ -521,7 +521,7 @@ struct ui
 
 	struct ds_Pool		bucket_pool;
 	struct dll		bucket_list;
-	struct hashMap 		bucket_map;
+	struct ds_HashMap 		bucket_map;
 	u32			bucket_cache;	/* for quick cmd check */
 	u32			bucket_count;
 
@@ -531,7 +531,7 @@ struct ui
 	/* node map for all u's  */
 	/* Shared allocator for all nodes  */
 	struct hi 		node_hierarchy;
-	struct hashMap 		node_map;
+	struct ds_HashMap 		node_map;
 
 	stack_ui_TextSelection	frame_stack_text_selection;
 	vec4			text_cursor_color;

@@ -26,10 +26,10 @@ struct strdb strdb_AllocInternal(struct arena *mem, const u32 hash_size, const u
 	ds_Assert(index_size && hash_size);
 
 	struct ds_Pool pool;
-	struct hashMap hash = { 0 };
+	struct ds_HashMap hash = { 0 };
 	struct strdb db = { 0 };
 
-	hash = HashMapAlloc(mem, hash_size, index_size, growable);
+	hash = ds_HashMapAlloc(mem, hash_size, index_size, growable);
 	pool = ds_PoolAllocInternal(mem, index_size, data_size, pool_state_offset, U64_MAX, growable);
 
 	if (!hash.hash || !pool.length)
@@ -50,7 +50,7 @@ struct strdb strdb_AllocInternal(struct arena *mem, const u32 hash_size, const u
 	const u32 key = Utf8Hash(stub_id);
 
 	struct slot slot = ds_PoolAdd(&db.pool);
-	HashMapAdd(&db.hash, key, slot.index);
+	ds_HashMapAdd(&db.hash, key, slot.index);
 	struct strdb_node *node = slot.address;
 
 	utf8 *id = (utf8 *)(((u8 *) slot.address) + db.id_offset);
@@ -67,19 +67,19 @@ struct strdb strdb_AllocInternal(struct arena *mem, const u32 hash_size, const u
 void strdb_Dealloc(struct strdb *db)
 {
 	ds_PoolDealloc(&db->pool);
-	HashMapFree(&db->hash);
+	ds_HashMapFree(&db->hash);
 }
 
 void strdb_Flush(struct strdb *db)
 {
-	HashMapFlush(&db->hash);
+	ds_HashMapFlush(&db->hash);
 	ds_PoolFlush(&db->pool);
 	dll_Flush(&db->allocated_dll);
 	const utf8 stub_id = Utf8Empty();
 	const u32 key = Utf8Hash(stub_id);
 
 	struct slot slot = ds_PoolAdd(&db->pool);
-	HashMapAdd(&db->hash, key, slot.index);
+	ds_HashMapAdd(&db->hash, key, slot.index);
 	struct strdb_node *node = slot.address;
 
 	utf8 *id = (utf8 *)(((u8 *) slot.address) + db->id_offset);
@@ -104,7 +104,7 @@ struct slot strdb_Add(struct arena *mem_db_lifetime, struct strdb *db, const utf
 	{
 		const u32 key = Utf8Hash(copy);
 		struct slot slot = ds_PoolAdd(&db->pool);
-		HashMapAdd(&db->hash, key, slot.index);
+		ds_HashMapAdd(&db->hash, key, slot.index);
 
 		utf8 *id_ptr = (utf8 *)(((u8 *) slot.address) + db->id_offset);
 		*id_ptr = id;
@@ -128,7 +128,7 @@ struct slot strdb_AddAndAlias(struct strdb *db, const utf8 id)
 
 	slot = ds_PoolAdd(&db->pool);
 	const u32 key = Utf8Hash(id);
-	HashMapAdd(&db->hash, key, slot.index);
+	ds_HashMapAdd(&db->hash, key, slot.index);
 
 	utf8 *id_ptr = (utf8 *)(((u8 *) slot.address) + db->id_offset);
 	*id_ptr = id;
@@ -148,7 +148,7 @@ void strdb_Remove(struct strdb *db, const utf8 id)
 	{
 		ds_Assert(*(u32 *)((u8 *) slot.address + db->reference_count_offset) == 0);
 		const u32 key = Utf8Hash(*(utf8 *)((u8 *) slot.address + db->id_offset));
-		HashMapRemove(&db->hash, key, slot.index);
+		ds_HashMapRemove(&db->hash, key, slot.index);
 		ds_PoolRemove(&db->pool, slot.index);
 		dll_Remove(&db->allocated_dll, db->pool.buf, slot.index);
 	}
@@ -158,7 +158,7 @@ struct slot strdb_Lookup(const struct strdb *db, const utf8 id)
 {
 	const u32 key = Utf8Hash(id);
 	struct slot slot = { .index = STRING_DATABASE_STUB_INDEX, .address = db->pool.buf };
-	for (u32 i = HashMapFirst(&db->hash, key); i != HASH_NULL; i = HashMapNext(&db->hash, i))
+	for (u32 i = ds_HashMapFirst(&db->hash, key); i != HASH_NULL; i = ds_HashMapNext(&db->hash, i))
 	{
 		u8 *address = strdb_Address(db, i);
 		utf8 *id_ptr = (utf8 *) (address + db->id_offset);
