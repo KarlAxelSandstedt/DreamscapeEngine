@@ -104,9 +104,9 @@ and write
     THASH_DECLARE(ds_Struct, key_Type)
     THASH_DEFINE(ds_Struct, key_name, key_Type, key_TypePtrHashFunction, key_TypePtrCmpFunction) 
 
-at the appropriate places. THASH_DECLARE declares the ds_StructTHashMap struct and
-the ds_StructTHashMap*** functions and THASH_DEFINE defines the struct and generates
-the implementations of each function. The functions generated are the following:
+at the appropriate places. THASH_DECLARE defines the ds_StructTHashMap struct and
+the ds_StructTHashMap*** functions and THASH_DEFINE generates the implementations
+of each function. The functions generated are the following:
 
     // Allocate hash map on heap if mem == NULL, otherwise push memory onto arena.
     // On failure, returns { 0 }.
@@ -127,14 +127,17 @@ the implementations of each function. The functions generated are the following:
     // heap. On failure, returns { 0 }.
     struct ds_StructTHashMap ds_StructTHashMapDeserialize(struct arena *mem, struct ss *ss);
 
-    //TODO
+    //Return slot with given key if found. Otherwise return (NULL, U32_MAX)
     struct slot              ds_StructTHashMapLookup(struct ds_StructTHashMap *map, const key_Type *key)
 
-    //TODO
+
+    // Add the node (at the given index, with a unique key) to the hash map. 
+    // NOTE: The node's key must be unique.
     void                     ds_StructTHashMapAdd(struct ds_StructTHashMap *map, 
                                                   struct ds_Structure *node, 
                                                   const u32 index)
-    //TODO
+
+    // Remove node with given key from HashMap. If no such node is found, no-op.
     void                     ds_StructTHashMapRemove(struct ds_StructTHashMap *map, const key_Type *key)
 
     //TODO Yield/Backoff technique performance boost????
@@ -175,7 +178,7 @@ the implementations of each function. The functions generated are the following:
                     + THASH_TAG_INCREMENT)
 
 #define THASH_DECLARE(struct_name, key_Type)                \
-        THASH_STRUCT_DECLARE(struct_name);                  \
+        THASH_STRUCT_DEFINE(struct_name);                   \
         THASH_ALLOC_DECLARE(struct_name);                   \
         THASH_DEALLOC_DECLARE(struct_name);                 \
         THASH_FLUSH_DECLARE(struct_name);                   \
@@ -187,7 +190,6 @@ the implementations of each function. The functions generated are the following:
         THASH_REMOVE_DECLARE(struct_name, key_Type);
 
 #define THASH_DEFINE(struct_name, key_name, key_Type, key_TypePtrHashFunction, key_TypePtrCmpFunction)              \
-        THASH_STRUCT_DEFINE(struct_name);                                                                           \
         THASH_ALLOC_DEFINE(struct_name)                                                                             \
         THASH_DEALLOC_DEFINE(struct_name)                                                                           \
         THASH_FLUSH_DEFINE(struct_name)                                                                             \
@@ -197,9 +199,6 @@ the implementations of each function. The functions generated are the following:
         THASH_LOOKUP_DEFINE(struct_name, key_Type)                                                                  \
         THASH_ADD_DEFINE(struct_name, key_name, key_TypePtrHashFunction)                                            \
         THASH_REMOVE_DEFINE(struct_name, key_Type) 
-
-#define THASH_STRUCT_DECLARE(struct_name)   \
-struct struct_name ## THashMap
 
 #define THASH_STRUCT_DEFINE(struct_name)        \
 struct struct_name ## THashMap                  \
@@ -475,9 +474,6 @@ THASH_REMOVE_DECLARE(struct_name, key_Type)                                     
         }                                                                                                   \
     }                                                                                                       \
 }
-
-
-
 
 #ifdef __cplusplus
 } 

@@ -32,6 +32,7 @@ extern "C" {
 #include "bit_vector.h"
 
 struct ds_RigidBodyPipeline;
+struct cdb;
 
 /*
 ds_Shape
@@ -322,6 +323,57 @@ struct ds_Contact
 };
 
 /*
+sat_Cache
+=========
+TODO
+*/
+enum sat_CacheType
+{
+    SAT_CACHE_NOT_SET,
+	SAT_CACHE_SEPARATION,
+	SAT_CACHE_CONTACT_FV,
+	SAT_CACHE_CONTACT_EE,
+	SAT_CACHE_COUNT,
+};
+
+struct sat_Cache
+{
+    THASH_NODE;
+    TPOOL_NODE;
+
+	struct ds_ContactKey    key;
+	enum sat_CacheType	    type;
+	union
+	{
+		struct
+		{
+			u32 body;	/* body (0,1) containing face   */
+			u32	face;	/* reference face 	            */
+		};
+
+		struct
+		{
+			u32	edge1;	/* body0 edge, body0 < body1    */
+			u32	edge2;	/* body1 edge                   */
+		};
+
+		struct
+		{
+			vec3    separation_axis;
+			f32	    separation;
+		};
+	};
+};
+
+TPOOL_DECLARE(sat_Cache)
+THASH_DECLARE(sat_Cache, struct ds_ContactKey)
+
+/* Alloc sat_Cache in pipeline. */
+struct slot sat_CacheAdd(struct cdb *cdb, const struct ds_ContactKey *key);
+/* Lookup sat_Cache in pipeline. If found, return (index, address). Otherwise (U32_MAX, NULL). */
+struct slot sat_CacheLookup(struct cdb *cdb, const struct ds_ContactKey *key);
+
+/*
 contact_database
 ================
 Database for last and current frame contacts. Any rigid body can lookup its cached
@@ -353,8 +405,8 @@ struct cdb
 	/*
 	 * frame-cached separation axes 
 	 */
-	struct ds_Pool	    sat_cache_pool;
-	struct ds_HashMap	sat_cache_map;		
+	struct sat_CacheTPool       sat_cache_pool;
+	struct sat_CacheTHashMap	sat_cache_map;		
 
 	/* PERSISTENT DATA, GROWABLE, keeps track of which slots in contacts are currently being used.
        At end of frame, it is set to contacts_frame_usage and any new appended contacts resulting 
@@ -368,7 +420,7 @@ struct cdb
 	struct bitVec 	contacts_frame_usage;	
 };
 
-struct cdb 	cdb_Alloc(struct arena *mem_persistent, const u32 initial_size);
+struct cdb *cdb_Alloc(struct arena *mem_persistent, const u32 initial_size);
 void 		cdb_Free(struct cdb *cdb);
 void		cdb_Flush(struct cdb *cdb);
 void		cdb_Validate(const struct ds_RigidBodyPipeline *pipeline);
@@ -383,60 +435,6 @@ void		cdb_StaticRemoveContactsAndUpdateIslands(struct ds_RigidBodyPipeline *pipe
 struct ds_Contact *cdb_ContactLookup(const struct cdb *cdb, const u32 b1, const u32 b2);
 u32 		cdb_ContactLookupIndex(const struct cdb *cdb, const u32 i1, const u32 i2);
 void 		cdb_UpdatePersistentContactsUsage(struct cdb *cdb);
-
-
-/*
-sat_Cache
-=========
-TODO
-*/
-enum sat_CacheType
-{
-    SAT_CACHE_NOT_SET,
-	SAT_CACHE_SEPARATION,
-	SAT_CACHE_CONTACT_FV,
-	SAT_CACHE_CONTACT_EE,
-	SAT_CACHE_COUNT,
-};
-
-struct sat_Cache
-{
-    THASH_NODE;
-    TPOOL_NODE;
-
-	POOL_SLOT_STATE;
-
-	struct ds_ContactKey    key;
-	enum sat_CacheType	    type;
-	union
-	{
-		struct
-		{
-			u32 body;	/* body (0,1) containing face   */
-			u32	face;	/* reference face 	            */
-		};
-
-		struct
-		{
-			u32	edge1;	/* body0 edge, body0 < body1    */
-			u32	edge2;	/* body1 edge                   */
-		};
-
-		struct
-		{
-			vec3    separation_axis;
-			f32	    separation;
-		};
-	};
-};
-
-TPOOL_DECLARE(sat_Cache)
-THASH_DECLARE(sat_Cache, struct ds_ContactKey)
-
-/* Alloc sat_Cache in pipeline. */
-struct slot sat_CacheAdd(struct cdb *cdb, const struct ds_ContactKey *key);
-/* Lookup sat_Cache in pipeline. If found, return (index, address). Otherwise (POOL_NULL, NULL). */
-struct slot sat_CacheLookup(const struct cdb *cdb, const struct ds_ContactKey *key);
 
 /*
 =================================================================================================================
@@ -915,9 +913,7 @@ struct ds_RigidBodyPipeline
 	struct ds_Pool		event_pool;
 	struct dll		event_list;
 
-
-
-	struct cdb		cdb;
+	struct cdb *	cdb;
 	struct isdb 	is_db;
 
 	struct collisionDebug *	debug;

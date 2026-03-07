@@ -67,26 +67,27 @@ static u32 cdb_IndexInNextConctactNode(struct nll *net, void **next_node, const 
 		: 1;
 }
 
-struct cdb cdb_Alloc(struct arena *mem_persistent, const u32 size)
+struct cdb *cdb_Alloc(struct arena *mem_persistent, const u32 size)
 {
-	struct cdb cdb = { 0 };
+    /* Note: requires allocation in persistent memory; thread structures initalizes pointers to pool storage... */
+	struct cdb *cdb = ArenaPush(mem_persistent, sizeof(struct cdb));
 	ds_Assert(PowerOfTwoCheck(size));
 
-	cdb.sat_cache_map = ds_HashMapAlloc(NULL, size, size, GROWABLE);
-	cdb.sat_cache_pool = ds_PoolAlloc(NULL, 20000, struct sat_Cache, GROWABLE);
-	//cdb.sat_cache_pool = ds_PoolAlloc(NULL, size, struct sat_Cache, GROWABLE);
-	cdb.contact_net = nll_Alloc(NULL, size, struct ds_Contact, cdb_IndexInPreviousConctactNode, cdb_IndexInNextConctactNode, GROWABLE);
-	//cdb.contact_map = ds_HashMapAlloc(NULL, size, size, GROWABLE);
-	cdb.contact_map = ds_HashMapAlloc(NULL, size, 20000, GROWABLE);
-	cdb.contacts_persistent_usage = BitVecAlloc(NULL, size, 0, GROWABLE);
+	sat_CacheTPoolAlloc(&cdb->sat_cache_pool, g_arch_config->logical_core_count, size);
+	cdb->sat_cache_map = sat_CacheTHashMapAlloc(mem_persistent, &cdb->sat_cache_pool, 4096);
+
+    //TODO nll, hash_map => Tnll, THashMap
+	cdb->contact_net = nll_Alloc(NULL, size, struct ds_Contact, cdb_IndexInPreviousConctactNode, cdb_IndexInNextConctactNode, GROWABLE);
+	cdb->contact_map = ds_HashMapAlloc(NULL, size, 20000, GROWABLE);
+	cdb->contacts_persistent_usage = BitVecAlloc(NULL, size, 0, GROWABLE);
 
 	return cdb;
 }
 
 void cdb_Free(struct cdb *cdb)
 {
-	ds_PoolDealloc(&cdb->sat_cache_pool);
-	ds_HashMapDealloc(&cdb->sat_cache_map);
+	sat_CacheTPoolDealloc(&cdb->sat_cache_pool);
+	sat_CacheTHashMapDealloc(&cdb->sat_cache_map);
 	nll_Dealloc(&cdb->contact_net);
 	ds_HashMapDealloc(&cdb->contact_map);
 	BitVecFree(&cdb->contacts_persistent_usage);
@@ -95,8 +96,8 @@ void cdb_Free(struct cdb *cdb)
 void cdb_Flush(struct cdb *cdb)
 {
 	cdb_ClearFrame(cdb);
-	ds_PoolFlush(&cdb->sat_cache_pool);
-	ds_HashMapFlush(&cdb->sat_cache_map);
+	sat_CacheTPoolFlush(&cdb->sat_cache_pool);
+	sat_CacheTHashMapFlush(&cdb->sat_cache_map);
 	nll_Flush(&cdb->contact_net);
 	ds_HashMapFlush(&cdb->contact_map);
 	BitVecClear(&cdb->contacts_persistent_usage, 0);
@@ -487,40 +488,19 @@ struct slot sat_CacheAdd(struct cdb *cdb, const struct ds_ContactKey *key)
 {
 	ds_Assert(sat_CacheLookup(cdb, key).address == NULL);
 
-    ds_AssertString(cdb->sat_cache_pool.count < cdb->sat_cache_pool.length, "Temporary: Currently   \
-            we add new sat caches as we continuously dispatch contact calculation jobs to worker    \
-            threads. Thus, if we happen to realloc here, we invalidate our thread pointers (most    \
-            likely). The solution is to either make a pool allocator viable for multihtreading, or  \
-            allocating all caches beforehand.");
-
-    const u32 hash = (u32) XXH3_64bits(key, sizeof(*key));
-	struct slot slot = ds_PoolAdd(&cdb->sat_cache_pool);
-	ds_HashMapAdd(&cdb->sat_cache_map, hash, slot.index);
-
+	struct slot slot = sat_CacheTPoolAdd(&cdb->sat_cache_pool);
 	struct sat_Cache *sat = slot.address;
     sat->key = *key;
     sat->type = SAT_CACHE_NOT_SET;
+	sat_CacheTHashMapAdd(&cdb->sat_cache_map, sat, slot.index);
 
     return slot;
 }
 
-struct slot sat_CacheLookup(const struct cdb *cdb, const struct ds_ContactKey *key)
+struct slot sat_CacheLookup(struct cdb *cdb, const struct ds_ContactKey *key)
 {
 	ds_Assert(key->body0 < key->body1);
-    const u32 hash = (u32) XXH3_64bits(key, sizeof(*key));
-    struct slot slot = { .index = POOL_NULL, .address = NULL };
-	for (u32 i = ds_HashMapFirst(&cdb->sat_cache_map, hash); i != HASH_NULL; i = ds_HashMapNext(&cdb->sat_cache_map, i))
-	{
-		struct sat_Cache *sat = ds_PoolAddress(&cdb->sat_cache_pool, i);
-		if (memcmp(&sat->key, key, sizeof(*key)) == 0)
-		{
-			slot.address = sat;
-            slot.index = i;
-			break;
-		}
-	}
-
-	return slot;
+    return sat_CacheTHashMapLookup(&cdb->sat_cache_map, key);
 }
 
 TPOOL_DEFINE(sat_Cache)

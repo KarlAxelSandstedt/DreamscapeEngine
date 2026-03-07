@@ -390,10 +390,9 @@ and write
     TPOOL_DECLARE(ds_Struct)
     TPOOL_DEFINE(ds_Struct)
 
-at the appropriate places. TPOOL_DECLARE declares the dsStructTPool struct and
-the ds_StructTPool*** functions, and TPOOL_DEFINE defines the dsStructTPool
-struct and generates the implementations of each function. The functions
-generated are the following:
+at the appropriate places. TPOOL_DECLARE defines the dsStructTPool struct and
+the ds_StructTPool*** functions, and TPOOL_DEFINE generates the implementations
+of each function. The functions generated are the following:
 
     // Allocation of pool.
     void        ds_StructTPoolAlloc(struct ds_StructTPool *pool, const u32 initial_count, const u64 slot_size);
@@ -465,7 +464,7 @@ The address of index i is derived as follows:
 #define TPOOL_NODE  TSTACK_NODE(FreeList)
 
 #define TPOOL_DECLARE(struct_name)                                                                          \
-        TPOOL_STRUCT_DECLARE(struct_name);                                                                  \
+        TPOOL_STRUCT_DEFINE(struct_name);                                                                   \
         TSTACK_DECLARE(struct_name, FreeList)                                                               \
         TPOOL_ALLOC_DECLARE(struct_name);                                                                   \
         TPOOL_DEALLOC_DECLARE(struct_name);                                                                 \
@@ -477,7 +476,6 @@ The address of index i is derived as follows:
 
 #define TPOOL_DEFINE(struct_name)                                                                           \
         TSTACK_DEFINE(struct_name, FreeList)                                                                \
-        TPOOL_STRUCT_DEFINE(struct_name);                                                                   \
         TPOOL_ALLOC_DEFINE(struct_name)                                                                     \
         TPOOL_DEALLOC_DEFINE(struct_name)                                                                   \
         TPOOL_FLUSH_DEFINE(struct_name)                                                                     \
@@ -485,9 +483,6 @@ The address of index i is derived as follows:
         TPOOL_REMOVE_DEFINE(struct_name)                                                                    \
         TPOOL_ADDRESS_DEFINE(struct_name)                                                                   \
         TPOOL_INCREMENT_DEFINE(struct_name)                                                                 
-
-#define TPOOL_STRUCT_DECLARE(struct_name)                                                                   \
-struct struct_name ## TPool                                       
 
 #define TPOOL_STRUCT_DEFINE(struct_name)                                                                    \
 struct struct_name ## TPool                                                                                 \
@@ -587,12 +582,14 @@ TPOOL_DEALLOC_DECLARE(struct_name)                                              
     ds_Free(&pool->t_free_list_mem);                                                                        \
 }
 
-//TODO reset count_max                                                                                  
-//TODO flush TPoolLists.... (Need to give them back since they are now up for grabs)                   
 #define TPOOL_FLUSH_DEFINE(struct_name)                                                                     \
 TPOOL_FLUSH_DECLARE(struct_name)                                                                            \
 {                                                                                                           \
-    ds_AssertString(0, "Implement TPoolFlush");                                                             \
+    for (u32 i = 0; i < pool->free_list_count; ++i)                                                             \
+    {                                                                                                       \
+        struct_name ## FreeListTStackFlush(pool->t_free_list + i);                                          \
+    }                                                                                                       \
+    AtomicStoreRel64(&pool->a_count_max, 0);                                                                \
 }
 
 #define TPOOL_INCREMENT_DEFINE(struct_name)                                                                 \
@@ -735,24 +732,21 @@ at the appropriate places. This Declares and Generates the following functions
 #define TSTACK_NULL U64_MAX
 
 #define TSTACK_DECLARE(struct_name, name)                                                                       \
-        TSTACK_STRUCT_DECLARE(struct_name, name);                                                               \
+        TSTACK_STRUCT_DEFINE(struct_name, name);                                                                \
         TSTACK_INIT_DECLARE(struct_name, name);                                                                 \
         TSTACK_FLUSH_DECLARE(struct_name, name);                                                                \
         TSTACK_PUSH_DECLARE(struct_name, name);                                                                 \
         TSTACK_POP_DECLARE(struct_name, name);                                                                  \
 
 #define TSTACK_DEFINE(struct_name, name)                                                                        \
-        TSTACK_STRUCT_DEFINE(struct_name, name);                                                                \
         TSTACK_INIT_DEFINE(struct_name, name)                                                                   \
         TSTACK_FLUSH_DEFINE(struct_name, name)                                                                  \
         TSTACK_PUSH_DEFINE(struct_name, name)                                                                   \
         TSTACK_POP_DEFINE(struct_name, name)                                                                    \
 
-#define TSTACK_STRUCT_DECLARE(struct_name, name)                                                                \
-struct struct_name ## name ## TStack                                                                            \
 
 #define TSTACK_STRUCT_DEFINE(struct_name, name)                                                                 \
-TSTACK_STRUCT_DECLARE(struct_name, name)                                                                        \
+struct struct_name ## name ## TStack                                                                            \
 {                                                                                                               \
     struct struct_name ## TPool *   pool;                                                                       \
     u64                             a_head;                                                                     \

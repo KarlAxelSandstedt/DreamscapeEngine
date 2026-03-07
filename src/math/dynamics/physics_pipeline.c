@@ -154,7 +154,7 @@ void PhysicsPipelineFree(struct ds_RigidBodyPipeline *pipeline)
 	free(pipeline->debug);
 #endif
 	BvhFree(&pipeline->shape_bvh);
-	cdb_Free(&pipeline->cdb);
+	cdb_Free(pipeline->cdb);
 	isdb_Dealloc(&pipeline->is_db);
 	ds_PoolDealloc(&pipeline->body_pool);
 	ds_PoolDealloc(&pipeline->event_pool);
@@ -175,7 +175,7 @@ static void InternalPhysicsPipelineClearFrame(struct ds_RigidBodyPipeline *pipel
 	pipeline->cm = NULL;
 
 	isdb_ClearFrame(&pipeline->is_db);
-	cdb_ClearFrame(&pipeline->cdb);
+	cdb_ClearFrame(pipeline->cdb);
 	ArenaFlush(&pipeline->frame);
 }
 
@@ -188,7 +188,7 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
 		stack_visualSegmentFlush(&pipeline->debug[i].stack_segment);
 	}
 #endif
-	cdb_Flush(&pipeline->cdb);
+	cdb_Flush(pipeline->cdb);
 	isdb_Flush(&pipeline->is_db);
 	
 	ds_PoolFlush(&pipeline->body_pool);
@@ -270,6 +270,7 @@ struct tcc_Input
     struct ds_RigidBodyPipeline *   pipeline;
     struct ds_Shape *               s1;
     struct ds_Shape *               s2;
+    struct ds_ContactKey            key;
     f32                             margin;
 };
 
@@ -281,6 +282,17 @@ static void ThreadCalculateContact(void *task_addr)
 	struct worker *worker = task->executor;
     struct tcc_Input *in = task->input;
     struct tcc_Output *out = in->out;
+
+    struct sat_Cache *cache = NULL;
+    if (in->s1->cshape_type == C_SHAPE_CONVEX_HULL && in->s2->cshape_type == C_SHAPE_CONVEX_HULL)
+    {
+        cache = sat_CacheLookup(in->pipeline->cdb, &in->key).address;
+        if (!cache)
+        {
+            cache = sat_CacheAdd(in->pipeline->cdb, &in->key).address;
+        }
+    }
+    out->cache = cache;
 
     ds_Assert(in->s1->body != in->s2->body);
     out->collision = ds_ShapeContact(&worker->mem_frame, &out->manifold, out->cache, in->pipeline, in->s1, in->s2, in->margin);
@@ -316,24 +328,9 @@ static void InternalCalculateContacts(struct ds_RigidBodyPipeline *pipeline)
             continue;
         }
 
-        struct sat_Cache *cache = NULL;
-        if (s1->cshape_type == C_SHAPE_CONVEX_HULL && s2->cshape_type == C_SHAPE_CONVEX_HULL)
-        {
-            const struct ds_ContactKey key = ds_ContactKeyCanonical(s1->body, 
-                                                                    pipeline->proxy_overlap[i].id1, 
-                                                                    s2->body, 
-                                                                    pipeline->proxy_overlap[i].id2);
-            cache = sat_CacheLookup(&pipeline->cdb, &key).address;
-            if (!cache)
-            {
-                cache = sat_CacheAdd(&pipeline->cdb, &key).address;
-            }
-        }
-
         struct tcc_Output *out = ArenaPushAligned(&pipeline->frame, sizeof(struct tcc_Output), g_arch_config->cacheline);
         struct tcc_Input *args = ArenaPushAligned(&pipeline->frame, sizeof(struct tcc_Input), g_arch_config->cacheline);
 
-        out->cache = cache;
         out->next = NULL;
 
         args->out = out;
@@ -341,6 +338,10 @@ static void InternalCalculateContacts(struct ds_RigidBodyPipeline *pipeline)
         args->s1 = s1;
         args->s2 = s2;
         args->margin = margin;
+        args->key = ds_ContactKeyCanonical(s1->body, 
+                                           pipeline->proxy_overlap[i].id1, 
+                                           s2->body, 
+                                           pipeline->proxy_overlap[i].id2);
 
 		task_stream_dispatch(&pipeline->frame, stream, ThreadCalculateContact, args);
         *next = out;
@@ -354,14 +355,17 @@ static void InternalCalculateContacts(struct ds_RigidBodyPipeline *pipeline)
 	/* release any task resources */
 	task_stream_cleanup(stream);		
 
+    u32 collision_count = 0;
 	for (; output; output = output->next)
 	{
+        collision_count += output->collision;
 	}
 
+    fprintf(stderr, "collision_count: %u\n", collision_count);
     
-	pipeline->cdb.contacts_frame_usage = BitVecAlloc(&pipeline->frame, pipeline->cdb.contacts_persistent_usage.bit_count, 0, 0);
-	ds_Assert(pipeline->cdb.contacts_frame_usage.block_count == pipeline->cdb.contacts_persistent_usage.block_count);
-	ds_Assert(pipeline->cdb.contacts_frame_usage.bit_count == pipeline->cdb.contacts_persistent_usage.bit_count);
+	pipeline->cdb->contacts_frame_usage = BitVecAlloc(&pipeline->frame, pipeline->cdb->contacts_persistent_usage.bit_count, 0, 0);
+	ds_Assert(pipeline->cdb->contacts_frame_usage.block_count == pipeline->cdb->contacts_persistent_usage.block_count);
+	ds_Assert(pipeline->cdb->contacts_frame_usage.bit_count == pipeline->cdb->contacts_persistent_usage.bit_count);
 
 //	pipeline->contact_new_count = 0;
 //	pipeline->contact_new = (u32 *) &pipeline->frame.stack_ptr;
@@ -372,9 +376,9 @@ static void InternalCalculateContacts(struct ds_RigidBodyPipeline *pipeline)
 //		{
 //			const struct ds_Contact *c = cdb_ContactAdd(pipeline, pipeline->cm + i, pipeline->cm[i].i1, pipeline->cm[i].i2);
 //			/* add to new links if needed */
-//			const u32 index = (u32) nll_Index(&pipeline->cdb.contact_net, c);
-//			if (index >= pipeline->cdb.contacts_persistent_usage.bit_count
-//				 || BitVecGetBit(&pipeline->cdb.contacts_persistent_usage, index) == 0)
+//			const u32 index = (u32) nll_Index(&pipeline->cdb->contact_net, c);
+//			if (index >= pipeline->cdb->contacts_persistent_usage.bit_count
+//				 || BitVecGetBit(&pipeline->cdb->contacts_persistent_usage, index) == 0)
 //			{
 //					pipeline->contact_new_count += 1;
 //					ArenaPushPackedMemcpy(&pipeline->frame, &index, sizeof(index));
@@ -394,7 +398,7 @@ static void InternalCalculateContacts(struct ds_RigidBodyPipeline *pipeline)
 //	ProfZone;
 //	for (u32 i = 0; i < pipeline->contact_new_count; ++i)
 //	{
-//		struct ds_Contact *c = nll_Address(&pipeline->cdb.contact_net, pipeline->contact_new[i]);
+//		struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, pipeline->contact_new[i]);
 //		const struct ds_RigidBody *body1 = ds_PoolAddress(&pipeline->body_pool, c->cm.i1);
 //		const struct ds_RigidBody *body2 = ds_PoolAddress(&pipeline->body_pool, c->cm.i2);
 //		const u32 is1 = body1->island_index;
@@ -413,14 +417,14 @@ static void InternalCalculateContacts(struct ds_RigidBodyPipeline *pipeline)
 //			case 0x2:
 //			{
 //				struct island *is = ds_PoolAddress(&pipeline->is_db.island_pool, is1);
-//				dll_Append(&is->contact_list, pipeline->cdb.contact_net.pool.buf, pipeline->contact_new[i]);
+//				dll_Append(&is->contact_list, pipeline->cdb->contact_net.pool.buf, pipeline->contact_new[i]);
 //			} break;
 //
 //			/* static-dynamic */
 //			case 0x1:
 //			{
 //				struct island *is = ds_PoolAddress(&pipeline->is_db.island_pool, is2);
-//				dll_Append(&is->contact_list, pipeline->cdb.contact_net.pool.buf, pipeline->contact_new[i]);
+//				dll_Append(&is->contact_list, pipeline->cdb->contact_net.pool.buf, pipeline->contact_new[i]);
 //			} break;
 //		}
 //	}
@@ -430,7 +434,7 @@ static void InternalCalculateContacts(struct ds_RigidBodyPipeline *pipeline)
 //static void InternalRemoveContactsAndTagSplitIslands(struct ds_RigidBodyPipeline *pipeline)
 //{
 //	ProfZone;
-//	if (pipeline->cdb.contact_net.pool.count == 0) 
+//	if (pipeline->cdb->contact_net.pool.count == 0) 
 //	{ 
 //		ProfZoneEnd;
 //		return; 
@@ -446,11 +450,11 @@ static void InternalCalculateContacts(struct ds_RigidBodyPipeline *pipeline)
 //	//fprintf(stderr, " R: {");
 //	u32 bit = 0;
 //	isdb_ReserveSplitsMemory(&pipeline->frame, &pipeline->is_db);
-//	for (u64 block = 0; block < pipeline->cdb.contacts_frame_usage.block_count; ++block)
+//	for (u64 block = 0; block < pipeline->cdb->contacts_frame_usage.block_count; ++block)
 //	{
 //		u64 broken_link_block = 
-//				    pipeline->cdb.contacts_persistent_usage.bits[block]
-//				& (~pipeline->cdb.contacts_frame_usage.bits[block]);
+//				    pipeline->cdb->contacts_persistent_usage.bits[block]
+//				& (~pipeline->cdb->contacts_frame_usage.bits[block]);
 //		u32 b = 0;
 //		while (broken_link_block)
 //		{
@@ -464,7 +468,7 @@ static void InternalCalculateContacts(struct ds_RigidBodyPipeline *pipeline)
 //				: 0;
 //		
 //			//fprintf(stderr, " %lu", ci);
-//			struct ds_Contact *c = nll_Address(&pipeline->cdb.contact_net, ci);
+//			struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, ci);
 //
 //			/* tag island, if any exist, to split */
 //			const u32 b1 = CONTACT_KEY_TO_BODY_0(c->key);
@@ -488,13 +492,13 @@ static void InternalCalculateContacts(struct ds_RigidBodyPipeline *pipeline)
 //			}
 //
 //			ds_Assert(is->contact_list.count > 0);
-//			dll_Remove(&is->contact_list, pipeline->cdb.contact_net.pool.buf, ci);
+//			dll_Remove(&is->contact_list, pipeline->cdb->contact_net.pool.buf, ci);
 //			cdb_ContactRemove(pipeline, c->key, (u32) ci);
 //		}
 //		bit += 64;
 //	}	
 //	isdb_ReleaseUnusedSplitsMemory(&pipeline->frame, &pipeline->is_db);
-//	//fprintf(stderr, " }\tcontacts: %u\n", pipeline->cdb.contacts->count-2);
+//	//fprintf(stderr, " }\tcontacts: %u\n", pipeline->cdb->contacts->count-2);
 //	ProfZoneEnd;
 //}
 //
