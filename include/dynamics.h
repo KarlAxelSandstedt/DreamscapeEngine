@@ -444,7 +444,6 @@ void		cdb_ClearFrame(struct cdb *cdb);
 void		cdb_BodyRemoveContacts(struct ds_RigidBodyPipeline *pipeline, const u32 body_index);
 /* Remove all contacts associated with the given static body and update affected islands */
 void		cdb_StaticRemoveContactsAndUpdateIslands(struct ds_RigidBodyPipeline *pipeline, const u32 static_index);
-void 		cdb_UpdatePersistentContactsUsage(struct cdb *cdb);
 
 /*
 =================================================================================================================
@@ -612,14 +611,8 @@ struct island *	isdb_InitIslandFromBody(struct ds_RigidBodyPipeline *pipeline, c
 void 		isdb_AddContactToIsland(struct ds_RigidBodyPipeline *pipeline, const u32 island, const u32 contact);
 /* Return island that body is assigned to */
 struct island *	isdb_BodyToIsland(struct ds_RigidBodyPipeline *pipeline, const u32 body);
-/* Reserve enough memory to fit all possible split */
-void		isdb_ReserveSplitsMemory(struct arena *mem_frame, struct isdb *is_db);
-/* Release any unused reserved possible split memory */
-void		isdb_ReleaseUnusedSplitsMemory(struct arena *mem_frame, struct isdb *is_db);
-/* Tag the island that the body is in for splitting and push it onto split memory (if we havn't already) */
-void 		isdb_TagForSplitting(struct ds_RigidBodyPipeline *pipeline, const u32 body);
 /* Merge islands (Or simply update if new local contact) using new contact */
-void 		isdb_MergeIslands(struct ds_RigidBodyPipeline *pipeline, const u32 ci, const u32 b1, const u32 b2);
+void 		isdb_MergeIslands(struct ds_RigidBodyPipeline *pipeline, const u32 ci, const u32 b0, const u32 b1);
 /* Split island, or remake if no split happens: TODO: Make thread-safe  */
 void 		isdb_SplitIsland(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, const u32 island_to_split);
 

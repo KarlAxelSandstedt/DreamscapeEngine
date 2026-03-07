@@ -220,8 +220,6 @@ struct c_Manifold
 	vec3 	n;		/* B1 -> B2 */
 	u32 	v_count;
     //TODO What do?
-	u32 	i1;
-	u32 	i2;
 };
 
 void 	c_ManifoldDebugPrint(FILE *file, const struct c_Manifold *cm);

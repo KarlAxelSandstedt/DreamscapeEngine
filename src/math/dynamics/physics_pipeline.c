@@ -161,7 +161,7 @@ void PhysicsPipelineFree(struct ds_RigidBodyPipeline *pipeline)
 	ds_PoolDealloc(&pipeline->shape_pool);
 }
 
-static void InternalPhysicsPipelineClearFrame(struct ds_RigidBodyPipeline *pipeline)
+static void PhysicsPipelineClearFrame(struct ds_RigidBodyPipeline *pipeline)
 {
 #ifdef DS_PHYSICS_DEBUG
 	for (u32 i = 0; i < pipeline->debug_count; ++i)
@@ -204,15 +204,15 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
 	pipeline->ns_elapsed = 0;
 }
 
-//void PhysicsPipelineValidate(const struct ds_RigidBodyPipeline *pipeline)
-//{
-//	ProfZone;
-//
-//	cdb_Validate(pipeline);
-//	isdb_Validate(pipeline);
-//
-//	ProfZoneEnd;
-//}
+void PhysicsPipelineValidate(const struct ds_RigidBodyPipeline *pipeline)
+{
+	ProfZone;
+
+	cdb_Validate(pipeline);
+	isdb_Validate(pipeline);
+
+	ProfZoneEnd;
+}
 
 struct tcc_Output
 {
@@ -264,9 +264,9 @@ static void ThreadCalculateContact(void *task_addr)
 	ProfZoneEnd;
 }
 
-static void InternalCollisionDetection(struct ds_RigidBodyPipeline *pipeline)
+static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 {
-	ProfZoneNamed("CollisionDetection");
+	ProfZone;
 
     {
     	ProfZoneNamed("DbvhUpdate");
@@ -407,134 +407,145 @@ static void InternalCollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 }
 
 
-//static void InternalMergeIslands(struct ds_RigidBodyPipeline *pipeline)
-//{
-//	ProfZone;
-//	for (u32 i = 0; i < pipeline->contact_new_count; ++i)
-//	{
-//		struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, pipeline->contact_new[i]);
-//		const struct ds_RigidBody *body1 = ds_PoolAddress(&pipeline->body_pool, c->cm.i1);
-//		const struct ds_RigidBody *body2 = ds_PoolAddress(&pipeline->body_pool, c->cm.i2);
-//		const u32 is1 = body1->island_index;
-//		const u32 is2 = body2->island_index;
-//		const u32 d1 = (is1 != ISLAND_STATIC) ? 0x2 : 0x0;
-//		const u32 d2 = (is2 != ISLAND_STATIC) ? 0x1 : 0x0;
-//		switch (d1 | d2)
-//		{
-//			/* dynamic-dynamic */
-//			case 0x3: 
-//			{
-//				isdb_MergeIslands(pipeline, pipeline->contact_new[i], c->cm.i1, c->cm.i2);
-//			} break;
+static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
+{
+	ProfZone;
+	for (u32 i = 0; i < pipeline->cdb->contact_new_count; ++i)
+	{
+		struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, pipeline->cdb->contact_new[i]);
+		const struct ds_RigidBody *body0 = ds_PoolAddress(&pipeline->body_pool, c->key.body0);
+		const struct ds_RigidBody *body1 = ds_PoolAddress(&pipeline->body_pool, c->key.body1);
+		const u32 is0 = body0->island_index;
+		const u32 is1 = body1->island_index;
+		const u32 d0 = (is0 != ISLAND_STATIC) ? 0x2 : 0x0;
+		const u32 d1 = (is1 != ISLAND_STATIC) ? 0x1 : 0x0;
+		switch (d0 | d1)
+		{
+			/* dynamic-dynamic */
+			case 0x3: 
+			{
+				isdb_MergeIslands(pipeline, pipeline->cdb->contact_new[i], c->key.body0, c->key.body1);
+			} break;
+
+			/* dynamic-static */
+			case 0x2:
+			{
+				struct island *is = ds_PoolAddress(&pipeline->is_db.island_pool, is0);
+				dll_Append(&is->contact_list, pipeline->cdb->contact_net.pool.buf, pipeline->cdb->contact_new[i]);
+			} break;
+
+			/* static-dynamic */
+			case 0x1:
+			{
+				struct island *is = ds_PoolAddress(&pipeline->is_db.island_pool, is1);
+				dll_Append(&is->contact_list, pipeline->cdb->contact_net.pool.buf, pipeline->cdb->contact_new[i]);
+			} break;
+		}
+	}
+	ProfZoneEnd;
+}
+
+static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
+{
+	ProfZone;
+
+    struct cdb *cdb = pipeline->cdb;
+
+	if (cdb->contact_net.pool.count == 0) 
+	{ 
+		ProfZoneEnd;
+		return; 
+	}
+    
+	u32 *split = ArenaPush(&pipeline->frame, pipeline->is_db.island_pool.count*sizeof(u32));
+    u32 split_count = 0;
+	u32 bit = 0;
+	//fprintf(stderr, " R: {");
+	for (u64 block = 0; block < cdb->contacts_frame_usage.block_count; ++block)
+	{
+		u64 broken_link_block = 
+				    cdb->contacts_persistent_usage.bits[block]
+				& (~cdb->contacts_frame_usage.bits[block]);
+		u32 b = 0;
+		while (broken_link_block)
+		{
+			const u32 tzc = Ctz64(broken_link_block);
+			b += tzc;
+			const u32 ci = bit + b;
+			b += 1;
+
+			broken_link_block = (tzc < 63) 
+				? broken_link_block >> (tzc + 1)
+				: 0;
+		
+			//fprintf(stderr, " %lu", ci);
+			struct ds_Contact *c = nll_Address(&cdb->contact_net, ci);
+
+			const u32 b0 = c->key.body0;
+			const u32 b1 = c->key.body1;
+			const struct ds_RigidBody *body0 = ds_PoolAddress(&pipeline->body_pool, b0);
+			const struct ds_RigidBody *body1 = ds_PoolAddress(&pipeline->body_pool, b1);
+			ds_Assert(body0->island_index != ISLAND_STATIC || body1->island_index != ISLAND_STATIC);
+
+			struct island *is;
+			if (body0->island_index != ISLAND_STATIC)
+			{
+				is = isdb_BodyToIsland(pipeline, b0);
+				if (body1->island_index != ISLAND_STATIC)
+				{
+                    if (!(is->flags & ISLAND_SPLIT))
+                    {
+                    	is->flags |= ISLAND_SPLIT;
+                    	split[split_count++] = body0->island_index;
+                        ds_Assert(split_count <= pipeline->is_db.island_pool.count);
+                    }
+				}
+			}
+			else
+			{
+				is = isdb_BodyToIsland(pipeline, b1);
+			}
+
+			ds_Assert(is->contact_list.count > 0);
+			dll_Remove(&is->contact_list, cdb->contact_net.pool.buf, ci);
+			ds_ContactRemove(pipeline, ci);
+		}
+		bit += 64;
+	}	
+	ArenaPopPacked(&pipeline->frame, (pipeline->is_db.island_pool.count - split_count)*sizeof(u32));
+
+    struct arena tmp = ArenaAlloc1MB();
+	/* TODO: Parallelize island splitting */
+	for (u32 i = 0; i < split_count; ++i)
+	{
+		isdb_SplitIsland(&tmp, pipeline, split[i]);
+	}
+
+    /* Update contacts_persistent_usage */
+    {
+        for (u64 i = 0; i < cdb->contacts_frame_usage.block_count; ++i)
+        {
+        	cdb->contacts_persistent_usage.bits[i] = cdb->contacts_frame_usage.bits[i];	
+        }
+
+        if (cdb->contacts_persistent_usage.bit_count < cdb->contact_net.pool.count_max)
+        {
+        	const u64 low_bit = cdb->contacts_persistent_usage.bit_count;
+        	const u64 high_bit = cdb->contact_net.pool.count_max;
+        	BitVecIncreaseSize(&cdb->contacts_persistent_usage, cdb->contact_net.pool.length, 0);
+        	/* any new contacts that is in the appended region must now be set */
+        	for (u64 bit = low_bit; bit < high_bit; ++bit)
+        	{
+        		BitVecSetBit(&cdb->contacts_persistent_usage, bit, 1);
+        	}
+        }
+    } 
+
+	ArenaFree1MB(&tmp);
+	ProfZoneEnd;
+}
 //
-//			/* dynamic-static */
-//			case 0x2:
-//			{
-//				struct island *is = ds_PoolAddress(&pipeline->is_db.island_pool, is1);
-//				dll_Append(&is->contact_list, pipeline->cdb->contact_net.pool.buf, pipeline->contact_new[i]);
-//			} break;
-//
-//			/* static-dynamic */
-//			case 0x1:
-//			{
-//				struct island *is = ds_PoolAddress(&pipeline->is_db.island_pool, is2);
-//				dll_Append(&is->contact_list, pipeline->cdb->contact_net.pool.buf, pipeline->contact_new[i]);
-//			} break;
-//		}
-//	}
-//	ProfZoneEnd;
-//}
-//
-//static void InternalRemoveContactsAndTagSplitIslands(struct ds_RigidBodyPipeline *pipeline)
-//{
-//	ProfZone;
-//	if (pipeline->cdb->contact_net.pool.count == 0) 
-//	{ 
-//		ProfZoneEnd;
-//		return; 
-//	}
-//
-//	/* 
-//	 * For every removed contact
-//	 * (1)	if island is not tagged, tag island and push. 
-//	 * (2) 	remove contact
-//	 */
-//
-//	/* Remove any contacts that were not persistent */
-//	//fprintf(stderr, " R: {");
-//	u32 bit = 0;
-//	isdb_ReserveSplitsMemory(&pipeline->frame, &pipeline->is_db);
-//	for (u64 block = 0; block < pipeline->cdb->contacts_frame_usage.block_count; ++block)
-//	{
-//		u64 broken_link_block = 
-//				    pipeline->cdb->contacts_persistent_usage.bits[block]
-//				& (~pipeline->cdb->contacts_frame_usage.bits[block]);
-//		u32 b = 0;
-//		while (broken_link_block)
-//		{
-//			const u32 tzc = Ctz64(broken_link_block);
-//			b += tzc;
-//			const u32 ci = bit + b;
-//			b += 1;
-//
-//			broken_link_block = (tzc < 63) 
-//				? broken_link_block >> (tzc + 1)
-//				: 0;
-//		
-//			//fprintf(stderr, " %lu", ci);
-//			struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, ci);
-//
-//			/* tag island, if any exist, to split */
-//			const u32 b1 = CONTACT_KEY_TO_BODY_0(c->key);
-//			const u32 b2 = CONTACT_KEY_TO_BODY_1(c->key);
-//			const struct ds_RigidBody *body1 = ds_PoolAddress(&pipeline->body_pool, b1);
-//			const struct ds_RigidBody *body2 = ds_PoolAddress(&pipeline->body_pool, b2);
-//			ds_Assert(body1->island_index != ISLAND_STATIC || body2->island_index != ISLAND_STATIC);
-//
-//			struct island *is;
-//			if (body1->island_index != ISLAND_STATIC)
-//			{
-//				is = isdb_BodyToIsland(pipeline, b1);
-//				if (body2->island_index != ISLAND_STATIC)
-//				{
-//					isdb_TagForSplitting(pipeline, b1);
-//				}
-//			}
-//			else
-//			{
-//				is = isdb_BodyToIsland(pipeline, b2);
-//			}
-//
-//			ds_Assert(is->contact_list.count > 0);
-//			dll_Remove(&is->contact_list, pipeline->cdb->contact_net.pool.buf, ci);
-//			cdb_ContactRemove(pipeline, c->key, (u32) ci);
-//		}
-//		bit += 64;
-//	}	
-//	isdb_ReleaseUnusedSplitsMemory(&pipeline->frame, &pipeline->is_db);
-//	//fprintf(stderr, " }\tcontacts: %u\n", pipeline->cdb->contacts->count-2);
-//	ProfZoneEnd;
-//}
-//
-//static void InternalSplitIslands(struct ds_RigidBodyPipeline *pipeline)
-//{
-//	ProfZone;
-//  struct arena tmp = ArenaAlloc1MB();
-//
-//	/* TODO: Parallelize island splitting */
-//
-//	for (u32 i = 0; i < pipeline->is_db.possible_splits_count; ++i)
-//	{
-//		isdb_SplitIsland(&tmp, pipeline, pipeline->is_db.possible_splits[i]);
-//	}
-//
-//	cdb_UpdatePersistentContactsUsage(&pipeline->cdb);
-//
-//	ArenaFree1MB(&tmp);
-//	ProfZoneEnd;
-//}
-//
-//static void InternalParallelSolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta) 
+//static void ParallelSolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta) 
 //{
 //	ProfZone;
 //
@@ -649,7 +660,7 @@ void PhysicsPipelineSleepDisable(struct ds_RigidBodyPipeline *pipeline)
 	}
 }
 
-static void InternalUpdateSolverConfig(struct ds_RigidBodyPipeline *pipeline)
+static void UpdateSolverConfig(struct ds_RigidBodyPipeline *pipeline)
 {
 	g_solver_config->warmup_solver = g_solver_config->pending_warmup_solver;
 	g_solver_config->block_solver = g_solver_config->pending_block_solver;
@@ -681,7 +692,7 @@ void PhysicsPipelineRigidBodyTagForRemoval(struct ds_RigidBodyPipeline *pipeline
 	}
 }
 
-static void InternalRemoveMarkedBodies(struct ds_RigidBodyPipeline *pipeline)
+static void RemoveMarkedBodies(struct ds_RigidBodyPipeline *pipeline)
 {
 	struct ds_RigidBody *b = NULL;
 	for (u32 i = pipeline->body_marked_list.first; i != DLL_NULL; i = dll_Next(b))
@@ -693,22 +704,21 @@ static void InternalRemoveMarkedBodies(struct ds_RigidBodyPipeline *pipeline)
 	dll_Flush(&pipeline->body_marked_list);
 }
 
-void InternalPhysicsPipelineSimulateFrame(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
+void PhysicsPipelineSimulateFrame(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
 {
-	InternalRemoveMarkedBodies(pipeline);
+	RemoveMarkedBodies(pipeline);
 
 	/* update, if possible, any pending values in contact solver config */
-	InternalUpdateSolverConfig(pipeline);
+	UpdateSolverConfig(pipeline);
 
 	/* broadphase => narrowphase => solve => integrate */
-    InternalCollisionDetection(pipeline);
+    CollisionDetection(pipeline);
 
-	//InternalMergeIslands(pipeline);
-	//InternalRemoveContactsAndTagSplitIslands(pipeline);
-	//InternalSplitIslands(pipeline);
-	//InternalParallelSolveIslands(pipeline, delta);
+	MergeIslands(pipeline);
+	SplitIslandsAndRemoveContacts(pipeline);
+	//ParallelSolveIslands(pipeline, delta);
 
-	//PHYSICS_PIPELINE_VALIDATE(pipeline);
+	PHYSICS_PIPELINE_VALIDATE(pipeline);
 }
 
 void PhysicsPipelineTick(struct ds_RigidBodyPipeline *pipeline)
@@ -717,11 +727,11 @@ void PhysicsPipelineTick(struct ds_RigidBodyPipeline *pipeline)
 
 	if (pipeline->frames_completed > 0)
 	{
-		InternalPhysicsPipelineClearFrame(pipeline);
+		PhysicsPipelineClearFrame(pipeline);
 	}
 	pipeline->frames_completed += 1;
 	const f32 delta = (f32) pipeline->ns_tick / NSEC_PER_SEC;
-	InternalPhysicsPipelineSimulateFrame(pipeline, delta);
+	PhysicsPipelineSimulateFrame(pipeline, delta);
 
 	ProfZoneEnd;
 }

@@ -76,7 +76,6 @@ struct cdb *cdb_Alloc(struct arena *mem_persistent, const u32 size)
 	sat_CacheTPoolAlloc(&cdb->sat_cache_pool, g_arch_config->logical_core_count, size);
 	cdb->sat_cache_map = sat_CacheTHashMapAlloc(mem_persistent, &cdb->sat_cache_pool, 4096);
 
-    //TODO nll, hash_map => Tnll, THashMap
 	cdb->contact_net = nll_Alloc(NULL, size, struct ds_Contact, cdb_IndexInPreviousConctactNode, cdb_IndexInNextConctactNode, GROWABLE);
 	cdb->contact_map = ds_HashMapAlloc(NULL, size, 20000, GROWABLE);
 	cdb->contacts_persistent_usage = BitVecAlloc(NULL, size, 0, GROWABLE);
@@ -103,107 +102,88 @@ void cdb_Flush(struct cdb *cdb)
 	BitVecClear(&cdb->contacts_persistent_usage, 0);
 }
 
-//void cdb_Validate(const struct ds_RigidBodyPipeline *pipeline)
-//{
-//	for (u64 i = 0; i < pipeline->cdb->contacts_persistent_usage.bit_count; ++i)
-//	{
-//		if (BitVecGetBit(&pipeline->cdb->contacts_persistent_usage, i))
-//		{
-//			const struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, (u32) i);
-//			ds_Assert(PoolSlotAllocated(c));
-//
-//			//fprintf(stderr, "contact[%lu] (next[0], next[1], prev[0], prev[1]) : (%u,%u,%u,%u)\n",
-//			//	       i,
-//			//	       c->nll_next[0],	
-//			//	       c->nll_next[1],	
-//			//	       c->nll_prev[0],	
-//			//	       c->nll_prev[1]);
-//
-//			const struct ds_RigidBody *b1 = ds_PoolAddress(&pipeline->body_pool, c->cm.i1);
-//			const struct ds_RigidBody *b2 = ds_PoolAddress(&pipeline->body_pool, c->cm.i2);
-//
-//			u32 prev, k, found; 
-//			prev = NLL_NULL;
-//			k = b1->contact_first;
-//			found = 0;
-//			while (k != NLL_NULL)
-//			{
-//				if (k == i)
-//				{
-//					found = 1;
-//					break;
-//				}
-//
-//				const struct ds_Contact *tmp = nll_Address(&pipeline->cdb->contact_net, k);
-//				ds_Assert(PoolSlotAllocated(tmp));
-//				if (CONTACT_KEY_TO_BODY_0(tmp->key) == c->cm.i1)
-//				{
-//					ds_Assert(prev == tmp->nll_prev[0]);
-//					prev = k;
-//					k = tmp->nll_next[0];
-//				}
-//				else
-//				{
-//					ds_Assert(CONTACT_KEY_TO_BODY_1(tmp->key) == c->cm.i1);
-//					ds_Assert(prev == tmp->nll_prev[1]);
-//					prev = k;
-//					k = tmp->nll_next[1];
-//				}
-//			}
-//			ds_Assert(found);
-// 
-//			prev = NLL_NULL;
-//			k = b2->contact_first;
-//			found = 0;
-//			while (k != NLL_NULL)
-//			{
-//				if (k == i)
-//				{
-//					found = 1;
-//					break;
-//				}
-//
-//				const struct ds_Contact *tmp = nll_Address(&pipeline->cdb->contact_net, k);
-//				ds_Assert(PoolSlotAllocated(tmp));
-//				if (CONTACT_KEY_TO_BODY_0(tmp->key) == c->cm.i2)
-//				{
-//					ds_Assert(prev == tmp->nll_prev[0]);
-//					prev = k;
-//					k = tmp->nll_next[0];
-//				}
-//				else
-//				{
-//					ds_Assert(prev == tmp->nll_prev[1]);
-//					ds_Assert(CONTACT_KEY_TO_BODY_1(tmp->key) == c->cm.i2);
-//					prev = k;
-//					k = tmp->nll_next[1];
-//				}
-//			}
-//			ds_Assert(found);
-//		}
-//	}
-//}
-//
-//void cdb_UpdatePersistentContactsUsage(struct cdb *cdb)
-//{
-//	ds_Assert(cdb->contacts_persistent_usage.block_count == cdb->contacts_frame_usage.block_count);
-//	for (u64 i = 0; i < cdb->contacts_frame_usage.block_count; ++i)
-//	{
-//		cdb->contacts_persistent_usage.bits[i] = cdb->contacts_frame_usage.bits[i];	
-//	}
-//
-//	if (cdb->contacts_persistent_usage.bit_count < cdb->contact_net.pool.count_max)
-//	{
-//		const u64 low_bit = cdb->contacts_persistent_usage.bit_count;
-//		const u64 high_bit = cdb->contact_net.pool.count_max;
-//		BitVecIncreaseSize(&cdb->contacts_persistent_usage, cdb->contact_net.pool.length, 0);
-//		/* any new contacts that is in the appended region must now be set */
-//		for (u64 bit = low_bit; bit < high_bit; ++bit)
-//		{
-//			BitVecSetBit(&cdb->contacts_persistent_usage, bit, 1);
-//		}
-//	}
-//}
+void cdb_Validate(const struct ds_RigidBodyPipeline *pipeline)
+{
+	for (u64 i = 0; i < pipeline->cdb->contacts_persistent_usage.bit_count; ++i)
+	{
+		if (BitVecGetBit(&pipeline->cdb->contacts_persistent_usage, i))
+		{
+			const struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, (u32) i);
+			ds_Assert(PoolSlotAllocated(c));
+
+			//fprintf(stderr, "contact[%lu] (next[0], next[1], prev[0], prev[1]) : (%u,%u,%u,%u)\n",
+			//	       i,
+			//	       c->nll_next[0],	
+			//	       c->nll_next[1],	
+			//	       c->nll_prev[0],	
+			//	       c->nll_prev[1]);
+
+			const struct ds_RigidBody *b0 = ds_PoolAddress(&pipeline->body_pool, c->key.body0);
+			const struct ds_RigidBody *b1 = ds_PoolAddress(&pipeline->body_pool, c->key.body1);
+			const struct ds_Shape *s0 = ds_PoolAddress(&pipeline->shape_pool, c->key.shape0);
+			const struct ds_Shape *s1 = ds_PoolAddress(&pipeline->shape_pool, c->key.shape1);
+
+			u32 prev, k, found; 
+			prev = NLL_NULL;
+			k = s0->contact_first;
+			found = 0;
+			while (k != NLL_NULL)
+			{
+				if (k == i)
+				{
+					found = 1;
+					break;
+				}
+
+				const struct ds_Contact *tmp = nll_Address(&pipeline->cdb->contact_net, k);
+				ds_Assert(PoolSlotAllocated(tmp));
+				if (tmp->key.shape0 == c->key.shape0)
+				{
+					ds_Assert(prev == tmp->nll_prev[0]);
+					prev = k;
+					k = tmp->nll_next[0];
+				}
+				else
+				{
+					ds_Assert(tmp->key.shape1 == c->key.shape0);
+					ds_Assert(prev == tmp->nll_prev[1]);
+					prev = k;
+					k = tmp->nll_next[1];
+				}
+			}
+			ds_Assert(found);
+ 
+			prev = NLL_NULL;
+			k = s1->contact_first;
+			found = 0;
+			while (k != NLL_NULL)
+			{
+				if (k == i)
+				{
+					found = 1;
+					break;
+				}
+
+				const struct ds_Contact *tmp = nll_Address(&pipeline->cdb->contact_net, k);
+				ds_Assert(PoolSlotAllocated(tmp));
+				if (tmp->key.shape0 == c->key.shape1)
+				{
+					ds_Assert(prev == tmp->nll_prev[0]);
+					prev = k;
+					k = tmp->nll_next[0];
+				}
+				else
+				{
+					ds_Assert(prev == tmp->nll_prev[1]);
+					ds_Assert(tmp->key.shape1 == c->key.shape1);
+					prev = k;
+					k = tmp->nll_next[1];
+				}
+			}
+			ds_Assert(found);
+		}
+	}
+}
 
 void cdb_ClearFrame(struct cdb *cdb)
 {

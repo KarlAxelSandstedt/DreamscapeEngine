@@ -39,9 +39,6 @@ struct visualSegment VisualSegmentConstruct(const struct segment segment, const 
 void c_ManifoldDebugPrint(FILE *file, const struct c_Manifold *cm)
 {
 	fprintf(stderr, "Contact Manifold:\n{\n");
-
-	fprintf(stderr, "\t.i1 = %u\n", cm->i1);
-	fprintf(stderr, "\t.i2 = %u\n", cm->i2);
 	fprintf(stderr, "\t.v_count = %u\n", cm->v_count);
 	for (u32 i = 0; i < cm->v_count; ++i)
 	{
