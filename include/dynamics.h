@@ -75,24 +75,24 @@ We now derive the transformations needed assuming an arbitrary center of mass.
 struct ds_Shape
 {
 	POOL_SLOT_STATE;
-	DLL_SLOT_STATE;				            /* Node links in ds_RigidBody shape_list 	local   */
+	DLL_SLOT_STATE;				        /* Node links in ds_RigidBody shape_list 	local   */
 
-	u32 			body;		            /* ds_RigidBody owner of node 			            */
-	u32			    contact_first;	        /* index to first contact in shape's list (nll)     */
+	u32 			body;		        /* ds_RigidBody owner of node 			            */
+	u32			    contact_first;	    /* index to first contact in shape's list (nll)     */
 
-	enum c_ShapeType cshape_type;	/* collisionShape type 				                */
-	u32			    cshape_handle;	        /* handle to referenced collisionShape 		        */
+	enum c_ShapeType cshape_type;	    /* collisionShape type 				                */
+	u32			    cshape_handle;	    /* handle to referenced collisionShape 		        */
 
-	f32			    density;	            /* kg/m^3					                        */
-	f32 			restitution;            /* Range [0.0, 1.0] : bounciness  		            */
-	f32 			friction;	            /* Range [0.0, 1.0] : bound tangent impulses to 
-						                       mix(b1->friction, b2->friction)*(normal impuse)  */
-	f32		        margin;		            /* bouding box margin for dynamic BVH proxies 	    */
+	f32			    density;	        /* kg/m^3					                        */
+	f32 			restitution;        /* Range [0.0, 1.0] : bounciness  		            */
+	f32 			friction;	        /* Range [0.0, 1.0] : bound tangent impulses to 
+						                   mix(b1->friction, b2->friction)*(normal impuse)  */
+	f32		        margin;		        /* bouding box margin for dynamic BVH proxies 	    */
 
-	ds_Transform	t_local;	            /* local body frame transform 			            */
+	ds_Transform	t_local;	        /* local body frame transform 			            */
 
 	/* DYNAMIC STATE */
-	u32			    proxy;		            /* BVH index 					                    */
+	u32			    proxy;		        /* BVH index 					                    */
 };
 
 /*
@@ -107,12 +107,12 @@ struct ds_ShapePrefab
 {
 	STRING_DATABASE_SLOT_STATE;
 
-	u32	    cshape;	        /* referenced collisionShape handle  		        */
-	f32		density;	    /* kg/m^3					                        */
-	f32 	restitution;	/* Range [0.0, 1.0] : bounciness  		            */
-	f32 	friction;	    /* Range [0.0, 1.0] : bound tangent impulses to 
-						       mix(b1->friction, b2->friction)*(normal impuse)  */
-	f32		margin;	        /* bouding box margin for dynamic BVH proxies 	    */
+	u32	    cshape;	            /* referenced collisionShape handle  		        */
+	f32		density;	        /* kg/m^3					                        */
+	f32 	restitution;	    /* Range [0.0, 1.0] : bounciness  		            */
+	f32 	friction;	        /* Range [0.0, 1.0] : bound tangent impulses to 
+						           mix(b1->friction, b2->friction)*(normal impuse)  */
+	f32		margin;	            /* bouding box margin for dynamic BVH proxies 	    */
 };
 
 /*
@@ -322,6 +322,15 @@ struct ds_Contact
 	u32 			        cached_count;			    /* number of vertices in cache          */
 };
 
+/* Add and return new contact with unique key and update pipeline state */
+struct slot ds_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct c_Manifold *cm, const struct ds_ContactKey *key);
+/* Remove contact at the given index and update pipeline state */
+void 	    ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index);
+/* Return the contact associated with the given key. If no such contact is found, return (NULL, NLL_NULL) */
+struct slot ds_ContactLookup(const struct ds_RigidBodyPipeline *pipeline, const struct ds_ContactKey *key);
+/* Update contact at the given slot and update pipeline state. */
+void        ds_ContactUpdate(struct ds_RigidBodyPipeline *pipeline, const struct slot slot, const struct c_Manifold *cm);
+
 /*
 sat_Cache
 =========
@@ -379,7 +388,11 @@ contact_database
 Database for last and current frame contacts. Any rigid body can lookup its cached
 and current contacts, and if necessary, invalidate any contact data.
 
-Frame layout:
+
+::: Internals :::
+
+//TODO Update
+Frame layout
 	1. generate_contacts
  	2. cdb_new_frame(contact_count)	// alloc memory for frame contacts
  	3. cdb_ContactAdd(i1, i2, contact)	// add all new contacts 
@@ -391,20 +404,16 @@ Frame layout:
 
 struct cdb
 {
-	/*
-	 * contact net list nodes are owned as follows:
+	/* contact net list nodes are owned as follows:
 	 *
-	 * contact->key.shape0 owns slot 0
-	 * contact->key.shape1 owns slot 1
+	 *  contact->key.shape0 owns slot 0
+	 *  contact->key.shape1 owns slot 1
 	 *
-	 * i.e. the smaller index owns slot 0 and the larger index owns slot 1.
-	 */
+	 * i.e. the smaller index owns slot 0 and the larger index owns slot 1.  */
 	struct nll	contact_net;
 	struct ds_HashMap	contact_map;		
 
-	/*
-	 * frame-cached separation axes 
-	 */
+	/* frame-cached separation axis results */
 	struct sat_CacheTPool       sat_cache_pool;
 	struct sat_CacheTHashMap	sat_cache_map;		
 
@@ -418,22 +427,23 @@ struct cdb
        the current frame are the ones in the bit array + any appended contacts which resulted in
        growing the array. */
 	struct bitVec 	contacts_frame_usage;	
+
+    /* FRAME DATA */
+    u32             contact_count;      /* Contacts found in the current frame      */
+	u32			    contact_new_count;  /* New contacts found in the current frame  */
+	u32 *			contact_new;
 };
 
+//TODO document
 struct cdb *cdb_Alloc(struct arena *mem_persistent, const u32 initial_size);
 void 		cdb_Free(struct cdb *cdb);
 void		cdb_Flush(struct cdb *cdb);
 void		cdb_Validate(const struct ds_RigidBodyPipeline *pipeline);
 void		cdb_ClearFrame(struct cdb *cdb);
-/* Update or add new contact depending on if the contact persisted from prevous frame. */
-struct ds_Contact *cdb_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct c_Manifold *cm, const u32 i1, const u32 i2);
-void 		cdb_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u64 key, const u32 index);
 /* Remove all contacts associated with the given body */
 void		cdb_BodyRemoveContacts(struct ds_RigidBodyPipeline *pipeline, const u32 body_index);
 /* Remove all contacts associated with the given static body and update affected islands */
 void		cdb_StaticRemoveContactsAndUpdateIslands(struct ds_RigidBodyPipeline *pipeline, const u32 static_index);
-struct ds_Contact *cdb_ContactLookup(const struct cdb *cdb, const u32 b1, const u32 b2);
-u32 		cdb_ContactLookupIndex(const struct cdb *cdb, const u32 i1, const u32 i2);
 void 		cdb_UpdatePersistentContactsUsage(struct cdb *cdb);
 
 /*
@@ -792,18 +802,18 @@ void 		SolverCacheImpulse(struct solver *solver, const struct island *is);
 #define UNIFORM_SIZE 256
 #define GRAVITY_CONSTANT_DEFAULT 9.80665f
 
-#define PHYSICS_EVENT_BODY(pipeline, event_type, body_index)						\
-	{												\
+#define PHYSICS_EVENT_BODY(pipeline, event_type, body_index)						        \
+	{												                                        \
 		struct physicsEvent *__physics_debug_event = PhysicsPipelineEventPush(pipeline);	\
-		__physics_debug_event->type = event_type;						\
-		__physics_debug_event->body = body_index;						\
+		__physics_debug_event->type = event_type;						                    \
+		__physics_debug_event->body = body_index;						                    \
 	}
 
-#define PHYSICS_EVENT_ISLAND(pipeline, event_type, island_index)					\
-	{												\
+#define PHYSICS_EVENT_ISLAND(pipeline, event_type, island_index)					        \
+	{												                                        \
 		struct physicsEvent *__physics_debug_event = PhysicsPipelineEventPush(pipeline);	\
-		__physics_debug_event->type = event_type;						\
-		__physics_debug_event->island = island_index;						\
+		__physics_debug_event->type = event_type;						                    \
+		__physics_debug_event->island = island_index;						                \
 	}
 
 #ifdef DS_PHYSICS_DEBUG
@@ -815,19 +825,17 @@ void 		SolverCacheImpulse(struct solver *solver, const struct island *is);
 #define	PhysicsEventIslandNew(pipeline, island)		    PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_NEW, island)
 #define	PhysicsEventIslandExpanded(pipeline, island)	PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_EXPANDED, island)
 #define	PhysicsEventIslandRemoved(pipeline, island)	    PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_REMOVED, island)
-#define PhysicsEventContactNew(pipeline, body1_index, body2_index)					        \
+#define PhysicsEventContactNew(pipeline, _key)					                            \
 	{												                                        \
 		struct physicsEvent *__physics_debug_event = PhysicsPipelineEventPush(pipeline);	\
 		__physics_debug_event->type = PHYSICS_EVENT_CONTACT_NEW;				            \
-		__physics_debug_event->contact_bodies.body1 = body1_index;				            \
-		__physics_debug_event->contact_bodies.body2 = body2_index;				            \
+		__physics_debug_event->contact_key = _key;				                            \
 	}
-#define PhysicsEventContactRemoved(pipeline, body1_index, body2_index)				        \
+#define PhysicsEventContactRemoved(pipeline, _key)				                            \
 	{												                                        \
 		struct physicsEvent *__physics_debug_event = PhysicsPipelineEventPush(pipeline);	\
 		__physics_debug_event->type = PHYSICS_EVENT_CONTACT_REMOVED;				        \
-		__physics_debug_event->contact_bodies.body1 = body1_index;				            \
-		__physics_debug_event->contact_bodies.body2 = body2_index;				            \
+		__physics_debug_event->contact_key = _key;				                            \
 	}
 
 #else
@@ -868,13 +876,9 @@ struct physicsEvent
 	enum physicsEventType type;
 	union
 	{
-		u32 island;
-		u32 body;
-		struct 
-		{
-			u32 body1;
-			u32 body2;
-		} contact_bodies;
+		u32                     island;
+		u32                     body;
+        struct ds_ContactKey    contact_key;
 	};
 };
 
@@ -903,14 +907,14 @@ struct ds_RigidBodyPipeline
 	struct strdb *	cshape_db;		        /* externally owned */
 	struct strdb *	body_prefab_db;		    /* externally owned */
 
-	struct ds_Pool		body_pool;
+	struct ds_Pool	body_pool;
 	struct dll		body_marked_list;	    /* bodies marked for removal */
 	struct dll		body_non_marked_list;	/* bodies alive and non-marked  */
 
-	struct ds_Pool		shape_pool;
+	struct ds_Pool	shape_pool;
 	struct bvh 		shape_bvh;              /* dynamic bvh of shapes */
 
-	struct ds_Pool		event_pool;
+	struct ds_Pool	event_pool;
 	struct dll		event_list;
 
 	struct cdb *	cdb;
@@ -926,11 +930,7 @@ struct ds_RigidBodyPipeline
 	f32			    margin;
 
 	/* frame data */
-	u32			    contact_new_count;
-	u32			    proxy_overlap_count;
 	u32			    cm_count;
-	u32 *			contact_new;
-	struct dbvhOverlap *	proxy_overlap;
 	struct c_Manifold *cm;
 
 	/* debug */

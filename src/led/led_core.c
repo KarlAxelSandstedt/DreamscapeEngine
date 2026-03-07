@@ -1872,8 +1872,8 @@ static void led_engine_run(struct led *led)
 			{
 				if (led->physics.body_color_mode == RB_COLOR_MODE_COLLISION)
 				{
-					const struct ds_RigidBody *body1 = ds_PoolAddress(&led->physics.body_pool, event->contact_bodies.body1);
-					const struct ds_RigidBody *body2 = ds_PoolAddress(&led->physics.body_pool, event->contact_bodies.body2);
+					const struct ds_RigidBody *body1 = ds_PoolAddress(&led->physics.body_pool, event->contact_key.body0);
+					const struct ds_RigidBody *body2 = ds_PoolAddress(&led->physics.body_pool, event->contact_key.body1);
 					const struct led_node *node1 = ds_PoolAddress(&led->node_pool, body1->entity);
 					const struct led_node *node2 = ds_PoolAddress(&led->node_pool, body2->entity);
 					if (RB_IS_DYNAMIC(body1))

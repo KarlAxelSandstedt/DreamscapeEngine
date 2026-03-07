@@ -169,8 +169,6 @@ static void InternalPhysicsPipelineClearFrame(struct ds_RigidBodyPipeline *pipel
 		stack_visualSegmentFlush(&pipeline->debug[i].stack_segment);
 	}
 #endif
-	pipeline->proxy_overlap_count = 0;
-	pipeline->proxy_overlap = NULL;
 	pipeline->cm_count = 0;
 	pipeline->cm = NULL;
 
@@ -216,52 +214,13 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
 //	ProfZoneEnd;
 //}
 
-static void InternalUpdateShapeBvh(struct ds_RigidBodyPipeline *pipeline)
-{
-	ProfZone;
-
-	const u32 flags = RB_ACTIVE | RB_DYNAMIC | (g_solver_config->sleep_enabled * RB_AWAKE);
-	const struct ds_RigidBody *body = NULL;
-	for (u32 i = pipeline->body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
-	{
-		body = ds_PoolAddress(&pipeline->body_pool, i);
-		if ((body->flags & flags) == flags)
-		{
-            struct ds_Shape *shape = NULL;
-            for (u32 j = body->shape_list.first; j != DLL_NULL; j = shape->dll_next)
-            {
-                shape = ds_PoolAddress(&pipeline->shape_pool, j);
-                struct aabb bbox = ds_ShapeWorldBbox(pipeline, shape);
-                const struct bvhNode *node = ds_PoolAddress(&pipeline->shape_bvh.tree.pool, shape->proxy);
-			    const struct aabb *proxy = &node->bbox;
-			    if (!AabbContains(proxy, &bbox))
-			    {
-			    	bbox.hw[0] += shape->margin;
-			    	bbox.hw[1] += shape->margin;
-			    	bbox.hw[2] += shape->margin;
-			    	DbvhRemove(&pipeline->shape_bvh, shape->proxy);
-			    	shape->proxy = DbvhInsert(&pipeline->shape_bvh, j, &bbox);
-			    }
-            }
-		}
-	}
-
-	ProfZoneEnd;
-}
-
-static void InternalPushProxyOverlaps(struct ds_RigidBodyPipeline *pipeline)
-{
-	ProfZone;
-	pipeline->proxy_overlap = DbvhPushOverlapPairs(&pipeline->frame, &pipeline->proxy_overlap_count, &pipeline->shape_bvh);
-	ProfZoneEnd;
-}
-
 struct tcc_Output
 {
-    struct tcc_Output * next;
-    struct sat_Cache *  cache;
-	struct c_Manifold   manifold;
-    u32                 collision;
+    struct tcc_Output *     next;
+    struct sat_Cache *      cache;
+	struct c_Manifold       manifold;
+    struct ds_ContactKey    key;
+    u32                     collision;
 };
 
 struct tcc_Input
@@ -270,7 +229,6 @@ struct tcc_Input
     struct ds_RigidBodyPipeline *   pipeline;
     struct ds_Shape *               s1;
     struct ds_Shape *               s2;
-    struct ds_ContactKey            key;
     f32                             margin;
 };
 
@@ -286,10 +244,10 @@ static void ThreadCalculateContact(void *task_addr)
     struct sat_Cache *cache = NULL;
     if (in->s1->cshape_type == C_SHAPE_CONVEX_HULL && in->s2->cshape_type == C_SHAPE_CONVEX_HULL)
     {
-        cache = sat_CacheLookup(in->pipeline->cdb, &in->key).address;
+        cache = sat_CacheLookup(in->pipeline->cdb, &out->key).address;
         if (!cache)
         {
-            cache = sat_CacheAdd(in->pipeline->cdb, &in->key).address;
+            cache = sat_CacheAdd(in->pipeline->cdb, &out->key).address;
         }
     }
     out->cache = cache;
@@ -306,88 +264,144 @@ static void ThreadCalculateContact(void *task_addr)
 	ProfZoneEnd;
 }
 
-static void InternalCalculateContacts(struct ds_RigidBodyPipeline *pipeline)
+static void InternalCollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 {
-	ProfZone;
+	ProfZoneNamed("CollisionDetection");
 
-	/* acquire any task resources */
-	struct task_stream *stream = task_stream_init(&pipeline->frame);
-	struct tcc_Output *output = NULL;
-	struct tcc_Output **next = &output;
-
-    const f32 margin = (pipeline->margin_on)
-        ? pipeline->margin
-        : 0.0f;
-
-	for (u32 i = 0; i < pipeline->proxy_overlap_count; ++i)
-	{
-        struct ds_Shape *s1 = ds_PoolAddress(&pipeline->shape_pool, pipeline->proxy_overlap[i].id1);
-        struct ds_Shape *s2 = ds_PoolAddress(&pipeline->shape_pool, pipeline->proxy_overlap[i].id2);
-        if (s1->body == s2->body)
-        {
-            continue;
-        }
-
-        struct tcc_Output *out = ArenaPushAligned(&pipeline->frame, sizeof(struct tcc_Output), g_arch_config->cacheline);
-        struct tcc_Input *args = ArenaPushAligned(&pipeline->frame, sizeof(struct tcc_Input), g_arch_config->cacheline);
-
-        out->next = NULL;
-
-        args->out = out;
-        args->pipeline = pipeline;
-        args->s1 = s1;
-        args->s2 = s2;
-        args->margin = margin;
-        args->key = ds_ContactKeyCanonical(s1->body, 
-                                           pipeline->proxy_overlap[i].id1, 
-                                           s2->body, 
-                                           pipeline->proxy_overlap[i].id2);
-
-		task_stream_dispatch(&pipeline->frame, stream, ThreadCalculateContact, args);
-        *next = out;
-        next = &out->next;
-	}
-
-	task_main_master_run_available_jobs();
-
-	/* spin wait until last job completes */
-	task_stream_spin_wait(stream);
-	/* release any task resources */
-	task_stream_cleanup(stream);		
-
-    u32 collision_count = 0;
-	for (; output; output = output->next)
-	{
-        collision_count += output->collision;
-	}
-
-    fprintf(stderr, "collision_count: %u\n", collision_count);
+    {
+    	ProfZoneNamed("DbvhUpdate");
     
-	pipeline->cdb->contacts_frame_usage = BitVecAlloc(&pipeline->frame, pipeline->cdb->contacts_persistent_usage.bit_count, 0, 0);
-	ds_Assert(pipeline->cdb->contacts_frame_usage.block_count == pipeline->cdb->contacts_persistent_usage.block_count);
-	ds_Assert(pipeline->cdb->contacts_frame_usage.bit_count == pipeline->cdb->contacts_persistent_usage.bit_count);
+    	const u32 flags = RB_ACTIVE | RB_DYNAMIC | (g_solver_config->sleep_enabled * RB_AWAKE);
+    	const struct ds_RigidBody *body = NULL;
+    	for (u32 i = pipeline->body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
+    	{
+    		body = ds_PoolAddress(&pipeline->body_pool, i);
+    		if ((body->flags & flags) == flags)
+    		{
+                struct ds_Shape *shape = NULL;
+                for (u32 j = body->shape_list.first; j != DLL_NULL; j = shape->dll_next)
+                {
+                    shape = ds_PoolAddress(&pipeline->shape_pool, j);
+                    struct aabb bbox = ds_ShapeWorldBbox(pipeline, shape);
+                    const struct bvhNode *node = ds_PoolAddress(&pipeline->shape_bvh.tree.pool, shape->proxy);
+    			    const struct aabb *proxy = &node->bbox;
+    			    if (!AabbContains(proxy, &bbox))
+    			    {
+    			    	bbox.hw[0] += shape->margin;
+    			    	bbox.hw[1] += shape->margin;
+    			    	bbox.hw[2] += shape->margin;
+    			    	DbvhRemove(&pipeline->shape_bvh, shape->proxy);
+    			    	shape->proxy = DbvhInsert(&pipeline->shape_bvh, j, &bbox);
+    			    }
+                }
+    		}
+    	}
 
-//	pipeline->contact_new_count = 0;
-//	pipeline->contact_new = (u32 *) &pipeline->frame.stack_ptr;
-//	//fprintf(stderr, "A: {");
-//	{
-//		ProfZoneNamed("internal_gather_real_contacts");
-//		for (u32 i = 0; i < pipeline->cm_count; ++i)
-//		{
-//			const struct ds_Contact *c = cdb_ContactAdd(pipeline, pipeline->cm + i, pipeline->cm[i].i1, pipeline->cm[i].i2);
-//			/* add to new links if needed */
-//			const u32 index = (u32) nll_Index(&pipeline->cdb->contact_net, c);
-//			if (index >= pipeline->cdb->contacts_persistent_usage.bit_count
-//				 || BitVecGetBit(&pipeline->cdb->contacts_persistent_usage, index) == 0)
-//			{
-//					pipeline->contact_new_count += 1;
-//					ArenaPushPackedMemcpy(&pipeline->frame, &index, sizeof(index));
-//			}
-//			//fprintf(stderr, " %u", index);
-//		}
-//		ProfZoneEnd;
-//	}
-//	//fprintf(stderr, " } ");
+    	ProfZoneEnd;
+    }
+
+	struct dbvhOverlap *proxy_overlap = NULL;
+	u32 proxy_overlap_count = 0;
+    {
+    	ProfZoneNamed("Broadphase");
+    	proxy_overlap = DbvhPushOverlapPairs(&pipeline->frame, &proxy_overlap_count, &pipeline->shape_bvh);
+    	ProfZoneEnd;
+    }
+
+	struct tcc_Output *output = NULL;
+    {
+    	ProfZoneNamed("NarrowPhase");
+	    /* acquire any task resources */
+	    struct task_stream *stream = task_stream_init(&pipeline->frame);
+	    struct tcc_Output **next = &output;
+
+        const f32 margin = (pipeline->margin_on)
+            ? pipeline->margin
+            : 0.0f;
+
+	    for (u32 i = 0; i < proxy_overlap_count; ++i)
+	    {
+            struct ds_Shape *s1 = ds_PoolAddress(&pipeline->shape_pool, proxy_overlap[i].id1);
+            struct ds_Shape *s2 = ds_PoolAddress(&pipeline->shape_pool, proxy_overlap[i].id2);
+            if (s1->body == s2->body)
+            {
+                continue;
+            }
+
+            struct tcc_Output *out = ArenaPushAligned(&pipeline->frame, sizeof(struct tcc_Output), g_arch_config->cacheline);
+            struct tcc_Input *args = ArenaPushAligned(&pipeline->frame, sizeof(struct tcc_Input), g_arch_config->cacheline);
+
+            out->next = NULL;
+            out->key = ds_ContactKeyCanonical(s1->body, 
+                                              proxy_overlap[i].id1, 
+                                              s2->body, 
+                                              proxy_overlap[i].id2);
+
+            args->out = out;
+            args->pipeline = pipeline;
+            args->s1 = s1;
+            args->s2 = s2;
+            args->margin = margin;
+
+	    	task_stream_dispatch(&pipeline->frame, stream, ThreadCalculateContact, args);
+            *next = out;
+            next = &out->next;
+	    }
+
+	    task_main_master_run_available_jobs();
+	    /* spin wait until last job completes */
+	    task_stream_spin_wait(stream);
+	    /* release any task resources */
+	    task_stream_cleanup(stream);		
+
+    	ProfZoneEnd;
+    }
+ 
+    {
+    	ProfZoneNamed("ContactManagement");
+
+	    pipeline->cdb->contacts_frame_usage = BitVecAlloc(&pipeline->frame, pipeline->cdb->contacts_persistent_usage.bit_count, 0, 0);
+	    ds_Assert(pipeline->cdb->contacts_frame_usage.block_count == pipeline->cdb->contacts_persistent_usage.block_count);
+	    ds_Assert(pipeline->cdb->contacts_frame_usage.bit_count == pipeline->cdb->contacts_persistent_usage.bit_count);
+
+        struct memArray arr = ArenaPushAlignedAll(&pipeline->frame, sizeof(u32), sizeof(u32));
+        pipeline->cdb->contact_new = arr.addr;
+        //fprintf(stderr, "A: {");
+	    for (; output; output = output->next)
+	    {
+            if (output->collision)
+            {
+                pipeline->cdb->contact_count += 1;
+                struct slot slot = ds_ContactLookup(pipeline, &output->key);
+                if (!slot.address)
+                {
+                    slot = ds_ContactAdd(pipeline, &output->manifold, &output->key);
+                }
+                else
+                {
+                    ds_ContactUpdate(pipeline, slot, &output->manifold);
+                }
+                 
+			    /* add to new links if needed */
+			    if (slot.index >= pipeline->cdb->contacts_persistent_usage.bit_count
+			    	 || BitVecGetBit(&pipeline->cdb->contacts_persistent_usage, slot.index) == 0)
+			    {
+                        if (pipeline->cdb->contact_new_count >= arr.len)
+                        {
+                            LogString(T_PHYSICS, S_FATAL, "Frame arena OOM in Broadphase, increase size!");
+                            FatalCleanupAndExit();
+                        }
+                        pipeline->cdb->contact_new[ pipeline->cdb->contact_new_count ] = slot.index;
+			    		pipeline->cdb->contact_new_count += 1;
+			    }
+			    //fprintf(stderr, " %u", index);
+            }
+	    }
+        //fprintf(stderr, " } ");
+        ArenaPopPacked(&pipeline->frame, sizeof(u32)*(arr.len - pipeline->cdb->contact_new_count));
+
+    	ProfZoneEnd;
+    }
 
 	ProfZoneEnd;
 }
@@ -687,9 +701,7 @@ void InternalPhysicsPipelineSimulateFrame(struct ds_RigidBodyPipeline *pipeline,
 	InternalUpdateSolverConfig(pipeline);
 
 	/* broadphase => narrowphase => solve => integrate */
-	InternalUpdateShapeBvh(pipeline);
-	InternalPushProxyOverlaps(pipeline);
-    InternalCalculateContacts(pipeline);
+    InternalCollisionDetection(pipeline);
 
 	//InternalMergeIslands(pipeline);
 	//InternalRemoveContactsAndTagSplitIslands(pipeline);
