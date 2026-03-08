@@ -372,7 +372,7 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
             if (output->collision)
             {
                 pipeline->cdb->contact_count += 1;
-                struct slot slot = ds_ContactLookup(pipeline, &output->key);
+                struct slot slot = ds_ContactKeyLookup(pipeline, &output->key);
                 if (!slot.address)
                 {
                     slot = ds_ContactAdd(pipeline, &output->manifold, &output->key);

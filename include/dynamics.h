@@ -35,6 +35,39 @@ struct ds_RigidBodyPipeline;
 struct cdb;
 
 /*
+ds_Id
+=====
+Opaque generation based handles for user-interfacing structures. ds_Id supports
+16-bit generations, and 32-bit indices. ds_IdF (frequent) supports 32-bit 
+generations and 32-bit indices.
+*/
+
+typedef u64 ds_Id;
+typedef u64 ds_IdF; /* ds_IdF (frequent) */
+
+typedef ds_Id   ds_RigidBodyId;
+typedef ds_Id   ds_ShapeId;
+typedef ds_IdF  ds_ContactId;
+
+#define DS_ID_NULL                      U64_MAX
+#define DS_ID_INDEX_MASK                ((u64) 0x00000000ffffffff)
+#define DS_ID_TAG_MASK                  ((u64) 0xffffffff00000000)
+
+#define DS_ID_TAG_UNUSED_MASK           0x0000ffff
+#define DS_ID_TAG_GENERATION_MASK       0xffff0000
+#define DS_ID_TAG_GENERATION_INCREMENT  0x00010000
+
+#define ds_IdTag(id)                    ((u32) (id >> 32))
+#define ds_IdIndex(id)                  ((u32) id)
+
+#define DS_IDF_NULL                     U64_MAX
+#define DS_IDF_INDEX_MASK               ((u64) 0x00000000ffffffff)
+#define DS_IDF_GENERATION_MASK          ((u64) 0xffffffff00000000)
+
+#define ds_IdFGeneration(id)            ((u32) (id >> 32))
+#define ds_IdFIndex(id)                 ((u32) id)
+
+/*
 ds_Shape
 ========
 ds_Shapes are convex building blocks for constructing a ds_RigidBody. The structure
@@ -72,11 +105,13 @@ the local-to-world transform, ds_RigidBody must also store its center of mass:
 
 We now derive the transformations needed assuming an arbitrary center of mass.
 */
+
 struct ds_Shape
 {
 	POOL_SLOT_STATE;
 	DLL_SLOT_STATE;				        /* Node links in ds_RigidBody shape_list 	local   */
 
+    u32             tag;                /* Tag [ Generation(16) | Unused (16) ]             */
 	u32 			body;		        /* ds_RigidBody owner of node 			            */
 	u32			    contact_first;	    /* index to first contact in shape's list (nll)     */
 
@@ -96,7 +131,7 @@ struct ds_Shape
 };
 
 /*
-ds_ShapePrefab
+ds_ShapePrefab  
 ==============
 ds_ShapePrefabs are ds_Shape blueprints. When adding a ds_Shape, you will most likely
 use the same set of parameters for multiple shapes. This warrants the use of a 
@@ -130,24 +165,28 @@ struct ds_ShapePrefabInstance
     DLL_SLOT_STATE;             /* ds_RigidBodyPrefab instance list                 */
     u8              id_buf[SHAPE_PREFAB_INSTANCE_BUFSIZE];
     utf8            id;         /* local identifier within a body: (body_id).(id)   */
-    u32             shape;      /* ds_ShapePrefab reference                         */
+    u32             shape_prefab;
+    ds_ShapeId      shape;
 	ds_Transform	t_local;	/* local body frame transform                       */
 };
 
 /* 
  * Allocates a shape according to the values set in Prefab and with given local body frame transform. On success, 
- * a valid address and index to the shape is returned. If the ID is invalid, a default collisionShape is assigned
- * to the shape. On failure, (NULL, POOL_NULL) is returned. 
+ * an identifier to the shape is returned. On failure, U64 is return. 
  */
-struct slot ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_ShapePrefab *prefab, const ds_Transform *t, const u32 body);
+ds_ShapeId  ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_ShapePrefab *prefab, const ds_Transform *t, const ds_RigidBodyId body);
 /* 
  * Remove the specified shape of a DYNAMIC body and update the physics state into a valid state.  
  */
-void		ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, const u32 shape);
+void		ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, const ds_ShapeId id);
 /* 
  * Remove the specified shape of a STATIC body and update the physics state into a valid state. 
  */
-void		ds_ShapeStaticRemove(struct ds_RigidBodyPipeline *pipeline, const u32 shape);
+void		ds_ShapeStaticRemove(struct ds_RigidBodyPipeline *pipeline, const ds_ShapeId id);
+/*
+ * Lookup the specified shape and return it if found. Otherwise return (NULL, POOL_NULL).
+ */
+struct slot ds_ShapeLookup(const struct ds_RigidBodyPipeline *pipeline, const ds_ShapeId id);
 /*
  * Calculate the world transform of the shape.
  */
@@ -211,6 +250,8 @@ struct ds_RigidBody
 	DLL_SLOT_STATE;		/* body marked/non-marked list node */
 	POOL_SLOT_STATE;
 
+    u32             tag;                /* Tag [ Generation(16) | Unused (16) ]                 */
+
 	struct dll  shape_list;		        /* list of convex shapes constructing the rigid body 	*/
 	ds_Transform t_world;		        /* local body frame to world transform 			        */
 	vec3		local_center_of_mass;	/* local body frame center of mass 			            */
@@ -253,7 +294,8 @@ struct ds_RigidBodyPrefab
 {
 	STRING_DATABASE_SLOT_STATE;
 
-    struct dll  shape_list;     /* shape prefab instance list */
+    struct dll      shape_list;     /* shape prefab instance list */
+    ds_RigidBodyId  body;
 
     //TODO remove
 	u32     shape;
@@ -270,11 +312,13 @@ struct ds_RigidBodyPrefab
 };
 
 //TODO
-struct slot ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBodyPrefab *prefab, const vec3 position, const quat rotation, const u32 entity);
-/* Free the body at the given index */
-void		ds_RigidBodyRemove(struct ds_RigidBodyPipeline *pipeline, const u32 body);
+ds_RigidBodyId  ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBodyPrefab *prefab, const vec3 position, const quat rotation, const u32 entity);
+/* Free the given body */
+void		    ds_RigidBodyRemove(struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId id);
+/* Lookup the given body and return it. If it does not exist, return DS_ID_NULL.  */
+struct slot	    ds_RigidBodyLookup(const struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId id);
 /* Process the body's shape list and set its internal mass properties accordingly. */
-void		ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, const u32 body);
+void		    ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId id);
 
 /*
 ds_ContactKey
@@ -309,8 +353,10 @@ struct ds_Contact
 {
 	DLL_SLOT_STATE;		                                /* island->contact_list node            */
 	NLL_SLOT_STATE;		                                /* shape->contact_net node              */
+    u32                     generation;                 
     struct ds_ContactKey    key;                        /* canonical-form key                   */
 	struct c_Manifold 	    cm;                         /* Current contact manifold             */
+
 
 	vec3 			        normal_cache;
 	vec3 			        tangent_cache[2];
@@ -326,10 +372,12 @@ struct ds_Contact
 struct slot ds_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct c_Manifold *cm, const struct ds_ContactKey *key);
 /* Remove contact at the given index and update pipeline state */
 void 	    ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index);
-/* Return the contact associated with the given key. If no such contact is found, return (NULL, NLL_NULL) */
-struct slot ds_ContactLookup(const struct ds_RigidBodyPipeline *pipeline, const struct ds_ContactKey *key);
+/* Return the contact associated with the given id. If no such contact is found, return (NULL, NLL_NULL) */
+struct slot ds_ContactLookup(const struct ds_RigidBodyPipeline *pipeline, const ds_ContactId id);
 /* Update contact at the given slot and update pipeline state. */
 void        ds_ContactUpdate(struct ds_RigidBodyPipeline *pipeline, const struct slot slot, const struct c_Manifold *cm);
+/* Return the contact associated with the given key. If no such contact is found, return (NULL, NLL_NULL) */
+struct slot ds_ContactKeyLookup(const struct ds_RigidBodyPipeline *pipeline, const struct ds_ContactKey *key);
 
 /*
 sat_Cache
@@ -818,17 +866,17 @@ void 		SolverCacheImpulse(struct solver *solver, const struct island *is);
 #define	PhysicsEventIslandNew(pipeline, island)		    PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_NEW, island)
 #define	PhysicsEventIslandExpanded(pipeline, island)	PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_EXPANDED, island)
 #define	PhysicsEventIslandRemoved(pipeline, island)	    PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_REMOVED, island)
-#define PhysicsEventContactNew(pipeline, _key)					                            \
+#define PhysicsEventContactNew(pipeline, _contact)					                        \
 	{												                                        \
 		struct physicsEvent *__physics_debug_event = PhysicsPipelineEventPush(pipeline);	\
 		__physics_debug_event->type = PHYSICS_EVENT_CONTACT_NEW;				            \
-		__physics_debug_event->contact_key = _key;				                            \
+		__physics_debug_event->contact = _contact;				                            \
 	}
-#define PhysicsEventContactRemoved(pipeline, _key)				                            \
+#define PhysicsEventContactRemoved(pipeline, _contact)				                        \
 	{												                                        \
 		struct physicsEvent *__physics_debug_event = PhysicsPipelineEventPush(pipeline);	\
 		__physics_debug_event->type = PHYSICS_EVENT_CONTACT_REMOVED;				        \
-		__physics_debug_event->contact_key = _key;				                            \
+		__physics_debug_event->contact = _contact;				                            \
 	}
 
 #else
@@ -870,8 +918,8 @@ struct physicsEvent
 	union
 	{
 		u32                     island;
-		u32                     body;
-        struct ds_ContactKey    contact_key;
+		ds_RigidBodyId          body;
+        ds_ContactId            contact;
 	};
 };
 

@@ -314,7 +314,7 @@ void cdb_ClearFrame(struct cdb *cdb)
 
 struct slot ds_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct c_Manifold *cm, const struct ds_ContactKey *key)
 {
-    ds_Assert(ds_ContactLookup(pipeline, key).address == NULL);
+    ds_Assert(ds_ContactKeyLookup(pipeline, key).address == NULL);
 
 	struct ds_Shape *shape0 = ds_PoolAddress(&pipeline->shape_pool, key->shape0);
 	struct ds_Shape *shape1 = ds_PoolAddress(&pipeline->shape_pool, key->shape1);
@@ -327,6 +327,9 @@ struct slot ds_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct c_
 	};
 	struct slot slot = nll_Add(&pipeline->cdb->contact_net, &cpy, shape0->contact_first, shape1->contact_first);
 	ds_HashMapAdd(&pipeline->cdb->contact_map, ds_ContactKeyHash(key), slot.index);
+    struct ds_Contact *c = slot.address;
+    c->generation += 1;
+    const ds_ContactId id = ((u64) c->generation << 32) | slot.index;
 	shape0->contact_first = slot.index;
 	shape1->contact_first = slot.index;
 
@@ -334,7 +337,7 @@ struct slot ds_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct c_
 	{
 		BitVecSetBit(&pipeline->cdb->contacts_frame_usage, slot.index, 1);
 	}
-	PhysicsEventContactNew(pipeline, *key);
+	PhysicsEventContactNew(pipeline, id);
 
     return slot;
 }
@@ -387,12 +390,13 @@ void ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
 	//	i = next;
 	//}
 
-	PhysicsEventContactRemoved(pipeline, c->key);
+    const ds_ContactId id = ((u64) c->generation << 32) | index;
+	PhysicsEventContactRemoved(pipeline, id);
 	ds_HashMapRemove(&pipeline->cdb->contact_map, ds_ContactKeyHash(&c->key), index);
 	nll_Remove(&pipeline->cdb->contact_net, index);
 }
 
-struct slot ds_ContactLookup(const struct ds_RigidBodyPipeline *pipeline, const struct ds_ContactKey *key)
+struct slot ds_ContactKeyLookup(const struct ds_RigidBodyPipeline *pipeline, const struct ds_ContactKey *key)
 {
     struct slot slot = { .address = NULL, .index = NLL_NULL };
 	const u32 hash = ds_ContactKeyHash(key);
@@ -409,6 +413,20 @@ struct slot ds_ContactLookup(const struct ds_RigidBodyPipeline *pipeline, const 
 
 	return slot;
 }
+
+struct slot ds_ContactLookup(const struct ds_RigidBodyPipeline *pipeline, const ds_ContactId id)
+{
+    struct slot slot = { .address = NULL, .index = NLL_NULL };
+    struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, ds_IdFIndex(id));
+    if (id != DS_IDF_NULL && PoolSlotAllocated(c) && c->generation == ds_IdFGeneration(id))
+    {
+        slot.address = c;
+        slot.index = ds_IdFIndex(id);
+    }
+
+    return slot;
+}
+
 
 struct slot sat_CacheAdd(struct cdb *cdb, const struct ds_ContactKey *key)
 {

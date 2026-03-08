@@ -572,7 +572,7 @@ struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const u32 dyn
 static void led_ShapePrefabInstanceRemove(struct led *led, const u32 i)
 {
     const struct ds_ShapePrefabInstance *instance = ds_PoolAddress(&led->shape_prefab_instance_pool, i);
-    strdb_Dereference(&led->shape_prefab_db, instance->shape);
+    strdb_Dereference(&led->shape_prefab_db, instance->shape_prefab);
     ds_PoolRemove(&led->shape_prefab_instance_pool, i);
 }
 
@@ -628,7 +628,7 @@ void led_RigidBodyPrefabAttachShape(struct led *led, const utf8 rb_id, const utf
 
         dll_Prepend(&rb_prefab->shape_list, led->shape_prefab_instance_pool.buf, slot.index);
         instance->id = Utf8CopyBuffered(instance->id_buf, SHAPE_PREFAB_INSTANCE_BUFSIZE, local_shape_id);
-        instance->shape = strdb_Reference(&led->shape_prefab_db, shape_id).index;
+        instance->shape_prefab = strdb_Reference(&led->shape_prefab_db, shape_id).index;
 
         quat quat;
         QuatAxisAngle(quat, Vec3Inline(0.0f, 1.0f, 0.0f), 0.0f);
@@ -652,7 +652,7 @@ void led_RigidBodyPrefabDetachShape(struct led *led, const utf8 rb_id, const utf
     }
     else
     {
-        strdb_Dereference(&led->shape_prefab_db, instance->shape);
+        strdb_Dereference(&led->shape_prefab_db, instance->shape_prefab);
         dll_Remove(&rb_prefab->shape_list, led->shape_prefab_instance_pool.buf, slot.index);
     }
 }
@@ -1723,15 +1723,15 @@ static void led_EngineInit(struct led *led)
             ds_Transform t;
             Vec3Set(t.position, 0.0f, 0.0f, 0.0f);
             QuatAxisAngle(t.rotation, Vec3Inline(0.0f, 1.0f, 0.0f), 0.0f);
-	    	const u32 body = ds_RigidBodyAdd(&led->physics, prefab, node->position, node->rotation, i).index;
+	    	const ds_RigidBodyId body = ds_RigidBodyAdd(&led->physics, prefab, node->position, node->rotation, i);
     
             struct ds_ShapePrefabInstance *instance = NULL;
             struct ds_ShapePrefab *shape_prefab = NULL;
             for (u32 j = prefab->shape_list.first; j != DLL_NULL; j = instance->dll_next)
             {
                 instance = ds_PoolAddress(&led->shape_prefab_instance_pool, j);
-                shape_prefab = strdb_Address(&led->shape_prefab_db, instance->shape);
-                ds_ShapeAdd(&led->physics, shape_prefab, &instance->t_local, body);
+                shape_prefab = strdb_Address(&led->shape_prefab_db, instance->shape_prefab);
+                instance->shape = ds_ShapeAdd(&led->physics, shape_prefab, &instance->t_local, body);
             }
 
             ds_RigidBodyUpdateMassProperties(&led->physics, body);
@@ -1872,20 +1872,24 @@ static void led_engine_run(struct led *led)
 			{
 				if (led->physics.body_color_mode == RB_COLOR_MODE_COLLISION)
 				{
-					const struct ds_RigidBody *body1 = ds_PoolAddress(&led->physics.body_pool, event->contact_key.body0);
-					const struct ds_RigidBody *body2 = ds_PoolAddress(&led->physics.body_pool, event->contact_key.body1);
-					const struct led_node *node1 = ds_PoolAddress(&led->node_pool, body1->entity);
-					const struct led_node *node2 = ds_PoolAddress(&led->node_pool, body2->entity);
-					if (RB_IS_DYNAMIC(body1))
-					{
-						struct r_Proxy3d *proxy = r_Proxy3dAddress(node1->proxy);
-						Vec4Copy(proxy->color, led->physics.collision_color);
-					}
-					if (RB_IS_DYNAMIC(body2))
-					{
-						struct r_Proxy3d *proxy = r_Proxy3dAddress(node2->proxy);
-						Vec4Copy(proxy->color, led->physics.collision_color);
-					}
+                    const struct ds_Contact *c = ds_ContactLookup(&led->physics, event->contact).address;
+                    if (c)
+                    {
+					    const struct ds_RigidBody *body1 = ds_PoolAddress(&led->physics.body_pool, c->key.body0);
+					    const struct ds_RigidBody *body2 = ds_PoolAddress(&led->physics.body_pool, c->key.body1);
+					    const struct led_node *node1 = ds_PoolAddress(&led->node_pool, body1->entity);
+					    const struct led_node *node2 = ds_PoolAddress(&led->node_pool, body2->entity);
+					    if (RB_IS_DYNAMIC(body1))
+					    {
+					    	struct r_Proxy3d *proxy = r_Proxy3dAddress(node1->proxy);
+					    	Vec4Copy(proxy->color, led->physics.collision_color);
+					    }
+					    if (RB_IS_DYNAMIC(body2))
+					    {
+					    	struct r_Proxy3d *proxy = r_Proxy3dAddress(node2->proxy);
+					    	Vec4Copy(proxy->color, led->physics.collision_color);
+					    }
+                    }
 				}
 			} break;
 
