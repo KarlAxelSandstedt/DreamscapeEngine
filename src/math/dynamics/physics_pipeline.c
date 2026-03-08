@@ -221,6 +221,7 @@ struct tcc_Output
 	struct c_Manifold       manifold;
     struct ds_ContactKey    key;
     u32                     collision;
+    u32                     cache_index;
 };
 
 struct tcc_Input
@@ -241,25 +242,32 @@ static void ThreadCalculateContact(void *task_addr)
     struct tcc_Input *in = task->input;
     struct tcc_Output *out = in->out;
 
-    struct sat_Cache *cache = NULL;
+    out->cache = NULL;
+    out->cache_index = U32_MAX;
     if (in->s1->cshape_type == C_SHAPE_CONVEX_HULL && in->s2->cshape_type == C_SHAPE_CONVEX_HULL)
     {
-        cache = sat_CacheLookup(in->pipeline->cdb, &out->key).address;
-        if (!cache)
+        const struct ds_RigidBody *b1 = ds_PoolAddress(&in->pipeline->body_pool, in->s1->body);
+        const struct ds_RigidBody *b2 = ds_PoolAddress(&in->pipeline->body_pool, in->s2->body);
+        const u32 s1_index = ds_PoolIndex(&in->pipeline->shape_pool, in->s1);
+        const u32 s2_index = ds_PoolIndex(&in->pipeline->shape_pool, in->s2);
+        const struct sat_CacheKey key = sat_CacheKeyCanonical(
+            ((u64)     b1->tag << 32) | in->s1->body,
+            ((u64) in->s1->tag << 32) | s1_index,
+            ((u64)     b2->tag << 32) | in->s2->body,
+            ((u64) in->s2->tag << 32) | s2_index
+        );
+ 
+        struct slot slot = sat_CacheLookup(in->pipeline->cdb, &key);
+        if (!slot.address)
         {
-            cache = sat_CacheAdd(in->pipeline->cdb, &out->key).address;
+            slot = sat_CacheAdd(in->pipeline->cdb, &key);
         }
+        out->cache_index = slot.index;
+        out->cache = slot.address;
     }
-    out->cache = cache;
 
     ds_Assert(in->s1->body != in->s2->body);
     out->collision = ds_ShapeContact(&worker->mem_frame, &out->manifold, out->cache, in->pipeline, in->s1, in->s2, in->margin);
-	//if (data->collision)
-	//{
-    //    //TODO
-	//	data->manifold->i1 = proxy_overlap[i].id1;
-	//	data->manifold->i2 = proxy_overlap[i].id2;
-	//}	
 
 	ProfZoneEnd;
 }
@@ -267,6 +275,7 @@ static void ThreadCalculateContact(void *task_addr)
 static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 {
 	ProfZone;
+    struct cdb *cdb = pipeline->cdb;
 
     {
     	ProfZoneNamed("DbvhUpdate");
@@ -360,18 +369,26 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
     {
     	ProfZoneNamed("ContactManagement");
 
-	    pipeline->cdb->contacts_frame_usage = BitVecAlloc(&pipeline->frame, pipeline->cdb->contacts_persistent_usage.bit_count, 0, 0);
-	    ds_Assert(pipeline->cdb->contacts_frame_usage.block_count == pipeline->cdb->contacts_persistent_usage.block_count);
-	    ds_Assert(pipeline->cdb->contacts_frame_usage.bit_count == pipeline->cdb->contacts_persistent_usage.bit_count);
+	    cdb->sat_cache_frame_usage = BitVecAlloc(&pipeline->frame, cdb->sat_cache_persistent_usage.bit_count, 0, 0);
+	    cdb->contact_frame_usage = BitVecAlloc(&pipeline->frame, cdb->contact_persistent_usage.bit_count, 0, 0);
 
         struct memArray arr = ArenaPushAlignedAll(&pipeline->frame, sizeof(u32), sizeof(u32));
-        pipeline->cdb->contact_new = arr.addr;
+        cdb->contact_new = arr.addr;
         //fprintf(stderr, "A: {");
 	    for (; output; output = output->next)
 	    {
+            if (output->cache)
+            {
+                cdb->sat_cache_count += 1;
+                if (output->cache_index < cdb->sat_cache_persistent_usage.bit_count)
+                {
+                    BitVecSetBit(&cdb->sat_cache_frame_usage, output->cache_index, 1);   
+                }
+            }
+
             if (output->collision)
             {
-                pipeline->cdb->contact_count += 1;
+                cdb->contact_count += 1;
                 struct slot slot = ds_ContactKeyLookup(pipeline, &output->key);
                 if (!slot.address)
                 {
@@ -383,22 +400,66 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
                 }
                  
 			    /* add to new links if needed */
-			    if (slot.index >= pipeline->cdb->contacts_persistent_usage.bit_count
-			    	 || BitVecGetBit(&pipeline->cdb->contacts_persistent_usage, slot.index) == 0)
+			    if (slot.index >= cdb->contact_persistent_usage.bit_count
+			    	 || BitVecGetBit(&cdb->contact_persistent_usage, slot.index) == 0)
 			    {
-                        if (pipeline->cdb->contact_new_count >= arr.len)
+                        if (cdb->contact_new_count >= arr.len)
                         {
                             LogString(T_PHYSICS, S_FATAL, "Frame arena OOM in Broadphase, increase size!");
                             FatalCleanupAndExit();
                         }
-                        pipeline->cdb->contact_new[ pipeline->cdb->contact_new_count ] = slot.index;
-			    		pipeline->cdb->contact_new_count += 1;
+                        cdb->contact_new[ cdb->contact_new_count ] = slot.index;
+			    		cdb->contact_new_count += 1;
 			    }
 			    //fprintf(stderr, " %u", index);
             }
 	    }
         //fprintf(stderr, " } ");
-        ArenaPopPacked(&pipeline->frame, sizeof(u32)*(arr.len - pipeline->cdb->contact_new_count));
+        ArenaPopPacked(&pipeline->frame, sizeof(u32)*(arr.len - cdb->contact_new_count));
+
+        /* Remove stale sat_Caches */
+	    for (u64 block = 0; block < cdb->sat_cache_frame_usage.block_count; ++block)
+	    {
+	    	u64 broken_link_block = 
+	    			    cdb->sat_cache_persistent_usage.bits[block]
+	    			& (~cdb->sat_cache_frame_usage.bits[block]);
+	    	u32 b = 0;
+	        u32 bit = 0;
+	    	while (broken_link_block)
+	    	{
+	    		const u32 tzc = Ctz64(broken_link_block);
+	    		b += tzc;
+	    		const u32 ci = bit + b;
+	    		b += 1;
+
+	    		broken_link_block = (tzc < 63) 
+	    			? broken_link_block >> (tzc + 1)
+	    			: 0;
+	    	
+	    		sat_CacheRemove(cdb, ci);
+	    	}
+	    	bit += 64;
+	    }	
+
+        /* Update sat_cache_persistent_usage */
+        for (u64 i = 0; i < cdb->sat_cache_frame_usage.block_count; ++i)
+        {
+        	cdb->sat_cache_persistent_usage.bits[i] = cdb->sat_cache_frame_usage.bits[i];	
+        }
+
+        const u32 count_max = AtomicLoadRlx32(&cdb->sat_cache_pool.a_count_max);
+        const u32 length = AtomicLoadRlx32(&cdb->sat_cache_pool.a_length);
+        if (cdb->sat_cache_persistent_usage.bit_count < count_max)
+        {
+        	const u64 low_bit = cdb->sat_cache_persistent_usage.bit_count;
+        	const u64 high_bit = count_max;
+        	BitVecIncreaseSize(&cdb->sat_cache_persistent_usage, length, 0);
+        	/* any new sat_caches that is in the appended region must now be set */
+        	for (u64 bit = low_bit; bit < high_bit; ++bit)
+        	{
+        		BitVecSetBit(&cdb->sat_cache_persistent_usage, bit, 1);
+        	}
+        }
 
     	ProfZoneEnd;
     }
@@ -461,11 +522,11 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
     u32 split_count = 0;
 	u32 bit = 0;
 	//fprintf(stderr, " R: {");
-	for (u64 block = 0; block < cdb->contacts_frame_usage.block_count; ++block)
+	for (u64 block = 0; block < cdb->contact_frame_usage.block_count; ++block)
 	{
 		u64 broken_link_block = 
-				    cdb->contacts_persistent_usage.bits[block]
-				& (~cdb->contacts_frame_usage.bits[block]);
+				    cdb->contact_persistent_usage.bits[block]
+				& (~cdb->contact_frame_usage.bits[block]);
 		u32 b = 0;
 		while (broken_link_block)
 		{
@@ -521,22 +582,22 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 		isdb_SplitIsland(&tmp, pipeline, split[i]);
 	}
 
-    /* Update contacts_persistent_usage */
+    /* Update contact_persistent_usage */
     {
-        for (u64 i = 0; i < cdb->contacts_frame_usage.block_count; ++i)
+        for (u64 i = 0; i < cdb->contact_frame_usage.block_count; ++i)
         {
-        	cdb->contacts_persistent_usage.bits[i] = cdb->contacts_frame_usage.bits[i];	
+        	cdb->contact_persistent_usage.bits[i] = cdb->contact_frame_usage.bits[i];	
         }
 
-        if (cdb->contacts_persistent_usage.bit_count < cdb->contact_net.pool.count_max)
+        if (cdb->contact_persistent_usage.bit_count < cdb->contact_net.pool.count_max)
         {
-        	const u64 low_bit = cdb->contacts_persistent_usage.bit_count;
+        	const u64 low_bit = cdb->contact_persistent_usage.bit_count;
         	const u64 high_bit = cdb->contact_net.pool.count_max;
-        	BitVecIncreaseSize(&cdb->contacts_persistent_usage, cdb->contact_net.pool.length, 0);
+        	BitVecIncreaseSize(&cdb->contact_persistent_usage, cdb->contact_net.pool.length, 0);
         	/* any new contacts that is in the appended region must now be set */
         	for (u64 bit = low_bit; bit < high_bit; ++bit)
         	{
-        		BitVecSetBit(&cdb->contacts_persistent_usage, bit, 1);
+        		BitVecSetBit(&cdb->contact_persistent_usage, bit, 1);
         	}
         }
     } 

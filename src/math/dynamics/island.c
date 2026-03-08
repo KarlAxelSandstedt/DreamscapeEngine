@@ -387,8 +387,8 @@ void isdb_SplitIsland(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeli
                 while (ci != NLL_NULL)
                 {
 		    		const struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, ci);
-		    		ds_Assert(ci >= pipeline->cdb->contacts_frame_usage.bit_count 
-		    				||  BitVecGetBit(&pipeline->cdb->contacts_frame_usage, ci) == 1)
+		    		ds_Assert(ci >= pipeline->cdb->contact_frame_usage.bit_count 
+		    				||  BitVecGetBit(&pipeline->cdb->contact_frame_usage, ci) == 1)
 
                     u32 neighbour_index;
                     if (bi_cur == c->key.body0)
@@ -428,7 +428,7 @@ void isdb_SplitIsland(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeli
 	{
 	    c = nll_Address(&pipeline->cdb->contact_net, i);
 		next = dll_Next(c);
-		if (i >= pipeline->cdb->contacts_frame_usage.bit_count || BitVecGetBit(&pipeline->cdb->contacts_frame_usage, i) == 1)
+		if (i >= pipeline->cdb->contact_frame_usage.bit_count || BitVecGetBit(&pipeline->cdb->contact_frame_usage, i) == 1)
 		{
 			const struct ds_RigidBody *body0 = ds_PoolAddress(&pipeline->body_pool, c->key.body0);
 			const struct ds_RigidBody *body1 = ds_PoolAddress(&pipeline->body_pool, c->key.body1);

@@ -2301,8 +2301,8 @@ void sat_EdgeQueryCollisionResult(struct c_Manifold *manifold, struct sat_Cache 
 	Vec3Interpolate(manifold->v[0], c1, c2, 0.5f);
 	Vec3Copy(manifold->n, query->normal);
 
-	sat_cache->edge1 = query->e1;
-	sat_cache->edge2 = query->e2;
+	sat_cache->edge0 = query->e1;
+	sat_cache->edge1 = query->e2;
 	sat_cache->type = SAT_CACHE_CONTACT_EE;
 	ds_Assert(1.0f - 1000.0f * F32_EPSILON < Vec3Length(manifold->n));
 	ds_Assert(Vec3Length(manifold->n) < 1.0f + 1000.0f * F32_EPSILON);
@@ -2384,7 +2384,7 @@ u32 c_HullContact(struct arena *mem_tmp, struct c_Manifold *manifold, struct sat
 
         case SAT_CACHE_CONTACT_EE:
 	    {
-	    	HullContactInternalEECheck(&e_query, h1, v1_world, cache_copy->edge1, h2, v2_world, cache_copy->edge2, t1->position);
+	    	HullContactInternalEECheck(&e_query, h1, v1_world, cache_copy->edge0, h2, v2_world, cache_copy->edge1, t1->position);
 	    	if (-F32_INFINITY < e_query.depth && e_query.depth < 0.0f)
 	    	{
 	    		sat_EdgeQueryCollisionResult(manifold, cache, &e_query);

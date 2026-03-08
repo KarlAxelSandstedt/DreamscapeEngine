@@ -77,8 +77,9 @@ struct cdb *cdb_Alloc(struct arena *mem_persistent, const u32 size)
 	cdb->sat_cache_map = sat_CacheTHashMapAlloc(mem_persistent, &cdb->sat_cache_pool, 4096);
 
 	cdb->contact_net = nll_Alloc(NULL, size, struct ds_Contact, cdb_IndexInPreviousConctactNode, cdb_IndexInNextConctactNode, GROWABLE);
-	cdb->contact_map = ds_HashMapAlloc(NULL, size, 20000, GROWABLE);
-	cdb->contacts_persistent_usage = BitVecAlloc(NULL, size, 0, GROWABLE);
+	cdb->contact_map = ds_HashMapAlloc(NULL, size, size, GROWABLE);
+	cdb->contact_persistent_usage = BitVecAlloc(NULL, size, 0, GROWABLE);
+	cdb->sat_cache_persistent_usage = BitVecAlloc(NULL, size, 0, GROWABLE);
 
 	return cdb;
 }
@@ -89,7 +90,8 @@ void cdb_Free(struct cdb *cdb)
 	sat_CacheTHashMapDealloc(&cdb->sat_cache_map);
 	nll_Dealloc(&cdb->contact_net);
 	ds_HashMapDealloc(&cdb->contact_map);
-	BitVecFree(&cdb->contacts_persistent_usage);
+	BitVecFree(&cdb->contact_persistent_usage);
+	BitVecFree(&cdb->sat_cache_persistent_usage);
 }
 
 void cdb_Flush(struct cdb *cdb)
@@ -99,14 +101,15 @@ void cdb_Flush(struct cdb *cdb)
 	sat_CacheTHashMapFlush(&cdb->sat_cache_map);
 	nll_Flush(&cdb->contact_net);
 	ds_HashMapFlush(&cdb->contact_map);
-	BitVecClear(&cdb->contacts_persistent_usage, 0);
+	BitVecClear(&cdb->contact_persistent_usage, 0);
+	BitVecClear(&cdb->sat_cache_persistent_usage, 0);
 }
 
 void cdb_Validate(const struct ds_RigidBodyPipeline *pipeline)
 {
-	for (u64 i = 0; i < pipeline->cdb->contacts_persistent_usage.bit_count; ++i)
+	for (u64 i = 0; i < pipeline->cdb->contact_persistent_usage.bit_count; ++i)
 	{
-		if (BitVecGetBit(&pipeline->cdb->contacts_persistent_usage, i))
+		if (BitVecGetBit(&pipeline->cdb->contact_persistent_usage, i))
 		{
 			const struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, (u32) i);
 			ds_Assert(PoolSlotAllocated(c));
@@ -187,9 +190,14 @@ void cdb_Validate(const struct ds_RigidBodyPipeline *pipeline)
 
 void cdb_ClearFrame(struct cdb *cdb)
 {
-	cdb->contacts_frame_usage.bits = NULL;
-	cdb->contacts_frame_usage.bit_count = 0;
-	cdb->contacts_frame_usage.block_count = 0;	
+	cdb->sat_cache_frame_usage.bits = NULL;
+	cdb->sat_cache_frame_usage.bit_count = 0;
+	cdb->sat_cache_frame_usage.block_count = 0;	
+    cdb->sat_cache_count = 0;
+
+	cdb->contact_frame_usage.bits = NULL;
+	cdb->contact_frame_usage.bit_count = 0;
+	cdb->contact_frame_usage.block_count = 0;	
     cdb->contact_count = 0;
     cdb->contact_new_count = 0;
 }
@@ -230,7 +238,7 @@ void cdb_ClearFrame(struct cdb *cdb)
 //		const u32 ci_next = c->nll_next[next_i];
 //
 //		PhysicsEventContactRemoved(pipeline, (u32) CONTACT_KEY_TO_BODY_0(c->key), (u32) CONTACT_KEY_TO_BODY_1(c->key));
-//		BitVecSetBit(&pipeline->cdb->contacts_persistent_usage, ci, 0);
+//		BitVecSetBit(&pipeline->cdb->contact_persistent_usage, ci, 0);
 //		ds_HashMapRemove(&pipeline->cdb->contact_map, (u32) c->key, ci);
 //		nll_Remove(&pipeline->cdb->contact_net, ci);
 //		ci = ci_next;
@@ -285,7 +293,7 @@ void cdb_ClearFrame(struct cdb *cdb)
 //		}
 //
 //		PhysicsEventContactRemoved(pipeline, (u32) CONTACT_KEY_TO_BODY_0(c->key), (u32) CONTACT_KEY_TO_BODY_1(c->key));
-//		BitVecSetBit(&pipeline->cdb->contacts_persistent_usage, ci, 0);
+//		BitVecSetBit(&pipeline->cdb->contact_persistent_usage, ci, 0);
 //		ds_HashMapRemove(&pipeline->cdb->contact_map, (u32) c->key, ci);
 //		nll_Remove(&pipeline->cdb->contact_net, ci);
 //		ci = ci_next;
@@ -333,9 +341,9 @@ struct slot ds_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct c_
 	shape0->contact_first = slot.index;
 	shape1->contact_first = slot.index;
 
-	if (slot.index < pipeline->cdb->contacts_frame_usage.bit_count)
+	if (slot.index < pipeline->cdb->contact_frame_usage.bit_count)
 	{
-		BitVecSetBit(&pipeline->cdb->contacts_frame_usage, slot.index, 1);
+		BitVecSetBit(&pipeline->cdb->contact_frame_usage, slot.index, 1);
 	}
 	PhysicsEventContactNew(pipeline, id);
 
@@ -345,7 +353,7 @@ struct slot ds_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct c_
 void ds_ContactUpdate(struct ds_RigidBodyPipeline *pipeline, const struct slot slot, const struct c_Manifold *cm)
 {
 	struct ds_Contact *c = slot.address;
-	BitVecSetBit(&pipeline->cdb->contacts_frame_usage, slot.index, 1);
+	BitVecSetBit(&pipeline->cdb->contact_frame_usage, slot.index, 1);
 	c->cm = *cm;
 }
 
@@ -427,8 +435,24 @@ struct slot ds_ContactLookup(const struct ds_RigidBodyPipeline *pipeline, const 
     return slot;
 }
 
+struct sat_CacheKey sat_CacheKeyCanonical(const ds_RigidBodyId bodyA, const ds_ShapeId shapeA, const ds_RigidBodyId bodyB, const ds_ShapeId shapeB)
+{
+    return (ds_IdIndex(bodyA) < ds_IdIndex(bodyB))
+        ? (struct sat_CacheKey) { .body0 = bodyA, .shape0 = shapeA, .body1 = bodyB, .shape1 = shapeB }
+        : (struct sat_CacheKey) { .body0 = bodyB, .shape0 = shapeB, .body1 = bodyA, .shape1 = shapeA };
+}
 
-struct slot sat_CacheAdd(struct cdb *cdb, const struct ds_ContactKey *key)
+u32 sat_CacheKeyHash(const struct sat_CacheKey *key)
+{
+    return (u32) XXH3_64bits(key, sizeof(struct sat_CacheKey));
+}
+
+u32 sat_CacheKeyEquivalence(const struct sat_CacheKey *keyA, const struct sat_CacheKey *keyB)
+{
+    return memcmp(keyA, keyB, sizeof(struct sat_CacheKey)) == 0;
+}
+
+struct slot sat_CacheAdd(struct cdb *cdb, const struct sat_CacheKey *key)
 {
 	ds_Assert(sat_CacheLookup(cdb, key).address == NULL);
 
@@ -441,11 +465,18 @@ struct slot sat_CacheAdd(struct cdb *cdb, const struct ds_ContactKey *key)
     return slot;
 }
 
-struct slot sat_CacheLookup(struct cdb *cdb, const struct ds_ContactKey *key)
+void sat_CacheRemove(struct cdb *cdb, const u32 index)
 {
-	ds_Assert(key->body0 < key->body1);
+	struct sat_Cache *sat = sat_CacheTPoolAddress(&cdb->sat_cache_pool, index);
+    sat_CacheTHashMapRemove(&cdb->sat_cache_map, &sat->key);
+    sat_CacheTPoolRemove(&cdb->sat_cache_pool, index);
+}
+
+struct slot sat_CacheLookup(struct cdb *cdb, const struct sat_CacheKey *key)
+{
+	ds_Assert(ds_IdIndex(key->body0) < ds_IdIndex(key->body1));
     return sat_CacheTHashMapLookup(&cdb->sat_cache_map, key);
 }
 
 TPOOL_DEFINE(sat_Cache)
-THASH_DEFINE(sat_Cache, key, struct ds_ContactKey, ds_ContactKeyHash, ds_ContactKeyEquivalence)
+THASH_DEFINE(sat_Cache, key, struct sat_CacheKey, sat_CacheKeyHash, sat_CacheKeyEquivalence)

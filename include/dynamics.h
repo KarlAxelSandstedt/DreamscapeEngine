@@ -325,7 +325,7 @@ ds_ContactKey
 =============
 ds_ContactKey is the unique key for a contact, and it used in the contact database
 hash map. Since the key must be unique for a contact, we require it to be in 
-canonical form, i.e. you may always assume that body1 > body2.  The shapes are the
+canonical form, i.e. you may always assume that body0 < body1.  The shapes are the
 subshapes of their respective bodys making contact. 
 */
 struct ds_ContactKey
@@ -380,16 +380,50 @@ void        ds_ContactUpdate(struct ds_RigidBodyPipeline *pipeline, const struct
 struct slot ds_ContactKeyLookup(const struct ds_RigidBodyPipeline *pipeline, const struct ds_ContactKey *key);
 
 /*
+sat_CacheKey
+============
+sat_CacheKey is the unique key for a sat_cache, and it used in the contact database
+hash map. Since the key must be unique for a sat_cache, we require it to be in 
+canonical form, i.e. you may always assume that Index(body0) < Index(body1). The 
+shapes are the subshapes of their respective bodys making contact. 
+
+::: Internals :::
+
+The choice to using IDs instead of indices is required due to ABA issues; rigid 
+bodies and shapes do not contain enough information themselves to easily lookup
+any of their caches, so when we remove a body or a shape, we do not want to remove
+its cache immediately. Instead, we lazily remove caches with 1 frame delay, which
+introduces the ABA problems which justifies adding full ids to the cache key.
+
+//TODO maybe this can be done in a less bloated way...
+*/
+struct sat_CacheKey
+{
+    ds_RigidBodyId  body0;      /* Index(body0) < Index(body1)  */
+    ds_ShapeId      shape0;     /* subshape of body0            */
+    ds_RigidBodyId  body1;      /* Index(body0) < Index(body1)  */
+    ds_ShapeId      shape1;     /* subshape of body1            */
+};
+
+/* Return the Canonical key of (bodyA,shapeA) (bodyB,shapeB) */
+struct sat_CacheKey sat_CacheKeyCanonical(const ds_RigidBodyId bodyA, const ds_ShapeId shapeA, const ds_RigidBodyId bodyB, const ds_ShapeId shapeB);
+/* Return a 32-bit hash of the key */
+u32                 sat_CacheKeyHash(const struct sat_CacheKey *key);
+/* Return 1 if the two keys are equivalent, otherwise return  0. */
+u32                 sat_CacheKeyEquivalence(const struct sat_CacheKey *keyA, const struct sat_CacheKey *keyB);
+
+/*
 sat_Cache
 =========
-TODO
+Internal physics engine struct for caching SAT-based contact calculations
+each frame.
 */
 enum sat_CacheType
 {
-    SAT_CACHE_NOT_SET,
-	SAT_CACHE_SEPARATION,
-	SAT_CACHE_CONTACT_FV,
-	SAT_CACHE_CONTACT_EE,
+    SAT_CACHE_NOT_SET,      /* Cache not set            */
+	SAT_CACHE_SEPARATION,   /* Seperation axis found    */
+	SAT_CACHE_CONTACT_FV,   /* Face-Vertex Contact      */
+	SAT_CACHE_CONTACT_EE,   /* Edge-Edge Contact        */
 	SAT_CACHE_COUNT,
 };
 
@@ -398,20 +432,20 @@ struct sat_Cache
     THASH_NODE;
     TPOOL_NODE;
 
-	struct ds_ContactKey    key;
-	enum sat_CacheType	    type;
+	struct sat_CacheKey key;
+	enum sat_CacheType	type;
 	union
 	{
 		struct
 		{
-			u32 body;	/* body (0,1) containing face   */
-			u32	face;	/* reference face 	            */
+			u32 body;	/* body (0 or 1) containing face    */
+			u32	face;	/* reference face 	                */
 		};
 
 		struct
 		{
-			u32	edge1;	/* body0 edge, body0 < body1    */
-			u32	edge2;	/* body1 edge                   */
+			u32	edge0;	/* body0 edge   */
+			u32	edge1;	/* body1 edge   */
 		};
 
 		struct
@@ -423,12 +457,14 @@ struct sat_Cache
 };
 
 TPOOL_DECLARE(sat_Cache)
-THASH_DECLARE(sat_Cache, struct ds_ContactKey)
+THASH_DECLARE(sat_Cache, struct sat_CacheKey)
 
 /* Alloc sat_Cache in pipeline. */
-struct slot sat_CacheAdd(struct cdb *cdb, const struct ds_ContactKey *key);
+struct slot sat_CacheAdd(struct cdb *cdb, const struct sat_CacheKey *key);
+/* Dealloc sat_Cache in pipeline. */
+void        sat_CacheRemove(struct cdb *cdb, const u32 index);
 /* Lookup sat_Cache in pipeline. If found, return (index, address). Otherwise (U32_MAX, NULL). */
-struct slot sat_CacheLookup(struct cdb *cdb, const struct ds_ContactKey *key);
+struct slot sat_CacheLookup(struct cdb *cdb, const struct sat_CacheKey *key);
 
 /*
 contact_database
@@ -465,20 +501,25 @@ struct cdb
 	struct sat_CacheTPool       sat_cache_pool;
 	struct sat_CacheTHashMap	sat_cache_map;		
 
-	/* PERSISTENT DATA, GROWABLE, keeps track of which slots in contacts are currently being used.
-       At end of frame, it is set to contacts_frame_usage and any new appended contacts resulting 
-       in appending the contacts array.  */
-	struct bitVec 	contacts_persistent_usage; 
+	/* PERSISTENT DATA, GROWABLE, keeps track of which slots in contact_net/sat_cache
+     * from last frame that are still being used. At the end of every frame, it is
+     * set to ***_frame_usage, after which and any new contacts/sat_Caches outside
+     * of the slots covered by ***_frame_usage is appended.  
+     */
+	struct bitVec 	contact_persistent_usage; 
+	struct bitVec 	sat_cache_persistent_usage; 
 
-	/* FRAME DATA, NOT GROWABLE, keeps track of which slots in contacts are currently being used.
-       bit-array showing which of the previous frame link indices are reused. Thus, all links in
-       the current frame are the ones in the bit array + any appended contacts which resulted in
-       growing the array. */
-	struct bitVec 	contacts_frame_usage;	
+	/* FRAME DATA, NOT GROWABLE, keeps track of which slots in contact_net/sat_cache
+     * in previous frame that are currently being used. Thus, all links in the current
+     * frame are the ones in the bit array + any appended contacts/sat_caches which 
+     * resulted in growing the array. */
+	struct bitVec 	contact_frame_usage;	
+	struct bitVec 	sat_cache_frame_usage;	
 
     /* FRAME DATA */
-    u32             contact_count;      /* Contacts found in the current frame      */
-	u32			    contact_new_count;  /* New contacts found in the current frame  */
+    u32             sat_cache_count;        /* Caches in the current frame              */
+    u32             contact_count;          /* Contacts found in the current frame      */
+	u32			    contact_new_count;      /* New contacts found in the current frame  */
 	u32 *			contact_new;
 };
 
