@@ -22,7 +22,7 @@
 #include "ds_job.h"
 
 /* Add new body to island */
-static void isdb_AddBodyToIsland(struct ds_RigidBodyPipeline *pipeline, struct island *is, const u32 body)
+static void isdb_AddBodyToIsland(struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is, const u32 body)
 {
 	struct ds_RigidBody *b = ds_PoolAddress(&pipeline->body_pool, body);
 	b->island_index = ds_PoolIndex(&pipeline->is_db.island_pool, is);
@@ -35,7 +35,7 @@ static struct slot isdb_IslandEmpty(struct ds_RigidBodyPipeline *pipeline)
 	dll_Append(&pipeline->is_db.island_list, pipeline->is_db.island_pool.buf, slot.index);
 	PhysicsEventIslandNew(pipeline, slot.index);
 
-	struct island *is = slot.address;
+	struct ds_Island *is = slot.address;
 	is->contact_list = dll_Init(struct ds_Contact);
 	is->body_list = dll2_Init(struct ds_RigidBody);
 	is->flags = g_solver_config->sleep_enabled * (ISLAND_AWAKE | ISLAND_SLEEP_RESET);
@@ -43,10 +43,10 @@ static struct slot isdb_IslandEmpty(struct ds_RigidBodyPipeline *pipeline)
 	return slot;
 }
 
-struct island *isdb_InitIslandFromBody(struct ds_RigidBodyPipeline *pipeline, const u32 body)
+struct ds_Island *isdb_InitIslandFromBody(struct ds_RigidBodyPipeline *pipeline, const u32 body)
 {
 	struct slot slot = isdb_IslandEmpty(pipeline);
-	struct island *is = slot.address;
+	struct ds_Island *is = slot.address;
 	struct ds_RigidBody *b = ds_PoolAddress(&pipeline->body_pool, body);
 	b->island_index = slot.index;
 	dll_Append(&is->body_list, pipeline->body_pool.buf, body);
@@ -56,7 +56,7 @@ struct island *isdb_InitIslandFromBody(struct ds_RigidBodyPipeline *pipeline, co
 
 void isdb_PrintIsland(FILE *file, const struct ds_RigidBodyPipeline *pipeline, const u32 island, const char *desc)
 {
-	const struct island *is = ds_PoolAddress(&pipeline->is_db.island_pool, island);
+	const struct ds_Island *is = ds_PoolAddress(&pipeline->is_db.island_pool, island);
 	if (!is) { return; }
 
 	const struct ds_Contact *c;
@@ -104,8 +104,8 @@ struct isdb isdb_Alloc(struct arena *mem_persistent, const u32 initial_size)
 {
 	struct isdb is_db = { 0 };
 
-	is_db.island_pool = ds_PoolAlloc(NULL, initial_size, struct island, GROWABLE);
-	is_db.island_list = dll_Init(struct island);
+	is_db.island_pool = ds_PoolAlloc(NULL, initial_size, struct ds_Island, GROWABLE);
+	is_db.island_list = dll_Init(struct ds_Island);
 
 	return is_db;
 }
@@ -133,7 +133,7 @@ void isdb_Validate(const struct ds_RigidBodyPipeline *pipeline)
 	const struct isdb *is_db = &pipeline->is_db;
 	const struct cdb *c_db = pipeline->cdb;
 
-	const struct island *is = NULL;
+	const struct ds_Island *is = NULL;
 	const struct ds_RigidBody *body = NULL;
 	const struct ds_Contact *c = NULL;
 	for (u32 i = pipeline->is_db.island_list.first; i != DLL_NULL; i = dll_Next(is))
@@ -205,13 +205,13 @@ void isdb_Validate(const struct ds_RigidBodyPipeline *pipeline)
 		struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, i);
 		if (PoolSlotAllocated(body) && body->island_index != ISLAND_NULL && body->island_index != ISLAND_STATIC)
 		{
-			struct island *is = ds_PoolAddress(&is_db->island_pool, body->island_index);
+			struct ds_Island *is = ds_PoolAddress(&is_db->island_pool, body->island_index);
 			ds_Assert(PoolSlotAllocated(is));
 		}
 	}
 }
 
-struct island *isdb_BodyToIsland(struct ds_RigidBodyPipeline *pipeline, const u32 body)
+struct ds_Island *isdb_BodyToIsland(struct ds_RigidBodyPipeline *pipeline, const u32 body)
 {
 	const u32 is_index = ((struct ds_RigidBody *) ds_PoolAddress(&pipeline->body_pool, body))->island_index;
 	return (is_index != ISLAND_NULL && is_index != ISLAND_STATIC)
@@ -234,7 +234,7 @@ void isdb_MergeIslands(struct ds_RigidBodyPipeline *pipeline, const u32 ci, cons
 	/* new local contact within island */
 	if (expand == merge)
 	{
-		struct island *is = ds_PoolAddress(&pipeline->is_db.island_pool, expand);
+		struct ds_Island *is = ds_PoolAddress(&pipeline->is_db.island_pool, expand);
 		ds_Assert(is->contact_list.count != 0);
 		ds_Assert(is->contact_list.last != DLL_NULL);
 
@@ -243,8 +243,8 @@ void isdb_MergeIslands(struct ds_RigidBodyPipeline *pipeline, const u32 ci, cons
 	/* new contact between distinct islands */
 	else
 	{
-		struct island *is_expand = ds_PoolAddress(&pipeline->is_db.island_pool, expand);
-		struct island *is_merge = ds_PoolAddress(&pipeline->is_db.island_pool, merge);
+		struct ds_Island *is_expand = ds_PoolAddress(&pipeline->is_db.island_pool, expand);
+		struct ds_Island *is_merge = ds_PoolAddress(&pipeline->is_db.island_pool, merge);
 
 		if (g_solver_config->sleep_enabled)
 		{
@@ -314,7 +314,7 @@ void isdb_MergeIslands(struct ds_RigidBodyPipeline *pipeline, const u32 ci, cons
     ProfZoneEnd;
 }
 
-void isdb_IslandRemove(struct ds_RigidBodyPipeline *pipeline, struct island *island)
+void isdb_IslandRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Island *island)
 {
 	const u32 island_index = ds_PoolIndex(&pipeline->is_db.island_pool, island);
 	dll_Remove(&pipeline->is_db.island_list, pipeline->is_db.island_pool.buf, island_index);
@@ -322,42 +322,12 @@ void isdb_IslandRemove(struct ds_RigidBodyPipeline *pipeline, struct island *isl
 	PhysicsEventIslandRemoved(pipeline, island_index);
 }
 
-//void isdb_IslandRemoveBodyResources(struct ds_RigidBodyPipeline *pipeline, const u32 island_index, const u32 body)
-//{
-//	struct island *island = ds_PoolAddress(&pipeline->is_db.island_pool, island_index);
-//	ds_Assert(PoolSlotAllocated(island));
-//
-//	struct ds_RigidBody *b = ds_PoolAddress(&pipeline->body_pool, body);
-//	for (u32 i = b->contact_first; i != NLL_NULL; )
-//	{
-//		const struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, i);
-//		const u32 next = (body == CONTACT_KEY_TO_BODY_0(c->key))
-//			? c->nll_next[0] 
-//			: c->nll_next[1];
-//		dll_Remove(&island->contact_list, pipeline->cdb->contact_net.pool.buf, i);
-//		i = next;
-//	}
-//
-//	dll_Remove(&island->body_list, pipeline->body_pool.buf, body); 	
-//
-//	if (island->body_list.count == 0)
-//	{
-//		ds_Assert(island->contact_list.first == DLL_NULL);
-//		ds_Assert(island->body_list.first == DLL_NULL);
-//		ds_Assert(island->contact_list.last == DLL_NULL);
-//		ds_Assert(island->body_list.last == DLL_NULL);
-//		ds_Assert(island->contact_list.count == 0);
-//		ds_Assert(island->body_list.count == 0);
-//		isdb_IslandRemove(pipeline, island);
-//	}
-//}
-//
 void isdb_SplitIsland(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, const u32 island_to_split)
 {
     ProfZone;
 	ArenaPushRecord(mem_tmp);
 
-	struct island *split_island = ds_PoolAddress(&pipeline->is_db.island_pool, island_to_split);
+	struct ds_Island *split_island = ds_PoolAddress(&pipeline->is_db.island_pool, island_to_split);
 	//isdb_PrintIsland(stderr, pipeline, island_to_split, "To Split");
 	u32 *body_stack = ArenaPush(mem_tmp, split_island->body_list.count*sizeof(u32));
 	u32 sc;
@@ -367,7 +337,7 @@ void isdb_SplitIsland(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeli
 	    struct ds_RigidBody *body_last = ds_PoolAddress(&pipeline->body_pool, bi);
 		ds_Assert(body_last->island_index == island_to_split);
 		struct slot slot = isdb_IslandEmpty(pipeline);
-		struct island *new_island = slot.address;
+		struct ds_Island *new_island = slot.address;
 		split_island = ds_PoolAddress(&pipeline->is_db.island_pool, island_to_split);
         /* Note: we set this manually here as to skip the check 
          * neighbour_island == island_to_split for the body */
@@ -434,7 +404,7 @@ void isdb_SplitIsland(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeli
 			const struct ds_RigidBody *body1 = ds_PoolAddress(&pipeline->body_pool, c->key.body1);
 			const u32 island0 = body0->island_index;
 			const u32 island1 = body1->island_index;
-			struct island *is = (island0 != ISLAND_STATIC)
+			struct ds_Island *is = (island0 != ISLAND_STATIC)
 				? ds_PoolAddress(&pipeline->is_db.island_pool, island0)
 				: ds_PoolAddress(&pipeline->is_db.island_pool, island1);
 			dll_Append(&is->contact_list, pipeline->cdb->contact_net.pool.buf, i);
@@ -446,7 +416,7 @@ void isdb_SplitIsland(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeli
     ProfZoneEnd;
 }
 
-//static u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, struct island *is, u32 *asleep, const f32 timestep)
+//static u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is, u32 *asleep, const f32 timestep)
 //{
 //	u32 *bodies_simulated = ArenaPush(mem_frame, is->body_list.count*sizeof(u32));
 //	ArenaPushRecord(mem_frame);
@@ -578,7 +548,7 @@ void isdb_SplitIsland(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeli
 //	ProfZone;
 //
 //	struct task *t_ctx = task_input;
-//	struct islandSolveInput *args = t_ctx->input;
+//	struct ds_IslandSolveInput *args = t_ctx->input;
 //	args->out->body_count = args->is->body_list.count;
 //	args->out->island_asleep = 0;
 //	args->out->bodies = IslandSolve(&t_ctx->executor->mem_frame, args->pipeline, args->is, &args->out->island_asleep, args->timestep);

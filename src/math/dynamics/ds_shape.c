@@ -19,7 +19,7 @@
 
 #include "dynamics.h"
 
-ds_ShapeId  ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_ShapePrefab *prefab, const ds_Transform *t, const ds_RigidBodyId body)
+ds_ShapeId ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_ShapePrefab *prefab, const ds_Transform *t, const ds_RigidBodyId body)
 {
     ds_ShapeId id = DS_ID_NULL;
     struct slot slot = ds_PoolAdd(&pipeline->shape_pool);
@@ -57,49 +57,125 @@ ds_ShapeId  ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_S
     return id;
 }
 
-void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, const ds_ShapeId shape_id)
+void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Island *island, const u32 shape_index)
 {
-    const u32 shape_index = ds_IdIndex(shape_id);
-	struct ds_Shape *shape = ds_PoolAddress(&pipeline->shape_pool, shape_index);
-    if (shape->tag != ds_IdTag(shape_id))
-    {
-         return;
-    }
-	ds_Assert(PoolSlotAllocated(shape));
-
-	//TODO Island is per-body specific, so it should not be here
-	//TODO Contacts is per shape specific, makes sense
-	//basically, we should separate and simplfiy the state management here.
-	
-	//isdb_IslandRemoveBodyResources(pipeline, body->island_index, shape_index);
-	//cdb_BodyRemoveContacts(pipeline, shape_index);
-	//const struct island *is = ds_PoolAddress(&pipeline->is_db.island_pool, body->island_index);
-	//if (PoolSlotAllocated(is) && is->contact_list.count > 0)
-	//{
-	//	isdb_SplitIsland(&pipeline->frame, pipeline, body->island_index);
-	//}
+    struct ds_Shape *shape = ds_PoolAddress(&pipeline->shape_pool, shape_index);
+	u32 ci = shape->contact_first;
+	shape->contact_first = NLL_NULL;
 
 	strdb_Dereference(pipeline->cshape_db, shape->cshape_handle);
 	DbvhRemove(&pipeline->shape_bvh, shape->proxy);
-	ds_PoolRemove(&pipeline->shape_pool, shape_index);
+	ds_PoolRemove(&pipeline->shape_pool, ds_PoolIndex(&pipeline->shape_pool, shape));
+
+	while (ci != NLL_NULL)
+	{
+		struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, ci);
+
+        u32 next_i;
+		if (shape_index == c->key.shape0)
+		{
+			next_i = 0;
+			shape = ds_PoolAddress(&pipeline->shape_pool, c->key.shape1);
+		}
+		else
+		{
+			next_i = 1;
+			shape = ds_PoolAddress(&pipeline->shape_pool, c->key.shape0);
+		}
+
+		if (shape->contact_first == ci)
+		{
+			shape->contact_first = c->nll_next[1-next_i];
+		}
+		const u32 ci_next = c->nll_next[next_i];
+
+        const ds_ContactId id = ((u64) c->generation << 32) | ci;
+		PhysicsEventContactRemoved(pipeline, id);
+        dll_Remove(&island->contact_list, pipeline->cdb->contact_net.pool.buf, ci);
+		BitVecSetBit(&pipeline->cdb->contact_persistent_usage, ci, 0);
+		ds_HashMapRemove(&pipeline->cdb->contact_map, ds_ContactKeyHash(&c->key), ci);
+		nll_Remove(&pipeline->cdb->contact_net, ci);
+		ci = ci_next;
+    }
 }
 
-void ds_ShapeStaticRemove(struct ds_RigidBodyPipeline *pipeline, const ds_ShapeId shape_id)
+void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, const u32 index)
 {
-    const u32 shape_index = ds_IdIndex(shape_id);
-	struct ds_Shape *shape = ds_PoolAddress(&pipeline->shape_pool, shape_index);
-    if (shape->tag != ds_IdTag(shape_id))
-    {
-         return;
-    }
-	ds_Assert(PoolSlotAllocated(shape));
-
-	//TODO
-	//cdb_StaticRemoveContactsAndUpdateIslands(pipeline, shape_index);	
+	struct ds_Shape *shape = ds_PoolAddress(&pipeline->shape_pool, index);
+	u32 ci = shape->contact_first;
+	shape->contact_first = NLL_NULL;
+    ds_Assert(((struct ds_RigidBody *) ds_PoolAddress(&pipeline->body_pool, shape->body))->island_index == ISLAND_STATIC);
 
 	strdb_Dereference(pipeline->cshape_db, shape->cshape_handle);
 	DbvhRemove(&pipeline->shape_bvh, shape->proxy);
-	ds_PoolRemove(&pipeline->shape_pool, shape_index);
+	ds_PoolRemove(&pipeline->shape_pool, ds_PoolIndex(&pipeline->shape_pool, shape));
+
+	ArenaPushRecord(&pipeline->frame);
+	struct memArray arr = ArenaPushAlignedAll(&pipeline->frame, sizeof(u32), sizeof(u32));
+	u32 *island = arr.addr;
+	u32 island_count = 0;
+	while (ci != NLL_NULL)
+	{
+		struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, ci);
+		u32 next_i;
+		if (index == c->key.shape0)
+		{
+			next_i = 0;
+			shape = ds_PoolAddress(&pipeline->shape_pool, c->key.shape1);
+		}
+		else
+		{
+			next_i = 1;
+			shape = ds_PoolAddress(&pipeline->shape_pool, c->key.shape0);
+		}
+
+		if (shape->contact_first == ci)
+		{
+			shape->contact_first = c->nll_next[1-next_i];
+		}
+		const u32 ci_next = c->nll_next[next_i];
+	    const struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, shape->body);
+		struct ds_Island *is = ds_PoolAddress(&pipeline->is_db.island_pool, body->island_index);
+
+		if ((is->flags & ISLAND_SPLIT) == 0)
+		{
+		    if (island_count == arr.len)
+			{
+				LogString(T_SYSTEM, S_FATAL, "Stack OOM in ds_ShapeStaticRemove");
+				FatalCleanupAndExit();
+			}
+			island[island_count++] = body->island_index;
+			
+			is->flags |= ISLAND_SPLIT;
+		}
+
+        const ds_ContactId id = ((u64) c->generation << 32) | ci;
+		PhysicsEventContactRemoved(pipeline, id);
+		BitVecSetBit(&pipeline->cdb->contact_persistent_usage, ci, 0);
+		ds_HashMapRemove(&pipeline->cdb->contact_map, ds_ContactKeyHash(&c->key), ci);
+        dll_Remove(&is->contact_list, pipeline->cdb->contact_net.pool.buf, ci);
+		nll_Remove(&pipeline->cdb->contact_net, ci);
+		ci = ci_next;
+	}
+
+	for (u32 i = 0; i < island_count; ++i)
+	{
+		struct ds_Island *is = ds_PoolAddress(&pipeline->is_db.island_pool, island[i]);
+		if (is->contact_list.count > 0)
+		{
+			isdb_SplitIsland(mem_tmp, pipeline, island[i]);
+		}
+		else
+		{
+			is->flags &= ~(ISLAND_SPLIT);
+			if (!(is->flags & ISLAND_AWAKE))
+			{
+				PhysicsEventIslandAwake(pipeline, island[i]);	
+			}
+			is->flags |= ISLAND_SLEEP_RESET | ISLAND_AWAKE;
+		}
+	}
+    ArenaPopRecord(&pipeline->frame);
 }
 
 struct slot ds_ShapeLookup(const struct ds_RigidBodyPipeline *pipeline, const ds_ShapeId shape_id)

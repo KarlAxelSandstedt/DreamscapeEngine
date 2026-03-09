@@ -1741,7 +1741,7 @@ static void led_EngineInit(struct led *led)
 
 static void led_EngineColorBodies(struct led *led, const u32 island, const vec4 color)
 {
-	struct island *is = ds_PoolAddress(&led->physics.is_db.island_pool, island);
+	struct ds_Island *is = ds_PoolAddress(&led->physics.is_db.island_pool, island);
 	const struct ds_RigidBody *body;
 	for (u32 i = is->body_list.first; i != DLL_NULL; i = body->dll2_next)
 	{
@@ -1852,7 +1852,7 @@ static void led_engine_run(struct led *led)
 					}
 					else
 					{
-						const struct island *is = ds_PoolAddress(&led->physics.is_db.island_pool, body->island_index);
+						const struct ds_Island *is = ds_PoolAddress(&led->physics.is_db.island_pool, body->island_index);
 						Vec4Copy(proxy->color, is->color);
 					}
 				}
@@ -1934,7 +1934,7 @@ static void led_engine_run(struct led *led)
 #ifdef DS_PHYSICS_DEBUG
 			case PHYSICS_EVENT_ISLAND_NEW:
 			{
-				struct island *is = ds_PoolAddress(&led->physics.is_db.island_pool, event->island);
+				struct ds_Island *is = ds_PoolAddress(&led->physics.is_db.island_pool, event->island);
 				if (PoolSlotAllocated(is))
 				{
 					Vec4Set(is->color, 
@@ -1957,7 +1957,7 @@ static void led_engine_run(struct led *led)
 			{
 				if (led->physics.body_color_mode == RB_COLOR_MODE_ISLAND)
 				{
-					const struct island *is = ds_PoolAddress(&led->physics.is_db.island_pool, event->island);
+					const struct ds_Island *is = ds_PoolAddress(&led->physics.is_db.island_pool, event->island);
 					if (PoolSlotAllocated(is))
 					{
 						led_EngineColorBodies(led, event->island, is->color);

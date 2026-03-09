@@ -62,7 +62,7 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_
 	return id;
 }
 
-void ds_RigidBodyRemove(struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId id)
+void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId id)
 {
 	struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, ds_IdIndex(id));
     if (body->tag != ds_IdTag(id))
@@ -74,20 +74,39 @@ void ds_RigidBodyRemove(struct ds_RigidBodyPipeline *pipeline, const ds_RigidBod
 	struct ds_Shape *shape_ptr;
 	if (body->island_index != ISLAND_STATIC)
 	{
+	    struct ds_Island *island = ds_PoolAddress(&pipeline->is_db.island_pool, body->island_index);
+        ds_Assert(PoolSlotAllocated(island));
+
 		for (u32 shape = body->shape_list.first; shape != DLL_NULL; shape = shape_ptr->dll_next)
 		{
 			shape_ptr = ds_PoolAddress(&pipeline->shape_pool, shape);
-			ds_ShapeDynamicRemove(pipeline, shape);
+			ds_ShapeDynamicRemove(pipeline, island, shape);
 		}
-	}
+
+    	dll_Remove(&island->body_list, pipeline->body_pool.buf, ds_IdIndex(id)); 
+    	ds_Assert(island->body_list.count > 1 || (   island->contact_list.first == DLL_NULL
+               	                                  && island->contact_list.last == DLL_NULL
+               	                                  && island->contact_list.count == 0));
+    	if (island->body_list.count == 0)
+    	{
+    		ds_Assert(island->body_list.first == DLL_NULL);
+    		ds_Assert(island->body_list.last == DLL_NULL);
+    		isdb_IslandRemove(pipeline, island);
+    	} 
+        else if (island->body_list.count > 1) 
+        {
+	    	isdb_SplitIsland(mem_tmp, pipeline, body->island_index);
+	    }
+	}       
 	else
 	{
 		for (u32 shape = body->shape_list.first; shape != DLL_NULL; shape = shape_ptr->dll_next)
 		{
 			shape_ptr = ds_PoolAddress(&pipeline->shape_pool, shape);
-			ds_ShapeStaticRemove(pipeline, shape);
+			ds_ShapeStaticRemove(mem_tmp, pipeline, shape);
 		}
 	}
+
 	ds_PoolRemove(&pipeline->body_pool, ds_IdIndex(id));
 	PhysicsEventBodyRemoved(pipeline, id);
 }

@@ -491,14 +491,14 @@ static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
 			/* dynamic-static */
 			case 0x2:
 			{
-				struct island *is = ds_PoolAddress(&pipeline->is_db.island_pool, is0);
+				struct ds_Island *is = ds_PoolAddress(&pipeline->is_db.island_pool, is0);
 				dll_Append(&is->contact_list, pipeline->cdb->contact_net.pool.buf, pipeline->cdb->contact_new[i]);
 			} break;
 
 			/* static-dynamic */
 			case 0x1:
 			{
-				struct island *is = ds_PoolAddress(&pipeline->is_db.island_pool, is1);
+				struct ds_Island *is = ds_PoolAddress(&pipeline->is_db.island_pool, is1);
 				dll_Append(&is->contact_list, pipeline->cdb->contact_net.pool.buf, pipeline->cdb->contact_new[i]);
 			} break;
 		}
@@ -548,7 +548,7 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 			const struct ds_RigidBody *body1 = ds_PoolAddress(&pipeline->body_pool, b1);
 			ds_Assert(body0->island_index != ISLAND_STATIC || body1->island_index != ISLAND_STATIC);
 
-			struct island *is;
+			struct ds_Island *is;
 			if (body0->island_index != ISLAND_STATIC)
 			{
 				is = isdb_BodyToIsland(pipeline, b0);
@@ -612,17 +612,17 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 //
 //	/* acquire any task resources */
 //	struct task_stream *stream = task_stream_init(&pipeline->frame);
-//	struct islandSolveOutput *output = NULL;
-//	struct islandSolveOutput **next = &output;
+//	struct ds_IslandSolveOutput *output = NULL;
+//	struct ds_IslandSolveOutput **next = &output;
 //
-//	struct island *is = NULL;
+//	struct ds_Island *is = NULL;
 //	for (u32 i = pipeline->is_db.island_list.first; i != DLL_NULL; i = dll_Next(is))
 //	{
 //		is = ds_PoolAddress(&pipeline->is_db.island_pool, i);
 //		if (!g_solver_config->sleep_enabled || ISLAND_AWAKE_BIT(is))
 //		{
-//			struct islandSolveInput *args = ArenaPush(&pipeline->frame, sizeof(struct islandSolveInput));
-//			*next = ArenaPush(&pipeline->frame, sizeof(struct islandSolveOutput));
+//			struct ds_IslandSolveInput *args = ArenaPush(&pipeline->frame, sizeof(struct ds_IslandSolveInput));
+//			*next = ArenaPush(&pipeline->frame, sizeof(struct ds_IslandSolveOutput));
 //			(*next)->island = i;
 //			(*next)->island_asleep = 0;
 //			(*next)->next = NULL;
@@ -684,7 +684,7 @@ void PhysicsPipelineSleepEnable(struct ds_RigidBodyPipeline *pipeline)
 			}
 		}
 
-		struct island *is = NULL;
+		struct ds_Island *is = NULL;
 		for (u32 i = pipeline->is_db.island_list.first; i != DLL_NULL; i = dll_Next(is))
 		{
 			is = ds_PoolAddress(&pipeline->is_db.island_pool, i);
@@ -711,7 +711,7 @@ void PhysicsPipelineSleepDisable(struct ds_RigidBodyPipeline *pipeline)
 			}
 		}
 
-		struct island *is = NULL;
+		struct ds_Island *is = NULL;
 		for (u32 i = pipeline->is_db.island_list.first; i != DLL_NULL; i = dll_Next(is))
 		{
 			is = ds_PoolAddress(&pipeline->is_db.island_pool, i);
@@ -755,14 +755,17 @@ void PhysicsPipelineRigidBodyTagForRemoval(struct ds_RigidBodyPipeline *pipeline
 
 static void RemoveMarkedBodies(struct ds_RigidBodyPipeline *pipeline)
 {
-	struct ds_RigidBody *b = NULL;
-	for (u32 i = pipeline->body_marked_list.first; i != DLL_NULL; i = dll_Next(b))
+    struct arena tmp = ArenaAlloc1MB();
+    u32 next;
+	for (u32 i = pipeline->body_marked_list.first; i != DLL_NULL; i = next)
 	{
-		b = ds_PoolAddress(&pipeline->body_pool, i);
-		ds_RigidBodyRemove(pipeline, i);
+		struct ds_RigidBody *b = ds_PoolAddress(&pipeline->body_pool, i);
+        next = dll_Next(b);
+		ds_RigidBodyRemove(&tmp, pipeline, i);
 	}
 
 	dll_Flush(&pipeline->body_marked_list);
+    ArenaFree1MB(&tmp);
 }
 
 void PhysicsPipelineSimulateFrame(struct ds_RigidBodyPipeline *pipeline, const f32 delta)

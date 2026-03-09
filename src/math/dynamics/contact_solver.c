@@ -63,7 +63,7 @@ void SolverConfigInit(const u32 iteration_count, const u32 block_solver, const u
 	static_body.restitution = 0.0f;
 }
 
-//struct solver *SolverInitBodyData(struct arena *mem, struct island *is, const f32 timestep)
+//struct solver *SolverInitBodyData(struct arena *mem, struct ds_Island *is, const f32 timestep)
 //{
 //	struct solver *solver = ArenaPush(mem, sizeof(struct solver));
 //
@@ -134,7 +134,7 @@ void SolverConfigInit(const u32 iteration_count, const u32 block_solver, const u
 //	return solver;
 //}
 //
-//void SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, const struct ds_RigidBodyPipeline *pipeline, const struct island *is)
+//void SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Island *is)
 //{
 //	solver->vcs = ArenaPush(mem, solver->contact_count * sizeof(struct velocityConstraint));
 //
@@ -361,7 +361,7 @@ void SolverConfigInit(const u32 iteration_count, const u32 block_solver, const u
 //	}
 //}
 //
-//void SolverWarmup(struct solver *solver, const struct island *is)
+//void SolverWarmup(struct solver *solver, const struct ds_Island *is)
 //{
 //
 //	vec3 tmp1, tmp2, tmp3;
@@ -418,7 +418,7 @@ void SolverConfigInit(const u32 iteration_count, const u32 block_solver, const u
 //	}
 //}
 //
-//void SolverCacheImpulse(struct solver *solver, const struct island *is)
+//void SolverCacheImpulse(struct solver *solver, const struct ds_Island *is)
 //{
 //	for (u32 i = 0; i < solver->contact_count; ++i)
 //	{			

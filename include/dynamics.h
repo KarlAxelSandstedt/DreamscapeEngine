@@ -31,8 +31,10 @@ extern "C" {
 #include "ds_hash_map.h"
 #include "bit_vector.h"
 
+//TODO 
 struct ds_RigidBodyPipeline;
 struct cdb;
+struct ds_Island;
 
 /*
 ds_Id
@@ -176,13 +178,13 @@ struct ds_ShapePrefabInstance
  */
 ds_ShapeId  ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_ShapePrefab *prefab, const ds_Transform *t, const ds_RigidBodyId body);
 /* 
- * Remove the specified shape of a DYNAMIC body and update the physics state into a valid state.  
+ * Remove the specified shape of a DYNAMIC body and update the island database and contact database state.  
  */
-void		ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, const ds_ShapeId id);
+void        ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Island *island, const u32 shape_index);
 /* 
  * Remove the specified shape of a STATIC body and update the physics state into a valid state. 
  */
-void		ds_ShapeStaticRemove(struct ds_RigidBodyPipeline *pipeline, const ds_ShapeId id);
+void		ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, const u32 index);
 /*
  * Lookup the specified shape and return it if found. Otherwise return (NULL, POOL_NULL).
  */
@@ -314,7 +316,7 @@ struct ds_RigidBodyPrefab
 //TODO
 ds_RigidBodyId  ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBodyPrefab *prefab, const vec3 position, const quat rotation, const u32 entity);
 /* Free the given body */
-void		    ds_RigidBodyRemove(struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId id);
+void            ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId id);
 /* Lookup the given body and return it. If it does not exist, return DS_ID_NULL.  */
 struct slot	    ds_RigidBodyLookup(const struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId id);
 /* Process the body's shape list and set its internal mass properties accordingly. */
@@ -471,19 +473,6 @@ contact_database
 ================
 Database for last and current frame contacts. Any rigid body can lookup its cached
 and current contacts, and if necessary, invalidate any contact data.
-
-
-::: Internals :::
-
-//TODO Update
-Frame layout
-	1. generate_contacts
- 	2. cdb_new_frame(contact_count)	// alloc memory for frame contacts
- 	3. cdb_ContactAdd(i1, i2, contact)	// add all new contacts 
- 	4. solve
- 	5. invalidate any contacts before caching them.
- 	6. switch frame and cache 
- 	7. reset frame
 */
 
 struct cdb
@@ -494,12 +483,12 @@ struct cdb
 	 *  contact->key.shape1 owns slot 1
 	 *
 	 * i.e. the smaller index owns slot 0 and the larger index owns slot 1.  */
-	struct nll	contact_net;
-	struct ds_HashMap	contact_map;		
+	struct nll	                contact_net;
+	struct ds_HashMap	        contact_map;		
 
 	/* frame-cached separation axis results */
 	struct sat_CacheTPool       sat_cache_pool;
-	struct sat_CacheTHashMap	sat_cache_map;		
+	struct sat_CacheTHashMap    sat_cache_map;		
 
 	/* PERSISTENT DATA, GROWABLE, keeps track of which slots in contact_net/sat_cache
      * from last frame that are still being used. At the end of every frame, it is
@@ -517,30 +506,28 @@ struct cdb
 	struct bitVec 	sat_cache_frame_usage;	
 
     /* FRAME DATA */
-    u32             sat_cache_count;        /* Caches in the current frame              */
-    u32             contact_count;          /* Contacts found in the current frame      */
-	u32			    contact_new_count;      /* New contacts found in the current frame  */
-	u32 *			contact_new;
+    u32     sat_cache_count;        /* Caches in the current frame              */
+    u32     contact_count;          /* Contacts found in the current frame      */
+	u32		contact_new_count;      /* New contacts found in the current frame  */
+	u32 *   contact_new;
 };
 
-//TODO document
+/* Allocate cdb resources */
 struct cdb *cdb_Alloc(struct arena *mem_persistent, const u32 initial_size);
+/* Deallocate cdb resources */
 void 		cdb_Free(struct cdb *cdb);
+/* Flush cdb resources */
 void		cdb_Flush(struct cdb *cdb);
+/* Validate cdb state */
 void		cdb_Validate(const struct ds_RigidBodyPipeline *pipeline);
+/* Flush cdb frame resources */
 void		cdb_ClearFrame(struct cdb *cdb);
-/* Remove all contacts associated with the given body */
-void		cdb_BodyRemoveContacts(struct ds_RigidBodyPipeline *pipeline, const u32 body_index);
-/* Remove all contacts associated with the given static body and update affected islands */
-void		cdb_StaticRemoveContactsAndUpdateIslands(struct ds_RigidBodyPipeline *pipeline, const u32 static_index);
 
 /*
-=================================================================================================================
-|						Persistent Islands						|
-=================================================================================================================
+ds_Island
+=========
+TODO remove and rewrite
 
-island
-======
 Persistent island over several frames. Justification is that island information may possibly not change much from
 frame to frame, so storing persistent island data may work as an optimization.  It would also be of help in storing
 cached collision/body data between frames.
@@ -637,7 +624,7 @@ data (ListData) is kept throughout [2], [3], and discarded at [4] when islands a
 #define ISLAND_NULL	POOL_NULL 
 #define ISLAND_STATIC	POOL_NULL-1	/* static bodies are mapped to "island" ISLAND_STATIC */
 
-struct island
+struct ds_Island
 {
 	POOL_SLOT_STATE;
 	DLL_SLOT_STATE;
@@ -687,19 +674,17 @@ void		isdb_Flush(struct isdb *is_db);
 /* Clear any frame related data */
 void		isdb_ClearFrame(struct isdb *is_db);
 /* remove island resources from database */
-void 		isdb_IslandRemove(struct ds_RigidBodyPipeline *pipeline, struct island *is);
-/* remove island resources related to body, and possibly the whole island, from database */
-void 		isdb_IslandRemoveBodyResources(struct ds_RigidBodyPipeline *pipeline, const u32 island_index, const u32 body);
+void 		isdb_IslandRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is);
 /* Debug printing of island */
 void 		isdb_PrintIsland(FILE *file, const struct ds_RigidBodyPipeline *pipeline, const u32 island, const char *desc);
 /* Check if the database appears to be valid */
 void 		isdb_Validate(const struct ds_RigidBodyPipeline *pipeline);
 /* Setup new island from single body */
-struct island *	isdb_InitIslandFromBody(struct ds_RigidBodyPipeline *pipeline, const u32 body);
+struct ds_Island *	isdb_InitIslandFromBody(struct ds_RigidBodyPipeline *pipeline, const u32 body);
 /* Add contact to island */
 void 		isdb_AddContactToIsland(struct ds_RigidBodyPipeline *pipeline, const u32 island, const u32 contact);
 /* Return island that body is assigned to */
-struct island *	isdb_BodyToIsland(struct ds_RigidBodyPipeline *pipeline, const u32 body);
+struct ds_Island *	isdb_BodyToIsland(struct ds_RigidBodyPipeline *pipeline, const u32 body);
 /* Merge islands (Or simply update if new local contact) using new contact */
 void 		isdb_MergeIslands(struct ds_RigidBodyPipeline *pipeline, const u32 ci, const u32 b0, const u32 b1);
 /* Split island, or remake if no split happens: TODO: Make thread-safe  */
@@ -707,26 +692,26 @@ void 		isdb_SplitIsland(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
 
 /********* Threaded Island API *********/
 
-struct islandSolveOutput
+struct ds_IslandSolveOutput
 {
 	u32 island;
 	u32 island_asleep;
 	u32 body_count;
 	u32 *bodies;		/* bodies simulated in island */ 
-	struct islandSolveOutput *next;
+	struct ds_IslandSolveOutput *next;
 };
 
-struct islandSolveInput
+struct ds_IslandSolveInput
 {
-	struct island *is;
+	struct ds_Island *is;
 	struct ds_RigidBodyPipeline *pipeline;
-	struct islandSolveOutput *out;
+	struct ds_IslandSolveOutput *out;
 	f32 timestep;
 };
 
 /*
- * Input: struct island_solve_in 
- * Output: struct islandSolveOutput
+ * Input: struct ds_Island_solve_in 
+ * Output: struct ds_IslandSolveOutput
  *
  * Solves the given island using the global solver config. Since no island shares any contacts or bodies, and every
  * island is a unique task, no shared variables are being written to.
@@ -862,11 +847,11 @@ struct solver
 	vec3ptr			angular_velocity;
 };
 
-struct solver *	SolverInitBodyData(struct arena *mem, struct island *is, const f32 timestep);
-void 		SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, const struct ds_RigidBodyPipeline *pipeline, const struct island *is);
+struct solver *	SolverInitBodyData(struct arena *mem, struct ds_Island *is, const f32 timestep);
+void 		SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Island *is);
 void 		SolverIterateVelocityConstraints(struct solver *solver);
-void 		SolverWarmup(struct solver *solver, const struct island *is);
-void 		SolverCacheImpulse(struct solver *solver, const struct island *is);
+void 		SolverWarmup(struct solver *solver, const struct ds_Island *is);
+void 		SolverCacheImpulse(struct solver *solver, const struct ds_Island *is);
 
 /*
 =================================================================================================================
