@@ -416,142 +416,142 @@ void isdb_SplitIsland(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeli
     ProfZoneEnd;
 }
 
-//static u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is, u32 *asleep, const f32 timestep)
-//{
-//	u32 *bodies_simulated = ArenaPush(mem_frame, is->body_list.count*sizeof(u32));
-//	ArenaPushRecord(mem_frame);
-//
-//	/* Important: Reserve extra space for static body defaults used in contact solver */
-//	is->bodies = ArenaPush(mem_frame, (is->body_list.count + 1) * sizeof(struct ds_RigidBody *));
-//	is->contacts = ArenaPush(mem_frame, is->contact_list.count * sizeof(struct ds_Contact *));
-//	is->body_index_map = ArenaPush(mem_frame, pipeline->body_pool.count_max * sizeof(u32));
-//
-//	/* init body and contact arrays */
-//	u32 k = is->body_list.first;
-//	for (u32 i = 0; i < is->body_list.count; ++i)
-//	{
-//		struct ds_RigidBody *b = ds_PoolAddress(&pipeline->body_pool, k);
-//		bodies_simulated[i] = k;
-//		is->bodies[i] = b;
-//		is->body_index_map[k] = i;
-//		k = b->dll2_next;
-//	}
-//
-//	if (g_solver_config->sleep_enabled && ISLAND_TRY_SLEEP_BIT(is))
-//	{
-//		is->flags = 0;
-//		for (u32 i = 0; i < is->body_list.count; ++i)
-//		{
-//			struct ds_RigidBody *b = is->bodies[i];
-//			b->flags ^= RB_AWAKE;
-//		}
-//		*asleep = 1;
-//	}
-//	/* Island low energy state was interrupted, or island is simply awake */
-//	else
-//	{
-//		k = is->contact_list.first;
-//		for (u32 i = 0; i < is->contact_list.count; ++i)
-//		{
-//			is->contacts[i] = nll_Address(&pipeline->cdb->contact_net, k);
-// 			k = is->contacts[i]->dll_next;
-//		}
-//
-//		/* init solver and velocity constraints */
-//		struct solver *solver = SolverInitBodyData(mem_frame, is, timestep);
-//		SolverInitVelocityConstraints(mem_frame, solver, pipeline, is);
-//		
-//		if (g_solver_config->warmup_solver)
-//		{
-//			SolverWarmup(solver, is);
-//		}
-//
-//		for (u32 i = 0; i < g_solver_config->iteration_count; ++i)
-//		{
-//			SolverIterateVelocityConstraints(solver);
-//		}
-//
-//		SolverCacheImpulse(solver, is);
-//
-//		/* integrate final solver velocities and update bodies and find lowest low_velocity time */
-//		if (g_solver_config->sleep_enabled)
-//		{
-//			f32 min_low_velocity_time = F32_MAX_POSITIVE_NORMAL;
-//			for (u32 i = 0; i < is->body_list.count; ++i)
-//			{
-//				struct ds_RigidBody *b = is->bodies[i];
-//				Vec3TranslateScaled(b->position, solver->linear_velocity[i], timestep);	
-//				Vec3Copy(b->velocity, solver->linear_velocity[i]);	
-//
-//				quat a_vel_quat, rot_delta;
-//				Vec3Copy(b->angular_velocity, solver->angular_velocity[i]);	
-//				QuatSet(a_vel_quat, 
-//						solver->angular_velocity[i][0], 
-//						solver->angular_velocity[i][1], 
-//						solver->angular_velocity[i][2],
-//					      	0.0f);
-//				QuatMul(rot_delta, a_vel_quat, b->rotation);
-//				QuatScale(rot_delta, timestep / 2.0f);
-//				QuatTranslate(b->rotation, rot_delta);
-//				QuatNormalize(b->rotation);
-//
-//				/* Always set RB_AWAKE, if island should sleep, we set it later,
-//				 * but the bodies may come in sleeping if island just woke up 
-//				 */
-//				b->flags |= RB_AWAKE;
-//				b->low_velocity_time = (1-ISLAND_SLEEP_RESET_BIT(is)) * b->low_velocity_time;
-//				const f32 lv_sq = Vec3Dot(b->velocity, b->velocity);
-//				const f32 av_sq = Vec3Dot(b->angular_velocity, b->angular_velocity);
-//				if (lv_sq <= g_solver_config->sleep_linear_velocity_sq_limit && av_sq <= g_solver_config->sleep_angular_velocity_sq_limit)
-//				{
-//					b->low_velocity_time += timestep;
-//				}
-//				min_low_velocity_time = f32_min(min_low_velocity_time, b->low_velocity_time);
-//			}
-//
-//			is->flags &= ~ISLAND_SLEEP_RESET;
-//			if (g_solver_config->sleep_time_threshold <= min_low_velocity_time)
-//			{
-//				is->flags |= ISLAND_TRY_SLEEP;
-//			}
-//		}
-//		/* only integrate final solver velocities and update bodies  */
-//		else 
-//		{
-//			for (u32 i = 0; i < is->body_list.count; ++i)
-//			{
-//				struct ds_RigidBody *b = is->bodies[i];
-//				Vec3TranslateScaled(b->position, solver->linear_velocity[i], timestep);	
-//				Vec3Copy(b->velocity, solver->linear_velocity[i]);	
-//
-//				quat a_vel_quat, rot_delta;
-//				Vec3Copy(b->angular_velocity, solver->angular_velocity[i]);	
-//				QuatSet(a_vel_quat, 
-//						solver->angular_velocity[i][0], 
-//						solver->angular_velocity[i][1], 
-//						solver->angular_velocity[i][2],
-//					      	0.0f);
-//				QuatMul(rot_delta, a_vel_quat, b->rotation);
-//				QuatScale(rot_delta, timestep / 2.0f);
-//				QuatTranslate(b->rotation, rot_delta);
-//				QuatNormalize(b->rotation);
-//			}
-//		}
-//	}
-//
-//	ArenaPopRecord(mem_frame);
-//	return bodies_simulated;
-//}
-//
-//void ThreadIslandSolve(void *task_input)
-//{
-//	ProfZone;
-//
-//	struct task *t_ctx = task_input;
-//	struct ds_IslandSolveInput *args = t_ctx->input;
-//	args->out->body_count = args->is->body_list.count;
-//	args->out->island_asleep = 0;
-//	args->out->bodies = IslandSolve(&t_ctx->executor->mem_frame, args->pipeline, args->is, &args->out->island_asleep, args->timestep);
-//
-//	ProfZoneEnd;
-//}
+static u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is, u32 *asleep, const f32 timestep)
+{
+	u32 *bodies_simulated = ArenaPush(mem_frame, is->body_list.count*sizeof(u32));
+	ArenaPushRecord(mem_frame);
+
+	/* Important: Reserve extra space for static body defaults used in contact solver */
+	is->bodies = ArenaPush(mem_frame, (is->body_list.count + 1) * sizeof(struct ds_RigidBody *));
+	is->contacts = ArenaPush(mem_frame, is->contact_list.count * sizeof(struct ds_Contact *));
+	is->body_index_map = ArenaPush(mem_frame, pipeline->body_pool.count_max * sizeof(u32));
+
+	/* init body and contact arrays */
+	u32 k = is->body_list.first;
+	for (u32 i = 0; i < is->body_list.count; ++i)
+	{
+		struct ds_RigidBody *b = ds_PoolAddress(&pipeline->body_pool, k);
+		bodies_simulated[i] = k;
+		is->bodies[i] = b;
+		is->body_index_map[k] = i;
+		k = b->dll2_next;
+	}
+
+	if (g_solver_config->sleep_enabled && ISLAND_TRY_SLEEP_BIT(is))
+	{
+		is->flags = 0;
+		for (u32 i = 0; i < is->body_list.count; ++i)
+		{
+			struct ds_RigidBody *b = is->bodies[i];
+			b->flags ^= RB_AWAKE;
+		}
+		*asleep = 1;
+	}
+	/* Island low energy state was interrupted, or island is simply awake */
+	else
+	{
+		k = is->contact_list.first;
+		for (u32 i = 0; i < is->contact_list.count; ++i)
+		{
+			is->contacts[i] = nll_Address(&pipeline->cdb->contact_net, k);
+ 			k = is->contacts[i]->dll_next;
+		}
+
+		/* init solver and velocity constraints */
+		struct solver *solver = SolverInitBodyData(mem_frame, is, timestep);
+		SolverInitVelocityConstraints(mem_frame, solver, pipeline, is);
+		
+		if (g_solver_config->warmup_solver)
+		{
+			SolverWarmup(solver, is);
+		}
+
+		for (u32 i = 0; i < g_solver_config->iteration_count; ++i)
+		{
+			SolverIterateVelocityConstraints(solver);
+		}
+
+		SolverCacheImpulse(solver, is);
+
+		/* integrate final solver velocities and update bodies and find lowest low_velocity time */
+		if (g_solver_config->sleep_enabled)
+		{
+			f32 min_low_velocity_time = F32_MAX_POSITIVE_NORMAL;
+			for (u32 i = 0; i < is->body_list.count; ++i)
+			{
+				struct ds_RigidBody *b = is->bodies[i];
+				Vec3TranslateScaled(b->t_world.position, solver->linear_velocity[i], timestep);	
+				Vec3Copy(b->velocity, solver->linear_velocity[i]);	
+
+				quat a_vel_quat, rot_delta;
+				Vec3Copy(b->angular_velocity, solver->angular_velocity[i]);	
+				QuatSet(a_vel_quat, 
+						solver->angular_velocity[i][0], 
+						solver->angular_velocity[i][1], 
+						solver->angular_velocity[i][2],
+					      	0.0f);
+				QuatMul(rot_delta, a_vel_quat, b->t_world.rotation);
+				QuatScale(rot_delta, timestep / 2.0f);
+				QuatTranslate(b->t_world.rotation, rot_delta);
+				QuatNormalize(b->t_world.rotation);
+
+				/* Always set RB_AWAKE, if island should sleep, we set it later,
+				 * but the bodies may come in sleeping if island just woke up 
+				 */
+				b->flags |= RB_AWAKE;
+				b->low_velocity_time = (1-ISLAND_SLEEP_RESET_BIT(is)) * b->low_velocity_time;
+				const f32 lv_sq = Vec3Dot(b->velocity, b->velocity);
+				const f32 av_sq = Vec3Dot(b->angular_velocity, b->angular_velocity);
+				if (lv_sq <= g_solver_config->sleep_linear_velocity_sq_limit && av_sq <= g_solver_config->sleep_angular_velocity_sq_limit)
+				{
+					b->low_velocity_time += timestep;
+				}
+				min_low_velocity_time = f32_min(min_low_velocity_time, b->low_velocity_time);
+			}
+
+			is->flags &= ~ISLAND_SLEEP_RESET;
+			if (g_solver_config->sleep_time_threshold <= min_low_velocity_time)
+			{
+				is->flags |= ISLAND_TRY_SLEEP;
+			}
+		}
+		/* only integrate final solver velocities and update bodies  */
+		else 
+		{
+			for (u32 i = 0; i < is->body_list.count; ++i)
+			{
+				struct ds_RigidBody *b = is->bodies[i];
+				Vec3TranslateScaled(b->t_world.position, solver->linear_velocity[i], timestep);	
+				Vec3Copy(b->velocity, solver->linear_velocity[i]);	
+
+				quat a_vel_quat, rot_delta;
+				Vec3Copy(b->angular_velocity, solver->angular_velocity[i]);	
+				QuatSet(a_vel_quat, 
+						solver->angular_velocity[i][0], 
+						solver->angular_velocity[i][1], 
+						solver->angular_velocity[i][2],
+					      	0.0f);
+				QuatMul(rot_delta, a_vel_quat, b->t_world.rotation);
+				QuatScale(rot_delta, timestep / 2.0f);
+				QuatTranslate(b->t_world.rotation, rot_delta);
+				QuatNormalize(b->t_world.rotation);
+			}
+		}
+	}
+
+	ArenaPopRecord(mem_frame);
+	return bodies_simulated;
+}
+
+void ThreadIslandSolve(void *task_input)
+{
+	ProfZone;
+
+	struct task *t_ctx = task_input;
+	struct ds_IslandSolveInput *args = t_ctx->input;
+	args->out->body_count = args->is->body_list.count;
+	args->out->island_asleep = 0;
+	args->out->bodies = IslandSolve(&t_ctx->executor->mem_frame, args->pipeline, args->is, &args->out->island_asleep, args->timestep);
+
+	ProfZoneEnd;
+}

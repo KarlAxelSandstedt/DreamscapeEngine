@@ -418,13 +418,13 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
         ArenaPopPacked(&pipeline->frame, sizeof(u32)*(arr.len - cdb->contact_new_count));
 
         /* Remove stale sat_Caches */
+	    u32 bit = 0;
 	    for (u64 block = 0; block < cdb->sat_cache_frame_usage.block_count; ++block)
 	    {
 	    	u64 broken_link_block = 
 	    			    cdb->sat_cache_persistent_usage.bits[block]
 	    			& (~cdb->sat_cache_frame_usage.bits[block]);
 	    	u32 b = 0;
-	        u32 bit = 0;
 	    	while (broken_link_block)
 	    	{
 	    		const u32 tzc = Ctz64(broken_link_block);
@@ -435,12 +435,12 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 	    		broken_link_block = (tzc < 63) 
 	    			? broken_link_block >> (tzc + 1)
 	    			: 0;
-	    	
+
 	    		sat_CacheRemove(cdb, ci);
 	    	}
 	    	bit += 64;
 	    }	
-
+    
         /* Update sat_cache_persistent_usage */
         for (u64 i = 0; i < cdb->sat_cache_frame_usage.block_count; ++i)
         {
@@ -605,67 +605,61 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 	ArenaFree1MB(&tmp);
 	ProfZoneEnd;
 }
-//
-//static void ParallelSolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta) 
-//{
-//	ProfZone;
-//
-//	/* acquire any task resources */
-//	struct task_stream *stream = task_stream_init(&pipeline->frame);
-//	struct ds_IslandSolveOutput *output = NULL;
-//	struct ds_IslandSolveOutput **next = &output;
-//
-//	struct ds_Island *is = NULL;
-//	for (u32 i = pipeline->is_db.island_list.first; i != DLL_NULL; i = dll_Next(is))
-//	{
-//		is = ds_PoolAddress(&pipeline->is_db.island_pool, i);
-//		if (!g_solver_config->sleep_enabled || ISLAND_AWAKE_BIT(is))
-//		{
-//			struct ds_IslandSolveInput *args = ArenaPush(&pipeline->frame, sizeof(struct ds_IslandSolveInput));
-//			*next = ArenaPush(&pipeline->frame, sizeof(struct ds_IslandSolveOutput));
-//			(*next)->island = i;
-//			(*next)->island_asleep = 0;
-//			(*next)->next = NULL;
-//			args->out = *next;
-//			args->is = is;
-//			args->pipeline = pipeline;
-//			args->timestep = delta;
-//			task_stream_dispatch(&pipeline->frame, stream, ThreadIslandSolve, args);
-//
-//			next = &(*next)->next;
-//		}
-//	}
-//
-//	task_main_master_run_available_jobs();
-//
-//	/* spin wait until last job completes */
-//	task_stream_spin_wait(stream);
-//	/* release any task resources */
-//	task_stream_cleanup(stream);		
-//
-//
-//	/*
-//	 * TODO:
-//	 * 	(1) pipeline->event_list sequential list of physics events
-//	 * 	(2) implement array_list_flush to clear whole list 
-//	 */
-//	for (; output; output = output->next)
-//	{
-//		if (output->island_asleep)
-//		{
-//			PhysicsEventIslandAsleep(pipeline, output->island);
-//		}
-//
-//		for (u32 i = 0; i < output->body_count; ++i)
-//		{
-//			struct physicsEvent *event = PhysicsPipelineEventPush(pipeline);
-//			event->type = PHYSICS_EVENT_BODY_ORIENTATION;
-//			event->body = output->bodies[i];
-//		}
-//	}
-//
-//	ProfZoneEnd;
-//}
+
+static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta) 
+{
+	ProfZone;
+
+	/* acquire any task resources */
+	struct task_stream *stream = task_stream_init(&pipeline->frame);
+	struct ds_IslandSolveOutput *output = NULL;
+	struct ds_IslandSolveOutput **next = &output;
+
+	struct ds_Island *is = NULL;
+	for (u32 i = pipeline->is_db.island_list.first; i != DLL_NULL; i = dll_Next(is))
+	{
+		is = ds_PoolAddress(&pipeline->is_db.island_pool, i);
+		if (!g_solver_config->sleep_enabled || ISLAND_AWAKE_BIT(is))
+		{
+			struct ds_IslandSolveInput *args = ArenaPush(&pipeline->frame, sizeof(struct ds_IslandSolveInput));
+			*next = ArenaPush(&pipeline->frame, sizeof(struct ds_IslandSolveOutput));
+			(*next)->island = i;
+			(*next)->island_asleep = 0;
+			(*next)->next = NULL;
+			args->out = *next;
+			args->is = is;
+			args->pipeline = pipeline;
+			args->timestep = delta;
+			task_stream_dispatch(&pipeline->frame, stream, ThreadIslandSolve, args);
+
+			next = &(*next)->next;
+		}
+	}
+
+	task_main_master_run_available_jobs();
+	/* spin wait until last job completes */
+	task_stream_spin_wait(stream);
+	/* release any task resources */
+	task_stream_cleanup(stream);		
+
+	for (; output; output = output->next)
+	{
+		if (output->island_asleep)
+		{
+			PhysicsEventIslandAsleep(pipeline, output->island);
+		}
+
+		for (u32 i = 0; i < output->body_count; ++i)
+		{
+			struct physicsEvent *event = PhysicsPipelineEventPush(pipeline);
+			event->type = PHYSICS_EVENT_BODY_ORIENTATION;
+            const struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, output->bodies[i]);
+			event->body = ((u64) body->tag << 32) | output->bodies[i];
+		}
+	}
+
+	ProfZoneEnd;
+}
 
 void PhysicsPipelineSleepEnable(struct ds_RigidBodyPipeline *pipeline)
 {
@@ -780,7 +774,7 @@ void PhysicsPipelineSimulateFrame(struct ds_RigidBodyPipeline *pipeline, const f
 
 	MergeIslands(pipeline);
 	SplitIslandsAndRemoveContacts(pipeline);
-	//ParallelSolveIslands(pipeline, delta);
+	SolveIslands(pipeline, delta);
 
 	PHYSICS_PIPELINE_VALIDATE(pipeline);
 }

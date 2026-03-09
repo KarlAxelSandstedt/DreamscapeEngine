@@ -242,6 +242,8 @@ void ds_ContactUpdate(struct ds_RigidBodyPipeline *pipeline, const struct slot s
 void ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
 {
 	struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, index);
+	struct ds_RigidBody *body0 = ds_PoolAddress(&pipeline->body_pool, c->key.body0);
+	struct ds_RigidBody *body1 = ds_PoolAddress(&pipeline->body_pool, c->key.body1);
 	struct ds_Shape *shape0 = ds_PoolAddress(&pipeline->shape_pool, c->key.shape0);
 	struct ds_Shape *shape1 = ds_PoolAddress(&pipeline->shape_pool, c->key.shape1);
 	
@@ -256,7 +258,12 @@ void ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
 	}
 
     const ds_ContactId id = ((u64) c->generation << 32) | index;
-	PhysicsEventContactRemoved(pipeline, id);
+
+    const u64 b0 = ((u64) body0->tag << 32)  | c->key.body0;
+    const u64 s0 = ((u64) shape0->tag << 32) | c->key.shape0;
+    const u64 b1 = ((u64) body1->tag << 32)  | c->key.body1;
+    const u64 s1 = ((u64) shape1->tag << 32) | c->key.shape1;
+	PhysicsEventContactRemoved(pipeline, b0, s0, b1, s1);
 	ds_HashMapRemove(&pipeline->cdb->contact_map, ds_ContactKeyHash(&c->key), index);
 	nll_Remove(&pipeline->cdb->contact_net, index);
 }
@@ -318,7 +325,6 @@ struct slot sat_CacheAdd(struct cdb *cdb, const struct sat_CacheKey *key)
     sat->key = *key;
     sat->type = SAT_CACHE_NOT_SET;
 	sat_CacheTHashMapAdd(&cdb->sat_cache_map, sat, slot.index);
-
     return slot;
 }
 

@@ -123,7 +123,7 @@ struct ds_Shape
 	f32			    density;	        /* kg/m^3					                        */
 	f32 			restitution;        /* Range [0.0, 1.0] : bounciness  		            */
 	f32 			friction;	        /* Range [0.0, 1.0] : bound tangent impulses to 
-						                   mix(b1->friction, b2->friction)*(normal impuse)  */
+						                   mix(s1->friction, s2->friction)*(normal impuse)  */
 	f32		        margin;		        /* bouding box margin for dynamic BVH proxies 	    */
 
 	ds_Transform	t_local;	        /* local body frame transform 			            */
@@ -148,7 +148,7 @@ struct ds_ShapePrefab
 	f32		density;	        /* kg/m^3					                        */
 	f32 	restitution;	    /* Range [0.0, 1.0] : bounciness  		            */
 	f32 	friction;	        /* Range [0.0, 1.0] : bound tangent impulses to 
-						           mix(b1->friction, b2->friction)*(normal impuse)  */
+						           mix(s1->friction, s2->friction)*(normal impuse)  */
 	f32		margin;	            /* bouding box margin for dynamic BVH proxies 	    */
 };
 
@@ -252,37 +252,24 @@ struct ds_RigidBody
 	DLL_SLOT_STATE;		/* body marked/non-marked list node */
 	POOL_SLOT_STATE;
 
-    u32             tag;                /* Tag [ Generation(16) | Unused (16) ]                 */
+    u32             tag;                    /* Tag [ Generation(16) | Unused (16) ]                 */
+	u32 		    flags;
+	u32		        island_index;
 
-	struct dll  shape_list;		        /* list of convex shapes constructing the rigid body 	*/
-	ds_Transform t_world;		        /* local body frame to world transform 			        */
-	vec3		local_center_of_mass;	/* local body frame center of mass 			            */
+	struct dll      shape_list;		        /* list of convex shapes constructing the rigid body 	*/
+	ds_Transform    t_world;		        /* local body frame to world transform 			        */
+	vec3		    local_center_of_mass;	/* local body frame center of mass 			            */
 
-	quat 		rotation;		
-	vec3 		velocity;
-	vec3 		angular_velocity;
+	vec3 		    velocity;
+	vec3 		    angular_velocity;
+	vec3 		    linear_momentum;   	    /* L = mv */
+	f32 		    low_velocity_time;	    /* Current uninterrupted time body has been in a low velocity state */
 
-	quat 		angular_momentum;	/* TODO: */
-	vec3 		position;		/* center of mass world frame position */
-	vec3 		linear_momentum;   	/* L = mv */
+	mat3 		    inv_inertia_tensor;
+	f32 		    mass;			        /* total body mass */
 
-	u32		    island_index;
-
-	/* static state */
-	u32 		entity;
-	u32 		flags;
-
-    //TODO remove 
-	enum c_ShapeType shape_type;
-	u32		    shape_handle;
-
-	mat3 		inertia_tensor;		/* intertia tensor of body frame */
-	mat3 		inv_inertia_tensor;
-	f32 		mass;			/* total body mass */
-	f32 		restitution;
-	f32 		friction;		/* Range [0.0, 1.0f] : bound tangent impulses to 
-						   mix(b1->friction, b2->friction)*(normal impuse) */
-	f32 		low_velocity_time;	/* Current uninterrupted time body has been in a low velocity state */
+    //TODO Why do we store this here ...
+	u32 	        entity;
 };
 
 /*
@@ -296,21 +283,14 @@ struct ds_RigidBodyPrefab
 {
 	STRING_DATABASE_SLOT_STATE;
 
-    struct dll      shape_list;     /* shape prefab instance list */
+    struct dll      shape_list;         /* shape prefab instance list */
     ds_RigidBodyId  body;
+    
+	u32	            dynamic;	        /* dynamic body is true, static if false */
 
-    //TODO remove
-	u32     shape;
-
-
-	mat3 	inertia_tensor;		/* intertia tensor of body frame */
-	mat3 	inv_inertia_tensor;
-	f32 	mass;			    /* total body mass */
-	f32     density;
-	f32 	restitution;
-	f32 	friction;		/* Range [0.0, 1.0f] : bound tangent impulses to 
-						       mix(b1->friction, b2->friction)*(normal impuse) */
-	u32	    dynamic;		/* dynamic body is true, static if false */
+    //TODO pre-compute...?
+	//(f32 	        mass;			    /* total body mass */
+	//mat3 	        inv_inertia_tensor;
 };
 
 //TODO
@@ -898,11 +878,14 @@ void 		SolverCacheImpulse(struct solver *solver, const struct ds_Island *is);
 		__physics_debug_event->type = PHYSICS_EVENT_CONTACT_NEW;				            \
 		__physics_debug_event->contact = _contact;				                            \
 	}
-#define PhysicsEventContactRemoved(pipeline, _contact)				                        \
+#define PhysicsEventContactRemoved(pipeline, body0, shape0, body1, shape1)                  \
 	{												                                        \
 		struct physicsEvent *__physics_debug_event = PhysicsPipelineEventPush(pipeline);	\
 		__physics_debug_event->type = PHYSICS_EVENT_CONTACT_REMOVED;				        \
-		__physics_debug_event->contact = _contact;				                            \
+		__physics_debug_event->contact_removed_bodies[0] = body0;				            \
+		__physics_debug_event->contact_removed_bodies[1] = body1;				            \
+		__physics_debug_event->contact_removed_shapes[0] = shape0;				            \
+		__physics_debug_event->contact_removed_shapes[1] = shape1;				            \
 	}
 
 #else
@@ -915,7 +898,7 @@ void 		SolverCacheImpulse(struct solver *solver, const struct ds_Island *is);
 #define	PhysicsEventIslandExpanded(pipeline, island)   
 #define	PhysicsEventIslandRemoved(pipeline, island)
 #define PhysicsEventContactNew(pipeline, contact)
-#define PhysicsEventContactRemoved(pipeline, body1, body2)
+#define PhysicsEventContactRemoved(pipeline, body0, shape0, body1, shape1)                
 
 #endif
 
@@ -946,6 +929,12 @@ struct physicsEvent
 		u32                     island;
 		ds_RigidBodyId          body;
         ds_ContactId            contact;
+        
+        struct 
+        {
+            ds_RigidBodyId      contact_removed_bodies[2];
+            ds_ShapeId          contact_removed_shapes[2];
+        };
 	};
 };
 

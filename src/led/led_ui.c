@@ -743,8 +743,8 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 						ui_Pad();
 
-						const f32 density_prev = prefab->density;
-						const u32 shape_prev = prefab->shape;
+						//const f32 density_prev = prefab->density;
+						//const u32 shape_prev = prefab->shape;
 
 						ui_Height(ui_SizePixel(24.0f, 1.0f))
 						ui_ChildLayoutAxis(AXIS_2_X)
@@ -756,9 +756,9 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 				
 								ui_PadFill();
 
-								ui_Flags(UI_DRAW_BORDER)
-								ui_Width(ui_SizePixel(110.0f, 1.0f))
-								prefab->density = ui_FieldF32F(prefab->density, intv_inline(0.00125f, 1000000.0f), "%f###s_density", prefab->density);
+								//ui_Flags(UI_DRAW_BORDER)
+								//ui_Width(ui_SizePixel(110.0f, 1.0f))
+								//prefab->density = ui_FieldF32F(prefab->density, intv_inline(0.00125f, 1000000.0f), "%f###s_density", prefab->density);
 							}
 							
 							ui_Pad();
@@ -770,9 +770,9 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 				
 								ui_PadFill();
 
-								ui_Flags(UI_DRAW_BORDER)
-								ui_Width(ui_SizePixel(110.0f, 1.0f))
-								prefab->restitution = ui_FieldF32F(prefab->restitution, intv_inline(0.0f, 1.0f), "%f###s_restitution", prefab->restitution);
+								//ui_Flags(UI_DRAW_BORDER)
+								//ui_Width(ui_SizePixel(110.0f, 1.0f))
+								//prefab->restitution = ui_FieldF32F(prefab->restitution, intv_inline(0.0f, 1.0f), "%f###s_restitution", prefab->restitution);
 							}
 							
 							ui_Pad();
@@ -784,9 +784,9 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 				
 								ui_PadFill();
 
-								ui_Flags(UI_DRAW_BORDER)
-								ui_Width(ui_SizePixel(110.0f, 1.0f))
-								prefab->friction = ui_FieldF32F(prefab->friction, intv_inline(0.0f, 1.0f), "%f###s_friction", prefab->friction);
+								//ui_Flags(UI_DRAW_BORDER)
+								//ui_Width(ui_SizePixel(110.0f, 1.0f))
+								//prefab->friction = ui_FieldF32F(prefab->friction, intv_inline(0.0f, 1.0f), "%f###s_friction", prefab->friction);
 							}
 							
 							ui_Pad();
@@ -812,35 +812,35 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 				
 								ui_PadFill();
 
-								shape = strdb_Address(&led->cs_db, prefab->shape);
-								ui_Width(ui_SizePixel(110.0f, 1.0f))
-								if (ui_DropdownMenuF(&led->rb_prefab_mesh_menu, "%k###%p_sel", &shape->id, &led->rb_prefab_mesh_menu))
-								{
-									ui_DropdownMenuPush(&led->rb_prefab_mesh_menu);
+								//shape = strdb_Address(&led->cs_db, prefab->shape);
+								//ui_Width(ui_SizePixel(110.0f, 1.0f))
+								//if (ui_DropdownMenuF(&led->rb_prefab_mesh_menu, "%k###%p_sel", &shape->id, &led->rb_prefab_mesh_menu))
+								//{
+								//	ui_DropdownMenuPush(&led->rb_prefab_mesh_menu);
 
-									const struct c_Shape *s;
-									for (u32 i = led->cs_db.allocated_dll.first; i != DLL_NULL; i = strdb_Next(s))
-									{
-										s = strdb_Address(&led->cs_db, i);
-										struct ui_Node *drop;
-										ui_Flags(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW)
-										drop = ui_DropdownMenuEntryF(&led->rb_prefab_mesh_menu, "%k##%p_%u", &s->id, &led->rb_prefab_mesh_menu, i).address;
-										if (drop->inter & UI_INTER_SELECT)
-										{
-											strdb_Dereference(&led->cs_db, prefab->shape);
-											prefab->shape = strdb_Reference(&led->cs_db, s->id).index;
-										}
-									}
+								//	const struct c_Shape *s;
+								//	for (u32 i = led->cs_db.allocated_dll.first; i != DLL_NULL; i = strdb_Next(s))
+								//	{
+								//		s = strdb_Address(&led->cs_db, i);
+								//		struct ui_Node *drop;
+								//		ui_Flags(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW)
+								//		drop = ui_DropdownMenuEntryF(&led->rb_prefab_mesh_menu, "%k##%p_%u", &s->id, &led->rb_prefab_mesh_menu, i).address;
+								//		if (drop->inter & UI_INTER_SELECT)
+								//		{
+								//			strdb_Dereference(&led->cs_db, prefab->shape);
+								//			prefab->shape = strdb_Reference(&led->cs_db, s->id).index;
+								//		}
+								//	}
 
-									ui_DropdownMenuPop(&led->rb_prefab_mesh_menu);
-								}
+								//	ui_DropdownMenuPop(&led->rb_prefab_mesh_menu);
+								//}
 							}
 						}
 
-						if (prefab->density != density_prev || prefab->shape != shape_prev)
-						{
-                            ds_AssertString(0, "TODO");
-						}
+						//if (prefab->density != density_prev || prefab->shape != shape_prev)
+						//{
+                        //    ds_AssertString(0, "TODO");
+						//}
 
 						ui_PadFill();
 					}

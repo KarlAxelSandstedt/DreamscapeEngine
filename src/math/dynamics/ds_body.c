@@ -34,8 +34,6 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_
 	Vec3Copy(body->t_world.position, position);
 
 	body->entity = entity;
-	Vec3Copy(body->position, position);
-	QuatCopy(body->rotation, rotation);
 	Vec3Set(body->velocity, 0.0f, 0.0f, 0.0f);
 	Vec3Set(body->angular_velocity, 0.0f, 0.0f, 0.0f);
 	Vec3Set(body->linear_momentum, 0.0f, 0.0f, 0.0f);
@@ -43,11 +41,6 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_
 	const u32 dynamic_flag = (prefab->dynamic) ? RB_DYNAMIC : 0;
 	body->flags = RB_ACTIVE | (g_solver_config->sleep_enabled * RB_AWAKE) | dynamic_flag;
 
-	Mat3Copy(body->inertia_tensor, prefab->inertia_tensor);
-	Mat3Copy(body->inv_inertia_tensor, prefab->inv_inertia_tensor);
-	body->mass = prefab->mass;
-	body->restitution = prefab->restitution;
-	body->friction = prefab->friction;
 	body->low_velocity_time = 0.0f;
 
 	if (body->flags & RB_DYNAMIC)
@@ -138,12 +131,13 @@ void ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, con
 	ds_Assert(PoolSlotAllocated(body));
 
 	vec3 tmp;
+    mat3 body_inertia_tensor;
 	mat3 rot_world, rot_local, rot_local_inv, tmp1, tmp2, tmp3;
 	Mat3Quat(rot_world, body->t_world.rotation);
 
 	body->mass = 0.0f;
 	Vec3Set(body->local_center_of_mass, 0.0f, 0.0f, 0.0f);
-	Mat3Set(body->inertia_tensor, 
+	Mat3Set(body_inertia_tensor, 
 			0.0f, 0.0f, 0.0f, 
 			0.0f, 0.0f, 0.0f, 
 			0.0f, 0.0f, 0.0f);
@@ -196,10 +190,11 @@ void ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, con
 		Mat3OuterProduct(tmp2, d, d);
 		Mat3ScaleSelf(tmp2, mass[i]);
 
-		Mat3AddSelf(body->inertia_tensor, inertia_tensor[i]);
-		Mat3AddSelf(body->inertia_tensor, tmp1);
-		Mat3SubSelf(body->inertia_tensor, tmp2);
+		Mat3AddSelf(body_inertia_tensor, inertia_tensor[i]);
+		Mat3AddSelf(body_inertia_tensor, tmp1);
+		Mat3SubSelf(body_inertia_tensor, tmp2);
 	}
+    Mat3Inverse(body->inv_inertia_tensor, body_inertia_tensor);
 
 	ArenaPopRecord(&pipeline->frame);
 }

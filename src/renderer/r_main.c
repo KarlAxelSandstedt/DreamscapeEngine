@@ -417,7 +417,6 @@ static void r_EditorDraw(const struct led *led)
 
 	if (led->physics.draw_sbvh)
 	{
-
 		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
 		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
@@ -425,13 +424,17 @@ static void r_EditorDraw(const struct led *led)
 		for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
 		{
 			body = ds_PoolAddress(&led->physics.body_pool, i);
-			if (body->shape_type != C_SHAPE_TRI_MESH)
+            const struct ds_Shape *s = ds_PoolAddress(&led->physics.shape_pool, body->shape_list.first);
+			if (s->cshape_type != C_SHAPE_TRI_MESH)
 			{
 				continue;
 			}
 
-			const struct c_Shape *shape = strdb_Address(led->physics.cshape_db, body->shape_handle);
-			struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &shape->mesh_bvh.bvh, body->position, body->rotation, led->physics.sbvh_color);
+            ds_Transform transform;
+            ds_ShapeWorldTransform(&transform, &led->physics, s);
+
+			const struct c_Shape *shape = strdb_Address(led->physics.cshape_db, s->cshape_handle);
+			struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &shape->mesh_bvh.bvh, transform.position, transform.rotation, led->physics.sbvh_color);
 			if (mesh)
 			{
 				struct r_Instance *instance = r_InstanceAddNonCached(cmd);

@@ -397,7 +397,8 @@ try_again:                                                                      
             }                                                                                                       \
             *snapshot_prev = new_prev;                                                                              \
         }                                                                                                           \
-        /* node may be up-to-date, or may have been deleted and re-inserted at this point. */                       \
+        /* node may be 
+         * p-to-date, or may have been deleted and re-inserted at this point. */                       \
         else                                                                                                        \
         {                                                                                                           \
             const u32 key_found = key_TypePtrCmpFunction(key, &(*n_cur)->key_name);                                 \

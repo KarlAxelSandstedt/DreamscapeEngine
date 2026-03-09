@@ -561,7 +561,6 @@ struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const u32 dyn
 		{
 			struct ds_RigidBodyPrefab *prefab = strdb_AddAndAlias(&led->rb_prefab_db, copy).address;
             prefab->shape_list = dll_Init(struct ds_ShapePrefabInstance);
-			prefab->shape = POOL_NULL;
 			prefab->dynamic = dynamic;
 		}
 	}
@@ -1218,7 +1217,6 @@ void led_WallSmashSimulationSetup(struct led *led)
 	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_map");
 	sys_win->cmd_queue.regs[1].ptr = mesh_bvh;
 	CmdQueueSubmit(&sys_win->cmd_queue, cmd_collision_tri_mesh_bvh_add_id);
-
 
 	sys_win->cmd_queue.regs[0].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "s_map");
 	sys_win->cmd_queue.regs[1].utf8 = Utf8Cstr(sys_win->ui->mem_frame, "c_map");
@@ -1897,37 +1895,42 @@ static void led_engine_run(struct led *led)
 			{
 				if (led->physics.body_color_mode == RB_COLOR_MODE_COLLISION)
 				{
-                    ds_AssertString(0, "TODO");
-					//const struct ds_RigidBody *body1 = ds_PoolAddress(&led->physics.body_pool, event->contact_bodies.body1);
-					//const struct ds_RigidBody *body2 = ds_PoolAddress(&led->physics.body_pool, event->contact_bodies.body2);
-					//const struct led_node *node1 = ds_PoolAddress(&led->node_pool, body1->entity);
-					//const struct led_node *node2 = ds_PoolAddress(&led->node_pool, body2->entity);
+					const struct ds_RigidBody *body1 = ds_RigidBodyLookup(&led->physics, event->contact_removed_bodies[0]).address;
+					const struct ds_RigidBody *body2 = ds_RigidBodyLookup(&led->physics, event->contact_removed_bodies[1]).address;
+                    if (body1 && body2)
+                    {
+					    const struct led_node *node1 = ds_PoolAddress(&led->node_pool, body1->entity);
+					    const struct led_node *node2 = ds_PoolAddress(&led->node_pool, body2->entity);
 
-					//struct r_Proxy3d *proxy1 = r_Proxy3dAddress(node1->proxy);
-					//struct r_Proxy3d *proxy2 = r_Proxy3dAddress(node2->proxy);
-					//if (RB_IS_DYNAMIC(body1))
-					//{
-					//	if (body1->contact_first == NLL_NULL)
-					//	{
-					//		Vec4Copy(proxy1->color, node1->color);
-					//	}
-					//}
-					//else
-					//{
-					//	Vec4Copy(proxy1->color, led->physics.static_color);
-					//}
+
+					    struct r_Proxy3d *proxy1 = r_Proxy3dAddress(node1->proxy);
+					    struct r_Proxy3d *proxy2 = r_Proxy3dAddress(node2->proxy);
+					    if (RB_IS_DYNAMIC(body1))
+					    {
+                            const struct ds_Island *is = ds_PoolAddress(&led->physics.is_db.island_pool, body1->island_index);
+					    	if (is->contact_list.count == 0)
+					    	{
+					    		Vec4Copy(proxy1->color, node1->color);
+					    	}
+					    }
+					    else
+					    {
+					    	Vec4Copy(proxy1->color, led->physics.static_color);
+					    }
 		
-					//if (RB_IS_DYNAMIC(body2))
-					//{
-					//	if (body2->contact_first == NLL_NULL)
-					//	{
-					//		Vec4Copy(proxy2->color, node2->color);
-					//	}
-					//}
-					//else
-					//{
-					//	Vec4Copy(proxy2->color, led->physics.static_color);
-					//}
+					    if (RB_IS_DYNAMIC(body2))
+					    {
+                            const struct ds_Island *is = ds_PoolAddress(&led->physics.is_db.island_pool, body2->island_index);
+					    	if (is->contact_list.count)
+					    	{
+					    		Vec4Copy(proxy2->color, node2->color);
+					    	}
+					    }
+					    else
+					    {
+					    	Vec4Copy(proxy2->color, led->physics.static_color);
+					    }
+                    }
 				}
 			} break;
 
@@ -2001,8 +2004,8 @@ static void led_engine_run(struct led *led)
 
 				vec3 linear_velocity;
 				Vec3Scale(linear_velocity, body->linear_momentum, 1.0f / body->mass);
-				r_Proxy3dLinearSpeculationSet(body->position
-						, body->rotation
+				r_Proxy3dLinearSpeculationSet(body->t_world.position
+						, body->t_world.rotation
 						, linear_velocity
 						, body->angular_velocity
 						, event->ns

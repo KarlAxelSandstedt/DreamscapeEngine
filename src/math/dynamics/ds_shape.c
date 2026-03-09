@@ -60,6 +60,10 @@ ds_ShapeId ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_Sh
 void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Island *island, const u32 shape_index)
 {
     struct ds_Shape *shape = ds_PoolAddress(&pipeline->shape_pool, shape_index);
+    struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, shape->body);
+    const u64 s0 = ((u64) shape->tag << 32) | shape_index;
+    const u64 b0 = ((u64) body->tag << 32) | shape->body;
+
 	u32 ci = shape->contact_first;
 	shape->contact_first = NLL_NULL;
 
@@ -72,15 +76,23 @@ void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Isla
 		struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, ci);
 
         u32 next_i;
+        u64 b1; 
+        u64 s1; 
 		if (shape_index == c->key.shape0)
 		{
 			next_i = 0;
 			shape = ds_PoolAddress(&pipeline->shape_pool, c->key.shape1);
-		}
+            body = ds_PoolAddress(&pipeline->body_pool, c->key.body1);
+            b1 = ((u64) body->tag << 32) | c->key.body1;
+            s1 = ((u64) shape->tag << 32) | c->key.shape1;
+        }
 		else
 		{
 			next_i = 1;
 			shape = ds_PoolAddress(&pipeline->shape_pool, c->key.shape0);
+            body = ds_PoolAddress(&pipeline->body_pool, c->key.body0);
+            b1 = ((u64) body->tag << 32) | c->key.body0;
+            s1 = ((u64) shape->tag << 32) | c->key.shape0;
 		}
 
 		if (shape->contact_first == ci)
@@ -89,8 +101,7 @@ void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Isla
 		}
 		const u32 ci_next = c->nll_next[next_i];
 
-        const ds_ContactId id = ((u64) c->generation << 32) | ci;
-		PhysicsEventContactRemoved(pipeline, id);
+	    PhysicsEventContactRemoved(pipeline, b0, s0, b1, s1);
         dll_Remove(&island->contact_list, pipeline->cdb->contact_net.pool.buf, ci);
 		BitVecSetBit(&pipeline->cdb->contact_persistent_usage, ci, 0);
 		ds_HashMapRemove(&pipeline->cdb->contact_map, ds_ContactKeyHash(&c->key), ci);
@@ -102,6 +113,10 @@ void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Isla
 void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, const u32 index)
 {
 	struct ds_Shape *shape = ds_PoolAddress(&pipeline->shape_pool, index);
+    struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, shape->body);
+    const u64 s0 = ((u64) shape->tag << 32) | index;
+    const u64 b0 = ((u64) body->tag << 32) | shape->body;
+
 	u32 ci = shape->contact_first;
 	shape->contact_first = NLL_NULL;
     ds_Assert(((struct ds_RigidBody *) ds_PoolAddress(&pipeline->body_pool, shape->body))->island_index == ISLAND_STATIC);
@@ -118,15 +133,23 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
 	{
 		struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, ci);
 		u32 next_i;
+        u64 b1; 
+        u64 s1; 
 		if (index == c->key.shape0)
 		{
 			next_i = 0;
 			shape = ds_PoolAddress(&pipeline->shape_pool, c->key.shape1);
+            body = ds_PoolAddress(&pipeline->body_pool, c->key.body1);
+            b1 = ((u64) body->tag << 32) | c->key.body1;
+            s1 = ((u64) shape->tag << 32) | c->key.shape1;
 		}
 		else
 		{
 			next_i = 1;
 			shape = ds_PoolAddress(&pipeline->shape_pool, c->key.shape0);
+            body = ds_PoolAddress(&pipeline->body_pool, c->key.body0);
+            b1 = ((u64) body->tag << 32) | c->key.body0;
+            s1 = ((u64) shape->tag << 32) | c->key.shape0;
 		}
 
 		if (shape->contact_first == ci)
@@ -149,8 +172,7 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
 			is->flags |= ISLAND_SPLIT;
 		}
 
-        const ds_ContactId id = ((u64) c->generation << 32) | ci;
-		PhysicsEventContactRemoved(pipeline, id);
+		PhysicsEventContactRemoved(pipeline, b0, s0, b1, s1);
 		BitVecSetBit(&pipeline->cdb->contact_persistent_usage, ci, 0);
 		ds_HashMapRemove(&pipeline->cdb->contact_map, ds_ContactKeyHash(&c->key), ci);
         dll_Remove(&is->contact_list, pipeline->cdb->contact_net.pool.buf, ci);
