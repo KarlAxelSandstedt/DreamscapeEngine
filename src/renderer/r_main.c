@@ -375,6 +375,10 @@ static void r_EditorDraw(const struct led *led)
 	{
 		const u32 index = hi_IteratorNextDf(&it);
 		struct r_Proxy3d *proxy = r_Proxy3dAddress(index);
+        if ((proxy->flags & PROXY3D_DRAW) == 0)
+        {
+            continue;
+        }
 
 		const f32 dist = Vec3Distance(proxy->spec_position, led->cam.position);
 		const u32 unit_exponent = f32_exponent_bits(dist);

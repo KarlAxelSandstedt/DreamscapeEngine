@@ -68,8 +68,8 @@ u32 r_Proxy3dAlloc(const struct r_Proxy3d_config *config)
 	struct slot slot = hi_Add(&g_r_core->proxy3d_hierarchy, config->parent);
 	struct r_Proxy3d *proxy = slot.address;
 	proxy->flags = (config->parent != g_r_core->proxy3d_root)
-		? PROXY3D_RELATIVE
-		: 0;
+		? PROXY3D_DRAW | PROXY3D_RELATIVE
+		: PROXY3D_DRAW;
 
 	proxy->mesh = strdb_Reference(g_r_core->mesh_database, config->mesh).index;
 	Vec4Copy(proxy->color, config->color);

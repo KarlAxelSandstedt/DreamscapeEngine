@@ -1683,6 +1683,7 @@ static void led_EngineFlush(struct led *led)
 					, led->ns
 					, node->proxy);
 		struct r_Proxy3d *proxy = r_Proxy3dAddress(node->proxy);
+        proxy->flags |= PROXY3D_DRAW;
 		Vec4Copy(proxy->color, node->color);
 	}
 }
@@ -1995,6 +1996,9 @@ static void led_engine_run(struct led *led)
 
 			case PHYSICS_EVENT_BODY_REMOVED:
 			{
+				struct led_node *node = ds_PoolAddress(&led->node_pool, event->entity);
+                struct r_Proxy3d *proxy = r_Proxy3dAddress(node->proxy);
+                proxy->flags &= ~PROXY3D_DRAW;
 			} break;
 
 			case PHYSICS_EVENT_BODY_ORIENTATION:

@@ -64,16 +64,22 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
     }
 	ds_Assert(PoolSlotAllocated(body));
 
+    (RB_IS_MARKED(body))
+		? dll_Remove(&pipeline->body_marked_list, pipeline->body_pool.buf, ds_IdIndex(id))
+		: dll_Remove(&pipeline->body_non_marked_list, pipeline->body_pool.buf, ds_IdIndex(id));
+
 	struct ds_Shape *shape_ptr;
 	if (body->island_index != ISLAND_STATIC)
 	{
 	    struct ds_Island *island = ds_PoolAddress(&pipeline->is_db.island_pool, body->island_index);
         ds_Assert(PoolSlotAllocated(island));
 
-		for (u32 shape = body->shape_list.first; shape != DLL_NULL; shape = shape_ptr->dll_next)
+		for (u32 shape = body->shape_list.first; shape != DLL_NULL;)
 		{
 			shape_ptr = ds_PoolAddress(&pipeline->shape_pool, shape);
+            const u32 next = shape_ptr->dll_next;
 			ds_ShapeDynamicRemove(pipeline, island, shape);
+            shape = next;
 		}
 
     	dll_Remove(&island->body_list, pipeline->body_pool.buf, ds_IdIndex(id)); 
@@ -93,15 +99,18 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
 	}       
 	else
 	{
-		for (u32 shape = body->shape_list.first; shape != DLL_NULL; shape = shape_ptr->dll_next)
+		for (u32 shape = body->shape_list.first; shape != DLL_NULL;)
 		{
 			shape_ptr = ds_PoolAddress(&pipeline->shape_pool, shape);
+            const u32 next = shape_ptr->dll_next;
 			ds_ShapeStaticRemove(mem_tmp, pipeline, shape);
+            shape = next;
 		}
 	}
 
+    const u32 entity = body->entity;
 	ds_PoolRemove(&pipeline->body_pool, ds_IdIndex(id));
-	PhysicsEventBodyRemoved(pipeline, id);
+	PhysicsEventBodyRemoved(pipeline, entity);
 }
 
 struct slot ds_RigidBodyLookup(const struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId id)

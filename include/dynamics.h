@@ -849,13 +849,6 @@ void 		SolverCacheImpulse(struct solver *solver, const struct ds_Island *is);
 #define UNIFORM_SIZE 256
 #define GRAVITY_CONSTANT_DEFAULT 9.80665f
 
-#define PHYSICS_EVENT_BODY(pipeline, event_type, body_index)						        \
-	{												                                        \
-		struct physicsEvent *__physics_debug_event = PhysicsPipelineEventPush(pipeline);	\
-		__physics_debug_event->type = event_type;						                    \
-		__physics_debug_event->body = body_index;						                    \
-	}
-
 #define PHYSICS_EVENT_ISLAND(pipeline, event_type, island_index)					        \
 	{												                                        \
 		struct physicsEvent *__physics_debug_event = PhysicsPipelineEventPush(pipeline);	\
@@ -865,8 +858,18 @@ void 		SolverCacheImpulse(struct solver *solver, const struct ds_Island *is);
 
 #ifdef DS_PHYSICS_DEBUG
 
-#define	PhysicsEventBodyNew(pipeline, body)		        PHYSICS_EVENT_BODY(pipeline, PHYSICS_EVENT_BODY_NEW, body)
-#define	PhysicsEventBodyRemoved(pipeline, body)		    PHYSICS_EVENT_BODY(pipeline, PHYSICS_EVENT_BODY_REMOVED, body)
+#define	PhysicsEventBodyNew(pipeline, _body)		                                        \
+	{												                                        \
+		struct physicsEvent *__physics_debug_event = PhysicsPipelineEventPush(pipeline);	\
+		__physics_debug_event->type = PHYSICS_EVENT_BODY_NEW;						        \
+		__physics_debug_event->body = _body;						                        \
+	}
+#define	PhysicsEventBodyRemoved(pipeline, body_entity)                                      \
+	{												                                        \
+		struct physicsEvent *__physics_debug_event = PhysicsPipelineEventPush(pipeline);	\
+		__physics_debug_event->type = PHYSICS_EVENT_BODY_REMOVED;						    \
+		__physics_debug_event->entity = body_entity;						                \
+	}
 #define	PhysicsEventIslandAsleep(pipeline, island)	    PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_ASLEEP, island)
 #define	PhysicsEventIslandAwake(pipeline, island)	    PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_AWAKE, island)
 #define	PhysicsEventIslandNew(pipeline, island)		    PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_NEW, island)
@@ -891,7 +894,7 @@ void 		SolverCacheImpulse(struct solver *solver, const struct ds_Island *is);
 #else
 
 #define	PhysicsEventBodyNew(pipeline, body)
-#define	PhysicsEventBodyRemoved(pipeline, body)
+#define	PhysicsEventBodyRemoved(pipeline, entity)
 #define	PhysicsEventIslandAsleep(pipeline, island)
 #define	PhysicsEventIslandAwake(pipeline, island) 
 #define	PhysicsEventIslandNew(pipeline, island)   
@@ -926,6 +929,7 @@ struct physicsEvent
 	enum physicsEventType type;
 	union
 	{
+        u32                     entity;
 		u32                     island;
 		ds_RigidBodyId          body;
         ds_ContactId            contact;

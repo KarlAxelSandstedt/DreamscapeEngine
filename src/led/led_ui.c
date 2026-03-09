@@ -504,12 +504,17 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 							const struct led_node *entity = ds_PoolAddress(&led->node_pool, body->entity);
 							const char *body_id = CstrUtf8(g_ui->mem_frame, entity->id);
 
-
 							ui_FixedX(g_ui->inter.cursor_position[0])
 							ui_FixedY(g_ui->inter.cursor_position[1])
 							ui_Width(ui_SizeText(128.0f, 1.0f))
 							ui_Height(ui_SizePixel(24.0f, 1.0f))
 							ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW | UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_SKIP_HOVER_SEARCH, "%k##%u", &entity->id, body->entity);
+
+                            if (node->inter & UI_INTER_LEFT_CLICK)
+                            {
+                                const ds_RigidBodyId id = ((u64) body->tag << 32) | hit.u;
+                                ds_RigidBodyRemove(g_ui->mem_frame, &led->physics, id);
+                            }
 						}
 					}
 

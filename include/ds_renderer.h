@@ -227,11 +227,12 @@ we must speculate on future positions.
 
 #define PROXY3D_ROOT			2
 
-#define PROXY3D_FLAG_NONE		((u32) 0)
-#define PROXY3D_MOVING			((u32) 1 << 0)	/* Set if any velocity != 0 			    */
-#define PROXY3D_SPECULATE_NONE		((u32) 1 << 1)	/* Set if transform should be non-speculative  	    */
-#define PROXY3D_SPECULATE_LINEAR	((u32) 1 << 2)	/* Set if linear speculation			    */
-#define PROXY3D_RELATIVE		((u32) 1 << 3)  /* Set if proxy is relative (has a non-root parent) */
+#define PROXY3D_FLAG_NONE		    ((u32) 0)
+#define PROXY3D_DRAW                ((u32) 1 << 0)
+#define PROXY3D_MOVING			    ((u32) 1 << 1)	/* Set if any velocity != 0 			    */
+#define PROXY3D_SPECULATE_NONE		((u32) 1 << 2)	/* Set if transform should be non-speculative  	    */
+#define PROXY3D_SPECULATE_LINEAR	((u32) 1 << 3)	/* Set if linear speculation			    */
+#define PROXY3D_RELATIVE		    ((u32) 1 << 4)  /* Set if proxy is relative (has a non-root parent) */
 
 #define PROXY3D_SPECULATE_FLAGS		(   PROXY3D_SPECULATE_NONE	\
 					  | PROXY3D_SPECULATE_LINEAR	\
