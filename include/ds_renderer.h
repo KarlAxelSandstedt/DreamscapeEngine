@@ -225,7 +225,8 @@ Contains data for speculative movement; Since the physics engine runs at a fixed
 we must speculate on future positions. 
 */
 
-#define PROXY3D_ROOT			2
+#define PROXY3D_NULL                HI_NULL_INDEX
+#define PROXY3D_ROOT			    2
 
 #define PROXY3D_FLAG_NONE		    ((u32) 0)
 #define PROXY3D_DRAW                ((u32) 1 << 0)
@@ -234,9 +235,9 @@ we must speculate on future positions.
 #define PROXY3D_SPECULATE_LINEAR	((u32) 1 << 3)	/* Set if linear speculation			    */
 #define PROXY3D_RELATIVE		    ((u32) 1 << 4)  /* Set if proxy is relative (has a non-root parent) */
 
-#define PROXY3D_SPECULATE_FLAGS		(   PROXY3D_SPECULATE_NONE	\
-					  | PROXY3D_SPECULATE_LINEAR	\
-					)
+#define PROXY3D_SPECULATE_FLAGS		(   PROXY3D_SPECULATE_NONE	    \
+					                  | PROXY3D_SPECULATE_LINEAR	\
+					                )
 
 struct r_Proxy3d_config
 {
@@ -431,15 +432,18 @@ void		r_SceneFrameEnd(void);
  *			r_mesh.c			*
  ********************************************************/
 
+#define R_MESH_BUFSIZE  32
+
 struct r_Mesh
 {
-	STRING_DATABASE_SLOT_STATE;				/* internal header, MAY NOT BE MOVED */
-	u32				index_count;		
-	u32 *				index_data; 		/* index_data[index_count] */
-	u32				index_max_used;		/* max used index */
-	u32				vertex_count;   	
-	void *				vertex_data;		/* vertex_data[vertex_count] */
-	u64				local_stride;
+    u8      id_buf[R_MESH_BUFSIZE];
+	STRING_DATABASE_SLOT_STATE;	/* internal header, MAY NOT BE MOVED */
+	u32		index_count;		
+	u32 *	index_data; 		/* index_data[index_count] */
+	u32		index_max_used;		/* max used index */
+	u32		vertex_count;   	
+	void *	vertex_data;		/* vertex_data[vertex_count] */
+	u64		local_stride;
 };
 
 /**************** TEMPORARY: quick and dirty mesh generation *****************/

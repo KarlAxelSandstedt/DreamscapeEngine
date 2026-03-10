@@ -103,11 +103,9 @@ struct led *led_Alloc(void)
 	}
 	
 	g_editor->viewport_id = Utf8Format(&sys_win->mem_persistent, "viewport_%u", g_editor->window);
-	g_editor->node_pool = ds_GPoolAlloc(NULL, 4096, struct led_node, GROWABLE);
+	g_editor->node_hierarchy = hi_Alloc(NULL, 4096, struct led_Node, GROWABLE);
 	g_editor->node_map = ds_HashMapAlloc(NULL, 4096, 4096, GROWABLE);
-	g_editor->node_marked_list = dll_Init(struct led_node);
-	g_editor->node_non_marked_list = dll_Init(struct led_node);
-	g_editor->node_selected_list = dll2_Init(struct led_node);
+	//g_editor->node_selected_list = dll2_Init(struct led_Node);
 	g_editor->csg = csg_Alloc();
 	g_editor->render_mesh_db = strdb_Alloc(NULL, 32, 32, struct r_Mesh, GROWABLE);
 	g_editor->shape_prefab_db = strdb_Alloc(NULL, 32, 32, struct ds_ShapePrefab, GROWABLE);
@@ -141,7 +139,7 @@ struct led *led_Alloc(void)
     struct slot slot = ds_PoolAdd(&g_editor->shape_prefab_instance_pool);
     const u32 instance_index = slot.index;
     struct ds_ShapePrefabInstance *instance = slot.address;
-    instance->id = Utf8CstrBuffered(instance->id_buf, SHAPE_PREFAB_INSTANCE_BUFSIZE, "Stub");
+    instance->id = Utf8CstrBuffered(instance->id_buf, PREFAB_BUFSIZE, "Stub");
 	instance->shape = strdb_Reference(&g_editor->cs_db, Utf8Inline("")).index;
     quat quat;
     QuatAxisAngle(quat, Vec3Inline(0.0f, 1.0f, 0.0f), 0.0f);
@@ -162,6 +160,6 @@ void led_Dealloc(struct led *led)
 	led_ProjectMenuDealloc(&led->project_menu);
 	csg_Dealloc(&led->csg);
 	ds_HashMapDealloc(&led->node_map);
-	ds_GPoolDealloc(&led->node_pool);
+	hi_Dealloc(&led->node_hierarchy);
 	ArenaFree(&g_editor->frame);
 }

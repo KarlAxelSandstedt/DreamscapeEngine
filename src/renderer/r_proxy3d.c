@@ -82,16 +82,18 @@ u32 r_Proxy3dAlloc(const struct r_Proxy3d_config *config)
 
 void r_Proxy3dDealloc(struct arena *tmp, const u32 proxy_index)
 {
-	struct r_Proxy3d *proxy = r_Proxy3dAddress(proxy_index);
-	strdb_Dereference(g_r_core->mesh_database, proxy->mesh);
-	hi_Remove(tmp, &g_r_core->proxy3d_hierarchy, proxy_index);
+    if (proxy_index != PROXY3D_NULL)
+    {
+	    struct r_Proxy3d *proxy = r_Proxy3dAddress(proxy_index);
+	    strdb_Dereference(g_r_core->mesh_database, proxy->mesh);
+	    hi_Remove(tmp, &g_r_core->proxy3d_hierarchy, proxy_index);
+    }
 }
 
 struct r_Proxy3d *r_Proxy3dAddress(const u32 proxy)
 {
 	return hi_Address(&g_r_core->proxy3d_hierarchy, proxy);
 }
-
 
 /* Calculate the speculative movement of the proxy locally, i.e., the position of the proxy not counting any position type effects */
 static void r_InternalProxy3dLocalSpeculativeOrientation(struct r_Proxy3d *proxy, const u64 ns_time)

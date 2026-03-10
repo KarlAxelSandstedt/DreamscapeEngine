@@ -66,7 +66,7 @@ enum cmdId
 	CMD_STATIC_COUNT
 };
 
-#define CMD_REGISTER_COUNT	8
+#define CMD_REGISTER_COUNT	16
 union cmdRegister
 {
 	u8	u8;
@@ -83,6 +83,8 @@ union cmdRegister
 	utf8	utf8;
 	utf32	utf32;
 	intv	intv;
+    vec3    vec3;
+    vec4    vec4;
 };
 
 typedef struct cmdFunction

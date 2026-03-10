@@ -184,8 +184,10 @@ enum c_ShapeType
 	C_SHAPE_COUNT,
 };
 
+#define C_SHAPE_ID_SIZE     128
 struct c_Shape
 {
+    u8                      id_buf[C_SHAPE_ID_SIZE];
 	STRING_DATABASE_SLOT_STATE;
 	
 	mat3	                inertia_tensor;		/* local shape frame intertia tensor (Assumes density=1.0, 

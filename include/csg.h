@@ -117,7 +117,7 @@ struct csg
 
 	struct strdb	brush_db;
 	struct ds_Pool	instance_pool;
-	struct ds_Pool	node_pool;
+	struct ds_Pool	node_hierarchy;
 
 	struct dll	brush_marked_list;
 

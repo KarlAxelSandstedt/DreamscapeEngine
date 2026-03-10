@@ -501,7 +501,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 						if (hit.f < F32_INFINITY)
 						{
 							const struct ds_RigidBody *body = ds_PoolAddress(&led->physics.body_pool, hit.u);	
-							const struct led_node *entity = ds_PoolAddress(&led->node_pool, body->entity);
+							const struct led_Node *entity = hi_Address(&led->node_hierarchy, body->entity);
 							const char *body_id = CstrUtf8(g_ui->mem_frame, entity->id);
 
 							ui_FixedX(g_ui->inter.cursor_position[0])
@@ -853,254 +853,254 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 					ui_Pad();
 				}
 
-				ui_ChildLayoutAxis(AXIS_2_Y)
-				ui_Width(ui_SizePixel(230.0f, 1.0f))
-				ui_Parent(ui_NodeAllocNonHashed(UI_DRAW_BACKGROUND).index)
-				ui_Flags(UI_DRAW_ROUNDED_CORNERS | UI_TEXT_ALLOW_OVERFLOW)
-				{
-					if (ui_DropdownMenuF(&led->rb_color_mode_menu, "%s###%p_color_mode", body_color_mode_str[led->physics.body_color_mode], &led->rb_color_mode_menu))
-					{
-						ui_DropdownMenuPush(&led->rb_color_mode_menu);
+				//ui_ChildLayoutAxis(AXIS_2_Y)
+				//ui_Width(ui_SizePixel(230.0f, 1.0f))
+				//ui_Parent(ui_NodeAllocNonHashed(UI_DRAW_BACKGROUND).index)
+				//ui_Flags(UI_DRAW_ROUNDED_CORNERS | UI_TEXT_ALLOW_OVERFLOW)
+				//{
+				//	if (ui_DropdownMenuF(&led->rb_color_mode_menu, "%s###%p_color_mode", body_color_mode_str[led->physics.body_color_mode], &led->rb_color_mode_menu))
+				//	{
+				//		ui_DropdownMenuPush(&led->rb_color_mode_menu);
 
-						for (u32 i = 0; i < RB_COLOR_MODE_COUNT; ++i)
-						{
-							struct ui_Node *drop;
-							ui_Flags(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW)
-							drop = ui_DropdownMenuEntryF(&led->rb_color_mode_menu, "%s###%p_%u", 
-									body_color_mode_str[i], 
-									&led->rb_color_mode_menu, 
-									i).address;
-							if (drop->inter & UI_INTER_SELECT)
-							{
-								led->physics.pending_body_color_mode = i;
-							}
-						}
+				//		for (u32 i = 0; i < RB_COLOR_MODE_COUNT; ++i)
+				//		{
+				//			struct ui_Node *drop;
+				//			ui_Flags(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW)
+				//			drop = ui_DropdownMenuEntryF(&led->rb_color_mode_menu, "%s###%p_%u", 
+				//					body_color_mode_str[i], 
+				//					&led->rb_color_mode_menu, 
+				//					i).address;
+				//			if (drop->inter & UI_INTER_SELECT)
+				//			{
+				//				led->physics.pending_body_color_mode = i;
+				//			}
+				//		}
 
-						ui_DropdownMenuPop(&led->rb_color_mode_menu);
-					}
+				//		ui_DropdownMenuPop(&led->rb_color_mode_menu);
+				//	}
 
-					ui_Pad(); 
+				//	ui_Pad(); 
 
-					/* TODO: Make checkbox one-lines */
-					/* TODO: Make center one-lines */
-					struct ui_Node *node;
-					ui_Height(ui_SizePixel(24.0f, 1.0f))
-					ui_ChildLayoutAxis(AXIS_2_X)
-					{
-						ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
-						{
-							ui_Pad();
-							ui_Width(ui_SizePixel(24.0f, 1.0f))
-							node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_0").address;
-							ui_Pad();
-							ui_NodeAllocF(UI_DRAW_TEXT, "draw DBVT");
-							if (node->inter & UI_INTER_LEFT_CLICK)
-							{
-								led->physics.draw_dbvh = !led->physics.draw_dbvh;
-							}
+				//	/* TODO: Make checkbox one-lines */
+				//	/* TODO: Make center one-lines */
+				//	struct ui_Node *node;
+				//	ui_Height(ui_SizePixel(24.0f, 1.0f))
+				//	ui_ChildLayoutAxis(AXIS_2_X)
+				//	{
+				//		ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+				//		{
+				//			ui_Pad();
+				//			ui_Width(ui_SizePixel(24.0f, 1.0f))
+				//			node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_0").address;
+				//			ui_Pad();
+				//			ui_NodeAllocF(UI_DRAW_TEXT, "draw DBVT");
+				//			if (node->inter & UI_INTER_LEFT_CLICK)
+				//			{
+				//				led->physics.draw_dbvh = !led->physics.draw_dbvh;
+				//			}
 
-							if (led->physics.draw_dbvh)
-							{
-								Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
-							}
+				//			if (led->physics.draw_dbvh)
+				//			{
+				//				Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
+				//			}
 
-							if (node->inter & UI_INTER_HOVER)
-							{
-								Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
-							}
-						}
+				//			if (node->inter & UI_INTER_HOVER)
+				//			{
+				//				Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
+				//			}
+				//		}
 
-						ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
-						{
-							ui_Pad();
-							ui_Width(ui_SizePixel(24.0f, 1.0f))
-							node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_1").address;
-							ui_Pad();
-							ui_NodeAllocF(UI_DRAW_TEXT, "draw SBVT");
-							if (node->inter & UI_INTER_LEFT_CLICK)
-							{
-								led->physics.draw_sbvh = !led->physics.draw_sbvh;
-							}
+				//		ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+				//		{
+				//			ui_Pad();
+				//			ui_Width(ui_SizePixel(24.0f, 1.0f))
+				//			node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_1").address;
+				//			ui_Pad();
+				//			ui_NodeAllocF(UI_DRAW_TEXT, "draw SBVT");
+				//			if (node->inter & UI_INTER_LEFT_CLICK)
+				//			{
+				//				led->physics.draw_sbvh = !led->physics.draw_sbvh;
+				//			}
 
-							if (led->physics.draw_sbvh)
-							{
-								Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
-							}
+				//			if (led->physics.draw_sbvh)
+				//			{
+				//				Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
+				//			}
 
-							if (node->inter & UI_INTER_HOVER)
-							{
-								Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
-							}
-						}
+				//			if (node->inter & UI_INTER_HOVER)
+				//			{
+				//				Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
+				//			}
+				//		}
 
-						ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
-						{
-							ui_Pad();
-							ui_Width(ui_SizePixel(24.0f, 1.0f))
-							node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_2").address;
-							ui_Pad();
-							ui_NodeAllocF(UI_DRAW_TEXT, "draw bounding boxes");
-							if (node->inter & UI_INTER_LEFT_CLICK)
-							{
-								led->physics.draw_bounding_box = !led->physics.draw_bounding_box;
-							}
+				//		ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+				//		{
+				//			ui_Pad();
+				//			ui_Width(ui_SizePixel(24.0f, 1.0f))
+				//			node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_2").address;
+				//			ui_Pad();
+				//			ui_NodeAllocF(UI_DRAW_TEXT, "draw bounding boxes");
+				//			if (node->inter & UI_INTER_LEFT_CLICK)
+				//			{
+				//				led->physics.draw_bounding_box = !led->physics.draw_bounding_box;
+				//			}
 
-							if (led->physics.draw_bounding_box)
-							{
-								Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
-							}
+				//			if (led->physics.draw_bounding_box)
+				//			{
+				//				Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
+				//			}
 
-							if (node->inter & UI_INTER_HOVER)
-							{
-								Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
-							}
-						}
+				//			if (node->inter & UI_INTER_HOVER)
+				//			{
+				//				Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
+				//			}
+				//		}
 
-						ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
-						{
-							ui_Pad();
-							ui_Width(ui_SizePixel(24.0f, 1.0f))
-							node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_3").address;
-							ui_Pad();
-							ui_NodeAllocF(UI_DRAW_TEXT, "draw collision manifolds");
-							if (node->inter & UI_INTER_LEFT_CLICK)
-							{
-								led->physics.draw_manifold = !led->physics.draw_manifold;
-							}
+				//		ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+				//		{
+				//			ui_Pad();
+				//			ui_Width(ui_SizePixel(24.0f, 1.0f))
+				//			node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_3").address;
+				//			ui_Pad();
+				//			ui_NodeAllocF(UI_DRAW_TEXT, "draw collision manifolds");
+				//			if (node->inter & UI_INTER_LEFT_CLICK)
+				//			{
+				//				led->physics.draw_manifold = !led->physics.draw_manifold;
+				//			}
 
-							if (led->physics.draw_manifold)
-							{
-								Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
-							}
+				//			if (led->physics.draw_manifold)
+				//			{
+				//				Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
+				//			}
 
-							if (node->inter & UI_INTER_HOVER)
-							{
-								Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
-							}
-						}
+				//			if (node->inter & UI_INTER_HOVER)
+				//			{
+				//				Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
+				//			}
+				//		}
 
-						ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
-						{
-							ui_Pad();
-							ui_Width(ui_SizePixel(24.0f, 1.0f))
-							node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_4").address;
-							ui_Pad();
-							ui_NodeAllocF(UI_DRAW_TEXT, "draw debug lines");
-							if (node->inter & UI_INTER_LEFT_CLICK)
-							{
-								led->physics.draw_lines = !led->physics.draw_lines;
-							}
+				//		ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+				//		{
+				//			ui_Pad();
+				//			ui_Width(ui_SizePixel(24.0f, 1.0f))
+				//			node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_4").address;
+				//			ui_Pad();
+				//			ui_NodeAllocF(UI_DRAW_TEXT, "draw debug lines");
+				//			if (node->inter & UI_INTER_LEFT_CLICK)
+				//			{
+				//				led->physics.draw_lines = !led->physics.draw_lines;
+				//			}
 
-							if (led->physics.draw_lines)
-							{
-								Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
-							}
+				//			if (led->physics.draw_lines)
+				//			{
+				//				Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
+				//			}
 
-							if (node->inter & UI_INTER_HOVER)
-							{
-								Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
-							}
-						}
-					}
-
-
-				
-					//struct led_node *node = NULL;
-					//ui_Height(ui_SizePixel(256.0f, 1.0f))
-					//ui_list(&led->node_ui_list, "###%p", &led->node_ui_list)
-					//for (u32 i = led->node_non_marked_list.first; i != DLL_NULL; i = dll_Next(node))
-					//{
-					//	node = ds_GPoolAddress(&led->node_pool, i);
-					//	ui_ChildLayoutAxis(AXIS_2_X)
-					//	node->cache = ui_ListEntryAllocCached(&led->node_ui_list, 
-					//			       	node->id,
-					//				node->cache);
-
-					//	if (node->cache.frame_node)
-					//	ui_Parent(node->cache.index)
-					//	{
-					//		ui_Pad(); 
-
-					//		ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, "%k##%u", &node->id, i);
-					//	}
-
-					//	struct ui_Node *ui_node = node->cache.frame_node;
-					//	if (ui_node->inter & UI_INTER_SELECT)
-					//	{
-					//		if (!dll2_InList(node))
-					//		{
-					//			dll_Append(&led->node_selected_list, led->node_pool.buf, i);
-					//		}
-					//	}
-					//	else
-					//	{
-					//		if (dll2_InList(node))
-					//		{
-					//			dll_Remove(&led->node_selected_list, led->node_pool.buf, i);
-					//		}
-					//	}
-					//}
-
-					//ui_list(&led->node_selected_ui_list, "###%p", &led->node_selected_ui_list)
-					//for (u32 i = led->node_selected_list.first; i != DLL_NULL; i = dll2_Next(node))
-					//{
-					//	node = ds_GPoolAddress(&led->node_pool, i);
-					//	ui_ChildLayoutAxis(AXIS_2_Y)
-					//	ui_Parent(ui_ListEntryAllocF(&led->node_selected_ui_list, "###%p_%u", &led->node_selected_ui_list, i).index)
-					//	{
-					//		ui_Height(ui_SizePixel(24.0f, 1.0f))
-					//		ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, "%k##sel_%u", &node->id, i);
-					//		ui_Height(ui_SizePixel(3*24.0f + 12.0f, 1.0f))
-					//		ui_ChildLayoutAxis(AXIS_2_X)
-					//		ui_Parent(ui_NodeAllocNonHashed(UI_DRAW_BORDER).index)
-					//		ui_ChildLayoutAxis(AXIS_2_Y)
-					//		{
-					//			ui_TextAlignY(ALIGN_TOP)	
-					//			ui_Width(ui_SizePixel(128.0f, 0.0f))
-					//			ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
-					//			ui_Height(ui_SizePixel(24.0f, 1.0f))
-					//			{
-					//				ui_PadPixel(6.0f);
-
-					//				ui_Height(ui_SizePixel(3*24.0f, 1.0f))
-					//				ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, "position##%u", i);
-					//				ui_PadPixel(6.0f);
-					//			}
-
-					//			ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
-					//			ui_Height(ui_SizePixel(24.0f, 1.0f))
-					//			{
-					//				ui_PadPixel(6.0f);
-					//				
-					//				vec3 p;
-					//				Vec3Copy(p, node->position);
-					//				node->position[0] = ui_FieldF32F(node->position[0], intv_inline(-1000000.0f, 1000000.0f), "%f###field_x_%u", node->position[0], i);
-					//				node->position[1] = ui_FieldF32F(node->position[1], intv_inline(-1000000.0f, 1000000.0f), "%f###field_y_%u", node->position[1], i);
-					//				node->position[2] = ui_FieldF32F(node->position[2], intv_inline(-1000000.0f, 1000000.0f), "%f###field_z_%u", node->position[2], i);
-
-					//				if (p[0] != node->position[0] || p[1] != node->position[1] || p[2] != node->position[2])
-					//				{
-					//					vec3 zero = { 0 };
-					//					r_Proxy3dLinearSpeculationSet(node->position
-					//							, node->rotation
-					//							, zero 
-					//							, zero 
-					//							, led->ns
-					//							, node->proxy);
-					//	
-					//				}
+				//			if (node->inter & UI_INTER_HOVER)
+				//			{
+				//				Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
+				//			}
+				//		}
+				//	}
 
 
-					//				ui_PadPixel(6.0f);
-					//			}
+				//
+				//	//struct led_Node *node = NULL;
+				//	//ui_Height(ui_SizePixel(256.0f, 1.0f))
+				//	//ui_list(&led->node_ui_list, "###%p", &led->node_ui_list)
+				//	//for (u32 i = led->node_non_marked_list.first; i != DLL_NULL; i = dll_Next(node))
+				//	//{
+				//	//	node = hi_Address(&led->node_hierarchy, i);
+				//	//	ui_ChildLayoutAxis(AXIS_2_X)
+				//	//	node->cache = ui_ListEntryAllocCached(&led->node_ui_list, 
+				//	//			       	node->id,
+				//	//				node->cache);
 
-					//			ui_PadFill();
-					//		}
-					//	}
-					//}
+				//	//	if (node->cache.frame_node)
+				//	//	ui_Parent(node->cache.index)
+				//	//	{
+				//	//		ui_Pad(); 
 
-					ui_PadFill();
-				}
+				//	//		ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, "%k##%u", &node->id, i);
+				//	//	}
+
+				//	//	struct ui_Node *ui_node = node->cache.frame_node;
+				//	//	if (ui_node->inter & UI_INTER_SELECT)
+				//	//	{
+				//	//		if (!dll2_InList(node))
+				//	//		{
+				//	//			dll_Append(&led->node_selected_list, led->node_hierarchy.pool.buf, i);
+				//	//		}
+				//	//	}
+				//	//	else
+				//	//	{
+				//	//		if (dll2_InList(node))
+				//	//		{
+				//	//			dll_Remove(&led->node_selected_list, led->node_hierarchy.pool.buf, i);
+				//	//		}
+				//	//	}
+				//	//}
+
+				//	//ui_list(&led->node_selected_ui_list, "###%p", &led->node_selected_ui_list)
+				//	//for (u32 i = led->node_selected_list.first; i != DLL_NULL; i = dll2_Next(node))
+				//	//{
+				//	//	node = hi_Address(&led->node_hierarchy, i);
+				//	//	ui_ChildLayoutAxis(AXIS_2_Y)
+				//	//	ui_Parent(ui_ListEntryAllocF(&led->node_selected_ui_list, "###%p_%u", &led->node_selected_ui_list, i).index)
+				//	//	{
+				//	//		ui_Height(ui_SizePixel(24.0f, 1.0f))
+				//	//		ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, "%k##sel_%u", &node->id, i);
+				//	//		ui_Height(ui_SizePixel(3*24.0f + 12.0f, 1.0f))
+				//	//		ui_ChildLayoutAxis(AXIS_2_X)
+				//	//		ui_Parent(ui_NodeAllocNonHashed(UI_DRAW_BORDER).index)
+				//	//		ui_ChildLayoutAxis(AXIS_2_Y)
+				//	//		{
+				//	//			ui_TextAlignY(ALIGN_TOP)	
+				//	//			ui_Width(ui_SizePixel(128.0f, 0.0f))
+				//	//			ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+				//	//			ui_Height(ui_SizePixel(24.0f, 1.0f))
+				//	//			{
+				//	//				ui_PadPixel(6.0f);
+
+				//	//				ui_Height(ui_SizePixel(3*24.0f, 1.0f))
+				//	//				ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, "position##%u", i);
+				//	//				ui_PadPixel(6.0f);
+				//	//			}
+
+				//	//			ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+				//	//			ui_Height(ui_SizePixel(24.0f, 1.0f))
+				//	//			{
+				//	//				ui_PadPixel(6.0f);
+				//	//				
+				//	//				vec3 p;
+				//	//				Vec3Copy(p, node->position);
+				//	//				node->position[0] = ui_FieldF32F(node->position[0], intv_inline(-1000000.0f, 1000000.0f), "%f###field_x_%u", node->position[0], i);
+				//	//				node->position[1] = ui_FieldF32F(node->position[1], intv_inline(-1000000.0f, 1000000.0f), "%f###field_y_%u", node->position[1], i);
+				//	//				node->position[2] = ui_FieldF32F(node->position[2], intv_inline(-1000000.0f, 1000000.0f), "%f###field_z_%u", node->position[2], i);
+
+				//	//				if (p[0] != node->position[0] || p[1] != node->position[1] || p[2] != node->position[2])
+				//	//				{
+				//	//					vec3 zero = { 0 };
+				//	//					r_Proxy3dLinearSpeculationSet(node->position
+				//	//							, node->rotation
+				//	//							, zero 
+				//	//							, zero 
+				//	//							, led->ns
+				//	//							, node->proxy);
+				//	//	
+				//	//				}
+
+
+				//	//				ui_PadPixel(6.0f);
+				//	//			}
+
+				//	//			ui_PadFill();
+				//	//		}
+				//	//	}
+				//	//}
+
+				//	ui_PadFill();
+				//}
 			}
 
 			win->cmd_console->visible = 1;

@@ -31,7 +31,7 @@ struct csg csg_Alloc(void)
 
 	csg.brush_db = strdb_Alloc(NULL, 32, 32, struct csg_Brush, GROWABLE);
 	csg.instance_pool = ds_PoolAlloc(NULL, 32, struct csg_Instance, GROWABLE);
-	csg.node_pool = ds_PoolAlloc(NULL, 32, struct csg_Instance, GROWABLE);
+	csg.node_hierarchy = ds_PoolAlloc(NULL, 32, struct csg_Instance, GROWABLE);
 	csg.frame = ArenaAlloc(1024*1024);
 	csg.brush_marked_list = dll_Init(struct csg_Brush);
 	csg.instance_marked_list = dll_Init(struct csg_Instance);
@@ -54,7 +54,7 @@ void csg_Dealloc(struct csg *csg)
 {
 	strdb_Dealloc(&csg->brush_db);
 	ds_PoolDealloc(&csg->instance_pool);
-	ds_PoolDealloc(&csg->node_pool);
+	ds_PoolDealloc(&csg->node_hierarchy);
 	ArenaFree(&csg->frame);
 	//dcel_allocator_dealloc(csg->dcel_allocator);
 }
@@ -63,7 +63,7 @@ void csg_Flush(struct csg *csg)
 {
 	strdb_Flush(&csg->brush_db);
 	ds_PoolFlush(&csg->instance_pool);
-	ds_PoolFlush(&csg->node_pool);
+	ds_PoolFlush(&csg->node_hierarchy);
 	ArenaFlush(&csg->frame);
 	dll_Flush(&csg->brush_marked_list);
 	dll_Flush(&csg->instance_marked_list);

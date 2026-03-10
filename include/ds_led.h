@@ -41,58 +41,25 @@ struct led_ProjectMenu
 {
 	u32		window;
 
-	utf8		selected_path;		/* selected path in menu, or empty string */
+	utf8	selected_path;		        /* selected path in menu, or empty string */
 
 	u32		projects_folder_allocated; /* Boolean : Is directory contents allocated */
-	u32		projects_folder_refresh; /* Boolean : on main entry, refresh projects folder contents */
+	u32		projects_folder_refresh;    /* Boolean : on main entry, refresh projects folder contents */
 
 	struct directoryNavigator	dir_nav;
-	struct ui_List			dir_list;
+	struct ui_List			    dir_list;
 	
-	struct ui_Popup		popup_new_project;
-	struct ui_Popup		popup_new_project_extra;
-	utf8			utf8_new_project;
-	struct ui_TextInput 	input_line_new_project;
+	struct ui_Popup		        popup_new_project;
+	struct ui_Popup		        popup_new_project_extra;
+	utf8			            utf8_new_project;
+	struct ui_TextInput 	    input_line_new_project;
 };
 
 struct led_project
 {
-	u32			initialized;	/* is project setup/loaded and initialized? 	*/	
-	struct file		folder;		/* project folder 				*/
-	struct file		file;		/* project main file 				*/
-};
-
-/*
-led_node
-========
-General level editor node; TODO
-*/
-
-#define LED_FLAG_NONE			((u64) 0)
-#define LED_CONSTANT			((u64) 1 << 0)	/* node state is constant 			   	*/
-#define LED_MARKED_FOR_REMOVAL		((u64) 1 << 1)	/* node is marked for removal; Whenever possible, 
-							   remove the node. 					*/
-#define LED_PHYSICS			((u64) 1 << 2)	/* node contains a physics constructor handle		*/
-#define LED_CSG				((u64) 1 << 3)	/* node contains a csg constructor handle		*/
-
-struct led_node
-{
-	GENERATIONAL_POOL_SLOT_STATE;
-	DLL_SLOT_STATE;		/* marked/non_marked state */
-	DLL2_SLOT_STATE;	/* selected list state */
-
-	u64			        flags;
-	utf8			    id;
-	struct ui_NodeCache	cache;
-	u32			        key;
-
-	vec3			    position;
-	quat			    rotation;
-	vec4			    color;
-
-	u32			        rb_prefab; 
-	u32 			    proxy;	
-	u32			        csgBRush;	
+	u32			    initialized;	/* is project setup/loaded and initialized? 	*/	
+	struct file		folder;		    /* project folder 				*/
+	struct file		file;		    /* project main file 				*/
 };
 
 /*
@@ -146,7 +113,7 @@ struct led
 	struct ui_DropdownMenu  rb_color_mode_menu;
 
 	struct strdb		    shape_prefab_db;
-    struct ds_Pool             shape_prefab_instance_pool;    
+    struct ds_Pool          shape_prefab_instance_pool;    
 
 	struct strdb		    rb_prefab_db;
 	struct ui_List 		    rb_prefab_list;
@@ -154,10 +121,9 @@ struct led
 
 	struct strdb		    render_mesh_db;
 
-	struct ds_HashMap 		    node_map;
-	struct ds_Pool		        node_pool;
-	struct dll		        node_marked_list;
-	struct dll		        node_non_marked_list;
+	struct ds_HashMap 		node_map;
+	struct hi		        node_hierarchy;
+
 	struct dll		        node_selected_list;
 	struct ui_List		    node_ui_list;
 	struct ui_List		    node_selected_ui_list;
@@ -169,7 +135,7 @@ struct led *	led_Alloc(void);
 void		led_Dealloc(struct led *led);
 
 /*******************************************/
-/*                 led_utility.c              */
+/*                 led_utility.c           */
 /*******************************************/
 
 u32		led_FilenameValid(const utf8 filename);

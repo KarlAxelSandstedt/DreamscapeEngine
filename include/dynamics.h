@@ -54,6 +54,7 @@ typedef ds_IdF  ds_ContactId;
 #define DS_ID_NULL                      U64_MAX
 #define DS_ID_INDEX_MASK                ((u64) 0x00000000ffffffff)
 #define DS_ID_TAG_MASK                  ((u64) 0xffffffff00000000)
+#define DS_ID_TAG_INCREMENT             ((u64) 0x0000100000000000)
 
 #define DS_ID_TAG_UNUSED_MASK           0x0000ffff
 #define DS_ID_TAG_GENERATION_MASK       0xffff0000
@@ -140,8 +141,12 @@ use the same set of parameters for multiple shapes. This warrants the use of a
 ds_ShapePrefab which stores a common set of parameters, and can be referenced using
 a utf8 identifier.
 */
+
+#define PREFAB_BUFSIZE  32
+
 struct ds_ShapePrefab
 {
+    u8      id_buf[PREFAB_BUFSIZE];
 	STRING_DATABASE_SLOT_STATE;
 
 	u32	    cshape;	            /* referenced collisionShape handle  		        */
@@ -160,12 +165,11 @@ body may contain multiple shapes, the ds_RigidBodyPrefab struct contains a list 
 ds_ShapePrefabInstances. Each instance contains an identifier local to the
 ds_RigidBodyPrefab, a local transform, and a reference to the instanced ds_Shape.
 */
-#define SHAPE_PREFAB_INSTANCE_BUFSIZE  32
 struct ds_ShapePrefabInstance
 {
     POOL_SLOT_STATE;
     DLL_SLOT_STATE;             /* ds_RigidBodyPrefab instance list                 */
-    u8              id_buf[SHAPE_PREFAB_INSTANCE_BUFSIZE];
+    u8              id_buf[PREFAB_BUFSIZE];
     utf8            id;         /* local identifier within a body: (body_id).(id)   */
     u32             shape_prefab;
     ds_ShapeId      shape;
@@ -281,6 +285,7 @@ new bodies.
 */
 struct ds_RigidBodyPrefab
 {
+    u8              id_buf[PREFAB_BUFSIZE];
 	STRING_DATABASE_SLOT_STATE;
 
     struct dll      shape_list;         /* shape prefab instance list */
@@ -622,9 +627,10 @@ struct ds_Island
 	struct dll	body_list;
 	struct dll	contact_list;
 
-#ifdef DS_PHYSICS_DEBUG
-	vec4 color;
-#endif
+//TODO RMEOVE
+//#ifdef DS_PHYSICS_DEBUG
+//	vec4 color;
+//#endif
 };
 
 struct isdb
@@ -951,7 +957,8 @@ enum rigidBodyColorMode
 	RB_COLOR_MODE_COUNT
 };
 
-extern const char **body_color_mode_str;
+//TODO
+//extern const char **body_color_mode_str;
 /*
  * Physics Pipeline
  */
@@ -994,6 +1001,7 @@ struct ds_RigidBodyPipeline
 	struct c_Manifold *cm;
 
 	/* debug */
+    //TODO
 	enum rigidBodyColorMode	pending_body_color_mode;
 	enum rigidBodyColorMode	body_color_mode;
 	vec4			collision_color;
@@ -1005,12 +1013,12 @@ struct ds_RigidBodyPipeline
 	vec4			dbvh_color;
 	vec4			sbvh_color;
 	vec4			manifold_color;
-
-	u32			draw_bounding_box;
-	u32			draw_dbvh;
-	u32			draw_sbvh;
-	u32			draw_manifold;
-	u32			draw_lines;
+    
+    u32			draw_bounding_box;
+    u32			draw_dbvh;
+    u32			draw_sbvh;
+    u32			draw_manifold;
+    u32			draw_lines;
 };
 
 /**************** PHYISCS PIPELINE API ****************/
