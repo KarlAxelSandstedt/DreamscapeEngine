@@ -93,32 +93,6 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
     pipeline.margin_on = 0;
 	pipeline.margin = COLLISION_DEFAULT_MARGIN;
 
-    //TODO
-    //const char *body_color_mode_str_buf[RB_COLOR_MODE_COUNT] = 
-    //{
-    //	"RB_COLOR_MODE_BODY",
-    //	"RB_COLOR_MODE_COLLISION",
-    //	"RB_COLOR_MODE_ISLAND",
-    //	"RB_COLOR_MODE_SLEEP",
-    //};
-    //const char **body_color_mode_str = body_color_mode_str_buf;
-	//pipeline.body_color_mode = RB_COLOR_MODE_BODY;
-	//pipeline.pending_body_color_mode = RB_COLOR_MODE_COLLISION;
-	//Vec4Set(pipeline.collision_color, 1.0f, 0.1f, 0.1f, 0.5f);
-	//Vec4Set(pipeline.static_color, 0.6f, 0.6f, 0.6f, 0.5f);
-	//Vec4Set(pipeline.sleep_color, 113.0f/256.0f, 241.0f/256.0f, 157.0f/256.0f, 0.7f);
-	//Vec4Set(pipeline.awake_color, 255.0f/256.0f, 36.0f/256.0f, 48.0f/256.0f, 0.7f);
-	//Vec4Set(pipeline.manifold_color, 0.6f, 0.6f, 0.9f, 1.0f);
-	//Vec4Set(pipeline.dbvh_color, 0.8f, 0.1f, 0.0f, 0.6f);
-	//Vec4Set(pipeline.sbvh_color, 0.0f, 0.8f, 0.1f, 0.6f);
-	//Vec4Set(pipeline.bounding_box_color, 0.8f, 0.1f, 0.6f, 1.0f);
-
-	//pipeline.draw_bounding_box = 0;
-	//pipeline.draw_dbvh = 0;
-	//pipeline.draw_sbvh = 1;
-	//pipeline.draw_manifold = 0;
-	//pipeline.draw_lines = 0;
-
 	pipeline.debug_count = 0;
 	pipeline.debug = NULL;
 #ifdef DS_PHYSICS_DEBUG

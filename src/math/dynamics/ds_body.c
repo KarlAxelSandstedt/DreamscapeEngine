@@ -19,7 +19,7 @@
 
 #include "dynamics.h"
 
-ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBodyPrefab *prefab, const vec3 position, const quat rotation, const u32 entity)
+ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBodyPrefab *prefab, const ds_Transform *t_world, const u32 entity)
 {
 	struct slot slot = ds_PoolAdd(&pipeline->body_pool);
 	struct ds_RigidBody *body = slot.address;
@@ -30,8 +30,7 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_
 	dll_Append(&pipeline->body_non_marked_list, pipeline->body_pool.buf, slot.index);
 
 	body->shape_list = dll_Init(struct ds_Shape);
-	QuatCopy(body->t_world.rotation, rotation);
-	Vec3Copy(body->t_world.position, position);
+    body->t_world = *t_world;
 
 	body->entity = entity;
 	Vec3Set(body->velocity, 0.0f, 0.0f, 0.0f);

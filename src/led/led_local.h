@@ -93,6 +93,8 @@ void 		led_CoreInitCommands(void);
 /* run level editor systems */
 void 		led_Core(struct led *led);
 
+/* Refresh led_Node resources (grab updates) */
+void 		led_Refresh(struct led *led);
 /* compile level editor map */
 void		led_Compile(struct led *led);
 /* run level editor map, and  */
@@ -116,6 +118,7 @@ level editor fat struct node that interfaces with all sub-systems.
 
 
 #define LED_NODE_ID_SIZE    128
+#define LED_NODE_ROOT       2
 
 struct led_Node
 {

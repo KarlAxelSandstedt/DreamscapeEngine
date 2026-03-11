@@ -46,6 +46,16 @@ void led_ProjectMenuDealloc(struct led_ProjectMenu *menu)
 	DirectoryNavigatorDealloc(&menu->dir_nav);
 }
 
+const char *body_color_mode_str_buf[RB_COLOR_MODE_COUNT] = 
+{
+	"RB_COLOR_MODE_BODY",
+	"RB_COLOR_MODE_COLLISION",
+	"RB_COLOR_MODE_ISLAND",
+	"RB_COLOR_MODE_SLEEP",
+};
+const char **body_color_mode_str = body_color_mode_str_buf;
+
+
 struct led *led_Alloc(void)
 {
 	led_CoreInitCommands();
@@ -137,7 +147,7 @@ struct led *led_Alloc(void)
 	shape_stub->friction = 0.0f;
     shape_stub->render_mesh = strdb_Reference(&g_editor->render_mesh_db, Utf8Inline("")).index;
 
-     struct slot slot = ds_PoolAdd(&g_editor->shape_prefab_instance_pool);
+    struct slot slot = ds_PoolAdd(&g_editor->shape_prefab_instance_pool);
     const u32 instance_index = slot.index;
     struct ds_ShapePrefabInstance *instance = slot.address;
     instance->id = Utf8CstrBuffered(instance->id_buf, PREFAB_BUFSIZE, "Stub");
@@ -148,6 +158,26 @@ struct led *led_Alloc(void)
 	prefab_stub->dynamic = 1;
     prefab_stub->shape_list = dll_Init(struct ds_ShapePrefabInstance);
     dll_Append(&prefab_stub->shape_list, g_editor->shape_prefab_instance_pool.buf, instance_index);
+
+    slot = hi_Add(&g_editor->node_hierarchy, HI_ROOT_STUB_INDEX);
+    ds_Assert(slot.index == LED_NODE_ROOT);
+
+	g_editor->body_color_mode = RB_COLOR_MODE_BODY;
+	g_editor->pending_body_color_mode = RB_COLOR_MODE_COLLISION;
+	Vec4Set(g_editor->collision_color, 1.0f, 0.1f, 0.1f, 0.5f);
+	Vec4Set(g_editor->static_color, 0.6f, 0.6f, 0.6f, 0.5f);
+	Vec4Set(g_editor->sleep_color, 113.0f/256.0f, 241.0f/256.0f, 157.0f/256.0f, 0.7f);
+	Vec4Set(g_editor->awake_color, 255.0f/256.0f, 36.0f/256.0f, 48.0f/256.0f, 0.7f);
+	Vec4Set(g_editor->manifold_color, 0.6f, 0.6f, 0.9f, 1.0f);
+	Vec4Set(g_editor->dbvh_color, 0.8f, 0.1f, 0.0f, 0.6f);
+	Vec4Set(g_editor->sbvh_color, 0.0f, 0.8f, 0.1f, 0.6f);
+	Vec4Set(g_editor->bounding_box_color, 0.8f, 0.1f, 0.6f, 1.0f);
+
+	g_editor->draw_bounding_box = 0;
+	g_editor->draw_dbvh = 0;
+	g_editor->draw_sbvh = 1;
+	g_editor->draw_manifold = 0;
+	g_editor->draw_lines = 0;
 
 	return g_editor;
 }

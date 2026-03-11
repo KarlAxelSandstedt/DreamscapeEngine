@@ -23,8 +23,9 @@
 #include "transform.h"
 #include "ds_led.h"
 
-static struct r_Mesh *DebugContactManifoldSegmentsMesh(struct arena *mem, const struct ds_RigidBodyPipeline *pipeline)
+static struct r_Mesh *DebugContactManifoldSegmentsMesh(struct arena *mem, const struct led *led)
 {
+    const struct ds_RigidBodyPipeline *pipeline = &led->physics;
 	const struct c_Manifold *cm = pipeline->cm;
 	const u32 cm_count = pipeline->cm_count;
 
@@ -90,19 +91,19 @@ static struct r_Mesh *DebugContactManifoldSegmentsMesh(struct arena *mem, const 
 		}
 
 		Vec3Copy((f32 *) vertex_data +  0, n0);
-		Vec4Copy((f32 *) vertex_data +  3, pipeline->manifold_color);
+		Vec4Copy((f32 *) vertex_data +  3, led->manifold_color);
 		Vec3Copy((f32 *) vertex_data +  7, n1);
-		Vec4Copy((f32 *) vertex_data + 10, pipeline->manifold_color);
+		Vec4Copy((f32 *) vertex_data + 10, led->manifold_color);
 		vertex_data += 2*(sizeof(vec3) + sizeof(vec4));
 	}
 end:
 	return mesh;
-
 }
 
-static struct r_Mesh *DebugContactManifoldTrianglesMesh(struct arena *mem, const struct ds_RigidBodyPipeline *pipeline)
+static struct r_Mesh *DebugContactManifoldTrianglesMesh(struct arena *mem, const struct led *led)
 {
-	const struct c_Manifold *cm = pipeline->cm;
+    const struct ds_RigidBodyPipeline *pipeline = &led->physics;
+	const struct c_Manifold *cm = pipeline->cm; 
 	const u32 cm_count = pipeline->cm_count;
 
 	ArenaPushRecord(mem);
@@ -144,11 +145,11 @@ static struct r_Mesh *DebugContactManifoldTrianglesMesh(struct arena *mem, const
 				Vec3TranslateScaled(v[2], cm[i].n, 0.005f);
 
 				Vec3Copy((f32 *) vertex_data +  0, v[0]);
-				Vec4Copy((f32 *) vertex_data +  3, pipeline->manifold_color);
+				Vec4Copy((f32 *) vertex_data +  3, led->manifold_color);
 				Vec3Copy((f32 *) vertex_data +  7, v[1]);
-				Vec4Copy((f32 *) vertex_data + 10, pipeline->manifold_color);
+				Vec4Copy((f32 *) vertex_data + 10, led->manifold_color);
 				Vec3Copy((f32 *) vertex_data + 14, v[2]);
-				Vec4Copy((f32 *) vertex_data + 17, pipeline->manifold_color);
+				Vec4Copy((f32 *) vertex_data + 17, led->manifold_color);
 				vertex_data += 3*(sizeof(vec3) + sizeof(vec4));
 				mesh->vertex_count += 3; 
 			} break;
@@ -165,17 +166,17 @@ static struct r_Mesh *DebugContactManifoldTrianglesMesh(struct arena *mem, const
 				Vec3TranslateScaled(v[3], cm[i].n, 0.005f);
 
 				Vec3Copy((f32 *) vertex_data +  0, v[0]);
-				Vec4Copy((f32 *) vertex_data +  3, pipeline->manifold_color);
+				Vec4Copy((f32 *) vertex_data +  3, led->manifold_color);
 				Vec3Copy((f32 *) vertex_data +  7, v[1]);
-				Vec4Copy((f32 *) vertex_data + 10, pipeline->manifold_color);
+				Vec4Copy((f32 *) vertex_data + 10, led->manifold_color);
 				Vec3Copy((f32 *) vertex_data + 14, v[2]);
-				Vec4Copy((f32 *) vertex_data + 17, pipeline->manifold_color);
+				Vec4Copy((f32 *) vertex_data + 17, led->manifold_color);
 				Vec3Copy((f32 *) vertex_data + 21, v[0]);
-				Vec4Copy((f32 *) vertex_data + 24, pipeline->manifold_color);
+				Vec4Copy((f32 *) vertex_data + 24, led->manifold_color);
 				Vec3Copy((f32 *) vertex_data + 28, v[2]);
-				Vec4Copy((f32 *) vertex_data + 31, pipeline->manifold_color);
+				Vec4Copy((f32 *) vertex_data + 31, led->manifold_color);
 				Vec3Copy((f32 *) vertex_data + 35, v[3]);
-				Vec4Copy((f32 *) vertex_data + 38, pipeline->manifold_color);
+				Vec4Copy((f32 *) vertex_data + 38, led->manifold_color);
 				vertex_data += 6*(sizeof(vec3) + sizeof(vec4));
 				mesh->vertex_count += 6; 
 			} break;
@@ -400,7 +401,7 @@ static void r_EditorDraw(const struct led *led)
 	}
 	ArenaPopRecord(&g_r_core->frame);
 
-	if (led->physics.draw_dbvh)
+	if (led->draw_dbvh)
 	{
 		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
@@ -410,7 +411,7 @@ static void r_EditorDraw(const struct led *led)
 		vec3 axis = { 0.0f, 1.0f, 0.0f };
 		const f32 angle = 0.0f;
 		QuatAxisAngle(rotation, axis, angle);
-		struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &led->physics.shape_bvh, translation, rotation, led->physics.dbvh_color);
+		struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &led->physics.shape_bvh, translation, rotation, led->dbvh_color);
 		if (mesh)
 		{
 			struct r_Instance *instance = r_InstanceAddNonCached(cmd);
@@ -419,7 +420,7 @@ static void r_EditorDraw(const struct led *led)
 		}
 	}
 
-	if (led->physics.draw_sbvh)
+	if (led->draw_sbvh)
 	{
 		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
@@ -438,7 +439,7 @@ static void r_EditorDraw(const struct led *led)
             ds_ShapeWorldTransform(&transform, &led->physics, s);
 
 			const struct c_Shape *shape = strdb_Address(led->physics.cshape_db, s->cshape_handle);
-			struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &shape->mesh_bvh.bvh, transform.position, transform.rotation, led->physics.sbvh_color);
+			struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &shape->mesh_bvh.bvh, transform.position, transform.rotation, led->sbvh_color);
 			if (mesh)
 			{
 				struct r_Instance *instance = r_InstanceAddNonCached(cmd);
@@ -448,12 +449,12 @@ static void r_EditorDraw(const struct led *led)
 		}
 	}
 
-	if (led->physics.draw_bounding_box)
+	if (led->draw_bounding_box)
 	{
 		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
 		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		struct r_Mesh *mesh = BoundingBoxesMesh(&g_r_core->frame, &led->physics, led->physics.bounding_box_color);
+		struct r_Mesh *mesh = BoundingBoxesMesh(&g_r_core->frame, &led->physics, led->bounding_box_color);
 		if (mesh)
 		{
 			struct r_Instance *instance = r_InstanceAddNonCached(cmd);
@@ -462,7 +463,7 @@ static void r_EditorDraw(const struct led *led)
 		}
 	}
 
-	if (led->physics.draw_lines)
+	if (led->draw_lines)
 	{
 		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
@@ -476,14 +477,14 @@ static void r_EditorDraw(const struct led *led)
 		}
 	}
 
-	if (led->physics.draw_manifold)
+	if (led->draw_manifold)
 	{
 
 		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
 
 		const u64 cmd1 = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_TRIANGLE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		struct r_Mesh *mesh = DebugContactManifoldTrianglesMesh(&g_r_core->frame, &led->physics);
+		struct r_Mesh *mesh = DebugContactManifoldTrianglesMesh(&g_r_core->frame, led);
 		if (mesh)
 		{
 			struct r_Instance *instance = r_InstanceAddNonCached(cmd1);
@@ -492,7 +493,7 @@ static void r_EditorDraw(const struct led *led)
 		}
 
 		const u64 cmd2 = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		mesh = DebugContactManifoldSegmentsMesh(&g_r_core->frame, &led->physics);
+		mesh = DebugContactManifoldSegmentsMesh(&g_r_core->frame, led);
 		if (mesh)
 		{
 			struct r_Instance *instance = r_InstanceAddNonCached(cmd2);

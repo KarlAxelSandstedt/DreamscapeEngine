@@ -152,10 +152,16 @@ void r_Proxy3dHierarchySpeculate(struct arena *mem, const u64 ns_time)
 				QuatCopy(proxy->spec_rotation, proxy->rotation);	
 			}
 
-			Vec3Translate(proxy->spec_position, parent->spec_position);
-			quat tmp;
-			QuatCopy(tmp, proxy->spec_rotation);
-			QuatMul(proxy->spec_rotation, tmp, parent->spec_rotation);
+            vec3 tmp;
+            mat3 rot;
+            Mat3Quat(rot, parent->spec_rotation);
+            Mat3VecMul(tmp, rot, proxy->spec_position);
+            Vec3Add(proxy->spec_position, tmp, parent->spec_position);
+
+			quat q_tmp;
+			QuatCopy(q_tmp, proxy->spec_rotation);
+			QuatMul(proxy->spec_rotation, parent->spec_rotation, q_tmp);
+            QuatNormalize(proxy->spec_rotation);
 		}
 	}
 	ArenaPopRecord(mem);

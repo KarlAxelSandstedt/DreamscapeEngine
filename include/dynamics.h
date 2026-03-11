@@ -302,7 +302,7 @@ struct ds_RigidBodyPrefab
 };
 
 //TODO
-ds_RigidBodyId  ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBodyPrefab *prefab, const vec3 position, const quat rotation, const u32 entity);
+ds_RigidBodyId  ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBodyPrefab *prefab, const ds_Transform *t_world, const u32 entity);
 /* Free the given body */
 void            ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId id);
 /* Lookup the given body and return it. If it does not exist, return DS_ID_NULL.  */
@@ -631,9 +631,9 @@ struct ds_Island
 	struct dll	contact_list;
 
 //TODO RMEOVE
-//#ifdef DS_PHYSICS_DEBUG
-//	vec4 color;
-//#endif
+#ifdef DS_PHYSICS_DEBUG
+	vec4 color;
+#endif
 };
 
 struct isdb
@@ -960,8 +960,6 @@ enum rigidBodyColorMode
 	RB_COLOR_MODE_COUNT
 };
 
-//TODO
-//extern const char **body_color_mode_str;
 /*
  * Physics Pipeline
  */
@@ -1002,26 +1000,6 @@ struct ds_RigidBodyPipeline
 	/* frame data */
 	u32			    cm_count;
 	struct c_Manifold *cm;
-
-	/* debug */
-    //TODO
-	enum rigidBodyColorMode	pending_body_color_mode;
-	enum rigidBodyColorMode	body_color_mode;
-	vec4			collision_color;
-	vec4			static_color;
-	vec4			sleep_color;
-	vec4			awake_color;
-
-	vec4			bounding_box_color;
-	vec4			dbvh_color;
-	vec4			sbvh_color;
-	vec4			manifold_color;
-    
-    u32			draw_bounding_box;
-    u32			draw_dbvh;
-    u32			draw_sbvh;
-    u32			draw_manifold;
-    u32			draw_lines;
 };
 
 /**************** PHYISCS PIPELINE API ****************/
@@ -1040,7 +1018,7 @@ struct slot		PhysicsPipelineRigidBodyAlloc(struct ds_RigidBodyPipeline *pipeline
 void			PhysicsPipelineRigidBodyTagForRemoval(struct ds_RigidBodyPipeline *pipeline, const u32 handle);
 /* validate and ds_Assert internal state of physics pipeline */
 void			PhysicsPipelineValidate(const struct ds_RigidBodyPipeline *pipeline);
-/* If hit, return parameter (body,t) of ray at first collision. Otherwise return (U32_MAX, F32_INFINITY) */
+/* If hit, return parameter (shape,t) of ray at first collision. Otherwise return (U32_MAX, F32_INFINITY) */
 u32f32 			PhysicsPipelineRaycastParameter(struct arena *mem_tmp1, struct arena *mem_tmp2, const struct ds_RigidBodyPipeline *pipeline, const struct ray *ray);
 /* enable sleeping in pipeline */
 void 			PhysicsPipelineSleepEnable(struct ds_RigidBodyPipeline *pipeline);

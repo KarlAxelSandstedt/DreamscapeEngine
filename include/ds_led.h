@@ -127,7 +127,33 @@ struct led
 	struct dll		        node_selected_list;
 	struct ui_List		    node_ui_list;
 	struct ui_List		    node_selected_ui_list;
+
+	/* debug */
+	enum rigidBodyColorMode	pending_body_color_mode;
+	enum rigidBodyColorMode	body_color_mode;
+	vec4			        collision_color;
+	vec4			        static_color;
+	vec4			        sleep_color;
+	vec4			        awake_color;
+
+	vec4			        bounding_box_color;
+	vec4			        dbvh_color;
+	vec4			        sbvh_color;
+	vec4			        manifold_color;
+    
+    u32			            draw_bounding_box;
+    u32			            draw_dbvh;
+    u32			            draw_sbvh;
+    u32			            draw_manifold;
+    u32			            draw_lines;
 };
+
+extern const char **body_color_mode_str;
+
+extern u32	cmd_led_compile;
+extern u32	cmd_led_run;
+extern u32	cmd_led_pause;
+extern u32	cmd_led_stop;
 
 /* Allocate initial led resources */
 struct led *	led_Alloc(void);
@@ -150,6 +176,7 @@ void		led_Main(struct led *led, const u64 ns_delta);
 /*******************************************/
 /*                 led_ui.c                */
 /*******************************************/
+
 
 /* level editor ui entrypoint */
 void 		led_UiMain(struct led *led);

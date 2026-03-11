@@ -34,8 +34,8 @@ Intrusive hierarchy data structure for indexed structures supporting 31 bit indi
 
 
 /* root stub is an internal node of the hierarchy; using this we can simplify Logic and have a nice "NULL" index to use */
-#define HI_ROOT_STUB_INDEX	0
-#define	HI_NULL_INDEX		0	
+#define HI_ROOT_STUB_INDEX	    0
+#define	HI_NULL_INDEX		    0	
 #define HI_ORPHAN_STUB_INDEX	1
 
 #define HI_SLOT_STATE	u32	hi_parent;	\
