@@ -411,8 +411,8 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 		led->cs_list = ui_ListInit(AXIS_2_Y, 200.0f, 24.0f, UI_SELECTION_UNIQUE);
 		led->cs_mesh_menu = ui_DropdownMenuInit(150.0f, Vec2Inline(110.0f, 24.0f), UI_DROPDOWN_BELOW);
 
-		led->rb_prefab_list = ui_ListInit(AXIS_2_Y, 200.0f, 24.0f, UI_SELECTION_UNIQUE);
-		led->rb_prefab_mesh_menu = ui_DropdownMenuInit(150.0f, Vec2Inline(110.0f, 24.0f), UI_DROPDOWN_ABOVE);
+		//led->rb_prefab_list = ui_ListInit(AXIS_2_Y, 200.0f, 24.0f, UI_SELECTION_UNIQUE);
+		//led->rb_prefab_mesh_menu = ui_DropdownMenuInit(150.0f, Vec2Inline(110.0f, 24.0f), UI_DROPDOWN_ABOVE);
 		
 		led->rb_color_mode_menu = ui_DropdownMenuInit(120.0f, Vec2Inline(196.0f, 24.0f), UI_DROPDOWN_BELOW);
 	}
@@ -708,150 +708,150 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 					ui_Pad();
 
-					const struct ds_RigidBodyPrefab *prefab;
-					ui_list(&led->rb_prefab_list, "###%p", &led->rb_prefab_list)
-					for (u32 i = led->rb_prefab_db.allocated_dll.first; i != DLL_NULL; i = strdb_Next(prefab))
-					{
-						prefab = strdb_Address(&led->rb_prefab_db, i);
-						struct slot entry = ui_ListEntryAllocF(&led->rb_prefab_list, "###%p_%u", &led->rb_prefab_list, i);
-						if (entry.index)
-						ui_Parent(entry.index)
-						{
-							if (entry.index == led->rb_prefab_list.last_selected)
-							{
-								prefab_selected = i;
-							}
-							ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, "%k##%u", &prefab->id, i);
-						}
-					}
+					//const struct ds_RigidBodyPrefab *prefab;
+					//ui_list(&led->rb_prefab_list, "###%p", &led->rb_prefab_list)
+					//for (u32 i = led->rb_prefab_db.allocated_dll.first; i != DLL_NULL; i = strdb_Next(prefab))
+					//{
+					//	prefab = strdb_Address(&led->rb_prefab_db, i);
+					//	struct slot entry = ui_ListEntryAllocF(&led->rb_prefab_list, "###%p_%u", &led->rb_prefab_list, i);
+					//	if (entry.index)
+					//	ui_Parent(entry.index)
+					//	{
+					//		if (entry.index == led->rb_prefab_list.last_selected)
+					//		{
+					//			prefab_selected = i;
+					//		}
+					//		ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, "%k##%u", &prefab->id, i);
+					//	}
+					//}
 
 					ui_PadFill();
 				}
 
-				ui_Width(ui_SizePixel(256.0f, 1.0f))
-				ui_ChildLayoutAxis(AXIS_2_X)
-				ui_Parent(ui_NodeAllocNonHashed(UI_DRAW_BORDER).index)
-				if (led->rb_prefab_list.last_selection_happened == g_ui->frame)
-				{
-					ui_Pad();
+				//ui_Width(ui_SizePixel(256.0f, 1.0f))
+				//ui_ChildLayoutAxis(AXIS_2_X)
+				//ui_Parent(ui_NodeAllocNonHashed(UI_DRAW_BORDER).index)
+				//if (led->rb_prefab_list.last_selection_happened == g_ui->frame)
+				//{
+				//	ui_Pad();
 
-					ui_ChildLayoutAxis(AXIS_2_Y)
-					ui_Width(ui_SizePixel(240.0f, 1.0f))
-					ui_Parent(ui_NodeAllocNonHashed(0).index)
-					{
-						ui_Pad();
+				//	ui_ChildLayoutAxis(AXIS_2_Y)
+				//	ui_Width(ui_SizePixel(240.0f, 1.0f))
+				//	ui_Parent(ui_NodeAllocNonHashed(0).index)
+				//	{
+				//		ui_Pad();
 
-						struct ds_RigidBodyPrefab *prefab = strdb_Address(&led->rb_prefab_db, prefab_selected);
-						struct c_Shape *shape = NULL;
-						ui_Height(ui_SizePixel(24.0f, 1.0f))
-						ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW | UI_DRAW_BORDER, "%k##prefab_selected", &prefab->id);
+				//		struct ds_RigidBodyPrefab *prefab = strdb_Address(&led->rb_prefab_db, prefab_selected);
+				//		struct c_Shape *shape = NULL;
+				//		ui_Height(ui_SizePixel(24.0f, 1.0f))
+				//		ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW | UI_DRAW_BORDER, "%k##prefab_selected", &prefab->id);
 
-						ui_Pad();
+				//		ui_Pad();
 
-						//const f32 density_prev = prefab->density;
-						//const u32 shape_prev = prefab->shape;
+				//		//const f32 density_prev = prefab->density;
+				//		//const u32 shape_prev = prefab->shape;
 
-						ui_Height(ui_SizePixel(24.0f, 1.0f))
-						ui_ChildLayoutAxis(AXIS_2_X)
-						{
-							ui_Parent(ui_NodeAllocNonHashed(0).index)
-							{
-								ui_Width(ui_SizeText(F32_INFINITY, 1.0f))
-								ui_NodeAllocF(UI_DRAW_TEXT, "density: ");
-				
-								ui_PadFill();
+				//		ui_Height(ui_SizePixel(24.0f, 1.0f))
+				//		ui_ChildLayoutAxis(AXIS_2_X)
+				//		{
+				//			ui_Parent(ui_NodeAllocNonHashed(0).index)
+				//			{
+				//				ui_Width(ui_SizeText(F32_INFINITY, 1.0f))
+				//				ui_NodeAllocF(UI_DRAW_TEXT, "density: ");
+				//
+				//				ui_PadFill();
 
-								//ui_Flags(UI_DRAW_BORDER)
-								//ui_Width(ui_SizePixel(110.0f, 1.0f))
-								//prefab->density = ui_FieldF32F(prefab->density, intv_inline(0.00125f, 1000000.0f), "%f###s_density", prefab->density);
-							}
-							
-							ui_Pad();
+				//				//ui_Flags(UI_DRAW_BORDER)
+				//				//ui_Width(ui_SizePixel(110.0f, 1.0f))
+				//				//prefab->density = ui_FieldF32F(prefab->density, intv_inline(0.00125f, 1000000.0f), "%f###s_density", prefab->density);
+				//			}
+				//			
+				//			ui_Pad();
 
-							ui_Parent(ui_NodeAllocNonHashed(0).index)
-							{
-								ui_Width(ui_SizeText(F32_INFINITY, 1.0f))
-								ui_NodeAllocF(UI_DRAW_TEXT, "restitution: ");
-				
-								ui_PadFill();
+				//			ui_Parent(ui_NodeAllocNonHashed(0).index)
+				//			{
+				//				ui_Width(ui_SizeText(F32_INFINITY, 1.0f))
+				//				ui_NodeAllocF(UI_DRAW_TEXT, "restitution: ");
+				//
+				//				ui_PadFill();
 
-								//ui_Flags(UI_DRAW_BORDER)
-								//ui_Width(ui_SizePixel(110.0f, 1.0f))
-								//prefab->restitution = ui_FieldF32F(prefab->restitution, intv_inline(0.0f, 1.0f), "%f###s_restitution", prefab->restitution);
-							}
-							
-							ui_Pad();
+				//				//ui_Flags(UI_DRAW_BORDER)
+				//				//ui_Width(ui_SizePixel(110.0f, 1.0f))
+				//				//prefab->restitution = ui_FieldF32F(prefab->restitution, intv_inline(0.0f, 1.0f), "%f###s_restitution", prefab->restitution);
+				//			}
+				//			
+				//			ui_Pad();
 
-							ui_Parent(ui_NodeAllocNonHashed(0).index)
-							{
-								ui_Width(ui_SizeText(F32_INFINITY, 1.0f))
-								ui_NodeAllocF(UI_DRAW_TEXT, "friction: ");
-				
-								ui_PadFill();
+				//			ui_Parent(ui_NodeAllocNonHashed(0).index)
+				//			{
+				//				ui_Width(ui_SizeText(F32_INFINITY, 1.0f))
+				//				ui_NodeAllocF(UI_DRAW_TEXT, "friction: ");
+				//
+				//				ui_PadFill();
 
-								//ui_Flags(UI_DRAW_BORDER)
-								//ui_Width(ui_SizePixel(110.0f, 1.0f))
-								//prefab->friction = ui_FieldF32F(prefab->friction, intv_inline(0.0f, 1.0f), "%f###s_friction", prefab->friction);
-							}
-							
-							ui_Pad();
+				//				//ui_Flags(UI_DRAW_BORDER)
+				//				//ui_Width(ui_SizePixel(110.0f, 1.0f))
+				//				//prefab->friction = ui_FieldF32F(prefab->friction, intv_inline(0.0f, 1.0f), "%f###s_friction", prefab->friction);
+				//			}
+				//			
+				//			ui_Pad();
 
-							ui_Parent(ui_NodeAllocNonHashed(0).index)
-							{
-								ui_Width(ui_SizeText(F32_INFINITY, 1.0f))
-								ui_NodeAllocF(UI_DRAW_TEXT, "dynamic: ");
-				
-								ui_PadFill();
+				//			ui_Parent(ui_NodeAllocNonHashed(0).index)
+				//			{
+				//				ui_Width(ui_SizeText(F32_INFINITY, 1.0f))
+				//				ui_NodeAllocF(UI_DRAW_TEXT, "dynamic: ");
+				//
+				//				ui_PadFill();
 
-								ui_Flags(UI_DRAW_BORDER)
-								ui_Width(ui_SizePixel(110.0f, 1.0f))
-								prefab->dynamic = (u32) ui_FieldU64F(prefab->dynamic, intvu64_inline(0, 1), "%u###s_dynamic", prefab->dynamic);
-							}
+				//				ui_Flags(UI_DRAW_BORDER)
+				//				ui_Width(ui_SizePixel(110.0f, 1.0f))
+				//				prefab->dynamic = (u32) ui_FieldU64F(prefab->dynamic, intvu64_inline(0, 1), "%u###s_dynamic", prefab->dynamic);
+				//			}
 
-							ui_Pad();
+				//			ui_Pad();
 
-							ui_Parent(ui_NodeAllocNonHashed(0).index)
-							{
-								ui_Width(ui_SizeText(F32_INFINITY, 1.0f))
-								ui_NodeAllocF(UI_DRAW_TEXT, "shape: ");
-				
-								ui_PadFill();
+				//			ui_Parent(ui_NodeAllocNonHashed(0).index)
+				//			{
+				//				ui_Width(ui_SizeText(F32_INFINITY, 1.0f))
+				//				ui_NodeAllocF(UI_DRAW_TEXT, "shape: ");
+				//
+				//				ui_PadFill();
 
-								//shape = strdb_Address(&led->cs_db, prefab->shape);
-								//ui_Width(ui_SizePixel(110.0f, 1.0f))
-								//if (ui_DropdownMenuF(&led->rb_prefab_mesh_menu, "%k###%p_sel", &shape->id, &led->rb_prefab_mesh_menu))
-								//{
-								//	ui_DropdownMenuPush(&led->rb_prefab_mesh_menu);
+				//				//shape = strdb_Address(&led->cs_db, prefab->shape);
+				//				//ui_Width(ui_SizePixel(110.0f, 1.0f))
+				//				//if (ui_DropdownMenuF(&led->rb_prefab_mesh_menu, "%k###%p_sel", &shape->id, &led->rb_prefab_mesh_menu))
+				//				//{
+				//				//	ui_DropdownMenuPush(&led->rb_prefab_mesh_menu);
 
-								//	const struct c_Shape *s;
-								//	for (u32 i = led->cs_db.allocated_dll.first; i != DLL_NULL; i = strdb_Next(s))
-								//	{
-								//		s = strdb_Address(&led->cs_db, i);
-								//		struct ui_Node *drop;
-								//		ui_Flags(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW)
-								//		drop = ui_DropdownMenuEntryF(&led->rb_prefab_mesh_menu, "%k##%p_%u", &s->id, &led->rb_prefab_mesh_menu, i).address;
-								//		if (drop->inter & UI_INTER_SELECT)
-								//		{
-								//			strdb_Dereference(&led->cs_db, prefab->shape);
-								//			prefab->shape = strdb_Reference(&led->cs_db, s->id).index;
-								//		}
-								//	}
+				//				//	const struct c_Shape *s;
+				//				//	for (u32 i = led->cs_db.allocated_dll.first; i != DLL_NULL; i = strdb_Next(s))
+				//				//	{
+				//				//		s = strdb_Address(&led->cs_db, i);
+				//				//		struct ui_Node *drop;
+				//				//		ui_Flags(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW)
+				//				//		drop = ui_DropdownMenuEntryF(&led->rb_prefab_mesh_menu, "%k##%p_%u", &s->id, &led->rb_prefab_mesh_menu, i).address;
+				//				//		if (drop->inter & UI_INTER_SELECT)
+				//				//		{
+				//				//			strdb_Dereference(&led->cs_db, prefab->shape);
+				//				//			prefab->shape = strdb_Reference(&led->cs_db, s->id).index;
+				//				//		}
+				//				//	}
 
-								//	ui_DropdownMenuPop(&led->rb_prefab_mesh_menu);
-								//}
-							}
-						}
+				//				//	ui_DropdownMenuPop(&led->rb_prefab_mesh_menu);
+				//				//}
+				//			}
+				//		}
 
-						//if (prefab->density != density_prev || prefab->shape != shape_prev)
-						//{
-                        //    ds_AssertString(0, "TODO");
-						//}
+				//		//if (prefab->density != density_prev || prefab->shape != shape_prev)
+				//		//{
+                //        //    ds_AssertString(0, "TODO");
+				//		//}
 
-						ui_PadFill();
-					}
+				//		ui_PadFill();
+				//	}
 
-					ui_Pad();
-				}
+				//	ui_Pad();
+				//}
 
 				//ui_ChildLayoutAxis(AXIS_2_Y)
 				//ui_Width(ui_SizePixel(230.0f, 1.0f))

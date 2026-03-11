@@ -109,8 +109,10 @@ level editor fat struct node that interfaces with all sub-systems.
 */
 
 #define LED_FLAG_NONE		((u64) 0)
+#define LED_ANONYMOUS       ((u64) 1 << 0)  /* Non-identifiable led_Node; usually the case when node spawn nodes */
 #define LED_PROXY3D         ((u64) 1 << 16)
-#define LED_RIGID_BODY      ((u64) 1 << 32)
+#define LED_BODY_PREFAB     ((u64) 1 << 32)
+#define LED_SHAPE_PREFAB    ((u64) 1 << 33)
 
 
 #define LED_NODE_ID_SIZE    128
@@ -125,10 +127,12 @@ struct led_Node
 
     ds_Transform    transform;      /* Transform relative to parent (or world origin if no parent) */
 
-	u32			    rb_prefab;      
+	u32			    body_prefab; 
+    u32             shape_prefab;
 
     u32             proxy;
 	vec4			color;
+    f32             blend;
 };
 
 /* Add a new node on success. If the parent_id is not empty, the new node will be a child of the parent node. 
@@ -145,17 +149,19 @@ struct led_Node *   led_NodeLookup(struct led *led, const ds_Id id);
 /* Set node position if it exist. */
 void		        led_NodeSetPositionId(struct led *led, const utf8 id, const vec3 position);
 /* Set node position if it exist. */
+void		        led_NodeSetColor(struct led *led, const ds_Id id, const vec4 color, const f32 blend);
+/* Set node color and blend factor if it exist. */
+void		        led_NodeSetColorId(struct led *led, const utf8 id, const vec4 color, const f32 blend);
+/* Set node color and blend factor if it exist. */
 void		        led_NodeSetPosition(struct led *led, const ds_Id id, const vec3 position);
-
 /* Set node to contain a rigid body if the node and the prefab exist */
 void		        led_NodeAttachRigidBodyPrefabId(struct led *led, const utf8 id, const utf8 prefab);
 /* Set node to contain a rigid body if the node and the prefab exist */
-void		        led_NodeAttachtRigidBodyPrefab(struct led *led, const ds_Id id, const utf8 prefab);
-
+void		        led_NodeAttachRigidBodyPrefab(struct led *led, const ds_Id id, const utf8 prefab);
+/* Detach any existing rigid body from the node. If the node does not exist, or have no body attached, no-op. */
 void		        led_NodeDetachRigidBodyPrefabId(struct led *led, const utf8 id);
+/* Detach any existing rigid body from the node. If the node does not exist, or have no body attached, no-op. */
 void		        led_NodeDetachRigidBodyPrefab(struct led *led, const ds_Id id);
-
-
 
 /*
 led c_Shape API
@@ -188,6 +194,10 @@ struct slot	led_ShapePrefabAdd(struct led *led, const utf8 id, const utf8 c_shap
 void 		led_ShapePrefabRemove(struct led *led, const utf8 id);
 /* Return prefab with the given id if it exist; otherwise return (STUB_ADDRESS, STUB_INDEX).  */
 struct slot led_ShapePrefabLookup(struct led *led, const utf8 id);
+/* Detach any exist mesh and attach the new mesh onto the given shape. If shape or mesh does not exist, no-op. */
+void        led_ShapePrefabAttachRenderMesh(struct led *led, const utf8 id, const utf8 render_mesh);
+/* Detach any exist mesh of given shape. If shape or mesh does not exist, no-op. */
+void        led_ShapePrefabDetachRenderMesh(struct led *led, const utf8 id);
 
 /*
 led ds_RigidBodyPrefab API
@@ -199,7 +209,6 @@ struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const u32 dyn
 void        led_RigidBodyPrefabRemove(struct led *led, const utf8 id);
 /* Return prefab with the given id if it exist; otherwise return (STUB_ADDRESS, STUB_INDEX).  */
 struct slot led_RigidBodyPrefabLookup(struct led *led, const utf8 id);
-
 /* Create and attach a shape prefab instance to the given body prefab if the body and shape exist; 
  * otherwise no-op. The body's local instance of the shape can be identified by local_id.  */
 void        led_RigidBodyPrefabAttachShape(struct led *led, const utf8 rb_id, const utf8 shape_id, const utf8 local_shape_id, const ds_Transform *t_local);
@@ -220,14 +229,6 @@ struct slot	led_RenderMeshAdd(struct led *led, const utf8 id, const utf8 shape);
 void 		led_RenderMeshRemove(struct led *led, const utf8 id);
 /* Return node with the given id if it exist; otherwise return (STUB_ADDRESS, STUB_INDEX).  */
 struct slot led_RenderMeshLookup(struct led *led, const utf8 id);
-
-
-
-
-//TODO
-
-/* Set node's shape colors  */
-void		        led_NodeSetProxy3d(struct led *led, const utf8 id, const vec4 color, const f32 transparency);
 
 
 #endif

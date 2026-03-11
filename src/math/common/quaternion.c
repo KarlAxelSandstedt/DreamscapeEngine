@@ -21,6 +21,15 @@
 #include "quaternion.h"
 #include "float32.h"
 
+void QuatIdentity(quat dst)
+{
+	dst[0] = 0.0f;
+	dst[1] = 0.0f;
+	dst[2] = 0.0f;
+	dst[3] = 1.0f;
+}
+
+
 void QuatSet(quat dst, const f32 x, const f32 y, const f32 z, const f32 w)
 {
 	dst[0] = x;

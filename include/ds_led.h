@@ -115,9 +115,9 @@ struct led
 	struct strdb		    shape_prefab_db;
     struct ds_Pool          shape_prefab_instance_pool;    
 
-	struct strdb		    rb_prefab_db;
-	struct ui_List 		    rb_prefab_list;
-	struct ui_DropdownMenu  rb_prefab_mesh_menu;
+	struct strdb		    body_prefab_db;
+	struct ui_List 		    body_prefab_list;
+	struct ui_DropdownMenu  body_prefab_mesh_menu;
 
 	struct strdb		    render_mesh_db;
 

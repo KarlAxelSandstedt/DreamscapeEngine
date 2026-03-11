@@ -155,6 +155,10 @@ struct ds_ShapePrefab
 	f32 	friction;	        /* Range [0.0, 1.0] : bound tangent impulses to 
 						           mix(s1->friction, s2->friction)*(normal impuse)  */
 	f32		margin;	            /* bouding box margin for dynamic BVH proxies 	    */
+
+    /* TODO: why here... Currently each shape <-> mesh, so for 
+     * simplicity in led, we store the mesh reference in prefab. */
+    u32 render_mesh;
 };
 
 /*
@@ -168,12 +172,11 @@ ds_RigidBodyPrefab, a local transform, and a reference to the instanced ds_Shape
 struct ds_ShapePrefabInstance
 {
     POOL_SLOT_STATE;
-    DLL_SLOT_STATE;             /* ds_RigidBodyPrefab instance list                 */
+    DLL_SLOT_STATE;             /* ds_RigidBodyPrefab instance list  */
     u8              id_buf[PREFAB_BUFSIZE];
-    utf8            id;         /* local identifier within a body: (body_id).(id)   */
+    utf8            id;         /* local identifier within a body    */
     u32             shape_prefab;
-    ds_ShapeId      shape;
-	ds_Transform	t_local;	/* local body frame transform                       */
+	ds_Transform	t_local;	/* local body frame transform        */
 };
 
 /* 

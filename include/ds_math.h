@@ -38,6 +38,16 @@ typedef struct
 	vec3	position;
 } ds_Transform;
 
+static inline ds_Transform ds_TransformIdentity(void)
+{
+    ds_Transform transform = 
+    { 
+        .position = { 0.0f, 0.0f, 0.0f },
+    };
+    QuatIdentity(transform.rotation);
+    return transform;
+}
+
 #ifdef __cplusplus
 } 
 #endif

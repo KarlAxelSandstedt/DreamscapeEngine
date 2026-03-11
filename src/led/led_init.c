@@ -110,9 +110,9 @@ struct led *led_Alloc(void)
 	g_editor->render_mesh_db = strdb_Alloc(NULL, 32, 32, struct r_Mesh, GROWABLE);
 	g_editor->shape_prefab_db = strdb_Alloc(NULL, 32, 32, struct ds_ShapePrefab, GROWABLE);
     g_editor->shape_prefab_instance_pool = ds_PoolAlloc(NULL, 4096, struct ds_ShapePrefabInstance, GROWABLE);
-	g_editor->rb_prefab_db = strdb_Alloc(NULL, 32, 32, struct ds_RigidBodyPrefab, GROWABLE);
+	g_editor->body_prefab_db = strdb_Alloc(NULL, 32, 32, struct ds_RigidBodyPrefab, GROWABLE);
 	g_editor->cs_db = strdb_Alloc(NULL, 32, 32, struct c_Shape, GROWABLE);
-	g_editor->physics = PhysicsPipelineAlloc(&g_editor->mem_persistent, 1024, NSEC_PER_SEC / (u64) 60, 16*1024*1024, &g_editor->cs_db, &g_editor->rb_prefab_db);
+	g_editor->physics = PhysicsPipelineAlloc(&g_editor->mem_persistent, 1024, NSEC_PER_SEC / (u64) 60, 16*1024*1024, &g_editor->cs_db, &g_editor->body_prefab_db);
 
 	g_editor->pending_engine_running = 0;
 	g_editor->pending_engine_initalized = 0;
@@ -135,18 +135,16 @@ struct led *led_Alloc(void)
 	shape_stub->density = 1.0f;
 	shape_stub->restitution = 0.0f;
 	shape_stub->friction = 0.0f;
+    shape_stub->render_mesh = strdb_Reference(&g_editor->render_mesh_db, Utf8Inline("")).index;
 
-    struct slot slot = ds_PoolAdd(&g_editor->shape_prefab_instance_pool);
+     struct slot slot = ds_PoolAdd(&g_editor->shape_prefab_instance_pool);
     const u32 instance_index = slot.index;
     struct ds_ShapePrefabInstance *instance = slot.address;
     instance->id = Utf8CstrBuffered(instance->id_buf, PREFAB_BUFSIZE, "Stub");
-	instance->shape = strdb_Reference(&g_editor->cs_db, Utf8Inline("")).index;
-    quat quat;
-    QuatAxisAngle(quat, Vec3Inline(0.0f, 1.0f, 0.0f), 0.0f);
-    Vec3Set(instance->t_local.position, 0.0f, 0.0f, 0.0f);
-    QuatCopy(instance->t_local.rotation, quat);
+	instance->shape_prefab = strdb_Reference(&g_editor->shape_prefab_db, Utf8Inline("")).index;
+    instance->t_local = ds_TransformIdentity();
 
-	struct ds_RigidBodyPrefab *prefab_stub = strdb_Address(&g_editor->rb_prefab_db, STRING_DATABASE_STUB_INDEX);
+	struct ds_RigidBodyPrefab *prefab_stub = strdb_Address(&g_editor->body_prefab_db, STRING_DATABASE_STUB_INDEX);
 	prefab_stub->dynamic = 1;
     prefab_stub->shape_list = dll_Init(struct ds_ShapePrefabInstance);
     dll_Append(&prefab_stub->shape_list, g_editor->shape_prefab_instance_pool.buf, instance_index);
