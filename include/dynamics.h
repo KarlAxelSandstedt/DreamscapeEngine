@@ -264,11 +264,13 @@ struct ds_RigidBody
 	u32		        island_index;
 
 	struct dll      shape_list;		        /* list of convex shapes constructing the rigid body 	*/
-	ds_Transform    t_world;		        /* local body frame to world transform 			        */
+	ds_Transform    t_world;		        /* local body frame to world transform. Rotation is 
+                                               about the local origin (not center of mass!)         */
 	vec3		    local_center_of_mass;	/* local body frame center of mass 			            */
 
-	vec3 		    velocity;
-	vec3 		    angular_velocity;
+	vec3 		    velocity;               /* linear velocity of body */
+	vec3 		    angular_velocity;       /* angular velocity of body (about local center of mass,
+                                               not local origin!)                                   */
 	vec3 		    linear_momentum;   	    /* L = mv */
 	f32 		    low_velocity_time;	    /* Current uninterrupted time body has been in a low velocity state */
 
@@ -815,10 +817,10 @@ struct velocityConstraint
 	u32 	lb1;		/* local body 1 index (index into solver arrays) */
 	u32 	lb2;		/* local body 2 index (index into solver arrays) */
 	u32 	vcp_count;	/* Number of contact points in the contact manifold */
-	f32	restitution;	/* Range[0.0f, 1.0f] : higher => bouncy */
+	f32	    restitution;	/* Range[0.0f, 1.0f] : higher => bouncy */
 	//f32	tangent_impulse_bound;	/* TODO: contact_friction * gravity_constant * point_mass */
-	f32	friction;	/* TODO: friction = f32_max(b1->friction, b2->friction) */
-	u32	block_solve;	/* if config->block_solver && condition number of block normal mass is ok, then = 1 */
+	f32	    friction;	/* TODO: friction = f32_max(b1->friction, b2->friction) */
+	u32	    block_solve;	/* if config->block_solver && condition number of block normal mass is ok, then = 1 */
 };
 
 struct solver
@@ -827,9 +829,10 @@ struct solver
 	u32			body_count;
 	u32			contact_count;
 
-	struct ds_RigidBody **	bodies;
-	mat3ptr			Iw_inv;		/* inverted world inertia tensors */
-	struct velocityConstraint *vcs;	
+	struct ds_RigidBody **	    bodies;
+    vec3ptr                     w_center_of_mass;   /* world-position center of mass of body */
+	mat3ptr			            Iw_inv;		        /* inverted world inertia tensors */
+	struct velocityConstraint * vcs;	
 
 	/* temporary state of bodies in island, static bodies index last element */
 	vec3ptr			linear_velocity;
@@ -1024,6 +1027,8 @@ u32f32 			PhysicsPipelineRaycastParameter(struct arena *mem_tmp1, struct arena *
 void 			PhysicsPipelineSleepEnable(struct ds_RigidBodyPipeline *pipeline);
 /* disable sleeping in pipeline */
 void 			PhysicsPipelineSleepDisable(struct ds_RigidBodyPipeline *pipeline);
+/* Print resource usage */
+void            PhysicsPipelinePrintUsage(const struct ds_RigidBodyPipeline *pipeline);
 
 #ifdef DS_PHYSICS_DEBUG
 #define PHYSICS_PIPELINE_VALIDATE(pipeline)	PhysicsPipelineValidate(pipeline)

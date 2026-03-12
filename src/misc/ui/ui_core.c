@@ -430,7 +430,7 @@ static void ui_ChildsumLayoutSizeAndPruneNodes(void)
 	stack_ptr stack_childsum_y = stack_ptrAlloc(g_ui->mem_frame, g_ui->node_count_frame, 0);
 
 	ArenaPushRecord(g_ui->mem_frame);
-	struct hiIterator it = hi_IteratorAlloc(g_ui->mem_frame, &g_ui->node_hierarchy, g_ui->root);
+	struct hi_Iterator it = hi_IteratorAlloc(g_ui->mem_frame, &g_ui->node_hierarchy, g_ui->root);
 	while(it.count)
 	{
 		//const u32 potential_next = hi_IteratorPeek(&it);
@@ -631,7 +631,7 @@ static void ui_NodeSolveChildViolation(struct ui_Node *node, const enum axis_2 a
 static void ui_SolveViolations(void)
 {
 	struct arena tmp = ArenaAlloc1MB();
-	struct hiIterator it = hi_IteratorAlloc(&tmp, &g_ui->node_hierarchy, g_ui->root);
+	struct hi_Iterator it = hi_IteratorAlloc(&tmp, &g_ui->node_hierarchy, g_ui->root);
 	while(it.count)
 	{
 		const u32 index = hi_IteratorNextDf(&it);
@@ -646,7 +646,7 @@ static void ui_SolveViolations(void)
 static void ui_LayoutAbsolutePosition(void)
 {
 	struct arena tmp = ArenaAlloc1MB();
-	struct hiIterator it = hi_IteratorAlloc(&tmp, &g_ui->node_hierarchy, g_ui->root);
+	struct hi_Iterator it = hi_IteratorAlloc(&tmp, &g_ui->node_hierarchy, g_ui->root);
 
 	struct ui_Node *node = hi_Address(&g_ui->node_hierarchy, g_ui->root);
 	node->pixel_position[0] = node->layout_position[0];

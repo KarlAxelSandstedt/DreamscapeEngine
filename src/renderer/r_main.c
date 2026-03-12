@@ -369,7 +369,7 @@ static void r_EditorDraw(const struct led *led)
 	r_Proxy3dHierarchySpeculate(&g_r_core->frame, led->ns - led->ns_engine_paused);
 
 	ArenaPushRecord(&g_r_core->frame);
-	struct hiIterator it = hi_IteratorAlloc(&g_r_core->frame, &g_r_core->proxy3d_hierarchy, PROXY3D_ROOT);
+	struct hi_Iterator it = hi_IteratorAlloc(&g_r_core->frame, &g_r_core->proxy3d_hierarchy, PROXY3D_ROOT);
 	// skip root stub 
 	hi_IteratorNextDf(&it);
 	while (it.count)
@@ -500,7 +500,6 @@ static void r_EditorDraw(const struct led *led)
 			instance->type = R_INSTANCE_MESH;
 			instance->mesh = mesh;
 		}
-
 	}
 
 	ProfZoneEnd;
@@ -748,7 +747,7 @@ void r_EditorMain(const struct led *led)
 			struct ds_Window *win = NULL;
 
 			struct arena tmp = ArenaAlloc1MB();
-			struct hiIterator it = hi_IteratorAlloc(&tmp, g_window_hierarchy, g_process_root_window);
+			struct hi_Iterator it = hi_IteratorAlloc(&tmp, g_window_hierarchy, g_process_root_window);
 			while (it.count)
 			{
 				const u32 window = hi_IteratorNextDf(&it);

@@ -64,10 +64,10 @@ void QuatSub(quat dst, const quat p, const quat q)
 
 void QuatMul(quat dst, const quat p, const quat q)
 {
-	dst[0] = p[0] * q[3] + p[3] * q[0] + p[1] * q[2] - p[2] * q[1];
-	dst[1] = p[1] * q[3] + p[3] * q[1] + p[2] * q[0] - p[0] * q[2];
-	dst[2] = p[2] * q[3] + p[3] * q[2] + p[0] * q[1] - p[1] * q[0];
-	dst[3] = p[3] * q[3] - p[0] * q[0] - p[1] * q[1] - p[2] * q[2];
+	dst[0] = p[0]*q[3] + p[3]*q[0] + p[1]*q[2] - p[2]*q[1];
+	dst[1] = p[1]*q[3] + p[3]*q[1] + p[2]*q[0] - p[0]*q[2];
+	dst[2] = p[2]*q[3] + p[3]*q[2] + p[0]*q[1] - p[1]*q[0];
+	dst[3] = p[3]*q[3] - p[0]*q[0] - p[1]*q[1] - p[2]*q[2];
 }
 
 void QuatScale(quat dst, const f32 scale)

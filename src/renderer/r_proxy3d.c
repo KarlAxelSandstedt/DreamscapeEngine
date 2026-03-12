@@ -131,7 +131,7 @@ static void r_InternalProxy3dLocalSpeculativeOrientation(struct r_Proxy3d *proxy
 void r_Proxy3dHierarchySpeculate(struct arena *mem, const u64 ns_time)
 {
 	ArenaPushRecord(mem);
-	struct hiIterator it = hi_IteratorAlloc(mem, &g_r_core->proxy3d_hierarchy, g_r_core->proxy3d_root);
+	struct hi_Iterator it = hi_IteratorAlloc(mem, &g_r_core->proxy3d_hierarchy, g_r_core->proxy3d_root);
 	// skip root stub 
 	hi_IteratorNextDf(&it);
 	while (it.count)

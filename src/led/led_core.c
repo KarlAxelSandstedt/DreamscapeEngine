@@ -1350,26 +1350,47 @@ void led_WallSmashSimulationSetup(struct led *led)
 		}
 	}
 
-	for (u32 k = 0; k < tower2_count; ++k)
-	{
-		for (u32 j = 0; j < tower2_count; ++j)
-		{
-			for (u32 i = 0; i < tower2_box_count; ++i)
+	//for (u32 k = 0; k < tower2_count; ++k)
+    //{
+        for (u32 j = 0; j < 10; ++j)
+        {
+    		for (u32 i = 0; i <= j; ++i)
 			{
 				vec3 translation;
 				Vec3Copy(translation, box_base_translation);
-				translation[2] += 15.0f + 2.0f*k;
+				translation[2] -= 15.0f + 2.0f*0;
 				translation[1] += (f32) i * box_aabb.hw[1] * 2.10f;
-				translation[0] -= 15.0f + 2.0f*j;
+				translation[0] -= 15.0f + 1.5f*j;
 			
-				id = Utf8Format(sys_win->ui->mem_frame, "tower2_%u_%u_%u", i, j, k);
+				id = Utf8Format(sys_win->ui->mem_frame, "tower2_%u_%u_%u", i, j, 0);
                 tagged_id = led_NodeAdd(led, id, Utf8Empty());
                 led_NodeSetPosition(led, tagged_id, translation);
                 led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_box"));
                 led_NodeSetColor(led, tagged_id, tower2_color, 1.0f);
 			}
-		}
-	}
+        }
+    //}
+   
+	//for (u32 k = 0; k < tower2_count; ++k)
+	//{
+	//	for (u32 j = 0; j < tower2_count; ++j)
+	//	{
+	//		for (u32 i = 0; i < tower2_box_count; ++i)
+	//		{
+	//			vec3 translation;
+	//			Vec3Copy(translation, box_base_translation);
+	//			translation[2] += 15.0f + 2.0f*k;
+	//			translation[1] += (f32) i * box_aabb.hw[1] * 2.10f;
+	//			translation[0] -= 15.0f + 2.0f*j;
+	//		
+	//			id = Utf8Format(sys_win->ui->mem_frame, "tower2_%u_%u_%u", i, j, k);
+    //            tagged_id = led_NodeAdd(led, id, Utf8Empty());
+    //            led_NodeSetPosition(led, tagged_id, translation);
+    //            led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_box"));
+    //            led_NodeSetColor(led, tagged_id, tower2_color, 1.0f);
+	//		}
+	//	}
+	//}
 }
 
 void led_Compile(struct led *led)
@@ -1378,20 +1399,26 @@ void led_Compile(struct led *led)
 
 void led_Refresh(struct led *led)
 {
-    ArenaPushRecord(&led->frame);
-	struct hiIterator it = hi_IteratorAlloc(&led->frame, &led->node_hierarchy, LED_NODE_ROOT);
+    struct arena tmp = ArenaAlloc1MB();
+	struct hi_Iterator it = hi_IteratorAlloc(&tmp, &led->node_hierarchy, LED_NODE_ROOT);
     hi_IteratorNextDf(&it);
 	while(it.count)
 	{
-		struct led_Node *node = hi_Address(&led->node_hierarchy, hi_IteratorNextDf(&it));
-
+        //Careful here, do not allocate inside iterator loop, instead skip subtree allocating within
+        const u32 index = hi_IteratorPeek(&it);
+		struct led_Node *node = hi_Address(&led->node_hierarchy, index);
         if (node->flags & LED_BODY_PREFAB)
         {
+            hi_IteratorSkip(&it);
             const struct ds_RigidBodyPrefab *prefab = strdb_Address(&led->body_prefab_db, node->body_prefab);
             led_NodeAttachRigidBodyPrefab(led, node->tagged_id, prefab->id);
         }
+        else
+        {
+            hi_IteratorNextDf(&it);
+        }
 	}
-	ArenaPopRecord(&led->frame);
+    ArenaFree1MB(&tmp);
 }
 
 void led_Run(struct led *led)
@@ -1405,6 +1432,8 @@ void led_Pause(struct led *led)
 {
 	led->pending_engine_paused = 1;
 	led->pending_engine_running = 0;
+
+
 }
 
 void led_Stop(struct led *led)
@@ -1761,13 +1790,15 @@ static void led_EngineRun(struct led *led)
 	}
 	
 	dll_Flush(&led->physics.event_list);
+
+    PhysicsPipelinePrintUsage(&led->physics);
 }
 
 static void led_EngineFlush(struct led *led)
 {
 	PhysicsPipelineFlush(&led->physics);
     ArenaPushRecord(&led->frame);
-	struct hiIterator it = hi_IteratorAlloc(&led->frame, &led->node_hierarchy, LED_NODE_ROOT);
+	struct hi_Iterator it = hi_IteratorAlloc(&led->frame, &led->node_hierarchy, LED_NODE_ROOT);
     hi_IteratorNextDf(&it);
 	while(it.count)
 	{
@@ -1795,7 +1826,6 @@ static void led_EngineFlush(struct led *led)
 
 static void led_EngineInit(struct led *led)
 {
-    led_Refresh(led);
 	//TODO move this into engine flush
 	PhysicsPipelineFlush(&led->physics);		
 	led->physics.ns_start = led->ns;
@@ -1803,7 +1833,7 @@ static void led_EngineInit(struct led *led)
 	led->ns_engine_paused = 0;
 
     ArenaPushRecord(&led->frame);
-	struct hiIterator it = hi_IteratorAlloc(&led->frame, &led->node_hierarchy, LED_NODE_ROOT);
+	struct hi_Iterator it = hi_IteratorAlloc(&led->frame, &led->node_hierarchy, LED_NODE_ROOT);
     hi_IteratorNextDf(&it);
 	while(it.count)
 	{
@@ -1844,6 +1874,7 @@ void led_Core(struct led *led)
 	if (led->engine_initalized && !led->pending_engine_initalized)
 	{
 		led_EngineFlush(led);
+        led_Refresh(led);
 	}
 
 	if (!led->engine_initalized && led->pending_engine_initalized)

@@ -585,7 +585,7 @@ TPOOL_DEALLOC_DECLARE(struct_name)                                              
 #define TPOOL_FLUSH_DEFINE(struct_name)                                                                     \
 TPOOL_FLUSH_DECLARE(struct_name)                                                                            \
 {                                                                                                           \
-    for (u32 i = 0; i < pool->free_list_count; ++i)                                                             \
+    for (u32 i = 0; i < pool->free_list_count; ++i)                                                         \
     {                                                                                                       \
         struct_name ## FreeListTStackFlush(pool->t_free_list + i);                                          \
     }                                                                                                       \

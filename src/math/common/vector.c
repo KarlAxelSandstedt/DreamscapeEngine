@@ -848,17 +848,26 @@ void Vec3CreateBasis(vec3 n1, vec3 n2, const vec3 n3)
 {
 	ds_Assert(1.0f - F32_EPSILON*10000.0f <= Vec3Length(n3) && Vec3Length(n3) <= 1.0f + F32_EPSILON*10000.0f);
 
-	if (n3[0]*n3[0] < n3[1]*n3[1])
-	{
-		if (n3[0]*n3[0] < n3[2]*n3[2]) { Vec3Set(n2, 1.0f, 0.0f, 0.0f); }
-		else { Vec3Set(n2, 0.0f, 0.0f, 1.0f); }
-	}
-	else
-	{
-		if (n3[1]*n3[1] < n3[2]*n3[2]) { Vec3Set(n2, 0.0f, 1.0f, 0.0f); }
-		else { Vec3Set(n2, 0.0f, 0.0f, 1.0f); }
-	}
-		
+	//if (n3[0]*n3[0] < n3[1]*n3[1])
+	//{
+	//	if (n3[0]*n3[0] < n3[2]*n3[2]) { Vec3Set(n2, 1.0f, 0.0f, 0.0f); }
+	//	else { Vec3Set(n2, 0.0f, 0.0f, 1.0f); }
+	//}
+	//else
+	//{
+	//	if (n3[1]*n3[1] < n3[2]*n3[2]) { Vec3Set(n2, 0.0f, 1.0f, 0.0f); }
+	//	else { Vec3Set(n2, 0.0f, 0.0f, 1.0f); }
+	//}
+    const f32 inv_sqrt2 = 1.0f / f32_sqrt(2.0f);
+	if (f32_abs(n3[2]) < inv_sqrt2)
+    {
+        Vec3Set(n2, -n3[1], n3[0], 0.0f);
+    }
+    else
+    {
+        Vec3Set(n2, 0.0f, -n3[2], n3[1]);
+    }
+
 	Vec3Cross(n1, n3, n2);
 	Vec3ScaleSelf(n1, 1.0f / Vec3Length(n1));
 	Vec3Cross(n2, n1, n3);

@@ -59,7 +59,7 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 		const u32 block_solver = 0; 
 		const u32 warmup_solver = 1;
 		const vec3 gravity = { 0.0f, -GRAVITY_CONSTANT_DEFAULT, 0.0f };
-       		const f32 baumgarte_constant = 0.1f;
+       	const f32 baumgarte_constant = 0.1f;
 		const f32 max_condition = 1000.0f;
 		const f32 linear_dampening = 0.1f;
 		const f32 angular_dampening = 0.1f;
@@ -574,8 +574,8 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
         	}
         }
     } 
-
 	ArenaFree1MB(&tmp);
+
 	ProfZoneEnd;
 }
 
@@ -810,4 +810,18 @@ struct physicsEvent *PhysicsPipelineEventPush(struct ds_RigidBodyPipeline *pipel
 	struct physicsEvent *event = slot.address;
 	event->ns = pipeline->ns_start + pipeline->frames_completed * pipeline->ns_tick;
 	return event;
+}
+
+void PhysicsPipelinePrintUsage(const struct ds_RigidBodyPipeline *pipeline)
+{
+    fprintf(stderr, "Physics:\n");
+    fprintf(stderr, "\tbodies:                      %u\n", pipeline->body_pool.count);
+    fprintf(stderr, "\tshapes:                      %u\n", pipeline->shape_pool.count);
+    fprintf(stderr, "\tshape_bvh nodes:             %u\n", pipeline->shape_bvh.tree.pool.count);
+    fprintf(stderr, "\tevents:                      %u\n", pipeline->event_pool.count);
+    fprintf(stderr, "\tislands:                     %u\n", pipeline->is_db.island_pool.count);
+    fprintf(stderr, "\tcontacts:                    %u\n", pipeline->cdb->contact_net.pool.count);
+    fprintf(stderr, "\tsat caches (max):            %u\n", AtomicLoadRlx32(&pipeline->cdb->sat_cache_pool.a_count_max));
+    fprintf(stderr, "\tcontact bitvector size:      %lu\n", pipeline->cdb->contact_persistent_usage.block_count*sizeof(u64));
+    fprintf(stderr, "\tsat cache bitvector size:    %lu\n", pipeline->cdb->sat_cache_persistent_usage.block_count*sizeof(u64));
 }

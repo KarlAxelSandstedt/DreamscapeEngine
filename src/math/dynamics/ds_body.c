@@ -139,9 +139,7 @@ void ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, con
 	ds_Assert(PoolSlotAllocated(body));
 
 	vec3 tmp;
-    mat3 body_inertia_tensor;
-	mat3 rot_world, rot_local, rot_local_inv, tmp1, tmp2, tmp3;
-	Mat3Quat(rot_world, body->t_world.rotation);
+    mat3 body_inertia_tensor, rot_local, rot_local_inv, tmp1, tmp2;
 
 	body->mass = 0.0f;
 	Vec3Set(body->local_center_of_mass, 0.0f, 0.0f, 0.0f);
@@ -165,7 +163,7 @@ void ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, con
 		mass[i] = shape->density * cshape->volume;
 		body->mass += mass[i];
 
-		/* R, R^-1*/
+		/* R, R^-1 */
 		Mat3Quat(rot_local, shape->t_local.rotation);
 		Mat3Transpose(rot_local_inv, rot_local);
 

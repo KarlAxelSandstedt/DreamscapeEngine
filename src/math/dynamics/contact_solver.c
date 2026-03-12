@@ -71,14 +71,16 @@ struct solver *SolverInitBodyData(struct arena *mem, struct ds_Island *is, const
 	solver->body_count = is->body_list.count;
 	solver->contact_count = is->contact_list.count;
 
+    solver->w_center_of_mass = ArenaPush(mem, (is->body_list.count + 1) * sizeof(mat3));
 	solver->Iw_inv = ArenaPush(mem, (is->body_list.count + 1) * sizeof(mat3));
 	solver->linear_velocity = ArenaPush(mem,  (is->body_list.count + 1) * sizeof(vec3));	/* last element is for static bodies with 0-value data */
 	solver->angular_velocity = ArenaPush(mem, (is->body_list.count + 1) * sizeof(vec3));
 
 	mat3ptr mi;
-	mat3 rot, tmp1, tmp2;
+	mat3 rot, tmp1, rot_inv;
 
 	solver->bodies[solver->body_count] = &static_body;
+	Vec3Set(solver->w_center_of_mass[solver->body_count], 0.0f, 0.0f, 0.0f);
 	Vec3Set(solver->linear_velocity[solver->body_count], 0.0f, 0.0f, 0.0f);
 	Vec3Set(solver->angular_velocity[solver->body_count], 0.0f, 0.0f, 0.0f);
 	mi = solver->Iw_inv + solver->body_count;
@@ -89,14 +91,17 @@ struct solver *SolverInitBodyData(struct arena *mem, struct ds_Island *is, const
 
 	for (u32 i = 0; i < is->body_list.count; ++i)
 	{	
-		const struct ds_RigidBody *b = solver->bodies[i];
+		struct ds_RigidBody *b = solver->bodies[i];
 
-		/* setup inverted world intertia tensors */
+		/* setup inverted world intertia tensors and center of massses */
 		mat3ptr mi = solver->Iw_inv + i;
 		Mat3Quat(rot, b->t_world.rotation);
-		Mat3Mul(tmp1, rot, ((struct ds_RigidBody *) b)->inv_inertia_tensor);
-		Mat3Transpose(tmp2, rot);
-		Mat3Mul(*mi, tmp1, tmp2);
+		Mat3Transpose(rot_inv, rot);
+		Mat3Mul(tmp1, rot, b->inv_inertia_tensor);
+		Mat3Mul(*mi, tmp1, rot_inv);
+
+        Mat3VecMul(solver->w_center_of_mass[i], rot, b->local_center_of_mass);
+        Vec3Translate(solver->w_center_of_mass[i], b->t_world.position);
 
 		/* integrate new velocities using external forces */
 		Vec3Copy(solver->linear_velocity[i], b->velocity);
@@ -155,8 +160,8 @@ void SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, con
 		const u32 b1_static = (b1->island_index == ISLAND_STATIC) ? 1 : 0; 
 		const u32 b2_static = (b2->island_index == ISLAND_STATIC) ? 1 : 0; 
 
-		const f32 b1_friction = s1->friction;
-	    const f32 b2_friction = s2->friction;
+		const f32 s1_friction = s1->friction;
+	    const f32 s2_friction = s2->friction;
 		const u32 static_contact = (b1_static | b2_static);
 
 		/* 
@@ -168,6 +173,13 @@ void SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, con
 			vc->lb1 = is->body_index_map[is->contacts[i]->key.body1];
 			vc->lb2 = solver->body_count;
 			Vec3Scale(vc->normal, is->contacts[i]->cm.n, -1.0f);
+
+            const struct ds_RigidBody *tmp_b1 = b1;
+            const struct ds_Shape *tmp_s1 = s1;
+            b1 = b2;
+            s1 = s2;
+            b2 = tmp_b1;
+            s2 = tmp_s1;
 		}
 		else
 		{
@@ -176,8 +188,7 @@ void SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, con
 			Vec3Copy(vc->normal, is->contacts[i]->cm.n);
 		}
 
-		b1 = solver->bodies[vc->lb1];
-		b2 = solver->bodies[vc->lb2];
+
 		mat3ptr Iw_inv1 = solver->Iw_inv + vc->lb1;
 		mat3ptr Iw_inv2 = solver->Iw_inv + vc->lb2;
 
@@ -185,7 +196,7 @@ void SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, con
 		vc->vcp_count = is->contacts[i]->cm.v_count;
 		vc->block_solve = 0;
 		vc->restitution = f32_max(s1->restitution, s2->restitution);
-		vc->friction = f32_sqrt(b1_friction*b2_friction);
+		vc->friction = f32_sqrt(s1_friction*s2_friction);
 		vc->vcps = ArenaPush(mem, vc->vcp_count * sizeof(struct velocityConstraintPoint));
 
 		for (u32 j = 0; j < vc->vcp_count; ++j)
@@ -195,7 +206,7 @@ void SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, con
 			vcp->tangent_impulse[0] = 0.0f;
 			vcp->tangent_impulse[1] = 0.0f;
 			
-			Vec3Sub(vcp->r1, is->contacts[i]->cm.v[j], b1->t_world.position);
+			Vec3Sub(vcp->r1, is->contacts[i]->cm.v[j], solver->w_center_of_mass[vc->lb1]);
 			Vec3Cross(vcp_c1[j], vcp->r1, vc->normal);
 			Mat3VecMul(vcp_Ic1[j], *Iw_inv1, vcp_c1[j]);
 			vcp->normal_mass = 1.0f / b1->mass + Vec3Dot(vcp_Ic1[j], vcp_c1[j]);
@@ -215,7 +226,7 @@ void SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, con
 			}
 			else
 			{
-				Vec3Sub(vcp->r2, is->contacts[i]->cm.v[j], b2->t_world.position);
+				Vec3Sub(vcp->r2, is->contacts[i]->cm.v[j], solver->w_center_of_mass[vc->lb2]);
 				Vec3Cross(vcp_c2[j], vcp->r2, vc->normal);
 				Mat3VecMul(vcp_Ic2[j], *Iw_inv2, vcp_c2[j]);
 				vcp->normal_mass += 1.0f / b2->mass + Vec3Dot(vcp_Ic2[j], vcp_c2[j]);
@@ -243,7 +254,7 @@ void SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, con
 			Vec3Cross(tmp2, solver->angular_velocity[vc->lb1], vcp->r1);
 			Vec3Translate(relative_velocity, tmp1);
 			Vec3TranslateScaled(relative_velocity, tmp2, -1.0f);
-			const f32 seperating_velocity = Vec3Dot(vc->normal, relative_velocity);
+			const f32 separating_velocity = Vec3Dot(vc->normal, relative_velocity);
 
 			/* Apply velocity bias, taking the accepted error into account */
 			vcp->velocity_bias = f32_max(is->contacts[i]->cm.depth[j] - g_solver_config->linear_slop, 0.0f)  * g_solver_config->baumgarte_constant / solver->timestep;
@@ -251,9 +262,9 @@ void SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, con
 			//if (vc->vcp_count == 4) fprintf(stderr, "%u -  bias (without restitution): %f\t depth: %f\t timestep %f\n", j, vcp->velocity_bias, is->contacts[i]->cm.depth[j], solver->timestep);
 
 			/* sufficiently fast collision happening, so apply the restitution effect */
-			if (g_solver_config->restitution_threshold < -seperating_velocity)
+			if (g_solver_config->restitution_threshold < -separating_velocity)
 			{
-				vcp->velocity_bias += -seperating_velocity * vc->restitution;
+				vcp->velocity_bias += -separating_velocity * vc->restitution;
 			}
 		}
 
@@ -392,26 +403,33 @@ void SolverWarmup(struct solver *solver, const struct ds_Island *is)
 
 				if (best != U32_MAX)
 				{
-					vec3 old_tangent_impulse;
+					vec3 old_tangent_impulse, total_cached_impulse;
 					Vec3Scale(old_tangent_impulse, c->tangent_cache[0], c->tangent_impulse_cache[best][0]);
 					Vec3TranslateScaled(old_tangent_impulse, c->tangent_cache[1], c->tangent_impulse_cache[best][1]);
 
+                    if (0.25f <= Vec3Distance(c->tangent_cache[0], vc->tangent[0]) + Vec3Distance(c->tangent_cache[1], vc->tangent[1]))
+                    {
+                        fprintf(stderr, "meow\n");
+                    }
 					vcp->normal_impulse = c->normal_impulse_cache[best];
+                    //const f32 friction_max = vc->friction*f32_abs(vcp->normal_impulse);
 					//vcp->tangent_impulse[0] = Vec3Dot(vc->tangent[0], old_tangent_impulse);
 					//vcp->tangent_impulse[1] = Vec3Dot(vc->tangent[1], old_tangent_impulse);
+					//vcp->tangent_impulse[0] = f32_clamp(Vec3Dot(vc->tangent[0], old_tangent_impulse);
+					//vcp->tangent_impulse[1] = f32_clamp(Vec3Dot(vc->tangent[1], old_tangent_impulse);
 					vcp->tangent_impulse[0] = 0.0f;
 					vcp->tangent_impulse[1] = 0.0f;
 
-					Vec3Scale(tmp1, vc->normal, vcp->normal_impulse);
-					Vec3TranslateScaled(tmp1, vc->tangent[0], vcp->tangent_impulse[0]);
-					Vec3TranslateScaled(tmp1, vc->tangent[1], vcp->tangent_impulse[1]);
+					Vec3Scale(total_cached_impulse, vc->normal, vcp->normal_impulse);
+					Vec3TranslateScaled(total_cached_impulse, vc->tangent[0], vcp->tangent_impulse[0]);
+					Vec3TranslateScaled(total_cached_impulse, vc->tangent[1], vcp->tangent_impulse[1]);
 
-					Vec3TranslateScaled(solver->linear_velocity[vc->lb1], tmp1, -1.0f / solver->bodies[vc->lb1]->mass);
-					Vec3TranslateScaled(solver->linear_velocity[vc->lb2], tmp1, 1.0f / solver->bodies[vc->lb2]->mass);
-					Vec3Cross(tmp2, vcp->r1, tmp1);
+					Vec3TranslateScaled(solver->linear_velocity[vc->lb1], total_cached_impulse, -1.0f / solver->bodies[vc->lb1]->mass);
+					Vec3TranslateScaled(solver->linear_velocity[vc->lb2], total_cached_impulse, 1.0f / solver->bodies[vc->lb2]->mass);
+					Vec3Cross(tmp2, vcp->r1, total_cached_impulse);
 					Mat3VecMul(tmp3, solver->Iw_inv[vc->lb1], tmp2);
 					Vec3TranslateScaled(solver->angular_velocity[vc->lb1], tmp3, -1.0f);
-					Vec3Cross(tmp2, vcp->r2, tmp1);
+					Vec3Cross(tmp2, vcp->r2, total_cached_impulse);
 					Mat3VecMul(tmp3, solver->Iw_inv[vc->lb2], tmp2);
 					Vec3Translate(solver->angular_velocity[vc->lb2], tmp3);
 				}
@@ -468,7 +486,7 @@ void SolverIterateVelocityConstraints(struct solver *solver)
 
 			for (u32 k = 0; k < 2; ++k)
 			{
-				/* Calculate seperating velocity at point: JV */
+				/* Calculate separating velocity at point: JV */
 				Vec3Sub(relative_velocity, 
 						solver->linear_velocity[vc->lb2],
 						solver->linear_velocity[vc->lb1]);
@@ -476,10 +494,10 @@ void SolverIterateVelocityConstraints(struct solver *solver)
 				Vec3Cross(tmp3, solver->angular_velocity[vc->lb1], vcp->r1);
 				Vec3Translate(relative_velocity, tmp2);
 				Vec3TranslateScaled(relative_velocity, tmp3, -1.0f);
-				const f32 seperating_velocity = Vec3Dot(vc->tangent[k], relative_velocity);
+				const f32 separating_velocity = Vec3Dot(vc->tangent[k], relative_velocity);
 
 				/* update constraint point tangent impulse */
-				f32 delta_impulse = -vcp->tangent_mass[k] * seperating_velocity;
+				f32 delta_impulse = -vcp->tangent_mass[k] * separating_velocity;
 				const f32 old_impulse = vcp->tangent_impulse[k];
 				vcp->tangent_impulse[k] = f32_clamp(vcp->tangent_impulse[k] + delta_impulse, -impulse_bound, impulse_bound);
 				delta_impulse = vcp->tangent_impulse[k] - old_impulse;
@@ -503,7 +521,7 @@ void SolverIterateVelocityConstraints(struct solver *solver)
 			{
 				struct velocityConstraintPoint *vcp = vc->vcps + j;
 
-				/* Calculate seperating velocity at point: JV */
+				/* Calculate separating velocity at point: JV */
 				Vec3Sub(relative_velocity, 
 						solver->linear_velocity[vc->lb2],
 						solver->linear_velocity[vc->lb1]);
@@ -511,10 +529,10 @@ void SolverIterateVelocityConstraints(struct solver *solver)
 				Vec3Cross(tmp3, solver->angular_velocity[vc->lb1], vcp->r1);
 				Vec3Translate(relative_velocity, tmp2);
 				Vec3TranslateScaled(relative_velocity, tmp3, -1.0f);
-				const f32 seperating_velocity = Vec3Dot(vc->normal, relative_velocity);
+				const f32 separating_velocity = Vec3Dot(vc->normal, relative_velocity);
 
 				/* update constraint point normal impulse */
-				f32 delta_impulse = vcp->normal_mass * (vcp->velocity_bias - seperating_velocity);
+				f32 delta_impulse = vcp->normal_mass * (vcp->velocity_bias - separating_velocity);
 				const f32 old_impulse = vcp->normal_impulse;
 				vcp->normal_impulse = f32_max(0.0f, vcp->normal_impulse + delta_impulse);
 				delta_impulse = vcp->normal_impulse - old_impulse;
@@ -537,13 +555,13 @@ void SolverIterateVelocityConstraints(struct solver *solver)
 			for (u32 j = 0; j < vc->vcp_count; ++j)
 			{
 				struct velocityConstraintPoint *vcp = vc->vcps + j;
-				/* Calculate seperating velocity at point: JV */
+				/* Calculate separating velocity at point: JV */
 				Vec3Cross(tmp2, solver->angular_velocity[vc->lb2], vcp->r2);
 				Vec3Cross(tmp3, solver->angular_velocity[vc->lb1], vcp->r1);
 				Vec3Add(relative_velocity, tmp1, tmp2);
 				Vec3TranslateScaled(relative_velocity, tmp3, -1.0f);
-				const f32 seperating_velocity = Vec3Dot(vc->normal, relative_velocity);
-				b[j] = vcp->velocity_bias - seperating_velocity;
+				const f32 separating_velocity = Vec3Dot(vc->normal, relative_velocity);
+				b[j] = vcp->velocity_bias - separating_velocity;
 			}
 			
 			u32 solution_found = 0;

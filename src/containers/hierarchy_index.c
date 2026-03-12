@@ -490,12 +490,11 @@ void *hi_Address(const struct hi *hi, const u32 node)
 	return ds_PoolAddress(&hi->pool, node);
 }
 
-struct hiIterator hi_IteratorAlloc(struct arena *mem, struct hi *hi, const u32 root)
+struct hi_Iterator hi_IteratorAlloc(struct arena *mem, struct hi *hi, const u32 root)
 {
 	ds_Assert(mem);
-	ArenaPushRecord(mem);
 
-	struct hiIterator it;
+	struct hi_Iterator it;
 	it.hi = hi;
 
 	struct memArray alloc = ArenaPushAlignedAll(mem, sizeof(u32), sizeof(u32));
@@ -516,13 +515,13 @@ struct hiIterator hi_IteratorAlloc(struct arena *mem, struct hi *hi, const u32 r
 	return it;
 }
 
-u32 hi_IteratorPeek(struct hiIterator *it)
+u32 hi_IteratorPeek(struct hi_Iterator *it)
 {
 	ds_Assert(it->count);
 	return it->stack[it->count];
 }
 
-u32 hi_IteratorNextDf(struct hiIterator *it)
+u32 hi_IteratorNextDf(struct hi_Iterator *it)
 {
 	ds_Assert(it->count);
 	const u32 node = it->stack[it->count];
@@ -561,7 +560,7 @@ u32 hi_IteratorNextDf(struct hiIterator *it)
 	return node;
 }
 
-void hi_IteratorSkip(struct hiIterator *it)
+void hi_IteratorSkip(struct hi_Iterator *it)
 {
 	ds_Assert(it->count);
 	const u32 node = it->stack[it->count];

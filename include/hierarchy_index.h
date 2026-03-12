@@ -102,7 +102,7 @@ void *		hi_Address(const struct hi *hi, const u32 node_index);
  * hierarchy_index_iterator: iterator for traversing a supplied node and it's entire sub-hierarchy in the given
  * hierarchy. 
  */
-struct hiIterator
+struct hi_Iterator
 {
 	struct hi *	hi; 		/* hierarchy index */
 	u64 		stack_len;  	/* max stack size  */
@@ -111,13 +111,13 @@ struct hiIterator
 };
 
 /* Setup hierarchy iterator at the given node root */
-struct hiIterator	hi_IteratorAlloc(struct arena *ar_alias, struct hi *hi, const u32 root);
+struct hi_Iterator	hi_IteratorAlloc(struct arena *ar_alias, struct hi *hi, const u32 root);
 /* Given it->count > 0, return the next index in the iterator */
-u32 			hi_IteratorPeek(struct hiIterator *it);
+u32 			hi_IteratorPeek(struct hi_Iterator *it);
 /* Given it->count > 0, return the next index in the iterator, and push any new links (depth-first) related to the index */
-u32 			hi_IteratorNextDf(struct hiIterator *it);
+u32 			hi_IteratorNextDf(struct hi_Iterator *it);
 /* Given it->count > 0, skip the whole subtree corresponding to the next index in the iterator, and push the subtree's next sibling, if it exists. */
-void			hi_IteratorSkip(struct hiIterator *it);
+void			hi_IteratorSkip(struct hi_Iterator *it);
 
 #ifdef __cplusplus
 } 

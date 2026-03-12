@@ -81,7 +81,7 @@ u32 ds_WindowAlloc(const char *title, const vec2u32 position, const vec2u32 size
 void ds_WindowTagSubHierarchyForDestruction(const u32 root)
 {
 	struct arena tmp = ArenaAlloc1MB();
-	struct hiIterator it = hi_IteratorAlloc(&tmp, g_window_hierarchy, root);
+	struct hi_Iterator it = hi_IteratorAlloc(&tmp, g_window_hierarchy, root);
 	while (it.count)
 	{
 		const u32 index = hi_IteratorNextDf(&it);
@@ -101,7 +101,7 @@ void ds_DeallocTaggedWindows(void)
 {
 	struct arena tmp1 = ArenaAlloc1MB();
 	struct arena tmp2 = ArenaAlloc1MB();
-	struct hiIterator it = hi_IteratorAlloc(&tmp1, g_window_hierarchy, g_process_root_window);
+	struct hi_Iterator it = hi_IteratorAlloc(&tmp1, g_window_hierarchy, g_process_root_window);
 	while (it.count)
 	{
 		const u32 index = hi_IteratorPeek(&it);
@@ -127,7 +127,7 @@ struct slot ds_WindowLookup(const u64 native_handle)
 	u32 index = U32_MAX;
 
 	struct arena tmp = ArenaAlloc1MB();
-	struct hiIterator it = hi_IteratorAlloc(&tmp, g_window_hierarchy, g_process_root_window);
+	struct hi_Iterator it = hi_IteratorAlloc(&tmp, g_window_hierarchy, g_process_root_window);
 	while (it.count)
 	{
 		const u32 win_index = hi_IteratorNextDf(&it);
