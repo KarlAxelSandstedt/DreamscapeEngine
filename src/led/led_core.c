@@ -1049,6 +1049,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 	const vec4 sphere_color = { 0.2f, 0.9f, 0.5f,                             alpha1 };
 	const vec4 capsule_color = { 0.1f, 0.4f, 0.8f, 				alpha2 };
 	const vec4 multibox_color = { 0.2f, 0.3f, 0.6f, 				alpha2 };
+	const vec4 multidsphere_color = { 0.9f, 0.6f, 0.1f, 				alpha2 };
 	const vec4 map_color = { 0.5f, 0.5f, 0.8f, 0.7f };
 
 	const f32 box_side = 1.0f;
@@ -1134,6 +1135,7 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_RigidBodyPrefabAdd(led, Utf8Inline("rb_capsule"), rb_dynamic);
     led_RigidBodyPrefabAdd(led, Utf8Inline("rb_sphere"), rb_dynamic);
     led_RigidBodyPrefabAdd(led, Utf8Inline("rb_dsphere"), rb_dynamic);
+    led_RigidBodyPrefabAdd(led, Utf8Inline("rb_multidsphere"), rb_dynamic);
 
     led_RenderMeshAdd(led, Utf8Inline("rm_map"), Utf8Inline("c_map"));
     led_RenderMeshAdd(led, Utf8Inline("rm_floor"), Utf8Inline("c_floor"));
@@ -1188,6 +1190,23 @@ void led_WallSmashSimulationSetup(struct led *led)
     Vec3Set(transform.position, 2.0f, 1.0f, 2.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multibox"), Utf8Inline("s_box"), Utf8Inline("l_s_box7"), &transform);
 
+    Vec3Set(transform.position, 0.0f, 0.0f, 0.0f);
+    led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere0"), &transform);
+    Vec3Set(transform.position, 2.0f, 0.0f, 0.0f);
+    led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere1"), &transform);
+    Vec3Set(transform.position, 0.0f, 0.0f, 2.0f);
+    led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere2"), &transform);
+    Vec3Set(transform.position, 2.0f, 0.0f, 2.0f);
+    led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere3"), &transform);
+    Vec3Set(transform.position, 0.0f, 1.0f, 0.0f);
+    led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere4"), &transform);
+    Vec3Set(transform.position, 2.0f, 1.0f, 0.0f);
+    led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere5"), &transform);
+    Vec3Set(transform.position, 0.0f, 1.0f, 2.0f);
+    led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere6"), &transform);
+    Vec3Set(transform.position, 2.0f, 1.0f, 2.0f);
+    led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere7"), &transform);
+
 	const vec3 sphere_translation = { -0.5, 0.5f + ramp_height, -ramp_length };
 	const vec3 box_translation =  {-0.5f, 0.0f, -0.5f};
 	const vec3 ramp_translation = {-5.0f , -5.0f, -15.0f};
@@ -1195,6 +1214,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 	const vec3 box_base_translation = { 0.0f, floor_translation[1] + 1.0f, floor_translation[2] / 2.0f};
 	const vec3 dsphere_base_translation = { -15.0f, floor_translation[1] + 1.0f, floor_translation[2] / 2.0f + 20.0f};
     const vec3 multibox_base_translation = { 0.0f, floor_translation[1] + 1.0f, floor_translation[2] / 2.0f -10.0f };
+    const vec3 multidsphere_base_translation = { 0.0f, floor_translation[1] + 1.0f, floor_translation[2] / 2.0f -14.0f };
     const vec3 map_translation = { 0.0f, -25.0f, 0.0f };
 
     id = Utf8Cstr(sys_win->ui->mem_frame, "led_floor");
@@ -1240,7 +1260,22 @@ void led_WallSmashSimulationSetup(struct led *led)
         led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_multibox"));
         led_NodeSetColor(led, tagged_id, multibox_color, 1.0f);
     }
-	
+
+	for (u32 i = 0; i < multibox_count; ++i)
+    {
+        vec3 translation;
+		Vec3Copy(translation, multidsphere_base_translation);
+		translation[0] += 0.0f;
+		translation[1] += i*4.0f;
+		translation[2] += 0.0f;
+
+		id = Utf8Format(sys_win->ui->mem_frame, "multidsphere_%u", i);
+        tagged_id = led_NodeAdd(led, id, Utf8Empty());
+        led_NodeSetPosition(led, tagged_id, translation);
+        led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_multidsphere"));
+        led_NodeSetColor(led, tagged_id, multidsphere_color, 1.0f);
+    }
+
 	for (u32 i = 0; i < capsule_count; ++i)
 	{	
 		vec3 translation;
@@ -1628,7 +1663,7 @@ static void led_EngineRun(struct led *led)
 					    if (RB_IS_DYNAMIC(body2))
 					    {
                             const struct ds_Island *is = ds_PoolAddress(&led->physics.is_db.island_pool, body2->island_index);
-					    	if (is->contact_list.count)
+					    	if (is->contact_list.count == 0)
 					    	{
                                 led_NodeColorProxies(led, body2->entity, node2->color);
 					    	}
