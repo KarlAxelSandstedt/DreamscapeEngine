@@ -26,12 +26,11 @@
 static struct r_Mesh *DebugContactManifoldSegmentsMesh(struct arena *mem, const struct led *led)
 {
     const struct ds_RigidBodyPipeline *pipeline = &led->physics;
-	const struct c_Manifold *cm = pipeline->cm;
-	const u32 cm_count = pipeline->cm_count;
+	const u32 cm_count = pipeline->cdb->contact_net.pool.count-1;
 
 	ArenaPushRecord(mem);
 
-	const u32 vertex_count = 2*pipeline->cm_count;
+	const u32 vertex_count = 2*cm_count;
 	struct r_Mesh *mesh = NULL;
  	struct r_Mesh *tmp = ArenaPush(mem, sizeof(struct r_Mesh));
 	u8 *vertex_data = ArenaPush(mem, vertex_count*L_COLOR_STRIDE);
@@ -50,42 +49,51 @@ static struct r_Mesh *DebugContactManifoldSegmentsMesh(struct arena *mem, const 
 	mesh->vertex_data = vertex_data;
 	mesh->local_stride = L_COLOR_STRIDE;
 
-	for (u32 i = 0; i < cm_count; ++i)
+    u32 i = 0; 
+    u32 ci = 1;
+	while (i < cm_count)
 	{
+        const struct ds_Contact *c = ds_PoolAddress(&pipeline->cdb->contact_net.pool, ci++);
+        if (!PoolSlotAllocated(c))
+        {
+            continue;
+        }
+	    const struct c_Manifold *cm = &c->cm;
 		vec3 n0, n1;
-		switch (cm[i].v_count)
+		switch (cm->v_count)
 		{
 			case 1:
 			{
-				Vec3Copy(n0, cm[i].v[0]);
-				Vec3Add(n1, n0, cm[i].n);
+				Vec3Copy(n0, cm->v[0]);
+				Vec3Add(n1, n0, cm->n);
 			} break;
 
 			case 2:
 			{
-				Vec3Interpolate(n0, cm[i].v[0], cm[i].v[1], 0.5f);
-				Vec3Add(n1, n0, cm[i].n);
+				Vec3Interpolate(n0, cm->v[0], cm->v[1], 0.5f);
+				Vec3Add(n1, n0, cm->n);
 			} break;
 
 			case 3:
 			{
-				Vec3Scale(n0, cm[i].v[0], 1.0f/3.0f);
-				Vec3TranslateScaled(n0, cm[i].v[1], 1.0f/3.0f);
-				Vec3TranslateScaled(n0, cm[i].v[2], 1.0f/3.0f);
-				Vec3Add(n1, n0, cm[i].n);
+				Vec3Scale(n0, cm->v[0], 1.0f/3.0f);
+				Vec3TranslateScaled(n0, cm->v[1], 1.0f/3.0f);
+				Vec3TranslateScaled(n0, cm->v[2], 1.0f/3.0f);
+				Vec3Add(n1, n0, cm->n);
 			} break;
 
 			case 4:
 			{
-				Vec3Scale(n0, cm[i].v[0], 1.0f/4.0f);
-				Vec3TranslateScaled(n0, cm[i].v[1], 1.0f/4.0f);
-				Vec3TranslateScaled(n0, cm[i].v[2], 1.0f/4.0f);
-				Vec3TranslateScaled(n0, cm[i].v[3], 1.0f/4.0f);
-				Vec3Add(n1, n0, cm[i].n);
+				Vec3Scale(n0, cm->v[0], 1.0f/4.0f);
+				Vec3TranslateScaled(n0, cm->v[1], 1.0f/4.0f);
+				Vec3TranslateScaled(n0, cm->v[2], 1.0f/4.0f);
+				Vec3TranslateScaled(n0, cm->v[3], 1.0f/4.0f);
+				Vec3Add(n1, n0, cm->n);
 			} break;
 
 			default:
 			{
+                ds_Assert(0);
 				continue;
 			} break;
 		}
@@ -95,6 +103,7 @@ static struct r_Mesh *DebugContactManifoldSegmentsMesh(struct arena *mem, const 
 		Vec3Copy((f32 *) vertex_data +  7, n1);
 		Vec4Copy((f32 *) vertex_data + 10, led->manifold_color);
 		vertex_data += 2*(sizeof(vec3) + sizeof(vec4));
+        ++i;
 	}
 end:
 	return mesh;
@@ -103,12 +112,11 @@ end:
 static struct r_Mesh *DebugContactManifoldTrianglesMesh(struct arena *mem, const struct led *led)
 {
     const struct ds_RigidBodyPipeline *pipeline = &led->physics;
-	const struct c_Manifold *cm = pipeline->cm; 
-	const u32 cm_count = pipeline->cm_count;
+	const u32 cm_count = pipeline->cdb->contact_net.pool.count-1;
 
 	ArenaPushRecord(mem);
 
-	u32 vertex_count = 6*pipeline->cm_count;
+	u32 vertex_count = 6*cm_count;
 
 	struct r_Mesh *mesh = NULL;
  	struct r_Mesh *tmp = ArenaPush(mem, sizeof(struct r_Mesh));
@@ -131,18 +139,33 @@ static struct r_Mesh *DebugContactManifoldTrianglesMesh(struct arena *mem, const
 	vec3 v[4];
 	u32 cm_triangles = 0;
 	u32 cm_planes = 0;
-	for (u32 i = 0; i < cm_count; ++i)
+    u32 i = 0; 
+    u32 ci = 1;
+	while (i < cm_count)
 	{
-		switch (cm[i].v_count)
+        const struct ds_Contact *c = ds_PoolAddress(&pipeline->cdb->contact_net.pool, ci++);
+        if (!PoolSlotAllocated(c))
+        {
+            continue;
+        }
+        i += 1;
+	    const struct c_Manifold *cm = &c->cm;
+		switch (cm->v_count)
 		{
+            case 1:
+            case 2:
+            {
+                continue;
+            };
+
 			case 3:
 			{
-				Vec3Copy(v[0], cm[i].v[0]);
-				Vec3Copy(v[1], cm[i].v[1]);
-				Vec3Copy(v[2], cm[i].v[2]);
-				Vec3TranslateScaled(v[0], cm[i].n, 0.005f);
-				Vec3TranslateScaled(v[1], cm[i].n, 0.005f);
-				Vec3TranslateScaled(v[2], cm[i].n, 0.005f);
+				Vec3Copy(v[0], cm->v[0]);
+				Vec3Copy(v[1], cm->v[1]);
+				Vec3Copy(v[2], cm->v[2]);
+				Vec3TranslateScaled(v[0], cm->n, 0.005f);
+				Vec3TranslateScaled(v[1], cm->n, 0.005f);
+				Vec3TranslateScaled(v[2], cm->n, 0.005f);
 
 				Vec3Copy((f32 *) vertex_data +  0, v[0]);
 				Vec4Copy((f32 *) vertex_data +  3, led->manifold_color);
@@ -156,14 +179,14 @@ static struct r_Mesh *DebugContactManifoldTrianglesMesh(struct arena *mem, const
 
 			case 4:
 			{
-				Vec3Copy(v[0], cm[i].v[0]);
-				Vec3Copy(v[1], cm[i].v[1]);
-				Vec3Copy(v[2], cm[i].v[2]);
-				Vec3Copy(v[3], cm[i].v[3]);
-				Vec3TranslateScaled(v[0], cm[i].n, 0.005f);
-				Vec3TranslateScaled(v[1], cm[i].n, 0.005f);
-				Vec3TranslateScaled(v[2], cm[i].n, 0.005f);
-				Vec3TranslateScaled(v[3], cm[i].n, 0.005f);
+				Vec3Copy(v[0], cm->v[0]);
+				Vec3Copy(v[1], cm->v[1]);
+				Vec3Copy(v[2], cm->v[2]);
+				Vec3Copy(v[3], cm->v[3]);
+				Vec3TranslateScaled(v[0], cm->n, 0.005f);
+				Vec3TranslateScaled(v[1], cm->n, 0.005f);
+				Vec3TranslateScaled(v[2], cm->n, 0.005f);
+				Vec3TranslateScaled(v[3], cm->n, 0.005f);
 
 				Vec3Copy((f32 *) vertex_data +  0, v[0]);
 				Vec4Copy((f32 *) vertex_data +  3, led->manifold_color);
@@ -183,6 +206,7 @@ static struct r_Mesh *DebugContactManifoldTrianglesMesh(struct arena *mem, const
 
 			default:
 			{
+                ds_Assert(0);
 				continue;
 			} break;
 		}

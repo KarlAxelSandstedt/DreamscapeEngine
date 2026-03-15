@@ -56,20 +56,18 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 	{
 		init_solver_once = 1;
 		const u32 iteration_count = 10;
-		const u32 block_solver = 0; 
 		const u32 warmup_solver = 1;
 		const vec3 gravity = { 0.0f, -GRAVITY_CONSTANT_DEFAULT, 0.0f };
        	const f32 baumgarte_constant = 0.1f;
-		const f32 max_condition = 1000.0f;
 		const f32 linear_dampening = 0.1f;
 		const f32 angular_dampening = 0.1f;
-		const f32 linear_slop = 0.001f;
+		const f32 linear_slop = 0.005f;
 		const f32 restitution_threshold = 0.001f;
 		const u32 sleep_enabled = 1;
 		const f32 sleep_time_threshold = 0.5f;
-		f32 sleep_linear_velocity_sq_limit = 0.001f*0.001f; 
+		f32 sleep_linear_velocity_sq_limit = 0.005f*0.005f; 
 		f32 sleep_angular_velocity_sq_limit = 0.01f*0.01f*2.0f*F32_PI;
-		SolverConfigInit(iteration_count, block_solver, warmup_solver, gravity, baumgarte_constant, max_condition, linear_dampening, angular_dampening, linear_slop, restitution_threshold, sleep_enabled, sleep_time_threshold, sleep_linear_velocity_sq_limit, sleep_angular_velocity_sq_limit);
+		SolverConfigInit(iteration_count, warmup_solver, gravity, baumgarte_constant, linear_dampening, angular_dampening, linear_slop, restitution_threshold, sleep_enabled, sleep_time_threshold, sleep_linear_velocity_sq_limit, sleep_angular_velocity_sq_limit);
 
 	}
 
@@ -142,9 +140,6 @@ static void PhysicsPipelineClearFrame(struct ds_RigidBodyPipeline *pipeline)
 		stack_visualSegmentFlush(&pipeline->debug[i].stack_segment);
 	}
 #endif
-	pipeline->cm_count = 0;
-	pipeline->cm = NULL;
-
 	isdb_ClearFrame(&pipeline->is_db);
 	cdb_ClearFrame(pipeline->cdb);
 	ArenaFlush(&pipeline->frame);
@@ -691,7 +686,6 @@ void PhysicsPipelineSleepDisable(struct ds_RigidBodyPipeline *pipeline)
 static void UpdateSolverConfig(struct ds_RigidBodyPipeline *pipeline)
 {
 	g_solver_config->warmup_solver = g_solver_config->pending_warmup_solver;
-	g_solver_config->block_solver = g_solver_config->pending_block_solver;
 	g_solver_config->iteration_count = g_solver_config->pending_iteration_count;
 	g_solver_config->linear_slop = g_solver_config->pending_linear_slop;
 	g_solver_config->baumgarte_constant = g_solver_config->pending_baumgarte_constant;

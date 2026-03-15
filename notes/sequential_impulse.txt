@@ -1,0 +1,311 @@
+----- Iterative Dynamics using Constraints -----
+
+Introduction and Problem Setting
+================================
+
+Consider two bodies B1, B2 with orientation x1,q1,x2,q2. A constraint is then of the form
+
+	C(x1,q1,x2,q2) = (>=, <=, ...) 0
+
+For a system of n bodies, usually an island, we let V denote the velocity vector of the system:
+	
+	V = (v1 w1 v2 w2 ... vn wn)
+
+The contacts in the system generates a set of constraints, usually one for every point of a
+contact, and we wish to find new velocities that solves the contacts as much as possible. 
+This means that we need to find constraint forces
+
+	Fc = (fc1 tc1 fc2 tc2 ... fcn tcn)
+
+that solves the s constraints that we have. 
+
+
+The Normal Constraint ([1], Section 4.1)
+========================================
+
+Again, let B1 and B2 denote two bodies with orientations x1, q1, x2, q2. Let d be the absolute
+penetration depth. Furthermore, suppose that the penetration normal n is oriented from B1 to B2.
+The signed distance (between two given points on body B1 and B2) can then be written as
+
+	B1.p1 = x1 + r1
+	B2.p2 = x2 + r2
+	Cn = signed distance = (x2 + r2 - x1 - r1) * n 
+
+The seperating velocity of those two points along n becomes the derivative
+
+	Cn^prime = signed seperation velocity along n between p1 and p2
+		 = (v2 + w2 x r2 - v1 - w1 x r1) * n + (x2 + r2 - x1 - r1) * (w1 x n)
+		 ~ (v2 + w2 x r2 - v1 - w1 x r1) * n 	(Approx. due to assuming d small)
+ 		 = JnV,
+
+	where
+		Jn = [ -n    -(r1 x n)^T    n    (r2 x n)^T ],
+		V  = [ v1    w1    v2    w2 ].
+
+If Cn^prime is negative, the peneteration depth is increasing. Now, if we want to reduce the
+penetration, we want to have
+
+	Cn^prime >= 0,
+
+so we introduce a bias constant to control the aimed seperation velocity. Let Beta denote the
+percentage of penetration depth you aim to remove per timestep. Let delta denote the time 
+step. Then we must satisfy
+
+	delta * Cn^prime >= Beta * d
+     => 	Cn^prime >= Beta * d / delta
+
+Thus, we have modified the constraint to reduce penetration according to the rate
+
+	rate(Beta, d, delta)
+
+Having a fixed timestep would help here and allow a more careful choice of Beta. For a simple
+discussion, see ([1], Page 10).
+
+
+--- 3. The Equations of motion ([1], Section 5) ---
+
+Let I denote the rotational inertia. The Newton-Euler equations of motions are
+
+	mv^prime = f_c + f_ext
+	Iw^prime = t_c + t_ext
+
+For a system, we get, In matrix form:
+
+	MV^prime = F_c + F_ext
+	M_Inv = [ 	mInv_1E	0	    ...	0 	    0	    ]
+	    	[	0	    IInv_1  ...	0 	    0	    ]
+	    	[ 	...	    ...	    ...	...	    ...	    ]
+	    	[ 	0	    0	    ...	mInv_nE	0	    ]
+	    	[	0	    0	    ...	0 	    IInv_n	]
+
+	E = 3x3 Identity matrix
+
+where E denotes the 3x3 identity matrix. It follows that we are solving the system (with no bias)
+
+	MV^prime = F_c + F_ext
+	JV	 = 0
+
+or, with bias:
+
+	MV^prime = F_c + F_ext
+	JV	 = zeta
+
+where zeta is a vector of constraint biases Beta * penetration_depth / delta,
+and J is now a sparse representation of the previous single constraint version.
+
+Some questions we can ask ourselves now is: 
+	(1) What should we do with the unknown acceleration?
+	(2) how do we linearize F_c in the unknown constraint solution vector lambda?
+	(3) How do we discretize the system using timesteps?
+	(4) What are we in the end solving?
+
+We start by answering (1) and (3). Given a time step delta, the first order approximation 
+of the acceleration becomes
+
+		V^prime ~ [ V(k+1) - V(k) ] / delta 
+	<=>	delta * V^prime ~ V(k+1) - V(k)
+				= delta * M_Inv * (F_c + F_ext),
+
+where the last equality comes from the motion equations:
+
+		V^prime = M_Inv*(F_c + F_ext)
+	=> 	V(k+1) - V(k) ~ delta*V_prime =  delta * M_Inv * (F_c + F_ext).
+
+Through our constraints and linear approximations, we now have, with bias
+
+		V(k+1) = delta * M_Inv * (F_c + F_ext) + V(k)	
+	<=>	zeta = JV(k+1) = delta * J * M_Inv * (F_c + F_ext) + JV(k)
+
+We don't answer why F_c can be linearized in lambda, but simply state that 
+
+	F_c = J^T * lambda.
+
+Thus 
+	   	zeta = delta*J*M_Inv*J^T*lambda + delta*J*M_Inv*F_ext + JV(k)
+	<=>	zeta = delta*JB*lambda + delta*J*M_Inv*F_ext + JV(k)	[ B = M_Inv*J^T	]
+	<=>	eta = JB*lambda						[ eta = zeta/delta - J*(V(k)/delta + M_Inv*F_ext) ]
+
+
+--- 3. What is lambda? ---
+
+Following from the previous section's last system, lambda is exactly the force produced from 
+the constraint, and thus, for example, the newly added velocity along the normal (without 
+regards to the sign) becomes
+
+		v_c = delta * F_c / mass
+	<=>	    = delta / mass * dir * lambda
+	<=>	mass * v_c = dir * lambda * delta
+	<=>	impulse = dir * lambda * delta 
+
+Thus, lambda must be the magnitude of the constraint force in the system 
+
+	eta = JB*lambda,
+
+or, by multiplying by delta and producing the system
+
+		delta * eta = JB*lambda
+	<=> 	zeta - J*(V(k) + delta*M_Inv*F_ext) = JB*lambda,
+	<=>	eta = JB*lambda				[ eta = zeta - JV(k) - delta*J*M_Inv*F_ext ]
+
+lambda must be the produced constraint impulse. [This is the way Erin Catto does things?] If we assume the
+starting velocity has already taken into account external forces, we finally get the system
+
+		zeta - JV(k) = J*Inv(M)*Transpose(J)*lambda
+
+This can now be used together with Project Gauss-Seidel (PGS) to iteratively solve the system.
+
+
+--- 4. Solving the system ---
+
+[1] solves 
+	   	J*Inv(M)*Transpose(J)*lambda = zeta - JV(0)
+	<=>	Ax = b
+
+where V(k) is the initial velocity entering the system (Taking into account the external forces applied to the
+bodies), by Projected Gauss-Seidel. Box2D transforms this system into an equivalent iterable solution that only
+updates the lambdas and body velocities at each inner-most loop body. The PGS-update to variable x_i in the
+solution vector x at iteration (k+1) of the outermost loop looks like:
+
+	delta(x_i^{k+1}) = 1/A_{ii} (b - sum_{j=1}^s x_i^k * A_{ij}.
+
+We first determine A_{ii} and A_{ij} before showing the equivalence to the Box2D. First A_{ii}:
+
+		A = J*Inv(M)*Transpose(J)
+	=>	A_{ii} = Row(J,i) * Transpose( [ -n / m1    -Inv(I_1)(r1 x n)    n / m2    Inv(I_2)(r2 x n)])
+	=>	A_{ii} = 1.0f / m1 + Inv(I_1)(r1 x n)*(r1 x n) + 1.0f / m2 + Inv(I_2)(r2 x n)*(r2 x n)
+
+where the transposed vector is sparely represented. A_{ii} is usually called the inverse normal mass, or normal mass
+or perhaps effective mass or inverse effective mass. Similarly, Assuming i1 == j1 refers to the same body, and i != j:
+	
+		A_{ij} = Row(J,i) * Transpose( [ -nj / mj1    -Inv(I_1)(rj1 x nj)    nj / mj2    Inv(I_2)(rj2 x n)])
+		A_{ij} = ni*nj / m + Inv(I_1)(ri1 x ni)(rj1 x nj)
+
+Of course, if i1 != j1 and we instead have some other configuration, the signs may change. Lastly, we note that from
+earlier
+
+		directed_impulse = J * impulse,			[ impulse = solution_vector ]
+	=> 	delta_velocity   = Inv(M) * J * impulse.
+
+We are ready to prove the equivalence between the systems. Let V denote the initial velocity of the system and
+V(k) the currently up-to-date velocity vector of the bodies.
+Then the PGS solver gives the update 
+
+	delta(x_i^{k+1}) = 1/A_{ii} * (bias - row(J,i)*V - row(J,i)*Inv(M)*Transpose(J)*x).
+	delta(x_i^{k+1}) = 1/A_{ii} * (bias - row(J,i)*V - row(J,i)*Inv(M)*old_impulse).
+			 = 1/A_{ii} * (bias - row(J,i)*V - row(J,i)*delta_velocity).
+			 = 1/A_{ii} * (bias - row(J,i)*V(k)).
+			 = 1/A_{ii} * (bias - seperating_velocity(k)).
+
+This is the update that Box2D uses, and after the new delta impulse have been calculated, the solution vector x
+and V(k+1) can be updated accordingly. This was of solving the system seems easier at is the one you usually see
+on posts and in code. 
+
+--- 5. Block-Solver extension to the normal constraint ---
+
+Instead of solving a contacts several constraints individually, we may use block solvers to solve the contact's
+constraints as a system instead. Erin Catto sets up the problem as follows:
+
+	Ax - b = vn			vn >= 0, x >= 0,	vn_i * x_i = 0,	i in [1, v_count]
+	A = J*Inv(M)*Transpose(J)
+	b = velocity_bias - sv				[ sv - seperating velocity ]
+
+where sv is the seperating velocity for the contact points in the block at the beginning of the iteration.  
+The system is solved using the total enumeration method, as in [2]. Using the system constraint that, for 
+each constraint i, either the impulse xi, or vni, are equal to 0. Thus we can enumerate every possible 
+combination, and from the assumed 0's, check if the other values or non-zero. The first solution we find we
+go with.
+
+We try to understand the block solution. From box2d, we have the explanation:
+	Block solver developed in collaboration with Dirk Gregorius (back in 01/07 on Box2D_Lite).
+	Build the mini LCP for this contact patch
+	
+	vn = A * x + b, vn >= 0, x >= 0 and vn_i * x_i = 0 with i = 1..2
+	
+	A = J * W * JT and J = ( -n, -r1 x n, n, r2 x n )
+	b = vn0 - velocityBias
+
+	The system is solved using the "Total enumeration method" (s. Murty). The complementary constraint
+	vn_i * x_i implies that we must have in any solution either vn_i = 0 or x_i = 0. So for the 2D 
+	contact problem the cases vn1 = 0 and vn2 = 0, x1 = 0 and x2 = 0, x1 = 0 and vn2 = 0, x2 = 0 and
+	vn1 = 0 need to be tested. The first valid solution that satisfies the problem is chosen.
+
+	In order to account of the accumulated impulse 'a' (because of the iterative nature of the solver 
+	which only requires that the accumulated impulse is clamped and not the incremental impulse) we 
+	change the impulse variable (x_i).
+	
+	Substitute:
+	
+	x = a + d
+	
+	a := old total impulse
+	x := new total impulse
+	d := incremental impulse 
+	
+	For the current iteration we extend the formula for the incremental impulse
+	to compute the new total impulse:
+
+	vn = A * d + b
+	   = A * (x - a) + b
+	   = A * x + b - A * a
+	   = A * x + b'
+	b' = b - A * a;
+	
+First we note that if vn_i = 0, then, given our b is the negative of Erin's b,
+
+		A*impulse_new - A*impulse_old - b = 0
+	<=>	A*impulse_delta = b
+
+which equates to solving the usual impulse applied to the normal at the constraint. If x_i = 0, then 
+it means that any impulse applied to the constraint point this frame is completely removed. Given this
+fact, we have that 
+
+		vn_i >= 0	
+	<=>	A_i*impulses_new - A_i*impulses_old - b_i >= 0
+	<=>	J_i*new_accumulated_velocities - J_i*old_accumulated_velocities - b_i >= 0
+	<=>	delta_seperating_velocity_i >= b_i
+
+Thus, by solving the system, we get a solution which applies new impulses only a few points,
+	the points at which x_i >= 0. Given this impulse, the points for which x_i = 0 will
+	still satisfy the velocity constraint due to vn_i >= 0.
+		
+
+
+
+
+
+
+General Solution:
+Given any configuration of assumed zeros vn_i and x_j, we first solve system consisting of rows of the form
+	
+	row(J,i)*Inv(M)*Transpose(J)*x = b[i] = velocity_bias[i] - vn[i] = velocity_bias[i],
+	
+a system of as many unknowns as there are zeroes in vn. After solving the system, simply calculate the nonzero
+values vn[i] as
+
+	vn[i] = row(A,i)*x + b[i],
+
+after which we can derive new impulses and velocities.
+
+
+
+
+
+
+
+From now on, we assume we have an arbitrary number of points 4. We do a systematic analysis of all cases.
+Case 1. [4 choose 0, 4 zeroes in vn, 0 zeroes in x].
+
+		vn = 0
+	=>	A*x = b 
+	<=>	x = inv(A)*b
+	
+	if (x[0] >= 0.0f && x[1] >= 0.0f && x[2] >= 0.0f && x[3] >= 0.0f)
+	{
+		we have found a solution, update the impulses, and calculate new velocities of bodies.
+	}
+
+
+----- References -----
+
+[1].	Iterative Dynamics with Temporal Coherence, Erin Catto
+[2].	Box2D v2, Erin Catto, contact_solver.cpp, line ~ 400

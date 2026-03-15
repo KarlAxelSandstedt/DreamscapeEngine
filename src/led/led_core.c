@@ -1853,8 +1853,6 @@ static void led_EngineInit(struct led *led)
                 shape_prefab = strdb_Address(&led->shape_prefab_db, instance->shape_prefab);
                 ds_ShapeAdd(&led->physics, shape_prefab, &instance->t_local, body);
             }
-
-            ds_RigidBodyUpdateMassProperties(&led->physics, body);
         }
 	}
 	ArenaPopRecord(&led->frame);

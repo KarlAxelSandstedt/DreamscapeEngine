@@ -1,0 +1,32 @@
+----- Velocity solver + Position solver (PGS_NGS) -----
+
+Why? Because ordinary PGS + velocity steering seem unstable, especially when stacking
+boxes. As we solve the contacts for a box, to much force is applied at one contact 
+point in relation to rest, so contact digs deeper at the other contact points, while
+one contact point is removed. This results in the contact flipping from a full, flat
+rectangle surface to a triangle surface and back again, over and over, resulting in
+the "wooble effect" of the box stack.
+
+One approach to solve this (or an extension to PGS_NGS), is to solve a set of related
+contacts at once, instead of one-by-one. This is more costly, but the result is that 
+the solution takes all contact constraints into account at the same. We skip this 
+technique, called block solving, for now, and only consider NGS.
+
+
+::: Premble :::
+
+Impulse P   = Integral(F(t)dt)) 
+            = m*Integral(a(t)dt) 
+            = m*(v(t1) - v(t0)) 
+            = m * v_delta
+
+Now, we wish to solve/find the right impulse along normal n, so we get our
+first three unknown variables (lambda) in Newton's law:
+
+    n*lambda = m*v_delta,       (Unknown: lambda, v(t1))
+
+Next, we have (from somewhere) that for Inertia tensor (world) I_w and
+angular velocity w, The angular momentum H is:
+
+    H(t1) = I_w*(w(t1)-w(t0))
+          = r * Impulse(t1)?

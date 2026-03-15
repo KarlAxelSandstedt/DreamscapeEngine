@@ -52,6 +52,8 @@ ds_ShapeId ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_Sh
 			Vec3Translate(bbox_proxy.hw, Vec3Inline(shape->margin, shape->margin, shape->margin));
 		}
 		shape->proxy = DbvhInsert(&pipeline->shape_bvh, slot.index, &bbox_proxy);
+
+        ds_RigidBodyUpdateMassProperties(pipeline, body);
 	}
 
     return id;

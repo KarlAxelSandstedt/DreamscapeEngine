@@ -82,9 +82,6 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
 		}
 
     	dll_Remove(&island->body_list, pipeline->body_pool.buf, ds_IdIndex(id)); 
-    	ds_Assert(island->body_list.count > 1 || (   island->contact_list.first == DLL_NULL
-               	                                  && island->contact_list.last == DLL_NULL
-               	                                  && island->contact_list.count == 0));
     	if (island->body_list.count == 0)
     	{
     		ds_Assert(island->body_list.first == DLL_NULL);

@@ -1,0 +1,448 @@
+
+/* solver data */
+	u32 	block_solver;		/* bool : Use block solver when applicable */
+	f32 	max_condition;		/* max condition number of block normal mass */
+
+/* velocityConstraint data */
+	u32	    block_solve;	/* if config->block_solver && condition number of block normal mass is ok, then = 1 */
+
+/* Initialization */
+if (vc->vcp_count >= 2 && g_solver_config->block_solver)
+{
+	const f32 mm_inv = 1.0f/b1->mass + 1.0f/b2->mass;
+
+	/* upper bound for condition number in Infinity norm, usually larger than L2 norm */
+	f32 cond_inf_lb = 0.0f;
+
+	switch (vc->vcp_count)
+	{
+		case 2: 
+		{ 
+			vc->normal_mass = ArenaPush(mem, sizeof(mat2));
+			vc->inv_normal_mass = ArenaPush(mem, sizeof(mat2));
+			
+			const f32 A11 = 1.0f / vc->vcps[0].normal_mass;
+			const f32 A22 = 1.0f / vc->vcps[1].normal_mass;
+			const f32 A12 = mm_inv + Vec3Dot(vcp_c1[0], vcp_Ic1[1]) + Vec3Dot(vcp_c2[0], vcp_Ic2[1]);
+			Mat2Set(*((mat2ptr) vc->inv_normal_mass), A11, A12, A12, A22);
+			const f32 det = Mat2Inverse(*((mat2ptr) vc->normal_mass), *((mat2ptr) vc->inv_normal_mass));
+
+			if (f32_abs(det) <= 1000.0f * F32_EPSILON)
+			{
+				cond_inf_lb = g_solver_config->max_condition + 1.0f;
+				break;
+			}
+			
+			/* L_Infinity usually larger than L2 condition number */
+			cond_inf_lb = f32_abs(Mat2AbsMax(*((mat2ptr) vc->normal_mass)) / Mat2AbsMin(*((mat2ptr) vc->normal_mass)));
+		} break;
+
+		case 3: 
+		{ 
+			vc->normal_mass = ArenaPush(mem, sizeof(mat3));
+			vc->inv_normal_mass = ArenaPush(mem, sizeof(mat3));
+
+			const f32 A11 = 1.0f / vc->vcps[0].normal_mass;
+			const f32 A22 = 1.0f / vc->vcps[1].normal_mass;
+			const f32 A33 = 1.0f / vc->vcps[2].normal_mass;
+			const f32 A12 = mm_inv + Vec3Dot(vcp_Ic1[0], vcp_c1[1]) + Vec3Dot(vcp_Ic2[0], vcp_c2[1]);
+			const f32 A13 = mm_inv + Vec3Dot(vcp_Ic1[0], vcp_c1[2]) + Vec3Dot(vcp_Ic2[0], vcp_c2[2]);
+			const f32 A23 = mm_inv + Vec3Dot(vcp_Ic1[1], vcp_c1[2]) + Vec3Dot(vcp_Ic2[1], vcp_c2[2]);
+
+			Mat3Set(*((mat3ptr) vc->inv_normal_mass), A11, A12, A13,
+			   	    A12, A22, A23,
+				    A13, A23, A33);
+			
+			const f32 det = Mat3Inverse(*((mat3ptr) vc->normal_mass), *((mat3ptr) vc->inv_normal_mass));
+
+			if (f32_abs(det) <= 1000.0f * F32_EPSILON)
+			{
+				cond_inf_lb = g_solver_config->max_condition + 1.0f;
+				break;
+			}
+			
+			cond_inf_lb = f32_abs(Mat3AbsMax(*((mat3ptr) vc->normal_mass)) / Mat3AbsMin(*((mat3ptr) vc->normal_mass)));
+		} break;
+
+		case 4: 
+		{ 
+			vc->normal_mass = ArenaPush(mem, sizeof(mat4));
+			vc->inv_normal_mass = ArenaPush(mem, sizeof(mat4));
+
+			const f32 A11 = 1.0f / vc->vcps[0].normal_mass;
+			const f32 A22 = 1.0f / vc->vcps[1].normal_mass;
+			const f32 A33 = 1.0f / vc->vcps[2].normal_mass;
+			const f32 A44 = 1.0f / vc->vcps[3].normal_mass;
+			const f32 A12 = mm_inv + Vec3Dot(vcp_Ic1[0], vcp_c1[1]) + Vec3Dot(vcp_Ic2[0], vcp_c2[1]);
+			const f32 A13 = mm_inv + Vec3Dot(vcp_Ic1[0], vcp_c1[2]) + Vec3Dot(vcp_Ic2[0], vcp_c2[2]);
+			const f32 A14 = mm_inv + Vec3Dot(vcp_Ic1[0], vcp_c1[3]) + Vec3Dot(vcp_Ic2[0], vcp_c2[3]);
+			const f32 A23 = mm_inv + Vec3Dot(vcp_Ic1[1], vcp_c1[2]) + Vec3Dot(vcp_Ic2[1], vcp_c2[2]);
+			const f32 A24 = mm_inv + Vec3Dot(vcp_Ic1[1], vcp_c1[3]) + Vec3Dot(vcp_Ic2[1], vcp_c2[3]);
+			const f32 A34 = mm_inv + Vec3Dot(vcp_Ic1[2], vcp_c1[3]) + Vec3Dot(vcp_Ic2[2], vcp_c2[3]);
+
+
+			Mat4Set(*((mat4ptr) vc->inv_normal_mass),
+				    A11, A12, A13, A14, 
+				    A12, A22, A23, A24, 
+				    A13, A23, A33, A34, 
+				    A14, A24, A34, A44);
+			const f32 det = Mat4Inverse(*((mat4ptr) vc->normal_mass), *((mat4ptr) vc->inv_normal_mass));
+
+			if (f32_abs(det) <= 1000.0f * F32_EPSILON)
+			{
+				cond_inf_lb = g_solver_config->max_condition + 1.0f;
+				break;
+			}
+			
+			/* L_Infinity usually larger than L2 condition number */
+			cond_inf_lb = f32_abs(Mat4AbsMax(*((mat4ptr) vc->normal_mass)) / Mat4AbsMin(*((mat4ptr) vc->normal_mass)));
+
+		} break;
+	}
+
+	if (cond_inf_lb <= g_solver_config->max_condition)
+	{
+		vc->block_solve = 1;
+	}
+	else
+	{
+		vc->block_solve = 0;
+		//fprintf(stderr, "WARNING: bad estimated upper bound of condition number in normal mass: %f\n", cond_inf_lb);
+	}
+}
+
+/* Execution */
+if (vc->vcp_count == 1 || !vc->block_solve)
+{
+	for (u32 j = 0; j < vc->vcp_count; ++j)
+	{
+		struct velocityConstraintPoint *vcp = vc->vcps + j;
+
+		/* Calculate separating velocity at point: JV */
+		Vec3Sub(relative_velocity, 
+				solver->linear_velocity[vc->lb2],
+				solver->linear_velocity[vc->lb1]);
+		Vec3Cross(tmp2, solver->angular_velocity[vc->lb2], vcp->r2);
+		Vec3Cross(tmp3, solver->angular_velocity[vc->lb1], vcp->r1);
+		Vec3Translate(relative_velocity, tmp2);
+		Vec3TranslateScaled(relative_velocity, tmp3, -1.0f);
+		const f32 separating_velocity = Vec3Dot(vc->normal, relative_velocity);
+
+		/* update constraint point normal impulse */
+		f32 delta_impulse = vcp->normal_mass * (vcp->velocity_bias - separating_velocity);
+		const f32 old_impulse = vcp->normal_impulse;
+		vcp->normal_impulse = f32_max(0.0f, vcp->normal_impulse + delta_impulse);
+		delta_impulse = vcp->normal_impulse - old_impulse;
+
+		/* update body velocities */
+		Vec3Scale(tmp1, vc->normal, delta_impulse);
+		Vec3TranslateScaled(solver->linear_velocity[vc->lb1], tmp1, -1.0f / solver->bodies[vc->lb1]->mass);
+		Vec3TranslateScaled(solver->linear_velocity[vc->lb2], tmp1, 1.0f / solver->bodies[vc->lb2]->mass);
+		Vec3Cross(tmp2, vcp->r1, tmp1);
+		Mat3VecMul(tmp3, solver->Iw_inv[vc->lb1], tmp2);
+		Vec3TranslateScaled(solver->angular_velocity[vc->lb1], tmp3, -1.0f);
+		Vec3Cross(tmp2, vcp->r2, tmp1);
+		Mat3VecMul(tmp3, solver->Iw_inv[vc->lb2], tmp2);
+		Vec3Translate(solver->angular_velocity[vc->lb2], tmp3);
+	}
+}
+else
+{
+	Vec3Sub(tmp1, solver->linear_velocity[vc->lb2], solver->linear_velocity[vc->lb1]);
+	for (u32 j = 0; j < vc->vcp_count; ++j)
+	{
+		struct velocityConstraintPoint *vcp = vc->vcps + j;
+		/* Calculate separating velocity at point: JV */
+		Vec3Cross(tmp2, solver->angular_velocity[vc->lb2], vcp->r2);
+		Vec3Cross(tmp3, solver->angular_velocity[vc->lb1], vcp->r1);
+		Vec3Add(relative_velocity, tmp1, tmp2);
+		Vec3TranslateScaled(relative_velocity, tmp3, -1.0f);
+		const f32 separating_velocity = Vec3Dot(vc->normal, relative_velocity);
+		b[j] = vcp->velocity_bias - separating_velocity;
+	}
+	
+	u32 solution_found = 0;
+	switch (vc->vcp_count)
+	{
+		case 2: 
+		{ 
+			mat2ptr normal_mass = vc->normal_mass;
+			mat2ptr inv_normal_mass = vc->inv_normal_mass;
+
+			/* (1) xn == 0 
+			 * 	=> vn = -b
+			 */
+			if (b[0] <= 0.0f && b[1] <= 0.0f)
+			{
+				solution_found = 1;	
+				Vec2Set(new_total_impulse, 0.0f, 0.0f);
+				goto BLOCK_SOLVER_UPDATE;
+			}
+
+			/* (2) vn == 0  
+			 *	=>	x = inv(A)*b
+			 */
+			Mat2VecMul(new_total_impulse, *normal_mass, b);
+			if (new_total_impulse[0] >= 0.0f && new_total_impulse[1] >= 0.0f)
+			{
+				solution_found = 1;
+				goto BLOCK_SOLVER_UPDATE;
+			}
+
+			/* (3) xi != 0  
+			 * 	=> 0 = Ai1 * x1 + Ai2 * x2 - bi 
+			 * 	=> xi = bi / Aii
+			 * 	=> vn = A*x_i - b
+			 */
+			for (u32 j = 0; j < vc->vcp_count; ++j)
+			{
+				struct velocityConstraintPoint *vcp = vc->vcps + j;
+				const f32 xj = vcp->normal_mass * b[j];
+				const u32 i1 = (j+1) % 2;
+				if (xj >= 0.0f && (xj*(*inv_normal_mass)[j][i1] - b[i1]) >= 0.0f)
+				{
+					solution_found = 1;
+					new_total_impulse[j] = xj;
+					new_total_impulse[i1] = 0.0f;
+					goto BLOCK_SOLVER_UPDATE;
+				}
+			}
+		} break;
+
+		case 3: 
+		{ 
+			mat3ptr normal_mass = vc->normal_mass;
+			mat3ptr inv_normal_mass = vc->inv_normal_mass;
+
+			/* (1) xn == 0 
+			 * 	=> vn = -b
+			 */
+			if (b[0] <= 0.0f && b[1] <= 0.0f && b[2] <= 0.0f)
+			{
+				solution_found = 1;	
+				Vec3Set(new_total_impulse, 0.0f, 0.0f, 0.0f);
+				goto BLOCK_SOLVER_UPDATE;
+			}
+
+			/* (2) vn == 0  
+			 *	=>	x = inv(A)*b
+			 */
+			Mat3VecMul(new_total_impulse, *normal_mass, b);
+			if (new_total_impulse[0] >= 0.0f && new_total_impulse[1] >= 0.0f && new_total_impulse[2] >= 0.0f)
+			{
+				solution_found = 1;
+				goto BLOCK_SOLVER_UPDATE;
+			}
+
+			/* (3) xi != 0  
+			 * 	=> 0 = Ai1 * x1 + ... + Ai3 * x3 - bi 
+			 * 	=> xi = bi / Aii
+			 * 	=> vn = A*x_i - b
+			 */
+			for (u32 j = 0; j < vc->vcp_count; ++j)
+			{
+				struct velocityConstraintPoint *vcp = vc->vcps + j;
+				const f32 xj = vcp->normal_mass * b[j];
+				const u32 i1 = (j+1) % 3;
+				const u32 i2 = (j+2) % 3;
+				const f32 vni1 = xj*(*inv_normal_mass)[j][i1] - b[i1];
+				const f32 vni2 = xj*(*inv_normal_mass)[j][i2] - b[i2];
+				if (xj >= 0.0f && vni1 >= 0.0f && vni2 >= 0.0f)
+				{
+					solution_found = 1;
+					new_total_impulse[j] = xj;
+					new_total_impulse[i1] = 0.0f;
+					new_total_impulse[i2] = 0.0f;
+					goto BLOCK_SOLVER_UPDATE;
+				}
+			}
+
+			/* (4) vni != 0  
+			 * 	=>	inv(A)*vn = x - inv(A)*b
+			 * 	=>	inv(A)_ii*vni = -row(inv(A),i)*b
+			 * 	=>	vni = -row(inv(A),i)*b/inv(A)_ii
+			 * 	=>	x = inv(A)(vn + b)
+			 */
+			for (u32 j = 0; j < vc->vcp_count; ++j)
+			{
+				struct velocityConstraintPoint *vcp = vc->vcps + j;
+				const f32 vnj = -((*normal_mass)[0][j]*b[0] + (*normal_mass)[1][j]*b[1] + (*normal_mass)[2][j]*b[2]) / (*normal_mass)[j][j];
+				
+				if (vnj < 0.0f) { continue; }
+
+				vec3 tmp;
+				Vec3Copy(tmp, b);
+				tmp[j] += vnj;
+				Mat3VecMul(new_total_impulse, vc->normal_mass, tmp);
+				new_total_impulse[j] = 0.0f;
+
+				const u32 i1 = (j+1) % 3;
+				const u32 i2 = (j+2) % 3;
+
+				if (new_total_impulse[i1] >= 0.0f && new_total_impulse[i2] >= 0.0f)
+				{
+					solution_found = 1;
+					goto BLOCK_SOLVER_UPDATE;
+				}
+			}
+		} break;
+
+		case 4: 
+		{ 
+			mat4ptr normal_mass = vc->normal_mass;
+			mat4ptr inv_normal_mass = vc->inv_normal_mass;
+
+			/* (1) xn == 0 
+			 * 	=> vn = -b
+			 */
+			if (b[0] <= 0.0f && b[1] <= 0.0f && b[2] <= 0.0f && b[3] <= 0.0f)
+			{
+				solution_found = 1;	
+				Vec4Set(new_total_impulse, 0.0f, 0.0f, 0.0f, 0.0f);
+				goto BLOCK_SOLVER_UPDATE;
+			}
+
+			/* (2) vn == 0  
+			 *	=>	x = inv(A)*b
+			 */
+			Mat4VecMul(new_total_impulse, *((mat4ptr) vc->normal_mass), b);
+			if (new_total_impulse[0] >= 0.0f && new_total_impulse[1] >= 0.0f && new_total_impulse[2] >= 0.0f && new_total_impulse[3] >= 0.0f)
+			{
+				solution_found = 1;
+				goto BLOCK_SOLVER_UPDATE;
+			}
+
+			/* (3) xi != 0  
+			 * 	=> 0 = Ai1 * x1 + ... + Ai4 * x4 - bi 
+			 * 	=> xi = bi / Aii
+			 * 	=> vn = col(A,i)*x_i - b
+			 */
+			for (u32 j = 0; j < vc->vcp_count; ++j)
+			{
+				struct velocityConstraintPoint *vcp = vc->vcps + j;
+				const f32 xj = b[j] * vcp->normal_mass;
+				const u32 i1 = (j+1) % 4;
+				const u32 i2 = (j+2) % 4;
+				const u32 i3 = (j+3) % 4;
+				if (xj >= 0.0f  && (xj * (*inv_normal_mass)[j][i1] - b[i1]) >= 0.0f
+						&& (xj * (*inv_normal_mass)[j][i2] - b[i2]) >= 0.0f
+						&& (xj * (*inv_normal_mass)[j][i3] - b[i3]) >= 0.0f)
+				{
+					solution_found = 1;
+					new_total_impulse[j] = xj;
+					new_total_impulse[i1] = 0.0f;
+					new_total_impulse[i2] = 0.0f;
+					new_total_impulse[i3] = 0.0f;
+					goto BLOCK_SOLVER_UPDATE;
+				}
+			}
+
+			/* (4) vni != 0  
+			 * 	=>	inv(A)*vn = x - inv(A)*b
+			 * 	=>	inv(A)_ii*vni = -row(inv(A),i)*b
+			 * 	=>	vni = -row(inv(A),i)*b/inv(A)_ii
+			 * 	=>	x = inv(A)(vn + b)
+			 */
+			for (u32 j = 0; j < vc->vcp_count; ++j)
+			{
+				struct velocityConstraintPoint *vcp = vc->vcps + j;
+				const f32 vnj = -((*normal_mass)[0][j]*b[0] + (*normal_mass)[1][j]*b[1] + (*normal_mass)[2][j]*b[2] + (*normal_mass)[3][j]*b[3]) / vcp->normal_mass;
+				
+				if (vnj < 0.0f) { continue; }
+
+				vec4 tmp;
+				Vec4Copy(tmp, b);
+				tmp[j] += vnj;
+				Mat4VecMul(new_total_impulse, *normal_mass, tmp);
+				new_total_impulse[j] = 0.0f;
+
+				const u32 i1 = (j+1) % 4;
+				const u32 i2 = (j+2) % 4;
+				const u32 i3 = (j+3) % 4;
+
+				if (new_total_impulse[i1] >= 0.0f && new_total_impulse[i2] >= 0.0f && new_total_impulse[i3] >= 0.0f)
+				{
+					solution_found = 1;
+					goto BLOCK_SOLVER_UPDATE;
+				}
+			}
+
+			/* (5) xi, xj != 0  
+			 *	=> 	[bi] = [Aii  Aij][xi]
+			 *	=> 	[bj]   [Aji  Ajj][xj]
+			 *
+			 *	=>	1/(Aii*Ajj - Aij*Aji) * [ Ajj  -Aij] [bi] = [xi]
+			 *					[-Aji   Aii] [bj]   [xj]
+			 * 	=> vn = col(A,i)*xi + col(A,j)*x_j - b
+			 */
+			const u32 xj1_scheme[6] =  { 0, 0, 0, 1, 1, 2 };
+			const u32 xj2_scheme[6] =  { 1, 2, 3, 2, 3, 3 };
+			const u32 vnj1_scheme[6] = { 2, 1, 1, 0, 0, 0 };
+			const u32 vnj2_scheme[6] = { 3, 3, 2, 3, 2, 1 };
+
+			for (u32 j = 0; j < 6; ++j)
+			{
+				const u32 x_index1 = xj1_scheme[j];
+				const u32 x_index2 = xj2_scheme[j];
+				const u32 vn_index1 = vnj1_scheme[j];
+				const u32 vn_index2 = vnj2_scheme[j];
+			
+				const f32 Aii = (*inv_normal_mass)[x_index1][x_index1];
+				const f32 Aij = (*inv_normal_mass)[x_index2][x_index1];
+				const f32 Ajj = (*inv_normal_mass)[x_index2][x_index2];
+				const f32 det = Aii*Ajj - Aij*Aij;
+
+				//TODO
+				if (det*det <= 0.0001f) { continue; }
+				
+				const f32 det_inv = 1.0f / det;
+				new_total_impulse[x_index1] = det_inv * ( Ajj*b[x_index1] - Aij*b[x_index2]);
+				new_total_impulse[x_index2] = det_inv * (-Aij*b[x_index1] + Aii*b[x_index2]);
+
+				if (new_total_impulse[x_index1] < 0.0f || new_total_impulse[x_index2] < 0.0f) { continue; }
+
+
+				const f32 vnj1 = 
+					  (*inv_normal_mass)[x_index1][vn_index1]*new_total_impulse[x_index1] 
+					+ (*inv_normal_mass)[x_index2][vn_index1]*new_total_impulse[x_index2]
+					- b[vn_index1];
+				const f32 vnj2 = 
+					  (*inv_normal_mass)[x_index1][vn_index2]*new_total_impulse[x_index1] 
+					+ (*inv_normal_mass)[x_index2][vn_index2]*new_total_impulse[x_index2]
+					- b[vn_index2];
+
+				if (vnj1 >= 0.0f && vnj2 >= 0.0f)
+				{
+					new_total_impulse[vn_index1] = 0.0f;
+					new_total_impulse[vn_index2] = 0.0f;
+					solution_found = 1;
+					goto BLOCK_SOLVER_UPDATE;
+				}
+
+			}
+		} break;
+	}
+
+	BLOCK_SOLVER_UPDATE:
+	if (solution_found)
+	{
+		for (u32 j = 0; j < vc->vcp_count; ++j)
+		{
+			struct velocityConstraintPoint *vcp = vc->vcps + j;
+			const f32 delta_impulse = new_total_impulse[j] - vcp->normal_impulse;
+			vcp->normal_impulse = new_total_impulse[j];
+			
+			Vec3Scale(tmp1, vc->normal, delta_impulse);
+			Vec3TranslateScaled(solver->linear_velocity[vc->lb2], tmp1, 1.0f/solver->bodies[vc->lb2]->mass);
+			Vec3TranslateScaled(solver->linear_velocity[vc->lb1], tmp1, -1.0f/solver->bodies[vc->lb1]->mass);
+
+			Vec3Cross(tmp2, vcp->r2, tmp1);
+			Vec3Cross(tmp3, vcp->r1, tmp1);
+
+			Mat3VecMul(tmp1, solver->Iw_inv[vc->lb2], tmp2);
+			Vec3Translate(solver->angular_velocity[vc->lb2], tmp1);
+			Mat3VecMul(tmp1, solver->Iw_inv[vc->lb1], tmp3);
+			Vec3TranslateScaled(solver->angular_velocity[vc->lb1], tmp1, -1.0f);
+		}
+	}
+}

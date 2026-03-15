@@ -416,6 +416,34 @@ void isdb_SplitIsland(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeli
     ProfZoneEnd;
 }
 
+/* TODO place somewhere reasonable.... */
+static void IntegrateBody(struct ds_Island *is, const struct solver *solver, const u32 i)
+{
+    /* update velocity and world center of mass */
+	struct ds_RigidBody *b = is->bodies[i];
+	Vec3TranslateScaled(solver->w_center_of_mass[i], solver->linear_velocity[i], solver->timestep);	
+	Vec3Copy(b->velocity, solver->linear_velocity[i]);	
+
+    quat a_vel_quat, rot_delta;
+	Vec3Copy(b->angular_velocity, solver->angular_velocity[i]);	
+	QuatSet(a_vel_quat, 
+			solver->angular_velocity[i][0], 
+			solver->angular_velocity[i][1], 
+			solver->angular_velocity[i][2],
+		      	0.0f);
+	QuatMul(rot_delta, a_vel_quat, b->t_world.rotation);
+	QuatScale(rot_delta, solver->timestep / 2.0f);
+	QuatTranslate(b->t_world.rotation, rot_delta);
+	QuatNormalize(b->t_world.rotation);
+
+    /* derive new world transform from updated angle and world center of mass */
+    vec3 rotated_local_center_of_mass;
+    mat3 new_rot;
+    Mat3Quat(new_rot, b->t_world.rotation);
+    Mat3VecMul(rotated_local_center_of_mass, new_rot, b->local_center_of_mass);
+    Vec3Sub(b->t_world.position, solver->w_center_of_mass[i], rotated_local_center_of_mass);
+}
+
 static u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is, u32 *asleep, const f32 timestep)
 {
 	u32 *bodies_simulated = ArenaPush(mem_frame, is->body_list.count*sizeof(u32));
@@ -479,35 +507,12 @@ static u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pi
 			f32 min_low_velocity_time = F32_MAX_POSITIVE_NORMAL;
 			for (u32 i = 0; i < is->body_list.count; ++i)
 			{
-                /* update velocity and world center of mass */
-				struct ds_RigidBody *b = is->bodies[i];
-				//Vec3TranslateScaled(b->t_world.position, solver->linear_velocity[i], timestep);	
-				Vec3TranslateScaled(solver->w_center_of_mass[i], solver->linear_velocity[i], timestep);	
-				Vec3Copy(b->velocity, solver->linear_velocity[i]);	
-
-                quat a_vel_quat, rot_delta;
-				Vec3Copy(b->angular_velocity, solver->angular_velocity[i]);	
-				QuatSet(a_vel_quat, 
-						solver->angular_velocity[i][0], 
-						solver->angular_velocity[i][1], 
-						solver->angular_velocity[i][2],
-					      	0.0f);
-				QuatMul(rot_delta, a_vel_quat, b->t_world.rotation);
-				QuatScale(rot_delta, timestep / 2.0f);
-				QuatTranslate(b->t_world.rotation, rot_delta);
-				QuatNormalize(b->t_world.rotation);
-
-                /* derive new world transform from updated angle and world center of mass */
-                vec3 rotated_local_center_of_mass;
-                mat3 new_rot;
-                Mat3Quat(new_rot, b->t_world.rotation);
-                Mat3VecMul(rotated_local_center_of_mass, new_rot, b->local_center_of_mass);
-                Vec3Sub(b->t_world.position, solver->w_center_of_mass[i], rotated_local_center_of_mass);
-
+                IntegrateBody(is, solver, i);
 
 				/* Always set RB_AWAKE, if island should sleep, we set it later,
 				 * but the bodies may come in sleeping if island just woke up 
 				 */
+                struct ds_RigidBody *b = is->bodies[i];
 				b->flags |= RB_AWAKE;
 				b->low_velocity_time = (1-ISLAND_SLEEP_RESET_BIT(is)) * b->low_velocity_time;
 				const f32 lv_sq = Vec3Dot(b->velocity, b->velocity);
@@ -530,21 +535,7 @@ static u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pi
 		{
 			for (u32 i = 0; i < is->body_list.count; ++i)
 			{
-				struct ds_RigidBody *b = is->bodies[i];
-				Vec3TranslateScaled(b->t_world.position, solver->linear_velocity[i], timestep);	
-				Vec3Copy(b->velocity, solver->linear_velocity[i]);	
-
-				quat a_vel_quat, rot_delta;
-				Vec3Copy(b->angular_velocity, solver->angular_velocity[i]);	
-				QuatSet(a_vel_quat, 
-						solver->angular_velocity[i][0], 
-						solver->angular_velocity[i][1], 
-						solver->angular_velocity[i][2],
-					      	0.0f);
-				QuatMul(rot_delta, a_vel_quat, b->t_world.rotation);
-				QuatScale(rot_delta, timestep / 2.0f);
-				QuatTranslate(b->t_world.rotation, rot_delta);
-				QuatNormalize(b->t_world.rotation);
+                IntegrateBody(is, solver, i);
 			}
 		}
 	}
