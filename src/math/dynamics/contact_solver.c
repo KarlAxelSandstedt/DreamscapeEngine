@@ -313,18 +313,12 @@ void SolverWarmup(struct solver *solver, const struct ds_Island *is)
 					Vec3Scale(old_tangent_impulse, c->tangent_cache[0], c->tangent_impulse_cache[best][0]);
 					Vec3TranslateScaled(old_tangent_impulse, c->tangent_cache[1], c->tangent_impulse_cache[best][1]);
 
-                    if (0.25f <= Vec3Distance(c->tangent_cache[0], vc->tangent[0]) + Vec3Distance(c->tangent_cache[1], vc->tangent[1]))
-                    {
-                        fprintf(stderr, "meow\n");
-                    }
 					vcp->normal_impulse = c->normal_impulse_cache[best];
-                    //const f32 friction_max = vc->friction*f32_abs(vcp->normal_impulse);
-					//vcp->tangent_impulse[0] = Vec3Dot(vc->tangent[0], old_tangent_impulse);
-					//vcp->tangent_impulse[1] = Vec3Dot(vc->tangent[1], old_tangent_impulse);
-					//vcp->tangent_impulse[0] = f32_clamp(Vec3Dot(vc->tangent[0], old_tangent_impulse);
-					//vcp->tangent_impulse[1] = f32_clamp(Vec3Dot(vc->tangent[1], old_tangent_impulse);
-					vcp->tangent_impulse[0] = 0.0f;
-					vcp->tangent_impulse[1] = 0.0f;
+			        const f32 impulse_bound = vc->friction * vcp->normal_impulse;
+					vcp->tangent_impulse[0] = Vec3Dot(vc->tangent[0], old_tangent_impulse);
+					vcp->tangent_impulse[1] = Vec3Dot(vc->tangent[1], old_tangent_impulse);
+					vcp->tangent_impulse[0] = f32_clamp(vcp->tangent_impulse[0], -impulse_bound, impulse_bound);
+					vcp->tangent_impulse[1] = f32_clamp(vcp->tangent_impulse[1], -impulse_bound, impulse_bound);
 
 					Vec3Scale(total_cached_impulse, vc->normal, vcp->normal_impulse);
 					Vec3TranslateScaled(total_cached_impulse, vc->tangent[0], vcp->tangent_impulse[0]);
@@ -332,6 +326,7 @@ void SolverWarmup(struct solver *solver, const struct ds_Island *is)
 
 					Vec3TranslateScaled(solver->linear_velocity[vc->lb1], total_cached_impulse, -1.0f / solver->bodies[vc->lb1]->mass);
 					Vec3TranslateScaled(solver->linear_velocity[vc->lb2], total_cached_impulse, 1.0f / solver->bodies[vc->lb2]->mass);
+
 					Vec3Cross(tmp2, vcp->r1, total_cached_impulse);
 					Mat3VecMul(tmp3, solver->Iw_inv[vc->lb1], tmp2);
 					Vec3TranslateScaled(solver->angular_velocity[vc->lb1], tmp3, -1.0f);
