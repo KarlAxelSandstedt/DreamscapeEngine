@@ -15,23 +15,20 @@ General Notes
 =============
 
 This project is a game/physics engine in progress. Currently most development efforts
-are put into the 3D physics engine, the engine's UI library, and the platform independent
-base layer. 
+are being put into the 3D physics engine, the engine's UI library, and the platform 
+independent base layer. 
  
 
 Usage
 =====
 
-When running the program, two windows will pop up. The first window displays the 
-profiler. The timeline is draggable using left-click. If you press control + 
-left-click while dragging you will zoom-in or out of the timeline. 
-
-The second window displays the simulation and simulation related data.  click the
-colored run, pause or stop signs at the top of the window to interact with the 
-simulation. By clicking on the display region of the simulation you enter focused
-mode and can move the camera using the WASD-keys and the mouse. To exit focus mode,
-you press Escape.  In the bottom-right you will find additional display options. 
-4 checkbox options and a dropdown menu displaying the current rigid body coloring mode.
+When running the program, a window displaying the simulation and simulation related
+data will pop up.  click the colored run, pause or stop signs at the top of the window
+to begin, pause or stop the simulation.  By clicking on the display region of the 
+simulation you enter focused mode and can move the camera using the WASD-keys and the
+mouse. To exit focus mode, you press Escape.  In the bottom-right you will find additional
+display options; checkbox draw options options and a dropdown menu displaying the current
+rigid body coloring mode.
 
 
 Installing on Windows 
@@ -57,7 +54,7 @@ Requirements: Some modern version of CMake.
 
 1. Clone the repository and all of its submodules:
 
-git clone --recurse-submodules https://github.com/KarlAxelSandstedt/engine_sandbox.git
+git clone --recurse-submodules https://github.com/KarlAxelSandstedt/DreamscapeEngine.git
 
 2. Compile and run the codebase by calling any of the following options.
 
@@ -77,6 +74,9 @@ Instrument and compile the code with data race checking.
 undefined_behaviour_sanitize.sh:
 Instrument and compile the code with undefined behaviour runtime checks.
 
+test.sh:
+Depending on the provided CMake options, tests performance or correctness of certain 
+submodules.
 
 CMake Library Usage and Options
 ===============================
@@ -101,7 +101,7 @@ option(DS_PROFILE "Enable internal Tracy profiling points and provide Tracy wrap
 	enables the Dreamscape profiling API wrapping Tracy. Furthermore, if the option
 	is enabled, Tracy profile zones within the library is enabled.
 
-option(DS_LOG "DS_LOG enabled the logging API and internal logging points in the library." ON)
+option(DS_LOG "Enabled the logging API and internal logging points in the library." ON)
 
 	DS_LOG builds the library with internal logging, and provides the loggin API
 	to the user.
