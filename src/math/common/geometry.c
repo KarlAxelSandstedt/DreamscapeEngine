@@ -741,6 +741,7 @@ u32 VertexSupport(vec3 support, const vec3 dir, const vec3ptr v, const u32 v_cou
 		}
 	}
 
+    ds_Assert(best != U32_MAX);
 	Vec3Copy(support, v[best]);
 	return best;
 }

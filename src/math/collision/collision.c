@@ -2346,6 +2346,9 @@ u32 c_HullContact(struct arena *mem_tmp, struct c_Manifold *manifold, struct sat
 	vec3ptr v1_world = ArenaPush(mem_tmp, h1->v_count * sizeof(vec3));
 	vec3ptr v2_world = ArenaPush(mem_tmp, h2->v_count * sizeof(vec3));
 
+    ds_AssertString(!(h1->v_count == 0 || h2->v_count == 0 || h1->v_count > 100 || h2->v_count > 100),
+            "We have some random crash when calling VertexSupport occasionally, very wierd...")
+
 	for (u32 i = 0; i < h1->v_count; ++i)
 	{
 		Mat3VecMul(v1_world[i], rot1, h1->v[i]);

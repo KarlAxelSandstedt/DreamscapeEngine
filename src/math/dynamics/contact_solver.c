@@ -103,10 +103,6 @@ struct solver *SolverInitBodyData(struct arena *mem, struct ds_Island *is, const
 		/* integrate new velocities using external forces */
 		Vec3Copy(solver->linear_velocity[i], b->velocity);
 		Vec3Copy(solver->angular_velocity[i], b->angular_velocity);
-
-		/* TODO: Apply other external forces here other than gravity and angular velocity */
-		/* TODO: Explicit vs. Implicit Euler stability */
-		/* TODO: quaternion will drift, become unnormalized*/
 		Vec3TranslateScaled(solver->linear_velocity[i], g_solver_config->gravity, timestep);
 
 		/* Apply dampening: 
