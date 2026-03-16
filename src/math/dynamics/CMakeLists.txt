@@ -10,4 +10,10 @@ add_library(dynamics STATIC
 	ds_body.c
 )
 add_library(Dreamscape::Dynamics ALIAS dynamics)
-target_link_libraries(dynamics PUBLIC Dreamscape::Collision Dreamscape::Job)
+target_link_libraries(dynamics 
+    PUBLIC 
+        Dreamscape::Collision 
+        Dreamscape::Job
+    PRIVATE
+        xxHash
+    )

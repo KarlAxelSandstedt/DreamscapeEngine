@@ -85,14 +85,13 @@ extern "C" {
 
 #elif defined(_MSC_VER)
 
-	#define __DS_COMPILER__	__MSVC__
+	#define __DS_COMPILER__	__DS_MSVC__
 	#define DS_LITTLE_ENDIAN
 	#define dsThreadLocal	__declspec(thread)
 	#define ds_StaticAssert(ds_Assertion, str)	static_assert(ds_Assertion, str)
 	#define ds_Align(alignment) __declspec(align(alignment)) 
     #include <stdatomic.h>
-    #define ds_ReadWriteBarrier atomic_signal_fence(memory_order_acq_rel);
-
+    #define ds_ReadWriteBarrier atomic_signal_fence(memory_order_acq_rel)
 
 #endif
 

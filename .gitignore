@@ -11,3 +11,6 @@ asset_components/led_projects
 **.make
 **/link.txt
 **CMakeFiles
+CMakeCache.txt
+CMakeSettings.json
+**.vs

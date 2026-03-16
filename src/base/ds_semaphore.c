@@ -94,7 +94,7 @@ u32 SemaphoreTryWait(semaphore *sem)
 	return success;
 }
 
-#elif _DS_PLATFORM__ == __DS_WIN64__
+#elif __DS_PLATFORM__ == __DS_WIN64__
 
 #define SEM_MAX U16_MAX
 

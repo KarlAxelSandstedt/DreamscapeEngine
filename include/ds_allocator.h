@@ -589,7 +589,7 @@ TPOOL_FLUSH_DECLARE(struct_name)                                                
     {                                                                                                       \
         struct_name ## FreeListTStackFlush(pool->t_free_list + i);                                          \
     }                                                                                                       \
-    AtomicStoreRel64(&pool->a_count_max, 0);                                                                \
+    AtomicStoreRel32(&pool->a_count_max, 0);                                                                \
 }
 
 #define TPOOL_INCREMENT_DEFINE(struct_name)                                                                 \

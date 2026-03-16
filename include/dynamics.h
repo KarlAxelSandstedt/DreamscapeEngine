@@ -633,9 +633,7 @@ struct ds_Island
 	struct dll	contact_list;
 
 //TODO RMEOVE
-#ifdef DS_PHYSICS_DEBUG
 	vec4 color;
-#endif
 };
 
 struct isdb

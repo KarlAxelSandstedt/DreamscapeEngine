@@ -2336,18 +2336,19 @@ u32 c_HullContact(struct arena *mem_tmp, struct c_Manifold *manifold, struct sat
     
 	ArenaPushRecord(mem_tmp);
 
+	//TODO Bug when integrating rotations? We may get NaN here at certain points...
 	mat3 rot1, rot2;
 	Mat3Quat(rot1, t1->rotation);
 	Mat3Quat(rot2, t2->rotation);
+	
+	ds_Assert(!f32_test_nan(t1->rotation[0]) && !f32_test_nan(t1->rotation[1]) && !f32_test_nan(t1->rotation[2]) && !f32_test_nan(t1->rotation[3]));
+	ds_Assert(!f32_test_nan(t2->rotation[0]) && !f32_test_nan(t2->rotation[1]) && !f32_test_nan(t2->rotation[2]) && !f32_test_nan(t2->rotation[3]));
 
 	const struct dcel *h1 = &s1->hull;
 	const struct dcel *h2 = &s2->hull;
 
 	vec3ptr v1_world = ArenaPush(mem_tmp, h1->v_count * sizeof(vec3));
 	vec3ptr v2_world = ArenaPush(mem_tmp, h2->v_count * sizeof(vec3));
-
-    ds_AssertString(!(h1->v_count == 0 || h2->v_count == 0 || h1->v_count > 100 || h2->v_count > 100),
-            "We have some random crash when calling VertexSupport occasionally, very wierd...")
 
 	for (u32 i = 0; i < h1->v_count; ++i)
 	{

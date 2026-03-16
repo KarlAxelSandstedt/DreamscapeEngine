@@ -504,7 +504,7 @@ struct ss_write_read_u32_partial_input
 	u64 n;
 };
 
-const u64 ss_write_read_u32_partial_size = 4*256*1024;
+#define   ss_write_read_u32_partial_size    ((u64) 4*256*1024)
 
 void *ss_write_read_u32_partial_init(void)
 {

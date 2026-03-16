@@ -32,8 +32,8 @@ struct list_node
 	void *next;
 };
 
-const u64 g_256B_count = 100000;
-const u64 g_1MB_count = 10000;
+#define G_256B_COUNT  ((u64) 100000)
+#define G_1MB_COUNT   ((u64) 10000)
 
 struct ds_Struct
 {
@@ -123,7 +123,7 @@ void ds_StructTStackTest(void *void_pool)
 void *block_allocator_stress_test_256B_init(void)
 {
 	struct block_allocator_stress_input *args = malloc(sizeof(struct block_allocator_stress_input));
-	args->allocations_left = g_256B_count;
+	args->allocations_left = G_256B_COUNT;
 	args->block_size = 256;
 	return args;
 }
@@ -131,7 +131,7 @@ void *block_allocator_stress_test_256B_init(void)
 void block_allocator_stress_test_256B_reset(void *args)
 {
 	struct block_allocator_stress_input *input = args;
-	input->allocations_left = g_256B_count;
+	input->allocations_left = G_256B_COUNT;
 }
 
 void block_allocator_stress_test_256B_free(void *args)
@@ -142,7 +142,7 @@ void block_allocator_stress_test_256B_free(void *args)
 void *block_allocator_stress_test_1MB_init(void)
 {
 	struct block_allocator_stress_input *args = malloc(sizeof(struct block_allocator_stress_input));
-	args->allocations_left = g_1MB_count;
+	args->allocations_left = G_1MB_COUNT;
 	args->block_size = 1024*1024;
 	return args;
 }
@@ -150,7 +150,7 @@ void *block_allocator_stress_test_1MB_init(void)
 void block_allocator_stress_test_1MB_reset(void *args)
 {
 	struct block_allocator_stress_input *input = args;
-	input->allocations_left = g_1MB_count;
+	input->allocations_left = G_1MB_COUNT;
 }
 
 void block_allocator_stress_test_1MB_free(void *args)
@@ -160,7 +160,7 @@ void block_allocator_stress_test_1MB_free(void *args)
 
 void serial_block_allocator_test_256B(void *null)
 {
-	u32 allocations_left = g_256B_count;
+	u32 allocations_left = G_256B_COUNT;
 	struct list_node *head = NULL;
 	while (allocations_left || head)
 	{
@@ -292,7 +292,7 @@ struct test_PerformanceSerial allocator_serial_test[] =
 {
 	{
 		.id = "serial_block_allocator_256B_test",
-		.size = g_256B_count * 256,
+		.size = G_256B_COUNT * 256,
 		.test = &serial_block_allocator_test_256B,
 		.test_init = NULL,
 		.test_reset = NULL,
@@ -327,7 +327,7 @@ struct test_PerformanceParallel allocator_parallel_test[] =
 
 	{
 		.id = "parallel_block_allocator_256B_stress_test",
-		.size = g_256B_count * 256,
+		.size = G_256B_COUNT * 256,
 		.test = &block_allocator_stress_test_256B,
 		.test_init = &block_allocator_stress_test_256B_init,
 		.test_reset = &block_allocator_stress_test_256B_reset,
@@ -336,7 +336,7 @@ struct test_PerformanceParallel allocator_parallel_test[] =
 
 	{
 		.id = "parallel_malloc_256B_stress_test",
-		.size = g_256B_count * 256,
+		.size = G_256B_COUNT * 256,
 		.test = &malloc_stress_test,
 		.test_init = &block_allocator_stress_test_256B_init,
 		.test_reset = &block_allocator_stress_test_256B_reset,
@@ -345,7 +345,7 @@ struct test_PerformanceParallel allocator_parallel_test[] =
 
 	{
 		.id = "parallel_block_allocator_1MB_stress_test",
-		.size = g_1MB_count * 1024*1024,
+		.size = G_1MB_COUNT * 1024*1024,
 		.test = &block_allocator_stress_test_1MB,
 		.test_init = &block_allocator_stress_test_1MB_init,
 		.test_reset = &block_allocator_stress_test_1MB_reset,
@@ -354,7 +354,7 @@ struct test_PerformanceParallel allocator_parallel_test[] =
 
 	{
 		.id = "parallel_malloc_1MB_stress_test",
-		.size = g_1MB_count * 1024*1024,
+		.size = G_1MB_COUNT * 1024*1024,
 		.test = &malloc_stress_test,
 		.test_init = &block_allocator_stress_test_1MB_init,
 		.test_reset = &block_allocator_stress_test_1MB_reset,

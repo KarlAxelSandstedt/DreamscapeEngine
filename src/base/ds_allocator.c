@@ -72,31 +72,28 @@ u64 ds_AllocSizeCeil(const u64 size)
 		: size;
 }
 
-static void ds_MemApiInitShared(const u32 count_256B, const u32 count_1MB)
-{
-	ds_StaticAssert(((u64) &((struct threadBlockAllocator *) 0)->a_next % DS_CACHE_LINE_UB) == 0, "Expected Alignment");
-	ThreadBlockAllocatorAlloc(&g_mem_config->block_allocator_256B, count_256B, 256);
-	ThreadBlockAllocatorAlloc(&g_mem_config->block_allocator_1MB, count_1MB, 1024*1024);
-}
-
 void ds_MemApiShutdown(void)
 {
 	ThreadBlockAllocatorFree(&g_mem_config->block_allocator_256B);
 	ThreadBlockAllocatorFree(&g_mem_config->block_allocator_1MB);
 }
 
+void ds_MemApiInit(const u32 count_256B, const u32 count_1MB)
+{
+	g_mem_config->page_size = ds_Pagesize();
+	g_mem_config->alloc_size_min = g_mem_config->page_size;
+	ds_Assert( PowerOfTwoCheck( g_mem_config->alloc_size_min ) );
+
+	ds_StaticAssert(((u64) &((struct threadBlockAllocator *) 0)->a_next % DS_CACHE_LINE_UB) == 0, "Expected Alignment");
+	ThreadBlockAllocatorAlloc(&g_mem_config->block_allocator_256B, count_256B, 256);
+	ThreadBlockAllocatorAlloc(&g_mem_config->block_allocator_1MB, count_1MB, 1024*1024);
+}
+
+
 #if __DS_PLATFORM__ == __DS_LINUX__
 
 #include <unistd.h>
 #include <sys/mman.h>
-
-void ds_MemApiInit(const u32 count_256B, const u32 count_1MB)
-{
-	g_mem_config->page_size = getpagesize();
-	g_mem_config->alloc_size_min = g_mem_config->page_size;
-	ds_MemApiInitShared(count_256B, count_1MB);
-	ds_Assert( PowerOfTwoCheck( g_mem_config->alloc_size_min ) );
-}
 
 void *ds_Alloc(struct ds_MemSlot *slot, const u64 size, const u32 huge_pages)
 {
@@ -166,13 +163,6 @@ void ds_Free(struct ds_MemSlot *slot)
 #include <unistd.h>
 #include <sys/mman.h>
 
-void ds_MemApiInit(const u32 count_256B, const u32 count_1MB)
-{
-	g_mem_config->page_size = getpagesize();
-	g_mem_config->alloc_size_min = g_mem_config->page_size;
-	ds_MemApiInitShared(count_256B, count_1MB);
-}
-
 void *ds_Alloc(struct ds_MemSlot *slot, const u64 size, const u32 garbage)
 {
 	ds_Assert(size); 
@@ -223,6 +213,63 @@ void ds_Free(struct ds_MemSlot *slot)
 	slot->huge_pages = 0;
 }
 #elif __DS_PLATFORM__ == __DS_WIN64__
+
+void *ds_Alloc(struct ds_MemSlot *slot, const u64 size, const u32 huge_pages)
+{
+	ds_Assert(size); 
+
+	u64 size_used = ds_AllocSizeCeil(size);
+
+	/* TODO: We skip huge pages here... */
+	void *addr = VirtualAlloc(NULL, size_used, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+	if (!addr)
+	{
+		LogSystemError(S_ERROR);
+		addr = NULL;
+		size_used = 0;
+	}
+
+	slot->address = addr;
+	slot->size = size_used;
+	slot->huge_pages = 0;
+
+	ds_Assert(((u64) slot->address) % g_mem_config->page_size == 0);
+
+	return slot->address;
+}
+
+void *ds_Realloc(struct ds_MemSlot *slot, const u64 size)
+{
+	if (slot->size < size)
+	{
+		struct ds_MemSlot new_slot;
+		if (ds_Alloc(&new_slot, size, NO_HUGE_PAGES))
+		{
+			memcpy(new_slot.address, slot->address, slot->size);
+		}
+		ds_Free(slot);
+		*slot = new_slot;
+
+		if (!slot->address)
+		{
+			LogString(T_SYSTEM, S_FATAL, "Failed to reallocate memSlot in ds_Realloc, exiting.");
+			FatalCleanupAndExit();
+		}
+	}
+
+	return slot->address;
+}
+
+void ds_Free(struct ds_MemSlot *slot)
+{
+	if (!VirtualFree(slot->address, 0, MEM_RELEASE))
+	{
+		LogSystemError(S_ERROR);
+	}
+	slot->address = NULL;
+	slot->size = 0;
+	slot->huge_pages = 0;
+}
 
 #elif 
 

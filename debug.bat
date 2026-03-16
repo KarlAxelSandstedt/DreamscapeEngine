@@ -1,6 +1,6 @@
-cmake -S . -B build -Dkas_debug=ON  -DCMAKE_BUILD_TYPE=Debug -G Ninja
+cmake -S . -B build -DDS_TEST_PHYSICS=ON -DDS_PROFILE=OFF -DCMAKE_BUILD_TYPE=Debug
 cd build
-cmake --build .
-raddbg engine_sandbox
+cmake --build . --parallel
+raddbg Debug\DreamscapeTest
 cd ..
 

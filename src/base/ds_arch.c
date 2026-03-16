@@ -88,7 +88,6 @@ pid ds_Pid(void)
 
 #elif __DS_PLATFORM__ == __DS_WIN64__
 
-#include "local.h"
 #include <intrin.h>
 
 void ds_Cpuid(u32 *eax, u32 *ebx, u32 *ecx, u32 *edx, const u32 function)

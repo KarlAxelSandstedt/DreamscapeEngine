@@ -20,7 +20,8 @@
 #include "ds_test.h"
 #include "ds_math.h"
 
-static const u64 g_rng_count = 1024*1024;
+#define RNG_COUNT   1024*1024
+static const u64 g_rng_count = RNG_COUNT;
 static void thread_local_rng_u64_test(void *void_count)
 {
 	for (u32 i = 0; i < g_rng_count; ++i)
@@ -41,7 +42,7 @@ struct test_PerformanceSerial rng_serial_test[] =
 {
 	{ 
 		.id = "thread_local_rng_u64", 
-		.size = 8*g_rng_count,
+		.size = 8*RNG_COUNT,
 		.test = &thread_local_rng_u64_test,
 		.test_init = NULL,
 		.test_reset = NULL,
@@ -50,7 +51,7 @@ struct test_PerformanceSerial rng_serial_test[] =
 
 	{ 
 		.id = "global_rng_u64_test", 
-		.size = 8*g_rng_count,
+		.size = 8*RNG_COUNT,
 		.test = &global_rng_u64_test,
 		.test_init = NULL,
 		.test_reset = NULL,

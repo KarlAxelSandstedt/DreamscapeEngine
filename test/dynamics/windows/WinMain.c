@@ -18,92 +18,76 @@
 */
 
 #include <windows.h>
-#include <bcrypt.h>
-#include <stdio.h>
 
-#include "kas_common.h"
-#include "kas_random.h"
-#include "sys_public.h"
+#include "ds_base.h" 
+#include "ds_math.h"
+#include "ds_platform.h"
+#include "ds_graphics.h"
+#include "ds_asset.h"
+#include "ds_ui.h"
 #include "ds_led.h"
-#include "ds_renderer.h"
-
-static void win_init_rng(void)
-{
-#if defined(KAS_TEST_CORRECTNESS)
-	u64 seed[4] = { 6712394175642371735lu, 15709062239796375561lu, 2231484769219996854lu, 779317575278281131lu };
-#else
-	u64 seed[4];
-	BCRYPT_ALG_HANDLE hAlgorithm;
-	LPCWSTR pszAlgId = BCRYPT_RNG_ALGORITHM;
-	LPCWSTR pszImplementation = NULL;
-	ULONG dwFlags = 0;
-	NTSTATUS status = BCryptOpenAlgorithmProvider(&hAlgorithm, pszAlgId, pszImplementation, dwFlags);
-	if (!BCRYPT_SUCCESS(status))
-	{
-		fprintf(stderr, "Couldn't close algorithm provider: %08x\n", status);
-		return;
-	}
-
-	status = BCryptGenRandom(hAlgorithm, ((PUCHAR) seed), sizeof(seed), 0);
-	if (!BCRYPT_SUCCESS(status))
-	{
-		fprintf(stderr, "Couldn't initiate rng source: %08x\n", status);
-		return;
-	}
-
-	status = BCryptCloseAlgorithmProvider(hAlgorithm, 0);
-	if (!BCRYPT_SUCCESS(status))
-	{
-		fprintf(stderr, "Couldn't close algorithm provider: %08x\n", status);
-		return;
-	}
-#endif
-	g_xoshiro_256_init(seed);
-	thread_xoshiro_256_init_sequence();
-}
+#include "ds_job.h"
 
 int CALLBACK WinMain(HINSTANCE h_instance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
 {
-	win_init_rng();
+	u64 seed[4];
+	RngSystem(seed, sizeof(seed));
+	Xoshiro256Init(seed);
+		
+	const u32 count_256B = 4*1024;
+	const u32 count_1MB = 64;
 
-	struct arena mem_persistent = arena_alloc(32*1024*1024);
-	system_resources_init(&mem_persistent);
-	cmd_alloc();
-	ui_init_global_state();
-	asset_database_init(&mem_persistent);
-#if defined(KAS_TEST_CORRECTNESS) || defined(KAS_TEST_PERFORMANCE)
-	ds_TestMain();
-#else
-	struct led *editor = led_alloc();
-	
+	ds_MemApiInit(count_256B, count_1MB);
+
+	struct arena persistent = ArenaAlloc(32*1024*1024);
+	LogInit(&persistent, "log.txt");
+
+	ds_TimeApiInit(&persistent);
+
+	ds_ThreadMasterInit(&persistent);
+	ds_ArchConfigInit(&persistent);
+
+	ds_StringApiInit(g_arch_config->logical_core_count);
+
+	ds_PlatformApiInit(&persistent);
+
+	ds_GraphicsApiInit();
+
+	ds_UiApiInit();
+
+	AssetInit(&persistent);
+
+	struct led *editor = led_Alloc();
+
 	const u64 renderer_framerate = 144;	
-	r_init(&mem_persistent, NSEC_PER_SEC / renderer_framerate, 16*1024*1024, 1024, &editor->render_mesh_db);
+	r_Init(&persistent, NSEC_PER_SEC / renderer_framerate, 16*1024*1024, 1024, &editor->render_mesh_db);
 	
 	u64 old_time = editor->ns;
 	while (editor->running)
 	{
-		PROF_FRAME_MARK;
+		ProfFrameMark;
 
-		system_free_tagged_windows();
+		ds_DeallocTaggedWindows();
 
 		task_context_frame_clear();
 
-		const u64 new_time = time_ns();
+		const u64 new_time = ds_TimeNs();
 		const u64 ns_tick = new_time - old_time;
 		old_time = new_time;
 
-		system_process_events();
+		ds_ProcessEvents();
 
-		led_main(editor, ns_tick);
-		led_ui_main(editor);
-		r_led_main(editor);
+		led_Main(editor, ns_tick);
+		led_UiMain(editor);
+		r_EditorMain(editor);
 	}
+	
+	led_Dealloc(editor);
+	AssetShutdown();
+	ds_GraphicsApiShutdown();
+	ds_PlatformApiShutdown();
+	LogShutdown();
+	ds_MemApiShutdown();
 
-	led_dealloc(editor);
-	asset_database_cleanup();
-	cmd_free();
-	system_resources_cleanup();
-	arena_free(&mem_persistent);
-#endif
 	return 0;
 }

@@ -36,3 +36,7 @@ target_link_libraries(DreamscapeBase
 		dtoa
 		xxHash
 )
+
+if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    target_link_libraries(DreamscapeBase PRIVATE onecore)
+endif ()

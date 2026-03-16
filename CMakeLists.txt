@@ -6,6 +6,10 @@ set(CPACK_PACKAGE_MINOR "1")
 set(CPACK_PACKAGE_PATCH "2")
 set(CPACK_PACKAGE_VERSION "${CPACK_PACKAGE_MAJOR}.${CPACK_PACKAGE_MINOR}.${CPACK_PACKAGE_PATCH}")
 
+set(DS_TEST_EXECUTABLE "DreamscapeTest")
+add_compile_definitions(DS_VERSION_CSTR="${CPACK_PACKAGE_VERSION}")
+add_compile_definitions(DS_EXECUTABLE_CSTR="${DS_TEST_EXECUTABLE}")
+
 option(DS_OPTIMIZE "DS_OPTIMIZE enables compiler optimization flags in the library. Defaults 
 		    to OFF." 
 		OFF)
@@ -138,6 +142,7 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 	# avoids x87 fp-instructions entirely (extended precision bad for consistency)
 	add_compile_options(/arch:SSE2)
 
+	add_compile_options(/std:c11 /experimental:c11atomics)
 	#parallel compilation
 	add_compile_options(/MP)
 
@@ -181,7 +186,6 @@ endif()
 ######################### Testing ###########################
 
 set(DS_TEST_PATH "${CMAKE_CURRENT_SOURCE_DIR}/test")
-set(DS_TEST_EXECUTABLE "DreamscapeTest")
 
 option(DS_TEST OFF)
 option(DS_TEST_PHYSICS "Run physics engine tests" OFF)
@@ -223,6 +227,11 @@ if (DS_TEST)
     add_subdirectory(${DS_TEST_PATH})
     target_link_libraries(${DS_TEST_EXECUTABLE} PRIVATE Dreamscape::Test)
 	target_link_libraries(${DS_TEST_EXECUTABLE} PRIVATE Dreamscape)
+	
+	add_custom_command(TARGET ${DS_TEST_EXECUTABLE} POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+		$<TARGET_FILE:SDL3::SDL3>
+		$<TARGET_FILE_DIR:${DS_TEST_EXECUTABLE}>)
 endif ()
 
 # For CPack and installation process, good information can be found at:

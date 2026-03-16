@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.14.3)
 
 add_library(sdl3_wrapper STATIC 
+	"${DS_INCLUDE_PATH}/ds_gl.h"
 	sdl3_wrapper_public.h
 	sdl3_wrapper_local.h
 	sdl3_wrapper_window.c

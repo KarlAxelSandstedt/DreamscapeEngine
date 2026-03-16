@@ -18,6 +18,7 @@
 */
 
 #include "ds_base.h"
+#include "ds_platform.h"
 
 static u32 a_fatal_cleanup_initiated = 0;
 
@@ -139,7 +140,7 @@ void FatalCleanupAndExit()
     		//           local_time.wHour, 
 		//	   local_time.wMinute,
 		//	   local_time.wSecond);
-    		const char *filename = CstrUtf8(&tmp, utf8_filename);
+    	const char *filename = CstrUtf8(&tmp, utf8_filename);
 		struct file dump = FileNull();
 		if (FileTryCreateAtCwd(&tmp, &dump, filename, FILE_TRUNCATE) == FS_SUCCESS)
 		{
@@ -153,6 +154,9 @@ void FatalCleanupAndExit()
 		ArenaFree1MB(&tmp);
 
 		LogShutdown();
+#if DS_DEBUG
+		Breakpoint(1);
+#endif
 		exit(0);
 	}
 

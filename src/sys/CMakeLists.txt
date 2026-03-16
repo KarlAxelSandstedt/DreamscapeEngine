@@ -2,17 +2,37 @@ cmake_minimum_required(VERSION 3.14.3)
 
 add_subdirectory("sdl3_wrapper")
 
-add_library(DreamscapePlatform
-	STATIC
-		"${DS_INCLUDE_PATH}/ds_platform.h"
-		"linux/linux_filesystem.c"
-		"linux/linux_random.c"
-		"sys_local.h"
-		"sys_filesystem.c"
-		"sys_event.c"
-		"sys_init.c"
-		"sys_input.c"
-)
+if (DEFINED EMSCRIPTEN OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_library(DreamscapePlatform
+    	STATIC
+    		"${DS_INCLUDE_PATH}/ds_platform.h"
+    		"linux/linux_filesystem.c"
+    		"linux/linux_random.c"
+    		"sys_local.h"
+    		"sys_filesystem.c"
+    		"sys_event.c"
+    		"sys_init.c"
+    		"sys_input.c"
+    )
+
+elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
+
+    add_library(DreamscapePlatform
+    	STATIC
+    		"${DS_INCLUDE_PATH}/ds_platform.h"
+    		"windows/win_filesystem.c"
+    		"windows/win_random.c"
+    		"sys_local.h"
+    		"sys_filesystem.c"
+    		"sys_event.c"
+    		"sys_init.c"
+    		"sys_input.c"
+    )
+
+    target_link_libraries(DreamscapePlatform PRIVATE Bcrypt)
+
+endif ()
+
 add_library(Dreamscape::Platform ALIAS DreamscapePlatform)
 target_link_libraries(DreamscapePlatform 
 	PUBLIC 

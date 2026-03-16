@@ -32,7 +32,7 @@ extern "C" {
 	#include <semaphore.h>
 	typedef sem_t semaphore;
 
-#elif _DS_PLATFORM__ == __DS_WIN64__
+#elif __DS_PLATFORM__ == __DS_WIN64__
 
 	#include <windows.h>
 	typedef HANDLE semaphore;

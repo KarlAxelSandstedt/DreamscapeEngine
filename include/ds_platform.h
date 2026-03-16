@@ -70,23 +70,18 @@ void	RngSystem(void *buf, const u64 size);
 	
 	#define FS_MAP_SHARED        MAP_SHARED
 	#define FS_MAP_PRIVATE       MAP_PRIVATE
-	
-	
-	#define FILE_READ	0
-	#define FILE_WRITE	(1 << 0)
-	#define FILE_TRUNCATE	(1 << 1)
 
-#elif 
+#elif __DS_PLATFORM__ == __DS_WIN64__
 
 	#include <windows.h>
 	
 	typedef WIN32_FILE_ATTRIBUTE_DATA	file_status;
-	typedef HANDLE 				file_handle;
+	typedef HANDLE 				        file_handle;
 	
-	#define FILE_HANDLE_INVALID	INVALID_HANDLE_VALUE
+	#define FILE_HANDLE_INVALID	    INVALID_HANDLE_VALUE
 	
 	#define FS_PROT_READ         	FILE_MAP_READ
-	#define FS_PROT_WRITE		FILE_MAP_WRITE
+	#define FS_PROT_WRITE		    FILE_MAP_WRITE
 	#define FS_PROT_EXECUTE      	FILE_MAP_EXECUTE
 	#define FS_PROT_NONE         	0
 	
@@ -94,6 +89,11 @@ void	RngSystem(void *buf, const u64 size);
 	#define FS_MAP_PRIVATE       	0
 
 #endif
+
+#define FILE_READ	    0
+#define FILE_WRITE	    (1 << 0)
+#define FILE_TRUNCATE	(1 << 1)
+
 
 enum fsError
 {
