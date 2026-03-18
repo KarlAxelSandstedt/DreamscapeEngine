@@ -55,10 +55,12 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 	if (!init_solver_once)
 	{
 		init_solver_once = 1;
-		const u32 iteration_count = 10;
+		const u32 pgs_iteration_count = 8;
+		const u32 ngs_iteration_count = 3;
 		const u32 warmup_solver = 1;
 		const vec3 gravity = { 0.0f, -GRAVITY_CONSTANT_DEFAULT, 0.0f };
        	const f32 baumgarte_constant = 0.1f;
+        const f32 max_linear_correction = 0.2f;
 		const f32 linear_dampening = 0.1f;
 		const f32 angular_dampening = 0.1f;
 		const f32 linear_slop = 0.005f;
@@ -67,8 +69,7 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 		const f32 sleep_time_threshold = 0.5f;
 		f32 sleep_linear_velocity_sq_limit = 0.005f*0.005f; 
 		f32 sleep_angular_velocity_sq_limit = 0.01f*0.01f*2.0f*F32_PI;
-		SolverConfigInit(iteration_count, warmup_solver, gravity, baumgarte_constant, linear_dampening, angular_dampening, linear_slop, restitution_threshold, sleep_enabled, sleep_time_threshold, sleep_linear_velocity_sq_limit, sleep_angular_velocity_sq_limit);
-
+		SolverConfigInit(pgs_iteration_count, ngs_iteration_count, warmup_solver, gravity, baumgarte_constant, max_linear_correction, linear_dampening, angular_dampening, linear_slop, restitution_threshold, sleep_enabled, sleep_time_threshold, sleep_linear_velocity_sq_limit, sleep_angular_velocity_sq_limit);
 	}
 
 	ds_AssertString(PowerOfTwoCheck(initial_size), "For simplicity of future data structures, expect pipeline sizes to be powers of two");
@@ -686,7 +687,8 @@ void PhysicsPipelineSleepDisable(struct ds_RigidBodyPipeline *pipeline)
 static void UpdateSolverConfig(struct ds_RigidBodyPipeline *pipeline)
 {
 	g_solver_config->warmup_solver = g_solver_config->pending_warmup_solver;
-	g_solver_config->iteration_count = g_solver_config->pending_iteration_count;
+	g_solver_config->pgs_iteration_count = g_solver_config->pending_pgs_iteration_count;
+	g_solver_config->ngs_iteration_count = g_solver_config->pending_ngs_iteration_count;
 	g_solver_config->linear_slop = g_solver_config->pending_linear_slop;
 	g_solver_config->baumgarte_constant = g_solver_config->pending_baumgarte_constant;
 	g_solver_config->restitution_threshold = g_solver_config->pending_restitution_threshold;

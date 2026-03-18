@@ -29,7 +29,6 @@ extern "C" {
 //#define FORCE_SEQ_CST
 
 #if __DS_COMPILER__ == __DS_GCC__ || __DS_COMPILER__ == __DS_CLANG__ || __DS_COMPILER__ == __DS_EMSCRIPTEN__
-#error
 
 	#ifdef FORCE_SEQ_CST
 		#define ATOMIC_RELAXED	__ATOMIC_SEQ_CST

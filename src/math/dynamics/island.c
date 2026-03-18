@@ -416,8 +416,8 @@ void isdb_SplitIsland(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeli
     ProfZoneEnd;
 }
 
-/* TODO place somewhere reasonable.... */
-static void IntegrateBody(struct ds_Island *is, const struct solver *solver, const u32 i)
+/* TODO name and place somewhere reasonable.... */
+static void IntegrateOrientationVelocities(struct ds_Island *is, struct solver *solver, const u32 i)
 {
     /* update velocity and world center of mass */
 	struct ds_RigidBody *b = is->bodies[i];
@@ -433,13 +433,19 @@ static void IntegrateBody(struct ds_Island *is, const struct solver *solver, con
 		      	0.0f);
 	QuatMul(rot_delta, a_vel_quat, b->t_world.rotation);
 	QuatScale(rot_delta, solver->timestep / 2.0f);
-	QuatTranslate(b->t_world.rotation, rot_delta);
-	QuatNormalize(b->t_world.rotation);
+	QuatAdd(solver->rotation[i], b->t_world.rotation, rot_delta);
+	QuatNormalize(solver->rotation[i]);
+}
+
+static void UpdateOrientation(struct ds_Island *is, const struct solver *solver, const u32 i)
+{
+	struct ds_RigidBody *b = is->bodies[i];
+    QuatCopy(b->t_world.rotation, solver->rotation[i]);
 
     /* derive new world transform from updated angle and world center of mass */
     vec3 rotated_local_center_of_mass;
     mat3 new_rot;
-    Mat3Quat(new_rot, b->t_world.rotation);
+    Mat3Quat(new_rot, solver->rotation[i]);
     Mat3VecMul(rotated_local_center_of_mass, new_rot, b->local_center_of_mass);
     Vec3Sub(b->t_world.position, solver->w_center_of_mass[i], rotated_local_center_of_mass);
 }
@@ -494,7 +500,7 @@ static u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pi
 			SolverWarmup(solver, is);
 		}
 
-		for (u32 i = 0; i < g_solver_config->iteration_count; ++i)
+		for (u32 i = 0; i < g_solver_config->pgs_iteration_count; ++i)
 		{
 			SolverIterateVelocityConstraints(solver);
 		}
@@ -507,7 +513,7 @@ static u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pi
 			f32 min_low_velocity_time = F32_MAX_POSITIVE_NORMAL;
 			for (u32 i = 0; i < is->body_list.count; ++i)
 			{
-                IntegrateBody(is, solver, i);
+                IntegrateOrientationVelocities(is, solver, i);
 
 				/* Always set RB_AWAKE, if island should sleep, we set it later,
 				 * but the bodies may come in sleeping if island just woke up 
@@ -535,10 +541,21 @@ static u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pi
 		{
 			for (u32 i = 0; i < is->body_list.count; ++i)
 			{
-                IntegrateBody(is, solver, i);
+                IntegrateOrientationVelocities(is, solver, i);
 			}
 		}
-	}
+
+        SolverInitPositionConstraints(solver, is); 
+        for (u32 i = 0; i < g_solver_config->ngs_iteration_count; ++i)
+		{
+			SolverIteratePositionConstraints(solver);
+		}
+
+        for (u32 i = 0; i < is->body_list.count; ++i)
+	    {
+            UpdateOrientation(is, solver, i);
+	    }
+	} 
 
 	ArenaPopRecord(mem_frame);
 	return bodies_simulated;

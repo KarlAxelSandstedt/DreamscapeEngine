@@ -741,11 +741,12 @@ Mumerical parameters configuration for solving islands.
  */
 struct solverConfig
 {
-	u32 	iteration_count;	/* velocity solver iteration count */
+	u32 	pgs_iteration_count;	/* velocity solver iteration count */
+	u32 	ngs_iteration_count;	/* position solver iteration count */
 	u32 	warmup_solver;		/* bool : Should warmup solver when applicable */
 	vec3 	gravity;
-	f32 	baumgarte_constant;  	/* Range[0.0, 1.0] : Determine how quickly contacts are resolved, 1.0f max 
-					   speed */
+	f32 	baumgarte_constant;  	/* Range[0.0, 1.0] : Determine how quickly contacts are resolved, 1.0f max speed */
+    f32     max_linear_correction;
 	f32 	linear_dampening;	/* Range[0.0, inf] : coefficient in diff. eq. dv/dt = -coeff*v */
 	f32 	angular_dampening;	/* Range[0.0, inf] : coefficient in diff. eq. dv/dt = -coeff*v */
 	f32 	linear_slop;		/* Range[0.0, inf] : Allowed penetration before velocity steering gradually
@@ -761,7 +762,8 @@ struct solverConfig
 	/* Pending updates */
 	u32 	pending_warmup_solver;		
 	u32 	pending_sleep_enabled;		
-	u32 	pending_iteration_count;
+	u32 	pending_pgs_iteration_count;
+	u32 	pending_ngs_iteration_count;
 	f32 	pending_baumgarte_constant;
 	f32 	pending_linear_slop;
 	f32 	pending_restitution_threshold;
@@ -771,7 +773,7 @@ struct solverConfig
 
 extern struct solverConfig *g_solver_config;
 
-void	SolverConfigInit(const u32 iteration_count, const u32 warmup_solver, const vec3 gravity, const f32 baumgarte_constant, const f32 linear_dampening, const f32 angular_dampening, const f32 linear_slop, const f32 restitution_threshold, const u32 sleep_enabled, const f32 sleep_time_threshold, const f32 sleep_linear_velocity_sq_limit, const f32 sleep_angular_velocity_sq_limit);
+void    SolverConfigInit(const u32 pgs_iteration_count, const u32 ngs_iteration_count, const u32 warmup_solver, const vec3 gravity, const f32 baumgarte_constant, const f32 max_linear_correction, const f32 linear_dampening, const f32 angular_dampening, const f32 linear_slop, const f32 restitution_threshold, const u32 sleep_enabled, const f32 sleep_time_threshold, const f32 sleep_linear_velocity_sq_limit, const f32 sleep_angular_velocity_sq_limit);
 
 
 /*
@@ -790,13 +792,15 @@ individual constraint for one point in the contact manifold
 
 struct velocityConstraintPoint
 {
-	vec3 	r1;		/* vector from body 1's center to manifold point */
-	vec3 	r2;		/* vector from body 2's center to manifold point */
-	f32 	normal_impulse;	/* the normal impulse produced by the contact */
-	f32	velocity_bias;	/* scale of velocity_bias along contact normal */
-	f32	normal_mass;	/* 1.0f / row(J,i)*Inv(M)*J^T entry for point */
-	f32	tangent_mass[2]; /* 1.0f / row(J_tangent,i)*Inv(M)*J_tangent^T entry for point */
-	f32	tangent_impulse[2]; /* the tangent impulses produced by the contact */
+    vec3    contact_point;  /* contact point                                */
+	vec3 	r1;		        /* vector from body 1's center to contact point */
+	vec3 	r2;		        /* vector from body 2's center to contact point */
+	f32 	normal_impulse;	/* Normal impulse produced by the contact       */
+    f32     target_distance;/* Initial distance + penetration depth         */
+	f32	    velocity_bias;	/* scale of velocity_bias along contact normal */
+	f32	    normal_mass;	/* 1.0f / row(J,i)*Inv(M)*J^T entry for point */
+	f32	    tangent_mass[2]; /* 1.0f / row(J_tangent,i)*Inv(M)*J_tangent^T entry for point */
+	f32	    tangent_impulse[2]; /* the tangent impulses produced by the contact */
 };
 
 struct velocityConstraint
@@ -824,18 +828,21 @@ struct solver
 	u32			contact_count;
 
 	struct ds_RigidBody **	    bodies;
-    vec3ptr                     w_center_of_mass;   /* world-position center of mass of body */
 	mat3ptr			            Iw_inv;		        /* inverted world inertia tensors */
 	struct velocityConstraint * vcs;	
 
 	/* temporary state of bodies in island, static bodies index last element */
 	vec3ptr			linear_velocity;
 	vec3ptr			angular_velocity;
+    vec3ptr         w_center_of_mass;   /* world-position center of mass of body */
+    quatptr         rotation;
 };
 
 struct solver *	SolverInitBodyData(struct arena *mem, struct ds_Island *is, const f32 timestep);
 void 		SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Island *is);
 void 		SolverIterateVelocityConstraints(struct solver *solver);
+void        SolverInitPositionConstraints(struct solver *solver, const struct ds_Island *island);
+void 		SolverIteratePositionConstraints(struct solver *solver);
 void 		SolverWarmup(struct solver *solver, const struct ds_Island *is);
 void 		SolverCacheImpulse(struct solver *solver, const struct ds_Island *is);
 
