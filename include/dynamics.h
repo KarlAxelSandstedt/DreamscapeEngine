@@ -722,23 +722,6 @@ contact_solver_config
 Mumerical parameters configuration for solving islands.
 */
 
-/*
- * Implementation of ([Iterative Dynamics with Temporal Coherence], Erin Catto, 2005) and
- * Box2D features.
- *
- * Planned Features:
- * (O) Block Solver
- * (O) Sleeping islands
- * (O) Friction Solver
- * () warmup impulse for contact points
- * (O) g_solver_config dampening constants (linear and angular)
- * (O) velocity biases: baumgarte bias linear slop (allowed position error we correct for, see def. in https://allenchou.net/2013/12/game-physics-resolution-contact-constraints/)
- * (O) Resitution base contacts [bounciness of objects, added to velocity bias in velocity constraint solver given
- * 	restitution threshold, see def. in https://allenchou.net/2013/12/game-physics-resolution-contact-constraints/
- * 	and box2D
- * () threshold for forces
- * (O) conditioning number of normal mass, must ensure stability.
- */
 struct solverConfig
 {
 	u32 	pgs_iteration_count;	/* velocity solver iteration count */
@@ -781,7 +764,7 @@ void    SolverConfigInit(const u32 pgs_iteration_count, const u32 ngs_iteration_
  *
  * struct velocityConstraintPoint 	- constraint point local data (body center to manifold point, and so on)
  * struct velocityConstraint 		- contact local data (manifold normal, body indices, and so on)
- * solver->array			- shared data between contacts, i.e temporary body changes (velocities, ...)
+ * solver->array			        - shared data between contacts, i.e temporary body changes (velocities, ...)
  */
 
 /*

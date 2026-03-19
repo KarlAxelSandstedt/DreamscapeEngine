@@ -1,0 +1,173 @@
+We provide a small discussion on local frame contact storage vs. world space contact
+storage, Reference geometry, and other good stuff.
+
+
+Contact Manifold and the Local Frame
+====================================
+
+Like before, the Narrowphase provides us with contact manifolds, a struct that stores
+a set of contact points, penetration depths, and a contact normal. We now derive the
+local body frame arm levers r1, r2:
+
+            r1 = Inverse(body1->rotation) * (contact_point - body1->world_center_of_mass)
+            r2 = Inverse(body2->rotation) * (contact_point - body2->world_center_of_mass)
+
+Likewise,
+
+            contact_point = body1->rotation * r1 + body1->world_center_of_mass;
+                          = body2->rotation * r2 + body2->world_center_of_mass;
+
+
+Contact Caching
+===============
+
+We assume that a contact point p_new in our contact manifold is cached if the contact
+is cached and there exists a cached contact point p_old such that
+
+            | r1_new - r1_old |^2 <= limit_sq,
+
+where limit_sq is some distance limit. If multiple such points exist, we use the
+closest point we find. It is less good to use the following check, which is the
+more naive version:
+
+            | p_new - p_old |^2 <= limit_sq.
+
+This test is not rotation invariant. Consider a spinning cube, resting flat on a
+floor. If the rotation is quick enough, we will invalidate our cached contact points
+every frame. It would be more proper to view to contacts as relative to the spinning
+cube, in which they will more or less stay the same if we account for the rotation
+applied every frame. Something along this way of thinking arrives us at the rotation
+invariant check...
+
+We skip checking that
+            
+            | r2_new - r2_old |^2 <= limit_sq,
+            
+and assume that the r1 check is enough. It is more performant and seems to give us
+very little since no one else does the check; so we just guess that it holds.
+
+If we add a new contact point to the cache we store the local frame arm lever r1_new
+and r2_new in the cached contact point. It is now constant for the rest of the cached
+contact point's lifetime. If we find a cached contact point, we use the stored local
+frame r1_old and r2_old.
+
+
+Warmstarting
+============
+
+We achieve better stability improvements due to having rotation invariant lookups,
+i.e. the key is something related to the body feature in contact, not just some 
+contact point in world space.
+
+
+Separation
+==========
+
+We assume that at a contact point p(t1), we start with penetration depth d(t1), and
+world lever arm r1_w(t1), r2_w(t1). Furthermore, we assume that the contact normal
+n points from body1 to body2.
+
+When the contact point was created, we had
+
+            r1_w(t1) == r2_w(t1).
+
+Assume now that the points have been slightly separated at time t2 but still 
+penetrating
+
+            r1_w(t2) != r2_w(t2).
+
+Assume that we find and use the cached contact from time t1. The question becomes:
+
+            Do we use the new contact penetration from the current narrowphase, 
+            or do we use the old one minus new separation that happened?
+
+We discard the Narrowphase penetration depth and assume we are completely aliasing 
+the old contact geometry. Native (and bad) approach to derive new penetration goes
+something like
+
+            depth(t2) = (...) - Dot(center_of_mass2_w(t2) - center_of_mass1_w(t2), normal(t2))  : (WRONG)
+
+Note that this is not rotation invariant! We don't view the contact point as fixed
+in relation to the reference body. We can easily imagine a scenario where the center
+of masses stay the same, while the rotations of the bodies are incremented; this
+type of depth calculation does not account for that.  Another way to derive the new
+depth is 
+    
+            n(t2)     = new contact normal pointing from reference      (Narrowphase derived)
+            p1(t2)    = center_of_mass1_w(t2) + R1(t2)*r1               (reference world-space contact point)
+            p2(t2)    = center_of_mass2_w(t2) + R2(t2)*r2               (world-space contact point)
+            s(t2)     = Dot(p2(t2) - p1(t2), n(t2))                     (signed separation since contact addition)
+            depth(t2) = f32_max(0.0f, depth(t1) - s(t2))                (positive peneration depth)
+                  
+We measure how the contact point has drifted apart between the two bodies since the
+contact point was added at time t1. This scheme assumes unadjusted r1 and r2 such
+that
+            p1(t1) == p2(t1).
+
+The issue that is still lingering is that the lever-arms are not point to the surfaces
+of their corresponding body, but instead to the contact point which may be on one of
+the surfaces, or somewhere inbetween.  In the standard dual-anchor, we extend r1(t1) 
+and r2(t1) to their corresponding surfaces. Assuming a contact point inbetween the
+two surfaces, we have 
+
+            p1(t1) += n(t1) * depth(t1) / 2
+            p2(t1) -= n(t1) * depth(t1) / 2
+
+It follows that
+            
+            s(t1)   = Dot(p2(t1) - p1(t1), n(t1)) = -depth(t1)
+            r1(t1)  = R1(t1)^T*(p1(t1) - center_of_mass1_w(t1))
+            r2(t1)  = R2(t1)^T*(p2(t1) - center_of_mass2_w(t1))
+
+To calculate the penetration depth at time t2 now becomes:
+
+            s(t2)   = Dot(p2(t2) - p1(t2), n(t2))
+
+We no longer have to store a contact depth as it is implied by the lever arms.
+
+Reference Geometry Contact Points
+=================================
+
+I realize as I'm writing this that this is most likely the whole point of stable 
+manifolds, reference bodies and so on. The reference geometry is viewed as ground
+truth from which we can derive world-space contacts. From the contact's point of
+view, we only push body2, body1 stays constant.
+
+Currently, some of the contact methods generate contact points directly on the 
+reference geometry (faces), while other contacts such as sphere-sphere always generate
+a contact point in the middle of the collision area. We may simplify our engine by, 
+from now on, always assume that a contact function generates the contact point on
+the reference surface. Thus we enforce
+
+            p1(t1) = p1(t1)
+            p2(t1) -= n(t1) * depth(t1)
+
+which yields the same physics as before; we just unify how we handle contact points
+for flat vs curved surfaces. NOTE: Other engines do not do this. For example, in
+Dirk Gregorius' GDC talk about stable manifolds.
+
+When to evict a cache contact
+=============================
+
+If we find that the penetration depth is 0.0f, we evict the cached contact and add
+our new contact from the Narrowphase. 
+
+If we find that n(t2)*n(t1) < constant, say 0.9f, we assume that the contact features
+have changed and discard the contact. Otherwise we update the cached normal to n(t2).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
