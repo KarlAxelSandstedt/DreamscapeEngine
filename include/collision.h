@@ -210,60 +210,64 @@ void	c_ShapeUpdateMassProperties(struct c_Shape *shape);
 
 
 
+//TODO Currently we cannot set v/n immediately to be reference, that is up to the caller 
+//to do. We have in contacts that s1.type >= s2.type, we this is not the canonical ordering
+//in keys.
 /*
 c_Manifold
 ==========
-//TODO
+a c_Manifold (contact manifold) contains the required information about how two shapes
+are colliding for our physics solvers to solve them. One of the shapes are viewed as 
+the reference shape. 
 */
 struct c_Manifold
 {
-	vec3 	v[4];
-	f32 	depth[4];
-	vec3 	n;		/* B1 -> B2 */
-	u32 	v_count;
-    //TODO What do?
+	vec3 	v[4];       /* contact point on the reference shape surface     */
+	f32 	depth[4];   /* Contact point penetration depth (0.0f, INFINITY) */
+	vec3 	n;		    /* Contact normal: Points away from reference       */
+	u32 	v_count;    /* Contact point count                              */
 };
 
 void 	c_ManifoldDebugPrint(FILE *file, const struct c_Manifold *cm);
 
 /********************************** INTERSECTION TESTS **********************************/
 
-u32     c_SphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-u32     c_CapsuleSphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-u32     c_CapsuleTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-u32     c_HullSphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-u32     c_HullCapsuleTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-u32     c_HullTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-u32     c_TriMeshBvhSphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-u32     c_TriMeshBvhCapsuleTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-u32     c_TriMeshBvhHullTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+u32     c_SphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+u32     c_CapsuleSphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+u32     c_CapsuleTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+u32     c_HullSphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+u32     c_HullCapsuleTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+u32     c_HullTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+u32     c_TriMeshBvhSphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+u32     c_TriMeshBvhCapsuleTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+u32     c_TriMeshBvhHullTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
 
 /********************************** DISTANCE METHODS **********************************/
 
-f32     c_SphereDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-f32     c_CapsuleSphereDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-f32     c_CapsuleDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-f32     c_HullSphereDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-f32     c_HullCapsuleDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-f32     c_HullDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-f32     c_TriMeshBvhSphereDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-f32     c_TriMeshBvhCapsuleDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-f32     c_TriMeshBvhHullDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+f32     c_SphereDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+f32     c_CapsuleSphereDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+f32     c_CapsuleDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+f32     c_HullSphereDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+f32     c_HullCapsuleDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+f32     c_HullDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+f32     c_TriMeshBvhSphereDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+f32     c_TriMeshBvhCapsuleDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+f32     c_TriMeshBvhHullDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
 
 /********************************** CONTACT MANIFOLD METHODS **********************************/
 
 struct ds_ContactResult;
 struct sat_Cache;
 
-u32     c_SphereContact(struct arena *not_used1, struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-u32     c_CapsuleSphereContact(struct arena *not_used1, struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-u32     c_CapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-u32     c_HullSphereContact(struct arena *not_used1, struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-u32     c_HullCapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-u32     c_HullContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *cache, const struct sat_Cache *cache_copy, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-u32     c_TriMeshBvhSphereContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *not_used1, const struct sat_Cache *not_used2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-u32     c_TriMeshBvhCapsuleContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *not_used1, const struct sat_Cache *not_used2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
-u32     c_TriMeshBvhHullContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *not_used1, const struct sat_Cache *not_used2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2, const f32 margin);
+u32     c_SphereContact(struct arena *not_used1, struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+u32     c_CapsuleSphereContact(struct arena *not_used1, struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+u32     c_CapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+u32     c_HullSphereContact(struct arena *not_used1, struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+u32     c_HullCapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+u32     c_HullContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *cache, const struct sat_Cache *cache_copy, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+u32     c_TriMeshBvhSphereContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *not_used1, const struct sat_Cache *not_used2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+u32     c_TriMeshBvhCapsuleContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *not_used1, const struct sat_Cache *not_used2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+u32     c_TriMeshBvhHullContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *not_used1, const struct sat_Cache *not_used2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
 
 /********************************** RAYCAST **********************************/
 

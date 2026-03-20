@@ -125,6 +125,7 @@ To calculate the penetration depth at time t2 now becomes:
 
 We no longer have to store a contact depth as it is implied by the lever arms.
 
+
 Reference Geometry Contact Points
 =================================
 
@@ -146,6 +147,7 @@ which yields the same physics as before; we just unify how we handle contact poi
 for flat vs curved surfaces. NOTE: Other engines do not do this. For example, in
 Dirk Gregorius' GDC talk about stable manifolds.
 
+
 When to evict a cache contact
 =============================
 
@@ -154,20 +156,3 @@ our new contact from the Narrowphase.
 
 If we find that n(t2)*n(t1) < constant, say 0.9f, we assume that the contact features
 have changed and discard the contact. Otherwise we update the cached normal to n(t2).
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

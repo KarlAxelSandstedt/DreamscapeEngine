@@ -205,19 +205,19 @@ void        ds_ShapeWorldTransform(ds_Transform *t, const struct ds_RigidBodyPip
  */
 struct aabb ds_ShapeWorldBbox(const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape);
 /* 
- * Test for intersection between shapes, with each shape having the given margin. returns 1 if intersecting, else 0 
+ * Test for intersection between shapes. returns 1 if intersecting, else 0 
  */
-u32	        ds_ShapeTest(const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2, const f32 margin);
+u32	        ds_ShapeTest(const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
 /* 
- * Return, if no intersection was found, the distance between shapes s1 and s2 (with no margin) and their 
- * respective closest points c1 and c2. If the shapes are intersecting, return 0.0f. 
+ * Return, if no intersection was found, the distance between shapes s1 and s2 and their respective
+ * closest points c1 and c2. If the shapes are intersecting, return 0.0f. 
  */
-f32 	    ds_ShapeDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2, const f32 margin);
+f32 	    ds_ShapeDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
 /* 
  * Returns 1 if the shapes are colliding, 0 otherwise. If a collision is found, return a contact manifold
  * with normal pointing from s1 to s2 (and set the sat_cache if non-null and applicable). 
  */
-u32         ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2, const f32 margin);
+u32         ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
 /* 
  * Return, if ray intersects shape, t such that ray.origin + t*ray.dir == closest point on shape. 
  *         Otherwise, return F32_INFINITY.
@@ -318,7 +318,8 @@ ds_ContactKey
 ds_ContactKey is the unique key for a contact, and it used in the contact database
 hash map. Since the key must be unique for a contact, we require it to be in 
 canonical form, i.e. you may always assume that body0 < body1.  The shapes are the
-subshapes of their respective bodys making contact. 
+subshapes of their respective bodys making contact. You may always assume that 
+body0 is the reference body in a contact.
 */
 struct ds_ContactKey
 {
@@ -338,20 +339,20 @@ u32                     ds_ContactKeyEquivalence(const struct ds_ContactKey *key
 /*
 ds_Contact
 ==========
-ds_Contact is the value mapped by a ds_ContactKey, and contains current and 
-cached contact data and additional list node state. 
+ds_Contact is the value mapped by a ds_ContactKey, and contains current and cached 
+contact data and additional list node state. The reference body is ALWAYS body0,
+so any cached contacts are relative to body0.
 */
 struct ds_Contact
 {
 	DLL_SLOT_STATE;		                                /* island->contact_list node            */
 	NLL_SLOT_STATE;		                                /* shape->contact_net node              */
-    u32                     generation;                 
+    u32                     generation;                 /* Slot generation used id ds_ContactId */
     struct ds_ContactKey    key;                        /* canonical-form key                   */
 	struct c_Manifold 	    cm;                         /* Current contact manifold             */
 
-
-	vec3 			        normal_cache;
-	vec3 			        tangent_cache[2];
+	vec3 			        normal_cache;               /* Cached contact normal                */
+	vec3 			        tangent_cache[2];           /* Froms Contact basis with normal      */
 	vec3 			        v_cache[4];			        /* previous contact manifold vertices, 
 					        			                   or { F32_MAX, F32_MAX, F32_MAX }     */
 	f32 			        tangent_impulse_cache[4][2];

@@ -199,7 +199,6 @@ struct tcc_Input
     struct ds_RigidBodyPipeline *   pipeline;
     struct ds_Shape *               s1;
     struct ds_Shape *               s2;
-    f32                             margin;
 };
 
 static void ThreadCalculateContact(void *task_addr)
@@ -236,7 +235,7 @@ static void ThreadCalculateContact(void *task_addr)
     }
 
     ds_Assert(in->s1->body != in->s2->body);
-    out->collision = ds_ShapeContact(&worker->mem_frame, &out->manifold, out->cache, in->pipeline, in->s1, in->s2, in->margin);
+    out->collision = ds_ShapeContact(&worker->mem_frame, &out->manifold, out->cache, in->pipeline, in->s1, in->s2);
 
 	ProfZoneEnd;
 }
@@ -293,10 +292,6 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 	    struct task_stream *stream = task_stream_init(&pipeline->frame);
 	    struct tcc_Output **next = &output;
 
-        const f32 margin = (pipeline->margin_on)
-            ? pipeline->margin
-            : 0.0f;
-
 	    for (u32 i = 0; i < proxy_overlap_count; ++i)
 	    {
             struct ds_Shape *s1 = ds_PoolAddress(&pipeline->shape_pool, proxy_overlap[i].id1);
@@ -319,7 +314,6 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
             args->pipeline = pipeline;
             args->s1 = s1;
             args->s2 = s2;
-            args->margin = margin;
 
 	    	task_stream_dispatch(&pipeline->frame, stream, ThreadCalculateContact, args);
             *next = out;
