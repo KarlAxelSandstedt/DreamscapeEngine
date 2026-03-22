@@ -353,8 +353,8 @@ struct ds_Contact
 
 	vec3 			        normal_cache;               /* Cached contact normal                */
 	vec3 			        tangent_cache[2];           /* Froms Contact basis with normal      */
-	vec3 			        v_cache[4];			        /* previous contact manifold vertices, 
-					        			                   or { F32_MAX, F32_MAX, F32_MAX }     */
+	vec3 			        r1_cache[4];			    /* previous local frame arm levers      */
+    vec3                    r2_cache[4];                   
 	f32 			        tangent_impulse_cache[4][2];
 	f32 			        normal_impulse_cache[4];	/* contact_solver solution to contact 
                                                            constraint, or 0.0f                  */

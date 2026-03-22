@@ -64,6 +64,8 @@ void 	Mat4Quat(mat4 dst, const quat q);
 
 /* Quaternion Operations and Functions */
 void    QuatIdentity(quat dst);
+void 	QuatInverse(quat inv, const quat q);
+void    QuatVec3Rotate(vec3 dst, const quat q, const vec3 v);
 void 	QuatSet(quat dst, const f32 x, const f32 y, const f32 z, const f32 w);
 void 	QuatAdd(quat dst, const quat p, const quat q);
 void 	QuatTranslate(quat dst, const quat translation);
@@ -72,7 +74,6 @@ void 	QuatMul(quat dst, const quat p, const quat q);
 void 	QuatScale(quat dst, const f32 scale);
 void 	QuatCopy(quat dst, const quat src);
 void 	QuatConj(quat conj, const quat q);
-void 	QuatInverse(quat inv, const quat q);
 f32 	QuatNorm(const quat q);
 void 	QuatNormalize(quat q);
 

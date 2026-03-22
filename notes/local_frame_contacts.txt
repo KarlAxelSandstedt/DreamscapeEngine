@@ -22,7 +22,7 @@ Contact Caching
 ===============
 
 We assume that a contact point p_new in our contact manifold is cached if the contact
-is cached and there exists a cached contact point p_old such that
+is cached and there exists a cached contact point r1_old such that
 
             | r1_new - r1_old |^2 <= limit_sq,
 
