@@ -422,133 +422,97 @@ void SolverIterateVelocityConstraints(struct solver *solver)
 
 void SolverInitPositionConstraints(struct solver *solver, const struct ds_Island *is)
 {
-    //vec3 tmp1, tmp2, relative_velocity;
-    //for (u32 i = 0; i < solver->contact_count; ++i)
-	//{
-	//	struct velocityConstraint *vc = solver->vcs + i;
-	//	for (u32 j = 0; j < vc->vcp_count; ++j)
-	//	{
-	//		struct velocityConstraintPoint *vcp = vc->vcps + j;
-
-    //        /* Note that we use old vcp->r* values, as those are the correct applied velocities */
-	//		Vec3Sub(relative_velocity, 
-	//				solver->linear_velocity[vc->lb2],
-	//				solver->linear_velocity[vc->lb1]);
-	//		Vec3Cross(tmp1, solver->angular_velocity[vc->lb2], vcp->r2);
-	//		Vec3Cross(tmp2, solver->angular_velocity[vc->lb1], vcp->r1);
-	//		Vec3Translate(relative_velocity, tmp1);
-	//		Vec3TranslateScaled(relative_velocity, tmp2, -1.0f);
-	//		const f32 separating_velocity = Vec3Dot(vc->normal, relative_velocity);
-
-    //        /* 
-    //         * (1) If the velocity solver did not manage to make the separating velocity
-    //         *     positive, the penetration has deepend to old_depth - t*sep_vel.
-    //         *
-    //         *              delta = (- t*sep_vel, old_depth - t*sep_vel)
-    //         *
-    //         * (2) If the velocity solver did manage to make the separating velocity
-    //         *     positive, we get the bound of delta position correction:
-    //         *               
-    //         *              delta = (0.0f, old_depth)
-    //         */
-
-    //        /*
-    //         * (1) new_depth = f32_max(0.0f, old_depth - delta_depth) = 
-    //         * {
-    //         *    delta_depth is negative, so return old_depth - delta_depth.
-    //         *      (This is correct, the contact deepend, so we must adjust the position even more).
-    //         * }
-    //         *
-    //         * (2) new_depth = f32_max(0.0f, old_depth - delta_depth) = 
-    //         * {
-    //         *    if velocity removed the collision all together, old_depth - delta_depth < 0 => return 0
-    //         *      (The velocity removed the contact, so the position solver has nothing to do).
-    //         *    if velocity did not removed the collision, old_depth - delta_depth > 0 => return old_depth
-    //         *      (The velocity removed partial contact, the position solver fixes the rest of the penetration).
-    //         * }
-    //         */
-
-    //        /* delta_depth : (-INF, old_depth) */
-    //        const f32 delta_depth = f32_min(solver->timestep*separating_velocity, is->contacts[i]->cm.depth[j]);
-    //        const f32 new_depth = is->contacts[i]->cm.depth[j] - delta_depth;
-    //        vcp->target_distance = new_depth 
-    //                             + Vec3Dot(solver->w_center_of_mass[vc->lb2], vc->normal) 
-    //                             - Vec3Dot(solver->w_center_of_mass[vc->lb1], vc->normal); 
-    //    }
-    //}
+    quat body1_inverse_rotation, body2_inverse_rotation;
+    vec3 tmp1, tmp2, relative_velocity;
+    for (u32 i = 0; i < solver->contact_count; ++i)
+	{
+		struct velocityConstraint *vc = solver->vcs + i;
+        QuatInverse(body1_inverse_rotation, solver->rotation[vc->lb1]);
+        QuatInverse(body2_inverse_rotation, solver->rotation[vc->lb2]);
+		for (u32 j = 0; j < vc->vcp_count; ++j)
+		{
+			struct velocityConstraintPoint *vcp = vc->vcps + j;
+            QuatVec3RotateSelf(vcp->r1, body1_inverse_rotation);
+            QuatVec3RotateSelf(vcp->r2, body2_inverse_rotation);
+        }
+    }
 }
 
 void SolverIteratePositionConstraints(struct solver *solver)
 {
-    //mat3ptr mi;
-    //mat3 mat_tmp, rot, rot_inv;
-	//vec3 diff, r1, r2, rn1, rn2, tmp1, tmp2, impulse_vector;
-    //quat quat_tmp, quat_angle;
+    mat3ptr mi;
+    mat3 mat_tmp, rot, rot_inv;
+	vec3 diff, r1, r2, rn1, rn2, tmp1, tmp2, impulse_vector;
+    quat quat_tmp, quat_angle;
 
-	//for (u32 i = 0; i < solver->contact_count; ++i)
-	//{
-	//    struct velocityConstraint *vc = solver->vcs + i;
-    //    struct ds_RigidBody *b1 = solver->bodies[vc->lb1];
-    //    struct ds_RigidBody *b2 = solver->bodies[vc->lb2];
+	for (u32 i = 0; i < solver->contact_count; ++i)
+	{
+	    struct velocityConstraint *vc = solver->vcs + i;
+        struct ds_RigidBody *b1 = solver->bodies[vc->lb1];
+        struct ds_RigidBody *b2 = solver->bodies[vc->lb2];
 
-	//	for (u32 j = 0; j < vc->vcp_count; ++j)
-	//	{
-	//		struct velocityConstraintPoint *vcp = vc->vcps + j;
+		for (u32 j = 0; j < vc->vcp_count; ++j)
+		{
+			struct velocityConstraintPoint *vcp = vc->vcps + j;
 
-    //        mi = solver->Iw_inv + vc->lb1;
-	//	    Mat3Quat(rot, solver->rotation[vc->lb1]);
-	//	    Mat3Transpose(rot_inv, rot);
-	//	    Mat3Mul(mat_tmp, rot, b1->inv_inertia_tensor);
-	//	    Mat3Mul(*mi, mat_tmp, rot_inv);
+            mi = solver->Iw_inv + vc->lb1;
+		    Mat3Quat(rot, solver->rotation[vc->lb1]);
+		    Mat3Transpose(rot_inv, rot);
+		    Mat3Mul(mat_tmp, rot, b1->inv_inertia_tensor);
+		    Mat3Mul(*mi, mat_tmp, rot_inv);
 
-    //        mi = solver->Iw_inv + vc->lb2;
-	//	    Mat3Quat(rot, solver->rotation[vc->lb2]);
-	//	    Mat3Transpose(rot_inv, rot);
-	//	    Mat3Mul(mat_tmp, rot, b2->inv_inertia_tensor);
-	//	    Mat3Mul(*mi, mat_tmp, rot_inv);
+            mi = solver->Iw_inv + vc->lb2;
+		    Mat3Quat(rot, solver->rotation[vc->lb2]);
+		    Mat3Transpose(rot_inv, rot);
+		    Mat3Mul(mat_tmp, rot, b2->inv_inertia_tensor);
+		    Mat3Mul(*mi, mat_tmp, rot_inv);
 
-	//		Vec3Sub(r1, vcp->contact_point, solver->w_center_of_mass[vc->lb1]);
-	//		Vec3Sub(r2, vcp->contact_point, solver->w_center_of_mass[vc->lb2]);
+			//Vec3Sub(r1, vcp->contact_point, solver->w_center_of_mass[vc->lb1]);
+			//Vec3Sub(r2, vcp->contact_point, solver->w_center_of_mass[vc->lb2]);
+            QuatVec3Rotate(r1, solver->rotation[vc->lb1], vcp->r1);
+            QuatVec3Rotate(r2, solver->rotation[vc->lb2], vcp->r2);
 
-	//		Vec3Cross(rn1, r1, vc->normal);
-	//		Vec3Cross(rn2, r2, vc->normal);
+			Vec3Cross(rn1, r1, vc->normal);
+			Vec3Cross(rn2, r2, vc->normal);
 
-	//		Mat3VecMul(tmp1, solver->Iw_inv[vc->lb1], rn1);
-	//		Mat3VecMul(tmp2, solver->Iw_inv[vc->lb2], rn2);
+			Mat3VecMul(tmp1, solver->Iw_inv[vc->lb1], rn1);
+			Mat3VecMul(tmp2, solver->Iw_inv[vc->lb2], rn2);
 
-    //        /* inverse effective mass? */
-    //        const f32 K = 1.0f/b1->mass + 1.0f/b2->mass + Vec3Dot(tmp1, rn1) + Vec3Dot(tmp2, rn2);
+            /* inverse effective mass? */
+            const f32 K = 1.0f/b1->mass + 1.0f/b2->mass + Vec3Dot(tmp1, rn1) + Vec3Dot(tmp2, rn2);
 
-    //        /* constraint */
-    //        const f32 distance = Vec3Dot(solver->w_center_of_mass[vc->lb2], vc->normal) - Vec3Dot(solver->w_center_of_mass[vc->lb1], vc->normal) - vcp->target_distance; 
-    //        const f32 biased_slop_distance = g_solver_config->baumgarte_constant * (distance + g_solver_config->linear_slop);
+            /* constraint */
+            Vec3Add(tmp1, r1, solver->w_center_of_mass[vc->lb1]);
+            Vec3Add(tmp2, r2, solver->w_center_of_mass[vc->lb2]);
+            const f32 distance = Vec3Dot(tmp2, vc->normal) - Vec3Dot(tmp1, vc->normal); 
+            const f32 biased_slop_distance = g_solver_config->baumgarte_constant * (distance + g_solver_config->linear_slop);
 
-    //        const f32 C = f32_clamp(biased_slop_distance, -g_solver_config->max_linear_correction, 0.0f);
-    //        
-    //        const f32 impulse = (K > 0.0f) 
-    //            ? -C/K 
-    //            : 0.0f;
+            const f32 C = f32_clamp(biased_slop_distance, -g_solver_config->max_linear_correction, 0.0f);
+            
+            const f32 impulse = (K > 0.0f) 
+                ? -C/K 
+                : 0.0f;
 
-    //        Vec3Scale(impulse_vector, vc->normal, impulse);
-    //        Vec3TranslateScaled(solver->w_center_of_mass[vc->lb1], impulse_vector, -1.0f/b1->mass);
-    //        Vec3TranslateScaled(solver->w_center_of_mass[vc->lb2], impulse_vector,  1.0f/b2->mass);
+            Vec3Scale(impulse_vector, vc->normal, impulse);
+            Vec3TranslateScaled(solver->w_center_of_mass[vc->lb1], impulse_vector, -1.0f/b1->mass);
+            Vec3TranslateScaled(solver->w_center_of_mass[vc->lb2], impulse_vector,  1.0f/b2->mass);
 
-    //        /* flipped cross for correct sign! */
-    //        Vec3Cross(tmp1, impulse_vector, r1);
-    //        /* instantaneous torque, assume delta_t = 1 */
-    //        Mat3VecMul(tmp2, solver->Iw_inv[vc->lb1], tmp1);
-    //        /* Taylor expansion for sin, cos around 0 yields following approximation */
-    //        QuatSet(quat_angle, tmp2[0]/2.0f, tmp2[1]/2.0f, tmp2[2]/2.0f, 1.0f);
-    //        QuatCopy(quat_tmp, solver->rotation[vc->lb1]);
-    //        QuatMul(solver->rotation[vc->lb1], quat_angle, quat_tmp);
-    //        QuatNormalize(solver->rotation[vc->lb1]);
+            /* flipped cross for correct sign! */
+            Vec3Cross(tmp1, impulse_vector, r1);
+            /* instantaneous torque, assume delta_t = 1 */
+            Mat3VecMul(tmp2, solver->Iw_inv[vc->lb1], tmp1);
+            /* Taylor expansion for sin, cos around 0 yields following approximation */
+            QuatSet(quat_angle, tmp2[0]/2.0f, tmp2[1]/2.0f, tmp2[2]/2.0f, 1.0f);
+            QuatCopy(quat_tmp, solver->rotation[vc->lb1]);
+            QuatMul(solver->rotation[vc->lb1], quat_angle, quat_tmp);
+            QuatNormalize(solver->rotation[vc->lb1]);
 
-    //        Vec3Cross(tmp1, r2, impulse_vector);
-    //        Mat3VecMul(tmp2, solver->Iw_inv[vc->lb2], tmp1);
-    //        QuatSet(quat_angle, tmp2[0]/2.0f, tmp2[1]/2.0f, tmp2[2]/2.0f, 1.0f);
-    //        QuatCopy(quat_tmp, solver->rotation[vc->lb2]);
-    //        QuatMul(solver->rotation[vc->lb2], quat_angle, quat_tmp);
-    //        QuatNormalize(solver->rotation[vc->lb2]);
-    //    }
-	//}
+            Vec3Cross(tmp1, r2, impulse_vector);
+            Mat3VecMul(tmp2, solver->Iw_inv[vc->lb2], tmp1);
+            QuatSet(quat_angle, tmp2[0]/2.0f, tmp2[1]/2.0f, tmp2[2]/2.0f, 1.0f);
+            QuatCopy(quat_tmp, solver->rotation[vc->lb2]);
+            QuatMul(solver->rotation[vc->lb2], quat_angle, quat_tmp);
+            QuatNormalize(solver->rotation[vc->lb2]);
+        }
+	}
 }

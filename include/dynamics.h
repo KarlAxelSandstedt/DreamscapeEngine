@@ -780,7 +780,6 @@ struct velocityConstraintPoint
 	vec3 	r1;		        /* vector from body 1's center to contact point */
 	vec3 	r2;		        /* vector from body 2's center to contact point */
 	f32 	normal_impulse;	/* Normal impulse produced by the contact       */
-    f32     target_distance;/* Initial distance + penetration depth         */
 	f32	    velocity_bias;	/* scale of velocity_bias along contact normal */
 	f32	    normal_mass;	/* 1.0f / row(J,i)*Inv(M)*J^T entry for point */
 	f32	    tangent_mass[2]; /* 1.0f / row(J_tangent,i)*Inv(M)*J_tangent^T entry for point */

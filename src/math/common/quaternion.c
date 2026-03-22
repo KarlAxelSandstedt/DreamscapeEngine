@@ -173,3 +173,18 @@ void QuatVec3Rotate(vec3 dst, const quat q, const vec3 v)
     dst[1] = v[1] + q[3]*c[1] + q[2]*c[0] - q[0]*c[2];
     dst[2] = v[2] + q[3]*c[2] + q[0]*c[1] - q[1]*c[0];
 }
+
+void QuatVec3RotateSelf(vec3 v, const quat q)
+{
+    /* qvq^-1 = v + 2*q_w*Cross(q_xyz, v) + 2*Cross(q_xyz, Cross(q_xyz, v)) */
+    const vec3 c =
+    {
+        2.0f*(q[1]*v[2] - q[2]*v[1]),
+        2.0f*(q[2]*v[0] - q[0]*v[2]),
+        2.0f*(q[0]*v[1] - q[1]*v[0]),
+    };
+
+    v[0] += q[3]*c[0] + q[1]*c[2] - q[2]*c[1];
+    v[1] += q[3]*c[1] + q[2]*c[0] - q[0]*c[2];
+    v[2] += q[3]*c[2] + q[0]*c[1] - q[1]*c[0];
+}

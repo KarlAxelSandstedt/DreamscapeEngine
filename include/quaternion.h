@@ -66,6 +66,7 @@ void 	Mat4Quat(mat4 dst, const quat q);
 void    QuatIdentity(quat dst);
 void 	QuatInverse(quat inv, const quat q);
 void    QuatVec3Rotate(vec3 dst, const quat q, const vec3 v);
+void    QuatVec3RotateSelf(vec3 v, const quat q);
 void 	QuatSet(quat dst, const f32 x, const f32 y, const f32 z, const f32 w);
 void 	QuatAdd(quat dst, const quat p, const quat q);
 void 	QuatTranslate(quat dst, const quat translation);
