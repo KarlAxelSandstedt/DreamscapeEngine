@@ -324,15 +324,10 @@ f32 PlaneSegmentClipParameter(const struct plane *pl, const struct segment *s)
 u32 PlaneSegmentClip(vec3 clip, const struct plane *pl, const struct segment *s)
 {
 	const f32 t = PlaneSegmentClipParameter(pl, s);
-	u32 intersection = 0;
-
-	if (0.0f <= t && t <= 1.0f)
-	{
-		intersection = 0;
-		SegmentBc(clip, s, t);
-	} 
-	
-	return intersection;
+	SegmentBc(clip, s, t);
+	return (0.0f <= t && t <= 1.0f)
+        ? 1
+        : 0;
 }
 
 u32 PlaneSegmentTest(const struct plane *pl, const struct segment *s)

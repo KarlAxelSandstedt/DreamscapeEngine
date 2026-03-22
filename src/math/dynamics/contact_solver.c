@@ -467,8 +467,6 @@ void SolverIteratePositionConstraints(struct solver *solver)
 		    Mat3Mul(mat_tmp, rot, b2->inv_inertia_tensor);
 		    Mat3Mul(*mi, mat_tmp, rot_inv);
 
-			//Vec3Sub(r1, vcp->contact_point, solver->w_center_of_mass[vc->lb1]);
-			//Vec3Sub(r2, vcp->contact_point, solver->w_center_of_mass[vc->lb2]);
             QuatVec3Rotate(r1, solver->rotation[vc->lb1], vcp->r1);
             QuatVec3Rotate(r2, solver->rotation[vc->lb2], vcp->r2);
 

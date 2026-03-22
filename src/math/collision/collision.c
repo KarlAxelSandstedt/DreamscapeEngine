@@ -2414,7 +2414,6 @@ u32 c_HullContact(struct arena *mem_tmp, struct c_Manifold *manifold, struct sat
             {
                 if (cache_copy->body != ref)
                 {
-                    Vec3ScaleSelf(manifold->n, -1.0f);
                     Vec3TranslateScaled(manifold->v[0], manifold->n, manifold->depth[0]);
                     Vec3TranslateScaled(manifold->v[1], manifold->n, manifold->depth[1]);
                     Vec3TranslateScaled(manifold->v[2], manifold->n, manifold->depth[2]);

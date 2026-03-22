@@ -88,7 +88,7 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
     		ds_Assert(island->body_list.last == DLL_NULL);
     		isdb_IslandRemove(pipeline, island);
     	} 
-        else if (island->body_list.count > 1) 
+        else
         {
 	    	isdb_SplitIsland(mem_tmp, pipeline, body->island_index);
 	    }
