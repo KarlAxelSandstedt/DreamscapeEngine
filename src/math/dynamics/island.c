@@ -548,7 +548,12 @@ static u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pi
         SolverInitPositionConstraints(solver, is); 
         for (u32 i = 0; i < g_solver_config->ngs_iteration_count; ++i)
 		{
-			SolverIteratePositionConstraints(solver);
+			const u32 contacts_okay = SolverIteratePositionConstraints(solver);
+            if (contacts_okay)
+            {
+                fprintf(stderr, "epic\n");
+                break;
+            }
 		}
 
         for (u32 i = 0; i < is->body_list.count; ++i)

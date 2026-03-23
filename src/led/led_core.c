@@ -1791,7 +1791,7 @@ static void led_EngineRun(struct led *led)
 	
 	dll_Flush(&led->physics.event_list);
 
-    PhysicsPipelinePrintUsage(&led->physics);
+    //PhysicsPipelinePrintUsage(&led->physics);
 }
 
 static void led_EngineFlush(struct led *led)

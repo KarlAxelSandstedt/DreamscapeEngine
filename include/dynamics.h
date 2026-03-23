@@ -825,7 +825,7 @@ struct solver *	SolverInitBodyData(struct arena *mem, struct ds_Island *is, cons
 void 		SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Island *is);
 void 		SolverIterateVelocityConstraints(struct solver *solver);
 void        SolverInitPositionConstraints(struct solver *solver, const struct ds_Island *island);
-void 		SolverIteratePositionConstraints(struct solver *solver);
+u32 		SolverIteratePositionConstraints(struct solver *solver);
 void 		SolverWarmup(struct solver *solver, const struct ds_Island *is);
 void 		SolverCacheImpulse(struct solver *solver, const struct ds_Island *is);
 

@@ -438,13 +438,14 @@ void SolverInitPositionConstraints(struct solver *solver, const struct ds_Island
     }
 }
 
-void SolverIteratePositionConstraints(struct solver *solver)
+u32 SolverIteratePositionConstraints(struct solver *solver)
 {
     mat3ptr mi;
     mat3 mat_tmp, rot, rot_inv;
 	vec3 diff, r1, r2, rn1, rn2, tmp1, tmp2, impulse_vector;
     quat quat_tmp, quat_angle;
 
+    f32 min_separation = -F32_INFINITY;
 	for (u32 i = 0; i < solver->contact_count; ++i)
 	{
 	    struct velocityConstraint *vc = solver->vcs + i;
@@ -483,6 +484,7 @@ void SolverIteratePositionConstraints(struct solver *solver)
             Vec3Add(tmp1, r1, solver->w_center_of_mass[vc->lb1]);
             Vec3Add(tmp2, r2, solver->w_center_of_mass[vc->lb2]);
             const f32 distance = Vec3Dot(tmp2, vc->normal) - Vec3Dot(tmp1, vc->normal); 
+            min_separation = f32_max(min_separation, distance);
             const f32 biased_slop_distance = g_solver_config->baumgarte_constant * (distance + g_solver_config->linear_slop);
 
             const f32 C = f32_clamp(biased_slop_distance, -g_solver_config->max_linear_correction, 0.0f);
@@ -513,4 +515,12 @@ void SolverIteratePositionConstraints(struct solver *solver)
             QuatNormalize(solver->rotation[vc->lb2]);
         }
 	}
+
+    /* 
+     * If all penetration depths at start of iteration was smaller that 3*linear_slop, we view contacts as
+     * okay and early exit. Note that the solver target separation is -solver->linear_slop, not 0.0f. 
+     */
+    return (min_separation >= -3.0f*g_solver_config->linear_slop)
+        ? 1
+        : 0;
 }
