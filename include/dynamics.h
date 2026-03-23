@@ -205,19 +205,19 @@ void        ds_ShapeWorldTransform(ds_Transform *t, const struct ds_RigidBodyPip
  */
 struct aabb ds_ShapeWorldBbox(const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape);
 /* 
- * Test for intersection between shapes, with each shape having the given margin. returns 1 if intersecting, else 0 
+ * Test for intersection between shapes. returns 1 if intersecting, else 0 
  */
-u32	        ds_ShapeTest(const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2, const f32 margin);
+u32	        ds_ShapeTest(const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
 /* 
- * Return, if no intersection was found, the distance between shapes s1 and s2 (with no margin) and their 
- * respective closest points c1 and c2. If the shapes are intersecting, return 0.0f. 
+ * Return, if no intersection was found, the distance between shapes s1 and s2 and their respective
+ * closest points c1 and c2. If the shapes are intersecting, return 0.0f. 
  */
-f32 	    ds_ShapeDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2, const f32 margin);
+f32 	    ds_ShapeDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
 /* 
  * Returns 1 if the shapes are colliding, 0 otherwise. If a collision is found, return a contact manifold
  * with normal pointing from s1 to s2 (and set the sat_cache if non-null and applicable). 
  */
-u32         ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2, const f32 margin);
+u32         ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
 /* 
  * Return, if ray intersects shape, t such that ray.origin + t*ray.dir == closest point on shape. 
  *         Otherwise, return F32_INFINITY.
@@ -318,7 +318,8 @@ ds_ContactKey
 ds_ContactKey is the unique key for a contact, and it used in the contact database
 hash map. Since the key must be unique for a contact, we require it to be in 
 canonical form, i.e. you may always assume that body0 < body1.  The shapes are the
-subshapes of their respective bodys making contact. 
+subshapes of their respective bodys making contact. You may always assume that 
+body0 is the reference body in a contact.
 */
 struct ds_ContactKey
 {
@@ -338,22 +339,22 @@ u32                     ds_ContactKeyEquivalence(const struct ds_ContactKey *key
 /*
 ds_Contact
 ==========
-ds_Contact is the value mapped by a ds_ContactKey, and contains current and 
-cached contact data and additional list node state. 
+ds_Contact is the value mapped by a ds_ContactKey, and contains current and cached 
+contact data and additional list node state. The reference body is ALWAYS body0,
+so any cached contacts are relative to body0.
 */
 struct ds_Contact
 {
 	DLL_SLOT_STATE;		                                /* island->contact_list node            */
 	NLL_SLOT_STATE;		                                /* shape->contact_net node              */
-    u32                     generation;                 
+    u32                     generation;                 /* Slot generation used id ds_ContactId */
     struct ds_ContactKey    key;                        /* canonical-form key                   */
 	struct c_Manifold 	    cm;                         /* Current contact manifold             */
 
-
-	vec3 			        normal_cache;
-	vec3 			        tangent_cache[2];
-	vec3 			        v_cache[4];			        /* previous contact manifold vertices, 
-					        			                   or { F32_MAX, F32_MAX, F32_MAX }     */
+	vec3 			        normal_cache;               /* Cached contact normal                */
+	vec3 			        tangent_cache[2];           /* Froms Contact basis with normal      */
+	vec3 			        r1_cache[4];			    /* previous local frame arm levers      */
+    vec3                    r2_cache[4];                   
 	f32 			        tangent_impulse_cache[4][2];
 	f32 			        normal_impulse_cache[4];	/* contact_solver solution to contact 
                                                            constraint, or 0.0f                  */
@@ -722,23 +723,6 @@ contact_solver_config
 Mumerical parameters configuration for solving islands.
 */
 
-/*
- * Implementation of ([Iterative Dynamics with Temporal Coherence], Erin Catto, 2005) and
- * Box2D features.
- *
- * Planned Features:
- * (O) Block Solver
- * (O) Sleeping islands
- * (O) Friction Solver
- * () warmup impulse for contact points
- * (O) g_solver_config dampening constants (linear and angular)
- * (O) velocity biases: baumgarte bias linear slop (allowed position error we correct for, see def. in https://allenchou.net/2013/12/game-physics-resolution-contact-constraints/)
- * (O) Resitution base contacts [bounciness of objects, added to velocity bias in velocity constraint solver given
- * 	restitution threshold, see def. in https://allenchou.net/2013/12/game-physics-resolution-contact-constraints/
- * 	and box2D
- * () threshold for forces
- * (O) conditioning number of normal mass, must ensure stability.
- */
 struct solverConfig
 {
 	u32 	pgs_iteration_count;	/* velocity solver iteration count */
@@ -746,7 +730,9 @@ struct solverConfig
 	u32 	warmup_solver;		/* bool : Should warmup solver when applicable */
 	vec3 	gravity;
 	f32 	baumgarte_constant;  	/* Range[0.0, 1.0] : Determine how quickly contacts are resolved, 1.0f max speed */
-    f32     max_linear_correction;
+    f32     max_linear_correction;           /* Range[0.0, inf] : max linear correction of constraint per iteration in the position solver */
+    f32     max_linear_velocity_magnitude_inv;   /* Range[0.0, inf) :  max units (m) per second a body may travel */
+    f32     max_angular_velocity_magnitude_inv;  /* Range[0.0, inf) : max units (radians) per second a body may travel */
 	f32 	linear_dampening;	/* Range[0.0, inf] : coefficient in diff. eq. dv/dt = -coeff*v */
 	f32 	angular_dampening;	/* Range[0.0, inf] : coefficient in diff. eq. dv/dt = -coeff*v */
 	f32 	linear_slop;		/* Range[0.0, inf] : Allowed penetration before velocity steering gradually
@@ -773,7 +759,7 @@ struct solverConfig
 
 extern struct solverConfig *g_solver_config;
 
-void    SolverConfigInit(const u32 pgs_iteration_count, const u32 ngs_iteration_count, const u32 warmup_solver, const vec3 gravity, const f32 baumgarte_constant, const f32 max_linear_correction, const f32 linear_dampening, const f32 angular_dampening, const f32 linear_slop, const f32 restitution_threshold, const u32 sleep_enabled, const f32 sleep_time_threshold, const f32 sleep_linear_velocity_sq_limit, const f32 sleep_angular_velocity_sq_limit);
+void    SolverConfigInit(const u32 pgs_iteration_count, const u32 ngs_iteration_count, const u32 warmup_solver, const vec3 gravity, const f32 baumgarte_constant, const f32 max_linear_correction, const f32 max_linear_velocity_magnitude, const f32 max_angular_velocity_magnitude, const f32 linear_dampening, const f32 angular_dampening, const f32 linear_slop, const f32 restitution_threshold, const u32 sleep_enabled, const f32 sleep_time_threshold, const f32 sleep_linear_velocity_sq_limit, const f32 sleep_angular_velocity_sq_limit);
 
 
 /*
@@ -781,7 +767,7 @@ void    SolverConfigInit(const u32 pgs_iteration_count, const u32 ngs_iteration_
  *
  * struct velocityConstraintPoint 	- constraint point local data (body center to manifold point, and so on)
  * struct velocityConstraint 		- contact local data (manifold normal, body indices, and so on)
- * solver->array			- shared data between contacts, i.e temporary body changes (velocities, ...)
+ * solver->array			        - shared data between contacts, i.e temporary body changes (velocities, ...)
  */
 
 /*
@@ -796,7 +782,6 @@ struct velocityConstraintPoint
 	vec3 	r1;		        /* vector from body 1's center to contact point */
 	vec3 	r2;		        /* vector from body 2's center to contact point */
 	f32 	normal_impulse;	/* Normal impulse produced by the contact       */
-    f32     target_distance;/* Initial distance + penetration depth         */
 	f32	    velocity_bias;	/* scale of velocity_bias along contact normal */
 	f32	    normal_mass;	/* 1.0f / row(J,i)*Inv(M)*J^T entry for point */
 	f32	    tangent_mass[2]; /* 1.0f / row(J_tangent,i)*Inv(M)*J_tangent^T entry for point */
@@ -842,7 +827,7 @@ struct solver *	SolverInitBodyData(struct arena *mem, struct ds_Island *is, cons
 void 		SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Island *is);
 void 		SolverIterateVelocityConstraints(struct solver *solver);
 void        SolverInitPositionConstraints(struct solver *solver, const struct ds_Island *island);
-void 		SolverIteratePositionConstraints(struct solver *solver);
+u32 		SolverIteratePositionConstraints(struct solver *solver);
 void 		SolverWarmup(struct solver *solver, const struct ds_Island *is);
 void 		SolverCacheImpulse(struct solver *solver, const struct ds_Island *is);
 

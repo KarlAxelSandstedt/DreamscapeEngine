@@ -420,16 +420,21 @@ void isdb_SplitIsland(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeli
 static void IntegrateOrientationVelocities(struct ds_Island *is, struct solver *solver, const u32 i)
 {
     /* update velocity and world center of mass */
+    const f32 div_linear = Vec3Length(solver->linear_velocity[i]) * g_solver_config->max_linear_velocity_magnitude_inv;
+    const f32 div_angular = Vec3Length(solver->angular_velocity[i]) * g_solver_config->max_angular_velocity_magnitude_inv;
+    const f32 t_linear = 1.0f / f32_clamp(div_linear, 1.0f, F32_INFINITY);
+    const f32 t_angular = 1.0f / f32_clamp(div_angular, 1.0f, F32_INFINITY);
+
 	struct ds_RigidBody *b = is->bodies[i];
-	Vec3TranslateScaled(solver->w_center_of_mass[i], solver->linear_velocity[i], solver->timestep);	
+	Vec3TranslateScaled(solver->w_center_of_mass[i], solver->linear_velocity[i], solver->timestep * t_linear);	
 	Vec3Copy(b->velocity, solver->linear_velocity[i]);	
 
     quat a_vel_quat, rot_delta;
 	Vec3Copy(b->angular_velocity, solver->angular_velocity[i]);	
 	QuatSet(a_vel_quat, 
-			solver->angular_velocity[i][0], 
-			solver->angular_velocity[i][1], 
-			solver->angular_velocity[i][2],
+			solver->angular_velocity[i][0] * t_angular, 
+			solver->angular_velocity[i][1] * t_angular, 
+			solver->angular_velocity[i][2] * t_angular,
 		      	0.0f);
 	QuatMul(rot_delta, a_vel_quat, b->t_world.rotation);
 	QuatScale(rot_delta, solver->timestep / 2.0f);
@@ -548,7 +553,11 @@ static u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pi
         SolverInitPositionConstraints(solver, is); 
         for (u32 i = 0; i < g_solver_config->ngs_iteration_count; ++i)
 		{
-			SolverIteratePositionConstraints(solver);
+			const u32 contacts_okay = SolverIteratePositionConstraints(solver);
+            if (contacts_okay)
+            {
+                break;
+            }
 		}
 
         for (u32 i = 0; i < is->body_list.count; ++i)
