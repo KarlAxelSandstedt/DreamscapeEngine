@@ -54,6 +54,9 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 	static u32 init_solver_once = 0;
 	if (!init_solver_once)
 	{
+        const f32 max_linear_velocity_magnitude = 400.0f;
+        const f32 max_angular_velocity_magnitude = 10.0f * F32_PI;
+
 		init_solver_once = 1;
 		const u32 pgs_iteration_count = 8;
 		const u32 ngs_iteration_count = 3;
@@ -69,7 +72,7 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 		const f32 sleep_time_threshold = 0.5f;
 		f32 sleep_linear_velocity_sq_limit = 0.005f*0.005f; 
 		f32 sleep_angular_velocity_sq_limit = 0.01f*0.01f*2.0f*F32_PI;
-		SolverConfigInit(pgs_iteration_count, ngs_iteration_count, warmup_solver, gravity, baumgarte_constant, max_linear_correction, linear_dampening, angular_dampening, linear_slop, restitution_threshold, sleep_enabled, sleep_time_threshold, sleep_linear_velocity_sq_limit, sleep_angular_velocity_sq_limit);
+		SolverConfigInit(pgs_iteration_count, ngs_iteration_count, warmup_solver, gravity, baumgarte_constant, max_linear_correction, max_linear_velocity_magnitude, max_angular_velocity_magnitude, linear_dampening, angular_dampening, linear_slop, restitution_threshold, sleep_enabled, sleep_time_threshold, sleep_linear_velocity_sq_limit, sleep_angular_velocity_sq_limit);
 	}
 
 	ds_AssertString(PowerOfTwoCheck(initial_size), "For simplicity of future data structures, expect pipeline sizes to be powers of two");

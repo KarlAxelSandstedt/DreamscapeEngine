@@ -730,7 +730,9 @@ struct solverConfig
 	u32 	warmup_solver;		/* bool : Should warmup solver when applicable */
 	vec3 	gravity;
 	f32 	baumgarte_constant;  	/* Range[0.0, 1.0] : Determine how quickly contacts are resolved, 1.0f max speed */
-    f32     max_linear_correction;
+    f32     max_linear_correction;           /* Range[0.0, inf] : max linear correction of constraint per iteration in the position solver */
+    f32     max_linear_velocity_magnitude_inv;   /* Range[0.0, inf) :  max units (m) per second a body may travel */
+    f32     max_angular_velocity_magnitude_inv;  /* Range[0.0, inf) : max units (radians) per second a body may travel */
 	f32 	linear_dampening;	/* Range[0.0, inf] : coefficient in diff. eq. dv/dt = -coeff*v */
 	f32 	angular_dampening;	/* Range[0.0, inf] : coefficient in diff. eq. dv/dt = -coeff*v */
 	f32 	linear_slop;		/* Range[0.0, inf] : Allowed penetration before velocity steering gradually
@@ -757,7 +759,7 @@ struct solverConfig
 
 extern struct solverConfig *g_solver_config;
 
-void    SolverConfigInit(const u32 pgs_iteration_count, const u32 ngs_iteration_count, const u32 warmup_solver, const vec3 gravity, const f32 baumgarte_constant, const f32 max_linear_correction, const f32 linear_dampening, const f32 angular_dampening, const f32 linear_slop, const f32 restitution_threshold, const u32 sleep_enabled, const f32 sleep_time_threshold, const f32 sleep_linear_velocity_sq_limit, const f32 sleep_angular_velocity_sq_limit);
+void    SolverConfigInit(const u32 pgs_iteration_count, const u32 ngs_iteration_count, const u32 warmup_solver, const vec3 gravity, const f32 baumgarte_constant, const f32 max_linear_correction, const f32 max_linear_velocity_magnitude, const f32 max_angular_velocity_magnitude, const f32 linear_dampening, const f32 angular_dampening, const f32 linear_slop, const f32 restitution_threshold, const u32 sleep_enabled, const f32 sleep_time_threshold, const f32 sleep_linear_velocity_sq_limit, const f32 sleep_angular_velocity_sq_limit);
 
 
 /*

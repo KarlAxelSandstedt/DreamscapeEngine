@@ -1635,8 +1635,12 @@ u32 c_HullSphereContact(struct arena *not_used1, struct c_Manifold *manifold, st
 		}
 
 		manifold->depth[0] = min_depth + s[1]->sphere.radius;
-		Vec3Copy(manifold->v[0], t[ref].position);
-        if (ref == 1)
+		Vec3Copy(manifold->v[0], t[1].position);
+        if (ref == 0)
+        {
+		    Vec3TranslateScaled(manifold->v[0], manifold->n, min_depth);
+        }
+        else
         {
             Vec3ScaleSelf(manifold->n, -1.0f);
 		    Vec3TranslateScaled(manifold->v[0], manifold->n, s[1]->sphere.radius);
@@ -1648,12 +1652,15 @@ u32 c_HullSphereContact(struct arena *not_used1, struct c_Manifold *manifold, st
 		contact_generated = 1;
 		manifold->v_count = 1;
 
-		Vec3Sub(manifold->n, c[inc], c[ref]);
+		Vec3Sub(manifold->n, c[1], c[0]);
 		Vec3ScaleSelf(manifold->n, 1.0f / Vec3Length(manifold->n));
+		manifold->depth[0] = s[1]->sphere.radius - (Vec3Dot(c[1], manifold->n) - Vec3Dot(c[0], manifold->n));
         Vec3Copy(manifold->v[0], c[ref]);
-
-		Vec3TranslateScaled(c[1], manifold->n, -s[1]->sphere.radius);
-		manifold->depth[0] = Vec3Dot(c[ref], manifold->n) - Vec3Dot(c[inc], manifold->n);
+        if (ref == 1)
+        {
+            Vec3ScaleSelf(manifold->n, -1.0f);
+	    	Vec3TranslateScaled(manifold->v[0], manifold->n, s[1]->sphere.radius);
+        }
 	}
 
 	return contact_generated;

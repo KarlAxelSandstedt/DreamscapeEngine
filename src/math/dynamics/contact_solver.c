@@ -29,7 +29,7 @@ struct ds_RigidBody static_body = { 0 };
 struct solverConfig config_storage = { 0 };
 struct solverConfig *g_solver_config = &config_storage;
 
-void    SolverConfigInit(const u32 pgs_iteration_count, const u32 ngs_iteration_count, const u32 warmup_solver, const vec3 gravity, const f32 baumgarte_constant, const f32 max_linear_correction, const f32 linear_dampening, const f32 angular_dampening, const f32 linear_slop, const f32 restitution_threshold, const u32 sleep_enabled, const f32 sleep_time_threshold, const f32 sleep_linear_velocity_sq_limit, const f32 sleep_angular_velocity_sq_limit)
+void SolverConfigInit(const u32 pgs_iteration_count, const u32 ngs_iteration_count, const u32 warmup_solver, const vec3 gravity, const f32 baumgarte_constant, const f32 max_linear_correction, const f32 max_linear_velocity_magnitude, const f32 max_angular_velocity_magnitude, const f32 linear_dampening, const f32 angular_dampening, const f32 linear_slop, const f32 restitution_threshold, const u32 sleep_enabled, const f32 sleep_time_threshold, const f32 sleep_linear_velocity_sq_limit, const f32 sleep_angular_velocity_sq_limit)
 {
 	ds_Assert(pgs_iteration_count >= 1);
 	ds_Assert(ngs_iteration_count >= 1);
@@ -40,6 +40,12 @@ void    SolverConfigInit(const u32 pgs_iteration_count, const u32 ngs_iteration_
 	Vec3Copy(g_solver_config->gravity, gravity);
 	g_solver_config->baumgarte_constant = baumgarte_constant;
 	g_solver_config->max_linear_correction = max_linear_correction;
+    g_solver_config->max_linear_velocity_magnitude_inv = (0.0f == max_linear_velocity_magnitude)
+                                                        ? F32_INFINITY
+                                                        : 1.0f / max_linear_velocity_magnitude;
+    g_solver_config->max_angular_velocity_magnitude_inv = (0.0f == max_angular_velocity_magnitude)
+                                                        ? F32_INFINITY
+                                                        : 1.0f / max_angular_velocity_magnitude;
 	g_solver_config->linear_dampening = linear_dampening;
 	g_solver_config->angular_dampening = angular_dampening;
 	g_solver_config->linear_slop = linear_slop;
