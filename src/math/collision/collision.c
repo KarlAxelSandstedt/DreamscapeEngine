@@ -1060,6 +1060,7 @@ static f32 gjk_DistanceSquared(vec3 c1, vec3 c2, struct gjk_Input *in1, struct g
 		 */
 		if (simplex.type == 3)
 		{
+			gjk_InternalClosestPoints(c1, c2, in1, &simplex, lambda);
 			return 0.0f;
 		}
 		else
@@ -1073,6 +1074,7 @@ static f32 gjk_DistanceSquared(vec3 c1, vec3 c2, struct gjk_Input *in1, struct g
 			dist_sq = Vec3Dot(c_v, c_v);
 			if (dist_sq <= abs_tol * ma)
 			{
+			    gjk_InternalClosestPoints(c1, c2, in1, &simplex, lambda);
 				return 0.0f;
 			}
 		}
@@ -1798,43 +1800,42 @@ u32 c_HullCapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, s
 			vec3 s_dir, diff;
 			Vec3Normalize(s_dir, cap_s.dir);
 
-			u32 fi;
+            u32 best_face = h->f_count;
 			const struct dcel *h = &s[0]->hull;
 			/* If capsule is not a point, check if it lies parallel on a face */
 			if (Vec3Dot(cap_s.dir, cap_s.dir) > COLLISION_POINT_DIST_SQ)
 			{
 			    vec3 n;
 				/* find parallel face with Vec3Dot(face_normal, segment_points) > 0.0f */
-				for (fi = 0; fi < h->f_count; ++fi)
+				const f32 d2d2 = Vec3Dot(s_dir, s_dir);
+				for (u32 fi = 0; fi < h->f_count; ++fi)
 				{
-				    const struct dcelFace *f = h->f + fi;
-					DcelFaceNormal(tmp, h, fi);
-                    Mat3VecMul(manifold->n, g1.rot, tmp); 
-
-					const f32 d1d1 = Vec3Dot(manifold->n, manifold->n);
-					const f32 d2d2 = Vec3Dot(s_dir, s_dir);
-					const f32 d1d2 = Vec3Dot(manifold->n, s_dir);
+				    struct plane pl = DcelFacePlane(h, g1.rot, g1.pos, fi);
+					const f32 d1d1 = Vec3Dot(pl.normal, pl.normal);
+					const f32 d1d2 = Vec3Dot(pl.normal, s_dir);
 					const f32 denom = d1d1*d2d2 - d1d2*d1d2;
-
-					/* denom = (1-cos(theta)^2) == 1.0f <=> capsule and face normal orthogonal */
+					/* denom = (1-cos(theta)^2) == 1.0f <=> capsule parallel with face normal orthogonal */
 					if (denom >= 1.0f - COLLISION_POINT_DIST_SQ)
 					{	
-                        Vec3Sub(diff, cap_s.p0, g1.pos);
-                        if (Vec3Dot(diff, manifold->n) > 0.0f)
+                        const f32 depth = PlanePointSignedDistance(&pl, c[0]);
+                        if (f32_abs(dist_sq - depth*depth) <= COLLISION_POINT_DIST_SQ)
                         {
-							break;
-						}
+                            Vec3Copy(manifold->n, pl.normal);
+                            best_face = fi;
+                            break;
+                        }
 					}
 				}
 			}
 
-			if (fi < h->f_count)
+			if (best_face != h->f_count)
 			{
 				manifold->v_count = 2;
 				manifold->depth[0] = s[1]->capsule.radius + Vec3Dot(manifold->n, c[0]) - Vec3Dot(manifold->n, c[1]);
 				manifold->depth[1] = manifold->depth[0];
-				Vec3Copy(manifold->v[0], cap_s.p0);
-				Vec3Copy(manifold->v[1], cap_s.p1);
+				const struct segment cap_clip = DcelFaceClipSegment(h, g1.rot, g1.pos, best_face, &cap_s);
+				Vec3Copy(manifold->v[0], cap_clip.p0);
+				Vec3Copy(manifold->v[1], cap_clip.p1);
                 if (ref == 0)
                 {
 				    Vec3TranslateScaled(manifold->v[0], manifold->n, -s[1]->capsule.radius + manifold->depth[0]);
@@ -1846,6 +1847,7 @@ u32 c_HullCapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, s
 				    Vec3TranslateScaled(manifold->v[0], manifold->n, s[1]->capsule.radius);
 				    Vec3TranslateScaled(manifold->v[1], manifold->n, s[1]->capsule.radius);
                 }
+                COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(manifold->v[0], manifold->v[1]), Vec4Inline(0.1f, 0.6f, 0.9f, 1.0f));
 			}
 			else
 			{
