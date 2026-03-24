@@ -42,14 +42,14 @@ bounding volume hierarchy
 struct bvhNode
 {
 	BT_SLOT_STATE;
-	struct aabb	bbox;
+	struct aabb bbox;
 };
 
 struct bvh
 {
 	struct bt		tree;
 	struct minQueue	cost_queue;	/* dynamic specific */
-	u32			heap_allocated;
+	u32			    heap_allocated;
 };
 
 /* free allocated resources */
@@ -68,29 +68,29 @@ struct dbvhOverlap
 	u32 id2;	
 };
 
-struct bvh		DbvhAlloc(struct arena *mem, const u32 initial_length, const u32 growable);
+struct bvh		    DbvhAlloc(struct arena *mem, const u32 initial_length, const u32 growable);
 /* flush / reset the hierarchy  */
-void 			DbvhFlush(struct bvh *bvh);
+void 			    DbvhFlush(struct bvh *bvh);
 /* id is an integer identifier from the outside, return index of added value */
-u32 			DbvhInsert(struct bvh *bvh, const u32 id, const struct aabb *bbox);
+u32 			    DbvhInsert(struct bvh *bvh, const u32 id, const struct aabb *bbox);
 /* remove leaf corresponding to index from tree */
-void 			DbvhRemove(struct bvh *bvh, const u32 index);
+void 			    DbvhRemove(struct bvh *bvh, const u32 index);
 /* Return overlapping ids ptr, set to NULL if no overlap. if overlap, count is set */
-struct dbvhOverlap *	DbvhPushOverlapPairs(struct arena *mem, u32 *count, const struct bvh *bvh);
+struct dbvhOverlap *DbvhPushOverlapPairs(struct arena *mem, u32 *count, const struct bvh *bvh);
 /* push	id:s of leaves hit by raycast. returns number of hits. -1 == out of memory */
 
 struct triMeshBvh
 {
 	const struct triMesh *	mesh;		
-	struct bvh		bvh;
-	u32 *			tri;		
-	u32			tri_count;	
+	struct bvh		        bvh;
+	u32 *			        tri;		
+	u32			            tri_count;	
 };
 
 /* Return non-empty tri_mesh_bvh on success. */
-struct triMeshBvh 	TriMeshBvhConstruct(struct arena *mem, const struct triMesh *mesh, const u32 bin_count);
+struct triMeshBvh   TriMeshBvhConstruct(struct arena *mem, const struct triMesh *mesh, const u32 bin_count);
 /* Return (index, ray hit parameter) on closest hit, or (U32_MAX, F32_INFINITY) on no hit */
-u32f32 			TriMeshBvhRaycast(struct arena *tmp, const struct triMeshBvh *mesh_bvh, const struct ray *ray);
+u32f32 			    TriMeshBvhRaycast(struct arena *tmp, const struct triMeshBvh *mesh_bvh, const struct ray *ray);
 
 
 /*

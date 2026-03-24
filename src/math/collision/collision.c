@@ -995,7 +995,7 @@ static u32 gjk_InternalSupport(vec3 support, const vec3 dir, struct gjk_Input *i
 
 }
 
-static f32 gjk_DistanceSquared(vec3 c1, vec3 c2, struct gjk_Input *in1, struct gjk_Input *in2)
+static f32 gjk_DistanceSquared(vec3 c1, vec3 c2, struct gjk_Simplex *simplex, struct gjk_Input *in1, struct gjk_Input *in2)
 {
 	ds_Assert(in1->v_count > 0);
 	ds_Assert(in2->v_count > 0);
@@ -1003,7 +1003,7 @@ static f32 gjk_DistanceSquared(vec3 c1, vec3 c2, struct gjk_Input *in1, struct g
 	const f32 abs_tol = 100.0f * F32_EPSILON;
 	const f32 tol = 100.0f * F32_EPSILON;
 
-	struct gjk_Simplex simplex = gjk_InternalSimplexInit();
+	*simplex = gjk_InternalSimplexInit();
 	vec3 dir, c_v, tmp, s1, s2;
 	vec4 lambda;
 	u64 support_id;
@@ -1019,22 +1019,22 @@ static f32 gjk_DistanceSquared(vec3 c1, vec3 c2, struct gjk_Input *in1, struct g
 	const u32 max_iter = 128;
 	for (u32 i = 0; i < max_iter; ++i)
 	{
-		simplex.type += 1;
+		simplex->type += 1;
 		Vec3Scale(dir, c_v, -1.0f);
 
 		const u32 i1 = gjk_InternalSupport(s1, dir, in1);
 		Vec3Negate(tmp, dir);
 		const u32 i2 = gjk_InternalSupport(s2, tmp, in2);
-		Vec3Sub(simplex.p[simplex.type], s1, s2);
+		Vec3Sub(simplex->p[simplex->type], s1, s2);
 		support_id = ((u64) i1 << 32) | (u64) i2;
 
-		if (dist_sq - Vec3Dot(simplex.p[simplex.type], c_v) <= rel * dist_sq + abs_tol
-				|| simplex.id[0] == support_id || simplex.id[1] == support_id 
-				|| simplex.id[2] == support_id || simplex.id[3] == support_id)
+		if (dist_sq - Vec3Dot(simplex->p[simplex->type], c_v) <= rel * dist_sq + abs_tol
+				|| simplex->id[0] == support_id || simplex->id[1] == support_id 
+				|| simplex->id[2] == support_id || simplex->id[3] == support_id)
 		{
 			ds_Assert(dist_sq != F32_INFINITY);
-			simplex.type -= 1;
-			gjk_InternalClosestPoints(c1, c2, in1, &simplex, lambda);
+			simplex->type -= 1;
+			gjk_InternalClosestPoints(c1, c2, in1, simplex, lambda);
 			return dist_sq;
 		}
 
@@ -1043,38 +1043,38 @@ static f32 gjk_DistanceSquared(vec3 c1, vec3 c2, struct gjk_Input *in1, struct g
 		 * either in wrong sub-simplex being chosen, or no valid simplex at all. In that case c_v
 		 * stays the same, and we terminate the algorithm. [See page 142].
 		 */
-		if (gjk_InternalJohnsonsAlgorithm(&simplex, c_v, lambda))
+		if (gjk_InternalJohnsonsAlgorithm(simplex, c_v, lambda))
 		{
 			ds_Assert(dist_sq != F32_INFINITY);
-			simplex.type -= 1;
-			gjk_InternalClosestPoints(c1, c2, in1, &simplex, lambda);
+			simplex->type -= 1;
+			gjk_InternalClosestPoints(c1, c2, in1, simplex, lambda);
 			return dist_sq;
 		}
 
-		simplex.id[simplex.type] = support_id;
-		simplex.dot[simplex.type] = Vec3Dot(simplex.p[simplex.type], simplex.p[simplex.type]);
+		simplex->id[simplex->type] = support_id;
+		simplex->dot[simplex->type] = Vec3Dot(simplex->p[simplex->type], simplex->p[simplex->type]);
 
 		/* 
 		 * If the simplex is of type 3, or a tetrahedron, we have encapsulated 0, or, if v is sufficiently
 		 * close to the origin, within a margin of error, return an intersection.
 		 */
-		if (simplex.type == 3)
+		if (simplex->type == 3)
 		{
-			gjk_InternalClosestPoints(c1, c2, in1, &simplex, lambda);
+			gjk_InternalClosestPoints(c1, c2, in1, simplex, lambda);
 			return 0.0f;
 		}
 		else
 		{
-			ma = simplex.dot[0];
-			ma = f32_max(ma, simplex.dot[1]);
-			ma = f32_max(ma, simplex.dot[2]);
-			ma = f32_max(ma, simplex.dot[3]);
+			ma = simplex->dot[0];
+			ma = f32_max(ma, simplex->dot[1]);
+			ma = f32_max(ma, simplex->dot[2]);
+			ma = f32_max(ma, simplex->dot[3]);
 
 			/* For error bound discussion, see sections 4.3.5, 4.3.6 */
 			dist_sq = Vec3Dot(c_v, c_v);
 			if (dist_sq <= abs_tol * ma)
 			{
-			    gjk_InternalClosestPoints(c1, c2, in1, &simplex, lambda);
+			    gjk_InternalClosestPoints(c1, c2, in1, simplex, lambda);
 				return 0.0f;
 			}
 		}
@@ -1272,7 +1272,8 @@ f32 c_HullSphereDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Tr
 	Vec3Copy(g2.pos, t2->position);
 	Mat3Identity(g2.rot);
 
-	f32 dist_sq = gjk_DistanceSquared(c1, c2, &g1, &g2);
+    struct gjk_Simplex simplex;
+	f32 dist_sq = gjk_DistanceSquared(c1, c2, &simplex, &g1, &g2);
 	const f32 r_sum = s2->sphere.radius;
 
 	if (dist_sq <= r_sum*r_sum)
@@ -1305,7 +1306,8 @@ f32 c_HullCapsuleDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_T
 	Vec3Copy(g2.pos, t2->position);
 	Mat3Quat(g1.rot, t2->rotation);
 
-	f32 dist_sq = gjk_DistanceSquared(c1, c2, &g1, &g2);
+    struct gjk_Simplex simplex;
+	f32 dist_sq = gjk_DistanceSquared(c1, c2, &simplex, &g1, &g2);
 	const f32 r_sum = s2->capsule.radius;
 
 	if (dist_sq <= r_sum*r_sum)
@@ -1337,7 +1339,8 @@ f32 c_HullDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transfor
 	Vec3Copy(g2.pos, t2->position);
 	Mat3Quat(g2.rot, t2->rotation);
 
-	f32 dist_sq = gjk_DistanceSquared(c1, c2, &g1, &g2);
+    struct gjk_Simplex simplex;
+	f32 dist_sq = gjk_DistanceSquared(c1, c2, &simplex, &g1, &g2);
 	if (dist_sq <= 0.0f)
 	{
 		dist_sq = 0.0f;
@@ -1605,7 +1608,8 @@ u32 c_HullSphereContact(struct arena *not_used1, struct c_Manifold *manifold, st
 	Mat3Identity(g2.rot);
 
 	vec3 c[2];
-	const f32 dist_sq = gjk_DistanceSquared(c[0], c[1], &g1, &g2);
+    struct gjk_Simplex simplex;
+	const f32 dist_sq = gjk_DistanceSquared(c[0], c[1], &simplex, &g1, &g2);
 	const f32 r_sum = s[1]->sphere.radius;
 
 	/* Deep Penetration */
@@ -1688,7 +1692,8 @@ u32 c_HullCapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, s
 	Mat3Quat(g2.rot, t[1].rotation);
 
 	vec3 c[2];
-	const f32 dist_sq = gjk_DistanceSquared(c[0], c[1], &g1, &g2);
+    struct gjk_Simplex simplex;
+	const f32 dist_sq = gjk_DistanceSquared(c[0], c[1], &simplex, &g1, &g2);
 	if (dist_sq <= s[1]->capsule.radius*s[1]->capsule.radius)
 	{
 		contact_generated = 1;
@@ -1704,9 +1709,9 @@ u32 c_HullCapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, s
 		{
             /* TODO: if p0 is outside, then p1 must be inside, can prob skip check ??? */
 		    g2.v_count = 1;
-		    const u32 cap_p0_inside = (gjk_DistanceSquared(p1, tmp, &g1, &g2) == 0.0f) ? 1 : 0;
+		    const u32 cap_p0_inside = (gjk_DistanceSquared(p1, tmp, &simplex, &g1, &g2) == 0.0f) ? 1 : 0;
 		    Vec3Copy(g2.v[0], g2.v[1]);
-		    const u32 cap_p1_inside = (gjk_DistanceSquared(p2, tmp, &g1, &g2) == 0.0f) ? 1 : 0;
+		    const u32 cap_p1_inside = (gjk_DistanceSquared(p2, tmp, &simplex, &g1, &g2) == 0.0f) ? 1 : 0;
 
 			u32 edge_best = 0; 
 			u32 best_index = 0;
@@ -2553,10 +2558,16 @@ u32 c_TriMeshBvhSphereContact(struct arena *tmp, struct c_Manifold *manifold, st
 	struct memArray arr = ArenaPushAlignedAll(tmp, sizeof(struct bvhNode *), sizeof(struct bvhNode *));
 	const struct bvhNode **node_stack = arr.addr;
 
-    //TODO 
-    //TODO 
-    //TODO 
-    //TODO Should rotate sphere into mesh lopcal space??????
+    vec3 v_tri[3], c1, c2;
+    struct gjk_Input g1 = { .v = v_tri, .v_count = 3 };
+    Vec3Copy(g1.pos, t[0].position);
+    Mat3Quat(g1.rot, t[0].rotation);
+    
+    vec3 v_sphere = VEC3_ZERO;
+    struct gjk_Input g2 = { .v = &v_sphere, .v_count = 1, };
+    Vec3Copy(g2.pos, t[1].position);
+    Mat3Identity(g2.rot);
+ 
 	if (arr.len == 0)
 	{
 		Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
@@ -2573,7 +2584,37 @@ u32 c_TriMeshBvhSphereContact(struct arena *tmp, struct c_Manifold *manifold, st
 	{
 		if (bt_LeafCheck(node_stack[sc]))
 		{
-			fprintf(stderr, "sphere hits triangle bbox\n");	
+            /*
+             * TODO:
+             * (O) Setup const shared triangle DCEL struct (shared constant storage)
+             * (O) hull-sphere gjk
+             * () Categorize { Face, edge, vertex contact }
+             * () Build void set
+             * () Sort (vertex and edge) contacts
+             * () Process contacts in sorted order, unconditionally voiding triangle features on the way
+             */
+            const struct triMesh *mesh = mesh_bvh->mesh;
+            const u32 tri_first = node_stack[sc]->bt_left;
+            const u32 tri_last = tri_first + node_stack[sc]->bt_right - 1;
+            for (u32 index = tri_first; index <= tri_last; ++index)
+            {
+                    const u32 tri = mesh_bvh->tri[index];
+                    Vec3Copy(v_tri[0], mesh->v[mesh->tri[tri][0]]);
+                    Vec3Copy(v_tri[1], mesh->v[mesh->tri[tri][1]]);
+                    Vec3Copy(v_tri[2], mesh->v[mesh->tri[tri][2]]);
+           
+                    struct gjk_Simplex simplex;
+                    f32 dist_sq = gjk_DistanceSquared(c1, c2, &simplex, &g1, &g2);
+                    if (dist_sq > sph->radius*sph->radius)
+                    {
+                            COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(c1, c2), Vec4Inline(0.8f, 0.6, 0.1f, 1.0f));
+                    }
+                    //vec3_sub(n, c2, c1);
+                    //vec3_mul_constant(n, 1.0f / vec3_length(n));
+                    //vec3_translate_scaled(c1, n, margin);
+                    //vec3_translate_scaled(c2, n, -(sph->radius + margin));
+            }
+
 		}
 		else
 		{
