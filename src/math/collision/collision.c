@@ -2604,17 +2604,20 @@ u32 c_TriMeshBvhSphereContact(struct arena *tmp, struct c_Manifold *manifold, st
                     Vec3Copy(v_tri[2], mesh->v[mesh->tri[tri][2]]);
            
                     struct gjk_Simplex simplex;
-                    f32 dist_sq = gjk_DistanceSquared(c1, c2, &simplex, &g1, &g2);
+                    const f32 dist_sq = gjk_DistanceSquared(c1, c2, &simplex, &g1, &g2);
                     if (dist_sq > sph->radius*sph->radius)
                     {
                             COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(c1, c2), Vec4Inline(0.8f, 0.6, 0.1f, 1.0f));
+                    }
+                    else
+                    {
+                            COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(c1, c2), Vec4Inline(0.8f, 0.0, 0.1f, 1.0f));
                     }
                     //vec3_sub(n, c2, c1);
                     //vec3_mul_constant(n, 1.0f / vec3_length(n));
                     //vec3_translate_scaled(c1, n, margin);
                     //vec3_translate_scaled(c2, n, -(sph->radius + margin));
             }
-
 		}
 		else
 		{
