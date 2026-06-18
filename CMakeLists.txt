@@ -10,6 +10,24 @@ set(DS_TEST_EXECUTABLE "DreamscapeTest")
 add_compile_definitions(DS_VERSION_CSTR="${CPACK_PACKAGE_VERSION}")
 add_compile_definitions(DS_EXECUTABLE_CSTR="${DS_TEST_EXECUTABLE}")
 
+if(WIN32)
+    set(LIB_PREFIX "")
+    set(SHARED_EXT ".dll")
+    set(STATIC_EXT ".lib")
+else()
+    set(LIB_PREFIX "lib")
+    set(SHARED_EXT ".so")
+    set(STATIC_EXT ".a")
+endif()
+
+#TODO REMOVE
+if (CMAKE_C_COMPILER_ID MATCHES "Clang")
+    add_compile_options(-ftime-trace)
+endif()
+
+find_package(OpenGL REQUIRED)
+find_package(Threads REQUIRED)
+
 option(DS_OPTIMIZE "DS_OPTIMIZE enables compiler optimization flags in the library. Defaults 
 		    to OFF." 
 		OFF)
@@ -43,12 +61,11 @@ option(DS_UBSAN "DS_UBSAN builds the library with undefined behaviour sanitizing
  		 to also set DS_OPTIMIZE to ON."
 		 OFF)
 
+include(ExternalProject)
+set(DS_INSTALL_PATH "${CMAKE_BINARY_DIR}/install")
 set(DS_INCLUDE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/include")
 set(DS_SRC_PATH "${CMAKE_CURRENT_SOURCE_DIR}/src")
 set(DS_LIB_PATH "${CMAKE_CURRENT_SOURCE_DIR}/lib")
-
-find_package(OpenGL REQUIRED)
-find_package(Threads REQUIRED)
 
 if (DS_PROFILE)
 	set(TRACY_ENABLE ON)

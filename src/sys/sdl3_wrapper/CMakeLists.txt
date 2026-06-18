@@ -19,5 +19,6 @@ if (DEFINED EMSCRIPTEN)
 			SDL3::Headers
 	)
 else ()
-	target_link_libraries(sdl3_wrapper PRIVATE SDL3::SDL3-shared)	
+    #target_link_libraries(sdl3_wrapper PRIVATE SDL3::SDL3-shared)	
+    target_link_libraries(sdl3_wrapper PRIVATE SDL3::SDL3)	
 endif ()

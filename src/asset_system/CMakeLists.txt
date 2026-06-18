@@ -13,7 +13,7 @@ target_include_directories(asset_system INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(asset_system 
 	PRIVATE 
 		stb_image
-		freetype
+        Freetype::Freetype
 	PUBLIC
 		Dreamscape::Platform
 	)
