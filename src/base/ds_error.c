@@ -79,33 +79,13 @@ void FatalCleanupAndExit(void)
 utf8 Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 code)
 {
 	ds_Assert(bufsize > 0);
-	utf8 err_str = 
-	{
-		.len = 0,
-		.buf = buf,
-		.size = bufsize,
-	};
 
-	const u32 status = strerror_r(code, (char *) buf, bufsize);
-	if (status != 0)
-	{
-		if (status == EINVAL)
-		{
-			LogSystemErrorCode(S_ERROR, status);
-		}
-		else if (status == ERANGE)
-		{
-			ds_Assert(0 && "increase system error string buffer size!");
-		}
-
-		return Utf8Empty();
-	}
-
-	err_str.len = strnlen((char *) err_str.buf, ERROR_BUFSIZE);
-	if (err_str.len == ERROR_BUFSIZE)
+    char tmpbuf[ERROR_BUFSIZE];
+	const char *str = strerror_r(code, (char *) tmpbuf, ERROR_BUFSIZE);
+    const utf8 err_str = Utf8CstrBuffered(buf, bufsize, str);
+	if (err_str.len == 0)
 	{
 		Log(T_SYSTEM, S_ERROR, "strnlen failed to determine string length in %s, most likely due to no null-termination? Fix.", __func__);
-		return Utf8Empty();
 	}
 
 	return err_str;

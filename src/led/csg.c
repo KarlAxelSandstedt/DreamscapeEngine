@@ -79,6 +79,8 @@ void csg_Serialize(struct ss *ss, const struct csg *csg)
 struct csg csg_Deserialize(struct arena *mem, struct ss *ss, const u32 growable)
 {
 	ds_Assert(!mem || !growable);
+
+    return (struct csg) { 0 };
 }
 
 static void csg_ApplyDelta(struct csg *csg)

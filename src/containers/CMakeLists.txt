@@ -11,15 +11,7 @@ add_library(DreamscapeContainers STATIC
 	"${DS_INCLUDE_PATH}/string_database.h"
 	"${DS_INCLUDE_PATH}/tree.h"
 	"${DS_INCLUDE_PATH}/fifo_spmc.h"
-	"ds_hash_map.c"
-	"queue.c"
-	"bit_vector.c"
-	"ds_vector.c"
-	"list.c"
-	"hierarchy_index.c"
-	"string_database.c"
-	"tree.c"
-	"parallel/fifo_spmc.c"
+	"ds_containers.c"
 )       
 add_library(Dreamscape::Containers ALIAS DreamscapeContainers)
 target_link_libraries(DreamscapeContainers PUBLIC Dreamscape::Base)

@@ -23,4 +23,4 @@ cd build
 time ninja -d explain -d stats -j$(nproc)
 ninjatracing .ninja_log > ninja_trace.json
 
-
+#NOTE: use Brave + brave://tracing to view profile graphically. 
