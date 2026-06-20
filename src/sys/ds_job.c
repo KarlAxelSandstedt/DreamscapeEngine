@@ -22,6 +22,177 @@
 #include "ds_random.h"
 #include "ds_job.h"
 
+
+static void ds_WSDequeStaticAssert(void)
+{
+    ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->a_top == 0, "");
+    ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->pad1 == 8, "");
+    ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->a_bottom == 64, "");
+    ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->pad2 == 72, "");
+    ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->a_mem_count == 128, "");
+    ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->owner == 132, "");
+    ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->pad3 == 136, "");
+    ds_StaticAssert(sizeof(struct ds_WSDeque) == 27*DS_CACHE_LINE, "Unexpected size of ds_WSDeque");
+}
+
+void ds_WSDequeAlloc(struct ds_WSDeque *deque, const u32 owner, const u64 len)
+{
+    ds_Assert(len);
+
+    deque->owner = owner;
+    deque->mem[0].len = PowerOfTwoCeil(len);
+    deque->mem[0].mask = deque->mem[0].len - 1;
+    deque->mem[0].id = ds_Alloc(&deque->mem[0].mem, deque->mem[0].len*sizeof(deque->mem[0].id), NO_HUGE_PAGES);
+    if (!deque->mem[0].id) 
+	{
+		LogString(T_SYSTEM, S_FATAL, "Failed to reallocate memSlot in ds_Alloc, exiting.");
+		FatalCleanupAndExit();
+	}
+
+    /* We begin counting from 1 and not 0 in order to prevent an underflow bug in the original paper within PopBottom. */
+    AtomicStoreRlx64(&deque->a_bottom, 1);
+    AtomicStoreRel64(&deque->a_mem_count, 1);
+    AtomicStoreRel64(&deque->a_top, 1);
+}
+
+static void ds_WSDequeRealloc(struct ds_WSDeque *deque)
+{
+    const u32 local_mem_count = AtomicLoadRlx32(&deque->a_mem_count);
+    ds_Assert(local_mem_count < 32);
+    ds_Assert(deque->mem[local_mem_count].len < (u64) 1 << 63);
+
+    deque->mem[local_mem_count].len = 2*deque->mem[local_mem_count - 1].len;
+    deque->mem[local_mem_count].mask = deque->mem[local_mem_count].len - 1;
+    deque->mem[local_mem_count].id = ds_Alloc(&deque->mem[local_mem_count].mem 
+                                              ,deque->mem[local_mem_count].len*sizeof(deque->mem[0].id)
+                                              ,NO_HUGE_PAGES);
+    if (deque->mem[local_mem_count].id)
+    {
+		LogString(T_SYSTEM, S_FATAL, "Failed to reallocate memSlot in ds_Realloc, exiting.");
+		FatalCleanupAndExit();
+    }
+
+    const u64 local_bottom = AtomicLoadRlx64(&deque->a_bottom);
+    const u64 local_top = AtomicLoadRlx64(&deque->a_top);
+    const u64 new_mask = deque->mem[local_mem_count].mask;
+    const u64 old_mask = deque->mem[local_mem_count - 1].mask;
+    for (u64 i = local_top; i < local_bottom; ++i)
+    {
+        deque->mem[local_mem_count].id[i & new_mask] = deque->mem[local_mem_count - 1].id[i & old_mask];
+    }
+
+    AtomicStoreRel32(&deque->a_mem_count, local_mem_count+1);
+}
+
+void ds_WSDequeDealloc(struct ds_WSDeque *deque)
+{
+    const u32 local_mem_count = AtomicLoadAcq32(&deque->a_mem_count);
+    for (u32 i = 0; i < local_mem_count; ++i)
+    {
+        ds_Free(&deque->mem[i].mem);
+    }
+}
+
+void ds_WSDequePushBottom(struct ds_WSDeque *deque, const u32 id)
+{
+    ds_Assert(deque->owner == ds_ThreadSelfIndex());
+
+    u64 local_mem_count = AtomicLoadRlx64(&deque->a_mem_count);
+    const u64 local_bottom = AtomicLoadRlx64(&deque->a_bottom);
+    /* Note: Paper uses Acquire here, not sure why as only a_top itself is modified by guest threads. */
+    const u64 local_top = AtomicLoadRlx64(&deque->a_top);
+    if (local_bottom - local_top >= deque->mem[local_mem_count-1].len)
+    {
+        ds_WSDequeRealloc(deque);
+        local_mem_count = AtomicLoadRlx64(&deque->a_mem_count);
+    }
+
+    const u32 index = local_bottom & deque->mem[local_mem_count-1].mask;
+    deque->mem[local_mem_count-1].id[index] = id;
+    AtomicStoreRel32(&deque->a_bottom, local_bottom+1);
+}
+
+u32 ds_WSDequeTryPopBottom(struct ds_WSDeque *deque)
+{
+    ds_Assert(deque->owner == ds_ThreadSelfIndex());
+
+    const u64 local_bottom_t0 = AtomicLoadRlx64(&deque->a_bottom) - 1;
+    const u32 local_mem_count = AtomicLoadRlx32(&deque->a_mem_count);
+
+    /*
+     * In order to get a correct lower-bound of elements in the snapshot at time t0, we must enforce
+     * the instruction (and memory) order
+     *              (1) store: a_bottom = local_bottom_t0 
+     *              (2)  load: local_top = a_top;
+     *
+     * The lower-bound of elements in the deque at t0 then becomes
+     *
+     *      local_bottom_t0 - local_top_t0 >= local_bottom_t0 - local_top_t1, 
+     *
+     * which enables the safe CAS-less pop for the common case of a filled Deque.
+     * TODO: Seem to be some crazy links here with stealer's Fence in PopBottom.
+     */
+    AtomicStoreRlx64(&deque->a_bottom, local_bottom_t0);
+    ds_MemoryFenceSeqCst;
+    u64 local_top_t1 = AtomicLoadAcq64(&deque->a_top);
+
+    u32 id = DS_WSDEQUE_INVALID;
+    if (local_top_t1 <= local_bottom_t0)
+    {
+        const struct ds_WSDequeMem *mem = deque->mem + local_mem_count - 1;
+        id = mem->id[local_bottom_t0 & mem->mask];
+        if (local_top_t1 == local_bottom_t0)
+        {
+            /* We contend with stealers for the last element */
+            //TODO why seq_cst on success?
+            if (!AtomicCompareExchangeSeqCstRlx64(&deque->a_top, &local_top_t1, local_top_t1+1))
+            {
+                id = DS_WSDEQUE_INVALID;
+            }
+            AtomicStoreRlx64(&deque->a_bottom, local_bottom_t0 + 1);
+        }
+    }
+    else
+    {
+        AtomicStoreRlx64(&deque->a_bottom, local_bottom_t0 + 1);
+    }
+
+
+    return id;
+}
+
+u32 ds_WSDequeTrySteal(struct ds_WSDeque *deque)
+{
+    u32 id = DS_WSDEQUE_INVALID;
+    u64 local_top = AtomicLoadRlx64(&deque->a_top);
+    /*
+     * TODO Hmm.. me no understand the necessity but experts say...
+     * Seem to be some crazy links here with the owner's Fence in PopBottom.
+     */
+    ds_MemoryFenceSeqCst;
+    const u64 local_bottom = AtomicLoadAcq64(&deque->a_bottom);
+    const u64 count = local_bottom - local_top;
+    if (count)
+    {
+        /* 
+         * At this point, owner may have allocated new memory so our acquisition of a_bottom 
+         * may not be enough, thus we require a Aquire load here. 
+         */
+        const u32 local_mem_count = AtomicLoadAcq32(&deque->a_mem_count);
+        const struct ds_WSDequeMem *mem = deque->mem + local_mem_count - 1;
+        id = mem->id[local_top];
+        //TODO why SeqCstRlx?
+        if (!AtomicCompareExchangeSeqCstRlx64(&deque->a_top, &local_top, local_top+1))
+        {
+            id = DS_WSDEQUE_INVALID;
+        }
+    }
+
+    return id;
+}
+
+
+
 struct task_context t_ctx;
 struct task_context *g_task_ctx = &t_ctx;
 

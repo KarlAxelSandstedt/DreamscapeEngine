@@ -62,9 +62,9 @@ Thread-safe fixed size block allocator.
 struct threadBlockAllocator
 {
 	/* pads for 64 and 128 cachelines */
-	u8				pad1[DS_CACHE_LINE_UB];
-	ds_Align(DS_CACHE_LINE_UB) u64	a_next;
-	u8				pad2[DS_CACHE_LINE_UB];
+	u8				pad1[DS_CACHE_LINE];
+	ds_Align(DS_CACHE_LINE) u64	a_next;
+	u8				pad2[DS_CACHE_LINE];
 	u8 *				block;
 	u64				block_size;
 	u64				max_count;
@@ -131,7 +131,7 @@ not as a requirement the platform must adhere to.
  * Return a (at least) page size aligned allocation with at least size bytes. If huge_pages is true, the 
  * kernel is advised to use huge pages in the allocation. On success, the function sets the input memSlot
  * and returns a non-NULL valid memory address. On failure, the function returns NULL, and sets 
- * slot->address = NULL * and slot->size = 0;
+ * slot->address = NULL and slot->size = 0;
  */
 void *	ds_Alloc(struct ds_MemSlot *slot, const u64 size, const u32 huge_pages);
 /* 
