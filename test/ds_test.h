@@ -233,6 +233,7 @@ extern struct suite_Performance *rng_performance_suite;
 extern struct suite_Performance *serialize_performance_suite;
 extern struct suite_Performance *allocator_performance_suite;
 extern struct suite_Performance *THashMap_performance_suite;
+extern struct suite_Performance *jobscheduler_performance_suite;
 
 //extern struct suite_Correctness *array_list_suite;
 //extern struct suite_Correctness *hierarchy_index_suite;
@@ -241,5 +242,6 @@ extern struct suite_Correctness *allocator_correctness_suite;
 extern struct suite_Correctness *kas_string_correctness_suite;
 extern struct suite_Correctness *serialize_correctness_suite;
 extern struct suite_Correctness *THashMap_correctness_suite;
+extern struct suite_Correctness *jobscheduler_correctness_suite;
 
 #endif

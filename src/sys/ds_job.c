@@ -42,7 +42,7 @@ void ds_WSDequeAlloc(struct ds_WSDeque *deque, const u32 owner, const u64 len)
     deque->owner = owner;
     deque->mem[0].len = PowerOfTwoCeil(len);
     deque->mem[0].mask = deque->mem[0].len - 1;
-    deque->mem[0].id = ds_Alloc(&deque->mem[0].mem, deque->mem[0].len*sizeof(deque->mem[0].id), NO_HUGE_PAGES);
+    deque->mem[0].id = ds_Alloc(&deque->mem[0].mem, deque->mem[0].len*sizeof(deque->mem[0].id[0]), NO_HUGE_PAGES);
     if (!deque->mem[0].id) 
 	{
 		LogString(T_SYSTEM, S_FATAL, "Failed to reallocate memSlot in ds_Alloc, exiting.");
@@ -51,7 +51,7 @@ void ds_WSDequeAlloc(struct ds_WSDeque *deque, const u32 owner, const u64 len)
 
     /* We begin counting from 1 and not 0 in order to prevent an underflow bug in the original paper within PopBottom. */
     AtomicStoreRlx64(&deque->a_bottom, 1);
-    AtomicStoreRel64(&deque->a_mem_count, 1);
+    AtomicStoreRel32(&deque->a_mem_count, 1);
     AtomicStoreRel64(&deque->a_top, 1);
 }
 
@@ -59,14 +59,14 @@ static void ds_WSDequeRealloc(struct ds_WSDeque *deque)
 {
     const u32 local_mem_count = AtomicLoadRlx32(&deque->a_mem_count);
     ds_Assert(local_mem_count < 32);
-    ds_Assert(deque->mem[local_mem_count].len < (u64) 1 << 63);
+    ds_Assert(deque->mem[local_mem_count-1].len < (u64) 1 << 63);
 
     deque->mem[local_mem_count].len = 2*deque->mem[local_mem_count - 1].len;
     deque->mem[local_mem_count].mask = deque->mem[local_mem_count].len - 1;
     deque->mem[local_mem_count].id = ds_Alloc(&deque->mem[local_mem_count].mem 
-                                              ,deque->mem[local_mem_count].len*sizeof(deque->mem[0].id)
+                                              ,deque->mem[local_mem_count].len*sizeof(deque->mem[0].id[0])
                                               ,NO_HUGE_PAGES);
-    if (deque->mem[local_mem_count].id)
+    if (!deque->mem[local_mem_count].id)
     {
 		LogString(T_SYSTEM, S_FATAL, "Failed to reallocate memSlot in ds_Realloc, exiting.");
 		FatalCleanupAndExit();
@@ -78,7 +78,8 @@ static void ds_WSDequeRealloc(struct ds_WSDeque *deque)
     const u64 old_mask = deque->mem[local_mem_count - 1].mask;
     for (u64 i = local_top; i < local_bottom; ++i)
     {
-        deque->mem[local_mem_count].id[i & new_mask] = deque->mem[local_mem_count - 1].id[i & old_mask];
+        AtomicStoreRlx32(&deque->mem[local_mem_count].id[i & new_mask]
+                        , deque->mem[local_mem_count - 1].id[i & old_mask]);
     }
 
     AtomicStoreRel32(&deque->a_mem_count, local_mem_count+1);
@@ -87,6 +88,11 @@ static void ds_WSDequeRealloc(struct ds_WSDeque *deque)
 void ds_WSDequeDealloc(struct ds_WSDeque *deque)
 {
     const u32 local_mem_count = AtomicLoadAcq32(&deque->a_mem_count);
+    if (1 < local_mem_count)
+    {
+        Log(T_SYSTEM, S_WARNING, "ds_WSDeque has been reallocated, largest size used: %lu. Since memory is not reclaimed, consider tuning the initial size.", deque->mem[local_mem_count-1].len);
+    }
+
     for (u32 i = 0; i < local_mem_count; ++i)
     {
         ds_Free(&deque->mem[i].mem);
@@ -97,19 +103,19 @@ void ds_WSDequePushBottom(struct ds_WSDeque *deque, const u32 id)
 {
     ds_Assert(deque->owner == ds_ThreadSelfIndex());
 
-    u64 local_mem_count = AtomicLoadRlx64(&deque->a_mem_count);
+    u32 local_mem_count = AtomicLoadRlx32(&deque->a_mem_count);
     const u64 local_bottom = AtomicLoadRlx64(&deque->a_bottom);
     /* Note: Paper uses Acquire here, not sure why as only a_top itself is modified by guest threads. */
     const u64 local_top = AtomicLoadRlx64(&deque->a_top);
     if (local_bottom - local_top >= deque->mem[local_mem_count-1].len)
     {
         ds_WSDequeRealloc(deque);
-        local_mem_count = AtomicLoadRlx64(&deque->a_mem_count);
+        local_mem_count = AtomicLoadRlx32(&deque->a_mem_count);
     }
 
     const u32 index = local_bottom & deque->mem[local_mem_count-1].mask;
-    deque->mem[local_mem_count-1].id[index] = id;
-    AtomicStoreRel32(&deque->a_bottom, local_bottom+1);
+    AtomicStoreRlx32(&deque->mem[local_mem_count-1].id[index], id);
+    AtomicStoreRel64(&deque->a_bottom, local_bottom+1);
 }
 
 u32 ds_WSDequeTryPopBottom(struct ds_WSDeque *deque)
@@ -123,7 +129,7 @@ u32 ds_WSDequeTryPopBottom(struct ds_WSDeque *deque)
      * In order to get a correct lower-bound of elements in the snapshot at time t0, we must enforce
      * the instruction (and memory) order
      *              (1) store: a_bottom = local_bottom_t0 
-     *              (2)  load: local_top = a_top;
+     *              (2)  load: local_top_t1 = a_top;
      *
      * The lower-bound of elements in the deque at t0 then becomes
      *
@@ -134,13 +140,13 @@ u32 ds_WSDequeTryPopBottom(struct ds_WSDeque *deque)
      */
     AtomicStoreRlx64(&deque->a_bottom, local_bottom_t0);
     ds_MemoryFenceSeqCst;
-    u64 local_top_t1 = AtomicLoadAcq64(&deque->a_top);
+    u64 local_top_t1 = AtomicLoadRlx64(&deque->a_top);
 
     u32 id = DS_WSDEQUE_INVALID;
     if (local_top_t1 <= local_bottom_t0)
     {
         const struct ds_WSDequeMem *mem = deque->mem + local_mem_count - 1;
-        id = mem->id[local_bottom_t0 & mem->mask];
+        id = AtomicLoadRlx32(&mem->id[local_bottom_t0 & mem->mask]);
         if (local_top_t1 == local_bottom_t0)
         {
             /* We contend with stealers for the last element */
@@ -171,8 +177,7 @@ u32 ds_WSDequeTrySteal(struct ds_WSDeque *deque)
      */
     ds_MemoryFenceSeqCst;
     const u64 local_bottom = AtomicLoadAcq64(&deque->a_bottom);
-    const u64 count = local_bottom - local_top;
-    if (count)
+    if (local_top < local_bottom)
     {
         /* 
          * At this point, owner may have allocated new memory so our acquisition of a_bottom 
@@ -180,7 +185,7 @@ u32 ds_WSDequeTrySteal(struct ds_WSDeque *deque)
          */
         const u32 local_mem_count = AtomicLoadAcq32(&deque->a_mem_count);
         const struct ds_WSDequeMem *mem = deque->mem + local_mem_count - 1;
-        id = mem->id[local_top];
+        id = AtomicLoadRlx32(&mem->id[local_top & mem->mask]);
         //TODO why SeqCstRlx?
         if (!AtomicCompareExchangeSeqCstRlx64(&deque->a_top, &local_top, local_top+1))
         {

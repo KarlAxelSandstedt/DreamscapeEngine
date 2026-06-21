@@ -27,8 +27,8 @@ extern "C" {
 #include "ds_define.h"
 
 #include <stdatomic.h>
-#define ds_MemoryFenceAcq     atomic_thread_fence(memory_order_acquire)
-#define ds_MemoryFenceRel     atomic_thread_fence(memory_order_release)
+#define ds_MemoryFenceAcquire atomic_thread_fence(memory_order_acquire)
+#define ds_MemoryFenceRelease atomic_thread_fence(memory_order_release)
 #define ds_MemoryFenceAcqRel  atomic_thread_fence(memory_order_acq_rel)
 #define ds_MemoryFenceSeqCst  atomic_thread_fence(memory_order_seq_cst)
 
