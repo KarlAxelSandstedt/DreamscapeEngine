@@ -33,6 +33,7 @@ extern "C" {
 #include "ds_error.h"
 #include "ds_arch.h"
 #include "ds_time.h"
+#include "ds_semaphore.h"
 #include "ds_thread.h"
 #include "ds_log.h"
 

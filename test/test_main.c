@@ -106,7 +106,7 @@ static void run_performance_suite(struct suite_Performance *suite)
 	fprintf(stdout, ":::::::::: Running peformance suite %s ::::::::::\n", suite->id);
 
 	//const u64 max_time_without_improvement = 10*TscFrequency();
-	const u64 max_time_without_improvement = 1000*TscFrequency();
+	const u64 max_time_without_improvement = 100*TscFrequency();
 	struct rt tester;
 	struct arena mem = ArenaAlloc1MB();
 

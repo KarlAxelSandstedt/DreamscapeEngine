@@ -54,15 +54,11 @@ void ds_WSDequeTest(void *void_pool)
     }
 
     u64 local_sum = 0;
-    u64 local_top = 0;
-    u64 local_bottom = 0;
     u32 local_inc = 0;
     u32 its = 0;
     do
     {
-         local_bottom = AtomicLoadRlx64(&g_deque.a_bottom);
-         local_top = AtomicLoadRlx64(&g_deque.a_top);
-         const u32 id = (ds_ThreadSelfIndex() == 0)
+         const ds_JobId id = (ds_ThreadSelfIndex() == 0)
                             ? ds_WSDequeTryPopBottom(&g_deque)
                             : ds_WSDequeTrySteal(&g_deque);
 
@@ -71,7 +67,7 @@ void ds_WSDequeTest(void *void_pool)
          //   fprintf(stderr, "(%lu, %lu): %u\n", local_top, AtomicLoadRlx64(&g_deque.a_bottom), id);
          //}
         
-        if (id != DS_WSDEQUE_INVALID)
+        if (id != DS_JOB_ID_NULL)
         {
             local_sum += id;
             local_inc += 1;

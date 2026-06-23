@@ -30,6 +30,7 @@ extern "C" {
 #include "collision.h"
 #include "ds_hash_map.h"
 #include "bit_vector.h"
+#include "ds_job.h"
 
 //TODO 
 struct ds_RigidBodyPipeline;
@@ -832,6 +833,49 @@ void 		SolverWarmup(struct solver *solver, const struct ds_Island *is);
 void 		SolverCacheImpulse(struct solver *solver, const struct ds_Island *is);
 
 /*
+ds_CollisionJobPhase
+====================
+*/
+
+enum ds_CollisionJobType
+{
+    COLLISION_JOB_SEED,
+    COLLISION_JOB_NARROWPHASE,
+    COLLISION_JOB_COUNT
+};
+
+struct ds_NarrowPhaseSeedJob
+{
+    u32 low;    /* inclusive */
+    u32 high;   /* exclusive */
+};
+
+struct ds_NarrowPhaseJob 
+{
+    struct ds_ContactKey        key;
+
+	struct c_Manifold           manifold;
+    struct sat_Cache *          cache;
+    u32                         collision;
+    u32                         cache_index;
+    u32                         valid;
+    u8                          pad[8];
+};
+
+struct ds_CollisionJobPhase
+{
+    struct ds_JobPhase              phase;
+
+    struct ds_RigidBodyPipeline *   pipeline;
+    struct dbvhOverlap *            overlap;
+
+    struct ds_NarrowPhaseSeedJob *  seed_jobs;
+    struct ds_NarrowPhaseJob *      narrowphase_jobs;
+    u32                             narrowphase_count_max;
+    u32                             seed_count_max;
+};
+
+/*
 =================================================================================================================
 |						Physics Pipeline			  	      	    	|
 =================================================================================================================
@@ -985,6 +1029,8 @@ struct ds_RigidBodyPipeline
 
 	u32			    margin_on;
 	f32			    margin;
+
+    struct ds_CollisionJobPhase *cd_jobs;
 };
 
 /**************** PHYISCS PIPELINE API ****************/

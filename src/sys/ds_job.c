@@ -23,16 +23,46 @@
 #include "ds_job.h"
 
 
+struct ds_JobScheduler *g_scheduler = NULL;
+
 static void ds_WSDequeStaticAssert(void)
 {
     ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->a_top == 0, "");
-    ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->pad1 == 8, "");
     ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->a_bottom == 64, "");
-    ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->pad2 == 72, "");
     ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->a_mem_count == 128, "");
     ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->owner == 132, "");
-    ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->pad3 == 136, "");
     ds_StaticAssert(sizeof(struct ds_WSDeque) == 27*DS_CACHE_LINE, "Unexpected size of ds_WSDeque");
+}
+
+static void ds_WorkerStaticAssert(void)
+{
+    ds_StaticAssert((u64) &((struct ds_Worker *)0)->mem_frame == 0, "");
+    ds_StaticAssert((u64) &((struct ds_Worker *)0)->thr == 56, "");
+    ds_StaticAssert((u64) &((struct ds_Worker *)0)->a_mem_frame_clear == 64, "");
+    ds_StaticAssert(sizeof(struct ds_Worker) == 2*DS_CACHE_LINE, "Unexpected size of ds_Worker");
+}
+
+static void ds_JobSchedulerStaticAssert(void)
+{
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->worker == 0, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->deque == 8, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->worker_count == 16, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->a_running == 20, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->phase == 24, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->jobs_are_available == 64, "");
+    ds_StaticAssert(sizeof(struct ds_JobScheduler) == 2*DS_CACHE_LINE, "Unexpected size of ds_JobScheduler");
+}
+
+static void ds_JobPhaseStaticAssert(void)
+{
+    ds_StaticAssert((u64) &((struct ds_JobPhase *)0)->a_jobs_remaining == 64, "");
+    ds_StaticAssert(sizeof(struct ds_JobPhase) == 2*DS_CACHE_LINE, "Unexpected size of ds_JobPhase");
+}
+
+static void ds_PaddedCounterStaticAssert(void)
+{
+    ds_StaticAssert((u64) &((struct ds_PaddedCounter *)0)->a_counter == 0, "");
+    ds_StaticAssert(sizeof(struct ds_PaddedCounter) == DS_CACHE_LINE, "Unexpected size of ds_PaddedCounter");
 }
 
 void ds_WSDequeAlloc(struct ds_WSDeque *deque, const u32 owner, const u64 len)
@@ -42,7 +72,7 @@ void ds_WSDequeAlloc(struct ds_WSDeque *deque, const u32 owner, const u64 len)
     deque->owner = owner;
     deque->mem[0].len = PowerOfTwoCeil(len);
     deque->mem[0].mask = deque->mem[0].len - 1;
-    deque->mem[0].id = ds_Alloc(&deque->mem[0].mem, deque->mem[0].len*sizeof(deque->mem[0].id[0]), NO_HUGE_PAGES);
+    deque->mem[0].id = ds_Alloc(&deque->mem[0].mem, deque->mem[0].len*sizeof(ds_JobId), NO_HUGE_PAGES);
     if (!deque->mem[0].id) 
 	{
 		LogString(T_SYSTEM, S_FATAL, "Failed to reallocate memSlot in ds_Alloc, exiting.");
@@ -64,7 +94,7 @@ static void ds_WSDequeRealloc(struct ds_WSDeque *deque)
     deque->mem[local_mem_count].len = 2*deque->mem[local_mem_count - 1].len;
     deque->mem[local_mem_count].mask = deque->mem[local_mem_count].len - 1;
     deque->mem[local_mem_count].id = ds_Alloc(&deque->mem[local_mem_count].mem 
-                                              ,deque->mem[local_mem_count].len*sizeof(deque->mem[0].id[0])
+                                              ,deque->mem[local_mem_count].len*sizeof(ds_JobId)
                                               ,NO_HUGE_PAGES);
     if (!deque->mem[local_mem_count].id)
     {
@@ -99,9 +129,9 @@ void ds_WSDequeDealloc(struct ds_WSDeque *deque)
     }
 }
 
-void ds_WSDequePushBottom(struct ds_WSDeque *deque, const u32 id)
+void ds_WSDequePushBottom(struct ds_WSDeque *deque, const ds_JobId id)
 {
-    ds_Assert(deque->owner == ds_ThreadSelfIndex());
+    ds_Assert(deque->owner == ds_ThreadSelfIndex() || 0 == ds_ThreadSelfIndex());
 
     u32 local_mem_count = AtomicLoadRlx32(&deque->a_mem_count);
     const u64 local_bottom = AtomicLoadRlx64(&deque->a_bottom);
@@ -118,7 +148,7 @@ void ds_WSDequePushBottom(struct ds_WSDeque *deque, const u32 id)
     AtomicStoreRel64(&deque->a_bottom, local_bottom+1);
 }
 
-u32 ds_WSDequeTryPopBottom(struct ds_WSDeque *deque)
+ds_JobId ds_WSDequeTryPopBottom(struct ds_WSDeque *deque)
 {
     ds_Assert(deque->owner == ds_ThreadSelfIndex());
 
@@ -142,7 +172,7 @@ u32 ds_WSDequeTryPopBottom(struct ds_WSDeque *deque)
     ds_MemoryFenceSeqCst;
     u64 local_top_t1 = AtomicLoadRlx64(&deque->a_top);
 
-    u32 id = DS_WSDEQUE_INVALID;
+    ds_JobId id = DS_JOB_ID_EMPTY;
     if (local_top_t1 <= local_bottom_t0)
     {
         const struct ds_WSDequeMem *mem = deque->mem + local_mem_count - 1;
@@ -153,7 +183,7 @@ u32 ds_WSDequeTryPopBottom(struct ds_WSDeque *deque)
             //TODO why seq_cst on success?
             if (!AtomicCompareExchangeSeqCstRlx64(&deque->a_top, &local_top_t1, local_top_t1+1))
             {
-                id = DS_WSDEQUE_INVALID;
+                id = DS_JOB_ID_NULL;
             }
             AtomicStoreRlx64(&deque->a_bottom, local_bottom_t0 + 1);
         }
@@ -163,13 +193,12 @@ u32 ds_WSDequeTryPopBottom(struct ds_WSDeque *deque)
         AtomicStoreRlx64(&deque->a_bottom, local_bottom_t0 + 1);
     }
 
-
     return id;
 }
 
-u32 ds_WSDequeTrySteal(struct ds_WSDeque *deque)
+ds_JobId ds_WSDequeTrySteal(struct ds_WSDeque *deque)
 {
-    u32 id = DS_WSDEQUE_INVALID;
+    u32 id = DS_JOB_ID_NULL;
     u64 local_top = AtomicLoadRlx64(&deque->a_top);
     /*
      * TODO Hmm.. me no understand the necessity but experts say...
@@ -189,21 +218,216 @@ u32 ds_WSDequeTrySteal(struct ds_WSDeque *deque)
         //TODO why SeqCstRlx?
         if (!AtomicCompareExchangeSeqCstRlx64(&deque->a_top, &local_top, local_top+1))
         {
-            id = DS_WSDEQUE_INVALID;
+            id = DS_JOB_ID_NULL;
         }
     }
 
     return id;
 }
 
+void ds_WorkerMain(dsThread *thr)
+{
+	struct ds_Worker *w = ds_ThreadArguments(thr);
+	ThreadXoshiro256InitSequence();
+
+	while (AtomicLoadAcq32(&g_scheduler->a_running) == 0);
+
+	w->thr = thr;
+	AtomicFetchAddSeqCst32(&g_scheduler->a_running, 1);
+	LogString(T_SYSTEM, S_NOTE, "ds_Worker setup fished");
+
+    const u32 index_self = ds_ThreadSelfIndex();
+	while (AtomicLoadRlx32(&g_scheduler->a_running))
+	{
+		/* No more work, we go to sleep and wait until we aquire new work.
+		 * Spurious wake ups may happen, so we keep this in a loop.
+         *
+         * TODO:
+         * Optimization: If sempahore turns out to be to much overhead explore 
+         *      - futexes (Linux)
+         *      - WaitOnAddress + WakeByAddressSingle (Windows)
+		 */
+		while (!SemaphoreWait(&g_scheduler->jobs_are_available));
+
+JOB_LOOP:
+        u32 job;
+        while ((job = ds_WSDequeTryPopBottom(g_scheduler->deque + index_self)) != DS_JOB_ID_EMPTY)
+        {
+            if (job != DS_JOB_ID_NULL)
+            {
+                g_scheduler->phase->dispatch(job);
+            }
+        }
+
+        ds_Assert(AtomicLoadRlx32(&g_scheduler->deque[index_self].a_top) == AtomicLoadRlx32(&g_scheduler->deque[index_self].a_bottom));
+
+        //TODO: temporary count
+        const u32 steal_attempts_count = 8;
+        for (u32 i = 0; i < steal_attempts_count; ++i)
+        {
+            const u32 index = RngU64Range(0, g_scheduler->worker_count-1);
+            if (index != index_self && (job = ds_WSDequeTrySteal(g_scheduler->deque + index)) != DS_JOB_ID_NULL)
+            {
+                g_scheduler->phase->dispatch(job);
+                goto JOB_LOOP;
+            }
+        }
+	}
+}
+
+void ds_MasterRunAvailableJobs(void)
+{
+    ds_Assert(ds_ThreadSelfIndex() == 0);
+    ds_Assert(g_scheduler->worker_count);
+JOB_LOOP:
+    u32 job;
+    while ((job = ds_WSDequeTryPopBottom(g_scheduler->deque + 0)) != DS_JOB_ID_EMPTY)
+    {
+        if (job != DS_JOB_ID_NULL)
+        {
+            g_scheduler->phase->dispatch(job);
+        }
+    }
+    ds_Assert(AtomicLoadRlx32(&g_scheduler->deque[0].a_top) == AtomicLoadRlx32(&g_scheduler->deque[0].a_bottom));
+
+    //TODO: temporary count
+    const u32 steal_attempts_count = 16;
+    for (u32 i = 0; i < steal_attempts_count; ++i)
+    {
+        const u32 index = RngU64Range(1, g_scheduler->worker_count-1);
+        job = ds_WSDequeTrySteal(g_scheduler->deque + index);
+        if (job != DS_JOB_ID_NULL)
+        {
+            g_scheduler->phase->dispatch(job);
+            goto JOB_LOOP;
+        }
+    }
+}
+
+void ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, const u64 stacksize, const u64 initial_deque_size)
+{
+	Log(T_SYSTEM, S_NOTE, "ds_JobScheduler worker count: %u", thread_count);
+
+    g_scheduler = ArenaPushAligned(mem_persistent, sizeof(struct ds_JobScheduler), DS_CACHE_LINE);
+    g_scheduler->worker_count = thread_count;
+	g_scheduler->worker = ArenaPushAligned(mem_persistent, thread_count*sizeof(struct ds_Worker), DS_CACHE_LINE);	
+    g_scheduler->deque = ArenaPushAligned(mem_persistent, thread_count*sizeof(struct ds_WSDeque), DS_CACHE_LINE);
+    g_scheduler->phase = NULL;
+    AtomicStoreRlx32(&g_scheduler->a_running, 0);
+	SemaphoreInit(&g_scheduler->jobs_are_available, 0);
+	for (u32 i = 0; i < thread_count; ++i)
+	{
+        g_scheduler->worker[i].mem_frame = ArenaAlloc1MB();
+        ds_WSDequeAlloc(g_scheduler->deque + i, i, initial_deque_size);
+	}
+
+	/* NOTE: worker 0: reserved for main thread */
+	for (u32 i = 1; i < thread_count; ++i)
+	{
+		ds_ThreadClone(mem_persistent, ds_WorkerMain, g_scheduler->worker + i, stacksize);
+	}
+
+    //AtomicStoreRlx32(&g_scheduler->a_jobs_available_count, 0);
+	AtomicFetchAddRel32(&g_scheduler->a_running, 1);
+
+	while ((u32) AtomicLoadSeqCst32(&g_scheduler->a_running) < g_scheduler->worker_count);
+}
+
+void ds_JobSchedulerShutdown(void)
+{
+    AtomicStoreRlx32(&g_scheduler->a_running, 0);
+	for (u32 i = 1; i < g_scheduler->worker_count; ++i)
+	{
+        SemaphorePost(&g_scheduler->jobs_are_available);
+	}
+
+	for (u32 i = 1; i < g_scheduler->worker_count; ++i)
+	{
+		ds_ThreadWait(g_scheduler->worker[i].thr);
+	}
+
+	for (u32 i = 0; i < g_scheduler->worker_count; ++i)
+	{
+	    ds_WSDequeDealloc(g_scheduler->deque + i);
+		ArenaFree1MB(&g_scheduler->worker[i].mem_frame);
+	}
+
+	SemaphoreDestroy(&g_scheduler->jobs_are_available);
+}
+
+void ds_JobSchedulerFrameClear(void)
+{
+	for (u32 i = 0; i < g_scheduler->worker_count; ++i)
+	{
+		AtomicStoreRel32(&g_scheduler->worker[i].a_mem_frame_clear, 1);
+	}
+}
+
+void ds_JobPhaseAlloc(struct arena *mem, struct ds_JobPhase *phase, const u32 job_type_count)
+{
+    AtomicStoreRlx32(&phase->a_jobs_remaining, 0);
+    SemaphoreInit(&phase->completed, 0);
+    phase->next = ArenaPushAligned(mem, job_type_count * sizeof(struct ds_PaddedCounter), DS_CACHE_LINE);
+    phase->next_len = job_type_count;
+}
+
+void ds_JobPhaseDealloc(struct ds_JobPhase *phase)
+{
+    SemaphoreDestroy(&phase->completed);
+}
+
+void ds_JobPhaseBegin(struct ds_JobPhase *phase)
+{
+    ds_Assert(0 == SemaphoreTryWait(&phase->completed));
+    ds_Assert(g_scheduler->phase == NULL);
+
+    g_scheduler->phase = phase;
+    AtomicStoreRlx32(&phase->a_jobs_remaining, 0);
+    for (u32 i = 0; i < phase->next_len; ++i)
+    {
+        AtomicStoreRlx32(&phase->next[i].a_counter, 0); 
+    }
+}
+
+void ds_JobPhaseEnd(struct ds_JobPhase *phase)
+{
+    while (!SemaphoreWait(&phase->completed));
+    g_scheduler->phase = NULL;
+}
+
+u32 ds_JobPhaseFetchDecrementRemaining(struct ds_JobPhase *phase)
+{
+    const u32 local_remaining = AtomicFetchSubRlx32(&phase->a_jobs_remaining, 1);
+    ds_Assert(local_remaining);
+    if (local_remaining == 1)
+    {
+        SemaphorePost(&phase->completed);
+    }
+    return local_remaining;
+}
+
+u32 ds_JobPhaseFetchAddRemaining(struct ds_JobPhase *phase, const u32 new_jobs)
+{
+    return AtomicFetchAddRlx32(&phase->a_jobs_remaining, new_jobs);
+}
+
+u32 ds_JobPhaseReserve(struct ds_JobPhase *phase, const u32 job_type, const u32 new_jobs_count)
+{
+    ds_Assert(job_type < phase->next_len);
+    return AtomicFetchAddRlx32(&phase->next[job_type].a_counter, new_jobs_count);
+}
+
+
+
+
 
 
 struct task_context t_ctx;
 struct task_context *g_task_ctx = &t_ctx;
 
-u32 a_startup_complete = 0;
+u32 a_startup_complete2 = 0;
 
-static void worker_init(struct worker *w)
+static void worker_init(struct ds_Worker *w)
 {
 	w->mem_frame = ArenaAlloc1MB();
 }
@@ -214,7 +438,7 @@ static void worker_exit(void *void_task)
 	ds_ThreadExit();
 }
 
-static void task_run(struct task *task_info, struct worker *w)
+static void task_run(struct task *task_info, struct ds_Worker *w)
 {
 	if (AtomicLoadAcq32(&w->a_mem_frame_clear))
 	{
@@ -250,13 +474,13 @@ static void task_run(struct task *task_info, struct worker *w)
 
 void task_main(dsThread *thr)
 {
-	struct worker *w = ds_ThreadArguments(thr);
+	struct ds_Worker *w = ds_ThreadArguments(thr);
 	ThreadXoshiro256InitSequence();
 
-	while (AtomicLoadAcq32(&a_startup_complete) == 0);
+	while (AtomicLoadAcq32(&a_startup_complete2) == 0);
 
 	w->thr = thr;
-	AtomicFetchAddSeqCst32(&a_startup_complete, 1);
+	AtomicFetchAddSeqCst32(&a_startup_complete2, 1);
 	LogString(T_SYSTEM, S_NOTE, "task_worker setup finalized");
 
 	while (1)
@@ -278,7 +502,7 @@ void task_main(dsThread *thr)
 
 void task_main_master_run_available_jobs(void)
 {
-	struct worker *master = g_task_ctx->workers + 0;
+	struct ds_Worker *master = g_task_ctx->workers + 0;
 	while (SemaphoreTryWait(&g_task_ctx->tasks->able_for_reservation))
 	{
 		task_run(FifoSpmcPop(g_task_ctx->tasks), master);
@@ -312,7 +536,7 @@ void task_context_init(struct arena *mem_persistent, const u32 thread_count)
 
 	*g_task_ctx = ctx;
 	g_task_ctx->bundle = task_bundle_init();
-	g_task_ctx->workers = ArenaPush(mem_persistent, thread_count * sizeof(struct worker));	
+	g_task_ctx->workers = ArenaPush(mem_persistent, thread_count * sizeof(struct ds_Worker));	
 	g_task_ctx->tasks = FifoSpmcInit(mem_persistent, TASK_MAX_COUNT);
 
 	for (u32 i = 0; i < thread_count; ++i)
@@ -326,9 +550,9 @@ void task_context_init(struct arena *mem_persistent, const u32 thread_count)
 		ds_ThreadClone(mem_persistent, task_main, g_task_ctx->workers + i, stack_size);
 	}
 
-	AtomicStoreRel32(&a_startup_complete, 1);
+	AtomicStoreRel32(&a_startup_complete2, 1);
 
-	while ((u32) AtomicLoadSeqCst32(&a_startup_complete) < g_task_ctx->worker_count);
+	while ((u32) AtomicLoadSeqCst32(&a_startup_complete2) < g_task_ctx->worker_count);
 }
 
 void task_context_frame_clear(void)

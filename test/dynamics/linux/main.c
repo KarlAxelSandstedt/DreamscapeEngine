@@ -70,7 +70,7 @@ int main(int argc, char *argv[])
 
 		ds_DeallocTaggedWindows();
 
-		task_context_frame_clear();
+        ds_JobSchedulerFrameClear();
 
 		const u64 new_time = ds_TimeNs();
 		const u64 ns_tick = new_time - old_time;

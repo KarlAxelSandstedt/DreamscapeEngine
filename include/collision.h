@@ -160,12 +160,12 @@ struct collisionDebug
 	u8			pad[64];
 };
 
-extern dsThreadLocal struct collisionDebug *tl_debug;
+extern struct collisionDebug *g_collision_debug;
 
 #ifdef DS_PHYSICS_DEBUG
 
 #define COLLISION_DEBUG_ADD_SEGMENT(segment, color)							\
-	stack_visualSegmentPush(&tl_debug->stack_segment,  VisualSegmentConstruct(segment, color))
+	stack_visualSegmentPush(&g_collision_debug[ds_ThreadSelfIndex()].stack_segment,  VisualSegmentConstruct(segment, color))
 
 #else
 

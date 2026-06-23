@@ -376,6 +376,7 @@ void *ArenaPushAligned(struct arena *ar, const u64 size, const u64 alignment)
 			alloc_addr = ar->stack_ptr + push_alignment;
 			ar->mem_left -= size + push_alignment;
 			ar->stack_ptr += size + push_alignment;
+            ds_Assert((u64) alloc_addr % alignment == 0);
 		}
 	}
 
