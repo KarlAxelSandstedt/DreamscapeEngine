@@ -49,6 +49,7 @@ void ds_WSDequeTest(void *void_pool)
         for (u32 i = 0; i < 100000; ++i)
         {
             ds_WSDequePushBottom(&g_deque, i); 
+            ds_WSDequePublish(&g_deque); 
         }
         AtomicStoreRlx32(&pushing, 0);
     }
@@ -67,7 +68,7 @@ void ds_WSDequeTest(void *void_pool)
          //   fprintf(stderr, "(%lu, %lu): %u\n", local_top, AtomicLoadRlx64(&g_deque.a_bottom), id);
          //}
         
-        if (id != DS_JOB_ID_NULL)
+        if (id != DS_JOB_ID_NULL && id != DS_JOB_ID_EMPTY)
         {
             local_sum += id;
             local_inc += 1;

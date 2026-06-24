@@ -146,14 +146,7 @@ struct test_PerformanceParallel
 	void *		(*test_init)(void);
 	void 		(*test_reset)(void *);
 	void 		(*test_free)(void *);
-	TASK		test;
-};
-
-struct test_PerformanceInput
-{
-	u32 *	a_barrier;
-	void *	args;
-	TASK	test;
+	void 		(*test)(void *);
 };
 
 struct suite_Performance

@@ -163,6 +163,16 @@ struct ss ss_Alloc(struct arena *mem, const u64 bufsize)
 	return ss;
 }
 
+void ss_Free(struct ss *ss)
+{
+	if (ss->mem_slot.address)
+	{
+		ds_Free(&ss->mem_slot);
+	}
+}
+
+
+
 struct ss ss_Buffered(void *buf, const u64 bufsize)
 {
 	struct ss ss =
@@ -246,14 +256,6 @@ static inline b64 EndianShift64(const b64 le)
 #define		BeToNa32(val)	(val)
 #define		BeToNa64(val)	(val)
 #endif
-
-void ss_Free(struct ss *ss)
-{
-	if (ss->mem_slot.address)
-	{
-		ds_Free(&ss->mem_slot);
-	}
-}
 
 b8 ss_Read8(struct ss *ss)
 {

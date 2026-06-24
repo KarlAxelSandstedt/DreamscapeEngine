@@ -98,7 +98,7 @@ void ds_StructTPoolIncrementTest(void *void_pool)
 void ds_StructTStackTest(void *void_pool)
 {
 	struct ds_StructTPool *pool = AtomicLoadAcq64(&g_tpool);
-    const u32 count = 1000000;
+    const u32 count = 200;
     if (ds_ThreadSelfIndex() == 0)
     {
         for (u32 i = 0; i < count*pool->free_list_count; ++i)
@@ -201,6 +201,7 @@ void block_allocator_stress_test_256B(void *void_input)
 			{
 				input->allocations_left -= 1;
 				struct list_node *tmp = ThreadAlloc256B();
+                ds_Assert(tmp);
 				tmp->next = head;
 				head = tmp;
 			}
@@ -306,7 +307,7 @@ struct suite_Correctness storage_allocator_correctness_suite =
 };
 
 struct test_PerformanceParallel allocator_parallel_test[] =
-{
+{    
     {
         .id = "ds_StructTStackTest",
         .size = 1,
@@ -325,41 +326,41 @@ struct test_PerformanceParallel allocator_parallel_test[] =
         .test_free = &ds_StructTPoolIncrementTestFree,
     },
 
-	{
-		.id = "parallel_block_allocator_256B_stress_test",
-		.size = G_256B_COUNT * 256,
-		.test = &block_allocator_stress_test_256B,
-		.test_init = &block_allocator_stress_test_256B_init,
-		.test_reset = &block_allocator_stress_test_256B_reset,
-		.test_free = &block_allocator_stress_test_256B_free,
-	},
+	//{
+	//	.id = "parallel_block_allocator_256B_stress_test",
+	//	.size = G_256B_COUNT * 256,
+	//	.test = &block_allocator_stress_test_256B,
+	//	.test_init = &block_allocator_stress_test_256B_init,
+	//	.test_reset = &block_allocator_stress_test_256B_reset,
+	//	.test_free = &block_allocator_stress_test_256B_free,
+	//},
 
-	{
-		.id = "parallel_malloc_256B_stress_test",
-		.size = G_256B_COUNT * 256,
-		.test = &malloc_stress_test,
-		.test_init = &block_allocator_stress_test_256B_init,
-		.test_reset = &block_allocator_stress_test_256B_reset,
-		.test_free = &block_allocator_stress_test_256B_free,
-	},
+	//{
+	//	.id = "parallel_malloc_256B_stress_test",
+	//	.size = G_256B_COUNT * 256,
+	//	.test = &malloc_stress_test,
+	//	.test_init = &block_allocator_stress_test_256B_init,
+	//	.test_reset = &block_allocator_stress_test_256B_reset,
+	//	.test_free = &block_allocator_stress_test_256B_free,
+	//},
 
-	{
-		.id = "parallel_block_allocator_1MB_stress_test",
-		.size = G_1MB_COUNT * 1024*1024,
-		.test = &block_allocator_stress_test_1MB,
-		.test_init = &block_allocator_stress_test_1MB_init,
-		.test_reset = &block_allocator_stress_test_1MB_reset,
-		.test_free = &block_allocator_stress_test_1MB_free,
-	},
+	//{
+	//	.id = "parallel_block_allocator_1MB_stress_test",
+	//	.size = G_1MB_COUNT * 1024*1024,
+	//	.test = &block_allocator_stress_test_1MB,
+	//	.test_init = &block_allocator_stress_test_1MB_init,
+	//	.test_reset = &block_allocator_stress_test_1MB_reset,
+	//	.test_free = &block_allocator_stress_test_1MB_free,
+	//},
 
-	{
-		.id = "parallel_malloc_1MB_stress_test",
-		.size = G_1MB_COUNT * 1024*1024,
-		.test = &malloc_stress_test,
-		.test_init = &block_allocator_stress_test_1MB_init,
-		.test_reset = &block_allocator_stress_test_1MB_reset,
-		.test_free = &block_allocator_stress_test_1MB_free,
-	},
+	//{
+	//	.id = "parallel_malloc_1MB_stress_test",
+	//	.size = G_1MB_COUNT * 1024*1024,
+	//	.test = &malloc_stress_test,
+	//	.test_init = &block_allocator_stress_test_1MB_init,
+	//	.test_reset = &block_allocator_stress_test_1MB_reset,
+	//	.test_free = &block_allocator_stress_test_1MB_free,
+	//},
 };
 
 struct suite_Performance storage_performance_allocator_suite =

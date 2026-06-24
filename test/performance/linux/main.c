@@ -60,11 +60,11 @@ int main(int argc, char *argv[])
 
 	AssetInit(&persistent);
 
-	//struct led *editor = led_Alloc();
+	struct led *editor = led_Alloc();
 	
     ds_TestMainPerformance();
 	
-	//led_Dealloc(editor);
+	led_Dealloc(editor);
 	AssetShutdown();
 	ds_GraphicsApiShutdown();
 	ds_PlatformApiShutdown();

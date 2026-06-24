@@ -358,13 +358,10 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
             }
 
             low = cd_jobs->seed_jobs[i].high;
+            ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(COLLISION_JOB_SEED, i));
         }
         ds_Assert(cd_jobs->seed_jobs[cd_jobs->seed_count_max - 1].high == proxy_overlap_count);
 
-        for (u32 i = 0; i < cd_jobs->seed_count_max; ++i)
-        {
-            ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(COLLISION_JOB_SEED, i));
-        }
         AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, cd_jobs->seed_count_max);
         ds_JobPhaseAddFetchRemaining(&cd_jobs->phase, cd_jobs->seed_count_max);
         ds_WSDequePublish(g_scheduler->seed_deque);

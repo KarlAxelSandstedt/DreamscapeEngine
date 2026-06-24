@@ -93,20 +93,55 @@ static void run_suite(struct suite_Correctness *suite, struct test_Environment *
 			(long long unsigned int) suite->unit_test_count + suite->repetition_test_count); }
 }
 
-void test_caller(void *task_input)
+enum ds_TestJobType
 {
-	struct task *t_ctx = task_input;
-	struct test_PerformanceInput *input = t_ctx->input;
-	while (!AtomicLoadAcq32(input->a_barrier));
-	input->test(input->args);
+    TEST_JOB,
+    TEST_JOB_COUNT
+};
+
+struct ds_TestJob
+{
+	void *	args;
+    void    (*test)(void *);
+};
+
+struct ds_TestJobPhase
+{
+    struct ds_JobPhase  phase;
+    
+    struct ds_TestJob * job;
+    u32                 count;
+    u32                 a_barrier;
+};
+
+u32 TestJob(struct ds_TestJobPhase *phase, struct ds_TestJob *job)
+{
+	while (!AtomicLoadAcq32(&phase->a_barrier));
+	job->test(job->args);
+    return U32_MAX;
+}
+
+u32 ds_TestJobPhaseDispatch(const ds_JobId job)
+{
+    struct ds_TestJobPhase *phase = (struct ds_TestJobPhase *) g_scheduler->phase;
+    const u32 index = ds_JobIdIndex(job);
+    const enum ds_TestJobType type = ds_JobIdTag(job);
+
+    u32 job_diff = 0;
+    switch (type)
+    {
+        case TEST_JOB: { job_diff = TestJob(phase, phase->job + index); } break;
+        default: { ds_AssertString(0, "Should not be possible"); } break;
+    };
+
+    return job_diff;
 }
 
 static void run_performance_suite(struct suite_Performance *suite)
 {
 	fprintf(stdout, ":::::::::: Running peformance suite %s ::::::::::\n", suite->id);
 
-	//const u64 max_time_without_improvement = 10*TscFrequency();
-	const u64 max_time_without_improvement = 100*TscFrequency();
+	const u64 max_time_without_improvement = 10*TscFrequency();
 	struct rt tester;
 	struct arena mem = ArenaAlloc1MB();
 
@@ -115,17 +150,21 @@ static void run_performance_suite(struct suite_Performance *suite)
 		memset(&tester, 0, sizeof(tester));
 		fprintf(stdout, "\t::: %s ::: \n", suite->parallel_test[i].id);
 
-		ArenaFlush(&mem);
-		struct test_PerformanceInput *args = ArenaPush(&mem, g_task_ctx->worker_count * sizeof(struct test_PerformanceInput));
-		u32 a_barrier;
 
-		for (u32 k = 0; k < g_task_ctx->worker_count; ++k)
+		ArenaFlush(&mem);
+        
+        struct ds_TestJobPhase phase;
+        ds_JobPhaseAlloc(&mem, &phase.phase, TEST_JOB_COUNT, ds_TestJobPhaseDispatch);
+        phase.job = ArenaPush(&mem, g_scheduler->worker_count * sizeof(struct ds_TestJob));
+        phase.count = g_scheduler->worker_count;
+
+
+		for (u32 k = 0; k < phase.count; ++k)
 		{
-			args[k].test = suite->parallel_test[i].test;
-			args[k].a_barrier = &a_barrier;
-			args[k].args = (suite->parallel_test[i].test_init)
-				? suite->parallel_test[i].test_init()
-				: NULL;
+			phase.job[k].test = suite->parallel_test[i].test;
+			phase.job[k].args = (suite->parallel_test[i].test_init)
+                ? suite->parallel_test[i].test_init()
+                : NULL;
 		}
 
 		rt_Wave(&tester, suite->parallel_test[i].size, TscFrequency(), max_time_without_improvement, 1);
@@ -133,34 +172,50 @@ static void run_performance_suite(struct suite_Performance *suite)
 		{
 			RngPushState();
 			ArenaPushRecord(&mem);
-			AtomicStoreRel32(&a_barrier, 0);
-			struct task_stream *stream = task_stream_init(&mem);
-			for (u32 k = 0; k < g_task_ctx->worker_count; ++k)
-			{
-				if (suite->parallel_test[i].test_reset)
-				{
-					suite->parallel_test[i].test_reset(args[k].args);
-				}		
+			AtomicStoreRel32(&phase.a_barrier, 0);
 
-				task_stream_dispatch(&mem, stream, test_caller, args + k);
-			}
+            {
+                ds_JobPhaseBegin(&phase.phase);
 
-			rt_BeginTime(&tester);	
-			AtomicStoreRel32(&a_barrier, 1);
-			task_main_master_run_available_jobs();
-			task_stream_spin_wait(stream);
-			rt_EndTime(&tester);
+                static u32 poo = 0;
+                for (u32 k = 0; k < phase.count; ++k)
+			    {
+			    	if (suite->parallel_test[i].test_reset)
+			    	{
+			    		suite->parallel_test[i].test_reset(phase.job[k].args);
+			    	}		
 
-			task_stream_cleanup(stream);		
+                    ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(TEST_JOB, k));
+			    }
+
+                ds_JobPhaseReserve(&phase.phase, TEST_JOB, phase.count);
+                AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, phase.count);
+                ds_JobPhaseAddFetchRemaining(&phase.phase, phase.count);
+                ds_WSDequePublish(g_scheduler->seed_deque);
+
+                for (u32 i = 1; i < phase.count; ++i)
+                {
+                    SemaphorePost(&g_scheduler->jobs_are_available);
+                }
+			    AtomicStoreRel32(&phase.a_barrier, 1);
+
+			    rt_BeginTime(&tester);	
+
+                ds_MasterRunAvailableJobs();
+                ds_JobPhaseEnd();
+			    
+                rt_EndTime(&tester);
+            }
+
 			ArenaPopRecord(&mem);
 			RngPopState();
 		} while (rt_TestingCheck(&tester));
 
 		if (suite->parallel_test[i].test_free)
 		{
-			for (u32 k = 0; k < g_task_ctx->worker_count; ++k)
+			for (u32 k = 0; k < g_scheduler->worker_count; ++k)
 			{
-				suite->parallel_test[i].test_free(args[k].args);
+				suite->parallel_test[i].test_free(phase.job[k].args);
 			}
 		}
 
@@ -234,10 +289,10 @@ void ds_TestMainCorrectness(void)
 
 void ds_TestMainPerformance(void)
 {
-	run_performance_suite(jobscheduler_performance_suite);
+	//run_performance_suite(jobscheduler_performance_suite);
 	//run_performance_suite(THashMap_performance_suite);
 	//run_performance_suite(allocator_performance_suite);
 	//run_performance_suite(hash_performance_suite);
 	//run_performance_suite(rng_performance_suite);
-	//run_performance_suite(serialize_performance_suite);
+	run_performance_suite(serialize_performance_suite);
 }
