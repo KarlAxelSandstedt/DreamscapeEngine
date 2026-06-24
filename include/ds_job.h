@@ -153,11 +153,13 @@ struct ds_JobScheduler
 	struct ds_Worker *  worker;
     struct ds_WSDeque * deque;              /* worker[i] owns deque[i] */
     struct ds_WSDeque * seed_deque;         /* Special deque used for seeding tasks */ 
+    struct ds_JobPhase *phase;              /* Currently running phase, if any. */
 
     u32                 worker_count;
     u32                 a_running;
-    struct ds_JobPhase *phase;              /* Currently running phase, if any. */
-    u8                  pad1[64 - 4*sizeof(void *) - 2*sizeof(u32)];
+    u32                 steal_attempts:
+
+    u8                  pad1[64 - 4*sizeof(void *) - 3*sizeof(u32)];
 
 	semaphore 	        jobs_are_available;  
     u8                  pad2[64 - sizeof(semaphore)];

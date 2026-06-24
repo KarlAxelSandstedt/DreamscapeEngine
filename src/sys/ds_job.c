@@ -48,9 +48,10 @@ static void ds_JobSchedulerStaticAssert(void)
     ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->worker == 0, "");
     ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->deque == 8, "");
     ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->seed_deque == 16, "");
-    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->worker_count == 24, "");
-    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->a_running == 28, "");
-    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->phase == 32, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->phase == 24, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->worker_count == 32, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->a_running == 36, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->steal_attempts == 40, "");
     ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->jobs_are_available == 64, "");
     ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->a_workers_waiting == 128, "");
     ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->a_seeds_remaining == 192, "");
@@ -261,17 +262,24 @@ void ds_WorkerRunJob(const ds_JobId job)
 
 void ds_TrySeedAndRunJobs(const u32 thread)
 {
+    ProfZone;
+
     /* When we get here, we know for sure that the deque we own is empty. We check if there are any special
      * seed tasks to grab, and seed of deque if that is the case. */
     u32 job;
-    u32 local_seeds_remaining;
 
-    //TODO fetch increment seed_index, if (seed_index < seed_count), grab task and run 
+    //TODO(Simplification): Instead of using a separate Deque, we could just use a atomic counter, since all
+    //seeds are assumed to be published immediately?
+    //const u32 local_seed_next = AtomicFetchAddRlx32(&a_seeds_next);
+    //if (local_seed_next < a_seeds_count)
+    //{
+    //    ds_WorkerRunJob(g_scheduler->phase->seed_job[local_seed_next]);
+    //}
     
     /* (1) Seed and run as many jobs in owned Deque as possible */
-    while (0 < (local_seeds_remaining = AtomicLoadRlx32(&g_scheduler->a_seeds_remaining)))
+    u32 local_seeds_remaining = AtomicLoadRlx32(&g_scheduler->a_seeds_remaining);
+    while (local_seeds_remaining)
     {
-        //TODO compare_exchange loads hte value as well... uncessary loads happening
         if (AtomicCompareExchangeRlxRlx32(&g_scheduler->a_seeds_remaining, &local_seeds_remaining, local_seeds_remaining - 1))
         {
             while ((job = ds_WSDequeTrySteal(g_scheduler->seed_deque)) == DS_JOB_ID_NULL);
@@ -289,9 +297,7 @@ RUN_JOBS:
         }
     }
 
-    //TODO: temporary count
-    const u32 steal_attempts_count = 8;
-    for (u32 i = 0; i < steal_attempts_count; ++i)
+    for (u32 i = 0; i < g_scheduler->steal_attempts; ++i)
     {
         const u32 index = RngU64Range(0, g_scheduler->worker_count-1);
         if (index != thread && (job = ds_WSDequeTrySteal(g_scheduler->deque + index)) != DS_JOB_ID_NULL)
@@ -300,6 +306,8 @@ RUN_JOBS:
             goto RUN_JOBS;
         }
     }
+
+    ProfZoneEnd;
 }
 
 void ds_WorkerMain(dsThread *thr)
@@ -348,6 +356,13 @@ void ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, c
     g_scheduler->deque = ArenaPushAligned(mem_persistent, thread_count*sizeof(struct ds_WSDeque), DS_CACHE_LINE);
     g_scheduler->seed_deque = ArenaPushAligned(mem_persistent, sizeof(struct ds_WSDeque), DS_CACHE_LINE);
     g_scheduler->phase = NULL;
+
+
+
+    g_scheduler->steal_attempts = (4*thread_count < 64)
+                                    ? 4*thread_count
+                                    : 64;
+
     AtomicStoreRlx32(&g_scheduler->a_running, 0);
 	SemaphoreInit(&g_scheduler->jobs_are_available, 0);
     SemaphoreInit(&g_scheduler->phase_completed, 0);
