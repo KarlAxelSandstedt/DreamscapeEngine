@@ -14,4 +14,4 @@ cmake -S . -B build -Dkas_debug=ON -DDS_TEST_PHYSICS=ON -DDS_TSAN=ON -DDS_OPTIMI
 cd build
 cmake --build . --parallel
 ./DreamscapeTest
-cDreamscapeTestd ..
+cd ..

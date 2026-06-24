@@ -91,7 +91,9 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 	pipeline.debug = NULL;
 
     pipeline.cd_jobs = ArenaPushAligned(mem, sizeof(struct ds_CollisionJobPhase), DS_CACHE_LINE);
+    pipeline.is_jobs = ArenaPushAligned(mem, sizeof(struct ds_IslandJobPhase), DS_CACHE_LINE);
     ds_JobPhaseAlloc(mem, &pipeline.cd_jobs->phase, COLLISION_JOB_COUNT);
+    ds_JobPhaseAlloc(mem, &pipeline.is_jobs->phase, ISLAND_JOB_COUNT);
 #ifdef DS_PHYSICS_DEBUG
 	pipeline.debug_count = g_arch_config->logical_core_count;
 	pipeline.debug = malloc(g_arch_config->logical_core_count * sizeof(struct collisionDebug));
@@ -115,6 +117,7 @@ void PhysicsPipelineFree(struct ds_RigidBodyPipeline *pipeline)
 	free(pipeline->debug);
 #endif
     ds_JobPhaseDealloc(&pipeline->cd_jobs->phase);
+    ds_JobPhaseDealloc(&pipeline->is_jobs->phase);
 	BvhFree(&pipeline->shape_bvh);
 	cdb_Free(pipeline->cdb);
 	isdb_Dealloc(&pipeline->is_db);
@@ -191,11 +194,9 @@ struct tcc_Input
     struct ds_Shape *               s2;
 };
 
-static void NarrowPhaseSeedJobExecute(struct ds_CollisionJobPhase *phase, struct ds_NarrowPhaseSeedJob *job)
+static void NarrowPhaseSeedJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPhaseSeedJob *job)
 {
 	ProfZone;
-
-    LogString(T_SYSTEM, S_NOTE, "Seeding...");
 
     const struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
 
@@ -224,12 +225,13 @@ static void NarrowPhaseSeedJobExecute(struct ds_CollisionJobPhase *phase, struct
     }
 
     ds_JobPhaseFetchAddRemaining(&phase->phase, job_count);
+    ds_WSDequePublish(g_scheduler->deque + ds_ThreadSelfIndex());
     ds_JobPhaseFetchDecrementRemaining(&phase->phase);
 
 	ProfZoneEnd;
 }
 
-static void NarrowPhaseJobExecute(struct ds_CollisionJobPhase *phase, struct ds_NarrowPhaseJob *job)
+static void NarrowPhaseJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPhaseJob *job)
 {
 	ProfZone;
 
@@ -276,8 +278,8 @@ void ds_CollisionJobPhaseDispatch(const ds_JobId job)
 
     switch (type)
     {
-        case COLLISION_JOB_SEED: { NarrowPhaseSeedJobExecute(phase, phase->seed_jobs + index); } break;
-        case COLLISION_JOB_NARROWPHASE: { NarrowPhaseJobExecute(phase, phase->narrowphase_jobs + index); } break;
+        case COLLISION_JOB_SEED: { NarrowPhaseSeedJob(phase, phase->seed_jobs + index); } break;
+        case COLLISION_JOB_NARROWPHASE: { NarrowPhaseJob(phase, phase->narrowphase_jobs + index); } break;
         default: { ds_AssertString(0, "Should not be possible"); } break;
     };
 }
@@ -328,8 +330,9 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
     }
 
     struct ds_CollisionJobPhase *cd_jobs = pipeline->cd_jobs;
-    ds_JobPhaseBegin(&cd_jobs->phase);
     {
+        ds_JobPhaseBegin(&cd_jobs->phase);
+
     	ProfZoneNamed("NarrowPhase");
   
         cd_jobs->phase.dispatch = &ds_CollisionJobPhaseDispatch;
@@ -341,6 +344,7 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 
         cd_jobs->narrowphase_count_max = proxy_overlap_count;
         cd_jobs->narrowphase_jobs = ArenaPushAligned(&pipeline->frame, cd_jobs->narrowphase_count_max*sizeof(struct ds_NarrowPhaseJob), DS_CACHE_LINE);
+        ds_JobPhaseReserve(&cd_jobs->phase, COLLISION_JOB_SEED, cd_jobs->seed_count_max);
 
         const u32 jobs_per_seed = proxy_overlap_count / cd_jobs->seed_count_max;
         u32 extra = proxy_overlap_count % cd_jobs->seed_count_max;
@@ -359,11 +363,12 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
         }
         ds_Assert(cd_jobs->seed_jobs[cd_jobs->seed_count_max - 1].high == proxy_overlap_count);
 
-        ds_JobPhaseFetchAddRemaining(&cd_jobs->phase, cd_jobs->seed_count_max);
         for (u32 i = 0; i < cd_jobs->seed_count_max; ++i)
         {
             ds_WSDequePushBottom(g_scheduler->deque + 0, ds_JobIdInit(COLLISION_JOB_SEED, i));
         }
+        ds_JobPhaseFetchAddRemaining(&cd_jobs->phase, cd_jobs->seed_count_max);
+        ds_WSDequePublish(g_scheduler->deque + 0);
         
         for (u32 i = 1; i < g_arch_config->logical_core_count; ++i)
         {
@@ -371,8 +376,13 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
         }
 
         ds_MasterRunAvailableJobs();
+        ds_JobPhaseEnd(&cd_jobs->phase);
+        ds_Assert(AtomicLoadRlx32(&cd_jobs->phase.a_jobs_remaining) == 0);
+
+        ProfZoneEnd;
     }
-    ds_JobPhaseEnd(&cd_jobs->phase);
+    //TODO Data-race in g_scheduler->phase, since it will still be in use as master sets it to NULL...
+    ds_Assert(0);
 
     {
     	ProfZoneNamed("ContactManagement");
@@ -590,7 +600,6 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 	ArenaPopPacked(&pipeline->frame, (pipeline->is_db.island_pool.count - split_count)*sizeof(u32));
 
     struct arena tmp = ArenaAlloc1MB();
-	/* TODO: Parallelize island splitting */
 	for (u32 i = 0; i < split_count; ++i)
 	{
 		isdb_SplitIsland(&tmp, pipeline, split[i]);
@@ -620,55 +629,94 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 	ProfZoneEnd;
 }
 
+static void IslandJobSolve(struct ds_IslandJobPhase *phase, struct ds_IslandSolveJob *job)
+{
+	ProfZone;
+
+    struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
+    struct ds_Island *is = (struct ds_Island *) pipeline->is_db.island_pool.buf + job->island;
+	job->body_count = is->body_list.count;
+	job->bodies = IslandSolve(&g_scheduler->worker[ds_ThreadSelfIndex()].mem_frame, pipeline, is, &job->asleep, phase->timestep);
+
+    ds_JobPhaseFetchDecrementRemaining(&phase->phase);
+
+	ProfZoneEnd;
+}
+
+void ds_IslandJobPhaseDispatch(const ds_JobId job)
+{
+    struct ds_IslandJobPhase *phase = (struct ds_IslandJobPhase *) g_scheduler->phase;
+ 
+    const u32 index = ds_JobIdIndex(job);
+    const enum ds_IslandJobType type = ds_JobIdTag(job);
+
+    switch (type)
+    {
+        case ISLAND_JOB_SOLVE: { IslandJobSolve(phase, phase->island_solve_jobs + index); } break;
+        default: { ds_AssertString(0, "Should not be possible"); } break;
+    };
+}
+
 static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta) 
 {
 	ProfZone;
 
-	/* acquire any task resources */
-	struct task_stream *stream = task_stream_init(&pipeline->frame);
-	struct ds_IslandSolveOutput *output = NULL;
-	struct ds_IslandSolveOutput **next = &output;
+    u32 job_count = 0;
+    struct ds_IslandJobPhase *is_jobs = pipeline->is_jobs;
+    ds_JobPhaseBegin(&is_jobs->phase);
+    {
+        is_jobs->phase.dispatch = &ds_IslandJobPhaseDispatch;
+        is_jobs->pipeline = pipeline;
+        is_jobs->timestep = delta;
 
-	struct ds_Island *is = NULL;
-	for (u32 i = pipeline->is_db.island_list.first; i != DLL_NULL; i = dll_Next(is))
+        is_jobs->island_solve_count_max = pipeline->is_db.island_pool.count;
+        is_jobs->island_solve_jobs = ArenaPush(&pipeline->frame, is_jobs->island_solve_count_max*sizeof(struct ds_IslandSolveJob));
+        ds_JobPhaseReserve(&is_jobs->phase, ISLAND_JOB_SOLVE, is_jobs->island_solve_count_max);
+
+        //TODO Require an easy to use barrier or something, This defeats the whole purpose of multithreading
+        //or some other mechanism to facilitate seeding
+        
+	    struct ds_Island *is = NULL;
+	    for (u32 i = pipeline->is_db.island_list.first; i != DLL_NULL; i = dll_Next(is))
+	    {
+		    is = ds_PoolAddress(&pipeline->is_db.island_pool, i);
+            if (!g_solver_config->sleep_enabled || ISLAND_AWAKE_BIT(is))
+		    {
+		    	is_jobs->island_solve_jobs[job_count++].island = i;
+		    }
+        }
+        ds_Assert(job_count <= is_jobs->island_solve_count_max);
+        
+        for (u32 i = 0; i < job_count; ++i)
+        {
+            ds_WSDequePushBottom(g_scheduler->deque + 0, ds_JobIdInit(ISLAND_JOB_SOLVE, i));
+        }
+        ds_JobPhaseFetchAddRemaining(&is_jobs->phase, job_count);
+        ds_WSDequePublish(g_scheduler->deque + 0);
+
+        for (u32 i = 1; i < g_arch_config->logical_core_count; ++i)
+        {
+            SemaphorePost(&g_scheduler->jobs_are_available);
+        }
+
+        ds_MasterRunAvailableJobs();
+    }
+    ds_JobPhaseEnd(&is_jobs->phase);
+
+	for (u32 i = 0; i < job_count; ++i)
 	{
-		is = ds_PoolAddress(&pipeline->is_db.island_pool, i);
-		if (!g_solver_config->sleep_enabled || ISLAND_AWAKE_BIT(is))
+        const struct ds_IslandSolveJob *job = is_jobs->island_solve_jobs + i;
+		if (job->asleep)
 		{
-			struct ds_IslandSolveInput *args = ArenaPush(&pipeline->frame, sizeof(struct ds_IslandSolveInput));
-			*next = ArenaPush(&pipeline->frame, sizeof(struct ds_IslandSolveOutput));
-			(*next)->island = i;
-			(*next)->island_asleep = 0;
-			(*next)->next = NULL;
-			args->out = *next;
-			args->is = is;
-			args->pipeline = pipeline;
-			args->timestep = delta;
-			task_stream_dispatch(&pipeline->frame, stream, ThreadIslandSolve, args);
-
-			next = &(*next)->next;
-		}
-	}
-
-	task_main_master_run_available_jobs();
-	/* spin wait until last job completes */
-	task_stream_spin_wait(stream);
-	/* release any task resources */
-	task_stream_cleanup(stream);		
-
-	for (; output; output = output->next)
-	{
-		if (output->island_asleep)
-		{
-			PhysicsEventIslandAsleep(pipeline, output->island);
+			PhysicsEventIslandAsleep(pipeline, job->island);
 		}
 
-		for (u32 i = 0; i < output->body_count; ++i)
+		for (u32 b = 0; b < job->body_count; ++b)
 		{
 			struct physicsEvent *event = PhysicsPipelineEventPush(pipeline);
 			event->type = PHYSICS_EVENT_BODY_ORIENTATION;
-            const struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, output->bodies[i]);
-			event->body = ((u64) body->tag << 32) | output->bodies[i];
+            const struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, job->bodies[b]);
+			event->body = ((u64) body->tag << 32) | job->bodies[b];
 		}
 	}
 

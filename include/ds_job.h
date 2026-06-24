@@ -84,7 +84,8 @@ struct ds_WSDeque
     u8                      pad2[DS_CACHE_LINE - sizeof(u64)];
     u32                     a_mem_count;
     u32                     owner;
-    u8                      pad3[DS_CACHE_LINE - 2*sizeof(u32)];
+    u64                     to_publish;
+    u8                      pad3[DS_CACHE_LINE - 2*sizeof(u32) - sizeof(u64)];
     struct ds_WSDequeMem    mem[32];
 };
 
@@ -92,8 +93,10 @@ struct ds_WSDeque
 void        ds_WSDequeAlloc(struct ds_WSDeque *deque, const u32 owner, const u64 len);
 /* Deallocate Deque. */
 void        ds_WSDequeDealloc(struct ds_WSDeque *deque);
-/* Push an id at the bottom of the Deque. WARNING: Only to be used by the owner of the deque. */
+/* Push an unpublished id at the bottom of the Deque. WARNING: Only to be used by the owner of the deque. */
 void        ds_WSDequePushBottom(struct ds_WSDeque *deque, const ds_JobId id);
+/* Publish any pendings jobs */
+void        ds_WSDequePublish(struct ds_WSDeque *deque);
 /* 
  * Try pop the bottom of Deque. On success, the id is returned.
  * On a failed CAS, return DS_JOB_ID_NULL, 
@@ -151,13 +154,15 @@ struct ds_JobScheduler
     struct ds_WSDeque * deque;              /* worker[i] owns deque[i] */
 	u32                 worker_count;
     u32                 a_running;
-
     struct ds_JobPhase *phase;              /* Currently running phase, if any. */
-
     u8                  pad1[64 - 3*sizeof(void *) - 2*sizeof(u32)];
 
 	semaphore 	        jobs_are_available;  
     u8                  pad2[64 - sizeof(semaphore)];
+
+    u32                 a_workers_waiting;
+    u8                  pad3[64 - sizeof(u32)];
+
 };
 
 extern struct ds_JobScheduler *g_scheduler;

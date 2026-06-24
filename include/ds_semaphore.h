@@ -45,8 +45,8 @@ void 	SemaphoreInit(semaphore *sem, const u32 val);
 void 	SemaphoreDestroy(semaphore *sem);
 /* increment semaphore */
 void 	SemaphorePost(semaphore *sem);	
-/* return 1 on successful lock aquisition, 0 otherwise. */
-u32 	SemaphoreWait(semaphore *sem);	
+/* Block until the semaphore has been signaled */
+void 	SemaphoreWait(semaphore *sem);	
 /* return 1 on successful lock aquisition, 0 otherwise. */
 u32 	SemaphoreTryWait(semaphore *sem);	
 

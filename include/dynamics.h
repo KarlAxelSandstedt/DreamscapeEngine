@@ -681,38 +681,7 @@ void 		isdb_MergeIslands(struct ds_RigidBodyPipeline *pipeline, const u32 ci, co
 /* Split island, or remake if no split happens: TODO: Make thread-safe  */
 void 		isdb_SplitIsland(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, const u32 island_to_split);
 
-/********* Threaded Island API *********/
-
-struct ds_IslandSolveOutput
-{
-	u32 island;
-	u32 island_asleep;
-	u32 body_count;
-	u32 *bodies;		/* bodies simulated in island */ 
-	struct ds_IslandSolveOutput *next;
-};
-
-struct ds_IslandSolveInput
-{
-	struct ds_Island *is;
-	struct ds_RigidBodyPipeline *pipeline;
-	struct ds_IslandSolveOutput *out;
-	f32 timestep;
-};
-
-/*
- * Input: struct ds_Island_solve_in 
- * Output: struct ds_IslandSolveOutput
- *
- * Solves the given island using the global solver config. Since no island shares any contacts or bodies, and every
- * island is a unique task, no shared variables are being written to.
- *
- * - reads pipeline, solver config, cdb, is_db (basically everything)
- * - writes to island,		(unique to thread, memory in cdb)
- * - writes to island->contacts (unique to thread, memory in cdb)
- * - writes to island->bodies	(unique to thread, memory in pipeline)
- */
-void	ThreadIslandSolve(void *task_input);
+u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is, u32 *asleep, const f32 timestep);
 
 /*
 =================================================================================================================
@@ -875,6 +844,38 @@ struct ds_CollisionJobPhase
     u32                             seed_count_max;
 };
 
+
+/*
+ds_IslandJobPhase
+=================
+*/
+
+enum ds_IslandJobType
+{
+    ISLAND_JOB_SOLVE,
+    ISLAND_JOB_COUNT
+};
+
+struct ds_IslandSolveJob 
+{
+	u32     island;
+
+	u32     asleep;
+	u32     body_count;
+	u32 *   bodies;		    /* bodies simulated in island */ 
+};
+
+struct ds_IslandJobPhase
+{
+    struct ds_JobPhase              phase;
+
+	struct ds_RigidBodyPipeline *   pipeline;
+    f32                             timestep;
+
+    struct ds_IslandSolveJob *      island_solve_jobs;
+    u32                             island_solve_count_max;
+};
+
 /*
 =================================================================================================================
 |						Physics Pipeline			  	      	    	|
@@ -1030,7 +1031,8 @@ struct ds_RigidBodyPipeline
 	u32			    margin_on;
 	f32			    margin;
 
-    struct ds_CollisionJobPhase *cd_jobs;
+    struct ds_CollisionJobPhase *   cd_jobs;
+    struct ds_IslandJobPhase *      is_jobs;
 };
 
 /**************** PHYISCS PIPELINE API ****************/

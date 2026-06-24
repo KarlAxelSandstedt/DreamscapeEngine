@@ -1020,15 +1020,26 @@ void led_WallSmashSimulationSetup(struct led *led)
     ds_Id tagged_id;
 
 #define dsphere_v_count 	30
-	const u32 dsphere_count = 40;
-	const u32 capsule_count = 20;
-	const u32 tower1_count = 2;
-	const u32 tower2_count = 4;
-	const u32 tower1_box_count = 40;
-	const u32 tower2_box_count = 10;
-    const u32 multibox_count = 5;
-	const u32 pyramid_layers = 15;
-	const u32 pyramid_count = 3;
+	//const u32 dsphere_count = 40;
+	const u32 dsphere_count = 0;
+	//const u32 capsule_count = 20;
+	const u32 capsule_count = 0;
+	//const u32 tower1_count = 2;
+	//const u32 tower2_count = 4;
+	const u32 tower1_count = 0;
+	const u32 tower2_count = 0;
+	//const u32 tower1_box_count = 40;
+	const u32 tower1_box_count = 0;
+	//const u32 tower2_box_count = 10;
+	const u32 tower2_box_count = 0;
+    //const u32 multibox_count = 5;
+    const u32 multibox_count = 0;
+	//const u32 pyramid_layers = 15;
+	//const u32 pyramid_count = 3;
+	const u32 pyramid_layers = 2;
+	const u32 pyramid_count = 1;
+    //const u32 incr_count = 10;
+    const u32 incr_count = 0;
 	const u32 bodies = tower1_box_count + tower2_box_count + 3 + pyramid_layers*(pyramid_layers+1) / 2;
 
 	/* Setup rigid bodies */
@@ -1128,7 +1139,7 @@ void led_WallSmashSimulationSetup(struct led *led)
     const u32 rb_static = 0;
     const u32 rb_dynamic = 1;
     led_RigidBodyPrefabAdd(led, Utf8Inline("rb_map"), rb_static);
-    //led_RigidBodyPrefabAdd(led, Utf8Inline("rb_floor"), rb_static);
+    led_RigidBodyPrefabAdd(led, Utf8Inline("rb_floor"), rb_static);
     led_RigidBodyPrefabAdd(led, Utf8Inline("rb_ramp"), rb_static);
     led_RigidBodyPrefabAdd(led, Utf8Inline("rb_box"), rb_dynamic);
     led_RigidBodyPrefabAdd(led, Utf8Inline("rb_multibox"), rb_dynamic);
@@ -1166,7 +1177,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 
     ds_Transform transform = ds_TransformIdentity();
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_map"), Utf8Inline("s_map"), Utf8Inline("l_s_map"), &transform);
-    //led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_floor"), Utf8Inline("s_floor"), Utf8Inline("l_s_floor"), &transform);
+    led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_floor"), Utf8Inline("s_floor"), Utf8Inline("l_s_floor"), &transform);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_box"), Utf8Inline("s_box"), Utf8Inline("l_s_box"), &transform);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_capsule"), Utf8Inline("s_capsule"), Utf8Inline("l_s_capsule"), &transform);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_sphere"), Utf8Inline("s_sphere"), Utf8Inline("l_s_sphere"), &transform);
@@ -1217,11 +1228,11 @@ void led_WallSmashSimulationSetup(struct led *led)
     const vec3 multidsphere_base_translation = { 0.0f, floor_translation[1] + 1.0f, floor_translation[2] / 2.0f -14.0f };
     const vec3 map_translation = { 0.0f, -25.0f, 0.0f };
 
-    //id = Utf8Cstr(sys_win->ui->mem_frame, "led_floor");
-    //tagged_id = led_NodeAdd(led, id, Utf8Empty());
-    //led_NodeSetPosition(led, tagged_id, floor_translation);
-    //led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_floor"));
-    //led_NodeSetColor(led, tagged_id, floor_color, 1.0f);
+    id = Utf8Cstr(sys_win->ui->mem_frame, "led_floor");
+    tagged_id = led_NodeAdd(led, id, Utf8Empty());
+    led_NodeSetPosition(led, tagged_id, floor_translation);
+    led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_floor"));
+    led_NodeSetColor(led, tagged_id, floor_color, 1.0f);
 	
     id = Utf8Cstr(sys_win->ui->mem_frame, "led_map");
     tagged_id = led_NodeAdd(led, id, Utf8Empty());
@@ -1352,7 +1363,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 
 	//for (u32 k = 0; k < tower2_count; ++k)
     //{
-        for (u32 j = 0; j < 10; ++j)
+        for (u32 j = 0; j < incr_count; ++j)
         {
     		for (u32 i = 0; i <= j; ++i)
 			{

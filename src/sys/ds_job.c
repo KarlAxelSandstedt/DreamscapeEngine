@@ -31,6 +31,7 @@ static void ds_WSDequeStaticAssert(void)
     ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->a_bottom == 64, "");
     ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->a_mem_count == 128, "");
     ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->owner == 132, "");
+    ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->to_publish == 136, "");
     ds_StaticAssert(sizeof(struct ds_WSDeque) == 27*DS_CACHE_LINE, "Unexpected size of ds_WSDeque");
 }
 
@@ -50,7 +51,8 @@ static void ds_JobSchedulerStaticAssert(void)
     ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->a_running == 20, "");
     ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->phase == 24, "");
     ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->jobs_are_available == 64, "");
-    ds_StaticAssert(sizeof(struct ds_JobScheduler) == 2*DS_CACHE_LINE, "Unexpected size of ds_JobScheduler");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->a_workers_waiting == 128, "");
+    ds_StaticAssert(sizeof(struct ds_JobScheduler) == 3*DS_CACHE_LINE, "Unexpected size of ds_JobScheduler");
 }
 
 static void ds_JobPhaseStaticAssert(void)
@@ -70,6 +72,7 @@ void ds_WSDequeAlloc(struct ds_WSDeque *deque, const u32 owner, const u64 len)
     ds_Assert(len);
 
     deque->owner = owner;
+    deque->to_publish = 0;
     deque->mem[0].len = PowerOfTwoCeil(len);
     deque->mem[0].mask = deque->mem[0].len - 1;
     deque->mem[0].id = ds_Alloc(&deque->mem[0].mem, deque->mem[0].len*sizeof(ds_JobId), NO_HUGE_PAGES);
@@ -106,7 +109,7 @@ static void ds_WSDequeRealloc(struct ds_WSDeque *deque)
     const u64 local_top = AtomicLoadRlx64(&deque->a_top);
     const u64 new_mask = deque->mem[local_mem_count].mask;
     const u64 old_mask = deque->mem[local_mem_count - 1].mask;
-    for (u64 i = local_top; i < local_bottom; ++i)
+    for (u64 i = local_top; i < local_bottom + deque->to_publish; ++i)
     {
         AtomicStoreRlx32(&deque->mem[local_mem_count].id[i & new_mask]
                         , deque->mem[local_mem_count - 1].id[i & old_mask]);
@@ -137,20 +140,28 @@ void ds_WSDequePushBottom(struct ds_WSDeque *deque, const ds_JobId id)
     const u64 local_bottom = AtomicLoadRlx64(&deque->a_bottom);
     /* Note: Paper uses Acquire here, not sure why as only a_top itself is modified by guest threads. */
     const u64 local_top = AtomicLoadRlx64(&deque->a_top);
-    if (local_bottom - local_top >= deque->mem[local_mem_count-1].len)
+    if (deque->to_publish + local_bottom - local_top >= deque->mem[local_mem_count-1].len)
     {
         ds_WSDequeRealloc(deque);
         local_mem_count = AtomicLoadRlx32(&deque->a_mem_count);
     }
 
-    const u32 index = local_bottom & deque->mem[local_mem_count-1].mask;
+    const u32 index = (deque->to_publish + local_bottom) & deque->mem[local_mem_count-1].mask;
+    deque->to_publish += 1;
     AtomicStoreRlx32(&deque->mem[local_mem_count-1].id[index], id);
-    AtomicStoreRel64(&deque->a_bottom, local_bottom+1);
+}
+
+void ds_WSDequePublish(struct ds_WSDeque *deque)
+{
+    const u64 local_bottom = AtomicLoadRlx64(&deque->a_bottom);
+    AtomicStoreRel64(&deque->a_bottom, local_bottom + deque->to_publish);
+    deque->to_publish = 0;
 }
 
 ds_JobId ds_WSDequeTryPopBottom(struct ds_WSDeque *deque)
 {
     ds_Assert(deque->owner == ds_ThreadSelfIndex());
+    ds_Assert(deque->to_publish == 0);
 
     const u64 local_bottom_t0 = AtomicLoadRlx64(&deque->a_bottom) - 1;
     const u32 local_mem_count = AtomicLoadRlx32(&deque->a_mem_count);
@@ -240,15 +251,15 @@ void ds_WorkerMain(dsThread *thr)
 	while (AtomicLoadRlx32(&g_scheduler->a_running))
 	{
 		/* No more work, we go to sleep and wait until we aquire new work.
-		 * Spurious wake ups may happen, so we keep this in a loop.
          *
          * TODO:
          * Optimization: If sempahore turns out to be to much overhead explore 
          *      - futexes (Linux)
          *      - WaitOnAddress + WakeByAddressSingle (Windows)
 		 */
-		while (!SemaphoreWait(&g_scheduler->jobs_are_available));
-
+        AtomicFetchAddRlx32(&g_scheduler->a_workers_waiting, 1);
+		SemaphoreWait(&g_scheduler->jobs_are_available);
+        AtomicFetchSubRlx32(&g_scheduler->a_workers_waiting, 1);
 JOB_LOOP:
         u32 job;
         while ((job = ds_WSDequeTryPopBottom(g_scheduler->deque + index_self)) != DS_JOB_ID_EMPTY)
@@ -258,8 +269,6 @@ JOB_LOOP:
                 g_scheduler->phase->dispatch(job);
             }
         }
-
-        ds_Assert(AtomicLoadRlx32(&g_scheduler->deque[index_self].a_top) == AtomicLoadRlx32(&g_scheduler->deque[index_self].a_bottom));
 
         //TODO: temporary count
         const u32 steal_attempts_count = 8;
@@ -288,7 +297,6 @@ JOB_LOOP:
             g_scheduler->phase->dispatch(job);
         }
     }
-    ds_Assert(AtomicLoadRlx32(&g_scheduler->deque[0].a_top) == AtomicLoadRlx32(&g_scheduler->deque[0].a_bottom));
 
     //TODO: temporary count
     const u32 steal_attempts_count = 16;
@@ -327,7 +335,7 @@ void ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, c
 		ds_ThreadClone(mem_persistent, ds_WorkerMain, g_scheduler->worker + i, stacksize);
 	}
 
-    //AtomicStoreRlx32(&g_scheduler->a_jobs_available_count, 0);
+    AtomicStoreRlx32(&g_scheduler->a_workers_waiting, 0);
 	AtomicFetchAddRel32(&g_scheduler->a_running, 1);
 
 	while ((u32) AtomicLoadSeqCst32(&g_scheduler->a_running) < g_scheduler->worker_count);
@@ -382,6 +390,7 @@ void ds_JobPhaseBegin(struct ds_JobPhase *phase)
     ds_Assert(g_scheduler->phase == NULL);
 
     g_scheduler->phase = phase;
+    ds_Assert(AtomicLoadRlx32(&phase->a_jobs_remaining) == 0);
     AtomicStoreRlx32(&phase->a_jobs_remaining, 0);
     for (u32 i = 0; i < phase->next_len; ++i)
     {
@@ -391,7 +400,8 @@ void ds_JobPhaseBegin(struct ds_JobPhase *phase)
 
 void ds_JobPhaseEnd(struct ds_JobPhase *phase)
 {
-    while (!SemaphoreWait(&phase->completed));
+    SemaphoreWait(&phase->completed);
+    ds_Assert(0 == SemaphoreTryWait(&phase->completed));
     g_scheduler->phase = NULL;
 }
 
@@ -491,10 +501,7 @@ void task_main(dsThread *thr)
 			task_run(FifoSpmcPop(g_task_ctx->tasks), w);
 		}
 
-		/* No more work, we go to sleep and wait until we aquire new work.
-		 * Spurious wake ups may happen, so we keep this in a loop.
-		 */
-		while (!SemaphoreWait(&g_task_ctx->tasks->able_for_reservation));
+		SemaphoreWait(&g_task_ctx->tasks->able_for_reservation);
 
 		task_run(FifoSpmcPop(g_task_ctx->tasks), w);
 	};
@@ -633,7 +640,7 @@ struct task_bundle *task_bundle_split_range(struct arena *mem_task_lifetime, TAS
 
 void task_bundle_wait(struct task_bundle *bundle)
 {
-	while (!SemaphoreWait(&bundle->bundle_completed));
+	SemaphoreWait(&bundle->bundle_completed);
 }
 
 void task_bundle_release(struct task_bundle *bundle)
