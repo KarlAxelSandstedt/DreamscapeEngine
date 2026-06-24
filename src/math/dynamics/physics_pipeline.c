@@ -92,8 +92,8 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 
     pipeline.cd_jobs = ArenaPushAligned(mem, sizeof(struct ds_CollisionJobPhase), DS_CACHE_LINE);
     pipeline.is_jobs = ArenaPushAligned(mem, sizeof(struct ds_IslandJobPhase), DS_CACHE_LINE);
-    ds_JobPhaseAlloc(mem, &pipeline.cd_jobs->phase, COLLISION_JOB_COUNT);
-    ds_JobPhaseAlloc(mem, &pipeline.is_jobs->phase, ISLAND_JOB_COUNT);
+    ds_JobPhaseAlloc(mem, &pipeline.cd_jobs->phase, COLLISION_JOB_COUNT, ds_CollisionJobPhaseDispatch);
+    ds_JobPhaseAlloc(mem, &pipeline.is_jobs->phase, ISLAND_JOB_COUNT, ds_IslandJobPhaseDispatch);
 #ifdef DS_PHYSICS_DEBUG
 	pipeline.debug_count = g_arch_config->logical_core_count;
 	pipeline.debug = malloc(g_arch_config->logical_core_count * sizeof(struct collisionDebug));
@@ -116,8 +116,6 @@ void PhysicsPipelineFree(struct ds_RigidBodyPipeline *pipeline)
 	}
 	free(pipeline->debug);
 #endif
-    ds_JobPhaseDealloc(&pipeline->cd_jobs->phase);
-    ds_JobPhaseDealloc(&pipeline->is_jobs->phase);
 	BvhFree(&pipeline->shape_bvh);
 	cdb_Free(pipeline->cdb);
 	isdb_Dealloc(&pipeline->is_db);
@@ -194,7 +192,7 @@ struct tcc_Input
     struct ds_Shape *               s2;
 };
 
-static void NarrowPhaseSeedJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPhaseSeedJob *job)
+static u32 NarrowPhaseSeedJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPhaseSeedJob *job)
 {
 	ProfZone;
 
@@ -224,14 +222,12 @@ static void NarrowPhaseSeedJob(struct ds_CollisionJobPhase *phase, struct ds_Nar
         ds_WSDequePushBottom(g_scheduler->deque + ds_ThreadSelfIndex(), ds_JobIdInit(COLLISION_JOB_NARROWPHASE, index));
     }
 
-    ds_JobPhaseFetchAddRemaining(&phase->phase, job_count);
-    ds_WSDequePublish(g_scheduler->deque + ds_ThreadSelfIndex());
-    ds_JobPhaseFetchDecrementRemaining(&phase->phase);
-
 	ProfZoneEnd;
+
+    return job_count - 1;
 }
 
-static void NarrowPhaseJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPhaseJob *job)
+static u32 NarrowPhaseJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPhaseJob *job)
 {
 	ProfZone;
 
@@ -264,24 +260,27 @@ static void NarrowPhaseJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowP
     ds_Assert(s0->body != s1->body);
     job->collision = ds_ShapeContact(&g_scheduler->worker[ds_ThreadSelfIndex()].mem_frame, &job->manifold, job->cache, pipeline, s0, s1);
 
-    ds_JobPhaseFetchDecrementRemaining(&phase->phase);
-
 	ProfZoneEnd;
+
+    return U32_MAX;
 }
 
-void ds_CollisionJobPhaseDispatch(const ds_JobId job)
+u32 ds_CollisionJobPhaseDispatch(const ds_JobId job)
 {
     struct ds_CollisionJobPhase *phase = (struct ds_CollisionJobPhase *) g_scheduler->phase;
  
     const u32 index = ds_JobIdIndex(job);
     const enum ds_CollisionJobType type = ds_JobIdTag(job);
 
+    u32 job_diff = 0;
     switch (type)
     {
-        case COLLISION_JOB_SEED: { NarrowPhaseSeedJob(phase, phase->seed_jobs + index); } break;
-        case COLLISION_JOB_NARROWPHASE: { NarrowPhaseJob(phase, phase->narrowphase_jobs + index); } break;
+        case COLLISION_JOB_SEED: { job_diff = NarrowPhaseSeedJob(phase, phase->seed_jobs + index); } break;
+        case COLLISION_JOB_NARROWPHASE: { job_diff = NarrowPhaseJob(phase, phase->narrowphase_jobs + index); } break;
         default: { ds_AssertString(0, "Should not be possible"); } break;
     };
+
+    return job_diff;
 }
 
 static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
@@ -331,20 +330,19 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 
     struct ds_CollisionJobPhase *cd_jobs = pipeline->cd_jobs;
     {
-        ds_JobPhaseBegin(&cd_jobs->phase);
+    	ProfZoneNamed("JobPhase (NarrowPhase)");
 
-    	ProfZoneNamed("NarrowPhase");
+        ds_JobPhaseBegin(&cd_jobs->phase);
   
-        cd_jobs->phase.dispatch = &ds_CollisionJobPhaseDispatch;
         cd_jobs->pipeline = pipeline;
         cd_jobs->overlap = proxy_overlap;
 
-        cd_jobs->seed_count_max = g_arch_config->logical_core_count;
+        cd_jobs->seed_count_max = 3*g_arch_config->logical_core_count;
         cd_jobs->seed_jobs = ArenaPush(&pipeline->frame, cd_jobs->seed_count_max*sizeof(struct ds_NarrowPhaseSeedJob));
+        ds_JobPhaseReserve(&cd_jobs->phase, COLLISION_JOB_SEED, cd_jobs->seed_count_max);
 
         cd_jobs->narrowphase_count_max = proxy_overlap_count;
         cd_jobs->narrowphase_jobs = ArenaPushAligned(&pipeline->frame, cd_jobs->narrowphase_count_max*sizeof(struct ds_NarrowPhaseJob), DS_CACHE_LINE);
-        ds_JobPhaseReserve(&cd_jobs->phase, COLLISION_JOB_SEED, cd_jobs->seed_count_max);
 
         const u32 jobs_per_seed = proxy_overlap_count / cd_jobs->seed_count_max;
         u32 extra = proxy_overlap_count % cd_jobs->seed_count_max;
@@ -365,10 +363,11 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 
         for (u32 i = 0; i < cd_jobs->seed_count_max; ++i)
         {
-            ds_WSDequePushBottom(g_scheduler->deque + 0, ds_JobIdInit(COLLISION_JOB_SEED, i));
+            ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(COLLISION_JOB_SEED, i));
         }
-        ds_JobPhaseFetchAddRemaining(&cd_jobs->phase, cd_jobs->seed_count_max);
-        ds_WSDequePublish(g_scheduler->deque + 0);
+        AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, cd_jobs->seed_count_max);
+        ds_JobPhaseAddFetchRemaining(&cd_jobs->phase, cd_jobs->seed_count_max);
+        ds_WSDequePublish(g_scheduler->seed_deque);
         
         for (u32 i = 1; i < g_arch_config->logical_core_count; ++i)
         {
@@ -376,13 +375,11 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
         }
 
         ds_MasterRunAvailableJobs();
-        ds_JobPhaseEnd(&cd_jobs->phase);
-        ds_Assert(AtomicLoadRlx32(&cd_jobs->phase.a_jobs_remaining) == 0);
+
+        ds_JobPhaseEnd();
 
         ProfZoneEnd;
     }
-    //TODO Data-race in g_scheduler->phase, since it will still be in use as master sets it to NULL...
-    ds_Assert(0);
 
     {
     	ProfZoneNamed("ContactManagement");
@@ -629,7 +626,42 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 	ProfZoneEnd;
 }
 
-static void IslandJobSolve(struct ds_IslandJobPhase *phase, struct ds_IslandSolveJob *job)
+static u32 IslandJobSeed(struct ds_IslandJobPhase *phase, struct ds_IslandSeedJob *job)
+{
+	ProfZone;
+
+    const u32 thread = ds_ThreadSelfIndex();
+    const struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
+    const u32 base = ds_JobPhaseReserve(&phase->phase, ISLAND_JOB_SOLVE, job->count);
+    ds_Assert(base + job->count <= phase->solve_count_max);
+
+    u32 job_count = 0;
+    u32 island_index = job->island_first;
+    struct ds_Island *is;
+    for (u32 i = 0; i < job->count; ++i, island_index = dll_Next(is))
+	{
+	    is = ds_PoolAddress(&pipeline->is_db.island_pool, island_index);
+
+        const u32 job_index = base + i;
+        struct ds_IslandSolveJob *job = phase->solve_jobs + job_index;
+
+        job->valid = 0;
+        if (!g_solver_config->sleep_enabled || ISLAND_AWAKE_BIT(is))
+	    {
+            job_count += 1;
+            job->valid = 1;
+	    	job->island = island_index;
+            ds_WSDequePushBottom(g_scheduler->deque + thread, ds_JobIdInit(ISLAND_JOB_SOLVE, job_index));
+	    }
+        
+    }
+
+	ProfZoneEnd;
+
+    return job_count - 1;
+}
+
+static u32 IslandJobSolve(struct ds_IslandJobPhase *phase, struct ds_IslandSolveJob *job)
 {
 	ProfZone;
 
@@ -638,74 +670,99 @@ static void IslandJobSolve(struct ds_IslandJobPhase *phase, struct ds_IslandSolv
 	job->body_count = is->body_list.count;
 	job->bodies = IslandSolve(&g_scheduler->worker[ds_ThreadSelfIndex()].mem_frame, pipeline, is, &job->asleep, phase->timestep);
 
-    ds_JobPhaseFetchDecrementRemaining(&phase->phase);
-
 	ProfZoneEnd;
+
+    return U32_MAX;
 }
 
-void ds_IslandJobPhaseDispatch(const ds_JobId job)
+u32 ds_IslandJobPhaseDispatch(const ds_JobId job)
 {
     struct ds_IslandJobPhase *phase = (struct ds_IslandJobPhase *) g_scheduler->phase;
  
     const u32 index = ds_JobIdIndex(job);
     const enum ds_IslandJobType type = ds_JobIdTag(job);
 
+    u32 job_diff = 0;
     switch (type)
     {
-        case ISLAND_JOB_SOLVE: { IslandJobSolve(phase, phase->island_solve_jobs + index); } break;
+        case ISLAND_JOB_SEED: { job_diff = IslandJobSeed(phase, phase->seed_jobs + index); } break;
+        case ISLAND_JOB_SOLVE: { job_diff = IslandJobSolve(phase, phase->solve_jobs + index); } break;
         default: { ds_AssertString(0, "Should not be possible"); } break;
     };
+
+    return job_diff;
 }
 
 static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta) 
 {
 	ProfZone;
 
-    u32 job_count = 0;
     struct ds_IslandJobPhase *is_jobs = pipeline->is_jobs;
-    ds_JobPhaseBegin(&is_jobs->phase);
     {
-        is_jobs->phase.dispatch = &ds_IslandJobPhaseDispatch;
+    	ProfZoneNamed("JobPhase(Solve Islands)");
+
+        ds_JobPhaseBegin(&is_jobs->phase);
+
         is_jobs->pipeline = pipeline;
         is_jobs->timestep = delta;
 
-        is_jobs->island_solve_count_max = pipeline->is_db.island_pool.count;
-        is_jobs->island_solve_jobs = ArenaPush(&pipeline->frame, is_jobs->island_solve_count_max*sizeof(struct ds_IslandSolveJob));
-        ds_JobPhaseReserve(&is_jobs->phase, ISLAND_JOB_SOLVE, is_jobs->island_solve_count_max);
+        is_jobs->seed_count_max = 3*g_arch_config->logical_core_count;
+        is_jobs->seed_jobs = ArenaPush(&pipeline->frame, is_jobs->seed_count_max*sizeof(struct ds_IslandSeedJob));
+        ds_JobPhaseReserve(&is_jobs->phase, ISLAND_JOB_SEED, is_jobs->seed_count_max);
 
-        //TODO Require an easy to use barrier or something, This defeats the whole purpose of multithreading
-        //or some other mechanism to facilitate seeding
-        
-	    struct ds_Island *is = NULL;
-	    for (u32 i = pipeline->is_db.island_list.first; i != DLL_NULL; i = dll_Next(is))
-	    {
-		    is = ds_PoolAddress(&pipeline->is_db.island_pool, i);
-            if (!g_solver_config->sleep_enabled || ISLAND_AWAKE_BIT(is))
-		    {
-		    	is_jobs->island_solve_jobs[job_count++].island = i;
-		    }
-        }
-        ds_Assert(job_count <= is_jobs->island_solve_count_max);
-        
-        for (u32 i = 0; i < job_count; ++i)
+        is_jobs->solve_count_max = pipeline->is_db.island_list.count;
+        is_jobs->solve_jobs = ArenaPush(&pipeline->frame, is_jobs->solve_count_max*sizeof(struct ds_IslandSolveJob));
+
+        const u32 islands_per_seed = pipeline->is_db.island_list.count / is_jobs->seed_count_max;
+        u32 extra = pipeline->is_db.island_list.count % is_jobs->seed_count_max;
+        u32 low = 0;
+        u32 next = pipeline->is_db.island_list.first;
+        for (u32 i = 0; i < is_jobs->seed_count_max; ++i)
         {
-            ds_WSDequePushBottom(g_scheduler->deque + 0, ds_JobIdInit(ISLAND_JOB_SOLVE, i));
-        }
-        ds_JobPhaseFetchAddRemaining(&is_jobs->phase, job_count);
-        ds_WSDequePublish(g_scheduler->deque + 0);
+            u32 high = low + islands_per_seed;
+            if (extra)
+            {
+                high += 1;
+                extra -= 1;
+            }
+            is_jobs->seed_jobs[i].count = high - low;
+            low = high;
+        
+            is_jobs->seed_jobs[i].island_first = next;
+	        struct ds_Island *is = NULL;
+            for (u32 c = 0; c < is_jobs->seed_jobs[i].count; ++c)
+            {
+		        is = ds_PoolAddress(&pipeline->is_db.island_pool, next);
+                next = dll_Next(is);
+            }
 
+            ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(ISLAND_JOB_SEED, i));
+        }
+        ds_Assert(next == DLL_NULL);
+
+        AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, is_jobs->seed_count_max);
+        ds_JobPhaseAddFetchRemaining(&is_jobs->phase, is_jobs->seed_count_max);
+        ds_WSDequePublish(g_scheduler->seed_deque);
         for (u32 i = 1; i < g_arch_config->logical_core_count; ++i)
         {
             SemaphorePost(&g_scheduler->jobs_are_available);
         }
 
-        ds_MasterRunAvailableJobs();
-    }
-    ds_JobPhaseEnd(&is_jobs->phase);
+	    ds_MasterRunAvailableJobs();
+        
+        ds_JobPhaseEnd();
 
-	for (u32 i = 0; i < job_count; ++i)
+    	ProfZoneEnd;
+    }
+
+	for (u32 i = 0; i < is_jobs->solve_count_max; ++i)
 	{
-        const struct ds_IslandSolveJob *job = is_jobs->island_solve_jobs + i;
+        const struct ds_IslandSolveJob *job = is_jobs->solve_jobs + i;
+        if (!job->valid)
+        {
+            continue;
+        }
+    
 		if (job->asleep)
 		{
 			PhysicsEventIslandAsleep(pipeline, job->island);

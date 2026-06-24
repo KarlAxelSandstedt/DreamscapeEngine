@@ -47,12 +47,15 @@ static void ds_JobSchedulerStaticAssert(void)
 {
     ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->worker == 0, "");
     ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->deque == 8, "");
-    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->worker_count == 16, "");
-    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->a_running == 20, "");
-    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->phase == 24, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->seed_deque == 16, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->worker_count == 24, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->a_running == 28, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->phase == 32, "");
     ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->jobs_are_available == 64, "");
     ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->a_workers_waiting == 128, "");
-    ds_StaticAssert(sizeof(struct ds_JobScheduler) == 3*DS_CACHE_LINE, "Unexpected size of ds_JobScheduler");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->a_seeds_remaining == 192, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->phase_completed == 256, "");
+    ds_StaticAssert(sizeof(struct ds_JobScheduler) == 5*DS_CACHE_LINE, "Unexpected size of ds_JobScheduler");
 }
 
 static void ds_JobPhaseStaticAssert(void)
@@ -236,6 +239,69 @@ ds_JobId ds_WSDequeTrySteal(struct ds_WSDeque *deque)
     return id;
 }
 
+void ds_WorkerRunJob(const ds_JobId job)
+{
+    struct ds_WSDeque *deque = g_scheduler->deque + ds_ThreadSelfIndex();
+    const u32 job_diff = g_scheduler->phase->dispatch(job);
+
+    /* TODO: If this is costly, maybe we can skip this while running tasks in own deque, and do 
+     * a batch update before/after stealing. Trade-off becomes early publishing vs. less updates a_remaining
+     */
+    const u32 local_remaining = ds_JobPhaseAddFetchRemaining(g_scheduler->phase, job_diff);
+    if (deque->to_publish)
+    {
+        ds_WSDequePublish(deque);
+    }
+
+    if (local_remaining == 0)
+    {
+        SemaphorePost(&g_scheduler->phase_completed);
+    }
+}
+
+void ds_TrySeedAndRunJobs(const u32 thread)
+{
+    /* When we get here, we know for sure that the deque we own is empty. We check if there are any special
+     * seed tasks to grab, and seed of deque if that is the case. */
+    u32 job;
+    u32 local_seeds_remaining;
+
+    //TODO fetch increment seed_index, if (seed_index < seed_count), grab task and run 
+    
+    /* (1) Seed and run as many jobs in owned Deque as possible */
+    while (0 < (local_seeds_remaining = AtomicLoadRlx32(&g_scheduler->a_seeds_remaining)))
+    {
+        //TODO compare_exchange loads hte value as well... uncessary loads happening
+        if (AtomicCompareExchangeRlxRlx32(&g_scheduler->a_seeds_remaining, &local_seeds_remaining, local_seeds_remaining - 1))
+        {
+            while ((job = ds_WSDequeTrySteal(g_scheduler->seed_deque)) == DS_JOB_ID_NULL);
+            ds_WorkerRunJob(job);
+        }
+    }
+
+    /* No more seed tasks, try to steal. If we succeed in stealing a task, we check our own deque again for work. */
+RUN_JOBS:
+    while ((job = ds_WSDequeTryPopBottom(g_scheduler->deque + thread)) != DS_JOB_ID_EMPTY)
+    {
+        if (job != DS_JOB_ID_NULL)
+        {
+            ds_WorkerRunJob(job);
+        }
+    }
+
+    //TODO: temporary count
+    const u32 steal_attempts_count = 8;
+    for (u32 i = 0; i < steal_attempts_count; ++i)
+    {
+        const u32 index = RngU64Range(0, g_scheduler->worker_count-1);
+        if (index != thread && (job = ds_WSDequeTrySteal(g_scheduler->deque + index)) != DS_JOB_ID_NULL)
+        {
+            ds_WorkerRunJob(job);
+            goto RUN_JOBS;
+        }
+    }
+}
+
 void ds_WorkerMain(dsThread *thr)
 {
 	struct ds_Worker *w = ds_ThreadArguments(thr);
@@ -260,56 +326,16 @@ void ds_WorkerMain(dsThread *thr)
         AtomicFetchAddRlx32(&g_scheduler->a_workers_waiting, 1);
 		SemaphoreWait(&g_scheduler->jobs_are_available);
         AtomicFetchSubRlx32(&g_scheduler->a_workers_waiting, 1);
-JOB_LOOP:
-        u32 job;
-        while ((job = ds_WSDequeTryPopBottom(g_scheduler->deque + index_self)) != DS_JOB_ID_EMPTY)
-        {
-            if (job != DS_JOB_ID_NULL)
-            {
-                g_scheduler->phase->dispatch(job);
-            }
-        }
 
-        //TODO: temporary count
-        const u32 steal_attempts_count = 8;
-        for (u32 i = 0; i < steal_attempts_count; ++i)
-        {
-            const u32 index = RngU64Range(0, g_scheduler->worker_count-1);
-            if (index != index_self && (job = ds_WSDequeTrySteal(g_scheduler->deque + index)) != DS_JOB_ID_NULL)
-            {
-                g_scheduler->phase->dispatch(job);
-                goto JOB_LOOP;
-            }
-        }
+        ds_TrySeedAndRunJobs(index_self);
 	}
 }
 
 void ds_MasterRunAvailableJobs(void)
 {
     ds_Assert(ds_ThreadSelfIndex() == 0);
-    ds_Assert(g_scheduler->worker_count);
-JOB_LOOP:
-    u32 job;
-    while ((job = ds_WSDequeTryPopBottom(g_scheduler->deque + 0)) != DS_JOB_ID_EMPTY)
-    {
-        if (job != DS_JOB_ID_NULL)
-        {
-            g_scheduler->phase->dispatch(job);
-        }
-    }
 
-    //TODO: temporary count
-    const u32 steal_attempts_count = 16;
-    for (u32 i = 0; i < steal_attempts_count; ++i)
-    {
-        const u32 index = RngU64Range(1, g_scheduler->worker_count-1);
-        job = ds_WSDequeTrySteal(g_scheduler->deque + index);
-        if (job != DS_JOB_ID_NULL)
-        {
-            g_scheduler->phase->dispatch(job);
-            goto JOB_LOOP;
-        }
-    }
+    ds_TrySeedAndRunJobs(0);
 }
 
 void ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, const u64 stacksize, const u64 initial_deque_size)
@@ -320,9 +346,12 @@ void ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, c
     g_scheduler->worker_count = thread_count;
 	g_scheduler->worker = ArenaPushAligned(mem_persistent, thread_count*sizeof(struct ds_Worker), DS_CACHE_LINE);	
     g_scheduler->deque = ArenaPushAligned(mem_persistent, thread_count*sizeof(struct ds_WSDeque), DS_CACHE_LINE);
+    g_scheduler->seed_deque = ArenaPushAligned(mem_persistent, sizeof(struct ds_WSDeque), DS_CACHE_LINE);
     g_scheduler->phase = NULL;
     AtomicStoreRlx32(&g_scheduler->a_running, 0);
 	SemaphoreInit(&g_scheduler->jobs_are_available, 0);
+    SemaphoreInit(&g_scheduler->phase_completed, 0);
+    ds_WSDequeAlloc(g_scheduler->seed_deque, 0, initial_deque_size);
 	for (u32 i = 0; i < thread_count; ++i)
 	{
         g_scheduler->worker[i].mem_frame = ArenaAlloc1MB();
@@ -359,8 +388,10 @@ void ds_JobSchedulerShutdown(void)
 	    ds_WSDequeDealloc(g_scheduler->deque + i);
 		ArenaFree1MB(&g_scheduler->worker[i].mem_frame);
 	}
+	ds_WSDequeDealloc(g_scheduler->seed_deque);
 
 	SemaphoreDestroy(&g_scheduler->jobs_are_available);
+    SemaphoreDestroy(&g_scheduler->phase_completed);
 }
 
 void ds_JobSchedulerFrameClear(void)
@@ -371,22 +402,17 @@ void ds_JobSchedulerFrameClear(void)
 	}
 }
 
-void ds_JobPhaseAlloc(struct arena *mem, struct ds_JobPhase *phase, const u32 job_type_count)
+void ds_JobPhaseAlloc(struct arena *mem, struct ds_JobPhase *phase, const u32 job_type_count, ds_JobDispatchFunction dispatch)
 {
     AtomicStoreRlx32(&phase->a_jobs_remaining, 0);
-    SemaphoreInit(&phase->completed, 0);
     phase->next = ArenaPushAligned(mem, job_type_count * sizeof(struct ds_PaddedCounter), DS_CACHE_LINE);
     phase->next_len = job_type_count;
-}
-
-void ds_JobPhaseDealloc(struct ds_JobPhase *phase)
-{
-    SemaphoreDestroy(&phase->completed);
+    phase->dispatch = dispatch;
 }
 
 void ds_JobPhaseBegin(struct ds_JobPhase *phase)
 {
-    ds_Assert(0 == SemaphoreTryWait(&phase->completed));
+    ds_Assert(0 == SemaphoreTryWait(&g_scheduler->phase_completed));
     ds_Assert(g_scheduler->phase == NULL);
 
     g_scheduler->phase = phase;
@@ -398,27 +424,18 @@ void ds_JobPhaseBegin(struct ds_JobPhase *phase)
     }
 }
 
-void ds_JobPhaseEnd(struct ds_JobPhase *phase)
+void ds_JobPhaseEnd(void)
 {
-    SemaphoreWait(&phase->completed);
-    ds_Assert(0 == SemaphoreTryWait(&phase->completed));
+    SemaphoreWait(&g_scheduler->phase_completed);
+    const u32 local_remaining = AtomicLoadAcq32(&g_scheduler->phase->a_jobs_remaining);
+    ds_Assert(0 == SemaphoreTryWait(&g_scheduler->phase_completed));
+    ds_Assert(0 == local_remaining);
     g_scheduler->phase = NULL;
 }
 
-u32 ds_JobPhaseFetchDecrementRemaining(struct ds_JobPhase *phase)
+u32 ds_JobPhaseAddFetchRemaining(struct ds_JobPhase *phase, const u32 new_jobs)
 {
-    const u32 local_remaining = AtomicFetchSubRlx32(&phase->a_jobs_remaining, 1);
-    ds_Assert(local_remaining);
-    if (local_remaining == 1)
-    {
-        SemaphorePost(&phase->completed);
-    }
-    return local_remaining;
-}
-
-u32 ds_JobPhaseFetchAddRemaining(struct ds_JobPhase *phase, const u32 new_jobs)
-{
-    return AtomicFetchAddRlx32(&phase->a_jobs_remaining, new_jobs);
+    return AtomicAddFetchRel32(&phase->a_jobs_remaining, new_jobs);
 }
 
 u32 ds_JobPhaseReserve(struct ds_JobPhase *phase, const u32 job_type, const u32 new_jobs_count)

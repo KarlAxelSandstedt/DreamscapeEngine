@@ -152,16 +152,24 @@ struct ds_JobScheduler
 {
 	struct ds_Worker *  worker;
     struct ds_WSDeque * deque;              /* worker[i] owns deque[i] */
-	u32                 worker_count;
+    struct ds_WSDeque * seed_deque;         /* Special deque used for seeding tasks */ 
+
+    u32                 worker_count;
     u32                 a_running;
     struct ds_JobPhase *phase;              /* Currently running phase, if any. */
-    u8                  pad1[64 - 3*sizeof(void *) - 2*sizeof(u32)];
+    u8                  pad1[64 - 4*sizeof(void *) - 2*sizeof(u32)];
 
 	semaphore 	        jobs_are_available;  
     u8                  pad2[64 - sizeof(semaphore)];
 
     u32                 a_workers_waiting;
     u8                  pad3[64 - sizeof(u32)];
+
+    u32                 a_seeds_remaining;
+    u8                  pad4[64 - sizeof(u32)];
+
+    semaphore           phase_completed;
+    u8                  pad5[64 - sizeof(semaphore)];
 
 };
 
@@ -314,32 +322,27 @@ struct ds_PaddedCounter
     u8      pad[64 - sizeof(u32)];
 };
 
-typedef void (*ds_JobDispatchFunction)(const ds_JobId job);
+typedef u32 (*ds_JobDispatchFunction)(const ds_JobId job);
 
 struct ds_JobPhase
 {
-    semaphore                   completed;
     ds_JobDispatchFunction      dispatch;
 
     struct ds_PaddedCounter *   next;       /* next[type].a_counter == Where next job of given type is pushed to */
     u32                         next_len;
-    u8                          pad1[64 - sizeof(semaphore) - 2*sizeof(void *) - sizeof(u32)];
+    u8                          pad1[64 - 2*sizeof(void *) - sizeof(u32)];
     u32                         a_jobs_remaining;
     u8                          pad2[64 - sizeof(u32)];
 };
 
 /* Allocate and Initalize phase resources. */
-void    ds_JobPhaseAlloc(struct arena *mem, struct ds_JobPhase *phase, const u32 job_type_count);
-/* Shutdown phase resources. */
-void    ds_JobPhaseDealloc(struct ds_JobPhase *phase);
+void    ds_JobPhaseAlloc(struct arena *mem, struct ds_JobPhase *phase, const u32 job_type_count, ds_JobDispatchFunction dispatch);
 /* Reset phase resources and set the global ds_JobPhase in scheduler to phase. */
 void    ds_JobPhaseBegin(struct ds_JobPhase *phase);
 /* Block until all jobs in the phase are completed, and set the global ds_JobPhase in scheduler to NULL. */
-void    ds_JobPhaseEnd(struct ds_JobPhase *phase);
-/* Decrement the number of remaining jobs, and return the old value. */
-u32     ds_JobPhaseFetchDecrementRemaining(struct ds_JobPhase *phase);
-/* Add new jobs to the remaining jobs counter, and return the old value. */
-u32     ds_JobPhaseFetchAddRemaining(struct ds_JobPhase *phase, const u32 new_jobs_count);
+void    ds_JobPhaseEnd(void);
+/* Add new jobs to the remaining jobs counter, and return the new value. */
+u32     ds_JobPhaseAddFetchRemaining(struct ds_JobPhase *phase, const u32 new_jobs_count);
 /* Reserve a number of job slots of the given type, and return the starting index */
 u32     ds_JobPhaseReserve(struct ds_JobPhase *phase, const u32 job_type, const u32 new_jobs_count);
 

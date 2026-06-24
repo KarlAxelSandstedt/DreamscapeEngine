@@ -1020,26 +1020,26 @@ void led_WallSmashSimulationSetup(struct led *led)
     ds_Id tagged_id;
 
 #define dsphere_v_count 	30
-	//const u32 dsphere_count = 40;
-	const u32 dsphere_count = 0;
-	//const u32 capsule_count = 20;
-	const u32 capsule_count = 0;
-	//const u32 tower1_count = 2;
-	//const u32 tower2_count = 4;
-	const u32 tower1_count = 0;
-	const u32 tower2_count = 0;
-	//const u32 tower1_box_count = 40;
-	const u32 tower1_box_count = 0;
-	//const u32 tower2_box_count = 10;
-	const u32 tower2_box_count = 0;
-    //const u32 multibox_count = 5;
-    const u32 multibox_count = 0;
-	//const u32 pyramid_layers = 15;
-	//const u32 pyramid_count = 3;
-	const u32 pyramid_layers = 2;
-	const u32 pyramid_count = 1;
-    //const u32 incr_count = 10;
-    const u32 incr_count = 0;
+	const u32 dsphere_count = 40;
+	const u32 capsule_count = 20;
+	const u32 tower1_count = 2;
+	const u32 tower2_count = 4;
+	const u32 tower1_box_count = 40;
+	const u32 tower2_box_count = 10;
+    const u32 multibox_count = 5;
+	const u32 pyramid_layers = 15;
+	const u32 pyramid_count = 3;
+    const u32 incr_count = 10;
+	//const u32 dsphere_count = 0;
+	//const u32 capsule_count = 0;
+	//const u32 tower1_count = 0;
+	//const u32 tower2_count = 0;
+	//const u32 tower1_box_count = 0;
+	//const u32 tower2_box_count = 0;
+    //const u32 multibox_count = 0;
+	//const u32 pyramid_layers = 2;
+	//const u32 pyramid_count = 1;
+    //const u32 incr_count = 0;
 	const u32 bodies = tower1_box_count + tower2_box_count + 3 + pyramid_layers*(pyramid_layers+1) / 2;
 
 	/* Setup rigid bodies */

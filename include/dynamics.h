@@ -839,11 +839,13 @@ struct ds_CollisionJobPhase
     struct dbvhOverlap *            overlap;
 
     struct ds_NarrowPhaseSeedJob *  seed_jobs;
+    u32                             seed_count_max;
+
     struct ds_NarrowPhaseJob *      narrowphase_jobs;
     u32                             narrowphase_count_max;
-    u32                             seed_count_max;
 };
 
+u32 ds_CollisionJobPhaseDispatch(const ds_JobId job);
 
 /*
 ds_IslandJobPhase
@@ -852,12 +854,20 @@ ds_IslandJobPhase
 
 enum ds_IslandJobType
 {
+    ISLAND_JOB_SEED,
     ISLAND_JOB_SOLVE,
     ISLAND_JOB_COUNT
 };
 
+struct ds_IslandSeedJob 
+{
+    u32     island_first;
+    u32     count;
+};
+
 struct ds_IslandSolveJob 
 {
+    u32     valid;
 	u32     island;
 
 	u32     asleep;
@@ -872,9 +882,14 @@ struct ds_IslandJobPhase
 	struct ds_RigidBodyPipeline *   pipeline;
     f32                             timestep;
 
-    struct ds_IslandSolveJob *      island_solve_jobs;
-    u32                             island_solve_count_max;
+    struct ds_IslandSeedJob *       seed_jobs;
+    u32                             seed_count_max;
+
+    struct ds_IslandSolveJob *      solve_jobs;
+    u32                             solve_count_max;
 };
+
+u32 ds_IslandJobPhaseDispatch(const ds_JobId job);
 
 /*
 =================================================================================================================
