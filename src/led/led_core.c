@@ -1231,7 +1231,7 @@ void led_WallSmashSimulationSetup(struct led *led)
     id = Utf8Cstr(sys_win->ui->mem_frame, "led_floor");
     tagged_id = led_NodeAdd(led, id, Utf8Empty());
     led_NodeSetPosition(led, tagged_id, floor_translation);
-    led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_floor"));
+    //led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_floor"));
     led_NodeSetColor(led, tagged_id, floor_color, 1.0f);
 	
     id = Utf8Cstr(sys_win->ui->mem_frame, "led_map");

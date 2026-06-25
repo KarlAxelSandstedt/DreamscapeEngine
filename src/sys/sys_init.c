@@ -47,8 +47,8 @@ void ds_PlatformApiInit(struct arena *mem)
 	}
 #endif
     const u64 stacksize = 64*1024;
-    const u64 initial_deque_size = 1024;
-    ds_JobSchedulerInit(mem, g_arch_config->logical_core_count, stacksize, 1024); 
+    const u64 initial_deque_size = 4096;
+    ds_JobSchedulerInit(mem, g_arch_config->logical_core_count, stacksize, initial_deque_size); 
 }
 
 void ds_PlatformApiShutdown(void)

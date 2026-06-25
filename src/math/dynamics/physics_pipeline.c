@@ -402,35 +402,35 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
                 if (job->cache_index < cdb->sat_cache_persistent_usage.bit_count)
                 {
                     BitVecSetBit(&cdb->sat_cache_frame_usage, job->cache_index, 1);   
-                }
+                } 
+            }
 
-                if (job->collision)
+            if (job->collision)
+            {
+                cdb->contact_count += 1;
+                struct slot slot = ds_ContactKeyLookup(pipeline, &job->key);
+                if (!slot.address)
                 {
-                    cdb->contact_count += 1;
-                    struct slot slot = ds_ContactKeyLookup(pipeline, &job->key);
-                    if (!slot.address)
-                    {
-                        slot = ds_ContactAdd(pipeline, &job->manifold, &job->key);
-                    }
-                    else
-                    {
-                        ds_ContactUpdate(pipeline, slot, &job->manifold);
-                    }
-                     
-			        /* add to new links if needed */
-			        if (slot.index >= cdb->contact_persistent_usage.bit_count
-			        	 || BitVecGetBit(&cdb->contact_persistent_usage, slot.index) == 0)
-			        {
-                            if (cdb->contact_new_count >= arr.len)
-                            {
-                                LogString(T_PHYSICS, S_FATAL, "Frame arena OOM in Broadphase, increase size!");
-                                FatalCleanupAndExit();
-                            }
-                            cdb->contact_new[ cdb->contact_new_count ] = slot.index;
-			        		cdb->contact_new_count += 1;
-			        }
-			        //fprintf(stderr, " %u", index);
+                    slot = ds_ContactAdd(pipeline, &job->manifold, &job->key);
                 }
+                else
+                {
+                    ds_ContactUpdate(pipeline, slot, &job->manifold);
+                }
+                 
+			    /* add to new links if needed */
+			    if (slot.index >= cdb->contact_persistent_usage.bit_count
+			    	 || BitVecGetBit(&cdb->contact_persistent_usage, slot.index) == 0)
+			    {
+                        if (cdb->contact_new_count >= arr.len)
+                        {
+                            LogString(T_PHYSICS, S_FATAL, "Frame arena OOM in Broadphase, increase size!");
+                            FatalCleanupAndExit();
+                        }
+                        cdb->contact_new[ cdb->contact_new_count ] = slot.index;
+			    		cdb->contact_new_count += 1;
+			    }
+			    //fprintf(stderr, " %u", index);
             }
         }
         //fprintf(stderr, " } ");
