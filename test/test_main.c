@@ -143,7 +143,7 @@ static void run_performance_suite(struct suite_Performance *suite)
 
 	const u64 max_time_without_improvement = 10*TscFrequency();
 	struct rt tester;
-	struct arena mem = ArenaAlloc1MB();
+	struct arena *mem = ArenaPushScratch();
 
 	for (u32 i = 0; i < suite->parallel_test_count; ++i)
 	{
@@ -151,11 +151,11 @@ static void run_performance_suite(struct suite_Performance *suite)
 		fprintf(stdout, "\t::: %s ::: \n", suite->parallel_test[i].id);
 
 
-		ArenaFlush(&mem);
+		ArenaFlush(mem);
         
         struct ds_TestJobPhase phase;
-        ds_JobPhaseAlloc(&mem, &phase.phase, TEST_JOB_COUNT, ds_TestJobPhaseDispatch);
-        phase.job = ArenaPush(&mem, g_scheduler->worker_count * sizeof(struct ds_TestJob));
+        ds_JobPhaseAlloc(mem, &phase.phase, TEST_JOB_COUNT, ds_TestJobPhaseDispatch);
+        phase.job = ArenaPush(mem, g_scheduler->worker_count * sizeof(struct ds_TestJob));
         phase.count = g_scheduler->worker_count;
 
 
@@ -171,7 +171,7 @@ static void run_performance_suite(struct suite_Performance *suite)
 		do
 		{
 			RngPushState();
-			ArenaPushRecord(&mem);
+			ArenaPushRecord(mem);
 			AtomicStoreRel32(&phase.a_barrier, 0);
 
             {
@@ -207,7 +207,7 @@ static void run_performance_suite(struct suite_Performance *suite)
                 rt_EndTime(&tester);
             }
 
-			ArenaPopRecord(&mem);
+			ArenaPopRecord(mem);
 			RngPopState();
 		} while (rt_TestingCheck(&tester));
 
@@ -254,7 +254,7 @@ static void run_performance_suite(struct suite_Performance *suite)
 		rt_PrintStatistics(&tester, stdout);
 	}
 
-	ArenaFree1MB(&mem);
+    ArenaPopScratch();
 }
 
 void ds_TestMainCorrectness(void)

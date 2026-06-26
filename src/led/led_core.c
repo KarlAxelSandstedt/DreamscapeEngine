@@ -834,7 +834,7 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 {
 	ds_Assert(PowerOfTwoCheck(n) && n >= 32);
 
-	struct arena tmp = ArenaAlloc1MB();
+	struct arena *tmp = ArenaPushScratch();
 
 	struct triMesh mesh = 
 	{
@@ -854,7 +854,7 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 	for (u32 o = 0; o < OCTAVES; ++o)
 	{
 		const u32 on = (n >> o) + 1;
-		grad[o] = ArenaPush(&tmp, on*on*sizeof(vec2));
+		grad[o] = ArenaPush(tmp, on*on*sizeof(vec2));
 		for (u32 x = 0; x < on; ++x)
 		{
 			for (u32 z = 0; z < on; ++z)
@@ -1000,7 +1000,7 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 		}
 	}
 
-	ArenaFree1MB(&tmp);
+	ArenaPopScratch();
 
 	struct aabb bbox = TriMeshBbox(&mesh);
 	vec3 local_origin;
@@ -1410,8 +1410,8 @@ void led_Compile(struct led *led)
 
 void led_Refresh(struct led *led)
 {
-    struct arena tmp = ArenaAlloc1MB();
-	struct hi_Iterator it = hi_IteratorAlloc(&tmp, &led->node_hierarchy, LED_NODE_ROOT);
+    struct arena *tmp = ArenaPushScratch();
+	struct hi_Iterator it = hi_IteratorAlloc(tmp, &led->node_hierarchy, LED_NODE_ROOT);
     hi_IteratorNextDf(&it);
 	while(it.count)
 	{
@@ -1429,7 +1429,7 @@ void led_Refresh(struct led *led)
             hi_IteratorNextDf(&it);
         }
 	}
-    ArenaFree1MB(&tmp);
+    ArenaPopScratch();
 }
 
 void led_Run(struct led *led)

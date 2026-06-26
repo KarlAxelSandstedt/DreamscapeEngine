@@ -101,9 +101,7 @@ static void csg_RemoveMarkedStructs(struct csg *csg)
 			continue;
 		}
 
-		utf8 id = brush->id;
-		strdb_Remove(&csg->brush_db, id);
-		ThreadFree256B(id.buf);
+		strdb_Remove(&csg->brush_db, brush->id);
 	}
 
 	dll_Flush(&csg->brush_marked_list);
@@ -130,13 +128,12 @@ struct slot csg_BrushAdd(struct csg *csg, const utf8 id)
 		return empty_slot; 
 	}
 
-	void *buf = ThreadAlloc256B();
+    u8  buf[256];
 	const utf8 heap_id = Utf8CopyBuffered(buf, 256, id);
 	struct slot slot = strdb_AddAndAlias(&csg->brush_db, heap_id);
 	if (!slot.address)
 	{
 		Log(T_CSG, S_WARNING, "Failed to create csgBRush, brush with id %k already exist.", &id);
-		ThreadFree256B(buf);
 	}
 	else
 	{
@@ -145,6 +142,8 @@ struct slot csg_BrushAdd(struct csg *csg, const utf8 id)
 		brush->dcel = DcelBoxStub();
 		brush->flags = CSG_FLAG_NONE;
 		brush->delta = NULL;
+        brush->id.buf = brush->buf_mem;
+	    Utf8CopyBuffered(brush->id.buf, 256, id);
 
 		brush->cache = ui_NodeCacheNull();
 	}

@@ -1204,14 +1204,14 @@ static void DdcelEdgeSet(struct ddcelEdge *edge, const u32 origin, const u32 twi
 
 static void DdcelAssertTopology(const struct ddcel *ddcel)
 {
-	struct arena tmp = ArenaAlloc1MB();
+	struct arena *tmp = ArenaPushScratch();
 
 	u32 face_count = 0;
 	u32 vertex_count = 0;
 
-	u32 *vertex_check = ArenaPushZero(&tmp, ddcel->v_count * sizeof(u32));
-	u32 *edge_check = ArenaPushZero(&tmp, ddcel->edge_pool.count * sizeof(u32));
-	u32 *face_check = ArenaPushZero(&tmp, 3*ddcel->v_count * sizeof(u32));
+	u32 *vertex_check = ArenaPushZero(tmp, ddcel->v_count * sizeof(u32));
+	u32 *edge_check = ArenaPushZero(tmp, ddcel->edge_pool.count * sizeof(u32));
+	u32 *face_check = ArenaPushZero(tmp, 3*ddcel->v_count * sizeof(u32));
 
 	for (u32 i = 0; i < ddcel->edge_pool.count; ++i)
 	{
@@ -1268,8 +1268,7 @@ static void DdcelAssertTopology(const struct ddcel *ddcel)
 		}
 	}
 
-	ArenaFree1MB(&tmp);
-
+    ArenaPopScratch();
 	ds_Assert(face_count >= 4);
 }
 
@@ -1783,23 +1782,23 @@ struct dcel DcelConvexHull(struct arena *mem, const vec3ptr v, const u32 v_count
 	struct dcel dcel = DcelEmpty();
 	if (v_count < 4) { goto end; }	
 
-	struct arena tmp1 = ArenaAlloc1MB();
-	struct arena tmp2 = ArenaAlloc1MB();
+	struct arena *tmp1 = ArenaPushScratch();
+	struct arena *tmp2 = ArenaPushScratch();
 
 	const u32 edge_count_upper_bound = 6*v_count - 12;
 	const u32 face_count_upper_bound = 2*v_count - 4;
 	struct ddcel ddcel =
 	{
-		.face_pool = ds_PoolAlloc(&tmp1, 2*face_count_upper_bound, struct ddcelFace, NOT_GROWABLE),	/* add additional space for easier memory management */
-		.edge_pool = ds_PoolAlloc(&tmp1, 2+edge_count_upper_bound, struct ddcelEdge, NOT_GROWABLE),	/* add additional space for easier memory management */
+		.face_pool = ds_PoolAlloc(tmp1, 2*face_count_upper_bound, struct ddcelFace, NOT_GROWABLE),	/* add additional space for easier memory management */
+		.edge_pool = ds_PoolAlloc(tmp1, 2+edge_count_upper_bound, struct ddcelEdge, NOT_GROWABLE),	/* add additional space for easier memory management */
 		.v = v,
 		.v_count = v_count,
-		.ce_pool = ds_PoolAlloc(&tmp2, tmp2.mem_size / sizeof(struct conflictEdge), struct conflictEdge, NOT_GROWABLE),
-		.cv = ArenaPush(&tmp1, v_count * sizeof(struct conflictVertex)),
-		.hv = ArenaPush(&tmp1, v_count * sizeof(struct horizionVertex)),
+		.ce_pool = ds_PoolAlloc(tmp2, tmp2->mem_size / sizeof(struct conflictEdge), struct conflictEdge, NOT_GROWABLE),
+		.cv = ArenaPush(tmp1, v_count * sizeof(struct conflictVertex)),
+		.hv = ArenaPush(tmp1, v_count * sizeof(struct horizionVertex)),
 	};
 
-	ddcel.tmp1 = tmp1;
+	ddcel.tmp1 = *ArenaPushScratch();
 	ddcel.e = (struct ddcelEdge *) ddcel.edge_pool.buf;
 	ddcel.f = (struct ddcelFace *) ddcel.face_pool.buf;
 	ddcel.ce = (struct conflictEdge *) ddcel.ce_pool.buf;
@@ -1838,8 +1837,9 @@ struct dcel DcelConvexHull(struct arena *mem, const vec3ptr v, const u32 v_count
 
 	dcel = DcelDdcel(mem, &ddcel);	
 end:
-	ArenaFree1MB(&tmp1);
-	ArenaFree1MB(&tmp2);
+	ArenaPopScratch();
+	ArenaPopScratch();
+	ArenaPopScratch();
 
 	return dcel;
 }

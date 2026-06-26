@@ -770,8 +770,8 @@ void r_EditorMain(const struct led *led)
 
 			struct ds_Window *win = NULL;
 
-			struct arena tmp = ArenaAlloc1MB();
-			struct hi_Iterator it = hi_IteratorAlloc(&tmp, g_window_hierarchy, g_process_root_window);
+			struct arena *tmp = ArenaPushScratch();
+			struct hi_Iterator it = hi_IteratorAlloc(tmp, g_window_hierarchy, g_process_root_window);
 			while (it.count)
 			{
 				const u32 window = hi_IteratorNextDf(&it);
@@ -796,7 +796,7 @@ void r_EditorMain(const struct led *led)
 					r_SceneRender(led, window);
 				}
 			}
-			ArenaFree1MB(&tmp);
+            ArenaPopScratch();
 
 			/* NOTE: main context must be set in the case of creating new contexts sharing state. */
 			ds_WindowSetCurrentGlContext(g_process_root_window);

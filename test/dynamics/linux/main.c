@@ -35,19 +35,16 @@ int main(int argc, char *argv[])
 	RngSystem(seed, sizeof(seed));
 	Xoshiro256Init(seed);
 		
-	const u32 count_256B = 4*1024;
-	const u32 count_1MB = 64;
+	ds_MemApiInit();
 
-	ds_MemApiInit(count_256B, count_1MB);
-
-	struct arena persistent = ArenaAlloc(NULL, 128*1024*1024);
+	struct arena persistent = ArenaAlloc(NULL, 256*1024*1024);
 	LogInit(&persistent, "log.txt");
 
 	ds_TimeApiInit(&persistent);
 
     const u64 thread_framesize = 4*1024*1024;
     const u64 thread_scratchsize = 1*1024*1024;
-    const u64 scratch_count = 4;
+    const u64 scratch_count = 5;
 	ds_ThreadMasterInit(&persistent, thread_framesize, thread_scratchsize, scratch_count);
 	ds_ArchConfigInit(&persistent);
 

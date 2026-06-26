@@ -868,17 +868,17 @@ void PhysicsPipelineRigidBodyTagForRemoval(struct ds_RigidBodyPipeline *pipeline
 
 static void RemoveMarkedBodies(struct ds_RigidBodyPipeline *pipeline)
 {
-    struct arena tmp = ArenaAlloc1MB();
+    struct arena *tmp = ArenaPushScratch();
     u32 next;
 	for (u32 i = pipeline->body_marked_list.first; i != DLL_NULL; i = next)
 	{
 		struct ds_RigidBody *b = ds_PoolAddress(&pipeline->body_pool, i);
         next = dll_Next(b);
-		ds_RigidBodyRemove(&tmp, pipeline, i);
+		ds_RigidBodyRemove(tmp, pipeline, i);
 	}
 
 	dll_Flush(&pipeline->body_marked_list);
-    ArenaFree1MB(&tmp);
+    ArenaPopScratch();
 }
 
 void PhysicsPipelineSimulateFrame(struct ds_RigidBodyPipeline *pipeline, const f32 delta)

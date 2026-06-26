@@ -52,44 +52,6 @@ struct ds_MemSlot
 	u32	    huge_pages;	/* huge memory pages were requested (Up to the kernel to decide) */
 };
 
-
-/*
-Thread-Safe block allocator
-===========================
-Thread-safe fixed size block allocator. 
-*/
-
-struct threadBlockAllocator
-{
-	/* pads for 64 and 128 cachelines */
-	u8				pad1[DS_CACHE_LINE];
-	ds_Align(DS_CACHE_LINE) u64	a_next;
-	u8				pad2[DS_CACHE_LINE];
-	u8 *				block;
-	u64				block_size;
-	u64				max_count;
-	struct ds_MemSlot			mem_slot;
-};
-
-/* initalize allocator with at least the given block count */
-void 	ThreadBlockAllocatorAlloc(struct threadBlockAllocator *allocator, const u64 block_count, const u64 block_size);
-/* Release allocator resources */
-void	ThreadBlockAllocatorFree(struct threadBlockAllocator *allocator);
-/* Returns pointer to requested block, or NULL if  out of memory */
-void *	ThreadBlockAlloc(struct threadBlockAllocator *allocator);
-/* Free block */
-void  	ThreadBlockFree(struct threadBlockAllocator *allocator, void *addr);
-
-/* returns a 256B cache aligned block on success, NULL on out-of-memory */
-void *	ThreadAlloc256B(void);
-/* returns a 1MB cache aligned block on success, NULL on out-of-memory */
-void *	ThreadAlloc1MB(void);
-/* free a 256B block */
-void 	ThreadFree256B(void *addr);
-/* free a 1MB block */
-void 	ThreadFree1MB(void *addr);
-
-
 /*
 memConfig 
 =========
@@ -98,15 +60,13 @@ Global memory configuration structure.
 
 struct memConfig
 {
-	struct threadBlockAllocator	block_allocator_256B;
-	struct threadBlockAllocator 	block_allocator_1MB;
 	u64				page_size;
 	u64				alloc_size_min;
 };
 extern struct memConfig *g_mem_config;
 
 /* Initalize global memConfig and allocate resources */
-void ds_MemApiInit(const u32 count_256B, const u32 count_1MB);
+void ds_MemApiInit(void);
 /* Shutdown global memConfig resources */
 void ds_MemApiShutdown(void);
 
@@ -187,11 +147,6 @@ struct arena
 	struct ds_MemSlot		slot;
 };
 
-/* setup arena using global block allocator */
-struct arena	ArenaAlloc1MB(void);
-/*  global block allocator free wrapper */
-void		ArenaFree1MB(struct arena *mem);
-
 /* Record arena memory position */
 void		ArenaPushRecord(struct arena *ar);
 /* Return to last recorded memory position, given that recorded mem_left >= current mem_left. */
@@ -200,7 +155,7 @@ void		ArenaPopRecord(struct arena *ar);
 void 		ArenaRemoveRecord(struct arena *ar);
 
 /* If allocation failed, return arena = { 0 } */
-struct arena	ArenaAlloc(struct arena *mem, const u64 size);
+struct arena ArenaAlloc(struct arena *mem, const u64 size);
 /* free heap memory and set *ar = empty_arena */
 void		ArenaFree(struct arena *ar);
 /* flush contents, reset stack to start of stack */

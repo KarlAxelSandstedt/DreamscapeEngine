@@ -630,8 +630,8 @@ static void ui_NodeSolveChildViolation(struct ui_Node *node, const enum axis_2 a
 
 static void ui_SolveViolations(void)
 {
-	struct arena tmp = ArenaAlloc1MB();
-	struct hi_Iterator it = hi_IteratorAlloc(&tmp, &g_ui->node_hierarchy, g_ui->root);
+	struct arena *tmp = ArenaPushScratch();
+	struct hi_Iterator it = hi_IteratorAlloc(tmp, &g_ui->node_hierarchy, g_ui->root);
 	while(it.count)
 	{
 		const u32 index = hi_IteratorNextDf(&it);
@@ -640,13 +640,13 @@ static void ui_SolveViolations(void)
 		ui_NodeSolveChildViolation(node, AXIS_2_X);
 		ui_NodeSolveChildViolation(node, AXIS_2_Y);
 	}
-	ArenaFree1MB(&tmp);
+    ArenaPopScratch();
 }
 
 static void ui_LayoutAbsolutePosition(void)
 {
-	struct arena tmp = ArenaAlloc1MB();
-	struct hi_Iterator it = hi_IteratorAlloc(&tmp, &g_ui->node_hierarchy, g_ui->root);
+	struct arena *tmp = ArenaPushScratch();
+	struct hi_Iterator it = hi_IteratorAlloc(tmp, &g_ui->node_hierarchy, g_ui->root);
 
 	struct ui_Node *node = hi_Address(&g_ui->node_hierarchy, g_ui->root);
 	node->pixel_position[0] = node->layout_position[0];
@@ -753,7 +753,7 @@ static void ui_LayoutAbsolutePosition(void)
 		}
 	}
 
-	ArenaFree1MB(&tmp);
+    ArenaPopScratch();
 }
 
 static void InterDebugPrint(const u64 inter)

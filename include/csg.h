@@ -59,6 +59,7 @@ csg_bursh
 */
 struct csg_Brush
 {
+    u8          buf_mem[256];
 	u64			flags;
 	struct csg_Brush *	delta;
 	enum csg_Primitive	primitive;		/* primitive type 	*/

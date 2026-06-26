@@ -236,10 +236,10 @@ void FontBuild(struct arena *mem, const enum fontId id)
 
 void FontSerialize(const struct assetFont *asset, const struct font *font)
 {
-	struct arena tmp = ArenaAlloc1MB();
+	struct arena *tmp = ArenaPushScratch();
 
 	struct file file = FileNull();
-	if (FileTryCreateAtCwd(&tmp, &file, asset->filepath, FILE_TRUNCATE) != FS_SUCCESS)
+	if (FileTryCreateAtCwd(tmp, &file, asset->filepath, FILE_TRUNCATE) != FS_SUCCESS)
 	{
 		LogString(T_ASSET, S_FATAL, "Failed to create .font file");
 		FatalCleanupAndExit();
@@ -278,7 +278,7 @@ void FontSerialize(const struct assetFont *asset, const struct font *font)
 	FileMemoryUnmap(buf, font->size);
 	FileClose(&file);
 
-	ArenaFree1MB(&tmp);
+    ArenaPopScratch();
 }
 
 #endif
@@ -286,9 +286,9 @@ void FontSerialize(const struct assetFont *asset, const struct font *font)
 const struct font *FontDeserialize(struct assetFont *asset)
 {
 	//TODO remove later;
-	struct arena tmp = ArenaAlloc1MB();
+	struct arena *tmp = ArenaPushScratch();
 	struct file file = FileNull();
-	FileTryOpenAtCwd(&tmp, &file, asset->filepath, FILE_READ);
+	FileTryOpenAtCwd(tmp, &file, asset->filepath, FILE_READ);
 	if (file.handle == FILE_HANDLE_INVALID)
 	{
 		return NULL;
@@ -342,7 +342,7 @@ const struct font *FontDeserialize(struct assetFont *asset)
 	FileMemoryUnmap(buf, size);
 	FileClose(&file);
 
-	ArenaFree1MB(&tmp);
+    ArenaPopScratch();
 	asset->loaded = 1;
 	return font;
 }

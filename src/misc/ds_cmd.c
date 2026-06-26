@@ -31,10 +31,12 @@ struct cmdQueue *g_queue = NULL;
 static stack_cmdFunction g_cmd_f;
 u32			  g_cmd_internal_debug_print_index;	
 
+//TODO REMOVE mallocs/free in debug printing
+
 static void CmdDebugPrint(void)
 {
 	Utf8DebugPrint(g_queue->cmd_exec->arg[0].utf8);
-	ThreadFree256B(g_queue->cmd_exec->arg[0].utf8.buf);
+	free(g_queue->cmd_exec->arg[0].utf8.buf);
 }
 
 void ds_CmdApiInit(void)
@@ -111,7 +113,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 	if (cmd->function == NULL)
 	{
 		cmd->function = g_cmd_f.arr + g_cmd_internal_debug_print_index;
-		u8 *buf = ThreadAlloc256B();
+		u8 *buf = malloc(256);
 		cmd->arg[0].utf8 = Utf8FormatBuffered(buf, 256, "Error in tokenizing %k: invalid command name", (char *) &cmd->string); 
 		return;
 	}
@@ -131,7 +133,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 
 		if (token_count == cmd->function->args_count)
 		{
-			u8 *buf = ThreadAlloc256B();
+			u8 *buf = malloc(256);
 			cmd->arg[0].utf8 = Utf8FormatBuffered(buf, 256, "Error in tokenizing %k: command expects %u arguments.", &cmd->string, cmd->function->args_count); 
 			cmd->function = g_cmd_f.arr + g_cmd_internal_debug_print_index;
 			break;
@@ -155,7 +157,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 			if (text[i] != '"')
 			{
 				cmd->function = g_cmd_f.arr + g_cmd_internal_debug_print_index;
-				u8 *buf = ThreadAlloc256B();
+				u8 *buf = malloc(256);
 				cmd->arg[0].utf8 = Utf8FormatBuffered(buf, 256, "Error in tokenizing %k: non-closed string beginning.", &cmd->string); 
 				break;
 			}
@@ -255,7 +257,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 		if (ret.op_result != PARSE_SUCCESS)
 		{
 			cmd->function = g_cmd_f.arr + g_cmd_internal_debug_print_index;
-			u8 *buf = ThreadAlloc256B();
+			u8 *buf = malloc(256);
 			switch (ret.op_result)
 			{
 				case PARSE_UNDERFLOW: 
@@ -280,7 +282,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 
 void CmdQueueExecute(void)
 {
-	struct arena tmp = ArenaAlloc1MB();
+	struct arena *tmp = ArenaPushScratch();
 
 	u32 next = U32_MAX;
 	for (u32 i = g_queue->cmd_list.first; i != LL_NULL; i = next)
@@ -290,7 +292,7 @@ void CmdQueueExecute(void)
 		if (g_queue->cmd_exec->args_type == CMD_ARGS_TOKEN)
 		{
 			//Utf8DebugPrint(g_queue->cmd_exec->string);
-			CmdTokenizeString(&tmp, g_queue->cmd_exec);
+			CmdTokenizeString(tmp, g_queue->cmd_exec);
 		}
 		g_queue->cmd_exec->function->call();
 		ds_PoolRemove(&g_queue->cmd_pool, i);
@@ -299,7 +301,7 @@ void CmdQueueExecute(void)
 	g_queue->cmd_list = g_queue->cmd_list_next_frame;
 	ll_Flush(&g_queue->cmd_list_next_frame);
 
-	ArenaFree1MB(&tmp);
+	ArenaPopScratch();
 }
 
 void CmdQueueFlush(struct cmdQueue *queue)

@@ -424,11 +424,11 @@ struct dbvhOverlap *DbvhPushOverlapPairs(struct arena *mem, u32 *count, const st
 	u32 b = nodes[bvh->tree.root].bt_right;
 	u32 q = U32_MAX;
 
-	struct arena tmp1 = ArenaAlloc1MB();
-	struct arena tmp2 = ArenaAlloc1MB();
+	struct arena *tmp1 = ArenaPushScratch();
+	struct arena *tmp2 = ArenaPushScratch();
 
-	struct memArray arr1 = ArenaPushAlignedAll(&tmp1, sizeof(struct dbvhOverlap), 4); 
-	struct memArray arr2 = ArenaPushAlignedAll(&tmp2, sizeof(struct dbvhOverlap), 4); 
+	struct memArray arr1 = ArenaPushAlignedAll(tmp1, sizeof(struct dbvhOverlap), 4); 
+	struct memArray arr2 = ArenaPushAlignedAll(tmp2, sizeof(struct dbvhOverlap), 4); 
 
 	struct dbvhOverlap *stack1 = arr1.addr;
 	struct dbvhOverlap *stack2 = arr2.addr;
@@ -467,8 +467,8 @@ struct dbvhOverlap *DbvhPushOverlapPairs(struct arena *mem, u32 *count, const st
 		}
 	}
 
-	ArenaFree1MB(&tmp1);
-	ArenaFree1MB(&tmp2);
+    ArenaPopScratch();
+    ArenaPopScratch();
 
 	return (*count) ? overlaps : NULL;
 }
