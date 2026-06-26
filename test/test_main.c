@@ -259,12 +259,12 @@ static void run_performance_suite(struct suite_Performance *suite)
 
 void ds_TestMainCorrectness(void)
 {
-	struct arena mem_1 = ArenaAlloc(16*1024*1024);
-	struct arena mem_2 = ArenaAlloc(1024*1024);
-	struct arena mem_3 = ArenaAlloc(1024*1024);
-	struct arena mem_4 = ArenaAlloc(1024*1024);
-	struct arena mem_5 = ArenaAlloc(1024*1024);
-	struct arena mem_6 = ArenaAlloc(1024*1024);
+	struct arena mem_1 = ArenaAlloc(NULL, 16*1024*1024);
+	struct arena mem_2 = ArenaAlloc(NULL, 1024*1024);
+	struct arena mem_3 = ArenaAlloc(NULL, 1024*1024);
+	struct arena mem_4 = ArenaAlloc(NULL, 1024*1024);
+	struct arena mem_5 = ArenaAlloc(NULL, 1024*1024);
+	struct arena mem_6 = ArenaAlloc(NULL, 1024*1024);
 
 	struct test_Environment env = 
 	{

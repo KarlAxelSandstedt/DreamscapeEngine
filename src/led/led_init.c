@@ -59,11 +59,11 @@ const char **body_color_mode_str = body_color_mode_str_buf;
 struct led *led_Alloc(void)
 {
 	led_CoreInitCommands();
-	g_editor->mem_persistent = ArenaAlloc(16*1024*1024);
+	g_editor->mem_persistent = ArenaAlloc(NULL,32*1024*1024);
 
 	g_editor->window = ds_RootWindowAlloc("Level Editor", Vec2U32Inline(400,400), Vec2U32Inline(1280, 720));
 
-	g_editor->frame = ArenaAlloc(16*1024*1024);
+	g_editor->frame = ArenaAlloc(NULL, 16*1024*1024);
 	g_editor->project_menu = led_ProjectMenuAlloc();
 	g_editor->running = 1;
 	g_editor->ns = ds_TimeNs();

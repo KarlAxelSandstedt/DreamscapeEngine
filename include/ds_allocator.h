@@ -200,7 +200,7 @@ void		ArenaPopRecord(struct arena *ar);
 void 		ArenaRemoveRecord(struct arena *ar);
 
 /* If allocation failed, return arena = { 0 } */
-struct arena	ArenaAlloc(const u64 size);
+struct arena	ArenaAlloc(struct arena *mem, const u64 size);
 /* free heap memory and set *ar = empty_arena */
 void		ArenaFree(struct arena *ar);
 /* flush contents, reset stack to start of stack */

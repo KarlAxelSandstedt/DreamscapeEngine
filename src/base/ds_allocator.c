@@ -310,7 +310,7 @@ void ArenaRemoveRecord(struct arena *ar)
 	}
 }
 
-struct arena ArenaAlloc(const u64 size)
+struct arena ArenaAlloc(struct arena *mem, const u64 size)
 {
 	struct arena ar =
 	{
@@ -319,16 +319,31 @@ struct arena ArenaAlloc(const u64 size)
 		.record = NULL,
 	};
 
-	ar.stack_ptr = (size >= 2*1024*1024)
-		? ds_Alloc(&ar.slot, size, HUGE_PAGES)
-		: ds_Alloc(&ar.slot, size, NO_HUGE_PAGES);
+    if (mem)
+    {
+        ar.stack_ptr = ArenaPushAligned(mem, size, DS_CACHE_LINE);
 
-	if (ar.stack_ptr)
-	{
-		ar.mem_size = ar.slot.size;
-		ar.mem_left = ar.slot.size;
-		PoisonAddress(ar.stack_ptr, ar.mem_left);
-	}
+	    if (ar.stack_ptr)
+	    {
+	    	ar.mem_size = size;
+	    	ar.mem_left = size;
+	    	PoisonAddress(ar.stack_ptr, ar.mem_left);
+	    }
+    }
+    else
+    {
+	    ar.stack_ptr = (size >= 2*1024*1024)
+	    	? ds_Alloc(&ar.slot, size, HUGE_PAGES)
+	    	: ds_Alloc(&ar.slot, size, NO_HUGE_PAGES);
+
+	    if (ar.stack_ptr)
+	    {
+	    	ar.mem_size = ar.slot.size;
+	    	ar.mem_left = ar.slot.size;
+	    	PoisonAddress(ar.stack_ptr, ar.mem_left);
+	    }
+    }
+
 	
 	return ar;
 }
@@ -468,8 +483,8 @@ struct threadBlockHeader
 #define LOCAL_MAX_COUNT		32
 #define LOCAL_FREE_LOW  	16
 #define LOCAL_FREE_HIGH 	31
-static dsThreadLocal u32 local_count = 1;	/* local_next[0] is dummy */
-static dsThreadLocal u64 local_next[LOCAL_MAX_COUNT];
+static ds_ThreadLocal u32 local_count = 1;	/* local_next[0] is dummy */
+static ds_ThreadLocal u64 local_next[LOCAL_MAX_COUNT];
 
 void ThreadBlockAllocatorAlloc(struct threadBlockAllocator *allocator, const u64 block_count, const u64 block_size)
 {

@@ -39,7 +39,7 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 		.ns_tick = ns_tick,
 		.ns_elapsed = 0,
 		.ns_start = 0,
-		.frame = ArenaAlloc(frame_memory),
+		.frame = ArenaAlloc(mem, frame_memory),
 		.frames_completed = 0,
 	};
 
@@ -258,7 +258,10 @@ static u32 NarrowPhaseJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPh
     }
 
     ds_Assert(s0->body != s1->body);
-    job->collision = ds_ShapeContact(&g_scheduler->worker[ds_ThreadSelfIndex()].mem_frame, &job->manifold, job->cache, pipeline, s0, s1);
+    
+    struct arena *tmp = ArenaPushScratch();
+    job->collision = ds_ShapeContact(tmp, &job->manifold, job->cache, pipeline, s0, s1);
+    ArenaPopScratch();
 
 	ProfZoneEnd;
 
@@ -593,10 +596,10 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 	}	
 	ArenaPopPacked(&pipeline->frame, (pipeline->is_db.island_pool.count - split_count)*sizeof(u32));
 
-    struct arena tmp = ArenaAlloc1MB();
+    struct arena *tmp = ArenaPushScratch();
 	for (u32 i = 0; i < split_count; ++i)
 	{
-		isdb_SplitIsland(&tmp, pipeline, split[i]);
+		isdb_SplitIsland(tmp, pipeline, split[i]);
 	}
 
     /* Update contact_persistent_usage */
@@ -618,7 +621,7 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
         	}
         }
     } 
-	ArenaFree1MB(&tmp);
+    ArenaPopScratch();
 
 	ProfZoneEnd;
 }
@@ -665,7 +668,7 @@ static u32 IslandJobSolve(struct ds_IslandJobPhase *phase, struct ds_IslandSolve
     struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
     struct ds_Island *is = (struct ds_Island *) pipeline->is_db.island_pool.buf + job->island;
 	job->body_count = is->body_list.count;
-	job->bodies = IslandSolve(&g_scheduler->worker[ds_ThreadSelfIndex()].mem_frame, pipeline, is, &job->asleep, phase->timestep);
+	job->bodies = IslandSolve(&g_tl_self->frame, pipeline, is, &job->asleep, phase->timestep);
 
 	ProfZoneEnd;
 

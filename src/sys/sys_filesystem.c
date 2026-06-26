@@ -32,7 +32,7 @@ struct directoryNavigator DirectoryNavigatorAlloc(const u32 initial_memory_strin
 	{
 		.path = Utf8Empty(),
 		.relative_path_to_file_map = ds_HashMapAlloc(NULL, hash_size, initial_hash_index_size, GROWABLE),
-		.mem_string = ArenaAlloc(initial_memory_string_size),
+		.mem_string = ArenaAlloc(NULL, initial_memory_string_size),
 		.files = VectorAlloc(NULL, sizeof(struct file), initial_hash_index_size, GROWABLE),
 	};
 

@@ -37,10 +37,9 @@ static void ds_WSDequeStaticAssert(void)
 
 static void ds_WorkerStaticAssert(void)
 {
-    ds_StaticAssert((u64) &((struct ds_Worker *)0)->mem_frame == 0, "");
-    ds_StaticAssert((u64) &((struct ds_Worker *)0)->thr == 56, "");
-    ds_StaticAssert((u64) &((struct ds_Worker *)0)->a_mem_frame_clear == 64, "");
-    ds_StaticAssert(sizeof(struct ds_Worker) == 2*DS_CACHE_LINE, "Unexpected size of ds_Worker");
+    ds_StaticAssert((u64) &((struct ds_Worker *)0)->thr == 0, "");
+    ds_StaticAssert((u64) &((struct ds_Worker *)0)->a_mem_frame_clear == 8, "");
+    ds_StaticAssert(sizeof(struct ds_Worker) == DS_CACHE_LINE, "Unexpected size of ds_Worker");
 }
 
 static void ds_JobSchedulerStaticAssert(void)
@@ -260,13 +259,18 @@ void ds_WorkerRunJob(const ds_JobId job)
     }
 }
 
-void ds_TrySeedAndRunJobs(const u32 thread)
+void ds_TrySeedAndRunJobs(struct ds_Worker *w, const u32 thread)
 {
     ProfZone;
 
+    if (AtomicLoadRlx32(&w->a_mem_frame_clear))
+    {
+        AtomicStoreRlx32(&w->a_mem_frame_clear, 0);
+        ArenaFlush(&g_tl_self->frame);
+    }
+
     /* When we get here, we know for sure that the deque we own is empty. We check if there are any special
      * seed tasks to grab, and seed of deque if that is the case. */
-    u32 job;
 
     //TODO(Simplification): Instead of using a separate Deque, we could just use a atomic counter, since all
     //seeds are assumed to be published immediately?
@@ -277,6 +281,7 @@ void ds_TrySeedAndRunJobs(const u32 thread)
     //}
     
     /* (1) Seed and run as many jobs in owned Deque as possible */
+    u32 job;
     u32 local_seeds_remaining = AtomicLoadRlx32(&g_scheduler->a_seeds_remaining);
     while (local_seeds_remaining)
     {
@@ -310,7 +315,7 @@ RUN_JOBS:
     ProfZoneEnd;
 }
 
-void ds_WorkerMain(dsThread *thr)
+void ds_WorkerMain(ds_Thread *thr)
 {
 	struct ds_Worker *w = ds_ThreadArguments(thr);
 	ThreadXoshiro256InitSequence();
@@ -335,7 +340,7 @@ void ds_WorkerMain(dsThread *thr)
 		SemaphoreWait(&g_scheduler->jobs_are_available);
         AtomicFetchSubRlx32(&g_scheduler->a_workers_waiting, 1);
 
-        ds_TrySeedAndRunJobs(index_self);
+        ds_TrySeedAndRunJobs(g_scheduler->worker + index_self, index_self);
 	}
 }
 
@@ -343,10 +348,10 @@ void ds_MasterRunAvailableJobs(void)
 {
     ds_Assert(ds_ThreadSelfIndex() == 0);
 
-    ds_TrySeedAndRunJobs(0);
+    ds_TrySeedAndRunJobs(g_scheduler->worker + 0, 0);
 }
 
-void ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, const u64 stacksize, const u64 initial_deque_size)
+void ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, const u64 stacksize, const u64 framesize, const u64 scratchsize, const u32 scratch_count, const u64 initial_deque_size)
 {
 	Log(T_SYSTEM, S_NOTE, "ds_JobScheduler worker count: %u", thread_count);
 
@@ -366,14 +371,14 @@ void ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, c
     ds_WSDequeAlloc(g_scheduler->seed_deque, 0, initial_deque_size);
 	for (u32 i = 0; i < thread_count; ++i)
 	{
-        g_scheduler->worker[i].mem_frame = ArenaAlloc1MB();
         ds_WSDequeAlloc(g_scheduler->deque + i, i, initial_deque_size);
 	}
 
 	/* NOTE: worker 0: reserved for main thread */
+    g_scheduler->worker[0].thr = g_tl_self;
 	for (u32 i = 1; i < thread_count; ++i)
 	{
-		ds_ThreadClone(mem_persistent, ds_WorkerMain, g_scheduler->worker + i, stacksize);
+		ds_ThreadClone(mem_persistent, ds_WorkerMain, g_scheduler->worker + i, stacksize, framesize, scratchsize, scratch_count);
 	}
 
     AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, 0);
@@ -399,7 +404,6 @@ void ds_JobSchedulerShutdown(void)
 	for (u32 i = 0; i < g_scheduler->worker_count; ++i)
 	{
 	    ds_WSDequeDealloc(g_scheduler->deque + i);
-		ArenaFree1MB(&g_scheduler->worker[i].mem_frame);
 	}
 	ds_WSDequeDealloc(g_scheduler->seed_deque);
 

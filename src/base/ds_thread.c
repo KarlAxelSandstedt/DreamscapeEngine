@@ -20,57 +20,70 @@
 #define _GNU_SOURCE
 #include "ds_base.h"
 
-dsThreadLocal struct dsThread *g_tl_self = NULL;
+ds_ThreadLocal struct ds_Thread *g_tl_self = NULL;
 u32 a_index_counter = 1;
 
 const char *thread_profiler_id[] = 
 {
-	   "Master",  "Worker 1",  "Worker 2",  "Worker 3",  "Worker 4",  "Worker 5",  "Worker 6",  "Worker 7", 
-	 "Worker 8",  "Worker 9", "Worker 10", "Worker 11", "Worker 12", "Worker 13", "Worker 14", "Worker 15",
-       	"Worker 16", "Worker 17", "Worker 18", "Worker 19", "Worker 20", "Worker 21", "Worker 22", "Worker 23",
-       	"Worker 24", "Worker 25", "Worker 26", "Worker 27", "Worker 28", "Worker 29", "Worker 30", "Worker 31",
-       	"Worker 32", "Worker 33", "Worker 34", "Worker 35", "Worker 36", "Worker 37", "Worker 38", "Worker 39",
+    "Master",  "Worker 1",  "Worker 2",  "Worker 3",  "Worker 4",  "Worker 5",  "Worker 6",  "Worker 7", 
+	"Worker 8",  "Worker 9", "Worker 10", "Worker 11", "Worker 12", "Worker 13", "Worker 14", "Worker 15",
+    "Worker 16", "Worker 17", "Worker 18", "Worker 19", "Worker 20", "Worker 21", "Worker 22", "Worker 23",
+    "Worker 24", "Worker 25", "Worker 26", "Worker 27", "Worker 28", "Worker 29", "Worker 30", "Worker 31",
+    "Worker 32", "Worker 33", "Worker 34", "Worker 35", "Worker 36", "Worker 37", "Worker 38", "Worker 39",
 	"Worker 40", "Worker 41", "Worker 42", "Worker 43", "Worker 44", "Worker 45", "Worker 46", "Worker 47",
-       	"Worker 48", "Worker 49", "Worker 50", "Worker 51", "Worker 52", "Worker 53", "Worker 54", "Worker 55",
-       	"Worker 56", "Worker 57", "Worker 58", "Worker 59", "Worker 60", "Worker 61", "Worker 62", "Worker 63",
+    "Worker 48", "Worker 49", "Worker 50", "Worker 51", "Worker 52", "Worker 53", "Worker 54", "Worker 55",
+    "Worker 56", "Worker 57", "Worker 58", "Worker 59", "Worker 60", "Worker 61", "Worker 62", "Worker 63",
 };
+
+
+static void ds_ThreadAllocMemory(struct arena *mem, struct ds_Thread *thr, const u64 frame_size, const u64 scratch_size, const u32 scratch_count)
+{
+    thr->scratch_next = 0;
+    thr->scratch_count = scratch_count;
+    thr->scratch = ArenaPush(mem, scratch_count*sizeof(struct arena));
+    for (u32 i = 0; i < scratch_count; ++i)
+    {
+        thr->scratch[i] = ArenaAlloc(mem, scratch_size);
+    }
+    thr->frame = ArenaAlloc(mem, frame_size);
+    ArenaPush(mem, DS_CACHE_LINE);
+
+    if (!thr->scratch || !thr->scratch[thr->scratch_count-1].stack_ptr || !thr->frame.stack_ptr)
+    {
+		LogString(T_SYSTEM, S_FATAL, "Failed to alloc thread memory, aborting.");
+		FatalCleanupAndExit();
+    }
+}
+ 
+struct arena *ArenaPushScratch(void)
+{
+    if (g_tl_self->scratch_next == g_tl_self->scratch_count)
+    {
+		LogString(T_SYSTEM, S_FATAL, "Scratch arenas exhausted, aborting.");
+		FatalCleanupAndExit();
+    }
+
+    const u32 index = g_tl_self->scratch_next++;
+    struct arena *mem = g_tl_self->scratch + index;
+    ArenaFlush(mem);
+    return mem;
+}
+
+void ArenaPopScratch(void)
+{
+    ds_Assert(g_tl_self->scratch_next);
+    g_tl_self->scratch_next -= 1;
+}
 
 #if __DS_PLATFORM__ == __DS_LINUX__ ||__DS_PLATFORM__ == __DS_WEB__
 
 #include <unistd.h>
 #include <pthread.h>
 
-/*
- *	Assuming we use CLONE_THREAD, we have the following:
- *	PPID - parent pid of master thread			   (Shared between all threads)
- *	TGID - thread group id, and the unique TID of the master thread (Shared between all threads due to CLONE_THREAD)
- *	TID  - unique thread identifier
- *
- *	We need CLONE_THREAD for kernel tracing, which means that we cannot use waitpid anymore on cloned threads;
- *	instead cpid is cleared to 0 on thread exit.
- *
- *	The PPID of a thread is retrieved by getppid();
- *	The TGID of a thread is retrieved by getpid();
- *	The TID of a thread is retrieved by gettid();
- */
-struct dsThread
-{
-	void		(*start)(dsThread *);	/* beginning of execution for thread */
-	void *		args;			/* thread arguments */
-	void *		ret;			/* adress to returned value, if any */
-	u64		ret_size;		/* size of returned value */
-	u64		stack_size;		/* size of stack (not counting protected page at bottom) */
-	pid_t		ppid;			/* native parent tid */
-	pid_t		gtid;			/* native group tid */
-	tid		tid;			/* native thread id */
-	u32		index;			/* thread index, used for accessing thread data in arrays  */
-	pthread_t	pthread;		/* thread internal */
-};
-
 static void *ds_ThreadCloneStart(void *void_thr)
 {
 	g_tl_self = void_thr;
-	struct dsThread *thr = void_thr;
+	struct ds_Thread *thr = void_thr;
 	thr->ppid = getppid();
 	thr->gtid = getpid();
 	thr->tid = gettid();
@@ -81,25 +94,27 @@ static void *ds_ThreadCloneStart(void *void_thr)
 	return NULL;
 }
 
-void ds_ThreadMasterInit(struct arena *mem)
+void ds_ThreadMasterInit(struct arena *mem, const u64 frame_size, const u64 scratch_size, const u32 scratch_count)
 {
-	g_tl_self = ArenaPush(mem, sizeof(struct dsThread));
+	g_tl_self = ArenaPush(mem, sizeof(struct ds_Thread));
 	g_tl_self->ppid = getppid();
 	g_tl_self->gtid = getpid();
 	g_tl_self->tid = gettid();
 	g_tl_self->index = 0;
+    ds_ThreadAllocMemory(mem, g_tl_self, frame_size, scratch_size, scratch_count);
+
 	ProfThreadNamed(thread_profiler_id[g_tl_self->index]);
 }
 
-dsThread *ds_ThreadClone(struct arena *mem, void (*start)(dsThread *), void *args, const u64 stack_size)
+ds_Thread *ds_ThreadClone(struct arena *mem, void (*start)(ds_Thread *), void *args, const u64 stack_size, const u64 frame_size, const u64 scratch_size, const u32 scratch_count)
 {
 	ds_Assert(stack_size > 0);
 
-	const u64 thr_size = (sizeof(dsThread) % g_arch_config->cacheline == 0)
-		? sizeof(dsThread)
-		: sizeof(dsThread) + g_arch_config->cacheline - (sizeof(dsThread) % g_arch_config->cacheline);
+	const u64 thr_size = (sizeof(ds_Thread) % g_arch_config->cacheline == 0)
+		? sizeof(ds_Thread)
+		: sizeof(ds_Thread) + g_arch_config->cacheline - (sizeof(ds_Thread) % g_arch_config->cacheline);
 
-	dsThread *thr = NULL;
+	ds_Thread *thr = NULL;
 	thr = ArenaPushAligned(mem, thr_size, g_arch_config->cacheline);
 
 	if (thr == NULL)
@@ -117,6 +132,7 @@ dsThread *ds_ThreadClone(struct arena *mem, void (*start)(dsThread *), void *arg
 	thr->stack_size = (stack_size % g_arch_config->pagesize == 0) 
 				? stack_size 
 				: stack_size + (g_arch_config->pagesize - stack_size % g_arch_config->pagesize);
+    ds_ThreadAllocMemory(mem, thr, frame_size, scratch_size, scratch_count);
 
 	pthread_attr_t attr;
 	if (pthread_attr_init(&attr) != 0)
@@ -156,7 +172,7 @@ void ds_ThreadExit(void)
 	pthread_exit(0);
 }
 
-void ds_ThreadWait(const dsThread *thr)
+void ds_ThreadWait(const ds_Thread *thr)
 {
 	void *garbage;
 
@@ -170,22 +186,10 @@ void ds_ThreadWait(const dsThread *thr)
 
 #elif __DS_PLATFORM__ == __DS_WIN64__
 
-struct dsThread
-{
-	void		(*start)(dsThread *);	/* beginning of execution for thread */
-	void 		*args;			/* thread arguments */
-	void 		*ret;			/* adress to returned value, if any */
-	u64		ret_size;		/* size of returned value */
-	u64		stack_size;		/* size of stack (not counting protected page at bottom) */
-	u32		index;			/* thread index, used for accessing thread data in arrays  */
-	DWORD		tid;			/* native thread id (pid_t on linux) */
-	HANDLE		native;			/* native thread handle */
-};
-
 DWORD WINAPI ds_ThreadCloneStart(LPVOID void_thr)
 {
 	g_tl_self = void_thr;
-	struct dsThread *thr = void_thr;
+	struct ds_Thread *thr = void_thr;
 	thr->tid = GetCurrentThreadId();
 	thr->index = AtomicFetchAddRlx32(&a_index_counter, 1);
 	ThreadXoshiro256InitSequence();
@@ -197,21 +201,21 @@ DWORD WINAPI ds_ThreadCloneStart(LPVOID void_thr)
 
 void ds_ThreadMasterInit(struct arena *mem)
 {
-	g_tl_self = ArenaPush(mem, sizeof(struct dsThread));
+	g_tl_self = ArenaPush(mem, sizeof(struct ds_Thread));
 	g_tl_self->tid = GetCurrentThreadId();
 	g_tl_self->index = 0;
 	ProfThreadNamed(thread_profiler_id[g_tl_self->index]);
 }
 
-dsThread *ds_ThreadClone(struct arena *mem, void (*start)(dsThread *), void *args, const u64 stack_size)
+ds_Thread *ds_ThreadClone(struct arena *mem, void (*start)(ds_Thread *), void *args, const u64 stack_size, const u64 frame_size, const u64 tmp_size)
 {
 	ds_Assert(stack_size > 0);
 
-	const u64 thr_size = (sizeof(dsThread) % g_arch_config->cacheline == 0)
-		? sizeof(dsThread)
-		: sizeof(dsThread) + g_arch_config->cacheline - (sizeof(dsThread) % g_arch_config->cacheline);
+	const u64 thr_size = (sizeof(ds_Thread) % g_arch_config->cacheline == 0)
+		? sizeof(ds_Thread)
+		: sizeof(ds_Thread) + g_arch_config->cacheline - (sizeof(ds_Thread) % g_arch_config->cacheline);
 
-	dsThread *thr = NULL;
+	ds_Thread *thr = NULL;
 	thr = ArenaPushAligned(mem, thr_size, g_arch_config->cacheline);
 
 	if (thr == NULL)
@@ -229,6 +233,7 @@ dsThread *ds_ThreadClone(struct arena *mem, void (*start)(dsThread *), void *arg
 	thr->stack_size = (stack_size % g_arch_config->pagesize == 0) 
 				? stack_size 
 				: stack_size + (g_arch_config->pagesize - stack_size % g_arch_config->pagesize);
+    ds_ThreadAllocMemory(mem, thr, frame_size, scratch_size, scratch_count);
 
   	LPSECURITY_ATTRIBUTES   lpThreadAttributes = NULL; 	/* default attributes */
   	DWORD                   dwCreationFlags = 0;		/* default creation flags */
@@ -248,7 +253,7 @@ void ds_ThreadExit(void)
 	ExitThread(0);
 }
 
-void ds_ThreadWait(const dsThread *thr)
+void ds_ThreadWait(const ds_Thread *thr)
 {
 	u32 waited = 1;
 	DWORD ret = WaitForSingleObjectEx(thr->native, INFINITE, FALSE);
@@ -283,22 +288,22 @@ void ds_ThreadWait(const dsThread *thr)
 
 #endif
 
-void *ds_ThreadReturnValue(const dsThread *thr)
+void *ds_ThreadReturnValue(const ds_Thread *thr)
 {
 	return thr->ret;	
 }
 
-void *ds_ThreadArguments(const dsThread *thr)
+void *ds_ThreadArguments(const ds_Thread *thr)
 {
 	return thr->args;
 }
 
-u64 ds_ThreadReturnValueSize(const dsThread *thr)
+u64 ds_ThreadReturnValueSize(const ds_Thread *thr)
 {
 	return thr->ret_size;
 }
 
-tid ds_ThreadTid(const dsThread *thr)
+tid ds_ThreadTid(const ds_Thread *thr)
 {
 	return thr->tid;
 }
@@ -308,7 +313,7 @@ tid ds_ThreadSelfTid(void)
 	return g_tl_self->tid;
 }
 
-u32 ds_ThreadIndex(const dsThread *thr)
+u32 ds_ThreadIndex(const ds_Thread *thr)
 {
 	return thr->index;
 }

@@ -138,8 +138,8 @@ struct ui *ui_Alloc(void)
 	ui->root = HI_ROOT_STUB_INDEX;
 	ui->node_count_prev_frame = 0;
 	ui->node_count_frame = 0;
-	ui->mem_frame_arr[0] = ArenaAlloc(64*1024*1024);
-	ui->mem_frame_arr[1] = ArenaAlloc(64*1024*1024);
+	ui->mem_frame_arr[0] = ArenaAlloc(NULL, 64*1024*1024);
+	ui->mem_frame_arr[1] = ArenaAlloc(NULL, 64*1024*1024);
 	ui->mem_frame = ui->mem_frame_arr + (ui->frame & 0x1);
 	ui->stack_parent = stack_u32Alloc(NULL, 32, GROWABLE);
 	ui->stack_sprite = stack_u32Alloc(NULL, 32, GROWABLE);

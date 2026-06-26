@@ -22,7 +22,7 @@
 
 DEFINE_STACK(visualSegment);
 
-dsThreadLocal struct collisionDebug *debug;
+ds_ThreadLocal struct collisionDebug *debug;
 
 struct visualSegment VisualSegmentConstruct(const struct segment segment, const vec4 color)
 {

@@ -115,14 +115,13 @@ TODO: We don't really use this at the moment...
 
 struct ds_Worker
 {
-	struct arena	mem_frame;		/* Cleared at start of every frame */	
-	dsThread *	    thr;
+	ds_Thread *	    thr;
 	u32 		    a_mem_frame_clear;	/* atomic sync-point: if set, on next task run flush mem_frame. */
-    u8              pad[64 - sizeof(u32)];
+    u8              pad[64 - sizeof(void *) - sizeof(u32)];
 };
 
 /* main loop for slave workers */
-void  	ds_WorkerMain(dsThread *thr);
+void  	ds_WorkerMain(ds_Thread *thr);
 /* master worker runs any available work */
 void 	ds_MasterRunAvailableJobs(void);
 
@@ -272,7 +271,7 @@ struct ds_JobScheduler
 extern struct ds_JobScheduler *g_scheduler;
 
 /* Init Scheduler and setup threads inside ds_WorkerMain */
-void 	ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, const u64 stacksize, const u64 initial_deque_size);
+void 	ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, const u64 stacksize, const u64 framesize, const u64 scratchsize, const u32 scratch_count, const u64 initial_deque_size);
 /* Destory resources */
 void 	ds_JobSchedulerShutdown(void);
 /* Clear any frame resources held by the task context and it's workers */

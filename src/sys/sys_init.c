@@ -34,7 +34,7 @@ static void DsSysEnvInit(struct arena *mem)
 	}
 }
 
-void ds_PlatformApiInit(struct arena *mem)
+void ds_PlatformApiInit(struct arena *mem, const u64 framesize, const u64 scratchsize, const u32 scratch_count)
 {
  	DsSysEnvInit(mem);
 
@@ -48,7 +48,7 @@ void ds_PlatformApiInit(struct arena *mem)
 #endif
     const u64 stacksize = 64*1024;
     const u64 initial_deque_size = 4096;
-    ds_JobSchedulerInit(mem, g_arch_config->logical_core_count, stacksize, initial_deque_size); 
+    ds_JobSchedulerInit(mem, g_arch_config->logical_core_count, stacksize, framesize, scratchsize, scratch_count, initial_deque_size); 
 }
 
 void ds_PlatformApiShutdown(void)
