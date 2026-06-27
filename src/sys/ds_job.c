@@ -289,6 +289,14 @@ void ds_TrySeedAndRunJobs(struct ds_Worker *w, const u32 thread)
         {
             while ((job = ds_WSDequeTrySteal(g_scheduler->seed_deque)) == DS_JOB_ID_NULL);
             ds_WorkerRunJob(job);
+
+            while ((job = ds_WSDequeTryPopBottom(g_scheduler->deque + thread)) != DS_JOB_ID_EMPTY)
+            {
+                if (job != DS_JOB_ID_NULL)
+                {
+                    ds_WorkerRunJob(job);
+                }
+            }
         }
     }
 

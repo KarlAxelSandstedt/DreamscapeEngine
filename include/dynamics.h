@@ -216,9 +216,17 @@ u32	        ds_ShapeTest(const struct ds_RigidBodyPipeline *pipeline, const stru
 f32 	    ds_ShapeDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
 /* 
  * Returns 1 if the shapes are colliding, 0 otherwise. If a collision is found, return a contact manifold
- * with normal pointing from s1 to s2 (and set the sat_cache if non-null and applicable). 
+ * with normal pointing from the reference body towards the incident body (and set the sat_cache if non-null 
+ * and applicable). 
  */
 u32         ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
+/*
+ * Returns the number of triangles in the mesh colliding with the other shape. If collisions are found, manifold and
+ * triangle allocated to store each collision's manifold and triangle index. Each manifold normal points the
+ * reference body towards the incident body.
+ */
+u32         ds_ShapeMeshContact(struct arena *frame, struct c_Manifold **manifold, u32 **triangle, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2); 
+
 /* 
  * Return, if ray intersects shape, t such that ray.origin + t*ray.dir == closest point on shape. 
  *         Otherwise, return F32_INFINITY.
@@ -819,19 +827,26 @@ struct ds_NarrowPhaseSeedJob
     u32 high;   /* exclusive */
 };
 
+/*
+ *  Output:
+ *      - collision_count
+ *      - manifold_arr      Handles manifolds for ordinary and mesh contacts
+ *      - key_arr           Handles key generation for meshes [Just point to internal key for non-mesh contacts]
+ *
+ *      - cache             Handles cache for Hull vs. Hull
+ */
 struct ds_NarrowPhaseJob 
 {
-    struct ds_ContactKey        key;
+    struct ds_ContactKey        key_in;     
 
-    //TODO collision => manifold_count
-    //TODO manifold => locally allocated on frame memory
+	struct c_Manifold *         manifold;   /* : [collision_count] */
+    struct ds_ContactKey *      key;        
 
-	struct c_Manifold           manifold;
-    struct sat_Cache *          cache;
-    u32                         collision;
+    struct sat_Cache *          cache;      /* : [0], Or [1] if Hull vs. Hull cache found */
     u32                         cache_index;
+    u32                         collision_count;
     u32                         valid;
-    u8                          pad[8];
+    u8                          pad[12];
 };
 
 struct ds_CollisionJobPhase

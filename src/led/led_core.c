@@ -1105,6 +1105,9 @@ void led_WallSmashSimulationSetup(struct led *led)
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_sphere");
     led_CollisionSphereAdd(led, id, 2.0f);
 
+	id = Utf8Cstr(sys_win->ui->mem_frame, "c_s_sphere");
+    led_CollisionSphereAdd(led, id, 0.375f);
+
 	struct dcel *c_ramp = ArenaPush(&sys_win->mem_persistent, sizeof(struct dcel));
 	*c_ramp = DcelConvexHull(&sys_win->mem_persistent, ramp_vertices, 6, F32_EPSILON * 100.0f);
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_ramp");
@@ -1145,6 +1148,7 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_RigidBodyPrefabAdd(led, Utf8Inline("rb_multibox"), rb_dynamic);
     led_RigidBodyPrefabAdd(led, Utf8Inline("rb_capsule"), rb_dynamic);
     led_RigidBodyPrefabAdd(led, Utf8Inline("rb_sphere"), rb_dynamic);
+    led_RigidBodyPrefabAdd(led, Utf8Inline("rb_s_sphere"), rb_dynamic);
     led_RigidBodyPrefabAdd(led, Utf8Inline("rb_dsphere"), rb_dynamic);
     led_RigidBodyPrefabAdd(led, Utf8Inline("rb_multidsphere"), rb_dynamic);
 
@@ -1154,6 +1158,7 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_RenderMeshAdd(led, Utf8Inline("rm_capsule"), Utf8Inline("c_capsule"));
     led_RenderMeshAdd(led, Utf8Inline("rm_box"), Utf8Inline("c_box"));
     led_RenderMeshAdd(led, Utf8Inline("rm_sphere"), Utf8Inline("c_sphere"));
+    led_RenderMeshAdd(led, Utf8Inline("rm_s_sphere"), Utf8Inline("c_s_sphere"));
     led_RenderMeshAdd(led, Utf8Inline("rm_dsphere"), Utf8Inline("c_dsphere"));
 
     const f32 density = 1.0f;
@@ -1164,6 +1169,7 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_ShapePrefabAdd(led, Utf8Inline("s_box"), Utf8Inline("c_box"), density, restitution, box_friction, margin);
     led_ShapePrefabAdd(led, Utf8Inline("s_capsule"), Utf8Inline("c_capsule"), density, restitution, capsule_friction, margin);
     led_ShapePrefabAdd(led, Utf8Inline("s_sphere"), Utf8Inline("c_sphere"), 100.0f, restitution, sphere_friction, margin);
+    led_ShapePrefabAdd(led, Utf8Inline("s_s_sphere"), Utf8Inline("c_s_sphere"), 100.0f, restitution, sphere_friction, margin);
     led_ShapePrefabAdd(led, Utf8Inline("s_dsphere"), Utf8Inline("c_dsphere"), density, restitution, box_friction, margin);
     led_ShapePrefabAdd(led, Utf8Inline("s_ramp"), Utf8Inline("c_ramp"), density, restitution, ramp_friction, margin);
 
@@ -1172,6 +1178,7 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_ShapePrefabAttachRenderMesh(led, Utf8Inline("s_box"), Utf8Inline("rm_box"));
     led_ShapePrefabAttachRenderMesh(led, Utf8Inline("s_capsule"), Utf8Inline("rm_capsule"));
     led_ShapePrefabAttachRenderMesh(led, Utf8Inline("s_sphere"), Utf8Inline("rm_sphere"));
+    led_ShapePrefabAttachRenderMesh(led, Utf8Inline("s_s_sphere"), Utf8Inline("rm_s_sphere"));
     led_ShapePrefabAttachRenderMesh(led, Utf8Inline("s_dsphere"), Utf8Inline("rm_dsphere"));
     led_ShapePrefabAttachRenderMesh(led, Utf8Inline("s_ramp"), Utf8Inline("rm_ramp"));
 
@@ -1181,6 +1188,7 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_box"), Utf8Inline("s_box"), Utf8Inline("l_s_box"), &transform);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_capsule"), Utf8Inline("s_capsule"), Utf8Inline("l_s_capsule"), &transform);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_sphere"), Utf8Inline("s_sphere"), Utf8Inline("l_s_sphere"), &transform);
+    led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_s_sphere"), Utf8Inline("s_s_sphere"), Utf8Inline("l_s_s_sphere"), &transform);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_dsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere"), &transform);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_ramp"), Utf8Inline("s_ramp"), Utf8Inline("l_s_ramp"), &transform);
 
@@ -1334,7 +1342,8 @@ void led_WallSmashSimulationSetup(struct led *led)
 				id = Utf8Format(sys_win->ui->mem_frame, "pyramid_%u_%u_%u", i, j, k);
                 tagged_id = led_NodeAdd(led, id, Utf8Empty());
                 led_NodeSetPosition(led, tagged_id, translation);
-                led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_box"));
+                //led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_box"));
+                led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_s_sphere"));
                 led_NodeSetColor(led, tagged_id, pyramid_color, 1.0f);
 			}
 		}

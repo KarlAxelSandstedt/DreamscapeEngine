@@ -28,7 +28,7 @@ struct collisionDebug *g_collision_debug;
 
 void ds_DynamicsStaticAssert(void)
 {
-    ds_StaticAssert(sizeof(struct ds_NarrowPhaseJob) == 2*DS_CACHE_LINE, "");
+    ds_StaticAssert(sizeof(struct ds_NarrowPhaseJob) == DS_CACHE_LINE, "");
 }
 
 struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct strdb *cshape_db, struct strdb *prefab_db)
@@ -217,7 +217,7 @@ static u32 NarrowPhaseSeedJob(struct ds_CollisionJobPhase *phase, struct ds_Narr
 
         job_count += 1;
         phase->narrowphase_jobs[index].valid = 1;
-        phase->narrowphase_jobs[index].key = ds_ContactKeyCanonical(s1->body, overlap->id1, s2->body, overlap->id2);
+        phase->narrowphase_jobs[index].key_in = ds_ContactKeyCanonical(s1->body, overlap->id1, s2->body, overlap->id2);
     
         ds_WSDequePushBottom(g_scheduler->deque + ds_ThreadSelfIndex(), ds_JobIdInit(COLLISION_JOB_NARROWPHASE, index));
     }
@@ -234,34 +234,68 @@ static u32 NarrowPhaseJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPh
     const struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
     job->cache = NULL;
     job->cache_index = U32_MAX;
+    job->key = &job->key_in;
 
-    const struct ds_RigidBody *b0 = (struct ds_RigidBody *) pipeline->body_pool.buf + job->key.body0;
-    const struct ds_RigidBody *b1 = (struct ds_RigidBody *) pipeline->body_pool.buf + job->key.body1;
-    const struct ds_Shape *s0 = (struct ds_Shape *) pipeline->shape_pool.buf + job->key.shape0;
-    const struct ds_Shape *s1 = (struct ds_Shape *) pipeline->shape_pool.buf + job->key.shape1;
+    const struct ds_RigidBody *b0 = (struct ds_RigidBody *) pipeline->body_pool.buf + job->key_in.body0;
+    const struct ds_RigidBody *b1 = (struct ds_RigidBody *) pipeline->body_pool.buf + job->key_in.body1;
+    const struct ds_Shape *s0 = (struct ds_Shape *) pipeline->shape_pool.buf + job->key_in.shape0;
+    const struct ds_Shape *s1 = (struct ds_Shape *) pipeline->shape_pool.buf + job->key_in.shape1;
 
-    if (s0->cshape_type == C_SHAPE_CONVEX_HULL && s1->cshape_type == C_SHAPE_CONVEX_HULL)
+    
+    ds_Assert(s0->body != s1->body);
+
+
+    if (s0->cshape_type == C_SHAPE_TRI_MESH || s1->cshape_type == C_SHAPE_TRI_MESH)
     {
-        const struct sat_CacheKey key = sat_CacheKeyCanonical(
-            ((u64) b0->tag << 32) | job->key.body0,
-            ((u64) s0->tag << 32) | job->key.shape0,
-            ((u64) b1->tag << 32) | job->key.body1,
-            ((u64) s1->tag << 32) | job->key.shape1);
- 
-        struct slot slot = sat_CacheLookup(pipeline->cdb, &key);
-        if (!slot.address)
+
+        u32 *tri;
+        job->collision_count = ds_ShapeMeshContact(&g_tl_self->frame, &job->manifold, &tri, pipeline, s0, s1);
+        job->key = ArenaPush(&g_tl_self->frame, job->collision_count*sizeof(struct ds_ContactKey));
+        if (s0->cshape_type == C_SHAPE_TRI_MESH)
         {
-            slot = sat_CacheAdd(pipeline->cdb, &key);
+            for (u32 i = 0; i < job->collision_count; ++i)
+            {
+                job->key[i] = ds_ContactKeyCanonical(job->key_in.body0, tri[i] | 0x80000000, job->key_in.body1, job->key_in.shape1);
+            }
         }
-        job->cache_index = slot.index;
-        job->cache = slot.address;
+        else
+        {
+            for (u32 i = 0; i < job->collision_count; ++i)
+            {
+                job->key[i] = ds_ContactKeyCanonical(job->key_in.body0, job->key_in.shape0, job->key_in.body1, tri[i]);
+            }
+        }
+    }
+    else
+    {
+        if (s0->cshape_type == C_SHAPE_CONVEX_HULL && s1->cshape_type == C_SHAPE_CONVEX_HULL)
+        {
+            const struct sat_CacheKey key = sat_CacheKeyCanonical(
+                ((u64) b0->tag << 32) | job->key_in.body0,
+                ((u64) s0->tag << 32) | job->key_in.shape0,
+                ((u64) b1->tag << 32) | job->key_in.body1,
+                ((u64) s1->tag << 32) | job->key_in.shape1);
+ 
+            struct slot slot = sat_CacheLookup(pipeline->cdb, &key);
+            if (!slot.address)
+            {
+                slot = sat_CacheAdd(pipeline->cdb, &key);
+            }
+            job->cache_index = slot.index;
+            job->cache = slot.address;
+        }
+
+        struct c_Manifold manifold;
+        struct arena *tmp = ArenaPushScratch();
+        job->collision_count = ds_ShapeContact(tmp, &manifold, job->cache, pipeline, s0, s1);
+        ArenaPopScratch();
+
+        if (job->collision_count)
+        {
+            job->manifold = ArenaPushAlignedMemcpy(&g_tl_self->frame, &manifold, sizeof(struct c_Manifold), 4);
+        }
     }
 
-    ds_Assert(s0->body != s1->body);
-    
-    struct arena *tmp = ArenaPushScratch();
-    job->collision = ds_ShapeContact(tmp, &job->manifold, job->cache, pipeline, s0, s1);
-    ArenaPopScratch();
 
 	ProfZoneEnd;
 
@@ -408,17 +442,17 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
                 } 
             }
 
-            if (job->collision)
+            for (u32 c = 0; c < job->collision_count; ++c)
             {
                 cdb->contact_count += 1;
-                struct slot slot = ds_ContactKeyLookup(pipeline, &job->key);
+                struct slot slot = ds_ContactKeyLookup(pipeline, job->key + c);
                 if (!slot.address)
                 {
-                    slot = ds_ContactAdd(pipeline, &job->manifold, &job->key);
+                    slot = ds_ContactAdd(pipeline, job->manifold + c, job->key + c);
                 }
                 else
                 {
-                    ds_ContactUpdate(pipeline, slot, &job->manifold);
+                    ds_ContactUpdate(pipeline, slot, job->manifold + c);
                 }
                  
 			    /* add to new links if needed */

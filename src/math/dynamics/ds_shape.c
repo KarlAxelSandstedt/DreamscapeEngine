@@ -326,7 +326,15 @@ u32 (*c_contact_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(struct arena *, struct c_
 	{ c_SphereContact,	 	        0, 				            0,			                0, },
 	{ c_CapsuleSphereContact, 	    c_CapsuleContact,			0,			                0, },
 	{ c_HullSphereContact, 	  	    c_HullCapsuleContact,		c_HullContact, 		        0, },
-	{ c_TriMeshBvhSphereContact,	c_TriMeshBvhCapsuleContact, c_TriMeshBvhHullContact,    0, },
+	{ 0,	                        0,                          0,                          0, },
+};
+
+u32 (*c_mesh_contact_methods[C_SHAPE_COUNT])(struct arena *, struct c_Manifold **, u32 **, const struct c_Shape *[2], const ds_Transform [2], const u32) =
+{
+    c_TriMeshBvhSphereContact,
+    c_TriMeshBvhCapsuleContact,
+    c_TriMeshBvhHullContact,
+    0,
 };
 
 f32 (*c_raycast_parameter_methods[C_SHAPE_COUNT])(struct arena *, const struct c_Shape *, const ds_Transform *, const struct ray *) =
@@ -380,8 +388,7 @@ u32 ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_C
         cache_copy_mem = *cache;
     }
 
-
-	u32 collision;
+	u32 collision_count;
 	if (c_s1->type >= c_s2->type) 
 	{
         const struct c_Shape *c_s_arr[2] = { c_s1, c_s2 };
@@ -390,7 +397,7 @@ u32 ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_C
         const u32 ref = (s1->body < s2->body)
                         ? 0
                         : 1;
-		collision = c_contact_methods[c_s1->type][c_s2->type](tmp, manifold, cache, cache_copy, c_s_arr, t_arr, ref);
+		collision_count = c_contact_methods[c_s1->type][c_s2->type](tmp, manifold, cache, cache_copy, c_s_arr, t_arr, ref);
 	}                                                                                         
 	else                                                                                      
 	{                                                                                         
@@ -400,10 +407,26 @@ u32 ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_C
         const u32 ref = (s1->body < s2->body)
                         ? 1
                         : 0;
-		collision = c_contact_methods[c_s2->type][c_s1->type](tmp, manifold, cache, cache_copy, c_s_arr, t_arr, ref);
+		collision_count = c_contact_methods[c_s2->type][c_s1->type](tmp, manifold, cache, cache_copy, c_s_arr, t_arr, ref);
 	}
 
-	return collision;
+	return collision_count;
+}
+
+u32 ds_ShapeMeshContact(struct arena *frame, struct c_Manifold **manifold, u32 **triangle, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2)
+{
+    ds_Transform t_arr[2];
+
+    const struct c_Shape *c_s1 = strdb_Address(pipeline->cshape_db, s1->cshape_handle);
+    const struct c_Shape *c_s2 = strdb_Address(pipeline->cshape_db, s2->cshape_handle);
+    const struct c_Shape *c_s_arr[2] = { c_s1, c_s2 };
+
+    ds_ShapeWorldTransform(t_arr + 0, pipeline, s1);
+    ds_ShapeWorldTransform(t_arr + 1, pipeline, s2);
+    const u32 ref = (s1->body < s2->body)
+                    ? 0
+                    : 1;
+	return c_mesh_contact_methods[c_s2->type](frame, manifold, triangle, c_s_arr, t_arr, ref);
 }
 
 
