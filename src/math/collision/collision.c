@@ -2539,24 +2539,50 @@ sat_cleanup:
 	return colliding;
 }
 
+struct DelayedFeature
+{
+    u32 index;
+    f32 dist_sq;
+};
+
+struct TriMeshBvhContact
+{
+    struct gjk_Simplex  simplex;
+    u32                 tri;
+    f32                 dist_sq;
+};
+
 u32 c_TriMeshBvhSphereContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *not_used1, const struct sat_Cache *not_used2, const struct c_Shape *s[2], const ds_Transform t[2], const u32 ref)
 {
 	ds_Assert(s[0]->type == C_SHAPE_TRI_MESH);
 	ds_Assert(s[1]->type == C_SHAPE_SPHERE);
 
+    struct arena *tmp2 = ArenaPushScratch();
+    struct arena *tmp3 = ArenaPushScratch();
+	ArenaPushRecord(tmp);
+
+    struct memArray delayed_arr = ArenaPushAlignedAll(tmp2, sizeof(struct DelayedFeature), 8);
+    struct DelayedFeature *delayed_set = delayed_arr.addr;
+    u32 delayed_count = 0;
+
+    struct memArray contact_arr = ArenaPushAlignedAll(tmp3, sizeof(struct TriMeshBvhContact), 8);
+    struct TriMeshBvhContact *contact = contact_arr.addr;
+    u32 contact_count = 0;
+
 	const struct triMeshBvh *mesh_bvh = &s[0]->mesh_bvh;
 	const struct sphere *sph = &s[1]->sphere;
 
-	struct aabb bbox_transform;
-	Vec3Sub(bbox_transform.center, t[1].position, t[0].position);
-	Vec3Set(bbox_transform.hw, sph->radius, sph->radius, sph->radius);
+    struct bitVec void_bitset = BitVecAlloc(tmp, mesh_bvh->mesh->v_count, 0, NOT_GROWABLE);
 
-	ArenaPushRecord(tmp);
-
+    const struct triMesh *mesh = mesh_bvh->mesh;
 	const struct bvh *bvh = &mesh_bvh->bvh;
 	const struct bvhNode *node = (struct bvhNode *) bvh->tree.pool.buf;
 	struct memArray arr = ArenaPushAlignedAll(tmp, sizeof(struct bvhNode *), sizeof(struct bvhNode *));
 	const struct bvhNode **node_stack = arr.addr;
+
+	struct aabb bbox_transform;
+	Vec3Sub(bbox_transform.center, t[1].position, t[0].position);
+	Vec3Set(bbox_transform.hw, sph->radius, sph->radius, sph->radius);
 
     vec3 v_tri[3], c1, c2;
     struct gjk_Input g1 = { .v = v_tri, .v_count = 3 };
@@ -2583,40 +2609,29 @@ u32 c_TriMeshBvhSphereContact(struct arena *tmp, struct c_Manifold *manifold, st
 	while (sc--)
 	{
 		if (bt_LeafCheck(node_stack[sc]))
-		{
-            /*
-             * TODO:
-             * (O) Setup const shared triangle DCEL struct (shared constant storage)
-             * (O) hull-sphere gjk
-             * () Categorize { Face, edge, vertex contact }
-             * () Build void set
-             * () Sort (vertex and edge) contacts
-             * () Process contacts in sorted order, unconditionally voiding triangle features on the way
-             */
-            const struct triMesh *mesh = mesh_bvh->mesh;
+		{ 
             const u32 tri_first = node_stack[sc]->bt_left;
             const u32 tri_last = tri_first + node_stack[sc]->bt_right - 1;
             for (u32 index = tri_first; index <= tri_last; ++index)
             {
-                    const u32 tri = mesh_bvh->tri[index];
-                    Vec3Copy(v_tri[0], mesh->v[mesh->tri[tri][0]]);
-                    Vec3Copy(v_tri[1], mesh->v[mesh->tri[tri][1]]);
-                    Vec3Copy(v_tri[2], mesh->v[mesh->tri[tri][2]]);
+                const u32 tri = mesh_bvh->tri[index];
+                Vec3Copy(v_tri[0], mesh->v[mesh->tri[tri][0]]);
+                Vec3Copy(v_tri[1], mesh->v[mesh->tri[tri][1]]);
+                Vec3Copy(v_tri[2], mesh->v[mesh->tri[tri][2]]);
+
+                if (contact_count >= contact_arr.len)
+                {
+					Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
+					FatalCleanupAndExit();
+                }
            
-                    struct gjk_Simplex simplex;
-                    const f32 dist_sq = gjk_DistanceSquared(c1, c2, &simplex, &g1, &g2);
-                    if (dist_sq > sph->radius*sph->radius)
-                    {
-                            COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(c1, c2), Vec4Inline(0.8f, 0.6, 0.1f, 1.0f));
-                    }
-                    else
-                    {
-                            COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(c1, c2), Vec4Inline(0.8f, 0.0, 0.1f, 1.0f));
-                    }
-                    //vec3_sub(n, c2, c1);
-                    //vec3_mul_constant(n, 1.0f / vec3_length(n));
-                    //vec3_translate_scaled(c1, n, margin);
-                    //vec3_translate_scaled(c2, n, -(sph->radius + margin));
+                contact[contact_count].tri = tri;
+                contact[contact_count].dist_sq = gjk_DistanceSquared(c1, c2, &contact[contact_count].simplex, &g1, &g2);
+                if (contact[contact_count].dist_sq <= sph->radius*sph->radius)
+                {
+                    contact_count += 1;
+                    COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(c1, c2), Vec4Inline(0.8f, 0.6, 0.1f, 1.0f));
+                }
             }
 		}
 		else
@@ -2640,7 +2655,70 @@ u32 c_TriMeshBvhSphereContact(struct arena *tmp, struct c_Manifold *manifold, st
 		}
 	}
 
+            /*
+             * TODO:
+             * (O) Setup const shared triangle DCEL struct (shared constant storage)
+             * (O) hull-sphere gjk
+             * (O) Categorize { Face, edge, vertex contact }
+             * (O) void bitset
+             * (O) Store (simplex, tri, distance)
+             * (O) Sort (vertex and edge) contacts
+             * (O) Process contacts in sorted order, unconditionally voiding triangle features on the way
+             * () What do we return?
+             */
+
+    for (u32 i = 0; i < contact_count; ++i)
+    {
+        /* face contact */
+        if (contact[i].simplex.type == SIMPLEX_2)
+        {
+            //TODO: Register Real Contact
+            
+            BitVecSetBit(&void_bitset, mesh->tri[contact[i].tri][0], 1);
+            BitVecSetBit(&void_bitset, mesh->tri[contact[i].tri][1], 1);
+            BitVecSetBit(&void_bitset, mesh->tri[contact[i].tri][2], 1);
+        }
+        else
+        {
+            delayed_set[delayed_count].index = i;
+            delayed_set[delayed_count].dist_sq = contact[i].dist_sq;
+            for (u32 d = delayed_count; d; --d)
+            {
+                if (delayed_set[d-1].dist_sq <= delayed_set[d].dist_sq)
+                {
+                    break;
+                }
+                const struct DelayedFeature tmp = delayed_set[d];
+                delayed_set[d] = delayed_set[d-1];
+                delayed_set[d-1] = tmp;
+            }
+
+            delayed_count += 1;
+        }
+    }
+
+    for (u32 i = 0; i < delayed_count; ++i)
+    {
+        const struct TriMeshBvhContact *c = contact + delayed_set[i].index;
+        /* if vertex_contact not in void, or edge contact and not fully in void */
+        if (!BitVecGetBit(&void_bitset, c->simplex.id[0] >> 32)
+                || (c->simplex.type == SIMPLEX_1 && !BitVecGetBit(&void_bitset, c->simplex.id[1] >> 32)))
+        {
+            //TODO: Register Real Contact
+        }
+
+        fprintf(stderr, "%f ", c->dist_sq);
+
+        BitVecSetBit(&void_bitset, mesh->tri[c->tri][0], 1);
+        BitVecSetBit(&void_bitset, mesh->tri[c->tri][1], 1);
+        BitVecSetBit(&void_bitset, mesh->tri[c->tri][2], 1);
+    }
+        fprintf(stderr, "\n");
+
 	ArenaPopRecord(tmp);
+    ArenaPopScratch();
+    ArenaPopScratch();
+
 	return 0;
 }
 

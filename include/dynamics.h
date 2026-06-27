@@ -823,6 +823,9 @@ struct ds_NarrowPhaseJob
 {
     struct ds_ContactKey        key;
 
+    //TODO collision => manifold_count
+    //TODO manifold => locally allocated on frame memory
+
 	struct c_Manifold           manifold;
     struct sat_Cache *          cache;
     u32                         collision;
