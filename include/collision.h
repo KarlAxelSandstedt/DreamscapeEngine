@@ -85,6 +85,7 @@ struct triMeshBvh
 	struct bvh		        bvh;
 	u32 *			        tri;		
 	u32			            tri_count;	
+    u32                     depth;      /* root=0, */
 };
 
 /* Return non-empty tri_mesh_bvh on success. */

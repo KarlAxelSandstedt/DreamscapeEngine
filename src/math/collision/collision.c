@@ -2562,13 +2562,8 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
 
     struct arena *tmp1 = ArenaPushScratch();
     struct arena *tmp2 = ArenaPushScratch();
-    struct arena *tmp3 = ArenaPushScratch();
 
-    struct memArray delayed_arr = ArenaPushAlignedAll(tmp2, sizeof(struct DelayedFeature), 8);
-    struct DelayedFeature *delayed_set = delayed_arr.addr;
-    u32 delayed_count = 0;
-
-    struct memArray contact_arr = ArenaPushAlignedAll(tmp3, sizeof(struct TriMeshBvhContact), 8);
+    struct memArray contact_arr = ArenaPushAlignedAll(tmp2, sizeof(struct TriMeshBvhContact), 8);
     struct TriMeshBvhContact *contact = contact_arr.addr;
     u32 contact_count = 0;
 
@@ -2579,9 +2574,9 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
 
     const struct triMesh *mesh = mesh_bvh->mesh;
 	const struct bvh *bvh = &mesh_bvh->bvh;
+
 	const struct bvhNode *node = (struct bvhNode *) bvh->tree.pool.buf;
-	struct memArray arr = ArenaPushAlignedAll(tmp1, sizeof(struct bvhNode *), sizeof(struct bvhNode *));
-	const struct bvhNode **node_stack = arr.addr;
+	const struct bvhNode **node_stack = ArenaPush(tmp1, (mesh_bvh->depth+1)*sizeof(struct bvhNode **));
 
     quat q_inv;
 	struct aabb bbox_transform;
@@ -2606,6 +2601,8 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
 		node_stack[sc++] = node + bvh->tree.root;
 	}
 
+    {
+    ProfZoneNamed("DBVH");
 	while (sc--)
 	{
 		if (bt_LeafCheck(node_stack[sc]))
@@ -2620,7 +2617,9 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
                 Vec3Copy(v_tri[1], mesh->v[mesh->tri[c->tri][1]]);
                 Vec3Copy(v_tri[2], mesh->v[mesh->tri[c->tri][2]]);
 
+                ProfZoneNamed("gjk");
                 c->dist_sq = gjk_DistanceSquared(c->c[0], c->c[1], &c->simplex, &g1, &g2);
+                ProfZoneEnd;
                 if (c->dist_sq <= sph->radius*sph->radius)
                 {
                     COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(c->c[0], c->c[1]), Vec4Inline(0.1f, 0.3f, 0.9f, 1.0f));
@@ -2648,12 +2647,14 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
 			}
 
 			if (AabbTest(&bbox_transform, &left->bbox))
-			{
-				ds_Assert(sc < arr.len);
+            {
+                ds_Assert(sc < mesh_bvh->depth+1);
 				node_stack[sc++] = left;
 			}
 		}
 	}
+    ProfZoneEnd;
+    }
 
     u32 collision_count = 0;
     *manifold = ArenaPush(frame, contact_count*sizeof(struct c_Manifold));
@@ -2663,6 +2664,9 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
 		Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
 		FatalCleanupAndExit();
 	}
+
+    struct DelayedFeature *delayed_set = ArenaPush(tmp1, contact_count*sizeof(struct DelayedFeature));
+    u32 delayed_count = 0;
 
     for (u32 i = 0; i < contact_count; ++i)
     {
@@ -2739,7 +2743,6 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
         BitVecSetBit(&void_bitset, mesh->tri[c->tri][2], 1);
     }
 
-    ArenaPopScratch();
     ArenaPopScratch();
     ArenaPopScratch();
 
