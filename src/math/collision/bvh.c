@@ -741,8 +741,6 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
 		
 		ProfZoneEnd;
 	}
-
-    fprintf(stderr, "DEPTH: %u\n", mesh_bvh.depth);
 	
 end:
 	if (success)
@@ -841,7 +839,6 @@ u32f32 TriMeshBvhRaycast(struct arena *tmp, const struct triMeshBvh *mesh_bvh, c
 				if (distance < info.hit.f)
 				{
 					info.hit = u32f32_inline(mesh_bvh->tri[i], distance);
-					fprintf(stderr, "%u\n", mesh_bvh->tri[i]);
 				}
 			}
 		}

@@ -61,8 +61,8 @@ ds_ShapeId ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_Sh
 
 void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Island *island, const u32 shape_index)
 {
-    struct ds_Shape *shape = ds_PoolAddress(&pipeline->shape_pool, shape_index);
-    struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, shape->body);
+    struct ds_Shape *dummy_shape, *shape = ds_PoolAddress(&pipeline->shape_pool, shape_index);
+    struct ds_RigidBody *dummy_body, *body = ds_PoolAddress(&pipeline->body_pool, shape->body);
     const ds_ShapeId s0 = ((u64) shape->tag << 32) | shape_index;
     const ds_RigidBodyId b0 = ((u64) body->tag << 32) | shape->body;
 
@@ -83,16 +83,14 @@ void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Isla
 		if (shape_index == c->key.shape0)
 		{
 			next_i = 0;
-			shape = ds_PoolAddress(&pipeline->shape_pool, c->key.shape1);
-            body = ds_PoolAddress(&pipeline->body_pool, c->key.body1);
+            ds_ContactKeyAddress(&dummy_body, &dummy_shape, &body, &shape, pipeline, &c->key);
             b1 = ((u64) body->tag << 32) | c->key.body1;
             s1 = ((u64) shape->tag << 32) | c->key.shape1;
         }
 		else
 		{
 			next_i = 1;
-			shape = ds_PoolAddress(&pipeline->shape_pool, c->key.shape0);
-            body = ds_PoolAddress(&pipeline->body_pool, c->key.body0);
+            ds_ContactKeyAddress(&body, &shape, &dummy_body, &dummy_shape, pipeline, &c->key);
             b1 = ((u64) body->tag << 32) | c->key.body0;
             s1 = ((u64) shape->tag << 32) | c->key.shape0;
 		}

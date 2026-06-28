@@ -1590,6 +1590,19 @@ u32 c_CapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, struc
 	return contact_generated;
 }
 
+static void c_HullSphereShallowManifold(struct c_Manifold *manifold, const f32 radius, const vec3 c[2], const u32 ref)
+{
+    manifold->v_count = 1;
+    Vec3Sub(manifold->n, c[1], c[0]);
+    Vec3ScaleSelf(manifold->n, 1.0f / Vec3Length(manifold->n));
+    manifold->depth[0] = radius - (Vec3Dot(c[1], manifold->n) - Vec3Dot(c[0], manifold->n));
+    if (ref == 1)
+    {
+        Vec3ScaleSelf(manifold->n, -1.0f);
+    	Vec3TranslateScaled(manifold->v[0], manifold->n, radius);
+    }    Vec3Copy(manifold->v[0], c[ref]);
+}
+
 u32 c_HullSphereContact(struct arena *not_used1, struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s[2], const ds_Transform t[2], const u32 ref)
 {
 	ds_Assert(s[0]->type == C_SHAPE_CONVEX_HULL);
@@ -1654,17 +1667,7 @@ u32 c_HullSphereContact(struct arena *not_used1, struct c_Manifold *manifold, st
 	else if (dist_sq <= r_sum*r_sum)
 	{
 		contact_generated = 1;
-		manifold->v_count = 1;
-
-		Vec3Sub(manifold->n, c[1], c[0]);
-		Vec3ScaleSelf(manifold->n, 1.0f / Vec3Length(manifold->n));
-		manifold->depth[0] = s[1]->sphere.radius - (Vec3Dot(c[1], manifold->n) - Vec3Dot(c[0], manifold->n));
-        Vec3Copy(manifold->v[0], c[ref]);
-        if (ref == 1)
-        {
-            Vec3ScaleSelf(manifold->n, -1.0f);
-	    	Vec3TranslateScaled(manifold->v[0], manifold->n, s[1]->sphere.radius);
-        }
+        c_HullSphereShallowManifold(manifold, s[1]->sphere.radius, c, ref);
 	}
 
 	return contact_generated;
@@ -2545,13 +2548,87 @@ struct DelayedFeature
     f32 dist_sq;
 };
 
-struct TriMeshBvhContact
+struct c_TriMeshBvhContact
 {
     struct gjk_Simplex  simplex;
     vec3                c[2];
     u32                 tri;
     f32                 dist_sq;
 };
+
+struct c_TriMeshBvhIterator
+{
+    struct arena *              tmp1;
+    struct arena *              tmp2;
+
+    struct c_TriMeshBvhContact *contact;
+    u32                         contact_count;
+    u32                         contact_len;
+
+    struct bitVec               void_bitset;
+
+    const struct triMeshBvh *   mesh_bvh;
+    const struct triMesh *      mesh;
+    const struct bvh *          bvh;
+
+    const struct bvhNode *      node;
+    const struct bvhNode **     node_stack;
+    u32                         sc;
+
+    /* Bounding box of transformed shape in BVH's local coordinate system */
+    const struct aabb *         bvh_local_bbox;
+    const struct aabb *         bvh_bbox;
+};
+
+static void c_TriMeshBvhIteratorAlloc(struct c_TriMeshBvhIterator *it, const struct triMeshBvh *mesh_bvh, struct aabb *bvh_local_bbox)
+{
+    it->tmp1 = ArenaPushScratch();
+    it->tmp2 = ArenaPushScratch();
+
+    struct memArray contact_arr = ArenaPushAlignedAll(it->tmp1, sizeof(struct c_TriMeshBvhContact), 8);
+    it->contact = contact_arr.addr;
+    it->contact_count = 0;
+    it->contact_len = contact_arr.len;
+
+    it->void_bitset = BitVecAlloc(it->tmp2, mesh_bvh->mesh->v_count, 0, NOT_GROWABLE);
+
+    it->mesh_bvh = mesh_bvh;
+    it->mesh = mesh_bvh->mesh;
+	it->bvh = &mesh_bvh->bvh;
+
+	it->node = (struct bvhNode *) mesh_bvh->bvh.tree.pool.buf;
+	it->node_stack = ArenaPush(it->tmp2, (mesh_bvh->depth+1)*sizeof(struct bvhNode **));
+    it->sc = 0;
+
+    it->bvh_local_bbox = bvh_local_bbox;
+    it->bvh_bbox = &it->node[it->bvh->tree.root].bbox;
+    if (AabbTest(it->bvh_local_bbox, it->bvh_bbox))
+	{
+		it->node_stack[it->sc++] = it->node + it->bvh->tree.root;
+	}
+}
+
+static void c_TriMeshBvhIteratorDealloc(struct c_TriMeshBvhIterator *it)
+{
+    ArenaPopScratch();
+    ArenaPopScratch();
+}
+
+static void c_TriMeshBvhIteratorPushChildren(struct c_TriMeshBvhIterator *it)
+{
+	const struct bvhNode *left = it->node + it->node_stack[it->sc]->bt_left;
+	const struct bvhNode *right = it->node + it->node_stack[it->sc]->bt_right;
+	if (AabbTest(it->bvh_local_bbox, &right->bbox))
+	{
+		it->node_stack[it->sc++] = right;
+	}
+
+	if (AabbTest(it->bvh_local_bbox, &left->bbox))
+    {
+        ds_Assert(it->sc < it->mesh_bvh->depth+1);
+		it->node_stack[it->sc++] = left;
+    }
+}
 
 u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold, u32 **tri, const struct c_Shape *s[2], const ds_Transform t[2], const u32 ref)
 {
@@ -2560,23 +2637,8 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
 	ds_Assert(s[0]->type == C_SHAPE_TRI_MESH);
 	ds_Assert(s[1]->type == C_SHAPE_SPHERE);
 
-    struct arena *tmp1 = ArenaPushScratch();
-    struct arena *tmp2 = ArenaPushScratch();
-
-    struct memArray contact_arr = ArenaPushAlignedAll(tmp2, sizeof(struct TriMeshBvhContact), 8);
-    struct TriMeshBvhContact *contact = contact_arr.addr;
-    u32 contact_count = 0;
-
-	const struct triMeshBvh *mesh_bvh = &s[0]->mesh_bvh;
+    const struct triMeshBvh *mesh_bvh = &s[0]->mesh_bvh;
 	const struct sphere *sph = &s[1]->sphere;
-
-    struct bitVec void_bitset = BitVecAlloc(tmp1, mesh_bvh->mesh->v_count, 0, NOT_GROWABLE);
-
-    const struct triMesh *mesh = mesh_bvh->mesh;
-	const struct bvh *bvh = &mesh_bvh->bvh;
-
-	const struct bvhNode *node = (struct bvhNode *) bvh->tree.pool.buf;
-	const struct bvhNode **node_stack = ArenaPush(tmp1, (mesh_bvh->depth+1)*sizeof(struct bvhNode **));
 
     quat q_inv;
 	struct aabb bbox_transform;
@@ -2594,110 +2656,81 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
     struct gjk_Input g2 = { .v = &v_sphere, .v_count = 1, };
     Vec3Copy(g2.pos, t[1].position);
     Mat3Identity(g2.rot);
- 
-	u32 sc = 0;
-	if (AabbTest(&bbox_transform, &node[bvh->tree.root].bbox))
-	{
-		node_stack[sc++] = node + bvh->tree.root;
-	}
 
-    {
-    ProfZoneNamed("DBVH");
-	while (sc--)
-	{
-		if (bt_LeafCheck(node_stack[sc]))
-		{ 
-            const u32 tri_first = node_stack[sc]->bt_left;
-            const u32 tri_last = tri_first + node_stack[sc]->bt_right - 1;
-            for (u32 index = tri_first; index <= tri_last; ++index)
-            {
-                struct TriMeshBvhContact *c = contact + contact_count;
-                c->tri = mesh_bvh->tri[index];
-                Vec3Copy(v_tri[0], mesh->v[mesh->tri[c->tri][0]]);
-                Vec3Copy(v_tri[1], mesh->v[mesh->tri[c->tri][1]]);
-                Vec3Copy(v_tri[2], mesh->v[mesh->tri[c->tri][2]]);
+    struct c_TriMeshBvhIterator it;
+    c_TriMeshBvhIteratorAlloc(&it, mesh_bvh, &bbox_transform);
 
-                ProfZoneNamed("gjk");
-                c->dist_sq = gjk_DistanceSquared(c->c[0], c->c[1], &c->simplex, &g1, &g2);
-                ProfZoneEnd;
-                if (c->dist_sq <= sph->radius*sph->radius)
+	{
+        ProfZoneNamed("Calculate Triangles");
+	    while (it.sc--)
+	    {
+	    	if (!bt_LeafCheck(it.node_stack[it.sc]))
+	    	{
+                c_TriMeshBvhIteratorPushChildren(&it);
+	    	}
+	    	else
+            { 
+                const u32 tri_first = it.node_stack[it.sc]->bt_left;
+                const u32 tri_last = tri_first + it.node_stack[it.sc]->bt_right - 1;
+                for (u32 index = tri_first; index <= tri_last; ++index)
                 {
-                    COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(c->c[0], c->c[1]), Vec4Inline(0.1f, 0.3f, 0.9f, 1.0f));
-                    contact_count += 1;
+                    struct c_TriMeshBvhContact *c = it.contact + it.contact_count;
+                    c->tri = mesh_bvh->tri[index];
+                    Vec3Copy(v_tri[0], it.mesh->v[it.mesh->tri[c->tri][0]]);
+                    Vec3Copy(v_tri[1], it.mesh->v[it.mesh->tri[c->tri][1]]);
+                    Vec3Copy(v_tri[2], it.mesh->v[it.mesh->tri[c->tri][2]]);
 
-                    if (contact_count == contact_arr.len)
+                    ProfZoneNamed("gjk");
+                    c->dist_sq = gjk_DistanceSquared(c->c[0], c->c[1], &c->simplex, &g1, &g2);
+                    ProfZoneEnd;
+                    if (c->dist_sq <= sph->radius*sph->radius)
                     {
-				    	Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
-				    	FatalCleanupAndExit();
+                        it.contact_count += 1;
+
+                        if (it.contact_count == it.contact_len)
+                        {
+	    			    	Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
+	    			    	FatalCleanupAndExit();
+                        }
                     }
                 }
-                else 
-                {
-                    COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(c->c[0], c->c[1]), Vec4Inline(0.9f, 0.7f, 0.9f, 1.0f));
-                }
-            }
-		}
-		else
-		{
-			const struct bvhNode *left = node + node_stack[sc]->bt_left;
-			const struct bvhNode *right = node + node_stack[sc]->bt_right;
-			if (AabbTest(&bbox_transform, &right->bbox))
-			{
-				node_stack[sc++] = right;
-			}
-
-			if (AabbTest(&bbox_transform, &left->bbox))
-            {
-                ds_Assert(sc < mesh_bvh->depth+1);
-				node_stack[sc++] = left;
-			}
-		}
-	}
-    ProfZoneEnd;
+	    	}
+	    }
+        ProfZoneEnd;
     }
 
     u32 collision_count = 0;
-    *manifold = ArenaPush(frame, contact_count*sizeof(struct c_Manifold));
-    *tri = ArenaPush(frame, contact_count*sizeof(u32));
-    if (!manifold || !tri)
+    u32 delayed_count = 0;
+    *manifold = ArenaPush(frame, it.contact_count*sizeof(struct c_Manifold));
+    *tri = ArenaPush(frame, it.contact_count*sizeof(u32));
+    struct DelayedFeature *delayed_set = ArenaPush(it.tmp2, it.contact_count*sizeof(struct DelayedFeature));
+    if (it.contact_count && (!manifold || !tri || !delayed_set))
     {
 		Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
 		FatalCleanupAndExit();
 	}
 
-    struct DelayedFeature *delayed_set = ArenaPush(tmp1, contact_count*sizeof(struct DelayedFeature));
-    u32 delayed_count = 0;
-
-    for (u32 i = 0; i < contact_count; ++i)
+    for (u32 i = 0; i < it.contact_count; ++i)
     {
         /* face contact */
-        struct TriMeshBvhContact *c = contact + i;
+        struct c_TriMeshBvhContact *c = it.contact + i;
         if (c->simplex.type == SIMPLEX_2)
         {
             struct c_Manifold *m = (*manifold) + collision_count;
             u32 *t = (*tri) + collision_count;
             collision_count += 1;
-
-		    m->v_count = 1;
-		    Vec3Sub(m->n, c->c[1], c->c[0]);
-		    Vec3ScaleSelf(m->n, 1.0f / Vec3Length(m->n));
-		    m->depth[0] = s[1]->sphere.radius - (Vec3Dot(c->c[1], m->n) - Vec3Dot(c->c[0], m->n));
-            Vec3Copy(m->v[0], c->c[ref]);
-            if (ref == 1)
-            {
-                Vec3ScaleSelf(m->n, -1.0f);
-	        	Vec3TranslateScaled(m->v[0], m->n, s[1]->sphere.radius);
-            }
+            c_HullSphereShallowManifold(m, s[1]->sphere.radius, c->c, ref);
             
+            COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(c->c[0], c->c[1]), Vec4Inline(0.9f, 0.7f, 0.9f, 1.0f));
             *t = c->tri;
-            BitVecSetBit(&void_bitset, mesh->tri[*t][0], 1);
-            BitVecSetBit(&void_bitset, mesh->tri[*t][1], 1);
-            BitVecSetBit(&void_bitset, mesh->tri[*t][2], 1);
+            BitVecSetBit(&it.void_bitset, it.mesh->tri[*t][0], 1);
+            BitVecSetBit(&it.void_bitset, it.mesh->tri[*t][1], 1);
+            BitVecSetBit(&it.void_bitset, it.mesh->tri[*t][2], 1);
         }
         else
         {
             delayed_set[delayed_count].index = i;
-            delayed_set[delayed_count].dist_sq = contact[i].dist_sq;
+            delayed_set[delayed_count].dist_sq = c->dist_sq;
             for (u32 d = delayed_count; d; --d)
             {
                 if (delayed_set[d-1].dist_sq <= delayed_set[d].dist_sq)
@@ -2715,36 +2748,27 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
 
     for (u32 i = 0; i < delayed_count; ++i)
     {
-        const struct TriMeshBvhContact *c = contact + delayed_set[i].index;
+        const struct c_TriMeshBvhContact *c = it.contact + delayed_set[i].index;
         /* if vertex_contact not in void, or edge contact and not fully in void */
-        if (!BitVecGetBit(&void_bitset, c->simplex.id[0] >> 32)
-                || (c->simplex.type == SIMPLEX_1 && !BitVecGetBit(&void_bitset, c->simplex.id[1] >> 32)))
+        if (!BitVecGetBit(&it.void_bitset, c->simplex.id[0] >> 32)
+                || (c->simplex.type == SIMPLEX_1 && !BitVecGetBit(&it.void_bitset, c->simplex.id[1] >> 32)))
         {
             struct c_Manifold *m = (*manifold) + collision_count;
             u32 *t = (*tri) + collision_count;
             collision_count += 1;
 
-		    m->v_count = 1;
-		    Vec3Sub(m->n, c->c[1], c->c[0]);
-		    Vec3ScaleSelf(m->n, 1.0f / Vec3Length(m->n));
-		    m->depth[0] = s[1]->sphere.radius - (Vec3Dot(c->c[1], m->n) - Vec3Dot(c->c[0], m->n));
-            Vec3Copy(m->v[0], c->c[ref]);
-            if (ref == 1)
-            {
-                Vec3ScaleSelf(m->n, -1.0f);
-	        	Vec3TranslateScaled(m->v[0], m->n, s[1]->sphere.radius);
-            }
-            
+            c_HullSphereShallowManifold(m, s[1]->sphere.radius, c->c, ref);
+
+            COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(c->c[0], c->c[1]), Vec4Inline(0.9f, 0.7f, 0.9f, 1.0f));
             *t = c->tri;
         }
 
-        BitVecSetBit(&void_bitset, mesh->tri[c->tri][0], 1);
-        BitVecSetBit(&void_bitset, mesh->tri[c->tri][1], 1);
-        BitVecSetBit(&void_bitset, mesh->tri[c->tri][2], 1);
+        BitVecSetBit(&it.void_bitset, it.mesh->tri[c->tri][0], 1);
+        BitVecSetBit(&it.void_bitset, it.mesh->tri[c->tri][1], 1);
+        BitVecSetBit(&it.void_bitset, it.mesh->tri[c->tri][2], 1);
     }
 
-    ArenaPopScratch();
-    ArenaPopScratch();
+    c_TriMeshBvhIteratorDealloc(&it);
 
     ProfZoneEnd;
 

@@ -175,9 +175,9 @@ struct led *led_Alloc(void)
 
 	g_editor->draw_bounding_box = 0;
 	g_editor->draw_dbvh = 0;
-	g_editor->draw_sbvh = 1;
+	g_editor->draw_sbvh = 0;
 	g_editor->draw_manifold = 0;
-	g_editor->draw_lines = 0;
+	g_editor->draw_lines = 1;
 
 	return g_editor;
 }
