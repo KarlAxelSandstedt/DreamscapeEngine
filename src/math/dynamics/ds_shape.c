@@ -114,10 +114,11 @@ void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Isla
 
 void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, const u32 index)
 {
-	struct ds_Shape *shape = ds_PoolAddress(&pipeline->shape_pool, index);
-    struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, shape->body);
+	struct ds_Shape *dummy_shape, *shape = ds_PoolAddress(&pipeline->shape_pool, index);
+    struct ds_RigidBody *dummy_body, *body = ds_PoolAddress(&pipeline->body_pool, shape->body);
     const u64 s0 = ((u64) shape->tag << 32) | index;
     const u64 b0 = ((u64) body->tag << 32) | shape->body;
+    const u32 static_is_tri_mesh = shape->cshape_type == C_SHAPE_TRI_MESH;
 
 	u32 ci = shape->contact_first;
 	shape->contact_first = NLL_NULL;
@@ -137,19 +138,17 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
 		u32 next_i;
         u64 b1; 
         u64 s1; 
-		if (index == c->key.shape0)
+		if (index == c->key.shape0 || (static_is_tri_mesh && INDIRECT_SHAPE_CHECK(c->key.shape0)))
 		{
 			next_i = 0;
-			shape = ds_PoolAddress(&pipeline->shape_pool, c->key.shape1);
-            body = ds_PoolAddress(&pipeline->body_pool, c->key.body1);
+            ds_ContactKeyAddress(&dummy_body, &dummy_shape, &body, &shape, pipeline, &c->key);
             b1 = ((u64) body->tag << 32) | c->key.body1;
             s1 = ((u64) shape->tag << 32) | c->key.shape1;
 		}
 		else
 		{
 			next_i = 1;
-			shape = ds_PoolAddress(&pipeline->shape_pool, c->key.shape0);
-            body = ds_PoolAddress(&pipeline->body_pool, c->key.body0);
+            ds_ContactKeyAddress(&body, &shape, &dummy_body, &dummy_shape, pipeline, &c->key);
             b1 = ((u64) body->tag << 32) | c->key.body0;
             s1 = ((u64) shape->tag << 32) | c->key.shape0;
 		}

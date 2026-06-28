@@ -327,13 +327,27 @@ ds_ContactKey
 ds_ContactKey is the unique key for a contact, and it used in the contact database
 hash map. Since the key must be unique for a contact, we require it to be in 
 canonical form, i.e. you may always assume that body0 < body1.  The shapes are the
-subshapes of their respective bodys making contact. You may always assume that 
-body0 is the reference body in a contact.
+subshapes of their respective bodys making contact, or in the case of a TriMeshBvh
+shape, the index of the triangle in contact, ORed with SHAPE_INDIRECT_FLAG. 
+You may always assume that body0 is the reference body in a contact.
+
+Internals:
+
+    SPHERE, CAPSULE, HULL => shapeN is direct index for the shape
+                 TRI_MESH => shapeN is (SHAPE_INDIRECT_FLAG | triangle_index)
+
+    Thus, when in doubt, use ds_ContactKeyAddress to correctly setup pointers to bodies
+    and shapes.
 */
+
+#define INDIRECT_SHAPE_INIT(s)  ((s) | INDIRECT_SHAPE_FLAG)
+#define INDIRECT_SHAPE_FLAG     0x80000000
+#define INDIRECT_SHAPE_CHECK(s) ((s) & INDIRECT_SHAPE_FLAG)
+
 struct ds_ContactKey
 {
     u32 body0;      /* (body0 < body1)      */
-    u32 shape0;     /* subshape of body0    */
+    u32 shape0;     /* subshape of body0, OR if body0 is a TriMesh, (    */
     u32 body1;      /* (body0 < body1)      */
     u32 shape1;     /* subshape of body1    */
 };
@@ -344,6 +358,8 @@ struct ds_ContactKey    ds_ContactKeyCanonical(const u32 bodyA, const u32 shapeA
 u32                     ds_ContactKeyHash(const struct ds_ContactKey *key);
 /* Return 1 if the two keys are equivalent, otherwise return  0. */
 u32                     ds_ContactKeyEquivalence(const struct ds_ContactKey *keyA, const struct ds_ContactKey *keyB);
+/* Return the body and shape addresses of the key */
+void                    ds_ContactKeyAddress(struct ds_RigidBody **b0, struct ds_Shape **s0, struct ds_RigidBody **b1, struct ds_Shape **s1, const struct ds_RigidBodyPipeline *pipeline, const struct ds_ContactKey *key);
 
 /*
 ds_Contact

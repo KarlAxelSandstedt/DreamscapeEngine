@@ -255,14 +255,14 @@ static u32 NarrowPhaseJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPh
         {
             for (u32 i = 0; i < job->collision_count; ++i)
             {
-                job->key[i] = ds_ContactKeyCanonical(job->key_in.body0, tri[i] | 0x80000000, job->key_in.body1, job->key_in.shape1);
+                job->key[i] = ds_ContactKeyCanonical(job->key_in.body0, INDIRECT_SHAPE_INIT(tri[i]), job->key_in.body1, job->key_in.shape1);
             }
         }
         else
         {
             for (u32 i = 0; i < job->collision_count; ++i)
             {
-                job->key[i] = ds_ContactKeyCanonical(job->key_in.body0, job->key_in.shape0, job->key_in.body1, tri[i]);
+                job->key[i] = ds_ContactKeyCanonical(job->key_in.body0, job->key_in.shape0, job->key_in.body1, INDIRECT_SHAPE_INIT(tri[i]));
             }
         }
     }
