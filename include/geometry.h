@@ -131,15 +131,18 @@ f32 		RaySegmentDistanceSquared(vec3 r_c, vec3 s_c, const struct ray *ray, const
 /* construct segment */
 struct segment 	SegmentConstruct(const vec3 p0, const vec3 p1);
 /* return squared distance between s1 and s2; set c1, c2 to closest point on s1, s2 respectively  */
-f32 		SegmentDistanceSquared(vec3 c1, vec3 c2, const struct segment *s1, const struct segment *s2);
+f32 		    SegmentDistanceSquared(vec3 c1, vec3 c2, const struct segment *s1, const struct segment *s2);
 /* return squared distance between s and p; set c to the closest point on s to p */
-f32 		SegmentPointDistanceSquared(vec3 c, const struct segment *s, const vec3 p);
+f32 		    SegmentPointDistanceSquared(vec3 c, const struct segment *s, const vec3 p);
 /* Return parameter t of projected barycentric point p to segment s: PROJECTION_ON_LINE(p) = s.p0*(1-t) + s.p1*t */
-f32		SegmentPointProjectedBcParameter(const struct segment *s, const vec3 p);
+f32		        SegmentPointProjectedBcParameter(const struct segment *s, const vec3 p);
 /* Return parameter g of closest barycentric point p to segment s: PROJECTION_ON_SEGMENT(p) = s.p0*(1-t) + s.p1*t, 0.0f <= t <= 1.0f */
-f32 		SegmentPointClosestBcParameter(const struct segment *s, const vec3 p);
+f32 		    SegmentPointClosestBcParameter(const struct segment *s, const vec3 p);
 /* set bc_p = s.p0*(1-t) + s.p1*t */
-void 		SegmentBc(vec3 bc_p, const struct segment *s, const f32 t); 	
+void 		    SegmentBc(vec3 bc_p, const struct segment *s, const f32 t); 	
+
+/* Return the bounding box of the segment  */
+struct aabb     BboxSegment(const struct segment *s);
 
 /********************************** plane ***********************************/
 
@@ -228,10 +231,54 @@ f32 		TriMeshRaycastParameter(const struct triMesh *mesh, const u32 tri, const s
 /* If the ray hits triangle (ccw), return 1 and set intersection. otherwise return 0. */
 u32 		TriMeshRaycast(vec3 intersection, const struct triMesh *mesh, const u32 tri, const struct ray *ray);
 
-/* get normal of ccw triangle */
+/*
+TriVoronoi
+==========
+Shared data for triangle voronoi calculation 
+*/
+
+enum TriVoronoiRegion
+{
+    TRI_VORONOI_VERTEX0,
+    TRI_VORONOI_VERTEX1,
+    TRI_VORONOI_VERTEX2,
+    TRI_VORONOI_EDGE01,
+    TRI_VORONOI_EDGE12,
+    TRI_VORONOI_EDGE20,
+    TRI_VORONOI_FACE,
+    TRI_VORONOI_COUNT
+};
+
+
+struct TriVoronoi
+{
+    struct segment  s[3];
+    vec3            cross[3];
+    vec3            n_dir;
+};
+
+
+/* Get normal of ccw triangle */
 void 		TriCcwNormal(vec3 normal, const vec3 p0, const vec3 p1, const vec3 p2);
-/* get direction of ccw triangle */
+/* Get direction of ccw triangle */
 void 		TriCcwDirection(vec3 dir, const vec3 p0, const vec3 p1, const vec3 p2);
+
+/* Return squared distance from segment s to triangle t, and set c_s to be the closest point on s, and c_t to be 
+ * the closest point on the triangle. :
+ *
+ */
+f32 		TriCcwSegmentDistanceSquared(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *region, const vec3 t[3], const struct segment *s);
+
+/* Return squared distance from point p to triangle t, and set c to be the closest point on the triangle. 
+ * lambda_count is set to indicate the number of non-zero lambda components, and lambda is set to the 
+ * barocentric coordinates:
+ *
+ *      c = sum( lambda[i]*t[i]: i in { 0, 1, 2 } )
+ */
+f32         TriCcwPointDistanceSquared(vec3 c, enum TriVoronoiRegion *region, const vec3 t[3], const vec3 point);
+
+/* Setup a TriVoronoi struct corresponding to the CCW triangle t and return true if t is robust, false otherwise.  */
+u32         TriVoronoiInitCcw(struct TriVoronoi *tv, const vec3 t[3]);
 
 
 

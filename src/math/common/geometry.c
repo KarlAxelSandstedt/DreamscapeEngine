@@ -264,6 +264,28 @@ void SegmentBc(vec3 bc_p, const struct segment *s, const f32 t)
 	Vec3Interpolate(bc_p, s->p1, s->p0, t);
 }
 
+struct aabb BboxSegment(const struct segment *s)
+{
+	struct aabb bbox;
+
+	vec3 min = { s->p0[0], s->p0[1], s->p0[2] };
+	vec3 max = { s->p0[0], s->p0[1], s->p0[2] };
+
+	min[0] = f32_min(min[0], s->p1[0]); 
+	min[1] = f32_min(min[1], s->p1[1]); 
+	min[2] = f32_min(min[2], s->p1[2]); 
+
+	max[0] = f32_max(max[0], s->p1[0]); 
+	max[1] = f32_max(max[1], s->p1[1]); 
+	max[2] = f32_max(max[2], s->p1[2]); 
+
+	Vec3Sub(bbox.hw, max, min);
+	Vec3ScaleSelf(bbox.hw, 0.5f);
+	Vec3Add(bbox.center, min, bbox.hw);
+
+    return bbox;
+}
+
 f32 SegmentPointProjectedBcParameter(const struct segment *s, const vec3 p)
 {	
 	vec3 diff;
@@ -766,6 +788,149 @@ void TriCcwDirection(vec3 dir, const vec3 p0, const vec3 p1, const vec3 p2)
 	Vec3Sub(A, p1, p0);
 	Vec3Sub(B, p2, p0);
 	Vec3Cross(dir, A, B);
+}
+
+u32 TriVoronoiInitCcw(struct TriVoronoi *tv, const vec3 t[3])
+{
+    tv->s[0] = SegmentConstruct(t[0], t[1]);
+    tv->s[1] = SegmentConstruct(t[1], t[2]);
+    tv->s[2] = SegmentConstruct(t[2], t[0]);
+
+    Vec3Cross(tv->n_dir, tv->s[0].dir, tv->s[2].dir);
+    Vec3ScaleSelf(tv->n_dir, -1.0f);
+
+    Vec3Cross(tv->cross[0], tv->s[0].dir, tv->n_dir);
+    Vec3Cross(tv->cross[1], tv->s[1].dir, tv->n_dir);
+    Vec3Cross(tv->cross[2], tv->s[2].dir, tv->n_dir);
+    
+
+    const f32 n_dir_len_sq = Vec3Dot(tv->n_dir, tv->n_dir);
+    const f32 s0_len_sq = Vec3Dot(tv->s[0].dir, tv->s[0].dir);
+    const f32 s1_len_sq = Vec3Dot(tv->s[1].dir, tv->s[1].dir);
+    const f32 s2_len_sq = Vec3Dot(tv->s[2].dir, tv->s[2].dir);
+    const f32 s_max_len_sq = f32_max(f32_max(s0_len_sq, s1_len_sq), s2_len_sq);
+
+    /* 
+     * We want |n| to be bound from below proportionally to the size of the triangle's
+     * sides.
+     *
+     *                                     |n|^2  >= EPSILON^2 * |s_max|^2
+     *
+     *  This test simply enforces a lower limit of |n|, but how does it affect the
+     *  minimum angle within the triangle? From the cross product n = Cross(si,sj)
+     *  we have for all i,j:
+     *
+     *                  |si| * |sj| sin(theta_ij) = |n|
+     *                              sin(theta_ij) = |n| / (|si| * |sj|)
+     *                                           >= |n| / |s_max|^2
+     *
+     *  In particular, for i,j such that theta_ij = theta_min:
+     *
+     *                            sin(theta_min) >= |n| / |s_max|^2
+     *
+     *  Assuming a fixed EPSILON, and the use of our test, we get:
+     *
+     *                                     |n|^2 >= EPSILON^2 * |s_max|^2
+     *                                     |n|   >= EPSILON * |s_max|
+     *       =>                   sin(theta_min) >= EPSILON / |s_max|
+     *
+     *  Note that this yields an ever decreasing minimum angle as the sides of our triangles grow:
+     *
+     *                      MinAngle(EPSILON) = ArcSin( EPSILON / |s_max| )
+     *
+     *  This may be a problem for other scenarios, but hopefully our requirement of |n| being 
+     *  lower-bound by EPSILON*|s_max| is good enough for Voronoi region calculations.
+     *
+     *  Table for EPSILON = 10^-6:
+     *
+     *  |s_max|     |   Approx. minimum angle
+     * -------------+---------------------------
+     *  0.0100      |   0.00573
+     *  0.1000      |   0.000573 
+     *  1.0000      |   0.0000573
+     *  10.000      |   0.00000573
+     *  100.00      |   0.000000573
+     */
+    const u32 robust = (n_dir_len_sq >= s_max_len_sq * 1e-6 * 1e-6);
+    return robust;
+}
+
+static const enum TriVoronoiRegion tri_voronoi_table[8] =
+{
+    TRI_VORONOI_FACE,
+    TRI_VORONOI_EDGE01,
+    TRI_VORONOI_EDGE12,
+    TRI_VORONOI_VERTEX1,
+    TRI_VORONOI_EDGE20,
+    TRI_VORONOI_VERTEX0,
+    TRI_VORONOI_VERTEX2,
+    TRI_VORONOI_COUNT
+};
+
+static const u32 table_add_1_mod_3[3] = { 1, 2, 0 };
+
+f32 TriCcwPointDistanceSquared(vec3 c, enum TriVoronoiRegion *region, const vec3 t[3], const vec3 point)
+{
+    struct TriVoronoi tv;
+    const u32 robust = TriVoronoiInitCcw(&tv, t);
+    ds_Assert(robust);
+
+    vec3 diff0, diff1, diff2;
+    Vec3Sub(diff0, point, t[0]);
+    Vec3Sub(diff1, point, t[1]);
+    Vec3Sub(diff2, point, t[2]);
+
+    const u32 index = ((Vec3Dot(diff0, tv.cross[0]) >= 0.0f) << 0) 
+                    | ((Vec3Dot(diff1, tv.cross[1]) >= 0.0f) << 1)
+                    | ((Vec3Dot(diff2, tv.cross[2]) >= 0.0f) << 2);
+
+    *region = tri_voronoi_table[index];
+    switch (*region)
+    {
+        case TRI_VORONOI_COUNT: *region = TRI_VORONOI_VERTEX0;
+        case TRI_VORONOI_VERTEX0: 
+        case TRI_VORONOI_VERTEX1: 
+        case TRI_VORONOI_VERTEX2: 
+        { 
+            Vec3Copy(c, t[*region]);
+        } break;
+
+        case TRI_VORONOI_EDGE01: 
+        case TRI_VORONOI_EDGE12: 
+        case TRI_VORONOI_EDGE20: 
+        {
+            const enum TriVoronoiRegion v = *region - TRI_VORONOI_EDGE01;
+            const u32 next = table_add_1_mod_3[v];
+            const f32 param = SegmentPointClosestBcParameter(tv.s + v, point); 
+
+            Vec3Scale(c, t[v], param);
+            Vec3TranslateScaled(c, t[next], 1.0f - param);
+            if (1.0f == param)
+            {
+                *region = v;
+            }
+            else if (0.0f == param)
+            {
+                *region = next;
+            }
+        } break;
+
+        case TRI_VORONOI_FACE: 
+        {
+            Vec3Copy(c, point);
+            const f32 dist = Vec3Dot(diff0, tv.n_dir) / Vec3Dot(tv.n_dir, tv.n_dir);
+            Vec3TranslateScaled(c, tv.n_dir, -dist);
+        } break;
+    }
+
+    return Vec3DistanceSquared(point, c);
+}
+
+f32 TriCcwSegmentDistanceSquared(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *region, const vec3 t[3], const struct segment *s)
+{
+    struct TriVoronoi tv;
+    const u32 robust = TriVoronoiInitCcw(&tv, t);
+    ds_Assert(robust);
 }
 
 vec3 box_stub_vertex[8] =
@@ -1868,6 +2033,7 @@ u32 TriMeshRaycast(vec3 intersection, const struct triMesh *mesh, const u32 tri,
 	 * By precomputation and extending our tri_mesh structure, we can avoid these branches;
 	 * so if it becomes relevant, we need to precompute the edge sorting or something...  
 	 */
+
 	/* canonicalize edges: We require consistency between triangles sharing edges; if the 
 	 * test determining which side of the edge the ray intersects the triangle planes are
 	 * not done in the same way, we may miss collision with both triangles despite hitting
@@ -1875,11 +2041,6 @@ u32 TriMeshRaycast(vec3 intersection, const struct triMesh *mesh, const u32 tri,
 	 * robustness discussion. */
 
 	vec3 p0, p1, p2, c;
-
-	Vec3Sub(p0, mesh->v[mesh->tri[tri][1]],mesh->v[mesh->tri[tri][0]]);
-	Vec3Sub(p1, mesh->v[mesh->tri[tri][2]],mesh->v[mesh->tri[tri][0]]);
-	Vec3Cross(p2, p0, p1);
-	ds_Assert(p2[1] > 0.0f);
 
 	Vec3Sub(p0, mesh->v[mesh->tri[tri][0]], ray->origin);
 	Vec3Sub(p1, mesh->v[mesh->tri[tri][1]], ray->origin);

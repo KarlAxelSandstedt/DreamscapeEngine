@@ -1106,7 +1106,7 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_CollisionSphereAdd(led, id, 2.0f);
 
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_s_sphere");
-    led_CollisionSphereAdd(led, id, 0.375f);
+    led_CollisionSphereAdd(led, id, 0.5f);
 
 	struct dcel *c_ramp = ArenaPush(&sys_win->mem_persistent, sizeof(struct dcel));
 	*c_ramp = DcelConvexHull(&sys_win->mem_persistent, ramp_vertices, 6, F32_EPSILON * 100.0f);

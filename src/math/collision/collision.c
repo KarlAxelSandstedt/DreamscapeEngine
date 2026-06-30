@@ -2550,10 +2550,10 @@ struct DelayedFeature
 
 struct c_TriMeshBvhContact
 {
-    struct gjk_Simplex  simplex;
-    vec3                c[2];
-    u32                 tri;
-    f32                 dist_sq;
+    enum TriVoronoiRegion   region;
+    vec3                    c[2];
+    u32                     tri;
+    f32                     dist_sq;
 };
 
 struct c_TriMeshBvhIterator
@@ -2647,18 +2647,16 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
     QuatVec3RotateSelf(bbox_transform.center, q_inv);
 	Vec3Set(bbox_transform.hw, sph->radius, sph->radius, sph->radius);
 
-    vec3 v_tri[3];
-    struct gjk_Input g1 = { .v = v_tri, .v_count = 3 };
-    Vec3Copy(g1.pos, t[0].position);
-    Mat3Quat(g1.rot, t[0].rotation);
-    
-    vec3 v_sphere = VEC3_ZERO;
-    struct gjk_Input g2 = { .v = &v_sphere, .v_count = 1, };
-    Vec3Copy(g2.pos, t[1].position);
-    Mat3Identity(g2.rot);
-
     struct c_TriMeshBvhIterator it;
     c_TriMeshBvhIteratorAlloc(&it, mesh_bvh, &bbox_transform);
+
+    mat3 bvh_rotation;
+    vec3 v_tri[3];
+    Mat3Quat(bvh_rotation, t[0].rotation);
+    
+    vec3 v_sphere;
+    Vec3Copy(v_sphere, t[1].position);
+
 
 	{
         ProfZoneNamed("Calculate Triangles");
@@ -2676,22 +2674,31 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
                 {
                     struct c_TriMeshBvhContact *c = it.contact + it.contact_count;
                     c->tri = mesh_bvh->tri[index];
-                    Vec3Copy(v_tri[0], it.mesh->v[it.mesh->tri[c->tri][0]]);
-                    Vec3Copy(v_tri[1], it.mesh->v[it.mesh->tri[c->tri][1]]);
-                    Vec3Copy(v_tri[2], it.mesh->v[it.mesh->tri[c->tri][2]]);
+                    Mat3VecMul(v_tri[0], bvh_rotation, it.mesh->v[it.mesh->tri[c->tri][0]]);
+                    Mat3VecMul(v_tri[1], bvh_rotation, it.mesh->v[it.mesh->tri[c->tri][1]]);
+                    Mat3VecMul(v_tri[2], bvh_rotation, it.mesh->v[it.mesh->tri[c->tri][2]]);
+                    Vec3Translate(v_tri[0], t[0].position); 
+                    Vec3Translate(v_tri[1], t[0].position); 
+                    Vec3Translate(v_tri[2], t[0].position); 
+                    Vec3Copy(c->c[1], v_sphere);
 
-                    ProfZoneNamed("gjk");
-                    c->dist_sq = gjk_DistanceSquared(c->c[0], c->c[1], &c->simplex, &g1, &g2);
+                    ProfZoneNamed("TriCcwPointDistanceSquared");
+                    c->dist_sq = TriCcwPointDistanceSquared(c->c[0], &c->region, v_tri, c->c[1]);
                     ProfZoneEnd;
                     if (c->dist_sq <= sph->radius*sph->radius)
                     {
                         it.contact_count += 1;
-
                         if (it.contact_count == it.contact_len)
                         {
 	    			    	Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
 	    			    	FatalCleanupAndExit();
                         }
+                    }
+                    else
+                    {
+                        COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(v_tri[0], c->c[1]), Vec4Inline(0.8f, 0.8f, 0.4f, 1.0f));
+                        COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(v_tri[1], c->c[1]), Vec4Inline(0.8f, 0.8f, 0.4f, 1.0f));
+                        COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(v_tri[2], c->c[1]), Vec4Inline(0.8f, 0.8f, 0.4f, 1.0f));
                     }
                 }
 	    	}
@@ -2714,7 +2721,7 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
     {
         /* face contact */
         struct c_TriMeshBvhContact *c = it.contact + i;
-        if (c->simplex.type == SIMPLEX_2)
+        if (c->region == TRI_VORONOI_FACE)
         {
             struct c_Manifold *m = (*manifold) + collision_count;
             u32 *t = (*tri) + collision_count;
@@ -2746,26 +2753,41 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
         }
     }
 
+
+    //TODO Move 
+    static const u32 map[TRI_VORONOI_COUNT][2] =
+    {
+        { 0, 0 },
+        { 1, 1 },
+        { 2, 2 },
+        { 0, 1 },
+        { 1, 2 },
+        { 2, 0 },
+        { U32_MAX, U32_MAX },
+    };
+
     for (u32 i = 0; i < delayed_count; ++i)
     {
         const struct c_TriMeshBvhContact *c = it.contact + delayed_set[i].index;
+        const u32 *tri_id = it.mesh->tri[c->tri];
+        const u32 v0 = tri_id[ map[c->region][0] ];
+        const u32 v1 = tri_id[ map[c->region][1] ];
         /* if vertex_contact not in void, or edge contact and not fully in void */
-        if (!BitVecGetBit(&it.void_bitset, c->simplex.id[0] >> 32)
-                || (c->simplex.type == SIMPLEX_1 && !BitVecGetBit(&it.void_bitset, c->simplex.id[1] >> 32)))
+        if (!BitVecGetBit(&it.void_bitset, v0) || !BitVecGetBit(&it.void_bitset, v1))
         {
             struct c_Manifold *m = (*manifold) + collision_count;
             u32 *t = (*tri) + collision_count;
+            *t = c->tri;
             collision_count += 1;
 
             c_HullSphereShallowManifold(m, s[1]->sphere.radius, c->c, ref);
 
             COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(c->c[0], c->c[1]), Vec4Inline(0.9f, 0.7f, 0.9f, 1.0f));
-            *t = c->tri;
         }
 
-        BitVecSetBit(&it.void_bitset, it.mesh->tri[c->tri][0], 1);
-        BitVecSetBit(&it.void_bitset, it.mesh->tri[c->tri][1], 1);
-        BitVecSetBit(&it.void_bitset, it.mesh->tri[c->tri][2], 1);
+        BitVecSetBit(&it.void_bitset, tri_id[0], 1);
+        BitVecSetBit(&it.void_bitset, tri_id[1], 1);
+        BitVecSetBit(&it.void_bitset, tri_id[2], 1);
     }
 
     c_TriMeshBvhIteratorDealloc(&it);
@@ -2775,12 +2797,94 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
 	return collision_count;
 }
 
+static u32 c_TriCapsuleContact(vec3 c1, vec3 c2, enum TriVoronoiRegion *region, const struct capsule *capsule, const struct segment *capsule_segment, const vec3 triangle[3])
+{
+
+    const f32 dist_sq = TriCcwSegmentDistanceSquared(c1, c2, region, triangle, capsule_segment);
+    if (dist_sq <= capsule->radius*capsule->radius)
+    {
+    }
+    return (dist_sq == 0.0f);
+}
+
 u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold, u32 **tri, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index)
 {
 	ds_Assert(s[0]->type == C_SHAPE_TRI_MESH);
 	ds_Assert(s[1]->type == C_SHAPE_CAPSULE);
 
     ProfZone;
+
+    const struct triMeshBvh *mesh_bvh = &s[0]->mesh_bvh;
+	const struct capsule *cap = &s[1]->capsule;
+
+    /* world-space capsule segment */
+	vec3 cap_v[2];
+	Vec3Set(cap_v[0], 0.0f, cap->half_height, 0.0f);
+	Vec3Set(cap_v[1], 0.0f, -cap->half_height, 0.0f);
+    QuatVec3RotateSelf(cap_v[0], t[1].rotation);
+    QuatVec3RotateSelf(cap_v[1], t[1].rotation);
+    Vec3Translate(cap_v[0], t[1].position);
+    Vec3Translate(cap_v[1], t[1].position);
+    const struct segment cap_s = SegmentConstruct(cap_v[0], cap_v[1]);
+
+    /* bvh local-space capsule segment */
+    quat q_inv;
+    QuatInverse(q_inv, t[0].rotation);
+    Vec3TranslateScaled(cap_v[0], t[0].position, -1.0f);
+    Vec3TranslateScaled(cap_v[1], t[0].position, -1.0f);
+    QuatVec3RotateSelf(cap_v[0], q_inv);
+    QuatVec3RotateSelf(cap_v[1], q_inv);
+    const struct segment cap_mesh_space_s = SegmentConstruct(cap_v[0], cap_v[1]);
+	struct aabb bbox_transform = BboxSegment(&cap_mesh_space_s);
+    const vec3 radius = { cap->radius, cap->radius, cap->radius };
+	Vec3Translate(bbox_transform.hw, radius);
+
+    struct c_TriMeshBvhIterator it;
+    c_TriMeshBvhIteratorAlloc(&it, mesh_bvh, &bbox_transform);
+
+	{
+        ProfZoneNamed("Calculate Triangles");
+	    while (it.sc--)
+	    {
+	    	if (!bt_LeafCheck(it.node_stack[it.sc]))
+	    	{
+                c_TriMeshBvhIteratorPushChildren(&it);
+	    	}
+	    	else
+            { 
+                const u32 tri_first = it.node_stack[it.sc]->bt_left;
+                const u32 tri_last = tri_first + it.node_stack[it.sc]->bt_right - 1;
+                for (u32 index = tri_first; index <= tri_last; ++index)
+                {
+                    struct c_TriMeshBvhContact *c = it.contact + it.contact_count;
+                    c->tri = mesh_bvh->tri[index];
+
+                    vec3 v_tri[3];
+                    vec3 lambda;
+                    u32 lambda_count;
+
+                    Vec3Copy(v_tri[0], it.mesh->v[it.mesh->tri[c->tri][0]]);
+                    Vec3Copy(v_tri[1], it.mesh->v[it.mesh->tri[c->tri][1]]);
+                    Vec3Copy(v_tri[2], it.mesh->v[it.mesh->tri[c->tri][2]]);
+
+                    c->dist_sq = c_TriCapsuleContact(c->c[0], c->c[1], &c->region, cap, &cap_s, v_tri);
+                    if (c->dist_sq <= cap->radius*cap->radius)
+                    {
+                        it.contact_count += 1;
+
+                        if (it.contact_count == it.contact_len)
+                        {
+	    			    	Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
+	    			    	FatalCleanupAndExit();
+                        }
+                    }
+                }
+	    	}
+	    }
+        ProfZoneEnd;
+    }
+
+    c_TriMeshBvhIteratorDealloc(&it);
 
     ProfZoneEnd;
 
