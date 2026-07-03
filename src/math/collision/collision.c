@@ -1559,8 +1559,8 @@ u32 c_CapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, struc
 			{
                 const f32 t[2] =
                 {
-				    SegmentPointClosestBcParameter(&seg[ref], seg[inc].p0),
-				    SegmentPointClosestBcParameter(&seg[ref], seg[inc].p1),
+				    SegmentPointClosestBcParameter(&seg[ref], seg[inc].p[0]),
+				    SegmentPointClosestBcParameter(&seg[ref], seg[inc].p[1]),
                 };
 
 				if (t[0] != t[1])
@@ -1725,8 +1725,8 @@ u32 c_HullCapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, s
 			{
 				struct plane pl = DcelFacePlane(h, g1.rot, t[0].position, fi);
 
-				const f32 d0 = PlanePointSignedDistance(&pl, cap_s.p0);
-				const f32 d1 = PlanePointSignedDistance(&pl, cap_s.p1);
+				const f32 d0 = PlanePointSignedDistance(&pl, cap_s.p[0]);
+				const f32 d1 = PlanePointSignedDistance(&pl, cap_s.p[1]);
 				const f32 d = f32_min(d0, d1);
 				if (max_signed_depth < d)
 				{
@@ -1774,18 +1774,18 @@ u32 c_HullCapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, s
 
 				if (cap_p0_inside == 1 && cap_p1_inside == 0)
 				{
-					Vec3Copy(manifold->v[0], seg.p0);
+					Vec3Copy(manifold->v[0], seg.p[0]);
 					PlaneSegmentClip(manifold->v[1], &pl, &seg);
 				}
 				else if (cap_p0_inside == 0 && cap_p1_inside == 1)
 				{
 					PlaneSegmentClip(manifold->v[0], &pl, &seg);
-					Vec3Copy(manifold->v[1], seg.p1);
+					Vec3Copy(manifold->v[1], seg.p[1]);
 				}
 				else
 				{
-					Vec3Copy(manifold->v[0], seg.p0);
-					Vec3Copy(manifold->v[1], seg.p1);
+					Vec3Copy(manifold->v[0], seg.p[0]);
+					Vec3Copy(manifold->v[1], seg.p[1]);
 				}
 				
                 if (ref == 0)
@@ -1849,8 +1849,8 @@ u32 c_HullCapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, s
 				manifold->depth[0] = s[1]->capsule.radius + Vec3Dot(manifold->n, c[0]) - Vec3Dot(manifold->n, c[1]);
 				manifold->depth[1] = manifold->depth[0];
 				const struct segment cap_clip = DcelFaceClipSegment(h, g1.rot, g1.pos, best_face, &cap_s);
-				Vec3Copy(manifold->v[0], cap_clip.p0);
-				Vec3Copy(manifold->v[1], cap_clip.p1);
+				Vec3Copy(manifold->v[0], cap_clip.p[0]);
+				Vec3Copy(manifold->v[1], cap_clip.p[1]);
                 if (ref == 0)
                 {
 				    Vec3TranslateScaled(manifold->v[0], manifold->n, -s[1]->capsule.radius + manifold->depth[0]);
@@ -1972,17 +1972,17 @@ static u32 HullContactInternalFaceContact(struct arena *mem_tmp, struct c_Manifo
 			const f32 t = PlaneSegmentClipParameter(&clip_plane, &clip_edge);
 
 			vec3 inter;
-			Vec3Interpolate(inter, clip_edge.p1, clip_edge.p0, t);
+			Vec3Interpolate(inter, clip_edge.p[1], clip_edge.p[0], t);
 
-			if (PlanePointBehindCheck(&clip_plane, clip_edge.p0))
+			if (PlanePointBehindCheck(&clip_plane, clip_edge.p[0]))
 			{
-				stackVec3Push(clip_stack + cur, clip_edge.p0);
+				stackVec3Push(clip_stack + cur, clip_edge.p[0]);
 				if (0.0f < t && t < 1.0f)
 				{
 					stackVec3Push(clip_stack + cur, inter);
 				}
 			}
-			else if (PlanePointBehindCheck(&clip_plane, clip_edge.p1))
+			else if (PlanePointBehindCheck(&clip_plane, clip_edge.p[1]))
 			{
 				stackVec3Push(clip_stack + cur, inter);
 			}
@@ -2260,7 +2260,7 @@ static void HullContactInternalEECheck(struct sat_EdgeQuery *query, const struct
 		{
 			Vec3Cross(e1, s1.dir, s2.dir);
 			Vec3ScaleSelf(e1, 1.0f / Vec3Length(e1));
-			Vec3Sub(e2, s1.p0, h1_world_center);
+			Vec3Sub(e2, s1.p[0], h1_world_center);
 			/* plane normal points from A -> B */
 			if (Vec3Dot(e1, e2) < 0.0f)
 			{
@@ -2268,7 +2268,7 @@ static void HullContactInternalEECheck(struct sat_EdgeQuery *query, const struct
 			}
 			
 			/* check segmente-segment distance interval signed plane distance, > 0.0f => we have found a seperating axis */
-			Vec3Sub(e2, s2.p0, s1.p0);
+			Vec3Sub(e2, s2.p[0], s1.p[0]);
 			const f32 dist = Vec3Dot(e1, e2);
 
 			if (query->depth < dist)
@@ -2683,8 +2683,13 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
                     Vec3Copy(c->c[1], v_sphere);
 
                     ProfZoneNamed("TriCcwPointDistanceSquared");
-                    c->dist_sq = TriCcwPointDistanceSquared(c->c[0], &c->region, v_tri, c->c[1]);
+                    struct TriVoronoi tv;
+                    const u32 robust = TriVoronoiInitCcw(&tv, v_tri);
+                    ds_Assert(robust);
+
+                    c->dist_sq = TriCcwPointDistanceSquared(c->c[0], &c->region, v_tri, c->c[1], &tv);
                     ProfZoneEnd;
+
                     if (c->dist_sq <= sph->radius*sph->radius)
                     {
                         it.contact_count += 1;
@@ -2750,6 +2755,7 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
             }
 
             delayed_count += 1;
+            ds_AssertString(delayed_count <= 64, "delayed phase exceeded 64 triangles, consider moving from insertion sort to something more proper.");
         }
     }
 
@@ -2797,16 +2803,6 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
 	return collision_count;
 }
 
-static u32 c_TriCapsuleContact(vec3 c1, vec3 c2, enum TriVoronoiRegion *region, const struct capsule *capsule, const struct segment *capsule_segment, const vec3 triangle[3])
-{
-
-    const f32 dist_sq = TriCcwSegmentDistanceSquared(c1, c2, region, triangle, capsule_segment);
-    if (dist_sq <= capsule->radius*capsule->radius)
-    {
-    }
-    return (dist_sq == 0.0f);
-}
-
 u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold, u32 **tri, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index)
 {
 	ds_Assert(s[0]->type == C_SHAPE_TRI_MESH);
@@ -2820,9 +2816,8 @@ u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold
     /* world-space capsule segment */
 	vec3 cap_v[2];
 	Vec3Set(cap_v[0], 0.0f, cap->half_height, 0.0f);
-	Vec3Set(cap_v[1], 0.0f, -cap->half_height, 0.0f);
     QuatVec3RotateSelf(cap_v[0], t[1].rotation);
-    QuatVec3RotateSelf(cap_v[1], t[1].rotation);
+	Vec3Negate(cap_v[1], cap_v[0]);
     Vec3Translate(cap_v[0], t[1].position);
     Vec3Translate(cap_v[1], t[1].position);
     const struct segment cap_s = SegmentConstruct(cap_v[0], cap_v[1]);
@@ -2838,6 +2833,10 @@ u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold
 	struct aabb bbox_transform = BboxSegment(&cap_mesh_space_s);
     const vec3 radius = { cap->radius, cap->radius, cap->radius };
 	Vec3Translate(bbox_transform.hw, radius);
+
+    mat3 bvh_rotation;
+    vec3 v_tri[3];
+    Mat3Quat(bvh_rotation, t[0].rotation);
 
     struct c_TriMeshBvhIterator it;
     c_TriMeshBvhIteratorAlloc(&it, mesh_bvh, &bbox_transform);
@@ -2859,24 +2858,37 @@ u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold
                     struct c_TriMeshBvhContact *c = it.contact + it.contact_count;
                     c->tri = mesh_bvh->tri[index];
 
+                    //TODO repetition as in sphere case 
                     vec3 v_tri[3];
-                    vec3 lambda;
-                    u32 lambda_count;
+                    Mat3VecMul(v_tri[0], bvh_rotation, it.mesh->v[it.mesh->tri[c->tri][0]]);
+                    Mat3VecMul(v_tri[1], bvh_rotation, it.mesh->v[it.mesh->tri[c->tri][1]]);
+                    Mat3VecMul(v_tri[2], bvh_rotation, it.mesh->v[it.mesh->tri[c->tri][2]]);
+                    Vec3Translate(v_tri[0], t[0].position); 
+                    Vec3Translate(v_tri[1], t[0].position); 
+                    Vec3Translate(v_tri[2], t[0].position); 
 
-                    Vec3Copy(v_tri[0], it.mesh->v[it.mesh->tri[c->tri][0]]);
-                    Vec3Copy(v_tri[1], it.mesh->v[it.mesh->tri[c->tri][1]]);
-                    Vec3Copy(v_tri[2], it.mesh->v[it.mesh->tri[c->tri][2]]);
+                    ProfZoneNamed("TriCcwPointDistanceSquared");
+                    struct TriVoronoi tv;
+                    const u32 robust = TriVoronoiInitCcw(&tv, v_tri);
+                    ds_Assert(robust);
 
-                    c->dist_sq = c_TriCapsuleContact(c->c[0], c->c[1], &c->region, cap, &cap_s, v_tri);
+                    c->dist_sq = TriCcwSegmentDistanceSquared(c->c[0], c->c[1], &c->region, v_tri, &cap_s, &tv);
+                    ProfZoneEnd;
+
                     if (c->dist_sq <= cap->radius*cap->radius)
                     {
                         it.contact_count += 1;
-
                         if (it.contact_count == it.contact_len)
                         {
 	    			    	Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
 	    			    	FatalCleanupAndExit();
                         }
+                    }
+                    else
+                    {
+                        COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(v_tri[0], c->c[1]), Vec4Inline(0.8f, 0.8f, 0.4f, 1.0f));
+                        COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(v_tri[1], c->c[1]), Vec4Inline(0.8f, 0.8f, 0.4f, 1.0f));
+                        COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(v_tri[2], c->c[1]), Vec4Inline(0.8f, 0.8f, 0.4f, 1.0f));
                     }
                 }
 	    	}

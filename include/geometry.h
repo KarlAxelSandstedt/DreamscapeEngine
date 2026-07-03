@@ -74,9 +74,8 @@ struct ray
  */
 struct segment
 {
-	vec3 p0;	
-	vec3 p1;	
-	vec3 dir;	/* p1-p0 */
+	vec3 p[2];	
+	vec3 dir;	/* p[1]-p[0] */
 };
 
 /**
@@ -132,6 +131,8 @@ f32 		RaySegmentDistanceSquared(vec3 r_c, vec3 s_c, const struct ray *ray, const
 struct segment 	SegmentConstruct(const vec3 p0, const vec3 p1);
 /* return squared distance between s1 and s2; set c1, c2 to closest point on s1, s2 respectively  */
 f32 		    SegmentDistanceSquared(vec3 c1, vec3 c2, const struct segment *s1, const struct segment *s2);
+/* return parameters t1,t2 of closest points c1,c2 on s1,s2 such that ci = si.p0(1-ti) + s1.p1*ti  */
+void		    SegmentClosestParameter(f32 *t1, f32 *t2, const struct segment *s1, const struct segment *s2);
 /* return squared distance between s and p; set c to the closest point on s to p */
 f32 		    SegmentPointDistanceSquared(vec3 c, const struct segment *s, const vec3 p);
 /* Return parameter t of projected barycentric point p to segment s: PROJECTION_ON_LINE(p) = s.p0*(1-t) + s.p1*t */
@@ -154,16 +155,19 @@ struct plane 	PlaneConstructFromCcwTriangle(const vec3 a, const vec3 b, const ve
 u32 		PlanePointInfrontCheck(const struct plane *pl, const vec3 p);
 /* return 1: If p is behind plane, i.e. a negative signed distance, otherwise 0*/
 u32 		PlanePointBehindCheck(const struct plane *pl, const vec3 p);
- /* return t: s.p0 + t*s.dir is point on plane */
+/* return t: s.p0 + t*s.dir is point on plane */
 f32 		PlaneSegmentClipParameter(const struct plane *pl, const struct segment *s);
- /* return 1 if clip happened, otherwise 0. If 1, return valid clip point */
+/* return 1 if clip happened, otherwise 0. If 1, return valid clip point */
 u32 		PlaneSegmentClip(vec3 clip, const struct plane *pl, const struct segment *s);
 /* return 1 if clip happened, otherwise 0 */
 u32 		PlaneSegmentTest(const struct plane *pl, const struct segment *s); 
- /* return signed distance between plane and point (infront of plane == positive) */
+/* return signed distance between plane and point (infront of plane == positive) */
 f32 		PlanePointSignedDistance(const struct plane *pl, const vec3 p);
- /* return absolute distance between plane and point */
+/* return absolute distance between plane and point */
 f32 		PlanePointDistance(const struct plane *pl, const vec3 p);
+/* return the signed distance of point p to plane pl, and set the projection of p onto pl. */
+f32 		PlanePointProjection(vec3 proj, const struct plane *pl, const vec3 p);
+
 /* Return t such that ray->origin + t*ray->dir is a point on the given plane. If no such t exist, return F32_INFINITY. */
 f32 		PlaneRaycastParameter(const struct plane *plane, const struct ray *ray);
 /* Return 1 if raycast hit plane, 0 otherwise. If hit, set intersection  */
@@ -237,6 +241,7 @@ TriVoronoi
 Shared data for triangle voronoi calculation 
 */
 
+/* WARNING: Do not change ordering! */
 enum TriVoronoiRegion
 {
     TRI_VORONOI_VERTEX0,
@@ -264,18 +269,18 @@ void 		TriCcwNormal(vec3 normal, const vec3 p0, const vec3 p1, const vec3 p2);
 void 		TriCcwDirection(vec3 dir, const vec3 p0, const vec3 p1, const vec3 p2);
 
 /* Return squared distance from segment s to triangle t, and set c_s to be the closest point on s, and c_t to be 
- * the closest point on the triangle. :
+ * the closest point on the triangle.
  *
+ * NOTE: If the returned distance is 0.0f, c_t is not necessarily c_s, but instead c_t ~= c_s. Use one of the points
+ * for consistency if needed.
  */
-f32 		TriCcwSegmentDistanceSquared(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *region, const vec3 t[3], const struct segment *s);
+f32 		TriCcwSegmentDistanceSquared(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *region, const vec3 t[3], const struct segment *s, const struct TriVoronoi *tv);
 
 /* Return squared distance from point p to triangle t, and set c to be the closest point on the triangle. 
  * lambda_count is set to indicate the number of non-zero lambda components, and lambda is set to the 
  * barocentric coordinates:
- *
- *      c = sum( lambda[i]*t[i]: i in { 0, 1, 2 } )
  */
-f32         TriCcwPointDistanceSquared(vec3 c, enum TriVoronoiRegion *region, const vec3 t[3], const vec3 point);
+f32         TriCcwPointDistanceSquared(vec3 c, enum TriVoronoiRegion *region, const vec3 t[3], const vec3 point, const struct TriVoronoi *tv);
 
 /* Setup a TriVoronoi struct corresponding to the CCW triangle t and return true if t is robust, false otherwise.  */
 u32         TriVoronoiInitCcw(struct TriVoronoi *tv, const vec3 t[3]);
