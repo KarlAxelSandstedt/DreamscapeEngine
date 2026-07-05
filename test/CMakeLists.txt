@@ -13,6 +13,7 @@ add_library(DreamscapeTestAPI
     test_hash_map.c
 	test_hash.c
 	test_rng.c
+	test_geometry.c
 )
 
 add_library(Dreamscape::Test ALIAS DreamscapeTestAPI)

@@ -254,6 +254,7 @@ enum TriVoronoiRegion
     TRI_VORONOI_COUNT
 };
 
+extern const char *g_table_tri_voronoi_region_string[TRI_VORONOI_COUNT];
 
 struct TriVoronoi
 {
@@ -268,7 +269,12 @@ void 		TriCcwNormal(vec3 normal, const vec3 p0, const vec3 p1, const vec3 p2);
 /* Get direction of ccw triangle */
 void 		TriCcwDirection(vec3 dir, const vec3 p0, const vec3 p1, const vec3 p2);
 
-/* Return squared distance from segment s to triangle t, and set c_s to be the closest point on s, and c_t to be 
+
+/* Setup a TriVoronoi struct corresponding to the CCW triangle t and return true if t is robust, false otherwise.  */
+u32         TriVoronoiInitCcw(struct TriVoronoi *tv, const vec3 t[3]);
+
+/* 
+ * Return squared distance from segment s to triangle t, and set c_s to be the closest point on s, and c_t to be 
  * the closest point on the triangle.
  *
  * NOTE: If the returned distance is 0.0f, c_t is not necessarily c_s, but instead c_t ~= c_s. Use one of the points
@@ -276,14 +282,23 @@ void 		TriCcwDirection(vec3 dir, const vec3 p0, const vec3 p1, const vec3 p2);
  */
 f32 		TriCcwSegmentDistanceSquared(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *region, const vec3 t[3], const struct segment *s, const struct TriVoronoi *tv);
 
-/* Return squared distance from point p to triangle t, and set c to be the closest point on the triangle. 
+/* 
+ * Return squared distance from point p to triangle t, and set c to be the closest point on the triangle. 
  * lambda_count is set to indicate the number of non-zero lambda components, and lambda is set to the 
  * barocentric coordinates:
  */
 f32         TriCcwPointDistanceSquared(vec3 c, enum TriVoronoiRegion *region, const vec3 t[3], const vec3 point, const struct TriVoronoi *tv);
 
-/* Setup a TriVoronoi struct corresponding to the CCW triangle t and return true if t is robust, false otherwise.  */
-u32         TriVoronoiInitCcw(struct TriVoronoi *tv, const vec3 t[3]);
+/* 
+ * Return t in [0,1] such that clip = s.p0*(1-t) + s.p1*t is a point on the given plane. If no such t exist, 
+ * return F32_INFINITY. 
+ */
+f32         TriCcwSegmentClipParameter(vec3 clip, const vec3 tri[3], const struct segment *s, const struct TriVoronoi *tv);
+
+/* 
+ * Return 1 if segment clips triangle, 0 otherwise. If clip, set the clip point.
+ */
+u32         TriCcwSegmentClip(vec3 clip, const vec3 tri[3], const struct segment *s, const struct TriVoronoi *tv);
 
 
 

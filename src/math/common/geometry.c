@@ -814,6 +814,17 @@ static void TriVoronoiStaticAssert(void)
     ds_StaticAssert(TRI_VORONOI_FACE == 6, "");
 }
 
+const char *g_table_tri_voronoi_region_string[TRI_VORONOI_COUNT] =
+{
+    "TRI_VORONOI_VERTEX0",
+    "TRI_VORONOI_VERTEX1",
+    "TRI_VORONOI_VERTEX2",
+    "TRI_VORONOI_EDGE01",
+    "TRI_VORONOI_EDGE12",
+    "TRI_VORONOI_EDGE20",
+    "TRI_VORONOI_FACE",
+};
+
 u32 TriVoronoiInitCcw(struct TriVoronoi *tv, const vec3 t[3])
 {
     tv->s[0] = SegmentConstruct(t[0], t[1]);
@@ -922,9 +933,7 @@ f32 TriCcwPointDistanceSquared(vec3 c, enum TriVoronoiRegion *region, const vec3
         const enum TriVoronoiRegion v = *region - TRI_VORONOI_EDGE01;
         const u32 next = table_add_1_mod_3[v];
         const f32 param = SegmentPointClosestBcParameter(tv->s + v, point); 
-
-        Vec3Scale(c, t[v], param);
-        Vec3TranslateScaled(c, t[next], 1.0f - param);
+        SegmentBc(c, tv->s, param);
         if (1.0f == param)
         {
             *region = v;
@@ -936,15 +945,178 @@ f32 TriCcwPointDistanceSquared(vec3 c, enum TriVoronoiRegion *region, const vec3
     }
     else if (table_tri_voronoi_vertex_check[*region])
     {
-        Vec3Copy(c, t[*region]);
+        const u32 ij = table_sub_1_mod_3[*region];
+        const u32 jk = *region;
+        f32 param; 
+        if (0.0f < (param = SegmentPointClosestBcParameter(tv->s + ij, point)) && param < 1.0f)
+        {
+            SegmentBc(c, tv->s + ij, param);
+            *region = TRI_VORONOI_EDGE01 + ij;
+        }
+        else if (0.0f < (param = SegmentPointClosestBcParameter(tv->s + jk, point)) && param < 1.0f)
+        {
+            SegmentBc(c, tv->s + jk, param);
+            *region = TRI_VORONOI_EDGE01 + jk;
+        }
+        else
+        {
+            Vec3Copy(c, t[*region]);
+        }
     }
 
     return Vec3DistanceSquared(point, c);
 }
 
+f32 TriCcwSegmentClipParameter(vec3 clip, const vec3 tri[3], const struct segment *s, const struct TriVoronoi *tv)
+{
+    //TODO sqrt, can we skip?
+    const struct plane tri_pl = PlaneConstructFromCcwTriangle(tri[0], tri[1], tri[2]);
+    const f32 param = PlaneSegmentClipParameter(&tri_pl, s);
+    if (0.0f <= param && param <= 1.0f)
+    {
+        SegmentBc(clip, s, param);
+        vec3 diff0, diff1, diff2;
+        Vec3Sub(diff0, clip, tri[0]);
+        Vec3Sub(diff1, clip, tri[1]);
+        Vec3Sub(diff2, clip, tri[2]);
+        const f32 dot0 = Vec3Dot(tv->cross[0], diff0);
+        const f32 dot1 = Vec3Dot(tv->cross[1], diff1);
+        const f32 dot2 = Vec3Dot(tv->cross[2], diff2);
+        if (dot0 < 0.0f && dot1 < 0.0f && dot2 < 0.0f)
+        {
+            return param;
+        }
+    }
+
+    return F32_INFINITY;
+}
+
+u32 TriCcwSegmentClip(vec3 clip, const vec3 tri[3], const struct segment *s, const struct TriVoronoi *tv)
+{
+    return (TriCcwSegmentClipParameter(clip, tri, s, tv) < F32_INFINITY);
+}
+
+static f32 TriCcwSegmentEdgeCheck(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *region, const struct segment *s, const struct TriVoronoi *tv, const u32 start)
+{
+    /* Last case: segment-edge generates closest point */
+    f32 s_param, t_param;
+    SegmentClosestParameter(&s_param, &t_param, s, tv->s + start);
+    SegmentBc(c_s, s, s_param);
+    SegmentBc(c_t, tv->s + start, t_param);
+    
+    if (t_param == 0.0f)
+    {
+        *region = TRI_VORONOI_VERTEX0 + start;
+    }
+    else if (t_param == 1.0f)
+    {
+        *region = TRI_VORONOI_VERTEX0 + table_add_1_mod_3[start];
+    }
+    else
+    {
+        *region = TRI_VORONOI_EDGE01 + start;
+    }
+    
+    return Vec3DistanceSquared(c_s, c_t);
+}
+
+static f32 TriCcwSegmentDoubleEdgeCheck(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *segment_region, const struct segment *s, const struct TriVoronoi *tv, const u32 j)
+{
+    const u32 i = table_sub_1_mod_3[j];
+    const u32 k = table_sub_1_mod_3[j];
+
+    f32 dist_sq, s_param_ij, s_param_jk, t_param_ij, t_param_jk;
+    SegmentClosestParameter(&s_param_ij, &t_param_ij, s, tv->s + i);
+    SegmentClosestParameter(&s_param_jk, &t_param_jk, s, tv->s + j);
+
+    vec3 c_s_ij, c_s_jk, c_t_ij, c_t_jk;
+    SegmentBc(c_s_ij, s, s_param_ij);
+    SegmentBc(c_s_jk, s, s_param_jk);
+    SegmentBc(c_t_ij, tv->s + i, t_param_ij);
+    SegmentBc(c_t_jk, tv->s + j, t_param_jk);
+
+    const f32 dist_sq_ij = Vec3DistanceSquared(c_s_ij, c_t_ij);
+    const f32 dist_sq_jk = Vec3DistanceSquared(c_s_jk, c_t_jk);
+    if (dist_sq_ij < dist_sq_jk)
+    {
+        Vec3Copy(c_s, c_s_ij);
+        Vec3Copy(c_t, c_t_ij);
+        dist_sq = dist_sq_ij;
+        if (t_param_ij == 0.0f)
+        {
+            *segment_region = TRI_VORONOI_VERTEX0 + i;
+        }
+        else if (t_param_ij == 1.0f)
+        {
+            *segment_region = TRI_VORONOI_VERTEX0 + j;
+        }
+        else
+        {
+            *segment_region = TRI_VORONOI_EDGE01 + i;
+        }
+    }
+    else
+    {
+        Vec3Copy(c_s, c_s_jk);
+        Vec3Copy(c_t, c_t_jk);
+        dist_sq = dist_sq_jk;
+        if (t_param_jk == 0.0f)
+        {
+            *segment_region = TRI_VORONOI_VERTEX0 + j;
+        }
+        else if (t_param_jk == 1.0f)
+        {
+            *segment_region = TRI_VORONOI_VERTEX0 + k;
+        }
+        else
+        {
+            *segment_region = TRI_VORONOI_EDGE01 + j;
+        }
+    }
+
+    return dist_sq;
+}
+
+static f32 TriCcwSegmentTripleEdgeCheck(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *segment_region, const struct segment *s, const struct TriVoronoi *tv)
+{
+    f32 dist_sq = F32_INFINITY;
+    u32 min_i = 0;
+    f32 s_param[3], t_param[3];
+    vec3 c_s_local[3], c_t_local[3];
+    for (u32 i = 0; i < 3; ++i)
+    {
+        SegmentClosestParameter(s_param + i, t_param + i, s, tv->s + i);
+        SegmentBc(c_s_local[i], s, s_param[i]);
+        SegmentBc(c_t_local[i], tv->s + i, t_param[i]);
+        const f32 dist_sq_local = Vec3DistanceSquared(c_s_local[i], c_t_local[i]);
+        if (dist_sq_local < dist_sq)
+        {
+            dist_sq = dist_sq_local;
+            min_i = i;
+        }
+    }
+
+    Vec3Copy(c_s, c_s_local[min_i]);
+    Vec3Copy(c_t, c_t_local[min_i]);
+    if (t_param[min_i] == 0.0f)
+    {
+        *segment_region = TRI_VORONOI_VERTEX0 + min_i;
+    }
+    else if (t_param[min_i] == 1.0f)
+    {
+        *segment_region = TRI_VORONOI_VERTEX0 + table_add_1_mod_3[min_i];
+    }
+    else
+    {
+        *segment_region = TRI_VORONOI_EDGE01 + min_i;
+    }
+
+    return dist_sq;
+}
+
 f32 TriCcwSegmentDistanceSquared(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *segment_region, const vec3 t[3], const struct segment *s, const struct TriVoronoi *tv)
 {
-    f32 dist_sq;
+    f32 dist_sq = F32_INFINITY;
 
     vec3 diff00, diff01, diff02, diff10, diff11, diff12;
     Vec3Sub(diff00, s->p[0], t[0]);
@@ -990,9 +1162,9 @@ f32 TriCcwSegmentDistanceSquared(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *segm
     {
         const struct plane tri_pl = PlaneConstructFromCcwTriangle(t[0], t[1], t[2]);
         const u32 infront_face = PlanePointInfrontCheck(&tri_pl, s_canon.p[0]);
-        const f32 dot_dir = Vec3Dot(tv->n_dir, s_canon.dir);
+        const f32 dot_dir = Vec3Dot(tri_pl.normal, s_canon.dir);
         /* First case: end-point in FACE is closest */
-        if ((infront_face &&  dot_dir >= 0.0f) || (!infront_face && dot_dir <= 0.0f))
+        if ((infront_face && dot_dir >= 0.0f) || (!infront_face && dot_dir <= 0.0f))
         {
             *segment_region = TRI_VORONOI_FACE;
             Vec3Copy(c_s, s_canon.p[0]);
@@ -1004,60 +1176,42 @@ f32 TriCcwSegmentDistanceSquared(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *segm
         {
             const u32 start = region[low] - TRI_VORONOI_EDGE01;
             const u32 end = table_add_1_mod_3[start];
-            /* Side plane of edge and s_canon->p[0] in tetrahedron */
             const struct plane side_pl = (infront_face)
-                                       ? PlaneConstructFromCcwTriangle(s_canon.p[0], t[start], t[end])
-                                       : PlaneConstructFromCcwTriangle(s_canon.p[0], t[end], t[start]);
+                               ? PlaneConstructFromCcwTriangle(s_canon.p[0], t[start], t[end])
+                               : PlaneConstructFromCcwTriangle(s_canon.p[0], t[end], t[start]);
             /* Second case: segment clips triangle, point on FACE is closest */
             if (Vec3Dot(side_pl.normal, s_canon.dir) < 0.0f)
             {
                 *segment_region = TRI_VORONOI_FACE;
-                PlaneSegmentClip(c_s, &tri_pl, &s_canon);
+                PlaneSegmentClip(c_s, &tri_pl, s);
                 Vec3Copy(c_t, c_s);
                 dist_sq = 0.0f;
-            }
+            }    
             /* Last case: segment-edge generates closest point */
             else
             {
-                f32 s_param, t_param;
-                SegmentClosestParameter(&s_param, &t_param, &s_canon, tv->s + start);
-                SegmentBc(c_s, &s_canon, s_param);
-                SegmentBc(c_t, tv->s + start, t_param);
-                dist_sq = Vec3DistanceSquared(c_s, c_t);
-
-                if (t_param == 0.0f)
-                {
-                    *segment_region = start;
-                }
-                else if (t_param == 1.0f)
-                {
-                    *segment_region = end;
-                }
-                else
-                {
-                    *segment_region = region[low];
-                }
+                dist_sq = TriCcwSegmentEdgeCheck(c_t, c_s, segment_region, s, tv, start); 
             }
         }
         /* Face-Vertex: May yield closest point on s within FACE, VERTEX_k, EDGE_jk or EDGE_ki */
         else
         {
-            const u32 k = region[low];
-            const u32 j  = table_sub_1_mod_3[k];
-            const u32 i  = table_add_1_mod_3[k];
+            const u32 i  = table_sub_1_mod_3[region[low]];
+            const u32 j = region[low];
+            const u32 k  = table_add_1_mod_3[region[low]];
 
+            const struct plane pl_ij = (infront_face)
+                                       ? PlaneConstructFromCcwTriangle(s_canon.p[0], t[i], t[j])
+                                       : PlaneConstructFromCcwTriangle(s_canon.p[0], t[j], t[i]);
             const struct plane pl_jk = (infront_face)
                                        ? PlaneConstructFromCcwTriangle(s_canon.p[0], t[j], t[k])
                                        : PlaneConstructFromCcwTriangle(s_canon.p[0], t[k], t[j]);
-            const struct plane pl_ki = (infront_face)
-                                       ? PlaneConstructFromCcwTriangle(s_canon.p[0], t[k], t[i])
-                                       : PlaneConstructFromCcwTriangle(s_canon.p[0], t[i], t[k]);
 
+            const f32 dot_ij = Vec3Dot(pl_ij.normal, s_canon.dir);
             const f32 dot_jk = Vec3Dot(pl_jk.normal, s_canon.dir);
-            const f32 dot_ki = Vec3Dot(pl_ki.normal, s_canon.dir);
 
             /* Segment clips face */
-            if (dot_jk < 0.0f && dot_ki < 0.0f)
+            if (dot_ij < 0.0f && dot_jk < 0.0f)
             {
                 *segment_region = TRI_VORONOI_FACE;
                 PlaneSegmentClip(c_s, &tri_pl, &s_canon);
@@ -1065,33 +1219,18 @@ f32 TriCcwSegmentDistanceSquared(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *segm
                 dist_sq = 0.0f;
             }
             /* Segment is closest to some point on either edges */
-            else if (dot_jk >= 0.0f && dot_ki < 0.0f)
+            else if (dot_ij >= 0.0f && dot_jk < 0.0f)
             {
-                f32 s_param, t_param;
-                SegmentClosestParameter(&s_param, &t_param, &s_canon, tv->s + j);
-                SegmentBc(c_s, &s_canon, s_param);
-                SegmentBc(c_t, tv->s + j, t_param);
-                dist_sq = Vec3DistanceSquared(c_s, c_t);
-                *segment_region = (t_param == 1.0f)
-                                ? TRI_VORONOI_VERTEX0 + k
-                                : TRI_VORONOI_EDGE01 + j;
+                dist_sq = TriCcwSegmentEdgeCheck(c_t, c_s, segment_region, s, tv, i); 
             }
-            else if (dot_jk < 0.0f && dot_ki >= 0.0f)
+            else if (dot_ij < 0.0f && dot_jk >= 0.0f)
             {
-                f32 s_param, t_param;
-                SegmentClosestParameter(&s_param, &t_param, &s_canon, tv->s + k);
-                SegmentBc(c_s, &s_canon, s_param);
-                SegmentBc(c_t, tv->s + k, t_param);
-                dist_sq = Vec3DistanceSquared(c_s, c_t);
-                *segment_region = (t_param == 0.0f)
-                                ? TRI_VORONOI_VERTEX0 + k
-                                : TRI_VORONOI_EDGE01 + k;
+                dist_sq = TriCcwSegmentEdgeCheck(c_t, c_s, segment_region, s, tv, j); 
             }
             else
             {
-                dist_sq = SegmentPointDistanceSquared(c_s, &s_canon, t[k]);
-                Vec3Copy(c_t, t[k]);
-                *segment_region = TRI_VORONOI_VERTEX0 + k;
+                //TODO Can we reduce this to a single check?
+                dist_sq = TriCcwSegmentDoubleEdgeCheck(c_t, c_s, segment_region, s, tv, j); 
             }
         }
     }
@@ -1101,105 +1240,22 @@ f32 TriCcwSegmentDistanceSquared(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *segm
         if (region[high] == region[low])
         {
             const u32 start = region[low] - TRI_VORONOI_EDGE01;
-            f32 s_param, t_param;
-            SegmentClosestParameter(&s_param, &t_param, &s_canon, tv->s + start);
-            SegmentBc(c_s, &s_canon, s_param);
-            SegmentBc(c_t, tv->s + start, t_param);
-            dist_sq = Vec3DistanceSquared(c_s, c_t);
-
-            if (t_param == 0.0f)
-            {
-                *segment_region = start;
-            }
-            else if (t_param == 1.0f)
-            {
-                *segment_region = table_add_1_mod_3[start];
-            }
-            else
-            {
-                *segment_region = region[low];
-            }
+            dist_sq = TriCcwSegmentEdgeCheck(c_t, c_s, segment_region, s, tv, start); 
         }
         /* Edge_ij-Edge_jk (/jk): Point points on positive side of EDGE_ij, and EDGE_jk (/kj), may yield, Face, EDGE_ij, EDGE_jk (/kj), VERTEX_j */
         else
         {
-            //TODO repeated in Edge-Vertex
-            const struct plane tri_pl = PlaneConstructFromCcwTriangle(t[0], t[1], t[2]);
-            const f32 s_param = PlaneSegmentClipParameter(&tri_pl, &s_canon);
-            u32 clip = 0;
-            if (0.0f <= s_param && s_param <= 1.0f)
+            if (TriCcwSegmentClip(c_s, t, s, tv))
             {
-                SegmentBc(c_s, &s_canon, s_param);
-                vec3 diff_clip0, diff_clip1, diff_clip2;
-                Vec3Sub(diff_clip0, c_s, t[0]);
-                Vec3Sub(diff_clip1, c_s, t[1]);
-                Vec3Sub(diff_clip2, c_s, t[2]);
-                const f32 dot0 = Vec3Dot(tv->cross[0], diff_clip0);
-                const f32 dot1 = Vec3Dot(tv->cross[1], diff_clip1);
-                const f32 dot2 = Vec3Dot(tv->cross[2], diff_clip2);
-                if (dot0 < 0.0f && dot1 < 0.0f && dot2 < 0.0f)
-                {
                     Vec3Copy(c_t, c_s);
                     *segment_region = TRI_VORONOI_FACE;
                     dist_sq = 0.0f;
-                    clip = 1;
-                }
             }
-
-            if (!clip)
+            else
             {
-                const u32 i = region[low] - TRI_VORONOI_EDGE01;
-                const u32 j = region[high] - TRI_VORONOI_EDGE01;
-                const u32 k = table_add_1_mod_3[j];
-                
-                f32 s_param_ij, s_param_jk, t_param_ij, t_param_jk;
-                SegmentClosestParameter(&s_param_ij, &t_param_ij, &s_canon, tv->s + i);
-                SegmentClosestParameter(&s_param_jk, &t_param_jk, &s_canon, tv->s + j);
-
-                vec3 c_s_ij, c_s_jk, c_t_ij, c_t_jk;
-                SegmentBc(c_s_ij, &s_canon, s_param_ij);
-                SegmentBc(c_s_jk, &s_canon, s_param_jk);
-                SegmentBc(c_t_ij, tv->s + i, t_param_ij);
-                SegmentBc(c_t_jk, tv->s + j, t_param_jk);
-
-                const f32 dist_sq_ij = Vec3DistanceSquared(c_s_ij, c_t_ij);
-                const f32 dist_sq_jk = Vec3DistanceSquared(c_s_jk, c_t_jk);
-                if (dist_sq_ij < dist_sq_jk)
-                {
-                    Vec3Copy(c_s, c_s_ij);
-                    Vec3Copy(c_t, c_t_ij);
-                    dist_sq = dist_sq_ij;
-                    if (t_param_ij == 0.0f)
-                    {
-                        *segment_region = TRI_VORONOI_VERTEX0 + i;
-                    }
-                    else if (t_param_ij == 1.0f)
-                    {
-                        *segment_region = TRI_VORONOI_VERTEX0 + j;
-                    }
-                    else
-                    {
-                        *segment_region = TRI_VORONOI_EDGE01 + i;
-                    }
-                }
-                else
-                {
-                    Vec3Copy(c_s, c_s_jk);
-                    Vec3Copy(c_t, c_t_jk);
-                    dist_sq = dist_sq_jk;
-                    if (t_param_jk == 0.0f)
-                    {
-                        *segment_region = TRI_VORONOI_VERTEX0 + j;
-                    }
-                    else if (t_param_jk == 1.0f)
-                    {
-                        *segment_region = TRI_VORONOI_VERTEX0 + k;
-                    }
-                    else
-                    {
-                        *segment_region = TRI_VORONOI_EDGE01 + j;
-                    }
-                }
+                static const u32 j_map[4] = { U32_MAX, 1, 0, 2 };
+                const u32 j = j_map[region[high] + region[low] - 2*TRI_VORONOI_EDGE01];
+                dist_sq = TriCcwSegmentDoubleEdgeCheck(c_t, c_s, segment_region, s, tv, j); 
             }
         }
     }
@@ -1209,87 +1265,23 @@ f32 TriCcwSegmentDistanceSquared(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *segm
         const u32 start = region[high] - TRI_VORONOI_EDGE01;
         const u32 end = table_add_1_mod_3[start];
         /* Edge-Vertex shared, we can do a single segment-edge test */
-        if (start == region[low] || end == region[high])
+        if (start == region[low] || end == region[low])
         {
-            f32 s_param, t_param;
-            SegmentClosestParameter(&s_param, &t_param, &s_canon, tv->s + start);
-            SegmentBc(c_s, &s_canon, s_param);
-            SegmentBc(c_t, tv->s + start, t_param);
-            dist_sq = Vec3DistanceSquared(c_s, c_t);
-            if (t_param == 0.0f)
-            {
-                *segment_region = TRI_VORONOI_VERTEX0 + start;
-            }
-            else if (t_param == 1.0f)
-            {
-                *segment_region = TRI_VORONOI_VERTEX0 + end;
-            }
-            else
-            {
-                *segment_region = TRI_VORONOI_EDGE01 + start;
-            }
+            dist_sq = TriCcwSegmentDoubleEdgeCheck(c_t, c_s, segment_region, s, tv, region[low]); 
         }
         /* Edge-Vertex not shared, we can get a face intersection, or any edge. */
         else
         {
-            //TODO repeated in Edge-Edge
-            const struct plane tri_pl = PlaneConstructFromCcwTriangle(t[0], t[1], t[2]);
-            const f32 s_param = PlaneSegmentClipParameter(&tri_pl, &s_canon);
-            u32 clip = 0;
-            if (0.0f <= s_param && s_param <= 1.0f)
+            if (TriCcwSegmentClip(c_s, t, s, tv))
             {
-                SegmentBc(c_s, &s_canon, s_param);
-                vec3 diff_clip0, diff_clip1, diff_clip2;
-                Vec3Sub(diff_clip0, c_s, t[0]);
-                Vec3Sub(diff_clip1, c_s, t[1]);
-                Vec3Sub(diff_clip2, c_s, t[2]);
-                const f32 dot0 = Vec3Dot(tv->cross[0], diff_clip0);
-                const f32 dot1 = Vec3Dot(tv->cross[1], diff_clip1);
-                const f32 dot2 = Vec3Dot(tv->cross[2], diff_clip2);
-                if (dot0 < 0.0f && dot1 < 0.0f && dot2 < 0.0f)
-                {
                     Vec3Copy(c_t, c_s);
                     *segment_region = TRI_VORONOI_FACE;
                     dist_sq = 0.0f;
-                    clip = 1;
-                }
             }
-
-            if (!clip)
+            else
             {
-                dist_sq = F32_INFINITY;
-                u32 min_i = 0;
-                f32 s_param[3], t_param[3], dist_sq_local[3];
-                vec3 c_s_local[3], c_t_local[3];
-                for (u32 i = 0; i < 3; ++i)
-                {
-                    SegmentClosestParameter(s_param + i, t_param + i, &s_canon, tv->s + i);
-                    SegmentBc(c_s_local[i], &s_canon, s_param[i]);
-                    SegmentBc(c_t_local[i], tv->s + i, t_param[i]);
-                    dist_sq_local[i] = Vec3DistanceSquared(c_s_local[i], c_t_local[i]);
-                    if (dist_sq_local[i] < dist_sq)
-                    {
-                        min_i = i;
-                    }
-                }
-
-                Vec3Copy(c_s, c_s_local[min_i]);
-                Vec3Copy(c_t, c_t_local[min_i]);
-                dist_sq = dist_sq_local[min_i];;
-                if (t_param[min_i] == 0.0f)
-                {
-                    *segment_region = TRI_VORONOI_VERTEX0 + min_i;
-                }
-                else if (t_param[min_i] == 1.0f)
-                {
-                    *segment_region = TRI_VORONOI_VERTEX0 + table_add_1_mod_3[min_i];
-                }
-                else
-                {
-                    *segment_region = TRI_VORONOI_EDGE01 + min_i;
-                }
+                dist_sq = TriCcwSegmentTripleEdgeCheck(c_t, c_s, segment_region, s, tv); 
             }
-
         }
     }
     else
@@ -1297,33 +1289,12 @@ f32 TriCcwSegmentDistanceSquared(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *segm
         /* Vertex_i-Vertex_i */
         if (region[high] == region[low])
         {
-            *segment_region = region[high];
-            Vec3Copy(c_t, t[region[high]]);
-            dist_sq = SegmentPointDistanceSquared(c_s, &s_canon, t[region[high]]);
+            dist_sq = TriCcwSegmentDoubleEdgeCheck(c_t, c_s, segment_region, s, tv, region[high]); 
         }
-        /* Vertex_i-Vertex_j: */
+        /* Vertex_i-Vertex_j */
         else
         {
-            static const u32 vv_edge_map[4] = { U32_MAX, 0, 2, 1 };
-            const u32 e = vv_edge_map[region[0] + region[1]];
-
-            f32 s_param, t_param;
-            SegmentClosestParameter(&s_param, &t_param, &s_canon, tv->s + e);
-            SegmentBc(c_s, &s_canon, s_param);
-            SegmentBc(c_t, tv->s + e, t_param);
-            dist_sq = Vec3DistanceSquared(c_s, c_t);
-            if (t_param == 0.0f)
-            {
-                *segment_region = TRI_VORONOI_VERTEX0 + e;
-            }
-            else if (t_param == 1.0f)
-            {
-                *segment_region = TRI_VORONOI_VERTEX0 + table_add_1_mod_3[e];
-            }
-            else
-            {
-                *segment_region = TRI_VORONOI_EDGE01 + e;
-            }
+            dist_sq = TriCcwSegmentTripleEdgeCheck(c_t, c_s, segment_region, s, tv); 
         }
     }
 

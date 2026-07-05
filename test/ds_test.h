@@ -236,5 +236,6 @@ extern struct suite_Correctness *kas_string_correctness_suite;
 extern struct suite_Correctness *serialize_correctness_suite;
 extern struct suite_Correctness *THashMap_correctness_suite;
 extern struct suite_Correctness *jobscheduler_correctness_suite;
+extern struct suite_Correctness *geometry_correctness_suite;
 
 #endif
