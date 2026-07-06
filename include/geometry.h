@@ -41,13 +41,24 @@ struct aabb
 
 /**
  * plane: geomtrical primitive
- * normal: normal of plane
- * signed_distance: Signed distance to plane; plane_normal * signed_distance is point on plane.
+ * normal: normal of plane 
+ * OR normal_dir: normal direction of plane (To make it explicit in code when we choose not to normalize the direction)
+ * signed_distance: Signed distance (in |normal_direction| units) to plane; plane.normal * signed_distance is point on plane.
+ *
  */
 struct plane 
 {
-	vec3 normal;
-	f32 signed_distance;
+    union
+    {
+	    vec3 normal;
+	    vec3 normal_direction;
+    };
+    union
+    {
+	    f32 signed_distance;
+        f32 signed_normal_unit_distance;
+    };
+    f32 inv_dot_nn; /* 1.0f / Dot(normal,normal) */
 };
 
 /**
@@ -129,6 +140,8 @@ f32 		RaySegmentDistanceSquared(vec3 r_c, vec3 s_c, const struct ray *ray, const
 
 /* construct segment */
 struct segment 	SegmentConstruct(const vec3 p0, const vec3 p1);
+/* Return 1 if the end-points of s are within a distance of sqrt(min_dist_sq) of each other, otherwise return 0. */
+u32             SegmentPointCheck(const struct segment *s, const f32 min_dist_sq);
 /* return squared distance between s1 and s2; set c1, c2 to closest point on s1, s2 respectively  */
 f32 		    SegmentDistanceSquared(vec3 c1, vec3 c2, const struct segment *s1, const struct segment *s2);
 /* return parameters t1,t2 of closest points c1,c2 on s1,s2 such that ci = si.p0(1-ti) + s1.p1*ti  */
@@ -147,26 +160,32 @@ struct aabb     BboxSegment(const struct segment *s);
 
 /********************************** plane ***********************************/
 
-/* construct plane with given normal n containing point p */
+/* construct plane with given normal direction n containing point p */
 struct plane 	PlaneConstruct(const vec3 n, const vec3 p); 
+/* construct normalized plane with given normal direction n containing point p */
+struct plane 	PlaneConstructNormalized(const vec3 n, const vec3 p); 
 /* construct plane from CCW triangle abc */
 struct plane 	PlaneConstructFromCcwTriangle(const vec3 a, const vec3 b, const vec3 c);
-/* return 1: If p is infront of plane, i.e. a positive signed distance, otherwise 0*/
-u32 		PlanePointInfrontCheck(const struct plane *pl, const vec3 p);
-/* return 1: If p is behind plane, i.e. a negative signed distance, otherwise 0*/
-u32 		PlanePointBehindCheck(const struct plane *pl, const vec3 p);
+/* construct normalized plane from CCW triangle abc */
+struct plane 	PlaneConstructNormalizedFromCcwTriangle(const vec3 a, const vec3 b, const vec3 c);
+/* Return 1 if p is infront of plane, i.e. a positive signed distance, otherwise 0 */
+u32 		    PlanePointInfrontCheck(const struct plane *pl, const vec3 p);
+/* Return 1 if p is behind plane, i.e. a negative signed distance, otherwise 0 */
+u32 		    PlanePointBehindCheck(const struct plane *pl, const vec3 p);
+/* Return 1 if segment is parallel to plane, otherwise return 0. */
+u32             PlaneSegmentParallelCheck(const struct plane *pl, const struct segment *s);
 /* return t: s.p0 + t*s.dir is point on plane */
-f32 		PlaneSegmentClipParameter(const struct plane *pl, const struct segment *s);
+f32 		    PlaneSegmentClipParameter(const struct plane *pl, const struct segment *s);
 /* return 1 if clip happened, otherwise 0. If 1, return valid clip point */
-u32 		PlaneSegmentClip(vec3 clip, const struct plane *pl, const struct segment *s);
+u32 		    PlaneSegmentClip(vec3 clip, const struct plane *pl, const struct segment *s);
 /* return 1 if clip happened, otherwise 0 */
-u32 		PlaneSegmentTest(const struct plane *pl, const struct segment *s); 
-/* return signed distance between plane and point (infront of plane == positive) */
-f32 		PlanePointSignedDistance(const struct plane *pl, const vec3 p);
-/* return absolute distance between plane and point */
-f32 		PlanePointDistance(const struct plane *pl, const vec3 p);
-/* return the signed distance of point p to plane pl, and set the projection of p onto pl. */
-f32 		PlanePointProjection(vec3 proj, const struct plane *pl, const vec3 p);
+u32 		    PlaneSegmentTest(const struct plane *pl, const struct segment *s); 
+/* return signed distance (measured in |plane.normal_direction| units) between plane and point (infront of plane == positive) */
+f32 		    PlanePointSignedDistance(const struct plane *pl, const vec3 p);
+/* return absolute distance (measured in |plane.normal_direction| units) between plane and point */
+f32 		    PlanePointDistance(const struct plane *pl, const vec3 p);
+/* return the signed distance (measured in |plane.normal_direction| units) of point p to plane pl, and set the projection of p onto pl. */
+f32 		    PlanePointProjection(vec3 proj, const struct plane *pl, const vec3 p);
 
 /* Return t such that ray->origin + t*ray->dir is a point on the given plane. If no such t exist, return F32_INFINITY. */
 f32 		PlaneRaycastParameter(const struct plane *plane, const struct ray *ray);
@@ -300,6 +319,11 @@ f32         TriCcwSegmentClipParameter(vec3 clip, const vec3 tri[3], const struc
  */
 u32         TriCcwSegmentClip(vec3 clip, const vec3 tri[3], const struct segment *s, const struct TriVoronoi *tv);
 
+/* 
+ * Return the remaining segment when clipping s against all side-planes of the triangle. WARNING: Assumes s in
+ * at least partially within the voronoi face region.
+ */
+struct segment  TriCcwSegmentSideClip(const vec3 tri[3], const struct segment *s, const struct TriVoronoi *tv);
 
 
 /********************************** dcel ************************************/

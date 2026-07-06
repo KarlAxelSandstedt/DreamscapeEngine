@@ -172,6 +172,11 @@ struct segment SegmentConstruct(const vec3 p0, const vec3 p1)
 	return s;
 }
 
+u32 SegmentPointCheck(const struct segment *s, const f32 min_dist_sq)
+{
+    return (Vec3Dot(s->dir, s->dir) <= min_dist_sq);
+}
+
 void SegmentClosestParameter(f32 *t1, f32 *t2, const struct segment *s1, const struct segment *s2)
 {
 	vec3 diff;
@@ -308,12 +313,32 @@ f32 SegmentPointClosestBcParameter(const struct segment *s, const vec3 p)
 struct plane PlaneConstruct(const vec3 n, const vec3 p)
 {
 	struct plane pl;
-	Vec3Copy(pl.normal, n);
+	Vec3Copy(pl.normal_direction, n);
+    pl.inv_dot_nn = 1.0f / Vec3Dot(n,n);
 	pl.signed_distance = Vec3Dot(n, p);
 	return pl;
 }
 
+struct plane PlaneConstructNormalized(const vec3 n, const vec3 p)
+{
+	struct plane pl;
+	Vec3Copy(pl.normal, n);
+	Vec3ScaleSelf(pl.normal, 1.0f/Vec3Length(pl.normal));
+	pl.signed_distance = Vec3Dot(pl.normal, p);
+    pl.inv_dot_nn = 1.0f;
+	return pl;
+}
+
 struct plane PlaneConstructFromCcwTriangle(const vec3 a, const vec3 b, const vec3 c)
+{
+	vec3 ab, ac, cross;
+	Vec3Sub(ab, b, a);
+	Vec3Sub(ac, c, a);
+	Vec3Cross(cross, ab, ac);
+	return PlaneConstruct(cross, a);
+}
+
+struct plane PlaneConstructNormalizedFromCcwTriangle(const vec3 a, const vec3 b, const vec3 c)
 {
 	vec3 ab, ac, cross;
 	Vec3Sub(ab, b, a);
@@ -333,52 +358,65 @@ u32 PlanePointBehindCheck(const struct plane *pl, const vec3 p)
 	return (PlanePointSignedDistance(pl, p) < 0.0f) ? 1 : 0;
 }
 
+u32 PlaneSegmentParallelCheck(const struct plane *pl, const struct segment *s)
+{
+    const f32 d1d1 = Vec3Dot(pl->normal_direction, pl->normal_direction);
+    const f32 d2d2 = Vec3Dot(s->dir, s->dir);
+	const f32 d1d2 = Vec3Dot(pl->normal_direction, s->dir);
+	const f32 denom = d1d1*d2d2 - d1d2*d1d2;
+	/* 
+     * denom = |n|^2 * |s->dir|^2 * (1-cos(theta)^2) == 1.0f 
+     *  <=> segment is orthogonal to normal
+     *  <=> segment is parallel to face
+     */
+    //TODO what is a reasonable limit here?
+	return (denom >= (1.0f - 100.0f*F32_EPSILON) * d1d1 * d2d2);
+}
+
 f32 PlaneSegmentClipParameter(const struct plane *pl, const struct segment *s)
 {
 	/*
-	 * 	GIVEN: pl.normal and segment direction not orthogonal.
-	 *
 	 * 	s.p0 + t*s.dir = PLANE POINT
-	 * =>   DOT(s.p0 + t*s.dir - pl.normal*pl.signed_distance, pl.normal) = 0
-	 * =>   DOT(t*s.dir pl.normal) = DOT(pl.normal*pl.signed_distance - s.p0, pl.normal)
-	 * =>   t = [pl.signed_distance - DOT(s.p0, pl.normal)] / DOT(s.dir, pl.normal)
+	 * =>   DOT(s.p0 + t*s.dir - n*pl.signed_distance/DOT(n,n), pl.n) = 0
+	 * =>   DOT(t*s.dir n) = DOT(n*pl.signed_distance/DOT(n,n) - s.p0, n)
+	 * =>   t = [pl.signed_distance - DOT(s.p0, n)] / DOT(s.dir, n)
 	 *
 	 * degenerate case: segment parallel to plane gives t = +-infinity, which is okay!
 	 */
-	return (pl->signed_distance - Vec3Dot(pl->normal, s->p[0])) / Vec3Dot(pl->normal, s->dir);
+    const f32 dot_pn = Vec3Dot(pl->normal_direction, s->p[0]);
+    const f32 dot_dn = Vec3Dot(pl->normal_direction, s->dir);
+	return (pl->signed_distance - dot_pn) / dot_dn;
 }
 
 u32 PlaneSegmentClip(vec3 clip, const struct plane *pl, const struct segment *s)
 {
 	const f32 t = PlaneSegmentClipParameter(pl, s);
 	SegmentBc(clip, s, t);
-	return (0.0f <= t && t <= 1.0f)
-        ? 1
-        : 0;
+	return (0.0f <= t && t <= 1.0f);
 }
 
 u32 PlaneSegmentTest(const struct plane *pl, const struct segment *s)
 {
 	const f32 t = PlaneSegmentClipParameter(pl, s);
-	return (0.0f <= t && t <= 1.0f) ? 1 : 0;
+	return (0.0f <= t && t <= 1.0f);
 }
 
 f32 PlanePointSignedDistance(const struct plane *pl, const vec3 p)
 {
-	return Vec3Dot(pl->normal, p) - pl->signed_distance;
+	return Vec3Dot(pl->normal_direction, p) - pl->signed_distance;
 }
 
 f32 PlanePointDistance(const struct plane *pl, const vec3 p)
 {
-	return f32_abs(Vec3Dot(pl->normal, p) - pl->signed_distance);
+	return f32_abs(PlanePointSignedDistance(pl, p));
 }
 
 f32 PlanePointProjection(vec3 proj, const struct plane *pl, const vec3 p)
 {
-    const f32 dist = PlanePointSignedDistance(pl, p);
+	const f32 n_units = PlanePointSignedDistance(pl, p) * pl->inv_dot_nn;
     Vec3Copy(proj, p);
-    Vec3TranslateScaled(proj, pl->normal, dist);
-    return dist;
+    Vec3TranslateScaled(proj, pl->normal_direction, -n_units);
+    return n_units;
 }
 
 f32 PlaneRaycastParameter(const struct plane *plane, const struct ray *ray)
@@ -969,7 +1007,6 @@ f32 TriCcwPointDistanceSquared(vec3 c, enum TriVoronoiRegion *region, const vec3
 
 f32 TriCcwSegmentClipParameter(vec3 clip, const vec3 tri[3], const struct segment *s, const struct TriVoronoi *tv)
 {
-    //TODO sqrt, can we skip?
     const struct plane tri_pl = PlaneConstructFromCcwTriangle(tri[0], tri[1], tri[2]);
     const f32 param = PlaneSegmentClipParameter(&tri_pl, s);
     if (0.0f <= param && param <= 1.0f)
@@ -994,6 +1031,34 @@ f32 TriCcwSegmentClipParameter(vec3 clip, const vec3 tri[3], const struct segmen
 u32 TriCcwSegmentClip(vec3 clip, const vec3 tri[3], const struct segment *s, const struct TriVoronoi *tv)
 {
     return (TriCcwSegmentClipParameter(clip, tri, s, tv) < F32_INFINITY);
+}
+
+struct segment TriCcwSegmentSideClip(const vec3 tri[3], const struct segment *s, const struct TriVoronoi *tv)
+{
+	f32 min_p = 0.0f;
+	f32 max_p = 1.0f;
+
+	for (u32 i = 0; i < 3; ++i)
+	{
+        struct plane side_plane = PlaneConstruct(tv->cross[i], tri[i]);
+		const f32 bc_c = PlaneSegmentClipParameter(&side_plane, s);
+        if (min_p <= bc_c && bc_c <= max_p)
+		{
+			if (Vec3Dot(s->dir, side_plane.normal_direction) >= 0.0f)
+			{
+				max_p = bc_c;
+			}
+			else
+			{
+				min_p = bc_c;
+			}
+		}
+    }
+
+    vec3 p0, p1;
+	SegmentBc(p0, s, min_p);
+	SegmentBc(p1, s, max_p);
+	return SegmentConstruct(p0, p1);
 }
 
 static f32 TriCcwSegmentEdgeCheck(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *region, const struct segment *s, const struct TriVoronoi *tv, const u32 start)
@@ -1153,23 +1218,23 @@ f32 TriCcwSegmentDistanceSquared(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *segm
 
         *segment_region = TRI_VORONOI_FACE;
         SegmentBc(c_s, &s_canon, param);
-        dist_sq = PlanePointProjection(c_t, &pl, c_s);
+        PlanePointProjection(c_t, &pl, c_s);
         dist_sq = (param == 0.0f || param == 1.0f)
-                ? dist_sq*dist_sq
+                ? Vec3DistanceSquared(c_t, c_s)
                 : 0.0f;
     }
     else if (region[high] == TRI_VORONOI_FACE)
     {
         const struct plane tri_pl = PlaneConstructFromCcwTriangle(t[0], t[1], t[2]);
         const u32 infront_face = PlanePointInfrontCheck(&tri_pl, s_canon.p[0]);
-        const f32 dot_dir = Vec3Dot(tri_pl.normal, s_canon.dir);
+        const f32 dot_dir = Vec3Dot(tri_pl.normal_direction, s_canon.dir);
         /* First case: end-point in FACE is closest */
         if ((infront_face && dot_dir >= 0.0f) || (!infront_face && dot_dir <= 0.0f))
         {
             *segment_region = TRI_VORONOI_FACE;
             Vec3Copy(c_s, s_canon.p[0]);
-            dist_sq = PlanePointProjection(c_t, &tri_pl, c_s);
-            dist_sq = dist_sq*dist_sq;
+            PlanePointProjection(c_t, &tri_pl, c_s);
+            dist_sq = Vec3DistanceSquared(c_t, c_s);
         }
         /* Face-Edge: May yield closest point on s within FACE, EDGE_ij, VERTEX_i or VERTEX_j */
         else if (table_tri_voronoi_edge_check[region[low]])
