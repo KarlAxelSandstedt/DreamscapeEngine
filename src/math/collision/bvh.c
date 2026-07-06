@@ -188,11 +188,11 @@ static void DbvhInternalBalanceNode(struct bvh *bvh, const u32 node)
 
 u32 DbvhInsert(struct bvh *bvh, const u32 id, const struct aabb *bbox)
 {
-	struct bvhNode *nodes = (struct bvhNode *) bvh->tree.pool.buf;
 	struct slot leaf;
 	if (bvh->tree.root == BT_PARENT_INDEX_MASK)
 	{
 		leaf = bt_NodeAddRoot(&bvh->tree);
+	    struct bvhNode *nodes = (struct bvhNode *) bvh->tree.pool.buf;
 		bt_LeafSet(nodes + leaf.index);
 		/* Store external id's in bt_left of leaves */
 		nodes[leaf.index].bt_left = id;
@@ -202,6 +202,7 @@ u32 DbvhInsert(struct bvh *bvh, const u32 id, const struct aabb *bbox)
 	{
 		struct slot internal = bt_NodeAdd(&bvh->tree);
 		leaf = bt_NodeAdd(&bvh->tree);
+	    struct bvhNode *nodes = (struct bvhNode *) bvh->tree.pool.buf;
 		nodes[leaf.index].bbox = *bbox;
 		nodes[leaf.index].bt_parent = BT_PARENT_LEAF_MASK | internal.index;
 		nodes[leaf.index].bt_left = id;

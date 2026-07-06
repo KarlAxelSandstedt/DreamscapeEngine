@@ -322,10 +322,9 @@ struct plane PlaneConstruct(const vec3 n, const vec3 p)
 struct plane PlaneConstructNormalized(const vec3 n, const vec3 p)
 {
 	struct plane pl;
-	Vec3Copy(pl.normal, n);
-	Vec3ScaleSelf(pl.normal, 1.0f/Vec3Length(pl.normal));
-	pl.signed_distance = Vec3Dot(pl.normal, p);
+	Vec3Normalize(pl.normal, n);
     pl.inv_dot_nn = 1.0f;
+	pl.signed_distance = Vec3Dot(pl.normal, p);
 	return pl;
 }
 

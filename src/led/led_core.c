@@ -1020,26 +1020,26 @@ void led_WallSmashSimulationSetup(struct led *led)
     ds_Id tagged_id;
 
 #define dsphere_v_count 	30
-	const u32 dsphere_count = 40;
-	const u32 capsule_count = 20;
-	const u32 tower1_count = 2;
-	const u32 tower2_count = 4;
-	const u32 tower1_box_count = 40;
-	const u32 tower2_box_count = 10;
-    const u32 multibox_count = 5;
-	const u32 pyramid_layers = 15;
+	//const u32 dsphere_count = 40;
+	//const u32 capsule_count = 20;
+	//const u32 tower1_count = 2;
+	//const u32 tower2_count = 4;
+	//const u32 tower1_box_count = 40;
+	//const u32 tower2_box_count = 10;
+    //const u32 multibox_count = 5;
+	//const u32 pyramid_layers = 15;
+	//const u32 pyramid_count = 3;
+    //const u32 incr_count = 10;
+	const u32 dsphere_count = 0;
+	const u32 capsule_count = 400;
+	const u32 tower1_count = 0;
+	const u32 tower2_count = 0;
+	const u32 tower1_box_count = 0;
+	const u32 tower2_box_count = 0;
+    const u32 multibox_count = 0;
+	const u32 pyramid_layers = 20;
 	const u32 pyramid_count = 3;
-    const u32 incr_count = 10;
-	//const u32 dsphere_count = 0;
-	//const u32 capsule_count = 0;
-	//const u32 tower1_count = 0;
-	//const u32 tower2_count = 0;
-	//const u32 tower1_box_count = 0;
-	//const u32 tower2_box_count = 0;
-    //const u32 multibox_count = 0;
-	//const u32 pyramid_layers = 2;
-	//const u32 pyramid_count = 1;
-    //const u32 incr_count = 0;
+    const u32 incr_count = 0;
 	const u32 bodies = tower1_box_count + tower2_box_count + 3 + pyramid_layers*(pyramid_layers+1) / 2;
 
 	/* Setup rigid bodies */
@@ -1047,7 +1047,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 	const f32 ramp_friction = 0.1f;
 	const f32 sphere_friction = 0.1f;
 	const f32 floor_friction = 0.8f;
-	const f32 capsule_friction = 0.8f;
+	const f32 capsule_friction = 0.1f;
 
 	const f32 alpha1 = 0.7f;
 	const f32 alpha2 = 0.5f;
@@ -1299,9 +1299,9 @@ void led_WallSmashSimulationSetup(struct led *led)
 	{	
 		vec3 translation;
 		Vec3Copy(translation, dsphere_base_translation);
-		translation[0] += (10.0f - 38.0f * (f32) i / dsphere_count) * f32_cos(i * F32_PI*37.0f/197.0f);
+		translation[0] += (10.0f - 38.0f * (f32) i / capsule_count) * f32_cos(i * F32_PI*37.0f/197.0f);
 		translation[1] += 25.0f + (f32) i / 2.0f;
-		translation[2] += (10.0f - 38.0f * (f32) i / dsphere_count) * f32_sin(i * F32_PI*37.0f/197.0f);
+		translation[2] += (10.0f - 38.0f * (f32) i / capsule_count) * f32_sin(i * F32_PI*37.0f/197.0f);
 
 		id = Utf8Format(sys_win->ui->mem_frame, "capsule_%u", i);
         tagged_id = led_NodeAdd(led, id, Utf8Empty());

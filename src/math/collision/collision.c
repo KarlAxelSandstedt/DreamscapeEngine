@@ -2158,7 +2158,7 @@ static u32 HullContactInternalFVSeparation(struct sat_FaceQuery *query, const st
 		const u32 f_v0 = h1->e[h1->f[fi].first + 0].origin;
 		const u32 f_v1 = h1->e[h1->f[fi].first + 1].origin;
 		const u32 f_v2 = h1->e[h1->f[fi].first + 2].origin;
-		const struct plane sep_plane = PlaneConstructFromCcwTriangle(v1_world[f_v0], v1_world[f_v1], v1_world[f_v2]);
+		const struct plane sep_plane = PlaneConstructNormalizedFromCcwTriangle(v1_world[f_v0], v1_world[f_v1], v1_world[f_v2]);
 		f32 min_dist = F32_INFINITY;
 		for (u32 i = 0; i < h2->v_count; ++i)
 		{
@@ -2800,103 +2800,95 @@ static void c_TriCapsuleManifold(struct c_Manifold *m, const struct c_TriMeshBvh
 {
 	if (c->dist_sq == 0.0f)
 	{
-          /* TODO: if p0 is outside, then p1 must be inside, can prob skip check ??? */
-	//    g2.v_count = 1;
-	//    const u32 cap_p0_inside = (gjk_DistanceSquared(p1, tmp, &simplex, &g1, &g2) == 0.0f) ? 1 : 0;
-	//    Vec3Copy(g2.v[0], g2.v[1]);
-	//    const u32 cap_p1_inside = (gjk_DistanceSquared(p2, tmp, &simplex, &g1, &g2) == 0.0f) ? 1 : 0;
+        struct plane pl = PlaneConstructNormalized(c->tv.n_dir, c->c[0]);
+        f32 d[2] = 
+        {
+            PlanePointSignedDistance(&pl, s->p[0]),
+            PlanePointSignedDistance(&pl, s->p[1]),
+        };
 
-	//	u32 edge_best = 0; 
-	//	u32 best_index = 0;
+        vec3 c_p[2][3];
 
-	//	f32 max_signed_depth = -F32_INFINITY;
+        vec3 tmp1, tmp2;
+        f32 dist_sq[5] = 
+        {
+            d[0]*d[0],
+            d[1]*d[1],
+            SegmentDistanceSquared(c_p[0][0], c_p[1][0], c->tv.s + 0, s),
+            SegmentDistanceSquared(c_p[0][1], c_p[1][1], c->tv.s + 1, s),
+            SegmentDistanceSquared(c_p[0][2], c_p[1][2], c->tv.s + 2, s),
+        };
 
-	//	for (u32 fi = 0; fi < h->f_count; ++fi)
-	//	{
-	//		struct plane pl = DcelFacePlane(h, g1.rot, t[0].position, fi);
+        u32 best = 0;
+        for (u32 i = 1; i < 5; ++i)
+        {
+            if (dist_sq[i] < dist_sq[best])
+            {
+                best = i;
+            }
+        }
+		
+        const u32 inc = 1 - ref;
+		if (best < 2)
+        {
+			m->v_count = 2;
 
-	//		const f32 d0 = PlanePointSignedDistance(&pl, cap_s.p[0]);
-	//		const f32 d1 = PlanePointSignedDistance(&pl, cap_s.p[1]);
-	//		const f32 d = f32_min(d0, d1);
-	//		if (max_signed_depth < d)
-	//		{
-	//			best_index = fi;
-	//			max_signed_depth = d;
-	//		}
-	//	}
+            f32 flip_sign;
+            struct segment seg = TriCcwSegmentSideClip(c->t, s, &c->tv);
+			if (best == 0)
+			{
+				Vec3Copy(m->v[0], seg.p[0]);
+				PlaneSegmentClip(m->v[1], &pl, &seg);
+                flip_sign = (d[0] <= 0.0f)
+                          ?  1.0f
+                          : -1.0f;
+                d[0] = PlanePointSignedDistance(&pl, m->v[0]);
+                d[1] = 0.0f;
+			}
+			else if (best == 1)
+			{
+				PlaneSegmentClip(m->v[0], &pl, &seg);
+				Vec3Copy(m->v[1], seg.p[1]);
+                flip_sign = (d[1] <= 0.0f)
+                          ?  1.0f
+                          : -1.0f;
+                d[0] = 0.0f;
+                d[1] = PlanePointSignedDistance(&pl, m->v[1]);
+			}
 
-	//	/* For an edge to define seperating axis, either both or no end-points of the capsule must be inside */
-	//	if (cap_p0_inside == cap_p1_inside)
-	//	{
-	//		for (u32 ei = 0; ei < h->e_count; ++ei)
-	//		{
-	//			struct segment edge_s = DcelEdgeSegment(h, g1.rot, g1.pos, best_index);
-	//			
-	//			const f32 d = -f32_sqrt(SegmentDistanceSquared(c[0], c[1], &edge_s, &cap_s));
-	//			if (max_signed_depth < d)
-	//			{
-	//				edge_best = 1;
-	//				best_index = ei;
-	//				max_signed_depth = d;
-	//			}
-	//		}
-	//	}
-
-	//	if (edge_best)
-	//	{
-	//		manifold->v_count = 1;
-	//	    manifold->depth[0] = f32_max(-max_signed_depth, 0.0f);
-	//		struct segment edge_s = DcelEdgeSegment(h, g1.rot, g1.pos, best_index);
-	//		SegmentDistanceSquared(c[0], c[1], &edge_s, &cap_s);
-	//		Vec3Sub(manifold->n, c[ref], c[inc]);
-	//		Vec3ScaleSelf(manifold->n, 1.0f/Vec3Length(manifold->n));
-	//		Vec3Copy(manifold->v[0], c[ref]);
-    //          if (ref == 1)
-    //          {
-    //              Vec3TranslateScaled(manifold->v[0], manifold->n, s[1]->capsule.radius);
-    //          }
-	//	}
-	//	else
-	//	{
-	//		manifold->v_count = 2;
-	//		struct segment seg = DcelFaceClipSegment(h, g1.rot, g1.pos, best_index, &cap_s);
-	//		const struct plane pl = DcelFacePlane(h, g1.rot, g1.pos, best_index);
-
-	//		if (cap_p0_inside == 1 && cap_p1_inside == 0)
-	//		{
-	//			Vec3Copy(manifold->v[0], seg.p[0]);
-	//			PlaneSegmentClip(manifold->v[1], &pl, &seg);
-	//		}
-	//		else if (cap_p0_inside == 0 && cap_p1_inside == 1)
-	//		{
-	//			PlaneSegmentClip(manifold->v[0], &pl, &seg);
-	//			Vec3Copy(manifold->v[1], seg.p[1]);
-	//		}
-	//		else
-	//		{
-	//			Vec3Copy(manifold->v[0], seg.p[0]);
-	//			Vec3Copy(manifold->v[1], seg.p[1]);
-	//		}
-	//		
-    //          if (ref == 0)
-    //          {
-    //              Vec3Copy(manifold->n, pl.normal);
-    //              manifold->depth[0] = -PlanePointSignedDistance(&pl, manifold->v[0]);
-    //              manifold->depth[1] = -PlanePointSignedDistance(&pl, manifold->v[1]);
-	//		    Vec3TranslateScaled(manifold->v[0], manifold->n, manifold->depth[0]);
-	//		    Vec3TranslateScaled(manifold->v[1], manifold->n, manifold->depth[1]);
-    //              manifold->depth[0] += s[1]->capsule.radius;
-    //              manifold->depth[1] += s[1]->capsule.radius;
-    //          }
-    //          else
-    //          {
-    //              Vec3Scale(manifold->n, pl.normal, -1.0f);
-    //              manifold->depth[0] = -PlanePointSignedDistance(&pl, manifold->v[0]) + s[1]->capsule.radius;
-    //              manifold->depth[1] = -PlanePointSignedDistance(&pl, manifold->v[1]) + s[1]->capsule.radius;
-	//		    Vec3TranslateScaled(manifold->v[0], manifold->n, s[1]->capsule.radius);
-	//		    Vec3TranslateScaled(manifold->v[1], manifold->n, s[1]->capsule.radius);
-    //          }
-	//	}
+			Vec3Copy(m->v[0], seg.p[0]);
+			Vec3Copy(m->v[1], seg.p[1]);
+            m->depth[0] = f32_abs(d[0]);
+            m->depth[1] = f32_abs(d[1]);
+			
+            if (ref == 0)
+            {
+                Vec3Scale(m->n, pl.normal, flip_sign);
+			    Vec3TranslateScaled(m->v[0], m->n, m->depth[0]);
+			    Vec3TranslateScaled(m->v[1], m->n, m->depth[1]);
+            }
+            else
+            {
+                Vec3Scale(m->n, pl.normal, -1.0f*flip_sign);
+			    Vec3TranslateScaled(m->v[0], m->n, cap->radius);
+			    Vec3TranslateScaled(m->v[1], m->n, cap->radius);
+            }
+            m->depth[0] += cap->radius;
+            m->depth[1] += cap->radius;
+        }
+        else
+		{
+            const u32 v = best - 2;
+			m->v_count = 1;
+		    m->depth[0] = f32_sqrt(dist_sq[best]);
+			Vec3Sub(m->n, c_p[ref][v], c_p[inc][v]);
+			Vec3ScaleSelf(m->n, 1.0f/Vec3Length(m->n));
+			Vec3Copy(m->v[0], c_p[ref][v]);
+            if (ref == 1)
+            {
+                Vec3TranslateScaled(m->v[0], m->n, cap->radius);
+            }
+		}	
 	}
 	/* Shallow Penetration */
 	else
@@ -2910,26 +2902,29 @@ static void c_TriCapsuleManifold(struct c_Manifold *m, const struct c_TriMeshBvh
 			m->v_count = 2;
 			m->depth[1] = m->depth[0];
 
-            struct segment cap_clip;
-            TriCcwSegmentSideClip(c->t, &cap_clip, &c->tv);
+            struct segment cap_clip = TriCcwSegmentSideClip(c->t, s, &c->tv);
 			Vec3Copy(m->v[0], cap_clip.p[0]);
 			Vec3Copy(m->v[1], cap_clip.p[1]);
+
+            if (ref == 0)
+            {
+		        Vec3TranslateScaled(m->v[0], m->n, -cap->radius + m->depth[0]);
+		        Vec3TranslateScaled(m->v[1], m->n, -cap->radius + m->depth[1]);
+            }
+            else
+            {
+		        Vec3TranslateScaled(m->v[0], m->n, cap->radius);
+		        Vec3TranslateScaled(m->v[1], m->n, cap->radius);
+            }
         }
         else
         {
             m->v_count = 1;
             Vec3Copy(m->v[0], c->c[ref]);
-        }
-
-        if (ref == 0)
-        {
-		    Vec3TranslateScaled(m->v[0], m->n, -cap->radius + m->depth[0]);
-		    Vec3TranslateScaled(m->v[1], m->n, -cap->radius + m->depth[1]);
-        }
-        else
-        {
-		    Vec3TranslateScaled(m->v[0], m->n, cap->radius);
-		    Vec3TranslateScaled(m->v[1], m->n, cap->radius);
+            if (ref == 1)
+            {
+		        Vec3TranslateScaled(m->v[0], m->n, cap->radius);
+            }
         }
 	}
 }
@@ -2996,12 +2991,11 @@ u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold
                     Vec3Translate(c->t[1], t[0].position); 
                     Vec3Translate(c->t[2], t[0].position); 
 
-                    ProfZoneNamed("TriCcwPointDistanceSquared");
-                    struct TriVoronoi tv;
-                    const u32 robust = TriVoronoiInitCcw(&tv, c->t);
+                    ProfZoneNamed("TriCcwSegmentDistanceSquared");
+                    const u32 robust = TriVoronoiInitCcw(&c->tv, c->t);
                     ds_Assert(robust);
 
-                    c->dist_sq = TriCcwSegmentDistanceSquared(c->c[0], c->c[1], &c->region, c->t, &cap_s, &tv);
+                    c->dist_sq = TriCcwSegmentDistanceSquared(c->c[0], c->c[1], &c->region, c->t, &cap_s, &c->tv);
                     ProfZoneEnd;
 
                     if (c->dist_sq <= cap->radius*cap->radius)
@@ -3044,10 +3038,25 @@ u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold
         {
             struct c_Manifold *m = (*manifold) + collision_count;
             u32 *t = (*tri) + collision_count;
-            //collision_count += 1;
-            //TODO: c_HullSphereShallowManifold(m, s[1]->sphere.radius, c->c, ref);
-            
+            collision_count += 1;
+            c_TriCapsuleManifold(m, c, cap, &cap_s, reference_index);
+
             COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(c->c[0], c->c[1]), Vec4Inline(0.9f, 0.7f, 0.9f, 1.0f));
+
+            //fprintf(stderr, "\n");
+            //Vec3Print("\t", m->v[0]);
+            //if (m->v_count == 2)
+            //{
+            //    Vec3Print("\t", m->v[1]);
+            //}
+            //Breakpoint(Vec3Length(m->n) == 0.0f);
+            //Breakpoint(Vec3Length(m->v[0]) > 10000.0f || f32_test_nan(m->v[0][0]) || f32_test_nan(m->v[0][1]) || f32_test_nan(m->v[0][2])); 
+            //if (m->v_count == 2)
+            //{
+            //    Breakpoint(Vec3Length(m->v[1]) > 10000.0f || f32_test_nan(m->v[1][0]) || f32_test_nan(m->v[1][1]) || f32_test_nan(m->v[1][2])); 
+            //}
+            //c_TriCapsuleManifold(m, c, cap, &cap_s, reference_index);
+
             *t = c->tri;
             BitVecSetBit(&it.void_bitset, it.mesh->tri[*t][0], 1);
             BitVecSetBit(&it.void_bitset, it.mesh->tri[*t][1], 1);
@@ -3098,12 +3107,25 @@ u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold
             struct c_Manifold *m = (*manifold) + collision_count;
             u32 *t = (*tri) + collision_count;
             *t = c->tri;
-            //TODO
-            //collision_count += 1;
 
-            //c_HullSphereShallowManifold(m, s[1]->sphere.radius, c->c, ref);
+            collision_count += 1;
+            c_TriCapsuleManifold(m, c, cap, &cap_s, reference_index);
 
             COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(c->c[0], c->c[1]), Vec4Inline(0.9f, 0.7f, 0.9f, 1.0f));
+
+            //fprintf(stderr, "\n");
+            //Vec3Print("\t", m->v[0]);
+            //if (m->v_count == 2)
+            //{
+            //    Vec3Print("\t", m->v[1]);
+            //}
+            //Breakpoint(Vec3Length(m->n) == 0.0f);
+            //Breakpoint(Vec3Length(m->v[0]) > 10000.0f || f32_test_nan(m->v[0][0]) || f32_test_nan(m->v[0][1]) || f32_test_nan(m->v[0][2])); 
+            //if (m->v_count == 2)
+            //{
+            //    Breakpoint(Vec3Length(m->v[1]) > 10000.0f || f32_test_nan(m->v[1][0]) || f32_test_nan(m->v[1][1]) || f32_test_nan(m->v[1][2])); 
+            //}
+            //c_TriCapsuleManifold(m, c, cap, &cap_s, reference_index);
         }
 
         BitVecSetBit(&it.void_bitset, tri_id[0], 1);
@@ -3116,7 +3138,7 @@ u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold
 
     ProfZoneEnd;
 
-	return 0;
+	return collision_count;
 }
 
 u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u32 **tri, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index)
@@ -3126,9 +3148,11 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
 
     ProfZone;
 
+    u32 collision_count = 0;
+
     ProfZoneEnd;
 
-	return 0;
+	return collision_count;
 }
 
 /********************************** RAYCAST **********************************/

@@ -26,7 +26,7 @@ if [ "$BUILD_ID" != "$BUILD_ID_CURRENT" ]; then
     echo "$BUILD_ID" | tee "$BUILD_CONFIG"
 fi
 
-cmake -S . -B build -Dapply_optimization_options=ON -G $CMAKE_GENERATOR
+cmake -S . -B build -DDS_TEST_PHYSICS=ON -DDS_PROFILE=ON -DS_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Release -G $CMAKE_GENERATOR
 cd build
 cmake --build . --parallel
 
@@ -35,5 +35,5 @@ if [ -z $(pgrep -f "tracy-profiler")]; then
 	nohup "$TRACY_PROFILER" > /dev/null 2>&1 &
 fi
 
-./engine_sandbox
+./DreamscapeTest
 cd ..

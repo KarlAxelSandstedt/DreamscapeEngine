@@ -39,19 +39,25 @@ set_target_properties(SDL3::SDL3 PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/SDL/include"
 )
 
+if (CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(FREETYPE "freetype")
+else()
+    set(FREETYPE "freetyped")
+endif()
+
 ExternalProject_Add(freetype
     SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/freetype"
     BINARY_DIR "${CMAKE_BINARY_DIR}/lib/freetype"
     CMAKE_ARGS ${DS_FORWARD_VARS}
     BUILD_ALWAYS OFF
     INSTALL_DIR "${DS_INSTALL_PATH}"
-    BUILD_BYPRODUCTS "${DS_INSTALL_PATH}/lib/${LIB_PREFIX}freetyped${STATIC_EXT}"
+    BUILD_BYPRODUCTS "${DS_INSTALL_PATH}/lib/${LIB_PREFIX}${FREETYPE}${STATIC_EXT}"
 )
 ExternalProject_Get_Property(freetype BINARY_DIR)
 add_library(Freetype::Freetype STATIC IMPORTED GLOBAL)
 add_dependencies(Freetype::Freetype freetype)
 set_target_properties(Freetype::Freetype PROPERTIES
-    IMPORTED_LOCATION "${DS_INSTALL_PATH}/lib/${LIB_PREFIX}freetyped${STATIC_EXT}"
+    IMPORTED_LOCATION "${DS_INSTALL_PATH}/lib/${LIB_PREFIX}${FREETYPE}${STATIC_EXT}"
     INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/freetype/include"
 )
 

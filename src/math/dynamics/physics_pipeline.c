@@ -74,7 +74,7 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 	pipeline.body_non_marked_list = dll_Init(struct ds_RigidBody);
 
 	pipeline.shape_pool = ds_PoolAlloc(NULL, initial_size, struct ds_Shape, GROWABLE);
-	pipeline.shape_bvh = DbvhAlloc(NULL, 2*initial_size, 1);
+	pipeline.shape_bvh = DbvhAlloc(NULL, 2*initial_size, GROWABLE);
 
 	pipeline.event_pool = ds_PoolAlloc(NULL, 256, struct physicsEvent, GROWABLE);
 	pipeline.event_list = dll_Init(struct physicsEvent);

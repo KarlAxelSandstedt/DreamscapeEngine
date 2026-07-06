@@ -26,7 +26,7 @@ if [ "$BUILD_ID" != "$BUILD_ID_CURRENT" ]; then
     echo "$BUILD_ID" | tee "$BUILD_CONFIG"
 fi
 
-cmake -S . -B build -DDS_TEST_PHYSICS=ON -DDS_PROFILE=OFF -DCMAKE_BUILD_TYPE=Debug -G $CMAKE_GENERATOR
+cmake -S . -B build -DDS_TEST_PHYSICS=ON -DDS_PROFILE=OFF -DS_OPTIMIZE=OFF -DCMAKE_BUILD_TYPE=Debug -G $CMAKE_GENERATOR
 cd build
 cmake --build . --parallel
 
