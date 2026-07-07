@@ -226,6 +226,7 @@ struct c_Manifold
 };
 
 void 	c_ManifoldDebugPrint(FILE *file, const struct c_Manifold *cm);
+u32     c_ManifoldCheck(const struct c_Manifold *cm);
 
 /********************************** INTERSECTION TESTS **********************************/
 

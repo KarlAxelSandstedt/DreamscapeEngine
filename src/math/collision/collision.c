@@ -48,6 +48,53 @@ void c_ManifoldDebugPrint(FILE *file, const struct c_Manifold *cm)
 	fprintf(stderr, "}\n");
 }
 
+
+u32 c_ManifoldCheck(const struct c_Manifold *cm)
+{
+    u32 valid = 1;
+    const u32 bad_normal = Vec3Length(cm->n) == 0.0f;
+    for (u32 i = 0; i < cm->v_count; ++i)
+    {
+        const u32 bad_collision = bad_normal 
+            || Vec3Length(cm->v[i]) > 10000.0f 
+            || f32_test_nan(cm->v[i][0]) 
+            || f32_test_nan(cm->v[i][1]) 
+            || f32_test_nan(cm->v[i][2])
+            || !(cm->depth[i] >= 0.0f);
+
+        if (bad_collision)
+        {
+            fprintf(stderr, "=== Bad Collision ===\n");
+            Vec3Print("\tNormal", cm->n);
+            Vec3Print("\tv[0]", cm->v[0]);
+            fprintf(stderr, "\tdepth[0]: %f\n", cm->depth[0]);
+
+            if (2 <= cm->v_count)
+            {
+                Vec3Print("\tv[1]", cm->v[1]);
+                fprintf(stderr, "\tdepth[1]: %f\n", cm->depth[1]);
+            }
+
+            if (3 <= cm->v_count)
+            {
+                Vec3Print("\tv[2]", cm->v[2]);
+                fprintf(stderr, "\tdepth[2]: %f\n", cm->depth[2]);
+            }
+
+            if (4 <= cm->v_count)
+            {
+                Vec3Print("\tv[3]", cm->v[3]);
+                fprintf(stderr, "\tdepth[3]: %f\n", cm->depth[3]);
+            }
+
+            valid = 0;
+            break;
+        }
+    }
+
+    return valid;
+}
+
 /********************************** Collision Shape Mass Properties **********************************/
 
 #define VOL	    0 
@@ -2559,6 +2606,8 @@ struct c_TriMeshBvhIterator
     u32                         contact_count;
     u32                         contact_len;
 
+    u32                         delayed_count;
+    struct DelayedFeature *     delayed_set;
     struct bitVec               void_bitset;
 
     const struct triMeshBvh *   mesh_bvh;
@@ -2623,6 +2672,42 @@ static void c_TriMeshBvhIteratorPushChildren(struct c_TriMeshBvhIterator *it)
 		it->node_stack[it->sc++] = left;
     }
 }
+
+static void c_TriMeshBvhIteratorDelayedSetAlloc(struct c_TriMeshBvhIterator *it)
+{
+    it->delayed_count = 0;
+    it->delayed_set = ArenaPush(it->tmp2, it->contact_count*sizeof(struct DelayedFeature));
+}
+
+static void c_TriMeshBvhIteratorDelayedSetPush(struct c_TriMeshBvhIterator *it, const u32 contact, const f32 dist_sq)
+{
+    it->delayed_set[it->delayed_count].index = contact;
+    it->delayed_set[it->delayed_count].dist_sq = dist_sq;
+    for (u32 d = it->delayed_count; d; --d)
+    {
+        if (it->delayed_set[d-1].dist_sq <= it->delayed_set[d].dist_sq)
+        {
+            break;
+        }
+        const struct DelayedFeature tmp = it->delayed_set[d];
+        it->delayed_set[d] = it->delayed_set[d-1];
+        it->delayed_set[d-1] = tmp;
+    }
+
+    it->delayed_count += 1;
+    ds_AssertString(it->delayed_count <= 64, "delayed phase exceeded 64 triangles, consider moving from insertion sort to something more proper.");
+}
+
+static const u32 delayed_vertex_map[TRI_VORONOI_COUNT][2] =
+{
+    { 0, 0 },
+    { 1, 1 },
+    { 2, 2 },
+    { 0, 1 },
+    { 1, 2 },
+    { 2, 0 },
+    { U32_MAX, U32_MAX },
+};
 
 u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold, u32 **tri, const struct c_Shape *s[2], const ds_Transform t[2], const u32 ref)
 {
@@ -2709,8 +2794,8 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
     u32 delayed_count = 0;
     *manifold = ArenaPush(frame, it.contact_count*sizeof(struct c_Manifold));
     *tri = ArenaPush(frame, it.contact_count*sizeof(u32));
-    struct DelayedFeature *delayed_set = ArenaPush(it.tmp2, it.contact_count*sizeof(struct DelayedFeature));
-    if (it.contact_count && (!manifold || !tri || !delayed_set))
+    c_TriMeshBvhIteratorDelayedSetAlloc(&it);
+    if (it.contact_count && (!manifold || !tri || !it.delayed_set))
     {
 		Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
 		FatalCleanupAndExit();
@@ -2727,7 +2812,6 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
             collision_count += 1;
             c_HullSphereShallowManifold(m, s[1]->sphere.radius, c->c, ref);
             
-            COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(c->c[0], c->c[1]), Vec4Inline(0.9f, 0.7f, 0.9f, 1.0f));
             *t = c->tri;
             BitVecSetBit(&it.void_bitset, it.mesh->tri[*t][0], 1);
             BitVecSetBit(&it.void_bitset, it.mesh->tri[*t][1], 1);
@@ -2735,43 +2819,16 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
         }
         else
         {
-            delayed_set[delayed_count].index = i;
-            delayed_set[delayed_count].dist_sq = c->dist_sq;
-            for (u32 d = delayed_count; d; --d)
-            {
-                if (delayed_set[d-1].dist_sq <= delayed_set[d].dist_sq)
-                {
-                    break;
-                }
-                const struct DelayedFeature tmp = delayed_set[d];
-                delayed_set[d] = delayed_set[d-1];
-                delayed_set[d-1] = tmp;
-            }
-
-            delayed_count += 1;
-            ds_AssertString(delayed_count <= 64, "delayed phase exceeded 64 triangles, consider moving from insertion sort to something more proper.");
+            c_TriMeshBvhIteratorDelayedSetPush(&it, i, c->dist_sq);
         }
     }
 
-
-    //TODO Move 
-    static const u32 map[TRI_VORONOI_COUNT][2] =
-    {
-        { 0, 0 },
-        { 1, 1 },
-        { 2, 2 },
-        { 0, 1 },
-        { 1, 2 },
-        { 2, 0 },
-        { U32_MAX, U32_MAX },
-    };
-
     for (u32 i = 0; i < delayed_count; ++i)
     {
-        const struct c_TriMeshBvhContact *c = it.contact + delayed_set[i].index;
+        const struct c_TriMeshBvhContact *c = it.contact + it.delayed_set[i].index;
         const u32 *tri_id = it.mesh->tri[c->tri];
-        const u32 v0 = tri_id[ map[c->region][0] ];
-        const u32 v1 = tri_id[ map[c->region][1] ];
+        const u32 v0 = tri_id[ delayed_vertex_map[c->region][0] ];
+        const u32 v1 = tri_id[ delayed_vertex_map[c->region][1] ];
         /* if vertex_contact not in void, or edge contact and not fully in void */
         if (!BitVecGetBit(&it.void_bitset, v0) || !BitVecGetBit(&it.void_bitset, v1))
         {
@@ -2781,8 +2838,6 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
             collision_count += 1;
 
             c_HullSphereShallowManifold(m, s[1]->sphere.radius, c->c, ref);
-
-            COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(c->c[0], c->c[1]), Vec4Inline(0.9f, 0.7f, 0.9f, 1.0f));
         }
 
         BitVecSetBit(&it.void_bitset, tri_id[0], 1);
@@ -2983,7 +3038,6 @@ u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold
                     struct c_TriMeshBvhContact *c = it.contact + it.contact_count;
                     c->tri = mesh_bvh->tri[index];
 
-                    //TODO repetition as in sphere case 
                     vec3 tri[3];
                     Mat3VecMul(tri[0], bvh_rotation, it.mesh->v[it.mesh->tri[c->tri][0]]);
                     Mat3VecMul(tri[1], bvh_rotation, it.mesh->v[it.mesh->tri[c->tri][1]]);
@@ -3021,11 +3075,10 @@ u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold
     }
 
     u32 collision_count = 0;
-    u32 delayed_count = 0;
     *manifold = ArenaPush(frame, it.contact_count*sizeof(struct c_Manifold));
     *tri = ArenaPush(frame, it.contact_count*sizeof(u32));
-    struct DelayedFeature *delayed_set = ArenaPush(it.tmp2, it.contact_count*sizeof(struct DelayedFeature));
-    if (it.contact_count && (!manifold || !tri || !delayed_set))
+    c_TriMeshBvhIteratorDelayedSetAlloc(&it);
+    if (it.contact_count && (!manifold || !tri || !it.delayed_set))
     {
 		Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
 		FatalCleanupAndExit();
@@ -3042,22 +3095,6 @@ u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold
             collision_count += 1;
             c_TriCapsuleManifold(m, c, cap, &cap_s, reference_index);
 
-            COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(c->c[0], c->c[1]), Vec4Inline(0.9f, 0.7f, 0.9f, 1.0f));
-
-            //fprintf(stderr, "\n");
-            //Vec3Print("\t", m->v[0]);
-            //if (m->v_count == 2)
-            //{
-            //    Vec3Print("\t", m->v[1]);
-            //}
-            //Breakpoint(Vec3Length(m->n) == 0.0f);
-            //Breakpoint(Vec3Length(m->v[0]) > 10000.0f || f32_test_nan(m->v[0][0]) || f32_test_nan(m->v[0][1]) || f32_test_nan(m->v[0][2])); 
-            //if (m->v_count == 2)
-            //{
-            //    Breakpoint(Vec3Length(m->v[1]) > 10000.0f || f32_test_nan(m->v[1][0]) || f32_test_nan(m->v[1][1]) || f32_test_nan(m->v[1][2])); 
-            //}
-            //c_TriCapsuleManifold(m, c, cap, &cap_s, reference_index);
-
             *t = c->tri;
             BitVecSetBit(&it.void_bitset, it.mesh->tri[*t][0], 1);
             BitVecSetBit(&it.void_bitset, it.mesh->tri[*t][1], 1);
@@ -3065,43 +3102,16 @@ u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold
         }
         else
         {
-            delayed_set[delayed_count].index = i;
-            delayed_set[delayed_count].dist_sq = c->dist_sq;
-            for (u32 d = delayed_count; d; --d)
-            {
-                if (delayed_set[d-1].dist_sq <= delayed_set[d].dist_sq)
-                {
-                    break;
-                }
-                const struct DelayedFeature tmp = delayed_set[d];
-                delayed_set[d] = delayed_set[d-1];
-                delayed_set[d-1] = tmp;
-            }
-
-            delayed_count += 1;
-            ds_AssertString(delayed_count <= 64, "delayed phase exceeded 64 triangles, consider moving from insertion sort to something more proper.");
+            c_TriMeshBvhIteratorDelayedSetPush(&it, i, c->dist_sq);
         }
     }
 
-
-    //TODO Move 
-    static const u32 map[TRI_VORONOI_COUNT][2] =
+    for (u32 i = 0; i < it.delayed_count; ++i)
     {
-        { 0, 0 },
-        { 1, 1 },
-        { 2, 2 },
-        { 0, 1 },
-        { 1, 2 },
-        { 2, 0 },
-        { U32_MAX, U32_MAX },
-    };
-
-    for (u32 i = 0; i < delayed_count; ++i)
-    {
-        const struct c_TriMeshBvhContact *c = it.contact + delayed_set[i].index;
+        const struct c_TriMeshBvhContact *c = it.contact + it.delayed_set[i].index;
         const u32 *tri_id = it.mesh->tri[c->tri];
-        const u32 v0 = tri_id[ map[c->region][0] ];
-        const u32 v1 = tri_id[ map[c->region][1] ];
+        const u32 v0 = tri_id[ delayed_vertex_map[c->region][0] ];
+        const u32 v1 = tri_id[ delayed_vertex_map[c->region][1] ];
         /* if vertex_contact not in void, or edge contact and not fully in void */
         if (!BitVecGetBit(&it.void_bitset, v0) || !BitVecGetBit(&it.void_bitset, v1))
         {
@@ -3111,22 +3121,6 @@ u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold
 
             collision_count += 1;
             c_TriCapsuleManifold(m, c, cap, &cap_s, reference_index);
-
-            COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(c->c[0], c->c[1]), Vec4Inline(0.9f, 0.7f, 0.9f, 1.0f));
-
-            //fprintf(stderr, "\n");
-            //Vec3Print("\t", m->v[0]);
-            //if (m->v_count == 2)
-            //{
-            //    Vec3Print("\t", m->v[1]);
-            //}
-            //Breakpoint(Vec3Length(m->n) == 0.0f);
-            //Breakpoint(Vec3Length(m->v[0]) > 10000.0f || f32_test_nan(m->v[0][0]) || f32_test_nan(m->v[0][1]) || f32_test_nan(m->v[0][2])); 
-            //if (m->v_count == 2)
-            //{
-            //    Breakpoint(Vec3Length(m->v[1]) > 10000.0f || f32_test_nan(m->v[1][0]) || f32_test_nan(m->v[1][1]) || f32_test_nan(m->v[1][2])); 
-            //}
-            //c_TriCapsuleManifold(m, c, cap, &cap_s, reference_index);
         }
 
         BitVecSetBit(&it.void_bitset, tri_id[0], 1);

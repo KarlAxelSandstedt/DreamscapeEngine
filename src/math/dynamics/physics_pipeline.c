@@ -293,6 +293,14 @@ static u32 NarrowPhaseJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPh
         if (job->collision_count)
         {
             job->manifold = ArenaPushAlignedMemcpy(&g_tl_self->frame, &manifold, sizeof(struct c_Manifold), 4);
+            
+            if (!c_ManifoldCheck(job->manifold))
+            {
+                Breakpoint(1);
+                tmp = ArenaPushScratch();
+                job->collision_count = ds_ShapeContact(tmp, &manifold, job->cache, pipeline, s0, s1);
+                ArenaPopScratch();
+            }
         }
     }
 

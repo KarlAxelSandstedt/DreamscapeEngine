@@ -1229,17 +1229,18 @@ void led_WallSmashSimulationSetup(struct led *led)
 	const vec3 sphere_translation = { -0.5, 0.5f + ramp_height, -ramp_length };
 	const vec3 box_translation =  {-0.5f, 0.0f, -0.5f};
 	const vec3 ramp_translation = {-5.0f , -5.0f, -15.0f};
-	const vec3 floor_translation = { 0.0f, -ramp_width/2.0f - 1.0f, ramp_length / 2.0f -ramp_width/2.0f};
+	vec3 floor_translation = { 0.0f, -ramp_width/2.0f - 1.0f, ramp_length / 2.0f -ramp_width/2.0f};
 	const vec3 box_base_translation = { 0.0f, floor_translation[1] + 1.0f, floor_translation[2] / 2.0f};
 	const vec3 dsphere_base_translation = { -15.0f, floor_translation[1] + 1.0f, floor_translation[2] / 2.0f + 20.0f};
     const vec3 multibox_base_translation = { 0.0f, floor_translation[1] + 1.0f, floor_translation[2] / 2.0f -10.0f };
     const vec3 multidsphere_base_translation = { 0.0f, floor_translation[1] + 1.0f, floor_translation[2] / 2.0f -14.0f };
     const vec3 map_translation = { 0.0f, -25.0f, 0.0f };
+    floor_translation[1] -= 50.0f;
 
     id = Utf8Cstr(sys_win->ui->mem_frame, "led_floor");
     tagged_id = led_NodeAdd(led, id, Utf8Empty());
     led_NodeSetPosition(led, tagged_id, floor_translation);
-    //led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_floor"));
+    led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_floor"));
     led_NodeSetColor(led, tagged_id, floor_color, 1.0f);
 	
     id = Utf8Cstr(sys_win->ui->mem_frame, "led_map");
