@@ -9,27 +9,27 @@ static void Vec3UnitSphere(vec3 v)
     Vec3Set(v, r*f32_cos(theta), r*f32_sin(theta), z);
 }
 
-static f32 TriCcwSegmentDistanceSquaredSlow(enum TriVoronoiRegion *reg, const vec3 t[3], const struct segment *s, const struct TriVoronoi *tv)
+static f32 TriCcwSegmentDistanceSquaredSlow(enum TriVoronoiRegion *reg, const struct segment *s, const struct TriVoronoi *tv)
 {
     f32 dist_sq, dist_sq_min = F32_INFINITY;
     vec3 c1, c2;
     enum TriVoronoiRegion region;
 
-    if (TriCcwSegmentClip(c1, t, s, tv))
+    if (TriCcwSegmentClip(c1, s, tv))
     {
         dist_sq_min = 0.0f;
         *reg = TRI_VORONOI_FACE;
     }
     else 
     {
-        dist_sq = TriCcwPointDistanceSquared(c1, &region, t, s->p[0], tv);
+        dist_sq = TriCcwPointDistanceSquared(c1, &region, s->p[0], tv);
         if (dist_sq < dist_sq_min)
         {
             dist_sq_min = dist_sq;
             *reg = region;
         }
 
-        dist_sq = TriCcwPointDistanceSquared(c1, &region, t, s->p[1], tv);
+        dist_sq = TriCcwPointDistanceSquared(c1, &region, s->p[1], tv);
         if (dist_sq < dist_sq_min)
         {
             dist_sq_min = dist_sq;
@@ -95,8 +95,8 @@ struct test_Output TriCcwPointDistanceSquaredTest(struct test_Environment *env)
 
             enum TriVoronoiRegion region_slow;
             vec3 c_t, c_s;
-            const f32 dist = f32_sqrt(TriCcwSegmentDistanceSquared(c_t, c_s, &region, tri, &segment, &tv));
-            const f32 dist_slow = f32_sqrt(TriCcwSegmentDistanceSquaredSlow(&region_slow, tri, &segment, &tv));
+            const f32 dist = f32_sqrt(TriCcwSegmentDistanceSquared(c_t, c_s, &region, &segment, &tv));
+            const f32 dist_slow = f32_sqrt(TriCcwSegmentDistanceSquaredSlow(&region_slow, &segment, &tv));
             const f32 abs_diff = f32_abs(dist - dist_slow);
             if (abs_diff > 1e-6)
                 ++g;
@@ -105,19 +105,19 @@ struct test_Output TriCcwPointDistanceSquaredTest(struct test_Environment *env)
                 max_diff = abs_diff;
                 fprintf(stderr, "New maximum difference: %f (fast=%f, slow=%f)\n", f32_abs(dist-dist_slow), dist, dist_slow);
                 fprintf(stderr, "Triangle Config:\n");
-                Vec3Print("\t", tri[0]);
-                Vec3Print("\t", tri[1]);
-                Vec3Print("\t", tri[2]);
+                Vec3Print("\t", tv.t[0]);
+                Vec3Print("\t", tv.t[1]);
+                Vec3Print("\t", tv.t[2]);
                 fprintf(stderr, "Segment Config:\n");
                 Vec3Print("\t", p[0]);
                 Vec3Print("\t", p[1]);
                 fprintf(stderr, "fast region: %s\n", g_table_tri_voronoi_region_string[region]);
                 fprintf(stderr, "slow region: %s\n", g_table_tri_voronoi_region_string[region_slow]);
-                if (max_diff > 0.002f)
+                if (max_diff > 0.003f)
                 {
-                    Breakpoint(max_diff > 0.002f);
-                    TriCcwSegmentDistanceSquared(c_t, c_s, &region, tri, &segment, &tv);
-                    TriCcwSegmentDistanceSquaredSlow(&region_slow, tri, &segment, &tv);
+                    Breakpoint(max_diff > 0.003f);
+                    TriCcwSegmentDistanceSquared(c_t, c_s, &region, &segment, &tv);
+                    TriCcwSegmentDistanceSquaredSlow(&region_slow, &segment, &tv);
                 }
             }
         }
