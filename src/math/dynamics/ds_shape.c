@@ -157,24 +157,27 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
 		}
 		const u32 ci_next = c->nll_next[next_i];
 	    const struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, shape->body);
-		struct ds_Island *is = ds_PoolAddress(&pipeline->is_db.island_pool, body->island_index);
 
-		if ((is->flags & ISLAND_SPLIT) == 0)
-		{
-		    if (island_count == arr.len)
-			{
-				LogString(T_SYSTEM, S_FATAL, "Stack OOM in ds_ShapeStaticRemove");
-				FatalCleanupAndExit();
-			}
-			island[island_count++] = body->island_index;
-			
-			is->flags |= ISLAND_SPLIT;
-		}
+        if (body->island_index != ISLAND_STATIC)
+        {
+		    struct ds_Island *is = ds_PoolAddress(&pipeline->is_db.island_pool, body->island_index);
+		    if ((is->flags & ISLAND_SPLIT) == 0)
+		    {
+		        if (island_count == arr.len)
+		    	{
+		    		LogString(T_SYSTEM, S_FATAL, "Stack OOM in ds_ShapeStaticRemove");
+		    		FatalCleanupAndExit();
+		    	}
+		    	island[island_count++] = body->island_index;
+		    	
+		    	is->flags |= ISLAND_SPLIT;
+		    }
+            dll_Remove(&is->contact_list, pipeline->cdb->contact_net.pool.buf, ci);
+        }
 
 		PhysicsEventContactRemoved(pipeline, b0, s0, b1, s1);
 		BitVecSetBit(&pipeline->cdb->contact_persistent_usage, ci, 0);
 		ds_HashMapRemove(&pipeline->cdb->contact_map, ds_ContactKeyHash(&c->key), ci);
-        dll_Remove(&is->contact_list, pipeline->cdb->contact_net.pool.buf, ci);
 		nll_Remove(&pipeline->cdb->contact_net, ci);
 		ci = ci_next;
 	}

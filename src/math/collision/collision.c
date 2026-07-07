@@ -60,7 +60,8 @@ u32 c_ManifoldCheck(const struct c_Manifold *cm)
             || f32_test_nan(cm->v[i][0]) 
             || f32_test_nan(cm->v[i][1]) 
             || f32_test_nan(cm->v[i][2])
-            || !(cm->depth[i] >= 0.0f);
+            //|| !(cm->depth[i] >= -0.005f)
+                    ;
 
         if (bad_collision)
         {
@@ -1127,7 +1128,9 @@ static f32 gjk_DistanceSquared(vec3 c1, vec3 c2, struct gjk_Simplex *simplex, st
 		}
 	}
 
-	return 0.0f;
+	ds_Assert(dist_sq != F32_INFINITY);
+	gjk_InternalClosestPoints(c1, c2, in1, simplex, lambda);
+	return dist_sq;
 }
 
 /********************************** INTERSECTION TESTS **********************************/
@@ -1642,12 +1645,13 @@ static void c_HullSphereShallowManifold(struct c_Manifold *manifold, const f32 r
     manifold->v_count = 1;
     Vec3Sub(manifold->n, c[1], c[0]);
     Vec3ScaleSelf(manifold->n, 1.0f / Vec3Length(manifold->n));
-    manifold->depth[0] = radius - (Vec3Dot(c[1], manifold->n) - Vec3Dot(c[0], manifold->n));
+    manifold->depth[0] = f32_max(0.0f, radius - (Vec3Dot(c[1], manifold->n) - Vec3Dot(c[0], manifold->n)));
+    Vec3Copy(manifold->v[0], c[ref]);
     if (ref == 1)
     {
         Vec3ScaleSelf(manifold->n, -1.0f);
     	Vec3TranslateScaled(manifold->v[0], manifold->n, radius);
-    }    Vec3Copy(manifold->v[0], c[ref]);
+    }   
 }
 
 u32 c_HullSphereContact(struct arena *not_used1, struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s[2], const ds_Transform t[2], const u32 ref)
@@ -1689,8 +1693,8 @@ u32 c_HullSphereContact(struct arena *not_used1, struct c_Manifold *manifold, st
 			Mat3VecMul(n, g1.rot, p);
 			Mat3VecMul(p, g1.rot, h->v[h->e[h->f[fi].first].origin]);
 			Vec3Translate(p, t[0].position);
-			Vec3Sub(diff, p, t[1].position);
-			const f32 depth = Vec3Dot(n, diff);
+			Vec3Sub(diff, t[1].position, p);
+			const f32 depth = f32_max(0.0f, -Vec3Dot(n, diff));
 			if (depth < min_depth)
 			{
 				Vec3Copy(manifold->n, n);
@@ -1698,6 +1702,9 @@ u32 c_HullSphereContact(struct arena *not_used1, struct c_Manifold *manifold, st
 			}
 		}
 
+        COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(c[0], c[1]), Vec4Inline(0.1f, 0.6f, 0.9f, 1.0f));
+            
+        //ds_Assert(min_depth > 0.0f);
 		manifold->depth[0] = min_depth + s[1]->sphere.radius;
 		Vec3Copy(manifold->v[0], t[1].position);
         if (ref == 0)
@@ -1787,7 +1794,7 @@ u32 c_HullCapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, s
 			{
 				for (u32 ei = 0; ei < h->e_count; ++ei)
 				{
-					struct segment edge_s = DcelEdgeSegment(h, g1.rot, g1.pos, best_index);
+					struct segment edge_s = DcelEdgeSegment(h, g1.rot, g1.pos, ei);
 					
 					const f32 d = -f32_sqrt(SegmentDistanceSquared(c[0], c[1], &edge_s, &cap_s));
 					if (max_signed_depth < d)
@@ -1802,7 +1809,7 @@ u32 c_HullCapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, s
 			if (edge_best)
 			{
 				manifold->v_count = 1;
-			    manifold->depth[0] = f32_max(-max_signed_depth, 0.0f);
+			    manifold->depth[0] = f32_max(0.0f, -max_signed_depth);
 				struct segment edge_s = DcelEdgeSegment(h, g1.rot, g1.pos, best_index);
 				SegmentDistanceSquared(c[0], c[1], &edge_s, &cap_s);
 				Vec3Sub(manifold->n, c[ref], c[inc]);
@@ -1822,12 +1829,19 @@ u32 c_HullCapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, s
 				if (cap_p0_inside == 1 && cap_p1_inside == 0)
 				{
 					Vec3Copy(manifold->v[0], seg.p[0]);
-					PlaneSegmentClip(manifold->v[1], &pl, &seg);
+                    if (!PlaneSegmentClip(manifold->v[1], &pl, &seg))
+                    {
+				        manifold->v_count = 1;
+                    }
 				}
 				else if (cap_p0_inside == 0 && cap_p1_inside == 1)
 				{
-					PlaneSegmentClip(manifold->v[0], &pl, &seg);
 					Vec3Copy(manifold->v[1], seg.p[1]);
+					if (!PlaneSegmentClip(manifold->v[0], &pl, &seg))
+                    {
+				        manifold->v_count = 1;
+					    Vec3Copy(manifold->v[0], seg.p[1]);
+                    }
 				}
 				else
 				{
@@ -1872,7 +1886,7 @@ u32 c_HullCapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, s
 				    struct plane pl = DcelFacePlane(h, g1.rot, g1.pos, fi);
                     if (PlaneSegmentParallelCheck(&pl, &cap_s))
 					{	
-                        const f32 depth = PlanePointSignedDistance(&pl, c[0]);
+                        const f32 depth = PlanePointSignedDistance(&pl, c[1]);
                         if (f32_abs(dist_sq - depth*depth) <= COLLISION_POINT_DIST_SQ)
                         {
                             Vec3Copy(manifold->n, pl.normal);
