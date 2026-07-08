@@ -1071,7 +1071,6 @@ void led_WallSmashSimulationSetup(struct led *led)
 	const vec4 map_color = { 0.5f, 0.7f, 0.7f, 0.7f };
 
 	const f32 box_side = 1.0f;
-	struct aabb box_aabb = { .center = { 0.0f, 0.0f, 0.0f }, .hw = { box_side / 2.0f, box_side / 4.0f, box_side / 2.0f} };
 
 	const f32 ramp_width = 10.0f;
 	const f32 ramp_length = 60.0f;
@@ -1106,7 +1105,7 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_CollisionCapsuleAdd(led, id, 0.5f, 1.0f);
 
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_box");
-    const vec3 box_hw = { box_side / 2.0f, box_side / 4.0f, box_side / 2.0f };
+    const vec3 box_hw = { box_side / 2.0f, box_side, box_side / 2.0f };
     led_CollisionBoxAdd(led, id, box_hw);
 
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_sphere");
@@ -1352,7 +1351,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 	{
 		for (u32 i = 0; i < pyramid_layers; ++i)
 		{
-			const f32 local_y = i * box_side;
+			const f32 local_y = i * box_hw[1]*4.0f;
 			for (u32 j = 0; j < pyramid_layers-i; ++j)
 			{
 				const f32 local_x = j -(pyramid_layers-i-1) * box_side / 2.0f;
@@ -1381,7 +1380,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 				vec3 translation;
 				Vec3Copy(translation, box_base_translation);
 				translation[2] += 15.0f + 2.0f*k;
-				translation[1] += (f32) i * box_aabb.hw[1] * 2.10f;
+				translation[1] += (f32) i * box_hw[1] * 2.10f;
 				translation[0] += 15.0f + 2.0f*j;
 
 				id = Utf8Format(sys_win->ui->mem_frame, "tower1_%u_%u_%u", i, j, k);
@@ -1402,7 +1401,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 				vec3 translation;
 				Vec3Copy(translation, box_base_translation);
 				translation[2] -= 15.0f + 2.0f*0;
-				translation[1] += (f32) i * box_aabb.hw[1] * 2.10f;
+				translation[1] += (f32) i * box_hw[1] * 2.10f;
 				translation[0] -= 15.0f + 1.5f*j;
 			
 				id = Utf8Format(sys_win->ui->mem_frame, "tower2_%u_%u_%u", i, j, 0);

@@ -457,6 +457,7 @@ struct c_TriHullCache
         struct
 	    {
 	    	u32 body;	/* body (0 or 1) containing face    */
+            u32 vertex; /* incident vertex                  */
 	    	u32	face;	/* reference face 	                */
 	    };
 
