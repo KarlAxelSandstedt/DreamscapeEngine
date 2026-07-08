@@ -223,9 +223,9 @@ u32         ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, stru
 /*
  * Returns the number of triangles in the mesh colliding with the other shape. If collisions are found, manifold and
  * triangle allocated to store each collision's manifold and triangle index. Each manifold normal points the
- * reference body towards the incident body.
+ * reference body towards the incident body. Lastly, set the sat_cache if non-null and applicable.
  */
-u32         ds_ShapeMeshContact(struct arena *frame, struct c_Manifold **manifold, u32 **triangle, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2); 
+u32         ds_ShapeMeshContact(struct arena *frame, struct c_Manifold **manifold, u32 **triangle, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2); 
 
 /* 
  * Return, if ray intersects shape, t such that ray.origin + t*ray.dir == closest point on shape. 
@@ -442,7 +442,33 @@ enum sat_CacheType
 	SAT_CACHE_SEPARATION,   /* Seperation axis found    */
 	SAT_CACHE_CONTACT_FV,   /* Face-Vertex Contact      */
 	SAT_CACHE_CONTACT_EE,   /* Edge-Edge Contact        */
+	SAT_CACHE_CONTACT_TRI,  /* Mesh-Hull tri cache data */
 	SAT_CACHE_COUNT,
+};
+
+//TODO move:
+struct c_TriHullCache
+{
+    u32 tri;
+	enum sat_CacheType	type;
+    
+    struct
+	{
+		u32 body;	/* body (0 or 1) containing face    */
+		u32	face;	/* reference face 	                */
+	};
+
+	struct
+	{
+		u32	edge0;	/* body0 edge   */
+		u32	edge1;	/* body1 edge   */
+	};
+
+	//struct
+	//{
+	//	vec3    separation_axis;
+	//	f32	    separation;
+	//};
 };
 
 struct sat_Cache
@@ -471,6 +497,12 @@ struct sat_Cache
 			vec3    separation_axis;
 			f32	    separation;
 		};
+
+        struct
+        {
+            u32                     tri_cache_count;
+            struct c_TriHullCache * tri_cache;
+        };
 	};
 };
 

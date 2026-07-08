@@ -264,9 +264,9 @@ u32     c_HullSphereContact(struct arena *not_used1, struct c_Manifold *manifold
 u32     c_HullCapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
 u32     c_HullContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *cache, const struct sat_Cache *cache_copy, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
 
-u32     c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold, u32 **tri, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-u32     c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold, u32 **tri, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-u32     c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u32 **tri, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
+u32     c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold, u32 **tri, struct sat_Cache *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
+u32     c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold, u32 **tri, struct sat_Cache *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
+u32     c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u32 **tri, struct sat_Cache *cache, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
 
 /********************************** RAYCAST **********************************/
 

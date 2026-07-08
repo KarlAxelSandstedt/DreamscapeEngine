@@ -1363,7 +1363,6 @@ vec3 box_stub_vertex[8] =
 	{ -0.5f, -0.5f,  0.5f },	
 };
 
-
 static struct dcelFace box_face[] =
 {
 	{ .first  =  0, .count = 4 },
@@ -1420,6 +1419,47 @@ struct dcel DcelBoxStub(void)
 	};
 
 	return box; 
+}
+
+vec3 tri_stub_vertex[3] =
+{
+	{  0.0f,  0.0f,  0.0f }, 
+	{  0.0f,  0.0f,  1.0f },	
+	{  1.0f,  0.0f,  0.0f },	
+};
+
+
+static struct dcelFace tri_face[2] =
+{
+	{ .first  =  0, .count = 3 },
+	{ .first  =  3, .count = 3 },
+};
+                                                        
+static struct dcelEdge tri_edge[6] =                    
+                                                      
+{
+	{ .origin = 0, .twin = 5,  .face_ccw = 0, },     
+	{ .origin = 1, .twin = 4,  .face_ccw = 0, },    
+	{ .origin = 2, .twin = 3,  .face_ccw = 0, },
+
+	{ .origin = 0, .twin = 2,  .face_ccw = 1, },
+	{ .origin = 2, .twin = 1,  .face_ccw = 1, },
+	{ .origin = 1, .twin = 0,  .face_ccw = 1, },
+};
+
+struct dcel DcelTriStub(void)
+{
+	struct dcel tri = 
+	{
+		.v = tri_stub_vertex,
+		.e = tri_edge,
+		.f = tri_face,
+		.e_count = 6,
+		.v_count = 3,
+		.f_count = 2,
+	};
+
+	return tri;
 }
 
 struct dcel DcelBox(struct arena *mem, const vec3 hw)

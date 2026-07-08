@@ -38,7 +38,7 @@ static void ds_WSDequeStaticAssert(void)
 static void ds_WorkerStaticAssert(void)
 {
     ds_StaticAssert((u64) &((struct ds_Worker *)0)->thr == 0, "");
-    ds_StaticAssert((u64) &((struct ds_Worker *)0)->a_mem_frame_clear == 8, "");
+    ds_StaticAssert((u64) &((struct ds_Worker *)0)->a_mem_frame_switch == 8, "");
     ds_StaticAssert(sizeof(struct ds_Worker) == DS_CACHE_LINE, "Unexpected size of ds_Worker");
 }
 
@@ -263,10 +263,10 @@ void ds_TrySeedAndRunJobs(struct ds_Worker *w, const u32 thread)
 {
     ProfZone;
 
-    if (AtomicLoadRlx32(&w->a_mem_frame_clear))
+    if (AtomicLoadRlx32(&w->a_mem_frame_switch))
     {
-        AtomicStoreRlx32(&w->a_mem_frame_clear, 0);
-        ArenaFlush(&g_tl_self->frame);
+        AtomicStoreRlx32(&w->a_mem_frame_switch, 0);
+        ArenaSwitchAndFlushFrame();
     }
 
     /* When we get here, we know for sure that the deque we own is empty. We check if there are any special
@@ -423,7 +423,7 @@ void ds_JobSchedulerFrameClear(void)
 {
 	for (u32 i = 0; i < g_scheduler->worker_count; ++i)
 	{
-		AtomicStoreRel32(&g_scheduler->worker[i].a_mem_frame_clear, 1);
+		AtomicStoreRel32(&g_scheduler->worker[i].a_mem_frame_switch, 1);
 	}
 }
 

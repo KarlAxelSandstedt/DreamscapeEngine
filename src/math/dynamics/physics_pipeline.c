@@ -244,13 +244,30 @@ static u32 NarrowPhaseJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPh
     
     ds_Assert(s0->body != s1->body);
 
-
+    //TODO simplify with table lookups based on cshape_type...
+    //TODO repetition between the two cases...
     if (s0->cshape_type == C_SHAPE_TRI_MESH || s1->cshape_type == C_SHAPE_TRI_MESH)
     {
+        if (s0->cshape_type == C_SHAPE_CONVEX_HULL || s1->cshape_type == C_SHAPE_CONVEX_HULL)
+        {
+            const struct sat_CacheKey key = sat_CacheKeyCanonical(
+                ((u64) b0->tag << 32) | job->key_in.body0,
+                ((u64) s0->tag << 32) | job->key_in.shape0,
+                ((u64) b1->tag << 32) | job->key_in.body1,
+                ((u64) s1->tag << 32) | job->key_in.shape1);
+ 
+            struct slot slot = sat_CacheLookup(pipeline->cdb, &key);
+            if (!slot.address)
+            {
+                slot = sat_CacheAdd(pipeline->cdb, &key);
+            }
+            job->cache_index = slot.index;
+            job->cache = slot.address;
+        }
 
         u32 *tri;
-        job->collision_count = ds_ShapeMeshContact(&g_tl_self->frame, &job->manifold, &tri, pipeline, s0, s1);
-        job->key = ArenaPush(&g_tl_self->frame, job->collision_count*sizeof(struct ds_ContactKey));
+        job->collision_count = ds_ShapeMeshContact(g_tl_self->frame, &job->manifold, &tri, job->cache, pipeline, s0, s1);
+        job->key = ArenaPush(g_tl_self->frame, job->collision_count*sizeof(struct ds_ContactKey));
         if (s0->cshape_type == C_SHAPE_TRI_MESH)
         {
             for (u32 i = 0; i < job->collision_count; ++i)
@@ -292,7 +309,7 @@ static u32 NarrowPhaseJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPh
 
         if (job->collision_count)
         {
-            job->manifold = ArenaPushAlignedMemcpy(&g_tl_self->frame, &manifold, sizeof(struct c_Manifold), 4);
+            job->manifold = ArenaPushAlignedMemcpy(g_tl_self->frame, &manifold, sizeof(struct c_Manifold), 4);
             
             if (!c_ManifoldCheck(job->manifold))
             {
@@ -710,7 +727,7 @@ static u32 IslandJobSolve(struct ds_IslandJobPhase *phase, struct ds_IslandSolve
     struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
     struct ds_Island *is = (struct ds_Island *) pipeline->is_db.island_pool.buf + job->island;
 	job->body_count = is->body_list.count;
-	job->bodies = IslandSolve(&g_tl_self->frame, pipeline, is, &job->asleep, phase->timestep);
+	job->bodies = IslandSolve(g_tl_self->frame, pipeline, is, &job->asleep, phase->timestep);
 
 	ProfZoneEnd;
 

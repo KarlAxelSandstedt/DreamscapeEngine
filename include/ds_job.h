@@ -116,7 +116,7 @@ TODO: We don't really use this at the moment...
 struct ds_Worker
 {
 	ds_Thread *	    thr;
-	u32 		    a_mem_frame_clear;	/* atomic sync-point: if set, on next task run flush mem_frame. */
+	u32 		    a_mem_frame_switch;	/* atomic sync-point: if set, on next task run flush mem_frame. */
     u8              pad[64 - sizeof(void *) - sizeof(u32)];
 };
 

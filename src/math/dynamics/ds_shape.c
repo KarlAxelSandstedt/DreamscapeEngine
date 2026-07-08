@@ -329,7 +329,7 @@ u32 (*c_contact_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(struct arena *, struct c_
 	{ 0,	                        0,                          0,                          0, },
 };
 
-u32 (*c_mesh_contact_methods[C_SHAPE_COUNT])(struct arena *, struct c_Manifold **, u32 **, const struct c_Shape *[2], const ds_Transform [2], const u32) =
+u32 (*c_mesh_contact_methods[C_SHAPE_COUNT])(struct arena *, struct c_Manifold **, u32 **, struct sat_Cache *, const struct c_Shape *[2], const ds_Transform [2], const u32) =
 {
     c_TriMeshBvhSphereContact,
     c_TriMeshBvhCapsuleContact,
@@ -413,7 +413,7 @@ u32 ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_C
 	return collision_count;
 }
 
-u32 ds_ShapeMeshContact(struct arena *frame, struct c_Manifold **manifold, u32 **triangle, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2)
+u32 ds_ShapeMeshContact(struct arena *frame, struct c_Manifold **manifold, u32 **triangle, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2)
 {
     ds_Transform t_arr[2];
 
@@ -426,7 +426,7 @@ u32 ds_ShapeMeshContact(struct arena *frame, struct c_Manifold **manifold, u32 *
     const u32 ref = (s1->body < s2->body)
                     ? 0
                     : 1;
-	return c_mesh_contact_methods[c_s2->type](frame, manifold, triangle, c_s_arr, t_arr, ref);
+	return c_mesh_contact_methods[c_s2->type](frame, manifold, triangle, cache, c_s_arr, t_arr, ref);
 }
 
 

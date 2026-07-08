@@ -45,10 +45,13 @@ static void ds_ThreadAllocMemory(struct arena *mem, struct ds_Thread *thr, const
     {
         thr->scratch[i] = ArenaAlloc(mem, scratch_size);
     }
-    thr->frame = ArenaAlloc(mem, frame_size);
+    thr->frame_arr[0] = ArenaAlloc(mem, frame_size);
+    thr->frame_arr[1] = ArenaAlloc(mem, frame_size);
+    thr->frame_index = 0;
+    thr->frame = thr->frame_arr + thr->frame_index;
     ArenaPush(mem, DS_CACHE_LINE);
 
-    if (!thr->scratch || !thr->scratch[thr->scratch_count-1].stack_ptr || !thr->frame.stack_ptr)
+    if (!thr->scratch || !thr->scratch[thr->scratch_count-1].stack_ptr || !thr->frame_arr[1].stack_ptr)
     {
 		LogString(T_SYSTEM, S_FATAL, "Failed to alloc thread memory, aborting.");
 		FatalCleanupAndExit();
@@ -73,6 +76,13 @@ void ArenaPopScratch(void)
 {
     ds_Assert(g_tl_self->scratch_next);
     g_tl_self->scratch_next -= 1;
+}
+
+void ArenaSwitchAndFlushFrame(void)
+{
+    g_tl_self->frame_index = 1 - g_tl_self->frame_index;
+    g_tl_self->frame = g_tl_self->frame_arr + g_tl_self->frame_index;
+    ArenaFlush(g_tl_self->frame);
 }
 
 #if __DS_PLATFORM__ == __DS_LINUX__ ||__DS_PLATFORM__ == __DS_WEB__

@@ -63,7 +63,9 @@ struct ds_Thread
     u32             scratch_next;
     u32             scratch_count;
     struct arena *  scratch;
-    struct arena    frame;
+    struct arena    frame_arr[2];   /* Double buffered frame arena for easy caching */
+    struct arena *  frame;
+    u32             frame_index;
 };
 
 #elif __DS_PLATFORM__ == __DS_WIN64__
@@ -85,7 +87,9 @@ struct ds_Thread
     u32             scratch_next;
     u32             scratch_count;
     struct arena *  scratch;
-    struct arena    frame;
+    struct arena    frame_arr[2];   /* Double buffered frame arena for easy caching */
+    struct arena *  frame;
+    u32             frame_index;
 };
 
 #endif
@@ -94,6 +98,8 @@ struct ds_Thread
 struct arena *  ArenaPushScratch(void);
 /* Pop thread owned Scratch Arena */
 void            ArenaPopScratch(void);
+/* Switch thread owned frame arenas and clear the switched in arena. */
+void            ArenaSwitchAndFlushFrame(void);
 
 /* Alloc and initiate master thread information; should only be called once! */
 void        ds_ThreadMasterInit(struct arena *mem, const u64 framesize, const u64 scratch_size, const u32 scratch_count);

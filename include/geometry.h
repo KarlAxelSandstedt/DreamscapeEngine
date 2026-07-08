@@ -360,6 +360,8 @@ struct dcel
 
 /* return dcel { 0 } */
 struct dcel 	DcelEmpty(void);
+/* return dcel tri stub */
+struct dcel     DcelTriStub(void);
 /* return dcel box stub */
 struct dcel 	DcelBoxStub(void);
 /* return arena allocated dcel box with given half widths */
@@ -367,7 +369,7 @@ struct dcel 	DcelBox(struct arena *mem, const vec3 hw);
 /* return arena allocated dcel convex hull of input points. On failure, an empty dcel is returned. */
 struct dcel 	DcelConvexHull(struct arena *mem, const vec3ptr v, const u32 v_count, const f32 tol);
 /* Return support of dcel in given direction, and return supporting vertex index */
-u32		DcelSupport(vec3 support, const vec3 dir, const struct dcel *hull, mat3 rot, const vec3 pos);
+u32		        DcelSupport(vec3 support, const vec3 dir, const struct dcel *hull, mat3 rot, const vec3 pos);
 
 /* TODO: document, go through ... */
 void 		DcelFaceDirection(vec3 dir, const struct dcel *h, const u32 fi); /* not normalized */
