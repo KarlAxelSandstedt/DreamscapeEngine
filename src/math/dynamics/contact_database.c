@@ -341,6 +341,7 @@ struct slot sat_CacheAdd(struct cdb *cdb, const struct sat_CacheKey *key)
 	struct sat_Cache *sat = slot.address;
     sat->key = *key;
     sat->type = SAT_CACHE_NOT_SET;
+    sat->tri_cache_count = 0;
 	sat_CacheTHashMapAdd(&cdb->sat_cache_map, sat, slot.index);
     return slot;
 }

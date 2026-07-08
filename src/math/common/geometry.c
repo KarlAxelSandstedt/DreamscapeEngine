@@ -1421,13 +1421,12 @@ struct dcel DcelBoxStub(void)
 	return box; 
 }
 
-vec3 tri_stub_vertex[3] =
+static vec3 tri_stub_vertex[3] =
 {
 	{  0.0f,  0.0f,  0.0f }, 
 	{  0.0f,  0.0f,  1.0f },	
 	{  1.0f,  0.0f,  0.0f },	
 };
-
 
 static struct dcelFace tri_face[2] =
 {
@@ -1436,7 +1435,6 @@ static struct dcelFace tri_face[2] =
 };
                                                         
 static struct dcelEdge tri_edge[6] =                    
-                                                      
 {
 	{ .origin = 0, .twin = 5,  .face_ccw = 0, },     
 	{ .origin = 1, .twin = 4,  .face_ccw = 0, },    

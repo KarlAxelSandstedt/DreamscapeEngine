@@ -452,23 +452,26 @@ struct c_TriHullCache
     u32 tri;
 	enum sat_CacheType	type;
     
-    struct
-	{
-		u32 body;	/* body (0 or 1) containing face    */
-		u32	face;	/* reference face 	                */
-	};
+    union
+    {
+        struct
+	    {
+	    	u32 body;	/* body (0 or 1) containing face    */
+	    	u32	face;	/* reference face 	                */
+	    };
 
-	struct
-	{
-		u32	edge0;	/* body0 edge   */
-		u32	edge1;	/* body1 edge   */
-	};
+	    struct
+	    {
+	    	u32	edge0;	/* body0 edge   */
+	    	u32	edge1;	/* body1 edge   */
+	    };
 
-	//struct
-	//{
-	//	vec3    separation_axis;
-	//	f32	    separation;
-	//};
+    	//struct
+    	//{
+    	//	vec3    separation_axis;
+    	//	f32	    separation;
+    	//};
+    };
 };
 
 struct sat_Cache
