@@ -1513,6 +1513,14 @@ struct plane DcelFacePlane(const struct dcel *h, mat3 rot, const vec3 pos, const
 	return PlaneConstruct(n, p);
 }
 
+struct plane DcelFacePlaneLocal(const struct dcel *h, const u32 fi)
+{
+    const u32 i0  = h->e[h->f[fi].first + 0].origin;
+    const u32 i1  = h->e[h->f[fi].first + 1].origin;
+    const u32 i2  = h->e[h->f[fi].first + 2].origin;
+    return PlaneConstructFromCcwTriangle(h->v[i0], h->v[i1], h->v[i2]);
+}
+
 struct segment DcelFaceClipSegment(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi, const struct segment *s)
 {
 	vec3 f_n, p_n, p_p0, p_p1;

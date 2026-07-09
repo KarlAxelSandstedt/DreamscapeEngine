@@ -194,7 +194,7 @@ void cdb_Validate(const struct ds_RigidBodyPipeline *pipeline)
 				else
 				{
 					ds_Assert(prev == tmp->nll_prev[1]);
-					ds_Assert(tmp->key.shape1 == c->key.shape1);
+					ds_Assert(tmp->key.shape1 == c->key.shape1 || INDIRECT_SHAPE_CHECK(c->key.shape1));
 					prev = k;
 					k = tmp->nll_next[1];
 				}

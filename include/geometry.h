@@ -180,9 +180,9 @@ f32 		    PlaneSegmentClipParameter(const struct plane *pl, const struct segment
 u32 		    PlaneSegmentClip(vec3 clip, const struct plane *pl, const struct segment *s);
 /* return 1 if clip happened, otherwise 0 */
 u32 		    PlaneSegmentTest(const struct plane *pl, const struct segment *s); 
-/* return signed distance (measured in |plane.normal_direction| units) between plane and point (infront of plane == positive) */
+/* return signed distance multiplied by |normal_direction| between plane and point (infront of plane == positive) */
 f32 		    PlanePointSignedDistance(const struct plane *pl, const vec3 p);
-/* return absolute distance (measured in |plane.normal_direction| units) between plane and point */
+/* return absolute distance multiplied by |normal_direction| between plane and point */
 f32 		    PlanePointDistance(const struct plane *pl, const vec3 p);
 /* return the signed distance (measured in |plane.normal_direction| units) of point p to plane pl, and set the projection of p onto pl. */
 f32 		    PlanePointProjection(vec3 proj, const struct plane *pl, const vec3 p);
@@ -371,10 +371,15 @@ struct dcel 	DcelConvexHull(struct arena *mem, const vec3ptr v, const u32 v_coun
 /* Return support of dcel in given direction, and return supporting vertex index */
 u32		        DcelSupport(vec3 support, const vec3 dir, const struct dcel *hull, mat3 rot, const vec3 pos);
 
+/* Return the transformed plane defined by the given face */
+struct plane 	DcelFacePlane(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi);
+/* Return the plane defined by the given face */
+struct plane 	DcelFacePlaneLocal(const struct dcel *h, const u32 fi);
+
+
 /* TODO: document, go through ... */
 void 		DcelFaceDirection(vec3 dir, const struct dcel *h, const u32 fi); /* not normalized */
 void 		DcelFaceNormal(vec3 normal, const struct dcel *h, const u32 fi); /* normalized */
-struct plane 	DcelFacePlane(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi);
 struct plane 	DcelFaceClipPlane(const struct dcel *h, mat3 rot, const vec3 pos, const vec3 face_normal, const u32 e0, const u32 e1); /* Return clip plane of face containing edge e0e1, orthogonal to the face normal */
 struct segment 	DcelFaceClipSegment(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi, const struct segment *s); /* clip segment against face fi's edge-planes (No projection onto face plane!) */
 u32 		DcelFaceProjectedPointTest(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi, const vec3 p); /* Project p onto face plane and test if it is on the face */

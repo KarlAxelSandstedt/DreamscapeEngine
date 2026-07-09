@@ -419,14 +419,29 @@ u32 ds_ShapeMeshContact(struct arena *frame, struct c_Manifold **manifold, u32 *
 
     const struct c_Shape *c_s1 = strdb_Address(pipeline->cshape_db, s1->cshape_handle);
     const struct c_Shape *c_s2 = strdb_Address(pipeline->cshape_db, s2->cshape_handle);
-    const struct c_Shape *c_s_arr[2] = { c_s1, c_s2 };
 
-    ds_ShapeWorldTransform(t_arr + 0, pipeline, s1);
-    ds_ShapeWorldTransform(t_arr + 1, pipeline, s2);
-    const u32 ref = (s1->body < s2->body)
+    u32 collision_count;
+    if (c_s2->type < c_s1->type)
+    {
+        const u32 ref = (s1->body < s2->body)
                     ? 0
                     : 1;
-	return c_mesh_contact_methods[c_s2->type](frame, manifold, triangle, cache, c_s_arr, t_arr, ref);
+        const struct c_Shape *c_s_arr[2] = { c_s1, c_s2 };
+        ds_ShapeWorldTransform(t_arr + 0, pipeline, s1);
+        ds_ShapeWorldTransform(t_arr + 1, pipeline, s2);
+	    collision_count = c_mesh_contact_methods[c_s2->type](frame, manifold, triangle, cache, c_s_arr, t_arr, ref);
+    }
+    else
+    {
+        const u32 ref = (s1->body < s2->body)
+                    ? 1
+                    : 0;
+        const struct c_Shape *c_s_arr[2] = { c_s2, c_s1 };
+        ds_ShapeWorldTransform(t_arr + 0, pipeline, s2);
+        ds_ShapeWorldTransform(t_arr + 1, pipeline, s1);
+	    collision_count = c_mesh_contact_methods[c_s1->type](frame, manifold, triangle, cache, c_s_arr, t_arr, ref);
+    }
+    return collision_count;
 }
 
 
