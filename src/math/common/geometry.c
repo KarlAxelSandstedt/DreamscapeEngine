@@ -347,6 +347,14 @@ struct plane PlaneConstructNormalizedFromCcwTriangle(const vec3 a, const vec3 b,
 	return PlaneConstruct(cross, a);
 }
 
+void PlaneNormalize(struct plane *pl)
+{
+    const f32 n_dir_len = Vec3Length(pl->normal_direction);
+    Vec3ScaleSelf(pl->normal_direction, 1.0f/n_dir_len);
+    pl->signed_distance /= n_dir_len;
+    pl->inv_dot_nn = 1.0f;
+}
+
 u32 PlanePointInfrontCheck(const struct plane *pl, const vec3 p)
 {
 	return (PlanePointSignedDistance(pl, p) > 0.0f);

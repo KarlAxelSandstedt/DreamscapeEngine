@@ -160,14 +160,16 @@ struct aabb     BboxSegment(const struct segment *s);
 
 /********************************** plane ***********************************/
 
-/* construct plane with given normal direction n containing point p */
+/* Construct plane with given normal direction n containing point p */
 struct plane 	PlaneConstruct(const vec3 n, const vec3 p); 
-/* construct normalized plane with given normal direction n containing point p */
+/* Construct normalized plane with given normal direction n containing point p */
 struct plane 	PlaneConstructNormalized(const vec3 n, const vec3 p); 
-/* construct plane from CCW triangle abc */
+/* Construct plane from CCW triangle abc */
 struct plane 	PlaneConstructFromCcwTriangle(const vec3 a, const vec3 b, const vec3 c);
-/* construct normalized plane from CCW triangle abc */
+/* Construct normalized plane from CCW triangle abc */
 struct plane 	PlaneConstructNormalizedFromCcwTriangle(const vec3 a, const vec3 b, const vec3 c);
+/* Normalize the plane's normal direction (and update affected internals) */
+void            PlaneNormalize(struct plane *pl);
 /* Return 1 if p is infront of plane, i.e. a positive signed distance, otherwise 0 */
 u32 		    PlanePointInfrontCheck(const struct plane *pl, const vec3 p);
 /* Return 1 if p is behind plane, i.e. a negative signed distance, otherwise 0 */

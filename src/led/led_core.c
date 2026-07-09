@@ -1243,6 +1243,16 @@ void led_WallSmashSimulationSetup(struct led *led)
     const vec3 map_translation = { 0.0f, -25.0f, 0.0f };
     floor_translation[1] -= 50.0f;
 
+    id = Utf8Cstr(sys_win->ui->mem_frame, "led_map");
+    tagged_id = led_NodeAdd(led, id, Utf8Empty());
+    led_NodeSetPosition(led, tagged_id, map_translation);
+    led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_map"));
+    led_NodeSetColor(led, tagged_id, map_color, 1.0f);
+    struct led_Node *led_map = hi_Address(&led->node_hierarchy, ds_IdIndex(tagged_id));
+	vec3 axis = { 0.6f, 1.0f, 0.6f };
+	Vec3ScaleSelf(axis, 1.0f / f32_sqrt(Vec3Length(axis)));
+	const f32 angle = F32_PI / 16.0f;
+	QuatAxisAngle(led_map->transform.rotation, axis, angle);
 
     for (u32 i = 0; i < floor_count; ++i)
     {
@@ -1422,17 +1432,6 @@ void led_WallSmashSimulationSetup(struct led *led)
 	//		}
 	//	}
 	//}
-
-    id = Utf8Cstr(sys_win->ui->mem_frame, "led_map");
-    tagged_id = led_NodeAdd(led, id, Utf8Empty());
-    led_NodeSetPosition(led, tagged_id, map_translation);
-    led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_map"));
-    led_NodeSetColor(led, tagged_id, map_color, 1.0f);
-    struct led_Node *led_map = hi_Address(&led->node_hierarchy, ds_IdIndex(tagged_id));
-	vec3 axis = { 0.6f, 1.0f, 0.6f };
-	Vec3ScaleSelf(axis, 1.0f / f32_sqrt(Vec3Length(axis)));
-	const f32 angle = F32_PI / 16.0f;
-	QuatAxisAngle(led_map->transform.rotation, axis, angle);
 }
 
 void led_Compile(struct led *led)
