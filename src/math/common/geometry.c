@@ -177,6 +177,31 @@ u32 SegmentPointCheck(const struct segment *s, const f32 min_dist_sq)
     return (Vec3Dot(s->dir, s->dir) <= min_dist_sq);
 }
 
+u32 SegmentParallelCheck(const struct segment *s1, const struct segment *s2)
+{
+    /*
+     *  Dot(s1,s2)*Dot(s1*s2) = Dot(s1,s1)*Dot(s2,s2)*cos(theta)^2
+     *                        = Dot(s1,s1)*Dot(s2,s2)*(1-sin(theta)^2)
+     * =>
+     *  Dot(s1,s1)*Dot(s2,s2) - Dot(s1,s2)*Dot(s1,s2) = sin(theta)^2*Dot(s1,s1)*Dot(s2,s2)
+     *
+     *  If the two segments are parallel (and non-zero) the scale invariant test is found
+     *  by setting a suitable upper bound epsilon > sin(theta)^2
+     *
+     *  An ad-hoc angle that we choose is 0.5* degrees, for no other reason that to show
+     *  the analysis of deriving an epsilon given the wanted angle:
+     *
+     *                0.5/360 = theta/2_Pi        
+     * <=>              theta = 0.5 * 2_Pi / 360 ~= 0.008727
+     *  =>      sin(theta)^2 ~= 7.62e-5
+     *
+     */
+	const f32 d1d2 = Vec3Dot(s1->dir, s2->dir);
+    const f32 d1d1_d2d2 = Vec3Dot(s1->dir, s1->dir) * Vec3Dot(s2->dir, s2->dir);
+    const f32 eps = 7.62e-5;
+    return (d1d1_d2d2 > 0.0f) && (d1d1_d2d2 -  d1d2*d1d2 < eps*d1d1_d2d2);
+}
+
 void SegmentClosestParameter(f32 *t1, f32 *t2, const struct segment *s1, const struct segment *s2)
 {
 	vec3 diff;

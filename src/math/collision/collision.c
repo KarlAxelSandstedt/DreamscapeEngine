@@ -2338,11 +2338,8 @@ static void HullContactInternalEECheck(struct sat_EdgeQuery *query, const struct
 	 */
 	if (InternalEEIsMinkowskiFace(n1_1, n1_2, n2_1, n2_2, s1.dir, s2.dir))
 	{
-		const f32 d1d1 = Vec3Dot(s1.dir, s1.dir);
-		const f32 d2d2 = Vec3Dot(s2.dir, s2.dir);
-		const f32 d1d2 = Vec3Dot(s1.dir, s2.dir);
 		/* Skip parallel edge pairs  */
-		if (d1d1*d2d2 - d1d2*d1d2 > F32_EPSILON*100.0f) 
+		if (!SegmentParallelCheck(&s1, &s2)) 
 		{
 			Vec3Cross(e1, s1.dir, s2.dir);
 			Vec3ScaleSelf(e1, 1.0f / Vec3Length(e1));
@@ -3183,7 +3180,6 @@ u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold
         BitVecSetBit(&it.void_bitset, tri_id[2], 1);
     }
 
-
     c_TriMeshBvhIteratorDealloc(&it);
 
     ProfZoneEnd;
@@ -3235,49 +3231,6 @@ static u32 TriCcwPlaneHullContact(struct arena *mem_tmp, struct c_Manifold *cm, 
     ds_Assert(cp_count <= (2*inc_face->count + 3));
 
     return PolygonCcwContact(cm, cm_n, cp, depth, deepest_point, cp_count);
-}
-
-static u32 TriCcwHullPlaneContact(struct arena *mem_tmp, u32 *vertex, struct c_Manifold *cm, const vec3 cm_n, const vec3 tri[3], const struct plane *tri_plane, const struct dcel *hull, const struct plane *hull_plane, const u32 fi)
-{
-	vec3 tmp1, tmp2, n;
-
-    /* (1) if flip 1, the triangle's backside is in contact. */
-    const u32 flip = (Vec3Dot(tri_plane->normal, hull_plane->normal) > 0.0f);
-
-	/* (2) Setup world polygon */
-	const struct dcelFace *face = hull->f + fi;
-    vec3ptr v = ArenaPush(mem_tmp, face->count * sizeof(vec3));
-	struct stackVec3 clip_stack[2];
-	clip_stack[0] = stackVec3Alloc(mem_tmp, 2*3 + face->count, NOT_GROWABLE);
-	clip_stack[1] = stackVec3Alloc(mem_tmp, 2*3 + face->count, NOT_GROWABLE);
-	vec3ptr cp = ArenaPush(mem_tmp, (2*3 + face->count) * sizeof(vec3));
-	f32 *depth = ArenaPush(mem_tmp, (2*3 + face->count) * sizeof(f32));
-    u32 cp_count = 0;
-    u32 cp_deepest = 0;
-
-	for (u32 i = 0; i < face->count; ++i)
-	{
-		const u32 vi = hull->e[face->first + i].origin;
-		Vec3Copy(v[i], hull->v[vi]);
-	}
-
-    stackVec3Push(clip_stack + 0, tri[0]);
-    stackVec3Push(clip_stack + 0, tri[1]);
-    stackVec3Push(clip_stack + 0, tri[2]);
-    PolygonCcwClipNegativeFaceAndProject(cp, depth, &cp_deepest, &cp_count, clip_stack, hull_plane, face->count, v);
-    ds_Assert(cp_count <= 2*3 + face->count);
-
-    const u32 collision = PolygonCcwContact(cm, cm_n, cp, depth, cp_deepest, cp_count);
-    if (cm->v_count == 1)
-    {
-        //TODO get vertex
-    }
-    else if (cm->v_count == 2)
-    {
-        //TODO get vertices 
-    }
-
-	return collision;
 }
 
 //TODO
@@ -3349,10 +3302,14 @@ static u32 TriCcwHullEECheck(struct sat_EdgeQuery *query, const struct plane *tr
     {
 	    if (TriCcwHullEEIsMinkowskiFace(tri_plane->normal, n2_1, n2_2, tri_s[si].dir, hull_s.dir))
 	    {
+            // Inlined SegmentParallelCheck, 
 	    	const f32 d2d2 = Vec3Dot(hull_s.dir, hull_s.dir);
 	    	const f32 d1d2 = Vec3Dot(tri_s[si].dir, hull_s.dir);
+            const f32 d1d1_d2d2 = tri_s_dist_sq[si]*d2d2;
+            /* 0.5 degrees cut-off */
+            const f32 eps = 7.62e-5;    
 	    	/* Skip parallel edge pairs  */
-	    	if (tri_s_dist_sq[si]*d2d2 - d1d2*d1d2 > F32_EPSILON*100.0f) 
+	    	if (d1d1_d2d2 - d1d2*d1d2 >= eps*d1d1_d2d2) 
 	    	{
 	    		Vec3Cross(e1, tri_s[si].dir, hull_s.dir);
 	    		Vec3ScaleSelf(e1, 1.0f / Vec3Length(e1));
@@ -3534,12 +3491,13 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
 	{
         struct arena *tmp = ArenaPushScratch();
 		vec3 cm_n;
+        new_cache->type = SAT_CACHE_CONTACT_FV;
+		new_cache->v_count = 0;
 		if (f_query[0].depth > f_query[1].depth)
 		{
             const struct plane contact_plane = PlaneConstructNormalized(f_query[0].normal, tri[0]);
         	new_cache->body = 0;
 			new_cache->face = f_query[0].fi;
-			new_cache->vertex = U32_MAX;
             if (ref == 0)
             {
                 {
@@ -3581,46 +3539,72 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
 		{
 			new_cache->body = 1;
 			new_cache->face = f_query[1].fi;
-            new_cache->vertex = U32_MAX;
+            struct dcel hull_tri = DcelTriStub();
+            hull_tri.v = (vec3ptr) tri;
             if (ref == 1)
             {
-                {
-                    ProfZoneNamed("Specialzed2");
-                    colliding = TriCcwHullPlaneContact(tmp, &new_cache->vertex, manifold, cm_n, tri, &tri_plane, hull, &min_plane, f_query[1].fi);
-                    ProfZoneEnd;
-                }
-                {
-                    ProfZoneNamed("General2");
-                    struct dcel hull_tri = DcelTriStub();
-                    hull_tri.v = (vec3ptr) tri;
-			        colliding = HullContactInternalFaceContact(tmp, manifold, f_query[1].normal, hull, f_query[1].normal, f_query[1].fi, hull->v, &hull_tri, hull_tri.v);
-                    ProfZoneEnd;
-                }
+                
+			    colliding = HullContactInternalFaceContact(tmp, manifold, f_query[1].normal, hull, f_query[1].normal, f_query[1].fi, hull->v, &hull_tri, hull_tri.v);
             }
             else
             {
                 Vec3Scale(cm_n, f_query[1].normal, -1.0f);
-                {
-                    ProfZoneNamed("Specialzed2");
-                    colliding = TriCcwHullPlaneContact(tmp, &new_cache->vertex, manifold, cm_n, tri, &tri_plane, hull, &min_plane, f_query[1].fi);
-                    ProfZoneEnd;
-                }
-                {
-                    ProfZoneNamed("General2");
-                    struct dcel hull_tri = DcelTriStub();
-                    hull_tri.v = (vec3ptr) tri;
-			        colliding = HullContactInternalFaceContact(tmp, manifold, cm_n, hull, f_query[1].normal, f_query[1].fi, hull->v, &hull_tri, hull_tri.v);
-                    ProfZoneEnd;
-                }
+			    colliding = HullContactInternalFaceContact(tmp, manifold, cm_n, hull, f_query[1].normal, f_query[1].fi, hull->v, &hull_tri, hull_tri.v);
                 Vec3TranslateScaled(manifold->v[0], manifold->n, manifold->depth[0]);
                 Vec3TranslateScaled(manifold->v[1], manifold->n, manifold->depth[1]);
                 Vec3TranslateScaled(manifold->v[2], manifold->n, manifold->depth[2]);
                 Vec3TranslateScaled(manifold->v[3], manifold->n, manifold->depth[3]);
             }
+
+            /* Setup delayed vertices (if any) */
+            if (manifold->v_count == 1)
+            {
+                const f32 diff[3] =
+                {
+                    Vec3DistanceSquared(manifold->v[0], tri[0]), 
+                    Vec3DistanceSquared(manifold->v[0], tri[1]), 
+                    Vec3DistanceSquared(manifold->v[0], tri[2]), 
+                };
+
+                f32 min_diff = diff[0];
+                new_cache->v_count = 1;
+                new_cache->v[0] = 0;
+
+                if (diff[1] < min_diff)
+                {
+                    min_diff = diff[1];
+                    new_cache->v[0] = 1;
+                }
+
+                if (diff[2] < min_diff)
+                {
+                    new_cache->v[0] = 2;
+                }
+            }
+            else if (manifold->v_count == 2)
+            {
+                const struct segment c_s = SegmentConstruct(manifold->v[0], manifold->v[1]);
+                const struct segment s[3] =
+                {
+                    SegmentConstruct(tri[0],tri[1]),
+                    SegmentConstruct(tri[1],tri[2]),
+                    SegmentConstruct(tri[2],tri[0]),
+                };
+
+                for (u32 i = 0; i < 3; ++i)
+                {
+                    if (SegmentParallelCheck(s + i, &c_s))
+                    {
+                        new_cache->v_count = 2;
+                        new_cache->v[0] = i;
+                        new_cache->v[1] = (i+1) % 3;
+                        break;
+                    }
+                }
+            }
+
 		}
         ArenaPopScratch();
-
-        new_cache->type = SAT_CACHE_CONTACT_FV;
 	}
 	/* edgeContact */
 	else
@@ -3727,14 +3711,6 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
 	    				Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
 	    				FatalCleanupAndExit();
                     }
-
-                    //TODO display something...
-                    //if (!contact)
-                    //{
-                    //    COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(c->tv.t[0], c->c[1]), Vec4Inline(0.8f, 0.8f, 0.4f, 1.0f));
-                    //    COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(c->tv.t[1], c->c[1]), Vec4Inline(0.8f, 0.8f, 0.4f, 1.0f));
-                    //    COLLISION_DEBUG_ADD_SEGMENT(SegmentConstruct(c->tv.t[2], c->c[1]), Vec4Inline(0.8f, 0.8f, 0.4f, 1.0f));
-                    //}
                 }
 	    	}
 	    }
@@ -3754,7 +3730,7 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
     for (u32 i = 0; i < it.contact_count; ++i)
     {
         struct c_TriMeshBvhContact *c = it.contact + i;
-        if (c->cache.type == SAT_CACHE_CONTACT_FV && c->cache.body == 0)
+        if (c->cache.type == SAT_CACHE_CONTACT_FV && c->cache.v_count == 0)
         {
             struct c_Manifold *m = (*manifold) + collision_count;
             u32 *t = (*tri) + collision_count;
@@ -3780,8 +3756,6 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
         }
     }
 
-    //TODO check edge or vertex; derive correct v0,v1
-
     static const u32 edge_to_v0_map[6] = { 0, 1, 2, 0, 2, 1 };
     static const u32 edge_to_v1_map[6] = { 1, 2, 0, 2, 1, 0 };
     for (u32 i = 0; i < it.delayed_count; ++i)
@@ -3790,12 +3764,23 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
         const u32 *tri_id = it.mesh->tri[c->tri];
         
         u32 voided;
-        voided = (c->cache.type == SAT_CACHE_CONTACT_FV)
-            ? U32_MAX // BitVecGetBit(&it.void_bitset, c->cache.vertex)
-            : BitVecGetBit(&it.void_bitset, edge_to_v0_map[c->cache.edge0]) && BitVecGetBit(&it.void_bitset, edge_to_v1_map[c->cache.edge0]);
+        if (c->cache.type == SAT_CACHE_CONTACT_FV)
+        {
+            ds_Assert(c->cache.body == 1);
+            ds_Assert(c->cache.v_count == 1 || c->cache.v_count == 2);
 
-        //TODO
-        //ds_Assert(voided != U32_MAX);
+            voided = BitVecGetBit(&it.void_bitset, tri_id[ c->cache.v[0] ]);
+            if (c->cache.v_count == 2)
+            {
+                voided = voided && BitVecGetBit(&it.void_bitset, tri_id[ c->cache.v[1] ]);
+            }
+        }
+        else
+        {
+            const u32 v0 = tri_id[ edge_to_v0_map[c->cache.edge0] ];
+            const u32 v1 = tri_id[ edge_to_v1_map[c->cache.edge0] ];
+            voided = BitVecGetBit(&it.void_bitset, v0) && BitVecGetBit(&it.void_bitset, v1);
+        }
 
         if (!voided)
         {

@@ -456,9 +456,22 @@ struct c_TriHullCache
     {
         struct
 	    {
-	    	u32 body;	/* body (0 or 1) containing face    */
-            u32 vertex; /* incident vertex                  */
-	    	u32	face;	/* reference face 	                */
+	    	u32 body;	/* body (0 or 1) containing face        */
+	    	u32	face;	/* reference face 	                    */
+
+            /*
+             * TODO: This information be stored in the cache, since if we are going
+             * to use this cached contact data again, we must know the triangle is
+             * to delay these specific vertices...
+             *
+             * If body == 1, the reference face is on the hull, so
+             * we must check if the generated contact points on the
+             * triangle is either on an edge (v_count == 2), or 
+             * a vertex (v_count == 1), so we can correctly delay the
+             * contact. If v_count in neither 1 or 2, we ignore v[].
+             */
+            u32 v_count;
+            u32 v[2];
 	    };
 
 	    struct

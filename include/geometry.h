@@ -142,6 +142,8 @@ f32 		RaySegmentDistanceSquared(vec3 r_c, vec3 s_c, const struct ray *ray, const
 struct segment 	SegmentConstruct(const vec3 p0, const vec3 p1);
 /* Return 1 if the end-points of s are within a distance of sqrt(min_dist_sq) of each other, otherwise return 0. */
 u32             SegmentPointCheck(const struct segment *s, const f32 min_dist_sq);
+/* Return 1 if s1 and s2 are parallel, otherwise return 0. */
+u32             SegmentParallelCheck(const struct segment *s1, const struct segment *s2);
 /* return squared distance between s1 and s2; set c1, c2 to closest point on s1, s2 respectively  */
 f32 		    SegmentDistanceSquared(vec3 c1, vec3 c2, const struct segment *s1, const struct segment *s2);
 /* return parameters t1,t2 of closest points c1,c2 on s1,s2 such that ci = si.p0(1-ti) + s1.p1*ti  */
