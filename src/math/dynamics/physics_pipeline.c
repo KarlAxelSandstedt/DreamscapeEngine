@@ -1027,6 +1027,6 @@ void PhysicsPipelinePrintUsage(const struct ds_RigidBodyPipeline *pipeline)
     fprintf(stderr, "\tislands:                     %u\n", pipeline->is_db.island_pool.count);
     fprintf(stderr, "\tcontacts:                    %u\n", pipeline->cdb->contact_net.pool.count);
     fprintf(stderr, "\tsat caches (max):            %u\n", AtomicLoadRlx32(&pipeline->cdb->sat_cache_pool.a_count_max));
-    fprintf(stderr, "\tcontact bitvector size:      %lu\n", pipeline->cdb->contact_persistent_usage.block_count*sizeof(u64));
-    fprintf(stderr, "\tsat cache bitvector size:    %lu\n", pipeline->cdb->sat_cache_persistent_usage.block_count*sizeof(u64));
+    fprintf(stderr, "\tcontact bitvector size:      %lu\n", (long unsigned) pipeline->cdb->contact_persistent_usage.block_count*sizeof(u64));
+    fprintf(stderr, "\tsat cache bitvector size:    %lu\n", (long unsigned) pipeline->cdb->sat_cache_persistent_usage.block_count*sizeof(u64));
 }

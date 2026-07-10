@@ -25,6 +25,7 @@ extern "C" {
 #endif
 
 #include "ds_allocator.h"
+#include "ds_math.h"
 
 /****************** GEOMETRIC PRIMITIVES ******************/
 
@@ -156,6 +157,10 @@ f32		        SegmentPointProjectedBcParameter(const struct segment *s, const vec
 f32 		    SegmentPointClosestBcParameter(const struct segment *s, const vec3 p);
 /* set bc_p = s.p0*(1-t) + s.p1*t */
 void 		    SegmentBc(vec3 bc_p, const struct segment *s, const f32 t); 	
+
+
+/* Return the segment resulting from transforming the given capsule. */
+struct segment  SegmentCapsuleTransform(const struct capsule *cap, const ds_Transform *t);
 
 /* Return the bounding box of the segment  */
 struct aabb     BboxSegment(const struct segment *s);

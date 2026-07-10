@@ -911,7 +911,7 @@ struct ds_NarrowPhaseJob
     u32                         cache_index;
     u32                         collision_count;
     u32                         valid;
-    u8                          pad[12];
+    u8                          pad[DS_CACHE_LINE - sizeof(struct ds_ContactKey) - 3*sizeof(void*) - 3*sizeof(u32)];
 };
 
 struct ds_CollisionJobPhase

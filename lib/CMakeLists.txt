@@ -1,12 +1,31 @@
 cmake_minimum_required(VERSION 3.14.3)
 
 if (DEFINED EMSCRIPTEN)
-	# Needed due to header issues in freetype/buids/unix/ftsystem.c (Does not find open/read)
-	set(HAVE_UNISTD_H 1 CACHE BOOL "Trick freetype to use unistd.h" FORCE)
-	set(HAVE_FCNTL_H 1 CACHE BOOL "Trick freetype to use fcntl.h" FORCE)
-	#set(CMAKE_FIND_ROOT_PATH "$$ {EMSCRIPTEN_SYSROOT}" " $${CMAKE_FIND_ROOT_PATH}")
-	#include_directories("${EMSCRIPTEN_SYSROOT}/include")
-	#add_definitions(-D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700)
+    ## Needed due to header issues in freetype/buids/unix/ftsystem.c (Does not find open/read)
+	#set(HAVE_UNISTD_H 1 CACHE BOOL "Trick freetype to use unistd.h" FORCE)
+	#set(HAVE_FCNTL_H 1 CACHE BOOL "Trick freetype to use fcntl.h" FORCE)
+	##set(CMAKE_FIND_ROOT_PATH "$$ {EMSCRIPTEN_SYSROOT}" " $${CMAKE_FIND_ROOT_PATH}")
+	##include_directories("${EMSCRIPTEN_SYSROOT}/include")
+	##add_definitions(-D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700)
+
+    list(APPEND DS_FREETYPE_VARS
+        -DHAVE_UNISTD_H=1
+        -DHAVE_FCNTL_H=1
+    )
+
+    list(APPEND DS_SDL3_VARS
+        -DSDL_WAYLAND=ON
+        -DSDL_X11=OFF
+        -DSDL_VIDEO=ON          # keep video but without host backends
+        -DSDL_AUDIO=ON
+        -DSDL_JOYSTICK=ON
+        -DSDL_HAPTIC=ON
+        -DSDL_POWER=ON
+    )
+
+    list(APPEND DS_FORWARD_VARS
+        -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
+    )
 endif()
 
 set(DS_FORWARD_VARS
@@ -17,13 +36,16 @@ set(DS_FORWARD_VARS
     -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
     -DCMAKE_EXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}
     -DCMAKE_SHARED_LINKER_FLAGS=${CMAKE_SHARED_LINKER_FLAGS}
-    -DCMAKE_STATIC_LINKER_FLAGS=${CMAKE_STATIC_LINKER_FLAGS})
+    -DCMAKE_STATIC_LINKER_FLAGS=${CMAKE_STATIC_LINKER_FLAGS}
+    ${DS_FORWARD_VARS}
+)
 
 ExternalProject_Add(SDL3
     SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/SDL"
     BINARY_DIR "${CMAKE_BINARY_DIR}/lib/SDL"
     CMAKE_ARGS 
         ${DS_FORWARD_VARS}
+        ${DS_SDL3_VARS}
         -DSDL_STATIC=ON
         -DSDL_SHARED=OFF
         -DSDL_TESTS=OFF
@@ -48,7 +70,9 @@ endif()
 ExternalProject_Add(freetype
     SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/freetype"
     BINARY_DIR "${CMAKE_BINARY_DIR}/lib/freetype"
-    CMAKE_ARGS ${DS_FORWARD_VARS}
+    CMAKE_ARGS 
+        ${DS_FREETYPE_VARS}
+        ${DS_FORWARD_VARS}
     BUILD_ALWAYS OFF
     INSTALL_DIR "${DS_INSTALL_PATH}"
     BUILD_BYPRODUCTS "${DS_INSTALL_PATH}/lib/${LIB_PREFIX}${FREETYPE}${STATIC_EXT}"

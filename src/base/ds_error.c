@@ -76,6 +76,7 @@ void FatalCleanupAndExit(void)
 	//TODO spin threads that di not acquire lock or exit or something...
 }
 
+#if __DS_PLATFORM__ == __DS_LINUX__
 utf8 Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 code)
 {
 	ds_Assert(bufsize > 0);
@@ -90,6 +91,25 @@ utf8 Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 cod
 
 	return err_str;
 }
+#else
+utf8 Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 code)
+{
+    /* Note: Emscripten seems to comply with XSI, so need separate function here */
+	ds_Assert(bufsize > 0);
+
+    char tmpbuf[ERROR_BUFSIZE];
+    char *str = tmpbuf;
+	if (strerror_r(code, (char *) tmpbuf, ERROR_BUFSIZE) != 0)
+	{
+        str = "";
+		Log(T_SYSTEM, S_ERROR, "strnlen failed to determine string length in %s, most likely due to no null-termination? Fix.", __func__);
+	}
+
+    const utf8 err_str = Utf8CstrBuffered(buf, bufsize, str);
+
+	return err_str;
+}
+#endif
 
 #elif __DS_PLATFORM__ == __DS_WIN64__
 

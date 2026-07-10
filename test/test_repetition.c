@@ -297,6 +297,7 @@ u32 rt_TestingCheck(struct rt *tester)
 {
 	u32 status = 0;
 
+#if !(__DS_PLATFORM__ == __DS_WEB__)
 	if (tester->state == RT_TESTING)
 	{
 		if (tester->enter_count)
@@ -369,12 +370,14 @@ u32 rt_TestingCheck(struct rt *tester)
 			rt_Error(tester, __FILE__, __LINE__, "No timed region in test");
 		}
 	}	
+#endif
 
 	return status;
 }
 
 void rt_Wave(struct rt *tester, const u64 bytes_to_process, const u64 tsc_freq, const u64 tsc_retry_max, const u32 print)
 {
+#if !(__DS_PLATFORM__ == __DS_WEB__)
 	if (tester->state == RT_UNINITIALIZED)
 	{
 		tester->bytes_to_process = bytes_to_process;
@@ -410,10 +413,12 @@ void rt_Wave(struct rt *tester, const u64 bytes_to_process, const u64 tsc_freq, 
 	tester->frontend_stalled_cycles_in_current_test = 0;
 	tester->backend_stalled_cycles_in_current_test = 0;
 	tester->cycles_in_current_test = 0;
+#endif
 }
 
 void rt_BeginTime(struct rt *tester)
 {
+#if !(__DS_PLATFORM__ == __DS_WEB__)
 	//os_enable_counters(tester);
 	//struct os_event_format format = { 0 };
 	//os_get_counters(tester, tester->pf_fd, &format);
@@ -424,10 +429,12 @@ void rt_BeginTime(struct rt *tester)
 	//tester->cycles_in_current_test -= format.cycles;
 	tester->enter_count += 1;
 	tester->tsc_in_current_test -= Rdtsc();
+#endif
 }
 
 void rt_EndTime(struct rt *tester)
 {
+#if !(__DS_PLATFORM__ == __DS_WEB__)
 	tester->tsc_in_current_test += Rdtsc();
 	tester->exit_count += 1;
 	//struct os_event_format format = { 0 };
@@ -438,6 +445,7 @@ void rt_EndTime(struct rt *tester)
 	//tester->backend_stalled_cycles_in_current_test += format.backend_stalled_cycles;
 	//tester->cycles_in_current_test += format.cycles;
 	//os_disable_counters(tester);
+#endif
 }
 
 void rt_PrintStatistics(const struct rt *tester, FILE *file)

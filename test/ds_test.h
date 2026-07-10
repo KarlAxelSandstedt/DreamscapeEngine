@@ -25,6 +25,8 @@ extern "C" {
 #endif
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "ds_base.h"
 #include "ds_math.h"

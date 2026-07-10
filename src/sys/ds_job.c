@@ -38,23 +38,23 @@ static void ds_WSDequeStaticAssert(void)
 static void ds_WorkerStaticAssert(void)
 {
     ds_StaticAssert((u64) &((struct ds_Worker *)0)->thr == 0, "");
-    ds_StaticAssert((u64) &((struct ds_Worker *)0)->a_mem_frame_switch == 8, "");
+    ds_StaticAssert((u64) &((struct ds_Worker *)0)->a_mem_frame_switch < DS_CACHE_LINE, "");
     ds_StaticAssert(sizeof(struct ds_Worker) == DS_CACHE_LINE, "Unexpected size of ds_Worker");
 }
 
 static void ds_JobSchedulerStaticAssert(void)
 {
     ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->worker == 0, "");
-    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->deque == 8, "");
-    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->seed_deque == 16, "");
-    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->phase == 24, "");
-    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->worker_count == 32, "");
-    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->a_running == 36, "");
-    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->steal_attempts == 40, "");
-    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->jobs_are_available == 64, "");
-    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->a_workers_waiting == 128, "");
-    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->a_seeds_remaining == 192, "");
-    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->phase_completed == 256, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->deque < DS_CACHE_LINE, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->seed_deque < DS_CACHE_LINE, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->phase < DS_CACHE_LINE, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->worker_count < DS_CACHE_LINE, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->a_running < DS_CACHE_LINE, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->steal_attempts < DS_CACHE_LINE, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->jobs_are_available == DS_CACHE_LINE, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->a_workers_waiting == 2*DS_CACHE_LINE, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->a_seeds_remaining == 3*DS_CACHE_LINE, "");
+    ds_StaticAssert((u64) &((struct ds_JobScheduler *)0)->phase_completed == 4*DS_CACHE_LINE, "");
     ds_StaticAssert(sizeof(struct ds_JobScheduler) == 5*DS_CACHE_LINE, "Unexpected size of ds_JobScheduler");
 }
 

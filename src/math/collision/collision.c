@@ -1245,21 +1245,12 @@ f32 c_CapsuleSphereDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds
 
 	const struct capsule *cap = &s1->capsule;
 	const f32 r_sum = cap->radius + s2->sphere.radius;
-
-	mat3 rot;
-	Mat3Quat(rot, t1->rotation);
-
-	vec3 s_p1, s_p2, diff;
-	Vec3Sub(c2, t2->position, t1->position);
-	s_p1[0] = rot[1][0] * cap->half_height;	
-	s_p1[1] = rot[1][1] * cap->half_height;	
-	s_p1[2] = rot[1][2] * cap->half_height;	
-	Vec3Negate(s_p2, s_p1);
-	struct segment s = SegmentConstruct(s_p1, s_p2);
+	struct segment s = SegmentCapsuleTransform(cap, t1);
 
 	f32 dist = 0.0f;
 	if (SegmentPointDistanceSquared(c1, &s, c2) > r_sum*r_sum)
 	{
+        vec3 diff;
 		Vec3Translate(c1, t1->position);
 		Vec3Translate(c2, t1->position);
 		Vec3Sub(diff, c2, c1);
@@ -1282,30 +1273,13 @@ f32 c_CapsuleDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Trans
 	const struct capsule *cap2 = &s2->capsule;
 	const f32 r_sum = cap1->radius + cap2->radius;
 
-	mat3 rot;
-	vec3 p0, p1; /* line points */
-
-	Mat3Quat(rot, t1->rotation);
-	p0[0] = rot[1][0] * cap1->half_height,	
-	p0[1] = rot[1][1] * cap1->half_height,	
-	p0[2] = rot[1][2] * cap1->half_height,	
-	Vec3Negate(p1, p0);
-	Vec3Translate(p0, t1->position);
-	Vec3Translate(p1, t1->position);
-	struct segment seg1 = SegmentConstruct(p0, p1);
-	
-	Mat3Quat(rot, t2->rotation);
-	p0[0] = rot[1][0] * cap2->half_height,	
-	p0[1] = rot[1][1] * cap2->half_height,	
-	p0[2] = rot[1][2] * cap2->half_height,	
-	Vec3Negate(p1, p0);
-	Vec3Translate(p0, t2->position);
-	Vec3Translate(p1, t2->position);
-	struct segment seg2 = SegmentConstruct(p0, p1);
+	struct segment seg1 = SegmentCapsuleTransform(cap1, t1);
+	struct segment seg2 = SegmentCapsuleTransform(cap2, t2);
 
 	f32 dist = 0.0f;
 	if (SegmentDistanceSquared(c1, c2, &seg1, &seg2) > r_sum*r_sum)
 	{
+        vec3 p0, p1;
 		Vec3Sub(p0, c2, c1);
 		Vec3Normalize(p1, p0);
 		Vec3TranslateScaled(c1, p1, cap1->radius);
@@ -1398,15 +1372,7 @@ f32 c_HullDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transfor
 	Mat3Quat(g2.rot, t2->rotation);
 
     struct gjk_Simplex simplex;
-	f32 dist_sq = gjk_DistanceSquared(c1, c2, &simplex, &g1, &g2);
-	if (dist_sq <= 0.0f)
-	{
-		dist_sq = 0.0f;
-		vec3 n;
-		Vec3Sub(n, c2, c1);
-		Vec3ScaleSelf(n, 1.0f / Vec3Length(n));
-	}
-
+	const f32 dist_sq = gjk_DistanceSquared(c1, c2, &simplex, &g1, &g2);
 	return f32_sqrt(dist_sq);
 }
 
@@ -1545,30 +1511,15 @@ u32 c_CapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, struc
 	    &s[0]->capsule,
 	    &s[1]->capsule,
     };
-	const f32 r_sum = cap[0]->radius + cap[1]->radius;
 
-	mat3 rot;
+    const struct segment seg[2] = 
+    { 
+        SegmentCapsuleTransform(cap[0], t + 0), 
+        SegmentCapsuleTransform(cap[1], t + 1),
+    };
+
 	vec3 c[2], p0, p1; /* line points */
-    struct segment seg[2];
-
-	Mat3Quat(rot, t[0].rotation);
-	p0[0] = rot[1][0] * cap[0]->half_height;	
-	p0[1] = rot[1][1] * cap[0]->half_height;	
-	p0[2] = rot[1][2] * cap[0]->half_height;	
-	Vec3Negate(p1, p0);
-	Vec3Translate(p0, t[0].position);
-	Vec3Translate(p1, t[0].position);
-	seg[0] = SegmentConstruct(p0, p1);
-	
-	Mat3Quat(rot, t[1].rotation);
-	p0[0] = rot[1][0] * cap[1]->half_height;	
-	p0[1] = rot[1][1] * cap[1]->half_height;	
-	p0[2] = rot[1][2] * cap[1]->half_height;	
-	Vec3Negate(p1, p0);
-	Vec3Translate(p0, t[1].position);
-	Vec3Translate(p1, t[1].position);
-	seg[1] = SegmentConstruct(p0, p1);
-
+	const f32 r_sum = cap[0]->radius + cap[1]->radius;
 	const f32 dist_sq = SegmentDistanceSquared(c[0], c[1], &seg[0], &seg[1]);
 	if (dist_sq <= r_sum*r_sum)
 	{
@@ -3050,18 +3001,13 @@ u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold
 
     ProfZone;
 
-    const struct triMeshBvh *mesh_bvh = &s[0]->mesh_bvh;
 	const struct capsule *cap = &s[1]->capsule;
+    const struct segment cap_s = SegmentCapsuleTransform(cap, tf +1);
+    vec3 cap_v[2];
+    Vec3Copy(cap_v[0], cap_s.p[0]);
+    Vec3Copy(cap_v[1], cap_s.p[1]);
 
-    /* world-space capsule segment */
-	vec3 cap_v[2];
-	Vec3Set(cap_v[0], 0.0f, cap->half_height, 0.0f);
-    QuatVec3RotateSelf(cap_v[0], tf[1].rotation);
-	Vec3Negate(cap_v[1], cap_v[0]);
-    Vec3Translate(cap_v[0], tf[1].position);
-    Vec3Translate(cap_v[1], tf[1].position);
-    const struct segment cap_s = SegmentConstruct(cap_v[0], cap_v[1]);
-
+    const struct triMeshBvh *mesh_bvh = &s[0]->mesh_bvh;
     /* bvh local-space capsule segment */
     quat q_inv;
     QuatInverse(q_inv, tf[0].rotation);
@@ -3799,18 +3745,10 @@ f32 c_CapsuleRaycastParameter(struct arena *not_used, const struct c_Shape *shap
 {
 	ds_Assert(shape->type == C_SHAPE_CAPSULE);
 
-	mat3 rot;
-	vec3 p0, p1;
-	Mat3Quat(rot, transform->rotation);
-	p0[0] = rot[1][0] * shape->capsule.half_height;	
-	p0[1] = rot[1][1] * shape->capsule.half_height;	
-	p0[2] = rot[1][2] * shape->capsule.half_height;	
-	Vec3Negate(p1, p0);
-	Vec3Translate(p0, transform->position);
-	Vec3Translate(p1, transform->position);
-	struct segment s = SegmentConstruct(p0, p1);
-
 	const f32 r = shape->capsule.radius;
+	struct segment s = SegmentCapsuleTransform(&shape->capsule, transform);
+
+	vec3 p0, p1;
 	const f32 dist_sq = RaySegmentDistanceSquared(p0, p1, ray, &s);
 	if (dist_sq > r*r) { return F32_INFINITY; }
 

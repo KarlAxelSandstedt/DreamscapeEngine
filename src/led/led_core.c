@@ -1363,7 +1363,8 @@ void led_WallSmashSimulationSetup(struct led *led)
 				id = Utf8Format(sys_win->ui->mem_frame, "pyramid_%u_%u_%u", i, j, k);
                 tagged_id = led_NodeAdd(led, id, Utf8Empty());
                 led_NodeSetPosition(led, tagged_id, translation);
-                led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_box"));
+                //led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_box"));
+                led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_capsule"));
                 //led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_s_sphere"));
                 led_NodeSetColor(led, tagged_id, pyramid_color, 1.0f);
 			}

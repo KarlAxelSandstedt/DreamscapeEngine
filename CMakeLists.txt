@@ -108,6 +108,24 @@ if (DEFINED EMSCRIPTEN)
 	
 	add_compile_options(-W -Wall -Wextra -Wno-switch -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function)
 
+	add_link_options(--emrun)
+	add_link_options(-sALLOW_MEMORY_GROWTH)
+	add_link_options(-sMEMORY_GROWTH_GEOMETRIC_STEP=0)
+	add_link_options(-sMAX_WEBGL_VERSION=2)
+
+	add_compile_options(-pthread)
+	add_link_options(-pthread -sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency)
+
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --embed-file=../assets@../assets")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --embed-file=../asset_components@../asset_components")
+
+    #add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+	#	COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${PROJECT_NAME}>/src
+	#	COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/src $<TARGET_FILE_DIR:${PROJECT_NAME}>/src
+	#	COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${PROJECT_NAME}>/lib
+	#	COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/lib $<TARGET_FILE_DIR:${PROJECT_NAME}>/lib
+	#)
 elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 
 	if (DS_ASAN)

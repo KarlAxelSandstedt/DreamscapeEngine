@@ -26,8 +26,18 @@ if [ "$BUILD_ID" != "$BUILD_ID_CURRENT" ]; then
     echo "$BUILD_ID" | tee "$BUILD_CONFIG"
 fi
 
-emcmake cmake -S . -B build -Dapply_optimization_options=ON -DCMAKE_BUILD_TYPE=Release -G $CMAKE_GENERATOR
+source "$EMSDK/emsdk.sh"
+emcmake cmake -S . -B build \
+     -DCMAKE_TOOLCHAIN_FILE=$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake \
+    -DCMAKE_FIND_ROOT_PATH=$EMSDK/upstream/emscripten/cache/sysroot \
+    -DDS_TEST_PHYSICS=ON \
+    -DDS_DEBUG=OFF \
+    -DDS_OPTIMIZE=ON \
+    -DCMAKE_BUILD_TYPE=Release \
+    -G $CMAKE_GENERATOR
 cd build
 cmake --build . --parallel
-emrun engine_sandbox.html
-cd ..
+
+emrun --browser=/usr/bin/brave-browser DreamscapeTest.html
+#node engine_sandbox.js
+c

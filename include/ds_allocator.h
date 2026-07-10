@@ -703,8 +703,8 @@ at the appropriate places. This Declares and Generates the following functions
 #define TSTACK_STRUCT_DEFINE(struct_name, name)                                                                 \
 struct struct_name ## name ## TStack                                                                            \
 {                                                                                                               \
-    struct struct_name ## TPool *   pool;                                                                       \
     u64                             a_head;                                                                     \
+    struct struct_name ## TPool *   pool;                                                                       \
     u8                              pad[64 - sizeof(u64) - sizeof(void *)];                                     \
 }
 

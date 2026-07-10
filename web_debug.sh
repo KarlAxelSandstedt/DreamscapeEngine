@@ -1,5 +1,4 @@
 #/bin/bash
-#emcmake cmake -DCMAKE_BUILD_TYPE=Debug -S . -B build -Dkas_debug=ON -G Ninja
 
 if !(command -v cmake > /dev/null 2>&1); then
 	echo "Error: CMake is not installed."
@@ -27,11 +26,18 @@ if [ "$BUILD_ID" != "$BUILD_ID_CURRENT" ]; then
     echo "$BUILD_ID" | tee "$BUILD_CONFIG"
 fi
 
-
-emcmake cmake -S . -B build -Dkas_debug=ON -DCMAKE_BUILD_TYPE=Debug -G $CMAKE_GENERATOR
+source "$EMSDK/emsdk.sh"
+emcmake cmake -S . -B build \
+     -DCMAKE_TOOLCHAIN_FILE=$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake \
+    -DCMAKE_FIND_ROOT_PATH=$EMSDK/upstream/emscripten/cache/sysroot \
+    -DDS_TEST_PHYSICS=ON \
+    -DDS_DEBUG=ON \
+    -DDS_OPTIMIZE=OFF \
+    -DCMAKE_BUILD_TYPE=Debug \
+    -G $CMAKE_GENERATOR
 cd build
 cmake --build . --parallel
 
-emrun --browser=/usr/bin/brave-browser engine_sandbox.html
+emrun --browser=/usr/bin/brave-browser DreamscapeTest.html
 #node engine_sandbox.js
 cd ..

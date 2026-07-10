@@ -18,63 +18,54 @@
 */
 
 #include <stdio.h>
-#include <stdint.h>
 #include <string.h>
-#include <float.h>
 #include <emscripten/console.h>
 #include <emscripten/wasm_worker.h>
 #include <emscripten/threading.h>
 
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/mman.h>
-#include <fcntl.h>
-#include <unistd.h>
-
-#include "kas_common.h"
-#include "wasm_local.h"
-#include "memory.h"
-#include "kas_string.h"
-#include "sys_public.h"
+#include "ds_base.h" 
+#include "ds_math.h"
+#include "ds_platform.h"
+#include "ds_graphics.h"
 #include "ds_asset.h"
-#include "ds_renderer.h"
-#include "ds_led.h"
 #include "ds_ui.h"
-#include "kas_random.h"
+#include "ds_led.h"
+#include "ds_job.h"
 
 struct arena mem_persistent;
 struct led *editor;
 
-static void main_loop(void)
+static void ds_MainLoop(void)
 {
 	static u64 old_time = 0;
 	old_time = editor->ns;
 	if (editor->running)
 	{
-		system_free_tagged_windows();
+		ds_DeallocTaggedWindows();
 
-		task_context_frame_clear();
+        ds_JobSchedulerFrameClear();
 
-		const u64 new_time = time_ns();
+		const u64 new_time = ds_TimeNs();
 		const u64 ns_tick = new_time - old_time;
 		old_time = new_time;
 
-		system_process_events();
+		ds_ProcessEvents();
 
-		led_main(editor, ns_tick);
-		led_ui_main(editor);
-		r_led_main(editor);
+		led_Main(editor, ns_tick);
+		led_UiMain(editor);
+		r_EditorMain(editor);
 	}
 	else
 	{
 		static u32 cleanup = 1;
 		if (cleanup)
 		{
-			led_dealloc(editor);
-			asset_database_cleanup();
-			cmd_free();
-			system_resources_cleanup();
-			arena_free(&mem_persistent);
+	        led_Dealloc(editor);
+	        AssetShutdown();
+	        ds_GraphicsApiShutdown();
+	        ds_PlatformApiShutdown();
+	        LogShutdown();
+	        ds_MemApiShutdown();
 			cleanup = 0;
 		}
 	}
@@ -82,30 +73,39 @@ static void main_loop(void)
 
 int main(int argc, char *argv[])
 {	
-	u64 seed[4];
-	int fd = open("/dev/urandom", O_RDONLY);
-	const ssize_t size_read = read(fd, seed, sizeof(seed));
-	close(fd);
-	if (size_read != sizeof(seed))
-	{
-		fprintf(stderr, "Couldn't read from rng source, exiting\n");
-		return 0;
-	}
-	g_xoshiro_256_init(seed);
-	thread_xoshiro_256_init_sequence();
+    u64 seed[4];
+	RngSystem(seed, sizeof(seed));
+	Xoshiro256Init(seed);
 
-	mem_persistent = arena_alloc(32*1024*1024);
-	system_resources_init(&mem_persistent);
-	cmd_alloc();
-	ui_init_global_state();
-	asset_database_init(&mem_persistent);
+	ds_MemApiInit();
 
-	editor = led_alloc();
-	//TODO set 0 => draw as fast as possible 
-	const u64 renderer_framerate = 60;	
-	r_init(&mem_persistent, NSEC_PER_SEC / renderer_framerate, 16*1024*1024, 1024, &editor->render_mesh_db);
+	mem_persistent = ArenaAlloc(NULL, 256*1024*1024);
+	LogInit(&mem_persistent, "log.txt");
 
-	emscripten_set_main_loop(main_loop, 0, 1);
+	ds_TimeApiInit(&mem_persistent);
+
+    const u64 thread_framesize = 4*1024*1024;
+    const u64 thread_scratchsize = 1*1024*1024;
+    const u64 scratch_count = 5;
+	ds_ThreadMasterInit(&mem_persistent, thread_framesize, thread_scratchsize, scratch_count);
+	ds_ArchConfigInit(&mem_persistent);
+
+	ds_StringApiInit(g_arch_config->logical_core_count);
+
+	ds_PlatformApiInit(&mem_persistent, thread_framesize, thread_scratchsize, scratch_count);
+
+	ds_GraphicsApiInit();
+
+	ds_UiApiInit();
+
+	AssetInit(&mem_persistent);
+
+	editor = led_Alloc();
+
+	const u64 renderer_framerate = 144;	
+	r_Init(&mem_persistent, NSEC_PER_SEC / renderer_framerate, 16*1024*1024, 1024, &editor->render_mesh_db);
+	
+	emscripten_set_main_loop(ds_MainLoop, 0, 1);
 
 	return 0;
 }
