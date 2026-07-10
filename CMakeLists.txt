@@ -158,6 +158,7 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 	if (DS_ASAN)
 		add_compile_options(/fsanitize=address)
 		add_link_options(/incremental:no)
+		add_compile_options(/Zi)
 	endif ()
 
 	if (DS_DEBUG)
