@@ -98,6 +98,7 @@ static void *ds_ThreadCloneStart(void *void_thr)
 	thr->gtid = getpid();
 	thr->tid = gettid();
 	thr->index = AtomicFetchAddRlx32(&a_index_counter, 1);
+	ThreadXoshiro256InitSequence();
 	ProfThreadNamed(thread_profiler_id[thr->index]);
 	thr->start(thr);
 
@@ -209,15 +210,17 @@ DWORD WINAPI ds_ThreadCloneStart(LPVOID void_thr)
 	return 0;
 }
 
-void ds_ThreadMasterInit(struct arena *mem)
+void ds_ThreadMasterInit(struct arena *mem, const u64 frame_size, const u64 scratch_size, const u32 scratch_count)
 {
 	g_tl_self = ArenaPush(mem, sizeof(struct ds_Thread));
 	g_tl_self->tid = GetCurrentThreadId();
 	g_tl_self->index = 0;
+    ds_ThreadAllocMemory(mem, g_tl_self, frame_size, scratch_size, scratch_count);
+
 	ProfThreadNamed(thread_profiler_id[g_tl_self->index]);
 }
 
-ds_Thread *ds_ThreadClone(struct arena *mem, void (*start)(ds_Thread *), void *args, const u64 stack_size, const u64 frame_size, const u64 tmp_size)
+ds_Thread *ds_ThreadClone(struct arena *mem, void (*start)(ds_Thread *), void *args, const u64 stack_size, const u64 frame_size, const u64 scratch_size, const u32 scratch_count)
 {
 	ds_Assert(stack_size > 0);
 

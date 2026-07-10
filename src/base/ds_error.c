@@ -127,11 +127,11 @@ void FatalCleanupAndExit()
     		SYSTEMTIME local_time;
     		GetLocalTime(&local_time);
 
-		struct arena tmp = ArenaAlloc1MB();
-		const utf8 utf8_filename = Utf8Format(&tmp, "%s_%s_latest.dmp"
+		struct arena *tmp = ArenaPushScratch();
+		const utf8 utf8_filename = Utf8Format(tmp, "%s_%s_latest.dmp"
 				, DS_EXECUTABLE_CSTR
 				, DS_VERSION_CSTR);
-		//const utf8 utf8_filename = Utf8Format(&tmp, "%s_%s_%u%u%u_%u%u%u.dmp", 
+		//const utf8 utf8_filename = Utf8Format(tmp, "%s_%s_%u%u%u_%u%u%u.dmp", 
     		//           "engine_sandbox",
 		//	   "0_1", 
     		//           local_time.wYear,
@@ -140,9 +140,9 @@ void FatalCleanupAndExit()
     		//           local_time.wHour, 
 		//	   local_time.wMinute,
 		//	   local_time.wSecond);
-    	const char *filename = CstrUtf8(&tmp, utf8_filename);
+    	const char *filename = CstrUtf8(tmp, utf8_filename);
 		struct file dump = FileNull();
-		if (FileTryCreateAtCwd(&tmp, &dump, filename, FILE_TRUNCATE) == FS_SUCCESS)
+		if (FileTryCreateAtCwd(tmp, &dump, filename, FILE_TRUNCATE) == FS_SUCCESS)
 		{
 			if (!MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), dump.handle, MiniDumpWithFullMemory, NULL, NULL, NULL))
 			{
@@ -151,7 +151,7 @@ void FatalCleanupAndExit()
 			
 			FileClose(&dump);
 		}
-		ArenaFree1MB(&tmp);
+        ArenaPopScratch();
 
 		LogShutdown();
 #if DS_DEBUG

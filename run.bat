@@ -1,5 +1,5 @@
-cmake -S . -B build -D apply_optimization_options=ON -D CMAKE_BUILD_TYPE=Release -G Ninja
+cmake -S . -B build -DDS_TEST_PHYSICS=ON -DDS_PROFILE=ON -DDS_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Release -G Ninja 
 cd build
-cmake --build .
-engine_sandbox.exe
+cmake --build . --parallel
+DreamscapeTest.exe
 cd ..

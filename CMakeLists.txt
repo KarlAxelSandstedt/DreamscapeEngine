@@ -20,11 +20,6 @@ else()
     set(STATIC_EXT ".a")
 endif()
 
-#TODO REMOVE
-if (CMAKE_C_COMPILER_ID MATCHES "Clang")
-    add_compile_options(-ftime-trace)
-endif()
-
 find_package(OpenGL REQUIRED)
 find_package(Threads REQUIRED)
 
