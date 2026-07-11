@@ -327,6 +327,8 @@ void ds_WorkerMain(ds_Thread *thr)
 {
 	struct ds_Worker *w = ds_ThreadArguments(thr);
 
+	ThreadXoshiro256InitSequence();
+
 	while (AtomicLoadAcq32(&g_scheduler->a_running) == 0);
 
 	w->thr = thr;

@@ -295,8 +295,8 @@ struct TriVoronoi
 
 /* Get normal of ccw triangle */
 void 		TriCcwNormal(vec3 normal, const vec3 p0, const vec3 p1, const vec3 p2);
-/* Get direction of ccw triangle */
-void 		TriCcwDirection(vec3 dir, const vec3 p0, const vec3 p1, const vec3 p2);
+/* Get normal direction of ccw triangle */
+void 		TriCcwNormalDirection(vec3 dir, const vec3 p0, const vec3 p1, const vec3 p2);
 
 
 /* Setup a TriVoronoi struct corresponding to the CCW triangle t and return true if t is robust, false otherwise.  */

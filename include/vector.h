@@ -211,6 +211,24 @@ f32 	Vec2Dot(const vec2 a, const vec2 b);
 f32 	Vec3Dot(const vec3 a, const vec3 b);
 f32 	Vec4Dot(const vec4 a, const vec4 b);
 
+/* min[i] = f32_min(a[i], b[i]) */
+void    Vec2Min(vec2 dst, const vec2 a, const vec2 b);  
+void    Vec3Min(vec3 dst, const vec3 a, const vec3 b);  
+void    Vec4Min(vec4 dst, const vec4 a, const vec4 b);  
+
+void    Vec2MinSelf(vec2 dst, const vec2 a);  
+void    Vec3MinSelf(vec3 dst, const vec3 a);  
+void    Vec4MinSelf(vec4 dst, const vec4 a);  
+
+/* max[i] = f32_max(a[i], b[i]) */
+void    Vec2Max(vec2 dst, const vec2 a, const vec2 b);  
+void    Vec3Max(vec3 dst, const vec3 a, const vec3 b);  
+void    Vec4Max(vec4 dst, const vec4 a, const vec4 b);  
+
+void    Vec2MaxSelf(vec2 dst, const vec2 a);  
+void    Vec3MaxSelf(vec3 dst, const vec3 a);  
+void    Vec4MaxSelf(vec4 dst, const vec4 a);  
+
 void 	Vec2Interpolate(vec2 dst, const vec2 a, const vec2 b, const f32 alpha);
 void 	Vec3Interpolate(vec3 dst, const vec3 a, const vec3 b, const f32 alpha);
 void 	Vec4Interpolate(vec4 dst, const vec4 a, const vec4 b, const f32 alpha);	/* a * alpha + b * (1-alpha) */

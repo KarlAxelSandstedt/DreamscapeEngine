@@ -29,7 +29,6 @@ void QuatIdentity(quat dst)
 	dst[3] = 1.0f;
 }
 
-
 void QuatSet(quat dst, const f32 x, const f32 y, const f32 z, const f32 w)
 {
 	dst[0] = x;

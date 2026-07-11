@@ -446,6 +446,7 @@ enum sat_CacheType
 	SAT_CACHE_COUNT,
 };
 
+#define TRI_HULL_CACHE_MAX_SIZE 32
 //TODO move:
 struct c_TriHullCache
 {

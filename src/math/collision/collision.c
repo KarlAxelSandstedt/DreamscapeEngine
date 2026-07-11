@@ -17,6 +17,8 @@
 ==========================================================================
 */
 
+#include <string.h>
+
 #include "dynamics.h"
 #include "collision.h"
 
@@ -1155,15 +1157,12 @@ u32 c_CapsuleSphereTest(const struct c_Shape *s1, const ds_Transform *t1, const 
 	ds_Assert(s1->type == C_SHAPE_CAPSULE);
     ds_Assert(s2->type == C_SHAPE_SPHERE);
 
-    const struct capsule *cap = &s1->capsule;
-	mat3 rot;
-	Mat3Quat(rot, t1->rotation);
-
 	vec3 c1, c2, s_p1, s_p2;
 	Vec3Sub(c2, t2->position, t1->position);
-	s_p1[0] = rot[1][0] * cap->half_height;	
-	s_p1[1] = rot[1][1] * cap->half_height;	
-	s_p1[2] = rot[1][2] * cap->half_height;	
+
+    const struct capsule *cap = &s1->capsule;
+    Vec3Set(s_p1, 0.0f, cap->half_height, 0.0f);
+    QuatVec3RotateSelf(s_p1, t1->rotation);
 	Vec3Negate(s_p2, s_p1);
 	struct segment s = SegmentConstruct(s_p1, s_p2);
 
@@ -1355,7 +1354,6 @@ f32 c_HullCapsuleDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_T
 	}
 
 	return f32_sqrt(dist_sq);
-
 }
 
 f32 c_HullDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2)
@@ -1443,16 +1441,14 @@ u32 c_CapsuleSphereContact(struct arena *not_used1, struct c_Manifold *manifold,
 	const struct capsule *cap = &s[0]->capsule;
 	const f32 r_sum = cap->radius + s[1]->sphere.radius;
 
-	mat3 rot;
-	Mat3Quat(rot, t[0].rotation);
-
 	vec3 c[2], s_p1, s_p2, diff;
-	Vec3Sub(c[1], t[1].position, t[0].position);
-	s_p1[0] = rot[1][0] * cap->half_height;	
-	s_p1[1] = rot[1][1] * cap->half_height;	
-	s_p1[2] = rot[1][2] * cap->half_height;	
+
+    Vec3Set(s_p1, 0.0f, cap->half_height, 0.0f);
+    QuatVec3RotateSelf(s_p1, t[0].rotation);
 	Vec3Negate(s_p2, s_p1);
 	struct segment seg = SegmentConstruct(s_p1, s_p2);
+
+	Vec3Sub(c[1], t[1].position, t[0].position);
 	const f32 dist_sq = SegmentPointDistanceSquared(c[0], &seg, c[1]);
 
 	if (dist_sq <= r_sum*r_sum)
@@ -1462,22 +1458,8 @@ u32 c_CapsuleSphereContact(struct arena *not_used1, struct c_Manifold *manifold,
 		if (dist_sq <= COLLISION_POINT_DIST_SQ)
 		{
 			//TODO Degerate case: normal should be context dependent
-            //TODO WTF is happening here.....
-			Vec3Copy(manifold->v[0], t[0].position);
-			if (seg.dir[0]*seg.dir[0] < seg.dir[1]*seg.dir[1])
-			{
-				if (seg.dir[0]*seg.dir[0] < seg.dir[2]*seg.dir[2]) { Vec3Set(manifold->v[2], 1.0f, 0.0f, 0.0f); }
-				else { Vec3Set(manifold->v[2], 0.0f, 0.0f, 1.0f); }
-			}
-			else
-			{
-				if (seg.dir[1]*seg.dir[1] < seg.dir[2]*seg.dir[2]) { Vec3Set(manifold->v[0], 0.0f, 1.0f, 0.0f); }
-				else { Vec3Set(manifold->v[2], 0.0f, 0.0f, 1.0f); }
-			}
-				
-			Vec3Set(manifold->v[2], 1.0f, 0.0f, 0.0f);
-			Vec3Cross(diff, manifold->v[2], seg.dir);
-			Vec3Normalize(manifold->n, diff);
+			Vec3CreateBasis(manifold->n, diff, seg.dir);
+            Vec3Copy(manifold->v[0], t[0].position);
 			manifold->depth[0] = r_sum;
             ds_AssertString(0, "Implement Degenrate CapsuleSphere contact case properly");
 		}
@@ -1536,18 +1518,7 @@ u32 c_CapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, struc
 			if (cross_dist_sq <= COLLISION_POINT_DIST_SQ)
 			{
 				//TODO Normal should be context dependent
-				if (seg[ref].dir[0]*seg[ref].dir[0] < seg[ref].dir[1]*seg[ref].dir[1])
-				{
-					if (seg[ref].dir[0]*seg[ref].dir[0] < seg[ref].dir[2]*seg[ref].dir[2]) { Vec3Set(manifold->n, 1.0f, 0.0f, 0.0f); }
-					else { Vec3Set(manifold->n, 0.0f, 0.0f, 1.0f); }
-				}
-				else
-				{
-					if (seg[ref].dir[1]*seg[ref].dir[1] < seg[ref].dir[2]*seg[ref].dir[2]) { Vec3Set(manifold->n, 0.0f, 1.0f, 0.0f); }
-					else { Vec3Set(manifold->n, 0.0f, 0.0f, 1.0f); }
-				}
-				Vec3Cross(p0, seg[ref].dir, manifold->n);
-				Vec3Normalize(manifold->n, p0);
+                Vec3CreateBasis(manifold->n, p0, seg[ref].dir);
 			}
 			/* Degenerate Case 2: Non-Parallel capsules, */
 			else
@@ -1701,8 +1672,8 @@ u32 c_HullCapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, s
 
 	vec3 segment[2];
 	Vec3Set(segment[0], 0.0f, s[1]->capsule.half_height, 0.0f);
-	Vec3Set(segment[1], 0.0f, -s[1]->capsule.half_height, 0.0f);
 	Vec3Negate(segment[1], segment[0]);
+
 	struct gjk_Input g2 = { .v = segment, .v_count = 2, };
 	Vec3Copy(g2.pos, t[1].position);
 	Mat3Quat(g2.rot, t[1].rotation);
@@ -2110,7 +2081,7 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, const vec3 cm_n, constvec3pt
 			ds_Assert(max_pos_i != max_neg_i);
 	
 			vec3 dir;
-			TriCcwDirection(dir, cm->v[0], cp[max_pos_i], cm->v[2]);
+			TriCcwNormalDirection(dir, cm->v[0], cp[max_pos_i], cm->v[2]);
 			if (Vec3Dot(dir, cm->n) < 0.0f)
 			{
 				Vec3Copy(cm->v[3], cp[max_pos_i]);
@@ -2125,7 +2096,6 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, const vec3 cm_n, constvec3pt
 				cm->depth[3] = depth[max_neg_i];
 				cm->depth[1] = depth[max_pos_i];
 			}
-
 		} break;
 	}
 
@@ -2272,10 +2242,10 @@ static void HullContactInternalEECheck(struct sat_EdgeQuery *query, const struct
 	const u32 f1_2 = h1->e[e1_2].face_ccw;
 	const u32 f2_1 = h2->e[e2_1].face_ccw;
 	const u32 f2_2 = h2->e[e2_2].face_ccw;
-	TriCcwDirection(n1_1, v1_world[h1->e[h1->f[f1_1].first + 0].origin],  v1_world[h1->e[h1->f[f1_1].first + 1].origin], v1_world[h1->e[h1->f[f1_1].first + 2].origin]);
-	TriCcwDirection(n1_2, v1_world[h1->e[h1->f[f1_2].first + 0].origin],  v1_world[h1->e[h1->f[f1_2].first + 1].origin], v1_world[h1->e[h1->f[f1_2].first + 2].origin]);
-	TriCcwDirection(n2_1, v2_world[h2->e[h2->f[f2_1].first + 0].origin],  v2_world[h2->e[h2->f[f2_1].first + 1].origin], v2_world[h2->e[h2->f[f2_1].first + 2].origin]);
-	TriCcwDirection(n2_2, v2_world[h2->e[h2->f[f2_2].first + 0].origin],  v2_world[h2->e[h2->f[f2_2].first + 1].origin], v2_world[h2->e[h2->f[f2_2].first + 2].origin]);
+	TriCcwNormalDirection(n1_1, v1_world[h1->e[h1->f[f1_1].first + 0].origin],  v1_world[h1->e[h1->f[f1_1].first + 1].origin], v1_world[h1->e[h1->f[f1_1].first + 2].origin]);
+	TriCcwNormalDirection(n1_2, v1_world[h1->e[h1->f[f1_2].first + 0].origin],  v1_world[h1->e[h1->f[f1_2].first + 1].origin], v1_world[h1->e[h1->f[f1_2].first + 2].origin]);
+	TriCcwNormalDirection(n2_1, v2_world[h2->e[h2->f[f2_1].first + 0].origin],  v2_world[h2->e[h2->f[f2_1].first + 1].origin], v2_world[h2->e[h2->f[f2_1].first + 2].origin]);
+	TriCcwNormalDirection(n2_2, v2_world[h2->e[h2->f[f2_2].first + 0].origin],  v2_world[h2->e[h2->f[f2_2].first + 1].origin], v2_world[h2->e[h2->f[f2_2].first + 2].origin]);
 
 	///* we are working with minkowski difference A - B, so gauss map of B is (-B). n2_1, n2_2 cross product stays the same. */
 	Vec3NegateSelf(n2_1);	
@@ -3221,8 +3191,8 @@ static u32 TriCcwHullEECheck(struct sat_EdgeQuery *query, const struct plane *tr
     const u32 e2_2 = hull->e[e2_1].twin;
 	const u32 f2_1 = hull->e[e2_1].face_ccw;
 	const u32 f2_2 = hull->e[e2_2].face_ccw;
-	TriCcwDirection(n2_1, hull->v[hull->e[hull->f[f2_1].first + 0].origin],  hull->v[hull->e[hull->f[f2_1].first + 1].origin], hull->v[hull->e[hull->f[f2_1].first + 2].origin]);
-	TriCcwDirection(n2_2, hull->v[hull->e[hull->f[f2_2].first + 0].origin],  hull->v[hull->e[hull->f[f2_2].first + 1].origin], hull->v[hull->e[hull->f[f2_2].first + 2].origin]);
+	TriCcwNormalDirection(n2_1, hull->v[hull->e[hull->f[f2_1].first + 0].origin],  hull->v[hull->e[hull->f[f2_1].first + 1].origin], hull->v[hull->e[hull->f[f2_1].first + 2].origin]);
+	TriCcwNormalDirection(n2_2, hull->v[hull->e[hull->f[f2_2].first + 0].origin],  hull->v[hull->e[hull->f[f2_2].first + 1].origin], hull->v[hull->e[hull->f[f2_2].first + 2].origin]);
 	/* we are working with minkowski difference A - B, so gauss map of B is (-B). n2_1, n2_2 cross product stays the same. */
 	Vec3NegateSelf(n2_1);	
 	Vec3NegateSelf(n2_2);
@@ -3282,8 +3252,6 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
 {
     /*
      * TODO: Move this to the new cache struct infomation secion
-     * TODO: max_cache_count handling
-     *
      * Notes: Simple caching for fast dummies.
      *
      *  Instead of using triangles as shapes, we use the ordinary identifiers 
@@ -3301,22 +3269,112 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
      * TODO: (1) sat_MeshCaching
      *
      * TODO: (2) Is caching separating axes worth it? 
-     *
-     * TODO: (3) Is caching contacts data worth it? 
-     *
-     * TODO: (4) If performance is needed (Which it will be very likely), we can go from using generalized 
-     *           hull-hull face/edge checking to optimized hull-tri face/edge checking. IN THIS CASE, make
-     *           sure to measure the performance;you will have TriCcwHullContactSlow vs. TriCcwContactFast 
-     *           to compare.
      */
 	struct sat_FaceQuery f_query[2] = { { .depth = -F32_INFINITY }, { .depth = -F32_INFINITY } };
 	struct sat_EdgeQuery e_query = { .depth = -F32_INFINITY };
     *max_depth = -F32_INFINITY;
 	u32 colliding = 0;
+
+    //switch (old_cache->type)
+    //{
+    //    case SAT_CACHE_CONTACT_EE:
+	//    {
+	//    	HullContactInternalEECheck(&e_query, h1, v1_world, cache_copy->edge0, h2, v2_world, cache_copy->edge1, t[0].position);
+	//    	if (-F32_INFINITY < e_query.depth && e_query.depth < 0.0f)
+	//    	{
+	//    		sat_EdgeQueryCollisionResult(manifold, cache, &e_query, ref);
+    //            colliding = 1;
+    //            goto sat_cleanup;
+	//    	}
+	//    	e_query.depth = -F32_INFINITY;
+	//    } break;
+
+    //    default: { ds_AssertString("Should not happen."); } break;
+    //}
+
+    //switch (cache_copy->type)
+    //{
+    //    case SAT_CACHE_SEPARATION:
+	//    {
+	//    	vec3 support1, support2, tmp;
+	//    	Vec3Negate(tmp, cache_copy->separation_axis);
+
+	//    	VertexSupport(support1, cache_copy->separation_axis, v1_world, h1->v_count);
+	//    	VertexSupport(support2, tmp, v2_world, h2->v_count);
+
+	//    	const f32 dot1 = Vec3Dot(support1, cache_copy->separation_axis);
+	//    	const f32 dot2 = Vec3Dot(support2, cache_copy->separation_axis);
+	//    	const f32 separation = dot2 - dot1;
+	//    	if (separation > 0.0f)
+	//    	{
+	//    		cache->separation = separation;
+    //            goto sat_cleanup;
+	//    	}
+	//    } break;
+
+    //    case SAT_CACHE_CONTACT_EE:
+	//    {
+	//    	HullContactInternalEECheck(&e_query, h1, v1_world, cache_copy->edge0, h2, v2_world, cache_copy->edge1, t[0].position);
+	//    	if (-F32_INFINITY < e_query.depth && e_query.depth < 0.0f)
+	//    	{
+	//    		sat_EdgeQueryCollisionResult(manifold, cache, &e_query, ref);
+    //            colliding = 1;
+    //            goto sat_cleanup;
+	//    	}
+	//    	e_query.depth = -F32_INFINITY;
+	//    } break;
+
+    //    case SAT_CACHE_CONTACT_FV:
+	//    {
+	//    	//TODO We check that the manifold is still stable? if not, we throw it away.
+    //        //TODO Suspect this, and maybe EE cache is wrong, since box-box collision happened even though separated;
+    //        ds_Assert(cache_copy->type == SAT_CACHE_CONTACT_FV);
+
+	//    	vec3 ref_n, cm_n;
+    //        f32 max_depth;
+	//    	if (cache_copy->body == 0)
+	//    	{
+	//    		DcelFaceNormal(cm_n, h1, cache_copy->face);
+	//    		Mat3VecMul(ref_n, rot1, cm_n);
+    //            (cache_copy->body == ref)
+    //                ? Vec3Copy(cm_n, ref_n)
+    //                : Vec3Scale(cm_n, ref_n, -1.0f);
+	//    		colliding = HullContactInternalFaceContact(mem_tmp, manifold, &max_depth, cm_n, h1, ref_n, cache_copy->face, v1_world, h2, v2_world);
+	//    	}
+	//    	else
+	//    	{
+	//    		DcelFaceNormal(cm_n, h2, cache_copy->face);
+	//    		Mat3VecMul(ref_n, rot2, cm_n);
+    //            (cache_copy->body == ref)
+    //                ? Vec3Copy(cm_n, ref_n)
+    //                : Vec3Scale(cm_n, ref_n, -1.0f);
+	//    		colliding = HullContactInternalFaceContact(mem_tmp, manifold, &max_depth, cm_n, h2, ref_n, cache_copy->face, v2_world, h1, v1_world);
+	//    	}
+
+    //        if (colliding)
+    //        {
+    //            if (cache_copy->body != ref)
+    //            {
+    //                Vec3TranslateScaled(manifold->v[0], manifold->n, manifold->depth[0]);
+    //                Vec3TranslateScaled(manifold->v[1], manifold->n, manifold->depth[1]);
+    //                Vec3TranslateScaled(manifold->v[2], manifold->n, manifold->depth[2]);
+    //                Vec3TranslateScaled(manifold->v[3], manifold->n, manifold->depth[3]);
+    //            }
+
+    //            goto sat_cleanup;
+    //        }
+	//    } break;
+
+    //    case SAT_CACHE_NOT_SET:
+    //    {
+
+    //    } break;
+	//}
         
     const struct plane tri_plane = PlaneConstructNormalizedFromCcwTriangle(tri[0], tri[1], tri[2]);
     /* tri-plane vs. hull */
     {
+        ProfZoneNamed("tri-plane vs. hull");
         f32 min0_dist = F32_INFINITY;
         f32 min1_dist = -F32_INFINITY;
         for (u32 i  = 0; i < hull->v_count; ++i)
@@ -3326,6 +3384,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
             min0_dist = f32_min(min0_dist, dist);
             min1_dist = f32_min(min1_dist, -dist);
         }
+        ProfZoneEnd;
 
         if (min0_dist > 0.0f)
         {
@@ -3354,6 +3413,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
     struct plane min_plane;
     /* hull-planes vs. triangle */
     {
+        ProfZoneNamed("hull-planes vs. triangle");
     	for (u32 fi = 0; fi < hull->f_count; ++fi)
     	{
     		const u32 v0 = hull->e[hull->f[fi].first + 0].origin;
@@ -3368,6 +3428,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
 
     		if (min_dist > 0.0f) 
     		{ 
+                ProfZoneEnd;
 		        goto sat_cleanup;
     		}
     
@@ -3385,10 +3446,12 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
         min_plane.signed_distance /= n_dir_len;
     	Vec3Copy(f_query[1].normal, min_plane.normal);
         f_query[1].depth /= n_dir_len;
+        ProfZoneEnd;
     }
 
 
     {
+        ProfZoneNamed("Edge-Edge");
         const struct segment tri_s[3] = 
         {
             SegmentConstruct(tri[0], tri[1]),
@@ -3416,14 +3479,17 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
             
             if (TriCcwHullEECheck(&e_query, &tri_plane, tri_s, tri_s_dist_sq, tri_center, hull, ei))
             {
+                ProfZoneEnd;
                 goto sat_cleanup;
             }
         }
+        ProfZoneEnd;
     }
 
 	colliding = 1;
 	if (0.99f*f_query[0].depth >= e_query.depth || 0.99f*f_query[1].depth >= e_query.depth)
 	{
+        ProfZoneNamed("FaceContact");
         struct arena *tmp = ArenaPushScratch();
 		vec3 cm_n;
         new_cache->type = SAT_CACHE_CONTACT_FV;
@@ -3515,6 +3581,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
             }
 		}
         ArenaPopScratch();
+        ProfZoneEnd;
 	}
 	/* edgeContact */
 	else
@@ -3535,6 +3602,13 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
 {
 	ds_Assert(s[0]->type == C_SHAPE_TRI_MESH);
 	ds_Assert(s[1]->type == C_SHAPE_CONVEX_HULL);
+
+    if (cache->type == SAT_CACHE_NOT_SET)
+    {
+        cache->type = SAT_CACHE_CONTACT_TRI;
+        cache->tri_cache_count = 0;
+        cache->tri_cache = NULL;
+    }
 
     ProfZone;
 
@@ -3570,13 +3644,8 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
         Mat3VecMul(hull_bvh_local_space.v[i], R, hull->v[i]);
         Vec3Translate(hull_bvh_local_space.v[i], T);
 
-		min[0] = f32_min(min[0], hull_bvh_local_space.v[i][0]); 
-		min[1] = f32_min(min[1], hull_bvh_local_space.v[i][1]);			
-		min[2] = f32_min(min[2], hull_bvh_local_space.v[i][2]);			
-                                 		
-        max[0] = f32_max(max[0], hull_bvh_local_space.v[i][0]);			
-		max[1] = f32_max(max[1], hull_bvh_local_space.v[i][1]);			
-		max[2] = f32_max(max[2], hull_bvh_local_space.v[i][2]);			
+        Vec3MinSelf(min, hull_bvh_local_space.v[i]);
+        Vec3MaxSelf(max, hull_bvh_local_space.v[i]);
     }
 
 	Vec3Sub(bbox_transform.hw, max, min);
@@ -3613,10 +3682,27 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
                     Vec3Copy(tri[2], it.mesh->v[it.mesh->tri[c->tri][2]]);
 
                     ProfZoneNamed("TriCcwHullContact");
-                    struct c_TriHullCache tmp;
+                    const struct c_TriHullCache *old_cache = NULL;
+                    for (u32 ci = 0; ci < cache->tri_cache_count; ++ci)
+                    {
+                        if (c->tri == cache->tri_cache[ci].tri)
+                        {
+                            old_cache = cache->tri_cache + ci;
+                            break;
+                        }
+                    }
+
                     f32 max_depth = -F32_INFINITY;
-                    const u32 contact = TriCcwHullContact(&c->manifold, &c->cache, &max_depth, &tmp, tri, &hull_bvh_local_space, reference_index);
+                    const u32 contact = TriCcwHullContact(&c->manifold, &c->cache, &max_depth, old_cache, tri, &hull_bvh_local_space, reference_index);
                     ProfZoneEnd;
+
+                    {
+                    ProfZoneNamed("NON-CACHED");
+                    f32 dd = -F32_INFINITY;
+                    TriCcwHullContact(&c->manifold, &c->cache, &dd, NULL, tri, &hull_bvh_local_space, reference_index);
+                    ProfZoneEnd;
+                    }
+
 
                     /* delayed set processed from deepest to shallowest contact. */
                     c->priority = -max_depth*max_depth;
@@ -3633,11 +3719,16 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
         ProfZoneEnd;
     }
 
+    cache->tri_cache_count = 0;
+    cache->tri_cache = (it.contact_count < TRI_HULL_CACHE_MAX_SIZE) 
+                     ? ArenaPush(frame, it.contact_count*sizeof(struct c_TriHullCache))
+                     : ArenaPush(frame, TRI_HULL_CACHE_MAX_SIZE*sizeof(struct c_TriHullCache));
+
     u32 collision_count = 0;
     *manifold = ArenaPush(frame, it.contact_count*sizeof(struct c_Manifold));
     *tri = ArenaPush(frame, it.contact_count*sizeof(u32));
     c_TriMeshBvhIteratorDelayedSetAlloc(&it);
-    if (it.contact_count && (!manifold || !tri || !it.delayed_set))
+    if (it.contact_count && (!manifold || !tri || !it.delayed_set || !cache->tri_cache))
     {
 		Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
 		FatalCleanupAndExit();
@@ -3659,6 +3750,12 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
                 m->depth[vi] = c->manifold.depth[vi];
                 Mat3VecMul(m->v[vi], bvh_rotation, c->manifold.v[vi]);
                 Vec3Translate(m->v[vi], tf[0].position);
+            }
+
+            if (cache->tri_cache_count < TRI_HULL_CACHE_MAX_SIZE)
+            {
+                memcpy(cache->tri_cache + cache->tri_cache_count, &c->cache, sizeof(struct c_TriHullCache));
+                cache->tri_cache_count += 1;
             }
 
             *t = c->tri;
@@ -3714,6 +3811,12 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
                 m->depth[vi] = c->manifold.depth[vi];
                 Mat3VecMul(m->v[vi], bvh_rotation, c->manifold.v[vi]);
                 Vec3Translate(m->v[vi], tf[0].position);
+            }
+
+            if (cache->tri_cache_count < TRI_HULL_CACHE_MAX_SIZE)
+            {
+                memcpy(cache->tri_cache + cache->tri_cache_count, &c->cache, sizeof(struct c_TriHullCache));
+                cache->tri_cache_count += 1;
             }
         }
 

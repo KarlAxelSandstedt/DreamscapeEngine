@@ -219,6 +219,7 @@ void SegmentClosestParameter(f32 *t1, f32 *t2, const struct segment *s1, const s
 		const f32 diffd2 = Vec3Dot(diff, s2->dir);
 		const f32 denom = d1d1*d2d2 - d1d2*d1d2;
 		/* Check that the segments are not parallel */
+        //TODO is 0.0f good here, or should we use degree test as in SegmentParallelCheck?
 		if (denom > 0.0f)
 		{
 			*t1 = f32_clamp((diffd1*d2d2 - diffd2*d1d2) / denom, 0.0f, 1.0f);
@@ -316,13 +317,8 @@ struct aabb BboxSegment(const struct segment *s)
 	vec3 min = { s->p[0][0], s->p[0][1], s->p[0][2] };
 	vec3 max = { s->p[0][0], s->p[0][1], s->p[0][2] };
 
-	min[0] = f32_min(min[0], s->p[1][0]); 
-	min[1] = f32_min(min[1], s->p[1][1]); 
-	min[2] = f32_min(min[2], s->p[1][2]); 
-
-	max[0] = f32_max(max[0], s->p[1][0]); 
-	max[1] = f32_max(max[1], s->p[1][1]); 
-	max[2] = f32_max(max[2], s->p[1][2]); 
+    Vec3MinSelf(min, s->p[1]);
+    Vec3MaxSelf(max, s->p[1]);
 
 	Vec3Sub(bbox.hw, max, min);
 	Vec3ScaleSelf(bbox.hw, 0.5f);
@@ -485,13 +481,8 @@ void AabbVertex(struct aabb *dst, const vec3ptr v, const u32 v_count, const f32 
 	vec3 max = { -F32_INFINITY, -F32_INFINITY, -F32_INFINITY };
 	for (u32 i = 0; i < v_count; ++i)
 	{
-		min[0] = f32_min(min[0], v[i][0]); 
-		min[1] = f32_min(min[1], v[i][1]);			
-		min[2] = f32_min(min[2], v[i][2]);			
-
-		max[0] = f32_max(max[0], v[i][0]);			
-		max[1] = f32_max(max[1], v[i][1]);			
-		max[2] = f32_max(max[2], v[i][2]);			
+        Vec3MinSelf(min, v[i]);
+        Vec3MaxSelf(max, v[i]);
 	}
 
 	Vec3Sub(dst->hw, max, min);
@@ -621,6 +612,7 @@ f32 AabbRaycastParameterEx(const struct aabb *aabb, const struct ray *ray, const
 	for (u32 axis = 0; axis < 3; ++axis)
 	{
 		/* If parallel to slab, point_slab test */
+        //TODO fix hardcoded values here
 		if (f32_abs(ray->dir[axis]) < 10.0f * F32_EPSILON)
 		{
 			if (ray->origin[axis] < box_min[axis] || ray->origin[axis] > box_max[axis]) { return F32_INFINITY; }
@@ -676,53 +668,10 @@ u32 AabbRaycast(vec3 intersection, const struct aabb *aabb, const struct ray *ra
 
 u64 AabbPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const vec4 color)
 {
-	const u64 bytes_written = 3*8*(sizeof(vec3)+sizeof(vec4));
-	if (bufsize < bytes_written)
-	{
-		return 0;
-	}
-
-	vec3 end;
-	Vec3Sub(end, box->center, box->hw);
-
-	f32 *v = (f32*) buf;
-	Vec3Set(v+7*0, end[0], 		   end[1], 		     end[2]);
-	Vec3Set(v+7*1, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
-	Vec3Set(v+7*2, end[0], 		   end[1], 		     end[2]);
-	Vec3Set(v+7*3, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
-	Vec3Set(v+7*4, end[0], 		   end[1], 		     end[2]);
-	Vec3Set(v+7*5, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
-
-	Vec3Set(v+7*6, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
-	Vec3Set(v+7*7, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
-	Vec3Set(v+7*8, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
-	Vec3Set(v+7*9, end[0] + 2.0f*box->hw[0], end[1]                  , end[2] + 2.0f*box->hw[2]);
-
-	Vec3Set(v+7*10, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
-	Vec3Set(v+7*11, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*12, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
-	Vec3Set(v+7*13, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
-
-	Vec3Set(v+7*14, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*15, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*16, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*17, end[0] + 2.0f*box->hw[0], end[1], 	             end[2] + 2.0f*box->hw[2]);
-
-	Vec3Set(v+7*18, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
-	Vec3Set(v+7*19, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-
-	Vec3Set(v+7*20, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*21, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-
-	Vec3Set(v+7*22, end[0] + 2.0f*box->hw[0], end[1], 	             end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*23, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-
-	for (u32 i = 0; i < 24; ++i)
-	{
-		Vec4Copy(v + 7*i + 3, color);
-	}
-
-	return bytes_written;
+    mat3 identity;
+    Mat3Identity(identity);
+    const vec3 translation = VEC3_ZERO;
+	return AabbTransformPushLinesBuffered(buf, bufsize, box, translation, identity, color);
 }
 
 u64 AabbTransformPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const vec3 translation, mat3 rotation, const vec4 color)
@@ -737,49 +686,42 @@ u64 AabbTransformPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb
 	Vec3Sub(end, box->center, box->hw);
 
 	f32 *v = (f32*) buf;
-	Vec3Set(v+7*0, end[0], 		   end[1], 		     end[2]);
-	Vec3Set(v+7*1, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
-	Vec3Set(v+7*2, end[0], 		   end[1], 		     end[2]);
-	Vec3Set(v+7*3, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
-	Vec3Set(v+7*4, end[0], 		   end[1], 		     end[2]);
-	Vec3Set(v+7*5, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*0, end[0], 		                end[1], 		            end[2]);
+	Vec3Set(v+7*1, end[0] + 2.0f*box->hw[0],    end[1], 		            end[2]);
+	Vec3Set(v+7*2, end[0], 		                end[1], 		            end[2]);
+	Vec3Set(v+7*3, end[0], 		                end[1] + 2.0f*box->hw[1],   end[2]);
+	Vec3Set(v+7*4, end[0], 		                end[1], 		            end[2]);
+	Vec3Set(v+7*5, end[0], 		                end[1], 	                end[2] + 2.0f*box->hw[2]);
 
-	Vec3Set(v+7*6, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
-	Vec3Set(v+7*7, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
-	Vec3Set(v+7*8, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
-	Vec3Set(v+7*9, end[0] + 2.0f*box->hw[0], end[1]                  , end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*6, end[0] + 2.0f*box->hw[0],    end[1], 		            end[2]);
+	Vec3Set(v+7*7, end[0] + 2.0f*box->hw[0],    end[1] + 2.0f*box->hw[1],   end[2]);
+	Vec3Set(v+7*8, end[0] + 2.0f*box->hw[0],    end[1], 		            end[2]);
+	Vec3Set(v+7*9, end[0] + 2.0f*box->hw[0],    end[1],                     end[2] + 2.0f*box->hw[2]);
 
-	Vec3Set(v+7*10, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
-	Vec3Set(v+7*11, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*12, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
-	Vec3Set(v+7*13, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
+	Vec3Set(v+7*10, end[0], 		            end[1] + 2.0f*box->hw[1],   end[2]);
+	Vec3Set(v+7*11, end[0], 		            end[1] + 2.0f*box->hw[1],   end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*12, end[0], 		            end[1] + 2.0f*box->hw[1],   end[2]);
+	Vec3Set(v+7*13, end[0] + 2.0f*box->hw[0],   end[1] + 2.0f*box->hw[1],   end[2]);
 
-	Vec3Set(v+7*14, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*15, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*16, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*17, end[0] + 2.0f*box->hw[0], end[1], 	             end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*14, end[0], 		            end[1], 	                end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*15, end[0], 		            end[1] + 2.0f*box->hw[1],   end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*16, end[0], 		            end[1], 	                end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*17, end[0] + 2.0f*box->hw[0],   end[1], 	                end[2] + 2.0f*box->hw[2]);
 
-	Vec3Set(v+7*18, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
-	Vec3Set(v+7*19, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*18, end[0] + 2.0f*box->hw[0],   end[1] + 2.0f*box->hw[1],   end[2]);
+	Vec3Set(v+7*19, end[0] + 2.0f*box->hw[0],   end[1] + 2.0f*box->hw[1],   end[2] + 2.0f*box->hw[2]);
 
-	Vec3Set(v+7*20, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*21, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*20, end[0], 		            end[1] + 2.0f*box->hw[1],   end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*21, end[0] + 2.0f*box->hw[0],   end[1] + 2.0f*box->hw[1],   end[2] + 2.0f*box->hw[2]);
 
-	Vec3Set(v+7*22, end[0] + 2.0f*box->hw[0], end[1], 	             end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*23, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*22, end[0] + 2.0f*box->hw[0],   end[1], 	                end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*23, end[0] + 2.0f*box->hw[0],   end[1] + 2.0f*box->hw[1],   end[2] + 2.0f*box->hw[2]);
 
 	for (u32 i = 0; i < 24; ++i)
 	{
 		vec3 tmp1, tmp2;
-		//Vec3Sub(tmp1, v + 7*i, box->center);
-		//Mat3VecMul(tmp2, rotation, tmp1);
-		//Vec3Add(v + 7*i, tmp2, box->center);
-		//Vec3Translate(v + 7*i, translation);
-
 		Mat3VecMul(tmp1, rotation, v + 7*i);
 		Vec3Add(v + 7*i, tmp1, translation);
-
-
 		Vec4Copy(v + 7*i + 3, color);
 	}
 
@@ -792,22 +734,10 @@ struct aabb BboxTriangle(const vec3 p0, const vec3 p1, const vec3 p2)
 
 	vec3 min = { p0[0], p0[1], p0[2] };
 	vec3 max = { p0[0], p0[1], p0[2] };
-
-	min[0] = f32_min(min[0], p1[0]); 
-	min[1] = f32_min(min[1], p1[1]); 
-	min[2] = f32_min(min[2], p1[2]); 
-
-	max[0] = f32_max(max[0], p1[0]); 
-	max[1] = f32_max(max[1], p1[1]); 
-	max[2] = f32_max(max[2], p1[2]); 
-
-	min[0] = f32_min(min[0], p2[0]); 
-	min[1] = f32_min(min[1], p2[1]); 
-	min[2] = f32_min(min[2], p2[2]); 
-
-	max[0] = f32_max(max[0], p2[0]); 
-	max[1] = f32_max(max[1], p2[1]); 
-	max[2] = f32_max(max[2], p2[2]); 
+    Vec3MinSelf(min, p1);
+    Vec3MinSelf(min, p2);
+    Vec3MaxSelf(max, p1);
+    Vec3MaxSelf(max, p2);
 
 	Vec3Sub(bbox.hw, max, min);
 	Vec3ScaleSelf(bbox.hw, 0.5f);
@@ -875,7 +805,7 @@ void TriCcwNormal(vec3 normal, const vec3 p0, const vec3 p1, const vec3 p2)
 	Vec3Normalize(normal, C);
 }
 
-void TriCcwDirection(vec3 dir, const vec3 p0, const vec3 p1, const vec3 p2)
+void TriCcwNormalDirection(vec3 dir, const vec3 p0, const vec3 p1, const vec3 p2)
 {
 	vec3 A, B;
 	Vec3Sub(A, p1, p0);
@@ -1535,9 +1465,7 @@ void DcelFaceDirection(vec3 dir, const struct dcel *h, const u32 fi)
 	struct dcelEdge *e0 = h->e + h->f[fi].first;
 	struct dcelEdge *e1 = h->e + h->f[fi].first + 1;
 	struct dcelEdge *e2 = h->e + h->f[fi].first + 2;
-	Vec3Sub(a, h->v[e1->origin], h->v[e0->origin]);
-	Vec3Sub(b, h->v[e2->origin], h->v[e0->origin]);
-	Vec3Cross(dir, a, b);
+    TriCcwNormalDirection(dir, h->v[e0->origin], h->v[e1->origin], h->v[e2->origin]);
 }
 
 void DcelFaceNormal(vec3 normal, const struct dcel *h, const u32 fi)
@@ -1682,9 +1610,7 @@ void SphereSupport(vec3 support, const vec3 dir, const struct sphere *sph, const
 void CapsuleSupport(vec3 support, const vec3 dir, const struct capsule *cap, mat3 rot, const vec3 pos)
 {
 	vec3 p1, p2;
-	p1[0] = rot[1][0] * cap->half_height,	
-	p1[1] = rot[1][1] * cap->half_height,	
-	p1[2] = rot[1][2] * cap->half_height,	
+    Vec3Scale(p1, rot[1], cap->half_height);
 	Vec3Negate(p2, p1);
 
 	Vec3Scale(support, dir, cap->radius / Vec3Length(dir));
@@ -2061,25 +1987,10 @@ static void InternalConvexHullTetrahedronDdcel(struct ddcel *ddcel, const f32 to
 	DdcelEdgeSet(e10, ddcel->cv[2].index,  1,  9, 11, 3);
 	DdcelEdgeSet(e11, ddcel->cv[1].index,  3, 10,  9, 3);
 
-	Vec3Sub(a, ddcel->v[e1->origin], ddcel->v[e0->origin]);
-	Vec3Sub(b, ddcel->v[e2->origin], ddcel->v[e0->origin]);
-	Vec3Cross(cr, a, b);
-	Vec3Normalize(ddcel->f[0].normal, cr);
-
-	Vec3Sub(a, ddcel->v[e4->origin], ddcel->v[e3->origin]);
-	Vec3Sub(b, ddcel->v[e5->origin], ddcel->v[e3->origin]);
-	Vec3Cross(cr, a, b);
-	Vec3Normalize(ddcel->f[1].normal, cr);
-
-	Vec3Sub(a, ddcel->v[e7->origin], ddcel->v[e6->origin]);
-	Vec3Sub(b, ddcel->v[e8->origin], ddcel->v[e6->origin]);
-	Vec3Cross(cr, a, b);
-	Vec3Normalize(ddcel->f[2].normal, cr);
-
-	Vec3Sub(a, ddcel->v[e10->origin], ddcel->v[e9->origin]);
-	Vec3Sub(b, ddcel->v[e11->origin], ddcel->v[e9->origin]);
-	Vec3Cross(cr, a, b);
-	Vec3Normalize(ddcel->f[3].normal, cr);
+    TriCcwNormal(ddcel->f[0].normal, ddcel->v[e0->origin], ddcel->v[e1->origin], ddcel->v[e2->origin]);
+    TriCcwNormal(ddcel->f[1].normal, ddcel->v[e3->origin], ddcel->v[e4->origin], ddcel->v[e5->origin]);
+    TriCcwNormal(ddcel->f[2].normal, ddcel->v[e6->origin], ddcel->v[e7->origin], ddcel->v[e8->origin]);
+    TriCcwNormal(ddcel->f[3].normal, ddcel->v[e9->origin], ddcel->v[e10->origin], ddcel->v[e11->origin]);
 
 	DdcelAssertTopology(ddcel);
 }
@@ -2293,11 +2204,7 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 			DdcelEdgeSet(e0, e0->origin, e0->twin, se2.index, se1.index, sf.index);
 
 			DdcelFaceSet(f, e0i, 3);
-			vec3 a, b, cr;
-			Vec3Sub(a, ddcel->v[e1->origin], ddcel->v[e0->origin]);
-			Vec3Sub(b, ddcel->v[e2->origin], ddcel->v[e0->origin]);
-			Vec3Cross(cr, a, b);
-			Vec3Normalize(f->normal, cr);
+            TriCcwNormal(f->normal, ddcel->v[e0->origin], ddcel->v[e1->origin], ddcel->v[e2->origin]);
 		
 			/*TODO: We may add same point twich here, need to add a "has_been_mapped" thingy to not add again*/
 			ce = NULL;
