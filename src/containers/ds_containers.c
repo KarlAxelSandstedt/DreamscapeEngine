@@ -6,5 +6,3 @@
 #include "hierarchy_index.c"
 #include "string_database.c"
 #include "tree.c"
-#include "parallel/fifo_spmc.c"
-

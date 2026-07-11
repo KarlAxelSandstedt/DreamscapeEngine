@@ -111,9 +111,7 @@ void QuatNormalize(quat q)
 	QuatScale(q, norm_2_inv);
 }
 
-/**
- * CCW rot?
- */
+/* q is a normalised quaternion representing a CCW rotation.  */
 void Mat3Quat(mat3 dst, const quat q)
 {
 	const f32 tr_part = 2.0f*q[3]*q[3] - 1.0f;
@@ -128,9 +126,7 @@ void Mat3Quat(mat3 dst, const quat q)
 		      q13 + q20, q23 - q10, tr_part + 2.0f*q[2]*q[2]);
 }
 
-/**
- * q is a normalised quaternion representing a CCW rotation.
- */
+/* q is a normalised quaternion representing a CCW rotation.  */
 void Mat4Quat(mat4 dst, const quat q)
 {
 	const f32 tr_part = 2.0f*q[3]*q[3] - 1.0f;

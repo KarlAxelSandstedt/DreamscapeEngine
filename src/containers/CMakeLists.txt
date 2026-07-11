@@ -10,7 +10,6 @@ add_library(DreamscapeContainers STATIC
 	"${DS_INCLUDE_PATH}/hierarchy_index.h"
 	"${DS_INCLUDE_PATH}/string_database.h"
 	"${DS_INCLUDE_PATH}/tree.h"
-	"${DS_INCLUDE_PATH}/fifo_spmc.h"
 	"ds_containers.c"
 )       
 add_library(Dreamscape::Containers ALIAS DreamscapeContainers)

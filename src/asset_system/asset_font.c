@@ -285,7 +285,6 @@ void FontSerialize(const struct assetFont *asset, const struct font *font)
 
 const struct font *FontDeserialize(struct assetFont *asset)
 {
-	//TODO remove later;
 	struct arena *tmp = ArenaPushScratch();
 	struct file file = FileNull();
 	FileTryOpenAtCwd(tmp, &file, asset->filepath, FILE_READ);

@@ -31,7 +31,6 @@ static void f32_static_assert(void)
 static u32 ieee32_bit(const union ieee32 f, const u32 bit)
 {
 	ds_Assert(bit <= 31);
-
 	return (f.bits & (1 << bit)) >> bit;
 }
 
@@ -76,58 +75,37 @@ f32 f32_construct(const u32 sign_bit, const u32 exponent_bits, const u32 mantiss
 static u32 ieee32_test_nan(const f32 f)
 {
 	union ieee32 val = { .f = f };	
-
-	const u32 is_nan = (((val.bits & F32_EXPONENT_MASK) == F32_EXPONENT_MASK) 
-			 && ((val.bits & F32_SIGNIFICAND_MASK) > 0))
-		? 1
-		: 0;
-
-	return is_nan;
+	return ((val.bits & F32_EXPONENT_MASK) == F32_EXPONENT_MASK) && ((val.bits & F32_SIGNIFICAND_MASK) > 0);
 }
 
 static u32 ieee32_test_positive_inf(const f32 f)
 {
 	union ieee32 val = { .f = f };
-
-	const u32 is_positive_inf = (val.bits == F32_EXPONENT_MASK) ? 1 : 0;
-
-	return is_positive_inf;
+	return val.bits == F32_EXPONENT_MASK;
 }
 
 static u32 ieee32_test_negative_inf(const f32 f)
 {
 	union ieee32 val = { .f = f };
-
-	const u32 is_negative_inf = (val.bits == (F32_SIGN_MASK | F32_EXPONENT_MASK)) ? 1 : 0;
-
-	return is_negative_inf;
+	return val.bits == (F32_SIGN_MASK | F32_EXPONENT_MASK);
 }
 
 static u32 ieee32_test_subnormal(const f32 f)
 {
 	union ieee32 val = { .f = f };
-
-	return (((val.bits & F32_EXPONENT_MASK) == 0) && ((val.bits & F32_SIGNIFICAND_MASK) > 0))
-		? 1
-		: 0;
+	return ((val.bits & F32_EXPONENT_MASK) == 0) && ((val.bits & F32_SIGNIFICAND_MASK) > 0);
 }
 
 static u32 ieee32_test_positive_zero(const f32 f)
 {
 	union ieee32 val = { .f = f };
-
-	const u32 is_positive_zero = (val.bits == 0) ? 1 : 0;
-
-	return is_positive_zero;
+	return val.bits == 0;
 }
 
 static u32 ieee32_test_negative_zero(const f32 f)
 {
 	union ieee32 val = { .f = f };
-
-	const u32 is_negative_zero = (val.bits == F32_SIGN_MASK) ? 1 : 0;
-
-	return is_negative_zero;
+	return val.bits == F32_SIGN_MASK;
 }
 
 
@@ -165,147 +143,111 @@ f32 f32_abs(const f32 f)
 u32 f32_test_nan(const f32 f)
 {
 	union ieee32 val = { .f = f };	
-
-	const u32 is_nan = (((val.bits & F32_EXPONENT_MASK) == F32_EXPONENT_MASK) 
-			 && ((val.bits & F32_SIGNIFICAND_MASK) > 0))
-		? 1
-		: 0;
-
-	return is_nan;
+	return ((val.bits & F32_EXPONENT_MASK) == F32_EXPONENT_MASK) && ((val.bits & F32_SIGNIFICAND_MASK) > 0);
 }
 
 u32 f32_test_positive_inf(const f32 f)
 {
 	union ieee32 val = { .f = f };
-
-	const u32 is_positive_inf = (val.bits == F32_EXPONENT_MASK) ? 1 : 0;
-
-	return is_positive_inf;
+	return val.bits == F32_EXPONENT_MASK;
 }
 
 u32 f32_test_negative_inf(const f32 f)
 {
 	union ieee32 val = { .f = f };
-
-	const u32 is_negative_inf = (val.bits == (F32_SIGN_MASK | F32_EXPONENT_MASK)) ? 1 : 0;
-
-	return is_negative_inf;
+	return val.bits == (F32_SIGN_MASK | F32_EXPONENT_MASK);
 }
 
 u32 f32_test_normal(const f32 f)
 {
 	union ieee32 val = { .f = f };
-
 	const i32 s = (i32) ((val.bits & F32_EXPONENT_MASK) >> F32_SIGNIFICAND_LENGTH) - F32_BIAS;
-
-	return (F32_MIN_EXPONENT <= s && s <= F32_MAX_EXPONENT) ? 1 : 0;
+	return F32_MIN_EXPONENT <= s && s <= F32_MAX_EXPONENT;
 }
 
 u32 f32_test_subnormal(const f32 f)
 {
 	union ieee32 val = { .f = f };
-
-	return (((val.bits & F32_EXPONENT_MASK) == 0) && ((val.bits & F32_SIGNIFICAND_MASK) > 0))
-		? 1
-		: 0;
+	return ((val.bits & F32_EXPONENT_MASK) == 0) && ((val.bits & F32_SIGNIFICAND_MASK) > 0);
 }
 
 u32 f32_test_positive_zero(const f32 f)
 {
 	union ieee32 val = { .f = f };
-
-	const u32 is_positive_zero = (val.bits == 0) ? 1 : 0;
-
-	return is_positive_zero;
+	return (val.bits == 0);
 }
 
 u32 f32_test_negative_zero(const f32 f)
 {
 	union ieee32 val = { .f = f };
-
-	const u32 is_negative_zero = (val.bits == F32_SIGN_MASK) ? 1 : 0;
-
-	return is_negative_zero;
+	return val.bits == F32_SIGN_MASK;
 }
 
 f32 f32_inf(const u32 sign)
 {
 	union ieee32 val = { .bits = F32_EXPONENT_MASK };
-
 	val.bits |= (sign) ? F32_SIGN_MASK : 0;
-
 	return val.f;
 }
 
 f32 f32_zero(const u32 sign)
 {
 	union ieee32 val;
-
 	val.bits = (sign) ? F32_SIGN_MASK : 0;
-
 	return val.f;
 }
 
 f32 f32_nan(void)
 {
 	union ieee32 val = { .bits = F32_EXPONENT_MASK | F32_SIGNIFICAND_MASK };
-
 	return val.f;
 }
 
 f32 f32_max_positive_subnormal(void)
 {
 	union ieee32 val = { .bits = F32_SIGNIFICAND_MASK };
-
 	return val.f;
 }
 
 f32 f32_min_positive_subnormal(void)
 {
 	union ieee32 val = { .bits = 0x1 };
-
 	return val.f;
 }
 
 f32 f32_max_negative_subnormal(void)
 {
 	union ieee32 val = { .bits = F32_SIGN_MASK | 0x1 };
-
 	return val.f;
 }
 
 f32 f32_min_negative_subnormal(void)
 {
 	union ieee32 val = { .bits = F32_SIGN_MASK | F32_SIGNIFICAND_MASK };
-
 	return val.f;
 }
 
 f32 f32_max_positive_normal(void)
 {
 	union ieee32 val = { .bits = (F32_EXPONENT_MASK & 0x7f000000) | F32_SIGNIFICAND_MASK };
-
 	return val.f;
 }
 
 f32 f32_min_positive_normal(void)
 {
 	union ieee32 val = { .bits = (F32_EXPONENT_MASK & 0x00800000) };
-
 	return val.f;
 }
 
 f32 f32_max_negative_normal(void)
 {
 	union ieee32 val = { .bits = F32_SIGN_MASK | (F32_EXPONENT_MASK & 0x00800000) };
-
 	return val.f;
 }
 
 f32 f32_min_negative_normal(void)
 {
 	union ieee32 val = { .bits = F32_SIGN_MASK | (F32_EXPONENT_MASK & 0x7f000000) | F32_SIGNIFICAND_MASK };
-
 	return val.f;
 }
 
