@@ -951,3 +951,33 @@ void Vec3CreateBasis(vec3 n1, vec3 n2, const vec3 n3)
 	ds_Assert(f32_abs(Vec3Dot(n1, n3)) <= F32_EPSILON * 100.0f);
 	ds_Assert(f32_abs(Vec3Dot(n2, n3)) <= F32_EPSILON * 100.0f);
 }
+
+f32 Vec3ParallelCheckEpsilon(const f32 degrees)
+{
+    /*
+     *  Dot(a,b)*Dot(a*b) = Dot(a,a)*Dot(b,b)*cos(theta)^2
+     *                        = Dot(a,a)*Dot(b,b)*(1-sin(theta)^2)
+     * =>
+     *  Dot(a,a)*Dot(b,b) - Dot(a,b)*Dot(a,b) = sin(theta)^2*Dot(a,a)*Dot(b,b)
+     *
+     *  If the two vectors are parallel (and non-zero) the scale invariant test is found
+     *  by setting a suitable upper bound epsilon > sin(theta)^2
+     *
+     *  Consider the example for enforcing an angle of 0.5* degrees. The analysis of 
+     *  deriving an epsilon given the wanted angle:
+     *
+     *                0.5/360 = theta/2_Pi        
+     * <=>              theta = 0.5 * 2_Pi / 360 ~= 0.008727
+     *  =>      sin(theta)^2 ~= 7.62e-5
+     */
+    const f32 theta =  degrees * F32_PI2 / 360.0f;
+    const f32 sin_theta = f32_sin(theta);
+    return sin_theta*sin_theta;
+}
+
+u32 Vec3ParallelCheck(const vec3 a, const vec3 b, const f32 eps)
+{
+	const f32 d1d2 = Vec3Dot(a, b);
+    const f32 d1d1_d2d2 = Vec3Dot(a, a) * Vec3Dot(b, b);
+    return (d1d1_d2d2 > 0.0f) && (d1d1_d2d2 -  d1d2*d1d2 < eps*d1d1_d2d2);
+}

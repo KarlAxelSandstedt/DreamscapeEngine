@@ -237,6 +237,14 @@ void 	Vec2InterpolatePiecewise(vec2 dst, const vec2 a, const vec2 b, const vec2 
 void 	Vec3InterpolatePiecewise(vec3 dst, const vec3 a, const vec3 b, const vec3 alpha);
 void 	Vec4InterpolatePiecewise(vec4 dst, const vec4 a, const vec4 b, const vec4 alpha);
 
+/* 
+ * Generate an appropriate epsilon for Vec3ParallelCheck given the upper-bound degrees for two vectors to be 
+ * considered parallel. 
+ */
+f32     Vec3ParallelCheckEpsilon(const f32 degrees);
+/* Return 1 if the vectors are parallel, otherwise return 0. */
+u32     Vec3ParallelCheck(const vec3 a, const vec3 b, const f32 eps);
+
 void 	Vec3Cross(vec3 dst, const vec3 a, const vec3 b); 		/* a cross b */
 void 	Vec3RotateY(vec3 dst, const vec3 a, const f32 angle);	/* (a x b) x c */
 void 	Vec3TripleProduct(vec3 dst, const vec3 a, const vec3 b, const vec3 c);

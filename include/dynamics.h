@@ -38,6 +38,32 @@ struct cdb;
 struct ds_Island;
 
 /*
+ds_NumericsConfig
+==================
+ds_NumericsConfig stores configurable values to be used in numerical calculations.
+*/
+
+struct ds_NumericsConfig
+{
+    f32 vec3_parallel_check_max_degrees_pending;
+    f32 vec3_parallel_check_max_degrees;
+    f32 vec3_parallel_check_eps;
+
+    f32 manifold_cached_normal_parallel_check_max_degrees_pending;
+    f32 manifold_cached_normal_parallel_check_max_degrees;
+    f32 manifold_cached_normal_parallel_check_eps;
+};
+extern struct ds_NumericsConfig *g_numerics_config;
+
+/* Return default config */
+struct ds_NumericsConfig    ds_NumericsConfigDefault(void);
+/* Update any pending values in config and push config to global */
+void                        ds_NumericsConfigPush(struct ds_NumericsConfig *config);
+/* Pop global config */
+void                        ds_NumericsConfigPop(void);
+
+
+/*
 ds_Id
 =====
 Opaque generation based handles for user-interfacing structures. ds_Id supports
@@ -500,14 +526,17 @@ struct sat_Cache
 	{
 		struct
 		{
-			u32 body;	/* body (0 or 1) containing face    */
-			u32	face;	/* reference face 	                */
+			u32     body;	        /* body (0 or 1) containing face    */
+			u32	    face;	        /* reference face 	                */
+            u32     deepest_vertex; /* deepest point on incident face   */
+            vec3    face_normal;    /* cached world-space normal        */
 		};
 
 		struct
 		{
-			u32	edge0;	/* body0 edge   */
-			u32	edge1;	/* body1 edge   */
+			u32	    edge0;	        /* body0 edge                   */
+			u32	    edge1;	        /* body1 edge                   */
+            vec3    edge_normal;    /* cached world-space normal    */
 		};
 
 		struct
@@ -1132,6 +1161,8 @@ struct ds_RigidBodyPipeline
 
     struct ds_CollisionJobPhase *   cd_jobs;
     struct ds_IslandJobPhase *      is_jobs;
+
+    struct ds_NumericsConfig        numerics_config;
 };
 
 /**************** PHYISCS PIPELINE API ****************/

@@ -104,6 +104,8 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 	}
 #endif
 
+    pipeline.numerics_config = ds_NumericsConfigDefault();
+
 	return pipeline;
 }
 
@@ -961,6 +963,8 @@ void PhysicsPipelineTick(struct ds_RigidBodyPipeline *pipeline)
 {
 	ProfZone;
 
+    ds_NumericsConfigPush(&pipeline->numerics_config);
+
 	if (pipeline->frames_completed > 0)
 	{
 		PhysicsPipelineClearFrame(pipeline);
@@ -968,6 +972,8 @@ void PhysicsPipelineTick(struct ds_RigidBodyPipeline *pipeline)
 	pipeline->frames_completed += 1;
 	const f32 delta = (f32) pipeline->ns_tick / NSEC_PER_SEC;
 	PhysicsPipelineSimulateFrame(pipeline, delta);
+
+    ds_NumericsConfigPop();
 
 	ProfZoneEnd;
 }

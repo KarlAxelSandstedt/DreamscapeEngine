@@ -144,7 +144,7 @@ struct segment 	SegmentConstruct(const vec3 p0, const vec3 p1);
 /* Return 1 if the end-points of s are within a distance of sqrt(min_dist_sq) of each other, otherwise return 0. */
 u32             SegmentPointCheck(const struct segment *s, const f32 min_dist_sq);
 /* Return 1 if s1 and s2 are parallel, otherwise return 0. */
-u32             SegmentParallelCheck(const struct segment *s1, const struct segment *s2);
+u32             SegmentParallelCheck(const struct segment *s1, const struct segment *s2, const f32 eps);
 /* return squared distance between s1 and s2; set c1, c2 to closest point on s1, s2 respectively  */
 f32 		    SegmentDistanceSquared(vec3 c1, vec3 c2, const struct segment *s1, const struct segment *s2);
 /* return parameters t1,t2 of closest points c1,c2 on s1,s2 such that ci = si.p0(1-ti) + s1.p1*ti  */
@@ -385,11 +385,18 @@ struct plane 	DcelFacePlane(const struct dcel *h, mat3 rot, const vec3 pos, cons
 /* Return the plane defined by the given face */
 struct plane 	DcelFacePlaneLocal(const struct dcel *h, const u32 fi);
 
+/* Return the transformed normal defined by the given face */
+void 		    DcelFaceNormal(vec3 normal, const struct dcel *h, mat3 rot, const u32 fi);
+/* Return the transformed normal drirection defined by the given face */
+void 		    DcelFaceDirection(vec3 normal_direction, const struct dcel *h, mat3 rot, const u32 fi);
+/* Return the normal defined by the given face */
+void 		    DcelFaceNormalLocal(vec3 normal, const struct dcel *h, const u32 fi);
+/* Return the normal drirection defined by the given face */
+void 		    DcelFaceDirectionLocal(vec3 normal_direction, const struct dcel *h, const u32 fi);
+
+struct plane 	DcelFaceClipPlane(const struct dcel *h, mat3 rot, const vec3 pos, const vec3 face_normal, const u32 e0, const u32 e1); /* Return clip plane of face containing edge e0e1, orthogonal to the face normal */
 
 /* TODO: document, go through ... */
-void 		DcelFaceDirection(vec3 dir, const struct dcel *h, const u32 fi); /* not normalized */
-void 		DcelFaceNormal(vec3 normal, const struct dcel *h, const u32 fi); /* normalized */
-struct plane 	DcelFaceClipPlane(const struct dcel *h, mat3 rot, const vec3 pos, const vec3 face_normal, const u32 e0, const u32 e1); /* Return clip plane of face containing edge e0e1, orthogonal to the face normal */
 struct segment 	DcelFaceClipSegment(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi, const struct segment *s); /* clip segment against face fi's edge-planes (No projection onto face plane!) */
 u32 		DcelFaceProjectedPointTest(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi, const vec3 p); /* Project p onto face plane and test if it is on the face */
 
