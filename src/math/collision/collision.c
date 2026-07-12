@@ -2462,42 +2462,25 @@ u32 c_HullContact(struct arena *mem_tmp, struct c_Manifold *manifold, struct sat
         case SAT_CACHE_CONTACT_FV:
 	    {
             f32 max_depth;
-            const u32 f_body = cache_copy->body;
-            const u32 v_body = 1 - cache_copy->body;
-	    	DcelFaceNormal(cache->face_normal, h[f_body], rot[f_body], cache_copy->face);
-            if (cache_copy->body != ref)
-            {
-                Vec3ScaleSelf(cache->face_normal, -1.0f);
-            }
-
+            vec3 cm_n;
+            /* b_f = body with reference/contact face, b_v = incident body with penetrating vertices */
+            const u32 b_f = cache_copy->body;
+            const u32 b_v = 1 - b_f;
+	    	DcelFaceNormal(cache->face_normal, h[b_f], rot[b_f], cache_copy->face);
             if (Vec3Dot(cache->face_normal, cache_copy->face_normal) < g_numerics_config->manifold_cached_normal_parallel_check_eps) 
             { 
                 break; 
             }
 
-	    	Mat3VecMul(ref_n, rot[ref], cm_n);
+            (cache_copy->body == ref)
+                ? Vec3Copy(cm_n, cache->face_normal)
+                : Vec3Scale(cm_n, cache->face_normal, -1.0f);
 
-    //    	if (cache_copy->body == 0)
-	//    	{
-	//    		DcelFaceNormal(cm_n, h[0], cache_copy->face);
-	//    		Mat3VecMul(ref_n, rot[0], cm_n);
-    //            (cache_copy->body == ref)
-    //                ? Vec3Copy(cm_n, ref_n)
-    //                : Vec3Scale(cm_n, ref_n, -1.0f);
-	//    		colliding = HullContactFaceContact(mem_tmp, manifold, &max_depth, cm_n, h[0], ref_n, cache_copy->face, v_world[0], h[1], v_world[1]);
-	//    	}
-	//    	else
-	//    	{
-	//    		DcelFaceNormal(cm_n, h[1], cache_copy->face);
-	//    		Mat3VecMul(ref_n, rot[1], cm_n);
-    //            (cache_copy->body == ref)
-    //                ? Vec3Copy(cm_n, ref_n)
-    //                : Vec3Scale(cm_n, ref_n, -1.0f);
-	//    		colliding = HullContactFaceContact(mem_tmp, manifold, &max_depth, cm_n, h[1], ref_n, cache_copy->face, v_world[1], h[0], v_world[0]);
-	//    	}
-
-	    	colliding = HullContactFaceContact(mem_tmp, manifold, &max_depth, cm_n, h[f_body], ref_n, cache_copy->face, v_world[f_body], h[v_body], v_world[v_body]);
-            if (!colliding) { break; }
+	    	colliding = HullContactFaceContact(mem_tmp, manifold, &max_depth, cm_n, h[b_f], cache->face_normal, cache_copy->face, v_world[b_f], h[b_v], v_world[b_v]);
+            if (!colliding) 
+            { 
+                break; 
+            }
 
             if (cache_copy->body != ref)
             {
@@ -2542,45 +2525,28 @@ u32 c_HullContact(struct arena *mem_tmp, struct c_Manifold *manifold, struct sat
 	colliding = 1;
 	if (0.99f*f_query[0].depth >= e_query.depth || 0.99f*f_query[1].depth >= e_query.depth)
 	{
-        //TODO This is dogshit, cleanup 
-		vec3 cm_n;
+        /* b_f = body with reference/contact face, b_v = incident body with penetrating vertices */
+        const u32 b_f = (f_query[0].depth < f_query[1].depth);
+        const u32 b_v = 1 - b_f;
+		cache->body = b_f;
+		cache->face = f_query[b_f].fi;
+        Vec3Copy(cache->face_normal, f_query[b_f].normal);
+
         f32 max_depth;
-		if (f_query[0].depth > f_query[1].depth)
-		{
-			cache->body = 0;
-			cache->face = f_query[0].fi;
-            if (ref == 0)
-            {
-			    colliding = HullContactFaceContact(mem_tmp, manifold, &max_depth, f_query[0].normal, h[0], f_query[0].normal, f_query[0].fi, v_world[0], h[1], v_world[1]);
-            }
-            else
-            {
-                Vec3Scale(cm_n, f_query[0].normal, -1.0f);
-			    colliding = HullContactFaceContact(mem_tmp, manifold, &max_depth, cm_n, h[0], f_query[0].normal, f_query[0].fi, v_world[0], h[1], v_world[1]);
-                Vec3TranslateScaled(manifold->v[0], manifold->n, manifold->depth[0]);
-                Vec3TranslateScaled(manifold->v[1], manifold->n, manifold->depth[1]);
-                Vec3TranslateScaled(manifold->v[2], manifold->n, manifold->depth[2]);
-                Vec3TranslateScaled(manifold->v[3], manifold->n, manifold->depth[3]);
-            }
-		}
-		else
-		{
-			cache->body = 1;
-			cache->face = f_query[1].fi;
-            if (ref == 1)
-            {
-			    colliding = HullContactFaceContact(mem_tmp, manifold, &max_depth, f_query[1].normal, h[1], f_query[1].normal, f_query[1].fi, v_world[1], h[0], v_world[0]);
-            }
-            else
-            {
-                Vec3Scale(cm_n, f_query[1].normal, -1.0f);
-			    colliding = HullContactFaceContact(mem_tmp, manifold, &max_depth, cm_n, h[1], f_query[1].normal, f_query[1].fi, v_world[1], h[0], v_world[0]);
-                Vec3TranslateScaled(manifold->v[0], manifold->n, manifold->depth[0]);
-                Vec3TranslateScaled(manifold->v[1], manifold->n, manifold->depth[1]);
-                Vec3TranslateScaled(manifold->v[2], manifold->n, manifold->depth[2]);
-                Vec3TranslateScaled(manifold->v[3], manifold->n, manifold->depth[3]);
-            }
-		}
+        if (b_f == ref)
+        {
+		    colliding = HullContactFaceContact(mem_tmp, manifold, &max_depth, f_query[b_f].normal, h[b_f], f_query[b_f].normal, f_query[b_f].fi, v_world[b_f], h[b_v], v_world[b_v]);
+        }
+        else
+        {
+		    vec3 cm_n;
+            Vec3Scale(cm_n, f_query[b_f].normal, -1.0f);
+			colliding = HullContactFaceContact(mem_tmp, manifold, &max_depth, cm_n, h[b_f], f_query[b_f].normal, f_query[b_f].fi, v_world[b_f], h[b_v], v_world[b_v]);
+            Vec3TranslateScaled(manifold->v[0], manifold->n, manifold->depth[0]);
+            Vec3TranslateScaled(manifold->v[1], manifold->n, manifold->depth[1]);
+            Vec3TranslateScaled(manifold->v[2], manifold->n, manifold->depth[2]);
+            Vec3TranslateScaled(manifold->v[3], manifold->n, manifold->depth[3]);
+        }
 
 		if (colliding)
 		{
