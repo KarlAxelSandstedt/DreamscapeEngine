@@ -306,20 +306,20 @@ static u32 NarrowPhaseJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPh
 
         struct c_Manifold manifold;
         struct arena *tmp = ArenaPushScratch();
-        job->collision_count = ds_ShapeContact(tmp, &manifold, job->cache, pipeline, s0, s1);
+        job->collision_count = ds_ShapeContact(&manifold, job->cache, pipeline, s0, s1);
         ArenaPopScratch();
 
         if (job->collision_count)
         {
             job->manifold = ArenaPushAlignedMemcpy(g_tl_self->frame, &manifold, sizeof(struct c_Manifold), 4);
             
-            if (!c_ManifoldCheck(job->manifold))
-            {
-                Breakpoint(1);
-                tmp = ArenaPushScratch();
-                job->collision_count = ds_ShapeContact(tmp, &manifold, job->cache, pipeline, s0, s1);
-                ArenaPopScratch();
-            }
+            //if (!c_ManifoldCheck(job->manifold))
+            //{
+            //    Breakpoint(1);
+            //    tmp = ArenaPushScratch();
+            //    job->collision_count = ds_ShapeContact(&manifold, job->cache, pipeline, s0, s1);
+            //    ArenaPopScratch();
+            //}
         }
     }
 
@@ -981,7 +981,6 @@ void PhysicsPipelineTick(struct ds_RigidBodyPipeline *pipeline)
 u32f32 PhysicsPipelineRaycastParameter(struct arena *mem_tmp1, struct arena *mem_tmp2, const struct ds_RigidBodyPipeline *pipeline, const struct ray *ray)
 {
 	ArenaPushRecord(mem_tmp1);
-	ArenaPushRecord(mem_tmp2);
 
 	struct bvhRaycastInfo info = BvhRaycastInit(mem_tmp1, &pipeline->shape_bvh, ray);
 	while (info.hit_queue.count)
@@ -996,7 +995,7 @@ u32f32 PhysicsPipelineRaycastParameter(struct arena *mem_tmp1, struct arena *mem
 		{
 			const u32 si = info.node[tuple.u].bt_left;
 			const struct ds_Shape *shape = (struct ds_Shape *) pipeline->shape_pool.buf + si;
-			const f32 t = ds_ShapeRaycastParameter(mem_tmp2, pipeline, shape, ray);
+			const f32 t = ds_ShapeRaycastParameter(pipeline, shape, ray);
 			if (t < info.hit.f)
 			{
 				info.hit = u32f32_inline(si, t);
@@ -1009,7 +1008,6 @@ u32f32 PhysicsPipelineRaycastParameter(struct arena *mem_tmp1, struct arena *mem
 	}
 
 	ArenaPopRecord(mem_tmp1);
-	ArenaPopRecord(mem_tmp2);
 
 	return info.hit;
 }

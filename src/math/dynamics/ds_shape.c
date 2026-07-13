@@ -321,7 +321,7 @@ f32 (*c_distance_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(vec3 c1, vec3 c2, const 
 	{ c_TriMeshBvhSphereDistance,	c_TriMeshBvhCapsuleDistance, 	c_TriMeshBvhHullDistance,	0, },
 };
 
-u32 (*c_contact_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(struct arena *, struct c_Manifold *, struct sat_Cache *, const struct sat_Cache *, const struct c_Shape *[2], const ds_Transform [2], const u32) =
+u32 (*c_contact_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(struct c_Manifold *, struct sat_Cache *, const struct sat_Cache *, const struct c_Shape *[2], const ds_Transform [2], const u32) =
 {
 	{ c_SphereContact,	 	        0, 				            0,			                0, },
 	{ c_CapsuleSphereContact, 	    c_CapsuleContact,			0,			                0, },
@@ -337,7 +337,7 @@ u32 (*c_mesh_contact_methods[C_SHAPE_COUNT])(struct arena *, struct c_Manifold *
     0,
 };
 
-f32 (*c_raycast_parameter_methods[C_SHAPE_COUNT])(struct arena *, const struct c_Shape *, const ds_Transform *, const struct ray *) =
+f32 (*c_raycast_parameter_methods[C_SHAPE_COUNT])(const struct c_Shape *, const ds_Transform *, const struct ray *) =
 {
 	c_SphereRaycastParameter,
 	c_CapsuleRaycastParameter,
@@ -373,7 +373,7 @@ f32 ds_ShapeDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipeline *pipeli
 		: c_distance_methods[c_s2->type][c_s1->type](c2, c1, c_s2, &t2, c_s1, &t1);
 }
 
-u32 ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2)
+u32 ds_ShapeContact(struct c_Manifold *manifold, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2)
 {
     ds_Transform t_arr[2];
 
@@ -397,7 +397,7 @@ u32 ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_C
         const u32 ref = (s1->body < s2->body)
                         ? 0
                         : 1;
-		collision_count = c_contact_methods[c_s1->type][c_s2->type](tmp, manifold, cache, cache_copy, c_s_arr, t_arr, ref);
+		collision_count = c_contact_methods[c_s1->type][c_s2->type](manifold, cache, cache_copy, c_s_arr, t_arr, ref);
 	}                                                                                         
 	else                                                                                      
 	{                                                                                         
@@ -407,7 +407,7 @@ u32 ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_C
         const u32 ref = (s1->body < s2->body)
                         ? 1
                         : 0;
-		collision_count = c_contact_methods[c_s2->type][c_s1->type](tmp, manifold, cache, cache_copy, c_s_arr, t_arr, ref);
+		collision_count = c_contact_methods[c_s2->type][c_s1->type](manifold, cache, cache_copy, c_s_arr, t_arr, ref);
 	}
 
 	return collision_count;
@@ -445,18 +445,18 @@ u32 ds_ShapeMeshContact(struct arena *frame, struct c_Manifold **manifold, u32 *
 }
 
 
-f32 ds_ShapeRaycastParameter(struct arena *tmp, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray)
+f32 ds_ShapeRaycastParameter(const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray)
 {
     ds_Transform transform;
     ds_ShapeWorldTransform(&transform, pipeline, shape);
     const struct c_Shape *c_shape = strdb_Address(pipeline->cshape_db, shape->cshape_handle);
 
-	return c_raycast_parameter_methods[c_shape->type](tmp, c_shape, &transform, ray);
+	return c_raycast_parameter_methods[c_shape->type](c_shape, &transform, ray);
 }
 
-u32 ds_ShapeRaycast(struct arena *tmp, vec3 intersection, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray)
+u32 ds_ShapeRaycast(vec3 intersection, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray)
 {
-	const f32 t = ds_ShapeRaycastParameter(tmp, pipeline, shape, ray);
+	const f32 t = ds_ShapeRaycastParameter(pipeline, shape, ray);
 	if (t == F32_INFINITY) return 0;
 
 	Vec3Copy(intersection, ray->origin);

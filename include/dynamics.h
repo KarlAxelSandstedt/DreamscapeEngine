@@ -245,7 +245,7 @@ f32 	    ds_ShapeDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipeline *p
  * with normal pointing from the reference body towards the incident body (and set the sat_cache if non-null 
  * and applicable). 
  */
-u32         ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
+u32         ds_ShapeContact(struct c_Manifold *manifold, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
 /*
  * Returns the number of triangles in the mesh colliding with the other shape. If collisions are found, manifold and
  * triangle allocated to store each collision's manifold and triangle index. Each manifold normal points the
@@ -257,11 +257,11 @@ u32         ds_ShapeMeshContact(struct arena *frame, struct c_Manifold **manifol
  * Return, if ray intersects shape, t such that ray.origin + t*ray.dir == closest point on shape. 
  *         Otherwise, return F32_INFINITY.
  */
-f32 	    ds_ShapeRaycastParameter(struct arena *tmp, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray);
+f32 	    ds_ShapeRaycastParameter(const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray);
 /* 
  * Return 1 if ray hit shape, 0 otherwise. If hit, we return the closest intersection point 
  */
-u32 	    ds_ShapeRaycast(struct arena *tmp, vec3 intersection, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray);
+u32 	    ds_ShapeRaycast(vec3 intersection, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray);
 
 
 /*
@@ -515,6 +515,25 @@ struct c_TriHullCache
     };
 };
 
+typedef u32 sat_FeatureId;
+
+#define SAT_FEATURE_ID_INDEX_MASK           (0x3fffffff)
+#define SAT_FEATURE_ID_TYPE_MASK            (0xc0000000)
+
+#define SAT_FEATURE_NULL                    U32_MAX
+#define SAT_FEATURE_TYPE_NULL               3
+#define SAT_FEATURE_TYPE_FACE               2
+#define SAT_FEATURE_TYPE_EDGE               1
+#define SAT_FEATURE_TYPE_VERTEX             0
+
+#define sat_FeatureIdVertexCheck(id)        (((id) >> 30) == SAT_FEATURE_TYPE_VERTEX)
+#define sat_FeatureIdEdgeCheck(id)          (((id) >> 30) == SAT_FEATURE_TYPE_EDGE)
+#define sat_FeatureIdFaceCheck(id)          (((id) >> 30) == SAT_FEATURE_TYPE_FACE)
+
+#define sat_FeatureIdType(id)               ((id) >> 30)
+#define sat_FeatureIdIndex(id)              ((id) & SAT_FEATURE_ID_INDEX_MASK)
+#define sat_FeatureIdConstruct(index, type) (((type) << 30) | (SAT_FEATURE_ID_INDEX_MASK & (index)))
+
 struct sat_Cache
 {
     THASH_NODE;
@@ -524,15 +543,18 @@ struct sat_Cache
 	enum sat_CacheType	type;
 	union
 	{
-		struct
-		{
-			u32     body;	        /* body (0 or 1) containing face    */
-			u32	    face;	        /* reference face 	                */
-            u32     deepest_vertex; /* deepest point on incident face   */
-            vec3    face_normal;    /* cached world-space normal        */
-		};
+        struct
+        {
+            /*
+             * feature[i].type == FACE => i IS NOT incident face
+             * feature[i].type != FACE => i IS on incident face
+             */
+            sat_FeatureId   feature[2];
+            f32             max_depth;      /* maximum feature depth (positive) */
+            vec3            face_normal;    /* cached world-space normal        */
+        };
 
-		struct
+        struct
 		{
 			u32	    edge0;	        /* body0 edge                   */
 			u32	    edge1;	        /* body1 edge                   */
@@ -549,6 +571,7 @@ struct sat_Cache
         {
             u32                     tri_cache_count;
             struct c_TriHullCache * tri_cache;
+            //TODO storage for another pointer.
         };
 	};
 };
