@@ -225,8 +225,12 @@ struct c_Manifold
 	u32 	v_count;    /* Contact point count                              */
 };
 
-void 	c_ManifoldDebugPrint(FILE *file, const struct c_Manifold *cm);
+/* Print manifold to file stderr */
+void 	c_ManifoldDebugPrint(const struct c_Manifold *cm);
+/* Sanity tests for debugging. Return 1 if valid, 0 otherwise. */
 u32     c_ManifoldCheck(const struct c_Manifold *cm);
+/* Transform the manifold */
+void    c_ManifoldTransform(struct c_Manifold *dst, const struct c_Manifold *src, mat3 rot, const vec3 translation);
 
 /********************************** INTERSECTION TESTS **********************************/
 

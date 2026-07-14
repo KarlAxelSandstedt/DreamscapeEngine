@@ -45,7 +45,7 @@ void sat_CacheStaticAssert(void)
 
 /********************************** Contact Manifold helpers **********************************/
 
-void c_ManifoldDebugPrint(FILE *file, const struct c_Manifold *cm)
+void c_ManifoldDebugPrint(const struct c_Manifold *cm)
 {
 	fprintf(stderr, "Contact Manifold:\n{\n");
 	fprintf(stderr, "\t.v_count = %u\n", cm->v_count);
@@ -56,7 +56,6 @@ void c_ManifoldDebugPrint(FILE *file, const struct c_Manifold *cm)
 	fprintf(stderr, "\t.n = { %f, %f, %f }\n", cm->n[0], cm->n[1], cm->n[2]);
 	fprintf(stderr, "}\n");
 }
-
 
 u32 c_ManifoldCheck(const struct c_Manifold *cm)
 {
@@ -103,6 +102,18 @@ u32 c_ManifoldCheck(const struct c_Manifold *cm)
     }
 
     return valid;
+}
+
+void c_ManifoldTransform(struct c_Manifold *dst, const struct c_Manifold *src, mat3 rot, const vec3 translation)
+{
+    dst->v_count = src->v_count;
+    Mat3VecMul(dst->n, rot, src->n);
+    for (u32 vi = 0; vi < dst->v_count; ++vi)
+    {
+        dst->depth[vi] = src->depth[vi];
+        Mat3VecMul(dst->v[vi], rot, src->v[vi]);
+        Vec3Translate(dst->v[vi], translation);
+    }
 }
 
 /********************************** Collision Shape Mass Properties **********************************/
@@ -1885,7 +1896,7 @@ DEFINE_STACK(PolygonClipPoint);
  * clip_stack[0]: Expected to be filled with polygon vertices in counter-clockwise order.
  *            fv: Expected to be filled with face vertices in counter-clockwise order.
  */
-static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, vec3ptr *cp, f32 **cp_depth, u32 *cp_deepest, u32 *cp_count, f32 *max_depth, u32 *deepest_feature, const struct dcel *h[2], constvec3ptr v[2], const u32 f[2], const u32 b_f, const vec3 face_normal)
+static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureId **features, vec3ptr *cp, f32 **cp_depth, u32 *cp_deepest, u32 *cp_count, f32 *max_depth, u32 *deepest_feature, const struct dcel *h[2], constvec3ptr v[2], const u32 f[2], const u32 b_f, const vec3 face_normal)
 {
     const u32 b_v = 1 - b_f;
 	struct dcelFace *ref_face = h[b_f]->f + f[b_f];
@@ -1898,6 +1909,7 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, vec3ptr *cp,
 	vec3ptr ref_v = ArenaPush(mem, ref_face->count * sizeof(vec3));
 	*cp = ArenaPush(mem, count*sizeof(vec3));
 	*cp_depth = ArenaPush(mem, count*sizeof(f32));
+	*features = ArenaPush(mem, count*sizeof(sat_FeatureId));
 
 	for (u32 i = 0; i < ref_face->count; ++i)
 	{
@@ -1967,6 +1979,7 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, vec3ptr *cp,
 
 		if ((*cp_depth)[*cp_count] >= 0.0f)
 		{
+            (*features)[*cp_count] = pcp->feature[ pcp->index ];
 			Vec3TranslateScaled((*cp)[*cp_count], ref_plane.normal, (*cp_depth)[*cp_count]);
 			if (*max_depth < (*cp_depth)[ *cp_count ])
 			{
@@ -1981,7 +1994,7 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, vec3ptr *cp,
     ds_Assert(*cp_count <= count); 
 }
 
-static u32 PolygonCcwContact(struct c_Manifold *cm, const vec3 cm_n, constvec3ptr cp, const f32 *depth, const u32 cp_deepest, const u32 cp_count)
+static u32 PolygonCcwContact(struct c_Manifold *cm, sat_FeatureId cm_features[4], const vec3 cm_n, const sat_FeatureId *features, constvec3ptr cp, const f32 *depth, const u32 cp_deepest, const u32 cp_count)
 {
     vec3 n, tmp1, tmp2;
 
@@ -1991,6 +2004,7 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, const vec3 cm_n, constvec3pt
 	{
 		case 0:
 		{
+            cm->v_count = 0;
 			collision = 0;
 		} break;
 
@@ -1999,6 +2013,7 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, const vec3 cm_n, constvec3pt
 			cm->v_count = 1;
 			Vec3Copy(cm->v[0], cp[0]);
 			cm->depth[0] = depth[0];
+            cm_features[0] = features[0];
 		} break;
 
 		case 2:
@@ -2008,6 +2023,8 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, const vec3 cm_n, constvec3pt
 			Vec3Copy(cm->v[1], cp[1]);
 			cm->depth[0] = depth[0];
 			cm->depth[1] = depth[1];
+            cm_features[0] = features[0];
+            cm_features[1] = features[1];
 		} break;
 
 		case 3:
@@ -2024,6 +2041,9 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, const vec3 cm_n, constvec3pt
 				cm->depth[0] = depth[0];
 				cm->depth[1] = depth[1];
 				cm->depth[2] = depth[2];
+                cm_features[0] = features[0];
+                cm_features[1] = features[1];
+                cm_features[2] = features[2];
 			}
 			else
 			{
@@ -2033,6 +2053,9 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, const vec3 cm_n, constvec3pt
 				cm->depth[0] = depth[0];
 				cm->depth[2] = depth[1];
 				cm->depth[1] = depth[2];
+                cm_features[0] = features[0];
+                cm_features[2] = features[1];
+                cm_features[1] = features[2];
 			}
 		} break;
 
@@ -2042,7 +2065,7 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, const vec3 cm_n, constvec3pt
 			cm->v_count = 4;
 			Vec3Copy(cm->v[0], cp[cp_deepest]);
 			cm->depth[0] = depth[cp_deepest];
-
+            cm_features[0] = features[cp_deepest];
 			/* (2) Third point is point furthest away from deepest point */
 			f32 max_dist = 0.0f;
 			u32 max_i = (cp_deepest + 2) % cp_count;
@@ -2062,6 +2085,7 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, const vec3 cm_n, constvec3pt
 			}
 			Vec3Copy(cm->v[2], cp[max_i]);
 			cm->depth[2] = depth[max_i];
+            cm_features[2] = features[max_i];
 
 			/* (3, 4) Second point and forth is point that gives largest (in magnitude) 
 			 * areas with the previous points on each side of the previous segment 
@@ -2112,6 +2136,8 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, const vec3 cm_n, constvec3pt
 				Vec3Copy(cm->v[1], cp[max_neg_i]);
 				cm->depth[3] = depth[max_pos_i];
 				cm->depth[1] = depth[max_neg_i];
+                cm_features[3] = features[max_pos_i];
+                cm_features[1] = features[max_neg_i];
 			}
 			else
 			{
@@ -2119,6 +2145,8 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, const vec3 cm_n, constvec3pt
 				Vec3Copy(cm->v[1], cp[max_pos_i]);
 				cm->depth[3] = depth[max_neg_i];
 				cm->depth[1] = depth[max_pos_i];
+                cm_features[3] = features[max_neg_i];
+                cm_features[1] = features[max_pos_i];
 			}
 		} break;
 	}
@@ -2143,7 +2171,7 @@ struct sat_EdgeQuery
 	f32 depth;
 };
 
-static u32 HullFaceContact(struct arena *mem_tmp, struct c_Manifold *cm, f32 *max_depth, sat_FeatureId *max_feature, const struct sat_FaceQuery *query, const struct dcel *h[2], constvec3ptr v[2], const u32 b_f, const u32 ref)
+static u32 HullFaceContact(struct arena *mem_tmp, struct c_Manifold *cm, sat_FeatureId cm_features[4], f32 *max_depth, sat_FeatureId *max_feature, const struct sat_FaceQuery *query, const struct dcel *h[2], constvec3ptr v[2], const u32 b_f, const u32 ref)
 {
 	vec3 tmp1, tmp2, n;
 
@@ -2175,7 +2203,8 @@ static u32 HullFaceContact(struct arena *mem_tmp, struct c_Manifold *cm, f32 *ma
 	u32 cp_count = 0;
     vec3ptr cp = NULL;
     f32 *depth = NULL;
-    PolygonCcwClipNegativeFaceAndProject(mem_tmp, &cp, &depth, &deepest_point, &cp_count, max_depth, max_feature, h, v, f, b_f, query->normal);
+    sat_FeatureId *features;
+    PolygonCcwClipNegativeFaceAndProject(mem_tmp, &features, &cp, &depth, &deepest_point, &cp_count, max_depth, max_feature, h, v, f, b_f, query->normal);
 
 	//for (u32 i = 0; i < cp_count; ++i)
 	//{
@@ -2185,13 +2214,13 @@ static u32 HullFaceContact(struct arena *mem_tmp, struct c_Manifold *cm, f32 *ma
     u32 collision;
     if (b_f == ref)
     {
-        collision = PolygonCcwContact(cm, query->normal, cp, depth, deepest_point, cp_count);
+        collision = PolygonCcwContact(cm, cm_features, query->normal, features, cp, depth, deepest_point, cp_count);
     }
     else
     {
         vec3 cm_n;
         Vec3Scale(cm_n, query->normal, -1.0f);
-        collision = PolygonCcwContact(cm, cm_n, cp, depth, deepest_point, cp_count);
+        collision = PolygonCcwContact(cm, cm_features, cm_n, features, cp, depth, deepest_point, cp_count);
         Vec3TranslateScaled(cm->v[0], cm->n, cm->depth[0]);
         Vec3TranslateScaled(cm->v[1], cm->n, cm->depth[1]);
         Vec3TranslateScaled(cm->v[2], cm->n, cm->depth[2]);
@@ -2486,7 +2515,8 @@ u32 c_HullContact(struct c_Manifold *manifold, struct sat_Cache *cache, const st
             struct sat_FaceQuery q = { .fi = face };
             Vec3Copy(q.normal, cache->normal);
 
-	    	colliding = HullFaceContact(mem_tmp, manifold, &cache->depth, cache->feature + b_v, &q, h, (constvec3ptr *)v_world, b_f, ref);
+            sat_FeatureId manifold_features[4];
+	    	colliding = HullFaceContact(mem_tmp, manifold, manifold_features, &cache->depth, cache->feature + b_v, &q, h, (constvec3ptr *)v_world, b_f, ref);
             if (!colliding 
                     || cache->feature[b_v] != cache_copy->feature[b_v]
                     || f32_abs(cache->depth - cache_copy->depth) >= g_numerics_config->manifold_cache_depth_max_diff_allowed)
@@ -2538,7 +2568,8 @@ u32 c_HullContact(struct c_Manifold *manifold, struct sat_Cache *cache, const st
         const u32 b_v = 1 - b_f;
 
         f32 max_depth;
-		colliding = HullFaceContact(mem_tmp, manifold, &max_depth, cache->feature + b_v, f_query + b_f, h, (constvec3ptr *)v_world, b_f, ref);
+        sat_FeatureId manifold_features[4];
+		colliding = HullFaceContact(mem_tmp, manifold, manifold_features, &max_depth, cache->feature + b_v, f_query + b_f, h, (constvec3ptr *)v_world, b_f, ref);
 
 		if (colliding)
 		{
@@ -3232,8 +3263,87 @@ static void TriCcwHullEdgeQueryCollisionResult(struct c_Manifold *manifold, stru
     Vec3Copy(cache->normal, sat_cache.normal);
     cache->depth = sat_cache.depth;
 
-    *delayed_count = 1;
-    delayed_set[0] = sat_FeatureIdIndex(cache->feature[0]);
+    ds_Assert(query->e1 <= 2);
+    *delayed_count = 2;
+    delayed_set[0] = query->e1;
+    delayed_set[1] = (query->e1+1) % 3;
+}
+
+static void TriCcwHullDelayedSet(u32 delayed_set[2], u32 *delayed_count, const struct dcel *hull_tri, const sat_FeatureId feature[4], const u32 feature_count, const u32 b_f)
+{
+    *delayed_count = 0;
+    if (b_f == 0)
+    {
+        return;
+    }
+
+    /* Setup delayed vertices (if any) */
+    if (feature_count == 1)
+    {
+        const u32 index = sat_FeatureIdIndex(feature[0]);
+        if (sat_FeatureIdVertexCheck(feature[0]))
+        {
+            *delayed_count = 1;
+            delayed_set[0] = index;
+        }
+        else
+        {
+            *delayed_count = 2;
+            delayed_set[0] = hull_tri->e[index].origin;
+            delayed_set[1] = hull_tri->e[ hull_tri->e[index].twin ].origin;
+        }
+    }
+    else if (feature_count == 2)
+    {
+        const u32 index0 = sat_FeatureIdIndex(feature[0]);
+        const u32 index1 = sat_FeatureIdIndex(feature[1]);
+        u32 delayed_point[3] = { 0, 0, 0 };
+        if (sat_FeatureIdVertexCheck(feature[0]))
+        {
+            delayed_point[index0] = 1;
+        }
+        else
+        {
+            const u32 v0 = hull_tri->e[index0].origin;
+            const u32 v1 = hull_tri->e[ hull_tri->e[index0].twin ].origin;
+            delayed_point[v0] = 1;
+            delayed_point[v1] = 1;
+        }
+
+        if (sat_FeatureIdVertexCheck(feature[1]))
+        {
+            delayed_point[index1] = 1;
+        }
+        else
+        {
+            const u32 v0 = hull_tri->e[index1].origin;
+            const u32 v1 = hull_tri->e[ hull_tri->e[index1].twin ].origin;
+            delayed_point[v0] = 1;
+            delayed_point[v1] = 1;
+        }
+
+        const u32 sum = delayed_point[0] + delayed_point[1] + delayed_point[2];
+        if (sum < 3)
+        {
+            if (sum == 1)
+            {
+                delayed_set[0] = 0 + delayed_point[1] + 2*delayed_point[2];
+            }
+            else
+            {
+                if (delayed_point[0])
+                {
+                    delayed_set[0] = 0;
+                    delayed_set[1] = delayed_point[1] + 2*delayed_point[2];
+                }
+                else
+                {
+                    delayed_set[0] = 1;
+                    delayed_set[1] = 2;
+                }
+            }
+        }
+    }
 }
 
 static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache *new_cache, u32 delayed_set[2], u32 *delayed_count, const struct c_TriHullCache *old_cache, const vec3 tri[3], const struct dcel *hull, const u32 ref)
@@ -3323,7 +3433,8 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
             struct sat_FaceQuery q = { .fi = face };
             Vec3Copy(q.normal, new_cache->normal);
 
-	    	colliding = HullFaceContact(tmp, manifold, &new_cache->depth, new_cache->feature + b_v, &q, h, (constvec3ptr *) v, b_f, ref);
+            sat_FeatureId manifold_features[4];
+	    	colliding = HullFaceContact(tmp, manifold, manifold_features, &new_cache->depth, new_cache->feature + b_v, &q, h, (constvec3ptr *) v, b_f, ref);
             if (!colliding 
                     || new_cache->feature[b_v] != old_cache->feature[b_v]
                     || f32_abs(new_cache->depth - old_cache->depth) >= g_numerics_config->manifold_cache_depth_max_diff_allowed)
@@ -3335,53 +3446,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
             new_cache->type = SAT_CACHE_CONTACT_FV;
             new_cache->feature[b_f] = old_cache->feature[b_f];
 
-            *delayed_count = 0;
-            /* Setup delayed vertices (if any) */
-            if (b_f == 1 && manifold->v_count == 1)
-            {
-                const f32 diff[3] =
-                {
-                    Vec3DistanceSquared(manifold->v[0], tri[0]), 
-                    Vec3DistanceSquared(manifold->v[0], tri[1]), 
-                    Vec3DistanceSquared(manifold->v[0], tri[2]), 
-                };
-
-                f32 min_diff = diff[0];
-                *delayed_count = 1;
-                delayed_set[0] = 0;
-
-                if (diff[1] < min_diff)
-                {
-                    min_diff = diff[1];
-                    delayed_set[0] = 1;
-                }
-
-                if (diff[2] < min_diff)
-                {
-                    delayed_set[0] = 2;
-                }
-            }
-            else if (b_f == 1 && manifold->v_count == 2)
-            {
-                const struct segment c_s = SegmentConstruct(manifold->v[0], manifold->v[1]);
-                const struct segment s[3] =
-                {
-                    SegmentConstruct(tri[0],tri[1]),
-                    SegmentConstruct(tri[1],tri[2]),
-                    SegmentConstruct(tri[2],tri[0]),
-                };
-
-                for (u32 i = 0; i < 3; ++i)
-                {
-                    if (SegmentParallelCheck(s + i, &c_s, g_numerics_config->vec3_parallel_check_eps))
-                    {
-                        *delayed_count = 2;
-                        delayed_set[0] = i;
-                        delayed_set[1] = (i+1) % 3;
-                        break;
-                    }
-                }
-            }
+            TriCcwHullDelayedSet(delayed_set, delayed_count, &hull_tri, manifold_features, manifold->v_count, b_f);
     
             ProfZoneEnd;
             goto sat_cleanup;
@@ -3433,6 +3498,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
     struct plane min_plane;
     {
         ProfZoneNamed("HullPlane vs. Tri");
+        u32 separation_axis_found = 0;
     	for (u32 fi = 0; fi < hull->f_count; ++fi)
     	{
             const struct plane sep_plane = DcelFacePlaneLocal(hull, fi);
@@ -3449,22 +3515,26 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
                 min_plane = sep_plane;
                 if (f_query[1].depth > 0.0f)
                 {
-                    ProfZoneEnd;
-                    const f32 n_dir_len = Vec3Length(min_plane.normal_direction);
-		            Vec3Scale(new_cache->normal, min_plane.normal_direction, 1.0f/n_dir_len);
-		            new_cache->depth = f_query[1].depth / n_dir_len;
-		            new_cache->type = SAT_CACHE_SEPARATION;
-                    goto sat_cleanup;
+                    separation_axis_found = 1;
+                    break;
                 }
     		}
     	}
+        ProfZoneEnd;
 
         const f32 n_dir_len = Vec3Length(min_plane.normal_direction);
         Vec3ScaleSelf(min_plane.normal_direction, 1.0f/n_dir_len);
         min_plane.signed_distance /= n_dir_len;
     	Vec3Copy(f_query[1].normal, min_plane.normal);
         f_query[1].depth /= n_dir_len;
-        ProfZoneEnd;
+
+        if (separation_axis_found)
+        {
+		    Vec3Copy(new_cache->normal, f_query[1].normal);
+		    new_cache->depth = f_query[1].depth;
+		    new_cache->type = SAT_CACHE_SEPARATION;
+            goto sat_cleanup;
+        }
     }
 
     /* Edge vs. Edge */
@@ -3518,60 +3588,12 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
         new_cache->type = SAT_CACHE_CONTACT_FV;
         new_cache->feature[b_f] = sat_FeatureIdConstruct(f_query[b_f].fi, SAT_FEATURE_TYPE_FACE);
         Vec3Copy(new_cache->normal, f_query[b_f].normal);
-        colliding = HullFaceContact(tmp, manifold, &new_cache->depth, new_cache->feature + b_v, f_query + b_f, h, v, b_f, ref);
+        sat_FeatureId manifold_features[4];
+        colliding = HullFaceContact(tmp, manifold, manifold_features, &new_cache->depth, new_cache->feature + b_v, f_query + b_f, h, v, b_f, ref);
 
-        if (colliding)
-        {
+        TriCcwHullDelayedSet(delayed_set, delayed_count, &hull_tri, manifold_features, manifold->v_count, b_f);
 
-        *delayed_count = 0;
-        /* Setup delayed vertices (if any) */
-        if (b_f == 1 && manifold->v_count == 1)
-        {
-            const f32 diff[3] =
-            {
-                Vec3DistanceSquared(manifold->v[0], tri[0]), 
-                Vec3DistanceSquared(manifold->v[0], tri[1]), 
-                Vec3DistanceSquared(manifold->v[0], tri[2]), 
-            };
-
-            f32 min_diff = diff[0];
-            *delayed_count = 1;
-            delayed_set[0] = 0;
-
-            if (diff[1] < min_diff)
-            {
-                min_diff = diff[1];
-                delayed_set[0] = 1;
-            }
-
-            if (diff[2] < min_diff)
-            {
-                delayed_set[0] = 2;
-            }
-        }
-        else if (b_f == 1 && manifold->v_count == 2)
-        {
-            const struct segment c_s = SegmentConstruct(manifold->v[0], manifold->v[1]);
-            const struct segment s[3] =
-            {
-                SegmentConstruct(tri[0],tri[1]),
-                SegmentConstruct(tri[1],tri[2]),
-                SegmentConstruct(tri[2],tri[0]),
-            };
-
-            for (u32 i = 0; i < 3; ++i)
-            {
-                if (SegmentParallelCheck(s + i, &c_s, g_numerics_config->vec3_parallel_check_eps))
-                {
-                    *delayed_count = 2;
-                    delayed_set[0] = i;
-                    delayed_set[1] = (i+1) % 3;
-                    break;
-                }
-            }
-        }
-        }
-        else
+        if (!colliding)
         {
 			new_cache->type = SAT_CACHE_SEPARATION;
 			new_cache->depth = 0.0f;
@@ -3655,6 +3677,7 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
     mat3 bvh_rotation;
     Mat3Quat(bvh_rotation, tf[0].rotation);
 
+    /* it.contact_count in this case counts real contacts + separation axes, so need an additional counter here */
     u32 true_contact_count = 0;
     struct c_TriMeshBvhIterator it;
     c_TriMeshBvhIteratorAlloc(&it, mesh_bvh, &bbox_transform);
@@ -3693,13 +3716,12 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
                         }
                     }
 
-                    const u32 contact = TriCcwHullContact(&c->manifold, &c->cache, c->delayed_set, &c->delayed_count, old_cache, tri, &hull_bvh_local_space, reference_index);
+                    true_contact_count += TriCcwHullContact(&c->manifold, &c->cache, c->delayed_set, &c->delayed_count, old_cache, tri, &hull_bvh_local_space, reference_index);
                     ProfZoneEnd;
 
                     /* delayed set processed from deepest to shallowest contact. */
                     c->priority = -c->cache.depth * c->cache.depth;
 
-                    true_contact_count += contact;
                     it.contact_count += 1;
                     if (it.contact_count == it.contact_len)
                     {
@@ -3744,16 +3766,9 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
         {
             struct c_Manifold *m = (*manifold) + collision_count;
             u32 *t = (*tri) + collision_count;
+            *t = c->tri;
             collision_count += 1;
-
-            m->v_count = c->manifold.v_count;
-            Mat3VecMul(m->n, bvh_rotation, c->manifold.n);
-            for (u32 vi = 0; vi < m->v_count; ++vi)
-            {
-                m->depth[vi] = c->manifold.depth[vi];
-                Mat3VecMul(m->v[vi], bvh_rotation, c->manifold.v[vi]);
-                Vec3Translate(m->v[vi], tf[0].position);
-            }
+            c_ManifoldTransform(m, &c->manifold, bvh_rotation, tf[0].position);
 
             if (cache->tri_cache_count < TRI_HULL_CACHE_MAX_SIZE)
             {
@@ -3761,7 +3776,6 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
                 cache->tri_cache_count += 1;
             }
 
-            *t = c->tri;
             BitVecSetBit(&it.void_bitset, it.mesh->tri[*t][0], 1);
             BitVecSetBit(&it.void_bitset, it.mesh->tri[*t][1], 1);
             BitVecSetBit(&it.void_bitset, it.mesh->tri[*t][2], 1);
@@ -3772,46 +3786,24 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
         }
     }
 
-    static const u32 edge_to_v0_map[6] = { 0, 1, 2, 0, 2, 1 };
-    static const u32 edge_to_v1_map[6] = { 1, 2, 0, 2, 1, 0 };
     for (u32 i = 0; i < it.delayed_count; ++i)
     {
         const struct c_TriMeshBvhContact *c = it.contact + it.delayed_set[i].index;
         const u32 *tri_id = it.mesh->tri[c->tri];
         
-        u32 voided;
-        if (c->cache.type == SAT_CACHE_CONTACT_FV)
-        {
-            voided = BitVecGetBit(&it.void_bitset, tri_id[ c->delayed_set[0] ]);
-            if (c->delayed_count == 2)
-            {
-                voided = voided && BitVecGetBit(&it.void_bitset, tri_id[ c->delayed_set[1] ]);
-            }
-        }
-        else
-        {
-            const u32 v0 = tri_id[ edge_to_v0_map[ c->delayed_set[0] ] ];
-            const u32 v1 = tri_id[ edge_to_v1_map[ c->delayed_set[0] ] ];
-            voided = BitVecGetBit(&it.void_bitset, v0) && BitVecGetBit(&it.void_bitset, v1);
-        }
+        const u32 voided = (c->delayed_count == 1)
+            ? BitVecGetBit(&it.void_bitset, tri_id[ c->delayed_set[0] ])
+            : BitVecGetBit(&it.void_bitset, tri_id[ c->delayed_set[0] ]) && BitVecGetBit(&it.void_bitset, tri_id[ c->delayed_set[1] ]);
 
         if (!voided)
         {
             struct c_Manifold *m = (*manifold) + collision_count;
             u32 *t = (*tri) + collision_count;
             *t = c->tri;
-
             collision_count += 1;
 
             ds_Assert(c->manifold.v_count <= 2);
-            m->v_count = c->manifold.v_count;
-            Mat3VecMul(m->n, bvh_rotation, c->manifold.n);
-            for (u32 vi = 0; vi < m->v_count; ++vi)
-            {
-                m->depth[vi] = c->manifold.depth[vi];
-                Mat3VecMul(m->v[vi], bvh_rotation, c->manifold.v[vi]);
-                Vec3Translate(m->v[vi], tf[0].position);
-            }
+            c_ManifoldTransform(m, &c->manifold, bvh_rotation, tf[0].position);
 
             if (cache->tri_cache_count < TRI_HULL_CACHE_MAX_SIZE)
             {
