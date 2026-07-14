@@ -1956,10 +1956,9 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, vec3ptr *cp,
 	}
 
 	*max_depth = -F32_INFINITY;
-    *deepest_feature = clip_stack[cur].arr[0].feature[ clip_stack[cur].arr[0].index ];
+    *deepest_feature = 0;
     *cp_deepest = 0;
     *cp_count = 0;
-
 	for (u32 i = 0; i < clip_stack[cur].next; ++i)
 	{
         const struct PolygonClipPoint *pcp = clip_stack[cur].arr + i;
@@ -2395,11 +2394,11 @@ void sat_EdgeQueryCollisionResult(struct c_Manifold *manifold, struct sat_Cache 
         ? Vec3Copy(manifold->n, query->normal)
         : Vec3Scale(manifold->n, query->normal, -1.0f);
 
-	sat_cache->feature[0] = sat_FeatureIdConstruct(query->e1, SAT_FEATURE_TYPE_EDGE);
-	sat_cache->feature[1] = sat_FeatureIdConstruct(query->e2, SAT_FEATURE_TYPE_EDGE);
-    Vec3Copy(sat_cache->normal, manifold->n);
 	sat_cache->type = SAT_CACHE_CONTACT_EE;
     sat_cache->depth = manifold->depth[0];
+    Vec3Copy(sat_cache->normal, manifold->n);
+	sat_cache->feature[0] = sat_FeatureIdConstruct(query->e1, SAT_FEATURE_TYPE_EDGE);
+	sat_cache->feature[1] = sat_FeatureIdConstruct(query->e2, SAT_FEATURE_TYPE_EDGE);
 }
 
 /*
@@ -2434,9 +2433,6 @@ u32 c_HullContact(struct c_Manifold *manifold, struct sat_Cache *cache, const st
 		Vec3Translate(v_world[1][i], t[1].position);
 	}
 
-	struct sat_FaceQuery f_query[2] = { { .depth = -F32_INFINITY }, { .depth = -F32_INFINITY } };
-	struct sat_EdgeQuery e_query = { .depth = -F32_INFINITY };
-
 	u32 colliding = 0;
     switch (cache_copy->type)
     {
@@ -2460,25 +2456,25 @@ u32 c_HullContact(struct c_Manifold *manifold, struct sat_Cache *cache, const st
          
         case SAT_CACHE_CONTACT_EE:
 	    {
+	        struct sat_EdgeQuery e_query = { .depth = -F32_INFINITY };
 	    	HullContactEECheckRecompute(&e_query, h[0], v_world[0], sat_FeatureIdIndex(cache_copy->feature[0]), h[1], v_world[1], sat_FeatureIdIndex(cache_copy->feature[1]), t[0].position);
 	    	sat_EdgeQueryCollisionResult(manifold, cache, &e_query, ref);
 
-            if (e_query.depth >= 0.0f 
+            colliding = (e_query.depth < 0.0f);
+            if (!colliding
                     || f32_abs(e_query.depth - cache_copy->depth) >= g_numerics_config->manifold_cache_depth_max_diff_allowed
                     || Vec3Dot(cache->normal, cache_copy->normal) < g_numerics_config->manifold_cache_normal_parallel_check_eps)
             {
-	    	    e_query.depth = -F32_INFINITY;
                 break;
             }
 
-            colliding = 1;
             goto sat_cleanup;
 	    } break;
 
         case SAT_CACHE_CONTACT_FV:
 	    {
             /* b_f = body with reference/contact face, b_v = incident body with penetrating vertices */
-            const u32 b_f = (sat_FeatureIdType(cache_copy->feature[1]) == SAT_FEATURE_TYPE_FACE);
+            const u32 b_f = sat_FeatureIdFaceCheck(cache_copy->feature[1]);
             const u32 b_v = 1 - b_f;
             const u32 face = sat_FeatureIdIndex(cache_copy->feature[b_f]);
 	    	DcelFaceNormal(cache->normal, h[b_f], rot[b_f], face);
@@ -2487,18 +2483,16 @@ u32 c_HullContact(struct c_Manifold *manifold, struct sat_Cache *cache, const st
                 break; 
             }
 
-            sat_FeatureId max_feature;
             struct sat_FaceQuery q = { .fi = face };
             Vec3Copy(q.normal, cache->normal);
 
-	    	colliding = HullFaceContact(mem_tmp, manifold, &cache->depth, &max_feature, &q, h, (constvec3ptr *)v_world, b_f, ref);
+	    	colliding = HullFaceContact(mem_tmp, manifold, &cache->depth, cache->feature + b_v, &q, h, (constvec3ptr *)v_world, b_f, ref);
             if (!colliding 
-                    || max_feature != cache_copy->feature[b_v]
+                    || cache->feature[b_v] != cache_copy->feature[b_v]
                     || f32_abs(cache->depth - cache_copy->depth) >= g_numerics_config->manifold_cache_depth_max_diff_allowed)
             { 
                 break; 
             }
-            colliding = 1;
             goto sat_cleanup;
 	    } break;
 
@@ -2507,6 +2501,10 @@ u32 c_HullContact(struct c_Manifold *manifold, struct sat_Cache *cache, const st
 
         } break;
 	}
+
+    colliding = 0;
+	struct sat_FaceQuery f_query[2] = { { .depth = -F32_INFINITY }, { .depth = -F32_INFINITY } };
+	struct sat_EdgeQuery e_query = { .depth = -F32_INFINITY };
 
 	if (HullContactFVSeparation(&f_query[0], h[0], v_world[0], h[1], v_world[1]))
 	{
@@ -2540,14 +2538,12 @@ u32 c_HullContact(struct c_Manifold *manifold, struct sat_Cache *cache, const st
         const u32 b_v = 1 - b_f;
 
         f32 max_depth;
-        sat_FeatureId max_feature;
-		colliding = HullFaceContact(mem_tmp, manifold, &max_depth, &max_feature, f_query + b_f, h, (constvec3ptr *)v_world, b_f, ref);
+		colliding = HullFaceContact(mem_tmp, manifold, &max_depth, cache->feature + b_v, f_query + b_f, h, (constvec3ptr *)v_world, b_f, ref);
 
 		if (colliding)
 		{
 			cache->type = SAT_CACHE_CONTACT_FV;
             cache->feature[b_f] = sat_FeatureIdConstruct(f_query[b_f].fi, SAT_FEATURE_TYPE_FACE);
-            cache->feature[b_v] = max_feature;
             cache->depth = max_depth;
             Vec3Copy(cache->normal, f_query[b_f].normal);
 		}
@@ -2599,6 +2595,8 @@ struct c_TriMeshBvhContact
         {
             struct c_Manifold       manifold;
             struct c_TriHullCache   cache;
+            u32                     delayed_set[2];
+            u32                     delayed_count;
         };
     };
 };
@@ -3224,93 +3222,187 @@ static u32 TriCcwHullEECheck(struct sat_EdgeQuery *query, const struct plane *tr
     return 0;
 }
 
-static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache *new_cache, f32 *max_depth, const struct c_TriHullCache *old_cache, const vec3 tri[3], const struct dcel *hull, const u32 ref)
+static void TriCcwHullEdgeQueryCollisionResult(struct c_Manifold *manifold, struct c_TriHullCache *cache, u32 delayed_set[2], u32 *delayed_count, const struct sat_EdgeQuery *query, const u32 ref)
 {
-    /*
-     * TODO: Move this to the new cache struct infomation secion
-     * Notes: Simple caching for fast dummies.
-     *
-     *  Instead of using triangles as shapes, we use the ordinary identifiers 
-     *          
-     *          (body_hull, shape_hull, body_mesh, shape_mesh)
-     *
-     *  as our sat_CacheKey. Furthermore, we extend the union in sat_Cache with a "TriCcwHullCache" 
-     *  pointer which points into double-buffered memory. To handle this, we extend our program to
-     *  use double-buffered frame arenas; this way any thread can look into any other threads' old
-     *  caching work from the previous frame, and store any new cache data in the current frame.
-     *
-     *  The pointer points to an array of TriCcwHullContact data, which we linearly search in order
-     *  to find the speficic hull-triangle identified data.
-     *
-     * TODO: (1) sat_MeshCaching
-     *
-     * TODO: (2) Is caching separating axes worth it? 
-     */
-	struct sat_FaceQuery f_query[2] = { { .depth = -F32_INFINITY }, { .depth = -F32_INFINITY } };
-	struct sat_EdgeQuery e_query = { .depth = -F32_INFINITY };
-	u32 colliding = 0;
+    struct sat_Cache sat_cache;
+	sat_EdgeQueryCollisionResult(manifold, &sat_cache, query, ref);
+    cache->type = sat_cache.type;
+    cache->feature[0] = sat_cache.feature[0];
+    cache->feature[1] = sat_cache.feature[1];
+    Vec3Copy(cache->normal, sat_cache.normal);
+    cache->depth = sat_cache.depth;
 
+    *delayed_count = 1;
+    delayed_set[0] = sat_FeatureIdIndex(cache->feature[0]);
+}
+
+static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache *new_cache, u32 delayed_set[2], u32 *delayed_count, const struct c_TriHullCache *old_cache, const vec3 tri[3], const struct dcel *hull, const u32 ref)
+{ 
+    struct arena *tmp = ArenaPushScratch();
+    
+    struct dcel hull_tri = DcelTriStub();
+    hull_tri.v = (vec3ptr) tri;
+    const struct dcel *h[2] = { &hull_tri, hull };
+    constvec3ptr v[2] = { tri, hull->v };
+
+    const vec3 tri_center =
+    {
+        (tri[0][0] + tri[1][0] + tri[2][0]) / 3.0f,
+        (tri[0][1] + tri[1][1] + tri[2][1]) / 3.0f,
+        (tri[0][2] + tri[1][2] + tri[2][2]) / 3.0f,
+    };
+
+    //TODO Move this to ds_DynamicsStatistics
+    static ds_ThreadLocal u32 cache_count = 0;
+    static ds_ThreadLocal u32 eviction_count = 0;
+    static ds_ThreadLocal u32 call_count = 0;
+    call_count += 1;
+	u32 colliding = 0;
+    {
+    ProfZoneNamed("Cache-Ops");
     switch (old_cache->type)
     {
-    //    case SAT_CACHE_CONTACT_EE:
-	//    {
-	//    	HullContactEECheck(&e_query, h1, v1_world, cache_copy->edge0, h2, v2_world, cache_copy->edge1, t[0].position);
-	//    	if (-F32_INFINITY < e_query.depth && e_query.depth < 0.0f)
-	//    	{
-	//    		sat_EdgeQueryCollisionResult(manifold, cache, &e_query, ref);
-    //            colliding = 1;
-    //            goto sat_cleanup;
-	//    	}
-	//    	e_query.depth = -F32_INFINITY;
-	//    } break;
+        case SAT_CACHE_SEPARATION:
+	    {
+            cache_count += 1;
+	    	vec3 support1, support2, tmp;
+	    	Vec3Negate(tmp, old_cache->normal);
 
-    //    case SAT_CACHE_CONTACT_FV:
-	//    {
-	//    	//TODO We check that the manifold is still stable? if not, we throw it away.
-    //        //TODO Suspect this, and maybe EE cache is wrong, since box-box collision happened even though separated;
-    //        ds_Assert(cache_copy->type == SAT_CACHE_CONTACT_FV);
+	    	VertexSupport(support1, old_cache->normal, v[0], h[0]->v_count);
+	    	VertexSupport(support2, tmp, v[1], h[1]->v_count);
 
-	//    	vec3 ref_n, cm_n;
-    //        f32 max_depth;
-	//    	if (cache_copy->body == 0)
-	//    	{
-	//    		DcelFaceNormal(cm_n, h1, cache_copy->face);
-	//    		Mat3VecMul(ref_n, rot1, cm_n);
-    //            (cache_copy->body == ref)
-    //                ? Vec3Copy(cm_n, ref_n)
-    //                : Vec3Scale(cm_n, ref_n, -1.0f);
-	//    		colliding = HullFaceContact(mem_tmp, manifold, &max_depth, cm_n, h1, ref_n, cache_copy->face, v1_world, h2, v2_world);
-	//    	}
-	//    	else
-	//    	{
-	//    		DcelFaceNormal(cm_n, h2, cache_copy->face);
-	//    		Mat3VecMul(ref_n, rot2, cm_n);
-    //            (cache_copy->body == ref)
-    //                ? Vec3Copy(cm_n, ref_n)
-    //                : Vec3Scale(cm_n, ref_n, -1.0f);
-	//    		colliding = HullFaceContact(mem_tmp, manifold, &max_depth, cm_n, h2, ref_n, cache_copy->face, v2_world, h1, v1_world);
-	//    	}
+	    	const f32 dot1 = Vec3Dot(support1, old_cache->normal);
+	    	const f32 dot2 = Vec3Dot(support2, old_cache->normal);
+	    	const f32 depth = dot2 - dot1;
+	    	if (depth <= 0.0f)
+	    	{
+                eviction_count += 1;
+                break;
+	    	}
 
-    //        if (colliding)
-    //        {
-    //            if (cache_copy->body != ref)
-    //            {
-    //                Vec3TranslateScaled(manifold->v[0], manifold->n, manifold->depth[0]);
-    //                Vec3TranslateScaled(manifold->v[1], manifold->n, manifold->depth[1]);
-    //                Vec3TranslateScaled(manifold->v[2], manifold->n, manifold->depth[2]);
-    //                Vec3TranslateScaled(manifold->v[3], manifold->n, manifold->depth[3]);
-    //            }
+            Vec3Copy(new_cache->normal, old_cache->normal);
+	    	new_cache->depth = depth;
+            new_cache->type = SAT_CACHE_SEPARATION;
+            ProfZoneEnd;
+            goto sat_cleanup;
+	    } break;
+         
+        case SAT_CACHE_CONTACT_EE:
+	    {
+            cache_count += 1;
+	        struct sat_EdgeQuery e_query = { .depth = -F32_INFINITY };
+	    	HullContactEECheckRecompute(&e_query, h[0], v[0], sat_FeatureIdIndex(old_cache->feature[0]), h[1], v[1], sat_FeatureIdIndex(old_cache->feature[1]), tri_center);
+            TriCcwHullEdgeQueryCollisionResult(manifold, new_cache, delayed_set, delayed_count, &e_query, ref);
 
-    //            goto sat_cleanup;
-    //        }
-	//    } break;
+            colliding = (e_query.depth < 0.0f);
+            if (!colliding
+                    || f32_abs(new_cache->depth - old_cache->depth) >= g_numerics_config->manifold_cache_depth_max_diff_allowed
+                    || Vec3Dot(new_cache->normal, old_cache->normal) < g_numerics_config->manifold_cache_normal_parallel_check_eps)
+            {
+                eviction_count += 1;
+                break;
+            }
 
-        case SAT_CACHE_NOT_SET:
+            ProfZoneEnd;
+            goto sat_cleanup;
+	    } break;
+
+        case SAT_CACHE_CONTACT_FV:
+        {
+            cache_count += 1;
+            const u32 b_f = sat_FeatureIdFaceCheck(old_cache->feature[1]);
+            const u32 b_v = 1 - b_f;
+            const u32 face = sat_FeatureIdIndex(old_cache->feature[b_f]);
+	    	DcelFaceNormalLocal(new_cache->normal, h[b_f], face);
+            if (Vec3Dot(new_cache->normal, old_cache->normal) < g_numerics_config->manifold_cache_normal_parallel_check_eps) 
+            { 
+                eviction_count += 1;
+                break; 
+            }
+
+            struct sat_FaceQuery q = { .fi = face };
+            Vec3Copy(q.normal, new_cache->normal);
+
+	    	colliding = HullFaceContact(tmp, manifold, &new_cache->depth, new_cache->feature + b_v, &q, h, (constvec3ptr *) v, b_f, ref);
+            if (!colliding 
+                    || new_cache->feature[b_v] != old_cache->feature[b_v]
+                    || f32_abs(new_cache->depth - old_cache->depth) >= g_numerics_config->manifold_cache_depth_max_diff_allowed)
+            { 
+                eviction_count += 1;
+                break; 
+            }
+
+            new_cache->type = SAT_CACHE_CONTACT_FV;
+            new_cache->feature[b_f] = old_cache->feature[b_f];
+
+            *delayed_count = 0;
+            /* Setup delayed vertices (if any) */
+            if (b_f == 1 && manifold->v_count == 1)
+            {
+                const f32 diff[3] =
+                {
+                    Vec3DistanceSquared(manifold->v[0], tri[0]), 
+                    Vec3DistanceSquared(manifold->v[0], tri[1]), 
+                    Vec3DistanceSquared(manifold->v[0], tri[2]), 
+                };
+
+                f32 min_diff = diff[0];
+                *delayed_count = 1;
+                delayed_set[0] = 0;
+
+                if (diff[1] < min_diff)
+                {
+                    min_diff = diff[1];
+                    delayed_set[0] = 1;
+                }
+
+                if (diff[2] < min_diff)
+                {
+                    delayed_set[0] = 2;
+                }
+            }
+            else if (b_f == 1 && manifold->v_count == 2)
+            {
+                const struct segment c_s = SegmentConstruct(manifold->v[0], manifold->v[1]);
+                const struct segment s[3] =
+                {
+                    SegmentConstruct(tri[0],tri[1]),
+                    SegmentConstruct(tri[1],tri[2]),
+                    SegmentConstruct(tri[2],tri[0]),
+                };
+
+                for (u32 i = 0; i < 3; ++i)
+                {
+                    if (SegmentParallelCheck(s + i, &c_s, g_numerics_config->vec3_parallel_check_eps))
+                    {
+                        *delayed_count = 2;
+                        delayed_set[0] = i;
+                        delayed_set[1] = (i+1) % 3;
+                        break;
+                    }
+                }
+            }
+    
+            ProfZoneEnd;
+            goto sat_cleanup;
+	    } break;
+
+        default:
         {
 
         } break;
 	}
+    ProfZoneEnd;
+    }
+
+    //TODO
+    if ((cache_count % 1000) == 1)
+        fprintf(stderr, "EvictionRate, SetRate: %f, %f\n", (f32) eviction_count / cache_count, (f32) cache_count / call_count);
         
+    colliding = 0;
+	struct sat_FaceQuery f_query[2] = { { .depth = -F32_INFINITY }, { .depth = -F32_INFINITY } };
+	struct sat_EdgeQuery e_query = { .depth = -F32_INFINITY };
+
     /* tri-plane vs. hull */
     const struct plane tri_plane = PlaneConstructNormalizedFromCcwTriangle(tri[0], tri[1], tri[2]);
     {
@@ -3330,6 +3422,9 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
         Vec3Scale(f_query[0].normal, tri_plane.normal, f_query_sign[ f_query[0].fi ]);
         if (f_query[0].depth > 0.0f)
         {
+		    Vec3Copy(new_cache->normal, f_query[0].normal);
+		    new_cache->depth = f_query[0].depth;
+		    new_cache->type = SAT_CACHE_SEPARATION;
             goto sat_cleanup;
         }
     }
@@ -3355,6 +3450,10 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
                 if (f_query[1].depth > 0.0f)
                 {
                     ProfZoneEnd;
+                    const f32 n_dir_len = Vec3Length(min_plane.normal_direction);
+		            Vec3Scale(new_cache->normal, min_plane.normal_direction, 1.0f/n_dir_len);
+		            new_cache->depth = f_query[1].depth / n_dir_len;
+		            new_cache->type = SAT_CACHE_SEPARATION;
                     goto sat_cleanup;
                 }
     		}
@@ -3385,13 +3484,6 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
             Vec3LengthSquared(tri_s[2].dir),
         };
 
-        const vec3 tri_center =
-        {
-            (tri[0][0] + tri[1][0] + tri[2][0]) / 3.0f,
-            (tri[0][1] + tri[1][1] + tri[2][1]) / 3.0f,
-            (tri[0][2] + tri[1][2] + tri[2][2]) / 3.0f,
-        };
-
         for (u32 fi = 0; fi < hull->f_count; ++fi)
         {
             vec3 f_dir;
@@ -3405,6 +3497,9 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
                 if (TriCcwHullEECheck(&e_query, &tri_plane, tri_s, tri_s_dist_sq, tri_center, hull, f_dir, ei))
                 {
                     ProfZoneEnd;
+		            Vec3Copy(new_cache->normal, e_query.normal);
+		            new_cache->depth = e_query.depth;
+		            new_cache->type = SAT_CACHE_SEPARATION;
                     goto sat_cleanup;
                 }
             } 
@@ -3416,20 +3511,19 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
 	if (0.99f*f_query[0].depth >= e_query.depth || 0.99f*f_query[1].depth >= e_query.depth)
 	{
         ProfZoneNamed("FaceContact");
-        struct arena *tmp = ArenaPushScratch();
 
         const u32 b_f = (f_query[1].depth > f_query[0].depth);
+        const u32 b_v = 1 - b_f;
+
         new_cache->type = SAT_CACHE_CONTACT_FV;
-		new_cache->v_count = 0;
-        new_cache->body = b_f;
-        new_cache->face = f_query[b_f].fi;
+        new_cache->feature[b_f] = sat_FeatureIdConstruct(f_query[b_f].fi, SAT_FEATURE_TYPE_FACE);
+        Vec3Copy(new_cache->normal, f_query[b_f].normal);
+        colliding = HullFaceContact(tmp, manifold, &new_cache->depth, new_cache->feature + b_v, f_query + b_f, h, v, b_f, ref);
 
-        struct dcel hull_tri = DcelTriStub();
-        const struct dcel *h[2] = { &hull_tri, hull };
-        constvec3ptr v[2] = { tri, hull->v };
-        sat_FeatureId max_feature;
-        colliding = HullFaceContact(tmp, manifold, max_depth, &max_feature, f_query + b_f, h, v, b_f, ref);
+        if (colliding)
+        {
 
+        *delayed_count = 0;
         /* Setup delayed vertices (if any) */
         if (b_f == 1 && manifold->v_count == 1)
         {
@@ -3441,18 +3535,18 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
             };
 
             f32 min_diff = diff[0];
-            new_cache->v_count = 1;
-            new_cache->v[0] = 0;
+            *delayed_count = 1;
+            delayed_set[0] = 0;
 
             if (diff[1] < min_diff)
             {
                 min_diff = diff[1];
-                new_cache->v[0] = 1;
+                delayed_set[0] = 1;
             }
 
             if (diff[2] < min_diff)
             {
-                new_cache->v[0] = 2;
+                delayed_set[0] = 2;
             }
         }
         else if (b_f == 1 && manifold->v_count == 2)
@@ -3467,33 +3561,35 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
 
             for (u32 i = 0; i < 3; ++i)
             {
-                //TODO move to global numerical_engine
-                const f32 eps = g_numerics_config->vec3_parallel_check_eps;
-                if (SegmentParallelCheck(s + i, &c_s, eps))
+                if (SegmentParallelCheck(s + i, &c_s, g_numerics_config->vec3_parallel_check_eps))
                 {
-                    new_cache->v_count = 2;
-                    new_cache->v[0] = i;
-                    new_cache->v[1] = (i+1) % 3;
+                    *delayed_count = 2;
+                    delayed_set[0] = i;
+                    delayed_set[1] = (i+1) % 3;
                     break;
                 }
             }
         }
-        ArenaPopScratch();
-        
+        }
+        else
+        {
+			new_cache->type = SAT_CACHE_SEPARATION;
+			new_cache->depth = 0.0f;
+			(b_f == ref)
+				? Vec3Copy(new_cache->normal, f_query[0].normal)
+				: Vec3Negate(new_cache->normal, f_query[1].normal);
+        }
+
         ProfZoneEnd;
 	}
 	/* edgeContact */
 	else
-	{
-        struct sat_Cache sat_cache;
-		sat_EdgeQueryCollisionResult(manifold, &sat_cache, &e_query, ref);
-        new_cache->type = sat_cache.type;
-        new_cache->edge0 = sat_FeatureIdIndex(sat_cache.feature[0]);
-        new_cache->edge1 = sat_FeatureIdIndex(sat_cache.feature[1]);
-        *max_depth = manifold->depth[0];
+    {
+        TriCcwHullEdgeQueryCollisionResult(manifold, new_cache, delayed_set, delayed_count, &e_query, ref);
 	}
 
 sat_cleanup:
+    ArenaPopScratch();
 	return colliding;
 }
 
@@ -3559,6 +3655,7 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
     mat3 bvh_rotation;
     Mat3Quat(bvh_rotation, tf[0].rotation);
 
+    u32 true_contact_count = 0;
     struct c_TriMeshBvhIterator it;
     c_TriMeshBvhIteratorAlloc(&it, mesh_bvh, &bbox_transform);
 
@@ -3596,23 +3693,14 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
                         }
                     }
 
-                    f32 max_depth = -F32_INFINITY;
-                    const u32 contact = TriCcwHullContact(&c->manifold, &c->cache, &max_depth, old_cache, tri, &hull_bvh_local_space, reference_index);
+                    const u32 contact = TriCcwHullContact(&c->manifold, &c->cache, c->delayed_set, &c->delayed_count, old_cache, tri, &hull_bvh_local_space, reference_index);
                     ProfZoneEnd;
-
-                    {
-                    ProfZoneNamed("NON-CACHED");
-                    f32 dd = -F32_INFINITY;
-                    struct c_TriHullCache stube;
-                    TriCcwHullContact(&c->manifold, &stube, &dd, &tri_hull_cache_stub, tri, &hull_bvh_local_space, reference_index);
-                    ProfZoneEnd;
-                    }
-
 
                     /* delayed set processed from deepest to shallowest contact. */
-                    c->priority = -max_depth*max_depth;
+                    c->priority = -c->cache.depth * c->cache.depth;
 
-                    it.contact_count += contact;
+                    true_contact_count += contact;
+                    it.contact_count += 1;
                     if (it.contact_count == it.contact_len)
                     {
 	    				Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
@@ -3630,8 +3718,8 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
                      : ArenaPush(frame, TRI_HULL_CACHE_MAX_SIZE*sizeof(struct c_TriHullCache));
 
     u32 collision_count = 0;
-    *manifold = ArenaPush(frame, it.contact_count*sizeof(struct c_Manifold));
-    *tri = ArenaPush(frame, it.contact_count*sizeof(u32));
+    *manifold = ArenaPush(frame, true_contact_count*sizeof(struct c_Manifold));
+    *tri = ArenaPush(frame, true_contact_count*sizeof(u32));
     c_TriMeshBvhIteratorDelayedSetAlloc(&it);
     if (it.contact_count && (!manifold || !tri || !it.delayed_set || !cache->tri_cache))
     {
@@ -3642,8 +3730,17 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
     for (u32 i = 0; i < it.contact_count; ++i)
     {
         struct c_TriMeshBvhContact *c = it.contact + i;
-        //TODO fix
-        if (c->cache.type == SAT_CACHE_CONTACT_FV && c->cache.v_count == 0)
+        if (c->cache.type == SAT_CACHE_SEPARATION)
+        {
+            if (cache->tri_cache_count < TRI_HULL_CACHE_MAX_SIZE)
+            {
+                memcpy(cache->tri_cache + cache->tri_cache_count, &c->cache, sizeof(struct c_TriHullCache));
+                cache->tri_cache_count += 1;
+            }
+            continue;
+        }
+
+        if (c->delayed_count == 0)
         {
             struct c_Manifold *m = (*manifold) + collision_count;
             u32 *t = (*tri) + collision_count;
@@ -3685,19 +3782,16 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
         u32 voided;
         if (c->cache.type == SAT_CACHE_CONTACT_FV)
         {
-            ds_Assert(c->cache.body == 1);
-            ds_Assert(c->cache.v_count == 1 || c->cache.v_count == 2);
-
-            voided = BitVecGetBit(&it.void_bitset, tri_id[ c->cache.v[0] ]);
-            if (c->cache.v_count == 2)
+            voided = BitVecGetBit(&it.void_bitset, tri_id[ c->delayed_set[0] ]);
+            if (c->delayed_count == 2)
             {
-                voided = voided && BitVecGetBit(&it.void_bitset, tri_id[ c->cache.v[1] ]);
+                voided = voided && BitVecGetBit(&it.void_bitset, tri_id[ c->delayed_set[1] ]);
             }
         }
         else
         {
-            const u32 v0 = tri_id[ edge_to_v0_map[c->cache.edge0] ];
-            const u32 v1 = tri_id[ edge_to_v1_map[c->cache.edge0] ];
+            const u32 v0 = tri_id[ edge_to_v0_map[ c->delayed_set[0] ] ];
+            const u32 v1 = tri_id[ edge_to_v1_map[ c->delayed_set[0] ] ];
             voided = BitVecGetBit(&it.void_bitset, v0) && BitVecGetBit(&it.void_bitset, v1);
         }
 

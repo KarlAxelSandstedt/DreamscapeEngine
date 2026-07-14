@@ -204,7 +204,7 @@ u32 		PlaneRaycast(vec3 intersection, const struct plane *plane, const struct ra
 /********************************** AABB ************************************/
 
 /* Return smallest AABB with a given margin of the input vertex set,   */
-void		AabbVertex(struct aabb *dst, const vec3ptr v, const u32 v_count, const f32 margin);
+void		AabbVertex(struct aabb *dst, constvec3ptr v, const u32 v_count, const f32 margin);
 /* Return smallest AABB that contains both a and b  */
 void		AabbUnion(struct aabb *box_union, const struct aabb *a, const struct aabb *b);
 /* Return AABB of rotated AABB. */
@@ -376,7 +376,7 @@ struct dcel 	DcelBoxStub(void);
 /* return arena allocated dcel box with given half widths */
 struct dcel 	DcelBox(struct arena *mem, const vec3 hw);
 /* return arena allocated dcel convex hull of input points. On failure, an empty dcel is returned. */
-struct dcel 	DcelConvexHull(struct arena *mem, const vec3ptr v, const u32 v_count, const f32 tol);
+struct dcel 	DcelConvexHull(struct arena *mem, constvec3ptr v, const u32 v_count, const f32 tol);
 /* Return support of dcel in given direction, and return supporting vertex index */
 u32		        DcelSupport(vec3 support, const vec3 dir, const struct dcel *hull, mat3 rot, const vec3 pos);
 
@@ -415,8 +415,8 @@ void 		DcelAssertTopology(struct dcel *dcel);
 /********************************* vertex operations ***********************************/
 
 /* Return: support of vertex set given the direction, and supporting vertex index */
-u32 	VertexSupport(vec3 support, const vec3 dir, const vec3ptr v, const u32 v_count);
-void 	VertexCentroid(vec3 centroid, const vec3ptr vs, const u32 n);
+u32 	VertexSupport(vec3 support, const vec3 dir, constvec3ptr v, const u32 v_count);
+void 	VertexCentroid(vec3 centroid, constvec3ptr vs, const u32 n);
 
 #ifdef __cplusplus
 } 

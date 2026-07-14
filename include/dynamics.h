@@ -588,51 +588,42 @@ struct slot sat_CacheLookup(struct cdb *cdb, const struct sat_CacheKey *key);
 /*
 c_TriHullCache
 ==============
-TODO
+Cachind data for a triangle vs. hull sat call. Instead of using triangles as shapes, we use the 
+ordinary identifiers 
+         
+         (body_hull, shape_hull, body_mesh, shape_mesh)
 
+as our sat_CacheKey. We wish to skip the overhead of managing the database on a per-triangle contact basis, and
+instead keep the triangle cache data stored in a small array of size TRI_HULL_CACHE_MAX_SIZE. We extend the union 
+in sat_Cache with a "c_TriHullCache pointer" which points into double-buffered memory. To handle this, we extend 
+our program to use double-buffered frame arenas; this way any thread can look into any other threads' old caching 
+work from the previous frame, and store any new cache data in the current frame.
 */
 
 #define TRI_HULL_CACHE_MAX_SIZE 32
-//TODO move/rename/...:
 struct c_TriHullCache
 {
     u32 tri;
 	enum sat_CacheType	type;
     
-    union
-    {
-        struct
-	    {
-	    	u32 body;	/* body (0 or 1) containing face        */
-	    	u32	face;	/* reference face 	                    */
-
-            /*
-             * TODO: This information be stored in the cache, since if we are going
-             * to use this cached contact data again, we must know the triangle is
-             * to delay these specific vertices...
-             *
-             * If body == 1, the reference face is on the hull, so
-             * we must check if the generated contact points on the
-             * triangle is either on an edge (v_count == 2), or 
-             * a vertex (v_count == 1), so we can correctly delay the
-             * contact. If v_count in neither 1 or 2, we ignore v[].
-             */
-            u32 v_count;
-            u32 v[2];
-	    };
-
-	    struct
-	    {
-	    	u32	edge0;	/* body0 edge   */
-	    	u32	edge1;	/* body1 edge   */
-	    };
-
-    	//struct
-    	//{
-    	//	vec3    separation_axis;
-    	//	f32	    separation;
-    	//};
-    };
+    /*
+     * type == FACE:
+     *  feature[i].type == FACE => i IS NOT incident face
+     *  feature[i].type != FACE => i IS on incident face
+     *  normal == face normal
+     *
+     * type == EDGE:
+     *  feature[i].type == EDGE
+     *  feature[i].type == EDGE
+     *  normal == contact normal
+     *
+     * type == SEPARATION:
+     *      normal == separation axis pointing from reference body 
+     *      depth == separation distance
+     */
+    sat_FeatureId   feature[2];
+    f32             depth;      /* depth or separation (positive)   */
+    vec3            normal;     /* cached bvh-space normal          */
 };
 
 

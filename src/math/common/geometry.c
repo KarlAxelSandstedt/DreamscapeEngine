@@ -455,7 +455,7 @@ u32 PlaneRaycast(vec3 intersection, const struct plane *plane, const struct ray 
 	return 1;
 }
 
-void AabbVertex(struct aabb *dst, const vec3ptr v, const u32 v_count, const f32 margin)
+void AabbVertex(struct aabb *dst, constvec3ptr v, const u32 v_count, const f32 margin)
 {
 	vec3 min = { F32_INFINITY, F32_INFINITY, F32_INFINITY };
 	vec3 max = { -F32_INFINITY, -F32_INFINITY, -F32_INFINITY };
@@ -746,7 +746,7 @@ struct aabb BboxUnion(const struct aabb a, const struct aabb b)
 	return bbox;
 }
 
-u32 VertexSupport(vec3 support, const vec3 dir, const vec3ptr v, const u32 v_count)
+u32 VertexSupport(vec3 support, const vec3 dir, constvec3ptr v, const u32 v_count)
 {
 	u32 best = U32_MAX;
 	f32 max_dist = -F32_INFINITY;
@@ -766,7 +766,7 @@ u32 VertexSupport(vec3 support, const vec3 dir, const vec3ptr v, const u32 v_cou
 	return best;
 }
 
-void VertexCentroid(vec3 centroid, const vec3ptr vs, const u32 n)
+void VertexCentroid(vec3 centroid, constvec3ptr vs, const u32 n)
 {
 	Vec3Set(centroid, 0.0f, 0.0f, 0.0f);
 	for (u32 i = 0; i < n; ++i)
@@ -1374,13 +1374,6 @@ struct dcel DcelBoxStub(void)
 	return box; 
 }
 
-static vec3 tri_stub_vertex[3] =
-{
-	{  0.0f,  0.0f,  0.0f }, 
-	{  0.0f,  0.0f,  1.0f },	
-	{  1.0f,  0.0f,  0.0f },	
-};
-
 static struct dcelFace tri_face[2] =
 {
 	{ .first  =  0, .count = 3 },
@@ -1402,7 +1395,7 @@ struct dcel DcelTriStub(void)
 {
 	struct dcel tri = 
 	{
-		.v = tri_stub_vertex,
+		.v = NULL,
 		.e = tri_edge,
 		.f = tri_face,
 		.e_count = 6,
@@ -1764,7 +1757,7 @@ struct ddcel
 	/* pools are not growable, so safe to use these */
 	struct ddcelFace *	f;		
 	struct ddcelEdge *	e;
-	const vec3ptr		v;
+	constvec3ptr		v;
 	u32 			v_count;
 
 	/* internal */
@@ -1923,7 +1916,7 @@ u32 InternalConvexHullTetrahedronIndices(struct ddcel *ddcel, const f32 tol)
 
 static void InternalConvexHullTetrahedronDdcel(struct ddcel *ddcel, const f32 tol)
 {
-	const vec3ptr v = ddcel->v;
+	constvec3ptr v = ddcel->v;
 	const u32 v_count = ddcel->v_count;
 	vec3 a, b, c, cr;
 	Vec3Sub(a, v[ddcel->cv[1].index], v[ddcel->cv[0].index]);
@@ -1989,7 +1982,7 @@ static void InternalConvexHullTetrahedronDdcel(struct ddcel *ddcel, const f32 to
 
 static void InternalConvexHullTetrahedronConflicts(struct ddcel *ddcel, const f32 tol)
 {
-	const vec3ptr v = ddcel->v;
+	constvec3ptr v = ddcel->v;
 	const u32 v_count = ddcel->v_count;
 	vec3 b;
 	for (u32 cv_i = 4; cv_i < v_count; ++cv_i)
@@ -2348,7 +2341,7 @@ struct dcel DcelDdcel(struct arena *mem, const struct ddcel *ddcel)
 	return cpy;
 }
 
-struct dcel DcelConvexHull(struct arena *mem, const vec3ptr v, const u32 v_count, const f32 tol)
+struct dcel DcelConvexHull(struct arena *mem, constvec3ptr v, const u32 v_count, const f32 tol)
 {
 	struct dcel dcel = DcelEmpty();
 	if (v_count < 4) { goto end; }	
