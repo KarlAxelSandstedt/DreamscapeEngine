@@ -1747,7 +1747,7 @@ static void led_EngineRun(struct led *led)
 				}
 			} break;
 
-#ifdef DS_PHYSICS_DEBUG
+//#ifdef DS_PHYSICS_DEBUG
 			case PHYSICS_EVENT_ISLAND_NEW:
 			{
 				struct ds_Island *is = ds_PoolAddress(&led->physics.is_db.island_pool, event->island);
@@ -1780,7 +1780,7 @@ static void led_EngineRun(struct led *led)
 					}
 				}
 			} break;
-#endif
+//#endif
 
 			case PHYSICS_EVENT_ISLAND_REMOVED:
 			{

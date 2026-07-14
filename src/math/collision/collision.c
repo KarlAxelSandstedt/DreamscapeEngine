@@ -2461,10 +2461,11 @@ void sat_EdgeQueryCollisionResult(struct c_Manifold *manifold, struct sat_Cache 
         ? Vec3Copy(manifold->n, query->normal)
         : Vec3Scale(manifold->n, query->normal, -1.0f);
 
-	sat_cache->edge0 = query->e1;
-	sat_cache->edge1 = query->e2;
-    Vec3Copy(sat_cache->edge_normal, manifold->n);
+	sat_cache->feature[0] = sat_FeatureIdConstruct(query->e1, SAT_FEATURE_TYPE_EDGE);
+	sat_cache->feature[1] = sat_FeatureIdConstruct(query->e2, SAT_FEATURE_TYPE_EDGE);
+    Vec3Copy(sat_cache->normal, manifold->n);
 	sat_cache->type = SAT_CACHE_CONTACT_EE;
+    sat_cache->depth = manifold->depth[0];
 }
 
 /*
@@ -2502,26 +2503,6 @@ u32 c_HullContact(struct c_Manifold *manifold, struct sat_Cache *cache, const st
 	struct sat_FaceQuery f_query[2] = { { .depth = -F32_INFINITY }, { .depth = -F32_INFINITY } };
 	struct sat_EdgeQuery e_query = { .depth = -F32_INFINITY };
 
-    /* TODO: Need full check c_ManifoldCheckCached(&new_manifold, &old_manifold) 
-     *
-     * Here is a non-exhaustive list of thing to possible check when determining if our new contact manifold generated 
-     * from the cached features is good enough to keep.
-     *
-     *  (O) Check penetration: Are we even still penetrating?
-     *
-     *  (O) Have the contact normal cached drifted from the cached normal? If we compare to the cached normal 
-     *      from the frame before, how do we mitigate the cahced normal drifting over time? Is it better to view the 
-     *      cached normal as constant, and keep it until we drift to far away from it, and at that point run the full SAT
-     *     gauntlet again?
-     *
-     *  (O) Check that deepest point/edge/feature is still deepest (Old contact point still drives the penetration)
-     *
-     *  () Check if max depth is roughly the same
-     *
-     *  () Do we have to high velocity? If we have a high enough velocity, we might as well skip trying to cache, as the
-     *     manifold most certainly not going to be temporaly coherent.
-     *     TODO: Note, this should probably be done before calling this function, if at all.
-     */
 	u32 colliding = 0;
     switch (cache_copy->type)
     {
@@ -2545,10 +2526,12 @@ u32 c_HullContact(struct c_Manifold *manifold, struct sat_Cache *cache, const st
          
         case SAT_CACHE_CONTACT_EE:
 	    {
-	    	HullContactEECheckRecompute(&e_query, h[0], v_world[0], cache_copy->edge0, h[1], v_world[1], cache_copy->edge1, t[0].position);
+	    	HullContactEECheckRecompute(&e_query, h[0], v_world[0], sat_FeatureIdIndex(cache_copy->feature[0]), h[1], v_world[1], sat_FeatureIdIndex(cache_copy->feature[1]), t[0].position);
 	    	sat_EdgeQueryCollisionResult(manifold, cache, &e_query, ref);
 
-            if (e_query.depth >= 0.0f || Vec3Dot(cache->edge_normal, cache_copy->edge_normal) < g_numerics_config->manifold_cached_normal_parallel_check_eps)
+            if (e_query.depth >= 0.0f 
+                    || f32_abs(e_query.depth - cache_copy->depth) >= g_numerics_config->manifold_cache_depth_max_diff_allowed
+                    || Vec3Dot(cache->normal, cache_copy->normal) < g_numerics_config->manifold_cache_normal_parallel_check_eps)
             {
 	    	    e_query.depth = -F32_INFINITY;
                 break;
@@ -2560,25 +2543,28 @@ u32 c_HullContact(struct c_Manifold *manifold, struct sat_Cache *cache, const st
 
         case SAT_CACHE_CONTACT_FV:
 	    {
-            f32 max_depth;
             /* b_f = body with reference/contact face, b_v = incident body with penetrating vertices */
             const u32 b_f = (sat_FeatureIdType(cache_copy->feature[1]) == SAT_FEATURE_TYPE_FACE);
             const u32 b_v = 1 - b_f;
             const u32 face = sat_FeatureIdIndex(cache_copy->feature[b_f]);
-	    	DcelFaceNormal(cache->face_normal, h[b_f], rot[b_f], face);
-            if (Vec3Dot(cache->face_normal, cache_copy->face_normal) < g_numerics_config->manifold_cached_normal_parallel_check_eps) 
+	    	DcelFaceNormal(cache->normal, h[b_f], rot[b_f], face);
+            if (Vec3Dot(cache->normal, cache_copy->normal) < g_numerics_config->manifold_cache_normal_parallel_check_eps) 
             { 
                 break; 
             }
 
             sat_FeatureId max_feature;
             struct sat_FaceQuery q = { .fi = face };
-            Vec3Copy(q.normal, cache->face_normal);
-	    	colliding = HullFaceContact(mem_tmp, manifold, &max_depth, &max_feature, &q, h, (constvec3ptr *)v_world, b_f, ref);
-            if (!colliding || max_feature != cache_copy->feature[b_v]) 
+            Vec3Copy(q.normal, cache->normal);
+
+	    	colliding = HullFaceContact(mem_tmp, manifold, &cache->depth, &max_feature, &q, h, (constvec3ptr *)v_world, b_f, ref);
+            if (!colliding 
+                    || max_feature != cache_copy->feature[b_v]
+                    || f32_abs(cache->depth - cache_copy->depth) >= g_numerics_config->manifold_cache_depth_max_diff_allowed)
             { 
                 break; 
             }
+            colliding = 1;
             goto sat_cleanup;
 	    } break;
 
@@ -2628,8 +2614,8 @@ u32 c_HullContact(struct c_Manifold *manifold, struct sat_Cache *cache, const st
 			cache->type = SAT_CACHE_CONTACT_FV;
             cache->feature[b_f] = sat_FeatureIdConstruct(f_query[b_f].fi, SAT_FEATURE_TYPE_FACE);
             cache->feature[b_v] = max_feature;
-            cache->max_depth = max_depth;
-            Vec3Copy(cache->face_normal, f_query[b_f].normal);
+            cache->depth = max_depth;
+            Vec3Copy(cache->normal, f_query[b_f].normal);
 		}
 		else
 		{
@@ -3636,8 +3622,8 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
         struct sat_Cache sat_cache;
 		sat_EdgeQueryCollisionResult(manifold, &sat_cache, &e_query, ref);
         new_cache->type = sat_cache.type;
-        new_cache->edge0 = sat_cache.edge0;
-        new_cache->edge1 = sat_cache.edge1;
+        new_cache->edge0 = sat_FeatureIdIndex(sat_cache.feature[0]);
+        new_cache->edge1 = sat_FeatureIdIndex(sat_cache.feature[1]);
         *max_depth = manifold->depth[0];
 	}
 

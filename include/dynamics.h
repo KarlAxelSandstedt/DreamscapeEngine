@@ -43,15 +43,33 @@ ds_NumericsConfig
 ds_NumericsConfig stores configurable values to be used in numerical calculations.
 */
 
+#define DS_UNIT_M	1.0f
+#define DS_UNIT_DM	0.1f
+#define DS_UNIT_CM	0.01f
+#define DS_UNIT_MM	0.001f
+
 struct ds_NumericsConfig
 {
+    /* Maximum degrees allowed between two vectors for them to be considered parallel */
     f32 vec3_parallel_check_max_degrees_pending;
     f32 vec3_parallel_check_max_degrees;
     f32 vec3_parallel_check_eps;
 
-    f32 manifold_cached_normal_parallel_check_max_degrees_pending;
-    f32 manifold_cached_normal_parallel_check_max_degrees;
-    f32 manifold_cached_normal_parallel_check_eps;
+    /* Maximum degrees allowed for temporal consistency between a cached and new manifold normal */
+    f32 manifold_cache_normal_parallel_check_max_degrees_pending;
+    f32 manifold_cache_normal_parallel_check_max_degrees;
+    f32 manifold_cache_normal_parallel_check_eps;
+
+    /* Maximum difference allowed for temporal consistency between a cached and new manifold depth */
+    f32 manifold_cache_depth_max_diff_allowed_pending;
+    f32 manifold_cache_depth_max_diff_allowed;
+
+    /* 
+     * Maximum velocity along the contact normal  allowed for temporal consistency between a cached and 
+     * new manifold 
+     */
+    f32 manifold_cache_linear_velocity_max_diff_allowed_pending;
+    f32 manifold_cache_linear_velocity_max_diff_allowed;
 };
 extern struct ds_NumericsConfig *g_numerics_config;
 
@@ -439,8 +457,9 @@ any of their caches, so when we remove a body or a shape, we do not want to remo
 its cache immediately. Instead, we lazily remove caches with 1 frame delay, which
 introduces the ABA problems which justifies adding full ids to the cache key.
 
-//TODO maybe this can be done in a less bloated way...
 */
+
+//TODO maybe this can be done in a less bloated way...
 struct sat_CacheKey
 {
     ds_RigidBodyId  body0;      /* Index(body0) < Index(body1)  */
@@ -459,9 +478,30 @@ u32                 sat_CacheKeyEquivalence(const struct sat_CacheKey *keyA, con
 /*
 sat_Cache
 =========
-Internal physics engine struct for caching SAT-based contact calculations
-each frame.
+Internal physics engine struct for caching SAT-based contact calculations each frame. If a contact was found,
+the contact results may be re-used the next frame if a set of conditions are fullfilled.
+
+::: Internals :::
+
+To ensure temporal coherence when reusing contact information, we currently test:
+
+  1. A penetration check for the cached features: Are we even still penetrating for the given features?
+
+  2. Has the new contact normal drifted to much from the cached normal? The number of degrees-drift per frame 
+     is found in ds_NumericsConfig.
+
+  3. Is the cached feature that produced the deepest point still the deepest feature in the new contact? This
+     test is only relevant for face contacts, as the deepest point may come from the incident body's vertex set
+     or from the body's edge set as a clipped point.
+
+  4. We allow a maximum change in penetration depth per frame, governed by a value in ds_NumericsConfig. This test
+     may be unnecessary as we are already doing a linear velocity check.
+
+  5. We allow a maximum difference in velocity between the two bodies along the contact normal. If the separating
+     velocity is high, the chances are that our manifold is not coherent and we may as well not even try to rebuilt
+     it (a rather costly endevaour). As in the other case, the max difference is found in ds_NumericsConfig.
 */
+
 enum sat_CacheType
 {
     SAT_CACHE_NOT_SET,      /* Cache not set            */
@@ -472,8 +512,88 @@ enum sat_CacheType
 	SAT_CACHE_COUNT,
 };
 
+typedef u32 sat_FeatureId;
+
+#define SAT_FEATURE_ID_INDEX_MASK           (0x3fffffff)
+#define SAT_FEATURE_ID_TYPE_MASK            (0xc0000000)
+
+#define SAT_FEATURE_NULL                    U32_MAX
+#define SAT_FEATURE_TYPE_NULL               3
+#define SAT_FEATURE_TYPE_FACE               2
+#define SAT_FEATURE_TYPE_EDGE               1
+#define SAT_FEATURE_TYPE_VERTEX             0
+
+#define sat_FeatureIdVertexCheck(id)        (((id) >> 30) == SAT_FEATURE_TYPE_VERTEX)
+#define sat_FeatureIdEdgeCheck(id)          (((id) >> 30) == SAT_FEATURE_TYPE_EDGE)
+#define sat_FeatureIdFaceCheck(id)          (((id) >> 30) == SAT_FEATURE_TYPE_FACE)
+
+#define sat_FeatureIdType(id)               ((id) >> 30)
+#define sat_FeatureIdIndex(id)              ((id) & SAT_FEATURE_ID_INDEX_MASK)
+#define sat_FeatureIdConstruct(index, type) (((type) << 30) | (SAT_FEATURE_ID_INDEX_MASK & (index)))
+
+struct c_TriHullCache;
+
+struct sat_Cache
+{
+    THASH_NODE;
+    TPOOL_NODE;
+
+	struct sat_CacheKey key;
+	enum sat_CacheType	type;
+	union
+	{
+        struct
+        {
+            /*
+             * type == FACE:
+             *  feature[i].type == FACE => i IS NOT incident face
+             *  feature[i].type != FACE => i IS on incident face
+             *  normal == face normal
+             *
+             * type == EDGE:
+             *  feature[i].type == EDGE
+             *  feature[i].type == EDGE
+             *  normal == contact normal
+             */
+            sat_FeatureId   feature[2];
+            f32             depth;      /* maximum feature depth (positive) */
+            vec3            normal;     /* cached world-space normal        */
+        };
+
+		struct
+		{
+			vec3    separation_axis;    /* reference to incident direction */
+			f32	    separation;
+		};
+
+        struct
+        {
+            u32                     tri_cache_count;
+            struct c_TriHullCache * tri_cache;
+            //TODO storage for another pointer.
+        };
+	};
+};
+
+TPOOL_DECLARE(sat_Cache)
+THASH_DECLARE(sat_Cache, struct sat_CacheKey)
+
+/* Alloc sat_Cache in pipeline. */
+struct slot sat_CacheAdd(struct cdb *cdb, const struct sat_CacheKey *key);
+/* Dealloc sat_Cache in pipeline. */
+void        sat_CacheRemove(struct cdb *cdb, const u32 index);
+/* Lookup sat_Cache in pipeline. If found, return (index, address). Otherwise (U32_MAX, NULL). */
+struct slot sat_CacheLookup(struct cdb *cdb, const struct sat_CacheKey *key);
+
+/*
+c_TriHullCache
+==============
+TODO
+
+*/
+
 #define TRI_HULL_CACHE_MAX_SIZE 32
-//TODO move:
+//TODO move/rename/...:
 struct c_TriHullCache
 {
     u32 tri;
@@ -515,76 +635,6 @@ struct c_TriHullCache
     };
 };
 
-typedef u32 sat_FeatureId;
-
-#define SAT_FEATURE_ID_INDEX_MASK           (0x3fffffff)
-#define SAT_FEATURE_ID_TYPE_MASK            (0xc0000000)
-
-#define SAT_FEATURE_NULL                    U32_MAX
-#define SAT_FEATURE_TYPE_NULL               3
-#define SAT_FEATURE_TYPE_FACE               2
-#define SAT_FEATURE_TYPE_EDGE               1
-#define SAT_FEATURE_TYPE_VERTEX             0
-
-#define sat_FeatureIdVertexCheck(id)        (((id) >> 30) == SAT_FEATURE_TYPE_VERTEX)
-#define sat_FeatureIdEdgeCheck(id)          (((id) >> 30) == SAT_FEATURE_TYPE_EDGE)
-#define sat_FeatureIdFaceCheck(id)          (((id) >> 30) == SAT_FEATURE_TYPE_FACE)
-
-#define sat_FeatureIdType(id)               ((id) >> 30)
-#define sat_FeatureIdIndex(id)              ((id) & SAT_FEATURE_ID_INDEX_MASK)
-#define sat_FeatureIdConstruct(index, type) (((type) << 30) | (SAT_FEATURE_ID_INDEX_MASK & (index)))
-
-struct sat_Cache
-{
-    THASH_NODE;
-    TPOOL_NODE;
-
-	struct sat_CacheKey key;
-	enum sat_CacheType	type;
-	union
-	{
-        struct
-        {
-            /*
-             * feature[i].type == FACE => i IS NOT incident face
-             * feature[i].type != FACE => i IS on incident face
-             */
-            sat_FeatureId   feature[2];
-            f32             max_depth;      /* maximum feature depth (positive) */
-            vec3            face_normal;    /* cached world-space normal        */
-        };
-
-        struct
-		{
-			u32	    edge0;	        /* body0 edge                   */
-			u32	    edge1;	        /* body1 edge                   */
-            vec3    edge_normal;    /* cached world-space normal    */
-		};
-
-		struct
-		{
-			vec3    separation_axis;
-			f32	    separation;
-		};
-
-        struct
-        {
-            u32                     tri_cache_count;
-            struct c_TriHullCache * tri_cache;
-            //TODO storage for another pointer.
-        };
-	};
-};
-
-TPOOL_DECLARE(sat_Cache)
-THASH_DECLARE(sat_Cache, struct sat_CacheKey)
-
-/* Alloc sat_Cache in pipeline. */
-struct slot sat_CacheAdd(struct cdb *cdb, const struct sat_CacheKey *key);
-/* Dealloc sat_Cache in pipeline. */
-void        sat_CacheRemove(struct cdb *cdb, const u32 index);
-/* Lookup sat_Cache in pipeline. If found, return (index, address). Otherwise (U32_MAX, NULL). */
-struct slot sat_CacheLookup(struct cdb *cdb, const struct sat_CacheKey *key);
 
 /*
 contact_database
@@ -1033,12 +1083,7 @@ u32 ds_IslandJobPhaseDispatch(const ds_JobId job);
 =================================================================================================================
 */
 
-#define UNITS_PER_METER		1.0f
-#define UNITS_PER_DECIMETER	0.1f
-#define UNITS_PER_CENTIMETER	0.01f
-#define UNITS_PER_MILIMETER	0.001f
-
-#define COLLISION_MARGIN_DEFAULT 5.0f * UNITS_PER_MILIMETER 
+#define COLLISION_MARGIN_DEFAULT 5.0f * DS_UNIT_MM 
 
 #define UNIFORM_SIZE 256
 #define GRAVITY_CONSTANT_DEFAULT 9.80665f
@@ -1050,7 +1095,7 @@ u32 ds_IslandJobPhaseDispatch(const ds_JobId job);
 		__physics_debug_event->island = island_index;						                \
 	}
 
-#ifdef DS_PHYSICS_DEBUG
+//#ifdef DS_PHYSICS_DEBUG
 
 #define	PhysicsEventBodyNew(pipeline, _body)		                                        \
 	{												                                        \
@@ -1085,19 +1130,19 @@ u32 ds_IslandJobPhaseDispatch(const ds_JobId job);
 		__physics_debug_event->contact_removed_shapes[1] = shape1;				            \
 	}
 
-#else
-
-#define	PhysicsEventBodyNew(pipeline, body)
-#define	PhysicsEventBodyRemoved(pipeline, entity)
-#define	PhysicsEventIslandAsleep(pipeline, island)
-#define	PhysicsEventIslandAwake(pipeline, island) 
-#define	PhysicsEventIslandNew(pipeline, island)   
-#define	PhysicsEventIslandExpanded(pipeline, island)   
-#define	PhysicsEventIslandRemoved(pipeline, island)
-#define PhysicsEventContactNew(pipeline, contact)
-#define PhysicsEventContactRemoved(pipeline, body0, shape0, body1, shape1)                
-
-#endif
+//#else
+//
+//#define	PhysicsEventBodyNew(pipeline, body)
+//#define	PhysicsEventBodyRemoved(pipeline, entity)
+//#define	PhysicsEventIslandAsleep(pipeline, island)
+//#define	PhysicsEventIslandAwake(pipeline, island) 
+//#define	PhysicsEventIslandNew(pipeline, island)   
+//#define	PhysicsEventIslandExpanded(pipeline, island)   
+//#define	PhysicsEventIslandRemoved(pipeline, island)
+//#define PhysicsEventContactNew(pipeline, contact)
+//#define PhysicsEventContactRemoved(pipeline, body0, shape0, body1, shape1)                
+//
+//#endif
 
 enum physicsEventType
 {

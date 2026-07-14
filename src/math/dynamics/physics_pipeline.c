@@ -300,6 +300,22 @@ static u32 NarrowPhaseJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPh
             {
                 slot = sat_CacheAdd(pipeline->cdb, &key);
             }
+            else
+            {
+                struct sat_Cache *cache = slot.address;
+                /* Quick and dirty cache invalidation for fast moving objects; NOTE: not size invariant!  */
+                if (cache->type != SAT_CACHE_SEPARATION)
+                {
+                    vec3 diff;
+                    Vec3Sub(diff, b0->velocity, b1->velocity);
+                    const f32 linear_vel_abs_diff = f32_abs(Vec3Dot(diff, cache->normal));
+                    if (linear_vel_abs_diff >= g_numerics_config->manifold_cache_linear_velocity_max_diff_allowed)
+                    {
+                        cache->type = SAT_CACHE_NOT_SET;
+                    }
+                }
+            }
+            
             job->cache_index = slot.index;
             job->cache = slot.address;
         }
