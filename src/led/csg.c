@@ -32,7 +32,7 @@ struct csg csg_Alloc(void)
 	csg.brush_db = strdb_Alloc(NULL, 32, 32, struct csg_Brush, GROWABLE);
 	csg.instance_pool = ds_PoolAlloc(NULL, 32, struct csg_Instance, GROWABLE);
 	csg.node_hierarchy = ds_PoolAlloc(NULL, 32, struct csg_Instance, GROWABLE);
-	csg.frame = ArenaAlloc(1024*1024);
+	csg.frame = ArenaAlloc(NULL, 1024*1024);
 	csg.brush_marked_list = dll_Init(struct csg_Brush);
 	csg.instance_marked_list = dll_Init(struct csg_Instance);
 	csg.instance_non_marked_list = dll_Init(struct csg_Instance);
@@ -79,6 +79,8 @@ void csg_Serialize(struct ss *ss, const struct csg *csg)
 struct csg csg_Deserialize(struct arena *mem, struct ss *ss, const u32 growable)
 {
 	ds_Assert(!mem || !growable);
+
+    return (struct csg) { 0 };
 }
 
 static void csg_ApplyDelta(struct csg *csg)
@@ -99,9 +101,7 @@ static void csg_RemoveMarkedStructs(struct csg *csg)
 			continue;
 		}
 
-		utf8 id = brush->id;
-		strdb_Remove(&csg->brush_db, id);
-		ThreadFree256B(id.buf);
+		strdb_Remove(&csg->brush_db, brush->id);
 	}
 
 	dll_Flush(&csg->brush_marked_list);
@@ -128,13 +128,12 @@ struct slot csg_BrushAdd(struct csg *csg, const utf8 id)
 		return empty_slot; 
 	}
 
-	void *buf = ThreadAlloc256B();
+    u8  buf[256];
 	const utf8 heap_id = Utf8CopyBuffered(buf, 256, id);
 	struct slot slot = strdb_AddAndAlias(&csg->brush_db, heap_id);
 	if (!slot.address)
 	{
 		Log(T_CSG, S_WARNING, "Failed to create csgBRush, brush with id %k already exist.", &id);
-		ThreadFree256B(buf);
 	}
 	else
 	{
@@ -143,6 +142,8 @@ struct slot csg_BrushAdd(struct csg *csg, const utf8 id)
 		brush->dcel = DcelBoxStub();
 		brush->flags = CSG_FLAG_NONE;
 		brush->delta = NULL;
+        brush->id.buf = brush->buf_mem;
+	    Utf8CopyBuffered(brush->id.buf, 256, id);
 
 		brush->cache = ui_NodeCacheNull();
 	}

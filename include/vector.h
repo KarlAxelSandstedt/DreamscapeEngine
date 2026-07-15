@@ -211,6 +211,24 @@ f32 	Vec2Dot(const vec2 a, const vec2 b);
 f32 	Vec3Dot(const vec3 a, const vec3 b);
 f32 	Vec4Dot(const vec4 a, const vec4 b);
 
+/* min[i] = f32_min(a[i], b[i]) */
+void    Vec2Min(vec2 dst, const vec2 a, const vec2 b);  
+void    Vec3Min(vec3 dst, const vec3 a, const vec3 b);  
+void    Vec4Min(vec4 dst, const vec4 a, const vec4 b);  
+
+void    Vec2MinSelf(vec2 dst, const vec2 a);  
+void    Vec3MinSelf(vec3 dst, const vec3 a);  
+void    Vec4MinSelf(vec4 dst, const vec4 a);  
+
+/* max[i] = f32_max(a[i], b[i]) */
+void    Vec2Max(vec2 dst, const vec2 a, const vec2 b);  
+void    Vec3Max(vec3 dst, const vec3 a, const vec3 b);  
+void    Vec4Max(vec4 dst, const vec4 a, const vec4 b);  
+
+void    Vec2MaxSelf(vec2 dst, const vec2 a);  
+void    Vec3MaxSelf(vec3 dst, const vec3 a);  
+void    Vec4MaxSelf(vec4 dst, const vec4 a);  
+
 void 	Vec2Interpolate(vec2 dst, const vec2 a, const vec2 b, const f32 alpha);
 void 	Vec3Interpolate(vec3 dst, const vec3 a, const vec3 b, const f32 alpha);
 void 	Vec4Interpolate(vec4 dst, const vec4 a, const vec4 b, const f32 alpha);	/* a * alpha + b * (1-alpha) */
@@ -218,6 +236,14 @@ void 	Vec4Interpolate(vec4 dst, const vec4 a, const vec4 b, const f32 alpha);	/*
 void 	Vec2InterpolatePiecewise(vec2 dst, const vec2 a, const vec2 b, const vec2 alpha);
 void 	Vec3InterpolatePiecewise(vec3 dst, const vec3 a, const vec3 b, const vec3 alpha);
 void 	Vec4InterpolatePiecewise(vec4 dst, const vec4 a, const vec4 b, const vec4 alpha);
+
+/* 
+ * Generate an appropriate epsilon for Vec3ParallelCheck given the upper-bound degrees for two vectors to be 
+ * considered parallel. 
+ */
+f32     Vec3ParallelCheckEpsilon(const f32 degrees);
+/* Return 1 if the vectors are parallel, otherwise return 0. */
+u32     Vec3ParallelCheck(const vec3 a, const vec3 b, const f32 eps);
 
 void 	Vec3Cross(vec3 dst, const vec3 a, const vec3 b); 		/* a cross b */
 void 	Vec3RotateY(vec3 dst, const vec3 a, const f32 angle);	/* (a x b) x c */

@@ -401,7 +401,8 @@ try_again:                                                                      
         else                                                                                                        \
         {                                                                                                           \
             const u32 key_found = key_TypePtrCmpFunction(key, &(*n_cur)->key_name);                                 \
-            ds_ReadWriteBarrier;                                                                                    \
+            /* #LoadLoad, #LoadStore, #StoreStore compiler barrier */                                               \
+            ds_AcqRelCompilerBarrier;                                                                               \
             if (AtomicLoadRlx64(*a_prev) != *snapshot_prev)                                                         \
             {                                                                                                       \
                 goto try_again;                                                                                     \

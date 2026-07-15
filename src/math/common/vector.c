@@ -417,8 +417,6 @@ f32 Vec4DistanceSquared(const vec4 a, const vec4 b)
 	return (b[0]-a[0])*(b[0]-a[0]) + (b[1]-a[1])*(b[1]-a[1]) + (b[2]-a[2])*(b[2]-a[2]) + (b[3]-a[3])*(b[3]-a[3]);
 }
 
-
-
 void Vec2Set(vec2 dst, const f32 x, const f32 y)
 {
 	dst[0] = x;
@@ -844,20 +842,94 @@ void Vec4Mix(vec4 a, const vec4 b)
 	a[3] = 0.5f * (a[3] + b[3]);
 }
 
+void Vec2Min(vec2 dst, const vec2 a, const vec2 b)
+{
+	dst[0] = f32_min(a[0], b[0]); 
+	dst[1] = f32_min(a[1], b[1]);			
+}
+
+void Vec3Min(vec3 dst, const vec3 a, const vec3 b)
+{
+	dst[0] = f32_min(a[0], b[0]); 
+	dst[1] = f32_min(a[1], b[1]);			
+	dst[2] = f32_min(a[2], b[2]);			
+}
+
+void Vec4Min(vec4 dst, const vec4 a, const vec4 b)
+{
+	dst[0] = f32_min(a[0], b[0]); 
+	dst[1] = f32_min(a[1], b[1]);			
+	dst[2] = f32_min(a[2], b[2]);			
+	dst[3] = f32_min(a[3], b[3]);			
+}
+
+void Vec2MinSelf(vec2 dst, const vec2 a)
+{
+	dst[0] = f32_min(dst[0], a[0]); 
+	dst[1] = f32_min(dst[1], a[1]);			
+}
+
+void Vec3MinSelf(vec3 dst, const vec3 a)
+{
+	dst[0] = f32_min(dst[0], a[0]); 
+	dst[1] = f32_min(dst[1], a[1]);			
+	dst[2] = f32_min(dst[2], a[2]);			
+}
+
+void Vec4MinSelf(vec4 dst, const vec4 a)
+{
+	dst[0] = f32_min(dst[0], a[0]); 
+	dst[1] = f32_min(dst[1], a[1]);			
+	dst[2] = f32_min(dst[2], a[2]);			
+	dst[3] = f32_min(dst[3], a[3]);			
+}
+
+void Vec2Max(vec2 dst, const vec2 a, const vec2 b)
+{
+	dst[0] = f32_max(a[0], b[0]); 
+	dst[1] = f32_max(a[1], b[1]);			
+}
+
+void Vec3Max(vec3 dst, const vec3 a, const vec3 b)
+{
+	dst[0] = f32_max(a[0], b[0]); 
+	dst[1] = f32_max(a[1], b[1]);			
+	dst[2] = f32_max(a[2], b[2]);			
+}
+
+void Vec4Max(vec4 dst, const vec4 a, const vec4 b)
+{
+	dst[0] = f32_max(a[0], b[0]); 
+	dst[1] = f32_max(a[1], b[1]);			
+	dst[2] = f32_max(a[2], b[2]);			
+	dst[3] = f32_max(a[3], b[3]);			
+}
+
+void Vec2MaxSelf(vec2 dst, const vec2 a)
+{
+	dst[0] = f32_max(dst[0], a[0]); 
+	dst[1] = f32_max(dst[1], a[1]);			
+}
+
+void Vec3MaxSelf(vec3 dst, const vec3 a)
+{
+	dst[0] = f32_max(dst[0], a[0]); 
+	dst[1] = f32_max(dst[1], a[1]);			
+	dst[2] = f32_max(dst[2], a[2]);			
+}
+
+void Vec4MaxSelf(vec4 dst, const vec4 a)
+{
+	dst[0] = f32_max(dst[0], a[0]); 
+	dst[1] = f32_max(dst[1], a[1]);			
+	dst[2] = f32_max(dst[2], a[2]);			
+	dst[3] = f32_max(dst[3], a[3]);			
+}
+
 void Vec3CreateBasis(vec3 n1, vec3 n2, const vec3 n3)
 {
 	ds_Assert(1.0f - F32_EPSILON*10000.0f <= Vec3Length(n3) && Vec3Length(n3) <= 1.0f + F32_EPSILON*10000.0f);
 
-	//if (n3[0]*n3[0] < n3[1]*n3[1])
-	//{
-	//	if (n3[0]*n3[0] < n3[2]*n3[2]) { Vec3Set(n2, 1.0f, 0.0f, 0.0f); }
-	//	else { Vec3Set(n2, 0.0f, 0.0f, 1.0f); }
-	//}
-	//else
-	//{
-	//	if (n3[1]*n3[1] < n3[2]*n3[2]) { Vec3Set(n2, 0.0f, 1.0f, 0.0f); }
-	//	else { Vec3Set(n2, 0.0f, 0.0f, 1.0f); }
-	//}
     const f32 inv_sqrt2 = 1.0f / f32_sqrt(2.0f);
 	if (f32_abs(n3[2]) < inv_sqrt2)
     {
@@ -878,4 +950,34 @@ void Vec3CreateBasis(vec3 n1, vec3 n2, const vec3 n3)
 	ds_Assert(f32_abs(Vec3Dot(n1, n2)) <= F32_EPSILON * 100.0f);
 	ds_Assert(f32_abs(Vec3Dot(n1, n3)) <= F32_EPSILON * 100.0f);
 	ds_Assert(f32_abs(Vec3Dot(n2, n3)) <= F32_EPSILON * 100.0f);
+}
+
+f32 Vec3ParallelCheckEpsilon(const f32 degrees)
+{
+    /*
+     *  Dot(a,b)*Dot(a*b) = Dot(a,a)*Dot(b,b)*cos(theta)^2
+     *                        = Dot(a,a)*Dot(b,b)*(1-sin(theta)^2)
+     * =>
+     *  Dot(a,a)*Dot(b,b) - Dot(a,b)*Dot(a,b) = sin(theta)^2*Dot(a,a)*Dot(b,b)
+     *
+     *  If the two vectors are parallel (and non-zero) the scale invariant test is found
+     *  by setting a suitable upper bound epsilon > sin(theta)^2
+     *
+     *  Consider the example for enforcing an angle of 0.5* degrees. The analysis of 
+     *  deriving an epsilon given the wanted angle:
+     *
+     *                0.5/360 = theta/2_Pi        
+     * <=>              theta = 0.5 * 2_Pi / 360 ~= 0.008727
+     *  =>      sin(theta)^2 ~= 7.62e-5
+     */
+    const f32 theta =  degrees * F32_PI2 / 360.0f;
+    const f32 sin_theta = f32_sin(theta);
+    return sin_theta*sin_theta;
+}
+
+u32 Vec3ParallelCheck(const vec3 a, const vec3 b, const f32 eps)
+{
+	const f32 d1d2 = Vec3Dot(a, b);
+    const f32 d1d1_d2d2 = Vec3Dot(a, a) * Vec3Dot(b, b);
+    return (d1d1_d2d2 > 0.0f) && (d1d1_d2d2 -  d1d2*d1d2 < eps*d1d1_d2d2);
 }

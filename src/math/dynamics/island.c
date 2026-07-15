@@ -455,8 +455,9 @@ static void UpdateOrientation(struct ds_Island *is, const struct solver *solver,
     Vec3Sub(b->t_world.position, solver->w_center_of_mass[i], rotated_local_center_of_mass);
 }
 
-static u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is, u32 *asleep, const f32 timestep)
+u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is, u32 *asleep, const f32 timestep)
 {
+    *asleep = 0;
 	u32 *bodies_simulated = ArenaPush(mem_frame, is->body_list.count*sizeof(u32));
 	ArenaPushRecord(mem_frame);
 
@@ -568,17 +569,4 @@ static u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pi
 
 	ArenaPopRecord(mem_frame);
 	return bodies_simulated;
-}
-
-void ThreadIslandSolve(void *task_input)
-{
-	ProfZone;
-
-	struct task *t_ctx = task_input;
-	struct ds_IslandSolveInput *args = t_ctx->input;
-	args->out->body_count = args->is->body_list.count;
-	args->out->island_asleep = 0;
-	args->out->bodies = IslandSolve(&t_ctx->executor->mem_frame, args->pipeline, args->is, &args->out->island_asleep, args->timestep);
-
-	ProfZoneEnd;
 }

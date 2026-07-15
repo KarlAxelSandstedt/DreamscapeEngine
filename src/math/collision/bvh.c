@@ -188,11 +188,11 @@ static void DbvhInternalBalanceNode(struct bvh *bvh, const u32 node)
 
 u32 DbvhInsert(struct bvh *bvh, const u32 id, const struct aabb *bbox)
 {
-	struct bvhNode *nodes = (struct bvhNode *) bvh->tree.pool.buf;
 	struct slot leaf;
 	if (bvh->tree.root == BT_PARENT_INDEX_MASK)
 	{
 		leaf = bt_NodeAddRoot(&bvh->tree);
+	    struct bvhNode *nodes = (struct bvhNode *) bvh->tree.pool.buf;
 		bt_LeafSet(nodes + leaf.index);
 		/* Store external id's in bt_left of leaves */
 		nodes[leaf.index].bt_left = id;
@@ -202,6 +202,7 @@ u32 DbvhInsert(struct bvh *bvh, const u32 id, const struct aabb *bbox)
 	{
 		struct slot internal = bt_NodeAdd(&bvh->tree);
 		leaf = bt_NodeAdd(&bvh->tree);
+	    struct bvhNode *nodes = (struct bvhNode *) bvh->tree.pool.buf;
 		nodes[leaf.index].bbox = *bbox;
 		nodes[leaf.index].bt_parent = BT_PARENT_LEAF_MASK | internal.index;
 		nodes[leaf.index].bt_left = id;
@@ -424,11 +425,11 @@ struct dbvhOverlap *DbvhPushOverlapPairs(struct arena *mem, u32 *count, const st
 	u32 b = nodes[bvh->tree.root].bt_right;
 	u32 q = U32_MAX;
 
-	struct arena tmp1 = ArenaAlloc1MB();
-	struct arena tmp2 = ArenaAlloc1MB();
+	struct arena *tmp1 = ArenaPushScratch();
+	struct arena *tmp2 = ArenaPushScratch();
 
-	struct memArray arr1 = ArenaPushAlignedAll(&tmp1, sizeof(struct dbvhOverlap), 4); 
-	struct memArray arr2 = ArenaPushAlignedAll(&tmp2, sizeof(struct dbvhOverlap), 4); 
+	struct memArray arr1 = ArenaPushAlignedAll(tmp1, sizeof(struct dbvhOverlap), 4); 
+	struct memArray arr2 = ArenaPushAlignedAll(tmp2, sizeof(struct dbvhOverlap), 4); 
 
 	struct dbvhOverlap *stack1 = arr1.addr;
 	struct dbvhOverlap *stack2 = arr2.addr;
@@ -467,8 +468,8 @@ struct dbvhOverlap *DbvhPushOverlapPairs(struct arena *mem, u32 *count, const st
 		}
 	}
 
-	ArenaFree1MB(&tmp1);
-	ArenaFree1MB(&tmp2);
+    ArenaPopScratch();
+    ArenaPopScratch();
 
 	return (*count) ? overlaps : NULL;
 }
@@ -526,23 +527,26 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
 		},
 		.tri = ArenaPush(mem, mesh->tri_count*sizeof(u32)),
 		.tri_count = mesh->tri_count,
+        .depth = 0,
 	};
 
-	ArenaPushRecord(mem);
+    struct arena *tmp1 = ArenaPushScratch();
+    struct arena *tmp2 = ArenaPushScratch();
 	struct aabb *axis_bin_bbox[3];
 	u32 *axis_bin_tri_count[3];
 	u8 *centroid_bin_map[3];
-	centroid_bin_map[0] = ArenaPush(mem, mesh->tri_count*sizeof(u8));
-	centroid_bin_map[1] = ArenaPush(mem, mesh->tri_count*sizeof(u8));
-	centroid_bin_map[2] = ArenaPush(mem, mesh->tri_count*sizeof(u8));
-	axis_bin_bbox[0] = ArenaPush(mem, bin_count*sizeof(struct aabb));
-	axis_bin_bbox[1] = ArenaPush(mem, bin_count*sizeof(struct aabb));
-	axis_bin_bbox[2] = ArenaPush(mem, bin_count*sizeof(struct aabb));
-	axis_bin_tri_count[0] = ArenaPush(mem, bin_count*sizeof(u32));
-	axis_bin_tri_count[1] = ArenaPush(mem, bin_count*sizeof(u32));
-	axis_bin_tri_count[2] = ArenaPush(mem, bin_count*sizeof(u32));
-	struct aabb *bbox_tri = ArenaPush(mem, mesh->tri_count*sizeof(struct aabb));
-	struct memArray arr = ArenaPushAlignedAll(mem, sizeof(u32), 4);
+	centroid_bin_map[0] = ArenaPush(tmp1, mesh->tri_count*sizeof(u8));
+	centroid_bin_map[1] = ArenaPush(tmp1, mesh->tri_count*sizeof(u8));
+	centroid_bin_map[2] = ArenaPush(tmp1, mesh->tri_count*sizeof(u8));
+	axis_bin_bbox[0] = ArenaPush(tmp1, bin_count*sizeof(struct aabb));
+	axis_bin_bbox[1] = ArenaPush(tmp1, bin_count*sizeof(struct aabb));
+	axis_bin_bbox[2] = ArenaPush(tmp1, bin_count*sizeof(struct aabb));
+	axis_bin_tri_count[0] = ArenaPush(tmp1, bin_count*sizeof(u32));
+	axis_bin_tri_count[1] = ArenaPush(tmp1, bin_count*sizeof(u32));
+	axis_bin_tri_count[2] = ArenaPush(tmp1, bin_count*sizeof(u32));
+	struct aabb *bbox_tri = ArenaPush(tmp1, mesh->tri_count*sizeof(struct aabb));
+	struct memArray arr = ArenaPushAlignedAll(tmp1, sizeof(u32), 4);
+    struct memArray depth_arr = ArenaPushAlignedAll(tmp2, sizeof(u32), 4);
 
 	u32 success = 1;
 	if (!mesh_bvh.bvh.tree.pool.length 
@@ -558,6 +562,7 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
 	}
 
 	u32 *node_stack = arr.addr;	
+    u32 *depth_stack = depth_arr.addr;
 	u32 node_stack_size = arr.len;
 	u32 sc = 1;
 	struct slot root = bt_NodeAddRoot(&mesh_bvh.bvh.tree);
@@ -571,6 +576,7 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
 				mesh->v[mesh->tri[0][1]],
 				mesh->v[mesh->tri[0][2]]);
 	node_stack[0] = root.index;
+    depth_stack[0] = 0;
 
 	for (u32 i = 0; i < mesh->tri_count; ++i)
 	{
@@ -587,6 +593,10 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
 	/* Process triangles from left to right, depth-first. */
 	while (sc--)
 	{
+        if (mesh_bvh.depth < depth_stack[sc])
+        {
+            mesh_bvh.depth = depth_stack[sc];
+        }
 		node = ds_PoolAddress(&mesh_bvh.bvh.tree.pool, node_stack[sc]);
 		const u32 tri_first = node->bt_left;
 		const u32 tri_count = node->bt_right;
@@ -717,6 +727,10 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
 
 				node_stack[sc] = slot_right.index;
 				node_stack[sc+1] = slot_left.index;
+
+                const u32 new_depth = depth_stack[sc] + 1;
+                depth_stack[sc] = new_depth;
+                depth_stack[sc+1] = new_depth;
 				sc += 2;
 			}
 			else
@@ -730,7 +744,6 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
 	}
 	
 end:
-	ArenaPopRecord(mem);
 	if (success)
 	{
 		ArenaRemoveRecord(mem);
@@ -746,6 +759,9 @@ end:
 		Log(T_SYSTEM, S_ERROR, "Failed to allocate bvh from triangle mesh, minimum size required: %lu\n", size_required);
 		mesh_bvh = (struct triMeshBvh) { 0 };
 	}
+
+    ArenaPopScratch();
+    ArenaPopScratch();
 
 	BvhValidate(mem, &mesh_bvh.bvh);
 
@@ -824,7 +840,6 @@ u32f32 TriMeshBvhRaycast(struct arena *tmp, const struct triMeshBvh *mesh_bvh, c
 				if (distance < info.hit.f)
 				{
 					info.hit = u32f32_inline(mesh_bvh->tri[i], distance);
-					fprintf(stderr, "%u\n", mesh_bvh->tri[i]);
 				}
 			}
 		}

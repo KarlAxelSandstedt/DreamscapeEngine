@@ -42,14 +42,14 @@ bounding volume hierarchy
 struct bvhNode
 {
 	BT_SLOT_STATE;
-	struct aabb	bbox;
+	struct aabb bbox;
 };
 
 struct bvh
 {
 	struct bt		tree;
 	struct minQueue	cost_queue;	/* dynamic specific */
-	u32			heap_allocated;
+	u32			    heap_allocated;
 };
 
 /* free allocated resources */
@@ -68,29 +68,30 @@ struct dbvhOverlap
 	u32 id2;	
 };
 
-struct bvh		DbvhAlloc(struct arena *mem, const u32 initial_length, const u32 growable);
+struct bvh		    DbvhAlloc(struct arena *mem, const u32 initial_length, const u32 growable);
 /* flush / reset the hierarchy  */
-void 			DbvhFlush(struct bvh *bvh);
+void 			    DbvhFlush(struct bvh *bvh);
 /* id is an integer identifier from the outside, return index of added value */
-u32 			DbvhInsert(struct bvh *bvh, const u32 id, const struct aabb *bbox);
+u32 			    DbvhInsert(struct bvh *bvh, const u32 id, const struct aabb *bbox);
 /* remove leaf corresponding to index from tree */
-void 			DbvhRemove(struct bvh *bvh, const u32 index);
+void 			    DbvhRemove(struct bvh *bvh, const u32 index);
 /* Return overlapping ids ptr, set to NULL if no overlap. if overlap, count is set */
-struct dbvhOverlap *	DbvhPushOverlapPairs(struct arena *mem, u32 *count, const struct bvh *bvh);
+struct dbvhOverlap *DbvhPushOverlapPairs(struct arena *mem, u32 *count, const struct bvh *bvh);
 /* push	id:s of leaves hit by raycast. returns number of hits. -1 == out of memory */
 
 struct triMeshBvh
 {
 	const struct triMesh *	mesh;		
-	struct bvh		bvh;
-	u32 *			tri;		
-	u32			tri_count;	
+	struct bvh		        bvh;
+	u32 *			        tri;		
+	u32			            tri_count;	
+    u32                     depth;      /* root=0, */
 };
 
 /* Return non-empty tri_mesh_bvh on success. */
-struct triMeshBvh 	TriMeshBvhConstruct(struct arena *mem, const struct triMesh *mesh, const u32 bin_count);
+struct triMeshBvh   TriMeshBvhConstruct(struct arena *mem, const struct triMesh *mesh, const u32 bin_count);
 /* Return (index, ray hit parameter) on closest hit, or (U32_MAX, F32_INFINITY) on no hit */
-u32f32 			TriMeshBvhRaycast(struct arena *tmp, const struct triMeshBvh *mesh_bvh, const struct ray *ray);
+u32f32 			    TriMeshBvhRaycast(struct arena *tmp, const struct triMeshBvh *mesh_bvh, const struct ray *ray);
 
 
 /*
@@ -160,12 +161,12 @@ struct collisionDebug
 	u8			pad[64];
 };
 
-extern dsThreadLocal struct collisionDebug *tl_debug;
+extern struct collisionDebug *g_collision_debug;
 
 #ifdef DS_PHYSICS_DEBUG
 
 #define COLLISION_DEBUG_ADD_SEGMENT(segment, color)							\
-	stack_visualSegmentPush(&tl_debug->stack_segment,  VisualSegmentConstruct(segment, color))
+	stack_visualSegmentPush(&g_collision_debug[ds_ThreadSelfIndex()].stack_segment,  VisualSegmentConstruct(segment, color))
 
 #else
 
@@ -224,7 +225,12 @@ struct c_Manifold
 	u32 	v_count;    /* Contact point count                              */
 };
 
-void 	c_ManifoldDebugPrint(FILE *file, const struct c_Manifold *cm);
+/* Print manifold to file stderr */
+void 	c_ManifoldDebugPrint(const struct c_Manifold *cm);
+/* Sanity tests for debugging. Return 1 if valid, 0 otherwise. */
+u32     c_ManifoldCheck(const struct c_Manifold *cm);
+/* Transform the manifold */
+void    c_ManifoldTransform(struct c_Manifold *dst, const struct c_Manifold *src, mat3 rot, const vec3 translation);
 
 /********************************** INTERSECTION TESTS **********************************/
 
@@ -255,22 +261,23 @@ f32     c_TriMeshBvhHullDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, con
 struct ds_ContactResult;
 struct sat_Cache;
 
-u32     c_SphereContact(struct arena *not_used1, struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-u32     c_CapsuleSphereContact(struct arena *not_used1, struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-u32     c_CapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-u32     c_HullSphereContact(struct arena *not_used1, struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-u32     c_HullCapsuleContact(struct arena *not_used1, struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-u32     c_HullContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *cache, const struct sat_Cache *cache_copy, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-u32     c_TriMeshBvhSphereContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *not_used1, const struct sat_Cache *not_used2, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-u32     c_TriMeshBvhCapsuleContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *not_used1, const struct sat_Cache *not_used2, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-u32     c_TriMeshBvhHullContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *not_used1, const struct sat_Cache *not_used2, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
+u32     c_SphereContact(struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
+u32     c_CapsuleSphereContact(struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
+u32     c_CapsuleContact(struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
+u32     c_HullSphereContact(struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
+u32     c_HullCapsuleContact(struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
+u32     c_HullContact(struct c_Manifold *manifold, struct sat_Cache *cache, const struct sat_Cache *cache_copy, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
+
+u32     c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold, u32 **tri, struct sat_Cache *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
+u32     c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold, u32 **tri, struct sat_Cache *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
+u32     c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u32 **tri, struct sat_Cache *cache, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
 
 /********************************** RAYCAST **********************************/
 
-f32 c_SphereRaycastParameter(struct arena *not_used, const struct c_Shape *shape, const ds_Transform *transform, const struct ray *ray);
-f32 c_CapsuleRaycastParameter(struct arena *not_used, const struct c_Shape *shape, const ds_Transform *transform, const struct ray *ray);
-f32 c_HullRaycastParameter(struct arena *not_used, const struct c_Shape *shape, const ds_Transform *transform, const struct ray *ray);
-f32 c_TriMeshBvhRaycastParameter(struct arena *mem_tmp, const struct c_Shape *shape, const ds_Transform *transform, const struct ray *ray);
+f32 c_SphereRaycastParameter(const struct c_Shape *shape, const ds_Transform *transform, const struct ray *ray);
+f32 c_CapsuleRaycastParameter(const struct c_Shape *shape, const ds_Transform *transform, const struct ray *ray);
+f32 c_HullRaycastParameter(const struct c_Shape *shape, const ds_Transform *transform, const struct ray *ray);
+f32 c_TriMeshBvhRaycastParameter(const struct c_Shape *shape, const ds_Transform *transform, const struct ray *ray);
 
 #ifdef __cplusplus
 } 

@@ -34,20 +34,9 @@ void mat3SequentialRotation(mat3 dst, const vec3 axis_1, const f32 angle_1, cons
 
 void mat3Rotation(mat3 dst, const vec3 axis, const f32 angle)
 {
-	const f32 w = f32_cos(angle / 2.0f);
-	vec3 pure_quat;
-	Vec3Scale(pure_quat, axis, f32_sin(angle / 2.0f));
-
-	const f32 tr_part = 2.0f*w*w - 1.0f;
-	const f32 q12 = 2.0f*pure_quat[0]*pure_quat[1];
-	const f32 q13 = 2.0f*pure_quat[0]*pure_quat[2];
-	const f32 q10 = 2.0f*pure_quat[0]*w;
-	const f32 q23 = 2.0f*pure_quat[1]*pure_quat[2];
-	const f32 q20 = 2.0f*pure_quat[1]*w;
-	const f32 q30 = 2.0f*pure_quat[2]*w;
-	Mat3Set(dst, tr_part + 2.0f*pure_quat[0]*pure_quat[0], q12 + q30, q13 - q20,
-		      q12 - q30, tr_part + 2.0f*pure_quat[1]*pure_quat[1], q23 + q10,
-		      q13 + q20, q23 - q10, tr_part + 2.0f*pure_quat[2]*pure_quat[2]);
+    quat q;
+    QuatAxisAngle(q, axis, angle);
+    Mat3Quat(dst, q);
 }
 
 void Vec3RotateCenter(vec3 src_rotated, mat3 rotation, const vec3 center, const vec3 src)

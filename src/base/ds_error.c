@@ -76,40 +76,40 @@ void FatalCleanupAndExit(void)
 	//TODO spin threads that di not acquire lock or exit or something...
 }
 
+#if __DS_PLATFORM__ == __DS_LINUX__
 utf8 Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 code)
 {
 	ds_Assert(bufsize > 0);
-	utf8 err_str = 
-	{
-		.len = 0,
-		.buf = buf,
-		.size = bufsize,
-	};
 
-	const u32 status = strerror_r(code, (char *) buf, bufsize);
-	if (status != 0)
-	{
-		if (status == EINVAL)
-		{
-			LogSystemErrorCode(S_ERROR, status);
-		}
-		else if (status == ERANGE)
-		{
-			ds_Assert(0 && "increase system error string buffer size!");
-		}
-
-		return Utf8Empty();
-	}
-
-	err_str.len = strnlen((char *) err_str.buf, ERROR_BUFSIZE);
-	if (err_str.len == ERROR_BUFSIZE)
+    char tmpbuf[ERROR_BUFSIZE];
+	const char *str = strerror_r(code, (char *) tmpbuf, ERROR_BUFSIZE);
+    const utf8 err_str = Utf8CstrBuffered(buf, bufsize, str);
+	if (err_str.len == 0)
 	{
 		Log(T_SYSTEM, S_ERROR, "strnlen failed to determine string length in %s, most likely due to no null-termination? Fix.", __func__);
-		return Utf8Empty();
 	}
 
 	return err_str;
 }
+#else
+utf8 Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 code)
+{
+    /* Note: Emscripten seems to comply with XSI, so need separate function here */
+	ds_Assert(bufsize > 0);
+
+    char tmpbuf[ERROR_BUFSIZE];
+    char *str = tmpbuf;
+	if (strerror_r(code, (char *) tmpbuf, ERROR_BUFSIZE) != 0)
+	{
+        str = "";
+		Log(T_SYSTEM, S_ERROR, "strnlen failed to determine string length in %s, most likely due to no null-termination? Fix.", __func__);
+	}
+
+    const utf8 err_str = Utf8CstrBuffered(buf, bufsize, str);
+
+	return err_str;
+}
+#endif
 
 #elif __DS_PLATFORM__ == __DS_WIN64__
 
@@ -127,11 +127,11 @@ void FatalCleanupAndExit()
     		SYSTEMTIME local_time;
     		GetLocalTime(&local_time);
 
-		struct arena tmp = ArenaAlloc1MB();
-		const utf8 utf8_filename = Utf8Format(&tmp, "%s_%s_latest.dmp"
+		struct arena *tmp = ArenaPushScratch();
+		const utf8 utf8_filename = Utf8Format(tmp, "%s_%s_latest.dmp"
 				, DS_EXECUTABLE_CSTR
 				, DS_VERSION_CSTR);
-		//const utf8 utf8_filename = Utf8Format(&tmp, "%s_%s_%u%u%u_%u%u%u.dmp", 
+		//const utf8 utf8_filename = Utf8Format(tmp, "%s_%s_%u%u%u_%u%u%u.dmp", 
     		//           "engine_sandbox",
 		//	   "0_1", 
     		//           local_time.wYear,
@@ -140,9 +140,9 @@ void FatalCleanupAndExit()
     		//           local_time.wHour, 
 		//	   local_time.wMinute,
 		//	   local_time.wSecond);
-    	const char *filename = CstrUtf8(&tmp, utf8_filename);
+    	const char *filename = CstrUtf8(tmp, utf8_filename);
 		struct file dump = FileNull();
-		if (FileTryCreateAtCwd(&tmp, &dump, filename, FILE_TRUNCATE) == FS_SUCCESS)
+		if (FileTryCreateAtCwd(tmp, &dump, filename, FILE_TRUNCATE) == FS_SUCCESS)
 		{
 			if (!MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), dump.handle, MiniDumpWithFullMemory, NULL, NULL, NULL))
 			{
@@ -151,7 +151,7 @@ void FatalCleanupAndExit()
 			
 			FileClose(&dump);
 		}
-		ArenaFree1MB(&tmp);
+        ArenaPopScratch();
 
 		LogShutdown();
 #if DS_DEBUG

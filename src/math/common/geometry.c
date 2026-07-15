@@ -113,7 +113,7 @@ f32 RayPointDistanceSquared(vec3 r_c, const struct ray *ray, const vec3 p)
 f32 RaySegmentDistanceSquared(vec3 r_c, vec3 s_c, const struct ray *ray, const struct segment *s)
 {
 	vec3 diff;
-	Vec3Sub(diff, s->p0, ray->origin);
+	Vec3Sub(diff, s->p[0], ray->origin);
 	const f32 drdr = Vec3Dot(ray->dir, ray->dir);
 	const f32 dsds = Vec3Dot(s->dir, s->dir);
 
@@ -166,21 +166,31 @@ f32 RaySegmentDistanceSquared(vec3 r_c, vec3 s_c, const struct ray *ray, const s
 struct segment SegmentConstruct(const vec3 p0, const vec3 p1)
 {
 	struct segment s;
-	Vec3Copy(s.p0, p0);
-	Vec3Copy(s.p1, p1);
+	Vec3Copy(s.p[0], p0);
+	Vec3Copy(s.p[1], p1);
 	Vec3Sub(s.dir, p1, p0);
 	return s;
 }
 
-f32 SegmentDistanceSquared(vec3 c1, vec3 c2, const struct segment *s1, const struct segment *s2)
+u32 SegmentPointCheck(const struct segment *s, const f32 min_dist_sq)
+{
+    return (Vec3Dot(s->dir, s->dir) <= min_dist_sq);
+}
+
+u32 SegmentParallelCheck(const struct segment *s1, const struct segment *s2, const f32 eps)
+{
+    return Vec3ParallelCheck(s1->dir, s2->dir, eps);
+}
+
+void SegmentClosestParameter(f32 *t1, f32 *t2, const struct segment *s1, const struct segment *s2)
 {
 	vec3 diff;
-	Vec3Sub(diff, s2->p0, s1->p0);
+	Vec3Sub(diff, s2->p[0], s1->p[0]);
 	const f32 d1d1 = Vec3LengthSquared(s1->dir);
 	const f32 d2d2 = Vec3LengthSquared(s2->dir);
 
-	f32 t1 = 0.0f;
-	f32 t2 = 0.0f;
+	*t1 = 0.0f;
+	*t2 = 0.0f;
 
 	if (d1d1 >= MIN_SEGMENT_LENGTH_SQ && d2d2 >= MIN_SEGMENT_LENGTH_SQ)
 	{
@@ -189,9 +199,10 @@ f32 SegmentDistanceSquared(vec3 c1, vec3 c2, const struct segment *s1, const str
 		const f32 diffd2 = Vec3Dot(diff, s2->dir);
 		const f32 denom = d1d1*d2d2 - d1d2*d1d2;
 		/* Check that the segments are not parallel */
+        //TODO is 0.0f good here, or should we use degree test as in SegmentParallelCheck?
 		if (denom > 0.0f)
 		{
-			t1 = f32_clamp((diffd1*d2d2 - diffd2*d1d2) / denom, 0.0f, 1.0f);
+			*t1 = f32_clamp((diffd1*d2d2 - diffd2*d1d2) / denom, 0.0f, 1.0f);
 		}
 
 		/*
@@ -199,25 +210,25 @@ f32 SegmentDistanceSquared(vec3 c1, vec3 c2, const struct segment *s1, const str
 		 *     = (-DIFF + DIR1*t1) * DIR2 / DIR2*DIR2
 		 *     = (-DIFF*DIR2 + DIR1*DIR2*t1) / DIR2*DIR2
 		 */
-		t2 = f32_clamp(t1*d1d2 - diffd2, 0.0f, d2d2);
+		*t2 = f32_clamp(*t1*d1d2 - diffd2, 0.0f, d2d2);
 
-		if (t2 == 0.0f)
+		if (*t2 == 0.0f)
 		{
 			/*
 			 *  t1 = (L2_P1*(1-t2) + L2_P2*t2 - L1_P1) * DIR1 / DIR1*DIR1
 			 *     = (DIFF + DIR2*t2) * DIR1 / DIR1*DIR1
 			 *     = DIFF*DIR1 / DIR1*DIR1
 			 */
-			t1 = f32_clamp(diffd1 / d1d1, 0.0f, 1.0f);
+            *t1 = f32_clamp(diffd1 / d1d1, 0.0f, 1.0f);
 		}
-		else if (t2 == d2d2)
+		else if (*t2 == d2d2)
 		{
-			t2 = 1.0f;
-			t1 = f32_clamp((diffd1 + d1d2) / d1d1, 0.0f, 1.0f);
+			*t2 = 1.0f;
+			*t1 = f32_clamp((diffd1 + d1d2) / d1d1, 0.0f, 1.0f);
 		}	
 		else
 		{
-			t2 /= d2d2;
+			*t2 /= d2d2;
 		}
 	}
 	/* S2 is point */
@@ -229,16 +240,21 @@ f32 SegmentDistanceSquared(vec3 c1, vec3 c2, const struct segment *s1, const str
 		 * 	= t1*|DIR1|
 		 * => t = DIFF*DIR1 / (DIR1*DIR1) 
 		 */
-		t1 = f32_clamp(Vec3Dot(diff, s1->dir) / d1d1, 0.0f, 1.0f);
+        *t1 = f32_clamp(Vec3Dot(diff, s1->dir) / d1d1, 0.0f, 1.0f);
 	}
 	else if (d2d2 >= MIN_SEGMENT_LENGTH_SQ)
 	{
-		t2 = f32_clamp(-Vec3Dot(diff, s2->dir) / d2d2, 0.0f, 1.0f);
+		*t2 = f32_clamp(-Vec3Dot(diff, s2->dir) / d2d2, 0.0f, 1.0f);
 	}
 
-	ds_Assert(0.0f <= t1 && t1 <= 1.0f);
-	ds_Assert(0.0f <= t2 && t2 <= 1.0f);
+	ds_Assert(0.0f <= *t1 && *t1 <= 1.0f);
+	ds_Assert(0.0f <= *t2 && *t2 <= 1.0f);
+}
 
+f32 SegmentDistanceSquared(vec3 c1, vec3 c2, const struct segment *s1, const struct segment *s2)
+{
+    f32 t1, t2;
+    SegmentClosestParameter(&t1, &t2, s1, s2);
 	SegmentBc(c1, s1, t1);
 	SegmentBc(c2, s2, t2);
 	return Vec3DistanceSquared(c1, c2);
@@ -251,7 +267,7 @@ f32 SegmentPointDistanceSquared(vec3 c, const struct segment *s, const vec3 p)
 	if (Vec3LengthSquared(s->dir) >= MIN_SEGMENT_LENGTH_SQ)
 	{
 		vec3 diff;
-		Vec3Sub(diff, p, s->p0);
+		Vec3Sub(diff, p, s->p[0]);
 		t = f32_clamp(Vec3Dot(diff, s->dir) / Vec3Dot(s->dir, s->dir), 0.0f, 1.0f);
 	}
 
@@ -261,28 +277,65 @@ f32 SegmentPointDistanceSquared(vec3 c, const struct segment *s, const vec3 p)
 
 void SegmentBc(vec3 bc_p, const struct segment *s, const f32 t)
 {
-	Vec3Interpolate(bc_p, s->p1, s->p0, t);
+	Vec3Interpolate(bc_p, s->p[1], s->p[0], t);
+}
+                                                                        
+struct segment SegmentCapsuleTransform(const struct capsule *cap, const ds_Transform *t)
+{
+    vec3 p1, p0 = { 0.0f, cap->half_height, 0.0 };
+    QuatVec3RotateSelf(p0, t->rotation);
+	Vec3Negate(p1, p0);
+	Vec3Translate(p0, t->position);
+	Vec3Translate(p1, t->position);
+	return SegmentConstruct(p0, p1);
+}
+
+struct aabb BboxSegment(const struct segment *s)
+{
+	struct aabb bbox;
+
+	vec3 min = { s->p[0][0], s->p[0][1], s->p[0][2] };
+	vec3 max = { s->p[0][0], s->p[0][1], s->p[0][2] };
+
+    Vec3MinSelf(min, s->p[1]);
+    Vec3MaxSelf(max, s->p[1]);
+
+	Vec3Sub(bbox.hw, max, min);
+	Vec3ScaleSelf(bbox.hw, 0.5f);
+	Vec3Add(bbox.center, min, bbox.hw);
+
+    return bbox;
 }
 
 f32 SegmentPointProjectedBcParameter(const struct segment *s, const vec3 p)
 {	
 	vec3 diff;
-	Vec3Sub(diff, p, s->p0);
+	Vec3Sub(diff, p, s->p[0]);
 	return Vec3Dot(diff, s->dir) / Vec3Dot(s->dir, s->dir);
 }
 
 f32 SegmentPointClosestBcParameter(const struct segment *s, const vec3 p)
 {	
 	vec3 diff;
-	Vec3Sub(diff, p, s->p0);
+	Vec3Sub(diff, p, s->p[0]);
 	return f32_clamp(Vec3Dot(diff, s->dir) / Vec3Dot(s->dir, s->dir), 0.0f, 1.0f);
 }
 
 struct plane PlaneConstruct(const vec3 n, const vec3 p)
 {
 	struct plane pl;
-	Vec3Copy(pl.normal, n);
+	Vec3Copy(pl.normal_direction, n);
+    pl.inv_dot_nn = 1.0f / Vec3Dot(n,n);
 	pl.signed_distance = Vec3Dot(n, p);
+	return pl;
+}
+
+struct plane PlaneConstructNormalized(const vec3 n, const vec3 p)
+{
+	struct plane pl;
+	Vec3Normalize(pl.normal, n);
+    pl.inv_dot_nn = 1.0f;
+	pl.signed_distance = Vec3Dot(pl.normal, p);
 	return pl;
 }
 
@@ -292,58 +345,96 @@ struct plane PlaneConstructFromCcwTriangle(const vec3 a, const vec3 b, const vec
 	Vec3Sub(ab, b, a);
 	Vec3Sub(ac, c, a);
 	Vec3Cross(cross, ab, ac);
+	return PlaneConstruct(cross, a);
+}
+
+struct plane PlaneConstructNormalizedFromCcwTriangle(const vec3 a, const vec3 b, const vec3 c)
+{
+	vec3 ab, ac, cross;
+	Vec3Sub(ab, b, a);
+	Vec3Sub(ac, c, a);
+	Vec3Cross(cross, ab, ac);
 	Vec3ScaleSelf(cross, 1.0f/Vec3Length(cross));
 	return PlaneConstruct(cross, a);
 }
 
+void PlaneNormalize(struct plane *pl)
+{
+    const f32 n_dir_len = Vec3Length(pl->normal_direction);
+    Vec3ScaleSelf(pl->normal_direction, 1.0f/n_dir_len);
+    pl->signed_distance /= n_dir_len;
+    pl->inv_dot_nn = 1.0f;
+}
+
 u32 PlanePointInfrontCheck(const struct plane *pl, const vec3 p)
 {
-	return (PlanePointSignedDistance(pl, p) > 0.0f) ? 1 : 0;
+	return (PlanePointSignedDistance(pl, p) > 0.0f);
 }
 
 u32 PlanePointBehindCheck(const struct plane *pl, const vec3 p)
 {
-	return (PlanePointSignedDistance(pl, p) < 0.0f) ? 1 : 0;
+	return (PlanePointSignedDistance(pl, p) < 0.0f);
+}
+
+u32 PlaneSegmentParallelCheck(const struct plane *pl, const struct segment *s)
+{
+    const f32 d1d1 = Vec3Dot(pl->normal_direction, pl->normal_direction);
+    const f32 d2d2 = Vec3Dot(s->dir, s->dir);
+	const f32 d1d2 = Vec3Dot(pl->normal_direction, s->dir);
+	const f32 denom = d1d1*d2d2 - d1d2*d1d2;
+	/* 
+     * denom = |n|^2 * |s->dir|^2 * (1-cos(theta)^2) == 1.0f 
+     *  <=> segment is orthogonal to normal
+     *  <=> segment is parallel to face
+     */
+    //TODO what is a reasonable limit here?
+	return (denom >= (1.0f - 100.0f*F32_EPSILON) * d1d1 * d2d2);
 }
 
 f32 PlaneSegmentClipParameter(const struct plane *pl, const struct segment *s)
 {
 	/*
-	 * 	GIVEN: pl.normal and segment direction not orthogonal.
-	 *
 	 * 	s.p0 + t*s.dir = PLANE POINT
-	 * =>   DOT(s.p0 + t*s.dir - pl.normal*pl.signed_distance, pl.normal) = 0
-	 * =>   DOT(t*s.dir pl.normal) = DOT(pl.normal*pl.signed_distance - s.p0, pl.normal)
-	 * =>   t = [pl.signed_distance - DOT(s.p0, pl.normal)] / DOT(s.dir, pl.normal)
+	 * =>   DOT(s.p0 + t*s.dir - n*pl.signed_distance/DOT(n,n), pl.n) = 0
+	 * =>   DOT(t*s.dir n) = DOT(n*pl.signed_distance/DOT(n,n) - s.p0, n)
+	 * =>   t = [pl.signed_distance - DOT(s.p0, n)] / DOT(s.dir, n)
 	 *
 	 * degenerate case: segment parallel to plane gives t = +-infinity, which is okay!
 	 */
-	return (pl->signed_distance - Vec3Dot(pl->normal, s->p0)) / Vec3Dot(pl->normal, s->dir);
+    const f32 dot_pn = Vec3Dot(pl->normal_direction, s->p[0]);
+    const f32 dot_dn = Vec3Dot(pl->normal_direction, s->dir);
+	return (pl->signed_distance - dot_pn) / dot_dn;
 }
 
 u32 PlaneSegmentClip(vec3 clip, const struct plane *pl, const struct segment *s)
 {
 	const f32 t = PlaneSegmentClipParameter(pl, s);
 	SegmentBc(clip, s, t);
-	return (0.0f <= t && t <= 1.0f)
-        ? 1
-        : 0;
+	return (0.0f <= t && t <= 1.0f);
 }
 
 u32 PlaneSegmentTest(const struct plane *pl, const struct segment *s)
 {
 	const f32 t = PlaneSegmentClipParameter(pl, s);
-	return (0.0f <= t && t <= 1.0f) ? 1 : 0;
+	return (0.0f <= t && t <= 1.0f);
 }
 
 f32 PlanePointSignedDistance(const struct plane *pl, const vec3 p)
 {
-	return Vec3Dot(pl->normal, p) - pl->signed_distance;
+	return Vec3Dot(pl->normal_direction, p) - pl->signed_distance;
 }
 
 f32 PlanePointDistance(const struct plane *pl, const vec3 p)
 {
-	return f32_abs(Vec3Dot(pl->normal, p) - pl->signed_distance);
+	return f32_abs(PlanePointSignedDistance(pl, p));
+}
+
+f32 PlanePointProjection(vec3 proj, const struct plane *pl, const vec3 p)
+{
+	const f32 n_units = PlanePointSignedDistance(pl, p) * pl->inv_dot_nn;
+    Vec3Copy(proj, p);
+    Vec3TranslateScaled(proj, pl->normal_direction, -n_units);
+    return n_units;
 }
 
 f32 PlaneRaycastParameter(const struct plane *plane, const struct ray *ray)
@@ -364,19 +455,14 @@ u32 PlaneRaycast(vec3 intersection, const struct plane *plane, const struct ray 
 	return 1;
 }
 
-void AabbVertex(struct aabb *dst, const vec3ptr v, const u32 v_count, const f32 margin)
+void AabbVertex(struct aabb *dst, constvec3ptr v, const u32 v_count, const f32 margin)
 {
 	vec3 min = { F32_INFINITY, F32_INFINITY, F32_INFINITY };
 	vec3 max = { -F32_INFINITY, -F32_INFINITY, -F32_INFINITY };
 	for (u32 i = 0; i < v_count; ++i)
 	{
-		min[0] = f32_min(min[0], v[i][0]); 
-		min[1] = f32_min(min[1], v[i][1]);			
-		min[2] = f32_min(min[2], v[i][2]);			
-
-		max[0] = f32_max(max[0], v[i][0]);			
-		max[1] = f32_max(max[1], v[i][1]);			
-		max[2] = f32_max(max[2], v[i][2]);			
+        Vec3MinSelf(min, v[i]);
+        Vec3MaxSelf(max, v[i]);
 	}
 
 	Vec3Sub(dst->hw, max, min);
@@ -506,6 +592,7 @@ f32 AabbRaycastParameterEx(const struct aabb *aabb, const struct ray *ray, const
 	for (u32 axis = 0; axis < 3; ++axis)
 	{
 		/* If parallel to slab, point_slab test */
+        //TODO fix hardcoded values here
 		if (f32_abs(ray->dir[axis]) < 10.0f * F32_EPSILON)
 		{
 			if (ray->origin[axis] < box_min[axis] || ray->origin[axis] > box_max[axis]) { return F32_INFINITY; }
@@ -561,53 +648,10 @@ u32 AabbRaycast(vec3 intersection, const struct aabb *aabb, const struct ray *ra
 
 u64 AabbPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const vec4 color)
 {
-	const u64 bytes_written = 3*8*(sizeof(vec3)+sizeof(vec4));
-	if (bufsize < bytes_written)
-	{
-		return 0;
-	}
-
-	vec3 end;
-	Vec3Sub(end, box->center, box->hw);
-
-	f32 *v = (f32*) buf;
-	Vec3Set(v+7*0, end[0], 		   end[1], 		     end[2]);
-	Vec3Set(v+7*1, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
-	Vec3Set(v+7*2, end[0], 		   end[1], 		     end[2]);
-	Vec3Set(v+7*3, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
-	Vec3Set(v+7*4, end[0], 		   end[1], 		     end[2]);
-	Vec3Set(v+7*5, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
-
-	Vec3Set(v+7*6, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
-	Vec3Set(v+7*7, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
-	Vec3Set(v+7*8, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
-	Vec3Set(v+7*9, end[0] + 2.0f*box->hw[0], end[1]                  , end[2] + 2.0f*box->hw[2]);
-
-	Vec3Set(v+7*10, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
-	Vec3Set(v+7*11, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*12, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
-	Vec3Set(v+7*13, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
-
-	Vec3Set(v+7*14, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*15, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*16, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*17, end[0] + 2.0f*box->hw[0], end[1], 	             end[2] + 2.0f*box->hw[2]);
-
-	Vec3Set(v+7*18, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
-	Vec3Set(v+7*19, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-
-	Vec3Set(v+7*20, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*21, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-
-	Vec3Set(v+7*22, end[0] + 2.0f*box->hw[0], end[1], 	             end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*23, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-
-	for (u32 i = 0; i < 24; ++i)
-	{
-		Vec4Copy(v + 7*i + 3, color);
-	}
-
-	return bytes_written;
+    mat3 identity;
+    Mat3Identity(identity);
+    const vec3 translation = VEC3_ZERO;
+	return AabbTransformPushLinesBuffered(buf, bufsize, box, translation, identity, color);
 }
 
 u64 AabbTransformPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const vec3 translation, mat3 rotation, const vec4 color)
@@ -622,49 +666,42 @@ u64 AabbTransformPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb
 	Vec3Sub(end, box->center, box->hw);
 
 	f32 *v = (f32*) buf;
-	Vec3Set(v+7*0, end[0], 		   end[1], 		     end[2]);
-	Vec3Set(v+7*1, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
-	Vec3Set(v+7*2, end[0], 		   end[1], 		     end[2]);
-	Vec3Set(v+7*3, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
-	Vec3Set(v+7*4, end[0], 		   end[1], 		     end[2]);
-	Vec3Set(v+7*5, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*0, end[0], 		                end[1], 		            end[2]);
+	Vec3Set(v+7*1, end[0] + 2.0f*box->hw[0],    end[1], 		            end[2]);
+	Vec3Set(v+7*2, end[0], 		                end[1], 		            end[2]);
+	Vec3Set(v+7*3, end[0], 		                end[1] + 2.0f*box->hw[1],   end[2]);
+	Vec3Set(v+7*4, end[0], 		                end[1], 		            end[2]);
+	Vec3Set(v+7*5, end[0], 		                end[1], 	                end[2] + 2.0f*box->hw[2]);
 
-	Vec3Set(v+7*6, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
-	Vec3Set(v+7*7, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
-	Vec3Set(v+7*8, end[0] + 2.0f*box->hw[0], end[1], 		     end[2]);
-	Vec3Set(v+7*9, end[0] + 2.0f*box->hw[0], end[1]                  , end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*6, end[0] + 2.0f*box->hw[0],    end[1], 		            end[2]);
+	Vec3Set(v+7*7, end[0] + 2.0f*box->hw[0],    end[1] + 2.0f*box->hw[1],   end[2]);
+	Vec3Set(v+7*8, end[0] + 2.0f*box->hw[0],    end[1], 		            end[2]);
+	Vec3Set(v+7*9, end[0] + 2.0f*box->hw[0],    end[1],                     end[2] + 2.0f*box->hw[2]);
 
-	Vec3Set(v+7*10, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
-	Vec3Set(v+7*11, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*12, end[0], 		   end[1] + 2.0f*box->hw[1], end[2]);
-	Vec3Set(v+7*13, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
+	Vec3Set(v+7*10, end[0], 		            end[1] + 2.0f*box->hw[1],   end[2]);
+	Vec3Set(v+7*11, end[0], 		            end[1] + 2.0f*box->hw[1],   end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*12, end[0], 		            end[1] + 2.0f*box->hw[1],   end[2]);
+	Vec3Set(v+7*13, end[0] + 2.0f*box->hw[0],   end[1] + 2.0f*box->hw[1],   end[2]);
 
-	Vec3Set(v+7*14, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*15, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*16, end[0], 		   end[1], 	             end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*17, end[0] + 2.0f*box->hw[0], end[1], 	             end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*14, end[0], 		            end[1], 	                end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*15, end[0], 		            end[1] + 2.0f*box->hw[1],   end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*16, end[0], 		            end[1], 	                end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*17, end[0] + 2.0f*box->hw[0],   end[1], 	                end[2] + 2.0f*box->hw[2]);
 
-	Vec3Set(v+7*18, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2]);
-	Vec3Set(v+7*19, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*18, end[0] + 2.0f*box->hw[0],   end[1] + 2.0f*box->hw[1],   end[2]);
+	Vec3Set(v+7*19, end[0] + 2.0f*box->hw[0],   end[1] + 2.0f*box->hw[1],   end[2] + 2.0f*box->hw[2]);
 
-	Vec3Set(v+7*20, end[0], 		   end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*21, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*20, end[0], 		            end[1] + 2.0f*box->hw[1],   end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*21, end[0] + 2.0f*box->hw[0],   end[1] + 2.0f*box->hw[1],   end[2] + 2.0f*box->hw[2]);
 
-	Vec3Set(v+7*22, end[0] + 2.0f*box->hw[0], end[1], 	             end[2] + 2.0f*box->hw[2]);
-	Vec3Set(v+7*23, end[0] + 2.0f*box->hw[0], end[1] + 2.0f*box->hw[1], end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*22, end[0] + 2.0f*box->hw[0],   end[1], 	                end[2] + 2.0f*box->hw[2]);
+	Vec3Set(v+7*23, end[0] + 2.0f*box->hw[0],   end[1] + 2.0f*box->hw[1],   end[2] + 2.0f*box->hw[2]);
 
 	for (u32 i = 0; i < 24; ++i)
 	{
 		vec3 tmp1, tmp2;
-		//Vec3Sub(tmp1, v + 7*i, box->center);
-		//Mat3VecMul(tmp2, rotation, tmp1);
-		//Vec3Add(v + 7*i, tmp2, box->center);
-		//Vec3Translate(v + 7*i, translation);
-
 		Mat3VecMul(tmp1, rotation, v + 7*i);
 		Vec3Add(v + 7*i, tmp1, translation);
-
-
 		Vec4Copy(v + 7*i + 3, color);
 	}
 
@@ -677,22 +714,10 @@ struct aabb BboxTriangle(const vec3 p0, const vec3 p1, const vec3 p2)
 
 	vec3 min = { p0[0], p0[1], p0[2] };
 	vec3 max = { p0[0], p0[1], p0[2] };
-
-	min[0] = f32_min(min[0], p1[0]); 
-	min[1] = f32_min(min[1], p1[1]); 
-	min[2] = f32_min(min[2], p1[2]); 
-
-	max[0] = f32_max(max[0], p1[0]); 
-	max[1] = f32_max(max[1], p1[1]); 
-	max[2] = f32_max(max[2], p1[2]); 
-
-	min[0] = f32_min(min[0], p2[0]); 
-	min[1] = f32_min(min[1], p2[1]); 
-	min[2] = f32_min(min[2], p2[2]); 
-
-	max[0] = f32_max(max[0], p2[0]); 
-	max[1] = f32_max(max[1], p2[1]); 
-	max[2] = f32_max(max[2], p2[2]); 
+    Vec3MinSelf(min, p1);
+    Vec3MinSelf(min, p2);
+    Vec3MaxSelf(max, p1);
+    Vec3MaxSelf(max, p2);
 
 	Vec3Sub(bbox.hw, max, min);
 	Vec3ScaleSelf(bbox.hw, 0.5f);
@@ -721,7 +746,7 @@ struct aabb BboxUnion(const struct aabb a, const struct aabb b)
 	return bbox;
 }
 
-u32 VertexSupport(vec3 support, const vec3 dir, const vec3ptr v, const u32 v_count)
+u32 VertexSupport(vec3 support, const vec3 dir, constvec3ptr v, const u32 v_count)
 {
 	u32 best = U32_MAX;
 	f32 max_dist = -F32_INFINITY;
@@ -741,7 +766,7 @@ u32 VertexSupport(vec3 support, const vec3 dir, const vec3ptr v, const u32 v_cou
 	return best;
 }
 
-void VertexCentroid(vec3 centroid, const vec3ptr vs, const u32 n)
+void VertexCentroid(vec3 centroid, constvec3ptr vs, const u32 n)
 {
 	Vec3Set(centroid, 0.0f, 0.0f, 0.0f);
 	for (u32 i = 0; i < n; ++i)
@@ -760,12 +785,523 @@ void TriCcwNormal(vec3 normal, const vec3 p0, const vec3 p1, const vec3 p2)
 	Vec3Normalize(normal, C);
 }
 
-void TriCcwDirection(vec3 dir, const vec3 p0, const vec3 p1, const vec3 p2)
+void TriCcwNormalDirection(vec3 dir, const vec3 p0, const vec3 p1, const vec3 p2)
 {
 	vec3 A, B;
 	Vec3Sub(A, p1, p0);
 	Vec3Sub(B, p2, p0);
 	Vec3Cross(dir, A, B);
+}
+
+static void TriVoronoiStaticAssert(void)
+{
+    ds_StaticAssert(TRI_VORONOI_VERTEX0 == 0, "");
+    ds_StaticAssert(TRI_VORONOI_VERTEX1 == 1, "");
+    ds_StaticAssert(TRI_VORONOI_VERTEX2 == 2, "");
+    ds_StaticAssert(TRI_VORONOI_EDGE01 == 3, "");
+    ds_StaticAssert(TRI_VORONOI_EDGE12 == 4, "");
+    ds_StaticAssert(TRI_VORONOI_EDGE20 == 5, "");
+    ds_StaticAssert(TRI_VORONOI_FACE == 6, "");
+}
+
+const char *g_table_tri_voronoi_region_string[TRI_VORONOI_COUNT] =
+{
+    "TRI_VORONOI_VERTEX0",
+    "TRI_VORONOI_VERTEX1",
+    "TRI_VORONOI_VERTEX2",
+    "TRI_VORONOI_EDGE01",
+    "TRI_VORONOI_EDGE12",
+    "TRI_VORONOI_EDGE20",
+    "TRI_VORONOI_FACE",
+};
+
+u32 TriVoronoiInitCcw(struct TriVoronoi *tv, const vec3 t[3])
+{
+    vec3 face_normal_dir, edge_normal_dir[3];
+
+    Vec3Copy(tv->t[0], t[0]);
+    Vec3Copy(tv->t[1], t[1]);
+    Vec3Copy(tv->t[2], t[2]);
+
+    tv->s[0] = SegmentConstruct(t[0], t[1]);
+    tv->s[1] = SegmentConstruct(t[1], t[2]);
+    tv->s[2] = SegmentConstruct(t[2], t[0]);
+
+    Vec3Cross(face_normal_dir, tv->s[0].dir, tv->s[2].dir);
+    Vec3ScaleSelf(face_normal_dir, -1.0f);
+    tv->face_plane = PlaneConstruct(face_normal_dir, t[0]);
+
+    Vec3Cross(edge_normal_dir[0], tv->s[0].dir, tv->face_plane.normal_direction);
+    Vec3Cross(edge_normal_dir[1], tv->s[1].dir, tv->face_plane.normal_direction);
+    Vec3Cross(edge_normal_dir[2], tv->s[2].dir, tv->face_plane.normal_direction);
+
+    tv->edge_plane[0] = PlaneConstruct(edge_normal_dir[0], t[0]);
+    tv->edge_plane[1] = PlaneConstruct(edge_normal_dir[1], t[1]);
+    tv->edge_plane[2] = PlaneConstruct(edge_normal_dir[2], t[2]);
+
+    const f32 n_dir_len_sq = Vec3Dot(tv->face_plane.normal_direction, tv->face_plane.normal_direction);
+    const f32 s0_len_sq = Vec3Dot(tv->s[0].dir, tv->s[0].dir);
+    const f32 s1_len_sq = Vec3Dot(tv->s[1].dir, tv->s[1].dir);
+    const f32 s2_len_sq = Vec3Dot(tv->s[2].dir, tv->s[2].dir);
+    const f32 s_max_len_sq = f32_max(f32_max(s0_len_sq, s1_len_sq), s2_len_sq);
+
+    /* 
+     * We want |n| to be bound from below proportionally to the size of the triangle's
+     * sides.
+     *
+     *                                     |n|^2  >= EPSILON^2 * |s_max|^2
+     *
+     *  This test simply enforces a lower limit of |n|, but how does it affect the
+     *  minimum angle within the triangle? From the cross product n = Cross(si,sj)
+     *  we have for all i,j:
+     *
+     *                  |si| * |sj| sin(theta_ij) = |n|
+     *                              sin(theta_ij) = |n| / (|si| * |sj|)
+     *                                           >= |n| / |s_max|^2
+     *
+     *  In particular, for i,j such that theta_ij = theta_min:
+     *
+     *                            sin(theta_min) >= |n| / |s_max|^2
+     *
+     *  Assuming a fixed EPSILON, and the use of our test, we get:
+     *
+     *                                     |n|^2 >= EPSILON^2 * |s_max|^2
+     *                                     |n|   >= EPSILON * |s_max|
+     *       =>                   sin(theta_min) >= EPSILON / |s_max|
+     *
+     *  Note that this yields an ever decreasing minimum angle as the sides of our triangles grow:
+     *
+     *                      MinAngle(EPSILON) = ArcSin( EPSILON / |s_max| )
+     *
+     *  This may be a problem for other scenarios, but hopefully our requirement of |n| being 
+     *  lower-bound by EPSILON*|s_max| is good enough for Voronoi region calculations.
+     *
+     *  Table for EPSILON = 10^-6:
+     *
+     *  |s_max|     |   Approx. minimum angle
+     * -------------+---------------------------
+     *  0.0100      |   0.00573
+     *  0.1000      |   0.000573 
+     *  1.0000      |   0.0000573
+     *  10.000      |   0.00000573
+     *  100.00      |   0.000000573
+     */
+    const u32 robust = (n_dir_len_sq >= s_max_len_sq * 1e-6 * 1e-6);
+    return robust;
+}
+
+static const enum TriVoronoiRegion table_tri_voronoi[TRI_VORONOI_COUNT + 1] =
+{
+    TRI_VORONOI_FACE,
+    TRI_VORONOI_EDGE01,
+    TRI_VORONOI_EDGE12,
+    TRI_VORONOI_VERTEX1,
+    TRI_VORONOI_EDGE20,
+    TRI_VORONOI_VERTEX0,
+    TRI_VORONOI_VERTEX2,
+    TRI_VORONOI_VERTEX0 /* TRI_VORONOI_COUNT is invalid, so we just map it to something */
+};
+
+static const u32 table_tri_voronoi_edge_check[TRI_VORONOI_COUNT + 1] = { 0, 0, 0, 1, 1, 1, 0, 0 };
+static const u32 table_tri_voronoi_vertex_check[TRI_VORONOI_COUNT + 1] = { 1, 1, 1, 0, 0, 0, 0, 0 };
+
+static const u32 table_add_1_mod_3[6] = { 1, 2, 0, 1, 2, 0 };
+static const u32 table_sub_1_mod_3[6] = { 2, 0, 1, 2, 0, 1 };
+
+f32 TriCcwPointDistanceSquared(vec3 c, enum TriVoronoiRegion *region, const vec3 point, const struct TriVoronoi *tv)
+{
+    const u32 index = ((PlanePointInfrontCheck(&tv->edge_plane[0], point)) << 0) 
+                    | ((PlanePointInfrontCheck(&tv->edge_plane[1], point)) << 1)
+                    | ((PlanePointInfrontCheck(&tv->edge_plane[2], point)) << 2);
+
+    ds_Assert(index != TRI_VORONOI_COUNT);
+    *region = table_tri_voronoi[index];
+
+    if (*region == TRI_VORONOI_FACE)
+    {
+        PlanePointProjection(c, &tv->face_plane, point);
+    }
+    else if (table_tri_voronoi_edge_check[*region])
+    {
+        const enum TriVoronoiRegion v = *region - TRI_VORONOI_EDGE01;
+        const u32 next = table_add_1_mod_3[v];
+        const f32 param = SegmentPointClosestBcParameter(tv->s + v, point); 
+        SegmentBc(c, tv->s, param);
+        if (1.0f == param)
+        {
+            *region = v;
+        }
+        else if (0.0f == param)
+        {
+            *region = next;
+        }
+    }
+    else if (table_tri_voronoi_vertex_check[*region])
+    {
+        const u32 ij = table_sub_1_mod_3[*region];
+        const u32 jk = *region;
+        f32 param; 
+        if (0.0f < (param = SegmentPointClosestBcParameter(tv->s + ij, point)) && param < 1.0f)
+        {
+            SegmentBc(c, tv->s + ij, param);
+            *region = TRI_VORONOI_EDGE01 + ij;
+        }
+        else if (0.0f < (param = SegmentPointClosestBcParameter(tv->s + jk, point)) && param < 1.0f)
+        {
+            SegmentBc(c, tv->s + jk, param);
+            *region = TRI_VORONOI_EDGE01 + jk;
+        }
+        else
+        {
+            Vec3Copy(c, tv->t[*region]);
+        }
+    }
+
+    return Vec3DistanceSquared(point, c);
+}
+
+f32 TriCcwSegmentClipParameter(vec3 clip, const struct segment *s, const struct TriVoronoi *tv)
+{
+    const f32 param = PlaneSegmentClipParameter(&tv->face_plane, s);
+    if (0.0f <= param && param <= 1.0f)
+    {
+        SegmentBc(clip, s, param);
+        if (PlanePointBehindCheck(tv->edge_plane + 0, clip) && 
+            PlanePointBehindCheck(tv->edge_plane + 1, clip) && 
+            PlanePointBehindCheck(tv->edge_plane + 2, clip))
+        {
+            return param;
+        }
+    }
+
+    return F32_INFINITY;
+}
+
+u32 TriCcwSegmentClip(vec3 clip, const struct segment *s, const struct TriVoronoi *tv)
+{
+    return (TriCcwSegmentClipParameter(clip, s, tv) < F32_INFINITY);
+}
+
+struct segment TriCcwSegmentSideClip(const struct segment *s, const struct TriVoronoi *tv)
+{
+	f32 min_p = 0.0f;
+	f32 max_p = 1.0f;
+
+	for (u32 i = 0; i < 3; ++i)
+	{
+		const f32 bc_c = PlaneSegmentClipParameter(tv->edge_plane + i, s);
+        if (min_p <= bc_c && bc_c <= max_p)
+		{
+			if (Vec3Dot(s->dir, tv->edge_plane[i].normal_direction) >= 0.0f)
+			{
+				max_p = bc_c;
+			}
+			else
+			{
+				min_p = bc_c;
+			}
+		}
+    }
+
+    vec3 p0, p1;
+	SegmentBc(p0, s, min_p);
+	SegmentBc(p1, s, max_p);
+	return SegmentConstruct(p0, p1);
+}
+
+static f32 TriCcwSegmentEdgeCheck(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *region, const struct segment *s, const struct TriVoronoi *tv, const u32 start)
+{
+    /* Last case: segment-edge generates closest point */
+    f32 s_param, t_param;
+    SegmentClosestParameter(&s_param, &t_param, s, tv->s + start);
+    SegmentBc(c_s, s, s_param);
+    SegmentBc(c_t, tv->s + start, t_param);
+    
+    if (t_param == 0.0f)
+    {
+        *region = TRI_VORONOI_VERTEX0 + start;
+    }
+    else if (t_param == 1.0f)
+    {
+        *region = TRI_VORONOI_VERTEX0 + table_add_1_mod_3[start];
+    }
+    else
+    {
+        *region = TRI_VORONOI_EDGE01 + start;
+    }
+    
+    return Vec3DistanceSquared(c_s, c_t);
+}
+
+static f32 TriCcwSegmentDoubleEdgeCheck(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *segment_region, const struct segment *s, const struct TriVoronoi *tv, const u32 j)
+{
+    const u32 i = table_sub_1_mod_3[j];
+    const u32 k = table_sub_1_mod_3[j];
+
+    f32 dist_sq, s_param_ij, s_param_jk, t_param_ij, t_param_jk;
+    SegmentClosestParameter(&s_param_ij, &t_param_ij, s, tv->s + i);
+    SegmentClosestParameter(&s_param_jk, &t_param_jk, s, tv->s + j);
+
+    vec3 c_s_ij, c_s_jk, c_t_ij, c_t_jk;
+    SegmentBc(c_s_ij, s, s_param_ij);
+    SegmentBc(c_s_jk, s, s_param_jk);
+    SegmentBc(c_t_ij, tv->s + i, t_param_ij);
+    SegmentBc(c_t_jk, tv->s + j, t_param_jk);
+
+    const f32 dist_sq_ij = Vec3DistanceSquared(c_s_ij, c_t_ij);
+    const f32 dist_sq_jk = Vec3DistanceSquared(c_s_jk, c_t_jk);
+    if (dist_sq_ij < dist_sq_jk)
+    {
+        Vec3Copy(c_s, c_s_ij);
+        Vec3Copy(c_t, c_t_ij);
+        dist_sq = dist_sq_ij;
+        if (t_param_ij == 0.0f)
+        {
+            *segment_region = TRI_VORONOI_VERTEX0 + i;
+        }
+        else if (t_param_ij == 1.0f)
+        {
+            *segment_region = TRI_VORONOI_VERTEX0 + j;
+        }
+        else
+        {
+            *segment_region = TRI_VORONOI_EDGE01 + i;
+        }
+    }
+    else
+    {
+        Vec3Copy(c_s, c_s_jk);
+        Vec3Copy(c_t, c_t_jk);
+        dist_sq = dist_sq_jk;
+        if (t_param_jk == 0.0f)
+        {
+            *segment_region = TRI_VORONOI_VERTEX0 + j;
+        }
+        else if (t_param_jk == 1.0f)
+        {
+            *segment_region = TRI_VORONOI_VERTEX0 + k;
+        }
+        else
+        {
+            *segment_region = TRI_VORONOI_EDGE01 + j;
+        }
+    }
+
+    return dist_sq;
+}
+
+static f32 TriCcwSegmentTripleEdgeCheck(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *segment_region, const struct segment *s, const struct TriVoronoi *tv)
+{
+    f32 dist_sq = F32_INFINITY;
+    u32 min_i = 0;
+    f32 s_param[3], t_param[3];
+    vec3 c_s_local[3], c_t_local[3];
+    for (u32 i = 0; i < 3; ++i)
+    {
+        SegmentClosestParameter(s_param + i, t_param + i, s, tv->s + i);
+        SegmentBc(c_s_local[i], s, s_param[i]);
+        SegmentBc(c_t_local[i], tv->s + i, t_param[i]);
+        const f32 dist_sq_local = Vec3DistanceSquared(c_s_local[i], c_t_local[i]);
+        if (dist_sq_local < dist_sq)
+        {
+            dist_sq = dist_sq_local;
+            min_i = i;
+        }
+    }
+
+    Vec3Copy(c_s, c_s_local[min_i]);
+    Vec3Copy(c_t, c_t_local[min_i]);
+    if (t_param[min_i] == 0.0f)
+    {
+        *segment_region = TRI_VORONOI_VERTEX0 + min_i;
+    }
+    else if (t_param[min_i] == 1.0f)
+    {
+        *segment_region = TRI_VORONOI_VERTEX0 + table_add_1_mod_3[min_i];
+    }
+    else
+    {
+        *segment_region = TRI_VORONOI_EDGE01 + min_i;
+    }
+
+    return dist_sq;
+}
+
+f32 TriCcwSegmentDistanceSquared(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *segment_region, const struct segment *s, const struct TriVoronoi *tv)
+{
+    f32 dist_sq = F32_INFINITY;
+
+    u32 index[2];
+    index[0] = (PlanePointInfrontCheck(tv->edge_plane + 0, s->p[0]) << 0) 
+             | (PlanePointInfrontCheck(tv->edge_plane + 1, s->p[0]) << 1)
+             | (PlanePointInfrontCheck(tv->edge_plane + 2, s->p[0]) << 2);
+
+    index[1] = (PlanePointInfrontCheck(tv->edge_plane + 0, s->p[1]) << 0) 
+             | (PlanePointInfrontCheck(tv->edge_plane + 1, s->p[1]) << 1)
+             | (PlanePointInfrontCheck(tv->edge_plane + 2, s->p[1]) << 2);
+
+    ds_Assert(index[0] != TRI_VORONOI_COUNT);
+    ds_Assert(index[1] != TRI_VORONOI_COUNT);
+
+    const enum TriVoronoiRegion region[2] = { table_tri_voronoi[index[0]], table_tri_voronoi[index[1]] };
+
+    const u32 high = (region[0] <= region[1])
+        ? 1
+        : 0;
+    const u32 low = 1 - high;
+    const struct segment s_canon = SegmentConstruct(s->p[high], s->p[low]);
+
+    if (region[low] == TRI_VORONOI_FACE)
+    {
+        const f32 param = f32_clamp(PlaneSegmentClipParameter(&tv->face_plane, &s_canon), 0.0f, 1.0f);
+
+        *segment_region = TRI_VORONOI_FACE;
+        SegmentBc(c_s, &s_canon, param);
+        PlanePointProjection(c_t, &tv->face_plane, c_s);
+        dist_sq = (param == 0.0f || param == 1.0f)
+                ? Vec3DistanceSquared(c_t, c_s)
+                : 0.0f;
+    }
+    else if (region[high] == TRI_VORONOI_FACE)
+    {
+        const u32 infront_face = PlanePointInfrontCheck(&tv->face_plane, s_canon.p[0]);
+        const f32 dot_dir = Vec3Dot(tv->face_plane.normal_direction, s_canon.dir);
+        /* First case: end-point in FACE is closest */
+        if ((infront_face && dot_dir >= 0.0f) || (!infront_face && dot_dir <= 0.0f))
+        {
+            *segment_region = TRI_VORONOI_FACE;
+            Vec3Copy(c_s, s_canon.p[0]);
+            PlanePointProjection(c_t, &tv->face_plane, c_s);
+            dist_sq = Vec3DistanceSquared(c_t, c_s);
+        }
+        /* Face-Edge: May yield closest point on s within FACE, EDGE_ij, VERTEX_i or VERTEX_j */
+        else if (table_tri_voronoi_edge_check[region[low]])
+        {
+            const u32 start = region[low] - TRI_VORONOI_EDGE01;
+            const u32 end = table_add_1_mod_3[start];
+            const struct plane side_pl = (infront_face)
+                               ? PlaneConstructFromCcwTriangle(s_canon.p[0], tv->t[start], tv->t[end])
+                               : PlaneConstructFromCcwTriangle(s_canon.p[0], tv->t[end], tv->t[start]);
+            /* Second case: segment clips triangle, point on FACE is closest */
+            if (Vec3Dot(side_pl.normal, s_canon.dir) < 0.0f)
+            {
+                *segment_region = TRI_VORONOI_FACE;
+                PlaneSegmentClip(c_s, &tv->face_plane, s);
+                Vec3Copy(c_t, c_s);
+                dist_sq = 0.0f;
+            }    
+            /* Last case: segment-edge generates closest point */
+            else
+            {
+                dist_sq = TriCcwSegmentEdgeCheck(c_t, c_s, segment_region, s, tv, start); 
+            }
+        }
+        /* Face-Vertex: May yield closest point on s within FACE, VERTEX_k, EDGE_jk or EDGE_ki */
+        else
+        {
+            const u32 i  = table_sub_1_mod_3[region[low]];
+            const u32 j = region[low];
+            const u32 k  = table_add_1_mod_3[region[low]];
+
+            const struct plane pl_ij = (infront_face)
+                                       ? PlaneConstructFromCcwTriangle(s_canon.p[0], tv->t[i], tv->t[j])
+                                       : PlaneConstructFromCcwTriangle(s_canon.p[0], tv->t[j], tv->t[i]);
+            const struct plane pl_jk = (infront_face)                                              
+                                       ? PlaneConstructFromCcwTriangle(s_canon.p[0], tv->t[j], tv->t[k])
+                                       : PlaneConstructFromCcwTriangle(s_canon.p[0], tv->t[k], tv->t[j]);
+
+            const f32 dot_ij = Vec3Dot(pl_ij.normal, s_canon.dir);
+            const f32 dot_jk = Vec3Dot(pl_jk.normal, s_canon.dir);
+
+            /* Segment clips face */
+            if (dot_ij < 0.0f && dot_jk < 0.0f)
+            {
+                *segment_region = TRI_VORONOI_FACE;
+                PlaneSegmentClip(c_s, &tv->face_plane, &s_canon);
+                Vec3Copy(c_t, c_s);
+                dist_sq = 0.0f;
+            }
+            /* Segment is closest to some point on either edges */
+            else if (dot_ij >= 0.0f && dot_jk < 0.0f)
+            {
+                dist_sq = TriCcwSegmentEdgeCheck(c_t, c_s, segment_region, s, tv, i); 
+            }
+            else if (dot_ij < 0.0f && dot_jk >= 0.0f)
+            {
+                dist_sq = TriCcwSegmentEdgeCheck(c_t, c_s, segment_region, s, tv, j); 
+            }
+            else
+            {
+                //TODO Can we reduce this to a single check?
+                dist_sq = TriCcwSegmentDoubleEdgeCheck(c_t, c_s, segment_region, s, tv, j); 
+            }
+        }
+    }
+    else if (table_tri_voronoi_edge_check[region[low]])
+    {
+        /* Edge_ij-Edge_ij: Both points on positive side of EDGE_ij, may yield EDGE_ij, VERTEX_i, VERTEX_j */
+        if (region[high] == region[low])
+        {
+            const u32 start = region[low] - TRI_VORONOI_EDGE01;
+            dist_sq = TriCcwSegmentEdgeCheck(c_t, c_s, segment_region, s, tv, start); 
+        }
+        /* Edge_ij-Edge_jk (/jk): Point points on positive side of EDGE_ij, and EDGE_jk (/kj), may yield, Face, EDGE_ij, EDGE_jk (/kj), VERTEX_j */
+        else
+        {
+            if (TriCcwSegmentClip(c_s, s, tv))
+            {
+                    Vec3Copy(c_t, c_s);
+                    *segment_region = TRI_VORONOI_FACE;
+                    dist_sq = 0.0f;
+            }
+            else
+            {
+                static const u32 j_map[4] = { U32_MAX, 1, 0, 2 };
+                const u32 j = j_map[region[high] + region[low] - 2*TRI_VORONOI_EDGE01];
+                dist_sq = TriCcwSegmentDoubleEdgeCheck(c_t, c_s, segment_region, s, tv, j); 
+            }
+        }
+    }
+    /* Edge-Vertex: */
+    else if (table_tri_voronoi_edge_check[region[high]])
+    {
+        const u32 start = region[high] - TRI_VORONOI_EDGE01;
+        const u32 end = table_add_1_mod_3[start];
+        /* Edge-Vertex shared, we can do a single segment-edge test */
+        if (start == region[low] || end == region[low])
+        {
+            dist_sq = TriCcwSegmentDoubleEdgeCheck(c_t, c_s, segment_region, s, tv, region[low]); 
+        }
+        /* Edge-Vertex not shared, we can get a face intersection, or any edge. */
+        else
+        {
+            if (TriCcwSegmentClip(c_s, s, tv))
+            {
+                    Vec3Copy(c_t, c_s);
+                    *segment_region = TRI_VORONOI_FACE;
+                    dist_sq = 0.0f;
+            }
+            else
+            {
+                dist_sq = TriCcwSegmentTripleEdgeCheck(c_t, c_s, segment_region, s, tv); 
+            }
+        }
+    }
+    else
+    {
+        /* Vertex_i-Vertex_i */
+        if (region[high] == region[low])
+        {
+            dist_sq = TriCcwSegmentDoubleEdgeCheck(c_t, c_s, segment_region, s, tv, region[high]); 
+        }
+        /* Vertex_i-Vertex_j */
+        else
+        {
+            dist_sq = TriCcwSegmentTripleEdgeCheck(c_t, c_s, segment_region, s, tv); 
+        }
+    }
+
+    return dist_sq;
 }
 
 vec3 box_stub_vertex[8] =
@@ -779,7 +1315,6 @@ vec3 box_stub_vertex[8] =
 	{ -0.5f, -0.5f, -0.5f },	
 	{ -0.5f, -0.5f,  0.5f },	
 };
-
 
 static struct dcelFace box_face[] =
 {
@@ -839,6 +1374,38 @@ struct dcel DcelBoxStub(void)
 	return box; 
 }
 
+static struct dcelFace tri_face[2] =
+{
+	{ .first  =  0, .count = 3 },
+	{ .first  =  3, .count = 3 },
+};
+                                                        
+static struct dcelEdge tri_edge[6] =                    
+{
+	{ .origin = 0, .twin = 5,  .face_ccw = 0, },     
+	{ .origin = 1, .twin = 4,  .face_ccw = 0, },    
+	{ .origin = 2, .twin = 3,  .face_ccw = 0, },
+
+	{ .origin = 0, .twin = 2,  .face_ccw = 1, },
+	{ .origin = 2, .twin = 1,  .face_ccw = 1, },
+	{ .origin = 1, .twin = 0,  .face_ccw = 1, },
+};
+
+struct dcel DcelTriStub(void)
+{
+	struct dcel tri = 
+	{
+		.v = NULL,
+		.e = tri_edge,
+		.f = tri_face,
+		.e_count = 6,
+		.v_count = 3,
+		.f_count = 2,
+	};
+
+	return tri;
+}
+
 struct dcel DcelBox(struct arena *mem, const vec3 hw)
 {
 	vec3ptr box_vertex = ArenaPush(mem, 8*sizeof(vec3));
@@ -865,39 +1432,58 @@ struct dcel DcelBox(struct arena *mem, const vec3 hw)
 	return box; 
 }
 
-void DcelFaceDirection(vec3 dir, const struct dcel *h, const u32 fi)
+void DcelFaceNormal(vec3 normal, const struct dcel *h, mat3 rot, const u32 fi)
+{
+    vec3 local;
+    DcelFaceNormalLocal(local, h, fi);
+    Mat3VecMul(normal, rot, local);
+}
+
+void DcelFaceDirection(vec3 normal_direction, const struct dcel *h, mat3 rot, const u32 fi)
+{
+    vec3 local;
+    DcelFaceDirectionLocal(local, h, fi);
+    Mat3VecMul(normal_direction, rot, local);
+}
+
+void DcelFaceDirectionLocal(vec3 dir, const struct dcel *h, const u32 fi)
 {
 	vec3 a, b;
 	struct dcelEdge *e0 = h->e + h->f[fi].first;
 	struct dcelEdge *e1 = h->e + h->f[fi].first + 1;
 	struct dcelEdge *e2 = h->e + h->f[fi].first + 2;
-	Vec3Sub(a, h->v[e1->origin], h->v[e0->origin]);
-	Vec3Sub(b, h->v[e2->origin], h->v[e0->origin]);
-	Vec3Cross(dir, a, b);
+    TriCcwNormalDirection(dir, h->v[e0->origin], h->v[e1->origin], h->v[e2->origin]);
 }
 
-void DcelFaceNormal(vec3 normal, const struct dcel *h, const u32 fi)
+void DcelFaceNormalLocal(vec3 normal, const struct dcel *h, const u32 fi)
 {
-	DcelFaceDirection(normal, h, fi);
+	DcelFaceDirectionLocal(normal, h, fi);
 	Vec3ScaleSelf(normal, 1.0f/Vec3Length(normal));	
 }
 
 struct plane DcelFacePlane(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi)
 {
 	vec3 n, p;
-	DcelFaceNormal(p, h, fi);
+	DcelFaceNormalLocal(p, h, fi);
 	Mat3VecMul(n, rot, p);
 	Mat3VecMul(p, rot, h->v[h->e[h->f[fi].first].origin]);
 	Vec3Translate(p, pos);
 	return PlaneConstruct(n, p);
 }
 
+struct plane DcelFacePlaneLocal(const struct dcel *h, const u32 fi)
+{
+    const u32 i0  = h->e[h->f[fi].first + 0].origin;
+    const u32 i1  = h->e[h->f[fi].first + 1].origin;
+    const u32 i2  = h->e[h->f[fi].first + 2].origin;
+    return PlaneConstructFromCcwTriangle(h->v[i0], h->v[i1], h->v[i2]);
+}
+
 struct segment DcelFaceClipSegment(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi, const struct segment *s)
 {
 	vec3 f_n, p_n, p_p0, p_p1;
 
-	DcelFaceNormal(p_n, h, fi);
-	Mat3VecMul(f_n, rot, p_n);
+	DcelFaceNormal(p_n, h, rot, fi);
 
 	f32 min_p = 0.0f;
 	f32 max_p = 1.0f;
@@ -949,8 +1535,7 @@ u32 DcelFaceProjectedPointTest(const struct dcel *h, mat3 rot, const vec3 pos, c
 {
 	vec3 f_n, p_n;
 
-	DcelFaceNormal(p_n, h, fi);
-	Mat3VecMul(f_n, rot, p_n);
+	DcelFaceNormal(f_n, h, rot, fi);
 
 	f32 min_p = 0.0f;
 	f32 max_p = 1.0f;
@@ -1010,9 +1595,7 @@ void SphereSupport(vec3 support, const vec3 dir, const struct sphere *sph, const
 void CapsuleSupport(vec3 support, const vec3 dir, const struct capsule *cap, mat3 rot, const vec3 pos)
 {
 	vec3 p1, p2;
-	p1[0] = rot[1][0] * cap->half_height,	
-	p1[1] = rot[1][1] * cap->half_height,	
-	p1[2] = rot[1][2] * cap->half_height,	
+    Vec3Scale(p1, rot[1], cap->half_height);
 	Vec3Negate(p2, p1);
 
 	Vec3Scale(support, dir, cap->radius / Vec3Length(dir));
@@ -1174,7 +1757,7 @@ struct ddcel
 	/* pools are not growable, so safe to use these */
 	struct ddcelFace *	f;		
 	struct ddcelEdge *	e;
-	const vec3ptr		v;
+	constvec3ptr		v;
 	u32 			v_count;
 
 	/* internal */
@@ -1204,14 +1787,14 @@ static void DdcelEdgeSet(struct ddcelEdge *edge, const u32 origin, const u32 twi
 
 static void DdcelAssertTopology(const struct ddcel *ddcel)
 {
-	struct arena tmp = ArenaAlloc1MB();
+	struct arena *tmp = ArenaPushScratch();
 
 	u32 face_count = 0;
 	u32 vertex_count = 0;
 
-	u32 *vertex_check = ArenaPushZero(&tmp, ddcel->v_count * sizeof(u32));
-	u32 *edge_check = ArenaPushZero(&tmp, ddcel->edge_pool.count * sizeof(u32));
-	u32 *face_check = ArenaPushZero(&tmp, 3*ddcel->v_count * sizeof(u32));
+	u32 *vertex_check = ArenaPushZero(tmp, ddcel->v_count * sizeof(u32));
+	u32 *edge_check = ArenaPushZero(tmp, ddcel->edge_pool.count * sizeof(u32));
+	u32 *face_check = ArenaPushZero(tmp, 3*ddcel->v_count * sizeof(u32));
 
 	for (u32 i = 0; i < ddcel->edge_pool.count; ++i)
 	{
@@ -1268,8 +1851,7 @@ static void DdcelAssertTopology(const struct ddcel *ddcel)
 		}
 	}
 
-	ArenaFree1MB(&tmp);
-
+    ArenaPopScratch();
 	ds_Assert(face_count >= 4);
 }
 
@@ -1334,7 +1916,7 @@ u32 InternalConvexHullTetrahedronIndices(struct ddcel *ddcel, const f32 tol)
 
 static void InternalConvexHullTetrahedronDdcel(struct ddcel *ddcel, const f32 tol)
 {
-	const vec3ptr v = ddcel->v;
+	constvec3ptr v = ddcel->v;
 	const u32 v_count = ddcel->v_count;
 	vec3 a, b, c, cr;
 	Vec3Sub(a, v[ddcel->cv[1].index], v[ddcel->cv[0].index]);
@@ -1390,32 +1972,17 @@ static void InternalConvexHullTetrahedronDdcel(struct ddcel *ddcel, const f32 to
 	DdcelEdgeSet(e10, ddcel->cv[2].index,  1,  9, 11, 3);
 	DdcelEdgeSet(e11, ddcel->cv[1].index,  3, 10,  9, 3);
 
-	Vec3Sub(a, ddcel->v[e1->origin], ddcel->v[e0->origin]);
-	Vec3Sub(b, ddcel->v[e2->origin], ddcel->v[e0->origin]);
-	Vec3Cross(cr, a, b);
-	Vec3Normalize(ddcel->f[0].normal, cr);
-
-	Vec3Sub(a, ddcel->v[e4->origin], ddcel->v[e3->origin]);
-	Vec3Sub(b, ddcel->v[e5->origin], ddcel->v[e3->origin]);
-	Vec3Cross(cr, a, b);
-	Vec3Normalize(ddcel->f[1].normal, cr);
-
-	Vec3Sub(a, ddcel->v[e7->origin], ddcel->v[e6->origin]);
-	Vec3Sub(b, ddcel->v[e8->origin], ddcel->v[e6->origin]);
-	Vec3Cross(cr, a, b);
-	Vec3Normalize(ddcel->f[2].normal, cr);
-
-	Vec3Sub(a, ddcel->v[e10->origin], ddcel->v[e9->origin]);
-	Vec3Sub(b, ddcel->v[e11->origin], ddcel->v[e9->origin]);
-	Vec3Cross(cr, a, b);
-	Vec3Normalize(ddcel->f[3].normal, cr);
+    TriCcwNormal(ddcel->f[0].normal, ddcel->v[e0->origin], ddcel->v[e1->origin], ddcel->v[e2->origin]);
+    TriCcwNormal(ddcel->f[1].normal, ddcel->v[e3->origin], ddcel->v[e4->origin], ddcel->v[e5->origin]);
+    TriCcwNormal(ddcel->f[2].normal, ddcel->v[e6->origin], ddcel->v[e7->origin], ddcel->v[e8->origin]);
+    TriCcwNormal(ddcel->f[3].normal, ddcel->v[e9->origin], ddcel->v[e10->origin], ddcel->v[e11->origin]);
 
 	DdcelAssertTopology(ddcel);
 }
 
 static void InternalConvexHullTetrahedronConflicts(struct ddcel *ddcel, const f32 tol)
 {
-	const vec3ptr v = ddcel->v;
+	constvec3ptr v = ddcel->v;
 	const u32 v_count = ddcel->v_count;
 	vec3 b;
 	for (u32 cv_i = 4; cv_i < v_count; ++cv_i)
@@ -1622,11 +2189,7 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 			DdcelEdgeSet(e0, e0->origin, e0->twin, se2.index, se1.index, sf.index);
 
 			DdcelFaceSet(f, e0i, 3);
-			vec3 a, b, cr;
-			Vec3Sub(a, ddcel->v[e1->origin], ddcel->v[e0->origin]);
-			Vec3Sub(b, ddcel->v[e2->origin], ddcel->v[e0->origin]);
-			Vec3Cross(cr, a, b);
-			Vec3Normalize(f->normal, cr);
+            TriCcwNormal(f->normal, ddcel->v[e0->origin], ddcel->v[e1->origin], ddcel->v[e2->origin]);
 		
 			/*TODO: We may add same point twich here, need to add a "has_been_mapped" thingy to not add again*/
 			ce = NULL;
@@ -1778,28 +2341,28 @@ struct dcel DcelDdcel(struct arena *mem, const struct ddcel *ddcel)
 	return cpy;
 }
 
-struct dcel DcelConvexHull(struct arena *mem, const vec3ptr v, const u32 v_count, const f32 tol)
+struct dcel DcelConvexHull(struct arena *mem, constvec3ptr v, const u32 v_count, const f32 tol)
 {
 	struct dcel dcel = DcelEmpty();
 	if (v_count < 4) { goto end; }	
 
-	struct arena tmp1 = ArenaAlloc1MB();
-	struct arena tmp2 = ArenaAlloc1MB();
+	struct arena *tmp1 = ArenaPushScratch();
+	struct arena *tmp2 = ArenaPushScratch();
 
 	const u32 edge_count_upper_bound = 6*v_count - 12;
 	const u32 face_count_upper_bound = 2*v_count - 4;
 	struct ddcel ddcel =
 	{
-		.face_pool = ds_PoolAlloc(&tmp1, 2*face_count_upper_bound, struct ddcelFace, NOT_GROWABLE),	/* add additional space for easier memory management */
-		.edge_pool = ds_PoolAlloc(&tmp1, 2+edge_count_upper_bound, struct ddcelEdge, NOT_GROWABLE),	/* add additional space for easier memory management */
+		.face_pool = ds_PoolAlloc(tmp1, 2*face_count_upper_bound, struct ddcelFace, NOT_GROWABLE),	/* add additional space for easier memory management */
+		.edge_pool = ds_PoolAlloc(tmp1, 2+edge_count_upper_bound, struct ddcelEdge, NOT_GROWABLE),	/* add additional space for easier memory management */
 		.v = v,
 		.v_count = v_count,
-		.ce_pool = ds_PoolAlloc(&tmp2, tmp2.mem_size / sizeof(struct conflictEdge), struct conflictEdge, NOT_GROWABLE),
-		.cv = ArenaPush(&tmp1, v_count * sizeof(struct conflictVertex)),
-		.hv = ArenaPush(&tmp1, v_count * sizeof(struct horizionVertex)),
+		.ce_pool = ds_PoolAlloc(tmp2, tmp2->mem_size / sizeof(struct conflictEdge), struct conflictEdge, NOT_GROWABLE),
+		.cv = ArenaPush(tmp1, v_count * sizeof(struct conflictVertex)),
+		.hv = ArenaPush(tmp1, v_count * sizeof(struct horizionVertex)),
 	};
 
-	ddcel.tmp1 = tmp1;
+	ddcel.tmp1 = *ArenaPushScratch();
 	ddcel.e = (struct ddcelEdge *) ddcel.edge_pool.buf;
 	ddcel.f = (struct ddcelFace *) ddcel.face_pool.buf;
 	ddcel.ce = (struct conflictEdge *) ddcel.ce_pool.buf;
@@ -1838,8 +2401,9 @@ struct dcel DcelConvexHull(struct arena *mem, const vec3ptr v, const u32 v_count
 
 	dcel = DcelDdcel(mem, &ddcel);	
 end:
-	ArenaFree1MB(&tmp1);
-	ArenaFree1MB(&tmp2);
+	ArenaPopScratch();
+	ArenaPopScratch();
+	ArenaPopScratch();
 
 	return dcel;
 }
@@ -1868,6 +2432,7 @@ u32 TriMeshRaycast(vec3 intersection, const struct triMesh *mesh, const u32 tri,
 	 * By precomputation and extending our tri_mesh structure, we can avoid these branches;
 	 * so if it becomes relevant, we need to precompute the edge sorting or something...  
 	 */
+
 	/* canonicalize edges: We require consistency between triangles sharing edges; if the 
 	 * test determining which side of the edge the ray intersects the triangle planes are
 	 * not done in the same way, we may miss collision with both triangles despite hitting
@@ -1875,11 +2440,6 @@ u32 TriMeshRaycast(vec3 intersection, const struct triMesh *mesh, const u32 tri,
 	 * robustness discussion. */
 
 	vec3 p0, p1, p2, c;
-
-	Vec3Sub(p0, mesh->v[mesh->tri[tri][1]],mesh->v[mesh->tri[tri][0]]);
-	Vec3Sub(p1, mesh->v[mesh->tri[tri][2]],mesh->v[mesh->tri[tri][0]]);
-	Vec3Cross(p2, p0, p1);
-	ds_Assert(p2[1] > 0.0f);
 
 	Vec3Sub(p0, mesh->v[mesh->tri[tri][0]], ray->origin);
 	Vec3Sub(p1, mesh->v[mesh->tri[tri][1]], ray->origin);

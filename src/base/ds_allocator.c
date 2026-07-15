@@ -74,19 +74,13 @@ u64 ds_AllocSizeCeil(const u64 size)
 
 void ds_MemApiShutdown(void)
 {
-	ThreadBlockAllocatorFree(&g_mem_config->block_allocator_256B);
-	ThreadBlockAllocatorFree(&g_mem_config->block_allocator_1MB);
 }
 
-void ds_MemApiInit(const u32 count_256B, const u32 count_1MB)
+void ds_MemApiInit()
 {
 	g_mem_config->page_size = ds_Pagesize();
 	g_mem_config->alloc_size_min = g_mem_config->page_size;
 	ds_Assert( PowerOfTwoCheck( g_mem_config->alloc_size_min ) );
-
-	ds_StaticAssert(((u64) &((struct threadBlockAllocator *) 0)->a_next % DS_CACHE_LINE_UB) == 0, "Expected Alignment");
-	ThreadBlockAllocatorAlloc(&g_mem_config->block_allocator_256B, count_256B, 256);
-	ThreadBlockAllocatorAlloc(&g_mem_config->block_allocator_1MB, count_1MB, 1024*1024);
 }
 
 
@@ -310,7 +304,7 @@ void ArenaRemoveRecord(struct arena *ar)
 	}
 }
 
-struct arena ArenaAlloc(const u64 size)
+struct arena ArenaAlloc(struct arena *mem, const u64 size)
 {
 	struct arena ar =
 	{
@@ -319,16 +313,31 @@ struct arena ArenaAlloc(const u64 size)
 		.record = NULL,
 	};
 
-	ar.stack_ptr = (size >= 2*1024*1024)
-		? ds_Alloc(&ar.slot, size, HUGE_PAGES)
-		: ds_Alloc(&ar.slot, size, NO_HUGE_PAGES);
+    if (mem)
+    {
+        ar.stack_ptr = ArenaPushAligned(mem, size, DS_CACHE_LINE);
 
-	if (ar.stack_ptr)
-	{
-		ar.mem_size = ar.slot.size;
-		ar.mem_left = ar.slot.size;
-		PoisonAddress(ar.stack_ptr, ar.mem_left);
-	}
+	    if (ar.stack_ptr)
+	    {
+	    	ar.mem_size = size;
+	    	ar.mem_left = size;
+	    	PoisonAddress(ar.stack_ptr, ar.mem_left);
+	    }
+    }
+    else
+    {
+	    ar.stack_ptr = (size >= 2*1024*1024)
+	    	? ds_Alloc(&ar.slot, size, HUGE_PAGES)
+	    	: ds_Alloc(&ar.slot, size, NO_HUGE_PAGES);
+
+	    if (ar.stack_ptr)
+	    {
+	    	ar.mem_size = ar.slot.size;
+	    	ar.mem_left = ar.slot.size;
+	    	PoisonAddress(ar.stack_ptr, ar.mem_left);
+	    }
+    }
+
 	
 	return ar;
 }
@@ -376,6 +385,7 @@ void *ArenaPushAligned(struct arena *ar, const u64 size, const u64 alignment)
 			alloc_addr = ar->stack_ptr + push_alignment;
 			ar->mem_left -= size + push_alignment;
 			ar->stack_ptr += size + push_alignment;
+            ds_Assert((u64) alloc_addr % alignment == 0);
 		}
 	}
 
@@ -421,226 +431,6 @@ struct memArray ArenaPushAlignedAll(struct arena *ar, const u64 slot_size, const
 	}
 
 	return array;
-}
-
-struct arena ArenaAlloc1MB(void)
-{
-	struct arena ar =
-	{
-		.mem_size = 0,
-		.mem_left = 0,
-		.record = NULL,
-	};
-
-	ar.stack_ptr = ThreadAlloc1MB();
-	if (ar.stack_ptr)
-	{
-		ar.mem_size = 1024*1024;
-		ar.mem_left = 1024*1024;
-		PoisonAddress(ar.stack_ptr, ar.mem_left);
-	}
-
-	return ar;
-}
-
-void ArenaFree1MB(struct arena *ar)
-{
-	ar->stack_ptr -= ar->mem_size - ar->mem_left;
-	UnpoisonAddress(ar->stack_ptr, ar->mem_size);
-	ThreadFree1MB(ar->stack_ptr);
-}
-
-enum threadAllocRet
-{
-	ALLOCATOR_SUCCESS,
-	ALLOCATOR_FAILURE,
-	ALLOCATOR_OUT_OF_MEMORY,
-	ALLOCATOR_COUNT
-};
-
-struct threadBlockHeader
-{
-	u64 	id;
-	u64 	next;
-};
-
-#define LOCAL_MAX_COUNT		32
-#define LOCAL_FREE_LOW  	16
-#define LOCAL_FREE_HIGH 	31
-static dsThreadLocal u32 local_count = 1;	/* local_next[0] is dummy */
-static dsThreadLocal u64 local_next[LOCAL_MAX_COUNT];
-
-void ThreadBlockAllocatorAlloc(struct threadBlockAllocator *allocator, const u64 block_count, const u64 block_size)
-{
-	ds_StaticAssert(LOCAL_MAX_COUNT - 1 == LOCAL_FREE_HIGH, "");
-	ds_StaticAssert(LOCAL_FREE_LOW <= LOCAL_FREE_HIGH, "");
-	ds_StaticAssert(1 <= LOCAL_FREE_LOW, "");
-
-	const u64 mod = (block_size % DS_CACHE_LINE_UB);
-	allocator->block_size = (mod)
-		? DS_CACHE_LINE_UB + block_size + (DS_CACHE_LINE_UB - mod)
-		: DS_CACHE_LINE_UB + block_size;
-
-	const u64 size_used = ds_AllocSizeCeil(block_count * allocator->block_size);
-	allocator->max_count = size_used / allocator->block_size;
-	allocator->block = ds_Alloc(&allocator->mem_slot, size_used, HUGE_PAGES);
-
-	ds_AssertString(((u64) allocator->block & (DS_CACHE_LINE_UB-1)) == 0, "allocator block array should be cacheline aligned");
-	if (!allocator->block)
-	{
-		LogString(T_SYSTEM, S_FATAL, "Failed to allocate block allocator->block");
-		FatalCleanupAndExit();
-	}
-	/* sync point (gen, index) = (0,0) */
-	AtomicStoreRel64(&allocator->a_next, 0);
-}
-
-void ThreadBlockAllocatorFree(struct threadBlockAllocator *allocator)
-{
-	ds_Free(&allocator->mem_slot);
-}
-
-static enum threadAllocRet ThreadBlockTryAlloc(void **addr, u64 *a_next, struct threadBlockAllocator *allocator)
-{
-	/* a_next has been AQUIRED, so no local write/reads can move above (compiler and cpu), 
-	 * stores by other threads that have released the address is now visible locally.  */
-	const u64 gen = *a_next >> 32;
-	const u64 index = *a_next & U32_MAX;
-	if (index == allocator->max_count) { return ALLOCATOR_OUT_OF_MEMORY; }
-	
-	/* This block may already be owned by another thread, or undefined. Thus, we view the header values
-	 * as garbage if the generation is 0 OR if the allocator has been tampered with since our AQUIRE of
-	 * a_next. */
-	struct threadBlockHeader *header = (struct threadBlockHeader *) (allocator->block + index*allocator->block_size);
-
-	/* Unallocated blocks always start on generation 0, that we we can identify if the free list is empty */
-	const u64 new_next = (gen == 0)
-		? index+1
-		: AtomicLoadRlx64(&header->next);
-
-	/* Relaxed store on success, Aquire read on failure: 
-	 * 	If we succeed in the exchange, no tampering of the allocator has happened and we make 
-	 * 	can make a relaxed store; The only store that other threads need to read from us is
-	 * 	the sync point itself, so it may be relaxed. (GCC) Since the failure memorder may not 
-	 * 	be weaker than the success order, we must use ACQ, ACQ.
-	 *
-	 * 	If we fail in the exchange, we need to make an aquired read of a_next again; The allocator
-	 * 	may be in a state in which we will read thread written headers.  */
-	if (AtomicCompareExchangeAcqRlx64(&allocator->a_next, a_next, new_next))
-	{
-		*addr = (u8 *) header + DS_CACHE_LINE_UB;
-		/* update generation */
-		header->id = *a_next + ((u64) 1 << 32);
-		return ALLOCATOR_SUCCESS;
-	}
-	else
-	{
-		return ALLOCATOR_FAILURE;
-	}
-}
-
-static enum threadAllocRet ThreadBlockTryFree(struct threadBlockHeader *header, struct threadBlockAllocator *allocator, const u64 new_next)
-{
-	/*
-	 * On success, we release store, making our local header changes visible for any thread trying to allocate
-	 * this block again. 
-	 *
-	 * On failure, we may do a relaxed load of the next allocation identifier. We are never dereferencing it
-	 * in our pop procedure, so this is okay.
-	 */
-	return (AtomicCompareExchangeRelRlx64(&allocator->a_next, &header->next, new_next))
-		? ALLOCATOR_SUCCESS
-		: ALLOCATOR_FAILURE;
-}
-
-void *ThreadBlockAlloc(struct threadBlockAllocator *allocator)
-{
-	void *addr;
-	enum threadAllocRet ret;
-
-	u64 a_next = AtomicLoadAcq64(&allocator->a_next);
-	while ((ret = ThreadBlockTryAlloc(&addr, &a_next, allocator)) == ALLOCATOR_FAILURE)
-		;
-
-	ds_Assert(ret != ALLOCATOR_OUT_OF_MEMORY);
-
-	return (ret != ALLOCATOR_OUT_OF_MEMORY) 
-		? addr 
-		: NULL;
-}
-
-
-void ThreadBlockFree(struct threadBlockAllocator *allocator, void *addr)
-{
-	struct threadBlockHeader *header = (struct threadBlockHeader *) ((u8 *) addr - DS_CACHE_LINE_UB);
-	header->next = AtomicLoadRlx64(&allocator->a_next);
-	while (ThreadBlockTryFree(header, allocator, header->id) == ALLOCATOR_FAILURE);
-}
-
-void *ThreadBlockAlloc256B(struct threadBlockAllocator *allocator)
-{
-	void *addr;
-	enum threadAllocRet ret;
-
-	if (local_count > 1)
-	{
-		const u64 next = local_next[--local_count];
-		const u32 index = next & U32_MAX;
-		struct threadBlockHeader *header = (struct threadBlockHeader *) (allocator->block + index*allocator->block_size);
-		header->id = next + ((u64) 1 << 32);
-		addr = (u8 *) header + DS_CACHE_LINE_UB;
-		ret = ALLOCATOR_SUCCESS;
-	}
-	else
-	{
-		u64 a_next = AtomicLoadAcq64(&allocator->a_next);
-		while ((ret = ThreadBlockTryAlloc(&addr, &a_next, allocator)) == ALLOCATOR_FAILURE);
-	}
-
-	return (ret != ALLOCATOR_OUT_OF_MEMORY) 
-		? addr 
-		: NULL;
-}
-
-void ThreadBlockFree256B(struct threadBlockAllocator *allocator, void *addr)
-{
-	struct threadBlockHeader *header;
-	if (local_count == LOCAL_MAX_COUNT)
-	{
-		/* local_next[0] (DUMMY)  <- local_next[1] <- ... <- local_next[LOCAL_FREE_HIGH] */
-		u64 head = local_next[LOCAL_FREE_HIGH];
-		u64 tail = local_next[LOCAL_FREE_LOW];
-
-		header = (struct threadBlockHeader *) (allocator->block + (tail & U32_MAX)*allocator->block_size);
-		header->next = AtomicLoadRlx64(&allocator->a_next);
-		while (ThreadBlockTryFree(header, allocator, head) == ALLOCATOR_FAILURE);
-		local_count = LOCAL_FREE_LOW;
-	}
-
-	/* local_next[0] (DUMMY)  <- local_next[1] <- ... <- local_next[local_count] */
-	header = (struct threadBlockHeader *) ((u8 *) addr - DS_CACHE_LINE_UB);
-	AtomicStoreRel32(&header->next, local_next[local_count-1]);
-	local_next[local_count++] = header->id;
-}
-
-void *ThreadAlloc256B(void)
-{
-	return ThreadBlockAlloc256B(&g_mem_config->block_allocator_256B);
-}
-
-void *ThreadAlloc1MB(void)
-{
-	return ThreadBlockAlloc(&g_mem_config->block_allocator_1MB);
-}
-
-void ThreadFree256B(void *addr)
-{
-	ThreadBlockFree256B(&g_mem_config->block_allocator_256B, addr);
-}
-
-void ThreadFree1MB(void *addr)
-{
-	ThreadBlockFree(&g_mem_config->block_allocator_1MB, addr);
 }
 
 struct ring RingEmpty()

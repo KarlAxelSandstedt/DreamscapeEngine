@@ -34,7 +34,7 @@ static void DsSysEnvInit(struct arena *mem)
 	}
 }
 
-void ds_PlatformApiInit(struct arena *mem)
+void ds_PlatformApiInit(struct arena *mem, const u64 framesize, const u64 scratchsize, const u32 scratch_count)
 {
  	DsSysEnvInit(mem);
 
@@ -46,10 +46,12 @@ void ds_PlatformApiInit(struct arena *mem)
 		Log(T_SYSTEM, S_NOTE, "core %u tsc skew (reltive to core 0): %lu", i, g_tsc_skew[i]);
 	}
 #endif
-	task_context_init(mem, g_arch_config->logical_core_count);
+    const u64 stacksize = 64*1024;
+    const u64 initial_deque_size = 4096;
+    ds_JobSchedulerInit(mem, g_arch_config->logical_core_count, stacksize, framesize, scratchsize, scratch_count, initial_deque_size); 
 }
 
 void ds_PlatformApiShutdown(void)
 {
-	task_context_destroy(g_task_ctx);
+    ds_JobSchedulerShutdown();
 }

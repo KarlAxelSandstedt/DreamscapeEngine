@@ -61,8 +61,8 @@ ds_ShapeId ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_Sh
 
 void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Island *island, const u32 shape_index)
 {
-    struct ds_Shape *shape = ds_PoolAddress(&pipeline->shape_pool, shape_index);
-    struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, shape->body);
+    struct ds_Shape *dummy_shape, *shape = ds_PoolAddress(&pipeline->shape_pool, shape_index);
+    struct ds_RigidBody *dummy_body, *body = ds_PoolAddress(&pipeline->body_pool, shape->body);
     const ds_ShapeId s0 = ((u64) shape->tag << 32) | shape_index;
     const ds_RigidBodyId b0 = ((u64) body->tag << 32) | shape->body;
 
@@ -83,16 +83,14 @@ void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Isla
 		if (shape_index == c->key.shape0)
 		{
 			next_i = 0;
-			shape = ds_PoolAddress(&pipeline->shape_pool, c->key.shape1);
-            body = ds_PoolAddress(&pipeline->body_pool, c->key.body1);
+            ds_ContactKeyAddress(&dummy_body, &dummy_shape, &body, &shape, pipeline, &c->key);
             b1 = ((u64) body->tag << 32) | c->key.body1;
             s1 = ((u64) shape->tag << 32) | c->key.shape1;
         }
 		else
 		{
 			next_i = 1;
-			shape = ds_PoolAddress(&pipeline->shape_pool, c->key.shape0);
-            body = ds_PoolAddress(&pipeline->body_pool, c->key.body0);
+            ds_ContactKeyAddress(&body, &shape, &dummy_body, &dummy_shape, pipeline, &c->key);
             b1 = ((u64) body->tag << 32) | c->key.body0;
             s1 = ((u64) shape->tag << 32) | c->key.shape0;
 		}
@@ -114,10 +112,11 @@ void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Isla
 
 void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, const u32 index)
 {
-	struct ds_Shape *shape = ds_PoolAddress(&pipeline->shape_pool, index);
-    struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, shape->body);
+	struct ds_Shape *dummy_shape, *shape = ds_PoolAddress(&pipeline->shape_pool, index);
+    struct ds_RigidBody *dummy_body, *body = ds_PoolAddress(&pipeline->body_pool, shape->body);
     const u64 s0 = ((u64) shape->tag << 32) | index;
     const u64 b0 = ((u64) body->tag << 32) | shape->body;
+    const u32 static_is_tri_mesh = shape->cshape_type == C_SHAPE_TRI_MESH;
 
 	u32 ci = shape->contact_first;
 	shape->contact_first = NLL_NULL;
@@ -137,19 +136,17 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
 		u32 next_i;
         u64 b1; 
         u64 s1; 
-		if (index == c->key.shape0)
+		if (index == c->key.shape0 || (static_is_tri_mesh && INDIRECT_SHAPE_CHECK(c->key.shape0)))
 		{
 			next_i = 0;
-			shape = ds_PoolAddress(&pipeline->shape_pool, c->key.shape1);
-            body = ds_PoolAddress(&pipeline->body_pool, c->key.body1);
+            ds_ContactKeyAddress(&dummy_body, &dummy_shape, &body, &shape, pipeline, &c->key);
             b1 = ((u64) body->tag << 32) | c->key.body1;
             s1 = ((u64) shape->tag << 32) | c->key.shape1;
 		}
 		else
 		{
 			next_i = 1;
-			shape = ds_PoolAddress(&pipeline->shape_pool, c->key.shape0);
-            body = ds_PoolAddress(&pipeline->body_pool, c->key.body0);
+            ds_ContactKeyAddress(&body, &shape, &dummy_body, &dummy_shape, pipeline, &c->key);
             b1 = ((u64) body->tag << 32) | c->key.body0;
             s1 = ((u64) shape->tag << 32) | c->key.shape0;
 		}
@@ -160,24 +157,27 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
 		}
 		const u32 ci_next = c->nll_next[next_i];
 	    const struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, shape->body);
-		struct ds_Island *is = ds_PoolAddress(&pipeline->is_db.island_pool, body->island_index);
 
-		if ((is->flags & ISLAND_SPLIT) == 0)
-		{
-		    if (island_count == arr.len)
-			{
-				LogString(T_SYSTEM, S_FATAL, "Stack OOM in ds_ShapeStaticRemove");
-				FatalCleanupAndExit();
-			}
-			island[island_count++] = body->island_index;
-			
-			is->flags |= ISLAND_SPLIT;
-		}
+        if (body->island_index != ISLAND_STATIC)
+        {
+		    struct ds_Island *is = ds_PoolAddress(&pipeline->is_db.island_pool, body->island_index);
+		    if ((is->flags & ISLAND_SPLIT) == 0)
+		    {
+		        if (island_count == arr.len)
+		    	{
+		    		LogString(T_SYSTEM, S_FATAL, "Stack OOM in ds_ShapeStaticRemove");
+		    		FatalCleanupAndExit();
+		    	}
+		    	island[island_count++] = body->island_index;
+		    	
+		    	is->flags |= ISLAND_SPLIT;
+		    }
+            dll_Remove(&is->contact_list, pipeline->cdb->contact_net.pool.buf, ci);
+        }
 
 		PhysicsEventContactRemoved(pipeline, b0, s0, b1, s1);
 		BitVecSetBit(&pipeline->cdb->contact_persistent_usage, ci, 0);
 		ds_HashMapRemove(&pipeline->cdb->contact_map, ds_ContactKeyHash(&c->key), ci);
-        dll_Remove(&is->contact_list, pipeline->cdb->contact_net.pool.buf, ci);
 		nll_Remove(&pipeline->cdb->contact_net, ci);
 		ci = ci_next;
 	}
@@ -321,15 +321,23 @@ f32 (*c_distance_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(vec3 c1, vec3 c2, const 
 	{ c_TriMeshBvhSphereDistance,	c_TriMeshBvhCapsuleDistance, 	c_TriMeshBvhHullDistance,	0, },
 };
 
-u32 (*c_contact_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(struct arena *, struct c_Manifold *, struct sat_Cache *, const struct sat_Cache *, const struct c_Shape *[2], const ds_Transform [2], const u32) =
+u32 (*c_contact_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(struct c_Manifold *, struct sat_Cache *, const struct sat_Cache *, const struct c_Shape *[2], const ds_Transform [2], const u32) =
 {
 	{ c_SphereContact,	 	        0, 				            0,			                0, },
 	{ c_CapsuleSphereContact, 	    c_CapsuleContact,			0,			                0, },
 	{ c_HullSphereContact, 	  	    c_HullCapsuleContact,		c_HullContact, 		        0, },
-	{ c_TriMeshBvhSphereContact,	c_TriMeshBvhCapsuleContact, c_TriMeshBvhHullContact,    0, },
+	{ 0,	                        0,                          0,                          0, },
 };
 
-f32 (*c_raycast_parameter_methods[C_SHAPE_COUNT])(struct arena *, const struct c_Shape *, const ds_Transform *, const struct ray *) =
+u32 (*c_mesh_contact_methods[C_SHAPE_COUNT])(struct arena *, struct c_Manifold **, u32 **, struct sat_Cache *, const struct c_Shape *[2], const ds_Transform [2], const u32) =
+{
+    c_TriMeshBvhSphereContact,
+    c_TriMeshBvhCapsuleContact,
+    c_TriMeshBvhHullContact,
+    0,
+};
+
+f32 (*c_raycast_parameter_methods[C_SHAPE_COUNT])(const struct c_Shape *, const ds_Transform *, const struct ray *) =
 {
 	c_SphereRaycastParameter,
 	c_CapsuleRaycastParameter,
@@ -365,7 +373,7 @@ f32 ds_ShapeDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipeline *pipeli
 		: c_distance_methods[c_s2->type][c_s1->type](c2, c1, c_s2, &t2, c_s1, &t1);
 }
 
-u32 ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2)
+u32 ds_ShapeContact(struct c_Manifold *manifold, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2)
 {
     ds_Transform t_arr[2];
 
@@ -380,8 +388,7 @@ u32 ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_C
         cache_copy_mem = *cache;
     }
 
-
-	u32 collision;
+	u32 collision_count;
 	if (c_s1->type >= c_s2->type) 
 	{
         const struct c_Shape *c_s_arr[2] = { c_s1, c_s2 };
@@ -390,7 +397,7 @@ u32 ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_C
         const u32 ref = (s1->body < s2->body)
                         ? 0
                         : 1;
-		collision = c_contact_methods[c_s1->type][c_s2->type](tmp, manifold, cache, cache_copy, c_s_arr, t_arr, ref);
+		collision_count = c_contact_methods[c_s1->type][c_s2->type](manifold, cache, cache_copy, c_s_arr, t_arr, ref);
 	}                                                                                         
 	else                                                                                      
 	{                                                                                         
@@ -400,25 +407,56 @@ u32 ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_C
         const u32 ref = (s1->body < s2->body)
                         ? 1
                         : 0;
-		collision = c_contact_methods[c_s2->type][c_s1->type](tmp, manifold, cache, cache_copy, c_s_arr, t_arr, ref);
+		collision_count = c_contact_methods[c_s2->type][c_s1->type](manifold, cache, cache_copy, c_s_arr, t_arr, ref);
 	}
 
-	return collision;
+	return collision_count;
+}
+
+u32 ds_ShapeMeshContact(struct arena *frame, struct c_Manifold **manifold, u32 **triangle, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2)
+{
+    ds_Transform t_arr[2];
+
+    const struct c_Shape *c_s1 = strdb_Address(pipeline->cshape_db, s1->cshape_handle);
+    const struct c_Shape *c_s2 = strdb_Address(pipeline->cshape_db, s2->cshape_handle);
+
+    u32 collision_count;
+    if (c_s2->type < c_s1->type)
+    {
+        const u32 ref = (s1->body < s2->body)
+                    ? 0
+                    : 1;
+        const struct c_Shape *c_s_arr[2] = { c_s1, c_s2 };
+        ds_ShapeWorldTransform(t_arr + 0, pipeline, s1);
+        ds_ShapeWorldTransform(t_arr + 1, pipeline, s2);
+	    collision_count = c_mesh_contact_methods[c_s2->type](frame, manifold, triangle, cache, c_s_arr, t_arr, ref);
+    }
+    else
+    {
+        const u32 ref = (s1->body < s2->body)
+                    ? 1
+                    : 0;
+        const struct c_Shape *c_s_arr[2] = { c_s2, c_s1 };
+        ds_ShapeWorldTransform(t_arr + 0, pipeline, s2);
+        ds_ShapeWorldTransform(t_arr + 1, pipeline, s1);
+	    collision_count = c_mesh_contact_methods[c_s1->type](frame, manifold, triangle, cache, c_s_arr, t_arr, ref);
+    }
+    return collision_count;
 }
 
 
-f32 ds_ShapeRaycastParameter(struct arena *tmp, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray)
+f32 ds_ShapeRaycastParameter(const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray)
 {
     ds_Transform transform;
     ds_ShapeWorldTransform(&transform, pipeline, shape);
     const struct c_Shape *c_shape = strdb_Address(pipeline->cshape_db, shape->cshape_handle);
 
-	return c_raycast_parameter_methods[c_shape->type](tmp, c_shape, &transform, ray);
+	return c_raycast_parameter_methods[c_shape->type](c_shape, &transform, ray);
 }
 
-u32 ds_ShapeRaycast(struct arena *tmp, vec3 intersection, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray)
+u32 ds_ShapeRaycast(vec3 intersection, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray)
 {
-	const f32 t = ds_ShapeRaycastParameter(tmp, pipeline, shape, ray);
+	const f32 t = ds_ShapeRaycastParameter(pipeline, shape, ray);
 	if (t == F32_INFINITY) return 0;
 
 	Vec3Copy(intersection, ray->origin);

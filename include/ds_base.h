@@ -33,15 +33,16 @@ extern "C" {
 #include "ds_error.h"
 #include "ds_arch.h"
 #include "ds_time.h"
+#include "ds_semaphore.h"
 #include "ds_thread.h"
 #include "ds_log.h"
 
 #ifdef DS_PROFILE
 	#include "tracy/TracyC.h"
-	#define ProfFrameMark		TracyCFrameMark
-	#define	ProfZone		TracyCZone(ctx, 1)
-	#define ProfZoneNamed(str)	TracyCZoneN(ctx, str, 1)
-	#define ProfZoneEnd		TracyCZoneEnd(ctx)
+	#define ProfFrameMark		    TracyCFrameMark
+	#define	ProfZone		        TracyCZone(ctx, 1)
+	#define ProfZoneNamed(str)	    TracyCZoneN(ctx, str, 1)
+	#define ProfZoneEnd		        TracyCZoneEnd(ctx)
 	#define ProfThreadNamed(str)	TracyCSetThreadName(str)
 #else
 	#define ProfFrameMark		

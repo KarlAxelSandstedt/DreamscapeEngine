@@ -67,7 +67,6 @@ void led_ProjectMenuMain(struct led *led)
 	}
 }
 
-
 void led_Main(struct led *led, const u64 ns_delta)
 {
 	led->ns_delta = ns_delta * led->ns_delta_modifier;

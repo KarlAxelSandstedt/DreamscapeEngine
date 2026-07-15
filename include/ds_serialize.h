@@ -127,15 +127,15 @@ struct ss
 };
 
 /* Allocates a stream on the arena if mem != NULL, otherwise heap allocation. On failure, we return stream = { 0 } */
-struct ss ss_Alloc(struct arena *mem, const u64 bufsize);
+struct ss   ss_Alloc(struct arena *mem, const u64 bufsize);
 /* Initiates a stream that aliases the buf */
-struct ss ss_Buffered(void *buf, const u64 bufsize);
+struct ss   ss_Buffered(void *buf, const u64 bufsize);
 /* free stream resources (when using malloc) */
-void 			    ss_Free(struct ss *ss);
+void 	    ss_Free(struct ss *ss);
 /* return number of whole bytes left */
-u64			        ss_BytesLeft(const struct ss *ss);
+u64		    ss_BytesLeft(const struct ss *ss);
 /* return number of bits left */
-u64			        ss_BitsLeft(const struct ss *ss);
+u64			ss_BitsLeft(const struct ss *ss);
 
 
 /*

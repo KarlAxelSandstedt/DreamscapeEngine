@@ -25,6 +25,8 @@ extern "C" {
 #endif
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "ds_base.h"
 #include "ds_math.h"
@@ -146,14 +148,7 @@ struct test_PerformanceParallel
 	void *		(*test_init)(void);
 	void 		(*test_reset)(void *);
 	void 		(*test_free)(void *);
-	TASK		test;
-};
-
-struct test_PerformanceInput
-{
-	u32 *	a_barrier;
-	void *	args;
-	TASK	test;
+	void 		(*test)(void *);
 };
 
 struct suite_Performance
@@ -233,6 +228,7 @@ extern struct suite_Performance *rng_performance_suite;
 extern struct suite_Performance *serialize_performance_suite;
 extern struct suite_Performance *allocator_performance_suite;
 extern struct suite_Performance *THashMap_performance_suite;
+extern struct suite_Performance *jobscheduler_performance_suite;
 
 //extern struct suite_Correctness *array_list_suite;
 //extern struct suite_Correctness *hierarchy_index_suite;
@@ -241,5 +237,7 @@ extern struct suite_Correctness *allocator_correctness_suite;
 extern struct suite_Correctness *kas_string_correctness_suite;
 extern struct suite_Correctness *serialize_correctness_suite;
 extern struct suite_Correctness *THashMap_correctness_suite;
+extern struct suite_Correctness *jobscheduler_correctness_suite;
+extern struct suite_Correctness *geometry_correctness_suite;
 
 #endif

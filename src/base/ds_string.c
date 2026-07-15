@@ -95,7 +95,7 @@ utf32 Utf32StreamConsumeNonWhitespace(utf32 *stream)
 
 u32 Utf8ReadCodepoint(u64 *new_offset, const utf8 *str, const u64 offset)
 {
-	u32 decoded;
+	u32 decoded = 0;
 	u32 bad_sequence = 0;
 
 	const u32 inv = ~((u32) (str->buf[offset]) << 24);

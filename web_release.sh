@@ -10,8 +10,34 @@ else
 	CMAKE_GENERATOR="Unix Makefiles"
 fi
 
-emcmake cmake -S . -B build -Dapply_optimization_options=ON -DCMAKE_BUILD_TYPE=Release -G $CMAKE_GENERATOR
+BUILD_CONFIG="build/build_config.txt"
+BUILD_ID="WebRelease"
+
+if [ ! -d build ]; then
+    mkdir build
+    touch "$BUILD_CONFIG"
+fi
+
+read -r BUILD_ID_CURRENT < "$BUILD_CONFIG"
+if [ "$BUILD_ID" != "$BUILD_ID_CURRENT" ]; then
+    rm -r build
+    mkdir build
+    touch "$BUILD_CONFIG"
+    echo "$BUILD_ID" | tee "$BUILD_CONFIG"
+fi
+
+source "$EMSDK/emsdk.sh"
+emcmake cmake -S . -B build \
+     -DCMAKE_TOOLCHAIN_FILE=$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake \
+    -DCMAKE_FIND_ROOT_PATH=$EMSDK/upstream/emscripten/cache/sysroot \
+    -DDS_TEST_PHYSICS=ON \
+    -DDS_DEBUG=OFF \
+    -DDS_OPTIMIZE=ON \
+    -DCMAKE_BUILD_TYPE=Release \
+    -G $CMAKE_GENERATOR
 cd build
 cmake --build . --parallel
-emrun engine_sandbox.html
-cd ..
+
+emrun --browser=/usr/bin/brave-browser DreamscapeTest.html
+#node engine_sandbox.js
+c

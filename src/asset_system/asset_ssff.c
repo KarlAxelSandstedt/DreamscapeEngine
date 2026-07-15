@@ -310,10 +310,10 @@ i32 wi, he, co;
 
 void SsffSave(const struct assetSsff *asset, const struct ssff_header *header)
 {
-	struct arena tmp = ArenaAlloc1MB();
+	struct arena *tmp = ArenaPushScratch();
 
 	struct file file = FileNull();
-	if (FileTryCreateAtCwd(&tmp, &file, asset->filepath, FILE_TRUNCATE) != FS_SUCCESS)
+	if (FileTryCreateAtCwd(tmp, &file, asset->filepath, FILE_TRUNCATE) != FS_SUCCESS)
 	{
 		LogString(T_ASSET, S_FATAL, "Failed to create .ssff file handle");
 		FatalCleanupAndExit();
@@ -322,19 +322,19 @@ void SsffSave(const struct assetSsff *asset, const struct ssff_header *header)
 	FileWriteAppend(&file, (u8 *) header, header->size);
 	FileClose(&file);
 
-	ArenaFree1MB(&tmp);
+    ArenaPopScratch();
 }
 
 #endif
 
 const struct ssff_header *SsffLoad(struct assetSsff *asset)
 {
-	struct arena tmp = ArenaAlloc1MB();
+	struct arena *tmp = ArenaPushScratch();
 
-	const struct ssff_header *header = (const struct ssff_header *) FileDumpAtCwd(&tmp, asset->filepath).data;
+	const struct ssff_header *header = (const struct ssff_header *) FileDumpAtCwd(tmp, asset->filepath).data;
 	asset->loaded = (header) ? 1 : 0;
 
-	ArenaFree1MB(&tmp);
+    ArenaPopScratch();
 	return header;
 }
 

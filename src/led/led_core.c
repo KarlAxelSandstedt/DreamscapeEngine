@@ -834,7 +834,7 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 {
 	ds_Assert(PowerOfTwoCheck(n) && n >= 32);
 
-	struct arena tmp = ArenaAlloc1MB();
+	struct arena *tmp = ArenaPushScratch();
 
 	struct triMesh mesh = 
 	{
@@ -854,7 +854,7 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 	for (u32 o = 0; o < OCTAVES; ++o)
 	{
 		const u32 on = (n >> o) + 1;
-		grad[o] = ArenaPush(&tmp, on*on*sizeof(vec2));
+		grad[o] = ArenaPush(tmp, on*on*sizeof(vec2));
 		for (u32 x = 0; x < on; ++x)
 		{
 			for (u32 z = 0; z < on; ++z)
@@ -1000,7 +1000,7 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 		}
 	}
 
-	ArenaFree1MB(&tmp);
+	ArenaPopScratch();
 
 	struct aabb bbox = TriMeshBbox(&mesh);
 	vec3 local_origin;
@@ -1020,15 +1020,33 @@ void led_WallSmashSimulationSetup(struct led *led)
     ds_Id tagged_id;
 
 #define dsphere_v_count 	30
-	const u32 dsphere_count = 40;
-	const u32 capsule_count = 20;
-	const u32 tower1_count = 2;
-	const u32 tower2_count = 4;
-	const u32 tower1_box_count = 40;
-	const u32 tower2_box_count = 10;
-    const u32 multibox_count = 5;
+    //const u32 floor_count = 10;
+	//const u32 dsphere_count = 40;
+	//const u32 capsule_count = 20;
+	//const u32 tower1_count = 2;
+	//const u32 tower2_count = 4;
+	//const u32 tower1_box_count = 40;
+	//const u32 tower2_box_count = 10;
+    //const u32 multibox_count = 5;
+	//const u32 pyramid_layers = 15;
+	//const u32 pyramid_count = 3;
+    //const u32 incr_count = 10;
+   
+    const u32 floor_count = 10;
+	const u32 dsphere_count = 0;
+	//const u32 dsphere_count = 120;
+	//const u32 capsule_count = 400;
+	const u32 capsule_count = 0;
+	const u32 tower1_count = 0;
+	const u32 tower2_count = 0;
+	const u32 tower1_box_count = 0;
+	const u32 tower2_box_count = 0;
+    const u32 multibox_count = 0;
 	const u32 pyramid_layers = 15;
-	const u32 pyramid_count = 3;
+	const u32 pyramid_count = 5;
+	//const u32 pyramid_layers = 0;
+	//const u32 pyramid_count = 0;
+    const u32 incr_count = 0;
 	const u32 bodies = tower1_box_count + tower2_box_count + 3 + pyramid_layers*(pyramid_layers+1) / 2;
 
 	/* Setup rigid bodies */
@@ -1036,7 +1054,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 	const f32 ramp_friction = 0.1f;
 	const f32 sphere_friction = 0.1f;
 	const f32 floor_friction = 0.8f;
-	const f32 capsule_friction = 0.8f;
+	const f32 capsule_friction = 0.1f;
 
 	const f32 alpha1 = 0.7f;
 	const f32 alpha2 = 0.5f;
@@ -1045,15 +1063,14 @@ void led_WallSmashSimulationSetup(struct led *led)
 	const vec4 tower2_color = { 54.0f/256.0f, 183.0f/256.0f, 122.0f/256.0f, alpha2 };
 	const vec4 pyramid_color = { 254.0f/256.0f, 181.0f/256.0f, 82.0f/256.0f,alpha2 };
 	const vec4 floor_color = { 0.8f, 0.6f, 0.6f,                            alpha2 };
-	const vec4 ramp_color = { 165.0f/256.0f, 242.0f/256.0f, 243.0f/256.0f,  alpha2 };
+	const vec4 ramp_color = { 165.0f/256.0f, 172.0f/256.0f, 243.0f/256.0f,  alpha2 };
 	const vec4 sphere_color = { 0.2f, 0.9f, 0.5f,                             alpha1 };
 	const vec4 capsule_color = { 0.1f, 0.4f, 0.8f, 				alpha2 };
 	const vec4 multibox_color = { 0.2f, 0.3f, 0.6f, 				alpha2 };
 	const vec4 multidsphere_color = { 0.9f, 0.6f, 0.1f, 				alpha2 };
-	const vec4 map_color = { 0.5f, 0.5f, 0.8f, 0.7f };
+	const vec4 map_color = { 0.5f, 0.7f, 0.7f, 0.7f };
 
 	const f32 box_side = 1.0f;
-	struct aabb box_aabb = { .center = { 0.0f, 0.0f, 0.0f }, .hw = { box_side / 2.0f, box_side / 4.0f, box_side / 2.0f} };
 
 	const f32 ramp_width = 10.0f;
 	const f32 ramp_length = 60.0f;
@@ -1081,18 +1098,21 @@ void led_WallSmashSimulationSetup(struct led *led)
 	}
 
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_floor");
-    const vec3 ramp_hw = { 8.0f * ramp_width, 0.5f, ramp_length };
-    led_CollisionBoxAdd(led, id, ramp_hw);
+    const vec3 floor_hw = { 10.0f, 0.5f, 10.0f };
+    led_CollisionBoxAdd(led, id, floor_hw);
 
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_capsule");
     led_CollisionCapsuleAdd(led, id, 0.5f, 1.0f);
 
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_box");
-    const vec3 box_hw = { box_side / 2.0f, box_side / 4.0f, box_side / 2.0f };
+    const vec3 box_hw = { box_side / 2.0f, box_side, box_side / 2.0f };
     led_CollisionBoxAdd(led, id, box_hw);
 
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_sphere");
     led_CollisionSphereAdd(led, id, 2.0f);
+
+	id = Utf8Cstr(sys_win->ui->mem_frame, "c_s_sphere");
+    led_CollisionSphereAdd(led, id, 0.5f);
 
 	struct dcel *c_ramp = ArenaPush(&sys_win->mem_persistent, sizeof(struct dcel));
 	*c_ramp = DcelConvexHull(&sys_win->mem_persistent, ramp_vertices, 6, F32_EPSILON * 100.0f);
@@ -1134,6 +1154,7 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_RigidBodyPrefabAdd(led, Utf8Inline("rb_multibox"), rb_dynamic);
     led_RigidBodyPrefabAdd(led, Utf8Inline("rb_capsule"), rb_dynamic);
     led_RigidBodyPrefabAdd(led, Utf8Inline("rb_sphere"), rb_dynamic);
+    led_RigidBodyPrefabAdd(led, Utf8Inline("rb_s_sphere"), rb_dynamic);
     led_RigidBodyPrefabAdd(led, Utf8Inline("rb_dsphere"), rb_dynamic);
     led_RigidBodyPrefabAdd(led, Utf8Inline("rb_multidsphere"), rb_dynamic);
 
@@ -1143,6 +1164,7 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_RenderMeshAdd(led, Utf8Inline("rm_capsule"), Utf8Inline("c_capsule"));
     led_RenderMeshAdd(led, Utf8Inline("rm_box"), Utf8Inline("c_box"));
     led_RenderMeshAdd(led, Utf8Inline("rm_sphere"), Utf8Inline("c_sphere"));
+    led_RenderMeshAdd(led, Utf8Inline("rm_s_sphere"), Utf8Inline("c_s_sphere"));
     led_RenderMeshAdd(led, Utf8Inline("rm_dsphere"), Utf8Inline("c_dsphere"));
 
     const f32 density = 1.0f;
@@ -1153,6 +1175,7 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_ShapePrefabAdd(led, Utf8Inline("s_box"), Utf8Inline("c_box"), density, restitution, box_friction, margin);
     led_ShapePrefabAdd(led, Utf8Inline("s_capsule"), Utf8Inline("c_capsule"), density, restitution, capsule_friction, margin);
     led_ShapePrefabAdd(led, Utf8Inline("s_sphere"), Utf8Inline("c_sphere"), 100.0f, restitution, sphere_friction, margin);
+    led_ShapePrefabAdd(led, Utf8Inline("s_s_sphere"), Utf8Inline("c_s_sphere"), 100.0f, restitution, sphere_friction, margin);
     led_ShapePrefabAdd(led, Utf8Inline("s_dsphere"), Utf8Inline("c_dsphere"), density, restitution, box_friction, margin);
     led_ShapePrefabAdd(led, Utf8Inline("s_ramp"), Utf8Inline("c_ramp"), density, restitution, ramp_friction, margin);
 
@@ -1161,6 +1184,7 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_ShapePrefabAttachRenderMesh(led, Utf8Inline("s_box"), Utf8Inline("rm_box"));
     led_ShapePrefabAttachRenderMesh(led, Utf8Inline("s_capsule"), Utf8Inline("rm_capsule"));
     led_ShapePrefabAttachRenderMesh(led, Utf8Inline("s_sphere"), Utf8Inline("rm_sphere"));
+    led_ShapePrefabAttachRenderMesh(led, Utf8Inline("s_s_sphere"), Utf8Inline("rm_s_sphere"));
     led_ShapePrefabAttachRenderMesh(led, Utf8Inline("s_dsphere"), Utf8Inline("rm_dsphere"));
     led_ShapePrefabAttachRenderMesh(led, Utf8Inline("s_ramp"), Utf8Inline("rm_ramp"));
 
@@ -1170,6 +1194,7 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_box"), Utf8Inline("s_box"), Utf8Inline("l_s_box"), &transform);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_capsule"), Utf8Inline("s_capsule"), Utf8Inline("l_s_capsule"), &transform);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_sphere"), Utf8Inline("s_sphere"), Utf8Inline("l_s_sphere"), &transform);
+    led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_s_sphere"), Utf8Inline("s_s_sphere"), Utf8Inline("l_s_s_sphere"), &transform);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_dsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere"), &transform);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_ramp"), Utf8Inline("s_ramp"), Utf8Inline("l_s_ramp"), &transform);
 
@@ -1210,19 +1235,14 @@ void led_WallSmashSimulationSetup(struct led *led)
 	const vec3 sphere_translation = { -0.5, 0.5f + ramp_height, -ramp_length };
 	const vec3 box_translation =  {-0.5f, 0.0f, -0.5f};
 	const vec3 ramp_translation = {-5.0f , -5.0f, -15.0f};
-	const vec3 floor_translation = { 0.0f, -ramp_width/2.0f - 1.0f, ramp_length / 2.0f -ramp_width/2.0f};
+	vec3 floor_translation = { 0.0f, -ramp_width/2.0f - 1.0f, ramp_length / 2.0f -ramp_width/2.0f};
 	const vec3 box_base_translation = { 0.0f, floor_translation[1] + 1.0f, floor_translation[2] / 2.0f};
 	const vec3 dsphere_base_translation = { -15.0f, floor_translation[1] + 1.0f, floor_translation[2] / 2.0f + 20.0f};
     const vec3 multibox_base_translation = { 0.0f, floor_translation[1] + 1.0f, floor_translation[2] / 2.0f -10.0f };
     const vec3 multidsphere_base_translation = { 0.0f, floor_translation[1] + 1.0f, floor_translation[2] / 2.0f -14.0f };
     const vec3 map_translation = { 0.0f, -25.0f, 0.0f };
+    floor_translation[1] -= 50.0f;
 
-    id = Utf8Cstr(sys_win->ui->mem_frame, "led_floor");
-    tagged_id = led_NodeAdd(led, id, Utf8Empty());
-    led_NodeSetPosition(led, tagged_id, floor_translation);
-    led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_floor"));
-    led_NodeSetColor(led, tagged_id, floor_color, 1.0f);
-	
     id = Utf8Cstr(sys_win->ui->mem_frame, "led_map");
     tagged_id = led_NodeAdd(led, id, Utf8Empty());
     led_NodeSetPosition(led, tagged_id, map_translation);
@@ -1234,6 +1254,26 @@ void led_WallSmashSimulationSetup(struct led *led)
 	const f32 angle = F32_PI / 16.0f;
 	QuatAxisAngle(led_map->transform.rotation, axis, angle);
 
+    for (u32 i = 0; i < floor_count; ++i)
+    {
+        const f32 fi = -(f32) floor_count/2.0f + i;
+        for (u32 j = 0; j < floor_count; ++j)
+        {
+            const f32 fj = -(f32) floor_count/2.0f + j;
+            const vec3 floor_offset =
+            {
+                floor_translation[0] + fi*floor_hw[0]*2.0f,
+                floor_translation[1], 
+                floor_translation[2] + fj*floor_hw[2]*2.0f,
+            };
+		    id = Utf8Format(sys_win->ui->mem_frame, "led_floor_%u_%u", i, j);
+            tagged_id = led_NodeAdd(led, id, Utf8Empty());
+            led_NodeSetPosition(led, tagged_id, floor_offset);
+            led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_floor"));
+            led_NodeSetColor(led, tagged_id, floor_color, 1.0f);
+        }
+    }
+	
     id = Utf8Cstr(sys_win->ui->mem_frame, "led_ramp");
     tagged_id = led_NodeAdd(led, id, Utf8Empty());
     led_NodeSetPosition(led, tagged_id, ramp_translation);
@@ -1280,9 +1320,9 @@ void led_WallSmashSimulationSetup(struct led *led)
 	{	
 		vec3 translation;
 		Vec3Copy(translation, dsphere_base_translation);
-		translation[0] += (10.0f - 38.0f * (f32) i / dsphere_count) * f32_cos(i * F32_PI*37.0f/197.0f);
+		translation[0] += (10.0f - 38.0f * (f32) i / capsule_count) * f32_cos(i * F32_PI*37.0f/197.0f);
 		translation[1] += 25.0f + (f32) i / 2.0f;
-		translation[2] += (10.0f - 38.0f * (f32) i / dsphere_count) * f32_sin(i * F32_PI*37.0f/197.0f);
+		translation[2] += (10.0f - 38.0f * (f32) i / capsule_count) * f32_sin(i * F32_PI*37.0f/197.0f);
 
 		id = Utf8Format(sys_win->ui->mem_frame, "capsule_%u", i);
         tagged_id = led_NodeAdd(led, id, Utf8Empty());
@@ -1310,7 +1350,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 	{
 		for (u32 i = 0; i < pyramid_layers; ++i)
 		{
-			const f32 local_y = i * box_side;
+			const f32 local_y = i * box_hw[1]*4.0f;
 			for (u32 j = 0; j < pyramid_layers-i; ++j)
 			{
 				const f32 local_x = j -(pyramid_layers-i-1) * box_side / 2.0f;
@@ -1324,6 +1364,8 @@ void led_WallSmashSimulationSetup(struct led *led)
                 tagged_id = led_NodeAdd(led, id, Utf8Empty());
                 led_NodeSetPosition(led, tagged_id, translation);
                 led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_box"));
+                //led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_capsule"));
+                //led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_s_sphere"));
                 led_NodeSetColor(led, tagged_id, pyramid_color, 1.0f);
 			}
 		}
@@ -1338,7 +1380,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 				vec3 translation;
 				Vec3Copy(translation, box_base_translation);
 				translation[2] += 15.0f + 2.0f*k;
-				translation[1] += (f32) i * box_aabb.hw[1] * 2.10f;
+				translation[1] += (f32) i * box_hw[1] * 2.10f;
 				translation[0] += 15.0f + 2.0f*j;
 
 				id = Utf8Format(sys_win->ui->mem_frame, "tower1_%u_%u_%u", i, j, k);
@@ -1352,14 +1394,14 @@ void led_WallSmashSimulationSetup(struct led *led)
 
 	//for (u32 k = 0; k < tower2_count; ++k)
     //{
-        for (u32 j = 0; j < 10; ++j)
+        for (u32 j = 0; j < incr_count; ++j)
         {
     		for (u32 i = 0; i <= j; ++i)
 			{
 				vec3 translation;
 				Vec3Copy(translation, box_base_translation);
 				translation[2] -= 15.0f + 2.0f*0;
-				translation[1] += (f32) i * box_aabb.hw[1] * 2.10f;
+				translation[1] += (f32) i * box_hw[1] * 2.10f;
 				translation[0] -= 15.0f + 1.5f*j;
 			
 				id = Utf8Format(sys_win->ui->mem_frame, "tower2_%u_%u_%u", i, j, 0);
@@ -1399,8 +1441,8 @@ void led_Compile(struct led *led)
 
 void led_Refresh(struct led *led)
 {
-    struct arena tmp = ArenaAlloc1MB();
-	struct hi_Iterator it = hi_IteratorAlloc(&tmp, &led->node_hierarchy, LED_NODE_ROOT);
+    struct arena *tmp = ArenaPushScratch();
+	struct hi_Iterator it = hi_IteratorAlloc(tmp, &led->node_hierarchy, LED_NODE_ROOT);
     hi_IteratorNextDf(&it);
 	while(it.count)
 	{
@@ -1418,7 +1460,7 @@ void led_Refresh(struct led *led)
             hi_IteratorNextDf(&it);
         }
 	}
-    ArenaFree1MB(&tmp);
+    ArenaPopScratch();
 }
 
 void led_Run(struct led *led)
@@ -1705,7 +1747,7 @@ static void led_EngineRun(struct led *led)
 				}
 			} break;
 
-#ifdef DS_PHYSICS_DEBUG
+//#ifdef DS_PHYSICS_DEBUG
 			case PHYSICS_EVENT_ISLAND_NEW:
 			{
 				struct ds_Island *is = ds_PoolAddress(&led->physics.is_db.island_pool, event->island);
@@ -1738,7 +1780,7 @@ static void led_EngineRun(struct led *led)
 					}
 				}
 			} break;
-#endif
+//#endif
 
 			case PHYSICS_EVENT_ISLAND_REMOVED:
 			{

@@ -52,44 +52,6 @@ struct ds_MemSlot
 	u32	    huge_pages;	/* huge memory pages were requested (Up to the kernel to decide) */
 };
 
-
-/*
-Thread-Safe block allocator
-===========================
-Thread-safe fixed size block allocator. 
-*/
-
-struct threadBlockAllocator
-{
-	/* pads for 64 and 128 cachelines */
-	u8				pad1[DS_CACHE_LINE_UB];
-	ds_Align(DS_CACHE_LINE_UB) u64	a_next;
-	u8				pad2[DS_CACHE_LINE_UB];
-	u8 *				block;
-	u64				block_size;
-	u64				max_count;
-	struct ds_MemSlot			mem_slot;
-};
-
-/* initalize allocator with at least the given block count */
-void 	ThreadBlockAllocatorAlloc(struct threadBlockAllocator *allocator, const u64 block_count, const u64 block_size);
-/* Release allocator resources */
-void	ThreadBlockAllocatorFree(struct threadBlockAllocator *allocator);
-/* Returns pointer to requested block, or NULL if  out of memory */
-void *	ThreadBlockAlloc(struct threadBlockAllocator *allocator);
-/* Free block */
-void  	ThreadBlockFree(struct threadBlockAllocator *allocator, void *addr);
-
-/* returns a 256B cache aligned block on success, NULL on out-of-memory */
-void *	ThreadAlloc256B(void);
-/* returns a 1MB cache aligned block on success, NULL on out-of-memory */
-void *	ThreadAlloc1MB(void);
-/* free a 256B block */
-void 	ThreadFree256B(void *addr);
-/* free a 1MB block */
-void 	ThreadFree1MB(void *addr);
-
-
 /*
 memConfig 
 =========
@@ -98,15 +60,13 @@ Global memory configuration structure.
 
 struct memConfig
 {
-	struct threadBlockAllocator	block_allocator_256B;
-	struct threadBlockAllocator 	block_allocator_1MB;
 	u64				page_size;
 	u64				alloc_size_min;
 };
 extern struct memConfig *g_mem_config;
 
 /* Initalize global memConfig and allocate resources */
-void ds_MemApiInit(const u32 count_256B, const u32 count_1MB);
+void ds_MemApiInit(void);
 /* Shutdown global memConfig resources */
 void ds_MemApiShutdown(void);
 
@@ -131,7 +91,7 @@ not as a requirement the platform must adhere to.
  * Return a (at least) page size aligned allocation with at least size bytes. If huge_pages is true, the 
  * kernel is advised to use huge pages in the allocation. On success, the function sets the input memSlot
  * and returns a non-NULL valid memory address. On failure, the function returns NULL, and sets 
- * slot->address = NULL * and slot->size = 0;
+ * slot->address = NULL and slot->size = 0;
  */
 void *	ds_Alloc(struct ds_MemSlot *slot, const u64 size, const u32 huge_pages);
 /* 
@@ -187,11 +147,6 @@ struct arena
 	struct ds_MemSlot		slot;
 };
 
-/* setup arena using global block allocator */
-struct arena	ArenaAlloc1MB(void);
-/*  global block allocator free wrapper */
-void		ArenaFree1MB(struct arena *mem);
-
 /* Record arena memory position */
 void		ArenaPushRecord(struct arena *ar);
 /* Return to last recorded memory position, given that recorded mem_left >= current mem_left. */
@@ -200,7 +155,7 @@ void		ArenaPopRecord(struct arena *ar);
 void 		ArenaRemoveRecord(struct arena *ar);
 
 /* If allocation failed, return arena = { 0 } */
-struct arena	ArenaAlloc(const u64 size);
+struct arena ArenaAlloc(struct arena *mem, const u64 size);
 /* free heap memory and set *ar = empty_arena */
 void		ArenaFree(struct arena *ar);
 /* flush contents, reset stack to start of stack */
@@ -748,8 +703,8 @@ at the appropriate places. This Declares and Generates the following functions
 #define TSTACK_STRUCT_DEFINE(struct_name, name)                                                                 \
 struct struct_name ## name ## TStack                                                                            \
 {                                                                                                               \
-    struct struct_name ## TPool *   pool;                                                                       \
     u64                             a_head;                                                                     \
+    struct struct_name ## TPool *   pool;                                                                       \
     u8                              pad[64 - sizeof(u64) - sizeof(void *)];                                     \
 }
 

@@ -24,19 +24,11 @@
 #include "dynamics.h"
 #include "ds_job.h"
 
-dsThreadLocal struct collisionDebug *tl_debug;
+struct collisionDebug *g_collision_debug;
 
-u32 g_a_thread_counter = 0;
-
-static void ThreadSetCollisionDebug(void *task_addr)
+void ds_DynamicsStaticAssert(void)
 {
-	struct task *task = task_addr;
-	struct worker *worker = task->executor;
-	const struct ds_RigidBodyPipeline *pipeline = task->input;
-	tl_debug = pipeline->debug + ds_ThreadSelfIndex();
-
-	AtomicFetchAddRel32(&g_a_thread_counter, 1);
-	while (AtomicLoadAcq32(&g_a_thread_counter) != pipeline->debug_count);
+    ds_StaticAssert(sizeof(struct ds_NarrowPhaseJob) == DS_CACHE_LINE, "");
 }
 
 struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct strdb *cshape_db, struct strdb *prefab_db)
@@ -47,7 +39,7 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 		.ns_tick = ns_tick,
 		.ns_elapsed = 0,
 		.ns_start = 0,
-		.frame = ArenaAlloc(frame_memory),
+		.frame = ArenaAlloc(mem, frame_memory),
 		.frames_completed = 0,
 	};
 
@@ -82,7 +74,7 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 	pipeline.body_non_marked_list = dll_Init(struct ds_RigidBody);
 
 	pipeline.shape_pool = ds_PoolAlloc(NULL, initial_size, struct ds_Shape, GROWABLE);
-	pipeline.shape_bvh = DbvhAlloc(NULL, 2*initial_size, 1);
+	pipeline.shape_bvh = DbvhAlloc(NULL, 2*initial_size, GROWABLE);
 
 	pipeline.event_pool = ds_PoolAlloc(NULL, 256, struct physicsEvent, GROWABLE);
 	pipeline.event_list = dll_Init(struct physicsEvent);
@@ -97,24 +89,22 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 
 	pipeline.debug_count = 0;
 	pipeline.debug = NULL;
-#ifdef DS_PHYSICS_DEBUG
-	struct task_stream *stream = task_stream_init(&pipeline.frame);
 
+    pipeline.cd_jobs = ArenaPushAligned(mem, sizeof(struct ds_CollisionJobPhase), DS_CACHE_LINE);
+    pipeline.is_jobs = ArenaPushAligned(mem, sizeof(struct ds_IslandJobPhase), DS_CACHE_LINE);
+    ds_JobPhaseAlloc(mem, &pipeline.cd_jobs->phase, COLLISION_JOB_COUNT, ds_CollisionJobPhaseDispatch);
+    ds_JobPhaseAlloc(mem, &pipeline.is_jobs->phase, ISLAND_JOB_COUNT, ds_IslandJobPhaseDispatch);
+#ifdef DS_PHYSICS_DEBUG
 	pipeline.debug_count = g_arch_config->logical_core_count;
 	pipeline.debug = malloc(g_arch_config->logical_core_count * sizeof(struct collisionDebug));
+    g_collision_debug = pipeline.debug;
 	for (u32 i = 0; i < pipeline.debug_count; ++i)
 	{
 		pipeline.debug[i].stack_segment = stack_visualSegmentAlloc(NULL, 1024, GROWABLE);
-		task_stream_dispatch(&pipeline.frame, stream, ThreadSetCollisionDebug, &pipeline);
 	}
-
-	task_main_master_run_available_jobs();
-
-	/* spin wait until last job completes */
-	task_stream_spin_wait(stream);
-	/* release any task resources */
-	task_stream_cleanup(stream);		
 #endif
+
+    pipeline.numerics_config = ds_NumericsConfigDefault();
 
 	return pipeline;
 }
@@ -204,43 +194,173 @@ struct tcc_Input
     struct ds_Shape *               s2;
 };
 
-static void ThreadCalculateContact(void *task_addr)
+static u32 NarrowPhaseSeedJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPhaseSeedJob *job)
 {
 	ProfZone;
 
-	struct task *task = task_addr;
-	struct worker *worker = task->executor;
-    struct tcc_Input *in = task->input;
-    struct tcc_Output *out = in->out;
+    const struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
 
-    out->cache = NULL;
-    out->cache_index = U32_MAX;
-    if (in->s1->cshape_type == C_SHAPE_CONVEX_HULL && in->s2->cshape_type == C_SHAPE_CONVEX_HULL)
+    const u32 count = job->high - job->low;
+    const u32 base = ds_JobPhaseReserve(&phase->phase, COLLISION_JOB_NARROWPHASE, count);
+    ds_Assert(base + count <= phase->narrowphase_count_max);
+
+    u32 job_count = 0;
+    for (u32 i = 0; i < count; ++i)
     {
-        const struct ds_RigidBody *b1 = ds_PoolAddress(&in->pipeline->body_pool, in->s1->body);
-        const struct ds_RigidBody *b2 = ds_PoolAddress(&in->pipeline->body_pool, in->s2->body);
-        const u32 s1_index = ds_PoolIndex(&in->pipeline->shape_pool, in->s1);
-        const u32 s2_index = ds_PoolIndex(&in->pipeline->shape_pool, in->s2);
-        const struct sat_CacheKey key = sat_CacheKeyCanonical(
-            ((u64)     b1->tag << 32) | in->s1->body,
-            ((u64) in->s1->tag << 32) | s1_index,
-            ((u64)     b2->tag << 32) | in->s2->body,
-            ((u64) in->s2->tag << 32) | s2_index
-        );
- 
-        struct slot slot = sat_CacheLookup(in->pipeline->cdb, &key);
-        if (!slot.address)
+        const u32 index = base + i;
+        const struct dbvhOverlap *overlap = phase->overlap + job->low + i;
+        struct ds_Shape *s1 = (struct ds_Shape *) pipeline->shape_pool.buf + overlap->id1;
+        struct ds_Shape *s2 = (struct ds_Shape *) pipeline->shape_pool.buf + overlap->id2;
+        if (s1->body == s2->body)
         {
-            slot = sat_CacheAdd(in->pipeline->cdb, &key);
+            phase->narrowphase_jobs[index].valid = 0;
+            continue;
         }
-        out->cache_index = slot.index;
-        out->cache = slot.address;
+
+        job_count += 1;
+        phase->narrowphase_jobs[index].valid = 1;
+        phase->narrowphase_jobs[index].key_in = ds_ContactKeyCanonical(s1->body, overlap->id1, s2->body, overlap->id2);
+    
+        ds_WSDequePushBottom(g_scheduler->deque + ds_ThreadSelfIndex(), ds_JobIdInit(COLLISION_JOB_NARROWPHASE, index));
     }
 
-    ds_Assert(in->s1->body != in->s2->body);
-    out->collision = ds_ShapeContact(&worker->mem_frame, &out->manifold, out->cache, in->pipeline, in->s1, in->s2);
+	ProfZoneEnd;
+
+    return job_count - 1;
+}
+
+static u32 NarrowPhaseJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPhaseJob *job)
+{
+	ProfZone;
+
+    const struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
+    job->cache = NULL;
+    job->cache_index = U32_MAX;
+    job->key = &job->key_in;
+
+    const struct ds_RigidBody *b0 = (struct ds_RigidBody *) pipeline->body_pool.buf + job->key_in.body0;
+    const struct ds_RigidBody *b1 = (struct ds_RigidBody *) pipeline->body_pool.buf + job->key_in.body1;
+    const struct ds_Shape *s0 = (struct ds_Shape *) pipeline->shape_pool.buf + job->key_in.shape0;
+    const struct ds_Shape *s1 = (struct ds_Shape *) pipeline->shape_pool.buf + job->key_in.shape1;
+
+    
+    ds_Assert(s0->body != s1->body);
+
+    //TODO simplify with table lookups based on cshape_type...
+    //TODO repetition between the two cases...
+    if (s0->cshape_type == C_SHAPE_TRI_MESH || s1->cshape_type == C_SHAPE_TRI_MESH)
+    {
+        if (s0->cshape_type == C_SHAPE_CONVEX_HULL || s1->cshape_type == C_SHAPE_CONVEX_HULL)
+        {
+            const struct sat_CacheKey key = sat_CacheKeyCanonical(
+                ((u64) b0->tag << 32) | job->key_in.body0,
+                ((u64) s0->tag << 32) | job->key_in.shape0,
+                ((u64) b1->tag << 32) | job->key_in.body1,
+                ((u64) s1->tag << 32) | job->key_in.shape1);
+ 
+            struct slot slot = sat_CacheLookup(pipeline->cdb, &key);
+            if (!slot.address)
+            {
+                slot = sat_CacheAdd(pipeline->cdb, &key);
+            }
+            job->cache_index = slot.index;
+            job->cache = slot.address;
+        }
+
+        u32 *tri;
+        job->collision_count = ds_ShapeMeshContact(g_tl_self->frame, &job->manifold, &tri, job->cache, pipeline, s0, s1);
+        job->key = ArenaPush(g_tl_self->frame, job->collision_count*sizeof(struct ds_ContactKey));
+        if (s0->cshape_type == C_SHAPE_TRI_MESH)
+        {
+            for (u32 i = 0; i < job->collision_count; ++i)
+            {
+                job->key[i] = ds_ContactKeyCanonical(job->key_in.body0, INDIRECT_SHAPE_INIT(tri[i]), job->key_in.body1, job->key_in.shape1);
+            }
+        }
+        else
+        {
+            for (u32 i = 0; i < job->collision_count; ++i)
+            {
+                job->key[i] = ds_ContactKeyCanonical(job->key_in.body0, job->key_in.shape0, job->key_in.body1, INDIRECT_SHAPE_INIT(tri[i]));
+            }
+        }
+    }
+    else
+    {
+        if (s0->cshape_type == C_SHAPE_CONVEX_HULL && s1->cshape_type == C_SHAPE_CONVEX_HULL)
+        {
+            const struct sat_CacheKey key = sat_CacheKeyCanonical(
+                ((u64) b0->tag << 32) | job->key_in.body0,
+                ((u64) s0->tag << 32) | job->key_in.shape0,
+                ((u64) b1->tag << 32) | job->key_in.body1,
+                ((u64) s1->tag << 32) | job->key_in.shape1);
+ 
+            struct slot slot = sat_CacheLookup(pipeline->cdb, &key);
+            if (!slot.address)
+            {
+                slot = sat_CacheAdd(pipeline->cdb, &key);
+            }
+            else
+            {
+                struct sat_Cache *cache = slot.address;
+                /* Quick and dirty cache invalidation for fast moving objects; NOTE: not size invariant!  */
+                if (cache->type != SAT_CACHE_SEPARATION)
+                {
+                    vec3 diff;
+                    Vec3Sub(diff, b0->velocity, b1->velocity);
+                    const f32 linear_vel_abs_diff = f32_abs(Vec3Dot(diff, cache->normal));
+                    if (linear_vel_abs_diff >= g_numerics_config->manifold_cache_linear_velocity_max_diff_allowed)
+                    {
+                        cache->type = SAT_CACHE_NOT_SET;
+                    }
+                }
+            }
+            
+            job->cache_index = slot.index;
+            job->cache = slot.address;
+        }
+
+        struct c_Manifold manifold;
+        struct arena *tmp = ArenaPushScratch();
+        job->collision_count = ds_ShapeContact(&manifold, job->cache, pipeline, s0, s1);
+        ArenaPopScratch();
+
+        if (job->collision_count)
+        {
+            job->manifold = ArenaPushAlignedMemcpy(g_tl_self->frame, &manifold, sizeof(struct c_Manifold), 4);
+            
+            //if (!c_ManifoldCheck(job->manifold))
+            //{
+            //    Breakpoint(1);
+            //    tmp = ArenaPushScratch();
+            //    job->collision_count = ds_ShapeContact(&manifold, job->cache, pipeline, s0, s1);
+            //    ArenaPopScratch();
+            //}
+        }
+    }
+
 
 	ProfZoneEnd;
+
+    return U32_MAX;
+}
+
+u32 ds_CollisionJobPhaseDispatch(const ds_JobId job)
+{
+    struct ds_CollisionJobPhase *phase = (struct ds_CollisionJobPhase *) g_scheduler->phase;
+ 
+    const u32 index = ds_JobIdIndex(job);
+    const enum ds_CollisionJobType type = ds_JobIdTag(job);
+
+    u32 job_diff = 0;
+    switch (type)
+    {
+        case COLLISION_JOB_SEED: { job_diff = NarrowPhaseSeedJob(phase, phase->seed_jobs + index); } break;
+        case COLLISION_JOB_NARROWPHASE: { job_diff = NarrowPhaseJob(phase, phase->narrowphase_jobs + index); } break;
+        default: { ds_AssertString(0, "Should not be possible"); } break;
+    };
+
+    return job_diff;
 }
 
 static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
@@ -288,81 +408,94 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
     	ProfZoneEnd;
     }
 
-	struct tcc_Output *output = NULL;
+    struct ds_CollisionJobPhase *cd_jobs = pipeline->cd_jobs;
     {
-    	ProfZoneNamed("NarrowPhase");
-	    /* acquire any task resources */
-	    struct task_stream *stream = task_stream_init(&pipeline->frame);
-	    struct tcc_Output **next = &output;
+    	ProfZoneNamed("JobPhase (NarrowPhase)");
 
-	    for (u32 i = 0; i < proxy_overlap_count; ++i)
-	    {
-            struct ds_Shape *s1 = ds_PoolAddress(&pipeline->shape_pool, proxy_overlap[i].id1);
-            struct ds_Shape *s2 = ds_PoolAddress(&pipeline->shape_pool, proxy_overlap[i].id2);
-            if (s1->body == s2->body)
+        ds_JobPhaseBegin(&cd_jobs->phase);
+  
+        cd_jobs->pipeline = pipeline;
+        cd_jobs->overlap = proxy_overlap;
+
+        cd_jobs->seed_count_max = 3*g_arch_config->logical_core_count;
+        cd_jobs->seed_jobs = ArenaPush(&pipeline->frame, cd_jobs->seed_count_max*sizeof(struct ds_NarrowPhaseSeedJob));
+        ds_JobPhaseReserve(&cd_jobs->phase, COLLISION_JOB_SEED, cd_jobs->seed_count_max);
+
+        cd_jobs->narrowphase_count_max = proxy_overlap_count;
+        cd_jobs->narrowphase_jobs = ArenaPushAligned(&pipeline->frame, cd_jobs->narrowphase_count_max*sizeof(struct ds_NarrowPhaseJob), DS_CACHE_LINE);
+
+        const u32 jobs_per_seed = proxy_overlap_count / cd_jobs->seed_count_max;
+        u32 extra = proxy_overlap_count % cd_jobs->seed_count_max;
+        u32 low = 0;
+        for (u32 i = 0; i < cd_jobs->seed_count_max; ++i)
+        {
+            cd_jobs->seed_jobs[i].low = low;
+            cd_jobs->seed_jobs[i].high = low + jobs_per_seed;
+            if (extra)
             {
-                continue;
+                cd_jobs->seed_jobs[i].high += 1;
+                extra -= 1;
             }
 
-            struct tcc_Output *out = ArenaPushAligned(&pipeline->frame, sizeof(struct tcc_Output), g_arch_config->cacheline);
-            struct tcc_Input *args = ArenaPushAligned(&pipeline->frame, sizeof(struct tcc_Input), g_arch_config->cacheline);
+            low = cd_jobs->seed_jobs[i].high;
+            ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(COLLISION_JOB_SEED, i));
+        }
+        ds_Assert(cd_jobs->seed_jobs[cd_jobs->seed_count_max - 1].high == proxy_overlap_count);
 
-            out->next = NULL;
-            out->key = ds_ContactKeyCanonical(s1->body, 
-                                              proxy_overlap[i].id1, 
-                                              s2->body, 
-                                              proxy_overlap[i].id2);
+        AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, cd_jobs->seed_count_max);
+        ds_JobPhaseAddFetchRemaining(&cd_jobs->phase, cd_jobs->seed_count_max);
+        ds_WSDequePublish(g_scheduler->seed_deque);
+        
+        for (u32 i = 1; i < g_arch_config->logical_core_count; ++i)
+        {
+            SemaphorePost(&g_scheduler->jobs_are_available);
+        }
 
-            args->out = out;
-            args->pipeline = pipeline;
-            args->s1 = s1;
-            args->s2 = s2;
+        ds_MasterRunAvailableJobs();
 
-	    	task_stream_dispatch(&pipeline->frame, stream, ThreadCalculateContact, args);
-            *next = out;
-            next = &out->next;
-	    }
+        ds_JobPhaseEnd();
 
-	    task_main_master_run_available_jobs();
-	    /* spin wait until last job completes */
-	    task_stream_spin_wait(stream);
-	    /* release any task resources */
-	    task_stream_cleanup(stream);		
-
-    	ProfZoneEnd;
+        ProfZoneEnd;
     }
- 
+
     {
     	ProfZoneNamed("ContactManagement");
 
 	    cdb->sat_cache_frame_usage = BitVecAlloc(&pipeline->frame, cdb->sat_cache_persistent_usage.bit_count, 0, 0);
 	    cdb->contact_frame_usage = BitVecAlloc(&pipeline->frame, cdb->contact_persistent_usage.bit_count, 0, 0);
 
+        const u32 narrowphase_count = AtomicLoadRlx32(&cd_jobs->phase.next[COLLISION_JOB_NARROWPHASE].a_counter);
         struct memArray arr = ArenaPushAlignedAll(&pipeline->frame, sizeof(u32), sizeof(u32));
         cdb->contact_new = arr.addr;
         //fprintf(stderr, "A: {");
-	    for (; output; output = output->next)
-	    {
-            if (output->cache)
+        for (u32 i = 0; i < narrowphase_count; ++i)
+        {
+            const struct ds_NarrowPhaseJob *job = cd_jobs->narrowphase_jobs + i;
+            if (!job->valid)
             {
-                cdb->sat_cache_count += 1;
-                if (output->cache_index < cdb->sat_cache_persistent_usage.bit_count)
-                {
-                    BitVecSetBit(&cdb->sat_cache_frame_usage, output->cache_index, 1);   
-                }
+                continue;
             }
 
-            if (output->collision)
+            if (job->cache)
+            {
+                cdb->sat_cache_count += 1;
+                if (job->cache_index < cdb->sat_cache_persistent_usage.bit_count)
+                {
+                    BitVecSetBit(&cdb->sat_cache_frame_usage, job->cache_index, 1);   
+                } 
+            }
+
+            for (u32 c = 0; c < job->collision_count; ++c)
             {
                 cdb->contact_count += 1;
-                struct slot slot = ds_ContactKeyLookup(pipeline, &output->key);
+                struct slot slot = ds_ContactKeyLookup(pipeline, job->key + c);
                 if (!slot.address)
                 {
-                    slot = ds_ContactAdd(pipeline, &output->manifold, &output->key);
+                    slot = ds_ContactAdd(pipeline, job->manifold + c, job->key + c);
                 }
                 else
                 {
-                    ds_ContactUpdate(pipeline, slot, &output->manifold);
+                    ds_ContactUpdate(pipeline, slot, job->manifold + c);
                 }
                  
 			    /* add to new links if needed */
@@ -379,7 +512,7 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 			    }
 			    //fprintf(stderr, " %u", index);
             }
-	    }
+        }
         //fprintf(stderr, " } ");
         ArenaPopPacked(&pipeline->frame, sizeof(u32)*(arr.len - cdb->contact_new_count));
 
@@ -432,7 +565,6 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 
 	ProfZoneEnd;
 }
-
 
 static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
 {
@@ -541,11 +673,10 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 	}	
 	ArenaPopPacked(&pipeline->frame, (pipeline->is_db.island_pool.count - split_count)*sizeof(u32));
 
-    struct arena tmp = ArenaAlloc1MB();
-	/* TODO: Parallelize island splitting */
+    struct arena *tmp = ArenaPushScratch();
 	for (u32 i = 0; i < split_count; ++i)
 	{
-		isdb_SplitIsland(&tmp, pipeline, split[i]);
+		isdb_SplitIsland(tmp, pipeline, split[i]);
 	}
 
     /* Update contact_persistent_usage */
@@ -567,60 +698,159 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
         	}
         }
     } 
-	ArenaFree1MB(&tmp);
+    ArenaPopScratch();
 
 	ProfZoneEnd;
+}
+
+static u32 IslandJobSeed(struct ds_IslandJobPhase *phase, struct ds_IslandSeedJob *job)
+{
+	ProfZone;
+
+    const u32 thread = ds_ThreadSelfIndex();
+    const struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
+    const u32 base = ds_JobPhaseReserve(&phase->phase, ISLAND_JOB_SOLVE, job->count);
+    ds_Assert(base + job->count <= phase->solve_count_max);
+
+    u32 job_count = 0;
+    u32 island_index = job->island_first;
+    struct ds_Island *is;
+    for (u32 i = 0; i < job->count; ++i, island_index = dll_Next(is))
+	{
+	    is = ds_PoolAddress(&pipeline->is_db.island_pool, island_index);
+
+        const u32 job_index = base + i;
+        struct ds_IslandSolveJob *job = phase->solve_jobs + job_index;
+
+        job->valid = 0;
+        if (!g_solver_config->sleep_enabled || ISLAND_AWAKE_BIT(is))
+	    {
+            job_count += 1;
+            job->valid = 1;
+	    	job->island = island_index;
+            ds_WSDequePushBottom(g_scheduler->deque + thread, ds_JobIdInit(ISLAND_JOB_SOLVE, job_index));
+	    }
+        
+    }
+
+	ProfZoneEnd;
+
+    return job_count - 1;
+}
+
+static u32 IslandJobSolve(struct ds_IslandJobPhase *phase, struct ds_IslandSolveJob *job)
+{
+	ProfZone;
+
+    struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
+    struct ds_Island *is = (struct ds_Island *) pipeline->is_db.island_pool.buf + job->island;
+	job->body_count = is->body_list.count;
+	job->bodies = IslandSolve(g_tl_self->frame, pipeline, is, &job->asleep, phase->timestep);
+
+	ProfZoneEnd;
+
+    return U32_MAX;
+}
+
+u32 ds_IslandJobPhaseDispatch(const ds_JobId job)
+{
+    struct ds_IslandJobPhase *phase = (struct ds_IslandJobPhase *) g_scheduler->phase;
+ 
+    const u32 index = ds_JobIdIndex(job);
+    const enum ds_IslandJobType type = ds_JobIdTag(job);
+
+    u32 job_diff = 0;
+    switch (type)
+    {
+        case ISLAND_JOB_SEED: { job_diff = IslandJobSeed(phase, phase->seed_jobs + index); } break;
+        case ISLAND_JOB_SOLVE: { job_diff = IslandJobSolve(phase, phase->solve_jobs + index); } break;
+        default: { ds_AssertString(0, "Should not be possible"); } break;
+    };
+
+    return job_diff;
 }
 
 static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta) 
 {
 	ProfZone;
 
-	/* acquire any task resources */
-	struct task_stream *stream = task_stream_init(&pipeline->frame);
-	struct ds_IslandSolveOutput *output = NULL;
-	struct ds_IslandSolveOutput **next = &output;
+    struct ds_IslandJobPhase *is_jobs = pipeline->is_jobs;
+    {
+    	ProfZoneNamed("JobPhase(Solve Islands)");
 
-	struct ds_Island *is = NULL;
-	for (u32 i = pipeline->is_db.island_list.first; i != DLL_NULL; i = dll_Next(is))
+        ds_JobPhaseBegin(&is_jobs->phase);
+
+        is_jobs->pipeline = pipeline;
+        is_jobs->timestep = delta;
+
+        is_jobs->seed_count_max = 3*g_arch_config->logical_core_count;
+        is_jobs->seed_jobs = ArenaPush(&pipeline->frame, is_jobs->seed_count_max*sizeof(struct ds_IslandSeedJob));
+        ds_JobPhaseReserve(&is_jobs->phase, ISLAND_JOB_SEED, is_jobs->seed_count_max);
+
+        is_jobs->solve_count_max = pipeline->is_db.island_list.count;
+        is_jobs->solve_jobs = ArenaPush(&pipeline->frame, is_jobs->solve_count_max*sizeof(struct ds_IslandSolveJob));
+
+        const u32 islands_per_seed = pipeline->is_db.island_list.count / is_jobs->seed_count_max;
+        u32 extra = pipeline->is_db.island_list.count % is_jobs->seed_count_max;
+        u32 low = 0;
+        u32 next = pipeline->is_db.island_list.first;
+        for (u32 i = 0; i < is_jobs->seed_count_max; ++i)
+        {
+            u32 high = low + islands_per_seed;
+            if (extra)
+            {
+                high += 1;
+                extra -= 1;
+            }
+            is_jobs->seed_jobs[i].count = high - low;
+            low = high;
+        
+            is_jobs->seed_jobs[i].island_first = next;
+	        struct ds_Island *is = NULL;
+            for (u32 c = 0; c < is_jobs->seed_jobs[i].count; ++c)
+            {
+		        is = ds_PoolAddress(&pipeline->is_db.island_pool, next);
+                next = dll_Next(is);
+            }
+
+            ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(ISLAND_JOB_SEED, i));
+        }
+        ds_Assert(next == DLL_NULL);
+
+        AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, is_jobs->seed_count_max);
+        ds_JobPhaseAddFetchRemaining(&is_jobs->phase, is_jobs->seed_count_max);
+        ds_WSDequePublish(g_scheduler->seed_deque);
+        for (u32 i = 1; i < g_arch_config->logical_core_count; ++i)
+        {
+            SemaphorePost(&g_scheduler->jobs_are_available);
+        }
+
+	    ds_MasterRunAvailableJobs();
+        
+        ds_JobPhaseEnd();
+
+    	ProfZoneEnd;
+    }
+
+	for (u32 i = 0; i < is_jobs->solve_count_max; ++i)
 	{
-		is = ds_PoolAddress(&pipeline->is_db.island_pool, i);
-		if (!g_solver_config->sleep_enabled || ISLAND_AWAKE_BIT(is))
+        const struct ds_IslandSolveJob *job = is_jobs->solve_jobs + i;
+        if (!job->valid)
+        {
+            continue;
+        }
+    
+		if (job->asleep)
 		{
-			struct ds_IslandSolveInput *args = ArenaPush(&pipeline->frame, sizeof(struct ds_IslandSolveInput));
-			*next = ArenaPush(&pipeline->frame, sizeof(struct ds_IslandSolveOutput));
-			(*next)->island = i;
-			(*next)->island_asleep = 0;
-			(*next)->next = NULL;
-			args->out = *next;
-			args->is = is;
-			args->pipeline = pipeline;
-			args->timestep = delta;
-			task_stream_dispatch(&pipeline->frame, stream, ThreadIslandSolve, args);
-
-			next = &(*next)->next;
-		}
-	}
-
-	task_main_master_run_available_jobs();
-	/* spin wait until last job completes */
-	task_stream_spin_wait(stream);
-	/* release any task resources */
-	task_stream_cleanup(stream);		
-
-	for (; output; output = output->next)
-	{
-		if (output->island_asleep)
-		{
-			PhysicsEventIslandAsleep(pipeline, output->island);
+			PhysicsEventIslandAsleep(pipeline, job->island);
 		}
 
-		for (u32 i = 0; i < output->body_count; ++i)
+		for (u32 b = 0; b < job->body_count; ++b)
 		{
 			struct physicsEvent *event = PhysicsPipelineEventPush(pipeline);
 			event->type = PHYSICS_EVENT_BODY_ORIENTATION;
-            const struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, output->bodies[i]);
-			event->body = ((u64) body->tag << 32) | output->bodies[i];
+            const struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, job->bodies[b]);
+			event->body = ((u64) body->tag << 32) | job->bodies[b];
 		}
 	}
 
@@ -715,17 +945,17 @@ void PhysicsPipelineRigidBodyTagForRemoval(struct ds_RigidBodyPipeline *pipeline
 
 static void RemoveMarkedBodies(struct ds_RigidBodyPipeline *pipeline)
 {
-    struct arena tmp = ArenaAlloc1MB();
+    struct arena *tmp = ArenaPushScratch();
     u32 next;
 	for (u32 i = pipeline->body_marked_list.first; i != DLL_NULL; i = next)
 	{
 		struct ds_RigidBody *b = ds_PoolAddress(&pipeline->body_pool, i);
         next = dll_Next(b);
-		ds_RigidBodyRemove(&tmp, pipeline, i);
+		ds_RigidBodyRemove(tmp, pipeline, i);
 	}
 
 	dll_Flush(&pipeline->body_marked_list);
-    ArenaFree1MB(&tmp);
+    ArenaPopScratch();
 }
 
 void PhysicsPipelineSimulateFrame(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
@@ -749,6 +979,8 @@ void PhysicsPipelineTick(struct ds_RigidBodyPipeline *pipeline)
 {
 	ProfZone;
 
+    ds_NumericsConfigPush(&pipeline->numerics_config);
+
 	if (pipeline->frames_completed > 0)
 	{
 		PhysicsPipelineClearFrame(pipeline);
@@ -757,13 +989,14 @@ void PhysicsPipelineTick(struct ds_RigidBodyPipeline *pipeline)
 	const f32 delta = (f32) pipeline->ns_tick / NSEC_PER_SEC;
 	PhysicsPipelineSimulateFrame(pipeline, delta);
 
+    ds_NumericsConfigPop();
+
 	ProfZoneEnd;
 }
 
 u32f32 PhysicsPipelineRaycastParameter(struct arena *mem_tmp1, struct arena *mem_tmp2, const struct ds_RigidBodyPipeline *pipeline, const struct ray *ray)
 {
 	ArenaPushRecord(mem_tmp1);
-	ArenaPushRecord(mem_tmp2);
 
 	struct bvhRaycastInfo info = BvhRaycastInit(mem_tmp1, &pipeline->shape_bvh, ray);
 	while (info.hit_queue.count)
@@ -778,7 +1011,7 @@ u32f32 PhysicsPipelineRaycastParameter(struct arena *mem_tmp1, struct arena *mem
 		{
 			const u32 si = info.node[tuple.u].bt_left;
 			const struct ds_Shape *shape = (struct ds_Shape *) pipeline->shape_pool.buf + si;
-			const f32 t = ds_ShapeRaycastParameter(mem_tmp2, pipeline, shape, ray);
+			const f32 t = ds_ShapeRaycastParameter(pipeline, shape, ray);
 			if (t < info.hit.f)
 			{
 				info.hit = u32f32_inline(si, t);
@@ -791,7 +1024,6 @@ u32f32 PhysicsPipelineRaycastParameter(struct arena *mem_tmp1, struct arena *mem
 	}
 
 	ArenaPopRecord(mem_tmp1);
-	ArenaPopRecord(mem_tmp2);
 
 	return info.hit;
 }
@@ -815,6 +1047,6 @@ void PhysicsPipelinePrintUsage(const struct ds_RigidBodyPipeline *pipeline)
     fprintf(stderr, "\tislands:                     %u\n", pipeline->is_db.island_pool.count);
     fprintf(stderr, "\tcontacts:                    %u\n", pipeline->cdb->contact_net.pool.count);
     fprintf(stderr, "\tsat caches (max):            %u\n", AtomicLoadRlx32(&pipeline->cdb->sat_cache_pool.a_count_max));
-    fprintf(stderr, "\tcontact bitvector size:      %lu\n", pipeline->cdb->contact_persistent_usage.block_count*sizeof(u64));
-    fprintf(stderr, "\tsat cache bitvector size:    %lu\n", pipeline->cdb->sat_cache_persistent_usage.block_count*sizeof(u64));
+    fprintf(stderr, "\tcontact bitvector size:      %lu\n", (long unsigned) pipeline->cdb->contact_persistent_usage.block_count*sizeof(u64));
+    fprintf(stderr, "\tsat cache bitvector size:    %lu\n", (long unsigned) pipeline->cdb->sat_cache_persistent_usage.block_count*sizeof(u64));
 }

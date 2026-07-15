@@ -45,16 +45,16 @@ extern "C" {
 
 #define __GAPI__ __DS_SDL3__
 
-#define DS_CACHE_LINE_UB		64
+#define DS_CACHE_LINE		64
 
 #if defined(__EMSCRIPTEN__)
 
 	#define __DS_COMPILER__ __DS_EMSCRIPTEN__ 
 	#define DS_LITTLE_ENDIAN
-	#define dsThreadLocal __thread
+	#define ds_ThreadLocal __thread
 	#define ds_StaticAssert(ds_Assertion, str)	_Static_assert(ds_Assertion, str)
 	#define ds_Align(alignment) __attribute__((aligned(alignment)))
-    #define ds_ReadWriteBarrier __asm__ __volatile__ ("" ::: "memory")
+    #define ds_AcqRelCompilerBarrier __asm__ __volatile__ ("" ::: "memory")
 	#undef DS_PROFILE
 
 #elif defined(__clang__)
@@ -65,10 +65,10 @@ extern "C" {
 	#elif (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
 		#define DS_BIG_ENDIAN
 	#endif
-	#define dsThreadLocal	__thread
+	#define ds_ThreadLocal	__thread
 	#define ds_StaticAssert(ds_Assertion, str)	_Static_assert(ds_Assertion, str)
 	#define ds_Align(alignment) __attribute__((aligned(alignment)))
-    #define ds_ReadWriteBarrier __asm__ __volatile__ ("" ::: "memory")
+    #define ds_AcqRelCompilerBarrier __asm__ __volatile__ ("" ::: "memory")
 
 #elif defined(__GNUC__)
 
@@ -78,20 +78,21 @@ extern "C" {
 	#elif (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
 		#define DS_BIG_ENDIAN
 	#endif
-	#define dsThreadLocal	__thread
+	#define ds_ThreadLocal	__thread
 	#define ds_StaticAssert(ds_Assertion, str)	_Static_assert(ds_Assertion, str)
 	#define ds_Align(alignment) __attribute__((aligned(alignment)))
-    #define ds_ReadWriteBarrier __asm__ __volatile__ ("" ::: "memory")
+    #define ds_AcqRelCompilerBarrier __asm__ __volatile__ ("" ::: "memory")
 
 #elif defined(_MSC_VER)
 
 	#define __DS_COMPILER__	__DS_MSVC__
 	#define DS_LITTLE_ENDIAN
-	#define dsThreadLocal	__declspec(thread)
+	#define ds_ThreadLocal	__declspec(thread)
 	#define ds_StaticAssert(ds_Assertion, str)	static_assert(ds_Assertion, str)
 	#define ds_Align(alignment) __declspec(align(alignment)) 
-    #include <stdatomic.h>
-    #define ds_ReadWriteBarrier atomic_signal_fence(memory_order_acq_rel)
+    #define ds_AcqRelCompilerBarrier atomic_signal_fence(memory_order_acq_rel)
+
+    #define ds_
 
 #endif
 

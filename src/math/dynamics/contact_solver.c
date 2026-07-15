@@ -155,18 +155,16 @@ void SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, con
 	{			
 		struct velocityConstraint *vc = solver->vcs + i;
         {
-		    const struct ds_RigidBody *b1 = ds_PoolAddress(&pipeline->body_pool, is->contacts[i]->key.body0);
-		    const struct ds_RigidBody *b2 = ds_PoolAddress(&pipeline->body_pool, is->contacts[i]->key.body1);
-		    	
+	        struct ds_RigidBody *b1, *b2;
+            struct ds_Shape *s1, *s2;
+            ds_ContactKeyAddress(&b1, &s1, &b2, &s2, pipeline, &is->contacts[i]->key);
+
             vc->lb1 = (b1->island_index == ISLAND_STATIC)
                 ? solver->body_count
                 : is->body_index_map[is->contacts[i]->key.body0];
             vc->lb2 = (b2->island_index == ISLAND_STATIC)
                 ? solver->body_count
                 : is->body_index_map[is->contacts[i]->key.body1];
-
-            const struct ds_Shape *s1 = ds_PoolAddress(&pipeline->shape_pool, is->contacts[i]->key.shape0);
-            const struct ds_Shape *s2 = ds_PoolAddress(&pipeline->shape_pool, is->contacts[i]->key.shape1);
 
 		    vc->restitution = f32_max(s1->restitution, s2->restitution);
 		    vc->friction = f32_sqrt(s1->friction*s2->friction);

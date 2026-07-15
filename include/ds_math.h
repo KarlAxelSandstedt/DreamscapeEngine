@@ -27,16 +27,17 @@ extern "C" {
 #include "ds_random.h"
 #include "float32.h"
 #include "vector.h"
-#include "matrix.h"
-#include "transform.h"
-#include "geometry.h"
 #include "quaternion.h"
+#include "matrix.h"
 
 typedef struct
 {
 	quat	rotation;
 	vec3	position;
 } ds_Transform;
+
+#include "transform.h"
+#include "geometry.h"
 
 static inline ds_Transform ds_TransformIdentity(void)
 {

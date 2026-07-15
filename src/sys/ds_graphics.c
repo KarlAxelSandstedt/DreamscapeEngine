@@ -37,7 +37,7 @@ static void ds_WindowDealloc(struct ds_Window *sys_win)
 	r_SceneDealloc(sys_win->r_scene);
 	ui_Dealloc(sys_win->ui);
 	NativeWindowDestroy(sys_win->native);
-	ArenaFree1MB(&sys_win->mem_persistent);
+	ArenaFree(&sys_win->mem_persistent);
 }
 
 u32 ds_WindowAlloc(const char *title, const vec2u32 position, const vec2u32 size, const u32 parent)
@@ -47,7 +47,7 @@ u32 ds_WindowAlloc(const char *title, const vec2u32 position, const vec2u32 size
 
 	struct ds_Window *sys_win = slot.address;
 
-	sys_win->mem_persistent = ArenaAlloc1MB();
+	sys_win->mem_persistent = ArenaAlloc(NULL, 1024*1024);
 	sys_win->native = NativeWindowCreate(&sys_win->mem_persistent, (const char *) title, position, size);
 
 	sys_win->ui = ui_Alloc();
@@ -80,15 +80,15 @@ u32 ds_WindowAlloc(const char *title, const vec2u32 position, const vec2u32 size
 
 void ds_WindowTagSubHierarchyForDestruction(const u32 root)
 {
-	struct arena tmp = ArenaAlloc1MB();
-	struct hi_Iterator it = hi_IteratorAlloc(&tmp, g_window_hierarchy, root);
+	struct arena *tmp = ArenaPushScratch();
+	struct hi_Iterator it = hi_IteratorAlloc(tmp, g_window_hierarchy, root);
 	while (it.count)
 	{
 		const u32 index = hi_IteratorNextDf(&it);
 		struct ds_Window *sys_win = hi_Address(g_window_hierarchy, index);
 		sys_win->tagged_for_destruction = 1;
 	}
-	ArenaFree1MB(&tmp);
+    ArenaPopScratch();
 }
 
 static void ds_InternalWindowDealloc(const struct hi *hi, const u32 index, void *data)
@@ -99,9 +99,9 @@ static void ds_InternalWindowDealloc(const struct hi *hi, const u32 index, void 
 
 void ds_DeallocTaggedWindows(void)
 {
-	struct arena tmp1 = ArenaAlloc1MB();
-	struct arena tmp2 = ArenaAlloc1MB();
-	struct hi_Iterator it = hi_IteratorAlloc(&tmp1, g_window_hierarchy, g_process_root_window);
+	struct arena *tmp1 = ArenaPushScratch();
+	struct arena *tmp2 = ArenaPushScratch();
+	struct hi_Iterator it = hi_IteratorAlloc(tmp1, g_window_hierarchy, g_process_root_window);
 	while (it.count)
 	{
 		const u32 index = hi_IteratorPeek(&it);
@@ -109,7 +109,7 @@ void ds_DeallocTaggedWindows(void)
 		if (sys_win->tagged_for_destruction)
 		{
 			hi_IteratorSkip(&it);
-			hi_ApplyCustomFreeAndRemove(&tmp2, g_window_hierarchy, index, ds_InternalWindowDealloc, NULL);
+			hi_ApplyCustomFreeAndRemove(tmp2, g_window_hierarchy, index, ds_InternalWindowDealloc, NULL);
 
 		}
 		else
@@ -117,8 +117,8 @@ void ds_DeallocTaggedWindows(void)
 			hi_IteratorNextDf(&it);
 		}
 	}
-	ArenaFree1MB(&tmp1);
-	ArenaFree1MB(&tmp2);
+	ArenaPopScratch();
+	ArenaPopScratch();
 }
 
 struct slot ds_WindowLookup(const u64 native_handle)
@@ -126,8 +126,8 @@ struct slot ds_WindowLookup(const u64 native_handle)
 	struct ds_Window *win = NULL;
 	u32 index = U32_MAX;
 
-	struct arena tmp = ArenaAlloc1MB();
-	struct hi_Iterator it = hi_IteratorAlloc(&tmp, g_window_hierarchy, g_process_root_window);
+	struct arena *tmp = ArenaPushScratch();
+	struct hi_Iterator it = hi_IteratorAlloc(tmp, g_window_hierarchy, g_process_root_window);
 	while (it.count)
 	{
 		const u32 win_index = hi_IteratorNextDf(&it);
@@ -139,7 +139,7 @@ struct slot ds_WindowLookup(const u64 native_handle)
 			break;
 		}
 	}
-	ArenaFree1MB(&tmp);
+	ArenaPopScratch();
 
 	return (struct slot) { .index = index, .address = win };
 }
@@ -210,9 +210,9 @@ void ds_GraphicsApiInit(void)
 
 void ds_GraphicsApiShutdown(void)
 {
-	struct arena tmp = ArenaAlloc1MB();
-	hi_ApplyCustomFreeAndRemove(&tmp, g_window_hierarchy, g_process_root_window, ds_InternalWindowDealloc, NULL);
-	ArenaFree1MB(&tmp);
+	struct arena *tmp = ArenaPushScratch();
+	hi_ApplyCustomFreeAndRemove(tmp, g_window_hierarchy, g_process_root_window, ds_InternalWindowDealloc, NULL);
+    ArenaPopScratch();
 
 	gl_StatePoolDealloc();
 	hi_Dealloc(g_window_hierarchy);

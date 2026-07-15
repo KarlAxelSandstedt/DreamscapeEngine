@@ -34,7 +34,7 @@ extern "C" {
 /************************************************************************/
 
 /* Initiate/cleanup system resources such as timers, input handling, system events, ... */
-void 	ds_PlatformApiInit(struct arena *mem);
+void 	ds_PlatformApiInit(struct arena *mem, const u64 framesize, const u64 scratchsize, const u32 scratch_count);
 void 	ds_PlatformApiShutdown(void);
 
 

@@ -25,109 +25,260 @@ extern "C" {
 #endif
 
 #include "ds_base.h"
-#include "fifo_spmc.h"
-
-/* NOTE: WE ASSUME MASTER THREAD/WORKER HAS ID AND INDEX 0. */
-
-extern struct task_context *g_task_ctx;
-
-typedef void (*TASK)(void *);
-
-struct worker
-{
-	//TODO Cacheline alignment 
-	struct arena	mem_frame;		/* Cleared at start of every frame */	
-	dsThread *	thr;
-	u32 		a_mem_frame_clear;	/* atomic sync-point: if set, on next task run flush mem_frame. */
-};
-
-/* Task bundle: set of tasks commited at the same time. */
-struct task_bundle 
-{
-	semaphore 	bundle_completed;
-	struct task *	tasks;
-	u32 		task_count;
-	u32 		a_tasks_left;
-};
-
-struct task_range 
-{
-	void *base;
-	u64 count;
-};
-
-enum task_batch_type
-{
-	TASK_BATCH_BUNDLE,
-	TASK_BATCH_STREAM,
-};
-
-struct task
-{
-	struct worker *executor;
-	TASK task;
-	void *input;			/* Possibly shared arguments between tasks */
-	void *output;
-	struct task_range *range; 	/* 	If task_range, Set if task is to run over a specific local 
-					 * 	interval of range input.
-					 */
-
-	enum task_batch_type batch_type;
-	void *batch;			/* pointer to bundle or stream.
-					 * If task_bundle, if set, we keep track of when it is done.
-					 * If task_stream, increment stream->a_completed at end.
-					 * */
-};
-
-/* TODO Beware: Make sure to not false-share data between threads here, pad any structs if needed. */
-struct task_context
-{
-	struct task_bundle bundle; /* TODO: Temporary */
-	struct fifoSpmc *tasks;
-	struct worker *workers;
-	u32 worker_count;
-};
-
-/* Init task_context, setup threads inside task_main */
-void 	task_context_init(struct arena *mem_persistent, const u32 thread_count);
-/* Destory resources */
-void 	task_context_destroy(struct task_context *ctx);
-/* Clear any frame resources held by the task context and it's workers */
-void	task_context_frame_clear(void);
-/* main loop for slave workers */
-void  	task_main(dsThread *thr);
-/* master worker runs any available work */
-void 	task_main_master_run_available_jobs(void);
-
-/*********************** Task Streams ***********************/ 
 
 /*
- * Simple lock-free data structure for continuously dispatching and keeping track of work. Every task dispatched
- * using api will increment a_completed on completion. 
- */
-struct task_stream
+ds_JobId
+========
+The ds_JobId is a tuple (tag(8), index(24)) where the tag defines what the type of the job is, and the index
+is used to look up the job in the currently running ds_JobPhase (we assume only one phase in running at a time).
+*/
+
+typedef u32 ds_JobId;
+
+#define DS_JOB_ID_EMPTY             U32_MAX
+#define DS_JOB_ID_NULL              (U32_MAX-1)
+#define DS_JOB_ID_TAG_MASK          ((u32) 0xff000000)
+#define DS_JOB_ID_INDEX_MASK        ((u32) 0x00ffffff)
+
+#define ds_JobIdTag(id)             ((id) >> 24)
+#define ds_JobIdIndex(id)           ((id) & DS_JOB_ID_INDEX_MASK)
+#define ds_JobIdInit(tag, index)    (((u32) (tag) << 24) | (index))
+
+/*
+ds_WSDeque
+==========
+ABP-based Deque by David Chase and Lev (Dynamic Circular Work-Stealing Deque). The first paper does not work with
+weak memory models, and the paper (Correct adn Efficient Work-Stealing for Weak Memory Models) present versions
+for such architectures. Note that the paper contains an integer over/underflow which we must fix.
+
+Internals:
+For simplicity, whenever a deque is reallocated by its owner, the old memory is not freed. The cost of this is small,
+and it greatly simplifies the synchronization between threads. Since we double the size on each reallocation, the
+wasted memory is upper bounded by the current memory usage:
+
+        2^0 + 2^1 + ... 2^(n-1) = 2^n - 1 <= 2^n.
+
+Ideally, no reallocations will ever occur, since the developer should tune the initial size to be reasonable for
+the program that is being built. Note that ds_WSDequeDealloc does not only free the current memory, but also all
+previously allocated memory slots of the deque. 
+*/
+
+/*
+ds_WSDequeMem
+=============
+Helper for stealing threads to atomically load the memory and mask atomically. 
+*/
+struct ds_WSDequeMem
 {
-	u32 a_completed;	/* atomic completed tasks counter */
-	u32 task_count;		/* owned by main-thread 	  */
+    ds_JobId *          id; 
+    u64                 len;
+    u64                 mask;
+    struct ds_MemSlot   mem;
 };
 
-/* acquire resources (if any) */
-struct task_stream *	task_stream_init(struct arena *mem);
-/* Dispatch task for workers to immediately pick up */
-void 			task_stream_dispatch(struct arena *mem, struct task_stream *stream, TASK func, void *args);
-/* spin inside method until  a_completed == total */
-void			task_stream_spin_wait(struct task_stream *stream);	
-/* cleanup resources (if any) */
-void			task_stream_cleanup(struct task_stream *stream);
+struct ds_WSDeque
+{
+    u64                     a_top;                                              /* Shared index for stealing */
+    u8                      pad1[DS_CACHE_LINE - sizeof(u64)];
+    u64                     a_bottom;                                           /* Thread owned index for pushing */
+    u8                      pad2[DS_CACHE_LINE - sizeof(u64)];
+    u32                     a_mem_count;
+    u32                     owner;
+    u64                     to_publish;
+    u8                      pad3[DS_CACHE_LINE - 2*sizeof(u32) - sizeof(u64)];
+    struct ds_WSDequeMem    mem[32];
+};
 
-/*********************** Task Bundles ***********************/ 
+/* Allocate and initialize a new Deque. */
+void        ds_WSDequeAlloc(struct ds_WSDeque *deque, const u32 owner, const u64 len);
+/* Deallocate Deque. */
+void        ds_WSDequeDealloc(struct ds_WSDeque *deque);
+/* Push an unpublished id at the bottom of the Deque. WARNING: Only to be used by the owner of the deque. */
+void        ds_WSDequePushBottom(struct ds_WSDeque *deque, const ds_JobId id);
+/* Publish any pendings jobs */
+void        ds_WSDequePublish(struct ds_WSDeque *deque);
+/* 
+ * Try pop the bottom of Deque. On success, the id is returned.
+ * On a failed CAS, return DS_JOB_ID_NULL, 
+ * otherwise DS_JOB_ID_EMPTY is returned. 
+ */
+ds_JobId    ds_WSDequeTryPopBottom(struct ds_WSDeque *deque);
+/* Try pop the top of Deque. On success, the id is returned, otherwise DS_JOB_ID_NULL is returned. */
+ds_JobId    ds_WSDequeTrySteal(struct ds_WSDeque *deque);
 
-/* Split input range into split_count iterable intervals. task is then run iterably, and TODO: what do we return? */
-struct task_bundle *	task_bundle_split_range(struct arena *mem_task_lifetime, TASK task, const u32 split_count, void *inputs, const u64 input_count, const u64 input_element_size, void *shared_arguments);
-/* Blocked wait on bundle complete */
-void			task_bundle_wait(struct task_bundle *bundle);
-/* Clear and release task bundle for reallocation */
-void			task_bundle_release(struct task_bundle *bundle);
+
+/*
+ds_Worker
+=========
+TODO: We don't really use this at the moment...
+*/
+
+struct ds_Worker
+{
+	ds_Thread *	    thr;
+	u32 		    a_mem_frame_switch;	/* atomic sync-point: if set, on next task run flush mem_frame. */
+    u8              pad[64 - sizeof(void *) - sizeof(u32)];
+};
+
+/* main loop for slave workers */
+void  	ds_WorkerMain(ds_Thread *thr);
+/* master worker runs any available work */
+void 	ds_MasterRunAvailableJobs(void);
+
+
+/*
+ds_JobPhase
+===========
+The ds_JobPhase struct is a helper for building parallel phases in the program. Ideally, all shared memory in a phase
+can be pre-allocated. The master thread then spawns some "seeding" jobs, which is used to further spawn more jobs.
+When all future jobs originating from the seeding jobs are done, the struct will signal its completion. 
+
+Internals:
+
+    Note 1: Sharing growable arrays of jobs is nasty business, so we require each ds_JobPhase to allocate the
+            maximum number of each jobs per type up-front. Hopefully this scales well into the future, as it
+            simplifies job allocation a damn lot at the cost of reserving additional memory. 
+
+
+    Note 2: Each job is defined by its identfier, which breaks into (job_type, job_index). When building a new
+            parallel phase, we would construct something like: 
+
+                ds_CollisionJobPhase
+                {
+                    ds_JobPhase phase;
+                    
+                    job_type1 * jobs1;
+                    ...
+                    job_typeN * jobsN;
+                }
+
+            When a worker grabs a job, it can then look up the job by accessing the global phase. In addition
+            to the struct, one would also have to provide
+
+                ds_CollisionJobPhaseDispatch(ds_JobId id);
+
+            which handles the job lookup and execution. The dispatch function must also return the number
+            of jobs created within the job minus 1, i.e. If no jobs are created, U32_MAX is to be returned.
+*/
+
+struct ds_PaddedCounter
+{
+    u32     a_counter;
+    u8      pad[64 - sizeof(u32)];
+};
+
+typedef u32 (*ds_JobDispatchFunction)(const ds_JobId job);
+
+struct ds_JobPhase
+{
+    ds_JobDispatchFunction      dispatch;
+
+    struct ds_PaddedCounter *   next;       /* next[type].a_counter == Where next job of given type is pushed to */
+    u32                         next_len;
+    u8                          pad1[64 - 2*sizeof(void *) - sizeof(u32)];
+    u32                         a_jobs_remaining;
+    u8                          pad2[64 - sizeof(u32)];
+};
+
+/* Allocate and Initalize phase resources. */
+void    ds_JobPhaseAlloc(struct arena *mem, struct ds_JobPhase *phase, const u32 job_type_count, ds_JobDispatchFunction dispatch);
+/* Reset phase resources and set the global ds_JobPhase in scheduler to phase. */
+void    ds_JobPhaseBegin(struct ds_JobPhase *phase);
+/* Block until all jobs in the phase are completed, and set the global ds_JobPhase in scheduler to NULL. */
+void    ds_JobPhaseEnd(void);
+/* Add new jobs to the remaining jobs counter, and return the new value. */
+u32     ds_JobPhaseAddFetchRemaining(struct ds_JobPhase *phase, const u32 new_jobs_count);
+/* Reserve a number of job slots of the given type, and return the starting index */
+u32     ds_JobPhaseReserve(struct ds_JobPhase *phase, const u32 job_type, const u32 new_jobs_count);
+
+
+/*
+ds_JobScheduler
+==============
+ds_JobScheduler is the global scheduler of all jobs. It runs a single parallel phase at a time.
+
+
+Usage Sketch:
+
+    When using running a phase in the program, the user should setup seeding jobs, initital jobs whose sole
+    purpose is the generate new jobs. This is essentially required as the master thread cannot easily wake 
+    up worker threads and assign them these job spawning tasks. ds_JobScheduler supports this by having a 
+    separate queue for seeding jobs. Any thread that wakes up begins by checking if any seeding jobs are to
+    be executed, and if that is the case, executes the job. THis enables reasonable distribution of jobs during
+    the phase.
+
+    A Phase looks something like 
+
+    ds_JobPhaseBegin(&collision_phase->job_phase)
+    {
+        (1) Reserve job memory
+        collision_phase->seed_jobs = Arena(...)
+        collision_phase->jobs1 = Arena(...)
+        ...
+        collision_phase->jobsN = Arena(...)
+
+        (2) Setup seed jobs and push them onto the seed Deque
+        for (job in collison_phase->seed_jobs) 
+        { 
+            ... 
+            ds_WSDequePushBottom(g_scheduler->seed_deque, job_indentifier);
+        }
+        ds_JobPhaseAddFetchRemaining(&collision_phase->job_phase, collision_phase->seed_jobs_count);
+        AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, collision_phase->seed_jobs_count);
+
+        (3) Publish the deque jobs and wake up threads
+        ds_WSDequePublish(g_scheduler->seed_deque);
+        for (u32 i = 1; i < g_scheduler->worker_count; ++i)
+        {
+            SemaphorePost(&g_scheduler->jobs_are_available);
+        }
+
+        (4) Let the master thread participate in the execution of jobs as well.
+        ds_MasterRunAvailableJobs();
+
+    }
+    (5) Master waits until all remaining jobs in the phase have been completed. It then cleans up.
+    ds_JobPhaseEnc()
+*/
+
+struct ds_JobScheduler
+{
+	struct ds_Worker *  worker;
+    struct ds_WSDeque * deque;              /* worker[i] owns deque[i] */
+    struct ds_WSDeque * seed_deque;         /* Special deque used for seeding tasks */ 
+    struct ds_JobPhase *phase;              /* Currently running phase, if any. */
+
+    u32                 worker_count;
+    u32                 a_running;
+    u32                 steal_attempts;
+
+    u8                  pad1[64 - 4*sizeof(void *) - 3*sizeof(u32)];
+
+	semaphore 	        jobs_are_available;  
+    u8                  pad2[64 - sizeof(semaphore)];
+
+    u32                 a_workers_waiting;
+    u8                  pad3[64 - sizeof(u32)];
+
+    u32                 a_seeds_remaining;
+    u8                  pad4[64 - sizeof(u32)];
+
+    semaphore           phase_completed;
+    u8                  pad5[64 - sizeof(semaphore)];
+
+};
+
+extern struct ds_JobScheduler *g_scheduler;
+
+/* Init Scheduler and setup threads inside ds_WorkerMain */
+void 	ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, const u64 stacksize, const u64 framesize, const u64 scratchsize, const u32 scratch_count, const u64 initial_deque_size);
+/* Destory resources */
+void 	ds_JobSchedulerShutdown(void);
+/* Clear any frame resources held by the task context and it's workers */
+void	ds_JobSchedulerFrameClear(void);
+
+
+
 
 #ifdef __cplusplus
 }

@@ -225,7 +225,7 @@ void r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_siz
 	g_r_core->program[PROGRAM_LIGHTNING].buffer_shared_layout_setter = NULL;
 	g_r_core->program[PROGRAM_LIGHTNING].buffer_local_layout_setter = r_LightningBufferLayoutSetter;
 
-	g_r_core->frame = ArenaAlloc(frame_size); 
+	g_r_core->frame = ArenaAlloc(mem_persistent, frame_size); 
 	if (g_r_core->frame.mem_size == 0)
 	{
 		LogString(T_SYSTEM, S_FATAL, "Failed to allocate renderer frame, exiting.");

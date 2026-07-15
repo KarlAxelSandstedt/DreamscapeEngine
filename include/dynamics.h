@@ -30,11 +30,56 @@ extern "C" {
 #include "collision.h"
 #include "ds_hash_map.h"
 #include "bit_vector.h"
+#include "ds_job.h"
 
 //TODO 
 struct ds_RigidBodyPipeline;
 struct cdb;
 struct ds_Island;
+
+/*
+ds_NumericsConfig
+==================
+ds_NumericsConfig stores configurable values to be used in numerical calculations.
+*/
+
+#define DS_UNIT_M	1.0f
+#define DS_UNIT_DM	0.1f
+#define DS_UNIT_CM	0.01f
+#define DS_UNIT_MM	0.001f
+
+struct ds_NumericsConfig
+{
+    /* Maximum degrees allowed between two vectors for them to be considered parallel */
+    f32 vec3_parallel_check_max_degrees_pending;
+    f32 vec3_parallel_check_max_degrees;
+    f32 vec3_parallel_check_eps;
+
+    /* Maximum degrees allowed for temporal consistency between a cached and new manifold normal */
+    f32 manifold_cache_normal_parallel_check_max_degrees_pending;
+    f32 manifold_cache_normal_parallel_check_max_degrees;
+    f32 manifold_cache_normal_parallel_check_eps;
+
+    /* Maximum difference allowed for temporal consistency between a cached and new manifold depth */
+    f32 manifold_cache_depth_max_diff_allowed_pending;
+    f32 manifold_cache_depth_max_diff_allowed;
+
+    /* 
+     * Maximum velocity along the contact normal  allowed for temporal consistency between a cached and 
+     * new manifold 
+     */
+    f32 manifold_cache_linear_velocity_max_diff_allowed_pending;
+    f32 manifold_cache_linear_velocity_max_diff_allowed;
+};
+extern struct ds_NumericsConfig *g_numerics_config;
+
+/* Return default config */
+struct ds_NumericsConfig    ds_NumericsConfigDefault(void);
+/* Update any pending values in config and push config to global */
+void                        ds_NumericsConfigPush(struct ds_NumericsConfig *config);
+/* Pop global config */
+void                        ds_NumericsConfigPop(void);
+
 
 /*
 ds_Id
@@ -215,18 +260,26 @@ u32	        ds_ShapeTest(const struct ds_RigidBodyPipeline *pipeline, const stru
 f32 	    ds_ShapeDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
 /* 
  * Returns 1 if the shapes are colliding, 0 otherwise. If a collision is found, return a contact manifold
- * with normal pointing from s1 to s2 (and set the sat_cache if non-null and applicable). 
+ * with normal pointing from the reference body towards the incident body (and set the sat_cache if non-null 
+ * and applicable). 
  */
-u32         ds_ShapeContact(struct arena *tmp, struct c_Manifold *manifold, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
+u32         ds_ShapeContact(struct c_Manifold *manifold, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
+/*
+ * Returns the number of triangles in the mesh colliding with the other shape. If collisions are found, manifold and
+ * triangle allocated to store each collision's manifold and triangle index. Each manifold normal points the
+ * reference body towards the incident body. Lastly, set the sat_cache if non-null and applicable.
+ */
+u32         ds_ShapeMeshContact(struct arena *frame, struct c_Manifold **manifold, u32 **triangle, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2); 
+
 /* 
  * Return, if ray intersects shape, t such that ray.origin + t*ray.dir == closest point on shape. 
  *         Otherwise, return F32_INFINITY.
  */
-f32 	    ds_ShapeRaycastParameter(struct arena *tmp, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray);
+f32 	    ds_ShapeRaycastParameter(const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray);
 /* 
  * Return 1 if ray hit shape, 0 otherwise. If hit, we return the closest intersection point 
  */
-u32 	    ds_ShapeRaycast(struct arena *tmp, vec3 intersection, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray);
+u32 	    ds_ShapeRaycast(vec3 intersection, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray);
 
 
 /*
@@ -318,13 +371,27 @@ ds_ContactKey
 ds_ContactKey is the unique key for a contact, and it used in the contact database
 hash map. Since the key must be unique for a contact, we require it to be in 
 canonical form, i.e. you may always assume that body0 < body1.  The shapes are the
-subshapes of their respective bodys making contact. You may always assume that 
-body0 is the reference body in a contact.
+subshapes of their respective bodys making contact, or in the case of a TriMeshBvh
+shape, the index of the triangle in contact, ORed with SHAPE_INDIRECT_FLAG. 
+You may always assume that body0 is the reference body in a contact.
+
+Internals:
+
+    SPHERE, CAPSULE, HULL => shapeN is direct index for the shape
+                 TRI_MESH => shapeN is (SHAPE_INDIRECT_FLAG | triangle_index)
+
+    Thus, when in doubt, use ds_ContactKeyAddress to correctly setup pointers to bodies
+    and shapes.
 */
+
+#define INDIRECT_SHAPE_INIT(s)  ((s) | INDIRECT_SHAPE_FLAG)
+#define INDIRECT_SHAPE_FLAG     0x80000000
+#define INDIRECT_SHAPE_CHECK(s) ((s) & INDIRECT_SHAPE_FLAG)
+
 struct ds_ContactKey
 {
     u32 body0;      /* (body0 < body1)      */
-    u32 shape0;     /* subshape of body0    */
+    u32 shape0;     /* subshape of body0, OR if body0 is a TriMesh, (    */
     u32 body1;      /* (body0 < body1)      */
     u32 shape1;     /* subshape of body1    */
 };
@@ -335,6 +402,8 @@ struct ds_ContactKey    ds_ContactKeyCanonical(const u32 bodyA, const u32 shapeA
 u32                     ds_ContactKeyHash(const struct ds_ContactKey *key);
 /* Return 1 if the two keys are equivalent, otherwise return  0. */
 u32                     ds_ContactKeyEquivalence(const struct ds_ContactKey *keyA, const struct ds_ContactKey *keyB);
+/* Return the body and shape addresses of the key */
+void                    ds_ContactKeyAddress(struct ds_RigidBody **b0, struct ds_Shape **s0, struct ds_RigidBody **b1, struct ds_Shape **s1, const struct ds_RigidBodyPipeline *pipeline, const struct ds_ContactKey *key);
 
 /*
 ds_Contact
@@ -388,8 +457,9 @@ any of their caches, so when we remove a body or a shape, we do not want to remo
 its cache immediately. Instead, we lazily remove caches with 1 frame delay, which
 introduces the ABA problems which justifies adding full ids to the cache key.
 
-//TODO maybe this can be done in a less bloated way...
 */
+
+//TODO maybe this can be done in a less bloated way...
 struct sat_CacheKey
 {
     ds_RigidBodyId  body0;      /* Index(body0) < Index(body1)  */
@@ -408,17 +478,60 @@ u32                 sat_CacheKeyEquivalence(const struct sat_CacheKey *keyA, con
 /*
 sat_Cache
 =========
-Internal physics engine struct for caching SAT-based contact calculations
-each frame.
+Internal physics engine struct for caching SAT-based contact calculations each frame. If a contact was found,
+the contact results may be re-used the next frame if a set of conditions are fullfilled.
+
+::: Internals :::
+
+To ensure temporal coherence when reusing contact information, we currently test:
+
+  1. A penetration check for the cached features: Are we even still penetrating for the given features?
+
+  2. Has the new contact normal drifted to much from the cached normal? The number of degrees-drift per frame 
+     is found in ds_NumericsConfig.
+
+  3. Is the cached feature that produced the deepest point still the deepest feature in the new contact? This
+     test is only relevant for face contacts, as the deepest point may come from the incident body's vertex set
+     or from the body's edge set as a clipped point.
+
+  4. We allow a maximum change in penetration depth per frame, governed by a value in ds_NumericsConfig. This test
+     may be unnecessary as we are already doing a linear velocity check.
+
+  5. We allow a maximum difference in velocity between the two bodies along the contact normal. If the separating
+     velocity is high, the chances are that our manifold is not coherent and we may as well not even try to rebuilt
+     it (a rather costly endevaour). As in the other case, the max difference is found in ds_NumericsConfig.
 */
+
 enum sat_CacheType
 {
     SAT_CACHE_NOT_SET,      /* Cache not set            */
 	SAT_CACHE_SEPARATION,   /* Seperation axis found    */
 	SAT_CACHE_CONTACT_FV,   /* Face-Vertex Contact      */
 	SAT_CACHE_CONTACT_EE,   /* Edge-Edge Contact        */
+	SAT_CACHE_CONTACT_TRI,  /* Mesh-Hull tri cache data */
 	SAT_CACHE_COUNT,
 };
+
+typedef u32 sat_FeatureId;
+
+#define SAT_FEATURE_ID_INDEX_MASK           (0x3fffffff)
+#define SAT_FEATURE_ID_TYPE_MASK            (0xc0000000)
+
+#define SAT_FEATURE_NULL                    U32_MAX
+#define SAT_FEATURE_TYPE_NULL               3
+#define SAT_FEATURE_TYPE_FACE               2
+#define SAT_FEATURE_TYPE_EDGE               1
+#define SAT_FEATURE_TYPE_VERTEX             0
+
+#define sat_FeatureIdVertexCheck(id)        (((id) >> 30) == SAT_FEATURE_TYPE_VERTEX)
+#define sat_FeatureIdEdgeCheck(id)          (((id) >> 30) == SAT_FEATURE_TYPE_EDGE)
+#define sat_FeatureIdFaceCheck(id)          (((id) >> 30) == SAT_FEATURE_TYPE_FACE)
+
+#define sat_FeatureIdType(id)               ((id) >> 30)
+#define sat_FeatureIdIndex(id)              ((id) & SAT_FEATURE_ID_INDEX_MASK)
+#define sat_FeatureIdConstruct(index, type) (((type) << 30) | (SAT_FEATURE_ID_INDEX_MASK & (index)))
+
+struct c_TriHullCache;
 
 struct sat_Cache
 {
@@ -429,23 +542,36 @@ struct sat_Cache
 	enum sat_CacheType	type;
 	union
 	{
-		struct
-		{
-			u32 body;	/* body (0 or 1) containing face    */
-			u32	face;	/* reference face 	                */
-		};
+        struct
+        {
+            /*
+             * type == FACE:
+             *  feature[i].type == FACE => i IS NOT incident face
+             *  feature[i].type != FACE => i IS on incident face
+             *  normal == face normal
+             *
+             * type == EDGE:
+             *  feature[i].type == EDGE
+             *  feature[i].type == EDGE
+             *  normal == contact normal
+             */
+            sat_FeatureId   feature[2];
+            f32             depth;      /* maximum feature depth (positive) */
+            vec3            normal;     /* cached world-space normal        */
+        };
 
 		struct
 		{
-			u32	edge0;	/* body0 edge   */
-			u32	edge1;	/* body1 edge   */
-		};
-
-		struct
-		{
-			vec3    separation_axis;
+			vec3    separation_axis;    /* reference to incident direction */
 			f32	    separation;
 		};
+
+        struct
+        {
+            u32                     tri_cache_count;
+            struct c_TriHullCache * tri_cache;
+            //TODO storage for another pointer.
+        };
 	};
 };
 
@@ -458,6 +584,48 @@ struct slot sat_CacheAdd(struct cdb *cdb, const struct sat_CacheKey *key);
 void        sat_CacheRemove(struct cdb *cdb, const u32 index);
 /* Lookup sat_Cache in pipeline. If found, return (index, address). Otherwise (U32_MAX, NULL). */
 struct slot sat_CacheLookup(struct cdb *cdb, const struct sat_CacheKey *key);
+
+/*
+c_TriHullCache
+==============
+Cachind data for a triangle vs. hull sat call. Instead of using triangles as shapes, we use the 
+ordinary identifiers 
+         
+         (body_hull, shape_hull, body_mesh, shape_mesh)
+
+as our sat_CacheKey. We wish to skip the overhead of managing the database on a per-triangle contact basis, and
+instead keep the triangle cache data stored in a small array of size TRI_HULL_CACHE_MAX_SIZE. We extend the union 
+in sat_Cache with a "c_TriHullCache pointer" which points into double-buffered memory. To handle this, we extend 
+our program to use double-buffered frame arenas; this way any thread can look into any other threads' old caching 
+work from the previous frame, and store any new cache data in the current frame.
+*/
+
+#define TRI_HULL_CACHE_MAX_SIZE 32
+struct c_TriHullCache
+{
+    u32 tri;
+	enum sat_CacheType	type;
+    
+    /*
+     * type == FACE:
+     *  feature[i].type == FACE => i IS NOT incident face
+     *  feature[i].type != FACE => i IS on incident face
+     *  normal == face normal
+     *
+     * type == EDGE:
+     *  feature[i].type == EDGE
+     *  feature[i].type == EDGE
+     *  normal == contact normal
+     *
+     * type == SEPARATION:
+     *      normal == separation axis pointing from reference body 
+     *      depth == separation distance
+     */
+    sat_FeatureId   feature[2];
+    f32             depth;      /* depth or separation (positive)   */
+    vec3            normal;     /* cached bvh-space normal          */
+};
+
 
 /*
 contact_database
@@ -680,38 +848,7 @@ void 		isdb_MergeIslands(struct ds_RigidBodyPipeline *pipeline, const u32 ci, co
 /* Split island, or remake if no split happens: TODO: Make thread-safe  */
 void 		isdb_SplitIsland(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, const u32 island_to_split);
 
-/********* Threaded Island API *********/
-
-struct ds_IslandSolveOutput
-{
-	u32 island;
-	u32 island_asleep;
-	u32 body_count;
-	u32 *bodies;		/* bodies simulated in island */ 
-	struct ds_IslandSolveOutput *next;
-};
-
-struct ds_IslandSolveInput
-{
-	struct ds_Island *is;
-	struct ds_RigidBodyPipeline *pipeline;
-	struct ds_IslandSolveOutput *out;
-	f32 timestep;
-};
-
-/*
- * Input: struct ds_Island_solve_in 
- * Output: struct ds_IslandSolveOutput
- *
- * Solves the given island using the global solver config. Since no island shares any contacts or bodies, and every
- * island is a unique task, no shared variables are being written to.
- *
- * - reads pipeline, solver config, cdb, is_db (basically everything)
- * - writes to island,		(unique to thread, memory in cdb)
- * - writes to island->contacts (unique to thread, memory in cdb)
- * - writes to island->bodies	(unique to thread, memory in pipeline)
- */
-void	ThreadIslandSolve(void *task_input);
+u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is, u32 *asleep, const f32 timestep);
 
 /*
 =================================================================================================================
@@ -832,17 +969,112 @@ void 		SolverWarmup(struct solver *solver, const struct ds_Island *is);
 void 		SolverCacheImpulse(struct solver *solver, const struct ds_Island *is);
 
 /*
+ds_CollisionJobPhase
+====================
+*/
+
+enum ds_CollisionJobType
+{
+    COLLISION_JOB_SEED,
+    COLLISION_JOB_NARROWPHASE,
+    COLLISION_JOB_COUNT
+};
+
+struct ds_NarrowPhaseSeedJob
+{
+    u32 low;    /* inclusive */
+    u32 high;   /* exclusive */
+};
+
+/*
+ *  Output:
+ *      - collision_count
+ *      - manifold_arr      Handles manifolds for ordinary and mesh contacts
+ *      - key_arr           Handles key generation for meshes [Just point to internal key for non-mesh contacts]
+ *
+ *      - cache             Handles cache for Hull vs. Hull
+ */
+struct ds_NarrowPhaseJob 
+{
+    struct ds_ContactKey        key_in;     
+
+	struct c_Manifold *         manifold;   /* : [collision_count] */
+    struct ds_ContactKey *      key;        
+
+    struct sat_Cache *          cache;      /* : [0], Or [1] if Hull vs. Hull cache found */
+    u32                         cache_index;
+    u32                         collision_count;
+    u32                         valid;
+    u8                          pad[DS_CACHE_LINE - sizeof(struct ds_ContactKey) - 3*sizeof(void*) - 3*sizeof(u32)];
+};
+
+struct ds_CollisionJobPhase
+{
+    struct ds_JobPhase              phase;
+
+    struct ds_RigidBodyPipeline *   pipeline;
+    struct dbvhOverlap *            overlap;
+
+    struct ds_NarrowPhaseSeedJob *  seed_jobs;
+    u32                             seed_count_max;
+
+    struct ds_NarrowPhaseJob *      narrowphase_jobs;
+    u32                             narrowphase_count_max;
+};
+
+u32 ds_CollisionJobPhaseDispatch(const ds_JobId job);
+
+/*
+ds_IslandJobPhase
+=================
+*/
+
+enum ds_IslandJobType
+{
+    ISLAND_JOB_SEED,
+    ISLAND_JOB_SOLVE,
+    ISLAND_JOB_COUNT
+};
+
+struct ds_IslandSeedJob 
+{
+    u32     island_first;
+    u32     count;
+};
+
+struct ds_IslandSolveJob 
+{
+    u32     valid;
+	u32     island;
+
+	u32     asleep;
+	u32     body_count;
+	u32 *   bodies;		    /* bodies simulated in island */ 
+};
+
+struct ds_IslandJobPhase
+{
+    struct ds_JobPhase              phase;
+
+	struct ds_RigidBodyPipeline *   pipeline;
+    f32                             timestep;
+
+    struct ds_IslandSeedJob *       seed_jobs;
+    u32                             seed_count_max;
+
+    struct ds_IslandSolveJob *      solve_jobs;
+    u32                             solve_count_max;
+};
+
+u32 ds_IslandJobPhaseDispatch(const ds_JobId job);
+
+/*
 =================================================================================================================
 |						Physics Pipeline			  	      	    	|
 =================================================================================================================
 */
 
-#define UNITS_PER_METER		1.0f
-#define UNITS_PER_DECIMETER	0.1f
-#define UNITS_PER_CENTIMETER	0.01f
-#define UNITS_PER_MILIMETER	0.001f
-
-#define COLLISION_MARGIN_DEFAULT 5.0f * UNITS_PER_MILIMETER 
+#define COLLISION_MARGIN_DEFAULT 5.0f * DS_UNIT_MM 
 
 #define UNIFORM_SIZE 256
 #define GRAVITY_CONSTANT_DEFAULT 9.80665f
@@ -854,7 +1086,7 @@ void 		SolverCacheImpulse(struct solver *solver, const struct ds_Island *is);
 		__physics_debug_event->island = island_index;						                \
 	}
 
-#ifdef DS_PHYSICS_DEBUG
+//#ifdef DS_PHYSICS_DEBUG
 
 #define	PhysicsEventBodyNew(pipeline, _body)		                                        \
 	{												                                        \
@@ -889,19 +1121,19 @@ void 		SolverCacheImpulse(struct solver *solver, const struct ds_Island *is);
 		__physics_debug_event->contact_removed_shapes[1] = shape1;				            \
 	}
 
-#else
-
-#define	PhysicsEventBodyNew(pipeline, body)
-#define	PhysicsEventBodyRemoved(pipeline, entity)
-#define	PhysicsEventIslandAsleep(pipeline, island)
-#define	PhysicsEventIslandAwake(pipeline, island) 
-#define	PhysicsEventIslandNew(pipeline, island)   
-#define	PhysicsEventIslandExpanded(pipeline, island)   
-#define	PhysicsEventIslandRemoved(pipeline, island)
-#define PhysicsEventContactNew(pipeline, contact)
-#define PhysicsEventContactRemoved(pipeline, body0, shape0, body1, shape1)                
-
-#endif
+//#else
+//
+//#define	PhysicsEventBodyNew(pipeline, body)
+//#define	PhysicsEventBodyRemoved(pipeline, entity)
+//#define	PhysicsEventIslandAsleep(pipeline, island)
+//#define	PhysicsEventIslandAwake(pipeline, island) 
+//#define	PhysicsEventIslandNew(pipeline, island)   
+//#define	PhysicsEventIslandExpanded(pipeline, island)   
+//#define	PhysicsEventIslandRemoved(pipeline, island)
+//#define PhysicsEventContactNew(pipeline, contact)
+//#define PhysicsEventContactRemoved(pipeline, body0, shape0, body1, shape1)                
+//
+//#endif
 
 enum physicsEventType
 {
@@ -985,6 +1217,11 @@ struct ds_RigidBodyPipeline
 
 	u32			    margin_on;
 	f32			    margin;
+
+    struct ds_CollisionJobPhase *   cd_jobs;
+    struct ds_IslandJobPhase *      is_jobs;
+
+    struct ds_NumericsConfig        numerics_config;
 };
 
 /**************** PHYISCS PIPELINE API ****************/

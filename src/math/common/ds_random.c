@@ -1,8 +1,8 @@
 #include "ds_base.h"
 #include "ds_random.h"
 
-dsThreadLocal u64 tl_xoshiro_256[4];
-dsThreadLocal u64 tl_pushed_state[4];
+ds_ThreadLocal u64 tl_xoshiro_256[4];
+ds_ThreadLocal u64 tl_pushed_state[4];
 
 /* xoshiro_256** */
 u64 g_xoshiro_256[4];

@@ -29,8 +29,8 @@ struct r_Scene *g_scene = NULL;
 struct r_Scene *r_SceneAlloc(void)
 {
 	struct r_Scene *scene = malloc(sizeof(struct r_Scene));
-	scene->mem_frame_arr[0] = ArenaAlloc(64*1024*1024);
-	scene->mem_frame_arr[1] = ArenaAlloc(64*1024*1024);
+	scene->mem_frame_arr[0] = ArenaAlloc(NULL, 64*1024*1024);
+	scene->mem_frame_arr[1] = ArenaAlloc(NULL, 64*1024*1024);
 	scene->mem_frame = scene->mem_frame_arr + 0;
 	scene->frame = 0;
 

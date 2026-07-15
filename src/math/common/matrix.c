@@ -74,44 +74,23 @@ void Mat4Set(mat4 dst, const f32 a11, const f32 a21, const f32 a31, const f32 a4
 
 void Mat2SetColumns(mat2 dst, const vec2 c1, const vec2 c2)
 {
-	dst[0][0] = c1[0];
-	dst[0][1] = c1[1];
-	dst[1][0] = c2[0];
-	dst[1][1] = c2[1];
+    Vec2Copy(dst[0],c1);
+    Vec2Copy(dst[1],c2);
 }
 
 void Mat3SetColumns(mat3 dst, const vec3 c1, const vec3 c2, const vec3 c3)
 {
-
-	dst[0][0] = c1[0];
-	dst[0][1] = c1[1];
-	dst[0][2] = c1[2];
-	dst[1][0] = c2[0];
-	dst[1][1] = c2[1];
-	dst[1][2] = c2[2];
-	dst[2][0] = c3[0];
-	dst[2][1] = c3[1];
-	dst[2][2] = c3[2];
+    Vec3Copy(dst[0], c1);
+    Vec3Copy(dst[1], c2);
+    Vec3Copy(dst[2], c3);
 }
 
 void Mat4SetColumns(mat4 dst, const vec4 c1, const vec4 c2, const vec4 c3, const vec4 c4)
 {
-	dst[0][0] = c1[0];
-	dst[0][1] = c1[1];
-	dst[0][2] = c1[2];
-	dst[0][3] = c1[3];
-	dst[1][0] = c2[0];
-	dst[1][1] = c2[1];
-	dst[1][2] = c2[2];
-	dst[1][3] = c2[3];
-	dst[2][0] = c3[0];
-	dst[2][1] = c3[1];
-	dst[2][2] = c3[2];
-	dst[2][3] = c3[3];
-	dst[3][0] = c4[0];
-	dst[3][1] = c4[1];
-	dst[3][2] = c4[2];
-	dst[3][3] = c4[3];
+    Vec4Copy(dst[0], c1);
+    Vec4Copy(dst[1], c2);
+    Vec4Copy(dst[2], c3);
+    Vec4Copy(dst[3], c4);
 }
 
 void Mat2SetRows(mat2 dst, const vec2 r1, const vec2 r2)
@@ -173,23 +152,24 @@ void Mat4Identity(mat4 dst)
 
 void Vec2MatMul(vec2 dst, const vec2 vec, mat2 mat)
 {
-	dst[0] = vec[0] * mat[0][0] + vec[1] *  mat[0][1];
-	dst[1] = vec[0] * mat[1][0] + vec[1] *  mat[1][1];
+
+	dst[0] = Vec2Dot(mat[0], vec); 
+	dst[1] = Vec2Dot(mat[1], vec);
 }
 
 void Vec3MatMul(vec3 dst, const vec3 vec, mat3 mat)
 {
-	dst[0] = vec[0] * mat[0][0] + vec[1] *  mat[0][1] + vec[2] * mat[0][2];
-	dst[1] = vec[0] * mat[1][0] + vec[1] *  mat[1][1] + vec[2] * mat[1][2];
-	dst[2] = vec[0] * mat[2][0] + vec[1] *  mat[2][1] + vec[2] * mat[2][2];
+	dst[0] = Vec3Dot(mat[0], vec); 
+	dst[1] = Vec3Dot(mat[1], vec);
+	dst[2] = Vec3Dot(mat[2], vec);
 }
 
 void Vec4MatMul(vec4 dst, const vec4 vec, mat4 mat)
 {
-	dst[0] = vec[0] * mat[0][0] + vec[1] *  mat[0][1] + vec[2] * mat[0][2] + vec[3] * mat[0][3];
-	dst[1] = vec[0] * mat[1][0] + vec[1] *  mat[1][1] + vec[2] * mat[1][2] + vec[3] * mat[1][3];
-	dst[2] = vec[0] * mat[2][0] + vec[1] *  mat[2][1] + vec[2] * mat[2][2] + vec[3] * mat[2][3];
-	dst[3] = vec[0] * mat[3][0] + vec[1] *  mat[3][1] + vec[2] * mat[3][2] + vec[3] * mat[3][3];
+	dst[0] = Vec4Dot(mat[0], vec); 
+	dst[1] = Vec4Dot(mat[1], vec);
+	dst[2] = Vec4Dot(mat[2], vec);
+	dst[3] = Vec4Dot(mat[3], vec);
 }
 
 void Mat2VecMul(vec2 dst, mat2 mat, const vec2 vec)
@@ -265,190 +245,112 @@ void Mat4Mul(mat4 dst, mat4 a, mat4 b)
 
 void Mat2Add(mat2 dst, mat2 a, mat2 b)
 {
-	dst[0][0] = a[0][0] + b[0][0];  
-        dst[0][1] = a[0][1] + b[0][1];
-
-        dst[1][0] = a[1][0] + b[1][0];
-        dst[1][1] = a[1][1] + b[1][1];
+    Vec2Add(dst[0], a[0], b[0]);
+    Vec2Add(dst[1], a[1], b[1]);
 }
 
 void Mat3Add(mat3 dst, mat3 a, mat3 b)
 {
-	dst[0][0] = a[0][0] + b[0][0];  
-        dst[0][1] = a[0][1] + b[0][1];
-        dst[0][2] = a[0][2] + b[0][2];
-
-        dst[1][0] = a[1][0] + b[1][0];
-        dst[1][1] = a[1][1] + b[1][1];
-        dst[1][2] = a[1][2] + b[1][2];
-
-        dst[2][0] = a[2][0] + b[2][0];
-        dst[2][1] = a[2][1] + b[2][1];
-        dst[2][2] = a[2][2] + b[2][2];
+    Vec3Add(dst[0], a[0], b[0]);
+    Vec3Add(dst[1], a[1], b[1]);
+    Vec3Add(dst[2], a[2], b[2]);
 }
 
 void Mat4Add(mat4 dst, mat4 a, mat4 b)
 {
-	dst[0][0] = a[0][0] + b[0][0];  
-        dst[0][1] = a[0][1] + b[0][1];
-        dst[0][2] = a[0][2] + b[0][2];
-        dst[0][3] = a[0][3] + b[0][3];
-
-        dst[1][0] = a[1][0] + b[1][0];
-        dst[1][1] = a[1][1] + b[1][1];
-        dst[1][2] = a[1][2] + b[1][2];
-        dst[1][3] = a[1][3] + b[1][3];
-
-        dst[2][0] = a[2][0] + b[2][0];
-        dst[2][1] = a[2][1] + b[2][1];
-        dst[2][2] = a[2][2] + b[2][2];
-        dst[2][3] = a[2][3] + b[2][3];
-	
-        dst[3][0] = a[3][0] + b[3][0];
-        dst[3][1] = a[3][1] + b[3][1];
-        dst[3][2] = a[3][2] + b[3][2];
-        dst[3][3] = a[3][3] + b[3][3];
+    Vec4Add(dst[0], a[0], b[0]);
+    Vec4Add(dst[1], a[1], b[1]);
+    Vec4Add(dst[2], a[2], b[2]);
+    Vec4Add(dst[3], a[3], b[3]);
 }
 
 void Mat2AddSelf(mat2 dst, mat2 to_add)
 {
-	dst[0][0] += to_add[0][0];  
-        dst[0][1] += to_add[0][1];
-
-        dst[1][0] += to_add[1][0];
-        dst[1][1] += to_add[1][1];
+    Vec2Translate(dst[0], to_add[0]);
+    Vec2Translate(dst[1], to_add[1]);
 }
 
 void Mat3AddSelf(mat3 dst, mat3 to_add)
 {
-	dst[0][0] += to_add[0][0];  
-        dst[0][1] += to_add[0][1];
-        dst[0][2] += to_add[0][2];
-
-        dst[1][0] += to_add[1][0];
-        dst[1][1] += to_add[1][1];
-        dst[1][2] += to_add[1][2];
-
-        dst[2][0] += to_add[2][0];
-        dst[2][1] += to_add[2][1];
-        dst[2][2] += to_add[2][2];
+    Vec3Translate(dst[0], to_add[0]);
+    Vec3Translate(dst[1], to_add[1]);
+    Vec3Translate(dst[2], to_add[2]);
 }
 
 void Mat4AddSelf(mat4 dst, mat4 to_add)
 {
-	dst[0][0] += to_add[0][0];  
-        dst[0][1] += to_add[0][1];
-        dst[0][2] += to_add[0][2];
-        dst[0][3] += to_add[0][3];
-
-        dst[1][0] += to_add[1][0];
-        dst[1][1] += to_add[1][1];
-        dst[1][2] += to_add[1][2];
-        dst[1][3] += to_add[1][3];
-
-        dst[2][0] += to_add[2][0];
-        dst[2][1] += to_add[2][1];
-        dst[2][2] += to_add[2][2];
-        dst[2][3] += to_add[2][3];
-	
-        dst[3][0] += to_add[3][0];
-        dst[3][1] += to_add[3][1];
-        dst[3][2] += to_add[3][2];
-        dst[3][3] += to_add[3][3];
+    Vec4Translate(dst[0], to_add[0]);
+    Vec4Translate(dst[1], to_add[1]);
+    Vec4Translate(dst[2], to_add[2]);
+    Vec4Translate(dst[3], to_add[3]);
 }
 
 void Mat2Sub(mat2 dst, mat2 a, mat2 b)
 {
-	dst[0][0] = a[0][0] - b[0][0];  
-        dst[0][1] = a[0][1] - b[0][1];
-
-        dst[1][0] = a[1][0] - b[1][0];
-        dst[1][1] = a[1][1] - b[1][1];
+	Vec2Sub(dst[0], a[0], b[0]);
+    Vec2Sub(dst[1], a[1], b[1]);
 }
 
 void Mat3Sub(mat3 dst, mat3 a, mat3 b)
 {
-	dst[0][0] = a[0][0] - b[0][0];  
-        dst[0][1] = a[0][1] - b[0][1];
-        dst[0][2] = a[0][2] - b[0][2];
-
-        dst[1][0] = a[1][0] - b[1][0];
-        dst[1][1] = a[1][1] - b[1][1];
-        dst[1][2] = a[1][2] - b[1][2];
-
-        dst[2][0] = a[2][0] - b[2][0];
-        dst[2][1] = a[2][1] - b[2][1];
-        dst[2][2] = a[2][2] - b[2][2];
+	Vec3Sub(dst[0], a[0], b[0]);
+    Vec3Sub(dst[1], a[1], b[1]);
+    Vec3Sub(dst[2], a[2], b[2]);
 }
 
 void Mat4Sub(mat4 dst, mat4 a, mat4 b)
 {
-	dst[0][0] = a[0][0] - b[0][0];  
-        dst[0][1] = a[0][1] - b[0][1];
-        dst[0][2] = a[0][2] - b[0][2];
-        dst[0][3] = a[0][3] - b[0][3];
-
-        dst[1][0] = a[1][0] - b[1][0];
-        dst[1][1] = a[1][1] - b[1][1];
-        dst[1][2] = a[1][2] - b[1][2];
-        dst[1][3] = a[1][3] - b[1][3];
-
-        dst[2][0] = a[2][0] - b[2][0];
-        dst[2][1] = a[2][1] - b[2][1];
-        dst[2][2] = a[2][2] - b[2][2];
-        dst[2][3] = a[2][3] - b[2][3];
-	
-        dst[3][0] = a[3][0] - b[3][0];
-        dst[3][1] = a[3][1] - b[3][1];
-        dst[3][2] = a[3][2] - b[3][2];
-        dst[3][3] = a[3][3] - b[3][3];
+    Vec4Sub(dst[0], a[0], b[0]);
+    Vec4Sub(dst[1], a[1], b[1]);
+    Vec4Sub(dst[2], a[2], b[2]);
+    Vec4Sub(dst[3], a[3], b[3]);
 }
 
 void Mat2SubSelf(mat2 dst, mat2 to_sub)
 {
 	dst[0][0] -= to_sub[0][0];  
-        dst[0][1] -= to_sub[0][1];
+    dst[0][1] -= to_sub[0][1];
 
-        dst[1][0] -= to_sub[1][0];
-        dst[1][1] -= to_sub[1][1];
+    dst[1][0] -= to_sub[1][0];
+    dst[1][1] -= to_sub[1][1];
 }
 
 void Mat3SubSelf(mat3 dst, mat3 to_sub)
 {
 	dst[0][0] -= to_sub[0][0];  
-        dst[0][1] -= to_sub[0][1];
-        dst[0][2] -= to_sub[0][2];
+    dst[0][1] -= to_sub[0][1];
+    dst[0][2] -= to_sub[0][2];
 
-        dst[1][0] -= to_sub[1][0];
-        dst[1][1] -= to_sub[1][1];
-        dst[1][2] -= to_sub[1][2];
+    dst[1][0] -= to_sub[1][0];
+    dst[1][1] -= to_sub[1][1];
+    dst[1][2] -= to_sub[1][2];
 
-        dst[2][0] -= to_sub[2][0];
-        dst[2][1] -= to_sub[2][1];
-        dst[2][2] -= to_sub[2][2];
+    dst[2][0] -= to_sub[2][0];
+    dst[2][1] -= to_sub[2][1];
+    dst[2][2] -= to_sub[2][2];
 }
 
 void Mat4SubSelf(mat4 dst, mat4 to_sub)
 {
 	dst[0][0] -= to_sub[0][0];  
-        dst[0][1] -= to_sub[0][1];
-        dst[0][2] -= to_sub[0][2];
-        dst[0][3] -= to_sub[0][3];
+    dst[0][1] -= to_sub[0][1];
+    dst[0][2] -= to_sub[0][2];
+    dst[0][3] -= to_sub[0][3];
 
-        dst[1][0] -= to_sub[1][0];
-        dst[1][1] -= to_sub[1][1];
-        dst[1][2] -= to_sub[1][2];
-        dst[1][3] -= to_sub[1][3];
+    dst[1][0] -= to_sub[1][0];
+    dst[1][1] -= to_sub[1][1];
+    dst[1][2] -= to_sub[1][2];
+    dst[1][3] -= to_sub[1][3];
 
-        dst[2][0] -= to_sub[2][0];
-        dst[2][1] -= to_sub[2][1];
-        dst[2][2] -= to_sub[2][2];
-        dst[2][3] -= to_sub[2][3];
+    dst[2][0] -= to_sub[2][0];
+    dst[2][1] -= to_sub[2][1];
+    dst[2][2] -= to_sub[2][2];
+    dst[2][3] -= to_sub[2][3];
 	
-        dst[3][0] -= to_sub[3][0];
-        dst[3][1] -= to_sub[3][1];
-        dst[3][2] -= to_sub[3][2];
-        dst[3][3] -= to_sub[3][3];
+    dst[3][0] -= to_sub[3][0];
+    dst[3][1] -= to_sub[3][1];
+    dst[3][2] -= to_sub[3][2];
+    dst[3][3] -= to_sub[3][3];
 }
 
 void Mat2Transpose(mat2 dst, mat2 src)
@@ -497,8 +399,6 @@ void Mat4Transpose(mat4 dst, mat4 src)
 	dst[2][3] = src[3][2];
 	dst[3][3] = src[3][3];
 }
-
-
 
 f32 Mat2Inverse(mat2 dst, mat2 src)
 {
@@ -618,43 +518,23 @@ f32 Mat4Inverse(mat4 dst, mat4 src)
 
 void Mat2Copy(mat2 dst, mat2 src)
 {
-	dst[0][0] = src[0][0];
-	dst[0][1] = src[0][1];
-	dst[1][0] = src[1][0];
-	dst[1][1] = src[1][1];
+    Vec2Copy(dst[0], src[0]);
+    Vec2Copy(dst[1], src[1]);
 }
 
 void Mat3Copy(mat3 dst, mat3 src)
 {
-	dst[0][0] = src[0][0];
-	dst[0][1] = src[0][1];
-	dst[0][2] = src[0][2];
-	dst[1][0] = src[1][0];
-	dst[1][1] = src[1][1];
-	dst[1][2] = src[1][2];
-	dst[2][0] = src[2][0];
-	dst[2][1] = src[2][1];
-	dst[2][2] = src[2][2];
+    Vec3Copy(dst[0], src[0]);
+    Vec3Copy(dst[1], src[1]);
+    Vec3Copy(dst[2], src[2]);
 }
 
 void Mat4Copy(mat4 dst, mat4 src)
 {
-	dst[0][0] = src[0][0];
-	dst[0][1] = src[0][1];
-	dst[0][2] = src[0][2];
-	dst[0][3] = src[0][3];
-	dst[1][0] = src[1][0];
-	dst[1][1] = src[1][1];
-	dst[1][2] = src[1][2];
-	dst[1][3] = src[1][3];
-	dst[2][0] = src[2][0];
-	dst[2][1] = src[2][1];
-	dst[2][2] = src[2][2];
-	dst[2][3] = src[2][3];
-	dst[3][0] = src[3][0];
-	dst[3][1] = src[3][1];
-	dst[3][2] = src[3][2];
-	dst[3][3] = src[3][3];
+    Vec4Copy(dst[0], src[0]);
+    Vec4Copy(dst[1], src[1]);
+    Vec4Copy(dst[2], src[2]);
+    Vec4Copy(dst[3], src[3]);
 }
 
 f32 Mat2AbsMin(mat2 src)
@@ -707,96 +587,44 @@ f32 Mat4AbsMax(mat4 src)
 
 void Mat2Scale(mat2 dst, mat2 src, const f32 val)
 {	
-	dst[0][0] = src[0][0] * val;
-	dst[0][1] = src[0][1] * val;
-                             
-	dst[1][0] = src[1][0] * val;
-	dst[1][1] = src[1][1] * val;
+    Vec2Scale(dst[0], src[0], val);
+    Vec2Scale(dst[1], src[1], val);
 }
 
 void Mat3Scale(mat3 dst, mat3 src, const f32 val)
 {	
-	dst[0][0] = src[0][0] * val;
-	dst[0][1] = src[0][1] * val;
-	dst[0][2] = src[0][2] * val;
-                             
-	dst[1][0] = src[1][0] * val;
-	dst[1][1] = src[1][1] * val;
-	dst[1][2] = src[1][2] * val;
-                             
-	dst[2][0] = src[2][0] * val;
-	dst[2][1] = src[2][1] * val;
-	dst[2][2] = src[2][2] * val;
+    Vec3Scale(dst[0], src[0], val);
+    Vec3Scale(dst[1], src[1], val);
+    Vec3Scale(dst[2], src[2], val);
 }
 
 void Mat4Scale(mat4 dst, mat4 src, const f32 val)
 {
-	dst[0][0] = src[0][0] * val;
-	dst[0][1] = src[0][1] * val;
-	dst[0][2] = src[0][2] * val;
-	dst[0][3] = src[0][3] * val;
-                             
-	dst[1][0] = src[1][0] * val;
-	dst[1][1] = src[1][1] * val;
-	dst[1][2] = src[1][2] * val;
-	dst[1][3] = src[1][3] * val;
-                             
-	dst[2][0] = src[2][0] * val;
-	dst[2][1] = src[2][1] * val;
-	dst[2][2] = src[2][2] * val;
-	dst[2][3] = src[2][3] * val;
-                             
-	dst[3][0] = src[3][0] * val;
-	dst[3][1] = src[3][1] * val;
-	dst[3][2] = src[3][2] * val;
-	dst[3][3] = src[3][3] * val;
+    Vec4Scale(dst[0], src[0], val);
+    Vec4Scale(dst[1], src[1], val);
+    Vec4Scale(dst[2], src[2], val);
+    Vec4Scale(dst[3], src[3], val);
 }
 
 void Mat2ScaleSelf(mat2 dst, const f32 val)
 {
-	dst[0][0] *= val;
-	dst[0][1] *= val;
-
-	dst[1][0] *= val;
-	dst[1][1] *= val;
+    Vec2ScaleSelf(dst[0], val);
+    Vec2ScaleSelf(dst[1], val);
 }
 
 void Mat3ScaleSelf(mat3 dst, const f32 val)
 {
-	dst[0][0] *= val;
-	dst[0][1] *= val;
-	dst[0][2] *= val;
-
-	dst[1][0] *= val;
-	dst[1][1] *= val;
-	dst[1][2] *= val;
-
-	dst[2][0] *= val;
-	dst[2][1] *= val;
-	dst[2][2] *= val;
+    Vec3ScaleSelf(dst[0], val);
+    Vec3ScaleSelf(dst[1], val);
+    Vec3ScaleSelf(dst[2], val);
 }
 
 void Mat4ScaleSelf(mat4 dst, const f32 val)
 {
-	dst[0][0] *= val;
-	dst[0][1] *= val;
-	dst[0][2] *= val;
-	dst[0][3] *= val;
-
-	dst[1][0] *= val;
-	dst[1][1] *= val;
-	dst[1][2] *= val;
-	dst[1][3] *= val;
-
-	dst[2][0] *= val;
-	dst[2][1] *= val;
-	dst[2][2] *= val;
-	dst[2][3] *= val;
-
-	dst[3][0] *= val;
-	dst[3][1] *= val;
-	dst[3][2] *= val;
-	dst[3][3] *= val;
+    Vec4ScaleSelf(dst[0], val);
+    Vec4ScaleSelf(dst[1], val);
+    Vec4ScaleSelf(dst[2], val);
+    Vec4ScaleSelf(dst[3], val);
 }
 
 void Mat2OuterProduct(mat2 dst, const vec2 a, const vec2 b)

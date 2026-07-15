@@ -249,9 +249,9 @@ static struct r_Mesh *DebugLinesMesh(struct arena *mem, const struct ds_RigidBod
 	{
 		for (u32 j = 0; j < pipeline->debug[i].stack_segment.next; ++j)
 		{
-			Vec3Copy((f32 *) vertex_data +  0, pipeline->debug[i].stack_segment.arr[j].segment.p0);
+			Vec3Copy((f32 *) vertex_data +  0, pipeline->debug[i].stack_segment.arr[j].segment.p[0]);
 			Vec4Copy((f32 *) vertex_data +  3, pipeline->debug[i].stack_segment.arr[j].color);
-			Vec3Copy((f32 *) vertex_data +  7, pipeline->debug[i].stack_segment.arr[j].segment.p1);
+			Vec3Copy((f32 *) vertex_data +  7, pipeline->debug[i].stack_segment.arr[j].segment.p[1]);
 			Vec4Copy((f32 *) vertex_data + 10, pipeline->debug[i].stack_segment.arr[j].color);
 			vertex_data += 2*(sizeof(vec3) + sizeof(vec4));
 			mem_left -= 2*(sizeof(vec3) + sizeof(vec4));
@@ -770,8 +770,8 @@ void r_EditorMain(const struct led *led)
 
 			struct ds_Window *win = NULL;
 
-			struct arena tmp = ArenaAlloc1MB();
-			struct hi_Iterator it = hi_IteratorAlloc(&tmp, g_window_hierarchy, g_process_root_window);
+			struct arena *tmp = ArenaPushScratch();
+			struct hi_Iterator it = hi_IteratorAlloc(tmp, g_window_hierarchy, g_process_root_window);
 			while (it.count)
 			{
 				const u32 window = hi_IteratorNextDf(&it);
@@ -796,7 +796,7 @@ void r_EditorMain(const struct led *led)
 					r_SceneRender(led, window);
 				}
 			}
-			ArenaFree1MB(&tmp);
+            ArenaPopScratch();
 
 			/* NOTE: main context must be set in the case of creating new contexts sharing state. */
 			ds_WindowSetCurrentGlContext(g_process_root_window);

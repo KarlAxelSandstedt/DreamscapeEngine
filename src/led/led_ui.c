@@ -391,7 +391,7 @@ static void led_InputHandler(struct led *led, struct ui_Node *viewport)
 
 static void led_Ui(struct led *led, const struct ui_Visual *visual)
 {
-    struct arena mem_tmp = ArenaAlloc1MB();
+    struct arena *mem_tmp = ArenaPushScratch();
 
 	ds_WindowSetGlobal(led->window);
 	CmdQueueExecute();
@@ -497,7 +497,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 						Vec3TranslateScaled(dir, led->cam.position, -1.0f);
 						Vec3ScaleSelf(dir, 1.0f / Vec3Length(dir));
 						const struct ray ray = RayConstruct(led->cam.position, dir);
-						const u32f32 hit = PhysicsPipelineRaycastParameter(g_ui->mem_frame, &mem_tmp, &led->physics, &ray);
+						const u32f32 hit = PhysicsPipelineRaycastParameter(g_ui->mem_frame, mem_tmp, &led->physics, &ray);
 						if (hit.f < F32_INFINITY)
 						{
 							const struct ds_Shape *shape = ds_PoolAddress(&led->physics.shape_pool, hit.u);	
@@ -1134,7 +1134,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 		led->running = 0;
 	}
 
-    ArenaFree1MB(&mem_tmp);
+    ArenaPopScratch();
 }
 
 void led_UiMain(struct led *led)

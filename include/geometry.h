@@ -25,6 +25,7 @@ extern "C" {
 #endif
 
 #include "ds_allocator.h"
+#include "ds_math.h"
 
 /****************** GEOMETRIC PRIMITIVES ******************/
 
@@ -41,13 +42,24 @@ struct aabb
 
 /**
  * plane: geomtrical primitive
- * normal: normal of plane
- * signed_distance: Signed distance to plane; plane_normal * signed_distance is point on plane.
+ * normal: normal of plane 
+ * OR normal_dir: normal direction of plane (To make it explicit in code when we choose not to normalize the direction)
+ * signed_distance: Signed distance (in |normal_direction| units) to plane; plane.normal * signed_distance is point on plane.
+ *
  */
 struct plane 
 {
-	vec3 normal;
-	f32 signed_distance;
+    union
+    {
+	    vec3 normal;
+	    vec3 normal_direction;
+    };
+    union
+    {
+	    f32 signed_distance;
+        f32 signed_normal_unit_distance;
+    };
+    f32 inv_dot_nn; /* 1.0f / Dot(normal,normal) */
 };
 
 /**
@@ -74,9 +86,8 @@ struct ray
  */
 struct segment
 {
-	vec3 p0;	
-	vec3 p1;	
-	vec3 dir;	/* p1-p0 */
+	vec3 p[2];	
+	vec3 dir;	/* p[1]-p[0] */
 };
 
 /**
@@ -130,37 +141,61 @@ f32 		RaySegmentDistanceSquared(vec3 r_c, vec3 s_c, const struct ray *ray, const
 
 /* construct segment */
 struct segment 	SegmentConstruct(const vec3 p0, const vec3 p1);
+/* Return 1 if the end-points of s are within a distance of sqrt(min_dist_sq) of each other, otherwise return 0. */
+u32             SegmentPointCheck(const struct segment *s, const f32 min_dist_sq);
+/* Return 1 if s1 and s2 are parallel, otherwise return 0. */
+u32             SegmentParallelCheck(const struct segment *s1, const struct segment *s2, const f32 eps);
 /* return squared distance between s1 and s2; set c1, c2 to closest point on s1, s2 respectively  */
-f32 		SegmentDistanceSquared(vec3 c1, vec3 c2, const struct segment *s1, const struct segment *s2);
+f32 		    SegmentDistanceSquared(vec3 c1, vec3 c2, const struct segment *s1, const struct segment *s2);
+/* return parameters t1,t2 of closest points c1,c2 on s1,s2 such that ci = si.p0(1-ti) + s1.p1*ti  */
+void		    SegmentClosestParameter(f32 *t1, f32 *t2, const struct segment *s1, const struct segment *s2);
 /* return squared distance between s and p; set c to the closest point on s to p */
-f32 		SegmentPointDistanceSquared(vec3 c, const struct segment *s, const vec3 p);
+f32 		    SegmentPointDistanceSquared(vec3 c, const struct segment *s, const vec3 p);
 /* Return parameter t of projected barycentric point p to segment s: PROJECTION_ON_LINE(p) = s.p0*(1-t) + s.p1*t */
-f32		SegmentPointProjectedBcParameter(const struct segment *s, const vec3 p);
+f32		        SegmentPointProjectedBcParameter(const struct segment *s, const vec3 p);
 /* Return parameter g of closest barycentric point p to segment s: PROJECTION_ON_SEGMENT(p) = s.p0*(1-t) + s.p1*t, 0.0f <= t <= 1.0f */
-f32 		SegmentPointClosestBcParameter(const struct segment *s, const vec3 p);
+f32 		    SegmentPointClosestBcParameter(const struct segment *s, const vec3 p);
 /* set bc_p = s.p0*(1-t) + s.p1*t */
-void 		SegmentBc(vec3 bc_p, const struct segment *s, const f32 t); 	
+void 		    SegmentBc(vec3 bc_p, const struct segment *s, const f32 t); 	
+
+
+/* Return the segment resulting from transforming the given capsule. */
+struct segment  SegmentCapsuleTransform(const struct capsule *cap, const ds_Transform *t);
+
+/* Return the bounding box of the segment  */
+struct aabb     BboxSegment(const struct segment *s);
 
 /********************************** plane ***********************************/
 
-/* construct plane with given normal n containing point p */
+/* Construct plane with given normal direction n containing point p */
 struct plane 	PlaneConstruct(const vec3 n, const vec3 p); 
-/* construct plane from CCW triangle abc */
+/* Construct normalized plane with given normal direction n containing point p */
+struct plane 	PlaneConstructNormalized(const vec3 n, const vec3 p); 
+/* Construct plane from CCW triangle abc */
 struct plane 	PlaneConstructFromCcwTriangle(const vec3 a, const vec3 b, const vec3 c);
-/* return 1: If p is infront of plane, i.e. a positive signed distance, otherwise 0*/
-u32 		PlanePointInfrontCheck(const struct plane *pl, const vec3 p);
-/* return 1: If p is behind plane, i.e. a negative signed distance, otherwise 0*/
-u32 		PlanePointBehindCheck(const struct plane *pl, const vec3 p);
- /* return t: s.p0 + t*s.dir is point on plane */
-f32 		PlaneSegmentClipParameter(const struct plane *pl, const struct segment *s);
- /* return 1 if clip happened, otherwise 0. If 1, return valid clip point */
-u32 		PlaneSegmentClip(vec3 clip, const struct plane *pl, const struct segment *s);
+/* Construct normalized plane from CCW triangle abc */
+struct plane 	PlaneConstructNormalizedFromCcwTriangle(const vec3 a, const vec3 b, const vec3 c);
+/* Normalize the plane's normal direction (and update affected internals) */
+void            PlaneNormalize(struct plane *pl);
+/* Return 1 if p is infront of plane, i.e. a positive signed distance, otherwise 0 */
+u32 		    PlanePointInfrontCheck(const struct plane *pl, const vec3 p);
+/* Return 1 if p is behind plane, i.e. a negative signed distance, otherwise 0 */
+u32 		    PlanePointBehindCheck(const struct plane *pl, const vec3 p);
+/* Return 1 if segment is parallel to plane, otherwise return 0. */
+u32             PlaneSegmentParallelCheck(const struct plane *pl, const struct segment *s);
+/* return t: s.p0 + t*s.dir is point on plane */
+f32 		    PlaneSegmentClipParameter(const struct plane *pl, const struct segment *s);
+/* return 1 if clip happened, otherwise 0. If 1, return valid clip point */
+u32 		    PlaneSegmentClip(vec3 clip, const struct plane *pl, const struct segment *s);
 /* return 1 if clip happened, otherwise 0 */
-u32 		PlaneSegmentTest(const struct plane *pl, const struct segment *s); 
- /* return signed distance between plane and point (infront of plane == positive) */
-f32 		PlanePointSignedDistance(const struct plane *pl, const vec3 p);
- /* return absolute distance between plane and point */
-f32 		PlanePointDistance(const struct plane *pl, const vec3 p);
+u32 		    PlaneSegmentTest(const struct plane *pl, const struct segment *s); 
+/* return signed distance multiplied by |normal_direction| between plane and point (infront of plane == positive) */
+f32 		    PlanePointSignedDistance(const struct plane *pl, const vec3 p);
+/* return absolute distance multiplied by |normal_direction| between plane and point */
+f32 		    PlanePointDistance(const struct plane *pl, const vec3 p);
+/* return the signed distance (measured in |plane.normal_direction| units) of point p to plane pl, and set the projection of p onto pl. */
+f32 		    PlanePointProjection(vec3 proj, const struct plane *pl, const vec3 p);
+
 /* Return t such that ray->origin + t*ray->dir is a point on the given plane. If no such t exist, return F32_INFINITY. */
 f32 		PlaneRaycastParameter(const struct plane *plane, const struct ray *ray);
 /* Return 1 if raycast hit plane, 0 otherwise. If hit, set intersection  */
@@ -169,7 +204,7 @@ u32 		PlaneRaycast(vec3 intersection, const struct plane *plane, const struct ra
 /********************************** AABB ************************************/
 
 /* Return smallest AABB with a given margin of the input vertex set,   */
-void		AabbVertex(struct aabb *dst, const vec3ptr v, const u32 v_count, const f32 margin);
+void		AabbVertex(struct aabb *dst, constvec3ptr v, const u32 v_count, const f32 margin);
 /* Return smallest AABB that contains both a and b  */
 void		AabbUnion(struct aabb *box_union, const struct aabb *a, const struct aabb *b);
 /* Return AABB of rotated AABB. */
@@ -228,11 +263,77 @@ f32 		TriMeshRaycastParameter(const struct triMesh *mesh, const u32 tri, const s
 /* If the ray hits triangle (ccw), return 1 and set intersection. otherwise return 0. */
 u32 		TriMeshRaycast(vec3 intersection, const struct triMesh *mesh, const u32 tri, const struct ray *ray);
 
-/* get normal of ccw triangle */
-void 		TriCcwNormal(vec3 normal, const vec3 p0, const vec3 p1, const vec3 p2);
-/* get direction of ccw triangle */
-void 		TriCcwDirection(vec3 dir, const vec3 p0, const vec3 p1, const vec3 p2);
+/*
+TriVoronoi
+==========
+Shared data for triangle voronoi calculation 
+*/
 
+/* WARNING: Do not change ordering! */
+enum TriVoronoiRegion
+{
+    TRI_VORONOI_VERTEX0,
+    TRI_VORONOI_VERTEX1,
+    TRI_VORONOI_VERTEX2,
+    TRI_VORONOI_EDGE01,
+    TRI_VORONOI_EDGE12,
+    TRI_VORONOI_EDGE20,
+    TRI_VORONOI_FACE,
+    TRI_VORONOI_COUNT
+};
+
+extern const char *g_table_tri_voronoi_region_string[TRI_VORONOI_COUNT];
+
+struct TriVoronoi
+{
+    struct segment  s[3];           /* edge segment */
+    struct plane    edge_plane[3];  /* edge plane orthogonal to face plane */
+    struct plane    face_plane;     /* triangle plane (CCW) */
+    vec3            t[3];
+};
+
+
+/* Get normal of ccw triangle */
+void 		TriCcwNormal(vec3 normal, const vec3 p0, const vec3 p1, const vec3 p2);
+/* Get normal direction of ccw triangle */
+void 		TriCcwNormalDirection(vec3 dir, const vec3 p0, const vec3 p1, const vec3 p2);
+
+
+/* Setup a TriVoronoi struct corresponding to the CCW triangle t and return true if t is robust, false otherwise.  */
+u32         TriVoronoiInitCcw(struct TriVoronoi *tv, const vec3 t[3]);
+
+/* 
+ * Return squared distance from segment s to triangle t, and set c_s to be the closest point on s, and c_t to be 
+ * the closest point on the triangle.
+ *
+ * NOTE: If the returned distance is 0.0f, c_t is not necessarily c_s, but instead c_t ~= c_s. Use one of the points
+ * for consistency if needed.
+ */
+f32 		TriCcwSegmentDistanceSquared(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *region, const struct segment *s, const struct TriVoronoi *tv);
+
+/* 
+ * Return squared distance from point p to triangle t, and set c to be the closest point on the triangle. 
+ * lambda_count is set to indicate the number of non-zero lambda components, and lambda is set to the 
+ * barocentric coordinates:
+ */
+f32         TriCcwPointDistanceSquared(vec3 c, enum TriVoronoiRegion *region, const vec3 point, const struct TriVoronoi *tv);
+
+/* 
+ * Return t in [0,1] such that clip = s.p0*(1-t) + s.p1*t is a point on the given plane. If no such t exist, 
+ * return F32_INFINITY. 
+ */
+f32         TriCcwSegmentClipParameter(vec3 clip, const struct segment *s, const struct TriVoronoi *tv);
+
+/* 
+ * Return 1 if segment clips triangle, 0 otherwise. If clip, set the clip point.
+ */
+u32         TriCcwSegmentClip(vec3 clip, const struct segment *s, const struct TriVoronoi *tv);
+
+/* 
+ * Return the remaining segment when clipping s against all side-planes of the triangle. WARNING: Assumes s in
+ * at least partially within the voronoi face region.
+ */
+struct segment  TriCcwSegmentSideClip(const struct segment *s, const struct TriVoronoi *tv);
 
 
 /********************************** dcel ************************************/
@@ -268,20 +369,34 @@ struct dcel
 
 /* return dcel { 0 } */
 struct dcel 	DcelEmpty(void);
+/* return dcel tri stub */
+struct dcel     DcelTriStub(void);
 /* return dcel box stub */
 struct dcel 	DcelBoxStub(void);
 /* return arena allocated dcel box with given half widths */
 struct dcel 	DcelBox(struct arena *mem, const vec3 hw);
 /* return arena allocated dcel convex hull of input points. On failure, an empty dcel is returned. */
-struct dcel 	DcelConvexHull(struct arena *mem, const vec3ptr v, const u32 v_count, const f32 tol);
+struct dcel 	DcelConvexHull(struct arena *mem, constvec3ptr v, const u32 v_count, const f32 tol);
 /* Return support of dcel in given direction, and return supporting vertex index */
-u32		DcelSupport(vec3 support, const vec3 dir, const struct dcel *hull, mat3 rot, const vec3 pos);
+u32		        DcelSupport(vec3 support, const vec3 dir, const struct dcel *hull, mat3 rot, const vec3 pos);
+
+/* Return the transformed plane defined by the given face */
+struct plane 	DcelFacePlane(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi);
+/* Return the plane defined by the given face */
+struct plane 	DcelFacePlaneLocal(const struct dcel *h, const u32 fi);
+
+/* Return the transformed normal defined by the given face */
+void 		    DcelFaceNormal(vec3 normal, const struct dcel *h, mat3 rot, const u32 fi);
+/* Return the transformed normal drirection defined by the given face */
+void 		    DcelFaceDirection(vec3 normal_direction, const struct dcel *h, mat3 rot, const u32 fi);
+/* Return the normal defined by the given face */
+void 		    DcelFaceNormalLocal(vec3 normal, const struct dcel *h, const u32 fi);
+/* Return the normal drirection defined by the given face */
+void 		    DcelFaceDirectionLocal(vec3 normal_direction, const struct dcel *h, const u32 fi);
+
+struct plane 	DcelFaceClipPlane(const struct dcel *h, mat3 rot, const vec3 pos, const vec3 face_normal, const u32 e0, const u32 e1); /* Return clip plane of face containing edge e0e1, orthogonal to the face normal */
 
 /* TODO: document, go through ... */
-void 		DcelFaceDirection(vec3 dir, const struct dcel *h, const u32 fi); /* not normalized */
-void 		DcelFaceNormal(vec3 normal, const struct dcel *h, const u32 fi); /* normalized */
-struct plane 	DcelFacePlane(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi);
-struct plane 	DcelFaceClipPlane(const struct dcel *h, mat3 rot, const vec3 pos, const vec3 face_normal, const u32 e0, const u32 e1); /* Return clip plane of face containing edge e0e1, orthogonal to the face normal */
 struct segment 	DcelFaceClipSegment(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi, const struct segment *s); /* clip segment against face fi's edge-planes (No projection onto face plane!) */
 u32 		DcelFaceProjectedPointTest(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi, const vec3 p); /* Project p onto face plane and test if it is on the face */
 
@@ -300,8 +415,8 @@ void 		DcelAssertTopology(struct dcel *dcel);
 /********************************* vertex operations ***********************************/
 
 /* Return: support of vertex set given the direction, and supporting vertex index */
-u32 	VertexSupport(vec3 support, const vec3 dir, const vec3ptr v, const u32 v_count);
-void 	VertexCentroid(vec3 centroid, const vec3ptr vs, const u32 n);
+u32 	VertexSupport(vec3 support, const vec3 dir, constvec3ptr v, const u32 v_count);
+void 	VertexCentroid(vec3 centroid, constvec3ptr vs, const u32 n);
 
 #ifdef __cplusplus
 } 

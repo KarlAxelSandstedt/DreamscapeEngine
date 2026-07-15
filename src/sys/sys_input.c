@@ -95,7 +95,7 @@ const char *ds_keycode_string_map[] =
 	"DS_Y", 
 	"DS_Z", 
 	"DS_NO_SYMBOL",
-	"DS_KEY_COUN"
+	"DS_KEY_COUNT"
 };
 
 const char *CstrDsKeycode(const enum dsKeycode key)

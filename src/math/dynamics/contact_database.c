@@ -39,6 +39,22 @@ u32 ds_ContactKeyEquivalence(const struct ds_ContactKey *keyA, const struct ds_C
     return memcmp(keyA, keyB, sizeof(struct ds_ContactKey)) == 0;
 }
 
+void ds_ContactKeyAddress(struct ds_RigidBody **b0, struct ds_Shape **s0, struct ds_RigidBody **b1, struct ds_Shape **s1, const struct ds_RigidBodyPipeline *pipeline, const struct ds_ContactKey *key)
+{
+    *b0 = (struct ds_RigidBody *) pipeline->body_pool.buf + key->body0;
+    *b1 = (struct ds_RigidBody *) pipeline->body_pool.buf + key->body1;
+    
+    const u32 si0 = INDIRECT_SHAPE_CHECK(key->shape0)
+        ? (*b0)->shape_list.first
+        : key->shape0;
+    const u32 si1 = INDIRECT_SHAPE_CHECK(key->shape1)
+        ? (*b1)->shape_list.first
+        : key->shape1;
+    
+    *s0 = (struct ds_Shape *) pipeline->shape_pool.buf + si0;
+    *s1 = (struct ds_Shape *) pipeline->shape_pool.buf + si1;
+}
+
 static u32 cdb_IndexInPreviousConctactNode(struct nll *net, void **prev_node, const void *cur_node, const u32 cur_index)
 {
 	ds_Assert(cur_index <= 1);
@@ -47,8 +63,8 @@ static u32 cdb_IndexInPreviousConctactNode(struct nll *net, void **prev_node, co
 	
 	*prev_node = nll_Address(net, c->nll_prev[cur_index]);
     const struct ds_Contact *prev = *prev_node;
-	ds_Assert(c->nll_prev[cur_index] == NLL_NULL || shape == prev->key.shape0 || shape == prev->key.shape1);
-	return (shape == prev->key.shape0)
+	ds_Assert(c->nll_prev[cur_index] == NLL_NULL || shape == prev->key.shape0 || shape == prev->key.shape1 || INDIRECT_SHAPE_CHECK(shape));
+	return (shape == prev->key.shape0 || (INDIRECT_SHAPE_CHECK(shape) && INDIRECT_SHAPE_CHECK(prev->key.shape0)))
 		? 0
 		: 1;
 }
@@ -61,8 +77,8 @@ static u32 cdb_IndexInNextConctactNode(struct nll *net, void **next_node, const 
 	
 	*next_node = nll_Address(net, c->nll_next[cur_index]);
     const struct ds_Contact *next = *next_node;
-	ds_Assert(c->nll_next[cur_index] == NLL_NULL || shape == next->key.shape0 || shape == next->key.shape1);
-	return (shape == next->key.shape0)
+	ds_Assert(c->nll_next[cur_index] == NLL_NULL || shape == next->key.shape0 || shape == next->key.shape1 || INDIRECT_SHAPE_CHECK(shape));
+	return (shape == next->key.shape0 || (INDIRECT_SHAPE_CHECK(shape) && INDIRECT_SHAPE_CHECK(next->key.shape0)))
 		? 0
 		: 1;
 }
@@ -121,10 +137,10 @@ void cdb_Validate(const struct ds_RigidBodyPipeline *pipeline)
 			//	       c->nll_prev[0],	
 			//	       c->nll_prev[1]);
 
-			const struct ds_RigidBody *b0 = ds_PoolAddress(&pipeline->body_pool, c->key.body0);
-			const struct ds_RigidBody *b1 = ds_PoolAddress(&pipeline->body_pool, c->key.body1);
-			const struct ds_Shape *s0 = ds_PoolAddress(&pipeline->shape_pool, c->key.shape0);
-			const struct ds_Shape *s1 = ds_PoolAddress(&pipeline->shape_pool, c->key.shape1);
+
+            struct ds_RigidBody *b0, *b1;
+            struct ds_Shape *s0, *s1;
+            ds_ContactKeyAddress(&b0, &s0, &b1, &s1, pipeline, &c->key);
 
 			u32 prev, k, found; 
 			prev = NLL_NULL;
@@ -140,7 +156,7 @@ void cdb_Validate(const struct ds_RigidBodyPipeline *pipeline)
 
 				const struct ds_Contact *tmp = nll_Address(&pipeline->cdb->contact_net, k);
 				ds_Assert(PoolSlotAllocated(tmp));
-				if (tmp->key.shape0 == c->key.shape0)
+				if ((INDIRECT_SHAPE_CHECK(c->key.shape0) && INDIRECT_SHAPE_CHECK(tmp->key.shape0)) || tmp->key.shape0 == c->key.shape0)
 				{
 					ds_Assert(prev == tmp->nll_prev[0]);
 					prev = k;
@@ -148,7 +164,7 @@ void cdb_Validate(const struct ds_RigidBodyPipeline *pipeline)
 				}
 				else
 				{
-					ds_Assert(tmp->key.shape1 == c->key.shape0);
+					ds_Assert((INDIRECT_SHAPE_CHECK(c->key.shape0) && INDIRECT_SHAPE_CHECK(tmp->key.shape1)) || tmp->key.shape1 == c->key.shape0);
 					ds_Assert(prev == tmp->nll_prev[1]);
 					prev = k;
 					k = tmp->nll_next[1];
@@ -178,7 +194,7 @@ void cdb_Validate(const struct ds_RigidBodyPipeline *pipeline)
 				else
 				{
 					ds_Assert(prev == tmp->nll_prev[1]);
-					ds_Assert(tmp->key.shape1 == c->key.shape1);
+					ds_Assert(tmp->key.shape1 == c->key.shape1 || INDIRECT_SHAPE_CHECK(c->key.shape1));
 					prev = k;
 					k = tmp->nll_next[1];
 				}
@@ -206,8 +222,9 @@ struct slot ds_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct c_
 {
     ds_Assert(ds_ContactKeyLookup(pipeline, key).address == NULL);
 
-	struct ds_Shape *shape0 = ds_PoolAddress(&pipeline->shape_pool, key->shape0);
-	struct ds_Shape *shape1 = ds_PoolAddress(&pipeline->shape_pool, key->shape1);
+    struct ds_RigidBody *body0, *body1;
+    struct ds_Shape *shape0, *shape1;
+    ds_ContactKeyAddress(&body0, &shape0, &body1, &shape1, pipeline, key);
 
 	struct ds_Contact cpy =
 	{
@@ -242,10 +259,10 @@ void ds_ContactUpdate(struct ds_RigidBodyPipeline *pipeline, const struct slot s
 void ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
 {
 	struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, index);
-	struct ds_RigidBody *body0 = ds_PoolAddress(&pipeline->body_pool, c->key.body0);
-	struct ds_RigidBody *body1 = ds_PoolAddress(&pipeline->body_pool, c->key.body1);
-	struct ds_Shape *shape0 = ds_PoolAddress(&pipeline->shape_pool, c->key.shape0);
-	struct ds_Shape *shape1 = ds_PoolAddress(&pipeline->shape_pool, c->key.shape1);
+	struct ds_RigidBody *body0, *body1;
+    struct ds_Shape *shape0, *shape1;
+    ds_ContactKeyAddress(&body0, &shape0, &body1, &shape1, pipeline, &c->key);
+
 	
 	if (shape0->contact_first == index)
 	{
@@ -324,6 +341,7 @@ struct slot sat_CacheAdd(struct cdb *cdb, const struct sat_CacheKey *key)
 	struct sat_Cache *sat = slot.address;
     sat->key = *key;
     sat->type = SAT_CACHE_NOT_SET;
+    sat->tri_cache_count = 0;
 	sat_CacheTHashMapAdd(&cdb->sat_cache_map, sat, slot.index);
     return slot;
 }

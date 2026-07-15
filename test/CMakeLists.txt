@@ -4,6 +4,7 @@ add_library(DreamscapeTestAPI
 	ds_test.h
 	test_repetition.c
 	test_main.c 
+    test_job.c
     #test_container.c
     #test_math.c
 	test_string.c
@@ -12,6 +13,7 @@ add_library(DreamscapeTestAPI
     test_hash_map.c
 	test_hash.c
 	test_rng.c
+	test_geometry.c
 )
 
 add_library(Dreamscape::Test ALIAS DreamscapeTestAPI)

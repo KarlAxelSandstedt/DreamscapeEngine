@@ -17,8 +17,6 @@
 ==========================================================================
 */
 
-#include <string.h>
-
 #include "ds_test.h"
 
 enum ss_Type
@@ -526,7 +524,7 @@ void ss_write_read_u32_partial_reset(void *args)
 void ss_write_read_u32_partial_free(void *args)
 {
 	struct ss_write_read_u32_partial_input *input = args;
-	free(input->ss_1.buf);
+	ss_Free(&input->ss_1);
 	free(input);
 }
 

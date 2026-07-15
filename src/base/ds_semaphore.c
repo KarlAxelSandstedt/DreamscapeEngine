@@ -60,21 +60,16 @@ void SemaphorePost(semaphore *sem)
 	}
 }
 
-u32 SemaphoreWait(semaphore *sem)
+void SemaphoreWait(semaphore *sem)
 {
-	u32 success = 1;
-	if (sem_wait(sem) == -1)
+	while (sem_wait(sem) == -1)
 	{
 		if (errno == EINVAL)
 		{
 			LogSystemError(S_FATAL);
 			FatalCleanupAndExit();
 		}	
-
-		success = 0;
 	}
-
-	return success;
 }
 
 u32 SemaphoreTryWait(semaphore *sem)
@@ -130,7 +125,7 @@ void SemaphorePost(semaphore *sem)
 	}
 }
 
-u32 SemaphoreWait(semaphore *sem)
+void SemaphoreWait(semaphore *sem)
 {
 	DWORD ret = WaitForSingleObjectEx(*sem, INFINITE, FALSE);
 	if (ret != WAIT_OBJECT_0)
@@ -138,8 +133,6 @@ u32 SemaphoreWait(semaphore *sem)
 		LogSystemError(S_FATAL);
 		FatalCleanupAndExit();
 	}
-
-	return 1;
 }
 
 u32 SemaphoreTryWait(semaphore *sem)
