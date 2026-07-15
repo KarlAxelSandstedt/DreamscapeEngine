@@ -5,3 +5,4 @@
 #include "ds_shape.c"
 #include "ds_body.c"
 #include "ds_numerics.c"
+#include "ds_joint.c"

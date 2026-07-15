@@ -92,6 +92,7 @@ generations and 32-bit indices.
 typedef u64 ds_Id;
 typedef u64 ds_IdF; /* ds_IdF (frequent) */
 
+typedef ds_Id   ds_JointId;
 typedef ds_Id   ds_RigidBodyId;
 typedef ds_Id   ds_ShapeId;
 typedef ds_IdF  ds_ContactId;
@@ -280,6 +281,21 @@ f32 	    ds_ShapeRaycastParameter(const struct ds_RigidBodyPipeline *pipeline, c
  * Return 1 if ray hit shape, 0 otherwise. If hit, we return the closest intersection point 
  */
 u32 	    ds_ShapeRaycast(vec3 intersection, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray);
+
+/*
+ds_Joint
+========
+//TODO
+*/
+
+struct ds_Joint
+{
+    POOL_NODE;
+    
+    ds_JointId  id;
+};
+POOL_DECLARE(ds_Joint);
+
 
 
 /*

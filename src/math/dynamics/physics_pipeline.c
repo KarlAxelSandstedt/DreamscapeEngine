@@ -284,6 +284,15 @@ static u32 NarrowPhaseJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPh
                 job->key[i] = ds_ContactKeyCanonical(job->key_in.body0, job->key_in.shape0, job->key_in.body1, INDIRECT_SHAPE_INIT(tri[i]));
             }
         }
+
+        //TODO
+        for (u32 i = 0; i < job->collision_count; ++i)
+        {
+            if (!c_ManifoldCheck(job->manifold + i))
+            {
+                Breakpoint(1);
+            }
+        }
     }
     else
     {
@@ -321,21 +330,18 @@ static u32 NarrowPhaseJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPh
         }
 
         struct c_Manifold manifold;
-        struct arena *tmp = ArenaPushScratch();
         job->collision_count = ds_ShapeContact(&manifold, job->cache, pipeline, s0, s1);
-        ArenaPopScratch();
 
         if (job->collision_count)
         {
             job->manifold = ArenaPushAlignedMemcpy(g_tl_self->frame, &manifold, sizeof(struct c_Manifold), 4);
-            
-            //if (!c_ManifoldCheck(job->manifold))
-            //{
-            //    Breakpoint(1);
-            //    tmp = ArenaPushScratch();
-            //    job->collision_count = ds_ShapeContact(&manifold, job->cache, pipeline, s0, s1);
-            //    ArenaPopScratch();
-            //}
+
+            //TODO
+            if (!c_ManifoldCheck(job->manifold))
+            {
+                Breakpoint(1);
+                ds_ShapeContact(&manifold, job->cache, pipeline, s0, s1);
+            }
         }
     }
 

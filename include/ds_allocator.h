@@ -226,11 +226,56 @@ internal slot state for the struct. The pool allocator can allocate at most 2^31
 slots are supported by instead using the GPool Api instead, and replacing POOL_SLOT_STATE with 
 GENERATIONAL_POOL_SLOT_STATE.
 
-Internal: each struct contains a slot state variable (u32). For allocated slots the state is <= 0x7fffffff.
+::: Usage and Documentation :::
+
+To declare/define the allocator for a specific struct, say ds_Struct, add the 
+following in the definition of ds_Struct
+
+    struct ds_Struct
+    {
+        ...
+        POOL_NODE;
+        ...
+    };
+
+and write
+
+    POOL_DECLARE(ds_Struct)
+    POOL_DEFINE(ds_Struct)
+
+at the appropriate places. POOL_DECLARE defines the ds_StructPool struct and
+the ds_StructPool*** functions, and POOL_DEFINE generates the implementations
+of each function. The functions generated are the following:
+
+    // Allocation of pool (in mem if provided). On error, an empty pool (length == 0), is returned.
+    ds_StructPool   ds_StructPoolAlloc(mem, length, growable)	
+
+    // Deallocate pool.
+    void		    ds_StructPoolDealloc(struct ds_StructPool *pool)
+
+    // Deallocate all allocations inside pool.
+    void		    ds_StructPoolFlush(struct ds_StructPool *pool)
+
+    // alloc new slot; on error return (NULL, U32_MAX)
+    struct slot	    ds_StructPoolAdd(struct ds_StructPool *pool)
+
+    // remove slot given index
+    void		    ds_StructPoolRemove(struct ds_StructPool *pool, const u32 index)
+
+    // remove slot given address
+    void		    ds_StructPoolRemoveAddress(struct ds_StructPool *pool, void *address)
+
+    // return index of address 
+    u32		        ds_StructPoolIndex(const struct ds_StructPool *pool, const void *address)
+
+::: Internal ::: 
+
+Each struct contains a slot state variable (u32). For allocated slots the state is <= 0x7fffffff.
 For unallocated slots, the most signficicant bit is set and the 31 lower bits represents an index to the 
 next free slot in the chain. The end of the free chain is represented by POOL_NULL.
 */
 
+#define POOL_NODE 	        u32 pool_slot;
 #define POOL_SLOT_STATE 	u32 slot_allocation_state
 #define POOL_NULL		        0xffffffff
 #define POOL_ALLOCATION_MASK	0x80000000
@@ -238,10 +283,214 @@ next free slot in the chain. The end of the free chain is represented by POOL_NU
 #define PoolSlotAllocated(ptr)	(!((ptr)->slot_allocation_state & POOL_ALLOCATION_MASK))
 #define PoolSlotNext(ptr)	((ptr)->slot_allocation_state & POOL_INDEX_MASK)
 #define PoolSlotGeneration(ptr)	((ptr)->slot_generation_state)
-
 #define GENERATIONAL_POOL_SLOT_STATE	u32 slot_allocation_state;	\
 					u32 slot_generation_state
 
+
+#define POOL_DECLARE(struct_name)                                                                          \
+        POOL_STRUCT_DEFINE(struct_name);                                                                   \
+        POOL_ALLOC_DECLARE(struct_name);                                                                   \
+        POOL_DEALLOC_DECLARE(struct_name);                                                                 \
+        POOL_FLUSH_DECLARE(struct_name);                                                                   \
+        POOL_ADD_DECLARE(struct_name);                                                                     \
+        POOL_REMOVE_DECLARE(struct_name);                                                                  \
+        POOL_REMOVE_ADDRESS_DECLARE(struct_name);                                                          \
+        POOL_INDEX_DECLARE(struct_name)                                                           
+
+#define POOL_DEFINE(struct_name)                                                                           \
+        POOL_ALLOC_DEFINE(struct_name)                                                                     \
+        POOL_DEALLOC_DEFINE(struct_name)                                                                   \
+        POOL_FLUSH_DEFINE(struct_name)                                                                     \
+        POOL_ADD_DEFINE(struct_name)                                                                       \
+        POOL_REMOVE_DEFINE(struct_name)                                                                    \
+        POOL_REMOVE_ADDRESS_DEFINE(struct_name)                                                            \
+        POOL_INDEX_DEFINE(struct_name)                                                           
+
+#define POOL_STRUCT_DEFINE(struct_name)                                                                    \
+struct struct_name ## Pool                                                                                 \
+{                                                                                                          \
+	struct ds_MemSlot mem_slot;	/* If heap allocated, mem_slot.address set to valid address,               \
+                                   otherwise NULL.                                              */         \
+	struct struct_name *buf;		                                                                       \
+	u32 length;			        /* array length 				                                */         \
+	u32 count;			        /* current count of occupied slots 		                        */         \
+	u32 count_max;		        /* max count used over the object's lifetime 	                */         \
+	u32 next_free;		        /* next free index if != U32_MAX 		                        */         \
+	u32 growable;		        /* is the memory growable? 			                            */         \
+}
+
+#define POOL_ALLOC_DECLARE(struct_name)                                                                             \
+struct struct_name ## Pool  struct_name ## PoolAlloc(struct arena *mem,                                             \
+                                                        const u32 length,                                           \
+                                                        const u32 growable)
+
+#define POOL_DEALLOC_DECLARE(struct_name)                                                                           \
+void                        struct_name ## PoolDealloc(struct struct_name ## Pool *pool)                                           
+
+#define POOL_FLUSH_DECLARE(struct_name)                                                                             \
+void                        struct_name ## PoolFlush(struct struct_name ## Pool *pool)                                         
+
+#define POOL_ADD_DECLARE(struct_name)                                                                               \
+struct slot                 struct_name ## PoolAdd(struct struct_name ## Pool *pool)
+
+#define POOL_REMOVE_DECLARE(struct_name)                                                                            \
+void                        struct_name ## PoolRemove(struct struct_name ## Pool *pool,                             \
+                                                      const u32 index)   
+
+#define POOL_REMOVE_ADDRESS_DECLARE(struct_name)                                                                    \
+void                        struct_name ## PoolRemoveAddress(struct struct_name ## Pool *pool,                      \
+                                                         const struct struct_name *addr)    
+
+#define POOL_INDEX_DECLARE(struct_name)                                                                             \
+u32                         struct_name ## PoolIndex(struct struct_name ## Pool *pool,                              \
+                                                     const struct struct_name *addr)
+
+#define POOL_ALLOC_DEFINE(struct_name)                                                                      \
+POOL_ALLOC_DECLARE(struct_name)                                                                             \
+{                                                                                                           \
+	ds_Assert(!growable || !mem);                                                                           \
+	struct struct_name ## Pool pool = { 0 };                                                                \
+	u32 length_used = length;                                                                               \
+	if (mem)                                                                                                \
+	{                                                                                                       \
+		pool.buf = ArenaPush(mem, sizeof(struct struct_name) * length);                                     \
+	}                                                                                                       \
+	else                                                                                                    \
+	{                                                                                                       \
+		pool.buf = ds_Alloc(&pool.mem_slot, sizeof(struct struct_name) * length, HUGE_PAGES);               \
+		length_used = pool.mem_slot.size / sizeof(struct struct_name);                                      \
+	}                                                                                                       \
+                                                                                                            \
+	if (pool.buf)                                                                                           \
+	{                                                                                                       \
+		pool.length = length_used;                                                                          \
+		pool.count = 0;                                                                                     \
+		pool.count_max = 0;                                                                                 \
+		pool.next_free = POOL_INDEX_MASK;                                                                   \
+		pool.growable = growable;                                                                           \
+		PoisonAddress(pool.buf, pool.slot_size * pool.length);                                              \
+	}                                                                                                       \
+	return pool;                                                                                            \
+}
+
+#define POOL_DEALLOC_DEFINE(struct_name)                                                                    \
+POOL_DEALLOC_DECLARE(struct_name)                                                                           \
+{                                                                                                           \
+	if (pool->mem_slot.address)                                                                             \
+	{                                                                                                       \
+		ds_Free(&pool->mem_slot);                                                                           \
+	}                                                                                                       \
+}
+
+#define POOL_FLUSH_DEFINE(struct_name)                                                                      \
+POOL_FLUSH_DECLARE(struct_name)                                                                             \
+{                                                                                                           \
+	pool->count = 0;                                                                                        \
+	pool->count_max = 0;                                                                                    \
+	pool->next_free = POOL_INDEX_MASK;                                                                      \
+	PoisonAddress(pool->buf, pool->slot_size * pool->length);                                               \
+}
+
+#define POOL_ADD_DEFINE(struct_name)                                                                        \
+POOL_ADD_DECLARE(struct_name)                                                                               \
+{                                                                                                           \
+	struct slot allocation = { .address = NULL, .index = POOL_NULL };                                       \
+	if (pool->count < pool->length)                                                                         \
+	{                                                                                                       \
+		if (pool->next_free != POOL_INDEX_MASK)                                                             \
+		{                                                                                                   \
+			allocation.address = pool->buf + pool->next_free;                                               \
+			allocation.index = pool->next_free;                                                             \
+			UnpoisonAddress(allocation.address, sizeof(struct struct_name));                                \
+                                                                                                            \
+            pool->next_free = pool->buf[allocation.index].pool_slot & POOL_INDEX_MASK;                      \
+			ds_Assert(pool->next_free);                                                                     \
+		}                                                                                                   \
+		else                                                                                                \
+		{                                                                                                   \
+			allocation.address = pool->buf + pool->count_max;                                               \
+			allocation.index = pool->count_max;                                                             \
+			UnpoisonAddress(allocation.address, sizeof(struct struct_name));                                \
+			pool->count_max += 1;                                                                           \
+		}	                                                                                                \
+        pool->buf[allocation.index].pool_slot = 0;                                                          \
+		pool->count += 1;                                                                                   \
+	}                                                                                                       \
+	else if (pool->growable)                                                                                \
+	{                                                                                                       \
+	    const u32 length_max = (U32_MAX >> 1);                                                              \
+	    if (pool->length == length_max)                                                                     \
+	    {                                                                                                   \
+	    	LogString(T_SYSTEM, S_FATAL, "pool allocator full, exiting");                                   \
+	    	FatalCleanupAndExit();                                                                          \
+	    }                                                                                                   \
+	                                                                                                        \
+	    const u32 old_length = pool->length;                                                                \
+	    pool->length <<= 1;                                                                                 \
+	    if (pool->length > length_max)                                                                      \
+	    {                                                                                                   \
+	    	pool->length = length_max;                                                                      \
+	    }                                                                                                   \
+	                                                                                                        \
+	    pool->buf = ds_Realloc(&pool->mem_slot, pool->length*sizeof(struct struct_name));                   \
+	    if (!pool->buf)                                                                                     \
+	    {                                                                                                   \
+	    	LogString(T_SYSTEM, S_FATAL, "pool reallocation failed, exiting");                              \
+	    	FatalCleanupAndExit();                                                                          \
+	    }                                                                                                   \
+	                                                                                                        \
+	    UnpoisonAddress(pool->buf, old_length*sizeof(struct_name));                                         \
+	    PoisonAddress(pool->buf + old_length, (pool->length-old_length)*sizeof(struct_name));               \
+	                                                                                                        \
+		allocation.address = pool->buf + pool->count_max;                                                   \
+		allocation.index = pool->count_max;                                                                 \
+		UnpoisonAddress(allocation.address, sizeof(struct struct_name));                                    \
+        pool->buf[allocation.index].pool_slot = 0;                                                          \
+		pool->count += 1;                                                                                   \
+	}                                                                                                       \
+	return allocation;                                                                                      \
+}
+
+#define POOL_REMOVE_DEFINE(struct_name)                                                                     \
+POOL_REMOVE_DECLARE(struct_name)                                                                            \
+{                                                                                                           \
+    ds_Assert(index < pool->length);                                                                        \
+                                                                                                            \
+    struct struct_name *addr = pool->buf + index;                                                           \
+	ds_Assert( (addr->pool_slot & POOL_ALLOCATION_MASK) == 0);                                              \
+                                                                                                            \
+    addr->pool_slot = POOL_ALLOCATION_MASK | pool->next_free;                                               \
+	pool->next_free = index;                                                                                \
+	pool->count -= 1;                                                                                       \
+                                                                                                            \
+    const u64 offset = (u64) &(((struct struct_name *)0)->pool_slot);                                       \
+                                                                                                            \
+	PoisonAddress(pool->buf + index, offset);                                                               \
+	PoisonAddress((u8*)(pool->buf + index) + offset + sizeof(addr->pool_slot),                              \
+            sizeof(*addr) - offset - sizeof(addr->pool_slot));                                              \
+}
+
+#define POOL_REMOVE_ADDRESS_DEFINE(struct_name)                                                             \
+POOL_REMOVE_ADDRESS_DECLARE(struct_name)                                                                    \
+{                                                                                                           \
+	const u32 index = struct_name ## PoolIndex(pool, addr);                                                 \
+	struct_name ## PoolRemove(pool, index);                                                                 \
+}
+
+#define POOL_INDEX_DEFINE(struct_name)                                                                      \
+POOL_INDEX_DECLARE(struct_name)                                                                             \
+{                                                                                                           \
+	ds_Assert((u64) addr >= (u64) pool->buf);                                                               \
+	ds_Assert((u64) addr < (u64) (pool->buf + pool->length));                                               \
+	ds_Assert((u64) (addr - pool->buf) % sizeof(struct struct_name) == 0);                                  \
+	return (u32) ((u64)(addr - pool->buf) / sizeof(struct struct_name));                                    \
+}
+
+#define POOL_NODE 	        u32 pool_slot;
+
+
+/*TODO: DEPRECATED, REPLACE */
+#define POOL_SLOT_STATE 	u32 slot_allocation_state
 struct ds_Pool
 {
 	struct ds_MemSlot mem_slot;	/* If heap allocated, mem_slot.address set to  
@@ -256,7 +505,6 @@ struct ds_Pool
 	u32 	count_max;		/* max count used over the object's lifetime 	*/
 	u32 	next_free;		/* next free index if != U32_MAX 		*/
 	u32 	growable;		/* is the memory growable? 			*/
-
 };
 
 /* internal allocation of pool, use ds_PoolAlloc macro instead */
