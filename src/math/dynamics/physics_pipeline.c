@@ -73,6 +73,8 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 	pipeline.body_marked_list = dll_Init(struct ds_RigidBody);
 	pipeline.body_non_marked_list = dll_Init(struct ds_RigidBody);
 
+    pipeline.joint_pool = ds_JointPoolAlloc(NULL, initial_size, GROWABLE);
+
 	pipeline.shape_pool = ds_PoolAlloc(NULL, initial_size, struct ds_Shape, GROWABLE);
 	pipeline.shape_bvh = DbvhAlloc(NULL, 2*initial_size, GROWABLE);
 
@@ -104,6 +106,7 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 	}
 #endif
 
+    pipeline.cgraph = ds_CGraphAlloc(4096);
     pipeline.numerics_config = ds_NumericsConfigDefault();
 
 	return pipeline;
@@ -124,6 +127,8 @@ void PhysicsPipelineFree(struct ds_RigidBodyPipeline *pipeline)
 	ds_PoolDealloc(&pipeline->body_pool);
 	ds_PoolDealloc(&pipeline->event_pool);
 	ds_PoolDealloc(&pipeline->shape_pool);
+    ds_JointPoolDealloc(&pipeline->joint_pool);
+    ds_CGraphDealloc(&pipeline->cgraph);
 }
 
 static void PhysicsPipelineClearFrame(struct ds_RigidBodyPipeline *pipeline)
@@ -160,6 +165,9 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
 
 	ds_PoolFlush(&pipeline->event_pool);
 	dll_Flush(&pipeline->event_list);
+
+    ds_JointPoolFlush(&pipeline->joint_pool);
+    ds_CGraphFlush(&pipeline->cgraph);
 
 	ArenaFlush(&pipeline->frame);
 	pipeline->frames_completed = 0;

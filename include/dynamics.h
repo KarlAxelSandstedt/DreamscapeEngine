@@ -283,22 +283,6 @@ f32 	    ds_ShapeRaycastParameter(const struct ds_RigidBodyPipeline *pipeline, c
 u32 	    ds_ShapeRaycast(vec3 intersection, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray);
 
 /*
-ds_Joint
-========
-//TODO
-*/
-
-struct ds_Joint
-{
-    POOL_NODE;
-    
-    ds_JointId  id;
-};
-POOL_DECLARE(ds_Joint);
-
-
-
-/*
 rigid_body
 ========== 
 //TODO
@@ -697,6 +681,138 @@ void		cdb_Flush(struct cdb *cdb);
 void		cdb_Validate(const struct ds_RigidBodyPipeline *pipeline);
 /* Flush cdb frame resources */
 void		cdb_ClearFrame(struct cdb *cdb);
+
+
+/*
+ds_Joint
+========
+Library API level representation of all joint types. A ds_Joint constrain two rigid bodies according to its type,
+and should be viewed as data co-owned by the two bodies. Internally, it stores book-keeping data, while physics
+related data is stored in the ds_JointSim struct. It, in addition to the ds_Contact struct, also represents an
+edge in the constraint graph (ds_CGraph), 
+*/
+
+enum ds_JointType
+{
+    DS_JOINT_TYPE_NONE,
+    DS_JOINT_TYPE_DISTANCE,
+    DS_JOINT_TYPE_COUNT
+};
+
+struct ds_Joint
+{
+    POOL_NODE;
+    u32         tag;        /* id tag               */
+
+    //TODO
+    /* Should ideally be refactored into macro-based NLL? */
+    u32         body[2];
+    u32         prev[2];
+    u32         next[2];
+
+    //TODO u32         island;     /* */
+
+    u32         sim;        /* owned ds_JointSim    */
+    u32         color;      /* edge color           */
+};
+POOL_DECLARE(ds_Joint);
+
+/*
+ds_DistanceJoint
+================
+//TODO
+*/
+struct ds_DistanceJoint
+{
+    u32 tmp;
+};
+
+/*
+TODO: better name?
+ds_JointSim
+===========
+ds_JointSim is a discriminating union storing all different types of physical joints. 
+*/
+struct ds_JointSim
+{
+    POOL_NODE;
+
+    enum ds_JointType type;
+    union
+    {
+        struct ds_DistanceJoint distance;
+    };
+};
+DEFINE_CPOOL_STRUCT(ds_JointSim);
+
+/*
+ds_CGraph
+=========
+ds_CGraph is a persistent graph that models all constraints in the pipeline. Each implicit vertex
+in the graph represents a rigid body, and  each edge between two bodies represents a constraint
+from either a contact or a joint. Whenever a new constraint is added between two bodies, it is 
+assigned a unique color from all the other constraints that shares bodies (vertices) with it. If
+we have exhausted the available colors, we assign the constraint to the serial color. 
+
+Now that we have every constraint colored, We pay process all constraints with the same color in
+parallel (expect the serial color). For good information on this, see Erin Catto's post "SIMD Matters".
+
+Furthermore, similar to Box3D, in order to mitigate ghost collisions, we prioritize static-dynamic 
+constraints by processing them first in each solver iteration. This yields a process ordering:
+
+    CG_SERIAL_COLOR => CG_STATIC_COLOR_1 => ... => CG_STATIC_COLOR_N => CG_DYNAMIC_1 => .. CG_DYNAMIC_M
+
+//TODO When a island falls asleep, all its constraints are removed/moved away. WHen it wake-up we reinsert.
+
+//TODO We keep the color data arrays compact; we play a price to keep them coherent, but gain later on solving.
+
+::: Mapping of structs :::
+//TODO: Fill as we get furhter along 
+//
+                  DLL       DLL
+            body0 <-> joint <-> body1 
+                        A
+                        |
+        jointSim <------+
+*/
+
+
+/*
+ds_CGraphColor
+==============
+//TODO this may not be true, we will see.
+ds_CGraphColor stores the relevant physics data of active constraints, tightly packed for quick iterations.
+*/
+struct ds_CGraphColor
+{
+    ds_CPool(ds_JointSim)   joint_pool;
+};
+
+#define CG_COLOR_COUNT          12
+#define CG_SERIAL_COLOR         0 
+#define CG_STATIC_COLOR_FIRST   1
+#define CG_STATIC_COLOR_COUNT   4
+#define CG_DYNAMIC_COLOR_FIRST  (1 + CG_STATIC_COLOR_COUNT)
+#define CG_DYNAMIC_COLOR_COUNT  (CG_COLOR_COUNT - CG_STATIC_COLOR_COUNT - 1) 
+
+
+struct ds_CGraph
+{
+    struct ds_CGraphColor color[CG_COLOR_COUNT];
+};
+
+
+/* Allocate and setup constraint graph */
+struct ds_CGraph    ds_CGraphAlloc(const u32 initial_count);
+/* Dellocate constraint graph */
+void                ds_CGraphDealloc(struct ds_CGraph *cg);
+/* Flush constraint graph data */
+void                ds_CGraphFlush(struct ds_CGraph *cg);
+
+/* Allocate and setup a new ds_JointSim */
+struct slot         ds_CGraphJointAdd(u32 *color, u32 *index, struct ds_RigidBodyPipeline *pipeline, const u32 body0, const u32 body1);
+/* Deallocate a ds_JointSim */
+void                ds_CGraphJointRemove(struct ds_RigidBodyPipeline *pipeline, const u32 color, const u32 index);
 
 /*
 ds_Island
@@ -1202,37 +1318,43 @@ enum rigidBodyColorMode
  */
 struct ds_RigidBodyPipeline 
 {
-	struct arena 	frame;			        /* frame memory */
+	struct arena 	    frame;			        /* frame memory */
 
-	u64				ns_start;		        /* external ns at start of physics pipeline */
-	u64				ns_elapsed;		        /* actual ns elasped in pipeline (= 0 at start) */
-	u64				ns_tick;		        /* ns per game tick */
-	u64 			frames_completed;	    /* number of completed physics frames */ 
+	u64				    ns_start;		        /* external ns at start of physics pipeline */
+	u64				    ns_elapsed;		        /* actual ns elasped in pipeline (= 0 at start) */
+	u64				    ns_tick;		        /* ns per game tick */
+	u64 			    frames_completed;	    /* number of completed physics frames */ 
 
-	struct strdb *	cshape_db;		        /* externally owned */
-	struct strdb *	body_prefab_db;		    /* externally owned */
+	struct strdb *	    cshape_db;		        /* externally owned */
+	struct strdb *	    body_prefab_db;		    /* externally owned */
 
-	struct ds_Pool	body_pool;
-	struct dll		body_marked_list;	    /* bodies marked for removal */
-	struct dll		body_non_marked_list;	/* bodies alive and non-marked  */
+	struct ds_Pool	    body_pool;
+	struct dll		    body_marked_list;	    /* bodies marked for removal */
+	struct dll		    body_non_marked_list;	/* bodies alive and non-marked  */
 
-	struct ds_Pool	shape_pool;
-	struct bvh 		shape_bvh;              /* dynamic bvh of shapes */
+	struct ds_Pool	    shape_pool;
+	struct bvh 		    shape_bvh;              /* dynamic bvh of shapes */
 
-	struct ds_Pool	event_pool;
-	struct dll		event_list;
+    struct ds_JointPool joint_pool;
+    //TODO bit_vector vs. dll to-free-list
 
-	struct cdb *	cdb;
-	struct isdb 	is_db;
+	struct ds_Pool	    event_pool;
+	struct dll		    event_list;
+
+    struct ds_CGraph   cgraph;
+
+
+	struct cdb *	    cdb;
+	struct isdb 	    is_db;
 
 	struct collisionDebug *	debug;
-	u32			debug_count;
+	u32			        debug_count;
 
 	//TODO temporary, move somewhere else.
-	vec3 			gravity;	/* gravity constant */
+	vec3 			    gravity;	/* gravity constant */
 
-	u32			    margin_on;
-	f32			    margin;
+	u32			        margin_on;
+	f32			        margin;
 
     struct ds_CollisionJobPhase *   cd_jobs;
     struct ds_IslandJobPhase *      is_jobs;

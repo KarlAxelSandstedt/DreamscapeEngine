@@ -146,10 +146,13 @@ void *ds_Realloc(struct ds_MemSlot *slot, const u64 size)
 
 void ds_Free(struct ds_MemSlot *slot)
 {
-	munmap(slot->address, slot->size);	
-	slot->address = NULL;
-	slot->size = 0;
-	slot->huge_pages = 0;
+    if (slot->address)
+    {
+	    munmap(slot->address, slot->size);	
+	    slot->address = NULL;
+	    slot->size = 0;
+	    slot->huge_pages = 0;
+    }
 }
 
 #elif __DS_PLATFORM__ == __DS_WEB__
@@ -638,10 +641,7 @@ struct ds_Pool ds_PoolAllocInternal(struct arena *mem, const u32 length, const u
 
 void ds_PoolDealloc(struct ds_Pool *pool)
 {
-	if (pool->mem_slot.address)
-	{
-		ds_Free(&pool->mem_slot);
-	}	
+	ds_Free(&pool->mem_slot);
 }
 
 void ds_PoolFlush(struct ds_Pool *pool)
@@ -669,12 +669,6 @@ static void ds_PoolReallocInternal(struct ds_Pool *pool)
 	}
 
 	pool->buf = ds_Realloc(&pool->mem_slot, pool->length*pool->slot_size);
-	if (!pool->buf)
-	{
-		LogString(T_SYSTEM, S_FATAL, "pool reallocation failed, exiting");
-		FatalCleanupAndExit();
-	}
-
 	UnpoisonAddress(pool->buf, pool->slot_size*old_length);
 	PoisonAddress(pool->buf + old_length*pool->slot_size, (pool->length-old_length)*pool->slot_size);
 }
@@ -867,11 +861,6 @@ struct slot ds_PoolExternalAdd(struct ds_ds_PoolExternal *pool)
 		if (old_length != pool->pool.length)
 		{
 			*pool->external_buf = ds_Realloc(&pool->mem_external, pool->pool.slot_size*pool->pool.length);
-			if (*pool->external_buf == NULL)
-			{
-				LogString(T_SYSTEM, S_FATAL, "Failed to reallocate external pool buffer");
-				FatalCleanupAndExit();
-			}
 			UnpoisonAddress(*pool->external_buf, pool->slot_size*old_length);
 			PoisonAddress(((u8 *)(*pool->external_buf) + pool->slot_size*old_length), pool->slot_size*(pool->pool.length - old_length)); 
 		}

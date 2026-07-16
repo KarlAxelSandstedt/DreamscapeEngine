@@ -45,7 +45,7 @@ void 	LogWriteMessage(const enum system_id system, const enum severity_id severi
 #ifdef DS_LOG
 
 #define LogString(system, severity, msg, ...)		LogWriteMessage(system, severity, msg)
-#define Log(system, severity, msg, ...)			LogWriteMessage(system, severity, msg, __VA_ARGS__)
+#define Log(system, severity, msg, ...)			    LogWriteMessage(system, severity, msg, __VA_ARGS__)
 
 #if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
 

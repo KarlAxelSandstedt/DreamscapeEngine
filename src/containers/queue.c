@@ -211,11 +211,6 @@ u32 MinQueuePush(struct minQueue * const queue, const f32 priority, const u32 ex
 	{
 		ds_Assert(queue->growable);
 		queue->elements = ds_Realloc(&queue->mem_elements, queue->object_pool.length*sizeof(struct queueElement));
-		if (queue->elements == NULL)
-		{
-			LogString(T_SYSTEM, S_FATAL, "Failed to reallocate min queue, exiting.");
-			FatalCleanupAndExit();
-		}
 	}
 
 	queue->elements[queue_index].priority = priority;
@@ -374,11 +369,6 @@ void MinQueueFixedPush(struct minQueueFixed *queue, const u32 id, const f32 prio
 		{
 			queue->length *= 2;
 			queue->element = ds_Realloc(&queue->mem_element, queue->length*sizeof(u32f32));
-			if (queue->element == NULL)
-			{
-				LogString(T_SYSTEM, S_FATAL, "Failed to reallocate min_queue_fixed memory, exiting.");
-				FatalCleanupAndExit();
-			}
 		}	
 		else
 		{

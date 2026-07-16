@@ -6,3 +6,4 @@
 #include "ds_body.c"
 #include "ds_numerics.c"
 #include "ds_joint.c"
+#include "ds_constraint_graph.c"

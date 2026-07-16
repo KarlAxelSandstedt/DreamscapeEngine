@@ -77,11 +77,6 @@ struct slot VectorPush(struct vector *v)
 			const u64 size = ds_AllocSizeCeil(2*v->mem_slot.size);
 			v->length = size / v->blocksize;
 			v->data = ds_Realloc(&v->mem_slot, size);
-			if (!v->data)
-			{
-				LogString(T_SYSTEM, S_FATAL, "Failed to resize vector");
-				FatalCleanupAndExit();
-			}
 		}
 		else
 		{
