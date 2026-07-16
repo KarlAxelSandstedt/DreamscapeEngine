@@ -125,6 +125,7 @@ struct file
 	enum fileType		type;	/* file type 					*/
 	utf8			path;	/* context dependent: relative or absolute 	*/
 };
+DEFINE_CPOOL_STRUCT(file);
 
 struct file FileNull(void);
 
@@ -188,7 +189,7 @@ enum fsError 	DirectoryTryOpenAtCwd(struct arena *mem, struct file *dir, const c
  * 	DS_FS_BUFFER_TO_SMALL on out-of-memory,
  *	DS_FS_UNSPECIFIED on errors regarding opening and reading the directory.
  */
-enum fsError	DirectoryPushEntries(struct arena *mem, struct vector *vec, struct file *dir);
+enum fsError	DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct file *dir);
 
 
 /*
@@ -199,7 +200,7 @@ struct directoryNavigator
 	utf8		path;				/* directory path  		*/ 
 	struct ds_HashMap 	relative_path_to_file_map;	/* relative_path -> file index 	*/
 	struct arena	mem_string;			/* path memory			*/
-	struct vector	files;				/* file information 		*/
+	ds_CPool(file)	files;				/* file information 		*/
 };
 
 /* allocate initial memory */

@@ -63,12 +63,12 @@ static void led_ProjectMenuUi(struct led *led, const struct ui_Visual *visual)
 
 		ui_Pad();
 
-		const u32 file_count = menu->dir_nav.files.next;
+		const u32 file_count = menu->dir_nav.files.count;
 		ui_Height(ui_SizePixel(20.0f, 1.0f))
 		ui_list(&menu->dir_list, "###p", &menu->dir_list)
 		for (u32 f = 0; f < file_count; ++f)
 		{
-			const struct file *file = VectorAddress(&menu->dir_nav.files, f);
+			const struct file *file = menu->dir_nav.files.buf + f;
 			const enum spriteId spr = (file->type == FILE_DIRECTORY)
 				? SPRITE_LED_FOLDER
 				: SPRITE_LED_FILE;

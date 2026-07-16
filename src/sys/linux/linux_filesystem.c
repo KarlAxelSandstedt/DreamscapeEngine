@@ -471,7 +471,7 @@ enum fsError CwdSet(struct arena *mem, const char *path)
 	return ret;
 }
 
-enum fsError DirectoryPushEntries(struct arena *mem, struct vector *vec, struct file *dir)
+enum fsError DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct file *dir)
 {
 	u32 ret = FS_SUCCESS;
 	DIR *dir_stream = fdopendir(dir->handle);
@@ -481,13 +481,13 @@ enum fsError DirectoryPushEntries(struct arena *mem, struct vector *vec, struct 
 	}
 
 	ArenaPushRecord(mem);
-	const u32 vec_record = vec->next;
+	const u32 vec_record = vec->count;
 	
 	file_status status;
 	struct dirent *ent;
 	while ((ent = readdir(dir_stream)) != NULL)
 	{
-		struct file *file = VectorPush(vec).address;
+		struct file *file = ds_CPoolPush(*vec).address;
 		file->path = Utf8Cstr(mem, ent->d_name);
 		if (file->path.len == 0)
 		{
@@ -507,7 +507,7 @@ enum fsError DirectoryPushEntries(struct arena *mem, struct vector *vec, struct 
 	if (ret != FS_SUCCESS)
 	{
 		ArenaPopRecord(mem);
-		vec->next = vec_record;
+		ds_CPoolPopBatch(*vec, vec->count - vec_record);
 	}
 	closedir(dir_stream);
 	*dir = FileNull();

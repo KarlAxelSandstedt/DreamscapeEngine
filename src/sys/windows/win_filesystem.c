@@ -598,7 +598,7 @@ enum fsError CwdSet(struct arena *mem, const char *path)
 	return err;
 }
 
-enum fsError DirectoryPushEntries(struct arena *mem, struct vector *vec, struct file *dir)
+enum fsError DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct file *dir)
 {
 	WCHAR w_path[MAX_PATH];
 	if (WAbsolutePathFromRelativePathAndDirectory(w_path, "*", dir) != FS_SUCCESS)
@@ -616,14 +616,14 @@ enum fsError DirectoryPushEntries(struct arena *mem, struct vector *vec, struct 
 	
 
 	ArenaPushRecord(mem);
-	const u32 vec_record = vec->next;
+	const u32 vec_record = vec->count;
 
 	enum fsError ret = FS_SUCCESS;
 	file_status status;
 	char cstr_filename[4*MAX_PATH];
 	do
 	{
-		struct file *file = VectorPush(vec).address;
+		struct file *file = ds_CPoolPush(*vec).address;
 
 		int cstr_len = WideCharToMultiByte(CP_UTF8, 0, file_info.cFileName, -1, cstr_filename, sizeof(cstr_filename), NULL, NULL);
 		if (cstr_len == 0)
@@ -648,7 +648,7 @@ enum fsError DirectoryPushEntries(struct arena *mem, struct vector *vec, struct 
 	if (ret != FS_SUCCESS)
 	{
 		ArenaPopRecord(mem);
-		vec->next = vec_record;
+        ds_CPoolPopBatch(*vec, vec->count - vec_record);
 	}
 
 	FindClose(handle);

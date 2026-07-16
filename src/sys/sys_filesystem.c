@@ -33,9 +33,9 @@ struct directoryNavigator DirectoryNavigatorAlloc(const u32 initial_memory_strin
 		.path = Utf8Empty(),
 		.relative_path_to_file_map = ds_HashMapAlloc(NULL, hash_size, initial_hash_index_size, GROWABLE),
 		.mem_string = ArenaAlloc(NULL, initial_memory_string_size),
-		.files = VectorAlloc(NULL, sizeof(struct file), initial_hash_index_size, GROWABLE),
 	};
 
+    ds_CPoolAlloc(NULL, dn.files, initial_hash_index_size, GROWABLE);
 	return dn;
 }
 
@@ -43,14 +43,14 @@ void DirectoryNavigatorDealloc(struct directoryNavigator *dn)
 {
 	ArenaFree(&dn->mem_string);
 	ds_HashMapDealloc(&dn->relative_path_to_file_map);
-	VectorDealloc(&dn->files);
+    ds_CPoolDealloc(dn->files);
 }
 
 void DirectoryNavigatorFlush(struct directoryNavigator *dn)
 {
 	ArenaFlush(&dn->mem_string);
 	ds_HashMapFlush(&dn->relative_path_to_file_map);
-	VectorFlush(&dn->files);
+    ds_CPoolFlush(dn->files);
 }
 
 u32 DirectoryNavigatorLookupSubstring(struct arena *mem, u32 **index, struct directoryNavigator *dn, const utf8 substring)
@@ -61,9 +61,9 @@ u32 DirectoryNavigatorLookupSubstring(struct arena *mem, u32 **index, struct dir
 	*index = (u32 *) mem->stack_ptr;
 	u32 count = 0;
 
-	for (u32 i = 0; i < dn->files.next; ++i)
+	for (u32 i = 0; i < dn->files.count; ++i)
 	{
-		const struct file *file = VectorAddress(&dn->files, i);
+		const struct file *file = dn->files.buf + i;
 		if (Utf8LookupSubstring(&kmp_substring, file->path))
 		{
 			ArenaPushPackedMemcpy(mem, &i, sizeof(i));
@@ -81,7 +81,7 @@ u32 DirectoryNavigatorLookup(const struct directoryNavigator *dn, const utf8 fil
 	u32 index = HASH_NULL;
 	for (u32 i = ds_HashMapFirst(&dn->relative_path_to_file_map, key); i != HASH_NULL; i = ds_HashMapNext(&dn->relative_path_to_file_map, i))
 	{
-		const struct file *file = VectorAddress(&dn->files, i);
+		const struct file *file = dn->files.buf + i;
 		if (Utf8Equivalence(filename, file->path))
 		{
 			index = i;
@@ -102,9 +102,9 @@ enum fsError DirectoryNavigatorEnterAndAliasPath(struct directoryNavigator *dn, 
 	{
 		dn->path = path;
 		DirectoryPushEntries(&dn->mem_string, &dn->files, &dir);
-		for (u32 i = 0; i < dn->files.next; ++i)
+		for (u32 i = 0; i < dn->files.count; ++i)
 		{
-			const struct file *entry = VectorAddress(&dn->files, i);
+			const struct file *entry = dn->files.buf + i;
 			const u32 key = Utf8Hash(entry->path);
 			ds_HashMapAdd(&dn->relative_path_to_file_map, key, i);
 		}

@@ -52,6 +52,7 @@ struct utf8
 	u32 	size;		/* Number of bytes in buffer */
 	u32 	len;		/* Length of string (not bytes) (not including **POSSIBLE** '\0') */
 };
+DEFINE_CPOOL_STRUCT(utf8);
 
 typedef struct utf32 utf32;
 struct utf32
@@ -60,6 +61,7 @@ struct utf32
 	u32 	len;		/* number of codepoints in buf */
 	u32 	max_len;	/* buffer length in (u32) */
 };
+DEFINE_CPOOL_STRUCT(utf32);
 
 /************************************** Helpers ***************************************/
 

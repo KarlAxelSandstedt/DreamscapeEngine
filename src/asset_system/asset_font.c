@@ -67,8 +67,10 @@ void FontBuild(struct arena *mem, const enum fontId id)
 
 	i32 total_glyph_width = 0;
 	const u32 glyph_max_count = 4096;
-	stack_ptr stack_pixels = stack_ptr_alloc(mem, glyph_max_count, !STACK_GROWABLE);
-	stack_font_glyph stack_glyph = stack_font_glyph_alloc(mem, glyph_max_count, !STACK_GROWABLE);
+    ds_CPool(voidptr) stack_pixels;
+    ds_CPool(font_glyph) stack_glyph;
+    ds_CPoolAlloc(mem, stack_pixels, glyph_max_count, NOT_GROWABLE);
+    ds_CPoolAlloc(mem, stack_glyph, glyph_max_count, NOT_GROWABLE);
 	
 	/* setup no_found glyph */
 	//error = FT_Load_Char(face, 0, FT_LOAD_DEFAULT | FT_LOAD_FORCE_AUTOHINT | FT_LOAD_TARGET_NORMAL | FT_RENDER_MODE_NORMAL);
@@ -80,9 +82,9 @@ void FontBuild(struct arena *mem, const enum fontId id)
 
 	total_glyph_width += face->glyph->bitmap.width;
 	u8 *pixels = ArenaPushMemcpy(mem, face->glyph->bitmap.buffer, face->glyph->bitmap.width * face->glyph->bitmap.rows);
-	stack_ptrPush(&stack_pixels, pixels);
-	const u32 glyph_unknown_index = stack_glyph.next;
-	stack_font_glyphPush(&stack_glyph, (struct fontGlyph)
+	ds_CPoolPushValue(stack_pixels, pixels);
+	const u32 glyph_unknown_index = stack_glyph.count;
+	ds_CPoolPushValue(stack_glyph, (struct fontGlyph)
 	{
 		.size = { (i32) face->glyph->bitmap.width, (i32) face->glyph->bitmap.rows },
 		.bearing = { face->glyph->bitmap_left, face->glyph->bitmap_top },
@@ -105,8 +107,8 @@ void FontBuild(struct arena *mem, const enum fontId id)
 
 		total_glyph_width += face->glyph->bitmap.width;
 		pixels = ArenaPushMemcpy(mem, face->glyph->bitmap.buffer, face->glyph->bitmap.width * face->glyph->bitmap.rows);
-		stack_ptrPush(&stack_pixels, pixels);
-		stack_font_glyphPush(&stack_glyph, (struct fontGlyph)
+		ds_CPoolPushValue(stack_pixels, pixels);
+		ds_CPoolPushValue(stack_glyph, (struct fontGlyph)
 			{
 				.size = { (i32) face->glyph->bitmap.width, (i32) face->glyph->bitmap.rows },
 				.bearing = { face->glyph->bitmap_left, face->glyph->bitmap_top },
@@ -130,8 +132,8 @@ void FontBuild(struct arena *mem, const enum fontId id)
 
 		total_glyph_width += face->glyph->bitmap.width;
 		pixels = ArenaPushMemcpy(mem, face->glyph->bitmap.buffer, face->glyph->bitmap.width * face->glyph->bitmap.rows);
-		stack_ptrPush(&stack_pixels, pixels);
-		stack_font_glyphPush(&stack_glyph, (struct fontGlyph)
+		ds_CPoolPushValue(stack_pixels, pixels);
+		ds_CPoolPushValue(stack_glyph, (struct fontGlyph)
 			{
 				.size = { (i32) face->glyph->bitmap.width, (i32) face->glyph->bitmap.rows },
 				.bearing = { face->glyph->bitmap_left, face->glyph->bitmap_top },
@@ -140,12 +142,12 @@ void FontBuild(struct arena *mem, const enum fontId id)
 			});
 	}
 
-	const u32 hash_len = (u32) PowerOfTwoCeil(stack_glyph.next);
+	const u32 hash_len = (u32) PowerOfTwoCeil(stack_glyph.count);
 	struct font *font = ArenaPush(mem, sizeof(struct font));
 	font->codepoint_to_glyph_map = ds_HashMapAlloc(mem, hash_len, hash_len, !GROWABLE);
-	font->glyph_count = stack_glyph.next;
+	font->glyph_count = stack_glyph.count;
 	font->glyph_unknown_index = glyph_unknown_index;
-	font->glyph = stack_glyph.arr;
+	font->glyph = stack_glyph.buf;
 
 	font->ascent = (f32) face->size->metrics.ascender / 64;
 	font->descent = (face->size->metrics.descender > 0.0f)
@@ -183,7 +185,7 @@ void FontBuild(struct arena *mem, const enum fontId id)
 	font->pixmap_height = font->pixmap_width;
 	font->pixmap = ArenaPush(mem, font->pixmap_width * font->pixmap_height);
 	font->size = sizeof(u64) + 3*sizeof(f32) + 4*sizeof(u32)
-		+ stack_glyph.next * (2*sizeof(vec2i32) + 2*sizeof(u32) + 2*sizeof(vec2))
+		+ stack_glyph.count * (2*sizeof(vec2i32) + 2*sizeof(u32) + 2*sizeof(vec2))
 		+ sizeof(u32) + hash_len*sizeof(u32)
 		+ sizeof(u32) + hash_len*sizeof(u32)
 		+ font->pixmap_width * font->pixmap_height;
@@ -191,13 +193,13 @@ void FontBuild(struct arena *mem, const enum fontId id)
 
 	const f32 pixel_halfsize = 1.0f / (2.0f*font->pixmap_width);
 	vec2u32 offset = { 0, 0 };
-	for (u32 i = 0; i < stack_glyph.next; ++i)
+	for (u32 i = 0; i < stack_glyph.count; ++i)
 	{
 		u8 *alpha = font->pixmap;
 
-		struct fontGlyph *g = stack_glyph.arr + i;
+		struct fontGlyph *g = stack_glyph.buf + i;
 		ds_HashMapAdd(&font->codepoint_to_glyph_map, g->codepoint, i);
-		pixels = stack_pixels.arr[i];
+		pixels = stack_pixels.buf[i];
 		if (offset[0] + g->size[0] > font->pixmap_width)
 		{
 			offset[0] = 0;		

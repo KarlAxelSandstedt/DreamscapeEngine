@@ -395,7 +395,7 @@ typedef struct ui_TextSelection
 	u32			low;
 	u32			high;
 } ui_TextSelection;
-DECLARE_STACK(ui_TextSelection);
+DEFINE_CPOOL_STRUCT(ui_TextSelection);
 
 struct ui_TextSelection ui_TextSelectionEmpty(void);
 
@@ -505,13 +505,11 @@ typedef struct ui_Size
 		intv		intv;		/* unit interval 	*/
 	};
 } ui_Size;
-DECLARE_STACK(ui_Size);
+DEFINE_CPOOL_STRUCT(ui_Size);
 
 /********************************************************************************************************/
 /*				               UI STATE 						*/
 /********************************************************************************************************/
-
-DECLARE_STACK(utf32);
 
 /* Per window ui struct */
 struct ui
@@ -533,7 +531,7 @@ struct ui
 	struct hi 		node_hierarchy;
 	struct ds_HashMap 		node_map;
 
-	stack_ui_TextSelection	frame_stack_text_selection;
+	ds_CPool(ui_TextSelection)	frame_stack_text_selection;
 	vec4			text_cursor_color;
 	vec4			text_selection_color;
 
@@ -548,33 +546,33 @@ struct ui
 
 	u32		root;	/* root node of ui, always allocated on frame begin */
 
-	stack_u32	stack_parent;	
-	stack_u32	stack_sprite;
+	ds_CPool(u32)	parent;	
+	ds_CPool(u32)	sprite;
 	stack_u64	stack_flags;
 	stack_u64 	stack_recursive_interaction_flags;
 	stack_ptr	stack_font;
 
 	/* external text usage; used for skipping layout calculations for a string that is used in multiple nodes */
-	stack_utf32	stack_external_text;
+	ds_CPool(utf32)	stack_external_text;
 	stack_ptr	stack_external_text_layout;
 	stack_ptr	stack_external_text_input;
 
 	/* push all floating nodes so that we can linear search which floating subtree we are hovering */
-	stack_u32	stack_floating_node;
-	stack_u32	stack_floating_depth;
+	ds_CPool(u32)	floating_node;
+	ds_CPool(u32)	floating_depth;
 
 	/* text stacks */
-	stack_u32	stack_text_alignment_x;
-	stack_u32	stack_text_alignment_y;
+	ds_CPool(u32)	text_alignment_x;
+	ds_CPool(u32)	text_alignment_y;
 	stack_f32	stack_text_pad[AXIS_2_COUNT];
 
 	stack_f32	stack_pad;
 
-	stack_u32	stack_fixed_depth;
+	ds_CPool(u32)	stack_fixed_depth;
 	stack_f32	stack_floating[AXIS_2_COUNT];	
-	stack_ui_Size	stack_ui_Size[AXIS_2_COUNT];
+    ds_CPool(ui_Size)	ui_size[AXIS_2_COUNT];
 	stack_intv	stack_viewable[AXIS_2_COUNT];
-	stack_u32	stack_child_layout_axis;
+	ds_CPool(u32)	child_layout_axis;
 	struct stackVec4	stack_background_color;
 	struct stackVec4	stack_border_color;
 	struct stackVec4	stack_gradient_color[BOX_CORNER_COUNT];
