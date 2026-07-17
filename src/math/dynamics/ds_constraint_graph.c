@@ -28,12 +28,14 @@ void ds_CGraphFlush(struct ds_CGraph *cg)
     }
 }
 
-struct slot ds_CGraphJointAdd(u32 *color, u32 *index, struct ds_RigidBodyPipeline *pipeline, const u32 body0, const u32 body1)
+struct slot ds_CGraphJointAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint *joint)
 {
 
+    //struct ds_JointSim *sim = slot.address;
+    //joint->sim = slot.index;
 }
 
-void ds_CGraphJointRemove(struct ds_RigidBodyPipeline *pipeline, const u32 color, const u32 index)
+void ds_CGraphJointRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint *joint)
 {
 
 }

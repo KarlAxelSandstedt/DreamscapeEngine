@@ -29,6 +29,7 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const stru
 	PhysicsEventBodyNew(pipeline, id);
 	dll_Append(&pipeline->body_non_marked_list, pipeline->body_pool.buf, slot.index);
 
+    ds_DLLFlush(&body->joint_list);
 	body->shape_list = dll_Init(struct ds_Shape);
     body->t_world = *t_world;
 

@@ -257,6 +257,8 @@ The memory layout is as follows
 Note that the allocated memory is of length+1; the stub is rather opaque. 
 */
 
+#define DS_STUB_INDEX               U32_MAX 
+
 #define ds_CPool(T) ds_CPool_ ## T
 
 #define DEFINE_CPOOL_NATIVE(T)	    \
@@ -429,10 +431,13 @@ do                                                                              
 Pool Allocator
 ==============
 Intrusive pool allocator that handles allocation and deallocation of a specific struct. In order to use the
-pool allocator for a specific struct, the struct should contain the POOL_SLOT_STATE macro; it defines
+pool allocator for a specific struct, the struct should contain the POOL_NODE macro; it defines
 internal slot state for the struct. The pool allocator can allocate at most 2^31 slots. u32 generation
-slots are supported by instead using the GPool Api instead, and replacing POOL_SLOT_STATE with 
+slots are supported by instead using the GPool Api instead, and replacing POOL_NODE with 
 GENERATIONAL_POOL_SLOT_STATE.
+
+Index -1 is reserved for the opaque stub; Its data should be viewed as garbage, and the stub
+is only there to allow building simpler access algorithms on top of the pool.
 
 ::: Usage and Documentation :::
 
@@ -484,10 +489,14 @@ next free slot in the chain. The end of the free chain is represented by POOL_NU
 */
 
 #define POOL_NODE 	        u32 pool_slot;
-#define POOL_SLOT_STATE 	u32 slot_allocation_state
 #define POOL_NULL		        0xffffffff
 #define POOL_ALLOCATION_MASK	0x80000000
 #define POOL_INDEX_MASK		    0x7fffffff
+
+#define ds_PoolSlotAllocated(ptr)	(!((ptr)->pool_slot & POOL_ALLOCATION_MASK))
+
+
+#define POOL_SLOT_STATE 	u32 slot_allocation_state
 #define PoolSlotAllocated(ptr)	(!((ptr)->slot_allocation_state & POOL_ALLOCATION_MASK))
 #define PoolSlotNext(ptr)	((ptr)->slot_allocation_state & POOL_INDEX_MASK)
 #define PoolSlotGeneration(ptr)	((ptr)->slot_generation_state)
@@ -561,16 +570,17 @@ POOL_ALLOC_DECLARE(struct_name)                                                 
 	u32 length_used = length;                                                                               \
 	if (mem)                                                                                                \
 	{                                                                                                       \
-		pool.buf = ArenaPush(mem, sizeof(struct struct_name) * length);                                     \
+		pool.buf = ArenaPush(mem, sizeof(struct struct_name) * (length+1));                                 \
 	}                                                                                                       \
 	else                                                                                                    \
 	{                                                                                                       \
-		pool.buf = ds_Alloc(&pool.mem_slot, sizeof(struct struct_name) * length, HUGE_PAGES);               \
-		length_used = pool.mem_slot.size / sizeof(struct struct_name);                                      \
+		pool.buf = ds_Alloc(&pool.mem_slot, sizeof(struct struct_name) * (length+1), HUGE_PAGES);           \
+		length_used = pool.mem_slot.size / sizeof(struct struct_name)-1;                                    \
 	}                                                                                                       \
                                                                                                             \
 	if (pool.buf)                                                                                           \
 	{                                                                                                       \
+        pool.buf += 1;                                                                                      \
 		pool.length = length_used;                                                                          \
 		pool.count = 0;                                                                                     \
 		pool.count_max = 0;                                                                                 \
@@ -627,28 +637,31 @@ POOL_ADD_DECLARE(struct_name)                                                   
 	else if (pool->growable)                                                                                \
 	{                                                                                                       \
 	    const u32 length_max = (U32_MAX >> 1);                                                              \
-	    if (pool->length == length_max)                                                                     \
+        const u32 old_length_including_stub = pool->length + 1;                                             \
+	    u32 new_length_including_stub = old_length_including_stub << 1;                                     \
+	    if (old_length_including_stub == length_max)                                                        \
 	    {                                                                                                   \
 	    	LogString(T_SYSTEM, S_FATAL, "pool allocator full, exiting");                                   \
 	    	FatalCleanupAndExit();                                                                          \
 	    }                                                                                                   \
 	                                                                                                        \
-	    const u32 old_length = pool->length;                                                                \
-	    pool->length <<= 1;                                                                                 \
-	    if (pool->length > length_max)                                                                      \
+	    if (new_length_including_stub > length_max)                                                         \
 	    {                                                                                                   \
-	    	pool->length = length_max;                                                                      \
+	    	new_length_including_stub = length_max;                                                         \
 	    }                                                                                                   \
 	                                                                                                        \
-	    pool->buf = ds_Realloc(&pool->mem_slot, pool->length*sizeof(struct struct_name));                   \
+	    pool->buf = ds_Realloc(&pool->mem_slot, new_length_including_stub*sizeof(struct struct_name));      \
 	    if (!pool->buf)                                                                                     \
 	    {                                                                                                   \
 	    	LogString(T_SYSTEM, S_FATAL, "pool reallocation failed, exiting");                              \
 	    	FatalCleanupAndExit();                                                                          \
 	    }                                                                                                   \
-	                                                                                                        \
-	    UnpoisonAddress(pool->buf, old_length*sizeof(struct struct_name));                                  \
-	    PoisonAddress(pool->buf + old_length, (pool->length-old_length)*sizeof(struct struct_name));        \
+	    UnpoisonAddress(pool->buf, old_length_including_stub*sizeof(struct struct_name));                   \
+	    PoisonAddress(pool->buf + old_length_including_stub,                                                \
+                (new_length_including_stub-old_length_including_stub)*sizeof(struct struct_name));          \
+                                                                                                            \
+        pool->buf += 1;                                                                                     \
+        pool->length = new_length_including_stub-1;                                                         \
 	                                                                                                        \
 		allocation.address = pool->buf + pool->count_max;                                                   \
 		allocation.index = pool->count_max;                                                                 \

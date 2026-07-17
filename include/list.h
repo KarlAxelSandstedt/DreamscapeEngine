@@ -65,7 +65,7 @@ put DLL_SLOT_STATE in the structure. It is meant to be used for arrays < U32_MAX
 indices, where all structs are allocated in the same array. 
  */
 
-#define DLL_NULL			POOL_NULL
+#define DLL_NULL			    POOL_NULL
 #define DLL_NOT_IN_LIST			U32_MAX-1	/* if next, prev == DLL_STUB, then node is not in list */
 
 #define DLL_SLOT_STATE			u32 dll_prev;			\
@@ -177,6 +177,104 @@ void 		nll_Remove(struct nll *net, const u32 index);
 void *		nll_Address(const struct nll *net, const u32 index);
 /* get the node index given its address  */
 u32		nll_Index(const struct nll *net, const void *address);
+
+/*
+ds_DLL
+======
+Intrusive doubly linked list for indexed structures meant for ds_Pool/ds_CPool. It expects a sentinel/stub at index -1.
+
+::: Usage :::
+TODO 
+
+*/
+
+
+#define DLL_SENTINEL        DS_STUB_INDEX
+
+
+struct ds_DLL
+{
+	u32 	count;
+	u32 	first;
+	u32 	last;
+};
+
+struct ds_DLLNode
+{
+    u32 prev;
+    u32 next;
+};
+
+static inline void ds_DLLFlush(struct ds_DLL *dll)
+{
+    dll->count = 0;
+    dll->first = DLL_SENTINEL;
+    dll->last = DLL_SENTINEL;
+};
+
+#define ds_DLLAppend(_dll_, _base_, _index_, _node_)                                                    \
+do                                                                                                      \
+{                                                                                                       \
+    ds_Assert((_dll_).last == DLL_SENTINEL || (_base_)[(_dll_).last]._node_.next == DLL_SENTINEL);      \
+    ds_Assert(_index_ < 0x80000000);                                                                    \
+                                                                                                        \
+    (_dll_).count += 1;                                                                                 \
+    (_base_)[(i32) (_dll_).last]._node_.next = (_index_);                                               \
+    (_base_)[_index_]._node_.prev = (_dll_).last;                                                       \
+    (_base_)[_index_]._node_.next = DLL_SENTINEL;                                                       \
+                                                                                                        \
+    (_dll_).last = (_index_);                                                                           \
+    if ( (_dll_).first == DLL_SENTINEL )                                                                \
+    {                                                                                                   \
+        (_dll_).first = (_index_);                                                                      \
+    }                                                                                                   \
+} while (0)
+
+#define ds_DLLPrepend(_dll_, _base_, _index_, _node_)                                                   \
+do                                                                                                      \
+{                                                                                                       \
+    ds_Assert((_dll_).first == DLL_SENTINEL || (_base_)[(_dll_).first]._node_.prev == DLL_SENTINEL);    \
+    ds_Assert(_index_ < 0x80000000);                                                                    \
+                                                                                                        \
+    (_dll_).count += 1;                                                                                 \
+    (_base_)[(i32)(_dll_).first]._node_.prev = (_index_);                                               \
+    (_base_)[_index_]._node_.prev = DLL_SENTINEL;                                                       \
+    (_base_)[_index_]._node_.next = (_dll_).first;                                                      \
+                                                                                                        \
+    (_dll_).first = (_index_);                                                                          \
+    if ( (_dll_).last == DLL_SENTINEL )                                                                 \
+    {                                                                                                   \
+        (_dll_).last = (_index_);                                                                       \
+    }                                                                                                   \
+} while (0)
+
+#define ds_DLLRemove(_dll_, _base_, _index_, _node_)                                                    \
+do                                                                                                      \
+{                                                                                                       \
+    ds_Assert((_dll_).count);                                                                           \
+    ds_Assert(ds_DLLNodeCheckInList(_base_, _index_, _node_);                                           \
+    (_dll_).count -= 1;                                                                                 \
+    const u32 _next_ = (_base_)[_index_]._node_.next;                                                   \
+    const u32 _prev_ = (_base_)[_index_]._node_.prev;                                                   \
+    (_base_)[(i32)_next_]._node_.prev = _prev_;                                                         \
+    (_base_)[(i32)_prev_]._node_.next = _next_;                                                         \
+                                                                                                        \
+    if ( _prev_ == DLL_SENTINEL )                                                                       \
+    {                                                                                                   \
+        (_dll_).first = _next_;                                                                         \
+    }                                                                                                   \
+                                                                                                        \
+    if ( _next_ == DLL_SENTINEL )                                                                       \
+    {                                                                                                   \
+        (_dll_).last = _prev_;                                                                          \
+    }                                                                                                   \
+    ds_DLLNodeSetNotInList(_base_, _index_, _node_)                                                     \
+} while (0)
+
+#define ds_DLLNodeSetNotInList(_base_, _index_, _node_)  ( (_base_)[_index_]._node_.prev = DLL_NOT_IN_LIST ) 
+
+#define ds_DLLNodeCheckInList(_base_, _index_, _node_)   ( (_base_)[_index_]._node_.prev != DLL_NOT_IN_LIST )
+
 
 #ifdef __cplusplus
 } 

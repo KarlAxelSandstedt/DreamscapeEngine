@@ -108,6 +108,7 @@ typedef ds_IdF  ds_ContactId;
 
 #define ds_IdTag(id)                    ((u32) (id >> 32))
 #define ds_IdIndex(id)                  ((u32) id)
+#define ds_IdConstruct(index, tag)      ((((u64) tag) << 32) | (u64) index)
 
 #define DS_IDF_NULL                     U64_MAX
 #define DS_IDF_INDEX_MASK               ((u64) 0x00000000ffffffff)
@@ -315,6 +316,9 @@ struct ds_RigidBody
     u32             tag;                    /* Tag [ Generation(16) | Unused (16) ]                 */
 	u32 		    flags;
 	u32		        island_index;
+
+    struct ds_DLL   joint_list;             /* list of ds_Joint's attached to the body. Each joint is
+                                               shared with one other body. */
 
 	struct dll      shape_list;		        /* list of convex shapes constructing the rigid body 	*/
 	ds_Transform    t_world;		        /* local body frame to world transform. Rotation is 
@@ -702,20 +706,28 @@ enum ds_JointType
 struct ds_Joint
 {
     POOL_NODE;
-    u32         tag;        /* id tag               */
+    u32         tag;                    /* id tag               */
 
-    //TODO
-    /* Should ideally be refactored into macro-based NLL? */
-    u32         body[2];
-    u32         prev[2];
-    u32         next[2];
+    u32                 body[2];        /* bodies sharing ownership of joint */
+    struct ds_DLLNode   edge_node[2];   /* Each body stores the joint its dll; b == body[i] => edge_node[i] 
+                                           is part of body b's dll. */
 
     //TODO u32         island;     /* */
 
-    u32         sim;        /* owned ds_JointSim    */
-    u32         color;      /* edge color           */
+    u32         sim;                    /* owned ds_JointSim    */
+    u32         color;                  /* edge color           */
 };
 POOL_DECLARE(ds_Joint);
+
+/*  
+ * Allocate a joints joint. On success the joint's id is returned; on failure DS_ID_NULL is returned.
+ */
+ds_JointId  ds_JointAdd(struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId b0, const ds_RigidBodyId b1);
+/* TODO */
+void        ds_JointRemove(struct ds_RigidBodyPipeline *pipeline, const ds_JointId id);
+/* TODO */
+struct slot ds_JointLookup(const struct ds_RigidBodyPipeline *pipeline, const ds_JointId id);
+
 
 /*
 ds_DistanceJoint
@@ -776,7 +788,6 @@ constraints by processing them first in each solver iteration. This yields a pro
         jointSim <------+
 */
 
-
 /*
 ds_CGraphColor
 ==============
@@ -801,7 +812,6 @@ struct ds_CGraph
     struct ds_CGraphColor color[CG_COLOR_COUNT];
 };
 
-
 /* Allocate and setup constraint graph */
 struct ds_CGraph    ds_CGraphAlloc(const u32 initial_count);
 /* Dellocate constraint graph */
@@ -810,9 +820,9 @@ void                ds_CGraphDealloc(struct ds_CGraph *cg);
 void                ds_CGraphFlush(struct ds_CGraph *cg);
 
 /* Allocate and setup a new ds_JointSim */
-struct slot         ds_CGraphJointAdd(u32 *color, u32 *index, struct ds_RigidBodyPipeline *pipeline, const u32 body0, const u32 body1);
+struct slot         ds_CGraphJointAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint *joint);
 /* Deallocate a ds_JointSim */
-void                ds_CGraphJointRemove(struct ds_RigidBodyPipeline *pipeline, const u32 color, const u32 index);
+void                ds_CGraphJointRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint *joint);
 
 /*
 ds_Island
