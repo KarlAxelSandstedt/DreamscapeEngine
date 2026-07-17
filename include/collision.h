@@ -27,7 +27,6 @@ extern "C" {
 #include "ds_base.h"
 #include "ds_math.h"
 #include "string_database.h"
-#include "ds_vector.h"
 #include "queue.h"
 #include "tree.h"
 
@@ -151,14 +150,14 @@ typedef struct visualSegment
 	struct segment	segment;
 	vec4		color;
 } visualSegment;
-DECLARE_STACK(visualSegment);
+DEFINE_CPOOL_STRUCT(visualSegment);
 
 struct visualSegment	VisualSegmentConstruct(const struct segment segment, const vec4 color);
 
 struct collisionDebug
 {
-	stack_visualSegment	stack_segment;
-	u8			pad[64];
+	ds_CPool(visualSegment)	stack_segment;
+	u8			            pad[64];
 };
 
 extern struct collisionDebug *g_collision_debug;
@@ -166,7 +165,7 @@ extern struct collisionDebug *g_collision_debug;
 #ifdef DS_PHYSICS_DEBUG
 
 #define COLLISION_DEBUG_ADD_SEGMENT(segment, color)							\
-	stack_visualSegmentPush(&g_collision_debug[ds_ThreadSelfIndex()].stack_segment,  VisualSegmentConstruct(segment, color))
+	ds_CPoolPushValue(g_collision_debug[ds_ThreadSelfIndex()].stack_segment,  VisualSegmentConstruct(segment, color))
 
 #else
 

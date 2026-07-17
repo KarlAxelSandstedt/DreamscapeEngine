@@ -102,7 +102,7 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
     g_collision_debug = pipeline.debug;
 	for (u32 i = 0; i < pipeline.debug_count; ++i)
 	{
-		pipeline.debug[i].stack_segment = stack_visualSegmentAlloc(NULL, 1024, GROWABLE);
+		ds_CPoolAlloc(NULL, pipeline.debug[i].stack_segment, 1024, GROWABLE);
 	}
 #endif
 
@@ -117,7 +117,7 @@ void PhysicsPipelineFree(struct ds_RigidBodyPipeline *pipeline)
 #ifdef DS_PHYSICS_DEBUG
 	for (u32 i = 0; i < pipeline->debug_count; ++i)
 	{
-		stack_visualSegmentFree(&pipeline->debug[i].stack_segment);
+		ds_CPoolDealloc(pipeline->debug[i].stack_segment);
 	}
 	free(pipeline->debug);
 #endif
@@ -136,7 +136,7 @@ static void PhysicsPipelineClearFrame(struct ds_RigidBodyPipeline *pipeline)
 #ifdef DS_PHYSICS_DEBUG
 	for (u32 i = 0; i < pipeline->debug_count; ++i)
 	{
-		stack_visualSegmentFlush(&pipeline->debug[i].stack_segment);
+		ds_CPoolFlush(pipeline->debug[i].stack_segment);
 	}
 #endif
 	isdb_ClearFrame(&pipeline->is_db);
@@ -150,7 +150,7 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
 #ifdef DS_PHYSICS_DEBUG
 	for (u32 i = 0; i < pipeline->debug_count; ++i)
 	{
-		stack_visualSegmentFlush(&pipeline->debug[i].stack_segment);
+		ds_CPoolFlush(pipeline->debug[i].stack_segment);
 	}
 #endif
 	cdb_Flush(pipeline->cdb);

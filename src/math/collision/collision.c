@@ -22,8 +22,6 @@
 #include "dynamics.h"
 #include "collision.h"
 
-DEFINE_STACK(visualSegment);
-
 ds_ThreadLocal struct collisionDebug *debug;
 
 struct visualSegment VisualSegmentConstruct(const struct segment segment, const vec4 color)
@@ -1883,8 +1881,7 @@ struct PolygonClipPoint
     vec3            v;
 };
 
-DECLARE_STACK(PolygonClipPoint);
-DEFINE_STACK(PolygonClipPoint);
+DEFINE_CPOOL_STRUCT(PolygonClipPoint);
 
 /*
  * Sutherland-Hodgman 3D polygon clipping + negative face voronoi region projection: 
@@ -1903,9 +1900,9 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureI
 	struct dcelFace *inc_face = h[b_v]->f + f[b_v];
 
     const u32 count = 2*inc_face->count + ref_face->count;
-    stack_PolygonClipPoint clip_stack[2];
-	clip_stack[0] = stack_PolygonClipPointAlloc(mem, count, NOT_GROWABLE);
-	clip_stack[1] = stack_PolygonClipPointAlloc(mem, count, NOT_GROWABLE);
+    ds_CPool(PolygonClipPoint) clip_stack[2];
+	ds_CPoolAlloc(mem, clip_stack[0], count, NOT_GROWABLE);
+	ds_CPoolAlloc(mem, clip_stack[1], count, NOT_GROWABLE);
 	vec3ptr ref_v = ArenaPush(mem, ref_face->count * sizeof(vec3));
 	*cp = ArenaPush(mem, count*sizeof(vec3));
 	*cp_depth = ArenaPush(mem, count*sizeof(f32));
@@ -1929,7 +1926,7 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureI
             .feature[1] = sat_FeatureIdConstruct(inc_face->first + i, SAT_FEATURE_TYPE_EDGE),
         };
         Vec3Copy(pcp.v, v[b_v][vi]);
-		stack_PolygonClipPointPush(clip_stack + cur, pcp);
+		ds_CPoolPushMemcpy(clip_stack[cur], &pcp);
 	}
 
     /* Clip polygon against voronoi face region */
@@ -1938,31 +1935,31 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureI
 	{
 		const u32 prev = cur;
 		cur = 1 - cur;
-		stack_PolygonClipPointFlush(clip_stack + cur);
+		ds_CPoolFlush(clip_stack[cur]);
 
 		Vec3Sub(tmp, ref_v[(j+1) % ref_face->count], ref_v[j]);
 		Vec3Cross(side_plane_direction, tmp, ref_plane.normal);
 		struct plane side_plane = PlaneConstruct(side_plane_direction, ref_v[j]);
 
-		for (u32 i = 0; i < clip_stack[prev].next; ++i)
+		for (u32 i = 0; i < clip_stack[prev].count; ++i)
 		{
-			const struct segment clip_edge = SegmentConstruct(clip_stack[prev].arr[i].v, clip_stack[prev].arr[(i+1) % clip_stack[prev].next].v);
+			const struct segment clip_edge = SegmentConstruct(clip_stack[prev].buf[i].v, clip_stack[prev].buf[(i+1) % clip_stack[prev].count].v);
 			const f32 t = PlaneSegmentClipParameter(&side_plane, &clip_edge);
-            struct PolygonClipPoint pcp = clip_stack[prev].arr[i];
+            struct PolygonClipPoint pcp = clip_stack[prev].buf[i];
             SegmentBc(pcp.v, &clip_edge, t);
             pcp.index = 1;
 
 			if (PlanePointBehindCheck(&side_plane, clip_edge.p[0]))
 			{
-				stack_PolygonClipPointPush(clip_stack + cur, clip_stack[prev].arr[i]);
+				ds_CPoolPushMemcpy(clip_stack[cur], &clip_stack[prev].buf[i]);
 				if (0.0f < t && t < 1.0f)
 				{
-					stack_PolygonClipPointPush(clip_stack + cur, pcp);
+				    ds_CPoolPushMemcpy(clip_stack[cur], &pcp);
 				}
 			}
 			else if (PlanePointBehindCheck(&side_plane, clip_edge.p[1]))
 			{
-				stack_PolygonClipPointPush(clip_stack + cur, pcp);
+				ds_CPoolPushMemcpy(clip_stack[cur], &pcp);
 			}
 		}
 	}
@@ -1971,9 +1968,9 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureI
     *deepest_feature = 0;
     *cp_deepest = 0;
     *cp_count = 0;
-	for (u32 i = 0; i < clip_stack[cur].next; ++i)
+	for (u32 i = 0; i < clip_stack[cur].count; ++i)
 	{
-        const struct PolygonClipPoint *pcp = clip_stack[cur].arr + i;
+        const struct PolygonClipPoint *pcp = clip_stack[cur].buf + i;
 		Vec3Copy((*cp)[*cp_count], pcp->v);
         (*cp_depth)[ *cp_count ] = -PlanePointSignedDistance(&ref_plane, (*cp)[ *cp_count ]);
 

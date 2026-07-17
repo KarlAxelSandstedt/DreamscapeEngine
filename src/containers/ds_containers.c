@@ -1,7 +1,6 @@
 #include "ds_hash_map.c"
 #include "queue.c"
 #include "bit_vector.c"
-#include "ds_vector.c"
 #include "list.c"
 #include "hierarchy_index.c"
 #include "string_database.c"

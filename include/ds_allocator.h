@@ -268,7 +268,6 @@ typedef struct ds_CPool(T)		    \
 	T *                 buf;	    \
 	struct ds_MemSlot	mem_slot;	\
 } ds_CPool(T)
-
 typedef void * voidptr;
 DEFINE_CPOOL_NATIVE(voidptr);
 DEFINE_CPOOL_NATIVE(u8);
@@ -294,6 +293,7 @@ typedef struct ds_CPool(T)		    \
 	struct T *          buf;	    \
 	struct ds_MemSlot   mem_slot;	\
 } ds_CPool(T)
+DEFINE_CPOOL_STRUCT(intv);
 
 /* Allocate and setup the CPool.  */
 #define ds_CPoolAlloc(mem, pool, _length, _growable)                                    \
@@ -302,23 +302,23 @@ do                                                                              
 	ds_Assert(!(_growable) || !(mem));                                                  \
     memset(&(pool), 0, sizeof(pool));                                                   \
                                                                                         \
-	void *buf;                                                                          \
+	void *__buf;                                                                        \
 	u32 length_used = (_length);                                                        \
 	if (mem)                                                                            \
 	{                                                                                   \
-		buf = ArenaPush((mem), sizeof((pool).buf[0])*(_length+1));                      \
+		__buf = ArenaPush((mem), sizeof((pool).buf[0])*(_length+1));                    \
 	}                                                                                   \
 	else                                                                                \
 	{                                                                                   \
-		buf = (length_used*sizeof((pool).buf[0]) >= 1024*1024)                          \
+		__buf = (length_used*sizeof((pool).buf[0]) >= 1024*1024)                        \
             ? ds_Alloc(&(pool).mem_slot, sizeof((pool).buf[0])*(_length+1), HUGE_PAGES) \
             : ds_Alloc(&(pool).mem_slot, sizeof((pool).buf[0])*(_length+1), NO_HUGE_PAGES);\
 		length_used = (pool).mem_slot.size / sizeof((pool).buf[0]) - 1;                 \
 	}                                                                                   \
                                                                                         \
-	if (buf)                                                                            \
+	if (__buf)                                                                          \
 	{                                                                                   \
-		(pool).buf = buf;                                                               \
+		(pool).buf = __buf;                                                             \
 		(pool).buf += 1;                                                                \
 		(pool).length = length_used;                                                    \
 		(pool).count = 0;                                                               \
@@ -340,7 +340,7 @@ do                                                                              
 
 static inline struct slot ds_CPoolPushInternal(struct ds_MemSlot *mem, void **buf, u32 *count, u32 *length, const u64 slot_size, const u32 growable)
 {
-    if (*count == *length)                           
+    if (*count == *length)
     {                                                                                   
         if (!growable)                                                           
         {                                                                               
@@ -385,14 +385,14 @@ static inline struct slot ds_CPoolPushMemcpyInternal(struct ds_MemSlot *mem, voi
 #define ds_CPoolPushValue( pool, val )                                                      \
 do                                                                                          \
 {                                                                                           \
-    const struct slot slot = ds_CPoolPushInternal(&(pool).mem_slot,                         \
+    const struct slot __slot = ds_CPoolPushInternal(&(pool).mem_slot,                       \
                                                   (void **) &(pool).buf,                    \
                                                   &(pool).count,                            \
                                                   &(pool).length,                           \
                                                   sizeof((pool).buf[0]),                    \
                                                   (pool).growable);                         \
-    (pool).buf[(i32) slot.index] = (val);                                                   \
-} while (0);
+    (pool).buf[(i32) __slot.index] = (val);                                                 \
+} while (0)
 
 
 #define ds_CPoolPopBatch( pool, pop_count )                                                 \
@@ -413,7 +413,7 @@ do                                                                              
 	(pool).count -= 1;						                                            \
     if (index != (pool).count)                                                          \
     {                                                                                   \
-        memcpy((pool).buf + index, (pool).buf + (pool).count, sizeof((pool).buf[0]));   \
+        memcpy((pool).buf + (index), (pool).buf + (pool).count, sizeof((pool).buf[0])); \
     }                                                                                   \
 	PoisonAddress((pool).buf + (pool).count, sizeof((pool).buf[0]));	                \
 } while (0)

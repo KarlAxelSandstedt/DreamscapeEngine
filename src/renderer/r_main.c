@@ -222,7 +222,7 @@ static struct r_Mesh *DebugLinesMesh(struct arena *mem, const struct ds_RigidBod
 	u32 vertex_count = 0;
 	for (u32 i = 0; i < pipeline->debug_count; ++i)
 	{
-		vertex_count += 2*pipeline->debug[i].stack_segment.next;
+		vertex_count += 2*pipeline->debug[i].stack_segment.count;
 	}
 
 	struct r_Mesh *mesh = NULL;
@@ -247,12 +247,12 @@ static struct r_Mesh *DebugLinesMesh(struct arena *mem, const struct ds_RigidBod
 
 	for (u32 i = 0; i < pipeline->debug_count; ++i)
 	{
-		for (u32 j = 0; j < pipeline->debug[i].stack_segment.next; ++j)
+		for (u32 j = 0; j < pipeline->debug[i].stack_segment.count; ++j)
 		{
-			Vec3Copy((f32 *) vertex_data +  0, pipeline->debug[i].stack_segment.arr[j].segment.p[0]);
-			Vec4Copy((f32 *) vertex_data +  3, pipeline->debug[i].stack_segment.arr[j].color);
-			Vec3Copy((f32 *) vertex_data +  7, pipeline->debug[i].stack_segment.arr[j].segment.p[1]);
-			Vec4Copy((f32 *) vertex_data + 10, pipeline->debug[i].stack_segment.arr[j].color);
+			Vec3Copy((f32 *) vertex_data +  0, pipeline->debug[i].stack_segment.buf[j].segment.p[0]);
+			Vec4Copy((f32 *) vertex_data +  3, pipeline->debug[i].stack_segment.buf[j].color);
+			Vec3Copy((f32 *) vertex_data +  7, pipeline->debug[i].stack_segment.buf[j].segment.p[1]);
+			Vec4Copy((f32 *) vertex_data + 10, pipeline->debug[i].stack_segment.buf[j].color);
 			vertex_data += 2*(sizeof(vec3) + sizeof(vec4));
 			mem_left -= 2*(sizeof(vec3) + sizeof(vec4));
 		}

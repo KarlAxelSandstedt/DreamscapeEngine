@@ -18,7 +18,6 @@
 */
 
 #include "ds_hash_map.h"
-#include "ds_vector.h"
 #include "ds_platform.h"
 
 struct file FileNull(void)

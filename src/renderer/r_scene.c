@@ -549,7 +549,7 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 					{
 						for (u32 i = 0; i < ui_b->count; ++i)
 						{
-							const struct ui_TextSelection *sel = g_ui->frame_stack_text_selection.buf + draw_node->index;
+							const struct ui_TextSelection *sel = g_ui->frame_text_selection.buf + draw_node->index;
 							const struct ui_Node *n = sel->node;
 							draw_node = draw_node->next;
 

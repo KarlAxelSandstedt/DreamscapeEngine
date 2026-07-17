@@ -158,7 +158,7 @@ struct dsBuffer
 };
 #define ds_buffer_empty	(struct dsBuffer) { .data = NULL, .size = 0, .mem_left = 0, }
 
-typedef struct
+typedef struct intv
 {
 	union
 	{

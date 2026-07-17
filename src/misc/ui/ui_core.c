@@ -139,38 +139,38 @@ struct ui *ui_Alloc(void)
 	ui->mem_frame = ui->mem_frame_arr + (ui->frame & 0x1);
     ds_CPoolAlloc(NULL, ui->parent, 32, GROWABLE);
     ds_CPoolAlloc(NULL, ui->sprite, 32, GROWABLE);
-	ui->stack_font = stack_ptrAlloc(NULL, 8, GROWABLE);
-	ui->stack_external_text_input = stack_ptrAlloc(NULL, 8, GROWABLE);
-	ui->stack_flags = stack_u64Alloc(NULL, 16, GROWABLE);
-	ui->stack_recursive_interaction_flags = stack_u64Alloc(NULL, 16, GROWABLE);
-    ds_CPoolAlloc(NULL, ui->stack_external_text, 8, GROWABLE);
-	ui->stack_external_text_layout = stack_ptrAlloc(NULL, 8, GROWABLE);
+	ds_CPoolAlloc(NULL, ui->font, 8, GROWABLE);
+	ds_CPoolAlloc(NULL, ui->external_text_input, 8, GROWABLE);
+	ds_CPoolAlloc(NULL, ui->flags, 16, GROWABLE);
+	ds_CPoolAlloc(NULL, ui->recursive_interaction_flags, 16, GROWABLE);
+    ds_CPoolAlloc(NULL, ui->external_text, 8, GROWABLE);
+	ds_CPoolAlloc(NULL, ui->external_text_layout, 8, GROWABLE);
     ds_CPoolAlloc(NULL, ui->floating_node, 32, GROWABLE);
     ds_CPoolAlloc(NULL, ui->floating_depth, 32, GROWABLE);
-	ui->stack_floating[AXIS_2_X] = stack_f32Alloc(NULL, 16, GROWABLE);
-	ui->stack_floating[AXIS_2_Y] = stack_f32Alloc(NULL, 16, GROWABLE);
+	ds_CPoolAlloc(NULL, ui->floating[AXIS_2_X], 16, GROWABLE);
+	ds_CPoolAlloc(NULL, ui->floating[AXIS_2_Y], 16, GROWABLE);
     ds_CPoolAlloc(NULL, ui->ui_size[AXIS_2_X], 16, GROWABLE);
     ds_CPoolAlloc(NULL, ui->ui_size[AXIS_2_Y], 16, GROWABLE);
-	ui->stack_gradient_color[BOX_CORNER_BR] = stackVec4Alloc(NULL, 16, GROWABLE);
-	ui->stack_gradient_color[BOX_CORNER_TR] = stackVec4Alloc(NULL, 16, GROWABLE);
-	ui->stack_gradient_color[BOX_CORNER_TL] = stackVec4Alloc(NULL, 16, GROWABLE);
-	ui->stack_gradient_color[BOX_CORNER_BL] = stackVec4Alloc(NULL, 16, GROWABLE);
-	ui->stack_viewable[AXIS_2_X] = stack_intvAlloc(NULL, 8, GROWABLE);
-	ui->stack_viewable[AXIS_2_Y] = stack_intvAlloc(NULL, 8, GROWABLE);
+	ds_CPoolAlloc(NULL, ui->gradient_color[BOX_CORNER_BR], 16, GROWABLE);
+	ds_CPoolAlloc(NULL, ui->gradient_color[BOX_CORNER_TR], 16, GROWABLE);
+	ds_CPoolAlloc(NULL, ui->gradient_color[BOX_CORNER_TL], 16, GROWABLE);
+	ds_CPoolAlloc(NULL, ui->gradient_color[BOX_CORNER_BL], 16, GROWABLE);
+	ds_CPoolAlloc(NULL, ui->viewable[AXIS_2_X], 8, GROWABLE);
+	ds_CPoolAlloc(NULL, ui->viewable[AXIS_2_Y], 8, GROWABLE);
     ds_CPoolAlloc(NULL, ui->child_layout_axis, 16, GROWABLE);
-	ui->stack_background_color = stackVec4Alloc(NULL, 16, GROWABLE);
-	ui->stack_border_color = stackVec4Alloc(NULL, 16, GROWABLE);
-	ui->stack_sprite_color = stackVec4Alloc(NULL, 16, GROWABLE);
-	ui->stack_edge_softness = stack_f32Alloc(NULL, 16, GROWABLE);
-	ui->stack_corner_radius = stack_f32Alloc(NULL, 16, GROWABLE);
-	ui->stack_border_size = stack_f32Alloc(NULL, 16, GROWABLE);
+	ds_CPoolAlloc(NULL, ui->background_color, 16, GROWABLE);
+	ds_CPoolAlloc(NULL, ui->border_color, 16, GROWABLE);
+	ds_CPoolAlloc(NULL, ui->sprite_color, 16, GROWABLE);
+	ds_CPoolAlloc(NULL, ui->edge_softness, 16, GROWABLE);
+	ds_CPoolAlloc(NULL, ui->corner_radius, 16, GROWABLE);
+	ds_CPoolAlloc(NULL, ui->border_size, 16, GROWABLE);
     ds_CPoolAlloc(NULL, ui->text_alignment_x, 8, GROWABLE);
     ds_CPoolAlloc(NULL, ui->text_alignment_y, 8, GROWABLE);
-	ui->stack_text_pad[AXIS_2_X] = stack_f32Alloc(NULL, 8, GROWABLE);
-	ui->stack_text_pad[AXIS_2_Y] = stack_f32Alloc(NULL, 8, GROWABLE);
-    ds_CPoolAlloc(NULL, ui->stack_fixed_depth, 16, GROWABLE);
-	ui->stack_pad = stack_f32Alloc(NULL, 8, GROWABLE);
-    ds_CPoolAlloc(NULL, ui->frame_stack_text_selection, 128, GROWABLE);
+	ds_CPoolAlloc(NULL, ui->text_pad[AXIS_2_X], 8, GROWABLE);
+	ds_CPoolAlloc(NULL, ui->text_pad[AXIS_2_Y], 8, GROWABLE);
+    ds_CPoolAlloc(NULL, ui->fixed_depth, 16, GROWABLE);
+	ds_CPoolAlloc(NULL, ui->pad, 8, GROWABLE);
+    ds_CPoolAlloc(NULL, ui->frame_text_selection, 128, GROWABLE);
 
 	ui->inter.node_hovered = Utf8Empty();
 	ui->inter.text_edit_mode = 0;
@@ -203,8 +203,8 @@ struct ui *ui_Alloc(void)
 	orphan_root->inter_recursive_mask = 0;
 	orphan_root->last_frame_touched = U64_MAX;
 
-	stack_u64Push(&ui->stack_flags, UI_FLAG_NONE);
-	stack_u64Push(&ui->stack_recursive_interaction_flags, UI_FLAG_NONE);
+	ds_CPoolPushValue(ui->flags, UI_FLAG_NONE);
+	ds_CPoolPushValue(ui->recursive_interaction_flags, UI_FLAG_NONE);
 
 	/* setup stub bucket */
 	struct slot slot = ds_PoolAdd(&ui->bucket_pool);
@@ -214,6 +214,15 @@ struct ui *ui_Alloc(void)
 	bucket->cmd = 0;
 	bucket->count = 0;
 
+    const struct slot slot2 = { .index = 1 };
+    fprintf(stderr, "value1: %u\n", slot2.index);
+    do
+    {
+        const struct slot slot2 = { .index = 2 };
+        fprintf(stderr, "value1: %u\n", slot2.index);
+
+    } while (0);
+
 	return ui;
 }
 
@@ -222,40 +231,40 @@ void ui_Dealloc(struct ui *ui)
 	ArenaFree(ui->mem_frame_arr + 0);
 	ArenaFree(ui->mem_frame_arr + 1);
 
-	ds_CPoolDealloc(ui->frame_stack_text_selection);
-	stack_f32Free(&ui->stack_pad);
-	stack_u64Free(&ui->stack_flags);
-	stack_u64Free(&ui->stack_recursive_interaction_flags);
-	ds_CPoolDealloc(ui->stack_external_text);
-	stack_ptrFree(&ui->stack_external_text_layout);
-	stack_ptrFree(&ui->stack_external_text_input);
+	ds_CPoolDealloc(ui->frame_text_selection);
+	ds_CPoolDealloc(ui->pad);
+	ds_CPoolDealloc(ui->flags);
+	ds_CPoolDealloc(ui->recursive_interaction_flags);
+	ds_CPoolDealloc(ui->external_text);
+	ds_CPoolDealloc(ui->external_text_layout);
+	ds_CPoolDealloc(ui->external_text_input);
 	ds_CPoolDealloc(ui->text_alignment_x);
 	ds_CPoolDealloc(ui->text_alignment_y);
-	stack_f32Free(ui->stack_text_pad + AXIS_2_X);
-	stack_f32Free(ui->stack_text_pad + AXIS_2_Y);
-	stack_f32Free(&ui->stack_edge_softness);
-	stack_f32Free(&ui->stack_corner_radius);
-	stack_f32Free(&ui->stack_border_size);
+	ds_CPoolDealloc(ui->text_pad[AXIS_2_X]);
+	ds_CPoolDealloc(ui->text_pad[AXIS_2_Y]);
+	ds_CPoolDealloc(ui->edge_softness);
+	ds_CPoolDealloc(ui->corner_radius);
+	ds_CPoolDealloc(ui->border_size);
 	ds_CPoolDealloc(ui->parent);
 	ds_CPoolDealloc(ui->sprite);
-	stack_ptrFree(&ui->stack_font);
-	stack_f32Free(ui->stack_floating + AXIS_2_X);
-	stack_f32Free(ui->stack_floating + AXIS_2_Y);
+	ds_CPoolDealloc(ui->font);
+	ds_CPoolDealloc(ui->floating[AXIS_2_X]);
+	ds_CPoolDealloc(ui->floating[AXIS_2_Y]);
 	ds_CPoolDealloc(ui->ui_size[AXIS_2_X]);
 	ds_CPoolDealloc(ui->ui_size[AXIS_2_Y]);
-	stackVec4Free(ui->stack_gradient_color + BOX_CORNER_BR);
-	stackVec4Free(ui->stack_gradient_color + BOX_CORNER_TR);
-	stackVec4Free(ui->stack_gradient_color + BOX_CORNER_TL);
-	stackVec4Free(ui->stack_gradient_color + BOX_CORNER_BL);
-	stack_intvFree(ui->stack_viewable + AXIS_2_X);
-	stack_intvFree(ui->stack_viewable + AXIS_2_Y);
+	ds_CPoolDealloc(ui->gradient_color[BOX_CORNER_BR]);
+	ds_CPoolDealloc(ui->gradient_color[BOX_CORNER_TR]);
+	ds_CPoolDealloc(ui->gradient_color[BOX_CORNER_TL]);
+	ds_CPoolDealloc(ui->gradient_color[BOX_CORNER_BL]);
+	ds_CPoolDealloc(ui->viewable[AXIS_2_X]);
+	ds_CPoolDealloc(ui->viewable[AXIS_2_Y]);
 	ds_CPoolDealloc(ui->child_layout_axis);
-	stackVec4Free(&ui->stack_background_color);
-	stackVec4Free(&ui->stack_border_color);
-	stackVec4Free(&ui->stack_sprite_color);
+	ds_CPoolDealloc(ui->background_color);
+	ds_CPoolDealloc(ui->border_color);
+	ds_CPoolDealloc(ui->sprite_color);
 	ds_CPoolDealloc(ui->floating_node);
 	ds_CPoolDealloc(ui->floating_depth);
-	ds_CPoolDealloc(ui->stack_fixed_depth);
+	ds_CPoolDealloc(ui->fixed_depth);
 	ds_HashMapDealloc(&ui->node_map);
 	ds_PoolDealloc(&ui->event_pool);
 	ds_PoolDealloc(&ui->bucket_pool);
@@ -421,9 +430,10 @@ static void ui_ChildsumLayoutSizeAndPruneNodes(void)
 {
 	ArenaPushRecord(g_ui->mem_frame);
 
-	//stack_u32 stackFree = stack_u32Alloc(g_ui->mem_frame, g_ui->node_count_prev_frame, 0);
-	stack_ptr stack_childsum_x = stack_ptrAlloc(g_ui->mem_frame, g_ui->node_count_frame, 0);
-	stack_ptr stack_childsum_y = stack_ptrAlloc(g_ui->mem_frame, g_ui->node_count_frame, 0);
+	//u32 stackFree = u32Alloc(g_ui->mem_frame, g_ui->node_count_prev_frame, 0);
+    ds_CPool(voidptr) childsum_x, childsum_y;
+	ds_CPoolAlloc(g_ui->mem_frame, childsum_x, g_ui->node_count_frame, NOT_GROWABLE);
+	ds_CPoolAlloc(g_ui->mem_frame, childsum_y, g_ui->node_count_frame, NOT_GROWABLE);
 
 	ArenaPushRecord(g_ui->mem_frame);
 	struct hi_Iterator it = hi_IteratorAlloc(g_ui->mem_frame, &g_ui->node_hierarchy, g_ui->root);
@@ -443,19 +453,20 @@ static void ui_ChildsumLayoutSizeAndPruneNodes(void)
 
 		if (node->semantic_size[AXIS_2_X].type == UI_SIZE_CHILDSUM)
 		{
-			stack_ptrPush(&stack_childsum_x, node);
+			ds_CPoolPushValue(childsum_x, node);
 		}
 
 		if (node->semantic_size[AXIS_2_Y].type == UI_SIZE_CHILDSUM)
 		{
-			stack_ptrPush(&stack_childsum_y, node);
+			ds_CPoolPushValue(childsum_y, node);
 		}
 	}
 	ArenaPopRecord(g_ui->mem_frame);
 
-	while (stack_childsum_y.next)
+	while (childsum_y.count)
 	{
-		struct ui_Node *node = stack_ptrPop(&stack_childsum_y);
+		struct ui_Node *node = ds_CPoolTop(childsum_y);
+        ds_CPoolPop(childsum_y);
 		node->layout_size[AXIS_2_Y] = 0.0f;
 		struct ui_Node *child = NULL;
 		for (u32 i = node->hi_first; i != HI_NULL_INDEX; i = child->hi_next)
@@ -465,9 +476,10 @@ static void ui_ChildsumLayoutSizeAndPruneNodes(void)
 		}
 	}
 	
-	while (stack_childsum_x.next)
+	while (childsum_x.count)
 	{
-		struct ui_Node *node = stack_ptrPop(&stack_childsum_x);
+		struct ui_Node *node = ds_CPoolTop(childsum_x);
+        ds_CPoolPop(childsum_y);
 		node->layout_size[AXIS_2_X] = 0.0f;
 		struct ui_Node *child = NULL;
 		for (u32 i = node->hi_first; i != HI_NULL_INDEX; i = child->hi_next)
@@ -849,7 +861,7 @@ void ui_FrameBegin(const vec2u32 window_size, const struct ui_Visual *base)
 	bucket->cmd = 0;
 	bucket->count = 0;
 
-    ds_CPoolFlush(g_ui->frame_stack_text_selection);
+    ds_CPoolFlush(g_ui->frame_text_selection);
 
 	g_ui->node_count_prev_frame = g_ui->node_count_frame;
 	g_ui->node_count_frame = 0;
@@ -993,12 +1005,12 @@ static struct slot ui_TextSelectionAlloc(const struct ui_Node *node, const vec4 
 		.high = high,
 	};
 
-	const u32 index = g_ui->frame_stack_text_selection.count;
-	ds_CPoolPushValue(g_ui->frame_stack_text_selection, selection);
+	const u32 index = g_ui->frame_text_selection.count;
+	ds_CPoolPushValue(g_ui->frame_text_selection, selection);
 
 	const u32 draw_key = ui_DrawCommand(node->depth, UI_CMD_LAYER_TEXT_SELECTION, AssetSpriteGetTextureId(node->sprite));
 	ui_DrawBucketAddNode(draw_key, index);
-	return (struct slot) { .index = index, .address = g_ui->frame_stack_text_selection.buf + index };
+	return (struct slot) { .index = index, .address = g_ui->frame_text_selection.buf + index };
 }
 
 void ui_FrameEnd(void)
@@ -1150,7 +1162,7 @@ static void ui_NodeCalculateImmediateLayout(struct ui_Node *node, const enum axi
 		case UI_SIZE_UNIT:
 		{
 			const struct ui_Node *parent = hi_Address(&g_ui->node_hierarchy, node->hi_parent);
-			const intv visible = stack_intvTop(g_ui->stack_viewable + axis);
+			const intv visible = ds_CPoolTop(g_ui->viewable[axis]);
 			const f32 pixels_per_unit = parent->pixel_size[axis] / (visible.high - visible.low);
 
 			node->layout_size[axis] = pixels_per_unit*(node->semantic_size[axis].intv.high - node->semantic_size[axis].intv.low);
@@ -1192,15 +1204,15 @@ static u32 ui_InternalPad(const u64 flags, const f32 value, const enum ui_SizeTy
 	const u32 non_layout_axis = 1 - parent->child_layout_axis;
 
 	node->id = Utf8Empty();
-	node->flags = flags | stack_u64Top(&g_ui->stack_flags) | UI_DEBUG_FLAGS;
+	node->flags = flags | ds_CPoolTop(g_ui->flags) | UI_DEBUG_FLAGS;
 	node->last_frame_touched = g_ui->frame;
 	node->semantic_size[parent->child_layout_axis] = (type == UI_SIZE_PIXEL)
 		? ui_SizePixel(value, 0.0f)
 		: ui_SizePerc(value);
 	node->semantic_size[non_layout_axis] = ui_SizePerc(1.0f);
 	node->child_layout_axis = ds_CPoolTop(g_ui->child_layout_axis);
-	node->depth = (g_ui->stack_fixed_depth.count)
-		? ds_CPoolTop(g_ui->stack_fixed_depth)
+	node->depth = (g_ui->fixed_depth.count)
+		? ds_CPoolTop(g_ui->fixed_depth)
 		: parent->depth + 1;
 	node->inter = 0;
 	node->inter_recursive_flags = 0;
@@ -1209,7 +1221,7 @@ static u32 ui_InternalPad(const u64 flags, const f32 value, const enum ui_SizeTy
 	if (node->flags & UI_DRAW_SPRITE)
 	{
 		node->sprite = ds_CPoolTop(g_ui->sprite);
-		stackVec4Top(node->sprite_color, &g_ui->stack_sprite_color);
+		Vec4Copy(node->sprite_color, ds_CPoolTop(g_ui->sprite_color));
 	}
 	else
 	{
@@ -1233,13 +1245,13 @@ static u32 ui_InternalPad(const u64 flags, const f32 value, const enum ui_SizeTy
 	ui_NodeCalculateImmediateLayout(node, AXIS_2_Y);
 
 	(node->flags & UI_DRAW_BACKGROUND)
-		? stackVec4Top(node->background_color, &g_ui->stack_background_color)
+		? Vec4Copy(node->background_color, ds_CPoolTop(g_ui->background_color))
 		: Vec4Set(node->background_color, 0.0f, 0.0f, 0.0f, 0.0f);
 
 	if (node->flags & UI_DRAW_BORDER)
 	{
-		node->border_size = stack_f32Top(&g_ui->stack_border_size);
-		stackVec4Top(node->border_color, &g_ui->stack_border_color);
+		node->border_size = ds_CPoolTop(g_ui->border_size);
+		Vec4Copy(node->border_color, ds_CPoolTop(g_ui->border_color));
 	}
 	else
 	{
@@ -1249,10 +1261,10 @@ static u32 ui_InternalPad(const u64 flags, const f32 value, const enum ui_SizeTy
 
 	if (node->flags & UI_DRAW_GRADIENT)
 	{
-		stackVec4Top(node->gradient_color[BOX_CORNER_BR], g_ui->stack_gradient_color + BOX_CORNER_BR);
-		stackVec4Top(node->gradient_color[BOX_CORNER_TR], g_ui->stack_gradient_color + BOX_CORNER_TR);
-		stackVec4Top(node->gradient_color[BOX_CORNER_TL], g_ui->stack_gradient_color + BOX_CORNER_TL);
-		stackVec4Top(node->gradient_color[BOX_CORNER_BL], g_ui->stack_gradient_color + BOX_CORNER_BL);
+		Vec4Copy(node->gradient_color[BOX_CORNER_BR], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_BR]));
+		Vec4Copy(node->gradient_color[BOX_CORNER_TR], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_TR]));
+		Vec4Copy(node->gradient_color[BOX_CORNER_TL], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_TL]));
+		Vec4Copy(node->gradient_color[BOX_CORNER_BL], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_BL]));
 	}
 	else
 	{
@@ -1263,11 +1275,11 @@ static u32 ui_InternalPad(const u64 flags, const f32 value, const enum ui_SizeTy
 	}
 
 	node->edge_softness = (node->flags & UI_DRAW_EDGE_SOFTNESS)
-		? stack_f32Top(&g_ui->stack_edge_softness)
+		? ds_CPoolTop(g_ui->edge_softness)
 		: 0.0f;
 
 	node->corner_radius = (node->flags & UI_DRAW_ROUNDED_CORNERS)
-		? stack_f32Top(&g_ui->stack_corner_radius)
+		? ds_CPoolTop(g_ui->corner_radius)
 		: 0.0f;
 	
 	return slot.index;
@@ -1275,7 +1287,7 @@ static u32 ui_InternalPad(const u64 flags, const f32 value, const enum ui_SizeTy
 
 u32 ui_Pad(void)
 {
-	return ui_InternalPad(UI_NON_HASHED | UI_PAD, stack_f32Top(&g_ui->stack_pad), UI_SIZE_PIXEL);
+	return ui_InternalPad(UI_NON_HASHED | UI_PAD, ds_CPoolTop(g_ui->pad), UI_SIZE_PIXEL);
 }
 
 u32 ui_PadPixel(const f32 pixel)
@@ -1359,7 +1371,7 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 		return ui_NodeCacheOrphanRoot();
 	}
 
-	u64 implied_flags = stack_u64Top(&g_ui->stack_flags);
+	u64 implied_flags = ds_CPoolTop(g_ui->flags);
 
 	/* If not cached, index should be != STUB_INDEX */
 	struct ui_Node *node = (cache.last_frame_touched+1 == g_ui->frame)
@@ -1373,10 +1385,10 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 	/* Cull any unit_sized nodes that are not visible except if they are being interacted with */
 	if (size_x.type == UI_SIZE_UNIT)
 	{
-		ds_Assert(g_ui->stack_viewable[AXIS_2_X].next);
+		ds_Assert(g_ui->viewable[AXIS_2_X].count);
 		implied_flags |= UI_ALLOW_VIOLATION_X;
 
-		const intv visible = stack_intvTop(g_ui->stack_viewable + AXIS_2_X);
+		const intv visible = ds_CPoolTop(g_ui->viewable[AXIS_2_X]);
 		if ((size_x.intv.high < visible.low || size_x.intv.low > visible.high) && !(node->inter & UI_INTER_ACTIVE))
 		{
 			return ui_NodeCacheOrphanRoot();
@@ -1385,10 +1397,10 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 
 	if (size_y.type == UI_SIZE_UNIT)
 	{
-		ds_Assert(g_ui->stack_viewable[AXIS_2_Y].next);
+		ds_Assert(g_ui->viewable[AXIS_2_Y].count);
 		implied_flags |= UI_ALLOW_VIOLATION_Y;
 		
-		const intv visible = stack_intvTop(g_ui->stack_viewable + AXIS_2_Y);
+		const intv visible = ds_CPoolTop(g_ui->viewable[AXIS_2_Y]);
 		if ((size_y.intv.high < visible.low || size_y.intv.low > visible.high) && !(node->inter & UI_INTER_ACTIVE))
 		{
 			return ui_NodeCacheOrphanRoot();
@@ -1396,14 +1408,14 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 	}
 
 	const u64 inter_recursive_flags = (flags & UI_INTER_RECURSIVE_ROOT)
-		? stack_u64Top(&g_ui->stack_recursive_interaction_flags)
+		? ds_CPoolTop(g_ui->recursive_interaction_flags)
 		: 0;
 	const u64 node_flags = flags | implied_flags | UI_DEBUG_FLAGS | inter_recursive_flags;
 	const u64 inter_recursive_mask = parent->inter_recursive_mask | inter_recursive_flags;
 	u64 inter = 0;
 
-	const u32 depth = (g_ui->stack_fixed_depth.count)
-		? ds_CPoolTop(g_ui->stack_fixed_depth)
+	const u32 depth = (g_ui->fixed_depth.count)
+		? ds_CPoolTop(g_ui->fixed_depth)
 		: parent->depth + 1;
 
 	u32 hash;
@@ -1442,7 +1454,7 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 	if (node->flags & UI_DRAW_SPRITE)
 	{
 		node->sprite = ds_CPoolTop(g_ui->sprite);
-		stackVec4Top(node->sprite_color, &g_ui->stack_sprite_color);
+		Vec4Copy(node->sprite_color, ds_CPoolTop(g_ui->sprite_color));
 	}
 	else
 	{
@@ -1459,14 +1471,14 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 
 	if (node->flags & UI_DRAW_TEXT)
 	{
-		const struct assetFont *asset = stack_ptrTop(&g_ui->stack_font);
-		stackVec4Top(node->sprite_color, &g_ui->stack_sprite_color);
+		const struct assetFont *asset = ds_CPoolTop(g_ui->font);
+		Vec4Copy(node->sprite_color, ds_CPoolTop(g_ui->sprite_color));
 		node->flags |= UI_TEXT_ATTACHED;
 		node->font = asset->font;
 		node->text_align_x = ds_CPoolTop(g_ui->text_alignment_x);
 		node->text_align_y = ds_CPoolTop(g_ui->text_alignment_y);
-		node->text_pad[AXIS_2_X] = stack_f32Top(g_ui->stack_text_pad + AXIS_2_X);
-		node->text_pad[AXIS_2_Y] = stack_f32Top(g_ui->stack_text_pad + AXIS_2_Y);
+		node->text_pad[AXIS_2_X] = ds_CPoolTop(g_ui->text_pad[AXIS_2_X]);
+		node->text_pad[AXIS_2_Y] = ds_CPoolTop(g_ui->text_pad[AXIS_2_Y]);
 
 		u32 text_editing = 0;
 		if ((node->flags & UI_TEXT_EDIT) && (node->inter & UI_INTER_FOCUS))
@@ -1487,7 +1499,7 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 					if (node->flags & UI_TEXT_EDIT_COPY_ON_FOCUS)
 					{
 						utf32 copy = (node->flags & (UI_TEXT_EXTERNAL | UI_TEXT_EXTERNAL_LAYOUT))
-							? Utf32Copy(g_ui->mem_frame, ds_CPoolTop(g_ui->stack_external_text))
+							? Utf32Copy(g_ui->mem_frame, ds_CPoolTop(g_ui->external_text))
 							: Utf32Utf8(g_ui->mem_frame, text);
 
 						if (copy.len)
@@ -1501,7 +1513,7 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 				}
 				else
 				{
-					CmdSubmitFormat(g_ui->mem_frame, "ui_TextInputModeEnable \"%k\" %p", &node->id, stack_ptrTop(&g_ui->stack_external_text_input));
+					CmdSubmitFormat(g_ui->mem_frame, "ui_TextInputModeEnable \"%k\" %p", &node->id, ds_CPoolTop(g_ui->external_text_input));
 				}
 			}
 			else
@@ -1510,7 +1522,7 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 				 * buffers we must renew them on frame end! */
 				if ((node->flags & UI_TEXT_EDIT_INTER_BUF_ON_FOCUS) == 0)
 				{
-					g_ui->inter.text_edit = stack_ptrTop(&g_ui->stack_external_text_input);
+					g_ui->inter.text_edit = ds_CPoolTop(g_ui->external_text_input);
 					node->input = *g_ui->inter.text_edit;
 				}
 			}
@@ -1522,13 +1534,13 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 			if (node->flags & UI_TEXT_EXTERNAL_LAYOUT)
 			{
 				node->flags |= UI_TEXT_EXTERNAL | UI_TEXT_ALLOW_OVERFLOW;
-				node->input.text = ds_CPoolTop(g_ui->stack_external_text); 
-				node->layout_text = stack_ptrTop(&g_ui->stack_external_text_layout); 
+				node->input.text = ds_CPoolTop(g_ui->external_text); 
+				node->layout_text = ds_CPoolTop(g_ui->external_text_layout); 
 			}
 			else
 			{
 				node->input.text = (node->flags & UI_TEXT_EXTERNAL)
-					? ds_CPoolTop(g_ui->stack_external_text)
+					? ds_CPoolTop(g_ui->external_text)
 					: Utf32Utf8(g_ui->mem_frame, text);
 
 				/* TODO wonky, would be nice to have it in immediate calculations, but wonky there as well... */
@@ -1563,17 +1575,17 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 	ui_NodeCalculateImmediateLayout(node, AXIS_2_Y);
 
 	u32 floating = 0;
-	if (g_ui->stack_floating[AXIS_2_X].next)
+	if (g_ui->floating[AXIS_2_X].count)
 	{
 		floating = 1;
-		node->layout_position[AXIS_2_X] = stack_f32Top(g_ui->stack_floating + AXIS_2_X);
+		node->layout_position[AXIS_2_X] = ds_CPoolTop(g_ui->floating[AXIS_2_X]);
 		node->flags |= UI_FLOATING_X;
 	}	
 
-	if (g_ui->stack_floating[AXIS_2_Y].next)
+	if (g_ui->floating[AXIS_2_Y].count)
 	{
 		floating = 1;
-		node->layout_position[AXIS_2_Y] = stack_f32Top(g_ui->stack_floating + AXIS_2_Y);
+		node->layout_position[AXIS_2_Y] = ds_CPoolTop(g_ui->floating[AXIS_2_Y]);
 		node->flags |= UI_FLOATING_Y;
 	}
 
@@ -1584,13 +1596,13 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 	}
 
 	(node->flags & UI_DRAW_BACKGROUND)
-		? stackVec4Top(node->background_color, &g_ui->stack_background_color)
+		? Vec4Copy(node->background_color, ds_CPoolTop(g_ui->background_color))
 		: Vec4Set(node->background_color, 0.0f, 0.0f, 0.0f, 0.0f);
 
 	if (node->flags & UI_DRAW_BORDER)
 	{
-		node->border_size = stack_f32Top(&g_ui->stack_border_size);
-		stackVec4Top(node->border_color, &g_ui->stack_border_color);
+		node->border_size = ds_CPoolTop(g_ui->border_size);
+		Vec4Copy(node->border_color, ds_CPoolTop(g_ui->border_color));
 	}
 	else
 	{
@@ -1600,10 +1612,10 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 
 	if (node->flags & UI_DRAW_GRADIENT)
 	{
-		stackVec4Top(node->gradient_color[BOX_CORNER_BR], g_ui->stack_gradient_color + BOX_CORNER_BR);
-		stackVec4Top(node->gradient_color[BOX_CORNER_TR], g_ui->stack_gradient_color + BOX_CORNER_TR);
-		stackVec4Top(node->gradient_color[BOX_CORNER_TL], g_ui->stack_gradient_color + BOX_CORNER_TL);
-		stackVec4Top(node->gradient_color[BOX_CORNER_BL], g_ui->stack_gradient_color + BOX_CORNER_BL);
+		Vec4Copy(node->gradient_color[BOX_CORNER_BR], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_BR]));
+		Vec4Copy(node->gradient_color[BOX_CORNER_TR], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_TR]));
+		Vec4Copy(node->gradient_color[BOX_CORNER_TL], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_TL]));
+		Vec4Copy(node->gradient_color[BOX_CORNER_BL], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_BL]));
 	}
 	else
 	{
@@ -1614,11 +1626,11 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 	}
 
 	node->edge_softness = (node->flags & UI_DRAW_EDGE_SOFTNESS)
-		? stack_f32Top(&g_ui->stack_edge_softness)
+		? ds_CPoolTop(g_ui->edge_softness)
 		: 0.0f;
 
 	node->corner_radius = (node->flags & UI_DRAW_ROUNDED_CORNERS)
-		? stack_f32Top(&g_ui->stack_corner_radius)
+		? ds_CPoolTop(g_ui->corner_radius)
 		: 0.0f;
 	
 	ds_Assert(node->semantic_size[AXIS_2_Y].type != UI_SIZE_TEXT || node->semantic_size[AXIS_2_X].type == UI_SIZE_TEXT);
@@ -1683,9 +1695,9 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 	u32 hash = 0;
 
 	const u64 inter_recursive_flags = (flags & UI_INTER_RECURSIVE_ROOT)
-		? stack_u64Top(&g_ui->stack_recursive_interaction_flags)
+		? ds_CPoolTop(g_ui->recursive_interaction_flags)
 		: 0;
-	u64 node_flags = flags | stack_u64Top(&g_ui->stack_flags) | UI_DEBUG_FLAGS | inter_recursive_flags;
+	u64 node_flags = flags | ds_CPoolTop(g_ui->flags) | UI_DEBUG_FLAGS | inter_recursive_flags;
 	const u64 inter_recursive_mask = parent->inter_recursive_mask | inter_recursive_flags;
 
 	struct ui_Size size_x = ds_CPoolTop(g_ui->ui_size[AXIS_2_X]);
@@ -1693,10 +1705,10 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 
 	if (size_x.type == UI_SIZE_UNIT)
 	{
-		ds_Assert(g_ui->stack_viewable[AXIS_2_X].next);
+		ds_Assert(g_ui->viewable[AXIS_2_X].count);
 		node_flags |= UI_ALLOW_VIOLATION_X;
 
-		const intv visible = stack_intvTop(g_ui->stack_viewable + AXIS_2_X);
+		const intv visible = ds_CPoolTop(g_ui->viewable[AXIS_2_X]);
 		if ((size_x.intv.high < visible.low || size_x.intv.low > visible.high) && node && !(node->inter & UI_INTER_ACTIVE))
 		{
 			return (struct slot) { .index = HI_ORPHAN_STUB_INDEX, .address = hi_Address(&g_ui->node_hierarchy, HI_ORPHAN_STUB_INDEX) };
@@ -1705,10 +1717,10 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 
 	if (size_y.type == UI_SIZE_UNIT)
 	{
-		ds_Assert(g_ui->stack_viewable[AXIS_2_Y].next);
+		ds_Assert(g_ui->viewable[AXIS_2_Y].count);
 		node_flags |= UI_ALLOW_VIOLATION_Y;
 		
-		const intv visible = stack_intvTop(g_ui->stack_viewable + AXIS_2_Y);
+		const intv visible = ds_CPoolTop(g_ui->viewable[AXIS_2_Y]);
 		if ((size_y.intv.high < visible.low || size_y.intv.low > visible.high) && node && !(node->inter & UI_INTER_ACTIVE))
 		{
 			return (struct slot) { .index = HI_ORPHAN_STUB_INDEX, .address = hi_Address(&g_ui->node_hierarchy, HI_ORPHAN_STUB_INDEX) };
@@ -1748,14 +1760,14 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 	node->semantic_size[AXIS_2_X] = size_x;
 	node->semantic_size[AXIS_2_Y] = size_y;
 	node->child_layout_axis = ds_CPoolTop(g_ui->child_layout_axis);
-	node->depth = (g_ui->stack_fixed_depth.count)
-		? ds_CPoolTop(g_ui->stack_fixed_depth)
+	node->depth = (g_ui->fixed_depth.count)
+		? ds_CPoolTop(g_ui->fixed_depth)
 		: parent->depth + 1;
 
 	if (node->flags & UI_DRAW_SPRITE)
 	{
 		node->sprite = ds_CPoolTop(g_ui->sprite);
-		stackVec4Top(node->sprite_color, &g_ui->stack_sprite_color);
+		Vec4Copy(node->sprite_color, ds_CPoolTop(g_ui->sprite_color));
 	}
 	else
 	{
@@ -1772,14 +1784,14 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 
 	if (node->flags & UI_DRAW_TEXT)
 	{
-		const struct assetFont *asset = stack_ptrTop(&g_ui->stack_font);
-		stackVec4Top(node->sprite_color, &g_ui->stack_sprite_color);
+		const struct assetFont *asset = ds_CPoolTop(g_ui->font);
+		Vec4Copy(node->sprite_color, ds_CPoolTop(g_ui->sprite_color));
 		node->flags |= UI_TEXT_ATTACHED;
 		node->font = asset->font;
 		node->text_align_x = ds_CPoolTop(g_ui->text_alignment_x);
 		node->text_align_y = ds_CPoolTop(g_ui->text_alignment_y);
-		node->text_pad[AXIS_2_X] = stack_f32Top(g_ui->stack_text_pad + AXIS_2_X);
-		node->text_pad[AXIS_2_Y] = stack_f32Top(g_ui->stack_text_pad + AXIS_2_Y);
+		node->text_pad[AXIS_2_X] = ds_CPoolTop(g_ui->text_pad[AXIS_2_X]);
+		node->text_pad[AXIS_2_Y] = ds_CPoolTop(g_ui->text_pad[AXIS_2_Y]);
 
 		u32 text_editing = 0;
 		if ((node->flags & UI_TEXT_EDIT) && (node->inter & UI_INTER_FOCUS))
@@ -1800,7 +1812,7 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 					if (node->flags & UI_TEXT_EDIT_COPY_ON_FOCUS)
 					{
 						utf32 copy = (node->flags & (UI_TEXT_EXTERNAL | UI_TEXT_EXTERNAL_LAYOUT))
-							? Utf32Copy(g_ui->mem_frame, ds_CPoolTop(g_ui->stack_external_text))
+							? Utf32Copy(g_ui->mem_frame, ds_CPoolTop(g_ui->external_text))
 							: Utf32Utf8(g_ui->mem_frame, (utf8) { .buf = formatted->buf, .len = text_len, .size = formatted->size });
 
 						if (copy.len)
@@ -1814,7 +1826,7 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 				}
 				else
 				{
-					CmdSubmitFormat(g_ui->mem_frame, "ui_TextInputModeEnable \"%k\" %p", &node->id, stack_ptrTop(&g_ui->stack_external_text_input));
+					CmdSubmitFormat(g_ui->mem_frame, "ui_TextInputModeEnable \"%k\" %p", &node->id, ds_CPoolTop(g_ui->external_text_input));
 				}
 			}
 			else
@@ -1823,7 +1835,7 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 				 * buffers we must renew them on frame end! */
 				if ((node->flags & UI_TEXT_EDIT_INTER_BUF_ON_FOCUS) == 0)
 				{
-					g_ui->inter.text_edit = stack_ptrTop(&g_ui->stack_external_text_input);
+					g_ui->inter.text_edit = ds_CPoolTop(g_ui->external_text_input);
 					node->input = *g_ui->inter.text_edit;
 				}
 			}
@@ -1834,13 +1846,13 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 			if (node->flags & UI_TEXT_EXTERNAL_LAYOUT)
 			{
 				node->flags |= UI_TEXT_EXTERNAL | UI_TEXT_ALLOW_OVERFLOW;
-				node->input.text = ds_CPoolTop(g_ui->stack_external_text); 
-				node->layout_text = stack_ptrTop(&g_ui->stack_external_text_layout); 
+				node->input.text = ds_CPoolTop(g_ui->external_text); 
+				node->layout_text = ds_CPoolTop(g_ui->external_text_layout); 
 			}
 			else
 			{
 				node->input.text = (node->flags & UI_TEXT_EXTERNAL)
-					? ds_CPoolTop(g_ui->stack_external_text)
+					? ds_CPoolTop(g_ui->external_text)
 					: Utf32Utf8(g_ui->mem_frame, (utf8) { .buf = formatted->buf, .len = text_len, .size = formatted->size });
 
 				/* TODO wonky, would be nice to have it in immediate calculations, but wonky there as well... */
@@ -1875,17 +1887,17 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 	ui_NodeCalculateImmediateLayout(node, AXIS_2_Y);
 
 	u32 floating = 0;
-	if (g_ui->stack_floating[AXIS_2_X].next)
+	if (g_ui->floating[AXIS_2_X].count)
 	{
 		floating = 1;
-		node->layout_position[AXIS_2_X] = stack_f32Top(g_ui->stack_floating + AXIS_2_X);
+		node->layout_position[AXIS_2_X] = ds_CPoolTop(g_ui->floating[AXIS_2_X]);
 		node->flags |= UI_FLOATING_X;
 	}	
 
-	if (g_ui->stack_floating[AXIS_2_Y].next)
+	if (g_ui->floating[AXIS_2_Y].count)
 	{
 		floating = 1;
-		node->layout_position[AXIS_2_Y] = stack_f32Top(g_ui->stack_floating + AXIS_2_Y);
+		node->layout_position[AXIS_2_Y] = ds_CPoolTop(g_ui->floating[AXIS_2_Y]);
 		node->flags |= UI_FLOATING_Y;
 	}
 
@@ -1896,13 +1908,13 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 	}
 
 	(node->flags & UI_DRAW_BACKGROUND)
-		? stackVec4Top(node->background_color, &g_ui->stack_background_color)
+		? Vec4Copy(node->background_color, ds_CPoolTop(g_ui->background_color))
 		: Vec4Set(node->background_color, 0.0f, 0.0f, 0.0f, 0.0f);
 
 	if (node->flags & UI_DRAW_BORDER)
 	{
-		node->border_size = stack_f32Top(&g_ui->stack_border_size);
-		stackVec4Top(node->border_color, &g_ui->stack_border_color);
+		node->border_size = ds_CPoolTop(g_ui->border_size);
+		Vec4Copy(node->border_color, ds_CPoolTop(g_ui->border_color));
 	}
 	else
 	{
@@ -1912,10 +1924,10 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 
 	if (node->flags & UI_DRAW_GRADIENT)
 	{
-		stackVec4Top(node->gradient_color[BOX_CORNER_BR], g_ui->stack_gradient_color + BOX_CORNER_BR);
-		stackVec4Top(node->gradient_color[BOX_CORNER_TR], g_ui->stack_gradient_color + BOX_CORNER_TR);
-		stackVec4Top(node->gradient_color[BOX_CORNER_TL], g_ui->stack_gradient_color + BOX_CORNER_TL);
-		stackVec4Top(node->gradient_color[BOX_CORNER_BL], g_ui->stack_gradient_color + BOX_CORNER_BL);
+		Vec4Copy(node->gradient_color[BOX_CORNER_BR], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_BR]));
+		Vec4Copy(node->gradient_color[BOX_CORNER_TR], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_TR]));
+		Vec4Copy(node->gradient_color[BOX_CORNER_TL], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_TL]));
+		Vec4Copy(node->gradient_color[BOX_CORNER_BL], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_BL]));
 	}
 	else
 	{
@@ -1926,11 +1938,11 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 	}
 
 	node->edge_softness = (node->flags & UI_DRAW_EDGE_SOFTNESS)
-		? stack_f32Top(&g_ui->stack_edge_softness)
+		? ds_CPoolTop(g_ui->edge_softness)
 		: 0.0f;
 
 	node->corner_radius = (node->flags & UI_DRAW_ROUNDED_CORNERS)
-		? stack_f32Top(&g_ui->stack_corner_radius)
+		? ds_CPoolTop(g_ui->corner_radius)
 		: 0.0f;
 	
 	ds_Assert(node->semantic_size[AXIS_2_Y].type != UI_SIZE_TEXT || node->semantic_size[AXIS_2_X].type == UI_SIZE_TEXT);
@@ -2018,17 +2030,17 @@ void ui_HeightPop(void)
 
 void ui_FloatingPush(const enum axis_2 axis, const f32 pixel)
 {
-	stack_f32Push(g_ui->stack_floating + axis, pixel);
+	ds_CPoolPushValue(g_ui->floating[axis], pixel);
 }
 
 void ui_FloatingSet(const enum axis_2 axis, const f32 pixel)
 {
-	stack_f32Set(g_ui->stack_floating + axis, pixel);
+	*ds_CPoolTopAddress(g_ui->floating[axis]) = pixel;
 }
 
 void ui_FloatingPop(const enum axis_2 axis)
 {
-	stack_f32Pop(g_ui->stack_floating + axis);
+	ds_CPoolPop(g_ui->floating[axis]);
 }
 
 void ui_ChildLayoutAxisPush(const enum axis_2 axis)
@@ -2049,94 +2061,94 @@ void ui_ChildLayoutAxisPop(void)
 
 void ui_IntvViewablePush(const enum axis_2 axis, const intv inv)
 {
-	stack_intvPush(g_ui->stack_viewable + axis, inv);
+	ds_CPoolPushValue(g_ui->viewable[axis], inv);
 }
 
 void ui_IntvViewableSet(const enum axis_2 axis, const intv inv)
 {
-	stack_intvSet(g_ui->stack_viewable + axis, inv);
+	*ds_CPoolTopAddress(g_ui->viewable[axis]) = inv;
 }
 
 void ui_IntvViewablePop(const enum axis_2 axis)
 {
-	stack_intvPop(g_ui->stack_viewable + axis);
+	ds_CPoolPop(g_ui->viewable[axis]);
 }
 
 void ui_BackgroundColorPush(const vec4 color)
 {
-	stackVec4Push(&g_ui->stack_background_color, color);
+	ds_CPoolPushMemcpy(g_ui->background_color, color);
 }
 
 void ui_BackgroundColorSet(const vec4 color)
 {
-	stackVec4Set(&g_ui->stack_background_color, color);
+	Vec4Copy(ds_CPoolTop(g_ui->background_color), color);
 }
 
 void ui_BackgroundColorPop(void)
 {
-	stackVec4Pop(&g_ui->stack_background_color);
+	ds_CPoolPop(g_ui->background_color);
 }
 
 void ui_BorderColorPush(const vec4 color)
 {
-	stackVec4Push(&g_ui->stack_border_color, color);
+	ds_CPoolPushMemcpy(g_ui->border_color, color);
 }
 
 void ui_BorderColorSet(const vec4 color)
 {
-	stackVec4Set(&g_ui->stack_border_color, color);
+	Vec4Copy(ds_CPoolTop(g_ui->border_color), color);
 }
 
 void ui_BorderColorPop(void)
 {
-	stackVec4Pop(&g_ui->stack_border_color);
+	ds_CPoolPop(g_ui->border_color);
 }
 
 void ui_SpriteColorPush(const vec4 color)
 {
-	stackVec4Push(&g_ui->stack_sprite_color, color);
+	ds_CPoolPushMemcpy(g_ui->sprite_color, color);
 }
 
 void ui_SpriteColorSet(const vec4 color)
 {
-	stackVec4Set(&g_ui->stack_sprite_color, color);
+	Vec4Copy(ds_CPoolTop(g_ui->sprite_color), color);
 }
 
 void ui_SpriteColorPop(void)
 {
-	stackVec4Pop(&g_ui->stack_sprite_color);
+	ds_CPoolPop(g_ui->sprite_color);
 }
 
 void ui_GradientColorPush(const enum box_corner corner, const vec4 color)
 {
-	stackVec4Push(g_ui->stack_gradient_color + corner, color);
+	ds_CPoolPushMemcpy(g_ui->gradient_color[corner], color);
 }
 
 void ui_GradientColorSet(const enum box_corner corner, const vec4 color)
 {
-	stackVec4Set(g_ui->stack_gradient_color + corner, color);
+	Vec4Copy(ds_CPoolTop(g_ui->gradient_color[corner]), color);
 }
 
 void ui_GradientColorPop(const enum box_corner corner)
 {
-	stackVec4Pop(g_ui->stack_gradient_color + corner);
+	ds_CPoolPop(g_ui->gradient_color[corner]);
 }
 
 void ui_FontPush(const enum fontId font)
 {
 	struct assetFont *asset = AssetRequestFont(g_ui->mem_frame, font);
-	stack_ptrPush(&g_ui->stack_font, asset);
+	ds_CPoolPushValue(g_ui->font, asset);
 }
 
 void ui_FontSet(const enum fontId font)
 {
 	struct assetFont *asset = AssetRequestFont(g_ui->mem_frame, font);
-	stack_ptrSet(&g_ui->stack_font, asset);
+    *ds_CPoolTopAddress(g_ui->font) = asset;
 }
 
 void ui_FontPop(void)
 {
-	stack_ptrPop(&g_ui->stack_font);
+	ds_CPoolPop(g_ui->font);
 }
 
 void ui_SpritePush(const enum spriteId sprite)
@@ -2157,47 +2169,47 @@ void ui_SpritePop(void)
 
 void ui_EdgeSoftnessPush(const f32 softness)
 {
-	stack_f32Push(&g_ui->stack_edge_softness, softness);
+	ds_CPoolPushValue(g_ui->edge_softness, softness);
 }
 
 void ui_EdgeSoftnessSet(const f32 softness)
 {
-	stack_f32Set(&g_ui->stack_edge_softness, softness);
+	*ds_CPoolTopAddress(g_ui->edge_softness) = softness;
 }
 
 void ui_EdgeSoftnessPop(void)
 {
-	stack_f32Pop(&g_ui->stack_edge_softness);
+	ds_CPoolPop(g_ui->edge_softness);
 }
 
 void ui_CornerRadiusPush(const f32 radius)
 {
-	stack_f32Push(&g_ui->stack_corner_radius, radius);
+	ds_CPoolPushValue(g_ui->corner_radius, radius);
 }
 
 void ui_CornerRadiusSet(const f32 radius)
 {
-	stack_f32Set(&g_ui->stack_corner_radius, radius);
+	*ds_CPoolTopAddress(g_ui->corner_radius) = radius;
 }
 
 void ui_CornerRadiusPop(void)
 {
-	stack_f32Pop(&g_ui->stack_corner_radius);
+	ds_CPoolPop(g_ui->corner_radius);
 }
 
 void ui_BorderSizePush(const f32 pixels)
 {
-	stack_f32Push(&g_ui->stack_border_size, pixels);
+	ds_CPoolPushValue(g_ui->border_size, pixels);
 }
 
 void ui_BorderSizeSet(const f32 pixels)
 {
-	stack_f32Set(&g_ui->stack_border_size, pixels);
+	*ds_CPoolTopAddress(g_ui->border_size) = pixels;
 }
 
 void ui_BorderSizePop(void)
 {
-	stack_f32Pop(&g_ui->stack_border_size);
+	ds_CPoolPop(g_ui->border_size);
 }
 
 void ui_TextAlignXPush(const enum alignment_x align)
@@ -2234,117 +2246,117 @@ void ui_TextAlignYPop(void)
 
 void ui_TextPadPush(const enum axis_2 axis, const f32 pad)
 {
-	stack_f32Push(g_ui->stack_text_pad + axis, pad);
+	ds_CPoolPushValue(g_ui->text_pad[axis], pad);
 }
 
 void ui_TextPadSet(const enum axis_2 axis, const f32 pad)
 {
-	stack_f32Set(g_ui->stack_text_pad + axis, pad);
+	*ds_CPoolTopAddress(g_ui->text_pad[axis]) = pad;
 }
 
 void ui_TextPadPop(const enum axis_2 axis)
 {
-	stack_f32Pop(g_ui->stack_text_pad + axis);
+	ds_CPoolPop(g_ui->text_pad[axis]);
 }
 
 void ui_FlagsPush(const u64 flags)
 {
-	const u64 inherited_flags = stack_u64Top(&g_ui->stack_flags);
-	stack_u64Push(&g_ui->stack_flags, inherited_flags | flags);
+	const u64 inherited_flags = ds_CPoolTop(g_ui->flags);
+	ds_CPoolPushValue(g_ui->flags, inherited_flags | flags);
 }
 
 void ui_FlagsSet(const u64 flags)
 {
-	const u64 inherited_flags = stack_u64Top(&g_ui->stack_flags);
-	stack_u64Set(&g_ui->stack_flags, inherited_flags | flags);
+	const u64 inherited_flags = ds_CPoolTop(g_ui->flags);
+	*ds_CPoolTopAddress(g_ui->flags) = inherited_flags | flags;
 }
 
 void ui_FlagsPop(void)
 {
-	stack_u64Pop(&g_ui->stack_flags);
+	ds_CPoolPop(g_ui->flags);
 }
 
 void ui_PaddingPush(const f32 pad)
 {
-	stack_f32Push(&g_ui->stack_pad, pad);
+	ds_CPoolPushValue(g_ui->pad, pad);
 }
 
 void ui_PaddingSet(const f32 pad)
 {
-	stack_f32Set(&g_ui->stack_pad, pad);
+	*ds_CPoolTopAddress(g_ui->pad) = pad;
 }
 
 void ui_PaddingPop(void)
 {
-	stack_f32Pop(&g_ui->stack_pad);
+	ds_CPoolPop(g_ui->pad);
 }
 
 void ui_FixedDepthPush(const u32 depth)
 {
-	ds_CPoolPushValue(g_ui->stack_fixed_depth, depth);
+	ds_CPoolPushValue(g_ui->fixed_depth, depth);
 }
 
 void ui_FixedDepthSet(const u32 depth)
 {
-    ds_Assert(g_ui->stack_fixed_depth.count);
-	*ds_CPoolTopAddress(g_ui->stack_fixed_depth) = depth;
+    ds_Assert(g_ui->fixed_depth.count);
+	*ds_CPoolTopAddress(g_ui->fixed_depth) = depth;
 }
 
 void ui_FixedDepthPop(void)
 {
-	ds_CPoolPop(g_ui->stack_fixed_depth);
+	ds_CPoolPop(g_ui->fixed_depth);
 }
 
 void ui_ExternalTextPush(const utf32 text)
 {
-	ds_CPoolPushValue(g_ui->stack_external_text, text);
+	ds_CPoolPushValue(g_ui->external_text, text);
 }
 
 void ui_ExternalTextSet(const utf32 text)
 {
-    ds_Assert(g_ui->stack_external_text.count);
-	*ds_CPoolTopAddress(g_ui->stack_external_text) = text;
+    ds_Assert(g_ui->external_text.count);
+	*ds_CPoolTopAddress(g_ui->external_text) = text;
 }
 
 void ui_ExternalTextPop(void)
 {
-	ds_CPoolPop(g_ui->stack_external_text);
+	ds_CPoolPop(g_ui->external_text);
 }
 
 void ui_ExternalTextLayoutPush(struct textLayout *layout, const utf32 text)
 {
-	stack_ptrPush(&g_ui->stack_external_text_layout, layout);
-	ds_CPoolPushValue(g_ui->stack_external_text, text);
+	ds_CPoolPushValue(g_ui->external_text_layout, layout);
+	ds_CPoolPushValue(g_ui->external_text, text);
 }
 
 void ui_ExternalTextLayoutSet(struct textLayout *layout, const utf32 text)
 {
-    ds_Assert(g_ui->stack_external_text.count);
-	stack_ptrSet(&g_ui->stack_external_text_layout, layout);
-	*ds_CPoolTopAddress(g_ui->stack_external_text) = text;
+    ds_Assert(g_ui->external_text.count);
+	*ds_CPoolTopAddress(g_ui->external_text_layout) = layout;
+	*ds_CPoolTopAddress(g_ui->external_text) = text;
 }
 
 void ui_ExternalTextLayoutPop(void)
 {
-	stack_ptrPop(&g_ui->stack_external_text_layout);
+	ds_CPoolPop(g_ui->external_text_layout);
 }
 
 void ui_ExternalTextInputPush(struct ui_TextInput *input)
 {
-	stack_ptrPush(&g_ui->stack_external_text_input, input);
+	ds_CPoolPushValue(g_ui->external_text_input, input);
 }
 
 void ui_ExternalTextInputPop(void)
 {
-	stack_ptrPop(&g_ui->stack_external_text_input);
+	ds_CPoolPop(g_ui->external_text_input);
 }
 
 void ui_RecursiveInteractionPush(const u64 flags)
 {
-	stack_u64Push(&g_ui->stack_recursive_interaction_flags, flags);
+	ds_CPoolPushValue(g_ui->recursive_interaction_flags, flags);
 }
 
 void ui_RecursiveInteractionPop(void)
 {
-	stack_u64Pop(&g_ui->stack_recursive_interaction_flags);
+	ds_CPoolPop(g_ui->recursive_interaction_flags);
 }

@@ -21,14 +21,12 @@
 
 #include "cmd.h"
 #include "ds_hash_map.h"
-#include "ds_vector.h"
 
-DECLARE_STACK(cmdFunction);
-DEFINE_STACK(cmdFunction);
+DEFINE_CPOOL_STRUCT(cmdFunction);
 
 static struct ds_HashMap g_name_to_cmd_f_map;
 struct cmdQueue *g_queue = NULL;
-static stack_cmdFunction g_cmd_f;
+static ds_CPool(cmdFunction) g_cmd_f;
 u32			  g_cmd_internal_debug_print_index;	
 
 //TODO REMOVE mallocs/free in debug printing
@@ -42,7 +40,7 @@ static void CmdDebugPrint(void)
 void ds_CmdApiInit(void)
 {
 	g_name_to_cmd_f_map = ds_HashMapAlloc(NULL, 128, 128, GROWABLE);
-	g_cmd_f = stack_cmdFunctionAlloc(NULL, 128, GROWABLE);
+	ds_CPoolAlloc(NULL, g_cmd_f, 128, GROWABLE);
 
 	const utf8 debug_print_str = Utf8Inline("debug_print");
 	g_cmd_internal_debug_print_index = CmdFunctionRegister(debug_print_str, 1, &CmdDebugPrint).index;
@@ -51,7 +49,7 @@ void ds_CmdApiInit(void)
 void ds_CmdApiShutdown(void)
 {
 	ds_HashMapDealloc(&g_name_to_cmd_f_map);
-	stack_cmdFunctionFree(&g_cmd_f);
+	ds_CPoolDealloc(g_cmd_f);
 }
 
 struct cmdQueue CmdQueueAlloc(void)
@@ -112,7 +110,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 
 	if (cmd->function == NULL)
 	{
-		cmd->function = g_cmd_f.arr + g_cmd_internal_debug_print_index;
+		cmd->function = g_cmd_f.buf + g_cmd_internal_debug_print_index;
 		u8 *buf = malloc(256);
 		cmd->arg[0].utf8 = Utf8FormatBuffered(buf, 256, "Error in tokenizing %k: invalid command name", (char *) &cmd->string); 
 		return;
@@ -135,7 +133,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 		{
 			u8 *buf = malloc(256);
 			cmd->arg[0].utf8 = Utf8FormatBuffered(buf, 256, "Error in tokenizing %k: command expects %u arguments.", &cmd->string, cmd->function->args_count); 
-			cmd->function = g_cmd_f.arr + g_cmd_internal_debug_print_index;
+			cmd->function = g_cmd_f.buf + g_cmd_internal_debug_print_index;
 			break;
 		}
 
@@ -156,7 +154,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 
 			if (text[i] != '"')
 			{
-				cmd->function = g_cmd_f.arr + g_cmd_internal_debug_print_index;
+				cmd->function = g_cmd_f.buf + g_cmd_internal_debug_print_index;
 				u8 *buf = malloc(256);
 				cmd->arg[0].utf8 = Utf8FormatBuffered(buf, 256, "Error in tokenizing %k: non-closed string beginning.", &cmd->string); 
 				break;
@@ -256,7 +254,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 
 		if (ret.op_result != PARSE_SUCCESS)
 		{
-			cmd->function = g_cmd_f.arr + g_cmd_internal_debug_print_index;
+			cmd->function = g_cmd_f.buf + g_cmd_internal_debug_print_index;
 			u8 *buf = malloc(256);
 			switch (ret.op_result)
 			{
@@ -322,16 +320,15 @@ struct slot CmdFunctionRegister(const utf8 name, const u32 args_count, void (*ca
 	struct slot slot = CmdFunctionLookup(name);
 	if (!slot.address)
 	{
-		slot.index = g_cmd_f.next;
-		slot.address = g_cmd_f.arr + g_cmd_f.next;
-		stack_cmdFunctionPush(&g_cmd_f, cmd_f);
+		slot = ds_CPoolPush(g_cmd_f);
+        memcpy(slot.address, &cmd_f, sizeof(cmd_f));
 	
 		const u32 key = Utf8Hash(name);
 		ds_HashMapAdd(&g_name_to_cmd_f_map, key, slot.index);
 	}
 	else
 	{
-		g_cmd_f.arr[slot.index] = cmd_f;
+		g_cmd_f.buf[slot.index] = cmd_f;
 	}
 
 	return slot;
@@ -343,9 +340,9 @@ struct slot CmdFunctionLookup(const utf8 name)
 	struct slot slot = { .index = ds_HashMapFirst(&g_name_to_cmd_f_map, key), .address = NULL };
 	for (; slot.index != U32_MAX; slot.index = ds_HashMapNext(&g_name_to_cmd_f_map, slot.index))
 	{
-		if (Utf8Equivalence(g_cmd_f.arr[slot.index].name, name))
+		if (Utf8Equivalence(g_cmd_f.buf[slot.index].name, name))
 		{
-			slot.address = g_cmd_f.arr + slot.index;
+			slot.address = g_cmd_f.buf + slot.index;
 			break;
 		}
 	}
@@ -398,7 +395,7 @@ void CmdQueueSubmit(struct cmdQueue *queue, const u32 cmdFunction)
 	struct slot slot = ds_PoolAdd(&queue->cmd_pool);
 	struct cmd *cmd = slot.address;
 	cmd->args_type = CMD_ARGS_REGISTER;
-	cmd->function = g_cmd_f.arr + cmdFunction;
+	cmd->function = g_cmd_f.buf + cmdFunction;
 
 	for (u32 i = 0; i < cmd->function->args_count; ++i)
 	{
@@ -413,7 +410,7 @@ void CmdQueueSubmitNextFrame(struct cmdQueue *queue, const u32 cmdFunction)
 	struct slot slot = ds_PoolAdd(&queue->cmd_pool);
 	struct cmd *cmd = slot.address;
 	cmd->args_type = CMD_ARGS_REGISTER;
-	cmd->function = g_cmd_f.arr + cmdFunction;
+	cmd->function = g_cmd_f.buf + cmdFunction;
 
 	for (u32 i = 0; i < cmd->function->args_count; ++i)
 	{

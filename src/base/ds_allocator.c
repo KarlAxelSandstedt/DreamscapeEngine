@@ -149,10 +149,10 @@ void ds_Free(struct ds_MemSlot *slot)
     if (slot->address)
     {
 	    munmap(slot->address, slot->size);	
-	    slot->address = NULL;
-	    slot->size = 0;
-	    slot->huge_pages = 0;
     }
+	slot->address = NULL;
+	slot->size = 0;
+	slot->huge_pages = 0;
 }
 
 #elif __DS_PLATFORM__ == __DS_WEB__

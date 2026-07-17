@@ -29,7 +29,6 @@ extern "C" {
 #include "ds_graphics.h"
 #include "ds_asset.h"
 #include "hierarchy_index.h"
-#include "ds_vector.h"
 #include "list.h"
 
 #define UI_SCOPE(PUSH, POP)	for (i32 __i = ((PUSH), 0); __i < 1; ++__i, (POP))
@@ -531,7 +530,7 @@ struct ui
 	struct hi 		node_hierarchy;
 	struct ds_HashMap 		node_map;
 
-	ds_CPool(ui_TextSelection)	frame_stack_text_selection;
+	ds_CPool(ui_TextSelection)	frame_text_selection;
 	vec4			text_cursor_color;
 	vec4			text_selection_color;
 
@@ -546,40 +545,40 @@ struct ui
 
 	u32		root;	/* root node of ui, always allocated on frame begin */
 
-	ds_CPool(u32)	parent;	
-	ds_CPool(u32)	sprite;
-	stack_u64	stack_flags;
-	stack_u64 	stack_recursive_interaction_flags;
-	stack_ptr	stack_font;
+	ds_CPool(u32)	    parent;	
+	ds_CPool(u32)	    sprite;
+	ds_CPool(u64)	    flags;
+	ds_CPool(u64) 	    recursive_interaction_flags;
+	ds_CPool(voidptr)	font;
 
 	/* external text usage; used for skipping layout calculations for a string that is used in multiple nodes */
-	ds_CPool(utf32)	stack_external_text;
-	stack_ptr	stack_external_text_layout;
-	stack_ptr	stack_external_text_input;
+	ds_CPool(utf32)	    external_text;
+	ds_CPool(voidptr)	external_text_layout;
+	ds_CPool(voidptr)	external_text_input;
 
 	/* push all floating nodes so that we can linear search which floating subtree we are hovering */
-	ds_CPool(u32)	floating_node;
-	ds_CPool(u32)	floating_depth;
+	ds_CPool(u32)	    floating_node;
+	ds_CPool(u32)	    floating_depth;
 
 	/* text stacks */
-	ds_CPool(u32)	text_alignment_x;
-	ds_CPool(u32)	text_alignment_y;
-	stack_f32	stack_text_pad[AXIS_2_COUNT];
+	ds_CPool(u32)	    text_alignment_x;
+	ds_CPool(u32)	    text_alignment_y;
+	ds_CPool(f32)	    text_pad[AXIS_2_COUNT];
 
-	stack_f32	stack_pad;
+	ds_CPool(f32)	    pad;
 
-	ds_CPool(u32)	stack_fixed_depth;
-	stack_f32	stack_floating[AXIS_2_COUNT];	
+	ds_CPool(u32)	    fixed_depth;
+	ds_CPool(f32)	    floating[AXIS_2_COUNT];	
     ds_CPool(ui_Size)	ui_size[AXIS_2_COUNT];
-	stack_intv	stack_viewable[AXIS_2_COUNT];
-	ds_CPool(u32)	child_layout_axis;
-	struct stackVec4	stack_background_color;
-	struct stackVec4	stack_border_color;
-	struct stackVec4	stack_gradient_color[BOX_CORNER_COUNT];
-	struct stackVec4	stack_sprite_color;
-	stack_f32	stack_edge_softness;
-	stack_f32	stack_corner_radius;
-	stack_f32	stack_border_size;
+	ds_CPool(intv)	    viewable[AXIS_2_COUNT];
+	ds_CPool(u32)	    child_layout_axis;
+	ds_CPool(vec4)	    background_color;
+	ds_CPool(vec4)	    border_color;
+	ds_CPool(vec4)	    gradient_color[BOX_CORNER_COUNT];
+	ds_CPool(vec4)	    sprite_color;
+	ds_CPool(f32)	    edge_softness;
+	ds_CPool(f32)	    corner_radius;
+	ds_CPool(f32)	    border_size;
 };
 
 extern struct ui *g_ui;
@@ -696,7 +695,7 @@ void		ui_FrameEnd(void);				/* end ui frame 		*/
 #define		UI_TEXT_ALLOW_OVERFLOW		((u64) 1 << 40) /* calculate textLayout using an infinite line width  */
 #define		UI_TEXT_EXTERNAL		((u64) 1 << 41) /* Ignore any text given in node identifier string
 								   at allocation and instead pick text from top of 
-								   stack_text_external */
+								   text_external */
 #define		UI_TEXT_EXTERNAL_LAYOUT		((u64) 1 << 42) /* Ignore text layout paths in ui library and instead
 								   use a pre-derived layout. the flag impies the flag
 								   UI_TEXT_EXTERNAL and UI_TEXT_ALLOW_OVERFLOW. */
