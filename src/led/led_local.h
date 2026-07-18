@@ -136,6 +136,9 @@ struct led_Node
     u32             proxy;
 	vec4			color;
     f32             blend;
+
+    //TODO only used by shit joint on init temporarily
+    ds_RigidBodyId  body;
 };
 
 /* Add a new node on success. If the parent_id is not empty, the new node will be a child of the parent node. 

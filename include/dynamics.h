@@ -763,8 +763,6 @@ ds_JointSim is a discriminating union storing all different types of physical jo
 */
 struct ds_JointSim
 {
-    POOL_NODE;
-
     /* joint frame to body frame transform */
     ds_Transform        local_frame[2];
     

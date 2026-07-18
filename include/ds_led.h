@@ -62,6 +62,14 @@ struct led_project
 	struct file		file;		    /* project main file 				*/
 };
 
+struct led_Joint
+{
+    struct ds_DistanceJointPrefab   prefab;
+    ds_Id                           id[2];
+    ds_Transform                    local_frame[2];
+};
+DEFINE_CPOOL_STRUCT(led_Joint);
+
 /*
 led
 ===
@@ -100,6 +108,9 @@ struct led
 	utf8		           	viewport_id;
 	vec2		           	viewport_position;
 	vec2		           	viewport_size;
+
+    //TODO tmp
+    ds_CPool(led_Joint)     joint_pool;
 
 	/* TODO move stuff into led project/led_Core or something */
 	struct arena 		    frame;

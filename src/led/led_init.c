@@ -123,6 +123,7 @@ struct led *led_Alloc(void)
 	g_editor->body_prefab_db = strdb_Alloc(NULL, 32, 32, struct ds_RigidBodyPrefab, GROWABLE);
 	g_editor->cs_db = strdb_Alloc(NULL, 32, 32, struct c_Shape, GROWABLE);
 	g_editor->physics = PhysicsPipelineAlloc(&g_editor->mem_persistent, 1024, NSEC_PER_SEC / (u64) 60, 16*1024*1024, &g_editor->cs_db, &g_editor->body_prefab_db);
+    ds_CPoolAlloc(NULL, g_editor->joint_pool, 256, GROWABLE);
 
 	g_editor->pending_engine_running = 0;
 	g_editor->pending_engine_initalized = 0;
@@ -187,6 +188,7 @@ void led_Dealloc(struct led *led)
 	ArenaFree(&led->mem_persistent);
 	led_ProjectMenuDealloc(&led->project_menu);
 	csg_Dealloc(&led->csg);
+    ds_CPoolDealloc(g_editor->joint_pool);
 	ds_HashMapDealloc(&led->node_map);
 	hi_Dealloc(&led->node_hierarchy);
 	ArenaFree(&g_editor->frame);

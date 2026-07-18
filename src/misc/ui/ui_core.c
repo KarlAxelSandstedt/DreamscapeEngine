@@ -214,15 +214,6 @@ struct ui *ui_Alloc(void)
 	bucket->cmd = 0;
 	bucket->count = 0;
 
-    const struct slot slot2 = { .index = 1 };
-    fprintf(stderr, "value1: %u\n", slot2.index);
-    do
-    {
-        const struct slot slot2 = { .index = 2 };
-        fprintf(stderr, "value1: %u\n", slot2.index);
-
-    } while (0);
-
 	return ui;
 }
 

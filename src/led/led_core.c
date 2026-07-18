@@ -1013,9 +1013,21 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 	return mesh;
 }
 
+static void led_DistanceJointAdd(struct led *led, const struct ds_DistanceJointPrefab *prefab, const ds_Id id0, const ds_Transform *t0, const ds_Id id1, const ds_Transform *t1, const f32 distance)
+{
+    struct led_Joint *joint = ds_CPoolPush(led->joint_pool).address;
+    joint->prefab = *prefab;
+    joint->id[0] = id0;
+    joint->id[1] = id1;
+    joint->local_frame[0] = *t0;
+    joint->local_frame[1] = *t1;
+}
+
 #define ROPE_COUNT 10
 void led_RopeSetup(struct led *led)
 {
+    ds_CPoolFlush(led->joint_pool);
+
 	struct ds_Window *sys_win = ds_WindowAddress(g_editor->window);
     utf8 id;
     ds_Id tagged_id;
@@ -1092,13 +1104,14 @@ void led_RopeSetup(struct led *led)
 
 	id = Utf8Format(sys_win->ui->mem_frame, "led_ceil");
     rope_id[0] = led_NodeAdd(led, id, Utf8Empty());
-    led_NodeSetPosition(led, tagged_id, ceil_transform);
-    led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_ceil"));
-    led_NodeSetColor(led, tagged_id, floor_color, 1.0f);
+    led_NodeSetPosition(led, rope_id[0], ceil_transform);
+    led_NodeAttachRigidBodyPrefab(led, rope_id[0], Utf8Inline("rb_ceil"));
+    led_NodeSetColor(led, rope_id[0], floor_color, 1.0f);
     rope_t[0] = ds_TransformIdentity();
     Vec3Sub(rope_t[0].position, ceil_transform, rope_base);
 
-     
+    struct ds_DistanceJointPrefab prefab;
+    ds_DistanceJointPrefabDefault(&prefab);
     const f32 distance = 0.0f;
 
 	for (u32 i = 0; i < ROPE_COUNT; ++i)
@@ -1114,7 +1127,7 @@ void led_RopeSetup(struct led *led)
         led_NodeSetPosition(led, rope_id[i+1], translation);
         led_NodeAttachRigidBodyPrefab(led, rope_id[i+1], Utf8Inline("rb_capsule"));
         led_NodeSetColor(led, rope_id[i+1], capsule_color, 1.0f);
-        led_DistanceJointAdd(led, rope_id[i], rope_t[i], rope_id[i+1], rope_t[i+1], distance);
+        led_DistanceJointAdd(led, &prefab, rope_id[i], rope_t + i, rope_id[i+1], rope_t + i + 1, distance);
         Vec3Set(rope_t[i+1].position, 0.0f, -rope_half_height+rope_radius, 0.0f);
 	}
 
@@ -2012,6 +2025,7 @@ static void led_EngineInit(struct led *led)
         {
             const struct ds_RigidBodyPrefab *body_prefab = strdb_Address(&led->body_prefab_db, node->body_prefab);
 	    	const ds_RigidBodyId body = ds_RigidBodyAdd(&led->physics, body_prefab, &node->transform, node_index);
+            node->body = body;
     
             //TODO mass properties should be calculated on AttachShape....
             struct ds_ShapePrefabInstance *instance = NULL;
@@ -2025,6 +2039,20 @@ static void led_EngineInit(struct led *led)
         }
 	}
 	ArenaPopRecord(&led->frame);
+
+    for (u32 i = 0; i < led->joint_pool.count; ++i)
+    {
+        const struct led_Joint *joint = led->joint_pool.buf + i;
+        const struct led_Node *node0 = led_NodeLookup(led, joint->id[0]);
+        const struct led_Node *node1 = led_NodeLookup(led, joint->id[1]);
+        if (!node0 || !node1)
+        {
+		    LogString(T_LED, S_WARNING, "Failed to lookup joint attached node");
+            continue;
+        }
+
+        ds_DistanceJointAdd(&led->physics, &joint->prefab, node0->body, joint->local_frame + 0, node1->body, joint->local_frame + 1);
+    }
 }
 
 void led_Core(struct led *led)
