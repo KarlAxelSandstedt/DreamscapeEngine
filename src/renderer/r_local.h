@@ -27,7 +27,7 @@ extern "C" {
 #include "ds_base.h"
 #include "ds_math.h"
 #include "ds_renderer.h"
-#include "bit_vector.h"
+#include "ds_bitset.h"
 #include "ds_ui.h"
 #include "ds_asset.h"
 #include "ds_gl.h"

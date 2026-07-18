@@ -17,8 +17,8 @@
 ==========================================================================
 */
 
-#ifndef __BIT_VECTOR_H__
-#define __BIT_VECTOR_H__
+#ifndef __DS_BITSET_H__
+#define __DS_BITSET_H__
 
 #ifdef __cplusplus
 extern "C" { 
@@ -26,31 +26,30 @@ extern "C" {
 
 #include "ds_allocator.h"
 
-#define BIT_VEC_BLOCK_SIZE 	64
-#define BIT_VEC_GROWABLE	1
+#define DS_BITSET_BLOCKSIZE         8
+#define DS_BITSET_BLOCK_BITCOUNT    (8*DS_BITSET_BLOCKSIZE)	
 	
-/* bit indexing starts at 0, up to bit_count-1. */
-struct bitVec 
+struct ds_BitSet 
 {
-	u64 		block_count;
-	u64 		bit_count;
-	u64 * 		bits;
-	u32 		growable;
+	u64 		        block_count;
+	u64 		        bit_count;
+	u64 * 		        bits;
+	u32 		        growable;
 	struct ds_MemSlot 	mem_slot;
 };
 
-/* return a bit vector with bit_count >= bit_count, with all bits cleared to clear_bit. On failure, the zero vector is returned. */
-struct bitVec	BitVecAlloc(struct arena *mem, const u64 bit_count, const u64 clear_bit, const u32 growable);
-/* free the vectors resources.  */
-void 		BitVecFree(struct bitVec *bvec);
-/* increase the bit vector size and clear any newly allocated blocks with the clear bit. */
-void 		BitVecIncreaseSize(struct bitVec *bvec, const u64 bit_count, const u64 clear_bit);
-/* Clear the bit vector with the given bit value  */
-void 		BitVecClear(struct bitVec* bvec, const u64 clear_bit);
+/* Return a bitset with bit_count >= bit_count, with all bits cleared to clear_bit. On failure, an empty bitset is returned. */
+struct ds_BitSet	ds_BitSetAlloc(struct arena *mem, const u64 bit_count, const u64 clear_bit, const u32 growable);
+/* deallocate the set.  */
+void 		        ds_BitSetDealloc(struct ds_BitSet *set);
+/* increase the set's size and set any newly allocated blocks with the clear bit. */
+void 		        ds_BitSetIncreaseSize(struct ds_BitSet *set, const u64 bit_count, const u64 clear_bit);
+/* Clear the set with the given bit value  */
+void 		        ds_BitSetClear(struct ds_BitSet* set, const u64 clear_bit);
 /* return the bit value of the given bit  */
-uint8_t 	BitVecGetBit(const struct bitVec* bvec, const u64 bit);
+uint8_t 	        ds_BitSetGet(const struct ds_BitSet* set, const u64 bit);
 /* set the bit value of the given bit */
-void 		BitVecSetBit(const struct bitVec* bvec, const u64 bit, const u64 bit_value);
+void 		        ds_BitSetSet(const struct ds_BitSet* set, const u64 bit, const u64 bit_value);
 
 #ifdef __cplusplus
 } 

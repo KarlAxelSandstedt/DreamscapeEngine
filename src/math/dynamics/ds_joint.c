@@ -1,3 +1,22 @@
+/*
+==========================================================================
+    Copyright (C) 2026 Axel Sandstedt 
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+==========================================================================
+*/
+
 #include "dynamics.h"
 
 POOL_DEFINE(ds_Joint);
@@ -19,14 +38,17 @@ ds_JointId  ds_JointAdd(struct ds_RigidBodyPipeline *pipeline, const ds_RigidBod
     const ds_JointId id = ds_IdConstruct(slot_joint.index, joint->tag);
 
     //TODO does order matter here?
+    //TODO should static have slot 1 reserved?...
     joint->body[0] = slot_b0.index;
     joint->body[1] = slot_b1.index;
-    ds_DLLAppend(b0->joint_list, pipeline->joint_pool.buf, slot_joint.index, edge_node[0]);
-    ds_DLLAppend(b1->joint_list, pipeline->joint_pool.buf, slot_joint.index, edge_node[1]);
+    const u32 i0 = (joint->body[0] == pipeline->joint_pool.buf[(i32) b0->joint_list.last].body[1]);
+    const u32 i1 = (joint->body[1] == pipeline->joint_pool.buf[(i32) b1->joint_list.last].body[1]);
+    ds_DLLAppendEx(b0->joint_list, pipeline->joint_pool.buf, slot_joint.index, edge_node[i0], edge_node[0]);
+    ds_DLLAppendEx(b1->joint_list, pipeline->joint_pool.buf, slot_joint.index, edge_node[i1], edge_node[1]);
 
-    struct slot slot_joint_sim = ds_CGraphJointAdd(pipeline, joint);
-    struct ds_JointSim *sim = slot_joint_sim.address;
     //TODO does order matter here?
+    //TODO should static have slot 1 reserved?...
+    struct ds_JointSim *sim = ds_CGraphJointAdd(pipeline, joint);
     sim->local_frame[0] = *local_frame0;
     sim->local_frame[1] = *local_frame1;
 

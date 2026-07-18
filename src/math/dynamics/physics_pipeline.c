@@ -106,7 +106,7 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 	}
 #endif
 
-    pipeline.cgraph = ds_CGraphAlloc(4096);
+    ds_CGraphAlloc(&pipeline, 4096);
     pipeline.numerics_config = ds_NumericsConfigDefault();
 
 	return pipeline;
@@ -128,7 +128,7 @@ void PhysicsPipelineFree(struct ds_RigidBodyPipeline *pipeline)
 	ds_PoolDealloc(&pipeline->event_pool);
 	ds_PoolDealloc(&pipeline->shape_pool);
     ds_JointPoolDealloc(&pipeline->joint_pool);
-    ds_CGraphDealloc(&pipeline->cgraph);
+    ds_CGraphDealloc(pipeline);
 }
 
 static void PhysicsPipelineClearFrame(struct ds_RigidBodyPipeline *pipeline)
@@ -142,6 +142,7 @@ static void PhysicsPipelineClearFrame(struct ds_RigidBodyPipeline *pipeline)
 	isdb_ClearFrame(&pipeline->is_db);
 	cdb_ClearFrame(pipeline->cdb);
 	ArenaFlush(&pipeline->frame);
+    ds_CGraphFramePrepare(pipeline);
 }
 
 
@@ -167,7 +168,7 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
 	dll_Flush(&pipeline->event_list);
 
     ds_JointPoolFlush(&pipeline->joint_pool);
-    ds_CGraphFlush(&pipeline->cgraph);
+    ds_CGraphFlush(pipeline);
 
 	ArenaFlush(&pipeline->frame);
 	pipeline->frames_completed = 0;
@@ -475,8 +476,8 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
     {
     	ProfZoneNamed("ContactManagement");
 
-	    cdb->sat_cache_frame_usage = BitVecAlloc(&pipeline->frame, cdb->sat_cache_persistent_usage.bit_count, 0, 0);
-	    cdb->contact_frame_usage = BitVecAlloc(&pipeline->frame, cdb->contact_persistent_usage.bit_count, 0, 0);
+	    cdb->sat_cache_frame_usage = ds_BitSetAlloc(&pipeline->frame, cdb->sat_cache_persistent_usage.bit_count, 0, 0);
+	    cdb->contact_frame_usage = ds_BitSetAlloc(&pipeline->frame, cdb->contact_persistent_usage.bit_count, 0, 0);
 
         const u32 narrowphase_count = AtomicLoadRlx32(&cd_jobs->phase.next[COLLISION_JOB_NARROWPHASE].a_counter);
         struct memArray arr = ArenaPushAlignedAll(&pipeline->frame, sizeof(u32), sizeof(u32));
@@ -495,7 +496,7 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
                 cdb->sat_cache_count += 1;
                 if (job->cache_index < cdb->sat_cache_persistent_usage.bit_count)
                 {
-                    BitVecSetBit(&cdb->sat_cache_frame_usage, job->cache_index, 1);   
+                    ds_BitSetSet(&cdb->sat_cache_frame_usage, job->cache_index, 1);   
                 } 
             }
 
@@ -514,7 +515,7 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
                  
 			    /* add to new links if needed */
 			    if (slot.index >= cdb->contact_persistent_usage.bit_count
-			    	 || BitVecGetBit(&cdb->contact_persistent_usage, slot.index) == 0)
+			    	 || ds_BitSetGet(&cdb->contact_persistent_usage, slot.index) == 0)
 			    {
                         if (cdb->contact_new_count >= arr.len)
                         {
@@ -566,11 +567,11 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
         {
         	const u64 low_bit = cdb->sat_cache_persistent_usage.bit_count;
         	const u64 high_bit = count_max;
-        	BitVecIncreaseSize(&cdb->sat_cache_persistent_usage, length, 0);
+        	ds_BitSetIncreaseSize(&cdb->sat_cache_persistent_usage, length, 0);
         	/* any new sat_caches that is in the appended region must now be set */
         	for (u64 bit = low_bit; bit < high_bit; ++bit)
         	{
-        		BitVecSetBit(&cdb->sat_cache_persistent_usage, bit, 1);
+        		ds_BitSetSet(&cdb->sat_cache_persistent_usage, bit, 1);
         	}
         }
 
@@ -704,11 +705,11 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
         {
         	const u64 low_bit = cdb->contact_persistent_usage.bit_count;
         	const u64 high_bit = cdb->contact_net.pool.count_max;
-        	BitVecIncreaseSize(&cdb->contact_persistent_usage, cdb->contact_net.pool.length, 0);
+        	ds_BitSetIncreaseSize(&cdb->contact_persistent_usage, cdb->contact_net.pool.length, 0);
         	/* any new contacts that is in the appended region must now be set */
         	for (u64 bit = low_bit; bit < high_bit; ++bit)
         	{
-        		BitVecSetBit(&cdb->contact_persistent_usage, bit, 1);
+        		ds_BitSetSet(&cdb->contact_persistent_usage, bit, 1);
         	}
         }
     } 

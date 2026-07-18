@@ -103,7 +103,7 @@ void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Isla
 
 	    PhysicsEventContactRemoved(pipeline, b0, s0, b1, s1);
         dll_Remove(&island->contact_list, pipeline->cdb->contact_net.pool.buf, ci);
-		BitVecSetBit(&pipeline->cdb->contact_persistent_usage, ci, 0);
+		ds_BitSetSet(&pipeline->cdb->contact_persistent_usage, ci, 0);
 		ds_HashMapRemove(&pipeline->cdb->contact_map, ds_ContactKeyHash(&c->key), ci);
 		nll_Remove(&pipeline->cdb->contact_net, ci);
 		ci = ci_next;
@@ -176,7 +176,7 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
         }
 
 		PhysicsEventContactRemoved(pipeline, b0, s0, b1, s1);
-		BitVecSetBit(&pipeline->cdb->contact_persistent_usage, ci, 0);
+		ds_BitSetSet(&pipeline->cdb->contact_persistent_usage, ci, 0);
 		ds_HashMapRemove(&pipeline->cdb->contact_map, ds_ContactKeyHash(&c->key), ci);
 		nll_Remove(&pipeline->cdb->contact_net, ci);
 		ci = ci_next;

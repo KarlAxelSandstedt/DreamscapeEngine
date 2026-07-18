@@ -2640,7 +2640,7 @@ struct c_TriMeshBvhIterator
 
     u32                         delayed_count;
     struct DelayedFeature *     delayed_set;
-    struct bitVec               void_bitset;
+    struct ds_BitSet               void_bitset;
 
     const struct triMeshBvh *   mesh_bvh;
     const struct triMesh *      mesh;
@@ -2665,7 +2665,7 @@ static void c_TriMeshBvhIteratorAlloc(struct c_TriMeshBvhIterator *it, const str
     it->contact_count = 0;
     it->contact_len = contact_arr.len;
 
-    it->void_bitset = BitVecAlloc(it->tmp2, mesh_bvh->mesh->v_count, 0, NOT_GROWABLE);
+    it->void_bitset = ds_BitSetAlloc(it->tmp2, mesh_bvh->mesh->v_count, 0, NOT_GROWABLE);
 
     it->mesh_bvh = mesh_bvh;
     it->mesh = mesh_bvh->mesh;
@@ -2845,9 +2845,9 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
             c_HullSphereShallowManifold(m, s[1]->sphere.radius, c->c, ref);
             
             *t = c->tri;
-            BitVecSetBit(&it.void_bitset, it.mesh->tri[*t][0], 1);
-            BitVecSetBit(&it.void_bitset, it.mesh->tri[*t][1], 1);
-            BitVecSetBit(&it.void_bitset, it.mesh->tri[*t][2], 1);
+            ds_BitSetSet(&it.void_bitset, it.mesh->tri[*t][0], 1);
+            ds_BitSetSet(&it.void_bitset, it.mesh->tri[*t][1], 1);
+            ds_BitSetSet(&it.void_bitset, it.mesh->tri[*t][2], 1);
         }
         else
         {
@@ -2862,7 +2862,7 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
         const u32 v0 = tri_id[ delayed_vertex_map[c->region][0] ];
         const u32 v1 = tri_id[ delayed_vertex_map[c->region][1] ];
         /* if vertex_contact not in void, or edge contact and not fully in void */
-        if (!BitVecGetBit(&it.void_bitset, v0) || !BitVecGetBit(&it.void_bitset, v1))
+        if (!ds_BitSetGet(&it.void_bitset, v0) || !ds_BitSetGet(&it.void_bitset, v1))
         {
             struct c_Manifold *m = (*manifold) + collision_count;
             u32 *t = (*tri) + collision_count;
@@ -2872,9 +2872,9 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
             c_HullSphereShallowManifold(m, s[1]->sphere.radius, c->c, ref);
         }
 
-        BitVecSetBit(&it.void_bitset, tri_id[0], 1);
-        BitVecSetBit(&it.void_bitset, tri_id[1], 1);
-        BitVecSetBit(&it.void_bitset, tri_id[2], 1);
+        ds_BitSetSet(&it.void_bitset, tri_id[0], 1);
+        ds_BitSetSet(&it.void_bitset, tri_id[1], 1);
+        ds_BitSetSet(&it.void_bitset, tri_id[2], 1);
     }
 
     c_TriMeshBvhIteratorDealloc(&it);
@@ -3123,9 +3123,9 @@ u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold
             c_TriCapsuleManifold(m, c, cap, &cap_s, reference_index);
 
             *t = c->tri;
-            BitVecSetBit(&it.void_bitset, it.mesh->tri[*t][0], 1);
-            BitVecSetBit(&it.void_bitset, it.mesh->tri[*t][1], 1);
-            BitVecSetBit(&it.void_bitset, it.mesh->tri[*t][2], 1);
+            ds_BitSetSet(&it.void_bitset, it.mesh->tri[*t][0], 1);
+            ds_BitSetSet(&it.void_bitset, it.mesh->tri[*t][1], 1);
+            ds_BitSetSet(&it.void_bitset, it.mesh->tri[*t][2], 1);
         }
         else
         {
@@ -3140,7 +3140,7 @@ u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold
         const u32 v0 = tri_id[ delayed_vertex_map[c->region][0] ];
         const u32 v1 = tri_id[ delayed_vertex_map[c->region][1] ];
         /* if vertex_contact not in void, or edge contact and not fully in void */
-        if (!BitVecGetBit(&it.void_bitset, v0) || !BitVecGetBit(&it.void_bitset, v1))
+        if (!ds_BitSetGet(&it.void_bitset, v0) || !ds_BitSetGet(&it.void_bitset, v1))
         {
             struct c_Manifold *m = (*manifold) + collision_count;
             u32 *t = (*tri) + collision_count;
@@ -3150,9 +3150,9 @@ u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold
             c_TriCapsuleManifold(m, c, cap, &cap_s, reference_index);
         }
 
-        BitVecSetBit(&it.void_bitset, tri_id[0], 1);
-        BitVecSetBit(&it.void_bitset, tri_id[1], 1);
-        BitVecSetBit(&it.void_bitset, tri_id[2], 1);
+        ds_BitSetSet(&it.void_bitset, tri_id[0], 1);
+        ds_BitSetSet(&it.void_bitset, tri_id[1], 1);
+        ds_BitSetSet(&it.void_bitset, tri_id[2], 1);
     }
 
     c_TriMeshBvhIteratorDealloc(&it);
@@ -3773,9 +3773,9 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
                 cache->tri_cache_count += 1;
             }
 
-            BitVecSetBit(&it.void_bitset, it.mesh->tri[*t][0], 1);
-            BitVecSetBit(&it.void_bitset, it.mesh->tri[*t][1], 1);
-            BitVecSetBit(&it.void_bitset, it.mesh->tri[*t][2], 1);
+            ds_BitSetSet(&it.void_bitset, it.mesh->tri[*t][0], 1);
+            ds_BitSetSet(&it.void_bitset, it.mesh->tri[*t][1], 1);
+            ds_BitSetSet(&it.void_bitset, it.mesh->tri[*t][2], 1);
         }
         else
         {
@@ -3789,8 +3789,8 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
         const u32 *tri_id = it.mesh->tri[c->tri];
         
         const u32 voided = (c->delayed_count == 1)
-            ? BitVecGetBit(&it.void_bitset, tri_id[ c->delayed_set[0] ])
-            : BitVecGetBit(&it.void_bitset, tri_id[ c->delayed_set[0] ]) && BitVecGetBit(&it.void_bitset, tri_id[ c->delayed_set[1] ]);
+            ? ds_BitSetGet(&it.void_bitset, tri_id[ c->delayed_set[0] ])
+            : ds_BitSetGet(&it.void_bitset, tri_id[ c->delayed_set[0] ]) && ds_BitSetGet(&it.void_bitset, tri_id[ c->delayed_set[1] ]);
 
         if (!voided)
         {
@@ -3809,9 +3809,9 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
             }
         }
 
-        BitVecSetBit(&it.void_bitset, tri_id[0], 1);
-        BitVecSetBit(&it.void_bitset, tri_id[1], 1);
-        BitVecSetBit(&it.void_bitset, tri_id[2], 1);
+        ds_BitSetSet(&it.void_bitset, tri_id[0], 1);
+        ds_BitSetSet(&it.void_bitset, tri_id[1], 1);
+        ds_BitSetSet(&it.void_bitset, tri_id[2], 1);
     }
 
 

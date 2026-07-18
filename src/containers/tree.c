@@ -18,7 +18,7 @@
 */
 
 #include "ds_base.h"
-#include "bit_vector.h"
+#include "ds_bitset.h"
 #include "tree.h"
 
 struct bt bt_AllocInternal(struct arena *mem, const u32 initial_length, const u64 slot_size, const u64 parent_offset, const u64 left_offset, const u64 right_offset, const u64 pool_slot_offset, const u32 growable)
@@ -57,7 +57,7 @@ void bt_Validate(struct arena *tmp, const struct bt *tree)
 	}
 
 	ArenaPushRecord(tmp);
-	struct bitVec traversed = BitVecAlloc(tmp, tree->pool.length, 0, NOT_GROWABLE);
+	struct ds_BitSet traversed = ds_BitSetAlloc(tmp, tree->pool.length, 0, NOT_GROWABLE);
 	struct memArray arr = ArenaPushAlignedAll(tmp, sizeof(u32), 4);
 	u32 *stack = arr.addr;
 	stack[0] = tree->root;
@@ -75,8 +75,8 @@ void bt_Validate(struct arena *tmp, const struct bt *tree)
 		u32 *r = (u32 *) (addr + tree->right_offset);
 
 		ds_Assert((*alloc & POOL_ALLOCATION_MASK) == 0);
-		ds_Assert(BitVecGetBit(&traversed, stack[sc]) == 0);
-		BitVecSetBit(&traversed, stack[sc], 1);
+		ds_Assert(ds_BitSetGet(&traversed, stack[sc]) == 0);
+		ds_BitSetSet(&traversed, stack[sc], 1);
 
 		if ((BT_PARENT_INDEX_MASK & (*p)) != BT_PARENT_INDEX_MASK)
 		{

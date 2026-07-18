@@ -94,8 +94,8 @@ struct cdb *cdb_Alloc(struct arena *mem_persistent, const u32 size)
 
 	cdb->contact_net = nll_Alloc(NULL, size, struct ds_Contact, cdb_IndexInPreviousConctactNode, cdb_IndexInNextConctactNode, GROWABLE);
 	cdb->contact_map = ds_HashMapAlloc(NULL, size, size, GROWABLE);
-	cdb->contact_persistent_usage = BitVecAlloc(NULL, size, 0, GROWABLE);
-	cdb->sat_cache_persistent_usage = BitVecAlloc(NULL, size, 0, GROWABLE);
+	cdb->contact_persistent_usage = ds_BitSetAlloc(NULL, size, 0, GROWABLE);
+	cdb->sat_cache_persistent_usage = ds_BitSetAlloc(NULL, size, 0, GROWABLE);
 
 	return cdb;
 }
@@ -106,8 +106,8 @@ void cdb_Free(struct cdb *cdb)
 	sat_CacheTHashMapDealloc(&cdb->sat_cache_map);
 	nll_Dealloc(&cdb->contact_net);
 	ds_HashMapDealloc(&cdb->contact_map);
-	BitVecFree(&cdb->contact_persistent_usage);
-	BitVecFree(&cdb->sat_cache_persistent_usage);
+	ds_BitSetDealloc(&cdb->contact_persistent_usage);
+	ds_BitSetDealloc(&cdb->sat_cache_persistent_usage);
 }
 
 void cdb_Flush(struct cdb *cdb)
@@ -117,15 +117,15 @@ void cdb_Flush(struct cdb *cdb)
 	sat_CacheTHashMapFlush(&cdb->sat_cache_map);
 	nll_Flush(&cdb->contact_net);
 	ds_HashMapFlush(&cdb->contact_map);
-	BitVecClear(&cdb->contact_persistent_usage, 0);
-	BitVecClear(&cdb->sat_cache_persistent_usage, 0);
+	ds_BitSetClear(&cdb->contact_persistent_usage, 0);
+	ds_BitSetClear(&cdb->sat_cache_persistent_usage, 0);
 }
 
 void cdb_Validate(const struct ds_RigidBodyPipeline *pipeline)
 {
 	for (u64 i = 0; i < pipeline->cdb->contact_persistent_usage.bit_count; ++i)
 	{
-		if (BitVecGetBit(&pipeline->cdb->contact_persistent_usage, i))
+		if (ds_BitSetGet(&pipeline->cdb->contact_persistent_usage, i))
 		{
 			const struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, (u32) i);
 			ds_Assert(PoolSlotAllocated(c));
@@ -242,7 +242,7 @@ struct slot ds_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct c_
 
 	if (slot.index < pipeline->cdb->contact_frame_usage.bit_count)
 	{
-		BitVecSetBit(&pipeline->cdb->contact_frame_usage, slot.index, 1);
+		ds_BitSetSet(&pipeline->cdb->contact_frame_usage, slot.index, 1);
 	}
 	PhysicsEventContactNew(pipeline, id);
 
@@ -252,7 +252,7 @@ struct slot ds_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct c_
 void ds_ContactUpdate(struct ds_RigidBodyPipeline *pipeline, const struct slot slot, const struct c_Manifold *cm)
 {
 	struct ds_Contact *c = slot.address;
-	BitVecSetBit(&pipeline->cdb->contact_frame_usage, slot.index, 1);
+	ds_BitSetSet(&pipeline->cdb->contact_frame_usage, slot.index, 1);
 	c->cm = *cm;
 }
 

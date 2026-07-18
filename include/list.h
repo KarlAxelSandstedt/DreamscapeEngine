@@ -186,9 +186,13 @@ and can handle at most I32_MAX elements.
 
 ::: Usage :::
   
-    // Append _index_ to _dll_ and set  _base_[_index_]._node_.prev/next
+    // Append _index_ to _dll_ 
     ds_DLLAppend(_dll_, _base_, _index_, _node_)                                                    
   
+    // Append _index_ to _dll_ and setup _base_[_dll_.last]._last <-> _base_[_index_]._node_
+    // This macro exists for cases when the list's nodes may alias different variables
+    ds_DLLAppendEx(_dll_, _base_, _index_, _last_, _node_)                                                    
+
     // Prepend _index_ to _dll_ and set  _base_[_index_]._node_.prev/next
     ds_DLLPrepend(_dll_, _base_, _index_, _node_)                                                    
   
@@ -221,15 +225,15 @@ static inline void ds_DLLFlush(struct ds_DLL *dll)
     dll->last = DLL_SENTINEL;
 };
 
-/**/
-#define ds_DLLAppend(_dll_, _base_, _index_, _node_)                                                    \
+#define ds_DLLAppend(_dll_, _base_, _index_, _node_)    ds_DLLAppendEx(_dll_, _base_, _index_, _node_, _node_)
+#define ds_DLLAppendEx(_dll_, _base_, _index_, _last_, _node_)                                          \
 do                                                                                                      \
 {                                                                                                       \
-    ds_Assert((_dll_).last == DLL_SENTINEL || (_base_)[(_dll_).last]._node_.next == DLL_SENTINEL);      \
-    ds_Assert(_index_ < 0x80000000);                                                                    \
+    ds_Assert((_dll_).last == DLL_SENTINEL || (_base_)[(_dll_).last]._last_.next == DLL_SENTINEL);      \
+    ds_Assert((_index_) < 0x80000000);                                                                  \
                                                                                                         \
     (_dll_).count += 1;                                                                                 \
-    (_base_)[(i32) (_dll_).last]._node_.next = (_index_);                                               \
+    (_base_)[(i32) (_dll_).last]._last_.next = (_index_);                                               \
     (_base_)[_index_]._node_.prev = (_dll_).last;                                                       \
     (_base_)[_index_]._node_.next = DLL_SENTINEL;                                                       \
                                                                                                         \
@@ -240,14 +244,15 @@ do                                                                              
     }                                                                                                   \
 } while (0)
 
-#define ds_DLLPrepend(_dll_, _base_, _index_, _node_)                                                   \
+#define ds_DLLPrepend(_dll_, _base_, _index_, _node_)    ds_DLLAppendEx(_dll_, _base_, _index_, _node_, _node_)
+#define ds_DLLPrependEx(_dll_, _base_, _index_, _node_, _first_)                                        \
 do                                                                                                      \
 {                                                                                                       \
-    ds_Assert((_dll_).first == DLL_SENTINEL || (_base_)[(_dll_).first]._node_.prev == DLL_SENTINEL);    \
-    ds_Assert(_index_ < 0x80000000);                                                                    \
+    ds_Assert((_dll_).first == DLL_SENTINEL || (_base_)[(_dll_).first]._first_.prev == DLL_SENTINEL);   \
+    ds_Assert((_index_) < 0x80000000);                                                                  \
                                                                                                         \
     (_dll_).count += 1;                                                                                 \
-    (_base_)[(i32)(_dll_).first]._node_.prev = (_index_);                                               \
+    (_base_)[(i32)(_dll_).first]._first_.prev = (_index_);                                              \
     (_base_)[_index_]._node_.prev = DLL_SENTINEL;                                                       \
     (_base_)[_index_]._node_.next = (_dll_).first;                                                      \
                                                                                                         \
@@ -258,7 +263,8 @@ do                                                                              
     }                                                                                                   \
 } while (0)
 
-#define ds_DLLRemove(_dll_, _base_, _index_, _node_)                                                    \
+#define ds_DLLRemove(_dll_, _base_, _index_, _node_) ds_DLLRemoveEx(_dll_, _base_, _index_, _node_, _node_, _node_) 
+#define ds_DLLRemoveEx(_dll_, _base_, _index_, _p_, _node_, _n_)                                        \
 do                                                                                                      \
 {                                                                                                       \
     ds_Assert((_dll_).count);                                                                           \
@@ -266,8 +272,8 @@ do                                                                              
     (_dll_).count -= 1;                                                                                 \
     const u32 _next_ = (_base_)[_index_]._node_.next;                                                   \
     const u32 _prev_ = (_base_)[_index_]._node_.prev;                                                   \
-    (_base_)[(i32)_next_]._node_.prev = _prev_;                                                         \
-    (_base_)[(i32)_prev_]._node_.next = _next_;                                                         \
+    (_base_)[(i32)_next_]._n_.prev = _prev_;                                                            \
+    (_base_)[(i32)_prev_]._p_.next = _next_;                                                            \
                                                                                                         \
     if ( _prev_ == DLL_SENTINEL )                                                                       \
     {                                                                                                   \

@@ -29,7 +29,7 @@ extern "C" {
 #include "list.h"
 #include "collision.h"
 #include "ds_hash_map.h"
-#include "bit_vector.h"
+#include "ds_bitset.h"
 #include "ds_job.h"
 
 //TODO 
@@ -293,11 +293,18 @@ rigid_body
 #define RB_ISLAND		((u32) 1 << 3)
 #define RB_MARKED_FOR_REMOVAL	((u32) 1 << 4)
 
-#define RB_IS_ACTIVE(b)		((b->flags & RB_ACTIVE) >> 0u)
-#define RB_IS_DYNAMIC(b)	((b->flags & RB_DYNAMIC) >> 1u)
-#define RB_IS_AWAKE(b)		((b->flags & RB_AWAKE) >> 2u)
-#define RB_IS_ISLAND(b)		((b->flags & RB_ISLAND) >> 3u)
-#define RB_IS_MARKED(b)		((b->flags & RB_MARKED_FOR_REMOVAL) >> 4u)
+#define RB_IS_ACTIVE(b)		(b->flags & RB_ACTIVE)
+#define RB_IS_DYNAMIC(b)	(b->flags & RB_DYNAMIC)
+#define RB_IS_AWAKE(b)		(b->flags & RB_AWAKE)
+#define RB_IS_ISLAND(b)		(b->flags & RB_ISLAND)
+#define RB_IS_MARKED(b)		(b->flags & RB_MARKED_FOR_REMOVAL)
+
+
+#define RB_ACTIVE_BIT(b)	((b->flags & RB_ACTIVE) >> 0u)
+#define RB_DYNAMIC_BIT(b)	((b->flags & RB_DYNAMIC) >> 1u)
+#define RB_AWAKE_BIT(b)		((b->flags & RB_AWAKE) >> 2u)
+#define RB_ISLAND_BIT(b)	((b->flags & RB_ISLAND) >> 3u)
+#define RB_MARKED_BIT(b)	((b->flags & RB_MARKED_FOR_REMOVAL) >> 4u)
 
 #define IS_ACTIVE(flags)	((flags & RB_ACTIVE) >> 0u)
 #define IS_DYNAMIC(flags)	((flags & RB_DYNAMIC) >> 1u)
@@ -656,15 +663,15 @@ struct cdb
      * set to ***_frame_usage, after which and any new contacts/sat_Caches outside
      * of the slots covered by ***_frame_usage is appended.  
      */
-	struct bitVec 	contact_persistent_usage; 
-	struct bitVec 	sat_cache_persistent_usage; 
+	struct ds_BitSet 	contact_persistent_usage; 
+	struct ds_BitSet 	sat_cache_persistent_usage; 
 
 	/* FRAME DATA, NOT GROWABLE, keeps track of which slots in contact_net/sat_cache
      * in previous frame that are currently being used. Thus, all links in the current
      * frame are the ones in the bit array + any appended contacts/sat_caches which 
      * resulted in growing the array. */
-	struct bitVec 	contact_frame_usage;	
-	struct bitVec 	sat_cache_frame_usage;	
+	struct ds_BitSet 	contact_frame_usage;	
+	struct ds_BitSet 	sat_cache_frame_usage;	
 
     /* FRAME DATA */
     u32     sat_cache_count;        /* Caches in the current frame              */
@@ -813,15 +820,18 @@ ds_CGraphColor stores the relevant physics data of active constraints, tightly p
 */
 struct ds_CGraphColor
 {
+    struct ds_BitSet        body_bitset;
     ds_CPool(ds_JointSim)   joint_pool;
 };
 
 #define CG_COLOR_COUNT          12
 #define CG_SERIAL_COLOR         0 
-#define CG_STATIC_COLOR_FIRST   1
 #define CG_STATIC_COLOR_COUNT   4
-#define CG_DYNAMIC_COLOR_FIRST  (1 + CG_STATIC_COLOR_COUNT)
+#define CG_STATIC_COLOR_FIRST   1
+#define CG_STATIC_COLOR_LAST    (CG_STATIC_COLOR_FIRST + CG_STATIC_COLOR_COUNT - 1)
 #define CG_DYNAMIC_COLOR_COUNT  (CG_COLOR_COUNT - CG_STATIC_COLOR_COUNT - 1) 
+#define CG_DYNAMIC_COLOR_FIRST  (1 + CG_STATIC_COLOR_COUNT)
+#define CG_DYNAMIC_COLOR_LAST  (CG_DYNAMIC_COLOR_FIRST + CG_DYNAMIC_COLOR_COUNT - 1)
 
 
 struct ds_CGraph
@@ -829,17 +839,19 @@ struct ds_CGraph
     struct ds_CGraphColor color[CG_COLOR_COUNT];
 };
 
-/* Allocate and setup constraint graph */
-struct ds_CGraph    ds_CGraphAlloc(const u32 initial_count);
-/* Dellocate constraint graph */
-void                ds_CGraphDealloc(struct ds_CGraph *cg);
-/* Flush constraint graph data */
-void                ds_CGraphFlush(struct ds_CGraph *cg);
+/* Allocate and setup the pipeline's constraint graph */
+void                    ds_CGraphAlloc(struct ds_RigidBodyPipeline *pipeline, const u32 initial_count);
+/* Deallocate the pipeline's constraint graph */
+void                    ds_CGraphDealloc(struct ds_RigidBodyPipeline *pipeline);
+/* Flush the pipeline's constraint graph data */
+void                    ds_CGraphFlush(struct ds_RigidBodyPipeline *pipeline);
+/* Prepare the pipeline's constraint graph for the new frame, allocating and setting up new resources if necessary. */
+void                    ds_CGraphFramePrepare(struct ds_RigidBodyPipeline *pipeline);
 
 /* Allocate and setup a new ds_JointSim */
-struct slot         ds_CGraphJointAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint *joint);
+struct ds_JointSim *    ds_CGraphJointAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint *joint);
 /* Deallocate a ds_JointSim */
-void                ds_CGraphJointRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint *joint);
+void                    ds_CGraphJointRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint *joint);
 
 /*
 ds_Island
