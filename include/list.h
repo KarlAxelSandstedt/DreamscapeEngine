@@ -58,7 +58,7 @@ void			ll_Append(struct ll *ll, void *array, const u32 index);
 void			ll_Prepend(struct ll *ll, void *array, const u32 index);
 
 /*
-dll
+dll TODO(DEPRECATED)
 ==== 
 Intrusive doubly linked list for indexed structures. To use a struct as a list node,
 put DLL_SLOT_STATE in the structure. It is meant to be used for arrays < U32_MAX 
@@ -181,16 +181,25 @@ u32		nll_Index(const struct nll *net, const void *address);
 /*
 ds_DLL
 ======
-Intrusive doubly linked list for indexed structures meant for ds_Pool/ds_CPool. It expects a sentinel/stub at index -1.
+Intrusive doubly linked list for indexed structures meant for ds_Pool/ds_CPool. It expects a sentinel/stub at index -1
+and can handle at most I32_MAX elements.
 
 ::: Usage :::
-TODO 
-
+  
+    // Append _index_ to _dll_ and set  _base_[_index_]._node_.prev/next
+    ds_DLLAppend(_dll_, _base_, _index_, _node_)                                                    
+  
+    // Prepend _index_ to _dll_ and set  _base_[_index_]._node_.prev/next
+    ds_DLLPrepend(_dll_, _base_, _index_, _node_)                                                    
+  
+    // Remove _index_ from _dll_ and set  _base_[_index_]._node_.prev to DLL_NOT_IN_LIST
+    ds_DLLRemove(_dll_, _base_, _index_, _node_)                                                    
+  
+    // Check if _base_[_index_]._node_ is in a list 
+    ds_DLLNodeCheckInList(_base_, _index_, _node_)
 */
 
-
 #define DLL_SENTINEL        DS_STUB_INDEX
-
 
 struct ds_DLL
 {
@@ -212,6 +221,7 @@ static inline void ds_DLLFlush(struct ds_DLL *dll)
     dll->last = DLL_SENTINEL;
 };
 
+/**/
 #define ds_DLLAppend(_dll_, _base_, _index_, _node_)                                                    \
 do                                                                                                      \
 {                                                                                                       \

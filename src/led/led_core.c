@@ -1013,6 +1013,133 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 	return mesh;
 }
 
+#define ROPE_COUNT 10
+void led_RopeSetup(struct led *led)
+{
+	struct ds_Window *sys_win = ds_WindowAddress(g_editor->window);
+    utf8 id;
+    ds_Id tagged_id;
+
+    const f32 rope_radius = 0.125f;
+    const f32 rope_half_height = 0.125f;
+    const u32 floor_count = 10;
+
+	const f32 floor_friction = 0.8f;
+	const f32 capsule_friction = 0.1f;
+
+	const f32 alpha1 = 0.7f;
+	const f32 alpha2 = 0.5f;
+	const vec4 floor_color = { 0.8f, 0.6f, 0.6f, alpha2 };
+	const vec4 capsule_color = { 0.1f, 0.4f, 0.8f, alpha2 };
+
+	const f32 ramp_width = 10.0f;
+	const f32 ramp_length = 60.0f;
+	const f32 ramp_height = 34.0f;
+	const u32 v_count = 6;
+	vec3 ramp_vertices[6] = 
+	{
+		{0.0f, 		    ramp_height,	-ramp_length},
+		{ramp_width, 	ramp_height, 	-ramp_length},
+		{0.0f, 		    0.0f, 		    -ramp_length},
+		{ramp_width, 	0.0f, 		    -ramp_length},
+		{0.0f, 		    0.0f, 		    0.0f},
+		{ramp_width, 	0.0f, 		    0.0f},
+	};
+
+
+	id = Utf8Cstr(sys_win->ui->mem_frame, "c_ceil");
+    const vec3 ceil_hw = { 10.0f, 0.25f, 0.25f };
+    led_CollisionBoxAdd(led, id, ceil_hw);
+
+	id = Utf8Cstr(sys_win->ui->mem_frame, "c_floor");
+    const vec3 floor_hw = { 10.0f, 0.5f, 10.0f };
+    led_CollisionBoxAdd(led, id, floor_hw);
+
+	id = Utf8Cstr(sys_win->ui->mem_frame, "c_capsule");
+    led_CollisionCapsuleAdd(led, id, rope_radius, rope_half_height);
+
+    const u32 rb_static = 0;
+    const u32 rb_dynamic = 1;
+    led_RigidBodyPrefabAdd(led, Utf8Inline("rb_ceil"), rb_static);
+    led_RigidBodyPrefabAdd(led, Utf8Inline("rb_floor"), rb_static);
+    led_RigidBodyPrefabAdd(led, Utf8Inline("rb_capsule"), rb_dynamic);
+
+    led_RenderMeshAdd(led, Utf8Inline("rm_ceil"), Utf8Inline("c_ceil"));
+    led_RenderMeshAdd(led, Utf8Inline("rm_floor"), Utf8Inline("c_floor"));
+    led_RenderMeshAdd(led, Utf8Inline("rm_capsule"), Utf8Inline("c_capsule"));
+
+    const f32 density = 1.0f;
+    const f32 restitution = 0.0f;
+    const f32 margin = 0.5f;
+    led_ShapePrefabAdd(led, Utf8Inline("s_ceil"), Utf8Inline("c_ceil"), density, restitution, floor_friction, margin);
+    led_ShapePrefabAdd(led, Utf8Inline("s_floor"), Utf8Inline("c_floor"), density, restitution, floor_friction, margin);
+    led_ShapePrefabAdd(led, Utf8Inline("s_capsule"), Utf8Inline("c_capsule"), density, restitution, capsule_friction, margin);
+
+    led_ShapePrefabAttachRenderMesh(led, Utf8Inline("s_ceil"), Utf8Inline("rm_ceil")); 
+    led_ShapePrefabAttachRenderMesh(led, Utf8Inline("s_floor"), Utf8Inline("rm_floor")); 
+    led_ShapePrefabAttachRenderMesh(led, Utf8Inline("s_capsule"), Utf8Inline("rm_capsule"));
+
+    ds_Transform transform = ds_TransformIdentity();
+    led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_ceil"), Utf8Inline("s_ceil"), Utf8Inline("l_s_ceilr"), &transform);
+    led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_floor"), Utf8Inline("s_floor"), Utf8Inline("l_s_floor"), &transform);
+    led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_capsule"), Utf8Inline("s_capsule"), Utf8Inline("l_s_capsule"), &transform);
+
+    ds_Id rope_id[ROPE_COUNT + 1];
+    ds_Transform rope_t[ROPE_COUNT + 1];
+
+    vec3 ceil_transform = { 5.0f, 3.0f, 15.0f };
+    vec3 rope_base = { 5.0f, 2.75f - ceil_hw[1], 15.0f };
+
+	id = Utf8Format(sys_win->ui->mem_frame, "led_ceil");
+    rope_id[0] = led_NodeAdd(led, id, Utf8Empty());
+    led_NodeSetPosition(led, tagged_id, ceil_transform);
+    led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_ceil"));
+    led_NodeSetColor(led, tagged_id, floor_color, 1.0f);
+    rope_t[0] = ds_TransformIdentity();
+    Vec3Sub(rope_t[0].position, ceil_transform, rope_base);
+
+     
+    const f32 distance = 0.0f;
+
+	for (u32 i = 0; i < ROPE_COUNT; ++i)
+	{	
+		vec3 translation;
+		Vec3Copy(translation, rope_base);
+		translation[1] -= i*2.0f*(rope_half_height+rope_radius);
+        rope_t[i+1] = ds_TransformIdentity();
+        Vec3Set(rope_t[i+1].position, 0.0f, rope_half_height+rope_radius, 0.0f);
+
+		id = Utf8Format(sys_win->ui->mem_frame, "rope_%u", i);
+        rope_id[i+1] = led_NodeAdd(led, id, Utf8Empty());
+        led_NodeSetPosition(led, rope_id[i+1], translation);
+        led_NodeAttachRigidBodyPrefab(led, rope_id[i+1], Utf8Inline("rb_capsule"));
+        led_NodeSetColor(led, rope_id[i+1], capsule_color, 1.0f);
+        led_DistanceJointAdd(led, rope_id[i], rope_t[i], rope_id[i+1], rope_t[i+1], distance);
+        Vec3Set(rope_t[i+1].position, 0.0f, -rope_half_height+rope_radius, 0.0f);
+	}
+
+	vec3 floor_translation = { 0.0f, -ramp_width/2.0f - 1.0f, ramp_length / 2.0f -ramp_width/2.0f};
+    for (u32 i = 0; i < floor_count; ++i)
+    {
+        const f32 fi = -(f32) floor_count/2.0f + i;
+        for (u32 j = 0; j < floor_count; ++j)
+        {
+            const f32 fj = -(f32) floor_count/2.0f + j;
+            const vec3 floor_offset =
+            {
+                floor_translation[0] + fi*floor_hw[0]*2.0f,
+                floor_translation[1], 
+                floor_translation[2] + fj*floor_hw[2]*2.0f,
+            };
+		    id = Utf8Format(sys_win->ui->mem_frame, "led_floor_%u_%u", i, j);
+            tagged_id = led_NodeAdd(led, id, Utf8Empty());
+            led_NodeSetPosition(led, tagged_id, floor_offset);
+            led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_floor"));
+            led_NodeSetColor(led, tagged_id, floor_color, 1.0f);
+        }
+    }
+}
+
 void led_WallSmashSimulationSetup(struct led *led)
 {
 	struct ds_Window *sys_win = ds_WindowAddress(g_editor->window);
@@ -1907,7 +2034,8 @@ void led_Core(struct led *led)
 	if (once && sys_win)
 	{
 		once = 0;
-		led_WallSmashSimulationSetup(led);
+		//led_WallSmashSimulationSetup(led);
+		led_RopeSetup(led);
         led_Refresh(led);
 	}
 

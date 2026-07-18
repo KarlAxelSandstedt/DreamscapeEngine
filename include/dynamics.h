@@ -142,9 +142,9 @@ have updated to a new arbitrary space at some point, which would have entailed
 updating the body's position and mass properties, and recalculating the local 
 transforms of all of its shapes). For this to work, we must allow the local frame
 of the body to be arbitrary; it is up to the user to update the local frame if he
-or she so wishes. Hence, we cannot readjust the local frame of the body to always
-have the center of mass as its origin; by doing so. Thus, in addition to storing 
-the local-to-world transform, ds_RigidBody must also store its center of mass:
+or she so wishes. Hence, we cannot assume the local frame of the body to always
+have the center of mass as its origin. Thus, in addition to storing the local-to-world
+transform, ds_RigidBody must also store its center of mass:
 
 	ds_RigidBody
 	{
@@ -152,8 +152,6 @@ the local-to-world transform, ds_RigidBody must also store its center of mass:
 		ds_Transform	transform;	    // Local frame to World transform
 		vec3            center_of_mass;	
 	}
-
-We now derive the transformations needed assuming an arbitrary center of mass.
 */
 
 struct ds_Shape
@@ -719,10 +717,11 @@ struct ds_Joint
 };
 POOL_DECLARE(ds_Joint);
 
-/*  
- * Allocate a joints joint. On success the joint's id is returned; on failure DS_ID_NULL is returned.
+/* 
+ * Setup a joint between bodies b0 and b1 with anchors defined by the input local_frames. On success, 
+ * a valid ds_JointId is returned. On Failure, DS_ID_NULL is returned.
  */
-ds_JointId  ds_JointAdd(struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId b0, const ds_RigidBodyId b1);
+ds_JointId  ds_JointAdd(struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId b0, const ds_Transform *t0, const ds_RigidBodyId b1, const ds_Transform *t1);
 /* TODO */
 void        ds_JointRemove(struct ds_RigidBodyPipeline *pipeline, const ds_JointId id);
 /* TODO */
@@ -734,10 +733,27 @@ ds_DistanceJoint
 ================
 //TODO
 */
+
+struct ds_DistanceJointPrefab
+{
+    u32 tmp;
+};
+
+//TODO
 struct ds_DistanceJoint
 {
     u32 tmp;
 };
+
+/*
+ * Set prefab to the default distance joint values.
+ */
+void    ds_DistanceJointPrefabDefault(struct ds_DistanceJointPrefab *prefab);
+/* 
+ * Setup a joint between bodies b0 and b1 with anchors defined by the input local_frames. On success, 
+ * a valid ds_JointId is returned. On Failure, DS_ID_NULL is returned.
+ */
+ds_JointId ds_DistanceJointAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_DistanceJointPrefab *prefab, const ds_RigidBodyId b0, const ds_Transform *local_frame0, const ds_RigidBodyId b1, const ds_Transform *local_frame1);
 
 /*
 TODO: better name?
@@ -749,7 +765,10 @@ struct ds_JointSim
 {
     POOL_NODE;
 
-    enum ds_JointType type;
+    /* joint frame to body frame transform */
+    ds_Transform        local_frame[2];
+    
+    enum ds_JointType   type;
     union
     {
         struct ds_DistanceJoint distance;
