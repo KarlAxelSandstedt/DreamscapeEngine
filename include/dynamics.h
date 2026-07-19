@@ -34,8 +34,9 @@ extern "C" {
 
 //TODO 
 struct ds_RigidBodyPipeline;
-struct cdb;
+struct ds_RigidBody;
 struct ds_Island;
+struct cdb;
 
 /*
 ds_NumericsConfig
@@ -230,13 +231,13 @@ struct ds_ShapePrefabInstance
  */
 ds_ShapeId  ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_ShapePrefab *prefab, const ds_Transform *t, const ds_RigidBodyId body);
 /* 
- * Remove the specified shape of a DYNAMIC body and update the island database and contact database state.  
+ * INTERNAL: Remove the specified shape of a DYNAMIC body and update the island database and contact database state.  
  */
-void        ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Island *island, const u32 shape_index);
+void        ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 shape_index, const u32 update_mass_properties);
 /* 
- * Remove the specified shape of a STATIC body and update the physics state into a valid state. 
+ * INTERNAL: Remove the specified shape of a STATIC body and update the physics state into a valid state. 
  */
-void		ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, const u32 index);
+void        ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 index, const u32 update_mass_properties);
 /*
  * Lookup the specified shape and return it if found. Otherwise return (NULL, POOL_NULL).
  */
@@ -729,11 +730,22 @@ POOL_DECLARE(ds_Joint);
  * a valid ds_JointId is returned. On Failure, DS_ID_NULL is returned.
  */
 ds_JointId  ds_JointAdd(struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId b0, const ds_Transform *t0, const ds_RigidBodyId b1, const ds_Transform *t1);
-/* TODO */
+/*
+ * Remove the specified joint corresponding to the id. If the joint no longer exist, the call becomes a NO-OP.
+ */
 void        ds_JointRemove(struct ds_RigidBodyPipeline *pipeline, const ds_JointId id);
-/* TODO */
+/* 
+ * On success, return the joint corresponding to the id. If the wasn't found, return an empty slot (U32_MAX, NULL)
+ */
 struct slot ds_JointLookup(const struct ds_RigidBodyPipeline *pipeline, const ds_JointId id);
-
+/* 
+ * INTERNAL: Remove the specified joint of a STATIC-DYNAMIC body pair and update the pipeline into a valid state.
+ */
+void        ds_JointStaticRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 index);
+/* 
+ * INTERNAL: Remove the specified joint of a DYNAMIC-DYNAMIC body pair and update the pipeline into a valid state.
+ */
+void        ds_JointDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 index);
 
 /*
 ds_DistanceJoint
@@ -773,6 +785,7 @@ struct ds_JointSim
     /* joint frame to body frame transform */
     ds_Transform        local_frame[2];
     
+    u32                 joint;      /* index of general joint owning the struct */
     enum ds_JointType   type;
     union
     {

@@ -134,10 +134,29 @@ struct ds_JointSim *ds_CGraphJointAdd(struct ds_RigidBodyPipeline *pipeline, str
     }
 
     joint->sim = slot.index;
+    cg->color[joint->color].joint_pool.buf[slot.index].joint = ds_JointPoolIndex(&pipeline->joint_pool, joint);
     return slot.address;
 }
 
 void ds_CGraphJointRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint *joint)
 {
+    struct ds_CGraph *cg = &pipeline->cgraph;
+    struct ds_CGraphColor *color = cg->color + joint->color;
 
+    if (joint->color != CG_SERIAL_COLOR)
+    {
+        ds_BitSetSet(&color->body_bitset, joint->body[0], 0);
+        ds_BitSetSet(&color->body_bitset, joint->body[1], 0);
+    }
+
+    ds_CPoolRemoveAndSwap(color->joint_pool, joint->sim);
+    if (joint->sim < color->joint_pool.count)
+    {
+        const struct ds_JointSim *moved_joint_sim = color->joint_pool.buf + joint->sim;
+        struct ds_Joint *moved_joint = pipeline->joint_pool.buf + moved_joint_sim->joint;
+        ds_Assert(moved_joint->color == joint->color);
+        ds_Assert(moved_joint->sim == color->joint_pool.count);
+
+        moved_joint->sim = joint->sim;
+    }
 }

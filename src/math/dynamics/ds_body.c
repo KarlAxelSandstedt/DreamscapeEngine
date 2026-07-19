@@ -57,7 +57,8 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const stru
 
 void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId id)
 {
-	struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, ds_IdIndex(id));
+    const u32 body_index = ds_IdIndex(id);
+	struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, body_index);
     if (body->tag != ds_IdTag(id))
     {
         return;
@@ -68,19 +69,31 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
 		? dll_Remove(&pipeline->body_marked_list, pipeline->body_pool.buf, ds_IdIndex(id))
 		: dll_Remove(&pipeline->body_non_marked_list, pipeline->body_pool.buf, ds_IdIndex(id));
 
+    const u32 mass_properties_update = 0;
+
 	struct ds_Shape *shape_ptr;
 	if (body->island_index != ISLAND_STATIC)
 	{
 	    struct ds_Island *island = ds_PoolAddress(&pipeline->is_db.island_pool, body->island_index);
         ds_Assert(PoolSlotAllocated(island));
 
-		for (u32 shape = body->shape_list.first; shape != DLL_NULL;)
-		{
-			shape_ptr = ds_PoolAddress(&pipeline->shape_pool, shape);
-            const u32 next = shape_ptr->dll_next;
-			ds_ShapeDynamicRemove(pipeline, island, shape);
-            shape = next;
-		}
+        while (body->shape_list.count)
+        {
+			ds_ShapeDynamicRemove(pipeline, body, body->shape_list.first, mass_properties_update);
+        }
+
+        //Breakpoint(1);
+        while (body->joint_list.count)
+        {
+            const struct ds_Joint *joint = pipeline->joint_pool.buf + body->joint_list.first;
+            const struct ds_RigidBody *b0 = ds_PoolAddress(&pipeline->body_pool, joint->body[0]);
+            const struct ds_RigidBody *b1 = ds_PoolAddress(&pipeline->body_pool, joint->body[1]);
+            fprintf(stderr, "\n(%u,%u)\n", joint->body[0], joint->body[1]);
+            fprintf(stderr, "(%u,%u,%u)\n", b0->joint_list.count, b0->joint_list.first, b0->joint_list.last);
+            fprintf(stderr, "(%u,%u,%u)\n", b1->joint_list.count, b1->joint_list.first, b1->joint_list.last);
+
+            ds_JointDynamicRemove(pipeline, body, body->joint_list.first);
+        }
 
     	dll_Remove(&island->body_list, pipeline->body_pool.buf, ds_IdIndex(id)); 
     	if (island->body_list.count == 0)
@@ -96,13 +109,15 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
 	}       
 	else
 	{
-		for (u32 shape = body->shape_list.first; shape != DLL_NULL;)
-		{
-			shape_ptr = ds_PoolAddress(&pipeline->shape_pool, shape);
-            const u32 next = shape_ptr->dll_next;
-			ds_ShapeStaticRemove(mem_tmp, pipeline, shape);
-            shape = next;
-		}
+        while (body->shape_list.count)
+        {
+			ds_ShapeStaticRemove(mem_tmp, pipeline, body, body->shape_list.first, mass_properties_update);
+        }
+
+        while (body->joint_list.count)
+        {
+            ds_JointStaticRemove(pipeline, body, body->joint_list.first);
+        }
 	}
 
     const u32 entity = body->entity;

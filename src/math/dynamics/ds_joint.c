@@ -41,18 +41,58 @@ ds_JointId  ds_JointAdd(struct ds_RigidBodyPipeline *pipeline, const ds_RigidBod
     //TODO should static have slot 1 reserved?...
     joint->body[0] = slot_b0.index;
     joint->body[1] = slot_b1.index;
-    const u32 i0 = (joint->body[0] == pipeline->joint_pool.buf[(i32) b0->joint_list.last].body[1]);
-    const u32 i1 = (joint->body[1] == pipeline->joint_pool.buf[(i32) b1->joint_list.last].body[1]);
+    const u32 i0 = (joint->body[0] == pipeline->joint_pool.buf[b0->joint_list.last].body[1]);
+    const u32 i1 = (joint->body[1] == pipeline->joint_pool.buf[b1->joint_list.last].body[1]);
     ds_DLLAppendEx(b0->joint_list, pipeline->joint_pool.buf, slot_joint.index, edge_node[i0], edge_node[0]);
     ds_DLLAppendEx(b1->joint_list, pipeline->joint_pool.buf, slot_joint.index, edge_node[i1], edge_node[1]);
-
     //TODO does order matter here?
     //TODO should static have slot 1 reserved?...
     struct ds_JointSim *sim = ds_CGraphJointAdd(pipeline, joint);
     sim->local_frame[0] = *local_frame0;
     sim->local_frame[1] = *local_frame1;
 
+    fprintf(stderr, "(%u,%u)\n", joint->body[0], joint->body[1]);
+    fprintf(stderr, "(%u,%u,%u)\n", b0->joint_list.count, b0->joint_list.first, b0->joint_list.last);
+    fprintf(stderr, "(%u,%u,%u)\n", b1->joint_list.count, b1->joint_list.first, b1->joint_list.last);
+
     return id;
+}
+
+static void ds_JointUnlink(struct ds_RigidBodyPipeline *pipeline, const struct ds_Joint *joint, const u32 joint_index)
+{
+    for (u32 i = 0; i < 2; ++i)
+    {
+        struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, joint->body[i]);
+
+        const u32 bi = joint->body[i];
+        const i32 prev = joint->edge_node[i].prev;
+        const i32 next = joint->edge_node[i].next;
+        const struct ds_Joint *joint_prev = pipeline->joint_pool.buf + prev;
+        const struct ds_Joint *joint_next = pipeline->joint_pool.buf + next;
+        const u32 pi = (bi == joint_prev->body[1]);
+        const u32 ni = (bi == joint_next->body[1]);
+        ds_DLLRemoveEx(body->joint_list, pipeline->joint_pool.buf, joint_index, edge_node[pi], edge_node[i], edge_node[ni]);
+    }
+}
+
+void ds_JointStaticRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 index)
+{
+    struct ds_Joint *joint = pipeline->joint_pool.buf + index;
+    ds_CGraphJointRemove(pipeline, joint);
+    ds_JointUnlink(pipeline, joint, index);
+    ds_JointPoolRemove(&pipeline->joint_pool, index);
+
+    //TODO signal affected island for wakeup / slip
+}
+
+void ds_JointDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 index)
+{
+    struct ds_Joint *joint = pipeline->joint_pool.buf + index;
+    ds_CGraphJointRemove(pipeline, joint);
+    ds_JointUnlink(pipeline, joint, index);
+    ds_JointPoolRemove(&pipeline->joint_pool, index);
+
+    //TODO signal affected island for wakeup / slip
 }
 
 void ds_JointRemove(struct ds_RigidBodyPipeline *pipeline, const ds_JointId id)
@@ -61,8 +101,20 @@ void ds_JointRemove(struct ds_RigidBodyPipeline *pipeline, const ds_JointId id)
     if (slot.address)
     {
         struct ds_Joint *joint = slot.address;
-        ds_CGraphJointRemove(pipeline, joint);
-        ds_JointPoolRemove(&pipeline->joint_pool, slot.index);
+        struct ds_RigidBody *b0 = ds_PoolAddress(&pipeline->body_pool, joint->body[0]);
+        struct ds_RigidBody *b1 = ds_PoolAddress(&pipeline->body_pool, joint->body[1]);
+        if (!RB_IS_DYNAMIC(b0))
+        {
+            ds_JointStaticRemove(pipeline, b0, slot.index);
+        }
+        else if (!RB_IS_DYNAMIC(b1))
+        {
+            ds_JointStaticRemove(pipeline, b1, slot.index);
+        }
+        else
+        {
+            ds_JointDynamicRemove(pipeline, b0, slot.index);
+        }
     }
 }
 

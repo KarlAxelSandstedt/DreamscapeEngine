@@ -208,14 +208,14 @@ and can handle at most I32_MAX elements.
 struct ds_DLL
 {
 	u32 	count;
-	u32 	first;
-	u32 	last;
+	i32 	first;
+	i32 	last;
 };
 
 struct ds_DLLNode
 {
-    u32 prev;
-    u32 next;
+    i32 prev;
+    i32 next;
 };
 
 static inline void ds_DLLFlush(struct ds_DLL *dll)
@@ -233,7 +233,7 @@ do                                                                              
     ds_Assert((_index_) < 0x80000000);                                                                  \
                                                                                                         \
     (_dll_).count += 1;                                                                                 \
-    (_base_)[(i32) (_dll_).last]._last_.next = (_index_);                                               \
+    (_base_)[(_dll_).last]._last_.next = (_index_);                                                     \
     (_base_)[_index_]._node_.prev = (_dll_).last;                                                       \
     (_base_)[_index_]._node_.next = DLL_SENTINEL;                                                       \
                                                                                                         \
@@ -252,7 +252,7 @@ do                                                                              
     ds_Assert((_index_) < 0x80000000);                                                                  \
                                                                                                         \
     (_dll_).count += 1;                                                                                 \
-    (_base_)[(i32)(_dll_).first]._first_.prev = (_index_);                                              \
+    (_base_)[(_dll_).first]._first_.prev = (_index_);                                                   \
     (_base_)[_index_]._node_.prev = DLL_SENTINEL;                                                       \
     (_base_)[_index_]._node_.next = (_dll_).first;                                                      \
                                                                                                         \
@@ -264,32 +264,32 @@ do                                                                              
 } while (0)
 
 #define ds_DLLRemove(_dll_, _base_, _index_, _node_) ds_DLLRemoveEx(_dll_, _base_, _index_, _node_, _node_, _node_) 
-#define ds_DLLRemoveEx(_dll_, _base_, _index_, _p_, _node_, _n_)                                        \
+#define ds_DLLRemoveEx(_dll_, _base_, _index_, _prev_, _node_, _next_)                                  \
 do                                                                                                      \
 {                                                                                                       \
     ds_Assert((_dll_).count);                                                                           \
-    ds_Assert(ds_DLLNodeCheckInList(_base_, _index_, _node_);                                           \
+    ds_Assert(ds_DLLNodeCheckInList(_base_, _index_, _node_));                                          \
     (_dll_).count -= 1;                                                                                 \
-    const u32 _next_ = (_base_)[_index_]._node_.next;                                                   \
-    const u32 _prev_ = (_base_)[_index_]._node_.prev;                                                   \
-    (_base_)[(i32)_next_]._n_.prev = _prev_;                                                            \
-    (_base_)[(i32)_prev_]._p_.next = _next_;                                                            \
+    const i32 _p_ = (_base_)[_index_]._node_.prev;                                                      \
+    const i32 _n_ = (_base_)[_index_]._node_.next;                                                      \
+    (_base_)[_p_]._prev_.next = _n_;                                                                    \
+    (_base_)[_n_]._next_.prev = _p_;                                                                    \
                                                                                                         \
-    if ( _prev_ == DLL_SENTINEL )                                                                       \
+    if ( _p_ == DLL_SENTINEL )                                                                          \
     {                                                                                                   \
-        (_dll_).first = _next_;                                                                         \
+        (_dll_).first = _n_;                                                                            \
     }                                                                                                   \
                                                                                                         \
-    if ( _next_ == DLL_SENTINEL )                                                                       \
+    if ( _n_ == DLL_SENTINEL )                                                                          \
     {                                                                                                   \
-        (_dll_).last = _prev_;                                                                          \
+        (_dll_).last = _p_;                                                                             \
     }                                                                                                   \
-    ds_DLLNodeSetNotInList(_base_, _index_, _node_)                                                     \
 } while (0)
 
-#define ds_DLLNodeSetNotInList(_base_, _index_, _node_)  ( (_base_)[_index_]._node_.prev = DLL_NOT_IN_LIST ) 
+//TODO are these even good to use? we don't always want to set DLL_NOT_IN_LIST?...
+#define ds_DLLNodeSetNotInList(_base_, _index_, _node_)  ( (_base_)[_index_]._node_.prev = (i32) DLL_NOT_IN_LIST ) 
 
-#define ds_DLLNodeCheckInList(_base_, _index_, _node_)   ( (_base_)[_index_]._node_.prev != DLL_NOT_IN_LIST )
+#define ds_DLLNodeCheckInList(_base_, _index_, _node_)   ( (_base_)[_index_]._node_.prev != (i32) DLL_NOT_IN_LIST )
 
 
 #ifdef __cplusplus
