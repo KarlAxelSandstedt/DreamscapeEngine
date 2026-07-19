@@ -538,27 +538,16 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
         ArenaPopPacked(&pipeline->frame, sizeof(u32)*(arr.len - cdb->contact_new_count));
 
         /* Remove stale sat_Caches */
-	    u32 bit = 0;
 	    for (u64 block = 0; block < cdb->sat_cache_frame_usage.block_count; ++block)
 	    {
-	    	u64 broken_link_block = 
+	    	const u64 broken_link_block = 
 	    			    cdb->sat_cache_persistent_usage.bits[block]
 	    			& (~cdb->sat_cache_frame_usage.bits[block]);
-	    	u32 b = 0;
-	    	while (broken_link_block)
+            struct ds_BitBlock it = ds_BitBlockInit(broken_link_block, block, 1);
+	    	while (ds_BitBlockHasNext(&it))
 	    	{
-	    		const u32 tzc = Ctz64(broken_link_block);
-	    		b += tzc;
-	    		const u32 ci = bit + b;
-	    		b += 1;
-
-	    		broken_link_block = (tzc < 63) 
-	    			? broken_link_block >> (tzc + 1)
-	    			: 0;
-
-	    		sat_CacheRemove(cdb, ci);
+	    	    sat_CacheRemove(cdb, ds_BitBlockNext(&it));
 	    	}
-	    	bit += 64;
 	    }	
     
         /* Update sat_cache_persistent_usage */
@@ -639,27 +628,19 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
     
 	u32 *split = ArenaPush(&pipeline->frame, pipeline->is_db.island_pool.count*sizeof(u32));
     u32 split_count = 0;
-	u32 bit = 0;
 	//fprintf(stderr, " R: {");
 	for (u64 block = 0; block < cdb->contact_frame_usage.block_count; ++block)
 	{
-		u64 broken_link_block = 
+		const u64 broken_link_block = 
 				    cdb->contact_persistent_usage.bits[block]
 				& (~cdb->contact_frame_usage.bits[block]);
-		u32 b = 0;
-		while (broken_link_block)
-		{
-			const u32 tzc = Ctz64(broken_link_block);
-			b += tzc;
-			const u32 ci = bit + b;
-			b += 1;
 
-			broken_link_block = (tzc < 63) 
-				? broken_link_block >> (tzc + 1)
-				: 0;
-		
-			//fprintf(stderr, " %lu", ci);
+        struct ds_BitBlock it = ds_BitBlockInit(broken_link_block, block, 1);
+	    while (ds_BitBlockHasNext(&it))
+	    {
+            const u64 ci = ds_BitBlockNext(&it);
 			struct ds_Contact *c = nll_Address(&cdb->contact_net, ci);
+			//fprintf(stderr, " %lu", ci);
 
 			const u32 b0 = c->key.body0;
 			const u32 b1 = c->key.body1;
@@ -690,7 +671,6 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 			dll_Remove(&is->contact_list, cdb->contact_net.pool.buf, ci);
 			ds_ContactRemove(pipeline, ci);
 		}
-		bit += 64;
 	}	
 	ArenaPopPacked(&pipeline->frame, (pipeline->is_db.island_pool.count - split_count)*sizeof(u32));
 

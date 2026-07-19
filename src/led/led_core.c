@@ -2074,8 +2074,8 @@ void led_Core(struct led *led)
 	if (once && sys_win)
 	{
 		once = 0;
-		//led_WallSmashSimulationSetup(led);
-		led_RopeSetup(led);
+		led_WallSmashSimulationSetup(led);
+		//led_RopeSetup(led);
         led_Refresh(led);
 	}
 

@@ -51,10 +51,6 @@ ds_JointId  ds_JointAdd(struct ds_RigidBodyPipeline *pipeline, const ds_RigidBod
     sim->local_frame[0] = *local_frame0;
     sim->local_frame[1] = *local_frame1;
 
-    fprintf(stderr, "(%u,%u)\n", joint->body[0], joint->body[1]);
-    fprintf(stderr, "(%u,%u,%u)\n", b0->joint_list.count, b0->joint_list.first, b0->joint_list.last);
-    fprintf(stderr, "(%u,%u,%u)\n", b1->joint_list.count, b1->joint_list.first, b1->joint_list.last);
-
     return id;
 }
 

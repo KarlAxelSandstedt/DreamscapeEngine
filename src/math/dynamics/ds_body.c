@@ -86,16 +86,8 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
 			ds_ShapeDynamicRemove(pipeline, body, body->shape_list.first, mass_properties_update);
         }
 
-        //Breakpoint(1);
         while (body->joint_list.count)
         {
-            const struct ds_Joint *joint = pipeline->joint_pool.buf + body->joint_list.first;
-            const struct ds_RigidBody *b0 = ds_PoolAddress(&pipeline->body_pool, joint->body[0]);
-            const struct ds_RigidBody *b1 = ds_PoolAddress(&pipeline->body_pool, joint->body[1]);
-            fprintf(stderr, "\n(%u,%u)\n", joint->body[0], joint->body[1]);
-            fprintf(stderr, "(%u,%u,%u)\n", b0->joint_list.count, b0->joint_list.first, b0->joint_list.last);
-            fprintf(stderr, "(%u,%u,%u)\n", b1->joint_list.count, b1->joint_list.first, b1->joint_list.last);
-
             ds_JointDynamicRemove(pipeline, body, body->joint_list.first);
         }
 
