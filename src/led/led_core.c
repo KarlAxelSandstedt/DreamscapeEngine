@@ -1746,74 +1746,86 @@ static void led_EngineRun(struct led *led)
 		{
 			case RB_COLOR_MODE_BODY: 
 			{ 
-				const struct ds_RigidBody *body = NULL;
-				for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
-				{
-					body = ds_PoolAddress(&led->physics.body_pool, i);
-                    const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
-                    led_NodeColorProxies(led, body->entity, node->color);
-				}
+                for (u64 bi = 0; bi < led->physics.body_usage_set.block_count; ++bi)
+                {
+                    struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi, 1);
+                    while (ds_BitBlockHasNext(&it))
+                    {
+                        const struct ds_RigidBody *body = ds_PoolAddress(&led->physics.body_pool, ds_BitBlockNext(&it));
+                        const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
+                        led_NodeColorProxies(led, body->entity, node->color);
+                    }
+                }
 			} break;
 
 			case RB_COLOR_MODE_COLLISION: 
 			{ 
-				const struct ds_RigidBody *body = NULL;
-				for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
-				{
-                    vec4 color;
-					body = ds_PoolAddress(&led->physics.body_pool, i);
-                    const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
-					if (RB_IS_DYNAMIC(body))
-					{
-                        const struct ds_Island *island = ds_PoolAddress(&led->physics.is_db.island_pool, body->island_index);
-						(island->contact_list.count)
-							? Vec4Copy(color, led->collision_color)
-							: Vec4Copy(color, node->color);
-					}
-					else
-					{
-						Vec4Copy(color, led->static_color);
-					}
-					led_NodeColorProxies(led, body->entity, color);
+                vec4 color;
+                for (u64 bi = 0; bi < led->physics.body_usage_set.block_count; ++bi)
+                {
+                    struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi, 1);
+                    while (ds_BitBlockHasNext(&it))
+                    {
+				        const struct ds_RigidBody *body = ds_PoolAddress(&led->physics.body_pool, ds_BitBlockNext(&it));
+                        const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
+					    if (RB_IS_DYNAMIC(body))
+					    {
+                            const struct ds_Island *island = ds_PoolAddress(&led->physics.is_db.island_pool, body->island_index);
+					    	(island->contact_list.count)
+					    		? Vec4Copy(color, led->collision_color)
+					    		: Vec4Copy(color, node->color);
+					    }
+					    else
+					    {
+					    	Vec4Copy(color, led->static_color);
+					    }
+					    led_NodeColorProxies(led, body->entity, color);
+                    }
 				}
 			} break;
 
 			case RB_COLOR_MODE_SLEEP: 
 			{ 
-				const struct ds_RigidBody *body = NULL;
-				for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
-				{
-					body = ds_PoolAddress(&led->physics.body_pool, i);
-                    if (!RB_IS_DYNAMIC(body))
-					{						
-                        led_NodeColorProxies(led, body->entity, led->static_color);
-					}
-					else
-					{
-						(RB_IS_AWAKE(body))
-                            ? led_NodeColorProxies(led, body->entity,  led->awake_color)
-                            : led_NodeColorProxies(led, body->entity,  led->sleep_color);
-					}
+                for (u64 bi = 0; bi < led->physics.body_usage_set.block_count; ++bi)
+                {
+                    struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi, 1);
+                    while (ds_BitBlockHasNext(&it))
+                    {
+				        const struct ds_RigidBody *body = ds_PoolAddress(&led->physics.body_pool, ds_BitBlockNext(&it));
+                        if (!RB_IS_DYNAMIC(body))
+					    {						
+                            led_NodeColorProxies(led, body->entity, led->static_color);
+					    }
+					    else
+					    {
+					    	(RB_IS_AWAKE(body))
+                                ? led_NodeColorProxies(led, body->entity,  led->awake_color)
+                                : led_NodeColorProxies(led, body->entity,  led->sleep_color);
+					    }
+                    }
 				}
 			} break;
 
 			case RB_COLOR_MODE_ISLAND: 
 			{ 
-				const struct ds_RigidBody *body = NULL;
-				for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
-				{
-					body = ds_PoolAddress(&led->physics.body_pool, i);
-                    const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
-					if (body->island_index == ISLAND_STATIC)
-					{
-                        led_NodeColorProxies(led, body->entity, led->static_color);
-					}
-					else
-					{
-						const struct ds_Island *is = ds_PoolAddress(&led->physics.is_db.island_pool, body->island_index);
-                        led_NodeColorProxies(led, body->entity, is->color);
-					}
-				}
+                for (u64 bi = 0; bi < led->physics.body_usage_set.block_count; ++bi)
+                {
+                    struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi, 1);
+                    while (ds_BitBlockHasNext(&it))
+                    {
+				        const struct ds_RigidBody *body = ds_PoolAddress(&led->physics.body_pool, ds_BitBlockNext(&it));
+                        const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
+					    if (body->island_index == ISLAND_STATIC)
+					    {
+                            led_NodeColorProxies(led, body->entity, led->static_color);
+					    }
+					    else
+					    {
+					    	const struct ds_Island *is = ds_PoolAddress(&led->physics.is_db.island_pool, body->island_index);
+                            led_NodeColorProxies(led, body->entity, is->color);
+					    }
+                    }
+                }
 			} break;
 		}
 	}

@@ -285,20 +285,24 @@ static struct r_Mesh *BoundingBoxesMesh(struct arena *mem, const struct ds_Rigid
 	mesh->local_stride = L_COLOR_STRIDE;
 
 	u64 mem_left = mesh->vertex_count * L_COLOR_STRIDE;
-	struct ds_RigidBody *body = NULL;
-	for (u32 i = pipeline->body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
-	{
-		body = ds_PoolAddress(&pipeline->body_pool, i);
-        struct ds_Shape *shape = NULL;
-        for (u32 j = body->shape_list.first; j != DLL_NULL; j = shape->dll_next)
+    for (u64 bi = 0; bi < pipeline->body_usage_set.block_count; ++bi)
+    {
+        struct ds_BitBlock it = ds_BitBlockInit(pipeline->body_usage_set.bits[bi], bi, 1);
+        while (ds_BitBlockHasNext(&it))
         {
-            shape = ds_PoolAddress(&pipeline->shape_pool, j);
-            const struct aabb bbox = ds_ShapeWorldBbox(pipeline, shape);
-		    const u64 bytes_written = AabbPushLinesBuffered(vertex_data, mem_left, &bbox, color);
-		    vertex_data += bytes_written;
-		    mem_left -= bytes_written;
+            const struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, ds_BitBlockNext(&it));
+            struct ds_Shape *shape = NULL;
+            for (u32 j = body->shape_list.first; j != DLL_NULL; j = shape->dll_next)
+            {
+                shape = ds_PoolAddress(&pipeline->shape_pool, j);
+                const struct aabb bbox = ds_ShapeWorldBbox(pipeline, shape);
+		        const u64 bytes_written = AabbPushLinesBuffered(vertex_data, mem_left, &bbox, color);
+		        vertex_data += bytes_written;
+		        mem_left -= bytes_written;
+            }
         }
-	}
+    }
+
 	ds_Assert(mem_left == 0);
 end:
 	return mesh;
@@ -450,27 +454,31 @@ static void r_EditorDraw(const struct led *led)
 		const u64 depth = 0x7fffff;
 		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
 		struct ds_RigidBody *body = NULL;
-		for (u32 i = led->physics.body_non_marked_list.first; i != DLL_NULL; i = dll_Next(body))
-		{
-			body = ds_PoolAddress(&led->physics.body_pool, i);
-            const struct ds_Shape *s = ds_PoolAddress(&led->physics.shape_pool, body->shape_list.first);
-			if (s->cshape_type != C_SHAPE_TRI_MESH)
-			{
-				continue;
-			}
+        for (u64 bi = 0; bi < led->physics.body_usage_set.block_count; ++bi)
+        {
+            struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi, 1);
+            while (ds_BitBlockHasNext(&it))
+            {
+                const struct ds_RigidBody *body = ds_PoolAddress(&led->physics.body_pool, ds_BitBlockNext(&it));
+                const struct ds_Shape *s = ds_PoolAddress(&led->physics.shape_pool, body->shape_list.first);
+			    if (s->cshape_type != C_SHAPE_TRI_MESH)
+			    {
+			    	continue;
+			    }
 
-            ds_Transform transform;
-            ds_ShapeWorldTransform(&transform, &led->physics, s);
+                ds_Transform transform;
+                ds_ShapeWorldTransform(&transform, &led->physics, s);
 
-			const struct c_Shape *shape = strdb_Address(led->physics.cshape_db, s->cshape_handle);
-			struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &shape->mesh_bvh.bvh, transform.position, transform.rotation, led->sbvh_color);
-			if (mesh)
-			{
-				struct r_Instance *instance = r_InstanceAddNonCached(cmd);
-				instance->type = R_INSTANCE_MESH;
-				instance->mesh = mesh;
-			}
-		}
+			    const struct c_Shape *shape = strdb_Address(led->physics.cshape_db, s->cshape_handle);
+			    struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &shape->mesh_bvh.bvh, transform.position, transform.rotation, led->sbvh_color);
+			    if (mesh)
+			    {
+			    	struct r_Instance *instance = r_InstanceAddNonCached(cmd);
+			    	instance->type = R_INSTANCE_MESH;
+			    	instance->mesh = mesh;
+			    }
+            }
+        }
 	}
 
 	if (led->draw_bounding_box)

@@ -292,20 +292,17 @@ rigid_body
 #define RB_DYNAMIC		((u32) 1 << 1)
 #define RB_AWAKE		((u32) 1 << 2)
 #define RB_ISLAND		((u32) 1 << 3)
-#define RB_MARKED_FOR_REMOVAL	((u32) 1 << 4)
 
 #define RB_IS_ACTIVE(b)		(b->flags & RB_ACTIVE)
 #define RB_IS_DYNAMIC(b)	(b->flags & RB_DYNAMIC)
 #define RB_IS_AWAKE(b)		(b->flags & RB_AWAKE)
 #define RB_IS_ISLAND(b)		(b->flags & RB_ISLAND)
-#define RB_IS_MARKED(b)		(b->flags & RB_MARKED_FOR_REMOVAL)
 
 
 #define RB_ACTIVE_BIT(b)	((b->flags & RB_ACTIVE) >> 0u)
 #define RB_DYNAMIC_BIT(b)	((b->flags & RB_DYNAMIC) >> 1u)
 #define RB_AWAKE_BIT(b)		((b->flags & RB_AWAKE) >> 2u)
 #define RB_ISLAND_BIT(b)	((b->flags & RB_ISLAND) >> 3u)
-#define RB_MARKED_BIT(b)	((b->flags & RB_MARKED_FOR_REMOVAL) >> 4u)
 
 #define IS_ACTIVE(flags)	((flags & RB_ACTIVE) >> 0u)
 #define IS_DYNAMIC(flags)	((flags & RB_DYNAMIC) >> 1u)
@@ -316,7 +313,6 @@ rigid_body
 struct ds_RigidBody
 {
 	DLL2_SLOT_STATE;	/* island body_list node */
-	DLL_SLOT_STATE;		/* body marked/non-marked list node */
 	POOL_SLOT_STATE;
 
     u32             tag;                    /* Tag [ Generation(16) | Unused (16) ]                 */
@@ -1381,14 +1377,13 @@ struct ds_RigidBodyPipeline
 	struct strdb *	    body_prefab_db;		    /* externally owned */
 
 	struct ds_Pool	    body_pool;
-	struct dll		    body_marked_list;	    /* bodies marked for removal */
-	struct dll		    body_non_marked_list;	/* bodies alive and non-marked  */
+    struct ds_BitSet    body_usage_set;         /* Bodies in use */
+    struct ds_BitSet    body_removal_set;       /* Bodies marked for removal */
 
 	struct ds_Pool	    shape_pool;
 	struct bvh 		    shape_bvh;              /* dynamic bvh of shapes */
 
     struct ds_JointPool joint_pool;
-    //TODO bit_vector vs. dll to-free-list
 
 	struct ds_Pool	    event_pool;
 	struct dll		    event_list;

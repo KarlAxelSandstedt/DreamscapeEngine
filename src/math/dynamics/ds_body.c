@@ -25,9 +25,14 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const stru
 	struct ds_RigidBody *body = slot.address;
     body->tag += DS_ID_TAG_GENERATION_INCREMENT;
     const ds_RigidBodyId id = ((u64) body->tag << 32) | slot.index;
-
 	PhysicsEventBodyNew(pipeline, id);
-	dll_Append(&pipeline->body_non_marked_list, pipeline->body_pool.buf, slot.index);
+
+    if (pipeline->body_usage_set.bit_count <= slot.index)
+    {
+        ds_BitSetIncreaseSize(&pipeline->body_usage_set, pipeline->body_usage_set.bit_count << 1, 0);
+        ds_BitSetIncreaseSize(&pipeline->body_removal_set, pipeline->body_removal_set.bit_count << 1, 0);
+    }
+    ds_BitSetSet(&pipeline->body_usage_set, slot.index, 1);
 
     ds_DLLFlush(&body->joint_list);
 	body->shape_list = dll_Init(struct ds_Shape);
@@ -63,11 +68,10 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
     {
         return;
     }
-	ds_Assert(PoolSlotAllocated(body));
+    ds_Assert(ds_BitSetGet(&pipeline->body_usage_set, body_index));
 
-    (RB_IS_MARKED(body))
-		? dll_Remove(&pipeline->body_marked_list, pipeline->body_pool.buf, ds_IdIndex(id))
-		: dll_Remove(&pipeline->body_non_marked_list, pipeline->body_pool.buf, ds_IdIndex(id));
+    ds_BitSetSet(&pipeline->body_usage_set, body_index, 0);
+    ds_BitSetSet(&pipeline->body_removal_set, body_index, 0);
 
     const u32 mass_properties_update = 0;
 

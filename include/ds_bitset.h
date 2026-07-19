@@ -51,6 +51,44 @@ uint8_t 	        ds_BitSetGet(const struct ds_BitSet* set, const u64 bit);
 /* set the bit value of the given bit */
 void 		        ds_BitSetSet(const struct ds_BitSet* set, const u64 bit, const u64 bit_value);
 
+struct ds_BitBlock
+{
+    u64         block;
+    u64         bit;
+};
+
+/* Setup a block iterator that iterates over the given bit value.  */
+static inline struct ds_BitBlock ds_BitBlockInit(const u64 block, const u64 block_index, const u64 bit_value_to_iterate_over)
+{
+    ds_Assert(bit_value_to_iterate_over <= 1);
+    const struct ds_BitBlock it =
+    {
+        .block = (bit_value_to_iterate_over) ? block : ~block,
+        .bit = block_index*DS_BITSET_BLOCK_BITCOUNT,
+    };
+    return it;
+}
+
+/* Return 1 if the iterator has any more bits to iterate over */
+static inline u32 ds_BitBlockHasNext(const struct ds_BitBlock *it)
+{
+    return it->block;
+}
+
+static inline u64 ds_BitBlockNext(struct ds_BitBlock *it)
+{
+    ds_Assert(ds_BitBlockHasNext(it));
+
+	const u64 tzc = Ctz64(it->block);
+    const u64 bit = it->bit + tzc;
+    it->bit = bit + 1;
+	it->block = (tzc < 63) 
+		      ? it->block >> (tzc + 1)
+		      : 0;
+
+    return bit;
+}
+
 #ifdef __cplusplus
 } 
 #endif
