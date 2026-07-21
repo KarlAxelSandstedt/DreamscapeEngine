@@ -185,11 +185,12 @@ struct led *led_Alloc(void)
 
 void led_Dealloc(struct led *led)
 {
-	ArenaFree(&led->mem_persistent);
+	PhysicsPipelineFree(&g_editor->physics);
 	led_ProjectMenuDealloc(&led->project_menu);
 	csg_Dealloc(&led->csg);
     ds_CPoolDealloc(g_editor->joint_pool);
 	ds_HashMapDealloc(&led->node_map);
 	hi_Dealloc(&led->node_hierarchy);
-	ArenaFree(&g_editor->frame);
+	ArenaFree(&led->frame);
+	ArenaFree(&led->mem_persistent);
 }

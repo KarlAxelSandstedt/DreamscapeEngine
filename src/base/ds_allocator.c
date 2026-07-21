@@ -83,6 +83,22 @@ void ds_MemApiInit()
 	ds_Assert( PowerOfTwoCheck( g_mem_config->alloc_size_min ) );
 }
 
+void ds_SmallRealloc(void **addr, const u64 old_size, const u64 new_size)
+{
+	if (old_size < new_size)
+	{
+        void *new_addr;
+        ds_SmallAlloc(&new_addr, new_size);
+        if (new_addr == NULL)
+        {
+			LogString(T_SYSTEM, S_FATAL, "Failed to reallocate in ds_SmallRealloc, exiting.");
+			FatalCleanupAndExit();
+        }
+        memcpy(new_addr, *addr, old_size);
+        ds_SmallFree(*addr);
+        *addr = new_addr;
+    }
+}
 
 #if __DS_PLATFORM__ == __DS_LINUX__
 

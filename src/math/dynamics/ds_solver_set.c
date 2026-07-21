@@ -26,6 +26,7 @@ POOL_DEFINE(ds_SolverSet);
 
 struct slot ds_SolverSetAdd(struct ds_RigidBodyPipeline *pipeline, const u32 initial_contact_count, const u32 initial_joint_count, const u32 initial_island_count)
 {
+    ProfZone;
     struct slot slot = ds_SolverSetPoolAdd(&pipeline->solver_set_pool);
     struct ds_SolverSet *set = slot.address;
 
@@ -47,6 +48,7 @@ struct slot ds_SolverSetAdd(struct ds_RigidBodyPipeline *pipeline, const u32 ini
         ds_CPoolAlloc(NULL, set->island_pool, initial_island_count, GROWABLE);
     }
 
+    ProfZoneEnd;
     return slot;
 }
 

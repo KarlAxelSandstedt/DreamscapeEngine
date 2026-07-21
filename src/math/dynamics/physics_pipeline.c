@@ -139,6 +139,15 @@ void PhysicsPipelineFree(struct ds_RigidBodyPipeline *pipeline)
     ds_CGraphDealloc(pipeline);
     ds_BitSetDealloc(&pipeline->body_usage_set);
     ds_BitSetDealloc(&pipeline->body_removal_set);
+    
+    for (u32 i = 0; i < pipeline->solver_set_pool.count_max; ++i)
+    {
+        const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + i;
+        if (ds_PoolSlotAllocated(set))
+        {
+            ds_SolverSetRemove(pipeline, i);
+        }
+    }
     ds_SolverSetPoolDealloc(&pipeline->solver_set_pool);
 }
 
@@ -167,6 +176,14 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
 	}
 #endif
 
+    for (u32 i = 0; i < pipeline->solver_set_pool.count_max; ++i)
+    {
+        const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + i;
+        if (ds_PoolSlotAllocated(set))
+        {
+            ds_SolverSetRemove(pipeline, i);
+        }
+    }
     ds_SolverSetPoolFlush(&pipeline->solver_set_pool);
 
 	cdb_Flush(pipeline->cdb);
