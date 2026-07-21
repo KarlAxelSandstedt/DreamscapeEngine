@@ -27,7 +27,7 @@ void ds_CGraphAlloc(struct ds_RigidBodyPipeline *pipeline, const u32 initial_cou
     memset(cg, 0, sizeof(pipeline->cgraph));
     for (u32 i = 0; i < CG_COLOR_COUNT; ++i)
     {
-        ds_CPoolAlloc(NULL, cg->color[i].joint_pool, initial_count, GROWABLE);
+        ds_CPoolAlloc(NULL, cg->color[i].joint_sim_pool, initial_count, GROWABLE);
         if (i != CG_SERIAL_COLOR)
         {
             cg->color[i].body_bitset = ds_BitSetAlloc(NULL, pipeline->body_pool.length, 0, GROWABLE);
@@ -40,7 +40,7 @@ void ds_CGraphDealloc(struct ds_RigidBodyPipeline *pipeline)
     struct ds_CGraph *cg = &pipeline->cgraph;
     for (u32 i = 0; i < CG_COLOR_COUNT; ++i)
     {
-        ds_CPoolDealloc(cg->color[i].joint_pool);
+        ds_CPoolDealloc(cg->color[i].joint_sim_pool);
         if (i != CG_SERIAL_COLOR)
         {
             ds_BitSetDealloc(&cg->color[i].body_bitset);
@@ -53,7 +53,7 @@ void ds_CGraphFlush(struct ds_RigidBodyPipeline *pipeline)
     struct ds_CGraph *cg = &pipeline->cgraph;
     for (u32 i = 0; i < CG_COLOR_COUNT; ++i)
     {
-        ds_CPoolFlush(cg->color[i].joint_pool);
+        ds_CPoolFlush(cg->color[i].joint_sim_pool);
         if (i != CG_SERIAL_COLOR)
         {
             ds_BitSetClear(&cg->color[i].body_bitset, 0);
@@ -104,7 +104,7 @@ struct ds_JointSim *ds_CGraphJointAdd(struct ds_RigidBodyPipeline *pipeline, str
 
             ds_BitSetSet(&cg->color[i].body_bitset, joint->body[0], 1);
             ds_BitSetSet(&cg->color[i].body_bitset, joint->body[1], 1);
-            slot = ds_CPoolPush(cg->color[i].joint_pool);
+            slot = ds_CPoolPush(cg->color[i].joint_sim_pool);
             joint->color = i;
             break;
         }
@@ -121,7 +121,7 @@ struct ds_JointSim *ds_CGraphJointAdd(struct ds_RigidBodyPipeline *pipeline, str
             }
 
             ds_BitSetSet(&cg->color[i].body_bitset, joint->body[dynamic_body], 1);
-            slot = ds_CPoolPush(cg->color[i].joint_pool);
+            slot = ds_CPoolPush(cg->color[i].joint_sim_pool);
             joint->color = i;
             break;
         }
@@ -129,12 +129,12 @@ struct ds_JointSim *ds_CGraphJointAdd(struct ds_RigidBodyPipeline *pipeline, str
 
     if (!slot.address)
     {
-        slot = ds_CPoolPush(cg->color[CG_SERIAL_COLOR].joint_pool);
+        slot = ds_CPoolPush(cg->color[CG_SERIAL_COLOR].joint_sim_pool);
         joint->color = CG_SERIAL_COLOR;
     }
 
     joint->sim = slot.index;
-    cg->color[joint->color].joint_pool.buf[slot.index].joint = ds_JointPoolIndex(&pipeline->joint_pool, joint);
+    cg->color[joint->color].joint_sim_pool.buf[slot.index].joint = ds_JointPoolIndex(&pipeline->joint_pool, joint);
     return slot.address;
 }
 
@@ -149,13 +149,13 @@ void ds_CGraphJointRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint
         ds_BitSetSet(&color->body_bitset, joint->body[1], 0);
     }
 
-    ds_CPoolRemoveAndSwap(color->joint_pool, joint->sim);
-    if (joint->sim < color->joint_pool.count)
+    ds_CPoolRemoveAndSwap(color->joint_sim_pool, joint->sim);
+    if (joint->sim < color->joint_sim_pool.count)
     {
-        const struct ds_JointSim *moved_joint_sim = color->joint_pool.buf + joint->sim;
+        const struct ds_JointSim *moved_joint_sim = color->joint_sim_pool.buf + joint->sim;
         struct ds_Joint *moved_joint = pipeline->joint_pool.buf + moved_joint_sim->joint;
         ds_Assert(moved_joint->color == joint->color);
-        ds_Assert(moved_joint->sim == color->joint_pool.count);
+        ds_Assert(moved_joint->sim == color->joint_sim_pool.count);
 
         moved_joint->sim = joint->sim;
     }

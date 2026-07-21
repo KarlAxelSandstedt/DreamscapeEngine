@@ -50,10 +50,12 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const stru
 
 	if (body->flags & RB_DYNAMIC)
 	{
-		isdb_InitIslandFromBody(pipeline, slot.index);
+        body->set = SOLVER_SET_ACTIVE;
+		isdb_InitIslandFromBody(pipeline, slot.index, SOLVER_SET_ACTIVE);
 	}
 	else
 	{
+        body->set = SOLVER_SET_STATIC;
 		body->island_index = ISLAND_STATIC;
 	}
 	

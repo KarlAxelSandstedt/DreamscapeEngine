@@ -109,6 +109,14 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
     ds_CGraphAlloc(&pipeline, 4096);
     pipeline.numerics_config = ds_NumericsConfigDefault();
 
+    pipeline.solver_set_pool = ds_SolverSetPoolAlloc(NULL, 4096, GROWABLE);
+    const struct slot set_disabled = ds_SolverSetAdd(&pipeline, 0, 4096, 4096);
+    const struct slot set_static = ds_SolverSetAdd(&pipeline, 0, 0, 0);
+    const struct slot set_active = ds_SolverSetAdd(&pipeline, 0, 0, 4096);
+    ds_Assert(set_disabled.index == SOLVER_SET_DISABLED);
+    ds_Assert(set_static.index == SOLVER_SET_STATIC);
+    ds_Assert(set_active.index == SOLVER_SET_ACTIVE);
+
 	return pipeline;
 }
 
@@ -131,6 +139,7 @@ void PhysicsPipelineFree(struct ds_RigidBodyPipeline *pipeline)
     ds_CGraphDealloc(pipeline);
     ds_BitSetDealloc(&pipeline->body_usage_set);
     ds_BitSetDealloc(&pipeline->body_removal_set);
+    ds_SolverSetPoolDealloc(&pipeline->solver_set_pool);
 }
 
 static void PhysicsPipelineClearFrame(struct ds_RigidBodyPipeline *pipeline)
@@ -157,6 +166,9 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
 		ds_CPoolFlush(pipeline->debug[i].stack_segment);
 	}
 #endif
+
+    ds_SolverSetPoolFlush(&pipeline->solver_set_pool);
+
 	cdb_Flush(pipeline->cdb);
 	isdb_Flush(&pipeline->is_db);
 	
@@ -182,6 +194,14 @@ void PhysicsPipelineValidate(const struct ds_RigidBodyPipeline *pipeline)
 {
 	ProfZone;
 
+    for (u32 i = 0; i < pipeline->solver_set_pool.count_max; ++i)
+    {
+        const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + i;
+        if (ds_PoolSlotAllocated(set))
+        {
+            ds_SolverSetValidate(pipeline, i);
+        }
+    }
 	cdb_Validate(pipeline);
 	isdb_Validate(pipeline);
 

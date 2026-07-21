@@ -29,8 +29,10 @@ static void isdb_AddBodyToIsland(struct ds_RigidBodyPipeline *pipeline, struct d
 	dll_Append(&is->body_list, pipeline->body_pool.buf, body);
 }
 
-static struct slot isdb_IslandEmpty(struct ds_RigidBodyPipeline *pipeline)
+static struct slot isdb_IslandEmpty(struct ds_RigidBodyPipeline *pipeline, const u32 set)
 {
+    ds_Assert(set != SOLVER_SET_STATIC);
+
 	struct slot slot = ds_PoolAdd(&pipeline->is_db.island_pool);
 	dll_Append(&pipeline->is_db.island_list, pipeline->is_db.island_pool.buf, slot.index);
 	PhysicsEventIslandNew(pipeline, slot.index);
@@ -40,12 +42,16 @@ static struct slot isdb_IslandEmpty(struct ds_RigidBodyPipeline *pipeline)
 	is->body_list = dll2_Init(struct ds_RigidBody);
 	is->flags = g_solver_config->sleep_enabled * (ISLAND_AWAKE | ISLAND_SLEEP_RESET);
 
+    struct ds_SolverSet *s = pipeline->solver_set_pool.buf + set;
+    is->set = set;
+    is->set_island_index = ds_CPoolPush(s->island_pool).index;
+
 	return slot;
 }
 
-struct ds_Island *isdb_InitIslandFromBody(struct ds_RigidBodyPipeline *pipeline, const u32 body)
+struct ds_Island *isdb_InitIslandFromBody(struct ds_RigidBodyPipeline *pipeline, const u32 body, const u32 set)
 {
-	struct slot slot = isdb_IslandEmpty(pipeline);
+	struct slot slot = isdb_IslandEmpty(pipeline, set);
 	struct ds_Island *is = slot.address;
 	struct ds_RigidBody *b = ds_PoolAddress(&pipeline->body_pool, body);
 	b->island_index = slot.index;
@@ -318,6 +324,16 @@ void isdb_IslandRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Island *
 {
 	const u32 island_index = ds_PoolIndex(&pipeline->is_db.island_pool, island);
 	dll_Remove(&pipeline->is_db.island_list, pipeline->is_db.island_pool.buf, island_index);
+    if (island->set >= SOLVER_SET_SLEEPING_FIRST)
+    {
+        ds_SolverSetRemove(pipeline, island->set);
+    }
+    else
+    {
+        struct ds_SolverSet *set = pipeline->solver_set_pool.buf + island->set;
+        ds_CPoolRemoveAndSwap(set->island_pool, island->set_island_index);
+        island->set_island_index = ds_CPoolPush(set->island_pool).index;
+    }
 	ds_PoolRemove(&pipeline->is_db.island_pool, island_index);
 	PhysicsEventIslandRemoved(pipeline, island_index);
 }
@@ -331,12 +347,15 @@ void isdb_SplitIsland(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeli
 	//isdb_PrintIsland(stderr, pipeline, island_to_split, "To Split");
 	u32 *body_stack = ArenaPush(mem_tmp, split_island->body_list.count*sizeof(u32));
 	u32 sc;
+    const u32 new_set = (split_island->set == SOLVER_SET_DISABLED)
+                      ? SOLVER_SET_DISABLED
+                      : SOLVER_SET_ACTIVE;
 
 	for (u32 bi = split_island->body_list.first; bi != DLL_NULL; )
 	{
 	    struct ds_RigidBody *body_last = ds_PoolAddress(&pipeline->body_pool, bi);
 		ds_Assert(body_last->island_index == island_to_split);
-		struct slot slot = isdb_IslandEmpty(pipeline);
+		struct slot slot = isdb_IslandEmpty(pipeline, new_set);
 		struct ds_Island *new_island = slot.address;
 		split_island = ds_PoolAddress(&pipeline->is_db.island_pool, island_to_split);
         /* Note: we set this manually here as to skip the check 

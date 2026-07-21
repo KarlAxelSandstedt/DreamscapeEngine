@@ -7,3 +7,4 @@
 #include "ds_numerics.c"
 #include "ds_joint.c"
 #include "ds_constraint_graph.c"
+#include "ds_solver_set.c"

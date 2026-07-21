@@ -141,7 +141,8 @@ ds_JointId ds_DistanceJointAdd(struct ds_RigidBodyPipeline *pipeline, const stru
     }
 
     struct ds_Joint *joint = pipeline->joint_pool.buf + ds_IdIndex(id);
-    struct ds_JointSim *sim = pipeline->cgraph.color[joint->color].joint_pool.buf + joint->sim;
+    struct ds_CGraphColor *color = pipeline->cgraph.color + joint->color;
+    struct ds_JointSim *sim = color->joint_sim_pool.buf + joint->sim;
 
     return id;
 }

@@ -318,6 +318,7 @@ struct ds_RigidBody
     u32             tag;                    /* Tag [ Generation(16) | Unused (16) ]                 */
 	u32 		    flags;
 	u32		        island_index;
+    u32             set;                    /* ds_SolverSet index                                   */
 
     struct ds_DLL   joint_list;             /* list of ds_Joint's attached to the body. Each joint is
                                                shared with one other body. */
@@ -423,6 +424,9 @@ struct ds_Contact
 	DLL_SLOT_STATE;		                                /* island->contact_list node            */
 	NLL_SLOT_STATE;		                                /* shape->contact_net node              */
     u32                     generation;                 /* Slot generation used id ds_ContactId */
+    u32                     set;                        /* Index of contact's set               */
+    u32                     set_contact_index;          /* Index(contact) 
+                                                           == set->contact[ set_contact_index ] */
     struct ds_ContactKey    key;                        /* canonical-form key                   */
 	struct c_Manifold 	    cm;                         /* Current contact manifold             */
 
@@ -708,16 +712,20 @@ enum ds_JointType
 struct ds_Joint
 {
     POOL_NODE;
-    u32         tag;                    /* id tag               */
+    u32         tag;                    /* id tag                                                           */
 
-    u32                 body[2];        /* bodies sharing ownership of joint */
+    u32                 body[2];        /* bodies sharing ownership of joint                                */
     struct ds_DLLNode   edge_node[2];   /* Each body stores the joint its dll; b == body[i] => edge_node[i] 
-                                           is part of body b's dll. */
+                                           is part of body b's dll.                                         */
 
     //TODO u32         island;     /* */
 
-    u32         sim;                    /* owned ds_JointSim    */
-    u32         color;                  /* edge color           */
+    u32         set;                    /* index to joint's set                                             */
+    u32         color;                  /* edge color (or CG_COLOR_NOT_SET)                                 */
+    u32         sim;                    /* owned ds_JointSim. If color is a valid color, the JointSim is 
+                                           found in in the given color of the ds_CGraph. if 
+                                           color == CG_COLOR_NOT_SET, sim is an index into the joint's 
+                                           set->jointsim_pool.                                              */
 };
 POOL_DECLARE(ds_Joint);
 
@@ -791,6 +799,134 @@ struct ds_JointSim
 DEFINE_CPOOL_STRUCT(ds_JointSim);
 
 /*
+ds_SolverSet
+============
+//TODO 
+
+::: Internals :::
+
+Context: Unlike Box3d, we do not store non-touching contacts; instead, we run a full dynamic tree search for
+potential contacts, and then run narrowphase on overlapping leaves. For any new contacts we then merge islands.
+For any contact that has disappeared, we flag the merged/persistent island for splitting. Then we try to split
+any flagged island. Then we solve any awake island. This is a simplified physics solver for now, so we try to
+keep this structure unless you recommend us switching.
+
+Furthermore, we do not at the moment store body data in the sets, only contact indices for sleeping sets
+and ds_JoinSim for sleeping/disabled sets, and any islands in the set.  we will expand this struct as needed.
+
+TODO: Do we need to for bodies/contacts/joints/islands to store the set they belong to in them?
+
+With this context, carefully analyze the following questions and operations regarding island/solver updates; 
+if you believe some operations are missing, state so.
+
+
+    () BodyAdd
+        IF body is dynamic => Add new island (with only the new body in it) to the active set 
+        IF body is static => (do nothing for now)
+        body.set = (static) ? STATIC : ACTIVE
+
+    () BodyRemove
+        *** After containts/joints removed ***
+        - simplicity, assume an island flagged for splitting is at least split into one new island
+        =>  For split in split_island_list
+                if (body.set == SLEEPING|ACTIVE)
+                    Add split.island to ACTIVE
+                    Add split.contacts to constraint graph 
+                    Add split.joints to constraint graph
+                else if (body.set == DISABLED)
+                    Add split.island to DISABLED
+                    Add split.contacts to DISABLED
+                    Add split.joints to DISABLED
+        - deallocate body
+
+    () On new joint
+        () merge island_expand <= island_merge
+        () if island_expand == sleeping, wake
+        () if island_expand == sleeping, merge island_set into active_set
+        () add joint to constraint graph
+
+    () On delete joint
+        () mark island for pontential splitting
+        () if island == sleeping, wake
+        () if island == awake, remove joint from constraint graph
+        () else if island == sleeping/disabled  remove joint from set
+
+    () On new contact
+        () merge island_expand <= island_merge
+        () if island_expand == sleeping, wake
+        () if island_expand == sleeping, merge island_set into active_set
+        () add contact to constraint graph
+
+    () On delete contact 
+        () mark island for pontential splitting
+        () if island == sleeping, wake
+        () if island == awake, remove joint from constraint graph
+        () else if island == sleeping/disabled  remove joint from set
+
+    () On island split
+        () try_split_island_into_islands
+        () Add any new islands to active set
+        () if island->set == SLEEPING/DISABLED => remove set
+        () else remove island from island->set
+
+    () On island merge
+        () island1,island2 == island_expand, island_merge, merge island_merge into island_expand
+        () if island_merge->set == SLEEPING/DISABLED => remove set
+        () else remove island from island->set
+
+SOLVER_SET_DISABLED: TODO
+
+SOLVER_SET_STATIC: TODO
+
+SOLVER_SET_ACTIVE: TODO
+
+SOLVER_SET_SLEEPING: TODO
+*/
+
+enum ds_SolverSetType
+{
+   SOLVER_SET_DISABLED,
+   SOLVER_SET_STATIC,
+   SOLVER_SET_ACTIVE,
+   SOLVER_SET_SLEEPING_FIRST
+};
+
+struct ds_SolverSet
+{
+    POOL_NODE;
+
+    //TODO body solver data
+    
+    /* Sleep set contact indices. 
+     * TODO: box3d store non-contact dbvh overlaps for active set here, and contact indices in CGraph 
+     */
+    ds_CPool(u32)           contact_pool;
+    
+    /* Disabled/Sleep set stores non-active joints that has been removed from the constraint graph */
+    ds_CPool(ds_JointSim)   joint_sim_pool;
+
+    /* Islands in set */
+    ds_CPool(u32)           island_pool;
+};
+POOL_DECLARE(ds_SolverSet);
+
+
+/* Allocate and setup a ds_SolverSet */
+struct slot ds_SolverSetAdd(struct ds_RigidBodyPipeline *pipeline, const u32 initial_index_count, const u32 initial_joint_count, const u32 initial_island_count);
+/* Deallocate a the given ds_SolverSet */
+void        ds_SolverSetRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index);
+/* Flush the given ds_SolverSet */
+void        ds_SolverSetFlush(struct ds_RigidBodyPipeline *pipeline, const u32 index);
+/* Wake up the given sleeping ds_SolverSet. If the solver set is not sleeping set, the call becomes a NO-OP. */
+void        ds_SolverSetWakeUp(struct ds_RigidBodyPipeline *pipeline, const u32 index);
+/* Try put the given island to sleep. On success, the island is moved from the active set to a sleeping set. */
+void        ds_SolverSetTrySleep(struct ds_RigidBodyPipeline *pipeline, const u32 island_index);
+/* Merge set_merge into set_expand and dealloc set_merge. */
+void        ds_SolverSetMerge(struct ds_RigidBodyPipeline *pipeline, const u32 set_expand, const u32 set_merge);
+/* Debug validation for the given set */
+void        ds_SolverSetValidate(const struct ds_RigidBodyPipeline *pipeline, const u32 set_index);
+
+/*
 ds_CGraph
 =========
 ds_CGraph is a persistent graph that models all constraints in the pipeline. Each implicit vertex
@@ -830,7 +966,7 @@ ds_CGraphColor stores the relevant physics data of active constraints, tightly p
 struct ds_CGraphColor
 {
     struct ds_BitSet        body_bitset;
-    ds_CPool(ds_JointSim)   joint_pool;
+    ds_CPool(ds_JointSim)   joint_sim_pool;
 };
 
 #define CG_COLOR_COUNT          12
@@ -970,13 +1106,15 @@ struct ds_Island
 
 	struct ds_RigidBody **	bodies;	
 	struct ds_Contact 	**	contacts;
-	u32 *			body_index_map; /* body_index -> local indices of bodies in island:
-						 * is->bodies[i] = pipeline->bodies[b] => 
-						 * is->body_index_map[b] = i 
-						 */
+	u32 *			        body_index_map; /* body_index -> local indices of bodies in island:
+						                     * is->bodies[i] = pipeline->bodies[b] => 
+						                     * is->body_index_map[b] = i 
+						                     */
 
 	/* Persistent Island */
 	u32 flags;
+    u32 set;                /* ds_SolverSet index */
+    u32 set_island_index;   /* Index(island) == solver_sets[set].island[ island->set_island_index ] */
 
 	struct dll	body_list;
 	struct dll	contact_list;
@@ -1018,7 +1156,7 @@ void 		isdb_PrintIsland(FILE *file, const struct ds_RigidBodyPipeline *pipeline,
 /* Check if the database appears to be valid */
 void 		isdb_Validate(const struct ds_RigidBodyPipeline *pipeline);
 /* Setup new island from single body */
-struct ds_Island *	isdb_InitIslandFromBody(struct ds_RigidBodyPipeline *pipeline, const u32 body);
+struct ds_Island *  isdb_InitIslandFromBody(struct ds_RigidBodyPipeline *pipeline, const u32 body, const u32 set);
 /* Add contact to island */
 void 		isdb_AddContactToIsland(struct ds_RigidBodyPipeline *pipeline, const u32 island, const u32 contact);
 /* Return island that body is assigned to */
@@ -1388,8 +1526,9 @@ struct ds_RigidBodyPipeline
 	struct ds_Pool	    event_pool;
 	struct dll		    event_list;
 
-    struct ds_CGraph   cgraph;
+    struct ds_CGraph    cgraph;
 
+    struct ds_SolverSetPool solver_set_pool;    /* index 0,1,2 reserved for DISABLED,STATIC,ACTIVE sets */
 
 	struct cdb *	    cdb;
 	struct isdb 	    is_db;
