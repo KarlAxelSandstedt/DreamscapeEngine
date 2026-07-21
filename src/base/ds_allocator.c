@@ -94,8 +94,12 @@ void ds_SmallRealloc(void **addr, const u64 old_size, const u64 new_size)
 			LogString(T_SYSTEM, S_FATAL, "Failed to reallocate in ds_SmallRealloc, exiting.");
 			FatalCleanupAndExit();
         }
-        memcpy(new_addr, *addr, old_size);
-        ds_SmallFree(*addr);
+
+        if (old_size)
+        {
+            memcpy(new_addr, *addr, old_size);
+            ds_SmallFree(*addr);
+        }
         *addr = new_addr;
     }
 }

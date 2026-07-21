@@ -317,6 +317,10 @@ do                                                                              
 {                                                                                       \
 	ds_Assert(!(__growable) || !(mem));                                                 \
     memset(&(pool), 0, sizeof(pool));                                                   \
+    if (__length == 0)                                                                  \
+    {                                                                                   \
+        break;                                                                          \
+    }                                                                                   \
                                                                                         \
 	void *__buf = NULL;                                                                 \
     const u64 __size = sizeof((pool).buf[0])*(__length+1);                              \
@@ -370,9 +374,11 @@ static inline struct slot ds_CPoolPushInternal(void **buf, u32 *count, u32 *leng
             return (struct slot) { .index = U32_MAX, .address = (u8*)(*buf) - slot_size }; 
         } 
                                                                                         
-        const u64 new_length = (*length) << 1;
+        const u64 new_length = (*length)
+                             ? (*length) << 1
+                             : 2;
         const u64 new_size = new_length * slot_size;
-        *buf -= slot_size;
+        *buf = (u8 *)(*buf) - slot_size;
         ds_SmallRealloc(buf, (*length)*slot_size, new_size);    
         PoisonAddress(*buf, new_size);                                
         UnpoisonAddress(*buf, (*count + 1)*slot_size);                

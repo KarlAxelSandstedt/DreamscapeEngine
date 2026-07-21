@@ -176,7 +176,10 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
 	}
 #endif
 
-    for (u32 i = 0; i < pipeline->solver_set_pool.count_max; ++i)
+    ds_SolverSetFlush(pipeline, 0);
+    ds_SolverSetFlush(pipeline, 1);
+    ds_SolverSetFlush(pipeline, 2);
+    for (u32 i = SOLVER_SET_SLEEPING_FIRST; i < pipeline->solver_set_pool.count_max; ++i)
     {
         const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + i;
         if (ds_PoolSlotAllocated(set))
@@ -184,7 +187,6 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
             ds_SolverSetRemove(pipeline, i);
         }
     }
-    ds_SolverSetPoolFlush(&pipeline->solver_set_pool);
 
 	cdb_Flush(pipeline->cdb);
 	isdb_Flush(&pipeline->is_db);

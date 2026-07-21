@@ -56,9 +56,6 @@ void ds_SolverSetRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
 {
     struct ds_SolverSet *set = pipeline->solver_set_pool.buf + index;
     ds_Assert(ds_PoolSlotAllocated(set));
-    ds_Assert(0 == set->contact_pool.count);
-    ds_Assert(0 == set->joint_sim_pool.count);
-    ds_Assert(0 == set->island_pool.count);
 
     if (set->contact_pool.buf)
     {

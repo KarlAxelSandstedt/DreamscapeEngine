@@ -45,6 +45,7 @@ static struct slot isdb_IslandEmpty(struct ds_RigidBodyPipeline *pipeline, const
     struct ds_SolverSet *s = pipeline->solver_set_pool.buf + set;
     is->set = set;
     is->set_island_index = ds_CPoolPush(s->island_pool).index;
+    s->island_pool.buf[ is->set_island_index ] = slot.index;
 
 	return slot;
 }
@@ -332,7 +333,13 @@ void isdb_IslandRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Island *
     {
         struct ds_SolverSet *set = pipeline->solver_set_pool.buf + island->set;
         ds_CPoolRemoveAndSwap(set->island_pool, island->set_island_index);
-        island->set_island_index = ds_CPoolPush(set->island_pool).index;
+        if (island->set_island_index < set->island_pool.count)
+        {
+            const u32 update_index = set->island_pool.buf[ island->set_island_index ];
+            struct ds_Island *island_to_update = ds_PoolAddress(&pipeline->is_db.island_pool, update_index);
+            ds_Assert(island_to_update->set_island_index == set->island_pool.count);
+            island_to_update->set_island_index = island->set_island_index; 
+        }
     }
 	ds_PoolRemove(&pipeline->is_db.island_pool, island_index);
 	PhysicsEventIslandRemoved(pipeline, island_index);
