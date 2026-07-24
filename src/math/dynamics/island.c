@@ -26,6 +26,7 @@ static void isdb_AddBodyToIsland(struct ds_RigidBodyPipeline *pipeline, struct d
 {
 	struct ds_RigidBody *b = ds_PoolAddress(&pipeline->body_pool, body);
 	b->island_index = ds_PoolIndex(&pipeline->is_db.island_pool, is);
+    b->set = is->set;
 	dll_Append(&is->body_list, pipeline->body_pool.buf, body);
 }
 
@@ -40,6 +41,7 @@ static struct slot isdb_IslandEmpty(struct ds_RigidBodyPipeline *pipeline, const
 	struct ds_Island *is = slot.address;
 	is->contact_list = dll_Init(struct ds_Contact);
 	is->body_list = dll2_Init(struct ds_RigidBody);
+    ds_DLLFlush(&is->joint_list);
 	is->flags = g_solver_config->sleep_enabled * (ISLAND_AWAKE | ISLAND_SLEEP_RESET);
 
     struct ds_SolverSet *s = pipeline->solver_set_pool.buf + set;
@@ -232,8 +234,8 @@ void isdb_MergeIslands(struct ds_RigidBodyPipeline *pipeline, const u32 ci, cons
 	const struct ds_RigidBody *body1 = ds_PoolAddress(&pipeline->body_pool, b0);
 	const struct ds_RigidBody *body2 = ds_PoolAddress(&pipeline->body_pool, b1);
 
-	const u32 expand = body1->island_index;
-	const u32 merge = body2->island_index;
+	u32 expand = body1->island_index;
+	u32 merge = body2->island_index;
 
 	//isdb_PrintIsland(stderr, pipeline, expand, "To Expand");
 	//isdb_PrintIsland(stderr, pipeline, merge, "To Merge");
@@ -265,8 +267,14 @@ void isdb_MergeIslands(struct ds_RigidBodyPipeline *pipeline, const u32 ci, cons
 					PhysicsEventIslandAwake(pipeline, expand);	
 				}
 				is_expand->flags = ISLAND_AWAKE | ISLAND_SLEEP_RESET;
+                ds_SolverSetWakeUp(pipeline, is_expand->set);
 			}
 		}
+
+        if (is_expand->set != is_merge->set)
+        {
+            ds_SolverSetMerge(pipeline, is_expand->set, is_merge->set);
+        }
 
 		struct ds_Contact *contact_new = nll_Address(&pipeline->cdb->contact_net, ci);
 		if (is_expand->contact_list.count == 0)
@@ -417,25 +425,56 @@ void isdb_SplitIsland(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeli
 		//isdb_PrintIsland(stderr, pipeline, slot.index, "New Island (without contacts)");
 	}
 
+    struct ds_SolverSet *set = pipeline->solver_set_pool.buf + split_island->set;
 	/* create contact lists of new islands */
-	struct ds_Contact *c;
-	u32 next;
-	for (u32 i = split_island->contact_list.first; i != DLL_NULL; i = next)
-	{
-	    c = nll_Address(&pipeline->cdb->contact_net, i);
-		next = dll_Next(c);
-		if (i >= pipeline->cdb->contact_frame_usage.bit_count || ds_BitSetGet(&pipeline->cdb->contact_frame_usage, i) == 1)
-		{
-			const struct ds_RigidBody *body0 = ds_PoolAddress(&pipeline->body_pool, c->key.body0);
-			const struct ds_RigidBody *body1 = ds_PoolAddress(&pipeline->body_pool, c->key.body1);
-			const u32 island0 = body0->island_index;
-			const u32 island1 = body1->island_index;
-			struct ds_Island *is = (island0 != ISLAND_STATIC)
-				? ds_PoolAddress(&pipeline->is_db.island_pool, island0)
-				: ds_PoolAddress(&pipeline->is_db.island_pool, island1);
-			dll_Append(&is->contact_list, pipeline->cdb->contact_net.pool.buf, i);
-		}
-	}
+    if (split_island->set >= SOLVER_SET_SLEEPING_FIRST)
+    {
+        /* 
+         * We only move contacts if split was sleeping since ACTIVE/DISABLED contacts 
+         * stay in the same set as before 
+         */
+        for (u32 i = 0; i < set->contact_pool.count; ++i)
+        {
+            const u32 ci = set->contact_pool.buf[i];
+	    	if (ci >= pipeline->cdb->contact_frame_usage.bit_count || ds_BitSetGet(&pipeline->cdb->contact_frame_usage, ci) == 1)
+	    	{
+                struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, ci);
+                ds_CGraphContactAdd(pipeline, c);
+
+                const struct ds_RigidBody *body0 = ds_PoolAddress(&pipeline->body_pool, c->key.body0);
+	    	    const struct ds_RigidBody *body1 = ds_PoolAddress(&pipeline->body_pool, c->key.body1);
+	    	    const u32 island0 = body0->island_index;
+	    	    const u32 island1 = body1->island_index;
+	    	    struct ds_Island *is = (island0 != ISLAND_STATIC)
+	    	    	? ds_PoolAddress(&pipeline->is_db.island_pool, island0)
+	    	    	: ds_PoolAddress(&pipeline->is_db.island_pool, island1);
+	    	    dll_Append(&is->contact_list, pipeline->cdb->contact_net.pool.buf, ci);
+            }
+        }
+    }
+    else
+    {
+	    struct ds_Contact *c;
+	    u32 next;
+	    for (u32 i = split_island->contact_list.first; i != DLL_NULL; i = next)
+	    {
+	        c = nll_Address(&pipeline->cdb->contact_net, i);
+	    	next = dll_Next(c);
+	    	if (i >= pipeline->cdb->contact_frame_usage.bit_count || ds_BitSetGet(&pipeline->cdb->contact_frame_usage, i) == 1)
+	    	{
+	    		const struct ds_RigidBody *body0 = ds_PoolAddress(&pipeline->body_pool, c->key.body0);
+	    		const struct ds_RigidBody *body1 = ds_PoolAddress(&pipeline->body_pool, c->key.body1);
+	    		const u32 island0 = body0->island_index;
+	    		const u32 island1 = body1->island_index;
+	    		struct ds_Island *is = (island0 != ISLAND_STATIC)
+	    			? ds_PoolAddress(&pipeline->is_db.island_pool, island0)
+	    			: ds_PoolAddress(&pipeline->is_db.island_pool, island1);
+	    		dll_Append(&is->contact_list, pipeline->cdb->contact_net.pool.buf, i);
+	    	}
+	    }
+    }
+                
+    //TODO issue: joints/bodies in old island, need to update 
 
 	isdb_IslandRemove(pipeline, split_island);
 	ArenaPopRecord(mem_tmp);

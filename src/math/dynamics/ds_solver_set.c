@@ -57,6 +57,8 @@ void ds_SolverSetRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
     struct ds_SolverSet *set = pipeline->solver_set_pool.buf + index;
     ds_Assert(ds_PoolSlotAllocated(set));
 
+    ds_Assert(index < SOLVER_SET_SLEEPING_FIRST || (set->contact_pool.count == 0) || (set->joint_sim_pool.count == 0) || (set->island_pool.count == 1));
+
     if (set->contact_pool.buf)
     {
         ds_CPoolDealloc(set->contact_pool);
@@ -103,24 +105,91 @@ void ds_SolverSetWakeUp(struct ds_RigidBodyPipeline *pipeline, const u32 index)
         return;
     }
 
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     struct ds_SolverSet *set = pipeline->solver_set_pool.buf + index;
     ds_Assert(ds_PoolSlotAllocated(set));
+    ds_Assert(set->island_pool.count == 1);
 
-    //TODO
+    //TODO Wake up island? 
+    
+    for (u32 i = 0; i < set->contact_pool.count; ++i)
+    {
+        const u32 ci = set->contact_pool.buf[i];
+        struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, ci);
+        ds_CGraphContactAdd(pipeline, c);
+    }
+
+    for (u32 i = 0; i < set->island_pool.count; ++i)
+    {
+        const u32 isi = set->island_pool.buf[i];
+        struct ds_Island *island = ds_PoolAddress(&pipeline->is_db.island_pool, isi);
+        island->set = SOLVER_SET_ACTIVE;
+        island->set_island_index = ds_CPoolPush(active->island_pool).index; 
+        active->island_pool.buf[ island->set_island_index ] = isi;
+    }
+
+    ds_SolverSetRemove(pipeline, index);
 }
 
 void ds_SolverSetTrySleep(struct ds_RigidBodyPipeline *pipeline, const u32 island_index)
 {
+    struct ds_CGraph *cg = &pipeline->cgraph;
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     struct ds_Island *island = ds_PoolAddress(&pipeline->is_db.island_pool, island_index);
-    if (island->set != SOLVER_SET_ACTIVE)
+
+    ds_Assert(island->set == SOLVER_SET_ACTIVE);
+    ds_Assert(island->set_island_index < active->island_pool.count);
+
+    ds_CPoolRemoveAndSwap(active->island_pool, island->set_island_index);
+    if (island->set_island_index < active->island_pool.count)
     {
-        return;
+        const u32 moved_index = active->island_pool.buf[ island->set_island_index ];
+        struct ds_Island *moved = ds_PoolAddress(&pipeline->is_db.island_pool, moved_index);
+        ds_Assert(moved->set == SOLVER_SET_ACTIVE);
+        ds_Assert(moved->set_island_index == active->island_pool.count);
+        moved->set_island_index = island->set_island_index;
     }
 
-    struct ds_SolverSet *set = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
-    ds_Assert(island->set_island_index < set->island_pool.count);
+    struct slot slot = ds_SolverSetAdd(pipeline, island->contact_list.count, island->joint_list.count, 1);
+    struct ds_SolverSet *set = slot.address;
+    island->set = slot.index;
+    island->set_island_index = 0;
+    ds_CPoolPushValue(set->island_pool, island_index);
 
-    //TODO try sleep bla bla bla
+    struct ds_Joint *joint = pipeline->joint_pool.buf + island->joint_list.first;
+    for (u32 i = 0; i < island->joint_list.count; ++i)
+    {
+        ds_Assert(joint->island == island_index);
+        ds_Assert(joint->set == SOLVER_SET_NULL);
+        struct ds_CGraphColor *color = cg->color + joint->color;
+
+        slot = ds_CPoolPush(set->joint_sim_pool);
+        memcpy(slot.address, color->joint_sim_pool.buf + joint->sim, sizeof(struct ds_JointSim));
+        ds_CGraphJointRemove(pipeline, joint);
+
+        joint->set = island->set;
+        joint->sim = slot.index;
+        struct ds_Joint *joint = pipeline->joint_pool.buf + joint->island_list_node.next;
+    }
+
+    u32 next = island->contact_list.first;
+    for (u32 i = 0; i < island->contact_list.count; ++i)
+    {
+        struct ds_Contact *contact = nll_Address(&pipeline->cdb->contact_net, next);
+     
+        ds_Assert(contact->set == SOLVER_SET_NULL);
+        next = contact->dll_next;
+        //TODO: do we need this link?
+        //ds_Assert(contact->island == island_index);
+        struct ds_CGraphColor *color = cg->color + contact->color;
+
+        slot = ds_CPoolPush(set->contact_pool);
+        set->contact_pool.buf[ slot.index ] = nll_Index(&pipeline->cdb->contact_net, contact);
+        ds_CGraphContactRemove(pipeline, contact);
+
+        contact->set = island->set;
+        contact->set_contact_index = slot.index;
+    }
 }
 
 void ds_SolverSetMerge(struct ds_RigidBodyPipeline *pipeline, const u32 set_expand, const u32 set_merge)
@@ -132,7 +201,58 @@ void ds_SolverSetMerge(struct ds_RigidBodyPipeline *pipeline, const u32 set_expa
     ds_Assert(ds_PoolSlotAllocated(expand));
     ds_Assert(ds_PoolSlotAllocated(merge));
 
-    //TODO  merge bla bla
+    for (u32 i = 0; i < merge->island_pool.count; ++i)
+    {
+        const u32 isi = merge->island_pool.buf[i];
+        struct ds_Island *is = ds_PoolAddress(&pipeline->is_db.island_pool, isi);
+        ds_Assert(is->set == set_merge);
+
+        is->set = set_expand;
+        is->set_island_index = ds_CPoolPush(expand->island_pool).index;
+        expand->island_pool.buf[ is->set_island_index ] = isi;
+    }
+
+    if (set_expand == SOLVER_SET_ACTIVE)
+    {
+        for (u32 i = 0; i < merge->contact_pool.count; ++i)
+        {
+            const u32 ci = merge->contact_pool.buf[i];
+            struct ds_Contact *contact = nll_Address(&pipeline->cdb->contact_net, ci);
+            ds_CGraphContactAdd(pipeline, contact);
+        }
+
+        for (u32 i = 0; i < merge->joint_sim_pool.count; ++i)
+        {
+            struct ds_JointSim *old_sim = merge->joint_sim_pool.buf + i;
+            struct ds_Joint *joint = pipeline->joint_pool.buf + old_sim->joint;
+            struct ds_JointSim *new_sim = ds_CGraphJointAdd(pipeline, joint);
+            memcpy(new_sim, old_sim, sizeof(struct ds_JointSim));
+        }
+    }
+    else
+    {
+        for (u32 i = 0; i < merge->contact_pool.count; ++i)
+        {
+            const u32 ci = merge->contact_pool.buf[i];
+            struct ds_Contact *contact = nll_Address(&pipeline->cdb->contact_net, ci);
+            contact->set_contact_index = ds_CPoolPush(expand->contact_pool).index;
+            contact->set = set_expand;
+            expand->contact_pool.buf[ contact->set_contact_index ] = ci;
+        }
+
+        for (u32 i = 0; i < merge->joint_sim_pool.count; ++i)
+        {
+            struct ds_JointSim *old_sim = merge->joint_sim_pool.buf + i;
+            struct ds_Joint *joint = pipeline->joint_pool.buf + old_sim->joint;
+            const struct slot slot = ds_CPoolPush(expand->joint_sim_pool);
+            struct ds_JointSim *new_sim = slot.address;
+            joint->sim = slot.index;
+            joint->set = set_expand;
+            memcpy(new_sim, old_sim, sizeof(struct ds_JointSim));
+        }
+    } 
+
+    ds_SolverSetRemove(pipeline, set_merge);
 }
 
 void ds_SolverSetValidate(const struct ds_RigidBodyPipeline *pipeline, const u32 set_index)
@@ -154,10 +274,17 @@ void ds_SolverSetValidate(const struct ds_RigidBodyPipeline *pipeline, const u32
         ds_Assert(joint->sim == i);
     }
 
-    for (u32 i = 0; i < set->contact_pool.count; ++i)
+    if (set_index == SOLVER_SET_ACTIVE)
     {
-        const struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, set->contact_pool.buf[i]);
-        ds_Assert(c->set == set_index);
-        ds_Assert(c->set_contact_index == i);
+        ds_Assert(set->contact_pool.count == 0);
+    }
+    else
+    {
+        for (u32 i = 0; i < set->contact_pool.count; ++i)
+        {
+            const struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, set->contact_pool.buf[i]);
+            ds_Assert(c->set == set_index);
+            ds_Assert(c->set_contact_index == i);
+        }
     }
 }

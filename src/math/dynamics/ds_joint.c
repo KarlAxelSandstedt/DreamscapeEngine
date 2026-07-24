@@ -74,7 +74,24 @@ static void ds_JointUnlink(struct ds_RigidBodyPipeline *pipeline, const struct d
 void ds_JointStaticRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 index)
 {
     struct ds_Joint *joint = pipeline->joint_pool.buf + index;
-    ds_CGraphJointRemove(pipeline, joint);
+    if (joint->set == SOLVER_SET_NULL)
+    {
+        ds_CGraphJointRemove(pipeline, joint);
+    }
+    else
+    {
+        ds_Assert(joint->color >= CG_INVALID_COLOR);
+        struct ds_SolverSet *set = pipeline->solver_set_pool.buf + joint->set;
+    
+        ds_CPoolRemoveAndSwap(set->joint_sim_pool, joint->sim);
+        if (joint->sim < set->joint_sim_pool.count)
+        {
+            const struct ds_JointSim *moved_sim = set->joint_sim_pool.buf + joint->sim;
+            struct ds_Joint *moved_joint = pipeline->joint_pool.buf + moved_sim->joint;
+            ds_Assert(moved_joint->sim == set->joint_sim_pool.count);
+            moved_joint->sim = joint->sim;
+        }
+    }
     ds_JointUnlink(pipeline, joint, index);
     ds_JointPoolRemove(&pipeline->joint_pool, index);
 
@@ -83,12 +100,15 @@ void ds_JointStaticRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Rigid
 
 void ds_JointDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 index)
 {
-    struct ds_Joint *joint = pipeline->joint_pool.buf + index;
-    ds_CGraphJointRemove(pipeline, joint);
-    ds_JointUnlink(pipeline, joint, index);
-    ds_JointPoolRemove(&pipeline->joint_pool, index);
+    //TODO for now, it seems like Static and Dynamic remove is the same...
+    ds_JointStaticRemove(pipeline, body, index);
+   
+    //struct ds_Joint *joint = pipeline->joint_pool.buf + index;
+    //ds_CGraphJointRemove(pipeline, joint);
+    //ds_JointUnlink(pipeline, joint, index);
+    //ds_JointPoolRemove(&pipeline->joint_pool, index);
 
-    //TODO signal affected island for wakeup / slip
+    ////TODO signal affected island for wakeup / slip
 }
 
 void ds_JointRemove(struct ds_RigidBodyPipeline *pipeline, const ds_JointId id)

@@ -28,6 +28,7 @@ void ds_CGraphAlloc(struct ds_RigidBodyPipeline *pipeline, const u32 initial_cou
     for (u32 i = 0; i < CG_COLOR_COUNT; ++i)
     {
         ds_CPoolAlloc(NULL, cg->color[i].joint_sim_pool, initial_count, GROWABLE);
+        ds_CPoolAlloc(NULL, cg->color[i].contact_pool, initial_count, GROWABLE);
         if (i != CG_SERIAL_COLOR)
         {
             cg->color[i].body_bitset = ds_BitSetAlloc(NULL, pipeline->body_pool.length, 0, GROWABLE);
@@ -41,6 +42,7 @@ void ds_CGraphDealloc(struct ds_RigidBodyPipeline *pipeline)
     for (u32 i = 0; i < CG_COLOR_COUNT; ++i)
     {
         ds_CPoolDealloc(cg->color[i].joint_sim_pool);
+        ds_CPoolDealloc(cg->color[i].contact_pool);
         if (i != CG_SERIAL_COLOR)
         {
             ds_BitSetDealloc(&cg->color[i].body_bitset);
@@ -54,6 +56,7 @@ void ds_CGraphFlush(struct ds_RigidBodyPipeline *pipeline)
     for (u32 i = 0; i < CG_COLOR_COUNT; ++i)
     {
         ds_CPoolFlush(cg->color[i].joint_sim_pool);
+        ds_CPoolFlush(cg->color[i].contact_pool);
         if (i != CG_SERIAL_COLOR)
         {
             ds_BitSetClear(&cg->color[i].body_bitset, 0);
@@ -76,36 +79,32 @@ void ds_CGraphFramePrepare(struct ds_RigidBodyPipeline *pipeline)
     }
 }
 
-struct ds_JointSim *ds_CGraphJointAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint *joint)
+static u32 ds_CGraphColorNext(struct ds_RigidBodyPipeline *pipeline, const u32 body[2])
 {
+    struct ds_CGraph *cg = &pipeline->cgraph;
+
+    const struct ds_RigidBody *b0 = ds_PoolAddress(&pipeline->body_pool, body[0]);
+    const struct ds_RigidBody *b1 = ds_PoolAddress(&pipeline->body_pool, body[1]);
+
+    const u32 dynamic_bit[2] = { RB_DYNAMIC_BIT(b0), RB_DYNAMIC_BIT(b1) };
+    const u32 dynamic_dynamic = dynamic_bit[0] & dynamic_bit[1];
+    u32 color = CG_SERIAL_COLOR;
+
     /*
      * Since static bodies does not have their orientations updated, we don't care about multiple
      * constraints of such bodies having the same color, hence we skip updating the body_bitset for
      * static bodies. Furthermore, we don't care about the body_bitset for CG_SERIAL_COLOR either.
      */
-
-    struct ds_CGraph *cg = &pipeline->cgraph;
-
-    const struct ds_RigidBody *b0 = ds_PoolAddress(&pipeline->body_pool, joint->body[0]);
-    const struct ds_RigidBody *b1 = ds_PoolAddress(&pipeline->body_pool, joint->body[1]);
-
-    const u32 dynamic_bit[2] = { RB_DYNAMIC_BIT(b0), RB_DYNAMIC_BIT(b1) };
-    const u32 dynamic_dynamic = dynamic_bit[0] & dynamic_bit[1];
-    struct slot slot = empty_slot;
-        
     if (dynamic_dynamic)
     {
         for (u32 i = CG_DYNAMIC_COLOR_FIRST; i <= CG_DYNAMIC_COLOR_LAST; ++i)
         {
-            if (!ds_BitSetGet(&cg->color[i].body_bitset, joint->body[0]) || !ds_BitSetGet(&cg->color[i].body_bitset, joint->body[1]))
+            if (!ds_BitSetGet(&cg->color[i].body_bitset, body[0]) || !ds_BitSetGet(&cg->color[i].body_bitset, body[1]))
             {
                 continue;
             }
 
-            ds_BitSetSet(&cg->color[i].body_bitset, joint->body[0], 1);
-            ds_BitSetSet(&cg->color[i].body_bitset, joint->body[1], 1);
-            slot = ds_CPoolPush(cg->color[i].joint_sim_pool);
-            joint->color = i;
+            color = i;
             break;
         }
     }
@@ -115,31 +114,38 @@ struct ds_JointSim *ds_CGraphJointAdd(struct ds_RigidBodyPipeline *pipeline, str
         const u32 dynamic_body = dynamic_bit[1];
         for (u32 i = CG_STATIC_COLOR_FIRST; i <= CG_STATIC_COLOR_LAST; ++i)
         {
-            if (!ds_BitSetGet(&cg->color[i].body_bitset, joint->body[dynamic_body]))
+            if (!ds_BitSetGet(&cg->color[i].body_bitset, body[dynamic_body]))
             {
                 continue;
             }
 
-            ds_BitSetSet(&cg->color[i].body_bitset, joint->body[dynamic_body], 1);
-            slot = ds_CPoolPush(cg->color[i].joint_sim_pool);
-            joint->color = i;
+            color = i;
             break;
         }
     }
 
-    if (!slot.address)
-    {
-        slot = ds_CPoolPush(cg->color[CG_SERIAL_COLOR].joint_sim_pool);
-        joint->color = CG_SERIAL_COLOR;
-    }
 
+    return color;
+}
+
+struct ds_JointSim *ds_CGraphJointAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint *joint)
+{    
+    joint->color = ds_CGraphColorNext(pipeline, joint->body);
+    struct ds_CGraph *cg = &pipeline->cgraph;
+    struct ds_CGraphColor *color = pipeline->cgraph.color + joint->color;
+    struct slot slot = ds_CPoolPush(cg->color[CG_SERIAL_COLOR].joint_sim_pool);
+
+    joint->set = SOLVER_SET_NULL;
     joint->sim = slot.index;
-    cg->color[joint->color].joint_sim_pool.buf[slot.index].joint = ds_JointPoolIndex(&pipeline->joint_pool, joint);
+    color->joint_sim_pool.buf[slot.index].joint = ds_JointPoolIndex(&pipeline->joint_pool, joint);
     return slot.address;
 }
 
 void ds_CGraphJointRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint *joint)
 {
+    ds_Assert(joint->set == SOLVER_SET_NULL);
+    ds_Assert(joint->color != CG_INVALID_COLOR);
+
     struct ds_CGraph *cg = &pipeline->cgraph;
     struct ds_CGraphColor *color = cg->color + joint->color;
 
@@ -159,4 +165,45 @@ void ds_CGraphJointRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint
 
         moved_joint->sim = joint->sim;
     }
+
+    joint->color = CG_INVALID_COLOR;
+}
+
+void ds_CGraphContactAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact)
+{
+    const u32 body[2] = { contact->key.body0, contact->key.body1 };
+    contact->color = ds_CGraphColorNext(pipeline, body);
+
+    struct ds_CGraphColor *color = pipeline->cgraph.color + contact->color;
+    contact->set = SOLVER_SET_NULL;
+    contact->set_contact_index = ds_CPoolPush(color->contact_pool).index;
+    color->contact_pool.buf[ contact->set_contact_index ] = nll_Index(&pipeline->cdb->contact_net, contact);
+}
+
+void ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact)
+{
+    ds_Assert(contact->set == SOLVER_SET_NULL);
+    ds_Assert(contact->color != CG_INVALID_COLOR);
+
+    struct ds_CGraph *cg = &pipeline->cgraph;
+    struct ds_CGraphColor *color = cg->color + contact->color;
+
+    if (contact->color != CG_SERIAL_COLOR)
+    {
+        ds_BitSetSet(&color->body_bitset, contact->key.body0, 0);
+        ds_BitSetSet(&color->body_bitset, contact->key.body1, 0);
+    }
+
+    ds_CPoolRemoveAndSwap(color->contact_pool, contact->set_contact_index);
+    if (contact->set_contact_index < color->contact_pool.count)
+    {
+        const u32 moved_index = color->contact_pool.buf[ contact->set_contact_index ];
+        struct ds_Contact *moved_contact = nll_Address(&pipeline->cdb->contact_net, moved_index);
+        ds_Assert(moved_contact->color == contact->color);
+        ds_Assert(moved_contact->set_contact_index == color->contact_pool.count);
+
+        moved_contact->set_contact_index = contact->set_contact_index;
+    }
+        
+    contact->color = CG_INVALID_COLOR;
 }

@@ -262,7 +262,9 @@ static u32 NarrowPhaseSeedJob(struct ds_CollisionJobPhase *phase, struct ds_Narr
         const struct dbvhOverlap *overlap = phase->overlap + job->low + i;
         struct ds_Shape *s1 = (struct ds_Shape *) pipeline->shape_pool.buf + overlap->id1;
         struct ds_Shape *s2 = (struct ds_Shape *) pipeline->shape_pool.buf + overlap->id2;
-        if (s1->body == s2->body)
+        struct ds_RigidBody *b1 = (struct ds_RigidBody *) pipeline->body_pool.buf + s1->body; 
+        struct ds_RigidBody *b2 = (struct ds_RigidBody *) pipeline->body_pool.buf + s2->body; 
+        if (s1->body == s2->body || ((!RB_IS_DYNAMIC(b1)) && (!RB_IS_DYNAMIC(b2))) )
         {
             phase->narrowphase_jobs[index].valid = 0;
             continue;
@@ -882,6 +884,7 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
     
 		if (job->asleep)
 		{
+            ds_SolverSetTrySleep(pipeline, job->island);
 			PhysicsEventIslandAsleep(pipeline, job->island);
 		}
 
@@ -924,6 +927,7 @@ void PhysicsPipelineSleepEnable(struct ds_RigidBodyPipeline *pipeline)
 			is = ds_PoolAddress(&pipeline->is_db.island_pool, i);
 			is->flags |= ISLAND_AWAKE | ISLAND_SLEEP_RESET;
 			is->flags &= ~ISLAND_TRY_SLEEP;
+            ds_SolverSetWakeUp(pipeline, is->set);
 		}
 	}
 }
@@ -956,6 +960,7 @@ void PhysicsPipelineSleepDisable(struct ds_RigidBodyPipeline *pipeline)
 			is = ds_PoolAddress(&pipeline->is_db.island_pool, i);
 			is->flags |= ISLAND_AWAKE;
 			is->flags &= ~(ISLAND_SLEEP_RESET | ISLAND_TRY_SLEEP);
+            ds_SolverSetWakeUp(pipeline, is->set);
 		}
 	}
 }

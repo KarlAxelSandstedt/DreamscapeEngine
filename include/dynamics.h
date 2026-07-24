@@ -421,23 +421,28 @@ so any cached contacts are relative to body0.
 */
 struct ds_Contact
 {
-	DLL_SLOT_STATE;		                                /* island->contact_list node            */
-	NLL_SLOT_STATE;		                                /* shape->contact_net node              */
-    u32                     generation;                 /* Slot generation used id ds_ContactId */
-    u32                     set;                        /* Index of contact's set               */
-    u32                     set_contact_index;          /* Index(contact) 
-                                                           == set->contact[ set_contact_index ] */
-    struct ds_ContactKey    key;                        /* canonical-form key                   */
-	struct c_Manifold 	    cm;                         /* Current contact manifold             */
+	DLL_SLOT_STATE;		                                /* island->contact_list node                                */
+	NLL_SLOT_STATE;		                                /* shape->contact_net node                                  */
+    u32                     generation;                 /* Slot generation used id ds_ContactId                     */
 
-	vec3 			        normal_cache;               /* Cached contact normal                */
-	vec3 			        tangent_cache[2];           /* Froms Contact basis with normal      */
-	vec3 			        r1_cache[4];			    /* previous local frame arm levers      */
+    u32                     set;                        /* Index of contact's set                                   */
+    /* TODO rename, real shit */
+    u32                     set_contact_index;          /* If set is NULL, Index(contact) == 
+                                                           graph->color[ c->color ].contact[ set_contact_index ]
+                                                           else Index(contact) == set->contact[ set_contact_index ] */
+    u32                     color;                      /* If valid, determines the contact's CGraph color.         */
+
+    struct ds_ContactKey    key;                        /* canonical-form key                                       */
+	struct c_Manifold 	    cm;                         /* Current contact manifold                                 */
+
+	vec3 			        normal_cache;               /* Cached contact normal                                    */
+	vec3 			        tangent_cache[2];           /* Froms Contact basis with normal                          */
+	vec3 			        r1_cache[4];			    /* previous local frame arm levers                          */
     vec3                    r2_cache[4];                   
 	f32 			        tangent_impulse_cache[4][2];
 	f32 			        normal_impulse_cache[4];	/* contact_solver solution to contact 
-                                                           constraint, or 0.0f                  */
-	u32 			        cached_count;			    /* number of vertices in cache          */
+                                                           constraint, or 0.0f                                      */
+	u32 			        cached_count;			    /* number of vertices in cache                              */
 };
 
 /* Add and return new contact with unique key and update pipeline state */
@@ -539,7 +544,7 @@ typedef u32 sat_FeatureId;
 
 #define sat_FeatureIdType(id)               ((id) >> 30)
 #define sat_FeatureIdIndex(id)              ((id) & SAT_FEATURE_ID_INDEX_MASK)
-#define sat_FeatureIdConstruct(index, type) (((type) << 30) | (SAT_FEATURE_ID_INDEX_MASK & (index)))
+#define sat_FeatureIdConstruct(index, type) ((((u32) type) << 30) | (SAT_FEATURE_ID_INDEX_MASK & (index)))
 
 struct c_TriHullCache;
 
@@ -714,6 +719,9 @@ struct ds_Joint
     POOL_NODE;
     u32         tag;                    /* id tag                                                           */
 
+    u32                 island;
+    struct ds_DLLNode   island_list_node;
+
     u32                 body[2];        /* bodies sharing ownership of joint                                */
     struct ds_DLLNode   edge_node[2];   /* Each body stores the joint its dll; b == body[i] => edge_node[i] 
                                            is part of body b's dll.                                         */
@@ -885,10 +893,11 @@ SOLVER_SET_SLEEPING: TODO
 
 enum ds_SolverSetType
 {
-   SOLVER_SET_DISABLED,
-   SOLVER_SET_STATIC,
-   SOLVER_SET_ACTIVE,
-   SOLVER_SET_SLEEPING_FIRST
+    SOLVER_SET_DISABLED,
+    SOLVER_SET_STATIC,
+    SOLVER_SET_ACTIVE,
+    SOLVER_SET_SLEEPING_FIRST,
+    SOLVER_SET_NULL = U32_MAX,
 };
 
 struct ds_SolverSet
@@ -966,9 +975,11 @@ ds_CGraphColor stores the relevant physics data of active constraints, tightly p
 struct ds_CGraphColor
 {
     struct ds_BitSet        body_bitset;
+    ds_CPool(u32)           contact_pool;
     ds_CPool(ds_JointSim)   joint_sim_pool;
 };
 
+#define CG_INVALID_COLOR        CG_COLOR_COUNT
 #define CG_COLOR_COUNT          12
 #define CG_SERIAL_COLOR         0 
 #define CG_STATIC_COLOR_COUNT   4
@@ -992,11 +1003,14 @@ void                    ds_CGraphDealloc(struct ds_RigidBodyPipeline *pipeline);
 void                    ds_CGraphFlush(struct ds_RigidBodyPipeline *pipeline);
 /* Prepare the pipeline's constraint graph for the new frame, allocating and setting up new resources if necessary. */
 void                    ds_CGraphFramePrepare(struct ds_RigidBodyPipeline *pipeline);
-
 /* Allocate and setup a new ds_JointSim */
 struct ds_JointSim *    ds_CGraphJointAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint *joint);
 /* Deallocate a ds_JointSim */
 void                    ds_CGraphJointRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint *joint);
+/* TODO: for now, we only setup link contact <-> graph */
+void                    ds_CGraphContactAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact);
+/* TODO: for now, we only remove link contact <-> graph */
+void                    ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact);
 
 /*
 ds_Island
@@ -1116,8 +1130,9 @@ struct ds_Island
     u32 set;                /* ds_SolverSet index */
     u32 set_island_index;   /* Index(island) == solver_sets[set].island[ island->set_island_index ] */
 
-	struct dll	body_list;
-	struct dll	contact_list;
+	struct dll	    body_list;
+	struct dll	    contact_list;
+    struct ds_DLL   joint_list;
 
 //TODO RMEOVE
 	vec4 color;

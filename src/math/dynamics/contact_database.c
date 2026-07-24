@@ -240,6 +240,8 @@ struct slot ds_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct c_
 	shape0->contact_first = slot.index;
 	shape1->contact_first = slot.index;
 
+    ds_CGraphContactAdd(pipeline, c);
+
 	if (slot.index < pipeline->cdb->contact_frame_usage.bit_count)
 	{
 		ds_BitSetSet(&pipeline->cdb->contact_frame_usage, slot.index, 1);
@@ -259,10 +261,29 @@ void ds_ContactUpdate(struct ds_RigidBodyPipeline *pipeline, const struct slot s
 void ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
 {
 	struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, index);
+
+    if (c->set == SOLVER_SET_NULL)
+    {
+        ds_CGraphContactRemove(pipeline, c);
+    }
+    else
+    {
+        ds_Assert(c->color >= CG_INVALID_COLOR);
+        struct ds_SolverSet *set = pipeline->solver_set_pool.buf + c->set;
+
+        ds_CPoolRemoveAndSwap(set->contact_pool, c->set_contact_index);
+        if (c->set_contact_index < set->contact_pool.count)
+        {
+            const u32 moved_index = set->contact_pool.buf[ c->set_contact_index ];
+            struct ds_Contact *moved = nll_Address(&pipeline->cdb->contact_net, moved_index);
+            ds_Assert(moved->set_contact_index == set->contact_pool.count);
+            moved->set_contact_index = c->set_contact_index;
+        }
+    }
+
 	struct ds_RigidBody *body0, *body1;
     struct ds_Shape *shape0, *shape1;
     ds_ContactKeyAddress(&body0, &shape0, &body1, &shape1, pipeline, &c->key);
-
 	
 	if (shape0->contact_first == index)
 	{
