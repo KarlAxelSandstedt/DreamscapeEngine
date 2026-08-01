@@ -622,7 +622,7 @@ static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
 	ProfZone;
 	for (u32 i = 0; i < pipeline->cdb->contact_new_count; ++i)
 	{
-		struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, pipeline->cdb->contact_new[i]);
+		struct ds_Contact *c = pipeline->cdb->contact_pool.buf + pipeline->cdb->contact_new[i];
 		const struct ds_RigidBody *body0 = ds_PoolAddress(&pipeline->body_pool, c->key.body0);
 		const struct ds_RigidBody *body1 = ds_PoolAddress(&pipeline->body_pool, c->key.body1);
 		const u32 is0 = body0->island_index;
@@ -641,14 +641,14 @@ static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
 			case 0x2:
 			{
 				struct ds_Island *is = ds_PoolAddress(&pipeline->is_db.island_pool, is0);
-				dll_Append(&is->contact_list, pipeline->cdb->contact_net.pool.buf, pipeline->cdb->contact_new[i]);
+				dll_Append(&is->contact_list, pipeline->cdb->contact_pool.buf, pipeline->cdb->contact_new[i]);
 			} break;
 
 			/* static-dynamic */
 			case 0x1:
 			{
 				struct ds_Island *is = ds_PoolAddress(&pipeline->is_db.island_pool, is1);
-				dll_Append(&is->contact_list, pipeline->cdb->contact_net.pool.buf, pipeline->cdb->contact_new[i]);
+				dll_Append(&is->contact_list, pipeline->cdb->contact_pool.buf, pipeline->cdb->contact_new[i]);
 			} break;
 		}
 	}
@@ -661,7 +661,7 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 
     struct cdb *cdb = pipeline->cdb;
 
-	if (cdb->contact_net.pool.count == 0) 
+	if (cdb->contact_pool.count == 0) 
 	{ 
 		ProfZoneEnd;
 		return; 
@@ -680,7 +680,7 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 	    while (ds_BitBlockHasNext(&it))
 	    {
             const u64 ci = ds_BitBlockNext(&it);
-			struct ds_Contact *c = nll_Address(&cdb->contact_net, ci);
+			struct ds_Contact *c = cdb->contact_pool.buf + ci;
 			//fprintf(stderr, " %lu", ci);
 
 			const u32 b0 = c->key.body0;
@@ -709,7 +709,7 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 			}
 
 			ds_Assert(is->contact_list.count > 0);
-			dll_Remove(&is->contact_list, cdb->contact_net.pool.buf, ci);
+			dll_Remove(&is->contact_list, cdb->contact_pool.buf, ci);
 			ds_ContactRemove(pipeline, ci);
 		}
 	}	
@@ -728,11 +728,11 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
         	cdb->contact_persistent_usage.bits[i] = cdb->contact_frame_usage.bits[i];	
         }
 
-        if (cdb->contact_persistent_usage.bit_count < cdb->contact_net.pool.count_max)
+        if (cdb->contact_persistent_usage.bit_count < cdb->contact_pool.count_max)
         {
         	const u64 low_bit = cdb->contact_persistent_usage.bit_count;
-        	const u64 high_bit = cdb->contact_net.pool.count_max;
-        	ds_BitSetIncreaseSize(&cdb->contact_persistent_usage, cdb->contact_net.pool.length, 0);
+        	const u64 high_bit = cdb->contact_pool.count_max;
+        	ds_BitSetIncreaseSize(&cdb->contact_persistent_usage, cdb->contact_pool.length, 0);
         	/* any new contacts that is in the appended region must now be set */
         	for (u64 bit = low_bit; bit < high_bit; ++bit)
         	{
@@ -1087,7 +1087,7 @@ void PhysicsPipelinePrintUsage(const struct ds_RigidBodyPipeline *pipeline)
     fprintf(stderr, "\tshape_bvh nodes:             %u\n", pipeline->shape_bvh.tree.pool.count);
     fprintf(stderr, "\tevents:                      %u\n", pipeline->event_pool.count);
     fprintf(stderr, "\tislands:                     %u\n", pipeline->is_db.island_pool.count);
-    fprintf(stderr, "\tcontacts:                    %u\n", pipeline->cdb->contact_net.pool.count);
+    fprintf(stderr, "\tcontacts:                    %u\n", pipeline->cdb->contact_pool.count);
     fprintf(stderr, "\tsat caches (max):            %u\n", AtomicLoadRlx32(&pipeline->cdb->sat_cache_pool.a_count_max));
     fprintf(stderr, "\tcontact bitvector size:      %lu\n", (long unsigned) pipeline->cdb->contact_persistent_usage.block_count*sizeof(u64));
     fprintf(stderr, "\tsat cache bitvector size:    %lu\n", (long unsigned) pipeline->cdb->sat_cache_persistent_usage.block_count*sizeof(u64));

@@ -177,7 +177,7 @@ void ds_CGraphContactAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Contac
     struct ds_CGraphColor *color = pipeline->cgraph.color + contact->color;
     contact->set = SOLVER_SET_NULL;
     contact->set_contact_index = ds_CPoolPush(color->contact_pool).index;
-    color->contact_pool.buf[ contact->set_contact_index ] = nll_Index(&pipeline->cdb->contact_net, contact);
+    color->contact_pool.buf[ contact->set_contact_index ] = ds_ContactPoolIndex(&pipeline->cdb->contact_pool, contact);
 }
 
 void ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact)
@@ -198,7 +198,7 @@ void ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Con
     if (contact->set_contact_index < color->contact_pool.count)
     {
         const u32 moved_index = color->contact_pool.buf[ contact->set_contact_index ];
-        struct ds_Contact *moved_contact = nll_Address(&pipeline->cdb->contact_net, moved_index);
+        struct ds_Contact *moved_contact = pipeline->cdb->contact_pool.buf + moved_index;
         ds_Assert(moved_contact->color == contact->color);
         ds_Assert(moved_contact->set_contact_index == color->contact_pool.count);
 

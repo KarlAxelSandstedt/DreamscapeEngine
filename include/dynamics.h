@@ -162,7 +162,7 @@ struct ds_Shape
 
     u32             tag;                /* Tag [ Generation(16) | Unused (16) ]             */
 	u32 			body;		        /* ds_RigidBody owner of node 			            */
-	u32			    contact_first;	    /* index to first contact in shape's list (nll)     */
+    struct ds_DLL   contact_list;       /* list of the shape's contacts                     */
 
 	enum c_ShapeType cshape_type;	    /* collisionShape type 				                */
 	u32			    cshape_handle;	    /* handle to referenced collisionShape 		        */
@@ -422,7 +422,7 @@ so any cached contacts are relative to body0.
 struct ds_Contact
 {
 	DLL_SLOT_STATE;		                                /* island->contact_list node                                */
-	NLL_SLOT_STATE;		                                /* shape->contact_net node                                  */
+    POOL_NODE;
     u32                     generation;                 /* Slot generation used id ds_ContactId                     */
 
     u32                     set;                        /* Index of contact's set                                   */
@@ -432,6 +432,7 @@ struct ds_Contact
                                                            else Index(contact) == set->contact[ set_contact_index ] */
     u32                     color;                      /* If valid, determines the contact's CGraph color.         */
 
+    struct ds_DLLNode       shape_contact[2];           /* [i] is part of shape i's contact list                    */
     struct ds_ContactKey    key;                        /* canonical-form key                                       */
 	struct c_Manifold 	    cm;                         /* Current contact manifold                                 */
 
@@ -444,6 +445,7 @@ struct ds_Contact
                                                            constraint, or 0.0f                                      */
 	u32 			        cached_count;			    /* number of vertices in cache                              */
 };
+POOL_DECLARE(ds_Contact);
 
 /* Add and return new contact with unique key and update pipeline state */
 struct slot ds_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct c_Manifold *cm, const struct ds_ContactKey *key);
@@ -657,7 +659,7 @@ struct cdb
 	 *  contact->key.shape1 owns slot 1
 	 *
 	 * i.e. the smaller index owns slot 0 and the larger index owns slot 1.  */
-	struct nll	                contact_net;
+    struct ds_ContactPool       contact_pool;
 	struct ds_HashMap	        contact_map;		
 
 	/* frame-cached separation axis results */

@@ -34,12 +34,12 @@ ds_ShapeId ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_Sh
         shape->tag += DS_ID_TAG_GENERATION_INCREMENT;
         id = ((u64) shape->tag << 32) | slot.index;
 		shape->body = ds_IdIndex(body);
-		shape->contact_first = NLL_NULL;
 		shape->density = prefab->density;
 		shape->restitution = prefab->restitution;
 		shape->friction = prefab->friction;
 		shape->t_local = *t;
 		shape->margin = prefab->margin;
+		ds_DLLFlush(&shape->contact_list);
 
 		const struct c_Shape *cshape = strdb_Address(pipeline->cshape_db, prefab->cshape);
 		const struct slot cshape_slot = strdb_Reference(pipeline->cshape_db, cshape->id);
@@ -67,54 +67,21 @@ void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Rigi
     const ds_ShapeId s0 = ((u64) shape->tag << 32) | shape_index;
     const ds_RigidBodyId b0 = ((u64) body->tag << 32) | shape->body;
 
-	u32 ci = shape->contact_first;
-	shape->contact_first = NLL_NULL;
-
     dll_Remove(&body->shape_list, pipeline->shape_pool.buf, shape_index);
 	strdb_Dereference(pipeline->cshape_db, shape->cshape_handle);
 	DbvhRemove(&pipeline->shape_bvh, shape->proxy);
-	ds_PoolRemove(&pipeline->shape_pool, ds_PoolIndex(&pipeline->shape_pool, shape));
 
-	while (ci != NLL_NULL)
+    while (shape->contact_list.first != DLL_SENTINEL)
 	{
-		struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, ci);
-
-        u32 next_i;
-        ds_RigidBodyId b1; 
-        ds_ShapeId s1; 
-		if (shape_index == c->key.shape0)
-		{
-			next_i = 0;
-            ds_ContactKeyAddress(&dummy_body, &dummy_shape, &body, &shape, pipeline, &c->key);
-            b1 = ((u64) body->tag << 32) | c->key.body1;
-            s1 = ((u64) shape->tag << 32) | c->key.shape1;
-        }
-		else
-		{
-			next_i = 1;
-            ds_ContactKeyAddress(&body, &shape, &dummy_body, &dummy_shape, pipeline, &c->key);
-            b1 = ((u64) body->tag << 32) | c->key.body0;
-            s1 = ((u64) shape->tag << 32) | c->key.shape0;
-		}
-
-		if (shape->contact_first == ci)
-		{
-			shape->contact_first = c->nll_next[1-next_i];
-		}
-		const u32 ci_next = c->nll_next[next_i];
-
-	    PhysicsEventContactRemoved(pipeline, b0, s0, b1, s1);
-        dll_Remove(&island->contact_list, pipeline->cdb->contact_net.pool.buf, ci);
-		ds_BitSetSet(&pipeline->cdb->contact_persistent_usage, ci, 0);
-		ds_HashMapRemove(&pipeline->cdb->contact_map, ds_ContactKeyHash(&c->key), ci);
-		nll_Remove(&pipeline->cdb->contact_net, ci);
-		ci = ci_next;
+        ds_ContactRemove(pipeline, shape->contact_list.first);
     }
 
     if (mass_properties_update)
     {
         ds_RigidBodyUpdateMassProperties(pipeline, b0);
     }
+
+	ds_PoolRemove(&pipeline->shape_pool, ds_PoolIndex(&pipeline->shape_pool, shape));
 }
 
 void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 index, const u32 mass_properties_update)
@@ -126,46 +93,31 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
     const u32 static_is_tri_mesh = shape->cshape_type == C_SHAPE_TRI_MESH;
 
     dll_Remove(&body->shape_list, pipeline->shape_pool.buf, index);
-	u32 ci = shape->contact_first;
-	shape->contact_first = NLL_NULL;
     ds_Assert(((struct ds_RigidBody *) ds_PoolAddress(&pipeline->body_pool, shape->body))->island_index == ISLAND_STATIC);
 
 	strdb_Dereference(pipeline->cshape_db, shape->cshape_handle);
 	DbvhRemove(&pipeline->shape_bvh, shape->proxy);
-	ds_PoolRemove(&pipeline->shape_pool, ds_PoolIndex(&pipeline->shape_pool, shape));
 
 	ArenaPushRecord(&pipeline->frame);
 	struct memArray arr = ArenaPushAlignedAll(&pipeline->frame, sizeof(u32), sizeof(u32));
 	u32 *island = arr.addr;
 	u32 island_count = 0;
-	while (ci != NLL_NULL)
+
+    while (shape->contact_list.first != DLL_SENTINEL)
 	{
-		struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, ci);
-		u32 next_i;
-        u64 b1; 
-        u64 s1; 
+        const u32 ci = shape->contact_list.first;
+		struct ds_Contact *c = pipeline->cdb->contact_pool.buf + ci;
+
 		if (index == c->key.shape0 || (static_is_tri_mesh && INDIRECT_SHAPE_CHECK(c->key.shape0)))
 		{
-			next_i = 0;
             ds_ContactKeyAddress(&dummy_body, &dummy_shape, &body, &shape, pipeline, &c->key);
-            b1 = ((u64) body->tag << 32) | c->key.body1;
-            s1 = ((u64) shape->tag << 32) | c->key.shape1;
 		}
 		else
 		{
-			next_i = 1;
             ds_ContactKeyAddress(&body, &shape, &dummy_body, &dummy_shape, pipeline, &c->key);
-            b1 = ((u64) body->tag << 32) | c->key.body0;
-            s1 = ((u64) shape->tag << 32) | c->key.shape0;
 		}
 
-		if (shape->contact_first == ci)
-		{
-			shape->contact_first = c->nll_next[1-next_i];
-		}
-		const u32 ci_next = c->nll_next[next_i];
 	    const struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, shape->body);
-
         if (body->island_index != ISLAND_STATIC)
         {
 		    struct ds_Island *is = ds_PoolAddress(&pipeline->is_db.island_pool, body->island_index);
@@ -180,15 +132,10 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
 		    	
 		    	is->flags |= ISLAND_SPLIT;
 		    }
-            dll_Remove(&is->contact_list, pipeline->cdb->contact_net.pool.buf, ci);
+            dll_Remove(&is->contact_list, pipeline->cdb->contact_pool.buf, ci);
         }
-
-		PhysicsEventContactRemoved(pipeline, b0, s0, b1, s1);
-		ds_BitSetSet(&pipeline->cdb->contact_persistent_usage, ci, 0);
-		ds_HashMapRemove(&pipeline->cdb->contact_map, ds_ContactKeyHash(&c->key), ci);
-		nll_Remove(&pipeline->cdb->contact_net, ci);
-		ci = ci_next;
-	}
+        ds_ContactRemove(pipeline, ci);
+    }
 
 	for (u32 i = 0; i < island_count; ++i)
 	{
@@ -213,6 +160,8 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
     {
         ds_RigidBodyUpdateMassProperties(pipeline, b0);
     }
+
+	ds_PoolRemove(&pipeline->shape_pool, ds_PoolIndex(&pipeline->shape_pool, shape));
 }
 
 struct slot ds_ShapeLookup(const struct ds_RigidBodyPipeline *pipeline, const ds_ShapeId shape_id)

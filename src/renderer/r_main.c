@@ -26,7 +26,7 @@
 static struct r_Mesh *DebugContactManifoldSegmentsMesh(struct arena *mem, const struct led *led)
 {
     const struct ds_RigidBodyPipeline *pipeline = &led->physics;
-	const u32 cm_count = pipeline->cdb->contact_net.pool.count-1;
+	const u32 cm_count = pipeline->cdb->contact_pool.count-1;
 
 	ArenaPushRecord(mem);
 
@@ -53,8 +53,9 @@ static struct r_Mesh *DebugContactManifoldSegmentsMesh(struct arena *mem, const 
     u32 ci = 1;
 	while (i < cm_count)
 	{
-        const struct ds_Contact *c = ds_PoolAddress(&pipeline->cdb->contact_net.pool, ci++);
-        if (!PoolSlotAllocated(c))
+        const struct ds_Contact *c = pipeline->cdb->contact_pool.buf + ci;
+        ci += 1;
+        if (!ds_PoolSlotAllocated(c))
         {
             continue;
         }
@@ -112,7 +113,7 @@ end:
 static struct r_Mesh *DebugContactManifoldTrianglesMesh(struct arena *mem, const struct led *led)
 {
     const struct ds_RigidBodyPipeline *pipeline = &led->physics;
-	const u32 cm_count = pipeline->cdb->contact_net.pool.count-1;
+	const u32 cm_count = pipeline->cdb->contact_pool.count-1;
 
 	ArenaPushRecord(mem);
 
@@ -143,8 +144,9 @@ static struct r_Mesh *DebugContactManifoldTrianglesMesh(struct arena *mem, const
     u32 ci = 1;
 	while (i < cm_count)
 	{
-        const struct ds_Contact *c = ds_PoolAddress(&pipeline->cdb->contact_net.pool, ci++);
-        if (!PoolSlotAllocated(c))
+        const struct ds_Contact *c = pipeline->cdb->contact_pool.buf + ci;
+        ci += 1;
+        if (!ds_PoolSlotAllocated(c))
         {
             continue;
         }

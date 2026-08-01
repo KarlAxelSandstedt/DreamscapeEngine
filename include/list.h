@@ -112,71 +112,7 @@ void			dll_Remove(struct dll *dll, void *array, const u32 index);
 /* set slot state to indicate it is not in some list; WARNING: must not be in list!  */
 void			dll_SlotSetNotInList(struct dll *dll, void *slot);
 
-/*
-nll
-=== 
-net_list : A set of intertwined lists. Each node represents a node in two lists, and adding or removing a net_node
-affects two lists simultaneously. It is up to the user of the data structure to construct identifying data in their
-own structures to identify who/what owns what parts of the node, i.e. which list owns prev_0, next_0 and
-which list owns prev_1, next_1.
-*/
 
-#define NLL_NULL			0
-
-#define NLL_SLOT_STATE			u32	nll_next[2];		\
-					u32	nll_prev[2];		\
-					POOL_SLOT_STATE
-
-//#define NLL_PREV(structure_addr)	((structure_addr)->dll_prev)
-//#define NLL_NEXT(structure_addr)	((structure_addr)->dll_next)
-//#define NLL_IN_LIST(structure_addr)	((structure_addr)->dll_next != DLL_NOT_IN_LIST)
-
-struct nll
-{
-	struct ds_Pool	pool;
-
-	/* user provided identifier methods: 
-	 *
-	 * 	cur_index: the index used for the owner of prev[cur_index], next[cur_index]
-	 * 	cur_node: [cur_node, cur_index], the node in a specific list we are inspecting
-	 * 	prev/next_node: the node in which we wish to identify index owned by the owner of [cur_node, cur_index]
-	 * 	returns the index owned by [cur_node, cur_index] in the prev/next index
-	 *
-	 * When removing a node in the middle of two lists, we must know how to identify the indices of the two
-	 * corresponding lists within the prev/next nodes
-	 */
-	u32	(*index_in_prev_node)(struct nll *net, void **prev_node, const void *cur_node, const u32 cur_index);
-	u32	(*index_in_next_node)(struct nll *net, void **next_node, const void *cur_node, const u32 cur_index);
-
-	u32	heap_allocated;
-	u64	next_offset;
-	u64	prev_offset;
-};
-
-/* allocate net_list memory. If mem != NULL, the list cannot be growable. If mem == NULL, heap allocation is made */
-struct nll 	nll_AllocInternal(struct arena *mem, 
-				const u32 initial_length, 
-				const u64 data_size, 
-				const u64 pool_slot_offset, 
-				const u64 next_offset, 
-				const u64 prev_offset, 
-				u32 (*index_in_prev_node)(struct nll *, void **, const void *, const u32),
-	       			u32 (*index_in_next_node)(struct nll *, void **, const void *, const u32),
-				const u32 growable);
-#define 	nll_Alloc(mem, initial_length, STRUCT, index_in_prev_node, index_in_next_node, growable)  nll_AllocInternal(mem, initial_length, sizeof(STRUCT), (u64) &((STRUCT *)0)->slot_allocation_state, (u64) &((STRUCT *)0)->nll_next, (u64) &((STRUCT *)0)->nll_prev, index_in_prev_node, index_in_next_node, growable)
-/* free allocated resources */
-void		nll_Dealloc(struct nll *net);
-/* flush / reset net_list  */
-void 		nll_Flush(struct nll *net);
-/* reserve a memory node and return the memory index and set the node's links. next_0 and next_1 MUST always be 
- * the first nodes, or static node references, of the two corresponding lists owning the node */
-struct slot	nll_Add(struct nll *net, void *data, const u32 next_0, const u32 next_1);
-/* free a memory node, updating both lists it is a part of */
-void 		nll_Remove(struct nll *net, const u32 index);
-/* get the node address given its index */
-void *		nll_Address(const struct nll *net, const u32 index);
-/* get the node index given its address  */
-u32		nll_Index(const struct nll *net, const void *address);
 
 /*
 ds_DLL
