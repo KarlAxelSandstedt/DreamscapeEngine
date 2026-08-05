@@ -47,10 +47,10 @@ void ds_ContactKeyAddress(struct ds_RigidBody **b0, struct ds_Shape **s0, struct
     *b1 = (struct ds_RigidBody *) pipeline->body_pool.buf + key->body1;
     
     const u32 si0 = INDIRECT_SHAPE_CHECK(key->shape0)
-        ? (*b0)->shape_list.first
+        ? (u32) (*b0)->shape_list.first
         : key->shape0;
     const u32 si1 = INDIRECT_SHAPE_CHECK(key->shape1)
-        ? (*b1)->shape_list.first
+        ? (u32) (*b1)->shape_list.first
         : key->shape1;
     
     *s0 = (struct ds_Shape *) pipeline->shape_pool.buf + si0;

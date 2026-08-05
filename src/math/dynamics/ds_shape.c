@@ -19,15 +19,17 @@
 
 #include "dynamics.h"
 
+POOL_DEFINE(ds_Shape);
+
 ds_ShapeId ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_ShapePrefab *prefab, const ds_Transform *t, const ds_RigidBodyId body)
 {
     ds_ShapeId id = DS_ID_NULL;
-    struct slot slot = ds_PoolAdd(&pipeline->shape_pool);
+    struct slot slot = ds_ShapePoolAdd(&pipeline->shape_pool);
 	if (slot.address)
 	{
 		struct ds_RigidBody *body_ptr = ds_PoolAddress(&pipeline->body_pool, body);
 		ds_Assert(PoolSlotAllocated(body_ptr));
-		dll_Append(&body_ptr->shape_list, pipeline->shape_pool.buf, slot.index);
+		ds_DLLAppend(body_ptr->shape_list, pipeline->shape_pool.buf, slot.index, body_shape);
 
 		struct ds_Shape *shape = slot.address;
 
@@ -62,12 +64,12 @@ ds_ShapeId ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_Sh
 void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 shape_index, const u32 mass_properties_update)
 {
 	struct ds_Island *island = ds_PoolAddress(&pipeline->is_db.island_pool, body->island_index);
-    struct ds_Shape *dummy_shape, *shape = ds_PoolAddress(&pipeline->shape_pool, shape_index);
+    struct ds_Shape *dummy_shape, *shape = pipeline->shape_pool.buf + shape_index;
     struct ds_RigidBody *dummy_body;
     const ds_ShapeId s0 = ((u64) shape->tag << 32) | shape_index;
     const ds_RigidBodyId b0 = ((u64) body->tag << 32) | shape->body;
 
-    dll_Remove(&body->shape_list, pipeline->shape_pool.buf, shape_index);
+    ds_DLLRemove(body->shape_list, pipeline->shape_pool.buf, shape_index, body_shape);
 	strdb_Dereference(pipeline->cshape_db, shape->cshape_handle);
 	DbvhRemove(&pipeline->shape_bvh, shape->proxy);
 
@@ -81,12 +83,12 @@ void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Rigi
         ds_RigidBodyUpdateMassProperties(pipeline, b0);
     }
 
-	ds_PoolRemove(&pipeline->shape_pool, ds_PoolIndex(&pipeline->shape_pool, shape));
+	ds_ShapePoolRemove(&pipeline->shape_pool, shape_index);
 }
 
 void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 index, const u32 mass_properties_update)
 {
-	struct ds_Shape *dynamic_shape, *shape = ds_PoolAddress(&pipeline->shape_pool, index);
+	struct ds_Shape *dynamic_shape, *shape = pipeline->shape_pool.buf + index;
     struct ds_RigidBody *dynamic_body;
     const u64 s0 = ((u64) shape->tag << 32) | index;
     const u64 b0 = ((u64) body->tag << 32) | shape->body;
@@ -153,17 +155,17 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
         ds_RigidBodyUpdateMassProperties(pipeline, b0);
     }
 
-    dll_Remove(&body->shape_list, pipeline->shape_pool.buf, index);
+    ds_DLLRemove(body->shape_list, pipeline->shape_pool.buf, index, body_shape);
 	strdb_Dereference(pipeline->cshape_db, shape->cshape_handle);
 	DbvhRemove(&pipeline->shape_bvh, shape->proxy);
-	ds_PoolRemove(&pipeline->shape_pool, index);
+	ds_ShapePoolRemove(&pipeline->shape_pool, index);
 }
 
 struct slot ds_ShapeLookup(const struct ds_RigidBodyPipeline *pipeline, const ds_ShapeId shape_id)
 {
     struct slot slot = { .address = NULL, .index = 0 };
-    struct ds_Shape *shape = ds_PoolAddress(&pipeline->shape_pool, ds_IdIndex(shape_id));
-    if (shape_id != DS_ID_NULL && PoolSlotAllocated(shape) && shape->tag == ds_IdTag(shape_id))
+    struct ds_Shape *shape = pipeline->shape_pool.buf + ds_IdIndex(shape_id);
+    if (shape_id != DS_ID_NULL && ds_PoolSlotAllocated(shape) && shape->tag == ds_IdTag(shape_id))
     {
         slot.address = shape;
         slot.index = ds_IdIndex(shape_id);

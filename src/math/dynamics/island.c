@@ -179,10 +179,10 @@ void isdb_Validate(const struct ds_RigidBodyPipeline *pipeline)
 			body = ds_PoolAddress(&pipeline->body_pool, is->body_list.first);
 			ds_Assert(PoolSlotAllocated(body));
             const struct ds_Shape *shape = NULL;
-            for (u32 s = body->shape_list.first; s != DLL_NULL; s = shape->dll_next)
+            for (u32 s = body->shape_list.first; (i32) s != DLL_SENTINEL; s = shape->body_shape.next)
             {
-                shape = ds_PoolAddress(&pipeline->shape_pool, s);
-                ds_Assert(PoolSlotAllocated(shape) && shape->contact_list.first == DLL_SENTINEL);
+                shape = pipeline->shape_pool.buf + s;
+                ds_Assert(ds_PoolSlotAllocated(shape) && shape->contact_list.first == DLL_SENTINEL);
             }
 		}
 		else
@@ -404,9 +404,9 @@ void isdb_SplitIsland(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeli
             const u32 bi_cur = body_stack[sc];
 			struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, bi_cur);
             struct ds_Shape *shape = NULL;
-            for (u32 si = body->shape_list.first; si != DLL_NULL; si = shape->dll_next)
+            for (u32 si = body->shape_list.first; (i32) si != DLL_SENTINEL; si = shape->body_shape.next)
             {
-                shape = ds_PoolAddress(&pipeline->shape_pool, si);
+                shape = pipeline->shape_pool.buf + si;
             	u32 ci = shape->contact_list.first;
                 for (u32 co = 0; co < shape->contact_list.count; ++co)
                 {

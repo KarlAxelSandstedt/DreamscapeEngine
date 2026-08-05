@@ -157,8 +157,8 @@ transform, ds_RigidBody must also store its center of mass:
 
 struct ds_Shape
 {
-	POOL_SLOT_STATE;
-	DLL_SLOT_STATE;				        /* Node links in ds_RigidBody shape_list 	local   */
+	POOL_NODE;
+    struct ds_DLLNode body_shape;
 
     u32             tag;                /* Tag [ Generation(16) | Unused (16) ]             */
 	u32 			body;		        /* ds_RigidBody owner of node 			            */
@@ -178,6 +178,7 @@ struct ds_Shape
 	/* DYNAMIC STATE */
 	u32			    proxy;		        /* BVH index 					                    */
 };
+POOL_DECLARE(ds_Shape);
 
 /*
 ds_ShapePrefab  
@@ -323,7 +324,7 @@ struct ds_RigidBody
     struct ds_DLL   joint_list;             /* list of ds_Joint's attached to the body. Each joint is
                                                shared with one other body. */
 
-	struct dll      shape_list;		        /* list of convex shapes constructing the rigid body 	*/
+	struct ds_DLL   shape_list;		        /* list of convex shapes constructing the rigid body 	*/
 	ds_Transform    t_world;		        /* local body frame to world transform. Rotation is 
                                                about the local origin (not center of mass!)         */
 	vec3		    local_center_of_mass;	/* local body frame center of mass 			            */
@@ -1536,7 +1537,7 @@ struct ds_RigidBodyPipeline
     struct ds_BitSet    body_usage_set;         /* Bodies in use */
     struct ds_BitSet    body_removal_set;       /* Bodies marked for removal */
 
-	struct ds_Pool	    shape_pool;
+	struct ds_ShapePool	shape_pool;
 	struct bvh 		    shape_bvh;              /* dynamic bvh of shapes */
 
     struct ds_JointPool joint_pool;

@@ -35,7 +35,7 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const stru
     ds_BitSetSet(&pipeline->body_usage_set, slot.index, 1);
 
     ds_DLLFlush(&body->joint_list);
-	body->shape_list = dll_Init(struct ds_Shape);
+    ds_DLLFlush(&body->shape_list);
     body->t_world = *t_world;
 
 	body->entity = entity;
@@ -167,8 +167,8 @@ void ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, con
 	u32 s = body->shape_list.first;
 	for (u32 i = 0; i < body->shape_list.count; ++i)
 	{
-		shape = ds_PoolAddress(&pipeline->shape_pool, s);
-		s = shape->dll_next;
+		shape = pipeline->shape_pool.buf + s;
+		s = shape->body_shape.next;
 		const struct c_Shape *cshape = strdb_Address(pipeline->cshape_db, shape->cshape_handle);
 
 		mass[i] = shape->density * cshape->volume;

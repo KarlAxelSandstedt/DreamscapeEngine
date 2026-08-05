@@ -75,7 +75,7 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 
     pipeline.joint_pool = ds_JointPoolAlloc(NULL, initial_size, GROWABLE);
 
-	pipeline.shape_pool = ds_PoolAlloc(NULL, initial_size, struct ds_Shape, GROWABLE);
+	pipeline.shape_pool = ds_ShapePoolAlloc(NULL, initial_size, GROWABLE);
 	pipeline.shape_bvh = DbvhAlloc(NULL, 2*initial_size, GROWABLE);
 
 	pipeline.event_pool = ds_PoolAlloc(NULL, 256, struct physicsEvent, GROWABLE);
@@ -134,7 +134,7 @@ void PhysicsPipelineFree(struct ds_RigidBodyPipeline *pipeline)
 	isdb_Dealloc(&pipeline->is_db);
 	ds_PoolDealloc(&pipeline->body_pool);
 	ds_PoolDealloc(&pipeline->event_pool);
-	ds_PoolDealloc(&pipeline->shape_pool);
+	ds_ShapePoolDealloc(&pipeline->shape_pool);
     ds_JointPoolDealloc(&pipeline->joint_pool);
     ds_CGraphDealloc(pipeline);
     ds_BitSetDealloc(&pipeline->body_usage_set);
@@ -196,7 +196,7 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
     ds_BitSetClear(&pipeline->body_removal_set, 0);
 
 	DbvhFlush(&pipeline->shape_bvh);
-	ds_PoolFlush(&pipeline->shape_pool);
+	ds_ShapePoolFlush(&pipeline->shape_pool);
 
 	ds_PoolFlush(&pipeline->event_pool);
 	dll_Flush(&pipeline->event_list);
@@ -260,8 +260,8 @@ static u32 NarrowPhaseSeedJob(struct ds_CollisionJobPhase *phase, struct ds_Narr
     {
         const u32 index = base + i;
         const struct dbvhOverlap *overlap = phase->overlap + job->low + i;
-        struct ds_Shape *s1 = (struct ds_Shape *) pipeline->shape_pool.buf + overlap->id1;
-        struct ds_Shape *s2 = (struct ds_Shape *) pipeline->shape_pool.buf + overlap->id2;
+        struct ds_Shape *s1 = pipeline->shape_pool.buf + overlap->id1;
+        struct ds_Shape *s2 = pipeline->shape_pool.buf + overlap->id2;
         struct ds_RigidBody *b1 = (struct ds_RigidBody *) pipeline->body_pool.buf + s1->body; 
         struct ds_RigidBody *b2 = (struct ds_RigidBody *) pipeline->body_pool.buf + s2->body; 
         if (s1->body == s2->body || ((!RB_IS_DYNAMIC(b1)) && (!RB_IS_DYNAMIC(b2))) )
@@ -293,8 +293,8 @@ static u32 NarrowPhaseJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPh
 
     const struct ds_RigidBody *b0 = (struct ds_RigidBody *) pipeline->body_pool.buf + job->key_in.body0;
     const struct ds_RigidBody *b1 = (struct ds_RigidBody *) pipeline->body_pool.buf + job->key_in.body1;
-    const struct ds_Shape *s0 = (struct ds_Shape *) pipeline->shape_pool.buf + job->key_in.shape0;
-    const struct ds_Shape *s1 = (struct ds_Shape *) pipeline->shape_pool.buf + job->key_in.shape1;
+    const struct ds_Shape *s0 = pipeline->shape_pool.buf + job->key_in.shape0;
+    const struct ds_Shape *s1 = pipeline->shape_pool.buf + job->key_in.shape1;
 
     
     ds_Assert(s0->body != s1->body);
@@ -440,9 +440,9 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
     		    if ((body->flags & flags) == flags)
     		    {
                     struct ds_Shape *shape = NULL;
-                    for (u32 j = body->shape_list.first; j != DLL_NULL; j = shape->dll_next)
+                    for (u32 j = body->shape_list.first; (i32) j != DLL_SENTINEL; j = shape->body_shape.next)
                     {
-                        shape = ds_PoolAddress(&pipeline->shape_pool, j);
+                        shape = pipeline->shape_pool.buf + j;
                         struct aabb bbox = ds_ShapeWorldBbox(pipeline, shape);
                         const struct bvhNode *node = ds_PoolAddress(&pipeline->shape_bvh.tree.pool, shape->proxy);
     		    	    const struct aabb *proxy = &node->bbox;
@@ -1052,7 +1052,7 @@ u32f32 PhysicsPipelineRaycastParameter(struct arena *mem_tmp1, struct arena *mem
 		if (bt_LeafCheck(info.node + tuple.u))
 		{
 			const u32 si = info.node[tuple.u].bt_left;
-			const struct ds_Shape *shape = (struct ds_Shape *) pipeline->shape_pool.buf + si;
+			const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
 			const f32 t = ds_ShapeRaycastParameter(pipeline, shape, ray);
 			if (t < info.hit.f)
 			{
