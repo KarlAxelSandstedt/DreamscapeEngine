@@ -642,6 +642,7 @@ static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
 			{
 				struct ds_Island *is = ds_PoolAddress(&pipeline->is_db.island_pool, is0);
 				dll_Append(&is->contact_list, pipeline->cdb->contact_pool.buf, pipeline->cdb->contact_new[i]);
+                c->island = is0;
 			} break;
 
 			/* static-dynamic */
@@ -649,6 +650,7 @@ static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
 			{
 				struct ds_Island *is = ds_PoolAddress(&pipeline->is_db.island_pool, is1);
 				dll_Append(&is->contact_list, pipeline->cdb->contact_pool.buf, pipeline->cdb->contact_new[i]);
+                c->island = is1;
 			} break;
 		}
 	}
@@ -708,8 +710,6 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 				is = isdb_BodyToIsland(pipeline, b1);
 			}
 
-			ds_Assert(is->contact_list.count > 0);
-			dll_Remove(&is->contact_list, cdb->contact_pool.buf, ci);
 			ds_ContactRemove(pipeline, ci);
 		}
 	}	

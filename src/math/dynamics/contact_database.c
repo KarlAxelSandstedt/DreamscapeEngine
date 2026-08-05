@@ -116,20 +116,20 @@ void cdb_Validate(const struct ds_RigidBodyPipeline *pipeline)
             struct ds_Shape *s0, *s1;
             ds_ContactKeyAddress(&b0, &s0, &b1, &s1, pipeline, &c->key);
 
-			u32 prev, k, found; 
-			prev = NLL_NULL;
+			i32 prev, k, found; 
+			prev = DLL_SENTINEL;
 			k = s0->contact_list.first;
 			found = 0;
-			while (k != NLL_NULL)
+			while (k != DLL_SENTINEL)
 			{
-				if (k == i)
+				if (k == (i32) i)
 				{
 					found = 1;
 					break;
 				}
 
 				const struct ds_Contact *tmp = pipeline->cdb->contact_pool.buf + k;
-				ds_Assert(PoolSlotAllocated(tmp));
+				ds_Assert(ds_PoolSlotAllocated(tmp));
 				if ((INDIRECT_SHAPE_CHECK(c->key.shape0) && INDIRECT_SHAPE_CHECK(tmp->key.shape0)) || tmp->key.shape0 == c->key.shape0)
 				{
 					ds_Assert(prev == tmp->shape_contact[0].prev);
@@ -146,19 +146,19 @@ void cdb_Validate(const struct ds_RigidBodyPipeline *pipeline)
 			}
 			ds_Assert(found);
  
-			prev = NLL_NULL;
+			prev = DLL_SENTINEL;
 			k = s1->contact_list.first;
 			found = 0;
-			while (k != NLL_NULL)
+			while (k != DLL_SENTINEL)
 			{
-				if (k == i)
+				if (k == (i32) i)
 				{
 					found = 1;
 					break;
 				}
 
 				const struct ds_Contact *tmp = pipeline->cdb->contact_pool.buf + k;
-				ds_Assert(PoolSlotAllocated(tmp));
+				ds_Assert(ds_PoolSlotAllocated(tmp));
 				if (tmp->key.shape0 == c->key.shape1)
 				{
 					ds_Assert(prev == tmp->shape_contact[0].prev);
@@ -196,21 +196,26 @@ struct slot ds_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct c_
 {
     ds_Assert(ds_ContactKeyLookup(pipeline, key).address == NULL);
 
+    struct ds_Contact *buf = pipeline->cdb->contact_pool.buf;
     struct ds_RigidBody *body0, *body1;
     struct ds_Shape *shape0, *shape1;
     ds_ContactKeyAddress(&body0, &shape0, &body1, &shape1, pipeline, key);
 
-	struct ds_Contact cpy =
-	{
-		.cm = *cm,
-		.key = *key,
-		.cached_count = 0,
-	};
-	struct slot slot = ds_ContactPoolAdd(&pipeline->contact_pool);
+	struct slot slot = ds_ContactPoolAdd(&pipeline->cdb->contact_pool);
+    struct ds_Contact *c = slot.address;
+    c->cm = *cm;
+    c->key = *key;
+    c->cached_count = 0;
+    c->generation += 1;
+
+    struct ds_Contact *c0 = buf + shape0->contact_list.last; 
+    struct ds_Contact *c1 = buf + shape1->contact_list.last; 
+    const i32 prev0 = (c0->key.shape1 == c->key.shape0);
+    const i32 prev1 = (c1->key.shape1 == c->key.shape1);
+    ds_DLLAppendEx(shape0->contact_list, buf, slot.index, shape_contact[prev0], shape_contact[0]);
+    ds_DLLAppendEx(shape1->contact_list, buf, slot.index, shape_contact[prev1], shape_contact[1]);
 
 	ds_HashMapAdd(&pipeline->cdb->contact_map, ds_ContactKeyHash(key), slot.index);
-    struct ds_Contact *c = slot.address;
-    c->generation += 1;
     const ds_ContactId id = ((u64) c->generation << 32) | slot.index;
 
     ds_CGraphContactAdd(pipeline, c);
@@ -233,7 +238,9 @@ void ds_ContactUpdate(struct ds_RigidBodyPipeline *pipeline, const struct slot s
 
 void ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
 {
-	struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, index);
+    struct ds_Contact *buf = pipeline->cdb->contact_pool.buf;
+	struct ds_Contact *c = buf + index;
+    ds_Assert(ds_PoolSlotAllocated(c));
 
     if (c->set == SOLVER_SET_NULL)
     {
@@ -248,7 +255,7 @@ void ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
         if (c->set_contact_index < set->contact_pool.count)
         {
             const u32 moved_index = set->contact_pool.buf[ c->set_contact_index ];
-            struct ds_Contact *moved = nll_Address(&pipeline->cdb->contact_net, moved_index);
+            struct ds_Contact *moved = buf + moved_index;
             ds_Assert(moved->set_contact_index == set->contact_pool.count);
             moved->set_contact_index = c->set_contact_index;
         }
@@ -258,18 +265,7 @@ void ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
     struct ds_Shape *shape0, *shape1;
     ds_ContactKeyAddress(&body0, &shape0, &body1, &shape1, pipeline, &c->key);
 	
-	if (shape0->contact_first == index)
-	{
-		shape0->contact_first = c->nll_next[0];
-	}
-
-	if (shape1->contact_first == index)
-	{
-		shape1->contact_first = c->nll_next[1];
-	}
-
     const ds_ContactId id = ((u64) c->generation << 32) | index;
-
     const u64 b0 = ((u64) body0->tag << 32)  | c->key.body0;
     const u64 s0 = ((u64) shape0->tag << 32) | c->key.shape0;
     const u64 b1 = ((u64) body1->tag << 32)  | c->key.body1;
@@ -277,16 +273,27 @@ void ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
 	PhysicsEventContactRemoved(pipeline, b0, s0, b1, s1);
 	ds_BitSetSet(&pipeline->cdb->contact_persistent_usage, index, 0);
 	ds_HashMapRemove(&pipeline->cdb->contact_map, ds_ContactKeyHash(&c->key), index);
-	nll_Remove(&pipeline->cdb->contact_net, index);
+
+    const i32 prev0 = (c->key.shape0 == buf[ c->shape_contact[0].prev ].key.shape1);
+    const i32 prev1 = (c->key.shape1 == buf[ c->shape_contact[1].prev ].key.shape1);
+    const i32 next0 = (c->key.shape0 == buf[ c->shape_contact[0].next ].key.shape1);
+    const i32 next1 = (c->key.shape1 == buf[ c->shape_contact[1].next ].key.shape1);
+    ds_DLLRemoveEx(shape0->contact_list, buf, index, shape_contact[prev0], shape_contact[0], shape_contact[next0]);
+    ds_DLLRemoveEx(shape1->contact_list, buf, index, shape_contact[prev1], shape_contact[1], shape_contact[next1]);
+
+    struct ds_Island *island = ds_PoolAddress(&pipeline->is_db.island_pool, c->island);
+    dll_Remove(&island->contact_list, pipeline->cdb->contact_pool.buf, index);
+
+    ds_ContactPoolRemove(&pipeline->cdb->contact_pool, index);
 }
 
 struct slot ds_ContactKeyLookup(const struct ds_RigidBodyPipeline *pipeline, const struct ds_ContactKey *key)
 {
-    struct slot slot = { .address = NULL, .index = NLL_NULL };
+    struct slot slot = { .address = NULL, .index = U32_MAX };
 	const u32 hash = ds_ContactKeyHash(key);
 	for (u32 i = ds_HashMapFirst(&pipeline->cdb->contact_map, hash); i != HASH_NULL; i = ds_HashMapNext(&pipeline->cdb->contact_map, i))
 	{
-		struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, i);
+		struct ds_Contact *c = pipeline->cdb->contact_pool.buf + i;
 		if (ds_ContactKeyEquivalence(&c->key, key))
 		{
             slot.address = c;
@@ -300,9 +307,9 @@ struct slot ds_ContactKeyLookup(const struct ds_RigidBodyPipeline *pipeline, con
 
 struct slot ds_ContactLookup(const struct ds_RigidBodyPipeline *pipeline, const ds_ContactId id)
 {
-    struct slot slot = { .address = NULL, .index = NLL_NULL };
-    struct ds_Contact *c = nll_Address(&pipeline->cdb->contact_net, ds_IdFIndex(id));
-    if (id != DS_IDF_NULL && PoolSlotAllocated(c) && c->generation == ds_IdFGeneration(id))
+    struct slot slot = { .address = NULL, .index = U32_MAX };
+    struct ds_Contact *c = pipeline->cdb->contact_pool.buf + ds_IdFIndex(id);
+    if (id != DS_IDF_NULL && ds_PoolSlotAllocated(c) && c->generation == ds_IdFGeneration(id))
     {
         slot.address = c;
         slot.index = ds_IdFIndex(id);

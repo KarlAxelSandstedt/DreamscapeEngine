@@ -425,6 +425,7 @@ struct ds_Contact
     POOL_NODE;
     u32                     generation;                 /* Slot generation used id ds_ContactId                     */
 
+    u32                     island;                     /* Index of contact's island */
     u32                     set;                        /* Index of contact's set                                   */
     /* TODO rename, real shit */
     u32                     set_contact_index;          /* If set is NULL, Index(contact) == 

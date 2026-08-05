@@ -651,7 +651,7 @@ POOL_ADD_DECLARE(T)                                                             
 			UnpoisonAddress(allocation.address, sizeof(struct T));                                  \
                                                                                                     \
             pool->next_free = pool->buf[allocation.index].pool_slot & POOL_INDEX_MASK;              \
-			ds_Assert(pool->next_free);                                                             \
+            ds_Assert(pool->buf[allocation.index].pool_slot & POOL_ALLOCATION_MASK);                \
 		}                                                                                           \
 		else                                                                                        \
 		{                                                                                           \

@@ -86,17 +86,13 @@ void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Rigi
 
 void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 index, const u32 mass_properties_update)
 {
-	struct ds_Shape *dummy_shape, *shape = ds_PoolAddress(&pipeline->shape_pool, index);
-    struct ds_RigidBody *dummy_body;
+	struct ds_Shape *dynamic_shape, *shape = ds_PoolAddress(&pipeline->shape_pool, index);
+    struct ds_RigidBody *dynamic_body;
     const u64 s0 = ((u64) shape->tag << 32) | index;
     const u64 b0 = ((u64) body->tag << 32) | shape->body;
     const u32 static_is_tri_mesh = shape->cshape_type == C_SHAPE_TRI_MESH;
 
-    dll_Remove(&body->shape_list, pipeline->shape_pool.buf, index);
     ds_Assert(((struct ds_RigidBody *) ds_PoolAddress(&pipeline->body_pool, shape->body))->island_index == ISLAND_STATIC);
-
-	strdb_Dereference(pipeline->cshape_db, shape->cshape_handle);
-	DbvhRemove(&pipeline->shape_bvh, shape->proxy);
 
 	ArenaPushRecord(&pipeline->frame);
 	struct memArray arr = ArenaPushAlignedAll(&pipeline->frame, sizeof(u32), sizeof(u32));
@@ -110,30 +106,26 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
 
 		if (index == c->key.shape0 || (static_is_tri_mesh && INDIRECT_SHAPE_CHECK(c->key.shape0)))
 		{
-            ds_ContactKeyAddress(&dummy_body, &dummy_shape, &body, &shape, pipeline, &c->key);
+            ds_ContactKeyAddress(&body, &shape, &dynamic_body, &dynamic_shape, pipeline, &c->key);
 		}
 		else
 		{
-            ds_ContactKeyAddress(&body, &shape, &dummy_body, &dummy_shape, pipeline, &c->key);
+            ds_ContactKeyAddress(&dynamic_body, &dynamic_shape, &body, &shape, pipeline, &c->key);
 		}
 
-	    const struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, shape->body);
-        if (body->island_index != ISLAND_STATIC)
-        {
-		    struct ds_Island *is = ds_PoolAddress(&pipeline->is_db.island_pool, body->island_index);
-		    if ((is->flags & ISLAND_SPLIT) == 0)
-		    {
-		        if (island_count == arr.len)
-		    	{
-		    		LogString(T_SYSTEM, S_FATAL, "Stack OOM in ds_ShapeStaticRemove");
-		    		FatalCleanupAndExit();
-		    	}
-		    	island[island_count++] = body->island_index;
-		    	
-		    	is->flags |= ISLAND_SPLIT;
-		    }
-            dll_Remove(&is->contact_list, pipeline->cdb->contact_pool.buf, ci);
-        }
+        ds_Assert(dynamic_body->island_index != ISLAND_STATIC);
+		struct ds_Island *is = ds_PoolAddress(&pipeline->is_db.island_pool, dynamic_body->island_index);
+		if ((is->flags & ISLAND_SPLIT) == 0)
+		{
+		    if (island_count == arr.len)
+			{
+				LogString(T_SYSTEM, S_FATAL, "Stack OOM in ds_ShapeStaticRemove");
+				FatalCleanupAndExit();
+			}
+			island[island_count++] = dynamic_body->island_index;
+			
+			is->flags |= ISLAND_SPLIT;
+		}
         ds_ContactRemove(pipeline, ci);
     }
 
@@ -161,7 +153,10 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
         ds_RigidBodyUpdateMassProperties(pipeline, b0);
     }
 
-	ds_PoolRemove(&pipeline->shape_pool, ds_PoolIndex(&pipeline->shape_pool, shape));
+    dll_Remove(&body->shape_list, pipeline->shape_pool.buf, index);
+	strdb_Dereference(pipeline->cshape_db, shape->cshape_handle);
+	DbvhRemove(&pipeline->shape_bvh, shape->proxy);
+	ds_PoolRemove(&pipeline->shape_pool, index);
 }
 
 struct slot ds_ShapeLookup(const struct ds_RigidBodyPipeline *pipeline, const ds_ShapeId shape_id)

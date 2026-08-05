@@ -58,6 +58,7 @@ option(DS_UBSAN "DS_UBSAN builds the library with undefined behaviour sanitizing
 
 include(ExternalProject)
 set(DS_INSTALL_PATH "${CMAKE_BINARY_DIR}/install")
+set(CMAKE_INSTALL_LIBDIR "lib")
 set(DS_INCLUDE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/include")
 set(DS_SRC_PATH "${CMAKE_CURRENT_SOURCE_DIR}/src")
 set(DS_LIB_PATH "${CMAKE_CURRENT_SOURCE_DIR}/lib")
