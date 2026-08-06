@@ -313,8 +313,8 @@ rigid_body
 
 struct ds_RigidBody
 {
-	DLL2_SLOT_STATE;	/* island body_list node */
-	POOL_SLOT_STATE;
+	POOL_NODE;
+	struct ds_DLLNode island_body;	        /* island body_list node */
 
     u32             tag;                    /* Tag [ Generation(16) | Unused (16) ]                 */
 	u32 		    flags;
@@ -341,6 +341,7 @@ struct ds_RigidBody
     //TODO Why do we store this here ...
 	u32 	        entity;
 };
+POOL_DECLARE(ds_RigidBody);
 
 /*
 rigid_body_prefab
@@ -1133,7 +1134,7 @@ struct ds_Island
     u32 set;                /* ds_SolverSet index */
     u32 set_island_index;   /* Index(island) == solver_sets[set].island[ island->set_island_index ] */
 
-	struct dll	    body_list;
+	struct ds_DLL	body_list;
 	struct ds_DLL	contact_list;
     struct ds_DLL   joint_list;
 
@@ -1533,7 +1534,7 @@ struct ds_RigidBodyPipeline
 	struct strdb *	    cshape_db;		        /* externally owned */
 	struct strdb *	    body_prefab_db;		    /* externally owned */
 
-	struct ds_Pool	    body_pool;
+	struct ds_RigidBodyPool body_pool;
     struct ds_BitSet    body_usage_set;         /* Bodies in use */
     struct ds_BitSet    body_removal_set;       /* Bodies marked for removal */
 

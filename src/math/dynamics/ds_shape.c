@@ -27,8 +27,8 @@ ds_ShapeId ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_Sh
     struct slot slot = ds_ShapePoolAdd(&pipeline->shape_pool);
 	if (slot.address)
 	{
-		struct ds_RigidBody *body_ptr = ds_PoolAddress(&pipeline->body_pool, body);
-		ds_Assert(PoolSlotAllocated(body_ptr));
+		struct ds_RigidBody *body_ptr = pipeline->body_pool.buf + ds_IdIndex(body);
+		ds_Assert(ds_PoolSlotAllocated(body_ptr));
 		ds_DLLAppend(body_ptr->shape_list, pipeline->shape_pool.buf, slot.index, body_shape);
 
 		struct ds_Shape *shape = slot.address;
@@ -94,7 +94,7 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
     const u64 b0 = ((u64) body->tag << 32) | shape->body;
     const u32 static_is_tri_mesh = shape->cshape_type == C_SHAPE_TRI_MESH;
 
-    ds_Assert(((struct ds_RigidBody *) ds_PoolAddress(&pipeline->body_pool, shape->body))->island_index == ISLAND_STATIC);
+    ds_Assert(pipeline->body_pool.buf[shape->body].island_index == ISLAND_STATIC);
 
 	ArenaPushRecord(&pipeline->frame);
 	struct memArray arr = ArenaPushAlignedAll(&pipeline->frame, sizeof(u32), sizeof(u32));
@@ -176,7 +176,7 @@ struct slot ds_ShapeLookup(const struct ds_RigidBodyPipeline *pipeline, const ds
 
 void ds_ShapeWorldTransform(ds_Transform *t, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape)
 {
-	const struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, shape->body);
+	const struct ds_RigidBody *body = pipeline->body_pool.buf + shape->body;
     mat3 rot;
     Mat3Quat(rot, body->t_world.rotation);
 
@@ -190,7 +190,7 @@ struct aabb ds_ShapeWorldBbox(const struct ds_RigidBodyPipeline *pipeline, const
 	vec3 min = { F32_INFINITY, F32_INFINITY, F32_INFINITY };
 	vec3 max = { -F32_INFINITY, -F32_INFINITY, -F32_INFINITY };
 
-	const struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, shape->body);
+	const struct ds_RigidBody *body = pipeline->body_pool.buf + shape->body;
 	const struct c_Shape *cshape = strdb_Address(pipeline->cshape_db, shape->cshape_handle);
 
     mat3 rot;

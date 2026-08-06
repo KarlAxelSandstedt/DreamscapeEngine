@@ -19,9 +19,11 @@
 
 #include "dynamics.h"
 
+POOL_DEFINE(ds_RigidBody);
+
 ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBodyPrefab *prefab, const ds_Transform *t_world, const u32 entity)
 {
-	struct slot slot = ds_PoolAdd(&pipeline->body_pool);
+	struct slot slot = ds_RigidBodyPoolAdd(&pipeline->body_pool);
 	struct ds_RigidBody *body = slot.address;
     body->tag += DS_ID_TAG_GENERATION_INCREMENT;
     const ds_RigidBodyId id = ((u64) body->tag << 32) | slot.index;
@@ -65,7 +67,7 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const stru
 void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId id)
 {
     const u32 body_index = ds_IdIndex(id);
-	struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, body_index);
+	struct ds_RigidBody *body = pipeline->body_pool.buf + body_index;
     if (body->tag != ds_IdTag(id))
     {
         return;
@@ -93,11 +95,11 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
             ds_JointDynamicRemove(pipeline, body, body->joint_list.first);
         }
 
-    	dll_Remove(&island->body_list, pipeline->body_pool.buf, ds_IdIndex(id)); 
+    	ds_DLLRemove(island->body_list, pipeline->body_pool.buf, ds_IdIndex(id), island_body); 
     	if (island->body_list.count == 0)
     	{
-    		ds_Assert(island->body_list.first == DLL_NULL);
-    		ds_Assert(island->body_list.last == DLL_NULL);
+    		ds_Assert(island->body_list.first == DLL_SENTINEL);
+    		ds_Assert(island->body_list.last == DLL_SENTINEL);
     		isdb_IslandRemove(pipeline, island);
     	} 
         else
@@ -119,15 +121,15 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
 	}
 
     const u32 entity = body->entity;
-	ds_PoolRemove(&pipeline->body_pool, ds_IdIndex(id));
+	ds_RigidBodyPoolRemove(&pipeline->body_pool, ds_IdIndex(id));
 	PhysicsEventBodyRemoved(pipeline, entity);
 }
 
 struct slot ds_RigidBodyLookup(const struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId id)
 {
     struct slot slot = { .address = NULL, .index = 0 };
-    struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, ds_IdIndex(id));
-    if (id != DS_ID_NULL && PoolSlotAllocated(body) && body->tag == ds_IdTag(id))
+    struct ds_RigidBody *body = pipeline->body_pool.buf + ds_IdIndex(id);
+    if (id != DS_ID_NULL && ds_PoolSlotAllocated(body) && body->tag == ds_IdTag(id))
     {
         slot.address = body;
         slot.index = ds_IdIndex(id);
@@ -146,8 +148,8 @@ void ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, con
 {
 	ArenaPushRecord(&pipeline->frame);
 
-	struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, ds_IdIndex(id));
-	ds_Assert(PoolSlotAllocated(body));
+	struct ds_RigidBody *body = pipeline->body_pool.buf + ds_IdIndex(id);
+	ds_Assert(ds_PoolSlotAllocated(body));
 
 	vec3 tmp;
     mat3 body_inertia_tensor, rot_local, rot_local_inv, tmp1, tmp2;

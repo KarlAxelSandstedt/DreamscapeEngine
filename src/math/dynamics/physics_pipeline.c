@@ -71,7 +71,7 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 
 	ds_AssertString(PowerOfTwoCheck(initial_size), "For simplicity of future data structures, expect pipeline sizes to be powers of two");
 
-	pipeline.body_pool = ds_PoolAlloc(NULL, initial_size, struct ds_RigidBody, GROWABLE);
+	pipeline.body_pool = ds_RigidBodyPoolAlloc(NULL, initial_size, GROWABLE);
     pipeline.body_usage_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
     pipeline.body_removal_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
 
@@ -134,7 +134,7 @@ void PhysicsPipelineFree(struct ds_RigidBodyPipeline *pipeline)
 	BvhFree(&pipeline->shape_bvh);
 	cdb_Free(pipeline->cdb);
 	isdb_Dealloc(&pipeline->is_db);
-	ds_PoolDealloc(&pipeline->body_pool);
+	ds_RigidBodyPoolDealloc(&pipeline->body_pool);
 	ds_PhysicsEventPoolDealloc(&pipeline->event_pool);
 	ds_ShapePoolDealloc(&pipeline->shape_pool);
     ds_JointPoolDealloc(&pipeline->joint_pool);
@@ -193,7 +193,7 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
 	cdb_Flush(pipeline->cdb);
 	isdb_Flush(&pipeline->is_db);
 	
-	ds_PoolFlush(&pipeline->body_pool);
+	ds_RigidBodyPoolFlush(&pipeline->body_pool);
     ds_BitSetClear(&pipeline->body_usage_set, 0);
     ds_BitSetClear(&pipeline->body_removal_set, 0);
 
@@ -264,8 +264,8 @@ static u32 NarrowPhaseSeedJob(struct ds_CollisionJobPhase *phase, struct ds_Narr
         const struct dbvhOverlap *overlap = phase->overlap + job->low + i;
         struct ds_Shape *s1 = pipeline->shape_pool.buf + overlap->id1;
         struct ds_Shape *s2 = pipeline->shape_pool.buf + overlap->id2;
-        struct ds_RigidBody *b1 = (struct ds_RigidBody *) pipeline->body_pool.buf + s1->body; 
-        struct ds_RigidBody *b2 = (struct ds_RigidBody *) pipeline->body_pool.buf + s2->body; 
+        struct ds_RigidBody *b1 = pipeline->body_pool.buf + s1->body; 
+        struct ds_RigidBody *b2 = pipeline->body_pool.buf + s2->body; 
         if (s1->body == s2->body || ((!RB_IS_DYNAMIC(b1)) && (!RB_IS_DYNAMIC(b2))) )
         {
             phase->narrowphase_jobs[index].valid = 0;
@@ -293,8 +293,8 @@ static u32 NarrowPhaseJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPh
     job->cache_index = U32_MAX;
     job->key = &job->key_in;
 
-    const struct ds_RigidBody *b0 = (struct ds_RigidBody *) pipeline->body_pool.buf + job->key_in.body0;
-    const struct ds_RigidBody *b1 = (struct ds_RigidBody *) pipeline->body_pool.buf + job->key_in.body1;
+    const struct ds_RigidBody *b0 = pipeline->body_pool.buf + job->key_in.body0;
+    const struct ds_RigidBody *b1 = pipeline->body_pool.buf + job->key_in.body1;
     const struct ds_Shape *s0 = pipeline->shape_pool.buf + job->key_in.shape0;
     const struct ds_Shape *s1 = pipeline->shape_pool.buf + job->key_in.shape1;
 
@@ -438,7 +438,7 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
             struct ds_BitBlock it = ds_BitBlockInit(pipeline->body_usage_set.bits[bi], bi, 1);
             while (ds_BitBlockHasNext(&it))
             {
-                const struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, ds_BitBlockNext(&it));
+                const struct ds_RigidBody *body = pipeline->body_pool.buf + ds_BitBlockNext(&it);
     		    if ((body->flags & flags) == flags)
     		    {
                     struct ds_Shape *shape = NULL;
@@ -625,8 +625,8 @@ static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
 	for (u32 i = 0; i < pipeline->cdb->contact_new_count; ++i)
 	{
 		struct ds_Contact *c = pipeline->cdb->contact_pool.buf + pipeline->cdb->contact_new[i];
-		const struct ds_RigidBody *body0 = ds_PoolAddress(&pipeline->body_pool, c->key.body0);
-		const struct ds_RigidBody *body1 = ds_PoolAddress(&pipeline->body_pool, c->key.body1);
+		const struct ds_RigidBody *body0 = pipeline->body_pool.buf + c->key.body0;
+		const struct ds_RigidBody *body1 = pipeline->body_pool.buf + c->key.body1;
 		const u32 is0 = body0->island_index;
 		const u32 is1 = body1->island_index;
 		const u32 d0 = (is0 != ISLAND_STATIC) ? 0x2 : 0x0;
@@ -689,8 +689,8 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 
 			const u32 b0 = c->key.body0;
 			const u32 b1 = c->key.body1;
-			const struct ds_RigidBody *body0 = ds_PoolAddress(&pipeline->body_pool, b0);
-			const struct ds_RigidBody *body1 = ds_PoolAddress(&pipeline->body_pool, b1);
+			const struct ds_RigidBody *body0 = pipeline->body_pool.buf + b0;
+			const struct ds_RigidBody *body1 = pipeline->body_pool.buf + b1;
 			ds_Assert(body0->island_index != ISLAND_STATIC || body1->island_index != ISLAND_STATIC);
 
 			struct ds_Island *is;
@@ -885,7 +885,7 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
 		{
 			struct ds_PhysicsEvent *event = ds_PhysicsEventPush(pipeline);
 			event->type = PHYSICS_EVENT_BODY_ORIENTATION;
-            const struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, job->bodies[b]);
+            const struct ds_RigidBody *body = pipeline->body_pool.buf + job->bodies[b];
 			event->body = ((u64) body->tag << 32) | job->bodies[b];
 		}
 	}
@@ -906,7 +906,7 @@ void PhysicsPipelineSleepEnable(struct ds_RigidBodyPipeline *pipeline)
             struct ds_BitBlock it = ds_BitBlockInit(pipeline->body_usage_set.bits[bi], bi, 1);
             while (ds_BitBlockHasNext(&it))
             {
-                struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, ds_BitBlockNext(&it));
+                struct ds_RigidBody *body = pipeline->body_pool.buf + ds_BitBlockNext(&it);
 			    if (body->flags & body_flags)
 			    {
 			    	body->flags |= RB_AWAKE;
@@ -950,7 +950,7 @@ void PhysicsPipelineSleepDisable(struct ds_RigidBodyPipeline *pipeline)
             struct ds_BitBlock it = ds_BitBlockInit(pipeline->body_usage_set.bits[bi], bi, 1);
             while (ds_BitBlockHasNext(&it))
             {
-                struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, ds_BitBlockNext(&it));
+                struct ds_RigidBody *body = pipeline->body_pool.buf + ds_BitBlockNext(&it);
 			    if (body->flags & body_flags)
 			    {
 			    	body->flags |= RB_AWAKE;

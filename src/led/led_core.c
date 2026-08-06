@@ -1707,9 +1707,9 @@ static void led_ColorIsland(struct led *led, const u32 island, const vec4 color)
 {
 	struct ds_Island *is = led->physics.is_db.island_pool.buf + island;
 	const struct ds_RigidBody *body;
-	for (u32 i = is->body_list.first; i != DLL_NULL; i = body->dll2_next)
+	for (u32 i = is->body_list.first; (i32) i != DLL_SENTINEL; i = body->island_body.next)
 	{
-		body = ds_PoolAddress(&led->physics.body_pool, i);
+		body = led->physics.body_pool.buf + i;
         led_NodeColorProxies(led, body->entity, color);
 	}
 }
@@ -1751,7 +1751,7 @@ static void led_EngineRun(struct led *led)
                     struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi, 1);
                     while (ds_BitBlockHasNext(&it))
                     {
-                        const struct ds_RigidBody *body = ds_PoolAddress(&led->physics.body_pool, ds_BitBlockNext(&it));
+                        const struct ds_RigidBody *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);
                         const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
                         led_NodeColorProxies(led, body->entity, node->color);
                     }
@@ -1766,7 +1766,7 @@ static void led_EngineRun(struct led *led)
                     struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi, 1);
                     while (ds_BitBlockHasNext(&it))
                     {
-				        const struct ds_RigidBody *body = ds_PoolAddress(&led->physics.body_pool, ds_BitBlockNext(&it));
+				        const struct ds_RigidBody *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);
                         const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
 					    if (RB_IS_DYNAMIC(body))
 					    {
@@ -1791,7 +1791,7 @@ static void led_EngineRun(struct led *led)
                     struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi, 1);
                     while (ds_BitBlockHasNext(&it))
                     {
-				        const struct ds_RigidBody *body = ds_PoolAddress(&led->physics.body_pool, ds_BitBlockNext(&it));
+				        const struct ds_RigidBody *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);
                         if (!RB_IS_DYNAMIC(body))
 					    {						
                             led_NodeColorProxies(led, body->entity, led->static_color);
@@ -1813,7 +1813,7 @@ static void led_EngineRun(struct led *led)
                     struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi, 1);
                     while (ds_BitBlockHasNext(&it))
                     {
-				        const struct ds_RigidBody *body = ds_PoolAddress(&led->physics.body_pool, ds_BitBlockNext(&it));
+				        const struct ds_RigidBody *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);
                         const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
 					    if (body->island_index == ISLAND_STATIC)
 					    {
@@ -1844,8 +1844,8 @@ static void led_EngineRun(struct led *led)
                     const struct ds_Contact *c = ds_ContactLookup(&led->physics, event->contact).address;
                     if (c)
                     {
-					    const struct ds_RigidBody *body1 = ds_PoolAddress(&led->physics.body_pool, c->key.body0);
-					    const struct ds_RigidBody *body2 = ds_PoolAddress(&led->physics.body_pool, c->key.body1);
+					    const struct ds_RigidBody *body1 = led->physics.body_pool.buf + c->key.body0;
+					    const struct ds_RigidBody *body2 = led->physics.body_pool.buf + c->key.body1;
 					    if (RB_IS_DYNAMIC(body1))
 					    {
                             led_NodeColorProxies(led, body1->entity, led->collision_color);
@@ -1964,7 +1964,7 @@ static void led_EngineRun(struct led *led)
 
 			case PHYSICS_EVENT_BODY_ORIENTATION:
 			{
-				const struct ds_RigidBody *body = ds_PoolAddress(&led->physics.body_pool, event->body);
+				const struct ds_RigidBody *body = led->physics.body_pool.buf + ds_IdIndex(event->body);
 				const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
 
 				vec3 linear_velocity;

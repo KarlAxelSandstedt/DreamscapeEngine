@@ -292,7 +292,7 @@ static struct r_Mesh *BoundingBoxesMesh(struct arena *mem, const struct ds_Rigid
         struct ds_BitBlock it = ds_BitBlockInit(pipeline->body_usage_set.bits[bi], bi, 1);
         while (ds_BitBlockHasNext(&it))
         {
-            const struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, ds_BitBlockNext(&it));
+            const struct ds_RigidBody *body = pipeline->body_pool.buf + ds_BitBlockNext(&it);
             struct ds_Shape *shape = NULL;
             for (i32 j = body->shape_list.first; (i32) j != DLL_SENTINEL; j = shape->body_shape.next)
             {
@@ -461,7 +461,7 @@ static void r_EditorDraw(const struct led *led)
             struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi, 1);
             while (ds_BitBlockHasNext(&it))
             {
-                const struct ds_RigidBody *body = ds_PoolAddress(&led->physics.body_pool, ds_BitBlockNext(&it));
+                const struct ds_RigidBody *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);
                 const struct ds_Shape *s = led->physics.shape_pool.buf + body->shape_list.first;
 			    if (s->cshape_type != C_SHAPE_TRI_MESH)
 			    {

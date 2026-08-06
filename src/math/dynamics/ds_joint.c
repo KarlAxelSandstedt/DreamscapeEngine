@@ -58,7 +58,7 @@ static void ds_JointUnlink(struct ds_RigidBodyPipeline *pipeline, const struct d
 {
     for (u32 i = 0; i < 2; ++i)
     {
-        struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, joint->body[i]);
+        struct ds_RigidBody *body = pipeline->body_pool.buf + joint->body[i];
 
         const u32 bi = joint->body[i];
         const i32 prev = joint->edge_node[i].prev;
@@ -117,8 +117,8 @@ void ds_JointRemove(struct ds_RigidBodyPipeline *pipeline, const ds_JointId id)
     if (slot.address)
     {
         struct ds_Joint *joint = slot.address;
-        struct ds_RigidBody *b0 = ds_PoolAddress(&pipeline->body_pool, joint->body[0]);
-        struct ds_RigidBody *b1 = ds_PoolAddress(&pipeline->body_pool, joint->body[1]);
+        struct ds_RigidBody *b0 = pipeline->body_pool.buf + joint->body[0];
+        struct ds_RigidBody *b1 = pipeline->body_pool.buf + joint->body[1];
         if (!RB_IS_DYNAMIC(b0))
         {
             ds_JointStaticRemove(pipeline, b0, slot.index);

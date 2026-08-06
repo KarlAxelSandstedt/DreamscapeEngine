@@ -501,7 +501,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 						if (hit.f < F32_INFINITY)
 						{
 							const struct ds_Shape *shape = led->physics.shape_pool.buf + hit.u;	
-							const struct ds_RigidBody *body = ds_PoolAddress(&led->physics.body_pool, shape->body);	
+							const struct ds_RigidBody *body = led->physics.body_pool.buf + shape->body;	
 							const struct led_Node *entity = hi_Address(&led->node_hierarchy, body->entity);
 							const char *body_id = CstrUtf8(g_ui->mem_frame, entity->id);
 

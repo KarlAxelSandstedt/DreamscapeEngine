@@ -43,8 +43,8 @@ u32 ds_ContactKeyEquivalence(const struct ds_ContactKey *keyA, const struct ds_C
 
 void ds_ContactKeyAddress(struct ds_RigidBody **b0, struct ds_Shape **s0, struct ds_RigidBody **b1, struct ds_Shape **s1, const struct ds_RigidBodyPipeline *pipeline, const struct ds_ContactKey *key)
 {
-    *b0 = (struct ds_RigidBody *) pipeline->body_pool.buf + key->body0;
-    *b1 = (struct ds_RigidBody *) pipeline->body_pool.buf + key->body1;
+    *b0 = pipeline->body_pool.buf + key->body0;
+    *b1 = pipeline->body_pool.buf + key->body1;
     
     const u32 si0 = INDIRECT_SHAPE_CHECK(key->shape0)
         ? (u32) (*b0)->shape_list.first

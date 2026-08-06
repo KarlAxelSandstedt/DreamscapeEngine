@@ -83,8 +83,8 @@ static u32 ds_CGraphColorNext(struct ds_RigidBodyPipeline *pipeline, const u32 b
 {
     struct ds_CGraph *cg = &pipeline->cgraph;
 
-    const struct ds_RigidBody *b0 = ds_PoolAddress(&pipeline->body_pool, body[0]);
-    const struct ds_RigidBody *b1 = ds_PoolAddress(&pipeline->body_pool, body[1]);
+    const struct ds_RigidBody *b0 = pipeline->body_pool.buf + body[0];
+    const struct ds_RigidBody *b1 = pipeline->body_pool.buf + body[1];
 
     const u32 dynamic_bit[2] = { RB_DYNAMIC_BIT(b0), RB_DYNAMIC_BIT(b1) };
     const u32 dynamic_dynamic = dynamic_bit[0] & dynamic_bit[1];
