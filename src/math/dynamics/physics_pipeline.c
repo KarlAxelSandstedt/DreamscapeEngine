@@ -223,6 +223,8 @@ void PhysicsPipelineValidate(const struct ds_RigidBodyPipeline *pipeline)
             ds_SolverSetValidate(pipeline, i);
         }
     }
+
+    ds_CGraphValidate(pipeline);
 	cdb_Validate(pipeline);
 	isdb_Validate(pipeline);
 
@@ -752,7 +754,7 @@ static u32 IslandJobSeed(struct ds_IslandJobPhase *phase, struct ds_IslandSeedJo
 	ProfZone;
 
     const struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
-    const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    const struct ds_SolverSet *active_set = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     const u32 thread = ds_ThreadSelfIndex();
     const u32 base = ds_JobPhaseReserve(&phase->phase, ISLAND_JOB_SOLVE, job->count);
     ds_Assert(base + job->count <= phase->solve_count_max);
@@ -762,7 +764,7 @@ static u32 IslandJobSeed(struct ds_IslandJobPhase *phase, struct ds_IslandSeedJo
     struct ds_Island *island;
     for (u32 i = 0; i < job->count; ++i)
 	{
-        const u32 island_index = set->island_pool.buf[job->island_first + i];
+        const u32 island_index = active_set->island_pool.buf[job->island_first + i];
 	    island = pipeline->is_db.island_pool.buf + island_index;
 
         const u32 job_index = base + i;
@@ -835,8 +837,9 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
         is_jobs->solve_count_max = pipeline->is_db.island_pool.count;
         is_jobs->solve_jobs = ArenaPush(&pipeline->frame, is_jobs->solve_count_max*sizeof(struct ds_IslandSolveJob));
 
-        const u32 islands_per_seed = pipeline->is_db.island_pool.count / is_jobs->seed_count_max;
-        u32 extra = pipeline->is_db.island_pool.count % is_jobs->seed_count_max;
+        struct ds_SolverSet *active_set = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+        const u32 islands_per_seed = active_set->island_pool.count / is_jobs->seed_count_max;
+        u32 extra = active_set->island_pool.count % is_jobs->seed_count_max;
         u32 low = 0;
         for (u32 i = 0; i < is_jobs->seed_count_max; ++i)
         {

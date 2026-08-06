@@ -274,6 +274,14 @@ void ds_SolverSetValidate(const struct ds_RigidBodyPipeline *pipeline, const u32
         ds_Assert(joint->sim == i);
     }
 
+    for (u32 i = 0; i < set->contact_pool.count; ++i)
+    {
+        const u32 ci = set->contact_pool.buf[i];
+        const struct ds_Contact *c = pipeline->cdb->contact_pool.buf + ci;
+        ds_Assert(c->set == set_index);
+        ds_Assert(c->set_contact_index == i);
+    }
+
     if (set_index == SOLVER_SET_ACTIVE)
     {
         ds_Assert(set->contact_pool.count == 0);

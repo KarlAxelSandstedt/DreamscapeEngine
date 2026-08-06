@@ -1006,6 +1006,8 @@ void                    ds_CGraphAlloc(struct ds_RigidBodyPipeline *pipeline, co
 void                    ds_CGraphDealloc(struct ds_RigidBodyPipeline *pipeline);
 /* Flush the pipeline's constraint graph data */
 void                    ds_CGraphFlush(struct ds_RigidBodyPipeline *pipeline);
+/* Validate the state of the pipeline's constraint graph */
+void                    ds_CGraphValidate(const struct ds_RigidBodyPipeline *pipeline);
 /* Prepare the pipeline's constraint graph for the new frame, allocating and setting up new resources if necessary. */
 void                    ds_CGraphFramePrepare(struct ds_RigidBodyPipeline *pipeline);
 /* Allocate and setup a new ds_JointSim */
