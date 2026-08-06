@@ -155,11 +155,21 @@ extern "C" {
 		#define Clz64(x)	((u32) __builtin_clzl(x))	/* count leading zeroes long, NOTE: if x == 0, undefined! */
 		#define Ctz32(x)	((u32) __builtin_ctz(x))  	/* count trailing zeroes, NOTE: if x == 0, undefined! */
 		#define Ctz64(x)	((u32) __builtin_ctzl(x))	/* count trailing zeroes long, NOTE: if x == 0, undefined! */
+        
+        #define Cz32(x)     ((u32) __builtin_popcount(~(x)))    /* count number of 0-bits */
+        #define Cz64(x)     ((u32) __builtin_popcountl(~(x)))   /* count number of 0-bits */
+        #define C32(x)     ((u32) __builtin_popcount(x))        /* count number of 1-bits */
+        #define C64(x)     ((u32) __builtin_popcountl(x))       /* count number of 1-bits */
 	#else
 		#define Clz32(x)	((u32) __builtin_clz(x))  	/* count leading zeroes, NOTE: if x == 0, undefined! */
 		#define Clz64(x)	((u32) __builtin_clzll(x))	/* count leading zeroes long, NOTE: if x == 0, undefined! */
 		#define Ctz32(x)	((u32) __builtin_ctz(x))  	/* count trailing zeroes, NOTE: if x == 0, undefined! */
 		#define Ctz64(x)	((u32) __builtin_ctzll(x))	/* count trailing zeroes long, NOTE: if x == 0, undefined! */
+
+        #define Cz32(x)     ((u32) __builtin_popcount(~(x)))    /* count number of 0-bits */
+        #define Cz64(x)     ((u32) __builtin_popcountll(~(x)))  /* count number of 0-bits */
+        #define C32(x)     ((u32) __builtin_popcount(x))        /* count number of 1-bits */
+        #define C64(x)     ((u32) __builtin_popcountll(x))      /* count number of 1-bits */
 	#endif
 
 #elif __DS_COMPILER__ == __DS_MSVC__
@@ -303,6 +313,10 @@ extern "C" {
 	#define Ctz32(x)	((u32) _tzcnt_u32(x))	/* count trailing zeroes, NOTE: if x == 0, undefined! */
 	#define Ctz64(x)	((u32) _tzcnt_u64(x))	/* count trailing zeroes long, NOTE: if x == 0, undefined! */
 
+    #define Cz32(x)     ((u32) __popcnt(~(x)))      /* count number of 0-bits */
+    #define Cz64(x)     ((u32) __popcnt64(~(x)))    /* count number of 0-bits */
+    #define C32(x)      ((u32) __popcnt(x))         /* count number of 1-bits */
+    #define C64(x)      ((u32) __popcnt64(x))       /* count number of 1-bits */
 #endif
 
 #ifdef __cplusplus

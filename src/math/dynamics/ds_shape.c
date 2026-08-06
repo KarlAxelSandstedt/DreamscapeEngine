@@ -63,7 +63,7 @@ ds_ShapeId ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_Sh
 
 void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 shape_index, const u32 mass_properties_update)
 {
-	struct ds_Island *island = ds_PoolAddress(&pipeline->is_db.island_pool, body->island_index);
+	struct ds_Island *island = pipeline->is_db.island_pool.buf + body->island_index;
     struct ds_Shape *dummy_shape, *shape = pipeline->shape_pool.buf + shape_index;
     struct ds_RigidBody *dummy_body;
     const ds_ShapeId s0 = ((u64) shape->tag << 32) | shape_index;
@@ -116,7 +116,7 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
 		}
 
         ds_Assert(dynamic_body->island_index != ISLAND_STATIC);
-		struct ds_Island *is = ds_PoolAddress(&pipeline->is_db.island_pool, dynamic_body->island_index);
+		struct ds_Island *is = pipeline->is_db.island_pool.buf + dynamic_body->island_index;
 		if ((is->flags & ISLAND_SPLIT) == 0)
 		{
 		    if (island_count == arr.len)
@@ -133,7 +133,7 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
 
 	for (u32 i = 0; i < island_count; ++i)
 	{
-		struct ds_Island *is = ds_PoolAddress(&pipeline->is_db.island_pool, island[i]);
+		struct ds_Island *is = pipeline->is_db.island_pool.buf + island[i];
 		if (is->contact_list.count > 0)
 		{
 			isdb_SplitIsland(mem_tmp, pipeline, island[i]);

@@ -640,7 +640,7 @@ static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
 			/* dynamic-static */
 			case 0x2:
 			{
-				struct ds_Island *is = ds_PoolAddress(&pipeline->is_db.island_pool, is0);
+				struct ds_Island *is = pipeline->is_db.island_pool.buf + is0;
 				dll_Append(&is->contact_list, pipeline->cdb->contact_pool.buf, pipeline->cdb->contact_new[i]);
                 c->island = is0;
 			} break;
@@ -648,7 +648,7 @@ static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
 			/* static-dynamic */
 			case 0x1:
 			{
-				struct ds_Island *is = ds_PoolAddress(&pipeline->is_db.island_pool, is1);
+				struct ds_Island *is = pipeline->is_db.island_pool.buf + is1;
 				dll_Append(&is->contact_list, pipeline->cdb->contact_pool.buf, pipeline->cdb->contact_new[i]);
                 c->island = is1;
 			} break;
@@ -749,30 +749,31 @@ static u32 IslandJobSeed(struct ds_IslandJobPhase *phase, struct ds_IslandSeedJo
 {
 	ProfZone;
 
-    const u32 thread = ds_ThreadSelfIndex();
     const struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
+    const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    const u32 thread = ds_ThreadSelfIndex();
     const u32 base = ds_JobPhaseReserve(&phase->phase, ISLAND_JOB_SOLVE, job->count);
     ds_Assert(base + job->count <= phase->solve_count_max);
 
     u32 job_count = 0;
     u32 island_index = job->island_first;
-    struct ds_Island *is;
-    for (u32 i = 0; i < job->count; ++i, island_index = dll_Next(is))
+    struct ds_Island *island;
+    for (u32 i = 0; i < job->count; ++i)
 	{
-	    is = ds_PoolAddress(&pipeline->is_db.island_pool, island_index);
+        const u32 island_index = set->island_pool.buf[job->island_first + i];
+	    island = pipeline->is_db.island_pool.buf + island_index;
 
         const u32 job_index = base + i;
         struct ds_IslandSolveJob *job = phase->solve_jobs + job_index;
 
         job->valid = 0;
-        if (!g_solver_config->sleep_enabled || ISLAND_AWAKE_BIT(is))
+        if (!g_solver_config->sleep_enabled || ISLAND_AWAKE_BIT(island))
 	    {
             job_count += 1;
             job->valid = 1;
 	    	job->island = island_index;
             ds_WSDequePushBottom(g_scheduler->deque + thread, ds_JobIdInit(ISLAND_JOB_SOLVE, job_index));
 	    }
-        
     }
 
 	ProfZoneEnd;
@@ -785,7 +786,7 @@ static u32 IslandJobSolve(struct ds_IslandJobPhase *phase, struct ds_IslandSolve
 	ProfZone;
 
     struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
-    struct ds_Island *is = (struct ds_Island *) pipeline->is_db.island_pool.buf + job->island;
+    struct ds_Island *is = pipeline->is_db.island_pool.buf + job->island;
 	job->body_count = is->body_list.count;
 	job->bodies = IslandSolve(g_tl_self->frame, pipeline, is, &job->asleep, phase->timestep);
 
@@ -826,16 +827,15 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
         is_jobs->timestep = delta;
 
         is_jobs->seed_count_max = 3*g_arch_config->logical_core_count;
-        is_jobs->seed_jobs = ArenaPush(&pipeline->frame, is_jobs->seed_count_max*sizeof(struct ds_IslandSeedJob));
+        is_jobs->seed_jobs = ArenaPushZero(&pipeline->frame, is_jobs->seed_count_max*sizeof(struct ds_IslandSeedJob));
         ds_JobPhaseReserve(&is_jobs->phase, ISLAND_JOB_SEED, is_jobs->seed_count_max);
 
-        is_jobs->solve_count_max = pipeline->is_db.island_list.count;
+        is_jobs->solve_count_max = pipeline->is_db.island_pool.count;
         is_jobs->solve_jobs = ArenaPush(&pipeline->frame, is_jobs->solve_count_max*sizeof(struct ds_IslandSolveJob));
 
-        const u32 islands_per_seed = pipeline->is_db.island_list.count / is_jobs->seed_count_max;
-        u32 extra = pipeline->is_db.island_list.count % is_jobs->seed_count_max;
+        const u32 islands_per_seed = pipeline->is_db.island_pool.count / is_jobs->seed_count_max;
+        u32 extra = pipeline->is_db.island_pool.count % is_jobs->seed_count_max;
         u32 low = 0;
-        u32 next = pipeline->is_db.island_list.first;
         for (u32 i = 0; i < is_jobs->seed_count_max; ++i)
         {
             u32 high = low + islands_per_seed;
@@ -844,20 +844,11 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
                 high += 1;
                 extra -= 1;
             }
+            is_jobs->seed_jobs[i].island_first = low;
             is_jobs->seed_jobs[i].count = high - low;
             low = high;
-        
-            is_jobs->seed_jobs[i].island_first = next;
-	        struct ds_Island *is = NULL;
-            for (u32 c = 0; c < is_jobs->seed_jobs[i].count; ++c)
-            {
-		        is = ds_PoolAddress(&pipeline->is_db.island_pool, next);
-                next = dll_Next(is);
-            }
-
             ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(ISLAND_JOB_SEED, i));
         }
-        ds_Assert(next == DLL_NULL);
 
         AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, is_jobs->seed_count_max);
         ds_JobPhaseAddFetchRemaining(&is_jobs->phase, is_jobs->seed_count_max);
@@ -921,14 +912,25 @@ void PhysicsPipelineSleepEnable(struct ds_RigidBodyPipeline *pipeline)
             }
 		}
 
-		struct ds_Island *is = NULL;
-		for (u32 i = pipeline->is_db.island_list.first; i != DLL_NULL; i = dll_Next(is))
-		{
-			is = ds_PoolAddress(&pipeline->is_db.island_pool, i);
-			is->flags |= ISLAND_AWAKE | ISLAND_SLEEP_RESET;
-			is->flags &= ~ISLAND_TRY_SLEEP;
-            ds_SolverSetWakeUp(pipeline, is->set);
-		}
+        for (u32 set_index = 0; set_index < pipeline->solver_set_pool.count_max; ++set_index)
+        {
+            struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
+            if (ds_PoolSlotAllocated(set))
+            {
+                for (u32 k = 0; k < set->island_pool.count; ++k)
+                {
+                    const u32 island_index = set->island_pool.buf[k];
+	        	    struct ds_Island *is = pipeline->is_db.island_pool.buf + k;
+			        is->flags |= ISLAND_AWAKE | ISLAND_SLEEP_RESET;
+			        is->flags &= ~ISLAND_TRY_SLEEP;
+                }
+
+                if (set_index >= SOLVER_SET_SLEEPING_FIRST)
+                {
+                    ds_SolverSetWakeUp(pipeline, set_index);
+                }
+            }
+        }
 	}
 }
 
@@ -954,14 +956,25 @@ void PhysicsPipelineSleepDisable(struct ds_RigidBodyPipeline *pipeline)
             }
 		}
 
-		struct ds_Island *is = NULL;
-		for (u32 i = pipeline->is_db.island_list.first; i != DLL_NULL; i = dll_Next(is))
-		{
-			is = ds_PoolAddress(&pipeline->is_db.island_pool, i);
-			is->flags |= ISLAND_AWAKE;
-			is->flags &= ~(ISLAND_SLEEP_RESET | ISLAND_TRY_SLEEP);
-            ds_SolverSetWakeUp(pipeline, is->set);
-		}
+        for (u32 set_index = 0; set_index < pipeline->solver_set_pool.count_max; ++set_index)
+        {
+            struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
+            if (ds_PoolSlotAllocated(set))
+            {
+                for (u32 k = 0; k < set->island_pool.count; ++k)
+                {
+                    const u32 island_index = set->island_pool.buf[k];
+	        	    struct ds_Island *is = pipeline->is_db.island_pool.buf + k;
+			        is->flags |= ISLAND_AWAKE;
+			        is->flags &= ~(ISLAND_SLEEP_RESET | ISLAND_TRY_SLEEP);
+                }
+
+                if (set_index >= SOLVER_SET_SLEEPING_FIRST)
+                {
+                    ds_SolverSetWakeUp(pipeline, set_index);
+                }
+            }
+        }
 	}
 }
 

@@ -1119,8 +1119,7 @@ data (ListData) is kept throughout [2], [3], and discarded at [4] when islands a
 
 struct ds_Island
 {
-	POOL_SLOT_STATE;
-	DLL_SLOT_STATE;
+    POOL_NODE;
 
 	struct ds_RigidBody **	bodies;	
 	struct ds_Contact 	**	contacts;
@@ -1141,15 +1140,15 @@ struct ds_Island
 //TODO RMEOVE
 	vec4 color;
 };
+POOL_DECLARE(ds_Island);
 
 struct isdb
 {
 	/* PERSISTENT DATA */
-	struct ds_Pool 	island_pool;	/* GROWABLE, list nodes of contacts and bodies	*/
-	struct dll	island_list;
+	struct ds_IslandPool 	island_pool;	    
 	/* FRAME DATA */
-	u32 *		possible_splits;				/* Islands in which a contact has been broken during frame */
-	u32 		possible_splits_count;
+	u32 *		        possible_splits;		/* Islands in which a contact has been broken during frame */
+	u32 		        possible_splits_count;
 };
 
 #ifdef DS_PHYSICS_DEBUG
@@ -1375,7 +1374,7 @@ enum ds_IslandJobType
 
 struct ds_IslandSeedJob 
 {
-    u32     island_first;
+    u32     island_first;   /* First index in ACTIVE SET island pool */
     u32     count;
 };
 

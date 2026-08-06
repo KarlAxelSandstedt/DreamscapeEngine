@@ -1705,7 +1705,7 @@ static void led_NodeDontDrawProxies(struct led *led, const u32 index)
 
 static void led_ColorIsland(struct led *led, const u32 island, const vec4 color)
 {
-	struct ds_Island *is = ds_PoolAddress(&led->physics.is_db.island_pool, island);
+	struct ds_Island *is = led->physics.is_db.island_pool.buf + island;
 	const struct ds_RigidBody *body;
 	for (u32 i = is->body_list.first; i != DLL_NULL; i = body->dll2_next)
 	{
@@ -1770,7 +1770,7 @@ static void led_EngineRun(struct led *led)
                         const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
 					    if (RB_IS_DYNAMIC(body))
 					    {
-                            const struct ds_Island *island = ds_PoolAddress(&led->physics.is_db.island_pool, body->island_index);
+                            const struct ds_Island *island = led->physics.is_db.island_pool.buf + body->island_index;
 					    	(island->contact_list.count)
 					    		? Vec4Copy(color, led->collision_color)
 					    		: Vec4Copy(color, node->color);
@@ -1821,7 +1821,7 @@ static void led_EngineRun(struct led *led)
 					    }
 					    else
 					    {
-					    	const struct ds_Island *is = ds_PoolAddress(&led->physics.is_db.island_pool, body->island_index);
+					    	const struct ds_Island *is = led->physics.is_db.island_pool.buf + body->island_index;
                             led_NodeColorProxies(led, body->entity, is->color);
 					    }
                     }
@@ -1872,7 +1872,7 @@ static void led_EngineRun(struct led *led)
 
 					    if (RB_IS_DYNAMIC(body1))
 					    {
-                            const struct ds_Island *is = ds_PoolAddress(&led->physics.is_db.island_pool, body1->island_index);
+                            const struct ds_Island *is = led->physics.is_db.island_pool.buf + body1->island_index;
 					    	if (is->contact_list.count == 0)
 					    	{
                                 led_NodeColorProxies(led, body1->entity, node1->color);
@@ -1885,7 +1885,7 @@ static void led_EngineRun(struct led *led)
 		
 					    if (RB_IS_DYNAMIC(body2))
 					    {
-                            const struct ds_Island *is = ds_PoolAddress(&led->physics.is_db.island_pool, body2->island_index);
+                            const struct ds_Island *is = led->physics.is_db.island_pool.buf + body2->island_index;
 					    	if (is->contact_list.count == 0)
 					    	{
                                 led_NodeColorProxies(led, body2->entity, node2->color);
@@ -1902,8 +1902,8 @@ static void led_EngineRun(struct led *led)
 //#ifdef DS_PHYSICS_DEBUG
 			case PHYSICS_EVENT_ISLAND_NEW:
 			{
-				struct ds_Island *is = ds_PoolAddress(&led->physics.is_db.island_pool, event->island);
-				if (PoolSlotAllocated(is))
+				struct ds_Island *is = led->physics.is_db.island_pool.buf + event->island;
+				if (ds_PoolSlotAllocated(is))
 				{
 					Vec4Set(is->color, 
 							RngF32Normalized(), 
@@ -1925,8 +1925,8 @@ static void led_EngineRun(struct led *led)
 			{
 				if (led->body_color_mode == RB_COLOR_MODE_ISLAND)
 				{
-					const struct ds_Island *is = ds_PoolAddress(&led->physics.is_db.island_pool, event->island);
-					if (PoolSlotAllocated(is))
+					const struct ds_Island *is = led->physics.is_db.island_pool.buf + event->island;
+					if (ds_PoolSlotAllocated(is))
 					{
 						led_ColorIsland(led, event->island, is->color);
 					}

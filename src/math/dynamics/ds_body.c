@@ -80,8 +80,8 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
 	struct ds_Shape *shape_ptr;
 	if (body->island_index != ISLAND_STATIC)
 	{
-	    struct ds_Island *island = ds_PoolAddress(&pipeline->is_db.island_pool, body->island_index);
-        ds_Assert(PoolSlotAllocated(island));
+	    struct ds_Island *island = pipeline->is_db.island_pool.buf + body->island_index;
+        ds_Assert(ds_PoolSlotAllocated(island));
 
         while (body->shape_list.count)
         {

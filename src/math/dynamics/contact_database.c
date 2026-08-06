@@ -281,7 +281,7 @@ void ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
     ds_DLLRemoveEx(shape0->contact_list, buf, index, shape_contact[prev0], shape_contact[0], shape_contact[next0]);
     ds_DLLRemoveEx(shape1->contact_list, buf, index, shape_contact[prev1], shape_contact[1], shape_contact[next1]);
 
-    struct ds_Island *island = ds_PoolAddress(&pipeline->is_db.island_pool, c->island);
+    struct ds_Island *island = pipeline->is_db.island_pool.buf + c->island;
     dll_Remove(&island->contact_list, pipeline->cdb->contact_pool.buf, index);
 
     ds_ContactPoolRemove(&pipeline->cdb->contact_pool, index);
