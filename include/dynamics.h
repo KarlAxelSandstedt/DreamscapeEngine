@@ -422,9 +422,9 @@ so any cached contacts are relative to body0.
 */
 struct ds_Contact
 {
-	DLL_SLOT_STATE;		                                /* island->contact_list node                                */
     POOL_NODE;
     u32                     generation;                 /* Slot generation used id ds_ContactId                     */
+    struct ds_DLLNode       island_contact;             /* island->contact_list node                         */
 
     u32                     island;                     /* Index of contact's island */
     u32                     set;                        /* Index of contact's set                                   */
@@ -1134,7 +1134,7 @@ struct ds_Island
     u32 set_island_index;   /* Index(island) == solver_sets[set].island[ island->set_island_index ] */
 
 	struct dll	    body_list;
-	struct dll	    contact_list;
+	struct ds_DLL	contact_list;
     struct ds_DLL   joint_list;
 
 //TODO RMEOVE

@@ -643,7 +643,7 @@ static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
 			case 0x2:
 			{
 				struct ds_Island *is = pipeline->is_db.island_pool.buf + is0;
-				dll_Append(&is->contact_list, pipeline->cdb->contact_pool.buf, pipeline->cdb->contact_new[i]);
+				ds_DLLAppend(is->contact_list, pipeline->cdb->contact_pool.buf, pipeline->cdb->contact_new[i], island_contact);
                 c->island = is0;
 			} break;
 
@@ -651,7 +651,7 @@ static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
 			case 0x1:
 			{
 				struct ds_Island *is = pipeline->is_db.island_pool.buf + is1;
-				dll_Append(&is->contact_list, pipeline->cdb->contact_pool.buf, pipeline->cdb->contact_new[i]);
+				ds_DLLAppend(is->contact_list, pipeline->cdb->contact_pool.buf, pipeline->cdb->contact_new[i], island_contact);
                 c->island = is1;
 			} break;
 		}

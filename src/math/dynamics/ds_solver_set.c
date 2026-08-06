@@ -178,7 +178,7 @@ void ds_SolverSetTrySleep(struct ds_RigidBodyPipeline *pipeline, const u32 islan
         struct ds_Contact *contact = pipeline->cdb->contact_pool.buf + next;
      
         ds_Assert(contact->set == SOLVER_SET_NULL);
-        next = contact->dll_next;
+        next = contact->island_contact.next;
         //TODO: do we need this link?
         //ds_Assert(contact->island == island_index);
         struct ds_CGraphColor *color = cg->color + contact->color;
