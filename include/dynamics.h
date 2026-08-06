@@ -1417,7 +1417,7 @@ u32 ds_IslandJobPhaseDispatch(const ds_JobId job);
 
 #define PHYSICS_EVENT_ISLAND(pipeline, event_type, island_index)					        \
 	{												                                        \
-		struct physicsEvent *__physics_debug_event = PhysicsPipelineEventPush(pipeline);	\
+		struct ds_PhysicsEvent *__physics_debug_event = ds_PhysicsEventPush(pipeline);	\
 		__physics_debug_event->type = event_type;						                    \
 		__physics_debug_event->island = island_index;						                \
 	}
@@ -1426,13 +1426,13 @@ u32 ds_IslandJobPhaseDispatch(const ds_JobId job);
 
 #define	PhysicsEventBodyNew(pipeline, _body)		                                        \
 	{												                                        \
-		struct physicsEvent *__physics_debug_event = PhysicsPipelineEventPush(pipeline);	\
+		struct ds_PhysicsEvent *__physics_debug_event = ds_PhysicsEventPush(pipeline);	\
 		__physics_debug_event->type = PHYSICS_EVENT_BODY_NEW;						        \
 		__physics_debug_event->body = _body;						                        \
 	}
 #define	PhysicsEventBodyRemoved(pipeline, body_entity)                                      \
 	{												                                        \
-		struct physicsEvent *__physics_debug_event = PhysicsPipelineEventPush(pipeline);	\
+		struct ds_PhysicsEvent *__physics_debug_event = ds_PhysicsEventPush(pipeline);	\
 		__physics_debug_event->type = PHYSICS_EVENT_BODY_REMOVED;						    \
 		__physics_debug_event->entity = body_entity;						                \
 	}
@@ -1443,13 +1443,13 @@ u32 ds_IslandJobPhaseDispatch(const ds_JobId job);
 #define	PhysicsEventIslandRemoved(pipeline, island)	    PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_REMOVED, island)
 #define PhysicsEventContactNew(pipeline, _contact)					                        \
 	{												                                        \
-		struct physicsEvent *__physics_debug_event = PhysicsPipelineEventPush(pipeline);	\
+		struct ds_PhysicsEvent *__physics_debug_event = ds_PhysicsEventPush(pipeline);	\
 		__physics_debug_event->type = PHYSICS_EVENT_CONTACT_NEW;				            \
 		__physics_debug_event->contact = _contact;				                            \
 	}
 #define PhysicsEventContactRemoved(pipeline, body0, shape0, body1, shape1)                  \
 	{												                                        \
-		struct physicsEvent *__physics_debug_event = PhysicsPipelineEventPush(pipeline);	\
+		struct ds_PhysicsEvent *__physics_debug_event = ds_PhysicsEventPush(pipeline);	\
 		__physics_debug_event->type = PHYSICS_EVENT_CONTACT_REMOVED;				        \
 		__physics_debug_event->contact_removed_bodies[0] = body0;				            \
 		__physics_debug_event->contact_removed_bodies[1] = body1;				            \
@@ -1471,7 +1471,7 @@ u32 ds_IslandJobPhaseDispatch(const ds_JobId job);
 //
 //#endif
 
-enum physicsEventType
+enum ds_PhysicsEventType
 {
 	PHYSICS_EVENT_CONTACT_NEW,
 	PHYSICS_EVENT_CONTACT_REMOVED,
@@ -1486,13 +1486,13 @@ enum physicsEventType
 	PHYSICS_EVENT_COUNT
 };
 
-struct physicsEvent
+struct ds_PhysicsEvent
 {
-	POOL_SLOT_STATE;
-	DLL_SLOT_STATE;
+	POOL_NODE;
+    struct ds_DLLNode   node;
 
 	u64			ns;	/* time of event */
-	enum physicsEventType type;
+	enum ds_PhysicsEventType type;
 	union
 	{
         u32                     entity;
@@ -1507,6 +1507,7 @@ struct physicsEvent
         };
 	};
 };
+POOL_DECLARE(ds_PhysicsEvent);
 
 enum rigidBodyColorMode
 {
@@ -1541,8 +1542,8 @@ struct ds_RigidBodyPipeline
 
     struct ds_JointPool joint_pool;
 
-	struct ds_Pool	    event_pool;
-	struct dll		    event_list;
+	struct ds_PhysicsEventPool  event_pool;
+	struct ds_DLL		        event_list;
 
     struct ds_CGraph    cgraph;
 
@@ -1600,7 +1601,7 @@ void            PhysicsPipelinePrintUsage(const struct ds_RigidBodyPipeline *pip
 /**************** PHYISCS PIPELINE INTERNAL API ****************/
 
 /* push physics event into pipeline memory and return pointer to allocated event */
-struct physicsEvent *	PhysicsPipelineEventPush(struct ds_RigidBodyPipeline *pipeline);
+struct ds_PhysicsEvent *	ds_PhysicsEventPush(struct ds_RigidBodyPipeline *pipeline);
 
 #ifdef __cplusplus
 } 

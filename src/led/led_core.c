@@ -1831,11 +1831,10 @@ static void led_EngineRun(struct led *led)
 	}
 	led->body_color_mode = led->pending_body_color_mode;
 
-	struct physicsEvent *event = NULL;
-	for (u32 i = led->physics.event_list.first; i != DLL_NULL; )
+	while (led->physics.event_list.first != DLL_SENTINEL)
 	{
-		event = ds_PoolAddress(&led->physics.event_pool, i);
-		const u32 next = dll_Next(event);
+        const u32 ei = led->physics.event_list.first;
+	    struct ds_PhysicsEvent *event = led->physics.event_pool.buf + ei;
 		switch (event->type)
 		{
 			case PHYSICS_EVENT_CONTACT_NEW:
@@ -1979,11 +1978,11 @@ static void led_EngineRun(struct led *led)
 						, node->proxy);
 			} break;
 		}
-		ds_PoolRemove(&led->physics.event_pool, i);
-		i = next;
+
+        ds_DLLRemove(led->physics.event_list, led->physics.event_pool.buf, ei, node);
 	}
 	
-	dll_Flush(&led->physics.event_list);
+	ds_PhysicsEventPoolFlush(&led->physics.event_pool);
 
     //PhysicsPipelinePrintUsage(&led->physics);
 }

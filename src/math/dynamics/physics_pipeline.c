@@ -24,6 +24,8 @@
 #include "dynamics.h"
 #include "ds_job.h"
 
+POOL_DEFINE(ds_PhysicsEvent);
+
 struct collisionDebug *g_collision_debug;
 
 void ds_DynamicsStaticAssert(void)
@@ -78,8 +80,8 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 	pipeline.shape_pool = ds_ShapePoolAlloc(NULL, initial_size, GROWABLE);
 	pipeline.shape_bvh = DbvhAlloc(NULL, 2*initial_size, GROWABLE);
 
-	pipeline.event_pool = ds_PoolAlloc(NULL, 256, struct physicsEvent, GROWABLE);
-	pipeline.event_list = dll_Init(struct physicsEvent);
+	pipeline.event_pool = ds_PhysicsEventPoolAlloc(NULL, 256, GROWABLE);
+	ds_DLLFlush(&pipeline.event_list);
 
 	pipeline.cshape_db = cshape_db;
 
@@ -133,7 +135,7 @@ void PhysicsPipelineFree(struct ds_RigidBodyPipeline *pipeline)
 	cdb_Free(pipeline->cdb);
 	isdb_Dealloc(&pipeline->is_db);
 	ds_PoolDealloc(&pipeline->body_pool);
-	ds_PoolDealloc(&pipeline->event_pool);
+	ds_PhysicsEventPoolDealloc(&pipeline->event_pool);
 	ds_ShapePoolDealloc(&pipeline->shape_pool);
     ds_JointPoolDealloc(&pipeline->joint_pool);
     ds_CGraphDealloc(pipeline);
@@ -198,8 +200,8 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
 	DbvhFlush(&pipeline->shape_bvh);
 	ds_ShapePoolFlush(&pipeline->shape_pool);
 
-	ds_PoolFlush(&pipeline->event_pool);
-	dll_Flush(&pipeline->event_list);
+	ds_PhysicsEventPoolFlush(&pipeline->event_pool);
+	ds_DLLFlush(&pipeline->event_list);
 
     ds_JointPoolFlush(&pipeline->joint_pool);
     ds_CGraphFlush(pipeline);
@@ -881,7 +883,7 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
 
 		for (u32 b = 0; b < job->body_count; ++b)
 		{
-			struct physicsEvent *event = PhysicsPipelineEventPush(pipeline);
+			struct ds_PhysicsEvent *event = ds_PhysicsEventPush(pipeline);
 			event->type = PHYSICS_EVENT_BODY_ORIENTATION;
             const struct ds_RigidBody *body = ds_PoolAddress(&pipeline->body_pool, job->bodies[b]);
 			event->body = ((u64) body->tag << 32) | job->bodies[b];
@@ -1083,11 +1085,11 @@ u32f32 PhysicsPipelineRaycastParameter(struct arena *mem_tmp1, struct arena *mem
 	return info.hit;
 }
 
-struct physicsEvent *PhysicsPipelineEventPush(struct ds_RigidBodyPipeline *pipeline)
+struct ds_PhysicsEvent *ds_PhysicsEventPush(struct ds_RigidBodyPipeline *pipeline)
 {
-	struct slot slot = ds_PoolAdd(&pipeline->event_pool);
-	dll_Append(&pipeline->event_list, pipeline->event_pool.buf, slot.index);
-	struct physicsEvent *event = slot.address;
+	struct slot slot = ds_PhysicsEventPoolAdd(&pipeline->event_pool);
+    ds_DLLAppend(pipeline->event_list, pipeline->event_pool.buf, slot.index, node);
+	struct ds_PhysicsEvent *event = slot.address;
 	event->ns = pipeline->ns_start + pipeline->frames_completed * pipeline->ns_tick;
 	return event;
 }
