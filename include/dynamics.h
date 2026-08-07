@@ -1383,9 +1383,7 @@ struct ds_IslandSeedJob
 
 struct ds_IslandSolveJob 
 {
-    u32     valid;
 	u32     island;
-
 	u32     asleep;
 	u32     body_count;
 	u32 *   bodies;		    /* bodies simulated in island */ 

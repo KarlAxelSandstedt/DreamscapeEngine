@@ -196,7 +196,6 @@ struct slot ds_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct c_
 {
     ds_Assert(ds_ContactKeyLookup(pipeline, key).address == NULL);
 
-    struct ds_Contact *buf = pipeline->cdb->contact_pool.buf;
     struct ds_RigidBody *body0, *body1;
     struct ds_Shape *shape0, *shape1;
     ds_ContactKeyAddress(&body0, &shape0, &body1, &shape1, pipeline, key);
@@ -208,6 +207,7 @@ struct slot ds_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct c_
     c->cached_count = 0;
     c->generation += 1;
 
+    struct ds_Contact *buf = pipeline->cdb->contact_pool.buf;
     struct ds_Contact *c0 = buf + shape0->contact_list.last; 
     struct ds_Contact *c1 = buf + shape1->contact_list.last; 
     const i32 prev0 = (c0->key.shape1 == c->key.shape0);

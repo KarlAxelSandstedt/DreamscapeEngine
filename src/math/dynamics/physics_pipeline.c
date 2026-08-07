@@ -761,28 +761,18 @@ static u32 IslandJobSeed(struct ds_IslandJobPhase *phase, struct ds_IslandSeedJo
 
     u32 job_count = 0;
     u32 island_index = job->island_first;
-    struct ds_Island *island;
     for (u32 i = 0; i < job->count; ++i)
 	{
-        const u32 island_index = active_set->island_pool.buf[job->island_first + i];
-	    island = pipeline->is_db.island_pool.buf + island_index;
+        const u32 solve_job_index = base + i;
+        struct ds_IslandSolveJob *solve_job = phase->solve_jobs + solve_job_index;
 
-        const u32 job_index = base + i;
-        struct ds_IslandSolveJob *job = phase->solve_jobs + job_index;
-
-        job->valid = 0;
-        if (!g_solver_config->sleep_enabled || ISLAND_AWAKE_BIT(island))
-	    {
-            job_count += 1;
-            job->valid = 1;
-	    	job->island = island_index;
-            ds_WSDequePushBottom(g_scheduler->deque + thread, ds_JobIdInit(ISLAND_JOB_SOLVE, job_index));
-	    }
+	    solve_job->island = active_set->island_pool.buf[job->island_first + i];
+        ds_WSDequePushBottom(g_scheduler->deque + thread, ds_JobIdInit(ISLAND_JOB_SOLVE, solve_job_index));
     }
 
 	ProfZoneEnd;
 
-    return job_count - 1;
+    return job->count - 1;
 }
 
 static u32 IslandJobSolve(struct ds_IslandJobPhase *phase, struct ds_IslandSolveJob *job)
@@ -822,6 +812,7 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
 	ProfZone;
 
     struct ds_IslandJobPhase *is_jobs = pipeline->is_jobs;
+    struct ds_SolverSet *active_set = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     {
     	ProfZoneNamed("JobPhase(Solve Islands)");
 
@@ -834,10 +825,9 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
         is_jobs->seed_jobs = ArenaPushZero(&pipeline->frame, is_jobs->seed_count_max*sizeof(struct ds_IslandSeedJob));
         ds_JobPhaseReserve(&is_jobs->phase, ISLAND_JOB_SEED, is_jobs->seed_count_max);
 
-        is_jobs->solve_count_max = pipeline->is_db.island_pool.count;
-        is_jobs->solve_jobs = ArenaPush(&pipeline->frame, is_jobs->solve_count_max*sizeof(struct ds_IslandSolveJob));
+        is_jobs->solve_count_max = active_set->island_pool.count;
+        is_jobs->solve_jobs = ArenaPushZero(&pipeline->frame, is_jobs->solve_count_max*sizeof(struct ds_IslandSolveJob));
 
-        struct ds_SolverSet *active_set = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
         const u32 islands_per_seed = active_set->island_pool.count / is_jobs->seed_count_max;
         u32 extra = active_set->island_pool.count % is_jobs->seed_count_max;
         u32 low = 0;
@@ -873,11 +863,6 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
 	for (u32 i = 0; i < is_jobs->solve_count_max; ++i)
 	{
         const struct ds_IslandSolveJob *job = is_jobs->solve_jobs + i;
-        if (!job->valid)
-        {
-            continue;
-        }
-    
 		if (job->asleep)
 		{
             ds_SolverSetTrySleep(pipeline, job->island);
