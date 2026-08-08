@@ -23,7 +23,7 @@ POOL_DEFINE(ds_RigidBody);
 
 ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBodyPrefab *prefab, const ds_Transform *t_world, const u32 entity)
 {
-	struct slot slot = ds_RigidBodyPoolAdd(&pipeline->body_pool);
+	const struct slot slot = ds_RigidBodyPoolAdd(&pipeline->body_pool);
 	struct ds_RigidBody *body = slot.address;
     body->tag += DS_ID_TAG_GENERATION_INCREMENT;
     const ds_RigidBodyId id = ((u64) body->tag << 32) | slot.index;
@@ -32,7 +32,6 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const stru
     if (pipeline->body_usage_set.bit_count <= slot.index)
     {
         ds_BitSetIncreaseSize(&pipeline->body_usage_set, pipeline->body_usage_set.bit_count << 1, 0);
-        ds_BitSetIncreaseSize(&pipeline->body_removal_set, pipeline->body_removal_set.bit_count << 1, 0);
     }
     ds_BitSetSet(&pipeline->body_usage_set, slot.index, 1);
 
@@ -46,19 +45,34 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const stru
 	Vec3Set(body->linear_momentum, 0.0f, 0.0f, 0.0f);
 
 	const u32 dynamic_flag = (prefab->dynamic) ? RB_DYNAMIC : 0;
-	body->flags = RB_ACTIVE | (g_solver_config->sleep_enabled * RB_AWAKE) | dynamic_flag;
+	body->flags = dynamic_flag;
 
 	body->low_velocity_time = 0.0f;
 
 	if (body->flags & RB_DYNAMIC)
 	{
+        struct ds_SolverSet *active_set = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE; 
+        const struct slot sim_slot = ds_CPoolPush(active_set->body_sim_pool);
+
         body->set = SOLVER_SET_ACTIVE;
+        body->sim = sim_slot.index;
+
+        struct ds_RigidBodySim *sim = sim_slot.address;
+        sim->body = slot.index;
+
 		isdb_InitIslandFromBody(pipeline, slot.index, SOLVER_SET_ACTIVE);
 	}
 	else
 	{
+        struct ds_SolverSet *static_set = pipeline->solver_set_pool.buf + SOLVER_SET_STATIC; 
+        const struct slot sim_slot = ds_CPoolPush(static_set->body_sim_pool);
+
         body->set = SOLVER_SET_STATIC;
+        body->sim = sim_slot.index;
 		body->island_index = ISLAND_STATIC;
+
+        struct ds_RigidBodySim *sim = sim_slot.address;
+        sim->body = slot.index;
 	}
 	
 	return id;
@@ -75,7 +89,6 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
     ds_Assert(ds_BitSetGet(&pipeline->body_usage_set, body_index));
 
     ds_BitSetSet(&pipeline->body_usage_set, body_index, 0);
-    ds_BitSetSet(&pipeline->body_removal_set, body_index, 0);
 
     const u32 mass_properties_update = 0;
 
@@ -119,6 +132,17 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
             ds_JointStaticRemove(pipeline, body, body->joint_list.first);
         }
 	}
+
+    struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
+    ds_CPoolRemoveAndSwap(set->body_sim_pool, body->sim);
+    if (body->sim < set->body_sim_pool.count)
+    {
+        const struct ds_RigidBodySim *moved_sim = set->body_sim_pool.buf + body->sim;
+        struct ds_RigidBody *moved_body = pipeline->body_pool.buf + moved_sim->body;
+        ds_Assert(moved_body->set == body->set);
+        ds_Assert(moved_body->sim == set->body_sim_pool.count);
+        moved_body->sim = body->sim;
+    }
 
     const u32 entity = body->entity;
 	ds_RigidBodyPoolRemove(&pipeline->body_pool, ds_IdIndex(id));

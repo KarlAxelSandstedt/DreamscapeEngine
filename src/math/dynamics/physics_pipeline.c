@@ -73,7 +73,6 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 
 	pipeline.body_pool = ds_RigidBodyPoolAlloc(NULL, initial_size, GROWABLE);
     pipeline.body_usage_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
-    pipeline.body_removal_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
 
     pipeline.joint_pool = ds_JointPoolAlloc(NULL, initial_size, GROWABLE);
 
@@ -112,9 +111,9 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
     pipeline.numerics_config = ds_NumericsConfigDefault();
 
     pipeline.solver_set_pool = ds_SolverSetPoolAlloc(NULL, 4096, GROWABLE);
-    const struct slot set_disabled = ds_SolverSetAdd(&pipeline, 0, 4096, 4096);
-    const struct slot set_static = ds_SolverSetAdd(&pipeline, 0, 0, 0);
-    const struct slot set_active = ds_SolverSetAdd(&pipeline, 0, 0, 4096);
+    const struct slot set_disabled = ds_SolverSetAdd(&pipeline, 256, 0, 4096, 4096);
+    const struct slot set_static = ds_SolverSetAdd(&pipeline, 256, 0, 0, 0);
+    const struct slot set_active = ds_SolverSetAdd(&pipeline, 4096, 0, 0, 4096);
     ds_Assert(set_disabled.index == SOLVER_SET_DISABLED);
     ds_Assert(set_static.index == SOLVER_SET_STATIC);
     ds_Assert(set_active.index == SOLVER_SET_ACTIVE);
@@ -140,7 +139,6 @@ void PhysicsPipelineFree(struct ds_RigidBodyPipeline *pipeline)
     ds_JointPoolDealloc(&pipeline->joint_pool);
     ds_CGraphDealloc(pipeline);
     ds_BitSetDealloc(&pipeline->body_usage_set);
-    ds_BitSetDealloc(&pipeline->body_removal_set);
     
     for (u32 i = 0; i < pipeline->solver_set_pool.count_max; ++i)
     {
@@ -165,7 +163,6 @@ static void PhysicsPipelineClearFrame(struct ds_RigidBodyPipeline *pipeline)
 	cdb_ClearFrame(pipeline->cdb);
 	ArenaFlush(&pipeline->frame);
     ds_CGraphFramePrepare(pipeline);
-    ds_BitSetClear(&pipeline->body_removal_set, 0);
 }
 
 
@@ -195,7 +192,6 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
 	
 	ds_RigidBodyPoolFlush(&pipeline->body_pool);
     ds_BitSetClear(&pipeline->body_usage_set, 0);
-    ds_BitSetClear(&pipeline->body_removal_set, 0);
 
 	DbvhFlush(&pipeline->shape_bvh);
 	ds_ShapePoolFlush(&pipeline->shape_pool);
@@ -433,35 +429,29 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 
     {
     	ProfZoneNamed("DbvhUpdate");
-    
-    	const u32 flags = RB_ACTIVE | RB_DYNAMIC | (g_solver_config->sleep_enabled * RB_AWAKE);
-        for (u64 bi = 0; bi < pipeline->body_usage_set.block_count; ++bi)
+        struct ds_SolverSet *active_set = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+        for (u32 i = 0; i < active_set->body_sim_pool.count; ++i)
         {
-            struct ds_BitBlock it = ds_BitBlockInit(pipeline->body_usage_set.bits[bi], bi, 1);
-            while (ds_BitBlockHasNext(&it))
+            struct ds_RigidBodySim *sim = active_set->body_sim_pool.buf + i;
+            struct ds_RigidBody *body = pipeline->body_pool.buf + sim->body;
+
+            struct ds_Shape *shape = NULL;
+            for (u32 j = body->shape_list.first; (i32) j != DLL_SENTINEL; j = shape->body_shape.next)
             {
-                const struct ds_RigidBody *body = pipeline->body_pool.buf + ds_BitBlockNext(&it);
-    		    if ((body->flags & flags) == flags)
+                shape = pipeline->shape_pool.buf + j;
+                struct aabb bbox = ds_ShapeWorldBbox(pipeline, shape);
+                const struct bvhNode *node = ds_PoolAddress(&pipeline->shape_bvh.tree.pool, shape->proxy);
+    		    const struct aabb *proxy = &node->bbox;
+    		    if (!AabbContains(proxy, &bbox))
     		    {
-                    struct ds_Shape *shape = NULL;
-                    for (u32 j = body->shape_list.first; (i32) j != DLL_SENTINEL; j = shape->body_shape.next)
-                    {
-                        shape = pipeline->shape_pool.buf + j;
-                        struct aabb bbox = ds_ShapeWorldBbox(pipeline, shape);
-                        const struct bvhNode *node = ds_PoolAddress(&pipeline->shape_bvh.tree.pool, shape->proxy);
-    		    	    const struct aabb *proxy = &node->bbox;
-    		    	    if (!AabbContains(proxy, &bbox))
-    		    	    {
-    		    	    	bbox.hw[0] += shape->margin;
-    		    	    	bbox.hw[1] += shape->margin;
-    		    	    	bbox.hw[2] += shape->margin;
-    		    	    	DbvhRemove(&pipeline->shape_bvh, shape->proxy);
-    		    	    	shape->proxy = DbvhInsert(&pipeline->shape_bvh, j, &bbox);
-    		    	    }
-                    }
-                }
-    		}
-    	}
+    		        bbox.hw[0] += shape->margin;
+    		    	bbox.hw[1] += shape->margin;
+    		    	bbox.hw[2] += shape->margin;
+    		    	DbvhRemove(&pipeline->shape_bvh, shape->proxy);
+    		    	shape->proxy = DbvhInsert(&pipeline->shape_bvh, j, &bbox);
+    		    }
+            }
+        }
 
     	ProfZoneEnd;
     }
@@ -865,7 +855,7 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
         const struct ds_IslandSolveJob *job = is_jobs->solve_jobs + i;
 		if (job->asleep)
 		{
-            ds_SolverSetTrySleep(pipeline, job->island);
+            ds_SolverSetSleep(pipeline, job->island);
 			PhysicsEventIslandAsleep(pipeline, job->island);
 		}
 
@@ -887,21 +877,6 @@ void PhysicsPipelineSleepEnable(struct ds_RigidBodyPipeline *pipeline)
 	if (!g_solver_config->sleep_enabled)
 	{
 		g_solver_config->sleep_enabled = 1;
-		const u32 body_flags = RB_ACTIVE | RB_DYNAMIC;
-
-        for (u64 bi = 0; bi < pipeline->body_usage_set.block_count; ++bi)
-        {
-            struct ds_BitBlock it = ds_BitBlockInit(pipeline->body_usage_set.bits[bi], bi, 1);
-            while (ds_BitBlockHasNext(&it))
-            {
-                struct ds_RigidBody *body = pipeline->body_pool.buf + ds_BitBlockNext(&it);
-			    if (body->flags & body_flags)
-			    {
-			    	body->flags |= RB_AWAKE;
-			    }
-            }
-		}
-
         for (u32 set_index = 0; set_index < pipeline->solver_set_pool.count_max; ++set_index)
         {
             struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
@@ -930,22 +905,6 @@ void PhysicsPipelineSleepDisable(struct ds_RigidBodyPipeline *pipeline)
 	if (g_solver_config->sleep_enabled)
 	{
 		g_solver_config->sleep_enabled = 0;
-		const u32 body_flags = RB_ACTIVE | RB_DYNAMIC;
-		struct ds_RigidBody *body = NULL;
-
-        for (u64 bi = 0; bi < pipeline->body_usage_set.block_count; ++bi)
-        {
-            struct ds_BitBlock it = ds_BitBlockInit(pipeline->body_usage_set.bits[bi], bi, 1);
-            while (ds_BitBlockHasNext(&it))
-            {
-                struct ds_RigidBody *body = pipeline->body_pool.buf + ds_BitBlockNext(&it);
-			    if (body->flags & body_flags)
-			    {
-			    	body->flags |= RB_AWAKE;
-			    }
-            }
-		}
-
         for (u32 set_index = 0; set_index < pipeline->solver_set_pool.count_max; ++set_index)
         {
             struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
@@ -989,24 +948,8 @@ static void UpdateSolverConfig(struct ds_RigidBodyPipeline *pipeline)
 	}
 }
 
-static void RemovalBodySetClear(struct ds_RigidBodyPipeline *pipeline)
-{   
-    struct arena *tmp = ArenaPushScratch();
-	for (u64 bi = 0; bi < pipeline->body_removal_set.block_count; ++bi)
-	{
-        struct ds_BitBlock it = ds_BitBlockInit(pipeline->body_removal_set.bits[bi], bi, 1);
-		while (ds_BitBlockHasNext(&it))
-		{
-		    ds_RigidBodyRemove(tmp, pipeline, (u32) ds_BitBlockNext(&it));
-		}
-	}
-    ArenaPopScratch();
-}
-
 void PhysicsPipelineSimulateFrame(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
 {
-	RemovalBodySetClear(pipeline);
-
 	/* update, if possible, any pending values in contact solver config */
 	UpdateSolverConfig(pipeline);
 

@@ -1798,7 +1798,7 @@ static void led_EngineRun(struct led *led)
 					    }
 					    else
 					    {
-					    	(RB_IS_AWAKE(body))
+					    	(body->set < SOLVER_SET_SLEEPING_FIRST)
                                 ? led_NodeColorProxies(led, body->entity,  led->awake_color)
                                 : led_NodeColorProxies(led, body->entity,  led->sleep_color);
 					    }

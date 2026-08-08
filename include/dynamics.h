@@ -283,33 +283,48 @@ f32 	    ds_ShapeRaycastParameter(const struct ds_RigidBodyPipeline *pipeline, c
  */
 u32 	    ds_ShapeRaycast(vec3 intersection, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray);
 
+
+/*
+rigid_body_prefab
+=================
+TODO
+rigid body prefabs: used within editor and level editor file format, contains resuable preset values for creating
+new bodies.
+*/
+struct ds_RigidBodyPrefab
+{
+    u8              id_buf[PREFAB_BUFSIZE];
+	STRING_DATABASE_SLOT_STATE;
+
+    struct dll      shape_list;         /* shape prefab instance list */
+    ds_RigidBodyId  body;
+    
+	u32	            dynamic;	        /* dynamic body is true, static if false */
+
+    //TODO pre-compute...?
+	//(f32 	        mass;			    /* total body mass */
+	//mat3 	        inv_inertia_tensor;
+};
+
+
 /*
 rigid_body
 ========== 
 //TODO
 */
 
-#define RB_ACTIVE		((u32) 1 << 0)
 #define RB_DYNAMIC		((u32) 1 << 1)
-#define RB_AWAKE		((u32) 1 << 2)
 #define RB_ISLAND		((u32) 1 << 3)
 
-#define RB_IS_ACTIVE(b)		(b->flags & RB_ACTIVE)
 #define RB_IS_DYNAMIC(b)	(b->flags & RB_DYNAMIC)
-#define RB_IS_AWAKE(b)		(b->flags & RB_AWAKE)
 #define RB_IS_ISLAND(b)		(b->flags & RB_ISLAND)
 
 
-#define RB_ACTIVE_BIT(b)	((b->flags & RB_ACTIVE) >> 0u)
 #define RB_DYNAMIC_BIT(b)	((b->flags & RB_DYNAMIC) >> 1u)
-#define RB_AWAKE_BIT(b)		((b->flags & RB_AWAKE) >> 2u)
 #define RB_ISLAND_BIT(b)	((b->flags & RB_ISLAND) >> 3u)
 
-#define IS_ACTIVE(flags)	((flags & RB_ACTIVE) >> 0u)
 #define IS_DYNAMIC(flags)	((flags & RB_DYNAMIC) >> 1u)
-#define IS_AWAKE(flags)		((flags & RB_AWAKE) >> 2u)
 #define IS_ISLAND(flags)	((flags & RB_ISLAND) >> 3u)
-#define IS_MARKED(flags)	((flags & RB_MARKED_FOR_REMOVAL) >> 4u)
 
 struct ds_RigidBody
 {
@@ -319,7 +334,9 @@ struct ds_RigidBody
     u32             tag;                    /* Tag [ Generation(16) | Unused (16) ]                 */
 	u32 		    flags;
 	u32		        island_index;
+
     u32             set;                    /* ds_SolverSet index                                   */
+    u32             sim;                    /* ds_SolverSet data index                              */ 
 
     struct ds_DLL   joint_list;             /* list of ds_Joint's attached to the body. Each joint is
                                                shared with one other body. */
@@ -343,27 +360,11 @@ struct ds_RigidBody
 };
 POOL_DECLARE(ds_RigidBody);
 
-/*
-rigid_body_prefab
-=================
-TODO
-rigid body prefabs: used within editor and level editor file format, contains resuable preset values for creating
-new bodies.
-*/
-struct ds_RigidBodyPrefab
+struct ds_RigidBodySim
 {
-    u8              id_buf[PREFAB_BUFSIZE];
-	STRING_DATABASE_SLOT_STATE;
-
-    struct dll      shape_list;         /* shape prefab instance list */
-    ds_RigidBodyId  body;
-    
-	u32	            dynamic;	        /* dynamic body is true, static if false */
-
-    //TODO pre-compute...?
-	//(f32 	        mass;			    /* total body mass */
-	//mat3 	        inv_inertia_tensor;
+    u32             body;                   /* RigidBody index */
 };
+DEFINE_CPOOL_STRUCT(ds_RigidBodySim);
 
 //TODO
 ds_RigidBodyId  ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBodyPrefab *prefab, const ds_Transform *t_world, const u32 entity);
@@ -911,22 +912,25 @@ struct ds_SolverSet
 
     //TODO body solver data
     
+    /* Body simulation state */
+    ds_CPool(ds_RigidBodySim)   body_sim_pool;
+
     /* Sleep set contact indices. 
      * TODO: box3d store non-contact dbvh overlaps for active set here, and contact indices in CGraph 
      */
-    ds_CPool(u32)           contact_pool;
+    ds_CPool(u32)               contact_pool;
     
     /* Disabled/Sleep set stores non-active joints that has been removed from the constraint graph */
-    ds_CPool(ds_JointSim)   joint_sim_pool;
+    ds_CPool(ds_JointSim)       joint_sim_pool;
 
     /* Islands in set */
-    ds_CPool(u32)           island_pool;
+    ds_CPool(u32)               island_pool;
 };
 POOL_DECLARE(ds_SolverSet);
 
 
 /* Allocate and setup a ds_SolverSet */
-struct slot ds_SolverSetAdd(struct ds_RigidBodyPipeline *pipeline, const u32 initial_index_count, const u32 initial_joint_count, const u32 initial_island_count);
+struct slot ds_SolverSetAdd(struct ds_RigidBodyPipeline *pipeline, const u32 initial_body_count, const u32 initial_index_count, const u32 initial_joint_count, const u32 initial_island_count);
 /* Deallocate a the given ds_SolverSet */
 void        ds_SolverSetRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index);
 /* Flush the given ds_SolverSet */
@@ -934,11 +938,13 @@ void        ds_SolverSetFlush(struct ds_RigidBodyPipeline *pipeline, const u32 i
 /* Wake up the given sleeping ds_SolverSet. If the solver set is not sleeping set, the call becomes a NO-OP. */
 void        ds_SolverSetWakeUp(struct ds_RigidBodyPipeline *pipeline, const u32 index);
 /* Try put the given island to sleep. On success, the island is moved from the active set to a sleeping set. */
-void        ds_SolverSetTrySleep(struct ds_RigidBodyPipeline *pipeline, const u32 island_index);
+void        ds_SolverSetSleep(struct ds_RigidBodyPipeline *pipeline, const u32 island_index);
 /* Merge set_merge into set_expand and dealloc set_merge. */
 void        ds_SolverSetMerge(struct ds_RigidBodyPipeline *pipeline, const u32 set_expand, const u32 set_merge);
 /* Debug validation for the given set */
 void        ds_SolverSetValidate(const struct ds_RigidBodyPipeline *pipeline, const u32 set_index);
+/* Move the body to the given set */
+void        ds_SolverSetMoveBody(struct ds_RigidBodyPipeline *pipeline, const u32 body, const u32 set);
 
 /*
 ds_CGraph
@@ -1536,7 +1542,6 @@ struct ds_RigidBodyPipeline
 
 	struct ds_RigidBodyPool body_pool;
     struct ds_BitSet    body_usage_set;         /* Bodies in use */
-    struct ds_BitSet    body_removal_set;       /* Bodies marked for removal */
 
 	struct ds_ShapePool	shape_pool;
 	struct bvh 		    shape_bvh;              /* dynamic bvh of shapes */

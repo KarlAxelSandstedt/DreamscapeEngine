@@ -28,7 +28,10 @@ static void isdb_AddBodyToIsland(struct ds_RigidBodyPipeline *pipeline, struct d
 {
 	struct ds_RigidBody *b = pipeline->body_pool.buf + body;
 	b->island_index = ds_IslandPoolIndex(&pipeline->is_db.island_pool, is);
-    b->set = is->set;
+    if (b->set != is->set)
+    {
+        ds_SolverSetMoveBody(pipeline, body, is->set);
+    }
 	ds_DLLAppend(is->body_list, pipeline->body_pool.buf, body, island_body);
 }
 
@@ -59,6 +62,10 @@ struct ds_Island *isdb_InitIslandFromBody(struct ds_RigidBodyPipeline *pipeline,
 	struct ds_Island *is = slot.address;
 	struct ds_RigidBody *b = pipeline->body_pool.buf + body;
 	b->island_index = slot.index;
+    if (b->set != is->set)
+    {
+        ds_SolverSetMoveBody(pipeline, body, is->set);
+    }
 	ds_DLLAppend(is->body_list, pipeline->body_pool.buf, body, island_body);
 
 	return is;
@@ -273,25 +280,16 @@ void isdb_MergeIslands(struct ds_RigidBodyPipeline *pipeline, const u32 ci, cons
 		struct ds_Island *is_expand = pipeline->is_db.island_pool.buf + expand;
 		struct ds_Island *is_merge = pipeline->is_db.island_pool.buf + merge;
 
-		if (g_solver_config->sleep_enabled)
-		{
-			const u32 island_sleep_interrupted = 1 - ISLAND_AWAKE_BIT(is_merge)*ISLAND_AWAKE_BIT(is_expand)
-						+ ISLAND_TRY_SLEEP_BIT(is_merge) + ISLAND_TRY_SLEEP_BIT(is_expand);
-			ds_Assert(!(ISLAND_AWAKE_BIT(is_merge) == 0 && ISLAND_AWAKE_BIT(is_expand) == 0));
-			if (island_sleep_interrupted)
-			{
-				if (!ISLAND_AWAKE_BIT(is_expand))
-				{
-					PhysicsEventIslandAwake(pipeline, expand);	
-				}
-				is_expand->flags = ISLAND_AWAKE | ISLAND_SLEEP_RESET;
-                ds_SolverSetWakeUp(pipeline, is_expand->set);
-			}
-		}
-
-        if (is_expand->set != is_merge->set)
+        if (is_expand->set >= SOLVER_SET_SLEEPING_FIRST)
         {
-            ds_SolverSetMerge(pipeline, is_expand->set, is_merge->set);
+		    PhysicsEventIslandAwake(pipeline, expand);	
+			is_expand->flags = ISLAND_AWAKE | ISLAND_SLEEP_RESET;
+            ds_SolverSetWakeUp(pipeline, is_expand->set);
+        }
+
+        if (is_merge->set >= SOLVER_SET_SLEEPING_FIRST)
+        {
+            ds_SolverSetMerge(pipeline, SOLVER_SET_ACTIVE, is_merge->set);
         }
 
 		if (is_expand->contact_list.count == 0)
@@ -571,11 +569,6 @@ u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline,
 	if (g_solver_config->sleep_enabled && ISLAND_TRY_SLEEP_BIT(is))
 	{
 		is->flags = 0;
-		for (u32 i = 0; i < is->body_list.count; ++i)
-		{
-			struct ds_RigidBody *b = is->bodies[i];
-			b->flags ^= RB_AWAKE;
-		}
 		*asleep = 1;
 	}
 	/* Island low energy state was interrupted, or island is simply awake */
@@ -616,7 +609,6 @@ u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline,
 				 * but the bodies may come in sleeping if island just woke up 
 				 */
                 struct ds_RigidBody *b = is->bodies[i];
-				b->flags |= RB_AWAKE;
 				b->low_velocity_time = (1-ISLAND_SLEEP_RESET_BIT(is)) * b->low_velocity_time;
 				const f32 lv_sq = Vec3Dot(b->velocity, b->velocity);
 				const f32 av_sq = Vec3Dot(b->angular_velocity, b->angular_velocity);
