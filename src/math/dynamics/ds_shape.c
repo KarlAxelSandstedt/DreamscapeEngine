@@ -63,7 +63,7 @@ ds_ShapeId ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_Sh
 
 void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 shape_index, const u32 mass_properties_update)
 {
-	struct ds_Island *island = pipeline->is_db.island_pool.buf + body->island_index;
+	struct ds_Island *island = pipeline->island_pool.buf + body->island;
     struct ds_Shape *dummy_shape, *shape = pipeline->shape_pool.buf + shape_index;
     struct ds_RigidBody *dummy_body;
     const ds_ShapeId s0 = ((u64) shape->tag << 32) | shape_index;
@@ -94,13 +94,7 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
     const u64 b0 = ((u64) body->tag << 32) | shape->body;
     const u32 static_is_tri_mesh = shape->cshape_type == C_SHAPE_TRI_MESH;
 
-    ds_Assert(pipeline->body_pool.buf[shape->body].island_index == ISLAND_STATIC);
-
-	ArenaPushRecord(&pipeline->frame);
-	struct memArray arr = ArenaPushAlignedAll(&pipeline->frame, sizeof(u32), sizeof(u32));
-	u32 *island = arr.addr;
-	u32 island_count = 0;
-
+    ds_Assert(pipeline->body_pool.buf[shape->body].island == ISLAND_STATIC);
     while (shape->contact_list.first != DLL_SENTINEL)
 	{
         const u32 ci = shape->contact_list.first;
@@ -115,40 +109,11 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
             ds_ContactKeyAddress(&dynamic_body, &dynamic_shape, &body, &shape, pipeline, &c->key);
 		}
 
-        ds_Assert(dynamic_body->island_index != ISLAND_STATIC);
-		struct ds_Island *is = pipeline->is_db.island_pool.buf + dynamic_body->island_index;
-		if ((is->flags & ISLAND_SPLIT) == 0)
-		{
-		    if (island_count == arr.len)
-			{
-				LogString(T_SYSTEM, S_FATAL, "Stack OOM in ds_ShapeStaticRemove");
-				FatalCleanupAndExit();
-			}
-			island[island_count++] = dynamic_body->island_index;
-			
-			is->flags |= ISLAND_SPLIT;
-		}
+        ds_Assert(dynamic_body->island != ISLAND_STATIC);
+		struct ds_Island *is = pipeline->island_pool.buf + dynamic_body->island;
+		is->constraint_remove_count += 1; 
         ds_ContactRemove(pipeline, ci);
     }
-
-	for (u32 i = 0; i < island_count; ++i)
-	{
-		struct ds_Island *is = pipeline->is_db.island_pool.buf + island[i];
-		if (is->contact_list.count > 0)
-		{
-			isdb_SplitIsland(mem_tmp, pipeline, island[i]);
-		}
-		else
-		{
-			is->flags &= ~(ISLAND_SPLIT);
-			if (is->set >= SOLVER_SET_SLEEPING_FIRST)
-			{
-                ds_SolverSetWakeUp(pipeline, is->set);
-				PhysicsEventIslandAwake(pipeline, island[i]);	
-			}
-		}
-	}
-    ArenaPopRecord(&pipeline->frame);
 
     if (mass_properties_update)
     {

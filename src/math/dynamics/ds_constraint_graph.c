@@ -233,7 +233,7 @@ void ds_CGraphValidate(const struct ds_RigidBodyPipeline *pipeline)
         {
             const u32 ci = color->contact_pool.buf[i];
             const struct ds_Contact *contact = pipeline->cdb->contact_pool.buf + ci;
-            const struct ds_Island *island = pipeline->is_db.island_pool.buf + contact->island;
+            const struct ds_Island *island = pipeline->island_pool.buf + contact->island;
             const struct ds_RigidBody *body0 = pipeline->body_pool.buf + contact->key.body0;
             const struct ds_RigidBody *body1 = pipeline->body_pool.buf + contact->key.body1;
             ds_Assert(contact->color == c);
@@ -265,7 +265,7 @@ void ds_CGraphValidate(const struct ds_RigidBodyPipeline *pipeline)
         {
             const struct ds_JointSim *sim = color->joint_sim_pool.buf + i;
             const struct ds_Joint *joint = pipeline->joint_pool.buf + sim->joint;
-            const struct ds_Island *island = pipeline->is_db.island_pool.buf + joint->island;
+            const struct ds_Island *island = pipeline->island_pool.buf + joint->island;
             const struct ds_RigidBody *body0 = pipeline->body_pool.buf + joint->body[0];
             const struct ds_RigidBody *body1 = pipeline->body_pool.buf + joint->body[1];
             ds_Assert(joint->color == c);

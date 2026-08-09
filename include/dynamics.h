@@ -333,7 +333,7 @@ struct ds_RigidBody
 
     u32             tag;                    /* Tag [ Generation(16) | Unused (16) ]                 */
 	u32 		    flags;
-	u32		        island_index;
+	u32		        island;
 
     u32             set;                    /* ds_SolverSet index                                   */
     u32             sim;                    /* ds_SolverSet data index                              */ 
@@ -938,7 +938,7 @@ void        ds_SolverSetFlush(struct ds_RigidBodyPipeline *pipeline, const u32 i
 /* Wake up the given sleeping ds_SolverSet. If the solver set is not sleeping set, the call becomes a NO-OP. */
 void        ds_SolverSetWakeUp(struct ds_RigidBodyPipeline *pipeline, const u32 index);
 /* Try put the given island to sleep. On success, the island is moved from the active set to a sleeping set. */
-void        ds_SolverSetSleep(struct ds_RigidBodyPipeline *pipeline, const u32 island_index);
+void        ds_SolverSetSleep(struct ds_RigidBodyPipeline *pipeline, const u32 island);
 /* Merge set_merge into set_expand and dealloc set_merge. */
 void        ds_SolverSetMerge(struct ds_RigidBodyPipeline *pipeline, const u32 set_expand, const u32 set_merge);
 /* Debug validation for the given set */
@@ -1032,10 +1032,6 @@ ds_Island
 TODO 
 */
 
-#define ISLAND_SPLIT		(0x1u << 2u)	/* flag island for splitting */
-
-#define ISLAND_SPLIT_BIT(is)		(((is)->flags & ISLAND_SPLIT) >> 2u)
-
 #define ISLAND_NULL	    POOL_NULL 
 #define ISLAND_STATIC	POOL_NULL-1	/* static bodies are mapped to "island" ISLAND_STATIC */
 
@@ -1043,6 +1039,7 @@ struct ds_Island
 {
     POOL_NODE;
 
+    /* FRAME DATA */
 	struct ds_RigidBody **	bodies;	
 	struct ds_Contact 	**	contacts;
 	u32 *			        body_index_map; /* body_index -> local indices of bodies in island:
@@ -1050,10 +1047,10 @@ struct ds_Island
 						                     * is->body_index_map[b] = i 
 						                     */
 
-	/* Persistent Island */
-	u32 flags;
-    u32 set;                /* ds_SolverSet index */
-    u32 set_island_index;   /* Index(island) == solver_sets[set].island[ island->set_island_index ] */
+    /* PERSISTENT DATA */
+	u32             constraint_remove_count;   /* Constraints removed counter */
+    u32             set;                        /* ds_SolverSet index */
+    u32             set_island_index;           /* index into set.island_pool */
 
 	struct ds_DLL	body_list;
 	struct ds_DLL	contact_list;
@@ -1064,49 +1061,20 @@ struct ds_Island
 };
 POOL_DECLARE(ds_Island);
 
-struct isdb
-{
-	/* PERSISTENT DATA */
-	struct ds_IslandPool 	island_pool;	    
-	/* FRAME DATA */
-	u32 *		        possible_splits;		/* Islands in which a contact has been broken during frame */
-	u32 		        possible_splits_count;
-};
-
-#ifdef DS_PHYSICS_DEBUG
-#define IS_DB_VALIDATE(pipeline)	isdb_Validate((pipeline)
-#else
-#define IS_DB_VALIDATE(pipeline)	
-#endif
-
 struct ds_RigidBodyPipeline;
 
-/* Setup and allocate memory for new database */
-struct isdb	isdb_Alloc(struct arena *mem_persistent, const u32 initial_size);
-/* Free any heap memory */
-void	   	isdb_Dealloc(struct isdb *is_db);
-/* Flush / reset the island database */
-void		isdb_Flush(struct isdb *is_db);
-/* Clear any frame related data */
-void		isdb_ClearFrame(struct isdb *is_db);
 /* remove island resources from database */
-void 		isdb_IslandRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is);
+void 		ds_IslandRemove(struct ds_RigidBodyPipeline *pipeline, const u32 island);
 /* Debug printing of island */
-void 		isdb_PrintIsland(FILE *file, const struct ds_RigidBodyPipeline *pipeline, const u32 island, const char *desc);
+void 		ds_IslandPrint(FILE *file, const struct ds_RigidBodyPipeline *pipeline, const u32 island, const char *desc);
 /* Check if the database appears to be valid */
-void 		isdb_Validate(const struct ds_RigidBodyPipeline *pipeline);
-/* Setup new island from single body */
-struct ds_Island *  isdb_InitIslandFromBody(struct ds_RigidBodyPipeline *pipeline, const u32 body, const u32 set);
-/* Add contact to island */
-void 		isdb_AddContactToIsland(struct ds_RigidBodyPipeline *pipeline, const u32 island, const u32 contact);
-/* Return island that body is assigned to */
-struct ds_Island *	isdb_BodyToIsland(struct ds_RigidBodyPipeline *pipeline, const u32 body);
+void 		ds_IslandValidateAll(const struct ds_RigidBodyPipeline *pipeline);
 /* Merge islands (Or simply update if new local contact) using new contact */
-void 		isdb_MergeIslands(struct ds_RigidBodyPipeline *pipeline, const u32 ci, const u32 b0, const u32 b1);
-/* Split island, or remake if no split happens: TODO: Make thread-safe  */
-void 		isdb_SplitIsland(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, const u32 island_to_split);
+void 		ds_IslandMerge(struct ds_RigidBodyPipeline *pipeline, const u32 expand, const u32 merge, const u32 ci);
+/* Split island, or remake if no split happens.  */
+void 		ds_IslandSplit(struct ds_RigidBodyPipeline *pipeline, const u32 island);
 
-u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is, const f32 timestep);
+u32 *       ds_IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is, const f32 timestep);
 
 /*
 =================================================================================================================
@@ -1468,7 +1436,7 @@ struct ds_RigidBodyPipeline
     struct ds_SolverSetPool solver_set_pool;    /* index 0,1,2 reserved for DISABLED,STATIC,ACTIVE sets */
 
 	struct cdb *	    cdb;
-	struct isdb 	    is_db;
+	struct ds_IslandPool 	island_pool;	    
 
 	struct collisionDebug *	debug;
 	u32			        debug_count;

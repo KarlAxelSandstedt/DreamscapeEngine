@@ -23,17 +23,17 @@ POOL_DEFINE(ds_RigidBody);
 
 ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBodyPrefab *prefab, const ds_Transform *t_world, const u32 entity)
 {
-	const struct slot slot = ds_RigidBodyPoolAdd(&pipeline->body_pool);
-	struct ds_RigidBody *body = slot.address;
+	const struct slot body_slot = ds_RigidBodyPoolAdd(&pipeline->body_pool);
+	struct ds_RigidBody *body = body_slot.address;
     body->tag += DS_ID_TAG_GENERATION_INCREMENT;
-    const ds_RigidBodyId id = ((u64) body->tag << 32) | slot.index;
+    const ds_RigidBodyId id = ((u64) body->tag << 32) | body_slot.index;
 	PhysicsEventBodyNew(pipeline, id);
 
-    if (pipeline->body_usage_set.bit_count <= slot.index)
+    if (pipeline->body_usage_set.bit_count <= body_slot.index)
     {
         ds_BitSetIncreaseSize(&pipeline->body_usage_set, pipeline->body_usage_set.bit_count << 1, 0);
     }
-    ds_BitSetSet(&pipeline->body_usage_set, slot.index, 1);
+    ds_BitSetSet(&pipeline->body_usage_set, body_slot.index, 1);
 
     ds_DLLFlush(&body->joint_list);
     ds_DLLFlush(&body->shape_list);
@@ -58,9 +58,12 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const stru
         body->sim = sim_slot.index;
 
         struct ds_RigidBodySim *sim = sim_slot.address;
-        sim->body = slot.index;
+        sim->body = body_slot.index;
 
-		isdb_InitIslandFromBody(pipeline, slot.index, SOLVER_SET_ACTIVE);
+	    const struct slot island_slot = ds_IslandAlloc(pipeline, SOLVER_SET_ACTIVE);
+	    struct ds_Island *island = island_slot.address;
+	    body->island = island_slot.index;
+	    ds_DLLAppend(island->body_list, pipeline->body_pool.buf, body_slot.index, island_body);
 	}
 	else
 	{
@@ -69,10 +72,10 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const stru
 
         body->set = SOLVER_SET_STATIC;
         body->sim = sim_slot.index;
-		body->island_index = ISLAND_STATIC;
+		body->island = ISLAND_STATIC;
 
         struct ds_RigidBodySim *sim = sim_slot.address;
-        sim->body = slot.index;
+        sim->body = body_slot.index;
 	}
 	
 	return id;
@@ -106,7 +109,7 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
 	struct ds_Shape *shape_ptr;
 	if (body->set != SOLVER_SET_STATIC)
 	{
-	    struct ds_Island *island = pipeline->is_db.island_pool.buf + body->island_index;
+	    struct ds_Island *island = pipeline->island_pool.buf + body->island;
         ds_Assert(ds_PoolSlotAllocated(island));
 
         while (body->shape_list.count)
@@ -124,12 +127,8 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
     	{
     		ds_Assert(island->body_list.first == DLL_SENTINEL);
     		ds_Assert(island->body_list.last == DLL_SENTINEL);
-    		isdb_IslandRemove(pipeline, island);
+    		ds_IslandRemove(pipeline, body->island);
     	} 
-        else
-        {
-	    	isdb_SplitIsland(mem_tmp, pipeline, body->island_index);
-	    }
 	}       
 	else
 	{

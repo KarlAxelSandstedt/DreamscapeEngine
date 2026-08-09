@@ -150,21 +150,20 @@ void ds_SolverSetWakeUp(struct ds_RigidBodyPipeline *pipeline, const u32 index)
     for (u32 i = 0; i < set->island_pool.count; ++i)
     {
         const u32 isi = set->island_pool.buf[i];
-        struct ds_Island *island = pipeline->is_db.island_pool.buf + isi;
+        struct ds_Island *island = pipeline->island_pool.buf + isi;
         island->set = SOLVER_SET_ACTIVE;
         island->set_island_index = ds_CPoolPush(active->island_pool).index; 
         active->island_pool.buf[ island->set_island_index ] = isi;
     }
 
     ds_SolverSetRemove(pipeline, index);
-    fprintf(stderr, "Waking set %u\n", index);
 }
 
 void ds_SolverSetSleep(struct ds_RigidBodyPipeline *pipeline, const u32 island_index)
 {
     struct ds_CGraph *cg = &pipeline->cgraph;
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
-    struct ds_Island *island = pipeline->is_db.island_pool.buf + island_index;
+    struct ds_Island *island = pipeline->island_pool.buf + island_index;
 
     ds_Assert(island->set == SOLVER_SET_ACTIVE);
     ds_Assert(island->set_island_index < active->island_pool.count);
@@ -173,7 +172,7 @@ void ds_SolverSetSleep(struct ds_RigidBodyPipeline *pipeline, const u32 island_i
     if (island->set_island_index < active->island_pool.count)
     {
         const u32 moved_index = active->island_pool.buf[ island->set_island_index ];
-        struct ds_Island *moved = pipeline->is_db.island_pool.buf + moved_index;
+        struct ds_Island *moved = pipeline->island_pool.buf + moved_index;
         ds_Assert(moved->set == SOLVER_SET_ACTIVE);
         ds_Assert(moved->set_island_index == active->island_pool.count);
         moved->set_island_index = island->set_island_index;
@@ -184,7 +183,6 @@ void ds_SolverSetSleep(struct ds_RigidBodyPipeline *pipeline, const u32 island_i
     island->set = slot.index;
     island->set_island_index = 0;
     ds_CPoolPushValue(set->island_pool, island_index);
-    fprintf(stderr, "Sleeping set %u\n", slot.index);
 
     struct ds_Joint *joint = NULL;
     for (u32 i = island->joint_list.first; (i32) i != DLL_SENTINEL; i = joint->island_joint.next)
@@ -223,7 +221,7 @@ void ds_SolverSetSleep(struct ds_RigidBodyPipeline *pipeline, const u32 island_i
     for (u32 i = island->body_list.first; (i32) i != DLL_SENTINEL; i = body->island_body.next)
     {
         body = pipeline->body_pool.buf + i;
-        ds_Assert(body->island_index == island_index);
+        ds_Assert(body->island == island_index);
         ds_Assert(body->set == SOLVER_SET_ACTIVE);
         ds_SolverSetMoveBody(pipeline, i, island->set);
     }
@@ -260,7 +258,7 @@ void ds_SolverSetMerge(struct ds_RigidBodyPipeline *pipeline, const u32 set_expa
         for (u32 i = 0; i < merge->island_pool.count; ++i)
         {
             const u32 isi = merge->island_pool.buf[i];
-            struct ds_Island *is = pipeline->is_db.island_pool.buf + isi;
+            struct ds_Island *is = pipeline->island_pool.buf + isi;
             ds_Assert(is->set == set_merge);
 
             is->set = set_expand;
@@ -294,7 +292,7 @@ void ds_SolverSetValidate(const struct ds_RigidBodyPipeline *pipeline, const u32
     ds_Assert(ds_PoolSlotAllocated(set));
     for (u32 i = 0; i < set->island_pool.count; ++i)
     {
-        const struct ds_Island *island = pipeline->is_db.island_pool.buf + set->island_pool.buf[i];
+        const struct ds_Island *island = pipeline->island_pool.buf + set->island_pool.buf[i];
         ds_Assert(island->set == set_index);
         ds_Assert(island->set_island_index == i);
     }

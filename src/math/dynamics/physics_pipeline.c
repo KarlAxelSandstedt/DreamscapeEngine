@@ -85,7 +85,7 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 	pipeline.cshape_db = cshape_db;
 
 	pipeline.cdb = cdb_Alloc(mem, initial_size);
-	pipeline.is_db = isdb_Alloc(mem, initial_size);
+	pipeline.island_pool = ds_IslandPoolAlloc(NULL, initial_size, GROWABLE);
 
     pipeline.margin_on = 0;
 	pipeline.margin = COLLISION_DEFAULT_MARGIN;
@@ -132,7 +132,7 @@ void PhysicsPipelineFree(struct ds_RigidBodyPipeline *pipeline)
 #endif
 	BvhFree(&pipeline->shape_bvh);
 	cdb_Free(pipeline->cdb);
-	isdb_Dealloc(&pipeline->is_db);
+	ds_IslandPoolDealloc(&pipeline->island_pool);
 	ds_RigidBodyPoolDealloc(&pipeline->body_pool);
 	ds_PhysicsEventPoolDealloc(&pipeline->event_pool);
 	ds_ShapePoolDealloc(&pipeline->shape_pool);
@@ -159,7 +159,6 @@ static void PhysicsPipelineClearFrame(struct ds_RigidBodyPipeline *pipeline)
 		ds_CPoolFlush(pipeline->debug[i].stack_segment);
 	}
 #endif
-	isdb_ClearFrame(&pipeline->is_db);
 	cdb_ClearFrame(pipeline->cdb);
 	ArenaFlush(&pipeline->frame);
     ds_CGraphFramePrepare(pipeline);
@@ -188,7 +187,7 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
     }
 
 	cdb_Flush(pipeline->cdb);
-	isdb_Flush(&pipeline->is_db);
+	ds_IslandPoolFlush(&pipeline->island_pool);
 	
 	ds_RigidBodyPoolFlush(&pipeline->body_pool);
     ds_BitSetClear(&pipeline->body_usage_set, 0);
@@ -222,7 +221,7 @@ void PhysicsPipelineValidate(const struct ds_RigidBodyPipeline *pipeline)
 
     ds_CGraphValidate(pipeline);
 	cdb_Validate(pipeline);
-	isdb_Validate(pipeline);
+	ds_IslandValidateAll(pipeline);
 
 	ProfZoneEnd;
 }
@@ -619,8 +618,8 @@ static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
 		struct ds_Contact *c = pipeline->cdb->contact_pool.buf + pipeline->cdb->contact_new[i];
 		const struct ds_RigidBody *body0 = pipeline->body_pool.buf + c->key.body0;
 		const struct ds_RigidBody *body1 = pipeline->body_pool.buf + c->key.body1;
-		const u32 is0 = body0->island_index;
-		const u32 is1 = body1->island_index;
+		const u32 is0 = body0->island;
+		const u32 is1 = body1->island;
 		const u32 d0 = (is0 != ISLAND_STATIC) ? 0x2 : 0x0;
 		const u32 d1 = (is1 != ISLAND_STATIC) ? 0x1 : 0x0;
 		switch (d0 | d1)
@@ -628,13 +627,13 @@ static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
 			/* dynamic-dynamic */
 			case 0x3: 
 			{
-				isdb_MergeIslands(pipeline, pipeline->cdb->contact_new[i], c->key.body0, c->key.body1);
+				ds_IslandMerge(pipeline, body0->island, body1->island, pipeline->cdb->contact_new[i]);
 			} break;
 
 			/* dynamic-static */
 			case 0x2:
 			{
-				struct ds_Island *is = pipeline->is_db.island_pool.buf + is0;
+				struct ds_Island *is = pipeline->island_pool.buf + is0;
 				ds_DLLAppend(is->contact_list, pipeline->cdb->contact_pool.buf, pipeline->cdb->contact_new[i], island_contact);
                 c->island = is0;
                 /*
@@ -654,7 +653,7 @@ static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
 			/* static-dynamic */
 			case 0x1:
 			{
-				struct ds_Island *is = pipeline->is_db.island_pool.buf + is1;
+				struct ds_Island *is = pipeline->island_pool.buf + is1;
 				ds_DLLAppend(is->contact_list, pipeline->cdb->contact_pool.buf, pipeline->cdb->contact_new[i], island_contact);
                 c->island = is1;
                 /*
@@ -687,7 +686,7 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 		return; 
 	}
     
-	u32 *split = ArenaPush(&pipeline->frame, pipeline->is_db.island_pool.count*sizeof(u32));
+	u32 *split = ArenaPush(&pipeline->frame, pipeline->island_pool.count*sizeof(u32));
     u32 split_count = 0;
 	//fprintf(stderr, " R: {");
 	for (u64 block = 0; block < cdb->contact_frame_usage.block_count; ++block)
@@ -707,36 +706,27 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 			const u32 b1 = c->key.body1;
 			const struct ds_RigidBody *body0 = pipeline->body_pool.buf + b0;
 			const struct ds_RigidBody *body1 = pipeline->body_pool.buf + b1;
-			ds_Assert(body0->island_index != ISLAND_STATIC || body1->island_index != ISLAND_STATIC);
+			ds_Assert(body0->island != ISLAND_STATIC || body1->island != ISLAND_STATIC);
 
-			struct ds_Island *is;
-			if (body0->island_index != ISLAND_STATIC)
+			if (body0->set != SOLVER_SET_STATIC && body1->set != SOLVER_SET_STATIC)
 			{
-				is = isdb_BodyToIsland(pipeline, b0);
-				if (body1->island_index != ISLAND_STATIC)
-				{
-                    if (!(is->flags & ISLAND_SPLIT))
-                    {
-                    	is->flags |= ISLAND_SPLIT;
-                    	split[split_count++] = body0->island_index;
-                        ds_Assert(split_count <= pipeline->is_db.island_pool.count);
-                    }
-				}
-			}
-			else
-			{
-				is = isdb_BodyToIsland(pipeline, b1);
+			    struct ds_Island *is = pipeline->island_pool.buf + body0->island;
+                is->constraint_remove_count += 1;
+                if (is->constraint_remove_count == 1)
+                {
+                    split[split_count++] = body0->island;
+                    ds_Assert(split_count <= pipeline->island_pool.count);
+                }
 			}
 
 			ds_ContactRemove(pipeline, ci);
 		}
 	}	
-	ArenaPopPacked(&pipeline->frame, (pipeline->is_db.island_pool.count - split_count)*sizeof(u32));
+	ArenaPopPacked(&pipeline->frame, (pipeline->island_pool.count - split_count)*sizeof(u32));
 
-    struct arena *tmp = ArenaPushScratch();
 	for (u32 i = 0; i < split_count; ++i)
 	{
-		isdb_SplitIsland(tmp, pipeline, split[i]);
+		ds_IslandSplit(pipeline, split[i]);
 	}
 
     /* Update contact_persistent_usage */
@@ -758,7 +748,6 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
         	}
         }
     } 
-    ArenaPopScratch();
 
 	ProfZoneEnd;
 }
@@ -794,9 +783,9 @@ static u32 IslandJobSolve(struct ds_IslandJobPhase *phase, struct ds_IslandSolve
 	ProfZone;
 
     struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
-    struct ds_Island *is = pipeline->is_db.island_pool.buf + job->island;
+    struct ds_Island *is = pipeline->island_pool.buf + job->island;
 	job->body_count = is->body_list.count;
-	job->bodies = IslandSolve(g_tl_self->frame, pipeline, is, phase->timestep);
+	job->bodies = ds_IslandSolve(g_tl_self->frame, pipeline, is, phase->timestep);
 
 	ProfZoneEnd;
 
@@ -892,7 +881,7 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
         for (i32 i = (i32) active->island_pool.count - 1; i != -1; --i)
         {
             const u32 isi = active->island_pool.buf[i];
-            struct ds_Island *island = pipeline->is_db.island_pool.buf + isi; 
+            struct ds_Island *island = pipeline->island_pool.buf + isi; 
 	    	f32 min_low_velocity_time = F32_MAX_POSITIVE_NORMAL;
 
             struct ds_RigidBody *body;
@@ -941,7 +930,7 @@ void PhysicsPipelineSleepEnable(struct ds_RigidBodyPipeline *pipeline)
             for (u32 k = 0; k < set->island_pool.count; ++k)
             {
                 const u32 island_index = set->island_pool.buf[k];
-        	    struct ds_Island *is = pipeline->is_db.island_pool.buf + k;
+        	    struct ds_Island *is = pipeline->island_pool.buf + k;
             }
 
             if (set_index >= SOLVER_SET_SLEEPING_FIRST)
@@ -969,7 +958,7 @@ void PhysicsPipelineSleepDisable(struct ds_RigidBodyPipeline *pipeline)
             for (u32 k = 0; k < set->island_pool.count; ++k)
             {
                 const u32 island_index = set->island_pool.buf[k];
-	    	    struct ds_Island *is = pipeline->is_db.island_pool.buf + k;
+	    	    struct ds_Island *is = pipeline->island_pool.buf + k;
             }
 
             if (set_index >= SOLVER_SET_SLEEPING_FIRST)
@@ -1085,7 +1074,7 @@ void PhysicsPipelinePrintUsage(const struct ds_RigidBodyPipeline *pipeline)
     fprintf(stderr, "\tshapes:                      %u\n", pipeline->shape_pool.count);
     fprintf(stderr, "\tshape_bvh nodes:             %u\n", pipeline->shape_bvh.tree.pool.count);
     fprintf(stderr, "\tevents:                      %u\n", pipeline->event_pool.count);
-    fprintf(stderr, "\tislands:                     %u\n", pipeline->is_db.island_pool.count);
+    fprintf(stderr, "\tislands:                     %u\n", pipeline->island_pool.count);
     fprintf(stderr, "\tcontacts:                    %u\n", pipeline->cdb->contact_pool.count);
     fprintf(stderr, "\tsat caches (max):            %u\n", AtomicLoadRlx32(&pipeline->cdb->sat_cache_pool.a_count_max));
     fprintf(stderr, "\tcontact bitvector size:      %lu\n", (long unsigned) pipeline->cdb->contact_persistent_usage.block_count*sizeof(u64));
