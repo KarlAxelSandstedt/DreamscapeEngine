@@ -1748,7 +1748,7 @@ static void led_EngineRun(struct led *led)
 			{ 
                 for (u64 bi = 0; bi < led->physics.body_usage_set.block_count; ++bi)
                 {
-                    struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi, 1);
+                    struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi);
                     while (ds_BitBlockHasNext(&it))
                     {
                         const struct ds_RigidBody *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);
@@ -1763,7 +1763,7 @@ static void led_EngineRun(struct led *led)
                 vec4 color;
                 for (u64 bi = 0; bi < led->physics.body_usage_set.block_count; ++bi)
                 {
-                    struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi, 1);
+                    struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi);
                     while (ds_BitBlockHasNext(&it))
                     {
 				        const struct ds_RigidBody *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);
@@ -1788,7 +1788,7 @@ static void led_EngineRun(struct led *led)
 			{ 
                 for (u64 bi = 0; bi < led->physics.body_usage_set.block_count; ++bi)
                 {
-                    struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi, 1);
+                    struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi);
                     while (ds_BitBlockHasNext(&it))
                     {
 				        const struct ds_RigidBody *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);
@@ -1810,7 +1810,7 @@ static void led_EngineRun(struct led *led)
 			{ 
                 for (u64 bi = 0; bi < led->physics.body_usage_set.block_count; ++bi)
                 {
-                    struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi, 1);
+                    struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi);
                     while (ds_BitBlockHasNext(&it))
                     {
 				        const struct ds_RigidBody *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);
@@ -2076,6 +2076,7 @@ void led_Core(struct led *led)
 		led_WallSmashSimulationSetup(led);
 		//led_RopeSetup(led);
         led_Refresh(led);
+        led_Run(led);
 	}
 
 	if (led->engine_initalized && !led->pending_engine_initalized)

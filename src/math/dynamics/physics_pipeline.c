@@ -86,6 +86,7 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 
 	pipeline.cdb = cdb_Alloc(mem, initial_size);
 	pipeline.island_pool = ds_IslandPoolAlloc(NULL, initial_size, GROWABLE);
+    pipeline.island_high_energy_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
 
     pipeline.margin_on = 0;
 	pipeline.margin = COLLISION_DEFAULT_MARGIN;
@@ -133,6 +134,7 @@ void PhysicsPipelineFree(struct ds_RigidBodyPipeline *pipeline)
 	BvhFree(&pipeline->shape_bvh);
 	cdb_Free(pipeline->cdb);
 	ds_IslandPoolDealloc(&pipeline->island_pool);
+    ds_BitSetDealloc(&pipeline->island_high_energy_set);
 	ds_RigidBodyPoolDealloc(&pipeline->body_pool);
 	ds_PhysicsEventPoolDealloc(&pipeline->event_pool);
 	ds_ShapePoolDealloc(&pipeline->shape_pool);
@@ -162,6 +164,7 @@ static void PhysicsPipelineClearFrame(struct ds_RigidBodyPipeline *pipeline)
 	cdb_ClearFrame(pipeline->cdb);
 	ArenaFlush(&pipeline->frame);
     ds_CGraphFramePrepare(pipeline);
+    ds_BitSetClear(&pipeline->island_high_energy_set, 0);
 }
 
 
@@ -187,6 +190,7 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
     }
 
 	cdb_Flush(pipeline->cdb);
+
 	ds_IslandPoolFlush(&pipeline->island_pool);
 	
 	ds_RigidBodyPoolFlush(&pipeline->body_pool);
@@ -577,7 +581,7 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 	    	const u64 broken_link_block = 
 	    			    cdb->sat_cache_persistent_usage.bits[block]
 	    			& (~cdb->sat_cache_frame_usage.bits[block]);
-            struct ds_BitBlock it = ds_BitBlockInit(broken_link_block, block, 1);
+            struct ds_BitBlock it = ds_BitBlockInit(broken_link_block, block);
 	    	while (ds_BitBlockHasNext(&it))
 	    	{
 	    	    sat_CacheRemove(cdb, ds_BitBlockNext(&it));
@@ -680,14 +684,6 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 
     struct cdb *cdb = pipeline->cdb;
 
-	if (cdb->contact_pool.count == 0) 
-	{ 
-		ProfZoneEnd;
-		return; 
-	}
-    
-	u32 *split = ArenaPush(&pipeline->frame, pipeline->island_pool.count*sizeof(u32));
-    u32 split_count = 0;
 	//fprintf(stderr, " R: {");
 	for (u64 block = 0; block < cdb->contact_frame_usage.block_count; ++block)
 	{
@@ -695,7 +691,7 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 				    cdb->contact_persistent_usage.bits[block]
 				& (~cdb->contact_frame_usage.bits[block]);
 
-        struct ds_BitBlock it = ds_BitBlockInit(broken_link_block, block, 1);
+        struct ds_BitBlock it = ds_BitBlockInit(broken_link_block, block);
 	    while (ds_BitBlockHasNext(&it))
 	    {
             const u64 ci = ds_BitBlockNext(&it);
@@ -712,22 +708,11 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 			{
 			    struct ds_Island *is = pipeline->island_pool.buf + body0->island;
                 is->constraint_remove_count += 1;
-                if (is->constraint_remove_count == 1)
-                {
-                    split[split_count++] = body0->island;
-                    ds_Assert(split_count <= pipeline->island_pool.count);
-                }
 			}
 
 			ds_ContactRemove(pipeline, ci);
 		}
 	}	
-	ArenaPopPacked(&pipeline->frame, (pipeline->island_pool.count - split_count)*sizeof(u32));
-
-	for (u32 i = 0; i < split_count; ++i)
-	{
-		ds_IslandSplit(pipeline, split[i]);
-	}
 
     /* Update contact_persistent_usage */
     {
@@ -747,7 +732,17 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
         		ds_BitSetSet(&cdb->contact_persistent_usage, bit, 1);
         	}
         }
-    } 
+    }
+    
+    if (pipeline->island_to_split != DS_ID_NULL)
+    {
+        const u32 split_tag = ds_IdTag(pipeline->island_to_split);
+        const u32 split_index = ds_IdTag(pipeline->island_to_split);
+        if (split_tag == pipeline->island_pool.buf[split_index].tag)
+        {
+            ds_IslandSplit(pipeline, split_index);
+        }
+    }
 
 	ProfZoneEnd;
 }
@@ -785,7 +780,7 @@ static u32 IslandJobSolve(struct ds_IslandJobPhase *phase, struct ds_IslandSolve
     struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
     struct ds_Island *is = pipeline->island_pool.buf + job->island;
 	job->body_count = is->body_list.count;
-	job->bodies = ds_IslandSolve(g_tl_self->frame, pipeline, is, phase->timestep);
+	job->bodies = ds_IslandSolve(g_tl_self->frame, pipeline, is);
 
 	ProfZoneEnd;
 
@@ -810,7 +805,7 @@ u32 ds_IslandJobPhaseDispatch(const ds_JobId job)
     return job_diff;
 }
 
-static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta) 
+static void SolveIslands(struct ds_RigidBodyPipeline *pipeline) 
 {
 	ProfZone;
 
@@ -822,7 +817,6 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
         ds_JobPhaseBegin(&is_jobs->phase);
 
         is_jobs->pipeline = pipeline;
-        is_jobs->timestep = delta;
 
         is_jobs->seed_count_max = 3*g_arch_config->logical_core_count;
         is_jobs->seed_jobs = ArenaPushZero(&pipeline->frame, is_jobs->seed_count_max*sizeof(struct ds_IslandSeedJob));
@@ -863,6 +857,7 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
     	ProfZoneEnd;
     }
 
+    //TODO all above can be fused, we can parallelize velocity stuff bla bla 
 	for (u32 i = 0; i < is_jobs->solve_count_max; ++i)
 	{
         const struct ds_IslandSolveJob *job = is_jobs->solve_jobs + i;
@@ -875,40 +870,78 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
 		}
 	}
     
-    if (g_solver_config->sleep_enabled)
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    ds_BitSetClear(&pipeline->island_high_energy_set, 0);
+    pipeline->island_to_split = DS_ID_NULL; 
+    f32 global_max_low_velocity_time = F32_MAX_POSITIVE_NORMAL;
+    for (u32 i = 0; i < active->island_pool.count; ++i)
     {
-        struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
-        for (i32 i = (i32) active->island_pool.count - 1; i != -1; --i)
-        {
-            const u32 isi = active->island_pool.buf[i];
-            struct ds_Island *island = pipeline->island_pool.buf + isi; 
-	    	f32 min_low_velocity_time = F32_MAX_POSITIVE_NORMAL;
+        const u32 isi = active->island_pool.buf[i];
+        const struct ds_Island *island = pipeline->island_pool.buf + isi; 
+		f32 min_low_velocity_time = F32_MAX_POSITIVE_NORMAL;
 
-            struct ds_RigidBody *body;
-            for (i32 bi = island->body_list.first; bi != DLL_SENTINEL; bi = body->island_body.next)
+        struct ds_RigidBody *body;
+        for (i32 bi = island->body_list.first; bi != DLL_SENTINEL; bi = body->island_body.next)
+        {
+            body = pipeline->body_pool.buf + bi;
+			const f32 lv_sq = Vec3Dot(body->velocity, body->velocity);
+			const f32 av_sq = Vec3Dot(body->angular_velocity, body->angular_velocity);
+			if (lv_sq <= g_solver_config->sleep_linear_velocity_sq_limit && av_sq <= g_solver_config->sleep_angular_velocity_sq_limit)
+			{
+				body->low_velocity_time += pipeline->delta;
+			}
+            else
             {
-                body = pipeline->body_pool.buf + bi;
-	    		const f32 lv_sq = Vec3Dot(body->velocity, body->velocity);
-	    		const f32 av_sq = Vec3Dot(body->angular_velocity, body->angular_velocity);
-	    		if (lv_sq <= g_solver_config->sleep_linear_velocity_sq_limit && av_sq <= g_solver_config->sleep_angular_velocity_sq_limit)
-	    		{
-	    			body->low_velocity_time += delta;
-	    		}
-                else
-                {
-                    body->low_velocity_time = 0.0f;
-                }
-	    		min_low_velocity_time = f32_min(min_low_velocity_time, body->low_velocity_time);
+                body->low_velocity_time = 0.0f;
+            }
+			min_low_velocity_time = f32_min(min_low_velocity_time, body->low_velocity_time);
+        }
+
+        /* integrate final solver velocities and update bodies and find lowest low_velocity time */
+	    if (min_low_velocity_time < g_solver_config->sleep_time_threshold)
+	    {
+            ds_BitSetSet(&pipeline->island_high_energy_set, i, 1);
+	    }
+        else if (global_max_low_velocity_time < min_low_velocity_time)
+        {
+            global_max_low_velocity_time = min_low_velocity_time;
+            pipeline->island_to_split = ds_IdConstruct(isi, island->tag); 
+        }
+    }
+
+    for (u64 block = 0; block < pipeline->island_high_energy_set.block_count; ++block)
+	{
+        const u64 sleep_block = ~pipeline->island_high_energy_set.bits[block];
+        struct ds_BitBlock it = ds_BitBlockInit(sleep_block, block);
+		while (ds_BitBlockHasNext(&it))
+		{
+
+            const u32 i = ds_BitBlockPeekNext(&it);
+            if (i >= active->island_pool.count)
+            {
+                goto DONE;
             }
 
-            /* integrate final solver velocities and update bodies and find lowest low_velocity time */
-	        if (g_solver_config->sleep_time_threshold <= min_low_velocity_time)
-	        {
+            u32 pop = 1;
+            const u32 isi = active->island_pool.buf[i];
+            const struct ds_Island *island = pipeline->island_pool.buf + isi;
+            if (island->constraint_remove_count == 0)
+            {
+                if (i != active->island_pool.count-1 && ds_BitSetGet(&pipeline->island_high_energy_set, active->island_pool.count-1) == 0)
+                {
+                    pop = 0;
+                }
                 ds_SolverSetSleep(pipeline, isi);
-		    	PhysicsEventIslandAsleep(pipeline, isi);
-	        }
-        }
+	            PhysicsEventIslandAsleep(pipeline, isi);
+            }
+
+            if (pop)
+            {
+                ds_BitBlockNext(&it);
+            }
+		}
 	}
+DONE:
 
 	ProfZoneEnd;
 }
@@ -990,8 +1023,9 @@ static void UpdateSolverConfig(struct ds_RigidBodyPipeline *pipeline)
 	}
 }
 
-void PhysicsPipelineSimulateFrame(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
+void PhysicsPipelineSimulateFrame(struct ds_RigidBodyPipeline *pipeline)
 {
+    pipeline->delta = (f32) pipeline->ns_tick / NSEC_PER_SEC;
 	/* update, if possible, any pending values in contact solver config */
 	UpdateSolverConfig(pipeline);
 
@@ -1000,7 +1034,7 @@ void PhysicsPipelineSimulateFrame(struct ds_RigidBodyPipeline *pipeline, const f
 
 	MergeIslands(pipeline);
 	SplitIslandsAndRemoveContacts(pipeline);
-	SolveIslands(pipeline, delta);
+	SolveIslands(pipeline);
 
 	PHYSICS_PIPELINE_VALIDATE(pipeline);
 }
@@ -1017,7 +1051,7 @@ void PhysicsPipelineTick(struct ds_RigidBodyPipeline *pipeline)
 	}
 	pipeline->frames_completed += 1;
 	const f32 delta = (f32) pipeline->ns_tick / NSEC_PER_SEC;
-	PhysicsPipelineSimulateFrame(pipeline, delta);
+	PhysicsPipelineSimulateFrame(pipeline);
 
     ds_NumericsConfigPop();
 

@@ -289,7 +289,7 @@ static struct r_Mesh *BoundingBoxesMesh(struct arena *mem, const struct ds_Rigid
 	u64 mem_left = mesh->vertex_count * L_COLOR_STRIDE;
     for (u64 bi = 0; bi < pipeline->body_usage_set.block_count; ++bi)
     {
-        struct ds_BitBlock it = ds_BitBlockInit(pipeline->body_usage_set.bits[bi], bi, 1);
+        struct ds_BitBlock it = ds_BitBlockInit(pipeline->body_usage_set.bits[bi], bi);
         while (ds_BitBlockHasNext(&it))
         {
             const struct ds_RigidBody *body = pipeline->body_pool.buf + ds_BitBlockNext(&it);
@@ -458,7 +458,7 @@ static void r_EditorDraw(const struct led *led)
 		struct ds_RigidBody *body = NULL;
         for (u64 bi = 0; bi < led->physics.body_usage_set.block_count; ++bi)
         {
-            struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi, 1);
+            struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi);
             while (ds_BitBlockHasNext(&it))
             {
                 const struct ds_RigidBody *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);

@@ -97,11 +97,12 @@ typedef ds_Id   ds_JointId;
 typedef ds_Id   ds_RigidBodyId;
 typedef ds_Id   ds_ShapeId;
 typedef ds_IdF  ds_ContactId;
+typedef ds_Id   ds_IslandId;
 
 #define DS_ID_NULL                      U64_MAX
 #define DS_ID_INDEX_MASK                ((u64) 0x00000000ffffffff)
 #define DS_ID_TAG_MASK                  ((u64) 0xffffffff00000000)
-#define DS_ID_TAG_INCREMENT             ((u64) 0x0000100000000000)
+#define DS_ID_TAG_INCREMENT             ((u64) 0x0001000000000000)
 
 #define DS_ID_TAG_UNUSED_MASK           0x0000ffff
 #define DS_ID_TAG_GENERATION_MASK       0xffff0000
@@ -114,9 +115,11 @@ typedef ds_IdF  ds_ContactId;
 #define DS_IDF_NULL                     U64_MAX
 #define DS_IDF_INDEX_MASK               ((u64) 0x00000000ffffffff)
 #define DS_IDF_GENERATION_MASK          ((u64) 0xffffffff00000000)
+#define DS_IDF_TAG_GENERATION_INCREMENT ((u64) 0x0000000100000000)
 
 #define ds_IdFGeneration(id)            ((u32) (id >> 32))
 #define ds_IdFIndex(id)                 ((u32) id)
+#define ds_IdFConstruct(index, tag)     ((((u64) tag) << 32) | (u64) index)
 
 /*
 ds_Shape
@@ -1039,6 +1042,7 @@ struct ds_Island
 {
     POOL_NODE;
 
+
     /* FRAME DATA */
 	struct ds_RigidBody **	bodies;	
 	struct ds_Contact 	**	contacts;
@@ -1047,6 +1051,7 @@ struct ds_Island
 						                     * is->body_index_map[b] = i 
 						                     */
 
+    u32             tag;
     /* PERSISTENT DATA */
 	u32             constraint_remove_count;   /* Constraints removed counter */
     u32             set;                        /* ds_SolverSet index */
@@ -1074,7 +1079,7 @@ void 		ds_IslandMerge(struct ds_RigidBodyPipeline *pipeline, const u32 expand, c
 /* Split island, or remake if no split happens.  */
 void 		ds_IslandSplit(struct ds_RigidBodyPipeline *pipeline, const u32 island);
 
-u32 *       ds_IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is, const f32 timestep);
+u32 *       ds_IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is);
 
 /*
 =================================================================================================================
@@ -1171,13 +1176,14 @@ struct velocityConstraint
 
 struct solver
 {
-	f32 			timestep;
 	u32			body_count;
 	u32			contact_count;
 
 	struct ds_RigidBody **	    bodies;
 	mat3ptr			            Iw_inv;		        /* inverted world inertia tensors */
 	struct velocityConstraint * vcs;	
+
+    f32         timestep;
 
 	/* temporary state of bodies in island, static bodies index last element */
 	vec3ptr			linear_velocity;
@@ -1280,7 +1286,6 @@ struct ds_IslandJobPhase
     struct ds_JobPhase              phase;
 
 	struct ds_RigidBodyPipeline *   pipeline;
-    f32                             timestep;
 
     struct ds_IslandSeedJob *       seed_jobs;
     u32                             seed_count_max;
@@ -1417,6 +1422,8 @@ struct ds_RigidBodyPipeline
 	u64				    ns_tick;		        /* ns per game tick */
 	u64 			    frames_completed;	    /* number of completed physics frames */ 
 
+    f32                 delta;
+
 	struct strdb *	    cshape_db;		        /* externally owned */
 	struct strdb *	    body_prefab_db;		    /* externally owned */
 
@@ -1435,8 +1442,11 @@ struct ds_RigidBodyPipeline
 
     struct ds_SolverSetPool solver_set_pool;    /* index 0,1,2 reserved for DISABLED,STATIC,ACTIVE sets */
 
-	struct cdb *	    cdb;
-	struct ds_IslandPool 	island_pool;	    
+	struct cdb *	        cdb;
+
+    ds_IslandId             island_to_split;        /* */
+	struct ds_IslandPool    island_pool;	    
+    struct ds_BitSet        island_high_energy_set;   /* High energy islands per-frame. */
 
 	struct collisionDebug *	debug;
 	u32			        debug_count;

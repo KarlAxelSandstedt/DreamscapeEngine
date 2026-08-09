@@ -40,14 +40,26 @@ static struct slot ds_IslandAlloc(struct ds_RigidBodyPipeline *pipeline, const u
 {
     ds_Assert(set != SOLVER_SET_STATIC);
 
+    const u32 old_max = pipeline->island_pool.count;
 	struct slot slot = ds_IslandPoolAdd(&pipeline->island_pool);
 	PhysicsEventIslandNew(pipeline, slot.index);
+    if (pipeline->island_high_energy_set.bit_count < pipeline->island_pool.count)
+    {
+        ds_BitSetIncreaseSize(&pipeline->island_high_energy_set, pipeline->island_pool.count, 0);
+    }
 
 	struct ds_Island *is = slot.address;
 	ds_DLLFlush(&is->body_list);
 	ds_DLLFlush(&is->contact_list);
     ds_DLLFlush(&is->joint_list);
 	is->constraint_remove_count = 0;
+
+    if (old_max == pipeline->island_pool.count)
+    {
+        is->tag = 0;
+    }
+            
+    is->tag += DS_ID_TAG_GENERATION_INCREMENT;
 
     struct ds_SolverSet *s = pipeline->solver_set_pool.buf + set;
     is->set = set;
@@ -144,7 +156,7 @@ void ds_IslandValidateAll(const struct ds_RigidBodyPipeline *pipeline)
 	    /* 3. if island no contacts, ds_Assert body.contacts == NULL */
 	    if (is->contact_list.count == 0)
 	    {
-	    	ds_Assert(is->body_list.count == 1);
+	    	ds_Assert(is->body_list.count == 1 || is->constraint_remove_count);
 	    	body = pipeline->body_pool.buf + is->body_list.first;
 	    	ds_Assert(ds_PoolSlotAllocated(body));
             const struct ds_Shape *shape = NULL;
@@ -206,8 +218,8 @@ void ds_IslandMerge(struct ds_RigidBodyPipeline *pipeline, const u32 expand, con
     ProfZone;
     struct ds_Contact *c = pipeline->cdb->contact_pool.buf + ci;
     
-	//isdb_PrintIsland(stderr, pipeline, expand, "To Expand");
-	//isdb_PrintIsland(stderr, pipeline, merge, "To Merge");
+	//ds_IslandPrint(stderr, pipeline, expand, "To Expand");
+	//ds_IslandPrint(stderr, pipeline, merge, "To Merge");
     
 	struct ds_Island *is_expand = pipeline->island_pool.buf + expand;
 	struct ds_Island *is_merge = pipeline->island_pool.buf + merge;
@@ -224,13 +236,13 @@ void ds_IslandMerge(struct ds_RigidBodyPipeline *pipeline, const u32 expand, con
 	if (expand == merge)
 	{
 		struct ds_Island *is = pipeline->island_pool.buf + expand;
-		ds_Assert(is->contact_list.count != 0);
-		ds_Assert(is->contact_list.last != DLL_SENTINEL);
+		ds_Assert(is->contact_list.count != 0 || is->constraint_remove_count);
 		ds_DLLAppend(is->contact_list, pipeline->cdb->contact_pool.buf, ci, island_contact);
 	}
 	/* new contact between distinct islands */
 	else
 	{
+        is_expand->constraint_remove_count += is_merge->constraint_remove_count;
         if (is_merge->set >= SOLVER_SET_SLEEPING_FIRST)
         {
             ds_SolverSetMerge(pipeline, SOLVER_SET_ACTIVE, is_merge->set);
@@ -291,7 +303,7 @@ void ds_IslandMerge(struct ds_RigidBodyPipeline *pipeline, const u32 expand, con
 		ds_IslandRemove(pipeline, merge);
 	}
 
-	//isdb_PrintIsland(stderr, pipeline, expand, "Expanded");
+	//ds_IslandPrint(stderr, pipeline, expand, "Expanded");
     ProfZoneEnd;
 }
 
@@ -488,7 +500,7 @@ static void UpdateOrientation(struct ds_Island *is, const struct solver *solver,
     Vec3Sub(b->t_world.position, solver->w_center_of_mass[i], rotated_local_center_of_mass);
 }
 
-u32 *ds_IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is, const f32 timestep)
+u32 *ds_IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is)
 {
 	u32 *bodies_simulated = ArenaPush(mem_frame, is->body_list.count*sizeof(u32));
 	ArenaPushRecord(mem_frame);
@@ -518,7 +530,7 @@ u32 *ds_IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeli
 	}
 
 	/* init solver and velocity constraints */
-	struct solver *solver = SolverInitBodyData(mem_frame, is, timestep);
+	struct solver *solver = SolverInitBodyData(mem_frame, is, pipeline->delta);
 	SolverInitVelocityConstraints(mem_frame, solver, pipeline, is);
 	
 	if (g_solver_config->warmup_solver)

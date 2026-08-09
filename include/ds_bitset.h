@@ -58,12 +58,11 @@ struct ds_BitBlock
 };
 
 /* Setup a block iterator that iterates over the given bit value.  */
-static inline struct ds_BitBlock ds_BitBlockInit(const u64 block, const u64 block_index, const u64 bit_value_to_iterate_over)
+static inline struct ds_BitBlock ds_BitBlockInit(const u64 block, const u64 block_index)
 {
-    ds_Assert(bit_value_to_iterate_over <= 1);
     const struct ds_BitBlock it =
     {
-        .block = (bit_value_to_iterate_over) ? block : ~block,
+        .block = block,
         .bit = block_index*DS_BITSET_BLOCK_BITCOUNT,
     };
     return it;
@@ -86,6 +85,15 @@ static inline u64 ds_BitBlockNext(struct ds_BitBlock *it)
 		      ? it->block >> (tzc + 1)
 		      : 0;
 
+    return bit;
+}
+
+static inline u64 ds_BitBlockPeekNext(struct ds_BitBlock *it)
+{
+    ds_Assert(ds_BitBlockHasNext(it));
+
+	const u64 tzc = Ctz64(it->block);
+    const u64 bit = it->bit + tzc;
     return bit;
 }
 

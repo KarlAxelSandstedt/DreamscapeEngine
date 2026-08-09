@@ -161,6 +161,10 @@ void ds_SolverSetWakeUp(struct ds_RigidBodyPipeline *pipeline, const u32 index)
 
 void ds_SolverSetSleep(struct ds_RigidBodyPipeline *pipeline, const u32 island_index)
 {
+    if (!g_solver_config->sleep_enabled)
+    {
+        return;
+    }
     struct ds_CGraph *cg = &pipeline->cgraph;
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     struct ds_Island *island = pipeline->island_pool.buf + island_index;

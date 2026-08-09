@@ -99,19 +99,13 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
 	{
         const u32 ci = shape->contact_list.first;
 		struct ds_Contact *c = pipeline->cdb->contact_pool.buf + ci;
-
-		if (index == c->key.shape0 || (static_is_tri_mesh && INDIRECT_SHAPE_CHECK(c->key.shape0)))
-		{
-            ds_ContactKeyAddress(&body, &shape, &dynamic_body, &dynamic_shape, pipeline, &c->key);
-		}
-		else
-		{
-            ds_ContactKeyAddress(&dynamic_body, &dynamic_shape, &body, &shape, pipeline, &c->key);
-		}
-
-        ds_Assert(dynamic_body->island != ISLAND_STATIC);
-		struct ds_Island *is = pipeline->island_pool.buf + dynamic_body->island;
-		is->constraint_remove_count += 1; 
+		struct ds_Island *island = pipeline->island_pool.buf + c->island;
+		island->constraint_remove_count += 1; 
+        if (island->set >= SOLVER_SET_SLEEPING_FIRST)
+        {
+            ds_SolverSetWakeUp(pipeline, island->set);
+	        PhysicsEventIslandAwake(pipeline, c->island);	
+        }
         ds_ContactRemove(pipeline, ci);
     }
 
