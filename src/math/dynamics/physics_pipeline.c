@@ -637,6 +637,19 @@ static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
 				struct ds_Island *is = pipeline->is_db.island_pool.buf + is0;
 				ds_DLLAppend(is->contact_list, pipeline->cdb->contact_pool.buf, pipeline->cdb->contact_new[i], island_contact);
                 c->island = is0;
+                /*
+                 * TODO: This feels bad and dangerous; we've found a new contact of the island
+                 * which is in the Constraint Graph while the rest of the island's contacts are
+                 * in the sleeper set; it should be fine to wake up the set and move all 
+                 * sleeping constraints to the Constraint Graph without messing up links, but
+                 * it becomes very nasty to reason about
+                 */
+                if (is->set >= SOLVER_SET_SLEEPING_FIRST)
+                {
+	            	is->flags = ISLAND_SLEEP_RESET;
+                    ds_SolverSetWakeUp(pipeline, is->set);
+	                PhysicsEventIslandAwake(pipeline, is0);	
+                }
 			} break;
 
 			/* static-dynamic */
@@ -645,6 +658,19 @@ static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
 				struct ds_Island *is = pipeline->is_db.island_pool.buf + is1;
 				ds_DLLAppend(is->contact_list, pipeline->cdb->contact_pool.buf, pipeline->cdb->contact_new[i], island_contact);
                 c->island = is1;
+                /*
+                 * TODO: This feels bad and dangerous; we've found a new contact of the island
+                 * which is in the Constraint Graph while the rest of the island's contacts are
+                 * in the sleeper set; it should be fine to wake up the set and move all 
+                 * sleeping constraints to the Constraint Graph without messing up links, but
+                 * it becomes very nasty to reason about
+                 */
+                if (is->set >= SOLVER_SET_SLEEPING_FIRST)
+                {
+	            	is->flags = ISLAND_SLEEP_RESET;
+                    ds_SolverSetWakeUp(pipeline, is->set);
+	                PhysicsEventIslandAwake(pipeline, is1);	
+                }
 			} break;
 		}
 	}
@@ -772,7 +798,7 @@ static u32 IslandJobSolve(struct ds_IslandJobPhase *phase, struct ds_IslandSolve
     struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
     struct ds_Island *is = pipeline->is_db.island_pool.buf + job->island;
 	job->body_count = is->body_list.count;
-	job->bodies = IslandSolve(g_tl_self->frame, pipeline, is, &job->asleep, phase->timestep);
+	job->bodies = IslandSolve(g_tl_self->frame, pipeline, is, phase->timestep);
 
 	ProfZoneEnd;
 
@@ -853,12 +879,6 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
 	for (u32 i = 0; i < is_jobs->solve_count_max; ++i)
 	{
         const struct ds_IslandSolveJob *job = is_jobs->solve_jobs + i;
-		if (job->asleep)
-		{
-            ds_SolverSetSleep(pipeline, job->island);
-			PhysicsEventIslandAsleep(pipeline, job->island);
-		}
-
 		for (u32 b = 0; b < job->body_count; ++b)
 		{
 			struct ds_PhysicsEvent *event = ds_PhysicsEventPush(pipeline);
@@ -867,6 +887,42 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
 			event->body = ((u64) body->tag << 32) | job->bodies[b];
 		}
 	}
+    
+    if (g_solver_config->sleep_enabled)
+    {
+        struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+        for (i32 i = (i32) active->island_pool.count - 1; i != -1; --i)
+        {
+            const u32 isi = active->island_pool.buf[i];
+            struct ds_Island *island = pipeline->is_db.island_pool.buf + isi; 
+	    	f32 min_low_velocity_time = F32_MAX_POSITIVE_NORMAL;
+
+            struct ds_RigidBody *body;
+            for (i32 bi = island->body_list.first; bi != DLL_SENTINEL; bi = body->island_body.next)
+            {
+                body = pipeline->body_pool.buf + bi;
+	    		const f32 lv_sq = Vec3Dot(body->velocity, body->velocity);
+	    		const f32 av_sq = Vec3Dot(body->angular_velocity, body->angular_velocity);
+	    		if (lv_sq <= g_solver_config->sleep_linear_velocity_sq_limit && av_sq <= g_solver_config->sleep_angular_velocity_sq_limit)
+	    		{
+	    			body->low_velocity_time += delta;
+	    		}
+                else
+                {
+                    body->low_velocity_time = 0.0f;
+                }
+	    		min_low_velocity_time = f32_min(min_low_velocity_time, body->low_velocity_time);
+            }
+
+            /* integrate final solver velocities and update bodies and find lowest low_velocity time */
+	        island->flags &= ~ISLAND_SLEEP_RESET;
+	        if (g_solver_config->sleep_time_threshold <= min_low_velocity_time)
+	        {
+                ds_SolverSetSleep(pipeline, isi);
+		    	PhysicsEventIslandAsleep(pipeline, isi);
+	        }
+        }
+	}
 
 	ProfZoneEnd;
 }
@@ -874,54 +930,56 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
 void PhysicsPipelineSleepEnable(struct ds_RigidBodyPipeline *pipeline)
 {
 	ds_Assert(g_solver_config->sleep_enabled == 0);
-	if (!g_solver_config->sleep_enabled)
+	if (g_solver_config->sleep_enabled)
 	{
-		g_solver_config->sleep_enabled = 1;
-        for (u32 set_index = 0; set_index < pipeline->solver_set_pool.count_max; ++set_index)
-        {
-            struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
-            if (ds_PoolSlotAllocated(set))
-            {
-                for (u32 k = 0; k < set->island_pool.count; ++k)
-                {
-                    const u32 island_index = set->island_pool.buf[k];
-	        	    struct ds_Island *is = pipeline->is_db.island_pool.buf + k;
-			        is->flags |= ISLAND_AWAKE | ISLAND_SLEEP_RESET;
-			        is->flags &= ~ISLAND_TRY_SLEEP;
-                }
+        return;
+    }
 
-                if (set_index >= SOLVER_SET_SLEEPING_FIRST)
-                {
-                    ds_SolverSetWakeUp(pipeline, set_index);
-                }
+	g_solver_config->sleep_enabled = 1;
+    for (u32 set_index = 0; set_index < pipeline->solver_set_pool.count_max; ++set_index)
+    {
+        struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
+        if (ds_PoolSlotAllocated(set))
+        {
+            for (u32 k = 0; k < set->island_pool.count; ++k)
+            {
+                const u32 island_index = set->island_pool.buf[k];
+        	    struct ds_Island *is = pipeline->is_db.island_pool.buf + k;
+		        is->flags |= ISLAND_SLEEP_RESET;
+            }
+
+            if (set_index >= SOLVER_SET_SLEEPING_FIRST)
+            {
+                ds_SolverSetWakeUp(pipeline, set_index);
             }
         }
-	}
+    }
 }
 
 void PhysicsPipelineSleepDisable(struct ds_RigidBodyPipeline *pipeline)
 {
 	ds_Assert(g_solver_config->sleep_enabled == 1);
-	if (g_solver_config->sleep_enabled)
-	{
-		g_solver_config->sleep_enabled = 0;
-        for (u32 set_index = 0; set_index < pipeline->solver_set_pool.count_max; ++set_index)
+	if (!g_solver_config->sleep_enabled)
+    {
+        return;
+    }
+	
+	g_solver_config->sleep_enabled = 0;
+    for (u32 set_index = 0; set_index < pipeline->solver_set_pool.count_max; ++set_index)
+    {
+        struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
+        if (ds_PoolSlotAllocated(set))
         {
-            struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
-            if (ds_PoolSlotAllocated(set))
+            for (u32 k = 0; k < set->island_pool.count; ++k)
             {
-                for (u32 k = 0; k < set->island_pool.count; ++k)
-                {
-                    const u32 island_index = set->island_pool.buf[k];
-	        	    struct ds_Island *is = pipeline->is_db.island_pool.buf + k;
-			        is->flags |= ISLAND_AWAKE;
-			        is->flags &= ~(ISLAND_SLEEP_RESET | ISLAND_TRY_SLEEP);
-                }
+                const u32 island_index = set->island_pool.buf[k];
+	    	    struct ds_Island *is = pipeline->is_db.island_pool.buf + k;
+		        is->flags &= ~ISLAND_SLEEP_RESET;
+            }
 
-                if (set_index >= SOLVER_SET_SLEEPING_FIRST)
-                {
-                    ds_SolverSetWakeUp(pipeline, set_index);
-                }
+            if (set_index >= SOLVER_SET_SLEEPING_FIRST)
+            {
+                ds_SolverSetWakeUp(pipeline, set_index);
             }
         }
 	}

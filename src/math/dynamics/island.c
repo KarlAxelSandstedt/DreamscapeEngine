@@ -46,7 +46,7 @@ static struct slot isdb_IslandEmpty(struct ds_RigidBodyPipeline *pipeline, const
 	ds_DLLFlush(&is->body_list);
 	ds_DLLFlush(&is->contact_list);
     ds_DLLFlush(&is->joint_list);
-	is->flags = g_solver_config->sleep_enabled * (ISLAND_AWAKE | ISLAND_SLEEP_RESET);
+	is->flags = g_solver_config->sleep_enabled * ISLAND_SLEEP_RESET;
 
     struct ds_SolverSet *s = pipeline->solver_set_pool.buf + set;
     is->set = set;
@@ -109,7 +109,7 @@ void isdb_PrintIsland(FILE *file, const struct ds_RigidBodyPipeline *pipeline, c
 	fprintf(file, "}\n");
 
 	fprintf(file, "\tflags:\n\t{\n");
-	fprintf(file, "\t\tawake: %u\n", ISLAND_AWAKE_BIT(is));
+	fprintf(file, "\t\tawake: %u\n", is->set == SOLVER_SET_ACTIVE);
 	fprintf(file, "\t\tsleep_reset: %u\n", ISLAND_SLEEP_RESET_BIT(is));
 	fprintf(file, "\t\tsplit: %u\n", ISLAND_SPLIT_BIT(is));
 	fprintf(file, "\t}\n");
@@ -260,10 +260,21 @@ void isdb_MergeIslands(struct ds_RigidBodyPipeline *pipeline, const u32 ci, cons
 
 	const u32 expand = body1->island_index;
 	const u32 merge = body2->island_index;
-    c->island = expand;
-
+    
 	//isdb_PrintIsland(stderr, pipeline, expand, "To Expand");
 	//isdb_PrintIsland(stderr, pipeline, merge, "To Merge");
+    
+	struct ds_Island *is_expand = pipeline->is_db.island_pool.buf + expand;
+	struct ds_Island *is_merge = pipeline->is_db.island_pool.buf + merge;
+    
+    if (is_expand->set >= SOLVER_SET_SLEEPING_FIRST)
+    {
+		is_expand->flags = ISLAND_SLEEP_RESET;
+        ds_SolverSetWakeUp(pipeline, is_expand->set);
+	    PhysicsEventIslandAwake(pipeline, expand);	
+    }
+
+    c->island = expand;
 
 	/* new local contact within island */
 	if (expand == merge)
@@ -271,22 +282,11 @@ void isdb_MergeIslands(struct ds_RigidBodyPipeline *pipeline, const u32 ci, cons
 		struct ds_Island *is = pipeline->is_db.island_pool.buf + expand;
 		ds_Assert(is->contact_list.count != 0);
 		ds_Assert(is->contact_list.last != DLL_SENTINEL);
-
 		ds_DLLAppend(is->contact_list, pipeline->cdb->contact_pool.buf, ci, island_contact);
 	}
 	/* new contact between distinct islands */
 	else
 	{
-		struct ds_Island *is_expand = pipeline->is_db.island_pool.buf + expand;
-		struct ds_Island *is_merge = pipeline->is_db.island_pool.buf + merge;
-
-        if (is_expand->set >= SOLVER_SET_SLEEPING_FIRST)
-        {
-		    PhysicsEventIslandAwake(pipeline, expand);	
-			is_expand->flags = ISLAND_AWAKE | ISLAND_SLEEP_RESET;
-            ds_SolverSetWakeUp(pipeline, is_expand->set);
-        }
-
         if (is_merge->set >= SOLVER_SET_SLEEPING_FIRST)
         {
             ds_SolverSetMerge(pipeline, SOLVER_SET_ACTIVE, is_merge->set);
@@ -544,9 +544,8 @@ static void UpdateOrientation(struct ds_Island *is, const struct solver *solver,
     Vec3Sub(b->t_world.position, solver->w_center_of_mass[i], rotated_local_center_of_mass);
 }
 
-u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is, u32 *asleep, const f32 timestep)
+u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is, const f32 timestep)
 {
-    *asleep = 0;
 	u32 *bodies_simulated = ArenaPush(mem_frame, is->body_list.count*sizeof(u32));
 	ArenaPushRecord(mem_frame);
 
@@ -566,89 +565,51 @@ u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline,
 		k = b->island_body.next;
 	}
 
-	if (g_solver_config->sleep_enabled && ISLAND_TRY_SLEEP_BIT(is))
-	{
-		is->flags = 0;
-		*asleep = 1;
-	}
 	/* Island low energy state was interrupted, or island is simply awake */
-	else
+	k = is->contact_list.first;
+	for (u32 i = 0; i < is->contact_list.count; ++i)
 	{
-		k = is->contact_list.first;
-		for (u32 i = 0; i < is->contact_list.count; ++i)
-		{
-			is->contacts[i] = pipeline->cdb->contact_pool.buf + k;
- 			k = is->contacts[i]->island_contact.next;
-		}
+		is->contacts[i] = pipeline->cdb->contact_pool.buf + k;
+ 		k = is->contacts[i]->island_contact.next;
+	}
 
-		/* init solver and velocity constraints */
-		struct solver *solver = SolverInitBodyData(mem_frame, is, timestep);
-		SolverInitVelocityConstraints(mem_frame, solver, pipeline, is);
-		
-		if (g_solver_config->warmup_solver)
-		{
-			SolverWarmup(solver, is);
-		}
+	/* init solver and velocity constraints */
+	struct solver *solver = SolverInitBodyData(mem_frame, is, timestep);
+	SolverInitVelocityConstraints(mem_frame, solver, pipeline, is);
+	
+	if (g_solver_config->warmup_solver)
+	{
+		SolverWarmup(solver, is);
+	}
 
-		for (u32 i = 0; i < g_solver_config->pgs_iteration_count; ++i)
-		{
-			SolverIterateVelocityConstraints(solver);
-		}
+	for (u32 i = 0; i < g_solver_config->pgs_iteration_count; ++i)
+	{
+		SolverIterateVelocityConstraints(solver);
+	}
 
-		SolverCacheImpulse(solver, is);
+	SolverCacheImpulse(solver, is);
 
-		/* integrate final solver velocities and update bodies and find lowest low_velocity time */
-		if (g_solver_config->sleep_enabled)
-		{
-			f32 min_low_velocity_time = F32_MAX_POSITIVE_NORMAL;
-			for (u32 i = 0; i < is->body_list.count; ++i)
-			{
-                IntegrateOrientationVelocities(is, solver, i);
+	/* integrate final solver velocities and update bodies  */
+	for (u32 i = 0; i < is->body_list.count; ++i)
+	{
+        IntegrateOrientationVelocities(is, solver, i);
+	}
 
-				/* Always set RB_AWAKE, if island should sleep, we set it later,
-				 * but the bodies may come in sleeping if island just woke up 
-				 */
-                struct ds_RigidBody *b = is->bodies[i];
-				b->low_velocity_time = (1-ISLAND_SLEEP_RESET_BIT(is)) * b->low_velocity_time;
-				const f32 lv_sq = Vec3Dot(b->velocity, b->velocity);
-				const f32 av_sq = Vec3Dot(b->angular_velocity, b->angular_velocity);
-				if (lv_sq <= g_solver_config->sleep_linear_velocity_sq_limit && av_sq <= g_solver_config->sleep_angular_velocity_sq_limit)
-				{
-					b->low_velocity_time += timestep;
-				}
-				min_low_velocity_time = f32_min(min_low_velocity_time, b->low_velocity_time);
-			}
+    SolverInitPositionConstraints(solver, is); 
+    for (u32 i = 0; i < g_solver_config->ngs_iteration_count; ++i)
+	{
+		const u32 contacts_okay = SolverIteratePositionConstraints(solver);
+        if (contacts_okay)
+        {
+            break;
+        }
+	}
 
-			is->flags &= ~ISLAND_SLEEP_RESET;
-			if (g_solver_config->sleep_time_threshold <= min_low_velocity_time)
-			{
-				is->flags |= ISLAND_TRY_SLEEP;
-			}
-		}
-		/* only integrate final solver velocities and update bodies  */
-		else 
-		{
-			for (u32 i = 0; i < is->body_list.count; ++i)
-			{
-                IntegrateOrientationVelocities(is, solver, i);
-			}
-		}
-
-        SolverInitPositionConstraints(solver, is); 
-        for (u32 i = 0; i < g_solver_config->ngs_iteration_count; ++i)
-		{
-			const u32 contacts_okay = SolverIteratePositionConstraints(solver);
-            if (contacts_okay)
-            {
-                break;
-            }
-		}
-
-        for (u32 i = 0; i < is->body_list.count; ++i)
-	    {
-            UpdateOrientation(is, solver, i);
-	    }
-	} 
+    for (u32 i = 0; i < is->body_list.count; ++i)
+	{
+        UpdateOrientation(is, solver, i);
+	}
+	
 
 	ArenaPopRecord(mem_frame);
 	return bodies_simulated;

@@ -141,11 +141,11 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
 		else
 		{
 			is->flags &= ~(ISLAND_SPLIT);
-			if (!(is->flags & ISLAND_AWAKE))
+			if (is->set >= SOLVER_SET_SLEEPING_FIRST)
 			{
 				PhysicsEventIslandAwake(pipeline, island[i]);	
 			}
-			is->flags |= ISLAND_SLEEP_RESET | ISLAND_AWAKE;
+			is->flags |= ISLAND_SLEEP_RESET;
 		}
 	}
     ArenaPopRecord(&pipeline->frame);

@@ -126,8 +126,6 @@ void ds_SolverSetWakeUp(struct ds_RigidBodyPipeline *pipeline, const u32 index)
     ds_Assert(ds_PoolSlotAllocated(set));
     ds_Assert(set->island_pool.count == 1);
 
-    //TODO Wake up island? 
-    
     for (u32 i = 0; i < set->contact_pool.count; ++i)
     {
         const u32 ci = set->contact_pool.buf[i];
@@ -146,6 +144,7 @@ void ds_SolverSetWakeUp(struct ds_RigidBodyPipeline *pipeline, const u32 index)
 
         body->set = SOLVER_SET_ACTIVE;
         body->sim = slot.index;
+        body->low_velocity_time = 0.0f;
     }
 
     for (u32 i = 0; i < set->island_pool.count; ++i)
@@ -158,6 +157,7 @@ void ds_SolverSetWakeUp(struct ds_RigidBodyPipeline *pipeline, const u32 index)
     }
 
     ds_SolverSetRemove(pipeline, index);
+    fprintf(stderr, "Waking set %u\n", index);
 }
 
 void ds_SolverSetSleep(struct ds_RigidBodyPipeline *pipeline, const u32 island_index)
@@ -184,10 +184,12 @@ void ds_SolverSetSleep(struct ds_RigidBodyPipeline *pipeline, const u32 island_i
     island->set = slot.index;
     island->set_island_index = 0;
     ds_CPoolPushValue(set->island_pool, island_index);
+    fprintf(stderr, "Sleeping set %u\n", slot.index);
 
-    struct ds_Joint *joint = pipeline->joint_pool.buf + island->joint_list.first;
-    for (u32 i = 0; i < island->joint_list.count; ++i)
+    struct ds_Joint *joint = NULL;
+    for (u32 i = island->joint_list.first; (i32) i != DLL_SENTINEL; i = joint->island_joint.next)
     {
+        joint = pipeline->joint_pool.buf + i;
         ds_Assert(joint->island == island_index);
         ds_Assert(joint->set == SOLVER_SET_NULL);
         struct ds_CGraphColor *color = cg->color + joint->color;
@@ -198,7 +200,7 @@ void ds_SolverSetSleep(struct ds_RigidBodyPipeline *pipeline, const u32 island_i
 
         joint->set = island->set;
         joint->sim = slot.index;
-        struct ds_Joint *joint = pipeline->joint_pool.buf + joint->island_list_node.next;
+        struct ds_Joint *joint = pipeline->joint_pool.buf + joint->island_joint.next;
     }
 
     struct ds_Contact *contact = NULL;
@@ -206,8 +208,7 @@ void ds_SolverSetSleep(struct ds_RigidBodyPipeline *pipeline, const u32 island_i
     {
         contact = pipeline->cdb->contact_pool.buf + i;
         ds_Assert(contact->set == SOLVER_SET_NULL);
-        //TODO: do we need this link?
-        //ds_Assert(contact->island == island_index);
+        ds_Assert(contact->island == island_index);
         struct ds_CGraphColor *color = cg->color + contact->color;
 
         slot = ds_CPoolPush(set->contact_pool);
@@ -236,33 +237,37 @@ void ds_SolverSetMerge(struct ds_RigidBodyPipeline *pipeline, const u32 set_expa
     ds_Assert(ds_PoolSlotAllocated(expand));
     ds_Assert(ds_PoolSlotAllocated(merge));
 
-    for (u32 i = 0; i < merge->body_sim_pool.count; ++i)
-    {
-        const struct ds_RigidBodySim *old_sim = merge->body_sim_pool.buf + i;
-        struct ds_RigidBody *body = pipeline->body_pool.buf + old_sim->body;
-        ds_Assert(body->set == set_merge);
-
-        const struct slot slot = ds_CPoolPush(expand->body_sim_pool);
-        body->set = set_expand;
-        body->sim = slot.index;
-
-        struct ds_RigidBodySim *new_sim = slot.address;
-        memcpy(new_sim, old_sim, sizeof(*new_sim));
-    }
-
-    for (u32 i = 0; i < merge->island_pool.count; ++i)
-    {
-        const u32 isi = merge->island_pool.buf[i];
-        struct ds_Island *is = pipeline->is_db.island_pool.buf + isi;
-        ds_Assert(is->set == set_merge);
-
-        is->set = set_expand;
-        is->set_island_index = ds_CPoolPush(expand->island_pool).index;
-        expand->island_pool.buf[ is->set_island_index ] = isi;
-    }
-
     if (set_expand == SOLVER_SET_ACTIVE)
     {
+        ds_SolverSetWakeUp(pipeline, set_merge);
+    }
+    else
+    {
+        for (u32 i = 0; i < merge->body_sim_pool.count; ++i)
+        {
+            const struct ds_RigidBodySim *old_sim = merge->body_sim_pool.buf + i;
+            struct ds_RigidBody *body = pipeline->body_pool.buf + old_sim->body;
+            ds_Assert(body->set == set_merge);
+
+            const struct slot slot = ds_CPoolPush(expand->body_sim_pool);
+            body->set = set_expand;
+            body->sim = slot.index;
+
+            struct ds_RigidBodySim *new_sim = slot.address;
+            memcpy(new_sim, old_sim, sizeof(*new_sim));
+        }
+
+        for (u32 i = 0; i < merge->island_pool.count; ++i)
+        {
+            const u32 isi = merge->island_pool.buf[i];
+            struct ds_Island *is = pipeline->is_db.island_pool.buf + isi;
+            ds_Assert(is->set == set_merge);
+
+            is->set = set_expand;
+            is->set_island_index = ds_CPoolPush(expand->island_pool).index;
+            expand->island_pool.buf[ is->set_island_index ] = isi;
+        }
+
         for (u32 i = 0; i < merge->contact_pool.count; ++i)
         {
             const u32 ci = merge->contact_pool.buf[i];
@@ -277,31 +282,10 @@ void ds_SolverSetMerge(struct ds_RigidBodyPipeline *pipeline, const u32 set_expa
             struct ds_JointSim *new_sim = ds_CGraphJointAdd(pipeline, joint);
             memcpy(new_sim, old_sim, sizeof(struct ds_JointSim));
         }
+
+        ds_SolverSetRemove(pipeline, set_merge);
+        fprintf(stderr, "Merged set %u->%u\n", set_merge, set_expand);
     }
-    else
-    {
-        for (u32 i = 0; i < merge->contact_pool.count; ++i)
-        {
-            const u32 ci = merge->contact_pool.buf[i];
-            struct ds_Contact *contact = pipeline->cdb->contact_pool.buf + ci;
-            contact->set_contact_index = ds_CPoolPush(expand->contact_pool).index;
-            contact->set = set_expand;
-            expand->contact_pool.buf[ contact->set_contact_index ] = ci;
-        }
-
-        for (u32 i = 0; i < merge->joint_sim_pool.count; ++i)
-        {
-            struct ds_JointSim *old_sim = merge->joint_sim_pool.buf + i;
-            struct ds_Joint *joint = pipeline->joint_pool.buf + old_sim->joint;
-            const struct slot slot = ds_CPoolPush(expand->joint_sim_pool);
-            struct ds_JointSim *new_sim = slot.address;
-            joint->sim = slot.index;
-            joint->set = set_expand;
-            memcpy(new_sim, old_sim, sizeof(struct ds_JointSim));
-        }
-    } 
-
-    ds_SolverSetRemove(pipeline, set_merge);
 }
 
 void ds_SolverSetValidate(const struct ds_RigidBodyPipeline *pipeline, const u32 set_index)

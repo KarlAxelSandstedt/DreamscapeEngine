@@ -726,7 +726,7 @@ struct ds_Joint
     u32         tag;                    /* id tag                                                           */
 
     u32                 island;
-    struct ds_DLLNode   island_list_node;
+    struct ds_DLLNode   island_joint;
 
     u32                 body[2];        /* bodies sharing ownership of joint                                */
     struct ds_DLLNode   edge_node[2];   /* Each body stores the joint its dll; b == body[i] => edge_node[i] 
@@ -943,7 +943,8 @@ void        ds_SolverSetSleep(struct ds_RigidBodyPipeline *pipeline, const u32 i
 void        ds_SolverSetMerge(struct ds_RigidBodyPipeline *pipeline, const u32 set_expand, const u32 set_merge);
 /* Debug validation for the given set */
 void        ds_SolverSetValidate(const struct ds_RigidBodyPipeline *pipeline, const u32 set_index);
-/* Move the body to the given set */
+
+/* Internal: Move the body to the given set (Assumes the body is NOT part off the set) */
 void        ds_SolverSetMoveBody(struct ds_RigidBodyPipeline *pipeline, const u32 body, const u32 set);
 
 /*
@@ -1028,102 +1029,16 @@ void                    ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipe
 /*
 ds_Island
 =========
-TODO remove and rewrite
-
-Persistent island over several frames. Justification is that island information may possibly not change much from
-frame to frame, so storing persistent island data may work as an optimization.  It would also be of help in storing
-cached collision/body data between frames.
-
-Operations:
-	(1) island_initialize(body)	- Initalize new island from a body (valid for being in an island)
-	(2) island_split()		- We must be able to split an island no longer fully connected
-	(3) island_merge() 		- We must be able to merge two islands now connected
-
-Auxilliary Operation:
-	(1)	contact_cache_get_persistent_contacts()	
-	(2)	contact_cache_get_new_contacts() 
-  	(3)	contact_cache_get_deleted_contacts()
-
-
------ Island Consistency: Knowing when to split, and when to merge -----
-
-In order to know that we should split an island, or merge two islands, we must have ways to reason about
-the connectivity of islands. The physics pipeline ensure that islands are valid at the start of frames,
-except perhaps for the first frame. The frame layout should look something like:
-
-	[1] solve island local system
-		(1) We may now have broken islands
-	[2] finalize bodies, cache contact data  
-		(1) Islands contain up-to-date information and caches for bodies (which may no longer be connected) 
-		(2) if (cache_map.entry[i] == no_update) => Connection corresponding to entry i no longer exists
-	[3] construct new contact_data
-		(2) if (cache_map(contact) ==    hit) => Connection remains, (possibly in a new island)
-		(3) if (cache_map(contact) == no_hit) => A new connection has been established, 
-						         (possibly between two islands)
-       [4] update/construct islands
-
-It follows that if we keep track of 
-
-       (1) what contacts were removed from the contact_cache	- deleted links
-       (2) what contacts were added to the contact cache	- new links
-       (3) what contacts remain in the contact cache 		- persistent links
-
-we have all the sufficient (and necessary) information to re-establish the invariant of correct islands at the
-next frame.
-
-
------ Island Memory: Handling Lifetimes and Memory Layouts (Sanely) -----
-
-The issue with persistent islands is that the lifetime of the island is not (generally) shared with to bodies
-it rules over. It would be possible to limit the islands to using linked lists if we ideally only would have 
-to iterate each list once. This would greatly simplify the memory management. We consider what data must be
-delivered to and from the island at what time:
-
-
-FRAME n: 	...
-        	...
-	==== Contact Cache ====
-	[3, 4] construct new contact data + update/construct islands
-		list of body indices 		=> island
-		list of constraint indices 	=> island
-
-FRAME n+1:
-	==== Island ====
-	[1] solve island local system
-		island.constraints.data		=> solver
-		island.bodies data		=> solver
-
-	==== Solver ====
-     [2] finalize bodies, cache contact data
-       	solve.solution			=> contact cache
-       	cache constraints		=> contact cache
-
-
-Assuming that the island only contains linked lists of indices to various data, we wish to fully defer any
-lookups into that data until the Solver stage. [1] We traverse the lists and retrieve the wanted data. This
-data (ListData) is kept throughout [2], [3], and discarded at [4] when islands are split/merged.
+TODO 
 */
 
-#define BODY_NO_ISLAND_INDEX 	U32_MAX
-
-#define ISLAND_AWAKE		(0x1u << 0u)
 #define ISLAND_SLEEP_RESET	(0x1u << 1u)	/* reset sleep timers on frame */
 #define ISLAND_SPLIT		(0x1u << 2u)	/* flag island for splitting */
-#define ISLAND_TRY_SLEEP	(0x1u << 3u)	/* flag island for being put to sleep at next solve iteration 
-						 * (if the island is uninterrupted for a frame) This is needed
-						 * since if we determine that an updated island should be put
-						 * to sleep at end of a frame in island_solve, we must atleast
-						 * update all rigid body proxies before butting the bodies to
-						 * sleep as well, so keep the island awake for another frame
-						 * without solving it at the end if it is uninterrupted.
-						 */
 
-#define ISLAND_AWAKE_BIT(is)		(((is)->flags & ISLAND_AWAKE) >> 0u)
 #define ISLAND_SLEEP_RESET_BIT(is)	(((is)->flags & ISLAND_SLEEP_RESET) >> 1u)
 #define ISLAND_SPLIT_BIT(is)		(((is)->flags & ISLAND_SPLIT) >> 2u)
-#define ISLAND_TRY_SLEEP_BIT(is)	(((is)->flags & ISLAND_TRY_SLEEP) >> 3u)
 
-#define ISLAND_NULL	POOL_NULL 
+#define ISLAND_NULL	    POOL_NULL 
 #define ISLAND_STATIC	POOL_NULL-1	/* static bodies are mapped to "island" ISLAND_STATIC */
 
 struct ds_Island
@@ -1193,7 +1108,7 @@ void 		isdb_MergeIslands(struct ds_RigidBodyPipeline *pipeline, const u32 ci, co
 /* Split island, or remake if no split happens: TODO: Make thread-safe  */
 void 		isdb_SplitIsland(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, const u32 island_to_split);
 
-u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is, u32 *asleep, const f32 timestep);
+u32 *IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is, const f32 timestep);
 
 /*
 =================================================================================================================
@@ -1390,7 +1305,6 @@ struct ds_IslandSeedJob
 struct ds_IslandSolveJob 
 {
 	u32     island;
-	u32     asleep;
 	u32     body_count;
 	u32 *   bodies;		    /* bodies simulated in island */ 
 };
