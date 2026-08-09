@@ -46,7 +46,7 @@ static struct slot isdb_IslandEmpty(struct ds_RigidBodyPipeline *pipeline, const
 	ds_DLLFlush(&is->body_list);
 	ds_DLLFlush(&is->contact_list);
     ds_DLLFlush(&is->joint_list);
-	is->flags = g_solver_config->sleep_enabled * ISLAND_SLEEP_RESET;
+	is->flags = 0;
 
     struct ds_SolverSet *s = pipeline->solver_set_pool.buf + set;
     is->set = set;
@@ -110,7 +110,6 @@ void isdb_PrintIsland(FILE *file, const struct ds_RigidBodyPipeline *pipeline, c
 
 	fprintf(file, "\tflags:\n\t{\n");
 	fprintf(file, "\t\tawake: %u\n", is->set == SOLVER_SET_ACTIVE);
-	fprintf(file, "\t\tsleep_reset: %u\n", ISLAND_SLEEP_RESET_BIT(is));
 	fprintf(file, "\t\tsplit: %u\n", ISLAND_SPLIT_BIT(is));
 	fprintf(file, "\t}\n");
 
@@ -269,7 +268,6 @@ void isdb_MergeIslands(struct ds_RigidBodyPipeline *pipeline, const u32 ci, cons
     
     if (is_expand->set >= SOLVER_SET_SLEEPING_FIRST)
     {
-		is_expand->flags = ISLAND_SLEEP_RESET;
         ds_SolverSetWakeUp(pipeline, is_expand->set);
 	    PhysicsEventIslandAwake(pipeline, expand);	
     }

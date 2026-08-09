@@ -1032,10 +1032,8 @@ ds_Island
 TODO 
 */
 
-#define ISLAND_SLEEP_RESET	(0x1u << 1u)	/* reset sleep timers on frame */
 #define ISLAND_SPLIT		(0x1u << 2u)	/* flag island for splitting */
 
-#define ISLAND_SLEEP_RESET_BIT(is)	(((is)->flags & ISLAND_SLEEP_RESET) >> 1u)
 #define ISLAND_SPLIT_BIT(is)		(((is)->flags & ISLAND_SPLIT) >> 2u)
 
 #define ISLAND_NULL	    POOL_NULL 

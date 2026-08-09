@@ -646,7 +646,6 @@ static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
                  */
                 if (is->set >= SOLVER_SET_SLEEPING_FIRST)
                 {
-	            	is->flags = ISLAND_SLEEP_RESET;
                     ds_SolverSetWakeUp(pipeline, is->set);
 	                PhysicsEventIslandAwake(pipeline, is0);	
                 }
@@ -667,7 +666,6 @@ static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
                  */
                 if (is->set >= SOLVER_SET_SLEEPING_FIRST)
                 {
-	            	is->flags = ISLAND_SLEEP_RESET;
                     ds_SolverSetWakeUp(pipeline, is->set);
 	                PhysicsEventIslandAwake(pipeline, is1);	
                 }
@@ -915,7 +913,6 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline, const f32 delta)
             }
 
             /* integrate final solver velocities and update bodies and find lowest low_velocity time */
-	        island->flags &= ~ISLAND_SLEEP_RESET;
 	        if (g_solver_config->sleep_time_threshold <= min_low_velocity_time)
 	        {
                 ds_SolverSetSleep(pipeline, isi);
@@ -945,7 +942,6 @@ void PhysicsPipelineSleepEnable(struct ds_RigidBodyPipeline *pipeline)
             {
                 const u32 island_index = set->island_pool.buf[k];
         	    struct ds_Island *is = pipeline->is_db.island_pool.buf + k;
-		        is->flags |= ISLAND_SLEEP_RESET;
             }
 
             if (set_index >= SOLVER_SET_SLEEPING_FIRST)
@@ -974,7 +970,6 @@ void PhysicsPipelineSleepDisable(struct ds_RigidBodyPipeline *pipeline)
             {
                 const u32 island_index = set->island_pool.buf[k];
 	    	    struct ds_Island *is = pipeline->is_db.island_pool.buf + k;
-		        is->flags &= ~ISLAND_SLEEP_RESET;
             }
 
             if (set_index >= SOLVER_SET_SLEEPING_FIRST)

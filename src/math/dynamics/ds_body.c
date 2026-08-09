@@ -92,8 +92,19 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
 
     const u32 mass_properties_update = 0;
 
+    struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
+    ds_CPoolRemoveAndSwap(set->body_sim_pool, body->sim);
+    if (body->sim < set->body_sim_pool.count)
+    {
+        const struct ds_RigidBodySim *moved_sim = set->body_sim_pool.buf + body->sim;
+        struct ds_RigidBody *moved_body = pipeline->body_pool.buf + moved_sim->body;
+        ds_Assert(moved_body->set == body->set);
+        ds_Assert(moved_body->sim == set->body_sim_pool.count);
+        moved_body->sim = body->sim;
+    }
+
 	struct ds_Shape *shape_ptr;
-	if (body->island_index != ISLAND_STATIC)
+	if (body->set != SOLVER_SET_STATIC)
 	{
 	    struct ds_Island *island = pipeline->is_db.island_pool.buf + body->island_index;
         ds_Assert(ds_PoolSlotAllocated(island));
@@ -132,17 +143,6 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
             ds_JointStaticRemove(pipeline, body, body->joint_list.first);
         }
 	}
-
-    struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
-    ds_CPoolRemoveAndSwap(set->body_sim_pool, body->sim);
-    if (body->sim < set->body_sim_pool.count)
-    {
-        const struct ds_RigidBodySim *moved_sim = set->body_sim_pool.buf + body->sim;
-        struct ds_RigidBody *moved_body = pipeline->body_pool.buf + moved_sim->body;
-        ds_Assert(moved_body->set == body->set);
-        ds_Assert(moved_body->sim == set->body_sim_pool.count);
-        moved_body->sim = body->sim;
-    }
 
     const u32 entity = body->entity;
 	ds_RigidBodyPoolRemove(&pipeline->body_pool, ds_IdIndex(id));
