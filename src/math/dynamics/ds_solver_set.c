@@ -20,8 +20,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "dynamics.h"
-
 POOL_DEFINE(ds_SolverSet);
 
 struct slot ds_SolverSetAdd(struct ds_RigidBodyPipeline *pipeline, const u32 initial_body_count, const u32 initial_contact_count, const u32 initial_joint_count, const u32 initial_island_count)

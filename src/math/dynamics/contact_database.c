@@ -20,8 +20,6 @@
 #define XXH_INLINE_ALL
 #include "xxhash.h"
 
-#include "dynamics.h"
-
 POOL_DEFINE(ds_Contact);
 
 struct ds_ContactKey ds_ContactKeyCanonical(const u32 bodyA, const u32 shapeA, const u32 bodyB, const u32 shapeB)
@@ -200,12 +198,17 @@ struct slot ds_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct c_
     struct ds_Shape *shape0, *shape1;
     ds_ContactKeyAddress(&body0, &shape0, &body1, &shape1, pipeline, key);
 
+    const u32 old_max = pipeline->cdb->contact_pool.count_max;
 	struct slot slot = ds_ContactPoolAdd(&pipeline->cdb->contact_pool);
     struct ds_Contact *c = slot.address;
+    if (old_max != pipeline->cdb->contact_pool.count_max)
+    {
+        c->id = ds_IdFConstruct(slot.index, 0);
+    }
     c->cm = *cm;
     c->key = *key;
     c->cached_count = 0;
-    c->generation += 1;
+    c->id += DS_IDF_GENERATION_INCREMENT;
 
     struct ds_Contact *buf = pipeline->cdb->contact_pool.buf;
     struct ds_Contact *c0 = buf + shape0->contact_list.last; 
@@ -216,7 +219,6 @@ struct slot ds_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct c_
     ds_DLLAppendEx(shape1->contact_list, buf, slot.index, shape_contact[prev1], shape_contact[1]);
 
 	ds_HashMapAdd(&pipeline->cdb->contact_map, ds_ContactKeyHash(key), slot.index);
-    const ds_ContactId id = ((u64) c->generation << 32) | slot.index;
 
     ds_CGraphContactAdd(pipeline, c);
 
@@ -224,7 +226,7 @@ struct slot ds_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct c_
 	{
 		ds_BitSetSet(&pipeline->cdb->contact_frame_usage, slot.index, 1);
 	}
-	PhysicsEventContactNew(pipeline, id);
+	PhysicsEventContactNew(pipeline, c->id);
 
     return slot;
 }
@@ -265,12 +267,7 @@ void ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
     struct ds_Shape *shape0, *shape1;
     ds_ContactKeyAddress(&body0, &shape0, &body1, &shape1, pipeline, &c->key);
 	
-    const ds_ContactId id = ((u64) c->generation << 32) | index;
-    const u64 b0 = ((u64) body0->tag << 32)  | c->key.body0;
-    const u64 s0 = ((u64) shape0->tag << 32) | c->key.shape0;
-    const u64 b1 = ((u64) body1->tag << 32)  | c->key.body1;
-    const u64 s1 = ((u64) shape1->tag << 32) | c->key.shape1;
-	PhysicsEventContactRemoved(pipeline, b0, s0, b1, s1);
+	PhysicsEventContactRemoved(pipeline, body0->id, shape0->id, body1->id, shape1->id);
 	ds_BitSetSet(&pipeline->cdb->contact_persistent_usage, index, 0);
 	ds_HashMapRemove(&pipeline->cdb->contact_map, ds_ContactKeyHash(&c->key), index);
 
@@ -308,7 +305,7 @@ struct slot ds_ContactLookup(const struct ds_RigidBodyPipeline *pipeline, const 
 {
     struct slot slot = { .address = NULL, .index = U32_MAX };
     struct ds_Contact *c = pipeline->cdb->contact_pool.buf + ds_IdFIndex(id);
-    if (id != DS_IDF_NULL && ds_PoolSlotAllocated(c) && c->generation == ds_IdFGeneration(id))
+    if (id != DS_IDF_NULL && ds_PoolSlotAllocated(c) && c->id == id)
     {
         slot.address = c;
         slot.index = ds_IdFIndex(id);

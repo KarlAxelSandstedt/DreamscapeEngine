@@ -21,7 +21,6 @@
 #include <string.h>
 
 #include "float32.h"
-#include "dynamics.h"
 #include "ds_job.h"
 
 POOL_DEFINE(ds_PhysicsEvent);
@@ -308,11 +307,7 @@ static u32 NarrowPhaseJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPh
     {
         if (s0->cshape_type == C_SHAPE_CONVEX_HULL || s1->cshape_type == C_SHAPE_CONVEX_HULL)
         {
-            const struct sat_CacheKey key = sat_CacheKeyCanonical(
-                ((u64) b0->tag << 32) | job->key_in.body0,
-                ((u64) s0->tag << 32) | job->key_in.shape0,
-                ((u64) b1->tag << 32) | job->key_in.body1,
-                ((u64) s1->tag << 32) | job->key_in.shape1);
+            const struct sat_CacheKey key = sat_CacheKeyCanonical(b0->id, s0->id, b1->id, s1->id);
  
             struct slot slot = sat_CacheLookup(pipeline->cdb, &key);
             if (!slot.address)
@@ -354,12 +349,7 @@ static u32 NarrowPhaseJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPh
     {
         if (s0->cshape_type == C_SHAPE_CONVEX_HULL && s1->cshape_type == C_SHAPE_CONVEX_HULL)
         {
-            const struct sat_CacheKey key = sat_CacheKeyCanonical(
-                ((u64) b0->tag << 32) | job->key_in.body0,
-                ((u64) s0->tag << 32) | job->key_in.shape0,
-                ((u64) b1->tag << 32) | job->key_in.body1,
-                ((u64) s1->tag << 32) | job->key_in.shape1);
- 
+            const struct sat_CacheKey key = sat_CacheKeyCanonical(b0->id, s0->id, b1->id, s1->id);
             struct slot slot = sat_CacheLookup(pipeline->cdb, &key);
             if (!slot.address)
             {
@@ -736,9 +726,9 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
     
     if (pipeline->island_to_split != DS_ID_NULL)
     {
-        const u32 split_tag = ds_IdTag(pipeline->island_to_split);
         const u32 split_index = ds_IdIndex(pipeline->island_to_split);
-        if (split_tag == pipeline->island_pool.buf[split_index].tag)
+        if (ds_PoolSlotAllocated(pipeline->island_pool.buf + split_index) 
+                && pipeline->island_to_split == pipeline->island_pool.buf[split_index].id)
         {
             ds_IslandSplit(pipeline, split_index);
         }
@@ -866,7 +856,7 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline)
 			struct ds_PhysicsEvent *event = ds_PhysicsEventPush(pipeline);
 			event->type = PHYSICS_EVENT_BODY_ORIENTATION;
             const struct ds_RigidBody *body = pipeline->body_pool.buf + job->bodies[b];
-			event->body = ((u64) body->tag << 32) | job->bodies[b];
+			event->body = body->id;
 		}
 	}
     
@@ -905,7 +895,7 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline)
         else if (global_max_low_velocity_time < min_low_velocity_time && island->constraint_remove_count)
         {
             global_max_low_velocity_time = min_low_velocity_time;
-            pipeline->island_to_split = ds_IdConstruct(isi, island->tag); 
+            pipeline->island_to_split = island->id; 
         }
     }
 

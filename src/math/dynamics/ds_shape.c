@@ -17,48 +17,48 @@
 ==========================================================================
 */
 
-#include "dynamics.h"
-
 POOL_DEFINE(ds_Shape);
 
 ds_ShapeId ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_ShapePrefab *prefab, const ds_Transform *t, const ds_RigidBodyId body)
 {
     ds_ShapeId id = DS_ID_NULL;
+    const u32 old_max = pipeline->shape_pool.count_max;
     struct slot slot = ds_ShapePoolAdd(&pipeline->shape_pool);
-	if (slot.address)
+	struct ds_Shape *shape = slot.address;
+
+    if (old_max != pipeline->shape_pool.count_max)
+    {
+        shape->id = ds_IdConstruct(slot.index, 0);
+    }
+    shape->id += DS_ID_GENERATION_INCREMENT;
+
+	struct ds_RigidBody *body_ptr = pipeline->body_pool.buf + ds_IdIndex(body);
+	ds_Assert(ds_PoolSlotAllocated(body_ptr));
+	ds_DLLAppend(body_ptr->shape_list, pipeline->shape_pool.buf, slot.index, body_shape);
+
+	shape->body = ds_IdIndex(body);
+	shape->density = prefab->density;
+	shape->restitution = prefab->restitution;
+	shape->friction = prefab->friction;
+	shape->t_local = *t;
+	shape->margin = prefab->margin;
+	ds_DLLFlush(&shape->contact_list);
+
+	const struct c_Shape *cshape = strdb_Address(pipeline->cshape_db, prefab->cshape);
+	const struct slot cshape_slot = strdb_Reference(pipeline->cshape_db, cshape->id);
+	shape->cshape_handle = cshape_slot.index;
+	shape->cshape_type = cshape->type;
+
+	struct aabb bbox_proxy = ds_ShapeWorldBbox(pipeline, shape);
+	if (shape->cshape_type != C_SHAPE_TRI_MESH)
 	{
-		struct ds_RigidBody *body_ptr = pipeline->body_pool.buf + ds_IdIndex(body);
-		ds_Assert(ds_PoolSlotAllocated(body_ptr));
-		ds_DLLAppend(body_ptr->shape_list, pipeline->shape_pool.buf, slot.index, body_shape);
-
-		struct ds_Shape *shape = slot.address;
-
-        shape->tag += DS_ID_TAG_GENERATION_INCREMENT;
-        id = ((u64) shape->tag << 32) | slot.index;
-		shape->body = ds_IdIndex(body);
-		shape->density = prefab->density;
-		shape->restitution = prefab->restitution;
-		shape->friction = prefab->friction;
-		shape->t_local = *t;
-		shape->margin = prefab->margin;
-		ds_DLLFlush(&shape->contact_list);
-
-		const struct c_Shape *cshape = strdb_Address(pipeline->cshape_db, prefab->cshape);
-		const struct slot cshape_slot = strdb_Reference(pipeline->cshape_db, cshape->id);
-		shape->cshape_handle = cshape_slot.index;
-		shape->cshape_type = cshape->type;
-
-		struct aabb bbox_proxy = ds_ShapeWorldBbox(pipeline, shape);
-		if (shape->cshape_type != C_SHAPE_TRI_MESH)
-		{
-			Vec3Translate(bbox_proxy.hw, Vec3Inline(shape->margin, shape->margin, shape->margin));
-		}
-		shape->proxy = DbvhInsert(&pipeline->shape_bvh, slot.index, &bbox_proxy);
-
-        ds_RigidBodyUpdateMassProperties(pipeline, body);
+		Vec3Translate(bbox_proxy.hw, Vec3Inline(shape->margin, shape->margin, shape->margin));
 	}
+	shape->proxy = DbvhInsert(&pipeline->shape_bvh, slot.index, &bbox_proxy);
 
-    return id;
+    ds_RigidBodyUpdateMassProperties(pipeline, body);
+
+    return shape->id;
 }
 
 void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 shape_index, const u32 mass_properties_update)
@@ -66,8 +66,6 @@ void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Rigi
 	struct ds_Island *island = pipeline->island_pool.buf + body->island;
     struct ds_Shape *dummy_shape, *shape = pipeline->shape_pool.buf + shape_index;
     struct ds_RigidBody *dummy_body;
-    const ds_ShapeId s0 = ((u64) shape->tag << 32) | shape_index;
-    const ds_RigidBodyId b0 = ((u64) body->tag << 32) | shape->body;
 
     ds_DLLRemove(body->shape_list, pipeline->shape_pool.buf, shape_index, body_shape);
 	strdb_Dereference(pipeline->cshape_db, shape->cshape_handle);
@@ -80,7 +78,7 @@ void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Rigi
 
     if (mass_properties_update)
     {
-        ds_RigidBodyUpdateMassProperties(pipeline, b0);
+        ds_RigidBodyUpdateMassProperties(pipeline, body->id);
     }
 
 	ds_ShapePoolRemove(&pipeline->shape_pool, shape_index);
@@ -90,8 +88,6 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
 {
 	struct ds_Shape *dynamic_shape, *shape = pipeline->shape_pool.buf + index;
     struct ds_RigidBody *dynamic_body;
-    const u64 s0 = ((u64) shape->tag << 32) | index;
-    const u64 b0 = ((u64) body->tag << 32) | shape->body;
     const u32 static_is_tri_mesh = shape->cshape_type == C_SHAPE_TRI_MESH;
 
     ds_Assert(RB_IS_STATIC(pipeline->body_pool.buf + shape->body));
@@ -111,7 +107,7 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
 
     if (mass_properties_update)
     {
-        ds_RigidBodyUpdateMassProperties(pipeline, b0);
+        ds_RigidBodyUpdateMassProperties(pipeline, body->id);
     }
 
     ds_DLLRemove(body->shape_list, pipeline->shape_pool.buf, index, body_shape);
@@ -124,7 +120,7 @@ struct slot ds_ShapeLookup(const struct ds_RigidBodyPipeline *pipeline, const ds
 {
     struct slot slot = { .address = NULL, .index = 0 };
     struct ds_Shape *shape = pipeline->shape_pool.buf + ds_IdIndex(shape_id);
-    if (shape_id != DS_ID_NULL && ds_PoolSlotAllocated(shape) && shape->tag == ds_IdTag(shape_id))
+    if (shape_id != DS_ID_NULL && ds_PoolSlotAllocated(shape) && shape->id == shape_id)
     {
         slot.address = shape;
         slot.index = ds_IdIndex(shape_id);

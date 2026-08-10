@@ -90,36 +90,32 @@ Opaque generation based handles for user-interfacing structures. ds_Id supports
 generations and 32-bit indices.
 */
 
-typedef u64 ds_Id;
-typedef u64 ds_IdF; /* ds_IdF (frequent) */
+typedef u64     ds_Id;
+typedef u64     ds_IdF; /* ds_IdF (frequent) */
 
-typedef ds_Id   ds_JointId;
-typedef ds_Id   ds_RigidBodyId;
 typedef ds_Id   ds_ShapeId;
-typedef ds_IdF  ds_ContactId;
+typedef ds_Id   ds_RigidBodyId;
 typedef ds_Id   ds_IslandId;
+typedef ds_Id   ds_JointId;
+typedef ds_IdF  ds_ContactId;
 
 #define DS_ID_NULL                      U64_MAX
 #define DS_ID_INDEX_MASK                ((u64) 0x00000000ffffffff)
 #define DS_ID_TAG_MASK                  ((u64) 0xffffffff00000000)
-#define DS_ID_TAG_INCREMENT             ((u64) 0x0001000000000000)
+#define DS_ID_GENERATION_INCREMENT      ((u64) 0x0001000000000000)
 
-#define DS_ID_TAG_UNUSED_MASK           0x0000ffff
-#define DS_ID_TAG_GENERATION_MASK       0xffff0000
-#define DS_ID_TAG_GENERATION_INCREMENT  0x00010000
-
-#define ds_IdTag(id)                    ((u32) (id >> 32))
-#define ds_IdIndex(id)                  ((u32) id)
-#define ds_IdConstruct(index, tag)      ((((u64) tag) << 32) | (u64) index)
+#define ds_IdTag(id)                    ((u32) ((id) >> 32))
+#define ds_IdIndex(id)                  ((u32) (id))
+#define ds_IdConstruct(index, tag)      ((((u64) (tag)) << 32) | (u64) (index))
 
 #define DS_IDF_NULL                     U64_MAX
 #define DS_IDF_INDEX_MASK               ((u64) 0x00000000ffffffff)
 #define DS_IDF_GENERATION_MASK          ((u64) 0xffffffff00000000)
-#define DS_IDF_TAG_GENERATION_INCREMENT ((u64) 0x0000000100000000)
+#define DS_IDF_GENERATION_INCREMENT     ((u64) 0x0000000100000000)
 
-#define ds_IdFGeneration(id)            ((u32) (id >> 32))
-#define ds_IdFIndex(id)                 ((u32) id)
-#define ds_IdFConstruct(index, tag)     ((((u64) tag) << 32) | (u64) index)
+#define ds_IdFGeneration(id)            ((u32) ((id) >> 32))
+#define ds_IdFIndex(id)                 ((u32) (id))
+#define ds_IdFConstruct(index, tag)     ((((u64) (tag)) << 32) | (u64) (index))
 
 /*
 ds_Shape
@@ -163,7 +159,7 @@ struct ds_Shape
 	POOL_NODE;
     struct ds_DLLNode body_shape;
 
-    u32             tag;                /* Tag [ Generation(16) | Unused (16) ]             */
+    ds_ShapeId      id;                 /* Generational identifier                          */
 	u32 			body;		        /* ds_RigidBody owner of node 			            */
     struct ds_DLL   contact_list;       /* list of the shape's contacts                     */
 
@@ -317,24 +313,20 @@ rigid_body
 */
 
 #define RB_DYNAMIC		((u32) 1 << 1)
-#define RB_ISLAND		((u32) 1 << 3)
 
 #define RB_IS_STATIC(b)	    (!((b)->flags & RB_DYNAMIC))
 #define RB_IS_DYNAMIC(b)	((b)->flags & RB_DYNAMIC)
-#define RB_IS_ISLAND(b)		((b)->flags & RB_ISLAND)
 
 #define RB_DYNAMIC_BIT(b)	(((b)->flags & RB_DYNAMIC) >> 1u)
-#define RB_ISLAND_BIT(b)	(((b)->flags & RB_ISLAND) >> 3u)
 
 #define IS_DYNAMIC(flags)	(((flags) & RB_DYNAMIC) >> 1u)
-#define IS_ISLAND(flags)	(((flags) & RB_ISLAND) >> 3u)
 
 struct ds_RigidBody
 {
 	POOL_NODE;
 	struct ds_DLLNode island_body;	        /* island body_list node */
 
-    u32             tag;                    /* Tag [ Generation(16) | Unused (16) ]                 */
+    ds_RigidBodyId  id;                     /* generational identifier */
 	u32 		    flags;
 	u32		        island;
 
@@ -428,7 +420,7 @@ so any cached contacts are relative to body0.
 struct ds_Contact
 {
     POOL_NODE;
-    u32                     generation;                 /* Slot generation used id ds_ContactId                     */
+    ds_ContactId            id;                         /* generational identifier  */
     struct ds_DLLNode       island_contact;             /* island->contact_list node                         */
 
     u32                     island;                     /* Index of contact's island */
@@ -726,7 +718,7 @@ enum ds_JointType
 struct ds_Joint
 {
     POOL_NODE;
-    u32         tag;                    /* id tag                                                           */
+    ds_JointId          id;                    /* generational identifier */
 
     u32                 island;
     struct ds_DLLNode   island_joint;
@@ -1048,7 +1040,7 @@ struct ds_Island
 						                     * is->body_index_map[b] = i 
 						                     */
 
-    u32             tag;
+    ds_IslandId     id;                     /* generational identifier */
     /* PERSISTENT DATA */
 	u32             constraint_remove_count;   /* Constraints removed counter */
     u32             set;                        /* ds_SolverSet index */
@@ -1062,8 +1054,6 @@ struct ds_Island
 	vec4 color;
 };
 POOL_DECLARE(ds_Island);
-
-struct ds_RigidBodyPipeline;
 
 /* remove island resources from database */
 void 		ds_IslandRemove(struct ds_RigidBodyPipeline *pipeline, const u32 island);

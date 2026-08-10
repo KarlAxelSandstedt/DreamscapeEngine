@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.14.3)
 
 add_library(dynamics STATIC
-	"${DS_INCLUDE_PATH}/dynamics.h"
+	"${DS_INCLUDE_PATH}/ds_dynamics.h"
     ds_dynamics.c
 )
 add_library(Dreamscape::Dynamics ALIAS dynamics)

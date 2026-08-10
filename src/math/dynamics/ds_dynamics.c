@@ -1,3 +1,4 @@
+#include "ds_dynamics.h"
 #include "physics_pipeline.c"
 #include "contact_database.c"
 #include "contact_solver.c"

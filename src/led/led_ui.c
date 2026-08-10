@@ -513,8 +513,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
                             if (node->inter & UI_INTER_LEFT_CLICK)
                             {
-                                const ds_RigidBodyId id = ((u64) body->tag << 32) | shape->body;
-                                ds_RigidBodyRemove(g_ui->mem_frame, &led->physics, id);
+                                ds_RigidBodyRemove(g_ui->mem_frame, &led->physics, body->id);
                             }
 						}
 					}

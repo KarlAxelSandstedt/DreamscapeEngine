@@ -17,7 +17,6 @@
 ==========================================================================
 */
 
-#include "dynamics.h"
 #include "quaternion.h"
 #include "ds_job.h"
 
@@ -56,10 +55,10 @@ static struct slot ds_IslandAlloc(struct ds_RigidBodyPipeline *pipeline, const u
 
     if (old_max == pipeline->island_pool.count)
     {
-        is->tag = 0;
+        is->id = ds_IdConstruct(slot.index, 0);
     }
             
-    is->tag += DS_ID_TAG_GENERATION_INCREMENT;
+    is->id += DS_ID_GENERATION_INCREMENT;
 
     struct ds_SolverSet *s = pipeline->solver_set_pool.buf + set;
     is->set = set;

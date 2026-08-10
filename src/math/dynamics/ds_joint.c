@@ -17,11 +17,9 @@
 ==========================================================================
 */
 
-#include "dynamics.h"
-
 POOL_DEFINE(ds_Joint);
 
-ds_JointId  ds_JointAdd(struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId b0_id, const ds_Transform *local_frame0, const ds_RigidBodyId b1_id, const ds_Transform *local_frame1)
+ds_JointId ds_JointAdd(struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId b0_id, const ds_Transform *local_frame0, const ds_RigidBodyId b1_id, const ds_Transform *local_frame1)
 {
     struct slot slot_b0 = ds_RigidBodyLookup(pipeline, b0_id);
     struct slot slot_b1 = ds_RigidBodyLookup(pipeline, b1_id);
@@ -32,10 +30,14 @@ ds_JointId  ds_JointAdd(struct ds_RigidBodyPipeline *pipeline, const ds_RigidBod
         return DS_ID_NULL;
     }
 
+    const u32 old_max = pipeline->joint_pool.count_max;
     struct slot slot_joint = ds_JointPoolAdd(&pipeline->joint_pool);
     struct ds_Joint *joint = slot_joint.address;
-    joint->tag += DS_ID_TAG_GENERATION_INCREMENT;
-    const ds_JointId id = ds_IdConstruct(slot_joint.index, joint->tag);
+    if (old_max != pipeline->joint_pool.count_max)
+    {
+        joint->id = ds_IdConstruct(slot_joint.index, 0);
+    }
+    joint->id += DS_ID_GENERATION_INCREMENT;
 
     //TODO does order matter here?
     //TODO should static have slot 1 reserved?...
@@ -51,7 +53,7 @@ ds_JointId  ds_JointAdd(struct ds_RigidBodyPipeline *pipeline, const ds_RigidBod
     sim->local_frame[0] = *local_frame0;
     sim->local_frame[1] = *local_frame1;
 
-    return id;
+    return joint->id;
 }
 
 static void ds_JointUnlink(struct ds_RigidBodyPipeline *pipeline, const struct ds_Joint *joint, const u32 joint_index)
@@ -143,7 +145,7 @@ struct slot ds_JointLookup(const struct ds_RigidBodyPipeline *pipeline, const ds
     }
             
     struct ds_Joint *joint = pipeline->joint_pool.buf + index;
-    return  (ds_PoolSlotAllocated(joint) && joint->tag == ds_IdTag(id))
+    return  (ds_PoolSlotAllocated(joint) && joint->id == id)
         ? (struct slot) { .index = index, .address = joint }
         : (struct slot) { .index = U32_MAX, .address = NULL };
 }

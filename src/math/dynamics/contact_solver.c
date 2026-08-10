@@ -20,7 +20,6 @@
 #include <stdlib.h>
 
 #include "collision.h"
-#include "dynamics.h"
 
 /* used in contact solver to cleanup the code from if-statements */
 struct ds_RigidBody static_body = { 0 };

@@ -19,7 +19,7 @@
 
 #include <string.h>
 
-#include "dynamics.h"
+#include "ds_dynamics.h"
 #include "collision.h"
 
 ds_ThreadLocal struct collisionDebug *debug;

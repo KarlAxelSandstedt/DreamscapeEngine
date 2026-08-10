@@ -17,17 +17,20 @@
 ==========================================================================
 */
 
-#include "dynamics.h"
-
 POOL_DEFINE(ds_RigidBody);
 
 ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBodyPrefab *prefab, const ds_Transform *t_world, const u32 entity)
 {
+    const u32 old_max = pipeline->body_pool.count_max;
 	const struct slot body_slot = ds_RigidBodyPoolAdd(&pipeline->body_pool);
 	struct ds_RigidBody *body = body_slot.address;
-    body->tag += DS_ID_TAG_GENERATION_INCREMENT;
-    const ds_RigidBodyId id = ((u64) body->tag << 32) | body_slot.index;
-	PhysicsEventBodyNew(pipeline, id);
+
+    if (old_max != pipeline->body_pool.count_max)
+    {
+        body->id = ds_IdConstruct(body_slot.index, 0);
+    }
+    body->id += DS_ID_GENERATION_INCREMENT;
+	PhysicsEventBodyNew(pipeline, body->id);
 
     if (pipeline->body_usage_set.bit_count <= body_slot.index)
     {
@@ -78,14 +81,14 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const stru
         sim->body = body_slot.index;
 	}
 	
-	return id;
+	return body->id;
 }
 
 void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId id)
 {
     const u32 body_index = ds_IdIndex(id);
 	struct ds_RigidBody *body = pipeline->body_pool.buf + body_index;
-    if (body->tag != ds_IdTag(id))
+    if (body->id != id)
     {
         return;
     }
@@ -157,7 +160,7 @@ struct slot ds_RigidBodyLookup(const struct ds_RigidBodyPipeline *pipeline, cons
 {
     struct slot slot = { .address = NULL, .index = 0 };
     struct ds_RigidBody *body = pipeline->body_pool.buf + ds_IdIndex(id);
-    if (id != DS_ID_NULL && ds_PoolSlotAllocated(body) && body->tag == ds_IdTag(id))
+    if (id != DS_ID_NULL && ds_PoolSlotAllocated(body) && body->id == id)
     {
         slot.address = body;
         slot.index = ds_IdIndex(id);

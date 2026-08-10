@@ -53,7 +53,7 @@ struct led_Node *led_NodeLookup(struct led *led, const ds_Id id)
 
 static ds_Id led_NodeInitalize(struct led_Node *node, const u32 node_index, const u64 flags)
 {
-    node->tagged_id = ((node->tagged_id & DS_ID_TAG_MASK) + DS_ID_TAG_INCREMENT) | node_index; 
+    node->tagged_id = ((node->tagged_id & DS_ID_TAG_MASK) + DS_ID_GENERATION_INCREMENT) | node_index; 
 	node->flags = flags;
 	node->body_prefab = STRING_DATABASE_STUB_INDEX;
     node->shape_prefab = STRING_DATABASE_STUB_INDEX;

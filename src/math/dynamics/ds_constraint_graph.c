@@ -19,8 +19,6 @@
 
 #include <string.h>
 
-#include "dynamics.h"
-
 void ds_CGraphAlloc(struct ds_RigidBodyPipeline *pipeline, const u32 initial_count)
 {
     struct ds_CGraph *cg = &pipeline->cgraph;
@@ -213,19 +211,6 @@ void ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Con
 
 void ds_CGraphValidate(const struct ds_RigidBodyPipeline *pipeline)
 {
-    /* TODO Contacts:
-     *      (O) Validate colors
-     *      (O) Validate active set
-     *      (O) Validate active island 
-     *      () Validate static/dynamic color is correct
-     */
-
-    /* TODO Joints:
-     *      (O) Validate colors
-     *      (O) Validate active set
-     *      (O) Validate active island 
-     *      () Validate static/dynamic color is correct
-     */
     for (u32 c = 0; c < CG_COLOR_COUNT; ++c)
     {
         const struct ds_CGraphColor *color = pipeline->cgraph.color + c;
