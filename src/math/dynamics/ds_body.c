@@ -129,6 +129,11 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
     		ds_Assert(island->body_list.last == DLL_SENTINEL);
     		ds_IslandRemove(pipeline, body->island);
     	} 
+        else if (island->set >= SOLVER_SET_SLEEPING_FIRST)
+        {
+            ds_SolverSetWakeUp(pipeline, island->set);
+	        PhysicsEventIslandAwake(pipeline, body->island);	
+        }
 	}       
 	else
 	{

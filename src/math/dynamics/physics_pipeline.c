@@ -737,7 +737,7 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
     if (pipeline->island_to_split != DS_ID_NULL)
     {
         const u32 split_tag = ds_IdTag(pipeline->island_to_split);
-        const u32 split_index = ds_IdTag(pipeline->island_to_split);
+        const u32 split_index = ds_IdIndex(pipeline->island_to_split);
         if (split_tag == pipeline->island_pool.buf[split_index].tag)
         {
             ds_IslandSplit(pipeline, split_index);
@@ -873,7 +873,7 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline)
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     ds_BitSetClear(&pipeline->island_high_energy_set, 0);
     pipeline->island_to_split = DS_ID_NULL; 
-    f32 global_max_low_velocity_time = F32_MAX_POSITIVE_NORMAL;
+    f32 global_max_low_velocity_time = F32_MIN_NEGATIVE_NORMAL;
     for (u32 i = 0; i < active->island_pool.count; ++i)
     {
         const u32 isi = active->island_pool.buf[i];
@@ -902,7 +902,7 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline)
 	    {
             ds_BitSetSet(&pipeline->island_high_energy_set, i, 1);
 	    }
-        else if (global_max_low_velocity_time < min_low_velocity_time)
+        else if (global_max_low_velocity_time < min_low_velocity_time && island->constraint_remove_count)
         {
             global_max_low_velocity_time = min_low_velocity_time;
             pipeline->island_to_split = ds_IdConstruct(isi, island->tag); 

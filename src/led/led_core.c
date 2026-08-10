@@ -1175,8 +1175,8 @@ void led_WallSmashSimulationSetup(struct led *led)
     const u32 floor_count = 10;
 	const u32 dsphere_count = 0;
 	//const u32 dsphere_count = 120;
-	const u32 capsule_count = 400;
-	//const u32 capsule_count = 0;
+	//const u32 capsule_count = 400;
+	const u32 capsule_count = 0;
 	const u32 tower1_count = 0;
 	const u32 tower2_count = 0;
 	const u32 tower1_box_count = 0;
