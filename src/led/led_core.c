@@ -1815,7 +1815,7 @@ static void led_EngineRun(struct led *led)
                     {
 				        const struct ds_RigidBody *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);
                         const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
-					    if (body->island == ISLAND_STATIC)
+					    if (RB_IS_STATIC(body))
 					    {
                             led_NodeColorProxies(led, body->entity, led->static_color);
 					    }

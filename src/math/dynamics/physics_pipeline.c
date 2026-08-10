@@ -624,8 +624,8 @@ static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
 		const struct ds_RigidBody *body1 = pipeline->body_pool.buf + c->key.body1;
 		const u32 is0 = body0->island;
 		const u32 is1 = body1->island;
-		const u32 d0 = (is0 != ISLAND_STATIC) ? 0x2 : 0x0;
-		const u32 d1 = (is1 != ISLAND_STATIC) ? 0x1 : 0x0;
+		const u32 d0 = RB_IS_DYNAMIC(body0) ? 0x2 : 0x0;
+		const u32 d1 = RB_IS_DYNAMIC(body1) ? 0x1 : 0x0;
 		switch (d0 | d1)
 		{
 			/* dynamic-dynamic */
@@ -702,7 +702,7 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 			const u32 b1 = c->key.body1;
 			const struct ds_RigidBody *body0 = pipeline->body_pool.buf + b0;
 			const struct ds_RigidBody *body1 = pipeline->body_pool.buf + b1;
-			ds_Assert(body0->island != ISLAND_STATIC || body1->island != ISLAND_STATIC);
+			ds_Assert(RB_IS_DYNAMIC(body0) || RB_IS_DYNAMIC(body1));
 
 			if (body0->set != SOLVER_SET_STATIC && body1->set != SOLVER_SET_STATIC)
 			{

@@ -182,8 +182,8 @@ void ds_IslandValidateAll(const struct ds_RigidBodyPipeline *pipeline)
 	    		ds_Assert(ds_PoolSlotAllocated(c));
 	    		const struct ds_RigidBody *b0 = pipeline->body_pool.buf + c->key.body0;
 	    		const struct ds_RigidBody *b1 = pipeline->body_pool.buf + c->key.body1;
-	    		ds_Assert((b0->island == index) || (b0->island == ISLAND_STATIC));
-	    		ds_Assert((b1->island == index) || (b1->island == ISLAND_STATIC));
+	    		ds_Assert((b0->island == index) || RB_IS_STATIC(b0));
+	    		ds_Assert((b1->island == index) || RB_IS_STATIC(b1));
                 ds_Assert(c->island == index);
 	    	}
 	    	ds_Assert(list_length == is->contact_list.count);
@@ -194,7 +194,7 @@ void ds_IslandValidateAll(const struct ds_RigidBodyPipeline *pipeline)
 	for (u32 i = 0; i < pipeline->body_pool.count_max; ++i)
 	{
 		struct ds_RigidBody *body = pipeline->body_pool.buf + i;
-		if (ds_PoolSlotAllocated(body) && body->island != ISLAND_NULL && body->island != ISLAND_STATIC)
+		if (ds_PoolSlotAllocated(body) && RB_IS_DYNAMIC(body))
 		{
 			struct ds_Island *is = pipeline->island_pool.buf + body->island;
 			ds_Assert(ds_PoolSlotAllocated(is));
@@ -422,7 +422,7 @@ void ds_IslandSplit(struct ds_RigidBodyPipeline *pipeline, const u32 island_to_s
 	    	    const struct ds_RigidBody *body1 = pipeline->body_pool.buf + c->key.body1;
 	    	    const u32 island0 = body0->island;
 	    	    const u32 island1 = body1->island;
-	    	    struct ds_Island *is = (island0 != ISLAND_STATIC)
+	    	    struct ds_Island *is = RB_IS_DYNAMIC(body0)
 	    	    	? pipeline->island_pool.buf + island0
 	    	    	: pipeline->island_pool.buf + island1;
 	    	    ds_DLLAppend(is->contact_list, pipeline->cdb->contact_pool.buf, ci, island_contact);
@@ -445,7 +445,7 @@ void ds_IslandSplit(struct ds_RigidBodyPipeline *pipeline, const u32 island_to_s
 	    		const struct ds_RigidBody *body1 = pipeline->body_pool.buf + c->key.body1;
 	    		const u32 island0 = body0->island;
 	    		const u32 island1 = body1->island;
-	    		struct ds_Island *is = (island0 != ISLAND_STATIC)
+	    		struct ds_Island *is = RB_IS_DYNAMIC(body0)
 	    			? pipeline->island_pool.buf + island0
 	    			: pipeline->island_pool.buf + island1;
 	    		ds_DLLAppend(is->contact_list, pipeline->cdb->contact_pool.buf, i, island_contact);

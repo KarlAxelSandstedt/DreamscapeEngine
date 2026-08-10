@@ -159,10 +159,10 @@ void SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, con
             struct ds_Shape *s1, *s2;
             ds_ContactKeyAddress(&b1, &s1, &b2, &s2, pipeline, &is->contacts[i]->key);
 
-            vc->lb1 = (b1->island == ISLAND_STATIC)
+            vc->lb1 = RB_IS_STATIC(b1)
                 ? solver->body_count
                 : is->body_index_map[is->contacts[i]->key.body0];
-            vc->lb2 = (b2->island == ISLAND_STATIC)
+            vc->lb2 = RB_IS_STATIC(b2)
                 ? solver->body_count
                 : is->body_index_map[is->contacts[i]->key.body1];
 

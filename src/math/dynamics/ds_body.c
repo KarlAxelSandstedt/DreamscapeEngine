@@ -72,7 +72,7 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const stru
 
         body->set = SOLVER_SET_STATIC;
         body->sim = sim_slot.index;
-		body->island = ISLAND_STATIC;
+		body->island = POOL_NULL;
 
         struct ds_RigidBodySim *sim = sim_slot.address;
         sim->body = body_slot.index;

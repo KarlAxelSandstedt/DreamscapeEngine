@@ -319,15 +319,15 @@ rigid_body
 #define RB_DYNAMIC		((u32) 1 << 1)
 #define RB_ISLAND		((u32) 1 << 3)
 
-#define RB_IS_DYNAMIC(b)	(b->flags & RB_DYNAMIC)
-#define RB_IS_ISLAND(b)		(b->flags & RB_ISLAND)
+#define RB_IS_STATIC(b)	    (!((b)->flags & RB_DYNAMIC))
+#define RB_IS_DYNAMIC(b)	((b)->flags & RB_DYNAMIC)
+#define RB_IS_ISLAND(b)		((b)->flags & RB_ISLAND)
 
+#define RB_DYNAMIC_BIT(b)	(((b)->flags & RB_DYNAMIC) >> 1u)
+#define RB_ISLAND_BIT(b)	(((b)->flags & RB_ISLAND) >> 3u)
 
-#define RB_DYNAMIC_BIT(b)	((b->flags & RB_DYNAMIC) >> 1u)
-#define RB_ISLAND_BIT(b)	((b->flags & RB_ISLAND) >> 3u)
-
-#define IS_DYNAMIC(flags)	((flags & RB_DYNAMIC) >> 1u)
-#define IS_ISLAND(flags)	((flags & RB_ISLAND) >> 3u)
+#define IS_DYNAMIC(flags)	(((flags) & RB_DYNAMIC) >> 1u)
+#define IS_ISLAND(flags)	(((flags) & RB_ISLAND) >> 3u)
 
 struct ds_RigidBody
 {
@@ -1034,9 +1034,6 @@ ds_Island
 =========
 TODO 
 */
-
-#define ISLAND_NULL	    POOL_NULL 
-#define ISLAND_STATIC	POOL_NULL-1	/* static bodies are mapped to "island" ISLAND_STATIC */
 
 struct ds_Island
 {

@@ -94,7 +94,7 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
     const u64 b0 = ((u64) body->tag << 32) | shape->body;
     const u32 static_is_tri_mesh = shape->cshape_type == C_SHAPE_TRI_MESH;
 
-    ds_Assert(pipeline->body_pool.buf[shape->body].island == ISLAND_STATIC);
+    ds_Assert(RB_IS_STATIC(pipeline->body_pool.buf + shape->body));
     while (shape->contact_list.first != DLL_SENTINEL)
 	{
         const u32 ci = shape->contact_list.first;
