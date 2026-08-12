@@ -332,34 +332,56 @@ struct ds_RigidBody
 
     u32             set;                    /* ds_SolverSet index                                   */
     u32             sim;                    /* ds_SolverSet data index                              */ 
+	f32 		    low_velocity_time;	    /* Current uninterrupted time body has been in a low velocity state */
 
     struct ds_DLL   joint_list;             /* list of ds_Joint's attached to the body. Each joint is
                                                shared with one other body. */
 
 	struct ds_DLL   shape_list;		        /* list of convex shapes constructing the rigid body 	*/
+
+    //TODO Remove 
 	ds_Transform    t_world;		        /* local body frame to world transform. Rotation is 
                                                about the local origin (not center of mass!)         */
 	vec3		    local_center_of_mass;	/* local body frame center of mass 			            */
-
 	vec3 		    velocity;               /* linear velocity of body */
 	vec3 		    angular_velocity;       /* angular velocity of body (about local center of mass,
                                                not local origin!)                                   */
 	vec3 		    linear_momentum;   	    /* L = mv */
-	f32 		    low_velocity_time;	    /* Current uninterrupted time body has been in a low velocity state */
-
 	mat3 		    inv_inertia_tensor;
 	f32 		    mass;			        /* total body mass */
-
-    //TODO Why do we store this here ...
 	u32 	        entity;
 };
 POOL_DECLARE(ds_RigidBody);
 
+
+/*
+ds_RigidBodySim
+===============
+*/
 struct ds_RigidBodySim
 {
     u32             body;                   /* RigidBody index */
+    u32             flags;
+	ds_Transform    t_world;		        /* local body frame to world transform. Rotation is 
+                                               about the local origin (not center of mass!)         */
+	vec3		    local_center_of_mass;	/* local body frame center of mass */
+	mat3 		    inv_inertia_tensor;
 };
 DEFINE_CPOOL_STRUCT(ds_RigidBodySim);
+
+
+/*
+ds_RigidBodyCompute
+===================
+*/
+struct ds_RigidBodyCompute
+{
+	vec3 		    linear_velocity;        /* linear velocity of body */
+	vec3 		    angular_velocity;       /* angular velocity of body (about local center of mass,
+                                               not local origin!)                                   */
+    u32             flags;
+};
+DEFINE_CPOOL_STRUCT(ds_RigidBodyCompute);
 
 //TODO
 ds_RigidBodyId  ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBodyPrefab *prefab, const ds_Transform *t_world, const u32 entity);
@@ -823,66 +845,6 @@ keep this structure unless you recommend us switching.
 Furthermore, we do not at the moment store body data in the sets, only contact indices for sleeping sets
 and ds_JoinSim for sleeping/disabled sets, and any islands in the set.  we will expand this struct as needed.
 
-TODO: Do we need to for bodies/contacts/joints/islands to store the set they belong to in them?
-
-With this context, carefully analyze the following questions and operations regarding island/solver updates; 
-if you believe some operations are missing, state so.
-
-
-    () BodyAdd
-        IF body is dynamic => Add new island (with only the new body in it) to the active set 
-        IF body is static => (do nothing for now)
-        body.set = (static) ? STATIC : ACTIVE
-
-    () BodyRemove
-        *** After containts/joints removed ***
-        - simplicity, assume an island flagged for splitting is at least split into one new island
-        =>  For split in split_island_list
-                if (body.set == SLEEPING|ACTIVE)
-                    Add split.island to ACTIVE
-                    Add split.contacts to constraint graph 
-                    Add split.joints to constraint graph
-                else if (body.set == DISABLED)
-                    Add split.island to DISABLED
-                    Add split.contacts to DISABLED
-                    Add split.joints to DISABLED
-        - deallocate body
-
-    () On new joint
-        () merge island_expand <= island_merge
-        () if island_expand == sleeping, wake
-        () if island_expand == sleeping, merge island_set into active_set
-        () add joint to constraint graph
-
-    () On delete joint
-        () mark island for pontential splitting
-        () if island == sleeping, wake
-        () if island == awake, remove joint from constraint graph
-        () else if island == sleeping/disabled  remove joint from set
-
-    () On new contact
-        () merge island_expand <= island_merge
-        () if island_expand == sleeping, wake
-        () if island_expand == sleeping, merge island_set into active_set
-        () add contact to constraint graph
-
-    () On delete contact 
-        () mark island for pontential splitting
-        () if island == sleeping, wake
-        () if island == awake, remove joint from constraint graph
-        () else if island == sleeping/disabled  remove joint from set
-
-    () On island split
-        () try_split_island_into_islands
-        () Add any new islands to active set
-        () if island->set == SLEEPING/DISABLED => remove set
-        () else remove island from island->set
-
-    () On island merge
-        () island1,island2 == island_expand, island_merge, merge island_merge into island_expand
-        () if island_merge->set == SLEEPING/DISABLED => remove set
-        () else remove island from island->set
-
 SOLVER_SET_DISABLED: TODO
 
 SOLVER_SET_STATIC: TODO
@@ -908,24 +870,27 @@ struct ds_SolverSet
     //TODO body solver data
     
     /* Body simulation state */
-    ds_CPool(ds_RigidBodySim)   body_sim_pool;
+    ds_CPool(ds_RigidBodySim)       body_sim_pool;
+
+    /* Body solver computation state */
+    ds_CPool(ds_RigidBodyCompute)   body_compute_pool;
 
     /* Sleep set contact indices. 
      * TODO: box3d store non-contact dbvh overlaps for active set here, and contact indices in CGraph 
      */
-    ds_CPool(u32)               contact_pool;
+    ds_CPool(u32)                   contact_pool;
     
     /* Disabled/Sleep set stores non-active joints that has been removed from the constraint graph */
-    ds_CPool(ds_JointSim)       joint_sim_pool;
+    ds_CPool(ds_JointSim)           joint_sim_pool;
 
     /* Islands in set */
-    ds_CPool(u32)               island_pool;
+    ds_CPool(u32)                   island_pool;
 };
 POOL_DECLARE(ds_SolverSet);
 
 
 /* Allocate and setup a ds_SolverSet */
-struct slot ds_SolverSetAdd(struct ds_RigidBodyPipeline *pipeline, const u32 initial_body_count, const u32 initial_index_count, const u32 initial_joint_count, const u32 initial_island_count);
+struct slot ds_SolverSetAdd(struct ds_RigidBodyPipeline *pipeline, const u32 initial_body_sim_count, const u32 initial_body_compute_count, const u32 initial_index_count, const u32 initial_joint_count, const u32 initial_island_count);
 /* Deallocate a the given ds_SolverSet */
 void        ds_SolverSetRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index);
 /* Flush the given ds_SolverSet */

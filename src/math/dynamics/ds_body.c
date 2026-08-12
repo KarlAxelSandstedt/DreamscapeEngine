@@ -56,12 +56,22 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const stru
 	{
         struct ds_SolverSet *active_set = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE; 
         const struct slot sim_slot = ds_CPoolPush(active_set->body_sim_pool);
+        const struct slot compute_slot = ds_CPoolPush(active_set->body_compute_pool);
 
         body->set = SOLVER_SET_ACTIVE;
         body->sim = sim_slot.index;
 
         struct ds_RigidBodySim *sim = sim_slot.address;
         sim->body = body_slot.index;
+        sim->flags = body->flags;
+        sim->t_world = *t_world;
+        Vec3Set(sim->local_center_of_mass, 0.0f, 0.0f, 0.0f);
+        Mat3Identity(sim->inv_inertia_tensor);
+
+        struct ds_RigidBodyCompute *compute = compute_slot.address;
+        compute->flags = body->flags;
+	    Vec3Set(compute->linear_velocity, 0.0f, 0.0f, 0.0f);
+	    Vec3Set(compute->angular_velocity, 0.0f, 0.0f, 0.0f);
 
 	    const struct slot island_slot = ds_IslandAlloc(pipeline, SOLVER_SET_ACTIVE);
 	    struct ds_Island *island = island_slot.address;
@@ -79,6 +89,7 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const stru
 
         struct ds_RigidBodySim *sim = sim_slot.address;
         sim->body = body_slot.index;
+        sim->flags = body->flags;
 	}
 	
 	return body->id;
@@ -160,7 +171,7 @@ struct slot ds_RigidBodyLookup(const struct ds_RigidBodyPipeline *pipeline, cons
 {
     struct slot slot = { .address = NULL, .index = 0 };
     struct ds_RigidBody *body = pipeline->body_pool.buf + ds_IdIndex(id);
-    if (id != DS_ID_NULL && ds_PoolSlotAllocated(body) && body->id == id)
+    if (ds_PoolSlotAllocated(body) && body->id == id)
     {
         slot.address = body;
         slot.index = ds_IdIndex(id);
@@ -177,15 +188,23 @@ void ds_RigidBodyUpdateLocalFrame(struct ds_RigidBodyPipeline *pipeline, const u
 
 void ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId id)
 {
+	struct ds_RigidBody *body = pipeline->body_pool.buf + ds_IdIndex(id);
+    if (!ds_PoolSlotAllocated(body) || id != body->id)
+    {
+        return;
+    }
+
 	ArenaPushRecord(&pipeline->frame);
 
-	struct ds_RigidBody *body = pipeline->body_pool.buf + ds_IdIndex(id);
+    struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
+    struct ds_RigidBodySim *sim = set->body_sim_pool.buf + body->sim;
 	ds_Assert(ds_PoolSlotAllocated(body));
 
 	vec3 tmp;
     mat3 body_inertia_tensor, rot_local, rot_local_inv, tmp1, tmp2;
 
 	body->mass = 0.0f;
+    Vec3Set(sim->local_center_of_mass, 0.0f, 0.0f, 0.0f);
 	Vec3Set(body->local_center_of_mass, 0.0f, 0.0f, 0.0f);
 	Mat3Set(body_inertia_tensor, 
 			0.0f, 0.0f, 0.0f, 
@@ -245,6 +264,7 @@ void ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, con
 		Mat3SubSelf(body_inertia_tensor, tmp2);
 	}
     Mat3Inverse(body->inv_inertia_tensor, body_inertia_tensor);
+    Mat3Inverse(sim->inv_inertia_tensor, body_inertia_tensor);
 
 	ArenaPopRecord(&pipeline->frame);
 }

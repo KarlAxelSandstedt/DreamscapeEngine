@@ -111,9 +111,9 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
     pipeline.numerics_config = ds_NumericsConfigDefault();
 
     pipeline.solver_set_pool = ds_SolverSetPoolAlloc(NULL, 4096, GROWABLE);
-    const struct slot set_disabled = ds_SolverSetAdd(&pipeline, 256, 0, 4096, 4096);
-    const struct slot set_static = ds_SolverSetAdd(&pipeline, 256, 0, 0, 0);
-    const struct slot set_active = ds_SolverSetAdd(&pipeline, 4096, 0, 0, 4096);
+    const struct slot set_disabled = ds_SolverSetAdd(&pipeline, 256, 0, 0, 4096, 4096);
+    const struct slot set_static = ds_SolverSetAdd(&pipeline, 256, 0, 0, 0, 0);
+    const struct slot set_active = ds_SolverSetAdd(&pipeline, 4096, 4096, 0, 0, 4096);
     ds_Assert(set_disabled.index == SOLVER_SET_DISABLED);
     ds_Assert(set_static.index == SOLVER_SET_STATIC);
     ds_Assert(set_active.index == SOLVER_SET_ACTIVE);
@@ -799,66 +799,136 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline)
 {
 	ProfZone;
 
-    struct ds_IslandJobPhase *is_jobs = pipeline->is_jobs;
-    struct ds_SolverSet *active_set = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    struct ds_SolverSet *active = pipeline->solver_set.buf + SOLVER_SET_ACTIVE;
+    for (u32 i = 0; i < active->body_compute_pool.count; ++i)
     {
-    	ProfZoneNamed("JobPhase(Solve Islands)");
-
-        ds_JobPhaseBegin(&is_jobs->phase);
-
-        is_jobs->pipeline = pipeline;
-
-        is_jobs->seed_count_max = 3*g_arch_config->logical_core_count;
-        is_jobs->seed_jobs = ArenaPushZero(&pipeline->frame, is_jobs->seed_count_max*sizeof(struct ds_IslandSeedJob));
-        ds_JobPhaseReserve(&is_jobs->phase, ISLAND_JOB_SEED, is_jobs->seed_count_max);
-
-        is_jobs->solve_count_max = active_set->island_pool.count;
-        is_jobs->solve_jobs = ArenaPushZero(&pipeline->frame, is_jobs->solve_count_max*sizeof(struct ds_IslandSolveJob));
-
-        const u32 islands_per_seed = active_set->island_pool.count / is_jobs->seed_count_max;
-        u32 extra = active_set->island_pool.count % is_jobs->seed_count_max;
-        u32 low = 0;
-        for (u32 i = 0; i < is_jobs->seed_count_max; ++i)
-        {
-            u32 high = low + islands_per_seed;
-            if (extra)
-            {
-                high += 1;
-                extra -= 1;
-            }
-            is_jobs->seed_jobs[i].island_first = low;
-            is_jobs->seed_jobs[i].count = high - low;
-            low = high;
-            ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(ISLAND_JOB_SEED, i));
-        }
-
-        AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, is_jobs->seed_count_max);
-        ds_JobPhaseAddFetchRemaining(&is_jobs->phase, is_jobs->seed_count_max);
-        ds_WSDequePublish(g_scheduler->seed_deque);
-        for (u32 i = 1; i < g_arch_config->logical_core_count; ++i)
-        {
-            SemaphorePost(&g_scheduler->jobs_are_available);
-        }
-
-	    ds_MasterRunAvailableJobs();
-        
-        ds_JobPhaseEnd();
-
-    	ProfZoneEnd;
+        struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + i;
+        memset(compute->linear_velocity, 0, sizeof(vec3));
+        memset(compute->angular_velocity, 0, sizeof(vec3));
     }
 
-    //TODO all above can be fused, we can parallelize velocity stuff bla bla 
-	for (u32 i = 0; i < is_jobs->solve_count_max; ++i)
+    /* TODO 2. Init Velocity Constraints */
+
+    /* TODO 3. Warmup */
+
+    /* TODO 4. Iterate */
+	for (u32 i = 0; i < g_solver_config->pgs_iteration_count; ++i)
 	{
-        const struct ds_IslandSolveJob *job = is_jobs->solve_jobs + i;
-		for (u32 b = 0; b < job->body_count; ++b)
-		{
-			struct ds_PhysicsEvent *event = ds_PhysicsEventPush(pipeline);
-			event->type = PHYSICS_EVENT_BODY_ORIENTATION;
-            const struct ds_RigidBody *body = pipeline->body_pool.buf + job->bodies[b];
-			event->body = body->id;
-		}
+        for (u32 c = CG_STATIC_COLOR_FIRST; c <= CG_STATIC_COLOR_LAST; ++c)
+        {
+		    //TODO SolverIterateVelocityConstraints(solver);
+        }
+
+        for (u32 c = CG_DYNAMIC_COLOR_FIRST; c <= CG_DYNAMIC_COLOR_LAST; ++c)
+        {
+		    //TODO SolverIterateVelocityConstraints(solver);
+        }
+
+        //TODO run serial color 
 	}
+
+    /* TODO 5. SolverCacheImpulse */
+
+    //TODO 6. Integrate velocities 
+    /* integrate final solver velocities and update bodies  */
+	//for (u32 i = 0; i < is->body_list.count; ++i)
+	//{
+    //    //IntegrateOrientationVelocities(is, solver, i);
+	//}
+
+    // TODO 7. InitPositionConstraints 
+    //SolverInitPositionConstraints(solver, is); 
+
+    //TODO 8. Iterate position constraints 
+    for (u32 i = 0; i < g_solver_config->ngs_iteration_count; ++i)
+	{
+        //TODO Move into color stuff 
+		//const u32 contacts_okay = SolverIteratePositionConstraints(solver);
+        //if (contacts_okay)
+        //{
+        //    break;
+        //}
+
+        for (u32 c = CG_STATIC_COLOR_FIRST; c <= CG_STATIC_COLOR_LAST; ++c)
+        {
+        }
+
+        for (u32 c = CG_DYNAMIC_COLOR_FIRST; c <= CG_DYNAMIC_COLOR_LAST; ++c)
+        {
+        }
+
+        //TODO run serial color 
+	}
+
+    // TODO 9. Update orientation 
+    //for (u32 i = 0; i < is->body_list.count; ++i)
+	//{
+    //    UpdateOrientation(is, solver, i);
+	//}
+	
+
+
+
+    //struct ds_IslandJobPhase *is_jobs = pipeline->is_jobs;
+    //struct ds_SolverSet *active_set = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    //{
+    //	ProfZoneNamed("JobPhase(Solve Islands)");
+
+    //    ds_JobPhaseBegin(&is_jobs->phase);
+
+    //    is_jobs->pipeline = pipeline;
+
+    //    is_jobs->seed_count_max = 3*g_arch_config->logical_core_count;
+    //    is_jobs->seed_jobs = ArenaPushZero(&pipeline->frame, is_jobs->seed_count_max*sizeof(struct ds_IslandSeedJob));
+    //    ds_JobPhaseReserve(&is_jobs->phase, ISLAND_JOB_SEED, is_jobs->seed_count_max);
+
+    //    is_jobs->solve_count_max = active_set->island_pool.count;
+    //    is_jobs->solve_jobs = ArenaPushZero(&pipeline->frame, is_jobs->solve_count_max*sizeof(struct ds_IslandSolveJob));
+
+    //    const u32 islands_per_seed = active_set->island_pool.count / is_jobs->seed_count_max;
+    //    u32 extra = active_set->island_pool.count % is_jobs->seed_count_max;
+    //    u32 low = 0;
+    //    for (u32 i = 0; i < is_jobs->seed_count_max; ++i)
+    //    {
+    //        u32 high = low + islands_per_seed;
+    //        if (extra)
+    //        {
+    //            high += 1;
+    //            extra -= 1;
+    //        }
+    //        is_jobs->seed_jobs[i].island_first = low;
+    //        is_jobs->seed_jobs[i].count = high - low;
+    //        low = high;
+    //        ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(ISLAND_JOB_SEED, i));
+    //    }
+
+    //    AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, is_jobs->seed_count_max);
+    //    ds_JobPhaseAddFetchRemaining(&is_jobs->phase, is_jobs->seed_count_max);
+    //    ds_WSDequePublish(g_scheduler->seed_deque);
+    //    for (u32 i = 1; i < g_arch_config->logical_core_count; ++i)
+    //    {
+    //        SemaphorePost(&g_scheduler->jobs_are_available);
+    //    }
+
+	//    ds_MasterRunAvailableJobs();
+    //    
+    //    ds_JobPhaseEnd();
+
+    //	ProfZoneEnd;
+    //}
+
+    ////TODO all above can be fused, we can parallelize velocity stuff bla bla 
+	//for (u32 i = 0; i < is_jobs->solve_count_max; ++i)
+	//{
+    //    const struct ds_IslandSolveJob *job = is_jobs->solve_jobs + i;
+	//	for (u32 b = 0; b < job->body_count; ++b)
+	//	{
+	//		struct ds_PhysicsEvent *event = ds_PhysicsEventPush(pipeline);
+	//		event->type = PHYSICS_EVENT_BODY_ORIENTATION;
+    //        const struct ds_RigidBody *body = pipeline->body_pool.buf + job->bodies[b];
+	//		event->body = body->id;
+	//	}
+	//}
     
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     ds_BitSetClear(&pipeline->island_high_energy_set, 0);
