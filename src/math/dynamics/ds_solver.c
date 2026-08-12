@@ -442,7 +442,7 @@ void SolverInitPositionConstraints(struct solver *solver, const struct ds_Island
 }
 
 u32 SolverIteratePositionConstraints(struct solver *solver)
-{
+{    
     mat3ptr mi;
     mat3 mat_tmp, rot, rot_inv;
 	vec3 diff, r1, r2, rn1, rn2, tmp1, tmp2, impulse_vector;
@@ -543,17 +543,14 @@ void ds_RigidBodyUpdateSolverDataAll(struct ds_RigidBodyPipeline *pipeline)
         memset(compute->linear_velocity, 0, sizeof(vec3));
         memset(compute->angular_velocity, 0, sizeof(vec3));
         
-        QuatVec3Rotate(sim->world_center_of_mass, sim->world.rotation, sim->local_center_of_mass);
-        Vec3Translate(sim->world_center_of_mass, sim->world.position);
-    
 		/* setup inverted world inertia tensors and center of massses */
 		Mat3Quat(rot, sim->world.rotation);
 		Mat3Transpose(rot_inv, rot);
         Mat3Mul(tmp, rot, sim->local_inv_inertia);
         Mat3Mul(sim->world_inv_inertia, tmp, rot_inv);
 
-        Mat3VecMul(sim->world_center_of_mass, rot, sim->local_center_of_mass);
-        Vec3Translate(sim->world_center_of_mass, sim->world.position);
+        Mat3VecMul(compute->center_of_mass, rot, sim->local_center_of_mass);
+        Vec3Translate(compute->center_of_mass, sim->world.position);
 
         /* Apply dampening: 
 		 *		dv/dt = -d*v
@@ -582,6 +579,56 @@ void ds_RigidBodyUpdateSolverDataAll(struct ds_RigidBodyPipeline *pipeline)
     }
 
     ProfZoneEnd;
+}
+
+void ds_RigidBodyIntegrateVelocitiesAll(struct ds_RigidBodyPipeline *pipeline)
+{
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+
+    for (u32 i = 0; i < active->body_sim_pool.count; ++i)
+    {
+        struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + i;
+
+        /* update velocity and world center of mass */
+        const f32 div_linear = Vec3Length(compute->linear_velocity) * g_solver_config->max_linear_velocity_magnitude_inv;
+        const f32 div_angular = Vec3Length(compute->angular_velocity) * g_solver_config->max_angular_velocity_magnitude_inv;
+        const f32 t_linear = 1.0f / f32_clamp(div_linear, 1.0f, F32_INFINITY);
+        const f32 t_angular = 1.0f / f32_clamp(div_angular, 1.0f, F32_INFINITY);
+
+	    Vec3TranslateScaled(compute->center_of_mass, compute->linear_velocity, pipeline->timestep * t_linear);	
+
+        quat a_vel_quat, rot_delta;
+	    QuatSet(a_vel_quat, 
+	    		compute->angular_velocity[0] * t_angular, 
+	    		compute->angular_velocity[1] * t_angular, 
+	    		compute->angular_velocity[2] * t_angular,
+	    	      	0.0f);
+	    QuatMul(rot_delta, a_vel_quat, compute->rotation);
+	    QuatScale(rot_delta, pipeline->timestep / 2.0f);
+	    QuatTranslate(compute->rotation, rot_delta);
+	    QuatNormalize(compute->rotation);
+    }
+}
+
+void ds_RigidBodyUpdateOrientationAll(struct ds_RigidBodyPipeline *pipeline)
+{
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+
+    for (u32 i = 0; i < active->body_sim_pool.count; ++i)
+    {
+        struct ds_RigidBodySim *sim = active->body_sim_pool.buf + i;
+        struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + i;
+    
+        /* derive new world transform from updated angle and world center of mass */
+        vec3 rotated_local_center_of_mass;
+        QuatVec3Rotate(rotated_local_center_of_mass, compute->rotation, sim->local_center_of_mass);
+        Vec3Sub(sim->world.position, compute->center_of_mass, rotated_local_center_of_mass);
+        QuatCopy(sim->world.rotation, compute->rotation);
+
+        //TODO remove
+        struct ds_RigidBody *body = pipeline->body_pool.buf + sim->body;
+        body->t_world = sim->world;
+    }
 }
 
 void ds_ContactConstraintInitAll(struct ds_RigidBodyPipeline *pipeline)
@@ -634,8 +681,8 @@ void ds_ContactConstraintInitAll(struct ds_RigidBodyPipeline *pipeline)
 	    		ccp->tangent_impulse[1] = 0.0f;
 
                 Vec3Copy(ccp->v, c->cm.v[ccpi]);
-	    		Vec3Sub(ccp->r[0], ccp->v, sim[0]->world_center_of_mass);
-	    		Vec3Sub(ccp->r[1], ccp->v, sim[1]->world_center_of_mass);
+	    		Vec3Sub(ccp->r[0], ccp->v, compute[0]->center_of_mass);
+	    		Vec3Sub(ccp->r[1], ccp->v, compute[1]->center_of_mass);
                 Vec3TranslateScaled(ccp->r[1], c->cm.n, -c->cm.depth[ccpi]);
 
                 ds_AssertString(Vec3Dot(ccp->v, ccp->v) < 10000.0f*10000.0f,
@@ -790,4 +837,136 @@ void ds_ContactConstraintWarmupAll(struct ds_RigidBodyPipeline *pipeline)
     }
     
     ProfZoneEnd;
+}
+
+void ds_ContactConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, const u32 color_index)
+{
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+
+	vec4 b, new_total_impulse;
+	vec3 tmp1, tmp2, tmp3;
+	vec3 relative_velocity;
+
+    for (u32 ci = 0; ci < color->contact_constraint_pool.count; ++ci)
+	{			
+        const struct ds_Contact *c = pipeline->cdb->contact_pool.buf + color->contact_pool.buf[ci];
+	    struct ds_ContactConstraint *cc = color->contact_constraint_pool.buf + ci;
+
+        struct ds_RigidBodySim *sim[2] =
+        {
+            active->body_sim_pool.buf + cc->body_sim[0],
+            active->body_sim_pool.buf + cc->body_sim[1],
+        };
+
+        struct ds_RigidBodyCompute *compute[2] =
+        {
+            active->body_compute_pool.buf + cc->body_sim[0],
+            active->body_compute_pool.buf + cc->body_sim[1],
+        };
+
+		/* solve friction constraints first, since normal constraints are more important */
+        for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
+		{
+            struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
+			const f32 impulse_bound = cc->friction * ccp->normal_impulse;
+			for (u32 k = 0; k < 2; ++k)
+			{
+			    /* Calculate separating velocity at point: JV */
+			    Vec3Sub(relative_velocity, compute[1]->linear_velocity, compute[0]->linear_velocity);
+			    Vec3Cross(tmp2, compute[1]->angular_velocity, ccp->r[1]);
+			    Vec3Cross(tmp3, compute[0]->angular_velocity, ccp->r[0]);
+			    Vec3Translate(relative_velocity, tmp2);
+			    Vec3TranslateScaled(relative_velocity, tmp3, -1.0f);
+			    const f32 separating_velocity = Vec3Dot(cc->tangent[k], relative_velocity);
+
+			    /* update constraint point tangent impulse */
+			    f32 delta_impulse = -ccp->tangent_mass[k] * separating_velocity;
+			    const f32 old_impulse = ccp->tangent_impulse[k];
+			    ccp->tangent_impulse[k] = f32_clamp(ccp->tangent_impulse[k] + delta_impulse, -impulse_bound, impulse_bound);
+			    delta_impulse = ccp->tangent_impulse[k] - old_impulse;
+
+			    /* update body velocities */
+			    Vec3Scale(tmp1, cc->tangent[k], delta_impulse);
+			    Vec3TranslateScaled(compute[0]->linear_velocity, tmp1, -sim[0]->inv_mass);
+			    Vec3TranslateScaled(compute[1]->linear_velocity, tmp1,  sim[1]->inv_mass);
+			    Vec3Cross(tmp2, ccp->r[0], tmp1);
+			    Mat3VecMul(tmp3, sim[0]->world_inv_inertia, tmp2);
+			    Vec3TranslateScaled(compute[0]->angular_velocity, tmp3, -1.0f);
+			    Vec3Cross(tmp2, ccp->r[1], tmp1);
+			    Mat3VecMul(tmp3, sim[1]->world_inv_inertia, tmp2);
+			    Vec3Translate(compute[1]->angular_velocity, tmp3);
+            }
+		}
+
+        for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
+		{
+            struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
+
+			/* Calculate separating velocity at point: JV */
+			Vec3Sub(relative_velocity, compute[1]->linear_velocity, compute[0]->linear_velocity);
+			Vec3Cross(tmp2, compute[1]->angular_velocity, ccp->r[1]);
+			Vec3Cross(tmp3, compute[0]->angular_velocity, ccp->r[0]);
+			Vec3Translate(relative_velocity, tmp2);
+			Vec3TranslateScaled(relative_velocity, tmp3, -1.0f);
+			const f32 separating_velocity = Vec3Dot(cc->normal, relative_velocity);
+
+			/* update constraint point normal impulse */
+			f32 delta_impulse = ccp->normal_mass * (ccp->velocity_bias - separating_velocity);
+			const f32 old_impulse = ccp->normal_impulse;
+			ccp->normal_impulse = f32_max(0.0f, ccp->normal_impulse + delta_impulse);
+			delta_impulse = ccp->normal_impulse - old_impulse;
+
+			/* update body velocities */
+			Vec3Scale(tmp1, cc->normal, delta_impulse);
+			Vec3TranslateScaled(compute[0]->linear_velocity, tmp1, -sim[0]->inv_mass);
+			Vec3TranslateScaled(compute[1]->linear_velocity, tmp1,  sim[1]->inv_mass);
+			Vec3Cross(tmp2, ccp->r[0], tmp1);
+			Mat3VecMul(tmp3, sim[0]->world_inv_inertia, tmp2);
+			Vec3TranslateScaled(compute[0]->angular_velocity, tmp3, -1.0f);
+			Vec3Cross(tmp2, ccp->r[1], tmp1);
+			Mat3VecMul(tmp3, sim[1]->world_inv_inertia, tmp2);
+			Vec3Translate(compute[1]->angular_velocity, tmp3);
+        }
+    }
+}
+
+void ds_ContactConstraintCacheImpulse(struct ds_RigidBodyPipeline *pipeline)
+{
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    struct ds_CGraph *cg = &pipeline->cgraph;
+    quat body_inv_rotation[2];
+
+    for (u32 color_index = 0; color_index < CG_COLOR_COUNT; ++color_index)
+    {
+        struct ds_CGraphColor *color = cg->color + color_index;
+        for (u32 ci = 0; ci < color->contact_constraint_pool.count; ++ci)
+	    {			
+            struct ds_Contact *c = pipeline->cdb->contact_pool.buf + color->contact_pool.buf[ci];
+	        struct ds_ContactConstraint *cc = color->contact_constraint_pool.buf + ci;
+
+            const struct ds_RigidBodySim *sim[2] =
+            {
+                active->body_sim_pool.buf + cc->body_sim[0],
+                active->body_sim_pool.buf + cc->body_sim[1],
+            };
+
+		    c->cached_count = cc->ccp_count;
+		    Vec3Copy(c->normal_cache, cc->normal);
+		    Vec3Copy(c->tangent_cache[0], cc->tangent[0]);
+		    Vec3Copy(c->tangent_cache[1], cc->tangent[1]);
+
+            QuatInverse(body_inv_rotation[0], sim[0]->world.rotation);
+            QuatInverse(body_inv_rotation[1], sim[1]->world.rotation);
+		    for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
+		    {
+                struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
+		    	QuatVec3Rotate(c->r1_cache[ccpi], body_inv_rotation[0], ccp->r[0]);
+		    	QuatVec3Rotate(c->r2_cache[ccpi], body_inv_rotation[1], ccp->r[1]);
+		    	c->normal_impulse_cache[ccpi] = ccp->normal_impulse;
+		    	c->tangent_impulse_cache[ccpi][0] = ccp->tangent_impulse[0];
+		    	c->tangent_impulse_cache[ccpi][1] = ccp->tangent_impulse[1];
+		    }
+        }
+	}
 }

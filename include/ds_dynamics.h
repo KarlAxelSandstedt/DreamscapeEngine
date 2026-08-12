@@ -382,6 +382,8 @@ struct ds_RigidBodyCompute
 	vec3 		    linear_velocity;        /* linear velocity of body */
 	vec3 		    angular_velocity;       /* angular velocity of body (about local center of mass,
                                                not local origin!)                                   */
+    vec3            center_of_mass;         /* world-space  */
+    quat            rotation;
     u32             flags;
 };
 DEFINE_CPOOL_STRUCT(ds_RigidBodyCompute);
@@ -396,6 +398,10 @@ struct slot	    ds_RigidBodyLookup(const struct ds_RigidBodyPipeline *pipeline, 
 void		    ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId id);
 /* Internal: Refresh and update rigid body simulation and compute/solver data before solving */
 void            ds_RigidBodyUpdateSolverDataAll(struct ds_RigidBodyPipeline *pipeline);
+/* Internal: Integrate contact constraint velocities and update body simulation state */
+void            ds_RigidBodyIntegrateVelocitiesAll(struct ds_RigidBodyPipeline *pipeline);
+/* Internal: Update body orientation */
+void            ds_RigidBodyUpdateOrientationAll(struct ds_RigidBodyPipeline *pipeline);
 
 /*
 ds_ContactKey
@@ -1046,7 +1052,10 @@ DEFINE_CPOOL_STRUCT(ds_ContactConstraint);
 void 	ds_ContactConstraintInitAll(struct ds_RigidBodyPipeline *pipeline);
 /* Warmup all applicable ds_ContactConstraints in the constraint graph */
 void 	ds_ContactConstraintWarmupAll(struct ds_RigidBodyPipeline *pipeline);
-
+/* Compute a solver iteration over the given color for contact constraints */
+void    ds_ContactConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, const u32 color_index);
+/* Cache contact impulses */
+void ds_ContactConstraintCacheImpulse(struct ds_RigidBodyPipeline *pipeline);
 
 /*
 =================================================================================================================

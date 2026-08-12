@@ -799,43 +799,37 @@ u32 ds_IslandJobPhaseDispatch(const ds_JobId job)
     return job_diff;
 }
 
-static void SolveIslands(struct ds_RigidBodyPipeline *pipeline) 
+static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline) 
 {
 	ProfZone;
 
     ds_RigidBodyUpdateSolverDataAll(pipeline);
     ds_ContactConstraintInitAll(pipeline);
 
-    //TODO put into pipeline
     if (g_solver_config->warmup_solver)
     {
         ds_ContactConstraintWarmupAll(pipeline);
     }
 
-    /* TODO 4. Iterate */
 	for (u32 i = 0; i < g_solver_config->pgs_iteration_count; ++i)
 	{
         for (u32 c = CG_STATIC_COLOR_FIRST; c <= CG_STATIC_COLOR_LAST; ++c)
         {
-		    //TODO SolverIterateVelocityConstraints(solver);
+            ds_ContactConstraintColorIterate(pipeline, c);
         }
 
         for (u32 c = CG_DYNAMIC_COLOR_FIRST; c <= CG_DYNAMIC_COLOR_LAST; ++c)
         {
-		    //TODO SolverIterateVelocityConstraints(solver);
+            ds_ContactConstraintColorIterate(pipeline, c);
         }
 
-        //TODO run serial color 
+        ds_ContactConstraintColorIterate(pipeline, CG_SERIAL_COLOR);
 	}
 
-    /* TODO 5. SolverCacheImpulse */
+    ds_ContactConstraintCacheImpulse(pipeline);
 
-    //TODO 6. Integrate velocities 
     /* integrate final solver velocities and update bodies  */
-	//for (u32 i = 0; i < is->body_list.count; ++i)
-	//{
-    //    //IntegrateOrientationVelocities(is, solver, i);
-	//}
+    ds_RigidBodyIntegrateVelocitiesAll(pipeline);
 
     // TODO 7. InitPositionConstraints 
     //SolverInitPositionConstraints(solver, is); 
@@ -861,13 +855,8 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline)
         //TODO run serial color 
 	}
 
-    // TODO 9. Update orientation 
-    //for (u32 i = 0; i < is->body_list.count; ++i)
-	//{
-    //    UpdateOrientation(is, solver, i);
-	//}
-	
-
+    ds_RigidBodyUpdateOrientationAll(pipeline);
+        
 
 
     //struct ds_IslandJobPhase *is_jobs = pipeline->is_jobs;
@@ -1096,7 +1085,7 @@ void PhysicsPipelineSimulateFrame(struct ds_RigidBodyPipeline *pipeline)
 
 	MergeIslands(pipeline);
 	SplitIslandsAndRemoveContacts(pipeline);
-	SolveIslands(pipeline);
+	SolveConstraints(pipeline);
 
 	PHYSICS_PIPELINE_VALIDATE(pipeline);
 }
