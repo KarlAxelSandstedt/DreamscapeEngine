@@ -529,7 +529,7 @@ u32 *ds_IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeli
 	}
 
 	/* init solver and velocity constraints */
-	struct solver *solver = SolverInitBodyData(mem_frame, is, pipeline->delta);
+	struct solver *solver = SolverInitBodyData(mem_frame, is, pipeline->timestep);
 	SolverInitVelocityConstraints(mem_frame, solver, pipeline, is);
 	
 	if (g_solver_config->warmup_solver)

@@ -362,10 +362,13 @@ struct ds_RigidBodySim
 {
     u32             body;                   /* RigidBody index */
     u32             flags;
-	ds_Transform    t_world;		        /* local body frame to world transform. Rotation is 
+    f32             inv_mass;               /* TODO Inverse mass */
+	ds_Transform    world;		            /* local body frame to world transform. Rotation is 
                                                about the local origin (not center of mass!)         */
 	vec3		    local_center_of_mass;	/* local body frame center of mass */
-	mat3 		    inv_inertia_tensor;
+	vec3		    world_center_of_mass;	/* world body frame center of mass */
+	mat3 		    local_inv_inertia;      /* TODO local inertia tensor */
+	mat3 		    world_inv_inertia;      /* TODO world inertia tensor */
 };
 DEFINE_CPOOL_STRUCT(ds_RigidBodySim);
 
@@ -391,6 +394,8 @@ void            ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPip
 struct slot	    ds_RigidBodyLookup(const struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId id);
 /* Process the body's shape list and set its internal mass properties accordingly. */
 void		    ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId id);
+/* Internal: Refresh and update rigid body simulation and compute/solver data before solving */
+void            ds_RigidBodyUpdateSolverDataAll(struct ds_RigidBodyPipeline *pipeline);
 
 /*
 ds_ContactKey
@@ -863,6 +868,8 @@ enum ds_SolverSetType
     SOLVER_SET_NULL = U32_MAX,
 };
 
+#define ACTIVE_BODY_DUMMY_INDEX 0
+
 struct ds_SolverSet
 {
     POOL_NODE;
@@ -906,6 +913,8 @@ void        ds_SolverSetValidate(const struct ds_RigidBodyPipeline *pipeline, co
 
 /* Internal: Move the body to the given set (Assumes the body is NOT part off the set) */
 void        ds_SolverSetMoveBody(struct ds_RigidBodyPipeline *pipeline, const u32 body, const u32 set);
+/* Internal: Setup internal dummies in persistent sets */
+void        ds_SolverSetSetupDummies(struct ds_RigidBodyPipeline *pipeline);
 
 /*
 ds_CGraph
@@ -937,54 +946,6 @@ constraints by processing them first in each solver iteration. This yields a pro
                         |
         jointSim <------+
 */
-
-/*
-ds_CGraphColor
-==============
-//TODO this may not be true, we will see.
-ds_CGraphColor stores the relevant physics data of active constraints, tightly packed for quick iterations.
-*/
-struct ds_CGraphColor
-{
-    struct ds_BitSet        body_bitset;
-    ds_CPool(u32)           contact_pool;
-    ds_CPool(ds_JointSim)   joint_sim_pool;
-};
-
-#define CG_INVALID_COLOR        CG_COLOR_COUNT
-#define CG_COLOR_COUNT          12
-#define CG_SERIAL_COLOR         0 
-#define CG_STATIC_COLOR_COUNT   4
-#define CG_STATIC_COLOR_FIRST   1
-#define CG_STATIC_COLOR_LAST    (CG_STATIC_COLOR_FIRST + CG_STATIC_COLOR_COUNT - 1)
-#define CG_DYNAMIC_COLOR_COUNT  (CG_COLOR_COUNT - CG_STATIC_COLOR_COUNT - 1) 
-#define CG_DYNAMIC_COLOR_FIRST  (1 + CG_STATIC_COLOR_COUNT)
-#define CG_DYNAMIC_COLOR_LAST  (CG_DYNAMIC_COLOR_FIRST + CG_DYNAMIC_COLOR_COUNT - 1)
-
-
-struct ds_CGraph
-{
-    struct ds_CGraphColor color[CG_COLOR_COUNT];
-};
-
-/* Allocate and setup the pipeline's constraint graph */
-void                    ds_CGraphAlloc(struct ds_RigidBodyPipeline *pipeline, const u32 initial_count);
-/* Deallocate the pipeline's constraint graph */
-void                    ds_CGraphDealloc(struct ds_RigidBodyPipeline *pipeline);
-/* Flush the pipeline's constraint graph data */
-void                    ds_CGraphFlush(struct ds_RigidBodyPipeline *pipeline);
-/* Validate the state of the pipeline's constraint graph */
-void                    ds_CGraphValidate(const struct ds_RigidBodyPipeline *pipeline);
-/* Prepare the pipeline's constraint graph for the new frame, allocating and setting up new resources if necessary. */
-void                    ds_CGraphFramePrepare(struct ds_RigidBodyPipeline *pipeline);
-/* Allocate and setup a new ds_JointSim */
-struct ds_JointSim *    ds_CGraphJointAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint *joint);
-/* Deallocate a ds_JointSim */
-void                    ds_CGraphJointRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint *joint);
-/* TODO: for now, we only setup link contact <-> graph */
-void                    ds_CGraphContactAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact);
-/* TODO: for now, we only remove link contact <-> graph */
-void                    ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact);
 
 /*
 ds_Island
@@ -1032,6 +993,60 @@ void 		ds_IslandMerge(struct ds_RigidBodyPipeline *pipeline, const u32 expand, c
 void 		ds_IslandSplit(struct ds_RigidBodyPipeline *pipeline, const u32 island);
 
 u32 *       ds_IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is);
+
+
+/*
+ds_ContactConstraintPoint
+=========================
+Individual constraint point within a contact constraint.
+*/
+struct ds_ContactConstraintPoint 
+{
+    vec3    v;                  /* contact point                                */
+    vec3    r[2];               /* levers: body center to contact_point         */
+	f32 	normal_impulse;	    /* Normal impulse produced by the contact       */
+	f32	    velocity_bias;	    /* scale of velocity_bias along contact normal  */
+	f32	    normal_mass;	    /* 1.0f / row(J,i)*Inv(M)*J^T                   */
+	f32	    tangent_mass[2];    /* 1.0f / row(J_tangent,i)*Inv(M)*J_tangent^T t */
+	f32	    tangent_impulse[2]; /* the tangent impulses produced by the contact */
+};
+
+
+/*
+ds_ContactConstraint 
+====================
+Each individual ds_Contact in the constraint graph may index its ds_ContactConstraint within
+the contact's color. The ds_ContactConstraint stores all necessary data for the solver to solve
+the contact's contact points.
+*/
+
+struct ds_ContactConstraint 
+{
+    u32     body_sim[2]; /* body->sim values of the two bodies in contact   */
+	u32 	ccp_count;	 /* Number of contact points in the manifold        */
+	struct ds_ContactConstraintPoint ccp[4];
+
+    //TODO
+	void * 	normal_mass;	/* mat2, mat3 or mat4 normal mass for block solver = Inv(J*Inv(M)*J^T) */
+    //TODO
+	void * 	inv_normal_mass;/* mat2, mat3 or mat4 inv normal mass for block solver = J*Inv(M)*J^T */
+
+	/* contact base axes */
+	vec3 	normal;		/* Currently shared contact manifold normal between all point constraints */
+	vec3	tangent[2];	/* normalized friction directions of contact */
+
+	f32	    restitution;	/* Range[0.0f, 1.0f] : higher => bouncy */
+	//f32	tangent_impulse_bound;	/* TODO: contact_friction * gravity_constant * point_mass */
+	f32	    friction;	/* TODO: friction = f32_max(b1->friction, b2->friction) */
+};
+DEFINE_CPOOL_STRUCT(ds_ContactConstraint);
+
+
+/* Initalize all ds_ContactConstraints in the constraint graph */
+void 	ds_ContactConstraintInitAll(struct ds_RigidBodyPipeline *pipeline);
+/* Warmup all applicable ds_ContactConstraints in the constraint graph */
+void 	ds_ContactConstraintWarmupAll(struct ds_RigidBodyPipeline *pipeline);
+
 
 /*
 =================================================================================================================
@@ -1096,6 +1111,7 @@ velocity_constraint_point
 individual constraint for one point in the contact manifold
  */
 
+//TODO remove 
 struct velocityConstraintPoint
 {
     vec3    contact_point;  /* contact point                                */
@@ -1108,6 +1124,7 @@ struct velocityConstraintPoint
 	f32	    tangent_impulse[2]; /* the tangent impulses produced by the contact */
 };
 
+//TODO remove 
 struct velocityConstraint
 {
 	struct velocityConstraintPoint *vcps;
@@ -1151,6 +1168,62 @@ void        SolverInitPositionConstraints(struct solver *solver, const struct ds
 u32 		SolverIteratePositionConstraints(struct solver *solver);
 void 		SolverWarmup(struct solver *solver, const struct ds_Island *is);
 void 		SolverCacheImpulse(struct solver *solver, const struct ds_Island *is);
+
+
+/*
+ds_CGraphColor
+==============
+//TODO this may not be true, we will see.
+ds_CGraphColor stores the relevant physics data of active constraints, tightly packed for quick iterations.
+*/
+struct ds_CGraphColor
+{
+    struct ds_BitSet                body_bitset;
+    ds_CPool(u32)                   contact_pool;
+    ds_CPool(ds_ContactConstraint)  contact_constraint_pool;
+    ds_CPool(ds_JointSim)           joint_sim_pool;
+};
+
+#define CG_INVALID_COLOR        CG_COLOR_COUNT
+#define CG_COLOR_COUNT          12
+#define CG_SERIAL_COLOR         0 
+#define CG_STATIC_COLOR_COUNT   4
+#define CG_STATIC_COLOR_FIRST   1
+#define CG_STATIC_COLOR_LAST    (CG_STATIC_COLOR_FIRST + CG_STATIC_COLOR_COUNT - 1)
+#define CG_DYNAMIC_COLOR_COUNT  (CG_COLOR_COUNT - CG_STATIC_COLOR_COUNT - 1) 
+#define CG_DYNAMIC_COLOR_FIRST  (1 + CG_STATIC_COLOR_COUNT)
+#define CG_DYNAMIC_COLOR_LAST  (CG_DYNAMIC_COLOR_FIRST + CG_DYNAMIC_COLOR_COUNT - 1)
+
+/*
+ds_CGraph
+=========
+//TODO
+*/
+struct ds_CGraph
+{
+    struct ds_CGraphColor color[CG_COLOR_COUNT];
+};
+
+/* Allocate and setup the pipeline's constraint graph */
+void                    ds_CGraphAlloc(struct ds_RigidBodyPipeline *pipeline, const u32 initial_count);
+/* Deallocate the pipeline's constraint graph */
+void                    ds_CGraphDealloc(struct ds_RigidBodyPipeline *pipeline);
+/* Flush the pipeline's constraint graph data */
+void                    ds_CGraphFlush(struct ds_RigidBodyPipeline *pipeline);
+/* Validate the state of the pipeline's constraint graph */
+void                    ds_CGraphValidate(const struct ds_RigidBodyPipeline *pipeline);
+/* Prepare the pipeline's constraint graph for the new frame, allocating and setting up new resources if necessary. */
+void                    ds_CGraphFramePrepare(struct ds_RigidBodyPipeline *pipeline);
+/* Allocate and setup a new ds_JointSim */
+struct ds_JointSim *    ds_CGraphJointAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint *joint);
+/* Deallocate a ds_JointSim */
+void                    ds_CGraphJointRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint *joint);
+/* TODO: for now, we only setup link contact <-> graph */
+void                    ds_CGraphContactAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact);
+/* TODO: for now, we only remove link contact <-> graph */
+void                    ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact);
+
+
 
 /*
 ds_CollisionJobPhase
@@ -1374,7 +1447,7 @@ struct ds_RigidBodyPipeline
 	u64				    ns_tick;		        /* ns per game tick */
 	u64 			    frames_completed;	    /* number of completed physics frames */ 
 
-    f32                 delta;
+    f32                 timestep;
 
 	struct strdb *	    cshape_db;		        /* externally owned */
 	struct strdb *	    body_prefab_db;		    /* externally owned */

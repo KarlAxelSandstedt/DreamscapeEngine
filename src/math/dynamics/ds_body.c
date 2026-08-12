@@ -19,7 +19,7 @@
 
 POOL_DEFINE(ds_RigidBody);
 
-ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBodyPrefab *prefab, const ds_Transform *t_world, const u32 entity)
+ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBodyPrefab *prefab, const ds_Transform *world, const u32 entity)
 {
     const u32 old_max = pipeline->body_pool.count_max;
 	const struct slot body_slot = ds_RigidBodyPoolAdd(&pipeline->body_pool);
@@ -40,7 +40,7 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const stru
 
     ds_DLLFlush(&body->joint_list);
     ds_DLLFlush(&body->shape_list);
-    body->t_world = *t_world;
+    body->t_world = *world;
 
 	body->entity = entity;
 	Vec3Set(body->velocity, 0.0f, 0.0f, 0.0f);
@@ -64,9 +64,10 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const stru
         struct ds_RigidBodySim *sim = sim_slot.address;
         sim->body = body_slot.index;
         sim->flags = body->flags;
-        sim->t_world = *t_world;
+        sim->world = *world;
         Vec3Set(sim->local_center_of_mass, 0.0f, 0.0f, 0.0f);
-        Mat3Identity(sim->inv_inertia_tensor);
+        Mat3Identity(sim->local_inv_inertia);
+        Mat3Identity(sim->world_inv_inertia);
 
         struct ds_RigidBodyCompute *compute = compute_slot.address;
         compute->flags = body->flags;
@@ -118,6 +119,11 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
         ds_Assert(moved_body->set == body->set);
         ds_Assert(moved_body->sim == set->body_sim_pool.count);
         moved_body->sim = body->sim;
+    }
+
+    if (body->set == SOLVER_SET_ACTIVE)
+    {
+        ds_CPoolRemoveAndSwap(set->body_compute_pool, body->sim);
     }
 
 	struct ds_Shape *shape_ptr;
@@ -264,7 +270,7 @@ void ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, con
 		Mat3SubSelf(body_inertia_tensor, tmp2);
 	}
     Mat3Inverse(body->inv_inertia_tensor, body_inertia_tensor);
-    Mat3Inverse(sim->inv_inertia_tensor, body_inertia_tensor);
+    Mat3Inverse(sim->local_inv_inertia, body_inertia_tensor);
 
 	ArenaPopRecord(&pipeline->frame);
 }

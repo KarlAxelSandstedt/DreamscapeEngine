@@ -27,6 +27,7 @@ void ds_CGraphAlloc(struct ds_RigidBodyPipeline *pipeline, const u32 initial_cou
     {
         ds_CPoolAlloc(NULL, cg->color[i].joint_sim_pool, initial_count, GROWABLE);
         ds_CPoolAlloc(NULL, cg->color[i].contact_pool, initial_count, GROWABLE);
+        ds_CPoolAlloc(NULL, cg->color[i].contact_constraint_pool, initial_count, GROWABLE);
         if (i != CG_SERIAL_COLOR)
         {
             cg->color[i].body_bitset = ds_BitSetAlloc(NULL, pipeline->body_pool.length, 0, GROWABLE);
@@ -41,6 +42,7 @@ void ds_CGraphDealloc(struct ds_RigidBodyPipeline *pipeline)
     {
         ds_CPoolDealloc(cg->color[i].joint_sim_pool);
         ds_CPoolDealloc(cg->color[i].contact_pool);
+        ds_CPoolDealloc(cg->color[i].contact_constraint_pool);
         if (i != CG_SERIAL_COLOR)
         {
             ds_BitSetDealloc(&cg->color[i].body_bitset);
@@ -55,6 +57,7 @@ void ds_CGraphFlush(struct ds_RigidBodyPipeline *pipeline)
     {
         ds_CPoolFlush(cg->color[i].joint_sim_pool);
         ds_CPoolFlush(cg->color[i].contact_pool);
+        ds_CPoolFlush(cg->color[i].contact_constraint_pool);
         if (i != CG_SERIAL_COLOR)
         {
             ds_BitSetClear(&cg->color[i].body_bitset, 0);
@@ -179,6 +182,7 @@ void ds_CGraphContactAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Contac
     contact->set = SOLVER_SET_NULL;
     contact->set_contact_index = ds_CPoolPush(color->contact_pool).index;
     color->contact_pool.buf[ contact->set_contact_index ] = ds_ContactPoolIndex(&pipeline->cdb->contact_pool, contact);
+    ds_CPoolPush(color->contact_constraint_pool);
 }
 
 void ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact)
@@ -196,6 +200,7 @@ void ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Con
     }
 
     ds_CPoolRemoveAndSwap(color->contact_pool, contact->set_contact_index);
+    ds_CPoolRemoveAndSwap(color->contact_constraint_pool, contact->set_contact_index);
     if (contact->set_contact_index < color->contact_pool.count)
     {
         const u32 moved_index = color->contact_pool.buf[ contact->set_contact_index ];

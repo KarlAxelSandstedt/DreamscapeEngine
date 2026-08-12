@@ -118,6 +118,8 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
     ds_Assert(set_static.index == SOLVER_SET_STATIC);
     ds_Assert(set_active.index == SOLVER_SET_ACTIVE);
 
+    ds_SolverSetSetupDummies(&pipeline);
+
 	return pipeline;
 }
 
@@ -207,6 +209,8 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
 	ArenaFlush(&pipeline->frame);
 	pipeline->frames_completed = 0;
 	pipeline->ns_elapsed = 0;
+
+    ds_SolverSetSetupDummies(pipeline);
 }
 
 void PhysicsPipelineValidate(const struct ds_RigidBodyPipeline *pipeline)
@@ -799,17 +803,14 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline)
 {
 	ProfZone;
 
-    struct ds_SolverSet *active = pipeline->solver_set.buf + SOLVER_SET_ACTIVE;
-    for (u32 i = 0; i < active->body_compute_pool.count; ++i)
+    ds_RigidBodyUpdateSolverDataAll(pipeline);
+    ds_ContactConstraintInitAll(pipeline);
+
+    //TODO put into pipeline
+    if (g_solver_config->warmup_solver)
     {
-        struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + i;
-        memset(compute->linear_velocity, 0, sizeof(vec3));
-        memset(compute->angular_velocity, 0, sizeof(vec3));
+        ds_ContactConstraintWarmupAll(pipeline);
     }
-
-    /* TODO 2. Init Velocity Constraints */
-
-    /* TODO 3. Warmup */
 
     /* TODO 4. Iterate */
 	for (u32 i = 0; i < g_solver_config->pgs_iteration_count; ++i)
@@ -948,7 +949,7 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline)
 			const f32 av_sq = Vec3Dot(body->angular_velocity, body->angular_velocity);
 			if (lv_sq <= g_solver_config->sleep_linear_velocity_sq_limit && av_sq <= g_solver_config->sleep_angular_velocity_sq_limit)
 			{
-				body->low_velocity_time += pipeline->delta;
+				body->low_velocity_time += pipeline->timestep;
 			}
             else
             {
@@ -993,6 +994,7 @@ static void SolveIslands(struct ds_RigidBodyPipeline *pipeline)
                 }
                 ds_SolverSetSleep(pipeline, isi);
 	            PhysicsEventIslandAsleep(pipeline, isi);
+                active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
             }
 
             if (pop)
@@ -1085,7 +1087,7 @@ static void UpdateSolverConfig(struct ds_RigidBodyPipeline *pipeline)
 
 void PhysicsPipelineSimulateFrame(struct ds_RigidBodyPipeline *pipeline)
 {
-    pipeline->delta = (f32) pipeline->ns_tick / NSEC_PER_SEC;
+    pipeline->timestep = (f32) pipeline->ns_tick / NSEC_PER_SEC;
 	/* update, if possible, any pending values in contact solver config */
 	UpdateSolverConfig(pipeline);
 
@@ -1110,7 +1112,6 @@ void PhysicsPipelineTick(struct ds_RigidBodyPipeline *pipeline)
 		PhysicsPipelineClearFrame(pipeline);
 	}
 	pipeline->frames_completed += 1;
-	const f32 delta = (f32) pipeline->ns_tick / NSEC_PER_SEC;
 	PhysicsPipelineSimulateFrame(pipeline);
 
     ds_NumericsConfigPop();
