@@ -1183,7 +1183,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 	const u32 tower2_box_count = 0;
     const u32 multibox_count = 0;
 	const u32 pyramid_layers = 15;
-	const u32 pyramid_count = 3;
+	const u32 pyramid_count = 1;
 	//const u32 pyramid_layers = 0;
 	//const u32 pyramid_count = 0;
     const u32 incr_count = 0;
@@ -1964,17 +1964,16 @@ static void led_EngineRun(struct led *led)
 
 			case PHYSICS_EVENT_BODY_ORIENTATION:
 			{
-                const struct ds_SolverSet *active = led->physics.solver_set_pool.buf + SOLVER_SET_ACTIVE;
 				const struct ds_RigidBody *body = led->physics.body_pool.buf + ds_IdIndex(event->body);
-
-                const struct ds_RigidBodySim *sim = active->body_sim_pool.buf + body->sim;
-                const struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + body->sim;
 				const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
+                const struct ds_SolverSet *set = led->physics.solver_set_pool.buf + body->set;
+                const struct ds_RigidBodySim *sim = set->body_sim_pool.buf + body->sim;
 
                 vec3 linear_velocity = { 0.0f, 0.0f, 0.0f };
                 vec3 angular_velocity = { 0.0f, 0.0f, 0.0f };
                 if (body->set == SOLVER_SET_ACTIVE)
                 {
+                    const struct ds_RigidBodyCompute *compute = set->body_compute_pool.buf + body->sim;
                     Vec3Copy(linear_velocity, compute->linear_velocity);
                     Vec3Copy(angular_velocity, compute->angular_velocity);
                 }

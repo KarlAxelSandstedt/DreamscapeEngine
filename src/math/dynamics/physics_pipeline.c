@@ -63,8 +63,8 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 		const f32 restitution_threshold = 0.001f;
 		const u32 sleep_enabled = 1;
 		const f32 sleep_time_threshold = 0.5f;
-		f32 sleep_linear_velocity_sq_limit = 0.005f*0.005f; 
-		f32 sleep_angular_velocity_sq_limit = 0.01f*0.01f*2.0f*F32_PI;
+		f32 sleep_linear_velocity_sq_limit = 0.01f*0.01f; 
+		f32 sleep_angular_velocity_sq_limit = 0.05f*0.05f;
 		SolverConfigInit(pgs_iteration_count, ngs_iteration_count, warmup_solver, gravity, baumgarte_constant, max_linear_correction, max_linear_velocity_magnitude, max_angular_velocity_magnitude, linear_dampening, angular_dampening, linear_slop, restitution_threshold, sleep_enabled, sleep_time_threshold, sleep_linear_velocity_sq_limit, sleep_angular_velocity_sq_limit);
 	}
 
@@ -925,7 +925,7 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
         for (i32 bi = island->body_list.first; bi != DLL_SENTINEL; bi = body->island_body.next)
         {
             body = pipeline->body_pool.buf + bi;
-            const struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + body->set;
+            const struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + body->sim;
 			const f32 lv_sq = Vec3Dot(compute->linear_velocity, compute->linear_velocity);
 			const f32 av_sq = Vec3Dot(compute->angular_velocity, compute->angular_velocity);
 			if (lv_sq <= g_solver_config->sleep_linear_velocity_sq_limit && av_sq <= g_solver_config->sleep_angular_velocity_sq_limit)
