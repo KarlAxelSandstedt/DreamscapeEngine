@@ -106,7 +106,7 @@ static void r_InternalProxy3dLocalSpeculativeOrientation(struct r_Proxy3d *proxy
 		{
 			proxy->spec_position[0] = proxy->position[0] + proxy->linear.linear_velocity[0] * timestep;
 			proxy->spec_position[1] = proxy->position[1] + proxy->linear.linear_velocity[1] * timestep;
-			proxy->spec_position[2] = proxy->position[2] + proxy->linear.linear_velocity[1] * timestep;
+			proxy->spec_position[2] = proxy->position[2] + proxy->linear.linear_velocity[2] * timestep;
 
 			quat a_vel_quat, rot_delta;
 			QuatSet(a_vel_quat, 

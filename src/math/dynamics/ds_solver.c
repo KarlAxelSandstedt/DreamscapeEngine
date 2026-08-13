@@ -1132,5 +1132,3 @@ void ds_PositionConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, co
 
     ProfZoneEnd;
 }
-
-
