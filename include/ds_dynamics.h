@@ -1055,6 +1055,10 @@ void 	ds_ContactConstraintWarmupAll(struct ds_RigidBodyPipeline *pipeline);
 void    ds_ContactConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, const u32 color_index);
 /* Cache contact impulses */
 void ds_ContactConstraintCacheImpulse(struct ds_RigidBodyPipeline *pipeline);
+/* Initialize position constraint data */
+void ds_PositionConstraintColorInitAll(struct ds_RigidBodyPipeline *pipeline);
+/* Compute a solver iteration over the given color for position constraints */
+void ds_PositionConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, const u32 color_index);
 
 /*
 =================================================================================================================

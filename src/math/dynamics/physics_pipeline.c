@@ -831,13 +831,10 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
     /* integrate final solver velocities and update bodies  */
     ds_RigidBodyIntegrateVelocitiesAll(pipeline);
 
-    // TODO 7. InitPositionConstraints 
-    //SolverInitPositionConstraints(solver, is); 
+    ds_PositionConstraintColorInitAll(pipeline); 
 
-    //TODO 8. Iterate position constraints 
     for (u32 i = 0; i < g_solver_config->ngs_iteration_count; ++i)
 	{
-        //TODO Move into color stuff 
 		//const u32 contacts_okay = SolverIteratePositionConstraints(solver);
         //if (contacts_okay)
         //{
@@ -846,13 +843,15 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
 
         for (u32 c = CG_STATIC_COLOR_FIRST; c <= CG_STATIC_COLOR_LAST; ++c)
         {
+            ds_PositionConstraintColorIterate(pipeline, c);
         }
 
         for (u32 c = CG_DYNAMIC_COLOR_FIRST; c <= CG_DYNAMIC_COLOR_LAST; ++c)
         {
+            ds_PositionConstraintColorIterate(pipeline, c);
         }
 
-        //TODO run serial color 
+        ds_PositionConstraintColorIterate(pipeline, CG_SERIAL_COLOR);
 	}
 
     ds_RigidBodyUpdateOrientationAll(pipeline);

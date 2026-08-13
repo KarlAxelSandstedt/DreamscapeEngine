@@ -24,7 +24,6 @@
 /* used in contact solver to cleanup the code from if-statements */
 struct ds_RigidBody static_body = { 0 };
 
-
 struct solverConfig config_storage = { 0 };
 struct solverConfig *g_solver_config = &config_storage;
 
@@ -664,30 +663,32 @@ void ds_ContactConstraintInitAll(struct ds_RigidBodyPipeline *pipeline)
             const struct ds_Contact *c = pipeline->cdb->contact_pool.buf + color->contact_pool.buf[ci];
 	        struct ds_ContactConstraint *cc = color->contact_constraint_pool.buf + ci;
 
-	        struct ds_RigidBody *b[2];
-            struct ds_Shape *s[2];
-            ds_ContactKeyAddress(b+0, s+0, b+1, s+1, pipeline, &c->key);
+            {
+	            struct ds_RigidBody *b[2];
+                struct ds_Shape *s[2];
+                ds_ContactKeyAddress(b+0, s+0, b+1, s+1, pipeline, &c->key);
 
-            cc->body_sim[0] = RB_IS_DYNAMIC(b[0])
-                ? b[0]->sim
-                : ACTIVE_BODY_DUMMY_INDEX;
-            cc->body_sim[1] = RB_IS_DYNAMIC(b[1])
-                ? b[1]->sim
-                : ACTIVE_BODY_DUMMY_INDEX;
+                cc->body_sim[0] = RB_IS_DYNAMIC(b[0])
+                    ? b[0]->sim
+                    : ACTIVE_BODY_DUMMY_INDEX;
+                cc->body_sim[1] = RB_IS_DYNAMIC(b[1])
+                    ? b[1]->sim
+                    : ACTIVE_BODY_DUMMY_INDEX;
 
-	    	cc->restitution = f32_max(s[0]->restitution, s[1]->restitution);
-	    	cc->friction = f32_sqrt(s[0]->friction*s[1]->friction);
+	    	    cc->restitution = f32_max(s[0]->restitution, s[1]->restitution);
+	    	    cc->friction = f32_sqrt(s[0]->friction*s[1]->friction);
+            }
 
             struct ds_RigidBodySim *sim[2] = 
             {
-                active->body_sim_pool.buf + b[0]->sim,
-                active->body_sim_pool.buf + b[1]->sim,
+                active->body_sim_pool.buf + cc->body_sim[0],
+                active->body_sim_pool.buf + cc->body_sim[1],
             };
 
             struct ds_RigidBodyCompute *compute[2] =
             {
-                active->body_compute_pool.buf + b[0]->sim,
-                active->body_compute_pool.buf + b[1]->sim,
+                active->body_compute_pool.buf + cc->body_sim[0],
+                active->body_compute_pool.buf + cc->body_sim[1],
             };
 
             Vec3Copy(cc->normal, c->cm.n);
@@ -999,3 +1000,137 @@ void ds_ContactConstraintCacheImpulse(struct ds_RigidBodyPipeline *pipeline)
 
     ProfZoneEnd;
 }
+
+void ds_PositionConstraintColorInitAll(struct ds_RigidBodyPipeline *pipeline)
+{
+    ProfZone;
+
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    struct ds_CGraph *cg = &pipeline->cgraph;
+
+    quat body_inv_rotation[2];
+    vec3 tmp1, tmp2, relative_velocity;
+
+    for (u32 color_index = 0; color_index < CG_COLOR_COUNT; ++color_index)
+    {
+        struct ds_CGraphColor *color = cg->color + color_index;
+        for (u32 ci = 0; ci < color->contact_constraint_pool.count; ++ci)
+	    {			
+            const struct ds_Contact *c = pipeline->cdb->contact_pool.buf + color->contact_pool.buf[ci];
+	        struct ds_ContactConstraint *cc = color->contact_constraint_pool.buf + ci;
+
+            const struct ds_RigidBodyCompute *compute[2] =
+            {
+                active->body_compute_pool.buf + cc->body_sim[0],
+                active->body_compute_pool.buf + cc->body_sim[1],
+            };
+
+            QuatInverse(body_inv_rotation[0], compute[0]->rotation);
+            QuatInverse(body_inv_rotation[1], compute[1]->rotation);
+            for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
+	    	{
+	    		struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
+                QuatVec3RotateSelf(ccp->r[0], body_inv_rotation[0]);
+                QuatVec3RotateSelf(ccp->r[1], body_inv_rotation[1]);
+            }
+        }
+    }
+
+    ProfZoneEnd;
+}
+
+void ds_PositionConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, const u32 color_index)
+{    
+    ProfZone;
+
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+
+    mat3ptr mi;
+    mat3 mat_tmp, rot, rot_inv;
+	vec3 diff, r[2], rn[2], tmp[2], impulse_vector;
+    quat quat_tmp, quat_angle;
+
+    f32 min_separation = -F32_INFINITY;
+    for (u32 ci = 0; ci < color->contact_constraint_pool.count; ++ci)
+	{			
+        const struct ds_Contact *c = pipeline->cdb->contact_pool.buf + color->contact_pool.buf[ci];
+	    struct ds_ContactConstraint *cc = color->contact_constraint_pool.buf + ci;
+
+        struct ds_RigidBodySim *sim[2] =
+        {
+            active->body_sim_pool.buf + cc->body_sim[0],
+            active->body_sim_pool.buf + cc->body_sim[1],
+        };
+
+        struct ds_RigidBodyCompute *compute[2] =
+        {
+            active->body_compute_pool.buf + cc->body_sim[0],
+            active->body_compute_pool.buf + cc->body_sim[1],
+        };
+
+        for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
+	    {
+	    	struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
+
+		    Mat3Quat(rot, compute[0]->rotation);
+		    Mat3Transpose(rot_inv, rot);
+		    Mat3Mul(mat_tmp, rot, sim[0]->local_inv_inertia);
+		    Mat3Mul(sim[0]->world_inv_inertia, mat_tmp, rot_inv);
+
+		    Mat3Quat(rot, compute[1]->rotation);
+		    Mat3Transpose(rot_inv, rot);
+		    Mat3Mul(mat_tmp, rot, sim[1]->local_inv_inertia);
+		    Mat3Mul(sim[1]->world_inv_inertia, mat_tmp, rot_inv);
+
+            QuatVec3Rotate(r[0], compute[0]->rotation, ccp->r[0]);
+            QuatVec3Rotate(r[1], compute[1]->rotation, ccp->r[1]);
+
+			Vec3Cross(rn[0], r[0], cc->normal);
+			Vec3Cross(rn[1], r[1], cc->normal);
+
+			Mat3VecMul(tmp[0], sim[0]->world_inv_inertia, rn[0]);
+			Mat3VecMul(tmp[1], sim[1]->world_inv_inertia, rn[1]);
+
+            /* inverse effective mass? */
+            const f32 K = sim[0]->inv_mass + sim[1]->inv_mass + Vec3Dot(tmp[0], rn[0]) + Vec3Dot(tmp[1], rn[1]);
+
+            /* constraint */
+            Vec3Add(tmp[0], r[0], compute[0]->center_of_mass);
+            Vec3Add(tmp[1], r[1], compute[1]->center_of_mass);
+            const f32 distance = Vec3Dot(tmp[1], cc->normal) - Vec3Dot(tmp[0], cc->normal); 
+            min_separation = f32_max(min_separation, distance);
+            const f32 biased_slop_distance = g_solver_config->baumgarte_constant * (distance + g_solver_config->linear_slop);
+
+            const f32 C = f32_clamp(biased_slop_distance, -g_solver_config->max_linear_correction, 0.0f);
+
+            const f32 impulse = (K > 0.0f) 
+                ? -C/K 
+                : 0.0f;
+
+            Vec3Scale(impulse_vector, cc->normal, impulse);
+            Vec3TranslateScaled(compute[0]->center_of_mass, impulse_vector, -sim[0]->inv_mass);
+            Vec3TranslateScaled(compute[1]->center_of_mass, impulse_vector,  sim[1]->inv_mass);
+            /* flipped cross for correct sign! */
+            Vec3Cross(tmp[0], impulse_vector, r[0]);
+            /* instantaneous torque, assume delta_t = 1 */
+            Mat3VecMul(tmp[1], sim[0]->world_inv_inertia, tmp[0]);
+            /* Taylor expansion for sin, cos around 0 yields following approximation */
+            QuatSet(quat_angle, tmp[1][0]/2.0f, tmp[1][1]/2.0f, tmp[1][2]/2.0f, 1.0f);
+            QuatCopy(quat_tmp, compute[0]->rotation);
+            QuatMul(compute[0]->rotation, quat_angle, quat_tmp);
+            QuatNormalize(compute[0]->rotation);
+
+            Vec3Cross(tmp[0], r[1], impulse_vector);
+            Mat3VecMul(tmp[1], sim[1]->world_inv_inertia, tmp[0]);
+            QuatSet(quat_angle, tmp[1][0]/2.0f, tmp[1][1]/2.0f, tmp[1][2]/2.0f, 1.0f);
+            QuatCopy(quat_tmp, compute[1]->rotation);
+            QuatMul(compute[1]->rotation, quat_angle, quat_tmp);
+            QuatNormalize(compute[1]->rotation);
+        }
+    }
+
+    ProfZoneEnd;
+}
+
+
