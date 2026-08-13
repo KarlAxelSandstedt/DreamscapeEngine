@@ -346,7 +346,6 @@ struct ds_RigidBody
 	vec3 		    velocity;               /* linear velocity of body */
 	vec3 		    angular_velocity;       /* angular velocity of body (about local center of mass,
                                                not local origin!)                                   */
-	vec3 		    linear_momentum;   	    /* L = mv */
 	mat3 		    inv_inertia_tensor;
 	f32 		    mass;			        /* total body mass */
 	u32 	        entity;

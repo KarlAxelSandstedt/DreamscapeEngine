@@ -45,13 +45,13 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const stru
 	body->entity = entity;
 	Vec3Set(body->velocity, 0.0f, 0.0f, 0.0f);
 	Vec3Set(body->angular_velocity, 0.0f, 0.0f, 0.0f);
-	Vec3Set(body->linear_momentum, 0.0f, 0.0f, 0.0f);
 
 	const u32 dynamic_flag = (prefab->dynamic) ? RB_DYNAMIC : 0;
 	body->flags = dynamic_flag;
 
 	body->low_velocity_time = 0.0f;
 
+    struct ds_RigidBodySim *sim;
 	if (body->flags & RB_DYNAMIC)
 	{
         struct ds_SolverSet *active_set = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE; 
@@ -61,14 +61,7 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const stru
         body->set = SOLVER_SET_ACTIVE;
         body->sim = sim_slot.index;
 
-        struct ds_RigidBodySim *sim = sim_slot.address;
-        sim->body = body_slot.index;
-        sim->flags = body->flags;
-        sim->world = *world;
-        Vec3Set(sim->local_center_of_mass, 0.0f, 0.0f, 0.0f);
-        Mat3Identity(sim->local_inv_inertia);
-        Mat3Identity(sim->world_inv_inertia);
-
+        sim = sim_slot.address;
         struct ds_RigidBodyCompute *compute = compute_slot.address;
         compute->flags = body->flags;
 	    Vec3Set(compute->linear_velocity, 0.0f, 0.0f, 0.0f);
@@ -88,10 +81,15 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const stru
         body->sim = sim_slot.index;
 		body->island = POOL_NULL;
 
-        struct ds_RigidBodySim *sim = sim_slot.address;
-        sim->body = body_slot.index;
-        sim->flags = body->flags;
+        sim = sim_slot.address;
 	}
+
+    sim->body = body_slot.index;
+    sim->flags = body->flags;
+    sim->world = *world;
+    sim->inv_mass = 0.0f;
+    Vec3Set(sim->local_center_of_mass, 0.0f, 0.0f, 0.0f);
+    Mat3Identity(sim->local_inv_inertia);
 	
 	return body->id;
 }
@@ -248,7 +246,9 @@ void ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, con
 		Mat3Mul(inertia_tensor[i], tmp2, rot_local_inv);
 	}
 
-	Vec3ScaleSelf(body->local_center_of_mass, 1.0f / body->mass);
+    sim->inv_mass = 1.0f / body->mass;
+	Vec3ScaleSelf(body->local_center_of_mass, sim->inv_mass);
+	Vec3Copy(sim->local_center_of_mass, body->local_center_of_mass);
 
 	/* 
 	 * d(i) = center_of_mass_Shape(i) - center_of_mass_Body

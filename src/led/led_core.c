@@ -1967,12 +1967,9 @@ static void led_EngineRun(struct led *led)
 				const struct ds_RigidBody *body = led->physics.body_pool.buf + ds_IdIndex(event->body);
 				const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
 
-				vec3 linear_velocity;
-				Vec3Scale(linear_velocity, body->linear_momentum, 1.0f / body->mass);
-                
 				r_Proxy3dLinearSpeculationSet(body->t_world.position
 						, body->t_world.rotation
-						, linear_velocity
+						, body->velocity
 						, body->angular_velocity
 						, event->ns
 						, node->proxy);

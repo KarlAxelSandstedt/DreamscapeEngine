@@ -425,7 +425,6 @@ void ds_SolverSetSetupDummies(struct ds_RigidBodyPipeline *pipeline)
 
     memset(dummy_sim, 0, sizeof(*dummy_sim));
     memset(dummy_compute, 0, sizeof(*dummy_compute));
-
     dummy_sim->world = ds_TransformIdentity();
 }
 

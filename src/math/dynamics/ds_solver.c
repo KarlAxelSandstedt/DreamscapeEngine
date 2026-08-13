@@ -533,46 +533,44 @@ void ds_RigidBodyUpdateSolverDataAll(struct ds_RigidBodyPipeline *pipeline)
     ProfZone;
 
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    
+    /* Apply dampening: 
+	 *		dv/dt = -d*v
+	 *	=>	d/dt[ve^(d*t)] = 0
+	 *	=>	v(t) = v(0)*e^(-d*t)
+	 *
+	 *	approx e^(-d*t) = 1 - d*t + d^2*t^2 / 2! - ....
+	 *	using Pade P^0_1 =>
+	 *		1 - d*t = a0 / (1 + b1*t)
+	 *		b0 = 1
+	 *		a0 = c0 = 1
+	 *		0 = a1 = c1 + c0*b1
+	 *	=>	0 = b1 - d
+	 *	=>	
+	 *		e^(-d*t) ~= P^0_1(t) 
+	 *			  =  a0 / (b0 + b1*t) 
+	 *			  =  1 / (1 + d*t)
+	 */
+	const f32 linear_damp = 1.0f / (1.0f + g_solver_config->linear_dampening * pipeline->timestep);
+	const f32 angular_damp = 1.0f / (1.0f + g_solver_config->angular_dampening * pipeline->timestep);
 
     mat3 tmp, rot, rot_inv;
-    for (u32 i = 0; i < active->body_sim_pool.count; ++i)
+    for (u32 i = 1; i < active->body_sim_pool.count; ++i)
     {
         struct ds_RigidBodySim *sim = active->body_sim_pool.buf + i;
         struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + i;
 
-        memset(compute->linear_velocity, 0, sizeof(vec3));
-        memset(compute->angular_velocity, 0, sizeof(vec3));
-        
 		/* setup inverted world inertia tensors and center of massses */
 		Mat3Quat(rot, sim->world.rotation);
 		Mat3Transpose(rot_inv, rot);
         Mat3Mul(tmp, rot, sim->local_inv_inertia);
         Mat3Mul(sim->world_inv_inertia, tmp, rot_inv);
 
+        QuatCopy(compute->rotation, sim->world.rotation);
         Mat3VecMul(compute->center_of_mass, rot, sim->local_center_of_mass);
         Vec3Translate(compute->center_of_mass, sim->world.position);
 
-        /* Apply dampening: 
-		 *		dv/dt = -d*v
-		 *	=>	d/dt[ve^(d*t)] = 0
-		 *	=>	v(t) = v(0)*e^(-d*t)
-		 *
-		 *	approx e^(-d*t) = 1 - d*t + d^2*t^2 / 2! - ....
-		 *	using Pade P^0_1 =>
-		 *		1 - d*t = a0 / (1 + b1*t)
-		 *		b0 = 1
-		 *		a0 = c0 = 1
-		 *		0 = a1 = c1 + c0*b1
-		 *	=>	0 = b1 - d
-		 *	=>	
-		 *		e^(-d*t) ~= P^0_1(t) 
-		 *			  =  a0 / (b0 + b1*t) 
-		 *			  =  1 / (1 + d*t)
-		 */
-		const f32 linear_damp = 1.0f / (1.0f + g_solver_config->linear_dampening * pipeline->timestep);
-		const f32 angular_damp = 1.0f / (1.0f + g_solver_config->angular_dampening * pipeline->timestep);
-
-		/* integrate new velocities using external forces */
+        /* integrate new velocities using external forces */
 		Vec3TranslateScaled(compute->linear_velocity, g_solver_config->gravity, pipeline->timestep);
 		Vec3ScaleSelf(compute->linear_velocity, linear_damp);
 		Vec3ScaleSelf(compute->angular_velocity, angular_damp);
@@ -583,9 +581,11 @@ void ds_RigidBodyUpdateSolverDataAll(struct ds_RigidBodyPipeline *pipeline)
 
 void ds_RigidBodyIntegrateVelocitiesAll(struct ds_RigidBodyPipeline *pipeline)
 {
+    ProfZone;
+
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
 
-    for (u32 i = 0; i < active->body_sim_pool.count; ++i)
+    for (u32 i = 1; i < active->body_sim_pool.count; ++i)
     {
         struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + i;
 
@@ -608,13 +608,17 @@ void ds_RigidBodyIntegrateVelocitiesAll(struct ds_RigidBodyPipeline *pipeline)
 	    QuatTranslate(compute->rotation, rot_delta);
 	    QuatNormalize(compute->rotation);
     }
+
+    ProfZoneEnd;
 }
 
 void ds_RigidBodyUpdateOrientationAll(struct ds_RigidBodyPipeline *pipeline)
 {
+    ProfZone;
+
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
 
-    for (u32 i = 0; i < active->body_sim_pool.count; ++i)
+    for (u32 i = 1; i < active->body_sim_pool.count; ++i)
     {
         struct ds_RigidBodySim *sim = active->body_sim_pool.buf + i;
         struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + i;
@@ -625,10 +629,20 @@ void ds_RigidBodyUpdateOrientationAll(struct ds_RigidBodyPipeline *pipeline)
         Vec3Sub(sim->world.position, compute->center_of_mass, rotated_local_center_of_mass);
         QuatCopy(sim->world.rotation, compute->rotation);
 
-        //TODO remove
         struct ds_RigidBody *body = pipeline->body_pool.buf + sim->body;
-        body->t_world = sim->world;
+		struct ds_PhysicsEvent *event = ds_PhysicsEventPush(pipeline);
+		event->type = PHYSICS_EVENT_BODY_ORIENTATION;
+		event->body = body->id;
+
+        //TODO remove
+        {
+            body->t_world = sim->world;
+            Vec3Copy(body->velocity, compute->linear_velocity);
+            Vec3Copy(body->angular_velocity, compute->angular_velocity);
+        }
     }
+
+    ProfZoneEnd;
 }
 
 void ds_ContactConstraintInitAll(struct ds_RigidBodyPipeline *pipeline)
@@ -647,27 +661,34 @@ void ds_ContactConstraintInitAll(struct ds_RigidBodyPipeline *pipeline)
         struct ds_CGraphColor *color = cg->color + color_index;
         for (u32 ci = 0; ci < color->contact_constraint_pool.count; ++ci)
 	    {			
-            struct ds_RigidBodySim *sim[2];
-            struct ds_RigidBodyCompute *compute[2];
             const struct ds_Contact *c = pipeline->cdb->contact_pool.buf + color->contact_pool.buf[ci];
 	        struct ds_ContactConstraint *cc = color->contact_constraint_pool.buf + ci;
 
+	        struct ds_RigidBody *b[2];
+            struct ds_Shape *s[2];
+            ds_ContactKeyAddress(b+0, s+0, b+1, s+1, pipeline, &c->key);
+
+            cc->body_sim[0] = RB_IS_DYNAMIC(b[0])
+                ? b[0]->sim
+                : ACTIVE_BODY_DUMMY_INDEX;
+            cc->body_sim[1] = RB_IS_DYNAMIC(b[1])
+                ? b[1]->sim
+                : ACTIVE_BODY_DUMMY_INDEX;
+
+	    	cc->restitution = f32_max(s[0]->restitution, s[1]->restitution);
+	    	cc->friction = f32_sqrt(s[0]->friction*s[1]->friction);
+
+            struct ds_RigidBodySim *sim[2] = 
             {
-	            struct ds_RigidBody *b[2];
-                struct ds_Shape *s[2];
-                ds_ContactKeyAddress(b+0, s+0, b+1, s+1, pipeline, &c->key);
+                active->body_sim_pool.buf + b[0]->sim,
+                active->body_sim_pool.buf + b[1]->sim,
+            };
 
-                cc->body_sim[0] = RB_IS_DYNAMIC(b[0])
-                    ? b[0]->sim
-                    : ACTIVE_BODY_DUMMY_INDEX;
-                cc->body_sim[1] = RB_IS_DYNAMIC(b[1])
-                    ? b[1]->sim
-                    : ACTIVE_BODY_DUMMY_INDEX;
-
-	    	    cc->restitution = f32_max(s[0]->restitution, s[1]->restitution);
-	    	    cc->friction = f32_sqrt(s[0]->friction*s[1]->friction);
-
-            }
+            struct ds_RigidBodyCompute *compute[2] =
+            {
+                active->body_compute_pool.buf + b[0]->sim,
+                active->body_compute_pool.buf + b[1]->sim,
+            };
 
             Vec3Copy(cc->normal, c->cm.n);
 	    	Vec3CreateBasis(cc->tangent[0], cc->tangent[1], cc->normal);
@@ -841,6 +862,8 @@ void ds_ContactConstraintWarmupAll(struct ds_RigidBodyPipeline *pipeline)
 
 void ds_ContactConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, const u32 color_index)
 {
+    ProfZone;
+
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
 
@@ -929,10 +952,14 @@ void ds_ContactConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, con
 			Vec3Translate(compute[1]->angular_velocity, tmp3);
         }
     }
+
+    ProfZoneEnd;
 }
 
 void ds_ContactConstraintCacheImpulse(struct ds_RigidBodyPipeline *pipeline)
 {
+    ProfZone;
+
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     struct ds_CGraph *cg = &pipeline->cgraph;
     quat body_inv_rotation[2];
@@ -969,4 +996,6 @@ void ds_ContactConstraintCacheImpulse(struct ds_RigidBodyPipeline *pipeline)
 		    }
         }
 	}
+
+    ProfZoneEnd;
 }
