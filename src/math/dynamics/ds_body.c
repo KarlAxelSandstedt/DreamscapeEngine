@@ -40,11 +40,8 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const stru
 
     ds_DLLFlush(&body->joint_list);
     ds_DLLFlush(&body->shape_list);
-    body->t_world = *world;
 
 	body->entity = entity;
-	Vec3Set(body->velocity, 0.0f, 0.0f, 0.0f);
-	Vec3Set(body->angular_velocity, 0.0f, 0.0f, 0.0f);
 
 	const u32 dynamic_flag = (prefab->dynamic) ? RB_DYNAMIC : 0;
 	body->flags = dynamic_flag;

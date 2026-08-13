@@ -100,7 +100,7 @@ static u32 ds_CGraphColorNext(struct ds_RigidBodyPipeline *pipeline, const u32 b
     {
         for (u32 i = CG_DYNAMIC_COLOR_FIRST; i <= CG_DYNAMIC_COLOR_LAST; ++i)
         {
-            if (!ds_BitSetGet(&cg->color[i].body_bitset, body[0]) || !ds_BitSetGet(&cg->color[i].body_bitset, body[1]))
+            if (ds_BitSetGet(&cg->color[i].body_bitset, body[0]) || ds_BitSetGet(&cg->color[i].body_bitset, body[1]))
             {
                 continue;
             }
@@ -117,7 +117,7 @@ static u32 ds_CGraphColorNext(struct ds_RigidBodyPipeline *pipeline, const u32 b
         const u32 dynamic_body = dynamic_bit[1];
         for (u32 i = CG_STATIC_COLOR_FIRST; i <= CG_STATIC_COLOR_LAST; ++i)
         {
-            if (!ds_BitSetGet(&cg->color[i].body_bitset, body[dynamic_body]))
+            if (ds_BitSetGet(&cg->color[i].body_bitset, body[dynamic_body]))
             {
                 continue;
             }
@@ -127,7 +127,6 @@ static u32 ds_CGraphColorNext(struct ds_RigidBodyPipeline *pipeline, const u32 b
             break;
         }
     }
-
 
     return color;
 }
@@ -233,21 +232,22 @@ void ds_CGraphValidate(const struct ds_RigidBodyPipeline *pipeline)
 
             if (CG_STATIC_COLOR_FIRST <= c && c <= CG_STATIC_COLOR_LAST)
             {
-                ds_Assert(RB_IS_DYNAMIC(body0) && RB_IS_DYNAMIC(body1));
-                ds_Assert(body0->set == SOLVER_SET_ACTIVE);
-                ds_Assert(body1->set == SOLVER_SET_ACTIVE);
+                ds_Assert((!RB_IS_DYNAMIC(body0) 
+                         && RB_IS_DYNAMIC(body1) 
+                         && body0->set == SOLVER_SET_STATIC
+                         && body1->set == SOLVER_SET_ACTIVE)
+                    || 
+                       (RB_IS_DYNAMIC(body0) 
+                         && !RB_IS_DYNAMIC(body1) 
+                         && body1->set == SOLVER_SET_STATIC 
+                         && body0->set == SOLVER_SET_ACTIVE));
+
             }
             else if (CG_DYNAMIC_COLOR_FIRST <= c && c <= CG_DYNAMIC_COLOR_LAST)
             {
-                ds_Assert((!RB_IS_DYNAMIC(body0) 
-                            && RB_IS_DYNAMIC(body1) 
-                            && body0->set == SOLVER_SET_NULL 
-                            && body1->set == SOLVER_SET_ACTIVE)
-                       || 
-                          (RB_IS_DYNAMIC(body0) 
-                            && !RB_IS_DYNAMIC(body1) 
-                            && body1->set == SOLVER_SET_NULL 
-                            && body0->set == SOLVER_SET_ACTIVE));
+                ds_Assert(RB_IS_DYNAMIC(body0) && RB_IS_DYNAMIC(body1));
+                ds_Assert(body0->set == SOLVER_SET_ACTIVE);
+                ds_Assert(body1->set == SOLVER_SET_ACTIVE);
             }
         }
 

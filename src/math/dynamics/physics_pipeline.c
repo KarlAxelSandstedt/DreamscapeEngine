@@ -365,8 +365,15 @@ static u32 NarrowPhaseJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPh
                 /* Quick and dirty cache invalidation for fast moving objects; NOTE: not size invariant!  */
                 if (cache->type != SAT_CACHE_SEPARATION)
                 {
+                    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+                    struct ds_RigidBodyCompute *compute[2] =
+                    {
+                        active->body_compute_pool.buf + (RB_IS_DYNAMIC(b0) ? b0->sim : 0),
+                        active->body_compute_pool.buf + (RB_IS_DYNAMIC(b1) ? b1->sim : 0),
+                    };
+
                     vec3 diff;
-                    Vec3Sub(diff, b0->velocity, b1->velocity);
+                    Vec3Sub(diff, compute[0]->linear_velocity, compute[1]->linear_velocity);
                     const f32 linear_vel_abs_diff = f32_abs(Vec3Dot(diff, cache->normal));
                     if (linear_vel_abs_diff >= g_numerics_config->manifold_cache_linear_velocity_max_diff_allowed)
                     {
@@ -774,7 +781,7 @@ static u32 IslandJobSolve(struct ds_IslandJobPhase *phase, struct ds_IslandSolve
     struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
     struct ds_Island *is = pipeline->island_pool.buf + job->island;
 	job->body_count = is->body_list.count;
-	job->bodies = ds_IslandSolve(g_tl_self->frame, pipeline, is);
+	//job->bodies = ds_IslandSolve(g_tl_self->frame, pipeline, is);
 
 	ProfZoneEnd;
 
@@ -856,8 +863,6 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
 
     ds_RigidBodyUpdateOrientationAll(pipeline);
         
-
-
     //struct ds_IslandJobPhase *is_jobs = pipeline->is_jobs;
     //struct ds_SolverSet *active_set = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     //{
@@ -906,19 +911,6 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
     //	ProfZoneEnd;
     //}
 
-    ////TODO all above can be fused, we can parallelize velocity stuff bla bla 
-	//for (u32 i = 0; i < is_jobs->solve_count_max; ++i)
-	//{
-    //    const struct ds_IslandSolveJob *job = is_jobs->solve_jobs + i;
-	//	for (u32 b = 0; b < job->body_count; ++b)
-	//	{
-	//		struct ds_PhysicsEvent *event = ds_PhysicsEventPush(pipeline);
-	//		event->type = PHYSICS_EVENT_BODY_ORIENTATION;
-    //        const struct ds_RigidBody *body = pipeline->body_pool.buf + job->bodies[b];
-	//		event->body = body->id;
-	//	}
-	//}
-    
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     ds_BitSetClear(&pipeline->island_high_energy_set, 0);
     pipeline->island_to_split = DS_ID_NULL; 
@@ -933,8 +925,9 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
         for (i32 bi = island->body_list.first; bi != DLL_SENTINEL; bi = body->island_body.next)
         {
             body = pipeline->body_pool.buf + bi;
-			const f32 lv_sq = Vec3Dot(body->velocity, body->velocity);
-			const f32 av_sq = Vec3Dot(body->angular_velocity, body->angular_velocity);
+            const struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + body->set;
+			const f32 lv_sq = Vec3Dot(compute->linear_velocity, compute->linear_velocity);
+			const f32 av_sq = Vec3Dot(compute->angular_velocity, compute->angular_velocity);
 			if (lv_sq <= g_solver_config->sleep_linear_velocity_sq_limit && av_sq <= g_solver_config->sleep_angular_velocity_sq_limit)
 			{
 				body->low_velocity_time += pipeline->timestep;

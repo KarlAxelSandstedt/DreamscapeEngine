@@ -339,13 +339,7 @@ struct ds_RigidBody
 
 	struct ds_DLL   shape_list;		        /* list of convex shapes constructing the rigid body 	*/
 
-    //TODO Remove 
-	ds_Transform    t_world;		        /* local body frame to world transform. Rotation is 
-                                               about the local origin (not center of mass!)         */
-	vec3		    local_center_of_mass;	/* local body frame center of mass 			            */
-	vec3 		    velocity;               /* linear velocity of body */
-	vec3 		    angular_velocity;       /* angular velocity of body (about local center of mass,
-                                               not local origin!)                                   */
+    vec3		    local_center_of_mass;	/* local body frame center of mass 			            */
 	mat3 		    inv_inertia_tensor;
 	f32 		    mass;			        /* total body mass */
 	u32 	        entity;
@@ -997,8 +991,6 @@ void 		ds_IslandMerge(struct ds_RigidBodyPipeline *pipeline, const u32 expand, c
 /* Split island, or remake if no split happens.  */
 void 		ds_IslandSplit(struct ds_RigidBodyPipeline *pipeline, const u32 island);
 
-u32 *       ds_IslandSolve(struct arena *mem_frame, struct ds_RigidBodyPipeline *pipeline, struct ds_Island *is);
-
 
 /*
 ds_ContactConstraintPoint
@@ -1107,79 +1099,6 @@ struct solverConfig
 extern struct solverConfig *g_solver_config;
 
 void    SolverConfigInit(const u32 pgs_iteration_count, const u32 ngs_iteration_count, const u32 warmup_solver, const vec3 gravity, const f32 baumgarte_constant, const f32 max_linear_correction, const f32 max_linear_velocity_magnitude, const f32 max_angular_velocity_magnitude, const f32 linear_dampening, const f32 angular_dampening, const f32 linear_slop, const f32 restitution_threshold, const u32 sleep_enabled, const f32 sleep_time_threshold, const f32 sleep_linear_velocity_sq_limit, const f32 sleep_angular_velocity_sq_limit);
-
-
-/*
- * Memory layout: Three distictions
- *
- * struct velocityConstraintPoint 	- constraint point local data (body center to manifold point, and so on)
- * struct velocityConstraint 		- contact local data (manifold normal, body indices, and so on)
- * solver->array			        - shared data between contacts, i.e temporary body changes (velocities, ...)
- */
-
-/*
-velocity_constraint_point 
-=========================
-individual constraint for one point in the contact manifold
- */
-
-//TODO remove 
-struct velocityConstraintPoint
-{
-    vec3    contact_point;  /* contact point                                */
-	vec3 	r1;		        /* vector from body 1's center to contact point */
-	vec3 	r2;		        /* vector from body 2's center to contact point */
-	f32 	normal_impulse;	/* Normal impulse produced by the contact       */
-	f32	    velocity_bias;	/* scale of velocity_bias along contact normal */
-	f32	    normal_mass;	/* 1.0f / row(J,i)*Inv(M)*J^T entry for point */
-	f32	    tangent_mass[2]; /* 1.0f / row(J_tangent,i)*Inv(M)*J_tangent^T entry for point */
-	f32	    tangent_impulse[2]; /* the tangent impulses produced by the contact */
-};
-
-//TODO remove 
-struct velocityConstraint
-{
-	struct velocityConstraintPoint *vcps;
-	void * 	normal_mass;	/* mat2, mat3 or mat4 normal mass for block solver = Inv(J*Inv(M)*J^T) */
-	void * 	inv_normal_mass;/* mat2, mat3 or mat4 inv normal mass for block solver = J*Inv(M)*J^T */
-
-	/* contact base axes */
-	vec3 	normal;		/* Currently shared contact manifold normal between all point constraints */
-	vec3	tangent[2];	/* normalized friction directions of contact */
-
-	u32 	lb1;		/* local body 1 index (index into solver arrays) */
-	u32 	lb2;		/* local body 2 index (index into solver arrays) */
-	u32 	vcp_count;	/* Number of contact points in the contact manifold */
-	f32	    restitution;	/* Range[0.0f, 1.0f] : higher => bouncy */
-	//f32	tangent_impulse_bound;	/* TODO: contact_friction * gravity_constant * point_mass */
-	f32	    friction;	/* TODO: friction = f32_max(b1->friction, b2->friction) */
-};
-
-struct solver
-{
-	u32			body_count;
-	u32			contact_count;
-
-	struct ds_RigidBody **	    bodies;
-	mat3ptr			            Iw_inv;		        /* inverted world inertia tensors */
-	struct velocityConstraint * vcs;	
-
-    f32         timestep;
-
-	/* temporary state of bodies in island, static bodies index last element */
-	vec3ptr			linear_velocity;
-	vec3ptr			angular_velocity;
-    vec3ptr         w_center_of_mass;   /* world-position center of mass of body */
-    quatptr         rotation;
-};
-
-struct solver *	SolverInitBodyData(struct arena *mem, struct ds_Island *is, const f32 timestep);
-void 		SolverInitVelocityConstraints(struct arena *mem, struct solver *solver, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Island *is);
-void 		SolverIterateVelocityConstraints(struct solver *solver);
-void        SolverInitPositionConstraints(struct solver *solver, const struct ds_Island *island);
-u32 		SolverIteratePositionConstraints(struct solver *solver);
-void 		SolverWarmup(struct solver *solver, const struct ds_Island *is);
-void 		SolverCacheImpulse(struct solver *solver, const struct ds_Island *is);
 
 
 /*
@@ -1311,6 +1230,7 @@ struct ds_IslandSeedJob
     u32     count;
 };
 
+//TODO Remove
 struct ds_IslandSolveJob 
 {
 	u32     island;

@@ -132,12 +132,14 @@ struct slot ds_ShapeLookup(const struct ds_RigidBodyPipeline *pipeline, const ds
 void ds_ShapeWorldTransform(ds_Transform *t, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape)
 {
 	const struct ds_RigidBody *body = pipeline->body_pool.buf + shape->body;
+    const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
+    const struct ds_RigidBodySim *sim = set->body_sim_pool.buf + body->sim;
     mat3 rot;
-    Mat3Quat(rot, body->t_world.rotation);
+    Mat3Quat(rot, sim->world.rotation);
 
-    QuatMul(t->rotation, body->t_world.rotation, shape->t_local.rotation);
+    QuatMul(t->rotation, sim->world.rotation, shape->t_local.rotation);
     Mat3VecMul(t->position, rot, shape->t_local.position);
-    Vec3Translate(t->position, body->t_world.position);
+    Vec3Translate(t->position, sim->world.position);
 }
 
 struct aabb ds_ShapeWorldBbox(const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape)
@@ -146,6 +148,8 @@ struct aabb ds_ShapeWorldBbox(const struct ds_RigidBodyPipeline *pipeline, const
 	vec3 max = { -F32_INFINITY, -F32_INFINITY, -F32_INFINITY };
 
 	const struct ds_RigidBody *body = pipeline->body_pool.buf + shape->body;
+    const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
+    const struct ds_RigidBodySim *sim = set->body_sim_pool.buf + body->sim;
 	const struct c_Shape *cshape = strdb_Address(pipeline->cshape_db, shape->cshape_handle);
 
     mat3 rot;
@@ -177,8 +181,8 @@ struct aabb ds_ShapeWorldBbox(const struct ds_RigidBodyPipeline *pipeline, const
 		Vec3Set(max, r, r, r);
 		Vec3Translate(min, shape->t_local.position);
 		Vec3Translate(max, shape->t_local.position);
-		Vec3Translate(min, body->t_world.position);
-		Vec3Translate(max, body->t_world.position);
+		Vec3Translate(min, sim->world.position);
+		Vec3Translate(max, sim->world.position);
 	}
 	else if (shape->cshape_type == C_SHAPE_CAPSULE)
 	{
