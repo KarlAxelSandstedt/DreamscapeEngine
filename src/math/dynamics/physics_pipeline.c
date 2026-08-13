@@ -94,9 +94,9 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 	pipeline.debug = NULL;
 
     pipeline.cd_jobs = ArenaPushAligned(mem, sizeof(struct ds_CollisionJobPhase), DS_CACHE_LINE);
-    pipeline.is_jobs = ArenaPushAligned(mem, sizeof(struct ds_IslandJobPhase), DS_CACHE_LINE);
+    pipeline.solver_phase = ArenaPushAligned(mem, sizeof(struct ds_SolverJobPhase), DS_CACHE_LINE);
     ds_JobPhaseAlloc(mem, &pipeline.cd_jobs->phase, COLLISION_JOB_COUNT, ds_CollisionJobPhaseDispatch);
-    ds_JobPhaseAlloc(mem, &pipeline.is_jobs->phase, ISLAND_JOB_COUNT, ds_IslandJobPhaseDispatch);
+    ds_JobPhaseAlloc(mem, &pipeline.solver_phase->phase, SOLVER_JOB_COUNT, ds_SolverJobPhaseDispatch);
 #ifdef DS_PHYSICS_DEBUG
 	pipeline.debug_count = g_arch_config->logical_core_count;
 	pipeline.debug = malloc(g_arch_config->logical_core_count * sizeof(struct collisionDebug));
@@ -748,62 +748,13 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 	ProfZoneEnd;
 }
 
-static u32 IslandJobSeed(struct ds_IslandJobPhase *phase, struct ds_IslandSeedJob *job)
+u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
 {
-	ProfZone;
+    struct ds_SolverJobPhase *phase = (struct ds_SolverJobPhase *) g_scheduler->phase;
 
-    const struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
-    const struct ds_SolverSet *active_set = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
-    const u32 thread = ds_ThreadSelfIndex();
-    const u32 base = ds_JobPhaseReserve(&phase->phase, ISLAND_JOB_SOLVE, job->count);
-    ds_Assert(base + job->count <= phase->solve_count_max);
-
-    u32 job_count = 0;
-    u32 island_index = job->island_first;
-    for (u32 i = 0; i < job->count; ++i)
-	{
-        const u32 solve_job_index = base + i;
-        struct ds_IslandSolveJob *solve_job = phase->solve_jobs + solve_job_index;
-
-	    solve_job->island = active_set->island_pool.buf[job->island_first + i];
-        ds_WSDequePushBottom(g_scheduler->deque + thread, ds_JobIdInit(ISLAND_JOB_SOLVE, solve_job_index));
-    }
-
-	ProfZoneEnd;
-
-    return job->count - 1;
-}
-
-static u32 IslandJobSolve(struct ds_IslandJobPhase *phase, struct ds_IslandSolveJob *job)
-{
-	ProfZone;
-
-    struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
-    struct ds_Island *is = pipeline->island_pool.buf + job->island;
-	job->body_count = is->body_list.count;
-	//job->bodies = ds_IslandSolve(g_tl_self->frame, pipeline, is);
-
-	ProfZoneEnd;
+    fprintf(stderr, "Hello from %s, please write me :)\n", __func__);
 
     return U32_MAX;
-}
-
-u32 ds_IslandJobPhaseDispatch(const ds_JobId job)
-{
-    struct ds_IslandJobPhase *phase = (struct ds_IslandJobPhase *) g_scheduler->phase;
- 
-    const u32 index = ds_JobIdIndex(job);
-    const enum ds_IslandJobType type = ds_JobIdTag(job);
-
-    u32 job_diff = 0;
-    switch (type)
-    {
-        case ISLAND_JOB_SEED: { job_diff = IslandJobSeed(phase, phase->seed_jobs + index); } break;
-        case ISLAND_JOB_SOLVE: { job_diff = IslandJobSolve(phase, phase->solve_jobs + index); } break;
-        default: { ds_AssertString(0, "Should not be possible"); } break;
-    };
-
-    return job_diff;
 }
 
 static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline) 
@@ -863,27 +814,20 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
 
     ds_RigidBodyUpdateOrientationAll(pipeline);
         
-    //struct ds_IslandJobPhase *is_jobs = pipeline->is_jobs;
-    //struct ds_SolverSet *active_set = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
-    //{
-    //	ProfZoneNamed("JobPhase(Solve Islands)");
+    struct ds_SolverJobPhase *solver_phase = pipeline->solver_phase;
+    {
+    	ProfZoneNamed("JobPhase(Solve)");
 
-    //    ds_JobPhaseBegin(&is_jobs->phase);
+        ds_JobPhaseBegin(&solver_phase->phase);
 
-    //    is_jobs->pipeline = pipeline;
+        solver_phase->pipeline = pipeline;
 
-    //    is_jobs->seed_count_max = 3*g_arch_config->logical_core_count;
-    //    is_jobs->seed_jobs = ArenaPushZero(&pipeline->frame, is_jobs->seed_count_max*sizeof(struct ds_IslandSeedJob));
-    //    ds_JobPhaseReserve(&is_jobs->phase, ISLAND_JOB_SEED, is_jobs->seed_count_max);
+        solver_phase->job_count = g_arch_config->logical_core_count;
+        solver_phase->job = ArenaPushZero(&pipeline->frame, solver_phase->job_count*sizeof(struct ds_SolverJob));
+        ds_JobPhaseReserve(&solver_phase->phase, SOLVER_JOB_SEED, solver_phase->job_count);
 
-    //    is_jobs->solve_count_max = active_set->island_pool.count;
-    //    is_jobs->solve_jobs = ArenaPushZero(&pipeline->frame, is_jobs->solve_count_max*sizeof(struct ds_IslandSolveJob));
-
-    //    const u32 islands_per_seed = active_set->island_pool.count / is_jobs->seed_count_max;
-    //    u32 extra = active_set->island_pool.count % is_jobs->seed_count_max;
-    //    u32 low = 0;
-    //    for (u32 i = 0; i < is_jobs->seed_count_max; ++i)
-    //    {
+        for (u32 i = 0; i < solver_phase->job_count; ++i)
+        {
     //        u32 high = low + islands_per_seed;
     //        if (extra)
     //        {
@@ -893,23 +837,23 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
     //        is_jobs->seed_jobs[i].island_first = low;
     //        is_jobs->seed_jobs[i].count = high - low;
     //        low = high;
-    //        ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(ISLAND_JOB_SEED, i));
-    //    }
+            ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(SOLVER_JOB_SEED, i));
+        }
 
-    //    AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, is_jobs->seed_count_max);
-    //    ds_JobPhaseAddFetchRemaining(&is_jobs->phase, is_jobs->seed_count_max);
-    //    ds_WSDequePublish(g_scheduler->seed_deque);
-    //    for (u32 i = 1; i < g_arch_config->logical_core_count; ++i)
-    //    {
-    //        SemaphorePost(&g_scheduler->jobs_are_available);
-    //    }
+        AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, solver_phase->job_count);
+        ds_JobPhaseAddFetchRemaining(&solver_phase->phase, solver_phase->job_count);
+        ds_WSDequePublish(g_scheduler->seed_deque);
+        for (u32 i = 1; i < g_arch_config->logical_core_count; ++i)
+        {
+            SemaphorePost(&g_scheduler->jobs_are_available);
+        }
 
-	//    ds_MasterRunAvailableJobs();
-    //    
-    //    ds_JobPhaseEnd();
+	    ds_MasterRunAvailableJobs();
+        
+        ds_JobPhaseEnd();
 
-    //	ProfZoneEnd;
-    //}
+    	ProfZoneEnd;
+    }
 
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     ds_BitSetClear(&pipeline->island_high_energy_set, 0);

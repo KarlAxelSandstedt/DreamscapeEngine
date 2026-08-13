@@ -627,6 +627,7 @@ void        sat_CacheRemove(struct cdb *cdb, const u32 index);
 /* Lookup sat_Cache in pipeline. If found, return (index, address). Otherwise (U32_MAX, NULL). */
 struct slot sat_CacheLookup(struct cdb *cdb, const struct sat_CacheKey *key);
 
+
 /*
 c_TriHullCache
 ==============
@@ -814,7 +815,6 @@ void    ds_DistanceJointPrefabDefault(struct ds_DistanceJointPrefab *prefab);
 ds_JointId ds_DistanceJointAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_DistanceJointPrefab *prefab, const ds_RigidBodyId b0, const ds_Transform *local_frame0, const ds_RigidBodyId b1, const ds_Transform *local_frame1);
 
 /*
-TODO: better name?
 ds_JointSim
 ===========
 ds_JointSim is a discriminating union storing all different types of physical joints. 
@@ -851,9 +851,9 @@ and ds_JoinSim for sleeping/disabled sets, and any islands in the set.  we will 
 
 SOLVER_SET_DISABLED: TODO
 
-SOLVER_SET_STATIC: TODO
-
 SOLVER_SET_ACTIVE: TODO
+
+SOLVER_SET_STATIC: TODO
 
 SOLVER_SET_SLEEPING: TODO
 */
@@ -873,8 +873,6 @@ struct ds_SolverSet
 {
     POOL_NODE;
 
-    //TODO body solver data
-    
     /* Body simulation state */
     ds_CPool(ds_RigidBodySim)       body_sim_pool;
 
@@ -931,19 +929,6 @@ Furthermore, similar to Box3D, in order to mitigate ghost collisions, we priorit
 constraints by processing them first in each solver iteration. This yields a process ordering:
 
     CG_SERIAL_COLOR => CG_STATIC_COLOR_1 => ... => CG_STATIC_COLOR_N => CG_DYNAMIC_1 => .. CG_DYNAMIC_M
-
-//TODO When a island falls asleep, all its constraints are removed/moved away. WHen it wake-up we reinsert.
-
-//TODO We keep the color data arrays compact; we play a price to keep them coherent, but gain later on solving.
-
-::: Mapping of structs :::
-//TODO: Fill as we get furhter along 
-//
-                  DLL       DLL
-            body0 <-> joint <-> body1 
-                        A
-                        |
-        jointSim <------+
 */
 
 /*
@@ -1023,9 +1008,9 @@ struct ds_ContactConstraint
 	u32 	ccp_count;	 /* Number of contact points in the manifold        */
 	struct ds_ContactConstraintPoint ccp[4];
 
-    //TODO
+    //TODO make mat(3?)
 	void * 	normal_mass;	/* mat2, mat3 or mat4 normal mass for block solver = Inv(J*Inv(M)*J^T) */
-    //TODO
+    //TODO make mat(3?)
 	void * 	inv_normal_mass;/* mat2, mat3 or mat4 inv normal mass for block solver = J*Inv(M)*J^T */
 
 	/* contact base axes */
@@ -1053,10 +1038,6 @@ void ds_PositionConstraintColorInitAll(struct ds_RigidBodyPipeline *pipeline);
 void ds_PositionConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, const u32 color_index);
 
 /*
-=================================================================================================================
-|						Contact Solver				  	      	    	|
-=================================================================================================================
-
 contact_solver_config
 =====================
 Mumerical parameters configuration for solving islands.
@@ -1098,13 +1079,28 @@ struct solverConfig
 
 extern struct solverConfig *g_solver_config;
 
-void    SolverConfigInit(const u32 pgs_iteration_count, const u32 ngs_iteration_count, const u32 warmup_solver, const vec3 gravity, const f32 baumgarte_constant, const f32 max_linear_correction, const f32 max_linear_velocity_magnitude, const f32 max_angular_velocity_magnitude, const f32 linear_dampening, const f32 angular_dampening, const f32 linear_slop, const f32 restitution_threshold, const u32 sleep_enabled, const f32 sleep_time_threshold, const f32 sleep_linear_velocity_sq_limit, const f32 sleep_angular_velocity_sq_limit);
+void    SolverConfigInit(const u32 pgs_iteration_count, 
+                         const u32 ngs_iteration_count, 
+                         const u32 warmup_solver, 
+                         const vec3 gravity, 
+                         const f32 baumgarte_constant, 
+                         const f32 max_linear_correction, 
+                         const f32 max_linear_velocity_magnitude, 
+                         const f32 max_angular_velocity_magnitude, 
+                         const f32 linear_dampening, 
+                         const f32 angular_dampening, 
+                         const f32 linear_slop, 
+                         const f32 restitution_threshold, 
+                         const u32 sleep_enabled, 
+                         const f32 sleep_time_threshold, 
+                         const f32 sleep_linear_velocity_sq_limit, 
+                         const f32 sleep_angular_velocity_sq_limit);
 
 
 /*
 ds_CGraphColor
 ==============
-//TODO this may not be true, we will see.
+//TODO
 ds_CGraphColor stores the relevant physics data of active constraints, tightly packed for quick iterations.
 */
 struct ds_CGraphColor
@@ -1213,45 +1209,46 @@ struct ds_CollisionJobPhase
 u32 ds_CollisionJobPhaseDispatch(const ds_JobId job);
 
 /*
-ds_IslandJobPhase
+ds_SolverJobPhase
 =================
 */
 
-enum ds_IslandJobType
+
+enum ds_SolverJobType
 {
-    ISLAND_JOB_SEED,
-    ISLAND_JOB_SOLVE,
-    ISLAND_JOB_COUNT
+    SOLVER_JOB_SEED,
+    SOLVER_JOB_COUNT
 };
 
-struct ds_IslandSeedJob 
+struct ds_SolverJob 
 {
-    u32     island_first;   /* First index in ACTIVE SET island pool */
-    u32     count;
+    u32     tmp;
 };
 
-//TODO Remove
-struct ds_IslandSolveJob 
-{
-	u32     island;
-	u32     body_count;
-	u32 *   bodies;		    /* bodies simulated in island */ 
-};
-
-struct ds_IslandJobPhase
+struct ds_SolverJobPhase
 {
     struct ds_JobPhase              phase;
 
 	struct ds_RigidBodyPipeline *   pipeline;
 
-    struct ds_IslandSeedJob *       seed_jobs;
-    u32                             seed_count_max;
+    struct ds_SolverJob *           job;
+    u32                             job_count;
 
-    struct ds_IslandSolveJob *      solve_jobs;
-    u32                             solve_count_max;
+    /*
+     * TODO: Somehow setup maps handling fine-grained scheduling:
+     *       1. Each thread checks if any work is left, IF NOT, EXIT.
+     *       2. If it is, check, without commiting to the work
+     *          whether the necessary pre-requisite jobs have been
+     *          completed; if not, YIELD and goto 2.
+     *       3. If pre-requisites are fullfilled, try grab work
+     *       4. If work grabbed, EXECUTE, else goto 1.
+     *
+     *       This should be super lightweight, read an integer,
+     *       check pre-requisites and run work. 
+     */
 };
 
-u32 ds_IslandJobPhaseDispatch(const ds_JobId job);
+u32 ds_SolverJobPhaseDispatch(const ds_JobId job);
 
 /*
 =================================================================================================================
@@ -1415,7 +1412,7 @@ struct ds_RigidBodyPipeline
 	f32			        margin;
 
     struct ds_CollisionJobPhase *   cd_jobs;
-    struct ds_IslandJobPhase *      is_jobs;
+    struct ds_SolverJobPhase *      solver_phase;
 
     struct ds_NumericsConfig        numerics_config;
 };
