@@ -754,6 +754,26 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
 
     fprintf(stderr, "Hello from %s, please write me :)\n", __func__);
 
+    /* 
+     * { iteration(0), color(0), range(0,0) } 
+     * ...
+     * { iteration(0), color0, rangeN } 
+     * { iteration(0), color(1), range(1,0)
+     * ...
+     * { iteration(0), color(C), range(C,N)
+     * { iteration(1), color(0), range(0,0) } 
+     * ...
+     * { iteration(I), color(C), range(C,N)
+     *
+     * => 
+     *  
+     *  Task count: Ic*C*N + Ip*C*N = (8+3)*12*N = 132*N >= 132*ThreadCount
+     *
+     *  TODO: SERIAL COLOR: SINGLE THREADED!!!
+     */
+
+    
+
     return U32_MAX;
 }
 
