@@ -426,7 +426,7 @@ void ds_ContactConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, con
         struct ds_RigidBodyCompute *compute[2] =
         {
             ((cc->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body : active->body_compute_pool.buf + cc->body_sim[0]),
-            ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body : active->body_compute_pool.buf + cc->body_sim[0]),
+            ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body : active->body_compute_pool.buf + cc->body_sim[1]),
         };
 
 		/* solve friction constraints first, since normal constraints are more important */

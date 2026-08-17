@@ -764,6 +764,7 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
 #include <sched.h>
     u32 spin_count = 0;
     u32 range = 0;
+    u32 local_completed = 0;
     u64 local_dependency = 0;
     u64 range_dependency = 0;
     while (1)
@@ -817,8 +818,7 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
         {
             AtomicLoadAcq32(&phase->a_range_completed);
             ds_ContactConstraintColorIterate(pipeline, color_index, cc_low, cc_high); 
-            AtomicAddFetchRel32(&phase->a_range_completed, 1);
-            range += 1;
+            range = AtomicAddFetchRel32(&phase->a_range_completed, 1);
 
             const u32 new_iteration = range / ranges_per_iteration;
             const u32 new_iteration_range = range % ranges_per_iteration;
@@ -826,7 +826,7 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
             const u64 new_dependency = ((u64) new_iteration << 32) | new_color_index;
             if (range_dependency < new_dependency)
             {
-                AtomicCompareExchangeRlxRlx64(&phase->a_range_dependency, &range_dependency, new_dependency);
+                AtomicStoreRlx64(&phase->a_range_dependency, new_dependency);
             }
         }
     }
