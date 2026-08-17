@@ -34,21 +34,21 @@ static void DsSysEnvInit(struct arena *mem)
 	}
 }
 
-void ds_PlatformApiInit(struct arena *mem, const u64 framesize, const u64 scratchsize, const u32 scratch_count)
+void ds_PlatformApiInit(struct arena *mem, const u64 framesize, const u64 scratchsize, const u32 scratch_count, const u32 thread_count)
 {
  	DsSysEnvInit(mem);
 
 #if __DS_PLATFORM__ != __DS_WEB__
 	Log(T_SYSTEM, S_NOTE, "clock resolution (us): %3f", (f64) NsResolution() / 1000.0);
 	Log(T_SYSTEM, S_NOTE, "Rdtsc estimated frequency (GHz): %3f", (f32) TscFrequency() / 1000000000);
-	for (u32 i = 0; i < g_arch_config->logical_core_count; ++i)
+	for (u32 i = 0; i < thread_count; ++i)
 	{
 		Log(T_SYSTEM, S_NOTE, "core %u tsc skew (reltive to core 0): %lu", i, g_tsc_skew[i]);
 	}
 #endif
     const u64 stacksize = 64*1024;
     const u64 initial_deque_size = 4096;
-    ds_JobSchedulerInit(mem, g_arch_config->logical_core_count, stacksize, framesize, scratchsize, scratch_count, initial_deque_size); 
+    ds_JobSchedulerInit(mem, thread_count, stacksize, framesize, scratchsize, scratch_count, initial_deque_size); 
 }
 
 void ds_PlatformApiShutdown(void)

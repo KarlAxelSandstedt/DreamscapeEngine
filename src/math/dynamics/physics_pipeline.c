@@ -98,8 +98,8 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
     ds_JobPhaseAlloc(mem, &pipeline.cd_jobs->phase, COLLISION_JOB_COUNT, ds_CollisionJobPhaseDispatch);
     ds_JobPhaseAlloc(mem, &pipeline.solver_phase->phase, SOLVER_JOB_COUNT, ds_SolverJobPhaseDispatch);
 #ifdef DS_PHYSICS_DEBUG
-	pipeline.debug_count = g_arch_config->logical_core_count;
-	pipeline.debug = malloc(g_arch_config->logical_core_count * sizeof(struct collisionDebug));
+	pipeline.debug_count = g_scheduler->worker_count;
+	pipeline.debug = malloc(g_scheduler->worker_count * sizeof(struct collisionDebug));
     g_collision_debug = pipeline.debug;
 	for (u32 i = 0; i < pipeline.debug_count; ++i)
 	{
@@ -477,7 +477,7 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
         cd_jobs->pipeline = pipeline;
         cd_jobs->overlap = proxy_overlap;
 
-        cd_jobs->seed_count_max = 3*g_arch_config->logical_core_count;
+        cd_jobs->seed_count_max = 3*g_scheduler->worker_count;
         cd_jobs->seed_jobs = ArenaPush(&pipeline->frame, cd_jobs->seed_count_max*sizeof(struct ds_NarrowPhaseSeedJob));
         ds_JobPhaseReserve(&cd_jobs->phase, COLLISION_JOB_SEED, cd_jobs->seed_count_max);
 
@@ -506,7 +506,7 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
         ds_JobPhaseAddFetchRemaining(&cd_jobs->phase, cd_jobs->seed_count_max);
         ds_WSDequePublish(g_scheduler->seed_deque);
         
-        for (u32 i = 1; i < g_arch_config->logical_core_count; ++i)
+        for (u32 i = 1; i < g_scheduler->worker_count; ++i)
         {
             SemaphorePost(&g_scheduler->jobs_are_available);
         }
@@ -750,17 +750,24 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 
 u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
 {
+    ProfZone;
+
     struct ds_SolverJobPhase *phase = (struct ds_SolverJobPhase *) g_scheduler->phase;
     struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
 
-    const u32 ranges_per_color = g_arch_config->logical_core_count;
+    const u32 ranges_per_color = g_scheduler->worker_count;
     /* Serial color only has a single range */
     const u32 ranges_per_iteration = (CG_COLOR_COUNT-1)*ranges_per_color + 1;
     const u32 range_velocity_count = ranges_per_iteration * g_solver_config->pgs_iteration_count;
     
+#include <sched.h>
+    u32 spin_count = 0;
+    u32 range = 0;
+    u64 local_dependency = 0;
+    u64 range_dependency = 0;
     while (1)
     {
-        u32 range = AtomicLoadRlx32(&phase->a_range_next);
+    RETRY:
         if (range >= range_velocity_count)
         {
             break;
@@ -782,22 +789,51 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
         const u32 cc_low = (color_range < cc_extra)
                         ? cc_high - cc_per_range - 1
                         : cc_high - cc_per_range;
-
-        const u32 range_dependency = iteration*ranges_per_iteration + color_index*ranges_per_color;
-        if (AtomicLoadAcq32(&phase->a_range_completed) < range_dependency)
+    
+        range_dependency = ((u64) iteration << 32) + color_index;
+        ProfZoneNamed("Spin");
+        while (local_dependency < range_dependency)
         {
-            continue;
+            local_dependency = AtomicLoadRlx64(&phase->a_range_dependency);
+            if (local_dependency >= range_dependency)
+            {
+                break;
+            }
+            
+            if (spin_count < 32)
+            {
+                __asm__ __volatile__("pause");
+                spin_count += 1;
+            }
+            else
+            {
+                sched_yield();
+                spin_count = 0;
+                ProfZoneEnd;
+                goto RETRY;
+            }
         }
+        ProfZoneEnd;
 
-        if (!AtomicCompareExchangeRlxRlx32(&phase->a_range_next, &range, range+1))
+        if (AtomicCompareExchangeRlxRlx32(&phase->a_range_next, &range, range+1))
         {
-            continue;
+            AtomicLoadAcq32(&phase->a_range_completed);
+            ds_ContactConstraintColorIterate(pipeline, color_index, cc_low, cc_high);
+            AtomicAddFetchRel32(&phase->a_range_completed, 1);
+            range += 1;
+
+            const u32 new_iteration = range / ranges_per_iteration;
+            const u32 new_iteration_range = range % ranges_per_iteration;
+            const u32 new_color_index = new_iteration_range / ranges_per_color;
+            const u64 new_dependency = ((u64) new_iteration << 32) | new_color_index;
+            if (range_dependency < new_dependency)
+            {
+                AtomicCompareExchangeRlxRlx64(&phase->a_range_dependency, &range_dependency, new_dependency);
+            }
         }
-
-        ds_ContactConstraintColorIterate(pipeline, color_index, cc_low, cc_high);
-
-        AtomicAddFetchRel32(&phase->a_range_completed, 1);
     }
+    
+    ProfZoneEnd;
 
     return U32_MAX;
 }
@@ -835,11 +871,21 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
 
         ds_JobPhaseBegin(&solver_phase->phase);
 
+        f32 cc_parallel = 0;
+        const f32 cc_serial = pipeline->cgraph.color[CG_SERIAL_COLOR].contact_constraint_pool.count;
+        for (u32 color_index = 0; color_index < CG_SERIAL_COLOR; ++color_index)
+        {
+            cc_parallel += pipeline->cgraph.color[color_index].contact_constraint_pool.count;
+        }
+
+        fprintf(stderr, "Solver serial percentage: %f\n", 100.0f * cc_serial / (cc_serial+cc_parallel));
+
         solver_phase->pipeline = pipeline;
         AtomicStoreRel32(&solver_phase->a_range_next, 0);
         AtomicStoreRel32(&solver_phase->a_range_completed, 0);
+        AtomicStoreRel64(&solver_phase->a_range_dependency, 0);
 
-        solver_phase->job_count = g_arch_config->logical_core_count;
+        solver_phase->job_count = g_scheduler->worker_count;
         solver_phase->job = ArenaPushZero(&pipeline->frame, solver_phase->job_count*sizeof(struct ds_SolverJob));
         ds_JobPhaseReserve(&solver_phase->phase, SOLVER_JOB_SEED, solver_phase->job_count);
 
@@ -851,7 +897,7 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
         AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, solver_phase->job_count);
         ds_JobPhaseAddFetchRemaining(&solver_phase->phase, solver_phase->job_count);
         ds_WSDequePublish(g_scheduler->seed_deque);
-        for (u32 i = 1; i < g_arch_config->logical_core_count; ++i)
+        for (u32 i = 1; i < g_scheduler->worker_count; ++i)
         {
             SemaphorePost(&g_scheduler->jobs_are_available);
         }

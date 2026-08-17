@@ -48,9 +48,10 @@ int main(int argc, char *argv[])
 	ds_ThreadMasterInit(&persistent, thread_framesize, thread_scratchsize, scratch_count);
 	ds_ArchConfigInit(&persistent);
 
-	ds_StringApiInit(g_arch_config->logical_core_count);
+    const u32 thread_count = g_arch_config->logical_core_count-2;
+	ds_StringApiInit(thread_count);
 
-	ds_PlatformApiInit(&persistent, thread_framesize, thread_scratchsize, scratch_count);
+	ds_PlatformApiInit(&persistent, thread_framesize, thread_scratchsize, scratch_count, thread_count);
 
 	ds_GraphicsApiInit();
 

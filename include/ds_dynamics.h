@@ -1252,6 +1252,8 @@ struct ds_SolverJobPhase
     u8                              pad2[64];
     u32                             a_range_completed;
     u8                              pad3[64];
+    u64                             a_range_dependency;
+    u8                              pad4[64];
 };
 
 u32 ds_SolverJobPhaseDispatch(const ds_JobId job);

@@ -61,7 +61,7 @@ struct cdb *cdb_Alloc(struct arena *mem_persistent, const u32 size)
 	struct cdb *cdb = ArenaPush(mem_persistent, sizeof(struct cdb));
 	ds_Assert(PowerOfTwoCheck(size));
 
-	sat_CacheTPoolAlloc(&cdb->sat_cache_pool, g_arch_config->logical_core_count, size);
+	sat_CacheTPoolAlloc(&cdb->sat_cache_pool, g_scheduler->worker_count, size);
 	cdb->sat_cache_map = sat_CacheTHashMapAlloc(mem_persistent, &cdb->sat_cache_pool, 4096);
 
 	cdb->contact_pool = ds_ContactPoolAlloc(NULL, size, GROWABLE);

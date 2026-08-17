@@ -1168,8 +1168,6 @@ void led_WallSmashSimulationSetup(struct led *led)
 	//const u32 tower1_box_count = 40;
 	//const u32 tower2_box_count = 10;
     //const u32 multibox_count = 5;
-	//const u32 pyramid_layers = 15;
-	//const u32 pyramid_count = 3;
     //const u32 incr_count = 10;
    
     const u32 floor_count = 10;
@@ -1183,7 +1181,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 	const u32 tower2_box_count = 0;
     const u32 multibox_count = 0;
 	const u32 pyramid_layers = 15;
-	const u32 pyramid_count = 1;
+	const u32 pyramid_count = 5;
 	//const u32 pyramid_layers = 0;
 	//const u32 pyramid_count = 0;
     const u32 incr_count = 0;

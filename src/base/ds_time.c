@@ -61,7 +61,7 @@ struct ping_pong_data
 {
 	u32	a_lock;
 	u32	a_iteration_test;
-	u32	Logical_core_count;
+	u32	logical_core_count;
 	u32	iterations;
 	u64 *	tsc_reference;
 	u64 *	tsc_iterator;
@@ -86,7 +86,7 @@ void *PingPongReference(void *data_void)
 
 	u32 c;
 	g_tsc_skew[0] = 0;
-	for (u32 core = 1; core < data->Logical_core_count; ++core)
+	for (u32 core = 1; core < data->logical_core_count; ++core)
 	{
 		AtomicStoreRel32(&data->a_iteration_test, 1);
 
@@ -120,7 +120,7 @@ void *PingPongCoreIterator(void *data_void)
 	struct ping_pong_data *data = data_void;
 
 	u32 c;
-	for (u32 core = 1; core < data->Logical_core_count; ++core)
+	for (u32 core = 1; core < data->logical_core_count; ++core)
 	{
 		cpu_set_t cpuset;
 		CPU_ZERO(&cpuset);
@@ -181,13 +181,13 @@ static void TscEstimateSkew(struct arena *persistent)
 {	
 	struct ping_pong_data data =
 	{
-		.Logical_core_count = (u32) sysconf(_SC_NPROCESSORS_ONLN),
+		.logical_core_count = (u32) sysconf(_SC_NPROCESSORS_ONLN),
 		.iterations = 100000,
 		.a_lock = 0,
 		.a_iteration_test = 0,
 	};
 
-	g_tsc_skew = ArenaPushZero(persistent, data.Logical_core_count*sizeof(u64));
+	g_tsc_skew = ArenaPushZero(persistent, data.logical_core_count*sizeof(u64));
 	ArenaPushRecord(persistent);
 	data.tsc_reference = ArenaPush(persistent, data.iterations * sizeof(u64));
 	data.tsc_iterator = ArenaPush(persistent, data.iterations * sizeof(u64));
@@ -287,7 +287,7 @@ struct ping_pong_data
 {
 	u32	a_lock;
 	u32	a_iteration_test;
-	u32	Logical_core_count;
+	u32	logical_core_count;
 	u32	iterations;
 	u64 *	tsc_reference;
 	u64 *	tsc_iterator;
@@ -313,7 +313,7 @@ static DWORD WINAPI PingPongReference(void *data_void)
 
 	u32 c;
 	g_tsc_skew[0] = 0;
-	for (u32 core = 1; core < data->Logical_core_count; ++core)
+	for (u32 core = 1; core < data->logical_core_count; ++core)
 	{
 		AtomicStoreRel32(&data->a_iteration_test, 1);
 
@@ -349,7 +349,7 @@ static DWORD WINAPI PingPongCoreIterator(void *data_void)
 	const HANDLE thread = GetCurrentThread();
 
 	u32 c;
-	for (u32 core = 1; core < data->Logical_core_count; ++core)
+	for (u32 core = 1; core < data->logical_core_count; ++core)
 	{
 		GROUP_AFFINITY affinity = { 0 };
 		affinity.Group = core / 64;
@@ -411,13 +411,13 @@ static void TscEstimateSkew(struct arena *persistent)
 
 	struct ping_pong_data data =
 	{
-		.Logical_core_count = (u32) info.dwNumberOfProcessors,
+		.logical_core_count = (u32) info.dwNumberOfProcessors,
 		.iterations = 100000,
 		.a_lock = 0,
 		.a_iteration_test = 0,
 	};
 
-	g_tsc_skew = ArenaPushZero(persistent, data.Logical_core_count*sizeof(u64));
+	g_tsc_skew = ArenaPushZero(persistent, data.logical_core_count*sizeof(u64));
 	ArenaPushRecord(persistent);
 	data.tsc_reference = ArenaPush(persistent, data.iterations * sizeof(u64));
 	data.tsc_iterator = ArenaPush(persistent, data.iterations * sizeof(u64));

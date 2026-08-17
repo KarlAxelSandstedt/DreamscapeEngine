@@ -25,9 +25,9 @@
 #define XXH_INLINE_ALL
 #include "xxhash.h"
 
-void ds_StringApiInit(const u32 logical_core_count)
+void ds_StringApiInit(const u32 thread_count)
 {
-	DmgDtoaInit(logical_core_count);
+	DmgDtoaInit(thread_count);
 }
 
 u32 WordbreakCheck(const u32 codepoint)

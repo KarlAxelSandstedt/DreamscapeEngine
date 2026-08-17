@@ -36,7 +36,7 @@ extern "C" {
  *
  *	Initialization needed for dtoa/strtod multithreading locks
  */
-void ds_StringApiInit(const u32 logical_core_count);
+void ds_StringApiInit(const u32 thread_count);
 
 #define Utf8Inline(cstr) (utf8)  		\
 	{					\
