@@ -1029,7 +1029,7 @@ void 	ds_ContactConstraintInitAll(struct ds_RigidBodyPipeline *pipeline);
 /* Warmup all applicable ds_ContactConstraints in the constraint graph */
 void 	ds_ContactConstraintWarmupAll(struct ds_RigidBodyPipeline *pipeline);
 /* Compute a solver iteration over the given color for contact constraints */
-void    ds_ContactConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, const u32 color_index);
+void    ds_ContactConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, const u32 color_index, const u32 cc_low, const u32 cc_high);
 /* Cache contact impulses */
 void ds_ContactConstraintCacheImpulse(struct ds_RigidBodyPipeline *pipeline);
 /* Initialize position constraint data */
@@ -1111,15 +1111,15 @@ struct ds_CGraphColor
     ds_CPool(ds_JointSim)           joint_sim_pool;
 };
 
-#define CG_INVALID_COLOR        CG_COLOR_COUNT
 #define CG_COLOR_COUNT          12
-#define CG_SERIAL_COLOR         0 
 #define CG_STATIC_COLOR_COUNT   4
-#define CG_STATIC_COLOR_FIRST   1
-#define CG_STATIC_COLOR_LAST    (CG_STATIC_COLOR_FIRST + CG_STATIC_COLOR_COUNT - 1)
 #define CG_DYNAMIC_COLOR_COUNT  (CG_COLOR_COUNT - CG_STATIC_COLOR_COUNT - 1) 
-#define CG_DYNAMIC_COLOR_FIRST  (1 + CG_STATIC_COLOR_COUNT)
-#define CG_DYNAMIC_COLOR_LAST  (CG_DYNAMIC_COLOR_FIRST + CG_DYNAMIC_COLOR_COUNT - 1)
+#define CG_STATIC_COLOR_FIRST   0
+#define CG_STATIC_COLOR_LAST    (CG_STATIC_COLOR_FIRST + CG_STATIC_COLOR_COUNT - 1)
+#define CG_DYNAMIC_COLOR_FIRST  (CG_STATIC_COLOR_LAST + 1)
+#define CG_DYNAMIC_COLOR_LAST   (CG_DYNAMIC_COLOR_FIRST + CG_DYNAMIC_COLOR_COUNT - 1)
+#define CG_SERIAL_COLOR         (CG_COLOR_COUNT-1) 
+#define CG_INVALID_COLOR        CG_COLOR_COUNT
 
 /*
 ds_CGraph
@@ -1208,11 +1208,11 @@ struct ds_CollisionJobPhase
 
 u32 ds_CollisionJobPhaseDispatch(const ds_JobId job);
 
+
 /*
 ds_SolverJobPhase
 =================
 */
-
 
 enum ds_SolverJobType
 {
@@ -1222,7 +1222,7 @@ enum ds_SolverJobType
 
 struct ds_SolverJob 
 {
-    u32     tmp;
+    u32 tmp;
 };
 
 struct ds_SolverJobPhase
@@ -1246,6 +1246,12 @@ struct ds_SolverJobPhase
      *       This should be super lightweight, read an integer,
      *       check pre-requisites and run work. 
      */
+
+    u8                              pad1[64];
+    u32                             a_range_next;
+    u8                              pad2[64];
+    u32                             a_range_completed;
+    u8                              pad3[64];
 };
 
 u32 ds_SolverJobPhaseDispatch(const ds_JobId job);

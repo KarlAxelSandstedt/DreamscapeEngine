@@ -751,28 +751,53 @@ static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
 {
     struct ds_SolverJobPhase *phase = (struct ds_SolverJobPhase *) g_scheduler->phase;
+    struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
 
-    fprintf(stderr, "Hello from %s, please write me :)\n", __func__);
-
-    /* 
-     * { iteration(0), color(0), range(0,0) } 
-     * ...
-     * { iteration(0), color0, rangeN } 
-     * { iteration(0), color(1), range(1,0)
-     * ...
-     * { iteration(0), color(C), range(C,N)
-     * { iteration(1), color(0), range(0,0) } 
-     * ...
-     * { iteration(I), color(C), range(C,N)
-     *
-     * => 
-     *  
-     *  Task count: Ic*C*N + Ip*C*N = (8+3)*12*N = 132*N >= 132*ThreadCount
-     *
-     *  TODO: SERIAL COLOR: SINGLE THREADED!!!
-     */
-
+    const u32 ranges_per_color = g_arch_config->logical_core_count;
+    /* Serial color only has a single range */
+    const u32 ranges_per_iteration = (CG_COLOR_COUNT-1)*ranges_per_color + 1;
+    const u32 range_velocity_count = ranges_per_iteration * g_solver_config->pgs_iteration_count;
     
+    while (1)
+    {
+        u32 range = AtomicLoadRlx32(&phase->a_range_next);
+        if (range >= range_velocity_count)
+        {
+            break;
+        }
+
+        const u32 iteration = range / ranges_per_iteration;
+        const u32 iteration_range = range % ranges_per_iteration;
+        const u32 color_index = iteration_range / ranges_per_color;
+        const u32 color_range = iteration_range % ranges_per_color;
+
+        const struct ds_CGraphColor *color = pipeline->cgraph.color + color_index; 
+
+        const u32 cc_per_range = color->contact_constraint_pool.count / ranges_per_color;
+        const u32 cc_extra = color->contact_constraint_pool.count % ranges_per_color;
+       
+        const u32 cc_high = (color_range < cc_extra)
+                        ? (color_range + 1)*cc_per_range + color_range 
+                        : (color_range + 1)*cc_per_range + cc_extra;
+        const u32 cc_low = (color_range < cc_extra)
+                        ? cc_high - cc_per_range - 1
+                        : cc_high - cc_per_range;
+
+        const u32 range_dependency = iteration*ranges_per_iteration + color_index*ranges_per_color;
+        if (AtomicLoadAcq32(&phase->a_range_completed) < range_dependency)
+        {
+            continue;
+        }
+
+        if (!AtomicCompareExchangeRlxRlx32(&phase->a_range_next, &range, range+1))
+        {
+            continue;
+        }
+
+        ds_ContactConstraintColorIterate(pipeline, color_index, cc_low, cc_high);
+
+        AtomicAddFetchRel32(&phase->a_range_completed, 1);
+    }
 
     return U32_MAX;
 }
@@ -789,20 +814,54 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
         ds_ContactConstraintWarmupAll(pipeline);
     }
 
-	for (u32 i = 0; i < g_solver_config->pgs_iteration_count; ++i)
-	{
-        for (u32 c = CG_STATIC_COLOR_FIRST; c <= CG_STATIC_COLOR_LAST; ++c)
+	//for (u32 i = 0; i < g_solver_config->pgs_iteration_count; ++i)
+	//{
+    //    for (u32 c = CG_STATIC_COLOR_FIRST; c <= CG_STATIC_COLOR_LAST; ++c)
+    //    {
+    //        ds_ContactConstraintColorIterate(pipeline, c);
+    //    }
+
+    //    for (u32 c = CG_DYNAMIC_COLOR_FIRST; c <= CG_DYNAMIC_COLOR_LAST; ++c)
+    //    {
+    //        ds_ContactConstraintColorIterate(pipeline, c);
+    //    }
+
+    //    ds_ContactConstraintColorIterate(pipeline, CG_SERIAL_COLOR);
+	//}
+
+    struct ds_SolverJobPhase *solver_phase = pipeline->solver_phase;
+    {
+    	ProfZoneNamed("JobPhase(Solve)");
+
+        ds_JobPhaseBegin(&solver_phase->phase);
+
+        solver_phase->pipeline = pipeline;
+        AtomicStoreRel32(&solver_phase->a_range_next, 0);
+        AtomicStoreRel32(&solver_phase->a_range_completed, 0);
+
+        solver_phase->job_count = g_arch_config->logical_core_count;
+        solver_phase->job = ArenaPushZero(&pipeline->frame, solver_phase->job_count*sizeof(struct ds_SolverJob));
+        ds_JobPhaseReserve(&solver_phase->phase, SOLVER_JOB_SEED, solver_phase->job_count);
+
+        for (u32 i = 0; i < solver_phase->job_count; ++i)
         {
-            ds_ContactConstraintColorIterate(pipeline, c);
+            ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(SOLVER_JOB_SEED, i));
         }
 
-        for (u32 c = CG_DYNAMIC_COLOR_FIRST; c <= CG_DYNAMIC_COLOR_LAST; ++c)
+        AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, solver_phase->job_count);
+        ds_JobPhaseAddFetchRemaining(&solver_phase->phase, solver_phase->job_count);
+        ds_WSDequePublish(g_scheduler->seed_deque);
+        for (u32 i = 1; i < g_arch_config->logical_core_count; ++i)
         {
-            ds_ContactConstraintColorIterate(pipeline, c);
+            SemaphorePost(&g_scheduler->jobs_are_available);
         }
 
-        ds_ContactConstraintColorIterate(pipeline, CG_SERIAL_COLOR);
-	}
+	    ds_MasterRunAvailableJobs();
+        
+        ds_JobPhaseEnd();
+
+    	ProfZoneEnd;
+    }
 
     ds_ContactConstraintCacheImpulse(pipeline);
 
@@ -834,47 +893,6 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
 
     ds_RigidBodyUpdateOrientationAll(pipeline);
         
-    struct ds_SolverJobPhase *solver_phase = pipeline->solver_phase;
-    {
-    	ProfZoneNamed("JobPhase(Solve)");
-
-        ds_JobPhaseBegin(&solver_phase->phase);
-
-        solver_phase->pipeline = pipeline;
-
-        solver_phase->job_count = g_arch_config->logical_core_count;
-        solver_phase->job = ArenaPushZero(&pipeline->frame, solver_phase->job_count*sizeof(struct ds_SolverJob));
-        ds_JobPhaseReserve(&solver_phase->phase, SOLVER_JOB_SEED, solver_phase->job_count);
-
-        for (u32 i = 0; i < solver_phase->job_count; ++i)
-        {
-    //        u32 high = low + islands_per_seed;
-    //        if (extra)
-    //        {
-    //            high += 1;
-    //            extra -= 1;
-    //        }
-    //        is_jobs->seed_jobs[i].island_first = low;
-    //        is_jobs->seed_jobs[i].count = high - low;
-    //        low = high;
-            ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(SOLVER_JOB_SEED, i));
-        }
-
-        AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, solver_phase->job_count);
-        ds_JobPhaseAddFetchRemaining(&solver_phase->phase, solver_phase->job_count);
-        ds_WSDequePublish(g_scheduler->seed_deque);
-        for (u32 i = 1; i < g_arch_config->logical_core_count; ++i)
-        {
-            SemaphorePost(&g_scheduler->jobs_are_available);
-        }
-
-	    ds_MasterRunAvailableJobs();
-        
-        ds_JobPhaseEnd();
-
-    	ProfZoneEnd;
-    }
-
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     ds_BitSetClear(&pipeline->island_high_energy_set, 0);
     pipeline->island_to_split = DS_ID_NULL; 

@@ -389,7 +389,7 @@ void ds_ContactConstraintWarmupAll(struct ds_RigidBodyPipeline *pipeline)
     ProfZoneEnd;
 }
 
-void ds_ContactConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, const u32 color_index)
+void ds_ContactConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, const u32 color_index, const u32 cc_low, const u32 cc_high)
 {
     ProfZone;
 
@@ -400,10 +400,12 @@ void ds_ContactConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, con
 	vec3 tmp1, tmp2, tmp3;
 	vec3 relative_velocity;
 
-    for (u32 ci = 0; ci < color->contact_constraint_pool.count; ++ci)
+    //TODO Cannot update static body in multithreaded environment
+
+    for (u32 cci = cc_low; cci < cc_high; ++cci)
 	{			
-        const struct ds_Contact *c = pipeline->cdb->contact_pool.buf + color->contact_pool.buf[ci];
-	    struct ds_ContactConstraint *cc = color->contact_constraint_pool.buf + ci;
+        const struct ds_Contact *c = pipeline->cdb->contact_pool.buf + color->contact_pool.buf[cci];
+	    struct ds_ContactConstraint *cc = color->contact_constraint_pool.buf + cci;
 
         struct ds_RigidBodySim *sim[2] =
         {
