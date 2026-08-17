@@ -104,7 +104,7 @@ not as a requirement the platform must adhere to.
 */
 
 #define DS_SMALL_ALLOCATION_LIMIT       (1024*1024 - 1)
-#define DS_SMALL_ALLOCATION_ALIGNMENT   (32)
+#define DS_SMALL_ALLOCATION_ALIGNMENT   (DS_CACHE_LINE)
 
 #if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
     #define ds_SmallAlloc(address_ptr, size)  posix_memalign(address_ptr, DS_SMALL_ALLOCATION_ALIGNMENT, size)
@@ -326,13 +326,14 @@ do                                                                              
     const u64 __size = sizeof((pool).buf[0])*(__length+1);                              \
 	if (mem)                                                                            \
 	{                                                                                   \
-		__buf = ArenaPush((mem), __size);                                               \
+		__buf = ArenaPushAligned((mem), __size, DS_SMALL_ALLOCATION_ALIGNMENT);         \
 	}                                                                                   \
 	else                                                                                \
 	{                                                                                   \
         ds_SmallAlloc(&__buf, __size);                                                  \
 	}                                                                                   \
                                                                                         \
+    ds_Assert((u64) __buf % DS_CACHE_LINE == 0);                                        \
 	if (__buf)                                                                          \
 	{                                                                                   \
 		(pool).buf = __buf;                                                             \

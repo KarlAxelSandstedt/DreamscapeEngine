@@ -24,6 +24,16 @@
 struct solverConfig config_storage = { 0 };
 struct solverConfig *g_solver_config = &config_storage;
 
+static ds_ThreadLocal struct ds_RigidBodyCompute tl_static_body = 
+{
+    .linear_velocity = { 0, 0, 0 },
+    .angular_velocity = { 0, 0, 0 },
+    .center_of_mass = { 0, 0, 0, },
+    .rotation = { 0, 0, 0, 1 },
+    .flags = 0,
+};
+
+
 void SolverConfigInit(const u32 pgs_iteration_count, const u32 ngs_iteration_count, const u32 warmup_solver, const vec3 gravity, const f32 baumgarte_constant, const f32 max_linear_correction, const f32 max_linear_velocity_magnitude, const f32 max_angular_velocity_magnitude, const f32 linear_dampening, const f32 angular_dampening, const f32 linear_slop, const f32 restitution_threshold, const u32 sleep_enabled, const f32 sleep_time_threshold, const f32 sleep_linear_velocity_sq_limit, const f32 sleep_angular_velocity_sq_limit)
 {
 	ds_Assert(pgs_iteration_count >= 1);
@@ -415,8 +425,8 @@ void ds_ContactConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, con
 
         struct ds_RigidBodyCompute *compute[2] =
         {
-            active->body_compute_pool.buf + cc->body_sim[0],
-            active->body_compute_pool.buf + cc->body_sim[1],
+            ((cc->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body : active->body_compute_pool.buf + cc->body_sim[0]),
+            ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body : active->body_compute_pool.buf + cc->body_sim[0]),
         };
 
 		/* solve friction constraints first, since normal constraints are more important */
@@ -442,13 +452,15 @@ void ds_ContactConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, con
 
 			    /* update body velocities */
 			    Vec3Scale(tmp1, cc->tangent[k], delta_impulse);
-			    Vec3TranslateScaled(compute[0]->linear_velocity, tmp1, -sim[0]->inv_mass);
-			    Vec3TranslateScaled(compute[1]->linear_velocity, tmp1,  sim[1]->inv_mass);
+
 			    Vec3Cross(tmp2, ccp->r[0], tmp1);
 			    Mat3VecMul(tmp3, sim[0]->world_inv_inertia, tmp2);
+			    Vec3TranslateScaled(compute[0]->linear_velocity, tmp1, -sim[0]->inv_mass);
 			    Vec3TranslateScaled(compute[0]->angular_velocity, tmp3, -1.0f);
+
 			    Vec3Cross(tmp2, ccp->r[1], tmp1);
 			    Mat3VecMul(tmp3, sim[1]->world_inv_inertia, tmp2);
+			    Vec3TranslateScaled(compute[1]->linear_velocity, tmp1,  sim[1]->inv_mass);
 			    Vec3Translate(compute[1]->angular_velocity, tmp3);
             }
 		}
@@ -473,13 +485,15 @@ void ds_ContactConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, con
 
 			/* update body velocities */
 			Vec3Scale(tmp1, cc->normal, delta_impulse);
-			Vec3TranslateScaled(compute[0]->linear_velocity, tmp1, -sim[0]->inv_mass);
-			Vec3TranslateScaled(compute[1]->linear_velocity, tmp1,  sim[1]->inv_mass);
+
 			Vec3Cross(tmp2, ccp->r[0], tmp1);
 			Mat3VecMul(tmp3, sim[0]->world_inv_inertia, tmp2);
+			Vec3TranslateScaled(compute[0]->linear_velocity, tmp1, -sim[0]->inv_mass);
 			Vec3TranslateScaled(compute[0]->angular_velocity, tmp3, -1.0f);
+
 			Vec3Cross(tmp2, ccp->r[1], tmp1);
 			Mat3VecMul(tmp3, sim[1]->world_inv_inertia, tmp2);
+			Vec3TranslateScaled(compute[1]->linear_velocity, tmp1, sim[1]->inv_mass);
 			Vec3Translate(compute[1]->angular_velocity, tmp3);
         }
     }

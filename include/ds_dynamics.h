@@ -378,6 +378,8 @@ struct ds_RigidBodyCompute
     vec3            center_of_mass;         /* world-space  */
     quat            rotation;
     u32             flags;
+
+    u8              pad[8];
 };
 DEFINE_CPOOL_STRUCT(ds_RigidBodyCompute);
 

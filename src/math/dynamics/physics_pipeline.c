@@ -30,6 +30,7 @@ struct collisionDebug *g_collision_debug;
 void ds_DynamicsStaticAssert(void)
 {
     ds_StaticAssert(sizeof(struct ds_NarrowPhaseJob) == DS_CACHE_LINE, "");
+    ds_StaticAssert(sizeof(struct ds_RigidBodyCompute) == DS_CACHE_LINE, "");
 }
 
 struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct strdb *cshape_db, struct strdb *prefab_db)
@@ -755,7 +756,7 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
     struct ds_SolverJobPhase *phase = (struct ds_SolverJobPhase *) g_scheduler->phase;
     struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
 
-    const u32 ranges_per_color = g_scheduler->worker_count;
+    const u32 ranges_per_color = 3*g_scheduler->worker_count;
     /* Serial color only has a single range */
     const u32 ranges_per_iteration = (CG_COLOR_COUNT-1)*ranges_per_color + 1;
     const u32 range_velocity_count = ranges_per_iteration * g_solver_config->pgs_iteration_count;
@@ -791,7 +792,6 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
                         : cc_high - cc_per_range;
     
         range_dependency = ((u64) iteration << 32) + color_index;
-        ProfZoneNamed("Spin");
         while (local_dependency < range_dependency)
         {
             local_dependency = AtomicLoadRlx64(&phase->a_range_dependency);
@@ -800,7 +800,7 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
                 break;
             }
             
-            if (spin_count < 32)
+            if (spin_count < 64)
             {
                 __asm__ __volatile__("pause");
                 spin_count += 1;
@@ -809,16 +809,14 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
             {
                 sched_yield();
                 spin_count = 0;
-                ProfZoneEnd;
                 goto RETRY;
             }
         }
-        ProfZoneEnd;
 
         if (AtomicCompareExchangeRlxRlx32(&phase->a_range_next, &range, range+1))
         {
             AtomicLoadAcq32(&phase->a_range_completed);
-            ds_ContactConstraintColorIterate(pipeline, color_index, cc_low, cc_high);
+            ds_ContactConstraintColorIterate(pipeline, color_index, cc_low, cc_high); 
             AtomicAddFetchRel32(&phase->a_range_completed, 1);
             range += 1;
 

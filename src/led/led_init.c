@@ -164,7 +164,7 @@ struct led *led_Alloc(void)
     ds_Assert(slot.index == LED_NODE_ROOT);
 
 	g_editor->body_color_mode = RB_COLOR_MODE_BODY;
-	g_editor->pending_body_color_mode = RB_COLOR_MODE_COLLISION;
+	g_editor->pending_body_color_mode = RB_COLOR_MODE_ISLAND;
 	Vec4Set(g_editor->collision_color, 1.0f, 0.1f, 0.1f, 0.5f);
 	Vec4Set(g_editor->static_color, 0.6f, 0.6f, 0.6f, 0.5f);
 	Vec4Set(g_editor->sleep_color, 113.0f/256.0f, 241.0f/256.0f, 157.0f/256.0f, 0.7f);

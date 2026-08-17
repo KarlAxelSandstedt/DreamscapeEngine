@@ -1180,15 +1180,17 @@ void led_WallSmashSimulationSetup(struct led *led)
 	const u32 tower1_box_count = 0;
 	const u32 tower2_box_count = 0;
     const u32 multibox_count = 0;
-	const u32 pyramid_layers = 15;
-	const u32 pyramid_count = 5;
+	const u32 pyramid_layers = 30;
+	const u32 pyramid_count = 1;
+	//const u32 pyramid_layers = 15;
+	//const u32 pyramid_count = 5;
 	//const u32 pyramid_layers = 0;
 	//const u32 pyramid_count = 0;
     const u32 incr_count = 0;
 	const u32 bodies = tower1_box_count + tower2_box_count + 3 + pyramid_layers*(pyramid_layers+1) / 2;
 
 	/* Setup rigid bodies */
-	const f32 box_friction = 0.8f;
+	const f32 box_friction = 1.0f;
 	const f32 ramp_friction = 0.1f;
 	const f32 sphere_friction = 0.1f;
 	const f32 floor_friction = 0.8f;
@@ -1243,7 +1245,8 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_CollisionCapsuleAdd(led, id, 0.5f, 1.0f);
 
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_box");
-    const vec3 box_hw = { box_side / 2.0f, box_side, box_side / 2.0f };
+    //const vec3 box_hw = { box_side / 2.0f, box_side, box_side / 2.0f };
+    const vec3 box_hw = { box_side / 2.0f, box_side / 4.0f, box_side / 2.0f };
     led_CollisionBoxAdd(led, id, box_hw);
 
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_sphere");
@@ -1327,7 +1330,7 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_ShapePrefabAttachRenderMesh(led, Utf8Inline("s_ramp"), Utf8Inline("rm_ramp"));
 
     ds_Transform transform = ds_TransformIdentity();
-    led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_map"), Utf8Inline("s_map"), Utf8Inline("l_s_map"), &transform);
+    //led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_map"), Utf8Inline("s_map"), Utf8Inline("l_s_map"), &transform);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_floor"), Utf8Inline("s_floor"), Utf8Inline("l_s_floor"), &transform);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_box"), Utf8Inline("s_box"), Utf8Inline("l_s_box"), &transform);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_capsule"), Utf8Inline("s_capsule"), Utf8Inline("l_s_capsule"), &transform);
@@ -1379,7 +1382,8 @@ void led_WallSmashSimulationSetup(struct led *led)
     const vec3 multibox_base_translation = { 0.0f, floor_translation[1] + 1.0f, floor_translation[2] / 2.0f -10.0f };
     const vec3 multidsphere_base_translation = { 0.0f, floor_translation[1] + 1.0f, floor_translation[2] / 2.0f -14.0f };
     const vec3 map_translation = { 0.0f, -25.0f, 0.0f };
-    floor_translation[1] -= 50.0f;
+    //floor_translation[1] -= 50.0f;
+    floor_translation[1] -= 1.0f;
 
     id = Utf8Cstr(sys_win->ui->mem_frame, "led_map");
     tagged_id = led_NodeAdd(led, id, Utf8Empty());
