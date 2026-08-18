@@ -761,76 +761,44 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
     const u32 ranges_per_iteration = (CG_COLOR_COUNT-1)*ranges_per_color + 1;
     const u32 range_velocity_count = ranges_per_iteration * g_solver_config->pgs_iteration_count;
     
-#include <sched.h>
-    u32 spin_count = 0;
     u32 range = 0;
     u32 local_completed = 0;
-    u64 local_dependency = 0;
-    u64 range_dependency = 0;
     while (1)
     {
-    RETRY:
         if (range >= range_velocity_count)
         {
             break;
         }
 
-        const u32 iteration = range / ranges_per_iteration;
         const u32 iteration_range = range % ranges_per_iteration;
         const u32 color_index = iteration_range / ranges_per_color;
         const u32 color_range = iteration_range % ranges_per_color;
 
-        const struct ds_CGraphColor *color = pipeline->cgraph.color + color_index; 
-
-        const u32 cc_per_range = color->contact_constraint_pool.count / ranges_per_color;
-        const u32 cc_extra = color->contact_constraint_pool.count % ranges_per_color;
-       
-        const u32 cc_high = (color_range < cc_extra)
-                        ? (color_range + 1)*cc_per_range + color_range 
-                        : (color_range + 1)*cc_per_range + cc_extra;
-        const u32 cc_low = (color_range < cc_extra)
-                        ? cc_high - cc_per_range - 1
-                        : cc_high - cc_per_range;
-    
-        range_dependency = ((u64) iteration << 32) + color_index;
-        while (local_dependency < range_dependency)
+        const u32 range_required = (range / ranges_per_iteration)*ranges_per_iteration + color_index*ranges_per_color;
+        while (AtomicLoadAcq32(&phase->a_range_completed) < range_required)
         {
-            local_dependency = AtomicLoadRlx64(&phase->a_range_dependency);
-            if (local_dependency >= range_dependency)
-            {
-                break;
-            }
-            
-            if (spin_count < 64)
-            {
-                __asm__ __volatile__("pause");
-                spin_count += 1;
-            }
-            else
-            {
-                sched_yield();
-                spin_count = 0;
-                goto RETRY;
-            }
+            ds_CpuPause(1);
         }
 
         if (AtomicCompareExchangeRlxRlx32(&phase->a_range_next, &range, range+1))
         {
-            AtomicLoadAcq32(&phase->a_range_completed);
+            const struct ds_CGraphColor *color = pipeline->cgraph.color + color_index; 
+
+            const u32 cc_per_range = color->contact_constraint_pool.count / ranges_per_color;
+            const u32 cc_extra = color->contact_constraint_pool.count % ranges_per_color;
+
+            const u32 cc_high = (color_range < cc_extra)
+                            ? (color_range + 1)*cc_per_range + color_range + 1
+                            : (color_range + 1)*cc_per_range + cc_extra;
+            const u32 cc_low = (color_range < cc_extra)
+                            ? cc_high - cc_per_range - 1
+                            : cc_high - cc_per_range;
+
             ds_ContactConstraintColorIterate(pipeline, color_index, cc_low, cc_high); 
             range = AtomicAddFetchRel32(&phase->a_range_completed, 1);
-
-            const u32 new_iteration = range / ranges_per_iteration;
-            const u32 new_iteration_range = range % ranges_per_iteration;
-            const u32 new_color_index = new_iteration_range / ranges_per_color;
-            const u64 new_dependency = ((u64) new_iteration << 32) | new_color_index;
-            if (range_dependency < new_dependency)
-            {
-                AtomicStoreRlx64(&phase->a_range_dependency, new_dependency);
-            }
         }
     }
-    
+
     ProfZoneEnd;
 
     return U32_MAX;

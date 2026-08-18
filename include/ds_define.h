@@ -37,10 +37,20 @@ extern "C" {
 
 #if defined(__linux__)
 	#define __DS_PLATFORM__ 	__DS_LINUX__
+    #if defined(__x86_64__)
+        #define __DS_X64__
+    #else 
+        #error
+    #endif
 #elif defined(__EMSCRIPTEN__)
 	#define __DS_PLATFORM__ 	__DS_WEB__
 #elif defined(_WIN64)
 	#define __DS_PLATFORM__ 	__DS_WIN64__
+    #if defined(_M_X64)
+        #define __DS_X64__
+    #else 
+        #error
+    #endif
 #endif
 
 #define __GAPI__ __DS_SDL3__
@@ -55,6 +65,7 @@ extern "C" {
 	#define ds_StaticAssert(ds_Assertion, str)	_Static_assert(ds_Assertion, str)
 	#define ds_Align(alignment) __attribute__((aligned(alignment)))
     #define ds_AcqRelCompilerBarrier __asm__ __volatile__ ("" ::: "memory")
+    #define ds_CpuPause(count)
 	#undef DS_PROFILE
 
 #elif defined(__clang__)
@@ -100,27 +111,42 @@ extern "C" {
 	#define DS_PHYSICS_DEBUG	/* Physics debug events, physics debug rendering	*/
 	#define DS_ASSERT_DEBUG 	/* Asserts on 						*/
 	#define DS_GL_DEBUG		/* graphics debugging */
-
-	#if __DS_PLATFORM__ == __DS_LINUX__
-
-		#ifdef __x86_64__
-			#define Breakpoint(condition) if (!(condition)) { } else { asm ("int3; nop"); }
-		#endif 
-	
-	#elif __DS_PLATFORM__ == __DS_WEB__
-
-		void emscripten_debugger(void);
-		#define Breakpoint(condition) if (!(condition)) { } else { emscripten_debugger(); }
-
-	#elif __DS_PLATFORM__ == __DS_WIN64__
-
-		#ifdef _M_X64
-			#define Breakpoint(condition) if (!(condition)) { } else { __debugbreak(); }
-		#endif 
-	#endif
-#else
-	#define Breakpoint(condition)
 #endif
+
+#if __DS_PLATFORM__ == __DS_LINUX__
+
+	#ifdef __DS_X64__
+		#define Breakpoint(condition) if (!(condition)) { } else { asm ("int3; nop"); }
+        #define ds_CpuPause(__cpu_pause_count)                                                          \
+        {                                                                                               \
+            for (u32 __cpu_pause_index = 0; __cpu_pause_index < __cpu_pause_count; ++__cpu_pause_index) \
+            {                                                                                           \
+                __asm__ __volatile__("pause");                                                          \
+            }                                                                                           \
+        }
+	#endif 
+
+#elif __DS_PLATFORM__ == __DS_WEB__
+
+	void emscripten_debugger(void);
+	#define Breakpoint(condition) if (!(condition)) { } else { emscripten_debugger(); }
+    #define ds_CpuPause(count)                                                                      
+
+#elif __DS_PLATFORM__ == __DS_WIN64__
+
+	#ifdef __DS_X64__
+        #include <intrin.h>
+		#define Breakpoint(condition) if (!(condition)) { } else { __debugbreak(); }
+        #define ds_CpuPause(__cpu_pause_count)                                                          \
+        {                                                                                               \
+            for (u32 __cpu_pause_index = 0; __cpu_pause_index < __cpu_pause_count; ++__cpu_pause_index) \
+            {                                                                                           \
+                __mm_pause();                                                                           \
+            }                                                                                           \
+        }
+	#endif 
+#endif
+
 
 #ifdef __cplusplus
 } 
