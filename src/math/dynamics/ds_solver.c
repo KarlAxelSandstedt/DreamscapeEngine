@@ -24,13 +24,26 @@
 struct solverConfig config_storage = { 0 };
 struct solverConfig *g_solver_config = &config_storage;
 
-static ds_ThreadLocal struct ds_RigidBodyCompute tl_static_body = 
+static ds_ThreadLocal struct ds_RigidBodyCompute tl_static_body_compute = 
 {
     .linear_velocity = { 0, 0, 0 },
     .angular_velocity = { 0, 0, 0 },
     .center_of_mass = { 0, 0, 0, },
     .rotation = { 0, 0, 0, 1 },
     .flags = 0,
+};
+
+static ds_ThreadLocal struct ds_RigidBodySim tl_static_body_sim = 
+{
+    .body = 0,
+    .flags = 0,
+    .inv_mass = 0,
+    .world.position = { 0, 0, 0, },
+    .world.rotation = { 0, 0, 0, 1 },
+    .local_center_of_mass = { 0, 0, 0 },
+    .world_center_of_mass = { 0, 0, 0 },
+    .local_inv_inertia = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }},
+    .world_inv_inertia = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }},
 };
 
 
@@ -99,7 +112,7 @@ void ds_RigidBodyUpdateSolverDataAll(struct ds_RigidBodyPipeline *pipeline)
 	const f32 angular_damp = 1.0f / (1.0f + g_solver_config->angular_dampening * pipeline->timestep);
 
     mat3 tmp, rot, rot_inv;
-    for (u32 i = 1; i < active->body_sim_pool.count; ++i)
+    for (u32 i = 0; i < active->body_sim_pool.count; ++i)
     {
         struct ds_RigidBodySim *sim = active->body_sim_pool.buf + i;
         struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + i;
@@ -129,7 +142,7 @@ void ds_RigidBodyIntegrateVelocitiesAll(struct ds_RigidBodyPipeline *pipeline)
 
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
 
-    for (u32 i = 1; i < active->body_sim_pool.count; ++i)
+    for (u32 i = 0; i < active->body_sim_pool.count; ++i)
     {
         struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + i;
 
@@ -162,7 +175,7 @@ void ds_RigidBodyUpdateOrientationAll(struct ds_RigidBodyPipeline *pipeline)
 
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
 
-    for (u32 i = 1; i < active->body_sim_pool.count; ++i)
+    for (u32 i = 0; i < active->body_sim_pool.count; ++i)
     {
         struct ds_RigidBodySim *sim = active->body_sim_pool.buf + i;
         struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + i;
@@ -410,8 +423,6 @@ void ds_ContactConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, con
 	vec3 tmp1, tmp2, tmp3;
 	vec3 relative_velocity;
 
-    //TODO Cannot update static body in multithreaded environment
-
     for (u32 cci = cc_low; cci < cc_high; ++cci)
 	{			
         const struct ds_Contact *c = pipeline->cdb->contact_pool.buf + color->contact_pool.buf[cci];
@@ -419,14 +430,14 @@ void ds_ContactConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, con
 
         struct ds_RigidBodySim *sim[2] =
         {
-            active->body_sim_pool.buf + cc->body_sim[0],
-            active->body_sim_pool.buf + cc->body_sim[1],
+            ((cc->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + cc->body_sim[0]),
+            ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + cc->body_sim[1]),       
         };
 
         struct ds_RigidBodyCompute *compute[2] =
         {
-            ((cc->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body : active->body_compute_pool.buf + cc->body_sim[0]),
-            ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body : active->body_compute_pool.buf + cc->body_sim[1]),
+            ((cc->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_compute : active->body_compute_pool.buf + cc->body_sim[0]),
+            ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_compute : active->body_compute_pool.buf + cc->body_sim[1]),
         };
 
 		/* solve friction constraints first, since normal constraints are more important */

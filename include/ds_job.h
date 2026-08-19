@@ -307,13 +307,29 @@ struct ds_ParallelFor
     u8  pad3[DS_CACHE_LINE - 4];
 };
 
-/* Allocate chain of parallel-for structures and setup dummy at end of array. */
-struct ds_ParallelFor *ds_ParallelForAlloc(struct arena *frame, const u32 count);
 
-#define ds_ParallelFor(_pf_, _index_)           \
-for (u32 _index_, _count_ = PFWait(_pf_);       \
-        ((_index_) = PFNext(_pf_)) < _count_;   \
-        PFComplete(_pf_, _count_))              
+/*
+ds_ParallelForChain
+===================
+TODO
+*/
+
+struct ds_ParallelForChain
+{
+    u32                     count;
+    struct ds_ParallelFor * parallel_for;
+};
+
+/* Allocate chain of parallel-for structures and setup dummy at end of array. */
+struct ds_ParallelForChain  ds_ParallelForChainAlloc(struct arena *frame, const u32 count);
+/* Wait until the last parallel-for has finished in the chain. */
+void                        ds_ParallelForChainWait(struct ds_ParallelForChain *chain);
+
+
+#define ds_ParallelFor(_chain_addr_, _pf_index_, _index_)                               \
+for (u32 _index_, _count_ = PFWait((_chain_addr_)->parallel_for + (_pf_index_));        \
+        ((_index_) = PFNext((_chain_addr_)->parallel_for + (_pf_index_))) < _count_;    \
+        PFComplete((_chain_addr_)->parallel_for + (_pf_index_), _count_))              
 
 #include <sched.h>
 static inline u32 PFWait(struct ds_ParallelFor *pf) 
@@ -330,7 +346,6 @@ static inline u32 PFWait(struct ds_ParallelFor *pf)
             spin_count = 128;
         }
     }
-
 
     const u32 count = AtomicLoadRlx32(&pf->a_count);
     if (!count)

@@ -119,8 +119,6 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
     ds_Assert(set_static.index == SOLVER_SET_STATIC);
     ds_Assert(set_active.index == SOLVER_SET_ACTIVE);
 
-    ds_SolverSetSetupDummies(&pipeline);
-
 	return pipeline;
 }
 
@@ -210,8 +208,6 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
 	ArenaFlush(&pipeline->frame);
 	pipeline->frames_completed = 0;
 	pipeline->ns_elapsed = 0;
-
-    ds_SolverSetSetupDummies(pipeline);
 }
 
 void PhysicsPipelineValidate(const struct ds_RigidBodyPipeline *pipeline)
@@ -755,14 +751,16 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
     struct ds_SolverJobPhase *phase = (struct ds_SolverJobPhase *) g_scheduler->phase;
     struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
 
-    struct ds_ParallelFor *pf = phase->pf_velocity;
+    struct ds_ParallelForChain *chain = &phase->pf_velocity_solve;
     for (u32 i = 0; i < g_solver_config->pgs_iteration_count; ++i)
     {
         ProfZoneNamed("Iteration");
         for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
         {
             ProfZoneNamed("Color");
+
             struct ds_CGraphColor *color = pipeline->cgraph.color + ci;
+            const u32 pfi = i*CG_COLOR_COUNT + ci;
 
             u32 cc_per_range = 8;
             u32 cc_extra =  color->contact_pool.count % cc_per_range;
@@ -777,7 +775,7 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
                 range_count = 1;
             }
 
-            ds_ParallelFor(&pf[i*CG_COLOR_COUNT + ci], range)
+            ds_ParallelFor(chain, pfi, range)
             {
                 u32 cc_low = range*cc_per_range;
                 u32 cc_high = (range+1 == range_count && cc_extra)
@@ -789,6 +787,8 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
         }
         ProfZoneEnd;
     }
+
+    ds_ParallelForChainWait(&phase->pf_velocity_solve);
 
     ProfZoneEnd;
 
@@ -813,10 +813,12 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
 
         ds_JobPhaseBegin(&solver_phase->phase);
 
-        solver_phase->pf_velocity = ds_ParallelForAlloc(&pipeline->frame, g_solver_config->pgs_iteration_count*CG_COLOR_COUNT);
+        solver_phase->pf_body = ds_ParallelForChainAlloc(&pipeline->frame, 1);
+        solver_phase->pf_contact_init = ds_ParallelForChainAlloc(&pipeline->frame, 1);
+        solver_phase->pf_velocity_solve = ds_ParallelForChainAlloc(&pipeline->frame, g_solver_config->pgs_iteration_count*CG_COLOR_COUNT);
 
         //fprintf(stderr, "range distribution: \n {");
-        struct ds_ParallelFor *pf = solver_phase->pf_velocity;
+        struct ds_ParallelFor *pf = solver_phase->pf_velocity_solve.parallel_for;
         for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
         {
             struct ds_CGraphColor *color = pipeline->cgraph.color + ci;

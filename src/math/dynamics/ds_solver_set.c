@@ -325,8 +325,6 @@ void ds_SolverSetMerge(struct ds_RigidBodyPipeline *pipeline, const u32 set_expa
 
 void ds_SolverSetValidate(const struct ds_RigidBodyPipeline *pipeline, const u32 set_index)
 {
-    ds_StaticAssert(ACTIVE_BODY_DUMMY_INDEX == 0, "Expected active body dummy at index 0");
-
     const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
     ds_Assert(ds_PoolSlotAllocated(set));
     for (u32 i = 0; i < set->island_pool.count; ++i)
@@ -345,7 +343,7 @@ void ds_SolverSetValidate(const struct ds_RigidBodyPipeline *pipeline, const u32
         ds_Assert(set->body_compute_pool.count == 0);
     }
 
-    for (u32 i = 1; i < set->body_sim_pool.count; ++i)
+    for (u32 i = 0; i < set->body_sim_pool.count; ++i)
     {
         const struct ds_RigidBodySim *sim = set->body_sim_pool.buf + i;
         const struct ds_RigidBody *body = pipeline->body_pool.buf + sim->body;
@@ -414,18 +412,3 @@ void ds_SolverSetMoveBody(struct ds_RigidBodyPipeline *pipeline, const u32 body_
     body->set = set_index;
     body->sim = slot.index;
 }
-
-void ds_SolverSetSetupDummies(struct ds_RigidBodyPipeline *pipeline)
-{
-    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
-    const struct slot dummy_sim_slot = ds_CPoolPush(active->body_sim_pool);
-    const struct slot dummy_compute_slot = ds_CPoolPush(active->body_compute_pool);
-    struct ds_RigidBodySim *dummy_sim = dummy_sim_slot.address;
-    struct ds_RigidBodyCompute *dummy_compute = dummy_compute_slot.address;
-
-    memset(dummy_sim, 0, sizeof(*dummy_sim));
-    memset(dummy_compute, 0, sizeof(*dummy_compute));
-    dummy_sim->world = ds_TransformIdentity();
-    QuatIdentity(dummy_compute->rotation);
-}
-

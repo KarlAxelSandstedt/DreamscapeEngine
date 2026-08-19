@@ -869,7 +869,7 @@ enum ds_SolverSetType
     SOLVER_SET_NULL = U32_MAX,
 };
 
-#define ACTIVE_BODY_DUMMY_INDEX 0
+#define ACTIVE_BODY_DUMMY_INDEX U32_MAX
 
 struct ds_SolverSet
 {
@@ -912,8 +912,6 @@ void        ds_SolverSetValidate(const struct ds_RigidBodyPipeline *pipeline, co
 
 /* Internal: Move the body to the given set (Assumes the body is NOT part off the set) */
 void        ds_SolverSetMoveBody(struct ds_RigidBodyPipeline *pipeline, const u32 body, const u32 set);
-/* Internal: Setup internal dummies in persistent sets */
-void        ds_SolverSetSetupDummies(struct ds_RigidBodyPipeline *pipeline);
 
 /*
 ds_CGraph
@@ -1236,8 +1234,10 @@ struct ds_SolverJobPhase
     struct ds_SolverJob *           job;
     u32                             job_count;
 
-    struct ds_ParallelFor *         pf_velocity;
-    u32                             pf_velocity_count;
+
+    struct ds_ParallelForChain      pf_body;
+    struct ds_ParallelForChain      pf_contact_init;
+    struct ds_ParallelForChain      pf_velocity_solve;
 };
 
 u32 ds_SolverJobPhaseDispatch(const ds_JobId job);
