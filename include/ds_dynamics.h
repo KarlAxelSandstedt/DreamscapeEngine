@@ -1283,8 +1283,8 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job);
 #define	PhysicsEventIslandAsleep(pipeline, island)	    PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_ASLEEP, island)
 #define	PhysicsEventIslandAwake(pipeline, island)	    PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_AWAKE, island)
 #define	PhysicsEventIslandNew(pipeline, island)		    PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_NEW, island)
-#define	PhysicsEventIslandExpanded(pipeline, island)	PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_EXPANDED, island)
-#define	PhysicsEventIslandRemoved(pipeline, island)	    PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_REMOVED, island)
+#define PhysicsEventIslandExpanded(pipeline, island)    PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_EXPANDED, island)
+#define PhysicsEventIslandRemoved(pipeline, island)         PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_REMOVED, island)
 #define PhysicsEventContactNew(pipeline, _contact)					                        \
 	{												                                        \
 		struct ds_PhysicsEvent *__physics_debug_event = ds_PhysicsEventPush(pipeline);	\
@@ -1308,8 +1308,8 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job);
 //#define	PhysicsEventIslandAsleep(pipeline, island)
 //#define	PhysicsEventIslandAwake(pipeline, island) 
 //#define	PhysicsEventIslandNew(pipeline, island)   
-//#define	PhysicsEventIslandExpanded(pipeline, island)   
 //#define	PhysicsEventIslandRemoved(pipeline, island)
+//#define   PhysicsEventIslandExpanded(pipeline, island) 
 //#define PhysicsEventContactNew(pipeline, contact)
 //#define PhysicsEventContactRemoved(pipeline, body0, shape0, body1, shape1)                
 //

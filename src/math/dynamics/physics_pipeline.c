@@ -647,8 +647,9 @@ static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
                 if (is->set >= SOLVER_SET_SLEEPING_FIRST)
                 {
                     ds_SolverSetWakeUp(pipeline, is->set);
-	                PhysicsEventIslandAwake(pipeline, is0);	
+	                PhysicsEventIslandAwake(pipeline, is->id);	
                 }
+	            PhysicsEventIslandExpanded(pipeline, is->id);	
 			} break;
 
 			/* static-dynamic */
@@ -667,8 +668,9 @@ static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
                 if (is->set >= SOLVER_SET_SLEEPING_FIRST)
                 {
                     ds_SolverSetWakeUp(pipeline, is->set);
-	                PhysicsEventIslandAwake(pipeline, is1);	
+	                PhysicsEventIslandAwake(pipeline, is->id);	
                 }
+	            PhysicsEventIslandExpanded(pipeline, is->id);	
 			} break;
 		}
 	}
@@ -862,7 +864,7 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
     chain = &phase->pf_position_solve;
     {
         ProfZoneNamed("Position Solve")
-        for (u32 i = 0; i < g_solver_config->pgs_iteration_count; ++i)
+        for (u32 i = 0; i < g_solver_config->ngs_iteration_count; ++i)
         {
             ProfZoneNamed("Iteration");
             for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
@@ -919,7 +921,7 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
         solver_phase->pf_velocity_solve = ds_ParallelForChainAlloc(&pipeline->frame, g_solver_config->pgs_iteration_count*CG_COLOR_COUNT);
         solver_phase->pf_integrate = ds_ParallelForChainAlloc(&pipeline->frame, 1);
         solver_phase->pf_cache_impulse_and_position_init = ds_ParallelForChainAlloc(&pipeline->frame, CG_COLOR_COUNT);
-        solver_phase->pf_position_solve = ds_ParallelForChainAlloc(&pipeline->frame, g_solver_config->pgs_iteration_count*CG_COLOR_COUNT);
+        solver_phase->pf_position_solve = ds_ParallelForChainAlloc(&pipeline->frame, g_solver_config->ngs_iteration_count*CG_COLOR_COUNT);
         solver_phase->pf_orientation = ds_ParallelForChainAlloc(&pipeline->frame, 1);
 
 
@@ -959,6 +961,11 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
             {
                 const u32 pfi = pgsi*CG_COLOR_COUNT + ci;
                 ds_ParallelForInit(pfvs + pfi, cc_count, cc_per_range);
+            }
+
+            for (u32 pgsi = 0; pgsi < g_solver_config->ngs_iteration_count; ++pgsi)
+            {
+                const u32 pfi = pgsi*CG_COLOR_COUNT + ci;
                 ds_ParallelForInit(pfps + pfi, cc_count, cc_per_range);
             }
         }
@@ -1051,7 +1058,7 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
                     pop = 0;
                 }
                 ds_SolverSetSleep(pipeline, isi);
-	            PhysicsEventIslandAsleep(pipeline, isi);
+	            PhysicsEventIslandAsleep(pipeline, island->id);
                 active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
             }
 

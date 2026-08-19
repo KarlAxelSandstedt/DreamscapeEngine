@@ -1180,7 +1180,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 	const u32 tower1_box_count = 0;
 	const u32 tower2_box_count = 0;
     const u32 multibox_count = 0;
-	const u32 pyramid_layers = 40;
+	const u32 pyramid_layers = 45;
 	const u32 pyramid_count = 1;
 	//const u32 pyramid_layers = 15;
 	//const u32 pyramid_count = 5;
@@ -1908,8 +1908,8 @@ static void led_EngineRun(struct led *led)
 //#ifdef DS_PHYSICS_DEBUG
 			case PHYSICS_EVENT_ISLAND_NEW:
 			{
-				struct ds_Island *is = led->physics.island_pool.buf + event->island;
-				if (ds_PoolSlotAllocated(is))
+				struct ds_Island *is = ds_IslandLookup(&led->physics, event->island).address;
+                if (is)
 				{
 					Vec4Set(is->color, 
 							RngF32Normalized(), 
@@ -1927,23 +1927,7 @@ static void led_EngineRun(struct led *led)
 				}
 			} break;
 
-			case PHYSICS_EVENT_ISLAND_EXPANDED:
-			{
-				if (led->body_color_mode == RB_COLOR_MODE_ISLAND)
-				{
-					const struct ds_Island *is = led->physics.island_pool.buf + event->island;
-					if (ds_PoolSlotAllocated(is))
-					{
-						led_ColorIsland(led, event->island, is->color);
-					}
-				}
-			} break;
 //#endif
-
-			case PHYSICS_EVENT_ISLAND_REMOVED:
-			{
-			} break;
-
 			case PHYSICS_EVENT_ISLAND_AWAKE:
 			{
 				if (led->body_color_mode == RB_COLOR_MODE_SLEEP)
@@ -1982,7 +1966,19 @@ static void led_EngineRun(struct led *led)
                     }
                 }
 			} break;
-			
+
+			case PHYSICS_EVENT_ISLAND_EXPANDED:
+            {
+                if (led->body_color_mode == RB_COLOR_MODE_ISLAND)
+                {
+                    const struct ds_Island *is = ds_IslandLookup(&led->physics, event->island).address;
+                    if (is)
+                    {
+                        led_ColorIsland(led, event->island, is->color);
+                    }
+                }
+            } break;
+
 			case PHYSICS_EVENT_BODY_NEW:
 			{
 			} break;
@@ -1996,21 +1992,24 @@ static void led_EngineRun(struct led *led)
         ds_DLLRemove(led->physics.event_list, led->physics.event_pool.buf, ei, node);
 	}
 
-    struct ds_SolverSet *active = led->physics.solver_set_pool.buf + SOLVER_SET_ACTIVE;
-    for (u32 i = 0; i < active->body_sim_pool.count; ++i)
+    if (physics_frames_to_run)
     {
-        const struct ds_RigidBodySim *sim = active->body_sim_pool.buf + i;
-		const struct ds_RigidBody *body = led->physics.body_pool.buf + sim->body;
-        const struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + body->sim;
-        const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
-        const u64 ns = led->physics.ns_start + led->physics.frames_completed*led->physics.ns_tick; 
+        struct ds_SolverSet *active = led->physics.solver_set_pool.buf + SOLVER_SET_ACTIVE;
+        for (u32 i = 0; i < active->body_sim_pool.count; ++i)
+        {
+            const struct ds_RigidBodySim *sim = active->body_sim_pool.buf + i;
+	    	const struct ds_RigidBody *body = led->physics.body_pool.buf + sim->body;
+            const struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + body->sim;
+            const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
+            const u64 ns = led->physics.ns_start + led->physics.frames_completed*led->physics.ns_tick; 
 
-		r_Proxy3dLinearSpeculationSet(sim->world.position
-				, sim->world.rotation
-				, compute->linear_velocity
-				, compute->angular_velocity
-				, ns
-				, node->proxy);
+	    	r_Proxy3dLinearSpeculationSet(sim->world.position
+	    			, sim->world.rotation
+	    			, compute->linear_velocity
+	    			, compute->angular_velocity
+	    			, ns
+	    			, node->proxy);
+        }
     }
         
 	

@@ -511,12 +511,19 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_RigidBodyPipeline 
     struct ds_CGraph *cg = &pipeline->cgraph;
     struct ds_CGraphColor *color = cg->color + color_index;
 
-    quat body_inv_rotation[2];
+    quat sim_inv_rotation[2];
+    quat compute_inv_rotation[2];
     vec3 tmp1, tmp2, relative_velocity;
     for (u32 ci = low; ci < high; ++ci)
     {			
         struct ds_Contact *c = pipeline->cdb->contact_pool.buf + color->contact_pool.buf[ci];
         struct ds_ContactConstraint *cc = color->contact_constraint_pool.buf + ci;
+
+        struct ds_RigidBodySim *sim[2] =
+        {
+            ((cc->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + cc->body_sim[0]),
+            ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + cc->body_sim[1]),       
+        };
 
         struct ds_RigidBodyCompute *compute[2] =
         {
@@ -529,21 +536,23 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_RigidBodyPipeline 
 		Vec3Copy(c->tangent_cache[0], cc->tangent[0]);
 		Vec3Copy(c->tangent_cache[1], cc->tangent[1]);
 
-        QuatInverse(body_inv_rotation[0], compute[0]->rotation);
-        QuatInverse(body_inv_rotation[1], compute[1]->rotation);
+        QuatInverse(sim_inv_rotation[0], sim[0]->world.rotation);
+        QuatInverse(sim_inv_rotation[1], sim[1]->world.rotation);
+        QuatInverse(compute_inv_rotation[0], compute[0]->rotation);
+        QuatInverse(compute_inv_rotation[1], compute[1]->rotation);
 		for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
 		{
             /* Cache */
             struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
-			QuatVec3Rotate(c->r1_cache[ccpi], body_inv_rotation[0], ccp->r[0]);
-			QuatVec3Rotate(c->r2_cache[ccpi], body_inv_rotation[1], ccp->r[1]);
+			QuatVec3Rotate(c->r1_cache[ccpi], sim_inv_rotation[0], ccp->r[0]);
+			QuatVec3Rotate(c->r2_cache[ccpi], sim_inv_rotation[1], ccp->r[1]);
 			c->normal_impulse_cache[ccpi] = ccp->normal_impulse;
 			c->tangent_impulse_cache[ccpi][0] = ccp->tangent_impulse[0];
 			c->tangent_impulse_cache[ccpi][1] = ccp->tangent_impulse[1];
 
             /* Init Position */
-            QuatVec3RotateSelf(ccp->r[0], body_inv_rotation[0]);
-            QuatVec3RotateSelf(ccp->r[1], body_inv_rotation[1]);
+            QuatVec3RotateSelf(ccp->r[0], compute_inv_rotation[0]);
+            QuatVec3RotateSelf(ccp->r[1], compute_inv_rotation[1]);
         }
     }
 

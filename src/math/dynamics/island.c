@@ -41,7 +41,6 @@ static struct slot ds_IslandAlloc(struct ds_RigidBodyPipeline *pipeline, const u
 
     const u32 old_max = pipeline->island_pool.count;
 	struct slot slot = ds_IslandPoolAdd(&pipeline->island_pool);
-	PhysicsEventIslandNew(pipeline, slot.index);
     if (pipeline->island_high_energy_set.bit_count < pipeline->island_pool.count)
     {
         ds_BitSetIncreaseSize(&pipeline->island_high_energy_set, pipeline->island_pool.count, 0);
@@ -64,6 +63,7 @@ static struct slot ds_IslandAlloc(struct ds_RigidBodyPipeline *pipeline, const u
     is->set = set;
     is->set_island_index = ds_CPoolPush(s->island_pool).index;
     s->island_pool.buf[ is->set_island_index ] = slot.index;
+	PhysicsEventIslandNew(pipeline, is->id);
 
 	return slot;
 }
@@ -239,8 +239,9 @@ void ds_IslandMerge(struct ds_RigidBodyPipeline *pipeline, const u32 expand, con
     if (is_expand->set >= SOLVER_SET_SLEEPING_FIRST)
     {
         ds_SolverSetWakeUp(pipeline, is_expand->set);
-	    PhysicsEventIslandAwake(pipeline, expand);	
+	    PhysicsEventIslandAwake(pipeline, is_expand->id);	
     }
+	PhysicsEventIslandExpanded(pipeline, is_expand->id);	
 
     c->island = expand;
 
@@ -311,7 +312,6 @@ void ds_IslandMerge(struct ds_RigidBodyPipeline *pipeline, const u32 expand, con
             merge_contact->island = expand;
         }
 
-		PhysicsEventIslandExpanded(pipeline, expand);
 		ds_IslandRemove(pipeline, merge);
 	}
 
@@ -339,7 +339,6 @@ void ds_IslandRemove(struct ds_RigidBodyPipeline *pipeline, const u32 island_ind
         }
     }
 	ds_IslandPoolRemove(&pipeline->island_pool, island_index);
-	PhysicsEventIslandRemoved(pipeline, island_index);
 }
 
 void ds_IslandSplit(struct ds_RigidBodyPipeline *pipeline, const u32 island_to_split)
