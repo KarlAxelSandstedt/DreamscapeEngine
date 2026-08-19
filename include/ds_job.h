@@ -299,14 +299,21 @@ struct ds_ParallelFor
 {
     u32 a_ready;
     u8  pad0[DS_CACHE_LINE - 4];
-    u32 a_count;
-    u8  pad1[DS_CACHE_LINE - 4];
     u32 a_next;
-    u8  pad2[DS_CACHE_LINE - 4];
+    u8  pad1[DS_CACHE_LINE - 4];
     u32 a_completed;
-    u8  pad3[DS_CACHE_LINE - 4];
+    u8  pad2[DS_CACHE_LINE - 4];
+
+    u32 index_count;
+    u32 range_count;
+    u32 range_index_count_max;
+    u8  pad3[DS_CACHE_LINE - 12];
 };
 
+/* Initialize the parallel-for according to the given parameters */
+void    ds_ParallelForInit(struct ds_ParallelFor *pf, const u32 index_count, const u32 range_index_count_max);
+/* Return the interval [low, high) to be processed for the given range index. */
+void    ds_ParallelForRange(u32 *low, u32 *high, const struct ds_ParallelFor *pf, const u32 range_index);
 
 /*
 ds_ParallelForChain
@@ -326,10 +333,8 @@ struct ds_ParallelForChain  ds_ParallelForChainAlloc(struct arena *frame, const 
 void                        ds_ParallelForChainWait(struct ds_ParallelForChain *chain);
 
 
-#define ds_ParallelFor(_chain_addr_, _pf_index_, _index_)                               \
-for (u32 _index_, _count_ = PFWait((_chain_addr_)->parallel_for + (_pf_index_));        \
-        ((_index_) = PFNext((_chain_addr_)->parallel_for + (_pf_index_))) < _count_;    \
-        PFComplete((_chain_addr_)->parallel_for + (_pf_index_), _count_))              
+#define ds_ParallelFor(_pf_, _index_)                                                                        \
+for (u32 _index_ = PFWait(_pf_); ((_index_) = PFNext(_pf_)) < (_pf_)->range_count; PFComplete(_pf_))
 
 #include <sched.h>
 static inline u32 PFWait(struct ds_ParallelFor *pf) 
@@ -347,15 +352,14 @@ static inline u32 PFWait(struct ds_ParallelFor *pf)
         }
     }
 
-    const u32 count = AtomicLoadRlx32(&pf->a_count);
-    if (!count)
+    if (!pf->range_count)
     {
         AtomicStoreRel32(&(pf + 1)->a_ready, 1);
     }
 
     ProfZoneEnd;
 
-    return count;
+    return U32_MAX;
 }
 
 static inline u32 PFNext(struct ds_ParallelFor *pf)
@@ -363,10 +367,10 @@ static inline u32 PFNext(struct ds_ParallelFor *pf)
     return AtomicFetchAddRlx32(&pf->a_next, 1);
 }
 
-static inline void PFComplete(struct ds_ParallelFor *pf, const u32 count)
+static inline void PFComplete(struct ds_ParallelFor *pf)
 {
     const u32 local_completed = AtomicAddFetchRel32(&pf->a_completed, 1);
-    if (local_completed == count)
+    if (local_completed == pf->range_count)
     {
         AtomicLoadAcq32(&pf->a_completed);
         AtomicStoreRel32(&(pf + 1)->a_ready, 1);

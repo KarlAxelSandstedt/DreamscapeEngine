@@ -61,9 +61,11 @@ static void ds_JobSchedulerStaticAssert(void)
 static void ds_ParallelForStaticAssert(void)
 {
     ds_StaticAssert((u64) &((struct ds_ParallelFor *)0)->a_ready == 0*DS_CACHE_LINE, "");
-    ds_StaticAssert((u64) &((struct ds_ParallelFor *)0)->a_count == 1*DS_CACHE_LINE, "");
-    ds_StaticAssert((u64) &((struct ds_ParallelFor *)0)->a_next == 2*DS_CACHE_LINE, "");
-    ds_StaticAssert((u64) &((struct ds_ParallelFor *)0)->a_completed == 3*DS_CACHE_LINE, "");
+    ds_StaticAssert((u64) &((struct ds_ParallelFor *)0)->a_next == 1*DS_CACHE_LINE, "");
+    ds_StaticAssert((u64) &((struct ds_ParallelFor *)0)->a_completed == 2*DS_CACHE_LINE, "");
+    ds_StaticAssert((u64) &((struct ds_ParallelFor *)0)->index_count >= 3*DS_CACHE_LINE, "");
+    ds_StaticAssert((u64) &((struct ds_ParallelFor *)0)->range_count >= 3*DS_CACHE_LINE, "");
+    ds_StaticAssert((u64) &((struct ds_ParallelFor *)0)->range_index_count_max >= 3*DS_CACHE_LINE, "");
     ds_StaticAssert(sizeof(struct ds_ParallelFor) == 4*DS_CACHE_LINE, "Unexpected size of ds_ParallelFor");
 }
 
@@ -497,7 +499,7 @@ struct ds_ParallelForChain ds_ParallelForChainAlloc(struct arena *frame, const u
         AtomicStoreRlx32(&chain.parallel_for[i].a_completed, 0);
     }
     AtomicStoreRlx32(&chain.parallel_for[0].a_ready, 1);
-    AtomicStoreRlx32(&chain.parallel_for[count+1].a_count, 0);
+    AtomicStoreRlx32(&chain.parallel_for[count+1].range_count, 0);
     return chain;        
 }
 
@@ -508,4 +510,21 @@ void ds_ParallelForChainWait(struct ds_ParallelForChain *chain)
     {
         ds_CpuPause(1);
     }
+}
+
+void ds_ParallelForInit(struct ds_ParallelFor *pf, const u32 index_count, const u32 range_index_count_max)
+{
+    ds_Assert(range_index_count_max);
+
+    pf->index_count = index_count;
+    pf->range_count = (index_count + range_index_count_max - 1) / range_index_count_max;
+    pf->range_index_count_max = range_index_count_max;
+}
+
+void ds_ParallelForRange(u32 *low, u32 *high, const struct ds_ParallelFor *pf, const u32 range_index)
+{
+    *low = range_index * pf->range_index_count_max;
+    *high = (range_index+1 < pf->range_count)
+                ? *low + pf->range_index_count_max
+                : *low + (pf->index_count % pf->range_index_count_max);
 }

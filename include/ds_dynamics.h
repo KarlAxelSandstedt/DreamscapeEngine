@@ -391,10 +391,10 @@ void            ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPip
 struct slot	    ds_RigidBodyLookup(const struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId id);
 /* Process the body's shape list and set its internal mass properties accordingly. */
 void		    ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId id);
-/* Internal: Refresh and update rigid body simulation and compute/solver data before solving */
-void            ds_RigidBodyUpdateSolverDataAll(struct ds_RigidBodyPipeline *pipeline);
-/* Internal: Integrate contact constraint velocities and update body simulation state */
-void            ds_RigidBodyIntegrateVelocitiesAll(struct ds_RigidBodyPipeline *pipeline);
+/* Internal: Refresh and update rigid body simulation and compute/solver data in range [low, high) before solving */
+void            ds_RigidBodyUpdateSolverDataRange(struct ds_RigidBodyPipeline *pipeline, const u32 low, const u32 high);
+/* Internal: Integrate body velocites in range [low, high) */
+void            ds_RigidBodyIntegrateVelocitiesRange(struct ds_RigidBodyPipeline *pipeline, const u32 low, const u32 high);
 /* Internal: Update body orientation */
 void            ds_RigidBodyUpdateOrientationAll(struct ds_RigidBodyPipeline *pipeline);
 
@@ -1024,12 +1024,12 @@ struct ds_ContactConstraint
 DEFINE_CPOOL_STRUCT(ds_ContactConstraint);
 
 
-/* Initalize all ds_ContactConstraints in the constraint graph */
-void 	ds_ContactConstraintInitAll(struct ds_RigidBodyPipeline *pipeline);
-/* Warmup all applicable ds_ContactConstraints in the constraint graph */
-void 	ds_ContactConstraintWarmupAll(struct ds_RigidBodyPipeline *pipeline);
+/* Initalize the given range [low, high) of ds_ContactConstraints in the constraint graph */
+void 	ds_ContactConstraintInitRange(struct ds_RigidBodyPipeline *pipeline, const u32 color, const u32 low, const u32 high);
+/* Warmup Range [low, high) of applicable ds_ContactConstraints for the given color in the constraint graph */
+void 	ds_ContactConstraintWarmupAll(struct ds_RigidBodyPipeline *pipeline, const u32 color, const u32 low, const u32 high);
 /* Compute a solver iteration over the given color for contact constraints */
-void    ds_ContactConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, const u32 color_index, const u32 cc_low, const u32 cc_high);
+void    ds_ContactConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, const u32 color, const u32 cc_low, const u32 cc_high);
 /* Cache contact impulses */
 void ds_ContactConstraintCacheImpulse(struct ds_RigidBodyPipeline *pipeline);
 /* Initialize position constraint data */
@@ -1237,6 +1237,7 @@ struct ds_SolverJobPhase
 
     struct ds_ParallelForChain      pf_body;
     struct ds_ParallelForChain      pf_contact_init;
+    struct ds_ParallelForChain      pf_contact_warmup;
     struct ds_ParallelForChain      pf_velocity_solve;
 };
 

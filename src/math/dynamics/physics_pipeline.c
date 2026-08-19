@@ -750,45 +750,84 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
 
     struct ds_SolverJobPhase *phase = (struct ds_SolverJobPhase *) g_scheduler->phase;
     struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
+    struct ds_ParallelForChain *chain;
+    struct ds_ParallelFor *pf;
+    u32 low, high;
 
-    struct ds_ParallelForChain *chain = &phase->pf_velocity_solve;
-    for (u32 i = 0; i < g_solver_config->pgs_iteration_count; ++i)
+    chain = &phase->pf_body;
     {
-        ProfZoneNamed("Iteration");
+        ProfZoneNamed("Integration");
+        pf = chain->parallel_for + 0;
+        ds_ParallelFor(pf, range_index)
+        {
+            ds_ParallelForRange(&low, &high, pf, range_index);
+            ds_RigidBodyUpdateSolverDataRange(pipeline, low, high);
+
+        }
+        ProfZoneEnd;
+    }
+    ds_ParallelForChainWait(chain);
+
+    chain = &phase->pf_contact_init;
+    {
+        ProfZoneNamed("Constraint Initialization");
         for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
         {
-            ProfZoneNamed("Color");
-
-            struct ds_CGraphColor *color = pipeline->cgraph.color + ci;
-            const u32 pfi = i*CG_COLOR_COUNT + ci;
-
-            u32 cc_per_range = 8;
-            u32 cc_extra =  color->contact_pool.count % cc_per_range;
-            u32 range_count = (cc_extra)
-                ? 1 + color->contact_pool.count / cc_per_range
-                : color->contact_pool.count / cc_per_range;
-
-            if (ci == CG_SERIAL_COLOR)
+            pf = chain->parallel_for + ci;
+            ds_ParallelFor(pf, range_index)
             {
-                cc_per_range = color->contact_pool.count;
-                cc_extra = 0;
-                range_count = 1;
+                ds_ParallelForRange(&low, &high, pf, range_index);
+                ds_ContactConstraintInitRange(pipeline, ci, low, high);
             }
+        }
+        ProfZoneEnd;
+    }
+    ds_ParallelForChainWait(chain);
 
-            ds_ParallelFor(chain, pfi, range)
+    if (g_solver_config->warmup_solver)
+    {
+        chain = &phase->pf_contact_warmup;
+        {
+            ProfZoneNamed("Constraint Warmup");
+            for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
             {
-                u32 cc_low = range*cc_per_range;
-                u32 cc_high = (range+1 == range_count && cc_extra)
-                    ? cc_low + cc_extra
-                    : cc_low + cc_per_range;
-               ds_ContactConstraintColorIterate(pipeline, ci, cc_low, cc_high); 
+                pf = chain->parallel_for + ci;
+                ds_ParallelFor(pf, range_index)
+                {
+                    ds_ParallelForRange(&low, &high, pf, range_index);
+                    ds_ContactConstraintInitRange(pipeline, ci, low, high);
+                }
+            }
+            ProfZoneEnd;
+        }
+        ds_ParallelForChainWait(chain);
+    }
+
+    chain = &phase->pf_velocity_solve;
+    {
+        ProfZoneNamed("Velocity Solve")
+        for (u32 i = 0; i < g_solver_config->pgs_iteration_count; ++i)
+        {
+            ProfZoneNamed("Iteration");
+            for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
+            {
+                ProfZoneNamed("Color");
+
+                struct ds_CGraphColor *color = pipeline->cgraph.color + ci;
+                const u32 pfi = i*CG_COLOR_COUNT + ci;
+                pf = chain->parallel_for + pfi;
+                ds_ParallelFor(pf, range_index)
+                {
+                    ds_ParallelForRange(&low, &high, pf, range_index);
+                    ds_ContactConstraintColorIterate(pipeline, ci, low, high); 
+                }
+                ProfZoneEnd;
             }
             ProfZoneEnd;
         }
         ProfZoneEnd;
     }
-
-    ds_ParallelForChainWait(&phase->pf_velocity_solve);
+    ds_ParallelForChainWait(chain);
 
     ProfZoneEnd;
 
@@ -799,14 +838,6 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
 {
 	ProfZone;
 
-    ds_RigidBodyUpdateSolverDataAll(pipeline);
-    ds_ContactConstraintInitAll(pipeline);
-
-    if (g_solver_config->warmup_solver)
-    {
-        ds_ContactConstraintWarmupAll(pipeline);
-    }
-
     struct ds_SolverJobPhase *solver_phase = pipeline->solver_phase;
     {
     	ProfZoneNamed("JobPhase(Solve)");
@@ -814,26 +845,30 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
         ds_JobPhaseBegin(&solver_phase->phase);
 
         solver_phase->pf_body = ds_ParallelForChainAlloc(&pipeline->frame, 1);
-        solver_phase->pf_contact_init = ds_ParallelForChainAlloc(&pipeline->frame, 1);
+        solver_phase->pf_contact_init = ds_ParallelForChainAlloc(&pipeline->frame, CG_COLOR_COUNT);
+        solver_phase->pf_contact_warmup = ds_ParallelForChainAlloc(&pipeline->frame, CG_COLOR_COUNT);
         solver_phase->pf_velocity_solve = ds_ParallelForChainAlloc(&pipeline->frame, g_solver_config->pgs_iteration_count*CG_COLOR_COUNT);
 
-        //fprintf(stderr, "range distribution: \n {");
-        struct ds_ParallelFor *pf = solver_phase->pf_velocity_solve.parallel_for;
+        struct ds_ParallelFor *pfb = solver_phase->pf_body.parallel_for;
+        ds_ParallelForInit(pfb + 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.count, 32);
+
+        struct ds_ParallelFor *pfci = solver_phase->pf_contact_init.parallel_for;
+        struct ds_ParallelFor *pfcw = solver_phase->pf_contact_warmup.parallel_for;
+        struct ds_ParallelFor *pfvs = solver_phase->pf_velocity_solve.parallel_for;
         for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
         {
             struct ds_CGraphColor *color = pipeline->cgraph.color + ci;
-            const u32 cc_per_range = 8;
-            const u32 cc_extra =  color->contact_pool.count % cc_per_range;
-            u32 range_count = (cc_extra)
-                ? 1 + color->contact_pool.count / cc_per_range
-                : color->contact_pool.count / cc_per_range;
+            const u32 cc_count = color->contact_pool.count;
+            u32 cc_per_range = (ci == CG_SERIAL_COLOR)
+                ? cc_count + 1
+                : 8;
 
-            if (ci == CG_SERIAL_COLOR)
-            {
-                range_count = 1;
-            }
+            ds_ParallelForInit(pfci + ci, cc_count, cc_per_range);
+            ds_ParallelForInit(pfcw + ci, cc_count, cc_per_range);
 
-            const f32 d = (f32) range_count / g_scheduler->worker_count;
+            //if (ci == 0)
+            //  fprintf(stderr, "range distribution: \n {");
+
             //(ci+1 < CG_COLOR_COUNT)
             //    ? fprintf(stderr, " %f,", d)
             //    : fprintf(stderr, " %f }\n", d);
@@ -841,7 +876,7 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
             for (u32 pgsi = 0; pgsi < g_solver_config->pgs_iteration_count; ++pgsi)
             {
                 const u32 pfi = pgsi*CG_COLOR_COUNT + ci;
-                AtomicStoreRlx32(&pf[pfi].a_count, range_count);
+                ds_ParallelForInit(pfvs + pfi, cc_count, cc_per_range);
             }
         }
 
@@ -873,7 +908,7 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
     ds_ContactConstraintCacheImpulse(pipeline);
 
     /* integrate final solver velocities and update bodies  */
-    ds_RigidBodyIntegrateVelocitiesAll(pipeline);
+    ds_RigidBodyIntegrateVelocitiesRange(pipeline, 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_sim_pool.count);
 
     ds_PositionConstraintColorInitAll(pipeline); 
 
