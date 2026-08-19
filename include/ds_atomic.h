@@ -101,11 +101,13 @@ extern "C" {
 	#define AtomicAddFetchRlx32(fetch_addr, val)	__atomic_add_fetch(fetch_addr, val, ATOMIC_RELAXED) 
 	#define AtomicAddFetchAcq32(fetch_addr, val)	__atomic_add_fetch(fetch_addr, val, ATOMIC_ACQUIRE) 
 	#define AtomicAddFetchRel32(fetch_addr, val)	__atomic_add_fetch(fetch_addr, val, ATOMIC_RELEASE) 
+	#define AtomicAddFetchAcqRel32(fetch_addr, val)	__atomic_add_fetch(fetch_addr, val, ATOMIC_ACQ_REL) 
 	#define AtomicAddFetchSeqCst32(fetch_addr, val)	__atomic_add_fetch(fetch_addr, val, ATOMIC_SEQ_CST)
 	      
 	#define AtomicAddFetchRlx64(fetch_addr, val)	__atomic_add_fetch(fetch_addr, val, ATOMIC_RELAXED) 
 	#define AtomicAddFetchAcq64(fetch_addr, val)	__atomic_add_fetch(fetch_addr, val, ATOMIC_ACQUIRE) 
 	#define AtomicAddFetchRel64(fetch_addr, val)	__atomic_add_fetch(fetch_addr, val, ATOMIC_RELEASE) 
+	#define AtomicAddFetchAcqRel64(fetch_addr, val)	__atomic_add_fetch(fetch_addr, val, ATOMIC_ACQ_REL) 
 	#define AtomicAddFetchSeqCst64(fetch_addr, val)	__atomic_add_fetch(fetch_addr, val, ATOMIC_SEQ_CST)
 	     
 	#define AtomicSubFetchRlx32(fetch_addr, val)	__atomic_sub_fetch(fetch_addr, val, ATOMIC_RELAXED) 
@@ -252,15 +254,18 @@ extern "C" {
 	#define AtomicAddFetchRlx32(fetch_addr, val)	(AtomicFetchAddRlx32(fetch_addr, val) + ((long) val))
 	#define AtomicAddFetchAcq32(fetch_addr, val)	(AtomicFetchAddAcq32(fetch_addr, val) + ((long) val))
 	#define AtomicAddFetchRel32(fetch_addr, val)	(AtomicFetchAddRel32(fetch_addr, val) + ((long) val))
+	#define AtomicAddFetchAcqRel32(fetch_addr, val)	(AtomicFetchAddAcqRel32(fetch_addr, val) + ((long) val))
 	#define AtomicAddFetchSeqCst32(fetch_addr, val)	(AtomicFetchAddSeqCst32(fetch_addr, val) + ((long) val))
 	                                                                                                         
 	#define AtomicAddFetchRlx64(fetch_addr, val)	(AtomicFetchAddRlx64(fetch_addr, val) + ((__int64) val))
 	#define AtomicAddFetchAcq64(fetch_addr, val)	(AtomicFetchAddAcq64(fetch_addr, val) + ((__int64) val))
 	#define AtomicAddFetchRel64(fetch_addr, val)	(AtomicFetchAddRel64(fetch_addr, val) + ((__int64) val))
+	#define AtomicAddFetchAcqRel64(fetch_addr, val)	(AtomicFetchAddAcqRel64(fetch_addr, val) + ((__int64) val))
 	#define AtomicAddFetchSeqCst64(fetch_addr, val)	(AtomicFetchAddSeqCst64(fetch_addr, val) + ((__int64) val))
 	
 	#define AtomicSubFetchRlx32(fetch_addr, val)	(AtomicFetchSubRlx32(fetch_addr, val) - ((long) val))
 	#define AtomicSubFetchAcq32(fetch_addr, val)	(AtomicFetchSubAcq32(fetch_addr, val) - ((long) val))
+	#define AtomicSubFetchRel32(fetch_addr, val)	(AtomicFetchSubRel32(fetch_addr, val) - ((long) val))
 	#define AtomicSubFetchRel32(fetch_addr, val)	(AtomicFetchSubRel32(fetch_addr, val) - ((long) val))
 	#define AtomicSubFetchSeqCst32(fetch_addr, val)	(AtomicFetchSubSeqCst32(fetch_addr, val) - ((long) val))
 	                                                                                                      

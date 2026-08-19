@@ -2434,7 +2434,7 @@ void sat_EdgeQueryCollisionResult(struct c_Manifold *manifold, struct sat_Cache 
  */
 u32 c_HullContact(struct c_Manifold *manifold, struct sat_Cache *cache, const struct sat_Cache *cache_copy, const struct c_Shape *s[2], const ds_Transform t[2], const u32 ref)
 {
-    ProfZone;
+    //ProfZone;
 	ds_Assert(s[0]->type == C_SHAPE_CONVEX_HULL);
 	ds_Assert(s[1]->type == C_SHAPE_CONVEX_HULL);
 
@@ -2592,7 +2592,7 @@ u32 c_HullContact(struct c_Manifold *manifold, struct sat_Cache *cache, const st
 
 sat_cleanup:
     ArenaPopScratch();
-    ProfZoneEnd;
+    //ProfZoneEnd;
 	return colliding;
 }
 
@@ -2743,7 +2743,7 @@ static const u32 delayed_vertex_map[TRI_VORONOI_COUNT][2] =
 
 u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold, u32 **tri, struct sat_Cache *not_used, const struct c_Shape *s[2], const ds_Transform tf[2], const u32 ref)
 {
-    ProfZone;
+    //ProfZone;
 
 	ds_Assert(s[0]->type == C_SHAPE_TRI_MESH);
 	ds_Assert(s[1]->type == C_SHAPE_SPHERE);
@@ -2769,7 +2769,7 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
 
 
 	{
-        ProfZoneNamed("Calculate Triangles");
+        //ProfZoneNamed("Calculate Triangles");
 	    while (it.sc--)
 	    {
 	    	if (!bt_LeafCheck(it.node_stack[it.sc]))
@@ -2794,12 +2794,12 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
                     Vec3Translate(tri[2], tf[0].position); 
                     Vec3Copy(c->c[1], v_sphere);
 
-                    ProfZoneNamed("TriCcwPointDistanceSquared");
+                    //ProfZoneNamed("TriCcwPointDistanceSquared");
                     const u32 robust = TriVoronoiInitCcw(&c->tv, tri);
                     ds_Assert(robust);
 
                     c->dist_sq = TriCcwPointDistanceSquared(c->c[0], &c->region, c->c[1], &c->tv);
-                    ProfZoneEnd;
+                    //ProfZoneEnd;
 
                     if (c->dist_sq <= sph->radius*sph->radius)
                     {
@@ -2819,7 +2819,7 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
                 }
 	    	}
 	    }
-        ProfZoneEnd;
+        //ProfZoneEnd;
     }
 
     u32 collision_count = 0;
@@ -2879,7 +2879,7 @@ u32 c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold,
 
     c_TriMeshBvhIteratorDealloc(&it);
 
-    ProfZoneEnd;
+    //ProfZoneEnd;
 
 	return collision_count;
 }
@@ -3021,7 +3021,7 @@ u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold
 	ds_Assert(s[0]->type == C_SHAPE_TRI_MESH);
 	ds_Assert(s[1]->type == C_SHAPE_CAPSULE);
 
-    ProfZone;
+    //ProfZone;
 
 	const struct capsule *cap = &s[1]->capsule;
     const struct segment cap_s = SegmentCapsuleTransform(cap, tf +1);
@@ -3049,7 +3049,7 @@ u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold
     c_TriMeshBvhIteratorAlloc(&it, mesh_bvh, &bbox_transform);
 
 	{
-        ProfZoneNamed("Calculate Triangles");
+        //ProfZoneNamed("Calculate Triangles");
 	    while (it.sc--)
 	    {
 	    	if (!bt_LeafCheck(it.node_stack[it.sc]))
@@ -3073,12 +3073,12 @@ u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold
                     Vec3Translate(tri[1], tf[0].position); 
                     Vec3Translate(tri[2], tf[0].position); 
 
-                    ProfZoneNamed("TriCcwSegmentDistanceSquared");
+                    //ProfZoneNamed("TriCcwSegmentDistanceSquared");
                     const u32 robust = TriVoronoiInitCcw(&c->tv, tri);
                     ds_Assert(robust);
 
                     c->dist_sq = TriCcwSegmentDistanceSquared(c->c[0], c->c[1], &c->region, &cap_s, &c->tv);
-                    ProfZoneEnd;
+                    //ProfZoneEnd;
 
                     if (c->dist_sq <= cap->radius*cap->radius)
                     {
@@ -3098,7 +3098,7 @@ u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold
                 }
 	    	}
 	    }
-        ProfZoneEnd;
+        //ProfZoneEnd;
     }
 
     u32 collision_count = 0;
@@ -3157,7 +3157,7 @@ u32 c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold
 
     c_TriMeshBvhIteratorDealloc(&it);
 
-    ProfZoneEnd;
+    //ProfZoneEnd;
 
 	return collision_count;
 }
@@ -3366,7 +3366,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
     call_count += 1;
 	u32 colliding = 0;
     {
-    ProfZoneNamed("Cache-Ops");
+    //ProfZoneNamed("Cache-Ops");
     switch (old_cache->type)
     {
         case SAT_CACHE_SEPARATION:
@@ -3390,7 +3390,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
             Vec3Copy(new_cache->normal, old_cache->normal);
 	    	new_cache->depth = depth;
             new_cache->type = SAT_CACHE_SEPARATION;
-            ProfZoneEnd;
+            //ProfZoneEnd;
             goto sat_cleanup;
 	    } break;
          
@@ -3410,7 +3410,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
                 break;
             }
 
-            ProfZoneEnd;
+            //ProfZoneEnd;
             goto sat_cleanup;
 	    } break;
 
@@ -3445,7 +3445,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
 
             TriCcwHullDelayedSet(delayed_set, delayed_count, &hull_tri, manifold_features, manifold->v_count, b_f);
     
-            ProfZoneEnd;
+            //ProfZoneEnd;
             goto sat_cleanup;
 	    } break;
 
@@ -3454,7 +3454,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
 
         } break;
 	}
-    ProfZoneEnd;
+    //ProfZoneEnd;
     }
 
     //TODO
@@ -3468,7 +3468,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
     /* tri-plane vs. hull */
     const struct plane tri_plane = PlaneConstructNormalizedFromCcwTriangle(tri[0], tri[1], tri[2]);
     {
-        ProfZoneNamed("TriPlane vs. Hull");
+        //ProfZoneNamed("TriPlane vs. Hull");
         f32 min_dist[2] = { F32_INFINITY, F32_INFINITY};
         for (u32 i  = 0; i < hull->v_count; ++i)
         {
@@ -3476,7 +3476,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
             min_dist[0] = f32_min(min_dist[0], dist);
             min_dist[1] = f32_min(min_dist[1], -dist);
         }
-        ProfZoneEnd;
+        //ProfZoneEnd;
 
         static const f32 f_query_sign[2] = { 1.0f, -1.0f };
         f_query[0].fi = (min_dist[0] < min_dist[1]);
@@ -3494,7 +3494,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
     /* hull-planes vs. triangle */
     struct plane min_plane;
     {
-        ProfZoneNamed("HullPlane vs. Tri");
+        //ProfZoneNamed("HullPlane vs. Tri");
         u32 separation_axis_found = 0;
     	for (u32 fi = 0; fi < hull->f_count; ++fi)
     	{
@@ -3517,7 +3517,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
                 }
     		}
     	}
-        ProfZoneEnd;
+        //ProfZoneEnd;
 
         const f32 n_dir_len = Vec3Length(min_plane.normal_direction);
         Vec3ScaleSelf(min_plane.normal_direction, 1.0f/n_dir_len);
@@ -3536,7 +3536,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
 
     /* Edge vs. Edge */
     {
-        ProfZoneNamed("Edge vs. Edge");
+        //ProfZoneNamed("Edge vs. Edge");
         const struct segment tri_s[3] = 
         {
             SegmentConstruct(tri[0], tri[1]),
@@ -3563,7 +3563,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
 
                 if (TriCcwHullEECheck(&e_query, &tri_plane, tri_s, tri_s_dist_sq, tri_center, hull, f_dir, ei))
                 {
-                    ProfZoneEnd;
+                    //ProfZoneEnd;
 		            Vec3Copy(new_cache->normal, e_query.normal);
 		            new_cache->depth = e_query.depth;
 		            new_cache->type = SAT_CACHE_SEPARATION;
@@ -3571,13 +3571,13 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
                 }
             } 
         }
-        ProfZoneEnd;
+        //ProfZoneEnd;
     }
 
 	colliding = 1;
 	if (0.99f*f_query[0].depth >= e_query.depth || 0.99f*f_query[1].depth >= e_query.depth)
 	{
-        ProfZoneNamed("FaceContact");
+        //ProfZoneNamed("FaceContact");
 
         const u32 b_f = (f_query[1].depth > f_query[0].depth);
         const u32 b_v = 1 - b_f;
@@ -3599,7 +3599,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_TriHullCache 
 				: Vec3Negate(new_cache->normal, f_query[1].normal);
         }
 
-        ProfZoneEnd;
+        //ProfZoneEnd;
 	}
 	/* edgeContact */
 	else
@@ -3629,7 +3629,7 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
         cache->tri_cache = NULL;
     }
 
-    ProfZone;
+    //ProfZone;
 
     const struct triMeshBvh *mesh_bvh = &s[0]->mesh_bvh;
 	const struct dcel *hull = &s[1]->hull;
@@ -3680,7 +3680,7 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
     c_TriMeshBvhIteratorAlloc(&it, mesh_bvh, &bbox_transform);
 
 	{
-        ProfZoneNamed("Calculate Triangles");
+        //ProfZoneNamed("Calculate Triangles");
 	    while (it.sc--)
 	    {
 	    	if (!bt_LeafCheck(it.node_stack[it.sc]))
@@ -3702,7 +3702,7 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
                     Vec3Copy(tri[1], it.mesh->v[it.mesh->tri[c->tri][1]]);
                     Vec3Copy(tri[2], it.mesh->v[it.mesh->tri[c->tri][2]]);
 
-                    ProfZoneNamed("TriCcwHullContact");
+                    //ProfZoneNamed("TriCcwHullContact");
                     const struct c_TriHullCache *old_cache = &tri_hull_cache_stub;
                     for (u32 ci = 0; ci < cache->tri_cache_count; ++ci)
                     {
@@ -3714,7 +3714,7 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
                     }
 
                     true_contact_count += TriCcwHullContact(&c->manifold, &c->cache, c->delayed_set, &c->delayed_count, old_cache, tri, &hull_bvh_local_space, reference_index);
-                    ProfZoneEnd;
+                    //ProfZoneEnd;
 
                     /* delayed set processed from deepest to shallowest contact. */
                     c->priority = -c->cache.depth * c->cache.depth;
@@ -3728,7 +3728,7 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
                 }
 	    	}
 	    }
-        ProfZoneEnd;
+        //ProfZoneEnd;
     }
 
     cache->tri_cache_count = 0;
@@ -3819,7 +3819,7 @@ u32 c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u
 
     ArenaPopScratch();
 
-    ProfZoneEnd;
+    //ProfZoneEnd;
 
 	return collision_count;
 }

@@ -265,7 +265,6 @@ struct ds_JobScheduler
 
     semaphore           phase_completed;
     u8                  pad5[64 - sizeof(semaphore)];
-
 };
 
 extern struct ds_JobScheduler *g_scheduler;
@@ -278,6 +277,86 @@ void 	ds_JobSchedulerShutdown(void);
 void	ds_JobSchedulerFrameClear(void);
 
 
+/*
+ds_ParallelFor
+==============
+Spin-based Parallel For helper for synchronizing threads.
+
+Usage:  TODO
+
+    0. allocated in chains, pf[i+1] depends on pf[i].
+    1. Talk about dummies
+    2. Usage:
+        - Setup each parallel-for yourself
+        - then create zones using ds_ParallelFor(pf + i, range, count[i])
+*/
+
+#define PARALLEL_FOR_COMPLETED      0
+#define PARALLEL_FOR_INITIALIZING   1
+#define PARALLEL_FOR_RUNNING        2
+
+struct ds_ParallelFor
+{
+    u32 a_ready;
+    u8  pad0[DS_CACHE_LINE - 4];
+    u32 a_count;
+    u8  pad1[DS_CACHE_LINE - 4];
+    u32 a_next;
+    u8  pad2[DS_CACHE_LINE - 4];
+    u32 a_completed;
+    u8  pad3[DS_CACHE_LINE - 4];
+};
+
+/* Allocate chain of parallel-for structures and setup dummy at end of array. */
+struct ds_ParallelFor *ds_ParallelForAlloc(struct arena *frame, const u32 count);
+
+#define ds_ParallelFor(_pf_, _index_)           \
+for (u32 _index_, _count_ = PFWait(_pf_);       \
+        ((_index_) = PFNext(_pf_)) < _count_;   \
+        PFComplete(_pf_, _count_))              
+
+#include <sched.h>
+static inline u32 PFWait(struct ds_ParallelFor *pf) 
+{
+    ProfZone;
+
+    u32 spin_count = 128;
+    while (!AtomicLoadAcq32(&pf->a_ready)) 
+    {
+        ds_CpuPause(1);
+        if(--spin_count == 0)
+        {
+            sched_yield();
+            spin_count = 128;
+        }
+    }
+
+
+    const u32 count = AtomicLoadRlx32(&pf->a_count);
+    if (!count)
+    {
+        AtomicStoreRel32(&(pf + 1)->a_ready, 1);
+    }
+
+    ProfZoneEnd;
+
+    return count;
+}
+
+static inline u32 PFNext(struct ds_ParallelFor *pf)
+{
+    return AtomicFetchAddRlx32(&pf->a_next, 1);
+}
+
+static inline void PFComplete(struct ds_ParallelFor *pf, const u32 count)
+{
+    const u32 local_completed = AtomicAddFetchRel32(&pf->a_completed, 1);
+    if (local_completed == count)
+    {
+        AtomicLoadAcq32(&pf->a_completed);
+        AtomicStoreRel32(&(pf + 1)->a_ready, 1);
+    }
+}
 
 
 #ifdef __cplusplus

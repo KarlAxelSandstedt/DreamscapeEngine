@@ -291,7 +291,7 @@ static u32 NarrowPhaseSeedJob(struct ds_CollisionJobPhase *phase, struct ds_Narr
 
 static u32 NarrowPhaseJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPhaseJob *job)
 {
-	ProfZone;
+	//ProfZone;
 
     const struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
     job->cache = NULL;
@@ -403,8 +403,7 @@ static u32 NarrowPhaseJob(struct ds_CollisionJobPhase *phase, struct ds_NarrowPh
         }
     }
 
-
-	ProfZoneEnd;
+//	ProfZoneEnd;
 
     return U32_MAX;
 }
@@ -756,47 +755,39 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
     struct ds_SolverJobPhase *phase = (struct ds_SolverJobPhase *) g_scheduler->phase;
     struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
 
-    const u32 ranges_per_color = 3*g_scheduler->worker_count;
-    /* Serial color only has a single range */
-    const u32 ranges_per_iteration = (CG_COLOR_COUNT-1)*ranges_per_color + 1;
-    const u32 range_velocity_count = ranges_per_iteration * g_solver_config->pgs_iteration_count;
-    
-    u32 range = 0;
-    u32 local_completed = 0;
-    while (1)
+    struct ds_ParallelFor *pf = phase->pf_velocity;
+    for (u32 i = 0; i < g_solver_config->pgs_iteration_count; ++i)
     {
-        if (range >= range_velocity_count)
+        ProfZoneNamed("Iteration");
+        for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
         {
-            break;
+            ProfZoneNamed("Color");
+            struct ds_CGraphColor *color = pipeline->cgraph.color + ci;
+
+            u32 cc_per_range = 8;
+            u32 cc_extra =  color->contact_pool.count % cc_per_range;
+            u32 range_count = (cc_extra)
+                ? 1 + color->contact_pool.count / cc_per_range
+                : color->contact_pool.count / cc_per_range;
+
+            if (ci == CG_SERIAL_COLOR)
+            {
+                cc_per_range = color->contact_pool.count;
+                cc_extra = 0;
+                range_count = 1;
+            }
+
+            ds_ParallelFor(&pf[i*CG_COLOR_COUNT + ci], range)
+            {
+                u32 cc_low = range*cc_per_range;
+                u32 cc_high = (range+1 == range_count && cc_extra)
+                    ? cc_low + cc_extra
+                    : cc_low + cc_per_range;
+               ds_ContactConstraintColorIterate(pipeline, ci, cc_low, cc_high); 
+            }
+            ProfZoneEnd;
         }
-
-        const u32 iteration_range = range % ranges_per_iteration;
-        const u32 color_index = iteration_range / ranges_per_color;
-        const u32 color_range = iteration_range % ranges_per_color;
-
-        const u32 range_required = (range / ranges_per_iteration)*ranges_per_iteration + color_index*ranges_per_color;
-        while (AtomicLoadAcq32(&phase->a_range_completed) < range_required)
-        {
-            ds_CpuPause(1);
-        }
-
-        if (AtomicCompareExchangeRlxRlx32(&phase->a_range_next, &range, range+1))
-        {
-            const struct ds_CGraphColor *color = pipeline->cgraph.color + color_index; 
-
-            const u32 cc_per_range = color->contact_constraint_pool.count / ranges_per_color;
-            const u32 cc_extra = color->contact_constraint_pool.count % ranges_per_color;
-
-            const u32 cc_high = (color_range < cc_extra)
-                            ? (color_range + 1)*cc_per_range + color_range + 1
-                            : (color_range + 1)*cc_per_range + cc_extra;
-            const u32 cc_low = (color_range < cc_extra)
-                            ? cc_high - cc_per_range - 1
-                            : cc_high - cc_per_range;
-
-            ds_ContactConstraintColorIterate(pipeline, color_index, cc_low, cc_high); 
-            range = AtomicAddFetchRel32(&phase->a_range_completed, 1);
-        }
+        ProfZoneEnd;
     }
 
     ProfZoneEnd;
@@ -816,41 +807,43 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
         ds_ContactConstraintWarmupAll(pipeline);
     }
 
-	//for (u32 i = 0; i < g_solver_config->pgs_iteration_count; ++i)
-	//{
-    //    for (u32 c = CG_STATIC_COLOR_FIRST; c <= CG_STATIC_COLOR_LAST; ++c)
-    //    {
-    //        ds_ContactConstraintColorIterate(pipeline, c);
-    //    }
-
-    //    for (u32 c = CG_DYNAMIC_COLOR_FIRST; c <= CG_DYNAMIC_COLOR_LAST; ++c)
-    //    {
-    //        ds_ContactConstraintColorIterate(pipeline, c);
-    //    }
-
-    //    ds_ContactConstraintColorIterate(pipeline, CG_SERIAL_COLOR);
-	//}
-
     struct ds_SolverJobPhase *solver_phase = pipeline->solver_phase;
     {
     	ProfZoneNamed("JobPhase(Solve)");
 
         ds_JobPhaseBegin(&solver_phase->phase);
 
-        f32 cc_parallel = 0;
-        const f32 cc_serial = pipeline->cgraph.color[CG_SERIAL_COLOR].contact_constraint_pool.count;
-        for (u32 color_index = 0; color_index < CG_SERIAL_COLOR; ++color_index)
+        solver_phase->pf_velocity = ds_ParallelForAlloc(&pipeline->frame, g_solver_config->pgs_iteration_count*CG_COLOR_COUNT);
+
+        //fprintf(stderr, "range distribution: \n {");
+        struct ds_ParallelFor *pf = solver_phase->pf_velocity;
+        for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
         {
-            cc_parallel += pipeline->cgraph.color[color_index].contact_constraint_pool.count;
+            struct ds_CGraphColor *color = pipeline->cgraph.color + ci;
+            const u32 cc_per_range = 8;
+            const u32 cc_extra =  color->contact_pool.count % cc_per_range;
+            u32 range_count = (cc_extra)
+                ? 1 + color->contact_pool.count / cc_per_range
+                : color->contact_pool.count / cc_per_range;
+
+            if (ci == CG_SERIAL_COLOR)
+            {
+                range_count = 1;
+            }
+
+            const f32 d = (f32) range_count / g_scheduler->worker_count;
+            //(ci+1 < CG_COLOR_COUNT)
+            //    ? fprintf(stderr, " %f,", d)
+            //    : fprintf(stderr, " %f }\n", d);
+
+            for (u32 pgsi = 0; pgsi < g_solver_config->pgs_iteration_count; ++pgsi)
+            {
+                const u32 pfi = pgsi*CG_COLOR_COUNT + ci;
+                AtomicStoreRlx32(&pf[pfi].a_count, range_count);
+            }
         }
 
-        fprintf(stderr, "Solver serial percentage: %f\n", 100.0f * cc_serial / (cc_serial+cc_parallel));
-
         solver_phase->pipeline = pipeline;
-        AtomicStoreRel32(&solver_phase->a_range_next, 0);
-        AtomicStoreRel32(&solver_phase->a_range_completed, 0);
-        AtomicStoreRel64(&solver_phase->a_range_dependency, 0);
-
         solver_phase->job_count = g_scheduler->worker_count;
         solver_phase->job = ArenaPushZero(&pipeline->frame, solver_phase->job_count*sizeof(struct ds_SolverJob));
         ds_JobPhaseReserve(&solver_phase->phase, SOLVER_JOB_SEED, solver_phase->job_count);

@@ -1236,24 +1236,8 @@ struct ds_SolverJobPhase
     struct ds_SolverJob *           job;
     u32                             job_count;
 
-    /*
-     * TODO: Somehow setup maps handling fine-grained scheduling:
-     *       1. Each thread checks if any work is left, IF NOT, EXIT.
-     *       2. If it is, check, without commiting to the work
-     *          whether the necessary pre-requisite jobs have been
-     *          completed; if not, YIELD and goto 2.
-     *       3. If pre-requisites are fullfilled, try grab work
-     *       4. If work grabbed, EXECUTE, else goto 1.
-     *
-     *       This should be super lightweight, read an integer,
-     *       check pre-requisites and run work. 
-     */
-
-    u8                              pad1[64];
-    u32                             a_range_next;
-    u8                              pad2[64];
-    u32                             a_range_completed;
-    u8                              pad3[64];
+    struct ds_ParallelFor *         pf_velocity;
+    u32                             pf_velocity_count;
 };
 
 u32 ds_SolverJobPhaseDispatch(const ds_JobId job);

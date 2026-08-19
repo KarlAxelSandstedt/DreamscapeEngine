@@ -58,6 +58,15 @@ static void ds_JobSchedulerStaticAssert(void)
     ds_StaticAssert(sizeof(struct ds_JobScheduler) == 5*DS_CACHE_LINE, "Unexpected size of ds_JobScheduler");
 }
 
+static void ds_ParallelForStaticAssert(void)
+{
+    ds_StaticAssert((u64) &((struct ds_ParallelFor *)0)->a_ready == 0*DS_CACHE_LINE, "");
+    ds_StaticAssert((u64) &((struct ds_ParallelFor *)0)->a_count == 1*DS_CACHE_LINE, "");
+    ds_StaticAssert((u64) &((struct ds_ParallelFor *)0)->a_next == 2*DS_CACHE_LINE, "");
+    ds_StaticAssert((u64) &((struct ds_ParallelFor *)0)->a_completed == 3*DS_CACHE_LINE, "");
+    ds_StaticAssert(sizeof(struct ds_ParallelFor) == 4*DS_CACHE_LINE, "Unexpected size of ds_ParallelFor");
+}
+
 static void ds_JobPhaseStaticAssert(void)
 {
     ds_StaticAssert((u64) &((struct ds_JobPhase *)0)->a_jobs_remaining == 64, "");
@@ -374,7 +383,8 @@ void ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, c
                                     ? 4*thread_count
                                     : 64;
 
-    AtomicStoreRlx32(&g_scheduler->a_running, 0);
+    //AtomicStoreRlx32(&g_scheduler->parallel_for.a_running);
+    //AtomicStoreRlx32(&g_scheduler->a_state, PARALLEL_FOR_COMPLETED);
 	SemaphoreInit(&g_scheduler->jobs_are_available, 0);
     SemaphoreInit(&g_scheduler->phase_completed, 0);
     ds_WSDequeAlloc(g_scheduler->seed_deque, 0, initial_deque_size);
@@ -468,4 +478,24 @@ u32 ds_JobPhaseReserve(struct ds_JobPhase *phase, const u32 job_type, const u32 
 {
     ds_Assert(job_type < phase->next_len);
     return AtomicFetchAddRlx32(&phase->next[job_type].a_counter, new_jobs_count);
+}
+
+struct ds_ParallelFor *ds_ParallelForAlloc(struct arena *frame, const u32 count)
+{
+    struct ds_ParallelFor *pf = ArenaPushAligned(frame, count + 1, DS_CACHE_LINE);
+    if (!pf)
+    {
+		LogString(T_SYSTEM, S_FATAL, "Failed to allocate parallel-for array, exiting.");
+		FatalCleanupAndExit();
+	}
+
+    for (u32 i = 0; i < count + 1; ++i)
+    {
+        AtomicStoreRlx32(&pf[i].a_ready, 0);
+        AtomicStoreRlx32(&pf[i].a_next, 0);
+        AtomicStoreRlx32(&pf[i].a_completed, 0);
+    }
+    AtomicStoreRlx32(&pf[0].a_ready, 1);
+    AtomicStoreRlx32(&pf[count+1].a_count, 0);
+    return pf;
 }
