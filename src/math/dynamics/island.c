@@ -52,7 +52,7 @@ static struct slot ds_IslandAlloc(struct ds_RigidBodyPipeline *pipeline, const u
     ds_DLLFlush(&is->joint_list);
 	is->constraint_remove_count = 0;
 
-    if (old_max == pipeline->island_pool.count)
+    if (old_max != pipeline->island_pool.count)
     {
         is->id = ds_IdConstruct(slot.index, 0);
     }

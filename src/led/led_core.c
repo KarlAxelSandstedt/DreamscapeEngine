@@ -1187,7 +1187,9 @@ void led_WallSmashSimulationSetup(struct led *led)
 	//const u32 pyramid_layers = 0;
 	//const u32 pyramid_count = 0;
     const u32 incr_count = 0;
-	const u32 bodies = tower1_box_count + tower2_box_count + 3 + pyramid_layers*(pyramid_layers+1) / 2;
+	const u32 pyramid_size = pyramid_layers*(pyramid_layers+1) / 2;
+
+    fprintf(stderr, "PYRAMID SIZE: %u\n", pyramid_size);
 
 	/* Setup rigid bodies */
 	const f32 box_friction = 1.0f;
@@ -1246,7 +1248,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_box");
     //const vec3 box_hw = { box_side / 2.0f, box_side, box_side / 2.0f };
-    const vec3 box_hw = { box_side / 2.0f, box_side / 4.0f, box_side / 2.0f };
+    const vec3 box_hw = { box_side / 2.0f, box_side / 2.0f, box_side / 2.0f };
     led_CollisionBoxAdd(led, id, box_hw);
 
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_sphere");
