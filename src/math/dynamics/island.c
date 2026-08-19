@@ -68,6 +68,19 @@ static struct slot ds_IslandAlloc(struct ds_RigidBodyPipeline *pipeline, const u
 	return slot;
 }
 
+struct slot ds_IslandLookup(struct ds_RigidBodyPipeline *pipeline, const ds_IslandId id)
+{
+    struct slot slot = { .address = NULL, .index = U32_MAX };
+    struct ds_Island *island = pipeline->island_pool.buf + ds_IdIndex(id);
+    if (ds_PoolSlotAllocated(island) && island->id == id)
+    {
+        slot.address = island;
+        slot.index = ds_IdIndex(id);
+    }
+
+    return slot;
+}
+
 void ds_IslandPrint(FILE *file, const struct ds_RigidBodyPipeline *pipeline, const u32 island, const char *desc)
 {
 	const struct ds_Island *is = pipeline->island_pool.buf + island;

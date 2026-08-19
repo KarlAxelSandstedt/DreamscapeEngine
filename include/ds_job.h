@@ -339,7 +339,7 @@ for (u32 _index_ = PFWait(_pf_); ((_index_) = PFNext(_pf_)) < (_pf_)->range_coun
 #include <sched.h>
 static inline u32 PFWait(struct ds_ParallelFor *pf) 
 {
-    ProfZone;
+    //ProfZone;
 
     u32 spin_count = 128;
     while (!AtomicLoadAcq32(&pf->a_ready)) 
@@ -357,7 +357,7 @@ static inline u32 PFWait(struct ds_ParallelFor *pf)
         AtomicStoreRel32(&(pf + 1)->a_ready, 1);
     }
 
-    ProfZoneEnd;
+    //ProfZoneEnd;
 
     return U32_MAX;
 }

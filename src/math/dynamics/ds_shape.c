@@ -118,7 +118,7 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
 
 struct slot ds_ShapeLookup(const struct ds_RigidBodyPipeline *pipeline, const ds_ShapeId shape_id)
 {
-    struct slot slot = { .address = NULL, .index = 0 };
+    struct slot slot = { .address = NULL, .index = U32_MAX };
     struct ds_Shape *shape = pipeline->shape_pool.buf + ds_IdIndex(shape_id);
     if (shape_id != DS_ID_NULL && ds_PoolSlotAllocated(shape) && shape->id == shape_id)
     {

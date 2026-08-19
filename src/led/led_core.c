@@ -1705,9 +1705,14 @@ static void led_NodeDontDrawProxies(struct led *led, const u32 index)
     }
 }
 
-static void led_ColorIsland(struct led *led, const u32 island, const vec4 color)
+static void led_ColorIsland(struct led *led, const ds_IslandId id, const vec4 color)
 {
-	struct ds_Island *is = led->physics.island_pool.buf + island;
+	struct ds_Island *is = ds_IslandLookup(&led->physics, id).address;
+    if (!is)
+    {
+        return;
+    }
+
 	const struct ds_RigidBody *body;
 	for (u32 i = is->body_list.first; (i32) i != DLL_SENTINEL; i = body->island_body.next)
 	{
@@ -1953,6 +1958,29 @@ static void led_EngineRun(struct led *led)
 				{
 					led_ColorIsland(led, event->island, led->sleep_color);
 				}
+
+                struct ds_Island *is = ds_IslandLookup(&led->physics, event->island).address;
+                if (is)
+                {
+                    struct ds_SolverSet *set = led->physics.solver_set_pool.buf + is->set;
+                    for (u32 i = 0; i < set->body_sim_pool.count; ++i)
+                    {
+                        const struct ds_RigidBodySim *sim = set->body_sim_pool.buf + i;
+	                	const struct ds_RigidBody *body = led->physics.body_pool.buf + sim->body;
+                        const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
+
+                        vec3 linear_velocity = { 0.0f, 0.0f, 0.0f };
+                        vec3 angular_velocity = { 0.0f, 0.0f, 0.0f };
+                        const u64 ns = led->physics.ns_start + led->physics.frames_completed*led->physics.ns_tick; 
+
+	                	r_Proxy3dLinearSpeculationSet(sim->world.position
+	                			, sim->world.rotation
+	                			, linear_velocity
+	                			, angular_velocity
+	                			, ns 
+	                			, node->proxy);
+                    }
+                }
 			} break;
 			
 			case PHYSICS_EVENT_BODY_NEW:
@@ -1963,34 +1991,28 @@ static void led_EngineRun(struct led *led)
 			{
                 led_NodeDontDrawProxies(led, event->entity);
 			} break;
-
-			case PHYSICS_EVENT_BODY_ORIENTATION:
-			{
-				const struct ds_RigidBody *body = led->physics.body_pool.buf + ds_IdIndex(event->body);
-				const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
-                const struct ds_SolverSet *set = led->physics.solver_set_pool.buf + body->set;
-                const struct ds_RigidBodySim *sim = set->body_sim_pool.buf + body->sim;
-
-                vec3 linear_velocity = { 0.0f, 0.0f, 0.0f };
-                vec3 angular_velocity = { 0.0f, 0.0f, 0.0f };
-                if (body->set == SOLVER_SET_ACTIVE)
-                {
-                    const struct ds_RigidBodyCompute *compute = set->body_compute_pool.buf + body->sim;
-                    Vec3Copy(linear_velocity, compute->linear_velocity);
-                    Vec3Copy(angular_velocity, compute->angular_velocity);
-                }
-
-				r_Proxy3dLinearSpeculationSet(sim->world.position
-						, sim->world.rotation
-						, linear_velocity
-						, angular_velocity
-						, event->ns
-						, node->proxy);
-			} break;
 		}
 
         ds_DLLRemove(led->physics.event_list, led->physics.event_pool.buf, ei, node);
 	}
+
+    struct ds_SolverSet *active = led->physics.solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    for (u32 i = 0; i < active->body_sim_pool.count; ++i)
+    {
+        const struct ds_RigidBodySim *sim = active->body_sim_pool.buf + i;
+		const struct ds_RigidBody *body = led->physics.body_pool.buf + sim->body;
+        const struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + body->sim;
+        const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
+        const u64 ns = led->physics.ns_start + led->physics.frames_completed*led->physics.ns_tick; 
+
+		r_Proxy3dLinearSpeculationSet(sim->world.position
+				, sim->world.rotation
+				, compute->linear_velocity
+				, compute->angular_velocity
+				, ns
+				, node->proxy);
+    }
+        
 	
 	ds_PhysicsEventPoolFlush(&led->physics.event_pool);
 

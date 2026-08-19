@@ -395,8 +395,8 @@ void		    ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline
 void            ds_RigidBodyUpdateSolverDataRange(struct ds_RigidBodyPipeline *pipeline, const u32 low, const u32 high);
 /* Internal: Integrate body velocites in range [low, high) */
 void            ds_RigidBodyIntegrateVelocitiesRange(struct ds_RigidBodyPipeline *pipeline, const u32 low, const u32 high);
-/* Internal: Update body orientation */
-void            ds_RigidBodyUpdateOrientationAll(struct ds_RigidBodyPipeline *pipeline);
+/* Internal: Update orientation of active bodies in range [low, high) */
+void            ds_RigidBodyUpdateOrientationRange(struct ds_RigidBodyPipeline *pipeline, const u32 low, const u32 high);
 
 /*
 ds_ContactKey
@@ -965,6 +965,8 @@ struct ds_Island
 };
 POOL_DECLARE(ds_Island);
 
+/*  Return the island corresponding the id; If it doesn't exist, return (NULL, U32_MAX). */
+struct slot ds_IslandLookup(struct ds_RigidBodyPipeline *pipeline, const ds_IslandId id);
 /* remove island resources from database */
 void 		ds_IslandRemove(struct ds_RigidBodyPipeline *pipeline, const u32 island);
 /* Debug printing of island */
@@ -1027,15 +1029,13 @@ DEFINE_CPOOL_STRUCT(ds_ContactConstraint);
 /* Initalize the given range [low, high) of ds_ContactConstraints in the constraint graph */
 void 	ds_ContactConstraintInitRange(struct ds_RigidBodyPipeline *pipeline, const u32 color, const u32 low, const u32 high);
 /* Warmup Range [low, high) of applicable ds_ContactConstraints for the given color in the constraint graph */
-void 	ds_ContactConstraintWarmupAll(struct ds_RigidBodyPipeline *pipeline, const u32 color, const u32 low, const u32 high);
+void 	ds_ContactConstraintWarmupRange(struct ds_RigidBodyPipeline *pipeline, const u32 color, const u32 low, const u32 high);
 /* Compute a solver iteration over the given color for contact constraints */
-void    ds_ContactConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, const u32 color, const u32 cc_low, const u32 cc_high);
-/* Cache contact impulses */
-void ds_ContactConstraintCacheImpulse(struct ds_RigidBodyPipeline *pipeline);
-/* Initialize position constraint data */
-void ds_PositionConstraintColorInitAll(struct ds_RigidBodyPipeline *pipeline);
-/* Compute a solver iteration over the given color for position constraints */
-void ds_PositionConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, const u32 color_index);
+void    ds_ContactConstraintIterateRange(struct ds_RigidBodyPipeline *pipeline, const u32 color, const u32 cc_low, const u32 cc_high);
+/* Cache contact impulses and initialize position constraints in the range [low, high) for the given color */
+void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_RigidBodyPipeline *pipeline, const u32 color, const u32 low, const u32 high);
+/* Compute a solver iteration over the given color for position constraints in range [low, high) */
+void ds_PositionConstraintIterateRange(struct ds_RigidBodyPipeline *pipeline, const u32 color, const u32 low, const u32 high);
 
 /*
 contact_solver_config
@@ -1235,10 +1235,15 @@ struct ds_SolverJobPhase
     u32                             job_count;
 
 
-    struct ds_ParallelForChain      pf_body;
+    struct ds_ParallelForChain      pf_body_update;
     struct ds_ParallelForChain      pf_contact_init;
     struct ds_ParallelForChain      pf_contact_warmup;
     struct ds_ParallelForChain      pf_velocity_solve;
+
+    struct ds_ParallelForChain      pf_integrate;
+    struct ds_ParallelForChain      pf_cache_impulse_and_position_init;
+    struct ds_ParallelForChain      pf_position_solve;
+    struct ds_ParallelForChain      pf_orientation;
 };
 
 u32 ds_SolverJobPhaseDispatch(const ds_JobId job);
@@ -1321,7 +1326,6 @@ enum ds_PhysicsEventType
 	PHYSICS_EVENT_ISLAND_ASLEEP,
 	PHYSICS_EVENT_BODY_NEW,
 	PHYSICS_EVENT_BODY_REMOVED,
-	PHYSICS_EVENT_BODY_ORIENTATION,
 	PHYSICS_EVENT_COUNT
 };
 
@@ -1335,7 +1339,7 @@ struct ds_PhysicsEvent
 	union
 	{
         u32                     entity;
-		u32                     island;
+		ds_IslandId             island;
 		ds_RigidBodyId          body;
         ds_ContactId            contact;
         

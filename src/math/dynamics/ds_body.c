@@ -170,7 +170,7 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
 
 struct slot ds_RigidBodyLookup(const struct ds_RigidBodyPipeline *pipeline, const ds_RigidBodyId id)
 {
-    struct slot slot = { .address = NULL, .index = 0 };
+    struct slot slot = { .address = NULL, .index = U32_MAX };
     struct ds_RigidBody *body = pipeline->body_pool.buf + ds_IdIndex(id);
     if (ds_PoolSlotAllocated(body) && body->id == id)
     {

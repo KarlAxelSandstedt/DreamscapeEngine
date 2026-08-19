@@ -485,7 +485,8 @@ u32 ds_JobPhaseReserve(struct ds_JobPhase *phase, const u32 job_type, const u32 
 struct ds_ParallelForChain ds_ParallelForChainAlloc(struct arena *frame, const u32 count)
 {
     struct ds_ParallelForChain chain = { 0 };
-    chain.parallel_for = ArenaPushAligned(frame, count + 1, DS_CACHE_LINE);
+    chain.count = count;
+    chain.parallel_for = ArenaPushAligned(frame, (count+1)*sizeof(struct ds_ParallelFor), DS_CACHE_LINE);
     if (!chain.parallel_for)
     {
 		LogString(T_SYSTEM, S_FATAL, "Failed to allocate ds_ParallelForChain, exiting.");
@@ -499,7 +500,7 @@ struct ds_ParallelForChain ds_ParallelForChainAlloc(struct arena *frame, const u
         AtomicStoreRlx32(&chain.parallel_for[i].a_completed, 0);
     }
     AtomicStoreRlx32(&chain.parallel_for[0].a_ready, 1);
-    AtomicStoreRlx32(&chain.parallel_for[count+1].range_count, 0);
+    AtomicStoreRlx32(&chain.parallel_for[count].range_count, 0);
     return chain;        
 }
 
@@ -526,5 +527,5 @@ void ds_ParallelForRange(u32 *low, u32 *high, const struct ds_ParallelFor *pf, c
     *low = range_index * pf->range_index_count_max;
     *high = (range_index+1 < pf->range_count)
                 ? *low + pf->range_index_count_max
-                : *low + (pf->index_count % pf->range_index_count_max);
+                : pf->index_count;
 }

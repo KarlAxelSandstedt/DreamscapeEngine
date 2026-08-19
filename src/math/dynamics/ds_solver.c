@@ -169,13 +169,13 @@ void ds_RigidBodyIntegrateVelocitiesRange(struct ds_RigidBodyPipeline *pipeline,
     ProfZoneEnd;
 }
 
-void ds_RigidBodyUpdateOrientationAll(struct ds_RigidBodyPipeline *pipeline)
+void ds_RigidBodyUpdateOrientationRange(struct ds_RigidBodyPipeline *pipeline, const u32 low, const u32 high)
 {
     ProfZone;
 
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
 
-    for (u32 i = 0; i < active->body_sim_pool.count; ++i)
+    for (u32 i = low; i < high; ++i)
     {
         struct ds_RigidBodySim *sim = active->body_sim_pool.buf + i;
         struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + i;
@@ -185,11 +185,6 @@ void ds_RigidBodyUpdateOrientationAll(struct ds_RigidBodyPipeline *pipeline)
         QuatVec3Rotate(rotated_local_center_of_mass, compute->rotation, sim->local_center_of_mass);
         Vec3Sub(sim->world.position, compute->center_of_mass, rotated_local_center_of_mass);
         QuatCopy(sim->world.rotation, compute->rotation);
-
-        struct ds_RigidBody *body = pipeline->body_pool.buf + sim->body;
-		struct ds_PhysicsEvent *event = ds_PhysicsEventPush(pipeline);
-		event->type = PHYSICS_EVENT_BODY_ORIENTATION;
-		event->body = body->id;
     }
 
     ProfZoneEnd;
@@ -312,7 +307,7 @@ void ds_ContactConstraintInitRange(struct ds_RigidBodyPipeline *pipeline, const 
     ProfZoneEnd;
 }
 
-void ds_ContactConstraintWarmupAll(struct ds_RigidBodyPipeline *pipeline, const u32 color_index, const u32 low, const u32 high)
+void ds_ContactConstraintWarmupRange(struct ds_RigidBodyPipeline *pipeline, const u32 color_index, const u32 low, const u32 high)
 {
     ProfZone;
 
@@ -408,7 +403,7 @@ void ds_ContactConstraintWarmupAll(struct ds_RigidBodyPipeline *pipeline, const 
     ProfZoneEnd;
 }
 
-void ds_ContactConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, const u32 color_index, const u32 cc_low, const u32 cc_high)
+void ds_ContactConstraintIterateRange(struct ds_RigidBodyPipeline *pipeline, const u32 color_index, const u32 cc_low, const u32 cc_high)
 {
     ProfZone;
 
@@ -508,96 +503,54 @@ void ds_ContactConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, con
     ProfZoneEnd;
 }
 
-void ds_ContactConstraintCacheImpulse(struct ds_RigidBodyPipeline *pipeline)
+void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_RigidBodyPipeline *pipeline, const u32 color_index, const u32 low, const u32 high)
 {
     ProfZone;
 
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     struct ds_CGraph *cg = &pipeline->cgraph;
-    quat body_inv_rotation[2];
-
-    for (u32 color_index = 0; color_index < CG_COLOR_COUNT; ++color_index)
-    {
-        struct ds_CGraphColor *color = cg->color + color_index;
-        for (u32 ci = 0; ci < color->contact_constraint_pool.count; ++ci)
-	    {			
-            struct ds_Contact *c = pipeline->cdb->contact_pool.buf + color->contact_pool.buf[ci];
-	        struct ds_ContactConstraint *cc = color->contact_constraint_pool.buf + ci;
-
-            struct ds_RigidBodySim *sim[2] =
-            {
-                ((cc->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + cc->body_sim[0]),
-                ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + cc->body_sim[1]),       
-            };
-
-            struct ds_RigidBodyCompute *compute[2] =
-            {
-                ((cc->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_compute : active->body_compute_pool.buf + cc->body_sim[0]),
-                ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_compute : active->body_compute_pool.buf + cc->body_sim[1]),
-            };
-
-		    c->cached_count = cc->ccp_count;
-		    Vec3Copy(c->normal_cache, cc->normal);
-		    Vec3Copy(c->tangent_cache[0], cc->tangent[0]);
-		    Vec3Copy(c->tangent_cache[1], cc->tangent[1]);
-
-            QuatInverse(body_inv_rotation[0], sim[0]->world.rotation);
-            QuatInverse(body_inv_rotation[1], sim[1]->world.rotation);
-		    for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
-		    {
-                struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
-		    	QuatVec3Rotate(c->r1_cache[ccpi], body_inv_rotation[0], ccp->r[0]);
-		    	QuatVec3Rotate(c->r2_cache[ccpi], body_inv_rotation[1], ccp->r[1]);
-		    	c->normal_impulse_cache[ccpi] = ccp->normal_impulse;
-		    	c->tangent_impulse_cache[ccpi][0] = ccp->tangent_impulse[0];
-		    	c->tangent_impulse_cache[ccpi][1] = ccp->tangent_impulse[1];
-		    }
-        }
-	}
-
-    ProfZoneEnd;
-}
-
-void ds_PositionConstraintColorInitAll(struct ds_RigidBodyPipeline *pipeline)
-{
-    ProfZone;
-
-    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
-    struct ds_CGraph *cg = &pipeline->cgraph;
+    struct ds_CGraphColor *color = cg->color + color_index;
 
     quat body_inv_rotation[2];
     vec3 tmp1, tmp2, relative_velocity;
+    for (u32 ci = low; ci < high; ++ci)
+    {			
+        struct ds_Contact *c = pipeline->cdb->contact_pool.buf + color->contact_pool.buf[ci];
+        struct ds_ContactConstraint *cc = color->contact_constraint_pool.buf + ci;
 
-    for (u32 color_index = 0; color_index < CG_COLOR_COUNT; ++color_index)
-    {
-        struct ds_CGraphColor *color = cg->color + color_index;
-        for (u32 ci = 0; ci < color->contact_constraint_pool.count; ++ci)
-	    {			
-            const struct ds_Contact *c = pipeline->cdb->contact_pool.buf + color->contact_pool.buf[ci];
-	        struct ds_ContactConstraint *cc = color->contact_constraint_pool.buf + ci;
+        struct ds_RigidBodyCompute *compute[2] =
+        {
+            ((cc->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_compute : active->body_compute_pool.buf + cc->body_sim[0]),
+            ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_compute : active->body_compute_pool.buf + cc->body_sim[1]),
+        };
 
-            struct ds_RigidBodyCompute *compute[2] =
-            {
-                ((cc->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_compute : active->body_compute_pool.buf + cc->body_sim[0]),
-                ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_compute : active->body_compute_pool.buf + cc->body_sim[1]),
-            };
+		c->cached_count = cc->ccp_count;
+		Vec3Copy(c->normal_cache, cc->normal);
+		Vec3Copy(c->tangent_cache[0], cc->tangent[0]);
+		Vec3Copy(c->tangent_cache[1], cc->tangent[1]);
 
+        QuatInverse(body_inv_rotation[0], compute[0]->rotation);
+        QuatInverse(body_inv_rotation[1], compute[1]->rotation);
+		for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
+		{
+            /* Cache */
+            struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
+			QuatVec3Rotate(c->r1_cache[ccpi], body_inv_rotation[0], ccp->r[0]);
+			QuatVec3Rotate(c->r2_cache[ccpi], body_inv_rotation[1], ccp->r[1]);
+			c->normal_impulse_cache[ccpi] = ccp->normal_impulse;
+			c->tangent_impulse_cache[ccpi][0] = ccp->tangent_impulse[0];
+			c->tangent_impulse_cache[ccpi][1] = ccp->tangent_impulse[1];
 
-            QuatInverse(body_inv_rotation[0], compute[0]->rotation);
-            QuatInverse(body_inv_rotation[1], compute[1]->rotation);
-            for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
-	    	{
-	    		struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
-                QuatVec3RotateSelf(ccp->r[0], body_inv_rotation[0]);
-                QuatVec3RotateSelf(ccp->r[1], body_inv_rotation[1]);
-            }
+            /* Init Position */
+            QuatVec3RotateSelf(ccp->r[0], body_inv_rotation[0]);
+            QuatVec3RotateSelf(ccp->r[1], body_inv_rotation[1]);
         }
     }
 
     ProfZoneEnd;
-}
+} 
 
-void ds_PositionConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, const u32 color_index)
+void ds_PositionConstraintIterateRange(struct ds_RigidBodyPipeline *pipeline, const u32 color_index, const u32 low, const u32 high)
 {    
     ProfZone;
 
@@ -610,7 +563,7 @@ void ds_PositionConstraintColorIterate(struct ds_RigidBodyPipeline *pipeline, co
     quat quat_tmp, quat_angle;
 
     f32 min_separation = -F32_INFINITY;
-    for (u32 ci = 0; ci < color->contact_constraint_pool.count; ++ci)
+    for (u32 ci = low; ci < high; ++ci)
 	{			
         const struct ds_Contact *c = pipeline->cdb->contact_pool.buf + color->contact_pool.buf[ci];
 	    struct ds_ContactConstraint *cc = color->contact_constraint_pool.buf + ci;

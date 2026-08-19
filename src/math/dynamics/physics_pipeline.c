@@ -754,9 +754,9 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
     struct ds_ParallelFor *pf;
     u32 low, high;
 
-    chain = &phase->pf_body;
+    chain = &phase->pf_body_update;
     {
-        ProfZoneNamed("Integration");
+        ProfZoneNamed("Body Update");
         pf = chain->parallel_for + 0;
         ds_ParallelFor(pf, range_index)
         {
@@ -795,7 +795,7 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
                 ds_ParallelFor(pf, range_index)
                 {
                     ds_ParallelForRange(&low, &high, pf, range_index);
-                    ds_ContactConstraintInitRange(pipeline, ci, low, high);
+                    ds_ContactConstraintWarmupRange(pipeline, ci, low, high);
                 }
             }
             ProfZoneEnd;
@@ -819,11 +819,80 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
                 ds_ParallelFor(pf, range_index)
                 {
                     ds_ParallelForRange(&low, &high, pf, range_index);
-                    ds_ContactConstraintColorIterate(pipeline, ci, low, high); 
+                    ds_ContactConstraintIterateRange(pipeline, ci, low, high); 
                 }
                 ProfZoneEnd;
             }
             ProfZoneEnd;
+        }
+        ProfZoneEnd;
+    }
+    ds_ParallelForChainWait(chain);
+
+    chain = &phase->pf_integrate;
+    {
+        ProfZoneNamed("Velocity Integrate");
+        pf = chain->parallel_for + 0;
+        ds_ParallelFor(pf, range_index)
+        {
+            ds_ParallelForRange(&low, &high, pf, range_index);
+            ds_RigidBodyIntegrateVelocitiesRange(pipeline, low, high);
+
+        }
+        ProfZoneEnd;
+    }
+    ds_ParallelForChainWait(chain);
+
+    chain = &phase->pf_cache_impulse_and_position_init;
+    {
+        ProfZoneNamed("Cache Impulses and Initalize Position Constraints");
+        for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
+        {
+            pf = chain->parallel_for + ci;
+            ds_ParallelFor(pf, range_index)
+            {
+                ds_ParallelForRange(&low, &high, pf, range_index);
+                ds_PositionConstraintInitAndCacheImpulsesRange(pipeline, ci, low, high);
+            }
+        }
+        ProfZoneEnd;
+    }
+    ds_ParallelForChainWait(chain);
+
+    chain = &phase->pf_position_solve;
+    {
+        ProfZoneNamed("Position Solve")
+        for (u32 i = 0; i < g_solver_config->pgs_iteration_count; ++i)
+        {
+            ProfZoneNamed("Iteration");
+            for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
+            {
+                ProfZoneNamed("Color");
+
+                struct ds_CGraphColor *color = pipeline->cgraph.color + ci;
+                const u32 pfi = i*CG_COLOR_COUNT + ci;
+                pf = chain->parallel_for + pfi;
+                ds_ParallelFor(pf, range_index)
+                {
+                    ds_ParallelForRange(&low, &high, pf, range_index);
+                    ds_PositionConstraintIterateRange(pipeline, ci, low, high); 
+                }
+                ProfZoneEnd;
+            }
+            ProfZoneEnd;
+        }
+        ProfZoneEnd;
+    }
+    ds_ParallelForChainWait(chain);
+
+    chain = &phase->pf_orientation;
+    {
+        ProfZoneNamed("Position Update");
+        pf = chain->parallel_for + 0;
+        ds_ParallelFor(pf, range_index)
+        {
+            ds_ParallelForRange(&low, &high, pf, range_index);
+            ds_RigidBodyUpdateOrientationRange(pipeline, low, high);
         }
         ProfZoneEnd;
     }
@@ -844,17 +913,29 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
 
         ds_JobPhaseBegin(&solver_phase->phase);
 
-        solver_phase->pf_body = ds_ParallelForChainAlloc(&pipeline->frame, 1);
+        solver_phase->pf_body_update = ds_ParallelForChainAlloc(&pipeline->frame, 1);
         solver_phase->pf_contact_init = ds_ParallelForChainAlloc(&pipeline->frame, CG_COLOR_COUNT);
         solver_phase->pf_contact_warmup = ds_ParallelForChainAlloc(&pipeline->frame, CG_COLOR_COUNT);
         solver_phase->pf_velocity_solve = ds_ParallelForChainAlloc(&pipeline->frame, g_solver_config->pgs_iteration_count*CG_COLOR_COUNT);
+        solver_phase->pf_integrate = ds_ParallelForChainAlloc(&pipeline->frame, 1);
+        solver_phase->pf_cache_impulse_and_position_init = ds_ParallelForChainAlloc(&pipeline->frame, CG_COLOR_COUNT);
+        solver_phase->pf_position_solve = ds_ParallelForChainAlloc(&pipeline->frame, g_solver_config->pgs_iteration_count*CG_COLOR_COUNT);
+        solver_phase->pf_orientation = ds_ParallelForChainAlloc(&pipeline->frame, 1);
 
-        struct ds_ParallelFor *pfb = solver_phase->pf_body.parallel_for;
+
+
+        struct ds_ParallelFor *pfb = solver_phase->pf_body_update.parallel_for;
+        struct ds_ParallelFor *pfin = solver_phase->pf_integrate.parallel_for;
+        struct ds_ParallelFor *pfo = solver_phase->pf_orientation.parallel_for;
         ds_ParallelForInit(pfb + 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.count, 32);
+        ds_ParallelForInit(pfin + 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.count, 32);
+        ds_ParallelForInit(pfo + 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.count, 32);
 
         struct ds_ParallelFor *pfci = solver_phase->pf_contact_init.parallel_for;
         struct ds_ParallelFor *pfcw = solver_phase->pf_contact_warmup.parallel_for;
         struct ds_ParallelFor *pfvs = solver_phase->pf_velocity_solve.parallel_for;
+        struct ds_ParallelFor *pfcp = solver_phase->pf_cache_impulse_and_position_init.parallel_for;
+        struct ds_ParallelFor *pfps = solver_phase->pf_position_solve.parallel_for;
         for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
         {
             struct ds_CGraphColor *color = pipeline->cgraph.color + ci;
@@ -865,6 +946,7 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
 
             ds_ParallelForInit(pfci + ci, cc_count, cc_per_range);
             ds_ParallelForInit(pfcw + ci, cc_count, cc_per_range);
+            ds_ParallelForInit(pfcp + ci, cc_count, cc_per_range);
 
             //if (ci == 0)
             //  fprintf(stderr, "range distribution: \n {");
@@ -877,6 +959,7 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
             {
                 const u32 pfi = pgsi*CG_COLOR_COUNT + ci;
                 ds_ParallelForInit(pfvs + pfi, cc_count, cc_per_range);
+                ds_ParallelForInit(pfps + pfi, cc_count, cc_per_range);
             }
         }
 
@@ -904,36 +987,6 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
 
     	ProfZoneEnd;
     }
-
-    ds_ContactConstraintCacheImpulse(pipeline);
-
-    /* integrate final solver velocities and update bodies  */
-    ds_RigidBodyIntegrateVelocitiesRange(pipeline, 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_sim_pool.count);
-
-    ds_PositionConstraintColorInitAll(pipeline); 
-
-    for (u32 i = 0; i < g_solver_config->ngs_iteration_count; ++i)
-	{
-		//const u32 contacts_okay = SolverIteratePositionConstraints(solver);
-        //if (contacts_okay)
-        //{
-        //    break;
-        //}
-
-        for (u32 c = CG_STATIC_COLOR_FIRST; c <= CG_STATIC_COLOR_LAST; ++c)
-        {
-            ds_PositionConstraintColorIterate(pipeline, c);
-        }
-
-        for (u32 c = CG_DYNAMIC_COLOR_FIRST; c <= CG_DYNAMIC_COLOR_LAST; ++c)
-        {
-            ds_PositionConstraintColorIterate(pipeline, c);
-        }
-
-        ds_PositionConstraintColorIterate(pipeline, CG_SERIAL_COLOR);
-	}
-
-    ds_RigidBodyUpdateOrientationAll(pipeline);
         
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     ds_BitSetClear(&pipeline->island_high_energy_set, 0);
