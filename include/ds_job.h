@@ -312,15 +312,66 @@ do                                                                              
 /*
 ds_ParallelFor
 ==============
-Spin-based Parallel For helper for synchronizing threads.
+Spin-based Parallel-For helper. Our common-case is having multiple parallel-for loops in which 
+loop i+1 depends on loop i; the ds_ParallelFor API is built to make this easy.
 
-Usage:  TODO
+::: Usage ::: 
 
-    0. allocated in chains, pf[i+1] depends on pf[i].
-    1. Talk about dummies
-    2. Usage:
-        - Setup each parallel-for yourself
-        - then create zones using ds_ParallelFor(pf + i, range, count[i])
+    Setup
+    ===== 
+    The user begins by allocating the set of dependent ds_ParallelFor structures by calling
+
+        ds_ParallelForChainAlloc(...).
+
+    This sets up internal values, including the dummy at the end. Afterwards, you must setup
+    initalize each chain->parallel_for[i] structure with the number of indices of work that 
+    is to be split into ranges, and how much work each range may represent: 
+
+        ds_ParallelForInit(chain->parallel_for + i, work[i], work_per_range[i]);
+
+    Note: chain->parallel_for[0].a_ready is set to 1 by default.
+
+    Loop
+    ====
+    We provide some example:
+
+        // Each color parallel-for loop depends on the previous color having
+        // finished. This pattern is common and is the reason for why a chain
+        // API is used.
+
+        struct ds_ParallelForChain *chain;
+        struct ds_ParallelFor *pf;
+        u32 low, high;
+
+        chain = &phase->pf_contact_init;
+        {
+            for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
+            {
+                // Thread enters parallel-for loop of color ci. range_index is the name and
+                // is defined within the ds_ParallelFor macro. Within the parallel-for scope
+                // it will be set to a unique range index of work that only the thread owns. 
+                // Since we provided the number of indices of the parallel-for in the setup
+                // stage, we can now map this range_index to an interval [low, high) of work.
+
+                pf = chain->parallel_for + ci;
+                ds_ParallelFor(pf, range_index)
+                {
+                    ds_ParallelForRange(&low, &high, pf, range_index);
+                    ds_ContactConstraintInitRange(pipeline, ci, low, high);
+                }
+            }
+        }
+
+        // (Optional) Spin until all work in the chain has completed
+        ds_ParallelForChainWait(chain);
+
+::: Internals ::: 
+
+    ds_ParallelForChain allocates a dummy at the end to support the following pattern:
+
+        (1) Thread T1 reaches parallel-for Loop[i+1], spinning while acquiring Loop[i+1].a_ready
+        (2) Thread T2 is working in parallel-for Loop[i]
+        (3) Thread T2 finishes Loop[i], finally Releasing Loop[i+1].a_ready
 */
 
 struct ds_ParallelFor
@@ -338,34 +389,33 @@ struct ds_ParallelFor
     u8  pad3[DS_CACHE_LINE - 12];
 };
 
-/* Initialize the parallel-for according to the given parameters */
-void    ds_ParallelForInit(struct ds_ParallelFor *pf, const u32 index_count, const u32 range_index_count_max);
-/* Return the interval [low, high) to be processed for the given range index. */
-void    ds_ParallelForRange(u32 *low, u32 *high, const struct ds_ParallelFor *pf, const u32 range_index);
-
-
-/*
-ds_ParallelForChain
-===================
-TODO
-*/
-
 struct ds_ParallelForChain
 {
     u32                     count;
     struct ds_ParallelFor * parallel_for;
 };
 
+
 /* Allocate chain of parallel-for structures and setup dummy at end of array. */
 struct ds_ParallelForChain  ds_ParallelForChainAlloc(struct arena *frame, const u32 count);
 /* Wait until the last parallel-for has finished in the chain. */
 void                        ds_ParallelForChainWait(struct ds_ParallelForChain *chain);
 
+/* Initialize the parallel-for according to the given parameters */
+void                        ds_ParallelForInit(struct ds_ParallelFor *pf, const u32 index_count, const u32 range_index_count_max);
+/* Return the interval [low, high) to be processed for the given range index. */
+void                        ds_ParallelForRange(u32 *low, u32 *high, const struct ds_ParallelFor *pf, const u32 range_index);
 
-#define ds_ParallelFor(_pf_, _index_)                                                                        \
-for (u32 _index_ = PFWait(_pf_, 8, 128); ((_index_) = PFNext(_pf_)) < (_pf_)->range_count; PFComplete(_pf_))
+/* Spin until the parallel-for is ready */
+#define ds_ParallelFor(_pf_, _index_)       ds_ParallelForEx(_pf_, _index_, 1, 128)
 
-#include <sched.h>
+/* 
+ * Extended parallel-for: provide the max pause instructions emitted per spin (which doubles every spin), 
+ * and the max pause instructions emitted before thread finally yielding.
+ */
+#define ds_ParallelForEx(_pf_, _index_, _max_pauses_per_spin_, _max_pauses_per_yield_)          \
+for (u32 _index_ = PFWait(_pf_, _max_pauses_per_spin_, _max_pauses_per_yield_); ((_index_) = PFNext(_pf_)) < (_pf_)->range_count; PFComplete(_pf_))
+
 static inline u32 PFWait(struct ds_ParallelFor *pf, const u32 max_pauses_per_spin, const u32 max_pauses_per_yield) 
 {
     //ProfZone;
