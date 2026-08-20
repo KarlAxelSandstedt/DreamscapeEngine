@@ -37,6 +37,7 @@ struct ds_RigidBodyPipeline;
 struct ds_RigidBody;
 struct ds_Island;
 struct cdb;
+struct ds_ProxyRange;
 
 /*
 ds_NumericsConfig
@@ -396,7 +397,7 @@ void            ds_RigidBodyUpdateSolverDataRange(struct ds_RigidBodyPipeline *p
 /* Internal: Integrate body velocites in range [low, high) */
 void            ds_RigidBodyIntegrateVelocitiesRange(struct ds_RigidBodyPipeline *pipeline, const u32 low, const u32 high);
 /* Internal: Update orientation of active bodies in range [low, high) */
-void            ds_RigidBodyUpdateOrientationRange(struct ds_RigidBodyPipeline *pipeline, const u32 low, const u32 high);
+void            ds_RigidBodyUpdateOrientationRange(struct ds_RigidBodyPipeline *pipeline, struct ds_ProxyRange *proxy_range, const u32 low, const u32 high);
 
 /*
 ds_ContactKey
@@ -1225,6 +1226,19 @@ struct ds_SolverJob
     u32 tmp;
 };
 
+
+struct ds_ProxyDirty
+{
+    struct aabb bbox_with_margin;
+    u32         shape;
+};
+
+struct ds_ProxyRange
+{
+    u32                     count;
+    struct ds_ProxyDirty *  proxy;
+};
+
 struct ds_SolverJobPhase
 {
     struct ds_JobPhase              phase;
@@ -1234,16 +1248,16 @@ struct ds_SolverJobPhase
     struct ds_SolverJob *           job;
     u32                             job_count;
 
-
     struct ds_ParallelForChain      pf_body_update;
     struct ds_ParallelForChain      pf_contact_init;
     struct ds_ParallelForChain      pf_contact_warmup;
     struct ds_ParallelForChain      pf_velocity_solve;
-
     struct ds_ParallelForChain      pf_integrate;
     struct ds_ParallelForChain      pf_cache_impulse_and_position_init;
     struct ds_ParallelForChain      pf_position_solve;
+
     struct ds_ParallelForChain      pf_orientation;
+    struct ds_ProxyRange *          proxy_range;
 };
 
 u32 ds_SolverJobPhaseDispatch(const ds_JobId job);

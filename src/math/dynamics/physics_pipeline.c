@@ -427,35 +427,17 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 	ProfZone;
     struct cdb *cdb = pipeline->cdb;
 
-    {
-    	ProfZoneNamed("DbvhUpdate");
-        struct ds_SolverSet *active_set = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
-        for (u32 i = 0; i < active_set->body_sim_pool.count; ++i)
-        {
-            struct ds_RigidBodySim *sim = active_set->body_sim_pool.buf + i;
-            struct ds_RigidBody *body = pipeline->body_pool.buf + sim->body;
+   
+    /*
+        Determinism issues
+        ==================
+        
+        (1) Overlaps should probably be reported in a canonical order, possible depending on the minimum
+            ds_BodyId.
 
-            struct ds_Shape *shape = NULL;
-            for (u32 j = body->shape_list.first; (i32) j != DLL_SENTINEL; j = shape->body_shape.next)
-            {
-                shape = pipeline->shape_pool.buf + j;
-                struct aabb bbox = ds_ShapeWorldBbox(pipeline, shape);
-                const struct bvhNode *node = ds_PoolAddress(&pipeline->shape_bvh.tree.pool, shape->proxy);
-    		    const struct aabb *proxy = &node->bbox;
-    		    if (!AabbContains(proxy, &bbox))
-    		    {
-    		        bbox.hw[0] += shape->margin;
-    		    	bbox.hw[1] += shape->margin;
-    		    	bbox.hw[2] += shape->margin;
-    		    	DbvhRemove(&pipeline->shape_bvh, shape->proxy);
-    		    	shape->proxy = DbvhInsert(&pipeline->shape_bvh, j, &bbox);
-    		    }
-            }
-        }
-
-    	ProfZoneEnd;
-    }
-
+        Optimization Issues:
+        ====================
+     */
 	struct dbvhOverlap *proxy_overlap = NULL;
 	u32 proxy_overlap_count = 0;
     {
@@ -893,8 +875,9 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
         pf = chain->parallel_for + 0;
         ds_ParallelFor(pf, range_index)
         {
+            struct ds_ProxyRange *proxy_range = phase->proxy_range + range_index;
             ds_ParallelForRange(&low, &high, pf, range_index);
-            ds_RigidBodyUpdateOrientationRange(pipeline, low, high);
+            ds_RigidBodyUpdateOrientationRange(pipeline, proxy_range, low, high);
         }
         ProfZoneEnd;
     }
@@ -907,8 +890,6 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
 
 static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline) 
 {
-	ProfZone;
-
     struct ds_SolverJobPhase *solver_phase = pipeline->solver_phase;
     {
     	ProfZoneNamed("JobPhase(Solve)");
@@ -924,14 +905,14 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
         solver_phase->pf_position_solve = ds_ParallelForChainAlloc(&pipeline->frame, g_solver_config->ngs_iteration_count*CG_COLOR_COUNT);
         solver_phase->pf_orientation = ds_ParallelForChainAlloc(&pipeline->frame, 1);
 
-
-
         struct ds_ParallelFor *pfb = solver_phase->pf_body_update.parallel_for;
         struct ds_ParallelFor *pfin = solver_phase->pf_integrate.parallel_for;
         struct ds_ParallelFor *pfo = solver_phase->pf_orientation.parallel_for;
+        //TODO: this range size is random hardcoded value, change
         ds_ParallelForInit(pfb + 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.count, 32);
         ds_ParallelForInit(pfin + 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.count, 32);
         ds_ParallelForInit(pfo + 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.count, 32);
+        solver_phase->proxy_range = ArenaPush(&pipeline->frame, pfo->range_count*sizeof(struct ds_ProxyRange));
 
         struct ds_ParallelFor *pfci = solver_phase->pf_contact_init.parallel_for;
         struct ds_ParallelFor *pfcw = solver_phase->pf_contact_warmup.parallel_for;
@@ -942,6 +923,7 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
         {
             struct ds_CGraphColor *color = pipeline->cgraph.color + ci;
             const u32 cc_count = color->contact_pool.count;
+            //TODO: this range size is random hardcoded value, change
             u32 cc_per_range = (ci == CG_SERIAL_COLOR)
                 ? cc_count + 1
                 : 8;
@@ -950,6 +932,7 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
             ds_ParallelForInit(pfcw + ci, cc_count, cc_per_range);
             ds_ParallelForInit(pfcp + ci, cc_count, cc_per_range);
 
+            //const f32 d = (f32) cc_count / (cc_per_range * g_scheduler->worker_count);
             //if (ci == 0)
             //  fprintf(stderr, "range distribution: \n {");
 
@@ -993,6 +976,47 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
         ds_JobPhaseEnd();
 
     	ProfZoneEnd;
+    }
+
+    /*
+        Determinism issues
+        ==================
+
+        (1) Insertion into dbvh should probably happen in a canonical order depending on ds_RigidBodyId;
+            we will get non-deterinistic results (probably) if we allow both orders 
+                
+                bbox_overlap(&a, &b) and bbox_overlap(&b, &a)
+
+            Perhaps this can and should be done after the solver phase and before we put islands to sleep;
+            islands put to sleep don't have their bodies updating their final resting place.
+
+            TODO: Insert bodies/shapes in a canonical order
+
+        Optimization Issues:
+        ====================
+
+        Baseline: 1.5ms - 0.75ms
+
+        (1) TODO: Dirty Check and WorldBBox derivation can we done in parallel, only Remove and Insert
+            needs to be serial
+     */
+    {
+        ProfZoneNamed("Dynamic Tree Update");
+        struct ds_ParallelFor *pf = solver_phase->pf_orientation.parallel_for + 0;
+        for (u32 ri = 0; ri < pf->range_count; ++ri)
+        {
+            const struct ds_ProxyRange *range = solver_phase->proxy_range + ri;
+            for (u32 pi = 0; pi < range->count; ++pi)
+            {
+                ProfZoneNamed("Reinsert");
+                const struct ds_ProxyDirty *dirty = range->proxy + pi;
+                struct ds_Shape *shape = pipeline->shape_pool.buf + dirty->shape;
+            	DbvhRemove(&pipeline->shape_bvh, shape->proxy);
+            	shape->proxy = DbvhInsert(&pipeline->shape_bvh, dirty->shape, &dirty->bbox_with_margin);
+                ProfZoneEnd;
+            }
+        }
+        ProfZoneEnd;
     }
         
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
@@ -1069,8 +1093,6 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
 		}
 	}
 DONE:
-
-	ProfZoneEnd;
 }
 
 void PhysicsPipelineSleepEnable(struct ds_RigidBodyPipeline *pipeline)

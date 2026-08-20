@@ -169,24 +169,57 @@ void ds_RigidBodyIntegrateVelocitiesRange(struct ds_RigidBodyPipeline *pipeline,
     ProfZoneEnd;
 }
 
-void ds_RigidBodyUpdateOrientationRange(struct ds_RigidBodyPipeline *pipeline, const u32 low, const u32 high)
+void ds_RigidBodyUpdateOrientationRange(struct ds_RigidBodyPipeline *pipeline, struct ds_ProxyRange *proxy_range, const u32 low, const u32 high)
 {
     ProfZone;
 
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    struct ds_Shape *shape = NULL;
+
+    struct memArray arr = ArenaPushAlignedAll(g_tl_self->frame, sizeof(struct ds_ProxyDirty), 8);
+    proxy_range->count = 0;
+    proxy_range->proxy = arr.addr;
+    struct ds_ProxyDirty *dirty = proxy_range->proxy + 0;
 
     for (u32 i = low; i < high; ++i)
     {
         struct ds_RigidBodySim *sim = active->body_sim_pool.buf + i;
-        struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + i;
+        const struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + i;
+        const struct ds_RigidBody *body = pipeline->body_pool.buf + sim->body;
     
         /* derive new world transform from updated angle and world center of mass */
         vec3 rotated_local_center_of_mass;
         QuatVec3Rotate(rotated_local_center_of_mass, compute->rotation, sim->local_center_of_mass);
         Vec3Sub(sim->world.position, compute->center_of_mass, rotated_local_center_of_mass);
         QuatCopy(sim->world.rotation, compute->rotation);
+
+        for (u32 j = body->shape_list.first; (i32) j != DLL_SENTINEL; j = shape->body_shape.next)
+        {
+            shape = pipeline->shape_pool.buf + j;
+            dirty->bbox_with_margin = ds_ShapeWorldBbox(pipeline, shape);
+            const struct bvhNode *node = ds_PoolAddress(&pipeline->shape_bvh.tree.pool, shape->proxy);
+            const struct aabb *proxy = &node->bbox;
+            if (!AabbContains(proxy, &dirty->bbox_with_margin))
+            {
+                dirty->shape = j;
+                dirty->bbox_with_margin.hw[0] += shape->margin;
+            	dirty->bbox_with_margin.hw[1] += shape->margin;
+            	dirty->bbox_with_margin.hw[2] += shape->margin;
+
+                proxy_range->count += 1;
+                dirty += 1;
+
+                if (proxy_range->count >= arr.len)
+                {
+		            Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
+		            FatalCleanupAndExit();
+                }
+            }
+        }
     }
 
+    ArenaPopPacked(g_tl_self->frame, sizeof(struct ds_ProxyDirty)*(arr.len - proxy_range->count));
+     
     ProfZoneEnd;
 }
 
