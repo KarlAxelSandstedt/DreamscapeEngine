@@ -123,6 +123,8 @@ tid 		ds_ThreadSelfTid(void);
 u32		    ds_ThreadIndex(const ds_Thread *thr);
 /* Return index of caller */ 
 u32		    ds_ThreadSelfIndex(void);
+/* Yield the thread's processor time to the OS. */
+void        ds_ThreadYield(void);
 
 #ifdef __cplusplus
 } 

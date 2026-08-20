@@ -121,7 +121,7 @@ extern "C" {
         {                                                                                               \
             for (u32 __cpu_pause_index = 0; __cpu_pause_index < __cpu_pause_count; ++__cpu_pause_index) \
             {                                                                                           \
-                __asm__ __volatile__("pause");                                                          \
+                _mm_pause();                                                                            \
             }                                                                                           \
         }
 	#endif 
@@ -141,7 +141,7 @@ extern "C" {
         {                                                                                               \
             for (u32 __cpu_pause_index = 0; __cpu_pause_index < __cpu_pause_count; ++__cpu_pause_index) \
             {                                                                                           \
-                __mm_pause();                                                                           \
+                _mm_pause();                                                                           \
             }                                                                                           \
         }
 	#endif 

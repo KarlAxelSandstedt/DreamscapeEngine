@@ -276,6 +276,38 @@ void 	ds_JobSchedulerShutdown(void);
 /* Clear any frame resources held by the task context and it's workers */
 void	ds_JobSchedulerFrameClear(void);
 
+/*
+ds_Spin
+=======
+ds_Spin is a spin-lock macro supporting exponential back-off + thread yielding.
+*/
+
+#define ds_Spin(_spin_condition_, _max_pauses_per_spin_, _max_pauses_per_yield_)    \
+do                                                                                  \
+{                                                                                   \
+    ds_Assert( (_max_pauses_per_spin_) );                                           \
+    ds_Assert( (_max_pauses_per_yield_) );                                          \
+    u32 _pause_count_ = 0;                                                          \
+    u32 _pause_ = 1;                                                                \
+    while ( (_spin_condition_) )                                                    \
+    {                                                                               \
+        ds_CpuPause(_pause_);                                                       \
+                                                                                    \
+        _pause_count_ += _pause_;                                                   \
+        _pause_ <<= 1;                                                              \
+                                                                                    \
+        if ( (_max_pauses_per_spin_) < _pause_ )                                    \
+        {                                                                           \
+            _pause_ = (_max_pauses_per_spin_);                                      \
+        }                                                                           \
+                                                                                    \
+        if( (_max_pauses_per_yield_) < _pause_count_ )                              \
+        {                                                                           \
+            _pause_count_ = 0;                                                      \
+            ds_ThreadYield();                                                       \
+        }                                                                           \
+    }                                                                               \
+} while (0)
 
 /*
 ds_ParallelFor
@@ -290,10 +322,6 @@ Usage:  TODO
         - Setup each parallel-for yourself
         - then create zones using ds_ParallelFor(pf + i, range, count[i])
 */
-
-#define PARALLEL_FOR_COMPLETED      0
-#define PARALLEL_FOR_INITIALIZING   1
-#define PARALLEL_FOR_RUNNING        2
 
 struct ds_ParallelFor
 {
@@ -315,6 +343,7 @@ void    ds_ParallelForInit(struct ds_ParallelFor *pf, const u32 index_count, con
 /* Return the interval [low, high) to be processed for the given range index. */
 void    ds_ParallelForRange(u32 *low, u32 *high, const struct ds_ParallelFor *pf, const u32 range_index);
 
+
 /*
 ds_ParallelForChain
 ===================
@@ -334,23 +363,30 @@ void                        ds_ParallelForChainWait(struct ds_ParallelForChain *
 
 
 #define ds_ParallelFor(_pf_, _index_)                                                                        \
-for (u32 _index_ = PFWait(_pf_); ((_index_) = PFNext(_pf_)) < (_pf_)->range_count; PFComplete(_pf_))
+for (u32 _index_ = PFWait(_pf_, 8, 128); ((_index_) = PFNext(_pf_)) < (_pf_)->range_count; PFComplete(_pf_))
 
 #include <sched.h>
-static inline u32 PFWait(struct ds_ParallelFor *pf) 
+static inline u32 PFWait(struct ds_ParallelFor *pf, const u32 max_pauses_per_spin, const u32 max_pauses_per_yield) 
 {
     //ProfZone;
 
-    u32 spin_count = 128;
-    while (!AtomicLoadAcq32(&pf->a_ready)) 
-    {
-        ds_CpuPause(1);
-        if(--spin_count == 0)
-        {
-            sched_yield();
-            spin_count = 128;
-        }
-    }
+    /*
+     * 2. Can we simplify the exponential pause stuff, or is it fine to only use << 1 increments?
+     *
+     * 3. We need to make sched_yield platform idependent,
+     *
+     *      PLATFORMS REQUIRED:
+     *          
+     *              Windows
+     *              Linux
+     *              WebAssembly + Emscripten
+     *
+     *      POSSIBLE FUTURE PLATFORMS
+     *
+     *              modern game consoles 
+     */
+
+    ds_Spin(!AtomicLoadAcq32(&pf->a_ready), max_pauses_per_spin, max_pauses_per_yield);
 
     if (!pf->range_count)
     {

@@ -194,6 +194,11 @@ void ds_ThreadWait(const ds_Thread *thr)
 	}
 }
 
+void ds_ThreadYield(void)
+{
+    sched_yield();
+}
+
 #elif __DS_PLATFORM__ == __DS_WIN64__
 
 DWORD WINAPI ds_ThreadCloneStart(LPVOID void_thr)
@@ -295,6 +300,11 @@ void ds_ThreadWait(const ds_Thread *thr)
 	}
 
 	return;
+}
+
+void ds_ThreadYield(void)
+{
+    SwitchToThread();
 }
 
 #endif
