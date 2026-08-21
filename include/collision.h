@@ -71,9 +71,13 @@ struct bvh		    DbvhAlloc(struct arena *mem, const u32 initial_length, const u32
 /* flush / reset the hierarchy  */
 void 			    DbvhFlush(struct bvh *bvh);
 /* id is an integer identifier from the outside, return index of added value */
-u32 			    DbvhInsert(struct bvh *bvh, const u32 id, const struct aabb *bbox);
+u32 			    DbvhInsert(struct bvh *bvh, const u32 id, const struct aabb *bbox, const u32 is_moving);
 /* remove leaf corresponding to index from tree */
 void 			    DbvhRemove(struct bvh *bvh, const u32 index);
+/* Set moving state of leaf corresponding to index */
+void                DbvhSetMoveState(struct bvh *bvh, const u32 index, const u32 is_moving);
+/* Get moving state of leaf corresponding to index */
+u32                 DbvhGetMoveState(const struct bvh *bvh, const u32 index);
 /* Return overlapping ids ptr, set to NULL if no overlap. if overlap, count is set */
 struct dbvhOverlap *DbvhPushOverlapPairs(struct arena *mem, u32 *count, const struct bvh *bvh);
 /* push	id:s of leaves hit by raycast. returns number of hits. -1 == out of memory */

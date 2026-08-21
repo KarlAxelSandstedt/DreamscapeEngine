@@ -424,9 +424,7 @@ u32 ds_CollisionJobPhaseDispatch(const ds_JobId job)
 
 static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 {
-	ProfZone;
     struct cdb *cdb = pipeline->cdb;
-
    
     /*
         Determinism issues
@@ -589,8 +587,6 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 
     	ProfZoneEnd;
     }
-
-	ProfZoneEnd;
 }
 
 static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
@@ -994,7 +990,7 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
                 const struct ds_ProxyDirty *dirty = range->proxy + pi;
                 struct ds_Shape *shape = pipeline->shape_pool.buf + dirty->shape;
             	DbvhRemove(&pipeline->shape_bvh, shape->proxy);
-            	shape->proxy = DbvhInsert(&pipeline->shape_bvh, dirty->shape, &dirty->bbox_with_margin);
+            	shape->proxy = DbvhInsert(&pipeline->shape_bvh, dirty->shape, &dirty->bbox_with_margin, 1);
                 ProfZoneEnd;
             }
         }

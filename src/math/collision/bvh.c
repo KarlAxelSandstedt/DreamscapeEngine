@@ -186,7 +186,7 @@ static void DbvhInternalBalanceNode(struct bvh *bvh, const u32 node)
 	nodes[node].bbox = BboxUnion(nodes[left].bbox, nodes[right].bbox);
 }
 
-u32 DbvhInsert(struct bvh *bvh, const u32 id, const struct aabb *bbox)
+u32 DbvhInsert(struct bvh *bvh, const u32 id, const struct aabb *bbox, const u32 is_moving)
 {
 	struct slot leaf;
 	if (bvh->tree.root == BT_PARENT_INDEX_MASK)
@@ -196,6 +196,7 @@ u32 DbvhInsert(struct bvh *bvh, const u32 id, const struct aabb *bbox)
 		bt_LeafSet(nodes + leaf.index);
 		/* Store external id's in bt_left of leaves */
 		nodes[leaf.index].bt_left = id;
+		nodes[leaf.index].bt_right = is_moving;
 		nodes[leaf.index].bbox = *bbox;
 	}
 	else
@@ -206,6 +207,7 @@ u32 DbvhInsert(struct bvh *bvh, const u32 id, const struct aabb *bbox)
 		nodes[leaf.index].bbox = *bbox;
 		nodes[leaf.index].bt_parent = BT_PARENT_LEAF_MASK | internal.index;
 		nodes[leaf.index].bt_left = id;
+		nodes[leaf.index].bt_right = is_moving;
 
 		/**
 		 * (1) Find best sibling using the minimum surface area hueristic + branch and bound algorithm.
@@ -343,10 +345,20 @@ void DbvhRemove(struct bvh *bvh, const u32 index)
 			}
 		}
 	}
+}
 
-	//struct arena tmp = ArenaAlloc1MB();
-	//BvhValidate(&tmp, bvh);
-	//ArenaFree1MB(&tmp);
+void DbvhSetMoveState(struct bvh *bvh, const u32 index, const u32 is_moving)
+{
+	struct bvhNode *nodes = (struct bvhNode *) bvh->tree.pool.buf;
+	ds_Assert(bt_LeafCheck(nodes + index));
+    nodes[index].bt_right = is_moving;
+}
+
+u32 DbvhGetMoveState(const struct bvh *bvh, const u32 index)
+{
+	struct bvhNode *nodes = (struct bvhNode *) bvh->tree.pool.buf;
+	ds_Assert(bt_LeafCheck(nodes + index));
+    return nodes[index].bt_right;
 }
 
 u32 DbvhInternalPushSubtreeOverlapPairs(struct arena *mem, struct dbvhOverlap *stack, const u64 stack_len, const struct bvh *bvh, u32 subA, u32 subB)
@@ -362,19 +374,24 @@ u32 DbvhInternalPushSubtreeOverlapPairs(struct arena *mem, struct dbvhOverlap *s
 		{
 			if (bt_LeafCheck(nodes + subA) && bt_LeafCheck(nodes + subB))
 			{
-				overlap_count += 1;
-				/* id's */
-				if (nodes[subA].bt_left < nodes[subB].bt_left)
-				{
-					overlap.id1 = nodes[subA].bt_left;	
-					overlap.id2 = nodes[subB].bt_left;	
-				}
-				else
-				{
-					overlap.id1 = nodes[subB].bt_left;	
-					overlap.id2 = nodes[subA].bt_left;	
-				}
-				ArenaPushPackedMemcpy(mem, &overlap, sizeof(overlap));
+                const u32 movingA = nodes[subA].bt_right;
+                const u32 movingB = nodes[subB].bt_right;
+                if (movingA || movingB)
+                {
+				    overlap_count += 1;
+				    /* id's */
+				    if (nodes[subA].bt_left < nodes[subB].bt_left)
+				    {
+				    	overlap.id1 = nodes[subA].bt_left;	
+				    	overlap.id2 = nodes[subB].bt_left;	
+				    }
+				    else
+				    {
+				    	overlap.id1 = nodes[subB].bt_left;	
+				    	overlap.id2 = nodes[subA].bt_left;	
+				    }
+				    ArenaPushPackedMemcpy(mem, &overlap, sizeof(overlap));
+                }
 			}
 			else
 			{

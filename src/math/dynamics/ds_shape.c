@@ -54,7 +54,9 @@ ds_ShapeId ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_Sh
 	{
 		Vec3Translate(bbox_proxy.hw, Vec3Inline(shape->margin, shape->margin, shape->margin));
 	}
-	shape->proxy = DbvhInsert(&pipeline->shape_bvh, slot.index, &bbox_proxy);
+
+    const u32 is_moving = (body_ptr->set == SOLVER_SET_ACTIVE);
+	shape->proxy = DbvhInsert(&pipeline->shape_bvh, slot.index, &bbox_proxy, is_moving);
 
     ds_RigidBodyUpdateMassProperties(pipeline, body);
 
