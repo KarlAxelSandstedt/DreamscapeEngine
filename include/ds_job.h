@@ -414,7 +414,7 @@ void                        ds_ParallelForRange(u32 *low, u32 *high, const struc
  * and the max pause instructions emitted before thread finally yielding.
  */
 #define ds_ParallelForEx(_pf_, _index_, _max_pauses_per_spin_, _max_pauses_per_yield_)          \
-for (u32 _index_ = PFWait(_pf_, _max_pauses_per_spin_, _max_pauses_per_yield_); ((_index_) = PFNext(_pf_)) < (_pf_)->range_count; PFComplete(_pf_))
+for (u32 _index_, _completed_ = PFWait(_pf_, _max_pauses_per_spin_, _max_pauses_per_yield_); (((_index_) = PFNext(_pf_)) < (_pf_)->range_count) || PFComplete(_pf_, _completed_); ++_completed_)
 
 static inline u32 PFWait(struct ds_ParallelFor *pf, const u32 max_pauses_per_spin, const u32 max_pauses_per_yield) 
 {
@@ -445,7 +445,7 @@ static inline u32 PFWait(struct ds_ParallelFor *pf, const u32 max_pauses_per_spi
 
     //ProfZoneEnd;
 
-    return U32_MAX;
+    return 0;
 }
 
 static inline u32 PFNext(struct ds_ParallelFor *pf)
@@ -453,14 +453,19 @@ static inline u32 PFNext(struct ds_ParallelFor *pf)
     return AtomicFetchAddRlx32(&pf->a_next, 1);
 }
 
-static inline void PFComplete(struct ds_ParallelFor *pf)
+static inline u32 PFComplete(struct ds_ParallelFor *pf, const u32 complete_count)
 {
-    const u32 local_completed = AtomicAddFetchRel32(&pf->a_completed, 1);
-    if (local_completed == pf->range_count)
-    {
-        AtomicLoadAcq32(&pf->a_completed);
-        AtomicStoreRel32(&(pf + 1)->a_ready, 1);
+    if (complete_count)
+    { 
+        const u32 local_completed = AtomicAddFetchRel32(&pf->a_completed, complete_count);
+        if (local_completed == pf->range_count)
+        {
+            AtomicLoadAcq32(&pf->a_completed);
+            AtomicStoreRel32(&(pf + 1)->a_ready, 1);
+        }
     }
+
+    return 0;
 }
 
 

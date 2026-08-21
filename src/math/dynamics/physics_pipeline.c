@@ -978,29 +978,11 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
     	ProfZoneEnd;
     }
 
-    /*
-        Determinism issues
-        ==================
-
-        (1) Insertion into dbvh should probably happen in a canonical order depending on ds_RigidBodyId;
-            we will get non-deterinistic results (probably) if we allow both orders 
-                
-                bbox_overlap(&a, &b) and bbox_overlap(&b, &a)
-
-            Perhaps this can and should be done after the solver phase and before we put islands to sleep;
-            islands put to sleep don't have their bodies updating their final resting place.
-
-            TODO: Insert bodies/shapes in a canonical order
-
-        Optimization Issues:
-        ====================
-
-        Baseline: 1.5ms - 0.75ms
-
-        (1) TODO: Dirty Check and WorldBBox derivation can we done in parallel, only Remove and Insert
-            needs to be serial
-     */
     {
+        /*
+         * TODO(Optimization): Reinsertion is costly, parallel-rebuild somehow if the reinsertion
+         *                     fraction is high.
+         */
         ProfZoneNamed("Dynamic Tree Update");
         struct ds_ParallelFor *pf = solver_phase->pf_orientation.parallel_for + 0;
         for (u32 ri = 0; ri < pf->range_count; ++ri)
