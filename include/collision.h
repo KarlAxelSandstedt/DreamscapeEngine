@@ -261,19 +261,24 @@ f32     c_TriMeshBvhHullDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, con
 
 /********************************** CONTACT MANIFOLD METHODS **********************************/
 
-struct ds_ContactResult;
-struct sat_Cache;
+struct c_ContactResult
+{
+    u32                         manifold_count;     /* Number of stored manifolds               */
+    u32                         cache_count;        /* Number of stored caches                  */
+    struct c_Manifold *         manifold;           /* Manifolds (if any)                       */
+    struct c_SatCache *         cache;              /* Caches (if any)                          */
+    u32 *                       tri;                /* Triangles (if any)                       */
+};
 
-u32     c_SphereContact(struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-u32     c_CapsuleSphereContact(struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-u32     c_CapsuleContact(struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-u32     c_HullSphereContact(struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-u32     c_HullCapsuleContact(struct c_Manifold *manifold, struct sat_Cache *not_used2, const struct sat_Cache *not_used3, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-u32     c_HullContact(struct c_Manifold *manifold, struct sat_Cache *cache, const struct sat_Cache *cache_copy, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-
-u32     c_TriMeshBvhSphereContact(struct arena *frame, struct c_Manifold **manifold, u32 **tri, struct sat_Cache *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-u32     c_TriMeshBvhCapsuleContact(struct arena *frame, struct c_Manifold **manifold, u32 **tri, struct sat_Cache *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-u32     c_TriMeshBvhHullContact(struct arena *frame, struct c_Manifold **manifold, u32 **tri, struct sat_Cache *cache, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
+struct c_ContactResult  c_SphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
+struct c_ContactResult  c_CapsuleSphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
+struct c_ContactResult  c_CapsuleContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
+struct c_ContactResult  c_HullSphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
+struct c_ContactResult  c_HullCapsuleContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
+struct c_ContactResult  c_HullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
+struct c_ContactResult  c_TriMeshBvhSphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
+struct c_ContactResult  c_TriMeshBvhCapsuleContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
+struct c_ContactResult  c_TriMeshBvhHullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
 
 /********************************** RAYCAST **********************************/
 

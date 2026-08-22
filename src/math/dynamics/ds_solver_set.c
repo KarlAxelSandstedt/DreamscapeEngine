@@ -143,7 +143,7 @@ void ds_SolverSetWakeUp(struct ds_RigidBodyPipeline *pipeline, const u32 index)
     for (u32 i = 0; i < set->contact_pool.count; ++i)
     {
         const u32 ci = set->contact_pool.buf[i];
-        struct ds_Contact *c = pipeline->cdb->contact_pool.buf + ci;
+        struct ds_Contact *c = pipeline->contact_pool.buf + ci;
         ds_CGraphContactAdd(pipeline, c);
     }
 
@@ -246,17 +246,17 @@ void ds_SolverSetSleep(struct ds_RigidBodyPipeline *pipeline, const u32 island_i
     struct ds_Contact *contact = NULL;
     for (u32 i = island->contact_list.first; (i32) i != DLL_SENTINEL; i = contact->island_contact.next)
     {
-        contact = pipeline->cdb->contact_pool.buf + i;
+        contact = pipeline->contact_pool.buf + i;
         ds_Assert(contact->set == SOLVER_SET_NULL);
         ds_Assert(contact->island == island_index);
         struct ds_CGraphColor *color = cg->color + contact->color;
 
         slot = ds_CPoolPush(set->contact_pool);
-        set->contact_pool.buf[ slot.index ] = ds_ContactPoolIndex(&pipeline->cdb->contact_pool, contact);
+        set->contact_pool.buf[ slot.index ] = ds_ContactPoolIndex(&pipeline->contact_pool, contact);
         ds_CGraphContactRemove(pipeline, contact);
 
         contact->set = island->set;
-        contact->set_contact_index = slot.index;
+        contact->compute = slot.index;
     }
 
     struct ds_RigidBody *body = NULL;
@@ -325,9 +325,9 @@ void ds_SolverSetMerge(struct ds_RigidBodyPipeline *pipeline, const u32 set_expa
         for (u32 i = 0; i < merge->contact_pool.count; ++i)
         {
             const u32 ci = merge->contact_pool.buf[i];
-            struct ds_Contact *contact = pipeline->cdb->contact_pool.buf + ci;
-            contact->set_contact_index = ds_CPoolPush(expand->contact_pool).index;
-            expand->contact_pool.buf[ contact->set_contact_index ] = ci;
+            struct ds_Contact *contact = pipeline->contact_pool.buf + ci;
+            contact->compute = ds_CPoolPush(expand->contact_pool).index;
+            expand->contact_pool.buf[ contact->compute ] = ci;
         }
 
         for (u32 i = 0; i < merge->joint_sim_pool.count; ++i)
@@ -391,9 +391,9 @@ void ds_SolverSetValidate(const struct ds_RigidBodyPipeline *pipeline, const u32
     for (u32 i = 0; i < set->contact_pool.count; ++i)
     {
         const u32 ci = set->contact_pool.buf[i];
-        const struct ds_Contact *c = pipeline->cdb->contact_pool.buf + ci;
+        const struct ds_Contact *c = pipeline->contact_pool.buf + ci;
         ds_Assert(c->set == set_index);
-        ds_Assert(c->set_contact_index == i);
+        ds_Assert(c->compute == i);
     }
 
     if (set_index == SOLVER_SET_ACTIVE)

@@ -27,7 +27,8 @@ void ds_CGraphAlloc(struct ds_RigidBodyPipeline *pipeline, const u32 initial_cou
     {
         ds_CPoolAlloc(NULL, cg->color[i].joint_sim_pool, initial_count, GROWABLE);
         ds_CPoolAlloc(NULL, cg->color[i].contact_pool, initial_count, GROWABLE);
-        ds_CPoolAlloc(NULL, cg->color[i].contact_constraint_pool, initial_count, GROWABLE);
+        ds_CPoolAlloc(NULL, cg->color[i].contact_compute_pool, initial_count, GROWABLE);
+        //ds_CPoolAlloc(NULL, cg->color[i].contact_constraint_pool, initial_count, GROWABLE);
         if (i != CG_SERIAL_COLOR)
         {
             cg->color[i].body_bitset = ds_BitSetAlloc(NULL, pipeline->body_pool.length, 0, GROWABLE);
@@ -42,7 +43,8 @@ void ds_CGraphDealloc(struct ds_RigidBodyPipeline *pipeline)
     {
         ds_CPoolDealloc(cg->color[i].joint_sim_pool);
         ds_CPoolDealloc(cg->color[i].contact_pool);
-        ds_CPoolDealloc(cg->color[i].contact_constraint_pool);
+        ds_CPoolDealloc(cg->color[i].contact_compute_pool);
+        //ds_CPoolDealloc(cg->color[i].contact_constraint_pool);
         if (i != CG_SERIAL_COLOR)
         {
             ds_BitSetDealloc(&cg->color[i].body_bitset);
@@ -57,7 +59,8 @@ void ds_CGraphFlush(struct ds_RigidBodyPipeline *pipeline)
     {
         ds_CPoolFlush(cg->color[i].joint_sim_pool);
         ds_CPoolFlush(cg->color[i].contact_pool);
-        ds_CPoolFlush(cg->color[i].contact_constraint_pool);
+        ds_CPoolFlush(cg->color[i].contact_compute_pool);
+        //ds_CPoolFlush(cg->color[i].contact_constraint_pool);
         if (i != CG_SERIAL_COLOR)
         {
             ds_BitSetClear(&cg->color[i].body_bitset, 0);
@@ -174,14 +177,51 @@ void ds_CGraphJointRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint
 
 void ds_CGraphContactAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact)
 {
-    const u32 body[2] = { contact->key.body0, contact->key.body1 };
+    ds_Assert(contact->set != SOLVER_SET_NULL)
+    ds_Assert(contact->color == CG_INVALID_COLOR);
+    
+    struct ds_SolverSet *set = pipeline->solver_set_pool.buf + contact->set;
+
+    const struct ds_Shape *shape[2] =
+    {
+        pipeline->shape_pool.buf + contact->key.shape[0],
+        pipeline->shape_pool.buf + contact->key.shape[1],
+    };
+
+    const u32 body[2] = { shape[0]->body, shape[1]->body };
     contact->color = ds_CGraphColorNext(pipeline, body);
 
+    //TODO Grab indices/pointers before updating them
+    if (contact->set == SOLVER_SET_ACTIVE)
+    {
+    }
+    else
+    {
+    }
+
+    //TODO
     struct ds_CGraphColor *color = pipeline->cgraph.color + contact->color;
+    contact->compute = ds_CPoolPush(color->contact_pool).index;
+    color->contact_pool.buf[ contact->compute ] = ds_ContactPoolIndex(&pipeline->contact_pool, contact);
+    //ds_CPoolPush(color->contact_constraint_pool);
+
+    
+
+
+
+    //TODO This should be in WakeUp
+    //ds_CPoolRemoveAndSwap(set->contact_pool, contact->compute);
+    //ds_CPoolRemoveAndSwap(set->contact_compute_pool, contact->compute);
+    //if (contact->compute < set->contact_pool.count)
+    //{
+    //    const u32 index = set->contact_pool.buf[ contact->compute ];
+    //    struct ds_Contact *moved_contact = pipeline->contact_pool.buf + contact->compute;
+    //    ds_Assert(moved_contact->set == SOLVER_SET_ACTIVE);
+    //    ds_Assert(moved_contact->compute == active->contact_pool.count);
+    //    moved_contact->compute = contact->compute;
+    //}
+    contact->compute = U32_MAX;
     contact->set = SOLVER_SET_NULL;
-    contact->set_contact_index = ds_CPoolPush(color->contact_pool).index;
-    color->contact_pool.buf[ contact->set_contact_index ] = ds_ContactPoolIndex(&pipeline->cdb->contact_pool, contact);
-    ds_CPoolPush(color->contact_constraint_pool);
 }
 
 void ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact)
@@ -194,20 +234,27 @@ void ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Con
 
     if (contact->color != CG_SERIAL_COLOR)
     {
-        ds_BitSetSet(&color->body_bitset, contact->key.body0, 0);
-        ds_BitSetSet(&color->body_bitset, contact->key.body1, 0);
+        const struct ds_Shape *shape[2] =
+        {
+            pipeline->shape_pool.buf + contact->key.shape[0],
+            pipeline->shape_pool.buf + contact->key.shape[1],
+        };
+
+        ds_BitSetSet(&color->body_bitset, shape[0]->body, 0);
+        ds_BitSetSet(&color->body_bitset, shape[1]->body, 0);
     }
 
-    ds_CPoolRemoveAndSwap(color->contact_pool, contact->set_contact_index);
-    ds_CPoolRemoveAndSwap(color->contact_constraint_pool, contact->set_contact_index);
-    if (contact->set_contact_index < color->contact_pool.count)
+    ds_CPoolRemoveAndSwap(color->contact_pool, contact->compute);
+    ds_CPoolRemoveAndSwap(color->contact_pool, contact->compute);
+    //ds_CPoolRemoveAndSwap(color->contact_constraint_pool, contact->compute);
+    if (contact->compute < color->contact_pool.count)
     {
-        const u32 moved_index = color->contact_pool.buf[ contact->set_contact_index ];
-        struct ds_Contact *moved_contact = pipeline->cdb->contact_pool.buf + moved_index;
+        const u32 moved_index = color->contact_pool.buf[ contact->compute ];
+        struct ds_Contact *moved_contact = pipeline->contact_pool.buf + moved_index;
         ds_Assert(moved_contact->color == contact->color);
-        ds_Assert(moved_contact->set_contact_index == color->contact_pool.count);
+        ds_Assert(moved_contact->compute == color->contact_pool.count);
 
-        moved_contact->set_contact_index = contact->set_contact_index;
+        moved_contact->compute = contact->compute;
     }
         
     contact->color = CG_INVALID_COLOR;
@@ -221,33 +268,45 @@ void ds_CGraphValidate(const struct ds_RigidBodyPipeline *pipeline)
         for (u32 i = 0; i < color->contact_pool.count; ++i)
         {
             const u32 ci = color->contact_pool.buf[i];
-            const struct ds_Contact *contact = pipeline->cdb->contact_pool.buf + ci;
+            const struct ds_Contact *contact = pipeline->contact_pool.buf + ci;
             const struct ds_Island *island = pipeline->island_pool.buf + contact->island;
-            const struct ds_RigidBody *body0 = pipeline->body_pool.buf + contact->key.body0;
-            const struct ds_RigidBody *body1 = pipeline->body_pool.buf + contact->key.body1;
+
+            const struct ds_Shape *shape[2] =
+            {
+                pipeline->shape_pool.buf + contact->key.shape[0],
+                pipeline->shape_pool.buf + contact->key.shape[1],
+            };
+
+            const struct ds_RigidBody *body[2] =
+            {
+                pipeline->body_pool.buf + shape[0]->body,
+                pipeline->body_pool.buf + shape[1]->body,
+            };
+
             ds_Assert(contact->color == c);
-            ds_Assert(contact->set_contact_index == i);
+            ds_Assert(contact->compute == i);
             ds_Assert(contact->set == SOLVER_SET_NULL);
             ds_Assert(island->set == SOLVER_SET_ACTIVE);
 
-            if (CG_STATIC_COLOR_FIRST <= c && c <= CG_STATIC_COLOR_LAST)
+            ds_StaticAssert(CG_STATIC_COLOR_FIRST == 0, "");
+            if (c <= CG_STATIC_COLOR_LAST)
             {
-                ds_Assert((!RB_IS_DYNAMIC(body0) 
-                         && RB_IS_DYNAMIC(body1) 
-                         && body0->set == SOLVER_SET_STATIC
-                         && body1->set == SOLVER_SET_ACTIVE)
+                ds_Assert((!RB_IS_DYNAMIC(body[0]) 
+                         && RB_IS_DYNAMIC(body[1]) 
+                         && body[0]->set == SOLVER_SET_STATIC
+                         && body[1]->set == SOLVER_SET_ACTIVE)
                     || 
-                       (RB_IS_DYNAMIC(body0) 
-                         && !RB_IS_DYNAMIC(body1) 
-                         && body1->set == SOLVER_SET_STATIC 
-                         && body0->set == SOLVER_SET_ACTIVE));
+                       (RB_IS_DYNAMIC(body[0]) 
+                         && !RB_IS_DYNAMIC(body[1]) 
+                         && body[1]->set == SOLVER_SET_STATIC 
+                         && body[0]->set == SOLVER_SET_ACTIVE));
 
             }
             else if (CG_DYNAMIC_COLOR_FIRST <= c && c <= CG_DYNAMIC_COLOR_LAST)
             {
-                ds_Assert(RB_IS_DYNAMIC(body0) && RB_IS_DYNAMIC(body1));
-                ds_Assert(body0->set == SOLVER_SET_ACTIVE);
-                ds_Assert(body1->set == SOLVER_SET_ACTIVE);
+                ds_Assert(RB_IS_DYNAMIC(body[0]) && RB_IS_DYNAMIC(body[1]));
+                ds_Assert(body[0]->set == SOLVER_SET_ACTIVE);
+                ds_Assert(body[1]->set == SOLVER_SET_ACTIVE);
             }
         }
 
@@ -263,7 +322,8 @@ void ds_CGraphValidate(const struct ds_RigidBodyPipeline *pipeline)
             ds_Assert(joint->set == SOLVER_SET_NULL);
             ds_Assert(island->set == SOLVER_SET_ACTIVE);
 
-            if (CG_STATIC_COLOR_FIRST <= c && c <= CG_STATIC_COLOR_LAST)
+            ds_StaticAssert(CG_STATIC_COLOR_FIRST == 0, "");
+            if (c <= CG_STATIC_COLOR_LAST)
             {
                 ds_Assert(RB_IS_DYNAMIC(body0) && RB_IS_DYNAMIC(body1));
                 ds_Assert(body0->set == SOLVER_SET_ACTIVE);

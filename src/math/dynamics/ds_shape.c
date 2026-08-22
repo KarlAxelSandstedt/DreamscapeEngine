@@ -96,7 +96,7 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
     while (shape->contact_list.first != DLL_SENTINEL)
 	{
         const u32 ci = shape->contact_list.first;
-		struct ds_Contact *c = pipeline->cdb->contact_pool.buf + ci;
+		struct ds_Contact *c = pipeline->contact_pool.buf + ci;
 		struct ds_Island *island = pipeline->island_pool.buf + c->island;
 		island->constraint_remove_count += 1; 
         if (island->set >= SOLVER_SET_SLEEPING_FIRST)
@@ -241,21 +241,14 @@ f32 (*c_distance_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(vec3 c1, vec3 c2, const 
 	{ c_TriMeshBvhSphereDistance,	c_TriMeshBvhCapsuleDistance, 	c_TriMeshBvhHullDistance,	0, },
 };
 
-u32 (*c_contact_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(struct c_Manifold *, struct sat_Cache *, const struct sat_Cache *, const struct c_Shape *[2], const ds_Transform [2], const u32) =
+struct c_ContactResult  (*c_contact_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(struct arena *, const struct c_ContactResult *, const struct c_Shape *[2], const ds_Transform [2], const u32) =
 {
 	{ c_SphereContact,	 	        0, 				            0,			                0, },
 	{ c_CapsuleSphereContact, 	    c_CapsuleContact,			0,			                0, },
 	{ c_HullSphereContact, 	  	    c_HullCapsuleContact,		c_HullContact, 		        0, },
-	{ 0,	                        0,                          0,                          0, },
+	{ c_TriMeshBvhSphereContact,    c_TriMeshBvhCapsuleContact, c_TriMeshBvhHullContact,    0, },
 };
 
-u32 (*c_mesh_contact_methods[C_SHAPE_COUNT])(struct arena *, struct c_Manifold **, u32 **, struct sat_Cache *, const struct c_Shape *[2], const ds_Transform [2], const u32) =
-{
-    c_TriMeshBvhSphereContact,
-    c_TriMeshBvhCapsuleContact,
-    c_TriMeshBvhHullContact,
-    0,
-};
 
 f32 (*c_raycast_parameter_methods[C_SHAPE_COUNT])(const struct c_Shape *, const ds_Transform *, const struct ray *) =
 {
@@ -293,77 +286,42 @@ f32 ds_ShapeDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipeline *pipeli
 		: c_distance_methods[c_s2->type][c_s1->type](c2, c1, c_s2, &t2, c_s1, &t1);
 }
 
-u32 ds_ShapeContact(struct c_Manifold *manifold, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2)
+void ds_ShapeContact(struct arena *frame, const struct ds_RigidBodyPipeline *pipeline, const u32 contact_index)
 {
-    ds_Transform t_arr[2];
+    struct ds_Contact *c = pipeline->contact_pool.buf + contact_index;
 
-    const struct c_Shape *c_s1 = strdb_Address(pipeline->cshape_db, s1->cshape_handle);
-    const struct c_Shape *c_s2 = strdb_Address(pipeline->cshape_db, s2->cshape_handle);
-
-    struct sat_Cache *cache_copy = NULL;
-    struct sat_Cache cache_copy_mem;
-    if (cache)
+    const struct ds_Shape *s[2] =
     {
-        cache_copy = &cache_copy_mem;
-        cache_copy_mem = *cache;
-    }
+        pipeline->shape_pool.buf + c->key.shape[0],
+        pipeline->shape_pool.buf + c->key.shape[1],
+    };
 
-	u32 collision_count;
-	if (c_s1->type >= c_s2->type) 
-	{
-        const struct c_Shape *c_s_arr[2] = { c_s1, c_s2 };
-        ds_ShapeWorldTransform(t_arr + 0, pipeline, s1);
-        ds_ShapeWorldTransform(t_arr + 1, pipeline, s2);
-        const u32 ref = (s1->body < s2->body)
+    const struct c_Shape *c_s[2] =
+    {
+        strdb_Address(pipeline->cshape_db, s[0]->cshape_handle),
+        strdb_Address(pipeline->cshape_db, s[1]->cshape_handle),
+    };
+
+    /* index of most complex shape in c_s_arr */
+    const u32 m = (c_s[0]->type >= c_s[1]->type) 
+                ? 0
+                : 1;
+
+    const u32 reference = (s[m]->body < s[1-m]->body)
                         ? 0
                         : 1;
-		collision_count = c_contact_methods[c_s1->type][c_s2->type](manifold, cache, cache_copy, c_s_arr, t_arr, ref);
-	}                                                                                         
-	else                                                                                      
-	{                                                                                         
-        const struct c_Shape *c_s_arr[2] = { c_s2, c_s1 };
-        ds_ShapeWorldTransform(t_arr + 0, pipeline, s2);
-        ds_ShapeWorldTransform(t_arr + 1, pipeline, s1);
-        const u32 ref = (s1->body < s2->body)
-                        ? 1
-                        : 0;
-		collision_count = c_contact_methods[c_s2->type][c_s1->type](manifold, cache, cache_copy, c_s_arr, t_arr, ref);
-	}
+    const struct c_Shape *c_s_arr[2] = 
+    { 
+        c_s[m], 
+        c_s[1-m],
+    };
 
-	return collision_count;
-}
-
-u32 ds_ShapeMeshContact(struct arena *frame, struct c_Manifold **manifold, u32 **triangle, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2)
-{
     ds_Transform t_arr[2];
+    ds_ShapeWorldTransform(t_arr + 0, pipeline, s[m]);
+    ds_ShapeWorldTransform(t_arr + 1, pipeline, s[1-m]);
 
-    const struct c_Shape *c_s1 = strdb_Address(pipeline->cshape_db, s1->cshape_handle);
-    const struct c_Shape *c_s2 = strdb_Address(pipeline->cshape_db, s2->cshape_handle);
-
-    u32 collision_count;
-    if (c_s2->type < c_s1->type)
-    {
-        const u32 ref = (s1->body < s2->body)
-                    ? 0
-                    : 1;
-        const struct c_Shape *c_s_arr[2] = { c_s1, c_s2 };
-        ds_ShapeWorldTransform(t_arr + 0, pipeline, s1);
-        ds_ShapeWorldTransform(t_arr + 1, pipeline, s2);
-	    collision_count = c_mesh_contact_methods[c_s2->type](frame, manifold, triangle, cache, c_s_arr, t_arr, ref);
-    }
-    else
-    {
-        const u32 ref = (s1->body < s2->body)
-                    ? 1
-                    : 0;
-        const struct c_Shape *c_s_arr[2] = { c_s2, c_s1 };
-        ds_ShapeWorldTransform(t_arr + 0, pipeline, s2);
-        ds_ShapeWorldTransform(t_arr + 1, pipeline, s1);
-	    collision_count = c_mesh_contact_methods[c_s1->type](frame, manifold, triangle, cache, c_s_arr, t_arr, ref);
-    }
-    return collision_count;
+	c->narrowphase = c_contact_methods[c_s[m]->type][c_s[1-m]->type](frame, &c->narrowphase, c_s_arr, t_arr, reference);
 }
-
 
 f32 ds_ShapeRaycastParameter(const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray)
 {

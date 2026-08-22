@@ -36,7 +36,6 @@ extern "C" {
 struct ds_RigidBodyPipeline;
 struct ds_RigidBody;
 struct ds_Island;
-struct cdb;
 struct ds_ProxyRange;
 
 /*
@@ -230,11 +229,11 @@ struct ds_ShapePrefabInstance
  * Allocates a shape according to the values set in Prefab and with given local body frame transform. On success, 
  * an identifier to the shape is returned. On failure, U64 is return. 
  */
-ds_ShapeId  ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_ShapePrefab *prefab, const ds_Transform *t, const ds_RigidBodyId body);
+ds_ShapeId              ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_ShapePrefab *prefab, const ds_Transform *t, const ds_RigidBodyId body);
 /* 
  * INTERNAL: Remove the specified shape of a DYNAMIC body and update the island database and contact database state.  
  */
-void        ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 shape_index, const u32 update_mass_properties);
+void                    ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 shape_index, const u32 update_mass_properties);
 /* 
  * INTERNAL: Remove the specified shape of a STATIC body and update the physics state into a valid state. 
  */
@@ -261,18 +260,9 @@ u32	        ds_ShapeTest(const struct ds_RigidBodyPipeline *pipeline, const stru
  */
 f32 	    ds_ShapeDistance(vec3 c1, vec3 c2, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
 /* 
- * Returns 1 if the shapes are colliding, 0 otherwise. If a collision is found, return a contact manifold
- * with normal pointing from the reference body towards the incident body (and set the sat_cache if non-null 
- * and applicable). 
+ * Run the contact's collision computation and set its manifold(s) and cache(s).
  */
-u32         ds_ShapeContact(struct c_Manifold *manifold, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
-/*
- * Returns the number of triangles in the mesh colliding with the other shape. If collisions are found, manifold and
- * triangle allocated to store each collision's manifold and triangle index. Each manifold normal points the
- * reference body towards the incident body. Lastly, set the sat_cache if non-null and applicable.
- */
-u32         ds_ShapeMeshContact(struct arena *frame, struct c_Manifold **manifold, u32 **triangle, struct sat_Cache *cache, const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2); 
-
+void        ds_ShapeContact(struct arena *frame, const struct ds_RigidBodyPipeline *pipeline, const u32 contact_index);
 /* 
  * Return, if ray intersects shape, t such that ray.origin + t*ray.dir == closest point on shape. 
  *         Otherwise, return F32_INFINITY.
@@ -418,27 +408,6 @@ Internals:
     and shapes.
 */
 
-#define INDIRECT_SHAPE_INIT(s)  ((s) | INDIRECT_SHAPE_FLAG)
-#define INDIRECT_SHAPE_FLAG     0x80000000
-#define INDIRECT_SHAPE_CHECK(s) ((s) & INDIRECT_SHAPE_FLAG)
-
-struct ds_ContactKey
-{
-    u32 body0;      /* (body0 < body1)      */
-    u32 shape0;     /* subshape of body0, OR if body0 is a TriMesh, (    */
-    u32 body1;      /* (body0 < body1)      */
-    u32 shape1;     /* subshape of body1    */
-};
-
-/* Return the Canonical key of (bodyA,shapeA) (bodyB,shapeB) */
-struct ds_ContactKey    ds_ContactKeyCanonical(const u32 bodyA, const u32 shapeA, const u32 bodyB, const u32 shapeB);
-/* Return a 32-bit hash of the key */
-u32                     ds_ContactKeyHash(const struct ds_ContactKey *key);
-/* Return 1 if the two keys are equivalent, otherwise return  0. */
-u32                     ds_ContactKeyEquivalence(const struct ds_ContactKey *keyA, const struct ds_ContactKey *keyB);
-/* Return the body and shape addresses of the key */
-void                    ds_ContactKeyAddress(struct ds_RigidBody **b0, struct ds_Shape **s0, struct ds_RigidBody **b1, struct ds_Shape **s1, const struct ds_RigidBodyPipeline *pipeline, const struct ds_ContactKey *key);
-
 /*
 ds_Contact
 ==========
@@ -446,83 +415,10 @@ ds_Contact is the value mapped by a ds_ContactKey, and contains current and cach
 contact data and additional list node state. The reference body is ALWAYS body0,
 so any cached contacts are relative to body0.
 */
-struct ds_Contact
-{
-    POOL_NODE;
-    ds_ContactId            id;                         /* generational identifier  */
-    struct ds_DLLNode       island_contact;             /* island->contact_list node                         */
-
-    u32                     island;                     /* Index of contact's island */
-    u32                     set;                        /* Index of contact's set                                   */
-    /* TODO rename, real shit */
-    u32                     set_contact_index;          /* If set is NULL, Index(contact) == 
-                                                           graph->color[ c->color ].contact[ set_contact_index ]
-                                                           else Index(contact) == set->contact[ set_contact_index ] */
-    u32                     color;                      /* If valid, determines the contact's CGraph color.         */
-
-    struct ds_DLLNode       shape_contact[2];           /* [i] is part of shape i's contact list                    */
-    struct ds_ContactKey    key;                        /* canonical-form key                                       */
-	struct c_Manifold 	    cm;                         /* Current contact manifold                                 */
-
-	vec3 			        normal_cache;               /* Cached contact normal                                    */
-	vec3 			        tangent_cache[2];           /* Froms Contact basis with normal                          */
-	vec3 			        r1_cache[4];			    /* previous local frame arm levers                          */
-    vec3                    r2_cache[4];                   
-	f32 			        tangent_impulse_cache[4][2];
-	f32 			        normal_impulse_cache[4];	/* contact_solver solution to contact 
-                                                           constraint, or 0.0f                                      */
-	u32 			        cached_count;			    /* number of vertices in cache                              */
-};
-POOL_DECLARE(ds_Contact);
-
-/* Add and return new contact with unique key and update pipeline state */
-struct slot ds_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct c_Manifold *cm, const struct ds_ContactKey *key);
-/* Remove contact at the given index and update pipeline state */
-void 	    ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index);
-/* Return the contact associated with the given id. If no such contact is found, return (NULL, NLL_NULL) */
-struct slot ds_ContactLookup(const struct ds_RigidBodyPipeline *pipeline, const ds_ContactId id);
-/* Update contact at the given slot and update pipeline state. */
-void        ds_ContactUpdate(struct ds_RigidBodyPipeline *pipeline, const struct slot slot, const struct c_Manifold *cm);
-/* Return the contact associated with the given key. If no such contact is found, return (NULL, NLL_NULL) */
-struct slot ds_ContactKeyLookup(const struct ds_RigidBodyPipeline *pipeline, const struct ds_ContactKey *key);
 
 /*
-sat_CacheKey
-============
-sat_CacheKey is the unique key for a sat_cache, and it used in the contact database
-hash map. Since the key must be unique for a sat_cache, we require it to be in 
-canonical form, i.e. you may always assume that Index(body0) < Index(body1). The 
-shapes are the subshapes of their respective bodys making contact. 
-
-::: Internals :::
-
-The choice to using IDs instead of indices is required due to ABA issues; rigid 
-bodies and shapes do not contain enough information themselves to easily lookup
-any of their caches, so when we remove a body or a shape, we do not want to remove
-its cache immediately. Instead, we lazily remove caches with 1 frame delay, which
-introduces the ABA problems which justifies adding full ids to the cache key.
-
-*/
-
-//TODO maybe this can be done in a less bloated way...
-struct sat_CacheKey
-{
-    ds_RigidBodyId  body0;      /* Index(body0) < Index(body1)  */
-    ds_ShapeId      shape0;     /* subshape of body0            */
-    ds_RigidBodyId  body1;      /* Index(body0) < Index(body1)  */
-    ds_ShapeId      shape1;     /* subshape of body1            */
-};
-
-/* Return the Canonical key of (bodyA,shapeA) (bodyB,shapeB) */
-struct sat_CacheKey sat_CacheKeyCanonical(const ds_RigidBodyId bodyA, const ds_ShapeId shapeA, const ds_RigidBodyId bodyB, const ds_ShapeId shapeB);
-/* Return a 32-bit hash of the key */
-u32                 sat_CacheKeyHash(const struct sat_CacheKey *key);
-/* Return 1 if the two keys are equivalent, otherwise return  0. */
-u32                 sat_CacheKeyEquivalence(const struct sat_CacheKey *keyA, const struct sat_CacheKey *keyB);
-
-/*
-sat_Cache
-=========
+ds_SatCache
+===========
 Internal physics engine struct for caching SAT-based contact calculations each frame. If a contact was found,
 the contact results may be re-used the next frame if a set of conditions are fullfilled.
 
@@ -549,11 +445,9 @@ To ensure temporal coherence when reusing contact information, we currently test
 
 enum sat_CacheType
 {
-    SAT_CACHE_NOT_SET,      /* Cache not set            */
 	SAT_CACHE_SEPARATION,   /* Seperation axis found    */
 	SAT_CACHE_CONTACT_FV,   /* Face-Vertex Contact      */
 	SAT_CACHE_CONTACT_EE,   /* Edge-Edge Contact        */
-	SAT_CACHE_CONTACT_TRI,  /* Mesh-Hull tri cache data */
 	SAT_CACHE_COUNT,
 };
 
@@ -576,80 +470,15 @@ typedef u32 sat_FeatureId;
 #define sat_FeatureIdIndex(id)              ((id) & SAT_FEATURE_ID_INDEX_MASK)
 #define sat_FeatureIdConstruct(index, type) ((((u32) type) << 30) | (SAT_FEATURE_ID_INDEX_MASK & (index)))
 
-struct c_TriHullCache;
-
-struct sat_Cache
-{
-    THASH_NODE;
-    TPOOL_NODE;
-
-	struct sat_CacheKey key;
-	enum sat_CacheType	type;
-	union
-	{
-        struct
-        {
-            /*
-             * type == FACE:
-             *  feature[i].type == FACE => i IS NOT incident face
-             *  feature[i].type != FACE => i IS on incident face
-             *  normal == face normal
-             *
-             * type == EDGE:
-             *  feature[i].type == EDGE
-             *  feature[i].type == EDGE
-             *  normal == contact normal
-             */
-            sat_FeatureId   feature[2];
-            f32             depth;      /* maximum feature depth (positive) */
-            vec3            normal;     /* cached world-space normal        */
-        };
-
-		struct
-		{
-			vec3    separation_axis;    /* reference to incident direction */
-			f32	    separation;
-		};
-
-        struct
-        {
-            u32                     tri_cache_count;
-            struct c_TriHullCache * tri_cache;
-            //TODO storage for another pointer.
-        };
-	};
-};
-
-TPOOL_DECLARE(sat_Cache)
-THASH_DECLARE(sat_Cache, struct sat_CacheKey)
-
-/* Alloc sat_Cache in pipeline. */
-struct slot sat_CacheAdd(struct cdb *cdb, const struct sat_CacheKey *key);
-/* Dealloc sat_Cache in pipeline. */
-void        sat_CacheRemove(struct cdb *cdb, const u32 index);
-/* Lookup sat_Cache in pipeline. If found, return (index, address). Otherwise (U32_MAX, NULL). */
-struct slot sat_CacheLookup(struct cdb *cdb, const struct sat_CacheKey *key);
-
+#define TRI_HULL_CACHE_MAX_SIZE 32
 
 /*
-c_TriHullCache
-==============
-Cachind data for a triangle vs. hull sat call. Instead of using triangles as shapes, we use the 
-ordinary identifiers 
-         
-         (body_hull, shape_hull, body_mesh, shape_mesh)
-
-as our sat_CacheKey. We wish to skip the overhead of managing the database on a per-triangle contact basis, and
-instead keep the triangle cache data stored in a small array of size TRI_HULL_CACHE_MAX_SIZE. We extend the union 
-in sat_Cache with a "c_TriHullCache pointer" which points into double-buffered memory. To handle this, we extend 
-our program to use double-buffered frame arenas; this way any thread can look into any other threads' old caching 
-work from the previous frame, and store any new cache data in the current frame.
+c_SatCache
+==========
 */
-
-#define TRI_HULL_CACHE_MAX_SIZE 32
-struct c_TriHullCache
+struct c_SatCache
 {
-    u32 tri;
+    u32 tri;                    /* (Optional): Triangle in mesh. */
 	enum sat_CacheType	type;
     
     /*
@@ -665,68 +494,124 @@ struct c_TriHullCache
      *
      * type == SEPARATION:
      *      normal == separation axis pointing from reference body 
-     *      depth == separation distance
+     *      depth == separation distance (positive)
      */
     sat_FeatureId   feature[2];
-    f32             depth;      /* depth or separation (positive)   */
-    vec3            normal;     /* cached bvh-space normal          */
+    f32             depth;      
+    vec3            normal;     
 };
 
 
 /*
-contact_database
-================
-Database for last and current frame contacts. Any rigid body can lookup its cached
-and current contacts, and if necessary, invalidate any contact data.
+ * TODO: Update stuff above
+ */
+
+/*
+Contact Management
+==================
+
+We describe how contacts are stored and handled in the engine. If two shapes are close to touching
+(non-touching) or touching, (s0.index, s1.index) defines a ds_ContactKey that is mapped to the
+pair's ds_Contact stored in the pipeline's sparse contact pool. 
+
+ds_ContactKey
+=============
+The key is defined by the canonical form (s0,s1), where s0 < s1 and is used to lookup locate the
+potential contact between shapes s0, s1.
+
+ds_Contact
+==========
+Every touching and non-touching contact is a persistent ds_Contact. The structure stores general
+connectivity data and where to find its simulation/compute data. 
+
+    :: Every non-touching contact have a link (<->) stored in the active set, and have no compute
+       data attached to it. It it not associated with an island. Any ds_SatCache that belongs to 
+       the contact is alive for 2 frames and is renewed every frame.
+
+    :: All contacts in an Awake island are stored in the constraint graph with a link (<->) and
+       compute data. Any ds_SatCache that belongs to the contact is alive for 2 frames and is
+       renewed every frame.
+
+    :: All contacts in a sleeping island are stored in the island's sleeping set, with a link (<->)
+       and compute data. Any ds_SatCache that belongs to the contact is moved onto the heap. 
+
+ds_ContactCompute
+=================
+Any touching contact 
+
 */
 
-struct cdb
+
+struct ds_ContactKey
 {
-	/* contact net list nodes are owned as follows:
-	 *
-	 *  contact->key.shape0 owns slot 0
-	 *  contact->key.shape1 owns slot 1
-	 *
-	 * i.e. the smaller index owns slot 0 and the larger index owns slot 1.  */
-    struct ds_ContactPool       contact_pool;
-	struct ds_HashMap	        contact_map;		
-
-	/* frame-cached separation axis results */
-	struct sat_CacheTPool       sat_cache_pool;
-	struct sat_CacheTHashMap    sat_cache_map;		
-
-	/* PERSISTENT DATA, GROWABLE, keeps track of which slots in contact_net/sat_cache
-     * from last frame that are still being used. At the end of every frame, it is
-     * set to ***_frame_usage, after which and any new contacts/sat_Caches outside
-     * of the slots covered by ***_frame_usage is appended.  
-     */
-	struct ds_BitSet 	contact_persistent_usage; 
-	struct ds_BitSet 	sat_cache_persistent_usage; 
-
-	/* FRAME DATA, NOT GROWABLE, keeps track of which slots in contact_net/sat_cache
-     * in previous frame that are currently being used. Thus, all links in the current
-     * frame are the ones in the bit array + any appended contacts/sat_caches which 
-     * resulted in growing the array. */
-	struct ds_BitSet 	contact_frame_usage;	
-	struct ds_BitSet 	sat_cache_frame_usage;	
-
-    /* FRAME DATA */
-    u32     sat_cache_count;        /* Caches in the current frame              */
-    u32     contact_count;          /* Contacts found in the current frame      */
-	u32		contact_new_count;      /* New contacts found in the current frame  */
-	u32 *   contact_new;
+    u32 shape[2];                   /* Canonical ordering: s[0] < s[1] */
 };
 
-/* Allocate cdb resources */
-struct cdb *cdb_Alloc(struct arena *mem_persistent, const u32 initial_size);
-/* Deallocate cdb resources */
-void 		cdb_Free(struct cdb *cdb);
-/* Flush cdb resources */
-void		cdb_Flush(struct cdb *cdb);
-/* Validate cdb state */
-void		cdb_Validate(const struct ds_RigidBodyPipeline *pipeline);
-/* Flush cdb frame resources */
-void		cdb_ClearFrame(struct cdb *cdb);
+/* Return the Canonical key of (shape0, shape1) */
+struct ds_ContactKey   ds_ContactKeyCanonical(const u32 shape0, const u32 shape1);
+/* Return a 32-bit hash of the key */
+u32                     ds_ContactKeyHash(const struct ds_ContactKey key);
+/* Return 1 if the two keys are equivalent, otherwise return  0. */
+u32                     ds_ContactKeyEquivalence(const struct ds_ContactKey key0, const struct ds_ContactKey key1);
+/* Return the body and shape addresses of the key */
+void                    ds_ContactKeyAddress(struct ds_RigidBody **b0, struct ds_Shape **s0, struct ds_RigidBody **b1, struct ds_Shape **s1, const struct ds_RigidBodyPipeline *pipeline, const struct ds_ContactKey key);
+/* Validate contact state */
+void		            ds_ContactValidateAll(const struct ds_RigidBodyPipeline *pipeline);
+
+struct ds_Contact
+{
+    POOL_NODE;      
+
+    ds_ContactId                id;                 /* Generational Identifier                  */
+    struct ds_ContactKey        key;                /* shape pair key                           */
+    
+    u32                         island;             /* Index of contact's island                */
+    u32                         set;                /* Index of contact's set                   */
+    u32                         compute;            /* Index of contact's set OR color data     */
+    u32                         color;              /* Index of contact's color (mesh triangle
+                                                       contacts are treated as a single 
+                                                       constraint!)                             */
+
+    struct ds_DLLNode           island_contact;     /* island->contact_list node                */
+    struct ds_DLLNode           shape_contact[2];   /* [i] is part of shape i's contact list    */
+
+    /* 
+     * The following data is regenerated per-frame and is alive for 2 frames. All data is 
+     * pushed onto thread's current frame arena (double buffered). If the contact is sleeping,
+     * the narrowphase is stored on the heap.
+     */
+    struct c_ContactResult      narrowphase;
+};
+POOL_DECLARE(ds_Contact);
+
+/* Add and return new contact with unique key and update pipeline state */
+struct slot ds_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_ContactKey key);
+/* Remove contact at the given index and update pipeline state */
+void 	    ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index);
+/* Return the contact associated with the given id. If no such contact is found, return (U32_MAX, NULL) */
+struct slot ds_ContactLookup(const struct ds_RigidBodyPipeline *pipeline, const ds_ContactId id);
+/* Update contact at the given slot and update pipeline state. */
+struct slot ds_ContactKeyLookup(const struct ds_RigidBodyPipeline *pipeline, const struct ds_ContactKey key);
+
+
+/*
+ds_ContactCompute
+=================
+
+TODO: contact <-> compute <-> constraints?
+*/
+struct ds_ContactCompute
+{
+	vec3 			        normal_cache;               /* Cached contact normal                */
+	vec3 			        tangent_cache[2];           /* Froms Contact basis with normal      */
+	vec3 			        r1_cache[4];			    /* previous local frame arm levers      */
+    vec3                    r2_cache[4];                   
+	f32 			        tangent_impulse_cache[4][2];
+	f32 			        normal_impulse_cache[4];	/* contact_solver solution to contact 
+                                                           constraint, or 0.0f                  */
+	u32 			        cached_count;			    /* number of vertices in cache          */
+};
+DEFINE_CPOOL_STRUCT(ds_ContactCompute);
 
 
 /*
@@ -1107,8 +992,9 @@ ds_CGraphColor stores the relevant physics data of active constraints, tightly p
 struct ds_CGraphColor
 {
     struct ds_BitSet                body_bitset;
+    //ds_CPool(ds_ContactConstraint)  contact_constraint_pool;
+    ds_CPool(ds_ContactCompute)     contact_compute_pool;
     ds_CPool(u32)                   contact_pool;
-    ds_CPool(ds_ContactConstraint)  contact_constraint_pool;
     ds_CPool(ds_JointSim)           joint_sim_pool;
 };
 
@@ -1407,7 +1293,33 @@ struct ds_RigidBodyPipeline
 
     struct ds_SolverSetPool solver_set_pool;    /* index 0,1,2 reserved for DISABLED,STATIC,ACTIVE sets */
 
-	struct cdb *	        cdb;
+    /* contact net list nodes are owned as follows:
+	 *
+	 *  contact->key.shape0 owns slot 0
+	 *  contact->key.shape1 owns slot 1
+	 *
+	 * i.e. the smaller index owns slot 0 and the larger index owns slot 1.  */
+    struct ds_ContactPool   contact_pool;   
+	struct ds_HashMap	    contact_map;		
+
+	/* PERSISTENT DATA, GROWABLE, keeps track of which slots in the contact pool 
+     * from last frame that are still being used. At the end of every frame, it is
+     * set to ***_frame_usage, after which and any new contacts outside of the slots
+     * covered by ***_frame_usage is appended.  
+     */
+	struct ds_BitSet 	contact_persistent_usage; 
+
+	/* FRAME DATA, NOT GROWABLE, keeps track of which slots in the contact pool in
+     * previous frame that are currently being used. Thus, all links in the current
+     * frame are the ones in the bit array + any appended contacts which resulted in
+     * growing the array. 
+     * */
+	struct ds_BitSet 	contact_frame_usage;	
+
+    /* FRAME DATA */
+    u32     contact_count;          /* Contacts found in the current frame      */
+	u32		contact_new_count;      /* New contacts found in the current frame  */
+	u32 *   contact_new;
 
     ds_IslandId             island_to_split;        /* */
 	struct ds_IslandPool    island_pool;	    

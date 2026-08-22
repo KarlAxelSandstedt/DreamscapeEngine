@@ -1,6 +1,6 @@
 #include "ds_dynamics.h"
 #include "physics_pipeline.c"
-#include "contact_database.c"
+#include "ds_contact.c"
 #include "ds_solver.c"
 #include "island.c"
 #include "ds_shape.c"

@@ -1851,15 +1851,25 @@ static void led_EngineRun(struct led *led)
                     const struct ds_Contact *c = ds_ContactLookup(&led->physics, event->contact).address;
                     if (c)
                     {
-					    const struct ds_RigidBody *body1 = led->physics.body_pool.buf + c->key.body0;
-					    const struct ds_RigidBody *body2 = led->physics.body_pool.buf + c->key.body1;
-					    if (RB_IS_DYNAMIC(body1))
+                        const struct ds_Shape *shape[2] =
+                        {
+                            led->physics.shape_pool.buf + c->key.shape[0],
+                            led->physics.shape_pool.buf + c->key.shape[1],
+                        };
+                        
+                        const struct ds_RigidBody *body[2] =
+                        {
+		                    led->physics.body_pool.buf + shape[0]->body,
+		                    led->physics.body_pool.buf + shape[1]->body,
+                        };
+
+					    if (RB_IS_DYNAMIC(body[0]))
 					    {
-                            led_NodeColorProxies(led, body1->entity, led->collision_color);
+                            led_NodeColorProxies(led, body[0]->entity, led->collision_color);
 					    }
-					    if (RB_IS_DYNAMIC(body2))
+					    if (RB_IS_DYNAMIC(body[1]))
 					    {
-                            led_NodeColorProxies(led, body2->entity, led->collision_color);
+                            led_NodeColorProxies(led, body[1]->entity, led->collision_color);
 					    }
                     }
 				}

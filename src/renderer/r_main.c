@@ -25,195 +25,197 @@
 
 static struct r_Mesh *DebugContactManifoldSegmentsMesh(struct arena *mem, const struct led *led)
 {
-    const struct ds_RigidBodyPipeline *pipeline = &led->physics;
-	const u32 cm_count = pipeline->cdb->contact_pool.count-1;
-
-	ArenaPushRecord(mem);
-
-	const u32 vertex_count = 2*cm_count;
+    ds_AssertString(0, "Reimplement");
 	struct r_Mesh *mesh = NULL;
- 	struct r_Mesh *tmp = ArenaPush(mem, sizeof(struct r_Mesh));
-	u8 *vertex_data = ArenaPush(mem, vertex_count*L_COLOR_STRIDE);
-	if (!tmp || !vertex_data) 
-	{ 
-		ArenaPopRecord(mem);
-		goto end;
-	}
-	ArenaRemoveRecord(mem);
-
-	mesh = tmp;
-	mesh->index_count = 0;
-	mesh->index_max_used = 0;
-	mesh->index_data = NULL;
-	mesh->vertex_count = vertex_count; 
-	mesh->vertex_data = vertex_data;
-	mesh->local_stride = L_COLOR_STRIDE;
-
-    u32 i = 0; 
-    u32 ci = 1;
-	while (i < cm_count)
-	{
-        const struct ds_Contact *c = pipeline->cdb->contact_pool.buf + ci;
-        ci += 1;
-        if (!ds_PoolSlotAllocated(c))
-        {
-            continue;
-        }
-	    const struct c_Manifold *cm = &c->cm;
-		vec3 n0, n1;
-		switch (cm->v_count)
-		{
-			case 1:
-			{
-				Vec3Copy(n0, cm->v[0]);
-				Vec3Add(n1, n0, cm->n);
-			} break;
-
-			case 2:
-			{
-				Vec3Interpolate(n0, cm->v[0], cm->v[1], 0.5f);
-				Vec3Add(n1, n0, cm->n);
-			} break;
-
-			case 3:
-			{
-				Vec3Scale(n0, cm->v[0], 1.0f/3.0f);
-				Vec3TranslateScaled(n0, cm->v[1], 1.0f/3.0f);
-				Vec3TranslateScaled(n0, cm->v[2], 1.0f/3.0f);
-				Vec3Add(n1, n0, cm->n);
-			} break;
-
-			case 4:
-			{
-				Vec3Scale(n0, cm->v[0], 1.0f/4.0f);
-				Vec3TranslateScaled(n0, cm->v[1], 1.0f/4.0f);
-				Vec3TranslateScaled(n0, cm->v[2], 1.0f/4.0f);
-				Vec3TranslateScaled(n0, cm->v[3], 1.0f/4.0f);
-				Vec3Add(n1, n0, cm->n);
-			} break;
-
-			default:
-			{
-                ds_Assert(0);
-				continue;
-			} break;
-		}
-
-		Vec3Copy((f32 *) vertex_data +  0, n0);
-		Vec4Copy((f32 *) vertex_data +  3, led->manifold_color);
-		Vec3Copy((f32 *) vertex_data +  7, n1);
-		Vec4Copy((f32 *) vertex_data + 10, led->manifold_color);
-		vertex_data += 2*(sizeof(vec3) + sizeof(vec4));
-        ++i;
-	}
-end:
+//    const struct ds_RigidBodyPipeline *pipeline = &led->physics;
+//	const u32 cm_count = pipeline->contact_pool.count-1;
+//
+//	ArenaPushRecord(mem);
+//
+//	const u32 vertex_count = 2*cm_count;
+// 	struct r_Mesh *tmp = ArenaPush(mem, sizeof(struct r_Mesh));
+//	u8 *vertex_data = ArenaPush(mem, vertex_count*L_COLOR_STRIDE);
+//	if (!tmp || !vertex_data) 
+//	{ 
+//		ArenaPopRecord(mem);
+//		goto end;
+//	}
+//	ArenaRemoveRecord(mem);
+//
+//	mesh = tmp;
+//	mesh->index_count = 0;
+//	mesh->index_max_used = 0;
+//	mesh->index_data = NULL;
+//	mesh->vertex_count = vertex_count; 
+//	mesh->vertex_data = vertex_data;
+//	mesh->local_stride = L_COLOR_STRIDE;
+//
+//    u32 i = 0; 
+//    u32 ci = 1;
+//	while (i < cm_count)
+//	{
+//        const struct ds_Contact *c = pipeline->contact_pool.buf + ci;
+//        ci += 1;
+//        if (!ds_PoolSlotAllocated(c))
+//        {
+//            continue;
+//        }
+//	    const struct c_Manifold *cm = &c->cm;
+//		vec3 n0, n1;
+//		switch (cm->v_count)
+//		{
+//			case 1:
+//			{
+//				Vec3Copy(n0, cm->v[0]);
+//				Vec3Add(n1, n0, cm->n);
+//			} break;
+//
+//			case 2:
+//			{
+//				Vec3Interpolate(n0, cm->v[0], cm->v[1], 0.5f);
+//				Vec3Add(n1, n0, cm->n);
+//			} break;
+//
+//			case 3:
+//			{
+//				Vec3Scale(n0, cm->v[0], 1.0f/3.0f);
+//				Vec3TranslateScaled(n0, cm->v[1], 1.0f/3.0f);
+//				Vec3TranslateScaled(n0, cm->v[2], 1.0f/3.0f);
+//				Vec3Add(n1, n0, cm->n);
+//			} break;
+//
+//			case 4:
+//			{
+//				Vec3Scale(n0, cm->v[0], 1.0f/4.0f);
+//				Vec3TranslateScaled(n0, cm->v[1], 1.0f/4.0f);
+//				Vec3TranslateScaled(n0, cm->v[2], 1.0f/4.0f);
+//				Vec3TranslateScaled(n0, cm->v[3], 1.0f/4.0f);
+//				Vec3Add(n1, n0, cm->n);
+//			} break;
+//
+//			default:
+//			{
+//                ds_Assert(0);
+//				continue;
+//			} break;
+//		}
+//
+//		Vec3Copy((f32 *) vertex_data +  0, n0);
+//		Vec4Copy((f32 *) vertex_data +  3, led->manifold_color);
+//		Vec3Copy((f32 *) vertex_data +  7, n1);
+//		Vec4Copy((f32 *) vertex_data + 10, led->manifold_color);
+//		vertex_data += 2*(sizeof(vec3) + sizeof(vec4));
+//        ++i;
+//	}
+//end:
 	return mesh;
 }
 
 static struct r_Mesh *DebugContactManifoldTrianglesMesh(struct arena *mem, const struct led *led)
 {
-    const struct ds_RigidBodyPipeline *pipeline = &led->physics;
-	const u32 cm_count = pipeline->cdb->contact_pool.count-1;
-
-	ArenaPushRecord(mem);
-
-	u32 vertex_count = 6*cm_count;
-
+    ds_AssertString(0, "Reimplement");
 	struct r_Mesh *mesh = NULL;
- 	struct r_Mesh *tmp = ArenaPush(mem, sizeof(struct r_Mesh));
-	u8 *vertex_data = ArenaPush(mem, vertex_count*L_COLOR_STRIDE);
-	if (!tmp || !vertex_data) 
-	{ 
-		ArenaPopRecord(mem);
-		goto end;
-	}
-	ArenaRemoveRecord(mem);
-
-	mesh = tmp;
-	mesh->index_count = 0;
-	mesh->index_max_used = 0;
-	mesh->index_data = NULL;
-	mesh->vertex_count = 0; 
-	mesh->vertex_data = vertex_data;
-	mesh->local_stride = L_COLOR_STRIDE;
-
-	vec3 v[4];
-	u32 cm_triangles = 0;
-	u32 cm_planes = 0;
-    u32 i = 0; 
-    u32 ci = 1;
-	while (i < cm_count)
-	{
-        const struct ds_Contact *c = pipeline->cdb->contact_pool.buf + ci;
-        ci += 1;
-        if (!ds_PoolSlotAllocated(c))
-        {
-            continue;
-        }
-        i += 1;
-	    const struct c_Manifold *cm = &c->cm;
-		switch (cm->v_count)
-		{
-            case 1:
-            case 2:
-            {
-                continue;
-            };
-
-			case 3:
-			{
-				Vec3Copy(v[0], cm->v[0]);
-				Vec3Copy(v[1], cm->v[1]);
-				Vec3Copy(v[2], cm->v[2]);
-				Vec3TranslateScaled(v[0], cm->n, 0.005f);
-				Vec3TranslateScaled(v[1], cm->n, 0.005f);
-				Vec3TranslateScaled(v[2], cm->n, 0.005f);
-
-				Vec3Copy((f32 *) vertex_data +  0, v[0]);
-				Vec4Copy((f32 *) vertex_data +  3, led->manifold_color);
-				Vec3Copy((f32 *) vertex_data +  7, v[1]);
-				Vec4Copy((f32 *) vertex_data + 10, led->manifold_color);
-				Vec3Copy((f32 *) vertex_data + 14, v[2]);
-				Vec4Copy((f32 *) vertex_data + 17, led->manifold_color);
-				vertex_data += 3*(sizeof(vec3) + sizeof(vec4));
-				mesh->vertex_count += 3; 
-			} break;
-
-			case 4:
-			{
-				Vec3Copy(v[0], cm->v[0]);
-				Vec3Copy(v[1], cm->v[1]);
-				Vec3Copy(v[2], cm->v[2]);
-				Vec3Copy(v[3], cm->v[3]);
-				Vec3TranslateScaled(v[0], cm->n, 0.005f);
-				Vec3TranslateScaled(v[1], cm->n, 0.005f);
-				Vec3TranslateScaled(v[2], cm->n, 0.005f);
-				Vec3TranslateScaled(v[3], cm->n, 0.005f);
-
-				Vec3Copy((f32 *) vertex_data +  0, v[0]);
-				Vec4Copy((f32 *) vertex_data +  3, led->manifold_color);
-				Vec3Copy((f32 *) vertex_data +  7, v[1]);
-				Vec4Copy((f32 *) vertex_data + 10, led->manifold_color);
-				Vec3Copy((f32 *) vertex_data + 14, v[2]);
-				Vec4Copy((f32 *) vertex_data + 17, led->manifold_color);
-				Vec3Copy((f32 *) vertex_data + 21, v[0]);
-				Vec4Copy((f32 *) vertex_data + 24, led->manifold_color);
-				Vec3Copy((f32 *) vertex_data + 28, v[2]);
-				Vec4Copy((f32 *) vertex_data + 31, led->manifold_color);
-				Vec3Copy((f32 *) vertex_data + 35, v[3]);
-				Vec4Copy((f32 *) vertex_data + 38, led->manifold_color);
-				vertex_data += 6*(sizeof(vec3) + sizeof(vec4));
-				mesh->vertex_count += 6; 
-			} break;
-
-			default:
-			{
-                ds_Assert(0);
-				continue;
-			} break;
-		}
-	}
-end:
+//    const struct ds_RigidBodyPipeline *pipeline = &led->physics;
+//	const u32 cm_count = pipeline->contact_pool.count-1;
+//
+//	ArenaPushRecord(mem);
+//
+//	u32 vertex_count = 6*cm_count;
+//
+// 	struct r_Mesh *tmp = ArenaPush(mem, sizeof(struct r_Mesh));
+//	u8 *vertex_data = ArenaPush(mem, vertex_count*L_COLOR_STRIDE);
+//	if (!tmp || !vertex_data) 
+//	{ 
+//		ArenaPopRecord(mem);
+//		goto end;
+//	}
+//	ArenaRemoveRecord(mem);
+//
+//	mesh = tmp;
+//	mesh->index_count = 0;
+//	mesh->index_max_used = 0;
+//	mesh->index_data = NULL;
+//	mesh->vertex_count = 0; 
+//	mesh->vertex_data = vertex_data;
+//	mesh->local_stride = L_COLOR_STRIDE;
+//
+//	vec3 v[4];
+//	u32 cm_triangles = 0;
+//	u32 cm_planes = 0;
+//    u32 i = 0; 
+//    u32 ci = 1;
+//	while (i < cm_count)
+//	{
+//        const struct ds_Contact *c = pipeline->contact_pool.buf + ci;
+//        ci += 1;
+//        if (!ds_PoolSlotAllocated(c))
+//        {
+//            continue;
+//        }
+//        i += 1;
+//	    const struct c_Manifold *cm = &c->cm;
+//		switch (cm->v_count)
+//		{
+//            case 1:
+//            case 2:
+//            {
+//                continue;
+//            };
+//
+//			case 3:
+//			{
+//				Vec3Copy(v[0], cm->v[0]);
+//				Vec3Copy(v[1], cm->v[1]);
+//				Vec3Copy(v[2], cm->v[2]);
+//				Vec3TranslateScaled(v[0], cm->n, 0.005f);
+//				Vec3TranslateScaled(v[1], cm->n, 0.005f);
+//				Vec3TranslateScaled(v[2], cm->n, 0.005f);
+//
+//				Vec3Copy((f32 *) vertex_data +  0, v[0]);
+//				Vec4Copy((f32 *) vertex_data +  3, led->manifold_color);
+//				Vec3Copy((f32 *) vertex_data +  7, v[1]);
+//				Vec4Copy((f32 *) vertex_data + 10, led->manifold_color);
+//				Vec3Copy((f32 *) vertex_data + 14, v[2]);
+//				Vec4Copy((f32 *) vertex_data + 17, led->manifold_color);
+//				vertex_data += 3*(sizeof(vec3) + sizeof(vec4));
+//				mesh->vertex_count += 3; 
+//			} break;
+//
+//			case 4:
+//			{
+//				Vec3Copy(v[0], cm->v[0]);
+//				Vec3Copy(v[1], cm->v[1]);
+//				Vec3Copy(v[2], cm->v[2]);
+//				Vec3Copy(v[3], cm->v[3]);
+//				Vec3TranslateScaled(v[0], cm->n, 0.005f);
+//				Vec3TranslateScaled(v[1], cm->n, 0.005f);
+//				Vec3TranslateScaled(v[2], cm->n, 0.005f);
+//				Vec3TranslateScaled(v[3], cm->n, 0.005f);
+//
+//				Vec3Copy((f32 *) vertex_data +  0, v[0]);
+//				Vec4Copy((f32 *) vertex_data +  3, led->manifold_color);
+//				Vec3Copy((f32 *) vertex_data +  7, v[1]);
+//				Vec4Copy((f32 *) vertex_data + 10, led->manifold_color);
+//				Vec3Copy((f32 *) vertex_data + 14, v[2]);
+//				Vec4Copy((f32 *) vertex_data + 17, led->manifold_color);
+//				Vec3Copy((f32 *) vertex_data + 21, v[0]);
+//				Vec4Copy((f32 *) vertex_data + 24, led->manifold_color);
+//				Vec3Copy((f32 *) vertex_data + 28, v[2]);
+//				Vec4Copy((f32 *) vertex_data + 31, led->manifold_color);
+//				Vec3Copy((f32 *) vertex_data + 35, v[3]);
+//				Vec4Copy((f32 *) vertex_data + 38, led->manifold_color);
+//				vertex_data += 6*(sizeof(vec3) + sizeof(vec4));
+//				mesh->vertex_count += 6; 
+//			} break;
+//
+//			default:
+//			{
+//                ds_Assert(0);
+//				continue;
+//			} break;
+//		}
+//	}
+//end:
 	return mesh;
 }
 
