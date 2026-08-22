@@ -1457,7 +1457,7 @@ struct c_ContactResult c_CapsuleSphereContact(struct arena *frame, const struct 
 	if (dist_sq <= r_sum*r_sum)
 	{
         result.manifold_count = 1;
-        result.manifold = ArenaPush(frame, sizeof(struct c_Manifold));
+        result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
         struct c_Manifold *manifold = result.manifold;
 
 		manifold->v_count = 1;
@@ -1512,7 +1512,7 @@ struct c_ContactResult c_CapsuleContact(struct arena *frame, const struct c_Cont
 	if (dist_sq <= r_sum*r_sum)
 	{
         result.manifold_count = 1;
-        result.manifold = ArenaPush(frame, sizeof(struct c_Manifold));
+        result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
         struct c_Manifold *manifold = result.manifold;
 
 		vec3 cross;
@@ -1619,7 +1619,7 @@ struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_C
 	if (dist_sq <= 0.0f)
 	{
         result.manifold_count = 1;
-        result.manifold = ArenaPush(frame, sizeof(struct c_Manifold));
+        result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
         struct c_Manifold *manifold = result.manifold;
 
 		manifold->v_count = 1;
@@ -1661,7 +1661,7 @@ struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_C
 	else if (dist_sq <= r_sum*r_sum)
 	{
         result.manifold_count = 1;
-        result.manifold = ArenaPush(frame, sizeof(struct c_Manifold));
+        result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
         struct c_Manifold *manifold = result.manifold;
 
         c_HullSphereShallowManifold(manifold, s[1]->sphere.radius, c, ref);
@@ -1697,7 +1697,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 	if (dist_sq <= s[1]->capsule.radius*s[1]->capsule.radius)
 	{
         result.manifold_count = 1;
-        result.manifold = ArenaPush(frame, sizeof(struct c_Manifold));
+        result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
         struct c_Manifold *manifold = result.manifold;
 
 		vec3 p1, p2, tmp;
@@ -2492,7 +2492,9 @@ struct c_ContactResult c_HullContact(struct arena *frame, const struct c_Contact
 	        	const f32 separation = dot2 - dot1;
 	        	if (separation > 0.0f)
 	        	{
+                    result.cache->type = SAT_CACHE_SEPARATION;
 	        		result.cache->depth = separation;
+                    Vec3Copy(result.cache->normal, cache->normal);
                     goto sat_cleanup;
 	        	}
 	        } break;
@@ -2500,7 +2502,7 @@ struct c_ContactResult c_HullContact(struct arena *frame, const struct c_Contact
             case SAT_CACHE_CONTACT_EE:
 	        {
 	            struct sat_EdgeQuery e_query = { .depth = -F32_INFINITY };
-	        	HullContactEECheckRecompute(&e_query, h[0], v_world[0], sat_FeatureIdIndex(result.cache->feature[0]), h[1], v_world[1], sat_FeatureIdIndex(result.cache->feature[1]), t[0].position);
+	        	HullContactEECheckRecompute(&e_query, h[0], v_world[0], sat_FeatureIdIndex(cache->feature[0]), h[1], v_world[1], sat_FeatureIdIndex(cache->feature[1]), t[0].position);
 	        	sat_EdgeQueryCollisionResult(result.manifold, result.cache, &e_query, ref);
 
                 colliding = (e_query.depth < 0.0f);
@@ -2612,6 +2614,7 @@ sat_cleanup:
     if (!colliding)
     {
         ArenaPopPacked(frame, sizeof(struct c_Manifold));
+        result.manifold_count = 0;
     }
     ArenaPopScratch();
     //ProfZoneEnd;
