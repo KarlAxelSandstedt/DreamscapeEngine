@@ -304,7 +304,7 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
     {
         const struct ds_ContactKey key = ds_ContactKeyCanonical(proxy_overlap[oi].id1, proxy_overlap[oi].id2);
         const struct slot slot = ds_ContactKeyLookup(pipeline, key);
-        if (slot.address)
+        if (!slot.address)
         {
             ds_ContactAdd(pipeline, key);
         }
@@ -325,14 +325,14 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
         for (u32 i = 0; i < CG_COLOR_COUNT; ++i)
         {
             const struct ds_CGraphColor *color = pipeline->cgraph.color + i;
-            pf = narrow_phase->pf[0].parallel_for;
+            pf = narrow_phase->pf[i].parallel_for;
             //TODO: this range size is random hardcoded value, change
-            ds_ParallelForInit(pf + 0, color->contact_pool.count, 16);
+            ds_ParallelForInit(pf + 0, color->contact_pool.count, 8);
         }
 
         pf = narrow_phase->pf[CG_COLOR_COUNT].parallel_for;
         //TODO: this range size is random hardcoded value, change
-        ds_ParallelForInit(pf + 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].contact_pool.count, 16);
+        ds_ParallelForInit(pf + 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].contact_pool.count, 8);
 
         narrow_phase->pipeline = pipeline;
         narrow_phase->job_count = g_scheduler->worker_count;
@@ -341,7 +341,7 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 
         for (u32 i = 0; i < narrow_phase->job_count; ++i)
         {
-            ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(SOLVER_JOB_SEED, i));
+            ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(NARROW_JOB_SEED, i));
         }
 
         AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, narrow_phase->job_count);
