@@ -29,7 +29,6 @@ struct collisionDebug *g_collision_debug;
 
 void ds_DynamicsStaticAssert(void)
 {
-    ds_StaticAssert(sizeof(struct ds_NarrowPhaseJob) == DS_CACHE_LINE, "");
     ds_StaticAssert(sizeof(struct ds_RigidBodyCompute) == DS_CACHE_LINE, "");
 }
 
@@ -97,9 +96,9 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 	pipeline.debug_count = 0;
 	pipeline.debug = NULL;
 
-    pipeline.cd_jobs = ArenaPushAligned(mem, sizeof(struct ds_CollisionJobPhase), DS_CACHE_LINE);
+    pipeline.narrow_phase = ArenaPushAligned(mem, sizeof(struct ds_NarrowJobPhase), DS_CACHE_LINE);
     pipeline.solver_phase = ArenaPushAligned(mem, sizeof(struct ds_SolverJobPhase), DS_CACHE_LINE);
-    ds_JobPhaseAlloc(mem, &pipeline.cd_jobs->phase, COLLISION_JOB_COUNT, ds_CollisionJobPhaseDispatch);
+    ds_JobPhaseAlloc(mem, &pipeline.narrow_phase->phase, NARROW_JOB_COUNT, ds_NarrowJobPhaseDispatch);
     ds_JobPhaseAlloc(mem, &pipeline.solver_phase->phase, SOLVER_JOB_COUNT, ds_SolverJobPhaseDispatch);
 #ifdef DS_PHYSICS_DEBUG
 	pipeline.debug_count = g_scheduler->worker_count;
@@ -242,22 +241,52 @@ void PhysicsPipelineValidate(const struct ds_RigidBodyPipeline *pipeline)
 	ProfZoneEnd;
 }
 
-u32 ds_CollisionJobPhaseDispatch(const ds_JobId job)
+u32 ds_NarrowJobPhaseDispatch(const ds_JobId job)
 {
-    struct ds_CollisionJobPhase *phase = (struct ds_CollisionJobPhase *) g_scheduler->phase;
- 
-    const u32 index = ds_JobIdIndex(job);
-    const enum ds_CollisionJobType type = ds_JobIdTag(job);
+    struct arena *frame = g_tl_self->frame;
+    struct ds_NarrowJobPhase *phase = (struct ds_NarrowJobPhase *) g_scheduler->phase;
+    struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
+    struct ds_ParallelForChain *chain;
+    struct ds_ParallelFor *pf;
+    u32 low, high;
 
-    u32 job_diff = 0;
-    switch (type)
+    for (u32 i = 0; i < CG_COLOR_COUNT; ++i)
     {
-        //case COLLISION_JOB_SEED: { job_diff = NarrowPhaseSeedJob(phase, phase->seed_jobs + index); } break;
-        //case COLLISION_JOB_NARROWPHASE: { job_diff = NarrowPhaseJob(phase, phase->narrowphase_jobs + index); } break;
-        default: { ds_AssertString(0, "Should not be possible"); } break;
-    };
+        ProfZoneNamed("Color");
+        struct ds_CGraphColor *color = pipeline->cgraph.color + i;
+        chain = phase->pf + i;
+        {
+            pf = chain->parallel_for + 0;
+            ds_ParallelFor(pf, range_index)
+            {
+                ds_ParallelForRange(&low, &high, pf, range_index);
+                for (u32 si = low; si < high; ++si)
+                {
+                    const u32 ci = color->contact_pool.buf[si];
+                    ds_ShapeContact(frame, pipeline, ci);
+                }
+            }
+        }
 
-    return job_diff;
+        ProfZoneEnd;
+    }
+
+    chain = phase->pf + CG_COLOR_COUNT;
+    {
+        struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+        pf = chain->parallel_for + 0;
+        ds_ParallelFor(pf, range_index)
+        {
+            ds_ParallelForRange(&low, &high, pf, range_index);
+            for (u32 si = low; si < high; ++si)
+            {
+                const u32 ci = active->contact_pool.buf[si];
+                ds_ShapeContact(frame, pipeline, ci);
+            }
+        }
+    }
+
+    return U32_MAX;
 }
 
 static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
@@ -281,55 +310,55 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
         }
     }
 
-    //struct ds_CollisionJobPhase *cd_jobs = pipeline->cd_jobs;
-    //{
-    //	ProfZoneNamed("JobPhase (NarrowPhase)");
+    struct ds_NarrowJobPhase *narrow_phase = pipeline->narrow_phase;
+    {
+    	ProfZoneNamed("JobPhase(Narrowphase)");
 
-    //    ds_JobPhaseBegin(&cd_jobs->phase);
-  
-    //    cd_jobs->pipeline = pipeline;
-    //    cd_jobs->overlap = proxy_overlap;
+        ds_JobPhaseBegin(&narrow_phase->phase);
 
-    //    cd_jobs->seed_count_max = 3*g_scheduler->worker_count;
-    //    cd_jobs->seed_jobs = ArenaPush(&pipeline->frame, cd_jobs->seed_count_max*sizeof(struct ds_NarrowPhaseSeedJob));
-    //    ds_JobPhaseReserve(&cd_jobs->phase, COLLISION_JOB_SEED, cd_jobs->seed_count_max);
+        for (u32 i = 0; i < CG_COLOR_COUNT + 1; ++i)
+        {
+            narrow_phase->pf[i] = ds_ParallelForChainAlloc(&pipeline->frame, 1); 
+        }
 
-    //    cd_jobs->narrowphase_count_max = proxy_overlap_count;
-    //    cd_jobs->narrowphase_jobs = ArenaPushAligned(&pipeline->frame, cd_jobs->narrowphase_count_max*sizeof(struct ds_NarrowPhaseJob), DS_CACHE_LINE);
+        struct ds_ParallelFor *pf;
+        for (u32 i = 0; i < CG_COLOR_COUNT; ++i)
+        {
+            const struct ds_CGraphColor *color = pipeline->cgraph.color + i;
+            pf = narrow_phase->pf[0].parallel_for;
+            //TODO: this range size is random hardcoded value, change
+            ds_ParallelForInit(pf + 0, color->contact_pool.count, 16);
+        }
 
-    //    const u32 jobs_per_seed = proxy_overlap_count / cd_jobs->seed_count_max;
-    //    u32 extra = proxy_overlap_count % cd_jobs->seed_count_max;
-    //    u32 low = 0;
-    //    for (u32 i = 0; i < cd_jobs->seed_count_max; ++i)
-    //    {
-    //        cd_jobs->seed_jobs[i].low = low;
-    //        cd_jobs->seed_jobs[i].high = low + jobs_per_seed;
-    //        if (extra)
-    //        {
-    //            cd_jobs->seed_jobs[i].high += 1;
-    //            extra -= 1;
-    //        }
+        pf = narrow_phase->pf[CG_COLOR_COUNT].parallel_for;
+        //TODO: this range size is random hardcoded value, change
+        ds_ParallelForInit(pf + 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].contact_pool.count, 16);
 
-    //        low = cd_jobs->seed_jobs[i].high;
-    //        ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(COLLISION_JOB_SEED, i));
-    //    }
-    //    ds_Assert(cd_jobs->seed_jobs[cd_jobs->seed_count_max - 1].high == proxy_overlap_count);
+        narrow_phase->pipeline = pipeline;
+        narrow_phase->job_count = g_scheduler->worker_count;
+        narrow_phase->job = ArenaPushZero(&pipeline->frame, narrow_phase->job_count*sizeof(struct ds_NarrowJob));
+        ds_JobPhaseReserve(&narrow_phase->phase, NARROW_JOB_SEED, narrow_phase->job_count);
 
-    //    AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, cd_jobs->seed_count_max);
-    //    ds_JobPhaseAddFetchRemaining(&cd_jobs->phase, cd_jobs->seed_count_max);
-    //    ds_WSDequePublish(g_scheduler->seed_deque);
-    //    
-    //    for (u32 i = 1; i < g_scheduler->worker_count; ++i)
-    //    {
-    //        SemaphorePost(&g_scheduler->jobs_are_available);
-    //    }
+        for (u32 i = 0; i < narrow_phase->job_count; ++i)
+        {
+            ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(SOLVER_JOB_SEED, i));
+        }
 
-    //    ds_MasterRunAvailableJobs();
+        AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, narrow_phase->job_count);
+        ds_JobPhaseAddFetchRemaining(&narrow_phase->phase, narrow_phase->job_count);
+        ds_WSDequePublish(g_scheduler->seed_deque);
+        for (u32 i = 1; i < g_scheduler->worker_count; ++i)
+        {
+            SemaphorePost(&g_scheduler->jobs_are_available);
+        }
 
-    //    ds_JobPhaseEnd();
+	    ds_MasterRunAvailableJobs();
+        
+        ds_JobPhaseEnd();
 
-    //    ProfZoneEnd;
-    //}
+    	ProfZoneEnd;
+    }
+    
 
     //{
     //	ProfZoneNamed("ContactManagement");

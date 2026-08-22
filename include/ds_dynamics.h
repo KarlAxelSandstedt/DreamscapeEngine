@@ -1040,60 +1040,35 @@ void                    ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipe
 
 
 /*
-ds_CollisionJobPhase
-====================
+ds_NarrowJobPhase
+======================
 */
 
-enum ds_CollisionJobType
+enum ds_NarrowphaseJobType
 {
-    COLLISION_JOB_SEED,
-    COLLISION_JOB_NARROWPHASE,
-    COLLISION_JOB_COUNT
+    NARROW_JOB_SEED,
+    NARROW_JOB_COUNT
 };
 
-struct ds_NarrowPhaseSeedJob
+struct ds_NarrowJob
 {
-    u32 low;    /* inclusive */
-    u32 high;   /* exclusive */
+    u32 tmp;
 };
 
-/*
- *  Output:
- *      - collision_count
- *      - manifold_arr      Handles manifolds for ordinary and mesh contacts
- *      - key_arr           Handles key generation for meshes [Just point to internal key for non-mesh contacts]
- *
- *      - cache             Handles cache for Hull vs. Hull
- */
-struct ds_NarrowPhaseJob 
-{
-    struct ds_ContactKey        key_in;     
-
-	struct c_Manifold *         manifold;   /* : [collision_count] */
-    struct ds_ContactKey *      key;        
-
-    struct sat_Cache *          cache;      /* : [0], Or [1] if Hull vs. Hull cache found */
-    u32                         cache_index;
-    u32                         collision_count;
-    u32                         valid;
-    u8                          pad[DS_CACHE_LINE - sizeof(struct ds_ContactKey) - 3*sizeof(void*) - 3*sizeof(u32)];
-};
-
-struct ds_CollisionJobPhase
+struct ds_NarrowJobPhase
 {
     struct ds_JobPhase              phase;
 
     struct ds_RigidBodyPipeline *   pipeline;
     struct dbvhOverlap *            overlap;
 
-    struct ds_NarrowPhaseSeedJob *  seed_jobs;
-    u32                             seed_count_max;
+    struct ds_NarrowJob *           job;
+    u32                             job_count;
 
-    struct ds_NarrowPhaseJob *      narrowphase_jobs;
-    u32                             narrowphase_count_max;
+    struct ds_ParallelForChain      pf[CG_COLOR_COUNT + 1];
 };
 
-u32 ds_CollisionJobPhaseDispatch(const ds_JobId job);
+u32 ds_NarrowJobPhaseDispatch(const ds_JobId job);
 
 
 /*
@@ -1334,7 +1309,7 @@ struct ds_RigidBodyPipeline
 	u32			        margin_on;
 	f32			        margin;
 
-    struct ds_CollisionJobPhase *   cd_jobs;
+    struct ds_NarrowJobPhase *      narrow_phase;
     struct ds_SolverJobPhase *      solver_phase;
 
     struct ds_NumericsConfig        numerics_config;
