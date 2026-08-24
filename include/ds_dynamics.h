@@ -1038,13 +1038,42 @@ void                    ds_CGraphContactAdd(struct ds_RigidBodyPipeline *pipelin
 void                    ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact);
 
 
+/*
+ds_BroadJobPhase
+=================
+*/
+
+enum ds_BroadJobType
+{
+    BROAD_JOB_SEED,
+    BROAD_JOB_COUNT
+};
+
+struct ds_BroadJob
+{
+    u32 tmp;
+};
+
+struct ds_BroadJobPhase
+{
+    struct ds_JobPhase              phase;
+
+    struct ds_RigidBodyPipeline *   pipeline;
+
+    struct ds_BroadJob *            job;
+    u32                             job_count;
+
+    struct ds_ParallelForChain      pf;
+};
+
+u32 ds_BroadJobPhaseDispatch(const ds_JobId job);
 
 /*
 ds_NarrowJobPhase
-======================
+=================
 */
 
-enum ds_NarrowphaseJobType
+enum ds_NarrowJobType
 {
     NARROW_JOB_SEED,
     NARROW_JOB_COUNT
@@ -1086,7 +1115,6 @@ struct ds_SolverJob
 {
     u32 tmp;
 };
-
 
 struct ds_ProxyDirty
 {
@@ -1257,7 +1285,10 @@ struct ds_RigidBodyPipeline
     struct ds_BitSet    body_usage_set;         /* Bodies in use */
 
 	struct ds_ShapePool	shape_pool;
-	struct bvh 		    shape_bvh;              /* dynamic bvh of shapes */
+	struct bvh 		    dynamic_bvh;            /* dynamic bvh of shapes */
+
+    struct ds_BitSet        dirty_shape_set;    
+    ds_CPool(bvh_QuerySet)  dirty_shape_query;
 
     struct ds_JointPool joint_pool;
 
@@ -1309,6 +1340,7 @@ struct ds_RigidBodyPipeline
 	u32			        margin_on;
 	f32			        margin;
 
+    struct ds_BroadJobPhase *       broad_phase;
     struct ds_NarrowJobPhase *      narrow_phase;
     struct ds_SolverJobPhase *      solver_phase;
 

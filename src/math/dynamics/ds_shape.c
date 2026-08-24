@@ -23,18 +23,25 @@ ds_ShapeId ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_Sh
 {
     ds_ShapeId id = DS_ID_NULL;
     const u32 old_max = pipeline->shape_pool.count_max;
-    struct slot slot = ds_ShapePoolAdd(&pipeline->shape_pool);
-	struct ds_Shape *shape = slot.address;
+    const struct slot shape_slot = ds_ShapePoolAdd(&pipeline->shape_pool);
+	struct ds_Shape *shape = shape_slot.address;
 
     if (old_max != pipeline->shape_pool.count_max)
     {
-        shape->id = ds_IdConstruct(slot.index, 0);
+        shape->id = ds_IdConstruct(shape_slot.index, 0);
+        ds_CPoolPush(pipeline->dirty_shape_query);
     }
     shape->id += DS_ID_GENERATION_INCREMENT;
 
+    if (pipeline->dirty_shape_set.bit_count < pipeline->dirty_shape_query.length)
+    {
+        ds_BitSetIncreaseSize(&pipeline->dirty_shape_set, pipeline->dirty_shape_query.length, 0);
+    }
+    ds_BitSetSet(&pipeline->dirty_shape_set, shape_slot.index, 1);
+
 	struct ds_RigidBody *body_ptr = pipeline->body_pool.buf + ds_IdIndex(body);
 	ds_Assert(ds_PoolSlotAllocated(body_ptr));
-	ds_DLLAppend(body_ptr->shape_list, pipeline->shape_pool.buf, slot.index, body_shape);
+	ds_DLLAppend(body_ptr->shape_list, pipeline->shape_pool.buf, shape_slot.index, body_shape);
 
 	shape->body = ds_IdIndex(body);
 	shape->density = prefab->density;
@@ -56,8 +63,8 @@ ds_ShapeId ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_Sh
 	}
 
     const u32 is_moving = (body_ptr->set == SOLVER_SET_ACTIVE);
-	shape->proxy = DbvhInsert(&pipeline->shape_bvh, slot.index, &bbox_proxy, is_moving);
-
+	shape->proxy = DbvhInsert(&pipeline->dynamic_bvh, shape_slot.index, &bbox_proxy, is_moving);
+    
     ds_RigidBodyUpdateMassProperties(pipeline, body);
 
     return shape->id;
@@ -69,9 +76,10 @@ void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Rigi
     struct ds_Shape *dummy_shape, *shape = pipeline->shape_pool.buf + shape_index;
     struct ds_RigidBody *dummy_body;
 
+    ds_BitSetSet(&pipeline->dirty_shape_set, shape_index, 0);
     ds_DLLRemove(body->shape_list, pipeline->shape_pool.buf, shape_index, body_shape);
 	strdb_Dereference(pipeline->cshape_db, shape->cshape_handle);
-	DbvhRemove(&pipeline->shape_bvh, shape->proxy);
+	DbvhRemove(&pipeline->dynamic_bvh, shape->proxy);
 
     while (shape->contact_list.first != DLL_SENTINEL)
 	{
@@ -88,6 +96,7 @@ void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Rigi
 
 void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 index, const u32 mass_properties_update)
 {
+    ds_BitSetSet(&pipeline->dirty_shape_set, index, 0);
 	struct ds_Shape *dynamic_shape, *shape = pipeline->shape_pool.buf + index;
     struct ds_RigidBody *dynamic_body;
     const u32 static_is_tri_mesh = shape->cshape_type == C_SHAPE_TRI_MESH;
@@ -114,7 +123,7 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
 
     ds_DLLRemove(body->shape_list, pipeline->shape_pool.buf, index, body_shape);
 	strdb_Dereference(pipeline->cshape_db, shape->cshape_handle);
-	DbvhRemove(&pipeline->shape_bvh, shape->proxy);
+	DbvhRemove(&pipeline->dynamic_bvh, shape->proxy);
 	ds_ShapePoolRemove(&pipeline->shape_pool, index);
 }
 

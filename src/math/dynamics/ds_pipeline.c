@@ -76,7 +76,9 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
     pipeline.joint_pool = ds_JointPoolAlloc(NULL, initial_size, GROWABLE);
 
 	pipeline.shape_pool = ds_ShapePoolAlloc(NULL, initial_size, GROWABLE);
-	pipeline.shape_bvh = DbvhAlloc(NULL, 2*initial_size, GROWABLE);
+	pipeline.dynamic_bvh = DbvhAlloc(NULL, 2*initial_size, GROWABLE);
+    pipeline.dirty_shape_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
+    ds_CPoolAlloc(NULL, pipeline.dirty_shape_query, initial_size, GROWABLE);
 
 	pipeline.event_pool = ds_PhysicsEventPoolAlloc(NULL, 256, GROWABLE);
 	ds_DLLFlush(&pipeline.event_list);
@@ -96,8 +98,10 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 	pipeline.debug_count = 0;
 	pipeline.debug = NULL;
 
+    pipeline.broad_phase = ArenaPushAligned(mem, sizeof(struct ds_BroadJobPhase), DS_CACHE_LINE);
     pipeline.narrow_phase = ArenaPushAligned(mem, sizeof(struct ds_NarrowJobPhase), DS_CACHE_LINE);
     pipeline.solver_phase = ArenaPushAligned(mem, sizeof(struct ds_SolverJobPhase), DS_CACHE_LINE);
+    ds_JobPhaseAlloc(mem, &pipeline.broad_phase->phase, BROAD_JOB_COUNT, ds_BroadJobPhaseDispatch);
     ds_JobPhaseAlloc(mem, &pipeline.narrow_phase->phase, NARROW_JOB_COUNT, ds_NarrowJobPhaseDispatch);
     ds_JobPhaseAlloc(mem, &pipeline.solver_phase->phase, SOLVER_JOB_COUNT, ds_SolverJobPhaseDispatch);
 #ifdef DS_PHYSICS_DEBUG
@@ -133,7 +137,10 @@ void PhysicsPipelineFree(struct ds_RigidBodyPipeline *pipeline)
 	}
 	free(pipeline->debug);
 #endif
-	BvhFree(&pipeline->shape_bvh);
+
+    ds_BitSetDealloc(&pipeline->dirty_shape_set);
+    ds_CPoolDealloc(pipeline->dirty_shape_query);
+	BvhFree(&pipeline->dynamic_bvh);
     ds_ContactPoolDealloc(&pipeline->contact_pool);
 	ds_BitSetDealloc(&pipeline->contact_persistent_usage);
     ds_HashMapDealloc(&pipeline->contact_map);
@@ -207,7 +214,9 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
 	ds_RigidBodyPoolFlush(&pipeline->body_pool);
     ds_BitSetClear(&pipeline->body_usage_set, 0);
 
-	DbvhFlush(&pipeline->shape_bvh);
+    ds_BitSetClear(&pipeline->dirty_shape_set, 0);
+    ds_CPoolFlush(pipeline->dirty_shape_query);
+	DbvhFlush(&pipeline->dynamic_bvh);
 	ds_ShapePoolFlush(&pipeline->shape_pool);
 
 	ds_PhysicsEventPoolFlush(&pipeline->event_pool);
@@ -239,6 +248,41 @@ void PhysicsPipelineValidate(const struct ds_RigidBodyPipeline *pipeline)
 	ds_IslandValidateAll(pipeline);
 
 	ProfZoneEnd;
+}
+
+u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
+{
+    struct arena *frame = g_tl_self->frame;
+    struct ds_BroadJobPhase *phase = (struct ds_BroadJobPhase *) g_scheduler->phase;
+    struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
+    struct ds_ParallelForChain *chain = &phase->pf;
+    struct ds_ParallelFor *pf = chain->parallel_for + 0;
+    struct ds_BitSet *dirty = &pipeline->dirty_shape_set;
+    struct bvh_QuerySet *query = pipeline->dirty_shape_query.buf;
+    u32 low, high;
+
+    ds_AssertString((u64) dirty->bits % DS_CACHE_LINE == 0
+            , "dirty proxy set should be cache-aligned"); 
+    ds_AssertString(sizeof(dirty->bits[0])*pf->range_index_count_max == 0
+            , "parallel-for ranges sizes should be a multiple of cacheline"); 
+
+    ds_ParallelFor(pf, range_index)
+    {
+        ds_ParallelForRange(&low, &high, pf, range_index);
+        for (u64 block = low; block < high; ++block)
+        {
+            struct ds_BitBlock it = ds_BitBlockInit(dirty->bits[block], block);
+		    while (ds_BitBlockHasNext(&it))
+		    {
+                const u32 pi = ds_BitBlockNext(&it);
+                //TODO
+                //query[pi] = bvh_Query
+		    }
+            dirty->bits[block] = 0;
+        }
+    }
+
+    return U32_MAX;
 }
 
 u32 ds_NarrowJobPhaseDispatch(const ds_JobId job)
@@ -291,23 +335,102 @@ u32 ds_NarrowJobPhaseDispatch(const ds_JobId job)
 
 static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 {
-	struct dbvhOverlap *proxy_overlap = NULL;
-	u32 proxy_overlap_count = 0;
-    {
-    	ProfZoneNamed("Broadphase");
-    	proxy_overlap = DbvhPushOverlapPairs(&pipeline->frame, &proxy_overlap_count, &pipeline->shape_bvh);
-    	ProfZoneEnd;
-    }
+    /*
+     * Achieving Determinism and Parallelization in the BroadPhase
+     * ===========================================================
+     *
+     * (0) Assume, at this point, that we have a compact buffer of all dirty proxies. A proxy
+     *     is dirty if it was newly inserted, enlarged or moved (re-inserted). As this buffer
+     *     is added to according to what work is thread did in the solver phase, it is out-of
+     *     -order.
+     *
+     * (1) In order to get determinism without sorting, we store, separate to the dynamic tree
+     *     a compact pool with the number of tree leaves.
+     *
+     *          dirty_shape_results[] 
+     *
+     * (2) the parallel broadphase becomes a parallel-for in which we query each dirty proxy 
+     *     against the dynamic tree, reporting all overlaps with shapes not attached to its 
+     *     body, or any moving bodies with a lower index. If a thread process proxy p, it
+     *     writes the result to
+     *
+     *          dirty_shape_results[p]    
+     *
+     * (3) The master thread may now process the results in index order; this can of course be
+     *     done efficiently with the use of bit-sets. 
+     *
+     *
+     * Preliminary Documentation 
+     * =========================
+     *
+     * Any time a proxy is created, re-inserted or enlarged, its bit in dirty_shape_set is set.
+     * All set bits are then processed in parallel in the broadphase; the thread processing 
+     * dirty bit B writes the proxy's query set (stored locally in the thread's frame arena)
+     * to dirty_query.buf[B]: 
+     *
+     *      dirty_query.buf[B].count = proxy.overlap_count;
+     *      dirty_query.buf[B].query = proxy.overlap;       (frame-arena backed)
+     *
+     * After the broadphase, the master thread process all written queries, processing each
+     * query in each query set, from the lower to higher index. 
+     *
+     *
+     *
+     * () TODO: how to we locate removed contacts?
+     */
 
-    //TODO sort according to full ID or something to get correct ordering
-    for (u32 oi = 0; oi < proxy_overlap_count; ++oi)
+    // TODO Remove 
+	//struct dbvhOverlap *proxy_overlap = NULL;
+	//u32 proxy_overlap_count = 0;
+    //{
+    //	proxy_overlap = DbvhPushOverlapPairs(&pipeline->frame, &proxy_overlap_count, &pipeline->dynamic_bvh);
+    //}
+
+    //for (u32 oi = 0; oi < proxy_overlap_count; ++oi)
+    //{
+    //    const struct ds_ContactKey key = ds_ContactKeyCanonical(proxy_overlap[oi].id1, proxy_overlap[oi].id2);
+    //    const struct slot slot = ds_ContactKeyLookup(pipeline, key);
+    //    if (!slot.address)
+    //    {
+    //        ds_ContactAdd(pipeline, key);
+    //    }
+    //}
+
+    struct ds_BroadJobPhase *broad_phase = pipeline->broad_phase;
     {
-        const struct ds_ContactKey key = ds_ContactKeyCanonical(proxy_overlap[oi].id1, proxy_overlap[oi].id2);
-        const struct slot slot = ds_ContactKeyLookup(pipeline, key);
-        if (!slot.address)
+    	ProfZoneNamed("JobPhase(Broadphase)");
+
+        ds_JobPhaseBegin(&broad_phase->phase);
+
+        broad_phase->pf = ds_ParallelForChainAlloc(&pipeline->frame, 1); 
+        
+        //TODO: U32_MAX => moved count
+        //TODO: this range size is random hardcoded value, change
+        ds_ParallelForInit(broad_phase->pf.parallel_for, U32_MAX, 8);
+
+        broad_phase->pipeline = pipeline;
+        broad_phase->job_count = g_scheduler->worker_count;
+        broad_phase->job = ArenaPushZero(&pipeline->frame, broad_phase->job_count*sizeof(struct ds_BroadJob));
+        ds_JobPhaseReserve(&broad_phase->phase, BROAD_JOB_SEED, broad_phase->job_count);
+
+        for (u32 i = 0; i < broad_phase->job_count; ++i)
         {
-            ds_ContactAdd(pipeline, key);
+            ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(BROAD_JOB_SEED, i));
         }
+
+        AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, broad_phase->job_count);
+        ds_JobPhaseAddFetchRemaining(&broad_phase->phase, broad_phase->job_count);
+        ds_WSDequePublish(g_scheduler->seed_deque);
+        for (u32 i = 1; i < g_scheduler->worker_count; ++i)
+        {
+            SemaphorePost(&g_scheduler->jobs_are_available);
+        }
+
+	    ds_MasterRunAvailableJobs();
+        
+        ds_JobPhaseEnd();
+
+        ProfZoneEnd;
     }
 
     struct ds_NarrowJobPhase *narrow_phase = pipeline->narrow_phase;
@@ -360,8 +483,18 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
     }
     
 
-    //{
-    //	ProfZoneNamed("ContactManagement");
+    {
+    	ProfZoneNamed("ContactManagement");
+
+        /*
+            (0) We need to promote any non-touching contacts (SOLVER_SET_ACTIVE) to touching 
+            contacts (CG_COLOR_***) if the contact was found to be touching. Similarly we need to
+            demote touching contacts to non-touching if we found it to be separating.
+
+            (1) We need to move contacts between the active set and the constraint graph 
+            deterministically, so we may as well use the deterministic ordering of contacts we
+            established after the broadphase.
+         */
 
 	//    cdb->sat_cache_frame_usage = ds_BitSetAlloc(&pipeline->frame, cdb->sat_cache_persistent_usage.bit_count, 0, 0);
 	//    cdb->contact_frame_usage = ds_BitSetAlloc(&pipeline->frame, cdb->contact_persistent_usage.bit_count, 0, 0);
@@ -451,8 +584,8 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
     //    	}
     //    }
 
-    //	ProfZoneEnd;
-    //}
+    	ProfZoneEnd;
+    }
 }
 
 static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
@@ -844,8 +977,9 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
                 ProfZoneNamed("Reinsert");
                 const struct ds_ProxyDirty *dirty = range->proxy + pi;
                 struct ds_Shape *shape = pipeline->shape_pool.buf + dirty->shape;
-            	DbvhRemove(&pipeline->shape_bvh, shape->proxy);
-            	shape->proxy = DbvhInsert(&pipeline->shape_bvh, dirty->shape, &dirty->bbox_with_margin, 1);
+            	DbvhRemove(&pipeline->dynamic_bvh, shape->proxy);
+            	shape->proxy = DbvhInsert(&pipeline->dynamic_bvh, dirty->shape, &dirty->bbox_with_margin, 1);
+                ds_BitSetSet(&pipeline->dirty_shape_set, dirty->shape, 1);
                 ProfZoneEnd;
             }
         }
@@ -1043,7 +1177,7 @@ u32f32 PhysicsPipelineRaycastParameter(struct arena *mem_tmp1, struct arena *mem
 {
 	ArenaPushRecord(mem_tmp1);
 
-	struct bvhRaycastInfo info = BvhRaycastInit(mem_tmp1, &pipeline->shape_bvh, ray);
+	struct bvhRaycastInfo info = BvhRaycastInit(mem_tmp1, &pipeline->dynamic_bvh, ray);
 	while (info.hit_queue.count)
 	{
 		const u32f32 tuple = MinQueueFixedPop(&info.hit_queue);
@@ -1087,7 +1221,7 @@ void PhysicsPipelinePrintUsage(const struct ds_RigidBodyPipeline *pipeline)
     fprintf(stderr, "Physics:\n");
     fprintf(stderr, "\tbodies:                      %u\n", pipeline->body_pool.count);
     fprintf(stderr, "\tshapes:                      %u\n", pipeline->shape_pool.count);
-    fprintf(stderr, "\tshape_bvh nodes:             %u\n", pipeline->shape_bvh.tree.pool.count);
+    fprintf(stderr, "\tdynamic_bvh nodes:             %u\n", pipeline->dynamic_bvh.tree.pool.count);
     fprintf(stderr, "\tevents:                      %u\n", pipeline->event_pool.count);
     fprintf(stderr, "\tislands:                     %u\n", pipeline->island_pool.count);
     fprintf(stderr, "\tcontacts:                    %u\n", pipeline->contact_pool.count);

@@ -443,7 +443,7 @@ static void r_EditorDraw(const struct led *led)
 		vec3 axis = { 0.0f, 1.0f, 0.0f };
 		const f32 angle = 0.0f;
 		QuatAxisAngle(rotation, axis, angle);
-		struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &led->physics.shape_bvh, translation, rotation, led->dbvh_color);
+		struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &led->physics.dynamic_bvh, translation, rotation, led->dbvh_color);
 		if (mesh)
 		{
 			struct r_Instance *instance = r_InstanceAddNonCached(cmd);

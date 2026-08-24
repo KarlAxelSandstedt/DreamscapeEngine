@@ -197,7 +197,7 @@ void ds_RigidBodyUpdateOrientationRange(struct ds_RigidBodyPipeline *pipeline, s
         {
             shape = pipeline->shape_pool.buf + j;
             dirty->bbox_with_margin = ds_ShapeWorldBbox(pipeline, shape);
-            const struct bvhNode *node = ds_PoolAddress(&pipeline->shape_bvh.tree.pool, shape->proxy);
+            const struct bvhNode *node = ds_PoolAddress(&pipeline->dynamic_bvh.tree.pool, shape->proxy);
             const struct aabb *proxy = &node->bbox;
             if (!AabbContains(proxy, &dirty->bbox_with_margin))
             {

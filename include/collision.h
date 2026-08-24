@@ -67,6 +67,18 @@ struct dbvhOverlap
 	u32 id2;	
 };
 
+struct bvh_Query
+{
+    u32 tmp[2];
+};
+
+struct bvh_QuerySet
+{
+    u32                 count;
+    struct bvh_Query *  query;
+};
+DEFINE_CPOOL_STRUCT(bvh_QuerySet);
+
 struct bvh		    DbvhAlloc(struct arena *mem, const u32 initial_length, const u32 growable);
 /* flush / reset the hierarchy  */
 void 			    DbvhFlush(struct bvh *bvh);
