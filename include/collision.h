@@ -73,7 +73,6 @@ struct bvh_QuerySet
     u32     count;
     u32 *   query;
 };
-DEFINE_CPOOL_STRUCT(bvh_QuerySet);
 
 struct bvh		    DbvhAlloc(struct arena *mem, const u32 initial_length, const u32 growable);
 /* flush / reset the hierarchy  */

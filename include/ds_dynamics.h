@@ -1128,6 +1128,15 @@ struct ds_ProxyDirty
     u32         reinsert; 
 };
 
+struct ds_ProxyQuery
+{
+    u32     dynamic_count;
+    u32     static_count;
+    u32 *   dynamic_query;
+    u32 *   static_query;
+};
+DEFINE_CPOOL_STRUCT(ds_ProxyQuery);
+
 struct ds_ProxyRange
 {
     u32                     count;
@@ -1292,10 +1301,11 @@ struct ds_RigidBodyPipeline
     struct ds_BitSet    body_usage_set;         /* Bodies in use */
 
 	struct ds_ShapePool	shape_pool;
-	struct bvh 		    dynamic_bvh;            /* dynamic bvh of shapes */
+	struct bvh 		    dynamic_bvh;            /* bvh of dynamic shapes */
+	struct bvh 		    static_bvh;             /* bvh of static shapes */
 
     struct ds_BitSet        dirty_shape_set;    
-    ds_CPool(bvh_QuerySet)  dirty_shape_query;
+    ds_CPool(ds_ProxyQuery) dirty_shape_query;
 
     struct ds_JointPool joint_pool;
 

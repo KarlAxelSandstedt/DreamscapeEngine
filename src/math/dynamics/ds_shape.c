@@ -37,8 +37,6 @@ ds_ShapeId ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_Sh
     {
         ds_BitSetIncreaseSize(&pipeline->dirty_shape_set, pipeline->dirty_shape_query.length, 0);
     }
-    ds_BitSetSet(&pipeline->dirty_shape_set, shape_slot.index, 1);
-
 	struct ds_RigidBody *body_ptr = pipeline->body_pool.buf + ds_IdIndex(body);
 	ds_Assert(ds_PoolSlotAllocated(body_ptr));
 	ds_DLLAppend(body_ptr->shape_list, pipeline->shape_pool.buf, shape_slot.index, body_shape);
@@ -62,8 +60,15 @@ ds_ShapeId ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_Sh
 		Vec3Translate(bbox_proxy.hw, Vec3Inline(shape->margin, shape->margin, shape->margin));
 	}
 
-    const u32 is_moving = (body_ptr->set == SOLVER_SET_ACTIVE);
-	shape->proxy = DbvhInsert(&pipeline->dynamic_bvh, shape->body, shape_slot.index, &bbox_proxy);
+    if (RB_IS_DYNAMIC(body_ptr))
+    {
+        ds_BitSetSet(&pipeline->dirty_shape_set, shape_slot.index, 1);
+        shape->proxy = DbvhInsert(&pipeline->dynamic_bvh, shape->body, shape_slot.index, &bbox_proxy);
+    }
+    else
+    {
+        shape->proxy = DbvhInsert(&pipeline->static_bvh, shape->body, shape_slot.index, &bbox_proxy);
+    }
     
     ds_RigidBodyUpdateMassProperties(pipeline, body);
 
@@ -123,7 +128,7 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
 
     ds_DLLRemove(body->shape_list, pipeline->shape_pool.buf, index, body_shape);
 	strdb_Dereference(pipeline->cshape_db, shape->cshape_handle);
-	DbvhRemove(&pipeline->dynamic_bvh, shape->proxy);
+	DbvhRemove(&pipeline->static_bvh, shape->proxy);
 	ds_ShapePoolRemove(&pipeline->shape_pool, index);
 }
 

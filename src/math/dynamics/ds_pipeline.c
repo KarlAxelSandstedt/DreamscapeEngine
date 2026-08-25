@@ -77,6 +77,7 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 
 	pipeline.shape_pool = ds_ShapePoolAlloc(NULL, initial_size, GROWABLE);
 	pipeline.dynamic_bvh = DbvhAlloc(NULL, 2*initial_size, GROWABLE);
+	pipeline.static_bvh = DbvhAlloc(NULL, 2*initial_size, GROWABLE);
     pipeline.dirty_shape_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
     ds_CPoolAlloc(NULL, pipeline.dirty_shape_query, initial_size, GROWABLE);
 
@@ -141,6 +142,7 @@ void PhysicsPipelineFree(struct ds_RigidBodyPipeline *pipeline)
     ds_BitSetDealloc(&pipeline->dirty_shape_set);
     ds_CPoolDealloc(pipeline->dirty_shape_query);
 	BvhFree(&pipeline->dynamic_bvh);
+	BvhFree(&pipeline->static_bvh);
     ds_ContactPoolDealloc(&pipeline->contact_pool);
 	ds_BitSetDealloc(&pipeline->contact_persistent_usage);
     ds_HashMapDealloc(&pipeline->contact_map);
@@ -217,6 +219,7 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
     ds_BitSetClear(&pipeline->dirty_shape_set, 0);
     ds_CPoolFlush(pipeline->dirty_shape_query);
 	DbvhFlush(&pipeline->dynamic_bvh);
+	DbvhFlush(&pipeline->static_bvh);
 	ds_ShapePoolFlush(&pipeline->shape_pool);
 
 	ds_PhysicsEventPoolFlush(&pipeline->event_pool);
@@ -258,13 +261,8 @@ u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
     struct ds_ParallelForChain *chain = &phase->pf;
     struct ds_ParallelFor *pf = chain->parallel_for + 0;
     struct ds_BitSet *dirty = &pipeline->dirty_shape_set;
-    struct bvh_QuerySet *query = pipeline->dirty_shape_query.buf;
+    struct ds_ProxyQuery *query = pipeline->dirty_shape_query.buf;
     u32 low, high;
-
-    ds_AssertString((u64) dirty->bits % DS_CACHE_LINE == 0
-            , "dirty proxy set should be cache-aligned"); 
-    ds_AssertString(sizeof(dirty->bits[0])*pf->range_index_count_max == 0
-            , "parallel-for ranges sizes should be a multiple of cacheline"); 
 
     ds_ParallelFor(pf, range_index)
     {
@@ -277,9 +275,14 @@ u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
                 const u32 si = ds_BitBlockNext(&it);
                 const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
                 const struct bvhNode *node = (const struct bvhNode *) pipeline->dynamic_bvh.tree.pool.buf + shape->proxy;
-                query[si] = BvhQueryAndFilterOnBody(frame, &pipeline->dynamic_bvh, node);
+                const struct bvh_QuerySet dynamic_query = BvhQueryAndFilterOnBody(frame, &pipeline->dynamic_bvh, node);
+                const struct bvh_QuerySet static_query = BvhQueryAndFilterOnBody(frame, &pipeline->static_bvh, node);
+
+                query[si].dynamic_count = dynamic_query.count;
+                query[si].dynamic_query = dynamic_query.query;
+                query[si].static_count = static_query.count;
+                query[si].static_query = static_query.query;
 		    }
-            dirty->bits[block] = 0;
         }
     }
 
