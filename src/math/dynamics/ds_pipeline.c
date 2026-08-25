@@ -279,9 +279,9 @@ u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
                 const struct bvh_QuerySet static_query = BvhQuery(frame, &pipeline->static_bvh, node);
 
                 query[si].dynamic_count = dynamic_query.count;
-                query[si].dynamic_query = dynamic_query.query;
+                query[si].dynamic_query = dynamic_query.shape;
                 query[si].static_count = static_query.count;
-                query[si].static_query = static_query.query;
+                query[si].static_query = static_query.shape;
 		    }
         }
     }
@@ -437,6 +437,47 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
         ProfZoneEnd;
     }
 
+    {
+        /* Allocate new contacts and update query[q].dynamic/static_shape to contact index. */
+        ProfZoneNamed("Contact Allocation");
+        
+        struct ds_BitSet *dirty = &pipeline->dirty_shape_set;
+        for (u64 block = 0; block < dirty->block_count; ++block)
+        {
+            struct ds_BitBlock it = ds_BitBlockInit(dirty->bits[block], block);
+		    while (ds_BitBlockHasNext(&it))
+		    {
+                const u32 si = ds_BitBlockNext(&it);
+
+                const struct ds_ProxyQuery *query = pipeline->dirty_shape_query.buf + si;
+                const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
+                for (u32 q = 0; q < query->dynamic_count; ++q)
+                {
+                    const struct ds_ContactKey key = ds_ContactKeyCanonical(si, query->dynamic_query[q]);
+                    struct slot slot = ds_ContactKeyLookup(pipeline, key);
+                    if (!slot.address)
+                    {
+                        slot = ds_ContactAdd(pipeline, key);
+                    }
+                    query->dynamic_query[q] = slot.index;
+                }
+
+                for (u32 q = 0; q < query->static_count; ++q)
+                {
+                    const struct ds_ContactKey key = ds_ContactKeyCanonical(si, query->static_query[q]);
+                    struct slot slot = ds_ContactKeyLookup(pipeline, key);
+                    if (!slot.address)
+                    {
+                        slot = ds_ContactAdd(pipeline, key);
+                    }
+                    query->static_query[q] = slot.index;
+                }
+		    }
+        }
+
+        ProfZoneEnd;
+    }
+
     struct ds_NarrowJobPhase *narrow_phase = pipeline->narrow_phase;
     {
     	ProfZoneNamed("JobPhase(Narrowphase)");
@@ -488,7 +529,7 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
     
 
     {
-    	ProfZoneNamed("ContactManagement");
+    	ProfZoneNamed("Contact Promotion/Demotion/Removal");
 
         /*
             (0) We need to promote any non-touching contacts (SOLVER_SET_ACTIVE) to touching 
@@ -499,6 +540,17 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
             deterministically, so we may as well use the deterministic ordering of contacts we
             established after the broadphase.
          */
+        struct ds_BitSet *dirty = &pipeline->dirty_shape_set;
+        for (u64 block = 0; block < dirty->block_count; ++block)
+        {
+            struct ds_BitBlock it = ds_BitBlockInit(dirty->bits[block], block);
+		    while (ds_BitBlockHasNext(&it))
+		    {
+                const u32 si = ds_BitBlockNext(&it);
+                //TODO
+		    }
+            dirty->bits[block] = 0;
+        }
 
 	//    cdb->sat_cache_frame_usage = ds_BitSetAlloc(&pipeline->frame, cdb->sat_cache_persistent_usage.bit_count, 0, 0);
 	//    cdb->contact_frame_usage = ds_BitSetAlloc(&pipeline->frame, cdb->contact_persistent_usage.bit_count, 0, 0);
@@ -586,7 +638,7 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
     //    	{
     //    		ds_BitSetSet(&cdb->sat_cache_persistent_usage, bit, 1);
     //    	}
-    //    }
+    //  }
 
     	ProfZoneEnd;
     }

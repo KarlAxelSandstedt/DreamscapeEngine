@@ -58,9 +58,9 @@ void 		        BvhFree(struct bvh *tree);
 void 		        BvhValidate(struct arena *tmp, const struct bvh *bvh);
 /* return total cost of bvh */
 f32 		        BvhCost(const struct bvh *bvh);
-/* Query all proxy overlaps  */
+/* Query all overlapping shapes */
 struct bvh_QuerySet BvhQuery(struct arena *mem, const struct bvh *bvh, const struct bvhNode *node);
-/* Query proxy overlaps and filter overlaps where bvh_node->bt_right <= node->bt_right (bt_right == body index)  */
+/* Query overlapping shapes with a body index > node->body (bt_right)  */
 struct bvh_QuerySet BvhQueryAndFilterOnBody(struct arena *mem, const struct bvh *bvh, const struct bvhNode *node);
 
 #define COST_QUEUE_INITIAL_COUNT 	64 
@@ -73,7 +73,7 @@ struct bvh_Query
 struct bvh_QuerySet
 {
     u32     count;
-    u32 *   query;
+    u32 *   shape;
 };
 
 struct bvh		    DbvhAlloc(struct arena *mem, const u32 initial_length, const u32 growable);

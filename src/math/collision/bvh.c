@@ -356,7 +356,7 @@ struct bvh_QuerySet BvhQuery(struct arena *mem, const struct bvh *bvh, const str
     struct bvh_QuerySet query = 
     { 
         .count = 0,
-        .query = mem_arr.addr,
+        .shape = mem_arr.addr,
     };
 
     struct arena *tmp = ArenaPushScratch();
@@ -372,10 +372,9 @@ struct bvh_QuerySet BvhQuery(struct arena *mem, const struct bvh *bvh, const str
     while (sc--)
     {
         const struct bvhNode *n = nodes + node_stack[ sc ];
-        /* bt_right == ds_RigidBody index */
         if (bt_LeafCheck(n))
         {
-            query.query[ query.count ] = node_stack[ sc ];
+            query.shape[ query.count ] = n->bt_left;
             query.count += 1;
             if (query.count >= mem_arr.len)
             {
@@ -420,7 +419,7 @@ struct bvh_QuerySet BvhQueryAndFilterOnBody(struct arena *mem, const struct bvh 
     struct bvh_QuerySet query = 
     { 
         .count = 0,
-        .query = mem_arr.addr,
+        .shape = mem_arr.addr,
     };
 
     struct arena *tmp = ArenaPushScratch();
@@ -439,7 +438,7 @@ struct bvh_QuerySet BvhQueryAndFilterOnBody(struct arena *mem, const struct bvh 
         /* bt_right == ds_RigidBody index */
         if (bt_LeafCheck(n) && node->bt_right < n->bt_right)
         {
-            query.query[ query.count ] = node_stack[ sc ];
+            query.shape[ query.count ] = n->bt_left;
             query.count += 1;
             if (query.count >= mem_arr.len)
             {
