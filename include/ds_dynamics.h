@@ -1118,8 +1118,9 @@ struct ds_SolverJob
 
 struct ds_ProxyDirty
 {
-    struct aabb bbox_with_margin;
+    struct aabb bbox;
     u32         shape;
+    u32         reinsert; 
 };
 
 struct ds_ProxyRange

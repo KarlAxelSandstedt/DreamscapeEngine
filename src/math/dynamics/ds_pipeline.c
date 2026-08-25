@@ -974,13 +974,16 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
             const struct ds_ProxyRange *range = solver_phase->proxy_range + ri;
             for (u32 pi = 0; pi < range->count; ++pi)
             {
-                ProfZoneNamed("Reinsert");
-                const struct ds_ProxyDirty *dirty = range->proxy + pi;
-                struct ds_Shape *shape = pipeline->shape_pool.buf + dirty->shape;
-            	DbvhRemove(&pipeline->dynamic_bvh, shape->proxy);
-            	shape->proxy = DbvhInsert(&pipeline->dynamic_bvh, dirty->shape, &dirty->bbox_with_margin, 1);
-                ds_BitSetSet(&pipeline->dirty_shape_set, dirty->shape, 1);
-                ProfZoneEnd;
+                if (dirty->reinsert)
+                {
+                    ProfZoneNamed("Reinsert");
+                    const struct ds_ProxyDirty *dirty = range->proxy + pi;
+                    struct ds_Shape *shape = pipeline->shape_pool.buf + dirty->shape;
+            	    DbvhRemove(&pipeline->dynamic_bvh, shape->proxy);
+            	    shape->proxy = DbvhInsert(&pipeline->dynamic_bvh, dirty->shape, &dirty->bbox, 1);
+                    ds_BitSetSet(&pipeline->dirty_shape_set, dirty->shape, 1);
+                    ProfZoneEnd;
+                }
             }
         }
         ProfZoneEnd;

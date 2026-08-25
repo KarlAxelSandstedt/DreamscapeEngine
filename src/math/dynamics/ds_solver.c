@@ -196,15 +196,34 @@ void ds_RigidBodyUpdateOrientationRange(struct ds_RigidBodyPipeline *pipeline, s
         for (u32 j = body->shape_list.first; (i32) j != DLL_SENTINEL; j = shape->body_shape.next)
         {
             shape = pipeline->shape_pool.buf + j;
-            dirty->bbox_with_margin = ds_ShapeWorldBbox(pipeline, shape);
+            dirty->bbox = ds_ShapeWorldBbox(pipeline, shape);
             const struct bvhNode *node = ds_PoolAddress(&pipeline->dynamic_bvh.tree.pool, shape->proxy);
             const struct aabb *proxy = &node->bbox;
-            if (!AabbContains(proxy, &dirty->bbox_with_margin))
+            
+
+            if (!AabbContains(proxy, &dirty->bbox))
             {
                 dirty->shape = j;
-                dirty->bbox_with_margin.hw[0] += shape->margin;
-            	dirty->bbox_with_margin.hw[1] += shape->margin;
-            	dirty->bbox_with_margin.hw[2] += shape->margin;
+                dirty->reinsert = 1;
+                if (bt_NotRootCheck(node))
+                {
+                    const u32 parent_index = node->bt_parent % BT_PARENT_INDEX_MASK;
+                    const struct bvhNode *parent = ds_PoolAddress(&pipeline->dynamic_bvh.tree.pool, parent_index);
+                    struct aabb enlarged_proxy;
+                    AabbUnion(&enlarged_proxy, proxy, &dirty->bbox);
+                    if (AabbContains(&parent->bbox, &enlarged_proxy))
+                    {
+                        dirty->bbox = enlarged_proxy;
+                        dirty->reinsert = 0;
+                    }
+                }
+
+                if (dirty->reinsert)
+                {
+                    dirty->bbox.hw[0] += shape->margin;
+            	    dirty->bbox.hw[1] += shape->margin;
+            	    dirty->bbox.hw[2] += shape->margin;
+                }
 
                 proxy_range->count += 1;
                 dirty += 1;
