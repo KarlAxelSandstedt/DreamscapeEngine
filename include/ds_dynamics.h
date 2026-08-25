@@ -71,6 +71,11 @@ struct ds_NumericsConfig
      */
     f32 manifold_cache_linear_velocity_max_diff_allowed_pending;
     f32 manifold_cache_linear_velocity_max_diff_allowed;
+
+    /* Fraction of dirty dbvh proxies that may be re-inserted before triggering a dbvh rebuild  */
+    f32 dbvh_reinsert_threshold_pending;
+    f32 dbvh_reinsert_threshold;
+
 };
 extern struct ds_NumericsConfig *g_numerics_config;
 
@@ -1126,6 +1131,7 @@ struct ds_ProxyDirty
 struct ds_ProxyRange
 {
     u32                     count;
+    u32                     reinsert_count;
     struct ds_ProxyDirty *  proxy;
 };
 

@@ -963,30 +963,45 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
     }
 
     {
-        /*
-         * TODO(Optimization): Reinsertion is costly, parallel-rebuild somehow if the reinsertion
-         *                     fraction is high.
-         */
-        ProfZoneNamed("Dynamic Tree Update");
         struct ds_ParallelFor *pf = solver_phase->pf_orientation.parallel_for + 0;
+        f32 dirty_count = 0; 
+        f32 reinsert_count = 0;
         for (u32 ri = 0; ri < pf->range_count; ++ri)
         {
             const struct ds_ProxyRange *range = solver_phase->proxy_range + ri;
-            for (u32 pi = 0; pi < range->count; ++pi)
+            dirty_count += range->count;
+            reinsert_count += range->reinsert_count;
+        }
+
+        const f32 reinsert_fraction = reinsert_count / dirty_count;
+        if (reinsert_fraction > g_numerics_config->dbvh_reinsert_threshold)
+        {
+            ProfZoneNamed("DBVH Rebuild");
+            ds_Assert(0);
+            ProfZoneEnd;
+        }
+        else
+        {
+            ProfZoneNamed("DBVH Update");
+            for (u32 ri = 0; ri < pf->range_count; ++ri)
             {
-                if (dirty->reinsert)
+                const struct ds_ProxyRange *range = solver_phase->proxy_range + ri;
+                for (u32 pi = 0; pi < range->count; ++pi)
                 {
-                    ProfZoneNamed("Reinsert");
                     const struct ds_ProxyDirty *dirty = range->proxy + pi;
-                    struct ds_Shape *shape = pipeline->shape_pool.buf + dirty->shape;
-            	    DbvhRemove(&pipeline->dynamic_bvh, shape->proxy);
-            	    shape->proxy = DbvhInsert(&pipeline->dynamic_bvh, dirty->shape, &dirty->bbox, 1);
                     ds_BitSetSet(&pipeline->dirty_shape_set, dirty->shape, 1);
-                    ProfZoneEnd;
+                    if (dirty->reinsert)
+                    {
+                        ProfZoneNamed("Reinsert");
+                        struct ds_Shape *shape = pipeline->shape_pool.buf + dirty->shape;
+                	    DbvhRemove(&pipeline->dynamic_bvh, shape->proxy);
+                	    shape->proxy = DbvhInsert(&pipeline->dynamic_bvh, dirty->shape, &dirty->bbox, 1);
+                        ProfZoneEnd;
+                    }
                 }
             }
+            ProfZoneEnd;
         }
-        ProfZoneEnd;
     }
         
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;

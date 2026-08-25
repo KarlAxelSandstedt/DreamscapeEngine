@@ -26,6 +26,7 @@ struct ds_NumericsConfig ds_NumericsConfigDefault(void)
     config.manifold_cache_normal_parallel_check_max_degrees_pending = 10.0f;
     config.manifold_cache_depth_max_diff_allowed_pending = DS_UNIT_CM;
     config.manifold_cache_linear_velocity_max_diff_allowed_pending = 10.0f * DS_UNIT_M;
+    config.dbvh_reinsert_threshold_pending = 0.25f;
 
     return config;
 }
@@ -33,6 +34,8 @@ struct ds_NumericsConfig ds_NumericsConfigDefault(void)
 void ds_NumericsConfigPush(struct ds_NumericsConfig *config)
 {
     g_numerics_config = config;
+
+    config->dbvh_reinsert_threshold = f32_clamp(config->dbvh_reinsert_threshold_pending, 0.0f, 1.0f);
 
     config->vec3_parallel_check_max_degrees_pending = f32_clamp(config->vec3_parallel_check_max_degrees_pending, 0.0f, 45.0f);
     config->vec3_parallel_check_max_degrees = config->vec3_parallel_check_max_degrees_pending;

@@ -220,6 +220,7 @@ void ds_RigidBodyUpdateOrientationRange(struct ds_RigidBodyPipeline *pipeline, s
 
                 if (dirty->reinsert)
                 {
+                    proxy_range->reinsert_count += 1;
                     dirty->bbox.hw[0] += shape->margin;
             	    dirty->bbox.hw[1] += shape->margin;
             	    dirty->bbox.hw[2] += shape->margin;
