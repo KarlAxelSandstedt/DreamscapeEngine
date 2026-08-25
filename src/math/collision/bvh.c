@@ -347,6 +347,70 @@ void DbvhRemove(struct bvh *bvh, const u32 index)
 	}
 }
 
+struct bvh_QuerySet BvhQuery(struct arena *mem, const struct bvh *bvh, const struct bvhNode *node)
+{
+    if (bt_LeafCount(&bvh->tree) < 1) { return (struct bvh_QuerySet) { 0 }; }
+	const struct bvhNode *nodes = (const struct bvhNode *) bvh->tree.pool.buf;
+
+    struct memArray mem_arr = ArenaPushAlignedAll(mem, sizeof(u32), sizeof(u32));
+    struct bvh_QuerySet query = 
+    { 
+        .count = 0,
+        .query = mem_arr.addr,
+    };
+
+    struct arena *tmp = ArenaPushScratch();
+    struct memArray stack_arr = ArenaPushAlignedAll(tmp, sizeof(void *), sizeof(void *));
+    u32 *node_stack = stack_arr.addr;
+    u32 sc = 0;
+
+    if (AabbTest(&node->bbox, &nodes[bvh->tree.root].bbox))
+    {
+       node_stack[ sc++ ] = bvh->tree.root;
+    }
+
+    while (sc--)
+    {
+        const struct bvhNode *n = nodes + node_stack[ sc ];
+        /* bt_right == ds_RigidBody index */
+        if (bt_LeafCheck(n))
+        {
+            query.query[ query.count ] = node_stack[ sc ];
+            query.count += 1;
+            if (query.count >= mem_arr.len)
+            {
+				LogString(T_PHYSICS, S_FATAL, "out-of-memory in query set, increase arena size!");		
+				FatalCleanupAndExit();
+            }
+        }
+        else
+        {
+        	const struct bvhNode *left = nodes + n->bt_left;
+        	const struct bvhNode *right = nodes + n->bt_right;
+        	if (AabbTest(&node->bbox, &right->bbox))
+        	{
+        		node_stack[ sc++ ] = n->bt_right;
+        	}
+        
+        	if (AabbTest(&node->bbox, &left->bbox))
+            {
+        		node_stack[ sc++ ] = n->bt_left;
+                if (sc >= stack_arr.len)
+                {
+					LogString(T_PHYSICS, S_FATAL, "out-of-memory in query stack, increase arena size!");		
+					FatalCleanupAndExit();
+                }
+            }
+        }
+    }
+
+    ArenaPopScratch();
+
+    ArenaPopPacked(mem, (mem_arr.len - query.count)*sizeof(u32));
+
+    return query;
+}
+
 struct bvh_QuerySet BvhQueryAndFilterOnBody(struct arena *mem, const struct bvh *bvh, const struct bvhNode *node)
 {
 	if (bt_LeafCount(&bvh->tree) < 1) { return (struct bvh_QuerySet) { 0 }; }

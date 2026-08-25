@@ -58,6 +58,8 @@ void 		        BvhFree(struct bvh *tree);
 void 		        BvhValidate(struct arena *tmp, const struct bvh *bvh);
 /* return total cost of bvh */
 f32 		        BvhCost(const struct bvh *bvh);
+/* Query all proxy overlaps  */
+struct bvh_QuerySet BvhQuery(struct arena *mem, const struct bvh *bvh, const struct bvhNode *node);
 /* Query proxy overlaps and filter overlaps where bvh_node->bt_right <= node->bt_right (bt_right == body index)  */
 struct bvh_QuerySet BvhQueryAndFilterOnBody(struct arena *mem, const struct bvh *bvh, const struct bvhNode *node);
 

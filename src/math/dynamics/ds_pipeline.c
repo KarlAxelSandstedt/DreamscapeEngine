@@ -276,7 +276,7 @@ u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
                 const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
                 const struct bvhNode *node = (const struct bvhNode *) pipeline->dynamic_bvh.tree.pool.buf + shape->proxy;
                 const struct bvh_QuerySet dynamic_query = BvhQueryAndFilterOnBody(frame, &pipeline->dynamic_bvh, node);
-                const struct bvh_QuerySet static_query = BvhQueryAndFilterOnBody(frame, &pipeline->static_bvh, node);
+                const struct bvh_QuerySet static_query = BvhQuery(frame, &pipeline->static_bvh, node);
 
                 query[si].dynamic_count = dynamic_query.count;
                 query[si].dynamic_query = dynamic_query.query;
