@@ -274,9 +274,10 @@ u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
             struct ds_BitBlock it = ds_BitBlockInit(dirty->bits[block], block);
 		    while (ds_BitBlockHasNext(&it))
 		    {
-                const u32 pi = ds_BitBlockNext(&it);
-                //TODO
-                //query[pi] = bvh_Query
+                const u32 si = ds_BitBlockNext(&it);
+                const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
+                const struct bvhNode *node = (const struct bvhNode *) pipeline->dynamic_bvh.tree.pool.buf + shape->proxy;
+                query[si] = BvhQueryAndFilterOnBody(frame, &pipeline->dynamic_bvh, node);
 		    }
             dirty->bits[block] = 0;
         }
@@ -973,34 +974,37 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
             reinsert_count += range->reinsert_count;
         }
 
-        const f32 reinsert_fraction = reinsert_count / dirty_count;
-        if (reinsert_fraction > g_numerics_config->dbvh_reinsert_threshold)
+        if (dirty_count)
         {
-            ProfZoneNamed("DBVH Rebuild");
-            ds_Assert(0);
-            ProfZoneEnd;
-        }
-        else
-        {
-            ProfZoneNamed("DBVH Update");
-            for (u32 ri = 0; ri < pf->range_count; ++ri)
+            const f32 reinsert_fraction = reinsert_count / dirty_count;
+            if (reinsert_fraction > g_numerics_config->dbvh_reinsert_threshold)
             {
-                const struct ds_ProxyRange *range = solver_phase->proxy_range + ri;
-                for (u32 pi = 0; pi < range->count; ++pi)
+                ProfZoneNamed("DBVH Rebuild");
+                ds_Assert(0);
+                ProfZoneEnd;
+            }
+            else
+            {
+                ProfZoneNamed("DBVH Update");
+                for (u32 ri = 0; ri < pf->range_count; ++ri)
                 {
-                    const struct ds_ProxyDirty *dirty = range->proxy + pi;
-                    ds_BitSetSet(&pipeline->dirty_shape_set, dirty->shape, 1);
-                    if (dirty->reinsert)
+                    const struct ds_ProxyRange *range = solver_phase->proxy_range + ri;
+                    for (u32 pi = 0; pi < range->count; ++pi)
                     {
-                        ProfZoneNamed("Reinsert");
-                        struct ds_Shape *shape = pipeline->shape_pool.buf + dirty->shape;
-                	    DbvhRemove(&pipeline->dynamic_bvh, shape->proxy);
-                	    shape->proxy = DbvhInsert(&pipeline->dynamic_bvh, dirty->shape, &dirty->bbox, 1);
-                        ProfZoneEnd;
+                        const struct ds_ProxyDirty *dirty = range->proxy + pi;
+                        ds_BitSetSet(&pipeline->dirty_shape_set, dirty->shape, 1);
+                        if (dirty->reinsert)
+                        {
+                            ProfZoneNamed("Reinsert");
+                            struct ds_Shape *shape = pipeline->shape_pool.buf + dirty->shape;
+                    	    DbvhRemove(&pipeline->dynamic_bvh, shape->proxy);
+                    	    shape->proxy = DbvhInsert(&pipeline->dynamic_bvh, shape->body, dirty->shape, &dirty->bbox);
+                            ProfZoneEnd;
+                        }
                     }
                 }
+                ProfZoneEnd;
             }
-            ProfZoneEnd;
         }
     }
         

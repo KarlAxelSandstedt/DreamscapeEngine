@@ -174,7 +174,6 @@ void ds_SolverSetWakeUp(struct ds_RigidBodyPipeline *pipeline, const u32 index)
         for (i32 si = body->shape_list.first; si != DLL_SENTINEL; si = shape->body_shape.next)
         {
             shape = pipeline->shape_pool.buf + si;
-            DbvhSetMoveState(&pipeline->dynamic_bvh, shape->proxy, 1);
         }
 
         memcpy(new_sim, old_sim, sizeof(*new_sim));
@@ -265,12 +264,6 @@ void ds_SolverSetSleep(struct ds_RigidBodyPipeline *pipeline, const u32 island_i
         body = pipeline->body_pool.buf + i;
         ds_Assert(body->island == island_index);
         ds_Assert(body->set == SOLVER_SET_ACTIVE);
-        struct ds_Shape *shape;
-        for (i32 si = body->shape_list.first; si != DLL_SENTINEL; si = shape->body_shape.next)
-        {
-            shape = pipeline->shape_pool.buf + si;
-            DbvhSetMoveState(&pipeline->dynamic_bvh, shape->proxy, 0);
-        }
         ds_SolverSetMoveBody(pipeline, i, island->set);
     }
 }
@@ -299,13 +292,6 @@ void ds_SolverSetMerge(struct ds_RigidBodyPipeline *pipeline, const u32 set_expa
             const struct slot slot = ds_CPoolPush(expand->body_sim_pool);
             body->set = set_expand;
             body->sim = slot.index;
-
-            struct ds_Shape *shape;
-            for (i32 si = body->shape_list.first; si != DLL_SENTINEL; si = shape->body_shape.next)
-            {
-                shape = pipeline->shape_pool.buf + si;
-                DbvhSetMoveState(&pipeline->dynamic_bvh, shape->proxy, 1);
-            }
 
             struct ds_RigidBodySim *new_sim = slot.address;
             memcpy(new_sim, old_sim, sizeof(*new_sim));
@@ -370,14 +356,6 @@ void ds_SolverSetValidate(const struct ds_RigidBodyPipeline *pipeline, const u32
         const struct ds_RigidBody *body = pipeline->body_pool.buf + sim->body;
         ds_Assert(body->set == set_index);
         ds_Assert(body->sim == i);
-
-        struct ds_Shape *shape;
-        for (i32 si = body->shape_list.first; si != DLL_SENTINEL; si = shape->body_shape.next)
-        {
-            shape = pipeline->shape_pool.buf + si;
-            const u32 moving = DbvhGetMoveState(&pipeline->dynamic_bvh, shape->proxy);
-            ds_Assert((set_index == SOLVER_SET_ACTIVE && moving) || (set_index != SOLVER_SET_ACTIVE && !moving));
-        }
     }
 
     for (u32 i = 0; i < set->joint_sim_pool.count; ++i)

@@ -40,6 +40,7 @@ bounding volume hierarchy
 
 struct bvhNode
 {
+    /* If leaf, bt_right == body_index, bt_left == shape index */
 	BT_SLOT_STATE;
 	struct aabb bbox;
 };
@@ -52,20 +53,15 @@ struct bvh
 };
 
 /* free allocated resources */
-void 		BvhFree(struct bvh *tree);
+void 		        BvhFree(struct bvh *tree);
 /* validate (ds_Assert) internal coherence of bvh */
-void 		BvhValidate(struct arena *tmp, const struct bvh *bvh);
+void 		        BvhValidate(struct arena *tmp, const struct bvh *bvh);
 /* return total cost of bvh */
-f32 		BvhCost(const struct bvh *bvh);
+f32 		        BvhCost(const struct bvh *bvh);
+/* Query proxy overlaps and filter overlaps where bvh_node->bt_right <= node->bt_right (bt_right == body index)  */
+struct bvh_QuerySet BvhQueryAndFilterOnBody(struct arena *mem, const struct bvh *bvh, const struct bvhNode *node);
 
 #define COST_QUEUE_INITIAL_COUNT 	64 
-
-//TODO remove
-struct dbvhOverlap
-{
-	u32 id1;
-	u32 id2;	
-};
 
 struct bvh_Query
 {
@@ -74,8 +70,8 @@ struct bvh_Query
 
 struct bvh_QuerySet
 {
-    u32                 count;
-    struct bvh_Query *  query;
+    u32     count;
+    u32 *   query;
 };
 DEFINE_CPOOL_STRUCT(bvh_QuerySet);
 
@@ -83,16 +79,20 @@ struct bvh		    DbvhAlloc(struct arena *mem, const u32 initial_length, const u32
 /* flush / reset the hierarchy  */
 void 			    DbvhFlush(struct bvh *bvh);
 /* id is an integer identifier from the outside, return index of added value */
-u32 			    DbvhInsert(struct bvh *bvh, const u32 id, const struct aabb *bbox, const u32 is_moving);
+u32 			    DbvhInsert(struct bvh *bvh, const u32 body, const u32 shape, const struct aabb *bbox);
 /* remove leaf corresponding to index from tree */
 void 			    DbvhRemove(struct bvh *bvh, const u32 index);
-/* Set moving state of leaf corresponding to index */
-void                DbvhSetMoveState(struct bvh *bvh, const u32 index, const u32 is_moving);
-/* Get moving state of leaf corresponding to index */
-u32                 DbvhGetMoveState(const struct bvh *bvh, const u32 index);
-/* Return overlapping ids ptr, set to NULL if no overlap. if overlap, count is set */
+
+
+//TODO remove
+struct dbvhOverlap
+{
+	u32 id1;
+	u32 id2;	
+};
+/* (DEPRECATED): Return overlapping ids ptr, set to NULL if no overlap. if overlap, count is set */
 struct dbvhOverlap *DbvhPushOverlapPairs(struct arena *mem, u32 *count, const struct bvh *bvh);
-/* push	id:s of leaves hit by raycast. returns number of hits. -1 == out of memory */
+
 
 struct triMeshBvh
 {
@@ -156,7 +156,7 @@ struct bvhRaycastInfo
 /* Initiate raycast information */
 struct bvhRaycastInfo	BvhRaycastInit(struct arena *mem, const struct bvh *bvh, const struct ray *ray);
 /* test Raycasting against child nodes and push hit children onto queue */
-void 			BvhRaycastTestAndPushChildren(struct bvhRaycastInfo *info, const u32f32 popped_tuple);
+void 			        BvhRaycastTestAndPushChildren(struct bvhRaycastInfo *info, const u32f32 popped_tuple);
 
 
 /********************************** COLLISION DEBUG **********************************/

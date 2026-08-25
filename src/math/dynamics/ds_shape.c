@@ -63,7 +63,7 @@ ds_ShapeId ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_Sh
 	}
 
     const u32 is_moving = (body_ptr->set == SOLVER_SET_ACTIVE);
-	shape->proxy = DbvhInsert(&pipeline->dynamic_bvh, shape_slot.index, &bbox_proxy, is_moving);
+	shape->proxy = DbvhInsert(&pipeline->dynamic_bvh, shape->body, shape_slot.index, &bbox_proxy);
     
     ds_RigidBodyUpdateMassProperties(pipeline, body);
 
