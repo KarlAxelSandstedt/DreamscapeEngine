@@ -500,6 +500,31 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
     {
     	ProfZoneNamed("Contact Promotion/Demotion");
 
+        const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+        for (u32 compute = 0; compute < active->contact_pool.count; ++compute)
+        {
+            const u32 ci = active->contact_pool.buf[compute];
+            struct ds_Contact *c = pipeline->contact_pool.buf + ci;
+            if (c->narrowphase.manifold_count > 0)
+            {
+                ds_ContactPromote(pipeline, ci);
+            }
+        }
+
+        for (u32 color_index = 0; color_index < CG_COLOR_COUNT; ++color_index)
+        {
+            const struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+            for (u32 compute = 0; compute < color->contact_pool.count; ++compute)
+            {
+                const u32 ci = color->contact_pool.buf[compute];
+                struct ds_Contact *c = pipeline->contact_pool.buf + ci;
+                if (c->narrowphase.manifold_count == 0)
+                {
+                    ds_ContactDemote(pipeline, ci);
+                }
+            }
+        }
+
         /*
          *TODO
          * Removal Sketch
@@ -507,47 +532,6 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
          * (1) Traverse dirty shape contacts
          * (2) If contact wasn't touched, MarkForRemoval + removed_constraint_count += 1
          */
-
-        struct ds_BitSet *dirty = &pipeline->dirty_shape_set;
-        for (u64 block = 0; block < dirty->block_count; ++block)
-        {
-            struct ds_BitBlock it = ds_BitBlockInit(dirty->bits[block], block);
-		    while (ds_BitBlockHasNext(&it))
-		    {
-                const u32 si = ds_BitBlockNext(&it);
-
-                const struct ds_ProxyQuery *query = pipeline->dirty_shape_query.buf + si;
-                for (u32 q = 0; q < query->dynamic_count; ++q)
-                {
-                    const u32 ci = query->dynamic_query[q];
-                    struct ds_Contact *c = pipeline->contact_pool.buf + ci;
-                    if (c->set == SOLVER_SET_ACTIVE && c->narrowphase.manifold_count > 0)
-                    {
-                        ds_ContactPromote(pipeline, ci);
-                    }
-                    else if (c->color <= CG_COLOR_COUNT && c->narrowphase.manifold_count == 0)
-                    {
-                        ds_ContactDemote(pipeline, ci);
-                    }
-                }
-
-                for (u32 q = 0; q < query->static_count; ++q)
-                {
-                    const u32 ci = query->static_query[q];
-                    struct ds_Contact *c = pipeline->contact_pool.buf + ci;
-                    if (c->set == SOLVER_SET_ACTIVE && c->narrowphase.manifold_count > 0)
-                    {
-                        ds_ContactPromote(pipeline, ci);
-                    }
-                    else if (c->color <= CG_COLOR_COUNT && c->narrowphase.manifold_count == 0)
-                    {
-                        ds_ContactDemote(pipeline, ci);
-                    }
-                }
-
-		    }
-            dirty->bits[block] = 0;
-        }
 
 	//    cdb->sat_cache_frame_usage = ds_BitSetAlloc(&pipeline->frame, cdb->sat_cache_persistent_usage.bit_count, 0, 0);
 	//    cdb->contact_frame_usage = ds_BitSetAlloc(&pipeline->frame, cdb->contact_persistent_usage.bit_count, 0, 0);

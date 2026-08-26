@@ -283,13 +283,12 @@ void ds_ContactSleep(struct arena *mem_sleep, struct ds_RigidBodyPipeline *pipel
 void ds_ContactValidateAll(const struct ds_RigidBodyPipeline *pipeline)
 {
     const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
-
     for (u32 i = 0; i < active->contact_pool.count; ++i)
     {
-        const u32 compute = active->contact_pool.buf[i];
-        const struct ds_Contact *c = pipeline->contact_pool.buf + compute;
+        const u32 ci = active->contact_pool.buf[i];
+        const struct ds_Contact *c = pipeline->contact_pool.buf + ci;
 		ds_Assert(ds_PoolSlotAllocated(c));
-        ds_Assert(c->compute == compute);
+        ds_Assert(c->compute == i);
         ds_Assert(c->set == SOLVER_SET_ACTIVE);
         ds_Assert(c->color == CG_INVALID_COLOR);
         ds_Assert(c->narrowphase.manifold_count == 0);
@@ -298,14 +297,29 @@ void ds_ContactValidateAll(const struct ds_RigidBodyPipeline *pipeline)
     for (u32 color_index = 0; color_index < CG_COLOR_COUNT; ++color_index)
     {
         const struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
-        for (u32 i = 0; i < active->contact_pool.count; ++i)
+        for (u32 i = 0; i < color->contact_pool.count; ++i)
         {
-            const u32 compute = color->contact_pool.buf[i];
-            const struct ds_Contact *c = pipeline->contact_pool.buf + compute;
+            const u32 ci = color->contact_pool.buf[i];
+            const struct ds_Contact *c = pipeline->contact_pool.buf + ci;
 			ds_Assert(ds_PoolSlotAllocated(c));
-            ds_Assert(c->compute == compute);
+            ds_Assert(c->compute == i);
             ds_Assert(c->set == SOLVER_SET_NULL);
             ds_Assert(c->color == color_index);
+            ds_Assert(c->narrowphase.manifold_count > 0);
+        }
+    }
+
+    for (u32 set_index = SOLVER_SET_SLEEPING_FIRST; set_index < pipeline->solver_set_pool.count; ++set_index)
+    {
+        const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
+        for (u32 i = 0; i < set->contact_pool.count; ++i)
+        {
+            const u32 ci = set->contact_pool.buf[i];
+            const struct ds_Contact *c = pipeline->contact_pool.buf + ci;
+		    ds_Assert(ds_PoolSlotAllocated(c));
+            ds_Assert(c->compute == i);
+            ds_Assert(c->set == set_index);
+            ds_Assert(c->color == CG_INVALID_COLOR);
             ds_Assert(c->narrowphase.manifold_count > 0);
         }
     }
