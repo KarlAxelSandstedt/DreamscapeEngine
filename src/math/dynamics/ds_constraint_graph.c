@@ -220,6 +220,8 @@ void ds_CGraphContactAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Contac
     //    ds_Assert(moved_contact->compute == active->contact_pool.count);
     //    moved_contact->compute = contact->compute;
     //}
+    
+    ///TODO
     contact->compute = U32_MAX;
     contact->set = SOLVER_SET_NULL;
 }

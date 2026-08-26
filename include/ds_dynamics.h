@@ -592,12 +592,22 @@ POOL_DECLARE(ds_Contact);
 /* Add and return new contact with unique key and update pipeline state */
 struct slot ds_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_ContactKey key);
 /* Remove contact at the given index and update pipeline state */
-void 	    ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index);
+void 	    ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 contact_index);
 /* Return the contact associated with the given id. If no such contact is found, return (U32_MAX, NULL) */
 struct slot ds_ContactLookup(const struct ds_RigidBodyPipeline *pipeline, const ds_ContactId id);
 /* Update contact at the given slot and update pipeline state. */
 struct slot ds_ContactKeyLookup(const struct ds_RigidBodyPipeline *pipeline, const struct ds_ContactKey key);
 
+/* Internal: Promote contact from non-touching active set to color in constraint graph */
+void        ds_ContactPromote(struct ds_RigidBodyPipeline *pipeline, const u32 contact);
+/* Internal: Demote contact to non-touching active set from color in constraint graph */
+void        ds_ContactDemote(struct ds_RigidBodyPipeline *pipeline, const u32 contact);
+/* Internal: Wakeup contact from sleeping set */
+void        ds_ContactWakeup(struct arena *frame, struct ds_RigidBodyPipeline *pipeline, const u32 contact);
+/* Internal: Put contact to sleep in sleeping set */
+void        ds_ContactSleep(struct arena *mem_sleep, struct ds_RigidBodyPipeline *pipeline, const u32 contact, const u32 set);
+/* Internal: Return bytes required to store contact narrowphase results */
+u64         ds_ContactMemoryRequirement(const struct ds_RigidBodyPipeline *pipeline, const u32 contact);
 
 /*
 ds_ContactCompute

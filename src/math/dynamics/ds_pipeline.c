@@ -371,7 +371,6 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
      * The master thread can then traverse the results from low to high, adding the contact in a 
      * canonical way.
      */
-
     struct ds_BroadJobPhase *broad_phase = pipeline->broad_phase;
     {
     	ProfZoneNamed("JobPhase(Broadphase)");
@@ -497,20 +496,18 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 
     	ProfZoneEnd;
     }
-    
 
     {
-    	ProfZoneNamed("Contact Promotion/Demotion/Removal");
+    	ProfZoneNamed("Contact Promotion/Demotion");
 
         /*
-            (0) We need to promote any non-touching contacts (SOLVER_SET_ACTIVE) to touching 
-            contacts (CG_COLOR_***) if the contact was found to be touching. Similarly we need to
-            demote touching contacts to non-touching if we found it to be separating.
-
-            (1) We need to move contacts between the active set and the constraint graph 
-            deterministically, so we may as well use the deterministic ordering of contacts we
-            established after the broadphase.
+         *TODO
+         * Removal Sketch
+         * ==============
+         * (1) Traverse dirty shape contacts
+         * (2) If contact wasn't touched, MarkForRemoval + removed_constraint_count += 1
          */
+
         struct ds_BitSet *dirty = &pipeline->dirty_shape_set;
         for (u64 block = 0; block < dirty->block_count; ++block)
         {
@@ -518,7 +515,36 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 		    while (ds_BitBlockHasNext(&it))
 		    {
                 const u32 si = ds_BitBlockNext(&it);
-                //TODO
+
+                const struct ds_ProxyQuery *query = pipeline->dirty_shape_query.buf + si;
+                for (u32 q = 0; q < query->dynamic_count; ++q)
+                {
+                    const u32 ci = query->dynamic_query[q];
+                    struct ds_Contact *c = pipeline->contact_pool.buf + ci;
+                    if (c->set == SOLVER_SET_ACTIVE && c->narrowphase.manifold_count > 0)
+                    {
+                        ds_ContactPromote(pipeline, ci);
+                    }
+                    else if (c->color <= CG_COLOR_COUNT && c->narrowphase.manifold_count == 0)
+                    {
+                        ds_ContactDemote(pipeline, ci);
+                    }
+                }
+
+                for (u32 q = 0; q < query->static_count; ++q)
+                {
+                    const u32 ci = query->static_query[q];
+                    struct ds_Contact *c = pipeline->contact_pool.buf + ci;
+                    if (c->set == SOLVER_SET_ACTIVE && c->narrowphase.manifold_count > 0)
+                    {
+                        ds_ContactPromote(pipeline, ci);
+                    }
+                    else if (c->color <= CG_COLOR_COUNT && c->narrowphase.manifold_count == 0)
+                    {
+                        ds_ContactDemote(pipeline, ci);
+                    }
+                }
+
 		    }
             dirty->bits[block] = 0;
         }
@@ -532,21 +558,6 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
     //    //fprintf(stderr, "A: {");
     //    for (u32 i = 0; i < narrowphase_count; ++i)
     //    {
-    //        const struct ds_NarrowPhaseJob *job = cd_jobs->narrowphase_jobs + i;
-    //        if (!job->valid)
-    //        {
-    //            continue;
-    //        }
-
-    //        if (job->cache)
-    //        {
-    //            cdb->sat_cache_count += 1;
-    //            if (job->cache_index < cdb->sat_cache_persistent_usage.bit_count)
-    //            {
-    //                ds_BitSetSet(&cdb->sat_cache_frame_usage, job->cache_index, 1);   
-    //            } 
-    //        }
-
     //        for (u32 c = 0; c < job->collision_count; ++c)
     //        {
     //            cdb->contact_count += 1;
@@ -577,38 +588,6 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
     //    }
     //    //fprintf(stderr, " } ");
     //    ArenaPopPacked(&pipeline->frame, sizeof(u32)*(arr.len - cdb->contact_new_count));
-
-    //    /* Remove stale sat_Caches */
-	//    for (u64 block = 0; block < cdb->sat_cache_frame_usage.block_count; ++block)
-	//    {
-	//    	const u64 broken_link_block = 
-	//    			    cdb->sat_cache_persistent_usage.bits[block]
-	//    			& (~cdb->sat_cache_frame_usage.bits[block]);
-    //        struct ds_BitBlock it = ds_BitBlockInit(broken_link_block, block);
-	//    	while (ds_BitBlockHasNext(&it))
-	//    	{
-	//    	    sat_CacheRemove(cdb, ds_BitBlockNext(&it));
-	//    	}
-	//    }	
-    //
-    //    /* Update sat_cache_persistent_usage */
-    //    for (u64 i = 0; i < cdb->sat_cache_frame_usage.block_count; ++i)
-    //    {
-    //    	cdb->sat_cache_persistent_usage.bits[i] = cdb->sat_cache_frame_usage.bits[i];	
-    //    }
-
-    //    const u32 count_max = AtomicLoadRlx32(&cdb->sat_cache_pool.a_count_max);
-    //    const u32 length = AtomicLoadRlx32(&cdb->sat_cache_pool.a_length);
-    //    if (cdb->sat_cache_persistent_usage.bit_count < count_max)
-    //    {
-    //    	const u64 low_bit = cdb->sat_cache_persistent_usage.bit_count;
-    //    	const u64 high_bit = count_max;
-    //    	ds_BitSetIncreaseSize(&cdb->sat_cache_persistent_usage, length, 0);
-    //    	/* any new sat_caches that is in the appended region must now be set */
-    //    	for (u64 bit = low_bit; bit < high_bit; ++bit)
-    //    	{
-    //    		ds_BitSetSet(&cdb->sat_cache_persistent_usage, bit, 1);
-    //    	}
     //  }
 
     	ProfZoneEnd;
