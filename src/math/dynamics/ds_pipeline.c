@@ -255,6 +255,8 @@ void PhysicsPipelineValidate(const struct ds_RigidBodyPipeline *pipeline)
 
 u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
 {
+    ProfZone;
+
     struct arena *frame = g_tl_self->frame;
     struct ds_BroadJobPhase *phase = (struct ds_BroadJobPhase *) g_scheduler->phase;
     struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
@@ -286,11 +288,15 @@ u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
         }
     }
 
+    ProfZoneEnd;
+
     return U32_MAX;
 }
 
 u32 ds_NarrowJobPhaseDispatch(const ds_JobId job)
 {
+    ProfZone;
+
     struct arena *frame = g_tl_self->frame;
     struct ds_NarrowJobPhase *phase = (struct ds_NarrowJobPhase *) g_scheduler->phase;
     struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
@@ -334,71 +340,37 @@ u32 ds_NarrowJobPhaseDispatch(const ds_JobId job)
         }
     }
 
+    ProfZoneEnd;
+
     return U32_MAX;
 }
 
 static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 {
     /*
-     * Achieving Determinism and Parallelization in the BroadPhase
+     * Achieving Determinism and Parallelization in the Broadphase
      * ===========================================================
      *
-     * (0) Assume, at this point, that we have a compact buffer of all dirty proxies. A proxy
-     *     is dirty if it was newly inserted, enlarged or moved (re-inserted). As this buffer
-     *     is added to according to what work is thread did in the solver phase, it is out-of
-     *     -order.
+     * All moving or new shapes from the last frame are dirty and have their corresponding index
+     * bit set in the dirty_shape_set. The broadphase can then be transformed into a parallel-for,
+     * in which each thread process a range in the dirty bitset and queries its shapes against the
+     * pipeline's bounding volume hierarchies. In order to to get duplicate collisions reported from
+     * two moving shapes, or from shapes sharing the same body, we enforce a filter for the dynamic
+     * bvh queries that looks something like:
      *
-     * (1) In order to get determinism without sorting, we store, separate to the dynamic tree
-     *     a compact pool with the number of tree leaves.
+     *          overlap : (s0, s1)  => (shape[s0].body < shape[s1].body)
      *
-     *          dirty_shape_results[] 
+     * When a DbvhRebuild is triggered due to a high number of re-insertions required in
+     * the previous frame, all dynamic shapes are treated as dirty.
+     * 
+     * To achieve determinism, after a thread has queried a moving shape si, in stores the resulting 
+     * query data in 
      *
-     * (2) the parallel broadphase becomes a parallel-for in which we query each dirty proxy 
-     *     against the dynamic tree, reporting all overlaps with shapes not attached to its 
-     *     body, or any moving bodies with a lower index. If a thread process proxy p, it
-     *     writes the result to
+     *      pipeline->shape_query.buf[si],
      *
-     *          dirty_shape_results[p]    
-     *
-     * (3) The master thread may now process the results in index order; this can of course be
-     *     done efficiently with the use of bit-sets. 
-     *
-     *
-     * Preliminary Documentation 
-     * =========================
-     *
-     * Any time a proxy is created, re-inserted or enlarged, its bit in dirty_shape_set is set.
-     * All set bits are then processed in parallel in the broadphase; the thread processing 
-     * dirty bit B writes the proxy's query set (stored locally in the thread's frame arena)
-     * to dirty_query.buf[B]: 
-     *
-     *      dirty_query.buf[B].count = proxy.overlap_count;
-     *      dirty_query.buf[B].query = proxy.overlap;       (frame-arena backed)
-     *
-     * After the broadphase, the master thread process all written queries, processing each
-     * query in each query set, from the lower to higher index. 
-     *
-     *
-     *
-     * () TODO: how to we locate removed contacts?
+     * The master thread can then traverse the results from low to high, adding the contact in a 
+     * canonical way.
      */
-
-    // TODO Remove 
-	//struct dbvhOverlap *proxy_overlap = NULL;
-	//u32 proxy_overlap_count = 0;
-    //{
-    //	proxy_overlap = DbvhPushOverlapPairs(&pipeline->frame, &proxy_overlap_count, &pipeline->dynamic_bvh);
-    //}
-
-    //for (u32 oi = 0; oi < proxy_overlap_count; ++oi)
-    //{
-    //    const struct ds_ContactKey key = ds_ContactKeyCanonical(proxy_overlap[oi].id1, proxy_overlap[oi].id2);
-    //    const struct slot slot = ds_ContactKeyLookup(pipeline, key);
-    //    if (!slot.address)
-    //    {
-    //        ds_ContactAdd(pipeline, key);
-    //    }
-    //}
 
     struct ds_BroadJobPhase *broad_phase = pipeline->broad_phase;
     {
@@ -408,9 +380,8 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 
         broad_phase->pf = ds_ParallelForChainAlloc(&pipeline->frame, 1); 
         
-        //TODO: U32_MAX => moved count
         //TODO: this range size is random hardcoded value, change
-        ds_ParallelForInit(broad_phase->pf.parallel_for, U32_MAX, 8);
+        ds_ParallelForInit(broad_phase->pf.parallel_for, pipeline->dirty_shape_set.block_count, 1);
 
         broad_phase->pipeline = pipeline;
         broad_phase->job_count = g_scheduler->worker_count;

@@ -272,8 +272,6 @@ void ds_WorkerRunJob(const ds_JobId job)
 
 void ds_TrySeedAndRunJobs(struct ds_Worker *w, const u32 thread)
 {
-    ProfZone;
-
     if (AtomicLoadRlx32(&w->a_mem_frame_switch))
     {
         AtomicStoreRlx32(&w->a_mem_frame_switch, 0);
@@ -330,8 +328,6 @@ RUN_JOBS:
             goto RUN_JOBS;
         }
     }
-
-    ProfZoneEnd;
 }
 
 void ds_WorkerMain(ds_Thread *thr)

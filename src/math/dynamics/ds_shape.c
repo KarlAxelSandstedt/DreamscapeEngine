@@ -55,13 +55,9 @@ ds_ShapeId ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_Sh
 	shape->cshape_type = cshape->type;
 
 	struct aabb bbox_proxy = ds_ShapeWorldBbox(pipeline, shape);
-	if (shape->cshape_type != C_SHAPE_TRI_MESH)
-	{
-		Vec3Translate(bbox_proxy.hw, Vec3Inline(shape->margin, shape->margin, shape->margin));
-	}
-
     if (RB_IS_DYNAMIC(body_ptr))
     {
+		Vec3Translate(bbox_proxy.hw, Vec3Inline(shape->margin, shape->margin, shape->margin));
         ds_BitSetSet(&pipeline->dirty_shape_set, shape_slot.index, 1);
         shape->proxy = DbvhInsert(&pipeline->dynamic_bvh, shape->body, shape_slot.index, &bbox_proxy);
     }
