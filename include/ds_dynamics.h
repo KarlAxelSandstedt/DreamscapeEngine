@@ -603,7 +603,7 @@ void        ds_ContactPromote(struct ds_RigidBodyPipeline *pipeline, const u32 c
 /* Internal: Demote contact to non-touching active set from color in constraint graph */
 void        ds_ContactDemote(struct ds_RigidBodyPipeline *pipeline, const u32 contact);
 /* Internal: Wakeup contact from sleeping set */
-void        ds_ContactWakeup(struct arena *frame, struct ds_RigidBodyPipeline *pipeline, const u32 contact);
+void        ds_ContactWakeUp(struct arena *frame, struct ds_RigidBodyPipeline *pipeline, const u32 contact);
 /* Internal: Put contact to sleep in sleeping set */
 void        ds_ContactSleep(struct arena *mem_sleep, struct ds_RigidBodyPipeline *pipeline, const u32 contact, const u32 set);
 /* Internal: Return bytes required to store contact narrowphase results */

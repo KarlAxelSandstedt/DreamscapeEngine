@@ -75,8 +75,6 @@ void ds_SolverSetRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
     struct ds_SolverSet *set = pipeline->solver_set_pool.buf + index;
     ds_Assert(ds_PoolSlotAllocated(set));
 
-    ds_Assert(index < SOLVER_SET_SLEEPING_FIRST || (set->contact_pool.count == 0) || (set->joint_sim_pool.count == 0) || (set->island_pool.count == 1));
-
     if (set->mem.mem_size)
     {
         ArenaFree(&set->mem);
@@ -157,9 +155,7 @@ void ds_SolverSetWakeUp(struct ds_RigidBodyPipeline *pipeline, const u32 index)
 
     for (u32 i = 0; i < set->contact_pool.count; ++i)
     {
-        const u32 ci = set->contact_pool.buf[i];
-        struct ds_Contact *c = pipeline->contact_pool.buf + ci;
-        ds_CGraphContactAdd(pipeline, c);
+        ds_ContactWakeUp(&pipeline->frame, pipeline, set->contact_pool.buf[i]);
     }
 
     for (u32 i = 0; i < set->joint_sim_pool.count; ++i)
@@ -277,23 +273,13 @@ void ds_SolverSetSleep(struct ds_RigidBodyPipeline *pipeline, const u32 island_i
 
         joint->set = island->set;
         joint->sim = slot.index;
-        struct ds_Joint *joint = pipeline->joint_pool.buf + joint->island_joint.next;
     }
 
     struct ds_Contact *contact = NULL;
     for (u32 i = island->contact_list.first; (i32) i != DLL_SENTINEL; i = contact->island_contact.next)
     {
-        contact = pipeline->contact_pool.buf + i;
-        ds_Assert(contact->set == SOLVER_SET_NULL);
         ds_Assert(contact->island == island_index);
-        struct ds_CGraphColor *color = cg->color + contact->color;
-
-        slot = ds_CPoolPush(set->contact_pool);
-        set->contact_pool.buf[ slot.index ] = ds_ContactPoolIndex(&pipeline->contact_pool, contact);
-        ds_CGraphContactRemove(pipeline, contact);
-
-        contact->set = island->set;
-        contact->compute = slot.index;
+        ds_ContactSleep(&set->mem, pipeline, i, island->set);
     }
 
     struct ds_RigidBody *body = NULL;
