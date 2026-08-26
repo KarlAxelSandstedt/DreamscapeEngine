@@ -776,6 +776,9 @@ struct ds_SolverSet
 {
     POOL_NODE;
 
+    /* Sleeping set memory */
+    struct arena                    mem;
+
     /* Body simulation state */
     ds_CPool(ds_RigidBodySim)       body_sim_pool;
 
@@ -796,18 +799,20 @@ struct ds_SolverSet
 POOL_DECLARE(ds_SolverSet);
 
 
-/* Allocate and setup a ds_SolverSet */
-struct slot ds_SolverSetAdd(struct ds_RigidBodyPipeline *pipeline, const u32 initial_body_sim_count, const u32 initial_body_compute_count, const u32 initial_index_count, const u32 initial_joint_count, const u32 initial_island_count);
+/* Allocate and setup a ds_SolverSet. If mem_set is provided, it will be used for allocating resources */
+struct slot ds_SolverSetAdd(struct arena *mem_set, struct ds_RigidBodyPipeline *pipeline, const u32 initial_body_sim_count, const u32 initial_body_compute_count, const u32 initial_contact_count, const u32 initial_joint_count, const u32 initial_island_count);
 /* Deallocate a the given ds_SolverSet */
 void        ds_SolverSetRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index);
 /* Flush the given ds_SolverSet */
 void        ds_SolverSetFlush(struct ds_RigidBodyPipeline *pipeline, const u32 index);
+/* Merge set_merge into set_expand and dealloc set_merge. */
+void        ds_SolverSetMerge(struct ds_RigidBodyPipeline *pipeline, const u32 set_expand, const u32 set_merge);
 /* Wake up the given sleeping ds_SolverSet. If the solver set is not sleeping set, the call becomes a NO-OP. */
 void        ds_SolverSetWakeUp(struct ds_RigidBodyPipeline *pipeline, const u32 index);
 /* Try put the given island to sleep. On success, the island is moved from the active set to a sleeping set. */
 void        ds_SolverSetSleep(struct ds_RigidBodyPipeline *pipeline, const u32 island);
-/* Merge set_merge into set_expand and dealloc set_merge. */
-void        ds_SolverSetMerge(struct ds_RigidBodyPipeline *pipeline, const u32 set_expand, const u32 set_merge);
+/* Return the required memory size for putting the given island to sleep */
+u64         ds_SolverSetSleepMemoryRequirement(const struct ds_RigidBodyPipeline *pipeline, const u32 island);
 /* Debug validation for the given set */
 void        ds_SolverSetValidate(const struct ds_RigidBodyPipeline *pipeline, const u32 set_index);
 

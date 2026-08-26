@@ -22,41 +22,49 @@
 
 POOL_DEFINE(ds_SolverSet);
 
-struct slot ds_SolverSetAdd(struct ds_RigidBodyPipeline *pipeline, const u32 initial_body_sim_count, const u32 initial_body_compute_count, const u32 initial_contact_count, const u32 initial_joint_count, const u32 initial_island_count)
+struct slot ds_SolverSetAdd(struct arena *mem_set, struct ds_RigidBodyPipeline *pipeline, const u32 initial_body_sim_count, const u32 initial_body_compute_count, const u32 initial_contact_count, const u32 initial_joint_count, const u32 initial_island_count)
 {
     ProfZone;
     struct slot slot = ds_SolverSetPoolAdd(&pipeline->solver_set_pool);
     struct ds_SolverSet *set = slot.address;
 
+    const u32 growable = (mem_set) 
+                       ? 0 
+                       : 1; 
+
     memset(&set->body_sim_pool, 0, sizeof(set->body_sim_pool));
     if (initial_body_sim_count)
     {
-        ds_CPoolAlloc(NULL, set->body_sim_pool, initial_body_sim_count, GROWABLE);
+        ds_CPoolAlloc(mem_set, set->body_sim_pool, initial_body_sim_count, growable);
     }
 
     memset(&set->body_compute_pool, 0, sizeof(set->body_compute_pool));
     if (initial_body_compute_count)
     {
-        ds_CPoolAlloc(NULL, set->body_compute_pool, initial_body_compute_count, GROWABLE);
+        ds_CPoolAlloc(mem_set, set->body_compute_pool, initial_body_compute_count, growable);
     }
 
     memset(&set->contact_pool, 0, sizeof(set->contact_pool));
     if (initial_contact_count)
     {
-        ds_CPoolAlloc(NULL, set->contact_pool, initial_contact_count, GROWABLE);
+        ds_CPoolAlloc(mem_set, set->contact_pool, initial_contact_count, growable);
     }
 
     memset(&set->joint_sim_pool, 0, sizeof(set->joint_sim_pool));
     if (initial_joint_count)
     {
-        ds_CPoolAlloc(NULL, set->joint_sim_pool, initial_joint_count, GROWABLE);
+        ds_CPoolAlloc(mem_set, set->joint_sim_pool, initial_joint_count, growable);
     }
 
     memset(&set->island_pool, 0, sizeof(set->island_pool));
     if (initial_island_count)
     {
-        ds_CPoolAlloc(NULL, set->island_pool, initial_island_count, GROWABLE);
+        ds_CPoolAlloc(mem_set, set->island_pool, initial_island_count, growable);
     }
+
+    set->mem = (mem_set)
+             ? *mem_set
+             : (struct arena) { 0 };
 
     ProfZoneEnd;
     return slot;
@@ -69,29 +77,36 @@ void ds_SolverSetRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
 
     ds_Assert(index < SOLVER_SET_SLEEPING_FIRST || (set->contact_pool.count == 0) || (set->joint_sim_pool.count == 0) || (set->island_pool.count == 1));
 
-    if (set->body_sim_pool.buf)
+    if (set->mem.mem_size)
     {
-        ds_CPoolDealloc(set->body_sim_pool);
+        ArenaFree(&set->mem);
     }
-
-    if (set->body_compute_pool.buf)
+    else
     {
-        ds_CPoolDealloc(set->body_compute_pool);
-    }
+        if (set->body_sim_pool.buf)
+        {
+            ds_CPoolDealloc(set->body_sim_pool);
+        }
 
-    if (set->contact_pool.buf)
-    {
-        ds_CPoolDealloc(set->contact_pool);
-    }
+        if (set->body_compute_pool.buf)
+        {
+            ds_CPoolDealloc(set->body_compute_pool);
+        }
 
-    if (set->joint_sim_pool.buf)
-    {
-        ds_CPoolDealloc(set->joint_sim_pool);
-    }
+        if (set->contact_pool.buf)
+        {
+            ds_CPoolDealloc(set->contact_pool);
+        }
 
-    if (set->island_pool.buf)
-    {
-        ds_CPoolDealloc(set->island_pool);
+        if (set->joint_sim_pool.buf)
+        {
+            ds_CPoolDealloc(set->joint_sim_pool);
+        }
+
+        if (set->island_pool.buf)
+        {
+            ds_CPoolDealloc(set->island_pool);
+        }
     }
 
     ds_SolverSetPoolRemove(&pipeline->solver_set_pool, index);
@@ -195,6 +210,26 @@ void ds_SolverSetWakeUp(struct ds_RigidBodyPipeline *pipeline, const u32 index)
     ds_SolverSetRemove(pipeline, index);
 }
 
+u64 ds_SolverSetSleepMemoryRequirement(const struct ds_RigidBodyPipeline *pipeline, const u32 island_index)
+{
+    const struct ds_Island *island = pipeline->island_pool.buf + island_index;
+
+    u64 memory_requirement = 0;
+    memory_requirement += ds_CPoolAllocMemoryRequirement(island->body_list.count, sizeof(struct ds_RigidBodySim));
+    memory_requirement += ds_CPoolAllocMemoryRequirement(island->contact_list.count, sizeof(u32));
+    memory_requirement += ds_CPoolAllocMemoryRequirement(island->joint_list.count, sizeof(struct ds_JointSim));
+    memory_requirement += ds_CPoolAllocMemoryRequirement(1, sizeof(u32));
+    
+    const struct ds_Contact *c;
+    for (i32 ci = island->contact_list.first; ci != DLL_SENTINEL; ci = c->island_contact.next)
+    {
+        c = pipeline->contact_pool.buf + ci;
+        memory_requirement += ds_ContactMemoryRequirement(pipeline, ci);
+    }
+
+    return memory_requirement;
+}
+
 void ds_SolverSetSleep(struct ds_RigidBodyPipeline *pipeline, const u32 island_index)
 {
     if (!g_solver_config->sleep_enabled)
@@ -204,7 +239,10 @@ void ds_SolverSetSleep(struct ds_RigidBodyPipeline *pipeline, const u32 island_i
     struct ds_CGraph *cg = &pipeline->cgraph;
     struct ds_Island *island = pipeline->island_pool.buf + island_index;
 
-    struct slot slot = ds_SolverSetAdd(pipeline, island->body_list.count, 0, island->contact_list.count, island->joint_list.count, 1);
+    const u64 memory_requirement = ds_SolverSetSleepMemoryRequirement(pipeline, island_index);
+    struct arena set_arena = ArenaAlloc(NULL, memory_requirement);
+
+    struct slot slot = ds_SolverSetAdd(&set_arena, pipeline, island->body_list.count, 0, island->contact_list.count, island->joint_list.count, 1);
     struct ds_SolverSet *set = slot.address;
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
 

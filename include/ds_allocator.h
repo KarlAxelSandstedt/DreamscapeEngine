@@ -311,6 +311,10 @@ typedef struct ds_CPool(T)		    \
 } ds_CPool(T)
 DEFINE_CPOOL_STRUCT(intv);
 
+/* Arena allocation memory requirement upper bound */
+#define ds_CPoolAllocMemoryRequirement(__length, __slot_size)                           \
+    (DS_SMALL_ALLOCATION_ALIGNMENT + ((__length)+1)*(__slot_size))
+
 /* Allocate and setup the CPool.  */
 #define ds_CPoolAlloc(mem, pool, __length, __growable)                                  \
 do                                                                                      \

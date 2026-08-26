@@ -189,8 +189,6 @@ void ds_ContactPromote(struct ds_RigidBodyPipeline *pipeline, const u32 contact)
         ds_Assert(moved->compute == active->contact_pool.count);
         moved->compute = compute;
     }
-
-    c->set = SOLVER_SET_NULL;
 }
 
 void ds_ContactDemote(struct ds_RigidBodyPipeline *pipeline, const u32 contact)
@@ -231,7 +229,6 @@ void ds_ContactWakeup(struct arena *frame, struct ds_RigidBodyPipeline *pipeline
     if (c->narrowphase.manifold_count)
     {
         ds_CGraphContactAdd(pipeline, c);
-        c->set = SOLVER_SET_NULL;
     }
     else
     {
