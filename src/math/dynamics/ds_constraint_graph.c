@@ -180,7 +180,7 @@ void ds_CGraphContactAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Contac
     ds_Assert(contact->set != SOLVER_SET_NULL)
     ds_Assert(contact->color == CG_INVALID_COLOR);
     
-    struct ds_SolverSet *set = pipeline->solver_set_pool.buf + contact->set;
+    const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + contact->set;
 
     const struct ds_Shape *shape[2] =
     {
@@ -191,39 +191,11 @@ void ds_CGraphContactAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Contac
     const u32 body[2] = { shape[0]->body, shape[1]->body };
     contact->color = ds_CGraphColorNext(pipeline, body);
 
-    //TODO Grab indices/pointers before updating them
-    if (contact->set == SOLVER_SET_ACTIVE)
-    {
-    }
-    else
-    {
-    }
-
-    //TODO
     struct ds_CGraphColor *color = pipeline->cgraph.color + contact->color;
     contact->compute = ds_CPoolPush(color->contact_pool).index;
     color->contact_pool.buf[ contact->compute ] = ds_ContactPoolIndex(&pipeline->contact_pool, contact);
+    //TODO
     //ds_CPoolPush(color->contact_constraint_pool);
-
-    
-
-
-
-    //TODO This should be in WakeUp
-    //ds_CPoolRemoveAndSwap(set->contact_pool, contact->compute);
-    //ds_CPoolRemoveAndSwap(set->contact_compute_pool, contact->compute);
-    //if (contact->compute < set->contact_pool.count)
-    //{
-    //    const u32 index = set->contact_pool.buf[ contact->compute ];
-    //    struct ds_Contact *moved_contact = pipeline->contact_pool.buf + contact->compute;
-    //    ds_Assert(moved_contact->set == SOLVER_SET_ACTIVE);
-    //    ds_Assert(moved_contact->compute == active->contact_pool.count);
-    //    moved_contact->compute = contact->compute;
-    //}
-    
-    ///TODO
-    contact->compute = U32_MAX;
-    contact->set = SOLVER_SET_NULL;
 }
 
 void ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact)
@@ -247,7 +219,7 @@ void ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Con
     }
 
     ds_CPoolRemoveAndSwap(color->contact_pool, contact->compute);
-    ds_CPoolRemoveAndSwap(color->contact_pool, contact->compute);
+    //TODO
     //ds_CPoolRemoveAndSwap(color->contact_constraint_pool, contact->compute);
     if (contact->compute < color->contact_pool.count)
     {

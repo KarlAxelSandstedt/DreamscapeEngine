@@ -200,6 +200,7 @@ void ds_ContactDemote(struct ds_RigidBodyPipeline *pipeline, const u32 contact)
 
     ds_CGraphContactRemove(pipeline, c); 
 
+    c->set = SOLVER_SET_ACTIVE;
     c->compute = ds_CPoolPush(active->contact_pool).index;
     active->contact_pool.buf[ c->compute ] = contact;
 
@@ -230,12 +231,12 @@ void ds_ContactWakeup(struct arena *frame, struct ds_RigidBodyPipeline *pipeline
     if (c->narrowphase.manifold_count)
     {
         ds_CGraphContactAdd(pipeline, c);
+        c->set = SOLVER_SET_NULL;
     }
     else
     {
-        c->set = SOLVER_SET_ACTIVE;
         struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
-
+        c->set = SOLVER_SET_ACTIVE;
         c->compute = ds_CPoolPush(active->contact_pool).index;
         active->contact_pool.buf[ c->compute ] = contact_index;
     }
@@ -259,7 +260,7 @@ void ds_ContactSleep(struct arena *mem_sleep, struct ds_RigidBodyPipeline *pipel
     ds_Assert(ds_ContactMemoryRequirement(pipeline, contact) <= mem_sleep->mem_left);
     struct ds_Contact *c = pipeline->contact_pool.buf + contact;
 
-    if (c->narrowphase.manifold)
+    if (c->color != CG_INVALID_COLOR)
     {
         const u64 mem_req_manifold = c->narrowphase.manifold_count*sizeof(struct c_Manifold);
         c->narrowphase.manifold = ArenaPushAlignedMemcpy(mem_sleep, c->narrowphase.manifold, mem_req_manifold, 1);

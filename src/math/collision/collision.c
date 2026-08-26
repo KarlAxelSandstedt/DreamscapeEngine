@@ -2615,6 +2615,7 @@ sat_cleanup:
     {
         ArenaPopPacked(frame, sizeof(struct c_Manifold));
         result.manifold_count = 0;
+        result.manifold = NULL;
     }
     ArenaPopScratch();
     //ProfZoneEnd;
