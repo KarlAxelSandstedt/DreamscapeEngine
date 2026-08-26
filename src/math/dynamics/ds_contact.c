@@ -282,83 +282,31 @@ void ds_ContactSleep(struct arena *mem_sleep, struct ds_RigidBodyPipeline *pipel
 
 void ds_ContactValidateAll(const struct ds_RigidBodyPipeline *pipeline)
 {
-//	for (u64 i = 0; i < pipeline->cdb->contact_persistent_usage.bit_count; ++i)
-//	{
-//		if (ds_BitSetGet(&pipeline->cdb->contact_persistent_usage, i))
-//		{
-//			const struct ds_Contact *c = pipeline->cdb->contact_pool.buf + (u32) i;
-//			ds_Assert(ds_PoolSlotAllocated(c));
-//
-//			//fprintf(stderr, "contact[%lu] (next[0], next[1], prev[0], prev[1]) : (%u,%u,%u,%u)\n",
-//			//	       i,
-//			//	       c->shape_contact[0].next,	
-//			//	       c->shape_contact[1].next,	
-//			//	       c->shape_contact[0].prev,	
-//			//	       c->shape_contact[1].prev);
-//
-//
-//            struct ds_RigidBody *b0, *b1;
-//            struct ds_Shape *s0, *s1;
-//            ds_ContactKeyAddress(&b0, &s0, &b1, &s1, pipeline, &c->key);
-//
-//			i32 prev, k, found; 
-//			prev = DLL_SENTINEL;
-//			k = s0->contact_list.first;
-//			found = 0;
-//			while (k != DLL_SENTINEL)
-//			{
-//				if (k == (i32) i)
-//				{
-//					found = 1;
-//					break;
-//				}
-//
-//				const struct ds_Contact *tmp = pipeline->cdb->contact_pool.buf + k;
-//				ds_Assert(ds_PoolSlotAllocated(tmp));
-//				if ((INDIRECT_SHAPE_CHECK(c->key.shape0) && INDIRECT_SHAPE_CHECK(tmp->key.shape0)) || tmp->key.shape0 == c->key.shape0)
-//				{
-//					ds_Assert(prev == tmp->shape_contact[0].prev);
-//					prev = k;
-//					k = tmp->shape_contact[0].next;
-//				}
-//				else
-//				{
-//					ds_Assert((INDIRECT_SHAPE_CHECK(c->key.shape0) && INDIRECT_SHAPE_CHECK(tmp->key.shape1)) || tmp->key.shape1 == c->key.shape0);
-//					ds_Assert(prev == tmp->shape_contact[1].prev);
-//					prev = k;
-//					k = tmp->shape_contact[1].next;
-//				}
-//			}
-//			ds_Assert(found);
-// 
-//			prev = DLL_SENTINEL;
-//			k = s1->contact_list.first;
-//			found = 0;
-//			while (k != DLL_SENTINEL)
-//			{
-//				if (k == (i32) i)
-//				{
-//					found = 1;
-//					break;
-//				}
-//
-//				const struct ds_Contact *tmp = pipeline->cdb->contact_pool.buf + k;
-//				ds_Assert(ds_PoolSlotAllocated(tmp));
-//				if (tmp->key.shape0 == c->key.shape1)
-//				{
-//					ds_Assert(prev == tmp->shape_contact[0].prev);
-//					prev = k;
-//					k = tmp->shape_contact[0].next;
-//				}
-//				else
-//				{
-//					ds_Assert(prev == tmp->shape_contact[1].prev);
-//					ds_Assert(tmp->key.shape1 == c->key.shape1 || INDIRECT_SHAPE_CHECK(c->key.shape1));
-//					prev = k;
-//					k = tmp->shape_contact[1].next;
-//				}
-//			}
-//			ds_Assert(found);
-//		}
-//	}
+    const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+
+    for (u32 i = 0; i < active->contact_pool.count; ++i)
+    {
+        const u32 compute = active->contact_pool.buf[i];
+        const struct ds_Contact *c = pipeline->contact_pool.buf + compute;
+		ds_Assert(ds_PoolSlotAllocated(c));
+        ds_Assert(c->compute == compute);
+        ds_Assert(c->set == SOLVER_SET_ACTIVE);
+        ds_Assert(c->color == CG_INVALID_COLOR);
+        ds_Assert(c->narrowphase.manifold_count == 0);
+    }
+
+    for (u32 color_index = 0; color_index < CG_COLOR_COUNT; ++color_index)
+    {
+        const struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+        for (u32 i = 0; i < active->contact_pool.count; ++i)
+        {
+            const u32 compute = color->contact_pool.buf[i];
+            const struct ds_Contact *c = pipeline->contact_pool.buf + compute;
+			ds_Assert(ds_PoolSlotAllocated(c));
+            ds_Assert(c->compute == compute);
+            ds_Assert(c->set == SOLVER_SET_NULL);
+            ds_Assert(c->color == color_index);
+            ds_Assert(c->narrowphase.manifold_count > 0);
+        }
+    }
 }

@@ -278,6 +278,7 @@ void ds_SolverSetSleep(struct ds_RigidBodyPipeline *pipeline, const u32 island_i
     struct ds_Contact *contact = NULL;
     for (u32 i = island->contact_list.first; (i32) i != DLL_SENTINEL; i = contact->island_contact.next)
     {
+        contact = pipeline->contact_pool.buf + i;
         ds_Assert(contact->island == island_index);
         ds_ContactSleep(&set->mem, pipeline, i, island->set);
     }
@@ -294,6 +295,8 @@ void ds_SolverSetSleep(struct ds_RigidBodyPipeline *pipeline, const u32 island_i
 
 void ds_SolverSetMerge(struct ds_RigidBodyPipeline *pipeline, const u32 set_expand, const u32 set_merge)
 {
+    ds_AssertString(0, "Out-of-date, reimplement");
+
     struct ds_SolverSet *expand = pipeline->solver_set_pool.buf + set_expand;
     struct ds_SolverSet *merge = pipeline->solver_set_pool.buf + set_merge;
     ds_Assert(set_expand != set_merge);
