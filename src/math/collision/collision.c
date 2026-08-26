@@ -3743,9 +3743,9 @@ struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct
     }
 
     result.cache_count = 0;
-    result.cache = (it.contact_count < TRI_HULL_CACHE_MAX_SIZE) 
+    result.cache = (it.contact_count < g_numerics_config->cache_count_max) 
                      ? ArenaPushPacked(frame, it.contact_count*sizeof(struct c_SatCache))
-                     : ArenaPushPacked(frame, TRI_HULL_CACHE_MAX_SIZE*sizeof(struct c_SatCache));
+                     : ArenaPushPacked(frame, g_numerics_config->cache_count_max*sizeof(struct c_SatCache));
 
     result.manifold = ArenaPush(frame, true_contact_count*sizeof(struct c_Manifold));
     result.tri = ArenaPush(frame, true_contact_count*sizeof(u32));
@@ -3761,7 +3761,7 @@ struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct
         struct c_TriMeshBvhContact *c = it.contact + i;
         if (c->cache.type == SAT_CACHE_SEPARATION)
         {
-            if (result.cache_count < TRI_HULL_CACHE_MAX_SIZE)
+            if (result.cache_count < g_numerics_config->cache_count_max)
             {
                 memcpy(result.cache + result.cache_count, &c->cache, sizeof(struct c_SatCache));
                 result.cache_count += 1;
@@ -3777,7 +3777,7 @@ struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct
             result.manifold_count += 1;
             c_ManifoldTransform(m, &c->manifold, bvh_rotation, tf[0].position);
 
-            if (result.cache_count < TRI_HULL_CACHE_MAX_SIZE)
+            if (result.cache_count < g_numerics_config->cache_count_max)
             {
                 memcpy(result.cache + result.cache_count, &c->cache, sizeof(struct c_SatCache));
                 result.cache_count += 1;
@@ -3812,7 +3812,7 @@ struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct
             ds_Assert(c->manifold.v_count <= 2);
             c_ManifoldTransform(m, &c->manifold, bvh_rotation, tf[0].position);
 
-            if (result.cache_count < TRI_HULL_CACHE_MAX_SIZE)
+            if (result.cache_count < g_numerics_config->cache_count_max)
             {
                 memcpy(result.cache + result.cache_count, &c->cache, sizeof(struct c_SatCache));
                 result.cache_count += 1;

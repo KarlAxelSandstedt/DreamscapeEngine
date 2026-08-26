@@ -500,27 +500,39 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
     {
     	ProfZoneNamed("Contact Promotion/Demotion");
 
-        const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
-        for (u32 compute = 0; compute < active->contact_pool.count; ++compute)
         {
-            const u32 ci = active->contact_pool.buf[compute];
-            struct ds_Contact *c = pipeline->contact_pool.buf + ci;
-            if (c->narrowphase.manifold_count > 0)
+            const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+            u32 compute = 0; 
+            while (compute < active->contact_pool.count)
             {
-                ds_ContactPromote(pipeline, ci);
+                const u32 ci = active->contact_pool.buf[compute];
+                const struct ds_Contact *c = pipeline->contact_pool.buf + ci;
+                if (c->narrowphase.manifold_count > 0)
+                {
+                    ds_ContactPromote(pipeline, ci);
+                }
+                else
+                {
+                    compute += 1;
+                }
             }
         }
 
         for (u32 color_index = 0; color_index < CG_COLOR_COUNT; ++color_index)
         {
             const struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
-            for (u32 compute = 0; compute < color->contact_pool.count; ++compute)
+            u32 compute = 0;
+            while (compute < color->contact_pool.count)
             {
                 const u32 ci = color->contact_pool.buf[compute];
-                struct ds_Contact *c = pipeline->contact_pool.buf + ci;
+                const struct ds_Contact *c = pipeline->contact_pool.buf + ci;
                 if (c->narrowphase.manifold_count == 0)
                 {
                     ds_ContactDemote(pipeline, ci);
+                }
+                else
+                {
+                    compute += 1;
                 }
             }
         }

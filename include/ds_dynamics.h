@@ -76,6 +76,9 @@ struct ds_NumericsConfig
     f32 dbvh_reinsert_threshold_pending;
     f32 dbvh_reinsert_threshold;
 
+    /* Max s_SatCache count per contact (Applies to mesh contacts in which we cache triangle ops)  */
+    u32 cache_count_max_pending;
+    u32 cache_count_max;
 };
 extern struct ds_NumericsConfig *g_numerics_config;
 
@@ -394,36 +397,10 @@ void            ds_RigidBodyIntegrateVelocitiesRange(struct ds_RigidBodyPipeline
 /* Internal: Update orientation of active bodies in range [low, high) */
 void            ds_RigidBodyUpdateOrientationRange(struct ds_RigidBodyPipeline *pipeline, struct ds_ProxyRange *proxy_range, const u32 low, const u32 high);
 
-/*
-ds_ContactKey
-=============
-ds_ContactKey is the unique key for a contact, and it used in the contact database
-hash map. Since the key must be unique for a contact, we require it to be in 
-canonical form, i.e. you may always assume that body0 < body1.  The shapes are the
-subshapes of their respective bodys making contact, or in the case of a TriMeshBvh
-shape, the index of the triangle in contact, ORed with SHAPE_INDIRECT_FLAG. 
-You may always assume that body0 is the reference body in a contact.
-
-Internals:
-
-    SPHERE, CAPSULE, HULL => shapeN is direct index for the shape
-                 TRI_MESH => shapeN is (SHAPE_INDIRECT_FLAG | triangle_index)
-
-    Thus, when in doubt, use ds_ContactKeyAddress to correctly setup pointers to bodies
-    and shapes.
-*/
 
 /*
-ds_Contact
+c_SatCache
 ==========
-ds_Contact is the value mapped by a ds_ContactKey, and contains current and cached 
-contact data and additional list node state. The reference body is ALWAYS body0,
-so any cached contacts are relative to body0.
-*/
-
-/*
-ds_SatCache
-===========
 Internal physics engine struct for caching SAT-based contact calculations each frame. If a contact was found,
 the contact results may be re-used the next frame if a set of conditions are fullfilled.
 
@@ -458,11 +435,9 @@ enum sat_CacheType
 
 typedef u32 sat_FeatureId;
 
-#define SAT_FEATURE_ID_INDEX_MASK           (0x3fffffff)
 #define SAT_FEATURE_ID_TYPE_MASK            (0xc0000000)
+#define SAT_FEATURE_ID_INDEX_MASK           (0x3fffffff)
 
-#define SAT_FEATURE_NULL                    U32_MAX
-#define SAT_FEATURE_TYPE_NULL               3
 #define SAT_FEATURE_TYPE_FACE               2
 #define SAT_FEATURE_TYPE_EDGE               1
 #define SAT_FEATURE_TYPE_VERTEX             0
@@ -475,12 +450,6 @@ typedef u32 sat_FeatureId;
 #define sat_FeatureIdIndex(id)              ((id) & SAT_FEATURE_ID_INDEX_MASK)
 #define sat_FeatureIdConstruct(index, type) ((((u32) type) << 30) | (SAT_FEATURE_ID_INDEX_MASK & (index)))
 
-#define TRI_HULL_CACHE_MAX_SIZE 32
-
-/*
-c_SatCache
-==========
-*/
 struct c_SatCache
 {
     u32 tri;                    /* (Optional): Triangle in mesh. */
@@ -506,10 +475,6 @@ struct c_SatCache
     vec3            normal;     
 };
 
-
-/*
- * TODO: Update stuff above
- */
 
 /*
 Contact Management
@@ -544,12 +509,12 @@ ds_ContactCompute
 =================
 Any touching contact 
 
+TODO
 */
-
 
 struct ds_ContactKey
 {
-    u32 shape[2];                   /* Canonical ordering: s[0] < s[1] */
+    u32 shape[2];       /* Canonical ordering: s[0] < s[1] */
 };
 
 /* Return the Canonical key of (shape0, shape1) */
