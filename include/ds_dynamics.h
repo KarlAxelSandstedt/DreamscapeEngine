@@ -477,41 +477,11 @@ struct c_SatCache
 
 
 /*
-Contact Management
-==================
-
-We describe how contacts are stored and handled in the engine. If two shapes are close to touching
-(non-touching) or touching, (s0.index, s1.index) defines a ds_ContactKey that is mapped to the
-pair's ds_Contact stored in the pipeline's sparse contact pool. 
-
 ds_ContactKey
 =============
-The key is defined by the canonical form (s0,s1), where s0 < s1 and is used to lookup locate the
-potential contact between shapes s0, s1.
-
-ds_Contact
-==========
-Every touching and non-touching contact is a persistent ds_Contact. The structure stores general
-connectivity data and where to find its simulation/compute data. 
-
-    :: Every non-touching contact have a link (<->) stored in the active set, and have no compute
-       data attached to it. It it not associated with an island. Any ds_SatCache that belongs to 
-       the contact is alive for 2 frames and is renewed every frame.
-
-    :: All contacts in an Awake island are stored in the constraint graph with a link (<->) and
-       compute data. Any ds_SatCache that belongs to the contact is alive for 2 frames and is
-       renewed every frame.
-
-    :: All contacts in a sleeping island are stored in the island's sleeping set, with a link (<->)
-       and compute data. Any ds_SatCache that belongs to the contact is moved onto the heap. 
-
-ds_ContactCompute
-=================
-Any touching contact 
-
-TODO
+The key is defined by the canonical form (s0,s1), where s0 < s1 and is used to lookup a contact
+between shapes s0, s1.
 */
-
 struct ds_ContactKey
 {
     u32 shape[2];       /* Canonical ordering: s[0] < s[1] */
@@ -528,6 +498,24 @@ void                    ds_ContactKeyAddress(struct ds_RigidBody **b0, struct ds
 /* Validate contact state */
 void		            ds_ContactValidateAll(const struct ds_RigidBodyPipeline *pipeline);
 
+
+/*
+ds_Contact
+==========
+Every touching and non-touching contact is a persistent ds_Contact. The structure stores general
+connectivity data and where to find its simulation/compute data. 
+
+    :: Every non-touching contact have a link (<->) stored in the active set, and have no compute
+       data attached to it. It it not associated with an island. Any ds_SatCache that belongs to 
+       the contact is alive for 2 frames and is renewed every frame.
+
+    :: All contacts in an Awake island are stored in the constraint graph with a link (<->) and
+       compute data. Any ds_SatCache that belongs to the contact is alive for 2 frames and is
+       renewed every frame.
+
+    :: All contacts in a sleeping island are stored in the island's sleeping set, with a link (<->)
+       and compute data. Any ds_SatCache that belongs to the contact is moved onto the heap. 
+*/
 struct ds_Contact
 {
     POOL_NODE;      
@@ -577,7 +565,6 @@ u64         ds_ContactMemoryRequirement(const struct ds_RigidBodyPipeline *pipel
 /*
 ds_ContactCompute
 =================
-
 TODO: contact <-> compute <-> constraints?
 */
 struct ds_ContactCompute
@@ -770,8 +757,6 @@ struct slot ds_SolverSetAdd(struct arena *mem_set, struct ds_RigidBodyPipeline *
 void        ds_SolverSetRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index);
 /* Flush the given ds_SolverSet */
 void        ds_SolverSetFlush(struct ds_RigidBodyPipeline *pipeline, const u32 index);
-/* Merge set_merge into set_expand and dealloc set_merge. */
-void        ds_SolverSetMerge(struct ds_RigidBodyPipeline *pipeline, const u32 set_expand, const u32 set_merge);
 /* Wake up the given sleeping ds_SolverSet. If the solver set is not sleeping set, the call becomes a NO-OP. */
 void        ds_SolverSetWakeUp(struct ds_RigidBodyPipeline *pipeline, const u32 index);
 /* Try put the given island to sleep. On success, the island is moved from the active set to a sleeping set. */
@@ -816,14 +801,14 @@ struct ds_Island
     /* FRAME DATA */
 	struct ds_RigidBody **	bodies;	
 	struct ds_Contact 	**	contacts;
-	u32 *			        body_index_map; /* body_index -> local indices of bodies in island:
-						                     * is->bodies[i] = pipeline->bodies[b] => 
-						                     * is->body_index_map[b] = i 
-						                     */
+	u32 *			        body_index_map;     /* body_index -> local indices of bodies in island:
+						                         * is->bodies[i] = pipeline->bodies[b] => 
+						                         * is->body_index_map[b] = i 
+						                         */
 
-    ds_IslandId     id;                     /* generational identifier */
     /* PERSISTENT DATA */
-	u32             constraint_remove_count;   /* Constraints removed counter */
+    ds_IslandId     id;                         /* generational identifier */
+	u32             constraint_remove_count;    /* Constraints removed counter */
     u32             set;                        /* ds_SolverSet index */
     u32             set_island_index;           /* index into set.island_pool */
 
@@ -845,7 +830,7 @@ void 		ds_IslandPrint(FILE *file, const struct ds_RigidBodyPipeline *pipeline, c
 /* Check if the database appears to be valid */
 void 		ds_IslandValidateAll(const struct ds_RigidBodyPipeline *pipeline);
 /* Merge islands (Or simply update if new local contact) using new contact */
-void 		ds_IslandMerge(struct ds_RigidBodyPipeline *pipeline, const u32 expand, const u32 merge, const u32 ci);
+void 		ds_IslandMerge(struct ds_RigidBodyPipeline *pipeline, const u32 expand, const u32 merge);
 /* Split island, or remake if no split happens.  */
 void 		ds_IslandSplit(struct ds_RigidBodyPipeline *pipeline, const u32 island);
 

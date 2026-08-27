@@ -189,6 +189,40 @@ void ds_ContactPromote(struct ds_RigidBodyPipeline *pipeline, const u32 contact)
         ds_Assert(moved->compute == active->contact_pool.count);
         moved->compute = compute;
     }
+
+    const struct ds_Shape *shape[2] =
+    {
+        pipeline->shape_pool.buf + c->key.shape[0],
+        pipeline->shape_pool.buf + c->key.shape[1],
+    };
+    
+    const struct ds_RigidBody *body[2] =
+    {
+	    pipeline->body_pool.buf + shape[0]->body,
+	    pipeline->body_pool.buf + shape[1]->body,
+    };
+
+    const u32 dynamic[2] = { RB_IS_DYNAMIC(body[0]), RB_IS_DYNAMIC(body[1]) };
+    const u32 expand_index = body[ dynamic[1] ]->island;
+    const u32 merge_index = 1-expand_index;
+    ds_Assert(dynamic[0] || dynamic[1]);
+
+	struct ds_Island *expand = pipeline->island_pool.buf + expand_index;
+    if (expand->set >= SOLVER_SET_SLEEPING_FIRST)
+    {
+        ds_SolverSetWakeUp(pipeline, expand->set);
+	    PhysicsEventIslandAwake(pipeline, expand->id);	
+    }
+
+    if (dynamic[0] && dynamic[1])
+    {
+		ds_IslandMerge(pipeline, expand_index, merge_index);
+    }
+
+    c->island = expand_index;
+	ds_DLLAppend(expand->contact_list, pipeline->contact_pool.buf, contact, island_contact);
+	PhysicsEventIslandExpanded(pipeline, expand->id);	
+
 }
 
 void ds_ContactDemote(struct ds_RigidBodyPipeline *pipeline, const u32 contact)

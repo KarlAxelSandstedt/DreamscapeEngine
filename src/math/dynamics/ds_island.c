@@ -224,97 +224,65 @@ void ds_IslandValidateAll(const struct ds_RigidBodyPipeline *pipeline)
 	}
 }
 
-void ds_IslandMerge(struct ds_RigidBodyPipeline *pipeline, const u32 expand, const u32 merge, const u32 ci)
+void ds_IslandMerge(struct ds_RigidBodyPipeline *pipeline, const u32 expand_index, const u32 merge_index)
 {
     ProfZone;
-    struct ds_Contact *c = pipeline->contact_pool.buf + ci;
     
-	//ds_IslandPrint(stderr, pipeline, expand, "To Expand");
-	//ds_IslandPrint(stderr, pipeline, merge, "To Merge");
+	struct ds_Island *expand = pipeline->island_pool.buf + expand_index;
+	struct ds_Island *merge = pipeline->island_pool.buf + merge_index;
     
-	struct ds_Island *is_expand = pipeline->island_pool.buf + expand;
-	struct ds_Island *is_merge = pipeline->island_pool.buf + merge;
-    
-    if (is_expand->set >= SOLVER_SET_SLEEPING_FIRST)
+    ds_Assert(expand->set == SOLVER_SET_ACTIVE)
+    ds_Assert(expand_index != merge_index)
+
+    ds_SolverSetWakeUp(pipeline, merge->set);
+
     {
-        ds_SolverSetWakeUp(pipeline, is_expand->set);
-	    PhysicsEventIslandAwake(pipeline, is_expand->id);	
-    }
-	PhysicsEventIslandExpanded(pipeline, is_expand->id);	
+        struct ds_Contact *expand_last = pipeline->contact_pool.buf + expand->contact_list.last;
+        struct ds_Contact *merge_first = pipeline->contact_pool.buf + merge->contact_list.first;
+        expand_last->island_contact.next = merge->contact_list.first;
+        merge_first->island_contact.prev = expand->contact_list.last;
 
-    c->island = expand;
+	    if (expand->contact_list.count == 0)
+	    {
+	    	expand->contact_list.first = merge->contact_list.first;
+	    }
 
-	/* new local contact within island */
-	if (expand == merge)
-	{
-		struct ds_Island *is = pipeline->island_pool.buf + expand;
-		ds_Assert(is->contact_list.count != 0 || is->constraint_remove_count);
-		ds_DLLAppend(is->contact_list, pipeline->contact_pool.buf, ci, island_contact);
-	}
-	/* new contact between distinct islands */
-	else
-	{
-        is_expand->constraint_remove_count += is_merge->constraint_remove_count;
-        if (is_merge->set >= SOLVER_SET_SLEEPING_FIRST)
+        if (merge->contact_list.count > 0)
         {
-            ds_SolverSetMerge(pipeline, SOLVER_SET_ACTIVE, is_merge->set);
+	        expand->contact_list.last = merge->contact_list.last;
         }
-
-		if (is_expand->contact_list.count == 0)
-		{
-			is_expand->contact_list.first = ci;
-			c->island_contact.prev = DLL_SENTINEL;
-		}
-		else
-		{
-			struct ds_Contact *contact = pipeline->contact_pool.buf + is_expand->contact_list.last;
-			ds_Assert(contact->island_contact.next == DLL_SENTINEL);
-			contact->island_contact.next = ci;
-			c->island_contact.prev = is_expand->contact_list.last;
-		}
-
-		if (is_merge->contact_list.count == 0)
-		{
-			is_expand->contact_list.last = ci;
-			c->island_contact.next = DLL_SENTINEL;
-		}
-		else
-		{
-			is_expand->contact_list.last = is_merge->contact_list.last;
-			struct ds_Contact *contact = pipeline->contact_pool.buf + is_merge->contact_list.first;
-			ds_Assert(contact->island_contact.prev == DLL_SENTINEL);
-			contact->island_contact.prev = ci;
-			c->island_contact.next = is_merge->contact_list.first;
-		}
-
-		is_expand->body_list.count += is_merge->body_list.count;
-		is_expand->contact_list.count += is_merge->contact_list.count + 1;
-
-		struct ds_RigidBody *body = pipeline->body_pool.buf + is_expand->body_list.last;
-		struct ds_RigidBody *body2 = pipeline->body_pool.buf + is_merge->body_list.first;
-		ds_Assert(body->island_body.next == DLL_SENTINEL);
-		ds_Assert(body2->island_body.prev == DLL_SENTINEL);
-		body->island_body.next = is_merge->body_list.first;
-		body2->island_body.prev = is_expand->body_list.last;
-		is_expand->body_list.last = is_merge->body_list.last;
-
-		for (u32 i = is_merge->body_list.first; (i32) i != DLL_SENTINEL; i = body->island_body.next)
-		{
-			body = pipeline->body_pool.buf + i;
-			body->island = expand;
-		}
-
+        
         struct ds_Contact *merge_contact;
-        for (u32 i = is_merge->contact_list.first; (i32) i != DLL_SENTINEL; i = merge_contact->island_contact.next)
+        for (i32 i = merge->contact_list.first; i != DLL_SENTINEL; i = merge_contact->island_contact.next)
         {
             merge_contact = pipeline->contact_pool.buf + i;
-            merge_contact->island = expand;
+            merge_contact->island = expand_index;
         }
+    }
 
-		ds_IslandRemove(pipeline, merge);
-	}
+    {
+	    struct ds_RigidBody *expand_body_last = pipeline->body_pool.buf + expand->body_list.last;
+	    struct ds_RigidBody *merge_body_first = pipeline->body_pool.buf + merge->body_list.first;
+	    ds_Assert(expand_body_last->island_body.next == DLL_SENTINEL);
+	    ds_Assert(merge_body_first->island_body.prev == DLL_SENTINEL);
 
-	//ds_IslandPrint(stderr, pipeline, expand, "Expanded");
+	    expand_body_last->island_body.next = merge->body_list.first;
+	    merge_body_first->island_body.prev = expand->body_list.last;
+        struct ds_RigidBody *body;
+	    for (i32 i = merge->body_list.first; i != DLL_SENTINEL; i = body->island_body.next)
+	    {
+	    	body = pipeline->body_pool.buf + i;
+	    	body->island = expand_index;
+	    }
+    }
+
+    expand->constraint_remove_count += merge->constraint_remove_count;
+	expand->contact_list.count += merge->contact_list.count;
+	expand->body_list.count += merge->body_list.count;
+	expand->body_list.last = merge->body_list.last;
+    
+	ds_IslandRemove(pipeline, merge_index);
+	
     ProfZoneEnd;
 }
 

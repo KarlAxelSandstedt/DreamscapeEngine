@@ -590,56 +590,6 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
     }
 }
 
-static void MergeIslands(struct ds_RigidBodyPipeline *pipeline)
-{
-	ProfZone;
-	for (u32 i = 0; i < pipeline->contact_new_count; ++i)
-	{
-		struct ds_Contact *c = pipeline->contact_pool.buf + pipeline->contact_new[i];
-
-        const struct ds_Shape *shape[2] =
-        {
-            pipeline->shape_pool.buf + c->key.shape[0],
-            pipeline->shape_pool.buf + c->key.shape[1],
-        };
-        
-        const struct ds_RigidBody *body[2] =
-        {
-		    pipeline->body_pool.buf + shape[0]->body,
-		    pipeline->body_pool.buf + shape[1]->body,
-        };
-
-        const u32 dynamic[2] = { RB_IS_DYNAMIC(body[0]), RB_IS_DYNAMIC(body[1]) };
-        if (dynamic[0] && dynamic[1])
-        {
-			ds_IslandMerge(pipeline, body[0]->island, body[1]->island, pipeline->contact_new[i]);
-        }
-        else
-        {
-            ds_Assert(dynamic[0] || dynamic[1]);
-            c->island = body[ dynamic[1] ]->island;
-			struct ds_Island *island = pipeline->island_pool.buf + c->island;
-			ds_DLLAppend(island->contact_list, pipeline->contact_pool.buf, pipeline->contact_new[i], island_contact);
-            /*
-             * TODO: is this even relevant anymore? 
-             *
-             * TODO: This feels bad and dangerous; we've found a new contact of the island
-             * which is in the Constraint Graph while the rest of the island's contacts are
-             * in the sleeper set; it should be fine to wake up the set and move all 
-             * sleeping constraints to the Constraint Graph without messing up links, but
-             * it becomes very nasty to reason about
-             */
-            if (island->set >= SOLVER_SET_SLEEPING_FIRST)
-            {
-                ds_SolverSetWakeUp(pipeline, island->set);
-	            PhysicsEventIslandAwake(pipeline, island->id);	
-            }
-	        PhysicsEventIslandExpanded(pipeline, island->id);
-        }
-	}
-	ProfZoneEnd;
-}
-
 static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
 {
 	ProfZone;
@@ -1171,7 +1121,6 @@ void PhysicsPipelineSimulateFrame(struct ds_RigidBodyPipeline *pipeline)
 	/* broadphase => narrowphase => solve => integrate */
     CollisionDetection(pipeline);
 
-	MergeIslands(pipeline);
 	SplitIslandsAndRemoveContacts(pipeline);
 	SolveConstraints(pipeline);
 
