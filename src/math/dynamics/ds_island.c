@@ -346,9 +346,6 @@ void ds_IslandSplit(struct ds_RigidBodyPipeline *pipeline, const u32 island_to_s
                 for (u32 co = 0; co < shape->contact_list.count; ++co)
                 {
 		    		const struct ds_Contact *c = pipeline->contact_pool.buf + ci;
-		    		ds_Assert(ci >= pipeline->contact_frame_usage.bit_count 
-		    				|| ds_BitSetGet(&pipeline->contact_frame_usage, ci) == 1);
-
                     const struct ds_Shape *shape0 = pipeline->shape_pool.buf + c->key.shape[0];
                     const struct ds_Shape *shape1 = pipeline->shape_pool.buf + c->key.shape[1];
                     u32 neighbour_index;
@@ -393,23 +390,21 @@ void ds_IslandSplit(struct ds_RigidBodyPipeline *pipeline, const u32 island_to_s
         for (u32 i = 0; i < set->contact_pool.count; ++i)
         {
             const u32 ci = set->contact_pool.buf[i];
-	    	if (ci >= pipeline->contact_frame_usage.bit_count || ds_BitSetGet(&pipeline->contact_frame_usage, ci) == 1)
-	    	{
-                struct ds_Contact *c = pipeline->contact_pool.buf + ci;
-                ds_CGraphContactAdd(pipeline, c);
+            struct ds_Contact *c = pipeline->contact_pool.buf + ci;
+            ds_CGraphContactAdd(pipeline, c);
 
-                const struct ds_Shape *shape0 = pipeline->shape_pool.buf + c->key.shape[0];
-                const struct ds_Shape *shape1 = pipeline->shape_pool.buf + c->key.shape[1];
-                const struct ds_RigidBody *body0 = pipeline->body_pool.buf + shape0->body;
-	    	    const struct ds_RigidBody *body1 = pipeline->body_pool.buf + shape1->body;
-	    	    const u32 island0 = body0->island;
-	    	    const u32 island1 = body1->island;
-	    	    struct ds_Island *is = RB_IS_DYNAMIC(body0)
-	    	    	? pipeline->island_pool.buf + island0
-	    	    	: pipeline->island_pool.buf + island1;
-	    	    ds_DLLAppend(is->contact_list, pipeline->contact_pool.buf, ci, island_contact);
-                c->island = ds_IslandPoolIndex(&pipeline->island_pool, is);
-            }
+            const struct ds_Shape *shape0 = pipeline->shape_pool.buf + c->key.shape[0];
+            const struct ds_Shape *shape1 = pipeline->shape_pool.buf + c->key.shape[1];
+            const struct ds_RigidBody *body0 = pipeline->body_pool.buf + shape0->body;
+	    	const struct ds_RigidBody *body1 = pipeline->body_pool.buf + shape1->body;
+	    	const u32 island0 = body0->island;
+	    	const u32 island1 = body1->island;
+	    	struct ds_Island *is = RB_IS_DYNAMIC(body0)
+	    		? pipeline->island_pool.buf + island0
+	    		: pipeline->island_pool.buf + island1;
+	    	ds_DLLAppend(is->contact_list, pipeline->contact_pool.buf, ci, island_contact);
+            c->island = ds_IslandPoolIndex(&pipeline->island_pool, is);
+            
         }
     }
     else
@@ -420,21 +415,18 @@ void ds_IslandSplit(struct ds_RigidBodyPipeline *pipeline, const u32 island_to_s
 	    {
 	        c = pipeline->contact_pool.buf + i;
 	    	next = c->island_contact.next;
-	    	if (i >= pipeline->contact_frame_usage.bit_count || ds_BitSetGet(&pipeline->contact_frame_usage, i) == 1)
-	    	{
-
-                const struct ds_Shape *shape0 = pipeline->shape_pool.buf + c->key.shape[0];
-                const struct ds_Shape *shape1 = pipeline->shape_pool.buf + c->key.shape[1];
-                const struct ds_RigidBody *body0 = pipeline->body_pool.buf + shape0->body;
-	    	    const struct ds_RigidBody *body1 = pipeline->body_pool.buf + shape1->body;
-	    		const u32 island0 = body0->island;
-	    		const u32 island1 = body1->island;
-	    		struct ds_Island *is = RB_IS_DYNAMIC(body0)
-	    			? pipeline->island_pool.buf + island0
-	    			: pipeline->island_pool.buf + island1;
-	    		ds_DLLAppend(is->contact_list, pipeline->contact_pool.buf, i, island_contact);
-                c->island = ds_IslandPoolIndex(&pipeline->island_pool, is);
-	    	}
+            const struct ds_Shape *shape0 = pipeline->shape_pool.buf + c->key.shape[0];
+            const struct ds_Shape *shape1 = pipeline->shape_pool.buf + c->key.shape[1];
+            const struct ds_RigidBody *body0 = pipeline->body_pool.buf + shape0->body;
+	    	const struct ds_RigidBody *body1 = pipeline->body_pool.buf + shape1->body;
+	    	const u32 island0 = body0->island;
+	    	const u32 island1 = body1->island;
+	    	struct ds_Island *is = RB_IS_DYNAMIC(body0)
+	    		? pipeline->island_pool.buf + island0
+	    		: pipeline->island_pool.buf + island1;
+	    	ds_DLLAppend(is->contact_list, pipeline->contact_pool.buf, i, island_contact);
+            c->island = ds_IslandPoolIndex(&pipeline->island_pool, is);
+	    	
 	    }
     }
                 

@@ -551,6 +551,8 @@ struct slot ds_ContactLookup(const struct ds_RigidBodyPipeline *pipeline, const 
 /* Update contact at the given slot and update pipeline state. */
 struct slot ds_ContactKeyLookup(const struct ds_RigidBodyPipeline *pipeline, const struct ds_ContactKey key);
 
+/* Internal: Return 1 if contact shape bvh nodes still overlap, otherwise return 0. */
+u32         ds_ContactCheckBvhOverlap(const struct ds_RigidBodyPipeline *pipeline, const u32 contact);
 /* Internal: Promote contact from non-touching active set to color in constraint graph */
 void        ds_ContactPromote(struct ds_RigidBodyPipeline *pipeline, const u32 contact);
 /* Internal: Demote contact to non-touching active set from color in constraint graph */
@@ -1250,36 +1252,36 @@ enum rigidBodyColorMode
  */
 struct ds_RigidBodyPipeline 
 {
-	struct arena 	    frame;			        /* frame memory */
+	struct arena 	            frame;			        /* frame memory */
 
-	u64				    ns_start;		        /* external ns at start of physics pipeline */
-	u64				    ns_elapsed;		        /* actual ns elasped in pipeline (= 0 at start) */
-	u64				    ns_tick;		        /* ns per game tick */
-	u64 			    frames_completed;	    /* number of completed physics frames */ 
+	u64				            ns_start;		        /* external ns at start of physics pipeline */
+	u64				            ns_elapsed;		        /* actual ns elasped in pipeline (= 0 at start) */
+	u64				            ns_tick;		        /* ns per game tick */
+	u64 			            frames_completed;	    /* number of completed physics frames */ 
 
-    f32                 timestep;
+    f32                         timestep;
 
-	struct strdb *	    cshape_db;		        /* externally owned */
-	struct strdb *	    body_prefab_db;		    /* externally owned */
+	struct strdb *	            cshape_db;		        /* externally owned */
+	struct strdb *	            body_prefab_db;		    /* externally owned */
 
-	struct ds_RigidBodyPool body_pool;
-    struct ds_BitSet    body_usage_set;         /* Bodies in use */
+	struct ds_RigidBodyPool     body_pool;
+    struct ds_BitSet            body_usage_set;         /* Bodies in use */
 
-	struct ds_ShapePool	shape_pool;
-	struct bvh 		    dynamic_bvh;            /* bvh of dynamic shapes */
-	struct bvh 		    static_bvh;             /* bvh of static shapes */
+	struct ds_ShapePool	        shape_pool;
+	struct bvh 		            dynamic_bvh;            /* bvh of dynamic shapes */
+	struct bvh 		            static_bvh;             /* bvh of static shapes */
 
-    struct ds_BitSet        dirty_shape_set;    
-    ds_CPool(ds_ProxyQuery) dirty_shape_query;
+    struct ds_BitSet            dirty_shape_set;    
+    ds_CPool(ds_ProxyQuery)     dirty_shape_query;
 
-    struct ds_JointPool joint_pool;
+    struct ds_JointPool         joint_pool;
 
 	struct ds_PhysicsEventPool  event_pool;
 	struct ds_DLL		        event_list;
 
-    struct ds_CGraph    cgraph;
+    struct ds_CGraph            cgraph;
 
-    struct ds_SolverSetPool solver_set_pool;    /* index 0,1,2 reserved for DISABLED,STATIC,ACTIVE sets */
+    struct ds_SolverSetPool     solver_set_pool;    /* index 0,1,2 reserved for DISABLED,STATIC,ACTIVE sets */
 
     /* contact net list nodes are owned as follows:
 	 *
@@ -1287,46 +1289,27 @@ struct ds_RigidBodyPipeline
 	 *  contact->key.shape1 owns slot 1
 	 *
 	 * i.e. the smaller index owns slot 0 and the larger index owns slot 1.  */
-    struct ds_ContactPool   contact_pool;   
-	struct ds_HashMap	    contact_map;		
+    struct ds_ContactPool       contact_pool;   
+	struct ds_HashMap	        contact_map;		
 
-	/* PERSISTENT DATA, GROWABLE, keeps track of which slots in the contact pool 
-     * from last frame that are still being used. At the end of every frame, it is
-     * set to ***_frame_usage, after which and any new contacts outside of the slots
-     * covered by ***_frame_usage is appended.  
-     */
-	struct ds_BitSet 	contact_persistent_usage; 
+    ds_IslandId                 island_to_split;            /* */
+	struct ds_IslandPool        island_pool;	    
+    struct ds_BitSet            island_high_energy_set;   /* High energy islands per-frame. */
 
-	/* FRAME DATA, NOT GROWABLE, keeps track of which slots in the contact pool in
-     * previous frame that are currently being used. Thus, all links in the current
-     * frame are the ones in the bit array + any appended contacts which resulted in
-     * growing the array. 
-     * */
-	struct ds_BitSet 	contact_frame_usage;	
-
-    /* FRAME DATA */
-    u32     contact_count;          /* Contacts found in the current frame      */
-	u32		contact_new_count;      /* New contacts found in the current frame  */
-	u32 *   contact_new;
-
-    ds_IslandId             island_to_split;        /* */
-	struct ds_IslandPool    island_pool;	    
-    struct ds_BitSet        island_high_energy_set;   /* High energy islands per-frame. */
-
-	struct collisionDebug *	debug;
-	u32			        debug_count;
+	struct collisionDebug *	    debug;
+	u32			                debug_count;
 
 	//TODO temporary, move somewhere else.
-	vec3 			    gravity;	/* gravity constant */
+	vec3 			            gravity;	/* gravity constant */
 
-	u32			        margin_on;
-	f32			        margin;
+	u32			                margin_on;
+	f32			                margin;
 
-    struct ds_BroadJobPhase *       broad_phase;
-    struct ds_NarrowJobPhase *      narrow_phase;
-    struct ds_SolverJobPhase *      solver_phase;
+    struct ds_BroadJobPhase *   broad_phase;
+    struct ds_NarrowJobPhase *  narrow_phase;
+    struct ds_SolverJobPhase *  solver_phase;
 
-    struct ds_NumericsConfig        numerics_config;
+    struct ds_NumericsConfig    numerics_config;
 };
 
 /**************** PHYISCS PIPELINE API ****************/

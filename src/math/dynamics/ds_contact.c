@@ -86,10 +86,6 @@ struct slot ds_ContactAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds
 
 	ds_HashMapAdd(&pipeline->contact_map, ds_ContactKeyHash(key), contact_slot.index);
 
-	if (contact_slot.index < pipeline->contact_frame_usage.bit_count)
-	{
-		ds_BitSetSet(&pipeline->contact_frame_usage, contact_slot.index, 1);
-	}
 	PhysicsEventContactNew(pipeline, c->id);
 
     return contact_slot;
@@ -125,7 +121,6 @@ void ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
     ds_ContactKeyAddress(&body0, &shape0, &body1, &shape1, pipeline, c->key);
 	
 	PhysicsEventContactRemoved(pipeline, body0->id, shape0->id, body1->id, shape1->id);
-	ds_BitSetSet(&pipeline->contact_persistent_usage, index, 0);
 	ds_HashMapRemove(&pipeline->contact_map, ds_ContactKeyHash(c->key), index);
 
     const i32 prev0 = (c->key.shape[0] == buf[ c->shape_contact[0].prev ].key.shape[1]);
@@ -171,6 +166,36 @@ struct slot ds_ContactLookup(const struct ds_RigidBodyPipeline *pipeline, const 
     return slot;
 }
 
+u32 ds_ContactCheckBvhOverlap(const struct ds_RigidBodyPipeline *pipeline, const u32 contact_index)
+{
+    const struct ds_Contact *contact = pipeline->contact_pool.buf + contact_index;
+
+    const struct ds_Shape *shape[2] =
+    {
+        pipeline->shape_pool.buf + contact->key.shape[0],
+        pipeline->shape_pool.buf + contact->key.shape[1],
+    };
+    
+    const struct ds_RigidBody *body[2] =
+    {
+	    pipeline->body_pool.buf + shape[0]->body,
+	    pipeline->body_pool.buf + shape[1]->body,
+    };
+
+    const struct bvhNode *s_node = (const struct bvhNode *) pipeline->static_bvh.tree.pool.buf;
+    const struct bvhNode *d_node = (const struct bvhNode *) pipeline->dynamic_bvh.tree.pool.buf;
+
+    const struct aabb *bbox[2];
+    bbox[0] = RB_IS_DYNAMIC(body[0]) 
+            ? &d_node[ shape[0]->proxy ].bbox 
+            : &s_node[ shape[0]->proxy ].bbox;
+    bbox[1] = RB_IS_DYNAMIC(body[1]) 
+            ? &d_node[ shape[1]->proxy ].bbox 
+            : &s_node[ shape[1]->proxy ].bbox;
+    
+    return AabbTest(bbox[0], bbox[1]);
+}
+
 void ds_ContactPromote(struct ds_RigidBodyPipeline *pipeline, const u32 contact)
 {
     struct ds_Contact *c = pipeline->contact_pool.buf + contact;
@@ -204,7 +229,7 @@ void ds_ContactPromote(struct ds_RigidBodyPipeline *pipeline, const u32 contact)
 
     const u32 dynamic[2] = { RB_IS_DYNAMIC(body[0]), RB_IS_DYNAMIC(body[1]) };
     const u32 expand_index = body[ dynamic[1] ]->island;
-    const u32 merge_index = 1-expand_index;
+    const u32 merge_index = body[ 1-dynamic[1] ]->island;
     ds_Assert(dynamic[0] || dynamic[1]);
 
 	struct ds_Island *expand = pipeline->island_pool.buf + expand_index;
@@ -232,12 +257,15 @@ void ds_ContactDemote(struct ds_RigidBodyPipeline *pipeline, const u32 contact)
 
     ds_CGraphContactRemove(pipeline, c); 
 
+    c->island = U32_MAX;
     c->set = SOLVER_SET_ACTIVE;
     c->compute = ds_CPoolPush(active->contact_pool).index;
     active->contact_pool.buf[ c->compute ] = contact;
 
+
     struct ds_Island *island = pipeline->island_pool.buf + c->island;
     island->constraint_remove_count += 1;
+    ds_DLLRemove(island->contact_list, pipeline->contact_pool.buf, contact, island_contact);
 }
 
 void ds_ContactWakeUp(struct arena *frame, struct ds_RigidBodyPipeline *pipeline, const u32 contact_index)

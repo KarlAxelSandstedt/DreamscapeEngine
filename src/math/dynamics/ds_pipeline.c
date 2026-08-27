@@ -88,7 +88,6 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 
     pipeline.contact_pool = ds_ContactPoolAlloc(NULL, initial_size, GROWABLE);
     pipeline.contact_map = ds_HashMapAlloc(NULL, initial_size, initial_size, GROWABLE);
-	pipeline.contact_persistent_usage = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
 
 	pipeline.island_pool = ds_IslandPoolAlloc(NULL, initial_size, GROWABLE);
     pipeline.island_high_energy_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
@@ -144,7 +143,6 @@ void PhysicsPipelineFree(struct ds_RigidBodyPipeline *pipeline)
 	BvhFree(&pipeline->dynamic_bvh);
 	BvhFree(&pipeline->static_bvh);
     ds_ContactPoolDealloc(&pipeline->contact_pool);
-	ds_BitSetDealloc(&pipeline->contact_persistent_usage);
     ds_HashMapDealloc(&pipeline->contact_map);
 	ds_IslandPoolDealloc(&pipeline->island_pool);
     ds_BitSetDealloc(&pipeline->island_high_energy_set);
@@ -175,12 +173,6 @@ static void PhysicsPipelineClearFrame(struct ds_RigidBodyPipeline *pipeline)
 	}
 #endif
 
-	pipeline->contact_frame_usage.bits = NULL;
-	pipeline->contact_frame_usage.bit_count = 0;
-	pipeline->contact_frame_usage.block_count = 0;	
-    pipeline->contact_count = 0;
-    pipeline->contact_new_count = 0;
-
 	ArenaFlush(&pipeline->frame);
     ds_CGraphFramePrepare(pipeline);
     ds_BitSetClear(&pipeline->island_high_energy_set, 0);
@@ -208,7 +200,6 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
         }
     }
 
-	ds_BitSetClear(&pipeline->contact_persistent_usage, 0);
     ds_ContactPoolFlush(&pipeline->contact_pool);
     ds_HashMapFlush(&pipeline->contact_map);
 	ds_IslandPoolFlush(&pipeline->island_pool);
@@ -499,7 +490,6 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 
     {
     	ProfZoneNamed("Contact Promotion/Demotion");
-
         {
             const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
             u32 compute = 0; 
@@ -536,132 +526,24 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
                 }
             }
         }
-
-        /*
-         *TODO
-         * Removal Sketch
-         * ==============
-         * (1) Traverse dirty shape contacts
-         * (2) If contact wasn't touched, MarkForRemoval + removed_constraint_count += 1
-         */
-
-	//    cdb->sat_cache_frame_usage = ds_BitSetAlloc(&pipeline->frame, cdb->sat_cache_persistent_usage.bit_count, 0, 0);
-	//    cdb->contact_frame_usage = ds_BitSetAlloc(&pipeline->frame, cdb->contact_persistent_usage.bit_count, 0, 0);
-
-    //    const u32 narrowphase_count = AtomicLoadRlx32(&cd_jobs->phase.next[COLLISION_JOB_NARROWPHASE].a_counter);
-    //    struct memArray arr = ArenaPushAlignedAll(&pipeline->frame, sizeof(u32), sizeof(u32));
-    //    cdb->contact_new = arr.addr;
-    //    //fprintf(stderr, "A: {");
-    //    for (u32 i = 0; i < narrowphase_count; ++i)
-    //    {
-    //        for (u32 c = 0; c < job->collision_count; ++c)
-    //        {
-    //            cdb->contact_count += 1;
-    //            struct slot slot = ds_ContactKeyLookup(pipeline, job->key + c);
-    //            if (!slot.address)
-    //            {
-    //                slot = ds_ContactAdd(pipeline, job->manifold + c, job->key + c);
-    //            }
-    //            else
-    //            {
-    //                ds_ContactUpdate(pipeline, slot, job->manifold + c);
-    //            }
-    //             
-	//		    /* add to new links if needed */
-	//		    if (slot.index >= cdb->contact_persistent_usage.bit_count
-	//		    	 || ds_BitSetGet(&cdb->contact_persistent_usage, slot.index) == 0)
-	//		    {
-    //                    if (cdb->contact_new_count >= arr.len)
-    //                    {
-    //                        LogString(T_PHYSICS, S_FATAL, "Frame arena OOM in Broadphase, increase size!");
-    //                        FatalCleanupAndExit();
-    //                    }
-    //                    cdb->contact_new[ cdb->contact_new_count ] = slot.index;
-	//		    		cdb->contact_new_count += 1;
-	//		    }
-	//		    //fprintf(stderr, " %u", index);
-    //        }
-    //    }
-    //    //fprintf(stderr, " } ");
-    //    ArenaPopPacked(&pipeline->frame, sizeof(u32)*(arr.len - cdb->contact_new_count));
-    //  }
-
     	ProfZoneEnd;
     }
-}
 
-static void SplitIslandsAndRemoveContacts(struct ds_RigidBodyPipeline *pipeline)
-{
-	ProfZone;
-
-	//fprintf(stderr, " R: {");
-	for (u64 block = 0; block < pipeline->contact_frame_usage.block_count; ++block)
-	{
-		const u64 broken_link_block = 
-				    pipeline->contact_persistent_usage.bits[block]
-				& (~pipeline->contact_frame_usage.bits[block]);
-
-        struct ds_BitBlock it = ds_BitBlockInit(broken_link_block, block);
-	    while (ds_BitBlockHasNext(&it))
-	    {
-            const u64 ci = ds_BitBlockNext(&it);
-			struct ds_Contact *c = pipeline->contact_pool.buf + ci;
-			//fprintf(stderr, " %lu", ci);
-
-            const struct ds_Shape *shape[2] =
-            {
-                pipeline->shape_pool.buf + c->key.shape[0],
-                pipeline->shape_pool.buf + c->key.shape[1],
-            };
-            
-            const struct ds_RigidBody *body[2] =
-            {
-		        pipeline->body_pool.buf + shape[0]->body,
-		        pipeline->body_pool.buf + shape[1]->body,
-            };
-			ds_Assert(RB_IS_DYNAMIC(body[0]) || RB_IS_DYNAMIC(body[1]));
-
-			if (body[0]->set != SOLVER_SET_STATIC && body[1]->set != SOLVER_SET_STATIC)
-			{
-			    struct ds_Island *is = pipeline->island_pool.buf + body[0]->island;
-                is->constraint_remove_count += 1;
-			}
-
-			ds_ContactRemove(pipeline, ci);
-		}
-	}	
-
-    /* Update contact_persistent_usage */
     {
-        for (u64 i = 0; i < pipeline->contact_frame_usage.block_count; ++i)
-        {
-        	pipeline->contact_persistent_usage.bits[i] = pipeline->contact_frame_usage.bits[i];	
-        }
-
-        if (pipeline->contact_persistent_usage.bit_count < pipeline->contact_pool.count_max)
-        {
-        	const u64 low_bit = pipeline->contact_persistent_usage.bit_count;
-        	const u64 high_bit = pipeline->contact_pool.count_max;
-        	ds_BitSetIncreaseSize(&pipeline->contact_persistent_usage, pipeline->contact_pool.length, 0);
-        	/* any new contacts that is in the appended region must now be set */
-        	for (u64 bit = low_bit; bit < high_bit; ++bit)
-        	{
-        		ds_BitSetSet(&pipeline->contact_persistent_usage, bit, 1);
-        	}
-        }
-    }
+    	ProfZone;
     
-    if (pipeline->island_to_split != DS_ID_NULL)
-    {
-        const u32 split_index = ds_IdIndex(pipeline->island_to_split);
-        if (ds_PoolSlotAllocated(pipeline->island_pool.buf + split_index) 
-                && pipeline->island_to_split == pipeline->island_pool.buf[split_index].id)
+        if (pipeline->island_to_split != DS_ID_NULL)
         {
-            ds_IslandSplit(pipeline, split_index);
+            const u32 split_index = ds_IdIndex(pipeline->island_to_split);
+            if (ds_PoolSlotAllocated(pipeline->island_pool.buf + split_index) 
+                    && pipeline->island_to_split == pipeline->island_pool.buf[split_index].id)
+            {
+                ds_IslandSplit(pipeline, split_index);
+            }
         }
+    
+    	ProfZoneEnd;
     }
-
-	ProfZoneEnd;
 }
 
 u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
@@ -936,25 +818,55 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
             }
             else
             {
-                ProfZoneNamed("DBVH Update");
-                for (u32 ri = 0; ri < pf->range_count; ++ri)
                 {
-                    const struct ds_ProxyRange *range = solver_phase->proxy_range + ri;
-                    for (u32 pi = 0; pi < range->count; ++pi)
+                    ProfZoneNamed("DBVH Update");
+                    for (u32 ri = 0; ri < pf->range_count; ++ri)
                     {
-                        const struct ds_ProxyDirty *dirty = range->proxy + pi;
-                        ds_BitSetSet(&pipeline->dirty_shape_set, dirty->shape, 1);
-                        if (dirty->reinsert)
+                        const struct ds_ProxyRange *range = solver_phase->proxy_range + ri;
+                        for (u32 pi = 0; pi < range->count; ++pi)
                         {
-                            ProfZoneNamed("Reinsert");
-                            struct ds_Shape *shape = pipeline->shape_pool.buf + dirty->shape;
-                    	    DbvhRemove(&pipeline->dynamic_bvh, shape->proxy);
-                    	    shape->proxy = DbvhInsert(&pipeline->dynamic_bvh, shape->body, dirty->shape, &dirty->bbox);
-                            ProfZoneEnd;
+                            const struct ds_ProxyDirty *dirty = range->proxy + pi;
+                            ds_BitSetSet(&pipeline->dirty_shape_set, dirty->shape, 1);
+                            if (dirty->reinsert)
+                            {
+                                ProfZoneNamed("Reinsert");
+                                struct ds_Shape *shape = pipeline->shape_pool.buf + dirty->shape;
+                        	    DbvhRemove(&pipeline->dynamic_bvh, shape->proxy);
+                        	    shape->proxy = DbvhInsert(&pipeline->dynamic_bvh, shape->body, dirty->shape, &dirty->bbox);
+                                ProfZoneEnd;
+                            }
                         }
                     }
+                    ProfZoneEnd;
                 }
-                ProfZoneEnd;
+
+                {
+                    ProfZoneNamed("Contact Removal");
+                    struct ds_BitSet *dirty = &pipeline->dirty_shape_set;
+                    for (u64 block = 0; block < dirty->block_count; ++block)
+                    {
+                        struct ds_BitBlock it = ds_BitBlockInit(dirty->bits[block], block);
+		                while (ds_BitBlockHasNext(&it))
+		                {
+                            const u32 si = ds_BitBlockNext(&it);
+                            const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
+                            i32 ci = shape->contact_list.first;
+                            while (ci != DLL_SENTINEL)
+                            {
+                                struct ds_Contact *c = pipeline->contact_pool.buf + ci;
+                                const i32 next = (si == c->key.shape[0])
+                                               ? c->shape_contact[0].next
+                                               : c->shape_contact[1].next;
+                                if (!ds_ContactCheckBvhOverlap(pipeline, ci))
+                                {
+                                    ds_ContactRemove(pipeline, ci);
+                                }
+                                ci = next;
+                            }
+		                }
+                    }
+                    ProfZoneEnd;
+                }
             }
         }
     }
@@ -1121,7 +1033,6 @@ void PhysicsPipelineSimulateFrame(struct ds_RigidBodyPipeline *pipeline)
 	/* broadphase => narrowphase => solve => integrate */
     CollisionDetection(pipeline);
 
-	SplitIslandsAndRemoveContacts(pipeline);
 	SolveConstraints(pipeline);
 
 	PHYSICS_PIPELINE_VALIDATE(pipeline);
@@ -1197,5 +1108,4 @@ void PhysicsPipelinePrintUsage(const struct ds_RigidBodyPipeline *pipeline)
     fprintf(stderr, "\tevents:                      %u\n", pipeline->event_pool.count);
     fprintf(stderr, "\tislands:                     %u\n", pipeline->island_pool.count);
     fprintf(stderr, "\tcontacts:                    %u\n", pipeline->contact_pool.count);
-    fprintf(stderr, "\tcontact bitvector size:      %lu\n", (long unsigned) pipeline->contact_persistent_usage.block_count*sizeof(u64));
 }
