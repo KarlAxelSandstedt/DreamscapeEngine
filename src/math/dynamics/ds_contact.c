@@ -100,10 +100,14 @@ void ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
     if (c->set == SOLVER_SET_NULL)
     {
         ds_CGraphContactRemove(pipeline, c);
+
+        struct ds_Island *island = pipeline->island_pool.buf + c->island;
+        ds_DLLRemove(island->contact_list, pipeline->contact_pool.buf, index, island_contact);
+        ds_ContactPoolRemove(&pipeline->contact_pool, index);
     }
     else
     {
-        ds_Assert(c->color >= CG_INVALID_COLOR);
+        ds_Assert(c->color == CG_INVALID_COLOR);
         struct ds_SolverSet *set = pipeline->solver_set_pool.buf + c->set;
 
         ds_CPoolRemoveAndSwap(set->contact_pool, c->compute);
@@ -129,10 +133,6 @@ void ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
     const i32 next1 = (c->key.shape[1] == buf[ c->shape_contact[1].next ].key.shape[1]);
     ds_DLLRemoveEx(shape0->contact_list, buf, index, shape_contact[prev0], shape_contact[0], shape_contact[next0]);
     ds_DLLRemoveEx(shape1->contact_list, buf, index, shape_contact[prev1], shape_contact[1], shape_contact[next1]);
-
-    struct ds_Island *island = pipeline->island_pool.buf + c->island;
-    ds_DLLRemove(island->contact_list, pipeline->contact_pool.buf, index, island_contact);
-    ds_ContactPoolRemove(&pipeline->contact_pool, index);
 }
 
 struct slot ds_ContactKeyLookup(const struct ds_RigidBodyPipeline *pipeline, const struct ds_ContactKey key)
@@ -253,19 +253,18 @@ void ds_ContactPromote(struct ds_RigidBodyPipeline *pipeline, const u32 contact)
 void ds_ContactDemote(struct ds_RigidBodyPipeline *pipeline, const u32 contact)
 {
     struct ds_Contact *c = pipeline->contact_pool.buf + contact;
+    struct ds_Island *island = pipeline->island_pool.buf + c->island;
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
 
     ds_CGraphContactRemove(pipeline, c); 
+
+    island->constraint_remove_count += 1;
+    ds_DLLRemove(island->contact_list, pipeline->contact_pool.buf, contact, island_contact);
 
     c->island = U32_MAX;
     c->set = SOLVER_SET_ACTIVE;
     c->compute = ds_CPoolPush(active->contact_pool).index;
     active->contact_pool.buf[ c->compute ] = contact;
-
-
-    struct ds_Island *island = pipeline->island_pool.buf + c->island;
-    island->constraint_remove_count += 1;
-    ds_DLLRemove(island->contact_list, pipeline->contact_pool.buf, contact, island_contact);
 }
 
 void ds_ContactWakeUp(struct arena *frame, struct ds_RigidBodyPipeline *pipeline, const u32 contact_index)
