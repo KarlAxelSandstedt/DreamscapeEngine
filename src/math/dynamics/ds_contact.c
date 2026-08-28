@@ -102,8 +102,8 @@ void ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
         ds_CGraphContactRemove(pipeline, c);
 
         struct ds_Island *island = pipeline->island_pool.buf + c->island;
+        island->constraint_remove_count += 1;
         ds_DLLRemove(island->contact_list, pipeline->contact_pool.buf, index, island_contact);
-        ds_ContactPoolRemove(&pipeline->contact_pool, index);
     }
     else
     {
@@ -133,6 +133,8 @@ void ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
     const i32 next1 = (c->key.shape[1] == buf[ c->shape_contact[1].next ].key.shape[1]);
     ds_DLLRemoveEx(shape0->contact_list, buf, index, shape_contact[prev0], shape_contact[0], shape_contact[next0]);
     ds_DLLRemoveEx(shape1->contact_list, buf, index, shape_contact[prev1], shape_contact[1], shape_contact[next1]);
+        
+    ds_ContactPoolRemove(&pipeline->contact_pool, index);
 }
 
 struct slot ds_ContactKeyLookup(const struct ds_RigidBodyPipeline *pipeline, const struct ds_ContactKey key)

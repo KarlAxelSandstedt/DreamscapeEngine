@@ -797,19 +797,9 @@ TODO
 
 struct ds_Island
 {
-    POOL_NODE;
-
-
-    /* FRAME DATA */
-	struct ds_RigidBody **	bodies;	
-	struct ds_Contact 	**	contacts;
-	u32 *			        body_index_map;     /* body_index -> local indices of bodies in island:
-						                         * is->bodies[i] = pipeline->bodies[b] => 
-						                         * is->body_index_map[b] = i 
-						                         */
-
-    /* PERSISTENT DATA */
     ds_IslandId     id;                         /* generational identifier */
+
+    POOL_NODE;
 	u32             constraint_remove_count;    /* Constraints removed counter */
     u32             set;                        /* ds_SolverSet index */
     u32             set_island_index;           /* index into set.island_pool */
@@ -827,14 +817,14 @@ POOL_DECLARE(ds_Island);
 struct slot ds_IslandLookup(struct ds_RigidBodyPipeline *pipeline, const ds_IslandId id);
 /* remove island resources from database */
 void 		ds_IslandRemove(struct ds_RigidBodyPipeline *pipeline, const u32 island);
-/* Debug printing of island */
-void 		ds_IslandPrint(FILE *file, const struct ds_RigidBodyPipeline *pipeline, const u32 island, const char *desc);
-/* Check if the database appears to be valid */
-void 		ds_IslandValidateAll(const struct ds_RigidBodyPipeline *pipeline);
 /* Merge islands (Or simply update if new local contact) using new contact */
 void 		ds_IslandMerge(struct ds_RigidBodyPipeline *pipeline, const u32 expand, const u32 merge);
 /* Split island, or remake if no split happens.  */
 void 		ds_IslandSplit(struct ds_RigidBodyPipeline *pipeline, const u32 island);
+/* Debug printing of island */
+void 		ds_IslandPrint(FILE *file, const struct ds_RigidBodyPipeline *pipeline, const u32 island, const char *desc);
+/* Check if the database appears to be valid */
+void 		ds_IslandValidateAll(const struct ds_RigidBodyPipeline *pipeline);
 
 
 /*

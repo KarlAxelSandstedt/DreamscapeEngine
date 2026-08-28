@@ -311,127 +311,72 @@ void ds_IslandRemove(struct ds_RigidBodyPipeline *pipeline, const u32 island_ind
 void ds_IslandSplit(struct ds_RigidBodyPipeline *pipeline, const u32 island_to_split)
 {
     ProfZone;
+
+	struct ds_Island *split = pipeline->island_pool.buf + island_to_split;
     struct arena *mem_tmp = ArenaPushScratch();
+    ds_Assert(split->set == SOLVER_SET_ACTIVE);
+    ds_Assert(split->constraint_remove_count > 0);
 
-	struct ds_Island *split_island = pipeline->island_pool.buf + island_to_split;
-	//isdb_PrintIsland(stderr, pipeline, island_to_split, "To Split");
-	u32 *body_stack = ArenaPush(mem_tmp, split_island->body_list.count*sizeof(u32));
+	u32 *body_stack = ArenaPush(mem_tmp, split->body_list.count*sizeof(u32));
 	u32 sc;
-    const u32 new_set = (split_island->set == SOLVER_SET_DISABLED)
-                      ? SOLVER_SET_DISABLED
-                      : SOLVER_SET_ACTIVE;
-
-	for (u32 bi = split_island->body_list.first; (i32) bi != DLL_SENTINEL; )
+    i32 bi = split->body_list.first; 
+    while (bi != DLL_SENTINEL)
 	{
-	    struct ds_RigidBody *body_last = pipeline->body_pool.buf + bi;
-		ds_Assert(body_last->island == island_to_split);
-		const struct slot slot = ds_IslandAlloc(pipeline, new_set);
-        const u32 new_island = slot.index;
-		split_island = pipeline->island_pool.buf + island_to_split;
+	    struct ds_RigidBody *body_anchor = pipeline->body_pool.buf + bi;
+		ds_Assert(body_anchor->island == island_to_split);
+
+	    const struct slot slot = ds_IslandAlloc(pipeline, SOLVER_SET_ACTIVE);
+        const u32 new_island_index = slot.index;
+        struct ds_Island *new_island = slot.address;
+		split = pipeline->island_pool.buf + island_to_split;
         /* Note: we set this manually here as to skip the check 
          * neighbour_island == island_to_split for the body */
-		body_last->island = slot.index;
+		body_anchor->island = slot.index;
 
         body_stack[0] = bi;
         sc = 1;
         while (sc--)
         {
-            const u32 bi_cur = body_stack[sc];
-			struct ds_RigidBody *body = pipeline->body_pool.buf + bi_cur;
-            struct ds_Shape *shape = NULL;
-            for (u32 si = body->shape_list.first; (i32) si != DLL_SENTINEL; si = shape->body_shape.next)
+            const u32 body_index = body_stack[sc];
+			struct ds_RigidBody *body = pipeline->body_pool.buf + body_index;
+            struct ds_Shape *shape;
+            for (i32 si = body->shape_list.first; si != DLL_SENTINEL; si = shape->body_shape.next)
             {
                 shape = pipeline->shape_pool.buf + si;
-            	u32 ci = shape->contact_list.first;
-                for (u32 co = 0; co < shape->contact_list.count; ++co)
+                i32 ci = shape->contact_list.first;
+                while (ci != DLL_SENTINEL)
                 {
-		    		const struct ds_Contact *c = pipeline->contact_pool.buf + ci;
-                    const struct ds_Shape *shape0 = pipeline->shape_pool.buf + c->key.shape[0];
-                    const struct ds_Shape *shape1 = pipeline->shape_pool.buf + c->key.shape[1];
-                    u32 neighbour_index;
-                    if (bi_cur == shape0->body)
+		    	    struct ds_Contact *c = pipeline->contact_pool.buf + ci;
+                    const u32 n = ((u32) si == c->key.shape[1]);
+                    const i32 ci_next = c->shape_contact[n].next;
+                    if (c->island == island_to_split)
                     {
-                        neighbour_index = shape1->body;
-		    		    ci = c->shape_contact[0].next;
+                        const struct ds_Shape *neighbour_shape = pipeline->shape_pool.buf + c->key.shape[1-n]; 
+                        const struct ds_RigidBody *neighbour_body = pipeline->body_pool.buf + neighbour_shape->body; 
+                        if (neighbour_body->island == island_to_split)
+                        {
+		      		    	ds_DLLRemove(split->body_list, pipeline->body_pool.buf, neighbour_shape->body, island_body);
+		      		    	ds_IslandAddBody(pipeline, new_island_index, neighbour_shape->body);
+		      		    	body_stack[sc++] = neighbour_shape->body;
+                        }
+	                    ds_DLLAppend(new_island->contact_list, pipeline->contact_pool.buf, (u32) ci, island_contact);
+                        c->island = new_island_index;
                     }
-                    else
-                    {
-                        neighbour_index = shape0->body;
-		    		    ci = c->shape_contact[1].next;
-                    }
-
-		    		body = pipeline->body_pool.buf + neighbour_index;
-		    		const u32 neighbour_island = body->island;
-              		if (neighbour_island == island_to_split)
-		      		{
-		      			ds_DLLRemove(split_island->body_list, pipeline->body_pool.buf, neighbour_index, island_body);
-		      			ds_IslandAddBody(pipeline, new_island, neighbour_index);
-		      			body_stack[sc++] = neighbour_index;
-		      		}
-		    	}
+                    ci = ci_next;
+                }
             }
         }
 
-		const u32 tmp = body_last->island_body.next;
-		ds_DLLRemove(split_island->body_list, pipeline->body_pool.buf, bi, island_body);
-		ds_IslandAddBody(pipeline, new_island, bi);
+		const u32 tmp = body_anchor->island_body.next;
+		ds_DLLRemove(split->body_list, pipeline->body_pool.buf, bi, island_body);
+		ds_IslandAddBody(pipeline, new_island_index, bi);
 		bi = tmp;
-		//isdb_PrintIsland(stderr, pipeline, slot.index, "New Island (without contacts)");
 	}
 
-    struct ds_SolverSet *set = pipeline->solver_set_pool.buf + split_island->set;
-	/* create contact lists of new islands */
-    if (split_island->set >= SOLVER_SET_SLEEPING_FIRST)
-    {
-        /* 
-         * We only move contacts if split was sleeping since ACTIVE/DISABLED contacts 
-         * stay in the same set as before 
-         */
-        for (u32 i = 0; i < set->contact_pool.count; ++i)
-        {
-            const u32 ci = set->contact_pool.buf[i];
-            struct ds_Contact *c = pipeline->contact_pool.buf + ci;
-            ds_CGraphContactAdd(pipeline, c);
-
-            const struct ds_Shape *shape0 = pipeline->shape_pool.buf + c->key.shape[0];
-            const struct ds_Shape *shape1 = pipeline->shape_pool.buf + c->key.shape[1];
-            const struct ds_RigidBody *body0 = pipeline->body_pool.buf + shape0->body;
-	    	const struct ds_RigidBody *body1 = pipeline->body_pool.buf + shape1->body;
-	    	const u32 island0 = body0->island;
-	    	const u32 island1 = body1->island;
-	    	struct ds_Island *is = RB_IS_DYNAMIC(body0)
-	    		? pipeline->island_pool.buf + island0
-	    		: pipeline->island_pool.buf + island1;
-	    	ds_DLLAppend(is->contact_list, pipeline->contact_pool.buf, ci, island_contact);
-            c->island = ds_IslandPoolIndex(&pipeline->island_pool, is);
-            
-        }
-    }
-    else
-    {
-	    struct ds_Contact *c;
-	    u32 next;
-	    for (u32 i = split_island->contact_list.first; (i32) i != DLL_SENTINEL; i = next)
-	    {
-	        c = pipeline->contact_pool.buf + i;
-	    	next = c->island_contact.next;
-            const struct ds_Shape *shape0 = pipeline->shape_pool.buf + c->key.shape[0];
-            const struct ds_Shape *shape1 = pipeline->shape_pool.buf + c->key.shape[1];
-            const struct ds_RigidBody *body0 = pipeline->body_pool.buf + shape0->body;
-	    	const struct ds_RigidBody *body1 = pipeline->body_pool.buf + shape1->body;
-	    	const u32 island0 = body0->island;
-	    	const u32 island1 = body1->island;
-	    	struct ds_Island *is = RB_IS_DYNAMIC(body0)
-	    		? pipeline->island_pool.buf + island0
-	    		: pipeline->island_pool.buf + island1;
-	    	ds_DLLAppend(is->contact_list, pipeline->contact_pool.buf, i, island_contact);
-            c->island = ds_IslandPoolIndex(&pipeline->island_pool, is);
-	    	
-	    }
-    }
-                
     //TODO issue: joints/(bodies???) in old island, need to update 
+    
 	ds_IslandRemove(pipeline, island_to_split);
     ArenaPopScratch();
+    
     ProfZoneEnd;
 }
