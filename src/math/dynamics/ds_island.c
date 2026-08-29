@@ -298,8 +298,7 @@ void ds_IslandSplit(struct ds_RigidBodyPipeline *pipeline, const u32 island_to_s
 
 	u32 *body_stack = ArenaPush(mem_tmp, split->body_list.count*sizeof(u32));
 	u32 sc;
-    i32 bi = split->body_list.first; 
-    while (bi != DLL_SENTINEL)
+    for (i32 bi = split->body_list.first; bi != DLL_SENTINEL; bi = split->body_list.first)
 	{
 	    struct ds_RigidBody *body_anchor = pipeline->body_pool.buf + bi;
 		ds_Assert(body_anchor->island == island_to_split);
@@ -308,12 +307,12 @@ void ds_IslandSplit(struct ds_RigidBodyPipeline *pipeline, const u32 island_to_s
         const u32 new_island_index = slot.index;
         struct ds_Island *new_island = slot.address;
 		split = pipeline->island_pool.buf + island_to_split;
-        /* Note: we set this manually here as to skip the check 
-         * neighbour_island == island_to_split for the body */
-		body_anchor->island = slot.index;
 
+		ds_DLLRemove(split->body_list, pipeline->body_pool.buf, bi, island_body);
+		ds_IslandAddBody(pipeline, new_island_index, bi);
         body_stack[0] = bi;
         sc = 1;
+
         while (sc--)
         {
             const u32 body_index = body_stack[sc];
@@ -345,11 +344,6 @@ void ds_IslandSplit(struct ds_RigidBodyPipeline *pipeline, const u32 island_to_s
                 }
             }
         }
-
-		const u32 tmp = body_anchor->island_body.next;
-		ds_DLLRemove(split->body_list, pipeline->body_pool.buf, bi, island_body);
-		ds_IslandAddBody(pipeline, new_island_index, bi);
-		bi = tmp;
 	}
 
     //TODO issue: joints/(bodies???) in old island, need to update 
