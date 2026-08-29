@@ -28,7 +28,6 @@ void ds_CGraphAlloc(struct ds_RigidBodyPipeline *pipeline, const u32 initial_cou
         ds_CPoolAlloc(NULL, cg->color[i].joint_sim_pool, initial_count, GROWABLE);
         ds_CPoolAlloc(NULL, cg->color[i].contact_pool, initial_count, GROWABLE);
         ds_CPoolAlloc(NULL, cg->color[i].contact_compute_pool, initial_count, GROWABLE);
-        //ds_CPoolAlloc(NULL, cg->color[i].contact_constraint_pool, initial_count, GROWABLE);
         if (i != CG_SERIAL_COLOR)
         {
             cg->color[i].body_bitset = ds_BitSetAlloc(NULL, pipeline->body_pool.length, 0, GROWABLE);
@@ -44,7 +43,6 @@ void ds_CGraphDealloc(struct ds_RigidBodyPipeline *pipeline)
         ds_CPoolDealloc(cg->color[i].joint_sim_pool);
         ds_CPoolDealloc(cg->color[i].contact_pool);
         ds_CPoolDealloc(cg->color[i].contact_compute_pool);
-        //ds_CPoolDealloc(cg->color[i].contact_constraint_pool);
         if (i != CG_SERIAL_COLOR)
         {
             ds_BitSetDealloc(&cg->color[i].body_bitset);
@@ -60,7 +58,6 @@ void ds_CGraphFlush(struct ds_RigidBodyPipeline *pipeline)
         ds_CPoolFlush(cg->color[i].joint_sim_pool);
         ds_CPoolFlush(cg->color[i].contact_pool);
         ds_CPoolFlush(cg->color[i].contact_compute_pool);
-        //ds_CPoolFlush(cg->color[i].contact_constraint_pool);
         if (i != CG_SERIAL_COLOR)
         {
             ds_BitSetClear(&cg->color[i].body_bitset, 0);
@@ -197,10 +194,9 @@ void ds_CGraphContactAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Contac
     color->contact_pool.buf[ contact->compute ] = ds_ContactPoolIndex(&pipeline->contact_pool, contact);
 
     struct slot ccomp_slot = ds_CPoolPush(color->contact_compute_pool);
-    ds_Assert(ccomp_slot.index == contact->compute);
-
     struct ds_ContactCompute *ccomp = ccomp_slot.address;
     memset(ccomp, 0, sizeof(*ccomp)); 
+    ds_Assert(ccomp_slot.index == contact->compute);
 }
 
 void ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact)

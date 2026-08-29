@@ -508,10 +508,9 @@ void ds_ContactConstraintIterateRange(struct ds_RigidBodyPipeline *pipeline, con
 	vec3 tmp1, tmp2, tmp3;
 	vec3 relative_velocity;
 
-    for (u32 cci = cc_low; cci < cc_high; ++cci)
+    for (u32 ci = cc_low; ci < cc_high; ++ci)
 	{			
-        const struct ds_Contact *c = pipeline->contact_pool.buf + color->contact_pool.buf[cci];
-	    struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + cci;
+	    struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + ci;
 
         struct ds_RigidBodySim *sim[2] =
         {
@@ -690,7 +689,6 @@ void ds_PositionConstraintIterateRange(struct ds_RigidBodyPipeline *pipeline, co
     f32 min_separation = -F32_INFINITY;
     for (u32 ci = low; ci < high; ++ci)
 	{			
-        const struct ds_Contact *c = pipeline->contact_pool.buf + color->contact_pool.buf[ci];
 	    struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + ci;
 
         struct ds_RigidBodySim *sim[2] =

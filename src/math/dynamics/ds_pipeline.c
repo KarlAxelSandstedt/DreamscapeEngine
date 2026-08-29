@@ -120,7 +120,7 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
     pipeline.solver_set_pool = ds_SolverSetPoolAlloc(NULL, 4096, GROWABLE);
     const struct slot set_disabled = ds_SolverSetAdd(NULL, &pipeline, 256, 0, 0, 4096, 4096);
     const struct slot set_static = ds_SolverSetAdd(NULL, &pipeline, 256, 0, 0, 0, 0);
-    const struct slot set_active = ds_SolverSetAdd(NULL, &pipeline, 4096, 4096, 0, 0, 4096);
+    const struct slot set_active = ds_SolverSetAdd(NULL, &pipeline, 4096, 4096, 4096, 0, 4096);
     ds_Assert(set_disabled.index == SOLVER_SET_DISABLED);
     ds_Assert(set_static.index == SOLVER_SET_STATIC);
     ds_Assert(set_active.index == SOLVER_SET_ACTIVE);
@@ -415,23 +415,19 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
                 for (u32 q = 0; q < query->dynamic_count; ++q)
                 {
                     const struct ds_ContactKey key = ds_ContactKeyCanonical(si, query->dynamic_query[q]);
-                    struct slot slot = ds_ContactKeyLookup(pipeline, key);
-                    if (!slot.address)
+                    if (!ds_ContactKeyLookup(pipeline, key).address)
                     {
-                        slot = ds_ContactAdd(pipeline, key);
+                        ds_ContactAdd(pipeline, key);
                     }
-                    query->dynamic_query[q] = slot.index;
                 }
 
                 for (u32 q = 0; q < query->static_count; ++q)
                 {
                     const struct ds_ContactKey key = ds_ContactKeyCanonical(si, query->static_query[q]);
-                    struct slot slot = ds_ContactKeyLookup(pipeline, key);
-                    if (!slot.address)
+                    if (!ds_ContactKeyLookup(pipeline, key).address)
                     {
-                        slot = ds_ContactAdd(pipeline, key);
+                        ds_ContactAdd(pipeline, key);
                     }
-                    query->static_query[q] = slot.index;
                 }
 		    }
         }
@@ -809,14 +805,14 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
 
         if (dirty_count)
         {
-            const f32 reinsert_fraction = reinsert_count / dirty_count;
-            if (reinsert_fraction > g_numerics_config->dbvh_reinsert_threshold)
-            {
-                ProfZoneNamed("DBVH Rebuild");
-                ds_Assert(0);
-                ProfZoneEnd;
-            }
-            else
+            //const f32 reinsert_fraction = reinsert_count / dirty_count;
+            //if (reinsert_fraction > g_numerics_config->dbvh_reinsert_threshold)
+            //{
+            //    ProfZoneNamed("DBVH Rebuild");
+            //    ds_Assert(0);
+            //    ProfZoneEnd;
+            //}
+            //else
             {
                 {
                     ProfZoneNamed("DBVH Update");

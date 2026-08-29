@@ -2539,6 +2539,9 @@ struct c_ContactResult c_HullContact(struct arena *frame, const struct c_Contact
                 { 
                     break; 
                 }
+			    result.cache->type = SAT_CACHE_CONTACT_FV;
+                result.cache->feature[b_f] = cache->feature[b_f];
+                Vec3Copy(result.cache->normal, q.normal);
                 goto sat_cleanup;
 	        } break;
 

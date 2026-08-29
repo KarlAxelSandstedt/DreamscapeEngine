@@ -436,14 +436,17 @@ struct bvh_QuerySet BvhQueryAndFilterOnBody(struct arena *mem, const struct bvh 
     {
         const struct bvhNode *n = nodes + node_stack[ sc ];
         /* bt_right == ds_RigidBody index */
-        if (bt_LeafCheck(n) && node->bt_right < n->bt_right)
+        if (bt_LeafCheck(n))
         {
-            query.shape[ query.count ] = n->bt_left;
-            query.count += 1;
-            if (query.count >= mem_arr.len)
+            if (node->bt_right < n->bt_right)
             {
-				LogString(T_PHYSICS, S_FATAL, "out-of-memory in query set, increase arena size!");		
-				FatalCleanupAndExit();
+                query.shape[ query.count ] = n->bt_left;
+                query.count += 1;
+                if (query.count >= mem_arr.len)
+                {
+			    	LogString(T_PHYSICS, S_FATAL, "out-of-memory in query set, increase arena size!");		
+			    	FatalCleanupAndExit();
+                }
             }
         }
         else

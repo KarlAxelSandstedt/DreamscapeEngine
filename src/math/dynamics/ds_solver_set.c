@@ -27,7 +27,6 @@ struct slot ds_SolverSetAdd(struct arena *mem_set, struct ds_RigidBodyPipeline *
     ProfZone;
     struct slot slot = ds_SolverSetPoolAdd(&pipeline->solver_set_pool);
     struct ds_SolverSet *set = slot.address;
-
     const u32 growable = (mem_set) 
                        ? 0 
                        : 1; 
@@ -335,11 +334,6 @@ void ds_SolverSetValidate(const struct ds_RigidBodyPipeline *pipeline, const u32
         const struct ds_Contact *c = pipeline->contact_pool.buf + ci;
         ds_Assert(c->set == set_index);
         ds_Assert(c->compute == i);
-    }
-
-    if (set_index == SOLVER_SET_ACTIVE)
-    {
-        ds_Assert(set->contact_pool.count == 0);
     }
 }
 

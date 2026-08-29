@@ -162,31 +162,17 @@ void ds_IslandValidateAll(const struct ds_RigidBodyPipeline *pipeline)
 	    }
 	    ds_Assert(list_length == is->body_list.count);
 
-	    /* 3. if island no contacts, ds_Assert body.contacts == NULL */
-	    if (is->contact_list.count == 0)
-	    {
-	    	ds_Assert(is->body_list.count == 1 || is->constraint_remove_count);
-	    	body = pipeline->body_pool.buf + is->body_list.first;
-	    	ds_Assert(ds_PoolSlotAllocated(body));
-            const struct ds_Shape *shape = NULL;
-            for (u32 s = body->shape_list.first; (i32) s != DLL_SENTINEL; s = shape->body_shape.next)
-            {
-                shape = pipeline->shape_pool.buf + s;
-                ds_Assert(ds_PoolSlotAllocated(shape) && shape->contact_list.first == DLL_SENTINEL);
-            }
-	    }
-	    else
+	    /* 3. check island contacts, ds_Assert body.contacts == NULL */
 	    {
 	    	/* 
 	    	 * 4. For each contact in island
 	    	 * 	1. check contact exist
 	    	 * 	2. check bodies in contact are mapped to island
 	    	 */
-	    	list_length = 0;
+            u32 touching_contacts = 0;
 	    	struct ds_Contact *c = NULL;
 	    	for (u32 ci = is->contact_list.first; (i32) ci != DLL_SENTINEL; ci = c->island_contact.next)
 	    	{
-	    		list_length += 1;
 	    		c = pipeline->contact_pool.buf + ci;
 	    		ds_Assert(ds_PoolSlotAllocated(c));
                 const struct ds_Shape *s0 = pipeline->shape_pool.buf + c->key.shape[0];
@@ -196,8 +182,12 @@ void ds_IslandValidateAll(const struct ds_RigidBodyPipeline *pipeline)
 	    		ds_Assert((b0->island == index) || RB_IS_STATIC(b0));
 	    		ds_Assert((b1->island == index) || RB_IS_STATIC(b1));
                 ds_Assert(c->island == index);
+                if (c->color != CG_INVALID_COLOR)
+                {
+                    touching_contacts += 1;
+                }
 	    	}
-	    	ds_Assert(list_length == is->contact_list.count);
+	    	ds_Assert(touching_contacts == is->contact_list.count);
 	    }
 	}
 
@@ -208,17 +198,6 @@ void ds_IslandValidateAll(const struct ds_RigidBodyPipeline *pipeline)
 		if (ds_PoolSlotAllocated(body) && RB_IS_DYNAMIC(body))
 		{
 			struct ds_Island *is = pipeline->island_pool.buf + body->island;
-			ds_Assert(ds_PoolSlotAllocated(is));
-		}
-	}
-
-    /* 6. verify no contact points to invalid island */
-	for (u32 i = 0; i < pipeline->contact_pool.count_max; ++i)
-	{
-		struct ds_Contact *c = pipeline->contact_pool.buf + i;
-		if (ds_PoolSlotAllocated(c))
-		{
-			struct ds_Island *is = pipeline->island_pool.buf + c->island;
 			ds_Assert(ds_PoolSlotAllocated(is));
 		}
 	}

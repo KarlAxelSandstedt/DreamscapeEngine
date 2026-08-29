@@ -381,14 +381,15 @@ static inline struct slot ds_CPoolPushInternal(void **buf, u32 *count, u32 *leng
                                                                                         
         const u64 new_length = (*length)
                              ? (*length) << 1
-                             : 2;
-        const u64 new_size = new_length * slot_size;
+                             : 1;
+        const u64 new_size = (new_length+1) * slot_size;
+        const u64 old_size = ((*length)+1) * slot_size;
         *buf = (u8 *)(*buf) - slot_size;
-        ds_SmallRealloc(buf, (*length)*slot_size, new_size);    
+        ds_SmallRealloc(buf, old_size, new_size);    
         PoisonAddress(*buf, new_size);                                
         UnpoisonAddress(*buf, (*count + 1)*slot_size);                
         *buf = (u8 *) (*buf) + slot_size;
-        *length = (u32) new_length - 1;
+        *length = (u32) new_length;
     }
 
     const struct slot slot = { .index = *count, .address = (u8*)(*buf) + *count*slot_size };

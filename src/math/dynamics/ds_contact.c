@@ -229,7 +229,7 @@ void ds_ContactPromote(struct ds_RigidBodyPipeline *pipeline, const u32 contact)
 	    pipeline->body_pool.buf + shape[1]->body,
     };
 
-    const u32 dynamic[2] = { RB_IS_DYNAMIC(body[0]), RB_IS_DYNAMIC(body[1]) };
+    const u32 dynamic[2] = { RB_DYNAMIC_BIT(body[0]), RB_DYNAMIC_BIT(body[1]) };
     const u32 expand_index = body[ dynamic[1] ]->island;
     const u32 merge_index = body[ 1-dynamic[1] ]->island;
     ds_Assert(dynamic[0] || dynamic[1]);
