@@ -564,6 +564,26 @@ void        ds_ContactSleep(struct arena *mem_sleep, struct ds_RigidBodyPipeline
 /* Internal: Return bytes required to store contact narrowphase results */
 u64         ds_ContactMemoryRequirement(const struct ds_RigidBodyPipeline *pipeline, const u32 contact);
 
+
+/*
+ds_ContactConstraintCache
+=========================
+TODO:
+*/
+struct ds_ContactConstraintCache
+{
+	vec3 			        normal;                     /* Cached contact normal                */
+	vec3 			        tangent[2];                 /* Froms Contact basis with normal      */
+	vec3 			        r1[4];			            /* previous local frame arm levers      */
+    vec3                    r2[4];                   
+	f32 			        tangent_impulse[4][2];
+	f32 			        normal_impulse[4];	        /* contact_solver solution to contact 
+                                                           constraint, or 0.0f                  */
+    u32                     v_count;                    /* Number of vertices in cache          */
+    u32                     tri;                        /* 0 if non-mesh contact                */
+};
+
+
 /*
 ds_ContactCompute
 =================
@@ -572,17 +592,10 @@ TODO: contact <-> compute <-> constraints?
 struct ds_ContactCompute
 {
     struct ds_ContactConstraint *       cc;
-    struct ds_ContactConstraintCache *  cc_cache;
+    struct ds_ContactConstraintCache *  ccache;
     u32                                 cc_count;
-
-	vec3 			        normal_cache;               /* Cached contact normal                */
-	vec3 			        tangent_cache[2];           /* Froms Contact basis with normal      */
-	vec3 			        r1_cache[4];			    /* previous local frame arm levers      */
-    vec3                    r2_cache[4];                   
-	f32 			        tangent_impulse_cache[4][2];
-	f32 			        normal_impulse_cache[4];	/* contact_solver solution to contact 
-                                                           constraint, or 0.0f                  */
-	u32 			        cached_count;			    /* number of vertices in cache          */
+    u32                                 ccache_count;
+    u32                                 body_sim[2];    /* body->sim values of the two bodies in contact   */
 };
 DEFINE_CPOOL_STRUCT(ds_ContactCompute);
 
@@ -839,7 +852,6 @@ the contact's contact points.
 
 struct ds_ContactConstraint 
 {
-    u32     body_sim[2]; /* body->sim values of the two bodies in contact   */
 	u32 	ccp_count;	 /* Number of contact points in the manifold        */
 	struct ds_ContactConstraintPoint ccp[4];
 

@@ -195,6 +195,12 @@ void ds_CGraphContactAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Contac
     contact->set = SOLVER_SET_NULL;
     contact->compute = ds_CPoolPush(color->contact_pool).index;
     color->contact_pool.buf[ contact->compute ] = ds_ContactPoolIndex(&pipeline->contact_pool, contact);
+
+    struct slot ccomp_slot = ds_CPoolPush(color->contact_compute_pool);
+    ds_Assert(ccomp_slot.index == contact->compute);
+
+    struct ds_ContactCompute *ccomp = ccomp_slot.address;
+    memset(ccomp, 0, sizeof(*ccomp)); 
 }
 
 void ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact)
@@ -218,8 +224,7 @@ void ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Con
     }
 
     ds_CPoolRemoveAndSwap(color->contact_pool, contact->compute);
-    //TODO
-    //ds_CPoolRemoveAndSwap(color->contact_constraint_pool, contact->compute);
+    ds_CPoolRemoveAndSwap(color->contact_compute_pool, contact->compute);
     if (contact->compute < color->contact_pool.count)
     {
         const u32 moved_index = color->contact_pool.buf[ contact->compute ];
