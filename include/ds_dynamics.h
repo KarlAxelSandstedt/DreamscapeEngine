@@ -571,6 +571,10 @@ TODO: contact <-> compute <-> constraints?
 */
 struct ds_ContactCompute
 {
+    struct ds_ContactConstraint *       cc;
+    struct ds_ContactConstraintCache *  cc_cache;
+    u32                                 cc_count;
+
 	vec3 			        normal_cache;               /* Cached contact normal                */
 	vec3 			        tangent_cache[2];           /* Froms Contact basis with normal      */
 	vec3 			        r1_cache[4];			    /* previous local frame arm levers      */
@@ -739,9 +743,7 @@ struct ds_SolverSet
     /* Body solver computation state */
     ds_CPool(ds_RigidBodyCompute)   body_compute_pool;
 
-    /* Sleep set contact indices. 
-     * TODO: box3d store non-contact dbvh overlaps for active set here, and contact indices in CGraph 
-     */
+    /* Contact indices.  */
     ds_CPool(u32)                   contact_pool;
     
     /* Disabled/Sleep set stores non-active joints that has been removed from the constraint graph */
@@ -771,23 +773,6 @@ void        ds_SolverSetValidate(const struct ds_RigidBodyPipeline *pipeline, co
 /* Internal: Move the body to the given set (Assumes the body is NOT part off the set) */
 void        ds_SolverSetMoveBody(struct ds_RigidBodyPipeline *pipeline, const u32 body, const u32 set);
 
-/*
-ds_CGraph
-=========
-ds_CGraph is a persistent graph that models all constraints in the pipeline. Each implicit vertex
-in the graph represents a rigid body, and  each edge between two bodies represents a constraint
-from either a contact or a joint. Whenever a new constraint is added between two bodies, it is 
-assigned a unique color from all the other constraints that shares bodies (vertices) with it. If
-we have exhausted the available colors, we assign the constraint to the serial color. 
-
-Now that we have every constraint colored, We pay process all constraints with the same color in
-parallel (expect the serial color). For good information on this, see Erin Catto's post "SIMD Matters".
-
-Furthermore, similar to Box3D, in order to mitigate ghost collisions, we prioritize static-dynamic 
-constraints by processing them first in each solver iteration. This yields a process ordering:
-
-    CG_SERIAL_COLOR => CG_STATIC_COLOR_1 => ... => CG_STATIC_COLOR_N => CG_DYNAMIC_1 => .. CG_DYNAMIC_M
-*/
 
 /*
 ds_Island
@@ -944,7 +929,6 @@ void    SolverConfigInit(const u32 pgs_iteration_count,
                          const f32 sleep_linear_velocity_sq_limit, 
                          const f32 sleep_angular_velocity_sq_limit);
 
-
 /*
 ds_CGraphColor
 ==============
@@ -954,7 +938,6 @@ ds_CGraphColor stores the relevant physics data of active constraints, tightly p
 struct ds_CGraphColor
 {
     struct ds_BitSet                body_bitset;
-    //ds_CPool(ds_ContactConstraint)  contact_constraint_pool;
     ds_CPool(ds_ContactCompute)     contact_compute_pool;
     ds_CPool(u32)                   contact_pool;
     ds_CPool(ds_JointSim)           joint_sim_pool;
@@ -973,7 +956,19 @@ struct ds_CGraphColor
 /*
 ds_CGraph
 =========
-//TODO
+ds_CGraph is a persistent graph that models all constraints in the pipeline. Each implicit vertex
+in the graph represents a rigid body, and  each edge between two bodies represents a constraint
+from either a contact or a joint. Whenever a new constraint is added between two bodies, it is 
+assigned a unique color from all the other constraints that shares bodies (vertices) with it. If
+we have exhausted the available colors, we assign the constraint to the serial color. 
+
+Now that we have every constraint colored, We pay process all constraints with the same color in
+parallel (expect the serial color). For good information on this, see Erin Catto's post "SIMD Matters".
+
+Furthermore, similar to Box3D, in order to mitigate ghost collisions, we prioritize static-dynamic 
+constraints by processing them first in each solver iteration. This yields a process ordering:
+
+    CG_SERIAL_COLOR => CG_STATIC_COLOR_1 => ... => CG_STATIC_COLOR_N => CG_DYNAMIC_1 => .. CG_DYNAMIC_M
 */
 struct ds_CGraph
 {

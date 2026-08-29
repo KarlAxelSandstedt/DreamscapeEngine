@@ -190,14 +190,11 @@ void ds_CGraphContactAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Contac
 
     const u32 body[2] = { shape[0]->body, shape[1]->body };
     contact->color = ds_CGraphColorNext(pipeline, body);
-
     struct ds_CGraphColor *color = pipeline->cgraph.color + contact->color;
+
+    contact->set = SOLVER_SET_NULL;
     contact->compute = ds_CPoolPush(color->contact_pool).index;
     color->contact_pool.buf[ contact->compute ] = ds_ContactPoolIndex(&pipeline->contact_pool, contact);
-    //TODO
-    //ds_CPoolPush(color->contact_constraint_pool);
-    
-    contact->set = SOLVER_SET_NULL;
 }
 
 void ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact)

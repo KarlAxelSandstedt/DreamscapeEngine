@@ -2756,6 +2756,48 @@ static void c_TriMeshBvhIteratorDelayedSetPush(struct c_TriMeshBvhIterator *it, 
     ds_AssertString(it->delayed_count <= 64, "delayed phase exceeded 64 triangles, consider moving from insertion sort to something more proper.");
 }
 
+void c_ContactResultSortTriangles(struct arena *frame, struct c_ContactResult *result)
+{
+    if (!result->manifold_count)
+    {
+        return;
+    }
+
+    //TODO Shit sort for now
+    ProfZoneNamed("Bad Triangle Sorting");
+
+    result->tri_manifold = ArenaPushPacked(frame, result->manifold_count*sizeof(u32));
+    if (!result->tri_manifold)
+    {
+	    Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
+	    FatalCleanupAndExit();
+    }
+
+    u32 *t = result->tri;
+    u32 *m = result->tri_manifold;
+    for (u32 h = 0; h < result->manifold_count; ++h)
+    {
+        m[h] = h;
+        for (u32 i = h; i; --i)
+        {
+            if (t[i-1] < t[i])
+            {
+                break;
+            }
+
+            const u32 t_tmp = t[i-1];
+            t[i-1] = t[i];
+            t[i] = t_tmp;
+
+            const u32 m_tmp = m[i-1];
+            m[i-1] = m[i];
+            m[i] = m_tmp;
+        }
+    }
+
+    ProfZoneEnd;
+}
+
 static const u32 delayed_vertex_map[TRI_VORONOI_COUNT][2] =
 {
     { 0, 0 },
@@ -2903,6 +2945,8 @@ struct c_ContactResult c_TriMeshBvhSphereContact(struct arena *frame, const stru
     }
 
     c_TriMeshBvhIteratorDealloc(&it);
+
+    c_ContactResultSortTriangles(frame, &result);
 
     //ProfZoneEnd;
 
@@ -3182,6 +3226,8 @@ struct c_ContactResult c_TriMeshBvhCapsuleContact(struct arena *frame, const str
     }
 
     c_TriMeshBvhIteratorDealloc(&it);
+
+    c_ContactResultSortTriangles(frame, &result);
 
     //ProfZoneEnd;
 
@@ -3824,10 +3870,11 @@ struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct
         ds_BitSetSet(&it.void_bitset, tri_id[2], 1);
     }
 
-
     c_TriMeshBvhIteratorDealloc(&it);
 
     ArenaPopScratch();
+
+    c_ContactResultSortTriangles(frame, &result);
 
     //ProfZoneEnd;
     

@@ -245,6 +245,20 @@ void ds_RigidBodyUpdateOrientationRange(struct ds_RigidBodyPipeline *pipeline, s
 
 void ds_ContactConstraintInitRange(struct ds_RigidBodyPipeline *pipeline, const u32 color_index, const u32 low, const u32 high)
 {
+        /* IDEA:  TODO
+         * (O) triangle in mesh contacts are reported in sorted order
+         * () triangle warmstart caches in mesh contacts are reported in the same sorted order
+         * () When warmstarting, traverse both cache and triangle constraints linearly
+         *
+         * () constraints and constraint points are stored in frame arenas
+         * () compute->cc
+         * () compute->ccache
+         * () compute->cc_count
+         * () compute->cc->ccp
+         * () compute->cc->ccp_count
+         */
+
+
 //    ProfZone;
 //
 //    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;

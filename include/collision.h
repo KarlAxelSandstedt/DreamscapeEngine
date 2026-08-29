@@ -280,7 +280,10 @@ struct c_ContactResult
     u32                         cache_count;        /* Number of stored caches                  */
     struct c_Manifold *         manifold;           /* Manifolds (if any)                       */
     struct c_SatCache *         cache;              /* Caches (if any)                          */
-    u32 *                       tri;                /* Triangles (if any)                       */
+    u32 *                       tri;                /* Sorted triangles, low-to-high (if any)   */
+    u32 *                       tri_manifold;       /* Sorted triangle manifold indices (if any)
+                                                       m = tri_manifold[T] => manifold if tri[T]
+                                                       is manifold[m].                          */
 };
 
 struct c_ContactResult  c_SphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);

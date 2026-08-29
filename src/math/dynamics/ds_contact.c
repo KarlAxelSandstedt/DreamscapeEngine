@@ -287,19 +287,11 @@ void ds_ContactWakeUp(struct arena *frame, struct ds_RigidBodyPipeline *pipeline
     if (c->narrowphase.tri)
     {
         c->narrowphase.tri = ArenaPushAlignedMemcpy(frame, c->narrowphase.tri, c->narrowphase.manifold_count*sizeof(u32), 1);
+        c->narrowphase.tri_manifold = ArenaPushAlignedMemcpy(frame, c->narrowphase.tri_manifold, c->narrowphase.manifold_count*sizeof(u32), 1);
     }
 
-    if (c->narrowphase.manifold_count)
-    {
-        ds_CGraphContactAdd(pipeline, c);
-    }
-    else
-    {
-        struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
-        c->set = SOLVER_SET_ACTIVE;
-        c->compute = ds_CPoolPush(active->contact_pool).index;
-        active->contact_pool.buf[ c->compute ] = contact_index;
-    }
+    ds_Assert(c->narrowphase.manifold_count);
+    ds_CGraphContactAdd(pipeline, c);
 }
 
 u64 ds_ContactMemoryRequirement(const struct ds_RigidBodyPipeline *pipeline, const u32 contact)
@@ -308,11 +300,16 @@ u64 ds_ContactMemoryRequirement(const struct ds_RigidBodyPipeline *pipeline, con
 
     const u64 mem_req_manifold = c->narrowphase.manifold_count*sizeof(struct c_Manifold);
     const u64 mem_req_cache = c->narrowphase.cache_count*sizeof(struct c_SatCache);
-    const u64 mem_req_tri = (c->narrowphase.tri)
-            ? c->narrowphase.manifold_count*sizeof(u32)
-            : 0;
 
-    return mem_req_manifold + mem_req_cache + mem_req_tri;
+    u64 mem_req_tri = 0;
+    u64 mem_req_tri_manifold = 0;
+    if (c->narrowphase.tri)
+    {
+        mem_req_tri = c->narrowphase.manifold_count*sizeof(u32);
+        mem_req_tri_manifold = c->narrowphase.manifold_count*sizeof(u32);
+    }
+
+    return mem_req_manifold + mem_req_cache + mem_req_tri + mem_req_tri_manifold;
 }
 
 void ds_ContactSleep(struct arena *mem_sleep, struct ds_RigidBodyPipeline *pipeline, const u32 contact, const u32 set_index)
@@ -335,7 +332,9 @@ void ds_ContactSleep(struct arena *mem_sleep, struct ds_RigidBodyPipeline *pipel
     if (c->narrowphase.tri)
     {
         const u64 mem_req_tri = c->narrowphase.manifold_count*sizeof(u32);
+        const u64 mem_req_tri_manifold = c->narrowphase.manifold_count*sizeof(u32);
         c->narrowphase.tri = ArenaPushAlignedMemcpy(mem_sleep, c->narrowphase.tri, mem_req_tri, 1);
+        c->narrowphase.tri_manifold = ArenaPushAlignedMemcpy(mem_sleep, c->narrowphase.tri_manifold, mem_req_tri_manifold, 1);
     }
 
     c->set = set_index;
