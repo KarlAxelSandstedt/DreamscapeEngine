@@ -389,9 +389,8 @@ void ds_ContactConstraintWarmupRange(struct ds_RigidBodyPipeline *pipeline, cons
     struct ds_CGraphColor *color = cg->color + color_index;
     for (u32 ci = low; ci < high; ++ci)
 	{			
-
         const struct ds_Contact *c = pipeline->contact_pool.buf + color->contact_pool.buf[ci];
-        struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + + color->contact_pool.buf[ci];
+        struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + ci;
 	    struct ds_RigidBody *b[2];
         struct ds_Shape *s[2];
         ds_ContactKeyAddress(b+0, s+0, b+1, s+1, pipeline, c->key);
@@ -418,9 +417,9 @@ void ds_ContactConstraintWarmupRange(struct ds_RigidBodyPipeline *pipeline, cons
                 ccache = NULL;
                 for (u32 t = 0; t < ccomp->ccache_count; ++t)
                 {
-                    if (ccomp->ccache[t].tri <= c->narrowphase.tri[cci])
+                    if (c->narrowphase.tri[cci] <= ccomp->ccache[t].tri)
                     {
-                        if (ccomp->ccache[t].tri == c->narrowphase.tri[cci])
+                        if (c->narrowphase.tri[cci] == ccomp->ccache[t].tri)
                         {
                             ccache = ccomp->ccache + t;
                             m = c->narrowphase.manifold + (c->narrowphase.tri_manifold[cci]);
@@ -470,15 +469,14 @@ void ds_ContactConstraintWarmupRange(struct ds_RigidBodyPipeline *pipeline, cons
 
 	            		ccp->normal_impulse = ccache->normal_impulse[best];
 	                    const f32 impulse_bound = cc->friction * ccp->normal_impulse;
-	            		ccp->tangent_impulse[0] = Vec3Dot(ccache->tangent[0], old_tangent_impulse);
-	            		ccp->tangent_impulse[1] = Vec3Dot(ccache->tangent[1], old_tangent_impulse);
+	            		ccp->tangent_impulse[0] = Vec3Dot(cc->tangent[0], old_tangent_impulse);
+	            		ccp->tangent_impulse[1] = Vec3Dot(cc->tangent[1], old_tangent_impulse);
 	            		ccp->tangent_impulse[0] = f32_clamp(ccp->tangent_impulse[0], -impulse_bound, impulse_bound);
 	            		ccp->tangent_impulse[1] = f32_clamp(ccp->tangent_impulse[1], -impulse_bound, impulse_bound);
 
-	            		Vec3Scale(total_cached_impulse, ccache->normal, ccp->normal_impulse);
-	            		Vec3TranslateScaled(total_cached_impulse, ccache->tangent[0], ccp->tangent_impulse[0]);
-	            		Vec3TranslateScaled(total_cached_impulse, ccache->tangent[1], ccp->tangent_impulse[1]);
-
+	            		Vec3Scale(total_cached_impulse, cc->normal, ccp->normal_impulse);
+	            		Vec3TranslateScaled(total_cached_impulse, cc->tangent[0], ccp->tangent_impulse[0]);
+	            		Vec3TranslateScaled(total_cached_impulse, cc->tangent[1], ccp->tangent_impulse[1]);
 
 	            		Vec3TranslateScaled(bcomp[0]->linear_velocity, total_cached_impulse, -sim[0]->inv_mass);
 	            		Vec3TranslateScaled(bcomp[1]->linear_velocity, total_cached_impulse, sim[1]->inv_mass);
@@ -644,7 +642,7 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_RigidBodyPipeline 
             struct ds_ContactConstraintCache *ccache = ccomp->ccache + cci;
 
             ccache->tri = (c->narrowphase.tri)
-                        ? cci
+                        ? c->narrowphase.tri[cci] 
                         : 0;
 
 		    ccache->v_count = cc->ccp_count;
