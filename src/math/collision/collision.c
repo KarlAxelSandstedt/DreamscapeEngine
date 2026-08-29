@@ -2760,6 +2760,8 @@ void c_ContactResultSortTriangles(struct arena *frame, struct c_ContactResult *r
 {
     if (!result->manifold_count)
     {
+        result->tri = NULL;
+        result->tri_manifold = NULL;
         return;
     }
 

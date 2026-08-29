@@ -24,7 +24,7 @@
 struct solverConfig config_storage = { 0 };
 struct solverConfig *g_solver_config = &config_storage;
 
-static ds_ThreadLocal struct ds_RigidBodyCompute tl_static_body_compute = 
+static ds_ThreadLocal struct ds_RigidBodyCompute tl_static_bcomp = 
 {
     .linear_velocity = { 0, 0, 0 },
     .angular_velocity = { 0, 0, 0 },
@@ -115,7 +115,7 @@ void ds_RigidBodyUpdateSolverDataRange(struct ds_RigidBodyPipeline *pipeline, co
     for (u32 i = low; i < high; ++i)
     {
         struct ds_RigidBodySim *sim = active->body_sim_pool.buf + i;
-        struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + i;
+        struct ds_RigidBodyCompute *bcomp = active->body_compute_pool.buf + i;
 
 		/* setup inverted world inertia tensors and center of massses */
 		Mat3Quat(rot, sim->world.rotation);
@@ -123,14 +123,14 @@ void ds_RigidBodyUpdateSolverDataRange(struct ds_RigidBodyPipeline *pipeline, co
         Mat3Mul(tmp, rot, sim->local_inv_inertia);
         Mat3Mul(sim->world_inv_inertia, tmp, rot_inv);
 
-        QuatCopy(compute->rotation, sim->world.rotation);
-        Mat3VecMul(compute->center_of_mass, rot, sim->local_center_of_mass);
-        Vec3Translate(compute->center_of_mass, sim->world.position);
+        QuatCopy(bcomp->rotation, sim->world.rotation);
+        Mat3VecMul(bcomp->center_of_mass, rot, sim->local_center_of_mass);
+        Vec3Translate(bcomp->center_of_mass, sim->world.position);
 
         /* integrate new velocities using external forces */
-		Vec3TranslateScaled(compute->linear_velocity, g_solver_config->gravity, pipeline->timestep);
-		Vec3ScaleSelf(compute->linear_velocity, linear_damp);
-		Vec3ScaleSelf(compute->angular_velocity, angular_damp);
+		Vec3TranslateScaled(bcomp->linear_velocity, g_solver_config->gravity, pipeline->timestep);
+		Vec3ScaleSelf(bcomp->linear_velocity, linear_damp);
+		Vec3ScaleSelf(bcomp->angular_velocity, angular_damp);
     }
 
     ProfZoneEnd;
@@ -144,26 +144,26 @@ void ds_RigidBodyIntegrateVelocitiesRange(struct ds_RigidBodyPipeline *pipeline,
 
     for (u32 i = low; i < high; ++i)
     {
-        struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + i;
+        struct ds_RigidBodyCompute *bcomp = active->body_compute_pool.buf + i;
 
         /* update velocity and world center of mass */
-        const f32 div_linear = Vec3Length(compute->linear_velocity) * g_solver_config->max_linear_velocity_magnitude_inv;
-        const f32 div_angular = Vec3Length(compute->angular_velocity) * g_solver_config->max_angular_velocity_magnitude_inv;
+        const f32 div_linear = Vec3Length(bcomp->linear_velocity) * g_solver_config->max_linear_velocity_magnitude_inv;
+        const f32 div_angular = Vec3Length(bcomp->angular_velocity) * g_solver_config->max_angular_velocity_magnitude_inv;
         const f32 t_linear = 1.0f / f32_clamp(div_linear, 1.0f, F32_INFINITY);
         const f32 t_angular = 1.0f / f32_clamp(div_angular, 1.0f, F32_INFINITY);
 
-	    Vec3TranslateScaled(compute->center_of_mass, compute->linear_velocity, pipeline->timestep * t_linear);	
+	    Vec3TranslateScaled(bcomp->center_of_mass, bcomp->linear_velocity, pipeline->timestep * t_linear);	
 
         quat a_vel_quat, rot_delta;
 	    QuatSet(a_vel_quat, 
-	    		compute->angular_velocity[0] * t_angular, 
-	    		compute->angular_velocity[1] * t_angular, 
-	    		compute->angular_velocity[2] * t_angular,
+	    		bcomp->angular_velocity[0] * t_angular, 
+	    		bcomp->angular_velocity[1] * t_angular, 
+	    		bcomp->angular_velocity[2] * t_angular,
 	    	      	0.0f);
-	    QuatMul(rot_delta, a_vel_quat, compute->rotation);
+	    QuatMul(rot_delta, a_vel_quat, bcomp->rotation);
 	    QuatScale(rot_delta, pipeline->timestep / 2.0f);
-	    QuatTranslate(compute->rotation, rot_delta);
-	    QuatNormalize(compute->rotation);
+	    QuatTranslate(bcomp->rotation, rot_delta);
+	    QuatNormalize(bcomp->rotation);
     }
 
     ProfZoneEnd;
@@ -184,14 +184,14 @@ void ds_RigidBodyUpdateOrientationRange(struct ds_RigidBodyPipeline *pipeline, s
     for (u32 i = low; i < high; ++i)
     {
         struct ds_RigidBodySim *sim = active->body_sim_pool.buf + i;
-        const struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + i;
+        const struct ds_RigidBodyCompute *bcomp = active->body_compute_pool.buf + i;
         const struct ds_RigidBody *body = pipeline->body_pool.buf + sim->body;
     
         /* derive new world transform from updated angle and world center of mass */
         vec3 rotated_local_center_of_mass;
-        QuatVec3Rotate(rotated_local_center_of_mass, compute->rotation, sim->local_center_of_mass);
-        Vec3Sub(sim->world.position, compute->center_of_mass, rotated_local_center_of_mass);
-        QuatCopy(sim->world.rotation, compute->rotation);
+        QuatVec3Rotate(rotated_local_center_of_mass, bcomp->rotation, sim->local_center_of_mass);
+        Vec3Sub(sim->world.position, bcomp->center_of_mass, rotated_local_center_of_mass);
+        QuatCopy(sim->world.rotation, bcomp->rotation);
 
         for (u32 j = body->shape_list.first; (i32) j != DLL_SENTINEL; j = shape->body_shape.next)
         {
@@ -259,119 +259,132 @@ void ds_ContactConstraintInitRange(struct ds_RigidBodyPipeline *pipeline, const 
          */
 
 
-//    ProfZone;
-//
-//    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
-//    struct ds_CGraph *cg = &pipeline->cgraph;
-//
-//	vec3 tmp1, tmp2, tmp3, tmp4;
-//	vec3 ccp_Ic; 	/* Temporary storage for Inw(I_1)(r1 x n) */
-//	vec3 ccp_c;	    /* Temporary storage for(r1 x n) */
-//
-//    struct ds_CGraphColor *color = cg->color + color_index;
-//    for (u32 ci = low; ci < high; ++ci)
-//	{			
-//        const struct ds_Contact *c = pipeline->cdb->contact_pool.buf + color->contact_pool.buf[ci];
-//	    struct ds_ContactConstraint *cc = color->contact_constraint_pool.buf + ci;
-//
-//        {
-//	        struct ds_RigidBody *b[2];
-//            struct ds_Shape *s[2];
-//            ds_ContactKeyAddress(b+0, s+0, b+1, s+1, pipeline, &c->key);
-//
-//            cc->body_sim[0] = RB_IS_DYNAMIC(b[0])
-//                ? b[0]->sim
-//                : ACTIVE_BODY_DUMMY_INDEX;
-//            cc->body_sim[1] = RB_IS_DYNAMIC(b[1])
-//                ? b[1]->sim
-//                : ACTIVE_BODY_DUMMY_INDEX;
-//
-//		    cc->restitution = f32_max(s[0]->restitution, s[1]->restitution);
-//		    cc->friction = f32_sqrt(s[0]->friction*s[1]->friction);
-//        }
-//
-//        struct ds_RigidBodySim *sim[2] =
-//        {
-//            ((cc->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + cc->body_sim[0]),
-//            ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + cc->body_sim[1]),       
-//        };
-//
-//        struct ds_RigidBodyCompute *compute[2] =
-//        {
-//            ((cc->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_compute : active->body_compute_pool.buf + cc->body_sim[0]),
-//            ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_compute : active->body_compute_pool.buf + cc->body_sim[1]),
-//        };
-//
-//        Vec3Copy(cc->normal, c->cm.n);
-//		Vec3CreateBasis(cc->tangent[0], cc->tangent[1], cc->normal);
-//
-//		cc->ccp_count = c->cm.v_count;
-//        for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
-//		{
-//			struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
-//			ccp->normal_impulse = 0.0f;
-//			ccp->tangent_impulse[0] = 0.0f;
-//			ccp->tangent_impulse[1] = 0.0f;
-//
-//            Vec3Copy(ccp->v, c->cm.v[ccpi]);
-//			Vec3Sub(ccp->r[0], ccp->v, compute[0]->center_of_mass);
-//			Vec3Sub(ccp->r[1], ccp->v, compute[1]->center_of_mass);
-//            Vec3TranslateScaled(ccp->r[1], c->cm.n, -c->cm.depth[ccpi]);
-//
-//            ds_AssertString(Vec3Dot(ccp->v, ccp->v) < 10000.0f*10000.0f,
-//                    "Currently, we use a sentinel with COM = origin for static bodies. This becomes problematic
-//                     for large levers r[0]/r[1]. Consider the case when the static body is the reference; we check
-//                     the new r[0]=ccp->v, against the cached lever. For large enough r[0], it will always hold
-//                     that |r[0] - r[0]_cached|^2 = 0.0f <= limit_sq, so we will continue alias the old contact despite
-//                     moving far away from it.");
-//
-//			Vec3Cross(ccp_c, ccp->r[0], cc->normal);
-//			Mat3VecMul(ccp_Ic, sim[0]->world_inv_inertia, ccp_c);
-//			ccp->normal_mass = sim[0]->inv_mass + Vec3Dot(ccp_Ic, ccp_c);
-//
-//			Vec3Cross(tmp1, ccp->r[0], cc->tangent[0]);
-//			Vec3Cross(tmp3, ccp->r[0], cc->tangent[1]);
-//			Mat3VecMul(tmp2, sim[0]->world_inv_inertia, tmp1);
-//			Mat3VecMul(tmp4, sim[0]->world_inv_inertia, tmp3);
-//			ccp->tangent_mass[0] = sim[0]->inv_mass + Vec3Dot(tmp1, tmp2);
-//			ccp->tangent_mass[1] = sim[0]->inv_mass + Vec3Dot(tmp3, tmp4);
-//
-//			Vec3Cross(ccp_c, ccp->r[1], cc->normal);
-//			Mat3VecMul(ccp_Ic, sim[1]->world_inv_inertia, ccp_c);
-//			ccp->normal_mass += sim[1]->inv_mass + Vec3Dot(ccp_Ic, ccp_c);
-//
-//			Vec3Cross(tmp1, ccp->r[1], cc->tangent[0]);
-//			Vec3Cross(tmp3, ccp->r[1], cc->tangent[1]);
-//			Mat3VecMul(tmp2, sim[1]->world_inv_inertia, tmp1);
-//			Mat3VecMul(tmp4, sim[1]->world_inv_inertia, tmp3);
-//			ccp->tangent_mass[0] += sim[1]->inv_mass + Vec3Dot(tmp1, tmp2);
-//			ccp->tangent_mass[1] += sim[1]->inv_mass + Vec3Dot(tmp3, tmp4);
-//
-//			ccp->normal_mass = 1.0f / ccp->normal_mass;
-//			ccp->tangent_mass[0] = 1.0f / ccp->tangent_mass[0];
-//			ccp->tangent_mass[1] = 1.0f / ccp->tangent_mass[1];
-//
-//			/* TODO: This will run immediately again on the first iteration of the solver,
-//			 * could somehow remove it here, but would make stuff more complex than needed
-//			 * at this current point. */
-//			vec3 relative_velocity;
-//			Vec3Sub(relative_velocity, 
-//					compute[1]->linear_velocity,
-//					compute[0]->linear_velocity);
-//			Vec3Cross(tmp1, compute[1]->angular_velocity, ccp->r[1]);
-//			Vec3Cross(tmp2, compute[0]->angular_velocity, ccp->r[0]);
-//			Vec3Translate(relative_velocity, tmp1);
-//			Vec3TranslateScaled(relative_velocity, tmp2, -1.0f);
-//			const f32 separating_velocity = Vec3Dot(cc->normal, relative_velocity);
-//
-//			/* if sufficiently fast collision happening, so apply the restitution effect */
-//			ccp->velocity_bias = (separating_velocity < -g_solver_config->restitution_threshold)
-//                ? -separating_velocity * cc->restitution
-//                : 0.0f;
-//		}
-//	}
-//    
-//    ProfZoneEnd;
+    ProfZone;
+
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    struct ds_CGraph *cg = &pipeline->cgraph;
+    struct arena *frame = g_tl_self->frame;
+
+	vec3 tmp1, tmp2, tmp3, tmp4;
+	vec3 ccp_Ic; 	/* Temporary storage for Inw(I_1)(r1 x n) */
+	vec3 ccp_c;	    /* Temporary storage for(r1 x n) */
+
+    struct ds_CGraphColor *color = cg->color + color_index;
+    for (u32 ci = low; ci < high; ++ci)
+	{			
+        const struct ds_Contact *c = pipeline->contact_pool.buf + color->contact_pool.buf[ci];
+        struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + c->compute;
+
+	    struct ds_RigidBody *b[2];
+        struct ds_Shape *s[2];
+        ds_ContactKeyAddress(b+0, s+0, b+1, s+1, pipeline, c->key);
+
+        u32 body_sim[2];
+        body_sim[0] = RB_IS_DYNAMIC(b[0])
+                ? b[0]->sim
+                : ACTIVE_BODY_DUMMY_INDEX;
+        body_sim[1] = RB_IS_DYNAMIC(b[1])
+                ? b[1]->sim
+                : ACTIVE_BODY_DUMMY_INDEX;
+
+        struct ds_RigidBodySim *sim[2] =
+        {
+            ((body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + body_sim[0]),
+            ((body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + body_sim[1]),       
+        };
+
+        struct ds_RigidBodyCompute *bcomp[2] =
+        {
+            ((body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + body_sim[0]),
+            ((body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + body_sim[1]),
+        };
+
+        ccomp->cc = ArenaPushPacked(frame, c->narrowphase.manifold_count * sizeof(struct ds_ContactConstraint));
+        for (u32 cci = 0; cci < c->narrowphase.manifold_count; ++cci)
+        {
+            const struct c_Manifold *m = (c->narrowphase.tri)
+                                       ? c->narrowphase.manifold + c->narrowphase.tri_manifold[cci]
+                                       : c->narrowphase.manifold + cci;
+
+    	    struct ds_ContactConstraint *cc = ccomp->cc + cci;
+            cc->body_sim[0] = body_sim[0];
+            cc->body_sim[1] = body_sim[1];
+
+		    cc->restitution = f32_max(s[0]->restitution, s[1]->restitution);
+		    cc->friction = f32_sqrt(s[0]->friction*s[1]->friction);
+            Vec3Copy(cc->normal, m->n);
+		    Vec3CreateBasis(cc->tangent[0], cc->tangent[1], cc->normal);
+
+		    cc->ccp_count = m->v_count;
+            for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
+		    {
+		    	struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
+		    	ccp->normal_impulse = 0.0f;
+		    	ccp->tangent_impulse[0] = 0.0f;
+		    	ccp->tangent_impulse[1] = 0.0f;
+
+                Vec3Copy(ccp->v, m->v[ccpi]);
+		    	Vec3Sub(ccp->r[0], ccp->v, bcomp[0]->center_of_mass);
+		    	Vec3Sub(ccp->r[1], ccp->v, bcomp[1]->center_of_mass);
+                Vec3TranslateScaled(ccp->r[1], m->n, -m->depth[ccpi]);
+
+                /*
+                 * Currently, we use a sentinel with COM = origin for static bodies. This becomes problematic
+                 * for large levers r[0]/r[1]. Consider the case when the static body is the reference; we check
+                 * the new r[0]=ccp->v, against the cached lever. For large enough r[0], it will always hold
+                 * that |r[0] - r[0]_cached|^2 = 0.0f <= limit_sq, so we will continue alias the old contact despite
+                 * moving far away from it.
+                 */
+                ds_Assert(Vec3Dot(ccp->v, ccp->v) < 10000.0f*10000.0f);
+
+		    	Vec3Cross(ccp_c, ccp->r[0], cc->normal);
+		    	Mat3VecMul(ccp_Ic, sim[0]->world_inv_inertia, ccp_c);
+		    	ccp->normal_mass = sim[0]->inv_mass + Vec3Dot(ccp_Ic, ccp_c);
+
+		    	Vec3Cross(tmp1, ccp->r[0], cc->tangent[0]);
+		    	Vec3Cross(tmp3, ccp->r[0], cc->tangent[1]);
+		    	Mat3VecMul(tmp2, sim[0]->world_inv_inertia, tmp1);
+		    	Mat3VecMul(tmp4, sim[0]->world_inv_inertia, tmp3);
+		    	ccp->tangent_mass[0] = sim[0]->inv_mass + Vec3Dot(tmp1, tmp2);
+		    	ccp->tangent_mass[1] = sim[0]->inv_mass + Vec3Dot(tmp3, tmp4);
+
+		    	Vec3Cross(ccp_c, ccp->r[1], cc->normal);
+		    	Mat3VecMul(ccp_Ic, sim[1]->world_inv_inertia, ccp_c);
+		    	ccp->normal_mass += sim[1]->inv_mass + Vec3Dot(ccp_Ic, ccp_c);
+
+		    	Vec3Cross(tmp1, ccp->r[1], cc->tangent[0]);
+		    	Vec3Cross(tmp3, ccp->r[1], cc->tangent[1]);
+		    	Mat3VecMul(tmp2, sim[1]->world_inv_inertia, tmp1);
+		    	Mat3VecMul(tmp4, sim[1]->world_inv_inertia, tmp3);
+		    	ccp->tangent_mass[0] += sim[1]->inv_mass + Vec3Dot(tmp1, tmp2);
+		    	ccp->tangent_mass[1] += sim[1]->inv_mass + Vec3Dot(tmp3, tmp4);
+
+		    	ccp->normal_mass = 1.0f / ccp->normal_mass;
+		    	ccp->tangent_mass[0] = 1.0f / ccp->tangent_mass[0];
+		    	ccp->tangent_mass[1] = 1.0f / ccp->tangent_mass[1];
+
+		    	/* TODO: This will run immediately again on the first iteration of the solver,
+		    	 * could somehow remove it here, but would make stuff more complex than needed
+		    	 * at this current point. */
+		    	vec3 relative_velocity;
+		    	Vec3Sub(relative_velocity, 
+		    			bcomp[1]->linear_velocity,
+		    			bcomp[0]->linear_velocity);
+		    	Vec3Cross(tmp1, bcomp[1]->angular_velocity, ccp->r[1]);
+		    	Vec3Cross(tmp2, bcomp[0]->angular_velocity, ccp->r[0]);
+		    	Vec3Translate(relative_velocity, tmp1);
+		    	Vec3TranslateScaled(relative_velocity, tmp2, -1.0f);
+		    	const f32 separating_velocity = Vec3Dot(cc->normal, relative_velocity);
+
+		    	/* if sufficiently fast collision happening, so apply the restitution effect */
+		    	ccp->velocity_bias = (separating_velocity < -g_solver_config->restitution_threshold)
+                    ? -separating_velocity * cc->restitution
+                    : 0.0f;
+		    }
+        }
+	}
+    
+    ProfZoneEnd;
 }
 
 void ds_ContactConstraintWarmupRange(struct ds_RigidBodyPipeline *pipeline, const u32 color_index, const u32 low, const u32 high)
@@ -396,10 +409,10 @@ void ds_ContactConstraintWarmupRange(struct ds_RigidBodyPipeline *pipeline, cons
 //            ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + cc->body_sim[1]),       
 //        };
 //
-//        struct ds_RigidBodyCompute *compute[2] =
+//        struct ds_RigidBodyCompute *bcomp[2] =
 //        {
-//            ((cc->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_compute : active->body_compute_pool.buf + cc->body_sim[0]),
-//            ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_compute : active->body_compute_pool.buf + cc->body_sim[1]),
+//            ((cc->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + cc->body_sim[0]),
+//            ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + cc->body_sim[1]),
 //        };
 //
 //
@@ -450,19 +463,19 @@ void ds_ContactConstraintWarmupRange(struct ds_RigidBodyPipeline *pipeline, cons
 //	    		Vec3TranslateScaled(total_cached_impulse, cc->tangent[1], ccp->tangent_impulse[1]);
 //
 //
-//	    		Vec3TranslateScaled(compute[0]->linear_velocity, total_cached_impulse, -sim[0]->inv_mass);
-//	    		Vec3TranslateScaled(compute[1]->linear_velocity, total_cached_impulse, sim[1]->inv_mass);
+//	    		Vec3TranslateScaled(bcomp[0]->linear_velocity, total_cached_impulse, -sim[0]->inv_mass);
+//	    		Vec3TranslateScaled(bcomp[1]->linear_velocity, total_cached_impulse, sim[1]->inv_mass);
 //
 //                QuatVec3Rotate(ccp->r[0], sim[0]->world.rotation, c->r1_cache[best]);
 //                QuatVec3Rotate(ccp->r[1], sim[1]->world.rotation, c->r2_cache[best]);
 //
 //	    		Vec3Cross(tmp2, ccp->r[0], total_cached_impulse);
 //	    		Mat3VecMul(tmp3, sim[0]->world_inv_inertia, tmp2);
-//	    		Vec3TranslateScaled(compute[0]->angular_velocity, tmp3, -1.0f);
+//	    		Vec3TranslateScaled(bcomp[0]->angular_velocity, tmp3, -1.0f);
 //
 //	    		Vec3Cross(tmp2, ccp->r[1], total_cached_impulse);
 //	    		Mat3VecMul(tmp3, sim[1]->world_inv_inertia, tmp2);
-//	    		Vec3Translate(compute[1]->angular_velocity, tmp3);
+//	    		Vec3Translate(bcomp[1]->angular_velocity, tmp3);
 //	    	}
 //        }
 //    }
@@ -492,10 +505,10 @@ void ds_ContactConstraintIterateRange(struct ds_RigidBodyPipeline *pipeline, con
 //            ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + cc->body_sim[1]),       
 //        };
 //
-//        struct ds_RigidBodyCompute *compute[2] =
+//        struct ds_RigidBodyCompute *bcomp[2] =
 //        {
-//            ((cc->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_compute : active->body_compute_pool.buf + cc->body_sim[0]),
-//            ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_compute : active->body_compute_pool.buf + cc->body_sim[1]),
+//            ((cc->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + cc->body_sim[0]),
+//            ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + cc->body_sim[1]),
 //        };
 //
 //		/* solve friction constraints first, since normal constraints are more important */
@@ -506,9 +519,9 @@ void ds_ContactConstraintIterateRange(struct ds_RigidBodyPipeline *pipeline, con
 //			for (u32 k = 0; k < 2; ++k)
 //			{
 //			    /* Calculate separating velocity at point: JV */
-//			    Vec3Sub(relative_velocity, compute[1]->linear_velocity, compute[0]->linear_velocity);
-//			    Vec3Cross(tmp2, compute[1]->angular_velocity, ccp->r[1]);
-//			    Vec3Cross(tmp3, compute[0]->angular_velocity, ccp->r[0]);
+//			    Vec3Sub(relative_velocity, bcomp[1]->linear_velocity, bcomp[0]->linear_velocity);
+//			    Vec3Cross(tmp2, bcomp[1]->angular_velocity, ccp->r[1]);
+//			    Vec3Cross(tmp3, bcomp[0]->angular_velocity, ccp->r[0]);
 //			    Vec3Translate(relative_velocity, tmp2);
 //			    Vec3TranslateScaled(relative_velocity, tmp3, -1.0f);
 //			    const f32 separating_velocity = Vec3Dot(cc->tangent[k], relative_velocity);
@@ -524,13 +537,13 @@ void ds_ContactConstraintIterateRange(struct ds_RigidBodyPipeline *pipeline, con
 //
 //			    Vec3Cross(tmp2, ccp->r[0], tmp1);
 //			    Mat3VecMul(tmp3, sim[0]->world_inv_inertia, tmp2);
-//			    Vec3TranslateScaled(compute[0]->linear_velocity, tmp1, -sim[0]->inv_mass);
-//			    Vec3TranslateScaled(compute[0]->angular_velocity, tmp3, -1.0f);
+//			    Vec3TranslateScaled(bcomp[0]->linear_velocity, tmp1, -sim[0]->inv_mass);
+//			    Vec3TranslateScaled(bcomp[0]->angular_velocity, tmp3, -1.0f);
 //
 //			    Vec3Cross(tmp2, ccp->r[1], tmp1);
 //			    Mat3VecMul(tmp3, sim[1]->world_inv_inertia, tmp2);
-//			    Vec3TranslateScaled(compute[1]->linear_velocity, tmp1,  sim[1]->inv_mass);
-//			    Vec3Translate(compute[1]->angular_velocity, tmp3);
+//			    Vec3TranslateScaled(bcomp[1]->linear_velocity, tmp1,  sim[1]->inv_mass);
+//			    Vec3Translate(bcomp[1]->angular_velocity, tmp3);
 //            }
 //		}
 //
@@ -539,9 +552,9 @@ void ds_ContactConstraintIterateRange(struct ds_RigidBodyPipeline *pipeline, con
 //            struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
 //
 //			/* Calculate separating velocity at point: JV */
-//			Vec3Sub(relative_velocity, compute[1]->linear_velocity, compute[0]->linear_velocity);
-//			Vec3Cross(tmp2, compute[1]->angular_velocity, ccp->r[1]);
-//			Vec3Cross(tmp3, compute[0]->angular_velocity, ccp->r[0]);
+//			Vec3Sub(relative_velocity, bcomp[1]->linear_velocity, bcomp[0]->linear_velocity);
+//			Vec3Cross(tmp2, bcomp[1]->angular_velocity, ccp->r[1]);
+//			Vec3Cross(tmp3, bcomp[0]->angular_velocity, ccp->r[0]);
 //			Vec3Translate(relative_velocity, tmp2);
 //			Vec3TranslateScaled(relative_velocity, tmp3, -1.0f);
 //			const f32 separating_velocity = Vec3Dot(cc->normal, relative_velocity);
@@ -557,13 +570,13 @@ void ds_ContactConstraintIterateRange(struct ds_RigidBodyPipeline *pipeline, con
 //
 //			Vec3Cross(tmp2, ccp->r[0], tmp1);
 //			Mat3VecMul(tmp3, sim[0]->world_inv_inertia, tmp2);
-//			Vec3TranslateScaled(compute[0]->linear_velocity, tmp1, -sim[0]->inv_mass);
-//			Vec3TranslateScaled(compute[0]->angular_velocity, tmp3, -1.0f);
+//			Vec3TranslateScaled(bcomp[0]->linear_velocity, tmp1, -sim[0]->inv_mass);
+//			Vec3TranslateScaled(bcomp[0]->angular_velocity, tmp3, -1.0f);
 //
 //			Vec3Cross(tmp2, ccp->r[1], tmp1);
 //			Mat3VecMul(tmp3, sim[1]->world_inv_inertia, tmp2);
-//			Vec3TranslateScaled(compute[1]->linear_velocity, tmp1, sim[1]->inv_mass);
-//			Vec3Translate(compute[1]->angular_velocity, tmp3);
+//			Vec3TranslateScaled(bcomp[1]->linear_velocity, tmp1, sim[1]->inv_mass);
+//			Vec3Translate(bcomp[1]->angular_velocity, tmp3);
 //        }
 //    }
 //
@@ -579,7 +592,7 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_RigidBodyPipeline 
 //    struct ds_CGraphColor *color = cg->color + color_index;
 //
 //    quat sim_inv_rotation[2];
-//    quat compute_inv_rotation[2];
+//    quat bcomp_inv_rotation[2];
 //    vec3 tmp1, tmp2, relative_velocity;
 //    for (u32 ci = low; ci < high; ++ci)
 //    {			
@@ -592,10 +605,10 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_RigidBodyPipeline 
 //            ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + cc->body_sim[1]),       
 //        };
 //
-//        struct ds_RigidBodyCompute *compute[2] =
+//        struct ds_RigidBodyCompute *bcomp[2] =
 //        {
-//            ((cc->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_compute : active->body_compute_pool.buf + cc->body_sim[0]),
-//            ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_compute : active->body_compute_pool.buf + cc->body_sim[1]),
+//            ((cc->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + cc->body_sim[0]),
+//            ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + cc->body_sim[1]),
 //        };
 //
 //		c->cached_count = cc->ccp_count;
@@ -605,8 +618,8 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_RigidBodyPipeline 
 //
 //        QuatInverse(sim_inv_rotation[0], sim[0]->world.rotation);
 //        QuatInverse(sim_inv_rotation[1], sim[1]->world.rotation);
-//        QuatInverse(compute_inv_rotation[0], compute[0]->rotation);
-//        QuatInverse(compute_inv_rotation[1], compute[1]->rotation);
+//        QuatInverse(bcomp_inv_rotation[0], bcomp[0]->rotation);
+//        QuatInverse(bcomp_inv_rotation[1], bcomp[1]->rotation);
 //		for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
 //		{
 //            /* Cache */
@@ -618,8 +631,8 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_RigidBodyPipeline 
 //			c->tangent_impulse_cache[ccpi][1] = ccp->tangent_impulse[1];
 //
 //            /* Init Position */
-//            QuatVec3RotateSelf(ccp->r[0], compute_inv_rotation[0]);
-//            QuatVec3RotateSelf(ccp->r[1], compute_inv_rotation[1]);
+//            QuatVec3RotateSelf(ccp->r[0], bcomp_inv_rotation[0]);
+//            QuatVec3RotateSelf(ccp->r[1], bcomp_inv_rotation[1]);
 //        }
 //    }
 //
@@ -650,10 +663,10 @@ void ds_PositionConstraintIterateRange(struct ds_RigidBodyPipeline *pipeline, co
 //            ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + cc->body_sim[1]),       
 //        };
 //
-//        struct ds_RigidBodyCompute *compute[2] =
+//        struct ds_RigidBodyCompute *bcomp[2] =
 //        {
-//            ((cc->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_compute : active->body_compute_pool.buf + cc->body_sim[0]),
-//            ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_compute : active->body_compute_pool.buf + cc->body_sim[1]),
+//            ((cc->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + cc->body_sim[0]),
+//            ((cc->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + cc->body_sim[1]),
 //        };
 //
 //
@@ -661,18 +674,18 @@ void ds_PositionConstraintIterateRange(struct ds_RigidBodyPipeline *pipeline, co
 //	    {
 //	    	struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
 //
-//		    Mat3Quat(rot, compute[0]->rotation);
+//		    Mat3Quat(rot, bcomp[0]->rotation);
 //		    Mat3Transpose(rot_inv, rot);
 //		    Mat3Mul(mat_tmp, rot, sim[0]->local_inv_inertia);
 //		    Mat3Mul(sim[0]->world_inv_inertia, mat_tmp, rot_inv);
 //
-//		    Mat3Quat(rot, compute[1]->rotation);
+//		    Mat3Quat(rot, bcomp[1]->rotation);
 //		    Mat3Transpose(rot_inv, rot);
 //		    Mat3Mul(mat_tmp, rot, sim[1]->local_inv_inertia);
 //		    Mat3Mul(sim[1]->world_inv_inertia, mat_tmp, rot_inv);
 //
-//            QuatVec3Rotate(r[0], compute[0]->rotation, ccp->r[0]);
-//            QuatVec3Rotate(r[1], compute[1]->rotation, ccp->r[1]);
+//            QuatVec3Rotate(r[0], bcomp[0]->rotation, ccp->r[0]);
+//            QuatVec3Rotate(r[1], bcomp[1]->rotation, ccp->r[1]);
 //
 //			Vec3Cross(rn[0], r[0], cc->normal);
 //			Vec3Cross(rn[1], r[1], cc->normal);
@@ -684,8 +697,8 @@ void ds_PositionConstraintIterateRange(struct ds_RigidBodyPipeline *pipeline, co
 //            const f32 K = sim[0]->inv_mass + sim[1]->inv_mass + Vec3Dot(tmp[0], rn[0]) + Vec3Dot(tmp[1], rn[1]);
 //
 //            /* constraint */
-//            Vec3Add(tmp[0], r[0], compute[0]->center_of_mass);
-//            Vec3Add(tmp[1], r[1], compute[1]->center_of_mass);
+//            Vec3Add(tmp[0], r[0], bcomp[0]->center_of_mass);
+//            Vec3Add(tmp[1], r[1], bcomp[1]->center_of_mass);
 //            const f32 distance = Vec3Dot(tmp[1], cc->normal) - Vec3Dot(tmp[0], cc->normal); 
 //            min_separation = f32_max(min_separation, distance);
 //            const f32 biased_slop_distance = g_solver_config->baumgarte_constant * (distance + g_solver_config->linear_slop);
@@ -697,24 +710,24 @@ void ds_PositionConstraintIterateRange(struct ds_RigidBodyPipeline *pipeline, co
 //                : 0.0f;
 //
 //            Vec3Scale(impulse_vector, cc->normal, impulse);
-//            Vec3TranslateScaled(compute[0]->center_of_mass, impulse_vector, -sim[0]->inv_mass);
-//            Vec3TranslateScaled(compute[1]->center_of_mass, impulse_vector,  sim[1]->inv_mass);
+//            Vec3TranslateScaled(bcomp[0]->center_of_mass, impulse_vector, -sim[0]->inv_mass);
+//            Vec3TranslateScaled(bcomp[1]->center_of_mass, impulse_vector,  sim[1]->inv_mass);
 //            /* flipped cross for correct sign! */
 //            Vec3Cross(tmp[0], impulse_vector, r[0]);
 //            /* instantaneous torque, assume delta_t = 1 */
 //            Mat3VecMul(tmp[1], sim[0]->world_inv_inertia, tmp[0]);
 //            /* Taylor expansion for sin, cos around 0 yields following approximation */
 //            QuatSet(quat_angle, tmp[1][0]/2.0f, tmp[1][1]/2.0f, tmp[1][2]/2.0f, 1.0f);
-//            QuatCopy(quat_tmp, compute[0]->rotation);
-//            QuatMul(compute[0]->rotation, quat_angle, quat_tmp);
-//            QuatNormalize(compute[0]->rotation);
+//            QuatCopy(quat_tmp, bcomp[0]->rotation);
+//            QuatMul(bcomp[0]->rotation, quat_angle, quat_tmp);
+//            QuatNormalize(bcomp[0]->rotation);
 //
 //            Vec3Cross(tmp[0], r[1], impulse_vector);
 //            Mat3VecMul(tmp[1], sim[1]->world_inv_inertia, tmp[0]);
 //            QuatSet(quat_angle, tmp[1][0]/2.0f, tmp[1][1]/2.0f, tmp[1][2]/2.0f, 1.0f);
-//            QuatCopy(quat_tmp, compute[1]->rotation);
-//            QuatMul(compute[1]->rotation, quat_angle, quat_tmp);
-//            QuatNormalize(compute[1]->rotation);
+//            QuatCopy(quat_tmp, bcomp[1]->rotation);
+//            QuatMul(bcomp[1]->rotation, quat_angle, quat_tmp);
+//            QuatNormalize(bcomp[1]->rotation);
 //        }
 //    }
 //
