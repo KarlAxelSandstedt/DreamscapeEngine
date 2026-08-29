@@ -2344,6 +2344,7 @@ static void HullContactEECheck(struct sat_EdgeQuery *query, const struct dcel *h
     	}
     }
 }
+
 static void HullContactEECheckRecompute(struct sat_EdgeQuery *query, const struct dcel *h1, constvec3ptr v1_world, const u32 e1_1, const struct dcel *h2, constvec3ptr v2_world, const u32 e2_1, const vec3 h1_world_center)
 {
 	vec3 n1_1, n1_2, n2_1, n2_2, e1, e2;
@@ -2504,8 +2505,7 @@ struct c_ContactResult c_HullContact(struct arena *frame, const struct c_Contact
 	            struct sat_EdgeQuery e_query = { .depth = -F32_INFINITY };
 	        	HullContactEECheckRecompute(&e_query, h[0], v_world[0], sat_FeatureIdIndex(cache->feature[0]), h[1], v_world[1], sat_FeatureIdIndex(cache->feature[1]), t[0].position);
 	        	sat_EdgeQueryCollisionResult(result.manifold, result.cache, &e_query, ref);
-
-                colliding = (e_query.depth < 0.0f);
+                colliding = (-F32_INFINITY < e_query.depth && e_query.depth < 0.0f);
                 if (!colliding
                         || f32_abs(e_query.depth - result.cache->depth) >= g_numerics_config->manifold_cache_depth_max_diff_allowed
                         || Vec3Dot(result.cache->normal, cache->normal) < g_numerics_config->manifold_cache_normal_parallel_check_eps)

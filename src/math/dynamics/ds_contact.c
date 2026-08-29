@@ -97,13 +97,19 @@ void ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
 	struct ds_Contact *c = buf + index;
     ds_Assert(ds_PoolSlotAllocated(c));
 
+	struct ds_RigidBody *body0, *body1;
+    struct ds_Shape *shape0, *shape1;
+    ds_ContactKeyAddress(&body0, &shape0, &body1, &shape1, pipeline, c->key);
+
     if (c->set == SOLVER_SET_NULL)
     {
         ds_CGraphContactRemove(pipeline, c);
+	    PhysicsEventContactRemoved(pipeline, body0->id, shape0->id, body1->id, shape1->id);
 
         struct ds_Island *island = pipeline->island_pool.buf + c->island;
         island->constraint_remove_count += 1;
         ds_DLLRemove(island->contact_list, pipeline->contact_pool.buf, index, island_contact);
+        c->island = U32_MAX;
     }
     else
     {
@@ -120,11 +126,6 @@ void ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
         }
     }
 
-	struct ds_RigidBody *body0, *body1;
-    struct ds_Shape *shape0, *shape1;
-    ds_ContactKeyAddress(&body0, &shape0, &body1, &shape1, pipeline, c->key);
-	
-	PhysicsEventContactRemoved(pipeline, body0->id, shape0->id, body1->id, shape1->id);
 	ds_HashMapRemove(&pipeline->contact_map, ds_ContactKeyHash(c->key), index);
 
     const i32 prev0 = (c->key.shape[0] == buf[ c->shape_contact[0].prev ].key.shape[1]);
@@ -241,7 +242,7 @@ void ds_ContactPromote(struct ds_RigidBodyPipeline *pipeline, const u32 contact)
 	    PhysicsEventIslandAwake(pipeline, expand->id);	
     }
 
-    if (dynamic[0] && dynamic[1])
+    if (dynamic[0] && dynamic[1] && expand_index != merge_index)
     {
 		ds_IslandMerge(pipeline, expand_index, merge_index);
     }
@@ -249,7 +250,6 @@ void ds_ContactPromote(struct ds_RigidBodyPipeline *pipeline, const u32 contact)
     c->island = expand_index;
 	ds_DLLAppend(expand->contact_list, pipeline->contact_pool.buf, contact, island_contact);
 	PhysicsEventIslandExpanded(pipeline, expand->id);	
-
 }
 
 void ds_ContactDemote(struct ds_RigidBodyPipeline *pipeline, const u32 contact)
@@ -259,6 +259,19 @@ void ds_ContactDemote(struct ds_RigidBodyPipeline *pipeline, const u32 contact)
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
 
     ds_CGraphContactRemove(pipeline, c); 
+
+    const struct ds_Shape *shape[2] =
+    {
+        pipeline->shape_pool.buf + c->key.shape[0],
+        pipeline->shape_pool.buf + c->key.shape[1],
+    };
+    
+    const struct ds_RigidBody *body[2] =
+    {
+	    pipeline->body_pool.buf + shape[0]->body,
+	    pipeline->body_pool.buf + shape[1]->body,
+    };
+	PhysicsEventContactRemoved(pipeline, body[0]->id, shape[0]->id, body[1]->id, shape[1]->id);
 
     island->constraint_remove_count += 1;
     ds_DLLRemove(island->contact_list, pipeline->contact_pool.buf, contact, island_contact);
@@ -318,10 +331,10 @@ void ds_ContactSleep(struct arena *mem_sleep, struct ds_RigidBodyPipeline *pipel
     struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
     struct ds_Contact *c = pipeline->contact_pool.buf + contact;
 
-    ds_Assert(c->color != CG_INVALID_COLOR)
+    ds_CGraphContactRemove(pipeline, c); 
+
     const u64 mem_req_manifold = c->narrowphase.manifold_count*sizeof(struct c_Manifold);
     c->narrowphase.manifold = ArenaPushAlignedMemcpy(mem_sleep, c->narrowphase.manifold, mem_req_manifold, 1);
-    ds_CGraphContactRemove(pipeline, c); 
 
     if (c->narrowphase.cache)
     {

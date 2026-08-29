@@ -227,7 +227,6 @@ void ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Con
         struct ds_Contact *moved_contact = pipeline->contact_pool.buf + moved_index;
         ds_Assert(moved_contact->color == contact->color);
         ds_Assert(moved_contact->compute == color->contact_pool.count);
-
         moved_contact->compute = contact->compute;
     }
         

@@ -330,7 +330,15 @@ void ds_ShapeContact(struct arena *frame, const struct ds_RigidBodyPipeline *pip
     ds_ShapeWorldTransform(t_arr + 0, pipeline, s[m]);
     ds_ShapeWorldTransform(t_arr + 1, pipeline, s[1-m]);
 
-	c->narrowphase = c_contact_methods[c_s[m]->type][c_s[1-m]->type](frame, &c->narrowphase, c_s_arr, t_arr, reference);
+    const struct c_ContactResult result = c_contact_methods[c_s[m]->type][c_s[1-m]->type](frame, &c->narrowphase, c_s_arr, t_arr, reference);
+
+    if (result.manifold_count && !c_ManifoldCheck(result.manifold))
+    {
+        c_ManifoldDebugPrint(result.manifold);
+        Breakpoint(1);
+        c->narrowphase = c_contact_methods[c_s[m]->type][c_s[1-m]->type](frame, &c->narrowphase, c_s_arr, t_arr, reference);
+    }
+	c->narrowphase = result;
 }
 
 f32 ds_ShapeRaycastParameter(const struct ds_RigidBodyPipeline *pipeline, const struct ds_Shape *shape, const struct ray *ray)
