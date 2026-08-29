@@ -259,7 +259,7 @@ void ds_ContactConstraintInitRange(struct ds_RigidBodyPipeline *pipeline, const 
     for (u32 ci = low; ci < high; ++ci)
 	{			
         const struct ds_Contact *c = pipeline->contact_pool.buf + color->contact_pool.buf[ci];
-        struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + + color->contact_pool.buf[ci];
+        struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + ci;
 
 	    struct ds_RigidBody *b[2];
         struct ds_Shape *s[2];
@@ -391,9 +391,6 @@ void ds_ContactConstraintWarmupRange(struct ds_RigidBodyPipeline *pipeline, cons
 	{			
         const struct ds_Contact *c = pipeline->contact_pool.buf + color->contact_pool.buf[ci];
         struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + ci;
-	    struct ds_RigidBody *b[2];
-        struct ds_Shape *s[2];
-        ds_ContactKeyAddress(b+0, s+0, b+1, s+1, pipeline, c->key);
 
         struct ds_RigidBodySim *sim[2] =
         {
@@ -502,102 +499,106 @@ void ds_ContactConstraintWarmupRange(struct ds_RigidBodyPipeline *pipeline, cons
 
 void ds_ContactConstraintIterateRange(struct ds_RigidBodyPipeline *pipeline, const u32 color_index, const u32 cc_low, const u32 cc_high)
 {
-//    ProfZone;
-//
-//    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
-//    struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
-//
-//	vec4 b, new_total_impulse;
-//	vec3 tmp1, tmp2, tmp3;
-//	vec3 relative_velocity;
-//
-//    for (u32 cci = cc_low; cci < cc_high; ++cci)
-//	{			
-//        const struct ds_Contact *c = pipeline->contact_pool.buf + color->contact_pool.buf[cci];
-//	    struct ds_ContactConstraint *cc = color->contact_constraint_pool.buf + cci;
-//
-//        struct ds_RigidBodySim *sim[2] =
-//        {
-//            ((ccomp->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + ccomp->body_sim[0]),
-//            ((ccomp->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + ccomp->body_sim[1]),       
-//        };
-//
-//        struct ds_RigidBodyCompute *bcomp[2] =
-//        {
-//            ((ccomp->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + ccomp->body_sim[0]),
-//            ((ccomp->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + ccomp->body_sim[1]),
-//        };
-//
-//		/* solve friction constraints first, since normal constraints are more important */
-//        for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
-//		{
-//            struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
-//			const f32 impulse_bound = cc->friction * ccp->normal_impulse;
-//			for (u32 k = 0; k < 2; ++k)
-//			{
-//			    /* Calculate separating velocity at point: JV */
-//			    Vec3Sub(relative_velocity, bcomp[1]->linear_velocity, bcomp[0]->linear_velocity);
-//			    Vec3Cross(tmp2, bcomp[1]->angular_velocity, ccp->r[1]);
-//			    Vec3Cross(tmp3, bcomp[0]->angular_velocity, ccp->r[0]);
-//			    Vec3Translate(relative_velocity, tmp2);
-//			    Vec3TranslateScaled(relative_velocity, tmp3, -1.0f);
-//			    const f32 separating_velocity = Vec3Dot(cc->tangent[k], relative_velocity);
-//
-//			    /* update constraint point tangent impulse */
-//			    f32 delta_impulse = -ccp->tangent_mass[k] * separating_velocity;
-//			    const f32 old_impulse = ccp->tangent_impulse[k];
-//			    ccp->tangent_impulse[k] = f32_clamp(ccp->tangent_impulse[k] + delta_impulse, -impulse_bound, impulse_bound);
-//			    delta_impulse = ccp->tangent_impulse[k] - old_impulse;
-//
-//			    /* update body velocities */
-//			    Vec3Scale(tmp1, cc->tangent[k], delta_impulse);
-//
-//			    Vec3Cross(tmp2, ccp->r[0], tmp1);
-//			    Mat3VecMul(tmp3, sim[0]->world_inv_inertia, tmp2);
-//			    Vec3TranslateScaled(bcomp[0]->linear_velocity, tmp1, -sim[0]->inv_mass);
-//			    Vec3TranslateScaled(bcomp[0]->angular_velocity, tmp3, -1.0f);
-//
-//			    Vec3Cross(tmp2, ccp->r[1], tmp1);
-//			    Mat3VecMul(tmp3, sim[1]->world_inv_inertia, tmp2);
-//			    Vec3TranslateScaled(bcomp[1]->linear_velocity, tmp1,  sim[1]->inv_mass);
-//			    Vec3Translate(bcomp[1]->angular_velocity, tmp3);
-//            }
-//		}
-//
-//        for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
-//		{
-//            struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
-//
-//			/* Calculate separating velocity at point: JV */
-//			Vec3Sub(relative_velocity, bcomp[1]->linear_velocity, bcomp[0]->linear_velocity);
-//			Vec3Cross(tmp2, bcomp[1]->angular_velocity, ccp->r[1]);
-//			Vec3Cross(tmp3, bcomp[0]->angular_velocity, ccp->r[0]);
-//			Vec3Translate(relative_velocity, tmp2);
-//			Vec3TranslateScaled(relative_velocity, tmp3, -1.0f);
-//			const f32 separating_velocity = Vec3Dot(cc->normal, relative_velocity);
-//
-//			/* update constraint point normal impulse */
-//			f32 delta_impulse = ccp->normal_mass * (ccp->velocity_bias - separating_velocity);
-//			const f32 old_impulse = ccp->normal_impulse;
-//			ccp->normal_impulse = f32_max(0.0f, ccp->normal_impulse + delta_impulse);
-//			delta_impulse = ccp->normal_impulse - old_impulse;
-//
-//			/* update body velocities */
-//			Vec3Scale(tmp1, cc->normal, delta_impulse);
-//
-//			Vec3Cross(tmp2, ccp->r[0], tmp1);
-//			Mat3VecMul(tmp3, sim[0]->world_inv_inertia, tmp2);
-//			Vec3TranslateScaled(bcomp[0]->linear_velocity, tmp1, -sim[0]->inv_mass);
-//			Vec3TranslateScaled(bcomp[0]->angular_velocity, tmp3, -1.0f);
-//
-//			Vec3Cross(tmp2, ccp->r[1], tmp1);
-//			Mat3VecMul(tmp3, sim[1]->world_inv_inertia, tmp2);
-//			Vec3TranslateScaled(bcomp[1]->linear_velocity, tmp1, sim[1]->inv_mass);
-//			Vec3Translate(bcomp[1]->angular_velocity, tmp3);
-//        }
-//    }
-//
-//    ProfZoneEnd;
+    ProfZone;
+
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+
+	vec4 b, new_total_impulse;
+	vec3 tmp1, tmp2, tmp3;
+	vec3 relative_velocity;
+
+    for (u32 cci = cc_low; cci < cc_high; ++cci)
+	{			
+        const struct ds_Contact *c = pipeline->contact_pool.buf + color->contact_pool.buf[cci];
+	    struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + cci;
+
+        struct ds_RigidBodySim *sim[2] =
+        {
+            ((ccomp->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + ccomp->body_sim[0]),
+            ((ccomp->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + ccomp->body_sim[1]),       
+        };
+
+        struct ds_RigidBodyCompute *bcomp[2] =
+        {
+            ((ccomp->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + ccomp->body_sim[0]),
+            ((ccomp->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + ccomp->body_sim[1]),
+        };
+
+		/* solve friction constraints first, since normal constraints are more important */
+        for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
+        {
+            struct ds_ContactConstraint *cc = ccomp->cc + cci;
+            for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
+		    {
+                struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
+		    	const f32 impulse_bound = cc->friction * ccp->normal_impulse;
+		    	for (u32 k = 0; k < 2; ++k)
+		    	{
+		    	    /* Calculate separating velocity at point: JV */
+		    	    Vec3Sub(relative_velocity, bcomp[1]->linear_velocity, bcomp[0]->linear_velocity);
+		    	    Vec3Cross(tmp2, bcomp[1]->angular_velocity, ccp->r[1]);
+		    	    Vec3Cross(tmp3, bcomp[0]->angular_velocity, ccp->r[0]);
+		    	    Vec3Translate(relative_velocity, tmp2);
+		    	    Vec3TranslateScaled(relative_velocity, tmp3, -1.0f);
+		    	    const f32 separating_velocity = Vec3Dot(cc->tangent[k], relative_velocity);
+
+		    	    /* update constraint point tangent impulse */
+		    	    f32 delta_impulse = -ccp->tangent_mass[k] * separating_velocity;
+		    	    const f32 old_impulse = ccp->tangent_impulse[k];
+		    	    ccp->tangent_impulse[k] = f32_clamp(ccp->tangent_impulse[k] + delta_impulse, -impulse_bound, impulse_bound);
+		    	    delta_impulse = ccp->tangent_impulse[k] - old_impulse;
+
+		    	    /* update body velocities */
+		    	    Vec3Scale(tmp1, cc->tangent[k], delta_impulse);
+
+		    	    Vec3Cross(tmp2, ccp->r[0], tmp1);
+		    	    Mat3VecMul(tmp3, sim[0]->world_inv_inertia, tmp2);
+		    	    Vec3TranslateScaled(bcomp[0]->linear_velocity, tmp1, -sim[0]->inv_mass);
+		    	    Vec3TranslateScaled(bcomp[0]->angular_velocity, tmp3, -1.0f);
+
+		    	    Vec3Cross(tmp2, ccp->r[1], tmp1);
+		    	    Mat3VecMul(tmp3, sim[1]->world_inv_inertia, tmp2);
+		    	    Vec3TranslateScaled(bcomp[1]->linear_velocity, tmp1,  sim[1]->inv_mass);
+		    	    Vec3Translate(bcomp[1]->angular_velocity, tmp3);
+                }
+		    }
+
+            for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
+		    {
+                struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
+
+		    	/* Calculate separating velocity at point: JV */
+		    	Vec3Sub(relative_velocity, bcomp[1]->linear_velocity, bcomp[0]->linear_velocity);
+		    	Vec3Cross(tmp2, bcomp[1]->angular_velocity, ccp->r[1]);
+		    	Vec3Cross(tmp3, bcomp[0]->angular_velocity, ccp->r[0]);
+		    	Vec3Translate(relative_velocity, tmp2);
+		    	Vec3TranslateScaled(relative_velocity, tmp3, -1.0f);
+		    	const f32 separating_velocity = Vec3Dot(cc->normal, relative_velocity);
+
+		    	/* update constraint point normal impulse */
+		    	f32 delta_impulse = ccp->normal_mass * (ccp->velocity_bias - separating_velocity);
+		    	const f32 old_impulse = ccp->normal_impulse;
+		    	ccp->normal_impulse = f32_max(0.0f, ccp->normal_impulse + delta_impulse);
+		    	delta_impulse = ccp->normal_impulse - old_impulse;
+
+		    	/* update body velocities */
+		    	Vec3Scale(tmp1, cc->normal, delta_impulse);
+
+		    	Vec3Cross(tmp2, ccp->r[0], tmp1);
+		    	Mat3VecMul(tmp3, sim[0]->world_inv_inertia, tmp2);
+		    	Vec3TranslateScaled(bcomp[0]->linear_velocity, tmp1, -sim[0]->inv_mass);
+		    	Vec3TranslateScaled(bcomp[0]->angular_velocity, tmp3, -1.0f);
+
+		    	Vec3Cross(tmp2, ccp->r[1], tmp1);
+		    	Mat3VecMul(tmp3, sim[1]->world_inv_inertia, tmp2);
+		    	Vec3TranslateScaled(bcomp[1]->linear_velocity, tmp1, sim[1]->inv_mass);
+		    	Vec3Translate(bcomp[1]->angular_velocity, tmp3);
+            }
+        }
+    }
+
+    ProfZoneEnd;
 }
 
 void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_RigidBodyPipeline *pipeline, const u32 color_index, const u32 low, const u32 high)
@@ -676,95 +677,98 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_RigidBodyPipeline 
 
 void ds_PositionConstraintIterateRange(struct ds_RigidBodyPipeline *pipeline, const u32 color_index, const u32 low, const u32 high)
 {    
-//    ProfZone;
-//
-//    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
-//    struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
-//
-//    mat3ptr mi;
-//    mat3 mat_tmp, rot, rot_inv;
-//	vec3 diff, r[2], rn[2], tmp[2], impulse_vector;
-//    quat quat_tmp, quat_angle;
-//
-//    f32 min_separation = -F32_INFINITY;
-//    for (u32 ci = low; ci < high; ++ci)
-//	{			
-//        const struct ds_Contact *c = pipeline->contact_pool.buf + color->contact_pool.buf[ci];
-//	    struct ds_ContactConstraint *cc = color->contact_constraint_pool.buf + ci;
-//
-//        struct ds_RigidBodySim *sim[2] =
-//        {
-//            ((ccomp->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + ccomp->body_sim[0]),
-//            ((ccomp->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + ccomp->body_sim[1]),       
-//        };
-//
-//        struct ds_RigidBodyCompute *bcomp[2] =
-//        {
-//            ((ccomp->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + ccomp->body_sim[0]),
-//            ((ccomp->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + ccomp->body_sim[1]),
-//        };
-//
-//
-//        for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
-//	    {
-//	    	struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
-//
-//		    Mat3Quat(rot, bcomp[0]->rotation);
-//		    Mat3Transpose(rot_inv, rot);
-//		    Mat3Mul(mat_tmp, rot, sim[0]->local_inv_inertia);
-//		    Mat3Mul(sim[0]->world_inv_inertia, mat_tmp, rot_inv);
-//
-//		    Mat3Quat(rot, bcomp[1]->rotation);
-//		    Mat3Transpose(rot_inv, rot);
-//		    Mat3Mul(mat_tmp, rot, sim[1]->local_inv_inertia);
-//		    Mat3Mul(sim[1]->world_inv_inertia, mat_tmp, rot_inv);
-//
-//            QuatVec3Rotate(r[0], bcomp[0]->rotation, ccp->r[0]);
-//            QuatVec3Rotate(r[1], bcomp[1]->rotation, ccp->r[1]);
-//
-//			Vec3Cross(rn[0], r[0], cc->normal);
-//			Vec3Cross(rn[1], r[1], cc->normal);
-//
-//			Mat3VecMul(tmp[0], sim[0]->world_inv_inertia, rn[0]);
-//			Mat3VecMul(tmp[1], sim[1]->world_inv_inertia, rn[1]);
-//
-//            /* inverse effective mass? */
-//            const f32 K = sim[0]->inv_mass + sim[1]->inv_mass + Vec3Dot(tmp[0], rn[0]) + Vec3Dot(tmp[1], rn[1]);
-//
-//            /* constraint */
-//            Vec3Add(tmp[0], r[0], bcomp[0]->center_of_mass);
-//            Vec3Add(tmp[1], r[1], bcomp[1]->center_of_mass);
-//            const f32 distance = Vec3Dot(tmp[1], cc->normal) - Vec3Dot(tmp[0], cc->normal); 
-//            min_separation = f32_max(min_separation, distance);
-//            const f32 biased_slop_distance = g_solver_config->baumgarte_constant * (distance + g_solver_config->linear_slop);
-//
-//            const f32 C = f32_clamp(biased_slop_distance, -g_solver_config->max_linear_correction, 0.0f);
-//
-//            const f32 impulse = (K > 0.0f) 
-//                ? -C/K 
-//                : 0.0f;
-//
-//            Vec3Scale(impulse_vector, cc->normal, impulse);
-//            Vec3TranslateScaled(bcomp[0]->center_of_mass, impulse_vector, -sim[0]->inv_mass);
-//            Vec3TranslateScaled(bcomp[1]->center_of_mass, impulse_vector,  sim[1]->inv_mass);
-//            /* flipped cross for correct sign! */
-//            Vec3Cross(tmp[0], impulse_vector, r[0]);
-//            /* instantaneous torque, assume delta_t = 1 */
-//            Mat3VecMul(tmp[1], sim[0]->world_inv_inertia, tmp[0]);
-//            /* Taylor expansion for sin, cos around 0 yields following approximation */
-//            QuatSet(quat_angle, tmp[1][0]/2.0f, tmp[1][1]/2.0f, tmp[1][2]/2.0f, 1.0f);
-//            QuatCopy(quat_tmp, bcomp[0]->rotation);
-//            QuatMul(bcomp[0]->rotation, quat_angle, quat_tmp);
-//            QuatNormalize(bcomp[0]->rotation);
-//
-//            Vec3Cross(tmp[0], r[1], impulse_vector);
-//            Mat3VecMul(tmp[1], sim[1]->world_inv_inertia, tmp[0]);
-//            QuatSet(quat_angle, tmp[1][0]/2.0f, tmp[1][1]/2.0f, tmp[1][2]/2.0f, 1.0f);
-//            QuatCopy(quat_tmp, bcomp[1]->rotation);
-//            QuatMul(bcomp[1]->rotation, quat_angle, quat_tmp);
-//            QuatNormalize(bcomp[1]->rotation);
-//        }
-//    }
-//
-//    ProfZoneEnd;
+    ProfZone;
+
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+
+    mat3ptr mi;
+    mat3 mat_tmp, rot, rot_inv;
+	vec3 diff, r[2], rn[2], tmp[2], impulse_vector;
+    quat quat_tmp, quat_angle;
+
+    f32 min_separation = -F32_INFINITY;
+    for (u32 ci = low; ci < high; ++ci)
+	{			
+        const struct ds_Contact *c = pipeline->contact_pool.buf + color->contact_pool.buf[ci];
+	    struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + ci;
+
+        struct ds_RigidBodySim *sim[2] =
+        {
+            ((ccomp->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + ccomp->body_sim[0]),
+            ((ccomp->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + ccomp->body_sim[1]),       
+        };
+
+        struct ds_RigidBodyCompute *bcomp[2] =
+        {
+            ((ccomp->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + ccomp->body_sim[0]),
+            ((ccomp->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + ccomp->body_sim[1]),
+        };
+
+        for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
+        {
+            struct ds_ContactConstraint *cc = ccomp->cc + cci;
+            for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
+	        {
+	        	struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
+
+		        Mat3Quat(rot, bcomp[0]->rotation);
+		        Mat3Transpose(rot_inv, rot);
+		        Mat3Mul(mat_tmp, rot, sim[0]->local_inv_inertia);
+		        Mat3Mul(sim[0]->world_inv_inertia, mat_tmp, rot_inv);
+
+		        Mat3Quat(rot, bcomp[1]->rotation);
+		        Mat3Transpose(rot_inv, rot);
+		        Mat3Mul(mat_tmp, rot, sim[1]->local_inv_inertia);
+		        Mat3Mul(sim[1]->world_inv_inertia, mat_tmp, rot_inv);
+
+                QuatVec3Rotate(r[0], bcomp[0]->rotation, ccp->r[0]);
+                QuatVec3Rotate(r[1], bcomp[1]->rotation, ccp->r[1]);
+
+		    	Vec3Cross(rn[0], r[0], cc->normal);
+		    	Vec3Cross(rn[1], r[1], cc->normal);
+
+		    	Mat3VecMul(tmp[0], sim[0]->world_inv_inertia, rn[0]);
+		    	Mat3VecMul(tmp[1], sim[1]->world_inv_inertia, rn[1]);
+
+                /* inverse effective mass? */
+                const f32 K = sim[0]->inv_mass + sim[1]->inv_mass + Vec3Dot(tmp[0], rn[0]) + Vec3Dot(tmp[1], rn[1]);
+
+                /* constraint */
+                Vec3Add(tmp[0], r[0], bcomp[0]->center_of_mass);
+                Vec3Add(tmp[1], r[1], bcomp[1]->center_of_mass);
+                const f32 distance = Vec3Dot(tmp[1], cc->normal) - Vec3Dot(tmp[0], cc->normal); 
+                min_separation = f32_max(min_separation, distance);
+                const f32 biased_slop_distance = g_solver_config->baumgarte_constant * (distance + g_solver_config->linear_slop);
+
+                const f32 C = f32_clamp(biased_slop_distance, -g_solver_config->max_linear_correction, 0.0f);
+
+                const f32 impulse = (K > 0.0f) 
+                    ? -C/K 
+                    : 0.0f;
+
+                Vec3Scale(impulse_vector, cc->normal, impulse);
+                Vec3TranslateScaled(bcomp[0]->center_of_mass, impulse_vector, -sim[0]->inv_mass);
+                Vec3TranslateScaled(bcomp[1]->center_of_mass, impulse_vector,  sim[1]->inv_mass);
+                /* flipped cross for correct sign! */
+                Vec3Cross(tmp[0], impulse_vector, r[0]);
+                /* instantaneous torque, assume delta_t = 1 */
+                Mat3VecMul(tmp[1], sim[0]->world_inv_inertia, tmp[0]);
+                /* Taylor expansion for sin, cos around 0 yields following approximation */
+                QuatSet(quat_angle, tmp[1][0]/2.0f, tmp[1][1]/2.0f, tmp[1][2]/2.0f, 1.0f);
+                QuatCopy(quat_tmp, bcomp[0]->rotation);
+                QuatMul(bcomp[0]->rotation, quat_angle, quat_tmp);
+                QuatNormalize(bcomp[0]->rotation);
+
+                Vec3Cross(tmp[0], r[1], impulse_vector);
+                Mat3VecMul(tmp[1], sim[1]->world_inv_inertia, tmp[0]);
+                QuatSet(quat_angle, tmp[1][0]/2.0f, tmp[1][1]/2.0f, tmp[1][2]/2.0f, 1.0f);
+                QuatCopy(quat_tmp, bcomp[1]->rotation);
+                QuatMul(bcomp[1]->rotation, quat_angle, quat_tmp);
+                QuatNormalize(bcomp[1]->rotation);
+            }
+        }
+    }
+
+    ProfZoneEnd;
 }
