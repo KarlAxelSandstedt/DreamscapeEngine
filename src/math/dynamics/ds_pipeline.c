@@ -86,8 +86,8 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
 
 	pipeline.cshape_db = cshape_db;
 
-    pipeline.contact_pool = ds_ContactPoolAlloc(NULL, initial_size, GROWABLE);
-    pipeline.contact_map = ds_HashMapAlloc(NULL, initial_size, initial_size, GROWABLE);
+    pipeline.contact_pool = ds_ContactPoolAlloc(NULL, 8*initial_size, GROWABLE);
+    pipeline.contact_map = ds_HashMapAlloc(NULL, 8*initial_size, 8*initial_size, GROWABLE);
 
 	pipeline.island_pool = ds_IslandPoolAlloc(NULL, initial_size, GROWABLE);
     pipeline.island_high_energy_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
@@ -249,6 +249,7 @@ u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
     ProfZone;
 
     struct arena *frame = g_tl_self->frame;
+    struct arena *tmp = ArenaPushScratch();
     struct ds_BroadJobPhase *phase = (struct ds_BroadJobPhase *) g_scheduler->phase;
     struct ds_RigidBodyPipeline *pipeline = phase->pipeline;
     struct ds_ParallelForChain *chain = &phase->pf;
@@ -265,19 +266,50 @@ u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
             struct ds_BitBlock it = ds_BitBlockInit(dirty->bits[block], block);
 		    while (ds_BitBlockHasNext(&it))
 		    {
+                ArenaPushRecord(tmp);
+
                 const u32 si = ds_BitBlockNext(&it);
                 const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
                 const struct bvhNode *node = (const struct bvhNode *) pipeline->dynamic_bvh.tree.pool.buf + shape->proxy;
-                const struct bvh_QuerySet dynamic_query = BvhQueryAndFilterOnBody(frame, &pipeline->dynamic_bvh, node);
-                const struct bvh_QuerySet static_query = BvhQuery(frame, &pipeline->static_bvh, node);
+                const struct bvh_QuerySet dynamic_query = BvhQueryAndFilterOnBody(tmp, &pipeline->dynamic_bvh, node);
+                const struct bvh_QuerySet static_query = BvhQuery(tmp, &pipeline->static_bvh, node);
+                
+                query[si].dynamic_count = 0;
+                query[si].dynamic_query = ArenaPushPacked(frame, dynamic_query.count*sizeof(u32));
+                for (u32 qi = 0; qi < dynamic_query.count; ++qi)
+                {
+                    const u32 neighbour_si = dynamic_query.shape[qi];
+                    const struct ds_ContactKey key = ds_ContactKeyCanonical(si, neighbour_si);
+                    if (!ds_ContactKeyLookup(pipeline, key).address)
+                    {
+                        query[si].dynamic_query[ query[si].dynamic_count ] = neighbour_si;
+                        query[si].dynamic_count += 1;
+                    }
+                }
+                ArenaPopPacked(frame, (dynamic_query.count - query[si].dynamic_count)*sizeof(u32));
 
-                query[si].dynamic_count = dynamic_query.count;
-                query[si].dynamic_query = dynamic_query.shape;
-                query[si].static_count = static_query.count;
-                query[si].static_query = static_query.shape;
+                query[si].static_count = 0;
+                query[si].static_query = ArenaPushPacked(frame, static_query.count*sizeof(u32));
+                for (u32 qi = 0; qi < static_query.count; ++qi)
+                {
+                    const u32 neighbour_si = static_query.shape[qi];
+                    const struct ds_ContactKey key = ds_ContactKeyCanonical(si, neighbour_si);
+                    if (!ds_ContactKeyLookup(pipeline, key).address)
+                    {
+                        query[si].static_query[ query[si].static_count ] = neighbour_si;
+                        query[si].static_count += 1;
+                    }
+                }
+                ArenaPopPacked(frame, (static_query.count - query[si].static_count)*sizeof(u32));
+
+
+
+                ArenaPopRecord(tmp);
 		    }
         }
     }
+
+    ArenaPopScratch();
 
     ProfZoneEnd;
 
@@ -318,6 +350,7 @@ u32 ds_NarrowJobPhaseDispatch(const ds_JobId job)
 
     chain = phase->pf + CG_COLOR_COUNT;
     {
+        ProfZoneNamed("Active");
         struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
         pf = chain->parallel_for + 0;
         ds_ParallelFor(pf, range_index)
@@ -329,6 +362,7 @@ u32 ds_NarrowJobPhaseDispatch(const ds_JobId job)
                 ds_ShapeContact(frame, pipeline, ci);
             }
         }
+        ProfZoneEnd;
     }
 
     ProfZoneEnd;
@@ -409,25 +443,18 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 		    while (ds_BitBlockHasNext(&it))
 		    {
                 const u32 si = ds_BitBlockNext(&it);
-
                 const struct ds_ProxyQuery *query = pipeline->dirty_shape_query.buf + si;
-                const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
+
                 for (u32 q = 0; q < query->dynamic_count; ++q)
                 {
                     const struct ds_ContactKey key = ds_ContactKeyCanonical(si, query->dynamic_query[q]);
-                    if (!ds_ContactKeyLookup(pipeline, key).address)
-                    {
-                        ds_ContactAdd(pipeline, key);
-                    }
+                    ds_ContactAdd(pipeline, key);
                 }
 
                 for (u32 q = 0; q < query->static_count; ++q)
                 {
                     const struct ds_ContactKey key = ds_ContactKeyCanonical(si, query->static_query[q]);
-                    if (!ds_ContactKeyLookup(pipeline, key).address)
-                    {
-                        ds_ContactAdd(pipeline, key);
-                    }
+                    ds_ContactAdd(pipeline, key);
                 }
 		    }
         }

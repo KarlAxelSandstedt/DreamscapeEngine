@@ -152,7 +152,6 @@ void ds_IslandValidateAll(const struct ds_RigidBodyPipeline *pipeline)
 	    
 	    ds_Assert(count == is->body_list.count && "Body count of island should be equal to the number of bodies mapped to the island");
  
-	    /* 2. verify body-island map  == island.bodies */
 	    u32 list_length = 0; 
 	    for (u32 bi = is->body_list.first; (i32) bi != DLL_SENTINEL; bi = body->island_body.next)
 	    {
@@ -162,33 +161,36 @@ void ds_IslandValidateAll(const struct ds_RigidBodyPipeline *pipeline)
 	    }
 	    ds_Assert(list_length == is->body_list.count);
 
-	    /* 3. check island contacts, ds_Assert body.contacts == NULL */
+        u32 touching_contacts = 0; 
+	    u32 colored_contacts = 0;
+	    struct ds_Contact *c = NULL;
+	    for (u32 ci = is->contact_list.first; (i32) ci != DLL_SENTINEL; ci = c->island_contact.next)
 	    {
-	    	/* 
-	    	 * 4. For each contact in island
-	    	 * 	1. check contact exist
-	    	 * 	2. check bodies in contact are mapped to island
-	    	 */
-            u32 touching_contacts = 0;
-	    	struct ds_Contact *c = NULL;
-	    	for (u32 ci = is->contact_list.first; (i32) ci != DLL_SENTINEL; ci = c->island_contact.next)
-	    	{
-	    		c = pipeline->contact_pool.buf + ci;
-	    		ds_Assert(ds_PoolSlotAllocated(c));
-                const struct ds_Shape *s0 = pipeline->shape_pool.buf + c->key.shape[0];
-                const struct ds_Shape *s1 = pipeline->shape_pool.buf + c->key.shape[1];
-	    		const struct ds_RigidBody *b0 = pipeline->body_pool.buf + s0->body;
-	    		const struct ds_RigidBody *b1 = pipeline->body_pool.buf + s1->body;
-	    		ds_Assert((b0->island == index) || RB_IS_STATIC(b0));
-	    		ds_Assert((b1->island == index) || RB_IS_STATIC(b1));
-                ds_Assert(c->island == index);
-                if (c->color != CG_INVALID_COLOR)
-                {
-                    touching_contacts += 1;
-                }
-	    	}
-	    	ds_Assert(touching_contacts == is->contact_list.count);
+	    	c = pipeline->contact_pool.buf + ci;
+	    	ds_Assert(ds_PoolSlotAllocated(c));
+            const struct ds_Shape *s0 = pipeline->shape_pool.buf + c->key.shape[0];
+            const struct ds_Shape *s1 = pipeline->shape_pool.buf + c->key.shape[1];
+	    	const struct ds_RigidBody *b0 = pipeline->body_pool.buf + s0->body;
+	    	const struct ds_RigidBody *b1 = pipeline->body_pool.buf + s1->body;
+	    	ds_Assert((b0->island == index) || RB_IS_STATIC(b0));
+	    	ds_Assert((b1->island == index) || RB_IS_STATIC(b1));
+            ds_Assert(c->island == index);
+            if (c->color != CG_INVALID_COLOR)
+            {
+                colored_contacts += 1;
+            }
+
+            if (c->narrowphase.manifold_count)
+            {
+                touching_contacts += 1;
+            }
 	    }
+
+	    ds_Assert(touching_contacts == is->contact_list.count);
+        if (is->set == SOLVER_SET_ACTIVE)
+        {
+	        ds_Assert(colored_contacts == is->contact_list.count);
+        }
 	}
 
 	/* 5. verify no body points to invalid island */

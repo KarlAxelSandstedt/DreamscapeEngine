@@ -488,7 +488,7 @@ struct ds_ContactKey
 };
 
 /* Return the Canonical key of (shape0, shape1) */
-struct ds_ContactKey   ds_ContactKeyCanonical(const u32 shape0, const u32 shape1);
+struct ds_ContactKey    ds_ContactKeyCanonical(const u32 shape0, const u32 shape1);
 /* Return a 32-bit hash of the key */
 u32                     ds_ContactKeyHash(const struct ds_ContactKey key);
 /* Return 1 if the two keys are equivalent, otherwise return  0. */
