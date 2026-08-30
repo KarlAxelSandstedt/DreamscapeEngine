@@ -302,8 +302,6 @@ u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
                 }
                 ArenaPopPacked(frame, (static_query.count - query[si].static_count)*sizeof(u32));
 
-
-
                 ArenaPopRecord(tmp);
 		    }
         }
@@ -372,6 +370,8 @@ u32 ds_NarrowJobPhaseDispatch(const ds_JobId job)
 
 static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 {
+    //TODO 756us mean (20.0s)
+    
     /*
      * Achieving Determinism and Parallelization in the Broadphase
      * ===========================================================
@@ -819,6 +819,7 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
     	ProfZoneEnd;
     }
 
+    //TODO: Can we move everything below into solver phase (or write a new phase?)
     {
         struct ds_ParallelFor *pf = solver_phase->pf_orientation.parallel_for + 0;
         f32 dirty_count = 0; 
@@ -1077,6 +1078,44 @@ void PhysicsPipelineTick(struct ds_RigidBodyPipeline *pipeline)
     ds_NumericsConfigPop();
 
 	ProfZoneEnd;
+}
+
+u64 PhysicsPipelineOrientationHash(const struct ds_RigidBodyPipeline *pipeline)
+{
+    XXH3_state_t* state = XXH3_createState();
+    if (!state)
+    {
+	    Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
+	    FatalCleanupAndExit();
+    }
+
+    XXH3_64bits_reset(state);
+    for (u32 i = 0; i < pipeline->body_pool.count_max; ++i)
+    {
+        const struct ds_RigidBody *body = pipeline->body_pool.buf + i;
+        if (!ds_PoolSlotAllocated(body))
+        {
+            continue;
+        }
+
+        const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
+        const struct ds_RigidBodySim *sim = set->body_sim_pool.buf + body->sim;
+
+        XXH3_64bits_update(state, &i, sizeof(u32));
+        XXH3_64bits_update(state, &body->flags, sizeof(body->flags));
+        XXH3_64bits_update(state, sim->world.position, sizeof(vec3));
+        XXH3_64bits_update(state, sim->world.rotation, sizeof(quat));
+        if (body->set == SOLVER_SET_ACTIVE)
+        {
+            const struct ds_RigidBodyCompute *compute = set->body_compute_pool.buf + body->sim;
+            XXH3_64bits_update(state, compute->linear_velocity, sizeof(vec3));
+            XXH3_64bits_update(state, compute->angular_velocity, sizeof(vec3));
+        }
+    }
+
+    const u64 hash = XXH3_64bits_digest(state);
+    XXH3_freeState(state);
+    return hash;
 }
 
 u32f32 PhysicsPipelineRaycastParameter(struct arena *mem_tmp1, struct arena *mem_tmp2, const struct ds_RigidBodyPipeline *pipeline, const struct ray *ray)

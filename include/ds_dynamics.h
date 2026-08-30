@@ -1319,10 +1319,8 @@ void 			PhysicsPipelineFree(struct ds_RigidBodyPipeline *physics_pipeline);
 void			PhysicsPipelineFlush(struct ds_RigidBodyPipeline *physics_pipeline);
 /* pipeline main method: simulate a single physics frame and update internal state  */
 void 			PhysicsPipelineTick(struct ds_RigidBodyPipeline *pipeline);
-/* allocate new rigid body in pipeline and return its slot */
-struct slot		PhysicsPipelineRigidBodyAlloc(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBodyPrefab *prefab, const vec3 position, const quat rotation, const u32 entity);
-/* deallocate a collision shape associated with the given handle. If no shape is found, do nothing */
-void			PhysicsPipelineRigidBodyTagForRemoval(struct ds_RigidBodyPipeline *pipeline, const u32 handle);
+/* Hash bodies in order from low to high and return the final hash  */
+u64             PhysicsPipelineOrientationHash(const struct ds_RigidBodyPipeline *pipeline);
 /* validate and ds_Assert internal state of physics pipeline */
 void			PhysicsPipelineValidate(const struct ds_RigidBodyPipeline *pipeline);
 /* If hit, return parameter (shape,t) of ray at first collision. Otherwise return (U32_MAX, F32_INFINITY) */

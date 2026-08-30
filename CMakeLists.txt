@@ -240,6 +240,12 @@ if (DS_TEST_PERFORMANCE)
 	set(DS_TEST_MODULE_PATH "${DS_TEST_PATH}/performance")
 endif ()
 
+if (DS_TEST_DETERMINISM)
+	set(DS_TEST ON)
+	set(DS_TEST_MODULE_PATH "${DS_TEST_PATH}/determinism")
+endif ()
+
+
 if (DS_TEST)
 	if (DEFINED EMSCRIPTEN)
 

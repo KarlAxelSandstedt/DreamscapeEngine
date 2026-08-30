@@ -17,9 +17,6 @@
 ==========================================================================
 */
 
-#define XXH_INLINE_ALL
-#include "xxhash.h"
-
 POOL_DEFINE(ds_Contact);
 
 struct ds_ContactKey ds_ContactKeyCanonical(const u32 shape0, const u32 shape1)

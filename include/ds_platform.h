@@ -122,7 +122,7 @@ enum fileType
 struct file
 {
 	file_handle		handle;	/* WARNING: not necessarily opened 		*/
-	enum fileType		type;	/* file type 					*/
+	enum fileType	type;	/* file type 					*/
 	utf8			path;	/* context dependent: relative or absolute 	*/
 };
 DEFINE_CPOOL_STRUCT(file);

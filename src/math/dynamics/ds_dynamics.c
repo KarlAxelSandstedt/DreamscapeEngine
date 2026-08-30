@@ -1,3 +1,6 @@
+#define XXH_INLINE_ALL
+#include "xxhash.h"
+
 #include "ds_dynamics.h"
 #include "ds_pipeline.c"
 #include "ds_contact.c"

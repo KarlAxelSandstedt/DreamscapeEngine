@@ -27,8 +27,8 @@ if [ "$BUILD_ID" != "$BUILD_ID_CURRENT" ]; then
 fi
 
 
-cmake -S . -B build -Dapply_optimization_options=ON -DCMAKE_BUILD_TYPE=Release -G $CMAKE_GENERATOR
+cmake -S . -B build -DDS_TEST_PHYSICS=ON -DDS_DEBUG=OFF -DDS_PROFILE=OFF -DDS_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Release -G $CMAKE_GENERATOR
 cd build
 cmake --build . --parallel
-./engine_sandbox
+ ./DreamscapeTest
 cd ..
