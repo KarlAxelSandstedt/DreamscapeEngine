@@ -27,21 +27,21 @@ if [ "$BUILD_ID" != "$BUILD_ID_CURRENT" ]; then
 fi
 
 
-#cmake -S . -B build -DDS_TEST_DETERMINISM=ON -DDS_DEBUG=ON -DDS_PROFILE=ON -DDS_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Release -G $CMAKE_GENERATOR
 cmake -S . -B build -DDS_TEST_DETERMINISM=ON -DDS_DEBUG=ON -DDS_PROFILE=ON -DDS_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Release -G $CMAKE_GENERATOR
+#cmake -S . -B build -DDS_TEST_DETERMINISM=ON -DDS_DEBUG=ON -DDS_PROFILE=ON -DDS_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Release -G $CMAKE_GENERATOR
 cd build
 cmake --build . --parallel
 
-#gdb --args ./DreamscapeTest --generate "determinism.bin"
-./DreamscapeTest --generate "determinism.bin"
-./DreamscapeTest --load "determinism.bin" 
-./DreamscapeTest --load "determinism.bin" 1
-./DreamscapeTest --load "determinism.bin" 2
-./DreamscapeTest --load "determinism.bin" 3
-./DreamscapeTest --load "determinism.bin" 4
-./DreamscapeTest --load "determinism.bin" 5
-./DreamscapeTest --load "determinism.bin" 6
-./DreamscapeTest --load "determinism.bin" 7
-./DreamscapeTest --load "determinism.bin" 8
+gdb --args ./DreamscapeTest --generate "determinism.bin"
+#./DreamscapeTest --generate "determinism.bin"
+#./DreamscapeTest --load "determinism.bin" 
+#./DreamscapeTest --load "determinism.bin" 1
+#./DreamscapeTest --load "determinism.bin" 2
+#./DreamscapeTest --load "determinism.bin" 3
+#./DreamscapeTest --load "determinism.bin" 4
+#./DreamscapeTest --load "determinism.bin" 5
+#./DreamscapeTest --load "determinism.bin" 6
+#./DreamscapeTest --load "determinism.bin" 7
+#./DreamscapeTest --load "determinism.bin" 8
 
 cd ..

@@ -759,6 +759,9 @@ struct ds_SolverSet
     /* Contact indices.  */
     ds_CPool(u32)                   contact_pool;
     
+    /* Disabled/Sleep set stores non-active contacts that has been removed from the constraint graph */
+    ds_CPool(ds_ContactCompute)     contact_compute_pool;
+
     /* Disabled/Sleep set stores non-active joints that has been removed from the constraint graph */
     ds_CPool(ds_JointSim)           joint_sim_pool;
 
@@ -769,7 +772,7 @@ POOL_DECLARE(ds_SolverSet);
 
 
 /* Allocate and setup a ds_SolverSet. If mem_set is provided, it will be used for allocating resources */
-struct slot ds_SolverSetAdd(struct arena *mem_set, struct ds_RigidBodyPipeline *pipeline, const u32 initial_body_sim_count, const u32 initial_body_compute_count, const u32 initial_contact_count, const u32 initial_joint_count, const u32 initial_island_count);
+struct slot ds_SolverSetAdd(struct arena *mem_set, struct ds_RigidBodyPipeline *pipeline, const u32 initial_body_sim_count, const u32 initial_body_compute_count, const u32 initial_contact_count, const u32 initial_contact_compute_count,  const u32 initial_joint_count, const u32 initial_island_count);
 /* Deallocate a the given ds_SolverSet */
 void        ds_SolverSetRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index);
 /* Flush the given ds_SolverSet */
@@ -1002,7 +1005,7 @@ struct ds_JointSim *    ds_CGraphJointAdd(struct ds_RigidBodyPipeline *pipeline,
 /* Deallocate a ds_JointSim */
 void                    ds_CGraphJointRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint *joint);
 /* TODO: for now, we only setup link contact <-> graph */
-void                    ds_CGraphContactAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact);
+void                    ds_CGraphContactAdd(struct arena *frame, struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact);
 /* TODO: for now, we only remove link contact <-> graph */
 void                    ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact);
 

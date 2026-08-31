@@ -172,12 +172,13 @@ void ds_CGraphJointRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Joint
     joint->color = CG_INVALID_COLOR;
 }
 
-void ds_CGraphContactAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact)
+void ds_CGraphContactAdd(struct arena *frame, struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact)
 {
     ds_Assert(contact->set != SOLVER_SET_NULL)
     ds_Assert(contact->color == CG_INVALID_COLOR);
     
     const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + contact->set;
+    const struct ds_ContactCompute *sleep_ccomp = set->contact_compute_pool.buf + contact->compute;
 
     const struct ds_Shape *shape[2] =
     {
@@ -189,7 +190,6 @@ void ds_CGraphContactAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Contac
     contact->color = ds_CGraphColorNext(pipeline, body);
     struct ds_CGraphColor *color = pipeline->cgraph.color + contact->color;
 
-    contact->set = SOLVER_SET_NULL;
     contact->compute = ds_CPoolPush(color->contact_pool).index;
     color->contact_pool.buf[ contact->compute ] = ds_ContactPoolIndex(&pipeline->contact_pool, contact);
 
@@ -197,6 +197,17 @@ void ds_CGraphContactAdd(struct ds_RigidBodyPipeline *pipeline, struct ds_Contac
     struct ds_ContactCompute *ccomp = ccomp_slot.address;
     memset(ccomp, 0, sizeof(*ccomp)); 
     ds_Assert(ccomp_slot.index == contact->compute);
+
+    if (contact->set >= SOLVER_SET_SLEEPING_FIRST)
+    {
+        const u64 mem_req_compute = sleep_ccomp->ccache_count*sizeof(struct ds_ContactConstraintCache);
+        ccomp->ccache_count = sleep_ccomp->ccache_count;
+        ccomp->ccache = (sleep_ccomp->ccache_count)
+                              ? ArenaPushAlignedMemcpy(frame, sleep_ccomp->ccache, mem_req_compute, 1)
+                              : NULL;
+    }
+
+    contact->set = SOLVER_SET_NULL;
 }
 
 void ds_CGraphContactRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Contact *contact)

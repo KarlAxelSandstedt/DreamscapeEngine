@@ -65,6 +65,7 @@ static struct ds_DeterminismTest ds_DeterminismProcessArguments(struct arena *pe
     if (Utf8Equivalence(argument[1], generate))
     {
         test.generate = 1;
+        test.thread_count = 1;  /* Reference should be serial */
 	    RngSystem(test.seed, sizeof(test.seed));
         ds_CPoolAlloc(NULL, test.hash_pool, 4096, GROWABLE);
     }

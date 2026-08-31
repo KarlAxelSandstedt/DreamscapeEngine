@@ -22,7 +22,7 @@
 
 POOL_DEFINE(ds_SolverSet);
 
-struct slot ds_SolverSetAdd(struct arena *mem_set, struct ds_RigidBodyPipeline *pipeline, const u32 initial_body_sim_count, const u32 initial_body_compute_count, const u32 initial_contact_count, const u32 initial_joint_count, const u32 initial_island_count)
+struct slot ds_SolverSetAdd(struct arena *mem_set, struct ds_RigidBodyPipeline *pipeline, const u32 initial_body_sim_count, const u32 initial_body_compute_count, const u32 initial_contact_count, const u32 initial_contact_compute_count, const u32 initial_joint_count, const u32 initial_island_count)
 {
     ProfZone;
     struct slot slot = ds_SolverSetPoolAdd(&pipeline->solver_set_pool);
@@ -47,6 +47,12 @@ struct slot ds_SolverSetAdd(struct arena *mem_set, struct ds_RigidBodyPipeline *
     if (initial_contact_count)
     {
         ds_CPoolAlloc(mem_set, set->contact_pool, initial_contact_count, growable);
+    }
+
+    memset(&set->contact_compute_pool, 0, sizeof(set->contact_compute_pool));
+    if (initial_contact_compute_count)
+    {
+        ds_CPoolAlloc(mem_set, set->contact_compute_pool, initial_contact_compute_count, growable);
     }
 
     memset(&set->joint_sim_pool, 0, sizeof(set->joint_sim_pool));
@@ -95,6 +101,11 @@ void ds_SolverSetRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
             ds_CPoolDealloc(set->contact_pool);
         }
 
+        if (set->contact_compute_pool.buf)
+        {
+            ds_CPoolDealloc(set->contact_compute_pool);
+        }
+
         if (set->joint_sim_pool.buf)
         {
             ds_CPoolDealloc(set->joint_sim_pool);
@@ -127,6 +138,11 @@ void ds_SolverSetFlush(struct ds_RigidBodyPipeline *pipeline, const u32 index)
     if (set->contact_pool.buf)
     {
         ds_CPoolFlush(set->contact_pool);
+    }
+
+    if (set->contact_compute_pool.buf)
+    {
+        ds_CPoolFlush(set->contact_compute_pool);
     }
 
     if (set->joint_sim_pool.buf)
@@ -212,6 +228,7 @@ u64 ds_SolverSetSleepMemoryRequirement(const struct ds_RigidBodyPipeline *pipeli
     u64 memory_requirement = 0;
     memory_requirement += ds_CPoolAllocMemoryRequirement(island->body_list.count, sizeof(struct ds_RigidBodySim));
     memory_requirement += ds_CPoolAllocMemoryRequirement(island->contact_list.count, sizeof(u32));
+    memory_requirement += ds_CPoolAllocMemoryRequirement(island->contact_list.count, sizeof(struct ds_ContactCompute));
     memory_requirement += ds_CPoolAllocMemoryRequirement(island->joint_list.count, sizeof(struct ds_JointSim));
     memory_requirement += ds_CPoolAllocMemoryRequirement(1, sizeof(u32));
     
@@ -237,7 +254,7 @@ void ds_SolverSetSleep(struct ds_RigidBodyPipeline *pipeline, const u32 island_i
     const u64 memory_requirement = ds_SolverSetSleepMemoryRequirement(pipeline, island_index);
     struct arena set_arena = ArenaAlloc(NULL, memory_requirement);
 
-    struct slot slot = ds_SolverSetAdd(&set_arena, pipeline, island->body_list.count, 0, island->contact_list.count, island->joint_list.count, 1);
+    struct slot slot = ds_SolverSetAdd(&set_arena, pipeline, island->body_list.count, 0, island->contact_list.count, island->contact_list.count, island->joint_list.count, 1);
     struct ds_SolverSet *set = slot.address;
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
 

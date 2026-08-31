@@ -203,7 +203,7 @@ void ds_ContactPromote(struct ds_RigidBodyPipeline *pipeline, const u32 contact)
     ds_Assert(c->set == SOLVER_SET_ACTIVE);
 
     const u32 compute = c->compute;
-    ds_CGraphContactAdd(pipeline, c);
+    ds_CGraphContactAdd(NULL, pipeline, c);
 
     ds_CPoolRemoveAndSwap(active->contact_pool, compute);
     if (compute < active->contact_pool.count)
@@ -284,10 +284,8 @@ void ds_ContactWakeUp(struct arena *frame, struct ds_RigidBodyPipeline *pipeline
     struct ds_Contact *c = pipeline->contact_pool.buf + contact_index;
     ds_Assert(c->set >= SOLVER_SET_SLEEPING_FIRST && c->color == CG_INVALID_COLOR);
 
-    if (c->narrowphase.manifold)
-    {
-        c->narrowphase.manifold = ArenaPushAlignedMemcpy(frame, c->narrowphase.manifold, c->narrowphase.manifold_count*sizeof(struct c_Manifold), 1);
-    }
+    ds_Assert(c->narrowphase.manifold_count);
+    c->narrowphase.manifold = ArenaPushAlignedMemcpy(frame, c->narrowphase.manifold, c->narrowphase.manifold_count*sizeof(struct c_Manifold), 1);
 
     if (c->narrowphase.cache)
     {
@@ -300,16 +298,18 @@ void ds_ContactWakeUp(struct arena *frame, struct ds_RigidBodyPipeline *pipeline
         c->narrowphase.tri_manifold = ArenaPushAlignedMemcpy(frame, c->narrowphase.tri_manifold, c->narrowphase.manifold_count*sizeof(u32), 1);
     }
 
-    ds_Assert(c->narrowphase.manifold_count);
-    ds_CGraphContactAdd(pipeline, c);
+    ds_CGraphContactAdd(frame, pipeline, c);
 }
 
 u64 ds_ContactMemoryRequirement(const struct ds_RigidBodyPipeline *pipeline, const u32 contact)
 {
     const struct ds_Contact *c = pipeline->contact_pool.buf + contact;
+    const struct ds_CGraphColor *color = pipeline->cgraph.color + c->color;
+    const struct ds_ContactCompute *compute = color->contact_compute_pool.buf + c->compute;
 
     const u64 mem_req_manifold = c->narrowphase.manifold_count*sizeof(struct c_Manifold);
     const u64 mem_req_cache = c->narrowphase.cache_count*sizeof(struct c_SatCache);
+    const u64 mem_req_compute = compute->ccache_count*sizeof(struct ds_ContactConstraintCache);
 
     u64 mem_req_tri = 0;
     u64 mem_req_tri_manifold = 0;
@@ -319,7 +319,7 @@ u64 ds_ContactMemoryRequirement(const struct ds_RigidBodyPipeline *pipeline, con
         mem_req_tri_manifold = c->narrowphase.manifold_count*sizeof(u32);
     }
 
-    return mem_req_manifold + mem_req_cache + mem_req_tri + mem_req_tri_manifold;
+    return mem_req_manifold + mem_req_cache + mem_req_tri + mem_req_tri_manifold + mem_req_compute;
 }
 
 void ds_ContactSleep(struct arena *mem_sleep, struct ds_RigidBodyPipeline *pipeline, const u32 contact, const u32 set_index)
@@ -327,6 +327,18 @@ void ds_ContactSleep(struct arena *mem_sleep, struct ds_RigidBodyPipeline *pipel
     ds_Assert(ds_ContactMemoryRequirement(pipeline, contact) <= mem_sleep->mem_left);
     struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
     struct ds_Contact *c = pipeline->contact_pool.buf + contact;
+    struct ds_CGraphColor *color = pipeline->cgraph.color + c->color;
+    struct ds_ContactCompute *compute = color->contact_compute_pool.buf + c->compute;
+
+    const u64 mem_req_compute = compute->ccache_count*sizeof(struct ds_ContactConstraintCache);
+    const struct slot compute_slot = ds_CPoolPush(set->contact_compute_pool);
+    struct ds_ContactCompute *sleep_compute = compute_slot.address;
+    sleep_compute->cc = NULL;
+    sleep_compute->cc_count = 0;
+    sleep_compute->ccache_count = compute->ccache_count;
+    sleep_compute->ccache = (compute->ccache_count)
+                          ? ArenaPushAlignedMemcpy(mem_sleep, compute->ccache, mem_req_compute, 1)
+                          : NULL;
 
     ds_CGraphContactRemove(pipeline, c); 
 
@@ -350,6 +362,7 @@ void ds_ContactSleep(struct arena *mem_sleep, struct ds_RigidBodyPipeline *pipel
     c->set = set_index;
     c->compute = ds_CPoolPush(set->contact_pool).index;
     set->contact_pool.buf[ c->compute ] = contact;
+    ds_Assert(c->compute == compute_slot.index);
 }
 
 void ds_ContactValidateAll(const struct ds_RigidBodyPipeline *pipeline)
