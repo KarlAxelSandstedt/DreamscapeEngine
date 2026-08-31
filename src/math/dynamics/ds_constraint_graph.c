@@ -201,6 +201,8 @@ void ds_CGraphContactAdd(struct arena *frame, struct ds_RigidBodyPipeline *pipel
     if (contact->set >= SOLVER_SET_SLEEPING_FIRST)
     {
         const u64 mem_req_compute = sleep_ccomp->ccache_count*sizeof(struct ds_ContactConstraintCache);
+        ccomp->body_sim[0] = sleep_ccomp->body_sim[0];
+        ccomp->body_sim[1] = sleep_ccomp->body_sim[1];
         ccomp->ccache_count = sleep_ccomp->ccache_count;
         ccomp->ccache = (sleep_ccomp->ccache_count)
                               ? ArenaPushAlignedMemcpy(frame, sleep_ccomp->ccache, mem_req_compute, 1)

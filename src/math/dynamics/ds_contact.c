@@ -111,8 +111,12 @@ void ds_ContactRemove(struct ds_RigidBodyPipeline *pipeline, const u32 index)
     else
     {
         ds_Assert(c->color == CG_INVALID_COLOR);
-        struct ds_SolverSet *set = pipeline->solver_set_pool.buf + c->set;
+        if (c->set >= SOLVER_SET_SLEEPING_FIRST)
+        {
+            ds_SolverSetWakeUp(pipeline, c->set);
+        }
 
+        struct ds_SolverSet *set = pipeline->solver_set_pool.buf + c->set;
         ds_CPoolRemoveAndSwap(set->contact_pool, c->compute);
         if (c->compute < set->contact_pool.count)
         {
@@ -336,6 +340,8 @@ void ds_ContactSleep(struct arena *mem_sleep, struct ds_RigidBodyPipeline *pipel
     sleep_compute->cc = NULL;
     sleep_compute->cc_count = 0;
     sleep_compute->ccache_count = compute->ccache_count;
+    sleep_compute->body_sim[0] = compute->body_sim[0];
+    sleep_compute->body_sim[1] = compute->body_sim[1];
     sleep_compute->ccache = (compute->ccache_count)
                           ? ArenaPushAlignedMemcpy(mem_sleep, compute->ccache, mem_req_compute, 1)
                           : NULL;

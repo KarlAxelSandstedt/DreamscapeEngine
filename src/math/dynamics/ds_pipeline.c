@@ -833,6 +833,7 @@ static void SolveConstraints(struct ds_RigidBodyPipeline *pipeline)
             reinsert_count += range->reinsert_count;
         }
 
+        ds_Assert(dirty_count >= reinsert_count);
         if (dirty_count)
         {
             //const f32 reinsert_fraction = reinsert_count / dirty_count;

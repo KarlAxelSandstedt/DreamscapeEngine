@@ -177,6 +177,7 @@ void ds_RigidBodyUpdateOrientationRange(struct ds_RigidBodyPipeline *pipeline, s
     struct ds_Shape *shape = NULL;
 
     struct memArray arr = ArenaPushAlignedAll(g_tl_self->frame, sizeof(struct ds_ProxyDirty), 8);
+    proxy_range->reinsert_count = 0;
     proxy_range->count = 0;
     proxy_range->proxy = arr.addr;
     struct ds_ProxyDirty *dirty = proxy_range->proxy + 0;
@@ -197,22 +198,23 @@ void ds_RigidBodyUpdateOrientationRange(struct ds_RigidBodyPipeline *pipeline, s
         {
             shape = pipeline->shape_pool.buf + j;
             dirty->bbox = ds_ShapeWorldBbox(pipeline, shape);
-            const struct bvhNode *node = ds_PoolAddress(&pipeline->dynamic_bvh.tree.pool, shape->proxy);
-            const struct aabb *proxy = &node->bbox;
+            struct bvhNode *node = ds_PoolAddress(&pipeline->dynamic_bvh.tree.pool, shape->proxy);
+            struct aabb *proxy = &node->bbox;
             
             if (!AabbContains(proxy, &dirty->bbox))
             {
                 dirty->shape = j;
                 dirty->reinsert = 1;
+
                 if (bt_NotRootCheck(node))
                 {
-                    const u32 parent_index = node->bt_parent % BT_PARENT_INDEX_MASK;
+                    const u32 parent_index = node->bt_parent & BT_PARENT_INDEX_MASK;
                     const struct bvhNode *parent = ds_PoolAddress(&pipeline->dynamic_bvh.tree.pool, parent_index);
                     struct aabb enlarged_proxy;
                     AabbUnion(&enlarged_proxy, proxy, &dirty->bbox);
                     if (AabbContains(&parent->bbox, &enlarged_proxy))
                     {
-                        dirty->bbox = enlarged_proxy;
+                        *proxy = enlarged_proxy;
                         dirty->reinsert = 0;
                     }
                 }
