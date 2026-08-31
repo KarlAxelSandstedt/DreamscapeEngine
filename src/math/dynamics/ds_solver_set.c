@@ -165,12 +165,13 @@ void ds_SolverSetWakeUp(struct ds_RigidBodyPipeline *pipeline, const u32 index)
 
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     struct ds_SolverSet *set = pipeline->solver_set_pool.buf + index;
+    struct arena *frame = g_tl_self->frame;
     ds_Assert(ds_PoolSlotAllocated(set));
     ds_Assert(set->island_pool.count == 1);
 
     for (u32 i = 0; i < set->contact_pool.count; ++i)
     {
-        ds_ContactWakeUp(&pipeline->frame, pipeline, set->contact_pool.buf[i]);
+        ds_ContactWakeUp(frame, pipeline, set->contact_pool.buf[i]);
     }
 
     for (u32 i = 0; i < set->joint_sim_pool.count; ++i)

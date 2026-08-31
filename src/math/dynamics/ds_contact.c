@@ -283,6 +283,27 @@ void ds_ContactDemote(struct ds_RigidBodyPipeline *pipeline, const u32 contact)
     active->contact_pool.buf[ c->compute ] = contact;
 }
 
+u64 ds_ContactMemoryRequirement(const struct ds_RigidBodyPipeline *pipeline, const u32 contact)
+{
+    const struct ds_Contact *c = pipeline->contact_pool.buf + contact;
+    const struct ds_CGraphColor *color = pipeline->cgraph.color + c->color;
+    const struct ds_ContactCompute *compute = color->contact_compute_pool.buf + c->compute;
+
+    const u64 mem_req_manifold = c->narrowphase.manifold_count*sizeof(struct c_Manifold);
+    const u64 mem_req_cache = c->narrowphase.cache_count*sizeof(struct c_SatCache);
+    const u64 mem_req_compute = compute->ccache_count*sizeof(struct ds_ContactConstraintCache);
+
+    u64 mem_req_tri = 0;
+    u64 mem_req_tri_manifold = 0;
+    if (c->narrowphase.tri)
+    {
+        mem_req_tri = c->narrowphase.manifold_count*sizeof(u32);
+        mem_req_tri_manifold = c->narrowphase.manifold_count*sizeof(u32);
+    }
+
+    return mem_req_manifold + mem_req_cache + mem_req_tri + mem_req_tri_manifold + mem_req_compute;
+}
+
 void ds_ContactWakeUp(struct arena *frame, struct ds_RigidBodyPipeline *pipeline, const u32 contact_index)
 {
     struct ds_Contact *c = pipeline->contact_pool.buf + contact_index;
@@ -303,27 +324,6 @@ void ds_ContactWakeUp(struct arena *frame, struct ds_RigidBodyPipeline *pipeline
     }
 
     ds_CGraphContactAdd(frame, pipeline, c);
-}
-
-u64 ds_ContactMemoryRequirement(const struct ds_RigidBodyPipeline *pipeline, const u32 contact)
-{
-    const struct ds_Contact *c = pipeline->contact_pool.buf + contact;
-    const struct ds_CGraphColor *color = pipeline->cgraph.color + c->color;
-    const struct ds_ContactCompute *compute = color->contact_compute_pool.buf + c->compute;
-
-    const u64 mem_req_manifold = c->narrowphase.manifold_count*sizeof(struct c_Manifold);
-    const u64 mem_req_cache = c->narrowphase.cache_count*sizeof(struct c_SatCache);
-    const u64 mem_req_compute = compute->ccache_count*sizeof(struct ds_ContactConstraintCache);
-
-    u64 mem_req_tri = 0;
-    u64 mem_req_tri_manifold = 0;
-    if (c->narrowphase.tri)
-    {
-        mem_req_tri = c->narrowphase.manifold_count*sizeof(u32);
-        mem_req_tri_manifold = c->narrowphase.manifold_count*sizeof(u32);
-    }
-
-    return mem_req_manifold + mem_req_cache + mem_req_tri + mem_req_tri_manifold + mem_req_compute;
 }
 
 void ds_ContactSleep(struct arena *mem_sleep, struct ds_RigidBodyPipeline *pipeline, const u32 contact, const u32 set_index)
