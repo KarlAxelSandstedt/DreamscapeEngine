@@ -125,6 +125,8 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
     ds_Assert(set_static.index == SOLVER_SET_STATIC);
     ds_Assert(set_active.index == SOLVER_SET_ACTIVE);
 
+    pipeline.island_to_split = DS_ID_NULL; 
+
 	return pipeline;
 }
 

@@ -12,6 +12,7 @@ target_link_libraries(DreamscapePlatform
 		Dreamscape::Base
 	PRIVATE
 		sdl3_wrapper
+        Dreamscape::Graphics
 )
 
 add_library(DreamscapeJob STATIC 

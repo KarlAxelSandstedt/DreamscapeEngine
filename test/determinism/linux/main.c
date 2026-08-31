@@ -31,15 +31,16 @@
 
 struct ds_DeterminismTest
 {
-    utf8    file;
-    char *  file_cstr;
+    utf8            file;
+    char *          file_cstr;
 
-    u32     generate;
-    u32     thread_count;
+    u32             generate;
+    u32             thread_count;
 
     /* file data */
-    u64     seed[4];    /* BE */
-    u64     hash;       /* BE */
+    u64             seed[4];    /* BE */
+
+    ds_CPool(u64)   hash_pool;  /* BE */
 };
 
 static struct ds_DeterminismTest ds_DeterminismProcessArguments(struct arena *persistent, const utf8 *argument, const u32 argument_count)
@@ -65,23 +66,35 @@ static struct ds_DeterminismTest ds_DeterminismProcessArguments(struct arena *pe
     {
         test.generate = 1;
 	    RngSystem(test.seed, sizeof(test.seed));
+        ds_CPoolAlloc(NULL, test.hash_pool, 4096, GROWABLE);
     }
     else if (Utf8Equivalence(argument[1], load))
     {
         struct dsBuffer buf = FileDumpAtCwd(persistent, test.file_cstr);
-        const u64 expected_size = sizeof(test.seed) + sizeof(test.hash);
-        if (buf.size != expected_size)
+        if (buf.size < 4*sizeof(u64) + sizeof(u32))
         {
             fprintf(stderr, "Bad determinism test file size, exiting.\n");
             exit(0);
         }
         
         struct ss ss = ss_Buffered(buf.data, buf.size);
-        test.seed[0] = ss_Read64Be(&ss).u;
-        test.seed[1] = ss_Read64Be(&ss).u;
-        test.seed[2] = ss_Read64Be(&ss).u;
-        test.seed[3] = ss_Read64Be(&ss).u;
-        test.hash = ss_Read64Be(&ss).u;
+        test.seed[0] = ss_ReadU64Be(&ss);
+        test.seed[1] = ss_ReadU64Be(&ss);
+        test.seed[2] = ss_ReadU64Be(&ss);
+        test.seed[3] = ss_ReadU64Be(&ss);
+        const u32 hash_count = ss_ReadU32Be(&ss);
+        if (buf.size - 4*sizeof(u64) - sizeof(u32) != hash_count*sizeof(u64))
+        {
+            fprintf(stderr, "Bad determinism test file size, exiting.\n");
+            exit(0);
+        }
+
+        ds_CPoolAlloc(persistent, test.hash_pool, hash_count, NOT_GROWABLE);
+        for (u32 i = 0; i < hash_count; ++i)
+        {
+           ds_CPoolPush(test.hash_pool);
+        }
+        ss_ReadU64BeN(test.hash_pool.buf, &ss, hash_count);
     }
     else
     {
@@ -100,7 +113,7 @@ static struct ds_DeterminismTest ds_DeterminismProcessArguments(struct arena *pe
     return test;
 }
 
-static void ds_DeterminismGenerate(struct arena *persistent, const struct ds_DeterminismTest *test)
+static void ds_DeterminismGenerate(struct arena *persistent, struct ds_DeterminismTest *test)
 {
     struct file file = { .handle = FILE_HANDLE_INVALID };
     const u32 truncate = 1;
@@ -110,18 +123,22 @@ static void ds_DeterminismGenerate(struct arena *persistent, const struct ds_Det
         exit(0);
     }
 
-    u8 buf[5*sizeof(u64)];
-    struct ss ss = ss_Buffered(buf, sizeof(buf));
+    const u64 bufsize = 4*sizeof(u64) + sizeof(u32) + (u64) test->hash_pool.count*sizeof(u64);
+    u8 *buf = ArenaPush(persistent, bufsize);
+    struct ss ss = ss_Buffered(buf, bufsize);
     ss_WriteU64Be(&ss, test->seed[0]);
     ss_WriteU64Be(&ss, test->seed[1]);
     ss_WriteU64Be(&ss, test->seed[2]);
     ss_WriteU64Be(&ss, test->seed[3]);
-    ss_WriteU64Be(&ss, test->hash);
+    ss_WriteU32Be(&ss, test->hash_pool.count);
+    ss_WriteU64BeN(&ss, test->hash_pool.buf, test->hash_pool.count);
 
-    const u64 bytes_written = FileWriteAppend(&file, buf, sizeof(buf));
-    ds_Assert(bytes_written == sizeof(buf));
+    const u64 bytes_written = FileWriteAppend(&file, buf, bufsize);
+    ds_Assert(bytes_written == bufsize);
 
     FileClose(&file);
+
+    ds_CPoolDealloc(test->hash_pool);
 }
 
 /*
@@ -161,7 +178,7 @@ int main(int argc, char *argv[])
 	ds_StringApiInit(test.thread_count);
 
 	ds_PlatformApiInit(&persistent, thread_framesize, thread_scratchsize, scratch_count, test.thread_count);
-
+ 
 	ds_GraphicsApiInit();
 
 	ds_UiApiInit();
@@ -173,25 +190,51 @@ int main(int argc, char *argv[])
 	const u64 renderer_framerate = 144;	
 	r_Init(&persistent, NSEC_PER_SEC / renderer_framerate, 16*1024*1024, 1024, &editor->render_mesh_db);
 	
-	u64 old_time = editor->ns;
-	//while (editor->running)
-	{
-		ProfFrameMark;
-
+    u32 success = 1;
+    u64 frame = 0;
+    while (editor->running)
+    {
+    	ProfFrameMark;
+    
 		ds_DeallocTaggedWindows();
 
         ds_JobSchedulerFrameClear();
-
-		const u64 new_time = ds_TimeNs();
-		const u64 ns_tick = new_time - old_time;
-		old_time = new_time;
-
+    
 		ds_ProcessEvents();
 
-		led_Main(editor, ns_tick);
+        led_Main(editor, editor->physics.ns_tick);
 		led_UiMain(editor);
 		r_EditorMain(editor);
-	}
+
+        const u64 hash = PhysicsPipelineOrientationHash(&editor->physics);
+        if (test.generate)
+        {
+            const u32 index = ds_CPoolPush(test.hash_pool).index;
+            test.hash_pool.buf[ index ] = hash;
+        }
+        else
+        {
+            //fprintf(stderr, "checking index %lu of %u: (%lu, %lu)\n", frame, test.hash_pool.count, hash, ((frame >= test.hash_pool.count) ? U64_MAX : test.hash_pool.buf[ frame ]));
+            if (frame >= test.hash_pool.count || hash != test.hash_pool.buf[ frame ])
+            {
+                success = 0;
+            }
+        }
+
+        if (!success || editor->physics.solver_set_pool.buf[SOLVER_SET_ACTIVE].body_sim_pool.count == 0)
+        {
+            editor->running = 0;
+        }
+
+        frame += 1;
+    }
+
+    if (!test.generate)
+    {
+        (success)
+            ? fprintf(stderr, "========================== SUCCESS ==========================")
+            : fprintf(stderr, "========================== FAILURE ==========================");
+    }
 	
 	led_Dealloc(editor);
 	AssetShutdown();
@@ -199,7 +242,10 @@ int main(int argc, char *argv[])
 	ds_PlatformApiShutdown();
 	LogShutdown();
 
-    ds_DeterminismGenerate(&persistent, &test);
+    if (test.generate)
+    {
+        ds_DeterminismGenerate(&persistent, &test);
+    }
 
 	ds_MemApiShutdown();
 

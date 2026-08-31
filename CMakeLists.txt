@@ -223,6 +223,7 @@ option(DS_TEST OFF)
 option(DS_TEST_PHYSICS "Run physics engine tests" OFF)
 option(DS_TEST_CORRECTNESS "Run tests to verify correctness" OFF)
 option(DS_TEST_PERFORMANCE "Run performance measuring tests" OFF)
+option(DS_TEST_DETERMINISM "Run determinism tests" OFF)
 
 
 if (DS_TEST_PHYSICS)
