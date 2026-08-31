@@ -158,7 +158,7 @@ void ds_SolverSetFlush(struct ds_RigidBodyPipeline *pipeline, const u32 index)
 
 void ds_SolverSetWakeUp(struct ds_RigidBodyPipeline *pipeline, const u32 index)
 {
-    if (index < SOLVER_SET_SLEEPING_FIRST)
+    if (index < SOLVER_SET_SLEEPING_FIRST || index == SOLVER_SET_NULL)
     {
         return;
     }
@@ -214,6 +214,7 @@ void ds_SolverSetWakeUp(struct ds_RigidBodyPipeline *pipeline, const u32 index)
     {
         const u32 isi = set->island_pool.buf[i];
         struct ds_Island *island = pipeline->island_pool.buf + isi;
+	    PhysicsEventIslandAwake(pipeline, island->id);	
         island->set = SOLVER_SET_ACTIVE;
         island->set_island_index = ds_CPoolPush(active->island_pool).index; 
         active->island_pool.buf[ island->set_island_index ] = isi;

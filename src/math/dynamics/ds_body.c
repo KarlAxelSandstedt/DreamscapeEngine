@@ -101,25 +101,9 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
     }
     ds_Assert(ds_BitSetGet(&pipeline->body_usage_set, body_index));
 
-    ds_BitSetSet(&pipeline->body_usage_set, body_index, 0);
-
     const u32 mass_properties_update = 0;
 
-    struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
-    ds_CPoolRemoveAndSwap(set->body_sim_pool, body->sim);
-    if (body->sim < set->body_sim_pool.count)
-    {
-        const struct ds_RigidBodySim *moved_sim = set->body_sim_pool.buf + body->sim;
-        struct ds_RigidBody *moved_body = pipeline->body_pool.buf + moved_sim->body;
-        ds_Assert(moved_body->set == body->set);
-        ds_Assert(moved_body->sim == set->body_sim_pool.count);
-        moved_body->sim = body->sim;
-    }
-
-    if (body->set == SOLVER_SET_ACTIVE)
-    {
-        ds_CPoolRemoveAndSwap(set->body_compute_pool, body->sim);
-    }
+    ds_SolverSetWakeUp(pipeline, body->set);
 
 	struct ds_Shape *shape_ptr;
 	if (body->set != SOLVER_SET_STATIC)
@@ -144,11 +128,6 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
     		ds_Assert(island->body_list.last == DLL_SENTINEL);
     		ds_IslandRemove(pipeline, body->island);
     	} 
-        else if (island->set >= SOLVER_SET_SLEEPING_FIRST)
-        {
-            ds_SolverSetWakeUp(pipeline, island->set);
-	        PhysicsEventIslandAwake(pipeline, body->island);	
-        }
 	}       
 	else
 	{
@@ -164,6 +143,21 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
 	}
 
     const u32 entity = body->entity;
+    struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
+    ds_CPoolRemoveAndSwap(set->body_sim_pool, body->sim);
+    if (body->sim < set->body_sim_pool.count)
+    {
+        const struct ds_RigidBodySim *moved_sim = set->body_sim_pool.buf + body->sim;
+        struct ds_RigidBody *moved_body = pipeline->body_pool.buf + moved_sim->body;
+        ds_Assert(moved_body->set == body->set);
+        ds_Assert(moved_body->sim == set->body_sim_pool.count);
+        moved_body->sim = body->sim;
+    }
+
+    if (body->set == SOLVER_SET_ACTIVE)
+    {
+        ds_CPoolRemoveAndSwap(set->body_compute_pool, body->sim);
+    }
 	ds_RigidBodyPoolRemove(&pipeline->body_pool, ds_IdIndex(id));
 	PhysicsEventBodyRemoved(pipeline, entity);
 }

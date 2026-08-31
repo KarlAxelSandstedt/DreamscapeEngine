@@ -73,16 +73,9 @@ ds_ShapeId ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_Sh
 
 void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 shape_index, const u32 mass_properties_update)
 {
-	struct ds_Island *island = pipeline->island_pool.buf + body->island;
-    struct ds_Shape *dummy_shape, *shape = pipeline->shape_pool.buf + shape_index;
-    struct ds_RigidBody *dummy_body;
+    struct ds_Shape *shape = pipeline->shape_pool.buf + shape_index;
 
-    ds_BitSetSet(&pipeline->dirty_shape_set, shape_index, 0);
-    ds_DLLRemove(body->shape_list, pipeline->shape_pool.buf, shape_index, body_shape);
-	strdb_Dereference(pipeline->cshape_db, shape->cshape_handle);
-	DbvhRemove(&pipeline->dynamic_bvh, shape->proxy);
-
-    while (shape->contact_list.first != DLL_SENTINEL)
+    while (shape->contact_list.count)
 	{
         ds_ContactRemove(pipeline, shape->contact_list.first);
     }
@@ -92,6 +85,10 @@ void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Rigi
         ds_RigidBodyUpdateMassProperties(pipeline, body->id);
     }
 
+    ds_BitSetSet(&pipeline->dirty_shape_set, shape_index, 0);
+    ds_DLLRemove(body->shape_list, pipeline->shape_pool.buf, shape_index, body_shape);
+	strdb_Dereference(pipeline->cshape_db, shape->cshape_handle);
+	DbvhRemove(&pipeline->dynamic_bvh, shape->proxy);
 	ds_ShapePoolRemove(&pipeline->shape_pool, shape_index);
 }
 
@@ -109,11 +106,7 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pi
 		struct ds_Contact *c = pipeline->contact_pool.buf + ci;
 		struct ds_Island *island = pipeline->island_pool.buf + c->island;
 		island->constraint_remove_count += 1; 
-        if (island->set >= SOLVER_SET_SLEEPING_FIRST)
-        {
-            ds_SolverSetWakeUp(pipeline, island->set);
-	        PhysicsEventIslandAwake(pipeline, c->island);	
-        }
+        ds_SolverSetWakeUp(pipeline, island->set);
         ds_ContactRemove(pipeline, ci);
     }
 

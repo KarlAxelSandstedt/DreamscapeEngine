@@ -994,10 +994,7 @@ void PhysicsPipelineSleepEnable(struct ds_RigidBodyPipeline *pipeline)
         	    struct ds_Island *is = pipeline->island_pool.buf + k;
             }
 
-            if (set_index >= SOLVER_SET_SLEEPING_FIRST)
-            {
-                ds_SolverSetWakeUp(pipeline, set_index);
-            }
+            ds_SolverSetWakeUp(pipeline, set_index);
         }
     }
 }
@@ -1022,10 +1019,7 @@ void PhysicsPipelineSleepDisable(struct ds_RigidBodyPipeline *pipeline)
 	    	    struct ds_Island *is = pipeline->island_pool.buf + k;
             }
 
-            if (set_index >= SOLVER_SET_SLEEPING_FIRST)
-            {
-                ds_SolverSetWakeUp(pipeline, set_index);
-            }
+            ds_SolverSetWakeUp(pipeline, set_index);
         }
 	}
 }
