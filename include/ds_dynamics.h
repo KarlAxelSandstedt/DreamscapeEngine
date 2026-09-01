@@ -201,7 +201,7 @@ a utf8 identifier.
 struct ds_ShapePrefab
 {
     u8      id_buf[PREFAB_BUFSIZE];
-	STRING_DATABASE_SLOT_STATE;
+    SDB_NODE;
 
 	u32	    cshape;	            /* referenced collisionShape handle  		        */
 	f32		density;	        /* kg/m^3					                        */
@@ -214,6 +214,7 @@ struct ds_ShapePrefab
      * simplicity in led, we store the mesh reference in prefab. */
     u32 render_mesh;
 };
+SDB_DECLARE(ds_ShapePrefab);
 
 /*
 ds_ShapePrefabInstance
@@ -292,7 +293,7 @@ new bodies.
 struct ds_RigidBodyPrefab
 {
     u8              id_buf[PREFAB_BUFSIZE];
-	STRING_DATABASE_SLOT_STATE;
+    SDB_NODE;
 
     struct dll      shape_list;         /* shape prefab instance list */
     ds_RigidBodyId  body;
@@ -303,7 +304,7 @@ struct ds_RigidBodyPrefab
 	//(f32 	        mass;			    /* total body mass */
 	//mat3 	        inv_inertia_tensor;
 };
-
+SDB_DECLARE(ds_RigidBodyPrefab);
 
 /*
 rigid_body
@@ -1261,8 +1262,8 @@ struct ds_RigidBodyPipeline
 
     f32                         timestep;
 
-	struct strdb *	            cshape_db;		        /* externally owned */
-	struct strdb *	            body_prefab_db;		    /* externally owned */
+	c_ShapeSDB *	            cshape_db;		        /* externally owned */
+	ds_RigidBodyPrefabSDB *	    body_prefab_db;		    /* externally owned */
 
 	struct ds_RigidBodyPool     body_pool;
     struct ds_BitSet            body_usage_set;         /* Bodies in use */
@@ -1315,7 +1316,7 @@ struct ds_RigidBodyPipeline
 /**************** PHYISCS PIPELINE API ****************/
 
 /* Initialize a new growable physics pipeline; ns_tick is the duration of a physics frame. */
-struct ds_RigidBodyPipeline	PhysicsPipelineAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct strdb *cshape_db, struct strdb *prefab_db);
+struct ds_RigidBodyPipeline	PhysicsPipelineAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, c_ShapeSDB *cshape_db, ds_RigidBodyPrefabSDB *prefab_db);
 /* free pipeline resources */
 void 			PhysicsPipelineFree(struct ds_RigidBodyPipeline *physics_pipeline);
 /* flush pipeline resources */

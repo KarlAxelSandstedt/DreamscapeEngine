@@ -195,7 +195,7 @@ void r_LightningBufferLayoutSetter(void)
 	ds_glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, (GLsizei)  stride, (void *)(sizeof(vec3) + sizeof(vec4)));
 }
 
-void r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u64 core_unit_count, struct strdb *mesh_database)
+void r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u64 core_unit_count, r_MeshSDB *mesh_database)
 {
 	g_r_core->frames_elapsed = 0;	
 	g_r_core->ns_elapsed = 0;	
@@ -253,7 +253,7 @@ void r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_siz
 	stub3d->flags = 0;
 
 	g_r_core->mesh_database = mesh_database; 
-	struct r_Mesh *stub = strdb_Address(g_r_core->mesh_database, STRING_DATABASE_STUB_INDEX);
+	struct r_Mesh *stub = g_r_core->mesh_database->pool.buf + SDB_STUB;
 	r_MeshStubBox(stub);
 
 

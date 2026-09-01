@@ -3,5 +3,4 @@
 #include "ds_bitset.c"
 #include "list.c"
 #include "hierarchy_index.c"
-#include "string_database.c"
 #include "tree.c"

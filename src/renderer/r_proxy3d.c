@@ -71,7 +71,7 @@ u32 r_Proxy3dAlloc(const struct r_Proxy3d_config *config)
 		? PROXY3D_DRAW | PROXY3D_RELATIVE
 		: PROXY3D_DRAW;
 
-	proxy->mesh = strdb_Reference(g_r_core->mesh_database, config->mesh).index;
+	proxy->mesh = r_MeshSDBReference(g_r_core->mesh_database, config->mesh).index;
 	Vec4Copy(proxy->color, config->color);
 	proxy->blend = config->blend;
 
@@ -85,7 +85,7 @@ void r_Proxy3dDealloc(struct arena *tmp, const u32 proxy_index)
     if (proxy_index != PROXY3D_NULL)
     {
 	    struct r_Proxy3d *proxy = r_Proxy3dAddress(proxy_index);
-	    strdb_Dereference(g_r_core->mesh_database, proxy->mesh);
+	    r_MeshSDBDereference(g_r_core->mesh_database, proxy->mesh);
 	    hi_Remove(tmp, &g_r_core->proxy3d_hierarchy, proxy_index);
     }
 }

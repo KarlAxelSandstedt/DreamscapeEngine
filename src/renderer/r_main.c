@@ -424,7 +424,7 @@ static void r_EditorDraw(const struct led *led)
 			: R_CMD_TRANSPARENCY_ADDITIVE;
 
 		const u64 material = r_MaterialConstruct(PROGRAM_PROXY3D, proxy->mesh, TEXTURE_NONE);
-		const struct r_Mesh *r_mesh = strdb_Address(&led->render_mesh_db, proxy->mesh);
+		const struct r_Mesh *r_mesh = led->render_mesh_db.pool.buf + proxy->mesh;
 		const u64 command = (r_mesh->index_data)
 			? r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, transparency, material, R_CMD_PRIMITIVE_TRIANGLE, R_CMD_INSTANCED, R_CMD_ELEMENTS)
 			: r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, transparency, material, R_CMD_PRIMITIVE_TRIANGLE, R_CMD_INSTANCED, R_CMD_ARRAYS);
@@ -473,7 +473,7 @@ static void r_EditorDraw(const struct led *led)
                 ds_Transform transform;
                 ds_ShapeWorldTransform(&transform, &led->physics, s);
 
-			    const struct c_Shape *shape = strdb_Address(led->physics.cshape_db, s->cshape_handle);
+			    const struct c_Shape *shape = led->physics.cshape_db->pool.buf + s->cshape_handle;
 			    struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &shape->mesh_bvh.bvh, transform.position, transform.rotation, led->sbvh_color);
 			    if (mesh)
 			    {

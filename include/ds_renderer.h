@@ -31,11 +31,30 @@ extern "C" {
 #include "list.h"
 
 /********************************************************
+ *			r_mesh.c			*
+ ********************************************************/
+
+#define R_MESH_BUFSIZE  32
+
+struct r_Mesh
+{
+    u8      id_buf[R_MESH_BUFSIZE];
+    SDB_NODE;
+
+	u32		index_count;		
+	u32 *	index_data; 		/* index_data[index_count] */
+	u32		index_max_used;		/* max used index */
+	u32		vertex_count;   	
+	void *	vertex_data;		/* vertex_data[vertex_count] */
+	u64		local_stride;
+};
+SDB_DECLARE(r_Mesh);
+/********************************************************
  *			r_Init.c			*
  ********************************************************/
 
 /* initiate render state, ns_tick is ns per draw frame, or, if 0, redraw on every r_main() entry,  should be a power of 2 */
-void 	r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u64 core_unit_count, struct strdb *mesh_database);
+void 	r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u64 core_unit_count, r_MeshSDB *mesh_database);
 
 /********************************************************
  *			r_main.c			*
@@ -428,23 +447,6 @@ void		r_SceneFrameBegin(void);
 /* set global scene to NULL and process draw commands  	*/
 void		r_SceneFrameEnd(void);
 
-/********************************************************
- *			r_mesh.c			*
- ********************************************************/
-
-#define R_MESH_BUFSIZE  32
-
-struct r_Mesh
-{
-    u8      id_buf[R_MESH_BUFSIZE];
-	STRING_DATABASE_SLOT_STATE;	/* internal header, MAY NOT BE MOVED */
-	u32		index_count;		
-	u32 *	index_data; 		/* index_data[index_count] */
-	u32		index_max_used;		/* max used index */
-	u32		vertex_count;   	
-	void *	vertex_data;		/* vertex_data[vertex_count] */
-	u64		local_stride;
-};
 
 /**************** TEMPORARY: quick and dirty mesh generation *****************/
 

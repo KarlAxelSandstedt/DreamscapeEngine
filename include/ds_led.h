@@ -25,12 +25,12 @@ extern "C" {
 #endif
 
 #include "ds_base.h"
-#include "csg.h"
 #include "ds_dynamics.h"
 #include "ds_hash_map.h"
 #include "list.h"
 #include "cmd.h"
 #include "ds_renderer.h"
+#include "ds_ui.h"
 
 /*******************************************/
 /*                 led_init.c              */
@@ -114,23 +114,22 @@ struct led
 
 	/* TODO move stuff into led project/led_Core or something */
 	struct arena 		    frame;
-	struct csg 		        csg;
 	struct ui_List 		    brush_list;
 
 	struct ds_RigidBodyPipeline physics;
-	struct strdb 		    cs_db;	
+    c_ShapeSDB 		        cs_db;	
 	struct ui_List 		    cs_list;
 	struct ui_DropdownMenu  cs_mesh_menu;
 	struct ui_DropdownMenu  rb_color_mode_menu;
 
-	struct strdb		    shape_prefab_db;
+	ds_ShapePrefabSDB       shape_prefab_db;
     struct ds_Pool          shape_prefab_instance_pool;    
 
-	struct strdb		    body_prefab_db;
+	ds_RigidBodyPrefabSDB   body_prefab_db;
 	struct ui_List 		    body_prefab_list;
 	struct ui_DropdownMenu  body_prefab_mesh_menu;
 
-	struct strdb		    render_mesh_db;
+    r_MeshSDB			    render_mesh_db;
 
 	struct ds_HashMap 		node_map;
 	struct hi		        node_hierarchy;

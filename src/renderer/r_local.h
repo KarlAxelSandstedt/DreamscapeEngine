@@ -122,7 +122,7 @@ struct r_Core
 
 	struct ds_Pool		unit_pool;
 
-	struct strdb *mesh_database;		/* mesh storage (external) */
+	r_MeshSDB *         mesh_database;		/* mesh storage (external) */
 
 	struct hi 		proxy3d_hierarchy;	/* proxy3d storage */
 	u32			proxy3d_root;

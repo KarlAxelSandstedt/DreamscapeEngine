@@ -22,6 +22,8 @@
 #include "ds_dynamics.h"
 #include "collision.h"
 
+SDB_DEFINE(c_Shape);
+
 ds_ThreadLocal struct collisionDebug *debug;
 
 struct visualSegment VisualSegmentConstruct(const struct segment segment, const vec4 color)
@@ -2769,7 +2771,7 @@ void c_ContactResultSortTriangles(struct arena *frame, struct c_ContactResult *r
     }
 
     //TODO Shit sort for now
-    ProfZoneNamed("Bad Triangle Sorting");
+    //ProfZoneNamed("Bad Triangle Sorting");
 
     result->tri_manifold = ArenaPushPacked(frame, result->manifold_count*sizeof(u32));
     if (!result->tri_manifold)
@@ -2800,7 +2802,7 @@ void c_ContactResultSortTriangles(struct arena *frame, struct c_ContactResult *r
         }
     }
 
-    ProfZoneEnd;
+    //ProfZoneEnd;
 }
 
 static const u32 delayed_vertex_map[TRI_VORONOI_COUNT][2] =
@@ -3801,7 +3803,8 @@ struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct
     result.manifold = ArenaPush(frame, true_contact_count*sizeof(struct c_Manifold));
     result.tri = ArenaPush(frame, true_contact_count*sizeof(u32));
     c_TriMeshBvhIteratorDelayedSetAlloc(&it);
-    if (it.contact_count && (!result.manifold || !result.tri || !it.delayed_set || !result.cache))
+    if ( (true_contact_count && (!result.manifold || !result.tri)) 
+            || (it.contact_count && (!it.delayed_set || !result.cache)))
     {
 		Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
 		FatalCleanupAndExit();

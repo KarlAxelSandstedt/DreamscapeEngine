@@ -27,20 +27,14 @@ extern "C" {
 #include "ds_hash_map.h"
 #include "list.h"
 
-#define STRING_DATABASE_STUB_INDEX	0
 
-/*
- * internal database struct state - Place inside of any structure to be stored within the database.
- */
-#define STRING_DATABASE_SLOT_STATE									\
-	utf8 				id;			/* identifier of database object */	\
-	u32				reference_count;	/* Number of references to slot  */	\
-	DLL3_SLOT_STATE;					/* allocated list state	         */	\
-	POOL_SLOT_STATE						/* pool slot internal state      */
+#define SDB_STUB	0
 
-#define strdb_Next(structure_addr)	dll3_Next(structure_addr)
-#define strdb_Prev(structure_addr)	dll3_Prev(structure_addr)
-#define strdb_InList(structure_addr)	dll3_InList(structure_addr)
+#define SDB_NODE                        \
+    utf8                id;             \
+    u32                 reference_count;\
+    struct ds_DLLNode   strdb_allocated;\
+    POOL_NODE
 
 /*
  *	1. id aliasing: on deallocation, do nothing with identifier, 
@@ -48,53 +42,226 @@ extern "C" {
  *	2. malloc copy: on deallocation, free identifier 
  *	3. arena copy:  on deallocation, do nothing with identifier, (up to user to free)
  */
-struct strdb
-{
-	struct ds_HashMap 	hash;
-	struct ds_Pool	pool;
-	struct dll	allocated_dll;
-	u64		id_offset;		/* id offset within db structure 	    */
-	u64		reference_count_offset; /* ref_count offset within db structure     */
-	u64		allocated_prev_offset;	/* (dll) previous allocated index offset     */
-	u64		allocated_next_offset;	/* (dll) next allocated index offset 	     */
-};
+#define DEFINE_SDB_STRUCT(T)            \
+typedef struct T ## SDB                 \
+{                                       \
+	struct ds_HashMap 	hash;           \
+	struct T ## Pool	pool;           \
+	struct ds_DLL	    allocated_list; \
+} T ## SDB
 
-/* allocate and return database with entries of data_size (simply sizeof(struct)). 
- * If growable, allows the database to increase size when required. */
-struct strdb	strdb_AllocInternal(struct arena *mem, const u32 hash_size, const u32 index_size, const u64 data_size, const u64 id_offset, const u64 reference_count_offset, const u64 allocated_prev_offset, const u64 allocated_next_offset, const u64 pool_state_offset, const u32 growable);
-#define 		strdb_Alloc(mem, hash_size, index_size, STRUCT, growable)			\
-			strdb_AllocInternal(mem,							\
-				       		       hash_size,					\
-						       index_size, 					\
-						       sizeof(STRUCT),					\
-						       ((u64)&((STRUCT *)0)->id),			\
-						       ((u64)&((STRUCT *)0)->reference_count),		\
-						       ((u64)&((STRUCT *)0)->dll3_prev),		\
-						       ((u64)&((STRUCT *)0)->dll3_next),		\
-						       ((u64)&((STRUCT *)0)->slot_allocation_state),	\
-						       growable)
-/* free the database. NOTE that none of the database id strings are freed as they are either aliases or arena memory. */
-void		strdb_Dealloc(struct strdb *db);
-/* flush or reset the string database */
-void		strdb_Flush(struct strdb *db);
-/* allocate a new database node with the given identifier and return its index (handle). 
-   The id will be copied onto the arena. On failure, the stub slot (0, NULL) is returned. 
-   the reference count is set to 0. */
-struct slot	strdb_Add(struct arena *mem_db_lifetime, struct strdb *db, const utf8 id);
-/* allocate a new database node with the given identifier and return its index. 
-   The id will alias the given string's content. On failure, the stub slot (0, NULL) is returned. 
-   the reference count is set to 0. */
-struct slot	strdb_AddAndAlias(struct strdb *db, const utf8 id);
+#define SDB_DECLARE(T)                  \
+    POOL_DECLARE(T);                    \
+    DEFINE_SDB_STRUCT(T);               \
+    DECLARE_SDB_ALLOC(T);               \
+    DECLARE_SDB_DEALLOC(T);             \
+    DECLARE_SDB_FLUSH(T);               \
+    DECLARE_SDB_ADD(T);                 \
+    DECLARE_SDB_ADD_AND_ALIAS(T);       \
+    DECLARE_SDB_REMOVE(T);              \
+    DECLARE_SDB_LOOKUP(T);              \
+    DECLARE_SDB_REFERENCE(T);           \
+    DECLARE_SDB_DEREFERENCE(T)          
+
+#define SDB_DEFINE(T)                   \
+    POOL_DEFINE(T)                      \
+    DEFINE_SDB_ALLOC(T)                 \
+    DEFINE_SDB_DEALLOC(T)               \
+    DEFINE_SDB_FLUSH(T)                 \
+    DEFINE_SDB_ADD(T)                   \
+    DEFINE_SDB_ADD_AND_ALIAS(T)         \
+    DEFINE_SDB_REMOVE(T)                \
+    DEFINE_SDB_LOOKUP(T)                \
+    DEFINE_SDB_REFERENCE(T)             \
+    DEFINE_SDB_DEREFERENCE(T)          
+
+/* Allocate and setup database. If growable, allows the database to increase size when required. */
+#define DECLARE_SDB_ALLOC(T)    \
+T ## SDB    T ## SDBAlloc(struct arena *mem, const u32 initial_length, const u32 growable)
+
+/* Deallocate the database. WARNING: that none of the database id strings are freed in the call. */
+#define DECLARE_SDB_DEALLOC(T)    \
+void        T ## SDBDealloc(T ## SDB *db)
+
+/* Flush or reset the string database */
+#define DECLARE_SDB_FLUSH(T)    \
+void        T ## SDBFlush(T ## SDB *db)
+
+/* 
+ * Allocate a new database node with the given identifier and return its index (handle). The id
+ * will be copied onto the arena. On failure, the null slot (U32_MAX, NULL) is returned. the 
+ * reference count is set to 0. 
+ * */
+#define DECLARE_SDB_ADD(T)    \
+struct slot T ## SDBAdd(struct arena *mem, T ## SDB *db, const utf8 id_to_copy)
+
+/* 
+ * allocate a new database node with the given identifier and return its index. The id will alias
+ * the given string's content. On failure, the null slot (U32_MAX, NULL) is returned. the reference
+ * count is set to 0. 
+ */
+#define DECLARE_SDB_ADD_AND_ALIAS(T)    \
+struct slot T ## SDBAddAndAlias(T ## SDB *db, const utf8 id_to_alias)
+
 /* remove the identifier's corresponding database node if found and update database state, otherwise do nothing. */
-void		strdb_Remove(struct strdb *db, const utf8 id);
-/* Lookup the identifer in the database. If it exist, return its slot. Otherwise return (0, NULL). */
-struct slot	strdb_Lookup(const struct strdb *db, const utf8 id);
-/* Return the corresponding address of the index. */
-void *		strdb_Address(const struct strdb *db, const u32 handle);
-/* Return the result of the lookup operation. furthermore, if the returned slot is not (0, NULL), increment the corresponding node's reference count.  */
-struct slot 	strdb_Reference(struct strdb *db, const utf8 id);
+#define DECLARE_SDB_REMOVE(T)    \
+void        T ## SDBRemove(T ## SDB *db, const utf8 id)
+
+/* Lookup the identifer in the database. If it exist, return its slot. Otherwise return the stub node. */
+#define DECLARE_SDB_LOOKUP(T)   \
+struct slot T ## SDBLookup(const T ## SDB *db, const utf8 id)
+
+/* 
+ * Return the result of the lookup operation. furthermore, if the returned slot is not the stub node, 
+ * increment the corresponding node's reference count.  
+ */
+#define DECLARE_SDB_REFERENCE(T)    \
+struct slot T ## SDBReference(T ## SDB *db, const utf8 id)
+
 /* Lookup the handle in the database. If it exist, decrement the corresponding node's reference count. */
-void		strdb_Dereference(struct strdb *db, const u32 handle);
+#define DECLARE_SDB_DEREFERENCE(T)    \
+void        T ## SDBDereference(T ## SDB *db, const u32 index)
+
+#define DEFINE_SDB_ALLOC(T)                                                                         \
+DECLARE_SDB_ALLOC(T)                                                                                \
+{                                                                                                   \
+    struct T ## SDB db = { 0 };                                                                     \
+    db.hash = ds_HashMapAlloc(mem, initial_length, initial_length, growable);                       \
+    db.pool = T ## PoolAlloc(mem, initial_length, growable);                                        \
+    ds_DLLFlush(&db.allocated_list);                                                                \
+                                                                                                    \
+	if (!db.hash.hash || !db.pool.length)                                                           \
+	{                                                                                               \
+		LogString(T_SYSTEM, S_FATAL, "Failed to allocate string_database");                         \
+		FatalCleanupAndExit();                                                                      \
+	}                                                                                               \
+                                                                                                    \
+    const utf8 stub_id = Utf8Empty();                                                               \
+	const u32 key = Utf8Hash(stub_id);                                                              \
+                                                                                                    \
+	struct slot slot = T ## PoolAdd(&db.pool);                                                      \
+	ds_Assert(slot.index == SDB_STUB);                                                              \
+                                                                                                    \
+	ds_HashMapAdd(&db.hash, key, slot.index);                                                       \
+    db.pool.buf[slot.index].id = stub_id;                                                           \
+    db.pool.buf[slot.index].reference_count = 0;                                                    \
+    return db;                                                                                      \
+}                                                                                                   
+
+#define DEFINE_SDB_DEALLOC(T)                                                                       \
+DECLARE_SDB_DEALLOC(T)                                                                              \
+{                                                                                                   \
+	T ## PoolDealloc(&db->pool);                                                                    \
+	ds_HashMapDealloc(&db->hash);                                                                   \
+}                                                                                                   
+
+#define DEFINE_SDB_FLUSH(T)                                                                         \
+DECLARE_SDB_FLUSH(T)                                                                                \
+{                                                                                                   \
+    ds_HashMapFlush(&db->hash);                                                                     \
+    T ## PoolFlush(&db->pool);                                                                      \
+    ds_DLLFlush(&db->allocated_list);                                                               \
+                                                                                                    \
+    const utf8 stub_id = Utf8Empty();                                                               \
+	const u32 key = Utf8Hash(stub_id);                                                              \
+                                                                                                    \
+	struct slot slot = T ## PoolAdd(&db->pool);                                                     \
+	ds_Assert(slot.index == SDB_STUB);                                                              \
+                                                                                                    \
+	ds_HashMapAdd(&db->hash, key, slot.index);                                                      \
+    db->pool.buf[slot.index].id = stub_id;                                                          \
+    db->pool.buf[slot.index].reference_count = 0;                                                   \
+}                                                                                                   
+
+#define DEFINE_SDB_ADD(T)                                                                           \
+DECLARE_SDB_ADD(T)                                                                                  \
+{                                                                                                   \
+    struct slot slot = { .index = U32_MAX, .address = NULL };                                       \
+	if (T ## SDBLookup(db, id_to_copy).index != SDB_STUB)                                           \
+	{                                                                                               \
+		return slot;                                                                                \
+	}                                                                                               \
+                                                                                                    \
+    utf8 id = Utf8Copy(mem, id_to_copy);                                                            \
+	if (id.buf)                                                                                     \
+	{                                                                                               \
+		const u32 key = Utf8Hash(id);                                                               \
+		struct slot slot = T ## PoolAdd(&db->pool);                                                 \
+		ds_HashMapAdd(&db->hash, key, slot.index);                                                  \
+                                                                                                    \
+		ds_DLLAppend(db->allocated_list, db->pool.buf, slot.index, strdb_allocated);                \
+        db->pool.buf[slot.index].id = id;                                                           \
+        db->pool.buf[slot.index].reference_count = 0;                                               \
+	}                                                                                               \
+                                                                                                    \
+	return slot;                                                                                    \
+}                                                                                                   
+
+#define DEFINE_SDB_ADD_AND_ALIAS(T)                                                                 \
+DECLARE_SDB_ADD_AND_ALIAS(T)                                                                        \
+{                                                                                                   \
+	if (T ## SDBLookup(db, id_to_alias).index != SDB_STUB)                                          \
+	{                                                                                               \
+		return (struct slot) { .address = NULL, .index = U32_MAX };                                 \
+	}                                                                                               \
+                                                                                                    \
+	const u32 key = Utf8Hash(id_to_alias);                                                          \
+	struct slot slot = T ## PoolAdd(&db->pool);                                                     \
+	ds_HashMapAdd(&db->hash, key, slot.index);                                                      \
+                                                                                                    \
+	ds_DLLAppend(db->allocated_list, db->pool.buf, slot.index, strdb_allocated);                    \
+    db->pool.buf[slot.index].id = id_to_alias;                                                      \
+    db->pool.buf[slot.index].reference_count = 0;                                                   \
+                                                                                                    \
+	return slot;                                                                                    \
+}
+
+#define DEFINE_SDB_REMOVE(T)                                                                        \
+DECLARE_SDB_REMOVE(T)                                                                               \
+{                                                                                                   \
+	const struct slot slot = T ## SDBLookup(db, id);                                                \
+	if (slot.index != SDB_STUB)                                                                     \
+	{                                                                                               \
+	    const u32 key = Utf8Hash(db->pool.buf[slot.index].id);                                      \
+		ds_DLLRemove(db->allocated_list, db->pool.buf, slot.index, strdb_allocated);                \
+		ds_HashMapRemove(&db->hash, key, slot.index);                                               \
+		T ## PoolRemove(&db->pool, slot.index);                                                     \
+	}                                                                                               \
+}                                                                                                   
+
+#define DEFINE_SDB_LOOKUP(T)                                                                        \
+DECLARE_SDB_LOOKUP(T)                                                                               \
+{                                                                                                   \
+	const u32 key = Utf8Hash(id);                                                                   \
+	struct slot slot = { .index = SDB_STUB, .address = db->pool.buf };                              \
+	for (u32 i = ds_HashMapFirst(&db->hash, key); i != HASH_NULL; i = ds_HashMapNext(&db->hash, i)) \
+	{                                                                                               \
+		if (Utf8Equivalence(id, db->pool.buf[i].id))                                                \
+		{                                                                                           \
+			slot.index = i;                                                                         \
+			slot.address = db->pool.buf + i;                                                        \
+			break;                                                                                  \
+		}                                                                                           \
+	}                                                                                               \
+                                                                                                    \
+	return slot;                                                                                    \
+}                                                                                                   
+
+#define DEFINE_SDB_REFERENCE(T)                                                                     \
+DECLARE_SDB_REFERENCE(T)                                                                            \
+{                                                                                                   \
+	struct slot slot = T ## SDBLookup(db, id);                                                      \
+    db->pool.buf[slot.index].reference_count += 1;                                                  \
+	return slot;                                                                                    \
+}                                                                                                   
+
+#define DEFINE_SDB_DEREFERENCE(T)                                                                   \
+DECLARE_SDB_DEREFERENCE(T)                                                                          \
+{                                                                                                   \
+	ds_Assert(db->pool.buf[index].reference_count >= 1 || index == SDB_STUB);                       \
+    db->pool.buf[index].reference_count -= 1;                                                       \
+}                                                                                                  
+
 
 #ifdef __cplusplus
 } 

@@ -205,7 +205,7 @@ enum c_ShapeType
 struct c_Shape
 {
     u8                      id_buf[C_SHAPE_ID_SIZE];
-	STRING_DATABASE_SLOT_STATE;
+    SDB_NODE;
 	
 	mat3	                inertia_tensor;		/* local shape frame intertia tensor (Assumes density=1.0, 
 			                		                to get the interia tensor given a density, just multiply
@@ -222,6 +222,7 @@ struct c_Shape
 		struct triMeshBvh 	mesh_bvh;
 	};
 };
+SDB_DECLARE(c_Shape);
 
 void	c_ShapeUpdateMassProperties(struct c_Shape *shape);
 

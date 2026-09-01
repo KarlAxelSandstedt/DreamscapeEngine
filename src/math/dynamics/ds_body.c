@@ -18,6 +18,7 @@
 */
 
 POOL_DEFINE(ds_RigidBody);
+SDB_DEFINE(ds_RigidBodyPrefab);
 
 ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_RigidBodyPrefab *prefab, const ds_Transform *world, const u32 entity)
 {
@@ -216,7 +217,7 @@ void ds_RigidBodyUpdateMassProperties(struct ds_RigidBodyPipeline *pipeline, con
 	{
 		shape = pipeline->shape_pool.buf + s;
 		s = shape->body_shape.next;
-		const struct c_Shape *cshape = strdb_Address(pipeline->cshape_db, shape->cshape_handle);
+		const struct c_Shape *cshape = pipeline->cshape_db->pool.buf + shape->cshape_handle;
 
 		mass[i] = shape->density * cshape->volume;
 		body->mass += mass[i];

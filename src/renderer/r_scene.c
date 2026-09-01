@@ -369,7 +369,7 @@ void r_SceneBucketListGenerate(void)
 			case R_INSTANCE_PROXY3D:
 			{
 				const struct r_Proxy3d *proxy = r_Proxy3dAddress(instance->unit);
-				const struct r_Mesh *mesh = strdb_Address(g_r_core->mesh_database, proxy->mesh);
+				const struct r_Mesh *mesh = g_r_core->mesh_database->pool.buf + proxy->mesh;
 				buf_constructor.last->index_count = mesh->index_count;
 				buf_constructor.last->local_size = mesh->vertex_count * L_PROXY3D_STRIDE;
 				r_BufferConstructorBufferAddSize(&buf_constructor, 
@@ -697,7 +697,7 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 			case R_INSTANCE_PROXY3D:
 			{
 				const struct r_Proxy3d *proxy = r_Proxy3dAddress(instance->unit);
-				const struct r_Mesh *mesh = strdb_Address(g_r_core->mesh_database, proxy->mesh);
+				const struct r_Mesh *mesh = g_r_core->mesh_database->pool.buf + proxy->mesh;
 				buf->shared_data = ArenaPush(g_scene->mem_frame, buf->shared_size);
 				buf->local_data = mesh->vertex_data;
 				buf->index_data = mesh->index_data;
