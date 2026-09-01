@@ -404,6 +404,7 @@ DECLARE_HI_ADOPT_NODE_EXCLUSIVE(T)                                              
     last = hi->pool.buf + parent->hi_last;                                                              \
                                                                                                         \
     last->hi_next = (i32) index;                                                                        \
+    node->hi_parent = new_parent_index;                                                                 \
     node->hi_prev = parent->hi_last;                                                                    \
     node->hi_next = HI_NULL;                                                                            \
     node->hi_first = HI_NULL;                                                                           \
@@ -443,6 +444,7 @@ DECLARE_HI_ADOPT(T)                                                             
     T *last = hi->pool.buf + parent->hi_last;                                                           \
     last->hi_next = (i32) index;                                                                        \
     node->hi_prev = parent->hi_last;                                                                    \
+    node->hi_parent = new_parent_index;                                                                 \
     parent->hi_last = (i32) index;                                                                      \
     if (parent->hi_first == HI_NULL)                                                                    \
     {                                                                                                   \
@@ -508,13 +510,13 @@ do                                                                              
 while (0)
 
 /* 
- * Advance the iterator the the next sibling or ancestor (or back to the root). 
+ * Set it.next to the next depth-first index outside of subtree of it.at . 
  */
 #define HIISkip(_hii_, _hi_)                                                                                \
 do                                                                                                          \
 {                                                                                                           \
-    ds_Assert(!((_hii_).at == (_hii_).root && (_hii_).next != (_hi_).pool.buf[(_hii_).root].hi_first));     \
-    (_hii_).at = (_hii_).next;                                                                              \
+    ds_Assert((_hii_).at != (_hii_).root);                                                                  \
+    (_hii_).next = (_hii_).at;                                                                              \
                                                                                                             \
     i32 _next_ = (_hi_).pool.buf[(_hii_).next].hi_next;                                                     \
     if (_next_ != HI_NULL)                                                                                  \

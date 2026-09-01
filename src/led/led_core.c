@@ -1599,10 +1599,8 @@ void led_Refresh(struct led *led)
             led_NodeAttachRigidBodyPrefab(led, node->tagged_id, prefab->id);
             HIISkip(it, led->node_hierarchy);
         }
-        else
-        {
-            HIIAdvance(it, led->node_hierarchy);
-        }
+            
+        HIIAdvance(it, led->node_hierarchy);
 	}
 }
 
