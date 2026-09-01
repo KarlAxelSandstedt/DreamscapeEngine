@@ -195,14 +195,14 @@ DECLARE_HI_ADD(T)                                                   \
     T *last = hi->pool.buf + parent->hi_last;                       \
     T *node = hi->pool.buf + slot.index;                            \
                                                                     \
+    last->hi_next = (i32) slot.index;                               \
+                                                                    \
     node->hi_parent = (i32) parent_index;                           \
     node->hi_next = HI_NULL;                                        \
-    node->hi_prev = HI_NULL;                                        \
+    node->hi_prev = parent->hi_last;                                \
     node->hi_first = HI_NULL;                                       \
-    node->hi_last = parent->hi_last;                                \
+    node->hi_last = HI_NULL;                                        \
     node->hi_child_count = 0;                                       \
-                                                                    \
-    last->hi_next = (i32) slot.index;                               \
                                                                     \
     parent->hi_child_count += 1;                                    \
 	parent->hi_last = slot.index;                                   \
@@ -217,7 +217,7 @@ DECLARE_HI_ADD(T)                                                   \
 #define DEFINE_HI_REMOVE(T)                                                         \
 DECLARE_HI_REMOVE(T)                                                                \
 {                                                                                   \
-    ds_Assert(0 < index && index < hi->pool.count_max);                             \
+    ds_Assert(1 < index && index < hi->pool.count_max);                             \
                                                                                     \
     const i32 parent = hi->pool.buf[index].hi_parent;                               \
     const i32 first = hi->pool.buf[index].hi_first;                                 \
@@ -283,7 +283,7 @@ DECLARE_HI_REMOVE(T)                                                            
 #define DEFINE_HI_APPLY_CUSTOM_FREE_AND_REMOVE(T)                                   \
 DECLARE_HI_APPLY_CUSTOM_FREE_AND_REMOVE(T)                                          \
 {                                                                                   \
-    ds_Assert(0 < index && index < hi->pool.count_max);                             \
+    ds_Assert(1 < index && index < hi->pool.count_max);                             \
                                                                                     \
     const i32 parent = hi->pool.buf[index].hi_parent;                               \
     const i32 first = hi->pool.buf[index].hi_first;                                 \
@@ -344,8 +344,10 @@ DECLARE_HI_APPLY_CUSTOM_FREE_AND_REMOVE(T)                                      
     hi->pool.buf[next].hi_prev = prev;                                              \
     hi->pool.buf[prev].hi_next = next;                                              \
                                                                                     \
+	custom_free(hi, (u32) index, data);                                             \
     T ## PoolRemove(&hi->pool, index);                                              \
 }
+
 #define DEFINE_HI_ADOPT_NODE_EXCLUSIVE(T)                                                               \
 DECLARE_HI_ADOPT_NODE_EXCLUSIVE(T)                                                                      \
 {                                                                                                       \
@@ -492,11 +494,11 @@ do                                                                              
 do                                                                                                          \
 {                                                                                                           \
     ds_Assert(!((_hii_).at == (_hii_).root && (_hii_).next != (_hi_).pool.buf[(_hii_).root].hi_first));     \
+    (_hii_).at = (_hii_).next;                                                                              \
                                                                                                             \
-    const i32 _first_ = (_hi_).pool.buf[(_hii_).at].hi_first;                                               \
+    const i32 _first_ = (_hi_).pool.buf[(_hii_).next].hi_first;                                             \
     if (_first_ != HI_NULL)                                                                                 \
     {                                                                                                       \
-        (_hii_).at = (_hii_).next;                                                                          \
         (_hii_).next = _first_;                                                                             \
         break;                                                                                              \
     }                                                                                                       \
@@ -512,29 +514,27 @@ while (0)
 do                                                                                                          \
 {                                                                                                           \
     ds_Assert(!((_hii_).at == (_hii_).root && (_hii_).next != (_hi_).pool.buf[(_hii_).root].hi_first));     \
+    (_hii_).at = (_hii_).next;                                                                              \
                                                                                                             \
-    i32 _next_ = (_hi_).pool.buf[(_hii_).at].hi_next;                                                       \
+    i32 _next_ = (_hi_).pool.buf[(_hii_).next].hi_next;                                                     \
     if (_next_ != HI_NULL)                                                                                  \
     {                                                                                                       \
-        (_hii_).at = (_hii_).next;                                                                          \
         (_hii_).next = _next_;                                                                              \
         break;                                                                                              \
     }                                                                                                       \
                                                                                                             \
     do                                                                                                      \
     {                                                                                                       \
-        (_hii_).at = (_hi_).pool.buf[(_hii_).at].hi_parent;                                                 \
-        if ((_hii_).at == (_hii_).root)                                                                     \
+        (_hii_).next = (_hi_).pool.buf[(_hii_).next].hi_parent;                                             \
+        if ((_hii_).next == (_hii_).root)                                                                   \
         {                                                                                                   \
-            (_hii_).at = (_hii_).next;                                                                      \
             (_hii_).next = (_hii_).root;                                                                    \
             break;                                                                                          \
         }                                                                                                   \
                                                                                                             \
-        _next_ = (_hi_).pool.buf[(_hii_).at].hi_next;                                                       \
+        _next_ = (_hi_).pool.buf[(_hii_).next].hi_next;                                                     \
         if (_next_ != HI_NULL)                                                                              \
         {                                                                                                   \
-            (_hii_).at = (_hii_).next;                                                                      \
             (_hii_).next = _next_;                                                                          \
             break;                                                                                          \
         }                                                                                                   \
