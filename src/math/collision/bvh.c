@@ -306,7 +306,7 @@ void DbvhRemove(struct bvh *bvh, const u32 index)
 	if (parent == BT_PARENT_INDEX_MASK)
 	{
 		bvh->tree.root = BT_PARENT_INDEX_MASK;
-		bt_NodeRemove(&bvh->tree, parent);
+		bt_NodeRemove(&bvh->tree, index);
 	}
 	else
 	{

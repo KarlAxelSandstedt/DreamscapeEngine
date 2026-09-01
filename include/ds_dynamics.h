@@ -245,7 +245,7 @@ void                    ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipel
 /* 
  * INTERNAL: Remove the specified shape of a STATIC body and update the physics state into a valid state. 
  */
-void        ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 index, const u32 update_mass_properties);
+void        ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 index);
 /*
  * Lookup the specified shape and return it if found. Otherwise return (NULL, POOL_NULL).
  */
@@ -1327,7 +1327,7 @@ u64             PhysicsPipelineOrientationHash(const struct ds_RigidBodyPipeline
 /* validate and ds_Assert internal state of physics pipeline */
 void			PhysicsPipelineValidate(const struct ds_RigidBodyPipeline *pipeline);
 /* If hit, return parameter (shape,t) of ray at first collision. Otherwise return (U32_MAX, F32_INFINITY) */
-u32f32 			PhysicsPipelineRaycastParameter(struct arena *mem_tmp1, struct arena *mem_tmp2, const struct ds_RigidBodyPipeline *pipeline, const struct ray *ray);
+u32f32 			PhysicsPipelineRaycastParameter(const struct ds_RigidBodyPipeline *pipeline, const struct ray *ray);
 /* enable sleeping in pipeline */
 void 			PhysicsPipelineSleepEnable(struct ds_RigidBodyPipeline *pipeline);
 /* disable sleeping in pipeline */

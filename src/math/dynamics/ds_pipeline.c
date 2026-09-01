@@ -1115,38 +1115,67 @@ u64 PhysicsPipelineOrientationHash(const struct ds_RigidBodyPipeline *pipeline)
     return hash;
 }
 
-u32f32 PhysicsPipelineRaycastParameter(struct arena *mem_tmp1, struct arena *mem_tmp2, const struct ds_RigidBodyPipeline *pipeline, const struct ray *ray)
+u32f32 PhysicsPipelineRaycastParameter(const struct ds_RigidBodyPipeline *pipeline, const struct ray *ray)
 {
-	ArenaPushRecord(mem_tmp1);
+    struct arena *tmp = ArenaPushScratch();
 
-	struct bvhRaycastInfo info = BvhRaycastInit(mem_tmp1, &pipeline->dynamic_bvh, ray);
-	while (info.hit_queue.count)
+	struct bvhRaycastInfo d_info = BvhRaycastInit(tmp, &pipeline->dynamic_bvh, ray);
+	while (d_info.hit_queue.count)
 	{
-		const u32f32 tuple = MinQueueFixedPop(&info.hit_queue);
-		if (info.hit.f < tuple.f)
+		const u32f32 tuple = MinQueueFixedPop(&d_info.hit_queue);
+		if (d_info.hit.f < tuple.f)
 		{
 			break;	
 		}
 
-		if (bt_LeafCheck(info.node + tuple.u))
+		if (bt_LeafCheck(d_info.node + tuple.u))
 		{
-			const u32 si = info.node[tuple.u].bt_left;
+			const u32 si = d_info.node[tuple.u].bt_left;
 			const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
 			const f32 t = ds_ShapeRaycastParameter(pipeline, shape, ray);
-			if (t < info.hit.f)
+			if (t < d_info.hit.f)
 			{
-				info.hit = u32f32_inline(si, t);
+				d_info.hit = u32f32_inline(si, t);
 			}
 		}
 		else
 		{
-			BvhRaycastTestAndPushChildren(&info, tuple);
+			BvhRaycastTestAndPushChildren(&d_info, tuple);
 		}
 	}
 
-	ArenaPopRecord(mem_tmp1);
+    ArenaFlush(tmp);
 
-	return info.hit;
+	struct bvhRaycastInfo s_info = BvhRaycastInit(tmp, &pipeline->static_bvh, ray);
+	while (s_info.hit_queue.count)
+	{
+		const u32f32 tuple = MinQueueFixedPop(&s_info.hit_queue);
+		if (s_info.hit.f < tuple.f)
+		{
+			break;	
+		}
+
+		if (bt_LeafCheck(s_info.node + tuple.u))
+		{
+			const u32 si = s_info.node[tuple.u].bt_left;
+			const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
+			const f32 t = ds_ShapeRaycastParameter(pipeline, shape, ray);
+			if (t < s_info.hit.f)
+			{
+				s_info.hit = u32f32_inline(si, t);
+			}
+		}
+		else
+		{
+			BvhRaycastTestAndPushChildren(&s_info, tuple);
+		}
+	}
+
+    ArenaPopScratch();
+
+	return (d_info.hit.f < s_info.hit.f)
+        ? d_info.hit
+        : s_info.hit;
 }
 
 struct ds_PhysicsEvent *ds_PhysicsEventPush(struct ds_RigidBodyPipeline *pipeline)

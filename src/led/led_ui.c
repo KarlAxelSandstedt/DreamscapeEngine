@@ -497,7 +497,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 						Vec3TranslateScaled(dir, led->cam.position, -1.0f);
 						Vec3ScaleSelf(dir, 1.0f / Vec3Length(dir));
 						const struct ray ray = RayConstruct(led->cam.position, dir);
-						const u32f32 hit = PhysicsPipelineRaycastParameter(g_ui->mem_frame, mem_tmp, &led->physics, &ray);
+						const u32f32 hit = PhysicsPipelineRaycastParameter(&led->physics, &ray);
 						if (hit.f < F32_INFINITY)
 						{
 							const struct ds_Shape *shape = led->physics.shape_pool.buf + hit.u;	

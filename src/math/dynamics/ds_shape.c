@@ -92,29 +92,16 @@ void ds_ShapeDynamicRemove(struct ds_RigidBodyPipeline *pipeline, struct ds_Rigi
 	ds_ShapePoolRemove(&pipeline->shape_pool, shape_index);
 }
 
-void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 index, const u32 mass_properties_update)
+void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipeline, struct ds_RigidBody *body, const u32 index)
 {
-    ds_BitSetSet(&pipeline->dirty_shape_set, index, 0);
-	struct ds_Shape *dynamic_shape, *shape = pipeline->shape_pool.buf + index;
-    struct ds_RigidBody *dynamic_body;
-    const u32 static_is_tri_mesh = shape->cshape_type == C_SHAPE_TRI_MESH;
+	struct ds_Shape *shape = pipeline->shape_pool.buf + index;
 
-    ds_Assert(RB_IS_STATIC(pipeline->body_pool.buf + shape->body));
-    while (shape->contact_list.first != DLL_SENTINEL)
+    while (shape->contact_list.count)
 	{
-        const u32 ci = shape->contact_list.first;
-		struct ds_Contact *c = pipeline->contact_pool.buf + ci;
-		struct ds_Island *island = pipeline->island_pool.buf + c->island;
-		island->constraint_remove_count += 1; 
-        ds_SolverSetWakeUp(pipeline, island->set);
-        ds_ContactRemove(pipeline, ci);
+        ds_ContactRemove(pipeline, shape->contact_list.first);
     }
 
-    if (mass_properties_update)
-    {
-        ds_RigidBodyUpdateMassProperties(pipeline, body->id);
-    }
-
+    ds_BitSetSet(&pipeline->dirty_shape_set, index, 0);
     ds_DLLRemove(body->shape_list, pipeline->shape_pool.buf, index, body_shape);
 	strdb_Dereference(pipeline->cshape_db, shape->cshape_handle);
 	DbvhRemove(&pipeline->static_bvh, shape->proxy);

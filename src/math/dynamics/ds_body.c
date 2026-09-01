@@ -133,7 +133,7 @@ void ds_RigidBodyRemove(struct arena *mem_tmp, struct ds_RigidBodyPipeline *pipe
 	{
         while (body->shape_list.count)
         {
-			ds_ShapeStaticRemove(mem_tmp, pipeline, body, body->shape_list.first, mass_properties_update);
+			ds_ShapeStaticRemove(mem_tmp, pipeline, body, body->shape_list.first);
         }
 
         while (body->joint_list.count)
