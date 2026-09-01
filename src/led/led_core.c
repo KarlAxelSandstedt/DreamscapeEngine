@@ -20,13 +20,15 @@
 #include "led_local.h"
 #include "ds_random.h"
 
+HI_DEFINE(led_Node);
+
 struct slot led_NodeLookupId(struct led *led, const utf8 id)
 {
 	struct slot slot = empty_slot;
 	const u32 hash = Utf8Hash(id);
 	for (u32 i = ds_HashMapFirst(&led->node_map, hash); i != HASH_NULL; i = ds_HashMapNext(&led->node_map, i))
 	{
-		struct led_Node *node = hi_Address(&led->node_hierarchy, i);
+		struct led_Node *node = led->node_hierarchy.pool.buf + i;
 		if (Utf8Equivalence(id, node->id))
 		{
 			slot.index = i;
@@ -45,7 +47,7 @@ struct led_Node *led_NodeLookup(struct led *led, const ds_Id id)
         return NULL;        
     }
 
-    struct led_Node *node = hi_Address(&led->node_hierarchy, ds_IdIndex(id));
+    struct led_Node *node = led->node_hierarchy.pool.buf + ds_IdIndex(id);
     return (node->tagged_id = id)
         ? node
         : NULL;
@@ -75,7 +77,7 @@ static ds_Id led_NodeAnonymousAdd(struct led *led, const ds_Id parent_id)
         parent = ds_IdIndex(parent_id);
     }
 
-    struct slot slot = hi_Add(&led->node_hierarchy, parent);
+    struct slot slot = led_NodeHIAdd(&led->node_hierarchy, parent);
     return led_NodeInitalize(slot.address, slot.index, LED_ANONYMOUS);
 }
 
@@ -105,12 +107,12 @@ ds_Id led_NodeAdd(struct led *led, const utf8 id, const utf8 parent_id)
         return DS_ID_NULL;
     }
 
-    struct slot slot = hi_Add(&led->node_hierarchy, parent);
+    struct slot slot = led_NodeHIAdd(&led->node_hierarchy, parent);
     struct led_Node *node = slot.address;
 	node->id = Utf8CopyBuffered(node->id_buf, LED_NODE_ID_SIZE, id);	
 	if (!node->id.len)
 	{
-        hi_Remove(&led->frame, &led->node_hierarchy, slot.index);
+        led_NodeHIRemove(&led->frame, &led->node_hierarchy, slot.index);
 		Log(T_LED, S_WARNING, "Failed to allocate led_node: id size must be <= %luB", LED_NODE_ID_SIZE);
         return DS_ID_NULL;
 	} 
@@ -120,10 +122,10 @@ ds_Id led_NodeAdd(struct led *led, const utf8 id, const utf8 parent_id)
     return led_NodeInitalize(node, slot.index, LED_FLAG_NONE);
 }
 
-static void led_NodeRemoveResources(const struct hi *hi, const u32 index, void *led_void)
+static void led_NodeRemoveResources(const led_NodeHI *hi, const u32 index, void *led_void)
 {
     struct led *led = led_void;
-    struct led_Node *node = hi_Address(hi, index);
+    struct led_Node *node = hi->pool.buf + index;
 
 	ds_RigidBodyPrefabSDBDereference(&led->body_prefab_db, node->body_prefab);
     node->body_prefab = SDB_STUB;
@@ -147,7 +149,7 @@ void led_NodeRemoveId(struct led *led, const utf8 id)
 	struct led_Node *node = slot.address;
     if (node)
     {
-        hi_ApplyCustomFreeAndRemove(&led->frame, &led->node_hierarchy, slot.index, &led_NodeRemoveResources, led);
+        led_NodeHIApplyCustomFreeAndRemove(&led->frame, &led->node_hierarchy, slot.index, &led_NodeRemoveResources, led);
     }
 }
 
@@ -156,7 +158,7 @@ void led_NodeRemove(struct led *led, const ds_Id id)
     struct led_Node *node = led_NodeLookup(led, id);
     if (node && node->tagged_id == id)
     {
-        hi_ApplyCustomFreeAndRemove(&led->frame, &led->node_hierarchy, ds_IdIndex(id), &led_NodeRemoveResources, led);
+        led_NodeHIApplyCustomFreeAndRemove(&led->frame, &led->node_hierarchy, ds_IdIndex(id), &led_NodeRemoveResources, led);
     }
 }
 
@@ -221,15 +223,14 @@ static void led_NodeDetachRigidBodyPrefabInternal(struct led *led, struct led_No
     if (node->flags & LED_BODY_PREFAB)
     {
 	    ds_RigidBodyPrefabSDBDereference(&led->body_prefab_db, node->body_prefab);
-        for (u32 i = node->hi_first; i != HI_NULL_INDEX; )
+        struct led_Node *child = NULL;
+        for (i32 i = node->hi_first; i != HI_NULL; i = child->hi_next)
         {
-            struct led_Node *child = hi_Address(&led->node_hierarchy, i);
-            const u32 next = child->hi_next;
+            child = led->node_hierarchy.pool.buf + i;
             if (child->flags & LED_SHAPE_PREFAB)
             {
-                hi_ApplyCustomFreeAndRemove(&led->frame, &led->node_hierarchy, i, &led_NodeRemoveResources, led);
+                led_NodeHIApplyCustomFreeAndRemove(&led->frame, &led->node_hierarchy, i, &led_NodeRemoveResources, led);
             }
-            i = next;
         }
 
 	    r_Proxy3dDealloc(&led->frame, node->proxy);
@@ -1393,7 +1394,7 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_NodeSetPosition(led, tagged_id, mesh_translation);
     led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_mesh"));
     led_NodeSetColor(led, tagged_id, mesh_color, 1.0f);
-    struct led_Node *led_mesh = hi_Address(&led->node_hierarchy, ds_IdIndex(tagged_id));
+    struct led_Node *led_mesh = led->node_hierarchy.pool.buf + ds_IdIndex(tagged_id);
 	vec3 axis = { 0.6f, 1.0f, 0.6f };
 	Vec3ScaleSelf(axis, 1.0f / f32_sqrt(Vec3Length(axis)));
 	const f32 angle = F32_PI / 16.0f;
@@ -1586,26 +1587,23 @@ void led_Compile(struct led *led)
 
 void led_Refresh(struct led *led)
 {
-    struct arena *tmp = ArenaPushScratch();
-	struct hi_Iterator it = hi_IteratorAlloc(tmp, &led->node_hierarchy, LED_NODE_ROOT);
-    hi_IteratorNextDf(&it);
-	while(it.count)
+    HII it; 
+    HIIInit(it, led->node_hierarchy, LED_NODE_ROOT);
+    HIIAdvance(it, led->node_hierarchy);
+	while (it.at != LED_NODE_ROOT)
 	{
-        //Careful here, do not allocate inside iterator loop, instead skip subtree allocating within
-        const u32 index = hi_IteratorPeek(&it);
-		struct led_Node *node = hi_Address(&led->node_hierarchy, index);
+		struct led_Node *node = led->node_hierarchy.pool.buf + it.at;
         if (node->flags & LED_BODY_PREFAB)
         {
-            hi_IteratorSkip(&it);
             const struct ds_RigidBodyPrefab *prefab = led->body_prefab_db.pool.buf + node->body_prefab;
             led_NodeAttachRigidBodyPrefab(led, node->tagged_id, prefab->id);
+            HIISkip(it, led->node_hierarchy);
         }
         else
         {
-            hi_IteratorNextDf(&it);
+            HIIAdvance(it, led->node_hierarchy);
         }
 	}
-    ArenaPopScratch();
 }
 
 void led_Run(struct led *led)
@@ -1665,11 +1663,11 @@ void led_CoreInitCommands(void)
 
 static void led_NodeColorProxies(struct led *led, const u32 index, const vec4 color)
 {
-    const struct led_Node *node = hi_Address(&led->node_hierarchy, index);
+    const struct led_Node *node = led->node_hierarchy.pool.buf + index;
     const struct led_Node *child = NULL;
-    for (u32 i = node->hi_first; i != HI_NULL_INDEX; i = child->hi_next)
+    for (i32 i = node->hi_first; i != HI_NULL; i = child->hi_next)
     {
-        child = hi_Address(&led->node_hierarchy, i);
+        child = led->node_hierarchy.pool.buf + i;
         if (child->flags & LED_SHAPE_PREFAB)
         {
             struct r_Proxy3d *proxy = r_Proxy3dAddress(child->proxy);
@@ -1680,11 +1678,11 @@ static void led_NodeColorProxies(struct led *led, const u32 index, const vec4 co
 
 static void led_NodeDrawProxies(struct led *led, const u32 index)
 {
-    const struct led_Node *node = hi_Address(&led->node_hierarchy, index);
+    const struct led_Node *node = led->node_hierarchy.pool.buf + index;
     const struct led_Node *child = NULL;
-    for (u32 i = node->hi_first; i != HI_NULL_INDEX; i = child->hi_next)
+    for (i32 i = node->hi_first; i != HI_NULL; i = child->hi_next)
     {
-        child = hi_Address(&led->node_hierarchy, i);
+        child = led->node_hierarchy.pool.buf + i;
         if (child->flags & LED_SHAPE_PREFAB)
         {
             struct r_Proxy3d *proxy = r_Proxy3dAddress(child->proxy);
@@ -1695,11 +1693,11 @@ static void led_NodeDrawProxies(struct led *led, const u32 index)
 
 static void led_NodeDontDrawProxies(struct led *led, const u32 index)
 {
-    const struct led_Node *node = hi_Address(&led->node_hierarchy, index);
+    const struct led_Node *node = led->node_hierarchy.pool.buf + index;
     const struct led_Node *child = NULL;
-    for (u32 i = node->hi_first; i != HI_NULL_INDEX; i = child->hi_next)
+    for (i32 i = node->hi_first; i != HI_NULL; i = child->hi_next)
     {
-        child = hi_Address(&led->node_hierarchy, i);
+        child = led->node_hierarchy.pool.buf + i;
         if (child->flags & LED_SHAPE_PREFAB)
         {
             struct r_Proxy3d *proxy = r_Proxy3dAddress(child->proxy);
@@ -1762,7 +1760,7 @@ static void led_EngineRun(struct led *led)
                     while (ds_BitBlockHasNext(&it))
                     {
                         const struct ds_RigidBody *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);
-                        const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
+                        const struct led_Node *node = led->node_hierarchy.pool.buf + body->entity;
                         led_NodeColorProxies(led, body->entity, node->color);
                     }
                 }
@@ -1777,7 +1775,7 @@ static void led_EngineRun(struct led *led)
                     while (ds_BitBlockHasNext(&it))
                     {
 				        const struct ds_RigidBody *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);
-                        const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
+                        const struct led_Node *node = led->node_hierarchy.pool.buf + body->entity;
 					    if (RB_IS_DYNAMIC(body))
 					    {
                             const struct ds_Island *island = led->physics.island_pool.buf + body->island;
@@ -1824,7 +1822,7 @@ static void led_EngineRun(struct led *led)
                     while (ds_BitBlockHasNext(&it))
                     {
 				        const struct ds_RigidBody *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);
-                        const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
+                        const struct led_Node *node = led->node_hierarchy.pool.buf + body->entity;
 					    if (RB_IS_STATIC(body))
 					    {
                             led_NodeColorProxies(led, body->entity, led->static_color);
@@ -1886,8 +1884,8 @@ static void led_EngineRun(struct led *led)
 					const struct ds_RigidBody *body2 = ds_RigidBodyLookup(&led->physics, event->contact_removed_bodies[1]).address;
                     if (body1 && body2)
                     {
-                        const struct led_Node *node1 = hi_Address(&led->node_hierarchy, body1->entity);
-                        const struct led_Node *node2 = hi_Address(&led->node_hierarchy, body2->entity);
+                        const struct led_Node *node1 = led->node_hierarchy.pool.buf + body1->entity;
+                        const struct led_Node *node2 = led->node_hierarchy.pool.buf + body2->entity;
 
 					    if (RB_IS_DYNAMIC(body1))
 					    {
@@ -1964,7 +1962,7 @@ static void led_EngineRun(struct led *led)
                     {
                         const struct ds_RigidBodySim *sim = set->body_sim_pool.buf + i;
 	                	const struct ds_RigidBody *body = led->physics.body_pool.buf + sim->body;
-                        const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
+                        const struct led_Node *node = led->node_hierarchy.pool.buf + body->entity;
 
                         vec3 linear_velocity = { 0.0f, 0.0f, 0.0f };
                         vec3 angular_velocity = { 0.0f, 0.0f, 0.0f };
@@ -2013,7 +2011,7 @@ static void led_EngineRun(struct led *led)
             const struct ds_RigidBodySim *sim = active->body_sim_pool.buf + i;
 	    	const struct ds_RigidBody *body = led->physics.body_pool.buf + sim->body;
             const struct ds_RigidBodyCompute *compute = active->body_compute_pool.buf + body->sim;
-            const struct led_Node *node = hi_Address(&led->node_hierarchy, body->entity);
+            const struct led_Node *node = led->node_hierarchy.pool.buf + body->entity;
             const u64 ns = led->physics.ns_start + led->physics.frames_completed*led->physics.ns_tick; 
 
 	    	r_Proxy3dLinearSpeculationSet(sim->world.position
@@ -2034,12 +2032,13 @@ static void led_EngineRun(struct led *led)
 static void led_EngineFlush(struct led *led)
 {
 	PhysicsPipelineFlush(&led->physics);
-    ArenaPushRecord(&led->frame);
-	struct hi_Iterator it = hi_IteratorAlloc(&led->frame, &led->node_hierarchy, LED_NODE_ROOT);
-    hi_IteratorNextDf(&it);
-	while(it.count)
+
+    HII it; 
+    HIIInit(it, led->node_hierarchy, LED_NODE_ROOT);
+    HIIAdvance(it, led->node_hierarchy);
+	while (it.at != LED_NODE_ROOT)
 	{
-		struct led_Node *node = hi_Address(&led->node_hierarchy, hi_IteratorNextDf(&it));
+		struct led_Node *node = led->node_hierarchy.pool.buf + it.at;
         if (node->flags & LED_PROXY3D)
         {
             r_Proxy3dLinearSpeculationSet(node->transform.position
@@ -2057,8 +2056,8 @@ static void led_EngineFlush(struct led *led)
 		    Vec4Copy(proxy->color, node->color);
             proxy->blend = node->blend;
         }
+        HIIAdvance(it, led->node_hierarchy);
 	}
-	ArenaPopRecord(&led->frame);
 }
 
 static void led_EngineInit(struct led *led)
@@ -2069,17 +2068,16 @@ static void led_EngineInit(struct led *led)
 	led->physics.ns_elapsed = -led->ns_delta;
 	led->ns_engine_paused = 0;
 
-    ArenaPushRecord(&led->frame);
-	struct hi_Iterator it = hi_IteratorAlloc(&led->frame, &led->node_hierarchy, LED_NODE_ROOT);
-    hi_IteratorNextDf(&it);
-	while(it.count)
+    HII it; 
+    HIIInit(it, led->node_hierarchy, LED_NODE_ROOT);
+    HIIAdvance(it, led->node_hierarchy);
+	while (it.at != LED_NODE_ROOT)
 	{
-        const u32 node_index = hi_IteratorNextDf(&it);
-		struct led_Node *node = hi_Address(&led->node_hierarchy, node_index);
+		struct led_Node *node = led->node_hierarchy.pool.buf + it.at;
         if (node->flags & LED_BODY_PREFAB)
         {
             const struct ds_RigidBodyPrefab *body_prefab = led->body_prefab_db.pool.buf + node->body_prefab;
-	    	const ds_RigidBodyId body = ds_RigidBodyAdd(&led->physics, body_prefab, &node->transform, node_index);
+	    	const ds_RigidBodyId body = ds_RigidBodyAdd(&led->physics, body_prefab, &node->transform, it.at);
             node->body = body;
     
             //TODO mass properties should be calculated on AttachShape....
@@ -2092,8 +2090,8 @@ static void led_EngineInit(struct led *led)
                 ds_ShapeAdd(&led->physics, shape_prefab, &instance->t_local, body);
             }
         }
+        HIIAdvance(it, led->node_hierarchy);
 	}
-	ArenaPopRecord(&led->frame);
 
     for (u32 i = 0; i < led->joint_pool.count; ++i)
     {

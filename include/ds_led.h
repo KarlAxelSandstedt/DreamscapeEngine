@@ -31,6 +31,75 @@ extern "C" {
 #include "cmd.h"
 #include "ds_renderer.h"
 #include "ds_ui.h"
+#include "hierarchy_index.h"
+
+/*
+led_Node
+========
+level editor fat struct node that interfaces with all sub-systems.
+*/
+
+#define LED_FLAG_NONE		((u64) 0)
+#define LED_ANONYMOUS       ((u64) 1 << 0)  /* Non-identifiable led_Node; usually the case when node spawn nodes */
+#define LED_PROXY3D         ((u64) 1 << 16)
+#define LED_BODY_PREFAB     ((u64) 1 << 32)
+#define LED_SHAPE_PREFAB    ((u64) 1 << 33)
+
+
+#define LED_NODE_ID_SIZE    128
+#define LED_NODE_ROOT       2
+
+typedef struct led_Node
+{
+    HI_NODE;
+    ds_Id           tagged_id;      /* Generational identifier */
+	u64			    flags;
+    u8              id_buf[LED_NODE_ID_SIZE];
+	utf8			id;             /* User-provided identifier */
+
+    ds_Transform    transform;      /* Transform relative to parent (or world origin if no parent) */
+
+	u32			    body_prefab; 
+    u32             shape_prefab;
+
+    u32             proxy;
+	vec4			color;
+    f32             blend;
+
+    //TODO only used by shit joint on init temporarily
+    ds_RigidBodyId  body;
+} led_Node;
+HI_DECLARE(led_Node);
+
+
+
+/* Add a new node on success. If the parent_id is not empty, the new node will be a child of the parent node. 
+ * If the allocation failed, return DS_ID_NULL. */
+ds_Id               led_NodeAdd(struct led *led, const utf8 id, const utf8 parent_id);
+/* Remove the node and its subhierarchy, and release all of their resources, if the node exist. Otherwise no-op. */
+void                led_NodeRemoveId(struct led *led, const utf8 id);
+/* Remove the node and its subhierarchy, and release all of their resources, if the node exist. Otherwise no-op. */
+void                led_NodeRemove(struct led *led, const ds_Id id);
+/* Return node with the given id if it exist; otherwise return (NULL, U32_MAX).  */
+struct slot         led_NodeLookupId(struct led *led, const utf8 id);
+/* Return node with the given ds_Id if it exist; otherwise return NULL.  */
+struct led_Node *   led_NodeLookup(struct led *led, const ds_Id id);
+/* Set node position if it exist. */
+void		        led_NodeSetPositionId(struct led *led, const utf8 id, const vec3 position);
+/* Set node position if it exist. */
+void		        led_NodeSetColor(struct led *led, const ds_Id id, const vec4 color, const f32 blend);
+/* Set node color and blend factor if it exist. */
+void		        led_NodeSetColorId(struct led *led, const utf8 id, const vec4 color, const f32 blend);
+/* Set node color and blend factor if it exist. */
+void		        led_NodeSetPosition(struct led *led, const ds_Id id, const vec3 position);
+/* Set node to contain a rigid body if the node and the prefab exist */
+void		        led_NodeAttachRigidBodyPrefabId(struct led *led, const utf8 id, const utf8 prefab);
+/* Set node to contain a rigid body if the node and the prefab exist */
+void		        led_NodeAttachRigidBodyPrefab(struct led *led, const ds_Id id, const utf8 prefab);
+/* Detach any existing rigid body from the node. If the node does not exist, or have no body attached, no-op. */
+void		        led_NodeDetachRigidBodyPrefabId(struct led *led, const utf8 id);
+/* Detach any existing rigid body from the node. If the node does not exist, or have no body attached, no-op. */
+void		        led_NodeDetachRigidBodyPrefab(struct led *led, const ds_Id id);
 
 /*******************************************/
 /*                 led_init.c              */
@@ -132,7 +201,7 @@ struct led
     r_MeshSDB			    render_mesh_db;
 
 	struct ds_HashMap 		node_map;
-	struct hi		        node_hierarchy;
+	led_NodeHI		        node_hierarchy;
 
 	struct dll		        node_selected_list;
 	struct ui_List		    node_ui_list;

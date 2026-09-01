@@ -83,6 +83,7 @@ void hi_Dealloc(struct hi *hi)
 {
 	ds_PoolDealloc(&hi->pool);
 }
+
 void hi_Flush(struct hi *hi)
 {
 	ds_PoolFlush(&hi->pool);

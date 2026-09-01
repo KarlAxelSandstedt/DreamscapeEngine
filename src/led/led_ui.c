@@ -502,7 +502,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 						{
 							const struct ds_Shape *shape = led->physics.shape_pool.buf + hit.u;	
 							const struct ds_RigidBody *body = led->physics.body_pool.buf + shape->body;	
-							const struct led_Node *entity = hi_Address(&led->node_hierarchy, body->entity);
+							const struct led_Node *entity = led->node_hierarchy.pool.buf + body->entity;
 							const char *body_id = CstrUtf8(g_ui->mem_frame, entity->id);
 
 							ui_FixedX(g_ui->inter.cursor_position[0])
