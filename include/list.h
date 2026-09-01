@@ -154,12 +154,14 @@ struct ds_DLLNode
     i32 next;
 };
 
-static inline void ds_DLLFlush(struct ds_DLL *dll)
-{
-    dll->count = 0;
-    dll->first = DLL_SENTINEL;
-    dll->last = DLL_SENTINEL;
-};
+
+#define ds_DLLFlush(_dll_)                                                                              \
+do                                                                                                      \
+{                                                                                                       \
+    (_dll_).count = 0;                                                                                  \
+    (_dll_).first = DLL_SENTINEL;                                                                       \
+    (_dll_).last = DLL_SENTINEL;                                                                        \
+} while (0)
 
 #define ds_DLLAppend(_dll_, _base_, _index_, _node_)    ds_DLLAppendEx(_dll_, _base_, _index_, _node_, _node_)
 #define ds_DLLAppendEx(_dll_, _base_, _index_, _last_, _node_)                                          \

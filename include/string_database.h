@@ -128,7 +128,7 @@ DECLARE_SDB_ALLOC(T)                                                            
     struct T ## SDB db = { 0 };                                                                     \
     db.hash = ds_HashMapAlloc(mem, initial_length, initial_length, growable);                       \
     db.pool = T ## PoolAlloc(mem, initial_length, growable);                                        \
-    ds_DLLFlush(&db.allocated_list);                                                                \
+    ds_DLLFlush(db.allocated_list);                                                                 \
                                                                                                     \
 	if (!db.hash.hash || !db.pool.length)                                                           \
 	{                                                                                               \
@@ -160,7 +160,7 @@ DECLARE_SDB_FLUSH(T)                                                            
 {                                                                                                   \
     ds_HashMapFlush(&db->hash);                                                                     \
     T ## PoolFlush(&db->pool);                                                                      \
-    ds_DLLFlush(&db->allocated_list);                                                               \
+    ds_DLLFlush(db->allocated_list);                                                                \
                                                                                                     \
     const utf8 stub_id = Utf8Empty();                                                               \
 	const u32 key = Utf8Hash(stub_id);                                                              \

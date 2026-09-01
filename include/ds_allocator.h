@@ -559,7 +559,7 @@ next free slot in the chain. The end of the free chain is represented by POOL_NU
         POOL_INDEX_DEFINE(T)                                                           
 
 #define POOL_STRUCT_DEFINE(T)                                                                       \
-struct T ## Pool                                                                                    \
+typedef struct T ## Pool                                                                            \
 {                                                                                                   \
 	struct ds_MemSlot mem_slot;	/* If heap allocated, mem_slot.address set to valid address,        \
                                    otherwise NULL.                                              */  \
@@ -569,7 +569,7 @@ struct T ## Pool                                                                
 	u32 count_max;		        /* max count used over the object's lifetime 	                */  \
 	u32 next_free;		        /* next free index if != U32_MAX 		                        */  \
 	u32 growable;		        /* is the memory growable? 			                            */  \
-}
+} T ## Pool
 
 #define POOL_ALLOC_DECLARE(T)                                                                       \
 struct T ## Pool    T ## PoolAlloc(struct arena *mem,                                               \

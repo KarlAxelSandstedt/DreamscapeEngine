@@ -226,13 +226,14 @@ ds_RigidBodyPrefab, a local transform, and a reference to the instanced ds_Shape
 */
 struct ds_ShapePrefabInstance
 {
-    POOL_SLOT_STATE;
-    DLL_SLOT_STATE;             /* ds_RigidBodyPrefab instance list  */
-    u8              id_buf[PREFAB_BUFSIZE];
-    utf8            id;         /* local identifier within a body    */
-    u32             shape_prefab;
-	ds_Transform	t_local;	/* local body frame transform        */
+    POOL_NODE;
+    struct ds_DLLNode   body_shape;
+    u8                  id_buf[PREFAB_BUFSIZE];
+    utf8                id;         /* local identifier within a body    */
+    u32                 shape_prefab;
+	ds_Transform	    t_local;	/* local body frame transform        */
 };
+POOL_DECLARE(ds_ShapePrefabInstance);
 
 /* 
  * Allocates a shape according to the values set in Prefab and with given local body frame transform. On success, 
@@ -295,7 +296,7 @@ struct ds_RigidBodyPrefab
     u8              id_buf[PREFAB_BUFSIZE];
     SDB_NODE;
 
-    struct dll      shape_list;         /* shape prefab instance list */
+    struct ds_DLL   shape_list;         /* shape prefab instance list */
     ds_RigidBodyId  body;
     
 	u32	            dynamic;	        /* dynamic body is true, static if false */

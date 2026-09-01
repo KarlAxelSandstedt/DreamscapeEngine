@@ -39,8 +39,8 @@ ds_RigidBodyId ds_RigidBodyAdd(struct ds_RigidBodyPipeline *pipeline, const stru
     }
     ds_BitSetSet(&pipeline->body_usage_set, body_slot.index, 1);
 
-    ds_DLLFlush(&body->joint_list);
-    ds_DLLFlush(&body->shape_list);
+    ds_DLLFlush(body->joint_list);
+    ds_DLLFlush(body->shape_list);
 
 	body->entity = entity;
 

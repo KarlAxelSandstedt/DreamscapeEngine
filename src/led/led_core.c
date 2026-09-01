@@ -272,9 +272,9 @@ static void led_NodeAttachRigidBodyPrefabInternal(struct led *led, struct led_No
 
     const struct ds_RigidBodyPrefab *body = slot.address;
     const struct ds_ShapePrefabInstance *instance = NULL;
-    for (u32 i = body->shape_list.first; i != DLL_NULL; i = instance->dll_next)
+    for (i32 i = body->shape_list.first; i != DLL_SENTINEL; i = instance->body_shape.next)
     {
-        instance = ds_PoolAddress(&led->shape_prefab_instance_pool, i);
+        instance = led->shape_prefab_instance_pool.buf + i;
         const struct ds_ShapePrefab *shape = led->shape_prefab_db.pool.buf + instance->shape_prefab;
         const struct r_Mesh *render_mesh = led->render_mesh_db.pool.buf + shape->render_mesh;
 
@@ -654,7 +654,7 @@ struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const u32 dyn
 		{
 			struct ds_RigidBodyPrefab *prefab = ds_RigidBodyPrefabSDBAddAndAlias(&led->body_prefab_db, copy).address;
             prefab->id = Utf8CopyBuffered(prefab->id_buf, PREFAB_BUFSIZE, copy);
-            prefab->shape_list = dll_Init(struct ds_ShapePrefabInstance);
+            ds_DLLFlush(prefab->shape_list);
 			prefab->dynamic = dynamic;
         }
 	}
@@ -664,9 +664,9 @@ struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const u32 dyn
 
 static void led_ShapePrefabInstanceRemove(struct led *led, const u32 i)
 {
-    const struct ds_ShapePrefabInstance *instance = ds_PoolAddress(&led->shape_prefab_instance_pool, i);
+    const struct ds_ShapePrefabInstance *instance = led->shape_prefab_instance_pool.buf + i;
     ds_ShapePrefabSDBDereference(&led->shape_prefab_db, instance->shape_prefab);
-    ds_PoolRemove(&led->shape_prefab_instance_pool, i);
+    ds_ShapePrefabInstancePoolRemove(&led->shape_prefab_instance_pool, i);
 }
 
 void led_RigidBodyPrefabRemove(struct led *led, const utf8 id)
@@ -677,8 +677,8 @@ void led_RigidBodyPrefabRemove(struct led *led, const utf8 id)
 	{
         for (u32 i = prefab->shape_list.first; i != DLL_NULL; )
         {
-            const struct ds_ShapePrefabInstance *instance = ds_PoolAddress(&led->shape_prefab_instance_pool, i);
-            i = instance->dll_next;
+            const struct ds_ShapePrefabInstance *instance = led->shape_prefab_instance_pool.buf + i;
+            i = instance->body_shape.next;
             led_ShapePrefabInstanceRemove(led, i);
         }
 
@@ -715,10 +715,10 @@ void led_RigidBodyPrefabAttachShape(struct led *led, const utf8 rb_id, const utf
     }
     else
     {
-        struct slot slot = ds_PoolAdd(&led->shape_prefab_instance_pool);
+        struct slot slot = ds_ShapePrefabInstancePoolAdd(&led->shape_prefab_instance_pool);
         struct ds_ShapePrefabInstance *instance = slot.address;
 
-        dll_Prepend(&body_prefab->shape_list, led->shape_prefab_instance_pool.buf, slot.index);
+        ds_DLLPrepend(body_prefab->shape_list, led->shape_prefab_instance_pool.buf, slot.index, body_shape);
         instance->id = Utf8CopyBuffered(instance->id_buf, PREFAB_BUFSIZE, local_shape_id);
         instance->shape_prefab = ds_ShapePrefabSDBReference(&led->shape_prefab_db, shape_id).index;
         instance->t_local = *t_local;
@@ -741,7 +741,7 @@ void led_RigidBodyPrefabDetachShape(struct led *led, const utf8 rb_id, const utf
     else
     {
         ds_ShapePrefabSDBDereference(&led->shape_prefab_db, instance->shape_prefab);
-        dll_Remove(&body_prefab->shape_list, led->shape_prefab_instance_pool.buf, slot.index);
+        ds_DLLRemove(body_prefab->shape_list, led->shape_prefab_instance_pool.buf, slot.index, body_shape);
     }
 }
 
@@ -753,9 +753,9 @@ struct slot led_RigidBodyPrefabLookupShape(struct led *led, const utf8 rb_id, co
     {
         const struct ds_RigidBodyPrefab *prefab = prefab_slot.address;
         struct ds_ShapePrefabInstance *instance = NULL;
-        for (u32 i = prefab->shape_list.first; i != DLL_NULL; i = instance->dll_next)
+        for (i32 i = prefab->shape_list.first; i != DLL_SENTINEL; i = instance->body_shape.next)
         {
-            instance = ds_PoolAddress(&led->shape_prefab_instance_pool, i);
+            instance = led->shape_prefab_instance_pool.buf + i;
             if (Utf8Equivalence(instance->id, local_shape_id))
             {
                 slot.index = i;
@@ -2085,9 +2085,9 @@ static void led_EngineInit(struct led *led)
             //TODO mass properties should be calculated on AttachShape....
             struct ds_ShapePrefabInstance *instance = NULL;
             struct ds_ShapePrefab *shape_prefab = NULL;
-            for (u32 j = body_prefab->shape_list.first; j != DLL_NULL; j = instance->dll_next)
+            for (i32 j = body_prefab->shape_list.first; j != DLL_SENTINEL; j = instance->body_shape.next)
             {
-                instance = ds_PoolAddress(&led->shape_prefab_instance_pool, j);
+                instance = led->shape_prefab_instance_pool.buf + j;
                 shape_prefab = led->shape_prefab_db.pool.buf + instance->shape_prefab;
                 ds_ShapeAdd(&led->physics, shape_prefab, &instance->t_local, body);
             }

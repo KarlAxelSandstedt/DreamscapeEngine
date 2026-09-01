@@ -123,7 +123,7 @@ struct led
 	struct ui_DropdownMenu  rb_color_mode_menu;
 
 	ds_ShapePrefabSDB       shape_prefab_db;
-    struct ds_Pool          shape_prefab_instance_pool;    
+    ds_ShapePrefabInstancePool shape_prefab_instance_pool;    
 
 	ds_RigidBodyPrefabSDB   body_prefab_db;
 	struct ui_List 		    body_prefab_list;

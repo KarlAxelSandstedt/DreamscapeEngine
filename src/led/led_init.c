@@ -118,7 +118,7 @@ struct led *led_Alloc(void)
 	//g_editor->node_selected_list = dll2_Init(struct led_Node);
 	g_editor->render_mesh_db = r_MeshSDBAlloc(NULL, 32, GROWABLE);
 	g_editor->shape_prefab_db = ds_ShapePrefabSDBAlloc(NULL, 32, GROWABLE);
-    g_editor->shape_prefab_instance_pool = ds_PoolAlloc(NULL, 4096, struct ds_ShapePrefabInstance, GROWABLE);
+    g_editor->shape_prefab_instance_pool = ds_ShapePrefabInstancePoolAlloc(NULL, 4096, GROWABLE);
 	g_editor->body_prefab_db = ds_RigidBodyPrefabSDBAlloc(NULL, 32, GROWABLE);
 	g_editor->cs_db = c_ShapeSDBAlloc(NULL, 32, GROWABLE);
 	g_editor->physics = PhysicsPipelineAlloc(&g_editor->mem_persistent, 1024, NSEC_PER_SEC / (u64) 60, 16*1024*1024, &g_editor->cs_db, &g_editor->body_prefab_db);
@@ -147,7 +147,7 @@ struct led *led_Alloc(void)
 	shape_stub->friction = 0.0f;
     shape_stub->render_mesh = r_MeshSDBReference(&g_editor->render_mesh_db, Utf8Empty()).index;
 
-    struct slot slot = ds_PoolAdd(&g_editor->shape_prefab_instance_pool);
+    struct slot slot = ds_ShapePrefabInstancePoolAdd(&g_editor->shape_prefab_instance_pool);
     const u32 instance_index = slot.index;
     struct ds_ShapePrefabInstance *instance = slot.address;
     instance->id = Utf8CstrBuffered(instance->id_buf, PREFAB_BUFSIZE, "Stub");
@@ -156,8 +156,8 @@ struct led *led_Alloc(void)
 
 	struct ds_RigidBodyPrefab *prefab_stub = g_editor->body_prefab_db.pool.buf + SDB_STUB;
 	prefab_stub->dynamic = 1;
-    prefab_stub->shape_list = dll_Init(struct ds_ShapePrefabInstance);
-    dll_Append(&prefab_stub->shape_list, g_editor->shape_prefab_instance_pool.buf, instance_index);
+    ds_DLLFlush(prefab_stub->shape_list);
+    ds_DLLAppend(prefab_stub->shape_list, g_editor->shape_prefab_instance_pool.buf, instance_index, body_shape);
 
     slot = hi_Add(&g_editor->node_hierarchy, HI_ROOT_STUB_INDEX);
     ds_Assert(slot.index == LED_NODE_ROOT);
@@ -186,6 +186,7 @@ void led_Dealloc(struct led *led)
 {
 	PhysicsPipelineFree(&g_editor->physics);
 	led_ProjectMenuDealloc(&led->project_menu);
+    ds_ShapePrefabInstancePoolDealloc(&led->shape_prefab_instance_pool);
     ds_CPoolDealloc(g_editor->joint_pool);
 	ds_HashMapDealloc(&led->node_map);
 	hi_Dealloc(&led->node_hierarchy);

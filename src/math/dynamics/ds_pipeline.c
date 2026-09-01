@@ -82,7 +82,7 @@ struct ds_RigidBodyPipeline PhysicsPipelineAlloc(struct arena *mem, const u32 in
     ds_CPoolAlloc(NULL, pipeline.dirty_shape_query, initial_size, GROWABLE);
 
 	pipeline.event_pool = ds_PhysicsEventPoolAlloc(NULL, 256, GROWABLE);
-	ds_DLLFlush(&pipeline.event_list);
+	ds_DLLFlush(pipeline.event_list);
 
 	pipeline.cshape_db = cshape_db;
 
@@ -216,7 +216,7 @@ void PhysicsPipelineFlush(struct ds_RigidBodyPipeline *pipeline)
 	ds_ShapePoolFlush(&pipeline->shape_pool);
 
 	ds_PhysicsEventPoolFlush(&pipeline->event_pool);
-	ds_DLLFlush(&pipeline->event_list);
+	ds_DLLFlush(pipeline->event_list);
 
     ds_JointPoolFlush(&pipeline->joint_pool);
     ds_CGraphFlush(pipeline);

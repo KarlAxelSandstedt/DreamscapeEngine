@@ -19,6 +19,7 @@
 
 POOL_DEFINE(ds_Shape);
 SDB_DEFINE(ds_ShapePrefab);
+POOL_DEFINE(ds_ShapePrefabInstance);
 
 ds_ShapeId ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_ShapePrefab *prefab, const ds_Transform *t, const ds_RigidBodyId body)
 {
@@ -48,7 +49,7 @@ ds_ShapeId ds_ShapeAdd(struct ds_RigidBodyPipeline *pipeline, const struct ds_Sh
 	shape->friction = prefab->friction;
 	shape->t_local = *t;
 	shape->margin = prefab->margin;
-	ds_DLLFlush(&shape->contact_list);
+	ds_DLLFlush(shape->contact_list);
 
 	const struct c_Shape *cshape = pipeline->cshape_db->pool.buf + prefab->cshape;
 	const struct slot cshape_slot = c_ShapeSDBReference(pipeline->cshape_db, cshape->id);
