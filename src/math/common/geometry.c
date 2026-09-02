@@ -2021,7 +2021,6 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 
 	struct conflictVertex *cv = ddcel->cv + cvi;
 	struct conflictEdge *ce = NULL;
-
 	for (i32 i = cv->ce_list.first; i != DLL_SENTINEL; i = ce->vertex_edge.next)
 	{
 		ce = ddcel->ce + i;
@@ -2032,6 +2031,7 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 			struct ddcelEdge *twin = ddcel->e + e->twin;
 			ds_Assert(e->horizon == 0);
 			ds_Assert(twin->horizon == 0);
+			e = ddcel->e + e->next;
 		}
 	}
 	
@@ -2256,25 +2256,21 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 
 	/* (9) Update all conflict_edge lists of vertices conflicting with face,
 	 * and remove all conflicting edges to face.  */
-	for (i32 i = cv->ce_list.first; i != DLL_SENTINEL;)
+	while (cv->ce_list.first != DLL_SENTINEL)
 	{
-		ce = ddcel->ce + i;
-		i = ce->vertex_edge.next;
+		ce = ddcel->ce + cv->ce_list.first;
 		const u32 fi = ce->face;
 		struct ddcelFace *f = ddcel->f + fi;
 
-		ce = NULL;
-		for (i32 j = f->ce_list.first; j != DLL_SENTINEL; )
-		{
-			ce = ddcel->ce + j;
-			const u32 next = ce->face_edge.next;
-
+        i32 next;
+        for (i32 cei = f->ce_list.first; cei != DLL_SENTINEL; cei = next)
+        {
+			ce = ddcel->ce + cei;
+            next = ce->vertex_edge.next;
 			struct conflictVertex *cvj = ddcel->cv + ce->vertex;
-			ds_DLLRemove(cvj->ce_list, ddcel->ce_pool.buf, j, vertex_edge);
-			conflictEdgePoolRemove(&ddcel->ce_pool, j);
-
-			j = next;
-		}
+			ds_DLLRemove(cvj->ce_list, ddcel->ce_pool.buf, cei, vertex_edge);
+			conflictEdgePoolRemove(&ddcel->ce_pool, cei);
+        }
 		ddcelFacePoolRemove(&ddcel->face_pool, fi);
 		//fprintf(stderr, "removed face %u\n", fi);
 	}
@@ -2365,7 +2361,7 @@ struct dcel DcelConvexHull(struct arena *mem, constvec3ptr v, const u32 v_count,
 		.edge_pool = ddcelEdgePoolAlloc(tmp1, 2+edge_count_upper_bound, NOT_GROWABLE),	/* add additional space for easier memory management */
 		.v = v,
 		.v_count = v_count,
-		.ce_pool = conflictEdgePoolAlloc(tmp2, tmp2->mem_size / sizeof(struct conflictEdge), NOT_GROWABLE),
+		.ce_pool = conflictEdgePoolAlloc(tmp2, (tmp2->mem_size / sizeof(struct conflictEdge))-1, NOT_GROWABLE),
 		.cv = ArenaPush(tmp1, v_count * sizeof(struct conflictVertex)),
 		.hv = ArenaPush(tmp1, v_count * sizeof(struct horizionVertex)),
 	};

@@ -29,7 +29,7 @@ POOL_DEFINE(ds_Event);
 void ds_WindowEventHandler(struct ds_Window *sys_win)
 {
 	struct ds_Event *event = NULL;
-	for (u32 i = sys_win->ui->event_list.first; i != DLL_SENTINEL; i = event->node.next)
+	for (i32 i = sys_win->ui->event_list.first; i != DLL_SENTINEL; i = event->node.next)
 	{
 		event = sys_win->ui->event_pool.buf + i;
 		switch (event->keycode)
