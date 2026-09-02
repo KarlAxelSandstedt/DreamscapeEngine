@@ -2266,7 +2266,7 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
         for (i32 cei = f->ce_list.first; cei != DLL_SENTINEL; cei = next)
         {
 			ce = ddcel->ce + cei;
-            next = ce->vertex_edge.next;
+            next = ce->face_edge.next;
 			struct conflictVertex *cvj = ddcel->cv + ce->vertex;
 			ds_DLLRemove(cvj->ce_list, ddcel->ce_pool.buf, cei, vertex_edge);
 			conflictEdgePoolRemove(&ddcel->ce_pool, cei);
