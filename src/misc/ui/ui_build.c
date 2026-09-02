@@ -279,7 +279,7 @@ struct slot ui_ListEntryAlloc(struct ui_List *list, const utf8 id)
 				&& list->last_selection_happened + 1 >= g_ui->frame
 				&& list->last_selected != entry.index)
 		{
-			struct ui_Node *prev = hi_Address(&g_ui->node_hierarchy, list->last_selected);
+			struct ui_Node *prev = g_ui->node_hierarchy.pool.buf + list->last_selected;
 			prev->inter &= ~UI_INTER_SELECT;
 			Vec4Copy(prev->border_color, node->border_color);
 		}
@@ -327,7 +327,7 @@ struct ui_NodeCache ui_ListEntryAllocCached(struct ui_List *list, const utf8 id,
 				&& list->last_selection_happened + 1 >= g_ui->frame
 				&& list->last_selected)
 		{
-			struct ui_Node *prev = hi_Address(&g_ui->node_hierarchy, list->last_selected);
+			struct ui_Node *prev = g_ui->node_hierarchy.pool.buf + list->last_selected;
 			prev->inter &= ~UI_INTER_SELECT;
 			Vec4Copy(prev->border_color, node->border_color);
 		}
@@ -425,7 +425,7 @@ void ui_Timeline(struct ui_TimelineConfig *config)
 		ui_Height(ui_SizeChildsum(0.0f))
 		config->timeline = ui_NodeAllocF(UI_DRAW_BACKGROUND, "timeline_rows_%p", config).index;
 		
-		const struct ui_Node *timeline_node = hi_Address(&g_ui->node_hierarchy, config->timeline);
+		const struct ui_Node *timeline_node = g_ui->node_hierarchy.pool.buf + config->timeline;
 		config->width = timeline_node->layout_size[0];
 		const f32 half_pixel_count = (2.0f * config->width * (1.0f - config->perc_width_row_title_column));
 		config->ns_half_pixel = (f32) (config->ns_interval_end - config->ns_interval_start) / half_pixel_count;

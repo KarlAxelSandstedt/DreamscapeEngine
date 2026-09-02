@@ -447,7 +447,7 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 					{
 						for (u32 i = 0; i < ui_b->count; )
 						{
-							const struct ui_Node *n = hi_Address(&g_ui->node_hierarchy, draw_node->index);
+							const struct ui_Node *n = g_ui->node_hierarchy.pool.buf + draw_node->index;
 							draw_node = draw_node->next;
 							const vec4 visible_rect =
 							{
@@ -651,7 +651,7 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 					{
 						for (u32 i = 0; i < ui_b->count; ++i)
 						{
-							const struct ui_Node *n = hi_Address(&g_ui->node_hierarchy, draw_node->index);
+							const struct ui_Node *n = g_ui->node_hierarchy.pool.buf + draw_node->index;
 							draw_node = draw_node->next;
 							const struct sprite *spr = g_sprite + n->sprite;
 							const vec4 node_rect =

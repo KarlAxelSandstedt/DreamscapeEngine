@@ -507,89 +507,6 @@ typedef struct ui_Size
 DEFINE_CPOOL_STRUCT(ui_Size);
 
 /********************************************************************************************************/
-/*				               UI STATE 						*/
-/********************************************************************************************************/
-
-/* Per window ui struct */
-struct ui
-{
-	struct ds_MemSlot		mem_slot;
-	struct ui_Interaction	inter;
-
-	struct ds_Pool		bucket_pool;
-	struct dll		bucket_list;
-	struct ds_HashMap 		bucket_map;
-	u32			bucket_cache;	/* for quick cmd check */
-	u32			bucket_count;
-
-	struct ds_Pool		event_pool;
-	struct dll		event_list;
-
-	/* node map for all u's  */
-	/* Shared allocator for all nodes  */
-	struct hi 		node_hierarchy;
-	struct ds_HashMap 		node_map;
-
-	ds_CPool(ui_TextSelection)	frame_text_selection;
-	vec4			text_cursor_color;
-	vec4			text_selection_color;
-
-	u64		frame;
-	struct arena 	mem_frame_arr[2];
-	struct arena *	mem_frame;
-
-	vec2u32		window_size;
-
-	u32		node_count_frame;
-	u32		node_count_prev_frame;
-
-	u32		root;	/* root node of ui, always allocated on frame begin */
-
-	ds_CPool(u32)	    parent;	
-	ds_CPool(u32)	    sprite;
-	ds_CPool(u64)	    flags;
-	ds_CPool(u64) 	    recursive_interaction_flags;
-	ds_CPool(voidptr)	font;
-
-	/* external text usage; used for skipping layout calculations for a string that is used in multiple nodes */
-	ds_CPool(utf32)	    external_text;
-	ds_CPool(voidptr)	external_text_layout;
-	ds_CPool(voidptr)	external_text_input;
-
-	/* push all floating nodes so that we can linear search which floating subtree we are hovering */
-	ds_CPool(u32)	    floating_node;
-	ds_CPool(u32)	    floating_depth;
-
-	/* text stacks */
-	ds_CPool(u32)	    text_alignment_x;
-	ds_CPool(u32)	    text_alignment_y;
-	ds_CPool(f32)	    text_pad[AXIS_2_COUNT];
-
-	ds_CPool(f32)	    pad;
-
-	ds_CPool(u32)	    fixed_depth;
-	ds_CPool(f32)	    floating[AXIS_2_COUNT];	
-    ds_CPool(ui_Size)	ui_size[AXIS_2_COUNT];
-	ds_CPool(intv)	    viewable[AXIS_2_COUNT];
-	ds_CPool(u32)	    child_layout_axis;
-	ds_CPool(vec4)	    background_color;
-	ds_CPool(vec4)	    border_color;
-	ds_CPool(vec4)	    gradient_color[BOX_CORNER_COUNT];
-	ds_CPool(vec4)	    sprite_color;
-	ds_CPool(f32)	    edge_softness;
-	ds_CPool(f32)	    corner_radius;
-	ds_CPool(f32)	    border_size;
-};
-
-extern struct ui *g_ui;
-
-struct ui *	ui_Alloc(void);					/* allocate a new ui 		*/
-void		ui_Dealloc(struct ui *ui);			/* dealloc an ui 		*/
-void		ui_Set(struct ui *ui);				/* set global ui within ui_*.c 	*/
-void		ui_FrameBegin(const vec2u32 window_size, const struct ui_Visual *base); /* begin new ui frame */
-void		ui_FrameEnd(void);				/* end ui frame 		*/
-
-/********************************************************************************************************/
 /*					 ui_node internals 						*/
 /********************************************************************************************************/
 
@@ -721,9 +638,9 @@ void		ui_FrameEnd(void);				/* end ui frame 		*/
 								   when parent is childsum  */
 #define		UI_PERC_POSTPONED_Y		((u64) 1 << 60) /* perc calculations are postponed (in Y) until after 
 								   violation solving. */
-struct ui_Node
+typedef struct ui_Node
 {
-	HI_SLOT_STATE;
+	HI_NODE;
 	utf8			id;		/* unique identifier  */
 	struct ui_TextInput	input;		/* text to display OR text to edit */
 
@@ -766,7 +683,8 @@ struct ui_Node
 	f32		border_size;
 	f32		edge_softness;
 	f32		corner_radius;
-};
+} ui_Node;
+HI_DECLARE(ui_Node);
 
 struct ui_NodeCache
 {
@@ -796,6 +714,91 @@ void 		ui_NodePush(const u32 node);
 void 		ui_NodePop(void);			
 /* get top node address (parent address) */
 struct ui_Node *ui_NodeTop(void);
+
+/********************************************************************************************************/
+/*				               UI STATE 						*/
+/********************************************************************************************************/
+
+/* Per window ui struct */
+struct ui
+{
+	struct ds_MemSlot		mem_slot;
+	struct ui_Interaction	inter;
+
+	struct ds_Pool		bucket_pool;
+	struct dll		bucket_list;
+	struct ds_HashMap 		bucket_map;
+	u32			bucket_cache;	/* for quick cmd check */
+	u32			bucket_count;
+
+	struct ds_Pool		event_pool;
+	struct dll		event_list;
+
+	/* node map for all u's  */
+	/* Shared allocator for all nodes  */
+	struct ui_NodeHI 		node_hierarchy;
+	struct ds_HashMap 		node_map;
+
+	ds_CPool(ui_TextSelection)	frame_text_selection;
+	vec4			text_cursor_color;
+	vec4			text_selection_color;
+
+	u64		frame;
+	struct arena 	mem_frame_arr[2];
+	struct arena *	mem_frame;
+
+	vec2u32		window_size;
+
+	u32		node_count_frame;
+	u32		node_count_prev_frame;
+
+	u32		root;	/* root node of ui, always allocated on frame begin */
+
+	ds_CPool(u32)	    parent;	
+	ds_CPool(u32)	    sprite;
+	ds_CPool(u64)	    flags;
+	ds_CPool(u64) 	    recursive_interaction_flags;
+	ds_CPool(voidptr)	font;
+
+	/* external text usage; used for skipping layout calculations for a string that is used in multiple nodes */
+	ds_CPool(utf32)	    external_text;
+	ds_CPool(voidptr)	external_text_layout;
+	ds_CPool(voidptr)	external_text_input;
+
+	/* push all floating nodes so that we can linear search which floating subtree we are hovering */
+	ds_CPool(u32)	    floating_node;
+	ds_CPool(u32)	    floating_depth;
+
+	/* text stacks */
+	ds_CPool(u32)	    text_alignment_x;
+	ds_CPool(u32)	    text_alignment_y;
+	ds_CPool(f32)	    text_pad[AXIS_2_COUNT];
+
+	ds_CPool(f32)	    pad;
+
+	ds_CPool(u32)	    fixed_depth;
+	ds_CPool(f32)	    floating[AXIS_2_COUNT];	
+    ds_CPool(ui_Size)	ui_size[AXIS_2_COUNT];
+	ds_CPool(intv)	    viewable[AXIS_2_COUNT];
+	ds_CPool(u32)	    child_layout_axis;
+	ds_CPool(vec4)	    background_color;
+	ds_CPool(vec4)	    border_color;
+	ds_CPool(vec4)	    gradient_color[BOX_CORNER_COUNT];
+	ds_CPool(vec4)	    sprite_color;
+	ds_CPool(f32)	    edge_softness;
+	ds_CPool(f32)	    corner_radius;
+	ds_CPool(f32)	    border_size;
+};
+
+extern struct ui *g_ui;
+
+struct ui *	ui_Alloc(void);					/* allocate a new ui 		*/
+void		ui_Dealloc(struct ui *ui);			/* dealloc an ui 		*/
+void		ui_Set(struct ui *ui);				/* set global ui within ui_*.c 	*/
+void		ui_FrameBegin(const vec2u32 window_size, const struct ui_Visual *base); /* begin new ui frame */
+void		ui_FrameEnd(void);				/* end ui frame 		*/
+
+
 
 
 /* add layout node padding given number of pixels according to stack_pad (non-cacheable) */

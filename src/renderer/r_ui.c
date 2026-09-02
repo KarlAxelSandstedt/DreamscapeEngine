@@ -52,7 +52,7 @@ void r_UiDraw(struct ui *ui)
 			struct ui_DrawNode *draw_node = instance->ui_bucket->list;
 			for (u32 i = 0; i < instance->ui_bucket->count; ++i)
 			{
-				const struct ui_Node *n = hi_Address(&ui->node_hierarchy, draw_node->index);
+				const struct ui_Node *n = ui->node_hierarchy.pool.buf + draw_node->index;
 				draw_node = draw_node->next;
 				struct textLine *line = n->layout_text->line;
 				for (u32 l = 0; l < n->layout_text->line_count; ++l)

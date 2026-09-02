@@ -430,6 +430,7 @@ DECLARE_HI_ADOPT(T)                                                             
     next->hi_prev = node->hi_prev;                                                                      \
     prev->hi_next = node->hi_next;                                                                      \
                                                                                                         \
+    parent->hi_child_count -= 1;                                                                        \
     if (parent->hi_first == (i32) index)                                                                \
     {                                                                                                   \
         parent->hi_first = node->hi_next;                                                               \
@@ -495,7 +496,9 @@ do                                                                              
 #define HIIAdvance(_hii_, _hi_)                                                                             \
 do                                                                                                          \
 {                                                                                                           \
-    ds_Assert(!((_hii_).at == (_hii_).root && (_hii_).next != (_hi_).pool.buf[(_hii_).root].hi_first));     \
+    ds_Assert((_hii_).at != (_hii_).root                                                                    \
+            || ((_hii_).next == (_hi_).pool.buf[(_hii_).root].hi_first                                      \
+            || ((_hii_).next == (_hii_).root)));                                                            \
     (_hii_).at = (_hii_).next;                                                                              \
                                                                                                             \
     const i32 _first_ = (_hi_).pool.buf[(_hii_).next].hi_first;                                             \
