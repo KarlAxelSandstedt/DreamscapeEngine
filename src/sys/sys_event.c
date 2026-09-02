@@ -24,12 +24,14 @@
 #include "ds_ui.h"
 #include "sys_local.h"
 
+POOL_DEFINE(ds_Event);
+
 void ds_WindowEventHandler(struct ds_Window *sys_win)
 {
-	struct dsEvent *event = NULL;
-	for (u32 i = sys_win->ui->event_list.first; i != DLL_NULL; i = dll_Next(event))
+	struct ds_Event *event = NULL;
+	for (u32 i = sys_win->ui->event_list.first; i != DLL_SENTINEL; i = event->node.next)
 	{
-		event = ds_PoolAddress(&sys_win->ui->event_pool, i);
+		event = sys_win->ui->event_pool.buf + i;
 		switch (event->keycode)
 		{
 			case DS_L:
@@ -76,7 +78,7 @@ void ds_WindowEventHandler(struct ds_Window *sys_win)
 void ds_ProcessEvents(void)
 {
 	const u32 key_modifiers = KeyModifiers();
-	struct dsEvent event;
+	struct ds_Event event;
 	while (EventConsume(&event)) 
 	{
 		struct slot slot = ds_WindowLookup(event.native_handle);
@@ -239,9 +241,9 @@ void ds_ProcessEvents(void)
 				}
 				else
 				{
-					struct slot slot = ds_PoolAdd(&sys_win->ui->event_pool);
-					dll_Append(&sys_win->ui->event_list, sys_win->ui->event_pool.buf, slot.index);
-					struct dsEvent *new = slot.address;
+					struct slot slot = ds_EventPoolAdd(&sys_win->ui->event_pool);
+					ds_DLLAppend(sys_win->ui->event_list, sys_win->ui->event_pool.buf, slot.index, node);
+					struct ds_Event *new = slot.address;
 					new->scancode = event.scancode;
 					new->keycode = event.keycode;
 					new->ns_timestamp = event.ns_timestamp;
@@ -258,9 +260,9 @@ void ds_ProcessEvents(void)
 				}
 				else
 				{
-					struct slot slot = ds_PoolAdd(&sys_win->ui->event_pool);
-					dll_Append(&sys_win->ui->event_list, sys_win->ui->event_pool.buf, slot.index);
-					struct dsEvent *new = slot.address;
+					struct slot slot = ds_EventPoolAdd(&sys_win->ui->event_pool);
+					ds_DLLAppend(sys_win->ui->event_list, sys_win->ui->event_pool.buf, slot.index, node);
+					struct ds_Event *new = slot.address;
 					new->scancode = event.scancode;
 					new->keycode = event.keycode;
 					new->ns_timestamp = event.ns_timestamp;

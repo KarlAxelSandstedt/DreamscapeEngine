@@ -1698,16 +1698,16 @@ void DcelAssertTopology(struct dcel *dcel)
 
 struct ddcelFace
 {
-	POOL_SLOT_STATE;
-	struct dll	ce_list;
-	vec3		normal;
-	u32 		first;	/* first half edge */
-	u32 		count;	/* edge count */
+	POOL_NODE;
+	struct ds_DLL	ce_list;
+	vec3		    normal;
+	u32 		    first;	/* first half edge */
+	u32 		    count;	/* edge count */
 };
 
 struct ddcelEdge
 {
-	POOL_SLOT_STATE;
+    POOL_NODE;
 	u32 		origin;		/* vertex index origin */
 	u32 		twin; 		/* twin half edge */
 	u32 		next;		/* next ccw edge */
@@ -1718,16 +1718,24 @@ struct ddcelEdge
 
 struct conflictEdge
 {
-	DLL_SLOT_STATE;
-	DLL2_SLOT_STATE;
-	u32 vertex;
-	u32 face;
-	POOL_SLOT_STATE;
+    struct ds_DLLNode   face_edge;
+    struct ds_DLLNode   vertex_edge;
+	u32                 vertex;
+	u32                 face;
+    POOL_NODE;
 };
+
+POOL_DECLARE(ddcelFace);
+POOL_DECLARE(ddcelEdge);
+POOL_DECLARE(conflictEdge);
+
+POOL_DEFINE(ddcelFace);
+POOL_DEFINE(ddcelEdge);
+POOL_DEFINE(conflictEdge);
 
 struct conflictVertex
 {
-	struct dll	ce_list;
+	struct ds_DLL	ce_list;
 	u32		index;
 	/* Needed in last step of iteration */
 	u32		last_iter;	/* last iteration it was added to a face's conflict list*/
@@ -1752,8 +1760,8 @@ struct horizionVertex
  */
 struct ddcel
 {
-	struct ds_Pool 		face_pool;
-	struct ds_Pool		edge_pool;
+	struct ddcelFacePool 		face_pool;
+	struct ddcelEdgePool		edge_pool;
 	/* pools are not growable, so safe to use these */
 	struct ddcelFace *	f;		
 	struct ddcelEdge *	e;
@@ -1762,7 +1770,7 @@ struct ddcel
 
 	/* internal */
 	struct arena		tmp1;
-	struct ds_Pool 		ce_pool;
+	struct conflictEdgePool 	ce_pool;
 	struct conflictEdge *	ce;
 	struct conflictVertex *cv;
 	struct horizionVertex * hv;
@@ -1772,7 +1780,7 @@ static void DdcelFaceSet(struct ddcelFace *face, const u32 first, const u32 coun
 {
 	face->first = first;
 	face->count = count;
-	face->ce_list = dll2_Init(struct conflictEdge);
+	ds_DLLFlush(face->ce_list);
 }
 
 static void DdcelEdgeSet(struct ddcelEdge *edge, const u32 origin, const u32 twin, const u32 prev, const u32 next, const u32 face_ccw)
@@ -1798,7 +1806,7 @@ static void DdcelAssertTopology(const struct ddcel *ddcel)
 
 	for (u32 i = 0; i < ddcel->edge_pool.count; ++i)
 	{
-		if (PoolSlotAllocated(ddcel->e + i) && !edge_check[i])
+		if (ds_PoolSlotAllocated(ddcel->e + i) && !edge_check[i])
 		{
 			face_count += 1;
 			u32 next;
@@ -1843,7 +1851,7 @@ static void DdcelAssertTopology(const struct ddcel *ddcel)
 
 	for (u32 i = 0; i < ddcel->face_pool.count_max; ++i)
 	{
-		if (PoolSlotAllocated(ddcel->f + i))
+		if (ds_PoolSlotAllocated(ddcel->f + i))
 		{
 			vec3 diff;
 			Vec3Sub(diff, center, ddcel->v[ddcel->e[ddcel->f[i].first].origin]);
@@ -1933,23 +1941,23 @@ static void InternalConvexHullTetrahedronDdcel(struct ddcel *ddcel, const f32 to
 		ddcel->cv[2].index = tmp;
 	}
 
-	struct ddcelFace *f0 = ds_PoolAdd(&ddcel->face_pool).address;
-	struct ddcelFace *f1 = ds_PoolAdd(&ddcel->face_pool).address;
-	struct ddcelFace *f2 = ds_PoolAdd(&ddcel->face_pool).address;
-	struct ddcelFace *f3 = ds_PoolAdd(&ddcel->face_pool).address;
+	struct ddcelFace *f0 =  ddcelFacePoolAdd(&ddcel->face_pool).address;
+	struct ddcelFace *f1 =  ddcelFacePoolAdd(&ddcel->face_pool).address;
+	struct ddcelFace *f2 =  ddcelFacePoolAdd(&ddcel->face_pool).address;
+	struct ddcelFace *f3 =  ddcelFacePoolAdd(&ddcel->face_pool).address;
 
-	struct ddcelEdge *e0 = ds_PoolAdd(&ddcel->edge_pool).address;
-	struct ddcelEdge *e1 = ds_PoolAdd(&ddcel->edge_pool).address;
-	struct ddcelEdge *e2 = ds_PoolAdd(&ddcel->edge_pool).address;
-	struct ddcelEdge *e3 = ds_PoolAdd(&ddcel->edge_pool).address;
-	struct ddcelEdge *e4 = ds_PoolAdd(&ddcel->edge_pool).address;
-	struct ddcelEdge *e5 = ds_PoolAdd(&ddcel->edge_pool).address;
-	struct ddcelEdge *e6 = ds_PoolAdd(&ddcel->edge_pool).address;
-	struct ddcelEdge *e7 = ds_PoolAdd(&ddcel->edge_pool).address;
-	struct ddcelEdge *e8 = ds_PoolAdd(&ddcel->edge_pool).address;
-	struct ddcelEdge *e9 = ds_PoolAdd(&ddcel->edge_pool).address;
-	struct ddcelEdge *e10 = ds_PoolAdd(&ddcel->edge_pool).address;
-	struct ddcelEdge *e11 = ds_PoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e0 =  ddcelEdgePoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e1 =  ddcelEdgePoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e2 =  ddcelEdgePoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e3 =  ddcelEdgePoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e4 =  ddcelEdgePoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e5 =  ddcelEdgePoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e6 =  ddcelEdgePoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e7 =  ddcelEdgePoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e8 =  ddcelEdgePoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e9 =  ddcelEdgePoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e10 = ddcelEdgePoolAdd(&ddcel->edge_pool).address;
+	struct ddcelEdge *e11 = ddcelEdgePoolAdd(&ddcel->edge_pool).address;
 
 	DdcelFaceSet(f0, 0, 3);
 	DdcelFaceSet(f1, 3, 3);
@@ -1995,9 +2003,9 @@ static void InternalConvexHullTetrahedronConflicts(struct ddcel *ddcel, const f3
 			/* If point is "in front" of face, we have a conflict */
 			if (Vec3Dot(ddcel->f[f_i].normal, b) > tol)
 			{
-				struct slot slot = ds_PoolAdd(&ddcel->ce_pool);
-				dll_Append(&cv->ce_list, ddcel->ce_pool.buf, slot.index);
-				dll_Append(&ddcel->f[f_i].ce_list, ddcel->ce_pool.buf, slot.index);
+				struct slot slot = conflictEdgePoolAdd(&ddcel->ce_pool);
+				ds_DLLAppend(cv->ce_list, ddcel->ce_pool.buf, slot.index, vertex_edge);
+				ds_DLLAppend(ddcel->f[f_i].ce_list, ddcel->ce_pool.buf, slot.index, face_edge);
 
 				struct conflictEdge *edge = slot.address;
 				edge->vertex = cv_i;
@@ -2014,7 +2022,7 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 	struct conflictVertex *cv = ddcel->cv + cvi;
 	struct conflictEdge *ce = NULL;
 
-	for (u32 i = cv->ce_list.first; i != DLL_NULL; i = dll_Next(ce))
+	for (i32 i = cv->ce_list.first; i != DLL_SENTINEL; i = ce->vertex_edge.next)
 	{
 		ce = ddcel->ce + i;
 		const u32 fi = ce->face;
@@ -2031,7 +2039,7 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 	 * At this point, all edges has horizon set to 0. Whenever we visit an edge, 
 	 * we flip the edge and its twin's horizon value. After the loop the horizon
 	 * will consist of the edges with value 1.  */
-	for (u32 i = cv->ce_list.first; i != DLL_NULL; i = dll_Next(ce))
+	for (i32 i = cv->ce_list.first; i != DLL_SENTINEL; i = ce->vertex_edge.next)
 	{
 		ce = ddcel->ce + i;
 		const u32 fi = ce->face;
@@ -2043,7 +2051,7 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 			e->horizon += 1;
 			twin->horizon += 1;
 			ds_Assert(e->horizon <= 2 && twin->horizon <= 2);
-			ds_Assert(twin->twin == ds_PoolIndex(&ddcel->edge_pool, e));
+			ds_Assert(twin->twin == ddcelEdgePoolIndex(&ddcel->edge_pool, e));
 			e = ddcel->e + e->next;
 		}
 	}
@@ -2053,7 +2061,7 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 	 */
 	u32 horizon = 0;
 	u32 horizon_count = 0;
-	for (u32 i = cv->ce_list.first; i != DLL_NULL; i = dll_Next(ce))
+	for (i32 i = cv->ce_list.first; i != DLL_SENTINEL; i = ce->vertex_edge.next)
 	{
 		ce = ddcel->ce + i;
 		const u32 fi = ce->face;
@@ -2066,7 +2074,7 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 			const u32 next = e->next;
 			if (e->horizon == 2)
 			{
-				ds_PoolRemove(&ddcel->edge_pool, ej);	
+				ddcelEdgePoolRemove(&ddcel->edge_pool, ej);	
 			}
 			else
 			{
@@ -2122,8 +2130,8 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 		struct ddcelFace *f_ccw = ddcel->f + ccw_face;
 		struct ddcelFace *f_twin = ddcel->f + twin_face;
 
-		struct slot se1 = ds_PoolAdd(&ddcel->edge_pool);
-		struct slot se2 = ds_PoolAdd(&ddcel->edge_pool);
+		struct slot se1 = ddcelEdgePoolAdd(&ddcel->edge_pool);
+		struct slot se2 = ddcelEdgePoolAdd(&ddcel->edge_pool);
 
 		struct ddcelEdge *e1 = se1.address;
 		struct ddcelEdge *e2 = se2.address;
@@ -2162,8 +2170,8 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 				ddcel->hv[prev_horizon].edge1 = se1.index;
 				ddcel->hv[prev_horizon].edge2 = se2.index;
 
-				ds_PoolRemove(&ddcel->edge_pool, ddcel->e[edge].twin);
-				ds_PoolRemove(&ddcel->edge_pool, edge);
+				ddcelEdgePoolRemove(&ddcel->edge_pool, ddcel->e[edge].twin);
+				ddcelEdgePoolRemove(&ddcel->edge_pool, edge);
 				edge = ddcel->hv[horizon].edge_out;
 			} while (ddcel->hv[horizon].edge_out_twin_face == twin_face);
 
@@ -2176,7 +2184,7 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 		}
 		else
 		{
-			struct slot sf = ds_PoolAdd(&ddcel->face_pool);
+			struct slot sf = ddcelFacePoolAdd(&ddcel->face_pool);
 			//fprintf(stderr, "added face %u\n", sf.index);
 
 			const u32 e0i = ddcel->hv[horizon].edge_out;
@@ -2193,7 +2201,7 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 		
 			/*TODO: We may add same point twich here, need to add a "has_been_mapped" thingy to not add again*/
 			ce = NULL;
-			for (u32 j = f_ccw->ce_list.first; j != DLL_NULL; j = dll2_Next(ce))
+			for (i32 j = f_ccw->ce_list.first; j != DLL_SENTINEL; j = ce->face_edge.next)
 			{
 				ce = ddcel->ce + j;
 				if (ce->vertex != cvi && (ddcel->cv[ce->vertex].last_face != sf.index || ddcel->cv[ce->vertex].last_iter != cvi))
@@ -2204,9 +2212,9 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 					Vec3Sub(diff, ddcel->v[ddcel->cv[ce->vertex].index], ddcel->v[e0->origin]);
 					if (Vec3Dot(f->normal, diff) > tol)
 					{
-						struct slot slot = ds_PoolAdd(&ddcel->ce_pool);
-						dll_Append(&f->ce_list, ddcel->ce_pool.buf, slot.index);
-						dll_Append(&ddcel->cv[ce->vertex].ce_list, ddcel->ce_pool.buf, slot.index);
+						struct slot slot = conflictEdgePoolAdd(&ddcel->ce_pool);
+						ds_DLLAppend(f->ce_list, ddcel->ce_pool.buf, slot.index, face_edge);
+						ds_DLLAppend(ddcel->cv[ce->vertex].ce_list, ddcel->ce_pool.buf, slot.index, vertex_edge);
 
 						struct conflictEdge *new = slot.address;
 						new->vertex = ce->vertex;
@@ -2216,7 +2224,7 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 			}
 
 			ce = NULL;
-			for (u32 j = f_twin->ce_list.first; j != DLL_NULL; j = dll2_Next(ce))
+			for (i32 j = f_twin->ce_list.first; j != DLL_SENTINEL; j = ce->face_edge.next)
 			{
 				ce = ddcel->ce + j;
 				vec3 diff;
@@ -2228,9 +2236,9 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 					Vec3Sub(diff, ddcel->v[ddcel->cv[ce->vertex].index], ddcel->v[e0->origin]);
 					if (Vec3Dot(f->normal, diff) > tol)
 					{
-						struct slot slot = ds_PoolAdd(&ddcel->ce_pool);
-						dll_Append(&f->ce_list, ddcel->ce_pool.buf, slot.index);
-						dll_Append(&ddcel->cv[ce->vertex].ce_list, ddcel->ce_pool.buf, slot.index);
+						struct slot slot = conflictEdgePoolAdd(&ddcel->ce_pool);
+						ds_DLLAppend(f->ce_list, ddcel->ce_pool.buf, slot.index, face_edge);
+						ds_DLLAppend(ddcel->cv[ce->vertex].ce_list, ddcel->ce_pool.buf, slot.index, vertex_edge);
 
 						struct conflictEdge *new = slot.address;
 						new->vertex = ce->vertex;
@@ -2248,26 +2256,26 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 
 	/* (9) Update all conflict_edge lists of vertices conflicting with face,
 	 * and remove all conflicting edges to face.  */
-	for (u32 i = cv->ce_list.first; i != DLL_NULL;)
+	for (i32 i = cv->ce_list.first; i != DLL_SENTINEL;)
 	{
 		ce = ddcel->ce + i;
-		i = dll_Next(ce);
+		i = ce->vertex_edge.next;
 		const u32 fi = ce->face;
 		struct ddcelFace *f = ddcel->f + fi;
 
 		ce = NULL;
-		for (u32 j = f->ce_list.first; j != DLL_NULL; )
+		for (i32 j = f->ce_list.first; j != DLL_SENTINEL; )
 		{
 			ce = ddcel->ce + j;
-			const u32 next = dll2_Next(ce);
+			const u32 next = ce->face_edge.next;
 
 			struct conflictVertex *cvj = ddcel->cv + ce->vertex;
-			dll_Remove(&cvj->ce_list, ddcel->ce_pool.buf, j);
-			ds_PoolRemove(&ddcel->ce_pool, j);
+			ds_DLLRemove(cvj->ce_list, ddcel->ce_pool.buf, j, vertex_edge);
+			conflictEdgePoolRemove(&ddcel->ce_pool, j);
 
 			j = next;
 		}
-		ds_PoolRemove(&ddcel->face_pool, fi);
+		ddcelFacePoolRemove(&ddcel->face_pool, fi);
 		//fprintf(stderr, "removed face %u\n", fi);
 	}
 }
@@ -2294,7 +2302,7 @@ struct dcel DcelDdcel(struct arena *mem, const struct ddcel *ddcel)
 		/* set dcel edge index into ddcel->edge.prev temporarily */
 		for (u32 fj = 0; fj < ddcel->face_pool.count_max; ++fj)
 		{
-			if (PoolSlotAllocated(ddcel->f + fj))
+			if (ds_PoolSlotAllocated(ddcel->f + fj))
 			{
 				u32 next = ddcel->f[fj].first;
 				for (u32 ei = 0; ei < ddcel->f[fj].count; ++ei)
@@ -2310,7 +2318,7 @@ struct dcel DcelDdcel(struct arena *mem, const struct ddcel *ddcel)
 		for (u32 fi = 0, fj = 0; fi < cpy.f_count; fj += 1)
 		{
 			ds_Assert(fj < ddcel->face_pool.count_max);
-			if (PoolSlotAllocated(ddcel->f + fj))
+			if (ds_PoolSlotAllocated(ddcel->f + fj))
 			{
 				cpy.f[fi].count = ddcel->f[fj].count;
 				cpy.f[fi].first = off;
@@ -2353,11 +2361,11 @@ struct dcel DcelConvexHull(struct arena *mem, constvec3ptr v, const u32 v_count,
 	const u32 face_count_upper_bound = 2*v_count - 4;
 	struct ddcel ddcel =
 	{
-		.face_pool = ds_PoolAlloc(tmp1, 2*face_count_upper_bound, struct ddcelFace, NOT_GROWABLE),	/* add additional space for easier memory management */
-		.edge_pool = ds_PoolAlloc(tmp1, 2+edge_count_upper_bound, struct ddcelEdge, NOT_GROWABLE),	/* add additional space for easier memory management */
+		.face_pool = ddcelFacePoolAlloc(tmp1, 2*face_count_upper_bound, NOT_GROWABLE),	/* add additional space for easier memory management */
+		.edge_pool = ddcelEdgePoolAlloc(tmp1, 2+edge_count_upper_bound, NOT_GROWABLE),	/* add additional space for easier memory management */
 		.v = v,
 		.v_count = v_count,
-		.ce_pool = ds_PoolAlloc(tmp2, tmp2->mem_size / sizeof(struct conflictEdge), struct conflictEdge, NOT_GROWABLE),
+		.ce_pool = conflictEdgePoolAlloc(tmp2, tmp2->mem_size / sizeof(struct conflictEdge), NOT_GROWABLE),
 		.cv = ArenaPush(tmp1, v_count * sizeof(struct conflictVertex)),
 		.hv = ArenaPush(tmp1, v_count * sizeof(struct horizionVertex)),
 	};
@@ -2370,7 +2378,7 @@ struct dcel DcelConvexHull(struct arena *mem, constvec3ptr v, const u32 v_count,
 	/* (1) permutation - Random permutation of remaining points */
 	for (u32 i = 0; i < v_count; ++i)
 	{
-		ddcel.cv[i].ce_list = dll_Init(struct conflictEdge);
+		ds_DLLFlush(ddcel.cv[i].ce_list);
 		ddcel.cv[i].index = i;
 		ddcel.cv[i].last_iter = U32_MAX;
 		ddcel.cv[i].last_face = U32_MAX;

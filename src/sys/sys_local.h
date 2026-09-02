@@ -88,7 +88,7 @@ extern void 			(*NativeCursorUnsetRectangle)(struct nativeWindow *native);
 /************************************************************************/
 
 /* If native event exist, consume event into a system event and return 1. otherwise return 0 */
-extern u32 	(*EventConsume)(struct dsEvent *event);
+extern u32 	(*EventConsume)(struct ds_Event *event);
 
 /************************************************************************/
 /* 			system mouse/keyboard handling 			*/

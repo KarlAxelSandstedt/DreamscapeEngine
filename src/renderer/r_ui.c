@@ -25,10 +25,10 @@ void r_UiDraw(struct ui *ui)
 	const vec4 zero4 = { 0.0f, 0.0f, 0.0f, 0.0f };
 	const vec3 zero3 = { 0.0f, 0.0f, 0.0f };
 
-	struct ui_DrawBucket *b = ds_PoolAddress(&ui->bucket_pool, ui->bucket_list.first);
-	for (u32 i = dll_Next(b); i != DLL_NULL; i = dll_Next(b)) 
+	struct ui_DrawBucket *b = ui->bucket_pool.buf + ui->bucket_list.first;
+	for (i32 i = b->node.next; i != DLL_SENTINEL; i = b->node.next) 
 	{
-		b = ds_PoolAddress(&ui->bucket_pool, i);
+		b = ui->bucket_pool.buf + i;
 		/* we reverse depth since in ui, larger depths goes infront, but in renderer lower depths drawn last */
 		const u64 depth = ((1 << R_CMD_DEPTH_BITS) - 1) - (ui_CmdDepthGet(b->cmd) << UI_CMD_LAYER_BITS);
 		const u64 transparency = (ui_CmdDepthGet(b->cmd) == UI_CMD_LAYER_TEXT_SELECTION)

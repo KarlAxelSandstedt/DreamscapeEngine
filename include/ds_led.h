@@ -203,7 +203,7 @@ struct led
 	struct ds_HashMap 		node_map;
 	led_NodeHI		        node_hierarchy;
 
-	struct dll		        node_selected_list;
+	struct ds_DLL		    node_selected_list;
 	struct ui_List		    node_ui_list;
 	struct ui_List		    node_selected_ui_list;
 

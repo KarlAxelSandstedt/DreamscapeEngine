@@ -392,7 +392,7 @@ const char *	CstrButton(const enum mouseButton button);
 /* 			      system events 				*/
 /************************************************************************/
 
-enum dsEventType 
+enum ds_EventType 
 {
 	DS_SCROLL,
 	DS_KEY_PRESSED,
@@ -412,13 +412,13 @@ enum dsEventType
 	DS_NO_EVENT,
 };
 
-struct dsEvent 
+struct ds_Event 
 {
-	POOL_SLOT_STATE;
-	DLL_SLOT_STATE;
+    POOL_NODE;
+    struct ds_DLLNode   node;
 	u64			native_handle;	/* window handle 			*/
 	u64			ns_timestamp;	/* external event time; NOT OUR CLOCK 	*/
-	enum dsEventType 	type;
+	enum ds_EventType 	type;
 
 	/* Input key */
 	enum dsKeycode keycode; 	
@@ -439,6 +439,7 @@ struct dsEvent
 
 	utf8	utf8;
 };
+POOL_DECLARE(ds_Event);
 
 /* process native window events and update corresponding system window states */
 void	ds_ProcessEvents(void);

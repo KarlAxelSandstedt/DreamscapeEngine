@@ -177,7 +177,7 @@ extern struct gl_Limits *g_gl_limits;
 
 struct gl_State
 {
-	POOL_SLOT_STATE;
+	POOL_NODE;
 
 	/* texture units */
 	GLenum 			tx_unit_active;
@@ -205,21 +205,23 @@ struct gl_State
 
 	struct gl_Functions	func;
 };
+POOL_DECLARE(gl_State);
 
 struct gl_TextureUnitBinding
 {
 	u32 			context;
 	GLuint 			tx_unit;
 
-	DLL_SLOT_STATE;
-	POOL_SLOT_STATE;
+	struct ds_DLLNode texture_binding;
+	POOL_NODE;
 };
+POOL_DECLARE(gl_TextureUnitBinding);
 
 struct gl_Texture
 {
-	POOL_SLOT_STATE;
+    POOL_NODE;
 	GLuint 		name;
-	struct dll 	binding_list;
+	struct ds_DLL 	binding_list;
 
 	GLenum 		target;
 	GLint 		wrap_s;
@@ -234,6 +236,7 @@ struct gl_Texture
 	GLenum		format;
 	GLenum		type;
 };
+POOL_DECLARE(gl_Texture);
 
 struct gl_TextureUnit
 {

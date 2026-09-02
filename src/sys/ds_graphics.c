@@ -206,7 +206,7 @@ void ds_GraphicsApiInit(void)
 	ds_UiApiInit();
 	g_window_hierarchy_storage = ds_WindowHIAlloc(NULL, 8, GROWABLE);
 	
-	gl_StatePoolAlloc();
+	gl_StateMemAlloc();
 }
 
 void ds_GraphicsApiShutdown(void)
@@ -215,7 +215,7 @@ void ds_GraphicsApiShutdown(void)
 	ds_WindowHIApplyCustomFreeAndRemove(tmp, g_window_hierarchy, g_process_root_window, ds_InternalWindowDealloc, NULL);
     ArenaPopScratch();
 
-	gl_StatePoolDealloc();
+	gl_StateMemDealloc();
 	ds_WindowHIDealloc(g_window_hierarchy);
 	ds_CmdApiShutdown();
 }

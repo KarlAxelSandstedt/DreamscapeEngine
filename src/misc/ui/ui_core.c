@@ -127,11 +127,11 @@ struct ui *ui_Alloc(void)
 	memset(ui, 0, sizeof(struct ui));
 	ui->node_hierarchy = ui_NodeHIAlloc(NULL, INITIAL_UNIT_COUNT, GROWABLE);
 	ui->node_map = ds_HashMapAlloc(NULL, U16_MAX, U16_MAX, GROWABLE);
-	ui->bucket_pool = ds_PoolAlloc(NULL, 64, struct ui_DrawBucket, GROWABLE);
-	ui->bucket_list = dll_Init(struct ui_DrawBucket);
+	ds_CPoolAlloc(NULL, ui->bucket_pool, 64, GROWABLE);
+	ds_DLLFlush(ui->bucket_list);
 	ui->bucket_map = ds_HashMapAlloc(NULL, 128, 128, GROWABLE);
-	ui->event_pool = ds_PoolAlloc(NULL, 32, struct dsEvent, GROWABLE);
-	ui->event_list = dll_Init(struct dsEvent);
+	ui->event_pool = ds_EventPoolAlloc(NULL, 32, GROWABLE);
+    ds_DLLFlush(ui->event_list);
 	ui->frame = 0;
 	ui->root = HI_ROOT;
 	ui->node_count_prev_frame = 0;
@@ -209,8 +209,8 @@ struct ui *ui_Alloc(void)
 	ds_CPoolPushValue(ui->recursive_interaction_flags, UI_FLAG_NONE);
 
 	/* setup stub bucket */
-	struct slot slot = ds_PoolAdd(&ui->bucket_pool);
-	dll_Append(&ui->bucket_list, ui->bucket_pool.buf, slot.index);
+	struct slot slot = ds_CPoolPush(ui->bucket_pool);
+	ds_DLLAppend(ui->bucket_list, ui->bucket_pool.buf, slot.index, node);
 	ui->bucket_cache = slot.index;
 	struct ui_DrawBucket *bucket = slot.address;
 	bucket->cmd = 0;
@@ -259,8 +259,8 @@ void ui_Dealloc(struct ui *ui)
 	ds_CPoolDealloc(ui->floating_depth);
 	ds_CPoolDealloc(ui->fixed_depth);
 	ds_HashMapDealloc(&ui->node_map);
-	ds_PoolDealloc(&ui->event_pool);
-	ds_PoolDealloc(&ui->bucket_pool);
+	ds_EventPoolDealloc(&ui->event_pool);
+	ds_CPoolDealloc(ui->bucket_pool);
 	ds_HashMapDealloc(&ui->bucket_map);
 	ui_NodeHIDealloc(&ui->node_hierarchy);
 	ds_Free(&ui->mem_slot);
@@ -272,13 +272,13 @@ void ui_Dealloc(struct ui *ui)
 
 static void ui_DrawBucketAddNode(const u32 cmd, const u32 index)
 {
-	struct ui_DrawBucket *bucket = ds_PoolAddress(&g_ui->bucket_pool, g_ui->bucket_cache);
+	struct ui_DrawBucket *bucket = g_ui->bucket_pool.buf + g_ui->bucket_cache;
 	if (bucket->cmd != cmd)
 	{
 		u32 bi = ds_HashMapFirst(&g_ui->bucket_map, cmd);
 		for (; bi != HASH_NULL; bi = ds_HashMapNext(&g_ui->bucket_map, bi))
 		{
-			bucket = ds_PoolAddress(&g_ui->bucket_pool, bi);
+			bucket = g_ui->bucket_pool.buf + bi;
 			if (bucket->cmd == cmd)
 			{
 				break;
@@ -287,10 +287,10 @@ static void ui_DrawBucketAddNode(const u32 cmd, const u32 index)
 
 		if (bi == HASH_NULL)
 		{
-			struct slot slot = ds_PoolAdd(&g_ui->bucket_pool);
+			struct slot slot = ds_CPoolPush(g_ui->bucket_pool);
 			bi = slot.index;
 			ds_HashMapAdd(&g_ui->bucket_map, cmd, bi);
-			dll_Append(&g_ui->bucket_list, g_ui->bucket_pool.buf, bi);
+			ds_DLLAppend(g_ui->bucket_list, g_ui->bucket_pool.buf, bi, node);
 			bucket = slot.address;
 			bucket->cmd = cmd;
 			bucket->count = 0;
@@ -842,13 +842,13 @@ void ui_FrameBegin(const vec2u32 window_size, const struct ui_Visual *base)
 	g_ui->frame += 1;
 	g_ui->mem_frame = g_ui->mem_frame_arr + (g_ui->frame & 0x1);
 	ArenaFlush(g_ui->mem_frame);
-	dll_Flush(&g_ui->bucket_list);
-	ds_PoolFlush(&g_ui->bucket_pool);
+	ds_DLLFlush(g_ui->bucket_list);
+	ds_CPoolFlush(g_ui->bucket_pool);
 	ds_HashMapFlush(&g_ui->bucket_map);
 	
 	/* setup stub bucket */
-	struct slot slot = ds_PoolAdd(&g_ui->bucket_pool);
-	dll_Append(&g_ui->bucket_list, g_ui->bucket_pool.buf, slot.index);
+	struct slot slot = ds_CPoolPush(g_ui->bucket_pool);
+	ds_DLLAppend(g_ui->bucket_list, g_ui->bucket_pool.buf, slot.index, node);
 	g_ui->bucket_cache = slot.index;
 	struct ui_DrawBucket *bucket = slot.address;
 	bucket->cmd = 0;
@@ -1008,8 +1008,8 @@ static struct slot ui_TextSelectionAlloc(const struct ui_Node *node, const vec4 
 
 void ui_FrameEnd(void)
 {	
-	dll_Flush(&g_ui->event_list);
-	ds_PoolFlush(&g_ui->event_pool);
+	ds_DLLFlush(g_ui->event_list);
+	ds_EventPoolFlush(&g_ui->event_pool);
 
 	ui_NodePop();
 

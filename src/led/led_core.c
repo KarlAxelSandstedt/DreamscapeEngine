@@ -678,7 +678,7 @@ void led_RigidBodyPrefabRemove(struct led *led, const utf8 id)
 	struct ds_RigidBodyPrefab *prefab = slot.address;
 	if (slot.index != SDB_STUB && prefab->reference_count == 0)
 	{
-        for (u32 i = prefab->shape_list.first; i != DLL_NULL; )
+        for (i32 i = prefab->shape_list.first; i != DLL_SENTINEL; )
         {
             const struct ds_ShapePrefabInstance *instance = led->shape_prefab_instance_pool.buf + i;
             i = instance->body_shape.next;

@@ -19,7 +19,7 @@
 
 #include "sdl3_wrapper_local.h"
 
-u32 sdl3_EventConsume(struct dsEvent *event)
+u32 sdl3_EventConsume(struct ds_Event *event)
 {
 	u32 event_exists = 0; 
 

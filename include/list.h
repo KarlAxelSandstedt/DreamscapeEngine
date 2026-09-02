@@ -58,63 +58,6 @@ void			ll_Append(struct ll *ll, void *array, const u32 index);
 void			ll_Prepend(struct ll *ll, void *array, const u32 index);
 
 /*
-dll TODO(DEPRECATED)
-==== 
-Intrusive doubly linked list for indexed structures. To use a struct as a list node,
-put DLL_SLOT_STATE in the structure. It is meant to be used for arrays < U32_MAX 
-indices, where all structs are allocated in the same array. 
- */
-
-#define DLL_NULL			    POOL_NULL
-#define DLL_NOT_IN_LIST			U32_MAX-1	/* if next, prev == DLL_STUB, then node is not in list */
-
-#define DLL_SLOT_STATE			u32 dll_prev;			\
-                       			u32 dll_next			
-#define dll_Prev(structure_addr)	((structure_addr)->dll_prev)
-#define dll_Next(structure_addr)	((structure_addr)->dll_next)
-#define dll_InList(structure_addr)	((structure_addr)->dll_next != DLL_NOT_IN_LIST)
-
-#define DLL2_SLOT_STATE			u32 dll2_prev;			\
-                       			u32 dll2_next			
-#define dll2_Prev(structure_addr)	((structure_addr)->dll2_prev)
-#define dll2_Next(structure_addr)	((structure_addr)->dll2_next)
-#define dll2_InList(structure_addr)	((structure_addr)->dll2_next != DLL_NOT_IN_LIST)
-
-#define DLL3_SLOT_STATE			u32 dll3_prev;			\
-                       			u32 dll3_next			
-#define dll3_Prev(structure_addr)	((structure_addr)->dll3_prev)
-#define dll3_Next(structure_addr)	((structure_addr)->dll3_next)
-#define dll3_InList(structure_addr)	((structure_addr)->dll3_next != DLL_NOT_IN_LIST)
-
-struct dll
-{
-	u32 	count;
-	u32 	first;
-	u32 	last;
-	u64 	slot_size;
-	u64	prev_offset;
-	u64	next_offset;
-};
-
-/* initalize linked list  */
-struct dll		  dll_InitInternal(const u64 slot_size, const u64 prev_offset, const u64 next_offset);
-#define dll_Init(STRUCT)  dll_InitInternal(sizeof(STRUCT), (u64) &((STRUCT *)0)->dll_prev, (u64) &((STRUCT *)0)->dll_next)
-#define dll2_Init(STRUCT) dll_InitInternal(sizeof(STRUCT), (u64) &((STRUCT *)0)->dll2_prev, (u64) &((STRUCT *)0)->dll2_next)
-#define dll3_Init(STRUCT) dll_InitInternal(sizeof(STRUCT), (u64) &((STRUCT *)0)->dll3_prev, (u64) &((STRUCT *)0)->dll3_next)
-/* flush list */
-void			dll_Flush(struct dll *dll);
-/* append to list */
-void			dll_Append(struct dll *dll, void *array, const u32 index);
-/* prepend to list */
-void			dll_Prepend(struct dll *dll, void *array, const u32 index);
-/* remove from list */
-void			dll_Remove(struct dll *dll, void *array, const u32 index);
-/* set slot state to indicate it is not in some list; WARNING: must not be in list!  */
-void			dll_SlotSetNotInList(struct dll *dll, void *slot);
-
-
-
-/*
 ds_DLL
 ======
 Intrusive doubly linked list for indexed structures meant for ds_Pool/ds_CPool. It expects a sentinel/stub at index -1
@@ -206,7 +149,6 @@ do                                                                              
 do                                                                                                      \
 {                                                                                                       \
     ds_Assert((_dll_).count);                                                                           \
-    ds_Assert(ds_DLLNodeCheckInList(_base_, _index_, _node_));                                          \
     (_dll_).count -= 1;                                                                                 \
     const i32 _p_ = (_base_)[_index_]._node_.prev;                                                      \
     const i32 _n_ = (_base_)[_index_]._node_.next;                                                      \
@@ -223,11 +165,6 @@ do                                                                              
         (_dll_).last = _p_;                                                                             \
     }                                                                                                   \
 } while (0)
-
-//TODO are these even good to use? we don't always want to set DLL_NOT_IN_LIST?...
-#define ds_DLLNodeSetNotInList(_base_, _index_, _node_)  ( (_base_)[_index_]._node_.prev = (i32) DLL_NOT_IN_LIST ) 
-
-#define ds_DLLNodeCheckInList(_base_, _index_, _node_)   ( (_base_)[_index_]._node_.prev != (i32) DLL_NOT_IN_LIST )
 
 
 #ifdef __cplusplus

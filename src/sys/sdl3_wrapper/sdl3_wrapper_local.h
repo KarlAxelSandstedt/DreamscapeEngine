@@ -32,7 +32,7 @@ extern "C" {
 #include "sdl3_wrapper_public.h"
 
 void			sdl3_GlFunctionsInit(struct gl_Functions *func);
-u32 			sdl3_EventConsume(struct dsEvent *event);
+u32 			sdl3_EventConsume(struct ds_Event *event);
 u32 			sdl3_KeyModifiers(void);
 enum mouseButton	sdl3_DsMouseButton(const u8 mouse_button);
 enum dsKeycode		sdl3_DsKeycode(const SDL_Keycode sdl_key);

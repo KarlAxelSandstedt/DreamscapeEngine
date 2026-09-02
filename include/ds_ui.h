@@ -406,12 +406,12 @@ struct ui_DrawNode
 
 struct ui_DrawBucket
 {
-	POOL_SLOT_STATE;
-	DLL_SLOT_STATE;
-	u32 			cmd;
-	u32 			count;
-	struct ui_DrawNode *	list;
+    struct ds_DLLNode   node;
+	u32 			    cmd;
+	u32 			    count;
+	struct ui_DrawNode *list;
 };
+DEFINE_CPOOL_STRUCT(ui_DrawBucket);
 
 /********************************************************************************************************/
 /*				             UI INTERACTIONS						*/
@@ -725,14 +725,14 @@ struct ui
 	struct ds_MemSlot		mem_slot;
 	struct ui_Interaction	inter;
 
-	struct ds_Pool		bucket_pool;
-	struct dll		bucket_list;
-	struct ds_HashMap 		bucket_map;
-	u32			bucket_cache;	/* for quick cmd check */
-	u32			bucket_count;
+	ds_CPool(ui_DrawBucket)	bucket_pool;
+	struct ds_DLL           bucket_list;
+	struct ds_HashMap 	    bucket_map;
+	u32			            bucket_cache;	/* for quick cmd check */
+	u32			            bucket_count;
 
-	struct ds_Pool		event_pool;
-	struct dll		event_list;
+	struct ds_EventPool		event_pool;
+	struct ds_DLL		    event_list;
 
 	/* node map for all u's  */
 	/* Shared allocator for all nodes  */

@@ -467,9 +467,9 @@ void 		r_MeshTriMesh(struct arena *mem, struct r_Mesh *mesh, const struct triMes
  ********************************************************/
 
 /* alloc global gl state list */
-void 	gl_StatePoolAlloc(void);
+void 	gl_StateMemAlloc(void);
 /* free global gl state list */
-void 	gl_StatePoolDealloc(void);
+void 	gl_StateMemDealloc(void);
 /* alloc a new gl_state  */
 u32	gl_StateAlloc(void);
 /* free a gl_state  */

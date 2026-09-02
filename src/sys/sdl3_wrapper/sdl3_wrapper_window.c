@@ -64,7 +64,7 @@ u32 			(*EnterTextInputMode)(struct nativeWindow *native);
 u32 			(*ExitTextInputMode)(struct nativeWindow *native);
 u32 			(*KeyModifiers)(void);
 
-u32 			(*EventConsume)(struct dsEvent *event);
+u32 			(*EventConsume)(struct ds_Event *event);
 
 void 			(*GlFunctionsInit)(struct gl_Functions *func);
 

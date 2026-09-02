@@ -323,10 +323,10 @@ static void led_InputHandler(struct led *led, struct ui_Node *viewport)
 	Vec4Set(viewport->border_color, 0.9f, 0.9f, 0.9f, 1.0f);
 	struct ds_Window *sys_win = ds_WindowAddress(led->window);
 
-	for (u32 i = sys_win->ui->event_list.first; i != DLL_NULL; )
+	for (i32 i = sys_win->ui->event_list.first; i != DLL_SENTINEL; )
 	{
-		struct dsEvent *event = ds_PoolAddress(&sys_win->ui->event_pool, i);
-		const u32 next = dll_Next(event);
+		struct ds_Event *event = sys_win->ui->event_pool.buf + i;
+		const i32 next = event->node.next;
 		u32 event_consumed = 1;
 		if (event->type == DS_KEY_PRESSED)
 		{
@@ -356,8 +356,8 @@ static void led_InputHandler(struct led *led, struct ui_Node *viewport)
 
 		if (event_consumed)
 		{
-			dll_Remove(&sys_win->ui->event_list, sys_win->ui->event_pool.buf, i);
-			ds_PoolRemove(&sys_win->ui->event_pool, i);
+			ds_DLLRemove(sys_win->ui->event_list, sys_win->ui->event_pool.buf, i, node);
+			ds_EventPoolRemove(&sys_win->ui->event_pool, i);
 		}
 		i = next;
 	}
@@ -678,7 +678,6 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 								ui_Height(ui_SizePixel(24.0f, 1.0f))
 								ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, "type: TRIANGLE MESH");
 							} break;
-
 						}
 
 						ui_PadFill();
