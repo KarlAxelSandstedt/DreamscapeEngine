@@ -27,35 +27,80 @@ extern "C" {
 #include "ds_allocator.h"
 
 /*
-ll
-==== 
-Intrusive linked list for indexed structures. To use a struct as a list node, put
-LL_SLOT_STATE in the structure. It is meant to be used for arrays < U32_MAX 
-indices, where all structs are allocated in the same array. 
- */
+ds_LL
+======
+Intrusive linked list for indexed structures meant for ds_Pool/ds_CPool. It expects a sentinel/stub at index -1
+and can handle at most I32_MAX elements.
 
-#define LL_NULL				POOL_NULL
-#define LL_SLOT_STATE			u32 ll_next
-#define ll_Next(structure_addr)		((structure_addr)->ll_next)
+::: Usage :::
+    //Initialize / Flush _ll_ to the empty state 
+    ds_LLFlush(_ll_, _base_, _index_, _node_)                                                    
 
-struct ll
+    // Append _index_ to _ll_ 
+    ds_LLAppend(_ll_, _base_, _index_, _node_)                                                    
+  
+    // Append _index_ to _dll_ and setup _base_[_dll_.last]._last_ -> _base_[_index_]._node_
+    // This macro exists for cases when we wish to use different next variables in the two
+    // nodes. 
+    ds_LLAppendEx(_ll_, _base_, _index_, _last_, _node_)                                                    
+  
+    // Prepend _index_ to _dll_
+    ds_LLPrepend(_ll_, _base_, _index_, _node_)                                                    
+*/
+
+#define LL_SENTINEL        DS_STUB_INDEX
+
+struct ds_LL
 {
 	u32 	count;
-	u32 	first;
-	u32 	last;
-	u64 	slot_size;
-	u64	slot_state_offset;
+	i32 	first;
+	i32 	last;
 };
 
-/* initalize linked list  */
-struct ll		ll_InitInternal(const u64 slot_size, const u64 slot_state_offset);
-#define ll_Init(STRUCT)	ll_InitInternal(sizeof(STRUCT), (u64) &((STRUCT *)0)->ll_next)
-/* flush list */
-void			ll_Flush(struct ll *ll);
-/* append to list */
-void			ll_Append(struct ll *ll, void *array, const u32 index);
-/* prepend to list */
-void			ll_Prepend(struct ll *ll, void *array, const u32 index);
+typedef i32 ds_LLNode;
+
+#define ds_LLFlush(_ll_)                                                                                \
+do                                                                                                      \
+{                                                                                                       \
+    (_ll_).count = 0;                                                                                   \
+    (_ll_).first = LL_SENTINEL;                                                                         \
+    (_ll_).last = LL_SENTINEL;                                                                          \
+} while (0)
+
+#define ds_LLAppend(_ll_, _base_, _index_, _node_)    ds_LLAppendEx(_ll_, _base_, _index_, _node_, _node_)
+#define ds_LLAppendEx(_ll_, _base_, _index_, _last_, _node_)                                            \
+do                                                                                                      \
+{                                                                                                       \
+    ds_Assert((_ll_).last == LL_SENTINEL || (_base_)[(_ll_).last]._last_ == LL_SENTINEL);               \
+    ds_Assert((u32) (_index_) < 0x80000000);                                                            \
+                                                                                                        \
+    (_ll_).count += 1;                                                                                  \
+    (_base_)[(_ll_).last]._last_ = (_index_);                                                           \
+    (_base_)[_index_]._node_ = LL_SENTINEL;                                                             \
+                                                                                                        \
+    (_ll_).last = (_index_);                                                                            \
+    if ( (_ll_).first == LL_SENTINEL )                                                                  \
+    {                                                                                                   \
+        (_ll_).first = (_index_);                                                                       \
+    }                                                                                                   \
+} while (0)
+
+#define ds_LLPrepend(_ll_, _base_, _index_, _node_)                                                     \
+do                                                                                                      \
+{                                                                                                       \
+    ds_Assert((_index_) < 0x80000000);                                                                  \
+                                                                                                        \
+    (_ll_).count += 1;                                                                                  \
+    (_base_)[_index_]._node_ = (_ll_).first;                                                            \
+    (_ll_).first = (_index_);                                                                           \
+                                                                                                        \
+    if ( (_ll_).last == LL_SENTINEL )                                                                   \
+    {                                                                                                   \
+        (_ll_).last = (_index_);                                                                        \
+    }                                                                                                   \
+} while (0)
+
+
 
 /*
 ds_DLL
@@ -68,18 +113,19 @@ and can handle at most I32_MAX elements.
     // Append _index_ to _dll_ 
     ds_DLLAppend(_dll_, _base_, _index_, _node_)                                                    
   
-    // Append _index_ to _dll_ and setup _base_[_dll_.last]._last <-> _base_[_index_]._node_
+    // Append _index_ to _dll_ and setup _base_[_dll_.last]._last_ <-> _base_[_index_]._node_
     // This macro exists for cases when the list's nodes may alias different variables
     ds_DLLAppendEx(_dll_, _base_, _index_, _last_, _node_)                                                    
 
     // Prepend _index_ to _dll_ and set  _base_[_index_]._node_.prev/next
     ds_DLLPrepend(_dll_, _base_, _index_, _node_)                                                    
   
+    // Prepend _index_ to _dll_ and setup _base_[_dll_.first]._first_ <-> _base_[_index_]._node_
+    // This macro exists for cases when the list's nodes may alias different variables
+    ds_DLLPrependEx(_dll_, _base_, _index_, _node_, _first_)                                        
+    
     // Remove _index_ from _dll_ and set  _base_[_index_]._node_.prev to DLL_NOT_IN_LIST
     ds_DLLRemove(_dll_, _base_, _index_, _node_)                                                    
-  
-    // Check if _base_[_index_]._node_ is in a list 
-    ds_DLLNodeCheckInList(_base_, _index_, _node_)
 */
 
 #define DLL_SENTINEL        DS_STUB_INDEX
@@ -96,7 +142,6 @@ struct ds_DLLNode
     i32 prev;
     i32 next;
 };
-
 
 #define ds_DLLFlush(_dll_)                                                                              \
 do                                                                                                      \

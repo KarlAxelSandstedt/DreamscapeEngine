@@ -42,10 +42,11 @@ HOW-TO-USE:
 
 struct queueObject
 {
-	POOL_SLOT_STATE;
+	POOL_NODE;
 	u32 	external_index;
-	u32	queue_index;
+	u32	    queue_index;
 };
+POOL_DECLARE(queueObject);
 
 struct queueElement 
 {
@@ -55,7 +56,7 @@ struct queueElement
 
 struct minQueue 
 {
-	struct ds_Pool 		object_pool;
+	struct queueObjectPool 	object_pool;
 	struct queueElement *	elements;
 	u32			growable;
 	struct ds_MemSlot		mem_elements;

@@ -22,6 +22,7 @@
 #include "cmd.h"
 #include "ds_hash_map.h"
 
+POOL_DEFINE(cmd);
 DEFINE_CPOOL_STRUCT(cmdFunction);
 
 static struct ds_HashMap g_name_to_cmd_f_map;
@@ -55,15 +56,15 @@ void ds_CmdApiShutdown(void)
 struct cmdQueue CmdQueueAlloc(void)
 {
 	struct cmdQueue queue = { 0 };
-	queue.cmd_pool = ds_PoolAlloc(NULL, 64, struct cmd, GROWABLE);
-	queue.cmd_list = ll_Init(struct cmd);
-	queue.cmd_list_next_frame = ll_Init(struct cmd);
+	queue.cmd_pool = cmdPoolAlloc(NULL, 64, GROWABLE);
+	ds_LLFlush(queue.cmd_list);
+	ds_LLFlush(queue.cmd_list_next_frame);
 	return queue;
 }
 
 void CmdQueueDealloc(struct cmdQueue *queue)
 {
-	ds_PoolDealloc(&queue->cmd_pool);
+	cmdPoolDealloc(&queue->cmd_pool);
 }
 
 void CmdQueueSet(struct cmdQueue *queue)
@@ -283,30 +284,30 @@ void CmdQueueExecute(void)
 	struct arena *tmp = ArenaPushScratch();
 
 	u32 next = U32_MAX;
-	for (u32 i = g_queue->cmd_list.first; i != LL_NULL; i = next)
+	for (i32 i = g_queue->cmd_list.first; i != LL_SENTINEL; i = next)
 	{
-		g_queue->cmd_exec = ds_PoolAddress(&g_queue->cmd_pool, i);
-		next = ll_Next(g_queue->cmd_exec);
+		g_queue->cmd_exec = g_queue->cmd_pool.buf + i;
+		next = g_queue->cmd_exec->next;
 		if (g_queue->cmd_exec->args_type == CMD_ARGS_TOKEN)
 		{
 			//Utf8DebugPrint(g_queue->cmd_exec->string);
 			CmdTokenizeString(tmp, g_queue->cmd_exec);
 		}
 		g_queue->cmd_exec->function->call();
-		ds_PoolRemove(&g_queue->cmd_pool, i);
+		cmdPoolRemove(&g_queue->cmd_pool, i);
 	}
 
 	g_queue->cmd_list = g_queue->cmd_list_next_frame;
-	ll_Flush(&g_queue->cmd_list_next_frame);
+	ds_LLFlush(g_queue->cmd_list_next_frame);
 
 	ArenaPopScratch();
 }
 
 void CmdQueueFlush(struct cmdQueue *queue)
 {
-	ds_PoolFlush(&queue->cmd_pool);
-	ll_Flush(&g_queue->cmd_list);
-	ll_Flush(&g_queue->cmd_list_next_frame);
+	cmdPoolFlush(&queue->cmd_pool);
+	ds_LLFlush(g_queue->cmd_list);
+	ds_LLFlush(g_queue->cmd_list_next_frame);
 }
 
 struct slot CmdFunctionRegister(const utf8 name, const u32 args_count, void (*call)(void))
@@ -377,12 +378,12 @@ void CmdSubmitUtf8(const utf8 string)
 
 void CmdQueueSubmitUtf8(struct cmdQueue *queue, const utf8 string)
 {
-	struct slot slot = ds_PoolAdd(&queue->cmd_pool);
+	struct slot slot = cmdPoolAdd(&queue->cmd_pool);
 	struct cmd *cmd = slot.address;
 	cmd->args_type = CMD_ARGS_TOKEN;
 	cmd->string = string;
 
-	ll_Append(&queue->cmd_list, queue->cmd_pool.buf, slot.index);
+	ds_LLAppend(queue->cmd_list, queue->cmd_pool.buf, slot.index, next);
 }
 
 void CmdSubmit(const u32 cmdFunction)
@@ -392,7 +393,7 @@ void CmdSubmit(const u32 cmdFunction)
 
 void CmdQueueSubmit(struct cmdQueue *queue, const u32 cmdFunction)
 {
-	struct slot slot = ds_PoolAdd(&queue->cmd_pool);
+	struct slot slot = cmdPoolAdd(&queue->cmd_pool);
 	struct cmd *cmd = slot.address;
 	cmd->args_type = CMD_ARGS_REGISTER;
 	cmd->function = g_cmd_f.buf + cmdFunction;
@@ -402,12 +403,12 @@ void CmdQueueSubmit(struct cmdQueue *queue, const u32 cmdFunction)
 		cmd->arg[i] = queue->regs[i];
 	}
 
-	ll_Append(&queue->cmd_list, queue->cmd_pool.buf, slot.index);
+	ds_LLAppend(queue->cmd_list, queue->cmd_pool.buf, slot.index, next);
 }
 
 void CmdQueueSubmitNextFrame(struct cmdQueue *queue, const u32 cmdFunction)
 {
-	struct slot slot = ds_PoolAdd(&queue->cmd_pool);
+	struct slot slot = cmdPoolAdd(&queue->cmd_pool);
 	struct cmd *cmd = slot.address;
 	cmd->args_type = CMD_ARGS_REGISTER;
 	cmd->function = g_cmd_f.buf + cmdFunction;
@@ -417,7 +418,7 @@ void CmdQueueSubmitNextFrame(struct cmdQueue *queue, const u32 cmdFunction)
 		cmd->arg[i] = queue->regs[i];
 	}
 
-	ll_Append(&queue->cmd_list_next_frame, queue->cmd_pool.buf, slot.index);
+	ds_LLAppend(queue->cmd_list_next_frame, queue->cmd_pool.buf, slot.index, next);
 }
 
 void CmdSubmitNextFrame(const u32 cmdFunction)
@@ -447,12 +448,12 @@ void CmdSubmitFormatNextFrame(struct arena *mem, const char *format, ...)
 
 void CmdQueueSubmitUtf8NextFrame(struct cmdQueue *queue, const utf8 string)
 {
-	struct slot slot = ds_PoolAdd(&queue->cmd_pool);
+	struct slot slot = cmdPoolAdd(&queue->cmd_pool);
 	struct cmd *cmd = slot.address;
 	cmd->args_type = CMD_ARGS_TOKEN;
 	cmd->string = string;
 
-	ll_Append(&queue->cmd_list_next_frame, queue->cmd_pool.buf, slot.index);
+	ds_LLAppend(queue->cmd_list_next_frame, queue->cmd_pool.buf, slot.index, next);
 }
 
 void CmdSubmitUtf8NextFrame(const utf8 string)

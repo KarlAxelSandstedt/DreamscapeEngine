@@ -120,8 +120,6 @@ struct r_Core
 	struct r_Program	program[PROGRAM_COUNT];
 	struct r_Texture	texture[TEXTURE_COUNT];
 
-	struct ds_Pool		unit_pool;
-
 	r_MeshSDB *         mesh_database;		/* mesh storage (external) */
 
 	r_Proxy3dHI 		proxy3d_hierarchy;	/* proxy3d storage */

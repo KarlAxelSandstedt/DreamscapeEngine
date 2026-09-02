@@ -326,8 +326,8 @@ enum r_instance_type
 
 struct r_Instance
 {
-	POOL_SLOT_STATE;
-	LL_SLOT_STATE;
+    POOL_NODE;
+    i32         next;
 
 	u64			frame_last_touched;	/* last scene frame it was touched; if not touched during frame, then prune */
 	struct r_Command *	cmd;			/* points into arena, so safe to dereference */
@@ -340,6 +340,7 @@ struct r_Instance
 		struct r_Mesh	      *mesh;
 	};
 };
+POOL_DECLARE(r_Instance);
 
 struct r_Instance *	r_InstanceAdd(const u32 unit, const u64 cmd);
 struct r_Instance *	r_InstanceAddNonCached(const u64 cmd); /* add non cached instance with no unit. This
@@ -424,8 +425,8 @@ struct r_Scene
 	u64 			frame;
 
 	struct ds_HashMap 		proxy3d_to_instance_map;/* map[ generation(32) | index(32) ] -> instance */
-	struct ds_Pool 		instance_pool;		/* instance storage */
-	struct ll		instance_new_list;	/* non-cached instance 	*/
+	struct r_InstancePool 	instance_pool;		/* instance storage */
+	struct ds_LL            instance_new_list;	/* non-cached instance 	*/
 
 	struct r_Command *	cmd_cache;		/* cached commands 		*/
 	struct r_Command *	cmd_frame;		/* current frame commands 	*/

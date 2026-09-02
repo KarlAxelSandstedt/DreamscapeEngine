@@ -96,20 +96,21 @@ typedef struct cmdFunction
 
 struct cmd
 {
-	POOL_SLOT_STATE;
-	LL_SLOT_STATE;
+	POOL_NODE;
+	i32                         next;
 
 	const struct cmdFunction *	function;
-	utf8				string;				/* defined if args_type == TOKEN */
-	union cmdRegister		arg[CMD_REGISTER_COUNT];	/* defined if args_type == REGISTER */
-	enum cmdArgsType		args_type;	
+	utf8				        string;				        /* defined if args_type == TOKEN */
+	union cmdRegister		    arg[CMD_REGISTER_COUNT];	/* defined if args_type == REGISTER */
+	enum cmdArgsType		    args_type;	
 };
+POOL_DECLARE(cmd);
 
 struct cmdQueue
 {
-	struct ds_Pool		cmd_pool;
-	struct ll		cmd_list;
-	struct ll		cmd_list_next_frame;
+	struct cmdPool	cmd_pool;
+	struct ds_LL	cmd_list;
+	struct ds_LL	cmd_list_next_frame;
 
 	struct cmd *		cmd_exec;
 
