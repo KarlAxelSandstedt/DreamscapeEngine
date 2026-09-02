@@ -244,7 +244,7 @@ Contains data for speculative movement; Since the physics engine runs at a fixed
 we must speculate on future positions. 
 */
 
-#define PROXY3D_NULL                HI_NULL_INDEX
+#define PROXY3D_NULL                HI_ROOT
 #define PROXY3D_ROOT			    2
 
 #define PROXY3D_FLAG_NONE		    ((u32) 0)
@@ -276,9 +276,9 @@ struct r_Proxy3d_config
 /*
  * r_proxy3d - proxy structure containing information for speculatively drawing. 
  */
-struct r_Proxy3d
+typedef struct r_Proxy3d
 {
-	HI_SLOT_STATE;
+    HI_NODE;
 
 	u32	flags;
 	vec3	spec_position;
@@ -300,7 +300,8 @@ struct r_Proxy3d
 			vec3	angular_velocity;
 		} linear;
 	};
-};
+} r_Proxy3d;
+HI_DECLARE(r_Proxy3d);
 
 /* return the handle of a newly allocated proxy3d. */
 u32 			r_Proxy3dAlloc(const struct r_Proxy3d_config *config);

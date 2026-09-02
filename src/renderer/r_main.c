@@ -400,13 +400,14 @@ static void r_EditorDraw(const struct led *led)
 
 	r_Proxy3dHierarchySpeculate(&g_r_core->frame, led->ns - led->ns_engine_paused);
 
-	ArenaPushRecord(&g_r_core->frame);
-	struct hi_Iterator it = hi_IteratorAlloc(&g_r_core->frame, &g_r_core->proxy3d_hierarchy, PROXY3D_ROOT);
+    HII it;
+    HIIInit(it, g_r_core->proxy3d_hierarchy, PROXY3D_ROOT);
 	// skip root stub 
-	hi_IteratorNextDf(&it);
-	while (it.count)
+    HIIAdvance(it, g_r_core->proxy3d_hierarchy);
+	while (it.at != PROXY3D_ROOT)
 	{
-		const u32 index = hi_IteratorNextDf(&it);
+		const u32 index = it.at;
+        HIIAdvance(it, g_r_core->proxy3d_hierarchy);
 		struct r_Proxy3d *proxy = r_Proxy3dAddress(index);
         if ((proxy->flags & PROXY3D_DRAW) == 0)
         {
@@ -782,11 +783,11 @@ void r_EditorMain(const struct led *led)
 
 			struct ds_Window *win = NULL;
 
-			struct arena *tmp = ArenaPushScratch();
-			struct hi_Iterator it = hi_IteratorAlloc(tmp, g_window_hierarchy, g_process_root_window);
-			while (it.count)
+            HII it;
+            HIIInit(it, *g_window_hierarchy, g_process_root_window);
+            do
 			{
-				const u32 window = hi_IteratorNextDf(&it);
+				const i32 window = it.at;
 				win = ds_WindowAddress(window);
 				if (!win->tagged_for_destruction)
 				{
@@ -807,8 +808,9 @@ void r_EditorMain(const struct led *led)
 					r_SceneFrameEnd();
 					r_SceneRender(led, window);
 				}
+                HIIAdvance(it, *g_window_hierarchy);
 			}
-            ArenaPopScratch();
+            while (it.at != g_process_root_window);
 
 			/* NOTE: main context must be set in the case of creating new contexts sharing state. */
 			ds_WindowSetCurrentGlContext(g_process_root_window);

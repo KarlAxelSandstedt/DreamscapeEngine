@@ -695,7 +695,7 @@ struct ui_NodeCache
 
 struct ui_NodeCache	ui_NodeCacheNull(void);
 
-#define UI_NON_CACHED_INDEX 	HI_ORPHAN_STUB_INDEX
+#define UI_NON_CACHED_INDEX 	HI_ORPHAN
 struct ui_NodeCache 	ui_NodeAllocCached(const u64 flags, const utf8 id, const utf8 text, const struct ui_NodeCache cache);
 
 /* allocate new node, values are set according to stack values */

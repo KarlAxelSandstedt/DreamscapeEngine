@@ -63,13 +63,13 @@ void 	ds_GraphicsApiInit(void);
 /* free any graphics resources */
 void 	ds_GraphicsApiShutdown(void);
 
-extern struct hi *	g_window_hierarchy;
-extern u32 		g_process_root_window;
-extern u32 		g_window;
+extern struct ds_WindowHI *	g_window_hierarchy;
+extern i32 		g_process_root_window;
+extern i32 		g_window;
 
-struct ds_Window
+typedef struct ds_Window
 {
-	HI_SLOT_STATE;
+	HI_NODE;
 	struct nativeWindow *	native;			/* native graphics handle */
 	struct ui *		ui;			/* local ui */
 	struct cmdQueue 	cmd_queue;		/* local command queue */
@@ -83,7 +83,8 @@ struct ds_Window
 	vec2u32			size;
 
 	u32			gl_state;
-};
+} ds_Window;
+HI_DECLARE(ds_Window);
 
 /* alloc system_window resources, if no gl context exist, allocate context as well. */
 u32 			ds_WindowAlloc(const char *title, const vec2u32 position, const vec2u32 size, const u32 parent);

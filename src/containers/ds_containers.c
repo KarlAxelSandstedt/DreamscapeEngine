@@ -2,5 +2,4 @@
 #include "queue.c"
 #include "ds_bitset.c"
 #include "list.c"
-#include "hierarchy_index.c"
 #include "tree.c"

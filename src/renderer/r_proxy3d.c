@@ -19,6 +19,8 @@
 
 #include "r_local.h"
 
+HI_DEFINE(r_Proxy3d);
+
 void r_Proxy3dBufferLocalLayoutSet(void)
 {
 	ds_glEnableVertexAttribArray(3);
@@ -65,7 +67,7 @@ void r_Proxy3dLinearSpeculationSet(const vec3 position, const quat rotation, con
 
 u32 r_Proxy3dAlloc(const struct r_Proxy3d_config *config)
 {
-	struct slot slot = hi_Add(&g_r_core->proxy3d_hierarchy, config->parent);
+	struct slot slot = r_Proxy3dHIAdd(&g_r_core->proxy3d_hierarchy, config->parent);
 	struct r_Proxy3d *proxy = slot.address;
 	proxy->flags = (config->parent != g_r_core->proxy3d_root)
 		? PROXY3D_DRAW | PROXY3D_RELATIVE
@@ -86,13 +88,13 @@ void r_Proxy3dDealloc(struct arena *tmp, const u32 proxy_index)
     {
 	    struct r_Proxy3d *proxy = r_Proxy3dAddress(proxy_index);
 	    r_MeshSDBDereference(g_r_core->mesh_database, proxy->mesh);
-	    hi_Remove(tmp, &g_r_core->proxy3d_hierarchy, proxy_index);
+	    r_Proxy3dHIRemove(tmp, &g_r_core->proxy3d_hierarchy, proxy_index);
     }
 }
 
 struct r_Proxy3d *r_Proxy3dAddress(const u32 proxy)
 {
-	return hi_Address(&g_r_core->proxy3d_hierarchy, proxy);
+	return g_r_core->proxy3d_hierarchy.pool.buf + proxy;
 }
 
 /* Calculate the speculative movement of the proxy locally, i.e., the position of the proxy not counting any position type effects */
@@ -131,19 +133,23 @@ static void r_InternalProxy3dLocalSpeculativeOrientation(struct r_Proxy3d *proxy
 void r_Proxy3dHierarchySpeculate(struct arena *mem, const u64 ns_time)
 {
 	ArenaPushRecord(mem);
-	struct hi_Iterator it = hi_IteratorAlloc(mem, &g_r_core->proxy3d_hierarchy, g_r_core->proxy3d_root);
+
+    HII it;
+    HIIInit(it, g_r_core->proxy3d_hierarchy, g_r_core->proxy3d_root);
 	// skip root stub 
-	hi_IteratorNextDf(&it);
-	while (it.count)
+    HIIAdvance(it, g_r_core->proxy3d_hierarchy);
+	while (it.at != (i32) g_r_core->proxy3d_root)
 	{
-		const u32 index = hi_IteratorNextDf(&it);
+		const u32 index = it.at;
+        HIIAdvance(it, g_r_core->proxy3d_hierarchy);
+
 		struct r_Proxy3d *proxy = r_Proxy3dAddress(index);
 		if (proxy->flags & PROXY3D_MOVING)
 		{
 			r_InternalProxy3dLocalSpeculativeOrientation(proxy, ns_time);
 		}
 
-		if (proxy->hi_parent != g_r_core->proxy3d_root)
+		if (proxy->hi_parent != (i32) g_r_core->proxy3d_root)
 		{
 			const struct r_Proxy3d *parent = r_Proxy3dAddress(proxy->hi_parent);
 			if ((proxy->flags & PROXY3D_MOVING) == 0)

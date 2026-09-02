@@ -227,11 +227,12 @@ static void led_NodeDetachRigidBodyPrefabInternal(struct led *led, struct led_No
         for (i32 i = node->hi_first; i != HI_NULL; )
         {
             child = led->node_hierarchy.pool.buf + i;
-            i = child->hi_next;
+            const i32 next = child->hi_next;
             if (child->flags & LED_SHAPE_PREFAB)
             {
                 led_NodeHIApplyCustomFreeAndRemove(&led->frame, &led->node_hierarchy, i, &led_NodeRemoveResources, led);
             }
+            i = next;
         }
 
 	    r_Proxy3dDealloc(&led->frame, node->proxy);

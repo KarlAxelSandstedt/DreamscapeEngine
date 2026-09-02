@@ -317,7 +317,7 @@ void ds_ProcessEvents(void)
 
 			case DS_WINDOW_CONFIG:
 			{
-				ds_WindowConfigUpdate(ds_PoolIndex(&g_window_hierarchy->pool, sys_win));
+				ds_WindowConfigUpdate(ds_WindowPoolIndex(&g_window_hierarchy->pool, sys_win));
 			} break;
 
 			//case DS_WINDOW_MINIMIZE:

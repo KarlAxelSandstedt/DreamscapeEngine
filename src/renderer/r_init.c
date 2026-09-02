@@ -232,14 +232,14 @@ void r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_siz
 		FatalCleanupAndExit();
 	}
 
-	g_r_core->proxy3d_hierarchy = hi_Alloc(NULL, core_unit_count, struct r_Proxy3d, GROWABLE);
+	g_r_core->proxy3d_hierarchy = r_Proxy3dHIAlloc(NULL, core_unit_count, GROWABLE);
 	if (g_r_core->proxy3d_hierarchy.pool.length == 0)
 	{
 		LogString(T_SYSTEM, S_FATAL, "Failed to allocate r_core unit hierarchy, exiting.");
 		FatalCleanupAndExit();
 	}
 
-	struct slot slot3d = hi_Add(&g_r_core->proxy3d_hierarchy, HI_NULL_INDEX);
+	struct slot slot3d = r_Proxy3dHIAdd(&g_r_core->proxy3d_hierarchy, HI_ROOT);
 	g_r_core->proxy3d_root = slot3d.index;
 	ds_Assert(g_r_core->proxy3d_root == PROXY3D_ROOT);
 	struct r_Proxy3d *stub3d = slot3d.address;
@@ -327,8 +327,8 @@ void r_CoreFlush(void)
 	g_r_core->frames_elapsed = 0;	
 	g_r_core->ns_elapsed = 0;	
 
-	hi_Flush(&g_r_core->proxy3d_hierarchy);
-	struct slot slot3d = hi_Add(&g_r_core->proxy3d_hierarchy, HI_NULL_INDEX);
+	r_Proxy3dHIFlush(&g_r_core->proxy3d_hierarchy);
+	struct slot slot3d = r_Proxy3dHIAdd(&g_r_core->proxy3d_hierarchy, HI_ROOT);
 	g_r_core->proxy3d_root = slot3d.index;
 	ds_Assert(g_r_core->proxy3d_root == PROXY3D_ROOT);
 	struct r_Proxy3d *stub3d = slot3d.address;

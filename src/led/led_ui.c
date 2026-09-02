@@ -481,7 +481,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 				const utf32 external_text = Utf32Cstr(g_ui->mem_frame, "Viewport");
 
 				slot = ui_NodeAlloc(UI_DRAW_BORDER | UI_INTER_FLAGS, &led->viewport_id);
-				if (slot.index != HI_ORPHAN_STUB_INDEX)
+				if (slot.index != HI_ORPHAN)
 				ui_Parent(slot.index)
 				{
 					struct ui_Node *node = slot.address;

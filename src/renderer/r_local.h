@@ -124,8 +124,8 @@ struct r_Core
 
 	r_MeshSDB *         mesh_database;		/* mesh storage (external) */
 
-	struct hi 		proxy3d_hierarchy;	/* proxy3d storage */
-	u32			proxy3d_root;
+	r_Proxy3dHI 		proxy3d_hierarchy;	/* proxy3d storage */
+	u32			        proxy3d_root;
 };
 extern struct r_Core *g_r_core;
 

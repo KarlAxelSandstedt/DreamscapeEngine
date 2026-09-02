@@ -133,7 +133,7 @@ struct ui *ui_Alloc(void)
 	ui->event_pool = ds_PoolAlloc(NULL, 32, struct dsEvent, GROWABLE);
 	ui->event_list = dll_Init(struct dsEvent);
 	ui->frame = 0;
-	ui->root = HI_ROOT_STUB_INDEX;
+	ui->root = HI_ROOT;
 	ui->node_count_prev_frame = 0;
 	ui->node_count_frame = 0;
 	ui->mem_frame_arr[0] = ArenaAlloc(NULL, 64*1024*1024);
@@ -180,7 +180,7 @@ struct ui *ui_Alloc(void)
 	ui->inter.text_edit = text_edit_stub_ptr();
 
 	/* setup root stub values */
-	ds_CPoolPushValue(ui->parent, HI_ROOT_STUB_INDEX);
+	ds_CPoolPushValue(ui->parent, HI_ROOT);
 	struct ui_Node *stub = ui->node_hierarchy.pool.buf + HI_ROOT;
 	stub->id = Utf8Empty();
 	stub->semantic_size[AXIS_2_X] = ui_SizePixel(0.0f, 0.0f);
@@ -755,8 +755,6 @@ static void ui_LayoutAbsolutePosition(void)
 		}
 	}
     while (it.at != (i32) g_ui->root);
-
-    ArenaPopScratch();
 }
 
 static void InterDebugPrint(const u64 inter)
@@ -925,7 +923,7 @@ static void ui_IdentifyHoveredNode(void)
 	const f32 x = g_ui->inter.cursor_position[0];
 	const f32 y = g_ui->inter.cursor_position[1];
 	i32 depth = -1;
-	u32 index = HI_ROOT;
+	i32 index = HI_ROOT;
 	/* find deepest hashed floating subtree which we are hovering */
 	for (u32 i = 0; i < g_ui->floating_node.count; ++i)
 	{
@@ -955,7 +953,7 @@ static void ui_IdentifyHoveredNode(void)
 	node = g_ui->node_hierarchy.pool.buf + index;
 	ds_Assert((node->flags & (UI_NON_HASHED | UI_SKIP_HOVER_SEARCH)) == 0);
 	index = node->hi_first;
-	while (index != HI_ROOT)
+	while (index != HI_NULL)
 	{
 		node = g_ui->node_hierarchy.pool.buf + index;
 		if (node->pixel_visible[0].low <= x && x <= node->pixel_visible[0].high &&  
@@ -1103,7 +1101,7 @@ void ui_FrameEnd(void)
 		}
 	}
 
-	struct ui_Node *orphan = g_ui->node_hierarchy.pool.buf + HI_ORPHAN_STUB_INDEX;
+	struct ui_Node *orphan = g_ui->node_hierarchy.pool.buf + HI_ORPHAN;
 	struct ui_Node *node; 
 	for (i32 index = orphan->hi_first; index != HI_NULL;)
 	{
@@ -1112,7 +1110,7 @@ void ui_FrameEnd(void)
 		ui_NodeHIApplyCustomFreeAndRemove(g_ui->mem_frame, &g_ui->node_hierarchy, index, &ui_NodeDealloc, NULL);
 		index = next;
 	}
-	ui_NodeHIAdoptNode(&g_ui->node_hierarchy, g_ui->root, HI_ORPHAN_STUB_INDEX);
+	ui_NodeHIAdoptNode(&g_ui->node_hierarchy, g_ui->root, HI_ORPHAN);
 }
 
 /* Calculate sizes known at time of creation, i.e. every size expect CHILDSUM */
@@ -1186,9 +1184,9 @@ static u32 ui_InternalPad(const u64 flags, const f32 value, const enum ui_SizeTy
 {
 	const u32 parent_index = ds_CPoolTop(g_ui->parent);
 
-	if (parent_index == HI_ORPHAN_STUB_INDEX)
+	if (parent_index == HI_ORPHAN)
 	{
-		return HI_ORPHAN_STUB_INDEX;
+		return HI_ORPHAN;
 	}
 
 	struct slot slot = ui_NodeHIAdd(&g_ui->node_hierarchy, parent_index);
@@ -1361,7 +1359,7 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 	struct ui_Node *parent = g_ui->node_hierarchy.pool.buf + parent_index;
 
 	/* Parent failed to alloc */
-	if (parent_index == HI_ORPHAN_STUB_INDEX)
+	if (parent_index == HI_ORPHAN)
 	{
 		return ui_NodeCacheOrphanRoot();
 	}
@@ -1371,7 +1369,7 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 	/* If not cached, index should be != STUB_INDEX */
 	struct ui_Node *node = (cache.last_frame_touched+1 == g_ui->frame)
 				? g_ui->node_hierarchy.pool.buf + cache.index
-				: g_ui->node_hierarchy.pool.buf + HI_ORPHAN_STUB_INDEX;
+				: g_ui->node_hierarchy.pool.buf + HI_ORPHAN;
 
 	ds_Assert(node->last_frame_touched != g_ui->frame);
 	struct ui_Size size_x = ds_CPoolTop(g_ui->ui_size[AXIS_2_X]);
@@ -1645,9 +1643,9 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 	const u32 parent_index = ds_CPoolTop(g_ui->parent);
 	struct ui_Node *parent = g_ui->node_hierarchy.pool.buf + parent_index;
 
-	if (parent_index == HI_ORPHAN_STUB_INDEX)
+	if (parent_index == HI_ORPHAN)
 	{
-		return (struct slot) { .index = HI_ORPHAN_STUB_INDEX, .address = g_ui->node_hierarchy.pool.buf + HI_ORPHAN_STUB_INDEX };
+		return (struct slot) { .index = HI_ORPHAN, .address = g_ui->node_hierarchy.pool.buf + HI_ORPHAN };
 	}
 
 	u32 hash_count = 0;
@@ -1706,7 +1704,7 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 		const intv visible = ds_CPoolTop(g_ui->viewable[AXIS_2_X]);
 		if ((size_x.intv.high < visible.low || size_x.intv.low > visible.high) && node && !(node->inter & UI_INTER_ACTIVE))
 		{
-			return (struct slot) { .index = HI_ORPHAN_STUB_INDEX, .address = g_ui->node_hierarchy.pool.buf + HI_ORPHAN_STUB_INDEX };
+			return (struct slot) { .index = HI_ORPHAN, .address = g_ui->node_hierarchy.pool.buf + HI_ORPHAN };
 		}
 	}
 
@@ -1718,7 +1716,7 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 		const intv visible = ds_CPoolTop(g_ui->viewable[AXIS_2_Y]);
 		if ((size_y.intv.high < visible.low || size_y.intv.low > visible.high) && node && !(node->inter & UI_INTER_ACTIVE))
 		{
-			return (struct slot) { .index = HI_ORPHAN_STUB_INDEX, .address = g_ui->node_hierarchy.pool.buf + HI_ORPHAN_STUB_INDEX };
+			return (struct slot) { .index = HI_ORPHAN, .address = g_ui->node_hierarchy.pool.buf + HI_ORPHAN };
 		}
 	}
 

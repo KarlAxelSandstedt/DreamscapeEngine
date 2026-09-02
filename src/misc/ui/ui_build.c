@@ -170,7 +170,7 @@ struct ui_List ui_ListInit(enum axis_2 axis, const f32 max_pixel_size, const f32
 		.axis = axis,
 		.selection_type = selection_type,
 		.last_build_frame = U64_MAX,
-		.last_selected = HI_NULL_INDEX,
+		.last_selected = HI_NULL,
 		.last_selection_happened = U64_MAX,
 	};
 
@@ -667,7 +667,7 @@ void ui_PopupBuild(void)
 	struct ui_Popup *popup = g_queue->cmd_exec->arg[0].ptr;
 	struct ui_Visual *visual = g_queue->cmd_exec->arg[1].ptr;
 
-	if (popup->window == HI_NULL_INDEX)
+	if ((i32) popup->window == HI_NULL)
 	{
 		*popup = ui_PopupNull();
 		return;
@@ -783,12 +783,12 @@ void ui_PopupBuild(void)
 
 struct ui_Popup ui_PopupNull(void)
 {
-	return (struct ui_Popup) { .window = HI_NULL_INDEX, .state = UI_POPUP_STATE_NULL };
+	return (struct ui_Popup) { .window = HI_NULL, .state = UI_POPUP_STATE_NULL };
 }
 
 void ui_PopupTryDestroyAndSetToNull(struct ui_Popup *popup)
 {
-	if (popup->window != HI_NULL_INDEX)
+	if ((i32) popup->window != HI_NULL)
 	{
 		struct ds_Window *win = ds_WindowAddress(popup->window);
 		ds_WindowTagSubHierarchyForDestruction(popup->window);
@@ -801,7 +801,7 @@ void ui_PopupUtf8Display(struct ui_Popup *popup, const utf8 display, const char 
 	if (popup->state == UI_POPUP_STATE_NULL)
 	{
 		popup->window = ds_WindowAlloc(title, Vec2U32Inline(0,0), Vec2U32Inline(600, 200), g_window);
-		if (popup->window != HI_NULL_INDEX)
+		if ((i32) popup->window != HI_NULL)
 		{
 			struct ds_Window *win = ds_WindowAddress(popup->window);
 			popup->display1 = Utf8Copy(&win->mem_persistent, display);
@@ -820,7 +820,7 @@ void ui_PopupUtf8Input(struct ui_Popup *popup, utf8 *input, struct ui_TextInput 
 	if (popup->state == UI_POPUP_STATE_NULL)
 	{
 		popup->window = ds_WindowAlloc(title, Vec2U32Inline(0,0), Vec2U32Inline(600, 200), g_window);
-		if (popup->window != HI_NULL_INDEX)
+		if ((i32) popup->window != HI_NULL)
 		{
 			struct ds_Window *win = ds_WindowAddress(popup->window);
 			popup->display1 = Utf8Copy(&win->mem_persistent, description);
@@ -842,7 +842,7 @@ void ui_PopupChoice(struct ui_Popup *popup, const utf8 description, const utf8 p
 	if (popup->state == UI_POPUP_STATE_NULL)
 	{
 		popup->window = ds_WindowAlloc(title, Vec2U32Inline(0,0), Vec2U32Inline(600, 200), g_window);
-		if (popup->window != HI_NULL_INDEX)
+		if ((i32) popup->window != HI_NULL)
 		{
 			struct ds_Window *win = ds_WindowAddress(popup->window);
 

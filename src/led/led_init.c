@@ -32,7 +32,7 @@ struct led_ProjectMenu led_ProjectMenuAlloc(void)
 		.selected_path = Utf8Empty(),
 		.dir_nav = DirectoryNavigatorAlloc(4096, 64, 64),
 		.dir_list = ui_ListInit(AXIS_2_Y, 200.0f, 24.0f, UI_SELECTION_UNIQUE),
-		.window = HI_NULL_INDEX,
+		.window = HI_ROOT,
 		.popup_new_project = ui_PopupNull(),
 		.utf8_new_project = Utf8Empty(),
 		.input_line_new_project = ui_TextInputEmpty(),
@@ -159,7 +159,7 @@ struct led *led_Alloc(void)
     ds_DLLFlush(prefab_stub->shape_list);
     ds_DLLAppend(prefab_stub->shape_list, g_editor->shape_prefab_instance_pool.buf, instance_index, body_shape);
 
-    slot = led_NodeHIAdd(&g_editor->node_hierarchy, HI_ROOT_STUB_INDEX);
+    slot = led_NodeHIAdd(&g_editor->node_hierarchy, HI_ROOT);
     ds_Assert(slot.index == LED_NODE_ROOT);
 
 	g_editor->body_color_mode = RB_COLOR_MODE_BODY;

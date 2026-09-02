@@ -25,10 +25,12 @@
 #include "sys_local.h"
 #include "ds_renderer.h"
 
-struct hi g_window_hierarchy_storage = { 0 };
-struct hi *g_window_hierarchy = &g_window_hierarchy_storage;
-u32 g_window = HI_NULL_INDEX;
-u32 g_process_root_window = HI_NULL_INDEX;
+HI_DEFINE(ds_Window);
+
+struct ds_WindowHI g_window_hierarchy_storage = { 0 };
+struct ds_WindowHI *g_window_hierarchy = &g_window_hierarchy_storage;
+i32 g_window = HI_NULL;
+i32 g_process_root_window = HI_NULL;
 
 static void ds_WindowDealloc(struct ds_Window *sys_win)
 {
@@ -42,8 +44,8 @@ static void ds_WindowDealloc(struct ds_Window *sys_win)
 
 u32 ds_WindowAlloc(const char *title, const vec2u32 position, const vec2u32 size, const u32 parent)
 {
-	struct slot slot = hi_Add(g_window_hierarchy, parent);
-	ds_Assert(parent != HI_ROOT_STUB_INDEX || slot.index == 2);
+	struct slot slot = ds_WindowHIAdd(g_window_hierarchy, parent);
+	ds_Assert(parent != HI_ROOT || slot.index == 2);
 
 	struct ds_Window *sys_win = slot.address;
 
@@ -69,7 +71,7 @@ u32 ds_WindowAlloc(const char *title, const vec2u32 position, const vec2u32 size
 	{
 		/* set context before we initalize gl function pointers ***POSSIBLY*** Local to the new context on 
 		 * some platforms */
-		struct ds_Window *root = hi_Address(g_window_hierarchy, g_process_root_window);
+		struct ds_Window *root = g_window_hierarchy->pool.buf + g_process_root_window;
 		NativeWindowGlSetCurrent(root->native);
 	}
 
@@ -80,99 +82,98 @@ u32 ds_WindowAlloc(const char *title, const vec2u32 position, const vec2u32 size
 
 void ds_WindowTagSubHierarchyForDestruction(const u32 root)
 {
-	struct arena *tmp = ArenaPushScratch();
-	struct hi_Iterator it = hi_IteratorAlloc(tmp, g_window_hierarchy, root);
-	while (it.count)
+    HII it;
+    HIIInit(it, *g_window_hierarchy, root);
+    do
 	{
-		const u32 index = hi_IteratorNextDf(&it);
-		struct ds_Window *sys_win = hi_Address(g_window_hierarchy, index);
+		const u32 index = it.at;
+        HIIAdvance(it, *g_window_hierarchy);
+		struct ds_Window *sys_win = g_window_hierarchy->pool.buf + index;
 		sys_win->tagged_for_destruction = 1;
 	}
-    ArenaPopScratch();
+    while (it.at != (i32) root);
 }
 
-static void ds_InternalWindowDealloc(const struct hi *hi, const u32 index, void *data)
+static void ds_InternalWindowDealloc(const struct ds_WindowHI *hi, const u32 index, void *data)
 {
-	struct ds_Window *win = hi_Address(hi, index);
+	struct ds_Window *win = hi->pool.buf + index;
 	ds_WindowDealloc(win);
 }
 
 void ds_DeallocTaggedWindows(void)
 {
-	struct arena *tmp1 = ArenaPushScratch();
-	struct arena *tmp2 = ArenaPushScratch();
-	struct hi_Iterator it = hi_IteratorAlloc(tmp1, g_window_hierarchy, g_process_root_window);
-	while (it.count)
+	struct arena *tmp = ArenaPushScratch();
+
+    HII it;
+    HIIInit(it, *g_window_hierarchy, g_process_root_window);
+    do
 	{
-		const u32 index = hi_IteratorPeek(&it);
-		struct ds_Window *sys_win = hi_Address(g_window_hierarchy, index);
+        const u32 index = it.at;
+		struct ds_Window *sys_win = g_window_hierarchy->pool.buf + index;
 		if (sys_win->tagged_for_destruction)
 		{
-			hi_IteratorSkip(&it);
-			hi_ApplyCustomFreeAndRemove(tmp2, g_window_hierarchy, index, ds_InternalWindowDealloc, NULL);
+            HIISkip(it, *g_window_hierarchy);
+			ds_WindowHIApplyCustomFreeAndRemove(tmp, g_window_hierarchy, index, ds_InternalWindowDealloc, NULL);
 
 		}
-		else
-		{
-			hi_IteratorNextDf(&it);
-		}
+        HIIAdvance(it, *g_window_hierarchy);
 	}
-	ArenaPopScratch();
+    while (it.at != g_process_root_window);
+
 	ArenaPopScratch();
 }
 
 struct slot ds_WindowLookup(const u64 native_handle)
 {
-	struct ds_Window *win = NULL;
-	u32 index = U32_MAX;
+    struct slot slot = { .index = U32_MAX, .address = NULL };
 
-	struct arena *tmp = ArenaPushScratch();
-	struct hi_Iterator it = hi_IteratorAlloc(tmp, g_window_hierarchy, g_process_root_window);
-	while (it.count)
+    HII it;
+    HIIInit(it, *g_window_hierarchy, g_process_root_window);
+    do
 	{
-		const u32 win_index = hi_IteratorNextDf(&it);
-		struct ds_Window *sys_win = hi_Address(g_window_hierarchy, win_index);
+        struct ds_Window *sys_win = g_window_hierarchy->pool.buf + it.at;
 		if (NativeWindowGetNativeHandle(sys_win->native) == native_handle)
 		{
-			win = sys_win;
-			index = win_index;
+			slot.address = sys_win;
+			slot.index = it.at;
 			break;
 		}
+        HIIAdvance(it, *g_window_hierarchy);
 	}
-	ArenaPopScratch();
+    while (it.at != g_process_root_window);
 
-	return (struct slot) { .index = index, .address = win };
+	return slot;
 }
 
 u32 ds_RootWindowAlloc(const char *title, const vec2u32 position, const vec2u32 size)
 {
-	ds_Assert(g_process_root_window == HI_NULL_INDEX);
-	g_process_root_window = ds_WindowAlloc(title, position, size, HI_ROOT_STUB_INDEX);
+	ds_Assert(g_process_root_window == HI_NULL);
+	g_process_root_window = ds_WindowAlloc(title, position, size, HI_ROOT);
 	ds_Assert(g_process_root_window == 2);
 	return g_process_root_window;
 }
 
 void ds_WindowConfigUpdate(const u32 window)
 {
-	struct ds_Window *sys_win = hi_Address(g_window_hierarchy, window);
+	struct ds_Window *sys_win = g_window_hierarchy->pool.buf + window;
 	NativeWindowConfigUpdate(sys_win->position, sys_win->size, sys_win->native);
 }
 
 void ds_WindowSize(vec2u32 size, const u32 window)
 {
-	struct ds_Window *sys_win = hi_Address(g_window_hierarchy, window);
+	struct ds_Window *sys_win = g_window_hierarchy->pool.buf + window;
 	size[0] = sys_win->size[0];
 	size[1] = sys_win->size[1];
 }
 
 struct ds_Window *ds_WindowAddress(const u32 index)
 {
-	return ds_PoolAddress(&g_window_hierarchy->pool, index);
+	return g_window_hierarchy->pool.buf + index;
 }
 
 u32 ds_WindowIndex(const struct ds_Window *win)
 {
-	return ds_PoolIndex(&g_window_hierarchy->pool, win);
+	return ds_WindowPoolIndex(&g_window_hierarchy->pool, win);
 }
 
 void ds_WindowSetCurrentGlContext(const u32 window)
@@ -191,7 +192,7 @@ void ds_WindowSwapGlBuffers(const u32 window)
 void ds_WindowSetGlobal(const u32 index)
 {
 	g_window = index;
-	struct ds_Window *sys_win = hi_Address(g_window_hierarchy, index);
+	struct ds_Window *sys_win = g_window_hierarchy->pool.buf + index;
 	ui_Set(sys_win->ui);
 	CmdQueueSet(&sys_win->cmd_queue);
 }
@@ -203,7 +204,7 @@ void ds_GraphicsApiInit(void)
 #endif
 	ds_CmdApiInit();
 	ds_UiApiInit();
-	g_window_hierarchy_storage = hi_Alloc(NULL, 8, struct ds_Window, GROWABLE);
+	g_window_hierarchy_storage = ds_WindowHIAlloc(NULL, 8, GROWABLE);
 	
 	gl_StatePoolAlloc();
 }
@@ -211,17 +212,17 @@ void ds_GraphicsApiInit(void)
 void ds_GraphicsApiShutdown(void)
 {
 	struct arena *tmp = ArenaPushScratch();
-	hi_ApplyCustomFreeAndRemove(tmp, g_window_hierarchy, g_process_root_window, ds_InternalWindowDealloc, NULL);
+	ds_WindowHIApplyCustomFreeAndRemove(tmp, g_window_hierarchy, g_process_root_window, ds_InternalWindowDealloc, NULL);
     ArenaPopScratch();
 
 	gl_StatePoolDealloc();
-	hi_Dealloc(g_window_hierarchy);
+	ds_WindowHIDealloc(g_window_hierarchy);
 	ds_CmdApiShutdown();
 }
 
 void ds_WindowTextInputModeEnable(void)
 {
-	struct ds_Window *sys_win = hi_Address(g_window_hierarchy, g_window);
+	struct ds_Window *sys_win = g_window_hierarchy->pool.buf + g_window;
 	if (EnterTextInputMode(sys_win->native))
 	{
 		sys_win->text_input_mode = 1;
@@ -234,7 +235,7 @@ void ds_WindowTextInputModeEnable(void)
 
 void ds_WindowTextInputModeDisable(void)
 {
-	struct ds_Window *sys_win = hi_Address(g_window_hierarchy, g_window);
+	struct ds_Window *sys_win = g_window_hierarchy->pool.buf + g_window;
 	if (ExitTextInputMode(sys_win->native))
 	{
 		sys_win->text_input_mode = 0;
