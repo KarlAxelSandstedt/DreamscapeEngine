@@ -179,5 +179,3 @@ u32 bt_LeafCount(const struct bt *tree)
 		? (tree->pool.count >> 1) + 1
 		: 0;
 }
-
-

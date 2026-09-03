@@ -344,7 +344,6 @@ u32 ds_NarrowJobPhaseDispatch(const ds_JobId job)
                 }
             }
         }
-
         ProfZoneEnd;
     }
 
@@ -372,8 +371,6 @@ u32 ds_NarrowJobPhaseDispatch(const ds_JobId job)
 
 static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
 {
-    //TODO 756us mean (20.0s)
-    
     /*
      * Achieving Determinism and Parallelization in the Broadphase
      * ===========================================================
@@ -555,19 +552,19 @@ static void CollisionDetection(struct ds_RigidBodyPipeline *pipeline)
     }
 
     {
-    	ProfZone;
-    
         if (pipeline->island_to_split != DS_ID_NULL)
         {
+    	    ProfZoneNamed("Island Split");
+    
             const u32 split_index = ds_IdIndex(pipeline->island_to_split);
             if (ds_PoolSlotAllocated(pipeline->island_pool.buf + split_index) 
                     && pipeline->island_to_split == pipeline->island_pool.buf[split_index].id)
             {
                 ds_IslandSplit(pipeline, split_index);
             }
-        }
     
-    	ProfZoneEnd;
+    	    ProfZoneEnd;
+        }
     }
 }
 
