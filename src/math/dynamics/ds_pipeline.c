@@ -272,7 +272,7 @@ u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
 
                 const u32 si = ds_BitBlockNext(&it);
                 const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
-                const struct bvhNode *node = (const struct bvhNode *) pipeline->dynamic_bvh.tree.pool.buf + shape->proxy;
+                const struct bvhNode *node = pipeline->dynamic_bvh.pool.buf + shape->proxy;
                 const struct bvh_QuerySet dynamic_query = BvhQueryAndFilterOnBody(tmp, &pipeline->dynamic_bvh, node);
                 const struct bvh_QuerySet static_query = BvhQuery(tmp, &pipeline->static_bvh, node);
                 
@@ -1125,9 +1125,9 @@ u32f32 PhysicsPipelineRaycastParameter(const struct ds_RigidBodyPipeline *pipeli
 			break;	
 		}
 
-		if (bt_LeafCheck(d_info.node + tuple.u))
+		if (ds_BTLeafCheck(d_info.node + tuple.u))
 		{
-			const u32 si = d_info.node[tuple.u].bt_left;
+			const u32 si = d_info.node[tuple.u].bt_child[0];
 			const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
 			const f32 t = ds_ShapeRaycastParameter(pipeline, shape, ray);
 			if (t < d_info.hit.f)
@@ -1152,9 +1152,9 @@ u32f32 PhysicsPipelineRaycastParameter(const struct ds_RigidBodyPipeline *pipeli
 			break;	
 		}
 
-		if (bt_LeafCheck(s_info.node + tuple.u))
+		if (ds_BTLeafCheck(s_info.node + tuple.u))
 		{
-			const u32 si = s_info.node[tuple.u].bt_left;
+			const u32 si = s_info.node[tuple.u].bt_child[0];
 			const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
 			const f32 t = ds_ShapeRaycastParameter(pipeline, shape, ray);
 			if (t < s_info.hit.f)
@@ -1189,7 +1189,7 @@ void PhysicsPipelinePrintUsage(const struct ds_RigidBodyPipeline *pipeline)
     fprintf(stderr, "Physics:\n");
     fprintf(stderr, "\tbodies:                      %u\n", pipeline->body_pool.count);
     fprintf(stderr, "\tshapes:                      %u\n", pipeline->shape_pool.count);
-    fprintf(stderr, "\tdynamic_bvh nodes:             %u\n", pipeline->dynamic_bvh.tree.pool.count);
+    fprintf(stderr, "\tdynamic_bvh nodes:           %u\n", pipeline->dynamic_bvh.pool.count);
     fprintf(stderr, "\tevents:                      %u\n", pipeline->event_pool.count);
     fprintf(stderr, "\tislands:                     %u\n", pipeline->island_pool.count);
     fprintf(stderr, "\tcontacts:                    %u\n", pipeline->contact_pool.count);

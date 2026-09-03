@@ -199,9 +199,9 @@ struct aabb ds_ShapeWorldBbox(const struct ds_RigidBodyPipeline *pipeline, const
 		// mesh shape to have position 0 and no rotation.
         ds_Assert(Vec3Length(shape->t_local.position) == 0.0f);
         ds_Assert(shape->t_local.rotation[3] == 1.0f);
-		const struct bvhNode *node = (struct bvhNode *) cshape->mesh_bvh.bvh.tree.pool.buf;
+		const struct bvhNode *node = cshape->mesh_bvh.bvh.pool.buf;
 		struct aabb bbox; 
-		AabbRotate(&bbox, &node[cshape->mesh_bvh.bvh.tree.root].bbox, rot);
+		AabbRotate(&bbox, &node[cshape->mesh_bvh.bvh.bt.root].bbox, rot);
 		Vec3Scale(min, bbox.hw, -1.0f);
 		Vec3Scale(max, bbox.hw, 1.0f);
 		Vec3Translate(min, t_world.position);

@@ -184,8 +184,8 @@ u32 ds_ContactCheckBvhOverlap(const struct ds_RigidBodyPipeline *pipeline, const
 	    pipeline->body_pool.buf + shape[1]->body,
     };
 
-    const struct bvhNode *s_node = (const struct bvhNode *) pipeline->static_bvh.tree.pool.buf;
-    const struct bvhNode *d_node = (const struct bvhNode *) pipeline->dynamic_bvh.tree.pool.buf;
+    const struct bvhNode *s_node = pipeline->static_bvh.pool.buf;
+    const struct bvhNode *d_node = pipeline->dynamic_bvh.pool.buf;
 
     const struct aabb *bbox[2];
     bbox[0] = RB_IS_DYNAMIC(body[0]) 

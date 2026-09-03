@@ -320,7 +320,7 @@ static struct r_Mesh *bvh_Mesh(struct arena *mem, const struct bvh *bvh, const v
 	Mat3Quat(rot, rotation);
 
 	ArenaPushRecord(mem);
-	const u32 vertex_count = 3*8*bvh->tree.pool.count;
+	const u32 vertex_count = 3*8*bvh->pool.count;
  	struct r_Mesh *mesh = NULL;
 	struct r_Mesh *tmp = ArenaPush(mem, sizeof(struct r_Mesh));
 	u8 *vertex_data = ArenaPush(mem, vertex_count * L_COLOR_STRIDE);
@@ -341,12 +341,10 @@ static struct r_Mesh *bvh_Mesh(struct arena *mem, const struct bvh *bvh, const v
 	ArenaPushRecord(mem);
 	struct memArray arr = ArenaPushAlignedAll(mem, sizeof(u32), 4); 
 	u32 *stack = arr.addr;
-
-	u32 i = bvh->tree.root;
+	u32 i = bvh->bt.root;
 	u32 sc = U32_MAX;
 
-
-	const struct bvhNode *nodes = (struct bvhNode *) bvh->tree.pool.buf;
+	const struct bvhNode *nodes = bvh->pool.buf;
 	u64 mem_left = mesh->vertex_count * L_COLOR_STRIDE;
 	while (i != U32_MAX)
 	{
@@ -354,15 +352,15 @@ static struct r_Mesh *bvh_Mesh(struct arena *mem, const struct bvh *bvh, const v
 		vertex_data += bytes_written;
 		mem_left -= bytes_written;
 
-		if (!bt_LeafCheck(nodes + i))
+		if (!ds_BTLeafCheck(nodes + i))
 		{
 			sc += 1;
 			if (sc == arr.len)
 			{
 				goto end;	
 			}
-			stack[sc] = nodes[i].bt_right;
-			i = nodes[i].bt_left;
+			stack[sc] = nodes[i].bt_child[1];
+			i = nodes[i].bt_child[0];
 		}
 		else if (sc != U32_MAX)
 		{

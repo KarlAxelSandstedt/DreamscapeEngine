@@ -462,7 +462,7 @@ struct slot led_CollisionDcelAdd(struct led *led, const utf8 id, struct dcel *dc
 struct slot led_CollisionTriMeshBvhAdd(struct led *led, const utf8 id, struct triMeshBvh *mesh_bvh)
 {
     struct slot slot = empty_slot;
-	if (mesh_bvh->mesh->v_count && bt_NodeCount(&mesh_bvh->bvh.tree))
+	if (mesh_bvh->mesh->v_count && mesh_bvh->bvh.bt.count)
 	{
 		struct c_Shape shape =
 		{

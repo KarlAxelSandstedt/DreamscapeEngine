@@ -41,15 +41,18 @@ bounding volume hierarchy
 struct bvhNode
 {
     /* If leaf, bt_right == body_index, bt_left == shape index */
-	BT_SLOT_STATE;
+	BT_NODE;
+    POOL_NODE;
 	struct aabb bbox;
 };
+POOL_DECLARE(bvhNode);
 
 struct bvh
 {
-	struct bt		tree;
-	struct minQueue	cost_queue;	/* dynamic specific */
-	u32			    heap_allocated;
+    struct ds_BT        bt;  
+    struct bvhNodePool  pool;
+	struct minQueue	    cost_queue;	    /* dynamic specific */
+	u32			        heap_allocated;
 };
 
 /* free allocated resources */

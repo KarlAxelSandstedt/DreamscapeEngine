@@ -198,7 +198,7 @@ void ds_RigidBodyUpdateOrientationRange(struct ds_RigidBodyPipeline *pipeline, s
         {
             shape = pipeline->shape_pool.buf + j;
             dirty->bbox = ds_ShapeWorldBbox(pipeline, shape);
-            struct bvhNode *node = ds_PoolAddress(&pipeline->dynamic_bvh.tree.pool, shape->proxy);
+            struct bvhNode *node = pipeline->dynamic_bvh.pool.buf + shape->proxy;
             struct aabb *proxy = &node->bbox;
             
             if (!AabbContains(proxy, &dirty->bbox))
@@ -206,10 +206,10 @@ void ds_RigidBodyUpdateOrientationRange(struct ds_RigidBodyPipeline *pipeline, s
                 dirty->shape = j;
                 dirty->reinsert = 1;
 
-                if (bt_NotRootCheck(node))
+                if (!ds_BTRootCheck(node))
                 {
-                    const u32 parent_index = node->bt_parent & BT_PARENT_INDEX_MASK;
-                    const struct bvhNode *parent = ds_PoolAddress(&pipeline->dynamic_bvh.tree.pool, parent_index);
+                    const u32 parent_index = node->bt_parent & BT_INDEX_MASK;
+                    const struct bvhNode *parent = pipeline->dynamic_bvh.pool.buf + parent_index;
                     struct aabb enlarged_proxy;
                     AabbUnion(&enlarged_proxy, proxy, &dirty->bbox);
                     if (AabbContains(&parent->bbox, &enlarged_proxy))

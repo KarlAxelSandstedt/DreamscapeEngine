@@ -2702,15 +2702,15 @@ static void c_TriMeshBvhIteratorAlloc(struct c_TriMeshBvhIterator *it, const str
     it->mesh = mesh_bvh->mesh;
 	it->bvh = &mesh_bvh->bvh;
 
-	it->node = (struct bvhNode *) mesh_bvh->bvh.tree.pool.buf;
+	it->node = (struct bvhNode *) mesh_bvh->bvh.pool.buf;
 	it->node_stack = ArenaPush(it->tmp2, (mesh_bvh->depth+1)*sizeof(struct bvhNode **));
     it->sc = 0;
 
     it->bvh_local_bbox = bvh_local_bbox;
-    it->bvh_bbox = &it->node[it->bvh->tree.root].bbox;
+    it->bvh_bbox = &it->node[it->bvh->bt.root].bbox;
     if (AabbTest(it->bvh_local_bbox, it->bvh_bbox))
 	{
-		it->node_stack[it->sc++] = it->node + it->bvh->tree.root;
+		it->node_stack[it->sc++] = it->node + it->bvh->bt.root;
 	}
 }
 
@@ -2722,8 +2722,8 @@ static void c_TriMeshBvhIteratorDealloc(struct c_TriMeshBvhIterator *it)
 
 static void c_TriMeshBvhIteratorPushChildren(struct c_TriMeshBvhIterator *it)
 {
-	const struct bvhNode *left = it->node + it->node_stack[it->sc]->bt_left;
-	const struct bvhNode *right = it->node + it->node_stack[it->sc]->bt_right;
+	const struct bvhNode *left = it->node + it->node_stack[it->sc]->bt_child[0];
+	const struct bvhNode *right = it->node + it->node_stack[it->sc]->bt_child[1];
 	if (AabbTest(it->bvh_local_bbox, &right->bbox))
 	{
 		it->node_stack[it->sc++] = right;
@@ -2848,14 +2848,14 @@ struct c_ContactResult c_TriMeshBvhSphereContact(struct arena *frame, const stru
         //ProfZoneNamed("Calculate Triangles");
 	    while (it.sc--)
 	    {
-	    	if (!bt_LeafCheck(it.node_stack[it.sc]))
+	    	if (!ds_BTLeafCheck(it.node_stack[it.sc]))
 	    	{
                 c_TriMeshBvhIteratorPushChildren(&it);
 	    	}
 	    	else
             { 
-                const u32 tri_first = it.node_stack[it.sc]->bt_left;
-                const u32 tri_last = tri_first + it.node_stack[it.sc]->bt_right - 1;
+                const u32 tri_first = it.node_stack[it.sc]->bt_child[0];
+                const u32 tri_last = tri_first + it.node_stack[it.sc]->bt_child[1] - 1;
                 for (u32 index = tri_first; index <= tri_last; ++index)
                 {
                     struct c_TriMeshBvhContact *c = it.contact + it.contact_count;
@@ -3130,14 +3130,14 @@ struct c_ContactResult c_TriMeshBvhCapsuleContact(struct arena *frame, const str
         //ProfZoneNamed("Calculate Triangles");
 	    while (it.sc--)
 	    {
-	    	if (!bt_LeafCheck(it.node_stack[it.sc]))
+	    	if (!ds_BTLeafCheck(it.node_stack[it.sc]))
 	    	{
                 c_TriMeshBvhIteratorPushChildren(&it);
 	    	}
 	    	else
             { 
-                const u32 tri_first = it.node_stack[it.sc]->bt_left;
-                const u32 tri_last = tri_first + it.node_stack[it.sc]->bt_right - 1;
+                const u32 tri_first = it.node_stack[it.sc]->bt_child[0];
+                const u32 tri_last = tri_first + it.node_stack[it.sc]->bt_child[1] - 1;
                 for (u32 index = tri_first; index <= tri_last; ++index)
                 {
                     struct c_TriMeshBvhContact *c = it.contact + it.contact_count;
@@ -3747,14 +3747,14 @@ struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct
         //ProfZoneNamed("Calculate Triangles");
 	    while (it.sc--)
 	    {
-	    	if (!bt_LeafCheck(it.node_stack[it.sc]))
+	    	if (!ds_BTLeafCheck(it.node_stack[it.sc]))
 	    	{
                 c_TriMeshBvhIteratorPushChildren(&it);
 	    	}
 	    	else
             { 
-                const u32 tri_first = it.node_stack[it.sc]->bt_left;
-                const u32 tri_last = tri_first + it.node_stack[it.sc]->bt_right - 1;
+                const u32 tri_first = it.node_stack[it.sc]->bt_child[0];
+                const u32 tri_last = tri_first + it.node_stack[it.sc]->bt_child[1] - 1;
                 for (u32 index = tri_first; index <= tri_last; ++index)
                 {
                     struct c_TriMeshBvhContact *c = it.contact + it.contact_count;
