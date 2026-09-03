@@ -39,7 +39,7 @@ it is a leaf. If the bit is set, the node is a leaf. We do this so that bt_left,
 unused in leaves, and can be used as arbitrary u32's storing external information.
 */
 
-#define BT_NULL         U32_MAX 
+#define BT_INDEX_NULL   BT_INDEX_MASK 
 #define BT_LEAF_MASK    0x80000000
 #define BT_INDEX_MASK   0x7fffffff
 
@@ -55,25 +55,25 @@ struct ds_BT
 
 #define ds_BTLeafSet(node_addr)		    ((node_addr)->bt_parent |= BT_LEAF_MASK) 
 #define ds_BTLeafCheck(node_addr)		((node_addr)->bt_parent & BT_LEAF_MASK)
-#define ds_BTRootCheck(node_addr)		((node_addr)->bt_parent == BT_NULL)
+#define ds_BTRootCheck(node_addr)		(((node_addr)->bt_parent & BT_INDEX_MASK) == BT_INDEX_NULL)
 
 #define ds_BTFlush(_bt_)        \
 do                              \
 {                               \
-    (_bt_).root = BT_NULL;      \
+    (_bt_).root = BT_INDEX_NULL;\
     (_bt_).count = 0;           \
 }                               \
 while (0)
 
-#define ds_BTAddRoot(_bt_, _buf_, _root_)       \
-do                                              \
-{                                               \
-    ds_Assert((_bt_).count == 0);               \
-    ds_Assert((_bt_).root == BT_NULL);          \
-    (_bt_).count = 1;                           \
-    (_bt_).root = _root_;                       \
-    (_buf_)[_root_].bt_parent = BT_NULL;        \
-}                                               \
+#define ds_BTAddRoot(_bt_, _buf_, _root_)                       \
+do                                                              \
+{                                                               \
+    ds_Assert((_bt_).count == 0);                               \
+    ds_Assert((_bt_).root == BT_INDEX_NULL);                    \
+    (_bt_).count = 1;                                           \
+    (_bt_).root = _root_;                                       \
+    (_buf_)[_root_].bt_parent = BT_LEAF_MASK | BT_INDEX_NULL;   \
+}                                                               \
 while (0)
 
 #define ds_BTAddChildren(_bt_, _buf_, _parent_, _left_, _right_)        \
@@ -82,7 +82,7 @@ do                                                                      \
     ds_Assert((_bt_).count > 0);                                        \
     ds_Assert(ds_BTLeafCheck((_buf_) + (_parent_)));                    \
     (_bt_).count += 2;                                                  \
-    (_buf_)[_parent_].bt_parent &= ~BT_LEAF_MASK;                       \
+    (_buf_)[_parent_].bt_parent &= BT_INDEX_MASK;                       \
     (_buf_)[_parent_].bt_child[0] = (_left_);                           \
     (_buf_)[_parent_].bt_child[1] = (_right_);                          \
     (_buf_)[_left_].bt_parent = BT_LEAF_MASK | (_parent_);              \
@@ -123,42 +123,41 @@ while (0)
 
 #define ds_BTLeafCount(_bt_)    (((_bt_).count) ? ((_bt_).count >> 1) + 1 : 0)
 
-#define ds_BTValidate(_bt_, _buf_)                                              \
-do                                                                              \
-{                                                                               \
-    if ((_bt_).root == BT_NULL)                                                 \
-    {                                                                           \
-        ds_Assert((_bt_).count == 0);                                           \
-        break;                                                                  \
-    }                                                                           \
-    ds_Assert((_bt_).root != BT_NULL);                                          \
-                                                                                \
-    u32 node_count = 0;                                                         \
-    BTI _it_;                                                                   \
-    BTIInit(_it_, (_buf_), (_bt_).root);                                        \
-    do                                                                          \
-    {                                                                           \
-        node_count += 1;                                                        \
-        const u32 _parent_ = (_buf_)[_it_.at].bt_parent & BT_INDEX_MASK;        \
-        const u32 _left_ = (_buf_)[_it_.at].bt_child[0];                        \
-        const u32 _right_ = (_buf_)[_it_.at].bt_child[1];                       \
-        if (_parent_ != BT_INDEX_MASK)                                          \
-        {                                                                       \
-            ds_Assert((_buf_)[_parent_].bt_child[0] == _it_.at                  \
-                   || (_buf_)[_parent_].bt_child[1] == _it_.at);                \
-        }                                                                       \
-                                                                                \
-        if (!ds_BTLeafCheck((_buf_) + _it_.at))                                 \
-        {                                                                       \
-            ds_Assert(((_buf_)[_left_].bt_parent & BT_INDEX_MASK) == _it_.at);  \
-            ds_Assert(((_buf_)[_right_].bt_parent & BT_INDEX_MASK) == _it_.at); \
-        }                                                                       \
-                                                                                \
-        BTIAdvance(_it_, (_buf_));                                              \
-    }                                                                           \
-    while (_it_.at != (_bt_).root);                                             \
-    ds_Assert(node_count == (_bt_).count);                                      \
-}                                                                               \
+#define ds_BTValidate(_bt_, _buf_)                                                          \
+do                                                                                          \
+{                                                                                           \
+    if ((_bt_).root == BT_INDEX_NULL)                                                       \
+    {                                                                                       \
+        ds_AssertString((_bt_).count == 0, "(1)");                                          \
+        break;                                                                              \
+    }                                                                                       \
+                                                                                            \
+    u32 node_count = 0;                                                                     \
+    BTI _it_;                                                                               \
+    BTIInit(_it_, (_buf_), (_bt_).root);                                                    \
+    do                                                                                      \
+    {                                                                                       \
+        node_count += 1;                                                                    \
+        const u32 _parent_ = (_buf_)[_it_.at].bt_parent & BT_INDEX_MASK;                    \
+        const u32 _left_ = (_buf_)[_it_.at].bt_child[0];                                    \
+        const u32 _right_ = (_buf_)[_it_.at].bt_child[1];                                   \
+        if (_parent_ != BT_INDEX_MASK)                                                      \
+        {                                                                                   \
+            ds_AssertString((_buf_)[_parent_].bt_child[0] == _it_.at                        \
+                   || (_buf_)[_parent_].bt_child[1] == _it_.at, "(2)");                     \
+        }                                                                                   \
+                                                                                            \
+        if (!ds_BTLeafCheck((_buf_) + _it_.at))                                             \
+        {                                                                                   \
+            ds_AssertString(((_buf_)[_left_].bt_parent & BT_INDEX_MASK) == _it_.at, "(3)"); \
+            ds_AssertString(((_buf_)[_right_].bt_parent & BT_INDEX_MASK) == _it_.at, "(4)");\
+        }                                                                                   \
+                                                                                            \
+        BTIAdvance(_it_, (_buf_));                                                          \
+    }                                                                                       \
+    while (_it_.at != (_bt_).root);                                                         \
+    ds_AssertString(node_count == (_bt_).count, "(5)");                                     \
+}                                                                                           \
 while (0)
 
 typedef struct BTI
@@ -208,7 +207,7 @@ while (0)
 do                                                                                                          \
 {                                                                                                           \
     (_bti_).next = (_bti_).at;                                                                              \
-    while ((_bti_).at != (_bti_).root)                                                                      \
+    while ((_bti_).next != (_bti_).root)                                                                    \
     {                                                                                                       \
         const u32 _parent_ = (_buf_)[(_bti_).next].bt_parent & BT_INDEX_MASK;                               \
         if ((_bti_).next == (_buf_)[_parent_].bt_child[0])                                                  \

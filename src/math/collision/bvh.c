@@ -101,7 +101,7 @@ static void DbvhInternalBalanceNode(struct bvh *bvh, const u32 node)
 	f32 cost_rotation, cost_original, cost_best = F32_INFINITY;
 			
 	u32 upper_rotation; /* child to rotate */
-	u32 best_rotation = BT_INDEX_MASK; /* best grandchild to rotate */
+	u32 best_rotation = BT_INDEX_NULL; /* best grandchild to rotate */
 	if (!ds_BTLeafCheck(nodes + left))
 	{
 		box_union = BboxUnion(nodes[nodes[left].bt_child[0]].bbox, nodes[right].bbox);
@@ -147,7 +147,7 @@ static void DbvhInternalBalanceNode(struct bvh *bvh, const u32 node)
 	}
 
 	/* (2) apply rotation */
-	if (best_rotation != BT_INDEX_MASK)
+	if (best_rotation != BT_INDEX_NULL)
 	{
 		nodes[best_rotation].bt_parent = (nodes[best_rotation].bt_parent & BT_LEAF_MASK) | node;
 		if (upper_rotation == left)
@@ -191,7 +191,7 @@ static void DbvhInternalBalanceNode(struct bvh *bvh, const u32 node)
 u32 DbvhInsert(struct bvh *bvh, const u32 body, const u32 shape, const struct aabb *bbox)
 {
     struct slot leaf = bvhNodePoolAdd(&bvh->pool);
-	if (bvh->bt.root == BT_NULL)
+	if (bvh->bt.root == BT_INDEX_NULL)
 	{
 	    struct bvhNode *nodes = bvh->pool.buf;
         ds_BTAddRoot(bvh->bt, nodes, leaf.index);
@@ -209,6 +209,7 @@ u32 DbvhInsert(struct bvh *bvh, const u32 body, const u32 shape, const struct aa
 		nodes[leaf.index].bt_parent = BT_LEAF_MASK | internal.index;
 		nodes[leaf.index].bt_child[0] = shape;
 		nodes[leaf.index].bt_child[1] = body;
+        bvh->bt.count += 2;
 
 		/**
 		 * (1) Find best sibling using the minimum surface area hueristic + branch and bound algorithm.
@@ -284,16 +285,16 @@ u32 DbvhInsert(struct bvh *bvh, const u32 body, const u32 shape, const struct aa
 
 		node = nodes[internal.index].bt_parent;
 		/* (3) Traverse from grandparent of leaf, refitting and rotating node up to the root */
-		while (node != BT_INDEX_MASK)
+		while (node != BT_INDEX_NULL)
 		{
 			DbvhInternalBalanceNode(bvh, node);
 			node = nodes[node].bt_parent;
 		}
 	}
 
-	//struct arena tmp = ArenaAlloc1MB();
-	//BvhValidate(&tmp, bvh);
-	//ArenaFree1MB(&tmp);
+	//struct arena *tmp = ArenaPushScratch();
+	//BvhValidate(tmp, bvh);
+	//ArenaPopScratch();
 
 	return leaf.index;
 }
@@ -304,9 +305,9 @@ void DbvhRemove(struct bvh *bvh, const u32 index)
 	ds_Assert(ds_BTLeafCheck(nodes + index));
 
 	u32 parent = nodes[index].bt_parent & BT_INDEX_MASK;
-	if (parent == BT_INDEX_MASK)
+	if (parent == BT_INDEX_NULL)
 	{
-		bvh->bt.root = BT_NULL;
+		bvh->bt.root = BT_INDEX_NULL;
         bvh->bt.count -= 1;
         bvhNodePoolRemove(&bvh->pool, parent);
 	}
@@ -324,7 +325,7 @@ void DbvhRemove(struct bvh *bvh, const u32 index)
         bvh->bt.count -= 2;
 
 		/* set new root */
-		if (grand_parent == BT_INDEX_MASK)
+		if (grand_parent == BT_INDEX_NULL)
 		{
 			bvh->bt.root = sibling;
 		}
@@ -341,7 +342,7 @@ void DbvhRemove(struct bvh *bvh, const u32 index)
 
 			nodes[grand_parent].bbox = BboxUnion(nodes[nodes[grand_parent].bt_child[0]].bbox, nodes[nodes[grand_parent].bt_child[1]].bbox);
 			parent = nodes[grand_parent].bt_parent;
-			while (parent != BT_INDEX_MASK)
+			while (parent != BT_INDEX_NULL)
 			{
 				DbvhInternalBalanceNode(bvh, parent);
 				parent = nodes[parent].bt_parent;
@@ -608,10 +609,10 @@ struct dbvhOverlap *DbvhPushOverlapPairs(struct arena *mem, u32 *count, const st
 
 void BvhValidate(struct arena *tmp, const struct bvh *bvh)
 {
-	ArenaPushRecord(tmp);
 	ds_BTValidate(bvh->bt, bvh->pool.buf);
-	if (bvh->bt.root == BT_INDEX_MASK) { return; }
+	if (bvh->bt.root == BT_INDEX_NULL) { return; }
 
+	ArenaPushRecord(tmp);
 	const struct bvhNode *node = bvh->pool.buf;
 	struct memArray arr = ArenaPushAlignedAll(tmp, sizeof(u32), 4);
 	u32 *stack = arr.addr;
