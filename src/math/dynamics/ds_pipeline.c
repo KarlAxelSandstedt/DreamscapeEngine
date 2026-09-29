@@ -92,6 +92,7 @@ struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, c
 
     pipeline.contact_pool = ds_ContactPoolAlloc(NULL, 8*initial_size, GROWABLE);
     pipeline.contact_map = ds_HashMapAlloc(NULL, 8*initial_size, 8*initial_size, GROWABLE);
+    pipeline.contact_usage_set = ds_BitSetAlloc(NULL, 8*initial_size, 0, GROWABLE);
 
 	pipeline.island_pool = ds_IslandPoolAlloc(NULL, initial_size, GROWABLE);
     pipeline.island_high_energy_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
@@ -103,10 +104,12 @@ struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, c
     pipeline.narrow_phase = ArenaPushAligned(mem, sizeof(struct ds_NarrowJobPhase), DS_CACHE_LINE);
     pipeline.solver_phase = ArenaPushAligned(mem, sizeof(struct ds_SolverJobPhase), DS_CACHE_LINE);
     pipeline.rebuild_phase = ArenaPushAligned(mem, sizeof(struct ds_RebuildJobPhase), DS_CACHE_LINE);
+    pipeline.removal_phase = ArenaPushAligned(mem, sizeof(struct ds_RemovalJobPhase), DS_CACHE_LINE);
     ds_JobPhaseAlloc(mem, &pipeline.broad_phase->phase, BROAD_JOB_COUNT, ds_BroadJobPhaseDispatch);
     ds_JobPhaseAlloc(mem, &pipeline.narrow_phase->phase, NARROW_JOB_COUNT, ds_NarrowJobPhaseDispatch);
     ds_JobPhaseAlloc(mem, &pipeline.solver_phase->phase, SOLVER_JOB_COUNT, ds_SolverJobPhaseDispatch);
     ds_JobPhaseAlloc(mem, &pipeline.rebuild_phase->phase, REBUILD_JOB_COUNT, ds_RebuildJobPhaseDispatch);
+    ds_JobPhaseAlloc(mem, &pipeline.removal_phase->phase, REMOVAL_JOB_COUNT, ds_RemovalJobPhaseDispatch);
 
     ds_CGraphAlloc(&pipeline, 4096);
     pipeline.numerics_config = ds_NumericsConfigDefault();
@@ -157,6 +160,7 @@ void ds_DynamicsFree(struct ds_Dynamics *pipeline)
 	BvhFree(&pipeline->static_bvh);
     ds_ContactPoolDealloc(&pipeline->contact_pool);
     ds_HashMapDealloc(&pipeline->contact_map);
+    ds_BitSetDealloc(&pipeline->contact_usage_set);
 	ds_IslandPoolDealloc(&pipeline->island_pool);
     ds_BitSetDealloc(&pipeline->island_high_energy_set);
 	ds_BodyPoolDealloc(&pipeline->body_pool);
@@ -215,6 +219,8 @@ void ds_DynamicsFlush(struct ds_Dynamics *pipeline)
 
     ds_ContactPoolFlush(&pipeline->contact_pool);
     ds_HashMapFlush(&pipeline->contact_map);
+    ds_BitSetClear(&pipeline->contact_usage_set, 0);
+
 	ds_IslandPoolFlush(&pipeline->island_pool);
 	
 	ds_BodyPoolFlush(&pipeline->body_pool);
@@ -744,7 +750,17 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
     return U32_MAX;
 }
 
-static struct ds_RebuildRange ds_RebuildRangeInit(const u32 node_index, const u32 base, const u32 count, const u32 depth, const u32 axis, const f32 pivot)
+static void ds_RebuildThreadComputeInit(struct ds_RebuildThreadCompute *t)
+{
+    t->count[0] = 0;
+    t->count[1] = 0;
+    Vec3Set(t->min[0], F32_INFINITY, F32_INFINITY, F32_INFINITY);
+    Vec3Set(t->max[0], -F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
+    Vec3Set(t->min[1], F32_INFINITY, F32_INFINITY, F32_INFINITY);
+    Vec3Set(t->max[1], -F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
+}
+
+static struct ds_RebuildRange ds_RebuildRangeInit(const u32 node_index, const u32 base, const u32 count, const u32 axis, const f32 pivot)
 {
     struct ds_RebuildRange range =
     {
@@ -753,7 +769,6 @@ static struct ds_RebuildRange ds_RebuildRangeInit(const u32 node_index, const u3
         .internal_index = node_index,
         .axis = axis,
         .pivot = pivot,
-        .depth = depth,
     };
 
     return range;
@@ -917,11 +932,13 @@ static u32 ds_RebuildJobSetup(const u32 job_index)
         f32 pivot[2];
         ds_RebuildAxisPivot(axis, pivot, min, max);
 
-        const u32 node_index = phase->internal_buf[AtomicFetchAddRlx32(&phase->a_internal_next, 1)];
-        pipeline->dynamic_bvh.bt.root = node_index;
-        pipeline->dynamic_bvh.pool.buf[node_index].bt_parent = BT_INDEX_NULL;
+        const u32 next = AtomicFetchAddRlx32(&phase->a_internal_next, 1);
+        const u32 index = phase->internal_buf[next];
+        ds_Assert(next < phase->internal_count);
+        pipeline->dynamic_bvh.bt.root = index;
+        pipeline->dynamic_bvh.pool.buf[index].bt_parent = BT_INDEX_NULL;
 
-        job->range = ds_RebuildRangeInit(node_index, 0, phase->leaf_count, 0, axis[0], pivot[0]);
+        job->range = ds_RebuildRangeInit(index, 0, phase->leaf_count, axis[0], pivot[0]);
         AtomicFetchAddRlx32(&phase->a_range_seed_count, 1);
         AtomicStoreRlx32(&job->a_range_ready, 1);
     }
@@ -950,7 +967,6 @@ static u32 ds_RebuildJobRange(const u32 job_index)
     struct ds_RebuildJob *job = phase->range_job + job_index;
     struct ds_RebuildLeaf *leaf = phase->leaf_buf;
     struct ds_Dynamics *pipeline = phase->pipeline;
-    u32 low, high;
 
     struct arena *mem = ArenaPushScratch();
     const struct memArray range_arr = ArenaPushAlignedAll(mem, sizeof(struct ds_RebuildRange), 4);
@@ -962,7 +978,6 @@ static u32 ds_RebuildJobRange(const u32 job_index)
     u32 leaves_completed = 0;
     while (work_count--)
     {
-        ProfZoneNamed("Range");
         struct ds_RebuildThreadCompute t;
         ds_RebuildThreadComputeInit(&t);
         
@@ -1038,24 +1053,23 @@ static u32 ds_RebuildJobRange(const u32 job_index)
             }
             else
             {
-                const u32 index = phase->internal_buf[AtomicFetchAddRlx32(&phase->a_internal_next, 1)];
+                const u32 next = AtomicFetchAddRlx32(&phase->a_internal_next, 1);
+                const u32 index = phase->internal_buf[next];
+                ds_Assert(next < phase->internal_count);
                 phase->pipeline->dynamic_bvh.pool.buf[parent].bt_child[s] = index;
                 phase->pipeline->dynamic_bvh.pool.buf[index].bt_parent = parent;
                 if (t.count[s] <= phase->small_leaf_limit || work_count == 0)
                 {
-                    range_buf[ work_count++ ] = ds_RebuildRangeInit(index, base[s], t.count[s], range->depth + 1, axis[s], pivot[s]);
+                    range_buf[ work_count++ ] = ds_RebuildRangeInit(index, base[s], t.count[s], axis[s], pivot[s]);
                 }
                 else
                 {
-                    struct ds_RebuildRange new_range = ds_RebuildRangeInit(index, base[s], t.count[s], range->depth + 1, axis[s], pivot[s]);
+                    struct ds_RebuildRange new_range = ds_RebuildRangeInit(index, base[s], t.count[s], axis[s], pivot[s]);
                     jobs_pushed += ds_RebuildJobPush(phase, &new_range);
                 }
             }
         }
-        ProfZoneEnd;
     }
-
-    //TODO Propagate boxes to nodes with <= small_leaf_limit
 
     AtomicFetchAddRlx32(&phase->a_leaves_completed, leaves_completed);
 
@@ -1089,46 +1103,54 @@ u32 ds_RebuildJobPhaseDispatch(const ds_JobId job_id)
         } break;
     }
 
-    /*
-     *  TODO: Serial:
-     *      () Propagate rest of bounding boxes (if <= small_leaf_limit, the box is already set!)
-     */
-
     return U32_MAX + jobs_pushed;
 }
 
-static void ds_DynamicsRemoveContacts(struct ds_Dynamics *pipeline)
+u32 ds_RemovalJobPhaseDispatch(const ds_JobId job_id)
 {
-    //TODO Traversing all dirty shapes can of course be done in parallel; only the removal itself
-    //should be serial.
+    ProfZone;
 
-    ProfZoneNamed("Contact Removal");
+    struct ds_RemovalJobPhase *phase = (struct ds_RemovalJobPhase *) g_scheduler->phase;
+    struct ds_ParallelForChain *chain = &phase->pf;
+    struct ds_ParallelFor *pf = chain->parallel_for + 0;
+    struct ds_RemovalJob *job = phase->job + ds_JobIdIndex(job_id);
+    struct ds_Dynamics *pipeline = phase->pipeline;
+    u32 low, high;
+
+    struct arena *frame = g_dynamics_worker[ ds_ThreadSelfIndex() ].frame;
+    job->removal_set = ds_BitSetAlloc(frame, pipeline->contact_usage_set.bit_count, 0, NOT_GROWABLE);
+
     struct ds_BitSet *dirty = &pipeline->shape_dirty_set;
-    for (u64 block = 0; block < dirty->block_count; ++block)
+    ds_ParallelFor(pf, range_index)
     {
-        struct ds_BitBlock it = ds_BitBlockInit(dirty->bits[block], block);
-        while (ds_BitBlockHasNext(&it))
+        ds_ParallelForRange(&low, &high, pf, range_index);
+        for (u32 bi = low; bi < high; ++bi)
         {
-            const u32 si = ds_BitBlockNext(&it);
-            const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
-            i32 ci = shape->contact_list.first;
-            while (ci != DLL_SENTINEL)
+            struct ds_BitBlock it = ds_BitBlockInit(dirty->bits[bi], bi);
+            while (ds_BitBlockHasNext(&it))
             {
-                struct ds_Contact *c = pipeline->contact_pool.buf + ci;
-                const i32 next = (si == c->key.shape[0])
-                               ? c->shape_contact[0].next
-                               : c->shape_contact[1].next;
-                if (!ds_ContactCheckBvhOverlap(pipeline, ci))
+                const u32 si = ds_BitBlockNext(&it);
+                const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
+                i32 ci = shape->contact_list.first;
+                while (ci != DLL_SENTINEL)
                 {
-                    ProfZoneNamed("ds_ContactRemove");
-                    ds_ContactRemove(pipeline, ci);
-                    ProfZoneEnd;
+                    struct ds_Contact *c = pipeline->contact_pool.buf + ci;
+                    const i32 next = (si == c->key.shape[0])
+                                   ? c->shape_contact[0].next
+                                   : c->shape_contact[1].next;
+                    if (!ds_ContactCheckBvhOverlap(pipeline, ci))
+                    {
+                        ds_BitSetSet(&job->removal_set, ci, 1);
+                    }
+                    ci = next;
                 }
-                ci = next;
             }
         }
     }
+
     ProfZoneEnd;
+
+    return U32_MAX;
 }
 
 static void SolveConstraints(struct ds_Dynamics *pipeline) 
@@ -1240,7 +1262,8 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
             pipeline->profile->ns_rebuildphase_start = ds_TimeNs();
 
             const f32 reinsert_fraction = reinsert_count / dirty_count;
-            if (dirty_count <= 1 || reinsert_fraction < g_numerics_config->dbvh_reinsert_threshold)
+            const u32 rebuild = !(dirty_count <= 1 || reinsert_fraction < g_numerics_config->dbvh_reinsert_threshold);
+            if (!rebuild)
             {
                 ProfZoneNamed("DBVH Update");
                 for (u32 ri = 0; ri < pf->range_count; ++ri)
@@ -1261,7 +1284,6 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                     }
                 }
                 ProfZoneEnd;
-                ds_DynamicsRemoveContacts(pipeline);
             }
             else
             {       
@@ -1358,10 +1380,11 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                     ds_JobPhaseEnd();
 
                     /* 
-                     * TODO: We can essentially make this cost-free by extending RebuildPhase to also
+                     * Note: We can essentially make this cost-free by extending RebuildPhase to also
                      * have threads doing thin range work derive the root-box withing that thin range.
                      * The master thread would then gather all thin boxes + necessary leaves and from
-                     * there propagate bounding boxes up to the root.
+                     * there propagate bounding boxes up to the root. However, the serial propagation 
+                     * is quite cheap so we skip the parallelization work for now.
                      */
                     BvhPropagateBoundingBoxesFromLeaves(&pipeline->dynamic_bvh);
 
@@ -1369,16 +1392,80 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
 
                     ProfZoneEnd;
                 }
+            } 
+
+            pipeline->profile->ns_rebuildphase_end = ds_TimeNs();
+
+            pipeline->profile->ns_removalphase_start = ds_TimeNs();
+
+            struct ds_RemovalJobPhase *removal_phase = pipeline->removal_phase;
+            {
+            	ProfZoneNamed("JobPhase(ContactRemoval)");
+
+                ArenaPushRecord(&pipeline->frame);
+
+                ds_JobPhaseBegin(&removal_phase->phase);
+
+                removal_phase->pipeline = pipeline;
+                removal_phase->pf = ds_ParallelForChainAlloc(&pipeline->frame, 1); 
+                ds_ParallelForInit(removal_phase->pf.parallel_for, pipeline->shape_dirty_set.block_count, 1);
+                removal_phase->job_count = g_scheduler->worker_count;
+                removal_phase->job = ArenaPushZero(&pipeline->frame, removal_phase->job_count*sizeof(struct ds_RemovalJob));
+
+                ds_JobPhaseReserve(&removal_phase->phase, REMOVAL_JOB, removal_phase->job_count);
+                for (u32 i = 0; i < removal_phase->job_count; ++i)
+                {
+                    ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(REMOVAL_JOB, i));
+                }
+
+                AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, removal_phase->job_count);
+                ds_JobPhaseAddFetchRemaining(&removal_phase->phase, removal_phase->job_count);
+                ds_WSDequePublish(g_scheduler->seed_deque);
+                for (u32 i = 1; i < g_scheduler->worker_count; ++i)
+                {
+                    SemaphorePost(&g_scheduler->jobs_are_available);
+                }
+
+	            ds_MasterRunAvailableJobs();
                 
-                ds_DynamicsRemoveContacts(pipeline);
+                ds_JobPhaseEnd();
+
+                {
+                    ProfZoneNamed("Contact Deallocation");
+
+                    for (u64 bi = 0; bi < pipeline->contact_usage_set.block_count; ++bi)
+                    {
+                        u64 block = removal_phase->job[0].removal_set.bits[bi];
+                        for (u32 ji = 1; ji < g_scheduler->worker_count; ++ji)
+                        {
+                            block |= removal_phase->job[ji].removal_set.bits[bi];
+                        }
+
+                        struct ds_BitBlock it = ds_BitBlockInit(block, bi);
+                        while (ds_BitBlockHasNext(&it))
+                        {
+                            ds_ContactRemove(pipeline, ds_BitBlockNext(&it));
+                        }
+                    }
+
+                    ProfZoneEnd;
+                }
+
+                ArenaPopRecord(&pipeline->frame);
+
+                ProfZoneEnd;
+            } 
+
+            if (rebuild)
+            {
                 const struct ds_BitSet *usage = &pipeline->shape_dynamic_usage_set;
                 for (u64 block = 0; block < usage->block_count; ++block)
                 {
                     pipeline->shape_dirty_set.bits[block] = usage->bits[block];
                 }
-            } 
+            }
 
-            pipeline->profile->ns_rebuildphase_end = ds_TimeNs();
+            pipeline->profile->ns_removalphase_end = ds_TimeNs();
         }
     }
         
@@ -1568,6 +1655,7 @@ static void ds_DynamicsProfileEnd(struct ds_Dynamics *pipeline)
     p->ns_narrowphase_duration = p->ns_narrowphase_end - p->ns_narrowphase_start;
     p->ns_solverphase_duration = p->ns_solverphase_end - p->ns_solverphase_start;
     p->ns_rebuildphase_duration = p->ns_rebuildphase_end - p->ns_rebuildphase_start;
+    p->ns_removalphase_duration = p->ns_removalphase_end - p->ns_removalphase_start;
 
     ds_DynamicsProfilePrint(stderr, p);
 
@@ -1586,11 +1674,13 @@ void ds_DynamicsProfilePrint(FILE *file, const struct ds_DynamicsProfile *p)
     const f32 ms_narrowphase_duration = (f32) p->ns_narrowphase_duration / NSEC_PER_MSEC;
     const f32 ms_solverphase_duration = (f32) p->ns_solverphase_duration / NSEC_PER_MSEC;
     const f32 ms_rebuildphase_duration = (f32) p->ns_rebuildphase_duration / NSEC_PER_MSEC;
+    const f32 ms_removalphase_duration = (f32) p->ns_removalphase_duration / NSEC_PER_MSEC;
 
     const f32 ms_broadphase_perc = 100.0f * ms_broadphase_duration / ms_frame_duration;
     const f32 ms_narrowphase_perc = 100.0f * ms_narrowphase_duration / ms_frame_duration;
     const f32 ms_solverphase_perc = 100.0f * ms_solverphase_duration / ms_frame_duration;
     const f32 ms_rebuildphase_perc = 100.0f * ms_rebuildphase_duration / ms_frame_duration;
+    const f32 ms_removalphase_perc = 100.0f * ms_removalphase_duration / ms_frame_duration;
 
     fprintf(file, "================= Profile ==============\n");
     fprintf(file, "        Time: %fms (100.0%%)\n", ms_frame_duration);
@@ -1598,6 +1688,7 @@ void ds_DynamicsProfilePrint(FILE *file, const struct ds_DynamicsProfile *p)
     fprintf(file, " Narrowphase: %fms (%f%%)\n", ms_narrowphase_duration, ms_narrowphase_perc);
     fprintf(file, " Solverphase: %fms (%f%%)\n", ms_solverphase_duration, ms_solverphase_perc);
     fprintf(file, "Rebuildphase: %fms (%f%%)\n", ms_rebuildphase_duration, ms_rebuildphase_perc);
+    fprintf(file, "Removalphase: %fms (%f%%)\n", ms_removalphase_duration, ms_removalphase_perc);
 }
 
 

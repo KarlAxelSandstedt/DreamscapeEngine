@@ -122,6 +122,11 @@ struct ds_DynamicsProfile
     u64 ns_rebuildphase_start;    
     u64 ns_rebuildphase_end;    
     u64 ns_rebuildphase_duration;    
+
+    /* Contact removal timings (ns) */
+    u64 ns_removalphase_start;    
+    u64 ns_removalphase_end;    
+    u64 ns_removalphase_duration;    
 };
 
 void    ds_DynamicsProfilePrint(FILE *file, const struct ds_DynamicsProfile *profile);
@@ -1271,46 +1276,18 @@ struct ds_RebuildRange
 {
     u32 low;
     u32 high;
-    u32 depth;
     u32 internal_index;
     u32 axis;
     f32 pivot;
 };
 
-static void ds_RebuildRangeSetNull(struct ds_RebuildRange *range)
-{
-    range->internal_index = U32_MAX;
-}
-
-static u32 ds_RebuildRangeCheck(struct ds_RebuildRange *range)
-{
-    return (range->internal_index != U32_MAX);
-}
-
 struct ds_RebuildThreadCompute
 {
-    /* 8 + 24 + 24 = 56 */
     u32     count[2];
     vec3    min[2];
     vec3    max[2];
     u8      pad[DS_CACHE_LINE - 2*sizeof(u32) - 4*sizeof(vec3)];
 };
-
-static void ds_RebuildThreadComputeInit(struct ds_RebuildThreadCompute *t)
-{
-    t->count[0] = 0;
-    t->count[1] = 0;
-    Vec3Set(t->min[0], F32_INFINITY, F32_INFINITY, F32_INFINITY);
-    Vec3Set(t->max[0], -F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
-    Vec3Set(t->min[1], F32_INFINITY, F32_INFINITY, F32_INFINITY);
-    Vec3Set(t->max[1], -F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
-}
-
-static void ds_RebuildThreadComputeBlockInit(struct ds_RebuildThreadCompute *t)
-{
-    t->count[0] = 0;
-    t->count[1] = 0;
-}
 
 struct ds_RebuildJob
 {
@@ -1328,7 +1305,6 @@ struct ds_RebuildJobPhase
     u32                             range_job_length;
     struct ds_ParallelForChain      pf_proxy_update;
     struct ds_Dynamics *            pipeline;
-
 
     u32 *                           internal_buf;
     u32                             internal_count;
@@ -1356,6 +1332,35 @@ struct ds_RebuildJobPhase
 };
 
 u32 ds_RebuildJobPhaseDispatch(const ds_JobId job);
+
+/*
+ds_RemovalJobPhase
+=================
+*/
+
+enum ds_RemovalJobType
+{
+    REMOVAL_JOB,
+    REMOVAL_JOB_COUNT
+};
+
+struct ds_RemovalJob
+{
+    struct ds_BitSet    removal_set;
+    u8                  pad[DS_CACHE_LINE - sizeof(struct ds_BitSet)];
+};
+
+struct ds_RemovalJobPhase
+{
+    struct ds_JobPhase              phase;
+    struct ds_RemovalJob *          job;
+    u32                             job_count;
+    struct ds_ParallelForChain      pf;
+    struct ds_Dynamics *            pipeline;
+};
+
+u32 ds_RemovalJobPhaseDispatch(const ds_JobId job);
+
 
 
 /*
@@ -1528,6 +1533,7 @@ struct ds_Dynamics
 	 * i.e. the smaller index owns slot 0 and the larger index owns slot 1.  */
     struct ds_ContactPool           contact_pool;   
 	struct ds_HashMap	            contact_map;		
+    struct ds_BitSet                contact_usage_set;
 
     ds_IslandId                     island_to_split;            /* */
 	struct ds_IslandPool            island_pool;	    
@@ -1543,6 +1549,7 @@ struct ds_Dynamics
     struct ds_NarrowJobPhase *      narrow_phase;
     struct ds_SolverJobPhase *      solver_phase;
     struct ds_RebuildJobPhase *     rebuild_phase;
+    struct ds_RemovalJobPhase *     removal_phase;
 };
 
 /**************** PHYISCS PIPELINE API ****************/

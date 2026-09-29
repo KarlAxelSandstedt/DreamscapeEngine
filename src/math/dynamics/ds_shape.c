@@ -42,7 +42,7 @@ ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab
     }
     shape->id += DS_ID_GENERATION_INCREMENT;
 
-    if (pipeline->shape_dirty_set.bit_count < shape_slot.index)
+    if (pipeline->shape_dirty_set.bit_count <= shape_slot.index)
     {
         ds_BitSetIncreaseSize(&pipeline->shape_dirty_set, pipeline->shape_dirty_set.bit_count << 1, 0);
     }

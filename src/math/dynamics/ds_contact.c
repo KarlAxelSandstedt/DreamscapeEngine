@@ -63,6 +63,12 @@ struct slot ds_ContactAdd(struct ds_Dynamics *pipeline, const struct ds_ContactK
         c->id = ds_IdFConstruct(contact_slot.index, 0);
     }
 
+    if (pipeline->contact_usage_set.bit_count <= contact_slot.index)
+    {
+        ds_BitSetIncreaseSize(&pipeline->contact_usage_set, pipeline->contact_usage_set.bit_count << 1, 0);
+    }
+    ds_BitSetSet(&pipeline->contact_usage_set, contact_slot.index, 1);
+
     c->key = key;
     c->island = U32_MAX;
     c->id += DS_IDF_GENERATION_INCREMENT;
@@ -135,6 +141,7 @@ void ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 index)
     ds_DLLRemoveEx(shape1->contact_list, buf, index, shape_contact[prev1], shape_contact[1], shape_contact[next1]);
         
     ds_ContactPoolRemove(&pipeline->contact_pool, index);
+    ds_BitSetSet(&pipeline->contact_usage_set, index, 0);
 }
 
 struct slot ds_ContactKeyLookup(const struct ds_Dynamics *pipeline, const struct ds_ContactKey key)
