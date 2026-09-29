@@ -31,6 +31,7 @@ void ds_DynamicsStaticAssert(void)
 {
     ds_StaticAssert(sizeof(struct ds_BodyCompute) == DS_CACHE_LINE, "");
     ds_StaticAssert(sizeof(struct ds_RebuildThreadCompute) == DS_CACHE_LINE, "");
+    ds_StaticAssert(sizeof(struct ds_RebuildJob) == DS_CACHE_LINE, "");
 }
 
 struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, c_ShapeSDB *cshape_db, ds_BodyPrefabSDB *prefab_db, const u32 worker_count, const u64 worker_frame_size)
@@ -765,17 +766,54 @@ static struct ds_RebuildRange *ds_RebuildRangeAlloc(struct arena *mem, const u32
     return range;
 }
 
-static void ds_RebuildRangePush(struct ds_RebuildJobPhase *phase, const struct ds_RebuildRange *range)
+static void ds_RebuildJobPushDeque(struct ds_RebuildJobPhase *phase, const struct ds_RebuildRange *range)
 {
     const u32 i = AtomicFetchAddRlx32(&phase->a_range_count, 1); 
-    if (i == phase->range_length)
+    if (i == phase->range_job_length)
     {
-        LogString(T_PHYSICS, S_FATAL, "RebuildPhase: range max count reached, Exiting.");
+        LogString(T_PHYSICS, S_FATAL, "RebuildPhase: range job max count reached, Exiting.");
         FatalCleanupAndExit();
     }
 
-    AtomicStoreRel64(phase->range + i, range);
-    AtomicFetchAddRlx32(&phase->a_range_remaining, 1);
+    struct ds_RebuildJob *job = phase->range_job + i;
+    job->range = *range;
+
+    ds_JobPhaseReserve(&phase->phase, REBUILD_JOB_RANGE, 1);
+    ds_WSDequePushBottom(g_scheduler->deque + ds_ThreadSelfIndex(), ds_JobIdInit(REBUILD_JOB_RANGE, i));
+}
+
+static u32 ds_RebuildJobPush(struct ds_RebuildJobPhase *phase, const struct ds_RebuildRange *range)
+{
+    u32 job_pushed = 0;
+    u32 seed_count = AtomicLoadRlx32(&phase->a_range_seed_count);
+    if (seed_count < phase->setup_job_length)
+    {
+        seed_count = AtomicFetchAddRlx32(&phase->a_range_seed_count, 1); 
+    }
+
+    if (seed_count < phase->setup_job_length)
+    {
+        u32 i = 0;
+        for (; i < phase->setup_job_length; ++i)
+        {
+            struct ds_RebuildJob *job = phase->setup_job + i;
+            u32 lock = 0;
+            if (AtomicCompareExchangeRlxRlx32(&job->a_range_ready, &lock, U32_MAX))
+            {
+                job->range = *range;
+                AtomicStoreRel32(&job->a_range_ready, 1);
+                break;
+            }
+        }
+        ds_Assert(i < phase->setup_job_length);
+    }
+    else
+    {
+        job_pushed += 1;
+        ds_RebuildJobPushDeque(phase, range);
+    }
+
+    return job_pushed;
 }
 
 static void ds_RebuildLeafSetMinMax(vec3 min, vec3 max, const struct ds_RebuildLeaf *base, const u32 count)
@@ -806,19 +844,127 @@ static void ds_RebuildAxisPivot(u32 axis[2], f32 pivot[2], const vec3 min[2], co
     }
 }
 
-static void ds_RebuildRangeExecute(struct arena *mem, struct ds_RebuildJobPhase *phase, struct ds_RebuildRange *root)
+static u32 ds_RebuildJobSetup(const u32 job_index)
 {
-    ProfZoneNamed("Range");
+    ProfZone;
+
+    struct ds_RebuildJobPhase *phase = (struct ds_RebuildJobPhase *) g_scheduler->phase;
+    struct ds_RebuildJob *job = phase->setup_job + job_index;
+    struct ds_Dynamics *pipeline = phase->pipeline;
+    struct ds_ParallelForChain *chain;
+    struct ds_ParallelFor *pf;
+    u32 low, high;
+
+    ds_Assert(pipeline->dynamic_bvh.pool.count >= 2);
     
-    struct arena *tmp = ArenaPushScratch();
+    /* Update DBVH leaf bounding boxes */
+    chain = &phase->pf_proxy_update;
+    {
+        ProfZoneNamed("Leaf Array Setup");
 
+        struct ds_RebuildThreadCompute *thread = phase->setup_compute + job_index;
+
+        pf = chain->parallel_for + 0;
+        ds_ParallelFor(pf, range_index)
+        {
+            ds_ParallelForRange(&low, &high, pf, range_index);
+            for (u32 li = low; li < high; ++li)
+            {
+                struct ds_RebuildLeaf *leaf = phase->leaf_buf + li;
+                struct bvhNode *node = pipeline->dynamic_bvh.pool.buf + leaf->index;
+                const struct ds_Shape *shape = pipeline->shape_pool.buf + node->bt_child[0];
+                node->bbox = ds_ShapeWorldBbox(pipeline, shape);
+                node->bbox.hw[0] += shape->margin;
+                node->bbox.hw[1] += shape->margin;
+                node->bbox.hw[2] += shape->margin;
+                Vec3Copy(leaf->center, node->bbox.center);
+                Vec3MinSelf(thread->min[0], node->bbox.center);
+                Vec3MaxSelf(thread->max[0], node->bbox.center);
+            }
+        }
+    }
+    ds_ParallelForChainWait(chain);
+
+    /*
+     *  Dispatch Strategy:
+     *
+     *      After the initial bounding boxes calculations, each worker waits until either the rebuild phase
+     *      has been completed (The dynamic bvh has been rebuilt), or it is assigned an initial range to work 
+     *      within (which will seed the worker's work-stealing deque with new range jobs). The worker that 
+     *      finalizes the bounding box pass is the first to be assigned range work.
+     *
+     *      Any further work generated is first prioritized to seed waiting workers, after which any remaining
+     *      work generated by a worker is pushed onto its work-stealing deque.
+     */
+    u32 lock = 0;
+    if (AtomicCompareExchangeRlxRlx32(&phase->a_setup_completed, &lock, U32_MAX))
+    {
+        vec3 min[2] = 
+        {
+            { F32_INFINITY, F32_INFINITY, F32_INFINITY },
+            { F32_INFINITY, F32_INFINITY, F32_INFINITY },
+        };
+    
+        vec3 max[2] = 
+        {
+            { -F32_INFINITY, -F32_INFINITY, -F32_INFINITY },
+            { -F32_INFINITY, -F32_INFINITY, -F32_INFINITY },
+        };
+    
+        for (u32 t = 0; t < phase->setup_job_length; ++t)
+        {
+            Vec3MinSelf(min[0], phase->setup_compute[t].min[0]);
+            Vec3MaxSelf(max[0], phase->setup_compute[t].max[0]);
+        }
+
+        u32 axis[2];
+        f32 pivot[2];
+        ds_RebuildAxisPivot(axis, pivot, min, max);
+
+        const u32 node_index = phase->internal_buf[AtomicFetchAddRlx32(&phase->a_internal_next, 1)];
+        pipeline->dynamic_bvh.bt.root = node_index;
+        pipeline->dynamic_bvh.pool.buf[node_index].bt_parent = BT_INDEX_NULL;
+
+        job->range = ds_RebuildRangeInit(node_index, 0, phase->leaf_count, 0, axis[0], pivot[0]);
+        AtomicFetchAddRlx32(&phase->a_range_seed_count, 1);
+        AtomicStoreRlx32(&job->a_range_ready, 1);
+    }
+
+    u32 push_job;
+    ds_Spin(    (push_job = AtomicLoadAcq32(&job->a_range_ready)) != 1
+             && AtomicLoadRlx32(&phase->a_leaves_completed) < phase->leaf_count
+            , 64
+            , U32_MAX);
+
+    if (push_job)
+    {
+        ds_RebuildJobPushDeque(phase, &job->range);
+    }
+
+    ProfZoneEnd;
+
+    return push_job;
+}
+
+static u32 ds_RebuildJobRange(const u32 job_index)
+{
+    ProfZone;
+
+    struct ds_RebuildJobPhase *phase = (struct ds_RebuildJobPhase *) g_scheduler->phase;
+    struct ds_RebuildJob *job = phase->range_job + job_index;
     struct ds_RebuildLeaf *leaf = phase->leaf_buf;
+    struct ds_Dynamics *pipeline = phase->pipeline;
+    struct ds_ParallelForChain *chain;
+    struct ds_ParallelFor *pf;
+    u32 low, high;
 
-    const struct memArray range_arr = ArenaPushAlignedAll(tmp, sizeof(struct ds_RebuildRange), 8);
+    struct arena *mem = ArenaPushScratch();
+    const struct memArray range_arr = ArenaPushAlignedAll(mem, sizeof(struct ds_RebuildRange), 4);
     struct ds_RebuildRange *range_buf = range_arr.addr;
 
-    range_buf[0] = *root;
+    range_buf[0] = job->range;
     u32 work_count = 1;
+    u32 jobs_pushed = 0;
     while (work_count--)
     {
         struct ds_RebuildThreadCompute t;
@@ -906,131 +1052,53 @@ static void ds_RebuildRangeExecute(struct arena *mem, struct ds_RebuildJobPhase 
                 }
                 else
                 {
-                    struct ds_RebuildRange *new_range = ds_RebuildRangeAlloc(mem, index, base[s], t.count[s], range->depth + 1, axis[s], pivot[s]);
-                    ds_RebuildRangePush(phase, range);
+                    struct ds_RebuildRange new_range = ds_RebuildRangeInit(index, base[s], t.count[s], range->depth + 1, axis[s], pivot[s]);
+                    jobs_pushed += ds_RebuildJobPush(phase, &new_range);
                 }
             }
         }
     }
 
-    ProfZoneEnd;
-
     //TODO Propagate boxes to nodes with <= small_leaf_limit
 
-    AtomicFetchAddRel32(&phase->a_leaves_completed, root->high - root->low);
+    AtomicFetchAddRel32(&phase->a_leaves_completed, job->range.high - job->range.low);
 
     ArenaPopScratch();
+
+    ProfZoneEnd;
+
+    return jobs_pushed;
 }
 
 u32 ds_RebuildJobPhaseDispatch(const ds_JobId job_id)
 {
-    ProfZone;
-
-    struct arena *phase_mem = ArenaPushScratch();
-    struct ds_RebuildJobPhase *phase = (struct ds_RebuildJobPhase *) g_scheduler->phase;
-    struct ds_Dynamics *pipeline = phase->pipeline;
-    struct ds_ParallelForChain *chain;
-    struct ds_ParallelFor *pf;
     const u32 job_index = ds_JobIdIndex(job_id);
-    struct ds_RebuildJob *job = phase->job + job_index;
-    u32 low, high;
 
-    ds_Assert(pipeline->dynamic_bvh.pool.count >= 2);
-    
-    /* Update DBVH leaf bounding boxes */
-    chain = &phase->pf_proxy_update;
+    u32 jobs_pushed = 0;
+    switch (ds_JobIdTag(job_id))
     {
-        ProfZoneNamed("Leaf Array Setup");
-
-        struct ds_RebuildThreadCompute *thread = phase->setup_compute + job_index;
-
-        pf = chain->parallel_for + 0;
-        ds_ParallelFor(pf, range_index)
+        case REBUILD_JOB_SETUP:
         {
-            ds_ParallelForRange(&low, &high, pf, range_index);
-            for (u32 li = low; li < high; ++li)
-            {
-                struct ds_RebuildLeaf *leaf = phase->leaf_buf + li;
-                struct bvhNode *node = pipeline->dynamic_bvh.pool.buf + leaf->index;
-                const struct ds_Shape *shape = pipeline->shape_pool.buf + node->bt_child[0];
-                node->bbox = ds_ShapeWorldBbox(pipeline, shape);
-                node->bbox.hw[0] += shape->margin;
-                node->bbox.hw[1] += shape->margin;
-                node->bbox.hw[2] += shape->margin;
-                Vec3Copy(leaf->center, node->bbox.center);
-                Vec3MinSelf(thread->min[0], node->bbox.center);
-                Vec3MaxSelf(thread->max[0], node->bbox.center);
-            }
-        }
-    }
-    ds_ParallelForChainWait(chain);
+            jobs_pushed = ds_RebuildJobSetup(job_index);
+        } break;
 
-    /* 
-     * One thread gets to finalize and setup the new tree root.
-     */
-    u32 lock = 0;
-    if (AtomicCompareExchangeRlxRlx32(&phase->a_setup_completed, &lock, U32_MAX))
-    {
-        vec3 min[2] = 
+        case REBUILD_JOB_RANGE:
         {
-            { F32_INFINITY, F32_INFINITY, F32_INFINITY },
-            { F32_INFINITY, F32_INFINITY, F32_INFINITY },
-        };
-    
-        vec3 max[2] = 
-        {
-            { -F32_INFINITY, -F32_INFINITY, -F32_INFINITY },
-            { -F32_INFINITY, -F32_INFINITY, -F32_INFINITY },
-        };
-    
-        for (u32 t = 0; t < phase->job_count; ++t)
-        {
-            Vec3MinSelf(min[0], phase->setup_compute[t].min[0]);
-            Vec3MaxSelf(max[0], phase->setup_compute[t].max[0]);
-        }
+            jobs_pushed = ds_RebuildJobRange(job_index);
+        } break;
 
-        u32 axis[2];
-        f32 pivot[2];
-        ds_RebuildAxisPivot(axis, pivot, min, max);
-
-        const u32 node_index = phase->internal_buf[AtomicFetchAddRlx32(&phase->a_internal_next, 1)];
-        pipeline->dynamic_bvh.bt.root = node_index;
-        pipeline->dynamic_bvh.pool.buf[node_index].bt_parent = BT_INDEX_NULL;
-
-        struct ds_RebuildRange *range = ds_RebuildRangeAlloc(phase_mem, node_index, 0, phase->leaf_count, 0, axis[0], pivot[0]);
-        ds_RebuildRangePush(phase, range);
-
-        AtomicStoreRel32(&phase->a_setup_completed, 1);
+        default:
+        { 
+            ds_AssertString(0, "Unreachable");
+        } break;
     }
 
-    u32 pause = 4;
-    while (AtomicLoadRlx32(&phase->a_leaves_completed) < phase->leaf_count)
-    {
-        u32 local_remaining = AtomicLoadRlx32(&phase->a_range_remaining);
-        if (!AtomicCompareExchangeRlxRlx32(&phase->a_range_remaining, &local_remaining, local_remaining+1))
-        {
-            pause *= 2;
-            if (pause > 32) { pause = 32; }
-            ds_CpuPause(pause);
-            continue;
-        }
-        pause = 4;
-
-        const u32 local_next = AtomicFetchAddRlx32(&phase->a_range_next, 1);
-        struct ds_RebuildRange *range = AtomicLoadAcq64(phase->range + local_next);
-        ds_RebuildRangeExecute(phase_mem, phase, range);
-    }
-    
     /*
      *  TODO: Serial:
      *      () Propagate rest of bounding boxes (if <= small_leaf_limit, the box is already set!)
      */
 
-    ArenaPopScratch();
-
-    ProfZoneEnd;
-
-    return U32_MAX;
+    return U32_MAX + jobs_pushed;
 }
 
 static void ds_DynamicsRemoveContacts(struct ds_Dynamics *pipeline)
@@ -1256,34 +1324,36 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
 
                     rebuild_phase->small_leaf_limit = 256;
                     rebuild_phase->pipeline = pipeline;
-                    rebuild_phase->job_count = g_scheduler->worker_count;
-                    rebuild_phase->job = ArenaPushZero(&pipeline->frame, rebuild_phase->job_count*sizeof(struct ds_RebuildJob));
+                    rebuild_phase->setup_job_length = g_scheduler->worker_count;
+                    rebuild_phase->setup_job = ArenaPushZero(&pipeline->frame, rebuild_phase->setup_job_length*sizeof(struct ds_RebuildJob));
                     AtomicStoreRlx32(&rebuild_phase->a_setup_completed, 0);
                     AtomicStoreRlx32(&rebuild_phase->a_leaves_completed, 0);
                     AtomicStoreRlx32(&rebuild_phase->a_internal_next, 0);
                     AtomicStoreRlx32(&rebuild_phase->a_range_count, 0);
                     AtomicStoreRlx32(&rebuild_phase->a_range_remaining, 0);
                     AtomicStoreRlx32(&rebuild_phase->a_range_next, 0);
+                    AtomicStoreRlx32(&rebuild_phase->a_range_seed_count, 0);
 
-                    rebuild_phase->setup_compute = ArenaPushAligned(&pipeline->frame, rebuild_phase->job_count*sizeof(struct ds_RebuildThreadCompute), DS_CACHE_LINE);
-                    for (u32 i = 0; i < rebuild_phase->job_count; ++i)
+                    rebuild_phase->setup_compute = ArenaPushAligned(&pipeline->frame, rebuild_phase->setup_job_length*sizeof(struct ds_RebuildThreadCompute), DS_CACHE_LINE);
+                    for (u32 i = 0; i < rebuild_phase->setup_job_length; ++i)
                     {
+                        AtomicStoreRlx32(&rebuild_phase->setup_job[i].a_range_ready, 0);
                         ds_RebuildThreadComputeInit(rebuild_phase->setup_compute + i);
                     }
 
-                    struct memArray range_arr = ArenaPushAlignedAll(&pipeline->frame, sizeof(struct ds_RebuildRange *), 8);
-                    rebuild_phase->range = range_arr.addr;
-                    rebuild_phase->range_length = range_arr.len;
+                    struct memArray range_arr = ArenaPushAlignedAll(&pipeline->frame, sizeof(struct ds_RebuildJob *), DS_CACHE_LINE);
+                    rebuild_phase->range_job = range_arr.addr;
+                    rebuild_phase->range_job_length = range_arr.len;
 
-                    ds_JobPhaseReserve(&rebuild_phase->phase, REBUILD_JOB_SEED, rebuild_phase->job_count);
+                    ds_JobPhaseReserve(&rebuild_phase->phase, REBUILD_JOB_SETUP, rebuild_phase->setup_job_length);
 
-                    for (u32 i = 0; i < rebuild_phase->job_count; ++i)
+                    for (u32 i = 0; i < rebuild_phase->setup_job_length; ++i)
                     {
-                        ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(REBUILD_JOB_SEED, i));
+                        ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(REBUILD_JOB_SETUP, i));
                     }
 
-                    AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, rebuild_phase->job_count);
-                    ds_JobPhaseAddFetchRemaining(&rebuild_phase->phase, rebuild_phase->job_count);
+                    AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, rebuild_phase->setup_job_length);
+                    ds_JobPhaseAddFetchRemaining(&rebuild_phase->phase, rebuild_phase->setup_job_length);
                     ds_WSDequePublish(g_scheduler->seed_deque);
                     for (u32 i = 1; i < g_scheduler->worker_count; ++i)
                     {

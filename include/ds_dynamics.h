@@ -1255,7 +1255,8 @@ ds_RebuildJobPhase
 
 enum ds_RebuildJobType
 {
-    REBUILD_JOB_SEED,
+    REBUILD_JOB_SETUP,
+    REBUILD_JOB_RANGE,
     REBUILD_JOB_COUNT
 };
 
@@ -1313,14 +1314,18 @@ static void ds_RebuildThreadComputeBlockInit(struct ds_RebuildThreadCompute *t)
 
 struct ds_RebuildJob
 {
-    u8                      pad[DS_CACHE_LINE];
+    u32                     a_range_ready;      /* Only used for setup jobs */
+    struct ds_RebuildRange  range;
+    u8                      pad[DS_CACHE_LINE - sizeof(u32) - sizeof(struct ds_RebuildRange)];
 };
 
 struct ds_RebuildJobPhase
 {
     struct ds_JobPhase              phase;
-    struct ds_RebuildJob *          job;
-    u32                             job_count;
+    struct ds_RebuildJob *          setup_job;
+    struct ds_RebuildJob *          range_job;
+    u32                             setup_job_length;
+    u32                             range_job_length;
     struct ds_ParallelForChain      pf_proxy_update;
     struct ds_Dynamics *            pipeline;
 
@@ -1335,8 +1340,6 @@ struct ds_RebuildJobPhase
     u32                             small_leaf_limit; 
 
     struct ds_RebuildThreadCompute *setup_compute;
-    struct ds_RebuildRange **       range;
-    u32                             range_length;
 
     u8                              pad0[DS_CACHE_LINE];
     u32                             a_range_count;
@@ -1354,6 +1357,9 @@ struct ds_RebuildJobPhase
 
     u32                             a_leaves_completed;
     u8                              pad6[DS_CACHE_LINE];
+
+    u32                             a_range_seed_count;
+    u8                              pad7[DS_CACHE_LINE];
 };
 
 u32 ds_RebuildJobPhaseDispatch(const ds_JobId job);
