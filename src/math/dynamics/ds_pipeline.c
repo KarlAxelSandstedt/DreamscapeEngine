@@ -887,6 +887,8 @@ static u32 ds_RebuildJobSetup(const u32 job_index)
                 Vec3MaxSelf(thread->max[0], node->bbox.center);
             }
         }
+
+        ProfZoneEnd;
     }
     ds_ParallelForChainWait(chain);
 
@@ -960,6 +962,7 @@ static u32 ds_RebuildJobRange(const u32 job_index)
     u32 leaves_completed = 0;
     while (work_count--)
     {
+        ProfZoneNamed("Range");
         struct ds_RebuildThreadCompute t;
         ds_RebuildThreadComputeInit(&t);
         
@@ -1023,8 +1026,7 @@ static u32 ds_RebuildJobRange(const u32 job_index)
         u32 axis[2];
         f32 pivot[2];
         ds_RebuildAxisPivot(axis, pivot, t.min, t.max);
-        
-        u32 local_work = 0;
+
         for (u32 s = 0; s < 2; ++s)
         {
             if (t.count[s] <= 1)
@@ -1039,9 +1041,8 @@ static u32 ds_RebuildJobRange(const u32 job_index)
                 const u32 index = phase->internal_buf[AtomicFetchAddRlx32(&phase->a_internal_next, 1)];
                 phase->pipeline->dynamic_bvh.pool.buf[parent].bt_child[s] = index;
                 phase->pipeline->dynamic_bvh.pool.buf[index].bt_parent = parent;
-                if (t.count[s] <= phase->small_leaf_limit || !local_work)
+                if (t.count[s] <= phase->small_leaf_limit || work_count == 0)
                 {
-                    local_work = 1;
                     range_buf[ work_count++ ] = ds_RebuildRangeInit(index, base[s], t.count[s], range->depth + 1, axis[s], pivot[s]);
                 }
                 else
@@ -1051,12 +1052,12 @@ static u32 ds_RebuildJobRange(const u32 job_index)
                 }
             }
         }
+        ProfZoneEnd;
     }
 
     //TODO Propagate boxes to nodes with <= small_leaf_limit
 
-    //TODO This may only be done for non-pushed leaves
-    AtomicFetchAddRel32(&phase->a_leaves_completed, leaves_completed);
+    AtomicFetchAddRlx32(&phase->a_leaves_completed, leaves_completed);
 
     ArenaPopScratch();
 
