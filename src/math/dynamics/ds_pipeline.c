@@ -1134,6 +1134,10 @@ u32 ds_RemovalJobPhaseDispatch(const ds_JobId job_id)
                 i32 ci = shape->contact_list.first;
                 while (ci != DLL_SENTINEL)
                 {
+                    /*
+                     * TODO If both shapes dynamic, we can skip overlap check
+                     * if we are iterating over shape 1. 
+                     */
                     struct ds_Contact *c = pipeline->contact_pool.buf + ci;
                     const i32 next = (si == c->key.shape[0])
                                    ? c->shape_contact[0].next
