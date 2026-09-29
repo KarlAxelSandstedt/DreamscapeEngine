@@ -1286,30 +1286,16 @@ static u32 ds_RebuildRangeCheck(struct ds_RebuildRange *range)
     return (range->internal_index != U32_MAX);
 }
 
-struct ds_RebuildFatWork
+struct ds_RebuildThreadCompute
 {
-    struct ds_ParallelForChain  pf;
-    struct ds_RebuildRange      range;
-    struct ds_RebuildThread *   thread;
-
-    u8                          pad0[DS_CACHE_LINE];
-    u32                         a_low_count;
-    u8                          pad1[DS_CACHE_LINE];
-    u32                         a_high_count;
-    u8                          pad2[DS_CACHE_LINE];
-
-};
-
-struct ds_RebuildThread
-{
-    /* 8 + 24 + 24 + */
+    /* 8 + 24 + 24 = 56 */
     u32     count[2];
     vec3    min[2];
     vec3    max[2];
     u8      pad[DS_CACHE_LINE - 2*sizeof(u32) - 4*sizeof(vec3)];
 };
 
-static void ds_RebuildThreadInit(struct ds_RebuildThread *t)
+static void ds_RebuildThreadComputeInit(struct ds_RebuildThreadCompute *t)
 {
     t->count[0] = 0;
     t->count[1] = 0;
@@ -1319,7 +1305,7 @@ static void ds_RebuildThreadInit(struct ds_RebuildThread *t)
     Vec3Set(t->max[1], -F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
 }
 
-static void ds_RebuildThreadBlockInit(struct ds_RebuildThread *t)
+static void ds_RebuildThreadComputeBlockInit(struct ds_RebuildThreadCompute *t)
 {
     t->count[0] = 0;
     t->count[1] = 0;
@@ -1327,8 +1313,6 @@ static void ds_RebuildThreadBlockInit(struct ds_RebuildThread *t)
 
 struct ds_RebuildJob
 {
-    struct ds_RebuildLeaf * leaf[2];
-    struct ds_RebuildRange  thin_range[2];
     u8                      pad[DS_CACHE_LINE];
 };
 
@@ -1340,33 +1324,35 @@ struct ds_RebuildJobPhase
     struct ds_ParallelForChain      pf_proxy_update;
     struct ds_Dynamics *            pipeline;
 
+
     u32 *                           internal_buf;
     u32                             internal_count;
-    struct ds_RebuildLeaf *         leaf_buf[2];
-    u32                             leaf_count;
-    u32                             leaf_blocks_per_proxy_update; 
-    u32                             small_leaf_limit; 
-    u32                             fat_leaf_limit; 
 
-    struct ds_RebuildFatWork *      fat_work_setup;
-    struct ds_RebuildFatWork *      fat_work;
-    u32                             fat_work_max_count;
+    struct ds_RebuildLeaf *         leaf_buf;
+    u32                             leaf_count;
+    u32                             leaf_block_size; 
+
+    u32                             small_leaf_limit; 
+
+    struct ds_RebuildThreadCompute *setup_compute;
+    struct ds_RebuildRange **       range;
+    u32                             range_length;
 
     u8                              pad0[DS_CACHE_LINE];
-    u32                             a_fat_work_counter;
+    u32                             a_range_count;
     u8                              pad1[DS_CACHE_LINE];
-    u32                             a_fat_work_completed;
+    u32                             a_range_remaining;
     u8                              pad2[DS_CACHE_LINE];
-
-    u32                             a_thin_range_count;
+    u32                             a_range_next;
     u8                              pad3[DS_CACHE_LINE];
-    u32                             a_thin_range_next;
-    u8                              pad4[DS_CACHE_LINE];
 
     u32                             a_setup_completed;     
+    u8                              pad4[DS_CACHE_LINE];
+
+    u32                             a_internal_next;
     u8                              pad5[DS_CACHE_LINE];
 
-    u32                             a_internal_counter;
+    u32                             a_leaves_completed;
     u8                              pad6[DS_CACHE_LINE];
 };
 
