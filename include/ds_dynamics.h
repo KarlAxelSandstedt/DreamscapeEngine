@@ -1342,24 +1342,17 @@ struct ds_RebuildJobPhase
     struct ds_RebuildThreadCompute *setup_compute;
 
     u8                              pad0[DS_CACHE_LINE];
-    u32                             a_range_count;
-    u8                              pad1[DS_CACHE_LINE];
-    u32                             a_range_remaining;
-    u8                              pad2[DS_CACHE_LINE];
-    u32                             a_range_next;
-    u8                              pad3[DS_CACHE_LINE];
-
     u32                             a_setup_completed;     
-    u8                              pad4[DS_CACHE_LINE];
+    u8                              pad1[DS_CACHE_LINE];
 
     u32                             a_internal_next;
-    u8                              pad5[DS_CACHE_LINE];
+    u8                              pad2[DS_CACHE_LINE];
 
     u32                             a_leaves_completed;
-    u8                              pad6[DS_CACHE_LINE];
+    u8                              pad3[DS_CACHE_LINE];
 
     u32                             a_range_seed_count;
-    u8                              pad7[DS_CACHE_LINE];
+    u8                              pad4[DS_CACHE_LINE];
 };
 
 u32 ds_RebuildJobPhaseDispatch(const ds_JobId job);
