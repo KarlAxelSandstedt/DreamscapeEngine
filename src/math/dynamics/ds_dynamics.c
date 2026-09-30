@@ -1,6 +1,11 @@
 #define XXH_INLINE_ALL
 #include "xxhash.h"
 
+#include "ds_float.h"
+#include "ds_vector.h"
+#include "ds_matrix.h"
+#include "ds_quaternion.h"
+
 #include "ds_dynamics.h"
 #include "ds_pipeline.c"
 #include "ds_metrics.c"

@@ -344,6 +344,62 @@ typedef union v4i64
 #define V3I64(_x, _y, _z)	((v3i64) { .x = (_x), .y = (_y), .z = (_z) })
 #define V4I64(_x, _y, _z, _w)	((v4i64) { .x = (_x), .y = (_y), .z = (_z), .w = (_w) })
 
+/*
+ * Column-major: aij is row i, column j. Elements are stored column by column
+ * (a11, a21, a31, a12, ...), so col[j-1] is column j and buf[(j-1)*N + (i-1)] is aij.
+ */
+typedef union m2
+{
+	struct 
+    { 
+        f32 a11, a21;	/* column 1 */
+        f32 a12, a22;	/* column 2 */
+    };
+	v2 col[2];
+	f32 buf[4];
+} m2;
+
+typedef union m3
+{
+	struct 
+    { 
+        f32 a11, a21, a31;	/* column 1 */
+        f32 a12, a22, a32;	/* column 2 */
+        f32 a13, a23, a33;	/* column 3 */
+    };
+	v3 col[3];
+	f32 buf[9];
+} m3;
+
+typedef union m4
+{
+	struct 
+    { 
+        f32 a11, a21, a31, a41;	/* column 1 */
+        f32 a12, a22, a32, a42;	/* column 2 */
+        f32 a13, a23, a33, a43;	/* column 3 */
+        f32 a14, a24, a34, a44;	/* column 4 */
+    };
+	v4 col[4];
+	f32 buf[16];
+} m4;
+
+/* Arguments in column-major order (a11, a21, a31, a12, ...) */
+#define M2(_a11, _a21,\
+           _a12, _a22)	\
+	((m2) { .a11 = (_a11), .a21 = (_a21), .a12 = (_a12), .a22 = (_a22) })
+
+#define M3(_a11, _a21, _a31,\
+           _a12, _a22, _a32,\
+           _a13, _a23, _a33)	\
+	((m3) { .a11 = (_a11), .a21 = (_a21), .a31 = (_a31), .a12 = (_a12), .a22 = (_a22), .a32 = (_a32), .a13 = (_a13), .a23 = (_a23), .a33 = (_a33) })
+
+#define M4(_a11, _a21, _a31, _a41,\
+           _a12, _a22, _a32, _a42,\
+           _a13, _a23, _a33, _a43,\
+           _a14, _a24, _a34, _a44)	\
+	((m4) { .a11 = (_a11), .a21 = (_a21), .a31 = (_a31), .a41 = (_a41), .a12 = (_a12), .a22 = (_a22), .a32 = (_a32), .a42 = (_a42), .a13 = (_a13), .a23 = (_a23), .a33 = (_a33), .a43 = (_a43), .a14 = (_a14), .a24 = (_a24), .a34 = (_a34), .a44 = (_a44) })
+
 typedef vec2 mat2[2];
 typedef vec3 mat3[3];
 typedef vec4 mat4[4];
