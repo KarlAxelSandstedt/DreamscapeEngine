@@ -227,11 +227,11 @@ void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId i
 		body->mass += mass[i];
 
 		/* R, R^-1 */
-		const m3 rot_local = M3Q(QLoad(shape->t_local.rotation));
+		const m3 rot_local = M3Q(shape->t_local.rotation);
 		const m3 rot_local_inv = M3Transpose(rot_local);
 
 		/* center_of_mass_Shape[i] = R*shape_center_of_mass + pos */
-		center_of_mass[i] = V3Add(M3V3Mul(rot_local, V3Load(cshape->center_of_mass)), V3Load(shape->t_local.position));
+		center_of_mass[i] = V3Add(M3V3Mul(rot_local, V3Load(cshape->center_of_mass)), shape->t_local.position);
 		sim->local_center_of_mass = V3AddScaled(sim->local_center_of_mass, center_of_mass[i], mass[i]);
 
 		/* I_Shape(i) = R * Shape_Inertia * R^-1 */

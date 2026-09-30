@@ -29,11 +29,14 @@ extern "C" {
 #include "vector.h"
 #include "quaternion.h"
 #include "matrix.h"
+#include "ds_float.h"
+#include "ds_vector.h"
+#include "ds_quaternion.h"
 
 typedef struct
 {
-	quat	rotation;
-	vec3	position;
+	q	rotation;
+	v3	position;
 } ds_Transform;
 
 #include "transform.h"
@@ -41,11 +44,11 @@ typedef struct
 
 static inline ds_Transform ds_TransformIdentity(void)
 {
-    ds_Transform transform = 
+    const ds_Transform transform = 
     { 
-        .position = { 0.0f, 0.0f, 0.0f },
+        .rotation = QIdentity(),
+        .position = V3Zero(),
     };
-    QuatIdentity(transform.rotation);
     return transform;
 }
 
@@ -57,13 +60,12 @@ static inline ds_Transform ds_TransformIdentity(void)
  */
 static inline ds_Transform ds_TransformRelative(const ds_Transform *reference, const ds_Transform *target)
 {
-    ds_Transform relative;
-    quat inv;
-
-    QuatInverse(inv, reference->rotation);
-    QuatMul(relative.rotation, inv, target->rotation);
-    Vec3Sub(relative.position, target->position, reference->position);
-    QuatVec3RotateSelf(relative.position, inv);
+    const q inv = QInverse(reference->rotation);
+    const ds_Transform relative =
+    {
+        .rotation = QMul(inv, target->rotation),
+        .position = QVec3Rotate(inv, V3Sub(target->position, reference->position)),
+    };
 
     return relative;
 }
@@ -72,12 +74,9 @@ static inline ds_Transform ds_TransformRelative(const ds_Transform *reference, c
  *
  *      ref->rot*rel + ref->pos = ref->rot*ref->rot_inv*(target - ref->pos) + ref->pos = target
  */
-static inline void ds_TransformPointToLocal(vec3 local, const ds_Transform *reference, const vec3 target)
+static inline v3 ds_TransformPointToLocal(const ds_Transform *reference, const v3 target)
 {
-    quat inv;
-    QuatInverse(inv, reference->rotation);
-    Vec3Sub(local, target, reference->position);
-    QuatVec3RotateSelf(local, inv);
+    return QVec3Rotate(QInverse(reference->rotation), V3Sub(target, reference->position));
 }
 
 #ifdef __cplusplus

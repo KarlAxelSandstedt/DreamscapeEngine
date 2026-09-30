@@ -283,10 +283,10 @@ void SegmentBc(vec3 bc_p, const struct segment *s, const f32 t)
 struct segment SegmentCapsuleTransform(const struct capsule *cap, const ds_Transform *t)
 {
     vec3 p1, p0 = { 0.0f, cap->half_height, 0.0 };
-    QuatVec3RotateSelf(p0, t->rotation);
+    QuatVec3RotateSelf(p0, t->rotation.buf);
 	Vec3Negate(p1, p0);
-	Vec3Translate(p0, t->position);
-	Vec3Translate(p1, t->position);
+	Vec3Translate(p0, t->position.buf);
+	Vec3Translate(p1, t->position.buf);
 	return SegmentConstruct(p0, p1);
 }
 

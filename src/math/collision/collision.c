@@ -1140,7 +1140,7 @@ u32 c_SphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct 
 {
 	ds_Assert(s1->type == C_SHAPE_SPHERE && s2->type == C_SHAPE_SPHERE);
 	const f32 r_sum = s1->sphere.radius + s2->sphere.radius;
-	return Vec3DistanceSquared(t1->position, t2->position) <= r_sum*r_sum;
+	return Vec3DistanceSquared(t1->position.buf, t2->position.buf) <= r_sum*r_sum;
 }
 
 u32 c_CapsuleSphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2)
@@ -1149,11 +1149,11 @@ u32 c_CapsuleSphereTest(const struct c_Shape *s1, const ds_Transform *t1, const 
     ds_Assert(s2->type == C_SHAPE_SPHERE);
 
 	vec3 c1, c2, s_p1, s_p2;
-	Vec3Sub(c2, t2->position, t1->position);
+	Vec3Sub(c2, t2->position.buf, t1->position.buf);
 
     const struct capsule *cap = &s1->capsule;
     Vec3Set(s_p1, 0.0f, cap->half_height, 0.0f);
-    QuatVec3RotateSelf(s_p1, t1->rotation);
+    QuatVec3RotateSelf(s_p1, t1->rotation.buf);
 	Vec3Negate(s_p2, s_p1);
 	struct segment s = SegmentConstruct(s_p1, s_p2);
 
@@ -1213,13 +1213,13 @@ f32 c_SphereDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transf
 	f32 dist_sq = 0.0f;
 
 	const f32 r_sum = s1->sphere.radius + s2->sphere.radius;
-	if (Vec3DistanceSquared(t1->position, t2->position) > r_sum*r_sum)
+	if (Vec3DistanceSquared(t1->position.buf, t2->position.buf) > r_sum*r_sum)
 	{
 		vec3 dir;
-		Vec3Sub(dir, t2->position, t1->position);
+		Vec3Sub(dir, t2->position.buf, t1->position.buf);
 		Vec3ScaleSelf(dir, 1.0f/Vec3Length(dir));
-		Vec3Copy(c1, t1->position);
-		Vec3Copy(c2, t2->position);
+		Vec3Copy(c1, t1->position.buf);
+		Vec3Copy(c2, t2->position.buf);
 		Vec3TranslateScaled(c1, dir,  s1->sphere.radius);
 		Vec3TranslateScaled(c2, dir, -s2->sphere.radius);
 		dist_sq = Vec3DistanceSquared(c1, c2);
@@ -1241,8 +1241,8 @@ f32 c_CapsuleSphereDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds
 	if (SegmentPointDistanceSquared(c1, &s, c2) > r_sum*r_sum)
 	{
         vec3 diff;
-		Vec3Translate(c1, t1->position);
-		Vec3Translate(c2, t1->position);
+		Vec3Translate(c1, t1->position.buf);
+		Vec3Translate(c2, t1->position.buf);
 		Vec3Sub(diff, c2, c1);
 		Vec3ScaleSelf(diff, 1.0f / Vec3Length(diff));
 		Vec3TranslateScaled(c1, diff, cap->radius);
@@ -1286,12 +1286,12 @@ f32 c_HullSphereDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Tr
 	ds_Assert(s2->type == C_SHAPE_SPHERE);
 
 	struct gjk_Input g1 = { .v = s1->hull.v, .v_count = s1->hull.v_count, };
-	Vec3Copy(g1.pos, t1->position);
-	Mat3Quat(g1.rot, t1->rotation);
+	Vec3Copy(g1.pos, t1->position.buf);
+	Mat3Quat(g1.rot, t1->rotation.buf);
 
 	vec3 n = VEC3_ZERO;
 	struct gjk_Input g2 = { .v = &n, .v_count = 1, };
-	Vec3Copy(g2.pos, t2->position);
+	Vec3Copy(g2.pos, t2->position.buf);
 	Mat3Identity(g2.rot);
 
     struct gjk_Simplex simplex;
@@ -1318,15 +1318,15 @@ f32 c_HullCapsuleDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_T
 	ds_Assert(s2->type == C_SHAPE_CAPSULE);
 
 	struct gjk_Input g1 = { .v = s1->hull.v, .v_count = s1->hull.v_count, };
-	Vec3Copy(g1.pos, t1->position);
-	Mat3Quat(g1.rot, t1->rotation);
+	Vec3Copy(g1.pos, t1->position.buf);
+	Mat3Quat(g1.rot, t1->rotation.buf);
 
 	vec3 segment[2];
 	Vec3Set(segment[0], 0.0f,  s2->capsule.half_height, 0.0f);
 	Vec3Set(segment[1], 0.0f, -s2->capsule.half_height, 0.0f);
 	struct gjk_Input g2 = { .v = segment, .v_count = 2, };
-	Vec3Copy(g2.pos, t2->position);
-	Mat3Quat(g1.rot, t2->rotation);
+	Vec3Copy(g2.pos, t2->position.buf);
+	Mat3Quat(g1.rot, t2->rotation.buf);
 
     struct gjk_Simplex simplex;
 	f32 dist_sq = gjk_DistanceSquared(c1, c2, &simplex, &g1, &g2);
@@ -1353,12 +1353,12 @@ f32 c_HullDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transfor
 	ds_Assert (s2->type == C_SHAPE_CONVEX_HULL);
 
 	struct gjk_Input g1 = { .v = s1->hull.v, .v_count = s1->hull.v_count, };
-	Vec3Copy(g1.pos, t1->position);
-	Mat3Quat(g1.rot, t1->rotation);
+	Vec3Copy(g1.pos, t1->position.buf);
+	Mat3Quat(g1.rot, t1->rotation.buf);
 
 	struct gjk_Input g2 = { .v = s2->hull.v, .v_count = s2->hull.v_count, };
-	Vec3Copy(g2.pos, t2->position);
-	Mat3Quat(g2.rot, t2->rotation);
+	Vec3Copy(g2.pos, t2->position.buf);
+	Mat3Quat(g2.rot, t2->rotation.buf);
 
     struct gjk_Simplex simplex;
 	const f32 dist_sq = gjk_DistanceSquared(c1, c2, &simplex, &g1, &g2);
@@ -1394,7 +1394,7 @@ struct c_ContactResult c_SphereContact(struct arena *frame, const struct c_Conta
     const u32 inc = 1 - ref;
 
 	const f32 r_sum = s[0]->sphere.radius + s[1]->sphere.radius;
-	const f32 dist_sq = Vec3DistanceSquared(t[0].position, t[1].position);
+	const f32 dist_sq = Vec3DistanceSquared(t[0].position.buf, t[1].position.buf);
 	if (dist_sq <= r_sum*r_sum)
 	{
         result.manifold_count = 1;
@@ -1409,13 +1409,13 @@ struct c_ContactResult c_SphereContact(struct arena *frame, const struct c_Conta
 		}
 		else
 		{
-			Vec3Sub(manifold->n, t[inc].position, t[ref].position);
+			Vec3Sub(manifold->n, t[inc].position.buf, t[ref].position.buf);
 			Vec3ScaleSelf(manifold->n, 1.0f/Vec3Length(manifold->n));
 		}
 
 		vec3 c2;
-        Vec3Copy(manifold->v[0], t[ref].position);
-		Vec3Copy(c2, t[inc].position);
+        Vec3Copy(manifold->v[0], t[ref].position.buf);
+		Vec3Copy(c2, t[inc].position.buf);
 		Vec3TranslateScaled(manifold->v[0], manifold->n, s[ref]->sphere.radius);
 		Vec3TranslateScaled(c2, manifold->n, -s[inc]->sphere.radius);
 		manifold->depth[0] = Vec3Dot(manifold->v[0], manifold->n) - Vec3Dot(c2, manifold->n);
@@ -1437,11 +1437,11 @@ struct c_ContactResult c_CapsuleSphereContact(struct arena *frame, const struct 
 	vec3 c[2], s_p1, s_p2, diff;
 
     Vec3Set(s_p1, 0.0f, cap->half_height, 0.0f);
-    QuatVec3RotateSelf(s_p1, t[0].rotation);
+    QuatVec3RotateSelf(s_p1, t[0].rotation.buf);
 	Vec3Negate(s_p2, s_p1);
 	struct segment seg = SegmentConstruct(s_p1, s_p2);
 
-	Vec3Sub(c[1], t[1].position, t[0].position);
+	Vec3Sub(c[1], t[1].position.buf, t[0].position.buf);
 	const f32 dist_sq = SegmentPointDistanceSquared(c[0], &seg, c[1]);
 
 	if (dist_sq <= r_sum*r_sum)
@@ -1455,7 +1455,7 @@ struct c_ContactResult c_CapsuleSphereContact(struct arena *frame, const struct 
 		{
 			//TODO Degerate case: normal should be context dependent
 			Vec3CreateBasis(manifold->n, diff, seg.dir);
-            Vec3Copy(manifold->v[0], t[0].position);
+            Vec3Copy(manifold->v[0], t[0].position.buf);
 			manifold->depth[0] = r_sum;
             ds_AssertString(0, "Implement Degenerate CapsuleSphere contact case properly");
 		}
@@ -1468,7 +1468,7 @@ struct c_ContactResult c_CapsuleSphereContact(struct arena *frame, const struct 
 			Vec3TranslateScaled(c[1], diff, -s[1]->sphere.radius);
 
 			manifold->depth[0] = Vec3Dot(c[0], diff) - Vec3Dot(c[1], diff);
-            Vec3Add(manifold->v[0], t[0].position, c[ref]);
+            Vec3Add(manifold->v[0], t[0].position.buf, c[ref]);
             Vec3Scale(manifold->n, diff, 1.0f - 2.0f*((f32) ref));
 		}	
 	}
@@ -1513,7 +1513,7 @@ struct c_ContactResult c_CapsuleContact(struct arena *frame, const struct c_Cont
 			/* Degenerate Case 1: Parallel capsules,*/
 			manifold->v_count = 1;
 			manifold->depth[0] = r_sum;
-			Vec3Copy(manifold->v[0], t[ref].position);
+			Vec3Copy(manifold->v[0], t[ref].position.buf);
 			if (cross_dist_sq <= COLLISION_POINT_DIST_SQ)
 			{
 				//TODO Normal should be context dependent
@@ -1592,12 +1592,12 @@ struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_C
     const u32 inc = 1 - ref;
 
 	struct gjk_Input g1 = { .v = s[0]->hull.v, .v_count = s[0]->hull.v_count, };
-	Vec3Copy(g1.pos, t[0].position);
-	Mat3Quat(g1.rot, t[0].rotation);
+	Vec3Copy(g1.pos, t[0].position.buf);
+	Mat3Quat(g1.rot, t[0].rotation.buf);
 
 	vec3 zero = VEC3_ZERO;
 	struct gjk_Input g2 = { .v = &zero, .v_count = 1, };
-	Vec3Copy(g2.pos, t[1].position);
+	Vec3Copy(g2.pos, t[1].position.buf);
 	Mat3Identity(g2.rot);
 
 	vec3 c[2];
@@ -1622,8 +1622,8 @@ struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_C
 		{
 			DcelFaceNormal(p, h, g1.rot, fi);
 			Mat3VecMul(p, g1.rot, h->v[h->e[h->f[fi].first].origin]);
-			Vec3Translate(p, t[0].position);
-			Vec3Sub(diff, t[1].position, p);
+			Vec3Translate(p, t[0].position.buf);
+			Vec3Sub(diff, t[1].position.buf, p);
 			const f32 depth = f32_max(0.0f, -Vec3Dot(n, diff));
 			if (depth < min_depth)
 			{
@@ -1636,7 +1636,7 @@ struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_C
             
         //ds_Assert(min_depth > 0.0f);
 		manifold->depth[0] = min_depth + s[1]->sphere.radius;
-		Vec3Copy(manifold->v[0], t[1].position);
+		Vec3Copy(manifold->v[0], t[1].position.buf);
         if (ref == 0)
         {
 		    Vec3TranslateScaled(manifold->v[0], manifold->n, min_depth);
@@ -1670,16 +1670,16 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 
 	const struct dcel *h = &s[0]->hull;
 	struct gjk_Input g1 = { .v = h->v, .v_count = h->v_count, };
-	Vec3Copy(g1.pos, t[0].position);
-	Mat3Quat(g1.rot, t[0].rotation);
+	Vec3Copy(g1.pos, t[0].position.buf);
+	Mat3Quat(g1.rot, t[0].rotation.buf);
 
 	vec3 segment[2];
 	Vec3Set(segment[0], 0.0f, s[1]->capsule.half_height, 0.0f);
 	Vec3Negate(segment[1], segment[0]);
 
 	struct gjk_Input g2 = { .v = segment, .v_count = 2, };
-	Vec3Copy(g2.pos, t[1].position);
-	Mat3Quat(g2.rot, t[1].rotation);
+	Vec3Copy(g2.pos, t[1].position.buf);
+	Mat3Quat(g2.rot, t[1].rotation.buf);
 
 	vec3 c[2];
     struct gjk_Simplex simplex;
@@ -1712,7 +1712,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 
 			for (u32 fi = 0; fi < h->f_count; ++fi)
 			{
-				struct plane pl = DcelFacePlane(h, g1.rot, t[0].position, fi);
+				struct plane pl = DcelFacePlane(h, g1.rot, t[0].position.buf, fi);
 
 				const f32 d0 = PlanePointSignedDistance(&pl, cap_s.p[0]);
 				const f32 d1 = PlanePointSignedDistance(&pl, cap_s.p[1]);
@@ -2450,8 +2450,8 @@ struct c_ContactResult c_HullContact(struct arena *frame, const struct c_Contact
     struct arena *mem_tmp = ArenaPushScratch();
 
     mat3 rot[2];
-	Mat3Quat(rot[0], t[0].rotation);
-	Mat3Quat(rot[1], t[1].rotation);
+	Mat3Quat(rot[0], t[0].rotation.buf);
+	Mat3Quat(rot[1], t[1].rotation.buf);
 	
     const struct dcel *h[2] = { &s[0]->hull, &s[1]->hull };
     vec3ptr v_world[2] = { ArenaPush(mem_tmp, h[0]->v_count * sizeof(vec3)), ArenaPush(mem_tmp, h[1]->v_count * sizeof(vec3)) };
@@ -2459,13 +2459,13 @@ struct c_ContactResult c_HullContact(struct arena *frame, const struct c_Contact
 	for (u32 i = 0; i < h[0]->v_count; ++i)
 	{
 		Mat3VecMul(v_world[0][i], rot[0], h[0]->v[i]);
-		Vec3Translate(v_world[0][i], t[0].position);
+		Vec3Translate(v_world[0][i], t[0].position.buf);
 	}
 
 	for (u32 i = 0; i < h[1]->v_count; ++i)
 	{
 		Mat3VecMul(v_world[1][i], rot[1], h[1]->v[i]);
-		Vec3Translate(v_world[1][i], t[1].position);
+		Vec3Translate(v_world[1][i], t[1].position.buf);
 	}
 
     if (cached_result->cache_count)
@@ -2499,7 +2499,7 @@ struct c_ContactResult c_HullContact(struct arena *frame, const struct c_Contact
 	        {
                 metrics->hull_cache_probe_count += 1;
 	            struct sat_EdgeQuery e_query = { .depth = -F32_INFINITY };
-	        	HullContactEECheckRecompute(&e_query, h[0], v_world[0], sat_FeatureIdIndex(cache->feature[0]), h[1], v_world[1], sat_FeatureIdIndex(cache->feature[1]), t[0].position);
+	        	HullContactEECheckRecompute(&e_query, h[0], v_world[0], sat_FeatureIdIndex(cache->feature[0]), h[1], v_world[1], sat_FeatureIdIndex(cache->feature[1]), t[0].position.buf);
 	        	sat_EdgeQueryCollisionResult(result.manifold, result.cache, &e_query, ref);
                 colliding = (-F32_INFINITY < e_query.depth && e_query.depth < 0.0f);
                 if (!colliding
@@ -2571,7 +2571,7 @@ struct c_ContactResult c_HullContact(struct arena *frame, const struct c_Contact
 		goto sat_cleanup;
 	}
 
-	if (HullContactEESeparation(&e_query, h[0], v_world[0], h[1], v_world[1], t[0].position))
+	if (HullContactEESeparation(&e_query, h[0], v_world[0], h[1], v_world[1], t[0].position.buf))
 	{
 		Vec3Copy(result.cache->normal, e_query.normal);
 		result.cache->depth = e_query.depth;
@@ -2828,8 +2828,8 @@ struct c_ContactResult c_TriMeshBvhSphereContact(struct arena *frame, const stru
 
     quat q_inv;
 	struct aabb bbox_transform;
-    QuatInverse(q_inv, tf[0].rotation);
-	Vec3Sub(bbox_transform.center, tf[1].position, tf[0].position);
+    QuatInverse(q_inv, tf[0].rotation.buf);
+	Vec3Sub(bbox_transform.center, tf[1].position.buf, tf[0].position.buf);
     QuatVec3RotateSelf(bbox_transform.center, q_inv);
 	Vec3Set(bbox_transform.hw, sph->radius, sph->radius, sph->radius);
 
@@ -2837,10 +2837,10 @@ struct c_ContactResult c_TriMeshBvhSphereContact(struct arena *frame, const stru
     c_TriMeshBvhIteratorAlloc(&it, mesh_bvh, &bbox_transform);
 
     mat3 bvh_rotation;
-    Mat3Quat(bvh_rotation, tf[0].rotation);
+    Mat3Quat(bvh_rotation, tf[0].rotation.buf);
     
     vec3 v_sphere;
-    Vec3Copy(v_sphere, tf[1].position);
+    Vec3Copy(v_sphere, tf[1].position.buf);
 
 	{
         //ProfZoneNamed("Calculate Triangles");
@@ -2863,9 +2863,9 @@ struct c_ContactResult c_TriMeshBvhSphereContact(struct arena *frame, const stru
                     Mat3VecMul(tri[0], bvh_rotation, it.mesh->v[it.mesh->tri[c->tri][0]]);
                     Mat3VecMul(tri[1], bvh_rotation, it.mesh->v[it.mesh->tri[c->tri][1]]);
                     Mat3VecMul(tri[2], bvh_rotation, it.mesh->v[it.mesh->tri[c->tri][2]]);
-                    Vec3Translate(tri[0], tf[0].position); 
-                    Vec3Translate(tri[1], tf[0].position); 
-                    Vec3Translate(tri[2], tf[0].position); 
+                    Vec3Translate(tri[0], tf[0].position.buf); 
+                    Vec3Translate(tri[1], tf[0].position.buf); 
+                    Vec3Translate(tri[2], tf[0].position.buf); 
                     Vec3Copy(c->c[1], v_sphere);
 
                     //ProfZoneNamed("TriCcwPointDistanceSquared");
@@ -3108,9 +3108,9 @@ struct c_ContactResult c_TriMeshBvhCapsuleContact(struct arena *frame, const str
     const struct triMeshBvh *mesh_bvh = &s[0]->mesh_bvh;
     /* bvh local-space capsule segment */
     quat q_inv;
-    QuatInverse(q_inv, tf[0].rotation);
-    Vec3TranslateScaled(cap_v[0], tf[0].position, -1.0f);
-    Vec3TranslateScaled(cap_v[1], tf[0].position, -1.0f);
+    QuatInverse(q_inv, tf[0].rotation.buf);
+    Vec3TranslateScaled(cap_v[0], tf[0].position.buf, -1.0f);
+    Vec3TranslateScaled(cap_v[1], tf[0].position.buf, -1.0f);
     QuatVec3RotateSelf(cap_v[0], q_inv);
     QuatVec3RotateSelf(cap_v[1], q_inv);
     const struct segment cap_mesh_space_s = SegmentConstruct(cap_v[0], cap_v[1]);
@@ -3119,7 +3119,7 @@ struct c_ContactResult c_TriMeshBvhCapsuleContact(struct arena *frame, const str
 	Vec3Translate(bbox_transform.hw, radius);
 
     mat3 bvh_rotation;
-    Mat3Quat(bvh_rotation, tf[0].rotation);
+    Mat3Quat(bvh_rotation, tf[0].rotation.buf);
 
     struct c_TriMeshBvhIterator it;
     c_TriMeshBvhIteratorAlloc(&it, mesh_bvh, &bbox_transform);
@@ -3145,9 +3145,9 @@ struct c_ContactResult c_TriMeshBvhCapsuleContact(struct arena *frame, const str
                     Mat3VecMul(tri[0], bvh_rotation, it.mesh->v[it.mesh->tri[c->tri][0]]);
                     Mat3VecMul(tri[1], bvh_rotation, it.mesh->v[it.mesh->tri[c->tri][1]]);
                     Mat3VecMul(tri[2], bvh_rotation, it.mesh->v[it.mesh->tri[c->tri][2]]);
-                    Vec3Translate(tri[0], tf[0].position); 
-                    Vec3Translate(tri[1], tf[0].position); 
-                    Vec3Translate(tri[2], tf[0].position); 
+                    Vec3Translate(tri[0], tf[0].position.buf); 
+                    Vec3Translate(tri[1], tf[0].position.buf); 
+                    Vec3Translate(tri[2], tf[0].position.buf); 
 
                     //ProfZoneNamed("TriCcwSegmentDistanceSquared");
                     const u32 robust = TriVoronoiInitCcw(&c->tv, tri);
@@ -3695,11 +3695,11 @@ struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct
      *                    = R*v_hull + T
      */
     quat q_R, q_inv;
-    QuatInverse(q_inv, tf[0].rotation);
-    QuatMul(q_R, q_inv, tf[1].rotation);
+    QuatInverse(q_inv, tf[0].rotation.buf);
+    QuatMul(q_R, q_inv, tf[1].rotation.buf);
 
     vec3 T;
-    Vec3Sub(T, tf[1].position, tf[0].position);
+    Vec3Sub(T, tf[1].position.buf, tf[0].position.buf);
     QuatVec3RotateSelf(T, q_inv);
 
     mat3 R;
@@ -3727,7 +3727,7 @@ struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct
 	Vec3Add(bbox_transform.center, min, bbox_transform.hw);
 
     mat3 bvh_rotation;
-    Mat3Quat(bvh_rotation, tf[0].rotation);
+    Mat3Quat(bvh_rotation, tf[0].rotation.buf);
 
     /* it.contact_count in this case counts real contacts + separation axes, so need an additional counter here */
     u32 true_contact_count = 0;
@@ -3820,7 +3820,7 @@ struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct
             u32 *t = result.tri + result.manifold_count;
             *t = c->tri;
             result.manifold_count += 1;
-            c_ManifoldTransform(m, &c->manifold, bvh_rotation, tf[0].position);
+            c_ManifoldTransform(m, &c->manifold, bvh_rotation, tf[0].position.buf);
 
             if (result.cache_count < g_numerics_config->cache_count_max)
             {
@@ -3855,7 +3855,7 @@ struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct
             result.manifold_count += 1;
 
             ds_Assert(c->manifold.v_count <= 2);
-            c_ManifoldTransform(m, &c->manifold, bvh_rotation, tf[0].position);
+            c_ManifoldTransform(m, &c->manifold, bvh_rotation, tf[0].position.buf);
 
             if (result.cache_count < g_numerics_config->cache_count_max)
             {
@@ -3885,7 +3885,7 @@ struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct
 f32 c_SphereRaycastParameter(const struct c_Shape *shape, const ds_Transform *transform, const struct ray *ray)
 {
 	ds_Assert(shape->type == C_SHAPE_SPHERE);
-	struct sphere sph = SphereConstruct(transform->position, shape->sphere.radius);
+	struct sphere sph = SphereConstruct(transform->position.buf, shape->sphere.radius);
 	return SphereRaycastParameter(&sph, ray);
 }
 
@@ -3910,18 +3910,18 @@ f32 c_HullRaycastParameter(const struct c_Shape *shape, const ds_Transform *tran
 
 	vec3 p;
 	mat3 rot;
-	Mat3Quat(rot, transform->rotation);
+	Mat3Quat(rot, transform->rotation.buf);
 	const struct dcel *h = &shape->hull;
 	f32 t_best = F32_INFINITY;
 
 	for (u32 fi = 0; fi < h->f_count; ++fi)
 	{
-		struct plane pl = DcelFacePlane(h, rot, transform->position, fi);
+		struct plane pl = DcelFacePlane(h, rot, transform->position.buf, fi);
 		const f32 t = PlaneRaycastParameter(&pl, ray);
 		if (t < t_best && t >= 0.0f)
 		{
 			RayPoint(p, ray, t);
-			if (DcelFaceProjectedPointTest(h, rot, transform->position, fi, p))
+			if (DcelFaceProjectedPointTest(h, rot, transform->position.buf, fi, p))
 			{
 				t_best = t;
 			}
@@ -3936,12 +3936,12 @@ f32 c_TriMeshBvhRaycastParameter(const struct c_Shape *shape, const ds_Transform
 	quat inv_quat;
 	mat3 inv_rot;
 	vec3 tmp;
-	QuatInverse(inv_quat, transform->rotation);
+	QuatInverse(inv_quat, transform->rotation.buf);
 	Mat3Quat(inv_rot, inv_quat);
 
 	const struct triMeshBvh *mesh_bvh = &shape->mesh_bvh;
 	struct ray rotated_ray;
-	Vec3Sub(tmp, ray->origin, transform->position);
+	Vec3Sub(tmp, ray->origin, transform->position.buf);
 	Mat3VecMul(rotated_ray.origin, inv_rot, tmp);
 	Mat3VecMul(rotated_ray.dir, inv_rot, ray->dir);
 

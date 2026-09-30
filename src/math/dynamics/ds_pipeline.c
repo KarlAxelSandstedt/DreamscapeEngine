@@ -1753,8 +1753,8 @@ u64 ds_DynamicsOrientationHash(const struct ds_Dynamics *pipeline)
 
         XXH3_64bits_update(state, &i, sizeof(u32));
         XXH3_64bits_update(state, &body->flags, sizeof(body->flags));
-        XXH3_64bits_update(state, sim->world.position, sizeof(vec3));
-        XXH3_64bits_update(state, sim->world.rotation, sizeof(quat));
+        XXH3_64bits_update(state, &sim->world.position, sizeof(v3));
+        XXH3_64bits_update(state, &sim->world.rotation, sizeof(q));
         if (body->set == SOLVER_SET_ACTIVE)
         {
             const struct ds_BodyCompute *compute = set->body_compute_pool.buf + body->sim;

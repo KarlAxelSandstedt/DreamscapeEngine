@@ -149,11 +149,11 @@ void ds_ShapeWorldTransform(ds_Transform *t, const struct ds_Dynamics *pipeline,
 	const struct ds_Body *body = pipeline->body_pool.buf + shape->body;
     const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
     const struct ds_BodySim *sim = set->body_sim_pool.buf + body->sim;
-    const q world_rotation = QLoad(sim->world.rotation);
+    const q world_rotation = sim->world.rotation;
     const m3 rot = M3Q(world_rotation);
 
-    QStore(t->rotation, QMul(world_rotation, QLoad(shape->t_local.rotation)));
-    V3Store(t->position, V3Add(M3V3Mul(rot, V3Load(shape->t_local.position)), V3Load(sim->world.position)));
+    t->rotation = QMul(world_rotation, shape->t_local.rotation);
+    t->position = V3Add(M3V3Mul(rot, shape->t_local.position), sim->world.position);
 }
 
 struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape)
@@ -165,8 +165,8 @@ struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct d
 
     ds_Transform t_world;
     ds_ShapeWorldTransform(&t_world, pipeline, shape);
-	const m3 rot = M3Q(QLoad(t_world.rotation));
-	const v3 world_position = V3Load(t_world.position);
+	const m3 rot = M3Q(t_world.rotation);
+	const v3 world_position = t_world.position;
 
 	if (shape->cshape_type == C_SHAPE_CONVEX_HULL)
 	{
@@ -197,8 +197,8 @@ struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct d
 		//TODO "We treat Tri meshes differently; a rigid body who has a tri mesh attached
 		// views the tri mesh triangles and its shapes. Thus such a rigid body treats its
 		// mesh shape to have position 0 and no rotation.
-        ds_Assert(V3Length(V3Load(shape->t_local.position)) == 0.0f);
-        ds_Assert(shape->t_local.rotation[3] == 1.0f);
+        ds_Assert(V3Length(shape->t_local.position) == 0.0f);
+        ds_Assert(shape->t_local.rotation.w == 1.0f);
 		const struct bvhNode *node = cshape->mesh_bvh.bvh.pool.buf;
 		mat3 rot_mat3;
 		M3Store(rot_mat3, rot);

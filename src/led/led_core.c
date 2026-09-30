@@ -175,7 +175,7 @@ void led_NodeSetPositionId(struct led *led, const utf8 id, const vec3 position)
 	}
 	else
 	{
-		Vec3Copy(node->transform.position, position);
+		Vec3Copy(node->transform.position.buf, position);
 	}
 }
 
@@ -188,7 +188,7 @@ void led_NodeSetPosition(struct led *led, const ds_Id id, const vec3 position)
 	}
 	else
 	{
-		Vec3Copy(node->transform.position, position);
+		Vec3Copy(node->transform.position.buf, position);
 	}
 }
 
@@ -267,8 +267,8 @@ static void led_NodeAttachRigidBodyPrefabInternal(struct led *led, const u32 nod
         .blend = node->blend,
 	};
     Vec4Copy(config.color, node->color);
-	Vec3Copy(config.position, node->transform.position);
-	QuatCopy(config.rotation, node->transform.rotation);
+	Vec3Copy(config.position, node->transform.position.buf);
+	QuatCopy(config.rotation, node->transform.rotation.buf);
 
     node->flags |= LED_BODY_PREFAB;
 	node->body_prefab = slot.index;
@@ -297,8 +297,8 @@ static void led_NodeAttachRigidBodyPrefabInternal(struct led *led, const u32 nod
 
 		config.mesh = render_mesh->id;
         config.parent = node->proxy;
-		Vec3Copy(config.position, child->transform.position);
-		QuatCopy(config.rotation, child->transform.rotation);
+		Vec3Copy(config.position, child->transform.position.buf);
+		QuatCopy(config.rotation, child->transform.rotation.buf);
 		child->proxy = r_Proxy3dAlloc(&config);
     }
 }
@@ -1116,7 +1116,7 @@ void led_RopeSetup(struct led *led)
     led_NodeAttachRigidBodyPrefab(led, rope_id[0], Utf8Inline("rb_ceil"));
     led_NodeSetColor(led, rope_id[0], floor_color, 1.0f);
     rope_t[0] = ds_TransformIdentity();
-    Vec3Sub(rope_t[0].position, ceil_transform, rope_base);
+    Vec3Sub(rope_t[0].position.buf, ceil_transform, rope_base);
 
     struct ds_DistanceJointPrefab prefab;
     ds_DistanceJointPrefabDefault(&prefab);
@@ -1128,7 +1128,7 @@ void led_RopeSetup(struct led *led)
 		Vec3Copy(translation, rope_base);
 		translation[1] -= i*2.0f*(rope_half_height+rope_radius);
         rope_t[i+1] = ds_TransformIdentity();
-        Vec3Set(rope_t[i+1].position, 0.0f, rope_half_height+rope_radius, 0.0f);
+        Vec3Set(rope_t[i+1].position.buf, 0.0f, rope_half_height+rope_radius, 0.0f);
 
 		id = Utf8Format(sys_win->ui->mem_frame, "rope_%u", i);
         rope_id[i+1] = led_NodeAdd(led, id, Utf8Empty());
@@ -1136,7 +1136,7 @@ void led_RopeSetup(struct led *led)
         led_NodeAttachRigidBodyPrefab(led, rope_id[i+1], Utf8Inline("rb_capsule"));
         led_NodeSetColor(led, rope_id[i+1], capsule_color, 1.0f);
         led_DistanceJointAdd(led, &prefab, rope_id[i], rope_t + i, rope_id[i+1], rope_t + i + 1, distance);
-        Vec3Set(rope_t[i+1].position, 0.0f, -rope_half_height+rope_radius, 0.0f);
+        Vec3Set(rope_t[i+1].position.buf, 0.0f, -rope_half_height+rope_radius, 0.0f);
 	}
 
 	vec3 floor_translation = { 0.0f, -ramp_width/2.0f - 1.0f, ramp_length / 2.0f -ramp_width/2.0f};
@@ -1345,38 +1345,38 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_dsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere"), &transform);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_ramp"), Utf8Inline("s_ramp"), Utf8Inline("l_s_ramp"), &transform);
 
-    Vec3Set(transform.position, 0.0f, 0.0f, 0.0f);
+    Vec3Set(transform.position.buf, 0.0f, 0.0f, 0.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multibox"), Utf8Inline("s_box"), Utf8Inline("l_s_box0"), &transform);
-    Vec3Set(transform.position, 2.0f, 0.0f, 0.0f);
+    Vec3Set(transform.position.buf, 2.0f, 0.0f, 0.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multibox"), Utf8Inline("s_box"), Utf8Inline("l_s_box1"), &transform);
-    Vec3Set(transform.position, 0.0f, 0.0f, 2.0f);
+    Vec3Set(transform.position.buf, 0.0f, 0.0f, 2.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multibox"), Utf8Inline("s_box"), Utf8Inline("l_s_box2"), &transform);
-    Vec3Set(transform.position, 2.0f, 0.0f, 2.0f);
+    Vec3Set(transform.position.buf, 2.0f, 0.0f, 2.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multibox"), Utf8Inline("s_box"), Utf8Inline("l_s_box3"), &transform);
-    Vec3Set(transform.position, 0.0f, 1.0f, 0.0f);
+    Vec3Set(transform.position.buf, 0.0f, 1.0f, 0.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multibox"), Utf8Inline("s_box"), Utf8Inline("l_s_box4"), &transform);
-    Vec3Set(transform.position, 2.0f, 1.0f, 0.0f);
+    Vec3Set(transform.position.buf, 2.0f, 1.0f, 0.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multibox"), Utf8Inline("s_box"), Utf8Inline("l_s_box5"), &transform);
-    Vec3Set(transform.position, 0.0f, 1.0f, 2.0f);
+    Vec3Set(transform.position.buf, 0.0f, 1.0f, 2.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multibox"), Utf8Inline("s_box"), Utf8Inline("l_s_box6"), &transform);
-    Vec3Set(transform.position, 2.0f, 1.0f, 2.0f);
+    Vec3Set(transform.position.buf, 2.0f, 1.0f, 2.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multibox"), Utf8Inline("s_box"), Utf8Inline("l_s_box7"), &transform);
 
-    Vec3Set(transform.position, 0.0f, 0.0f, 0.0f);
+    Vec3Set(transform.position.buf, 0.0f, 0.0f, 0.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere0"), &transform);
-    Vec3Set(transform.position, 2.0f, 0.0f, 0.0f);
+    Vec3Set(transform.position.buf, 2.0f, 0.0f, 0.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere1"), &transform);
-    Vec3Set(transform.position, 0.0f, 0.0f, 2.0f);
+    Vec3Set(transform.position.buf, 0.0f, 0.0f, 2.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere2"), &transform);
-    Vec3Set(transform.position, 2.0f, 0.0f, 2.0f);
+    Vec3Set(transform.position.buf, 2.0f, 0.0f, 2.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere3"), &transform);
-    Vec3Set(transform.position, 0.0f, 1.0f, 0.0f);
+    Vec3Set(transform.position.buf, 0.0f, 1.0f, 0.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere4"), &transform);
-    Vec3Set(transform.position, 2.0f, 1.0f, 0.0f);
+    Vec3Set(transform.position.buf, 2.0f, 1.0f, 0.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere5"), &transform);
-    Vec3Set(transform.position, 0.0f, 1.0f, 2.0f);
+    Vec3Set(transform.position.buf, 0.0f, 1.0f, 2.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere6"), &transform);
-    Vec3Set(transform.position, 2.0f, 1.0f, 2.0f);
+    Vec3Set(transform.position.buf, 2.0f, 1.0f, 2.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere7"), &transform);
 
 	vec3 floor_translation = { 0.0f, -ramp_width/2.0f - 1.0f, ramp_length / 2.0f -ramp_width/2.0f};
@@ -1403,7 +1403,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 	vec3 axis = { 0.6f, 1.0f, 0.6f };
 	Vec3ScaleSelf(axis, 1.0f / f32_sqrt(Vec3Length(axis)));
 	const f32 angle = F32_PI / 16.0f;
-	QuatAxisAngle(led_mesh->transform.rotation, axis, angle);
+	QuatAxisAngle(led_mesh->transform.rotation.buf, axis, angle);
 
     for (u32 i = 0; i < floor_count; ++i)
     {
@@ -1971,8 +1971,8 @@ static void led_EngineRun(struct led *led)
                         vec3 angular_velocity = { 0.0f, 0.0f, 0.0f };
                         const u64 ns = led->physics.ns_start + led->physics.frames_completed*led->physics.ns_tick; 
 
-	                	r_Proxy3dLinearSpeculationSet(sim->world.position
-	                			, sim->world.rotation
+	                	r_Proxy3dLinearSpeculationSet(sim->world.position.buf
+	                			, sim->world.rotation.buf
 	                			, linear_velocity
 	                			, angular_velocity
 	                			, ns 
@@ -2017,8 +2017,8 @@ static void led_EngineRun(struct led *led)
             const struct led_Node *node = led->node_hierarchy.pool.buf + body->entity;
             const u64 ns = led->physics.ns_start + led->physics.frames_completed*led->physics.ns_tick; 
 
-	    	r_Proxy3dLinearSpeculationSet(sim->world.position
-	    			, sim->world.rotation
+	    	r_Proxy3dLinearSpeculationSet(sim->world.position.buf
+	    			, sim->world.rotation.buf
 	    			, compute->linear_velocity.buf
 	    			, compute->angular_velocity.buf
 	    			, ns
@@ -2044,8 +2044,8 @@ static void led_EngineFlush(struct led *led)
 		struct led_Node *node = led->node_hierarchy.pool.buf + it.at;
         if (node->flags & LED_PROXY3D)
         {
-            r_Proxy3dLinearSpeculationSet(node->transform.position
-					, node->transform.rotation
+            r_Proxy3dLinearSpeculationSet(node->transform.position.buf
+					, node->transform.rotation.buf
 					, (vec3) { 0 } 
 					, (vec3) { 0 } 
 					, led->ns
