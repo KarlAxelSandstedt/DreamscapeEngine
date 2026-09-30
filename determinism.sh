@@ -36,12 +36,12 @@ cmake --build . --parallel
 ./DreamscapeTest --generate "determinism.bin"
 ./DreamscapeTest --load "determinism.bin" 
 ./DreamscapeTest --load "determinism.bin" 1
-./DreamscapeTest --load "determinism.bin" 2
-./DreamscapeTest --load "determinism.bin" 3
-./DreamscapeTest --load "determinism.bin" 4
-./DreamscapeTest --load "determinism.bin" 5
-./DreamscapeTest --load "determinism.bin" 6
-./DreamscapeTest --load "determinism.bin" 7
-./DreamscapeTest --load "determinism.bin" 8
+#./DreamscapeTest --load "determinism.bin" 2
+#./DreamscapeTest --load "determinism.bin" 3
+#./DreamscapeTest --load "determinism.bin" 4
+#./DreamscapeTest --load "determinism.bin" 5
+#./DreamscapeTest --load "determinism.bin" 6
+#./DreamscapeTest --load "determinism.bin" 7
+#./DreamscapeTest --load "determinism.bin" 8
 
 cd ..

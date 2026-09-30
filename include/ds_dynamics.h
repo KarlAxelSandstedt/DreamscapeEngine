@@ -698,10 +698,10 @@ Stores data needed for warming up the constraint in the next frame.
 */
 struct ds_ContactConstraintCache
 {
-	vec3 			        normal;                     /* Cached contact normal                */
-	vec3 			        tangent[2];                 /* Froms Contact basis with normal      */
-	vec3 			        r1[4];			            /* previous local frame arm levers      */
-    vec3                    r2[4];                   
+	v3 			        normal;                     /* Cached contact normal                */
+	v3 			        tangent[2];                 /* Froms Contact basis with normal      */
+	v3 			        r1[4];			            /* previous local frame arm levers      */
+    v3                      r2[4];                   
 	f32 			        tangent_impulse[4][2];
 	f32 			        normal_impulse[4];	        /* contact_solver solution to contact 
                                                            constraint, or 0.0f                  */
@@ -964,8 +964,8 @@ Individual constraint point within a contact constraint.
 */
 struct ds_ContactConstraintPoint 
 {
-    vec3    v;                  /* contact point                                */
-    vec3    r[2];               /* levers: body center to contact_point         */
+    v3      v;                  /* contact point                                */
+    v3      r[2];               /* levers: body center to contact_point         */
 	f32 	normal_impulse;	    /* Normal impulse produced by the contact       */
 	f32	    velocity_bias;	    /* scale of velocity_bias along contact normal  */
 	f32	    normal_mass;	    /* 1.0f / row(J,i)*Inv(M)*J^T                   */
@@ -988,8 +988,8 @@ struct ds_ContactConstraint
 	struct ds_ContactConstraintPoint ccp[4];
 
 	/* contact base axes */
-	vec3 	normal;		/* Currently shared contact manifold normal between all point constraints */
-	vec3	tangent[2];	/* normalized friction directions of contact */
+	v3 	normal;		/* Currently shared contact manifold normal between all point constraints */
+	v3	tangent[2];	/* normalized friction directions of contact */
 
 	f32	    restitution;	/* Range[0.0f, 1.0f] : higher => bouncy */
 	f32	    friction;	/* TODO: friction = f32_max(b1->friction, b2->friction) */
