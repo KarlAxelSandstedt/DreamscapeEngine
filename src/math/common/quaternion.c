@@ -100,9 +100,10 @@ f32 QuatNorm(const quat q)
 
 void QuatInverse(quat inv, const quat q)
 {
-	f32 norm_2_inv = 1.0f / QuatNorm(q);
+	/* q^-1 = conj(q) / |q|^2 */
+	const f32 norm_sq_inv = 1.0f / (q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3]);
 	QuatConj(inv, q);
-	QuatScale(inv, norm_2_inv);
+	QuatScale(inv, norm_sq_inv);
 }
 
 void QuatNormalize(quat q)

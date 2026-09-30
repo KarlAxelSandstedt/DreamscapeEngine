@@ -34,77 +34,77 @@ extern "C" {
 
 static ds_ForceInline v2 V2Zero(void)
 {
-	return v2(0.0f, 0.0f);
+	return V2(0.0f, 0.0f);
 }
 
 static ds_ForceInline v3 V3Zero(void)
 {
-	return v3(0.0f, 0.0f, 0.0f);
+	return V3(0.0f, 0.0f, 0.0f);
 }
 
 static ds_ForceInline v4 V4Zero(void)
 {
-	return v4(0.0f, 0.0f, 0.0f, 0.0f);
+	return V4(0.0f, 0.0f, 0.0f, 0.0f);
 }
 
 static ds_ForceInline v2u32 V2U32Zero(void)
 {
-	return v2u32(0, 0);
+	return V2U32(0, 0);
 }
 
 static ds_ForceInline v3u32 V3U32Zero(void)
 {
-	return v3u32(0, 0, 0);
+	return V3U32(0, 0, 0);
 }
 
 static ds_ForceInline v4u32 V4U32Zero(void)
 {
-	return v4u32(0, 0, 0, 0);
+	return V4U32(0, 0, 0, 0);
 }
 
 static ds_ForceInline v2u64 V2U64Zero(void)
 {
-	return v2u64(0, 0);
+	return V2U64(0, 0);
 }
 
 static ds_ForceInline v3u64 V3U64Zero(void)
 {
-	return v3u64(0, 0, 0);
+	return V3U64(0, 0, 0);
 }
 
 static ds_ForceInline v4u64 V4U64Zero(void)
 {
-	return v4u64(0, 0, 0, 0);
+	return V4U64(0, 0, 0, 0);
 }
 
 static ds_ForceInline v2i32 V2I32Zero(void)
 {
-	return v2i32(0, 0);
+	return V2I32(0, 0);
 }
 
 static ds_ForceInline v3i32 V3I32Zero(void)
 {
-	return v3i32(0, 0, 0);
+	return V3I32(0, 0, 0);
 }
 
 static ds_ForceInline v4i32 V4I32Zero(void)
 {
-	return v4i32(0, 0, 0, 0);
+	return V4I32(0, 0, 0, 0);
 }
 
 static ds_ForceInline v2i64 V2I64Zero(void)
 {
-	return v2i64(0, 0);
+	return V2I64(0, 0);
 }
 
 static ds_ForceInline v3i64 V3I64Zero(void)
 {
-	return v3i64(0, 0, 0);
+	return V3I64(0, 0, 0);
 }
 
 static ds_ForceInline v4i64 V4I64Zero(void)
 {
-	return v4i64(0, 0, 0, 0);
+	return V4I64(0, 0, 0, 0);
 }
 
 static inline void V2Print(const char *text, const v2 v)
@@ -184,188 +184,188 @@ static inline void V4I64Print(const char *text, const v4i64 v)
 
 static ds_ForceInline v2 V2Add(const v2 a, const v2 b)
 {
-	return v2(a.x + b.x, a.y + b.y);
+	return V2(a.x + b.x, a.y + b.y);
 }
 
 static ds_ForceInline v3 V3Add(const v3 a, const v3 b)
 {
-	return v3(a.x + b.x, a.y + b.y, a.z + b.z);
+	return V3(a.x + b.x, a.y + b.y, a.z + b.z);
 }
 
 static ds_ForceInline v4 V4Add(const v4 a, const v4 b)
 {
-	return v4(a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w);
+	return V4(a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w);
 }
 
 /* a - b */
 static ds_ForceInline v2 V2Sub(const v2 a, const v2 b)
 {
-	return v2(a.x - b.x, a.y - b.y);
+	return V2(a.x - b.x, a.y - b.y);
 }
 
 static ds_ForceInline v3 V3Sub(const v3 a, const v3 b)
 {
-	return v3(a.x - b.x, a.y - b.y, a.z - b.z);
+	return V3(a.x - b.x, a.y - b.y, a.z - b.z);
 }
 
 static ds_ForceInline v4 V4Sub(const v4 a, const v4 b)
 {
-	return v4(a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w);
+	return V4(a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w);
 }
 
 static ds_ForceInline v2 V2Mul(const v2 a, const v2 b)
 {
-	return v2(a.x * b.x, a.y * b.y);
+	return V2(a.x * b.x, a.y * b.y);
 }
 
 static ds_ForceInline v3 V3Mul(const v3 a, const v3 b)
 {
-	return v3(a.x * b.x, a.y * b.y, a.z * b.z);
+	return V3(a.x * b.x, a.y * b.y, a.z * b.z);
 }
 
 static ds_ForceInline v4 V4Mul(const v4 a, const v4 b)
 {
-	return v4(a.x * b.x, a.y * b.y, a.z * b.z, a.w * b.w);
+	return V4(a.x * b.x, a.y * b.y, a.z * b.z, a.w * b.w);
 }
 
 /* a / b */
 static ds_ForceInline v2 V2Div(const v2 a, const v2 b)
 {
-	return v2(a.x / b.x, a.y / b.y);
+	return V2(a.x / b.x, a.y / b.y);
 }
 
 static ds_ForceInline v3 V3Div(const v3 a, const v3 b)
 {
-	return v3(a.x / b.x, a.y / b.y, a.z / b.z);
+	return V3(a.x / b.x, a.y / b.y, a.z / b.z);
 }
 
 static ds_ForceInline v4 V4Div(const v4 a, const v4 b)
 {
-	return v4(a.x / b.x, a.y / b.y, a.z / b.z, a.w / b.w);
+	return V4(a.x / b.x, a.y / b.y, a.z / b.z, a.w / b.w);
 }
 
 static ds_ForceInline v2 V2Scale(const v2 a, const f32 scale)
 {
-	return v2(scale * a.x, scale * a.y);
+	return V2(scale * a.x, scale * a.y);
 }
 
 static ds_ForceInline v3 V3Scale(const v3 a, const f32 scale)
 {
-	return v3(scale * a.x, scale * a.y, scale * a.z);
+	return V3(scale * a.x, scale * a.y, scale * a.z);
 }
 
 static ds_ForceInline v4 V4Scale(const v4 a, const f32 scale)
 {
-	return v4(scale * a.x, scale * a.y, scale * a.z, scale * a.w);
+	return V4(scale * a.x, scale * a.y, scale * a.z, scale * a.w);
 }
 
 /* a + scale*b */
 static ds_ForceInline v2 V2AddScaled(const v2 a, const v2 b, const f32 scale)
 {
-	return v2(a.x + scale * b.x, a.y + scale * b.y);
+	return V2(a.x + scale * b.x, a.y + scale * b.y);
 }
 
 static ds_ForceInline v3 V3AddScaled(const v3 a, const v3 b, const f32 scale)
 {
-	return v3(a.x + scale * b.x, a.y + scale * b.y, a.z + scale * b.z);
+	return V3(a.x + scale * b.x, a.y + scale * b.y, a.z + scale * b.z);
 }
 
 static ds_ForceInline v4 V4AddScaled(const v4 a, const v4 b, const f32 scale)
 {
-	return v4(a.x + scale * b.x, a.y + scale * b.y, a.z + scale * b.z, a.w + scale * b.w);
+	return V4(a.x + scale * b.x, a.y + scale * b.y, a.z + scale * b.z, a.w + scale * b.w);
 }
 
 static ds_ForceInline v2 V2AddConstant(const v2 a, const f32 c)
 {
-	return v2(a.x + c, a.y + c);
+	return V2(a.x + c, a.y + c);
 }
 
 static ds_ForceInline v3 V3AddConstant(const v3 a, const f32 c)
 {
-	return v3(a.x + c, a.y + c, a.z + c);
+	return V3(a.x + c, a.y + c, a.z + c);
 }
 
 static ds_ForceInline v4 V4AddConstant(const v4 a, const f32 c)
 {
-	return v4(a.x + c, a.y + c, a.z + c, a.w + c);
+	return V4(a.x + c, a.y + c, a.z + c, a.w + c);
 }
 
 static ds_ForceInline v2 V2Negate(const v2 a)
 {
-	return v2(-a.x, -a.y);
+	return V2(-a.x, -a.y);
 }
 
 static ds_ForceInline v3 V3Negate(const v3 a)
 {
-	return v3(-a.x, -a.y, -a.z);
+	return V3(-a.x, -a.y, -a.z);
 }
 
 static ds_ForceInline v4 V4Negate(const v4 a)
 {
-	return v4(-a.x, -a.y, -a.z, -a.w);
+	return V4(-a.x, -a.y, -a.z, -a.w);
 }
 
 static ds_ForceInline v2 V2Abs(const v2 a)
 {
-	return v2(F32Abs(a.x), F32Abs(a.y));
+	return V2(F32Abs(a.x), F32Abs(a.y));
 }
 
 static ds_ForceInline v3 V3Abs(const v3 a)
 {
-	return v3(F32Abs(a.x), F32Abs(a.y), F32Abs(a.z));
+	return V3(F32Abs(a.x), F32Abs(a.y), F32Abs(a.z));
 }
 
 static ds_ForceInline v4 V4Abs(const v4 a)
 {
-	return v4(F32Abs(a.x), F32Abs(a.y), F32Abs(a.z), F32Abs(a.w));
+	return V4(F32Abs(a.x), F32Abs(a.y), F32Abs(a.z), F32Abs(a.w));
 }
 
 /* min[i] = F32Min(a[i], b[i]) */
 static ds_ForceInline v2 V2Min(const v2 a, const v2 b)
 {
-	return v2(F32Min(a.x, b.x), F32Min(a.y, b.y));
+	return V2(F32Min(a.x, b.x), F32Min(a.y, b.y));
 }
 
 static ds_ForceInline v3 V3Min(const v3 a, const v3 b)
 {
-	return v3(F32Min(a.x, b.x), F32Min(a.y, b.y), F32Min(a.z, b.z));
+	return V3(F32Min(a.x, b.x), F32Min(a.y, b.y), F32Min(a.z, b.z));
 }
 
 static ds_ForceInline v4 V4Min(const v4 a, const v4 b)
 {
-	return v4(F32Min(a.x, b.x), F32Min(a.y, b.y), F32Min(a.z, b.z), F32Min(a.w, b.w));
+	return V4(F32Min(a.x, b.x), F32Min(a.y, b.y), F32Min(a.z, b.z), F32Min(a.w, b.w));
 }
 
 /* max[i] = F32Max(a[i], b[i]) */
 static ds_ForceInline v2 V2Max(const v2 a, const v2 b)
 {
-	return v2(F32Max(a.x, b.x), F32Max(a.y, b.y));
+	return V2(F32Max(a.x, b.x), F32Max(a.y, b.y));
 }
 
 static ds_ForceInline v3 V3Max(const v3 a, const v3 b)
 {
-	return v3(F32Max(a.x, b.x), F32Max(a.y, b.y), F32Max(a.z, b.z));
+	return V3(F32Max(a.x, b.x), F32Max(a.y, b.y), F32Max(a.z, b.z));
 }
 
 static ds_ForceInline v4 V4Max(const v4 a, const v4 b)
 {
-	return v4(F32Max(a.x, b.x), F32Max(a.y, b.y), F32Max(a.z, b.z), F32Max(a.w, b.w));
+	return V4(F32Max(a.x, b.x), F32Max(a.y, b.y), F32Max(a.z, b.z), F32Max(a.w, b.w));
 }
 
 /* interpolate (alpha = 0.5f) */
 static ds_ForceInline v2 V2Mix(const v2 a, const v2 b)
 {
-	return v2(0.5f * (a.x + b.x), 0.5f * (a.y + b.y));
+	return V2(0.5f * (a.x + b.x), 0.5f * (a.y + b.y));
 }
 
 static ds_ForceInline v3 V3Mix(const v3 a, const v3 b)
 {
-	return v3(0.5f * (a.x + b.x), 0.5f * (a.y + b.y), 0.5f * (a.z + b.z));
+	return V3(0.5f * (a.x + b.x), 0.5f * (a.y + b.y), 0.5f * (a.z + b.z));
 }
 
 static ds_ForceInline v4 V4Mix(const v4 a, const v4 b)
 {
-	return v4(0.5f * (a.x + b.x), 0.5f * (a.y + b.y), 0.5f * (a.z + b.z), 0.5f * (a.w + b.w));
+	return V4(0.5f * (a.x + b.x), 0.5f * (a.y + b.y), 0.5f * (a.z + b.z), 0.5f * (a.w + b.w));
 }
 
 static ds_ForceInline f32 V2Dot(const v2 a, const v2 b)
@@ -461,20 +461,20 @@ static ds_ForceInline f32 V4Distance(const v4 a, const v4 b)
 /* a * alpha + b * (1-alpha) */
 static ds_ForceInline v2 V2Interpolate(const v2 a, const v2 b, const f32 alpha)
 {
-	return v2(a.x * alpha + b.x * (1.0f - alpha),
+	return V2(a.x * alpha + b.x * (1.0f - alpha),
 		  a.y * alpha + b.y * (1.0f - alpha));
 }
 
 static ds_ForceInline v3 V3Interpolate(const v3 a, const v3 b, const f32 alpha)
 {
-	return v3(a.x * alpha + b.x * (1.0f - alpha),
+	return V3(a.x * alpha + b.x * (1.0f - alpha),
 		  a.y * alpha + b.y * (1.0f - alpha),
 		  a.z * alpha + b.z * (1.0f - alpha));
 }
 
 static ds_ForceInline v4 V4Interpolate(const v4 a, const v4 b, const f32 alpha)
 {
-	return v4(a.x * alpha + b.x * (1.0f - alpha),
+	return V4(a.x * alpha + b.x * (1.0f - alpha),
 		  a.y * alpha + b.y * (1.0f - alpha),
 		  a.z * alpha + b.z * (1.0f - alpha),
 		  a.w * alpha + b.w * (1.0f - alpha));
@@ -482,20 +482,20 @@ static ds_ForceInline v4 V4Interpolate(const v4 a, const v4 b, const f32 alpha)
 
 static ds_ForceInline v2 V2InterpolatePiecewise(const v2 a, const v2 b, const v2 alpha)
 {
-	return v2(a.x * alpha.x + b.x * (1.0f - alpha.x),
+	return V2(a.x * alpha.x + b.x * (1.0f - alpha.x),
 		  a.y * alpha.y + b.y * (1.0f - alpha.y));
 }
 
 static ds_ForceInline v3 V3InterpolatePiecewise(const v3 a, const v3 b, const v3 alpha)
 {
-	return v3(a.x * alpha.x + b.x * (1.0f - alpha.x),
+	return V3(a.x * alpha.x + b.x * (1.0f - alpha.x),
 		  a.y * alpha.y + b.y * (1.0f - alpha.y),
 		  a.z * alpha.z + b.z * (1.0f - alpha.z));
 }
 
 static ds_ForceInline v4 V4InterpolatePiecewise(const v4 a, const v4 b, const v4 alpha)
 {
-	return v4(a.x * alpha.x + b.x * (1.0f - alpha.x),
+	return V4(a.x * alpha.x + b.x * (1.0f - alpha.x),
 		  a.y * alpha.y + b.y * (1.0f - alpha.y),
 		  a.z * alpha.z + b.z * (1.0f - alpha.z),
 		  a.w * alpha.w + b.w * (1.0f - alpha.w));
@@ -504,7 +504,7 @@ static ds_ForceInline v4 V4InterpolatePiecewise(const v4 a, const v4 b, const v4
 /* a cross b */
 static ds_ForceInline v3 V3Cross(const v3 a, const v3 b)
 {
-	return v3(a.y * b.z - a.z * b.y,
+	return V3(a.y * b.z - a.z * b.y,
 		  a.z * b.x - a.x * b.z,
 		  a.x * b.y - a.y * b.x);
 }
@@ -526,7 +526,7 @@ static ds_ForceInline v3 V3RotateY(const v3 a, const f32 angle)
 {
 	const f32 c = F32Cos(angle);
 	const f32 s = F32Sin(angle);
-	return v3(c * a.x + s * a.z, a.y, c * a.z - s * a.x);
+	return V3(c * a.x + s * a.z, a.y, c * a.z - s * a.x);
 }
 
 /* 
@@ -555,8 +555,8 @@ static ds_ForceInline void V3CreateBasis(v3 *n1, v3 *n2, const v3 n3)
 
 	const f32 inv_sqrt2 = 1.0f / F32Sqrt(2.0f);
 	const v3 t = (F32Abs(n3.z) < inv_sqrt2)
-		? v3(-n3.y, n3.x, 0.0f)
-		: v3(0.0f, -n3.z, n3.y);
+		? V3(-n3.y, n3.x, 0.0f)
+		: V3(0.0f, -n3.z, n3.y);
 
 	*n1 = V3Cross(n3, t);
 	*n1 = V3Scale(*n1, 1.0f / V3Length(*n1));

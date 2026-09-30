@@ -100,6 +100,21 @@ struct slot
 typedef f32 quat[4];
 typedef f32 (*quatptr)[4];
 
+/* { x, y, z, w }, w is real part */
+typedef union q
+{
+	struct 
+    { 
+        f32 x;
+        f32 y; 
+        f32 z; 
+        f32 w; 
+    };
+	f32 buf[4];
+} q;
+
+#define Q(_x, _y, _z, _w)	((q) { .x = (_x), .y = (_y), .z = (_z), .w = (_w) })
+
 typedef f32 vec2[2];
 typedef f32 vec3[3];
 typedef f32 vec4[4];
@@ -309,25 +324,25 @@ typedef union v4i64
 	i64 buf[4];
 } v4i64;
 
-#define v2(_x, _y)	((v2) { .x = (_x), .y = (_y) })
-#define v3(_x, _y, _z)	((v3) { .x = (_x), .y = (_y), .z = (_z) })
-#define v4(_x, _y, _z, _w)	((v4) { .x = (_x), .y = (_y), .z = (_z), .w = (_w) })
+#define V2(_x, _y)	((v2) { .x = (_x), .y = (_y) })
+#define V3(_x, _y, _z)	((v3) { .x = (_x), .y = (_y), .z = (_z) })
+#define V4(_x, _y, _z, _w)	((v4) { .x = (_x), .y = (_y), .z = (_z), .w = (_w) })
 
-#define v2u32(_x, _y)	((v2u32) { .x = (_x), .y = (_y) })
-#define v3u32(_x, _y, _z)	((v3u32) { .x = (_x), .y = (_y), .z = (_z) })
-#define v4u32(_x, _y, _z, _w)	((v4u32) { .x = (_x), .y = (_y), .z = (_z), .w = (_w) })
+#define V2U32(_x, _y)	((v2u32) { .x = (_x), .y = (_y) })
+#define V3U32(_x, _y, _z)	((v3u32) { .x = (_x), .y = (_y), .z = (_z) })
+#define V4U32(_x, _y, _z, _w)	((v4u32) { .x = (_x), .y = (_y), .z = (_z), .w = (_w) })
 
-#define v2u64(_x, _y)	((v2u64) { .x = (_x), .y = (_y) })
-#define v3u64(_x, _y, _z)	((v3u64) { .x = (_x), .y = (_y), .z = (_z) })
-#define v4u64(_x, _y, _z, _w)	((v4u64) { .x = (_x), .y = (_y), .z = (_z), .w = (_w) })
+#define V2U64(_x, _y)	((v2u64) { .x = (_x), .y = (_y) })
+#define V3U64(_x, _y, _z)	((v3u64) { .x = (_x), .y = (_y), .z = (_z) })
+#define V4U64(_x, _y, _z, _w)	((v4u64) { .x = (_x), .y = (_y), .z = (_z), .w = (_w) })
 
-#define v2i32(_x, _y)	((v2i32) { .x = (_x), .y = (_y) })
-#define v3i32(_x, _y, _z)	((v3i32) { .x = (_x), .y = (_y), .z = (_z) })
-#define v4i32(_x, _y, _z, _w)	((v4i32) { .x = (_x), .y = (_y), .z = (_z), .w = (_w) })
+#define V2I32(_x, _y)	((v2i32) { .x = (_x), .y = (_y) })
+#define V3I32(_x, _y, _z)	((v3i32) { .x = (_x), .y = (_y), .z = (_z) })
+#define V4I32(_x, _y, _z, _w)	((v4i32) { .x = (_x), .y = (_y), .z = (_z), .w = (_w) })
 
-#define v2i64(_x, _y)	((v2i64) { .x = (_x), .y = (_y) })
-#define v3i64(_x, _y, _z)	((v3i64) { .x = (_x), .y = (_y), .z = (_z) })
-#define v4i64(_x, _y, _z, _w)	((v4i64) { .x = (_x), .y = (_y), .z = (_z), .w = (_w) })
+#define V2I64(_x, _y)	((v2i64) { .x = (_x), .y = (_y) })
+#define V3I64(_x, _y, _z)	((v3i64) { .x = (_x), .y = (_y), .z = (_z) })
+#define V4I64(_x, _y, _z, _w)	((v4i64) { .x = (_x), .y = (_y), .z = (_z), .w = (_w) })
 
 typedef vec2 mat2[2];
 typedef vec3 mat3[3];
