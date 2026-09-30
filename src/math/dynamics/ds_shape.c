@@ -17,6 +17,12 @@
 ==========================================================================
 */
 
+#include "ds_float.h"
+#include "ds_vector.h"
+#include "ds_quaternion.h"
+#include "ds_matrix.h"
+#include "ds_math_bridge.h"
+
 POOL_DEFINE(ds_Shape);
 SDB_DEFINE(ds_ShapePrefab);
 POOL_DEFINE(ds_ShapePrefabInstance);
@@ -71,7 +77,7 @@ ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab
 	struct aabb bbox_proxy = ds_ShapeWorldBbox(pipeline, shape);
     if (ds_BodyDynamicCheck(body))
     {
-		Vec3Translate(bbox_proxy.hw, Vec3Inline(shape->margin, shape->margin, shape->margin));
+		V3Store(bbox_proxy.hw, V3AddConstant(V3Load(bbox_proxy.hw), shape->margin));
         ds_BitSetSet(&pipeline->shape_dynamic_usage_set, shape_slot.index, 1);
         ds_BitSetSet(&pipeline->shape_dirty_set, shape_slot.index, 1);
         shape->proxy = DbvhInsert(&pipeline->dynamic_bvh, shape->body, shape_slot.index, &bbox_proxy);
@@ -143,90 +149,73 @@ void ds_ShapeWorldTransform(ds_Transform *t, const struct ds_Dynamics *pipeline,
 	const struct ds_Body *body = pipeline->body_pool.buf + shape->body;
     const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
     const struct ds_BodySim *sim = set->body_sim_pool.buf + body->sim;
-    mat3 rot;
-    Mat3Quat(rot, sim->world.rotation);
+    const q world_rotation = QLoad(sim->world.rotation);
+    const m3 rot = M3Q(world_rotation);
 
-    QuatMul(t->rotation, sim->world.rotation, shape->t_local.rotation);
-    Mat3VecMul(t->position, rot, shape->t_local.position);
-    Vec3Translate(t->position, sim->world.position);
+    QStore(t->rotation, QMul(world_rotation, QLoad(shape->t_local.rotation)));
+    V3Store(t->position, V3Add(M3V3Mul(rot, V3Load(shape->t_local.position)), V3Load(sim->world.position)));
 }
 
 struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape)
 {
-	vec3 min = { F32_INFINITY, F32_INFINITY, F32_INFINITY };
-	vec3 max = { -F32_INFINITY, -F32_INFINITY, -F32_INFINITY };
+	v3 min = V3(F32_INFINITY, F32_INFINITY, F32_INFINITY);
+	v3 max = V3(-F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
 
 	const struct ds_Body *body = pipeline->body_pool.buf + shape->body;
     const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
     const struct ds_BodySim *sim = set->body_sim_pool.buf + body->sim;
 	const struct c_Shape *cshape = pipeline->cshape_db->pool.buf + shape->cshape_handle;
 
-    mat3 rot;
     ds_Transform t_world;
     ds_ShapeWorldTransform(&t_world, pipeline, shape);
-	Mat3Quat(rot, t_world.rotation);
+	const m3 rot = M3Q(QLoad(t_world.rotation));
+	const v3 world_position = V3Load(t_world.position);
 
-	vec3 v, tmp;
 	if (shape->cshape_type == C_SHAPE_CONVEX_HULL)
 	{
 		for (u32 i = 0; i < cshape->hull.v_count; ++i)
 		{
-			Mat3VecMul(v, rot, cshape->hull.v[i]);
-			Vec3Translate(v, t_world.position);
-
-			min[0] = f32_min(min[0], v[0]); 
-			min[1] = f32_min(min[1], v[1]);			
-			min[2] = f32_min(min[2], v[2]);			
-                                                   
-			max[0] = f32_max(max[0], v[0]);			
-			max[1] = f32_max(max[1], v[1]);			
-			max[2] = f32_max(max[2], v[2]);			
+			const v3 v = V3Add(M3V3Mul(rot, V3Load(cshape->hull.v[i])), world_position);
+			min = V3Min(min, v);
+			max = V3Max(max, v);
 		}
 	}
 	else if (shape->cshape_type == C_SHAPE_SPHERE)
 	{
 		const f32 r = cshape->sphere.radius;
-		Vec3Set(min, -r, -r, -r);
-		Vec3Set(max, r, r, r);
-		Vec3Translate(min, shape->t_local.position);
-		Vec3Translate(max, shape->t_local.position);
-		Vec3Translate(min, sim->world.position);
-		Vec3Translate(max, sim->world.position);
+		min = V3Add(V3Add(V3(-r, -r, -r), V3Load(shape->t_local.position)), V3Load(sim->world.position));
+		max = V3Add(V3Add(V3(r, r, r), V3Load(shape->t_local.position)), V3Load(sim->world.position));
 	}
 	else if (shape->cshape_type == C_SHAPE_CAPSULE)
 	{
-		tmp[0] = 0.0f;	
-		tmp[1] = cshape->capsule.half_height;	
-		tmp[2] = 0.0f;	
-		Mat3VecMul(v, rot, tmp);
+		const v3 v = M3V3Mul(rot, V3(0.0f, cshape->capsule.half_height, 0.0f));
+		max = V3AddConstant(V3Abs(v), cshape->capsule.radius);
+		min = V3Negate(max);
 
-		Vec3Abs(max, v);
-		Vec3AddConstant(max, cshape->capsule.radius);
-		Vec3Negate(min, max);
-
-		Vec3Translate(min, t_world.position);
-		Vec3Translate(max, t_world.position);
+		min = V3Add(min, world_position);
+		max = V3Add(max, world_position);
 	}
 	else if (shape->cshape_type == C_SHAPE_TRI_MESH)
 	{
 		//TODO "We treat Tri meshes differently; a rigid body who has a tri mesh attached
 		// views the tri mesh triangles and its shapes. Thus such a rigid body treats its
 		// mesh shape to have position 0 and no rotation.
-        ds_Assert(Vec3Length(shape->t_local.position) == 0.0f);
+        ds_Assert(V3Length(V3Load(shape->t_local.position)) == 0.0f);
         ds_Assert(shape->t_local.rotation[3] == 1.0f);
 		const struct bvhNode *node = cshape->mesh_bvh.bvh.pool.buf;
-		struct aabb bbox; 
-		AabbRotate(&bbox, &node[cshape->mesh_bvh.bvh.bt.root].bbox, rot);
-		Vec3Scale(min, bbox.hw, -1.0f);
-		Vec3Scale(max, bbox.hw, 1.0f);
-		Vec3Translate(min, t_world.position);
-		Vec3Translate(max, t_world.position);
+		mat3 rot_mat3;
+		M3Store(rot_mat3, rot);
+		struct aabb bbox;
+		AabbRotate(&bbox, &node[cshape->mesh_bvh.bvh.bt.root].bbox, rot_mat3);
+		const v3 hw = V3Load(bbox.hw);
+		min = V3Add(V3Negate(hw), world_position);
+		max = V3Add(hw, world_position);
 	}
 
+	const v3 hw = V3Scale(V3Sub(max, min), 0.5f);
 	struct aabb bbox;
-	Vec3Sub(bbox.hw, max, min);
-	Vec3ScaleSelf(bbox.hw, 0.5f);
-	Vec3Add(bbox.center, min, bbox.hw);
+	V3Store(bbox.hw, hw);
+	V3Store(bbox.center, V3Add(min, hw));
 	return bbox;
 }
 
@@ -352,7 +341,6 @@ u32 ds_ShapeRaycast(vec3 intersection, const struct ds_Dynamics *pipeline, const
 	const f32 t = ds_ShapeRaycastParameter(pipeline, shape, ray);
 	if (t == F32_INFINITY) return 0;
 
-	Vec3Copy(intersection, ray->origin);
-	Vec3TranslateScaled(intersection, ray->dir, t);
+	V3Store(intersection, V3AddScaled(V3Load(ray->origin), V3Load(ray->dir), t));
 	return 1;
 }

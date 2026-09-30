@@ -1267,7 +1267,7 @@ enum ds_RebuildJobType
 
 struct ds_RebuildLeaf 
 {
-    vec3    center;
+    v3      center;
     u32     index;
 };
 
@@ -1284,9 +1284,9 @@ struct ds_RebuildRange
 struct ds_RebuildThreadCompute
 {
     u32     count[2];
-    vec3    min[2];
-    vec3    max[2];
-    u8      pad[DS_CACHE_LINE - 2*sizeof(u32) - 4*sizeof(vec3)];
+    v3      min[2];
+    v3      max[2];
+    u8      pad[DS_CACHE_LINE - 2*sizeof(u32) - 4*sizeof(v3)];
 };
 
 struct ds_RebuildJob

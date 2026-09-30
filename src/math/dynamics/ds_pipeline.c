@@ -21,6 +21,9 @@
 #include <string.h>
 
 #include "float32.h"
+#include "ds_float.h"
+#include "ds_vector.h"
+#include "ds_math_bridge.h"
 #include "ds_job.h"
 
 POOL_DEFINE(ds_PhysicsEvent);
@@ -754,10 +757,10 @@ static void ds_RebuildThreadComputeInit(struct ds_RebuildThreadCompute *t)
 {
     t->count[0] = 0;
     t->count[1] = 0;
-    Vec3Set(t->min[0], F32_INFINITY, F32_INFINITY, F32_INFINITY);
-    Vec3Set(t->max[0], -F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
-    Vec3Set(t->min[1], F32_INFINITY, F32_INFINITY, F32_INFINITY);
-    Vec3Set(t->max[1], -F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
+    t->min[0] = V3(F32_INFINITY, F32_INFINITY, F32_INFINITY);
+    t->max[0] = V3(-F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
+    t->min[1] = V3(F32_INFINITY, F32_INFINITY, F32_INFINITY);
+    t->max[1] = V3(-F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
 }
 
 static struct ds_RebuildRange ds_RebuildRangeInit(const u32 node_index, const u32 base, const u32 count, const u32 axis, const f32 pivot)
@@ -823,32 +826,31 @@ static u32 ds_RebuildJobPush(struct ds_RebuildJobPhase *phase, const struct ds_R
     return job_pushed;
 }
 
-static void ds_RebuildLeafSetMinMax(vec3 min, vec3 max, const struct ds_RebuildLeaf *base, const u32 count)
+static void ds_RebuildLeafSetMinMax(v3 *min, v3 *max, const struct ds_RebuildLeaf *base, const u32 count)
 {
-	Vec3Set(min, F32_INFINITY, F32_INFINITY, F32_INFINITY);
-	Vec3Set(max, -F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
+	*min = V3(F32_INFINITY, F32_INFINITY, F32_INFINITY);
+	*max = V3(-F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
 	for (u32 i = 0; i < count; ++i)
 	{
-        Vec3MinSelf(min, base[i].center);
-        Vec3MaxSelf(max, base[i].center);
+        *min = V3Min(*min, base[i].center);
+        *max = V3Max(*max, base[i].center);
 	}
 }
 
-static void ds_RebuildAxisPivot(u32 axis[2], f32 pivot[2], const vec3 min[2], const vec3 max[2])
+static void ds_RebuildAxisPivot(u32 axis[2], f32 pivot[2], const v3 min[2], const v3 max[2])
 {
     for (u32 i = 0; i < 2; ++i)
     {
-        vec3 diff;
-        Vec3Sub(diff, max[i], min[i]);
+        const v3 diff = V3Sub(max[i], min[i]);
         axis[i] = 0;
         for (u32 a = 1; a < 3; ++a)
         {
-            if (diff[axis[i]] < diff[a])
+            if (diff.buf[axis[i]] < diff.buf[a])
             {
                 axis[i] = a;
             }
         }
-        pivot[i] = min[i][axis[i]] + diff[axis[i]] / 2.0f;
+        pivot[i] = min[i].buf[axis[i]] + diff.buf[axis[i]] / 2.0f;
     }
 }
 
@@ -897,9 +899,9 @@ static u32 ds_RebuildJobSetup(const u32 job_index)
                 node->bbox.hw[0] += shape->margin;
                 node->bbox.hw[1] += shape->margin;
                 node->bbox.hw[2] += shape->margin;
-                Vec3Copy(leaf->center, node->bbox.center);
-                Vec3MinSelf(thread->min[0], node->bbox.center);
-                Vec3MaxSelf(thread->max[0], node->bbox.center);
+                leaf->center = V3Load(node->bbox.center);
+                thread->min[0] = V3Min(thread->min[0], leaf->center);
+                thread->max[0] = V3Max(thread->max[0], leaf->center);
             }
         }
 
@@ -910,22 +912,22 @@ static u32 ds_RebuildJobSetup(const u32 job_index)
     u32 lock = 0;
     if (AtomicCompareExchangeRlxRlx32(&phase->a_setup_completed, &lock, U32_MAX))
     {
-        vec3 min[2] = 
+        v3 min[2] = 
         {
-            { F32_INFINITY, F32_INFINITY, F32_INFINITY },
-            { F32_INFINITY, F32_INFINITY, F32_INFINITY },
+            V3(F32_INFINITY, F32_INFINITY, F32_INFINITY),
+            V3(F32_INFINITY, F32_INFINITY, F32_INFINITY),
         };
     
-        vec3 max[2] = 
+        v3 max[2] = 
         {
-            { -F32_INFINITY, -F32_INFINITY, -F32_INFINITY },
-            { -F32_INFINITY, -F32_INFINITY, -F32_INFINITY },
+            V3(-F32_INFINITY, -F32_INFINITY, -F32_INFINITY),
+            V3(-F32_INFINITY, -F32_INFINITY, -F32_INFINITY),
         };
     
         for (u32 t = 0; t < phase->setup_job_length; ++t)
         {
-            Vec3MinSelf(min[0], phase->setup_compute[t].min[0]);
-            Vec3MaxSelf(max[0], phase->setup_compute[t].max[0]);
+            min[0] = V3Min(min[0], phase->setup_compute[t].min[0]);
+            max[0] = V3Max(max[0], phase->setup_compute[t].max[0]);
         }
 
         u32 axis[2];
@@ -989,34 +991,34 @@ static u32 ds_RebuildJobRange(const u32 job_index)
         {
             while (low < high)
             {
-                if (leaf[low].center[range->axis] >= range->pivot)
+                if (leaf[low].center.buf[range->axis] >= range->pivot)
                 {
                     break;
                 }
 
-                Vec3MinSelf(t.min[0], leaf[low].center);
-                Vec3MaxSelf(t.max[0], leaf[low].center);
+                t.min[0] = V3Min(t.min[0], leaf[low].center);
+                t.max[0] = V3Max(t.max[0], leaf[low].center);
                 low += 1;
             }
 
             while (low < high)
             {
-                if (leaf[high-1].center[range->axis] < range->pivot)
+                if (leaf[high-1].center.buf[range->axis] < range->pivot)
                 {
                     const struct ds_RebuildLeaf tmp = leaf[low];
                     leaf[low] = leaf[high-1];
                     leaf[high-1] = tmp;
-                    Vec3MinSelf(t.min[0], leaf[low].center);
-                    Vec3MaxSelf(t.max[0], leaf[low].center);
-                    Vec3MinSelf(t.min[1], leaf[high-1].center);
-                    Vec3MaxSelf(t.max[1], leaf[high-1].center);
+                    t.min[0] = V3Min(t.min[0], leaf[low].center);
+                    t.max[0] = V3Max(t.max[0], leaf[low].center);
+                    t.min[1] = V3Min(t.min[1], leaf[high-1].center);
+                    t.max[1] = V3Max(t.max[1], leaf[high-1].center);
                     low += 1;
                     high -= 1;
                     break;
                 }
 
-                Vec3MinSelf(t.min[1], leaf[high-1].center);
-                Vec3MaxSelf(t.max[1], leaf[high-1].center);
+                t.min[1] = V3Min(t.min[1], leaf[high-1].center);
+                t.max[1] = V3Max(t.max[1], leaf[high-1].center);
                 high -= 1;
             }
         }
@@ -1027,8 +1029,8 @@ static u32 ds_RebuildJobRange(const u32 job_index)
         {
             t.count[0] = (range->high - range->low) / 2;
             t.count[1] = range->high - range->low - t.count[0];
-            ds_RebuildLeafSetMinMax(t.min[0], t.max[0], leaf + range->low, t.count[0]);
-            ds_RebuildLeafSetMinMax(t.min[1], t.max[1], leaf + range->low + t.count[0], t.count[1]);
+            ds_RebuildLeafSetMinMax(&t.min[0], &t.max[0], leaf + range->low, t.count[0]);
+            ds_RebuildLeafSetMinMax(&t.min[1], &t.max[1], leaf + range->low + t.count[0], t.count[1]);
         }
  
         const u32 parent = range->internal_index;
@@ -1498,7 +1500,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
             {
                 body->low_velocity_time = 0.0f;
             }
-			min_low_velocity_time = f32_min(min_low_velocity_time, body->low_velocity_time);
+			min_low_velocity_time = F32Min(min_low_velocity_time, body->low_velocity_time);
         }
 
         /* integrate final solver velocities and update bodies and find lowest low_velocity time */
