@@ -137,7 +137,7 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 
 	struct c_Shape *cshape_stub = g_editor->cs_db.pool.buf + SDB_STUB;
 	cshape_stub->type = C_SHAPE_CONVEX_HULL;
-	cshape_stub->hull = DcelBox(&sys_win->mem_persistent, Vec3Inline(0.5f, 0.5f, 0.5f));
+	cshape_stub->hull = DcelBox(&sys_win->mem_persistent, V3(0.5f, 0.5f, 0.5f));
 	c_ShapeUpdateMassProperties(cshape_stub);
 
     struct ds_ShapePrefab *shape_stub = g_editor->shape_prefab_db.pool.buf + SDB_STUB;

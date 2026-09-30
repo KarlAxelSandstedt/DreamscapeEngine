@@ -429,7 +429,7 @@ struct slot led_CollisionBoxAdd(struct led *led, const utf8 id, const vec3 hw)
 		{
 			.id = id, 
 			.type = C_SHAPE_CONVEX_HULL,
-			.hull = DcelBox(&led->mem_persistent, hw), 
+			.hull = DcelBox(&led->mem_persistent, V3Load(hw)), 
 		};
 
 		slot = led_CollisionShapeAdd(led, &shape);
@@ -1262,12 +1262,12 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_CollisionSphereAdd(led, id, 0.5f);
 
 	struct dcel *c_ramp = ArenaPush(&sys_win->mem_persistent, sizeof(struct dcel));
-	*c_ramp = DcelConvexHull(&sys_win->mem_persistent, ramp_vertices, 6, F32_EPSILON * 100.0f);
+	*c_ramp = DcelConvexHull(&sys_win->mem_persistent, (v3 *) ramp_vertices, 6, F32_EPSILON * 100.0f);
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_ramp");
     led_CollisionDcelAdd(led, id, c_ramp);
 
 	struct dcel *c_dsphere = ArenaPush(&sys_win->mem_persistent, sizeof(struct dcel));
-	*c_dsphere = DcelConvexHull(&sys_win->mem_persistent, dsphere_vertices, dsphere_v_count, F32_EPSILON * 100.0f);
+	*c_dsphere = DcelConvexHull(&sys_win->mem_persistent, (v3 *) dsphere_vertices, dsphere_v_count, F32_EPSILON * 100.0f);
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_dsphere");
     led_CollisionDcelAdd(led, id, c_dsphere);
 

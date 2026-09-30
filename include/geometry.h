@@ -378,35 +378,35 @@ struct dcel     DcelTriStub(void);
 /* return dcel box stub */
 struct dcel 	DcelBoxStub(void);
 /* return arena allocated dcel box with given half widths */
-struct dcel 	DcelBox(struct arena *mem, const vec3 hw);
+struct dcel 	DcelBox(struct arena *mem, const v3 hw);
 /* return arena allocated dcel convex hull of input points. On failure, an empty dcel is returned. */
-struct dcel 	DcelConvexHull(struct arena *mem, constvec3ptr v, const u32 v_count, const f32 tol);
+struct dcel 	DcelConvexHull(struct arena *mem, const v3 *v, const u32 v_count, const f32 tol);
 /* Return support of dcel in given direction, and return supporting vertex index */
-u32		        DcelSupport(vec3 support, const vec3 dir, const struct dcel *hull, mat3 rot, const vec3 pos);
+u32		        DcelSupport(v3 *support, const v3 dir, const struct dcel *hull, const m3 rot, const v3 pos);
 
 /* Return the transformed plane defined by the given face */
-struct plane 	DcelFacePlane(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi);
+struct plane 	DcelFacePlane(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi);
 /* Return the plane defined by the given face */
 struct plane 	DcelFacePlaneLocal(const struct dcel *h, const u32 fi);
 
 /* Return the transformed normal defined by the given face */
-void 		    DcelFaceNormal(vec3 normal, const struct dcel *h, mat3 rot, const u32 fi);
+v3 		    DcelFaceNormal(const struct dcel *h, const m3 rot, const u32 fi);
 /* Return the transformed normal drirection defined by the given face */
-void 		    DcelFaceDirection(vec3 normal_direction, const struct dcel *h, mat3 rot, const u32 fi);
+v3 		    DcelFaceDirection(const struct dcel *h, const m3 rot, const u32 fi);
 /* Return the normal defined by the given face */
-void 		    DcelFaceNormalLocal(vec3 normal, const struct dcel *h, const u32 fi);
+v3 		    DcelFaceNormalLocal(const struct dcel *h, const u32 fi);
 /* Return the normal drirection defined by the given face */
-void 		    DcelFaceDirectionLocal(vec3 normal_direction, const struct dcel *h, const u32 fi);
+v3 		    DcelFaceDirectionLocal(const struct dcel *h, const u32 fi);
 
-struct plane 	DcelFaceClipPlane(const struct dcel *h, mat3 rot, const vec3 pos, const vec3 face_normal, const u32 e0, const u32 e1); /* Return clip plane of face containing edge e0e1, orthogonal to the face normal */
+struct plane 	DcelFaceClipPlane(const struct dcel *h, const m3 rot, const v3 pos, const v3 face_normal, const u32 e0, const u32 e1); /* Return clip plane of face containing edge e0e1, orthogonal to the face normal */
 
 /* TODO: document, go through ... */
-struct segment 	DcelFaceClipSegment(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi, const struct segment *s); /* clip segment against face fi's edge-planes (No projection onto face plane!) */
-u32 		DcelFaceProjectedPointTest(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi, const vec3 p); /* Project p onto face plane and test if it is on the face */
+struct segment 	DcelFaceClipSegment(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi, const struct segment *s); /* clip segment against face fi's edge-planes (No projection onto face plane!) */
+u32 		DcelFaceProjectedPointTest(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi, const v3 p); /* Project p onto face plane and test if it is on the face */
 
-void 		DcelEdgeNormal(vec3 dir, const struct dcel *h, const u32 ei);
-void 		DcelEdgeDirection(vec3 dir, const struct dcel *h, const u32 ei);
-struct segment 	DcelEdgeSegment(const struct dcel *h, mat3 rot, const vec3 pos, const u32 ei);
+v3 		DcelEdgeNormal(const struct dcel *h, const u32 ei);
+v3 		DcelEdgeDirection(const struct dcel *h, const u32 ei);
+struct segment 	DcelEdgeSegment(const struct dcel *h, const m3 rot, const v3 pos, const u32 ei);
 
 void 		DcelAssertTopology(struct dcel *dcel);
 

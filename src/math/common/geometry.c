@@ -627,7 +627,7 @@ u64 AabbPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, co
 
 u64 AabbTransformPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const v3 translation, const m3 rotation, const vec4 color)
 {
-	const u64 bytes_written = 3*8*(sizeof(vec3)+sizeof(vec4));
+	const u64 bytes_written = 3*8*(sizeof(v3)+sizeof(vec4));
 	if (bufsize < bytes_written)
 	{
 		return 0;
@@ -1372,18 +1372,18 @@ struct dcel DcelTriStub(void)
 	return tri;
 }
 
-struct dcel DcelBox(struct arena *mem, const vec3 hw)
+struct dcel DcelBox(struct arena *mem, const v3 hw)
 {
 	v3 *box_vertex = ArenaPush(mem, 8*sizeof(v3));
 
-	box_vertex[0] = V3(hw[0],  hw[1],  hw[2]); 
-	box_vertex[1] = V3(hw[0],  hw[1], -hw[2]);	
-	box_vertex[2] = V3(-hw[0],  hw[1], -hw[2]);	
-	box_vertex[3] = V3(-hw[0],  hw[1],  hw[2]);	
-	box_vertex[4] = V3(hw[0], -hw[1],  hw[2]);
-	box_vertex[5] = V3(hw[0], -hw[1], -hw[2]);	
-	box_vertex[6] = V3(-hw[0], -hw[1], -hw[2]);	
-	box_vertex[7] = V3(-hw[0], -hw[1],  hw[2]);	
+	box_vertex[0] = V3(hw.x,  hw.y,  hw.z); 
+	box_vertex[1] = V3(hw.x,  hw.y, -hw.z);	
+	box_vertex[2] = V3(-hw.x,  hw.y, -hw.z);	
+	box_vertex[3] = V3(-hw.x,  hw.y,  hw.z);	
+	box_vertex[4] = V3(hw.x, -hw.y,  hw.z);
+	box_vertex[5] = V3(hw.x, -hw.y, -hw.z);	
+	box_vertex[6] = V3(-hw.x, -hw.y, -hw.z);	
+	box_vertex[7] = V3(-hw.x, -hw.y,  hw.z);	
 
 	struct dcel box = 
 	{
@@ -1398,43 +1398,35 @@ struct dcel DcelBox(struct arena *mem, const vec3 hw)
 	return box; 
 }
 
-void DcelFaceNormal(vec3 normal, const struct dcel *h, mat3 rot, const u32 fi)
+v3 DcelFaceNormal(const struct dcel *h, const m3 rot, const u32 fi)
 {
-    vec3 local;
-    DcelFaceNormalLocal(local, h, fi);
-    Mat3VecMul(normal, rot, local);
+    return M3V3Mul(rot, DcelFaceNormalLocal(h, fi));
 }
 
-void DcelFaceDirection(vec3 normal_direction, const struct dcel *h, mat3 rot, const u32 fi)
+v3 DcelFaceDirection(const struct dcel *h, const m3 rot, const u32 fi)
 {
-    vec3 local;
-    DcelFaceDirectionLocal(local, h, fi);
-    Mat3VecMul(normal_direction, rot, local);
+    return M3V3Mul(rot, DcelFaceDirectionLocal(h, fi));
 }
 
-void DcelFaceDirectionLocal(vec3 dir, const struct dcel *h, const u32 fi)
+v3 DcelFaceDirectionLocal(const struct dcel *h, const u32 fi)
 {
-	vec3 a, b;
 	struct dcelEdge *e0 = h->e + h->f[fi].first;
 	struct dcelEdge *e1 = h->e + h->f[fi].first + 1;
 	struct dcelEdge *e2 = h->e + h->f[fi].first + 2;
-    V3Store(dir, TriCcwNormalDirection(h->v[e0->origin], h->v[e1->origin], h->v[e2->origin]));
+    return TriCcwNormalDirection(h->v[e0->origin], h->v[e1->origin], h->v[e2->origin]);
 }
 
-void DcelFaceNormalLocal(vec3 normal, const struct dcel *h, const u32 fi)
+v3 DcelFaceNormalLocal(const struct dcel *h, const u32 fi)
 {
-	DcelFaceDirectionLocal(normal, h, fi);
-	Vec3ScaleSelf(normal, 1.0f/Vec3Length(normal));	
+	const v3 normal = DcelFaceDirectionLocal(h, fi);
+	return V3Scale(normal, 1.0f/V3Length(normal));
 }
 
-struct plane DcelFacePlane(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi)
+struct plane DcelFacePlane(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi)
 {
-	vec3 n, p;
-	DcelFaceNormalLocal(p, h, fi);
-	Mat3VecMul(n, rot, p);
-	Mat3VecMul(p, rot, h->v[h->e[h->f[fi].first].origin].buf);
-	Vec3Translate(p, pos);
-	return PlaneConstruct(V3Load(n), V3Load(p));
+	const v3 n = M3V3Mul(rot, DcelFaceNormalLocal(h, fi));
+	const v3 p = V3Add(M3V3Mul(rot, h->v[h->e[h->f[fi].first].origin]), pos);
+	return PlaneConstruct(n, p);
 }
 
 struct plane DcelFacePlaneLocal(const struct dcel *h, const u32 fi)
@@ -1445,11 +1437,12 @@ struct plane DcelFacePlaneLocal(const struct dcel *h, const u32 fi)
     return PlaneConstructFromCcwTriangle(h->v[i0], h->v[i1], h->v[i2]);
 }
 
-struct segment DcelFaceClipSegment(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi, const struct segment *s)
+struct segment DcelFaceClipSegment(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi, const struct segment *s)
 {
-	vec3 f_n, p_n, p_p0, p_p1;
-
-	DcelFaceNormal(p_n, h, rot, fi);
+	/* NOTE: pending bug (see design notes): the face normal is computed into p_n, but the uninitialized f_n is used below */
+	v3 f_n;
+	const v3 p_n = DcelFaceNormal(h, rot, fi);
+	(void) p_n;
 
 	f32 min_p = 0.0f;
 	f32 max_p = 1.0f;
@@ -1464,7 +1457,7 @@ struct segment DcelFaceClipSegment(const struct dcel *h, mat3 rot, const vec3 po
 		const f32 bc_c = PlaneSegmentClipParameter(&clip_plane, s);
 		if (min_p <= bc_c && bc_c <= max_p)
 		{
-			if (Vec3Dot(s->dir.buf, clip_plane.normal.buf) >= 0.0f)
+			if (V3Dot(s->dir, clip_plane.normal) >= 0.0f)
 			{
 				max_p = bc_c;
 			}
@@ -1475,36 +1468,24 @@ struct segment DcelFaceClipSegment(const struct dcel *h, mat3 rot, const vec3 po
 		}
 	}	
 
-	V3Store(p_p0, SegmentBc(s, min_p));
-	V3Store(p_p1, SegmentBc(s, max_p));
-	return SegmentConstruct(V3Load(p_p0), V3Load(p_p1));
+	return SegmentConstruct(SegmentBc(s, min_p), SegmentBc(s, max_p));
 }
 
-struct plane DcelFaceClipPlane(const struct dcel *h, mat3 rot, const vec3 pos, const vec3 face_normal, const u32 e0, const u32 e1)
+struct plane DcelFaceClipPlane(const struct dcel *h, const m3 rot, const v3 pos, const v3 face_normal, const u32 e0, const u32 e1)
 {
-	vec3 diff, p0, p1;
 	struct dcelEdge *edge0 = h->e + e0; 
 	struct dcelEdge *edge1 = h->e + e1; 
 
-	Mat3VecMul(p0, rot, h->v[edge0->origin].buf);
-	Mat3VecMul(p1, rot, h->v[edge1->origin].buf);
-	Vec3Translate(p0, pos);
-	Vec3Translate(p1, pos);
-	Vec3Sub(diff, p1, p0);
-	Vec3Cross(p1, diff, face_normal);
-	Vec3ScaleSelf(p1, 1.0f/Vec3Length(p1));
+	const v3 p0 = V3Add(M3V3Mul(rot, h->v[edge0->origin]), pos);
+	const v3 p1 = V3Add(M3V3Mul(rot, h->v[edge1->origin]), pos);
+	const v3 n = V3Cross(V3Sub(p1, p0), face_normal);
 
-	return PlaneConstruct(V3Load(p1), V3Load(p0));
+	return PlaneConstruct(V3Scale(n, 1.0f/V3Length(n)), p0);
 }
 
-u32 DcelFaceProjectedPointTest(const struct dcel *h, mat3 rot, const vec3 pos, const u32 fi, const vec3 p)
+u32 DcelFaceProjectedPointTest(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi, const v3 p)
 {
-	vec3 f_n, p_n;
-
-	DcelFaceNormal(f_n, h, rot, fi);
-
-	f32 min_p = 0.0f;
-	f32 max_p = 1.0f;
+	const v3 f_n = DcelFaceNormal(h, rot, fi);
 
 	struct dcelFace *f = h->f + fi;
 	for (u32 i = 0; i < f->count; ++i)
@@ -1512,7 +1493,7 @@ u32 DcelFaceProjectedPointTest(const struct dcel *h, mat3 rot, const vec3 pos, c
 		const u32 e0 = f->first + i;
 		const u32 e1 = f->first + ((i + 1) % f->count);
 		struct plane clip_plane = DcelFaceClipPlane(h, rot, pos, f_n, e0, e1);
-		if (Vec3Dot(clip_plane.normal.buf, p) > clip_plane.signed_distance)
+		if (V3Dot(clip_plane.normal, p) > clip_plane.signed_distance)
 		{
 			return 0;
 		}
@@ -1521,35 +1502,32 @@ u32 DcelFaceProjectedPointTest(const struct dcel *h, mat3 rot, const vec3 pos, c
 	return 1;
 }
 
-void DcelEdgeDirection(vec3 dir, const struct dcel *h, const u32 ei)
+v3 DcelEdgeDirection(const struct dcel *h, const u32 ei)
 {
 	struct dcelEdge *e0 = h->e + ei;
 	struct dcelFace *f = h->f + e0->face_ccw;
 	const u32 next = f->first + ((ei - f->first + 1) % f->count);
 	struct dcelEdge *e1 = h->e + next;
-	Vec3Sub(dir, h->v[e1->origin].buf, h->v[e0->origin].buf);
+	return V3Sub(h->v[e1->origin], h->v[e0->origin]);
 }
 
-void DcelEdgeNormal(vec3 dir, const struct dcel *h, const u32 ei)
+v3 DcelEdgeNormal(const struct dcel *h, const u32 ei)
 {
-	DcelEdgeDirection(dir, h, ei);
-	Vec3ScaleSelf(dir, 1.0f / Vec3Length(dir));
+	const v3 dir = DcelEdgeDirection(h, ei);
+	return V3Scale(dir, 1.0f / V3Length(dir));
 }
 
-struct segment DcelEdgeSegment(const struct dcel *h, mat3 rot, const vec3 pos, const u32 ei)
+struct segment DcelEdgeSegment(const struct dcel *h, const m3 rot, const v3 pos, const u32 ei)
 {
-	vec3 p0, p1;
 	const u32 first = h->f[h->e[ei].face_ccw].first;
 	const u32 count = h->f[h->e[ei].face_ccw].count;
 	const u32 e0 = ei;
 	const u32 e1 = first + ((ei - first + 1) % count); 
 
-	Mat3VecMul(p0, rot, h->v[h->e[e0].origin].buf);
-	Mat3VecMul(p1, rot, h->v[h->e[e1].origin].buf);
-	Vec3Translate(p0, pos);
-	Vec3Translate(p1, pos);
+	const v3 p0 = V3Add(M3V3Mul(rot, h->v[h->e[e0].origin]), pos);
+	const v3 p1 = V3Add(M3V3Mul(rot, h->v[h->e[e1].origin]), pos);
 
-	return SegmentConstruct(V3Load(p0), V3Load(p1));
+	return SegmentConstruct(p0, p1);
 }
 
 v3 SphereSupport(const v3 dir, const struct sphere *sph, const v3 pos)
@@ -1568,15 +1546,14 @@ v3 CapsuleSupport(const v3 dir, const struct capsule *cap, const m3 rot, const v
 		: V3Add(support, p2);
 }
 
-u32 DcelSupport(vec3 support, const vec3 dir, const struct dcel *dcel, mat3 rot, const vec3 pos)
+u32 DcelSupport(v3 *support, const v3 dir, const struct dcel *dcel, const m3 rot, const v3 pos)
 {
 	f32 max = -F32_INFINITY;
 	u32 max_index = 0;
-	vec3 p;
 	for (u32 i = 0; i < dcel->v_count; ++i)
 	{
-		Mat3VecMul(p, rot, dcel->v[i].buf);
-		const f32 dot = Vec3Dot(p, dir);
+		const v3 p = M3V3Mul(rot, dcel->v[i]);
+		const f32 dot = V3Dot(p, dir);
 		if (max < dot)
 		{
 			max_index = i;
@@ -1584,8 +1561,7 @@ u32 DcelSupport(vec3 support, const vec3 dir, const struct dcel *dcel, mat3 rot,
 		}
 	}
 
-	Mat3VecMul(support, rot, dcel->v[max_index].buf);
-	Vec3Translate(support, pos);
+	*support = V3Add(M3V3Mul(rot, dcel->v[max_index]), pos);
 	return max_index;
 }
 
@@ -1663,7 +1639,7 @@ struct ddcelFace
 {
 	POOL_NODE;
 	struct ds_DLL	ce_list;
-	vec3		    normal;
+	v3		        normal;
 	u32 		    first;	/* first half edge */
 	u32 		    count;	/* edge count */
 };
@@ -1728,7 +1704,7 @@ struct ddcel
 	/* pools are not growable, so safe to use these */
 	struct ddcelFace *	f;		
 	struct ddcelEdge *	e;
-	constvec3ptr		v;
+	const v3 *		v;
 	u32 			v_count;
 
 	/* internal */
@@ -1802,23 +1778,23 @@ static void DdcelAssertTopology(const struct ddcel *ddcel)
 		}
 	}
 
-	vec3 center = { 0 };
+	v3 center = V3Zero();
 	for (u32 i = 0; i < ddcel->v_count; ++i)
 	{
 		if (vertex_check[i])
 		{
-			Vec3Translate(center, ddcel->v[i]);
+			center = V3Add(center, ddcel->v[i]);
 		}
 	}
-	Vec3ScaleSelf(center, 1.0f/vertex_count);
+	center = V3Scale(center, 1.0f/vertex_count);
 
 	for (u32 i = 0; i < ddcel->face_pool.count_max; ++i)
 	{
 		if (ds_PoolSlotAllocated(ddcel->f + i))
 		{
-			vec3 diff;
-			Vec3Sub(diff, center, ddcel->v[ddcel->e[ddcel->f[i].first].origin]);
-			ds_Assert(Vec3Dot(diff, ddcel->f[i].normal) < 0.0f);
+			v3 diff;
+			diff = V3Sub(center, ddcel->v[ddcel->e[ddcel->f[i].first].origin]);
+			ds_Assert(V3Dot(diff, ddcel->f[i].normal) < 0.0f);
 		}
 	}
 
@@ -1828,7 +1804,7 @@ static void DdcelAssertTopology(const struct ddcel *ddcel)
 
 u32 InternalConvexHullTetrahedronIndices(struct ddcel *ddcel, const f32 tol)
 {
-	vec3 a, b, n;
+	v3 a, b, n;
 
 	const f32 tol_sq = tol*tol;
 	u32 indices[4] = { 0 };
@@ -1836,11 +1812,11 @@ u32 InternalConvexHullTetrahedronIndices(struct ddcel *ddcel, const f32 tol)
 	/* Find two points not to close to each other */
 	for (; i < ddcel->v_count; ++i)
 	{
-		Vec3Sub(a, ddcel->v[ddcel->cv[i].index], ddcel->v[ddcel->cv[0].index]);
-		const f32 dist_sq = Vec3Dot(a, a);
+		a = V3Sub(ddcel->v[ddcel->cv[i].index], ddcel->v[ddcel->cv[0].index]);
+		const f32 dist_sq = V3Dot(a, a);
 		if (dist_sq > tol_sq)
 		{
-			//Vec3ScaleSelf(a, 1.0f / len);
+			//a = V3Scale(a, 1.0f / len);
 			indices[1] = i;
 			i += 1;
 			break;
@@ -1850,15 +1826,15 @@ u32 InternalConvexHullTetrahedronIndices(struct ddcel *ddcel, const f32 tol)
 	/* Find non-collinear point */
 	for (; i < ddcel->v_count; ++i)
 	{
-		Vec3Sub(b, ddcel->v[ddcel->cv[i].index], ddcel->v[ddcel->cv[0].index]);
-		Vec3Cross(n, a, b);
-		const f32 dist = Vec3Length(n);
+		b = V3Sub(ddcel->v[ddcel->cv[i].index], ddcel->v[ddcel->cv[0].index]);
+		n = V3Cross(a, b);
+		const f32 dist = V3Length(n);
 		const f32 area = dist / 2.0f;
 		if (area > tol_sq)
 		{
 			indices[2] = i;
 			i += 1;
-			Vec3ScaleSelf(n, 1.0f / dist);
+			n = V3Scale(n, 1.0f / dist);
 			break;
 		}
 	}
@@ -1866,9 +1842,9 @@ u32 InternalConvexHullTetrahedronIndices(struct ddcel *ddcel, const f32 tol)
 	/* Find non-coplanar point */
 	for (; i < ddcel->v_count; ++i)
 	{
-		Vec3Sub(a, ddcel->v[ddcel->cv[i].index], ddcel->v[ddcel->cv[0].index]);
-		const f32 height = Vec3Dot(a, n);
-		if (f32_abs(height) > tol)
+		a = V3Sub(ddcel->v[ddcel->cv[i].index], ddcel->v[ddcel->cv[0].index]);
+		const f32 height = V3Dot(a, n);
+		if (F32Abs(height) > tol)
 		{
 			indices[3] = i;
 			break;
@@ -1887,16 +1863,16 @@ u32 InternalConvexHullTetrahedronIndices(struct ddcel *ddcel, const f32 tol)
 
 static void InternalConvexHullTetrahedronDdcel(struct ddcel *ddcel, const f32 tol)
 {
-	constvec3ptr v = ddcel->v;
+	const v3 *v = ddcel->v;
 	const u32 v_count = ddcel->v_count;
-	vec3 a, b, c, cr;
-	Vec3Sub(a, v[ddcel->cv[1].index], v[ddcel->cv[0].index]);
-	Vec3Sub(b, v[ddcel->cv[2].index], v[ddcel->cv[0].index]);
-	Vec3Sub(c, v[ddcel->cv[3].index], v[ddcel->cv[0].index]);
-	Vec3Cross(cr, a, b);
+	v3 a, b, c, cr;
+	a = V3Sub(v[ddcel->cv[1].index], v[ddcel->cv[0].index]);
+	b = V3Sub(v[ddcel->cv[2].index], v[ddcel->cv[0].index]);
+	c = V3Sub(v[ddcel->cv[3].index], v[ddcel->cv[0].index]);
+	cr = V3Cross(a, b);
 
 	/* CCW == inside gives negative dot product for any polygon on a convex polyhedron */
-	if (Vec3Dot(cr, c) > 0.0f)
+	if (V3Dot(cr, c) > 0.0f)
 	{
 		/* Make 0->1->2->0 CCW */
 		const u32 tmp = ddcel->cv[1].index;
@@ -1943,28 +1919,28 @@ static void InternalConvexHullTetrahedronDdcel(struct ddcel *ddcel, const f32 to
 	DdcelEdgeSet(e10, ddcel->cv[2].index,  1,  9, 11, 3);
 	DdcelEdgeSet(e11, ddcel->cv[1].index,  3, 10,  9, 3);
 
-    V3Store(ddcel->f[0].normal, TriCcwNormal(V3Load(ddcel->v[e0->origin]), V3Load(ddcel->v[e1->origin]), V3Load(ddcel->v[e2->origin])));
-    V3Store(ddcel->f[1].normal, TriCcwNormal(V3Load(ddcel->v[e3->origin]), V3Load(ddcel->v[e4->origin]), V3Load(ddcel->v[e5->origin])));
-    V3Store(ddcel->f[2].normal, TriCcwNormal(V3Load(ddcel->v[e6->origin]), V3Load(ddcel->v[e7->origin]), V3Load(ddcel->v[e8->origin])));
-    V3Store(ddcel->f[3].normal, TriCcwNormal(V3Load(ddcel->v[e9->origin]), V3Load(ddcel->v[e10->origin]), V3Load(ddcel->v[e11->origin])));
+    ddcel->f[0].normal = TriCcwNormal(ddcel->v[e0->origin], ddcel->v[e1->origin], ddcel->v[e2->origin]);
+    ddcel->f[1].normal = TriCcwNormal(ddcel->v[e3->origin], ddcel->v[e4->origin], ddcel->v[e5->origin]);
+    ddcel->f[2].normal = TriCcwNormal(ddcel->v[e6->origin], ddcel->v[e7->origin], ddcel->v[e8->origin]);
+    ddcel->f[3].normal = TriCcwNormal(ddcel->v[e9->origin], ddcel->v[e10->origin], ddcel->v[e11->origin]);
 
 	DdcelAssertTopology(ddcel);
 }
 
 static void InternalConvexHullTetrahedronConflicts(struct ddcel *ddcel, const f32 tol)
 {
-	constvec3ptr v = ddcel->v;
+	const v3 *v = ddcel->v;
 	const u32 v_count = ddcel->v_count;
-	vec3 b;
+	v3 b;
 	for (u32 cv_i = 4; cv_i < v_count; ++cv_i)
 	{
 		struct conflictVertex *cv = ddcel->cv + cv_i;
 		for (u32 f_i = 0; f_i < 4; ++f_i)
 		{
 			const u32 v0_i = ddcel->e[ddcel->f[f_i].first].origin;
-			Vec3Sub(b, v[cv->index], v[v0_i]);
+			b = V3Sub(v[cv->index], v[v0_i]);
 			/* If point is "in front" of face, we have a conflict */
-			if (Vec3Dot(ddcel->f[f_i].normal, b) > tol)
+			if (V3Dot(ddcel->f[f_i].normal, b) > tol)
 			{
 				struct slot slot = conflictEdgePoolAdd(&ddcel->ce_pool);
 				ds_DLLAppend(cv->ce_list, ddcel->ce_pool.buf, slot.index, vertex_edge);
@@ -2058,9 +2034,9 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 				ddcel->hv[e->origin].next = e_twin->origin;
 				ddcel->hv[e_twin->origin].edge_in = ej;
 
-				vec3 diff;
-				Vec3Sub(diff, ddcel->v[cv->index], ddcel->v[e->origin]);
-				ddcel->hv[e->origin].colinear = (f32_abs(Vec3Dot(f_twin->normal, diff)) < tol)
+				v3 diff;
+				diff = V3Sub(ddcel->v[cv->index], ddcel->v[e->origin]);
+				ddcel->hv[e->origin].colinear = (F32Abs(V3Dot(f_twin->normal, diff)) < tol)
 					? 1
 					: 0;
 			}
@@ -2160,7 +2136,7 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 			DdcelEdgeSet(e0, e0->origin, e0->twin, se2.index, se1.index, sf.index);
 
 			DdcelFaceSet(f, e0i, 3);
-            V3Store(f->normal, TriCcwNormal(V3Load(ddcel->v[e0->origin]), V3Load(ddcel->v[e1->origin]), V3Load(ddcel->v[e2->origin])));
+            f->normal = TriCcwNormal(ddcel->v[e0->origin], ddcel->v[e1->origin], ddcel->v[e2->origin]);
 		
 			/*TODO: We may add same point twich here, need to add a "has_been_mapped" thingy to not add again*/
 			ce = NULL;
@@ -2171,9 +2147,9 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 				{
 					ddcel->cv[ce->vertex].last_iter = cvi;
 					ddcel->cv[ce->vertex].last_face = sf.index;
-					vec3 diff;
-					Vec3Sub(diff, ddcel->v[ddcel->cv[ce->vertex].index], ddcel->v[e0->origin]);
-					if (Vec3Dot(f->normal, diff) > tol)
+					v3 diff;
+					diff = V3Sub(ddcel->v[ddcel->cv[ce->vertex].index], ddcel->v[e0->origin]);
+					if (V3Dot(f->normal, diff) > tol)
 					{
 						struct slot slot = conflictEdgePoolAdd(&ddcel->ce_pool);
 						ds_DLLAppend(f->ce_list, ddcel->ce_pool.buf, slot.index, face_edge);
@@ -2190,14 +2166,14 @@ void ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 			for (i32 j = f_twin->ce_list.first; j != DLL_SENTINEL; j = ce->face_edge.next)
 			{
 				ce = ddcel->ce + j;
-				vec3 diff;
+				v3 diff;
 				ds_Assert(ce->vertex != cvi)
 				if (ddcel->cv[ce->vertex].last_face != sf.index || ddcel->cv[ce->vertex].last_iter != cvi)
 				{
 					ddcel->cv[ce->vertex].last_iter = cvi;
 					ddcel->cv[ce->vertex].last_face = sf.index;
-					Vec3Sub(diff, ddcel->v[ddcel->cv[ce->vertex].index], ddcel->v[e0->origin]);
-					if (Vec3Dot(f->normal, diff) > tol)
+					diff = V3Sub(ddcel->v[ddcel->cv[ce->vertex].index], ddcel->v[e0->origin]);
+					if (V3Dot(f->normal, diff) > tol)
 					{
 						struct slot slot = conflictEdgePoolAdd(&ddcel->ce_pool);
 						ds_DLLAppend(f->ce_list, ddcel->ce_pool.buf, slot.index, face_edge);
@@ -2244,7 +2220,7 @@ struct dcel DcelDdcel(struct arena *mem, const struct ddcel *ddcel)
 	ArenaPushRecord(mem);
 	struct dcel cpy =
 	{
-		.v = ArenaPushMemcpy(mem, ddcel->v, ddcel->v_count*sizeof(vec3)),
+		.v = ArenaPushMemcpy(mem, ddcel->v, ddcel->v_count*sizeof(v3)),
 		.e = ArenaPush(mem, ddcel->edge_pool.count*sizeof(struct dcelEdge)),
 		.f = ArenaPush(mem, ddcel->face_pool.count*sizeof(struct dcelFace)),
 		.v_count = ddcel->v_count,
@@ -2308,7 +2284,7 @@ struct dcel DcelDdcel(struct arena *mem, const struct ddcel *ddcel)
 	return cpy;
 }
 
-struct dcel DcelConvexHull(struct arena *mem, constvec3ptr v, const u32 v_count, const f32 tol)
+struct dcel DcelConvexHull(struct arena *mem, const v3 *v, const u32 v_count, const f32 tol)
 {
 	struct dcel dcel = DcelEmpty();
 	if (v_count < 4) { goto end; }	

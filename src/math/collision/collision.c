@@ -1570,7 +1570,7 @@ struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_C
 		vec3 p;
 		for (u32 fi = 0; fi < h->f_count; ++fi)
 		{
-			DcelFaceNormal(p, h, g1.rot, fi);
+			V3Store(p, DcelFaceNormal(h, M3Load(g1.rot), fi));
 			Mat3VecMul(p, g1.rot, h->v[h->e[h->f[fi].first].origin].buf);
 			Vec3Translate(p, t[0].position.buf);
 			Vec3Sub(diff, t[1].position.buf, p);
@@ -1662,7 +1662,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 
 			for (u32 fi = 0; fi < h->f_count; ++fi)
 			{
-				struct plane pl = DcelFacePlane(h, g1.rot, t[0].position.buf, fi);
+				struct plane pl = DcelFacePlane(h, M3Load(g1.rot), t[0].position, fi);
 
 				const f32 d0 = PlanePointSignedDistance(&pl, cap_s.p[0]);
 				const f32 d1 = PlanePointSignedDistance(&pl, cap_s.p[1]);
@@ -1679,7 +1679,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 			{
 				for (u32 ei = 0; ei < h->e_count; ++ei)
 				{
-					struct segment edge_s = DcelEdgeSegment(h, g1.rot, g1.pos, ei);
+					struct segment edge_s = DcelEdgeSegment(h, M3Load(g1.rot), V3Load(g1.pos), ei);
 					
 					const f32 d = -f32_sqrt(SegmentDistanceSquared((v3 *) c[0], (v3 *) c[1], &edge_s, &cap_s));
 					if (max_signed_depth < d)
@@ -1695,7 +1695,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 			{
 				manifold->v_count = 1;
 			    manifold->depth[0] = f32_max(0.0f, -max_signed_depth);
-				struct segment edge_s = DcelEdgeSegment(h, g1.rot, g1.pos, best_index);
+				struct segment edge_s = DcelEdgeSegment(h, M3Load(g1.rot), V3Load(g1.pos), best_index);
 				SegmentDistanceSquared((v3 *) c[0], (v3 *) c[1], &edge_s, &cap_s);
 				Vec3Sub(manifold->n, c[ref], c[inc]);
 				Vec3ScaleSelf(manifold->n, 1.0f/Vec3Length(manifold->n));
@@ -1708,8 +1708,8 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 			else
 			{
 				manifold->v_count = 2;
-				struct segment seg = DcelFaceClipSegment(h, g1.rot, g1.pos, best_index, &cap_s);
-				const struct plane pl = DcelFacePlane(h, g1.rot, g1.pos, best_index);
+				struct segment seg = DcelFaceClipSegment(h, M3Load(g1.rot), V3Load(g1.pos), best_index, &cap_s);
+				const struct plane pl = DcelFacePlane(h, M3Load(g1.rot), V3Load(g1.pos), best_index);
 
 				if (cap_p0_inside == 1 && cap_p1_inside == 0)
 				{
@@ -1768,7 +1768,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 				/* find parallel face with Vec3Dot(face_normal, segment_points) > 0.0f */
 				for (u32 fi = 0; fi < h->f_count; ++fi)
 				{
-				    struct plane pl = DcelFacePlane(h, g1.rot, g1.pos, fi);
+				    struct plane pl = DcelFacePlane(h, M3Load(g1.rot), V3Load(g1.pos), fi);
                     if (PlaneSegmentParallelCheck(&pl, &cap_s))
 					{	
                         const f32 depth = PlanePointSignedDistance(&pl, V3Load(c[1]));
@@ -1787,7 +1787,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 				manifold->v_count = 2;
 				manifold->depth[0] = s[1]->capsule.radius + Vec3Dot(manifold->n, c[0]) - Vec3Dot(manifold->n, c[1]);
 				manifold->depth[1] = manifold->depth[0];
-				const struct segment cap_clip = DcelFaceClipSegment(h, g1.rot, g1.pos, best_face, &cap_s);
+				const struct segment cap_clip = DcelFaceClipSegment(h, M3Load(g1.rot), V3Load(g1.pos), best_face, &cap_s);
 				Vec3Copy(manifold->v[0], cap_clip.p[0].buf);
 				Vec3Copy(manifold->v[1], cap_clip.p[1].buf);
                 if (ref == 0)
@@ -2470,7 +2470,7 @@ struct c_ContactResult c_HullContact(struct arena *frame, const struct c_Contact
                 const u32 b_f = sat_FeatureIdFaceCheck(cache->feature[1]);
                 const u32 b_v = 1 - b_f;
                 const u32 face = sat_FeatureIdIndex(cache->feature[b_f]);
-	        	DcelFaceNormal(result.cache->normal, h[b_f], rot[b_f], face);
+	        	V3Store(result.cache->normal, DcelFaceNormal(h[b_f], M3Load(rot[b_f]), face));
                 if (Vec3Dot(result.cache->normal, cache->normal) < g_numerics_config->manifold_cache_normal_parallel_check_eps) 
                 { 
                     metrics->hull_cache_eviction_count += 1;
@@ -3226,7 +3226,7 @@ static u32 TriCcwHullEECheck(struct sat_EdgeQuery *query, const struct plane *tr
 	const u32 f2_1 = hull->e[e2_1].face_ccw;
 	const u32 f2_2 = hull->e[e2_2].face_ccw;
 	const struct segment hull_s = SegmentConstruct(hull->v[hull->e[e2_1].origin], hull->v[hull->e[e2_2].origin]);
-    DcelFaceDirectionLocal(n2_2, hull, f2_2);
+    V3Store(n2_2, DcelFaceDirectionLocal(hull, f2_2));
 	Vec3NegateSelf(n2_2);
 
 	/* 
@@ -3439,7 +3439,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_SatCache *new
                 const u32 b_f = sat_FeatureIdFaceCheck(old_cache->feature[1]);
                 const u32 b_v = 1 - b_f;
                 const u32 face = sat_FeatureIdIndex(old_cache->feature[b_f]);
-	        	DcelFaceNormalLocal(new_cache->normal, h[b_f], face);
+	        	V3Store(new_cache->normal, DcelFaceNormalLocal(h[b_f], face));
                 if (Vec3Dot(new_cache->normal, old_cache->normal) < g_numerics_config->manifold_cache_normal_parallel_check_eps) 
                 { 
                     metrics->mesh_cache_eviction_count += 1;
@@ -3569,7 +3569,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_SatCache *new
         for (u32 fi = 0; fi < hull->f_count; ++fi)
         {
             vec3 f_dir;
-            DcelFaceDirectionLocal(f_dir, hull, fi);
+            V3Store(f_dir, DcelFaceDirectionLocal(hull, fi));
 	        Vec3NegateSelf(f_dir);	
             const u32 ei_end = hull->f[fi].first + hull->f[fi].count;
             for (u32 ei = hull->f[fi].first; ei < ei_end; ++ei)
@@ -3866,12 +3866,12 @@ f32 c_HullRaycastParameter(const struct c_Shape *shape, const ds_Transform *tran
 
 	for (u32 fi = 0; fi < h->f_count; ++fi)
 	{
-		struct plane pl = DcelFacePlane(h, rot, transform->position.buf, fi);
+		struct plane pl = DcelFacePlane(h, M3Load(rot), transform->position, fi);
 		const f32 t = PlaneRaycastParameter(&pl, ray);
 		if (t < t_best && t >= 0.0f)
 		{
 			V3Store(p, RayPoint(ray, t));
-			if (DcelFaceProjectedPointTest(h, rot, transform->position.buf, fi, p))
+			if (DcelFaceProjectedPointTest(h, M3Load(rot), transform->position, fi, V3Load(p)))
 			{
 				t_best = t;
 			}

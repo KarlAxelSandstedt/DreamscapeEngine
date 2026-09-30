@@ -248,7 +248,7 @@ void r_MeshCapsule(struct arena *mem, struct r_Mesh *mesh, const f32 half_height
 	ArenaPopPacked(mem, (arr.len - vi) * sizeof(vec3));
 
 	struct arena *tmp = ArenaPushScratch();
-	struct dcel dcel = DcelConvexHull(tmp, v, vi, 100.0f * F32_EPSILON);
+	struct dcel dcel = DcelConvexHull(tmp, (v3 *) v, vi, 100.0f * F32_EPSILON);
 	r_MeshHull(mem, mesh, &dcel);
     ArenaPopScratch();
 }
