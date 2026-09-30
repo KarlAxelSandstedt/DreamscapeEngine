@@ -21,6 +21,10 @@
 
 #include "ds_dynamics.h"
 #include "collision.h"
+#include "ds_float.h"
+#include "ds_vector.h"
+#include "ds_matrix.h"
+#include "ds_math_bridge.h"
 
 SDB_DEFINE(c_Shape);
 
@@ -404,7 +408,7 @@ void c_ShapeUpdateMassProperties(struct c_Shape *shape)
  */
 struct gjk_Simplex
 {
-	vec3 p[4];
+	v3 p[4];
 	u64 id[4];
 	f32 dot[4];
 	u32 type;
@@ -427,38 +431,35 @@ static struct gjk_Simplex gjk_SimplexInit(void)
 	return simplex;
 }
 
-static u32 gjk_JohnsonsAlgorithm(struct gjk_Simplex *simplex, vec3 c_v, vec4 lambda)
+static u32 gjk_JohnsonsAlgorithm(struct gjk_Simplex *simplex, v3 *c_v, f32 lambda[4])
 {
-	vec3 a;
+	v3 a;
 
 	if (simplex->type == 0)
 	{
-		Vec3Copy(c_v, simplex->p[0]);
+		*c_v = simplex->p[0];
 	}
 	else if (simplex->type == 1)
 	{
-		Vec3Sub(a, simplex->p[0], simplex->p[1]);
-		const f32 delta_01_1 = Vec3Dot(a, simplex->p[0]);
+		a = V3Sub(simplex->p[0], simplex->p[1]);
+		const f32 delta_01_1 = V3Dot(a, simplex->p[0]);
 
 		if (delta_01_1 > 0.0f)
 		{
-			Vec3Sub(a, simplex->p[1], simplex->p[0]);
-			const f32 delta_01_0 = Vec3Dot(a, simplex->p[1]);
+			a = V3Sub(simplex->p[1], simplex->p[0]);
+			const f32 delta_01_0 = V3Dot(a, simplex->p[1]);
 			if (delta_01_0 > 0.0f)
 			{
 				const f32 delta = delta_01_0 + delta_01_1;
 				lambda[0] = delta_01_0 / delta;
 				lambda[1] = delta_01_1 / delta;
-				Vec3Set(c_v,
-				       	(lambda[0]*(simplex->p[0])[0] + lambda[1]*(simplex->p[1])[0]),
-				       	(lambda[0]*(simplex->p[0])[1] + lambda[1]*(simplex->p[1])[1]),
-				       	(lambda[0]*(simplex->p[0])[2] + lambda[1]*(simplex->p[1])[2]));
+				*c_v = V3AddScaled(V3Scale(simplex->p[0], lambda[0]), simplex->p[1], lambda[1]);
 			}
 			else
 			{
 				simplex->type = 0;
-				Vec3Copy(c_v, simplex->p[1]);
-				Vec3Copy(simplex->p[0], simplex->p[1]);
+				*c_v = simplex->p[1];
+				simplex->p[0] = simplex->p[1];
 			}
 		}
 		else
@@ -473,38 +474,35 @@ static u32 gjk_JohnsonsAlgorithm(struct gjk_Simplex *simplex, vec3 c_v, vec4 lam
 	}
 	else if (simplex->type == 2)
 	{
-		Vec3Sub(a, simplex->p[1], simplex->p[0]);
-		const f32 delta_01_0 = Vec3Dot(a, simplex->p[1]);
-		Vec3Sub(a, simplex->p[0], simplex->p[1]);
-		const f32 delta_01_1 = Vec3Dot(a, simplex->p[0]);
-		Vec3Sub(a, simplex->p[0], simplex->p[2]);
-		const f32 delta_012_2 = delta_01_0 * Vec3Dot(a, simplex->p[0]) + delta_01_1 * Vec3Dot(a, simplex->p[1]);
+		a = V3Sub(simplex->p[1], simplex->p[0]);
+		const f32 delta_01_0 = V3Dot(a, simplex->p[1]);
+		a = V3Sub(simplex->p[0], simplex->p[1]);
+		const f32 delta_01_1 = V3Dot(a, simplex->p[0]);
+		a = V3Sub(simplex->p[0], simplex->p[2]);
+		const f32 delta_012_2 = delta_01_0 * V3Dot(a, simplex->p[0]) + delta_01_1 * V3Dot(a, simplex->p[1]);
 		if (delta_012_2 > 0.0f)
 		{
-			Vec3Sub(a, simplex->p[2], simplex->p[0]);
-			const f32 delta_02_0 = Vec3Dot(a, simplex->p[2]);
-			Vec3Sub(a, simplex->p[0], simplex->p[2]);
-			const f32 delta_02_2 = Vec3Dot(a, simplex->p[0]);
-			Vec3Sub(a, simplex->p[0], simplex->p[1]);
-			const f32 delta_012_1 = delta_02_0 * Vec3Dot(a, simplex->p[0]) + delta_02_2 * Vec3Dot(a, simplex->p[2]);
+			a = V3Sub(simplex->p[2], simplex->p[0]);
+			const f32 delta_02_0 = V3Dot(a, simplex->p[2]);
+			a = V3Sub(simplex->p[0], simplex->p[2]);
+			const f32 delta_02_2 = V3Dot(a, simplex->p[0]);
+			a = V3Sub(simplex->p[0], simplex->p[1]);
+			const f32 delta_012_1 = delta_02_0 * V3Dot(a, simplex->p[0]) + delta_02_2 * V3Dot(a, simplex->p[2]);
 			if (delta_012_1 > 0.0f)
 			{
-				Vec3Sub(a, simplex->p[2], simplex->p[1]);
-				const f32 delta_12_1 = Vec3Dot(a, simplex->p[2]);
-				Vec3Sub(a, simplex->p[1], simplex->p[2]);
-				const f32 delta_12_2 = Vec3Dot(a, simplex->p[1]);
-				Vec3Sub(a, simplex->p[1], simplex->p[0]);
-				const f32 delta_012_0 = delta_12_1 * Vec3Dot(a, simplex->p[1]) + delta_12_2 * Vec3Dot(a, simplex->p[2]);
+				a = V3Sub(simplex->p[2], simplex->p[1]);
+				const f32 delta_12_1 = V3Dot(a, simplex->p[2]);
+				a = V3Sub(simplex->p[1], simplex->p[2]);
+				const f32 delta_12_2 = V3Dot(a, simplex->p[1]);
+				a = V3Sub(simplex->p[1], simplex->p[0]);
+				const f32 delta_012_0 = delta_12_1 * V3Dot(a, simplex->p[1]) + delta_12_2 * V3Dot(a, simplex->p[2]);
 				if (delta_012_0 > 0.0f)
 				{
 					const f32 delta = delta_012_0 + delta_012_1 + delta_012_2;
 					lambda[0] = delta_012_0 / delta;
 					lambda[1] = delta_012_1 / delta;
 					lambda[2] = delta_012_2 / delta;
-					Vec3Set(c_v,
-						(lambda[0]*(simplex->p[0])[0] + lambda[1]*(simplex->p[1])[0] + lambda[2]*(simplex->p[2])[0]),
-						(lambda[0]*(simplex->p[0])[1] + lambda[1]*(simplex->p[1])[1] + lambda[2]*(simplex->p[2])[1]),
-						(lambda[0]*(simplex->p[0])[2] + lambda[1]*(simplex->p[1])[2] + lambda[2]*(simplex->p[2])[2]));
+					*c_v = V3AddScaled(V3AddScaled(V3Scale(simplex->p[0], lambda[0]), simplex->p[1], lambda[1]), simplex->p[2], lambda[2]);
 				}
 				else
 				{
@@ -515,21 +513,18 @@ static u32 gjk_JohnsonsAlgorithm(struct gjk_Simplex *simplex, vec3 c_v, vec4 lam
 							const f32 delta = delta_12_1 + delta_12_2;
 							lambda[0] = delta_12_1 / delta;
 							lambda[1] = delta_12_2 / delta;
-							Vec3Set(c_v,
-							       	(lambda[0]*(simplex->p[1])[0] + lambda[1]*(simplex->p[2])[0]),
-							       	(lambda[0]*(simplex->p[1])[1] + lambda[1]*(simplex->p[2])[1]),
-							       	(lambda[0]*(simplex->p[1])[2] + lambda[1]*(simplex->p[2])[2]));
+							*c_v = V3AddScaled(V3Scale(simplex->p[1], lambda[0]), simplex->p[2], lambda[1]);
 							simplex->type = 1;
-							Vec3Copy(simplex->p[0], simplex->p[1]);
-							Vec3Copy(simplex->p[1], simplex->p[2]);
+							simplex->p[0] = simplex->p[1];
+							simplex->p[1] = simplex->p[2];
 							simplex->id[0] = simplex->id[1];
 							simplex->dot[0] = simplex->dot[1];
 						}
 						else
 						{
 							simplex->type = 0;
-							Vec3Copy(c_v, simplex->p[2]);
-							Vec3Copy(simplex->p[0], simplex->p[2]);
+							*c_v = simplex->p[2];
+							simplex->p[0] = simplex->p[2];
 							simplex->id[1] = UINT32_MAX;
 							simplex->dot[1] = -1.0f;
 						}
@@ -552,18 +547,15 @@ static u32 gjk_JohnsonsAlgorithm(struct gjk_Simplex *simplex, vec3 c_v, vec4 lam
 						const f32 delta = delta_02_0 + delta_02_2;
 						lambda[0] = delta_02_0 / delta;
 						lambda[1] = delta_02_2 / delta;
-						Vec3Set(c_v,
-						       	(lambda[0]*(simplex->p[0])[0] + lambda[1]*(simplex->p[2])[0]),
-						       	(lambda[0]*(simplex->p[0])[1] + lambda[1]*(simplex->p[2])[1]),
-						       	(lambda[0]*(simplex->p[0])[2] + lambda[1]*(simplex->p[2])[2]));
+						*c_v = V3AddScaled(V3Scale(simplex->p[0], lambda[0]), simplex->p[2], lambda[1]);
 						simplex->type = 1;
-						Vec3Copy(simplex->p[1], simplex->p[2]);
+						simplex->p[1] = simplex->p[2];
 					}
 					else
 					{
 						simplex->type = 0;
-						Vec3Copy(c_v, simplex->p[2]);
-						Vec3Copy(simplex->p[0], simplex->p[2]);
+						*c_v = simplex->p[2];
+						simplex->p[0] = simplex->p[2];
 						simplex->id[1] = UINT32_MAX;
 						simplex->dot[1] = -1.0f;
 					}
@@ -577,83 +569,83 @@ static u32 gjk_JohnsonsAlgorithm(struct gjk_Simplex *simplex, vec3 c_v, vec4 lam
 	}
 	else
 	{
-		Vec3Sub(a, simplex->p[1], simplex->p[0]);
-		const f32 delta_01_0 = Vec3Dot(a, simplex->p[1]);
-		Vec3Sub(a, simplex->p[0], simplex->p[1]);
-		const f32 delta_01_1 = Vec3Dot(a, simplex->p[0]);
-		Vec3Sub(a, simplex->p[0], simplex->p[2]);
-		const f32 delta_012_2 = delta_01_0 * Vec3Dot(a, simplex->p[0]) + delta_01_1 * Vec3Dot(a, simplex->p[1]);
+		a = V3Sub(simplex->p[1], simplex->p[0]);
+		const f32 delta_01_0 = V3Dot(a, simplex->p[1]);
+		a = V3Sub(simplex->p[0], simplex->p[1]);
+		const f32 delta_01_1 = V3Dot(a, simplex->p[0]);
+		a = V3Sub(simplex->p[0], simplex->p[2]);
+		const f32 delta_012_2 = delta_01_0 * V3Dot(a, simplex->p[0]) + delta_01_1 * V3Dot(a, simplex->p[1]);
 
-		Vec3Sub(a, simplex->p[2], simplex->p[0]);
-		const f32 delta_02_0 = Vec3Dot(a, simplex->p[2]);
-		Vec3Sub(a, simplex->p[0], simplex->p[2]);
-		const f32 delta_02_2 = Vec3Dot(a, simplex->p[0]);
-		Vec3Sub(a, simplex->p[0], simplex->p[1]);
-		const f32 delta_012_1 = delta_02_0 * Vec3Dot(a, simplex->p[0]) + delta_02_2 * Vec3Dot(a, simplex->p[2]);
+		a = V3Sub(simplex->p[2], simplex->p[0]);
+		const f32 delta_02_0 = V3Dot(a, simplex->p[2]);
+		a = V3Sub(simplex->p[0], simplex->p[2]);
+		const f32 delta_02_2 = V3Dot(a, simplex->p[0]);
+		a = V3Sub(simplex->p[0], simplex->p[1]);
+		const f32 delta_012_1 = delta_02_0 * V3Dot(a, simplex->p[0]) + delta_02_2 * V3Dot(a, simplex->p[2]);
 
-		Vec3Sub(a, simplex->p[2], simplex->p[1]);
-		const f32 delta_12_1 = Vec3Dot(a, simplex->p[2]);
-		Vec3Sub(a, simplex->p[1], simplex->p[2]);
-		const f32 delta_12_2 = Vec3Dot(a, simplex->p[1]);
-		Vec3Sub(a, simplex->p[1], simplex->p[0]);
-		const f32 delta_012_0 = delta_12_1 * Vec3Dot(a, simplex->p[1]) + delta_12_2 * Vec3Dot(a, simplex->p[2]);
+		a = V3Sub(simplex->p[2], simplex->p[1]);
+		const f32 delta_12_1 = V3Dot(a, simplex->p[2]);
+		a = V3Sub(simplex->p[1], simplex->p[2]);
+		const f32 delta_12_2 = V3Dot(a, simplex->p[1]);
+		a = V3Sub(simplex->p[1], simplex->p[0]);
+		const f32 delta_012_0 = delta_12_1 * V3Dot(a, simplex->p[1]) + delta_12_2 * V3Dot(a, simplex->p[2]);
 
-		Vec3Sub(a, simplex->p[0], simplex->p[3]);
-		const f32 delta_0123_3 = delta_012_0 * Vec3Dot(a, simplex->p[0]) + delta_012_1 * Vec3Dot(a, simplex->p[1]) + delta_012_2 * Vec3Dot(a, simplex->p[2]);
+		a = V3Sub(simplex->p[0], simplex->p[3]);
+		const f32 delta_0123_3 = delta_012_0 * V3Dot(a, simplex->p[0]) + delta_012_1 * V3Dot(a, simplex->p[1]) + delta_012_2 * V3Dot(a, simplex->p[2]);
 
 		if (delta_0123_3 > 0.0f)
 		{
-			Vec3Sub(a, simplex->p[0], simplex->p[3]);
-			const f32 delta_013_3 = delta_01_0 * Vec3Dot(a, simplex->p[0]) + delta_01_1 * Vec3Dot(a, simplex->p[1]);
+			a = V3Sub(simplex->p[0], simplex->p[3]);
+			const f32 delta_013_3 = delta_01_0 * V3Dot(a, simplex->p[0]) + delta_01_1 * V3Dot(a, simplex->p[1]);
 
-			Vec3Sub(a, simplex->p[3], simplex->p[0]);
-			const f32 delta_03_0 = Vec3Dot(a, simplex->p[3]);
-			Vec3Sub(a, simplex->p[0], simplex->p[3]);
-			const f32 delta_03_3 = Vec3Dot(a, simplex->p[0]);
-			Vec3Sub(a, simplex->p[0], simplex->p[1]);
-			const f32 delta_013_1 = delta_03_0 * Vec3Dot(a, simplex->p[0]) + delta_03_3 * Vec3Dot(a, simplex->p[3]);
+			a = V3Sub(simplex->p[3], simplex->p[0]);
+			const f32 delta_03_0 = V3Dot(a, simplex->p[3]);
+			a = V3Sub(simplex->p[0], simplex->p[3]);
+			const f32 delta_03_3 = V3Dot(a, simplex->p[0]);
+			a = V3Sub(simplex->p[0], simplex->p[1]);
+			const f32 delta_013_1 = delta_03_0 * V3Dot(a, simplex->p[0]) + delta_03_3 * V3Dot(a, simplex->p[3]);
 
-			Vec3Sub(a, simplex->p[3], simplex->p[1]);
-			const f32 delta_13_1 = Vec3Dot(a, simplex->p[3]);
-			Vec3Sub(a, simplex->p[1], simplex->p[3]);
-			const f32 delta_13_3 = Vec3Dot(a, simplex->p[1]);
-			Vec3Sub(a, simplex->p[1], simplex->p[0]);
-			const f32 delta_013_0 = delta_13_1 * Vec3Dot(a, simplex->p[1]) + delta_13_3 * Vec3Dot(a, simplex->p[3]);
+			a = V3Sub(simplex->p[3], simplex->p[1]);
+			const f32 delta_13_1 = V3Dot(a, simplex->p[3]);
+			a = V3Sub(simplex->p[1], simplex->p[3]);
+			const f32 delta_13_3 = V3Dot(a, simplex->p[1]);
+			a = V3Sub(simplex->p[1], simplex->p[0]);
+			const f32 delta_013_0 = delta_13_1 * V3Dot(a, simplex->p[1]) + delta_13_3 * V3Dot(a, simplex->p[3]);
 
-			Vec3Sub(a, simplex->p[0], simplex->p[2]);
-			const f32 delta_0123_2 = delta_013_0 * Vec3Dot(a, simplex->p[0]) + delta_013_1 * Vec3Dot(a, simplex->p[1]) + delta_013_3 * Vec3Dot(a, simplex->p[3]);
+			a = V3Sub(simplex->p[0], simplex->p[2]);
+			const f32 delta_0123_2 = delta_013_0 * V3Dot(a, simplex->p[0]) + delta_013_1 * V3Dot(a, simplex->p[1]) + delta_013_3 * V3Dot(a, simplex->p[3]);
 
 			if (delta_0123_2 > 0.0f)
 			{
-				Vec3Sub(a, simplex->p[0], simplex->p[3]);
-				const f32 delta_023_3 = delta_02_0 * Vec3Dot(a, simplex->p[0]) + delta_02_2 * Vec3Dot(a, simplex->p[2]);
+				a = V3Sub(simplex->p[0], simplex->p[3]);
+				const f32 delta_023_3 = delta_02_0 * V3Dot(a, simplex->p[0]) + delta_02_2 * V3Dot(a, simplex->p[2]);
 
-				Vec3Sub(a, simplex->p[0], simplex->p[2]);
-				const f32 delta_023_2 = delta_03_0 * Vec3Dot(a, simplex->p[0]) + delta_03_3 * Vec3Dot(a, simplex->p[3]);
+				a = V3Sub(simplex->p[0], simplex->p[2]);
+				const f32 delta_023_2 = delta_03_0 * V3Dot(a, simplex->p[0]) + delta_03_3 * V3Dot(a, simplex->p[3]);
 
-				Vec3Sub(a, simplex->p[3], simplex->p[2]);
-				const f32 delta_23_2 = Vec3Dot(a, simplex->p[3]);
-				Vec3Sub(a, simplex->p[2], simplex->p[3]);
-				const f32 delta_23_3 = Vec3Dot(a, simplex->p[2]);
-				Vec3Sub(a, simplex->p[2], simplex->p[0]);
-				const f32 delta_023_0 = delta_23_2 * Vec3Dot(a, simplex->p[2]) + delta_23_3 * Vec3Dot(a, simplex->p[3]);
+				a = V3Sub(simplex->p[3], simplex->p[2]);
+				const f32 delta_23_2 = V3Dot(a, simplex->p[3]);
+				a = V3Sub(simplex->p[2], simplex->p[3]);
+				const f32 delta_23_3 = V3Dot(a, simplex->p[2]);
+				a = V3Sub(simplex->p[2], simplex->p[0]);
+				const f32 delta_023_0 = delta_23_2 * V3Dot(a, simplex->p[2]) + delta_23_3 * V3Dot(a, simplex->p[3]);
 
-				Vec3Sub(a, simplex->p[0], simplex->p[1]);
-				const f32 delta_0123_1 = delta_023_0 * Vec3Dot(a, simplex->p[0]) + delta_023_2 * Vec3Dot(a, simplex->p[2]) + delta_023_3 * Vec3Dot(a, simplex->p[3]);
+				a = V3Sub(simplex->p[0], simplex->p[1]);
+				const f32 delta_0123_1 = delta_023_0 * V3Dot(a, simplex->p[0]) + delta_023_2 * V3Dot(a, simplex->p[2]) + delta_023_3 * V3Dot(a, simplex->p[3]);
 
 				if (delta_0123_1 > 0.0f)
 				{
-					Vec3Sub(a, simplex->p[3], simplex->p[1]);
-					const f32 delta_123_1 = delta_23_2 * Vec3Dot(a, simplex->p[2]) + delta_23_3 * Vec3Dot(a, simplex->p[3]);
+					a = V3Sub(simplex->p[3], simplex->p[1]);
+					const f32 delta_123_1 = delta_23_2 * V3Dot(a, simplex->p[2]) + delta_23_3 * V3Dot(a, simplex->p[3]);
 
-					Vec3Sub(a, simplex->p[3], simplex->p[2]);
-					const f32 delta_123_2 = delta_13_1 * Vec3Dot(a, simplex->p[1]) + delta_13_3 * Vec3Dot(a, simplex->p[3]);
+					a = V3Sub(simplex->p[3], simplex->p[2]);
+					const f32 delta_123_2 = delta_13_1 * V3Dot(a, simplex->p[1]) + delta_13_3 * V3Dot(a, simplex->p[3]);
 
-					Vec3Sub(a, simplex->p[1], simplex->p[3]);
-					const f32 delta_123_3 = delta_12_1 * Vec3Dot(a, simplex->p[1]) + delta_12_2 * Vec3Dot(a, simplex->p[2]);
+					a = V3Sub(simplex->p[1], simplex->p[3]);
+					const f32 delta_123_3 = delta_12_1 * V3Dot(a, simplex->p[1]) + delta_12_2 * V3Dot(a, simplex->p[2]);
 
-					Vec3Sub(a, simplex->p[3], simplex->p[0]);
-					const f32 delta_0123_0 = delta_123_1 * Vec3Dot(a, simplex->p[1]) + delta_123_2 * Vec3Dot(a, simplex->p[2]) + delta_123_3 * Vec3Dot(a, simplex->p[3]);
+					a = V3Sub(simplex->p[3], simplex->p[0]);
+					const f32 delta_0123_0 = delta_123_1 * V3Dot(a, simplex->p[1]) + delta_123_2 * V3Dot(a, simplex->p[2]) + delta_123_3 * V3Dot(a, simplex->p[3]);
 
 					if (delta_0123_0 > 0.0f)
 					{
@@ -663,10 +655,7 @@ static u32 gjk_JohnsonsAlgorithm(struct gjk_Simplex *simplex, vec3 c_v, vec4 lam
 						lambda[1] = delta_0123_1 / delta;
 						lambda[2] = delta_0123_2 / delta;
 						lambda[3] = delta_0123_3 / delta;
-						Vec3Set(c_v,
-							(lambda[0]*(simplex->p[0])[0] + lambda[1]*(simplex->p[1])[0] + lambda[2]*(simplex->p[2])[0] + lambda[3]*(simplex->p[3])[0]),
-							(lambda[0]*(simplex->p[0])[1] + lambda[1]*(simplex->p[1])[1] + lambda[2]*(simplex->p[2])[1] + lambda[3]*(simplex->p[3])[1]),
-							(lambda[0]*(simplex->p[0])[2] + lambda[1]*(simplex->p[1])[2] + lambda[2]*(simplex->p[2])[2] + lambda[3]*(simplex->p[3])[2]));
+						*c_v = V3AddScaled(V3AddScaled(V3AddScaled(V3Scale(simplex->p[0], lambda[0]), simplex->p[1], lambda[1]), simplex->p[2], lambda[2]), simplex->p[3], lambda[3]);
 					}
 					else
 					{
@@ -681,14 +670,11 @@ static u32 gjk_JohnsonsAlgorithm(struct gjk_Simplex *simplex, vec3 c_v, vec4 lam
 									lambda[0] = delta_123_1 / delta;
 									lambda[1] = delta_123_2 / delta;
 									lambda[2] = delta_123_3 / delta;
-									Vec3Set(c_v,
-										(lambda[0]*(simplex->p[1])[0] + lambda[1]*(simplex->p[2])[0] + lambda[2]*(simplex->p[3])[0]),
-										(lambda[0]*(simplex->p[1])[1] + lambda[1]*(simplex->p[2])[1] + lambda[2]*(simplex->p[3])[1]),
-										(lambda[0]*(simplex->p[1])[2] + lambda[1]*(simplex->p[2])[2] + lambda[2]*(simplex->p[3])[2]));
+									*c_v = V3AddScaled(V3AddScaled(V3Scale(simplex->p[1], lambda[0]), simplex->p[2], lambda[1]), simplex->p[3], lambda[2]);
 									simplex->type = 2;
-									Vec3Copy(simplex->p[0], simplex->p[1]);		
-									Vec3Copy(simplex->p[1], simplex->p[2]);		
-									Vec3Copy(simplex->p[2], simplex->p[3]);		
+									simplex->p[0] = simplex->p[1];		
+									simplex->p[1] = simplex->p[2];		
+									simplex->p[2] = simplex->p[3];		
 									simplex->dot[0] = simplex->dot[1];
 									simplex->dot[1] = simplex->dot[2];
 									simplex->id[0] = simplex->id[1];
@@ -704,13 +690,10 @@ static u32 gjk_JohnsonsAlgorithm(struct gjk_Simplex *simplex, vec3 c_v, vec4 lam
 											const f32 delta = delta_23_2 + delta_23_3;
 											lambda[0] = delta_23_2 / delta;
 											lambda[1] = delta_23_3 / delta;
-											Vec3Set(c_v,
-												(lambda[0]*(simplex->p[2])[0] + lambda[1]*(simplex->p[3])[0]),
-												(lambda[0]*(simplex->p[2])[1] + lambda[1]*(simplex->p[3])[1]),
-												(lambda[0]*(simplex->p[2])[2] + lambda[1]*(simplex->p[3])[2]));
+											*c_v = V3AddScaled(V3Scale(simplex->p[2], lambda[0]), simplex->p[3], lambda[1]);
 											simplex->type = 1;
-											Vec3Copy(simplex->p[0], simplex->p[2]);		
-											Vec3Copy(simplex->p[1], simplex->p[3]);		
+											simplex->p[0] = simplex->p[2];		
+											simplex->p[1] = simplex->p[3];		
 											simplex->dot[0] = simplex->dot[2];
 											simplex->dot[2] = -1.0f;
 											simplex->id[0] = simplex->id[2];
@@ -718,9 +701,9 @@ static u32 gjk_JohnsonsAlgorithm(struct gjk_Simplex *simplex, vec3 c_v, vec4 lam
 										}
 										else
 										{
-											Vec3Copy(c_v, simplex->p[3]);
+											*c_v = simplex->p[3];
 											simplex->type = 0;
-											Vec3Copy(simplex->p[0], simplex->p[3]);
+											simplex->p[0] = simplex->p[3];
 											simplex->dot[1] = -1.0f;
 											simplex->dot[2] = -1.0f;
 											simplex->id[1] = UINT32_MAX;
@@ -743,13 +726,10 @@ static u32 gjk_JohnsonsAlgorithm(struct gjk_Simplex *simplex, vec3 c_v, vec4 lam
 										const f32 delta = delta_13_1 + delta_13_3;
 										lambda[0] = delta_13_1 / delta;
 										lambda[1] = delta_13_3 / delta;
-										Vec3Set(c_v,
-											(lambda[0]*(simplex->p[1])[0] + lambda[1]*(simplex->p[3])[0]),
-											(lambda[0]*(simplex->p[1])[1] + lambda[1]*(simplex->p[3])[1]),
-											(lambda[0]*(simplex->p[1])[2] + lambda[1]*(simplex->p[3])[2]));
+										*c_v = V3AddScaled(V3Scale(simplex->p[1], lambda[0]), simplex->p[3], lambda[1]);
 										simplex->type = 1;
-										Vec3Copy(simplex->p[0], simplex->p[1]);
-										Vec3Copy(simplex->p[1], simplex->p[3]);		
+										simplex->p[0] = simplex->p[1];
+										simplex->p[1] = simplex->p[3];		
 										simplex->dot[0] = simplex->dot[1];
 										simplex->dot[2] = -1.0f;
 										simplex->id[0] = simplex->id[1];
@@ -757,9 +737,9 @@ static u32 gjk_JohnsonsAlgorithm(struct gjk_Simplex *simplex, vec3 c_v, vec4 lam
 									}
 									else
 									{
-										Vec3Copy(c_v, simplex->p[3]);
+										*c_v = simplex->p[3];
 										simplex->type = 0;
-										Vec3Copy(simplex->p[0], simplex->p[3]);
+										simplex->p[0] = simplex->p[3];
 										simplex->dot[1] = -1.0f;
 										simplex->dot[2] = -1.0f;
 										simplex->id[1] = UINT32_MAX;
@@ -791,13 +771,10 @@ static u32 gjk_JohnsonsAlgorithm(struct gjk_Simplex *simplex, vec3 c_v, vec4 lam
 								lambda[0] = delta_023_0 / delta;
 								lambda[1] = delta_023_2 / delta;
 								lambda[2] = delta_023_3 / delta;
-								Vec3Set(c_v,
-									(lambda[0]*(simplex->p[0])[0] + lambda[1]*(simplex->p[2])[0] + lambda[2]*(simplex->p[3])[0]),
-									(lambda[0]*(simplex->p[0])[1] + lambda[1]*(simplex->p[2])[1] + lambda[2]*(simplex->p[3])[1]),
-									(lambda[0]*(simplex->p[0])[2] + lambda[1]*(simplex->p[2])[2] + lambda[2]*(simplex->p[3])[2]));
+								*c_v = V3AddScaled(V3AddScaled(V3Scale(simplex->p[0], lambda[0]), simplex->p[2], lambda[1]), simplex->p[3], lambda[2]);
 								simplex->type = 2;
-								Vec3Copy(simplex->p[1], simplex->p[2]);		
-								Vec3Copy(simplex->p[2], simplex->p[3]);		
+								simplex->p[1] = simplex->p[2];		
+								simplex->p[2] = simplex->p[3];		
 								simplex->dot[1] = simplex->dot[2];
 								simplex->id[1] = simplex->id[2];
 							}
@@ -811,13 +788,10 @@ static u32 gjk_JohnsonsAlgorithm(struct gjk_Simplex *simplex, vec3 c_v, vec4 lam
 										const f32 delta = delta_23_2 + delta_23_3;
 										lambda[0] = delta_23_2 / delta;
 										lambda[1] = delta_23_3 / delta;
-										Vec3Set(c_v,
-											(lambda[0]*(simplex->p[2])[0] + lambda[1]*(simplex->p[3])[0]),
-											(lambda[0]*(simplex->p[2])[1] + lambda[1]*(simplex->p[3])[1]),
-											(lambda[0]*(simplex->p[2])[2] + lambda[1]*(simplex->p[3])[2]));
+										*c_v = V3AddScaled(V3Scale(simplex->p[2], lambda[0]), simplex->p[3], lambda[1]);
 										simplex->type = 1;
-										Vec3Copy(simplex->p[0], simplex->p[2]);
-										Vec3Copy(simplex->p[1], simplex->p[3]);
+										simplex->p[0] = simplex->p[2];
+										simplex->p[1] = simplex->p[3];
 										simplex->dot[0] = simplex->dot[2];
 										simplex->dot[2] = -1.0f;
 										simplex->id[0] = simplex->id[2];
@@ -825,9 +799,9 @@ static u32 gjk_JohnsonsAlgorithm(struct gjk_Simplex *simplex, vec3 c_v, vec4 lam
 									}
 									else
 									{
-										Vec3Copy(c_v, simplex->p[3]);
+										*c_v = simplex->p[3];
 										simplex->type = 0;
-										Vec3Copy(simplex->p[0], simplex->p[3]);
+										simplex->p[0] = simplex->p[3];
 										simplex->dot[1] = -1.0f;
 										simplex->dot[2] = -1.0f;
 										simplex->id[1] = UINT32_MAX;
@@ -850,20 +824,17 @@ static u32 gjk_JohnsonsAlgorithm(struct gjk_Simplex *simplex, vec3 c_v, vec4 lam
 									const f32 delta = delta_03_0 + delta_03_3;
 									lambda[0] = delta_03_0 / delta;
 									lambda[1] = delta_03_3 / delta;
-									Vec3Set(c_v,
-										(lambda[0]*(simplex->p[0])[0] + lambda[1]*(simplex->p[3])[0]),
-										(lambda[0]*(simplex->p[0])[1] + lambda[1]*(simplex->p[3])[1]),
-										(lambda[0]*(simplex->p[0])[2] + lambda[1]*(simplex->p[3])[2]));
+									*c_v = V3AddScaled(V3Scale(simplex->p[0], lambda[0]), simplex->p[3], lambda[1]);
 									simplex->type = 1;
-									Vec3Copy(simplex->p[1], simplex->p[3]);
+									simplex->p[1] = simplex->p[3];
 									simplex->dot[2] = -1.0f;
 									simplex->id[2] = UINT32_MAX;
 								}
 								else
 								{
-									Vec3Copy(c_v, simplex->p[3]);
+									*c_v = simplex->p[3];
 									simplex->type = 0;
-									Vec3Copy(simplex->p[0], simplex->p[3]);
+									simplex->p[0] = simplex->p[3];
 									simplex->dot[1] = -1.0f;
 									simplex->dot[2] = -1.0f;
 									simplex->id[1] = UINT32_MAX;
@@ -895,12 +866,9 @@ static u32 gjk_JohnsonsAlgorithm(struct gjk_Simplex *simplex, vec3 c_v, vec4 lam
 							lambda[0] = delta_013_0 / delta;
 							lambda[1] = delta_013_1 / delta;
 							lambda[2] = delta_013_3 / delta;
-							Vec3Set(c_v,
-								(lambda[0]*(simplex->p[0])[0] + lambda[1]*(simplex->p[1])[0] + lambda[2]*(simplex->p[3])[0]),
-								(lambda[0]*(simplex->p[0])[1] + lambda[1]*(simplex->p[1])[1] + lambda[2]*(simplex->p[3])[1]),
-								(lambda[0]*(simplex->p[0])[2] + lambda[1]*(simplex->p[1])[2] + lambda[2]*(simplex->p[3])[2]));
+							*c_v = V3AddScaled(V3AddScaled(V3Scale(simplex->p[0], lambda[0]), simplex->p[1], lambda[1]), simplex->p[3], lambda[2]);
 							simplex->type = 2;
-							Vec3Copy(simplex->p[2], simplex->p[3]);
+							simplex->p[2] = simplex->p[3];
 						}
 						else
 						{
@@ -912,21 +880,18 @@ static u32 gjk_JohnsonsAlgorithm(struct gjk_Simplex *simplex, vec3 c_v, vec4 lam
 									const f32 delta = delta_13_1 + delta_13_3;
 									lambda[0] = delta_13_1 / delta;
 									lambda[1] = delta_13_3 / delta;
-									Vec3Set(c_v,
-										(lambda[0]*(simplex->p[1])[0] + lambda[1]*(simplex->p[3])[0]),
-										(lambda[0]*(simplex->p[1])[1] + lambda[1]*(simplex->p[3])[1]),
-										(lambda[0]*(simplex->p[1])[2] + lambda[1]*(simplex->p[3])[2]));
+									*c_v = V3AddScaled(V3Scale(simplex->p[1], lambda[0]), simplex->p[3], lambda[1]);
 									simplex->type = 1;
-									Vec3Copy(simplex->p[0], simplex->p[1]);
-									Vec3Copy(simplex->p[1], simplex->p[3]);
+									simplex->p[0] = simplex->p[1];
+									simplex->p[1] = simplex->p[3];
 									simplex->dot[2] = -1.0f;
 									simplex->id[2] = UINT32_MAX;
 								}
 								else
 								{
-									Vec3Copy(c_v, simplex->p[3]);
+									*c_v = simplex->p[3];
 									simplex->type = 0;
-									Vec3Copy(simplex->p[0], simplex->p[3]);
+									simplex->p[0] = simplex->p[3];
 									simplex->dot[1] = -1.0f;
 									simplex->dot[2] = -1.0f;
 									simplex->id[1] = UINT32_MAX;
@@ -949,20 +914,17 @@ static u32 gjk_JohnsonsAlgorithm(struct gjk_Simplex *simplex, vec3 c_v, vec4 lam
 								const f32 delta = delta_03_0 + delta_03_3;
 								lambda[0] = delta_03_0 / delta;
 								lambda[1] = delta_03_3 / delta;
-								Vec3Set(c_v,
-									(lambda[0]*(simplex->p[0])[0] + lambda[1]*(simplex->p[3])[0]),
-									(lambda[0]*(simplex->p[0])[1] + lambda[1]*(simplex->p[3])[1]),
-									(lambda[0]*(simplex->p[0])[2] + lambda[1]*(simplex->p[3])[2]));
+								*c_v = V3AddScaled(V3Scale(simplex->p[0], lambda[0]), simplex->p[3], lambda[1]);
 								simplex->type = 1;
-								Vec3Copy(simplex->p[1], simplex->p[3]);
+								simplex->p[1] = simplex->p[3];
 								simplex->dot[2] = -1.0f;
 								simplex->id[2] = UINT32_MAX;
 							}
 							else
 							{
-								Vec3Copy(c_v, simplex->p[3]);
+								*c_v = simplex->p[3];
 								simplex->type = 0;
-								Vec3Copy(simplex->p[0], simplex->p[3]);
+								simplex->p[0] = simplex->p[3];
 								simplex->dot[1] = -1.0f;
 								simplex->dot[2] = -1.0f;
 								simplex->id[1] = UINT32_MAX;
@@ -998,39 +960,41 @@ struct gjk_Input
 	u32 v_count;
 };
 
-static void gjk_ClosestPoints(vec3 c1, vec3 c2, struct gjk_Input *in1, struct gjk_Simplex *simplex, const vec4 lambda)
+static void gjk_ClosestPoints(vec3 c1, vec3 c2, struct gjk_Input *in1, struct gjk_Simplex *simplex, const f32 lambda[4])
 {
+	const m3 rot = M3Load(in1->rot);
+	const v3 pos = V3Load(in1->pos);
+	v3 p1, p2;
 	if (simplex->type == 0)
 	{
-		Mat3VecMul(c1, in1->rot, in1->v[simplex->id[0] >> 32]);
-		Vec3Translate(c1, in1->pos);
-		Vec3Sub(c2, c1, simplex->p[0]);
+		p1 = V3Add(M3V3Mul(rot, V3Load(in1->v[simplex->id[0] >> 32])), pos);
+		p2 = V3Sub(p1, simplex->p[0]);
 	}
 	else
 	{
-		vec3 tmp1, tmp2;
-		Vec3Set(c1, 0.0f, 0.0f, 0.0f);
-		Vec3Set(c2, 0.0f, 0.0f, 0.0f);
+		p1 = V3Zero();
+		p2 = V3Zero();
 		for (u32 i = 0; i <= simplex->type; ++i)
 		{
-			Mat3VecMul(tmp1, in1->rot, in1->v[simplex->id[i] >> 32]);
-			Vec3Translate(tmp1, in1->pos);
-			Vec3Sub(tmp2, tmp1, simplex->p[i]);
-			Vec3TranslateScaled(c1, tmp1, lambda[i]);
-			Vec3TranslateScaled(c2, tmp2, lambda[i]);
+			const v3 tmp1 = V3Add(M3V3Mul(rot, V3Load(in1->v[simplex->id[i] >> 32])), pos);
+			const v3 tmp2 = V3Sub(tmp1, simplex->p[i]);
+			p1 = V3AddScaled(p1, tmp1, lambda[i]);
+			p2 = V3AddScaled(p2, tmp2, lambda[i]);
 		}
 	}
+	V3Store(c1, p1);
+	V3Store(c2, p2);
 }	
 
-static u32 gjk_Support(vec3 support, const vec3 dir, struct gjk_Input *in)
+static u32 gjk_Support(v3 *support, const v3 dir, struct gjk_Input *in)
 {
+	const m3 rot = M3Load(in->rot);
 	f32 max = -F32_INFINITY;
 	u32 max_index = 0;
-	vec3 p;
 	for (u32 i = 0; i < in->v_count; ++i)
 	{
-		Mat3VecMul(p, in->rot, in->v[i]);
-		const f32 dot = Vec3Dot(p, dir);
+		const v3 p = M3V3Mul(rot, V3Load(in->v[i]));
+		const f32 dot = V3Dot(p, dir);
 		if (max < dot)
 		{
 			max_index = i;
@@ -1038,8 +1002,7 @@ static u32 gjk_Support(vec3 support, const vec3 dir, struct gjk_Input *in)
 		}
 	}
 
-	Mat3VecMul(support, in->rot, in->v[max_index]);
-	Vec3Translate(support,in->pos);
+	*support = V3Add(M3V3Mul(rot, V3Load(in->v[max_index])), V3Load(in->pos));
 	return max_index;
 
 }
@@ -1053,15 +1016,15 @@ static f32 gjk_DistanceSquared(vec3 c1, vec3 c2, struct gjk_Simplex *simplex, st
 	const f32 tol = 100.0f * F32_EPSILON;
 
 	*simplex = gjk_SimplexInit();
-	vec3 dir, c_v, tmp, s1, s2;
-	vec4 lambda;
+	v3 dir, c_v, s1, s2;
+	f32 lambda[4];
 	u64 support_id;
 	f32 ma; /* max dot product of current simplex */
 	f32 dist_sq = F32_MAX_POSITIVE_NORMAL; 
 	const f32 rel = tol * tol;
 
 	/* arbitrary starting search direction */
-	Vec3Set(c_v, 1.0f, 0.0f, 0.0f);
+	c_v = V3(1.0f, 0.0f, 0.0f);
 	u64 old_support = UINT64_MAX;
 
 	//TODO
@@ -1069,15 +1032,14 @@ static f32 gjk_DistanceSquared(vec3 c1, vec3 c2, struct gjk_Simplex *simplex, st
 	for (u32 i = 0; i < max_iter; ++i)
 	{
 		simplex->type += 1;
-		Vec3Scale(dir, c_v, -1.0f);
+		dir = V3Scale(c_v, -1.0f);
 
-		const u32 i1 = gjk_Support(s1, dir, in1);
-		Vec3Negate(tmp, dir);
-		const u32 i2 = gjk_Support(s2, tmp, in2);
-		Vec3Sub(simplex->p[simplex->type], s1, s2);
+		const u32 i1 = gjk_Support(&s1, dir, in1);
+		const u32 i2 = gjk_Support(&s2, V3Negate(dir), in2);
+		simplex->p[simplex->type] = V3Sub(s1, s2);
 		support_id = ((u64) i1 << 32) | (u64) i2;
 
-		if (dist_sq - Vec3Dot(simplex->p[simplex->type], c_v) <= rel * dist_sq + abs_tol
+		if (dist_sq - V3Dot(simplex->p[simplex->type], c_v) <= rel * dist_sq + abs_tol
 				|| simplex->id[0] == support_id || simplex->id[1] == support_id 
 				|| simplex->id[2] == support_id || simplex->id[3] == support_id)
 		{
@@ -1092,7 +1054,7 @@ static f32 gjk_DistanceSquared(vec3 c1, vec3 c2, struct gjk_Simplex *simplex, st
 		 * either in wrong sub-simplex being chosen, or no valid simplex at all. In that case c_v
 		 * stays the same, and we terminate the algorithm. [See page 142].
 		 */
-		if (gjk_JohnsonsAlgorithm(simplex, c_v, lambda))
+		if (gjk_JohnsonsAlgorithm(simplex, &c_v, lambda))
 		{
 			ds_Assert(dist_sq != F32_INFINITY);
 			simplex->type -= 1;
@@ -1101,7 +1063,7 @@ static f32 gjk_DistanceSquared(vec3 c1, vec3 c2, struct gjk_Simplex *simplex, st
 		}
 
 		simplex->id[simplex->type] = support_id;
-		simplex->dot[simplex->type] = Vec3Dot(simplex->p[simplex->type], simplex->p[simplex->type]);
+		simplex->dot[simplex->type] = V3Dot(simplex->p[simplex->type], simplex->p[simplex->type]);
 
 		/* 
 		 * If the simplex is of type 3, or a tetrahedron, we have encapsulated 0, or, if v is sufficiently
@@ -1115,12 +1077,12 @@ static f32 gjk_DistanceSquared(vec3 c1, vec3 c2, struct gjk_Simplex *simplex, st
 		else
 		{
 			ma = simplex->dot[0];
-			ma = f32_max(ma, simplex->dot[1]);
-			ma = f32_max(ma, simplex->dot[2]);
-			ma = f32_max(ma, simplex->dot[3]);
+			ma = F32Max(ma, simplex->dot[1]);
+			ma = F32Max(ma, simplex->dot[2]);
+			ma = F32Max(ma, simplex->dot[3]);
 
 			/* For error bound discussion, see sections 4.3.5, 4.3.6 */
-			dist_sq = Vec3Dot(c_v, c_v);
+			dist_sq = V3Dot(c_v, c_v);
 			if (dist_sq <= abs_tol * ma)
 			{
 			    gjk_ClosestPoints(c1, c2, in1, simplex, lambda);
@@ -1326,7 +1288,7 @@ f32 c_HullCapsuleDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_T
 	Vec3Set(segment[1], 0.0f, -s2->capsule.half_height, 0.0f);
 	struct gjk_Input g2 = { .v = segment, .v_count = 2, };
 	Vec3Copy(g2.pos, t2->position.buf);
-	Mat3Quat(g1.rot, t2->rotation.buf);
+	Mat3Quat(g2.rot, t2->rotation.buf);
 
     struct gjk_Simplex simplex;
 	f32 dist_sq = gjk_DistanceSquared(c1, c2, &simplex, &g1, &g2);
