@@ -22,6 +22,7 @@
 #include "ds_asset.h"
 #include "transform.h"
 #include "ds_led.h"
+#include "ds_math_bridge.h"
 
 POOL_DEFINE(r_Instance);
 
@@ -349,7 +350,7 @@ static struct r_Mesh *bvh_Mesh(struct arena *mem, const struct bvh *bvh, const v
 	while (sc--)
 	{
 	    u32 i = stack[sc];
-		const u64 bytes_written = AabbTransformPushLinesBuffered(vertex_data, mem_left, &nodes[i].bbox, translation, rot, color);
+		const u64 bytes_written = AabbTransformPushLinesBuffered(vertex_data, mem_left, &nodes[i].bbox, V3Load(translation), M3Load(rot), color);
 
         ds_Assert(bytes_written == 24*L_COLOR_STRIDE);
 		vertex_data += bytes_written;

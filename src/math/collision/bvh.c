@@ -620,9 +620,9 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
 	node->bt_child[0] = 0;
 	node->bt_child[1] = mesh->tri_count;
 	node->bbox = BboxTriangle(
-				mesh->v[mesh->tri[0].buf[0]].buf,
-				mesh->v[mesh->tri[0].buf[1]].buf,
-				mesh->v[mesh->tri[0].buf[2]].buf);
+				mesh->v[mesh->tri[0].buf[0]],
+				mesh->v[mesh->tri[0].buf[1]],
+				mesh->v[mesh->tri[0].buf[2]]);
 	node_stack[0] = root.index;
     depth_stack[0] = 0;
 
@@ -630,9 +630,9 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
 	{
 		mesh_bvh.tri[i] = i;
 		bbox_tri[i] = BboxTriangle(
-				mesh->v[mesh->tri[i].buf[0]].buf,
-				mesh->v[mesh->tri[i].buf[1]].buf,
-				mesh->v[mesh->tri[i].buf[2]].buf);
+				mesh->v[mesh->tri[i].buf[0]],
+				mesh->v[mesh->tri[i].buf[1]],
+				mesh->v[mesh->tri[i].buf[2]]);
 		node->bbox = BboxUnion(node->bbox, bbox_tri[i]);
 	}
 
@@ -831,7 +831,7 @@ struct bvhRaycastInfo BvhRaycastInit(struct arena *mem, const struct bvh *bvh, c
 
 	if (bvh->bt.count) 
 	{
-		AabbRaycastParameterExSetup(info.multiplier, info.dir_sign_bit, info.ray);
+		AabbRaycastParameterExSetup(&info.multiplier, &info.dir_sign_bit, info.ray);
 		const f32 root_hit_param = AabbRaycastParameterEx(&info.node[info.bvh->bt.root].bbox, info.ray, info.multiplier, info.dir_sign_bit);
 		if (root_hit_param < F32_INFINITY) 
 		{

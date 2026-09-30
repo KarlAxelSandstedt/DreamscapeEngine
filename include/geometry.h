@@ -114,49 +114,49 @@ struct capsule
 /********************************** sphere **********************************/
 
 /* constructed sphere */
-struct sphere 	SphereConstruct(const vec3 center, const f32 radius);
+struct sphere 	SphereConstruct(const v3 center, const f32 radius);
 /* return t: smallest t >= 0 such that p = origin + t*dir is a point on the sphere, or F32_INF if no such t exist */
 f32 		SphereRaycastParameter(const struct sphere *sph, const struct ray *ray);
 /* Return 1 if raycast hit sphere, 0 otherwise. If hit, set intersection  */
-u32 		SphereRaycast(vec3 intersection, const struct sphere *sph, const struct ray *ray);
+u32 		SphereRaycast(v3 *intersection, const struct sphere *sph, const struct ray *ray);
 /* Return support of sphere in given direction. sph->position is ignored here, so use pos as the real position */
-void		SphereSupport(vec3 support, const vec3 dir, const struct sphere *sph, const vec3 pos);
+v3		SphereSupport(const v3 dir, const struct sphere *sph, const v3 pos);
 
 /*********************************** ray ************************************/
 
 /* return constructed ray */
-struct ray 	RayConstruct(const vec3 origin, const vec3 dir);
+struct ray 	RayConstruct(const v3 origin, const v3 dir);
 /* return segment: s.p0 = r.origin, s.p1 = r.origin + t * r.dir */
 struct segment	RayConstructSegment(const struct ray *r, const f32 t);
-/* set r_c = ray.origin + t * ray.dir */
-void		RayPoint(vec3 r_c, const struct ray *ray, const f32 t);
+/* return ray.origin + t * ray.dir */
+v3		RayPoint(const struct ray *ray, const f32 t);
 /* return t: closest point on ray to p = origin + t * dir */
-f32 		RayPointClosestPointParameter(const struct ray *ray, const vec3 p);
+f32 		RayPointClosestPointParameter(const struct ray *ray, const v3 p);
 /* return squared distance from p to ray, and set RayPoint to the closest point on the ray */
-f32 		RayPointDistanceSquared(vec3 RayPoint, const struct ray *ray, const vec3 p);
+f32 		RayPointDistanceSquared(v3 *r_c, const struct ray *ray, const v3 p);
 /* return squared distance from s to ray, and set r_c and s_c to the closest points on the primitives */
-f32 		RaySegmentDistanceSquared(vec3 r_c, vec3 s_c, const struct ray *ray, const struct segment *s);
+f32 		RaySegmentDistanceSquared(v3 *r_c, v3 *s_c, const struct ray *ray, const struct segment *s);
 
 /********************************* segment **********************************/
 
 /* construct segment */
-struct segment 	SegmentConstruct(const vec3 p0, const vec3 p1);
+struct segment 	SegmentConstruct(const v3 p0, const v3 p1);
 /* Return 1 if the end-points of s are within a distance of sqrt(min_dist_sq) of each other, otherwise return 0. */
 u32             SegmentPointCheck(const struct segment *s, const f32 min_dist_sq);
 /* Return 1 if s1 and s2 are parallel, otherwise return 0. */
 u32             SegmentParallelCheck(const struct segment *s1, const struct segment *s2, const f32 eps);
 /* return squared distance between s1 and s2; set c1, c2 to closest point on s1, s2 respectively  */
-f32 		    SegmentDistanceSquared(vec3 c1, vec3 c2, const struct segment *s1, const struct segment *s2);
+f32 		    SegmentDistanceSquared(v3 *c1, v3 *c2, const struct segment *s1, const struct segment *s2);
 /* return parameters t1,t2 of closest points c1,c2 on s1,s2 such that ci = si.p0(1-ti) + s1.p1*ti  */
 void		    SegmentClosestParameter(f32 *t1, f32 *t2, const struct segment *s1, const struct segment *s2);
 /* return squared distance between s and p; set c to the closest point on s to p */
-f32 		    SegmentPointDistanceSquared(vec3 c, const struct segment *s, const vec3 p);
+f32 		    SegmentPointDistanceSquared(v3 *c, const struct segment *s, const v3 p);
 /* Return parameter t of projected barycentric point p to segment s: PROJECTION_ON_LINE(p) = s.p0*(1-t) + s.p1*t */
-f32		        SegmentPointProjectedBcParameter(const struct segment *s, const vec3 p);
+f32		        SegmentPointProjectedBcParameter(const struct segment *s, const v3 p);
 /* Return parameter g of closest barycentric point p to segment s: PROJECTION_ON_SEGMENT(p) = s.p0*(1-t) + s.p1*t, 0.0f <= t <= 1.0f */
-f32 		    SegmentPointClosestBcParameter(const struct segment *s, const vec3 p);
+f32 		    SegmentPointClosestBcParameter(const struct segment *s, const v3 p);
 /* set bc_p = s.p0*(1-t) + s.p1*t */
-void 		    SegmentBc(vec3 bc_p, const struct segment *s, const f32 t); 	
+v3 		    SegmentBc(const struct segment *s, const f32 t); 	
 
 
 /* Return the segment resulting from transforming the given capsule. */
@@ -168,45 +168,45 @@ struct aabb     BboxSegment(const struct segment *s);
 /********************************** plane ***********************************/
 
 /* Construct plane with given normal direction n containing point p */
-struct plane 	PlaneConstruct(const vec3 n, const vec3 p); 
+struct plane 	PlaneConstruct(const v3 n, const v3 p); 
 /* Construct normalized plane with given normal direction n containing point p */
-struct plane 	PlaneConstructNormalized(const vec3 n, const vec3 p); 
+struct plane 	PlaneConstructNormalized(const v3 n, const v3 p); 
 /* Construct plane from CCW triangle abc */
-struct plane 	PlaneConstructFromCcwTriangle(const vec3 a, const vec3 b, const vec3 c);
+struct plane 	PlaneConstructFromCcwTriangle(const v3 a, const v3 b, const v3 c);
 /* Construct normalized plane from CCW triangle abc */
-struct plane 	PlaneConstructNormalizedFromCcwTriangle(const vec3 a, const vec3 b, const vec3 c);
+struct plane 	PlaneConstructNormalizedFromCcwTriangle(const v3 a, const v3 b, const v3 c);
 /* Normalize the plane's normal direction (and update affected internals) */
 void            PlaneNormalize(struct plane *pl);
 /* Return 1 if p is infront of plane, i.e. a positive signed distance, otherwise 0 */
-u32 		    PlanePointInfrontCheck(const struct plane *pl, const vec3 p);
+u32 		    PlanePointInfrontCheck(const struct plane *pl, const v3 p);
 /* Return 1 if p is behind plane, i.e. a negative signed distance, otherwise 0 */
-u32 		    PlanePointBehindCheck(const struct plane *pl, const vec3 p);
+u32 		    PlanePointBehindCheck(const struct plane *pl, const v3 p);
 /* Return 1 if segment is parallel to plane, otherwise return 0. */
 u32             PlaneSegmentParallelCheck(const struct plane *pl, const struct segment *s);
 /* return t: s.p0 + t*s.dir is point on plane */
 f32 		    PlaneSegmentClipParameter(const struct plane *pl, const struct segment *s);
 /* return 1 if clip happened, otherwise 0. If 1, return valid clip point */
-u32 		    PlaneSegmentClip(vec3 clip, const struct plane *pl, const struct segment *s);
+u32 		    PlaneSegmentClip(v3 *clip, const struct plane *pl, const struct segment *s);
 /* return 1 if clip happened, otherwise 0 */
 u32 		    PlaneSegmentTest(const struct plane *pl, const struct segment *s); 
 /* return signed distance multiplied by |normal_direction| between plane and point (infront of plane == positive) */
-f32 		    PlanePointSignedDistance(const struct plane *pl, const vec3 p);
+f32 		    PlanePointSignedDistance(const struct plane *pl, const v3 p);
 /* return absolute distance multiplied by |normal_direction| between plane and point */
-f32 		    PlanePointDistance(const struct plane *pl, const vec3 p);
+f32 		    PlanePointDistance(const struct plane *pl, const v3 p);
 /* return the signed distance (measured in |plane.normal_direction| units) of point p to plane pl, and set the projection of p onto pl. */
-f32 		    PlanePointProjection(vec3 proj, const struct plane *pl, const vec3 p);
+f32 		    PlanePointProjection(v3 *proj, const struct plane *pl, const v3 p);
 
 /* Return t such that ray->origin + t*ray->dir is a point on the given plane. If no such t exist, return F32_INFINITY. */
 f32 		PlaneRaycastParameter(const struct plane *plane, const struct ray *ray);
 /* Return 1 if raycast hit plane, 0 otherwise. If hit, set intersection  */
-u32 		PlaneRaycast(vec3 intersection, const struct plane *plane, const struct ray *ray);
+u32 		PlaneRaycast(v3 *intersection, const struct plane *plane, const struct ray *ray);
 
 /********************************** AABB ************************************/
 
 /* Return smallest AABB that contains both a and b  */
 void		AabbUnion(struct aabb *box_union, const struct aabb *a, const struct aabb *b);
 /* Return AABB of rotated AABB. */
-void		AabbRotate(struct aabb *dst, const struct aabb *src, mat3 rotation);
+void		AabbRotate(struct aabb *dst, const struct aabb *src, const m3 rotation);
 /* Return 1 if a and b intersect, 0 otherwise  */
 u32 		AabbTest(const struct aabb *a, const struct aabb *b);
 /* Return 1 if a fully contains b, 0 otherwise  */
@@ -216,36 +216,36 @@ u32 		AabbContainsMargin(const struct aabb *a, const struct aabb *b, const f32 m
 /* sets up vertex buffer to use with glDrawArrays. Returns number of bytes written. */
 u64 		AabbPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const vec4 color);
 /* sets up vertex buffer to use with glDrawArrays. Returns number of bytes written. */
-u64 		AabbTransformPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const vec3 translation, mat3 rotation, const vec4 color);
+u64 		AabbTransformPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const v3 translation, const m3 rotation, const vec4 color);
 /* Return the smallest index of the aabb with the maximum side length */
 u32         AabbMaxAxis(const struct aabb a);
 
 /* Return bounding box of a and b  */
 struct aabb	BboxUnion(const struct aabb a, const struct aabb b);
 /* Return bounding box of aabb a and point p  */
-struct aabb	BboxPointUnion(const struct aabb a, const vec3 p);
+struct aabb	BboxPointUnion(const struct aabb a, const v3 p);
 /* Return bounding box of triangle */
-struct aabb	BboxTriangle(const vec3 p0, const vec3 p1, const vec3 p2);
+struct aabb	BboxTriangle(const v3 p0, const v3 p1, const v3 p2);
 /* Return bounding box of the vertex set */
-struct aabb	BboxVertexSet(const vec3 *p, const u32 count);
+struct aabb	BboxVertexSet(const v3 *p, const u32 count);
 
 /* Setup parameters for extended raycasting functions. */
-void 		AabbRaycastParameterExSetup(vec3 multiplier, vec3u32 dir_sign_bit, const struct ray *ray);
+void 		AabbRaycastParameterExSetup(v3 *multiplier, v3u32 *dir_sign_bit, const struct ray *ray);
 /* Extended AabbRaycastParameter optimized for multiple raycasts against AABBs using same ray. 
  * return t: smallest t >= 0 such that p = origin + t*dir is a point in the AABB volume, or F32_INF if no such t exist */
-f32 		AabbRaycastParameterEx(const struct aabb *aabb, const struct ray *ray, const vec3 multiplier, const vec3u32 dir_sign_bit);
+f32 		AabbRaycastParameterEx(const struct aabb *aabb, const struct ray *ray, const v3 multiplier, const v3u32 dir_sign_bit);
 /* return t: smallest t >= 0 such that p = origin + t*dir is a point in the AABB volume, or F32_INF if no such t exist */
 f32 		AabbRaycastParameter(const struct aabb *a, const struct ray *ray);
 /* Extended AabbRaycast, optimized for multiple raycasts against AABBs using same ray. 
  * If the ray hits aabb, return 1 and set intersection. otherwise return 0. */
-u32 		AabbRaycastEx(vec3 intersection, const struct aabb *aabb, const struct ray *ray, const vec3 multiplier, const vec3u32 dir_sign_bit);
+u32 		AabbRaycastEx(v3 *intersection, const struct aabb *aabb, const struct ray *ray, const v3 multiplier, const v3u32 dir_sign_bit);
 /* If the ray hits aabb, return 1 and set intersection. otherwise return 0. */
-u32 		AabbRaycast(vec3 intersection, const struct aabb *aabb, const struct ray *ray);
+u32 		AabbRaycast(v3 *intersection, const struct aabb *aabb, const struct ray *ray);
 
 /********************************* capsule **********************************/
 
 /* Return support of capsule in given direction. */
-void		CapsuleSupport(vec3 support, const vec3 dir, const struct capsule *cap, mat3 rot, const vec3 pos);
+v3		CapsuleSupport(const v3 dir, const struct capsule *cap, const m3 rot, const v3 pos);
 
 /********************************* tri_mesh **********************************/
 
@@ -419,8 +419,8 @@ void 		DcelAssertTopology(struct dcel *dcel);
 /********************************* vertex operations ***********************************/
 
 /* Return: support of vertex set given the direction, and supporting vertex index */
-u32 	VertexSupport(vec3 support, const vec3 dir, constvec3ptr v, const u32 v_count);
-void 	VertexCentroid(vec3 centroid, constvec3ptr vs, const u32 n);
+u32 	VertexSupport(v3 *support, const v3 dir, const v3 *v, const u32 v_count);
+v3 	VertexCentroid(const v3 *vs, const u32 n);
 
 #ifdef __cplusplus
 } 

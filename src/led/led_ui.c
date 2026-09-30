@@ -18,6 +18,7 @@
 */
 
 #include "led_local.h"
+#include "ds_math_bridge.h"
 
 static void led_ProjectMenuUi(struct led *led, const struct ui_Visual *visual)
 {
@@ -496,7 +497,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 						WindowSpaceToWorldSpace(dir, cursor_viewport_position, node->pixel_size, &led->cam);
 						Vec3TranslateScaled(dir, led->cam.position, -1.0f);
 						Vec3ScaleSelf(dir, 1.0f / Vec3Length(dir));
-						const struct ray ray = RayConstruct(led->cam.position, dir);
+						const struct ray ray = RayConstruct(V3Load(led->cam.position), V3Load(dir));
 						const u32f32 hit = ds_DynamicsRaycastParameter(&led->physics, &ray);
 						if (hit.f < F32_INFINITY)
 						{

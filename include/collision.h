@@ -144,8 +144,8 @@ To implement raycast using external primitives, one can use the following code:
 struct bvhRaycastInfo
 {
 	u32f32			hit;
-	vec3 			multiplier;
-	vec3u32 		dir_sign_bit;
+	v3 			    multiplier;
+	v3u32 		    dir_sign_bit;
 	struct minQueueFixed	hit_queue;
 	const struct ray *	ray;
 	const struct bvh *	bvh;
