@@ -24,19 +24,19 @@
 extern "C" { 
 #endif
 
-#include "matrix.h"
+#include "ds_types.h"
 
 /* axes should be normalized */
 /* rotation matrix of axis_1(angle_1) (R) -> [R(axis_2)](angle_2) */
-void 	mat3SequentialRotation(mat3 dst, const vec3 axis_1, const f32 angle_1, const vec3 axis_2, const f32 angle_2); 
-void 	mat3Rotation(mat3 dst, const vec3 axis, const f32 angle);
-void 	Vec3RotateCenter(vec3 src_rotated, mat3 rotation, const vec3 center, const vec3 src);
+m3 	M3SequentialRotation(const v3 axis_1, const f32 angle_1, const v3 axis_2, const f32 angle_2); 
+m3 	M3Rotation(const v3 axis, const f32 angle);
+v3 	V3RotateCenter(const m3 rotation, const v3 center, const v3 src);
 
-void 	mat4Perspective(mat4 dst, const f32 aspect_ratio, const f32 fov_x, const f32 fz_near, const f32 fz_far);
+m4 	M4Perspective(const f32 aspect_ratio, const f32 fov_x, const f32 fz_near, const f32 fz_far);
 
-void 	mat4View(mat4 dst, const vec3 position, const vec3 left, const vec3 up, const vec3 forward);
-void 	mat4ViewLookAt(mat4 dst, const vec3 position, const vec3 target);
-void 	mat4ViewYawPitch(mat4 dst, const vec3 position, const f32 yaw, const f32 pitch);
+m4 	M4View(const v3 position, const v3 left, const v3 up, const v3 forward);
+m4 	M4ViewLookAt(const v3 position, const v3 target);
+m4 	M4ViewYawPitch(const v3 position, const f32 yaw, const f32 pitch);
 
 #ifdef __cplusplus
 } 

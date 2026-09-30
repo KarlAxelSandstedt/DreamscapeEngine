@@ -18,6 +18,7 @@
 */
 
 #include "r_local.h"
+#include "ds_math_bridge.h"
 
 void r_Camera2dTransform(mat3 W_to_AS, const vec2 view_center, const f32 view_height, const f32 view_aspect_ratio)
 {
@@ -157,7 +158,7 @@ void r_CameraUpdateAxes(struct r_Camera *cam)
 	vec3 forward = {0.0f, 0.0f, 1.0f};
 
 	mat3 rot;
-	mat3SequentialRotation(rot, up, cam->yaw, left, cam->pitch);
+	M3Store(rot, M3SequentialRotation(V3Load(up), cam->yaw, V3Load(left), cam->pitch));
 
 	Mat3VecMul(cam->left, rot, left);
 	Mat3VecMul(cam->up, rot, up);
@@ -213,7 +214,7 @@ void FrustumProjectionPlaneWorldSpace(vec3 bottom_left, vec3 upper_right, const 
 	vec3 left = {1.0f, 0.0f, 0.0f};
 	vec3 up = {0.0f, 1.0f, 0.0f};
 	mat3 rot;
-	mat3SequentialRotation(rot, up, cam->yaw, left, cam->pitch);
+	M3Store(rot, M3SequentialRotation(V3Load(up), cam->yaw, V3Load(left), cam->pitch));
 
 	Vec3Set(v, frustum_width / 2.0f, -frustum_height / 2.0f, cam->fz_near);
 	Mat3VecMul(bottom_left, rot, v);
@@ -232,7 +233,7 @@ void WindowSpaceToWorldSpace(vec3 world_pixel, const vec2 pixel, const vec2 win_
 
 	vec3 left = {1.0f, 0.0f, 0.0f};
 	vec3 up = {0.0f, 1.0f, 0.0f};
-	mat3SequentialRotation(rot, up, cam->yaw, left, cam->pitch);
+	M3Store(rot, M3SequentialRotation(V3Load(up), cam->yaw, V3Load(left), cam->pitch));
 
 	const vec3 alphas = { 1.0f - ((f32) pixel[0]) / win_size[0], 1.0f - ((f32) pixel[1]) / win_size[1], 1.0f };	
 	FrustumProjectionPlaneCameraSpace(bl, tr, cam);

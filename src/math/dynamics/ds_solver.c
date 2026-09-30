@@ -24,7 +24,6 @@
 #include "ds_vector.h"
 #include "ds_quaternion.h"
 #include "ds_matrix.h"
-#include "ds_math_bridge.h"
 
 struct solverConfig config_storage = { 0 };
 struct solverConfig *g_solver_config = &config_storage;
@@ -52,7 +51,7 @@ static ds_ThreadLocal struct ds_BodySim tl_static_body_sim =
 };
 
 
-void SolverConfigInit(const u32 pgs_iteration_count, const u32 ngs_iteration_count, const u32 warmup_solver, const vec3 gravity, const f32 baumgarte_constant, const f32 max_linear_correction, const f32 max_linear_velocity_magnitude, const f32 max_angular_velocity_magnitude, const f32 linear_dampening, const f32 angular_dampening, const f32 linear_slop, const f32 restitution_threshold, const u32 sleep_enabled, const f32 sleep_time_threshold, const f32 sleep_linear_velocity_sq_limit, const f32 sleep_angular_velocity_sq_limit)
+void SolverConfigInit(const u32 pgs_iteration_count, const u32 ngs_iteration_count, const u32 warmup_solver, const v3 gravity, const f32 baumgarte_constant, const f32 max_linear_correction, const f32 max_linear_velocity_magnitude, const f32 max_angular_velocity_magnitude, const f32 linear_dampening, const f32 angular_dampening, const f32 linear_slop, const f32 restitution_threshold, const u32 sleep_enabled, const f32 sleep_time_threshold, const f32 sleep_linear_velocity_sq_limit, const f32 sleep_angular_velocity_sq_limit)
 {
 	ds_Assert(pgs_iteration_count >= 1);
 	ds_Assert(ngs_iteration_count >= 1);
@@ -60,7 +59,7 @@ void SolverConfigInit(const u32 pgs_iteration_count, const u32 ngs_iteration_cou
 	g_solver_config->pgs_iteration_count = pgs_iteration_count;
 	g_solver_config->ngs_iteration_count = ngs_iteration_count;
 	g_solver_config->warmup_solver = warmup_solver;
-	V3Store(g_solver_config->gravity, V3Load(gravity));
+	g_solver_config->gravity = gravity;
 	g_solver_config->baumgarte_constant = baumgarte_constant;
 	g_solver_config->max_linear_correction = max_linear_correction;
     g_solver_config->max_linear_velocity_magnitude_inv = (0.0f == max_linear_velocity_magnitude)
@@ -130,7 +129,7 @@ void ds_BodyUpdateSolverDataRange(struct ds_Dynamics *pipeline, const u32 low, c
         bcomp->center_of_mass = V3Add(M3V3Mul(rot, sim->local_center_of_mass), sim->world.position);
 
         /* integrate new velocities using external forces */
-        const v3 linear_velocity = V3AddScaled(bcomp->linear_velocity, V3Load(g_solver_config->gravity), pipeline->timestep);
+        const v3 linear_velocity = V3AddScaled(bcomp->linear_velocity, g_solver_config->gravity, pipeline->timestep);
 		bcomp->linear_velocity = V3Scale(linear_velocity, linear_damp);
 		bcomp->angular_velocity = V3Scale(bcomp->angular_velocity, angular_damp);
     }

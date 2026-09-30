@@ -539,10 +539,9 @@ static void r_EditorDraw(const struct led *led)
 
 static void r_InternalProxy3dUniforms(const struct led *led, const u32 window)
 {
-	mat4 perspective, view;
 	const struct r_Camera *cam = &led->cam;
-	mat4Perspective(perspective, cam->aspect_ratio, cam->fov_x, cam->fz_near, cam->fz_far);
-	mat4View(view, cam->position, cam->left, cam->up, cam->forward);
+	const m4 perspective = M4Perspective(cam->aspect_ratio, cam->fov_x, cam->fz_near, cam->fz_far);
+	const m4 view = M4View(V3Load(cam->position), V3Load(cam->left), V3Load(cam->up), V3Load(cam->forward));
 	
 	ds_glUseProgram(g_r_core->program[PROGRAM_PROXY3D].gl_program);
 	GLint aspect_ratio_addr, view_addr, perspective_addr, light_position_addr;
@@ -552,8 +551,8 @@ static void r_InternalProxy3dUniforms(const struct led *led, const u32 window)
 	light_position_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_PROXY3D].gl_program, "light_position");
 	ds_glUniform1f(aspect_ratio_addr, (f32) cam->aspect_ratio);
 	ds_glUniform3f(light_position_addr, cam->position[0], cam->position[1], cam->position[2]);
-	ds_glUniformMatrix4fv(perspective_addr, 1, GL_FALSE, (f32 *) perspective);
-	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, (f32 *) view);
+	ds_glUniformMatrix4fv(perspective_addr, 1, GL_FALSE, perspective.buf);
+	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, view.buf);
 
 	ds_glUseProgram(g_r_core->program[PROGRAM_LIGHTNING].gl_program);
 	aspect_ratio_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_LIGHTNING].gl_program, "aspect_ratio");
@@ -562,8 +561,8 @@ static void r_InternalProxy3dUniforms(const struct led *led, const u32 window)
 	light_position_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_LIGHTNING].gl_program, "light_position");
 	ds_glUniform1f(aspect_ratio_addr, (f32) cam->aspect_ratio);
 	ds_glUniform3f(light_position_addr, cam->position[0], cam->position[1], cam->position[2]);
-	ds_glUniformMatrix4fv(perspective_addr, 1, GL_FALSE, (f32 *) perspective);
-	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, (f32 *) view);
+	ds_glUniformMatrix4fv(perspective_addr, 1, GL_FALSE, perspective.buf);
+	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, view.buf);
 	
 	
 	ds_glUseProgram(g_r_core->program[PROGRAM_COLOR].gl_program);
@@ -571,8 +570,8 @@ static void r_InternalProxy3dUniforms(const struct led *led, const u32 window)
 	view_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_COLOR].gl_program, "view");
 	perspective_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_COLOR].gl_program, "perspective");
 	ds_glUniform1f(aspect_ratio_addr, (f32) cam->aspect_ratio);
-	ds_glUniformMatrix4fv(perspective_addr, 1, GL_FALSE, (f32 *) perspective);
-	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, (f32 *) view);
+	ds_glUniformMatrix4fv(perspective_addr, 1, GL_FALSE, perspective.buf);
+	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, view.buf);
 }
 
 static void r_InternalUiUniforms(const u32 window)

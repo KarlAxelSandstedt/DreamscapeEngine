@@ -40,7 +40,7 @@ struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, c
 {
 	struct ds_Dynamics pipeline =
 	{
-		.gravity = { 0.0f, -GRAVITY_CONSTANT_DEFAULT, 0.0f },
+		.gravity = V3(0.0f, -GRAVITY_CONSTANT_DEFAULT, 0.0f),
 		.ns_tick = ns_tick,
         .timestep = (f32) ns_tick / NSEC_PER_SEC,
 		.ns_elapsed = 0,
@@ -59,7 +59,7 @@ struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, c
 		const u32 pgs_iteration_count = 8;
 		const u32 ngs_iteration_count = 3;
 		const u32 warmup_solver = 1;
-		const vec3 gravity = { 0.0f, -GRAVITY_CONSTANT_DEFAULT, 0.0f };
+		const v3 gravity = V3(0.0f, -GRAVITY_CONSTANT_DEFAULT, 0.0f);
        	const f32 baumgarte_constant = 0.1f;
         const f32 max_linear_correction = 0.2f;
 		const f32 linear_dampening = 0.1f;

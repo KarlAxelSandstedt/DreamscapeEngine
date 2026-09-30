@@ -1020,7 +1020,7 @@ struct solverConfig
 	u32 	pgs_iteration_count;	/* velocity solver iteration count */
 	u32 	ngs_iteration_count;	/* position solver iteration count */
 	u32 	warmup_solver;		/* bool : Should warmup solver when applicable */
-	vec3 	gravity;
+	v3 	    gravity;
 	f32 	baumgarte_constant;  	/* Range[0.0, 1.0] : Determine how quickly contacts are resolved, 1.0f max speed */
     f32     max_linear_correction;           /* Range[0.0, inf] : max linear correction of constraint per iteration in the position solver */
     f32     max_linear_velocity_magnitude_inv;   /* Range[0.0, inf) :  max units (m) per second a body may travel */
@@ -1054,7 +1054,7 @@ extern struct solverConfig *g_solver_config;
 void    SolverConfigInit(const u32 pgs_iteration_count, 
                          const u32 ngs_iteration_count, 
                          const u32 warmup_solver, 
-                         const vec3 gravity, 
+                         const v3 gravity, 
                          const f32 baumgarte_constant, 
                          const f32 max_linear_correction, 
                          const f32 max_linear_velocity_magnitude, 
@@ -1540,7 +1540,7 @@ struct ds_Dynamics
     struct ds_BitSet                island_high_energy_set;   /* High energy islands per-frame. */
 
 	//TODO temporary, move somewhere else.
-	vec3 			                gravity;	/* gravity constant */
+	v3 			                    gravity;	/* gravity constant */
 
 	u32			                    margin_on;
 	f32			                    margin;
