@@ -161,9 +161,6 @@ struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct d
 	v3 min = V3(F32_INFINITY, F32_INFINITY, F32_INFINITY);
 	v3 max = V3(-F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
 
-	const struct ds_Body *body = pipeline->body_pool.buf + shape->body;
-    const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
-    const struct ds_BodySim *sim = set->body_sim_pool.buf + body->sim;
 	const struct c_Shape *cshape = pipeline->cshape_db->pool.buf + shape->cshape_handle;
 
     ds_Transform t_world;
@@ -183,8 +180,8 @@ struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct d
 	else if (shape->cshape_type == C_SHAPE_SPHERE)
 	{
 		const f32 r = cshape->sphere.radius;
-		min = V3Add(V3Add(V3(-r, -r, -r), V3Load(shape->t_local.position)), V3Load(sim->world.position));
-		max = V3Add(V3Add(V3(r, r, r), V3Load(shape->t_local.position)), V3Load(sim->world.position));
+		min = V3Add(V3(-r, -r, -r), world_position);
+		max = V3Add(V3(r, r, r), world_position);
 	}
 	else if (shape->cshape_type == C_SHAPE_CAPSULE)
 	{
