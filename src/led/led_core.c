@@ -2019,8 +2019,8 @@ static void led_EngineRun(struct led *led)
 
 	    	r_Proxy3dLinearSpeculationSet(sim->world.position
 	    			, sim->world.rotation
-	    			, compute->linear_velocity
-	    			, compute->angular_velocity
+	    			, compute->linear_velocity.buf
+	    			, compute->angular_velocity.buf
 	    			, ns
 	    			, node->proxy);
         }

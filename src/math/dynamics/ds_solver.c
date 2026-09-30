@@ -24,57 +24,17 @@
 #include "ds_vector.h"
 #include "ds_quaternion.h"
 #include "ds_matrix.h"
-
-/*
- * TEMPORARY migration helpers: load/store struct fields that still use the old vec3/quat/mat3 types
- * (ds_BodySim, ds_BodyCompute, ds_Transform, c_Manifold, solverConfig). Remove once those are migrated.
- */
-static ds_ForceInline v3 V3Load(const vec3 a)
-{
-	return V3(a[0], a[1], a[2]);
-}
-
-static ds_ForceInline void V3Store(vec3 dst, const v3 a)
-{
-	dst[0] = a.x;
-	dst[1] = a.y;
-	dst[2] = a.z;
-}
-
-static ds_ForceInline q QLoad(const quat a)
-{
-	return Q(a[0], a[1], a[2], a[3]);
-}
-
-static ds_ForceInline void QStore(quat dst, const q a)
-{
-	dst[0] = a.x;
-	dst[1] = a.y;
-	dst[2] = a.z;
-	dst[3] = a.w;
-}
-
-static ds_ForceInline m3 M3Load(mat3 a)
-{
-	return M3Columns(V3Load(a[0]), V3Load(a[1]), V3Load(a[2]));
-}
-
-static ds_ForceInline void M3Store(mat3 dst, const m3 a)
-{
-	V3Store(dst[0], a.col[0]);
-	V3Store(dst[1], a.col[1]);
-	V3Store(dst[2], a.col[2]);
-}
+#include "ds_math_bridge.h"
 
 struct solverConfig config_storage = { 0 };
 struct solverConfig *g_solver_config = &config_storage;
 
 static ds_ThreadLocal struct ds_BodyCompute tl_static_bcomp = 
 {
-    .linear_velocity = { 0, 0, 0 },
-    .angular_velocity = { 0, 0, 0 },
-    .center_of_mass = { 0, 0, 0, },
-    .rotation = { 0, 0, 0, 1 },
+    .linear_velocity = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
+    .angular_velocity = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
+    .center_of_mass = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
+    .rotation = { .x = 0.0f, .y = 0.0f, .z = 0.0f, .w = 1.0f },
     .flags = 0,
 };
 
@@ -85,10 +45,10 @@ static ds_ThreadLocal struct ds_BodySim tl_static_body_sim =
     .inv_mass = 0,
     .world.position = { 0, 0, 0, },
     .world.rotation = { 0, 0, 0, 1 },
-    .local_center_of_mass = { 0, 0, 0 },
-    .world_center_of_mass = { 0, 0, 0 },
-    .local_inv_inertia = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }},
-    .world_inv_inertia = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }},
+    .local_center_of_mass = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
+    .world_center_of_mass = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
+    .local_inv_inertia = { .buf = { 0.0f } },
+    .world_inv_inertia = { .buf = { 0.0f } },
 };
 
 
@@ -164,15 +124,15 @@ void ds_BodyUpdateSolverDataRange(struct ds_Dynamics *pipeline, const u32 low, c
 		/* setup inverted world inertia tensors and center of massses */
 		const m3 rot = M3Q(QLoad(sim->world.rotation));
 		const m3 rot_inv = M3Transpose(rot);
-        M3Store(sim->world_inv_inertia, M3Mul(M3Mul(rot, M3Load(sim->local_inv_inertia)), rot_inv));
+        sim->world_inv_inertia = M3Mul(M3Mul(rot, sim->local_inv_inertia), rot_inv);
 
-        QStore(bcomp->rotation, QLoad(sim->world.rotation));
-        V3Store(bcomp->center_of_mass, V3Add(M3V3Mul(rot, V3Load(sim->local_center_of_mass)), V3Load(sim->world.position)));
+        bcomp->rotation = QLoad(sim->world.rotation);
+        bcomp->center_of_mass = V3Add(M3V3Mul(rot, sim->local_center_of_mass), V3Load(sim->world.position));
 
         /* integrate new velocities using external forces */
-        const v3 linear_velocity = V3AddScaled(V3Load(bcomp->linear_velocity), V3Load(g_solver_config->gravity), pipeline->timestep);
-		V3Store(bcomp->linear_velocity, V3Scale(linear_velocity, linear_damp));
-		V3Store(bcomp->angular_velocity, V3Scale(V3Load(bcomp->angular_velocity), angular_damp));
+        const v3 linear_velocity = V3AddScaled(bcomp->linear_velocity, V3Load(g_solver_config->gravity), pipeline->timestep);
+		bcomp->linear_velocity = V3Scale(linear_velocity, linear_damp);
+		bcomp->angular_velocity = V3Scale(bcomp->angular_velocity, angular_damp);
     }
 
     ProfZoneEnd;
@@ -189,22 +149,22 @@ void ds_BodyIntegrateVelocitiesRange(struct ds_Dynamics *pipeline, const u32 low
         struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + i;
 
         /* update velocity and world center of mass */
-        const v3 linear_velocity = V3Load(bcomp->linear_velocity);
-        const v3 angular_velocity = V3Load(bcomp->angular_velocity);
+        const v3 linear_velocity = bcomp->linear_velocity;
+        const v3 angular_velocity = bcomp->angular_velocity;
         const f32 div_linear = V3Length(linear_velocity) * g_solver_config->max_linear_velocity_magnitude_inv;
         const f32 div_angular = V3Length(angular_velocity) * g_solver_config->max_angular_velocity_magnitude_inv;
         const f32 t_linear = 1.0f / F32Clamp(div_linear, 1.0f, F32_INFINITY);
         const f32 t_angular = 1.0f / F32Clamp(div_angular, 1.0f, F32_INFINITY);
 
-	    V3Store(bcomp->center_of_mass, V3AddScaled(V3Load(bcomp->center_of_mass), linear_velocity, pipeline->timestep * t_linear));
+	    bcomp->center_of_mass = V3AddScaled(bcomp->center_of_mass, linear_velocity, pipeline->timestep * t_linear);
 
-        const q rotation = QLoad(bcomp->rotation);
+        const q rotation = bcomp->rotation;
         const q a_vel_quat = Q(angular_velocity.x * t_angular,
                                angular_velocity.y * t_angular,
                                angular_velocity.z * t_angular,
                                0.0f);
 	    const q rot_delta = QScale(QMul(a_vel_quat, rotation), pipeline->timestep / 2.0f);
-	    QStore(bcomp->rotation, QNormalize(QAdd(rotation, rot_delta)));
+	    bcomp->rotation = QNormalize(QAdd(rotation, rot_delta));
     }
 
     ProfZoneEnd;
@@ -231,9 +191,9 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
         const struct ds_Body *body = pipeline->body_pool.buf + sim->body;
     
         /* derive new world transform from updated angle and world center of mass */
-        const q rotation = QLoad(bcomp->rotation);
-        const v3 rotated_local_center_of_mass = QVec3Rotate(rotation, V3Load(sim->local_center_of_mass));
-        V3Store(sim->world.position, V3Sub(V3Load(bcomp->center_of_mass), rotated_local_center_of_mass));
+        const q rotation = bcomp->rotation;
+        const v3 rotated_local_center_of_mass = QVec3Rotate(rotation, sim->local_center_of_mass);
+        V3Store(sim->world.position, V3Sub(bcomp->center_of_mass, rotated_local_center_of_mass));
         QStore(sim->world.rotation, rotation);
 
         for (u32 j = body->shape_list.first; (i32) j != DLL_SENTINEL; j = shape->body_shape.next)
@@ -353,8 +313,8 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
 		    	ccp->tangent_impulse[1] = 0.0f;
 
                 ccp->v = V3Load(m->v[ccpi]);
-		    	ccp->r[0] = V3Sub(ccp->v, V3Load(bcomp[0]->center_of_mass));
-		    	ccp->r[1] = V3AddScaled(V3Sub(ccp->v, V3Load(bcomp[1]->center_of_mass)), V3Load(m->n), -m->depth[ccpi]);
+		    	ccp->r[0] = V3Sub(ccp->v, bcomp[0]->center_of_mass);
+		    	ccp->r[1] = V3AddScaled(V3Sub(ccp->v, bcomp[1]->center_of_mass), V3Load(m->n), -m->depth[ccpi]);
 
                 /*
                  * Currently, we use a sentinel with COM = origin for static bodies. This becomes problematic
@@ -365,8 +325,8 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
                  */
                 ds_Assert(V3Dot(ccp->v, ccp->v) < 10000.0f*10000.0f);
 
-                const m3 inv_inertia0 = M3Load(sim[0]->world_inv_inertia);
-                const m3 inv_inertia1 = M3Load(sim[1]->world_inv_inertia);
+                const m3 inv_inertia0 = sim[0]->world_inv_inertia;
+                const m3 inv_inertia1 = sim[1]->world_inv_inertia;
 
 		    	v3 ccp_c = V3Cross(ccp->r[0], cc->normal);	/* (r1 x n) */
 		    	v3 ccp_Ic = M3V3Mul(inv_inertia0, ccp_c);	/* Inw(I_1)(r1 x n) */
@@ -397,9 +357,9 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
 		    	/* TODO: This will run immediately again on the first iteration of the solver,
 		    	 * could somehow remove it here, but would make stuff more complex than needed
 		    	 * at this current point. */
-		    	v3 relative_velocity = V3Sub(V3Load(bcomp[1]->linear_velocity), V3Load(bcomp[0]->linear_velocity));
-		    	relative_velocity = V3Add(relative_velocity, V3Cross(V3Load(bcomp[1]->angular_velocity), ccp->r[1]));
-		    	relative_velocity = V3Sub(relative_velocity, V3Cross(V3Load(bcomp[0]->angular_velocity), ccp->r[0]));
+		    	v3 relative_velocity = V3Sub(bcomp[1]->linear_velocity, bcomp[0]->linear_velocity);
+		    	relative_velocity = V3Add(relative_velocity, V3Cross(bcomp[1]->angular_velocity, ccp->r[1]));
+		    	relative_velocity = V3Sub(relative_velocity, V3Cross(bcomp[0]->angular_velocity, ccp->r[0]));
 		    	const f32 separating_velocity = V3Dot(cc->normal, relative_velocity);
 
 		    	/* if sufficiently fast collision happening, so apply the restitution effect */
@@ -508,17 +468,17 @@ void ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 col
 	            		total_cached_impulse = V3AddScaled(total_cached_impulse, cc->tangent[0], ccp->tangent_impulse[0]);
 	            		total_cached_impulse = V3AddScaled(total_cached_impulse, cc->tangent[1], ccp->tangent_impulse[1]);
 
-	            		V3Store(bcomp[0]->linear_velocity, V3AddScaled(V3Load(bcomp[0]->linear_velocity), total_cached_impulse, -sim[0]->inv_mass));
-	            		V3Store(bcomp[1]->linear_velocity, V3AddScaled(V3Load(bcomp[1]->linear_velocity), total_cached_impulse, sim[1]->inv_mass));
+	            		bcomp[0]->linear_velocity = V3AddScaled(bcomp[0]->linear_velocity, total_cached_impulse, -sim[0]->inv_mass);
+	            		bcomp[1]->linear_velocity = V3AddScaled(bcomp[1]->linear_velocity, total_cached_impulse, sim[1]->inv_mass);
 
                         ccp->r[0] = QVec3Rotate(QLoad(sim[0]->world.rotation), ccache->r1[best]);
                         ccp->r[1] = QVec3Rotate(QLoad(sim[1]->world.rotation), ccache->r2[best]);
 
-	            		const v3 delta_w0 = M3V3Mul(M3Load(sim[0]->world_inv_inertia), V3Cross(ccp->r[0], total_cached_impulse));
-	            		V3Store(bcomp[0]->angular_velocity, V3Sub(V3Load(bcomp[0]->angular_velocity), delta_w0));
+	            		const v3 delta_w0 = M3V3Mul(sim[0]->world_inv_inertia, V3Cross(ccp->r[0], total_cached_impulse));
+	            		bcomp[0]->angular_velocity = V3Sub(bcomp[0]->angular_velocity, delta_w0);
 
-	            		const v3 delta_w1 = M3V3Mul(M3Load(sim[1]->world_inv_inertia), V3Cross(ccp->r[1], total_cached_impulse));
-	            		V3Store(bcomp[1]->angular_velocity, V3Add(V3Load(bcomp[1]->angular_velocity), delta_w1));
+	            		const v3 delta_w1 = M3V3Mul(sim[1]->world_inv_inertia, V3Cross(ccp->r[1], total_cached_impulse));
+	            		bcomp[1]->angular_velocity = V3Add(bcomp[1]->angular_velocity, delta_w1);
 	            	}
                 }
             }
@@ -562,9 +522,9 @@ void ds_ContactConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 co
 		    	for (u32 k = 0; k < 2; ++k)
 		    	{
 		    	    /* Calculate separating velocity at point: JV */
-		    	    v3 relative_velocity = V3Sub(V3Load(bcomp[1]->linear_velocity), V3Load(bcomp[0]->linear_velocity));
-		    	    relative_velocity = V3Add(relative_velocity, V3Cross(V3Load(bcomp[1]->angular_velocity), ccp->r[1]));
-		    	    relative_velocity = V3Sub(relative_velocity, V3Cross(V3Load(bcomp[0]->angular_velocity), ccp->r[0]));
+		    	    v3 relative_velocity = V3Sub(bcomp[1]->linear_velocity, bcomp[0]->linear_velocity);
+		    	    relative_velocity = V3Add(relative_velocity, V3Cross(bcomp[1]->angular_velocity, ccp->r[1]));
+		    	    relative_velocity = V3Sub(relative_velocity, V3Cross(bcomp[0]->angular_velocity, ccp->r[0]));
 		    	    const f32 separating_velocity = V3Dot(cc->tangent[k], relative_velocity);
 
 		    	    /* update constraint point tangent impulse */
@@ -576,13 +536,13 @@ void ds_ContactConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 co
 		    	    /* update body velocities */
 		    	    const v3 impulse = V3Scale(cc->tangent[k], delta_impulse);
 
-		    	    const v3 delta_w0 = M3V3Mul(M3Load(sim[0]->world_inv_inertia), V3Cross(ccp->r[0], impulse));
-		    	    V3Store(bcomp[0]->linear_velocity, V3AddScaled(V3Load(bcomp[0]->linear_velocity), impulse, -sim[0]->inv_mass));
-		    	    V3Store(bcomp[0]->angular_velocity, V3Sub(V3Load(bcomp[0]->angular_velocity), delta_w0));
+		    	    const v3 delta_w0 = M3V3Mul(sim[0]->world_inv_inertia, V3Cross(ccp->r[0], impulse));
+		    	    bcomp[0]->linear_velocity = V3AddScaled(bcomp[0]->linear_velocity, impulse, -sim[0]->inv_mass);
+		    	    bcomp[0]->angular_velocity = V3Sub(bcomp[0]->angular_velocity, delta_w0);
 
-		    	    const v3 delta_w1 = M3V3Mul(M3Load(sim[1]->world_inv_inertia), V3Cross(ccp->r[1], impulse));
-		    	    V3Store(bcomp[1]->linear_velocity, V3AddScaled(V3Load(bcomp[1]->linear_velocity), impulse, sim[1]->inv_mass));
-		    	    V3Store(bcomp[1]->angular_velocity, V3Add(V3Load(bcomp[1]->angular_velocity), delta_w1));
+		    	    const v3 delta_w1 = M3V3Mul(sim[1]->world_inv_inertia, V3Cross(ccp->r[1], impulse));
+		    	    bcomp[1]->linear_velocity = V3AddScaled(bcomp[1]->linear_velocity, impulse, sim[1]->inv_mass);
+		    	    bcomp[1]->angular_velocity = V3Add(bcomp[1]->angular_velocity, delta_w1);
                 }
 		    }
 
@@ -591,9 +551,9 @@ void ds_ContactConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 co
                 struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
 
 		    	/* Calculate separating velocity at point: JV */
-		    	v3 relative_velocity = V3Sub(V3Load(bcomp[1]->linear_velocity), V3Load(bcomp[0]->linear_velocity));
-		    	relative_velocity = V3Add(relative_velocity, V3Cross(V3Load(bcomp[1]->angular_velocity), ccp->r[1]));
-		    	relative_velocity = V3Sub(relative_velocity, V3Cross(V3Load(bcomp[0]->angular_velocity), ccp->r[0]));
+		    	v3 relative_velocity = V3Sub(bcomp[1]->linear_velocity, bcomp[0]->linear_velocity);
+		    	relative_velocity = V3Add(relative_velocity, V3Cross(bcomp[1]->angular_velocity, ccp->r[1]));
+		    	relative_velocity = V3Sub(relative_velocity, V3Cross(bcomp[0]->angular_velocity, ccp->r[0]));
 		    	const f32 separating_velocity = V3Dot(cc->normal, relative_velocity);
 
 		    	/* update constraint point normal impulse */
@@ -605,13 +565,13 @@ void ds_ContactConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 co
 		    	/* update body velocities */
 		    	const v3 impulse = V3Scale(cc->normal, delta_impulse);
 
-		    	const v3 delta_w0 = M3V3Mul(M3Load(sim[0]->world_inv_inertia), V3Cross(ccp->r[0], impulse));
-		    	V3Store(bcomp[0]->linear_velocity, V3AddScaled(V3Load(bcomp[0]->linear_velocity), impulse, -sim[0]->inv_mass));
-		    	V3Store(bcomp[0]->angular_velocity, V3Sub(V3Load(bcomp[0]->angular_velocity), delta_w0));
+		    	const v3 delta_w0 = M3V3Mul(sim[0]->world_inv_inertia, V3Cross(ccp->r[0], impulse));
+		    	bcomp[0]->linear_velocity = V3AddScaled(bcomp[0]->linear_velocity, impulse, -sim[0]->inv_mass);
+		    	bcomp[0]->angular_velocity = V3Sub(bcomp[0]->angular_velocity, delta_w0);
 
-		    	const v3 delta_w1 = M3V3Mul(M3Load(sim[1]->world_inv_inertia), V3Cross(ccp->r[1], impulse));
-		    	V3Store(bcomp[1]->linear_velocity, V3AddScaled(V3Load(bcomp[1]->linear_velocity), impulse, sim[1]->inv_mass));
-		    	V3Store(bcomp[1]->angular_velocity, V3Add(V3Load(bcomp[1]->angular_velocity), delta_w1));
+		    	const v3 delta_w1 = M3V3Mul(sim[1]->world_inv_inertia, V3Cross(ccp->r[1], impulse));
+		    	bcomp[1]->linear_velocity = V3AddScaled(bcomp[1]->linear_velocity, impulse, sim[1]->inv_mass);
+		    	bcomp[1]->angular_velocity = V3Add(bcomp[1]->angular_velocity, delta_w1);
             }
         }
     }
@@ -673,8 +633,8 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline
             };
             const q bcomp_inv_rotation[2] =
             {
-                QInverse(QLoad(bcomp[0]->rotation)),
-                QInverse(QLoad(bcomp[1]->rotation)),
+                QInverse(bcomp[0]->rotation),
+                QInverse(bcomp[1]->rotation),
             };
 		    for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
 		    {
@@ -727,16 +687,16 @@ void ds_PositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 c
 	        {
 	        	struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
 
-		        const m3 rot0 = M3Q(QLoad(bcomp[0]->rotation));
-		        const m3 inv_inertia0 = M3Mul(M3Mul(rot0, M3Load(sim[0]->local_inv_inertia)), M3Transpose(rot0));
-		        M3Store(sim[0]->world_inv_inertia, inv_inertia0);
+		        const m3 rot0 = M3Q(bcomp[0]->rotation);
+		        const m3 inv_inertia0 = M3Mul(M3Mul(rot0, sim[0]->local_inv_inertia), M3Transpose(rot0));
+		        sim[0]->world_inv_inertia = inv_inertia0;
 
-		        const m3 rot1 = M3Q(QLoad(bcomp[1]->rotation));
-		        const m3 inv_inertia1 = M3Mul(M3Mul(rot1, M3Load(sim[1]->local_inv_inertia)), M3Transpose(rot1));
-		        M3Store(sim[1]->world_inv_inertia, inv_inertia1);
+		        const m3 rot1 = M3Q(bcomp[1]->rotation);
+		        const m3 inv_inertia1 = M3Mul(M3Mul(rot1, sim[1]->local_inv_inertia), M3Transpose(rot1));
+		        sim[1]->world_inv_inertia = inv_inertia1;
 
-                const v3 r0 = QVec3Rotate(QLoad(bcomp[0]->rotation), ccp->r[0]);
-                const v3 r1 = QVec3Rotate(QLoad(bcomp[1]->rotation), ccp->r[1]);
+                const v3 r0 = QVec3Rotate(bcomp[0]->rotation, ccp->r[0]);
+                const v3 r1 = QVec3Rotate(bcomp[1]->rotation, ccp->r[1]);
 
 		    	const v3 rn0 = V3Cross(r0, cc->normal);
 		    	const v3 rn1 = V3Cross(r1, cc->normal);
@@ -745,8 +705,8 @@ void ds_PositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 c
                 const f32 K = sim[0]->inv_mass + sim[1]->inv_mass + V3Dot(M3V3Mul(inv_inertia0, rn0), rn0) + V3Dot(M3V3Mul(inv_inertia1, rn1), rn1);
 
                 /* constraint */
-                const v3 p0 = V3Add(r0, V3Load(bcomp[0]->center_of_mass));
-                const v3 p1 = V3Add(r1, V3Load(bcomp[1]->center_of_mass));
+                const v3 p0 = V3Add(r0, bcomp[0]->center_of_mass);
+                const v3 p1 = V3Add(r1, bcomp[1]->center_of_mass);
                 const f32 distance = V3Dot(p1, cc->normal) - V3Dot(p0, cc->normal);
                 min_separation = F32Max(min_separation, distance);
                 const f32 biased_slop_distance = g_solver_config->baumgarte_constant * (distance + g_solver_config->linear_slop);
@@ -758,18 +718,18 @@ void ds_PositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 c
                     : 0.0f;
 
                 const v3 impulse_vector = V3Scale(cc->normal, impulse);
-                V3Store(bcomp[0]->center_of_mass, V3AddScaled(V3Load(bcomp[0]->center_of_mass), impulse_vector, -sim[0]->inv_mass));
-                V3Store(bcomp[1]->center_of_mass, V3AddScaled(V3Load(bcomp[1]->center_of_mass), impulse_vector,  sim[1]->inv_mass));
+                bcomp[0]->center_of_mass = V3AddScaled(bcomp[0]->center_of_mass, impulse_vector, -sim[0]->inv_mass);
+                bcomp[1]->center_of_mass = V3AddScaled(bcomp[1]->center_of_mass, impulse_vector,  sim[1]->inv_mass);
                 /* flipped cross for correct sign! */
                 /* instantaneous torque, assume delta_t = 1 */
                 const v3 w0 = M3V3Mul(inv_inertia0, V3Cross(impulse_vector, r0));
                 /* Taylor expansion for sin, cos around 0 yields following approximation */
                 const q quat_angle0 = Q(w0.x/2.0f, w0.y/2.0f, w0.z/2.0f, 1.0f);
-                QStore(bcomp[0]->rotation, QNormalize(QMul(quat_angle0, QLoad(bcomp[0]->rotation))));
+                bcomp[0]->rotation = QNormalize(QMul(quat_angle0, bcomp[0]->rotation));
 
                 const v3 w1 = M3V3Mul(inv_inertia1, V3Cross(r1, impulse_vector));
                 const q quat_angle1 = Q(w1.x/2.0f, w1.y/2.0f, w1.z/2.0f, 1.0f);
-                QStore(bcomp[1]->rotation, QNormalize(QMul(quat_angle1, QLoad(bcomp[1]->rotation))));
+                bcomp[1]->rotation = QNormalize(QMul(quat_angle1, bcomp[1]->rotation));
             }
         }
     }

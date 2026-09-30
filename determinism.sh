@@ -33,7 +33,7 @@ cd build
 cmake --build . --parallel
 
 #gdb --args ./DreamscapeTest --generate "determinism.bin"
-./DreamscapeTest --generate "determinism.bin"
+#./DreamscapeTest --generate "determinism.bin"
 ./DreamscapeTest --load "determinism.bin" 
 ./DreamscapeTest --load "determinism.bin" 1
 #./DreamscapeTest --load "determinism.bin" 2

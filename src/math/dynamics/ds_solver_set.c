@@ -20,6 +20,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "ds_vector.h"
+
 POOL_DEFINE(ds_SolverSet);
 
 struct slot ds_SolverSetAdd(struct arena *mem_set, struct ds_Dynamics *pipeline, const u32 initial_body_sim_count, const u32 initial_body_compute_count, const u32 initial_contact_count, const u32 initial_contact_compute_count, const u32 initial_joint_count, const u32 initial_island_count)
@@ -206,8 +208,8 @@ void ds_SolverSetWakeUp(struct ds_Dynamics *pipeline, const u32 index)
         memcpy(new_sim, old_sim, sizeof(*new_sim));
 
         compute->flags = body->flags;
-	    Vec3Set(compute->linear_velocity, 0.0f, 0.0f, 0.0f);
-	    Vec3Set(compute->angular_velocity, 0.0f, 0.0f, 0.0f);
+	    compute->linear_velocity = V3Zero();
+	    compute->angular_velocity = V3Zero();
     }
 
     for (u32 i = 0; i < set->island_pool.count; ++i)
@@ -387,8 +389,8 @@ void ds_SolverSetMoveBody(struct ds_Dynamics *pipeline, const u32 body_index, co
     if (set_index == SOLVER_SET_ACTIVE)
     {
         struct ds_BodyCompute *compute = ds_CPoolPush(new_set->body_compute_pool).address;
-	    Vec3Set(compute->linear_velocity, 0.0f, 0.0f, 0.0f);
-	    Vec3Set(compute->angular_velocity, 0.0f, 0.0f, 0.0f);
+	    compute->linear_velocity = V3Zero();
+	    compute->angular_velocity = V3Zero();
         compute->flags = body->flags;
     }
 

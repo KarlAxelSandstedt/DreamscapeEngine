@@ -1488,8 +1488,8 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
         {
             body = pipeline->body_pool.buf + bi;
             const struct ds_BodyCompute *compute = active->body_compute_pool.buf + body->sim;
-			const f32 lv_sq = Vec3Dot(compute->linear_velocity, compute->linear_velocity);
-			const f32 av_sq = Vec3Dot(compute->angular_velocity, compute->angular_velocity);
+			const f32 lv_sq = V3Dot(compute->linear_velocity, compute->linear_velocity);
+			const f32 av_sq = V3Dot(compute->angular_velocity, compute->angular_velocity);
 			if (lv_sq <= g_solver_config->sleep_linear_velocity_sq_limit && av_sq <= g_solver_config->sleep_angular_velocity_sq_limit)
 			{
 				body->low_velocity_time += pipeline->timestep;
@@ -1756,8 +1756,8 @@ u64 ds_DynamicsOrientationHash(const struct ds_Dynamics *pipeline)
         if (body->set == SOLVER_SET_ACTIVE)
         {
             const struct ds_BodyCompute *compute = set->body_compute_pool.buf + body->sim;
-            XXH3_64bits_update(state, compute->linear_velocity, sizeof(vec3));
-            XXH3_64bits_update(state, compute->angular_velocity, sizeof(vec3));
+            XXH3_64bits_update(state, &compute->linear_velocity, sizeof(v3));
+            XXH3_64bits_update(state, &compute->angular_velocity, sizeof(v3));
         }
     }
 

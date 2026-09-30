@@ -481,10 +481,10 @@ struct ds_BodySim
     f32             inv_mass;                   /* Inverse mass                                         */
 	ds_Transform    world;		                /* local body frame to world transform. Rotation is 
                                                    about the local origin (not center of mass!)         */
-	vec3		    local_center_of_mass;	    /* local body frame center of mass                      */
-	vec3		    world_center_of_mass;	    /* world body frame center of mass                      */
-	mat3 		    local_inv_inertia;          /* local inertia tensor                                 */
-	mat3 		    world_inv_inertia;          /* world inertia tensor                                 */
+	v3		        local_center_of_mass;	    /* local body frame center of mass                      */
+	v3		        world_center_of_mass;	    /* world body frame center of mass                      */
+	m3 		        local_inv_inertia;          /* local inertia tensor                                 */
+	m3 		        world_inv_inertia;          /* world inertia tensor                                 */
 };
 DEFINE_CPOOL_STRUCT(ds_BodySim);
 
@@ -496,11 +496,11 @@ Active rigid body velocity and other computational data used in the solver
 */
 struct ds_BodyCompute
 {
-	vec3 		    linear_velocity;        /* linear velocity of body */
-	vec3 		    angular_velocity;       /* angular velocity of body (about local center of mass,
+	v3 		        linear_velocity;        /* linear velocity of body */
+	v3 		        angular_velocity;       /* angular velocity of body (about local center of mass,
                                                not local origin!)                                   */
-    vec3            center_of_mass;         /* world-space  */
-    quat            rotation;
+    v3              center_of_mass;         /* world-space  */
+    q               rotation;
     u32             flags;
 
     u8              pad[8];

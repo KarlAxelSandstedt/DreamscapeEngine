@@ -17,6 +17,12 @@
 ==========================================================================
 */
 
+#include "ds_float.h"
+#include "ds_vector.h"
+#include "ds_quaternion.h"
+#include "ds_matrix.h"
+#include "ds_math_bridge.h"
+
 POOL_DEFINE(ds_Body);
 SDB_DEFINE(ds_BodyPrefab);
 
@@ -64,8 +70,8 @@ ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *p
 
         struct ds_BodyCompute *compute = compute_slot.address;
         compute->flags = body->flags;
-	    Vec3Set(compute->linear_velocity, 0.0f, 0.0f, 0.0f);
-	    Vec3Set(compute->angular_velocity, 0.0f, 0.0f, 0.0f);
+	    compute->linear_velocity = V3Zero();
+	    compute->angular_velocity = V3Zero();
 
 	    const struct slot island_slot = ds_IslandAlloc(pipeline, SOLVER_SET_ACTIVE);
 	    struct ds_Island *island = island_slot.address;
@@ -89,9 +95,9 @@ ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *p
     sim->flags = body->flags;
     sim->world = *world;
     sim->inv_mass = 0.0f;
-    Vec3Set(sim->local_center_of_mass, 0.0f, 0.0f, 0.0f);
-    Mat3Identity(sim->local_inv_inertia);
-	
+    sim->local_center_of_mass = V3Zero();
+    sim->local_inv_inertia = M3Identity();
+
 	return body->id;
 }
 
@@ -199,19 +205,15 @@ void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId i
     struct ds_BodySim *sim = set->body_sim_pool.buf + body->sim;
 	ds_Assert(ds_PoolSlotAllocated(body));
 
-	vec3 vtmp;
-    mat3 body_inertia_tensor, rot_local, rot_local_inv, tmp1, tmp2;
-
 	body->mass = 0.0f;
-    Vec3Set(sim->local_center_of_mass, 0.0f, 0.0f, 0.0f);
-	Mat3Set(body_inertia_tensor, 
-			0.0f, 0.0f, 0.0f, 
-			0.0f, 0.0f, 0.0f, 
-			0.0f, 0.0f, 0.0f);
+    sim->local_center_of_mass = V3Zero();
+	m3 body_inertia_tensor = M3(0.0f, 0.0f, 0.0f,
+				    0.0f, 0.0f, 0.0f,
+				    0.0f, 0.0f, 0.0f);
 
 	f32 *mass = ArenaPush(tmp, body->shape_list.count*sizeof(f32));
-	vec3ptr center_of_mass = ArenaPush(tmp, body->shape_list.count*sizeof(vec3));
-	mat3ptr inertia_tensor = ArenaPush(tmp, body->shape_list.count*sizeof(mat3));
+	v3 *center_of_mass = ArenaPush(tmp, body->shape_list.count*sizeof(v3));
+	m3 *inertia_tensor = ArenaPush(tmp, body->shape_list.count*sizeof(m3));
 
 	struct ds_Shape *shape = NULL;
 	u32 s = body->shape_list.first;
@@ -225,44 +227,37 @@ void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId i
 		body->mass += mass[i];
 
 		/* R, R^-1 */
-		Mat3Quat(rot_local, shape->t_local.rotation);
-		Mat3Transpose(rot_local_inv, rot_local);
+		const m3 rot_local = M3Q(QLoad(shape->t_local.rotation));
+		const m3 rot_local_inv = M3Transpose(rot_local);
 
 		/* center_of_mass_Shape[i] = R*shape_center_of_mass + pos */
-		Vec3Copy(vtmp, cshape->center_of_mass);
-		Mat3VecMul(center_of_mass[i], rot_local, vtmp);
-		Vec3Translate(center_of_mass[i], shape->t_local.position);
-		Vec3TranslateScaled(sim->local_center_of_mass, center_of_mass[i], mass[i]);
+		center_of_mass[i] = V3Add(M3V3Mul(rot_local, V3Load(cshape->center_of_mass)), V3Load(shape->t_local.position));
+		sim->local_center_of_mass = V3AddScaled(sim->local_center_of_mass, center_of_mass[i], mass[i]);
 
 		/* I_Shape(i) = R * Shape_Inertia * R^-1 */
-		Mat3Scale(tmp1, *((mat3ptr) &cshape->inertia_tensor), shape->density);
-		Mat3Mul(tmp2, rot_local, tmp1);
-		Mat3Mul(inertia_tensor[i], tmp2, rot_local_inv);
+		const m3 shape_inertia = M3Scale(M3Load(*((mat3ptr) &cshape->inertia_tensor)), shape->density);
+		inertia_tensor[i] = M3Mul(M3Mul(rot_local, shape_inertia), rot_local_inv);
 	}
 
     sim->inv_mass = 1.0f / body->mass;
-	Vec3ScaleSelf(sim->local_center_of_mass, sim->inv_mass);
+	sim->local_center_of_mass = V3Scale(sim->local_center_of_mass, sim->inv_mass);
 
-	/* 
+	/*
 	 * d(i) = center_of_mass_Shape(i) - center_of_mass_Body
-	 * I_Body = sum { I_Shape(i) + mass_Shape(i) * (Identity*DOT(d(i),d(i) - OUTER(d(i),d(i)))) } 
+	 * I_Body = sum { I_Shape(i) + mass_Shape(i) * (Identity*DOT(d(i),d(i) - OUTER(d(i),d(i)))) }
 	 */
-	vec3 d;
 	for (u32 i = 0; i < body->shape_list.count; ++i)
 	{
-		Vec3Sub(d, center_of_mass[i], sim->local_center_of_mass);
+		const v3 d = V3Sub(center_of_mass[i], sim->local_center_of_mass);
 
-		Mat3Identity(tmp1);
-		Mat3ScaleSelf(tmp1, mass[i]*Vec3Dot(d, d));
+		const m3 tmp1 = M3Scale(M3Identity(), mass[i]*V3Dot(d, d));
+		const m3 tmp2 = M3Scale(M3OuterProduct(d, d), mass[i]);
 
-		Mat3OuterProduct(tmp2, d, d);
-		Mat3ScaleSelf(tmp2, mass[i]);
-
-		Mat3AddSelf(body_inertia_tensor, inertia_tensor[i]);
-		Mat3AddSelf(body_inertia_tensor, tmp1);
-		Mat3SubSelf(body_inertia_tensor, tmp2);
+		body_inertia_tensor = M3Add(body_inertia_tensor, inertia_tensor[i]);
+		body_inertia_tensor = M3Add(body_inertia_tensor, tmp1);
+		body_inertia_tensor = M3Sub(body_inertia_tensor, tmp2);
 	}
-    Mat3Inverse(sim->local_inv_inertia, body_inertia_tensor);
+    M3Inverse(&sim->local_inv_inertia, body_inertia_tensor);
     
     ArenaPopScratch();
 }
