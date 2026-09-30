@@ -36,8 +36,8 @@ extern "C" {
  */
 struct aabb 
 {
-	vec3 center;
-	vec3 hw;
+	v3 center;
+	v3 hw;
 };
 
 /**
@@ -51,8 +51,8 @@ struct plane
 {
     union
     {
-	    vec3 normal;
-	    vec3 normal_direction;
+	    v3 normal;
+	    v3 normal_direction;
     };
     union
     {
@@ -74,8 +74,8 @@ struct plane
  */
 struct ray
 {
-	vec3 origin;
-	vec3 dir;
+	v3 origin;
+	v3 dir;
 };
 
 /**
@@ -86,8 +86,8 @@ struct ray
  */
 struct segment
 {
-	vec3 p[2];	
-	vec3 dir;	/* p[1]-p[0] */
+	v3 p[2];	
+	v3 dir;	/* p[1]-p[0] */
 };
 
 /**
@@ -98,7 +98,7 @@ struct segment
  */
 struct sphere
 {
-	vec3 center;
+	v3 center;
 	f32 radius;
 };
 
@@ -254,8 +254,8 @@ void		CapsuleSupport(vec3 support, const vec3 dir, const struct capsule *cap, ma
  */
 struct triMesh
 {
-	vec3ptr		v;
-	vec3u32ptr	tri;
+	v3 *		v;
+	v3u32 *	tri;
 	u32 		v_count;	
 	u32 		tri_count;
 };
@@ -293,7 +293,7 @@ struct TriVoronoi
     struct segment  s[3];           /* edge segment */
     struct plane    edge_plane[3];  /* edge plane orthogonal to face plane */
     struct plane    face_plane;     /* triangle plane (CCW) */
-    vec3            t[3];
+    v3            t[3];
 };
 
 
@@ -365,7 +365,7 @@ struct dcel
 {
 	struct dcelFace *f;		/* f[i] = half-edge of face i */
 	struct dcelEdge *e;
-	vec3ptr	v;
+	v3 *	v;
 	u32 f_count;
 	u32 e_count;
 	u32 v_count;

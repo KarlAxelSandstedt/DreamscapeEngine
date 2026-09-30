@@ -57,7 +57,7 @@ void BvhFree(struct bvh *bvh)
 
 static f32 BodySah(const struct aabb *box)
 {
-	return box->hw[0]*(box->hw[1] + box->hw[2]) + box->hw[1]*box->hw[2];
+	return box->hw.buf[0]*(box->hw.buf[1] + box->hw.buf[2]) + box->hw.buf[1]*box->hw.buf[2];
 }
 
 static f32 BvhCostRecursive(const struct bvh *bvh, const u32 index)
@@ -620,9 +620,9 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
 	node->bt_child[0] = 0;
 	node->bt_child[1] = mesh->tri_count;
 	node->bbox = BboxTriangle(
-				mesh->v[mesh->tri[0][0]],
-				mesh->v[mesh->tri[0][1]],
-				mesh->v[mesh->tri[0][2]]);
+				mesh->v[mesh->tri[0].buf[0]].buf,
+				mesh->v[mesh->tri[0].buf[1]].buf,
+				mesh->v[mesh->tri[0].buf[2]].buf);
 	node_stack[0] = root.index;
     depth_stack[0] = 0;
 
@@ -630,13 +630,13 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
 	{
 		mesh_bvh.tri[i] = i;
 		bbox_tri[i] = BboxTriangle(
-				mesh->v[mesh->tri[i][0]],
-				mesh->v[mesh->tri[i][1]],
-				mesh->v[mesh->tri[i][2]]);
+				mesh->v[mesh->tri[i].buf[0]].buf,
+				mesh->v[mesh->tri[i].buf[1]].buf,
+				mesh->v[mesh->tri[i].buf[2]].buf);
 		node->bbox = BboxUnion(node->bbox, bbox_tri[i]);
 	}
 
-	ds_AssertString(Vec3Length(node->bbox.center) < 0.0001f, "Center should most likely be 0.0, so the root box center defines a local origin!");
+	ds_AssertString(Vec3Length(node->bbox.center.buf) < 0.0001f, "Center should most likely be 0.0, so the root box center defines a local origin!");
 	
 	/* Process triangles from left to right, depth-first. */
 	while (sc--)
@@ -655,8 +655,8 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
 
 		ProfZoneNamed("mesh_bvh.bvh construction iteration");
 		vec3 bbox_min, bbox_max;
-		Vec3Add(bbox_max, node->bbox.center, node->bbox.hw);
-		Vec3Sub(bbox_min, node->bbox.center, node->bbox.hw);
+		Vec3Add(bbox_max, node->bbox.center.buf, node->bbox.hw.buf);
+		Vec3Sub(bbox_min, node->bbox.center.buf, node->bbox.hw.buf);
 
 		u32 best_axis = U32_MAX;
 		u32 best_split = U32_MAX;
@@ -676,7 +676,7 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
 			for (u32 i = tri_first; i < tri_first + tri_count; ++i)
 			{
 				const u32 tri = mesh_bvh.tri[i];
-				const f32 val = bin_count * (bbox_tri[tri].center[axis] - bbox_min[axis]) / (bbox_max[axis] - bbox_min[axis]);
+				const f32 val = bin_count * (bbox_tri[tri].center.buf[axis] - bbox_min[axis]) / (bbox_max[axis] - bbox_min[axis]);
 				const u8 bi = (u8) f32_clamp(val, 0.0f, bin_count - 0.01f);
 				centroid_bin_map[axis][tri] = bi;
 				axis_bin_bbox[axis][bi] = (axis_bin_tri_count[axis][bi] > 0)

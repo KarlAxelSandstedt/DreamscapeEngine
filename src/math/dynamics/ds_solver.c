@@ -224,9 +224,7 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
                 if (dirty->reinsert)
                 {
                     proxy_range->reinsert_count += 1;
-                    dirty->bbox.hw[0] += shape->margin;
-            	    dirty->bbox.hw[1] += shape->margin;
-            	    dirty->bbox.hw[2] += shape->margin;
+                    dirty->bbox.hw = V3AddConstant(dirty->bbox.hw, shape->margin);
                 }
 
                 proxy_range->count += 1;

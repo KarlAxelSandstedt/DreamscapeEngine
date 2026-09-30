@@ -885,9 +885,9 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 	{
 		for (u32 z = 0; z < n-1; ++z)
 		{
-			mesh.v[x*(n-1) + z][0] = (0.5f + x) * unit;
-			mesh.v[x*(n-1) + z][1] = 0.0f;
-			mesh.v[x*(n-1) + z][2] = (0.5f + z) * unit;
+			mesh.v[x*(n-1) + z].buf[0] = (0.5f + x) * unit;
+			mesh.v[x*(n-1) + z].buf[1] = 0.0f;
+			mesh.v[x*(n-1) + z].buf[2] = (0.5f + z) * unit;
 
 			f32 amplitude = 1.0f / (1 << OCTAVES);
 			for (u32 i = 0; i < OCTAVES; ++i)
@@ -901,26 +901,26 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 	
 				const vec2 bl_diff = 
 				{
-					mesh.v[x*(n-1) + z][0] - x_low * unit, 	
-					mesh.v[x*(n-1) + z][2] - z_low * unit, 	
+					mesh.v[x*(n-1) + z].buf[0] - x_low * unit, 	
+					mesh.v[x*(n-1) + z].buf[2] - z_low * unit, 	
 				};
 
 				const vec2 tl_diff = 
 				{
-					mesh.v[x*(n-1) + z][0] - x_low * unit, 	
-					mesh.v[x*(n-1) + z][2] - z_high * unit, 	
+					mesh.v[x*(n-1) + z].buf[0] - x_low * unit, 	
+					mesh.v[x*(n-1) + z].buf[2] - z_high * unit, 	
 				};
 
 				const vec2 br_diff = 
 				{
-					mesh.v[x*(n-1) + z][0] - x_high * unit, 	
-					mesh.v[x*(n-1) + z][2] - z_low * unit, 	
+					mesh.v[x*(n-1) + z].buf[0] - x_high * unit, 	
+					mesh.v[x*(n-1) + z].buf[2] - z_low * unit, 	
 				};
 
 				const vec2 tr_diff = 
 				{
-					mesh.v[x*(n-1) + z][0] - x_high * unit, 	
-					mesh.v[x*(n-1) + z][2] - z_high * unit, 	
+					mesh.v[x*(n-1) + z].buf[0] - x_high * unit, 	
+					mesh.v[x*(n-1) + z].buf[2] - z_high * unit, 	
 				};
 
 				//const f32 bl_dot = Vec2Dot(bl_diff, grad[i][(x_low >> i)*on + (z_low >> i)]);
@@ -963,8 +963,8 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 
 				const vec2 t = 
 				{
-					(mesh.v[x*(n-1) + z][0] - low[0]) / (high[0] - low[0]),
-					(mesh.v[x*(n-1) + z][2] - low[1]) / (high[1] - low[1]),
+					(mesh.v[x*(n-1) + z].buf[0] - low[0]) / (high[0] - low[0]),
+					(mesh.v[x*(n-1) + z].buf[2] - low[1]) / (high[1] - low[1]),
 				};
 
 				const vec2 smoothstep =
@@ -985,13 +985,13 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 				const f32 vt = tl_dot*(1.0f - smoothstep[0]) + tr_dot*smoothstep[0];
 				const f32 perlin = vb*(1.0f - smoothstep[1]) + vt*smoothstep[1];
 
-				mesh.v[x*(n-1) + z][1] += perlin * amplitude;
+				mesh.v[x*(n-1) + z].buf[1] += perlin * amplitude;
 				amplitude *= 2.0f;
 			}
 
-			mesh.v[x*(n-1) + z][0] += offset[0];
-			mesh.v[x*(n-1) + z][1] += offset[1];
-			mesh.v[x*(n-1) + z][2] += offset[2];
+			mesh.v[x*(n-1) + z].buf[0] += offset[0];
+			mesh.v[x*(n-1) + z].buf[1] += offset[1];
+			mesh.v[x*(n-1) + z].buf[2] += offset[2];
 		}
 	}
 
@@ -999,12 +999,12 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 	{
 		for (u32 z = 0; z < n-2; ++z)
 		{
-			mesh.tri[2*(x*(n-2) + z) + 0][0] = x*(n-1) + z; 
-			mesh.tri[2*(x*(n-2) + z) + 0][1] = x*(n-1) + z+1;
-			mesh.tri[2*(x*(n-2) + z) + 0][2] = (x+1)*(n-1) + z; 
-			mesh.tri[2*(x*(n-2) + z) + 1][0] = (x+1)*(n-1) + z; 
-			mesh.tri[2*(x*(n-2) + z) + 1][1] = x*(n-1) + z+1;
-			mesh.tri[2*(x*(n-2) + z) + 1][2] = (x+1)*(n-1) + z+1;
+			mesh.tri[2*(x*(n-2) + z) + 0].buf[0] = x*(n-1) + z; 
+			mesh.tri[2*(x*(n-2) + z) + 0].buf[1] = x*(n-1) + z+1;
+			mesh.tri[2*(x*(n-2) + z) + 0].buf[2] = (x+1)*(n-1) + z; 
+			mesh.tri[2*(x*(n-2) + z) + 1].buf[0] = (x+1)*(n-1) + z; 
+			mesh.tri[2*(x*(n-2) + z) + 1].buf[1] = x*(n-1) + z+1;
+			mesh.tri[2*(x*(n-2) + z) + 1].buf[2] = (x+1)*(n-1) + z+1;
 		}
 	}
 
@@ -1012,10 +1012,10 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 
 	struct aabb bbox = TriMeshBbox(&mesh);
 	vec3 local_origin;
-	Vec3Scale(local_origin, bbox.center, -1.0f);
+	Vec3Scale(local_origin, bbox.center.buf, -1.0f);
 	for (u32 i = 0; i < mesh.v_count; ++i)
 	{
-		Vec3Translate(mesh.v[i], local_origin);
+		Vec3Translate(mesh.v[i].buf, local_origin);
 	}
 
 	return mesh;

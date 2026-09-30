@@ -267,14 +267,14 @@ void r_MeshHull(struct arena *mem, struct r_Mesh *mesh, const struct dcel *hull)
 		struct dcelEdge *e1 = hull->e + f->first + 1;
 		struct dcelEdge *e2 = hull->e + f->first + 2;
 		TriCcwNormal(normal, 
-				hull->v[e0->origin],
-				hull->v[e1->origin],
-				hull->v[e2->origin]);
+				hull->v[e0->origin].buf,
+				hull->v[e1->origin].buf,
+				hull->v[e2->origin].buf);
 
 		vec3 p0, p1, p2;
-		Vec3Copy(p0, hull->v[e0->origin]); 
-                Vec3Copy(p1, hull->v[e1->origin]);
-                Vec3Copy(p2, hull->v[e2->origin]);
+		Vec3Copy(p0, hull->v[e0->origin].buf); 
+                Vec3Copy(p1, hull->v[e1->origin].buf);
+                Vec3Copy(p2, hull->v[e2->origin].buf);
 
 		ArenaPushPackedMemcpy(mem, p0, sizeof(vec3));
 		//ArenaPushPackedMemcpy(mem, color, sizeof(vec4));
@@ -292,7 +292,7 @@ void r_MeshHull(struct arena *mem, struct r_Mesh *mesh, const struct dcel *hull)
 		{
 			mesh->vertex_count += 1;
 			e2 = hull->e + f->first + ti + 2;
-                	Vec3Copy(p2, hull->v[e2->origin]);
+                	Vec3Copy(p2, hull->v[e2->origin].buf);
 
 			ArenaPushPackedMemcpy(mem, p2, sizeof(vec3));
 			//ArenaPushPackedMemcpy(mem, color, sizeof(vec4));
@@ -344,17 +344,17 @@ void r_MeshTriMesh(struct arena *mem, struct r_Mesh *mesh, const struct triMesh 
 	{
 		vec3 normal;
 		TriCcwNormal(normal, 
-				tri_mesh->v[tri_mesh->tri[t][0]],
-				tri_mesh->v[tri_mesh->tri[t][1]],
-				tri_mesh->v[tri_mesh->tri[t][2]]);
+				tri_mesh->v[tri_mesh->tri[t].buf[0]].buf,
+				tri_mesh->v[tri_mesh->tri[t].buf[1]].buf,
+				tri_mesh->v[tri_mesh->tri[t].buf[2]].buf);
 
-		ArenaPushPackedMemcpy(mem, tri_mesh->v[tri_mesh->tri[t][0]], sizeof(vec3));
+		ArenaPushPackedMemcpy(mem, tri_mesh->v[tri_mesh->tri[t].buf[0]].buf, sizeof(vec3));
 		//ArenaPushPackedMemcpy(mem, color, sizeof(vec4));
 		ArenaPushPackedMemcpy(mem, normal, sizeof(vec3));
-		ArenaPushPackedMemcpy(mem, tri_mesh->v[tri_mesh->tri[t][1]], sizeof(vec3));
+		ArenaPushPackedMemcpy(mem, tri_mesh->v[tri_mesh->tri[t].buf[1]].buf, sizeof(vec3));
 		//ArenaPushPackedMemcpy(mem, color, sizeof(vec4));
 		ArenaPushPackedMemcpy(mem, normal, sizeof(vec3));
-		ArenaPushPackedMemcpy(mem, tri_mesh->v[tri_mesh->tri[t][2]], sizeof(vec3));
+		ArenaPushPackedMemcpy(mem, tri_mesh->v[tri_mesh->tri[t].buf[2]].buf, sizeof(vec3));
 		//ArenaPushPackedMemcpy(mem, color, sizeof(vec4));
 		ArenaPushPackedMemcpy(mem, normal, sizeof(vec3));
 	}

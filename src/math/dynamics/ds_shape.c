@@ -77,7 +77,7 @@ ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab
 	struct aabb bbox_proxy = ds_ShapeWorldBbox(pipeline, shape);
     if (ds_BodyDynamicCheck(body))
     {
-		V3Store(bbox_proxy.hw, V3AddConstant(V3Load(bbox_proxy.hw), shape->margin));
+		bbox_proxy.hw = V3AddConstant(bbox_proxy.hw, shape->margin);
         ds_BitSetSet(&pipeline->shape_dynamic_usage_set, shape_slot.index, 1);
         ds_BitSetSet(&pipeline->shape_dirty_set, shape_slot.index, 1);
         shape->proxy = DbvhInsert(&pipeline->dynamic_bvh, shape->body, shape_slot.index, &bbox_proxy);
@@ -172,7 +172,7 @@ struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct d
 	{
 		for (u32 i = 0; i < cshape->hull.v_count; ++i)
 		{
-			const v3 v = V3Add(M3V3Mul(rot, V3Load(cshape->hull.v[i])), world_position);
+			const v3 v = V3Add(M3V3Mul(rot, cshape->hull.v[i]), world_position);
 			min = V3Min(min, v);
 			max = V3Max(max, v);
 		}
@@ -204,15 +204,15 @@ struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct d
 		M3Store(rot_mat3, rot);
 		struct aabb bbox;
 		AabbRotate(&bbox, &node[cshape->mesh_bvh.bvh.bt.root].bbox, rot_mat3);
-		const v3 hw = V3Load(bbox.hw);
+		const v3 hw = bbox.hw;
 		min = V3Add(V3Negate(hw), world_position);
 		max = V3Add(hw, world_position);
 	}
 
 	const v3 hw = V3Scale(V3Sub(max, min), 0.5f);
 	struct aabb bbox;
-	V3Store(bbox.hw, hw);
-	V3Store(bbox.center, V3Add(min, hw));
+	bbox.hw = hw;
+	bbox.center = V3Add(min, hw);
 	return bbox;
 }
 
@@ -338,6 +338,6 @@ u32 ds_ShapeRaycast(vec3 intersection, const struct ds_Dynamics *pipeline, const
 	const f32 t = ds_ShapeRaycastParameter(pipeline, shape, ray);
 	if (t == F32_INFINITY) return 0;
 
-	V3Store(intersection, V3AddScaled(V3Load(ray->origin), V3Load(ray->dir), t));
+	V3Store(intersection, V3AddScaled(ray->origin, ray->dir, t));
 	return 1;
 }

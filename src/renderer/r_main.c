@@ -255,9 +255,9 @@ static struct r_Mesh *DebugLinesMesh(struct arena *mem, const struct ds_Dynamics
 	{
 		for (u32 j = 0; j < pipeline->worker[i].draw.debug_segment_pool.count; ++j)
 		{
-			Vec3Copy((f32 *) vertex_data +  0, pipeline->worker[i].draw.debug_segment_pool.buf[j].segment.p[0]);
+			Vec3Copy((f32 *) vertex_data +  0, pipeline->worker[i].draw.debug_segment_pool.buf[j].segment.p[0].buf);
 			Vec4Copy((f32 *) vertex_data +  3, pipeline->worker[i].draw.debug_segment_pool.buf[j].color);
-			Vec3Copy((f32 *) vertex_data +  7, pipeline->worker[i].draw.debug_segment_pool.buf[j].segment.p[1]);
+			Vec3Copy((f32 *) vertex_data +  7, pipeline->worker[i].draw.debug_segment_pool.buf[j].segment.p[1].buf);
 			Vec4Copy((f32 *) vertex_data + 10, pipeline->worker[i].draw.debug_segment_pool.buf[j].color);
 			vertex_data += 2*(sizeof(vec3) + sizeof(vec4));
 			mem_left -= 2*(sizeof(vec3) + sizeof(vec4));
