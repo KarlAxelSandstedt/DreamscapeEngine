@@ -299,7 +299,7 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
 
 		    cc->restitution = F32Max(s[0]->restitution, s[1]->restitution);
 		    cc->friction = F32Sqrt(s[0]->friction*s[1]->friction);
-            cc->normal = V3Load(m->n);
+            cc->normal = m->n;
 		    V3CreateBasis(&cc->tangent[0], &cc->tangent[1], cc->normal);
 
 		    cc->ccp_count = m->v_count;
@@ -310,9 +310,9 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
 		    	ccp->tangent_impulse[0] = 0.0f;
 		    	ccp->tangent_impulse[1] = 0.0f;
 
-                ccp->v = V3Load(m->v[ccpi]);
+                ccp->v = m->v[ccpi];
 		    	ccp->r[0] = V3Sub(ccp->v, bcomp[0]->center_of_mass);
-		    	ccp->r[1] = V3AddScaled(V3Sub(ccp->v, bcomp[1]->center_of_mass), V3Load(m->n), -m->depth[ccpi]);
+		    	ccp->r[1] = V3AddScaled(V3Sub(ccp->v, bcomp[1]->center_of_mass), m->n, -m->depth[ccpi]);
 
                 /*
                  * Currently, we use a sentinel with COM = origin for static bodies. This becomes problematic
@@ -424,7 +424,7 @@ void ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 col
                  * If the cached contact's normal differ to musch from current, evict whole cache. 
                  * Note that we do not reuse the contact normal, but reuse cached r1, r2.
                  */
-                if (V3Dot(V3Load(m->n), ccache->normal) < 0.9f)
+                if (V3Dot(m->n, ccache->normal) < 0.9f)
                 {
                     continue;
                 }

@@ -23,7 +23,6 @@
 #include "float32.h"
 #include "ds_float.h"
 #include "ds_vector.h"
-#include "ds_math_bridge.h"
 #include "ds_job.h"
 
 POOL_DEFINE(ds_PhysicsEvent);

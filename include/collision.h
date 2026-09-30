@@ -175,10 +175,10 @@ struct c_Shape
     u8                      id_buf[C_SHAPE_ID_SIZE];
     SDB_NODE;
 	
-	mat3	                inertia_tensor;		/* local shape frame intertia tensor (Assumes density=1.0, 
+	m3	                    inertia_tensor;		/* local shape frame intertia tensor (Assumes density=1.0, 
 			                		                to get the interia tensor given a density, just multiply
 			                		                the matrix with the given density. */
-	vec3	                center_of_mass;		/* local shape frame center of mass */
+	v3	                    center_of_mass;		/* local shape frame center of mass */
 	f32	                    volume;
 
 	enum c_ShapeType        type;
@@ -204,9 +204,9 @@ the reference shape.
 */
 struct c_Manifold
 {
-	vec3 	v[4];       /* contact point on the reference shape surface     */
+	v3 	    v[4];       /* contact point on the reference shape surface     */
 	f32 	depth[4];   /* Contact point penetration depth (0.0f, INFINITY) */
-	vec3 	n;		    /* Contact normal: Points away from reference       */
+	v3 	    n;		    /* Contact normal: Points away from reference       */
 	u32 	v_count;    /* Contact point count                              */
 };
 
@@ -215,7 +215,7 @@ void 	c_ManifoldDebugPrint(const struct c_Manifold *cm);
 /* Sanity tests for debugging. Return 1 if valid, 0 otherwise. */
 u32     c_ManifoldCheck(const struct c_Manifold *cm);
 /* Transform the manifold */
-void    c_ManifoldTransform(struct c_Manifold *dst, const struct c_Manifold *src, mat3 rot, const vec3 translation);
+void	c_ManifoldTransform(struct c_Manifold *dst, const struct c_Manifold *src, const m3 rot, const v3 translation);
 
 /********************************** INTERSECTION TESTS **********************************/
 
@@ -231,15 +231,15 @@ u32     c_TriMeshBvhHullTest(const struct c_Shape *s1, const ds_Transform *t1, c
 
 /********************************** DISTANCE METHODS **********************************/
 
-f32     c_SphereDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-f32     c_CapsuleSphereDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-f32     c_CapsuleDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-f32     c_HullSphereDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-f32     c_HullCapsuleDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-f32     c_HullDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-f32     c_TriMeshBvhSphereDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-f32     c_TriMeshBvhCapsuleDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-f32     c_TriMeshBvhHullDistance(vec3 c1, vec3 c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+f32     c_SphereDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+f32     c_CapsuleSphereDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+f32     c_CapsuleDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+f32     c_HullSphereDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+f32     c_HullCapsuleDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+f32     c_HullDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+f32     c_TriMeshBvhSphereDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+f32     c_TriMeshBvhCapsuleDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+f32     c_TriMeshBvhHullDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
 
 /********************************** CONTACT MANIFOLD METHODS **********************************/
 

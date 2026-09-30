@@ -21,7 +21,6 @@
 #include "ds_vector.h"
 #include "ds_quaternion.h"
 #include "ds_matrix.h"
-#include "ds_math_bridge.h"
 
 POOL_DEFINE(ds_Body);
 SDB_DEFINE(ds_BodyPrefab);
@@ -231,11 +230,11 @@ void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId i
 		const m3 rot_local_inv = M3Transpose(rot_local);
 
 		/* center_of_mass_Shape[i] = R*shape_center_of_mass + pos */
-		center_of_mass[i] = V3Add(M3V3Mul(rot_local, V3Load(cshape->center_of_mass)), shape->t_local.position);
+		center_of_mass[i] = V3Add(M3V3Mul(rot_local, cshape->center_of_mass), shape->t_local.position);
 		sim->local_center_of_mass = V3AddScaled(sim->local_center_of_mass, center_of_mass[i], mass[i]);
 
 		/* I_Shape(i) = R * Shape_Inertia * R^-1 */
-		const m3 shape_inertia = M3Scale(M3Load(*((mat3ptr) &cshape->inertia_tensor)), shape->density);
+		const m3 shape_inertia = M3Scale(cshape->inertia_tensor, shape->density);
 		inertia_tensor[i] = M3Mul(M3Mul(rot_local, shape_inertia), rot_local_inv);
 	}
 

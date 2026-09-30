@@ -21,7 +21,6 @@
 #include "ds_vector.h"
 #include "ds_quaternion.h"
 #include "ds_matrix.h"
-#include "ds_math_bridge.h"
 
 POOL_DEFINE(ds_Shape);
 SDB_DEFINE(ds_ShapePrefab);
@@ -224,7 +223,7 @@ u32 (*c_shape_tests[C_SHAPE_COUNT][C_SHAPE_COUNT])(const struct c_Shape *, const
 	{ c_TriMeshBvhSphereTest,   c_TriMeshBvhCapsuleTest,    c_TriMeshBvhHullTest,	0, },
 };
 
-f32 (*c_distance_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(vec3 c1, vec3 c2, const struct c_Shape *, const ds_Transform *, const struct c_Shape *, const ds_Transform *) =
+f32 (*c_distance_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(v3 *c1, v3 *c2, const struct c_Shape *, const ds_Transform *, const struct c_Shape *, const ds_Transform *) =
 {
 	{ c_SphereDistance,	 	        0,				                0, 			                0, },
 	{ c_CapsuleSphereDistance,	    c_CapsuleDistance, 		        0, 			                0, },
@@ -263,7 +262,7 @@ u32 ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Shape *s1, 
 		: c_shape_tests[c_s2->type][c_s1->type](c_s2, &t2, c_s1, &t1);
 }
 
-f32 ds_ShapeDistance(vec3 c1, vec3 c2, const struct ds_Dynamics *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2)
+f32 ds_ShapeDistance(v3 *c1, v3 *c2, const struct ds_Dynamics *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2)
 {
  	const struct c_Shape *c_s1 = pipeline->cshape_db->pool.buf + s1->cshape_handle;
 	const struct c_Shape *c_s2 = pipeline->cshape_db->pool.buf + s2->cshape_handle;
@@ -331,11 +330,11 @@ f32 ds_ShapeRaycastParameter(const struct ds_Dynamics *pipeline, const struct ds
 	return c_raycast_parameter_methods[c_shape->type](c_shape, &transform, ray);
 }
 
-u32 ds_ShapeRaycast(vec3 intersection, const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct ray *ray)
+u32 ds_ShapeRaycast(v3 *intersection, const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct ray *ray)
 {
 	const f32 t = ds_ShapeRaycastParameter(pipeline, shape, ray);
 	if (t == F32_INFINITY) return 0;
 
-	V3Store(intersection, V3AddScaled(ray->origin, ray->dir, t));
+	*intersection = V3AddScaled(ray->origin, ray->dir, t);
 	return 1;
 }

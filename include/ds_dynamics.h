@@ -381,7 +381,7 @@ u32	        ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Sha
  * Return, if no intersection was found, the distance between shapes s1 and s2 and their respective
  * closest points c1 and c2. If the shapes are intersecting, return 0.0f. 
  */
-f32 	    ds_ShapeDistance(vec3 c1, vec3 c2, const struct ds_Dynamics *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
+f32 	    ds_ShapeDistance(v3 *c1, v3 *c2, const struct ds_Dynamics *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
 /* 
  * Run the contact's collision computation and set its manifold(s) and cache(s).
  */
@@ -394,7 +394,7 @@ f32 	    ds_ShapeRaycastParameter(const struct ds_Dynamics *pipeline, const stru
 /* 
  * Return 1 if ray hit shape, 0 otherwise. If hit, we return the closest intersection point 
  */
-u32 	    ds_ShapeRaycast(vec3 intersection, const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct ray *ray);
+u32 	    ds_ShapeRaycast(v3 *intersection, const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct ray *ray);
 
 
 /*
@@ -598,7 +598,7 @@ struct c_SatCache
      */
     sat_FeatureId   feature[2];
     f32             depth;      
-    vec3            normal;     
+    v3            normal;     
 };
 
 
