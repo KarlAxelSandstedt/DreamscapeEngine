@@ -26,6 +26,8 @@ extern "C" {
 
 #include <stdint.h>
 
+#include "ds_define.h"
+
 /************** Common Types **************/
 
 typedef	uint8_t 	u8;
@@ -141,6 +143,191 @@ typedef i64 vec4i64[4];
 typedef i64 (*vec2i64ptr)[2];
 typedef i64 (*vec3i64ptr)[3];
 typedef i64 (*vec4i64ptr)[4];
+
+typedef union v2
+{
+	struct 
+    { 
+        f32 x;
+        f32 y; 
+    };
+	f32 buf[2];
+} v2;
+
+typedef union v3
+{
+	struct 
+    { 
+        f32 x;
+        f32 y; 
+        f32 z; 
+    };
+	f32 buf[3];
+} v3;
+
+typedef union v4
+{
+	struct 
+    { 
+        f32 x;
+        f32 y; 
+        f32 z; 
+        f32 w; 
+    };
+	f32 buf[4];
+} v4;
+
+typedef union v2u32
+{
+	struct 
+    { 
+        u32 x;
+        u32 y; 
+    };
+	u32 buf[2];
+} v2u32;
+
+typedef union v3u32
+{
+	struct 
+    { 
+        u32 x;
+        u32 y; 
+        u32 z; 
+    };
+	u32 buf[3];
+} v3u32;
+
+typedef union v4u32
+{
+	struct 
+    { 
+        u32 x;
+        u32 y; 
+        u32 z; 
+        u32 w; 
+    };
+	u32 buf[4];
+} v4u32;
+
+typedef union v2u64
+{
+	struct 
+    { 
+        u64 x;
+        u64 y; 
+    };
+	u64 buf[2];
+} v2u64;
+
+typedef union v3u64
+{
+	struct 
+    { 
+        u64 x;
+        u64 y; 
+        u64 z; 
+    };
+	u64 buf[3];
+} v3u64;
+
+typedef union v4u64
+{
+	struct 
+    { 
+        u64 x;
+        u64 y; 
+        u64 z; 
+        u64 w; 
+    };
+	u64 buf[4];
+} v4u64;
+
+typedef union v2i32
+{
+	struct 
+    { 
+        i32 x;
+        i32 y; 
+    };
+	i32 buf[2];
+} v2i32;
+
+typedef union v3i32
+{
+	struct 
+    { 
+        i32 x;
+        i32 y; 
+        i32 z; 
+    };
+	i32 buf[3];
+} v3i32;
+
+typedef union v4i32
+{
+	struct 
+    { 
+        i32 x;
+        i32 y; 
+        i32 z; 
+        i32 w; 
+    };
+	i32 buf[4];
+} v4i32;
+
+typedef union v2i64
+{
+	struct 
+    { 
+        i64 x;
+        i64 y; 
+    };
+	i64 buf[2];
+} v2i64;
+
+typedef union v3i64
+{
+	struct 
+    { 
+        i64 x;
+        i64 y; 
+        i64 z; 
+    };
+	i64 buf[3];
+} v3i64;
+
+typedef union v4i64
+{
+	struct 
+    { 
+        i64 x;
+        i64 y; 
+        i64 z; 
+        i64 w; 
+    };
+	i64 buf[4];
+} v4i64;
+
+#define v2(_x, _y)	((v2) { .x = (_x), .y = (_y) })
+#define v3(_x, _y, _z)	((v3) { .x = (_x), .y = (_y), .z = (_z) })
+#define v4(_x, _y, _z, _w)	((v4) { .x = (_x), .y = (_y), .z = (_z), .w = (_w) })
+
+#define v2u32(_x, _y)	((v2u32) { .x = (_x), .y = (_y) })
+#define v3u32(_x, _y, _z)	((v3u32) { .x = (_x), .y = (_y), .z = (_z) })
+#define v4u32(_x, _y, _z, _w)	((v4u32) { .x = (_x), .y = (_y), .z = (_z), .w = (_w) })
+
+#define v2u64(_x, _y)	((v2u64) { .x = (_x), .y = (_y) })
+#define v3u64(_x, _y, _z)	((v3u64) { .x = (_x), .y = (_y), .z = (_z) })
+#define v4u64(_x, _y, _z, _w)	((v4u64) { .x = (_x), .y = (_y), .z = (_z), .w = (_w) })
+
+#define v2i32(_x, _y)	((v2i32) { .x = (_x), .y = (_y) })
+#define v3i32(_x, _y, _z)	((v3i32) { .x = (_x), .y = (_y), .z = (_z) })
+#define v4i32(_x, _y, _z, _w)	((v4i32) { .x = (_x), .y = (_y), .z = (_z), .w = (_w) })
+
+#define v2i64(_x, _y)	((v2i64) { .x = (_x), .y = (_y) })
+#define v3i64(_x, _y, _z)	((v3i64) { .x = (_x), .y = (_y), .z = (_z) })
+#define v4i64(_x, _y, _z, _w)	((v4i64) { .x = (_x), .y = (_y), .z = (_z), .w = (_w) })
 
 typedef vec2 mat2[2];
 typedef vec3 mat3[3];

@@ -64,6 +64,7 @@ extern "C" {
 	#define ds_ThreadLocal __thread
 	#define ds_StaticAssert(ds_Assertion, str)	_Static_assert(ds_Assertion, str)
 	#define ds_Align(alignment) __attribute__((aligned(alignment)))
+	#define ds_ForceInline inline __attribute__((always_inline))
     #define ds_AcqRelCompilerBarrier __asm__ __volatile__ ("" ::: "memory")
     #define ds_CpuPause(count)
 	#undef DS_PROFILE
@@ -79,6 +80,7 @@ extern "C" {
 	#define ds_ThreadLocal	__thread
 	#define ds_StaticAssert(ds_Assertion, str)	_Static_assert(ds_Assertion, str)
 	#define ds_Align(alignment) __attribute__((aligned(alignment)))
+	#define ds_ForceInline inline __attribute__((always_inline))
     #define ds_AcqRelCompilerBarrier __asm__ __volatile__ ("" ::: "memory")
 
 #elif defined(__GNUC__)
@@ -92,6 +94,7 @@ extern "C" {
 	#define ds_ThreadLocal	__thread
 	#define ds_StaticAssert(ds_Assertion, str)	_Static_assert(ds_Assertion, str)
 	#define ds_Align(alignment) __attribute__((aligned(alignment)))
+	#define ds_ForceInline inline __attribute__((always_inline))
     #define ds_AcqRelCompilerBarrier __asm__ __volatile__ ("" ::: "memory")
 
 #elif defined(_MSC_VER)
@@ -101,6 +104,7 @@ extern "C" {
 	#define ds_ThreadLocal	__declspec(thread)
 	#define ds_StaticAssert(ds_Assertion, str)	static_assert(ds_Assertion, str)
 	#define ds_Align(alignment) __declspec(align(alignment)) 
+	#define ds_ForceInline __forceinline
     #define ds_AcqRelCompilerBarrier atomic_signal_fence(memory_order_acq_rel)
 
     #define ds_

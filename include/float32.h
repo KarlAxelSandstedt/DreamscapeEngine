@@ -27,49 +27,7 @@ extern "C" {
 #include <stdio.h>
 
 #include "ds_types.h"
-
-#define F32_PI				3.14159274101257324f
-#define F32_PI2    			(2.0f * F32_PI)
-
-#define	F32_SIGN_LENGTH			1
-#define	F32_EXPONENT_LENGTH		8
-#define	F32_SIGNIFICAND_LENGTH		23
-
-#define	F32_SIGN_MASK			0x80000000
-#define	F32_EXPONENT_MASK		0x7f800000
-#define	F32_SIGNIFICAND_MASK		0x007fffff
-
-#define	F32_BIAS			127
-#define	F32_MAX_EXPONENT		127
-#define	F32_MIN_EXPONENT		-126
-
-#define	F32_MAX_POSITIVE_SUBNORMAL	f32_max_positive_subnormal()
-#define	F32_MIN_POSITIVE_SUBNORMAL	f32_min_positive_subnormal()
-#define	F32_MAX_NEGATIVE_SUBNORMAL	f32_max_negative_subnormal()
-#define	F32_MIN_NEGATIVE_SUBNORMAL	f32_min_negative_subnormal()
-
-#define	F32_MAX_POSITIVE_NORMAL		f32_max_positive_normal()
-#define	F32_MIN_POSITIVE_NORMAL		f32_min_positive_normal()
-#define	F32_MAX_NEGATIVE_NORMAL		f32_max_negative_normal()
-#define	F32_MIN_NEGATIVE_NORMAL		f32_min_negative_normal()
-
-#define	F32_INFINITY			f32_inf(0)
-#define	F32_EPSILON			1.1920929e-7f
-
-enum ieee_type
-{
-	IEEE_NAN,
-	IEEE_INF,
-	IEEE_ZERO,
-	IEEE_NORMAL,
-	IEEE_SUBNORMAL,
-};
-
-union ieee32
-{
-	f32 f;
-	u32 bits;		/* SIGN_BIT(1) | EXPONENT(8) | SIGNIFICAND(23) */
-};
+#include "ds_float.h"
 
 void		f32_bits_print(FILE *file, const f32 f);
 

@@ -29,6 +29,8 @@
 #include "ds_led.h"
 #include "ds_job.h"
 
+#include "ds_vector.h"
+
 int main(int argc, char *argv[])
 {	
 	u64 seed[4];
