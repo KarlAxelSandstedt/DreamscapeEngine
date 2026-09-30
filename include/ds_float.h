@@ -119,12 +119,12 @@ static ds_ForceInline f32 F32Abs(const f32 f)
 
 static ds_ForceInline f32 F32Max(const f32 a, const f32 b)
 {
-	return fmaxf(a, b);
+	return (a > b) ? a : b;
 }
 
 static ds_ForceInline f32 F32Min(const f32 a, const f32 b)
 {
-	return fminf(a, b);
+	return (a < b) ? a : b;
 }
 
 static ds_ForceInline f32 F32Clamp(const f32 val, const f32 min, const f32 max)
