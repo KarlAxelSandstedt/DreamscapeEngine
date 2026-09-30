@@ -265,7 +265,7 @@ struct aabb	TriMeshBbox(const struct triMesh *mesh);
 /* return t: smallest t >= 0 such that p = origin + t*dir is a point on the triangle, or F32_INF if no such t exist */
 f32 		TriMeshRaycastParameter(const struct triMesh *mesh, const u32 tri, const struct ray *ray);
 /* If the ray hits triangle (ccw), return 1 and set intersection. otherwise return 0. */
-u32 		TriMeshRaycast(vec3 intersection, const struct triMesh *mesh, const u32 tri, const struct ray *ray);
+u32 		TriMeshRaycast(v3 *intersection, const struct triMesh *mesh, const u32 tri, const struct ray *ray);
 
 /*
 TriVoronoi
@@ -298,13 +298,13 @@ struct TriVoronoi
 
 
 /* Get normal of ccw triangle */
-void 		TriCcwNormal(vec3 normal, const vec3 p0, const vec3 p1, const vec3 p2);
+v3 		TriCcwNormal(const v3 p0, const v3 p1, const v3 p2);
 /* Get normal direction of ccw triangle */
-void 		TriCcwNormalDirection(vec3 dir, const vec3 p0, const vec3 p1, const vec3 p2);
+v3 		TriCcwNormalDirection(const v3 p0, const v3 p1, const v3 p2);
 
 
 /* Setup a TriVoronoi struct corresponding to the CCW triangle t and return true if t is robust, false otherwise.  */
-u32         TriVoronoiInitCcw(struct TriVoronoi *tv, const vec3 t[3]);
+u32         TriVoronoiInitCcw(struct TriVoronoi *tv, const v3 t[3]);
 
 /* 
  * Return squared distance from segment s to triangle t, and set c_s to be the closest point on s, and c_t to be 
@@ -313,25 +313,25 @@ u32         TriVoronoiInitCcw(struct TriVoronoi *tv, const vec3 t[3]);
  * NOTE: If the returned distance is 0.0f, c_t is not necessarily c_s, but instead c_t ~= c_s. Use one of the points
  * for consistency if needed.
  */
-f32 		TriCcwSegmentDistanceSquared(vec3 c_t, vec3 c_s, enum TriVoronoiRegion *region, const struct segment *s, const struct TriVoronoi *tv);
+f32 		TriCcwSegmentDistanceSquared(v3 *c_t, v3 *c_s, enum TriVoronoiRegion *region, const struct segment *s, const struct TriVoronoi *tv);
 
 /* 
  * Return squared distance from point p to triangle t, and set c to be the closest point on the triangle. 
  * lambda_count is set to indicate the number of non-zero lambda components, and lambda is set to the 
  * barocentric coordinates:
  */
-f32         TriCcwPointDistanceSquared(vec3 c, enum TriVoronoiRegion *region, const vec3 point, const struct TriVoronoi *tv);
+f32         TriCcwPointDistanceSquared(v3 *c, enum TriVoronoiRegion *region, const v3 point, const struct TriVoronoi *tv);
 
 /* 
  * Return t in [0,1] such that clip = s.p0*(1-t) + s.p1*t is a point on the given plane. If no such t exist, 
  * return F32_INFINITY. 
  */
-f32         TriCcwSegmentClipParameter(vec3 clip, const struct segment *s, const struct TriVoronoi *tv);
+f32         TriCcwSegmentClipParameter(v3 *clip, const struct segment *s, const struct TriVoronoi *tv);
 
 /* 
  * Return 1 if segment clips triangle, 0 otherwise. If clip, set the clip point.
  */
-u32         TriCcwSegmentClip(vec3 clip, const struct segment *s, const struct TriVoronoi *tv);
+u32         TriCcwSegmentClip(v3 *clip, const struct segment *s, const struct TriVoronoi *tv);
 
 /* 
  * Return the remaining segment when clipping s against all side-planes of the triangle. WARNING: Assumes s in

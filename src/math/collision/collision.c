@@ -2074,7 +2074,7 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, sat_FeatureId cm_features[4]
 			ds_Assert(max_pos_i != max_neg_i);
 	
 			vec3 dir;
-			TriCcwNormalDirection(dir, cm->v[0], cp[max_pos_i], cm->v[2]);
+			V3Store(dir, TriCcwNormalDirection(V3Load(cm->v[0]), V3Load(cp[max_pos_i]), V3Load(cm->v[2])));
 			if (Vec3Dot(dir, cm->n) < 0.0f)
 			{
 				Vec3Copy(cm->v[3], cp[max_pos_i]);
@@ -2132,7 +2132,7 @@ static u32 HullFaceContact(struct arena *mem_tmp, struct c_Manifold *cm, sat_Fea
 		const u32 i0  = h[b_v]->e[h[b_v]->f[fi].first + 0].origin;
 		const u32 i1  = h[b_v]->e[h[b_v]->f[fi].first + 1].origin;
 		const u32 i2  = h[b_v]->e[h[b_v]->f[fi].first + 2].origin;
-        TriCcwNormalDirection(n, v[b_v][i0], v[b_v][i1], v[b_v][i2]);
+        V3Store(n, TriCcwNormalDirection(V3Load(v[b_v][i0]), V3Load(v[b_v][i1]), V3Load(v[b_v][i2])));
 
         /* Dot(R_n, I_n_dir) * Dot(R_n, I_n_dir) / Dot(I_n_dir, I_n_dir) = cos(theta)^2 */
         const f32 dot_RI = Vec3Dot(n, query->normal);
@@ -2295,10 +2295,10 @@ static void HullContactEECheckRecompute(struct sat_EdgeQuery *query, const struc
 	const u32 f1_2 = h1->e[e1_2].face_ccw;
 	const u32 f2_1 = h2->e[e2_1].face_ccw;
 	const u32 f2_2 = h2->e[e2_2].face_ccw;
-	TriCcwNormalDirection(n1_1, v1_world[h1->e[h1->f[f1_1].first + 0].origin],  v1_world[h1->e[h1->f[f1_1].first + 1].origin], v1_world[h1->e[h1->f[f1_1].first + 2].origin]);
-	TriCcwNormalDirection(n1_2, v1_world[h1->e[h1->f[f1_2].first + 0].origin],  v1_world[h1->e[h1->f[f1_2].first + 1].origin], v1_world[h1->e[h1->f[f1_2].first + 2].origin]);
-	TriCcwNormalDirection(n2_1, v2_world[h2->e[h2->f[f2_1].first + 0].origin],  v2_world[h2->e[h2->f[f2_1].first + 1].origin], v2_world[h2->e[h2->f[f2_1].first + 2].origin]);
-	TriCcwNormalDirection(n2_2, v2_world[h2->e[h2->f[f2_2].first + 0].origin],  v2_world[h2->e[h2->f[f2_2].first + 1].origin], v2_world[h2->e[h2->f[f2_2].first + 2].origin]);
+	V3Store(n1_1, TriCcwNormalDirection(V3Load(v1_world[h1->e[h1->f[f1_1].first + 0].origin]),  V3Load(v1_world[h1->e[h1->f[f1_1].first + 1].origin]), V3Load(v1_world[h1->e[h1->f[f1_1].first + 2].origin])));
+	V3Store(n1_2, TriCcwNormalDirection(V3Load(v1_world[h1->e[h1->f[f1_2].first + 0].origin]),  V3Load(v1_world[h1->e[h1->f[f1_2].first + 1].origin]), V3Load(v1_world[h1->e[h1->f[f1_2].first + 2].origin])));
+	V3Store(n2_1, TriCcwNormalDirection(V3Load(v2_world[h2->e[h2->f[f2_1].first + 0].origin]),  V3Load(v2_world[h2->e[h2->f[f2_1].first + 1].origin]), V3Load(v2_world[h2->e[h2->f[f2_1].first + 2].origin])));
+	V3Store(n2_2, TriCcwNormalDirection(V3Load(v2_world[h2->e[h2->f[f2_2].first + 0].origin]),  V3Load(v2_world[h2->e[h2->f[f2_2].first + 1].origin]), V3Load(v2_world[h2->e[h2->f[f2_2].first + 2].origin])));
 
 	///* we are working with minkowski difference A - B, so gauss map of B is (-B). n2_1, n2_2 cross product stays the same. */
 	Vec3NegateSelf(n2_1);	
@@ -2320,7 +2320,7 @@ static u32 HullContactEESeparation(struct sat_EdgeQuery *query, const struct dce
 	vec3 n1_1, n1_2, n2_1, n2_2;
     for (u32 f1 = 0; f1 < h1->f_count; ++f1)
     {
-        TriCcwNormalDirection(n1_1, v1_world[ h1->e[h1->f[f1].first + 0].origin ] , v1_world[ h1->e[h1->f[f1].first + 1].origin ] , v1_world[ h1->e[h1->f[f1].first + 2].origin ]);
+        V3Store(n1_1, TriCcwNormalDirection(V3Load(v1_world[ h1->e[h1->f[f1].first + 0].origin ]) , V3Load(v1_world[ h1->e[h1->f[f1].first + 1].origin ]) , V3Load(v1_world[ h1->e[h1->f[f1].first + 2].origin ])));
         const u32 end_1 = h1->f[f1].first + h1->f[f1].count;
         for (u32 e1_1 = h1->f[f1].first; e1_1 < end_1; ++e1_1)
 	    {
@@ -2330,11 +2330,11 @@ static u32 HullContactEESeparation(struct sat_EdgeQuery *query, const struct dce
 	        const struct segment s1 = SegmentConstruct(V3Load(v1_world[h1->e[e1_1].origin]), V3Load(v1_world[h1->e[e1_2].origin]));
             const f32 s1s1_d = Vec3Dot(s1.dir.buf, s1.dir.buf);
             const u32 f1_2 = h1->e[e1_2].face_ccw;
-            TriCcwNormalDirection(n1_2 , v1_world[ h1->e[h1->f[f1_2].first + 0].origin ] , v1_world[ h1->e[h1->f[f1_2].first + 1].origin ] , v1_world[ h1->e[h1->f[f1_2].first + 2].origin ]);
+            V3Store(n1_2, TriCcwNormalDirection(V3Load(v1_world[ h1->e[h1->f[f1_2].first + 0].origin ]) , V3Load(v1_world[ h1->e[h1->f[f1_2].first + 1].origin ]) , V3Load(v1_world[ h1->e[h1->f[f1_2].first + 2].origin ])));
             
             for (u32 f2 = 0; f2 < h2->f_count; ++f2)
             {
-                TriCcwNormalDirection(n2_1 , v2_world[ h2->e[h2->f[f2].first + 0].origin ] , v2_world[ h2->e[h2->f[f2].first + 2].origin ] , v2_world[ h2->e[h2->f[f2].first + 1].origin ]);
+                V3Store(n2_1, TriCcwNormalDirection(V3Load(v2_world[ h2->e[h2->f[f2].first + 0].origin ]) , V3Load(v2_world[ h2->e[h2->f[f2].first + 2].origin ]) , V3Load(v2_world[ h2->e[h2->f[f2].first + 1].origin ])));
                 const u32 end_2 = h2->f[f2].first + h2->f[f2].count;
             	for (u32 e2_1 = h2->f[f2].first; e2_1 < end_2; ++e2_1) 
 	        	{
@@ -2343,7 +2343,7 @@ static u32 HullContactEESeparation(struct sat_EdgeQuery *query, const struct dce
     
 	                const struct segment s2 = SegmentConstruct(V3Load(v2_world[h2->e[e2_1].origin]), V3Load(v2_world[h2->e[e2_2].origin]));
                     const u32 f2_2 = h2->e[e2_2].face_ccw;
-                    TriCcwNormalDirection(n2_2 , v2_world[ h2->e[h2->f[f2_2].first + 0].origin ] , v2_world[ h2->e[h2->f[f2_2].first + 2].origin ] , v2_world[ h2->e[h2->f[f2_2].first + 1].origin ]);
+                    V3Store(n2_2, TriCcwNormalDirection(V3Load(v2_world[ h2->e[h2->f[f2_2].first + 0].origin ]) , V3Load(v2_world[ h2->e[h2->f[f2_2].first + 2].origin ]) , V3Load(v2_world[ h2->e[h2->f[f2_2].first + 1].origin ])));
 	        		HullContactEECheck(query, h1, v1_world, e1_1, h2, v2_world, e2_1, h1_world_center, n1_1, n1_2, n2_1, n2_2, &s1, &s2, s1s1_d);
 	        		if (query->depth > 0.0f)
 	        		{
@@ -2819,10 +2819,10 @@ struct c_ContactResult c_TriMeshBvhSphereContact(struct arena *frame, const stru
                     Vec3Copy(c->c[1], v_sphere);
 
                     //ProfZoneNamed("TriCcwPointDistanceSquared");
-                    const u32 robust = TriVoronoiInitCcw(&c->tv, tri);
+                    const u32 robust = TriVoronoiInitCcw(&c->tv, (v3 *) tri);
                     ds_Assert(robust);
 
-                    c->dist_sq = TriCcwPointDistanceSquared(c->c[0], &c->region, c->c[1], &c->tv);
+                    c->dist_sq = TriCcwPointDistanceSquared((v3 *) c->c[0], &c->region, V3Load(c->c[1]), &c->tv);
                     //ProfZoneEnd;
 
                     if (c->dist_sq <= sph->radius*sph->radius)
@@ -3100,10 +3100,10 @@ struct c_ContactResult c_TriMeshBvhCapsuleContact(struct arena *frame, const str
                     Vec3Translate(tri[2], tf[0].position.buf); 
 
                     //ProfZoneNamed("TriCcwSegmentDistanceSquared");
-                    const u32 robust = TriVoronoiInitCcw(&c->tv, tri);
+                    const u32 robust = TriVoronoiInitCcw(&c->tv, (v3 *) tri);
                     ds_Assert(robust);
 
-                    c->dist_sq = TriCcwSegmentDistanceSquared(c->c[0], c->c[1], &c->region, &cap_s, &c->tv);
+                    c->dist_sq = TriCcwSegmentDistanceSquared((v3 *) c->c[0], (v3 *) c->c[1], &c->region, &cap_s, &c->tv);
                     //ProfZoneEnd;
 
                     if (c->dist_sq <= cap->radius*cap->radius)

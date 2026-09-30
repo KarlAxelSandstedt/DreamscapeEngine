@@ -266,10 +266,9 @@ void r_MeshHull(struct arena *mem, struct r_Mesh *mesh, const struct dcel *hull)
 		struct dcelEdge *e0 = hull->e + f->first;
 		struct dcelEdge *e1 = hull->e + f->first + 1;
 		struct dcelEdge *e2 = hull->e + f->first + 2;
-		TriCcwNormal(normal, 
-				hull->v[e0->origin].buf,
-				hull->v[e1->origin].buf,
-				hull->v[e2->origin].buf);
+		V3Store(normal, TriCcwNormal(hull->v[e0->origin],
+				hull->v[e1->origin],
+				hull->v[e2->origin]));
 
 		vec3 p0, p1, p2;
 		Vec3Copy(p0, hull->v[e0->origin].buf); 
@@ -343,10 +342,9 @@ void r_MeshTriMesh(struct arena *mem, struct r_Mesh *mesh, const struct triMesh 
 	for (u32 t = 0; t < tri_mesh->tri_count; ++t)
 	{
 		vec3 normal;
-		TriCcwNormal(normal, 
-				tri_mesh->v[tri_mesh->tri[t].buf[0]].buf,
-				tri_mesh->v[tri_mesh->tri[t].buf[1]].buf,
-				tri_mesh->v[tri_mesh->tri[t].buf[2]].buf);
+		V3Store(normal, TriCcwNormal(tri_mesh->v[tri_mesh->tri[t].buf[0]],
+				tri_mesh->v[tri_mesh->tri[t].buf[1]],
+				tri_mesh->v[tri_mesh->tri[t].buf[2]]));
 
 		ArenaPushPackedMemcpy(mem, tri_mesh->v[tri_mesh->tri[t].buf[0]].buf, sizeof(vec3));
 		//ArenaPushPackedMemcpy(mem, color, sizeof(vec4));
