@@ -122,9 +122,9 @@ enum fontId
 struct sprite
 {
 	enum ssffId	ssff_id;	/* sprite sheet identifer	*/
-	vec2u32		pixel_size;	/* size in pixels		*/
-	vec2		bl;		/* lower-left uv coordinate 	*/
-	vec2		tr;		/* upper-right uv coordinate	*/
+	v2u32		pixel_size;	/* size in pixels		*/
+	v2		bl;		/* lower-left uv coordinate 	*/
+	v2		tr;		/* upper-right uv coordinate	*/
 };
 
 extern struct sprite *	g_sprite;
@@ -188,12 +188,12 @@ struct assetTtf
 
 struct fontGlyph
 {
-	vec2i32		size;		/* glyph size 			*/
-	vec2i32		bearing;	/* glyph offset from baseline 	*/
+	v2i32		size;		/* glyph size 			*/
+	v2i32		bearing;	/* glyph offset from baseline 	*/
 	u32		advance;	/* pen position advancement (px)*/
 	u32		codepoint;	/* utf32 codepoint 		*/
-	vec2		bl;		/* lower-left uv coordinate 	*/
-	vec2		tr;		/* upper-right uv coordinate	*/
+	v2		bl;		/* lower-left uv coordinate 	*/
+	v2		tr;		/* upper-right uv coordinate	*/
 };
 
 struct font

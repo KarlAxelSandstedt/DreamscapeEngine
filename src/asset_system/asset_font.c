@@ -86,8 +86,8 @@ void FontBuild(struct arena *mem, const enum fontId id)
 	const u32 glyph_unknown_index = stack_glyph.count;
 	ds_CPoolPushValue(stack_glyph, (struct fontGlyph)
 	{
-		.size = { (i32) face->glyph->bitmap.width, (i32) face->glyph->bitmap.rows },
-		.bearing = { face->glyph->bitmap_left, face->glyph->bitmap_top },
+		.size = V2I32((i32) face->glyph->bitmap.width, (i32) face->glyph->bitmap.rows),
+		.bearing = V2I32(face->glyph->bitmap_left, face->glyph->bitmap_top),
 		.advance = (i32) face->glyph->advance.x >> 6,
 		.codepoint = 0,
 	});
@@ -110,8 +110,8 @@ void FontBuild(struct arena *mem, const enum fontId id)
 		ds_CPoolPushValue(stack_pixels, pixels);
 		ds_CPoolPushValue(stack_glyph, (struct fontGlyph)
 			{
-				.size = { (i32) face->glyph->bitmap.width, (i32) face->glyph->bitmap.rows },
-				.bearing = { face->glyph->bitmap_left, face->glyph->bitmap_top },
+				.size = V2I32((i32) face->glyph->bitmap.width, (i32) face->glyph->bitmap.rows),
+				.bearing = V2I32(face->glyph->bitmap_left, face->glyph->bitmap_top),
 				.advance = (i32) face->glyph->advance.x >> 6,
 				.codepoint = c,
 			});
@@ -135,8 +135,8 @@ void FontBuild(struct arena *mem, const enum fontId id)
 		ds_CPoolPushValue(stack_pixels, pixels);
 		ds_CPoolPushValue(stack_glyph, (struct fontGlyph)
 			{
-				.size = { (i32) face->glyph->bitmap.width, (i32) face->glyph->bitmap.rows },
-				.bearing = { face->glyph->bitmap_left, face->glyph->bitmap_top },
+				.size = V2I32((i32) face->glyph->bitmap.width, (i32) face->glyph->bitmap.rows),
+				.bearing = V2I32(face->glyph->bitmap_left, face->glyph->bitmap_top),
 				.advance = (i32) face->glyph->advance.x >> 6,
 				.codepoint = c,
 			});
@@ -185,14 +185,14 @@ void FontBuild(struct arena *mem, const enum fontId id)
 	font->pixmap_height = font->pixmap_width;
 	font->pixmap = ArenaPush(mem, font->pixmap_width * font->pixmap_height);
 	font->size = sizeof(u64) + 3*sizeof(f32) + 4*sizeof(u32)
-		+ stack_glyph.count * (2*sizeof(vec2i32) + 2*sizeof(u32) + 2*sizeof(vec2))
+		+ stack_glyph.count * (2*sizeof(v2i32) + 2*sizeof(u32) + 2*sizeof(v2))
 		+ sizeof(u32) + hash_len*sizeof(u32)
 		+ sizeof(u32) + hash_len*sizeof(u32)
 		+ font->pixmap_width * font->pixmap_height;
 	memset(font->pixmap, 0, font->pixmap_width * font->pixmap_height);
 
 	const f32 pixel_halfsize = 1.0f / (2.0f*font->pixmap_width);
-	vec2u32 offset = { 0, 0 };
+	v2u32 offset = V2U32(0, 0);
 	for (u32 i = 0; i < stack_glyph.count; ++i)
 	{
 		u8 *alpha = font->pixmap;
@@ -200,29 +200,29 @@ void FontBuild(struct arena *mem, const enum fontId id)
 		struct fontGlyph *g = stack_glyph.buf + i;
 		ds_HashMapAdd(&font->codepoint_to_glyph_map, g->codepoint, i);
 		pixels = stack_pixels.buf[i];
-		if (offset[0] + g->size[0] > font->pixmap_width)
+		if (offset.x + g->size.x > font->pixmap_width)
 		{
-			offset[0] = 0;		
-			offset[1] += asset->pixel_glyph_height;
+			offset.x = 0;		
+			offset.y += asset->pixel_glyph_height;
 		}
-		ds_Assert(offset[1] + g->size[1] <= font->pixmap_height);
+		ds_Assert(offset.y + g->size.y <= font->pixmap_height);
 
-		for (i32 y = 0; y < g->size[1]; ++y)
+		for (i32 y = 0; y < g->size.y; ++y)
 		{
-			for (i32 x = 0; x < g->size[0]; ++x)
+			for (i32 x = 0; x < g->size.x; ++x)
 			{
-				ds_Assert(offset[1] + y < font->pixmap_height);
-				ds_Assert(offset[0] + x < font->pixmap_width);
-				alpha[(offset[1] + g->size[1] - 1 - y)*font->pixmap_width + (offset[0] + x)] = pixels[y*g->size[0] + x];
+				ds_Assert(offset.y + y < font->pixmap_height);
+				ds_Assert(offset.x + x < font->pixmap_width);
+				alpha[(offset.y + g->size.y - 1 - y)*font->pixmap_width + (offset.x + x)] = pixels[y*g->size.x + x];
 			}
 		}
 
-		g->bl[0] = 2.0f*offset[0] * pixel_halfsize; 
-		g->tr[0] = 2.0f*(offset[0] + g->size[0]) * pixel_halfsize; 
-		g->bl[1] = 2.0f*offset[1] * pixel_halfsize; 
-		g->tr[1] = 2.0f*(offset[1] + g->size[1]) * pixel_halfsize; 
+		g->bl.x = 2.0f*offset.x * pixel_halfsize; 
+		g->tr.x = 2.0f*(offset.x + g->size.x) * pixel_halfsize; 
+		g->bl.y = 2.0f*offset.y * pixel_halfsize; 
+		g->tr.y = 2.0f*(offset.y + g->size.y) * pixel_halfsize; 
 
-		offset[0] += g->size[0];
+		offset.x += g->size.x;
 	}
 
 	if (FT_HAS_KERNING(face))
@@ -262,16 +262,16 @@ void FontSerialize(const struct assetFont *asset, const struct font *font)
 
 	for (u32 i = 0; i < font->glyph_count; ++i)
 	{
-		ss_WriteI32Be(&ss, font->glyph[i].size[0]);	
-		ss_WriteI32Be(&ss, font->glyph[i].size[1]);	
-		ss_WriteI32Be(&ss, font->glyph[i].bearing[0]);	
-		ss_WriteI32Be(&ss, font->glyph[i].bearing[1]);	
+		ss_WriteI32Be(&ss, font->glyph[i].size.x);	
+		ss_WriteI32Be(&ss, font->glyph[i].size.y);	
+		ss_WriteI32Be(&ss, font->glyph[i].bearing.x);	
+		ss_WriteI32Be(&ss, font->glyph[i].bearing.y);	
 		ss_WriteU32Be(&ss, font->glyph[i].advance);	
 		ss_WriteU32Be(&ss, font->glyph[i].codepoint);	
-		ss_WriteF32Be(&ss, font->glyph[i].bl[0]);
-		ss_WriteF32Be(&ss, font->glyph[i].bl[1]);
-		ss_WriteF32Be(&ss, font->glyph[i].tr[0]);
-		ss_WriteF32Be(&ss, font->glyph[i].tr[1]);
+		ss_WriteF32Be(&ss, font->glyph[i].bl.x);
+		ss_WriteF32Be(&ss, font->glyph[i].bl.y);
+		ss_WriteF32Be(&ss, font->glyph[i].tr.x);
+		ss_WriteF32Be(&ss, font->glyph[i].tr.y);
 	}
 
 	ds_HashMapSerialize(&ss, &font->codepoint_to_glyph_map);
@@ -325,16 +325,16 @@ const struct font *FontDeserialize(struct assetFont *asset)
 
 	for (u32 i = 0; i < font->glyph_count; ++i)
 	{
-		font->glyph[i].size[0] = ss_ReadI32Be(&ss);
-		font->glyph[i].size[1] = ss_ReadI32Be(&ss);
-		font->glyph[i].bearing[0] = ss_ReadI32Be(&ss);
-		font->glyph[i].bearing[1] = ss_ReadI32Be(&ss);
+		font->glyph[i].size.x = ss_ReadI32Be(&ss);
+		font->glyph[i].size.y = ss_ReadI32Be(&ss);
+		font->glyph[i].bearing.x = ss_ReadI32Be(&ss);
+		font->glyph[i].bearing.y = ss_ReadI32Be(&ss);
 		font->glyph[i].advance = ss_ReadU32Be(&ss);
 		font->glyph[i].codepoint = ss_ReadU32Be(&ss);
-		font->glyph[i].bl[0] = ss_ReadF32Be(&ss);
-		font->glyph[i].bl[1] = ss_ReadF32Be(&ss);
-		font->glyph[i].tr[0] = ss_ReadF32Be(&ss);
-		font->glyph[i].tr[1] = ss_ReadF32Be(&ss);
+		font->glyph[i].bl.x = ss_ReadF32Be(&ss);
+		font->glyph[i].bl.y = ss_ReadF32Be(&ss);
+		font->glyph[i].tr.x = ss_ReadF32Be(&ss);
+		font->glyph[i].tr.y = ss_ReadF32Be(&ss);
 	}
 
 	font->codepoint_to_glyph_map = ds_HashMapDeserialize(NULL, &ss, 0);
@@ -359,10 +359,10 @@ void FontDebugPrint(FILE *out, const struct font *font)
 	{
 		fprintf(out, "\tglyph[%u]:\n", i);
 		fprintf(out, "\t{\n");
-		fprintf(out, "\t\tsize:    { %i, %i }\n", font->glyph[i].size[0], font->glyph[i].size[1]);
-		fprintf(out, "\t\tbearing: { %i, %i }\n", font->glyph[i].bearing[0], font->glyph[i].bearing[1]);
-		fprintf(out, "\t\tbl: 	   { %f, %f }\n", font->glyph[i].bl[0], font->glyph[i].bl[1]);
-		fprintf(out, "\t\ttr: 	   { %f, %f }\n", font->glyph[i].tr[0], font->glyph[i].tr[1]);
+		fprintf(out, "\t\tsize:    { %i, %i }\n", font->glyph[i].size.x, font->glyph[i].size.y);
+		fprintf(out, "\t\tbearing: { %i, %i }\n", font->glyph[i].bearing.x, font->glyph[i].bearing.y);
+		fprintf(out, "\t\tbl: 	   { %f, %f }\n", font->glyph[i].bl.x, font->glyph[i].bl.y);
+		fprintf(out, "\t\ttr: 	   { %f, %f }\n", font->glyph[i].tr.x, font->glyph[i].tr.y);
 		fprintf(out, "\t\tadvance:   %u\n", font->glyph[i].advance);
 		fprintf(out, "\t\tcodepoint: %u\n", font->glyph[i].codepoint);
 		fprintf(out, "\t}\n");

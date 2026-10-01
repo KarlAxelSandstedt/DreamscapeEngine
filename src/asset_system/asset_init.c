@@ -253,9 +253,9 @@ struct assetDatabase *g_asset_db = &storage;
 void AssetInit(struct arena *mem_persistent)
 {
 	g_sprite[SPRITE_NONE].ssff_id = SSFF_NONE_ID;
-	Vec2U32Set(g_sprite[SPRITE_NONE].pixel_size, 1, 1);
-	Vec2Set(g_sprite[SPRITE_NONE].bl, 0.0f, 0.0f);
-	Vec2Set(g_sprite[SPRITE_NONE].tr, 0.0f, 0.0f);
+	g_sprite[SPRITE_NONE].pixel_size = V2U32(1, 1);
+	g_sprite[SPRITE_NONE].bl = V2(0.0f, 0.0f);
+	g_sprite[SPRITE_NONE].tr = V2(0.0f, 0.0f);
 
 	g_asset_db->ssff = InternalAssetSsffArrayInit(mem_persistent);
 	g_asset_db->font = InternalAssetFontArrayInit(mem_persistent);

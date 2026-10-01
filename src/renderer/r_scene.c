@@ -507,20 +507,20 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 								{
 									const struct fontGlyph *glyph = GlyphLookup(n->font, line->glyph[t].codepoint);
 									const v2 local_offset = V2(
-										global_baseline.x + (f32) glyph->bearing[0] + line->glyph[t].x,
-										global_baseline.y + (f32) glyph->bearing[1]);
+										global_baseline.x + (f32) glyph->bearing.x + line->glyph[t].x,
+										global_baseline.y + (f32) glyph->bearing.y);
 
 									const v4 glyph_rect = V4(
-										(2*local_offset.x + (f32) glyph->size[0]) / 2.0f,
-										(2*local_offset.y - (f32) glyph->size[1]) / 2.0f,
-										(f32) glyph->size[0] / 2.0f,
-										(f32) glyph->size[1] / 2.0f);	
+										(2*local_offset.x + (f32) glyph->size.x) / 2.0f,
+										(2*local_offset.y - (f32) glyph->size.y) / 2.0f,
+										(f32) glyph->size.x / 2.0f,
+										(f32) glyph->size.y / 2.0f);	
 
 									const v4 uv_rect = V4(
-										(glyph->tr[0] + glyph->bl[0]) / 2.0f,
-										(glyph->tr[1] + glyph->bl[1]) / 2.0f,
-										(glyph->tr[0] - glyph->bl[0]) / 2.0f,
-										(glyph->tr[1] - glyph->bl[1]) / 2.0f);
+										(glyph->tr.x + glyph->bl.x) / 2.0f,
+										(glyph->tr.y + glyph->bl.y) / 2.0f,
+										(glyph->tr.x - glyph->bl.x) / 2.0f,
+										(glyph->tr.y - glyph->bl.y) / 2.0f);
 
 									memcpy(shared_data + S_NODE_RECT_OFFSET, &glyph_rect, sizeof(v4));
 									memcpy(shared_data + S_VISIBLE_RECT_OFFSET, &visible_rect, sizeof(v4));
@@ -615,10 +615,10 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 	
 							const struct sprite *spr = g_sprite + n->sprite;
 							const v4 uv_rect = V4(
-								(spr->tr[0] + spr->bl[0]) / 2.0f,
-								(spr->tr[1] + spr->bl[1]) / 2.0f,
-								(spr->tr[0] - spr->bl[0]) / 2.0f,
-								(spr->tr[1] - spr->bl[1]) / 2.0f);
+								(spr->tr.x + spr->bl.x) / 2.0f,
+								(spr->tr.y + spr->bl.y) / 2.0f,
+								(spr->tr.x - spr->bl.x) / 2.0f,
+								(spr->tr.y - spr->bl.y) / 2.0f);
 
 							memcpy(shared_data + S_NODE_RECT_OFFSET, &highlight_rect, sizeof(v4));
 							memcpy(shared_data + S_VISIBLE_RECT_OFFSET, &visible_rect, sizeof(v4));
@@ -651,10 +651,10 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 								(n->pixel_visible[AXIS_2_Y].high - n->pixel_visible[AXIS_2_Y].low) / 2.0f);
 
 							const v4 uv_rect = V4(
-								(spr->tr[0] + spr->bl[0]) / 2.0f,
-								(spr->tr[1] + spr->bl[1]) / 2.0f,
-								(spr->tr[0] - spr->bl[0]) / 2.0f,
-								(spr->tr[1] - spr->bl[1]) / 2.0f);
+								(spr->tr.x + spr->bl.x) / 2.0f,
+								(spr->tr.y + spr->bl.y) / 2.0f,
+								(spr->tr.x - spr->bl.x) / 2.0f,
+								(spr->tr.y - spr->bl.y) / 2.0f);
 
 
 							const v3 extra = V3(n->border_size, n->corner_radius, n->edge_softness);

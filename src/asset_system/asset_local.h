@@ -139,12 +139,12 @@ void				SsffDebugPrint(FILE *out, const struct ssff_header *ssff);
 	}	
 	glyph[glyph_count] 
 	{
-		vec2i32	size;		; i32 (be)	
-		vec2i32	bearing;	; i32 (be)	
+		v2i32	size;		; i32 (be)	
+		v2i32	bearing;	; i32 (be)	
 		u32	advance;	; u32 (be)
 		u32	codepoint;	; u32 (be)
-		vec2	bl;		; f32 (be)
-		vec2	tr;		; f32 (be)
+		v2	bl;		; f32 (be)
+		v2	tr;		; f32 (be)
 
 	}
 

@@ -389,13 +389,11 @@ struct ssffTextureReturn SsffTexture(struct arena *mem, const struct ssff_header
 			//Vec2Set(ret.uv[ret.count + j].tr,
 			//		ret.uv[ret.count + j].bl[0] + (f32) (sprite_width-1) / width,
 			//		pixel_hw[1] + (f32) y_offset / height);
-			Vec2Set(ret.sprite[ret.count + j].bl, 
-					(f32) x_offset / width, 
-					(f32) (y_offset + sprite_height) / height);
-			Vec2Set(ret.sprite[ret.count + j].tr,
-					ret.sprite[ret.count + j].bl[0] + (f32) sprite_width / width,
-					(f32) y_offset / height);
-			Vec2U32Set(ret.sprite[ret.count + j].pixel_size, sprite_width, sprite_height);
+			ret.sprite[ret.count + j].bl = V2((f32) x_offset / width, 
+							   (f32) (y_offset + sprite_height) / height);
+			ret.sprite[ret.count + j].tr = V2(ret.sprite[ret.count + j].bl.x + (f32) sprite_width / width,
+							   (f32) y_offset / height);
+			ret.sprite[ret.count + j].pixel_size = V2U32(sprite_width, sprite_height);
 			x_offset += sprite_width;
 		}
 

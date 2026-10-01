@@ -71,13 +71,13 @@ static utf32 FontStreamSubstringOnRow(utf32 *text, u32 *x_new_offset, const stru
 	for (; sub.len < text->len; ++sub.len)
 	{
 		const struct fontGlyph *glyph = GlyphLookup(font, text->buf[sub.len]);
-		if (substring_pixels + glyph->bearing[0] + glyph->size[0] > pixels_left)
+		if (substring_pixels + glyph->bearing.x + glyph->size.x > pixels_left)
 		{
 			break;
 		}
 
 		substring_pixels += glyph->advance;
-		if (substring_pixels + linebreak->bearing[0] + linebreak->size[0] <= pixels_left)
+		if (substring_pixels + linebreak->bearing.x + linebreak->size.x <= pixels_left)
 		{
 			substring_with_wordbreak_len += 1;
 			substring_pixels_with_wordbreak += glyph->advance;
