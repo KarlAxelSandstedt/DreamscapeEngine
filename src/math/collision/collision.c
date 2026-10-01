@@ -1180,16 +1180,11 @@ f32 c_CapsuleSphereDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_T
 	struct segment s = SegmentCapsuleTransform(cap, t1);
 
 	f32 dist = 0.0f;
-	/* NOTE: pending bug 6 (see design notes): *c2 is read uninitialized here */
-	if (SegmentPointDistanceSquared(c1, &s, *c2) > r_sum*r_sum)
+	if (SegmentPointDistanceSquared(c1, &s, t2->position) > r_sum*r_sum)
 	{
-		*c1 = V3Add(*c1, t1->position);
-		*c2 = V3Add(*c2, t1->position);
-		v3 diff = V3Sub(*c2, *c1);
-		diff = V3Scale(diff, 1.0f / V3Length(diff));
-		*c1 = V3AddScaled(*c1, diff, cap->radius);
-		*c2 = V3AddScaled(*c2, diff, -s2->sphere.radius);
-
+		const v3 n = V3Normalize(V3Sub(t2->position, *c1));
+		*c1 = V3AddScaled(*c1, n, cap->radius);
+		*c2 = V3AddScaled(t2->position, n, -s2->sphere.radius);
 		dist = F32Sqrt(V3DistanceSquared(*c1, *c2));
 	}
 
@@ -1240,16 +1235,14 @@ f32 c_HullSphereDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Tran
 
 	if (dist_sq <= r_sum*r_sum)
 	{  
-		dist_sq = 0.0f;
+        return 0.0f;
 	}
-	else
-	{
-		n = V3Sub(*c2, *c1);
-		n = V3Scale(n, 1.0f / V3Length(n));
-		*c2 = V3AddScaled(*c2, n, -s2->sphere.radius);
-	}
+	
+	n = V3Sub(*c2, *c1);
+	n = V3Scale(n, 1.0f / V3Length(n));
+	*c2 = V3AddScaled(*c2, n, -s2->sphere.radius);
 
-	return F32Sqrt(dist_sq);
+	return F32Sqrt(dist_sq) - s2->sphere.radius;
 }
 
 f32 c_HullCapsuleDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2)
@@ -1274,16 +1267,13 @@ f32 c_HullCapsuleDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Tra
 
 	if (dist_sq <= r_sum*r_sum)
 	{
-		dist_sq = 0.0f;
-	}
-	else
-	{
-		v3 n = V3Sub(*c2, *c1);
-		n = V3Scale(n, 1.0f / V3Length(n));
-		*c2 = V3AddScaled(*c2, n, -s2->capsule.radius);
+        return 0.0f;
 	}
 
-	return F32Sqrt(dist_sq);
+	v3 n = V3Sub(*c2, *c1);
+	n = V3Scale(n, 1.0f / V3Length(n));
+	*c2 = V3AddScaled(*c2, n, -s2->capsule.radius);
+	return F32Sqrt(dist_sq) - s2->capsule.radius;
 }
 
 f32 c_HullDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2)
@@ -1546,14 +1536,12 @@ struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_C
         struct c_Manifold *manifold = result.manifold;
 
 		manifold->v_count = 1;
-		/* NOTE: pending bug 8 (see design notes): n is never initialized, the face normal below is overwritten */
-		v3 n;	
 		const struct dcel *h = &s[0]->hull;
 		f32 min_depth = F32_INFINITY;
 		for (u32 fi = 0; fi < h->f_count; ++fi)
 		{
-			v3 p = DcelFaceNormal(h, g1.rot, fi);
-			p = V3Add(M3V3Mul(g1.rot, h->v[h->e[h->f[fi].first].origin]), t[0].position);
+			const v3 n = DcelFaceNormal(h, g1.rot, fi);
+			const v3 p = V3Add(M3V3Mul(g1.rot, h->v[h->e[h->f[fi].first].origin]), t[0].position);
 			const v3 diff = V3Sub(t[1].position, p);
 			const f32 depth = F32Max(0.0f, -V3Dot(n, diff));
 			if (depth < min_depth)
@@ -2918,8 +2906,6 @@ static void c_TriCapsuleManifold(struct c_Manifold *m, const struct c_TriMeshBvh
                 d[1] = PlanePointSignedDistance(&pl, m->v[1]);
 			}
 
-			m->v[0] = seg.p[0];
-			m->v[1] = seg.p[1];
             m->depth[0] = F32Abs(d[0]);
             m->depth[1] = F32Abs(d[1]);
 			
@@ -3282,6 +3268,7 @@ static void TriCcwHullDelayedSet(u32 delayed_set[2], u32 *delayed_count, const s
         const u32 sum = delayed_point[0] + delayed_point[1] + delayed_point[2];
         if (sum < 3)
         {
+            *delayed_count = sum;
             if (sum == 1)
             {
                 delayed_set[0] = 0 + delayed_point[1] + 2*delayed_point[2];
