@@ -1634,7 +1634,7 @@ void ds_DynamicsSimulateFrame(struct ds_Dynamics *pipeline)
     {
         ds_DynamicsMetricsAdd(&pipeline->metrics, &pipeline->worker[i].metrics);
     }
-    ds_DynamicsMetricsPrint(stderr, &pipeline->metrics);
+    //ds_DynamicsMetricsPrint(stderr, &pipeline->metrics);
 
 	PHYSICS_PIPELINE_VALIDATE(pipeline);
 
@@ -1660,7 +1660,7 @@ static void ds_DynamicsProfileEnd(struct ds_Dynamics *pipeline)
     p->ns_rebuildphase_duration = p->ns_rebuildphase_end - p->ns_rebuildphase_start;
     p->ns_removalphase_duration = p->ns_removalphase_end - p->ns_removalphase_start;
 
-    ds_DynamicsProfilePrint(stderr, p);
+    //ds_DynamicsProfilePrint(stderr, p);
 
     if (p->ns_frame_duration > pipeline->ns_tick)
     {

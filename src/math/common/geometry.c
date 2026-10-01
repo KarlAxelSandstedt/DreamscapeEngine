@@ -1002,7 +1002,7 @@ static f32 TriCcwSegmentEdgeCheck(v3 *c_t, v3 *c_s, enum TriVoronoiRegion *regio
 static f32 TriCcwSegmentDoubleEdgeCheck(v3 *c_t, v3 *c_s, enum TriVoronoiRegion *segment_region, const struct segment *s, const struct TriVoronoi *tv, const u32 j)
 {
     const u32 i = table_sub_1_mod_3[j];
-    const u32 k = table_sub_1_mod_3[j];
+    const u32 k = table_add_1_mod_3[j];
 
     f32 dist_sq, s_param_ij, s_param_jk, t_param_ij, t_param_jk;
     SegmentClosestParameter(&s_param_ij, &t_param_ij, s, tv->s + i);
@@ -1438,10 +1438,7 @@ struct plane DcelFacePlaneLocal(const struct dcel *h, const u32 fi)
 
 struct segment DcelFaceClipSegment(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi, const struct segment *s)
 {
-	/* NOTE: pending bug (see design notes): the face normal is computed into p_n, but the uninitialized f_n is used below */
-	v3 f_n;
-	const v3 p_n = DcelFaceNormal(h, rot, fi);
-	(void) p_n;
+	const v3 f_n = DcelFaceNormal(h, rot, fi);
 
 	f32 min_p = 0.0f;
 	f32 max_p = 1.0f;
@@ -2368,7 +2365,16 @@ f32 TriMeshRaycastParameter(const struct triMesh *mesh, const u32 tri, const str
 
 u32 TriMeshRaycast(v3 *intersection, const struct triMesh *mesh, const u32 tri, const struct ray *ray)
 {
-	/* TODO(Optimization): 
+	/* TODO(Research): watertight raycasting.
+	 * Shared edges are consistent (canonicalized edge tests below), but rays passing exactly through a
+	 * shared vertex can still slip between all triangles of the fan (~0.1% of exactly vertex-aimed rays
+	 * in tests), since the signs of the float triple products are not exact. Woop, Benthin, Wald 2013,
+	 * "Watertight Ray/Triangle Intersection" (JCGT 2(1)), makes every edge test sign exact: per-ray shear
+	 * to ray space, 2D edge functions on per-vertex transformed coordinates, double precision recompute
+	 * when an edge function is exactly 0.0. It also needs no edge canonicalization and no face normal.
+	 */
+
+	/* TODO(Optimization):
 	 * By precomputation and extending our tri_mesh structure, we can avoid these branches;
 	 * so if it becomes relevant, we need to precompute the edge sorting or something...  
 	 */
@@ -2379,50 +2385,71 @@ u32 TriMeshRaycast(v3 *intersection, const struct triMesh *mesh, const u32 tri, 
 	 * one of them. See (Real Time Collision Detection, 5.3.4 and 11.3.3) for algorithm and
 	 * robustness discussion. */
 
-	const v3 p0 = V3Sub(mesh->v[mesh->tri[tri].x], ray->origin);
-	const v3 p1 = V3Sub(mesh->v[mesh->tri[tri].y], ray->origin);
-	const v3 p2 = V3Sub(mesh->v[mesh->tri[tri].z], ray->origin);
+	const v3 oa = V3Sub(mesh->v[mesh->tri[tri].x], ray->origin);
+	const v3 ob = V3Sub(mesh->v[mesh->tri[tri].y], ray->origin);
+	const v3 oc = V3Sub(mesh->v[mesh->tri[tri].z], ray->origin);
+    const v3 n = TriCcwNormalDirection(mesh->v[mesh->tri[tri].x], mesh->v[mesh->tri[tri].y], mesh->v[mesh->tri[tri].z]);
 
-	f32 u;
+    const u32 infront = (V3Dot(n, oa) < 0.0f); 
+    const u32 towards = (V3Dot(n, ray->dir) < 0.0f);
+
+    /* Exit if infront and along OR behind and towards */
+    if (infront != towards)
+    {
+        return 0;
+    }
+
+    const f32 side_sign = (infront)
+        ? 1.0f
+        : -1.0f;
+
+	f32 u, v, w;
 	if (mesh->tri[tri].x < mesh->tri[tri].y)
 	{
-		const v3 c = V3Cross(p1, p0);
-		u = V3Dot(ray->dir, c);
+		const v3 c = V3Cross(ob, oa);
+		u = side_sign*V3Dot(ray->dir, c);
 	}
 	else
 	{
-		const v3 c = V3Cross(p0, p1);
-		u = -V3Dot(ray->dir, c);
+		const v3 c = V3Cross(oa, ob);
+		u = -side_sign*V3Dot(ray->dir, c);
 	}
 	if (u < 0.0f) { return 0; }
 
-	f32 v;
 	if (mesh->tri[tri].y < mesh->tri[tri].z)
 	{
-		const v3 c = V3Cross(p2, p1);
-		v = V3Dot(ray->dir, c);
+		const v3 c = V3Cross(oc, ob);
+		v = side_sign*V3Dot(ray->dir, c);
 	}
 	else
 	{
-		const v3 c = V3Cross(p1, p2);
-		v = -V3Dot(ray->dir, c);
+		const v3 c = V3Cross(ob, oc);
+		v = -side_sign*V3Dot(ray->dir, c);
 	}
 	if (v < 0.0f) { return 0; }
 
-	f32 w;
 	if (mesh->tri[tri].z < mesh->tri[tri].x)
 	{
-		const v3 c = V3Cross(p0, p2);
-		w = V3Dot(ray->dir, c);
+		const v3 c = V3Cross(oa, oc);
+		w = side_sign*V3Dot(ray->dir, c);
 	}
 	else
 	{
-		const v3 c = V3Cross(p2, p0);
-		w = -V3Dot(ray->dir, c);
+		const v3 c = V3Cross(oc, oa);
+		w = -side_sign*V3Dot(ray->dir, c);
 	}
 	if (w < 0.0f) { return 0; }
 
-	/* TODO: Prob bad, we can go back to this later */
+	/* TODO: Prob bad, we can go back to this later
+	 * KNOWN ISSUE: rays lying in (or parallel to) the triangle plane may report a false hit at t = 0. For such
+	 * rays n.d ~ 0 and n.oa ~ 0, so infront/towards are decided by rounding noise, and u, v, w are (noisy) zeros
+	 * that can all pass >= 0 (always for exactly axis-aligned planes); we then end up here and return the ray
+	 * origin as the intersection. Measured: 100% of in-plane rays on horizontal triangles, ~6% on tilted ones.
+	 * Returning 0 here is not enough on its own (the noise in u, v, w scales with |oa||ob|, so far away origins
+	 * pass the absolute threshold with garbage weights). Tested fix: before the infront/towards test, reject
+	 * rays parallel to the plane relative to scale, (n.d)^2 <= (100*F32_EPSILON)^2 * |n|^2 * |d|^2, and return 0
+	 * here instead of the origin. See TODO(Research) above for the robust alternative.
+	 */
 	if (u + v + w < 100.0f * F32_EPSILON)
 	{
 		*intersection = ray->origin;
@@ -2432,11 +2459,13 @@ u32 TriMeshRaycast(v3 *intersection, const struct triMesh *mesh, const u32 tri, 
 		const f32 denom = 1.0f / (u + v + w);
 		u *= denom;
 		v *= denom;
-		w *= 1.0f - u - v;
+		w *= denom;
 
-		*intersection = V3AddScaled(V3AddScaled(V3Scale(mesh->v[mesh->tri[tri].x], v),
-							mesh->v[mesh->tri[tri].y], w),
-					    mesh->v[mesh->tri[tri].z], u);
+		*intersection = V3AddScaled(
+                            V3AddScaled(
+                                V3Scale(mesh->v[mesh->tri[tri].x], v), 
+                                mesh->v[mesh->tri[tri].y], w),
+					        mesh->v[mesh->tri[tri].z], u);
 	}
 
 	return 1;

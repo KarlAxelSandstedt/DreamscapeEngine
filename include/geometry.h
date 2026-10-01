@@ -264,7 +264,7 @@ struct triMesh
 struct aabb	TriMeshBbox(const struct triMesh *mesh);
 /* return t: smallest t >= 0 such that p = origin + t*dir is a point on the triangle, or F32_INF if no such t exist */
 f32 		TriMeshRaycastParameter(const struct triMesh *mesh, const u32 tri, const struct ray *ray);
-/* If the ray hits triangle (ccw), return 1 and set intersection. otherwise return 0. */
+/* If the ray hits triangle, return 1 and set intersection. otherwise return 0. */
 u32 		TriMeshRaycast(v3 *intersection, const struct triMesh *mesh, const u32 tri, const struct ray *ray);
 
 /*
