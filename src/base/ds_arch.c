@@ -392,7 +392,7 @@ static void internal_intel_determine_cache_attributes(const u32 largest_standard
 		if (config.cacheline == 0)
 		{
 			config.cacheline = 64;
-			Log(T_SYSTEM, S_WARNING, 0, "Failed to find cacheline size; defaulting to %luB", config.cacheline);
+			Log(T_SYSTEM, S_WARNING, "Failed to find cacheline size; defaulting to %luB", config.cacheline);
 		}
 	}
 }
