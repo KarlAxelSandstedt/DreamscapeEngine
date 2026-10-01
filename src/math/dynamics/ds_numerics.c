@@ -25,7 +25,7 @@ struct ds_NumericsConfig *g_numerics_config = NULL;
 struct ds_NumericsConfig ds_NumericsConfigDefault(void)
 {
     struct ds_NumericsConfig config = { 0 };
-    config.vec3_parallel_check_max_degrees_pending = 0.5f;
+    config.v3_parallel_check_max_degrees_pending = 0.5f;
     config.manifold_cache_normal_parallel_check_max_degrees_pending = 10.0f;
     config.manifold_cache_depth_max_diff_allowed_pending = DS_UNIT_CM;
     config.manifold_cache_linear_velocity_max_diff_allowed_pending = 10.0f * DS_UNIT_M;
@@ -41,9 +41,9 @@ void ds_NumericsConfigPush(struct ds_NumericsConfig *config)
 
     config->dbvh_reinsert_threshold = F32Clamp(config->dbvh_reinsert_threshold_pending, 0.0f, 1.0f);
 
-    config->vec3_parallel_check_max_degrees_pending = F32Clamp(config->vec3_parallel_check_max_degrees_pending, 0.0f, 45.0f);
-    config->vec3_parallel_check_max_degrees = config->vec3_parallel_check_max_degrees_pending;
-    config->vec3_parallel_check_eps = V3ParallelCheckEpsilon(config->vec3_parallel_check_max_degrees);
+    config->v3_parallel_check_max_degrees_pending = F32Clamp(config->v3_parallel_check_max_degrees_pending, 0.0f, 45.0f);
+    config->v3_parallel_check_max_degrees = config->v3_parallel_check_max_degrees_pending;
+    config->v3_parallel_check_eps = V3ParallelCheckEpsilon(config->v3_parallel_check_max_degrees);
 
     /* Since we are dealing with normals, easy test becomes Dot(a,b) > eps, eps = cos(max_degrees_in_radian) */
     config->manifold_cache_normal_parallel_check_max_degrees_pending = F32Clamp(config->manifold_cache_normal_parallel_check_max_degrees_pending, 0.0f, 45.0f);

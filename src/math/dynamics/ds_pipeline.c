@@ -88,7 +88,7 @@ struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, c
     ds_CPoolAlloc(NULL, pipeline.dirty_shape_query, initial_size, GROWABLE);
 
 	pipeline.event_pool = ds_PhysicsEventPoolAlloc(NULL, 256, GROWABLE);
-	ds_DLLFlush(pipeline.event_list);
+	DLLFlush(pipeline.event_list);
 
 	pipeline.cshape_db = cshape_db;
 
@@ -236,7 +236,7 @@ void ds_DynamicsFlush(struct ds_Dynamics *pipeline)
 	ds_ShapePoolFlush(&pipeline->shape_pool);
 
 	ds_PhysicsEventPoolFlush(&pipeline->event_pool);
-	ds_DLLFlush(pipeline->event_list);
+	DLLFlush(pipeline->event_list);
 
     ds_JointPoolFlush(&pipeline->joint_pool);
     ds_CGraphFlush(pipeline);
@@ -1831,7 +1831,7 @@ u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const str
 struct ds_PhysicsEvent *ds_PhysicsEventPush(struct ds_Dynamics *pipeline)
 {
 	struct slot slot = ds_PhysicsEventPoolAdd(&pipeline->event_pool);
-    ds_DLLAppend(pipeline->event_list, pipeline->event_pool.buf, slot.index, node);
+    DLLAppend(pipeline->event_list, pipeline->event_pool.buf, slot.index, node);
 	struct ds_PhysicsEvent *event = slot.address;
 	event->ns = pipeline->ns_start + pipeline->frames_completed * pipeline->ns_tick;
 	return event;

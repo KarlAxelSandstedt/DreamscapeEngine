@@ -116,7 +116,7 @@ static ds_ForceInline q QNormalize(const q a)
 }
 
 /* Rotate v by a: ava^-1 = v + 2*a_w*Cross(a_xyz, v) + 2*Cross(a_xyz, Cross(a_xyz, v)) */
-static ds_ForceInline v3 QVec3Rotate(const q a, const v3 v)
+static ds_ForceInline v3 QV3Rotate(const q a, const v3 v)
 {
 	const v3 c = V3(2.0f*(a.y*v.z - a.z*v.y),
 			2.0f*(a.z*v.x - a.x*v.z),

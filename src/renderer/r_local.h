@@ -210,7 +210,7 @@ struct gl_TextureUnitBinding
 	u32 			context;
 	GLuint 			tx_unit;
 
-	struct ds_DLLNode texture_binding;
+	struct DLLNode texture_binding;
 	POOL_NODE;
 };
 POOL_DECLARE(gl_TextureUnitBinding);
@@ -219,7 +219,7 @@ struct gl_Texture
 {
     POOL_NODE;
 	GLuint 		name;
-	struct ds_DLL 	binding_list;
+	struct DLL 	binding_list;
 
 	GLenum 		target;
 	GLint 		wrap_s;

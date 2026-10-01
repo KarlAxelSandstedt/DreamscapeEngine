@@ -27,7 +27,7 @@ extern "C" {
 #include "ds_allocator.h"
 #include "ds_math.h"
 #include "ds_renderer.h"
-#include "list.h"
+#include "ds_list.h"
 #include "collision.h"
 #include "ds_hash_map.h"
 #include "ds_bitset.h"
@@ -53,9 +53,9 @@ ds_NumericsConfig stores configurable values to be used in numerical calculation
 struct ds_NumericsConfig
 {
     /* Maximum degrees allowed between two vectors for them to be considered parallel */
-    f32 vec3_parallel_check_max_degrees_pending;
-    f32 vec3_parallel_check_max_degrees;
-    f32 vec3_parallel_check_eps;
+    f32 v3_parallel_check_max_degrees_pending;
+    f32 v3_parallel_check_max_degrees;
+    f32 v3_parallel_check_eps;
 
     /* Maximum degrees allowed for temporal consistency between a cached and new manifold normal */
     f32 manifold_cache_normal_parallel_check_max_degrees_pending;
@@ -279,13 +279,13 @@ transform, ds_Body must also store its center of mass:
 struct ds_Shape
 {
 	POOL_NODE;
-    struct ds_DLLNode body_shape;
+    struct DLLNode body_shape;
 
     ds_ShapeId      id;                 /* Generational identifier                          */
     u32             flags;              /* Shape flags (BODY_FLAG_DYNAMIC)                       */
 	u32 			body;		        /* ds_Body owner of node 			                */
 	u32			    proxy;		        /* BVH index 					                    */
-    struct ds_DLL   contact_list;       /* list of the shape's contacts                     */
+    struct DLL   contact_list;       /* list of the shape's contacts                     */
 
 	enum c_ShapeType cshape_type;	    /* collisionShape type 				                */
 	u32			    cshape_handle;	    /* handle to referenced collisionShape 		        */
@@ -340,7 +340,7 @@ ds_BodyPrefab, a local transform, and a reference to the instanced ds_Shape.
 struct ds_ShapePrefabInstance
 {
     POOL_NODE;
-    struct ds_DLLNode   body_shape;
+    struct DLLNode   body_shape;
     u8                  id_buf[PREFAB_BUFSIZE];
     utf8                id;         /* local identifier within a body    */
     u32                 shape_prefab;
@@ -407,7 +407,7 @@ struct ds_BodyPrefab
     u8              id_buf[PREFAB_BUFSIZE];
     SDB_NODE;
 
-    struct ds_DLL   shape_list;         /* shape prefab instance list */
+    struct DLL   shape_list;         /* shape prefab instance list */
     ds_BodyId  body;
     
 	u32	            dynamic;	        /* dynamic body is true, static if false */
@@ -445,7 +445,7 @@ ds_BodyCompute.
 struct ds_Body
 {
 	POOL_NODE;
-	struct ds_DLLNode island_body;	            /* island body_list node                                */
+	struct DLLNode island_body;	            /* island body_list node                                */
 
     ds_BodyId  id;                         /* generational identifier                              */
 	u32 		    flags;
@@ -456,10 +456,10 @@ struct ds_Body
 	f32 		    low_velocity_time;	        /* Current uninterrupted time body has been in a low 
                                                    velocity state                                       */
 
-    struct ds_DLL   joint_list;                 /* list of ds_Joint's attached to the body. Each joint is
+    struct DLL   joint_list;                 /* list of ds_Joint's attached to the body. Each joint is
                                                    shared with one other body. */
 
-	struct ds_DLL   shape_list;		            /* list of convex shapes constructing the rigid body 	*/
+	struct DLL   shape_list;		            /* list of convex shapes constructing the rigid body 	*/
 
 	f32 		    mass;			            /* total body mass                                      */
 
@@ -656,8 +656,8 @@ struct ds_Contact
                                                        contacts are treated as a single 
                                                        constraint!)                             */
 
-    struct ds_DLLNode           island_contact;     /* island->contact_list node                */
-    struct ds_DLLNode           shape_contact[2];   /* [i] is part of shape i's contact list    */
+    struct DLLNode           island_contact;     /* island->contact_list node                */
+    struct DLLNode           shape_contact[2];   /* [i] is part of shape i's contact list    */
 
     /* 
      * The following data is regenerated per-frame and is alive for 2 frames. All data is 
@@ -748,10 +748,10 @@ struct ds_Joint
     ds_JointId          id;                    /* generational identifier */
 
     u32                 island;
-    struct ds_DLLNode   island_joint;
+    struct DLLNode   island_joint;
 
     u32                 body[2];        /* bodies sharing ownership of joint                                */
-    struct ds_DLLNode   edge_node[2];   /* Each body stores the joint its dll; b == body[i] => edge_node[i] 
+    struct DLLNode   edge_node[2];   /* Each body stores the joint its dll; b == body[i] => edge_node[i] 
                                            is part of body b's dll.                                         */
 
     //TODO u32         island;     /* */
@@ -934,9 +934,9 @@ struct ds_Island
     u32             set;                        /* ds_SolverSet index */
     u32             set_island_index;           /* index into set.island_pool */
 
-	struct ds_DLL	body_list;
-	struct ds_DLL	contact_list;
-    struct ds_DLL   joint_list;
+	struct DLL	body_list;
+	struct DLL	contact_list;
+    struct DLL   joint_list;
 
 //TODO RMEOVE
 	v4 color;
@@ -1447,7 +1447,7 @@ enum ds_PhysicsEventType
 struct ds_PhysicsEvent
 {
 	POOL_NODE;
-    struct ds_DLLNode   node;
+    struct DLLNode   node;
 
 	u64			ns;	/* time of event */
 	enum ds_PhysicsEventType type;
@@ -1519,7 +1519,7 @@ struct ds_Dynamics
     struct ds_JointPool             joint_pool;
 
 	struct ds_PhysicsEventPool      event_pool;
-	struct ds_DLL		            event_list;
+	struct DLL		            event_list;
 
     struct ds_CGraph                cgraph;
 

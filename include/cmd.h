@@ -52,7 +52,7 @@ extern "C" {
  */
 
 #include "ds_base.h"
-#include "list.h"
+#include "ds_list.h"
 
 enum cmdArgsType
 {
@@ -83,7 +83,7 @@ union cmdRegister
 	utf8	utf8;
 	utf32	utf32;
 	intv	intv;
-    v3      vec3;
+    v3      v3;
     v4      vec4;
 };
 
@@ -109,8 +109,8 @@ POOL_DECLARE(cmd);
 struct cmdQueue
 {
 	struct cmdPool	cmd_pool;
-	struct ds_LL	cmd_list;
-	struct ds_LL	cmd_list_next_frame;
+	struct LL	cmd_list;
+	struct LL	cmd_list_next_frame;
 
 	struct cmd *		cmd_exec;
 

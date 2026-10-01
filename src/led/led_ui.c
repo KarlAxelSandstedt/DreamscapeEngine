@@ -356,7 +356,7 @@ static void led_InputHandler(struct led *led, struct ui_Node *viewport)
 
 		if (event_consumed)
 		{
-			ds_DLLRemove(sys_win->ui->event_list, sys_win->ui->event_pool.buf, i, node);
+			DLLRemove(sys_win->ui->event_list, sys_win->ui->event_pool.buf, i, node);
 			ds_EventPoolRemove(&sys_win->ui->event_pool, i);
 		}
 		i = next;

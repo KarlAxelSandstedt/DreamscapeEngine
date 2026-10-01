@@ -27,7 +27,7 @@ extern "C" {
 #include "ds_base.h"
 #include "ds_dynamics.h"
 #include "ds_hash_map.h"
-#include "list.h"
+#include "ds_list.h"
 #include "cmd.h"
 #include "ds_renderer.h"
 #include "ds_ui.h"
@@ -203,7 +203,7 @@ struct led
 	struct ds_HashMap 		node_map;
 	led_NodeHI		        node_hierarchy;
 
-	struct ds_DLL		    node_selected_list;
+	struct DLL		    node_selected_list;
 	struct ui_List		    node_ui_list;
 	struct ui_List		    node_selected_ui_list;
 

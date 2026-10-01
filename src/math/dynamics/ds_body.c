@@ -44,8 +44,8 @@ ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *p
     }
     ds_BitSetSet(&pipeline->body_usage_set, body_slot.index, 1);
 
-    ds_DLLFlush(body->joint_list);
-    ds_DLLFlush(body->shape_list);
+    DLLFlush(body->joint_list);
+    DLLFlush(body->shape_list);
 
 	body->entity = entity;
 
@@ -75,7 +75,7 @@ ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *p
 	    const struct slot island_slot = ds_IslandAlloc(pipeline, SOLVER_SET_ACTIVE);
 	    struct ds_Island *island = island_slot.address;
 	    body->island = island_slot.index;
-	    ds_DLLAppend(island->body_list, pipeline->body_pool.buf, body_slot.index, island_body);
+	    DLLAppend(island->body_list, pipeline->body_pool.buf, body_slot.index, island_body);
 	}
 	else
 	{
@@ -130,7 +130,7 @@ void ds_BodyRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, const ds
             ds_JointDynamicRemove(pipeline, body, body->joint_list.first);
         }
 
-    	ds_DLLRemove(island->body_list, pipeline->body_pool.buf, ds_IdIndex(id), island_body); 
+    	DLLRemove(island->body_list, pipeline->body_pool.buf, ds_IdIndex(id), island_body); 
     	if (island->body_list.count == 0)
     	{
     		ds_Assert(island->body_list.first == DLL_SENTINEL);

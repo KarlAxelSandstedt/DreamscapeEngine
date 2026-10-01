@@ -29,7 +29,7 @@ extern "C" {
 #include "ds_graphics.h"
 #include "ds_asset.h"
 #include "hierarchy_index.h"
-#include "list.h"
+#include "ds_list.h"
 
 #define UI_SCOPE(PUSH, POP)	for (i32 __i = ((PUSH), 0); __i < 1; ++__i, (POP))
 
@@ -406,7 +406,7 @@ struct ui_DrawNode
 
 struct ui_DrawBucket
 {
-    struct ds_DLLNode   node;
+    struct DLLNode   node;
 	u32 			    cmd;
 	u32 			    count;
 	struct ui_DrawNode *list;
@@ -726,13 +726,13 @@ struct ui
 	struct ui_Interaction	inter;
 
 	ds_CPool(ui_DrawBucket)	bucket_pool;
-	struct ds_DLL           bucket_list;
+	struct DLL           bucket_list;
 	struct ds_HashMap 	    bucket_map;
 	u32			            bucket_cache;	/* for quick cmd check */
 	u32			            bucket_count;
 
 	struct ds_EventPool		event_pool;
-	struct ds_DLL		    event_list;
+	struct DLL		    event_list;
 
 	/* node map for all u's  */
 	/* Shared allocator for all nodes  */

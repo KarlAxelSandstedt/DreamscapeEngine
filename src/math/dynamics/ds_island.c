@@ -31,7 +31,7 @@ static void ds_IslandAddBody(struct ds_Dynamics *pipeline, const u32 island_inde
     {
         ds_SolverSetMoveBody(pipeline, body, is->set);
     }
-	ds_DLLAppend(is->body_list, pipeline->body_pool.buf, body, island_body);
+	DLLAppend(is->body_list, pipeline->body_pool.buf, body, island_body);
 }
 
 static struct slot ds_IslandAlloc(struct ds_Dynamics *pipeline, const u32 set)
@@ -46,9 +46,9 @@ static struct slot ds_IslandAlloc(struct ds_Dynamics *pipeline, const u32 set)
     }
 
 	struct ds_Island *is = slot.address;
-	ds_DLLFlush(is->body_list);
-	ds_DLLFlush(is->contact_list);
-    ds_DLLFlush(is->joint_list);
+	DLLFlush(is->body_list);
+	DLLFlush(is->contact_list);
+    DLLFlush(is->joint_list);
 	is->constraint_remove_count = 0;
 
     if (old_max != pipeline->island_pool.count)
@@ -309,7 +309,7 @@ void ds_IslandSplit(struct ds_Dynamics *pipeline, const u32 island_to_split)
         struct ds_Island *new_island = slot.address;
 		split = pipeline->island_pool.buf + island_to_split;
 
-		ds_DLLRemove(split->body_list, pipeline->body_pool.buf, bi, island_body);
+		DLLRemove(split->body_list, pipeline->body_pool.buf, bi, island_body);
 		ds_IslandAddBody(pipeline, new_island_index, bi);
         body_stack[0] = bi;
         sc = 1;
@@ -334,11 +334,11 @@ void ds_IslandSplit(struct ds_Dynamics *pipeline, const u32 island_to_split)
                         const struct ds_Body *neighbour_body = pipeline->body_pool.buf + neighbour_shape->body; 
                         if (neighbour_body->island == island_to_split)
                         {
-		      		    	ds_DLLRemove(split->body_list, pipeline->body_pool.buf, neighbour_shape->body, island_body);
+		      		    	DLLRemove(split->body_list, pipeline->body_pool.buf, neighbour_shape->body, island_body);
 		      		    	ds_IslandAddBody(pipeline, new_island_index, neighbour_shape->body);
 		      		    	body_stack[sc++] = neighbour_shape->body;
                         }
-	                    ds_DLLAppend(new_island->contact_list, pipeline->contact_pool.buf, (u32) ci, island_contact);
+	                    DLLAppend(new_island->contact_list, pipeline->contact_pool.buf, (u32) ci, island_contact);
                         c->island = new_island_index;
                     }
                     ci = ci_next;

@@ -1098,7 +1098,7 @@ u32 c_CapsuleSphereTest(const struct c_Shape *s1, const ds_Transform *t1, const 
 	const v3 c2 = V3Sub(t2->position, t1->position);
 
     const struct capsule *cap = &s1->capsule;
-    const v3 s_p1 = QVec3Rotate(t1->rotation, V3(0.0f, cap->half_height, 0.0f));
+    const v3 s_p1 = QV3Rotate(t1->rotation, V3(0.0f, cap->half_height, 0.0f));
 	const struct segment s = SegmentConstruct(s_p1, V3Negate(s_p1));
 
 	const f32 r_sum = s1->capsule.radius + s2->sphere.radius;
@@ -1362,7 +1362,7 @@ struct c_ContactResult c_CapsuleSphereContact(struct arena *frame, const struct 
 
 	v3 c[2], diff;
 
-    const v3 s_p1 = QVec3Rotate(t[0].rotation, V3(0.0f, cap->half_height, 0.0f));
+    const v3 s_p1 = QV3Rotate(t[0].rotation, V3(0.0f, cap->half_height, 0.0f));
 	struct segment seg = SegmentConstruct(s_p1, V3Negate(s_p1));
 
 	c[1] = V3Sub(t[1].position, t[0].position);
@@ -2723,7 +2723,7 @@ struct c_ContactResult c_TriMeshBvhSphereContact(struct arena *frame, const stru
 	const struct sphere *sph = &s[1]->sphere;
 
 	struct aabb bbox_transform;
-	bbox_transform.center = QVec3Rotate(QInverse(tf[0].rotation), V3Sub(tf[1].position, tf[0].position));
+	bbox_transform.center = QV3Rotate(QInverse(tf[0].rotation), V3Sub(tf[1].position, tf[0].position));
 	bbox_transform.hw = V3(sph->radius, sph->radius, sph->radius);
 
     struct c_TriMeshBvhIterator it;
@@ -3004,8 +3004,8 @@ struct c_ContactResult c_TriMeshBvhCapsuleContact(struct arena *frame, const str
     /* bvh local-space capsule segment */
     const q q_inv = QInverse(tf[0].rotation);
     const struct segment cap_mesh_space_s = SegmentConstruct(
-            QVec3Rotate(q_inv, V3Sub(cap_s.p[0], tf[0].position)),
-            QVec3Rotate(q_inv, V3Sub(cap_s.p[1], tf[0].position)));
+            QV3Rotate(q_inv, V3Sub(cap_s.p[0], tf[0].position)),
+            QV3Rotate(q_inv, V3Sub(cap_s.p[1], tf[0].position)));
 	struct aabb bbox_transform = BboxSegment(&cap_mesh_space_s);
 	bbox_transform.hw = V3Add(bbox_transform.hw, V3(cap->radius, cap->radius, cap->radius));
 
@@ -3179,7 +3179,7 @@ static u32 TriCcwHullEECheck(struct sat_EdgeQuery *query, const struct plane *tr
 	    	const f32 d1d2 = V3Dot(tri_s[si].dir, hull_s.dir);
             const f32 d1d1_d2d2 = tri_s_dist_sq[si]*d2d2;
 	    	/* Skip parallel edge pairs  */
-	    	if (d1d1_d2d2 - d1d2*d1d2 >= g_numerics_config->vec3_parallel_check_eps*d1d1_d2d2) 
+	    	if (d1d1_d2d2 - d1d2*d1d2 >= g_numerics_config->v3_parallel_check_eps*d1d1_d2d2) 
 	    	{
 	    		v3 e1 = V3Cross(tri_s[si].dir, hull_s.dir);
 	    		e1 = V3Scale(e1, 1.0f / V3Length(e1));
@@ -3578,7 +3578,7 @@ struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct
      */
     const q q_inv = QInverse(tf[0].rotation);
     const q q_R = QMul(q_inv, tf[1].rotation);
-    const v3 T = QVec3Rotate(q_inv, V3Sub(tf[1].position, tf[0].position));
+    const v3 T = QV3Rotate(q_inv, V3Sub(tf[1].position, tf[0].position));
     const m3 R = M3Q(q_R);
 
     struct arena *tmp = ArenaPushScratch();

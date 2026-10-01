@@ -27,7 +27,7 @@ extern "C" {
 #include "ds_base.h"
 #include "ds_types.h"
 #include "ds_hash_map.h"
-#include "list.h"
+#include "ds_list.h"
 
 /************************************************************************/
 /* 			    Platform Initialization			*/
@@ -415,7 +415,7 @@ enum ds_EventType
 struct ds_Event 
 {
     POOL_NODE;
-    struct ds_DLLNode   node;
+    struct DLLNode   node;
 	u64			native_handle;	/* window handle 			*/
 	u64			ns_timestamp;	/* external event time; NOT OUR CLOCK 	*/
 	enum ds_EventType 	type;

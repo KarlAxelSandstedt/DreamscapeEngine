@@ -674,7 +674,7 @@ void ds_glGenTextures(const GLsizei count, GLuint tx[])
 		}
 
 		tx_in_use += 1;
-		ds_DLLFlush(tx_ptr->binding_list);
+		DLLFlush(tx_ptr->binding_list);
 		tx_ptr->wrap_s = GL_REPEAT;
 		tx_ptr->wrap_t = GL_REPEAT;
 		tx_ptr->mag_filter = GL_LINEAR;
@@ -754,7 +754,7 @@ void ds_glBindTexture(const GLenum target, const GLuint tx)
 			texture->binding_list.first = binding->texture_binding.next;
 		}
 		//fprintf(stderr, "context; %p\t DEL binding (UNIT,TEXTURE) : (%u,%u)\n", g_gl_state, gl_state->tx_unit_active, texture->name);
-		ds_DLLRemove(texture->binding_list, g_binding_pool.buf, unit->binding, texture_binding);
+		DLLRemove(texture->binding_list, g_binding_pool.buf, unit->binding, texture_binding);
 		gl_TextureUnitBindingPoolRemove(&g_binding_pool, unit->binding);
 		unit->binding = DLL_SENTINEL;
 	}
@@ -786,7 +786,7 @@ void ds_glBindTexture(const GLenum target, const GLuint tx)
 					}
 					gl_state->tx_unit[binding->tx_unit].binding = DLL_SENTINEL;
 
-					ds_DLLRemove(texture->binding_list, g_binding_pool.buf, i, texture_binding);
+					DLLRemove(texture->binding_list, g_binding_pool.buf, i, texture_binding);
 					gl_TextureUnitBindingPoolRemove(&g_binding_pool, i);
 					//fprintf(stderr, "context; %p\t DEL binding (UNIT,TEXTURE) : (%u,%u)\n", g_gl_state, binding->tx_unit, texture->name);
 				//}
@@ -796,7 +796,7 @@ void ds_glBindTexture(const GLenum target, const GLuint tx)
 
 		struct slot slot;
 		slot = gl_TextureUnitBindingPoolAdd(&g_binding_pool);
-	 	ds_DLLPrepend(texture->binding_list, g_binding_pool.buf, slot.index, texture_binding);
+	 	DLLPrepend(texture->binding_list, g_binding_pool.buf, slot.index, texture_binding);
 		
 		binding = slot.address;
 		binding->context = g_gl_state;
@@ -1113,7 +1113,7 @@ void gl_StateDealloc(const u32 gl_state_index)
 				struct gl_TextureUnitBinding *binding = g_binding_pool.buf + texture->binding_list.first;
 				texture->binding_list.first = binding->texture_binding.next;
 			}
-			ds_DLLRemove(texture->binding_list, g_binding_pool.buf, gl_state->tx_unit[i].binding, texture_binding);
+			DLLRemove(texture->binding_list, g_binding_pool.buf, gl_state->tx_unit[i].binding, texture_binding);
 			gl_TextureUnitBindingPoolRemove(&g_binding_pool, gl_state->tx_unit[i].binding);
 		}
 	}

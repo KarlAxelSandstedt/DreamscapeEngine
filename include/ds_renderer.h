@@ -28,7 +28,7 @@ extern "C" {
 #include "string_database.h"
 #include "hierarchy_index.h"
 #include "geometry.h"
-#include "list.h"
+#include "ds_list.h"
 
 /********************************************************
  *			r_mesh.c			*
@@ -426,7 +426,7 @@ struct r_Scene
 
 	struct ds_HashMap 		proxy3d_to_instance_map;/* map[ generation(32) | index(32) ] -> instance */
 	struct r_InstancePool 	instance_pool;		/* instance storage */
-	struct ds_LL            instance_new_list;	/* non-cached instance 	*/
+	struct LL            instance_new_list;	/* non-cached instance 	*/
 
 	struct r_Command *	cmd_cache;		/* cached commands 		*/
 	struct r_Command *	cmd_frame;		/* current frame commands 	*/

@@ -156,8 +156,8 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 
 	struct ds_BodyPrefab *prefab_stub = g_editor->body_prefab_db.pool.buf + SDB_STUB;
 	prefab_stub->dynamic = 1;
-    ds_DLLFlush(prefab_stub->shape_list);
-    ds_DLLAppend(prefab_stub->shape_list, g_editor->shape_prefab_instance_pool.buf, instance_index, body_shape);
+    DLLFlush(prefab_stub->shape_list);
+    DLLAppend(prefab_stub->shape_list, g_editor->shape_prefab_instance_pool.buf, instance_index, body_shape);
 
     slot = led_NodeHIAdd(&g_editor->node_hierarchy, HI_ROOT);
     ds_Assert(slot.index == LED_NODE_ROOT);

@@ -45,8 +45,8 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const ds_BodyId b0_id, cons
     joint->body[1] = slot_b1.index;
     const u32 i0 = (joint->body[0] == pipeline->joint_pool.buf[b0->joint_list.last].body[1]);
     const u32 i1 = (joint->body[1] == pipeline->joint_pool.buf[b1->joint_list.last].body[1]);
-    ds_DLLAppendEx(b0->joint_list, pipeline->joint_pool.buf, slot_joint.index, edge_node[i0], edge_node[0]);
-    ds_DLLAppendEx(b1->joint_list, pipeline->joint_pool.buf, slot_joint.index, edge_node[i1], edge_node[1]);
+    DLLAppendEx(b0->joint_list, pipeline->joint_pool.buf, slot_joint.index, edge_node[i0], edge_node[0]);
+    DLLAppendEx(b1->joint_list, pipeline->joint_pool.buf, slot_joint.index, edge_node[i1], edge_node[1]);
     //TODO does order matter here?
     //TODO should static have slot 1 reserved?...
     struct ds_JointSim *sim = ds_CGraphJointAdd(pipeline, joint);
@@ -69,7 +69,7 @@ static void ds_JointUnlink(struct ds_Dynamics *pipeline, const struct ds_Joint *
         const struct ds_Joint *joint_next = pipeline->joint_pool.buf + next;
         const u32 pi = (bi == joint_prev->body[1]);
         const u32 ni = (bi == joint_next->body[1]);
-        ds_DLLRemoveEx(body->joint_list, pipeline->joint_pool.buf, joint_index, edge_node[pi], edge_node[i], edge_node[ni]);
+        DLLRemoveEx(body->joint_list, pipeline->joint_pool.buf, joint_index, edge_node[pi], edge_node[i], edge_node[ni]);
     }
 }
 

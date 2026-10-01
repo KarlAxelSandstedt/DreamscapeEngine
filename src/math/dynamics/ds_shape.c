@@ -57,7 +57,7 @@ ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab
         ds_BitSetIncreaseSize(&pipeline->shape_dynamic_usage_set, pipeline->shape_dynamic_usage_set.bit_count << 1, 0);
     }
 
-	ds_DLLAppend(body->shape_list, pipeline->shape_pool.buf, shape_slot.index, body_shape);
+	DLLAppend(body->shape_list, pipeline->shape_pool.buf, shape_slot.index, body_shape);
 
     shape->flags = body->flags & SHAPE_FLAG_ALL;
 	shape->body = ds_IdIndex(body_id);
@@ -66,7 +66,7 @@ ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab
 	shape->friction = prefab->friction;
 	shape->t_local = *t;
 	shape->margin = prefab->margin;
-	ds_DLLFlush(shape->contact_list);
+	DLLFlush(shape->contact_list);
 
 	const struct c_Shape *cshape = pipeline->cshape_db->pool.buf + prefab->cshape;
 	const struct slot cshape_slot = c_ShapeSDBReference(pipeline->cshape_db, cshape->id);
@@ -107,7 +107,7 @@ void ds_ShapeDynamicRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, c
 
     ds_BitSetSet(&pipeline->shape_dynamic_usage_set, shape_index, 0);
     ds_BitSetSet(&pipeline->shape_dirty_set, shape_index, 0);
-    ds_DLLRemove(body->shape_list, pipeline->shape_pool.buf, shape_index, body_shape);
+    DLLRemove(body->shape_list, pipeline->shape_pool.buf, shape_index, body_shape);
 	c_ShapeSDBDereference(pipeline->cshape_db, shape->cshape_handle);
 	DbvhRemove(&pipeline->dynamic_bvh, shape->proxy);
 	ds_ShapePoolRemove(&pipeline->shape_pool, shape_index);
@@ -123,7 +123,7 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, s
     }
 
     ds_BitSetSet(&pipeline->shape_dirty_set, index, 0);
-    ds_DLLRemove(body->shape_list, pipeline->shape_pool.buf, index, body_shape);
+    DLLRemove(body->shape_list, pipeline->shape_pool.buf, index, body_shape);
 	c_ShapeSDBDereference(pipeline->cshape_db, shape->cshape_handle);
 	DbvhRemove(&pipeline->static_bvh, shape->proxy);
 	ds_ShapePoolRemove(&pipeline->shape_pool, index);

@@ -37,7 +37,7 @@ struct r_Scene *r_SceneAlloc(void)
 	scene->proxy3d_to_instance_map = ds_HashMapAlloc(NULL, 4096, 4096, GROWABLE);
 	scene->instance_pool = r_InstancePoolAlloc(NULL, 4096, GROWABLE);
 
-	ds_LLFlush(scene->instance_new_list);
+	LLFlush(scene->instance_new_list);
 
 	scene->cmd_cache = NULL;
 	scene->cmd_cache_count = 0;
@@ -66,7 +66,7 @@ void r_SceneFrameBegin(void)
 	g_scene->frame += 1;
 	g_scene->mem_frame = g_scene->mem_frame_arr + (g_scene->frame & 0x1);	
 	
-	ds_LLFlush(g_scene->instance_new_list);
+	LLFlush(g_scene->instance_new_list);
 	g_scene->cmd_cache = g_scene->cmd_frame;
 	g_scene->cmd_cache_count = g_scene->cmd_frame_count;
 	g_scene->cmd_frame = NULL;
@@ -752,7 +752,7 @@ struct r_Instance *r_InstanceAdd(const u32 unit, const u64 cmd)
 	{
 		struct slot slot = r_InstancePoolAdd(&g_scene->instance_pool);
 		ds_HashMapAdd(&g_scene->proxy3d_to_instance_map, hash, slot.index);
-		ds_LLPrepend(g_scene->instance_new_list, g_scene->instance_pool.buf, slot.index, next);
+		LLPrepend(g_scene->instance_new_list, g_scene->instance_pool.buf, slot.index, next);
 
 		instance = g_scene->instance_pool.buf + slot.index;
 		instance->unit = unit;
@@ -763,7 +763,7 @@ struct r_Instance *r_InstanceAdd(const u32 unit, const u64 cmd)
 	}
 	else if (instance->cmd->key != cmd)
 	{
-		ds_LLPrepend(g_scene->instance_new_list, g_scene->instance_pool.buf, index, next);
+		LLPrepend(g_scene->instance_new_list, g_scene->instance_pool.buf, index, next);
 
 		instance->cmd->allocated = 0;
 		instance->cmd = ArenaPush(g_scene->mem_frame, sizeof(struct r_Command));
@@ -782,7 +782,7 @@ struct r_Instance *r_InstanceAdd(const u32 unit, const u64 cmd)
 struct r_Instance *r_InstanceAddNonCached(const u64 cmd)
 {
 	struct slot slot = r_InstancePoolAdd(&g_scene->instance_pool);
-	ds_LLPrepend(g_scene->instance_new_list, g_scene->instance_pool.buf, slot.index, next);
+	LLPrepend(g_scene->instance_new_list, g_scene->instance_pool.buf, slot.index, next);
 
 	struct r_Instance *instance = g_scene->instance_pool.buf + slot.index;
 	instance->cmd = ArenaPush(g_scene->mem_frame, sizeof(struct r_Command));

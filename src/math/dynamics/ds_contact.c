@@ -85,8 +85,8 @@ struct slot ds_ContactAdd(struct ds_Dynamics *pipeline, const struct ds_ContactK
     struct ds_Contact *c1 = buf + shape[1]->contact_list.last; 
     const i32 prev0 = (c0->key.shape[1] == c->key.shape[0]);
     const i32 prev1 = (c1->key.shape[1] == c->key.shape[1]);
-    ds_DLLAppendEx(shape[0]->contact_list, buf, contact_slot.index, shape_contact[prev0], shape_contact[0]);
-    ds_DLLAppendEx(shape[1]->contact_list, buf, contact_slot.index, shape_contact[prev1], shape_contact[1]);
+    DLLAppendEx(shape[0]->contact_list, buf, contact_slot.index, shape_contact[prev0], shape_contact[0]);
+    DLLAppendEx(shape[1]->contact_list, buf, contact_slot.index, shape_contact[prev1], shape_contact[1]);
 
 	ds_HashMapAdd(&pipeline->contact_map, ds_ContactKeyHash(key), contact_slot.index);
 
@@ -114,7 +114,7 @@ void ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 index)
 
         struct ds_Island *island = pipeline->island_pool.buf + c->island;
         island->constraint_remove_count += 1;
-        ds_DLLRemove(island->contact_list, pipeline->contact_pool.buf, index, island_contact);
+        DLLRemove(island->contact_list, pipeline->contact_pool.buf, index, island_contact);
         c->island = U32_MAX;
     }
     else
@@ -137,8 +137,8 @@ void ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 index)
     const i32 prev1 = (c->key.shape[1] == buf[ c->shape_contact[1].prev ].key.shape[1]);
     const i32 next0 = (c->key.shape[0] == buf[ c->shape_contact[0].next ].key.shape[1]);
     const i32 next1 = (c->key.shape[1] == buf[ c->shape_contact[1].next ].key.shape[1]);
-    ds_DLLRemoveEx(shape0->contact_list, buf, index, shape_contact[prev0], shape_contact[0], shape_contact[next0]);
-    ds_DLLRemoveEx(shape1->contact_list, buf, index, shape_contact[prev1], shape_contact[1], shape_contact[next1]);
+    DLLRemoveEx(shape0->contact_list, buf, index, shape_contact[prev0], shape_contact[0], shape_contact[next0]);
+    DLLRemoveEx(shape1->contact_list, buf, index, shape_contact[prev1], shape_contact[1], shape_contact[next1]);
         
     ds_ContactPoolRemove(&pipeline->contact_pool, index);
     ds_BitSetSet(&pipeline->contact_usage_set, index, 0);
@@ -244,7 +244,7 @@ void ds_ContactPromote(struct ds_Dynamics *pipeline, const u32 contact)
     }
 
     c->island = expand_index;
-	ds_DLLAppend(expand->contact_list, pipeline->contact_pool.buf, contact, island_contact);
+	DLLAppend(expand->contact_list, pipeline->contact_pool.buf, contact, island_contact);
 	PhysicsEventIslandExpanded(pipeline, expand->id);	
 }
 
@@ -270,7 +270,7 @@ void ds_ContactDemote(struct ds_Dynamics *pipeline, const u32 contact)
 	PhysicsEventContactRemoved(pipeline, body[0]->id, shape[0]->id, body[1]->id, shape[1]->id);
 
     island->constraint_remove_count += 1;
-    ds_DLLRemove(island->contact_list, pipeline->contact_pool.buf, contact, island_contact);
+    DLLRemove(island->contact_list, pipeline->contact_pool.buf, contact, island_contact);
 
     c->island = U32_MAX;
     c->set = SOLVER_SET_ACTIVE;

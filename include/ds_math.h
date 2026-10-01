@@ -61,7 +61,7 @@ static inline ds_Transform ds_TransformRelative(const ds_Transform *reference, c
     const ds_Transform relative =
     {
         .rotation = QMul(inv, target->rotation),
-        .position = QVec3Rotate(inv, V3Sub(target->position, reference->position)),
+        .position = QV3Rotate(inv, V3Sub(target->position, reference->position)),
     };
 
     return relative;
@@ -73,7 +73,7 @@ static inline ds_Transform ds_TransformRelative(const ds_Transform *reference, c
  */
 static inline v3 ds_TransformPointToLocal(const ds_Transform *reference, const v3 target)
 {
-    return QVec3Rotate(QInverse(reference->rotation), V3Sub(target, reference->position));
+    return QV3Rotate(QInverse(reference->rotation), V3Sub(target, reference->position));
 }
 
 #ifdef __cplusplus

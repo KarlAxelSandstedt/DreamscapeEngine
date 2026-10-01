@@ -242,7 +242,7 @@ void ds_ProcessEvents(void)
 				else
 				{
 					struct slot slot = ds_EventPoolAdd(&sys_win->ui->event_pool);
-					ds_DLLAppend(sys_win->ui->event_list, sys_win->ui->event_pool.buf, slot.index, node);
+					DLLAppend(sys_win->ui->event_list, sys_win->ui->event_pool.buf, slot.index, node);
 					struct ds_Event *new = slot.address;
 					new->scancode = event.scancode;
 					new->keycode = event.keycode;
@@ -261,7 +261,7 @@ void ds_ProcessEvents(void)
 				else
 				{
 					struct slot slot = ds_EventPoolAdd(&sys_win->ui->event_pool);
-					ds_DLLAppend(sys_win->ui->event_list, sys_win->ui->event_pool.buf, slot.index, node);
+					DLLAppend(sys_win->ui->event_list, sys_win->ui->event_pool.buf, slot.index, node);
 					struct ds_Event *new = slot.address;
 					new->scancode = event.scancode;
 					new->keycode = event.keycode;

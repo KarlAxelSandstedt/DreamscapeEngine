@@ -662,7 +662,7 @@ struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const u32 dyn
 		{
 			struct ds_BodyPrefab *prefab = ds_BodyPrefabSDBAddAndAlias(&led->body_prefab_db, copy).address;
             prefab->id = Utf8CopyBuffered(prefab->id_buf, PREFAB_BUFSIZE, copy);
-            ds_DLLFlush(prefab->shape_list);
+            DLLFlush(prefab->shape_list);
 			prefab->dynamic = dynamic;
         }
 	}
@@ -726,7 +726,7 @@ void led_RigidBodyPrefabAttachShape(struct led *led, const utf8 rb_id, const utf
         struct slot slot = ds_ShapePrefabInstancePoolAdd(&led->shape_prefab_instance_pool);
         struct ds_ShapePrefabInstance *instance = slot.address;
 
-        ds_DLLPrepend(body_prefab->shape_list, led->shape_prefab_instance_pool.buf, slot.index, body_shape);
+        DLLPrepend(body_prefab->shape_list, led->shape_prefab_instance_pool.buf, slot.index, body_shape);
         instance->id = Utf8CopyBuffered(instance->id_buf, PREFAB_BUFSIZE, local_shape_id);
         instance->shape_prefab = ds_ShapePrefabSDBReference(&led->shape_prefab_db, shape_id).index;
         instance->t_local = *t_local;
@@ -748,7 +748,7 @@ void led_RigidBodyPrefabDetachShape(struct led *led, const utf8 rb_id, const utf
     }
     else
     {
-        ds_DLLRemove(body_prefab->shape_list, led->shape_prefab_instance_pool.buf, slot.index, body_shape);
+        DLLRemove(body_prefab->shape_list, led->shape_prefab_instance_pool.buf, slot.index, body_shape);
         led_ShapePrefabInstanceRemove(led, slot.index);
     }
 }
@@ -1929,7 +1929,7 @@ static void led_EngineRun(struct led *led)
 			} break;
 		}
 
-        ds_DLLRemove(led->physics.event_list, led->physics.event_pool.buf, ei, node);
+        DLLRemove(led->physics.event_list, led->physics.event_pool.buf, ei, node);
 	}
 
     if (physics_frames_to_run)

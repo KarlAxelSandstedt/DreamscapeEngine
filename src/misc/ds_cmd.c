@@ -57,8 +57,8 @@ struct cmdQueue CmdQueueAlloc(void)
 {
 	struct cmdQueue queue = { 0 };
 	queue.cmd_pool = cmdPoolAlloc(NULL, 64, GROWABLE);
-	ds_LLFlush(queue.cmd_list);
-	ds_LLFlush(queue.cmd_list_next_frame);
+	LLFlush(queue.cmd_list);
+	LLFlush(queue.cmd_list_next_frame);
 	return queue;
 }
 
@@ -298,7 +298,7 @@ void CmdQueueExecute(void)
 	}
 
 	g_queue->cmd_list = g_queue->cmd_list_next_frame;
-	ds_LLFlush(g_queue->cmd_list_next_frame);
+	LLFlush(g_queue->cmd_list_next_frame);
 
 	ArenaPopScratch();
 }
@@ -306,8 +306,8 @@ void CmdQueueExecute(void)
 void CmdQueueFlush(struct cmdQueue *queue)
 {
 	cmdPoolFlush(&queue->cmd_pool);
-	ds_LLFlush(g_queue->cmd_list);
-	ds_LLFlush(g_queue->cmd_list_next_frame);
+	LLFlush(g_queue->cmd_list);
+	LLFlush(g_queue->cmd_list_next_frame);
 }
 
 struct slot CmdFunctionRegister(const utf8 name, const u32 args_count, void (*call)(void))
@@ -383,7 +383,7 @@ void CmdQueueSubmitUtf8(struct cmdQueue *queue, const utf8 string)
 	cmd->args_type = CMD_ARGS_TOKEN;
 	cmd->string = string;
 
-	ds_LLAppend(queue->cmd_list, queue->cmd_pool.buf, slot.index, next);
+	LLAppend(queue->cmd_list, queue->cmd_pool.buf, slot.index, next);
 }
 
 void CmdSubmit(const u32 cmdFunction)
@@ -403,7 +403,7 @@ void CmdQueueSubmit(struct cmdQueue *queue, const u32 cmdFunction)
 		cmd->arg[i] = queue->regs[i];
 	}
 
-	ds_LLAppend(queue->cmd_list, queue->cmd_pool.buf, slot.index, next);
+	LLAppend(queue->cmd_list, queue->cmd_pool.buf, slot.index, next);
 }
 
 void CmdQueueSubmitNextFrame(struct cmdQueue *queue, const u32 cmdFunction)
@@ -418,7 +418,7 @@ void CmdQueueSubmitNextFrame(struct cmdQueue *queue, const u32 cmdFunction)
 		cmd->arg[i] = queue->regs[i];
 	}
 
-	ds_LLAppend(queue->cmd_list_next_frame, queue->cmd_pool.buf, slot.index, next);
+	LLAppend(queue->cmd_list_next_frame, queue->cmd_pool.buf, slot.index, next);
 }
 
 void CmdSubmitNextFrame(const u32 cmdFunction)
@@ -453,7 +453,7 @@ void CmdQueueSubmitUtf8NextFrame(struct cmdQueue *queue, const utf8 string)
 	cmd->args_type = CMD_ARGS_TOKEN;
 	cmd->string = string;
 
-	ds_LLAppend(queue->cmd_list_next_frame, queue->cmd_pool.buf, slot.index, next);
+	LLAppend(queue->cmd_list_next_frame, queue->cmd_pool.buf, slot.index, next);
 }
 
 void CmdSubmitUtf8NextFrame(const utf8 string)
