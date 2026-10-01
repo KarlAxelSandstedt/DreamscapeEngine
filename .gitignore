@@ -1,5 +1,6 @@
 Testing
 build
+build_agent
 log
 asset_components/led_projects
 **Makefile
