@@ -27,7 +27,7 @@
 #include "ds_hash_map.h"
 #include "list.h"
 #include "queue.h"
-#include "float32.h"
+#include "ds_float.h"
 
 //TODO what to do with this?
 #define MIN_SEGMENT_LENGTH_SQ	(100.0f*F32_EPSILON)
@@ -473,7 +473,7 @@ void AabbRotate(struct aabb *dst, const struct aabb *src, const m3 rotation)
 {
 	/*
 	 * Since we may pick any sign for hw[k], and the support point in any direction for an AABB is
-	 * one of its corners, we derive new hw as hw_new[k] = Vec3AbsSelf(rot.row[k])*hw_old;
+	 * one of its corners, we derive new hw as hw_new[k] = V3Abs(rot.row[k])*hw_old;
 	 */
 
 	const v3 x = V3Abs(V3(rotation.a11, rotation.a12, rotation.a13));

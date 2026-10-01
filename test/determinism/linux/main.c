@@ -233,8 +233,8 @@ int main(int argc, char *argv[])
     if (!test.generate)
     {
         (success)
-            ? fprintf(stderr, "========================== SUCCESS ==========================")
-            : fprintf(stderr, "========================== FAILURE ==========================");
+            ? fprintf(stderr, "========================== SUCCESS ==========================\n")
+            : fprintf(stderr, "========================== FAILURE ==========================\n");
     }
 	
 	led_Dealloc(editor);

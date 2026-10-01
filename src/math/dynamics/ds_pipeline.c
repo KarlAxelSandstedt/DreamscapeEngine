@@ -20,7 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "float32.h"
+#include "ds_float.h"
 #include "ds_float.h"
 #include "ds_vector.h"
 #include "ds_job.h"

@@ -22,7 +22,6 @@
 #include "ds_asset.h"
 #include "transform.h"
 #include "ds_led.h"
-#include "ds_math_bridge.h"
 
 POOL_DEFINE(r_Instance);
 

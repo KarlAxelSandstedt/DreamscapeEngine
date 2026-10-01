@@ -983,7 +983,7 @@ we require some ordering of how we compute each node's size.
 
 --- sizes ---
 
-UI_SIZE_PIXEL is easy; if a node is of the type, we simply grab the current global (vec2) preferred_size and preferred
+UI_SIZE_PIXEL is easy; if a node is of the type, we simply grab the current global (v2) preferred_size and preferred
 position at node creation, and we are done.
 
 Similarily, For nodes of type UI_SIZE_TEXT, we can compute on node creation the required size for displaying the
@@ -1324,7 +1324,7 @@ we need several values. The process looks like
 	if (TEXT_ATTACHED && FLAG_TEXT_LAYOUT_POSTPONED)
 		line_width = (FLAG_TEXT_ALLOW_LINE_OVERFLOW)
 			   ? F32_INFINITY
-			   : f32_max(node->pixel_size[0] - 2.0f-pad[0], 0.0f);
+			   : F32Max(node->pixel_size.x - 2.0f-pad[0], 0.0f);
 		node->textLayout = textLayout_calulcations
 	
 	

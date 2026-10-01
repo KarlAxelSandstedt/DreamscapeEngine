@@ -1742,7 +1742,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 			/* If capsule is not a point, check if it lies parallel on a face */
 			if (V3Dot(cap_s.dir, cap_s.dir) > COLLISION_POINT_DIST_SQ)
 			{
-				/* find parallel face with Vec3Dot(face_normal, segment_points) > 0.0f */
+				/* find parallel face with V3Dot(face_normal, segment_points) > 0.0f */
 				for (u32 fi = 0; fi < h->f_count; ++fi)
 				{
 				    struct plane pl = DcelFacePlane(h, g1.rot, g1.pos, fi);

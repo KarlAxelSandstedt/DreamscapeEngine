@@ -18,7 +18,7 @@
 */
 
 #include "ds_font.h"
-#include "float32.h"
+#include "ds_float.h"
 
 static u32 FontUtf32WhitespaceWidth(const struct font *font, const utf32 *whitespace, const u32 tab_size)
 {

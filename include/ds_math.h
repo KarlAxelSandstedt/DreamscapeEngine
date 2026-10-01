@@ -25,10 +25,6 @@ extern "C" {
 #endif
 
 #include "ds_random.h"
-#include "float32.h"
-#include "vector.h"
-#include "quaternion.h"
-#include "matrix.h"
 #include "ds_float.h"
 #include "ds_vector.h"
 #include "ds_quaternion.h"

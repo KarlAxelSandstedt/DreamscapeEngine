@@ -552,7 +552,7 @@ static inline struct r_ColorSegment	r_ColorSegmentConstruct(const struct segment
  		struct r_unit[id]
  		{
  			u32 		draw_flags;		// 0 or more flags set 
- 			vec4		color;			// Used on DRAW_COLOR
+ 			v4		color;			// Used on DRAW_COLOR
  			f32		transparency;		// Used on DRAW_TRASPARENT
  			f32		color_blending;		// Used on DRAW_COLOR & DRAW_**MATERIAL**
  			u32		material;		// Used on DRAW_**MATERIAL**
@@ -567,7 +567,7 @@ static inline struct r_ColorSegment	r_ColorSegmentConstruct(const struct segment
   		struct r_unit[id]
  		{
  			u32 		draw_flags;		// 0 or more flags set 
- 			vec4		color;			// Used on DRAW_COLOR
+ 			v4		color;			// Used on DRAW_COLOR
  			f32		transparency;		// Used on DRAW_TRASPARENT
  			f32		color_blending;		// Used on DRAW_COLOR & DRAW_**MATERIAL**
  			u32		material;		// Used on DRAW_**MATERIAL**

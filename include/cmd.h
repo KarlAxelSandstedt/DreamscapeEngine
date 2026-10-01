@@ -83,8 +83,8 @@ union cmdRegister
 	utf8	utf8;
 	utf32	utf32;
 	intv	intv;
-    vec3    vec3;
-    vec4    vec4;
+    v3      vec3;
+    v4      vec4;
 };
 
 typedef struct cmdFunction

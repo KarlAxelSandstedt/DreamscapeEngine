@@ -23,43 +23,42 @@
 #include <fenv.h>
 
 #include "ds_test.h"
-#include "matrix.h"
+#include "ds_matrix.h"
 
 static struct test_Output matrix_inverse_assert(struct test_Environment *env)
 {
 	struct test_Output output = { .success = 1, .id = __func__ };
 
-	mat3 I3, A, A_inv;
-	Mat3Set(A, 2,0,1,1,2,1,3,4,2);
-	Mat3Inverse(A_inv, A);
-	Mat3Mul(I3, A, A_inv);
+	const m3 A = M3(2,0,1,1,2,1,3,4,2);
+	m3 A_inv;
+	M3Inverse(&A_inv, A);
+	const m3 I3 = M3Mul(A, A_inv);
 
 	const f32 eps = 0.0001f;
 
 	for (u32 i = 0; i < 3; ++i)
 	{
-		ds_assert(1.0f - eps <= I3[i][i] && I3[i][i] <= 1.0f + eps);
+		ds_assert(1.0f - eps <= I3.col[i].buf[i] && I3.col[i].buf[i] <= 1.0f + eps);
 		for (u32 j = i+1; j < 3; ++j)
 		{
-			assert(-eps <= I3[i][j] && I3[j][i] <= eps);
+			assert(-eps <= I3.col[i].buf[j] && I3.col[j].buf[i] <= eps);
 		}
 	}
 
-	mat4 I4, B, B_inv;
-	Mat4Set(B,
-			5,2,6,2, 
+	const m4 B = M4(5,2,6,2, 
 			6,2,6,3,
 			6,2,2,6,
 			8,8,8,7);
-	Mat4Inverse(B_inv, B);
-	Mat4Mul(I4, B, B_inv);
+	m4 B_inv;
+	M4Inverse(&B_inv, B);
+	const m4 I4 = M4Mul(B, B_inv);
 
 	for (u32 i = 0; i < 4; ++i)
 	{
-		assert(1.0f - eps <= I4[i][i] && I4[i][i] <= 1.0f + eps);
+		assert(1.0f - eps <= I4.col[i].buf[i] && I4.col[i].buf[i] <= 1.0f + eps);
 		for (u32 j = i+1; j < 4; ++j)
 		{
-			assert(-eps <= I3[i][j] && I3[j][i] <= eps);
+			assert(-eps <= I3.col[i].buf[j] && I3.col[j].buf[i] <= eps);	/* bug 13: should be I4 (and reads past I3 for i = 3) */
 		}
 	}
 

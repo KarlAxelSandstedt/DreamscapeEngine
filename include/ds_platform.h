@@ -25,7 +25,7 @@ extern "C" {
 #endif
 
 #include "ds_base.h"
-#include "vector.h"
+#include "ds_types.h"
 #include "ds_hash_map.h"
 #include "list.h"
 

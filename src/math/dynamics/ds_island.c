@@ -17,7 +17,6 @@
 ==========================================================================
 */
 
-#include "quaternion.h"
 #include "ds_job.h"
 
 POOL_DEFINE(ds_Island);

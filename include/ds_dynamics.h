@@ -265,7 +265,7 @@ transform, ds_Body must also store its center of mass:
 	{
 		(...)
 		ds_Transform	transform;	    // Local frame to World transform
-		vec3            center_of_mass;	
+		v3              center_of_mass;	
 	}
 */
 
@@ -992,7 +992,7 @@ struct ds_ContactConstraint
 	v3	tangent[2];	/* normalized friction directions of contact */
 
 	f32	    restitution;	/* Range[0.0f, 1.0f] : higher => bouncy */
-	f32	    friction;	/* TODO: friction = f32_max(b1->friction, b2->friction) */
+	f32	    friction;	/* TODO: friction = F32Max(b1->friction, b2->friction) */
 	//f32	tangent_impulse_bound;	/* TODO: contact_friction * gravity_constant * point_mass */
 };
 DEFINE_CPOOL_STRUCT(ds_ContactConstraint);

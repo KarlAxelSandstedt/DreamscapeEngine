@@ -3,12 +3,12 @@ cmake_minimum_required(VERSION 3.14.3)
 # files to link to later
 add_library(ds_math STATIC
 	"ds_math.c"
-	"${DS_INCLUDE_PATH}/matrix.h"
-	"${DS_INCLUDE_PATH}/vector.h"
+	"${DS_INCLUDE_PATH}/ds_float.h"
+	"${DS_INCLUDE_PATH}/ds_vector.h"
+	"${DS_INCLUDE_PATH}/ds_quaternion.h"
+	"${DS_INCLUDE_PATH}/ds_matrix.h"
 	"${DS_INCLUDE_PATH}/ds_math.h"
-	"${DS_INCLUDE_PATH}/float32.h"
 	"${DS_INCLUDE_PATH}/geometry.h"
-	"${DS_INCLUDE_PATH}/quaternion.h"
 	"${DS_INCLUDE_PATH}/transform.h"
 	"${DS_INCLUDE_PATH}/ds_random.h"
 )

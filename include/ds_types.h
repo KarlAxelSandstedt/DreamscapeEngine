@@ -97,10 +97,6 @@ struct slot
 /************** Math Types **************/
 
 /* { x, y, z, w }, w is real part */
-typedef f32 quat[4];
-typedef f32 (*quatptr)[4];
-
-/* { x, y, z, w }, w is real part */
 typedef union q
 {
 	struct 
@@ -114,50 +110,6 @@ typedef union q
 } q;
 
 #define Q(_x, _y, _z, _w)	((q) { .x = (_x), .y = (_y), .z = (_z), .w = (_w) })
-
-typedef f32 vec2[2];
-typedef f32 vec3[3];
-typedef f32 vec4[4];
-
-typedef f32 (*vec2ptr)[2];
-typedef f32 (*vec3ptr)[3];
-typedef f32 (*vec4ptr)[4];
-
-typedef const f32 (*constvec2ptr)[2];
-typedef const f32 (*constvec3ptr)[3];
-typedef const f32 (*constvec4ptr)[4];
-
-typedef u32 vec2u32[2];
-typedef u32 vec3u32[3];
-typedef u32 vec4u32[4];
-
-typedef u32 (*vec2u32ptr)[2];
-typedef u32 (*vec3u32ptr)[3];
-typedef u32 (*vec4u32ptr)[4];
-
-typedef u64 vec2u64[2];
-typedef u64 vec3u64[3];
-typedef u64 vec4u64[4];
-
-typedef u64 (*vec2u64ptr)[2];
-typedef u64 (*vec3u64ptr)[3];
-typedef u64 (*vec4u64ptr)[4];
-
-typedef i32 vec2i32[2];
-typedef i32 vec3i32[3];
-typedef i32 vec4i32[4];
-
-typedef i32 (*vec2i32ptr)[2];
-typedef i32 (*vec3i32ptr)[3];
-typedef i32 (*vec4i32ptr)[4];
-
-typedef i64 vec2i64[2];
-typedef i64 vec3i64[3];
-typedef i64 vec4i64[4];
-
-typedef i64 (*vec2i64ptr)[2];
-typedef i64 (*vec3i64ptr)[3];
-typedef i64 (*vec4i64ptr)[4];
 
 typedef union v2
 {
@@ -400,14 +352,6 @@ typedef union m4
            _a14, _a24, _a34, _a44)	\
 	((m4) { .a11 = (_a11), .a21 = (_a21), .a31 = (_a31), .a41 = (_a41), .a12 = (_a12), .a22 = (_a22), .a32 = (_a32), .a42 = (_a42), .a13 = (_a13), .a23 = (_a23), .a33 = (_a33), .a43 = (_a43), .a14 = (_a14), .a24 = (_a24), .a34 = (_a34), .a44 = (_a44) })
 
-typedef vec2 mat2[2];
-typedef vec3 mat3[3];
-typedef vec4 mat4[4];
-
-typedef vec2 (*mat2ptr)[2];
-typedef vec3 (*mat3ptr)[3];
-typedef vec4 (*mat4ptr)[4];
-
 struct dsBuffer
 {
 	u8 *	data;
@@ -426,7 +370,7 @@ typedef struct intv
 			f32	high;
 		};
 
-		vec2	v;
+		f32	v[2];
 	};
 } intv;
 #define intv_inline(_low, _high) (intv) { .low = (_low), .high = (_high) }
@@ -441,7 +385,7 @@ typedef struct
 			u64	high;
 		};
 
-		vec2u64	v;
+		u64	v[2];
 	};
 } intvu64;
 #define intvu64_inline(_low, _high) (intvu64) { .low = (_low), .high = (_high) }
@@ -456,7 +400,7 @@ typedef struct
 			i64	high;
 		};
 
-		vec2i64	v;
+		i64	v[2];
 	};
 } intvi64;
 #define intvi64_inline(_low, _high) (intvi64) { .low = (_low), .high = (_high) }

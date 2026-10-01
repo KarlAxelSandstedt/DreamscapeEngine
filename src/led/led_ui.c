@@ -18,7 +18,6 @@
 */
 
 #include "led_local.h"
-#include "ds_math_bridge.h"
 
 static void led_ProjectMenuUi(struct led *led, const struct ui_Visual *visual)
 {
