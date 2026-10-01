@@ -898,11 +898,11 @@ f32 TriCcwPointDistanceSquared(v3 *c, enum TriVoronoiRegion *region, const v3 po
         *c = SegmentBc(tv->s + v, param);
         if (1.0f == param)
         {
-            *region = v;
+            *region = next;
         }
         else if (0.0f == param)
         {
-            *region = next;
+            *region = v;
         }
     }
     else if (table_tri_voronoi_vertex_check[*region])
