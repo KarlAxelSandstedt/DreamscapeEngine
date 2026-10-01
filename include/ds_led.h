@@ -63,7 +63,7 @@ typedef struct led_Node
     u32             shape_prefab;
 
     u32             proxy;
-	vec4			color;
+	v4			color;
     f32             blend;
 
     //TODO only used by shit joint on init temporarily
@@ -87,9 +87,9 @@ struct slot         led_NodeLookup(struct led *led, const ds_Id id);
 /* Set node position if it exist. */
 void		        led_NodeSetPositionId(struct led *led, const utf8 id, const vec3 position);
 /* Set node position if it exist. */
-void		        led_NodeSetColor(struct led *led, const ds_Id id, const vec4 color, const f32 blend);
+void		        led_NodeSetColor(struct led *led, const ds_Id id, const v4 color, const f32 blend);
 /* Set node color and blend factor if it exist. */
-void		        led_NodeSetColorId(struct led *led, const utf8 id, const vec4 color, const f32 blend);
+void		        led_NodeSetColorId(struct led *led, const utf8 id, const v4 color, const f32 blend);
 /* Set node color and blend factor if it exist. */
 void		        led_NodeSetPosition(struct led *led, const ds_Id id, const vec3 position);
 /* Set node to contain a rigid body if the node and the prefab exist */
@@ -175,8 +175,8 @@ struct led
 	u32			            engine_initalized;
 
 	utf8		           	viewport_id;
-	vec2		           	viewport_position;
-	vec2		           	viewport_size;
+	v2		           	viewport_position;
+	v2		           	viewport_size;
 
     //TODO tmp
     ds_CPool(led_Joint)     joint_pool;
@@ -210,15 +210,15 @@ struct led
 	/* debug */
 	enum rigidBodyColorMode	pending_body_color_mode;
 	enum rigidBodyColorMode	body_color_mode;
-	vec4			        collision_color;
-	vec4			        static_color;
-	vec4			        sleep_color;
-	vec4			        awake_color;
+	v4			        collision_color;
+	v4			        static_color;
+	v4			        sleep_color;
+	v4			        awake_color;
 
-	vec4			        bounding_box_color;
-	vec4			        dbvh_color;
-	vec4			        sbvh_color;
-	vec4			        manifold_color;
+	v4			        bounding_box_color;
+	v4			        dbvh_color;
+	v4			        sbvh_color;
+	v4			        manifold_color;
     
     u32			            draw_bounding_box;
     u32			            draw_dbvh;

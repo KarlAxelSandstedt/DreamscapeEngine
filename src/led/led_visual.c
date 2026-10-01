@@ -25,16 +25,16 @@ struct led_Visual *	g_visual = &visual_storage;
 void led_VisualInitDefaults(const u32 window)
 {
 	const struct ds_Window *sys_win = ds_WindowAddress(window);
-	Vec4Set(g_visual->unit_grid_color, 0.8f, 0.8f, 0.8f, 0.8f);
+	g_visual->unit_grid_color = V4(0.8f, 0.8f, 0.8f, 0.8f);
 	g_visual->unit_grid_equidistance = 1.0f;
 	g_visual->unit_grid_lines_per_axis = 100;
 	g_visual->unit_grid_draw = 1;
 
-        Vec4Set(g_visual->border_color, 0.4f, 0.4f, 0.7f, 1.0f);
-	Vec4Set(g_visual->background_color, 0.0625f, 0.0625f, 0.0625f, 1.0f);
-        Vec4Set(g_visual->background_highlight_color, 0.125f, 0.125f, 0.125f, 1.0f);
-        Vec4Set(g_visual->background_invalid_color, 0.6f, 0.3f, 0.3, 1.0f);
-        Vec4Set(g_visual->text_color, 0.7f, 0.7f, 0.9f, 1.0f);
+        g_visual->border_color = V4(0.4f, 0.4f, 0.7f, 1.0f);
+	g_visual->background_color = V4(0.0625f, 0.0625f, 0.0625f, 1.0f);
+        g_visual->background_highlight_color = V4(0.125f, 0.125f, 0.125f, 1.0f);
+        g_visual->background_invalid_color = V4(0.6f, 0.3f, 0.3, 1.0f);
+        g_visual->text_color = V4(0.7f, 0.7f, 0.9f, 1.0f);
 
 	g_visual->border_size = 2;
 	g_visual->edge_softness = 2.0f;

@@ -36,7 +36,7 @@ struct led_Visual
 	struct r_Camera	cam;	
 
 	/* general visual aspects */
-	vec4    unit_grid_color;
+	v4    unit_grid_color;
 	f32		unit_grid_equidistance;
 	u32		unit_grid_lines_per_axis;
 	u32		unit_grid_draw;			/* Boolean */
@@ -45,11 +45,11 @@ struct led_Visual
 	u32		axes_draw;
 	u32		axes_r_handle;
 
-	vec4	border_color;
-	vec4	background_color;
-	vec4	background_highlight_color;
-	vec4	background_invalid_color;
-	vec4	text_color;
+	v4	border_color;
+	v4	background_color;
+	v4	background_highlight_color;
+	v4	background_invalid_color;
+	v4	text_color;
 	i32		border_size;
 	f32		edge_softness;
 	f32		corner_radius;

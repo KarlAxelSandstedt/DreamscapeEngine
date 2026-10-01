@@ -437,7 +437,7 @@ static void r_EditorDraw(const struct led *led)
 		const v3 axis = V3(0.0f, 1.0f, 0.0f);
 		const f32 angle = 0.0f;
 		const q rotation = QAxisAngle(axis, angle);
-		struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &led->physics.dynamic_bvh, translation, rotation, V4Load(led->dbvh_color));
+		struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &led->physics.dynamic_bvh, translation, rotation, led->dbvh_color);
 		if (mesh)
 		{
 			struct r_Instance *instance = r_InstanceAddNonCached(cmd);
@@ -468,7 +468,7 @@ static void r_EditorDraw(const struct led *led)
                 ds_ShapeWorldTransform(&transform, &led->physics, s);
 
 			    const struct c_Shape *shape = led->physics.cshape_db->pool.buf + s->cshape_handle;
-			    struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &shape->mesh_bvh.bvh, transform.position, transform.rotation, V4Load(led->sbvh_color));
+			    struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &shape->mesh_bvh.bvh, transform.position, transform.rotation, led->sbvh_color);
 			    if (mesh)
 			    {
 			    	struct r_Instance *instance = r_InstanceAddNonCached(cmd);
@@ -484,7 +484,7 @@ static void r_EditorDraw(const struct led *led)
 		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
 		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		struct r_Mesh *mesh = BoundingBoxesMesh(&g_r_core->frame, &led->physics, V4Load(led->bounding_box_color));
+		struct r_Mesh *mesh = BoundingBoxesMesh(&g_r_core->frame, &led->physics, led->bounding_box_color);
 		if (mesh)
 		{
 			struct r_Instance *instance = r_InstanceAddNonCached(cmd);
@@ -660,10 +660,10 @@ static void r_SceneRender(const struct led *led, const u32 window)
 			case PROGRAM_COLOR:
 			case PROGRAM_PROXY3D:
 			{
-				ds_glViewport(led->viewport_position[0]
-					       , led->viewport_position[1]
-					       , led->viewport_size[0]
-					       , led->viewport_size[1]
+				ds_glViewport(led->viewport_position.x
+					       , led->viewport_position.y
+					       , led->viewport_size.x
+					       , led->viewport_size.y
 					       ); 
 			} break;
 		}

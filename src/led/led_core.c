@@ -65,7 +65,7 @@ static ds_Id led_NodeInitalize(struct led_Node *node, const u32 node_index, cons
     node->shape_prefab = SDB_STUB;
     node->proxy = PROXY3D_NULL;
     node->transform = ds_TransformIdentity();
-    Vec4Set(node->color, 0.9f, 0.9f, 0.9f, 1.0f);
+    node->color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 
     return node->tagged_id;
 }
@@ -193,7 +193,7 @@ void led_NodeSetPosition(struct led *led, const ds_Id id, const vec3 position)
 	}
 }
 
-void led_NodeSetColor(struct led *led, const ds_Id id, const vec4 color, const f32 blend)
+void led_NodeSetColor(struct led *led, const ds_Id id, const v4 color, const f32 blend)
 {
 	struct led_Node *node = led_NodeLookup(led, id).address;
 	if (!node)
@@ -202,12 +202,12 @@ void led_NodeSetColor(struct led *led, const ds_Id id, const vec4 color, const f
 	}
 	else
 	{
-		Vec4Copy(node->color, color);
+		node->color = color;
         node->blend = blend;
 	}
 }
 
-void led_NodeSetColorId(struct led *led, const utf8 id, const vec4 color, const f32 blend)
+void led_NodeSetColorId(struct led *led, const utf8 id, const v4 color, const f32 blend)
 {
 	struct slot slot = led_NodeLookupId(led, id);
 	struct led_Node *node = slot.address;
@@ -217,7 +217,7 @@ void led_NodeSetColorId(struct led *led, const utf8 id, const vec4 color, const 
 	}
 	else
 	{
-		Vec4Copy(node->color, color);
+		node->color = color;
         node->blend = blend;
 	}
 }
@@ -267,7 +267,7 @@ static void led_NodeAttachRigidBodyPrefabInternal(struct led *led, const u32 nod
 		.ns_time = led->ns,
         .blend = node->blend,
 	};
-    config.color = V4Load(node->color);
+    config.color = node->color;
 	config.position = node->transform.position;
 	config.rotation = node->transform.rotation;
 
@@ -293,7 +293,7 @@ static void led_NodeAttachRigidBodyPrefabInternal(struct led *led, const u32 nod
         child->transform = instance->t_local;
         child->flags |= LED_SHAPE_PREFAB;
         child->shape_prefab = ds_ShapePrefabSDBReference(&led->shape_prefab_db, shape->id).index;
-        Vec4Copy(child->color, node->color);
+        child->color = node->color;
         child->blend = node->blend;
 
 		config.mesh = render_mesh->id;
@@ -1050,8 +1050,8 @@ void led_RopeSetup(struct led *led)
 
 	const f32 alpha1 = 0.7f;
 	const f32 alpha2 = 0.5f;
-	const vec4 floor_color = { 0.8f, 0.6f, 0.6f, alpha2 };
-	const vec4 capsule_color = { 0.1f, 0.4f, 0.8f, alpha2 };
+	const v4 floor_color = V4(0.8f, 0.6f, 0.6f, alpha2);
+	const v4 capsule_color = V4(0.1f, 0.4f, 0.8f, alpha2);
 
 	const f32 ramp_width = 10.0f;
 	const f32 ramp_length = 60.0f;
@@ -1205,17 +1205,17 @@ void led_WallSmashSimulationSetup(struct led *led)
 
 	const f32 alpha1 = 0.7f;
 	const f32 alpha2 = 0.5f;
-	const vec4 dsphere_color = { 244.0f/256.0f, 0.1f, 0.4f, alpha2 };
-	const vec4 tower1_color = { 154.0f/256.0f, 101.0f/256.0f, 182.0f/256.0f,alpha1 };
-	const vec4 tower2_color = { 54.0f/256.0f, 183.0f/256.0f, 122.0f/256.0f, alpha2 };
-	const vec4 pyramid_color = { 254.0f/256.0f, 181.0f/256.0f, 82.0f/256.0f,alpha2 };
-	const vec4 floor_color = { 0.8f, 0.6f, 0.6f,                            alpha2 };
-	const vec4 ramp_color = { 165.0f/256.0f, 172.0f/256.0f, 243.0f/256.0f,  alpha2 };
-	const vec4 sphere_color = { 0.2f, 0.9f, 0.5f,                             alpha1 };
-	const vec4 capsule_color = { 0.1f, 0.4f, 0.8f, 				alpha2 };
-	const vec4 multibox_color = { 0.2f, 0.3f, 0.6f, 				alpha2 };
-	const vec4 multidsphere_color = { 0.9f, 0.6f, 0.1f, 				alpha2 };
-	const vec4 mesh_color = { 0.5f, 0.7f, 0.7f, 0.7f };
+	const v4 dsphere_color = V4(244.0f/256.0f, 0.1f, 0.4f, alpha2);
+	const v4 tower1_color = V4(154.0f/256.0f, 101.0f/256.0f, 182.0f/256.0f, alpha1);
+	const v4 tower2_color = V4(54.0f/256.0f, 183.0f/256.0f, 122.0f/256.0f, alpha2);
+	const v4 pyramid_color = V4(254.0f/256.0f, 181.0f/256.0f, 82.0f/256.0f, alpha2);
+	const v4 floor_color = V4(0.8f, 0.6f, 0.6f, alpha2);
+	const v4 ramp_color = V4(165.0f/256.0f, 172.0f/256.0f, 243.0f/256.0f, alpha2);
+	const v4 sphere_color = V4(0.2f, 0.9f, 0.5f, alpha1);
+	const v4 capsule_color = V4(0.1f, 0.4f, 0.8f, alpha2);
+	const v4 multibox_color = V4(0.2f, 0.3f, 0.6f, alpha2);
+	const v4 multidsphere_color = V4(0.9f, 0.6f, 0.1f, alpha2);
+	const v4 mesh_color = V4(0.5f, 0.7f, 0.7f, 0.7f);
 
 	const f32 box_side = 1.0f;
 
@@ -1665,7 +1665,7 @@ void led_CoreInitCommands(void)
 	cmd_led_stop = CmdFunctionRegister(Utf8Inline("led_Stop"), 0, &led_StopCmd).index;
 }
 
-static void led_NodeColorProxies(struct led *led, const u32 index, const vec4 color)
+static void led_NodeColorProxies(struct led *led, const u32 index, const v4 color)
 {
     const struct led_Node *node = led->node_hierarchy.pool.buf + index;
     const struct led_Node *child = NULL;
@@ -1675,7 +1675,7 @@ static void led_NodeColorProxies(struct led *led, const u32 index, const vec4 co
         if (child->flags & LED_SHAPE_PREFAB)
         {
             struct r_Proxy3d *proxy = r_Proxy3dAddress(child->proxy);
-	        proxy->color = V4Load(color);
+	        proxy->color = color;
         }
     }
 }
@@ -1710,7 +1710,7 @@ static void led_NodeDontDrawProxies(struct led *led, const u32 index)
     }
 }
 
-static void led_ColorIsland(struct led *led, const ds_IslandId id, const vec4 color)
+static void led_ColorIsland(struct led *led, const ds_IslandId id, const v4 color)
 {
 	struct ds_Island *is = ds_IslandLookup(&led->physics, id).address;
     if (!is)
@@ -1772,7 +1772,7 @@ static void led_EngineRun(struct led *led)
 
 			case RB_COLOR_MODE_COLLISION: 
 			{ 
-                vec4 color;
+                v4 color;
                 for (u64 bi = 0; bi < led->physics.body_usage_set.block_count; ++bi)
                 {
                     struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi);
@@ -1783,13 +1783,13 @@ static void led_EngineRun(struct led *led)
 					    if (ds_BodyDynamicCheck(body))
 					    {
                             const struct ds_Island *island = led->physics.island_pool.buf + body->island;
-					    	(island->contact_list.count)
-					    		? Vec4Copy(color, led->collision_color)
-					    		: Vec4Copy(color, node->color);
+					    	color = (island->contact_list.count)
+					    		? led->collision_color
+					    		: node->color;
 					    }
 					    else
 					    {
-					    	Vec4Copy(color, led->static_color);
+					    	color = led->static_color;
 					    }
 					    led_NodeColorProxies(led, body->entity, color);
                     }
@@ -1834,7 +1834,7 @@ static void led_EngineRun(struct led *led)
 					    else
 					    {
 					    	const struct ds_Island *is = led->physics.island_pool.buf + body->island;
-                            led_NodeColorProxies(led, body->entity, is->color.buf);
+                            led_NodeColorProxies(led, body->entity, is->color);
 					    }
                     }
                 }
@@ -1932,7 +1932,7 @@ static void led_EngineRun(struct led *led)
 						       0.7f);
 					if (led->body_color_mode == RB_COLOR_MODE_ISLAND)
 					{
-						led_ColorIsland(led, event->island, is->color.buf);
+						led_ColorIsland(led, event->island, is->color);
 					}
 					else if (led->body_color_mode == RB_COLOR_MODE_SLEEP)
 					{
@@ -1988,7 +1988,7 @@ static void led_EngineRun(struct led *led)
                     const struct ds_Island *is = ds_IslandLookup(&led->physics, event->island).address;
                     if (is)
                     {
-                        led_ColorIsland(led, event->island, is->color.buf);
+                        led_ColorIsland(led, event->island, is->color);
                     }
                 }
             } break;
@@ -2056,7 +2056,7 @@ static void led_EngineFlush(struct led *led)
             {
                 proxy->flags |= PROXY3D_DRAW;
             }
-		    proxy->color = V4Load(node->color);
+		    proxy->color = node->color;
             proxy->blend = node->blend;
         }
         HIIAdvance(it, led->node_hierarchy);

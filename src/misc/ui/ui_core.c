@@ -68,10 +68,10 @@ void ds_UiApiInit(void)
 	cmd_ui_popup_build = CmdFunctionRegister(Utf8Inline("ui_PopupBuild"), 2, &ui_PopupBuild).index;
 }
 
-struct ui_Visual ui_VisualInit(const vec4 background_color
-		, const vec4 border_color
-		, const vec4 gradient_color[BOX_CORNER_COUNT]
-		, const vec4 sprite_color
+struct ui_Visual ui_VisualInit(const v4 background_color
+		, const v4 border_color
+		, const v4 gradient_color[BOX_CORNER_COUNT]
+		, const v4 sprite_color
 		, const f32 pad
 		, const f32 edge_softness
 		, const f32 corner_radius
@@ -84,13 +84,13 @@ struct ui_Visual ui_VisualInit(const vec4 background_color
 {
 	struct ui_Visual visual = { 0 };
 
-	Vec4Copy(visual.background_color, background_color);
-	Vec4Copy(visual.border_color, border_color);
-	Vec4Copy(visual.gradient_color[0], gradient_color[0]);
-	Vec4Copy(visual.gradient_color[1], gradient_color[1]);
-	Vec4Copy(visual.gradient_color[2], gradient_color[2]);
-	Vec4Copy(visual.gradient_color[3], gradient_color[3]);
-	Vec4Copy(visual.sprite_color, sprite_color);
+	visual.background_color = background_color;
+	visual.border_color = border_color;
+	visual.gradient_color[0] = gradient_color[0];
+	visual.gradient_color[1] = gradient_color[1];
+	visual.gradient_color[2] = gradient_color[2];
+	visual.gradient_color[3] = gradient_color[3];
+	visual.sprite_color = sprite_color;
 	visual.pad = pad;
 	visual.edge_softness = edge_softness;
 	visual.corner_radius = corner_radius;
@@ -460,12 +460,12 @@ static void ui_ChildsumLayoutSizeAndPruneNodes(void)
 	{
 		struct ui_Node *node = ds_CPoolTop(childsum_y);
         ds_CPoolPop(childsum_y);
-		node->layout_size[AXIS_2_Y] = 0.0f;
+		node->layout_size.buf[AXIS_2_Y] = 0.0f;
 		struct ui_Node *child = NULL;
 		for (i32 i = node->hi_first; i != HI_NULL; i = child->hi_next)
 		{
 			child = g_ui->node_hierarchy.pool.buf + i;
-			node->layout_size[AXIS_2_Y] += child->layout_size[AXIS_2_Y];
+			node->layout_size.buf[AXIS_2_Y] += child->layout_size.buf[AXIS_2_Y];
 		}
 	}
 	
@@ -473,12 +473,12 @@ static void ui_ChildsumLayoutSizeAndPruneNodes(void)
 	{
 		struct ui_Node *node = ds_CPoolTop(childsum_x);
         ds_CPoolPop(childsum_y);
-		node->layout_size[AXIS_2_X] = 0.0f;
+		node->layout_size.buf[AXIS_2_X] = 0.0f;
 		struct ui_Node *child = NULL;
 		for (i32 i = node->hi_first; i != HI_NULL; i = child->hi_next)
 		{
 			child = g_ui->node_hierarchy.pool.buf + i;
-			node->layout_size[AXIS_2_X] += child->layout_size[AXIS_2_X];
+			node->layout_size.buf[AXIS_2_X] += child->layout_size.buf[AXIS_2_X];
 		}
 	}
 
@@ -507,11 +507,11 @@ static void ui_NodeSolveChildViolation(struct ui_Node *node, const enum axis_2 a
 	{
 		child[i] = g_ui->node_hierarchy.pool.buf + index;
 
-		new_size[i] = child[i]->layout_size[axis];
+		new_size[i] = child[i]->layout_size.buf[axis];
 		//child_size_sum += child[i]->layout_size[axis];
 		child_size_sum += (child[i]->flags & (UI_FLOATING_X << axis))
 			? 0.0f
-			: child[i]->layout_size[axis];
+			: child[i]->layout_size.buf[axis];
 
 		const u32 child_is_pad_fill = !!(child[i]->flags & UI_PAD_FILL);
 		if (child_is_pad_fill)
@@ -535,20 +535,20 @@ static void ui_NodeSolveChildViolation(struct ui_Node *node, const enum axis_2 a
 	{
 		for (u32 i = 0; i < node->hi_child_count; ++i)
 		{
-			const f32 perc = f32_max(child[i]->semantic_size[axis].strictness, f32_min(1.0f, child[i]->layout_size[axis] / node->layout_size[axis]));
+			const f32 perc = F32Max(F32Min(child[i]->layout_size.buf[axis] / node->layout_size.buf[axis], 1.0f), child[i]->semantic_size[axis].strictness);
 			new_size[i] = (shrink[i])
-				? child[i]->layout_size[axis] * perc
-				: child[i]->layout_size[axis];
+				? child[i]->layout_size.buf[axis] * perc
+				: child[i]->layout_size.buf[axis];
 		}
 	}
 	else if (node->child_layout_axis == axis)
 	{
-		const f32 size_left = node->layout_size[axis] - child_size_sum;
+		const f32 size_left = node->layout_size.buf[axis] - child_size_sum;
 		if (size_left < 0.0f)
 		{
  			if ((node->flags & (UI_ALLOW_VIOLATION_X << axis)) == 0)
 			{
-				f32 child_perc_remain_after_shrink = node->layout_size[axis] / child_size_sum;
+				f32 child_perc_remain_after_shrink = node->layout_size.buf[axis] / child_size_sum;
 
 				while (1)
 				{	
@@ -563,13 +563,13 @@ static void ui_NodeSolveChildViolation(struct ui_Node *node, const enum axis_2 a
 						{
 							if (child[i]->semantic_size[axis].strictness < child_perc_remain_after_shrink)
 							{
-								new_size[i] = child[i]->layout_size[axis] * child_perc_remain_after_shrink;
-								original_shrinkable_size += child[i]->layout_size[axis];
+								new_size[i] = child[i]->layout_size.buf[axis] * child_perc_remain_after_shrink;
+								original_shrinkable_size += child[i]->layout_size.buf[axis];
 								can_shrink_again_count += 1;
 							}
 							else
 							{
-								new_size[i] = child[i]->layout_size[axis] * child[i]->semantic_size[axis].strictness;
+								new_size[i] = child[i]->layout_size.buf[axis] * child[i]->semantic_size[axis].strictness;
 								new_unshrinkable_size += new_size[i];
 							}
 						}
@@ -584,14 +584,14 @@ static void ui_NodeSolveChildViolation(struct ui_Node *node, const enum axis_2 a
 					{
 						break;
 					}
-					else if (!can_shrink_again_count || original_shrinkable_size < (node->layout_size[axis] - new_unshrinkable_size))
+					else if (!can_shrink_again_count || original_shrinkable_size < (node->layout_size.buf[axis] - new_unshrinkable_size))
 					{
 						//force_shrink_all = 1;
 						break;
 					}
 
 					children_to_shrink = can_shrink_again_count;
-					child_perc_remain_after_shrink = (node->layout_size[axis] - new_unshrinkable_size) / original_shrinkable_size;
+					child_perc_remain_after_shrink = (node->layout_size.buf[axis] - new_unshrinkable_size) / original_shrinkable_size;
 				}
 			}
 		}
@@ -610,11 +610,11 @@ static void ui_NodeSolveChildViolation(struct ui_Node *node, const enum axis_2 a
 		for (u32 i = 0; i < node->hi_child_count; ++i)
 		{
 			if ((child[i]->flags & (UI_TEXT_ALLOW_OVERFLOW | UI_TEXT_ATTACHED)) == UI_TEXT_ATTACHED 
-					&& (child[i]->layout_size[axis] != new_size[i]))
+					&& (child[i]->layout_size.buf[axis] != new_size[i]))
 			{
 				child[i]->flags |= UI_TEXT_LAYOUT_POSTPONED;
 			}
-			child[i]->layout_size[axis] = new_size[i];
+			child[i]->layout_size.buf[axis] = new_size[i];
 		}
 	}
 	else
@@ -622,7 +622,7 @@ static void ui_NodeSolveChildViolation(struct ui_Node *node, const enum axis_2 a
 		//TODO clamp positions to pixels, (or something)
 		for (u32 i = 0; i < node->hi_child_count; ++i)
 		{
-			child[i]->layout_size[axis] = new_size[i];
+			child[i]->layout_size.buf[axis] = new_size[i];
 		}
 	}
 
@@ -648,12 +648,12 @@ static void ui_SolveViolations(void)
 static void ui_LayoutAbsolutePosition(void)
 {
 	struct ui_Node *node = g_ui->node_hierarchy.pool.buf + g_ui->root;
-	node->pixel_position[0] = node->layout_position[0];
-	node->pixel_position[1] = node->layout_position[1];
-	node->pixel_size[0] = node->layout_size[0];
-	node->pixel_size[1] = node->layout_size[1];
-	node->pixel_visible[0] = intv_inline(node->pixel_position[0], node->pixel_position[0] + node->pixel_size[0]);
-	node->pixel_visible[1] = intv_inline(node->pixel_position[1], node->pixel_position[1] + node->pixel_size[1]);
+	node->pixel_position.x = node->layout_position.x;
+	node->pixel_position.y = node->layout_position.y;
+	node->pixel_size.x = node->layout_size.x;
+	node->pixel_size.y = node->layout_size.y;
+	node->pixel_visible[0] = intv_inline(node->pixel_position.x, node->pixel_position.x + node->pixel_size.x);
+	node->pixel_visible[1] = intv_inline(node->pixel_position.y, node->pixel_position.y + node->pixel_size.y);
 
     HII it;
     HIIInit(it, g_ui->node_hierarchy, g_ui->root);
@@ -676,7 +676,7 @@ static void ui_LayoutAbsolutePosition(void)
 		struct ui_Node *child = NULL;
 		f32 child_layout_axis_offset = (node->child_layout_axis == AXIS_2_X) 
 			? 0.0f
-			: node->pixel_size[1];
+			: node->pixel_size.y;
 		const u32 non_layout_axis = 1 - node->child_layout_axis;
 		for (i32 next = node->hi_first; next != HI_NULL; next = child->hi_next)
 		{
@@ -685,71 +685,71 @@ static void ui_LayoutAbsolutePosition(void)
 
 			if (child->flags & (UI_PERC_POSTPONED_X << node->child_layout_axis))
 			{
-				child->layout_position[node->child_layout_axis] = 0.0f;
-				child->layout_size[node->child_layout_axis] = child->semantic_size[node->child_layout_axis].percentage * node->pixel_size[node->child_layout_axis];
+				child->layout_position.buf[node->child_layout_axis] = 0.0f;
+				child->layout_size.buf[node->child_layout_axis] = child->semantic_size[node->child_layout_axis].percentage * node->pixel_size.buf[node->child_layout_axis];
 			}
 			else
 			{
 				if ((child->flags & (UI_FLOATING_X << node->child_layout_axis)) == 0)
 				{
 					new_child_layout_axis_offset = (node->child_layout_axis == AXIS_2_X)
-					       ? child_layout_axis_offset + child->layout_size[AXIS_2_X]
-					       : child_layout_axis_offset - child->layout_size[AXIS_2_Y];
+					       ? child_layout_axis_offset + child->layout_size.buf[AXIS_2_X]
+					       : child_layout_axis_offset - child->layout_size.buf[AXIS_2_Y];
 				}
 			}
 
 			if (child->flags & (UI_PERC_POSTPONED_X << non_layout_axis))
 			{
-				child->layout_position[non_layout_axis] = 0.0f;
-				child->layout_size[non_layout_axis] = child->semantic_size[non_layout_axis].percentage * node->pixel_size[non_layout_axis];
+				child->layout_position.buf[non_layout_axis] = 0.0f;
+				child->layout_size.buf[non_layout_axis] = child->semantic_size[non_layout_axis].percentage * node->pixel_size.buf[non_layout_axis];
 			}
 
 			if (node->child_layout_axis == AXIS_2_X)
 			{
-				child->layout_position[AXIS_2_X] = ((child->flags & (UI_FLOATING_X | UI_PERC_POSTPONED_X)) || child->semantic_size[AXIS_2_X].type == UI_SIZE_UNIT)
-					? child->layout_position[AXIS_2_X]
+				child->layout_position.buf[AXIS_2_X] = ((child->flags & (UI_FLOATING_X | UI_PERC_POSTPONED_X)) || child->semantic_size[AXIS_2_X].type == UI_SIZE_UNIT)
+					? child->layout_position.buf[AXIS_2_X]
 					: child_layout_axis_offset;
 
-				child->layout_position[AXIS_2_Y] = (child->flags & UI_FLOATING_Y || child->semantic_size[AXIS_2_Y].type == UI_SIZE_UNIT)
-				       	? child->layout_position[AXIS_2_Y]
+				child->layout_position.buf[AXIS_2_Y] = (child->flags & UI_FLOATING_Y || child->semantic_size[AXIS_2_Y].type == UI_SIZE_UNIT)
+				       	? child->layout_position.buf[AXIS_2_Y]
 			       		: 0.0f;
 			}
 			else
 			{
-				child->layout_position[AXIS_2_Y] = ((child->flags & (UI_FLOATING_Y | UI_PERC_POSTPONED_Y)) || child->semantic_size[AXIS_2_Y].type == UI_SIZE_UNIT)
-					? child->layout_position[AXIS_2_Y]
-					: child_layout_axis_offset - child->layout_size[AXIS_2_Y];
+				child->layout_position.buf[AXIS_2_Y] = ((child->flags & (UI_FLOATING_Y | UI_PERC_POSTPONED_Y)) || child->semantic_size[AXIS_2_Y].type == UI_SIZE_UNIT)
+					? child->layout_position.buf[AXIS_2_Y]
+					: child_layout_axis_offset - child->layout_size.buf[AXIS_2_Y];
 
-				child->layout_position[AXIS_2_X] = (child->flags & UI_FLOATING_X || child->semantic_size[AXIS_2_X].type == UI_SIZE_UNIT)
-				       	? child->layout_position[AXIS_2_X]
+				child->layout_position.buf[AXIS_2_X] = (child->flags & UI_FLOATING_X || child->semantic_size[AXIS_2_X].type == UI_SIZE_UNIT)
+				       	? child->layout_position.buf[AXIS_2_X]
 			       		: 0.0f;
 			}
 
 			child_layout_axis_offset = new_child_layout_axis_offset;
 
-			child->pixel_size[0] = child->layout_size[0];
-			child->pixel_size[1] = child->layout_size[1];
-			child->pixel_position[0] = (child->flags & UI_FIXED_X)
-			       	? child->layout_position[0]
-		       		: child->layout_position[0] + node->pixel_position[0];
-			child->pixel_position[1] = (child->flags & UI_FIXED_Y)
-			       	? child->layout_position[1]
-		       		: child->layout_position[1] + node->pixel_position[1];
+			child->pixel_size.x = child->layout_size.x;
+			child->pixel_size.y = child->layout_size.y;
+			child->pixel_position.x = (child->flags & UI_FIXED_X)
+			       	? child->layout_position.x
+		       		: child->layout_position.x + node->pixel_position.x;
+			child->pixel_position.y = (child->flags & UI_FIXED_Y)
+			       	? child->layout_position.y
+		       		: child->layout_position.y + node->pixel_position.y;
 
 			child->pixel_visible[AXIS_2_X] = (child->flags & UI_FLOATING_X)
-				? intv_inline(child->pixel_position[0], child->pixel_position[0] + child->pixel_size[0])
-				: intv_inline(f32_max(child->pixel_position[0], node->pixel_visible[0].low),
-					      f32_min(child->pixel_position[0] + child->pixel_size[0], node->pixel_visible[AXIS_2_X].high));
+				? intv_inline(child->pixel_position.x, child->pixel_position.x + child->pixel_size.x)
+				: intv_inline(F32Max(child->pixel_position.x, node->pixel_visible[0].low),
+					      F32Min(child->pixel_position.x + child->pixel_size.x, node->pixel_visible[AXIS_2_X].high));
 			child->pixel_visible[AXIS_2_Y] = (child->flags & UI_FLOATING_Y)
-				? intv_inline(child->pixel_position[1], child->pixel_position[1] + child->pixel_size[1])
-				: intv_inline(f32_max(child->pixel_position[1], node->pixel_visible[1].low),
-					      f32_min(child->pixel_position[1] + child->pixel_size[1], node->pixel_visible[AXIS_2_Y].high));
+				? intv_inline(child->pixel_position.y, child->pixel_position.y + child->pixel_size.y)
+				: intv_inline(F32Max(child->pixel_position.y, node->pixel_visible[1].low),
+					      F32Min(child->pixel_position.y + child->pixel_size.y, node->pixel_visible[AXIS_2_Y].high));
 
 			if (child->flags & UI_TEXT_LAYOUT_POSTPONED)
 			{
 				const f32 line_width = (child->flags & UI_TEXT_ALLOW_OVERFLOW)
 					? F32_INFINITY
-					: f32_max(0.0f, child->pixel_size[0] - 2.0f*child->text_pad[0]);
+					: F32Max(child->pixel_size.x - 2.0f*child->text_pad.x, 0.0f);
 				child->layout_text = Utf32TextLayout(g_ui->mem_frame, &child->input.text, line_width, TAB_SIZE, child->font);
 			}
 		}
@@ -837,7 +837,7 @@ static u64 ui_NodeSetInteractions(const struct ui_Node *node, const u64 inter_lo
 	return inter_local_mask & node_inter;
 }
 
-void ui_FrameBegin(const vec2u32 window_size, const struct ui_Visual *base)
+void ui_FrameBegin(const v2u32 window_size, const struct ui_Visual *base)
 {
 	g_ui->frame += 1;
 	g_ui->mem_frame = g_ui->mem_frame_arr + (g_ui->frame & 0x1);
@@ -859,8 +859,7 @@ void ui_FrameBegin(const vec2u32 window_size, const struct ui_Visual *base)
 	g_ui->node_count_prev_frame = g_ui->node_count_frame;
 	g_ui->node_count_frame = 0;
 
-	g_ui->window_size[0] = window_size[0];
-	g_ui->window_size[1] = window_size[1];
+	g_ui->window_size = window_size;
 
 	ui_ExternalTextPush((utf32) { .len = 0, .max_len = 0, .buf = NULL });
 	ui_ExternalTextInputPush(text_edit_stub_ptr());
@@ -891,17 +890,17 @@ void ui_FrameBegin(const vec2u32 window_size, const struct ui_Visual *base)
 	ui_GradientColorPush(BOX_CORNER_BL, base->gradient_color[BOX_CORNER_BL]);
 	ui_SpriteColorPush(base->sprite_color);
 
-	Vec4Set(g_ui->text_cursor_color, 0.9f, 0.9f, 0.9f, 0.6f);
-	Vec4Set(g_ui->text_selection_color, 0.7f, 0.7f, 0.9f, 0.6f);
+	g_ui->text_cursor_color = V4(0.9f, 0.9f, 0.9f, 0.6f);
+	g_ui->text_selection_color = V4(0.7f, 0.7f, 0.9f, 0.6f);
 
 	ui_FixedX(0.0f)
 	ui_FixedY(0.0f)
-	ui_Width(ui_SizePixel((f32) g_ui->window_size[0], 1.0f))
-	ui_Height(ui_SizePixel((f32) g_ui->window_size[1], 1.0f))
+	ui_Width(ui_SizePixel((f32) g_ui->window_size.x, 1.0f))
+	ui_Height(ui_SizePixel((f32) g_ui->window_size.y, 1.0f))
 	g_ui->root = ui_RootF("###root_%p", &g_ui->root).index;
 	struct ui_Node *root = g_ui->node_hierarchy.pool.buf + g_ui->root;
-	root->pixel_visible[AXIS_2_X] = intv_inline(0.0f, (f32) window_size[0]);
-	root->pixel_visible[AXIS_2_Y] = intv_inline(0.0f, (f32) window_size[1]);
+	root->pixel_visible[AXIS_2_X] = intv_inline(0.0f, (f32) window_size.x);
+	root->pixel_visible[AXIS_2_Y] = intv_inline(0.0f, (f32) window_size.y);
 	
 	ui_NodePush(g_ui->root);
 }
@@ -920,8 +919,8 @@ static void ui_IdentifyHoveredNode(void)
 		}
 	}
 
-	const f32 x = g_ui->inter.cursor_position[0];
-	const f32 y = g_ui->inter.cursor_position[1];
+	const f32 x = g_ui->inter.cursor_position.x;
+	const f32 y = g_ui->inter.cursor_position.y;
 	i32 depth = -1;
 	i32 index = HI_ROOT;
 	/* find deepest hashed floating subtree which we are hovering */
@@ -984,16 +983,16 @@ static void ui_IdentifyHoveredNode(void)
 	}
 }
 
-static struct slot ui_TextSelectionAlloc(const struct ui_Node *node, const vec4 color, const u32 low, const u32 high)
+static struct slot ui_TextSelectionAlloc(const struct ui_Node *node, const v4 color, const u32 low, const u32 high)
 {
 	const f32 line_width = (node->flags & UI_TEXT_ALLOW_OVERFLOW)
 		? F32_INFINITY
-		: f32_max(0.0f, node->pixel_size[0] - 2.0f*node->text_pad[0]);
+		: F32Max(node->pixel_size.x - 2.0f*node->text_pad.x, 0.0f);
 	const struct ui_TextSelection selection = 
 	{
 		.node = node,
 		.layout = Utf32TextLayoutIncludeWhitespace(g_ui->mem_frame, &node->input.text, line_width, TAB_SIZE, node->font),
-		.color = { color[0], color[1], color[2], color[3], },
+		.color = color,
 		.low = low,
 		.high = high,
 	};
@@ -1065,8 +1064,8 @@ void ui_FrameEnd(void)
 	g_ui->inter.scroll_up_count = 0;
 	g_ui->inter.scroll_down_count = 0;
 
-	g_ui->inter.cursor_delta[0] = 0;
-	g_ui->inter.cursor_delta[1] = 0;
+	g_ui->inter.cursor_delta.x = 0;
+	g_ui->inter.cursor_delta.y = 0;
 
 	ds_Assert(g_ui->parent.count == 1);
 
@@ -1120,21 +1119,21 @@ static void ui_NodeCalculateImmediateLayout(struct ui_Node *node, const enum axi
 	{
 		case UI_SIZE_PIXEL:
 		{
-			node->layout_size[axis] = node->semantic_size[axis].pixels;
+			node->layout_size.buf[axis] = node->semantic_size[axis].pixels;
 		} break;
 
 		case UI_SIZE_TEXT:
 		{
-			const f32 pad = 2.0f*node->text_pad[axis];
+			const f32 pad = 2.0f*node->text_pad.buf[axis];
 			if (node->flags & UI_TEXT_ATTACHED)
 			{
-				node->layout_size[axis] = (axis == AXIS_2_X)
+				node->layout_size.buf[axis] = (axis == AXIS_2_X)
 					? pad + node->layout_text->width
 					: pad + node->font->linespace*node->layout_text->line_count;
 			}
 			else
 			{
-				node->layout_size[axis] = pad;
+				node->layout_size.buf[axis] = pad;
 			}
 		} break;
 
@@ -1143,12 +1142,12 @@ static void ui_NodeCalculateImmediateLayout(struct ui_Node *node, const enum axi
 			const struct ui_Node *parent = g_ui->node_hierarchy.pool.buf + node->hi_parent;
 			if (parent->semantic_size[axis].type == UI_SIZE_CHILDSUM || (parent->flags & (UI_PERC_POSTPONED_X << axis)))
 			{
-				node->layout_size[axis] = 0.0f;
+				node->layout_size.buf[axis] = 0.0f;
 				node->flags |= UI_PERC_POSTPONED_X << axis;
 			}
 			else
 			{
-				node->layout_size[axis] = node->semantic_size[axis].percentage * parent->layout_size[axis];	
+				node->layout_size.buf[axis] = node->semantic_size[axis].percentage * parent->layout_size.buf[axis];	
 			}
 		} break;
 
@@ -1156,21 +1155,21 @@ static void ui_NodeCalculateImmediateLayout(struct ui_Node *node, const enum axi
 		{
 			const struct ui_Node *parent = g_ui->node_hierarchy.pool.buf + node->hi_parent;
 			const intv visible = ds_CPoolTop(g_ui->viewable[axis]);
-			const f32 pixels_per_unit = parent->pixel_size[axis] / (visible.high - visible.low);
+			const f32 pixels_per_unit = parent->pixel_size.buf[axis] / (visible.high - visible.low);
 
-			node->layout_size[axis] = pixels_per_unit*(node->semantic_size[axis].intv.high - node->semantic_size[axis].intv.low);
-			node->layout_position[axis] = pixels_per_unit*(node->semantic_size[axis].intv.low - visible.low);
+			node->layout_size.buf[axis] = pixels_per_unit*(node->semantic_size[axis].intv.high - node->semantic_size[axis].intv.low);
+			node->layout_position.buf[axis] = pixels_per_unit*(node->semantic_size[axis].intv.low - visible.low);
 
 			if ((axis == AXIS_2_Y) && (node->flags & UI_UNIT_POSITIVE_DOWN))
 			{
-				node->layout_position[axis] = parent->pixel_size[axis] - node->layout_size[axis] - node->layout_position[axis];
+				node->layout_position.buf[axis] = parent->pixel_size.buf[axis] - node->layout_size.buf[axis] - node->layout_position.buf[axis];
 			}
 		} break;
 
 		case UI_SIZE_CHILDSUM:
 		{
-			node->layout_position[axis] = 0.0f;
-			node->layout_size[axis] = 0.0f;
+			node->layout_position.buf[axis] = 0.0f;
+			node->layout_size.buf[axis] = 0.0f;
 		} break;
 
 		default:
@@ -1214,7 +1213,7 @@ static u32 ui_InternalPad(const u64 flags, const f32 value, const enum ui_SizeTy
 	if (node->flags & UI_DRAW_SPRITE)
 	{
 		node->sprite = ds_CPoolTop(g_ui->sprite);
-		Vec4Copy(node->sprite_color, ds_CPoolTop(g_ui->sprite_color));
+		node->sprite_color = ds_CPoolTop(g_ui->sprite_color);
 	}
 	else
 	{
@@ -1237,34 +1236,34 @@ static u32 ui_InternalPad(const u64 flags, const f32 value, const enum ui_SizeTy
 	ui_NodeCalculateImmediateLayout(node, AXIS_2_X);
 	ui_NodeCalculateImmediateLayout(node, AXIS_2_Y);
 
-	(node->flags & UI_DRAW_BACKGROUND)
-		? Vec4Copy(node->background_color, ds_CPoolTop(g_ui->background_color))
-		: Vec4Set(node->background_color, 0.0f, 0.0f, 0.0f, 0.0f);
+	node->background_color = (node->flags & UI_DRAW_BACKGROUND)
+		? ds_CPoolTop(g_ui->background_color)
+		: V4(0.0f, 0.0f, 0.0f, 0.0f);
 
 	if (node->flags & UI_DRAW_BORDER)
 	{
 		node->border_size = ds_CPoolTop(g_ui->border_size);
-		Vec4Copy(node->border_color, ds_CPoolTop(g_ui->border_color));
+		node->border_color = ds_CPoolTop(g_ui->border_color);
 	}
 	else
 	{
 		node->border_size = 0.0f;
-		Vec4Set(node->border_color, 0.0f, 0.0f, 0.0f, 0.0f);
+		node->border_color = V4(0.0f, 0.0f, 0.0f, 0.0f);
 	}
 
 	if (node->flags & UI_DRAW_GRADIENT)
 	{
-		Vec4Copy(node->gradient_color[BOX_CORNER_BR], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_BR]));
-		Vec4Copy(node->gradient_color[BOX_CORNER_TR], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_TR]));
-		Vec4Copy(node->gradient_color[BOX_CORNER_TL], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_TL]));
-		Vec4Copy(node->gradient_color[BOX_CORNER_BL], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_BL]));
+		node->gradient_color[BOX_CORNER_BR] = ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_BR]);
+		node->gradient_color[BOX_CORNER_TR] = ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_TR]);
+		node->gradient_color[BOX_CORNER_TL] = ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_TL]);
+		node->gradient_color[BOX_CORNER_BL] = ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_BL]);
 	}
 	else
 	{
-		Vec4Set(node->gradient_color[BOX_CORNER_BR], 0.0f, 0.0f, 0.0f, 0.0f); 
-                Vec4Set(node->gradient_color[BOX_CORNER_TR], 0.0f, 0.0f, 0.0f, 0.0f);
-                Vec4Set(node->gradient_color[BOX_CORNER_TL], 0.0f, 0.0f, 0.0f, 0.0f);
-                Vec4Set(node->gradient_color[BOX_CORNER_BL], 0.0f, 0.0f, 0.0f, 0.0f);
+		node->gradient_color[BOX_CORNER_BR] = V4(0.0f, 0.0f, 0.0f, 0.0f); 
+                node->gradient_color[BOX_CORNER_TR] = V4(0.0f, 0.0f, 0.0f, 0.0f);
+                node->gradient_color[BOX_CORNER_TL] = V4(0.0f, 0.0f, 0.0f, 0.0f);
+                node->gradient_color[BOX_CORNER_BL] = V4(0.0f, 0.0f, 0.0f, 0.0f);
 	}
 
 	node->edge_softness = (node->flags & UI_DRAW_EDGE_SOFTNESS)
@@ -1447,7 +1446,7 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 	if (node->flags & UI_DRAW_SPRITE)
 	{
 		node->sprite = ds_CPoolTop(g_ui->sprite);
-		Vec4Copy(node->sprite_color, ds_CPoolTop(g_ui->sprite_color));
+		node->sprite_color = ds_CPoolTop(g_ui->sprite_color);
 	}
 	else
 	{
@@ -1465,13 +1464,13 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 	if (node->flags & UI_DRAW_TEXT)
 	{
 		const struct assetFont *asset = ds_CPoolTop(g_ui->font);
-		Vec4Copy(node->sprite_color, ds_CPoolTop(g_ui->sprite_color));
+		node->sprite_color = ds_CPoolTop(g_ui->sprite_color);
 		node->flags |= UI_TEXT_ATTACHED;
 		node->font = asset->font;
 		node->text_align_x = ds_CPoolTop(g_ui->text_alignment_x);
 		node->text_align_y = ds_CPoolTop(g_ui->text_alignment_y);
-		node->text_pad[AXIS_2_X] = ds_CPoolTop(g_ui->text_pad[AXIS_2_X]);
-		node->text_pad[AXIS_2_Y] = ds_CPoolTop(g_ui->text_pad[AXIS_2_Y]);
+		node->text_pad.buf[AXIS_2_X] = ds_CPoolTop(g_ui->text_pad[AXIS_2_X]);
+		node->text_pad.buf[AXIS_2_Y] = ds_CPoolTop(g_ui->text_pad[AXIS_2_Y]);
 
 		u32 text_editing = 0;
 		if ((node->flags & UI_TEXT_EDIT) && (node->inter & UI_INTER_FOCUS))
@@ -1558,7 +1557,7 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 	else
 	{
 		node->input.text = Utf32Empty();
-		Vec4Set(node->sprite_color, 0.0f, 0.0f, 0.0f, 0.0f);
+		node->sprite_color = V4(0.0f, 0.0f, 0.0f, 0.0f);
 		node->font = NULL;
 		node->layout_text = NULL;
 	}
@@ -1571,14 +1570,14 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 	if (g_ui->floating[AXIS_2_X].count)
 	{
 		floating = 1;
-		node->layout_position[AXIS_2_X] = ds_CPoolTop(g_ui->floating[AXIS_2_X]);
+		node->layout_position.buf[AXIS_2_X] = ds_CPoolTop(g_ui->floating[AXIS_2_X]);
 		node->flags |= UI_FLOATING_X;
 	}	
 
 	if (g_ui->floating[AXIS_2_Y].count)
 	{
 		floating = 1;
-		node->layout_position[AXIS_2_Y] = ds_CPoolTop(g_ui->floating[AXIS_2_Y]);
+		node->layout_position.buf[AXIS_2_Y] = ds_CPoolTop(g_ui->floating[AXIS_2_Y]);
 		node->flags |= UI_FLOATING_Y;
 	}
 
@@ -1588,34 +1587,34 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 		ds_CPoolPushValue(g_ui->floating_depth, node->depth);
 	}
 
-	(node->flags & UI_DRAW_BACKGROUND)
-		? Vec4Copy(node->background_color, ds_CPoolTop(g_ui->background_color))
-		: Vec4Set(node->background_color, 0.0f, 0.0f, 0.0f, 0.0f);
+	node->background_color = (node->flags & UI_DRAW_BACKGROUND)
+		? ds_CPoolTop(g_ui->background_color)
+		: V4(0.0f, 0.0f, 0.0f, 0.0f);
 
 	if (node->flags & UI_DRAW_BORDER)
 	{
 		node->border_size = ds_CPoolTop(g_ui->border_size);
-		Vec4Copy(node->border_color, ds_CPoolTop(g_ui->border_color));
+		node->border_color = ds_CPoolTop(g_ui->border_color);
 	}
 	else
 	{
 		node->border_size = 0.0f;
-		Vec4Set(node->border_color, 0.0f, 0.0f, 0.0f, 0.0f);
+		node->border_color = V4(0.0f, 0.0f, 0.0f, 0.0f);
 	}
 
 	if (node->flags & UI_DRAW_GRADIENT)
 	{
-		Vec4Copy(node->gradient_color[BOX_CORNER_BR], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_BR]));
-		Vec4Copy(node->gradient_color[BOX_CORNER_TR], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_TR]));
-		Vec4Copy(node->gradient_color[BOX_CORNER_TL], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_TL]));
-		Vec4Copy(node->gradient_color[BOX_CORNER_BL], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_BL]));
+		node->gradient_color[BOX_CORNER_BR] = ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_BR]);
+		node->gradient_color[BOX_CORNER_TR] = ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_TR]);
+		node->gradient_color[BOX_CORNER_TL] = ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_TL]);
+		node->gradient_color[BOX_CORNER_BL] = ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_BL]);
 	}
 	else
 	{
-		Vec4Set(node->gradient_color[BOX_CORNER_BR], 0.0f, 0.0f, 0.0f, 0.0f); 
-                Vec4Set(node->gradient_color[BOX_CORNER_TR], 0.0f, 0.0f, 0.0f, 0.0f);
-                Vec4Set(node->gradient_color[BOX_CORNER_TL], 0.0f, 0.0f, 0.0f, 0.0f);
-                Vec4Set(node->gradient_color[BOX_CORNER_BL], 0.0f, 0.0f, 0.0f, 0.0f);
+		node->gradient_color[BOX_CORNER_BR] = V4(0.0f, 0.0f, 0.0f, 0.0f); 
+                node->gradient_color[BOX_CORNER_TR] = V4(0.0f, 0.0f, 0.0f, 0.0f);
+                node->gradient_color[BOX_CORNER_TL] = V4(0.0f, 0.0f, 0.0f, 0.0f);
+                node->gradient_color[BOX_CORNER_BL] = V4(0.0f, 0.0f, 0.0f, 0.0f);
 	}
 
 	node->edge_softness = (node->flags & UI_DRAW_EDGE_SOFTNESS)
@@ -1760,7 +1759,7 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 	if (node->flags & UI_DRAW_SPRITE)
 	{
 		node->sprite = ds_CPoolTop(g_ui->sprite);
-		Vec4Copy(node->sprite_color, ds_CPoolTop(g_ui->sprite_color));
+		node->sprite_color = ds_CPoolTop(g_ui->sprite_color);
 	}
 	else
 	{
@@ -1778,13 +1777,13 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 	if (node->flags & UI_DRAW_TEXT)
 	{
 		const struct assetFont *asset = ds_CPoolTop(g_ui->font);
-		Vec4Copy(node->sprite_color, ds_CPoolTop(g_ui->sprite_color));
+		node->sprite_color = ds_CPoolTop(g_ui->sprite_color);
 		node->flags |= UI_TEXT_ATTACHED;
 		node->font = asset->font;
 		node->text_align_x = ds_CPoolTop(g_ui->text_alignment_x);
 		node->text_align_y = ds_CPoolTop(g_ui->text_alignment_y);
-		node->text_pad[AXIS_2_X] = ds_CPoolTop(g_ui->text_pad[AXIS_2_X]);
-		node->text_pad[AXIS_2_Y] = ds_CPoolTop(g_ui->text_pad[AXIS_2_Y]);
+		node->text_pad.buf[AXIS_2_X] = ds_CPoolTop(g_ui->text_pad[AXIS_2_X]);
+		node->text_pad.buf[AXIS_2_Y] = ds_CPoolTop(g_ui->text_pad[AXIS_2_Y]);
 
 		u32 text_editing = 0;
 		if ((node->flags & UI_TEXT_EDIT) && (node->inter & UI_INTER_FOCUS))
@@ -1870,7 +1869,7 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 	else
 	{
 		node->input.text = Utf32Empty();
-		Vec4Set(node->sprite_color, 0.0f, 0.0f, 0.0f, 0.0f);
+		node->sprite_color = V4(0.0f, 0.0f, 0.0f, 0.0f);
 		node->font = NULL;
 		node->layout_text = NULL;
 	}
@@ -1883,14 +1882,14 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 	if (g_ui->floating[AXIS_2_X].count)
 	{
 		floating = 1;
-		node->layout_position[AXIS_2_X] = ds_CPoolTop(g_ui->floating[AXIS_2_X]);
+		node->layout_position.buf[AXIS_2_X] = ds_CPoolTop(g_ui->floating[AXIS_2_X]);
 		node->flags |= UI_FLOATING_X;
 	}	
 
 	if (g_ui->floating[AXIS_2_Y].count)
 	{
 		floating = 1;
-		node->layout_position[AXIS_2_Y] = ds_CPoolTop(g_ui->floating[AXIS_2_Y]);
+		node->layout_position.buf[AXIS_2_Y] = ds_CPoolTop(g_ui->floating[AXIS_2_Y]);
 		node->flags |= UI_FLOATING_Y;
 	}
 
@@ -1900,34 +1899,34 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 		ds_CPoolPushValue(g_ui->floating_depth, node->depth);
 	}
 
-	(node->flags & UI_DRAW_BACKGROUND)
-		? Vec4Copy(node->background_color, ds_CPoolTop(g_ui->background_color))
-		: Vec4Set(node->background_color, 0.0f, 0.0f, 0.0f, 0.0f);
+	node->background_color = (node->flags & UI_DRAW_BACKGROUND)
+		? ds_CPoolTop(g_ui->background_color)
+		: V4(0.0f, 0.0f, 0.0f, 0.0f);
 
 	if (node->flags & UI_DRAW_BORDER)
 	{
 		node->border_size = ds_CPoolTop(g_ui->border_size);
-		Vec4Copy(node->border_color, ds_CPoolTop(g_ui->border_color));
+		node->border_color = ds_CPoolTop(g_ui->border_color);
 	}
 	else
 	{
 		node->border_size = 0.0f;
-		Vec4Set(node->border_color, 0.0f, 0.0f, 0.0f, 0.0f);
+		node->border_color = V4(0.0f, 0.0f, 0.0f, 0.0f);
 	}
 
 	if (node->flags & UI_DRAW_GRADIENT)
 	{
-		Vec4Copy(node->gradient_color[BOX_CORNER_BR], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_BR]));
-		Vec4Copy(node->gradient_color[BOX_CORNER_TR], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_TR]));
-		Vec4Copy(node->gradient_color[BOX_CORNER_TL], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_TL]));
-		Vec4Copy(node->gradient_color[BOX_CORNER_BL], ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_BL]));
+		node->gradient_color[BOX_CORNER_BR] = ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_BR]);
+		node->gradient_color[BOX_CORNER_TR] = ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_TR]);
+		node->gradient_color[BOX_CORNER_TL] = ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_TL]);
+		node->gradient_color[BOX_CORNER_BL] = ds_CPoolTop(g_ui->gradient_color[BOX_CORNER_BL]);
 	}
 	else
 	{
-		Vec4Set(node->gradient_color[BOX_CORNER_BR], 0.0f, 0.0f, 0.0f, 0.0f); 
-                Vec4Set(node->gradient_color[BOX_CORNER_TR], 0.0f, 0.0f, 0.0f, 0.0f);
-                Vec4Set(node->gradient_color[BOX_CORNER_TL], 0.0f, 0.0f, 0.0f, 0.0f);
-                Vec4Set(node->gradient_color[BOX_CORNER_BL], 0.0f, 0.0f, 0.0f, 0.0f);
+		node->gradient_color[BOX_CORNER_BR] = V4(0.0f, 0.0f, 0.0f, 0.0f); 
+                node->gradient_color[BOX_CORNER_TR] = V4(0.0f, 0.0f, 0.0f, 0.0f);
+                node->gradient_color[BOX_CORNER_TL] = V4(0.0f, 0.0f, 0.0f, 0.0f);
+                node->gradient_color[BOX_CORNER_BL] = V4(0.0f, 0.0f, 0.0f, 0.0f);
 	}
 
 	node->edge_softness = (node->flags & UI_DRAW_EDGE_SOFTNESS)
@@ -2067,14 +2066,14 @@ void ui_IntvViewablePop(const enum axis_2 axis)
 	ds_CPoolPop(g_ui->viewable[axis]);
 }
 
-void ui_BackgroundColorPush(const vec4 color)
+void ui_BackgroundColorPush(const v4 color)
 {
-	ds_CPoolPushMemcpy(g_ui->background_color, color);
+	ds_CPoolPushMemcpy(g_ui->background_color, &color);
 }
 
-void ui_BackgroundColorSet(const vec4 color)
+void ui_BackgroundColorSet(const v4 color)
 {
-	Vec4Copy(ds_CPoolTop(g_ui->background_color), color);
+	ds_CPoolTop(g_ui->background_color) = color;
 }
 
 void ui_BackgroundColorPop(void)
@@ -2082,14 +2081,14 @@ void ui_BackgroundColorPop(void)
 	ds_CPoolPop(g_ui->background_color);
 }
 
-void ui_BorderColorPush(const vec4 color)
+void ui_BorderColorPush(const v4 color)
 {
-	ds_CPoolPushMemcpy(g_ui->border_color, color);
+	ds_CPoolPushMemcpy(g_ui->border_color, &color);
 }
 
-void ui_BorderColorSet(const vec4 color)
+void ui_BorderColorSet(const v4 color)
 {
-	Vec4Copy(ds_CPoolTop(g_ui->border_color), color);
+	ds_CPoolTop(g_ui->border_color) = color;
 }
 
 void ui_BorderColorPop(void)
@@ -2097,14 +2096,14 @@ void ui_BorderColorPop(void)
 	ds_CPoolPop(g_ui->border_color);
 }
 
-void ui_SpriteColorPush(const vec4 color)
+void ui_SpriteColorPush(const v4 color)
 {
-	ds_CPoolPushMemcpy(g_ui->sprite_color, color);
+	ds_CPoolPushMemcpy(g_ui->sprite_color, &color);
 }
 
-void ui_SpriteColorSet(const vec4 color)
+void ui_SpriteColorSet(const v4 color)
 {
-	Vec4Copy(ds_CPoolTop(g_ui->sprite_color), color);
+	ds_CPoolTop(g_ui->sprite_color) = color;
 }
 
 void ui_SpriteColorPop(void)
@@ -2112,14 +2111,14 @@ void ui_SpriteColorPop(void)
 	ds_CPoolPop(g_ui->sprite_color);
 }
 
-void ui_GradientColorPush(const enum box_corner corner, const vec4 color)
+void ui_GradientColorPush(const enum box_corner corner, const v4 color)
 {
-	ds_CPoolPushMemcpy(g_ui->gradient_color[corner], color);
+	ds_CPoolPushMemcpy(g_ui->gradient_color[corner], &color);
 }
 
-void ui_GradientColorSet(const enum box_corner corner, const vec4 color)
+void ui_GradientColorSet(const enum box_corner corner, const v4 color)
 {
-	Vec4Copy(ds_CPoolTop(g_ui->gradient_color[corner]), color);
+	ds_CPoolTop(g_ui->gradient_color[corner]) = color;
 }
 
 void ui_GradientColorPop(const enum box_corner corner)

@@ -164,14 +164,14 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 
 	g_editor->body_color_mode = RB_COLOR_MODE_BODY;
 	g_editor->pending_body_color_mode = RB_COLOR_MODE_ISLAND;
-	Vec4Set(g_editor->collision_color, 1.0f, 0.1f, 0.1f, 0.5f);
-	Vec4Set(g_editor->static_color, 0.6f, 0.6f, 0.6f, 0.5f);
-	Vec4Set(g_editor->sleep_color, 113.0f/256.0f, 241.0f/256.0f, 157.0f/256.0f, 0.7f);
-	Vec4Set(g_editor->awake_color, 255.0f/256.0f, 36.0f/256.0f, 48.0f/256.0f, 0.7f);
-	Vec4Set(g_editor->manifold_color, 0.6f, 0.6f, 0.9f, 1.0f);
-	Vec4Set(g_editor->dbvh_color, 0.8f, 0.1f, 0.0f, 0.6f);
-	Vec4Set(g_editor->sbvh_color, 0.0f, 0.8f, 0.1f, 0.6f);
-	Vec4Set(g_editor->bounding_box_color, 0.8f, 0.1f, 0.6f, 1.0f);
+	g_editor->collision_color = V4(1.0f, 0.1f, 0.1f, 0.5f);
+	g_editor->static_color = V4(0.6f, 0.6f, 0.6f, 0.5f);
+	g_editor->sleep_color = V4(113.0f/256.0f, 241.0f/256.0f, 157.0f/256.0f, 0.7f);
+	g_editor->awake_color = V4(255.0f/256.0f, 36.0f/256.0f, 48.0f/256.0f, 0.7f);
+	g_editor->manifold_color = V4(0.6f, 0.6f, 0.9f, 1.0f);
+	g_editor->dbvh_color = V4(0.8f, 0.1f, 0.0f, 0.6f);
+	g_editor->sbvh_color = V4(0.0f, 0.8f, 0.1f, 0.6f);
+	g_editor->bounding_box_color = V4(0.8f, 0.1f, 0.6f, 1.0f);
 
 	g_editor->draw_bounding_box = 0;
 	g_editor->draw_dbvh = 0;

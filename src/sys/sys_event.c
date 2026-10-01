@@ -272,10 +272,9 @@ void ds_ProcessEvents(void)
 
 			case DS_CURSOR_POSITION:
 			{
-				vec2 cursor_delta;
-				WindowPositionNativeToEngine(sys_win->ui->inter.cursor_position, sys_win->native, event.native_cursor_window_position);
-				Vec2Set(cursor_delta, event.native_cursor_window_delta[0], -event.native_cursor_window_delta[1]);
-				Vec2Translate(sys_win->ui->inter.cursor_delta, cursor_delta);
+				WindowPositionNativeToEngine(sys_win->ui->inter.cursor_position.buf, sys_win->native, event.native_cursor_window_position);	/* TEMPORARY .buf until platform migration */
+				const v2 cursor_delta = V2(event.native_cursor_window_delta[0], -event.native_cursor_window_delta[1]);
+				sys_win->ui->inter.cursor_delta = V2Add(sys_win->ui->inter.cursor_delta, cursor_delta);
 			} break;
 
 			case DS_WINDOW_CLOSE:

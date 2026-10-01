@@ -22,8 +22,8 @@
 
 void r_UiDraw(struct ui *ui)
 {
-	const vec4 zero4 = { 0.0f, 0.0f, 0.0f, 0.0f };
-	const vec3 zero3 = { 0.0f, 0.0f, 0.0f };
+	const v4 zero4 = V4(0.0f, 0.0f, 0.0f, 0.0f);
+	const v3 zero3 = V3(0.0f, 0.0f, 0.0f);
 
 	struct ui_DrawBucket *b = ui->bucket_pool.buf + ui->bucket_list.first;
 	for (i32 i = b->node.next; i != DLL_SENTINEL; i = b->node.next) 

@@ -34,11 +34,6 @@ extern "C" {
  * TEMPORARY migration helpers: load/store data that still uses the old vec3/quat/mat3 types
  * (e.g. ds_Transform, c_Manifold, c_Shape, solverConfig). Delete this header once the migration is complete.
  */
-static ds_ForceInline v2 V2Load(const vec2 a)
-{
-	return V2(a[0], a[1]);
-}
-
 static ds_ForceInline v3 V3Load(const vec3 a)
 {
 	return V3(a[0], a[1], a[2]);

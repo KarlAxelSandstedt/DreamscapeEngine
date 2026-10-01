@@ -409,8 +409,8 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 {
 	ProfZone;
 
-	const vec4 zero4 = { 0.0f, 0.0f, 0.0f, 0.0f };
-	const vec3 zero3 = { 0.0f, 0.0f, 0.0f };
+	const v4 zero4 = V4(0.0f, 0.0f, 0.0f, 0.0f);
+	const v3 zero3 = V3(0.0f, 0.0f, 0.0f);
 
 	const struct r_Command *r_cmd = g_scene->cmd_frame + b->c_l;
 	const struct r_Instance *instance = g_scene->instance_pool.buf + r_cmd->instance;
@@ -449,30 +449,28 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 						{
 							const struct ui_Node *n = g_ui->node_hierarchy.pool.buf + draw_node->index;
 							draw_node = draw_node->next;
-							const vec4 visible_rect =
-							{
+							const v4 visible_rect = V4(
 								(n->pixel_visible[AXIS_2_X].high + n->pixel_visible[AXIS_2_X].low) / 2.0f,
 								(n->pixel_visible[AXIS_2_Y].high + n->pixel_visible[AXIS_2_Y].low) / 2.0f,
 								(n->pixel_visible[AXIS_2_X].high - n->pixel_visible[AXIS_2_X].low) / 2.0f,
-								(n->pixel_visible[AXIS_2_Y].high - n->pixel_visible[AXIS_2_Y].low) / 2.0f,
-							};
+								(n->pixel_visible[AXIS_2_Y].high - n->pixel_visible[AXIS_2_Y].low) / 2.0f);
 
-							vec2 global_offset = { 0 };
+							v2 global_offset = V2(0.0f, 0.0f);
 							switch (n->text_align_x)
 							{
 								case ALIGN_X_CENTER: 
 								{ 
-									global_offset[0] = n->pixel_position[0] + (n->pixel_size[0] - n->layout_text->width) / 2.0f; 
+									global_offset.x = n->pixel_position.x + (n->pixel_size.x - n->layout_text->width) / 2.0f; 
 								} break;
 
 								case ALIGN_LEFT: 
 								{ 
-									global_offset[0] = n->pixel_position[0] + n->text_pad[0]; 
+									global_offset.x = n->pixel_position.x + n->text_pad.x; 
 								} break;
 
 								case ALIGN_RIGHT: 
 								{ 
-									global_offset[0] = n->pixel_position[0] + n->pixel_size[0] - n->text_pad[0] - n->layout_text->width; 
+									global_offset.x = n->pixel_position.x + n->pixel_size.x - n->text_pad.x - n->layout_text->width; 
 								} break;
 							}	
 
@@ -480,66 +478,58 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 							{
 								case ALIGN_Y_CENTER: 
 								{ 
-									global_offset[1] = n->pixel_position[1] + (n->pixel_size[1] + n->font->linespace*n->layout_text->line_count) / 2.0f; 
+									global_offset.y = n->pixel_position.y + (n->pixel_size.y + n->font->linespace*n->layout_text->line_count) / 2.0f; 
 								} break;
 
 								case ALIGN_TOP: 
 								{ 
-									global_offset[1] = n->pixel_position[1] + n->pixel_size[1] - n->text_pad[1]; 
+									global_offset.y = n->pixel_position.y + n->pixel_size.y - n->text_pad.y; 
 								} break;
 
 								case ALIGN_BOTTOM: 
 								{ 
-									global_offset[1] = n->pixel_position[1] + n->font->linespace*n->layout_text->line_count + n->text_pad[1]; 
+									global_offset.y = n->pixel_position.y + n->font->linespace*n->layout_text->line_count + n->text_pad.y; 
 								} break;
 							}
 
-							global_offset[0] = f32_round(global_offset[0]);
-							global_offset[1] = f32_round(global_offset[1]);
+							global_offset.x = F32Round(global_offset.x);
+							global_offset.y = F32Round(global_offset.y);
 
 							struct textLine *line = n->layout_text->line;
 							for (u32 l = 0; l < n->layout_text->line_count; ++l, line = line->next)
 							{
-								vec2 global_baseline =
-								{
-									global_offset[0],
-									global_offset[1] - n->font->ascent - l*n->font->linespace,
-								};
+								v2 global_baseline = V2(
+									global_offset.x,
+									global_offset.y - n->font->ascent - l*n->font->linespace);
 									
 								i += line->glyph_count;
 								for (u32 t = 0; t < line->glyph_count; ++t)
 								{
 									const struct fontGlyph *glyph = GlyphLookup(n->font, line->glyph[t].codepoint);
-									const vec2 local_offset = 
-									{ 
-										global_baseline[0] + (f32) glyph->bearing[0] + line->glyph[t].x,
-										global_baseline[1] + (f32) glyph->bearing[1],
-									};
+									const v2 local_offset = V2(
+										global_baseline.x + (f32) glyph->bearing[0] + line->glyph[t].x,
+										global_baseline.y + (f32) glyph->bearing[1]);
 
-									const vec4 glyph_rect =
-									{
-										(2*local_offset[0] + (f32) glyph->size[0]) / 2.0f,
-										(2*local_offset[1] - (f32) glyph->size[1]) / 2.0f,
+									const v4 glyph_rect = V4(
+										(2*local_offset.x + (f32) glyph->size[0]) / 2.0f,
+										(2*local_offset.y - (f32) glyph->size[1]) / 2.0f,
 										(f32) glyph->size[0] / 2.0f,
-										(f32) glyph->size[1] / 2.0f,
-									};	
+										(f32) glyph->size[1] / 2.0f);	
 
-									const vec4 uv_rect = 
-									{
+									const v4 uv_rect = V4(
 										(glyph->tr[0] + glyph->bl[0]) / 2.0f,
 										(glyph->tr[1] + glyph->bl[1]) / 2.0f,
 										(glyph->tr[0] - glyph->bl[0]) / 2.0f,
-										(glyph->tr[1] - glyph->bl[1]) / 2.0f,
-									};
+										(glyph->tr[1] - glyph->bl[1]) / 2.0f);
 
-									memcpy(shared_data + S_NODE_RECT_OFFSET, glyph_rect, sizeof(vec4));
-									memcpy(shared_data + S_VISIBLE_RECT_OFFSET, visible_rect, sizeof(vec4));
-									memcpy(shared_data + S_UV_RECT_OFFSET, uv_rect, sizeof(vec4));
-									memcpy(shared_data + S_BACKGROUND_COLOR_OFFSET, zero4, sizeof(vec4));
-									memcpy(shared_data + S_BORDER_COLOR_OFFSET, zero4, sizeof(vec4));
-									memcpy(shared_data + S_SPRITE_COLOR_OFFSET, n->sprite_color, sizeof(vec4));
-									memcpy(shared_data + S_EXTRA_OFFSET, zero3, sizeof(vec3));
-									memset(shared_data + S_GRADIENT_COLOR_BR_OFFSET, 0, 4*sizeof(vec4));
+									memcpy(shared_data + S_NODE_RECT_OFFSET, &glyph_rect, sizeof(v4));
+									memcpy(shared_data + S_VISIBLE_RECT_OFFSET, &visible_rect, sizeof(v4));
+									memcpy(shared_data + S_UV_RECT_OFFSET, &uv_rect, sizeof(v4));
+									memcpy(shared_data + S_BACKGROUND_COLOR_OFFSET, &zero4, sizeof(v4));
+									memcpy(shared_data + S_BORDER_COLOR_OFFSET, &zero4, sizeof(v4));
+									memcpy(shared_data + S_SPRITE_COLOR_OFFSET, &n->sprite_color, sizeof(v4));
+									memcpy(shared_data + S_EXTRA_OFFSET, &zero3, sizeof(v3));
+									memset(shared_data + S_GRADIENT_COLOR_BR_OFFSET, 0, 4*sizeof(v4));
 									shared_data += S_UI_STRIDE;
 								}
 							}
@@ -553,22 +543,22 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 							const struct ui_Node *n = sel->node;
 							draw_node = draw_node->next;
 
-							vec2 global_offset = { 0 };
+							v2 global_offset = V2(0.0f, 0.0f);
 							switch (n->text_align_x)
 							{
 								case ALIGN_X_CENTER: 
 								{ 
-									global_offset[0] = n->pixel_position[0] + (n->pixel_size[0] - n->layout_text->width) / 2.0f; 
+									global_offset.x = n->pixel_position.x + (n->pixel_size.x - n->layout_text->width) / 2.0f; 
 								} break;
 
 								case ALIGN_LEFT: 
 								{ 
-									global_offset[0] = n->pixel_position[0] + n->text_pad[0]; 
+									global_offset.x = n->pixel_position.x + n->text_pad.x; 
 								} break;
 
 								case ALIGN_RIGHT: 
 								{ 
-									global_offset[0] = n->pixel_position[0] + n->pixel_size[0] - n->text_pad[0] - n->layout_text->width; 
+									global_offset.x = n->pixel_position.x + n->pixel_size.x - n->text_pad.x - n->layout_text->width; 
 								} break;
 							}	
 
@@ -576,22 +566,22 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 							{
 								case ALIGN_Y_CENTER: 
 								{ 
-									global_offset[1] = n->pixel_position[1] + (n->pixel_size[1] + n->font->linespace*n->layout_text->line_count) / 2.0f; 
+									global_offset.y = n->pixel_position.y + (n->pixel_size.y + n->font->linespace*n->layout_text->line_count) / 2.0f; 
 								} break;
 
 								case ALIGN_TOP: 
 								{ 
-									global_offset[1] = n->pixel_position[1] + n->pixel_size[1] - n->text_pad[1]; 
+									global_offset.y = n->pixel_position.y + n->pixel_size.y - n->text_pad.y; 
 								} break;
 
 								case ALIGN_BOTTOM: 
 								{ 
-									global_offset[1] = n->pixel_position[1] + n->font->linespace*n->layout_text->line_count + n->text_pad[1]; 
+									global_offset.y = n->pixel_position.y + n->font->linespace*n->layout_text->line_count + n->text_pad.y; 
 								} break;
 							}
 
-							global_offset[0] = f32_round(global_offset[0]);
-							global_offset[1] = f32_round(global_offset[1]);
+							global_offset.x = F32Round(global_offset.x);
+							global_offset.y = F32Round(global_offset.y);
 
 							struct textLine *line = sel->layout->line;
 							ds_Assert(sel->layout->line_count == 1);
@@ -608,42 +598,36 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 							if (0 < sel->low && sel->low <= line->glyph_count)
 							{
 								const struct fontGlyph *end_glyph = GlyphLookup(n->font, line->glyph[sel->low-1].codepoint);
-								global_offset[0] += line->glyph[sel->low-1].x + end_glyph->advance;
+								global_offset.x += line->glyph[sel->low-1].x + end_glyph->advance;
 							}
 
-							const vec4 highlight_rect =
-							{
-								(2*global_offset[0] + width) / 2.0f,
-								(2*global_offset[1] - height) / 2.0f,
+							const v4 highlight_rect = V4(
+								(2*global_offset.x + width) / 2.0f,
+								(2*global_offset.y - height) / 2.0f,
 								width / 2.0f,
-								height / 2.0f,
-							};	
+								height / 2.0f);	
 
-							const vec4 visible_rect =
-							{
+							const v4 visible_rect = V4(
 								(n->pixel_visible[AXIS_2_X].high + n->pixel_visible[AXIS_2_X].low) / 2.0f,
 								(n->pixel_visible[AXIS_2_Y].high + n->pixel_visible[AXIS_2_Y].low) / 2.0f,
 								(n->pixel_visible[AXIS_2_X].high - n->pixel_visible[AXIS_2_X].low) / 2.0f,
-								(n->pixel_visible[AXIS_2_Y].high - n->pixel_visible[AXIS_2_Y].low) / 2.0f,
-							};
+								(n->pixel_visible[AXIS_2_Y].high - n->pixel_visible[AXIS_2_Y].low) / 2.0f);
 	
 							const struct sprite *spr = g_sprite + n->sprite;
-							const vec4 uv_rect = 
-							{
+							const v4 uv_rect = V4(
 								(spr->tr[0] + spr->bl[0]) / 2.0f,
 								(spr->tr[1] + spr->bl[1]) / 2.0f,
 								(spr->tr[0] - spr->bl[0]) / 2.0f,
-								(spr->tr[1] - spr->bl[1]) / 2.0f,
-							};
+								(spr->tr[1] - spr->bl[1]) / 2.0f);
 
-							memcpy(shared_data + S_NODE_RECT_OFFSET, highlight_rect, sizeof(vec4));
-							memcpy(shared_data + S_VISIBLE_RECT_OFFSET, visible_rect, sizeof(vec4));
-							memcpy(shared_data + S_UV_RECT_OFFSET, uv_rect, sizeof(vec4));
-							memcpy(shared_data + S_BACKGROUND_COLOR_OFFSET, sel->color, sizeof(vec4));
-							memcpy(shared_data + S_BORDER_COLOR_OFFSET, zero4, sizeof(vec4));
-							memcpy(shared_data + S_SPRITE_COLOR_OFFSET, zero4, sizeof(vec4));
-							memcpy(shared_data + S_EXTRA_OFFSET, zero3, sizeof(vec3));
-							memset(shared_data + S_GRADIENT_COLOR_BR_OFFSET, 0, 4*sizeof(vec4));
+							memcpy(shared_data + S_NODE_RECT_OFFSET, &highlight_rect, sizeof(v4));
+							memcpy(shared_data + S_VISIBLE_RECT_OFFSET, &visible_rect, sizeof(v4));
+							memcpy(shared_data + S_UV_RECT_OFFSET, &uv_rect, sizeof(v4));
+							memcpy(shared_data + S_BACKGROUND_COLOR_OFFSET, &sel->color, sizeof(v4));
+							memcpy(shared_data + S_BORDER_COLOR_OFFSET, &zero4, sizeof(v4));
+							memcpy(shared_data + S_SPRITE_COLOR_OFFSET, &zero4, sizeof(v4));
+							memcpy(shared_data + S_EXTRA_OFFSET, &zero3, sizeof(v3));
+							memset(shared_data + S_GRADIENT_COLOR_BR_OFFSET, 0, 4*sizeof(v4));
 							shared_data += S_UI_STRIDE;
 						}
 					}
@@ -654,40 +638,34 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 							const struct ui_Node *n = g_ui->node_hierarchy.pool.buf + draw_node->index;
 							draw_node = draw_node->next;
 							const struct sprite *spr = g_sprite + n->sprite;
-							const vec4 node_rect =
-							{
-								n->pixel_position[0] + n->pixel_size[0] / 2.0f,
-								n->pixel_position[1] + n->pixel_size[1] / 2.0f,
-								n->pixel_size[0] / 2.0f,
-								n->pixel_size[1] / 2.0f,
-							};
+							const v4 node_rect = V4(
+								n->pixel_position.x + n->pixel_size.x / 2.0f,
+								n->pixel_position.y + n->pixel_size.y / 2.0f,
+								n->pixel_size.x / 2.0f,
+								n->pixel_size.y / 2.0f);
 
-							const vec4 visible_rect =
-							{
+							const v4 visible_rect = V4(
 								(n->pixel_visible[AXIS_2_X].high + n->pixel_visible[AXIS_2_X].low) / 2.0f,
 								(n->pixel_visible[AXIS_2_Y].high + n->pixel_visible[AXIS_2_Y].low) / 2.0f,
 								(n->pixel_visible[AXIS_2_X].high - n->pixel_visible[AXIS_2_X].low) / 2.0f,
-								(n->pixel_visible[AXIS_2_Y].high - n->pixel_visible[AXIS_2_Y].low) / 2.0f,
-							};
+								(n->pixel_visible[AXIS_2_Y].high - n->pixel_visible[AXIS_2_Y].low) / 2.0f);
 
-							const vec4 uv_rect = 
-							{
+							const v4 uv_rect = V4(
 								(spr->tr[0] + spr->bl[0]) / 2.0f,
 								(spr->tr[1] + spr->bl[1]) / 2.0f,
 								(spr->tr[0] - spr->bl[0]) / 2.0f,
-								(spr->tr[1] - spr->bl[1]) / 2.0f,
-							};
+								(spr->tr[1] - spr->bl[1]) / 2.0f);
 
 
-							const vec3 extra = { n->border_size, n->corner_radius, n->edge_softness };
-							memcpy(shared_data + S_NODE_RECT_OFFSET, node_rect, sizeof(vec4));
-							memcpy(shared_data + S_VISIBLE_RECT_OFFSET, visible_rect, sizeof(vec4));
-							memcpy(shared_data + S_UV_RECT_OFFSET, uv_rect, sizeof(vec4));
-							memcpy(shared_data + S_BACKGROUND_COLOR_OFFSET, n->background_color, sizeof(vec4));
-							memcpy(shared_data + S_BORDER_COLOR_OFFSET, n->border_color, sizeof(vec4));
-							memcpy(shared_data + S_SPRITE_COLOR_OFFSET, n->sprite_color, sizeof(vec4));
-							memcpy(shared_data + S_EXTRA_OFFSET, extra, sizeof(vec3));
-							memcpy(shared_data + S_GRADIENT_COLOR_BR_OFFSET, n->gradient_color, 4*sizeof(vec4));
+							const v3 extra = V3(n->border_size, n->corner_radius, n->edge_softness);
+							memcpy(shared_data + S_NODE_RECT_OFFSET, &node_rect, sizeof(v4));
+							memcpy(shared_data + S_VISIBLE_RECT_OFFSET, &visible_rect, sizeof(v4));
+							memcpy(shared_data + S_UV_RECT_OFFSET, &uv_rect, sizeof(v4));
+							memcpy(shared_data + S_BACKGROUND_COLOR_OFFSET, &n->background_color, sizeof(v4));
+							memcpy(shared_data + S_BORDER_COLOR_OFFSET, &n->border_color, sizeof(v4));
+							memcpy(shared_data + S_SPRITE_COLOR_OFFSET, &n->sprite_color, sizeof(v4));
+							memcpy(shared_data + S_EXTRA_OFFSET, &extra, sizeof(v3));
+							memcpy(shared_data + S_GRADIENT_COLOR_BR_OFFSET, n->gradient_color, 4*sizeof(v4));
 							shared_data += S_UI_STRIDE;
 						}
 					}

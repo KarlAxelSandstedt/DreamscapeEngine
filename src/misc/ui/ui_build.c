@@ -30,9 +30,9 @@ f32 ui_FieldF32(const f32 value, const intv range, const utf8 formatted)
 	if (node->input.focused && g_ui->inter.key_pressed[DS_ENTER])
 	{
 		const f32 parse_value = F32Utf32(g_ui->mem_frame, node->input.text);
-		if (!f32_test_nan(parse_value))
+		if (!F32TestNan(parse_value))
 		{
-			ret = f32_clamp(parse_value, range.low, range.high);
+			ret = F32Clamp(parse_value, range.low, range.high);
 			CmdSubmitFormat(g_ui->mem_frame, "ui_TextInputModeDisable \"%k\"", &node->id);
 		}
 		else
@@ -191,8 +191,8 @@ void ui_ListPush(struct ui_List *list, const char *format, ...)
 	{
 		struct ui_Node *node = ui_NodeAddress(list->frame_node);
 		wanted_axis_pixel_size = list->cache_count*list->entry_pixel_size;
-		wanted_axis_pixel_size = f32_min(wanted_axis_pixel_size, list->max_pixel_size);
-		cached_axis_pixel_size = node->pixel_size[list->axis];
+		wanted_axis_pixel_size = F32Min(wanted_axis_pixel_size, list->max_pixel_size);
+		cached_axis_pixel_size = node->pixel_size.buf[list->axis];
 	}
 	else
 	{
@@ -208,8 +208,8 @@ void ui_ListPush(struct ui_List *list, const char *format, ...)
 	ui_RecursiveInteraction(UI_INTER_DRAG | UI_INTER_SCROLL)
 	list->frame_node = ui_NodeAlloc(UI_INTER_RECURSIVE_ROOT | UI_DRAW_BACKGROUND | UI_DRAW_BORDER, &id).index;
 
-	list->visible.high = f32_min(list->visible.high, list->cache_count*list->entry_pixel_size);
-	list->visible.high = f32_max(list->visible.high, cached_axis_pixel_size);
+	list->visible.high = F32Min(list->visible.high, list->cache_count*list->entry_pixel_size);
+	list->visible.high = F32Max(list->visible.high, cached_axis_pixel_size);
 	list->visible.low = list->visible.high - cached_axis_pixel_size;
 
 	ui_ChildLayoutAxisPush(list->axis);
@@ -228,13 +228,13 @@ void ui_ListPop(struct ui_List *list)
 	{
 		if (list->axis == AXIS_2_X)
 		{
-			list->visible.low -= g_ui->inter.cursor_delta[0];
-			list->visible.high -= g_ui->inter.cursor_delta[0];
+			list->visible.low -= g_ui->inter.cursor_delta.x;
+			list->visible.high -= g_ui->inter.cursor_delta.x;
 		}
 		else
 		{
-			list->visible.low += g_ui->inter.cursor_delta[1];
-			list->visible.high += g_ui->inter.cursor_delta[1];
+			list->visible.low += g_ui->inter.cursor_delta.y;
+			list->visible.high += g_ui->inter.cursor_delta.y;
 		}
 	}
 	else if (node->inter & UI_INTER_SCROLL)
@@ -281,10 +281,10 @@ struct slot ui_ListEntryAlloc(struct ui_List *list, const utf8 id)
 		{
 			struct ui_Node *prev = g_ui->node_hierarchy.pool.buf + list->last_selected;
 			prev->inter &= ~UI_INTER_SELECT;
-			Vec4Copy(prev->border_color, node->border_color);
+			prev->border_color = node->border_color;
 		}
 
-		Vec4Set(node->border_color, 0.1f, 0.55f, 0.8f, 0.8f);
+		node->border_color = V4(0.1f, 0.55f, 0.8f, 0.8f);
 		list->last_selected = entry.index;
 		list->last_selection_happened = g_ui->frame;
 	}
@@ -329,10 +329,10 @@ struct ui_NodeCache ui_ListEntryAllocCached(struct ui_List *list, const utf8 id,
 		{
 			struct ui_Node *prev = g_ui->node_hierarchy.pool.buf + list->last_selected;
 			prev->inter &= ~UI_INTER_SELECT;
-			Vec4Copy(prev->border_color, node->border_color);
+			prev->border_color = node->border_color;
 		}
 
-		Vec4Set(node->border_color, 0.1f, 0.55f, 0.8f, 0.8f);
+		node->border_color = V4(0.1f, 0.55f, 0.8f, 0.8f);
 		list->last_selected = new_cache.index;
 		list->last_selection_happened = g_ui->frame;
 	}
@@ -426,7 +426,7 @@ void ui_Timeline(struct ui_TimelineConfig *config)
 		config->timeline = ui_NodeAllocF(UI_DRAW_BACKGROUND, "timeline_rows_%p", config).index;
 		
 		const struct ui_Node *timeline_node = g_ui->node_hierarchy.pool.buf + config->timeline;
-		config->width = timeline_node->layout_size[0];
+		config->width = timeline_node->layout_size.x;
 		const f32 half_pixel_count = (2.0f * config->width * (1.0f - config->perc_width_row_title_column));
 		config->ns_half_pixel = (f32) (config->ns_interval_end - config->ns_interval_start) / half_pixel_count;
 
@@ -586,12 +586,12 @@ void ui_TimelineRowPop(struct ui_TimelineConfig *config)
 	{
 		if (!g_ui->inter.key_pressed[DS_CTRL])
 		{
-			const f32 depth_offset = f32_max(-row_config->depth_visible.low, g_ui->inter.cursor_delta[1] / config->task_height);
+			const f32 depth_offset = F32Max(g_ui->inter.cursor_delta.y / config->task_height, -row_config->depth_visible.low);
 			row_config->depth_visible.low += depth_offset;
 			row_config->depth_visible.high += depth_offset;
 		}
 
-		CmdSubmitFormat(g_ui->mem_frame, "ui_TimelineDrag %p %li %li %u", config, (i64) g_ui->inter.cursor_delta[0], (i64) g_ui->inter.cursor_delta[1], g_ui->inter.key_pressed[DS_CTRL]);
+		CmdSubmitFormat(g_ui->mem_frame, "ui_TimelineDrag %p %li %li %u", config, (i64) g_ui->inter.cursor_delta.x, (i64) g_ui->inter.cursor_delta.y, g_ui->inter.key_pressed[DS_CTRL]);
 	}
 	
 	ui_TextAlignXPop();
@@ -618,8 +618,8 @@ void ui_TimelineRowPop(struct ui_TimelineConfig *config)
 		drag_node = ui_NodeAllocF(UI_DRAW_BACKGROUND | UI_DRAW_BORDER | UI_DRAW_ROUNDED_CORNERS | UI_INTER_DRAG, "drag_area_%u", config->rowPushed).address;
 		if (drag_node->inter & UI_INTER_DRAG)
 		{
-			row_config->height -= (g_ui->inter.cursor_delta[1] <= row_config->height)
-				? g_ui->inter.cursor_delta[1]
+			row_config->height -= (g_ui->inter.cursor_delta.y <= row_config->height)
+				? g_ui->inter.cursor_delta.y
 				: row_config->height;
 			row_config->depth_visible.high = row_config->depth_visible.low + row_config->height / config->task_height;
 			fprintf(stderr, "height: %f\n", row_config->height);
@@ -685,7 +685,7 @@ void ui_PopupBuild(void)
 	ds_WindowSetGlobal(popup->window);
 	CmdQueueExecute();
 
-	ui_FrameBegin(win->size, visual);
+	ui_FrameBegin(V2U32(win->size[0], win->size[1]), visual);
 	ui_TextAlignX(ALIGN_X_CENTER)
 	ui_TextAlignY(ALIGN_Y_CENTER)
 	ui_Parent(ui_NodeAllocF(UI_DRAW_BACKGROUND | UI_DRAW_BORDER, "###popup_%u", popup->window).index)
@@ -1100,12 +1100,12 @@ struct slot ui_TextInput(struct ui_TextInput *input, const utf32 unfocused_text,
 	struct ui_Node *node = slot.address;
 	if (node->inter & UI_INTER_FOCUS)
 	{
-		node->background_color[0] += 0.03125f;
-		node->background_color[1] += 0.03125f;
-		node->background_color[2] += 0.03125f;
-		node->border_color[0] += 0.25f;
-		node->border_color[1] += 0.25f;
-		node->border_color[2] += 0.25f;
+		node->background_color.x += 0.03125f;
+		node->background_color.y += 0.03125f;
+		node->background_color.z += 0.03125f;
+		node->border_color.x += 0.25f;
+		node->border_color.y += 0.25f;
+		node->border_color.z += 0.25f;
 	}
 
 	return slot;
@@ -1121,15 +1121,15 @@ struct slot ui_TextInputF(struct ui_TextInput *input, const utf32 unfocused_text
 	return ui_TextInput(input, unfocused_text, id);
 }
 
-struct ui_DropdownMenu ui_DropdownMenuInit(const f32 max_dropdown_height, const vec2 entry_size, const enum ui_DropdownPosition position)
+struct ui_DropdownMenu ui_DropdownMenuInit(const f32 max_dropdown_height, const v2 entry_size, const enum ui_DropdownPosition position)
 {
 	struct ui_DropdownMenu menu = 
 	{
 		.flags = 0,
-		.list = ui_ListInit(AXIS_2_Y, max_dropdown_height, entry_size[1], UI_SELECTION_UNIQUE),
+		.list = ui_ListInit(AXIS_2_Y, max_dropdown_height, entry_size.y, UI_SELECTION_UNIQUE),
 	};
 
-	Vec2Copy(menu.entry_size, entry_size);
+	menu.entry_size = entry_size;
 	menu.max_dropdown_height = max_dropdown_height;
 	menu.position = position;
 
@@ -1141,17 +1141,17 @@ struct ui_DropdownMenu ui_DropdownMenuInit(const f32 max_dropdown_height, const 
 	else if (position == UI_DROPDOWN_ABOVE)
 	{
 		menu.dropdown_x = 0.0f;
-		menu.dropdown_y = entry_size[1];
+		menu.dropdown_y = entry_size.y;
 	}
 	else if (position == UI_DROPDOWN_RIGHT)
 	{
-		menu.dropdown_x = entry_size[0];
-		menu.dropdown_y = -max_dropdown_height + entry_size[1];
+		menu.dropdown_x = entry_size.x;
+		menu.dropdown_y = -max_dropdown_height + entry_size.y;
 	}
 	else
 	{
-		menu.dropdown_x = -entry_size[0];
-		menu.dropdown_y = -max_dropdown_height + entry_size[1];
+		menu.dropdown_x = -entry_size.x;
+		menu.dropdown_y = -max_dropdown_height + entry_size.y;
 	}
 
 	return menu;	
@@ -1163,8 +1163,8 @@ u32 ui_DropdownMenu(struct ui_DropdownMenu *menu, const utf8 id)
 	ui_TextAlignX(ALIGN_X_CENTER)
 	ui_TextAlignY(ALIGN_BOTTOM)
 	ui_RecursiveInteraction(UI_INTER_HOVER)
-	ui_Width(ui_SizePixel(menu->entry_size[0], 1.0f))
-	ui_Height(ui_SizePixel(menu->entry_size[1], 1.0f))
+	ui_Width(ui_SizePixel(menu->entry_size.x, 1.0f))
+	ui_Height(ui_SizePixel(menu->entry_size.y, 1.0f))
 	slot = ui_NodeAlloc(UI_INTER_RECURSIVE_ROOT | UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW | UI_DRAW_BORDER, &id);
 
 	menu->root = slot.index;
@@ -1189,7 +1189,7 @@ void ui_DropdownMenuPush(struct ui_DropdownMenu *menu)
 	ui_FloatingX(menu->dropdown_x)
 	ui_FloatingY(menu->dropdown_y)
 	ui_FixedDepth(64)
-	ui_Width(ui_SizePixel(menu->entry_size[0], 1.0f))
+	ui_Width(ui_SizePixel(menu->entry_size.x, 1.0f))
 	ui_Height(ui_SizePixel(menu->max_dropdown_height, 1.0f))
 	ui_ChildLayoutAxis(AXIS_2_Y)
 	ui_NodePush(ui_NodeAllocF(UI_FLAG_NONE, "###dropdown_%p", menu).index);

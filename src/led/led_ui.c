@@ -28,7 +28,7 @@ static void led_ProjectMenuUi(struct led *led, const struct ui_Visual *visual)
 	CmdQueueExecute();
 
 	struct ds_Window *win = ds_WindowAddress(menu->window);
-	ui_FrameBegin(win->size, visual);
+	ui_FrameBegin(V2U32(win->size[0], win->size[1]), visual);
 
 	ui_TextAlignX(ALIGN_LEFT)
 	ui_ChildLayoutAxis(AXIS_2_Y)
@@ -185,7 +185,7 @@ static void led_UiTest(struct led *led, const struct ui_Visual *visual)
 	CmdQueueExecute();
 
 	struct ds_Window *win = ds_WindowAddress(led->window);
-	ui_FrameBegin(win->size, visual);
+	ui_FrameBegin(V2U32(win->size[0], win->size[1]), visual);
 
 	ui_TextAlignX(ALIGN_LEFT)
 	ui_ChildLayoutAxis(AXIS_2_Y)
@@ -208,9 +208,9 @@ static void led_UiTest(struct led *led, const struct ui_Visual *visual)
 			ui_Height(ui_SizePerc(0.1f))
 			ui_Parent(ui_NodeAllocF(UI_FLAG_NONE, "###row_%u", r).index)
 			{
-				ui_SpriteColor(Vec4Inline(0.4f, 0.15f, 0.75f, 0.7f))
+				ui_SpriteColor(V4(0.4f, 0.15f, 0.75f, 0.7f))
 				ui_Sprite(SPRITE_LED_FOLDER)
-				ui_BackgroundColor(Vec4Inline(204.0f/256.0f, 48.0f/256.0f, 110.0f/256.0f, 0.7f))
+				ui_BackgroundColor(V4(204.0f/256.0f, 48.0f/256.0f, 110.0f/256.0f, 0.7f))
 				ui_IntvViewableX(intv_inline(100.0f, 200.0f))	
 				for (u32 i = 0; i <= 10; ++i)
 				{
@@ -231,12 +231,12 @@ static void led_UiTest(struct led *led, const struct ui_Visual *visual)
 				for (u32 i = 0; i < 8; ++i)
 				{
 					ui_Width(ui_SizePixel(400, 1.0f / (2 << i)))
-					ui_BackgroundColor(Vec4Inline((214.0f - i*30.0f)/256.0f, (48.0f + i*30.0f)/256.0f, (44.0f + i*30.0f)/256.0f, 0.7f))
+					ui_BackgroundColor(V4((214.0f - i*30.0f)/256.0f, (48.0f + i*30.0f)/256.0f, (44.0f + i*30.0f)/256.0f, 0.7f))
 					ui_NodeAllocF(UI_DRAW_BACKGROUND, "###box_%u_%u", 6, i);
 				}
 
 				ui_Width(ui_SizePixel(400, 1.0f / (2 << 8)))
-				ui_BackgroundColor(Vec4Inline((204.0f- 8*20.0f)/256.0f, (48.0f + 8*20.0f)/256.0f, (110.0f + 8*10.0f)/256.0f, 0.7f))
+				ui_BackgroundColor(V4((204.0f- 8*20.0f)/256.0f, (48.0f + 8*20.0f)/256.0f, (110.0f + 8*10.0f)/256.0f, 0.7f))
 				ui_NodeAllocF(UI_DRAW_BACKGROUND, "###box_%u_%u", 6, 8);
 			}
 		}
@@ -251,13 +251,13 @@ static void led_UiTest(struct led *led, const struct ui_Visual *visual)
 				ui_Height(ui_SizePixel(80, 1.0f))
 				ui_FixedX(220.0f)
 				ui_FixedY(220.0f)
-				ui_BackgroundColor(Vec4Inline(0.1f, 0.3f, 0.6f, 0.7f))
+				ui_BackgroundColor(V4(0.1f, 0.3f, 0.6f, 0.7f))
 				ui_NodeAllocF(UI_DRAW_BACKGROUND, "###box_%u_%u", 7, 0);
 			}
 		}
 
 		ui_Height(ui_SizePerc(0.1f))
-		ui_SpriteColor(Vec4Inline(1.0f, 1.0f, 1.0f, 1.0f))
+		ui_SpriteColor(V4(1.0f, 1.0f, 1.0f, 1.0f))
 		ui_Parent(ui_NodeAllocF(UI_FLAG_NONE, "###row_%u", 8).index)
 		{
 			ui_Width(ui_SizeText(F32_INFINITY, 1.0f))
@@ -299,18 +299,18 @@ static void led_UiTest(struct led *led, const struct ui_Visual *visual)
 		}
 
 		ui_Height(ui_SizePerc(0.1f))
-		ui_SpriteColor(Vec4Inline(1.0f, 1.0f, 1.0f, 1.0f))
+		ui_SpriteColor(V4(1.0f, 1.0f, 1.0f, 1.0f))
 		ui_Font(FONT_DEFAULT_SMALL)
 		ui_Parent(ui_NodeAllocF(UI_FLAG_NONE, "###row_%u", 9).index)
 		{
 			ui_Width(ui_SizeText(F32_INFINITY, 1.0f))
 			ui_Height(ui_SizePerc(1.0f))
-			ui_BackgroundColor(Vec4Inline(0.2f, 0.2, 0.4f, 0.7f))
+			ui_BackgroundColor(V4(0.2f, 0.2, 0.4f, 0.7f))
 			ui_NodeAllocF(UI_DRAW_TEXT | UI_DRAW_BACKGROUND | UI_DRAW_BORDER, "###box_%u_%u", 9, 0);
 
 			ui_Width(ui_SizeText(F32_INFINITY, 1.0f))
 			ui_Height(ui_SizePerc(1.0f))
-			ui_BackgroundColor(Vec4Inline(0.2f, 0.2, 0.4f, 0.7f))
+			ui_BackgroundColor(V4(0.2f, 0.2, 0.4f, 0.7f))
 			ui_NodeAllocF(UI_DRAW_TEXT | UI_DRAW_BACKGROUND | UI_DRAW_BORDER, "awd###box_%u_%u", 9, 1);
 		}
 	}
@@ -321,7 +321,7 @@ static void led_UiTest(struct led *led, const struct ui_Visual *visual)
 
 static void led_InputHandler(struct led *led, struct ui_Node *viewport)
 {
-	Vec4Set(viewport->border_color, 0.9f, 0.9f, 0.9f, 1.0f);
+	viewport->border_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 	struct ds_Window *sys_win = ds_WindowAddress(led->window);
 
 	for (i32 i = sys_win->ui->event_list.first; i != DLL_SENTINEL; )
@@ -383,11 +383,11 @@ static void led_InputHandler(struct led *led, struct ui_Node *viewport)
 	    	led->cam_left_velocity -= 9.0f; 
 	} 
 
-	r_CameraUpdateAngles(&led->cam, -sys_win->ui->inter.cursor_delta[0] / 300.0f, -sys_win->ui->inter.cursor_delta[1] / 300.0f);
+	r_CameraUpdateAngles(&led->cam, -sys_win->ui->inter.cursor_delta.x / 300.0f, -sys_win->ui->inter.cursor_delta.y / 300.0f);
 	r_CameraUpdateAxes(&led->cam);
 
-	sys_win->ui->inter.cursor_delta[0] = 0.0f;
-	sys_win->ui->inter.cursor_delta[1] = 0.0f;
+	sys_win->ui->inter.cursor_delta.x = 0.0f;
+	sys_win->ui->inter.cursor_delta.y = 0.0f;
 }
 
 static void led_Ui(struct led *led, const struct ui_Visual *visual)
@@ -398,7 +398,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 	CmdQueueExecute();
 
 	struct ds_Window *win = ds_WindowAddress(led->window);
-	ui_FrameBegin(win->size, visual);
+	ui_FrameBegin(V2U32(win->size[0], win->size[1]), visual);
 
 	static u32 count = 0;
 	static u32 once = 1;
@@ -410,12 +410,12 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 		led->node_ui_list = ui_ListInit(AXIS_2_Y, 256.0f, 24.0f, UI_SELECTION_MULTI); 
 		led->node_selected_ui_list = ui_ListInit(AXIS_2_Y, 512.0f, 24.0f + 3*24.0f + 12.0f, UI_SELECTION_NONE);
 		led->cs_list = ui_ListInit(AXIS_2_Y, 200.0f, 24.0f, UI_SELECTION_UNIQUE);
-		led->cs_mesh_menu = ui_DropdownMenuInit(150.0f, Vec2Inline(110.0f, 24.0f), UI_DROPDOWN_BELOW);
+		led->cs_mesh_menu = ui_DropdownMenuInit(150.0f, V2(110.0f, 24.0f), UI_DROPDOWN_BELOW);
 
 		//led->rb_prefab_list = ui_ListInit(AXIS_2_Y, 200.0f, 24.0f, UI_SELECTION_UNIQUE);
 		//led->rb_prefab_mesh_menu = ui_DropdownMenuInit(150.0f, Vec2Inline(110.0f, 24.0f), UI_DROPDOWN_ABOVE);
 		
-		led->rb_color_mode_menu = ui_DropdownMenuInit(120.0f, Vec2Inline(196.0f, 24.0f), UI_DROPDOWN_BELOW);
+		led->rb_color_mode_menu = ui_DropdownMenuInit(120.0f, V2(196.0f, 24.0f), UI_DROPDOWN_BELOW);
 	}
 
 	ui_TextAlignX(ALIGN_LEFT)
@@ -433,18 +433,18 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 			{
 				ui_PadFill();
 
-				ui_BackgroundColor(Vec4Inline(0.0f, 0.125f, 0.125f, 1.0f))
+				ui_BackgroundColor(V4(0.0f, 0.125f, 0.125f, 1.0f))
 				ui_Flags(UI_DRAW_BACKGROUND)
 				{
 					struct ui_Node *button;
 					ui_Width(ui_SizePixel(32.0f, 1.0f))
 					ui_Flags(UI_DRAW_SPRITE)
-					ui_BackgroundColor(Vec4Inline(0.5f, 0.5f, 0.5f, 0.5f))
-					ui_SpriteColor(Vec4Inline(0.0f, 0.0f, 0.0f, 0.1f))
+					ui_BackgroundColor(V4(0.5f, 0.5f, 0.5f, 0.5f))
+					ui_SpriteColor(V4(0.0f, 0.0f, 0.0f, 0.1f))
 					ui_Sprite(SPRITE_LED_PLAY)
 					if (ui_ButtonF(UI_DRAW_BACKGROUND | UI_DRAW_SPRITE, "###play") & UI_INTER_LEFT_CLICK)
 					{
-						//ui_BackgroundColor(Vec4Inline(0.0f, 0.5f, 0.5f, 0.5f))
+						//ui_BackgroundColor(V4(0.0f, 0.5f, 0.5f, 0.5f))
 						CmdSubmitFormat(g_ui->mem_frame, "led_Compile");
 						CmdSubmitFormat(g_ui->mem_frame, "led_Run");
 					}
@@ -453,7 +453,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 					ui_Width(ui_SizePixel(32.0f, 1.0f))
 					ui_Flags(UI_DRAW_SPRITE)
-					ui_SpriteColor(Vec4Inline(0.0f, 0.0f, 0.0f, 0.1f))
+					ui_SpriteColor(V4(0.0f, 0.0f, 0.0f, 0.1f))
 					ui_Sprite(SPRITE_LED_PAUSE)
 					if (ui_ButtonF(UI_DRAW_SPRITE, "###pause") & UI_INTER_LEFT_CLICK)
 					{
@@ -464,7 +464,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 					ui_Width(ui_SizePixel(32.0f, 1.0f))
 					ui_Flags(UI_DRAW_SPRITE)
-					ui_SpriteColor(Vec4Inline(0.0f, 0.0f, 0.0f, 0.1f))
+					ui_SpriteColor(V4(0.0f, 0.0f, 0.0f, 0.1f))
 					ui_Sprite(SPRITE_LED_STOP)
 					if (ui_ButtonF(UI_DRAW_SPRITE, "###stop") & UI_INTER_LEFT_CLICK)
 					{
@@ -488,12 +488,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 					struct ui_Node *node = slot.address;
 					if (node->inter & UI_INTER_HOVER)
 					{
-						const vec2 cursor_viewport_position =
-						{
-							g_ui->inter.cursor_position[0] - node->pixel_position[0],
-							g_ui->inter.cursor_position[1] - node->pixel_position[1],
-						};
-						v3 dir = WindowSpaceToWorldSpace(V2Load(cursor_viewport_position), V2Load(node->pixel_size), &led->cam);
+						const v2 cursor_viewport_position = V2(
+							g_ui->inter.cursor_position.x - node->pixel_position.x,
+							g_ui->inter.cursor_position.y - node->pixel_position.y);
+						v3 dir = WindowSpaceToWorldSpace(cursor_viewport_position, node->pixel_size, &led->cam);
 						dir = V3Sub(dir, led->cam.position);
 						dir = V3Scale(dir, 1.0f / V3Length(dir));
 						const struct ray ray = RayConstruct(led->cam.position, dir);
@@ -505,8 +503,8 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 							const struct led_Node *entity = led->node_hierarchy.pool.buf + body->entity;
 							const char *body_id = CstrUtf8(g_ui->mem_frame, entity->id);
 
-							ui_FixedX(g_ui->inter.cursor_position[0])
-							ui_FixedY(g_ui->inter.cursor_position[1])
+							ui_FixedX(g_ui->inter.cursor_position.x)
+							ui_FixedY(g_ui->inter.cursor_position.y)
 							ui_Width(ui_SizeText(128.0f, 1.0f))
 							ui_Height(ui_SizePixel(24.0f, 1.0f))
 							ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW | UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_SKIP_HOVER_SEARCH, "%k##%u", &entity->id, body->entity);
@@ -520,12 +518,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 					if (node->inter & UI_INTER_FOCUS)
 					{	
-						const vec2 pos = 
-						{
-							node->pixel_position[0],
-							node->pixel_position[1] + node->pixel_size[1],
-						};
-						ds_CursorSetRectangle(win, pos, node->pixel_size);
+						const v2 pos = V2(
+							node->pixel_position.x,
+							node->pixel_position.y + node->pixel_size.y);
+						ds_CursorSetRectangle(win, pos.buf, node->pixel_size.buf);	/* TEMPORARY .buf until platform migration */
 						led_InputHandler(led, node);
 					}
 
@@ -900,12 +896,12 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 							if (led->draw_dbvh)
 							{
-								Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
+								node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 							}
 
 							if (node->inter & UI_INTER_HOVER)
 							{
-								Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
+								node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
 							}
 						}
 
@@ -923,12 +919,12 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 							if (led->draw_sbvh)
 							{
-								Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
+								node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 							}
 
 							if (node->inter & UI_INTER_HOVER)
 							{
-								Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
+								node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
 							}
 						}
 
@@ -946,12 +942,12 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 							if (led->draw_bounding_box)
 							{
-								Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
+								node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 							}
 
 							if (node->inter & UI_INTER_HOVER)
 							{
-								Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
+								node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
 							}
 						}
 
@@ -969,12 +965,12 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 							if (led->draw_manifold)
 							{
-								Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
+								node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 							}
 
 							if (node->inter & UI_INTER_HOVER)
 							{
-								Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
+								node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
 							}
 						}
 
@@ -992,12 +988,12 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 							if (led->draw_lines)
 							{
-								Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
+								node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 							}
 
 							if (node->inter & UI_INTER_HOVER)
 							{
-								Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
+								node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
 							}
 						}
 					}
@@ -1113,16 +1109,16 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 	ui_FrameEnd();
 
 	struct ui_Node *node = ui_NodeLookup(&led->viewport_id).address;
-	led->viewport_position[0] = node->pixel_position[0];
-	led->viewport_position[1] = node->pixel_position[1];
-	led->viewport_size[0] = node->pixel_size[0];
-	led->viewport_size[1] = node->pixel_size[1];
+	led->viewport_position.x = node->pixel_position.x;
+	led->viewport_position.y = node->pixel_position.y;
+	led->viewport_size.x = node->pixel_size.x;
+	led->viewport_size.y = node->pixel_size.y;
 
 	const f32 delta = (f32) led->ns_delta / NSEC_PER_SEC;
 	led->cam.position.x += delta * (led->cam_left_velocity * led->cam.left.x + led->cam_forward_velocity * led->cam.forward.x);
 	led->cam.position.y += delta * (led->cam_left_velocity * led->cam.left.y + led->cam_forward_velocity * led->cam.forward.y);
 	led->cam.position.z += delta * (led->cam_left_velocity * led->cam.left.z + led->cam_forward_velocity * led->cam.forward.z);
-	led->cam.aspect_ratio =  (f32) led->viewport_size[0] / led->viewport_size[1];
+	led->cam.aspect_ratio =  (f32) led->viewport_size.x / led->viewport_size.y;
 
 	led->cam_left_velocity = 0.0f;
 	led->cam_forward_velocity = 0.0f;
@@ -1139,16 +1135,16 @@ void led_UiMain(struct led *led)
 {
 	ProfZone;
 
-	const vec4 bg = { 0.0625f, 0.0625f, 0.0625f, 1.0f };
-	const vec4 br = { 0.0f, 0.15f, 0.25f, 1.0f };
-	const vec4 gr[BOX_CORNER_COUNT] = 
+	const v4 bg = V4(0.0625f, 0.0625f, 0.0625f, 1.0f);
+	const v4 br = V4(0.0f, 0.15f, 0.25f, 1.0f);
+	const v4 gr[BOX_CORNER_COUNT] = 
 	{
-		{0.0f, 0.15f, 0.8f, 0.8f },
-		{0.0f, 0.7f, 0.25f, 0.8f },
-		{0.0f, 0.7f, 0.25f, 0.8f },
-		{0.0f, 0.15f, 0.8f, 0.8f },
+		V4(0.0f, 0.15f, 0.8f, 0.8f),
+		V4(0.0f, 0.7f, 0.25f, 0.8f),
+		V4(0.0f, 0.7f, 0.25f, 0.8f),
+		V4(0.0f, 0.15f, 0.8f, 0.8f),
 	};
-	const vec4 sp = { 0.9f, 0.9f, 0.9f, 1.0f };
+	const v4 sp = V4(0.9f, 0.9f, 0.9f, 1.0f);
 
 	const f32 pad = 8.0f;
 	const f32 edge_softness = 0.0f;
