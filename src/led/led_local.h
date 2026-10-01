@@ -111,7 +111,7 @@ led c_Shape API
 /* Add and return a default collision shape. On failure, return (NULL, U32_MAX) */
 struct slot led_CollisionShapeDefaultAdd(struct led *led, const utf8 id);
 /* Add and return a dcel collision box with sides 2*hw[i]. On failure, return (NULL, U32_MAX) */
-struct slot led_CollisionBoxAdd(struct led *led, const utf8 id, const vec3 hw);
+struct slot led_CollisionBoxAdd(struct led *led, const utf8 id, const v3 hw);
 /* Add and return a collision sphere. On failure, return (NULL, U32_MAX) */
 struct slot led_CollisionSphereAdd(struct led *led, const utf8 id, const f32 radius);
 /* Add and return a collision capsule. On failure, return (NULL, U32_MAX) */

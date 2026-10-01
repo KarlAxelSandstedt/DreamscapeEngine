@@ -31,16 +31,16 @@
 /************************************************************************/
 
 /*TODO: Transform native screen position into our system coordinate system */
-extern void 	(*ScreenPositionNativeToEngine)(vec2 sys_pos, struct nativeWindow *native, const vec2 nat_pos);
+extern v2 	(*ScreenPositionNativeToEngine)(struct nativeWindow *native, const v2 nat_pos);
 /*TODO: Transform system screen position into native screen position */
-extern void 	(*ScreenPositionEngineToNative)(vec2 nat_pos, struct nativeWindow *native, const vec2 sys_pos);
+extern v2 	(*ScreenPositionEngineToNative)(struct nativeWindow *native, const v2 sys_pos);
 /* Transform native window position into our system coordinate system, return 1 if position is inside window, 0 otherwise */
-extern void 	(*WindowPositionNativeToEngine)(vec2 sys_pos, struct nativeWindow *native, const vec2 nat_pos);
+extern v2 	(*WindowPositionNativeToEngine)(struct nativeWindow *native, const v2 nat_pos);
 /* Transform system window position into native coordinate system return 1 if position is inside window, 0 otherwise */
-extern void 	(*WindowPositionEngineToNative)(vec2 nat_pos, struct nativeWindow *native, const vec2 sys_pos);
+extern v2 	(*WindowPositionEngineToNative)(struct nativeWindow *native, const v2 sys_pos);
 
 /* setup system window */
-extern struct nativeWindow *	(*NativeWindowCreate)(struct arena *mem, const char *title, const vec2u32 position, const vec2u32 size);
+extern struct nativeWindow *	(*NativeWindowCreate)(struct arena *mem, const char *title, const v2u32 position, const v2u32 size);
 /* destroy system window */
 extern void 			(*NativeWindowDestroy)(struct nativeWindow *native);
 /* Return the native window handle of the system window */
@@ -50,7 +50,7 @@ extern void 			(*NativeWindowGlSetCurrent)(struct nativeWindow *native);
 /* opengl swap window */	
 extern void 			(*NativeWindowGlSwapBuffers)(struct nativeWindow *native);
 /* set config variables of native window */
-extern void 			(*NativeWindowConfigUpdate)(vec2u32 position, vec2u32 size, struct nativeWindow *native);
+extern void 			(*NativeWindowConfigUpdate)(v2u32 *position, v2u32 *size, struct nativeWindow *native);
 /* set window fullscreen */
 extern void 			(*NativeWindowFullscreen)(struct nativeWindow *native);
 /* set window windowed */
@@ -77,7 +77,7 @@ extern u32 			(*NativeCursorLock)(struct nativeWindow *native);
 /* return 1 on success, 0 otherwise */
 extern u32 			(*NativeCursorUnlock)(struct nativeWindow *native);
 /* set rectangle within window that cursor is restricted to */
-extern void 			(*NativeCursorSetRectangle)(struct nativeWindow *sys_win, const vec2 nat_position, const vec2 size);
+extern void 			(*NativeCursorSetRectangle)(struct nativeWindow *sys_win, const v2 nat_position, const v2 size);
 /* release any rectangle restriction */
 extern void 			(*NativeCursorUnsetRectangle)(struct nativeWindow *native);
 

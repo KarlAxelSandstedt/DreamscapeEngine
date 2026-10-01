@@ -434,8 +434,8 @@ struct ds_Event
 		u32 count;
 	} scroll;
 
-	vec2 native_cursor_window_position;	/* native window coordinate space cursor position */
-	vec2 native_cursor_window_delta;	/* native window coordinate space cursor delta */
+	v2 native_cursor_window_position;	/* native window coordinate space cursor position */
+	v2 native_cursor_window_delta;	/* native window coordinate space cursor delta */
 
 	utf8	utf8;
 };

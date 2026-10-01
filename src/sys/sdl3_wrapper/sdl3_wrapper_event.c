@@ -74,8 +74,8 @@ u32 sdl3_EventConsume(struct ds_Event *event)
 			case SDL_EVENT_MOUSE_MOTION:
 			{
 				event->type = DS_CURSOR_POSITION;
-				Vec2Set(event->native_cursor_window_position, ev.motion.x, ev.motion.y);
-				Vec2Set(event->native_cursor_window_delta,  ev.motion.xrel, ev.motion.yrel);
+				event->native_cursor_window_position = V2(ev.motion.x, ev.motion.y);
+				event->native_cursor_window_delta = V2(ev.motion.xrel, ev.motion.yrel);
 			} break;
 
 			case SDL_EVENT_MOUSE_WHEEL:

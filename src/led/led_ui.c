@@ -28,7 +28,7 @@ static void led_ProjectMenuUi(struct led *led, const struct ui_Visual *visual)
 	CmdQueueExecute();
 
 	struct ds_Window *win = ds_WindowAddress(menu->window);
-	ui_FrameBegin(V2U32(win->size[0], win->size[1]), visual);
+	ui_FrameBegin(win->size, visual);
 
 	ui_TextAlignX(ALIGN_LEFT)
 	ui_ChildLayoutAxis(AXIS_2_Y)
@@ -185,7 +185,7 @@ static void led_UiTest(struct led *led, const struct ui_Visual *visual)
 	CmdQueueExecute();
 
 	struct ds_Window *win = ds_WindowAddress(led->window);
-	ui_FrameBegin(V2U32(win->size[0], win->size[1]), visual);
+	ui_FrameBegin(win->size, visual);
 
 	ui_TextAlignX(ALIGN_LEFT)
 	ui_ChildLayoutAxis(AXIS_2_Y)
@@ -398,7 +398,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 	CmdQueueExecute();
 
 	struct ds_Window *win = ds_WindowAddress(led->window);
-	ui_FrameBegin(V2U32(win->size[0], win->size[1]), visual);
+	ui_FrameBegin(win->size, visual);
 
 	static u32 count = 0;
 	static u32 once = 1;
@@ -521,7 +521,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 						const v2 pos = V2(
 							node->pixel_position.x,
 							node->pixel_position.y + node->pixel_size.y);
-						ds_CursorSetRectangle(win, pos.buf, node->pixel_size.buf);	/* TEMPORARY .buf until platform migration */
+						ds_CursorSetRectangle(win, pos, node->pixel_size);
 						led_InputHandler(led, node);
 					}
 

@@ -25,7 +25,7 @@ void led_ProjectMenuMain(struct led *led)
 	struct ds_Window *sys_win;
 	if ((i32) menu->window == HI_NULL)
 	{
-		menu->window = ds_WindowAlloc("Project Menu", Vec2U32Inline(0,0), Vec2U32Inline(400, 400), g_process_root_window);
+		menu->window = ds_WindowAlloc("Project Menu", V2U32(0, 0), V2U32(400, 400), g_process_root_window);
 		menu->popup_new_project = ui_PopupNull();
 
 		struct ds_Window *sys_win = ds_WindowAddress(menu->window);

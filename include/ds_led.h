@@ -85,13 +85,13 @@ struct slot         led_NodeLookupId(struct led *led, const utf8 id);
 /* Return node with the given ds_Id if it exist; otherwise return (NULL, U32_MAX).  */
 struct slot         led_NodeLookup(struct led *led, const ds_Id id);
 /* Set node position if it exist. */
-void		        led_NodeSetPositionId(struct led *led, const utf8 id, const vec3 position);
+void		        led_NodeSetPositionId(struct led *led, const utf8 id, const v3 position);
 /* Set node position if it exist. */
 void		        led_NodeSetColor(struct led *led, const ds_Id id, const v4 color, const f32 blend);
 /* Set node color and blend factor if it exist. */
 void		        led_NodeSetColorId(struct led *led, const utf8 id, const v4 color, const f32 blend);
 /* Set node color and blend factor if it exist. */
-void		        led_NodeSetPosition(struct led *led, const ds_Id id, const vec3 position);
+void		        led_NodeSetPosition(struct led *led, const ds_Id id, const v3 position);
 /* Set node to contain a rigid body if the node and the prefab exist */
 void		        led_NodeAttachRigidBodyPrefabId(struct led *led, const utf8 id, const utf8 prefab);
 /* Set node to contain a rigid body if the node and the prefab exist */

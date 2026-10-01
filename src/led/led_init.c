@@ -61,7 +61,7 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 	led_CoreInitCommands();
 	g_editor->mem_persistent = ArenaAlloc(NULL,64*1024*1024);
 
-	g_editor->window = ds_RootWindowAlloc("Level Editor", Vec2U32Inline(400,400), Vec2U32Inline(1280, 720));
+	g_editor->window = ds_RootWindowAlloc("Level Editor", V2U32(400, 400), V2U32(1280, 720));
 
 	g_editor->frame = ArenaAlloc(NULL, 16*1024*1024);
 	g_editor->project_menu = led_ProjectMenuAlloc();

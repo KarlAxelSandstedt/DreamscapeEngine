@@ -574,12 +574,11 @@ static void r_InternalProxy3dUniforms(const struct led *led, const u32 window)
 
 static void r_InternalUiUniforms(const u32 window)
 {
-	vec2u32 resolution;
-	ds_WindowSize(resolution, window);
+	const v2u32 resolution = ds_WindowSize(window);
 
 	ds_glUseProgram(g_r_core->program[PROGRAM_UI].gl_program);
 	GLint resolution_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_UI].gl_program, "resolution");
-	ds_glUniform2f(resolution_addr, (f32) resolution[0], (f32) resolution[1]);
+	ds_glUniform2f(resolution_addr, (f32) resolution.x, (f32) resolution.y);
 }
 
 static void r_SceneRender(const struct led *led, const u32 window)
@@ -587,7 +586,7 @@ static void r_SceneRender(const struct led *led, const u32 window)
 	ProfZone;
 
 	struct ds_Window *sys_win = ds_WindowAddress(window);
-	ds_glViewport(0, 0, (i32) sys_win->size[0], (i32) sys_win->size[1]); 
+	ds_glViewport(0, 0, (i32) sys_win->size.x, (i32) sys_win->size.y); 
 
 	ds_glClearColor(0.08f, 0.08f, 0.08f, 1.0f);
 	ds_glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -653,7 +652,7 @@ static void r_SceneRender(const struct led *led, const u32 window)
 				ds_glBindTexture(GL_TEXTURE_2D, g_r_core->texture[texture].handle);
 				const i32 texture_addr = ds_glGetUniformLocation(g_r_core->program[program].gl_program, "texture");
 				ds_glUniform1i(texture_addr, tx_index);
-				ds_glViewport(0, 0, (i32) sys_win->size[0], (i32) sys_win->size[1]); 
+				ds_glViewport(0, 0, (i32) sys_win->size.x, (i32) sys_win->size.y); 
 			} break;
 
 			case PROGRAM_LIGHTNING:

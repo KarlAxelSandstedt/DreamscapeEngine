@@ -42,7 +42,7 @@ static void ds_WindowDealloc(struct ds_Window *sys_win)
 	ArenaFree(&sys_win->mem_persistent);
 }
 
-u32 ds_WindowAlloc(const char *title, const vec2u32 position, const vec2u32 size, const u32 parent)
+u32 ds_WindowAlloc(const char *title, const v2u32 position, const v2u32 size, const u32 parent)
 {
 	struct slot slot = ds_WindowHIAdd(g_window_hierarchy, parent);
 	ds_Assert(parent != HI_ROOT || slot.index == 2);
@@ -145,7 +145,7 @@ struct slot ds_WindowLookup(const u64 native_handle)
 	return slot;
 }
 
-u32 ds_RootWindowAlloc(const char *title, const vec2u32 position, const vec2u32 size)
+u32 ds_RootWindowAlloc(const char *title, const v2u32 position, const v2u32 size)
 {
 	ds_Assert(g_process_root_window == HI_NULL);
 	g_process_root_window = ds_WindowAlloc(title, position, size, HI_ROOT);
@@ -156,14 +156,13 @@ u32 ds_RootWindowAlloc(const char *title, const vec2u32 position, const vec2u32 
 void ds_WindowConfigUpdate(const u32 window)
 {
 	struct ds_Window *sys_win = g_window_hierarchy->pool.buf + window;
-	NativeWindowConfigUpdate(sys_win->position, sys_win->size, sys_win->native);
+	NativeWindowConfigUpdate(&sys_win->position, &sys_win->size, sys_win->native);
 }
 
-void ds_WindowSize(vec2u32 size, const u32 window)
+v2u32 ds_WindowSize(const u32 window)
 {
-	struct ds_Window *sys_win = g_window_hierarchy->pool.buf + window;
-	size[0] = sys_win->size[0];
-	size[1] = sys_win->size[1];
+	const struct ds_Window *sys_win = g_window_hierarchy->pool.buf + window;
+	return sys_win->size;
 }
 
 struct ds_Window *ds_WindowAddress(const u32 index)
@@ -277,10 +276,9 @@ void ds_CursorHide(struct ds_Window *sys_win)
 	NativeCursorHide(sys_win->native);
 }
 
-void ds_CursorSetRectangle(struct ds_Window *sys_win, const vec2 sys_position, const vec2 size)
+void ds_CursorSetRectangle(struct ds_Window *sys_win, const v2 sys_position, const v2 size)
 {
-	vec2 nat_pos;
-	WindowPositionEngineToNative(nat_pos, sys_win->native, sys_position);
+	const v2 nat_pos = WindowPositionEngineToNative(sys_win->native, sys_position);
 	NativeCursorSetRectangle(sys_win->native, nat_pos, size);
 }
 

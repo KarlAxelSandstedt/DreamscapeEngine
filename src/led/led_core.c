@@ -166,7 +166,7 @@ void led_NodeRemove(struct led *led, const ds_Id id)
     }
 }
 
-void led_NodeSetPositionId(struct led *led, const utf8 id, const vec3 position)
+void led_NodeSetPositionId(struct led *led, const utf8 id, const v3 position)
 {
 	struct slot slot = led_NodeLookupId(led, id);
 	struct led_Node *node = slot.address;
@@ -176,11 +176,11 @@ void led_NodeSetPositionId(struct led *led, const utf8 id, const vec3 position)
 	}
 	else
 	{
-		Vec3Copy(node->transform.position.buf, position);
+		node->transform.position = position;
 	}
 }
 
-void led_NodeSetPosition(struct led *led, const ds_Id id, const vec3 position)
+void led_NodeSetPosition(struct led *led, const ds_Id id, const v3 position)
 {
 	struct led_Node *node = led_NodeLookup(led, id).address;
 	if (!node)
@@ -189,7 +189,7 @@ void led_NodeSetPosition(struct led *led, const ds_Id id, const vec3 position)
 	}
 	else
 	{
-		Vec3Copy(node->transform.position.buf, position);
+		node->transform.position = position;
 	}
 }
 
@@ -416,21 +416,21 @@ static struct slot led_CollisionShapeAdd(struct led *led, const struct c_Shape *
 
 struct slot led_CollisionShapeDefaultAdd(struct led *led, const utf8 id)
 {
-    const vec3 hw = { 0.5f, 0.5f, 0.5f };
+    const v3 hw = V3(0.5f, 0.5f, 0.5f);
 	return led_CollisionBoxAdd(led, id, hw);	
 }
 
-struct slot led_CollisionBoxAdd(struct led *led, const utf8 id, const vec3 hw)
+struct slot led_CollisionBoxAdd(struct led *led, const utf8 id, const v3 hw)
 {
 	//TODO Need to come up with a memory allocation strategy for dcels
     struct slot slot = empty_slot;
-	if (hw[0] > 0.0f && hw[1] > 0.0f && hw[2] > 0.0f)
+	if (hw.x > 0.0f && hw.y > 0.0f && hw.z > 0.0f)
 	{
 		struct c_Shape shape =
 		{
 			.id = id, 
 			.type = C_SHAPE_CONVEX_HULL,
-			.hull = DcelBox(&led->mem_persistent, V3Load(hw)), 
+			.hull = DcelBox(&led->mem_persistent, hw), 
 		};
 
 		slot = led_CollisionShapeAdd(led, &shape);
@@ -850,8 +850,8 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 		.v_count = (n-1)*(n-1),
 		.tri_count = 2*(n-2)*(n-2),
 	};
-	mesh.v = ArenaPush(mem_persistent, mesh.v_count*sizeof(vec3));
-	mesh.tri = ArenaPush(mem_persistent, mesh.tri_count*sizeof(vec3u32));
+	mesh.v = ArenaPush(mem_persistent, mesh.v_count*sizeof(v3));
+	mesh.tri = ArenaPush(mem_persistent, mesh.tri_count*sizeof(v3u32));
 	//TODO move out functino to TriMeshPerlinNoise method
 	//TODO return stub mesh
 	ds_Assert(mesh.v && mesh.tri);
@@ -859,36 +859,31 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 	const f32 unit = width / n;
 
 #define OCTAVES	6
-	vec2ptr grad[OCTAVES];
+	v2 *grad[OCTAVES];
 	for (u32 o = 0; o < OCTAVES; ++o)
 	{
 		const u32 on = (n >> o) + 1;
-		grad[o] = ArenaPush(tmp, on*on*sizeof(vec2));
+		grad[o] = ArenaPush(tmp, on*on*sizeof(v2));
 		for (u32 x = 0; x < on; ++x)
 		{
 			for (u32 z = 0; z < on; ++z)
 			{
 				const f32 angle = RngF32Range(0.0f, F32_PI2);
-				grad[o][x*on + z][0] = f32_cos(angle);
-				grad[o][x*on + z][1] = f32_sin(angle);
+				grad[o][x*on + z] = V2(F32Cos(angle), F32Sin(angle));
 			}
 		}
 	}
 
-	const vec3 offset =
-	{
-		-unit * (n >> 1),
-		-20.0f,
-		-unit * (n >> 1) + 30.0f,
-	};
+	const v3 offset = V3(-unit * (n >> 1),
+			     -20.0f,
+			     -unit * (n >> 1) + 30.0f);
 
 	for (u32 x = 0; x < n-1; ++x)
 	{
 		for (u32 z = 0; z < n-1; ++z)
 		{
-			mesh.v[x*(n-1) + z].buf[0] = (0.5f + x) * unit;
-			mesh.v[x*(n-1) + z].buf[1] = 0.0f;
-			mesh.v[x*(n-1) + z].buf[2] = (0.5f + z) * unit;
+			v3 *p = mesh.v + x*(n-1) + z;
+			*p = V3((0.5f + x) * unit, 0.0f, (0.5f + z) * unit);
 
 			f32 amplitude = 1.0f / (1 << OCTAVES);
 			for (u32 i = 0; i < OCTAVES; ++i)
@@ -900,35 +895,11 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 				const u32 x_high = x_low + (1 << i);
 				const u32 z_high = z_low + (1 << i);
 	
-				const vec2 bl_diff = 
-				{
-					mesh.v[x*(n-1) + z].buf[0] - x_low * unit, 	
-					mesh.v[x*(n-1) + z].buf[2] - z_low * unit, 	
-				};
+				const v2 bl_diff = V2(p->x - x_low * unit, p->z - z_low * unit);
+				const v2 tl_diff = V2(p->x - x_low * unit, p->z - z_high * unit);
+				const v2 br_diff = V2(p->x - x_high * unit, p->z - z_low * unit);
+				const v2 tr_diff = V2(p->x - x_high * unit, p->z - z_high * unit);
 
-				const vec2 tl_diff = 
-				{
-					mesh.v[x*(n-1) + z].buf[0] - x_low * unit, 	
-					mesh.v[x*(n-1) + z].buf[2] - z_high * unit, 	
-				};
-
-				const vec2 br_diff = 
-				{
-					mesh.v[x*(n-1) + z].buf[0] - x_high * unit, 	
-					mesh.v[x*(n-1) + z].buf[2] - z_low * unit, 	
-				};
-
-				const vec2 tr_diff = 
-				{
-					mesh.v[x*(n-1) + z].buf[0] - x_high * unit, 	
-					mesh.v[x*(n-1) + z].buf[2] - z_high * unit, 	
-				};
-
-				//const f32 bl_dot = Vec2Dot(bl_diff, grad[i][(x_low >> i)*on + (z_low >> i)]);
-				//const f32 br_dot = Vec2Dot(br_diff, grad[i][(x_high >> i)*on + (z_low >> i)]);
-				//const f32 tl_dot = Vec2Dot(tl_diff, grad[i][(x_low >> i)*on + (z_high >> i)]);
-				//const f32 tr_dot = Vec2Dot(tr_diff, grad[i][(x_high >> i)*on + (z_high >> i)]);
-				
 				const u32 xg_low = x_low >> i;
 				const u32 xg_high = xg_low + 1;
 				const u32 zg_low = z_low >> i;
@@ -939,60 +910,28 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 				ds_Assert(xg_low*on  + zg_high < on*on);
 				ds_Assert(xg_high*on + zg_high < on*on);
 
-				const f32 bl_dot = Vec2Dot(bl_diff, grad[i][xg_low*on  + zg_low]);
-				const f32 br_dot = Vec2Dot(br_diff, grad[i][xg_high*on + zg_low]);
-				const f32 tl_dot = Vec2Dot(tl_diff, grad[i][xg_low*on  + zg_high]);
-				const f32 tr_dot = Vec2Dot(tr_diff, grad[i][xg_high*on + zg_high]);
+				const f32 bl_dot = V2Dot(bl_diff, grad[i][xg_low*on  + zg_low]);
+				const f32 br_dot = V2Dot(br_diff, grad[i][xg_high*on + zg_low]);
+				const f32 tl_dot = V2Dot(tl_diff, grad[i][xg_low*on  + zg_high]);
+				const f32 tr_dot = V2Dot(tr_diff, grad[i][xg_high*on + zg_high]);
 
-				//fprintf(stderr, "(%u, %u), (%u, %u)\n",
-				//	(x_low >> i),
-				//	(x_high >> i),
-				//	(z_low >> i),
-				//	(z_high >> i));
+				const v2 low = V2(x_low * unit, z_low * unit);
+				const v2 high = V2(x_high * unit, z_high * unit);
+				const v2 t = V2((p->x - low.x) / (high.x - low.x),
+						(p->z - low.y) / (high.y - low.y));
 
-				const vec2 low = 
-				{
-					x_low * unit,
-					z_low * unit,
-				};
+				const v2 smoothstep = V2(6*t.x*t.x*t.x*t.x*t.x - 15*t.x*t.x*t.x*t.x + 10*t.x*t.x*t.x,
+							 6*t.y*t.y*t.y*t.y*t.y - 15*t.y*t.y*t.y*t.y + 10*t.y*t.y*t.y);
 
-				const vec2 high = 
-				{
-					x_high * unit,
-					z_high * unit,
-				};
+				const f32 vb = bl_dot*(1.0f - smoothstep.x) + br_dot*smoothstep.x;
+				const f32 vt = tl_dot*(1.0f - smoothstep.x) + tr_dot*smoothstep.x;
+				const f32 perlin = vb*(1.0f - smoothstep.y) + vt*smoothstep.y;
 
-				const vec2 t = 
-				{
-					(mesh.v[x*(n-1) + z].buf[0] - low[0]) / (high[0] - low[0]),
-					(mesh.v[x*(n-1) + z].buf[2] - low[1]) / (high[1] - low[1]),
-				};
-
-				const vec2 smoothstep =
-				{
-					6*t[0]*t[0]*t[0]*t[0]*t[0] - 15*t[0]*t[0]*t[0]*t[0] + 10*t[0]*t[0]*t[0],
-					6*t[1]*t[1]*t[1]*t[1]*t[1] - 15*t[1]*t[1]*t[1]*t[1] + 10*t[1]*t[1]*t[1],
-				};
-
-				//if (i == OCTAVES-4)
-				//{
-				//fprintf(stderr, "(%u, %u) -> (%u, %u), (%u, %u)\n", x, z, x_low, z_low, x_high, z_high);
-				////fprintf(stderr, "%f, %f\n", low[0], low[1]);
-				//fprintf(stderr, "%f, %f\n", t[0], t[1]);
-				////fprintf(stderr, "%f, %f\n", smoothstep[0], smoothstep[1]);
-				//}
-
-				const f32 vb = bl_dot*(1.0f - smoothstep[0]) + br_dot*smoothstep[0];
-				const f32 vt = tl_dot*(1.0f - smoothstep[0]) + tr_dot*smoothstep[0];
-				const f32 perlin = vb*(1.0f - smoothstep[1]) + vt*smoothstep[1];
-
-				mesh.v[x*(n-1) + z].buf[1] += perlin * amplitude;
+				p->y += perlin * amplitude;
 				amplitude *= 2.0f;
 			}
 
-			mesh.v[x*(n-1) + z].buf[0] += offset[0];
-			mesh.v[x*(n-1) + z].buf[1] += offset[1];
-			mesh.v[x*(n-1) + z].buf[2] += offset[2];
+			*p = V3Add(*p, offset);
 		}
 	}
 
@@ -1000,23 +939,18 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 	{
 		for (u32 z = 0; z < n-2; ++z)
 		{
-			mesh.tri[2*(x*(n-2) + z) + 0].buf[0] = x*(n-1) + z; 
-			mesh.tri[2*(x*(n-2) + z) + 0].buf[1] = x*(n-1) + z+1;
-			mesh.tri[2*(x*(n-2) + z) + 0].buf[2] = (x+1)*(n-1) + z; 
-			mesh.tri[2*(x*(n-2) + z) + 1].buf[0] = (x+1)*(n-1) + z; 
-			mesh.tri[2*(x*(n-2) + z) + 1].buf[1] = x*(n-1) + z+1;
-			mesh.tri[2*(x*(n-2) + z) + 1].buf[2] = (x+1)*(n-1) + z+1;
+			mesh.tri[2*(x*(n-2) + z) + 0] = V3U32(x*(n-1) + z, x*(n-1) + z+1, (x+1)*(n-1) + z);
+			mesh.tri[2*(x*(n-2) + z) + 1] = V3U32((x+1)*(n-1) + z, x*(n-1) + z+1, (x+1)*(n-1) + z+1);
 		}
 	}
 
 	ArenaPopScratch();
 
-	struct aabb bbox = TriMeshBbox(&mesh);
-	vec3 local_origin;
-	Vec3Scale(local_origin, bbox.center.buf, -1.0f);
+	const struct aabb bbox = TriMeshBbox(&mesh);
+	const v3 local_origin = V3Scale(bbox.center, -1.0f);
 	for (u32 i = 0; i < mesh.v_count; ++i)
 	{
-		Vec3Translate(mesh.v[i].buf, local_origin);
+		mesh.v[i] = V3Add(mesh.v[i], local_origin);
 	}
 
 	return mesh;
@@ -1057,23 +991,23 @@ void led_RopeSetup(struct led *led)
 	const f32 ramp_length = 60.0f;
 	const f32 ramp_height = 34.0f;
 	const u32 v_count = 6;
-	vec3 ramp_vertices[6] = 
+	v3 ramp_vertices[6] = 
 	{
-		{0.0f, 		    ramp_height,	-ramp_length},
-		{ramp_width, 	ramp_height, 	-ramp_length},
-		{0.0f, 		    0.0f, 		    -ramp_length},
-		{ramp_width, 	0.0f, 		    -ramp_length},
-		{0.0f, 		    0.0f, 		    0.0f},
-		{ramp_width, 	0.0f, 		    0.0f},
+		V3(0.0f, ramp_height, -ramp_length),
+		V3(ramp_width, ramp_height, -ramp_length),
+		V3(0.0f, 0.0f, -ramp_length),
+		V3(ramp_width, 0.0f, -ramp_length),
+		V3(0.0f, 0.0f, 0.0f),
+		V3(ramp_width, 0.0f, 0.0f),
 	};
 
 
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_ceil");
-    const vec3 ceil_hw = { 10.0f, 0.25f, 0.25f };
+    const v3 ceil_hw = V3(10.0f, 0.25f, 0.25f);
     led_CollisionBoxAdd(led, id, ceil_hw);
 
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_floor");
-    const vec3 floor_hw = { 10.0f, 0.5f, 10.0f };
+    const v3 floor_hw = V3(10.0f, 0.5f, 10.0f);
     led_CollisionBoxAdd(led, id, floor_hw);
 
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_capsule");
@@ -1108,8 +1042,8 @@ void led_RopeSetup(struct led *led)
     ds_Id rope_id[ROPE_COUNT + 1];
     ds_Transform rope_t[ROPE_COUNT + 1];
 
-    vec3 ceil_transform = { 5.0f, 3.0f, 15.0f };
-    vec3 rope_base = { 5.0f, 2.75f - ceil_hw[1], 15.0f };
+    v3 ceil_transform = V3(5.0f, 3.0f, 15.0f);
+    v3 rope_base = V3(5.0f, 2.75f - ceil_hw.y, 15.0f);
 
 	id = Utf8Format(sys_win->ui->mem_frame, "led_ceil");
     rope_id[0] = led_NodeAdd(led, id, Utf8Empty());
@@ -1117,7 +1051,7 @@ void led_RopeSetup(struct led *led)
     led_NodeAttachRigidBodyPrefab(led, rope_id[0], Utf8Inline("rb_ceil"));
     led_NodeSetColor(led, rope_id[0], floor_color, 1.0f);
     rope_t[0] = ds_TransformIdentity();
-    Vec3Sub(rope_t[0].position.buf, ceil_transform, rope_base);
+    rope_t[0].position = V3Sub(ceil_transform, rope_base);
 
     struct ds_DistanceJointPrefab prefab;
     ds_DistanceJointPrefabDefault(&prefab);
@@ -1125,11 +1059,11 @@ void led_RopeSetup(struct led *led)
 
 	for (u32 i = 0; i < ROPE_COUNT; ++i)
 	{	
-		vec3 translation;
-		Vec3Copy(translation, rope_base);
-		translation[1] -= i*2.0f*(rope_half_height+rope_radius);
+		v3 translation;
+		translation = rope_base;
+		translation.y -= i*2.0f*(rope_half_height+rope_radius);
         rope_t[i+1] = ds_TransformIdentity();
-        Vec3Set(rope_t[i+1].position.buf, 0.0f, rope_half_height+rope_radius, 0.0f);
+        rope_t[i+1].position = V3(0.0f, rope_half_height+rope_radius, 0.0f);
 
 		id = Utf8Format(sys_win->ui->mem_frame, "rope_%u", i);
         rope_id[i+1] = led_NodeAdd(led, id, Utf8Empty());
@@ -1137,22 +1071,20 @@ void led_RopeSetup(struct led *led)
         led_NodeAttachRigidBodyPrefab(led, rope_id[i+1], Utf8Inline("rb_capsule"));
         led_NodeSetColor(led, rope_id[i+1], capsule_color, 1.0f);
         led_DistanceJointAdd(led, &prefab, rope_id[i], rope_t + i, rope_id[i+1], rope_t + i + 1, distance);
-        Vec3Set(rope_t[i+1].position.buf, 0.0f, -rope_half_height+rope_radius, 0.0f);
+        rope_t[i+1].position = V3(0.0f, -rope_half_height+rope_radius, 0.0f);
 	}
 
-	vec3 floor_translation = { 0.0f, -ramp_width/2.0f - 1.0f, ramp_length / 2.0f -ramp_width/2.0f};
+	v3 floor_translation = V3(0.0f, -ramp_width/2.0f - 1.0f, ramp_length / 2.0f -ramp_width/2.0f);
     for (u32 i = 0; i < floor_count; ++i)
     {
         const f32 fi = -(f32) floor_count/2.0f + i;
         for (u32 j = 0; j < floor_count; ++j)
         {
             const f32 fj = -(f32) floor_count/2.0f + j;
-            const vec3 floor_offset =
-            {
-                floor_translation[0] + fi*floor_hw[0]*2.0f,
-                floor_translation[1], 
-                floor_translation[2] + fj*floor_hw[2]*2.0f,
-            };
+            const v3 floor_offset = V3(
+                floor_translation.x + fi*floor_hw.x*2.0f,
+                floor_translation.y,
+                floor_translation.z + fj*floor_hw.z*2.0f);
 		    id = Utf8Format(sys_win->ui->mem_frame, "led_floor_%u_%u", i, j);
             tagged_id = led_NodeAdd(led, id, Utf8Empty());
             led_NodeSetPosition(led, tagged_id, floor_offset);
@@ -1223,37 +1155,34 @@ void led_WallSmashSimulationSetup(struct led *led)
 	const f32 ramp_length = 60.0f;
 	const f32 ramp_height = 34.0f;
 	const u32 v_count = 6;
-	vec3 ramp_vertices[6] = 
+	v3 ramp_vertices[6] = 
 	{
-		{0.0f, 		    ramp_height,	-ramp_length},
-		{ramp_width, 	ramp_height, 	-ramp_length},
-		{0.0f, 		    0.0f, 		    -ramp_length},
-		{ramp_width, 	0.0f, 		    -ramp_length},
-		{0.0f, 		    0.0f, 		    0.0f},
-		{ramp_width, 	0.0f, 		    0.0f},
+		V3(0.0f, ramp_height, -ramp_length),
+		V3(ramp_width, ramp_height, -ramp_length),
+		V3(0.0f, 0.0f, -ramp_length),
+		V3(ramp_width, 0.0f, -ramp_length),
+		V3(0.0f, 0.0f, 0.0f),
+		V3(ramp_width, 0.0f, 0.0f),
 	};
 
-	vec3 dsphere_vertices[dsphere_v_count];
-	const f32 phi = F32_PI * (3.0f - f32_sqrt(5.0f));
+	v3 dsphere_vertices[dsphere_v_count];
+	const f32 phi = F32_PI * (3.0f - F32Sqrt(5.0f));
 	for (u32 i = 0; i < dsphere_v_count; ++i)
 	{
 		const f32 y = 1.0 - i*2.0f/(dsphere_v_count-1);
-		Vec3Set(dsphere_vertices[i]
-				, f32_cos(i*phi)*f32_sqrt(1 - y*y)
-				, y
-				, f32_sin(i*phi)*f32_sqrt(1 - y*y));
+		dsphere_vertices[i] = V3(F32Cos(i*phi)*F32Sqrt(1 - y*y), y, F32Sin(i*phi)*F32Sqrt(1 - y*y));
 	}
 
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_floor");
-    const vec3 floor_hw = { 10.0f, 0.5f, 10.0f };
+    const v3 floor_hw = V3(10.0f, 0.5f, 10.0f);
     led_CollisionBoxAdd(led, id, floor_hw);
 
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_capsule");
     led_CollisionCapsuleAdd(led, id, 0.5f, 1.0f);
 
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_box");
-    //const vec3 box_hw = { box_side / 2.0f, box_side, box_side / 2.0f };
-    const vec3 box_hw = { box_side / 2.0f, box_side / 2.0f, box_side / 2.0f };
+    //const v3 box_hw = V3(box_side / 2.0f, box_side, box_side / 2.0f);
+    const v3 box_hw = V3(box_side / 2.0f, box_side / 2.0f, box_side / 2.0f);
     led_CollisionBoxAdd(led, id, box_hw);
 
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_sphere");
@@ -1263,12 +1192,12 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_CollisionSphereAdd(led, id, 0.5f);
 
 	struct dcel *c_ramp = ArenaPush(&sys_win->mem_persistent, sizeof(struct dcel));
-	*c_ramp = DcelConvexHull(&sys_win->mem_persistent, (v3 *) ramp_vertices, 6, F32_EPSILON * 100.0f);
+	*c_ramp = DcelConvexHull(&sys_win->mem_persistent, ramp_vertices, 6, F32_EPSILON * 100.0f);
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_ramp");
     led_CollisionDcelAdd(led, id, c_ramp);
 
 	struct dcel *c_dsphere = ArenaPush(&sys_win->mem_persistent, sizeof(struct dcel));
-	*c_dsphere = DcelConvexHull(&sys_win->mem_persistent, (v3 *) dsphere_vertices, dsphere_v_count, F32_EPSILON * 100.0f);
+	*c_dsphere = DcelConvexHull(&sys_win->mem_persistent, dsphere_vertices, dsphere_v_count, F32_EPSILON * 100.0f);
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_dsphere");
     led_CollisionDcelAdd(led, id, c_dsphere);
 
@@ -1346,54 +1275,54 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_dsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere"), &transform);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_ramp"), Utf8Inline("s_ramp"), Utf8Inline("l_s_ramp"), &transform);
 
-    Vec3Set(transform.position.buf, 0.0f, 0.0f, 0.0f);
+    transform.position = V3(0.0f, 0.0f, 0.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multibox"), Utf8Inline("s_box"), Utf8Inline("l_s_box0"), &transform);
-    Vec3Set(transform.position.buf, 2.0f, 0.0f, 0.0f);
+    transform.position = V3(2.0f, 0.0f, 0.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multibox"), Utf8Inline("s_box"), Utf8Inline("l_s_box1"), &transform);
-    Vec3Set(transform.position.buf, 0.0f, 0.0f, 2.0f);
+    transform.position = V3(0.0f, 0.0f, 2.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multibox"), Utf8Inline("s_box"), Utf8Inline("l_s_box2"), &transform);
-    Vec3Set(transform.position.buf, 2.0f, 0.0f, 2.0f);
+    transform.position = V3(2.0f, 0.0f, 2.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multibox"), Utf8Inline("s_box"), Utf8Inline("l_s_box3"), &transform);
-    Vec3Set(transform.position.buf, 0.0f, 1.0f, 0.0f);
+    transform.position = V3(0.0f, 1.0f, 0.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multibox"), Utf8Inline("s_box"), Utf8Inline("l_s_box4"), &transform);
-    Vec3Set(transform.position.buf, 2.0f, 1.0f, 0.0f);
+    transform.position = V3(2.0f, 1.0f, 0.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multibox"), Utf8Inline("s_box"), Utf8Inline("l_s_box5"), &transform);
-    Vec3Set(transform.position.buf, 0.0f, 1.0f, 2.0f);
+    transform.position = V3(0.0f, 1.0f, 2.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multibox"), Utf8Inline("s_box"), Utf8Inline("l_s_box6"), &transform);
-    Vec3Set(transform.position.buf, 2.0f, 1.0f, 2.0f);
+    transform.position = V3(2.0f, 1.0f, 2.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multibox"), Utf8Inline("s_box"), Utf8Inline("l_s_box7"), &transform);
 
-    Vec3Set(transform.position.buf, 0.0f, 0.0f, 0.0f);
+    transform.position = V3(0.0f, 0.0f, 0.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere0"), &transform);
-    Vec3Set(transform.position.buf, 2.0f, 0.0f, 0.0f);
+    transform.position = V3(2.0f, 0.0f, 0.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere1"), &transform);
-    Vec3Set(transform.position.buf, 0.0f, 0.0f, 2.0f);
+    transform.position = V3(0.0f, 0.0f, 2.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere2"), &transform);
-    Vec3Set(transform.position.buf, 2.0f, 0.0f, 2.0f);
+    transform.position = V3(2.0f, 0.0f, 2.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere3"), &transform);
-    Vec3Set(transform.position.buf, 0.0f, 1.0f, 0.0f);
+    transform.position = V3(0.0f, 1.0f, 0.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere4"), &transform);
-    Vec3Set(transform.position.buf, 2.0f, 1.0f, 0.0f);
+    transform.position = V3(2.0f, 1.0f, 0.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere5"), &transform);
-    Vec3Set(transform.position.buf, 0.0f, 1.0f, 2.0f);
+    transform.position = V3(0.0f, 1.0f, 2.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere6"), &transform);
-    Vec3Set(transform.position.buf, 2.0f, 1.0f, 2.0f);
+    transform.position = V3(2.0f, 1.0f, 2.0f);
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_multidsphere"), Utf8Inline("s_dsphere"), Utf8Inline("l_s_dsphere7"), &transform);
 
-	vec3 floor_translation = { 0.0f, -ramp_width/2.0f - 1.0f, ramp_length / 2.0f -ramp_width/2.0f};
-    //const vec3 mesh_translation = { 0.0f, -25.0f, 0.0f };
+	v3 floor_translation = V3(0.0f, -ramp_width/2.0f - 1.0f, ramp_length / 2.0f -ramp_width/2.0f);
+    //const v3 mesh_translation = V3(0.0f, -25.0f, 0.0f);
     
-    const vec3 mesh_translation = { 0.0f, -25.0f, 0.0f };
+    const v3 mesh_translation = V3(0.0f, -25.0f, 0.0f);
 
-	const vec3 sphere_translation = { -0.5, 0.5f + ramp_height, -ramp_length };
-	const vec3 box_translation =  {-0.5f, 0.0f, -0.5f};
-	const vec3 ramp_translation = {-5.0f , -5.0f, -15.0f};
-	const vec3 box_base_translation = { 0.0f, floor_translation[1] + 1.0f, floor_translation[2] / 2.0f};
-	const vec3 dsphere_base_translation = { -15.0f, floor_translation[1] + 1.0f, floor_translation[2] / 2.0f + 20.0f};
-    const vec3 multibox_base_translation = { 0.0f, floor_translation[1] + 1.0f, floor_translation[2] / 2.0f -10.0f };
-    const vec3 multidsphere_base_translation = { 0.0f, floor_translation[1] + 1.0f, floor_translation[2] / 2.0f -14.0f };
+	const v3 sphere_translation = V3(-0.5, 0.5f + ramp_height, -ramp_length);
+	const v3 box_translation = V3(-0.5f, 0.0f, -0.5f);
+	const v3 ramp_translation = V3(-5.0f, -5.0f, -15.0f);
+	const v3 box_base_translation = V3(0.0f, floor_translation.y + 1.0f, floor_translation.z / 2.0f);
+	const v3 dsphere_base_translation = V3(-15.0f, floor_translation.y + 1.0f, floor_translation.z / 2.0f + 20.0f);
+    const v3 multibox_base_translation = V3(0.0f, floor_translation.y + 1.0f, floor_translation.z / 2.0f -10.0f);
+    const v3 multidsphere_base_translation = V3(0.0f, floor_translation.y + 1.0f, floor_translation.z / 2.0f -14.0f);
 
-    floor_translation[1] -= 35.0f;
+    floor_translation.y -= 35.0f;
 
     id = Utf8Cstr(sys_win->ui->mem_frame, "led_mesh");
     tagged_id = led_NodeAdd(led, id, Utf8Empty());
@@ -1401,10 +1330,10 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_mesh"));
     led_NodeSetColor(led, tagged_id, mesh_color, 1.0f);
     struct led_Node *led_mesh = led->node_hierarchy.pool.buf + ds_IdIndex(tagged_id);
-	vec3 axis = { 0.6f, 1.0f, 0.6f };
-	Vec3ScaleSelf(axis, 1.0f / f32_sqrt(Vec3Length(axis)));
+	v3 axis = V3(0.6f, 1.0f, 0.6f);
+	axis = V3Scale(axis, 1.0f / F32Sqrt(V3Length(axis)));
 	const f32 angle = F32_PI / 16.0f;
-	QuatAxisAngle(led_mesh->transform.rotation.buf, axis, angle);
+	led_mesh->transform.rotation = QAxisAngle(axis, angle);
 
     for (u32 i = 0; i < floor_count; ++i)
     {
@@ -1412,12 +1341,10 @@ void led_WallSmashSimulationSetup(struct led *led)
         for (u32 j = 0; j < floor_count; ++j)
         {
             const f32 fj = -(f32) floor_count/2.0f + j;
-            const vec3 floor_offset =
-            {
-                floor_translation[0] + fi*floor_hw[0]*2.0f,
-                floor_translation[1], 
-                floor_translation[2] + fj*floor_hw[2]*2.0f,
-            };
+            const v3 floor_offset = V3(
+                floor_translation.x + fi*floor_hw.x*2.0f,
+                floor_translation.y,
+                floor_translation.z + fj*floor_hw.z*2.0f);
 		    id = Utf8Format(sys_win->ui->mem_frame, "led_floor_%u_%u", i, j);
             tagged_id = led_NodeAdd(led, id, Utf8Empty());
             led_NodeSetPosition(led, tagged_id, floor_offset);
@@ -1440,11 +1367,11 @@ void led_WallSmashSimulationSetup(struct led *led)
 
 	for (u32 i = 0; i < multibox_count; ++i)
     {
-        vec3 translation;
-		Vec3Copy(translation, multibox_base_translation);
-		translation[0] += 0.0f;
-		translation[1] += i*2.5f;
-		translation[2] += 0.0f;
+        v3 translation;
+		translation = multibox_base_translation;
+		translation.x += 0.0f;
+		translation.y += i*2.5f;
+		translation.z += 0.0f;
 
 		id = Utf8Format(sys_win->ui->mem_frame, "multibox_%u", i);
         tagged_id = led_NodeAdd(led, id, Utf8Empty());
@@ -1455,11 +1382,11 @@ void led_WallSmashSimulationSetup(struct led *led)
 
 	for (u32 i = 0; i < multibox_count; ++i)
     {
-        vec3 translation;
-		Vec3Copy(translation, multidsphere_base_translation);
-		translation[0] += 0.0f;
-		translation[1] += i*4.0f;
-		translation[2] += 0.0f;
+        v3 translation;
+		translation = multidsphere_base_translation;
+		translation.x += 0.0f;
+		translation.y += i*4.0f;
+		translation.z += 0.0f;
 
 		id = Utf8Format(sys_win->ui->mem_frame, "multidsphere_%u", i);
         tagged_id = led_NodeAdd(led, id, Utf8Empty());
@@ -1470,11 +1397,11 @@ void led_WallSmashSimulationSetup(struct led *led)
 
 	for (u32 i = 0; i < capsule_count; ++i)
 	{	
-		vec3 translation;
-		Vec3Copy(translation, dsphere_base_translation);
-		translation[0] += (10.0f - 38.0f * (f32) i / capsule_count) * f32_cos(i * F32_PI*37.0f/197.0f);
-		translation[1] += 25.0f + (f32) i / 2.0f;
-		translation[2] += (10.0f - 38.0f * (f32) i / capsule_count) * f32_sin(i * F32_PI*37.0f/197.0f);
+		v3 translation;
+		translation = dsphere_base_translation;
+		translation.x += (10.0f - 38.0f * (f32) i / capsule_count) * F32Cos(i * F32_PI*37.0f/197.0f);
+		translation.y += 25.0f + (f32) i / 2.0f;
+		translation.z += (10.0f - 38.0f * (f32) i / capsule_count) * F32Sin(i * F32_PI*37.0f/197.0f);
 
 		id = Utf8Format(sys_win->ui->mem_frame, "capsule_%u", i);
         tagged_id = led_NodeAdd(led, id, Utf8Empty());
@@ -1485,11 +1412,11 @@ void led_WallSmashSimulationSetup(struct led *led)
 
 	for (u32 i = 0; i < dsphere_count; ++i)
 	{	
-		vec3 translation;
-		Vec3Copy(translation, dsphere_base_translation);
-		translation[0] += (10.0f - 38.0f * (f32) i / dsphere_count) * f32_cos(i * F32_PI*37.0f/197.0f);
-		translation[1] += 5.0f + (f32) i / 2.0f;
-		translation[2] += (10.0f - 38.0f * (f32) i / dsphere_count) * f32_sin(i * F32_PI*37.0f/197.0f);
+		v3 translation;
+		translation = dsphere_base_translation;
+		translation.x += (10.0f - 38.0f * (f32) i / dsphere_count) * F32Cos(i * F32_PI*37.0f/197.0f);
+		translation.y += 5.0f + (f32) i / 2.0f;
+		translation.z += (10.0f - 38.0f * (f32) i / dsphere_count) * F32Sin(i * F32_PI*37.0f/197.0f);
 
 		id = Utf8Format(sys_win->ui->mem_frame, "dsphere_%u", i);
         tagged_id = led_NodeAdd(led, id, Utf8Empty());
@@ -1502,15 +1429,15 @@ void led_WallSmashSimulationSetup(struct led *led)
 	{
 		for (u32 i = 0; i < pyramid_layers; ++i)
 		{
-			const f32 local_y = i * box_hw[1]*4.0f;
+			const f32 local_y = i * box_hw.y*4.0f;
 			for (u32 j = 0; j < pyramid_layers-i; ++j)
 			{
 				const f32 local_x = j -(pyramid_layers-i-1) * box_side / 2.0f;
-				vec3 translation;
-				Vec3Copy(translation, box_base_translation);
-				translation[0] += local_x;
-				translation[1] += local_y;
-				translation[2] += 10.0f * k;
+				v3 translation;
+				translation = box_base_translation;
+				translation.x += local_x;
+				translation.y += local_y;
+				translation.z += 10.0f * k;
 
 				id = Utf8Format(sys_win->ui->mem_frame, "pyramid_%u_%u_%u", i, j, k);
                 tagged_id = led_NodeAdd(led, id, Utf8Empty());
@@ -1529,11 +1456,11 @@ void led_WallSmashSimulationSetup(struct led *led)
 		{
 			for (u32 i = 0; i < tower1_box_count; ++i)
 			{
-				vec3 translation;
-				Vec3Copy(translation, box_base_translation);
-				translation[2] += 15.0f + 2.0f*k;
-				translation[1] += (f32) i * box_hw[1] * 2.10f;
-				translation[0] += 15.0f + 2.0f*j;
+				v3 translation;
+				translation = box_base_translation;
+				translation.z += 15.0f + 2.0f*k;
+				translation.y += (f32) i * box_hw.y * 2.10f;
+				translation.x += 15.0f + 2.0f*j;
 
 				id = Utf8Format(sys_win->ui->mem_frame, "tower1_%u_%u_%u", i, j, k);
                 tagged_id = led_NodeAdd(led, id, Utf8Empty());
@@ -1550,11 +1477,11 @@ void led_WallSmashSimulationSetup(struct led *led)
         {
     		for (u32 i = 0; i <= j; ++i)
 			{
-				vec3 translation;
-				Vec3Copy(translation, box_base_translation);
-				translation[2] -= 15.0f + 2.0f*0;
-				translation[1] += (f32) i * box_hw[1] * 2.10f;
-				translation[0] -= 15.0f + 1.5f*j;
+				v3 translation;
+				translation = box_base_translation;
+				translation.z -= 15.0f + 2.0f*0;
+				translation.y += (f32) i * box_hw.y * 2.10f;
+				translation.x -= 15.0f + 1.5f*j;
 			
 				id = Utf8Format(sys_win->ui->mem_frame, "tower2_%u_%u_%u", i, j, 0);
                 tagged_id = led_NodeAdd(led, id, Utf8Empty());
@@ -1571,7 +1498,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 	//	{
 	//		for (u32 i = 0; i < tower2_box_count; ++i)
 	//		{
-	//			vec3 translation;
+	//			v3 translation;
 	//			Vec3Copy(translation, box_base_translation);
 	//			translation[2] += 15.0f + 2.0f*k;
 	//			translation[1] += (f32) i * box_aabb.hw[1] * 2.10f;

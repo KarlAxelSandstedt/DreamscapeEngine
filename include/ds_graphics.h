@@ -79,17 +79,17 @@ typedef struct ds_Window
 
 	u32			tagged_for_destruction; /* If tagged, free on next start of frame */
 	u32			text_input_mode;	/* If on, window is receiving text input events */ 
-	vec2u32			position;
-	vec2u32			size;
+	v2u32			position;
+	v2u32			size;
 
 	u32			gl_state;
 } ds_Window;
 HI_DECLARE(ds_Window);
 
 /* alloc system_window resources, if no gl context exist, allocate context as well. */
-u32 			ds_WindowAlloc(const char *title, const vec2u32 position, const vec2u32 size, const u32 parent);
+u32 			ds_WindowAlloc(const char *title, const v2u32 position, const v2u32 size, const u32 parent);
 /* alloc system_window resources AND set window to global root process window, if no gl context exist, allocate context as well. */
-u32 			ds_RootWindowAlloc(const char *title, const vec2u32 position, const vec2u32 size);
+u32 			ds_RootWindowAlloc(const char *title, const v2u32 position, const v2u32 size);
 /* handle sys_win->ui events */
 void 			ds_WindowEventHandler(struct ds_Window *sys_win);
 /* Tag sub-hierachy of root (including root itself) for destruction on next frame. */
@@ -115,11 +115,11 @@ void 			ds_WindowSwapGlBuffers(const u32 window);
 /* update system_window configuration */
 void			ds_WindowConfigUpdate(const u32 window);
 /* get system_window size */
-void			ds_WindowSize(vec2u32 size, const u32 window);
+v2u32			ds_WindowSize(const u32 window);
 
 
 /* set rectangle within window that cursor is restricted to */
-void 			ds_CursorSetRectangle(struct ds_Window *sys_win, const vec2 sys_position, const vec2 size);
+void 			ds_CursorSetRectangle(struct ds_Window *sys_win, const v2 sys_position, const v2 size);
 /* release any rectangle restriction */
 void 			ds_CursorUnsetRectangle(struct ds_Window *sys_win);
 /* return 1 if cursor is locked, 0 otherwise */

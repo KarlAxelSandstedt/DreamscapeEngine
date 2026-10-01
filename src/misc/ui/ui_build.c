@@ -685,7 +685,7 @@ void ui_PopupBuild(void)
 	ds_WindowSetGlobal(popup->window);
 	CmdQueueExecute();
 
-	ui_FrameBegin(V2U32(win->size[0], win->size[1]), visual);
+	ui_FrameBegin(win->size, visual);
 	ui_TextAlignX(ALIGN_X_CENTER)
 	ui_TextAlignY(ALIGN_Y_CENTER)
 	ui_Parent(ui_NodeAllocF(UI_DRAW_BACKGROUND | UI_DRAW_BORDER, "###popup_%u", popup->window).index)
@@ -800,7 +800,7 @@ void ui_PopupUtf8Display(struct ui_Popup *popup, const utf8 display, const char 
 {
 	if (popup->state == UI_POPUP_STATE_NULL)
 	{
-		popup->window = ds_WindowAlloc(title, Vec2U32Inline(0,0), Vec2U32Inline(600, 200), g_window);
+		popup->window = ds_WindowAlloc(title, V2U32(0, 0), V2U32(600, 200), g_window);
 		if ((i32) popup->window != HI_NULL)
 		{
 			struct ds_Window *win = ds_WindowAddress(popup->window);
@@ -819,7 +819,7 @@ void ui_PopupUtf8Input(struct ui_Popup *popup, utf8 *input, struct ui_TextInput 
 {
 	if (popup->state == UI_POPUP_STATE_NULL)
 	{
-		popup->window = ds_WindowAlloc(title, Vec2U32Inline(0,0), Vec2U32Inline(600, 200), g_window);
+		popup->window = ds_WindowAlloc(title, V2U32(0, 0), V2U32(600, 200), g_window);
 		if ((i32) popup->window != HI_NULL)
 		{
 			struct ds_Window *win = ds_WindowAddress(popup->window);
@@ -841,7 +841,7 @@ void ui_PopupChoice(struct ui_Popup *popup, const utf8 description, const utf8 p
 {
 	if (popup->state == UI_POPUP_STATE_NULL)
 	{
-		popup->window = ds_WindowAlloc(title, Vec2U32Inline(0,0), Vec2U32Inline(600, 200), g_window);
+		popup->window = ds_WindowAlloc(title, V2U32(0, 0), V2U32(600, 200), g_window);
 		if ((i32) popup->window != HI_NULL)
 		{
 			struct ds_Window *win = ds_WindowAddress(popup->window);
