@@ -52,22 +52,22 @@ extern "C" {
 	
 	#define AtomicFetchAddRlx32(fetch_addr, val)	__atomic_fetch_add(fetch_addr, val, ATOMIC_RELAXED)
 	#define AtomicFetchAddAcq32(fetch_addr, val)	__atomic_fetch_add(fetch_addr, val, ATOMIC_ACQUIRE)
-	#define AtomicFetchAddRel32(fetch_addr, val)	__atomic_fetch_add(fetch_addr, val, ATOMIC_RELAXED)
+	#define AtomicFetchAddRel32(fetch_addr, val)	__atomic_fetch_add(fetch_addr, val, ATOMIC_RELEASE)
 	#define AtomicFetchAddSeqCst32(fetch_addr, val)	__atomic_fetch_add(fetch_addr, val, ATOMIC_SEQ_CST)
 	
 	#define AtomicFetchAddRlx64(fetch_addr, val)	__atomic_fetch_add(fetch_addr, val, ATOMIC_RELAXED)
 	#define AtomicFetchAddAcq64(fetch_addr, val)	__atomic_fetch_add(fetch_addr, val, ATOMIC_ACQUIRE)
-	#define AtomicFetchAddRel64(fetch_addr, val)	__atomic_fetch_add(fetch_addr, val, ATOMIC_RELAXED)
+	#define AtomicFetchAddRel64(fetch_addr, val)	__atomic_fetch_add(fetch_addr, val, ATOMIC_RELEASE)
 	#define AtomicFetchAddSeqCst64(fetch_addr, val)	__atomic_fetch_add(fetch_addr, val, ATOMIC_SEQ_CST)
 	
 	#define AtomicFetchSubRlx32(fetch_addr, val)	__atomic_fetch_sub(fetch_addr, val, ATOMIC_RELAXED)
 	#define AtomicFetchSubAcq32(fetch_addr, val)	__atomic_fetch_sub(fetch_addr, val, ATOMIC_ACQUIRE)
-	#define AtomicFetchSubRel32(fetch_addr, val)	__atomic_fetch_sub(fetch_addr, val, ATOMIC_RELAXED)
+	#define AtomicFetchSubRel32(fetch_addr, val)	__atomic_fetch_sub(fetch_addr, val, ATOMIC_RELEASE)
 	#define AtomicFetchSubSeqCst32(fetch_addr, val)	__atomic_fetch_sub(fetch_addr, val, ATOMIC_SEQ_CST)
 	                                                                       
 	#define AtomicFetchSubRlx64(fetch_addr, val)	__atomic_fetch_sub(fetch_addr, val, ATOMIC_RELAXED)
 	#define AtomicFetchSubAcq64(fetch_addr, val)	__atomic_fetch_sub(fetch_addr, val, ATOMIC_ACQUIRE)
-	#define AtomicFetchSubRel64(fetch_addr, val)	__atomic_fetch_sub(fetch_addr, val, ATOMIC_RELAXED)
+	#define AtomicFetchSubRel64(fetch_addr, val)	__atomic_fetch_sub(fetch_addr, val, ATOMIC_RELEASE)
 	#define AtomicFetchSubSeqCst64(fetch_addr, val)	__atomic_fetch_sub(fetch_addr, val, ATOMIC_SEQ_CST)
 	
 	#define AtomicCompareExchangeRlxRlx32(dst_addr, cmp_addr, exch_val)	    __atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_RELAXED, ATOMIC_RELAXED)
@@ -75,7 +75,6 @@ extern "C" {
 	#define AtomicCompareExchangeAcqAcq32(dst_addr, cmp_addr, exch_val)	    __atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_ACQUIRE, ATOMIC_ACQUIRE)
 	#define AtomicCompareExchangeRelRlx32(dst_addr, cmp_addr, exch_val)	    __atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_RELEASE, ATOMIC_RELAXED)
 	#define AtomicCompareExchangeRelAcq32(dst_addr, cmp_addr, exch_val)	    __atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_RELEASE, ATOMIC_ACQUIRE)
-	#define AtomicCompareExchangeAcqRelAcq32(dst_addr, cmp_addr, exch_val)	__atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_ACQ_REL, ATOMIC_ACQUIRE)
 	#define AtomicCompareExchangeAcqRelAcq32(dst_addr, cmp_addr, exch_val)	__atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_ACQ_REL, ATOMIC_ACQUIRE)
 	#define AtomicCompareExchangeSeqCstRlx32(dst_addr, cmp_addr, exch_val)	__atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_SEQ_CST, ATOMIC_RELAXED)
 	#define AtomicCompareExchangeSeqCst32(dst_addr, cmp_addr, exch_val)	    __atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST)
@@ -85,7 +84,6 @@ extern "C" {
 	#define AtomicCompareExchangeAcqAcq64(dst_addr, cmp_addr, exch_val)	    __atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_ACQUIRE, ATOMIC_ACQUIRE)
 	#define AtomicCompareExchangeRelRlx64(dst_addr, cmp_addr, exch_val)	    __atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_RELEASE, ATOMIC_RELAXED)
 	#define AtomicCompareExchangeRelAcq64(dst_addr, cmp_addr, exch_val)	    __atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_RELEASE, ATOMIC_ACQUIRE)
-	#define AtomicCompareExchangeAcqRelAcq64(dst_addr, cmp_addr, exch_val)	__atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_ACQ_REL, ATOMIC_ACQUIRE)
 	#define AtomicCompareExchangeAcqRelAcq64(dst_addr, cmp_addr, exch_val)	__atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_ACQ_REL, ATOMIC_ACQUIRE)
 	#define AtomicCompareExchangeSeqCstRlx64(dst_addr, cmp_addr, exch_val)	__atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_SEQ_CST, ATOMIC_RELAXED)
 	#define AtomicCompareExchangeSeqCst64(dst_addr, cmp_addr, exch_val)	    __atomic_compare_exchange_n(dst_addr, cmp_addr, exch_val, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST)
@@ -137,11 +135,11 @@ extern "C" {
 	#define AtomicLoadToAddrSeqCst64(fetch_addr, dst_addr)	__atomic_load(fetch_addr, dst_addr, ATOMIC_SEQ_CST)
 	
 	#define AtomicStoreFromAddrRlx32(dst_addr, src_addr)	__atomic_store(dst_addr, src_addr, ATOMIC_RELAXED)
-	#define AtomicStoreFromAddrRel32(dst_addr, src_addr)	__atomic_store(dst_addr, src_addr, ATOMIC_ACQUIRE)
+	#define AtomicStoreFromAddrRel32(dst_addr, src_addr)	__atomic_store(dst_addr, src_addr, ATOMIC_RELEASE)
 	#define AtomicStoreFromAddrSeqCst32(dst_addr, src_addr)	__atomic_store(dst_addr, src_addr, ATOMIC_SEQ_CST)
 	                                                                         
 	#define AtomicStoreFromAddrRlx64(dst_addr, src_addr)	__atomic_store(dst_addr, src_addr, ATOMIC_RELAXED)
-	#define AtomicStoreFromAddrRel64(dst_addr, src_addr)	__atomic_store(dst_addr, src_addr, ATOMIC_ACQUIRE)
+	#define AtomicStoreFromAddrRel64(dst_addr, src_addr)	__atomic_store(dst_addr, src_addr, ATOMIC_RELEASE)
 	#define AtomicStoreFromAddrSeqCst64(dst_addr, src_addr)	__atomic_store(dst_addr, src_addr, ATOMIC_SEQ_CST)
 	
 	/********************  Overflow Checking ********************/
@@ -265,7 +263,6 @@ extern "C" {
 	
 	#define AtomicSubFetchRlx32(fetch_addr, val)	(AtomicFetchSubRlx32(fetch_addr, val) - ((long) val))
 	#define AtomicSubFetchAcq32(fetch_addr, val)	(AtomicFetchSubAcq32(fetch_addr, val) - ((long) val))
-	#define AtomicSubFetchRel32(fetch_addr, val)	(AtomicFetchSubRel32(fetch_addr, val) - ((long) val))
 	#define AtomicSubFetchRel32(fetch_addr, val)	(AtomicFetchSubRel32(fetch_addr, val) - ((long) val))
 	#define AtomicSubFetchSeqCst32(fetch_addr, val)	(AtomicFetchSubSeqCst32(fetch_addr, val) - ((long) val))
 	                                                                                                      
