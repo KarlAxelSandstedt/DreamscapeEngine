@@ -71,10 +71,10 @@ void 	r_EditorMain(const struct led *led);
 
 struct r_Camera 
 {
-	vec3 position;
-	vec3 up;
-	vec3 forward;
-	vec3 left;
+	v3 position;
+	v3 up;
+	v3 forward;
+	v3 left;
 	f32 yaw;
 	f32 pitch;
 	f32 fz_near;
@@ -94,10 +94,10 @@ struct r_Camera
  * aspect_ratio - w/h
  */
 void r_CameraConstruct(struct r_Camera *cam,
-		const vec3 position,
-	       	const vec3 left,
-	       	const vec3 up,
-	       	const vec3 forward,
+		const v3 position,
+	       	const v3 left,
+	       	const v3 up,
+	       	const v3 forward,
 		const f32 yaw,
 		const f32 pitch,
 	       	const f32 fz_near,
@@ -114,7 +114,7 @@ void r_CameraConstruct(struct r_Camera *cam,
  * fz_far - distance to farther frustum plane (AFFECTS Depth calculations, see Z-fighting)
  * aspect_ratio - w/h
  */
-struct r_Camera	r_CameraInit(const vec3 position, const vec3 direction, const f32 fz_near, const f32 fz_far, const f32 aspect_ratio, const f32 fov_x);
+struct r_Camera	r_CameraInit(const v3 position, const v3 direction, const f32 fz_near, const f32 fz_far, const f32 aspect_ratio, const f32 fov_x);
 /* update camera axes from its rotation */
 void 		r_CameraUpdateAxes(struct r_Camera *cam);
 /* update camera angles */
@@ -125,21 +125,21 @@ void 		r_CameraDebugPrint(const struct r_Camera *cam);
 /*
  * camera2d transform: transform world space coordinates to screen space
  *
- * W_to_AS: Column-Major matrix applying the transform [-w/2, -h/2] x [w/2, h/2] => [-1.0f, -1.0f] x [1.0f, 1.0f]
+ * return W_to_AS: Column-Major matrix applying the transform [-w/2, -h/2] x [w/2, h/2] => [-1.0f, -1.0f] x [1.0f, 1.0f]
  * view_center: center of viewable zone 
  * view_size: size of viewable zone 
  */
-void 		r_Camera2dTransform(mat3 W_to_AS, const vec2 view_center, const f32 view_height, const f32 view_aspect_ratio);
+m3 		r_Camera2dTransform(const v2 view_center, const f32 view_height, const f32 view_aspect_ratio);
 
 /* Retrieve side lengths of frustum projection plane */
 void 		FrustumProjectionPlaneSides(f32 *width, f32 *height, const f32 plane_distance, const f32 fov_x, const f32 aspect_ratio);
 /* Retreive camera frustum plane in world space coordinates */
-void 		FrustumProjectionPlaneWorldSpace(vec3 bottom_left, vec3 upper_right, const struct r_Camera *cam);
+void 		FrustumProjectionPlaneWorldSpace(v3 *bottom_left, v3 *upper_right, const struct r_Camera *cam);
 /* Retreive camera frustum plane in camera space coordinates */
-void 		FrustumProjectionPlaneCameraSpace(vec3 bottom_left, vec3 upper_right, const struct r_Camera *cam);
+void 		FrustumProjectionPlaneCameraSpace(v3 *bottom_left, v3 *upper_right, const struct r_Camera *cam);
 
 /* maps window pixel to position in world */
-void 		WindowSpaceToWorldSpace(vec3 world_pixel, const vec2 pixel, const vec2 win_size, const struct r_Camera *cam);
+v3 		WindowSpaceToWorldSpace(const v2 pixel, const v2 win_size, const struct r_Camera *cam);
 
 /************************************** Draw Command Key Layout and Macros ***************************************/
 
@@ -263,12 +263,12 @@ struct r_Proxy3d_config
 	u64	ns_time;
 	u32	parent;
 
-	vec3	position;
-	quat	rotation;
-	vec3	linear_velocity;
-	vec3	angular_velocity;
+	v3	position;
+	q	rotation;
+	v3	linear_velocity;
+	v3	angular_velocity;
 
-	vec4 	color;
+	v4 	color;
 	f32	blend;		/* percentage of color vs. texture */
 	utf8	mesh;
 };
@@ -281,23 +281,23 @@ typedef struct r_Proxy3d
     HI_NODE;
 
 	u32	flags;
-	vec3	spec_position;
-	vec4	spec_rotation;
+	v3	spec_position;
+	q	spec_rotation;
 
 	u64	ns_at_update;	/* ns elapsed at the time of last update to position and rotation */
-	vec3	position;	/* position of unit; interpreted according to its pos_type.  */
-	quat	rotation;
+	v3	position;	/* position of unit; interpreted according to its pos_type.  */
+	q	rotation;
 
 	u32	mesh;
-	vec4	color;		
+	v4	color;		
 	f32	blend;	
 
 	union
 	{
 		struct 
 		{
-			vec3	linear_velocity;
-			vec3	angular_velocity;
+			v3	linear_velocity;
+			v3	angular_velocity;
 		} linear;
 	};
 } r_Proxy3d;
@@ -310,7 +310,7 @@ void			r_Proxy3dDealloc(struct arena *tmp, const u32 proxy);
 /* return the proxy3d of the unit given that the unit exist and has a proxy3d; otherwise return NULL. */
 struct r_Proxy3d *	r_Proxy3dAddress(const u32 proxy);
 /* set the proxy */
-void 			r_Proxy3dLinearSpeculationSet(const vec3 position, const quat rotation, const vec3 linear_velocity, const vec3 angular_velocity, const u64 ns_time, const u32 proxy);
+void 			r_Proxy3dLinearSpeculationSet(const v3 position, const q rotation, const v3 linear_velocity, const v3 angular_velocity, const u64 ns_time, const u32 proxy);
 
 /********************************************************
  *			r_scene.c			*
@@ -486,17 +486,17 @@ void 	gl_StateSetCurrent(const u32 gl_state);
 typedef struct r_ColorSegment 
 {
 	struct segment	segment;
-	vec4		    color;
+	v4		        color;
 } r_ColorSegment;
 DEFINE_CPOOL_STRUCT(r_ColorSegment);
 
-static inline struct r_ColorSegment	r_ColorSegmentConstruct(const struct segment segment, const vec4 color)
+static inline struct r_ColorSegment	r_ColorSegmentConstruct(const struct segment segment, const v4 color)
 {
 	struct r_ColorSegment visual =
 	{
 		.segment = segment,
+		.color = color,
 	};
-	Vec4Copy(visual.color, color);
 	return visual;
 }
 

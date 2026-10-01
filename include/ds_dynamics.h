@@ -939,7 +939,7 @@ struct ds_Island
     struct ds_DLL   joint_list;
 
 //TODO RMEOVE
-	vec4 color;
+	v4 color;
 };
 POOL_DECLARE(ds_Island);
 

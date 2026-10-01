@@ -46,20 +46,20 @@ void r_Proxy3dBufferSharedLayoutSet(void)
 	ds_glVertexAttribDivisor(2, 1);
 }
 
-void r_Proxy3dLinearSpeculationSet(const vec3 position, const quat rotation, const vec3 linear_velocity, const vec3 angular_velocity, const u64 ns_time, const u32 proxy_index)
+void r_Proxy3dLinearSpeculationSet(const v3 position, const q rotation, const v3 linear_velocity, const v3 angular_velocity, const u64 ns_time, const u32 proxy_index)
 {
 	struct r_Proxy3d *proxy = r_Proxy3dAddress(proxy_index);
 
 	proxy->flags &= ~(PROXY3D_SPECULATE_FLAGS | PROXY3D_MOVING);
 	proxy->flags |= PROXY3D_SPECULATE_LINEAR;
 	proxy->ns_at_update = ns_time;
-	Vec3Copy(proxy->position, position);
-	QuatCopy(proxy->rotation, rotation);
-	Vec3Copy(proxy->spec_position, position);
-	QuatCopy(proxy->spec_rotation, rotation);
-	Vec3Copy(proxy->linear.linear_velocity, linear_velocity);
-	Vec3Copy(proxy->linear.angular_velocity, angular_velocity);
-	if (Vec3Dot(linear_velocity, linear_velocity) + Vec3Dot(angular_velocity, angular_velocity) > 0.0f)
+	proxy->position = position;
+	proxy->rotation = rotation;
+	proxy->spec_position = position;
+	proxy->spec_rotation = rotation;
+	proxy->linear.linear_velocity = linear_velocity;
+	proxy->linear.angular_velocity = angular_velocity;
+	if (V3Dot(linear_velocity, linear_velocity) + V3Dot(angular_velocity, angular_velocity) > 0.0f)
 	{
 		proxy->flags |= PROXY3D_MOVING;
 	}
@@ -74,7 +74,7 @@ u32 r_Proxy3dAlloc(const struct r_Proxy3d_config *config)
 		: PROXY3D_DRAW;
 
 	proxy->mesh = r_MeshSDBReference(g_r_core->mesh_database, config->mesh).index;
-	Vec4Copy(proxy->color, config->color);
+	proxy->color = config->color;
 	proxy->blend = config->blend;
 
 	r_Proxy3dLinearSpeculationSet(config->position, config->rotation, config->linear_velocity, config->angular_velocity, config->ns_time, slot.index);
@@ -106,26 +106,20 @@ static void r_InternalProxy3dLocalSpeculativeOrientation(struct r_Proxy3d *proxy
 	{
 		case PROXY3D_SPECULATE_LINEAR:
 		{
-			proxy->spec_position[0] = proxy->position[0] + proxy->linear.linear_velocity[0] * timestep;
-			proxy->spec_position[1] = proxy->position[1] + proxy->linear.linear_velocity[1] * timestep;
-			proxy->spec_position[2] = proxy->position[2] + proxy->linear.linear_velocity[2] * timestep;
+			proxy->spec_position = V3AddScaled(proxy->position, proxy->linear.linear_velocity, timestep);
 
-			quat a_vel_quat, rot_delta;
-			QuatSet(a_vel_quat, 
-					proxy->linear.angular_velocity[0], 
-					proxy->linear.angular_velocity[1], 
-					proxy->linear.angular_velocity[2],
-				      	0.0f);
-			QuatMul(rot_delta, a_vel_quat, proxy->rotation);
-			QuatScale(rot_delta, timestep / 2.0f);
-			QuatAdd(proxy->spec_rotation, proxy->rotation, rot_delta);
-			QuatNormalize(proxy->spec_rotation);	
+			const q a_vel_quat = Q(proxy->linear.angular_velocity.x, 
+					       proxy->linear.angular_velocity.y, 
+					       proxy->linear.angular_velocity.z,
+					       0.0f);
+			const q rot_delta = QScale(QMul(a_vel_quat, proxy->rotation), timestep / 2.0f);
+			proxy->spec_rotation = QNormalize(QAdd(proxy->rotation, rot_delta));
 		} break;
 		
 		default:
 		{
-			Vec3Copy(proxy->spec_position, proxy->position);	
-			QuatCopy(proxy->spec_rotation, proxy->rotation);	
+			proxy->spec_position = proxy->position;	
+			proxy->spec_rotation = proxy->rotation;	
 		} break;
 	}	
 }
@@ -154,20 +148,12 @@ void r_Proxy3dHierarchySpeculate(struct arena *mem, const u64 ns_time)
 			const struct r_Proxy3d *parent = r_Proxy3dAddress(proxy->hi_parent);
 			if ((proxy->flags & PROXY3D_MOVING) == 0)
 			{
-				Vec3Copy(proxy->spec_position, proxy->position);	
-				QuatCopy(proxy->spec_rotation, proxy->rotation);	
+				proxy->spec_position = proxy->position;	
+				proxy->spec_rotation = proxy->rotation;	
 			}
 
-            vec3 tmp;
-            mat3 rot;
-            Mat3Quat(rot, parent->spec_rotation);
-            Mat3VecMul(tmp, rot, proxy->spec_position);
-            Vec3Add(proxy->spec_position, tmp, parent->spec_position);
-
-			quat q_tmp;
-			QuatCopy(q_tmp, proxy->spec_rotation);
-			QuatMul(proxy->spec_rotation, parent->spec_rotation, q_tmp);
-            QuatNormalize(proxy->spec_rotation);
+            proxy->spec_position = V3Add(M3V3Mul(M3Q(parent->spec_rotation), proxy->spec_position), parent->spec_position);
+            proxy->spec_rotation = QNormalize(QMul(parent->spec_rotation, proxy->spec_rotation));
 		}
 	}
 	ArenaPopRecord(mem);

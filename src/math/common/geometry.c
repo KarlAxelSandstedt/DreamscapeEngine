@@ -24,7 +24,6 @@
 #include "ds_float.h"
 #include "ds_vector.h"
 #include "ds_matrix.h"
-#include "ds_math_bridge.h"
 #include "ds_hash_map.h"
 #include "list.h"
 #include "queue.h"
@@ -620,60 +619,60 @@ u32 AabbRaycast(v3 *intersection, const struct aabb *aabb, const struct ray *ray
 	return AabbRaycastEx(intersection, aabb, ray, multiplier, dir_sign_bit);
 }
 
-u64 AabbPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const vec4 color)
+u64 AabbPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const v4 color)
 {
 	return AabbTransformPushLinesBuffered(buf, bufsize, box, V3Zero(), M3Identity(), color);
 }
 
-u64 AabbTransformPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const v3 translation, const m3 rotation, const vec4 color)
+u64 AabbTransformPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const v3 translation, const m3 rotation, const v4 color)
 {
-	const u64 bytes_written = 3*8*(sizeof(v3)+sizeof(vec4));
+	const u64 bytes_written = 3*8*(sizeof(v3)+sizeof(v4));
 	if (bufsize < bytes_written)
 	{
 		return 0;
 	}
 
 	const v3 end = V3Sub(box->center, box->hw);
+	const v3 line[24] =
+	{
+		V3(end.x, 		                end.y, 		            end.z),
+		V3(end.x + 2.0f*box->hw.x,    end.y, 		            end.z),
+		V3(end.x, 		                end.y, 		            end.z),
+		V3(end.x, 		                end.y + 2.0f*box->hw.y,   end.z),
+		V3(end.x, 		                end.y, 		            end.z),
+		V3(end.x, 		                end.y, 	                end.z + 2.0f*box->hw.z),
+
+		V3(end.x + 2.0f*box->hw.x,    end.y, 		            end.z),
+		V3(end.x + 2.0f*box->hw.x,    end.y + 2.0f*box->hw.y,   end.z),
+		V3(end.x + 2.0f*box->hw.x,    end.y, 		            end.z),
+		V3(end.x + 2.0f*box->hw.x,    end.y,                     end.z + 2.0f*box->hw.z),
+
+		V3(end.x, 		            end.y + 2.0f*box->hw.y,   end.z),
+		V3(end.x, 		            end.y + 2.0f*box->hw.y,   end.z + 2.0f*box->hw.z),
+		V3(end.x, 		            end.y + 2.0f*box->hw.y,   end.z),
+		V3(end.x + 2.0f*box->hw.x,   end.y + 2.0f*box->hw.y,   end.z),
+
+		V3(end.x, 		            end.y, 	                end.z + 2.0f*box->hw.z),
+		V3(end.x, 		            end.y + 2.0f*box->hw.y,   end.z + 2.0f*box->hw.z),
+		V3(end.x, 		            end.y, 	                end.z + 2.0f*box->hw.z),
+		V3(end.x + 2.0f*box->hw.x,   end.y, 	                end.z + 2.0f*box->hw.z),
+
+		V3(end.x + 2.0f*box->hw.x,   end.y + 2.0f*box->hw.y,   end.z),
+		V3(end.x + 2.0f*box->hw.x,   end.y + 2.0f*box->hw.y,   end.z + 2.0f*box->hw.z),
+
+		V3(end.x, 		            end.y + 2.0f*box->hw.y,   end.z + 2.0f*box->hw.z),
+		V3(end.x + 2.0f*box->hw.x,   end.y + 2.0f*box->hw.y,   end.z + 2.0f*box->hw.z),
+
+		V3(end.x + 2.0f*box->hw.x,   end.y, 	                end.z + 2.0f*box->hw.z),
+		V3(end.x + 2.0f*box->hw.x,   end.y + 2.0f*box->hw.y,   end.z + 2.0f*box->hw.z),
+	};
 
 	f32 *v = (f32*) buf;
-	V3Store(v+7*0, V3(end.x, 		                end.y, 		            end.z));
-	V3Store(v+7*1, V3(end.x + 2.0f*box->hw.x,    end.y, 		            end.z));
-	V3Store(v+7*2, V3(end.x, 		                end.y, 		            end.z));
-	V3Store(v+7*3, V3(end.x, 		                end.y + 2.0f*box->hw.y,   end.z));
-	V3Store(v+7*4, V3(end.x, 		                end.y, 		            end.z));
-	V3Store(v+7*5, V3(end.x, 		                end.y, 	                end.z + 2.0f*box->hw.z));
-
-	V3Store(v+7*6, V3(end.x + 2.0f*box->hw.x,    end.y, 		            end.z));
-	V3Store(v+7*7, V3(end.x + 2.0f*box->hw.x,    end.y + 2.0f*box->hw.y,   end.z));
-	V3Store(v+7*8, V3(end.x + 2.0f*box->hw.x,    end.y, 		            end.z));
-	V3Store(v+7*9, V3(end.x + 2.0f*box->hw.x,    end.y,                     end.z + 2.0f*box->hw.z));
-
-	V3Store(v+7*10, V3(end.x, 		            end.y + 2.0f*box->hw.y,   end.z));
-	V3Store(v+7*11, V3(end.x, 		            end.y + 2.0f*box->hw.y,   end.z + 2.0f*box->hw.z));
-	V3Store(v+7*12, V3(end.x, 		            end.y + 2.0f*box->hw.y,   end.z));
-	V3Store(v+7*13, V3(end.x + 2.0f*box->hw.x,   end.y + 2.0f*box->hw.y,   end.z));
-
-	V3Store(v+7*14, V3(end.x, 		            end.y, 	                end.z + 2.0f*box->hw.z));
-	V3Store(v+7*15, V3(end.x, 		            end.y + 2.0f*box->hw.y,   end.z + 2.0f*box->hw.z));
-	V3Store(v+7*16, V3(end.x, 		            end.y, 	                end.z + 2.0f*box->hw.z));
-	V3Store(v+7*17, V3(end.x + 2.0f*box->hw.x,   end.y, 	                end.z + 2.0f*box->hw.z));
-
-	V3Store(v+7*18, V3(end.x + 2.0f*box->hw.x,   end.y + 2.0f*box->hw.y,   end.z));
-	V3Store(v+7*19, V3(end.x + 2.0f*box->hw.x,   end.y + 2.0f*box->hw.y,   end.z + 2.0f*box->hw.z));
-
-	V3Store(v+7*20, V3(end.x, 		            end.y + 2.0f*box->hw.y,   end.z + 2.0f*box->hw.z));
-	V3Store(v+7*21, V3(end.x + 2.0f*box->hw.x,   end.y + 2.0f*box->hw.y,   end.z + 2.0f*box->hw.z));
-
-	V3Store(v+7*22, V3(end.x + 2.0f*box->hw.x,   end.y, 	                end.z + 2.0f*box->hw.z));
-	V3Store(v+7*23, V3(end.x + 2.0f*box->hw.x,   end.y + 2.0f*box->hw.y,   end.z + 2.0f*box->hw.z));
-
 	for (u32 i = 0; i < 24; ++i)
 	{
-		V3Store(v + 7*i, V3Add(M3V3Mul(rotation, V3Load(v + 7*i)), translation));
-		v[7*i + 3] = color[0];
-		v[7*i + 4] = color[1];
-		v[7*i + 5] = color[2];
-		v[7*i + 6] = color[3];
+		const v3 p = V3Add(M3V3Mul(rotation, line[i]), translation);
+		memcpy(v + 7*i + 0, &p, sizeof(v3));
+		memcpy(v + 7*i + 3, &color, sizeof(v4));
 	}
 
 	return bytes_written;

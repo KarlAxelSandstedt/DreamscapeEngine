@@ -256,12 +256,12 @@ static struct r_Mesh *DebugLinesMesh(struct arena *mem, const struct ds_Dynamics
 	{
 		for (u32 j = 0; j < pipeline->worker[i].draw.debug_segment_pool.count; ++j)
 		{
-			Vec3Copy((f32 *) vertex_data +  0, pipeline->worker[i].draw.debug_segment_pool.buf[j].segment.p[0].buf);
-			Vec4Copy((f32 *) vertex_data +  3, pipeline->worker[i].draw.debug_segment_pool.buf[j].color);
-			Vec3Copy((f32 *) vertex_data +  7, pipeline->worker[i].draw.debug_segment_pool.buf[j].segment.p[1].buf);
-			Vec4Copy((f32 *) vertex_data + 10, pipeline->worker[i].draw.debug_segment_pool.buf[j].color);
-			vertex_data += 2*(sizeof(vec3) + sizeof(vec4));
-			mem_left -= 2*(sizeof(vec3) + sizeof(vec4));
+			memcpy((f32 *) vertex_data +  0, &pipeline->worker[i].draw.debug_segment_pool.buf[j].segment.p[0], sizeof(v3));
+			memcpy((f32 *) vertex_data +  3, &pipeline->worker[i].draw.debug_segment_pool.buf[j].color, sizeof(v4));
+			memcpy((f32 *) vertex_data +  7, &pipeline->worker[i].draw.debug_segment_pool.buf[j].segment.p[1], sizeof(v3));
+			memcpy((f32 *) vertex_data + 10, &pipeline->worker[i].draw.debug_segment_pool.buf[j].color, sizeof(v4));
+			vertex_data += 2*(sizeof(v3) + sizeof(v4));
+			mem_left -= 2*(sizeof(v3) + sizeof(v4));
 		}
 	}
 	ds_Assert(mem_left == 0);
@@ -269,7 +269,7 @@ end:
 	return mesh;
 }
 
-static struct r_Mesh *BoundingBoxesMesh(struct arena *mem, const struct ds_Dynamics *pipeline, const vec4 color)
+static struct r_Mesh *BoundingBoxesMesh(struct arena *mem, const struct ds_Dynamics *pipeline, const v4 color)
 {
 	ArenaPushRecord(mem);
 	const u32 vertex_count = 3*8*pipeline->body_pool.count;
@@ -315,10 +315,9 @@ end:
 	return mesh;
 }
 
-static struct r_Mesh *bvh_Mesh(struct arena *mem, const struct bvh *bvh, const vec3 translation, const quat rotation, const vec4 color)
+static struct r_Mesh *bvh_Mesh(struct arena *mem, const struct bvh *bvh, const v3 translation, const q rotation, const v4 color)
 {
-	mat3 rot;
-	Mat3Quat(rot, rotation);
+	const m3 rot = M3Q(rotation);
 
 	ArenaPushRecord(mem);
 	const u32 vertex_count = 3*8*bvh->pool.count;
@@ -350,7 +349,7 @@ static struct r_Mesh *bvh_Mesh(struct arena *mem, const struct bvh *bvh, const v
 	while (sc--)
 	{
 	    u32 i = stack[sc];
-		const u64 bytes_written = AabbTransformPushLinesBuffered(vertex_data, mem_left, &nodes[i].bbox, V3Load(translation), M3Load(rot), color);
+		const u64 bytes_written = AabbTransformPushLinesBuffered(vertex_data, mem_left, &nodes[i].bbox, translation, rot, color);
 
         ds_Assert(bytes_written == 24*L_COLOR_STRIDE);
 		vertex_data += bytes_written;
@@ -390,7 +389,7 @@ static void r_EditorDraw(const struct led *led)
 	//	}
 	//}
 
-	const u32 depth_exponent = 1 + f32_exponent_bits(led->cam.fz_far);
+	const u32 depth_exponent = 1 + F32ExponentBits(led->cam.fz_far);
 	ds_Assert(depth_exponent >= 23);
 
 	r_Proxy3dHierarchySpeculate(&g_r_core->frame, led->ns - led->ns_engine_paused);
@@ -409,13 +408,13 @@ static void r_EditorDraw(const struct led *led)
             continue;
         }
 
-		const f32 dist = Vec3Distance(proxy->spec_position, led->cam.position);
-		const u32 unit_exponent = f32_exponent_bits(dist);
+		const f32 dist = V3Distance(proxy->spec_position, led->cam.position);
+		const u32 unit_exponent = F32ExponentBits(dist);
 		const u64 depth = (unit_exponent <= depth_exponent && unit_exponent > (depth_exponent - 23))
-			? (0x00800000 | f32_mantissa_bits(dist)) >> (depth_exponent - unit_exponent + 1)
+			? (0x00800000 | F32MantissaBits(dist)) >> (depth_exponent - unit_exponent + 1)
 			: 0;
 
-		const u64 transparency = (proxy->color[3] == 1.0f)
+		const u64 transparency = (proxy->color.w == 1.0f)
 			? R_CMD_TRANSPARENCY_OPAQUE
 			: R_CMD_TRANSPARENCY_ADDITIVE;
 
@@ -434,12 +433,11 @@ static void r_EditorDraw(const struct led *led)
 		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
 		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		quat rotation;
-		const vec3 translation = { 0 };
-		vec3 axis = { 0.0f, 1.0f, 0.0f };
+		const v3 translation = V3Zero();
+		const v3 axis = V3(0.0f, 1.0f, 0.0f);
 		const f32 angle = 0.0f;
-		QuatAxisAngle(rotation, axis, angle);
-		struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &led->physics.dynamic_bvh, translation, rotation, led->dbvh_color);
+		const q rotation = QAxisAngle(axis, angle);
+		struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &led->physics.dynamic_bvh, translation, rotation, V4Load(led->dbvh_color));
 		if (mesh)
 		{
 			struct r_Instance *instance = r_InstanceAddNonCached(cmd);
@@ -470,7 +468,7 @@ static void r_EditorDraw(const struct led *led)
                 ds_ShapeWorldTransform(&transform, &led->physics, s);
 
 			    const struct c_Shape *shape = led->physics.cshape_db->pool.buf + s->cshape_handle;
-			    struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &shape->mesh_bvh.bvh, transform.position.buf, transform.rotation.buf, led->sbvh_color);
+			    struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &shape->mesh_bvh.bvh, transform.position, transform.rotation, V4Load(led->sbvh_color));
 			    if (mesh)
 			    {
 			    	struct r_Instance *instance = r_InstanceAddNonCached(cmd);
@@ -486,7 +484,7 @@ static void r_EditorDraw(const struct led *led)
 		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
 		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		struct r_Mesh *mesh = BoundingBoxesMesh(&g_r_core->frame, &led->physics, led->bounding_box_color);
+		struct r_Mesh *mesh = BoundingBoxesMesh(&g_r_core->frame, &led->physics, V4Load(led->bounding_box_color));
 		if (mesh)
 		{
 			struct r_Instance *instance = r_InstanceAddNonCached(cmd);
@@ -541,7 +539,7 @@ static void r_InternalProxy3dUniforms(const struct led *led, const u32 window)
 {
 	const struct r_Camera *cam = &led->cam;
 	const m4 perspective = M4Perspective(cam->aspect_ratio, cam->fov_x, cam->fz_near, cam->fz_far);
-	const m4 view = M4View(V3Load(cam->position), V3Load(cam->left), V3Load(cam->up), V3Load(cam->forward));
+	const m4 view = M4View(cam->position, cam->left, cam->up, cam->forward);
 	
 	ds_glUseProgram(g_r_core->program[PROGRAM_PROXY3D].gl_program);
 	GLint aspect_ratio_addr, view_addr, perspective_addr, light_position_addr;
@@ -550,7 +548,7 @@ static void r_InternalProxy3dUniforms(const struct led *led, const u32 window)
 	perspective_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_PROXY3D].gl_program, "perspective");
 	light_position_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_PROXY3D].gl_program, "light_position");
 	ds_glUniform1f(aspect_ratio_addr, (f32) cam->aspect_ratio);
-	ds_glUniform3f(light_position_addr, cam->position[0], cam->position[1], cam->position[2]);
+	ds_glUniform3f(light_position_addr, cam->position.x, cam->position.y, cam->position.z);
 	ds_glUniformMatrix4fv(perspective_addr, 1, GL_FALSE, perspective.buf);
 	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, view.buf);
 
@@ -560,7 +558,7 @@ static void r_InternalProxy3dUniforms(const struct led *led, const u32 window)
 	perspective_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_LIGHTNING].gl_program, "perspective");
 	light_position_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_LIGHTNING].gl_program, "light_position");
 	ds_glUniform1f(aspect_ratio_addr, (f32) cam->aspect_ratio);
-	ds_glUniform3f(light_position_addr, cam->position[0], cam->position[1], cam->position[2]);
+	ds_glUniform3f(light_position_addr, cam->position.x, cam->position.y, cam->position.z);
 	ds_glUniformMatrix4fv(perspective_addr, 1, GL_FALSE, perspective.buf);
 	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, view.buf);
 	

@@ -32,6 +32,7 @@ extern "C" {
 #include "ds_float.h"
 #include "ds_vector.h"
 #include "ds_quaternion.h"
+#include "ds_matrix.h"
 
 typedef struct
 {

@@ -18,6 +18,7 @@
 */
 
 #include "led_local.h"
+#include "ds_math_bridge.h"
 #include "ds_random.h"
 
 HI_DEFINE(led_Node);
@@ -260,15 +261,15 @@ static void led_NodeAttachRigidBodyPrefabInternal(struct led *led, const u32 nod
     struct r_Proxy3d_config config =
 	{
 		.parent = PROXY3D_ROOT,
-		.linear_velocity = { 0.0f, 0.0f, 0.0f },
-		.angular_velocity = { 0.0f, 0.0f, 0.0f },
+		.linear_velocity = V3(0.0f, 0.0f, 0.0f),
+		.angular_velocity = V3(0.0f, 0.0f, 0.0f),
 		.mesh = Utf8Inline(""),
 		.ns_time = led->ns,
         .blend = node->blend,
 	};
-    Vec4Copy(config.color, node->color);
-	Vec3Copy(config.position, node->transform.position.buf);
-	QuatCopy(config.rotation, node->transform.rotation.buf);
+    config.color = V4Load(node->color);
+	config.position = node->transform.position;
+	config.rotation = node->transform.rotation;
 
     node->flags |= LED_BODY_PREFAB;
 	node->body_prefab = slot.index;
@@ -297,8 +298,8 @@ static void led_NodeAttachRigidBodyPrefabInternal(struct led *led, const u32 nod
 
 		config.mesh = render_mesh->id;
         config.parent = node->proxy;
-		Vec3Copy(config.position, child->transform.position.buf);
-		QuatCopy(config.rotation, child->transform.rotation.buf);
+		config.position = child->transform.position;
+		config.rotation = child->transform.rotation;
 		child->proxy = r_Proxy3dAlloc(&config);
     }
 }
@@ -1674,7 +1675,7 @@ static void led_NodeColorProxies(struct led *led, const u32 index, const vec4 co
         if (child->flags & LED_SHAPE_PREFAB)
         {
             struct r_Proxy3d *proxy = r_Proxy3dAddress(child->proxy);
-	        Vec4Copy(proxy->color, color);
+	        proxy->color = V4Load(color);
         }
     }
 }
@@ -1833,7 +1834,7 @@ static void led_EngineRun(struct led *led)
 					    else
 					    {
 					    	const struct ds_Island *is = led->physics.island_pool.buf + body->island;
-                            led_NodeColorProxies(led, body->entity, is->color);
+                            led_NodeColorProxies(led, body->entity, is->color.buf);
 					    }
                     }
                 }
@@ -1925,14 +1926,13 @@ static void led_EngineRun(struct led *led)
 				struct ds_Island *is = ds_IslandLookup(&led->physics, event->island).address;
                 if (is)
 				{
-					Vec4Set(is->color, 
-							RngF32Normalized(), 
-							RngF32Normalized(), 
-							RngF32Normalized(), 
-							0.7f);
+					is->color = V4(RngF32Normalized(), 
+						       RngF32Normalized(), 
+						       RngF32Normalized(), 
+						       0.7f);
 					if (led->body_color_mode == RB_COLOR_MODE_ISLAND)
 					{
-						led_ColorIsland(led, event->island, is->color);
+						led_ColorIsland(led, event->island, is->color.buf);
 					}
 					else if (led->body_color_mode == RB_COLOR_MODE_SLEEP)
 					{
@@ -1967,12 +1967,12 @@ static void led_EngineRun(struct led *led)
 	                	const struct ds_Body *body = led->physics.body_pool.buf + sim->body;
                         const struct led_Node *node = led->node_hierarchy.pool.buf + body->entity;
 
-                        vec3 linear_velocity = { 0.0f, 0.0f, 0.0f };
-                        vec3 angular_velocity = { 0.0f, 0.0f, 0.0f };
+                        const v3 linear_velocity = V3Zero();
+                        const v3 angular_velocity = V3Zero();
                         const u64 ns = led->physics.ns_start + led->physics.frames_completed*led->physics.ns_tick; 
 
-	                	r_Proxy3dLinearSpeculationSet(sim->world.position.buf
-	                			, sim->world.rotation.buf
+	                	r_Proxy3dLinearSpeculationSet(sim->world.position
+	                			, sim->world.rotation
 	                			, linear_velocity
 	                			, angular_velocity
 	                			, ns 
@@ -1988,7 +1988,7 @@ static void led_EngineRun(struct led *led)
                     const struct ds_Island *is = ds_IslandLookup(&led->physics, event->island).address;
                     if (is)
                     {
-                        led_ColorIsland(led, event->island, is->color);
+                        led_ColorIsland(led, event->island, is->color.buf);
                     }
                 }
             } break;
@@ -2017,10 +2017,10 @@ static void led_EngineRun(struct led *led)
             const struct led_Node *node = led->node_hierarchy.pool.buf + body->entity;
             const u64 ns = led->physics.ns_start + led->physics.frames_completed*led->physics.ns_tick; 
 
-	    	r_Proxy3dLinearSpeculationSet(sim->world.position.buf
-	    			, sim->world.rotation.buf
-	    			, compute->linear_velocity.buf
-	    			, compute->angular_velocity.buf
+	    	r_Proxy3dLinearSpeculationSet(sim->world.position
+	    			, sim->world.rotation
+	    			, compute->linear_velocity
+	    			, compute->angular_velocity
 	    			, ns
 	    			, node->proxy);
         }
@@ -2044,10 +2044,10 @@ static void led_EngineFlush(struct led *led)
 		struct led_Node *node = led->node_hierarchy.pool.buf + it.at;
         if (node->flags & LED_PROXY3D)
         {
-            r_Proxy3dLinearSpeculationSet(node->transform.position.buf
-					, node->transform.rotation.buf
-					, (vec3) { 0 } 
-					, (vec3) { 0 } 
+            r_Proxy3dLinearSpeculationSet(node->transform.position
+					, node->transform.rotation
+					, V3Zero()
+					, V3Zero()
 					, led->ns
 					, node->proxy);
 		    struct r_Proxy3d *proxy = r_Proxy3dAddress(node->proxy);
@@ -2056,7 +2056,7 @@ static void led_EngineFlush(struct led *led)
             {
                 proxy->flags |= PROXY3D_DRAW;
             }
-		    Vec4Copy(proxy->color, node->color);
+		    proxy->color = V4Load(node->color);
             proxy->blend = node->blend;
         }
         HIIAdvance(it, led->node_hierarchy);

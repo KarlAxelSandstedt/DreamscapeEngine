@@ -47,8 +47,8 @@ void led_VisualInitDefaults(const u32 window)
 	//TODO
 	//g_visual->axes_r_handle = 
 
-	const vec3 cam_position = { 5.0f, 5.0f, 5.0f };
-	const vec3 cam_direction = { -1.0f, -1.0f, -1.0f };
+	const v3 cam_position = V3(5.0f, 5.0f, 5.0f);
+	const v3 cam_direction = V3(-1.0f, -1.0f, -1.0f);
 	const f32 fz_near = 0.0125f;
 	const f32 fz_far =  512.0f;
 	const f32 aspect_ratio = (f32) sys_win->size[0] / sys_win->size[1];

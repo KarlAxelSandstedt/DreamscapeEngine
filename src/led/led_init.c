@@ -74,12 +74,12 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 	//const vec3 up = {0.0f, 1.0f, 0.0f};
 	//const vec3 dir = {1.0f, 0.0f, 0.0f};
 	
-	const vec3 position = {10.0f, 1.0f, 5.0f};
-	//const vec3 position = {3.0f, 1.0f, -3.0f};
-	const vec3 left = {1.0f, 0.0f, 0.0f};
-	const vec3 up = {0.0f, 1.0f, 0.0f};
-	const vec3 dir = {0.0f, 0.0f, 1.0f};
-	vec2 size = { 1280.0f, 720.0f };
+	const v3 position = V3(10.0f, 1.0f, 5.0f);
+	//const v3 position = V3(3.0f, 1.0f, -3.0f);
+	const v3 left = V3(1.0f, 0.0f, 0.0f);
+	const v3 up = V3(0.0f, 1.0f, 0.0f);
+	const v3 dir = V3(0.0f, 0.0f, 1.0f);
+	const v2 size = V2(1280.0f, 720.0f);
 	r_CameraConstruct(&g_editor->cam, 
 			position, 
 			left,
@@ -89,7 +89,7 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 			0.0f,
 			0.0250f,
 			1024.0f,
-			(f32) size[0] / size[1],
+			(f32) size.x / size.y,
 			2.0f * F32_PI / 3.0f );
 
 	g_editor->cam_left_velocity = 0.0f;

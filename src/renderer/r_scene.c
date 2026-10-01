@@ -709,10 +709,10 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 					instance = g_scene->instance_pool.buf + r_cmd->instance;
 					proxy = r_Proxy3dAddress(instance->unit);
 
-					memcpy(shared_data + S_PROXY3D_TRANSLATION_BLEND_OFFSET, proxy->spec_position, sizeof(vec3));
-					memcpy(shared_data + S_PROXY3D_TRANSLATION_BLEND_OFFSET + sizeof(vec3), &proxy->blend, sizeof(f32));
-					memcpy(shared_data + S_PROXY3D_ROTATION_OFFSET, proxy->spec_rotation, sizeof(quat));
-					memcpy(shared_data + S_PROXY3D_COLOR_OFFSET, proxy->color, sizeof(vec4));
+					memcpy(shared_data + S_PROXY3D_TRANSLATION_BLEND_OFFSET, &proxy->spec_position, sizeof(v3));
+					memcpy(shared_data + S_PROXY3D_TRANSLATION_BLEND_OFFSET + sizeof(v3), &proxy->blend, sizeof(f32));
+					memcpy(shared_data + S_PROXY3D_ROTATION_OFFSET, &proxy->spec_rotation, sizeof(q));
+					memcpy(shared_data + S_PROXY3D_COLOR_OFFSET, &proxy->color, sizeof(v4));
 					shared_data += S_PROXY3D_STRIDE;
 				}
 			} break;

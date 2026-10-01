@@ -18,50 +18,44 @@
 */
 
 #include "r_local.h"
-#include "ds_math_bridge.h"
 
-void r_Camera2dTransform(mat3 W_to_AS, const vec2 view_center, const f32 view_height, const f32 view_aspect_ratio)
+m3 r_Camera2dTransform(const v2 view_center, const f32 view_height, const f32 view_aspect_ratio)
 {
 	const f32 view_width = view_height * view_aspect_ratio;
 	/* world-to-camera, gles2 expects column-major */
-	mat3 W_to_C =
-	{
-		{ 1.0f, 0.0f, 0.0f },
-		{ 0.0f, 1.0f, 0.0f },
-		{ -view_center[0], -view_center[1], 1.0f },
-	};
+	const m3 W_to_C = M3(1.0f, 0.0f, 0.0f,
+			     0.0f, 1.0f, 0.0f,
+			     -view_center.x, -view_center.y, 1.0f);
 
 	/* camera-to-aspect_screen, gles2 expects column-major */
-	mat3 C_to_AS =
-	{
-		{ 2.0f/view_width, 0.0f, 0.0f },
-		{ 0.0f, 2.0f/view_height, 0.0f },
-		{ 0.0f, 0.0f, 1.0f },
-	};
+	const m3 C_to_AS = M3(2.0f/view_width, 0.0f, 0.0f,
+			      0.0f, 2.0f/view_height, 0.0f,
+			      0.0f, 0.0f, 1.0f);
 
-	Mat3Mul(W_to_AS, C_to_AS, W_to_C);
+	return M3Mul(C_to_AS, W_to_C);
 }
 
 void r_CameraDebugPrint(const struct r_Camera *cam)
 {
-	fprintf(stderr, "POS: (%f, %f, %f)\n", cam->position[0], cam->position[1], cam->position[2]);
-	fprintf(stderr, "RIGHT: (%f, %f, %f)\n", cam->left[0], cam->left[1], cam->left[2]);
-	fprintf(stderr, "UP: (%f, %f, %f)\n", cam->up[0], cam->up[1], cam->up[2]);
-	fprintf(stderr, "DIR: (%f, %f, %f)\n", cam->forward[0], cam->forward[1], cam->forward[2]);
+	fprintf(stderr, "POS: (%f, %f, %f)\n", cam->position.x, cam->position.y, cam->position.z);
+	fprintf(stderr, "RIGHT: (%f, %f, %f)\n", cam->left.x, cam->left.y, cam->left.z);
+	fprintf(stderr, "UP: (%f, %f, %f)\n", cam->up.x, cam->up.y, cam->up.z);
+	fprintf(stderr, "DIR: (%f, %f, %f)\n", cam->forward.x, cam->forward.y, cam->forward.z);
 	fprintf(stderr, "ASPECT, FOV_X, FZ_NEAR, FZ_FAR: (%f, %f, %f, %f)\n", cam->aspect_ratio, cam->fov_x, cam->fz_near, cam->fz_far);
 	fprintf(stderr, "YAW, PITCH: (%f, %f)\n", cam->yaw, cam->pitch);
 }
 
-struct r_Camera r_CameraInit(const vec3 position, const vec3 direction, const f32 fz_near, const f32 fz_far, const f32 aspect_ratio, const f32 fov_x)
+struct r_Camera r_CameraInit(const v3 position, const v3 direction, const f32 fz_near, const f32 fz_far, const f32 aspect_ratio, const f32 fov_x)
 {
 	ds_Assert(fov_x > 0.0f && fov_x < F32_PI);
 	ds_Assert(fz_near > 0.0f);
 	ds_Assert(fz_far > fz_near);
 	ds_Assert(aspect_ratio > 0);
-	ds_Assert(Vec3Length(direction) > 0.0f);
+	ds_Assert(V3Length(direction) > 0.0f);
 	
 	struct r_Camera cam = 
 	{
+		.position = position,
 		.yaw = 0.0f,
 		.pitch = 0.0f,
 		.fz_near = fz_near,
@@ -70,63 +64,55 @@ struct r_Camera r_CameraInit(const vec3 position, const vec3 direction, const f3
 		.fov_x = fov_x,
 	};
 
-	Vec3Copy(cam.position, position);
-
-	const vec3 direction_xz = { direction[0], 0.0f, direction[2] };
-	const f32 direction_xz_len = Vec3Length(direction_xz);
+	const v3 direction_xz = V3(direction.x, 0.0f, direction.z);
+	const f32 direction_xz_len = V3Length(direction_xz);
 	if (direction_xz_len < 0.001f)
 	{
-		if (direction[1] > 0.0f)
+		if (direction.y > 0.0f)
 		{
-			Vec3Set(cam.up, 0.0f, 0.0f, -1.0f);
-			Vec3Set(cam.forward, 0.0f, 1.0f, 0.0f);
-			Vec3Set(cam.left, 1.0f, 0.0f, 0.0f);
+			cam.up = V3(0.0f, 0.0f, -1.0f);
+			cam.forward = V3(0.0f, 1.0f, 0.0f);
+			cam.left = V3(1.0f, 0.0f, 0.0f);
 		}
 		else
 		{
-			Vec3Set(cam.up, 0.0f, 0.0f, 1.0f);
-			Vec3Set(cam.forward, 0.0f, -1.0f, 0.0f);
-			Vec3Set(cam.left, 1.0f, 0.0f, 0.0f);
+			cam.up = V3(0.0f, 0.0f, 1.0f);
+			cam.forward = V3(0.0f, -1.0f, 0.0f);
+			cam.left = V3(1.0f, 0.0f, 0.0f);
 		}
 	}
 	else
 	{
-		const vec3 x = { 1.0f, 0.0f, 0.0f };
-		const vec3 y = { 0.0f, 1.0f, 0.0f };
-		const vec3 z = { 0.0f, 0.0f, 1.0f };
+		const v3 x = V3(1.0f, 0.0f, 0.0f);
+		const v3 y = V3(0.0f, 1.0f, 0.0f);
+		const v3 z = V3(0.0f, 0.0f, 1.0f);
 
-		quat q1, q2;
-		const f32 angle1 = (direction[0] < 0.0f) 
-			? -f32_acos(direction[2] / (direction_xz_len))
-			:  f32_acos(direction[2] / (direction_xz_len));
+		const f32 angle1 = (direction.x < 0.0f) 
+			? -F32Acos(direction.z / (direction_xz_len))
+			:  F32Acos(direction.z / (direction_xz_len));
+		const m3 rot1 = M3Q(QUnitAxisAngle(y, angle1));
 
-		mat3 rot, rot1, rot2;
-		QuatUnitAxisAngle(q1, y, angle1);
-		Mat3Quat(rot1, q1);
+		const f32 angle2 = (direction.y > 0.0f)
+			? -F32Acos(direction_xz_len*direction_xz_len / (direction_xz_len * V3Length(direction)))
+			:  F32Acos(direction_xz_len*direction_xz_len / (direction_xz_len * V3Length(direction)));
+		const v3 v = M3V3Mul(rot1, x);
+		const m3 rot2 = M3Q(QAxisAngle(v, angle2));
 
-		const f32 angle2 = (direction[1] > 0.0f)
-			? -f32_acos(direction_xz_len*direction_xz_len / (direction_xz_len * Vec3Length(direction)))
-			:  f32_acos(direction_xz_len*direction_xz_len / (direction_xz_len * Vec3Length(direction)));
-		vec3 v;
-		Mat3VecMul(v, rot1, x);
-		QuatAxisAngle(q2, v, angle2);
-		Mat3Quat(rot2, q2);
+		const m3 rot = M3Mul(rot2, rot1);
 
-		Mat3Mul(rot, rot2, rot1);
-
-		Mat3VecMul(cam.forward, rot, z);
-		Mat3VecMul(cam.left, rot, x);
-		Mat3VecMul(cam.up, rot, y);
+		cam.forward = M3V3Mul(rot, z);
+		cam.left = M3V3Mul(rot, x);
+		cam.up = M3V3Mul(rot, y);
 	}
 
 	return cam;
 }
 
 void r_CameraConstruct(struct r_Camera *cam,
-		const vec3 position,
-	       	const vec3 left,
-	       	const vec3 up,
-	       	const vec3 forward,
+		const v3 position,
+	       	const v3 left,
+	       	const v3 up,
+	       	const v3 forward,
 		const f32 yaw,
 		const f32 pitch,
 	       	const f32 fz_near,
@@ -139,10 +125,10 @@ void r_CameraConstruct(struct r_Camera *cam,
 	ds_Assert(fz_far > fz_near);
 	ds_Assert(aspect_ratio > 0);
 	
-	Vec3Copy(cam->position, position);
-	Vec3Copy(cam->left, left);
-	Vec3Copy(cam->up, up);
-	Vec3Copy(cam->forward, forward);
+	cam->position = position;
+	cam->left = left;
+	cam->up = up;
+	cam->forward = forward;
 	cam->yaw = yaw;
 	cam->pitch = pitch;
 	cam->fz_near = fz_near;
@@ -153,16 +139,15 @@ void r_CameraConstruct(struct r_Camera *cam,
 
 void r_CameraUpdateAxes(struct r_Camera *cam)
 {
-	vec3 left = {1.0f, 0.0f, 0.0f};
-	vec3 up = {0.0f, 1.0f, 0.0f};
-	vec3 forward = {0.0f, 0.0f, 1.0f};
+	const v3 left = V3(1.0f, 0.0f, 0.0f);
+	const v3 up = V3(0.0f, 1.0f, 0.0f);
+	const v3 forward = V3(0.0f, 0.0f, 1.0f);
 
-	mat3 rot;
-	M3Store(rot, M3SequentialRotation(V3Load(up), cam->yaw, V3Load(left), cam->pitch));
+	const m3 rot = M3SequentialRotation(up, cam->yaw, left, cam->pitch);
 
-	Mat3VecMul(cam->left, rot, left);
-	Mat3VecMul(cam->up, rot, up);
-	Mat3VecMul(cam->forward, rot, forward);
+	cam->left = M3V3Mul(rot, left);
+	cam->up = M3V3Mul(rot, up);
+	cam->forward = M3V3Mul(rot, forward);
 }
 
 void r_CameraUpdateAngles(struct r_Camera *cam, const f32 yaw_delta, const f32 pitch_delta)
@@ -193,51 +178,44 @@ void r_CameraUpdateAngles(struct r_Camera *cam, const f32 yaw_delta, const f32 p
 
 void FrustumProjectionPlaneSides(f32 *width, f32 *height, const f32 plane_distance, const f32 fov_x, const f32 aspect_ratio)
 {
-	*width = 2.0f * plane_distance * f32_tan(fov_x / 2.0f);
+	*width = 2.0f * plane_distance * F32Tan(fov_x / 2.0f);
 	*height = *width / aspect_ratio;
 }
 
-void FrustumProjectionPlaneCameraSpace(vec3 bottom_left, vec3 upper_right, const struct r_Camera *cam)
+void FrustumProjectionPlaneCameraSpace(v3 *bottom_left, v3 *upper_right, const struct r_Camera *cam)
 {
 	f32 frustum_width, frustum_height;
 	FrustumProjectionPlaneSides(&frustum_width, &frustum_height, cam->fz_near, cam->fov_x, cam->aspect_ratio);
-	Vec3Set(bottom_left, frustum_width / 2.0f, -frustum_height / 2.0f, cam->fz_near);
-	Vec3Set(upper_right, -frustum_width / 2.0f, frustum_height / 2.0f, cam->fz_near);
+	*bottom_left = V3(frustum_width / 2.0f, -frustum_height / 2.0f, cam->fz_near);
+	*upper_right = V3(-frustum_width / 2.0f, frustum_height / 2.0f, cam->fz_near);
 }
 
-void FrustumProjectionPlaneWorldSpace(vec3 bottom_left, vec3 upper_right, const struct r_Camera *cam)
+void FrustumProjectionPlaneWorldSpace(v3 *bottom_left, v3 *upper_right, const struct r_Camera *cam)
 {
 	f32 frustum_width, frustum_height;
 	FrustumProjectionPlaneSides(&frustum_width, &frustum_height, cam->fz_near, cam->fov_x, cam->aspect_ratio);
 
-	vec3 v;
-	vec3 left = {1.0f, 0.0f, 0.0f};
-	vec3 up = {0.0f, 1.0f, 0.0f};
-	mat3 rot;
-	M3Store(rot, M3SequentialRotation(V3Load(up), cam->yaw, V3Load(left), cam->pitch));
+	const v3 left = V3(1.0f, 0.0f, 0.0f);
+	const v3 up = V3(0.0f, 1.0f, 0.0f);
+	const m3 rot = M3SequentialRotation(up, cam->yaw, left, cam->pitch);
 
-	Vec3Set(v, frustum_width / 2.0f, -frustum_height / 2.0f, cam->fz_near);
-	Mat3VecMul(bottom_left, rot, v);
-	Vec3Translate(bottom_left, cam->position);
+	v3 v = V3(frustum_width / 2.0f, -frustum_height / 2.0f, cam->fz_near);
+	*bottom_left = V3Add(M3V3Mul(rot, v), cam->position);
 
-	v[0] -= frustum_width;
-	v[1] += frustum_height;
-	Mat3VecMul(upper_right, rot, v);
-	Vec3Translate(upper_right, cam->position);
+	v.x -= frustum_width;
+	v.y += frustum_height;
+	*upper_right = V3Add(M3V3Mul(rot, v), cam->position);
 }
 
-void WindowSpaceToWorldSpace(vec3 world_pixel, const vec2 pixel, const vec2 win_size, const struct r_Camera * cam)
+v3 WindowSpaceToWorldSpace(const v2 pixel, const v2 win_size, const struct r_Camera * cam)
 {
-	mat3 rot;
-	vec3 bl, tr, camera_pixel;
+	const v3 left = V3(1.0f, 0.0f, 0.0f);
+	const v3 up = V3(0.0f, 1.0f, 0.0f);
+	const m3 rot = M3SequentialRotation(up, cam->yaw, left, cam->pitch);
 
-	vec3 left = {1.0f, 0.0f, 0.0f};
-	vec3 up = {0.0f, 1.0f, 0.0f};
-	M3Store(rot, M3SequentialRotation(V3Load(up), cam->yaw, V3Load(left), cam->pitch));
-
-	const vec3 alphas = { 1.0f - ((f32) pixel[0]) / win_size[0], 1.0f - ((f32) pixel[1]) / win_size[1], 1.0f };	
-	FrustumProjectionPlaneCameraSpace(bl, tr, cam);
-	Vec3InterpolatePiecewise(camera_pixel, bl, tr, alphas);	
-	Mat3VecMul(world_pixel, rot, camera_pixel);
-	Vec3Translate(world_pixel, cam->position);
+	const v3 alphas = V3(1.0f - pixel.x / win_size.x, 1.0f - pixel.y / win_size.y, 1.0f);	
+	v3 bl, tr;
+	FrustumProjectionPlaneCameraSpace(&bl, &tr, cam);
+	const v3 camera_pixel = V3InterpolatePiecewise(bl, tr, alphas);	
+	return V3Add(M3V3Mul(rot, camera_pixel), cam->position);
 }

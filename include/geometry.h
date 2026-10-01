@@ -214,9 +214,9 @@ u32 		AabbContains(const struct aabb *a, const struct aabb *b);
 /* Return 1 if a (extended with given margin) fully contains b, 0 otherwise  */
 u32 		AabbContainsMargin(const struct aabb *a, const struct aabb *b, const f32 margin);
 /* sets up vertex buffer to use with glDrawArrays. Returns number of bytes written. */
-u64 		AabbPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const vec4 color);
+u64 		AabbPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const v4 color);
 /* sets up vertex buffer to use with glDrawArrays. Returns number of bytes written. */
-u64 		AabbTransformPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const v3 translation, const m3 rotation, const vec4 color);
+u64 		AabbTransformPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const v3 translation, const m3 rotation, const v4 color);
 /* Return the smallest index of the aabb with the maximum side length */
 u32         AabbMaxAxis(const struct aabb a);
 

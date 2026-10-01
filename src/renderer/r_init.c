@@ -176,10 +176,10 @@ void r_ColorBufferLayoutSetter(void)
 	ds_glEnableVertexAttribArray(0);
 	ds_glEnableVertexAttribArray(1);
 
-	const u64 stride = sizeof(vec3) + sizeof(vec4);
+	const u64 stride = sizeof(v3) + sizeof(v4);
 
 	ds_glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, (GLsizei)  stride, 0);
-	ds_glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, (GLsizei)  stride, (void *)(sizeof(vec3)));
+	ds_glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, (GLsizei)  stride, (void *)(sizeof(v3)));
 }
 
 void r_LightningBufferLayoutSetter(void)
@@ -188,11 +188,11 @@ void r_LightningBufferLayoutSetter(void)
 	ds_glEnableVertexAttribArray(1);
 	ds_glEnableVertexAttribArray(2);
 
-	const u64 stride = 2*sizeof(vec3) + sizeof(vec4);
+	const u64 stride = 2*sizeof(v3) + sizeof(v4);
 
 	ds_glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, (GLsizei)  stride, 0);
-	ds_glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, (GLsizei)  stride, (void *)(sizeof(vec3)));
-	ds_glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, (GLsizei)  stride, (void *)(sizeof(vec3) + sizeof(vec4)));
+	ds_glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, (GLsizei)  stride, (void *)(sizeof(v3)));
+	ds_glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, (GLsizei)  stride, (void *)(sizeof(v3) + sizeof(v4)));
 }
 
 void r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u64 core_unit_count, r_MeshSDB *mesh_database)
@@ -243,13 +243,12 @@ void r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_siz
 	g_r_core->proxy3d_root = slot3d.index;
 	ds_Assert(g_r_core->proxy3d_root == PROXY3D_ROOT);
 	struct r_Proxy3d *stub3d = slot3d.address;
-	Vec3Set(stub3d->position, 0.0f, 0.0f, 0.0f);
-	Vec3Set(stub3d->spec_position, 0.0f, 0.0f, 0.0f);
-	const vec3 axis = { 0.0f, 1.0f, 0.0f };
-	QuatUnitAxisAngle(stub3d->rotation, axis, 0.0f);
-	QuatCopy(stub3d->spec_rotation, stub3d->rotation);
-	Vec3Set(stub3d->linear.linear_velocity, 0.0f, 0.0f, 0.0f);
-	Vec3Set(stub3d->linear.angular_velocity, 0.0f, 0.0f, 0.0f);
+	stub3d->position = V3Zero();
+	stub3d->spec_position = V3Zero();
+	stub3d->rotation = QUnitAxisAngle(V3(0.0f, 1.0f, 0.0f), 0.0f);
+	stub3d->spec_rotation = stub3d->rotation;
+	stub3d->linear.linear_velocity = V3Zero();
+	stub3d->linear.angular_velocity = V3Zero();
 	stub3d->flags = 0;
 
 	g_r_core->mesh_database = mesh_database; 
@@ -332,12 +331,11 @@ void r_CoreFlush(void)
 	g_r_core->proxy3d_root = slot3d.index;
 	ds_Assert(g_r_core->proxy3d_root == PROXY3D_ROOT);
 	struct r_Proxy3d *stub3d = slot3d.address;
-	Vec3Set(stub3d->position, 0.0f, 0.0f, 0.0f);
-	Vec3Set(stub3d->spec_position, 0.0f, 0.0f, 0.0f);
-	const vec3 axis = { 0.0f, 1.0f, 0.0f };
-	QuatUnitAxisAngle(stub3d->rotation, axis, 0.0f);
-	QuatCopy(stub3d->spec_rotation, stub3d->rotation);
-	Vec3Set(stub3d->linear.linear_velocity, 0.0f, 0.0f, 0.0f);
-	Vec3Set(stub3d->linear.angular_velocity, 0.0f, 0.0f, 0.0f);
+	stub3d->position = V3Zero();
+	stub3d->spec_position = V3Zero();
+	stub3d->rotation = QUnitAxisAngle(V3(0.0f, 1.0f, 0.0f), 0.0f);
+	stub3d->spec_rotation = stub3d->rotation;
+	stub3d->linear.linear_velocity = V3Zero();
+	stub3d->linear.angular_velocity = V3Zero();
 	stub3d->flags = 0;
 }

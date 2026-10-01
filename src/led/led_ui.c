@@ -488,16 +488,15 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 					struct ui_Node *node = slot.address;
 					if (node->inter & UI_INTER_HOVER)
 					{
-						vec3 dir; 
 						const vec2 cursor_viewport_position =
 						{
 							g_ui->inter.cursor_position[0] - node->pixel_position[0],
 							g_ui->inter.cursor_position[1] - node->pixel_position[1],
 						};
-						WindowSpaceToWorldSpace(dir, cursor_viewport_position, node->pixel_size, &led->cam);
-						Vec3TranslateScaled(dir, led->cam.position, -1.0f);
-						Vec3ScaleSelf(dir, 1.0f / Vec3Length(dir));
-						const struct ray ray = RayConstruct(V3Load(led->cam.position), V3Load(dir));
+						v3 dir = WindowSpaceToWorldSpace(V2Load(cursor_viewport_position), V2Load(node->pixel_size), &led->cam);
+						dir = V3Sub(dir, led->cam.position);
+						dir = V3Scale(dir, 1.0f / V3Length(dir));
+						const struct ray ray = RayConstruct(led->cam.position, dir);
 						const u32f32 hit = ds_DynamicsRaycastParameter(&led->physics, &ray);
 						if (hit.f < F32_INFINITY)
 						{
@@ -1120,9 +1119,9 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 	led->viewport_size[1] = node->pixel_size[1];
 
 	const f32 delta = (f32) led->ns_delta / NSEC_PER_SEC;
-	led->cam.position[0] += delta * (led->cam_left_velocity * led->cam.left[0] + led->cam_forward_velocity * led->cam.forward[0]);
-	led->cam.position[1] += delta * (led->cam_left_velocity * led->cam.left[1] + led->cam_forward_velocity * led->cam.forward[1]);
-	led->cam.position[2] += delta * (led->cam_left_velocity * led->cam.left[2] + led->cam_forward_velocity * led->cam.forward[2]);
+	led->cam.position.x += delta * (led->cam_left_velocity * led->cam.left.x + led->cam_forward_velocity * led->cam.forward.x);
+	led->cam.position.y += delta * (led->cam_left_velocity * led->cam.left.y + led->cam_forward_velocity * led->cam.forward.y);
+	led->cam.position.z += delta * (led->cam_left_velocity * led->cam.left.z + led->cam_forward_velocity * led->cam.forward.z);
 	led->cam.aspect_ratio =  (f32) led->viewport_size[0] / led->viewport_size[1];
 
 	led->cam_left_velocity = 0.0f;

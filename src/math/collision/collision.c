@@ -1563,7 +1563,7 @@ struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_C
 			}
 		}
 
-        ds_DynamicsDrawDebugSegment(SegmentConstruct(c[0], c[1]), Vec4Inline(0.1f, 0.6f, 0.9f, 1.0f));
+        ds_DynamicsDrawDebugSegment(SegmentConstruct(c[0], c[1]), V4(0.1f, 0.6f, 0.9f, 1.0f));
             
         //ds_Assert(min_depth > 0.0f);
 		manifold->depth[0] = min_depth + s[1]->sphere.radius;
@@ -1778,7 +1778,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 				    manifold->v[0] = V3AddScaled(manifold->v[0], manifold->n, s[1]->capsule.radius);
 				    manifold->v[1] = V3AddScaled(manifold->v[1], manifold->n, s[1]->capsule.radius);
                 }
-                ds_DynamicsDrawDebugSegment(SegmentConstruct(manifold->v[0], manifold->v[1]), Vec4Inline(0.1f, 0.6f, 0.9f, 1.0f));
+                ds_DynamicsDrawDebugSegment(SegmentConstruct(manifold->v[0], manifold->v[1]), V4(0.1f, 0.6f, 0.9f, 1.0f));
 			}
 			else
 			{
@@ -2117,7 +2117,7 @@ static u32 HullFaceContact(struct arena *mem_tmp, struct c_Manifold *cm, sat_Fea
 
 	//for (u32 i = 0; i < cp_count; ++i)
 	//{
-	//	ds_DynamicsDrawDebugSegment(SegmentConstruct(cp[i], cp[(i+1) % cp_count]), Vec4Inline(0.8f, 0.6f, 0.1f, 1.0f));
+	//	ds_DynamicsDrawDebugSegment(SegmentConstruct(cp[i], cp[(i+1) % cp_count]), V4(0.8f, 0.6f, 0.1f, 1.0f));
 	//}
 
     u32 collision;
@@ -2787,9 +2787,9 @@ struct c_ContactResult c_TriMeshBvhSphereContact(struct arena *frame, const stru
                     }
                     else
                     {
-                        ds_DynamicsDrawDebugSegment(SegmentConstruct(c->tv.t[0], c->c[1]), Vec4Inline(0.8f, 0.8f, 0.4f, 1.0f));
-                        ds_DynamicsDrawDebugSegment(SegmentConstruct(c->tv.t[1], c->c[1]), Vec4Inline(0.8f, 0.8f, 0.4f, 1.0f));
-                        ds_DynamicsDrawDebugSegment(SegmentConstruct(c->tv.t[2], c->c[1]), Vec4Inline(0.8f, 0.8f, 0.4f, 1.0f));
+                        ds_DynamicsDrawDebugSegment(SegmentConstruct(c->tv.t[0], c->c[1]), V4(0.8f, 0.8f, 0.4f, 1.0f));
+                        ds_DynamicsDrawDebugSegment(SegmentConstruct(c->tv.t[1], c->c[1]), V4(0.8f, 0.8f, 0.4f, 1.0f));
+                        ds_DynamicsDrawDebugSegment(SegmentConstruct(c->tv.t[2], c->c[1]), V4(0.8f, 0.8f, 0.4f, 1.0f));
                     }
                 }
 	    	}
@@ -3059,9 +3059,9 @@ struct c_ContactResult c_TriMeshBvhCapsuleContact(struct arena *frame, const str
                     }
                     else
                     {
-                        ds_DynamicsDrawDebugSegment(SegmentConstruct(c->tv.t[0], c->c[1]), Vec4Inline(0.8f, 0.8f, 0.4f, 1.0f));
-                        ds_DynamicsDrawDebugSegment(SegmentConstruct(c->tv.t[1], c->c[1]), Vec4Inline(0.8f, 0.8f, 0.4f, 1.0f));
-                        ds_DynamicsDrawDebugSegment(SegmentConstruct(c->tv.t[2], c->c[1]), Vec4Inline(0.8f, 0.8f, 0.4f, 1.0f));
+                        ds_DynamicsDrawDebugSegment(SegmentConstruct(c->tv.t[0], c->c[1]), V4(0.8f, 0.8f, 0.4f, 1.0f));
+                        ds_DynamicsDrawDebugSegment(SegmentConstruct(c->tv.t[1], c->c[1]), V4(0.8f, 0.8f, 0.4f, 1.0f));
+                        ds_DynamicsDrawDebugSegment(SegmentConstruct(c->tv.t[2], c->c[1]), V4(0.8f, 0.8f, 0.4f, 1.0f));
                     }
                 }
 	    	}
