@@ -895,7 +895,7 @@ f32 TriCcwPointDistanceSquared(v3 *c, enum TriVoronoiRegion *region, const v3 po
         const enum TriVoronoiRegion v = *region - TRI_VORONOI_EDGE01;
         const u32 next = table_add_1_mod_3[v];
         const f32 param = SegmentPointClosestBcParameter(tv->s + v, point); 
-        *c = SegmentBc(tv->s, param);
+        *c = SegmentBc(tv->s + v, param);
         if (1.0f == param)
         {
             *region = v;
