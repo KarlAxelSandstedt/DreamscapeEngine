@@ -370,10 +370,12 @@ f32 PlaneSegmentClipParameter(const struct plane *pl, const struct segment *s)
 	 * =>   t = [pl.signed_distance - DOT(s.p0, n)] / DOT(s.dir, n)
 	 *
 	 * degenerate case: segment parallel to plane gives t = +-infinity, which is okay!
+	 * degenerate case: segment parallel and lies on plane gives t = NaN, not okay!
 	 */
     const f32 dot_pn = V3Dot(pl->normal_direction, s->p[0]);
     const f32 dot_dn = V3Dot(pl->normal_direction, s->dir);
-	return (pl->signed_distance - dot_pn) / dot_dn;
+    const f32 t = (pl->signed_distance - dot_pn) / dot_dn;
+	return t;
 }
 
 u32 PlaneSegmentClip(v3 *clip, const struct plane *pl, const struct segment *s)
@@ -909,23 +911,44 @@ f32 TriCcwPointDistanceSquared(v3 *c, enum TriVoronoiRegion *region, const v3 po
     {
         const u32 ij = table_sub_1_mod_3[*region];
         const u32 jk = *region;
-        f32 param; 
-        if (0.0f < (param = SegmentPointClosestBcParameter(tv->s + ij, point)) && param < 1.0f)
+        const u32 ki = table_add_1_mod_3[jk];
+
+        const f32 param_ij = SegmentPointClosestBcParameter(tv->s + ij, point); 
+        if (param_ij < 1.0f)
         {
-            *c = SegmentBc(tv->s + ij, param);
-            *region = TRI_VORONOI_EDGE01 + ij;
+            if (param_ij == 0.0f)
+            {
+                *region = TRI_VORONOI_VERTEX0 + ij;
+                *c = tv->t[*region];
+            }
+            else
+            {
+                *c = SegmentBc(tv->s + ij, param_ij);
+                *region = TRI_VORONOI_EDGE01 + ij;
+            }
+            goto DONE;
         }
-        else if (0.0f < (param = SegmentPointClosestBcParameter(tv->s + jk, point)) && param < 1.0f)
+
+        const f32 param_jk = SegmentPointClosestBcParameter(tv->s + jk, point); 
+        if (param_jk > 0.0f)
         {
-            *c = SegmentBc(tv->s + jk, param);
-            *region = TRI_VORONOI_EDGE01 + jk;
+            if (param_jk == 1.0f)
+            {
+                *region = TRI_VORONOI_VERTEX0 + ki;
+                *c = tv->t[*region];
+            }
+            else
+            {
+                *c = SegmentBc(tv->s + jk, param_jk);
+                *region = TRI_VORONOI_EDGE01 + jk;
+            }
+            goto DONE;
         }
-        else
-        {
-            *c = tv->t[*region];
-        }
+
+        *c = tv->t[*region];
     }
 
+DONE:
     return V3DistanceSquared(point, *c);
 }
 
@@ -1118,7 +1141,13 @@ f32 TriCcwSegmentDistanceSquared(v3 *c_t, v3 *c_s, enum TriVoronoiRegion *segmen
 
     if (region[low] == TRI_VORONOI_FACE)
     {
-        const f32 param = F32Clamp(PlaneSegmentClipParameter(&tv->face_plane, &s_canon), 0.0f, 1.0f);
+        f32 t = PlaneSegmentClipParameter(&tv->face_plane, &s_canon);
+        if (F32TestNan(t))
+        {
+            /* segment lies in the face plane: every point is closest, pick the first end point */
+            t = 0.0f;
+        }
+        const f32 param = F32Clamp(t, 0.0f, 1.0f);
 
         *segment_region = TRI_VORONOI_FACE;
         *c_s = SegmentBc(&s_canon, param);

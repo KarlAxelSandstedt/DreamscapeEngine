@@ -2885,24 +2885,36 @@ static void c_TriCapsuleManifold(struct c_Manifold *m, const struct c_TriMeshBvh
 
             f32 flip_sign;
             struct segment seg = TriCcwSegmentSideClip(s, &c->tv);
+			/* 
+			 * If the side clipped segment does not cross the plane (e.g. it lies in the plane), the plane clip is
+			 * outside the segment (or NaN); then the other end point is used together with its own depth.
+			 */
 			if (best == 0)
 			{
 				m->v[0] = seg.p[0];
-				PlaneSegmentClip(&m->v[1], &pl, &seg);
+                d[1] = 0.0f;
+				if (!PlaneSegmentClip(&m->v[1], &pl, &seg))
+				{
+					m->v[1] = seg.p[1];
+					d[1] = PlanePointSignedDistance(&pl, m->v[1]);
+				}
                 flip_sign = (d[0] <= 0.0f)
                           ?  1.0f
                           : -1.0f;
                 d[0] = PlanePointSignedDistance(&pl, m->v[0]);
-                d[1] = 0.0f;
 			}
 			else if (best == 1)
 			{
-				PlaneSegmentClip(&m->v[0], &pl, &seg);
 				m->v[1] = seg.p[1];
+                d[0] = 0.0f;
+				if (!PlaneSegmentClip(&m->v[0], &pl, &seg))
+				{
+					m->v[0] = seg.p[0];
+					d[0] = PlanePointSignedDistance(&pl, m->v[0]);
+				}
                 flip_sign = (d[1] <= 0.0f)
                           ?  1.0f
                           : -1.0f;
-                d[0] = 0.0f;
                 d[1] = PlanePointSignedDistance(&pl, m->v[1]);
 			}
 

@@ -38,10 +38,10 @@ static struct test_Output matrix_inverse_assert(struct test_Environment *env)
 
 	for (u32 i = 0; i < 3; ++i)
 	{
-		ds_assert(1.0f - eps <= I3.col[i].buf[i] && I3.col[i].buf[i] <= 1.0f + eps);
+		TEST_TRUE(F32Abs(I3.col[i].buf[i] - 1.0f) <= eps);
 		for (u32 j = i+1; j < 3; ++j)
 		{
-			assert(-eps <= I3.col[i].buf[j] && I3.col[j].buf[i] <= eps);
+			TEST_TRUE(F32Abs(I3.col[i].buf[j]) <= eps && F32Abs(I3.col[j].buf[i]) <= eps);
 		}
 	}
 
@@ -55,10 +55,10 @@ static struct test_Output matrix_inverse_assert(struct test_Environment *env)
 
 	for (u32 i = 0; i < 4; ++i)
 	{
-		assert(1.0f - eps <= I4.col[i].buf[i] && I4.col[i].buf[i] <= 1.0f + eps);
+		TEST_TRUE(F32Abs(I4.col[i].buf[i] - 1.0f) <= eps);
 		for (u32 j = i+1; j < 4; ++j)
 		{
-			assert(-eps <= I3.col[i].buf[j] && I3.col[j].buf[i] <= eps);	/* bug 13: should be I4 (and reads past I3 for i = 3) */
+			TEST_TRUE(F32Abs(I4.col[i].buf[j]) <= eps && F32Abs(I4.col[j].buf[i]) <= eps);
 		}
 	}
 

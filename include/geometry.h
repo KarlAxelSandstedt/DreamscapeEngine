@@ -183,11 +183,23 @@ u32 		    PlanePointInfrontCheck(const struct plane *pl, const v3 p);
 u32 		    PlanePointBehindCheck(const struct plane *pl, const v3 p);
 /* Return 1 if segment is parallel to plane, otherwise return 0. */
 u32             PlaneSegmentParallelCheck(const struct plane *pl, const struct segment *s);
-/* return t: s.p0 + t*s.dir is point on plane */
+/* 
+ * return t: s.p0 + t*s.dir is point on plane 
+ *
+ * WARNING: if the segment lies on the plane, NaN is returned.
+ */
 f32 		    PlaneSegmentClipParameter(const struct plane *pl, const struct segment *s);
-/* return 1 if clip happened, otherwise 0. If 1, return valid clip point */
+/* 
+ * return 1 if clip happened, otherwise 0. If 1, return valid clip point 
+ *
+ * WARNING: if the segment lies on the plane, 0 is returned and clip is set to NaN.
+ */
 u32 		    PlaneSegmentClip(v3 *clip, const struct plane *pl, const struct segment *s);
-/* return 1 if clip happened, otherwise 0 */
+/* 
+ * return 1 if clip happened, otherwise 0 
+ *
+ * WARNING: if the segment lies on the plane, 0 is returned.
+ */
 u32 		    PlaneSegmentTest(const struct plane *pl, const struct segment *s); 
 /* return signed distance multiplied by |normal_direction| between plane and point (infront of plane == positive) */
 f32 		    PlanePointSignedDistance(const struct plane *pl, const v3 p);

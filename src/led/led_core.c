@@ -51,7 +51,7 @@ struct slot led_NodeLookup(struct led *led, const ds_Id id)
     slot.index = ds_IdIndex(id);
     slot.address = led->node_hierarchy.pool.buf + slot.index;
     struct led_Node *node = slot.address;
-    return (node->tagged_id = id)
+    return (node->tagged_id == id)
         ? slot 
         : empty_slot;
 }
@@ -685,9 +685,9 @@ void led_RigidBodyPrefabRemove(struct led *led, const utf8 id)
 	{
         for (i32 i = prefab->shape_list.first; i != DLL_SENTINEL; )
         {
-            const struct ds_ShapePrefabInstance *instance = led->shape_prefab_instance_pool.buf + i;
-            i = instance->body_shape.next;
+            const i32 next = led->shape_prefab_instance_pool.buf[i].body_shape.next;
             led_ShapePrefabInstanceRemove(led, i);
+            i = next;
         }
 
 		void *buf = prefab->id.buf;
@@ -748,8 +748,8 @@ void led_RigidBodyPrefabDetachShape(struct led *led, const utf8 rb_id, const utf
     }
     else
     {
-        ds_ShapePrefabSDBDereference(&led->shape_prefab_db, instance->shape_prefab);
         ds_DLLRemove(body_prefab->shape_list, led->shape_prefab_instance_pool.buf, slot.index, body_shape);
+        led_ShapePrefabInstanceRemove(led, slot.index);
     }
 }
 
