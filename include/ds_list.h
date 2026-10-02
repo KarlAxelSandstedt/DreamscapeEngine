@@ -25,6 +25,7 @@ extern "C" {
 #endif
 
 #include "ds_allocator.h"
+#include "ds_serialize.h"
 
 /*
 LL
@@ -33,19 +34,28 @@ Intrusive linked list for indexed structures meant for ds_Pool/ds_CPool. It expe
 and can handle at most I32_MAX elements.
 
 ::: Usage :::
-    //Initialize / Flush _ll_ to the empty state 
-    LLFlush(_ll_, _base_, _index_, _node_)                                                    
+    // Initialize / Flush _ll_ to the empty state 
+    LLFlush(_ll_)                                                    
 
     // Append _index_ to _ll_ 
     LLAppend(_ll_, _base_, _index_, _node_)                                                    
   
-    // Append _index_ to _dll_ and setup _base_[_dll_.last]._last_ -> _base_[_index_]._node_
+    // Append _index_ to _ll_ and setup _base_[_ll_.last]._last_ -> _base_[_index_]._node_
     // This macro exists for cases when we wish to use different next variables in the two
     // nodes. 
     LLAppendEx(_ll_, _base_, _index_, _last_, _node_)                                                    
   
-    // Prepend _index_ to _dll_
+    // Prepend _index_ to _ll_
     LLPrepend(_ll_, _base_, _index_, _node_)                                                    
+
+    // Return the required size when serializing _ll_
+    LLSerializeSize(_ll_)
+
+    // Serialize _ll_; its nodes are serialized with their pool. WARNING: Assumes _ll_ fits in _ss_.
+    LLSerialize(_ss_, _ll_)
+
+    // Deserialize _ll_ from _ss_. Returns 1 on success and 0 on failure.
+    LLTryDeserialize(_ll_, _ss_)
 */
 
 #define LL_SENTINEL        DS_STUB_INDEX
@@ -58,6 +68,7 @@ struct LL
 };
 
 typedef i32 LLNode;
+
 
 #define LLFlush(_ll_)                                                                                \
 do                                                                                                      \
@@ -102,6 +113,26 @@ do                                                                              
 
 
 
+/* Return the required size when serializing the list. */
+#define LLSerializeSize(_ll_)    (3*sizeof(u32))
+
+/* Serialize the list; its nodes are serialized with their pool. WARNING: Assumes list fits in the stream. */
+#define LLSerialize(_ss_, _ll_)                                                                         \
+do                                                                                                      \
+{                                                                                                       \
+    ss_WriteU32Le((_ss_), (_ll_).count);                                                                \
+    ss_WriteU32Le((_ss_), (u32) (_ll_).first);                                                          \
+    ss_WriteU32Le((_ss_), (u32) (_ll_).last);                                                           \
+} while (0)
+
+/* Returns 1 on success and 0 on failure. */
+#define LLTryDeserialize(_ll_, _ss_)                                                                    \
+    ((ss_BytesLeft(_ss_) < LLSerializeSize(_ll_))                                                       \
+        ? ((_ll_).count = 0, (_ll_).first = LL_SENTINEL, (_ll_).last = LL_SENTINEL, 0u)                 \
+        : ((_ll_).count = ss_ReadU32Le(_ss_),                                                           \
+           (_ll_).first = (i32) ss_ReadU32Le(_ss_),                                                     \
+           (_ll_).last = (i32) ss_ReadU32Le(_ss_), 1u))
+
 /*
 DLL
 ===
@@ -110,6 +141,9 @@ and can handle at most I32_MAX elements.
 
 ::: Usage :::
   
+    // Initialize / Flush _dll_ to the empty state 
+    DLLFlush(_dll_)
+
     // Append _index_ to _dll_ 
     DLLAppend(_dll_, _base_, _index_, _node_)                                                    
   
@@ -126,6 +160,15 @@ and can handle at most I32_MAX elements.
     
     // Remove _index_ from _dll_ and set  _base_[_index_]._node_.prev to DLL_NOT_IN_LIST
     DLLRemove(_dll_, _base_, _index_, _node_)                                                    
+
+    // Return the required size when serializing _dll_
+    DLLSerializeSize(_dll_)
+
+    // Serialize _dll_; its nodes are serialized with their pool. WARNING: Assumes _dll_ fits in _ss_.
+    DLLSerialize(_ss_, _dll_)
+
+    // Deserialize _dll_ from _ss_. Returns 1 on success and 0 on failure.
+    DLLTryDeserialize(_dll_, _ss_)
 */
 
 #define DLL_SENTINEL        DS_STUB_INDEX
@@ -142,6 +185,7 @@ struct DLLNode
     i32 prev;
     i32 next;
 };
+
 
 #define DLLFlush(_dll_)                                                                              \
 do                                                                                                      \
@@ -170,7 +214,7 @@ do                                                                              
     }                                                                                                   \
 } while (0)
 
-#define DLLPrepend(_dll_, _base_, _index_, _node_)    DLLAppendEx(_dll_, _base_, _index_, _node_, _node_)
+#define DLLPrepend(_dll_, _base_, _index_, _node_)    DLLPrependEx(_dll_, _base_, _index_, _node_, _node_)
 #define DLLPrependEx(_dll_, _base_, _index_, _node_, _first_)                                        \
 do                                                                                                      \
 {                                                                                                       \
@@ -211,6 +255,26 @@ do                                                                              
     }                                                                                                   \
 } while (0)
 
+
+/* Return the required size when serializing the list. */
+#define DLLSerializeSize(_dll_)    (3*sizeof(u32))
+
+/* Serialize the list; its nodes are serialized with their pool. WARNING: Assumes list fits in the stream. */
+#define DLLSerialize(_ss_, _dll_)                                                                       \
+do                                                                                                      \
+{                                                                                                       \
+    ss_WriteU32Le((_ss_), (_dll_).count);                                                               \
+    ss_WriteU32Le((_ss_), (u32) (_dll_).first);                                                         \
+    ss_WriteU32Le((_ss_), (u32) (_dll_).last);                                                          \
+} while (0)
+
+/* Returns 1 on success and 0 on failure. */
+#define DLLTryDeserialize(_dll_, _ss_)                                                                  \
+    ((ss_BytesLeft(_ss_) < DLLSerializeSize(_dll_))                                                     \
+        ? ((_dll_).count = 0, (_dll_).first = DLL_SENTINEL, (_dll_).last = DLL_SENTINEL, 0u)            \
+        : ((_dll_).count = ss_ReadU32Le(_ss_),                                                          \
+           (_dll_).first = (i32) ss_ReadU32Le(_ss_),                                                    \
+           (_dll_).last = (i32) ss_ReadU32Le(_ss_), 1u))
 
 #ifdef __cplusplus
 } 
