@@ -73,6 +73,10 @@ If no engine API exists, make a proposal. Reason: keeping dependencies low.
 3. If engine API documentation you relied upon is wrong or sparse, provide
 correct and concise proposals.
 
+4. Parameter order: allocator first, then written parameters (outputs, and
+e.g. a stream whose position advances), then read-only inputs:
+func(mem, out1, ..., outN, in1, ..., inM).
+
 Memory and Lifetime Handling (ds_allocator.h)
 =============================================
 
@@ -101,6 +105,10 @@ frame arena(s). Such arenas may be per-system and/or per-thread.
 allocated on scratch arenas. You push and pop scratch arenas in a LIFO fashion
 using ArenaPushScratch and ArenaPopScratch.
 
+7. Functions taking (struct arena *mem, ..., growable): mem is optional.
+Arena memory can't grow, so the valid combinations are (arena, NOT_GROWABLE)
+and (NULL = heap, GROWABLE or NOT_GROWABLE).
+
 Error Handling
 ==============
 
@@ -116,9 +124,10 @@ frame time budget (1/60 s).
 3. S_WARNING: valid but noteworthy states. Example: the editor rejects a node
 whose id already exists.
 
-4. ds_Alloc/ds_Realloc log and exit on failure themselves. Arena pushes return
-NULL (also for size 0) and full non-growable pools {NULL, U32_MAX}; most arena
-pushes are assumed never to fail, so only check where overflow is likely.
+4. ds_Realloc logs and exits on failure itself; ds_Alloc returns NULL. Arena
+pushes return NULL (also for size 0) and full non-growable pools {NULL, U32_MAX};
+most arena pushes are assumed never to fail, so only check where overflow is
+likely.
 
 Naming
 ======
@@ -132,3 +141,9 @@ Conventions, not rules: follow them in new code; don't rename old code.
 - Small common types: short lowercase type + uppercase function family
   (v3 -> V3Add, dll -> DLLAppend).
 - ds_Try...: may fail, returns a failure state. ...Check: returns a boolean.
+
+Comments
+========
+
+Short; state only what a reader would otherwise get wrong, never the obvious.
+Multi-line comments: /* on its own line, then the text, then */ on its own line.

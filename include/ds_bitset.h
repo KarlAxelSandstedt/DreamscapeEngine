@@ -25,6 +25,7 @@ extern "C" {
 #endif
 
 #include "ds_allocator.h"
+#include "ds_serialize.h"
 
 #define DS_BITSET_BLOCKSIZE         8
 #define DS_BITSET_BLOCK_BITCOUNT    (8*DS_BITSET_BLOCKSIZE)	
@@ -40,16 +41,48 @@ struct ds_BitSet
 
 /* Return a bitset with bit_count >= bit_count, with all bits cleared to clear_bit. On failure, an empty bitset is returned. */
 struct ds_BitSet	ds_BitSetAlloc(struct arena *mem, const u64 bit_count, const u64 clear_bit, const u32 growable);
-/* deallocate the set.  */
+/* ds_BitSetAlloc without clearing the bits. */
+struct ds_BitSet	ds_BitSetAllocEx(struct arena *mem, const u64 bit_count, const u32 growable);
+/* Deallocate the set.  */
 void 		        ds_BitSetDealloc(struct ds_BitSet *set);
-/* increase the set's size and set any newly allocated blocks with the clear bit. */
+/* Increase the set's size and set any newly allocated blocks with the clear bit. */
 void 		        ds_BitSetIncreaseSize(struct ds_BitSet *set, const u64 bit_count, const u64 clear_bit);
 /* Clear the set with the given bit value  */
 void 		        ds_BitSetClear(struct ds_BitSet* set, const u64 clear_bit);
-/* return the bit value of the given bit  */
-uint8_t 	        ds_BitSetGet(const struct ds_BitSet* set, const u64 bit);
-/* set the bit value of the given bit */
-void 		        ds_BitSetSet(const struct ds_BitSet* set, const u64 bit, const u64 bit_value);
+/* Return the required size when serializing the bitset. */
+u64                 ds_BitSetSerializeSize(const struct ds_BitSet *set);
+/* Serialize the bitset. WARNING: Assumes set fits in the stream. */
+void                ds_BitSetSerialize(struct ss *ss, const struct ds_BitSet *set);
+/* 
+ * Returns 1 on success and 0 on failure. On failure, the set is set to empty. 
+ * Failure may occur due to out-of-memory in mem, or the stream doesn't contain
+ * a bitset. 
+ */
+u32                 ds_BitSetTryDeserialize(struct arena *mem, struct ds_BitSet *set, struct ss *ss, const u32 growable);
+
+/* Return the bit value of the given bit. Indexing starts at 0.  */
+static inline uint8_t ds_BitSetGet(const struct ds_BitSet* set, const u64 bit)
+{
+	ds_Assert(bit < set->bit_count);
+
+	const u64 block = bit / DS_BITSET_BLOCK_BITCOUNT;
+	const u64 block_bit = bit % DS_BITSET_BLOCK_BITCOUNT;
+
+	return (set->bits[block] >> block_bit) & 0x1;
+}
+
+/* Set the bit value of the given bit. Indexing starts at 0. */
+static inline void ds_BitSetSet(struct ds_BitSet* set, const u64 bit, const u64 bit_value)
+{
+	ds_Assert(bit < set->bit_count && bit_value <= 1);
+
+	const u64 block = bit / DS_BITSET_BLOCK_BITCOUNT;
+	const u64 block_bit = bit % DS_BITSET_BLOCK_BITCOUNT;
+
+	/* Get all bits in block but set wanted bit to zero */
+	const u64 mask = ~((u64) 0x1 << block_bit); 
+	set->bits[block] = (set->bits[block] & mask) | (bit_value << block_bit);
+}
 
 struct ds_BitBlock
 {
@@ -74,6 +107,7 @@ static inline u64 ds_BitBlockHasNext(const struct ds_BitBlock *it)
     return it->block;
 }
 
+/* Advance the iterator */
 static inline u64 ds_BitBlockNext(struct ds_BitBlock *it)
 {
     ds_Assert(ds_BitBlockHasNext(it));
@@ -88,7 +122,8 @@ static inline u64 ds_BitBlockNext(struct ds_BitBlock *it)
     return bit;
 }
 
-static inline u64 ds_BitBlockPeekNext(struct ds_BitBlock *it)
+/* Peek the next bit in the iterator */
+static inline u64 ds_BitBlockPeekNext(const struct ds_BitBlock *it)
 {
     ds_Assert(ds_BitBlockHasNext(it));
 

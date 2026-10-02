@@ -1362,7 +1362,6 @@ struct ds_RemovalJobPhase
 u32 ds_RemovalJobPhaseDispatch(const ds_JobId job);
 
 
-
 /*
 =================================================================================================================
 |						Physics Pipeline			  	      	    	|
@@ -1552,14 +1551,15 @@ struct ds_Dynamics
     struct ds_RemovalJobPhase *     removal_phase;
 };
 
+
 /**************** PHYISCS PIPELINE API ****************/
 
 /* Initialize a new growable physics pipeline; ns_tick is the duration of a physics frame. */
 struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, c_ShapeSDB *cshape_db, ds_BodyPrefabSDB *prefab_db, const u32 worker_cont, const u64 worker_frame_size);
 /* free pipeline resources */
-void 			ds_DynamicsFree(struct ds_Dynamics *physics_pipeline);
+void 			ds_DynamicsFree(struct ds_Dynamics *pipeline);
 /* flush pipeline resources */
-void			ds_DynamicsFlush(struct ds_Dynamics *physics_pipeline);
+void			ds_DynamicsFlush(struct ds_Dynamics *pipeline);
 /* pipeline main method: simulate a single physics frame and update internal state  */
 void 			ds_DynamicsTick(struct ds_Dynamics *pipeline);
 /* Hash bodies in order from low to high and return the final hash  */
