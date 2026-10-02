@@ -124,17 +124,17 @@ void    ds_SmallRealloc(void **addr, const u64 old_size, const u64 new_size);
 /* 
  * Return a (at least) page size aligned allocation with at least size bytes. If huge_pages is true, the 
  * kernel is advised to use huge pages in the allocation. On success, the function sets the input memSlot
- * and returns a non-NULL valid memory address. On failure, the function returns NULL, and sets 
- * slot->address = NULL and slot->size = 0;
+ * and returns a non-NULL valid memory address. On failure, the function returns NULL, and sets
+ * slot->address = NULL and slot->size = 0; size == 0 gives an empty slot that keeps huge_pages for ds_Realloc.
  */
 void *	ds_Alloc(struct ds_MemSlot *slot, const u64 size, const u32 huge_pages);
 /* 
  * Reallocates the ds_Alloc memSlot, advising the kernel to use the same page policy for the new allocation. 
- * On failure, the application fatally cleans up and exit. 
+ * An empty slot is allocated with ds_Alloc. On failure, the application fatally cleans up and exit. 
  */
 void *	ds_Realloc(struct ds_MemSlot *slot, const u64 size);
 /*
- * Free a ds_Alloc memSlot. 
+ * Free a ds_Alloc memSlot; no-op on an empty slot. 
  */
 void	ds_Free(struct ds_MemSlot *slot);
 

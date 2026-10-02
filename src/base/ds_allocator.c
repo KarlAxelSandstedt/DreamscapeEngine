@@ -111,7 +111,11 @@ void ds_SmallRealloc(void **addr, const u64 old_size, const u64 new_size)
 
 void *ds_Alloc(struct ds_MemSlot *slot, const u64 size, const u32 huge_pages)
 {
-	ds_Assert(size); 
+	if (size == 0)
+	{
+		*slot = (struct ds_MemSlot) { .huge_pages = huge_pages };
+		return NULL;
+	}
 
 	u64 size_used = ds_AllocSizeCeil(size);
 	void *addr = mmap(NULL, size_used, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -134,34 +138,25 @@ void *ds_Alloc(struct ds_MemSlot *slot, const u64 size, const u32 huge_pages)
 	return slot->address;
 }
 
-void *ds_Realloc(struct ds_MemSlot *slot, const u64 size)
+/* Grow a non-empty slot to size > slot->size; on failure, slot->address is NULL. */
+static void ds_MemSlotGrow(struct ds_MemSlot *slot, const u64 size)
 {
-	if (slot->size < size)
+	if (slot->huge_pages)
 	{
-		if (slot->huge_pages)
+		struct ds_MemSlot new_slot;
+		if (ds_Alloc(&new_slot, size, HUGE_PAGES))
 		{
-			struct ds_MemSlot new_slot;
-			if (ds_Alloc(&new_slot, size, HUGE_PAGES))
-			{
-				memcpy(new_slot.address, slot->address, slot->size);
-			}
-			ds_Free(slot);
-			*slot = new_slot;
+			memcpy(new_slot.address, slot->address, slot->size);
 		}
-		else
-		{
-			slot->address = mremap(slot->address, slot->size, size, MREMAP_MAYMOVE);
-			slot->size = size;
-		}
-
-		if (slot->address == MAP_FAILED || slot->address == NULL)
-		{
-			LogString(T_SYSTEM, S_FATAL, "Failed to reallocate memSlot in ds_Realloc, exiting.");
-			FatalCleanupAndExit();
-		}
+		ds_Free(slot);
+		*slot = new_slot;
 	}
-
-	return slot->address;
+	else
+	{
+		void *addr = mremap(slot->address, slot->size, size, MREMAP_MAYMOVE);
+		slot->address = (addr == MAP_FAILED) ? NULL : addr;
+		slot->size = size;
+	}
 }
 
 void ds_Free(struct ds_MemSlot *slot)
@@ -182,7 +177,11 @@ void ds_Free(struct ds_MemSlot *slot)
 
 void *ds_Alloc(struct ds_MemSlot *slot, const u64 size, const u32 garbage)
 {
-	ds_Assert(size); 
+	if (size == 0)
+	{
+		*slot = (struct ds_MemSlot) { 0 };
+		return NULL;
+	}
 
 	u64 size_used = ds_AllocSizeCeil(size);
 	void *addr = mmap(NULL, size_used, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -201,30 +200,24 @@ void *ds_Alloc(struct ds_MemSlot *slot, const u64 size, const u32 garbage)
 	return slot->address;
 }
 
-void *ds_Realloc(struct ds_MemSlot *slot, const u64 size)
+/* Grow a non-empty slot to size > slot->size; on failure, slot->address is NULL. */
+static void ds_MemSlotGrow(struct ds_MemSlot *slot, const u64 size)
 {
-	ds_Assert(size > slot->size);
-
-	struct ds_MemSlot newSlot;
-	if (ds_Alloc(&newSlot, size, 0))
+	struct ds_MemSlot new_slot;
+	if (ds_Alloc(&new_slot, size, slot->huge_pages))
 	{
-		memcpy(newSlot.address, slot->address, slot->size);
+		memcpy(new_slot.address, slot->address, slot->size);
 	}
 	ds_Free(slot);
-	*slot = newSlot;
-	
-	if (slot->address == MAP_FAILED)
-	{
-		LogString(T_SYSTEM, S_FATAL, "Failed to reallocate memSlot in ds_Realloc, exiting.");
-		FatalCleanupAndExit();
-	}
-
-	return slot->address;
+	*slot = new_slot;
 }
 
 void ds_Free(struct ds_MemSlot *slot)
 {
-	munmap(slot->address, slot->size);	
+	if (slot->address)
+	{
+		munmap(slot->address, slot->size);	
+	}
 	slot->address = NULL;
 	slot->size = 0;
 	slot->huge_pages = 0;
@@ -233,7 +226,11 @@ void ds_Free(struct ds_MemSlot *slot)
 
 void *ds_Alloc(struct ds_MemSlot *slot, const u64 size, const u32 huge_pages)
 {
-	ds_Assert(size); 
+	if (size == 0)
+	{
+		*slot = (struct ds_MemSlot) { .huge_pages = huge_pages };
+		return NULL;
+	}
 
 	u64 size_used = ds_AllocSizeCeil(size);
 
@@ -248,38 +245,28 @@ void *ds_Alloc(struct ds_MemSlot *slot, const u64 size, const u32 huge_pages)
 
 	slot->address = addr;
 	slot->size = size_used;
-	slot->huge_pages = 0;
+	slot->huge_pages = huge_pages;
 
 	ds_Assert(((u64) slot->address) % g_mem_config->page_size == 0);
 
 	return slot->address;
 }
 
-void *ds_Realloc(struct ds_MemSlot *slot, const u64 size)
+/* Grow a non-empty slot to size > slot->size; on failure, slot->address is NULL. */
+static void ds_MemSlotGrow(struct ds_MemSlot *slot, const u64 size)
 {
-	if (slot->size < size)
+	struct ds_MemSlot new_slot;
+	if (ds_Alloc(&new_slot, size, slot->huge_pages))
 	{
-		struct ds_MemSlot new_slot;
-		if (ds_Alloc(&new_slot, size, NO_HUGE_PAGES))
-		{
-			memcpy(new_slot.address, slot->address, slot->size);
-		}
-		ds_Free(slot);
-		*slot = new_slot;
-
-		if (!slot->address)
-		{
-			LogString(T_SYSTEM, S_FATAL, "Failed to reallocate memSlot in ds_Realloc, exiting.");
-			FatalCleanupAndExit();
-		}
+		memcpy(new_slot.address, slot->address, slot->size);
 	}
-
-	return slot->address;
+	ds_Free(slot);
+	*slot = new_slot;
 }
 
 void ds_Free(struct ds_MemSlot *slot)
 {
-	if (!VirtualFree(slot->address, 0, MEM_RELEASE))
+	if (slot->address && !VirtualFree(slot->address, 0, MEM_RELEASE))
 	{
 		LogSystemError(S_ERROR);
 	}
@@ -293,6 +280,29 @@ void ds_Free(struct ds_MemSlot *slot)
 #error
 
 #endif
+
+void *ds_Realloc(struct ds_MemSlot *slot, const u64 size)
+{
+	if (slot->address == NULL)
+	{
+		if (ds_Alloc(slot, size, slot->huge_pages) == NULL && size)
+		{
+			LogString(T_SYSTEM, S_FATAL, "Failed to allocate empty memSlot in ds_Realloc, exiting.");
+			FatalCleanupAndExit();
+		}
+	}
+	else if (slot->size < size)
+	{
+		ds_MemSlotGrow(slot, size);
+		if (slot->address == NULL)
+		{
+			LogString(T_SYSTEM, S_FATAL, "Failed to reallocate memSlot in ds_Realloc, exiting.");
+			FatalCleanupAndExit();
+		}
+	}
+
+	return slot->address;
+}
 
 
 void ArenaPushRecord(struct arena *ar)
