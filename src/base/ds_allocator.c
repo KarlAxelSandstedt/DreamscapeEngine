@@ -29,6 +29,7 @@
 #include <errno.h>
 
 #include "ds_base.h"
+#include "ds_serialize.h"
 
 struct memConfig g_mem_config_storage = { 0 };
 struct memConfig *g_mem_config = &g_mem_config_storage;
@@ -340,6 +341,201 @@ u32 ds_CPoolAllocInternal(struct arena *mem, void **buf, u32 *length, u32 *count
 	*heap_allocated = (mem == NULL);
 	PoisonAddress(*buf, size - slot_size);
 	return 1;
+}
+
+void ds_CPoolSerializeInternal(struct ss *ss, const void *buf, const u32 length, const u32 count, const u64 slot_size)
+{
+	ds_Assert(ss->bit_index % 8 == 0);
+	ds_Assert(2*sizeof(u32) + count*slot_size <= ss_BytesLeft(ss));
+
+	ss_WriteU32Le(ss, length);
+	ss_WriteU32Le(ss, count);
+	ss_Write8N(ss, (const b8 *) buf, count*slot_size);
+}
+
+u32 ds_CPoolTryDeserializeInternal(struct arena *mem, void **buf, u32 *length, u32 *count, u32 *growable, u32 *heap_allocated, struct ss *ss, const u64 slot_size, const u32 alloc_growable)
+{
+	ds_Assert(ss->bit_index % 8 == 0);
+
+	*buf = NULL;
+	*length = 0;
+	*count = 0;
+	*growable = alloc_growable;
+	*heap_allocated = 0;
+	if (ss_BytesLeft(ss) < 2*sizeof(u32))
+	{
+		return 0;
+	}
+
+	const u64 bit_index = ss->bit_index;
+	const u32 serialized_length = ss_ReadU32Le(ss);
+	const u32 serialized_count = ss_ReadU32Le(ss);
+	/* division instead of count*slot_size: a corrupt count must not overflow the check */
+	if (serialized_count > serialized_length || serialized_count > ss_BytesLeft(ss) / slot_size
+		|| !ds_CPoolAllocInternal(mem, buf, length, count, growable, heap_allocated, slot_size, serialized_length, alloc_growable))
+	{
+		ss->bit_index = bit_index;
+		return 0;
+	}
+
+	UnpoisonAddress(*buf, serialized_count*slot_size);
+	ss_Read8N((b8 *) *buf, ss, serialized_count*slot_size);
+	*count = serialized_count;
+	return 1;
+}
+
+void ds_PoolSerializeInternal(struct ss *ss, const void *buf, const u32 length, const u32 count, const u32 count_max, const u32 next_free, const u64 slot_size, const u64 pool_slot_offset)
+{
+	ds_Assert(ss->bit_index % 8 == 0);
+	ds_Assert(3*sizeof(u32) + (u64) (count_max - count)*sizeof(u32) + (u64) count*slot_size <= ss_BytesLeft(ss));
+
+	const u8 *base = buf;
+	ss_WriteU32Le(ss, length);
+	ss_WriteU32Le(ss, count);
+	ss_WriteU32Le(ss, count_max);
+
+	u32 free_count = 0;
+	for (u32 i = next_free; i != POOL_INDEX_MASK; i = *(const u32 *) (base + i*slot_size + pool_slot_offset) & POOL_INDEX_MASK)
+	{
+		ss_WriteU32Le(ss, i);
+		free_count += 1;
+	}
+	ds_Assert(free_count == count_max - count);
+
+	for (u32 i = 0; i < count_max; ++i)
+	{
+		const u8 *slot = base + i*slot_size;
+		if (*(const u32 *) (slot + pool_slot_offset) & POOL_ALLOCATION_MASK)
+		{
+			continue;
+		}
+
+		ss_Write8N(ss, (const b8 *) slot, pool_slot_offset);
+		ss_WriteU32Le(ss, i);
+		ss_Write8N(ss, (const b8 *) (slot + pool_slot_offset + sizeof(u32)), slot_size - pool_slot_offset - sizeof(u32));
+	}
+}
+
+u32 ds_PoolAllocInternal(struct arena *mem, struct ds_MemSlot *mem_slot, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u32 alloc_length, const u32 alloc_growable)
+{
+	ds_Assert(!alloc_growable || !mem);
+	*mem_slot = (struct ds_MemSlot) { 0 };
+	*buf = NULL;
+	*length = 0;
+	*count = 0;
+	*count_max = 0;
+	*next_free = POOL_INDEX_MASK;
+	*growable = alloc_growable;
+
+	u32 length_used = alloc_length;
+	u8 *addr;
+	if (mem)
+	{
+		addr = ArenaPush(mem, slot_size * ((u64) alloc_length + 1));
+	}
+	else
+	{
+		addr = ds_Alloc(mem_slot, slot_size * ((u64) alloc_length + 1), HUGE_PAGES);
+		length_used = (u32) (mem_slot->size / slot_size - 1);
+	}
+
+	if (addr == NULL)
+	{
+		return 0;
+	}
+
+	*buf = addr + slot_size;
+	*length = length_used;
+	PoisonAddress(*buf, slot_size * length_used);
+	return 1;
+}
+
+u32 ds_PoolTryDeserializeInternal(struct arena *mem, struct ds_MemSlot *mem_slot, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, struct ss *ss, const u64 slot_size, const u64 pool_slot_offset, const u32 alloc_growable)
+{
+	ds_Assert(ss->bit_index % 8 == 0);
+
+	const u64 bit_index = ss->bit_index;
+	const u64 mem_left = (mem) ? mem->mem_left : 0;
+	*mem_slot = (struct ds_MemSlot) { 0 };
+	if (ss_BytesLeft(ss) < 3*sizeof(u32))
+	{
+		goto failure;
+	}
+
+	const u32 serialized_length = ss_ReadU32Le(ss);
+	const u32 serialized_count = ss_ReadU32Le(ss);
+	const u32 serialized_count_max = ss_ReadU32Le(ss);
+
+	/* divisions instead of multiplications: corrupt counts must not overflow the checks */
+	const u64 free_count = (u64) serialized_count_max - serialized_count;
+	const u64 bytes_left = ss_BytesLeft(ss);
+	if (serialized_count > serialized_count_max || serialized_count_max > serialized_length
+		|| serialized_length >= POOL_INDEX_MASK || free_count > bytes_left / sizeof(u32)
+		|| serialized_count > (bytes_left - free_count*sizeof(u32)) / slot_size
+		|| !ds_PoolAllocInternal(mem, mem_slot, buf, length, count, count_max, next_free, growable, slot_size, serialized_length, alloc_growable))
+	{
+		goto failure;
+	}
+
+	/* indices are written into the pool buffer; an out-of-range index fails the deserialization */
+	u8 *base = *buf;
+	u32 *prev_link = next_free;
+	for (u64 i = 0; i < free_count; ++i)
+	{
+		const u32 index = ss_ReadU32Le(ss);
+		if (index >= serialized_count_max)
+		{
+			goto failure;
+		}
+
+		u32 *link = (u32 *) (base + index*slot_size + pool_slot_offset);
+		UnpoisonAddress(link, sizeof(u32));
+		*prev_link = (prev_link == next_free) ? index : (POOL_ALLOCATION_MASK | index);
+		prev_link = link;
+	}
+
+	if (prev_link != next_free)
+	{
+		*prev_link = POOL_ALLOCATION_MASK | POOL_INDEX_MASK;
+	}
+
+	for (u32 i = 0; i < serialized_count; ++i)
+	{
+		struct ss peek = *ss;
+		peek.bit_index += 8*pool_slot_offset;
+		const u32 index = ss_ReadU32Le(&peek);
+		if (index >= serialized_count_max)
+		{
+			goto failure;
+		}
+
+		u8 *slot = base + index*slot_size;
+		UnpoisonAddress(slot, slot_size);
+		ss_Read8N((b8 *) slot, ss, slot_size);
+		*(u32 *) (slot + pool_slot_offset) = 0;
+	}
+
+	*count = serialized_count;
+	*count_max = serialized_count_max;
+	return 1;
+
+failure:
+	if (mem)
+	{
+		ArenaPopPacked(mem, mem_left - mem->mem_left);
+	}
+	else
+	{
+		ds_Free(mem_slot);
+	}
+	*buf = NULL;
+	*length = 0;
+	*count = 0;
+	*count_max = 0;
+	*next_free = POOL_INDEX_MASK;
+	*growable = alloc_growable;
+	ss->bit_index = bit_index;
+	return 0;
 }
 
 void ArenaPushRecord(struct arena *ar)

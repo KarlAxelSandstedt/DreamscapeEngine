@@ -445,15 +445,35 @@ do                                                                              
 /* Return top address, or stub addres in count == 0 */
 #define ds_CPoolTopAddress( pool ) ((pool).buf + (i32) (pool).count - 1)
 
+struct ss;
+/* Internal: see ds_CPoolSerialize. */
+void ds_CPoolSerializeInternal(struct ss *ss, const void *buf, const u32 length, const u32 count, const u64 slot_size);
+/* Internal: see ds_CPoolTryDeserialize. */
+u32  ds_CPoolTryDeserializeInternal(struct arena *mem, void **buf, u32 *length, u32 *count, u32 *growable, u32 *heap_allocated, struct ss *ss, const u64 slot_size, const u32 alloc_growable);
+
+/* Return the required size when serializing the CPool. */
+#define ds_CPoolSerializeSize( pool ) (2*sizeof(u32) + (u64) (pool).count*sizeof((pool).buf[0]))
+
+/* Serialize the CPool. WARNING: Assumes pool fits in the stream. */
+#define ds_CPoolSerialize( ss, pool ) ds_CPoolSerializeInternal((ss), (pool).buf, (pool).length, (pool).count, sizeof((pool).buf[0]))
+
+/* 
+ * Returns 1 on success and 0 on failure. On failure, the pool is set to empty. 
+ * Failure may occur due to out-of-memory in mem, or the stream doesn't contain
+ * a CPool.
+ */
+#define ds_CPoolTryDeserialize( mem, pool, ss, __growable )                                     \
+    ds_CPoolTryDeserializeInternal((mem), (void **) &(pool).buf, &(pool).length, &(pool).count, \
+                                   &(pool).growable, &(pool).heap_allocated, (ss),              \
+                                   sizeof((pool).buf[0]), (__growable))
+
 
 /*
 Pool Allocator
 ==============
 Intrusive pool allocator that handles allocation and deallocation of a specific struct. In order to use the
 pool allocator for a specific struct, the struct should contain the POOL_NODE macro; it defines
-internal slot state for the struct. The pool allocator can allocate at most 2^31 slots. u32 generation
-slots are supported by instead using the GPool Api instead, and replacing POOL_NODE with 
-GENERATIONAL_POOL_SLOT_STATE.
+internal slot state for the struct. The pool allocator can allocate at most 2^31 slots.
 
 Index -1 is reserved for the opaque stub; Its data should be viewed as garbage, and the stub
 is only there to allow building simpler access algorithms on top of the pool.
@@ -495,16 +515,29 @@ of each function. The functions generated are the following:
     void		    ds_StructPoolRemove(struct ds_StructPool *pool, const u32 index)
 
     // remove slot given address
-    void		    ds_StructPoolRemoveAddress(struct ds_StructPool *pool, void *address)
+    void		    ds_StructPoolRemoveAddress(struct ds_StructPool *pool, const struct ds_Struct *addr)
 
     // return index of address 
-    u32		        ds_StructPoolIndex(const struct ds_StructPool *pool, const void *address)
+    u32		        ds_StructPoolIndex(const struct ds_StructPool *pool, const struct ds_Struct *addr)
+
+    // Return the required size when serializing the pool.
+    u64             ds_StructPoolSerializeSize(const struct ds_StructPool *pool)
+
+    // Serialize the pool. WARNING: Assumes pool fits in the stream.
+    void            ds_StructPoolSerialize(struct ss *ss, const struct ds_StructPool *pool)
+
+    // Deserialize into *pool (in mem if provided). Returns 1 on success and 0 on failure.
+    u32             ds_StructPoolTryDeserialize(struct arena *mem, struct ds_StructPool *pool, struct ss *ss, const u32 growable)
 
 ::: Internal ::: 
 
 Each struct contains a slot state variable (u32). For allocated slots the state is <= 0x7fffffff.
 For unallocated slots, the most signficicant bit is set and the 31 lower bits represents an index to the 
 next free slot in the chain. The end of the free chain is represented by POOL_NULL.
+
+Serialized format (LE): u32 length, count, count_max; the count_max - count free slot indices in
+free-list order; the count allocated slots as raw bytes, each with pool_slot replaced by its index.
+Slot positions and the free-list order are restored exactly.
 */
 
 #define POOL_NODE 	        u32 pool_slot;
@@ -523,6 +556,13 @@ next free slot in the chain. The end of the free chain is represented by POOL_NU
 					u32 slot_generation_state
 
 
+/* Internal: see PoolAlloc. Returns 1 on success and 0 on failure. */
+u32  ds_PoolAllocInternal(struct arena *mem, struct ds_MemSlot *mem_slot, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u32 alloc_length, const u32 alloc_growable);
+/* Internal: see PoolSerialize. */
+void ds_PoolSerializeInternal(struct ss *ss, const void *buf, const u32 length, const u32 count, const u32 count_max, const u32 next_free, const u64 slot_size, const u64 pool_slot_offset);
+/* Internal: see PoolTryDeserialize. */
+u32  ds_PoolTryDeserializeInternal(struct arena *mem, struct ds_MemSlot *mem_slot, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, struct ss *ss, const u64 slot_size, const u64 pool_slot_offset, const u32 alloc_growable);
+
 #define POOL_DECLARE(T)                                                                          \
         POOL_STRUCT_DEFINE(T);                                                                   \
         POOL_ALLOC_DECLARE(T);                                                                   \
@@ -531,7 +571,10 @@ next free slot in the chain. The end of the free chain is represented by POOL_NU
         POOL_ADD_DECLARE(T);                                                                     \
         POOL_REMOVE_DECLARE(T);                                                                  \
         POOL_REMOVE_ADDRESS_DECLARE(T);                                                          \
-        POOL_INDEX_DECLARE(T)                                                           
+        POOL_INDEX_DECLARE(T);                                                                   \
+        POOL_SERIALIZE_SIZE_DECLARE(T);                                                          \
+        POOL_SERIALIZE_DECLARE(T);                                                               \
+        POOL_TRY_DESERIALIZE_DECLARE(T)
 
 #define POOL_DEFINE(T)                                                                           \
         POOL_ALLOC_DEFINE(T)                                                                     \
@@ -540,7 +583,10 @@ next free slot in the chain. The end of the free chain is represented by POOL_NU
         POOL_ADD_DEFINE(T)                                                                       \
         POOL_REMOVE_DEFINE(T)                                                                    \
         POOL_REMOVE_ADDRESS_DEFINE(T)                                                            \
-        POOL_INDEX_DEFINE(T)                                                           
+        POOL_INDEX_DEFINE(T)                                                                     \
+        POOL_SERIALIZE_SIZE_DEFINE(T)                                                            \
+        POOL_SERIALIZE_DEFINE(T)                                                                 \
+        POOL_TRY_DESERIALIZE_DEFINE(T)
 
 #define POOL_STRUCT_DEFINE(T)                                                                       \
 typedef struct T ## Pool                                                                            \
@@ -551,7 +597,7 @@ typedef struct T ## Pool                                                        
 	u32 length;			        /* array length 				                                */  \
 	u32 count;			        /* current count of occupied slots 		                        */  \
 	u32 count_max;		        /* max count used over the object's lifetime 	                */  \
-	u32 next_free;		        /* next free index if != U32_MAX 		                        */  \
+	u32 next_free;		        /* next free index if != POOL_INDEX_MASK 		                */  \
 	u32 growable;		        /* is the memory growable? 			                            */  \
 } T ## Pool
 
@@ -578,35 +624,26 @@ void                T ## PoolRemoveAddress(struct T ## Pool *pool,              
                                            const struct T *addr)    
 
 #define POOL_INDEX_DECLARE(T)                                                                       \
-u32                 T ## PoolIndex(struct T ## Pool *pool,                                          \
+u32                 T ## PoolIndex(const struct T ## Pool *pool,                                    \
                                    const struct T *addr)
+
+#define POOL_SERIALIZE_SIZE_DECLARE(T)                                                              \
+u64                 T ## PoolSerializeSize(const struct T ## Pool *pool)
+
+#define POOL_SERIALIZE_DECLARE(T)                                                                   \
+void                T ## PoolSerialize(struct ss *ss, const struct T ## Pool *pool)
+
+#define POOL_TRY_DESERIALIZE_DECLARE(T)                                                             \
+u32                 T ## PoolTryDeserialize(struct arena *mem, struct T ## Pool *pool,              \
+                                            struct ss *ss, const u32 growable)
 
 #define POOL_ALLOC_DEFINE(T)                                                                        \
 POOL_ALLOC_DECLARE(T)                                                                               \
 {                                                                                                   \
-	ds_Assert(!growable || !mem);                                                                   \
-	struct T ## Pool pool = { 0 };                                                                  \
-	u32 length_used = length;                                                                       \
-	if (mem)                                                                                        \
-	{                                                                                               \
-		pool.buf = ArenaPush(mem, sizeof(struct T) * (length+1));                                   \
-	}                                                                                               \
-	else                                                                                            \
-	{                                                                                               \
-		pool.buf = ds_Alloc(&pool.mem_slot, sizeof(struct T) * (length+1), HUGE_PAGES);             \
-		length_used = pool.mem_slot.size / sizeof(struct T)-1;                                      \
-	}                                                                                               \
-                                                                                                    \
-	if (pool.buf)                                                                                   \
-	{                                                                                               \
-        pool.buf += 1;                                                                              \
-		pool.length = length_used;                                                                  \
-		pool.count = 0;                                                                             \
-		pool.count_max = 0;                                                                         \
-		pool.next_free = POOL_INDEX_MASK;                                                           \
-		pool.growable = growable;                                                                   \
-		PoisonAddress(pool.buf, sizeof(struct T) * pool.length);                                    \
-	}                                                                                               \
+	struct T ## Pool pool;                                                                          \
+	ds_PoolAllocInternal(mem, &pool.mem_slot, (void **) &pool.buf, &pool.length, &pool.count,       \
+	                     &pool.count_max, &pool.next_free, &pool.growable, sizeof(struct T),        \
+	                     length, growable);                                                         \
 	return pool;                                                                                    \
 }
 
@@ -725,6 +762,29 @@ POOL_INDEX_DECLARE(T)                                                           
 	ds_Assert((u64) addr < (u64) (pool->buf + pool->length));                                       \
 	ds_Assert(((u8*) addr - (u8*) pool->buf) % sizeof(struct T) == 0);                              \
 	return (u32) (addr - pool->buf);                                                                \
+}
+
+#define POOL_SERIALIZE_SIZE_DEFINE(T)                                                               \
+POOL_SERIALIZE_SIZE_DECLARE(T)                                                                      \
+{                                                                                                   \
+	return 3*sizeof(u32) + (u64) (pool->count_max - pool->count)*sizeof(u32)                        \
+	                     + (u64) pool->count*sizeof(struct T);                                      \
+}
+
+#define POOL_SERIALIZE_DEFINE(T)                                                                    \
+POOL_SERIALIZE_DECLARE(T)                                                                           \
+{                                                                                                   \
+	ds_PoolSerializeInternal(ss, pool->buf, pool->length, pool->count, pool->count_max,             \
+	                         pool->next_free, sizeof(struct T), (u64) &(((struct T *)0)->pool_slot));\
+}
+
+#define POOL_TRY_DESERIALIZE_DEFINE(T)                                                              \
+POOL_TRY_DESERIALIZE_DECLARE(T)                                                                     \
+{                                                                                                   \
+	return ds_PoolTryDeserializeInternal(mem, &pool->mem_slot, (void **) &pool->buf, &pool->length, \
+	                                     &pool->count, &pool->count_max, &pool->next_free,          \
+	                                     &pool->growable, ss, sizeof(struct T),                     \
+	                                     (u64) &(((struct T *)0)->pool_slot), growable);            \
 }
 
 #define POOL_NODE 	        u32 pool_slot;
