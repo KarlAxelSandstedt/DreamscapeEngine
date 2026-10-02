@@ -26,7 +26,9 @@ Useful builds:
 
 All scripts share build/. For your own builds, use a separate directory
 (cmake -B build_agent ...) unless told otherwise. Configure your builds with
--DDS_PROFILE=OFF (Tracy); you cannot read its output.
+-DDS_PROFILE=OFF (Tracy); you cannot read its output. Sanitizer builds must be
+optimized (-DDS_OPTIMIZE=ON). DS_DEBUG=ON validates the whole physics pipeline
+every tick (slow).
 
 ds_Assert and Breakpoint(condition) are diligently used when debugging. Note
 that -DDS_DEBUG=OFF compiles them out, so they must not contain side effects or

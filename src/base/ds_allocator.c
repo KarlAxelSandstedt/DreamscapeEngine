@@ -87,7 +87,7 @@ void ds_SmallRealloc(void **addr, const u64 old_size, const u64 new_size)
 {
 	if (old_size < new_size)
 	{
-        void *new_addr;
+        void *new_addr = NULL;
         ds_SmallAlloc(&new_addr, new_size);
         if (new_addr == NULL)
         {
@@ -304,6 +304,43 @@ void *ds_Realloc(struct ds_MemSlot *slot, const u64 size)
 	return slot->address;
 }
 
+
+u32 ds_CPoolAllocInternal(struct arena *mem, void **buf, u32 *length, u32 *count, u32 *growable, u32 *heap_allocated, const u64 slot_size, const u32 alloc_length, const u32 alloc_growable)
+{
+	ds_Assert(!alloc_growable || !mem);
+	*buf = NULL;
+	*length = 0;
+	*count = 0;
+	*growable = alloc_growable;
+	*heap_allocated = 0;
+	if (alloc_length == 0)
+	{
+		return 1;
+	}
+
+	void *addr = NULL;
+	const u64 size = slot_size*((u64) alloc_length + 1);
+	if (mem)
+	{
+		addr = ArenaPushAligned(mem, size, DS_SMALL_ALLOCATION_ALIGNMENT);
+	}
+	else
+	{
+		ds_SmallAlloc(&addr, size);
+	}
+
+	ds_Assert((u64) addr % DS_CACHE_LINE == 0);
+	if (addr == NULL)
+	{
+		return 0;
+	}
+
+	*buf = (u8 *) addr + slot_size;
+	*length = alloc_length;
+	*heap_allocated = (mem == NULL);
+	PoisonAddress(*buf, size - slot_size);
+	return 1;
+}
 
 void ArenaPushRecord(struct arena *ar)
 {

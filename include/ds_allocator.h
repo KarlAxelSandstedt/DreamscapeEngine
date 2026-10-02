@@ -282,6 +282,7 @@ typedef struct ds_CPool(T)		    \
 	u32 		        length;		\
 	u32 		        count;		\
 	u32		            growable;	\
+	u32		            heap_allocated;	\
 	T *                 buf;	    \
 	struct ds_MemSlot	mem_slot;	\
 } ds_CPool(T)
@@ -307,6 +308,7 @@ typedef struct ds_CPool(T)		    \
 	u32 		        length;		\
 	u32 		        count;		\
 	u32		            growable;	\
+	u32		            heap_allocated;	\
 	struct T *          buf;	    \
 } ds_CPool(T)
 DEFINE_CPOOL_STRUCT(intv);
@@ -315,45 +317,24 @@ DEFINE_CPOOL_STRUCT(intv);
 #define ds_CPoolAllocMemoryRequirement(__length, __slot_size)                           \
     (DS_SMALL_ALLOCATION_ALIGNMENT + ((__length)+1)*(__slot_size))
 
+/* Internal: ds_CPoolAlloc as a function. Returns 1 on success and 0 on failure. */
+u32 ds_CPoolAllocInternal(struct arena *mem, void **buf, u32 *length, u32 *count, u32 *growable, u32 *heap_allocated, const u64 slot_size, const u32 alloc_length, const u32 alloc_growable);
+
 /* Allocate and setup the CPool.  */
 #define ds_CPoolAlloc(mem, pool, __length, __growable)                                  \
 do                                                                                      \
 {                                                                                       \
-	ds_Assert(!(__growable) || !(mem));                                                 \
     memset(&(pool), 0, sizeof(pool));                                                   \
-    if (__length == 0)                                                                  \
-    {                                                                                   \
-        break;                                                                          \
-    }                                                                                   \
-                                                                                        \
-	void *__buf = NULL;                                                                 \
-    const u64 __size = sizeof((pool).buf[0])*(__length+1);                              \
-	if (mem)                                                                            \
-	{                                                                                   \
-		__buf = ArenaPushAligned((mem), __size, DS_SMALL_ALLOCATION_ALIGNMENT);         \
-	}                                                                                   \
-	else                                                                                \
-	{                                                                                   \
-        ds_SmallAlloc(&__buf, __size);                                                  \
-	}                                                                                   \
-                                                                                        \
-    ds_Assert((u64) __buf % DS_CACHE_LINE == 0);                                        \
-	if (__buf)                                                                          \
-	{                                                                                   \
-		(pool).buf = __buf;                                                             \
-		(pool).buf += 1;                                                                \
-		(pool).length = __length;                                                       \
-		(pool).count = 0;                                                               \
-		(pool).growable = (__growable);                                                 \
-		PoisonAddress((pool).buf, __size - sizeof((pool).buf[0]));                      \
-	}                                                                                   \
-} while (0)                                                                             \
+    ds_CPoolAllocInternal((mem), (void **) &(pool).buf, &(pool).length, &(pool).count,  \
+                          &(pool).growable, &(pool).heap_allocated, sizeof((pool).buf[0]), \
+                          (__length), (__growable));                                    \
+} while (0)
 
 /* Deallocate (if any) CPool resources */
 #define ds_CPoolDealloc(pool)                                                           \
 do                                                                                      \
 {                                                                                       \
-    if ((pool).buf)                                                                     \
+    if ((pool).buf && (pool).heap_allocated)                                            \
     {                                                                                   \
         ds_SmallFree((pool).buf-1);                                                     \
     }                                                                                   \
@@ -370,7 +351,7 @@ do                                                                              
     (pool).count = 0;                                                                   \
 } while (0)                                                                             
 
-static inline struct slot ds_CPoolPushInternal(void **buf, u32 *count, u32 *length, const u64 slot_size, const u32 growable)
+static inline struct slot ds_CPoolPushInternal(void **buf, u32 *count, u32 *length, u32 *heap_allocated, const u64 slot_size, const u32 growable)
 {
     if (*count == *length)
     {                                                                                   
@@ -383,13 +364,15 @@ static inline struct slot ds_CPoolPushInternal(void **buf, u32 *count, u32 *leng
                              ? (*length) << 1
                              : 1;
         const u64 new_size = (new_length+1) * slot_size;
-        const u64 old_size = ((*length)+1) * slot_size;
-        *buf = (u8 *)(*buf) - slot_size;
-        ds_SmallRealloc(buf, old_size, new_size);    
-        PoisonAddress(*buf, new_size);                                
-        UnpoisonAddress(*buf, (*count + 1)*slot_size);                
-        *buf = (u8 *) (*buf) + slot_size;
+        /* an empty pool (length 0) has no buffer yet */
+        const u64 old_size = (*buf) ? ((*length)+1) * slot_size : 0;
+        void *base = (*buf) ? (u8 *)(*buf) - slot_size : NULL;
+        ds_SmallRealloc(&base, old_size, new_size);    
+        PoisonAddress(base, new_size);                                
+        UnpoisonAddress(base, (*count + 1)*slot_size);                
+        *buf = (u8 *) base + slot_size;
         *length = (u32) new_length;
+        *heap_allocated = 1;
     }
 
     const struct slot slot = { .index = *count, .address = (u8*)(*buf) + *count*slot_size };
@@ -398,9 +381,9 @@ static inline struct slot ds_CPoolPushInternal(void **buf, u32 *count, u32 *leng
     return slot;
 }
 
-static inline struct slot ds_CPoolPushMemcpyInternal(void **buf, u32 *count, u32 *length, const u64 slot_size, const u32 growable, const void *src)
+static inline struct slot ds_CPoolPushMemcpyInternal(void **buf, u32 *count, u32 *length, u32 *heap_allocated, const u64 slot_size, const u32 growable, const void *src)
 {
-    struct slot slot = ds_CPoolPushInternal(buf, count, length, slot_size, growable);
+    struct slot slot = ds_CPoolPushInternal(buf, count, length, heap_allocated, slot_size, growable);
     memcpy(slot.address, src, slot_size);
     return slot;
 }
@@ -409,13 +392,13 @@ static inline struct slot ds_CPoolPushMemcpyInternal(void **buf, u32 *count, u32
  * return allocated slot at the end of the occupied memory in the buffer, or { STUB_ADDRESS, U32_MAX } 
  * if the CPool is full and not growable.
  */
-#define ds_CPoolPush( pool ) ds_CPoolPushInternal((void **) &(pool).buf, &(pool).count, &(pool).length, sizeof((pool).buf[0]), (pool).growable)
+#define ds_CPoolPush( pool ) ds_CPoolPushInternal((void **) &(pool).buf, &(pool).count, &(pool).length, &(pool).heap_allocated, sizeof((pool).buf[0]), (pool).growable)
 
 /* 
  * return allocated slot at the end of the occupied memory in the buffer, or { STUB_ADDRESS, U32_MAX } 
  * if the CPool is full and not growable. The returned address will always be memcpy'd to.
  */
-#define ds_CPoolPushMemcpy( pool, src ) ds_CPoolPushMemcpyInternal((void **) &(pool).buf, &(pool).count, &(pool).length, sizeof((pool).buf[0]), (pool).growable, (src))
+#define ds_CPoolPushMemcpy( pool, src ) ds_CPoolPushMemcpyInternal((void **) &(pool).buf, &(pool).count, &(pool).length, &(pool).heap_allocated, sizeof((pool).buf[0]), (pool).growable, (src))
 
 /* 
  * Allocate a new slot at the end of the occupied memory in the buffer; on success, set the slot's value.
@@ -426,6 +409,7 @@ do                                                                              
     const struct slot __slot = ds_CPoolPushInternal((void **) &(pool).buf,                  \
                                                   &(pool).count,                            \
                                                   &(pool).length,                           \
+                                                  &(pool).heap_allocated,                   \
                                                   sizeof((pool).buf[0]),                    \
                                                   (pool).growable);                         \
     (pool).buf[(i32) __slot.index] = (val);                                                 \
