@@ -55,6 +55,62 @@ void BvhFree(struct bvh *bvh)
 	MinQueueDealloc(&bvh->cost_queue);
 }
 
+u64 BvhSerializeSize(const struct bvh *bvh)
+{
+	return 2*sizeof(u32) 
+		+ ds_BitSetSerializeSize(&bvh->leaf_set) 
+		+ ds_BitSetSerializeSize(&bvh->internal_set) 
+		+ bvhNodePoolSerializeSize(&bvh->pool);
+}
+
+void BvhSerialize(struct ss *ss, const struct bvh *bvh)
+{
+	ds_Assert(BvhSerializeSize(bvh) <= ss_BytesLeft(ss));
+
+	ss_WriteU32Le(ss, bvh->bt.root);
+	ss_WriteU32Le(ss, bvh->bt.count);
+	ds_BitSetSerialize(ss, &bvh->leaf_set);
+	ds_BitSetSerialize(ss, &bvh->internal_set);
+	bvhNodePoolSerialize(ss, &bvh->pool);
+}
+
+u32 BvhTryDeserialize(struct arena *mem, struct bvh *bvh, struct ss *ss, const u32 growable)
+{
+	const u64 bit_index = ss->bit_index;
+	const u64 mem_left = (mem) ? mem->mem_left : 0;
+	*bvh = (struct bvh) { .heap_allocated = !mem };
+	ds_BTFlush(bvh->bt);
+	if (ss_BytesLeft(ss) < 2*sizeof(u32))
+	{
+		return 0;
+	}
+
+	bvh->bt.root = ss_ReadU32Le(ss);
+	bvh->bt.count = ss_ReadU32Le(ss);
+	if (!ds_BitSetTryDeserialize(mem, &bvh->leaf_set, ss, growable)
+		|| !ds_BitSetTryDeserialize(mem, &bvh->internal_set, ss, growable)
+		|| !bvhNodePoolTryDeserialize(mem, &bvh->pool, ss, growable))
+	{
+		if (mem)
+		{
+			ArenaPopPacked(mem, mem_left - mem->mem_left);
+		}
+		else
+		{
+			ds_BitSetDealloc(&bvh->leaf_set);
+			ds_BitSetDealloc(&bvh->internal_set);
+			bvhNodePoolDealloc(&bvh->pool);
+		}
+		*bvh = (struct bvh) { .heap_allocated = !mem };
+		ds_BTFlush(bvh->bt);
+		ss->bit_index = bit_index;
+		return 0;
+	}
+
+	bvh->cost_queue = MinQueueAlloc(NULL, COST_QUEUE_INITIAL_COUNT, growable);
+	return 1;
+}
+
 static f32 BodySah(const struct aabb *box)
 {
 	return box->hw.x*(box->hw.y + box->hw.z) + box->hw.y*box->hw.z;
