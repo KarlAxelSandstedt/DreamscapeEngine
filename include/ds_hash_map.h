@@ -30,10 +30,10 @@ extern "C" {
 #define HASH_NULL 	POOL_NULL	
 
 /*
-hashMap
-=======
-hash map mapping a key to a set of possible indices. User dereference
-indices to check for equality between identifiers 
+ds_HashMap
+==========
+Hash map from a hash to a chain of indices. Users dereference the indices to compare the actual keys.
+hash_len is a power of two and index_len >= hash_len.
 */
 
 struct ds_HashMap
@@ -48,23 +48,30 @@ struct ds_HashMap
 	struct ds_MemSlot	mem_index;
 };
 
-/* allocate hash map on heap if mem == NULL, otherwise push memory onto arena. On failure, returns { 0 }  */
+/* Allocate a map with at least the given lengths (rounded up). On failure, an empty map is returned. */
 struct ds_HashMap	ds_HashMapAlloc(struct arena *mem, const u32 hash_len, const u32 index_len, const u32 growable);
-/* free hash map memory */
+/*
+ * ds_HashMapAlloc with exact lengths and uncleared memory. Used by deserialization: the hash array
+ * is only valid for the hash_len it was built with.
+ */
+struct ds_HashMap	ds_HashMapAllocEx(struct arena *mem, const u32 hash_len, const u32 index_len, const u32 growable);
+/* Free the map's heap memory. */
 void		        ds_HashMapDealloc(struct ds_HashMap *map);
-/* flush / reset the hash map */
+/* Remove all (hash, index) pairs. */
 void		        ds_HashMapFlush(struct ds_HashMap *map);
-/* serialize hash map into stream  */
+/* Return the required size when serializing the map. */
+u64                 ds_HashMapSerializeSize(const struct ds_HashMap *map);
+/* Serialize the map. WARNING: Assumes map fits in the stream. */
 void 		        ds_HashMapSerialize(struct ss *ss, const struct ds_HashMap *map);
-/* deserialize and construct hash_map on arena if defined, otherwise alloc on heap. On failure, returns NULL  */
-struct ds_HashMap	ds_HashMapDeserialize(struct arena *mem, struct ss *ss, const u32 growable);
-/* add the hash(key)-index pair to the hash map. return 1 on success, 0 on out-of-memory. */
+/* Returns 1 on success and 0 on failure. */
+u32                 ds_HashMapTryDeserialize(struct arena *mem, struct ds_HashMap *map, struct ss *ss, const u32 growable);
+/* Add the (hash, index) pair. Returns 1 on success and 0 if index doesn't fit a non-growable map. */
 u32		            ds_HashMapAdd(struct ds_HashMap *map, const u32 hash, const u32 index);
-/* remove  hash(key)-index pair to the hash map. If the pair is not found, do nothing. */
+/* Remove the (hash, index) pair; no-op if it isn't in the map. */
 void		        ds_HashMapRemove(struct ds_HashMap *map, const u32 hash, const u32 index);
-/* Get the first (hash,index) pair of the map. If HASH_NULL is returned, no more pairs exist */
+/* Return the first index in the hash's chain, or HASH_NULL. */
 u32		            ds_HashMapFirst(const struct ds_HashMap *map, const u32 hash);
-/* Get the next (hash,index) pair of the map. If HASH_NULL is returnsd, no more pairs exist */
+/* Return the next index in the chain, or HASH_NULL. */
 u32		            ds_HashMapNext(const struct ds_HashMap *map, const u32 index);
 
 /*

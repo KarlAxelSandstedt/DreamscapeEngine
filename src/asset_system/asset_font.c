@@ -337,7 +337,10 @@ const struct font *FontDeserialize(struct assetFont *asset)
 		font->glyph[i].tr.y = ss_ReadF32Be(&ss);
 	}
 
-	font->codepoint_to_glyph_map = ds_HashMapDeserialize(NULL, &ss, 0);
+	if (!ds_HashMapTryDeserialize(NULL, &font->codepoint_to_glyph_map, &ss, NOT_GROWABLE))
+	{
+		LogString(T_ASSET, S_ERROR, "Failed to deserialize font codepoint map");
+	}
 	ss_Read8N(font->pixmap, &ss, font->pixmap_height * font->pixmap_width);
 
 	FileMemoryUnmap(buf, size);
