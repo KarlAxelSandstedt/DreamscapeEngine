@@ -55,7 +55,7 @@ and can handle at most I32_MAX elements.
     LLSerialize(_ss_, _ll_)
 
     // Deserialize _ll_ from _ss_. Returns 1 on success and 0 on failure.
-    LLTryDeserialize(_ll_, _ss_)
+    LLTryDeserialize(_ss_, _ll_)
 */
 
 #define LL_SENTINEL        DS_STUB_INDEX
@@ -126,7 +126,7 @@ do                                                                              
 } while (0)
 
 /* Returns 1 on success and 0 on failure. */
-#define LLTryDeserialize(_ll_, _ss_)                                                                    \
+#define LLTryDeserialize(_ss_, _ll_)                                                                    \
     ((ss_BytesLeft(_ss_) < LLSerializeSize(_ll_))                                                       \
         ? ((_ll_).count = 0, (_ll_).first = LL_SENTINEL, (_ll_).last = LL_SENTINEL, 0u)                 \
         : ((_ll_).count = ss_ReadU32Le(_ss_),                                                           \
@@ -168,7 +168,7 @@ and can handle at most I32_MAX elements.
     DLLSerialize(_ss_, _dll_)
 
     // Deserialize _dll_ from _ss_. Returns 1 on success and 0 on failure.
-    DLLTryDeserialize(_dll_, _ss_)
+    DLLTryDeserialize(_ss_, _dll_)
 */
 
 #define DLL_SENTINEL        DS_STUB_INDEX
@@ -269,7 +269,7 @@ do                                                                              
 } while (0)
 
 /* Returns 1 on success and 0 on failure. */
-#define DLLTryDeserialize(_dll_, _ss_)                                                                  \
+#define DLLTryDeserialize(_ss_, _dll_)                                                                  \
     ((ss_BytesLeft(_ss_) < DLLSerializeSize(_dll_))                                                     \
         ? ((_dll_).count = 0, (_dll_).first = DLL_SENTINEL, (_dll_).last = DLL_SENTINEL, 0u)            \
         : ((_dll_).count = ss_ReadU32Le(_ss_),                                                          \

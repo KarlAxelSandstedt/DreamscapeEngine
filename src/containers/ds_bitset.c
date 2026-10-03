@@ -112,7 +112,7 @@ void ds_BitSetSerialize(struct ss *ss, const struct ds_BitSet *set)
 	ss_WriteU64LeN(ss, set->bits, set->block_count);
 }
 
-u32 ds_BitSetTryDeserialize(struct arena *mem, struct ds_BitSet *set, struct ss *ss, const u32 growable)
+u32 ds_BitSetTryDeserialize(struct arena *mem, struct ss *ss, struct ds_BitSet *set, const u32 growable)
 {
 	ds_Assert(ss->bit_index % 8 == 0);
 

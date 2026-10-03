@@ -64,7 +64,7 @@ u64                 ds_HashMapSerializeSize(const struct ds_HashMap *map);
 /* Serialize the map. WARNING: Assumes map fits in the stream. */
 void 		        ds_HashMapSerialize(struct ss *ss, const struct ds_HashMap *map);
 /* Returns 1 on success and 0 on failure. */
-u32                 ds_HashMapTryDeserialize(struct arena *mem, struct ds_HashMap *map, struct ss *ss, const u32 growable);
+u32                 ds_HashMapTryDeserialize(struct arena *mem, struct ss *ss, struct ds_HashMap *map, const u32 growable);
 /* Add the (hash, index) pair. Returns 1 on success and 0 if index doesn't fit a non-growable map. */
 u32		            ds_HashMapAdd(struct ds_HashMap *map, const u32 hash, const u32 index);
 /* Remove the (hash, index) pair; no-op if it isn't in the map. */

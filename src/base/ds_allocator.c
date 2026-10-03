@@ -353,7 +353,7 @@ void ds_CPoolSerializeInternal(struct ss *ss, const void *buf, const u32 length,
 	ss_Write8N(ss, (const b8 *) buf, count*slot_size);
 }
 
-u32 ds_CPoolTryDeserializeInternal(struct arena *mem, void **buf, u32 *length, u32 *count, u32 *growable, u32 *heap_allocated, struct ss *ss, const u64 slot_size, const u32 alloc_growable)
+u32 ds_CPoolTryDeserializeInternal(struct arena *mem, struct ss *ss, void **buf, u32 *length, u32 *count, u32 *growable, u32 *heap_allocated, const u64 slot_size, const u32 alloc_growable)
 {
 	ds_Assert(ss->bit_index % 8 == 0);
 
@@ -450,7 +450,7 @@ u32 ds_PoolAllocInternal(struct arena *mem, struct ds_MemSlot *mem_slot, void **
 	return 1;
 }
 
-u32 ds_PoolTryDeserializeInternal(struct arena *mem, struct ds_MemSlot *mem_slot, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, struct ss *ss, const u64 slot_size, const u64 pool_slot_offset, const u32 alloc_growable)
+u32 ds_PoolTryDeserializeInternal(struct arena *mem, struct ss *ss, struct ds_MemSlot *mem_slot, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u64 pool_slot_offset, const u32 alloc_growable)
 {
 	ds_Assert(ss->bit_index % 8 == 0);
 

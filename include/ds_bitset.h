@@ -58,7 +58,7 @@ void                ds_BitSetSerialize(struct ss *ss, const struct ds_BitSet *se
  * Failure may occur due to out-of-memory in mem, or the stream doesn't contain
  * a bitset. 
  */
-u32                 ds_BitSetTryDeserialize(struct arena *mem, struct ds_BitSet *set, struct ss *ss, const u32 growable);
+u32                 ds_BitSetTryDeserialize(struct arena *mem, struct ss *ss, struct ds_BitSet *set, const u32 growable);
 
 /* Return the bit value of the given bit. Indexing starts at 0.  */
 static inline uint8_t ds_BitSetGet(const struct ds_BitSet* set, const u64 bit)

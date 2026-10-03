@@ -74,7 +74,7 @@ void BvhSerialize(struct ss *ss, const struct bvh *bvh)
 	bvhNodePoolSerialize(ss, &bvh->pool);
 }
 
-u32 BvhTryDeserialize(struct arena *mem, struct bvh *bvh, struct ss *ss, const u32 growable)
+u32 BvhTryDeserialize(struct arena *mem, struct ss *ss, struct bvh *bvh, const u32 growable)
 {
 	const u64 bit_index = ss->bit_index;
 	const u64 mem_left = (mem) ? mem->mem_left : 0;
@@ -87,9 +87,9 @@ u32 BvhTryDeserialize(struct arena *mem, struct bvh *bvh, struct ss *ss, const u
 
 	bvh->bt.root = ss_ReadU32Le(ss);
 	bvh->bt.count = ss_ReadU32Le(ss);
-	if (!ds_BitSetTryDeserialize(mem, &bvh->leaf_set, ss, growable)
-		|| !ds_BitSetTryDeserialize(mem, &bvh->internal_set, ss, growable)
-		|| !bvhNodePoolTryDeserialize(mem, &bvh->pool, ss, growable))
+	if (!ds_BitSetTryDeserialize(mem, ss, &bvh->leaf_set, growable)
+		|| !ds_BitSetTryDeserialize(mem, ss, &bvh->internal_set, growable)
+		|| !bvhNodePoolTryDeserialize(mem, ss, &bvh->pool, growable))
 	{
 		if (mem)
 		{

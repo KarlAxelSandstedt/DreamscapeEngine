@@ -123,7 +123,7 @@ void ds_HashMapSerialize(struct ss *ss, const struct ds_HashMap *map)
 	ss_WriteU32LeN(ss, map->index, map->index_len);
 }
 
-u32 ds_HashMapTryDeserialize(struct arena *mem, struct ds_HashMap *map, struct ss *ss, const u32 growable)
+u32 ds_HashMapTryDeserialize(struct arena *mem, struct ss *ss, struct ds_HashMap *map, const u32 growable)
 {
 	ds_Assert(ss->bit_index % 8 == 0);
 

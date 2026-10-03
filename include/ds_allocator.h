@@ -449,7 +449,7 @@ struct ss;
 /* Internal: see ds_CPoolSerialize. */
 void ds_CPoolSerializeInternal(struct ss *ss, const void *buf, const u32 length, const u32 count, const u64 slot_size);
 /* Internal: see ds_CPoolTryDeserialize. */
-u32  ds_CPoolTryDeserializeInternal(struct arena *mem, void **buf, u32 *length, u32 *count, u32 *growable, u32 *heap_allocated, struct ss *ss, const u64 slot_size, const u32 alloc_growable);
+u32  ds_CPoolTryDeserializeInternal(struct arena *mem, struct ss *ss, void **buf, u32 *length, u32 *count, u32 *growable, u32 *heap_allocated, const u64 slot_size, const u32 alloc_growable);
 
 /* Return the required size when serializing the CPool. */
 #define ds_CPoolSerializeSize( pool ) (2*sizeof(u32) + (u64) (pool).count*sizeof((pool).buf[0]))
@@ -462,9 +462,9 @@ u32  ds_CPoolTryDeserializeInternal(struct arena *mem, void **buf, u32 *length, 
  * Failure may occur due to out-of-memory in mem, or the stream doesn't contain
  * a CPool.
  */
-#define ds_CPoolTryDeserialize( mem, pool, ss, __growable )                                     \
-    ds_CPoolTryDeserializeInternal((mem), (void **) &(pool).buf, &(pool).length, &(pool).count, \
-                                   &(pool).growable, &(pool).heap_allocated, (ss),              \
+#define ds_CPoolTryDeserialize( mem, ss, pool, __growable )                                     \
+    ds_CPoolTryDeserializeInternal((mem), (ss), (void **) &(pool).buf, &(pool).length,          \
+                                   &(pool).count, &(pool).growable, &(pool).heap_allocated,     \
                                    sizeof((pool).buf[0]), (__growable))
 
 
@@ -527,7 +527,7 @@ of each function. The functions generated are the following:
     void            ds_StructPoolSerialize(struct ss *ss, const struct ds_StructPool *pool)
 
     // Deserialize into *pool (in mem if provided). Returns 1 on success and 0 on failure.
-    u32             ds_StructPoolTryDeserialize(struct arena *mem, struct ds_StructPool *pool, struct ss *ss, const u32 growable)
+    u32             ds_StructPoolTryDeserialize(struct arena *mem, struct ss *ss, struct ds_StructPool *pool, const u32 growable)
 
 ::: Internal ::: 
 
@@ -561,7 +561,7 @@ u32  ds_PoolAllocInternal(struct arena *mem, struct ds_MemSlot *mem_slot, void *
 /* Internal: see PoolSerialize. */
 void ds_PoolSerializeInternal(struct ss *ss, const void *buf, const u32 length, const u32 count, const u32 count_max, const u32 next_free, const u64 slot_size, const u64 pool_slot_offset);
 /* Internal: see PoolTryDeserialize. */
-u32  ds_PoolTryDeserializeInternal(struct arena *mem, struct ds_MemSlot *mem_slot, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, struct ss *ss, const u64 slot_size, const u64 pool_slot_offset, const u32 alloc_growable);
+u32  ds_PoolTryDeserializeInternal(struct arena *mem, struct ss *ss, struct ds_MemSlot *mem_slot, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u64 pool_slot_offset, const u32 alloc_growable);
 
 #define POOL_DECLARE(T)                                                                          \
         POOL_STRUCT_DEFINE(T);                                                                   \
@@ -634,8 +634,8 @@ u64                 T ## PoolSerializeSize(const struct T ## Pool *pool)
 void                T ## PoolSerialize(struct ss *ss, const struct T ## Pool *pool)
 
 #define POOL_TRY_DESERIALIZE_DECLARE(T)                                                             \
-u32                 T ## PoolTryDeserialize(struct arena *mem, struct T ## Pool *pool,              \
-                                            struct ss *ss, const u32 growable)
+u32                 T ## PoolTryDeserialize(struct arena *mem, struct ss *ss,                       \
+                                            struct T ## Pool *pool, const u32 growable)
 
 #define POOL_ALLOC_DEFINE(T)                                                                        \
 POOL_ALLOC_DECLARE(T)                                                                               \
@@ -781,9 +781,9 @@ POOL_SERIALIZE_DECLARE(T)                                                       
 #define POOL_TRY_DESERIALIZE_DEFINE(T)                                                              \
 POOL_TRY_DESERIALIZE_DECLARE(T)                                                                     \
 {                                                                                                   \
-	return ds_PoolTryDeserializeInternal(mem, &pool->mem_slot, (void **) &pool->buf, &pool->length, \
-	                                     &pool->count, &pool->count_max, &pool->next_free,          \
-	                                     &pool->growable, ss, sizeof(struct T),                     \
+	return ds_PoolTryDeserializeInternal(mem, ss, &pool->mem_slot, (void **) &pool->buf,           \
+	                                     &pool->length, &pool->count, &pool->count_max,             \
+	                                     &pool->next_free, &pool->growable, sizeof(struct T),       \
 	                                     (u64) &(((struct T *)0)->pool_slot), growable);            \
 }
 
