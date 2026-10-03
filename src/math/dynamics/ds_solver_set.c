@@ -457,10 +457,8 @@ u32 ds_SolverSetTryDeserialize(struct ss *ss, struct ds_Dynamics *pipeline, cons
 {
 	ds_Assert(set_index < pipeline->solver_set_pool.count_max);
 	struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
-	ds_Assert(ds_PoolSlotAllocated(set));
+	ds_Assert(ds_PoolSlotAllocated(set) && set->mem.mem_size == 0 && set->body_sim_pool.buf == NULL);
 
-	/* the slot may hold stale bytes from the solver set pool's deserialization */
-	ds_SolverSetClear(set);
 	const u64 bit_index = ss->bit_index;
 	if (ss_BytesLeft(ss) < sizeof(u64))
 	{

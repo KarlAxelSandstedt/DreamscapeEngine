@@ -931,8 +931,8 @@ u64         ds_SolverSetSerializeSize(const struct ds_Dynamics *pipeline, const 
 /* Serialize the set. WARNING: Assumes set fits in the stream. */
 void        ds_SolverSetSerialize(struct ss *ss, const struct ds_Dynamics *pipeline, const u32 set);
 /*
- * Deserialize into the allocated set slot. The contact pool and the worker frames must already be restored.
- * Returns 1 on success and 0 on failure.
+ * Deserialize into the allocated, zeroed set slot. The contact pool and the worker frames must already be
+ * restored. Returns 1 on success and 0 on failure; on failure the slot is zeroed again.
  */
 u32         ds_SolverSetTryDeserialize(struct ss *ss, struct ds_Dynamics *pipeline, const u32 set);
 /* Debug validation for the given set */
