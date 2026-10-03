@@ -323,3 +323,131 @@ void ds_CGraphValidate(const struct ds_Dynamics *pipeline)
         }
     } 
 }
+
+static void ds_CGraphColorDealloc(struct ds_CGraphColor *color)
+{
+	ds_CPoolDealloc(color->joint_sim_pool);
+	ds_CPoolDealloc(color->contact_pool);
+	ds_CPoolDealloc(color->contact_compute_pool);
+	ds_BitSetDealloc(&color->body_bitset);
+	memset(color, 0, sizeof(*color));
+}
+
+u64 ds_CGraphColorSerializeSize(const struct ds_Dynamics *pipeline, const u32 color_index)
+{
+	const struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+	u64 size = ds_CPoolSerializeSize(color->joint_sim_pool)
+		+ ds_CPoolSerializeSize(color->contact_pool)
+		+ ds_CPoolSerializeSize(color->contact_compute_pool)
+		+ ds_BitSetSerializeSize(&color->body_bitset);
+
+	for (u32 i = 0; i < color->contact_pool.count; ++i)
+	{
+		size += ds_ContactFrameDataSerializeSize(pipeline, color->contact_pool.buf[i]);
+	}
+	for (u32 i = 0; i < color->contact_compute_pool.count; ++i)
+	{
+		size += ds_ContactComputeFrameDataSerializeSize(color->contact_compute_pool.buf + i);
+	}
+
+	return size;
+}
+
+void ds_CGraphColorSerialize(struct ss *ss, const struct ds_Dynamics *pipeline, const u32 color_index)
+{
+	ds_Assert(ds_CGraphColorSerializeSize(pipeline, color_index) <= ss_BytesLeft(ss));
+
+	const struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+	ds_CPoolSerialize(ss, color->joint_sim_pool);
+	ds_CPoolSerialize(ss, color->contact_pool);
+	ds_CPoolSerialize(ss, color->contact_compute_pool);
+	ds_BitSetSerialize(ss, &color->body_bitset);
+
+	for (u32 i = 0; i < color->contact_pool.count; ++i)
+	{
+		ds_ContactFrameDataSerialize(ss, pipeline, color->contact_pool.buf[i]);
+	}
+	for (u32 i = 0; i < color->contact_compute_pool.count; ++i)
+	{
+		ds_ContactComputeFrameDataSerialize(ss, color->contact_compute_pool.buf + i);
+	}
+}
+
+u32 ds_CGraphColorTryDeserialize(struct ss *ss, struct ds_Dynamics *pipeline, const u32 color_index)
+{
+	struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+	memset(color, 0, sizeof(*color));
+	const u64 bit_index = ss->bit_index;
+
+	if (!ds_CPoolTryDeserialize(NULL, ss, color->joint_sim_pool, GROWABLE)
+		|| !ds_CPoolTryDeserialize(NULL, ss, color->contact_pool, GROWABLE)
+		|| !ds_CPoolTryDeserialize(NULL, ss, color->contact_compute_pool, GROWABLE)
+		|| !ds_BitSetTryDeserialize(NULL, ss, &color->body_bitset, GROWABLE))
+	{
+		goto failure;
+	}
+
+	for (u32 i = 0; i < color->contact_pool.count; ++i)
+	{
+		const u32 contact = color->contact_pool.buf[i];
+		if (contact >= pipeline->contact_pool.count_max 
+			|| !ds_PoolSlotAllocated(pipeline->contact_pool.buf + contact)
+			|| !ds_ContactFrameDataTryDeserialize(NULL, ss, pipeline, contact))
+		{
+			goto failure;
+		}
+	}
+
+	for (u32 i = 0; i < color->contact_compute_pool.count; ++i)
+	{
+		if (!ds_ContactComputeFrameDataTryDeserialize(NULL, ss, color->contact_compute_pool.buf + i, pipeline))
+		{
+			goto failure;
+		}
+	}
+
+	return 1;
+
+failure:
+	/* frame data already pushed onto worker frames stays there until the frames are flushed */
+	ds_CGraphColorDealloc(color);
+	ss->bit_index = bit_index;
+	return 0;
+}
+
+u64 ds_CGraphSerializeSize(const struct ds_Dynamics *pipeline)
+{
+	u64 size = 0;
+	for (u32 i = 0; i < CG_COLOR_COUNT; ++i)
+	{
+		size += ds_CGraphColorSerializeSize(pipeline, i);
+	}
+	return size;
+}
+
+void ds_CGraphSerialize(struct ss *ss, const struct ds_Dynamics *pipeline)
+{
+	for (u32 i = 0; i < CG_COLOR_COUNT; ++i)
+	{
+		ds_CGraphColorSerialize(ss, pipeline, i);
+	}
+}
+
+u32 ds_CGraphTryDeserialize(struct ss *ss, struct ds_Dynamics *pipeline)
+{
+	const u64 bit_index = ss->bit_index;
+	memset(&pipeline->cgraph, 0, sizeof(pipeline->cgraph));
+	for (u32 i = 0; i < CG_COLOR_COUNT; ++i)
+	{
+		if (!ds_CGraphColorTryDeserialize(ss, pipeline, i))
+		{
+			for (u32 j = 0; j < i; ++j)
+			{
+				ds_CGraphColorDealloc(pipeline->cgraph.color + j);
+			}
+			ss->bit_index = bit_index;
+			return 0;
+		}
+	}
+	return 1;
+}
