@@ -1583,6 +1583,9 @@ void            ds_DynamicsPrintUsage(const struct ds_Dynamics *pipeline);
 
 /**************** PHYISCS PIPELINE INTERNAL API ****************/
 
+/* Internal: Set pipeline globals inside engine. */
+void                        ds_DynamicsSetGlobals(struct ds_Dynamics *pipeline);
+
 /* push physics event into pipeline memory and return pointer to allocated event */
 struct ds_PhysicsEvent *	ds_PhysicsEventPush(struct ds_Dynamics *pipeline);
 

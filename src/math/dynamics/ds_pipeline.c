@@ -1695,10 +1695,17 @@ void ds_DynamicsProfilePrint(FILE *file, const struct ds_DynamicsProfile *p)
 }
 
 
+void ds_DynamicsSetGlobals(struct ds_Dynamics *pipeline)
+{
+    g_dynamics_worker = pipeline->worker;
+    g_numerics_config = &pipeline->numerics_config;
+}
+
 void ds_DynamicsTick(struct ds_Dynamics *pipeline)
 {
 	ProfZone;
 
+    ds_DynamicsSetGlobals(pipeline);
     ds_NumericsConfigPush(&pipeline->numerics_config);
 
 	if (pipeline->frames_completed)
