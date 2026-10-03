@@ -77,7 +77,8 @@ correct and concise proposals.
 
 4. Parameter order: allocator first, then written parameters (outputs, and
 e.g. a stream whose position advances), then read-only inputs:
-func(mem, out1, ..., outN, in1, ..., inM).
+func(mem, out1, ..., outN, in1, ..., inM). Serialization functions put the
+stream right after the allocator: func(mem, ss, outputs, inputs).
 
 Memory and Lifetime Handling (ds_allocator.h)
 =============================================
