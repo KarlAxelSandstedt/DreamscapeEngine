@@ -384,7 +384,7 @@ void c_ShapeUpdateMassProperties(struct c_Shape *shape)
 	}
 }
 
-/********************************** GJK INTERNALS **********************************/
+/********************************** GJK INTERNALS (Old, to be removed) **********************************/
 
 /**
  * Gilbert-Johnson-Keerthi intersection algorithm in 3D. Based on the original paper. 
