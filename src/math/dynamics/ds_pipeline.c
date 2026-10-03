@@ -36,18 +36,17 @@ void ds_DynamicsStaticAssert(void)
     ds_StaticAssert(sizeof(struct ds_RebuildJob) == DS_CACHE_LINE, "");
 }
 
-struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, c_ShapeSDB *cshape_db, ds_BodyPrefabSDB *prefab_db, const u32 worker_count, const u64 worker_frame_size)
+void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, const u64 ns_tick, const u64 frame_memory, c_ShapeSDB *cshape_db, const u32 worker_count, const u64 worker_frame_size)
 {
-	struct ds_Dynamics pipeline =
+	*pipeline = (struct ds_Dynamics)
 	{
-		.gravity = V3(0.0f, -GRAVITY_CONSTANT_DEFAULT, 0.0f),
 		.ns_tick = ns_tick,
         .timestep = (f32) ns_tick / NSEC_PER_SEC,
-		.ns_elapsed = 0,
-		.ns_start = 0,
 		.frame = ArenaAlloc(mem, frame_memory),
-		.frames_completed = 0,
+		.cshape_db = cshape_db,
+		.island_to_split = DS_ID_NULL,
 	};
+	DLLFlush(pipeline->event_list);
 
 	static u32 init_solver_once = 0;
 	if (!init_solver_once)
@@ -73,6 +72,42 @@ struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, c
 		SolverConfigInit(pgs_iteration_count, ngs_iteration_count, warmup_solver, gravity, baumgarte_constant, max_linear_correction, max_linear_velocity_magnitude, max_angular_velocity_magnitude, linear_dampening, angular_dampening, linear_slop, restitution_threshold, sleep_enabled, sleep_time_threshold, sleep_linear_velocity_sq_limit, sleep_angular_velocity_sq_limit);
 	}
 
+    pipeline->broad_phase = ArenaPushAligned(mem, sizeof(struct ds_BroadJobPhase), DS_CACHE_LINE);
+    pipeline->narrow_phase = ArenaPushAligned(mem, sizeof(struct ds_NarrowJobPhase), DS_CACHE_LINE);
+    pipeline->solver_phase = ArenaPushAligned(mem, sizeof(struct ds_SolverJobPhase), DS_CACHE_LINE);
+    pipeline->rebuild_phase = ArenaPushAligned(mem, sizeof(struct ds_RebuildJobPhase), DS_CACHE_LINE);
+    pipeline->removal_phase = ArenaPushAligned(mem, sizeof(struct ds_RemovalJobPhase), DS_CACHE_LINE);
+    ds_JobPhaseAlloc(mem, &pipeline->broad_phase->phase, BROAD_JOB_COUNT, ds_BroadJobPhaseDispatch);
+    ds_JobPhaseAlloc(mem, &pipeline->narrow_phase->phase, NARROW_JOB_COUNT, ds_NarrowJobPhaseDispatch);
+    ds_JobPhaseAlloc(mem, &pipeline->solver_phase->phase, SOLVER_JOB_COUNT, ds_SolverJobPhaseDispatch);
+    ds_JobPhaseAlloc(mem, &pipeline->rebuild_phase->phase, REBUILD_JOB_COUNT, ds_RebuildJobPhaseDispatch);
+    ds_JobPhaseAlloc(mem, &pipeline->removal_phase->phase, REMOVAL_JOB_COUNT, ds_RemovalJobPhaseDispatch);
+
+    ds_StaticAssert((u64) &((struct ds_DynamicsWorker *)0)->frame_arr[1] < (u64) &((struct ds_DynamicsWorker *)0)->pad, "");
+    ds_StaticAssert((u64) &((struct ds_DynamicsWorker *)0)->frame < (u64) &((struct ds_DynamicsWorker *)0)->pad, "");
+    ds_StaticAssert((u64) &((struct ds_DynamicsWorker *)0)->metrics < (u64) &((struct ds_DynamicsWorker *)0)->pad, "");
+    pipeline->worker = ArenaPushAligned(mem, worker_count*sizeof(struct ds_DynamicsWorker), DS_CACHE_LINE);
+    pipeline->worker_count = worker_count;
+    g_dynamics_worker = pipeline->worker;
+    for (u32 i = 0; i < pipeline->worker_count; ++i)
+    {
+        pipeline->worker[i].frame_arr[0] = ArenaAlloc(NULL, worker_frame_size);
+        pipeline->worker[i].frame_arr[1] = ArenaAlloc(NULL, worker_frame_size);
+        ds_CPoolAlloc(NULL, pipeline->worker[i].draw.debug_segment_pool, 4096, GROWABLE);
+    }
+
+    pipeline->profile_length = 8192;
+    pipeline->profile_next = pipeline->profile_length;
+    pipeline->profile_buf = ArenaPushZero(mem, pipeline->profile_length*sizeof(struct ds_DynamicsProfile));
+
+}
+
+struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, c_ShapeSDB *cshape_db, ds_BodyPrefabSDB *prefab_db, const u32 worker_count, const u64 worker_frame_size)
+{
+	struct ds_Dynamics pipeline;
+	ds_DynamicsAllocShell(mem, &pipeline, ns_tick, frame_memory, cshape_db, worker_count, worker_frame_size);
+	pipeline.gravity = V3(0.0f, -GRAVITY_CONSTANT_DEFAULT, 0.0f);
+
 	ds_AssertString(PowerOfTwoCheck(initial_size), "For simplicity of future data structures, expect pipeline sizes to be powers of two");
 
 	pipeline.body_pool = ds_BodyPoolAlloc(NULL, initial_size, GROWABLE);
@@ -88,9 +123,6 @@ struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, c
     ds_CPoolAlloc(NULL, pipeline.dirty_shape_query, initial_size, GROWABLE);
 
 	pipeline.event_pool = ds_PhysicsEventPoolAlloc(NULL, 256, GROWABLE);
-	DLLFlush(pipeline.event_list);
-
-	pipeline.cshape_db = cshape_db;
 
     pipeline.contact_pool = ds_ContactPoolAlloc(NULL, 8*initial_size, GROWABLE);
     pipeline.contact_map = ds_HashMapAlloc(NULL, 8*initial_size, 8*initial_size, GROWABLE);
@@ -102,17 +134,6 @@ struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, c
     pipeline.margin_on = 0;
 	pipeline.margin = COLLISION_DEFAULT_MARGIN;
 
-    pipeline.broad_phase = ArenaPushAligned(mem, sizeof(struct ds_BroadJobPhase), DS_CACHE_LINE);
-    pipeline.narrow_phase = ArenaPushAligned(mem, sizeof(struct ds_NarrowJobPhase), DS_CACHE_LINE);
-    pipeline.solver_phase = ArenaPushAligned(mem, sizeof(struct ds_SolverJobPhase), DS_CACHE_LINE);
-    pipeline.rebuild_phase = ArenaPushAligned(mem, sizeof(struct ds_RebuildJobPhase), DS_CACHE_LINE);
-    pipeline.removal_phase = ArenaPushAligned(mem, sizeof(struct ds_RemovalJobPhase), DS_CACHE_LINE);
-    ds_JobPhaseAlloc(mem, &pipeline.broad_phase->phase, BROAD_JOB_COUNT, ds_BroadJobPhaseDispatch);
-    ds_JobPhaseAlloc(mem, &pipeline.narrow_phase->phase, NARROW_JOB_COUNT, ds_NarrowJobPhaseDispatch);
-    ds_JobPhaseAlloc(mem, &pipeline.solver_phase->phase, SOLVER_JOB_COUNT, ds_SolverJobPhaseDispatch);
-    ds_JobPhaseAlloc(mem, &pipeline.rebuild_phase->phase, REBUILD_JOB_COUNT, ds_RebuildJobPhaseDispatch);
-    ds_JobPhaseAlloc(mem, &pipeline.removal_phase->phase, REMOVAL_JOB_COUNT, ds_RemovalJobPhaseDispatch);
-
     ds_CGraphAlloc(&pipeline, 4096);
     pipeline.numerics_config = ds_NumericsConfigDefault();
 
@@ -123,25 +144,6 @@ struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, c
     ds_Assert(set_disabled.index == SOLVER_SET_DISABLED);
     ds_Assert(set_static.index == SOLVER_SET_STATIC);
     ds_Assert(set_active.index == SOLVER_SET_ACTIVE);
-
-    pipeline.island_to_split = DS_ID_NULL; 
-
-    ds_StaticAssert((u64) &((struct ds_DynamicsWorker *)0)->frame_arr[1] < (u64) &((struct ds_DynamicsWorker *)0)->pad, "");
-    ds_StaticAssert((u64) &((struct ds_DynamicsWorker *)0)->frame < (u64) &((struct ds_DynamicsWorker *)0)->pad, "");
-    ds_StaticAssert((u64) &((struct ds_DynamicsWorker *)0)->metrics < (u64) &((struct ds_DynamicsWorker *)0)->pad, "");
-    pipeline.worker = ArenaPushAligned(mem, worker_count*sizeof(struct ds_DynamicsWorker), DS_CACHE_LINE);
-    pipeline.worker_count = worker_count;
-    g_dynamics_worker = pipeline.worker;
-    for (u32 i = 0; i < pipeline.worker_count; ++i)
-    {
-        pipeline.worker[i].frame_arr[0] = ArenaAlloc(NULL, worker_frame_size);
-        pipeline.worker[i].frame_arr[1] = ArenaAlloc(NULL, worker_frame_size);
-        ds_CPoolAlloc(NULL, pipeline.worker[i].draw.debug_segment_pool, 4096, GROWABLE);
-    }
-
-    pipeline.profile_length = 8192;
-    pipeline.profile_next = pipeline.profile_length;
-    pipeline.profile_buf = ArenaPushZero(mem, pipeline.profile_length*sizeof(struct ds_DynamicsProfile));
 
 	return pipeline;
 }

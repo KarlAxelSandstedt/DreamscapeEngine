@@ -690,18 +690,22 @@ void        ds_ContactSleep(struct arena *mem_sleep, struct ds_Dynamics *pipelin
 /* Internal: Return bytes required to store contact narrowphase results */
 u64         ds_ContactMemoryRequirement(const struct ds_Dynamics *pipeline, const u32 contact);
 struct ds_ContactCompute;
-/* Internal: Return the required size when serializing the contact's narrowphase arrays (frame data). */
-u64         ds_ContactFrameDataSerializeSize(const struct ds_Dynamics *pipeline, const u32 contact);
+/* Internal: Return the required size when serializing the contact's narrowphase arrays. */
+u64         ds_ContactNarrowphaseSerializeSize(const struct ds_Dynamics *pipeline, const u32 contact);
 /* Internal: Serialize the contact's narrowphase arrays. WARNING: Assumes they fit in the stream. */
-void        ds_ContactFrameDataSerialize(struct ss *ss, const struct ds_Dynamics *pipeline, const u32 contact);
-/* Internal: Read the contact's narrowphase arrays into mem, or the freest worker frame if mem == NULL. Returns 1 on success and 0 on failure. */
-u32         ds_ContactFrameDataTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynamics *pipeline, const u32 contact);
+void        ds_ContactNarrowphaseSerialize(struct ss *ss, const struct ds_Dynamics *pipeline, const u32 contact);
+/* Internal: Read the contact's narrowphase arrays into worker frames (awake contacts). Returns 1 on success and 0 on failure. */
+u32         ds_ContactNarrowphaseFrameTryDeserialize(struct ss *ss, struct ds_Dynamics *pipeline, const u32 contact);
+/* Internal: Read the contact's narrowphase arrays into mem (sleeping contacts). Returns 1 on success and 0 on failure. */
+u32         ds_ContactNarrowphaseHeapTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynamics *pipeline, const u32 contact);
 /* Internal: Return the required size when serializing the compute's ccache. */
-u64         ds_ContactComputeFrameDataSerializeSize(const struct ds_ContactCompute *compute);
+u64         ds_ContactComputeCacheSerializeSize(const struct ds_ContactCompute *compute);
 /* Internal: Serialize the compute's ccache. WARNING: Assumes it fits in the stream. */
-void        ds_ContactComputeFrameDataSerialize(struct ss *ss, const struct ds_ContactCompute *compute);
-/* Internal: Read the compute's ccache into mem, or the freest worker frame if mem == NULL. Returns 1 on success and 0 on failure. */
-u32         ds_ContactComputeFrameDataTryDeserialize(struct arena *mem, struct ss *ss, struct ds_ContactCompute *compute, struct ds_Dynamics *pipeline);
+void        ds_ContactComputeCacheSerialize(struct ss *ss, const struct ds_ContactCompute *compute);
+/* Internal: Read the compute's ccache into worker frames (awake contacts). Returns 1 on success and 0 on failure. */
+u32         ds_ContactComputeCacheFrameTryDeserialize(struct ss *ss, struct ds_ContactCompute *compute, struct ds_Dynamics *pipeline);
+/* Internal: Read the compute's ccache into mem (sleeping contacts). Returns 1 on success and 0 on failure. */
+u32         ds_ContactComputeCacheHeapTryDeserialize(struct arena *mem, struct ss *ss, struct ds_ContactCompute *compute);
 
 
 /*
@@ -1637,6 +1641,8 @@ void                        ds_DynamicsAllocShell(struct arena *mem, struct ds_D
  * a stack). Returns 1 on success and 0 on failure.
  */
 u32                         ds_DynamicsFrameDataTryDeserialize(struct ss *ss, void **dst, struct ds_Dynamics *pipeline, const u64 size);
+/* Internal: Read size bytes of heap data (a sleeping set's arena) into mem and set *dst. Returns 1 on success and 0 on failure. */
+u32                         ds_DynamicsHeapDataTryDeserialize(struct arena *mem, struct ss *ss, void **dst, const u64 size);
 /* Internal: Set pipeline globals inside engine. */
 void                        ds_DynamicsSetGlobals(struct ds_Dynamics *pipeline);
 

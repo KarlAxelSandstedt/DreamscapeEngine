@@ -343,11 +343,11 @@ u64 ds_CGraphColorSerializeSize(const struct ds_Dynamics *pipeline, const u32 co
 
 	for (u32 i = 0; i < color->contact_pool.count; ++i)
 	{
-		size += ds_ContactFrameDataSerializeSize(pipeline, color->contact_pool.buf[i]);
+		size += ds_ContactNarrowphaseSerializeSize(pipeline, color->contact_pool.buf[i]);
 	}
 	for (u32 i = 0; i < color->contact_compute_pool.count; ++i)
 	{
-		size += ds_ContactComputeFrameDataSerializeSize(color->contact_compute_pool.buf + i);
+		size += ds_ContactComputeCacheSerializeSize(color->contact_compute_pool.buf + i);
 	}
 
 	return size;
@@ -365,11 +365,11 @@ void ds_CGraphColorSerialize(struct ss *ss, const struct ds_Dynamics *pipeline, 
 
 	for (u32 i = 0; i < color->contact_pool.count; ++i)
 	{
-		ds_ContactFrameDataSerialize(ss, pipeline, color->contact_pool.buf[i]);
+		ds_ContactNarrowphaseSerialize(ss, pipeline, color->contact_pool.buf[i]);
 	}
 	for (u32 i = 0; i < color->contact_compute_pool.count; ++i)
 	{
-		ds_ContactComputeFrameDataSerialize(ss, color->contact_compute_pool.buf + i);
+		ds_ContactComputeCacheSerialize(ss, color->contact_compute_pool.buf + i);
 	}
 }
 
@@ -392,7 +392,7 @@ u32 ds_CGraphColorTryDeserialize(struct ss *ss, struct ds_Dynamics *pipeline, co
 		const u32 contact = color->contact_pool.buf[i];
 		if (contact >= pipeline->contact_pool.count_max 
 			|| !ds_PoolSlotAllocated(pipeline->contact_pool.buf + contact)
-			|| !ds_ContactFrameDataTryDeserialize(NULL, ss, pipeline, contact))
+			|| !ds_ContactNarrowphaseFrameTryDeserialize(ss, pipeline, contact))
 		{
 			goto failure;
 		}
@@ -400,7 +400,7 @@ u32 ds_CGraphColorTryDeserialize(struct ss *ss, struct ds_Dynamics *pipeline, co
 
 	for (u32 i = 0; i < color->contact_compute_pool.count; ++i)
 	{
-		if (!ds_ContactComputeFrameDataTryDeserialize(NULL, ss, color->contact_compute_pool.buf + i, pipeline))
+		if (!ds_ContactComputeCacheFrameTryDeserialize(ss, color->contact_compute_pool.buf + i, pipeline))
 		{
 			goto failure;
 		}

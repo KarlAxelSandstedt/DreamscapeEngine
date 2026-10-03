@@ -415,39 +415,10 @@ void ds_ContactValidateAll(const struct ds_Dynamics *pipeline)
     }
 }
 
-#define DS_CONTACT_FRAME_DATA_CACHE     0x1
-#define DS_CONTACT_FRAME_DATA_TRI       0x2
+#define DS_CONTACT_NARROWPHASE_CACHE     0x1
+#define DS_CONTACT_NARROWPHASE_TRI       0x2
 
-/* Sleeping sets keep their frame data in their own arena (mem); awake contacts use the worker frames. */
-static u32 ds_ContactReadArray(struct arena *mem, struct ss *ss, void **dst, struct ds_Dynamics *pipeline, const u64 size)
-{
-	if (!mem)
-	{
-		return ds_DynamicsFrameDataTryDeserialize(ss, dst, pipeline, size);
-	}
-
-	*dst = NULL;
-	if (size == 0)
-	{
-		return 1;
-	}
-
-	if (size > ss_BytesLeft(ss))
-	{
-		return 0;
-	}
-
-	*dst = ArenaPushAligned(mem, size, 1);
-	if (!*dst)
-	{
-		return 0;
-	}
-
-	ss_Read8N((b8 *) *dst, ss, size);
-	return 1;
-}
-
-u64 ds_ContactFrameDataSerializeSize(const struct ds_Dynamics *pipeline, const u32 contact)
+u64 ds_ContactNarrowphaseSerializeSize(const struct ds_Dynamics *pipeline, const u32 contact)
 {
 	const struct c_ContactResult *r = &pipeline->contact_pool.buf[contact].narrowphase;
 	u64 size = sizeof(u32) + (u64) r->manifold_count*sizeof(struct c_Manifold);
@@ -462,10 +433,10 @@ u64 ds_ContactFrameDataSerializeSize(const struct ds_Dynamics *pipeline, const u
 	return size;
 }
 
-void ds_ContactFrameDataSerialize(struct ss *ss, const struct ds_Dynamics *pipeline, const u32 contact)
+void ds_ContactNarrowphaseSerialize(struct ss *ss, const struct ds_Dynamics *pipeline, const u32 contact)
 {
 	const struct c_ContactResult *r = &pipeline->contact_pool.buf[contact].narrowphase;
-	const u32 flags = ((r->cache) ? DS_CONTACT_FRAME_DATA_CACHE : 0) | ((r->tri) ? DS_CONTACT_FRAME_DATA_TRI : 0);
+	const u32 flags = ((r->cache) ? DS_CONTACT_NARROWPHASE_CACHE : 0) | ((r->tri) ? DS_CONTACT_NARROWPHASE_TRI : 0);
 	ss_WriteU32Le(ss, flags);
 	ss_Write8N(ss, (const b8 *) r->manifold, (u64) r->manifold_count*sizeof(struct c_Manifold));
 	if (r->cache)
@@ -479,38 +450,64 @@ void ds_ContactFrameDataSerialize(struct ss *ss, const struct ds_Dynamics *pipel
 	}
 }
 
-u32 ds_ContactFrameDataTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynamics *pipeline, const u32 contact)
+u32 ds_ContactNarrowphaseFrameTryDeserialize(struct ss *ss, struct ds_Dynamics *pipeline, const u32 contact)
 {
 	struct c_ContactResult *r = &pipeline->contact_pool.buf[contact].narrowphase;
+	r->manifold = NULL;
 	r->cache = NULL;
 	r->tri = NULL;
 	r->tri_manifold = NULL;
 	if (ss_BytesLeft(ss) < sizeof(u32))
 	{
-		r->manifold = NULL;
 		return 0;
 	}
 
 	const u32 flags = ss_ReadU32Le(ss);
-	return ds_ContactReadArray(mem, ss, (void **) &r->manifold, pipeline, (u64) r->manifold_count*sizeof(struct c_Manifold))
-		&& (!(flags & DS_CONTACT_FRAME_DATA_CACHE) || ds_ContactReadArray(mem, ss, (void **) &r->cache, pipeline, (u64) r->cache_count*sizeof(struct c_SatCache)))
-		&& (!(flags & DS_CONTACT_FRAME_DATA_TRI) || ds_ContactReadArray(mem, ss, (void **) &r->tri, pipeline, (u64) r->manifold_count*sizeof(u32)))
-		&& (!(flags & DS_CONTACT_FRAME_DATA_TRI) || ds_ContactReadArray(mem, ss, (void **) &r->tri_manifold, pipeline, (u64) r->manifold_count*sizeof(u32)));
+	return ds_DynamicsFrameDataTryDeserialize(ss, (void **) &r->manifold, pipeline, (u64) r->manifold_count*sizeof(struct c_Manifold))
+		&& (!(flags & DS_CONTACT_NARROWPHASE_CACHE) || ds_DynamicsFrameDataTryDeserialize(ss, (void **) &r->cache, pipeline, (u64) r->cache_count*sizeof(struct c_SatCache)))
+		&& (!(flags & DS_CONTACT_NARROWPHASE_TRI) || ds_DynamicsFrameDataTryDeserialize(ss, (void **) &r->tri, pipeline, (u64) r->manifold_count*sizeof(u32)))
+		&& (!(flags & DS_CONTACT_NARROWPHASE_TRI) || ds_DynamicsFrameDataTryDeserialize(ss, (void **) &r->tri_manifold, pipeline, (u64) r->manifold_count*sizeof(u32)));
 }
 
-u64 ds_ContactComputeFrameDataSerializeSize(const struct ds_ContactCompute *compute)
+u32 ds_ContactNarrowphaseHeapTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynamics *pipeline, const u32 contact)
+{
+	struct c_ContactResult *r = &pipeline->contact_pool.buf[contact].narrowphase;
+	r->manifold = NULL;
+	r->cache = NULL;
+	r->tri = NULL;
+	r->tri_manifold = NULL;
+	if (ss_BytesLeft(ss) < sizeof(u32))
+	{
+		return 0;
+	}
+
+	const u32 flags = ss_ReadU32Le(ss);
+	return ds_DynamicsHeapDataTryDeserialize(mem, ss, (void **) &r->manifold, (u64) r->manifold_count*sizeof(struct c_Manifold))
+		&& (!(flags & DS_CONTACT_NARROWPHASE_CACHE) || ds_DynamicsHeapDataTryDeserialize(mem, ss, (void **) &r->cache, (u64) r->cache_count*sizeof(struct c_SatCache)))
+		&& (!(flags & DS_CONTACT_NARROWPHASE_TRI) || ds_DynamicsHeapDataTryDeserialize(mem, ss, (void **) &r->tri, (u64) r->manifold_count*sizeof(u32)))
+		&& (!(flags & DS_CONTACT_NARROWPHASE_TRI) || ds_DynamicsHeapDataTryDeserialize(mem, ss, (void **) &r->tri_manifold, (u64) r->manifold_count*sizeof(u32)));
+}
+
+u64 ds_ContactComputeCacheSerializeSize(const struct ds_ContactCompute *compute)
 {
 	return (u64) compute->ccache_count*sizeof(struct ds_ContactConstraintCache);
 }
 
-void ds_ContactComputeFrameDataSerialize(struct ss *ss, const struct ds_ContactCompute *compute)
+void ds_ContactComputeCacheSerialize(struct ss *ss, const struct ds_ContactCompute *compute)
 {
-	ss_Write8N(ss, (const b8 *) compute->ccache, ds_ContactComputeFrameDataSerializeSize(compute));
+	ss_Write8N(ss, (const b8 *) compute->ccache, ds_ContactComputeCacheSerializeSize(compute));
 }
 
-u32 ds_ContactComputeFrameDataTryDeserialize(struct arena *mem, struct ss *ss, struct ds_ContactCompute *compute, struct ds_Dynamics *pipeline)
+u32 ds_ContactComputeCacheFrameTryDeserialize(struct ss *ss, struct ds_ContactCompute *compute, struct ds_Dynamics *pipeline)
 {
 	/* cc is rebuilt every solve */
 	compute->cc = NULL;
-	return ds_ContactReadArray(mem, ss, (void **) &compute->ccache, pipeline, ds_ContactComputeFrameDataSerializeSize(compute));
+	return ds_DynamicsFrameDataTryDeserialize(ss, (void **) &compute->ccache, pipeline, ds_ContactComputeCacheSerializeSize(compute));
+}
+
+u32 ds_ContactComputeCacheHeapTryDeserialize(struct arena *mem, struct ss *ss, struct ds_ContactCompute *compute)
+{
+	/* cc is rebuilt every solve */
+	compute->cc = NULL;
+	return ds_DynamicsHeapDataTryDeserialize(mem, ss, (void **) &compute->ccache, ds_ContactComputeCacheSerializeSize(compute));
 }

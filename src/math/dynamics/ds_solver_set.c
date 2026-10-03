@@ -397,3 +397,169 @@ void ds_SolverSetMoveBody(struct ds_Dynamics *pipeline, const u32 body_index, co
     body->set = set_index;
     body->sim = slot.index;
 }
+
+u64 ds_SolverSetSerializeSize(const struct ds_Dynamics *pipeline, const u32 set_index)
+{
+	const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
+	u64 size = sizeof(u64)
+		+ ds_CPoolSerializeSize(set->body_sim_pool)
+		+ ds_CPoolSerializeSize(set->body_compute_pool)
+		+ ds_CPoolSerializeSize(set->contact_pool)
+		+ ds_CPoolSerializeSize(set->contact_compute_pool)
+		+ ds_CPoolSerializeSize(set->joint_sim_pool)
+		+ ds_CPoolSerializeSize(set->island_pool);
+
+	for (u32 i = 0; i < set->contact_pool.count; ++i)
+	{
+		size += ds_ContactNarrowphaseSerializeSize(pipeline, set->contact_pool.buf[i]);
+	}
+	for (u32 i = 0; i < set->contact_compute_pool.count; ++i)
+	{
+		size += ds_ContactComputeCacheSerializeSize(set->contact_compute_pool.buf + i);
+	}
+
+	return size;
+}
+
+void ds_SolverSetSerialize(struct ss *ss, const struct ds_Dynamics *pipeline, const u32 set_index)
+{
+	ds_Assert(ds_SolverSetSerializeSize(pipeline, set_index) <= ss_BytesLeft(ss));
+
+	const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
+	ds_Assert((set_index >= SOLVER_SET_SLEEPING_FIRST) == (set->mem.mem_size != 0));
+	/* sleeping sets own one heap arena holding their pools and narrowphase data */
+	ss_WriteU64Le(ss, set->mem.mem_size);
+	ds_CPoolSerialize(ss, set->body_sim_pool);
+	ds_CPoolSerialize(ss, set->body_compute_pool);
+	ds_CPoolSerialize(ss, set->contact_pool);
+	ds_CPoolSerialize(ss, set->contact_compute_pool);
+	ds_CPoolSerialize(ss, set->joint_sim_pool);
+	ds_CPoolSerialize(ss, set->island_pool);
+
+	for (u32 i = 0; i < set->contact_pool.count; ++i)
+	{
+		ds_ContactNarrowphaseSerialize(ss, pipeline, set->contact_pool.buf[i]);
+	}
+	for (u32 i = 0; i < set->contact_compute_pool.count; ++i)
+	{
+		ds_ContactComputeCacheSerialize(ss, set->contact_compute_pool.buf + i);
+	}
+}
+
+static void ds_SolverSetClear(struct ds_SolverSet *set)
+{
+	const u32 pool_slot = set->pool_slot;
+	memset(set, 0, sizeof(*set));
+	set->pool_slot = pool_slot;
+}
+
+u32 ds_SolverSetTryDeserialize(struct ss *ss, struct ds_Dynamics *pipeline, const u32 set_index)
+{
+	ds_Assert(set_index < pipeline->solver_set_pool.count_max);
+	struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
+	ds_Assert(ds_PoolSlotAllocated(set));
+
+	/* the slot may hold stale bytes from the solver set pool's deserialization */
+	ds_SolverSetClear(set);
+	const u64 bit_index = ss->bit_index;
+	if (ss_BytesLeft(ss) < sizeof(u64))
+	{
+		return 0;
+	}
+
+	const u32 sleeping = (set_index >= SOLVER_SET_SLEEPING_FIRST);
+	const u64 mem_size = ss_ReadU64Le(ss);
+	if ( (sleeping && !mem_size) || (!sleeping && mem_size) )
+	{
+		ss->bit_index = bit_index;
+		return 0;
+	}
+
+	struct arena *mem = NULL;
+	if (sleeping)
+	{
+		set->mem = ArenaAlloc(NULL, mem_size);
+		if (!set->mem.mem_size)
+		{
+			ds_SolverSetClear(set);
+			ss->bit_index = bit_index;
+			return 0;
+		}
+		mem = &set->mem;
+	}
+
+	const u32 growable = (mem) ? NOT_GROWABLE : GROWABLE;
+	if (!ds_CPoolTryDeserialize(mem, ss, set->body_sim_pool, growable)
+		|| !ds_CPoolTryDeserialize(mem, ss, set->body_compute_pool, growable)
+		|| !ds_CPoolTryDeserialize(mem, ss, set->contact_pool, growable)
+		|| !ds_CPoolTryDeserialize(mem, ss, set->contact_compute_pool, growable)
+		|| !ds_CPoolTryDeserialize(mem, ss, set->joint_sim_pool, growable)
+		|| !ds_CPoolTryDeserialize(mem, ss, set->island_pool, growable))
+	{
+		goto failure;
+	}
+
+	if (!sleeping)
+	{
+		for (u32 i = 0; i < set->contact_pool.count; ++i)
+		{
+			const u32 contact = set->contact_pool.buf[i];
+			if (contact >= pipeline->contact_pool.count_max 
+				|| !ds_PoolSlotAllocated(pipeline->contact_pool.buf + contact)
+				|| !ds_ContactNarrowphaseFrameTryDeserialize(ss, pipeline, contact))
+			{
+				goto failure;
+			}
+		}
+
+		for (u32 i = 0; i < set->contact_compute_pool.count; ++i)
+		{
+			if (!ds_ContactComputeCacheFrameTryDeserialize(ss, set->contact_compute_pool.buf + i, pipeline))
+			{
+				goto failure;
+			}
+		}
+	}
+	else
+	{
+		for (u32 i = 0; i < set->contact_pool.count; ++i)
+		{
+			const u32 contact = set->contact_pool.buf[i];
+			if (contact >= pipeline->contact_pool.count_max 
+				|| !ds_PoolSlotAllocated(pipeline->contact_pool.buf + contact)
+				|| !ds_ContactNarrowphaseHeapTryDeserialize(mem, ss, pipeline, contact))
+			{
+				goto failure;
+			}
+		}
+
+		for (u32 i = 0; i < set->contact_compute_pool.count; ++i)
+		{
+			if (!ds_ContactComputeCacheHeapTryDeserialize(mem, ss, set->contact_compute_pool.buf + i))
+			{
+				goto failure;
+			}
+		}
+	}
+
+	return 1;
+
+failure:
+	/* frame data already pushed onto worker frames stays there until the frames are flushed */
+	if (mem)
+	{
+		ArenaFree(&set->mem);
+	}
+	else
+	{
+		ds_CPoolDealloc(set->body_sim_pool);
+		ds_CPoolDealloc(set->body_compute_pool);
+		ds_CPoolDealloc(set->contact_pool);
+		ds_CPoolDealloc(set->contact_compute_pool);
+		ds_CPoolDealloc(set->joint_sim_pool);
+		ds_CPoolDealloc(set->island_pool);
+	}
+	ds_SolverSetClear(set);
+	ss->bit_index = bit_index;
+	return 0;
+}
