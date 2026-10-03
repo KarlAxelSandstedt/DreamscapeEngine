@@ -65,7 +65,7 @@ u64                 BvhSerializeSize(const struct bvh *bvh);
 /* Serialize the bvh; the cost queue is empty between insertions and not serialized. WARNING: Assumes bvh fits in the stream. */
 void                BvhSerialize(struct ss *ss, const struct bvh *bvh);
 /* Returns 1 on success and 0 on failure. The cost queue is always heap allocated: free the bvh with BvhFree. */
-u32                 BvhTryDeserialize(struct arena *mem, struct bvh *bvh, struct ss *ss, const u32 growable);
+u32                 BvhTryDeserialize(struct arena *mem, struct ss *ss, struct bvh *bvh, const u32 growable);
 /* Derive all internal bounding boxes from the leaves' bounding boxes */
 void                BvhPropagateBoundingBoxesFromLeaves(struct bvh *bvh);
 /* validate (ds_Assert) internal coherence of bvh */
