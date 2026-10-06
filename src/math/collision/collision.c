@@ -2541,7 +2541,7 @@ struct c_TriMeshBvhContact
         {
             enum TriVoronoiRegion   region;
             v3                      c[2];
-            struct TriVoronoi       tv;
+            struct TriVoronoiTMP    tv;
         };
 
         struct

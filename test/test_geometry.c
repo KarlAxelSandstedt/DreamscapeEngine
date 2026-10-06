@@ -9,7 +9,7 @@ static v3 V3UnitSphere(void)
     return V3(r*F32Cos(theta), r*F32Sin(theta), z);
 }
 
-static f32 TriCcwSegmentDistanceSquaredSlow(enum TriVoronoiRegion *reg, const struct segment *s, const struct TriVoronoi *tv)
+static f32 TriCcwSegmentDistanceSquaredSlow(enum TriVoronoiRegion *reg, const struct segment *s, const struct TriVoronoiTMP *tv)
 {
     f32 dist_sq, dist_sq_min = F32_INFINITY;
     v3 c1;
@@ -77,7 +77,7 @@ struct test_Output TriCcwPointDistanceSquaredTest(struct test_Environment *env)
         tri[2] = V3UnitSphere();
 
         enum TriVoronoiRegion region;
-        struct TriVoronoi tv;
+        struct TriVoronoiTMP tv;
         if (!TriVoronoiInitCcw(&tv, tri))
             continue;
 

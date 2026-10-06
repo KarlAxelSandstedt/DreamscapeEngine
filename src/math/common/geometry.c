@@ -793,7 +793,7 @@ const char *g_table_tri_voronoi_region_string[TRI_VORONOI_COUNT] =
     "TRI_VORONOI_FACE",
 };
 
-u32 TriVoronoiInitCcw(struct TriVoronoi *tv, const v3 t[3])
+u32 TriVoronoiInitCcw(struct TriVoronoiTMP *tv, const v3 t[3])
 {
     tv->t[0] = t[0];
     tv->t[1] = t[1];
@@ -879,7 +879,7 @@ static const u32 table_tri_voronoi_vertex_check[TRI_VORONOI_COUNT + 1] = { 1, 1,
 static const u32 table_add_1_mod_3[6] = { 1, 2, 0, 1, 2, 0 };
 static const u32 table_sub_1_mod_3[6] = { 2, 0, 1, 2, 0, 1 };
 
-f32 TriCcwPointDistanceSquared(v3 *c, enum TriVoronoiRegion *region, const v3 point, const struct TriVoronoi *tv)
+f32 TriCcwPointDistanceSquared(v3 *c, enum TriVoronoiRegion *region, const v3 point, const struct TriVoronoiTMP *tv)
 {
     const u32 index = ((PlanePointInfrontCheck(&tv->edge_plane[0], point)) << 0) 
                     | ((PlanePointInfrontCheck(&tv->edge_plane[1], point)) << 1)
@@ -952,7 +952,7 @@ DONE:
     return V3DistanceSquared(point, *c);
 }
 
-f32 TriCcwSegmentClipParameter(v3 *clip, const struct segment *s, const struct TriVoronoi *tv)
+f32 TriCcwSegmentClipParameter(v3 *clip, const struct segment *s, const struct TriVoronoiTMP *tv)
 {
     const f32 param = PlaneSegmentClipParameter(&tv->face_plane, s);
     if (0.0f <= param && param <= 1.0f)
@@ -969,12 +969,12 @@ f32 TriCcwSegmentClipParameter(v3 *clip, const struct segment *s, const struct T
     return F32_INFINITY;
 }
 
-u32 TriCcwSegmentClip(v3 *clip, const struct segment *s, const struct TriVoronoi *tv)
+u32 TriCcwSegmentClip(v3 *clip, const struct segment *s, const struct TriVoronoiTMP *tv)
 {
     return (TriCcwSegmentClipParameter(clip, s, tv) < F32_INFINITY);
 }
 
-struct segment TriCcwSegmentSideClip(const struct segment *s, const struct TriVoronoi *tv)
+struct segment TriCcwSegmentSideClip(const struct segment *s, const struct TriVoronoiTMP *tv)
 {
 	f32 min_p = 0.0f;
 	f32 max_p = 1.0f;
@@ -998,7 +998,7 @@ struct segment TriCcwSegmentSideClip(const struct segment *s, const struct TriVo
 	return SegmentConstruct(SegmentBc(s, min_p), SegmentBc(s, max_p));
 }
 
-static f32 TriCcwSegmentEdgeCheck(v3 *c_t, v3 *c_s, enum TriVoronoiRegion *region, const struct segment *s, const struct TriVoronoi *tv, const u32 start)
+static f32 TriCcwSegmentEdgeCheck(v3 *c_t, v3 *c_s, enum TriVoronoiRegion *region, const struct segment *s, const struct TriVoronoiTMP *tv, const u32 start)
 {
     /* Last case: segment-edge generates closest point */
     f32 s_param, t_param;
@@ -1022,7 +1022,7 @@ static f32 TriCcwSegmentEdgeCheck(v3 *c_t, v3 *c_s, enum TriVoronoiRegion *regio
     return V3DistanceSquared(*c_s, *c_t);
 }
 
-static f32 TriCcwSegmentDoubleEdgeCheck(v3 *c_t, v3 *c_s, enum TriVoronoiRegion *segment_region, const struct segment *s, const struct TriVoronoi *tv, const u32 j)
+static f32 TriCcwSegmentDoubleEdgeCheck(v3 *c_t, v3 *c_s, enum TriVoronoiRegion *segment_region, const struct segment *s, const struct TriVoronoiTMP *tv, const u32 j)
 {
     const u32 i = table_sub_1_mod_3[j];
     const u32 k = table_add_1_mod_3[j];
@@ -1078,7 +1078,7 @@ static f32 TriCcwSegmentDoubleEdgeCheck(v3 *c_t, v3 *c_s, enum TriVoronoiRegion 
     return dist_sq;
 }
 
-static f32 TriCcwSegmentTripleEdgeCheck(v3 *c_t, v3 *c_s, enum TriVoronoiRegion *segment_region, const struct segment *s, const struct TriVoronoi *tv)
+static f32 TriCcwSegmentTripleEdgeCheck(v3 *c_t, v3 *c_s, enum TriVoronoiRegion *segment_region, const struct segment *s, const struct TriVoronoiTMP *tv)
 {
     f32 dist_sq = F32_INFINITY;
     u32 min_i = 0;
@@ -1115,7 +1115,7 @@ static f32 TriCcwSegmentTripleEdgeCheck(v3 *c_t, v3 *c_s, enum TriVoronoiRegion 
     return dist_sq;
 }
 
-f32 TriCcwSegmentDistanceSquared(v3 *c_t, v3 *c_s, enum TriVoronoiRegion *segment_region, const struct segment *s, const struct TriVoronoi *tv)
+f32 TriCcwSegmentDistanceSquared(v3 *c_t, v3 *c_s, enum TriVoronoiRegion *segment_region, const struct segment *s, const struct TriVoronoiTMP *tv)
 {
     f32 dist_sq = F32_INFINITY;
 
