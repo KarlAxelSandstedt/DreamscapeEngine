@@ -104,6 +104,9 @@ if (DEFINED EMSCRIPTEN)
 	
 	add_compile_options(-W -Wall -Wextra -Wno-switch -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function)
 
+	# determinism: never fuse a*b + c into an FMA (wasm relaxed-simd has FMA)
+	add_compile_options(-ffp-contract=off)
+
 	add_link_options(--emrun)
 	add_link_options(-sALLOW_MEMORY_GROWTH)
 	add_link_options(-sMEMORY_GROWTH_GEOMETRIC_STEP=0)
@@ -152,6 +155,9 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 	# avoids x87 fp-instructions entirely (extended precision bad for consistency)
 	add_compile_options(-mfpmath=sse)
 
+	# determinism: never fuse a*b + c into an FMA (GCC's default in GNU C mode is -ffp-contract=fast)
+	add_compile_options(-ffp-contract=off)
+
 	add_compile_options(-W -Wall -Wextra -Wno-switch -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function)
 
 elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
@@ -173,6 +179,14 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 
 	# avoids x87 fp-instructions entirely (extended precision bad for consistency)
 	add_compile_options(/arch:SSE2)
+
+	# determinism: IEEE-preserving optimizations only, no FMA contraction (don't add /fp:fast or /fp:contract)
+	if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
+		# clang-cl maps /fp:precise to -ffp-contract=on, so pass clang's own flag
+		add_compile_options(/clang:-ffp-contract=off)
+	else ()
+		add_compile_options(/fp:precise)
+	endif ()
 
 	add_compile_options(/std:c11 /experimental:c11atomics)
 	#parallel compilation

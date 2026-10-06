@@ -55,7 +55,9 @@ spirit of Erin Catto's box3d): builds from all supported compilers and platforms
 produce bit-identical results. Hence:
 - no output dependence on thread scheduling, randomness or wall-clock time;
 - no code whose float results depend on compiler choices (FMA contraction,
-  fast-math, intrinsics with differing precision).
+  fast-math, intrinsics with differing precision). CMakeLists.txt enforces
+  no contraction (-ffp-contract=off, MSVC /fp:precise); never add -march,
+  -mfma, -ffast-math, /fp:fast or /fp:contract.
 
 API
 ===

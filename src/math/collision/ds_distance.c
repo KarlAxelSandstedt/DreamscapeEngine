@@ -18,17 +18,20 @@
 ==========================================================================
 */
 
+#include "collision.h"
+#include "ds_barycentric.h"
+
 /*
 GJK Implementation: 
 
 Read: TODO 
      (O) Erin-Catto gjk 2010
-     () Ericcson 3.4
-     () Ericcson 5.1.5 (Solve3)
-     () Ericcson 5.1.6 (Solve4)
+     (O) Ericcson 3.4
+     (O) Ericcson 5.1.5 (Solve3)
+     (O) Ericcson 5.1.6 (Solve4)
      () Theory and termination: Gino, collision detection in interactive 3d env. 4.3.1-4.3.8
-     () Erin-Catto triangles (FP-precision)
-     () Erin Catto continous collision 2013 (where the cache leads)
+     (O) Erin-Catto triangles (FP-precision)
+     (O) Erin Catto continous collision 2013 (where the cache leads)
 
 Notes:
 */
