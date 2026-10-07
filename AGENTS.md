@@ -156,7 +156,7 @@ Conventions, not rules: follow them in new code; don't rename old code.
 
 - ds_Type, ds_TypeFunction: engine types and the public/physics API.
 - prefix_Function: subsystem API. r_ renderer, ui_ UI, led_ editor,
-  c_ collision, gl_ OpenGL, gjk_/sat_ collision algorithms, ss_ serial
+  c_ collision, gl_ OpenGL, sat_ collision algorithms, ss_ serial
   stream, hi_ hierarchy index.
 - Small common types: short lowercase type + uppercase function family
   (v3 -> V3Add, dll -> DLLAppend).

@@ -249,12 +249,25 @@ f32     c_TriMeshBvhHullDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const
 
 /********************************** CONTACT MANIFOLD METHODS **********************************/
 
+/*
+ * GJK warm start between frames on the same pair: the support indices of the last simplex. Zero (count 0)
+ * means a cold start.
+ */
+struct GJKCache
+{
+    f32 metric;             /* length, area or volume of the cached simplex; flushed if it changes > 2x */
+    u16 count;              /* 0: empty */
+    u16 index_a[4];
+    u16 index_b[4];
+};
+
 struct c_ContactResult
 {
     u32                         manifold_count;     /* Number of stored manifolds               */
     u32                         cache_count;        /* Number of stored caches                  */
     struct c_Manifold *         manifold;           /* Manifolds (if any)                       */
     struct c_SatCache *         cache;              /* Caches (if any)                          */
+    struct GJKCache *           gjk_cache;          /* GJK cache, at most one (NULL if none)    */
     u32 *                       tri;                /* Sorted triangles, low-to-high (if any)   */
     u32 *                       tri_manifold;       /* Sorted triangle manifold indices (if any)
                                                        m = tri_manifold[T] => manifold if tri[T]

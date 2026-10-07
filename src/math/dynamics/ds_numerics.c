@@ -31,6 +31,7 @@ struct ds_NumericsConfig ds_NumericsConfigDefault(void)
     config.manifold_cache_linear_velocity_max_diff_allowed_pending = 10.0f * DS_UNIT_M;
     config.dbvh_reinsert_threshold_pending = 0.25f;
     config.cache_count_max_pending = 32;
+    config.gjk_max_iterations_pending = 32;
 
     return config;
 }
@@ -57,6 +58,9 @@ void ds_NumericsConfigPush(struct ds_NumericsConfig *config)
     config->manifold_cache_linear_velocity_max_diff_allowed = config->manifold_cache_linear_velocity_max_diff_allowed_pending;
 
     config->cache_count_max = config->cache_count_max_pending;
+
+    config->gjk_max_iterations_pending = (config->gjk_max_iterations_pending > 0) ? config->gjk_max_iterations_pending : 1;
+    config->gjk_max_iterations = config->gjk_max_iterations_pending;
 }
 
 void ds_NumericsConfigPop(void)

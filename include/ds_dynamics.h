@@ -80,6 +80,10 @@ struct ds_NumericsConfig
     /* Max s_SatCache count per contact (Applies to mesh contacts in which we cache triangle ops)  */
     u32 cache_count_max_pending;
     u32 cache_count_max;
+
+    /* Max GJK iterations (support point evaluations) per distance query; at least 1 */
+    u32 gjk_max_iterations_pending;
+    u32 gjk_max_iterations;
 };
 extern struct ds_NumericsConfig *g_numerics_config;
 
