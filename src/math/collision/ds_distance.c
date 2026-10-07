@@ -19,7 +19,7 @@
 */
 
 #include "collision.h"
-#include "ds_barycentric.h"
+#include "ds_voronoi.h"
 
 /*
 GJK Implementation: 

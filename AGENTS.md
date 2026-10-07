@@ -69,7 +69,7 @@ zero-length) are detected and what is returned then: always something
 workable. Example: GJK falls back to the previous simplex when a divisor is
 <= 0. Avoid ill-conditioned questions instead of guarding their answers:
 decide regions from signs, then divide only where the result is bounded
-(see src/math/common/ds_barycentric.h). Inaccurate results are acceptable;
+(see src/math/common/ds_voronoi.h). Inaccurate results are acceptable;
 Inf/NaN from finite input is not. Don't hide NaN input; assert on it in
 debug. Document what a function returns for degenerate input; WARNING only
 for cases it doesn't handle.
