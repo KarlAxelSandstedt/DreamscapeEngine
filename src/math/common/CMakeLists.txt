@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.14.3)
 # files to link to later
 add_library(ds_math STATIC
 	"ds_math.c"
-	"ds_voronoi.h"
+	"${DS_INCLUDE_PATH}/ds_voronoi.h"
 	"${DS_INCLUDE_PATH}/ds_float.h"
 	"${DS_INCLUDE_PATH}/ds_vector.h"
 	"${DS_INCLUDE_PATH}/ds_quaternion.h"

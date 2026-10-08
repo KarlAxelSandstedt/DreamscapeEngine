@@ -428,6 +428,28 @@ static ds_ForceInline v4 V4Normalize(const v4 a)
 	return V4Scale(a, 1.0f / V4Length(a));
 }
 
+/*
+ * Return the index of the support vertex of v[0..count): the one maximizing dot(v[i], dir). Ties go to
+ * the lowest index (deterministic). dir needs no normalization; dir = 0 returns 0. count must be > 0.
+ */
+static ds_ForceInline u32 V3Support(const v3 *v, const u32 count, const v3 dir)
+{
+	ds_Assert(count > 0);
+	u32 best = 0;
+	f32 best_dot = V3Dot(v[0], dir);
+	for (u32 i = 1; i < count; ++i)
+	{
+		const f32 dot = V3Dot(v[i], dir);
+		if (best_dot < dot)
+		{
+			best = i;
+			best_dot = dot;
+		}
+	}
+
+	return best;
+}
+
 static ds_ForceInline f32 V2DistanceSquared(const v2 a, const v2 b)
 {
 	return V2LengthSquared(V2Sub(b, a));

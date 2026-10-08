@@ -250,13 +250,14 @@ f32     c_TriMeshBvhHullDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const
 /********************************** CONTACT MANIFOLD METHODS **********************************/
 
 /*
- * GJK warm start between frames on the same pair: the support indices of the last simplex. Zero (count 0)
- * means a cold start.
+ * GJK warm start between frames on the same pair: the support indices of the last simplex. A cache that
+ * exists is valid: count is 1..4 and the indices belong to the pair's shapes. No cache is NULL, never an
+ * empty cache.
  */
 struct GJKCache
 {
-    f32 metric;             /* length, area or volume of the cached simplex; flushed if it changes > 2x */
-    u16 count;              /* 0: empty */
+    f32 metric;             /* size of the cached simplex (GJKSimplexMetric); flushed if it changes > 2x */
+    u16 count;              /* 1..4 */
     u16 index_a[4];
     u16 index_b[4];
 };
