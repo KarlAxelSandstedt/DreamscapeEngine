@@ -14,6 +14,7 @@ add_library(DreamscapeTestAPI
 	test_hash.c
 	test_rng.c
 	test_geometry.c
+	test_gjk.c
 )
 
 add_library(Dreamscape::Test ALIAS DreamscapeTestAPI)

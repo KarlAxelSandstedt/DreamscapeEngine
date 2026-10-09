@@ -283,6 +283,7 @@ void ds_TestMainCorrectness(void)
 	//run_suite(kas_string_correctness_suite, &env, 1);
 	//run_suite(serialize_correctness_suite, &env, 1);
     run_suite(geometry_correctness_suite, &env, 1);
+    run_suite(gjk_correctness_suite, &env, 1);
 	//run_suite(array_list_correctness_suite, &env, 1);
 	//run_suite(hierarchy_correctness_index_suite, &env, 1);
 	//run_suite(math_correctness_suite, &env, 1);

@@ -371,9 +371,10 @@ void ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, c
 {
 	Log(T_SYSTEM, S_NOTE, "ds_JobScheduler worker count: %u", thread_count);
 
-    g_scheduler = ArenaPushAligned(mem_persistent, sizeof(struct ds_JobScheduler), DS_CACHE_LINE);
+    /* zeroed: workers read a_running and a_mem_frame_switch as soon as they start */
+    g_scheduler = ArenaPushAlignedZero(mem_persistent, sizeof(struct ds_JobScheduler), DS_CACHE_LINE);
     g_scheduler->worker_count = thread_count;
-	g_scheduler->worker = ArenaPushAligned(mem_persistent, thread_count*sizeof(struct ds_Worker), DS_CACHE_LINE);	
+	g_scheduler->worker = ArenaPushAlignedZero(mem_persistent, thread_count*sizeof(struct ds_Worker), DS_CACHE_LINE);	
     g_scheduler->deque = ArenaPushAligned(mem_persistent, thread_count*sizeof(struct ds_WSDeque), DS_CACHE_LINE);
     g_scheduler->seed_deque = ArenaPushAligned(mem_persistent, sizeof(struct ds_WSDeque), DS_CACHE_LINE);
     g_scheduler->phase = NULL;
@@ -391,6 +392,10 @@ void ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, c
         ds_WSDequeAlloc(g_scheduler->deque + i, i, initial_deque_size);
 	}
 
+    AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, 0);
+    AtomicStoreRlx32(&g_scheduler->a_workers_waiting, 0);
+    AtomicStoreRlx32(&g_scheduler->a_running, 0);
+
 	/* NOTE: worker 0: reserved for main thread */
     g_scheduler->worker[0].thr = g_tl_self;
 	for (u32 i = 1; i < thread_count; ++i)
@@ -398,8 +403,10 @@ void ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, c
 		ds_ThreadClone(mem_persistent, ds_WorkerMain, g_scheduler->worker + i, stacksize, framesize, scratchsize, scratch_count);
 	}
 
-    AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, 0);
-    AtomicStoreRlx32(&g_scheduler->a_workers_waiting, 0);
+    /*
+     * Start handshake: a_running 0 -> 1 releases the workers; each sets its thr and increments it, so
+     * a_running == worker_count once every worker has registered.
+     */
 	AtomicFetchAddRel32(&g_scheduler->a_running, 1);
 
 	while ((u32) AtomicLoadSeqCst32(&g_scheduler->a_running) < g_scheduler->worker_count);
