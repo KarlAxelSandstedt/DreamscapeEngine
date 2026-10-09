@@ -214,6 +214,17 @@ static v3 GJKSimplexSearchDirection(const struct GJKSimplex *simplex)
  */
 #define GJK_DIR_LENGTH_SQ_MIN (1000.0f * F32_MIN_POSITIVE_NORMAL)
 
+/*
+ * Touching tolerance (1b), relative to the solved feature's largest vertex L = max_i |v_i|:
+ *
+ *      |closest| <= GJK_TOUCH_TOLERANCE * eps * L
+ *
+ * closest = sum_i w_i v_i (w_i >= 0, sum 1) lies in B - A, so |closest| bounds the distance from above,
+ * up to the blend's rounding of ~eps * L. Below that, closest is rounding noise: its normal would be
+ * arbitrary, so the shapes are reported as touching.
+ */
+#define GJK_TOUCH_TOLERANCE 16.0f
+
 /* Set simplex cache.  */
 static void GJKCacheInit(struct GJKCache *cache, const struct GJKSimplex *simplex)
 {
@@ -229,7 +240,7 @@ static void GJKCacheInit(struct GJKCache *cache, const struct GJKSimplex *simple
 }
 
 /*
- * Overlap/touching result (1, 4a): the origin lies on the simplex of B - A, so sum_i w_i b_i = sum_i w_i a_i.
+ * Overlap/touching result (1, 1b, 4a): the origin lies on the simplex of B - A, so sum_i w_i b_i = sum_i w_i a_i.
  * Both witness points are taken from A's blend, so c_a == c_b exactly (distance 0); n = 0.
  */
 static f32 GJKOverlap(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKHelper *helper, const struct GJKSimplex *simplex)
@@ -303,10 +314,12 @@ static f32 GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct
      *
      *      #   condition                               meaning                             result
      *      1   region T0123                            origin inside the tetrahedron       return 0, n = 0
+     *      1b  |closest| <= GJK_TOUCH_TOLERANCE*eps*L  origin on the simplex (touching)    return 0, n = 0
      *      2   region INVALID                          degenerate, can't classify          backup
      *      3   !(distance_sq > iteration_distance_sq)  no strict progress (or NaN)         backup
      *      4a  |dir|^2 < MIN, count 1                  |dir| is the distance: ~0           return 0, n = 0
-     *      4b  |dir|^2 < MIN, count 2-3                degenerate edge/triangle            backup
+     *      4b  |dir|^2 < MIN, count 2-3                degenerate edge/triangle (1b        backup
+     *                                                  ruled out touching)
      *      5   the support bound proves                early exit                          return F32_INFINITY
      *          distance > cutoff_distance
      *      6   the support point makes no progress     converged                           simplex
@@ -384,13 +397,22 @@ static f32 GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct
         }
 
         v3 closest = V3Zero();
+        f32 vertex_length_sq_max = 0.0f;
         for (u32 j = 0; j < simplex.count; ++j)
         {
             closest = V3AddScaled(closest, simplex.v[j].minkowski, simplex.weight[j]);
+            vertex_length_sq_max = F32Max(vertex_length_sq_max, V3LengthSquared(simplex.v[j].minkowski));
+        }
+
+        /* 1b */
+        const f32 iteration_distance_sq = V3LengthSquared(closest);
+        const f32 touch_tolerance = GJK_TOUCH_TOLERANCE * F32_EPSILON;
+        if (iteration_distance_sq <= touch_tolerance * touch_tolerance * vertex_length_sq_max)
+        {
+            return GJKOverlap(c_a, c_b, n, cache_out, &helper, &simplex);
         }
 
         /* 3: no strict progress (or NaN) */
-        const f32 iteration_distance_sq = V3LengthSquared(closest);
         if (!(distance_sq > iteration_distance_sq))
         {
             simplex = backup;

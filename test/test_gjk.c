@@ -1009,6 +1009,9 @@ struct test_Output GjkDegenerateTest(struct test_Environment *env)
     const struct c_Shape segment_zero = { .type = C_SHAPE_CAPSULE, .capsule = { .half_height = 0.0f } };
     const q rot_x = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), F32_PI / 2.0f);   /* (0,1,0) -> (-1,0,0) */
     const ds_Transform origin = GjkTestTransform(QIdentity(), V3Zero());
+    /* rotated box: the edge point is no longer exactly representable, so closest ~ eps, not 0 */
+    const q rot_box = QUnitAxisAngle(V3Normalize(V3(1.0f, 2.0f, 3.0f)), 0.7f);
+    const ds_Transform rotated = GjkTestTransform(rot_box, V3Zero());
 
     struct
     {
@@ -1023,6 +1026,7 @@ struct test_Output GjkDegenerateTest(struct test_Environment *env)
         { "point on a face",                &box,   origin, &point,         GjkTestTransform(QIdentity(), V3(1.0f, 0.3f, 0.2f)), 0.0f },
         { "point on a vertex",              &box,   origin, &point,         GjkTestTransform(QIdentity(), V3(1.0f, 1.0f, 1.0f)), 0.0f },
         { "point on an edge",               &box,   origin, &point,         GjkTestTransform(QIdentity(), V3(1.0f, 1.0f, 0.5f)), 0.0f },
+        { "point on a rotated edge",        &box,   rotated, &point,        GjkTestTransform(QIdentity(), QV3Rotate(rot_box, V3(1.0f, 1.0f, 0.5f))), 0.0f },
         { "point at the center",            &box,   origin, &point,         origin, 0.0f },
         { "point off a vertex",             &box,   origin, &point,         GjkTestTransform(QIdentity(), V3(2.0f, 2.0f, 2.0f)), 1.7320508f },
         { "identical boxes",                &box,   origin, &box,           origin, 0.0f },
