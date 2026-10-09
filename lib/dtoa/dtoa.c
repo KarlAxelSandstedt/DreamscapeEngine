@@ -212,8 +212,6 @@
 
 
 /* ================================== USER DEFINITIONS ================================== */
- 
-void set_max_dtoa_threads(unsigned int n);
 
 #include "ds_define.h"
 #include "ds_types.h"
@@ -223,46 +221,32 @@ void set_max_dtoa_threads(unsigned int n);
 
 #define MULTIPLE_THREADS
 
-#if __DS_PLATFORM__ == __DS_LINUX__
+/*
+ * Threads with a slot (engine threads, DmgDtoaThreadInit) use their own ThInfo without locks; all others
+ * (thread number U32_MAX) share TI0 under the locks below, which are statically initialized so that
+ * conversions work before any init call.
+ */
+static ds_ThreadLocal u32 tl_dtoa_thread = U32_MAX;
+#define dtoa_get_threadno() 	tl_dtoa_thread
+
+void DmgDtoaThreadInit(const u32 thread_index)
+{
+	tl_dtoa_thread = (thread_index < DS_THREAD_COUNT_MAX) ? thread_index : U32_MAX;
+}
+
+#if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
 
 #include <pthread.h>
 static pthread_mutex_t g_lock[2] = { PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER };
 #define ACQUIRE_DTOA_LOCK(n) 	pthread_mutex_lock(g_lock + n)
 #define FREE_DTOA_LOCK(n) 	pthread_mutex_unlock(g_lock + n)
-#define dtoa_get_threadno 	pthread_self
-void DmgDtoaInit(const u32 max_thread_count)
-{
-	set_max_dtoa_threads(max_thread_count);
-}
-
-#elif __DS_PLATFORM__ == __DS_WEB__
-
-#define _GNU_SOURCE
-#include <pthread.h>
-#include <unistd.h>
-static pthread_mutex_t g_lock[2] = { PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER };
-#define ACQUIRE_DTOA_LOCK(n) 	pthread_mutex_lock(g_lock + n)
-#define FREE_DTOA_LOCK(n) 	pthread_mutex_unlock(g_lock + n)
-#define dtoa_get_threadno 	gettid
-void DmgDtoaInit(const u32 max_thread_count)
-{
-	set_max_dtoa_threads(max_thread_count);
-}
 
 #elif __DS_PLATFORM__ == __DS_WIN64__
 
 #include <windows.h>
-static CRITICAL_SECTION g_lock[2];
-#define ACQUIRE_DTOA_LOCK(n) 	EnterCriticalSection(g_lock + n)
-#define FREE_DTOA_LOCK(n) 	LeaveCriticalSection(g_lock + n)
-#define dtoa_get_threadno 	GetCurrentThreadId
-void DmgDtoaInit(const u32 max_thread_count)
-{
-	InitializeCriticalSection(g_lock + 0);
-	InitializeCriticalSection(g_lock + 1);
-
-	set_max_dtoa_threads(max_thread_count);
-}
+static SRWLOCK g_lock[2] = { SRWLOCK_INIT, SRWLOCK_INIT };
+#define ACQUIRE_DTOA_LOCK(n) 	AcquireSRWLockExclusive(g_lock + n)
+#define FREE_DTOA_LOCK(n) 	ReleaseSRWLockExclusive(g_lock + n)
 
 #endif
 
@@ -1551,7 +1535,7 @@ BCinfo { int dp0, dp1, dplen, dsign, e0, inexact, nd, nd0, rounding, scale, uflc
 #define MTa , PTI
 #define MTb , &TI
 #define MTd , ThInfo **PTI
-static unsigned int maxthreads = 0;
+static const unsigned int maxthreads = DS_THREAD_COUNT_MAX;
 #else
 #define MTa /*nothing*/
 #define MTb /*nothing*/
@@ -1583,43 +1567,17 @@ ThInfo {
  static ThInfo TI0;
 
 #ifdef MULTIPLE_THREADS
- static ThInfo *TI1;
- static int TI0_used;
-
- void
-set_max_dtoa_threads(unsigned int n)
-{
-	size_t L;
-
-	if (n > maxthreads) {
-		L = n*sizeof(ThInfo);
-		if (TI1) {
-			TI1 = (ThInfo*)REALLOC(TI1, L);
-			memset(TI1 + maxthreads, 0, (n-maxthreads)*sizeof(ThInfo));
-			}
-		else {
-			TI1 = (ThInfo*)MALLOC(L);
-			if (TI0_used) {
-				memcpy(TI1, &TI0, sizeof(ThInfo));
-				if (n > 1)
-					memset(TI1 + 1, 0, L - sizeof(ThInfo));
-				memset(&TI0, 0, sizeof(ThInfo));
-				}
-			else
-				memset(TI1, 0, L);
-			}
-		maxthreads = n;
-		}
-	}
+ /* one slot per engine thread, padded to whole cache lines: neighbours' free lists don't share a line */
+ static union { ThInfo ti; u8 pad[(sizeof(ThInfo) + 63) / 64 * 64]; } TI1_slot[DS_THREAD_COUNT_MAX];
+ /* slot 0 (the main thread) alone may use private_mem */
+#define TI1 (&TI1_slot[0].ti)
 
  static ThInfo*
 get_TI(void)
 {
 	unsigned int thno = dtoa_get_threadno();
 	if (thno < maxthreads)
-		return TI1 + thno;
-	if (thno == 0)
-		TI0_used = 1;
+		return &TI1_slot[thno].ti;
 	return &TI0;
 	}
 #define freelist TI->Freelist
@@ -1656,11 +1614,12 @@ Balloc(int k MTd)
 #else
 		len = (sizeof(Bigint) + (x-1)*sizeof(ULong) + sizeof(double) - 1)
 			/sizeof(double);
-		if (k <= Kmax && pmem_next - private_mem + len <= PRIVATE_mem
+		/* engine: slot 0 owns private_mem, so test ownership before reading pmem_next (data race otherwise) */
+		if (
 #ifdef MULTIPLE_THREADS
-			&& TI == TI1
+			TI == TI1 &&
 #endif
-			) {
+			k <= Kmax && pmem_next - private_mem + len <= PRIVATE_mem) {
 			rv = (Bigint*)pmem_next;
 			pmem_next += len;
 			}

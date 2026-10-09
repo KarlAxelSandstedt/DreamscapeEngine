@@ -88,9 +88,9 @@ struct ds_Config
                                                RngSystem. Workers derive their RNG streams from it.    */
     u64             persistent_size;        /* engine-owned persistent arena                            */
     u32             thread_count;           /* scheduler workers including the main thread; 0: logical
-                                               cores - 2. Clamped to [1, logical cores]; on the web
-                                               this is meant to be the pthread pool size
-                                               (-sPTHREAD_POOL_SIZE, unverified)                        */
+                                               cores - 2. Clamped to [1, min(logical cores,
+                                               DS_THREAD_COUNT_MAX)]; on the web the core count is
+                                               meant to be the pthread pool size (unverified)          */
     u64             thread_framesize;       /* per-thread frame arena size (main thread and workers)    */
     u64             thread_scratchsize;     /* per-thread scratch arena size                            */
     u32             thread_scratch_count;   /* per-thread scratch arena count                           */

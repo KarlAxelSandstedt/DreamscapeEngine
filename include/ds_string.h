@@ -33,10 +33,7 @@ extern "C" {
  *
  *	utf8 - NOT null-terminated unicode string
  *	utf32 - 32bit unicode string
- *
- *	Initialization needed for dtoa/strtod multithreading locks
  */
-void ds_StringApiInit(const u32 thread_count);
 
 #define Utf8Inline(cstr) (utf8)  		\
 	{					\

@@ -389,6 +389,7 @@ void ds_Init(const char *config_path, const char *log_path)
     }
     config->thread_count = (config->thread_count < 1) ? 1 : config->thread_count;
     config->thread_count = (config->thread_count > core_count) ? core_count : config->thread_count;
+    config->thread_count = (config->thread_count > DS_THREAD_COUNT_MAX) ? DS_THREAD_COUNT_MAX : config->thread_count;
     g_config = config;
 
     Log(T_SYSTEM, S_NOTE, "ds_Init: seed (%lu, %lu, %lu, %lu), %u workers, persistent %lu B, thread frame %lu B, scratch %u x %lu B, headless %u",
@@ -396,7 +397,6 @@ void ds_Init(const char *config_path, const char *log_path)
         config->persistent_size, config->thread_framesize, config->thread_scratch_count, config->thread_scratchsize,
         config->headless);
 
-    ds_StringApiInit(config->thread_count);
     ds_PlatformApiInit(&g_init_persistent, config->thread_framesize, config->thread_scratchsize, config->thread_scratch_count, config->thread_count);
     if (!config->headless)
     {

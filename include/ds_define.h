@@ -111,6 +111,9 @@ extern "C" {
 
 #endif
 
+/* Most threads the engine creates and indexes (thread index < DS_THREAD_COUNT_MAX), main thread included */
+#define DS_THREAD_COUNT_MAX	64
+
 #ifdef DS_DEBUG
 	#define DS_PHYSICS_DEBUG	/* Physics debug events, physics debug rendering	*/
 	#define DS_ASSERT_DEBUG 	/* Asserts on 						*/

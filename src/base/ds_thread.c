@@ -19,6 +19,7 @@
 
 #define _GNU_SOURCE
 #include "ds_base.h"
+#include "dtoa.h"
 
 ds_ThreadLocal struct ds_Thread *g_tl_self = NULL;
 u32 a_index_counter = 1;
@@ -34,6 +35,7 @@ const char *thread_profiler_id[] =
     "Worker 48", "Worker 49", "Worker 50", "Worker 51", "Worker 52", "Worker 53", "Worker 54", "Worker 55",
     "Worker 56", "Worker 57", "Worker 58", "Worker 59", "Worker 60", "Worker 61", "Worker 62", "Worker 63",
 };
+ds_StaticAssert(sizeof(thread_profiler_id) / sizeof(thread_profiler_id[0]) == DS_THREAD_COUNT_MAX, "one profiler name per thread index");
 
 
 static void ds_ThreadAllocMemory(struct arena *mem, struct ds_Thread *thr, const u64 frame_size, const u64 scratch_size, const u32 scratch_count)
@@ -98,6 +100,7 @@ static void *ds_ThreadCloneStart(void *void_thr)
 	thr->gtid = getpid();
 	thr->tid = gettid();
 	ProfThreadNamed(thread_profiler_id[thr->index]);
+	DmgDtoaThreadInit(thr->index);
 	thr->start(thr);
 
 	return NULL;
@@ -113,6 +116,7 @@ void ds_ThreadMasterInit(struct arena *mem, const u64 frame_size, const u64 scra
 	g_tl_self->tid = gettid();
 	g_tl_self->index = 0;
     ds_ThreadAllocMemory(mem, g_tl_self, frame_size, scratch_size, scratch_count);
+	DmgDtoaThreadInit(0);
 
 	ProfThreadNamed(thread_profiler_id[g_tl_self->index]);
 }
@@ -142,6 +146,7 @@ ds_Thread *ds_ThreadClone(struct arena *mem, void (*start)(ds_Thread *), void *a
 	thr->ret_size = 0;
 	/* in clone order, on the cloning thread: thread creation publishes it to the new thread */
 	thr->index = AtomicFetchAddRlx32(&a_index_counter, 1);
+	ds_AssertString(thr->index < DS_THREAD_COUNT_MAX, "more threads than DS_THREAD_COUNT_MAX");
 	thr->stack_size = (stack_size % g_arch_config->pagesize == 0) 
 				? stack_size 
 				: stack_size + (g_arch_config->pagesize - stack_size % g_arch_config->pagesize);
@@ -210,6 +215,7 @@ DWORD WINAPI ds_ThreadCloneStart(LPVOID void_thr)
 	struct ds_Thread *thr = void_thr;
 	thr->tid = GetCurrentThreadId();
 	ProfThreadNamed(thread_profiler_id[thr->index]);
+	DmgDtoaThreadInit(thr->index);
 	thr->start(thr);
 
 	return 0;
@@ -223,6 +229,7 @@ void ds_ThreadMasterInit(struct arena *mem, const u64 frame_size, const u64 scra
 	g_tl_self->tid = GetCurrentThreadId();
 	g_tl_self->index = 0;
     ds_ThreadAllocMemory(mem, g_tl_self, frame_size, scratch_size, scratch_count);
+	DmgDtoaThreadInit(0);
 
 	ProfThreadNamed(thread_profiler_id[g_tl_self->index]);
 }
@@ -252,6 +259,7 @@ ds_Thread *ds_ThreadClone(struct arena *mem, void (*start)(ds_Thread *), void *a
 	thr->ret_size = 0;
 	/* in clone order, on the cloning thread: thread creation publishes it to the new thread */
 	thr->index = AtomicFetchAddRlx32(&a_index_counter, 1);
+	ds_AssertString(thr->index < DS_THREAD_COUNT_MAX, "more threads than DS_THREAD_COUNT_MAX");
 	thr->stack_size = (stack_size % g_arch_config->pagesize == 0) 
 				? stack_size 
 				: stack_size + (g_arch_config->pagesize - stack_size % g_arch_config->pagesize);
