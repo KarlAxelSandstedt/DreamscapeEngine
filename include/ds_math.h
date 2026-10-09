@@ -56,11 +56,13 @@ static inline ds_Transform ds_TransformIdentity(void)
     return transform;
 }
 
-/* Return the relative transform of target to reference:
+/*
+ * Return target's pose in reference's frame (reference^-1 * target): rel maps points from target's frame
+ * into reference's frame.
  *
- *      ref->rot*rel->rot = ref->rot*ref->rot_inv*T->rot = target->rot
- *
- *      ref->rot*rel->pos + ref->pos = ref->rot*ref->rot_inv*(T->pos - ref->pos) + ref->pos = target->pos
+ *      p_reference = rel.rot*p_target + rel.pos
+ *      rel.rot     = reference.rot^-1 * target.rot
+ *      rel.pos     = reference.rot^-1 * (target.pos - reference.pos)
  */
 static inline ds_Transform ds_TransformRelative(const ds_Transform *reference, const ds_Transform *target)
 {
@@ -110,12 +112,13 @@ static inline ds_TransformWorld ds_TransformPromote(const ds_Transform *transfor
     return world;
 }
 
-/* 
- * Return the relative transform of target to reference (see ds_TransformRelative); the narrow phase
- * boundary:
+/*
+ * Return target's pose in reference's frame (reference^-1 * target): rel maps points from target's frame
+ * into reference's frame. Positions are subtracted in f64, then demoted.
  *
- *      rel->rot = ref->rot_inv*target->rot
- *      rel->pos = ref->rot_inv*demote(target->pos - ref->pos)
+ *      p_reference = rel.rot*p_target + rel.pos
+ *      rel.rot     = reference.rot^-1 * target.rot
+ *      rel.pos     = reference.rot^-1 * demote(target.pos - reference.pos)
  */
 static inline ds_Transform ds_TransformWorldRelative(const ds_TransformWorld *reference, const ds_TransformWorld *target)
 {
@@ -128,18 +131,17 @@ static inline ds_Transform ds_TransformWorldRelative(const ds_TransformWorld *re
     return relative;
 }
 
-/* 
- * Return the world transform of local, given in world's frame (e.g. body world * shape local):
+/*
+ * Return the world pose of child, given in parent's frame: points go through child, then parent.
  *
- *      rot = world->rot*local->rot
- *      pos = world->pos + promote(world->rot*local->pos)
+ *      result(p) = parent.rot*(child.rot*p + child.pos) + parent.pos
  */
-static inline ds_TransformWorld ds_TransformWorldMul(const ds_TransformWorld *world, const ds_Transform *local)
+static inline ds_TransformWorld ds_TransformWorldChild(const ds_TransformWorld *parent, const ds_Transform *child)
 {
     const ds_TransformWorld result =
     {
-        .rotation = QMul(world->rotation, local->rotation),
-        .position = V3F64Add(world->position, V3Promote(QV3Rotate(world->rotation, local->position))),
+        .rotation = QMul(parent->rotation, child->rotation),
+        .position = V3F64Add(parent->position, V3Promote(QV3Rotate(parent->rotation, child->position))),
     };
     return result;
 }
