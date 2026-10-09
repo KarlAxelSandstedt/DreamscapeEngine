@@ -210,9 +210,14 @@ void ds_GraphicsApiInit(void)
 
 void ds_GraphicsApiShutdown(void)
 {
-	struct arena *tmp = ArenaPushScratch();
-	ds_WindowHIApplyCustomFreeAndRemove(tmp, g_window_hierarchy, g_process_root_window, ds_InternalWindowDealloc, NULL);
-    ArenaPopScratch();
+	/* a program may shut down before creating its root window */
+	if (g_process_root_window != HI_NULL)
+	{
+		struct arena *tmp = ArenaPushScratch();
+		ds_WindowHIApplyCustomFreeAndRemove(tmp, g_window_hierarchy, g_process_root_window, ds_InternalWindowDealloc, NULL);
+		ArenaPopScratch();
+		g_process_root_window = HI_NULL;
+	}
 
 	gl_StateMemDealloc();
 	ds_WindowHIDealloc(g_window_hierarchy);
