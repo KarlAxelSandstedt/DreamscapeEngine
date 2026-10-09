@@ -26,8 +26,8 @@ Voronoi API
 -----------
 Description:
     XVoronoi returns the feature (vertex, edge, face or the tetrahedron itself) closest to a point, as an
-    enum voronoi, and the weight w[i] of every vertex: 0 outside the feature, in [0, 1] and summing to 1
-    up to rounding (see Internals). Every function has an origin variant (query point = origin).
+    enum voronoi, and the weight w[i] of every vertex: 0 outside the feature, in [0, 1], summing to 1.
+    Every function has an origin variant (query point = origin).
 
 Usage:
     f32 w[3];
@@ -40,18 +40,9 @@ Internals:
     enum voronoi is the bitmask of the feature's vertices. Degenerate input (coincident, collinear or
     coplanar vertices) resolves to a lower feature; VORONOI_INVALID only comes from a divisor <= 0 at
     normalization through rounding. Regions are decided from the signs of the unnormalized barycentric
-    coordinates below, then only the chosen feature is normalized.
-
-    w[i] = bc[i] / divisor, with the divisor from the feature alone (|s01|^2, |n|^2) and the numerators
-    from the vertices relative to the point. The numerators' rounding grows with r = |vertex - point|, so
-    the weights sum to 1 only up to
-
-        edge:   ~eps * r / f            f: the feature's size (edge length, sqrt of the face's |n|)
-        face:   ~eps * (r / f)^2
-
-    Near the feature (r ~ f, e.g. contacts) that is a few eps; far from it the closest point
-    sum_i w[i] t_i shrinks by the same factor (measured ~1e-4 at r ~ 100 f). Callers that need an exact
-    affine blend at range divide by sum_i w[i].
+    coordinates below, then only the chosen feature is normalized, by the sum of its numerators (all > 0
+    there): the weights sum to 1 to ~eps at any distance. The divisor only decides VORONOI_INVALID (see
+    the Barycentric API).
 
 Barycentric API
 ---------------
@@ -62,8 +53,13 @@ Description:
 
 Usage (only for own region logic; otherwise use the Voronoi API):
     1. decide the region from the signs of the numerators (no division),
-    2. normalize only the chosen feature, with that feature's own numerators and divisor,
-    3. handle divisor <= 0 there (exactly degenerate, or rounding) as a failure with a workable result.
+    2. normalize (the divisor and the numerator sum are equal in exact arithmetic):
+        - inside the chosen feature (its numerators all > 0): divide by the sum of its numerators; the
+          weights then lie in [0, 1] and sum to 1 to ~eps at any distance,
+        - the unclamped projection onto the line/plane (numerators of mixed sign): divide by the
+          divisor; a mixed-sign sum cancels,
+    3. divisor <= 0: the line/plane is undefined (exactly degenerate, or rounding); handle it as a
+       failure with a workable result.
 
 Internals:
     There are deliberately no normalized versions: barycentric coordinates of an unclamped projection are
@@ -71,6 +67,11 @@ Internals:
     barely defined). In a face or edge region all chosen numerators are > 0, so the weights lie in (0, 1).
     The general versions use edge forms (precise for a far point), the origin versions Box3D's forms; see
     the error derivation in TetrahedronBCUnnormalized.
+
+    Why the sum within a region: the numerators come from the vertices relative to the point, so their
+    rounding grows with r = |vertex - point|, while the divisor comes from the feature alone. Dividing by
+    the divisor leaves the weight sum off by ~eps r / f (edge), ~eps (r / f)^2 (face), f the feature's
+    size; the sum cancels that common error.
 */
 
 #ifndef __DS_VORONOI_H__
@@ -105,8 +106,7 @@ enum voronoi
 
 /*
  * Return the feature of segment (s0, s1) closest to p, and its barycentric weights: w[i] is the
- * weight of s_i, 0 for vertices outside the feature; all w[i] in [0, 1] and summing to 1 up to
- * rounding (see the Voronoi API).
+ * weight of s_i, 0 for vertices outside the feature; all w[i] in [0, 1], summing to 1.
  *
  * A degenerate segment (s0 == s1) gives VORONOI_V1. Returns VORONOI_INVALID only if the geometry is
  * numerically degenerate (rounding); w is then garbage.
@@ -117,8 +117,7 @@ static inline enum voronoi SegmentOriginVoronoi(f32 w[2], const v3 s0, const v3 
 
 /*
  * Return the feature of triangle (t0, t1, t2) closest to p, and its barycentric weights: w[i] is the
- * weight of t_i, 0 for vertices outside the feature; all w[i] in [0, 1] and summing to 1 up to
- * rounding (see the Voronoi API).
+ * weight of t_i, 0 for vertices outside the feature; all w[i] in [0, 1], summing to 1.
  *
  * A collinear triangle or coincident vertices give an edge or a vertex. Returns VORONOI_INVALID only if the
  * geometry is numerically degenerate (rounding); w is then garbage.
@@ -129,8 +128,8 @@ static inline enum voronoi TriOriginVoronoi(f32 w[3], const v3 t0, const v3 t1, 
 
 /*
  * Return the feature of tetrahedron (t0, t1, t2, t3) closest to p, and its barycentric weights: w[i] is
- * the weight of t_i, 0 for vertices outside the feature; all w[i] in [0, 1] and summing to 1 up to
- * rounding (see the Voronoi API). p inside gives VORONOI_T0123.
+ * the weight of t_i, 0 for vertices outside the feature; all w[i] in [0, 1], summing to 1. p inside
+ * gives VORONOI_T0123.
  *
  * A flat (coplanar) tetrahedron gives its closest face, edge or vertex. Returns VORONOI_INVALID only if
  * every candidate face is numerically degenerate (rounding); w is then garbage.
@@ -362,8 +361,9 @@ static inline enum voronoi SegmentVoronoi(f32 w[2], const v3 s0, const v3 s1, co
     else if (divisor > 0.0f)
     {
         r = VORONOI_E01;
-        w[0] = bc[0] / divisor;
-        w[1] = bc[1] / divisor;
+        const f32 sum = bc[0] + bc[1];
+        w[0] = bc[0] / sum;
+        w[1] = bc[1] / sum;
     }
 
     return r;
@@ -390,8 +390,9 @@ static inline enum voronoi SegmentOriginVoronoi(f32 w[2], const v3 s0, const v3 
     else if (divisor > 0.0f)
     {
         r = VORONOI_E01;
-        w[0] = bc[0] / divisor;
-        w[1] = bc[1] / divisor;
+        const f32 sum = bc[0] + bc[1];
+        w[0] = bc[0] / sum;
+        w[1] = bc[1] / sum;
     }
 
     return r;
@@ -429,8 +430,9 @@ static inline enum voronoi TriVoronoi(f32 w[3], const v3 t0, const v3 t1, const 
     TriBCUnnormalized(bc012, &div012, t0, t1, t2, p);
     if (bc12[0] > 0.0f && bc12[1] > 0.0f && bc012[0] <= 0.0f)
     {
-        w[1] = bc12[0] / div12;
-        w[2] = bc12[1] / div12;
+        const f32 sum = bc12[0] + bc12[1];
+        w[1] = bc12[0] / sum;
+        w[2] = bc12[1] / sum;
         return (div12 > 0.0f)
             ? VORONOI_E12
             : VORONOI_INVALID;
@@ -438,8 +440,9 @@ static inline enum voronoi TriVoronoi(f32 w[3], const v3 t0, const v3 t1, const 
     
     if (bc20[0] > 0.0f && bc20[1] > 0.0f && bc012[1] <= 0.0f)
     {
-        w[2] = bc20[0] / div20;
-        w[0] = bc20[1] / div20;
+        const f32 sum = bc20[0] + bc20[1];
+        w[2] = bc20[0] / sum;
+        w[0] = bc20[1] / sum;
         return (div20 > 0.0f)
             ? VORONOI_E02
             : VORONOI_INVALID;
@@ -447,8 +450,9 @@ static inline enum voronoi TriVoronoi(f32 w[3], const v3 t0, const v3 t1, const 
 
     if (bc01[0] > 0.0f && bc01[1] > 0.0f && bc012[2] <= 0.0f)
     {
-        w[0] = bc01[0] / div01;
-        w[1] = bc01[1] / div01;
+        const f32 sum = bc01[0] + bc01[1];
+        w[0] = bc01[0] / sum;
+        w[1] = bc01[1] / sum;
         return (div01 > 0.0f)
             ? VORONOI_E01
             : VORONOI_INVALID;
@@ -456,9 +460,10 @@ static inline enum voronoi TriVoronoi(f32 w[3], const v3 t0, const v3 t1, const 
 
     if (bc012[0] > 0.0f && bc012[1] > 0.0f && bc012[2] > 0.0f)
     {
-        w[0] = bc012[0] / div012;
-        w[1] = bc012[1] / div012;
-        w[2] = bc012[2] / div012;
+        const f32 sum = bc012[0] + bc012[1] + bc012[2];
+        w[0] = bc012[0] / sum;
+        w[1] = bc012[1] / sum;
+        w[2] = bc012[2] / sum;
         return (div012 > 0.0f)
             ? VORONOI_F012
             : VORONOI_INVALID;
@@ -499,8 +504,9 @@ static inline enum voronoi TriOriginVoronoi(f32 w[3], const v3 t0, const v3 t1, 
     TriOriginBCUnnormalized(bc012, &div012, t0, t1, t2);
     if (bc12[0] > 0.0f && bc12[1] > 0.0f && bc012[0] <= 0.0f)
     {
-        w[1] = bc12[0] / div12;
-        w[2] = bc12[1] / div12;
+        const f32 sum = bc12[0] + bc12[1];
+        w[1] = bc12[0] / sum;
+        w[2] = bc12[1] / sum;
         return (div12 > 0.0f)
             ? VORONOI_E12
             : VORONOI_INVALID;
@@ -508,8 +514,9 @@ static inline enum voronoi TriOriginVoronoi(f32 w[3], const v3 t0, const v3 t1, 
     
     if (bc20[0] > 0.0f && bc20[1] > 0.0f && bc012[1] <= 0.0f)
     {
-        w[2] = bc20[0] / div20;
-        w[0] = bc20[1] / div20;
+        const f32 sum = bc20[0] + bc20[1];
+        w[2] = bc20[0] / sum;
+        w[0] = bc20[1] / sum;
         return (div20 > 0.0f)
             ? VORONOI_E02
             : VORONOI_INVALID;
@@ -517,8 +524,9 @@ static inline enum voronoi TriOriginVoronoi(f32 w[3], const v3 t0, const v3 t1, 
 
     if (bc01[0] > 0.0f && bc01[1] > 0.0f && bc012[2] <= 0.0f)
     {
-        w[0] = bc01[0] / div01;
-        w[1] = bc01[1] / div01;
+        const f32 sum = bc01[0] + bc01[1];
+        w[0] = bc01[0] / sum;
+        w[1] = bc01[1] / sum;
         return (div01 > 0.0f)
             ? VORONOI_E01
             : VORONOI_INVALID;
@@ -526,9 +534,10 @@ static inline enum voronoi TriOriginVoronoi(f32 w[3], const v3 t0, const v3 t1, 
 
     if (bc012[0] > 0.0f && bc012[1] > 0.0f && bc012[2] > 0.0f)
     {
-        w[0] = bc012[0] / div012;
-        w[1] = bc012[1] / div012;
-        w[2] = bc012[2] / div012;
+        const f32 sum = bc012[0] + bc012[1] + bc012[2];
+        w[0] = bc012[0] / sum;
+        w[1] = bc012[1] / sum;
+        w[2] = bc012[2] / sum;
         return (div012 > 0.0f)
             ? VORONOI_F012
             : VORONOI_INVALID;
@@ -558,10 +567,11 @@ static inline enum voronoi TetrahedronVoronoi(f32 w[4], const v3 t0, const v3 t1
     TetrahedronBCUnnormalized(bc, &divisor, t0, t1, t2, t3, p);
     if (divisor > 0.0f && bc[0] > 0.0f && bc[1] > 0.0f && bc[2] > 0.0f && bc[3] > 0.0f)
     {
-        w[0] = bc[0] / divisor;
-        w[1] = bc[1] / divisor;
-        w[2] = bc[2] / divisor;
-        w[3] = bc[3] / divisor;
+        const f32 sum = bc[0] + bc[1] + bc[2] + bc[3];
+        w[0] = bc[0] / sum;
+        w[1] = bc[1] / sum;
+        w[2] = bc[2] / sum;
+        w[3] = bc[3] / sum;
         return VORONOI_T0123;
     }
 
@@ -627,10 +637,11 @@ static inline enum voronoi TetrahedronOriginVoronoi(f32 w[4], const v3 t0, const
     TetrahedronOriginBCUnnormalized(bc, &divisor, t0, t1, t2, t3);
     if (divisor > 0.0f && bc[0] > 0.0f && bc[1] > 0.0f && bc[2] > 0.0f && bc[3] > 0.0f)
     {
-        w[0] = bc[0] / divisor;
-        w[1] = bc[1] / divisor;
-        w[2] = bc[2] / divisor;
-        w[3] = bc[3] / divisor;
+        const f32 sum = bc[0] + bc[1] + bc[2] + bc[3];
+        w[0] = bc[0] / sum;
+        w[1] = bc[1] / sum;
+        w[2] = bc[2] / sum;
+        w[3] = bc[3] / sum;
         return VORONOI_T0123;
     }
 
