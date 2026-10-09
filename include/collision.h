@@ -264,7 +264,7 @@ Usage:
                         may still exceed it; callers compare.
 
 Internals:
-    ds_distance.c: the termination cases and the derivation of the touch band.
+    c_distance.c: the termination cases and the derivation of the touch band.
 */
 
 /*
@@ -280,7 +280,7 @@ struct GJKCache
     u16 index_b[4];
 };
 
-/* touch band width in units of the rounding noise eps * L (see ds_distance.c) */
+/* touch band width in units of the rounding noise eps * L (see c_distance.c) */
 #define GJK_TOUCH_TOLERANCE 100.0f
 
 f32     GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct c_Shape *shape_a, const ds_Transform *t_a, const struct c_Shape *shape_b, const ds_Transform *t_b, const f32 cutoff_distance);

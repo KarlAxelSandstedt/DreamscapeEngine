@@ -1,3 +1,6 @@
-#include "ds_distance.c"
-#include "collision.c"
+#include "c_shape.c"
+#include "c_distance.c"
+#include "c_test.c"
+#include "c_contact.c"
+#include "c_raycast.c"
 #include "bvh.c"
