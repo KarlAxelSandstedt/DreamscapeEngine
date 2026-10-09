@@ -4,12 +4,6 @@
 #include "ds_dynamics.h"
 
 /*
- * GJK and its helpers are static in ds_distance.c (unity-included by ds_collision.c); including it here
- * gives this test its own copy, with access to cache_in, cutoff_distance and cache_out.
- */
-#include "../src/math/collision/ds_distance.c"
-
-/*
 GJK tests
 =========
 Every GJK result is checked in double precision against the exact input shapes (the f32 vertices and
@@ -161,7 +155,7 @@ struct gjk_TestShape
 {
     struct c_Shape  shape;
     ds_Transform    t;
-    struct d3 *     v;          /* world vertices, in GJKVertexSet order                    */
+    struct d3 *     v;          /* world vertices, in GJK's vertex order (cache indices)    */
     struct d3 *     face_n;     /* world unit face normals (hulls)                          */
     struct d3 *     edge;       /* world edge directions: one per twin pair, or the segment */
     u32             v_count;

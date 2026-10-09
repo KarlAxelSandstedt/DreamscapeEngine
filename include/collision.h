@@ -237,6 +237,54 @@ u32     c_TriMeshBvhHullTest(const struct c_Shape *s1, const ds_Transform *t1, c
 
 /********************************** DISTANCE METHODS **********************************/
 
+/*
+GJK distance
+------------
+Description:
+    Distance, closest points and normal of two convex shapes, computed in A's frame. Shapes closer than
+    the rounding noise band GJK_TOUCH_TOLERANCE * eps * L (L ~ the shapes' extent in A's frame) count as
+    touching. Uses the pushed numerics config (gjk_max_iterations).
+
+Usage:
+    struct GJKCache cache;
+    v3 c_a, c_b, n;
+    const f32 d = GJK(&c_a, &c_b, &n, &cache, cache_in,
+                      shape_a, &transform_a, shape_b, &transform_b, cutoff_distance);
+
+    d == 0.0f           overlap or touch; c_a == c_b, n = 0
+    d == F32_INFINITY   a separating plane proves distance > cutoff_distance; c_a, c_b, n garbage
+    otherwise           the distance; c_a, c_b the closest points and n the unit normal from A to B (world
+                        space), n accurate to ~6 eps * L / distance radians. Only an upper bound if the
+                        iteration limit was reached
+
+    cache_in            NULL or the pair's previous cache_out; warm-starts the search unless the cached
+                        simplex changed size by more than 2x. cache_out is always written.
+    cutoff_distance     distances above it are of no interest (contacts: radii + speculative margin);
+                        F32_INFINITY for distance queries. Not every stop tests it, so a finite result
+                        may still exceed it; callers compare.
+
+Internals:
+    ds_distance.c: the termination cases and the derivation of the touch band.
+*/
+
+/*
+ * GJK warm start between frames on the same pair: the support indices of the last simplex. A cache that
+ * exists is valid: count is 1..4 and the indices belong to the pair's shapes. No cache is NULL, never an
+ * empty cache.
+ */
+struct GJKCache
+{
+    f32 metric;             /* length/area/volume of the cached simplex; flushed if it changes > 2x */
+    u16 count;              /* 1..4 */
+    u16 index_a[4];
+    u16 index_b[4];
+};
+
+/* touch band width in units of the rounding noise eps * L (see ds_distance.c) */
+#define GJK_TOUCH_TOLERANCE 100.0f
+
+f32     GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct c_Shape *shape_a, const ds_Transform *t_a, const struct c_Shape *shape_b, const ds_Transform *t_b, const f32 cutoff_distance);
+
 f32     c_SphereDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
 f32     c_CapsuleSphereDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
 f32     c_CapsuleDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
@@ -248,19 +296,6 @@ f32     c_TriMeshBvhCapsuleDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, co
 f32     c_TriMeshBvhHullDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
 
 /********************************** CONTACT MANIFOLD METHODS **********************************/
-
-/*
- * GJK warm start between frames on the same pair: the support indices of the last simplex. A cache that
- * exists is valid: count is 1..4 and the indices belong to the pair's shapes. No cache is NULL, never an
- * empty cache.
- */
-struct GJKCache
-{
-    f32 metric;             /* size of the cached simplex (GJKSimplexMetric); flushed if it changes > 2x */
-    u16 count;              /* 1..4 */
-    u16 index_a[4];
-    u16 index_b[4];
-};
 
 struct c_ContactResult
 {
