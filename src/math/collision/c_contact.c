@@ -303,7 +303,12 @@ struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_C
 	v3 c[2], normal;
 	const f32 r_sum = s[1]->sphere.radius;
 	result.gjk_cache = ArenaPushPacked(frame, sizeof(struct GJKCache));
-	const f32 dist = GJK(&c[0], &c[1], &normal, result.gjk_cache, cached_result->gjk_cache, s[0], &t[0], s[1], &t[1], r_sum);
+	/* TODO(f64 P2 contacts): build the manifold in A's frame; GJK's points demoted to world f32 for now */
+	const ds_TransformWorld w[2] = { ds_TransformPromote(&t[0]), ds_TransformPromote(&t[1]) };
+	v3f64 c_world[2] = { 0 };
+	const f32 dist = GJK(&c_world[0], &c_world[1], &normal, result.gjk_cache, cached_result->gjk_cache, s[0], &w[0], s[1], &w[1], r_sum);
+	c[0] = V3F64Demote(c_world[0]);
+	c[1] = V3F64Demote(c_world[1]);
 
 	/* Deep Penetration */
 	if (dist == 0.0f)
@@ -370,7 +375,12 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 
 	v3 c[2], normal;
 	result.gjk_cache = ArenaPushPacked(frame, sizeof(struct GJKCache));
-	const f32 dist = GJK(&c[0], &c[1], &normal, result.gjk_cache, cached_result->gjk_cache, s[0], &t[0], s[1], &t[1], s[1]->capsule.radius);
+	/* TODO(f64 P2 contacts): build the manifold in A's frame; GJK's points demoted to world f32 for now */
+	const ds_TransformWorld w[2] = { ds_TransformPromote(&t[0]), ds_TransformPromote(&t[1]) };
+	v3f64 c_world[2] = { 0 };
+	const f32 dist = GJK(&c_world[0], &c_world[1], &normal, result.gjk_cache, cached_result->gjk_cache, s[0], &w[0], s[1], &w[1], s[1]->capsule.radius);
+	c[0] = V3F64Demote(c_world[0]);
+	c[1] = V3F64Demote(c_world[1]);
 	const f32 dist_sq = dist*dist;
 	if (dist <= s[1]->capsule.radius)
 	{
@@ -385,12 +395,13 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
             /* TODO: if p0 is outside, then p1 must be inside, can prob skip check ??? */
 		    /* end-point inside tests: GJK against a point (a sphere's center); cutoff 0 exits on the first separating plane */
 		    const struct c_Shape point = { .type = C_SHAPE_SPHERE };
-		    const ds_Transform t_p0 = { .rotation = QIdentity(), .position = cap_s.p[0] };
-		    const ds_Transform t_p1 = { .rotation = QIdentity(), .position = cap_s.p[1] };
+		    const ds_TransformWorld t_p0 = { .rotation = QIdentity(), .position = V3Promote(cap_s.p[0]) };
+		    const ds_TransformWorld t_p1 = { .rotation = QIdentity(), .position = V3Promote(cap_s.p[1]) };
 		    struct GJKCache unused_cache;
-		    v3 unused_c[2], unused_n;
-		    const u32 cap_p0_inside = (GJK(&unused_c[0], &unused_c[1], &unused_n, &unused_cache, NULL, s[0], &t[0], &point, &t_p0, 0.0f) == 0.0f) ? 1 : 0;
-		    const u32 cap_p1_inside = (GJK(&unused_c[0], &unused_c[1], &unused_n, &unused_cache, NULL, s[0], &t[0], &point, &t_p1, 0.0f) == 0.0f) ? 1 : 0;
+		    v3f64 unused_c[2];
+		    v3 unused_n;
+		    const u32 cap_p0_inside = (GJK(&unused_c[0], &unused_c[1], &unused_n, &unused_cache, NULL, s[0], &w[0], &point, &t_p0, 0.0f) == 0.0f) ? 1 : 0;
+		    const u32 cap_p1_inside = (GJK(&unused_c[0], &unused_c[1], &unused_n, &unused_cache, NULL, s[0], &w[0], &point, &t_p1, 0.0f) == 0.0f) ? 1 : 0;
 
 			u32 edge_best = 0; 
 			u32 best_index = 0;

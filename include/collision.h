@@ -225,15 +225,17 @@ void	c_ManifoldTransform(struct c_Manifold *dst, const struct c_Manifold *src, c
 
 /********************************** INTERSECTION TESTS **********************************/
 
-u32     c_SphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-u32     c_CapsuleSphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-u32     c_CapsuleTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-u32     c_HullSphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-u32     c_HullCapsuleTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-u32     c_HullTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-u32     c_TriMeshBvhSphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-u32     c_TriMeshBvhCapsuleTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-u32     c_TriMeshBvhHullTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+/* 1 if the shapes overlap or touch (hull pairs: within GJK's touch band), else 0 */
+
+u32     c_SphereTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2);
+u32     c_CapsuleSphereTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2);
+u32     c_CapsuleTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2);
+u32     c_HullSphereTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2);
+u32     c_HullCapsuleTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2);
+u32     c_HullTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2);
+u32     c_TriMeshBvhSphereTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2);
+u32     c_TriMeshBvhCapsuleTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2);
+u32     c_TriMeshBvhHullTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2);
 
 /********************************** DISTANCE METHODS **********************************/
 
@@ -247,7 +249,8 @@ Description:
 
 Usage:
     struct GJKCache cache;
-    v3 c_a, c_b, n;
+    v3f64 c_a, c_b;
+    v3 n;
     const f32 d = GJK(&c_a, &c_b, &n, &cache, cache_in,
                       shape_a, &transform_a, shape_b, &transform_b, cutoff_distance);
 
@@ -283,17 +286,17 @@ struct GJKCache
 /* touch band width in units of the rounding noise eps * L (see c_distance.c) */
 #define GJK_TOUCH_TOLERANCE 100.0f
 
-f32     GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct c_Shape *shape_a, const ds_Transform *t_a, const struct c_Shape *shape_b, const ds_Transform *t_b, const f32 cutoff_distance);
+f32     GJK(v3f64 *c_a, v3f64 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct c_Shape *shape_a, const ds_TransformWorld *t_a, const struct c_Shape *shape_b, const ds_TransformWorld *t_b, const f32 cutoff_distance);
 
-f32     c_SphereDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-f32     c_CapsuleSphereDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-f32     c_CapsuleDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-f32     c_HullSphereDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-f32     c_HullCapsuleDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-f32     c_HullDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-f32     c_TriMeshBvhSphereDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-f32     c_TriMeshBvhCapsuleDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
-f32     c_TriMeshBvhHullDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2);
+f32     c_SphereDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2);
+f32     c_CapsuleSphereDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2);
+f32     c_CapsuleDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2);
+f32     c_HullSphereDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2);
+f32     c_HullCapsuleDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2);
+f32     c_HullDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2);
+f32     c_TriMeshBvhSphereDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2);
+f32     c_TriMeshBvhCapsuleDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2);
+f32     c_TriMeshBvhHullDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2);
 
 /********************************** CONTACT MANIFOLD METHODS **********************************/
 

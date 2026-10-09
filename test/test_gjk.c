@@ -66,6 +66,11 @@ static struct d3 D3V3(const v3 v)
     return D3(v.x, v.y, v.z);
 }
 
+static struct d3 D3V3F64(const v3f64 v)
+{
+    return D3(v.x, v.y, v.z);
+}
+
 static struct d3 D3Add(const struct d3 a, const struct d3 b)
 {
     return D3(a.x + b.x, a.y + b.y, a.z + b.z);
@@ -553,14 +558,22 @@ static u32 V3NanCheckTest(const v3 v)
     return (v.x != v.x) || (v.y != v.y) || (v.z != v.z);
 }
 
+static u32 V3F64NanCheckTest(const v3f64 v)
+{
+    return (v.x != v.x) || (v.y != v.y) || (v.z != v.z);
+}
+
 /*
  * Run GJK on (a, b) and check the result (see the top of the file). converged = 0 for runs that may hit
  * the iteration limit: the result is then only an upper bound, so the gap isn't checked.
  */
 static u32 GjkTestQuery(struct gjk_TestStats *stats, f32 *d_out, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct gjk_TestShape *a, const struct gjk_TestShape *b, const f32 cutoff, const u32 converged)
 {
-    v3 c_a, c_b, n;
-    const f32 d = GJK(&c_a, &c_b, &n, cache_out, cache_in, &a->shape, &a->t, &b->shape, &b->t, cutoff);
+    const ds_TransformWorld t_a = ds_TransformPromote(&a->t);
+    const ds_TransformWorld t_b = ds_TransformPromote(&b->t);
+    v3f64 c_a, c_b;
+    v3 n;
+    const f32 d = GJK(&c_a, &c_b, &n, cache_out, cache_in, &a->shape, &t_a, &b->shape, &t_b, cutoff);
     *d_out = d;
     stats->query_count += 1;
 
@@ -575,7 +588,7 @@ static u32 GjkTestQuery(struct gjk_TestStats *stats, f32 *d_out, struct GJKCache
 
     const char *failure = NULL;
     f64 gap = 0.0, sat = 0.0, upper = 0.0, g = 0.0, d_s = 0.0, lo = 0.0, hi = 0.0;
-    if (d != d || (d != F32_INFINITY && (V3NanCheckTest(c_a) || V3NanCheckTest(c_b) || V3NanCheckTest(n))))
+    if (d != d || (d != F32_INFINITY && (V3F64NanCheckTest(c_a) || V3F64NanCheckTest(c_b) || V3NanCheckTest(n))))
     {
         failure = "NaN output";
     }
@@ -635,7 +648,7 @@ static u32 GjkTestQuery(struct gjk_TestStats *stats, f32 *d_out, struct GJKCache
         stats->separated_count += 1;
         const struct d3 nd = D3V3(n);
         const f64 n_len = D3Length(nd);
-        upper = D3Length(D3Sub(D3V3(c_b), D3V3(c_a)));
+        upper = D3Length(D3Sub(D3V3F64(c_b), D3V3F64(c_a)));
         f64 a_min, a_max, b_min, b_max;
         GjkTestProject(&a_min, &a_max, a, D3Scale(nd, 1.0 / n_len));
         GjkTestProject(&b_min, &b_max, b, D3Scale(nd, 1.0 / n_len));

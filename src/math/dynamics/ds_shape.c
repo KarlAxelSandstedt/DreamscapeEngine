@@ -215,7 +215,7 @@ struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct d
 
 /********************************** LOOKUP TABLES FOR SHAPES **********************************/
 
-u32 (*c_shape_tests[C_SHAPE_COUNT][C_SHAPE_COUNT])(const struct c_Shape *, const ds_Transform *, const struct c_Shape *, const ds_Transform *) =
+u32 (*c_shape_tests[C_SHAPE_COUNT][C_SHAPE_COUNT])(const struct c_Shape *, const ds_TransformWorld *, const struct c_Shape *, const ds_TransformWorld *) =
 {
 	{ c_SphereTest, 		    0, 				            0, 			            0, },
 	{ c_CapsuleSphereTest,	    c_CapsuleTest, 			    0, 			            0, },
@@ -223,7 +223,7 @@ u32 (*c_shape_tests[C_SHAPE_COUNT][C_SHAPE_COUNT])(const struct c_Shape *, const
 	{ c_TriMeshBvhSphereTest,   c_TriMeshBvhCapsuleTest,    c_TriMeshBvhHullTest,	0, },
 };
 
-f32 (*c_distance_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(v3 *c1, v3 *c2, const struct c_Shape *, const ds_Transform *, const struct c_Shape *, const ds_Transform *) =
+f32 (*c_distance_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(v3f64 *c1, v3f64 *c2, const struct c_Shape *, const ds_TransformWorld *, const struct c_Shape *, const ds_TransformWorld *) =
 {
 	{ c_SphereDistance,	 	        0,				                0, 			                0, },
 	{ c_CapsuleSphereDistance,	    c_CapsuleDistance, 		        0, 			                0, },
@@ -256,10 +256,13 @@ u32 ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Shape *s1, 
     ds_Transform t1, t2;
     ds_ShapeWorldTransform(&t1, pipeline, s1);
     ds_ShapeWorldTransform(&t2, pipeline, s2);
+    /* TODO(f64 P3): world transforms once bodies store ds_TransformWorld */
+    const ds_TransformWorld w1 = ds_TransformPromote(&t1);
+    const ds_TransformWorld w2 = ds_TransformPromote(&t2);
 	
 	return (c_s1->type >= c_s2->type)  
-		? c_shape_tests[c_s1->type][c_s2->type](c_s1, &t1, c_s2, &t2)
-		: c_shape_tests[c_s2->type][c_s1->type](c_s2, &t2, c_s1, &t1);
+		? c_shape_tests[c_s1->type][c_s2->type](c_s1, &w1, c_s2, &w2)
+		: c_shape_tests[c_s2->type][c_s1->type](c_s2, &w2, c_s1, &w1);
 }
 
 f32 ds_ShapeDistance(v3 *c1, v3 *c2, const struct ds_Dynamics *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2)
@@ -270,10 +273,17 @@ f32 ds_ShapeDistance(v3 *c1, v3 *c2, const struct ds_Dynamics *pipeline, const s
     ds_Transform t1, t2;
     ds_ShapeWorldTransform(&t1, pipeline, s1);
     ds_ShapeWorldTransform(&t2, pipeline, s2);
+    /* TODO(f64 P3): world transforms and v3f64 points once bodies store ds_TransformWorld */
+    const ds_TransformWorld w1 = ds_TransformPromote(&t1);
+    const ds_TransformWorld w2 = ds_TransformPromote(&t2);
 
-	return (c_s1->type >= c_s2->type)  
-		? c_distance_methods[c_s1->type][c_s2->type](c1, c2, c_s1, &t1, c_s2, &t2)
-		: c_distance_methods[c_s2->type][c_s1->type](c2, c1, c_s2, &t2, c_s1, &t1);
+    v3f64 p1, p2;
+	const f32 dist = (c_s1->type >= c_s2->type)  
+		? c_distance_methods[c_s1->type][c_s2->type](&p1, &p2, c_s1, &w1, c_s2, &w2)
+		: c_distance_methods[c_s2->type][c_s1->type](&p2, &p1, c_s2, &w2, c_s1, &w1);
+    *c1 = V3F64Demote(p1);
+    *c2 = V3F64Demote(p2);
+    return dist;
 }
 
 void ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index)

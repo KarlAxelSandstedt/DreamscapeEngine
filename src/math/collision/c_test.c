@@ -25,67 +25,98 @@
 
 /********************************** INTERSECTION TESTS **********************************/
 
-u32 c_SphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2)
+/*
+ * The analytic tests compare squared core distances relative to t1's position (one f64 subtraction,
+ * see c_distance.c). The hull tests run GJK with the radius as cutoff_distance, so a separating plane
+ * ends the search early; the answer is the same as comparing the full distance.
+ */
+
+u32 c_SphereTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2)
 {
-	ds_Assert(s1->type == C_SHAPE_SPHERE && s2->type == C_SHAPE_SPHERE);
-	const f32 r_sum = s1->sphere.radius + s2->sphere.radius;
-	return V3DistanceSquared(t1->position, t2->position) <= r_sum*r_sum;
+    ds_Assert(s1->type == C_SHAPE_SPHERE && s2->type == C_SHAPE_SPHERE);
+    const f32 r_sum = s1->sphere.radius + s2->sphere.radius;
+    const v3 delta = V3F64Demote(V3F64Sub(t2->position, t1->position));
+    return V3LengthSquared(delta) <= r_sum*r_sum;
 }
 
-u32 c_CapsuleSphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2)
+u32 c_CapsuleSphereTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2)
 {
-	ds_Assert(s1->type == C_SHAPE_CAPSULE);
+    ds_Assert(s1->type == C_SHAPE_CAPSULE);
     ds_Assert(s2->type == C_SHAPE_SPHERE);
 
-	const v3 c2 = V3Sub(t2->position, t1->position);
-
     const struct capsule *cap = &s1->capsule;
-    const v3 s_p1 = QV3Rotate(t1->rotation, V3(0.0f, cap->half_height, 0.0f));
-	const struct segment s = SegmentConstruct(s_p1, V3Negate(s_p1));
+    const f32 r_sum = cap->radius + s2->sphere.radius;
+    const v3 axis = QV3Rotate(t1->rotation, V3(0.0f, cap->half_height, 0.0f));
+    const struct segment seg = SegmentConstruct(axis, V3Negate(axis));
+    const v3 p = V3F64Demote(V3F64Sub(t2->position, t1->position));
 
-	const f32 r_sum = s1->capsule.radius + s2->sphere.radius;
-	v3 c1;
-	return SegmentPointDistanceSquared(&c1, &s, c2) <= r_sum*r_sum;
+    v3 c;
+    return SegmentPointDistanceSquared(&c, &seg, p) <= r_sum*r_sum;
 }
 
-u32 c_CapsuleTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2)
+u32 c_CapsuleTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2)
 {
-	v3 c1, c2;
-	return c_CapsuleDistance(&c1, &c2, s1, t1, s2, t2) == 0.0f;
+    ds_Assert(s1->type == C_SHAPE_CAPSULE);
+    ds_Assert(s2->type == C_SHAPE_CAPSULE);
+
+    const f32 r_sum = s1->capsule.radius + s2->capsule.radius;
+    const v3 axis1 = QV3Rotate(t1->rotation, V3(0.0f, s1->capsule.half_height, 0.0f));
+    const v3 axis2 = QV3Rotate(t2->rotation, V3(0.0f, s2->capsule.half_height, 0.0f));
+    const v3 p2 = V3F64Demote(V3F64Sub(t2->position, t1->position));
+    const struct segment seg1 = SegmentConstruct(axis1, V3Negate(axis1));
+    const struct segment seg2 = SegmentConstruct(V3Add(p2, axis2), V3Sub(p2, axis2));
+
+    v3 q1, q2;
+    return SegmentDistanceSquared(&q1, &q2, &seg1, &seg2) <= r_sum*r_sum;
 }
 
-u32 c_HullSphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2)
+u32 c_HullSphereTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2)
 {
-	v3 c1, c2;
-	return c_HullSphereDistance(&c1, &c2, s1, t1, s2, t2) == 0.0f;
+    ds_Assert(s1->type == C_SHAPE_CONVEX_HULL);
+    ds_Assert(s2->type == C_SHAPE_SPHERE);
+
+    v3f64 c1, c2;
+    v3 n;
+    struct GJKCache cache;
+    return GJK(&c1, &c2, &n, &cache, NULL, s1, t1, s2, t2, s2->sphere.radius) <= s2->sphere.radius;
 }
 
-u32 c_HullCapsuleTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2)
+u32 c_HullCapsuleTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2)
 {
-	v3 c1, c2;
-	return c_HullCapsuleDistance(&c1, &c2, s1, t1, s2, t2) == 0.0f;
+    ds_Assert(s1->type == C_SHAPE_CONVEX_HULL);
+    ds_Assert(s2->type == C_SHAPE_CAPSULE);
+
+    v3f64 c1, c2;
+    v3 n;
+    struct GJKCache cache;
+    return GJK(&c1, &c2, &n, &cache, NULL, s1, t1, s2, t2, s2->capsule.radius) <= s2->capsule.radius;
 }
 
-u32 c_HullTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2)
+u32 c_HullTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2)
 {
-	v3 c1, c2;
-	return c_HullDistance(&c1, &c2, s1, t1, s2, t2) == 0.0f;
+    ds_Assert(s1->type == C_SHAPE_CONVEX_HULL);
+    ds_Assert(s2->type == C_SHAPE_CONVEX_HULL);
+
+    v3f64 c1, c2;
+    v3 n;
+    struct GJKCache cache;
+    return GJK(&c1, &c2, &n, &cache, NULL, s1, t1, s2, t2, 0.0f) == 0.0f;
 }
 
-u32 c_TriMeshBvhSphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2)
+u32 c_TriMeshBvhSphereTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2)
 {
-	v3 c1, c2;
-	return c_TriMeshBvhSphereDistance(&c1, &c2, s1, t1, s2, t2) == 0.0f;
+    v3f64 c1, c2;
+    return c_TriMeshBvhSphereDistance(&c1, &c2, s1, t1, s2, t2) == 0.0f;
 }
 
-u32 c_TriMeshBvhCapsuleTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2)
+u32 c_TriMeshBvhCapsuleTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2)
 {
-	v3 c1, c2;
-	return c_TriMeshBvhCapsuleDistance(&c1, &c2, s1, t1, s2, t2) == 0.0f;
+    v3f64 c1, c2;
+    return c_TriMeshBvhCapsuleDistance(&c1, &c2, s1, t1, s2, t2) == 0.0f;
 }
 
-u32 c_TriMeshBvhHullTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2)
+u32 c_TriMeshBvhHullTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2)
 {
-	v3 c1, c2;
-	return c_TriMeshBvhHullDistance(&c1, &c2, s1, t1, s2, t2) == 0.0f;
+    v3f64 c1, c2;
+    return c_TriMeshBvhHullDistance(&c1, &c2, s1, t1, s2, t2) == 0.0f;
 }
