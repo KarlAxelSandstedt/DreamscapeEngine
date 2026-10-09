@@ -25,6 +25,8 @@
 #include "ds_platform.h"
 #include "ds_graphics.h"
 #include "ds_asset.h"
+#include "cmd.h"
+#include "ds_ui.h"
 #include "ds_random.h"
 
 static struct ds_Config g_config_storage;
@@ -398,6 +400,8 @@ void ds_Init(const char *config_path, const char *log_path)
         config->headless);
 
     ds_PlatformApiInit(&g_init_persistent, config->thread_framesize, config->thread_scratchsize, config->thread_scratch_count, config->thread_count);
+    ds_CmdApiInit();
+    ds_UiApiInit();
     if (!config->headless)
     {
         ds_GraphicsApiInit();
@@ -415,6 +419,8 @@ void ds_Shutdown(void)
     {
         ds_GraphicsApiShutdown();
     }
+    ds_UiApiShutdown();
+    ds_CmdApiShutdown();
     ds_PlatformApiShutdown();
     g_config = NULL;
     LogShutdown();

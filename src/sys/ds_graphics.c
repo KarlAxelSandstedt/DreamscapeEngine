@@ -201,8 +201,6 @@ void ds_GraphicsApiInit(void)
 #if __GAPI__ == __DS_SDL3__
 	sdl3_WrapperInit();
 #endif
-	ds_CmdApiInit();
-	ds_UiApiInit();
 	g_window_hierarchy_storage = ds_WindowHIAlloc(NULL, 8, GROWABLE);
 	
 	gl_StateMemAlloc();
@@ -221,7 +219,9 @@ void ds_GraphicsApiShutdown(void)
 
 	gl_StateMemDealloc();
 	ds_WindowHIDealloc(g_window_hierarchy);
-	ds_CmdApiShutdown();
+#if __GAPI__ == __DS_SDL3__
+	sdl3_WrapperShutdown();
+#endif
 }
 
 void ds_WindowTextInputModeEnable(void)

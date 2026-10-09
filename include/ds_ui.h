@@ -35,8 +35,10 @@ extern "C" {
 
 #define TAB_SIZE	8
 
-/* allocate ui resources */
+/* register the UI commands (needs ds_CmdApiInit) */
 void	ds_UiApiInit(void);
+/* nothing to free: the commands go with ds_CmdApiShutdown */
+void	ds_UiApiShutdown(void);
 
 /*
 ui_visual

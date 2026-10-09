@@ -27,6 +27,8 @@ extern "C" {
 #include "ds_gl.h"
 
 void	sdl3_WrapperInit(void);
+/* SDL_Quit: closes the display connection and restores what SDL changed (screensaver, video modes) */
+void	sdl3_WrapperShutdown(void);
 
 #ifdef __cplusplus
 }

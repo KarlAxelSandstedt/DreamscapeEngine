@@ -379,6 +379,13 @@ void sdl3_CstrSetClipboard(const char *str)
 	}
 }
 
+void sdl3_WrapperShutdown(void)
+{
+	/* reverse of sdl3_WrapperInit; all windows (and their GL contexts) are destroyed by now */
+	SDL_GL_UnloadLibrary();
+	SDL_Quit();
+}
+
 void sdl3_WrapperInit(void)
 {
 	if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS))

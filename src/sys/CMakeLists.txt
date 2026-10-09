@@ -48,5 +48,6 @@ target_link_libraries(DreamscapeInit
 	PRIVATE
 		Dreamscape::Platform
 		Dreamscape::Graphics
+		Dreamscape::Misc
 		Dreamscape::Asset
 	)

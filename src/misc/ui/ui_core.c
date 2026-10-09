@@ -68,6 +68,10 @@ void ds_UiApiInit(void)
 	cmd_ui_popup_build = CmdFunctionRegister(Utf8Inline("ui_PopupBuild"), 2, &ui_PopupBuild).index;
 }
 
+void ds_UiApiShutdown(void)
+{
+}
+
 struct ui_Visual ui_VisualInit(const v4 background_color
 		, const v4 border_color
 		, const v4 gradient_color[BOX_CORNER_COUNT]
