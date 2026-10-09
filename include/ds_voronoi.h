@@ -26,8 +26,8 @@ Voronoi API
 -----------
 Description:
     XVoronoi returns the feature (vertex, edge, face or the tetrahedron itself) closest to a point, as an
-    enum voronoi, and the weight w[i] of every vertex: 0 outside the feature, in [0, 1], summing to 1.
-    Every function has an origin variant (query point = origin).
+    enum voronoi, and the weight w[i] of every vertex: 0 outside the feature, in [0, 1] and summing to 1
+    up to rounding (see Internals). Every function has an origin variant (query point = origin).
 
 Usage:
     f32 w[3];
@@ -40,7 +40,18 @@ Internals:
     enum voronoi is the bitmask of the feature's vertices. Degenerate input (coincident, collinear or
     coplanar vertices) resolves to a lower feature; VORONOI_INVALID only comes from a divisor <= 0 at
     normalization through rounding. Regions are decided from the signs of the unnormalized barycentric
-    coordinates below, then only the chosen feature is normalized..
+    coordinates below, then only the chosen feature is normalized.
+
+    w[i] = bc[i] / divisor, with the divisor from the feature alone (|s01|^2, |n|^2) and the numerators
+    from the vertices relative to the point. The numerators' rounding grows with r = |vertex - point|, so
+    the weights sum to 1 only up to
+
+        edge:   ~eps * r / f            f: the feature's size (edge length, sqrt of the face's |n|)
+        face:   ~eps * (r / f)^2
+
+    Near the feature (r ~ f, e.g. contacts) that is a few eps; far from it the closest point
+    sum_i w[i] t_i shrinks by the same factor (measured ~1e-4 at r ~ 100 f). Callers that need an exact
+    affine blend at range divide by sum_i w[i].
 
 Barycentric API
 ---------------
@@ -94,7 +105,8 @@ enum voronoi
 
 /*
  * Return the feature of segment (s0, s1) closest to p, and its barycentric weights: w[i] is the
- * weight of s_i, 0 for vertices outside the feature; all w[i] in [0, 1], summing to 1.
+ * weight of s_i, 0 for vertices outside the feature; all w[i] in [0, 1] and summing to 1 up to
+ * rounding (see the Voronoi API).
  *
  * A degenerate segment (s0 == s1) gives VORONOI_V1. Returns VORONOI_INVALID only if the geometry is
  * numerically degenerate (rounding); w is then garbage.
@@ -105,7 +117,8 @@ static inline enum voronoi SegmentOriginVoronoi(f32 w[2], const v3 s0, const v3 
 
 /*
  * Return the feature of triangle (t0, t1, t2) closest to p, and its barycentric weights: w[i] is the
- * weight of t_i, 0 for vertices outside the feature; all w[i] in [0, 1], summing to 1.
+ * weight of t_i, 0 for vertices outside the feature; all w[i] in [0, 1] and summing to 1 up to
+ * rounding (see the Voronoi API).
  *
  * A collinear triangle or coincident vertices give an edge or a vertex. Returns VORONOI_INVALID only if the
  * geometry is numerically degenerate (rounding); w is then garbage.
@@ -116,8 +129,8 @@ static inline enum voronoi TriOriginVoronoi(f32 w[3], const v3 t0, const v3 t1, 
 
 /*
  * Return the feature of tetrahedron (t0, t1, t2, t3) closest to p, and its barycentric weights: w[i] is
- * the weight of t_i, 0 for vertices outside the feature; all w[i] in [0, 1], summing to 1. p inside
- * gives VORONOI_T0123.
+ * the weight of t_i, 0 for vertices outside the feature; all w[i] in [0, 1] and summing to 1 up to
+ * rounding (see the Voronoi API). p inside gives VORONOI_T0123.
  *
  * A flat (coplanar) tetrahedron gives its closest face, edge or vertex. Returns VORONOI_INVALID only if
  * every candidate face is numerically degenerate (rounding); w is then garbage.

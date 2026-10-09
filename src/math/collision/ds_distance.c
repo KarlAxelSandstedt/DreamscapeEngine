@@ -490,15 +490,27 @@ static f32 GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct
         simplex.count -= 1;
     }
 
+    /*
+     * The weights sum to 1 only up to ~eps * (r / f)^2 (r: distance to the feature, f: its size; see
+     * ds_voronoi.h), which shrinks closest by that factor far from the feature (~1e-4 at r ~ 100 f).
+     * Dividing by their sum makes the blends affine; once per query, the loop only compares distances.
+     * The sum is > 0: the kept vertices' weights are > 0 (a lone vertex has weight 1).
+     */
     v3 p_a = V3Zero();
     v3 p_b = V3Zero();
     v3 closest = V3Zero();
+    f32 weight_sum = 0.0f;
     for (u32 j = 0; j < simplex.count; ++j)
     {
         p_a = V3AddScaled(p_a, simplex.v[j].a, simplex.weight[j]);
         p_b = V3AddScaled(p_b, simplex.v[j].b, simplex.weight[j]);
         closest = V3AddScaled(closest, simplex.v[j].minkowski, simplex.weight[j]);
+        weight_sum += simplex.weight[j];
     }
+    const f32 weight_sum_inv = 1.0f / weight_sum;
+    p_a = V3Scale(p_a, weight_sum_inv);
+    p_b = V3Scale(p_b, weight_sum_inv);
+    closest = V3Scale(closest, weight_sum_inv);
 
     /*
      * The distance from the minkowski blend, not |p_b - p_a| (cancellation near contact); the normal from
