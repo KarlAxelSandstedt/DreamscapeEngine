@@ -36,6 +36,13 @@ typedef struct
 	v3	position;
 } ds_Transform;
 
+/* World pose: f64 position (far from the origin), f32 rotation (frame local, needs no extra range). */
+typedef struct
+{
+	q	    rotation;
+	v3f64	position;
+} ds_TransformWorld;
+
 #include "transform.h"
 #include "geometry.h"
 
@@ -74,6 +81,79 @@ static inline ds_Transform ds_TransformRelative(const ds_Transform *reference, c
 static inline v3 ds_TransformPointToLocal(const ds_Transform *reference, const v3 target)
 {
     return QV3Rotate(QInverse(reference->rotation), V3Sub(target, reference->position));
+}
+
+/*
+ * World transforms. Positions cross between f64 (world) and f32 (frames) only through these: world
+ * positions are subtracted in f64 before demoting, so the f32 rounding is relative to the frames'
+ * separation, not to their distance from the origin.
+ */
+
+static inline ds_TransformWorld ds_TransformWorldIdentity(void)
+{
+    const ds_TransformWorld transform = 
+    { 
+        .rotation = QIdentity(),
+        .position = V3F64(0.0, 0.0, 0.0),
+    };
+    return transform;
+}
+
+/* lossless */
+static inline ds_TransformWorld ds_TransformPromote(const ds_Transform *transform)
+{
+    const ds_TransformWorld world =
+    {
+        .rotation = transform->rotation,
+        .position = V3Promote(transform->position),
+    };
+    return world;
+}
+
+/* 
+ * Return the relative transform of target to reference (see ds_TransformRelative); the narrow phase
+ * boundary:
+ *
+ *      rel->rot = ref->rot_inv*target->rot
+ *      rel->pos = ref->rot_inv*demote(target->pos - ref->pos)
+ */
+static inline ds_Transform ds_TransformWorldRelative(const ds_TransformWorld *reference, const ds_TransformWorld *target)
+{
+    const q inv = QInverse(reference->rotation);
+    const ds_Transform relative =
+    {
+        .rotation = QMul(inv, target->rotation),
+        .position = QV3Rotate(inv, V3F64Demote(V3F64Sub(target->position, reference->position))),
+    };
+    return relative;
+}
+
+/* 
+ * Return the world transform of local, given in world's frame (e.g. body world * shape local):
+ *
+ *      rot = world->rot*local->rot
+ *      pos = world->pos + promote(world->rot*local->pos)
+ */
+static inline ds_TransformWorld ds_TransformWorldMul(const ds_TransformWorld *world, const ds_Transform *local)
+{
+    const ds_TransformWorld result =
+    {
+        .rotation = QMul(world->rotation, local->rotation),
+        .position = V3F64Add(world->position, V3Promote(QV3Rotate(world->rotation, local->position))),
+    };
+    return result;
+}
+
+/* Return the local position of the world point target within reference's frame. */
+static inline v3 ds_TransformWorldPointToLocal(const ds_TransformWorld *reference, const v3f64 target)
+{
+    return QV3Rotate(QInverse(reference->rotation), V3F64Demote(V3F64Sub(target, reference->position)));
+}
+
+/* Return the world position of the point local, given in reference's frame. */
+static inline v3f64 ds_TransformWorldPointToWorld(const ds_TransformWorld *reference, const v3 local)
+{
+    return V3F64Add(reference->position, V3Promote(QV3Rotate(reference->rotation, local)));
 }
 
 #ifdef __cplusplus

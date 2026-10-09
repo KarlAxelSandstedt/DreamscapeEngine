@@ -213,6 +213,37 @@ static ds_ForceInline v4 V4Sub(const v4 a, const v4 b)
 	return V4(a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w);
 }
 
+/*
+ * v3f64: world positions, precise far from the origin. f64 is only for storage and the crossing; math
+ * runs in f32 relative to a nearby point:
+ *
+ *      local = V3F64Demote(V3F64Sub(p, base))      (rounding relative to |p - base|, not |p|)
+ *      p     = V3F64Add(p, V3Promote(delta))       (f32 increments back into world positions)
+ */
+
+/* lossless */
+static ds_ForceInline v3f64 V3Promote(const v3 a)
+{
+	return V3F64(a.x, a.y, a.z);
+}
+
+/* rounds each coordinate to the nearest f32 */
+static ds_ForceInline v3 V3F64Demote(const v3f64 a)
+{
+	return V3((f32) a.x, (f32) a.y, (f32) a.z);
+}
+
+static ds_ForceInline v3f64 V3F64Add(const v3f64 a, const v3f64 b)
+{
+	return V3F64(a.x + b.x, a.y + b.y, a.z + b.z);
+}
+
+/* a - b */
+static ds_ForceInline v3f64 V3F64Sub(const v3f64 a, const v3f64 b)
+{
+	return V3F64(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
 static ds_ForceInline v2 V2Mul(const v2 a, const v2 b)
 {
 	return V2(a.x * b.x, a.y * b.y);

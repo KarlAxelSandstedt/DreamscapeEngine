@@ -132,6 +132,18 @@ typedef union v3
 	f32 buf[3];
 } v3;
 
+/* world positions (see V3Promote in ds_vector.h) */
+typedef union v3f64
+{
+	struct 
+    { 
+        f64 x;
+        f64 y; 
+        f64 z; 
+    };
+	f64 buf[3];
+} v3f64;
+
 typedef union v4
 {
 	struct 
@@ -279,6 +291,7 @@ typedef union v4i64
 #define V2(_x, _y)	((v2) { .x = (_x), .y = (_y) })
 #define V3(_x, _y, _z)	((v3) { .x = (_x), .y = (_y), .z = (_z) })
 #define V4(_x, _y, _z, _w)	((v4) { .x = (_x), .y = (_y), .z = (_z), .w = (_w) })
+#define V3F64(_x, _y, _z)	((v3f64) { .x = (_x), .y = (_y), .z = (_z) })
 
 #define V2U32(_x, _y)	((v2u32) { .x = (_x), .y = (_y) })
 #define V3U32(_x, _y, _z)	((v3u32) { .x = (_x), .y = (_y), .z = (_z) })
