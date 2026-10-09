@@ -84,11 +84,12 @@ struct Log
 	u32 			a_shutting_down;	/* when set, any further calls to message_write will immediately return */
 	u32 			has_file;		/* If not, simply skip file IO */ 
 	FILE *			file;
+	u32			initialized;		/* set by LogInit (before any worker exists); until then messages go to stderr */
 };
 
 static struct Log g_log;
 
-void LogInit(struct arena *mem, const char *filepath)
+static void LogNamesInit(void)
 {
 	systems[T_SYSTEM] = Utf8Inline("System");
 	systems[T_RENDERER] = Utf8Inline("Renderer");
@@ -106,12 +107,18 @@ void LogInit(struct arena *mem, const char *filepath)
 	severities[S_WARNING] = Utf8Inline("warning");
 	severities[S_ERROR] = Utf8Inline("error");
 	severities[S_FATAL] = Utf8Inline("fatal");
+}
+
+void LogInit(struct arena *mem, const char *filepath)
+{
+	LogNamesInit();
 
 	g_log.msg = ArenaPush(mem, LOG_MAX_MESSAGES * sizeof(struct Log_message));
 	TicketFactoryInit(&g_log.tf, LOG_MAX_MESSAGES);
-	g_log.file = fopen(filepath, "w+");
+	g_log.file = (filepath) ? fopen(filepath, "w+") : NULL;
 	g_log.has_file = g_log.file != NULL;
 	AtomicStoreRel32(&g_log.a_writing_to_disk, 0);
+	g_log.initialized = 1;
 }
 
 static void LogTryWriteToDisk(void)
@@ -153,6 +160,11 @@ static void internal_write_to_disk(void)
 void LogShutdown()
 {
 	LogString(T_SYSTEM, S_NOTE, "Log system initiated shutdown");
+	if (!g_log.initialized)
+	{
+		/* FatalCleanupAndExit before LogInit */
+		return;
+	}
 
 	AtomicStoreRel32(&g_log.tf.a_open, 0);
 	if (g_log.has_file)
@@ -166,7 +178,24 @@ void LogShutdown()
 void LogWriteMessage(const enum system_id system, const enum severity_id severity, const char *format, ... )
 {
 	ProfZone;
-	
+
+	/* before LogInit or ds_ThreadMasterInit: no message slots, timer or thread index yet */
+	if (!g_log.initialized || g_tl_self == NULL)
+	{
+		LogNamesInit();
+		u8 early_buf[LOG_MAX_MESSAGE_SIZE];
+		u64 early_req_size;
+		va_list early_args;
+		va_start(early_args, format);
+		const utf8 early = Utf8FormatBufferedVariadic(&early_req_size, early_buf, LOG_MAX_MESSAGE_SIZE, format, early_args);
+		va_end(early_args);
+		fprintf(stderr, "[before log init] %.*s %.*s: %.*s\n",
+			(int) systems[system].len, (const char *) systems[system].buf,
+			(int) severities[severity].len, (const char *) severities[severity].buf,
+			(int) Utf8SizeRequired(early), (const char *) early.buf);
+		goto end;
+	}
+
 	const u32 thread_id = ds_ThreadSelfIndex();
 	/* spin until a new msg slot is up for grabs for us to publish */
 	u32 ticket;

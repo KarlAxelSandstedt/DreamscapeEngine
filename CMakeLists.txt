@@ -118,6 +118,7 @@ if (DEFINED EMSCRIPTEN)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread")
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --embed-file=../assets@../assets")
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --embed-file=../asset_components@../asset_components")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --embed-file=../config@../config")
 
     #add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 	#	COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${PROJECT_NAME}>/src
@@ -210,6 +211,7 @@ add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 
 target_link_libraries(${PROJECT_NAME} 
 	INTERFACE 
+		"${PROJECT_NAME}::Init"
 		"${PROJECT_NAME}::Base"
 		"${PROJECT_NAME}::Containers"
 		"${PROJECT_NAME}::Math"

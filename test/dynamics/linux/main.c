@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include "ds_base.h" 
+#include "ds_init.h"
 #include "ds_math.h"
 #include "ds_platform.h"
 #include "ds_graphics.h"
@@ -31,40 +32,25 @@
 
 #include "ds_vector.h"
 
+/* the program's own memory; ds_Init's persistent arena belongs to the engine */
+static struct arena g_persistent;
+
+/* ./DreamscapeTest [config_path] */
 int main(int argc, char *argv[])
-{	
-	u64 seed[4];
-	RngSystem(seed, sizeof(seed));
-	Xoshiro256Init(seed);
-		
-	ds_MemApiInit();
+{
+	ds_Init((argc > 1) ? argv[1] : NULL, "log.txt");
 
-	struct arena persistent = ArenaAlloc(NULL, 256*1024*1024);
-	LogInit(&persistent, "log.txt");
+	g_persistent = ArenaAlloc(NULL, 64*1024*1024);
+	if (!g_persistent.stack_ptr)
+	{
+		LogString(T_SYSTEM, S_FATAL, "Failed to allocate the program's persistent arena");
+		FatalCleanupAndExit();
+	}
 
-	ds_TimeApiInit(&persistent);
-
-    const u64 thread_framesize = 4*1024*1024;
-    const u64 thread_scratchsize = 1*1024*1024;
-    const u64 scratch_count = 5;
-	ds_ThreadMasterInit(&persistent, thread_framesize, thread_scratchsize, scratch_count);
-	ds_ArchConfigInit(&persistent);
-
-    const u32 thread_count = g_arch_config->logical_core_count-2;
-	ds_StringApiInit(thread_count);
-
-	ds_PlatformApiInit(&persistent, thread_framesize, thread_scratchsize, scratch_count, thread_count);
-
-	ds_GraphicsApiInit();
-
-	ds_UiApiInit();
-
-	AssetInit(&persistent);
-
-	struct led *editor = led_Alloc(thread_count, thread_framesize);
+	struct led *editor = led_Alloc(g_config->thread_count, g_config->thread_framesize);
 
 	const u64 renderer_framerate = 144;	
-	r_Init(&persistent, NSEC_PER_SEC / renderer_framerate, 16*1024*1024, 1024, &editor->render_mesh_db);
+	r_Init(&g_persistent, NSEC_PER_SEC / renderer_framerate, 16*1024*1024, 1024, &editor->render_mesh_db);
 	
 	u64 old_time = editor->ns;
 	while (editor->running)
@@ -87,11 +73,8 @@ int main(int argc, char *argv[])
 	}
 	
 	led_Dealloc(editor);
-	AssetShutdown();
-	ds_GraphicsApiShutdown();
-	ds_PlatformApiShutdown();
-	LogShutdown();
-	ds_MemApiShutdown();
+	ArenaFree(&g_persistent);
+	ds_Shutdown();
 
 	return 0;
 }

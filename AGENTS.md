@@ -15,7 +15,8 @@ Compilers: GCC, MSVC, Clang
 Graphics: OpenGL 3.x/WebGL 2.x
 External libraries: SDL3, dtoa, freetype, stb_image, tracy, xxHash.
 
-Useful builds:
+Useful builds (script/linux/*.sh, script/windows/*.bat, script/web/*.sh; they
+run from the repository root wherever they are called from):
     determinism.sh - fresh reference + replay at several thread counts (tests
         one build). An old .bin is only valid for the version that recorded it.
     run.(sh/bat) - optimized build
@@ -23,6 +24,10 @@ Useful builds:
     address_sanitize.sh - memory corruption detection + poisoning with ASan
     thread_sanitize.sh - thread race detection with TSan
     undefined_behaviour_sanitize.sh - undefined behaviour detection with UBSan
+
+Every executable takes a config file as its first argument
+(./DreamscapeTest config/<name>.cfg; none: engine defaults). Configs live in
+config/; the format is documented in include/ds_init.h.
 
 All scripts share build/. For your own builds, use a separate directory
 (cmake -B build_agent ...) unless told otherwise. Configure your builds with

@@ -35,3 +35,18 @@ target_link_libraries(DreamscapeGraphics
         Dreamscape::Misc
 		sdl3_wrapper
 	)
+
+add_library(DreamscapeInit
+	STATIC
+		"${DS_INCLUDE_PATH}/ds_init.h"
+		ds_init.c
+	)
+add_library(Dreamscape::Init ALIAS DreamscapeInit)
+target_link_libraries(DreamscapeInit
+	PUBLIC
+		Dreamscape::Base
+	PRIVATE
+		Dreamscape::Platform
+		Dreamscape::Graphics
+		Dreamscape::Asset
+	)

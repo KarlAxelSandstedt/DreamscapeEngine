@@ -120,7 +120,11 @@ extern "C" {
 #if __DS_PLATFORM__ == __DS_LINUX__
 
 	#ifdef __DS_X64__
-		#define Breakpoint(condition) if (!(condition)) { } else { asm ("int3; nop"); }
+		#ifdef DS_DEBUG
+			#define Breakpoint(condition) if (!(condition)) { } else { asm ("int3; nop"); }
+		#else
+			#define Breakpoint(condition)
+		#endif
         #define ds_CpuPause(__cpu_pause_count)                                                          \
         {                                                                                               \
             for (u32 __cpu_pause_index = 0; __cpu_pause_index < __cpu_pause_count; ++__cpu_pause_index) \
@@ -133,14 +137,22 @@ extern "C" {
 #elif __DS_PLATFORM__ == __DS_WEB__
 
 	void emscripten_debugger(void);
-	#define Breakpoint(condition) if (!(condition)) { } else { emscripten_debugger(); }
+	#ifdef DS_DEBUG
+		#define Breakpoint(condition) if (!(condition)) { } else { emscripten_debugger(); }
+	#else
+		#define Breakpoint(condition)
+	#endif
     #define ds_CpuPause(count)                                                                      
 
 #elif __DS_PLATFORM__ == __DS_WIN64__
 
 	#ifdef __DS_X64__
         #include <intrin.h>
-		#define Breakpoint(condition) if (!(condition)) { } else { __debugbreak(); }
+		#ifdef DS_DEBUG
+			#define Breakpoint(condition) if (!(condition)) { } else { __debugbreak(); }
+		#else
+			#define Breakpoint(condition)
+		#endif
         #define ds_CpuPause(__cpu_pause_count)                                                          \
         {                                                                                               \
             for (u32 __cpu_pause_index = 0; __cpu_pause_index < __cpu_pause_count; ++__cpu_pause_index) \

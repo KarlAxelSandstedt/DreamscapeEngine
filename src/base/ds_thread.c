@@ -106,6 +106,8 @@ static void *ds_ThreadCloneStart(void *void_thr)
 
 void ds_ThreadMasterInit(struct arena *mem, const u64 frame_size, const u64 scratch_size, const u32 scratch_count)
 {
+	ds_AssertString(g_tl_self == NULL, "ds_ThreadMasterInit runs once");
+	ds_AssertString(AtomicLoadRlx32(&a_index_counter) == 1, "no ds_ThreadClone before ds_ThreadMasterInit (ds_Init)");
 	g_tl_self = ArenaPush(mem, sizeof(struct ds_Thread));
 	g_tl_self->ppid = getppid();
 	g_tl_self->gtid = getpid();
@@ -215,6 +217,8 @@ DWORD WINAPI ds_ThreadCloneStart(LPVOID void_thr)
 
 void ds_ThreadMasterInit(struct arena *mem, const u64 frame_size, const u64 scratch_size, const u32 scratch_count)
 {
+	ds_AssertString(g_tl_self == NULL, "ds_ThreadMasterInit runs once");
+	ds_AssertString(AtomicLoadRlx32(&a_index_counter) == 1, "no ds_ThreadClone before ds_ThreadMasterInit (ds_Init)");
 	g_tl_self = ArenaPush(mem, sizeof(struct ds_Thread));
 	g_tl_self->tid = GetCurrentThreadId();
 	g_tl_self->index = 0;

@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include "ds_base.h" 
+#include "ds_init.h"
 #include "ds_math.h"
 #include "ds_platform.h"
 #include "ds_graphics.h"
@@ -33,9 +34,9 @@ struct ds_DeterminismTest
 {
     utf8            file;
     char *          file_cstr;
+    char *          config_cstr;    /* file.cfg: the config --generate ran with */
 
     u32             generate;
-    u32             thread_count;
 
     /* file data */
     u64             seed[4];    /* BE */
@@ -45,10 +46,10 @@ struct ds_DeterminismTest
 
 static struct ds_DeterminismTest ds_DeterminismProcessArguments(struct arena *persistent, const utf8 *argument, const u32 argument_count)
 {
-    if (argument_count < 3 || 4 < argument_count)
+    if (argument_count != 4)
     {
-        fprintf(stderr, "Bad number of arguments to executable, exiting.\n");
-        exit(0);
+        fprintf(stderr, "Usage: DreamscapeTest config_path --generate|--load file, exiting.\n");
+        exit(1);
     }
     
     const utf8 generate = Utf8Inline("--generate");
@@ -56,26 +57,28 @@ static struct ds_DeterminismTest ds_DeterminismProcessArguments(struct arena *pe
 
     struct ds_DeterminismTest test = 
     { 
-        .file = argument[2],
-        .file_cstr = CstrUtf8(persistent, test.file),
+        .file = argument[3],
+        .file_cstr = CstrUtf8(persistent, argument[3]),
+        .config_cstr = CstrUtf8(persistent, Utf8Format(persistent, "%k.cfg", &argument[3])),
         .generate = 0,
-        .thread_count = 0,
     };
     
-    if (Utf8Equivalence(argument[1], generate))
+    if (Utf8Equivalence(argument[2], generate))
     {
         test.generate = 1;
-        test.thread_count = 1;  /* Reference should be serial */
-	    RngSystem(test.seed, sizeof(test.seed));
+        test.seed[0] = g_config->seed[0];
+        test.seed[1] = g_config->seed[1];
+        test.seed[2] = g_config->seed[2];
+        test.seed[3] = g_config->seed[3];
         ds_CPoolAlloc(NULL, test.hash_pool, 4096, GROWABLE);
     }
-    else if (Utf8Equivalence(argument[1], load))
+    else if (Utf8Equivalence(argument[2], load))
     {
         struct dsBuffer buf = FileDumpAtCwd(persistent, test.file_cstr);
         if (buf.size < 4*sizeof(u64) + sizeof(u32))
         {
             fprintf(stderr, "Bad determinism test file size, exiting.\n");
-            exit(0);
+            exit(1);
         }
         
         struct ss ss = ss_Buffered(buf.data, buf.size);
@@ -87,7 +90,7 @@ static struct ds_DeterminismTest ds_DeterminismProcessArguments(struct arena *pe
         if (buf.size - 4*sizeof(u64) - sizeof(u32) != hash_count*sizeof(u64))
         {
             fprintf(stderr, "Bad determinism test file size, exiting.\n");
-            exit(0);
+            exit(1);
         }
 
         ds_CPoolAlloc(persistent, test.hash_pool, hash_count, NOT_GROWABLE);
@@ -96,19 +99,18 @@ static struct ds_DeterminismTest ds_DeterminismProcessArguments(struct arena *pe
            ds_CPoolPush(test.hash_pool);
         }
         ss_ReadU64BeN(test.hash_pool.buf, &ss, hash_count);
+
+        /* the RNG was seeded from the config in ds_Init */
+        if (test.seed[0] != g_config->seed[0] || test.seed[1] != g_config->seed[1] || test.seed[2] != g_config->seed[2] || test.seed[3] != g_config->seed[3])
+        {
+            fprintf(stderr, "The config's seed differs from the test file's: load with the config --generate wrote (%s), exiting.\n", test.config_cstr);
+            exit(1);
+        }
     }
     else
     {
         fprintf(stderr, "Bad operation provided to executable, exiting.\n");
-        exit(0);
-    }
-
-    if (argument_count == 4)
-    {
-        const struct parseRetval ret = U64Utf8(argument[3]);
-        test.thread_count = (ret.op_result == PARSE_SUCCESS) 
-                          ? ret.u32
-                          : 0;
+        exit(1);
     }
 
     return test;
@@ -121,7 +123,7 @@ static void ds_DeterminismGenerate(struct arena *persistent, struct ds_Determini
     if (FS_SUCCESS != FileTryCreateAtCwd(persistent, &file, test->file_cstr, truncate))
     {
         fprintf(stderr, "Failed to create file, exiting.\n");
-        exit(0);
+        exit(1);
     }
 
     const u64 bufsize = 4*sizeof(u64) + sizeof(u32) + (u64) test->hash_pool.count*sizeof(u64);
@@ -140,17 +142,30 @@ static void ds_DeterminismGenerate(struct arena *persistent, struct ds_Determini
     FileClose(&file);
 
     ds_CPoolDealloc(test->hash_pool);
+
+    if (!ds_ConfigTryWrite(persistent, g_config, test->config_cstr))
+    {
+        fprintf(stderr, "Failed to write %s, exiting.\n", test->config_cstr);
+        exit(1);
+    }
 }
 
 /*
- *  ./DeterminismTest --generate "determinism_test_file" Optional(thread_count) => generate determinism test file
- *  ./DeterminismTest --load     "determinism_test_file" Optional(thread_count) => run determinism test file 
+ *  ./DreamscapeTest config_path --generate file    run the scene, write its per-frame hashes to file and the
+ *                                                  config it ran with (seed, thread_count) to file.cfg
+ *  ./DreamscapeTest config_path --load file        replay with config_path (file.cfg, possibly with another
+ *                                                  thread_count) and compare every frame's hash
  */
 int main(int argc, char *argv[])
-{		
-	ds_MemApiInit();
+{
+    ds_Init((argc > 1) ? argv[1] : NULL, "log.txt");
 
-	struct arena persistent = ArenaAlloc(NULL, 256*1024*1024);
+	struct arena persistent = ArenaAlloc(NULL, 64*1024*1024);
+	if (!persistent.stack_ptr)
+	{
+		LogString(T_SYSTEM, S_FATAL, "Failed to allocate the program's persistent arena");
+		FatalCleanupAndExit();
+	}
 
     const u32 argument_count = (u32) argc;
     utf8 *argument = ArenaPush(&persistent, sizeof(utf8)*argument_count);
@@ -160,33 +175,7 @@ int main(int argc, char *argv[])
     }
     struct ds_DeterminismTest test = ds_DeterminismProcessArguments(&persistent, argument, argument_count);
 
-	LogInit(&persistent, "log.txt");
-	Xoshiro256Init(test.seed);
-	
-	ds_TimeApiInit(&persistent);
-
-    const u64 thread_framesize = 4*1024*1024;
-    const u64 thread_scratchsize = 1*1024*1024;
-    const u64 scratch_count = 5;
-	ds_ThreadMasterInit(&persistent, thread_framesize, thread_scratchsize, scratch_count);
-	ds_ArchConfigInit(&persistent);
-
-    if (test.thread_count == 0)
-    {
-        test.thread_count = g_arch_config->logical_core_count - 2;
-    }
-
-	ds_StringApiInit(test.thread_count);
-
-	ds_PlatformApiInit(&persistent, thread_framesize, thread_scratchsize, scratch_count, test.thread_count);
- 
-	ds_GraphicsApiInit();
-
-	ds_UiApiInit();
-
-	AssetInit(&persistent);
-
-	struct led *editor = led_Alloc(test.thread_count, thread_framesize);
+	struct led *editor = led_Alloc(g_config->thread_count, g_config->thread_framesize);
 
 	const u64 renderer_framerate = 144;	
 	r_Init(&persistent, NSEC_PER_SEC / renderer_framerate, 16*1024*1024, 1024, &editor->render_mesh_db);
@@ -238,17 +227,14 @@ int main(int argc, char *argv[])
     }
 	
 	led_Dealloc(editor);
-	AssetShutdown();
-	ds_GraphicsApiShutdown();
-	ds_PlatformApiShutdown();
-	LogShutdown();
 
     if (test.generate)
     {
         ds_DeterminismGenerate(&persistent, &test);
     }
 
-	ds_MemApiShutdown();
+	ArenaFree(&persistent);
+	ds_Shutdown();
 
-	return 0;
+	return (success) ? 0 : 1;
 }
