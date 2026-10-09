@@ -97,7 +97,6 @@ static void *ds_ThreadCloneStart(void *void_thr)
 	thr->ppid = getppid();
 	thr->gtid = getpid();
 	thr->tid = gettid();
-	thr->index = AtomicFetchAddRlx32(&a_index_counter, 1);
 	ProfThreadNamed(thread_profiler_id[thr->index]);
 	thr->start(thr);
 
@@ -141,6 +140,8 @@ ds_Thread *ds_ThreadClone(struct arena *mem, void (*start)(ds_Thread *), void *a
 	thr->args = args;
 	thr->ret = NULL;
 	thr->ret_size = 0;
+	/* in clone order, on the cloning thread: thread creation publishes it to the new thread */
+	thr->index = AtomicFetchAddRlx32(&a_index_counter, 1);
 	thr->stack_size = (stack_size % g_arch_config->pagesize == 0) 
 				? stack_size 
 				: stack_size + (g_arch_config->pagesize - stack_size % g_arch_config->pagesize);
@@ -208,7 +209,6 @@ DWORD WINAPI ds_ThreadCloneStart(LPVOID void_thr)
 	g_tl_self = void_thr;
 	struct ds_Thread *thr = void_thr;
 	thr->tid = GetCurrentThreadId();
-	thr->index = AtomicFetchAddRlx32(&a_index_counter, 1);
 	ProfThreadNamed(thread_profiler_id[thr->index]);
 	thr->start(thr);
 
@@ -250,6 +250,8 @@ ds_Thread *ds_ThreadClone(struct arena *mem, void (*start)(ds_Thread *), void *a
 	thr->args = args;
 	thr->ret = NULL;
 	thr->ret_size = 0;
+	/* in clone order, on the cloning thread: thread creation publishes it to the new thread */
+	thr->index = AtomicFetchAddRlx32(&a_index_counter, 1);
 	thr->stack_size = (stack_size % g_arch_config->pagesize == 0) 
 				? stack_size 
 				: stack_size + (g_arch_config->pagesize - stack_size % g_arch_config->pagesize);

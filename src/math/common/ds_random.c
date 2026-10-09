@@ -4,9 +4,8 @@
 ds_ThreadLocal u64 tl_xoshiro_256[4];
 ds_ThreadLocal u64 tl_pushed_state[4];
 
-/* xoshiro_256** */
+/* xoshiro_256** base state: stream 0; set by Xoshiro256Init before any other thread starts */
 u64 g_xoshiro_256[4];
-u32 a_g_xoshiro_256_lock = 0;
 
 /*  Written in 2018 by David Blackman and Sebastiano Vigna (vigna@acm.org) */
 static u64 Rotl(const u64 x, i32 k) 
@@ -39,7 +38,7 @@ void Xoshiro256Init(const u64 seed[4])
 	g_xoshiro_256[1] = seed[1];
 	g_xoshiro_256[2] = seed[2];
 	g_xoshiro_256[3] = seed[3];
-	ThreadXoshiro256InitSequence();
+	ThreadXoshiro256InitSequence(0);
 }
 
 void RngPushState(void)
@@ -97,8 +96,23 @@ f32 RngF32Range(const f32 min, const f32 max)
 }
 
 
-/*  Written in 2018 by David Blackman and Sebastiano Vigna (vigna@acm.org) */
-static void Xoshiro256Jump(void) 
+/*  Written in 2018 by David Blackman and Sebastiano Vigna (vigna@acm.org); state passed in */
+static void Xoshiro256Next(u64 s[4])
+{
+	const u64 t = s[1] << 17;
+
+	s[2] ^= s[0];
+	s[3] ^= s[1];
+	s[1] ^= s[2];
+	s[0] ^= s[3];
+
+	s[2] ^= t;
+
+	s[3] = Rotl(s[3], 45);
+}
+
+/*  Written in 2018 by David Blackman and Sebastiano Vigna (vigna@acm.org): advance s by 2^128 calls */
+static void Xoshiro256Jump(u64 s[4])
 {
 	static const u64 JUMP[] = { 0x180ec6d33cfd0aba, 0xd5a61266f0c9392c, 0xa9582618e03fc9aa, 0x39abdc4529b1661c };
 
@@ -109,34 +123,28 @@ static void Xoshiro256Jump(void)
 	for(u64 i = 0; i < sizeof(JUMP) / sizeof(JUMP[0]); i++)
 		for(int b = 0; b < 64; b++) {
 			if (JUMP[i] & UINT64_C(1) << b) {
-				s0 ^= g_xoshiro_256[0];
-				s1 ^= g_xoshiro_256[1];
-				s2 ^= g_xoshiro_256[2];
-				s3 ^= g_xoshiro_256[3];
+				s0 ^= s[0];
+				s1 ^= s[1];
+				s2 ^= s[2];
+				s3 ^= s[3];
 			}
-			TestXoshiro256Next();	
+			Xoshiro256Next(s);
 		}
 		
-	g_xoshiro_256[0] = s0;
-	g_xoshiro_256[1] = s1;
-	g_xoshiro_256[2] = s2;
-	g_xoshiro_256[3] = s3;
+	s[0] = s0;
+	s[1] = s1;
+	s[2] = s2;
+	s[3] = s3;
 }
 
-void ThreadXoshiro256InitSequence(void)
+void ThreadXoshiro256InitSequence(const u32 stream)
 {
-	u32 a_wanted_lock_state;
-	AtomicStoreRel32(&a_wanted_lock_state, 0);
-	while (!AtomicCompareExchangeSeqCst32(&a_g_xoshiro_256_lock, &a_wanted_lock_state, 1))
-	{
-		AtomicStoreRel32(&a_wanted_lock_state, 0);
-	}
-
 	tl_xoshiro_256[0] = g_xoshiro_256[0];
 	tl_xoshiro_256[1] = g_xoshiro_256[1];
 	tl_xoshiro_256[2] = g_xoshiro_256[2];
 	tl_xoshiro_256[3] = g_xoshiro_256[3];
-	Xoshiro256Jump();
-
-	AtomicStoreSeqCst32(&a_g_xoshiro_256_lock, 0);
+	for (u32 i = 0; i < stream; ++i)
+	{
+		Xoshiro256Jump(tl_xoshiro_256);
+	}
 }

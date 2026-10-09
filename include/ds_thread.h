@@ -103,7 +103,10 @@ void            ArenaSwitchAndFlushFrame(void);
 
 /* Alloc and initiate master thread information; should only be called once! */
 void        ds_ThreadMasterInit(struct arena *mem, const u64 framesize, const u64 scratch_size, const u32 scratch_count);
-/* Alloc and initiate thread. On success, return valid address. On failure, Fatally cleanup and exit */
+/*
+ * Alloc and initiate thread. On success, return valid address. On failure, Fatally cleanup and exit.
+ * The thread's index is the next one in clone order, assigned before the thread starts.
+ */
 ds_Thread * ds_ThreadClone(struct arena *mem, void (*start)(ds_Thread *), void *args, const u64 stack_size, const u64 frame_size, const u64 scratch_size, const u32 scratch_count);
 /* Exit calling thread */
 void		ds_ThreadExit(void);
@@ -119,7 +122,7 @@ void *  	ds_ThreadArguments(const ds_Thread *thr);
 tid		    ds_ThreadTid(const ds_Thread *thr);
 /* Return thread tid of caller */
 tid 		ds_ThreadSelfTid(void);
-/* Return index of thread (each created thread increments the global index counter) */
+/* Return index of thread: 0 for the master thread, then 1, 2, ... in clone order */
 u32		    ds_ThreadIndex(const ds_Thread *thr);
 /* Return index of caller */ 
 u32		    ds_ThreadSelfIndex(void);

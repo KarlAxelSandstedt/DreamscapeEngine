@@ -46,12 +46,17 @@ f32 	RngF32Range(const f32 min, const f32 max);
 /*
  *	xoshiro256** (David Blackman, Sebastiano Vigna)
  */
-/* Call once on main thread before calling ThreadXoshiro256InitSequence on each thread */ 
+/* Call once on the main thread before any other thread starts; seeds it with stream 0 */ 
 void 	Xoshiro256Init(const u64 seed[4]);
-/* Call once on thread to initate thread local xoshiro256** rng sequence  */ 
-void	ThreadXoshiro256InitSequence(void);
+/*
+ * Seed the calling thread with stream `stream`: the seed advanced by stream * 2^128 numbers, so the
+ * streams don't overlap. Threads pass their thread index, which makes each thread's numbers depend
+ * only on the seed and the index, not on the order threads start in.
+ */ 
+void	ThreadXoshiro256InitSequence(const u32 stream);
 
-/* NOTE: THREAD UNSAFE!!! Exposed for testing purposes. next rng on global rng */ 
+/* NOTE: THREAD UNSAFE!!! Exposed for testing purposes. Next number of the base state (stream 0), which
+ * it advances: streams seeded afterwards start from the advanced state. */ 
 u64 	TestXoshiro256Next(void);
 
 #ifdef __cplusplus

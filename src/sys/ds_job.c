@@ -333,8 +333,9 @@ RUN_JOBS:
 void ds_WorkerMain(ds_Thread *thr)
 {
 	struct ds_Worker *w = ds_ThreadArguments(thr);
+	ds_AssertString(w == g_scheduler->worker + ds_ThreadSelfIndex(), "worker slot i belongs to thread index i");
 
-	ThreadXoshiro256InitSequence();
+	ThreadXoshiro256InitSequence(ds_ThreadSelfIndex());
 
 	while (AtomicLoadAcq32(&g_scheduler->a_running) == 0);
 
@@ -400,7 +401,9 @@ void ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, c
     g_scheduler->worker[0].thr = g_tl_self;
 	for (u32 i = 1; i < thread_count; ++i)
 	{
-		ds_ThreadClone(mem_persistent, ds_WorkerMain, g_scheduler->worker + i, stacksize, framesize, scratchsize, scratch_count);
+		/* indices are assigned in clone order, so clone i is thread index i */
+		const ds_Thread *thr = ds_ThreadClone(mem_persistent, ds_WorkerMain, g_scheduler->worker + i, stacksize, framesize, scratchsize, scratch_count);
+		ds_AssertString(ds_ThreadIndex(thr) == i, "no other ds_ThreadClone before the scheduler's workers");
 	}
 
     /*
