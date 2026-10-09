@@ -23,12 +23,7 @@
 #include "ds_voronoi.h"
 
 /*
-GJK distance
-============
-Box3D's variant (agent_notes/gjk_design.txt): runs in shape A's frame on the Minkowski difference
-B - A, solves the simplex with the Voronoi API (ds_voronoi.h), takes the search direction from the
-simplex geometry, stops on a repeated support pair, on no progress (restoring the previous simplex)
-or on overlap, and warm-starts from a cache of support indices.
+=========================================== GJK ==============================================
 */
 
 /* Shape vertex set/storage */
@@ -44,7 +39,7 @@ struct GJKSimplexVertex
 {
     v3  a;                  /* support point of A */
     v3  b;                  /* support point of B, moved into frame A */
-    v3  minkowski;          /* b - a: */
+    v3  minkowski;          /* b - a */
     u32 index_a;            /* GJKVertexSet vertex indices of a and b */
     u32 index_b;
 };
@@ -58,8 +53,7 @@ struct GJKSimplex
 
 /*
  * Data shared by the GJK functions of one query: both vertex sets (local frames), the transform of B into
- * A's frame, and A's frame for the world-space outputs. Never copy it: a sphere's/capsule's vset.v points
- * into its own vset.buf.
+ * A's frame, and A's frame for the world-space outputs.
  */
 struct GJKHelper
 {
@@ -140,7 +134,7 @@ static void GJKSimplexVertexSupport(struct GJKSimplexVertex *v, const struct GJK
     *v = GJKSimplexVertexInit(helper, index_a, index_b);
 }
 
-/* Absolute volume/area/length (times a constant) of Simplex. Used to approve/reject cache_in */
+/* Absolute volume/area/length (times a constant) of the simplex; decides whether cache_in is reused. */
 static f32 GJKSimplexMetric(const struct GJKSimplex *simplex)
 {
     const struct GJKSimplexVertex *v = simplex->v;
@@ -215,24 +209,28 @@ static v3 GJKSimplexSearchDirection(const struct GJKSimplex *simplex)
 #define GJK_DIR_LENGTH_SQ_MIN (1000.0f * F32_MIN_POSITIVE_NORMAL)
 
 /*
- * Touching tolerance (1b):
+ * Touch tolerance (1b). The shapes are reported as touching when
  *
- *      |closest| <= GJK_TOUCH_TOLERANCE * eps * L,     L = max |v| over the support points of the query
+ *      |closest| <= GJK_TOUCH_TOLERANCE * eps * L,     L = max(|a|, |b|) over the query's support points
  *
- * closest = sum_i w_i v_i (w_i >= 0, sum 1) lies in B - A, so |closest| bounds the distance from above
- * for any simplex, degenerate or not. Its noise is set by the support points, not by the blend:
- * v = b - a with a, b in A's frame, each about the shapes' extent, so every v carries an error of
- * ~eps * max(|a|, |b|). Below a few times that, closest is noise and its normal arbitrary, so the shapes
- * are reported as touching.
+ * Safe for any simplex: closest = sum_i w_i v_i lies in B - A, so |closest| bounds the distance from above.
  *
- * L estimates that scale with one |v|^2 per new support point (a running max), instead of the max over
- * the current simplex every iteration. The running max is never smaller, and both are of the same
- * order: support points span B - A, whose size is the shapes' extent. 16 eps * L is well inside the
- * tests' 64 eps * L.
+ * L is the noise scale: a support point v = b - a is computed from a and b in A's frame, so it carries a
+ * rounding error of ~eps * max(|a|, |b|), also near contact where v itself cancels to a face's size.
+ *
+ * GJK_TOUCH_TOLERANCE is the band's width in units of that noise (eps * L). Its value bounds the error of
+ * the returned normal: a separation d with that noise gives a normal off by (measured)
+ *
+ *      theta ~ 6 eps * L / d
+ *
+ * so with a width of 100, every separated result has d > 100 eps * L and theta <= ~6 / 100 = 0.06 rad;
+ * closer pairs report touching, and contacts take their deep paths (feature normals). At L = 1 m the band
+ * is 100 * eps * 1 m = 0.012 mm, Box3D's 100 * FLT_EPSILON contact threshold, but it scales with the
+ * shapes. It is independent of the world position (L is measured in A's frame).
  */
-#define GJK_TOUCH_TOLERANCE 16.0f
+#define GJK_TOUCH_TOLERANCE 100.0f
 
-/* Set simplex cache.  */
+/* Write the simplex's support indices and metric to cache. */
 static void GJKCacheInit(struct GJKCache *cache, const struct GJKSimplex *simplex)
 {
     ds_Assert(1 <= simplex->count && simplex->count <= 4);
@@ -247,8 +245,8 @@ static void GJKCacheInit(struct GJKCache *cache, const struct GJKSimplex *simple
 }
 
 /*
- * Overlap/touching result (1, 1b, 4a): the origin lies on the simplex of B - A, so sum_i w_i b_i = sum_i w_i a_i.
- * Both witness points are taken from A's blend, so c_a == c_b exactly (distance 0); n = 0.
+ * Overlap/touching result (1, 1b, 4a): the origin lies on the simplex of B - A (within the touch band), so
+ * sum_i w_i b_i ~ sum_i w_i a_i. Both witness points are taken from A's blend: c_a == c_b, n = 0.
  */
 static f32 GJKOverlap(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKHelper *helper, const struct GJKSimplex *simplex)
 {
@@ -279,8 +277,8 @@ static f32 GJKOverlap(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const
  *      0.0f                overlap or touch (closer than GJK_TOUCH_TOLERANCE * eps * L, see 1b);
  *                          c_a == c_b, n = 0
  *      F32_INFINITY        a separating plane proves distance > cutoff_distance; c_a, c_b, n garbage
- *      otherwise           the distance; c_a, c_b, n valid. Only an upper bound if the iteration limit
- *                          was reached
+ *      otherwise           the distance; c_a, c_b, n valid, n accurate to ~6 eps * L / distance rad (see
+ *                          1b). Only an upper bound if the iteration limit was reached
  *
  * Not every stop tests cutoff_distance, so a finite result may still exceed it; callers compare.
  */
@@ -290,7 +288,7 @@ static f32 GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct
     GJKHelperInit(&helper, shape_a, t_a, shape_b, t_b);
     const f32 cutoff_distance_sq = cutoff_distance*cutoff_distance;
 
-    /* Use cache if it exist and its length/area/volume hasn't changed to much  */
+    /* warm start from the cache unless its length/area/volume changed by more than 2x */
     struct GJKSimplex simplex = { 0 };
     if (cache_in)
     {
@@ -316,11 +314,11 @@ static f32 GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct
     }
     struct GJKSimplex backup = { .count = 1, .v[0] = simplex.v[0], .weight[0] = 1.0f };
 
-    /* running max |v|^2 over the support points, the scale of 1b */
+    /* running max of |a|^2, |b|^2 over the support points, the scale of 1b */
     f32 vertex_length_sq_max = 0.0f;
     for (u32 j = 0; j < simplex.count; ++j)
     {
-        vertex_length_sq_max = F32Max(vertex_length_sq_max, V3LengthSquared(simplex.v[j].minkowski));
+        vertex_length_sq_max = F32Max(vertex_length_sq_max, F32Max(V3LengthSquared(simplex.v[j].a), V3LengthSquared(simplex.v[j].b)));
     }
 
     /*
@@ -451,7 +449,7 @@ static f32 GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct
 
         /* candidate vertex in the free slot; added below if it passes 5 and 6 */
         GJKSimplexVertexSupport(simplex.v + simplex.count, &helper, dir);
-        vertex_length_sq_max = F32Max(vertex_length_sq_max, V3LengthSquared(simplex.v[simplex.count].minkowski));
+        vertex_length_sq_max = F32Max(vertex_length_sq_max, F32Max(V3LengthSquared(simplex.v[simplex.count].a), V3LengthSquared(simplex.v[simplex.count].b)));
 
         /*
          * 5: B - A lies in the half-space dot(p, dir) <= dot(w, dir) of the support point w, so
@@ -490,27 +488,15 @@ static f32 GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct
         simplex.count -= 1;
     }
 
-    /*
-     * The weights sum to 1 only up to ~eps * (r / f)^2 (r: distance to the feature, f: its size; see
-     * ds_voronoi.h), which shrinks closest by that factor far from the feature (~1e-4 at r ~ 100 f).
-     * Dividing by their sum makes the blends affine; once per query, the loop only compares distances.
-     * The sum is > 0: the kept vertices' weights are > 0 (a lone vertex has weight 1).
-     */
     v3 p_a = V3Zero();
     v3 p_b = V3Zero();
     v3 closest = V3Zero();
-    f32 weight_sum = 0.0f;
     for (u32 j = 0; j < simplex.count; ++j)
     {
         p_a = V3AddScaled(p_a, simplex.v[j].a, simplex.weight[j]);
         p_b = V3AddScaled(p_b, simplex.v[j].b, simplex.weight[j]);
         closest = V3AddScaled(closest, simplex.v[j].minkowski, simplex.weight[j]);
-        weight_sum += simplex.weight[j];
     }
-    const f32 weight_sum_inv = 1.0f / weight_sum;
-    p_a = V3Scale(p_a, weight_sum_inv);
-    p_b = V3Scale(p_b, weight_sum_inv);
-    closest = V3Scale(closest, weight_sum_inv);
 
     /*
      * The distance from the minkowski blend, not |p_b - p_a| (cancellation near contact); the normal from
@@ -521,5 +507,9 @@ static f32 GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct
     *c_b = V3Add(QV3Rotate(t_a->rotation, p_b), t_a->position);
     *n = QV3Rotate(t_a->rotation, V3Scale(dir, -1.0f / V3Length(dir)));
     GJKCacheInit(cache_out, &simplex);
-    return V3Length(closest);
+
+    /* the result simplex passed 1b (or is the first vertex, 4a): 0 is only returned through GJKOverlap */
+    const f32 distance = V3Length(closest);
+    ds_Assert(distance > 0.0f);
+    return distance;
 }

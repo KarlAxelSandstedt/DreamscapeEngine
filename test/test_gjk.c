@@ -32,7 +32,8 @@ transforms), without a reference distance:
     give d within tol (its distance error is second order in its normal's error), and n can be inaccurate
     for d ~ eps * L or short simplex edges; both are only counted, and the worst normal gap d - g(n) printed.
 
-    overlap (d == 0):   SAT finds no axis separating A and B by more than tol
+    overlap (d == 0):   SAT finds no axis separating A and B by more than tol + GJK's touch band
+                        (GJK_TOUCH_TOLERANCE * eps * max(extent A, extent B + |pos_B - pos_A|))
     cutoff (F32_INFINITY): the cutoff-free result certifies and is >= cutoff - tol
 
 sat is the largest separation of A and B over the SAT axes (face normals of both, cross products of
@@ -575,6 +576,8 @@ static u32 GjkTestQuery(struct gjk_TestStats *stats, f32 *d_out, struct GJKCache
     const f64 eps_p = F32_EPSILON * (scale + D3Length(pos_a));
     const f64 tol = GJK_TEST_TOLERANCE * eps_l;
     const f64 tol_p = GJK_TEST_TOLERANCE * eps_p;
+    /* GJK's touch band (1b): its L = max(|a|, |b|) in A's frame is at most this */
+    const f64 touch_band = GJK_TOUCH_TOLERANCE * F32_EPSILON * F64MaxTest(a->extent, b->extent + D3Length(D3Sub(D3V3(b->t.position), pos_a)));
 
     const char *failure = NULL;
     f64 gap = 0.0, sat = 0.0, upper = 0.0, g = 0.0, d_s = 0.0, lo = 0.0, hi = 0.0;
@@ -628,7 +631,7 @@ static u32 GjkTestQuery(struct gjk_TestStats *stats, f32 *d_out, struct GJKCache
         {
             failure = "overlap: c_a != c_b or n != 0";
         }
-        else if (sat > tol)
+        else if (sat > tol + touch_band)
         {
             failure = "overlap, but SAT separates";
         }
