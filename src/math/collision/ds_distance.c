@@ -215,13 +215,20 @@ static v3 GJKSimplexSearchDirection(const struct GJKSimplex *simplex)
 #define GJK_DIR_LENGTH_SQ_MIN (1000.0f * F32_MIN_POSITIVE_NORMAL)
 
 /*
- * Touching tolerance (1b), relative to the solved feature's largest vertex L = max_i |v_i|:
+ * Touching tolerance (1b):
  *
- *      |closest| <= GJK_TOUCH_TOLERANCE * eps * L
+ *      |closest| <= GJK_TOUCH_TOLERANCE * eps * L,     L = max |v| over the support points of the query
  *
- * closest = sum_i w_i v_i (w_i >= 0, sum 1) lies in B - A, so |closest| bounds the distance from above,
- * up to the blend's rounding of ~eps * L. Below that, closest is rounding noise: its normal would be
- * arbitrary, so the shapes are reported as touching.
+ * closest = sum_i w_i v_i (w_i >= 0, sum 1) lies in B - A, so |closest| bounds the distance from above
+ * for any simplex, degenerate or not. Its noise is set by the support points, not by the blend:
+ * v = b - a with a, b in A's frame, each about the shapes' extent, so every v carries an error of
+ * ~eps * max(|a|, |b|). Below a few times that, closest is noise and its normal arbitrary, so the shapes
+ * are reported as touching.
+ *
+ * L estimates that scale with one |v|^2 per new support point (a running max), instead of the max over
+ * the current simplex every iteration. The running max is never smaller, and both are of the same
+ * order: support points span B - A, whose size is the shapes' extent. 16 eps * L is well inside the
+ * tests' 64 eps * L.
  */
 #define GJK_TOUCH_TOLERANCE 16.0f
 
@@ -269,7 +276,8 @@ static f32 GJKOverlap(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const
  *
  * Returns:
  *
- *      0.0f                overlap or touch; c_a == c_b, n = 0
+ *      0.0f                overlap or touch (closer than GJK_TOUCH_TOLERANCE * eps * L, see 1b);
+ *                          c_a == c_b, n = 0
  *      F32_INFINITY        a separating plane proves distance > cutoff_distance; c_a, c_b, n garbage
  *      otherwise           the distance; c_a, c_b, n valid. Only an upper bound if the iteration limit
  *                          was reached
@@ -307,6 +315,13 @@ static f32 GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct
         simplex.v[0] = GJKSimplexVertexInit(&helper, 0, 0);
     }
     struct GJKSimplex backup = { .count = 1, .v[0] = simplex.v[0], .weight[0] = 1.0f };
+
+    /* running max |v|^2 over the support points, the scale of 1b */
+    f32 vertex_length_sq_max = 0.0f;
+    for (u32 j = 0; j < simplex.count; ++j)
+    {
+        vertex_length_sq_max = F32Max(vertex_length_sq_max, V3LengthSquared(simplex.v[j].minkowski));
+    }
 
     /*
      * Termination. After the loop, the result simplex is solved and dir is its search direction with
@@ -397,11 +412,9 @@ static f32 GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct
         }
 
         v3 closest = V3Zero();
-        f32 vertex_length_sq_max = 0.0f;
         for (u32 j = 0; j < simplex.count; ++j)
         {
             closest = V3AddScaled(closest, simplex.v[j].minkowski, simplex.weight[j]);
-            vertex_length_sq_max = F32Max(vertex_length_sq_max, V3LengthSquared(simplex.v[j].minkowski));
         }
 
         /* 1b */
@@ -438,6 +451,7 @@ static f32 GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct
 
         /* candidate vertex in the free slot; added below if it passes 5 and 6 */
         GJKSimplexVertexSupport(simplex.v + simplex.count, &helper, dir);
+        vertex_length_sq_max = F32Max(vertex_length_sq_max, V3LengthSquared(simplex.v[simplex.count].minkowski));
 
         /*
          * 5: B - A lies in the half-space dot(p, dir) <= dot(w, dir) of the support point w, so
