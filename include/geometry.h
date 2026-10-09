@@ -119,8 +119,6 @@ struct sphere 	SphereConstruct(const v3 center, const f32 radius);
 f32 		SphereRaycastParameter(const struct sphere *sph, const struct ray *ray);
 /* Return 1 if raycast hit sphere, 0 otherwise. If hit, set intersection  */
 u32 		SphereRaycast(v3 *intersection, const struct sphere *sph, const struct ray *ray);
-/* Return support of sphere in given direction. sph->position is ignored here, so use pos as the real position */
-v3		SphereSupport(const v3 dir, const struct sphere *sph, const v3 pos);
 
 /*********************************** ray ************************************/
 
@@ -253,11 +251,6 @@ f32 		AabbRaycastParameter(const struct aabb *a, const struct ray *ray);
 u32 		AabbRaycastEx(v3 *intersection, const struct aabb *aabb, const struct ray *ray, const v3 multiplier, const v3u32 dir_sign_bit);
 /* If the ray hits aabb, return 1 and set intersection. otherwise return 0. */
 u32 		AabbRaycast(v3 *intersection, const struct aabb *aabb, const struct ray *ray);
-
-/********************************* capsule **********************************/
-
-/* Return support of capsule in given direction. */
-v3		CapsuleSupport(const v3 dir, const struct capsule *cap, const m3 rot, const v3 pos);
 
 /********************************* tri_mesh **********************************/
 
@@ -393,8 +386,6 @@ struct dcel 	DcelBoxStub(void);
 struct dcel 	DcelBox(struct arena *mem, const v3 hw);
 /* return arena allocated dcel convex hull of input points. On failure, an empty dcel is returned. */
 struct dcel 	DcelConvexHull(struct arena *mem, const v3 *v, const u32 v_count, const f32 tol);
-/* Return support of dcel in given direction, and return supporting vertex index */
-u32		        DcelSupport(v3 *support, const v3 dir, const struct dcel *hull, const m3 rot, const v3 pos);
 
 /* Return the transformed plane defined by the given face */
 struct plane 	DcelFacePlane(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi);
@@ -430,8 +421,6 @@ void 		DcelAssertTopology(struct dcel *dcel);
 
 /********************************* vertex operations ***********************************/
 
-/* Return: support of vertex set given the direction, and supporting vertex index */
-u32 	VertexSupport(v3 *support, const v3 dir, const v3 *v, const u32 v_count);
 v3 	VertexCentroid(const v3 *vs, const u32 n);
 
 #ifdef __cplusplus

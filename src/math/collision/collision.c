@@ -384,703 +384,6 @@ void c_ShapeUpdateMassProperties(struct c_Shape *shape)
 	}
 }
 
-/********************************** GJK INTERNALS (Old, to be removed) **********************************/
-
-/**
- * Gilbert-Johnson-Keerthi intersection algorithm in 3D. Based on the original paper. 
- *
- * For understanding, see [ Collision Detection in Interactive 3D environments, chapter 4.3.1 - 4.3.8 ]
- */
-struct gjk_Simplex
-{
-	v3 p[4];
-	u64 id[4];
-	f32 dot[4];
-	u32 type;
-};
-
-#define SIMPLEX_0	0
-#define SIMPLEX_1	1
-#define SIMPLEX_2	2
-#define SIMPLEX_3	3
-
-static struct gjk_Simplex gjk_SimplexInit(void)
-{
-	struct gjk_Simplex simplex = 
-	{
-		.id = {UINT64_MAX, UINT64_MAX, UINT64_MAX, UINT64_MAX},
-		.dot = { -1.0f, -1.0f, -1.0f, -1.0f },
-		.type = UINT32_MAX,
-	};
-
-	return simplex;
-}
-
-static u32 gjk_JohnsonsAlgorithm(struct gjk_Simplex *simplex, v3 *c_v, f32 lambda[4])
-{
-	v3 a;
-
-	if (simplex->type == 0)
-	{
-		*c_v = simplex->p[0];
-	}
-	else if (simplex->type == 1)
-	{
-		a = V3Sub(simplex->p[0], simplex->p[1]);
-		const f32 delta_01_1 = V3Dot(a, simplex->p[0]);
-
-		if (delta_01_1 > 0.0f)
-		{
-			a = V3Sub(simplex->p[1], simplex->p[0]);
-			const f32 delta_01_0 = V3Dot(a, simplex->p[1]);
-			if (delta_01_0 > 0.0f)
-			{
-				const f32 delta = delta_01_0 + delta_01_1;
-				lambda[0] = delta_01_0 / delta;
-				lambda[1] = delta_01_1 / delta;
-				*c_v = V3AddScaled(V3Scale(simplex->p[0], lambda[0]), simplex->p[1], lambda[1]);
-			}
-			else
-			{
-				simplex->type = 0;
-				*c_v = simplex->p[1];
-				simplex->p[0] = simplex->p[1];
-			}
-		}
-		else
-		{
-			/* 
-			 * numerical issues, new simplex should always contain newly added point
-			 * of simplex, terminate next iteration. Let c_v stay the same as in the
-			 * previous iteration.
-			 */
-			return 1;
-		}
-	}
-	else if (simplex->type == 2)
-	{
-		a = V3Sub(simplex->p[1], simplex->p[0]);
-		const f32 delta_01_0 = V3Dot(a, simplex->p[1]);
-		a = V3Sub(simplex->p[0], simplex->p[1]);
-		const f32 delta_01_1 = V3Dot(a, simplex->p[0]);
-		a = V3Sub(simplex->p[0], simplex->p[2]);
-		const f32 delta_012_2 = delta_01_0 * V3Dot(a, simplex->p[0]) + delta_01_1 * V3Dot(a, simplex->p[1]);
-		if (delta_012_2 > 0.0f)
-		{
-			a = V3Sub(simplex->p[2], simplex->p[0]);
-			const f32 delta_02_0 = V3Dot(a, simplex->p[2]);
-			a = V3Sub(simplex->p[0], simplex->p[2]);
-			const f32 delta_02_2 = V3Dot(a, simplex->p[0]);
-			a = V3Sub(simplex->p[0], simplex->p[1]);
-			const f32 delta_012_1 = delta_02_0 * V3Dot(a, simplex->p[0]) + delta_02_2 * V3Dot(a, simplex->p[2]);
-			if (delta_012_1 > 0.0f)
-			{
-				a = V3Sub(simplex->p[2], simplex->p[1]);
-				const f32 delta_12_1 = V3Dot(a, simplex->p[2]);
-				a = V3Sub(simplex->p[1], simplex->p[2]);
-				const f32 delta_12_2 = V3Dot(a, simplex->p[1]);
-				a = V3Sub(simplex->p[1], simplex->p[0]);
-				const f32 delta_012_0 = delta_12_1 * V3Dot(a, simplex->p[1]) + delta_12_2 * V3Dot(a, simplex->p[2]);
-				if (delta_012_0 > 0.0f)
-				{
-					const f32 delta = delta_012_0 + delta_012_1 + delta_012_2;
-					lambda[0] = delta_012_0 / delta;
-					lambda[1] = delta_012_1 / delta;
-					lambda[2] = delta_012_2 / delta;
-					*c_v = V3AddScaled(V3AddScaled(V3Scale(simplex->p[0], lambda[0]), simplex->p[1], lambda[1]), simplex->p[2], lambda[2]);
-				}
-				else
-				{
-					if (delta_12_2 > 0.0f)
-					{
-						if (delta_12_1 > 0.0f)
-						{
-							const f32 delta = delta_12_1 + delta_12_2;
-							lambda[0] = delta_12_1 / delta;
-							lambda[1] = delta_12_2 / delta;
-							*c_v = V3AddScaled(V3Scale(simplex->p[1], lambda[0]), simplex->p[2], lambda[1]);
-							simplex->type = 1;
-							simplex->p[0] = simplex->p[1];
-							simplex->p[1] = simplex->p[2];
-							simplex->id[0] = simplex->id[1];
-							simplex->dot[0] = simplex->dot[1];
-						}
-						else
-						{
-							simplex->type = 0;
-							*c_v = simplex->p[2];
-							simplex->p[0] = simplex->p[2];
-							simplex->id[1] = UINT32_MAX;
-							simplex->dot[1] = -1.0f;
-						}
-
-
-					}
-					else
-					{
-						return 1;
-					}
-				}
-
-			}
-			else
-			{
-				if (delta_02_2 > 0.0f)
-				{
-					if (delta_02_0 > 0.0f)
-					{
-						const f32 delta = delta_02_0 + delta_02_2;
-						lambda[0] = delta_02_0 / delta;
-						lambda[1] = delta_02_2 / delta;
-						*c_v = V3AddScaled(V3Scale(simplex->p[0], lambda[0]), simplex->p[2], lambda[1]);
-						simplex->type = 1;
-						simplex->p[1] = simplex->p[2];
-					}
-					else
-					{
-						simplex->type = 0;
-						*c_v = simplex->p[2];
-						simplex->p[0] = simplex->p[2];
-						simplex->id[1] = UINT32_MAX;
-						simplex->dot[1] = -1.0f;
-					}
-				}
-			}
-		}
-		else
-		{
-			return 1;
-		}
-	}
-	else
-	{
-		a = V3Sub(simplex->p[1], simplex->p[0]);
-		const f32 delta_01_0 = V3Dot(a, simplex->p[1]);
-		a = V3Sub(simplex->p[0], simplex->p[1]);
-		const f32 delta_01_1 = V3Dot(a, simplex->p[0]);
-		a = V3Sub(simplex->p[0], simplex->p[2]);
-		const f32 delta_012_2 = delta_01_0 * V3Dot(a, simplex->p[0]) + delta_01_1 * V3Dot(a, simplex->p[1]);
-
-		a = V3Sub(simplex->p[2], simplex->p[0]);
-		const f32 delta_02_0 = V3Dot(a, simplex->p[2]);
-		a = V3Sub(simplex->p[0], simplex->p[2]);
-		const f32 delta_02_2 = V3Dot(a, simplex->p[0]);
-		a = V3Sub(simplex->p[0], simplex->p[1]);
-		const f32 delta_012_1 = delta_02_0 * V3Dot(a, simplex->p[0]) + delta_02_2 * V3Dot(a, simplex->p[2]);
-
-		a = V3Sub(simplex->p[2], simplex->p[1]);
-		const f32 delta_12_1 = V3Dot(a, simplex->p[2]);
-		a = V3Sub(simplex->p[1], simplex->p[2]);
-		const f32 delta_12_2 = V3Dot(a, simplex->p[1]);
-		a = V3Sub(simplex->p[1], simplex->p[0]);
-		const f32 delta_012_0 = delta_12_1 * V3Dot(a, simplex->p[1]) + delta_12_2 * V3Dot(a, simplex->p[2]);
-
-		a = V3Sub(simplex->p[0], simplex->p[3]);
-		const f32 delta_0123_3 = delta_012_0 * V3Dot(a, simplex->p[0]) + delta_012_1 * V3Dot(a, simplex->p[1]) + delta_012_2 * V3Dot(a, simplex->p[2]);
-
-		if (delta_0123_3 > 0.0f)
-		{
-			a = V3Sub(simplex->p[0], simplex->p[3]);
-			const f32 delta_013_3 = delta_01_0 * V3Dot(a, simplex->p[0]) + delta_01_1 * V3Dot(a, simplex->p[1]);
-
-			a = V3Sub(simplex->p[3], simplex->p[0]);
-			const f32 delta_03_0 = V3Dot(a, simplex->p[3]);
-			a = V3Sub(simplex->p[0], simplex->p[3]);
-			const f32 delta_03_3 = V3Dot(a, simplex->p[0]);
-			a = V3Sub(simplex->p[0], simplex->p[1]);
-			const f32 delta_013_1 = delta_03_0 * V3Dot(a, simplex->p[0]) + delta_03_3 * V3Dot(a, simplex->p[3]);
-
-			a = V3Sub(simplex->p[3], simplex->p[1]);
-			const f32 delta_13_1 = V3Dot(a, simplex->p[3]);
-			a = V3Sub(simplex->p[1], simplex->p[3]);
-			const f32 delta_13_3 = V3Dot(a, simplex->p[1]);
-			a = V3Sub(simplex->p[1], simplex->p[0]);
-			const f32 delta_013_0 = delta_13_1 * V3Dot(a, simplex->p[1]) + delta_13_3 * V3Dot(a, simplex->p[3]);
-
-			a = V3Sub(simplex->p[0], simplex->p[2]);
-			const f32 delta_0123_2 = delta_013_0 * V3Dot(a, simplex->p[0]) + delta_013_1 * V3Dot(a, simplex->p[1]) + delta_013_3 * V3Dot(a, simplex->p[3]);
-
-			if (delta_0123_2 > 0.0f)
-			{
-				a = V3Sub(simplex->p[0], simplex->p[3]);
-				const f32 delta_023_3 = delta_02_0 * V3Dot(a, simplex->p[0]) + delta_02_2 * V3Dot(a, simplex->p[2]);
-
-				a = V3Sub(simplex->p[0], simplex->p[2]);
-				const f32 delta_023_2 = delta_03_0 * V3Dot(a, simplex->p[0]) + delta_03_3 * V3Dot(a, simplex->p[3]);
-
-				a = V3Sub(simplex->p[3], simplex->p[2]);
-				const f32 delta_23_2 = V3Dot(a, simplex->p[3]);
-				a = V3Sub(simplex->p[2], simplex->p[3]);
-				const f32 delta_23_3 = V3Dot(a, simplex->p[2]);
-				a = V3Sub(simplex->p[2], simplex->p[0]);
-				const f32 delta_023_0 = delta_23_2 * V3Dot(a, simplex->p[2]) + delta_23_3 * V3Dot(a, simplex->p[3]);
-
-				a = V3Sub(simplex->p[0], simplex->p[1]);
-				const f32 delta_0123_1 = delta_023_0 * V3Dot(a, simplex->p[0]) + delta_023_2 * V3Dot(a, simplex->p[2]) + delta_023_3 * V3Dot(a, simplex->p[3]);
-
-				if (delta_0123_1 > 0.0f)
-				{
-					a = V3Sub(simplex->p[3], simplex->p[1]);
-					const f32 delta_123_1 = delta_23_2 * V3Dot(a, simplex->p[2]) + delta_23_3 * V3Dot(a, simplex->p[3]);
-
-					a = V3Sub(simplex->p[3], simplex->p[2]);
-					const f32 delta_123_2 = delta_13_1 * V3Dot(a, simplex->p[1]) + delta_13_3 * V3Dot(a, simplex->p[3]);
-
-					a = V3Sub(simplex->p[1], simplex->p[3]);
-					const f32 delta_123_3 = delta_12_1 * V3Dot(a, simplex->p[1]) + delta_12_2 * V3Dot(a, simplex->p[2]);
-
-					a = V3Sub(simplex->p[3], simplex->p[0]);
-					const f32 delta_0123_0 = delta_123_1 * V3Dot(a, simplex->p[1]) + delta_123_2 * V3Dot(a, simplex->p[2]) + delta_123_3 * V3Dot(a, simplex->p[3]);
-
-					if (delta_0123_0 > 0.0f)
-					{
-						/* intersection */
-						const f32 delta = delta_0123_0 + delta_0123_1 + delta_0123_2 + delta_0123_3;
-						lambda[0] = delta_0123_0 / delta;
-						lambda[1] = delta_0123_1 / delta;
-						lambda[2] = delta_0123_2 / delta;
-						lambda[3] = delta_0123_3 / delta;
-						*c_v = V3AddScaled(V3AddScaled(V3AddScaled(V3Scale(simplex->p[0], lambda[0]), simplex->p[1], lambda[1]), simplex->p[2], lambda[2]), simplex->p[3], lambda[3]);
-					}
-					else
-					{
-						/* check 123 subset */
-						if (delta_123_3 > 0.0f)
-						{
-							if (delta_123_2 > 0.0f)
-							{
-								if (delta_123_1 > 0.0f)
-								{
-									const f32 delta = delta_123_1 + delta_123_2 + delta_123_3;
-									lambda[0] = delta_123_1 / delta;
-									lambda[1] = delta_123_2 / delta;
-									lambda[2] = delta_123_3 / delta;
-									*c_v = V3AddScaled(V3AddScaled(V3Scale(simplex->p[1], lambda[0]), simplex->p[2], lambda[1]), simplex->p[3], lambda[2]);
-									simplex->type = 2;
-									simplex->p[0] = simplex->p[1];		
-									simplex->p[1] = simplex->p[2];		
-									simplex->p[2] = simplex->p[3];		
-									simplex->dot[0] = simplex->dot[1];
-									simplex->dot[1] = simplex->dot[2];
-									simplex->id[0] = simplex->id[1];
-									simplex->id[1] = simplex->id[2];
-								}
-								else
-								{
-									/* check 23 */
-									if (delta_23_3 > 0.0f)
-									{
-										if (delta_23_2 > 0.0f)
-										{
-											const f32 delta = delta_23_2 + delta_23_3;
-											lambda[0] = delta_23_2 / delta;
-											lambda[1] = delta_23_3 / delta;
-											*c_v = V3AddScaled(V3Scale(simplex->p[2], lambda[0]), simplex->p[3], lambda[1]);
-											simplex->type = 1;
-											simplex->p[0] = simplex->p[2];		
-											simplex->p[1] = simplex->p[3];		
-											simplex->dot[0] = simplex->dot[2];
-											simplex->dot[2] = -1.0f;
-											simplex->id[0] = simplex->id[2];
-											simplex->id[2] = UINT32_MAX;
-										}
-										else
-										{
-											*c_v = simplex->p[3];
-											simplex->type = 0;
-											simplex->p[0] = simplex->p[3];
-											simplex->dot[1] = -1.0f;
-											simplex->dot[2] = -1.0f;
-											simplex->id[1] = UINT32_MAX;
-											simplex->id[2] = UINT32_MAX;
-										}
-									}
-									else
-									{
-										return 1;
-									}
-								}
-							}
-							else
-							{
-								/* check 13 subset */
-								if (delta_13_3 > 0.0f)
-								{
-									if (delta_13_1 > 0.0f)
-									{
-										const f32 delta = delta_13_1 + delta_13_3;
-										lambda[0] = delta_13_1 / delta;
-										lambda[1] = delta_13_3 / delta;
-										*c_v = V3AddScaled(V3Scale(simplex->p[1], lambda[0]), simplex->p[3], lambda[1]);
-										simplex->type = 1;
-										simplex->p[0] = simplex->p[1];
-										simplex->p[1] = simplex->p[3];		
-										simplex->dot[0] = simplex->dot[1];
-										simplex->dot[2] = -1.0f;
-										simplex->id[0] = simplex->id[1];
-										simplex->id[2] = UINT32_MAX;
-									}
-									else
-									{
-										*c_v = simplex->p[3];
-										simplex->type = 0;
-										simplex->p[0] = simplex->p[3];
-										simplex->dot[1] = -1.0f;
-										simplex->dot[2] = -1.0f;
-										simplex->id[1] = UINT32_MAX;
-										simplex->id[2] = UINT32_MAX;
-									}
-								}
-								else
-								{
-									return 1;
-								}
-							}	
-						}
-						else
-						{
-							return 1;
-						}
-					}
-				}
-				else
-				{
-					/* check 023 subset */
-					if (delta_023_3 > 0.0f)
-					{
-						if (delta_023_2 > 0.0f)
-						{
-							if (delta_023_0 > 0.0f)
-							{
-								const f32 delta = delta_023_0 + delta_023_2 + delta_023_3;
-								lambda[0] = delta_023_0 / delta;
-								lambda[1] = delta_023_2 / delta;
-								lambda[2] = delta_023_3 / delta;
-								*c_v = V3AddScaled(V3AddScaled(V3Scale(simplex->p[0], lambda[0]), simplex->p[2], lambda[1]), simplex->p[3], lambda[2]);
-								simplex->type = 2;
-								simplex->p[1] = simplex->p[2];		
-								simplex->p[2] = simplex->p[3];		
-								simplex->dot[1] = simplex->dot[2];
-								simplex->id[1] = simplex->id[2];
-							}
-							else
-							{
-								/* check 23 subset */
-								if (delta_23_3 > 0.0f)
-								{
-									if (delta_23_2 > 0.0f)
-									{
-										const f32 delta = delta_23_2 + delta_23_3;
-										lambda[0] = delta_23_2 / delta;
-										lambda[1] = delta_23_3 / delta;
-										*c_v = V3AddScaled(V3Scale(simplex->p[2], lambda[0]), simplex->p[3], lambda[1]);
-										simplex->type = 1;
-										simplex->p[0] = simplex->p[2];
-										simplex->p[1] = simplex->p[3];
-										simplex->dot[0] = simplex->dot[2];
-										simplex->dot[2] = -1.0f;
-										simplex->id[0] = simplex->id[2];
-										simplex->id[2] = UINT32_MAX;
-									}
-									else
-									{
-										*c_v = simplex->p[3];
-										simplex->type = 0;
-										simplex->p[0] = simplex->p[3];
-										simplex->dot[1] = -1.0f;
-										simplex->dot[2] = -1.0f;
-										simplex->id[1] = UINT32_MAX;
-										simplex->id[2] = UINT32_MAX;
-									}
-								}
-								else
-								{
-									return 1;
-								}
-							}
-						}
-						else
-						{
-							/* check 03 subset */
-							if (delta_03_3 > 0.0f)
-							{
-								if (delta_03_0 > 0.0f)
-								{
-									const f32 delta = delta_03_0 + delta_03_3;
-									lambda[0] = delta_03_0 / delta;
-									lambda[1] = delta_03_3 / delta;
-									*c_v = V3AddScaled(V3Scale(simplex->p[0], lambda[0]), simplex->p[3], lambda[1]);
-									simplex->type = 1;
-									simplex->p[1] = simplex->p[3];
-									simplex->dot[2] = -1.0f;
-									simplex->id[2] = UINT32_MAX;
-								}
-								else
-								{
-									*c_v = simplex->p[3];
-									simplex->type = 0;
-									simplex->p[0] = simplex->p[3];
-									simplex->dot[1] = -1.0f;
-									simplex->dot[2] = -1.0f;
-									simplex->id[1] = UINT32_MAX;
-									simplex->id[2] = UINT32_MAX;
-								}
-							}
-							else
-							{
-								return 1;
-							}
-						}
-					}
-					else
-					{
-						return 1;
-					}
-				}
-			}
-			else
-			{
-				/* check 013 subset */
-				if (delta_013_3 > 0.0f)
-				{
-					if (delta_013_1 > 0.0f)
-					{
-						if (delta_013_0 > 0.0f)
-						{
-							const f32 delta = delta_013_0 + delta_013_1 + delta_013_3;
-							lambda[0] = delta_013_0 / delta;
-							lambda[1] = delta_013_1 / delta;
-							lambda[2] = delta_013_3 / delta;
-							*c_v = V3AddScaled(V3AddScaled(V3Scale(simplex->p[0], lambda[0]), simplex->p[1], lambda[1]), simplex->p[3], lambda[2]);
-							simplex->type = 2;
-							simplex->p[2] = simplex->p[3];
-						}
-						else
-						{
-							/* check 13 subset */
-							if (delta_13_3 > 0.0f)
-							{
-								if (delta_13_1 > 0.0f)
-								{
-									const f32 delta = delta_13_1 + delta_13_3;
-									lambda[0] = delta_13_1 / delta;
-									lambda[1] = delta_13_3 / delta;
-									*c_v = V3AddScaled(V3Scale(simplex->p[1], lambda[0]), simplex->p[3], lambda[1]);
-									simplex->type = 1;
-									simplex->p[0] = simplex->p[1];
-									simplex->p[1] = simplex->p[3];
-									simplex->dot[2] = -1.0f;
-									simplex->id[2] = UINT32_MAX;
-								}
-								else
-								{
-									*c_v = simplex->p[3];
-									simplex->type = 0;
-									simplex->p[0] = simplex->p[3];
-									simplex->dot[1] = -1.0f;
-									simplex->dot[2] = -1.0f;
-									simplex->id[1] = UINT32_MAX;
-									simplex->id[2] = UINT32_MAX;
-								}
-							}
-							else
-							{
-								return 1;
-							}
-						}	
-					}
-					else
-					{
-						/* check 03 subset */
-						if (delta_03_3 > 0.0f)
-						{
-							if (delta_03_0 > 0.0f)
-							{
-								const f32 delta = delta_03_0 + delta_03_3;
-								lambda[0] = delta_03_0 / delta;
-								lambda[1] = delta_03_3 / delta;
-								*c_v = V3AddScaled(V3Scale(simplex->p[0], lambda[0]), simplex->p[3], lambda[1]);
-								simplex->type = 1;
-								simplex->p[1] = simplex->p[3];
-								simplex->dot[2] = -1.0f;
-								simplex->id[2] = UINT32_MAX;
-							}
-							else
-							{
-								*c_v = simplex->p[3];
-								simplex->type = 0;
-								simplex->p[0] = simplex->p[3];
-								simplex->dot[1] = -1.0f;
-								simplex->dot[2] = -1.0f;
-								simplex->id[1] = UINT32_MAX;
-								simplex->id[2] = UINT32_MAX;
-							}
-						}
-						else
-						{
-							return 1;
-						}
-					}
-				}
-				else
-				{
-					return 1;
-				}
-			}
-		}
-		else
-		{
-			return 1;
-		}
-	}
-
-	return 0;
-}
-
-struct gjk_Input
-{
-	v3 *v;
-	v3 pos;
-	m3 rot;
-	u32 v_count;
-};
-
-static void gjk_ClosestPoints(v3 *c1, v3 *c2, struct gjk_Input *in1, struct gjk_Simplex *simplex, const f32 lambda[4])
-{
-	const m3 rot = in1->rot;
-	const v3 pos = in1->pos;
-	v3 p1, p2;
-	if (simplex->type == 0)
-	{
-		p1 = V3Add(M3V3Mul(rot, in1->v[simplex->id[0] >> 32]), pos);
-		p2 = V3Sub(p1, simplex->p[0]);
-	}
-	else
-	{
-		p1 = V3Zero();
-		p2 = V3Zero();
-		for (u32 i = 0; i <= simplex->type; ++i)
-		{
-			const v3 tmp1 = V3Add(M3V3Mul(rot, in1->v[simplex->id[i] >> 32]), pos);
-			const v3 tmp2 = V3Sub(tmp1, simplex->p[i]);
-			p1 = V3AddScaled(p1, tmp1, lambda[i]);
-			p2 = V3AddScaled(p2, tmp2, lambda[i]);
-		}
-	}
-	*c1 = p1;
-	*c2 = p2;
-}	
-
-static u32 gjk_Support(v3 *support, const v3 dir, struct gjk_Input *in)
-{
-	const m3 rot = in->rot;
-	f32 max = -F32_INFINITY;
-	u32 max_index = 0;
-	for (u32 i = 0; i < in->v_count; ++i)
-	{
-		const v3 p = M3V3Mul(rot, in->v[i]);
-		const f32 dot = V3Dot(p, dir);
-		if (max < dot)
-		{
-			max_index = i;
-			max = dot; 
-		}
-	}
-
-	*support = V3Add(M3V3Mul(rot, in->v[max_index]), in->pos);
-	return max_index;
-
-}
-
-static f32 gjk_DistanceSquared(v3 *c1, v3 *c2, struct gjk_Simplex *simplex, struct gjk_Input *in1, struct gjk_Input *in2)
-{
-	ds_Assert(in1->v_count > 0);
-	ds_Assert(in2->v_count > 0);
-	
-	const f32 abs_tol = 100.0f * F32_EPSILON;
-	const f32 tol = 100.0f * F32_EPSILON;
-
-	*simplex = gjk_SimplexInit();
-	v3 dir, c_v, s1, s2;
-	f32 lambda[4];
-	u64 support_id;
-	f32 ma; /* max dot product of current simplex */
-	f32 dist_sq = F32_MAX_POSITIVE_NORMAL; 
-	const f32 rel = tol * tol;
-
-	/* arbitrary starting search direction */
-	c_v = V3(1.0f, 0.0f, 0.0f);
-	u64 old_support = UINT64_MAX;
-
-	//TODO
-	const u32 max_iter = 128;
-	for (u32 i = 0; i < max_iter; ++i)
-	{
-		simplex->type += 1;
-		dir = V3Scale(c_v, -1.0f);
-
-		const u32 i1 = gjk_Support(&s1, dir, in1);
-		const u32 i2 = gjk_Support(&s2, V3Negate(dir), in2);
-		simplex->p[simplex->type] = V3Sub(s1, s2);
-		support_id = ((u64) i1 << 32) | (u64) i2;
-
-		if (dist_sq - V3Dot(simplex->p[simplex->type], c_v) <= rel * dist_sq + abs_tol
-				|| simplex->id[0] == support_id || simplex->id[1] == support_id 
-				|| simplex->id[2] == support_id || simplex->id[3] == support_id)
-		{
-			ds_Assert(dist_sq != F32_INFINITY);
-			simplex->type -= 1;
-			gjk_ClosestPoints(c1, c2, in1, simplex, lambda);
-			return dist_sq;
-		}
-
-		/* find closest point v to origin using naive Johnson's algorithm, update simplex data 
-		 * Degenerate Case: due to numerical issues, determinant signs may flip, which may result
-		 * either in wrong sub-simplex being chosen, or no valid simplex at all. In that case c_v
-		 * stays the same, and we terminate the algorithm. [See page 142].
-		 */
-		if (gjk_JohnsonsAlgorithm(simplex, &c_v, lambda))
-		{
-			ds_Assert(dist_sq != F32_INFINITY);
-			simplex->type -= 1;
-			gjk_ClosestPoints(c1, c2, in1, simplex, lambda);
-			return dist_sq;
-		}
-
-		simplex->id[simplex->type] = support_id;
-		simplex->dot[simplex->type] = V3Dot(simplex->p[simplex->type], simplex->p[simplex->type]);
-
-		/* 
-		 * If the simplex is of type 3, or a tetrahedron, we have encapsulated 0, or, if v is sufficiently
-		 * close to the origin, within a margin of error, return an intersection.
-		 */
-		if (simplex->type == 3)
-		{
-			gjk_ClosestPoints(c1, c2, in1, simplex, lambda);
-			return 0.0f;
-		}
-		else
-		{
-			ma = simplex->dot[0];
-			ma = F32Max(ma, simplex->dot[1]);
-			ma = F32Max(ma, simplex->dot[2]);
-			ma = F32Max(ma, simplex->dot[3]);
-
-			/* For error bound discussion, see sections 4.3.5, 4.3.6 */
-			dist_sq = V3Dot(c_v, c_v);
-			if (dist_sq <= abs_tol * ma)
-			{
-			    gjk_ClosestPoints(c1, c2, in1, simplex, lambda);
-				return 0.0f;
-			}
-		}
-	}
-
-	ds_Assert(dist_sq != F32_INFINITY);
-	gjk_ClosestPoints(c1, c2, in1, simplex, lambda);
-	return dist_sq;
-}
-
 /********************************** INTERSECTION TESTS **********************************/
 
 u32 c_SphereTest(const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2)
@@ -1220,29 +523,16 @@ f32 c_HullSphereDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Tran
 	ds_Assert(s1->type == C_SHAPE_CONVEX_HULL);
 	ds_Assert(s2->type == C_SHAPE_SPHERE);
 
-	struct gjk_Input g1 = { .v = s1->hull.v, .v_count = s1->hull.v_count, };
-	g1.pos = t1->position;
-	g1.rot = M3Q(t1->rotation);
-
-	v3 n = V3Zero();
-	struct gjk_Input g2 = { .v = &n, .v_count = 1, };
-	g2.pos = t2->position;
-	g2.rot = M3Identity();
-
-    struct gjk_Simplex simplex;
-	f32 dist_sq = gjk_DistanceSquared(c1, c2, &simplex, &g1, &g2);
-	const f32 r_sum = s2->sphere.radius;
-
-	if (dist_sq <= r_sum*r_sum)
+	v3 n;
+	struct GJKCache cache;
+	const f32 dist = GJK(c1, c2, &n, &cache, NULL, s1, t1, s2, t2, F32_INFINITY);
+	if (dist <= s2->sphere.radius)
 	{  
         return 0.0f;
 	}
 	
-	n = V3Sub(*c2, *c1);
-	n = V3Scale(n, 1.0f / V3Length(n));
 	*c2 = V3AddScaled(*c2, n, -s2->sphere.radius);
-
-	return F32Sqrt(dist_sq) - s2->sphere.radius;
+	return dist - s2->sphere.radius;
 }
 
 f32 c_HullCapsuleDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2)
@@ -1250,30 +540,16 @@ f32 c_HullCapsuleDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Tra
 	ds_Assert(s1->type == C_SHAPE_CONVEX_HULL);
 	ds_Assert(s2->type == C_SHAPE_CAPSULE);
 
-	struct gjk_Input g1 = { .v = s1->hull.v, .v_count = s1->hull.v_count, };
-	g1.pos = t1->position;
-	g1.rot = M3Q(t1->rotation);
-
-	v3 segment[2];
-	segment[0] = V3(0.0f,  s2->capsule.half_height, 0.0f);
-	segment[1] = V3(0.0f, -s2->capsule.half_height, 0.0f);
-	struct gjk_Input g2 = { .v = segment, .v_count = 2, };
-	g2.pos = t2->position;
-	g2.rot = M3Q(t2->rotation);
-
-    struct gjk_Simplex simplex;
-	f32 dist_sq = gjk_DistanceSquared(c1, c2, &simplex, &g1, &g2);
-	const f32 r_sum = s2->capsule.radius;
-
-	if (dist_sq <= r_sum*r_sum)
+	v3 n;
+	struct GJKCache cache;
+	const f32 dist = GJK(c1, c2, &n, &cache, NULL, s1, t1, s2, t2, F32_INFINITY);
+	if (dist <= s2->capsule.radius)
 	{
         return 0.0f;
 	}
 
-	v3 n = V3Sub(*c2, *c1);
-	n = V3Scale(n, 1.0f / V3Length(n));
 	*c2 = V3AddScaled(*c2, n, -s2->capsule.radius);
-	return F32Sqrt(dist_sq) - s2->capsule.radius;
+	return dist - s2->capsule.radius;
 }
 
 f32 c_HullDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2)
@@ -1281,17 +557,9 @@ f32 c_HullDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform 
 	ds_Assert (s1->type == C_SHAPE_CONVEX_HULL);
 	ds_Assert (s2->type == C_SHAPE_CONVEX_HULL);
 
-	struct gjk_Input g1 = { .v = s1->hull.v, .v_count = s1->hull.v_count, };
-	g1.pos = t1->position;
-	g1.rot = M3Q(t1->rotation);
-
-	struct gjk_Input g2 = { .v = s2->hull.v, .v_count = s2->hull.v_count, };
-	g2.pos = t2->position;
-	g2.rot = M3Q(t2->rotation);
-
-    struct gjk_Simplex simplex;
-	const f32 dist_sq = gjk_DistanceSquared(c1, c2, &simplex, &g1, &g2);
-	return F32Sqrt(dist_sq);
+	v3 n;
+	struct GJKCache cache;
+	return GJK(c1, c2, &n, &cache, NULL, s1, t1, s2, t2, F32_INFINITY);
 }
 
 f32 c_TriMeshBvhSphereDistance(v3 *c1, v3 *c2, const struct c_Shape *s1, const ds_Transform *t1, const struct c_Shape *s2, const ds_Transform *t2)
@@ -1378,7 +646,7 @@ struct c_ContactResult c_CapsuleSphereContact(struct arena *frame, const struct 
 		if (dist_sq <= COLLISION_POINT_DIST_SQ)
 		{
 			//TODO Degerate case: normal should be context dependent
-			V3CreateBasis(&manifold->n, &diff, seg.dir);
+			V3CreateBasis(&manifold->n, &diff, QV3Rotate(t[0].rotation, V3(0.0f, 1.0f, 0.0f)));
             manifold->v[0] = t[0].position;
 			manifold->depth[0] = r_sum;
             ds_AssertString(0, "Implement Degenerate CapsuleSphere contact case properly");
@@ -1440,7 +708,7 @@ struct c_ContactResult c_CapsuleContact(struct arena *frame, const struct c_Cont
 			if (cross_dist_sq <= COLLISION_POINT_DIST_SQ)
 			{
 				//TODO Normal should be context dependent
-                V3CreateBasis(&manifold->n, &p0, seg[ref].dir);
+                V3CreateBasis(&manifold->n, &p0, QV3Rotate(t[ref].rotation, V3(0.0f, 1.0f, 0.0f)));
 			}
 			/* Degenerate Case 2: Non-Parallel capsules, */
 			else
@@ -1492,11 +760,11 @@ struct c_ContactResult c_CapsuleContact(struct arena *frame, const struct c_Cont
     return result;
 }
 
-static void c_HullSphereShallowManifold(struct c_Manifold *manifold, const f32 radius, const v3 c[2], const u32 ref)
+/* c[2]: closest point on the hull/triangle, sphere center; n: unit normal from c[0] towards c[1] */
+static void c_HullSphereShallowManifold(struct c_Manifold *manifold, const f32 radius, const v3 *c, const v3 n, const u32 ref)
 {
     manifold->v_count = 1;
-    manifold->n = V3Sub(c[1], c[0]);
-    manifold->n = V3Scale(manifold->n, 1.0f / V3Length(manifold->n));
+    manifold->n = n;
     manifold->depth[0] = F32Max(0.0f, radius - (V3Dot(c[1], manifold->n) - V3Dot(c[0], manifold->n)));
     manifold->v[0] = c[ref];
     if (ref == 1)
@@ -1506,30 +774,22 @@ static void c_HullSphereShallowManifold(struct c_Manifold *manifold, const f32 r
     }   
 }
 
-struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 ref)
+struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_Transform t[2], const u32 ref)
 {
 	ds_Assert(s[0]->type == C_SHAPE_CONVEX_HULL);
 	ds_Assert(s[1]->type == C_SHAPE_SPHERE);
 
     struct c_ContactResult result = { 0 };
     const u32 inc = 1 - ref;
+	const m3 rot = M3Q(t[0].rotation);
 
-	struct gjk_Input g1 = { .v = s[0]->hull.v, .v_count = s[0]->hull.v_count, };
-	g1.pos = t[0].position;
-	g1.rot = M3Q(t[0].rotation);
-
-	v3 zero = V3Zero();
-	struct gjk_Input g2 = { .v = &zero, .v_count = 1, };
-	g2.pos = t[1].position;
-	g2.rot = M3Identity();
-
-	v3 c[2];
-    struct gjk_Simplex simplex;
-	const f32 dist_sq = gjk_DistanceSquared(&c[0], &c[1], &simplex, &g1, &g2);
+	v3 c[2], normal;
 	const f32 r_sum = s[1]->sphere.radius;
+	result.gjk_cache = ArenaPushPacked(frame, sizeof(struct GJKCache));
+	const f32 dist = GJK(&c[0], &c[1], &normal, result.gjk_cache, cached_result->gjk_cache, s[0], &t[0], s[1], &t[1], r_sum);
 
 	/* Deep Penetration */
-	if (dist_sq <= 0.0f)
+	if (dist == 0.0f)
 	{
         result.manifold_count = 1;
         result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
@@ -1540,8 +800,8 @@ struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_C
 		f32 min_depth = F32_INFINITY;
 		for (u32 fi = 0; fi < h->f_count; ++fi)
 		{
-			const v3 n = DcelFaceNormal(h, g1.rot, fi);
-			const v3 p = V3Add(M3V3Mul(g1.rot, h->v[h->e[h->f[fi].first].origin]), t[0].position);
+			const v3 n = DcelFaceNormal(h, rot, fi);
+			const v3 p = V3Add(M3V3Mul(rot, h->v[h->e[h->f[fi].first].origin]), t[0].position);
 			const v3 diff = V3Sub(t[1].position, p);
 			const f32 depth = F32Max(0.0f, -V3Dot(n, diff));
 			if (depth < min_depth)
@@ -1567,19 +827,19 @@ struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_C
         }
 	}
 	/* Shallow Penetration */
-	else if (dist_sq <= r_sum*r_sum)
+	else if (dist <= r_sum)
 	{
         result.manifold_count = 1;
         result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
         struct c_Manifold *manifold = result.manifold;
 
-        c_HullSphereShallowManifold(manifold, s[1]->sphere.radius, c, ref);
+        c_HullSphereShallowManifold(manifold, s[1]->sphere.radius, c, normal, ref);
 	}
 
     return result;
 }
 
-struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 ref)
+struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_Transform t[2], const u32 ref)
 {
 	ds_Assert(s[0]->type == C_SHAPE_CONVEX_HULL);
 	ds_Assert(s[1]->type == C_SHAPE_CAPSULE);
@@ -1588,39 +848,32 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
     const u32 inc = 1 - ref;
 
 	const struct dcel *h = &s[0]->hull;
-	struct gjk_Input g1 = { .v = h->v, .v_count = h->v_count, };
-	g1.pos = t[0].position;
-	g1.rot = M3Q(t[0].rotation);
+	const m3 rot = M3Q(t[0].rotation);
+	const v3 pos = t[0].position;
 
-	v3 segment[2];
-	segment[0] = V3(0.0f, s[1]->capsule.half_height, 0.0f);
-	segment[1] = V3Negate(segment[0]);
-
-	struct gjk_Input g2 = { .v = segment, .v_count = 2, };
-	g2.pos = t[1].position;
-	g2.rot = M3Q(t[1].rotation);
-
-	v3 c[2];
-    struct gjk_Simplex simplex;
-	const f32 dist_sq = gjk_DistanceSquared(&c[0], &c[1], &simplex, &g1, &g2);
-	if (dist_sq <= s[1]->capsule.radius*s[1]->capsule.radius)
+	v3 c[2], normal;
+	result.gjk_cache = ArenaPushPacked(frame, sizeof(struct GJKCache));
+	const f32 dist = GJK(&c[0], &c[1], &normal, result.gjk_cache, cached_result->gjk_cache, s[0], &t[0], s[1], &t[1], s[1]->capsule.radius);
+	const f32 dist_sq = dist*dist;
+	if (dist <= s[1]->capsule.radius)
 	{
         result.manifold_count = 1;
         result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
         struct c_Manifold *manifold = result.manifold;
 
-		v3 p1 = V3Add(M3V3Mul(g2.rot, g2.v[0]), g2.pos);
-		v3 p2 = V3Add(M3V3Mul(g2.rot, g2.v[1]), g2.pos);
-		v3 tmp;
-		const struct segment cap_s = SegmentConstruct(p1, p2);
+		const struct segment cap_s = SegmentCapsuleTransform(&s[1]->capsule, &t[1]);
 		/* Deep Penetration */
-		if (dist_sq == 0.0f)
+		if (dist == 0.0f)
 		{
             /* TODO: if p0 is outside, then p1 must be inside, can prob skip check ??? */
-		    g2.v_count = 1;
-		    const u32 cap_p0_inside = (gjk_DistanceSquared(&p1, &tmp, &simplex, &g1, &g2) == 0.0f) ? 1 : 0;
-		    g2.v[0] = g2.v[1];
-		    const u32 cap_p1_inside = (gjk_DistanceSquared(&p2, &tmp, &simplex, &g1, &g2) == 0.0f) ? 1 : 0;
+		    /* end-point inside tests: GJK against a point (a sphere's center); cutoff 0 exits on the first separating plane */
+		    const struct c_Shape point = { .type = C_SHAPE_SPHERE };
+		    const ds_Transform t_p0 = { .rotation = QIdentity(), .position = cap_s.p[0] };
+		    const ds_Transform t_p1 = { .rotation = QIdentity(), .position = cap_s.p[1] };
+		    struct GJKCache unused_cache;
+		    v3 unused_c[2], unused_n;
+		    const u32 cap_p0_inside = (GJK(&unused_c[0], &unused_c[1], &unused_n, &unused_cache, NULL, s[0], &t[0], &point, &t_p0, 0.0f) == 0.0f) ? 1 : 0;
+		    const u32 cap_p1_inside = (GJK(&unused_c[0], &unused_c[1], &unused_n, &unused_cache, NULL, s[0], &t[0], &point, &t_p1, 0.0f) == 0.0f) ? 1 : 0;
 
 			u32 edge_best = 0; 
 			u32 best_index = 0;
@@ -1629,7 +882,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 
 			for (u32 fi = 0; fi < h->f_count; ++fi)
 			{
-				struct plane pl = DcelFacePlane(h, g1.rot, t[0].position, fi);
+				struct plane pl = DcelFacePlane(h, rot, t[0].position, fi);
 
 				const f32 d0 = PlanePointSignedDistance(&pl, cap_s.p[0]);
 				const f32 d1 = PlanePointSignedDistance(&pl, cap_s.p[1]);
@@ -1646,7 +899,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 			{
 				for (u32 ei = 0; ei < h->e_count; ++ei)
 				{
-					struct segment edge_s = DcelEdgeSegment(h, g1.rot, g1.pos, ei);
+					struct segment edge_s = DcelEdgeSegment(h, rot, pos, ei);
 					
 					const f32 d = -F32Sqrt(SegmentDistanceSquared(&c[0], &c[1], &edge_s, &cap_s));
 					if (max_signed_depth < d)
@@ -1662,7 +915,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 			{
 				manifold->v_count = 1;
 			    manifold->depth[0] = F32Max(0.0f, -max_signed_depth);
-				struct segment edge_s = DcelEdgeSegment(h, g1.rot, g1.pos, best_index);
+				struct segment edge_s = DcelEdgeSegment(h, rot, pos, best_index);
 				SegmentDistanceSquared(&c[0], &c[1], &edge_s, &cap_s);
 				manifold->n = V3Sub(c[ref], c[inc]);
 				manifold->n = V3Scale(manifold->n, 1.0f/V3Length(manifold->n));
@@ -1675,8 +928,8 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 			else
 			{
 				manifold->v_count = 2;
-				struct segment seg = DcelFaceClipSegment(h, g1.rot, g1.pos, best_index, &cap_s);
-				const struct plane pl = DcelFacePlane(h, g1.rot, g1.pos, best_index);
+				struct segment seg = DcelFaceClipSegment(h, rot, pos, best_index, &cap_s);
+				const struct plane pl = DcelFacePlane(h, rot, pos, best_index);
 
 				if (cap_p0_inside == 1 && cap_p1_inside == 0)
 				{
@@ -1733,7 +986,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 				/* find parallel face with V3Dot(face_normal, segment_points) > 0.0f */
 				for (u32 fi = 0; fi < h->f_count; ++fi)
 				{
-				    struct plane pl = DcelFacePlane(h, g1.rot, g1.pos, fi);
+				    struct plane pl = DcelFacePlane(h, rot, pos, fi);
                     if (PlaneSegmentParallelCheck(&pl, &cap_s))
 					{	
                         const f32 depth = PlanePointSignedDistance(&pl, c[1]);
@@ -1752,7 +1005,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 				manifold->v_count = 2;
 				manifold->depth[0] = s[1]->capsule.radius + V3Dot(manifold->n, c[0]) - V3Dot(manifold->n, c[1]);
 				manifold->depth[1] = manifold->depth[0];
-				const struct segment cap_clip = DcelFaceClipSegment(h, g1.rot, g1.pos, best_face, &cap_s);
+				const struct segment cap_clip = DcelFaceClipSegment(h, rot, pos, best_face, &cap_s);
 				manifold->v[0] = cap_clip.p[0];
 				manifold->v[1] = cap_clip.p[1];
                 if (ref == 0)
@@ -1771,9 +1024,8 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 			else
 			{
 				manifold->v_count = 1;
-				manifold->n = V3Sub(c[inc], c[ref]);
-				manifold->n = V3Scale(manifold->n, 1.0f / V3Length(manifold->n));
-				manifold->depth[0] = s[1]->capsule.radius + V3Dot(manifold->n, c[ref]) - V3Dot(manifold->n, c[inc]);
+				manifold->n = (ref == 0) ? normal : V3Negate(normal);
+				manifold->depth[0] = F32Max(0.0f, s[1]->capsule.radius + V3Dot(manifold->n, c[ref]) - V3Dot(manifold->n, c[inc]));
                 manifold->v[0] = c[ref];
                 if (ref == 1)
                 {
@@ -2372,11 +1624,8 @@ struct c_ContactResult c_HullContact(struct arena *frame, const struct c_Contact
             case SAT_CACHE_SEPARATION:
 	        {
                 metrics->hull_cache_probe_count += 1;
-	        	v3 support1, support2;
-	        	const v3 tmp = V3Negate(cache->normal);
-
-	        	VertexSupport(&support1, cache->normal, v_world[0], h[0]->v_count);
-	        	VertexSupport(&support2, tmp, v_world[1], h[1]->v_count);
+	        	const v3 support1 = v_world[0][V3Support(v_world[0], h[0]->v_count, cache->normal)];
+	        	const v3 support2 = v_world[1][V3Support(v_world[1], h[1]->v_count, V3Negate(cache->normal))];
 
 	        	const f32 dot1 = V3Dot(support1, cache->normal);
 	        	const f32 dot2 = V3Dot(support2, cache->normal);
@@ -2803,7 +2052,8 @@ struct c_ContactResult c_TriMeshBvhSphereContact(struct arena *frame, const stru
             struct c_Manifold *m = result.manifold + result.manifold_count;
             u32 *t = result.tri + result.manifold_count;
             result.manifold_count += 1;
-            c_HullSphereShallowManifold(m, s[1]->sphere.radius, c->c, ref);
+            const v3 n = V3Normalize(V3Sub(c->c[1], c->c[0]));
+            c_HullSphereShallowManifold(m, s[1]->sphere.radius, c->c, n, ref);
             
             *t = c->tri;
             ds_BitSetSet(&it.void_bitset, it.mesh->tri[*t].buf[0], 1);
@@ -2830,7 +2080,8 @@ struct c_ContactResult c_TriMeshBvhSphereContact(struct arena *frame, const stru
             *t = c->tri;
             result.manifold_count += 1;
 
-            c_HullSphereShallowManifold(m, s[1]->sphere.radius, c->c, ref);
+            const v3 n = V3Normalize(V3Sub(c->c[1], c->c[0]));
+            c_HullSphereShallowManifold(m, s[1]->sphere.radius, c->c, n, ref);
         }
 
         ds_BitSetSet(&it.void_bitset, tri_id[0], 1);
@@ -3327,9 +2578,8 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_SatCache *new
             case SAT_CACHE_SEPARATION:
 	        {
                 metrics->mesh_cache_probe_count += 1;
-	        	v3 support1, support2;
-	        	VertexSupport(&support1, old_cache->normal, v[0], h[0]->v_count);
-	        	VertexSupport(&support2, V3Negate(old_cache->normal), v[1], h[1]->v_count);
+	        	const v3 support1 = v[0][V3Support(v[0], h[0]->v_count, old_cache->normal)];
+	        	const v3 support2 = v[1][V3Support(v[1], h[1]->v_count, V3Negate(old_cache->normal))];
 
 	        	const f32 dot1 = V3Dot(support1, old_cache->normal);
 	        	const f32 dot2 = V3Dot(support2, old_cache->normal);

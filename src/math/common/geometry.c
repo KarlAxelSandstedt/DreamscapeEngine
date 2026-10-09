@@ -731,26 +731,6 @@ struct aabb	BboxPointUnion(const struct aabb a, const v3 p)
     return bbox;
 }
 
-u32 VertexSupport(v3 *support, const v3 dir, const v3 *v, const u32 v_count)
-{
-	u32 best = U32_MAX;
-	f32 max_dist = -F32_INFINITY;
-	for (u32 i = 0; i < v_count; ++i)
-	{
-		const f32 dist = V3Dot(dir, v[i]);
-
-		if (max_dist < dist)
-		{
-			best = i;
-			max_dist = dist;
-		}
-	}
-
-    ds_Assert(best != U32_MAX);
-	*support = v[best];
-	return best;
-}
-
 v3 VertexCentroid(const v3 *vs, const u32 n)
 {
 	v3 centroid = V3Zero();
@@ -1553,41 +1533,6 @@ struct segment DcelEdgeSegment(const struct dcel *h, const m3 rot, const v3 pos,
 	const v3 p1 = V3Add(M3V3Mul(rot, h->v[h->e[e1].origin]), pos);
 
 	return SegmentConstruct(p0, p1);
-}
-
-v3 SphereSupport(const v3 dir, const struct sphere *sph, const v3 pos)
-{
-	return V3Add(V3Scale(dir, sph->radius / V3Length(dir)), pos);
-}
-
-v3 CapsuleSupport(const v3 dir, const struct capsule *cap, const m3 rot, const v3 pos)
-{
-    const v3 p1 = V3Scale(rot.col[1], cap->half_height);
-	const v3 p2 = V3Negate(p1);
-
-	const v3 support = V3Add(V3Scale(dir, cap->radius / V3Length(dir)), pos);
-	return (V3Dot(dir, p1) > V3Dot(dir, p2))
-		? V3Add(support, p1) 
-		: V3Add(support, p2);
-}
-
-u32 DcelSupport(v3 *support, const v3 dir, const struct dcel *dcel, const m3 rot, const v3 pos)
-{
-	f32 max = -F32_INFINITY;
-	u32 max_index = 0;
-	for (u32 i = 0; i < dcel->v_count; ++i)
-	{
-		const v3 p = M3V3Mul(rot, dcel->v[i]);
-		const f32 dot = V3Dot(p, dir);
-		if (max < dot)
-		{
-			max_index = i;
-			max = dot; 
-		}
-	}
-
-	*support = V3Add(M3V3Mul(rot, dcel->v[max_index]), pos);
-	return max_index;
 }
 
 struct dcel DcelEmpty(void)
