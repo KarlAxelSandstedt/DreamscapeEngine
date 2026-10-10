@@ -176,12 +176,6 @@ enum c_ShapeType
 };
 
 #define C_SHAPE_ID_SIZE     128
-/* A collision sphere is centered at its shape's origin, so only its radius is stored */
-struct c_Sphere
-{
-    f32 radius;
-};
-
 struct c_Shape
 {
     u8                      id_buf[C_SHAPE_ID_SIZE];
@@ -196,7 +190,7 @@ struct c_Shape
 	enum c_ShapeType        type;
 	union
 	{
-		struct c_Sphere 	sphere;
+		struct sphere 		sphere;
 		struct capsule 		capsule;
 		struct dcel		    hull;
 		struct triMeshBvh 	mesh_bvh;
@@ -334,8 +328,25 @@ struct c_ContactResult  c_TriMeshBvhHullContact(struct arena *frame, const struc
 /*
  * Return the smallest t >= 0 at which origin + t*dir is on the shape's surface (the first surface hit), or
  * F32_INFINITY. Two-sided: surfaces count from either side, so an origin inside a solid returns its exit.
+ * The ray is in the shape's local frame.
  * precondition: ray->dir != 0 (asserted); callers check once per ray, not per shape
  */
+f32 SphereRaycastParameter(const struct sphere *sphere, const struct ray *ray);
+f32 CapsuleRaycastParameter(const struct capsule *capsule, const struct ray *ray);
+/* hull: a closed convex polyhedron with planar faces */
+f32 HullRaycastParameter(const struct dcel *hull, const struct ray *ray);
+f32 TriMeshBvhRaycastParameter(const struct triMeshBvh *mesh_bvh, const struct ray *ray);
+
+/*
+ * The local functions above, with the ray in world space and the shape placed by transform. t is the
+ * same in both frames (the rotation keeps |dir|).
+ */
+f32 SphereRaycastWorldParameter(const struct sphere *sphere, const ds_TransformWorld *transform, const struct rayWorld *ray);
+f32 CapsuleRaycastWorldParameter(const struct capsule *capsule, const ds_TransformWorld *transform, const struct rayWorld *ray);
+f32 HullRaycastWorldParameter(const struct dcel *hull, const ds_TransformWorld *transform, const struct rayWorld *ray);
+f32 TriMeshBvhRaycastWorldParameter(const struct triMeshBvh *mesh_bvh, const ds_TransformWorld *transform, const struct rayWorld *ray);
+
+/* The world functions above on a c_Shape of the matching type (the physics engine's shape table) */
 f32 c_SphereRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
 f32 c_CapsuleRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
 f32 c_HullRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);

@@ -97,6 +97,12 @@ struct segment
 	v3 dir;	/* p[1]-p[0] */
 };
 
+/* sphere: geometrical primitive, centered at its frame's origin */
+struct sphere
+{
+	f32 radius;
+};
+
 /**
  * capsule: geometrical primitive
  */
