@@ -78,6 +78,13 @@ struct ray
 	v3 dir;
 };
 
+/* ray in world space: f64 origin (precise far from the origin), f32 direction */
+struct rayWorld
+{
+	v3f64   origin;
+	v3      dir;
+};
+
 /**
  * segment: geometrical primitive; directional two point segment
  * p0: segment start

@@ -1776,6 +1776,13 @@ u64 ds_DynamicsOrientationHash(const struct ds_Dynamics *pipeline)
 
 u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const struct ray *ray)
 {
+    /* the one direction check for the whole query: the per-shape raycasts assume dir != 0 (a NaN
+     * direction passes on to their asserts instead of being hidden as a miss) */
+    if (V3Dot(ray->dir, ray->dir) <= 0.0f)
+    {
+        return u32f32_inline(U32_MAX, F32_INFINITY);
+    }
+
     struct arena *tmp = ArenaPushScratch();
 
 	struct bvhRaycastInfo d_info = BvhRaycastInit(tmp, &pipeline->dynamic_bvh, ray);

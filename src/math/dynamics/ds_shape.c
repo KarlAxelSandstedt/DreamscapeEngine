@@ -240,7 +240,7 @@ struct c_ContactResult  (*c_contact_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(struc
 };
 
 
-f32 (*c_raycast_parameter_methods[C_SHAPE_COUNT])(const struct c_Shape *, const ds_Transform *, const struct ray *) =
+f32 (*c_raycast_parameter_methods[C_SHAPE_COUNT])(const struct c_Shape *, const ds_TransformWorld *, const struct rayWorld *) =
 {
 	c_SphereRaycastParameter,
 	c_CapsuleRaycastParameter,
@@ -333,11 +333,15 @@ void ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, co
 
 f32 ds_ShapeRaycastParameter(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct ray *ray)
 {
-    ds_Transform transform;
-    ds_ShapeWorldTransform(&transform, pipeline, shape);
+    ds_Assert(V3Dot(ray->dir, ray->dir) > 0.0f);
+    ds_Transform t;
+    ds_ShapeWorldTransform(&t, pipeline, shape);
+    /* TODO(f64 P3/P6): world transform and world ray from the callers */
+    const ds_TransformWorld transform = ds_TransformPromote(&t);
+    const struct rayWorld ray_world = { .origin = V3Promote(ray->origin), .dir = ray->dir };
     const struct c_Shape *c_shape = pipeline->cshape_db->pool.buf + shape->cshape_handle;
 
-	return c_raycast_parameter_methods[c_shape->type](c_shape, &transform, ray);
+	return c_raycast_parameter_methods[c_shape->type](c_shape, &transform, &ray_world);
 }
 
 u32 ds_ShapeRaycast(v3 *intersection, const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct ray *ray)

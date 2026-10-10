@@ -325,10 +325,11 @@ struct c_ContactResult  c_TriMeshBvhHullContact(struct arena *frame, const struc
 
 /********************************** RAYCAST **********************************/
 
-f32 c_SphereRaycastParameter(const struct c_Shape *shape, const ds_Transform *transform, const struct ray *ray);
-f32 c_CapsuleRaycastParameter(const struct c_Shape *shape, const ds_Transform *transform, const struct ray *ray);
-f32 c_HullRaycastParameter(const struct c_Shape *shape, const ds_Transform *transform, const struct ray *ray);
-f32 c_TriMeshBvhRaycastParameter(const struct c_Shape *shape, const ds_Transform *transform, const struct ray *ray);
+/* precondition: ray->dir != 0 (asserted); callers check once per ray, not per shape */
+f32 c_SphereRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
+f32 c_CapsuleRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
+f32 c_HullRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
+f32 c_TriMeshBvhRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
 
 #ifdef __cplusplus
 } 

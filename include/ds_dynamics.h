@@ -392,7 +392,7 @@ f32 	    ds_ShapeDistance(v3 *c1, v3 *c2, const struct ds_Dynamics *pipeline, co
 void        ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index);
 /* 
  * Return, if ray intersects shape, t such that ray.origin + t*ray.dir == closest point on shape. 
- *         Otherwise, return F32_INFINITY.
+ *         Otherwise, return F32_INFINITY. Precondition: ray->dir != 0 (asserted).
  */
 f32 	    ds_ShapeRaycastParameter(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct ray *ray);
 /* 
@@ -1619,7 +1619,7 @@ void 			ds_DynamicsTick(struct ds_Dynamics *pipeline);
 u64             ds_DynamicsOrientationHash(const struct ds_Dynamics *pipeline);
 /* validate and ds_Assert internal state of physics pipeline */
 void			ds_DynamicsValidate(const struct ds_Dynamics *pipeline);
-/* If hit, return parameter (shape,t) of ray at first collision. Otherwise return (U32_MAX, F32_INFINITY) */
+/* If hit, return parameter (shape,t) of ray at first collision. Otherwise, or if ray->dir == 0, return (U32_MAX, F32_INFINITY) */
 u32f32 			ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const struct ray *ray);
 /* enable sleeping in pipeline */
 void 			ds_DynamicsSleepEnable(struct ds_Dynamics *pipeline);
