@@ -102,6 +102,12 @@ static void ds_InternalWindowDealloc(const struct ds_WindowHI *hi, const u32 ind
 
 void ds_DeallocTaggedWindows(void)
 {
+	/* no windows yet (or headless): nothing to iterate from */
+	if (g_process_root_window == HI_NULL)
+	{
+		return;
+	}
+
 	struct arena *tmp = ArenaPushScratch();
 
     HII it;

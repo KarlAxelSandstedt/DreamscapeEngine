@@ -29,7 +29,7 @@ if [ "$BUILD_ID" != "$BUILD_ID_CURRENT" ]; then
 fi
 
 
-cmake -S . -B build -Dkas_debug=ON -DDS_TEST_PHYSICS=ON -DDS_TSAN=ON -DDS_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Debug -G $CMAKE_GENERATOR
+cmake -S . -B build -DDS_TEST_PHYSICS=ON -DDS_TSAN=ON -DDS_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Debug -G $CMAKE_GENERATOR
 cd build
 cmake --build . --parallel
 ./DreamscapeTest ../config/default.cfg

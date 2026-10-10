@@ -70,10 +70,11 @@ if (WIN32)
     target_link_libraries(SDL3::SDL3 INTERFACE imm32)
 endif()
 
-if (CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(FREETYPE "freetype")
-else()
+# freetype appends its "d" postfix only for Debug (CMAKE_DEBUG_POSTFIX), not for empty or other types
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(FREETYPE "freetyped")
+else()
+    set(FREETYPE "freetype")
 endif()
 
 ExternalProject_Add(freetype
