@@ -110,8 +110,6 @@ struct triMeshBvh
 
 /* Return non-empty tri_mesh_bvh on success. */
 struct triMeshBvh   TriMeshBvhConstruct(struct arena *mem, const struct triMesh *mesh, const u32 bin_count);
-/* Return (index, ray hit parameter) on closest hit, or (U32_MAX, F32_INFINITY) on no hit */
-u32f32 			    TriMeshBvhRaycast(struct arena *tmp, const struct triMeshBvh *mesh_bvh, const struct ray *ray);
 
 
 /*
@@ -336,6 +334,11 @@ f32 CapsuleRaycastParameter(const struct capsule *capsule, const struct ray *ray
 /* hull: a closed convex polyhedron with planar faces */
 f32 HullRaycastParameter(const struct dcel *hull, const struct ray *ray);
 f32 TriMeshBvhRaycastParameter(const struct triMeshBvh *mesh_bvh, const struct ray *ray);
+/*
+ * triangle abc, any winding (no culling). A ray in the triangle's plane misses; an origin on the triangle with
+ * dir out of its plane returns 0. A mesh casts many triangles per ray: build the ray setup once (c_raycast.c).
+ */
+f32 TriRaycastParameter(const v3 a, const v3 b, const v3 c, const struct ray *ray);
 
 /*
  * The local functions above, with the ray in world space and the shape placed by transform. t is the
@@ -345,6 +348,7 @@ f32 SphereRaycastWorldParameter(const struct sphere *sphere, const ds_TransformW
 f32 CapsuleRaycastWorldParameter(const struct capsule *capsule, const ds_TransformWorld *transform, const struct rayWorld *ray);
 f32 HullRaycastWorldParameter(const struct dcel *hull, const ds_TransformWorld *transform, const struct rayWorld *ray);
 f32 TriMeshBvhRaycastWorldParameter(const struct triMeshBvh *mesh_bvh, const ds_TransformWorld *transform, const struct rayWorld *ray);
+f32 TriRaycastWorldParameter(const v3 a, const v3 b, const v3 c, const ds_TransformWorld *transform, const struct rayWorld *ray);
 
 /* The world functions above on a c_Shape of the matching type (the physics engine's shape table) */
 f32 c_SphereRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);

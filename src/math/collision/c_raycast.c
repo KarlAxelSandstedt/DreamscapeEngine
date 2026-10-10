@@ -274,15 +274,111 @@ f32 HullRaycastParameter(const struct dcel *hull, const struct ray *ray)
 		: F32_INFINITY;
 }
 
+/*
+The ray sheared into ray space, where it is the +z axis from the origin. Built once per ray, shared by every
+triangle test so that a vertex transforms identically in all its triangles (what makes the tests watertight).
+*/
+struct rayWoop
+{
+	v3	origin;
+	u32	kx;		/* kz: the axis of dir's largest |component|; kx = (kz + 1) % 3, ky = (kx + 1) % 3 */
+	u32	ky;
+	u32	kz;
+	f32	sx;		/* dir[kx] / dir[kz] */
+	f32	sy;		/* dir[ky] / dir[kz] */
+	f32	sz;		/* 1 / dir[kz] */
+};
+
+static struct rayWoop RayWoopConstruct(const struct ray *ray)
+{
+	/* the largest |component| (ties keep the lower axis); dir != 0, so dir[kz] != 0 */
+	u32 kz = 0;
+	if (F32Abs(ray->dir.buf[kz]) < F32Abs(ray->dir.y)) { kz = 1; }
+	if (F32Abs(ray->dir.buf[kz]) < F32Abs(ray->dir.z)) { kz = 2; }
+	const u32 kx = (kz + 1) % 3;
+	const u32 ky = (kx + 1) % 3;
+
+	/*
+	The shear p -> (p[kx] - sx*p[kz], p[ky] - sy*p[kz], sz*p[kz]) maps dir to (0, 0, 1). Two-sided, so kx
+	and ky are not swapped for dir[kz] < 0 (the paper's swap only keeps the winding for backface culling).
+	*/
+	const struct rayWoop woop =
+	{
+		.origin = ray->origin,
+		.kx = kx,
+		.ky = ky,
+		.kz = kz,
+		.sx = ray->dir.buf[kx] / ray->dir.buf[kz],
+		.sy = ray->dir.buf[ky] / ray->dir.buf[kz],
+		.sz = 1.0f / ray->dir.buf[kz],
+	};
+	return woop;
+}
+
+static f32 WoopRaycastParameter(const struct rayWoop *ray, const v3 a, const v3 b, const v3 c)
+{
+	/*
+	References: Woop, Benthin, Wald, "Watertight Ray/Triangle Intersection", Journal of Computer Graphics
+	Techniques (JCGT) 2(1), 2013.
+	*/
+
+	/* TODO: step 2, the vertices relative to the origin, sheared */
+	/* TODO: step 3, the edge functions U, V, W; recompute in f64 where one is exactly 0 */
+	/* TODO: step 4, two-sided sign test, det = U + V + W, t */
+	return F32_INFINITY;
+}
+
 f32 TriMeshBvhRaycastParameter(const struct triMeshBvh *mesh_bvh, const struct ray *ray)
+{
+	ProfZone;
+	ds_Assert(V3Dot(ray->dir, ray->dir) > 0.0f);
+
+	/* one setup for all triangles: a shared vertex then transforms identically in each of its triangles */
+	const struct rayWoop woop = RayWoopConstruct(ray);
+
+	/* nodes are popped in order of their box's entry t: stop once the best hit is nearer than the next box */
+	struct arena *mem_tmp = ArenaPushScratch();
+	struct bvhRaycastInfo info = BvhRaycastInit(mem_tmp, &mesh_bvh->bvh, ray);
+	while (info.hit_queue.count)
+	{
+		const u32f32 tuple = MinQueueFixedPop(&info.hit_queue);
+		if (info.hit.f < tuple.f)
+		{
+			break;
+		}
+
+		if (ds_BTLeafCheck(info.node + tuple.u))
+		{
+			const u32 tri_first = info.node[tuple.u].bt_child[0];
+			const u32 tri_last = tri_first + info.node[tuple.u].bt_child[1] - 1;
+			for (u32 i = tri_first; i <= tri_last; ++i)
+			{
+				const struct triMesh *mesh = mesh_bvh->mesh;
+				const v3u32 tri = mesh->tri[mesh_bvh->tri[i]];
+				const f32 t = WoopRaycastParameter(&woop, mesh->v[tri.x], mesh->v[tri.y], mesh->v[tri.z]);
+				if (t < info.hit.f)
+				{
+					info.hit = u32f32_inline(mesh_bvh->tri[i], t);
+				}
+			}
+		}
+		else
+		{
+			BvhRaycastTestAndPushChildren(&info, tuple);
+		}
+	}
+	ArenaPopScratch();
+
+	ProfZoneEnd;
+	return info.hit.f;
+}
+
+f32 TriRaycastParameter(const v3 a, const v3 b, const v3 c, const struct ray *ray)
 {
 	ds_Assert(V3Dot(ray->dir, ray->dir) > 0.0f);
 
-	struct arena *mem_tmp = ArenaPushScratch();
-	const f32 t = TriMeshBvhRaycast(mem_tmp, mesh_bvh, ray).f;
-	ArenaPopScratch();
-
-	return t;
+	const struct rayWoop woop = RayWoopConstruct(ray);
+	return WoopRaycastParameter(&woop, a, b, c);
 }
 
 f32 SphereRaycastWorldParameter(const struct sphere *sphere, const ds_TransformWorld *transform, const struct rayWorld *ray)
@@ -324,6 +420,16 @@ f32 TriMeshBvhRaycastWorldParameter(const struct triMeshBvh *mesh_bvh, const ds_
 		.dir = QV3Rotate(QInverse(transform->rotation), ray->dir),
 	};
 	return TriMeshBvhRaycastParameter(mesh_bvh, &local);
+}
+
+f32 TriRaycastWorldParameter(const v3 a, const v3 b, const v3 c, const ds_TransformWorld *transform, const struct rayWorld *ray)
+{
+	const struct ray local =
+	{
+		.origin = ds_TransformWorldPointToLocal(transform, ray->origin),
+		.dir = QV3Rotate(QInverse(transform->rotation), ray->dir),
+	};
+	return TriRaycastParameter(a, b, c, &local);
 }
 
 f32 c_SphereRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray)

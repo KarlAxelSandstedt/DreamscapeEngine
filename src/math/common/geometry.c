@@ -47,11 +47,6 @@ struct segment RayConstructSegment(const struct ray *r, const f32 t)
 }
 
 
-v3 RayPoint(const struct ray *ray, const f32 t)
-{
-	return V3AddScaled(ray->origin, ray->dir, t);
-}
-
 f32 RayPointClosestPointParameter(const struct ray *ray, const v3 p)
 { 
 	const v3 diff = V3Sub(p, ray->origin);
@@ -309,23 +304,6 @@ f32 PlanePointProjection(v3 *proj, const struct plane *pl, const v3 p)
 	const f32 n_units = PlanePointSignedDistance(pl, p) * pl->inv_dot_nn;
     *proj = V3AddScaled(p, pl->normal_direction, -n_units);
     return n_units;
-}
-
-f32 PlaneRaycastParameter(const struct plane *plane, const struct ray *ray)
-{
-	const f32 dot = V3Dot(ray->dir, plane->normal);
-	if (dot == 0.0f) { return F32_INFINITY; }
-
-	return (plane->signed_distance - V3Dot(ray->origin, plane->normal)) / dot;
-}
-
-u32 PlaneRaycast(v3 *intersection, const struct plane *plane, const struct ray *ray)
-{
-	const f32 t = PlaneRaycastParameter(plane, ray);
-	if (t < 0.0f || t == F32_INFINITY) { return 0; }
-
-	*intersection = V3AddScaled(ray->origin, ray->dir, t);
-	return 1;
 }
 
 u32 AabbMaxAxis(const struct aabb a)
@@ -1389,25 +1367,6 @@ struct plane DcelFaceClipPlane(const struct dcel *h, const m3 rot, const v3 pos,
 	const v3 n = V3Cross(V3Sub(p1, p0), face_normal);
 
 	return PlaneConstruct(V3Scale(n, 1.0f/V3Length(n)), p0);
-}
-
-u32 DcelFaceProjectedPointTest(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi, const v3 p)
-{
-	const v3 f_n = DcelFaceNormal(h, rot, fi);
-
-	struct dcelFace *f = h->f + fi;
-	for (u32 i = 0; i < f->count; ++i)
-	{
-		const u32 e0 = f->first + i;
-		const u32 e1 = f->first + ((i + 1) % f->count);
-		struct plane clip_plane = DcelFaceClipPlane(h, rot, pos, f_n, e0, e1);
-		if (V3Dot(clip_plane.normal, p) > clip_plane.signed_distance)
-		{
-			return 0;
-		}
-	}	
-
-	return 1;
 }
 
 v3 DcelEdgeDirection(const struct dcel *h, const u32 ei)

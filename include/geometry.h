@@ -118,8 +118,6 @@ struct capsule
 struct ray 	RayConstruct(const v3 origin, const v3 dir);
 /* return segment: s.p0 = r.origin, s.p1 = r.origin + t * r.dir */
 struct segment	RayConstructSegment(const struct ray *r, const f32 t);
-/* return ray.origin + t * ray.dir */
-v3		RayPoint(const struct ray *ray, const f32 t);
 /* return t: closest point on ray to p = origin + t * dir */
 f32 		RayPointClosestPointParameter(const struct ray *ray, const v3 p);
 
@@ -193,11 +191,6 @@ f32 		    PlanePointSignedDistance(const struct plane *pl, const v3 p);
 f32 		    PlanePointDistance(const struct plane *pl, const v3 p);
 /* return the signed distance (measured in |plane.normal_direction| units) of point p to plane pl, and set the projection of p onto pl. */
 f32 		    PlanePointProjection(v3 *proj, const struct plane *pl, const v3 p);
-
-/* Return t such that ray->origin + t*ray->dir is a point on the given plane. If no such t exist, return F32_INFINITY. */
-f32 		PlaneRaycastParameter(const struct plane *plane, const struct ray *ray);
-/* Return 1 if raycast hit plane, 0 otherwise. If hit, set intersection  */
-u32 		PlaneRaycast(v3 *intersection, const struct plane *plane, const struct ray *ray);
 
 /********************************** AABB ************************************/
 
@@ -393,7 +386,6 @@ struct plane 	DcelFaceClipPlane(const struct dcel *h, const m3 rot, const v3 pos
 
 /* TODO: document, go through ... */
 struct segment 	DcelFaceClipSegment(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi, const struct segment *s); /* clip segment against face fi's edge-planes (No projection onto face plane!) */
-u32 		DcelFaceProjectedPointTest(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi, const v3 p); /* Project p onto face plane and test if it is on the face */
 
 v3 		DcelEdgeNormal(const struct dcel *h, const u32 ei);
 v3 		DcelEdgeDirection(const struct dcel *h, const u32 ei);
