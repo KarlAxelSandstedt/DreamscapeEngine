@@ -52,108 +52,11 @@ v3 RayPoint(const struct ray *ray, const f32 t)
 	return V3AddScaled(ray->origin, ray->dir, t);
 }
 
-struct sphere SphereConstruct(const v3 center, const f32 radius)
-{
-	const struct sphere sph = { .center = center, .radius = radius };
-	return sph;	
-}
-
-/*
- * | r.o + t*r.dir - s.c |^2 = s.r^2 => solve quadratic formula give the following method.
- */
-f32 SphereRaycastParameter(const struct sphere *sph, const struct ray *ray)
-{
-	const v3 diff = V3Sub(ray->origin, sph->center);
-
-	const f32 a = V3Dot(ray->dir, ray->dir);
-	const f32 b = 2.0f * V3Dot(ray->dir, diff);
-	const f32 c = V3Dot(diff, diff) - sph->radius*sph->radius;
-
-	const f32 square = (b*b - 4.0f*a*c);
-	if (square < 0.0f) { return F32_INFINITY; }
-
-	const f32 root = F32Sqrt(square);
-
-	const f32 t2 = -b + root;
-	if (t2 < 0.0f) { return F32_INFINITY; }
-
-	const f32 t1 = -b - root;
-	return (t1 >= 0.0f) ? t1 / (2.0f * a) : t2 / (2.0f * a);
-}
-
-u32 SphereRaycast(v3 *intersection, const struct sphere *sph, const struct ray *ray)
-{
-	const f32 t = SphereRaycastParameter(sph, ray);
-	if (t < 0.0f || t == F32_INFINITY) { return 0; }
-
-	*intersection = V3AddScaled(ray->origin, ray->dir, t);
-	return 1;
-}
-
 f32 RayPointClosestPointParameter(const struct ray *ray, const v3 p)
 { 
 	const v3 diff = V3Sub(p, ray->origin);
 	const f32 tr = V3Dot(diff, ray->dir) / V3Dot(ray->dir, ray->dir);
 	return (tr >= 0.0f) ? tr : 0.0f;
-}
-
-f32 RayPointDistanceSquared(v3 *r_c, const struct ray *ray, const v3 p)
-{
-	const f32 t = RayPointClosestPointParameter(ray, p);
-	*r_c = RayPoint(ray, t);
-	return V3DistanceSquared(*r_c, p);
-}
-
-f32 RaySegmentDistanceSquared(v3 *r_c, v3 *s_c, const struct ray *ray, const struct segment *s)
-{
-	const v3 diff = V3Sub(s->p[0], ray->origin);
-	const f32 drdr = V3Dot(ray->dir, ray->dir);
-	const f32 dsds = V3Dot(s->dir, s->dir);
-
-	f32 tr = 0.0f;
-	f32 ts = 0.0f;
-
-	if (dsds >= MIN_SEGMENT_LENGTH_SQ)
-	{
-		const f32 drds = V3Dot(ray->dir, s->dir);
-		const f32 diffdr = V3Dot(diff, ray->dir);
-		const f32 diffds = V3Dot(diff, s->dir);
-		const f32 denom = drdr*dsds - drds*drds;
-		/* Check that the ray and segment are not parallel */
-		if (denom > 0.0f)
-		{
-			tr = (diffdr*dsds - diffds*drds) / denom;
-			tr = (tr >= 0.0f) ? tr : 0.0f;
-		}
-
-		ts = F32Clamp(tr*drds - diffds, 0.0f, dsds);
-		if (ts == 0.0f)
-		{
-			tr = diffdr / drdr;
-			tr = (tr >= 0.0f) ? tr : 0.0f;
-		}
-		else if (ts == dsds)
-		{
-			ts = 1.0f;
-			tr = (diffdr + drds) / drdr;
-			tr = (tr >= 0.0f) ? tr : 0.0f;
-		}	
-		else
-		{
-			ts /= dsds;
-		}
-	}
-	else
-	{
-		tr = F32Clamp(V3Dot(diff, ray->dir) / drdr, 0.0f, 1.0f);
-	}
-	
-	ds_Assert(0.0f <= tr);
-	ds_Assert(0.0f <= ts && ts <= 1.0f);
-
-	*r_c = RayPoint(ray, tr);
-	*s_c = SegmentBc(s, ts);
-	return V3DistanceSquared(*r_c, *s_c);
 }
 
 struct segment SegmentConstruct(const v3 p0, const v3 p1)
@@ -2346,6 +2249,8 @@ u32 TriMeshRaycast(v3 *intersection, const struct triMesh *mesh, const u32 tri, 
 	 * "Watertight Ray/Triangle Intersection" (JCGT 2(1)), makes every edge test sign exact: per-ray shear
 	 * to ray space, 2D edge functions on per-vertex transformed coordinates, double precision recompute
 	 * when an edge function is exactly 0.0. It also needs no edge canonicalization and no face normal.
+	 * Keep it two-sided (accept both edge-function signs, no backface culling); see the raycast semantics
+	 * in collision.h.
 	 */
 
 	/* TODO(Optimization):

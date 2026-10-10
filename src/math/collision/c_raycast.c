@@ -106,21 +106,124 @@ f32 c_SphereRaycastParameter(const struct c_Shape *shape, const ds_TransformWorl
 
 f32 c_CapsuleRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray)
 {
+	/*
+	References: Inigo Quilez, "Intersectors" (iquilezles.org/articles/intersectors, capsule); Hearn's
+	discriminant (Hearn & Baker) as in Ray Tracing Gems (2019), ch. 7, "Precision Improvements for
+	Ray/Sphere Intersection" (Haines, Guenther, Akenine-Moeller).
+	*/
 	ds_Assert(shape->type == C_SHAPE_CAPSULE);
 	ds_Assert(V3Dot(ray->dir, ray->dir) > 0.0f);
-	/* TODO: refactor in the shape's frame; the old world f32 values for now */
-	const ds_Transform t = { .rotation = transform->rotation, .position = V3F64Demote(transform->position) };
-	const struct ray ray_f32 = { .origin = V3F64Demote(ray->origin), .dir = ray->dir };
 
+	/* the ray in the capsule's frame. */
+	const struct ray local =
+	{
+		.origin = ds_TransformWorldPointToLocal(transform, ray->origin),
+		.dir = QV3Rotate(QInverse(transform->rotation), ray->dir),
+	};
+
+	/* Step 1: the infinite cylinder, Hearn's discriminant in 2D */
+    const f32 h = shape->capsule.half_height;
 	const f32 r = shape->capsule.radius;
-	struct segment s = SegmentCapsuleTransform(&shape->capsule, &t);
+	const f32 a = local.dir.x*local.dir.x + local.dir.z*local.dir.z;
+	const f32 b = local.origin.x*local.dir.x + local.origin.z*local.dir.z;
+	const f32 cross = local.origin.x*local.dir.z - local.origin.z*local.dir.x;
+	const f32 discriminant = a*r*r - cross*cross;
+	if (discriminant < 0.0f)
+	{
+		return F32_INFINITY;
+	}
 
-	v3 p0, p1;
-	const f32 dist_sq = RaySegmentDistanceSquared(&p0, &p1, &ray_f32, &s);
-	if (dist_sq > r*r) { return F32_INFINITY; }
+    /* Parallel check */
+    if (a == 0.0f)
+    {
+        /* the line runs at distance rho from the axis (step 1 cannot reject it: cross = 0) */
+        const f32 rho_sq = local.origin.x*local.origin.x + local.origin.z*local.origin.z;
+        if (rho_sq > r*r)
+        {
+            return F32_INFINITY;
+        }
 
-	struct sphere sph = SphereConstruct(p1, r);
-	return SphereRaycastParameter(&sph, &ray_f32);
+        /* it meets the caps' surfaces at y = +-(h + s); a == 0 and dir != 0 give dir.y != 0 */
+        ds_Assert(local.dir.y != 0.0f);
+        const f32 s = F32Sqrt(r*r - rho_sq);
+        const f32 y_out = (0.0f < local.dir.y) ? h + s : -(h + s);
+        const f32 t_in = (-y_out - local.origin.y) / local.dir.y;
+        if (0.0f <= t_in)
+        {
+            return t_in;
+        }
+
+        const f32 t_out = (y_out - local.origin.y) / local.dir.y;
+        return (0.0f <= t_out)
+            ? t_out
+            : F32_INFINITY;
+    }
+    else
+    {
+        const f32 discriminant_sqrt = F32Sqrt(discriminant);
+        const f32 t1 = (-b + discriminant_sqrt) / a;
+        /* the cylinder, hence the capsule, is behind the origin */
+        if (t1 < 0.0f)
+        {
+            return F32_INFINITY;
+        }
+
+        const f32 t0 = (-b - discriminant_sqrt) / a;
+        const f32 y0 = local.origin.y + t0*local.dir.y;
+        /* We enter the cylinder and capsule at the same time */
+        if (-h <= y0 && y0 <= h)
+        {
+            /* The entry is in front of the origin */
+            if (0.0f <= t0)
+            {
+                return t0;
+            }
+
+            /* the entry is behind the origin: the exit decides */
+            const f32 y1 = local.origin.y + t1*local.dir.y;
+            /* We leave the cylinder and capsule at the same time */
+            if (-h <= y1 && y1 <= h)
+            {
+                return t1;
+            }
+        }
+
+        const f32 dd = V3Dot(local.dir, local.dir);
+        /* the line enters the cylinder beyond an end */
+        if (y0 < -h || h < y0)
+        {
+            /* the cap's center relative to the origin */
+            const v3 c = V3(-local.origin.x, ((0.0f < y0) ? h : -h) - local.origin.y, -local.origin.z);
+            const f32 cap_discriminant = dd*r*r - V3LengthSquared(V3Cross(c, local.dir));
+            if (cap_discriminant < 0.0f)
+            {
+                return F32_INFINITY;
+            }
+
+            const f32 t_in = (V3Dot(c, local.dir) - F32Sqrt(cap_discriminant)) / dd;
+            if (0.0f <= t_in)
+            {
+                return t_in;
+            }
+        }
+
+        /* the entry is behind the origin: the exit decides */
+        const f32 y1 = local.origin.y + t1*local.dir.y;
+        if (-h <= y1 && y1 <= h)
+        {
+            return t1;
+        }
+
+        /* the line leaves the cylinder beyond an end: the capsule exit is that end's cap (far root) */
+        const v3 c = V3(-local.origin.x, ((0.0f < y1) ? h : -h) - local.origin.y, -local.origin.z);
+        /* the line crosses the cap's disc, so >= 0 in exact arithmetic; clamped against rounding */
+        const f32 cap_discriminant = F32Max(0.0f, dd*r*r - V3LengthSquared(V3Cross(c, local.dir)));
+        const f32 t_out = (V3Dot(c, local.dir) + F32Sqrt(cap_discriminant)) / dd;
+        /* the capsule is behind the origin */
+        return (0.0f <= t_out)
+            ? t_out
+            : F32_INFINITY;
+    }
 }
 
 f32 c_HullRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray)

@@ -98,18 +98,6 @@ struct segment
 };
 
 /**
- * segment: geometrical primitive
- * p0: segment start
- * p1: segment end 
- * dir: non-normalized direction vector
- */
-struct sphere
-{
-	v3 center;
-	f32 radius;
-};
-
-/**
  * capsule: geometrical primitive
  */
 struct capsule
@@ -117,15 +105,6 @@ struct capsule
 	f32 half_height;	/* capsule extends from [0, -half_height, 0] x [0, half_height, 0] */
 	f32 radius;	
 };
-
-/********************************** sphere **********************************/
-
-/* constructed sphere */
-struct sphere 	SphereConstruct(const v3 center, const f32 radius);
-/* return t: smallest t >= 0 such that p = origin + t*dir is a point on the sphere, or F32_INF if no such t exist */
-f32 		SphereRaycastParameter(const struct sphere *sph, const struct ray *ray);
-/* Return 1 if raycast hit sphere, 0 otherwise. If hit, set intersection  */
-u32 		SphereRaycast(v3 *intersection, const struct sphere *sph, const struct ray *ray);
 
 /*********************************** ray ************************************/
 
@@ -137,10 +116,6 @@ struct segment	RayConstructSegment(const struct ray *r, const f32 t);
 v3		RayPoint(const struct ray *ray, const f32 t);
 /* return t: closest point on ray to p = origin + t * dir */
 f32 		RayPointClosestPointParameter(const struct ray *ray, const v3 p);
-/* return squared distance from p to ray, and set RayPoint to the closest point on the ray */
-f32 		RayPointDistanceSquared(v3 *r_c, const struct ray *ray, const v3 p);
-/* return squared distance from s to ray, and set r_c and s_c to the closest points on the primitives */
-f32 		RaySegmentDistanceSquared(v3 *r_c, v3 *s_c, const struct ray *ray, const struct segment *s);
 
 /********************************* segment **********************************/
 
