@@ -176,6 +176,12 @@ enum c_ShapeType
 };
 
 #define C_SHAPE_ID_SIZE     128
+/* A collision sphere is centered at its shape's origin, so only its radius is stored */
+struct c_Sphere
+{
+    f32 radius;
+};
+
 struct c_Shape
 {
     u8                      id_buf[C_SHAPE_ID_SIZE];
@@ -190,7 +196,7 @@ struct c_Shape
 	enum c_ShapeType        type;
 	union
 	{
-		struct sphere 		sphere;
+		struct c_Sphere 	sphere;
 		struct capsule 		capsule;
 		struct dcel		    hull;
 		struct triMeshBvh 	mesh_bvh;

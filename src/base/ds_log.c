@@ -25,35 +25,6 @@
 #include <emscripten/console.h>
 #endif
 
-/*
- * message_write:
- * 	if (!SemaphoreTryWait(msg_mem_left))	<--- if no mem, spin try to write to disk, until memory acquired
- * 	{
- *		message_write_batch_to_disk()
- * 	}
- *	SemaphoreWait(msg_mem_left)
- * 	--------------------------------------- <-- we know there exist msg slot for thread, and that slot
- * 					            has had its memory pushed to disk. TODO: inspect assembly
- * 					            to ensure correct memory barriers, should be good enough
- * 					            with semaphore
- * 	index = atomic_relaxed_fetch_add(msg_count) % msg_max_count;
- * 	timestamp = timer_miliseconds()
- * 	format_msg_to_memory()
- *	atomic_release(msg_finished, 1);	<--- msg_finished == 1 <=> all memory has been written 
- *
- * message_write_batch_to_disk:
- * 	if (atomic_cmp_exchange_relaxed(disk_io_in_progress, 0, 1))
- * 	{
- * 		consume messages until we reach one that is not ready
- * 		while (atomic_cmp_exchange_acquire(next_msg->msg_finished, 1, 0) == 1)
- * 		{
- * 			write shit to disk
- * 		}
- * 		atomic_store_relaxed(disk_io_in_progress, 0);
- * 		semaphore_release(consume_count)
- * 	}
- */
-
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
@@ -69,9 +40,7 @@ struct Log_message
 	u32 	system;
 	u32 	severity;
 	u32 	thread_id;
-	u32 	a_completed;		/* atomic to signal message has been completed */
-	u32 	len;			/* length of message (without null termination) */
-	u64	size_req;
+	u64	size;			/* bytes in buf (without null termination) */
 	u8 	buf[LOG_MAX_MESSAGE_SIZE];	
 	u32 	a_in_use_and_completed;	/* ready to be sent of to disk and reused */
 };
@@ -81,10 +50,10 @@ struct Log
 	struct Log_message *	msg;
 	struct ticketFactory 	tf;    			/* index factory */
 	u32 			a_writing_to_disk;
-	u32 			a_shutting_down;	/* when set, any further calls to message_write will immediately return */
 	u32 			has_file;		/* If not, simply skip file IO */ 
 	FILE *			file;
 	u32			initialized;		/* set by LogInit (before any worker exists); until then messages go to stderr */
+	u32			a_shut_down;		/* set by LogShutdown: later messages are dropped (thread memory may be freed) */
 };
 
 static struct Log g_log;
@@ -118,13 +87,18 @@ void LogInit(struct arena *mem, const char *filepath)
 	g_log.file = (filepath) ? fopen(filepath, "w+") : NULL;
 	g_log.has_file = g_log.file != NULL;
 	AtomicStoreRel32(&g_log.a_writing_to_disk, 0);
+	AtomicStoreRel32(&g_log.a_shut_down, 0);
 	g_log.initialized = 1;
 }
 
+/*
+ * The thread winning the CAS on a_writing_to_disk writes completed slots in order until
+ * one is still being formatted, returns that many tickets, and releases a_writing_to_disk.
+ */
 static void LogTryWriteToDisk(void)
 {
 	u32 desired = 0;
-	/* If we fail, try to write messages to disk and re-publish them  */
+	/* become the single disk writer unless another thread is */
 	if (AtomicCompareExchangeAcqRlx32(&g_log.a_writing_to_disk, &desired, 1))
 	{
 		u32 count = 0;
@@ -135,9 +109,9 @@ static void LogTryWriteToDisk(void)
 		{
 			struct Log_message *msg = g_log.msg + serving;
 
-			if (g_log.has_file && msg->len)
+			if (g_log.has_file && msg->size)
 			{
-				fwrite(msg->buf, 1, msg->size_req, g_log.file);
+				fwrite(msg->buf, 1, msg->size, g_log.file);
 			}
 			serving = (serving + 1) % LOG_MAX_MESSAGES;
 			count += 1;
@@ -160,6 +134,7 @@ static void internal_write_to_disk(void)
 void LogShutdown()
 {
 	LogString(T_SYSTEM, S_NOTE, "Log system initiated shutdown");
+	AtomicStoreRel32(&g_log.a_shut_down, 1);
 	if (!g_log.initialized)
 	{
 		/* FatalCleanupAndExit before LogInit */
@@ -175,9 +150,19 @@ void LogShutdown()
 	TicketFactoryDestroy(&g_log.tf);
 }
 
+/*
+ * Spin on TicketFactoryTryGetTicket, writing completed slots to disk while none is free
+ * (LogTryWriteToDisk); format into slot ticket % LOG_MAX_MESSAGES, print it, then release-store
+ * a_in_use_and_completed = 1.
+ */
 void LogWriteMessage(const enum system_id system, const enum severity_id severity, const char *format, ... )
 {
 	ProfZone;
+
+	if (AtomicLoadAcq32(&g_log.a_shut_down))
+	{
+		goto end;
+	}
 
 	/* before LogInit or ds_ThreadMasterInit: no message slots, timer or thread index yet */
 	if (!g_log.initialized || g_tl_self == NULL)
@@ -221,30 +206,29 @@ void LogWriteMessage(const enum system_id system, const enum severity_id severit
 	msg->severity = severity;
 	msg->thread_id = thread_id;
 
-	/* TODO: hacky, but good enough for now... */
-	u8 buf[LOG_MAX_MESSAGE_SIZE]  = { 0 };
-	u64 req_size;
-	va_list args;
-	va_start(args, format);
-	utf8 formatted = Utf8FormatBufferedVariadic(&req_size, buf, LOG_MAX_MESSAGE_SIZE, format, args);
-	va_end(args);
-
-#if __DS_PLATFORM__ == __DS_WEB__
-	utf8 str = Utf8FormatBuffered(msg->buf, LOG_MAX_MESSAGE_SIZE-1, "[%lu.%lu%lu%lus] %k %k - Thread %u: %k",
-#else
-	utf8 str = Utf8FormatBuffered(msg->buf, LOG_MAX_MESSAGE_SIZE-1, "[%lu.%lu%lu%lus] %k %k - Thread %u: %k\n",
-#endif
+	/* prefix, then text, straight into the slot; 2 bytes stay free for '\n' and '\0' */
+	const u64 capacity = LOG_MAX_MESSAGE_SIZE - 2;
+	u64 size = Utf8SizeRequired(Utf8FormatBuffered(msg->buf, capacity, "[%lu.%lu%lu%lus] %k %k - Thread %u: ",
 		ms / 1000,
 		(ms / 100) % 10,
 		(ms / 10) % 10,
 		ms % 10,
 		systems + system,
 		severities + severity,
-		thread_id,
-		&formatted);
-	msg->size_req = Utf8SizeRequired(str);
-	msg->len = str.len;
-	msg->buf[msg->size_req] = '\0';
+		thread_id));
+
+	u64 text_size;
+	va_list args;
+	va_start(args, format);
+	Utf8FormatBufferedVariadic(&text_size, msg->buf + size, capacity - size, format, args);
+	va_end(args);
+	size += text_size;
+
+#if __DS_PLATFORM__ != __DS_WEB__
+	msg->buf[size++] = '\n';
+#endif
+	msg->buf[size] = '\0';
+	msg->size = size;
 
 #if __DS_PLATFORM__ == __DS_WEB__
 	emscripten_out((char *) msg->buf);
@@ -256,5 +240,11 @@ void LogWriteMessage(const enum system_id system, const enum severity_id severit
 end:
 	ProfZoneEnd;
 }
+
+#else
+
+void LogInit(struct arena *mem, const char *filepath) {}
+void LogShutdown(void) {}
+void LogWriteMessage(const enum system_id system, const enum severity_id severity, const char *format, ... ) {}
 
 #endif

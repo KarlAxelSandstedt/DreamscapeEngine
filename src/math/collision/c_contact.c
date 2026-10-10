@@ -1497,7 +1497,7 @@ struct c_ContactResult c_TriMeshBvhSphereContact(struct arena *frame, const stru
     struct c_ContactResult result = { 0 };
 
     const struct triMeshBvh *mesh_bvh = &s[0]->mesh_bvh;
-	const struct sphere *sph = &s[1]->sphere;
+	const struct c_Sphere *sph = &s[1]->sphere;
 
 	struct aabb bbox_transform;
 	bbox_transform.center = QV3Rotate(QInverse(tf[0].rotation), V3Sub(tf[1].position, tf[0].position));
