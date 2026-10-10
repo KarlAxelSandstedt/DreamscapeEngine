@@ -102,7 +102,7 @@ if (DEFINED EMSCRIPTEN)
 		add_compile_options(-O0)
 	endif ()	
 	
-	add_compile_options(-W -Wall -Wextra -Wno-switch -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function)
+	add_compile_options(-W -Wall -Wextra -Wno-switch -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function)
 
 	# determinism: never fuse a*b + c into an FMA (wasm relaxed-simd has FMA)
 	add_compile_options(-ffp-contract=off)
@@ -159,7 +159,7 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 	# determinism: never fuse a*b + c into an FMA (GCC's default in GNU C mode is -ffp-contract=fast)
 	add_compile_options(-ffp-contract=off)
 
-	add_compile_options(-W -Wall -Wextra -Wno-switch -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function)
+	add_compile_options(-W -Wall -Wextra -Wno-switch -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function)
 
 elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 

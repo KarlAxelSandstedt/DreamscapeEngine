@@ -111,6 +111,11 @@ ds_Id led_NodeAdd(struct led *led, const utf8 id, const utf8 parent_id)
     }
 
     struct slot slot = led_NodeHIAdd(&led->node_hierarchy, parent);
+    if (!slot.address)
+    {
+		LogString(T_LED, S_WARNING, "Failed to allocate led_node: node hierarchy is full");
+        return DS_ID_NULL;
+    }
     struct led_Node *node = slot.address;
 	node->id = Utf8CopyBuffered(node->id_buf, LED_NODE_ID_SIZE, id);	
 	if (!node->id.len)
@@ -1660,7 +1665,6 @@ static void led_EngineRun(struct led *led)
 	const u64 physics_frames_to_run = (led->physics.ns_elapsed - (led->physics.frames_completed * led->physics.ns_tick)) / led->physics.ns_tick;
 
 	//u64 ns_next_game_frame = game->frames_completed * game->ns_tick;
-	u64 ns_next_physics_frame = (led->physics.frames_completed+1) * led->physics.ns_tick;
 
 	for (u64 i = 0; i < /* game_frames_to_run + */ physics_frames_to_run; ++i)
 	{
@@ -1674,7 +1678,6 @@ static void led_EngineRun(struct led *led)
 		//else
 		//{
 			ds_DynamicsTick(&led->physics);
-			ns_next_physics_frame += led->physics.ns_tick;
 		//}
 	}
 
