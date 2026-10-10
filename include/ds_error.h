@@ -17,6 +17,16 @@
 ==========================================================================
 */
 
+/*
+ds_error.h
+==========
+Fatal-error exit and system error messages.
+
+Usage:
+    Log(T_SYSTEM, S_FATAL, "out of memory in %s", __func__);
+    FatalCleanupAndExit();
+*/
+
 #ifndef __DREAMSCAPE_ERROR_H__
 #define __DREAMSCAPE_ERROR_H__
 
@@ -31,7 +41,7 @@ extern "C" {
 /* Generate stacktrace and shutdown log gracefully, then exits */
 void 	FatalCleanupAndExit(void);
 
-/* thread safe last system error or code message generation */
+/* Write the text of a system error code into buf and return it; empty on failure. Thread-safe. */
 utf8	Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 code);
 
 

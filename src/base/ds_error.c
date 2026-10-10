@@ -21,6 +21,8 @@
 #include "ds_platform.h"
 
 static u32 a_fatal_cleanup_initiated = 0;
+/* set on the thread doing the cleanup: a fatal error during the cleanup itself exits at once */
+static ds_ThreadLocal u32 tl_fatal_cleanup_running = 0;
 
 #if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
 
@@ -38,11 +40,15 @@ static u32 a_fatal_cleanup_initiated = 0;
 void FatalCleanupAndExit(void)
 {
     Breakpoint(1);
+	if (tl_fatal_cleanup_running)
+	{
+		exit(1);
+	}
+
 	u32 desired = 0;
-	// TODO Somehow stop/force all threads to not continue / shut down program until cleanup is complete 
-	
 	if (AtomicCompareExchangeAcqRlx32(&a_fatal_cleanup_initiated, &desired, 1))
 	{
+		tl_fatal_cleanup_running = 1;
 #if __DS_PLATFORM__ == __DS_LINUX__
 		void *buf[STACKTRACE_BUFSIZE];
 		char **strings;
@@ -74,7 +80,11 @@ void FatalCleanupAndExit(void)
 		exit(1);
 	}
 
-	//TODO spin threads that di not acquire lock or exit or something...
+	/* another thread is cleaning up and will exit the process: never return to the failed caller */
+	for (;;)
+	{
+		ds_ThreadYield();
+	}
 }
 
 #if __DS_PLATFORM__ == __DS_LINUX__
@@ -120,11 +130,15 @@ utf8 Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 cod
 
 void FatalCleanupAndExit()
 {
+	if (tl_fatal_cleanup_running)
+	{
+		exit(1);
+	}
+
 	u32 desired = 0;
-	// TODO Somehow stop/force all threads to not continue / shut down program until cleanup is complete 
-	
 	if (AtomicCompareExchangeAcqRlx32(&a_fatal_cleanup_initiated, &desired, 1))
 	{
+		tl_fatal_cleanup_running = 1;
     		SYSTEMTIME local_time;
     		GetLocalTime(&local_time);
 
@@ -158,10 +172,14 @@ void FatalCleanupAndExit()
 #if DS_DEBUG
 		Breakpoint(1);
 #endif
-		exit(0);
+		exit(1);
 	}
 
-	//TODO spin threads that di not acquire lock or exit or something...
+	/* another thread is cleaning up and will exit the process: never return to the failed caller */
+	for (;;)
+	{
+		ds_ThreadYield();
+	}
 }
 
 utf8 Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 garbage)
