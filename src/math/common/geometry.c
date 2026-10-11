@@ -40,20 +40,6 @@ struct ray RayConstruct(const v3 origin, const v3 dir)
 	return r;
 }
 
-struct segment RayConstructSegment(const struct ray *r, const f32 t)
-{
-	const v3 p = V3AddScaled(r->origin, r->dir, t);
-	return SegmentConstruct(r->origin, p);
-}
-
-
-f32 RayPointClosestPointParameter(const struct ray *ray, const v3 p)
-{ 
-	const v3 diff = V3Sub(p, ray->origin);
-	const f32 tr = V3Dot(diff, ray->dir) / V3Dot(ray->dir, ray->dir);
-	return (tr >= 0.0f) ? tr : 0.0f;
-}
-
 struct segment SegmentConstruct(const v3 p0, const v3 p1)
 {
 	const struct segment s = { .p = { p0, p1 }, .dir = V3Sub(p1, p0) };
@@ -475,31 +461,6 @@ f32 AabbRaycastParameterEx(const struct aabb *aabb, const struct ray *ray, const
 	}
 
 	return t_min;
-}
-
-f32 AabbRaycastParameter(const struct aabb *aabb, const struct ray *ray)
-{
-	v3 multiplier;
-	v3u32 dir_sign_bit;
-	AabbRaycastParameterExSetup(&multiplier, &dir_sign_bit, ray);
-	return AabbRaycastParameterEx(aabb, ray, multiplier, dir_sign_bit);
-}
-
-u32 AabbRaycastEx(v3 *intersection, const struct aabb *aabb, const struct ray *ray, const v3 multiplier, const v3u32 dir_sign_bit)
-{
-	const f32 t = AabbRaycastParameterEx(aabb, ray, multiplier, dir_sign_bit);
-	if (t == F32_INFINITY) { return 0; }
-
-	*intersection = V3AddScaled(ray->origin, ray->dir, t);
-	return 1;
-}
-
-u32 AabbRaycast(v3 *intersection, const struct aabb *aabb, const struct ray *ray)
-{
-	v3 multiplier; 
-	v3u32 dir_sign_bit;
-	AabbRaycastParameterExSetup(&multiplier, &dir_sign_bit, ray);
-	return AabbRaycastEx(intersection, aabb, ray, multiplier, dir_sign_bit);
 }
 
 u64 AabbPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const v4 color)
@@ -2188,123 +2149,3 @@ struct aabb TriMeshBbox(const struct triMesh *mesh)
 	return BboxVertexSet(mesh->v, mesh->v_count);	
 }
 
-f32 TriMeshRaycastParameter(const struct triMesh *mesh, const u32 tri, const struct ray *ray)
-{
-	v3 intersection;
-	f32 t = F32_INFINITY;
-	if (TriMeshRaycast(&intersection, mesh, tri, ray))
-	{
-		t = RayPointClosestPointParameter(ray, intersection);
-	}
-	return t;
-}
-
-u32 TriMeshRaycast(v3 *intersection, const struct triMesh *mesh, const u32 tri, const struct ray *ray)
-{
-	/* TODO(Research): watertight raycasting.
-	 * Shared edges are consistent (canonicalized edge tests below), but rays passing exactly through a
-	 * shared vertex can still slip between all triangles of the fan (~0.1% of exactly vertex-aimed rays
-	 * in tests), since the signs of the float triple products are not exact. Woop, Benthin, Wald 2013,
-	 * "Watertight Ray/Triangle Intersection" (JCGT 2(1)), makes every edge test sign exact: per-ray shear
-	 * to ray space, 2D edge functions on per-vertex transformed coordinates, double precision recompute
-	 * when an edge function is exactly 0.0. It also needs no edge canonicalization and no face normal.
-	 * Keep it two-sided (accept both edge-function signs, no backface culling); see the raycast semantics
-	 * in collision.h.
-	 */
-
-	/* TODO(Optimization):
-	 * By precomputation and extending our tri_mesh structure, we can avoid these branches;
-	 * so if it becomes relevant, we need to precompute the edge sorting or something...  
-	 */
-
-	/* canonicalize edges: We require consistency between triangles sharing edges; if the 
-	 * test determining which side of the edge the ray intersects the triangle planes are
-	 * not done in the same way, we may miss collision with both triangles despite hitting
-	 * one of them. See (Real Time Collision Detection, 5.3.4 and 11.3.3) for algorithm and
-	 * robustness discussion. */
-
-	const v3 oa = V3Sub(mesh->v[mesh->tri[tri].x], ray->origin);
-	const v3 ob = V3Sub(mesh->v[mesh->tri[tri].y], ray->origin);
-	const v3 oc = V3Sub(mesh->v[mesh->tri[tri].z], ray->origin);
-    const v3 n = TriCcwNormalDirection(mesh->v[mesh->tri[tri].x], mesh->v[mesh->tri[tri].y], mesh->v[mesh->tri[tri].z]);
-
-    const u32 infront = (V3Dot(n, oa) < 0.0f); 
-    const u32 towards = (V3Dot(n, ray->dir) < 0.0f);
-
-    /* Exit if infront and along OR behind and towards */
-    if (infront != towards)
-    {
-        return 0;
-    }
-
-    const f32 side_sign = (infront)
-        ? 1.0f
-        : -1.0f;
-
-	f32 u, v, w;
-	if (mesh->tri[tri].x < mesh->tri[tri].y)
-	{
-		const v3 c = V3Cross(ob, oa);
-		u = side_sign*V3Dot(ray->dir, c);
-	}
-	else
-	{
-		const v3 c = V3Cross(oa, ob);
-		u = -side_sign*V3Dot(ray->dir, c);
-	}
-	if (u < 0.0f) { return 0; }
-
-	if (mesh->tri[tri].y < mesh->tri[tri].z)
-	{
-		const v3 c = V3Cross(oc, ob);
-		v = side_sign*V3Dot(ray->dir, c);
-	}
-	else
-	{
-		const v3 c = V3Cross(ob, oc);
-		v = -side_sign*V3Dot(ray->dir, c);
-	}
-	if (v < 0.0f) { return 0; }
-
-	if (mesh->tri[tri].z < mesh->tri[tri].x)
-	{
-		const v3 c = V3Cross(oa, oc);
-		w = side_sign*V3Dot(ray->dir, c);
-	}
-	else
-	{
-		const v3 c = V3Cross(oc, oa);
-		w = -side_sign*V3Dot(ray->dir, c);
-	}
-	if (w < 0.0f) { return 0; }
-
-	/* TODO: Prob bad, we can go back to this later
-	 * KNOWN ISSUE: rays lying in (or parallel to) the triangle plane may report a false hit at t = 0. For such
-	 * rays n.d ~ 0 and n.oa ~ 0, so infront/towards are decided by rounding noise, and u, v, w are (noisy) zeros
-	 * that can all pass >= 0 (always for exactly axis-aligned planes); we then end up here and return the ray
-	 * origin as the intersection. Measured: 100% of in-plane rays on horizontal triangles, ~6% on tilted ones.
-	 * Returning 0 here is not enough on its own (the noise in u, v, w scales with |oa||ob|, so far away origins
-	 * pass the absolute threshold with garbage weights). Tested fix: before the infront/towards test, reject
-	 * rays parallel to the plane relative to scale, (n.d)^2 <= (100*F32_EPSILON)^2 * |n|^2 * |d|^2, and return 0
-	 * here instead of the origin. See TODO(Research) above for the robust alternative.
-	 */
-	if (u + v + w < 100.0f * F32_EPSILON)
-	{
-		*intersection = ray->origin;
-	}
-	else
-	{
-		const f32 denom = 1.0f / (u + v + w);
-		u *= denom;
-		v *= denom;
-		w *= denom;
-
-		*intersection = V3AddScaled(
-                            V3AddScaled(
-                                V3Scale(mesh->v[mesh->tri[tri].x], v), 
-                                mesh->v[mesh->tri[tri].y], w),
-					        mesh->v[mesh->tri[tri].z], u);
-	}
-
-	return 1;
-}

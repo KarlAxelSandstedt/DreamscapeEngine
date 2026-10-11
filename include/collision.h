@@ -327,7 +327,8 @@ struct c_ContactResult  c_TriMeshBvhHullContact(struct arena *frame, const struc
  * Return the smallest t >= 0 at which origin + t*dir is on the shape's surface (the first surface hit), or
  * F32_INFINITY. Two-sided: surfaces count from either side, so an origin inside a solid returns its exit.
  * The ray is in the shape's local frame.
- * precondition: ray->dir != 0 (asserted); callers check once per ray, not per shape
+ * precondition: |ray->dir|^2 > 0 in f32 (asserted; rejects |dir| below ~4e-23, whose square underflows); callers check once per ray,
+ * not per shape
  */
 f32 SphereRaycastParameter(const struct sphere *sphere, const struct ray *ray);
 f32 CapsuleRaycastParameter(const struct capsule *capsule, const struct ray *ray);

@@ -116,10 +116,6 @@ struct capsule
 
 /* return constructed ray */
 struct ray 	RayConstruct(const v3 origin, const v3 dir);
-/* return segment: s.p0 = r.origin, s.p1 = r.origin + t * r.dir */
-struct segment	RayConstructSegment(const struct ray *r, const f32 t);
-/* return t: closest point on ray to p = origin + t * dir */
-f32 		RayPointClosestPointParameter(const struct ray *ray, const v3 p);
 
 /********************************* segment **********************************/
 
@@ -225,13 +221,6 @@ void 		AabbRaycastParameterExSetup(v3 *multiplier, v3u32 *dir_sign_bit, const st
 /* Extended AabbRaycastParameter optimized for multiple raycasts against AABBs using same ray. 
  * return t: smallest t >= 0 such that p = origin + t*dir is a point in the AABB volume, or F32_INF if no such t exist */
 f32 		AabbRaycastParameterEx(const struct aabb *aabb, const struct ray *ray, const v3 multiplier, const v3u32 dir_sign_bit);
-/* return t: smallest t >= 0 such that p = origin + t*dir is a point in the AABB volume, or F32_INF if no such t exist */
-f32 		AabbRaycastParameter(const struct aabb *a, const struct ray *ray);
-/* Extended AabbRaycast, optimized for multiple raycasts against AABBs using same ray. 
- * If the ray hits aabb, return 1 and set intersection. otherwise return 0. */
-u32 		AabbRaycastEx(v3 *intersection, const struct aabb *aabb, const struct ray *ray, const v3 multiplier, const v3u32 dir_sign_bit);
-/* If the ray hits aabb, return 1 and set intersection. otherwise return 0. */
-u32 		AabbRaycast(v3 *intersection, const struct aabb *aabb, const struct ray *ray);
 
 /********************************* tri_mesh **********************************/
 
@@ -248,10 +237,6 @@ struct triMesh
 
 /* return bounding box of triMesh */
 struct aabb	TriMeshBbox(const struct triMesh *mesh);
-/* return t: smallest t >= 0 such that p = origin + t*dir is a point on the triangle, or F32_INF if no such t exist */
-f32 		TriMeshRaycastParameter(const struct triMesh *mesh, const u32 tri, const struct ray *ray);
-/* If the ray hits triangle, return 1 and set intersection. otherwise return 0. */
-u32 		TriMeshRaycast(v3 *intersection, const struct triMesh *mesh, const u32 tri, const struct ray *ray);
 
 /*
 TriVoronoi

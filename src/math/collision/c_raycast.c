@@ -289,7 +289,7 @@ struct rayWoop
 	f32	sz;		/* 1 / dir[kz] */
 };
 
-static struct rayWoop RayWoopConstruct(const struct ray *ray)
+static struct rayWoop RayWoop(const struct ray *ray)
 {
 	/* the largest |component| (ties keep the lower axis); dir != 0, so dir[kz] != 0 */
 	u32 kz = 0;
@@ -322,10 +322,59 @@ static f32 WoopRaycastParameter(const struct rayWoop *ray, const v3 a, const v3 
 	Techniques (JCGT) 2(1), 2013.
 	*/
 
-	/* TODO: step 2, the vertices relative to the origin, sheared */
-	/* TODO: step 3, the edge functions U, V, W; recompute in f64 where one is exactly 0 */
-	/* TODO: step 4, two-sided sign test, det = U + V + W, t */
-	return F32_INFINITY;
+	/* Step 2: the vertices relative to the origin, sheared into ray space (the ray is the z axis) */
+	const v3 A = V3Sub(a, ray->origin);
+	const v3 B = V3Sub(b, ray->origin);
+	const v3 C = V3Sub(c, ray->origin);
+	const f32 ax = A.buf[ray->kx] - ray->sx*A.buf[ray->kz];
+	const f32 ay = A.buf[ray->ky] - ray->sy*A.buf[ray->kz];
+	const f32 bx = B.buf[ray->kx] - ray->sx*B.buf[ray->kz];
+	const f32 by = B.buf[ray->ky] - ray->sy*B.buf[ray->kz];
+	const f32 cx = C.buf[ray->kx] - ray->sx*C.buf[ray->kz];
+	const f32 cy = C.buf[ray->ky] - ray->sy*C.buf[ray->kz];
+
+	/* Step 3: the edge functions, twice the signed area of the ray point (0, 0) with each edge */
+	f32 u = cx*by - cy*bx;
+	f32 v = ax*cy - ay*cx;
+	f32 w = bx*ay - by*ax;
+	/* exactly 0: recompute in f64, where the f32 products are exact (24 + 24 bits <= 53) */
+	if (u == 0.0f || v == 0.0f || w == 0.0f)
+	{
+		u = (f32) ((f64) cx*(f64) by - (f64) cy*(f64) bx);
+		v = (f32) ((f64) ax*(f64) cy - (f64) ay*(f64) cx);
+		w = (f32) ((f64) bx*(f64) ay - (f64) by*(f64) ax);
+	}
+
+	/* Step 4: two-sided, so a hit needs equal signs (zeros allowed: the ray meets an edge or vertex) */
+	if ((u < 0.0f || v < 0.0f || w < 0.0f) && (0.0f < u || 0.0f < v || 0.0f < w))
+	{
+		return F32_INFINITY;
+	}
+
+	/* all zero: the ray lies in the triangle's plane, or the triangle is degenerate */
+	const f32 det = u + v + w;
+	if (det == 0.0f)
+	{
+		return F32_INFINITY;
+	}
+
+	/*
+	The hit's barycentrics are (u, v, w) / det; its sheared z is t (dir maps to (0, 0, 1)):
+
+		t = T / det,	T = u*Az + v*Bz + w*Cz,		Pz = sz*P[kz]
+	*/
+	const f32 az = ray->sz*A.buf[ray->kz];
+	const f32 bz = ray->sz*B.buf[ray->kz];
+	const f32 cz = ray->sz*C.buf[ray->kz];
+	const f32 T = u*az + v*bz + w*cz;
+	/* the triangle is behind the origin: t < 0 <=> T and det differ in sign (the paper's xorf(T, sign(det))) */
+	if ((det < 0.0f) ? (0.0f < T) : (T < 0.0f))
+	{
+		return F32_INFINITY;
+	}
+
+	const f32 rcp_det = 1.0f / det;
+	return T*rcp_det;
 }
 
 f32 TriMeshBvhRaycastParameter(const struct triMeshBvh *mesh_bvh, const struct ray *ray)
@@ -334,7 +383,7 @@ f32 TriMeshBvhRaycastParameter(const struct triMeshBvh *mesh_bvh, const struct r
 	ds_Assert(V3Dot(ray->dir, ray->dir) > 0.0f);
 
 	/* one setup for all triangles: a shared vertex then transforms identically in each of its triangles */
-	const struct rayWoop woop = RayWoopConstruct(ray);
+	const struct rayWoop woop = RayWoop(ray);
 
 	/* nodes are popped in order of their box's entry t: stop once the best hit is nearer than the next box */
 	struct arena *mem_tmp = ArenaPushScratch();
@@ -377,7 +426,7 @@ f32 TriRaycastParameter(const v3 a, const v3 b, const v3 c, const struct ray *ra
 {
 	ds_Assert(V3Dot(ray->dir, ray->dir) > 0.0f);
 
-	const struct rayWoop woop = RayWoopConstruct(ray);
+	const struct rayWoop woop = RayWoop(ray);
 	return WoopRaycastParameter(&woop, a, b, c);
 }
 
