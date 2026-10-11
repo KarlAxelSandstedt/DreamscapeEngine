@@ -157,6 +157,11 @@ struct plane 	PlaneConstructFromCcwTriangle(const v3 a, const v3 b, const v3 c);
 struct plane 	PlaneConstructNormalizedFromCcwTriangle(const v3 a, const v3 b, const v3 c);
 /* Normalize the plane's normal direction and rescale signed_distance accordingly */
 void            PlaneNormalize(struct plane *pl);
+/*
+ * Return pl moved by the rigid transform x -> rot x + pos (rot a rotation matrix). Keeps |n|, so unit planes stay
+ * unit. Not for scaling or shearing maps: their normals transform by the inverse transpose.
+ */
+struct plane    PlaneTransform(const struct plane *pl, const m3 rot, const v3 pos);
 /* Return 1 if p is infront of plane, i.e. a positive signed distance, otherwise 0 */
 u32 		    PlanePointInfrontCheck(const struct plane *pl, const v3 p);
 /* Return 1 if p is behind plane, i.e. a negative signed distance, otherwise 0 */

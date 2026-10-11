@@ -275,6 +275,19 @@ f32 PlanePointDistance(const struct plane *pl, const v3 p)
 	return F32Abs(PlanePointSignedDistance(pl, p));
 }
 
+struct plane PlaneTransform(const struct plane *pl, const m3 rot, const v3 pos)
+{
+	/*
+	 * A point x on pl (dot(n, x) = d) moves to rot x + pos. With n' = rot n, rotations keep dot products:
+	 *      dot(n', rot x + pos) = dot(n, x) + dot(n', pos) = d + dot(n', pos)
+	 * so the moved plane is (n', d + dot(n', pos)).
+	 */
+	struct plane moved;
+	moved.normal_direction = M3V3Mul(rot, pl->normal_direction);
+	moved.signed_distance = pl->signed_distance + V3Dot(moved.normal_direction, pos);
+	return moved;
+}
+
 f32 PlanePointProjection(v3 *proj, const struct plane *pl, const v3 p)
 {
 	/*
@@ -1205,11 +1218,7 @@ u32 DcelPlanesTryCompute(struct dcel *h)
 
 struct plane DcelFacePlaneWorld(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi)
 {
-	/* a point x on the local plane maps to rot x + pos: dot(rot n, rot x + pos) = dot(n, x) + dot(rot n, pos) */
-	struct plane pl;
-	pl.normal = M3V3Mul(rot, h->plane[fi].normal);
-	pl.signed_distance = h->plane[fi].signed_distance + V3Dot(pl.normal, pos);
-	return pl;
+	return PlaneTransform(h->plane + fi, rot, pos);
 }
 
 struct segment DcelFaceClipSegment(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi, const struct segment *s)
