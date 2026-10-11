@@ -137,6 +137,12 @@ u32		Utf8PathRelativeCheck(const utf8 path);
 
 /**************************** file opening, creating, closing and dumping *************************/
 
+/*
+ * Paths are relative to dir (or the cwd): FileTryCreate, FileTryOpen, DirectoryTryCreate and
+ * DirectoryTryOpen return FS_PATH_INVALID for an absolute path. TODO platforms differ: FileDump accepts
+ * absolute paths on Linux only (Windows goes through FileTryOpen); FileStatusPath rejects them on Linux.
+ */
+
 /* try close file if it is open and set to FileNull  */
 void 		FileClose(struct file *file);
 /* Try create and open a file at the given directory; If the file already exist, error is returned. */
