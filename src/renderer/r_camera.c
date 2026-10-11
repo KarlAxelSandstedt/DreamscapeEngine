@@ -90,13 +90,13 @@ struct r_Camera r_CameraInit(const v3 position, const v3 direction, const f32 fz
 		const f32 angle1 = (direction.x < 0.0f) 
 			? -F32Acos(direction.z / (direction_xz_len))
 			:  F32Acos(direction.z / (direction_xz_len));
-		const m3 rot1 = M3Q(QUnitAxisAngle(y, angle1));
+		const m3 rot1 = M3QUnit(QUnitAxisAngle(y, angle1));
 
 		const f32 angle2 = (direction.y > 0.0f)
 			? -F32Acos(direction_xz_len*direction_xz_len / (direction_xz_len * V3Length(direction)))
 			:  F32Acos(direction_xz_len*direction_xz_len / (direction_xz_len * V3Length(direction)));
 		const v3 v = M3V3Mul(rot1, x);
-		const m3 rot2 = M3Q(QAxisAngle(v, angle2));
+		const m3 rot2 = M3QUnit(QAxisAngle(v, angle2));
 
 		const m3 rot = M3Mul(rot2, rot1);
 

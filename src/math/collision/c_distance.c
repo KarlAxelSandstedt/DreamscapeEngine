@@ -102,7 +102,7 @@ static void GJKHelperInit(struct GJKHelper *helper, const struct c_Shape *shape_
 {
     GJKVertexSetInit(&helper->vset_a, shape_a);
     GJKVertexSetInit(&helper->vset_b, shape_b);
-    helper->rot = M3Q(b_to_a->rotation);
+    helper->rot = M3QUnit(b_to_a->rotation);
     helper->rot_t = M3Transpose(helper->rot);
     helper->pos = b_to_a->position;
 }

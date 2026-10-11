@@ -316,7 +316,7 @@ end:
 
 static struct r_Mesh *bvh_Mesh(struct arena *mem, const struct bvh *bvh, const v3 translation, const q rotation, const v4 color)
 {
-	const m3 rot = M3Q(rotation);
+	const m3 rot = M3QUnit(rotation);
 
 	ArenaPushRecord(mem);
 	const u32 vertex_count = 3*8*bvh->pool.count;

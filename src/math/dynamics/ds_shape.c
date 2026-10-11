@@ -150,7 +150,7 @@ void ds_ShapeWorldTransform(ds_Transform *t, const struct ds_Dynamics *pipeline,
     const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
     const struct ds_BodySim *sim = set->body_sim_pool.buf + body->sim;
     const q world_rotation = sim->world.rotation;
-    const m3 rot = M3Q(world_rotation);
+    const m3 rot = M3QUnit(world_rotation);
 
     t->rotation = QMul(world_rotation, shape->t_local.rotation);
     t->position = V3Add(M3V3Mul(rot, shape->t_local.position), sim->world.position);
@@ -165,7 +165,7 @@ struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct d
 
     ds_Transform t_world;
     ds_ShapeWorldTransform(&t_world, pipeline, shape);
-	const m3 rot = M3Q(t_world.rotation);
+	const m3 rot = M3QUnit(t_world.rotation);
 	const v3 world_position = t_world.position;
 
 	if (shape->cshape_type == C_SHAPE_CONVEX_HULL)
@@ -345,7 +345,7 @@ void ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, co
  */
 static void TMP_ds_ContactResultToSolver(struct c_ContactResult *result, const ds_TransformWorld *t, const u32 flip)
 {
-    const m3 rot = M3Q(t->rotation);
+    const m3 rot = M3QUnit(t->rotation);
     const v3 pos = V3F64Demote(t->position);
     for (u32 mi = 0; mi < result->manifold_count; ++mi)
     {

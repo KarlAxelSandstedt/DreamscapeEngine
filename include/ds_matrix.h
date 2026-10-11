@@ -333,7 +333,7 @@ static ds_ForceInline m4 M4OuterProduct(const v4 a, const v4 b)
 }
 
 /* a is a normalised quaternion representing a CCW rotation. */
-static ds_ForceInline m3 M3Q(const q a)
+static ds_ForceInline m3 M3QUnit(const q a)
 {
 	const f32 tr_part = 2.0f*a.w*a.w - 1.0f;
 	const f32 q12 = 2.0f*a.x*a.y;
@@ -348,7 +348,7 @@ static ds_ForceInline m3 M3Q(const q a)
 }
 
 /* a is a normalised quaternion representing a CCW rotation. */
-static ds_ForceInline m4 M4Q(const q a)
+static ds_ForceInline m4 M4QUnit(const q a)
 {
 	const f32 tr_part = 2.0f*a.w*a.w - 1.0f;
 	const f32 q12 = 2.0f*a.x*a.y;

@@ -291,7 +291,7 @@ struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_C
 
     struct c_ContactResult result = { 0 };
     const u32 inc = 1 - ref;
-	const m3 rot = M3Q(t[0].rotation);
+	const m3 rot = M3QUnit(t[0].rotation);
 
 	v3 c[2], normal;
 	const f32 r_sum = s[1]->sphere.radius;
@@ -368,7 +368,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
     const u32 inc = 1 - ref;
 
 	const struct dcel *h = &s[0]->hull;
-	const m3 rot = M3Q(t[0].rotation);
+	const m3 rot = M3QUnit(t[0].rotation);
 	const v3 pos = t[0].position;
 
 	v3 c[2], normal;
@@ -1132,7 +1132,7 @@ struct c_ContactResult c_HullContact(struct arena *frame, const struct c_Contact
 
     struct arena *mem_tmp = ArenaPushScratch();
 
-    const m3 rot[2] = { M3Q(t[0].rotation), M3Q(t[1].rotation) };
+    const m3 rot[2] = { M3QUnit(t[0].rotation), M3QUnit(t[1].rotation) };
 	
     const struct dcel *h[2] = { &s[0]->hull, &s[1]->hull };
     v3 *v_world[2] = { ArenaPush(mem_tmp, h[0]->v_count * sizeof(v3)), ArenaPush(mem_tmp, h[1]->v_count * sizeof(v3)) };
@@ -1517,7 +1517,7 @@ struct c_ContactResult c_TriMeshBvhSphereContact(struct arena *frame, const stru
     struct c_TriMeshBvhIterator it;
     c_TriMeshBvhIteratorAlloc(&it, mesh_bvh, &bbox_transform);
 
-    const m3 bvh_rotation = M3Q(tf[0].rotation);
+    const m3 bvh_rotation = M3QUnit(tf[0].rotation);
 
 	{
         //ProfZoneNamed("Calculate Triangles");
@@ -1807,7 +1807,7 @@ struct c_ContactResult c_TriMeshBvhCapsuleContact(struct arena *frame, const str
 	bbox_transform.min = V3AddConstant(bbox_transform.min, -cap->radius);
 	bbox_transform.max = V3AddConstant(bbox_transform.max, cap->radius);
 
-    const m3 bvh_rotation = M3Q(tf[0].rotation);
+    const m3 bvh_rotation = M3QUnit(tf[0].rotation);
 
     struct c_TriMeshBvhIterator it;
     c_TriMeshBvhIteratorAlloc(&it, mesh_bvh, &bbox_transform);
@@ -2383,7 +2383,7 @@ struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct
     const q q_inv = QConj(tf[0].rotation);
     const q q_R = QMul(q_inv, tf[1].rotation);
     const v3 T = QUnitRotate(q_inv, V3Sub(tf[1].position, tf[0].position));
-    const m3 R = M3Q(q_R);
+    const m3 R = M3QUnit(q_R);
 
     struct arena *tmp = ArenaPushScratch();
     struct dcel hull_bvh_local_space = *hull;
@@ -2410,7 +2410,7 @@ struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct
 	bbox_transform.min = min;
 	bbox_transform.max = max;
 
-    const m3 bvh_rotation = M3Q(tf[0].rotation);
+    const m3 bvh_rotation = M3QUnit(tf[0].rotation);
 
     /* it.contact_count in this case counts real contacts + separation axes, so need an additional counter here */
     u32 true_contact_count = 0;
@@ -2566,7 +2566,7 @@ struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct
 /* TMP: the old functions' world manifolds, with shape t as reference, expressed in t's frame */
 static void TMP_c_ContactResultToLocal(struct c_ContactResult *result, const ds_TransformWorld *t)
 {
-    const m3 rot_inv = M3Q(QConj(t->rotation));
+    const m3 rot_inv = M3QUnit(QConj(t->rotation));
     const v3 pos = V3F64Demote(t->position);
     for (u32 mi = 0; mi < result->manifold_count; ++mi)
     {

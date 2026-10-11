@@ -121,7 +121,7 @@ void ds_BodyUpdateSolverDataRange(struct ds_Dynamics *pipeline, const u32 low, c
         struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + i;
 
 		/* setup inverted world inertia tensors and center of massses */
-		const m3 rot = M3Q(sim->world.rotation);
+		const m3 rot = M3QUnit(sim->world.rotation);
 		const m3 rot_inv = M3Transpose(rot);
         sim->world_inv_inertia = M3Mul(M3Mul(rot, sim->local_inv_inertia), rot_inv);
 
@@ -685,11 +685,11 @@ void ds_PositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 c
 	        {
 	        	struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
 
-		        const m3 rot0 = M3Q(bcomp[0]->rotation);
+		        const m3 rot0 = M3QUnit(bcomp[0]->rotation);
 		        const m3 inv_inertia0 = M3Mul(M3Mul(rot0, sim[0]->local_inv_inertia), M3Transpose(rot0));
 		        sim[0]->world_inv_inertia = inv_inertia0;
 
-		        const m3 rot1 = M3Q(bcomp[1]->rotation);
+		        const m3 rot1 = M3QUnit(bcomp[1]->rotation);
 		        const m3 inv_inertia1 = M3Mul(M3Mul(rot1, sim[1]->local_inv_inertia), M3Transpose(rot1));
 		        sim[1]->world_inv_inertia = inv_inertia1;
 

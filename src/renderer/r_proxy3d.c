@@ -152,7 +152,7 @@ void r_Proxy3dHierarchySpeculate(struct arena *mem, const u64 ns_time)
 				proxy->spec_rotation = proxy->rotation;	
 			}
 
-            proxy->spec_position = V3Add(M3V3Mul(M3Q(parent->spec_rotation), proxy->spec_position), parent->spec_position);
+            proxy->spec_position = V3Add(M3V3Mul(M3QUnit(parent->spec_rotation), proxy->spec_position), parent->spec_position);
             proxy->spec_rotation = QNormalize(QMul(parent->spec_rotation, proxy->spec_rotation));
 		}
 	}

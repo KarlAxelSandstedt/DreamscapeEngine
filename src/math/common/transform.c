@@ -34,7 +34,7 @@ m3 M3SequentialRotation(const v3 axis_1, const f32 angle_1, const v3 axis_2, con
 
 m3 M3Rotation(const v3 axis, const f32 angle)
 {
-	return M3Q(QAxisAngle(axis, angle));
+	return M3QUnit(QAxisAngle(axis, angle));
 }
 
 v3 V3RotateCenter(const m3 rotation, const v3 center, const v3 src)
@@ -93,7 +93,7 @@ m4 M4ViewYawPitch(const v3 position, const f32 yaw, const f32 pitch)
 	const f32 cp = F32Cos(pitch / 2.0f);
 	const f32 sy = F32Sin(yaw / 2.0f);
 	const f32 sp = F32Sin(pitch / 2.0f);
-	const m3 rot = M3Q(Q(sy*sp, sy*cp, cy*sp, cy*cp));
+	const m3 rot = M3QUnit(Q(sy*sp, sy*cp, cy*sp, cy*cp));
 
 	/* Assume no rotation is equivalent to looking down positive x-axis */
 	const v3 left = M3V3Mul(rot, V3(0.0f, 0.0f, -1.0f));
