@@ -232,6 +232,13 @@ static ds_ForceInline enum ieee_type F32Classify(const f32 f)
 	else return IEEE_NORMAL;
 }
 
+/* 1 if f is neither NaN nor Inf */
+static ds_ForceInline u32 F32FiniteCheck(const f32 f)
+{
+	const union ieee32 val = { .f = f };
+	return (val.bits & F32_EXPONENT_MASK) != F32_EXPONENT_MASK;
+}
+
 static ds_ForceInline f32 F32Nan(void)
 {
 	const union ieee32 val = { .bits = F32_EXPONENT_MASK | F32_SIGNIFICAND_MASK };

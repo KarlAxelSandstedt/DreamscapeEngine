@@ -242,7 +242,7 @@ struct c_Manifold
 
 /* Print manifold to file stderr */
 void 	c_ManifoldDebugPrint(const struct c_Manifold *cm);
-/* Sanity tests for debugging. Return 1 if valid, 0 otherwise. */
+/* Debug check (DS_DEBUG callers): v_count <= 4; n, v, depth finite; n != 0; depth >= 0. Return 1 if valid. */
 u32     c_ManifoldCheck(const struct c_Manifold *cm);
 /* Transform the manifold */
 void	c_ManifoldTransform(struct c_Manifold *dst, const struct c_Manifold *src, const m3 rot, const v3 translation);

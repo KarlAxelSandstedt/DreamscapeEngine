@@ -33,7 +33,7 @@ void c_ManifoldDebugPrint(const struct c_Manifold *cm)
 	fprintf(stderr, "\t.v_count = %u\n", cm->v_count);
 	for (u32 i = 0; i < cm->v_count; ++i)
 	{
-		fprintf(stderr, "\t.v[%u] = { %f, %f, %f }\n", i, cm->v[i].buf[0], cm->v[i].buf[1], cm->v[i].buf[2]);
+		fprintf(stderr, "\t.v[%u] = { %f, %f, %f }, .depth[%u] = %f\n", i, cm->v[i].buf[0], cm->v[i].buf[1], cm->v[i].buf[2], i, cm->depth[i]);
 	}
 	fprintf(stderr, "\t.n = { %f, %f, %f }\n", cm->n.buf[0], cm->n.buf[1], cm->n.buf[2]);
 	fprintf(stderr, "}\n");
@@ -41,50 +41,17 @@ void c_ManifoldDebugPrint(const struct c_Manifold *cm)
 
 u32 c_ManifoldCheck(const struct c_Manifold *cm)
 {
-    u32 valid = 1;
-    const u32 bad_normal = V3Length(cm->n) == 0.0f;
-    for (u32 i = 0; i < cm->v_count; ++i)
-    {
-        ds_Assert(cm->depth[i] >= 0.0f);
-        const u32 bad_collision = bad_normal
-            || V3Length(cm->v[i]) > 10000.0f
-            || F32TestNan(cm->v[i].buf[0])
-            || F32TestNan(cm->v[i].buf[1])
-            || F32TestNan(cm->v[i].buf[2])
-            //|| !(cm->depth[i] >= -0.005f)
-                    ;
+	u32 valid = cm->v_count <= 4
+	         && V3FiniteCheck(cm->n)
+	         && V3Dot(cm->n, cm->n) > 0.0f;
+	for (u32 i = 0; valid && i < cm->v_count; ++i)
+	{
+		valid = V3FiniteCheck(cm->v[i])
+		     && F32FiniteCheck(cm->depth[i])
+		     && cm->depth[i] >= 0.0f;
+	}
 
-        if (bad_collision)
-        {
-            fprintf(stderr, "=== Bad Collision ===\n");
-            V3Print("\tNormal", cm->n);
-            V3Print("\tv[0]", cm->v[0]);
-            fprintf(stderr, "\tdepth[0]: %f\n", cm->depth[0]);
-
-            if (2 <= cm->v_count)
-            {
-                V3Print("\tv[1]", cm->v[1]);
-                fprintf(stderr, "\tdepth[1]: %f\n", cm->depth[1]);
-            }
-
-            if (3 <= cm->v_count)
-            {
-                V3Print("\tv[2]", cm->v[2]);
-                fprintf(stderr, "\tdepth[2]: %f\n", cm->depth[2]);
-            }
-
-            if (4 <= cm->v_count)
-            {
-                V3Print("\tv[3]", cm->v[3]);
-                fprintf(stderr, "\tdepth[3]: %f\n", cm->depth[3]);
-            }
-
-            valid = 0;
-            break;
-        }
-    }
-
-    return valid;
+	return valid;
 }
 
 void c_ManifoldTransform(struct c_Manifold *dst, const struct c_Manifold *src, const m3 rot, const v3 translation)

@@ -321,12 +321,19 @@ void ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, co
 
     const struct c_ContactResult result = c_contact_methods[c_s[m]->type][c_s[1-m]->type](frame, &c->narrowphase, c_s_arr, t_arr, reference);
 
-    if (result.manifold_count && !c_ManifoldCheck(result.manifold))
+#ifdef DS_DEBUG
+    for (u32 i = 0; i < result.manifold_count; ++i)
     {
-        c_ManifoldDebugPrint(result.manifold);
-        Breakpoint(1);
-        c->narrowphase = c_contact_methods[c_s[m]->type][c_s[1-m]->type](frame, &c->narrowphase, c_s_arr, t_arr, reference);
+        if (!c_ManifoldCheck(result.manifold + i))
+        {
+            c_ManifoldDebugPrint(result.manifold + i);
+            Breakpoint(1);
+            /* rerun to step into the failing case */
+            c_contact_methods[c_s[m]->type][c_s[1-m]->type](frame, &c->narrowphase, c_s_arr, t_arr, reference);
+            break;
+        }
     }
+#endif
 	c->narrowphase = result;
 }
 
@@ -412,13 +419,19 @@ void TMP_ds_ShapeConvexContact(struct arena *frame, const struct ds_Dynamics *pi
                    : 1;
     TMP_ds_ContactResultToSolver(&result, &t_arr[0], flip);
 
-    if (result.manifold_count && !c_ManifoldCheck(result.manifold))
+#ifdef DS_DEBUG
+    for (u32 i = 0; i < result.manifold_count; ++i)
     {
-        c_ManifoldDebugPrint(result.manifold);
-        Breakpoint(1);
-        /* rerun to step into the failing case */
-        TMP_c_convex_contact_methods[c_s[m]->type][c_s[1-m]->type](frame, &c->narrowphase, c_s_arr, t_arr);
+        if (!c_ManifoldCheck(result.manifold + i))
+        {
+            c_ManifoldDebugPrint(result.manifold + i);
+            Breakpoint(1);
+            /* rerun to step into the failing case */
+            TMP_c_convex_contact_methods[c_s[m]->type][c_s[1-m]->type](frame, &c->narrowphase, c_s_arr, t_arr);
+            break;
+        }
     }
+#endif
 	c->narrowphase = result;
 }
 
@@ -459,13 +472,19 @@ void TMP_ds_ShapeMeshContact(struct arena *frame, const struct ds_Dynamics *pipe
                    : 1;
     TMP_ds_ContactResultToSolver(&result, &t_convex, flip);
 
-    if (result.manifold_count && !c_ManifoldCheck(result.manifold))
+#ifdef DS_DEBUG
+    for (u32 i = 0; i < result.manifold_count; ++i)
     {
-        c_ManifoldDebugPrint(result.manifold);
-        Breakpoint(1);
-        /* rerun to step into the failing case */
-        TMP_c_mesh_contact_methods[c_s[1-m]->type](frame, &c->narrowphase, c_s[m], &t_mesh, c_s[1-m], &t_convex);
+        if (!c_ManifoldCheck(result.manifold + i))
+        {
+            c_ManifoldDebugPrint(result.manifold + i);
+            Breakpoint(1);
+            /* rerun to step into the failing case */
+            TMP_c_mesh_contact_methods[c_s[1-m]->type](frame, &c->narrowphase, c_s[m], &t_mesh, c_s[1-m], &t_convex);
+            break;
+        }
     }
+#endif
 	c->narrowphase = result;
 }
 

@@ -122,6 +122,12 @@ static inline void V4Print(const char *text, const v4 v)
 	fprintf(stderr, "%s: (%f, %f, %f, %f), \n", text, v.x, v.y, v.z, v.w);
 }
 
+/* 1 if no component is NaN or Inf */
+static ds_ForceInline u32 V3FiniteCheck(const v3 v)
+{
+	return F32FiniteCheck(v.x) && F32FiniteCheck(v.y) && F32FiniteCheck(v.z);
+}
+
 static inline void V2U32Print(const char *text, const v2u32 v)
 {
 	fprintf(stderr, "%s: (%" PRIu32 ", %" PRIu32 "), \n", text, v.x, v.y);

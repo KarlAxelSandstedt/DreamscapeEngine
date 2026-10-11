@@ -1419,10 +1419,10 @@ static void DdcelAssertTopology(const struct ddcel *ddcel)
 	u32 vertex_count = 0;
 
 	u32 *vertex_check = ArenaPushZero(tmp, ddcel->v_count * sizeof(u32));
-	u32 *edge_check = ArenaPushZero(tmp, ddcel->edge_pool.count * sizeof(u32));
+	u32 *edge_check = ArenaPushZero(tmp, ddcel->edge_pool.count_max * sizeof(u32));
 	u32 *face_check = ArenaPushZero(tmp, 3*ddcel->v_count * sizeof(u32));
 
-	for (u32 i = 0; i < ddcel->edge_pool.count; ++i)
+	for (u32 i = 0; i < ddcel->edge_pool.count_max; ++i)
 	{
 		if (ds_PoolSlotAllocated(ddcel->e + i) && !edge_check[i])
 		{
