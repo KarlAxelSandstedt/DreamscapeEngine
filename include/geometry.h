@@ -332,6 +332,7 @@ struct dcelEdge
 struct dcel
 {
 	struct dcelFace *f;		/* f[i] = half-edge of face i */
+	struct plane *  plane;	/* plane[i] = face i's plane: unit normal pointing out of the hull (DcelPlanesTryCompute) */
 	struct dcelEdge *e;
 	v3 *	v;
 	u32 f_count;
@@ -341,28 +342,36 @@ struct dcel
 
 /* return dcel { 0 } */
 struct dcel 	DcelEmpty(void);
-/* return dcel tri stub */
+/*
+ * Return the triangle stub: two faces (front 0-1-2, back 0-2-1) without vertices or planes. The caller sets
+ * v (3 vertices) and plane (2 planes, e.g. through DcelPlanesTryCompute).
+ */
 struct dcel     DcelTriStub(void);
-/* return dcel box stub */
+/* return dcel box stub: unit cube centered at the origin, static memory (planes included) */
 struct dcel 	DcelBoxStub(void);
-/* return arena allocated dcel box with given half widths */
+/*
+ * return arena allocated dcel box with given half widths. Degenerate (a half width of 0): asserts in debug;
+ * in release logs a warning and returns DcelBoxStub().
+ */
 struct dcel 	DcelBox(struct arena *mem, const v3 hw);
-/* return arena allocated dcel convex hull of input points. On failure, an empty dcel is returned. */
+/*
+ * return arena allocated dcel convex hull of input points. On failure (fewer than 4 points, or no
+ * tetrahedron within tol), an empty dcel is returned. A hull with a degenerate face (zero area) asserts in
+ * debug; in release it is discarded with a warning and DcelBoxStub() is returned.
+ */
 struct dcel 	DcelConvexHull(struct arena *mem, const v3 *v, const u32 v_count, const f32 tol);
 
-/* Return the transformed plane defined by the given face */
-struct plane 	DcelFacePlane(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi);
-/* Return the plane defined by the given face */
-struct plane 	DcelFacePlaneLocal(const struct dcel *h, const u32 fi);
+/*
+ * Compute h->plane[0 .. f_count) (memory set by the caller) with Newell's method: per face, the summed
+ * vector over all of its edges is twice the face's area times its unit normal (Box3D b3NewellPlane), and the
+ * plane goes through the average of the face's vertices. Using every vertex keeps the normal accurate for
+ * polygons whose first triangle is thin. Return 1 if every face has a nonzero area, otherwise 0 (the
+ * planes of degenerate faces are then garbage).
+ */
+u32             DcelPlanesTryCompute(struct dcel *h);
 
-/* Return the transformed normal defined by the given face */
-v3 		    DcelFaceNormal(const struct dcel *h, const m3 rot, const u32 fi);
-/* Return the transformed normal drirection defined by the given face */
-v3 		    DcelFaceDirection(const struct dcel *h, const m3 rot, const u32 fi);
-/* Return the normal defined by the given face */
-v3 		    DcelFaceNormalLocal(const struct dcel *h, const u32 fi);
-/* Return the normal drirection defined by the given face */
-v3 		    DcelFaceDirectionLocal(const struct dcel *h, const u32 fi);
+/* Return face fi's plane transformed by p -> rot p + pos (local planes: h->plane[fi]) */
+struct plane 	DcelFacePlaneWorld(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi);
 
 struct plane 	DcelFaceClipPlane(const struct dcel *h, const m3 rot, const v3 pos, const v3 face_normal, const u32 e0, const u32 e1); /* Return clip plane of face containing edge e0e1, orthogonal to the face normal */
 

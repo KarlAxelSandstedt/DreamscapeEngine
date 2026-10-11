@@ -313,7 +313,7 @@ struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_C
 		f32 min_depth = F32_INFINITY;
 		for (u32 fi = 0; fi < h->f_count; ++fi)
 		{
-			const v3 n = DcelFaceNormal(h, rot, fi);
+			const v3 n = M3V3Mul(rot, h->plane[fi].normal);
 			const v3 p = V3Add(M3V3Mul(rot, h->v[h->e[h->f[fi].first].origin]), t[0].position);
 			const v3 diff = V3Sub(t[1].position, p);
 			const f32 depth = F32Max(0.0f, -V3Dot(n, diff));
@@ -406,7 +406,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 
 			for (u32 fi = 0; fi < h->f_count; ++fi)
 			{
-				struct plane pl = DcelFacePlane(h, rot, t[0].position, fi);
+				struct plane pl = DcelFacePlaneWorld(h, rot, t[0].position, fi);
 
 				const f32 d0 = PlanePointSignedDistance(&pl, cap_s.p[0]);
 				const f32 d1 = PlanePointSignedDistance(&pl, cap_s.p[1]);
@@ -453,7 +453,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 			{
 				manifold->v_count = 2;
 				struct segment seg = DcelFaceClipSegment(h, rot, pos, best_index, &cap_s);
-				const struct plane pl = DcelFacePlane(h, rot, pos, best_index);
+				const struct plane pl = DcelFacePlaneWorld(h, rot, pos, best_index);
 
 				if (cap_p0_inside == 1 && cap_p1_inside == 0)
 				{
@@ -510,7 +510,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 				/* find parallel face with V3Dot(face_normal, segment_points) > 0.0f */
 				for (u32 fi = 0; fi < h->f_count; ++fi)
 				{
-				    struct plane pl = DcelFacePlane(h, rot, pos, fi);
+				    struct plane pl = DcelFacePlaneWorld(h, rot, pos, fi);
                     if (PlaneSegmentParallelCheck(&pl, &cap_s))
 					{	
                         const f32 depth = PlanePointSignedDistance(&pl, c[1]);
@@ -1196,7 +1196,7 @@ struct c_ContactResult c_HullContact(struct arena *frame, const struct c_Contact
                 const u32 b_f = sat_FeatureIdFaceCheck(cache->feature[1]);
                 const u32 b_v = 1 - b_f;
                 const u32 face = sat_FeatureIdIndex(cache->feature[b_f]);
-	        	result.cache->normal = DcelFaceNormal(h[b_f], rot[b_f], face);
+	        	result.cache->normal = M3V3Mul(rot[b_f], h[b_f]->plane[face].normal);
                 if (V3Dot(result.cache->normal, cache->normal) < g_numerics_config->manifold_cache_normal_parallel_check_eps) 
                 { 
                     metrics->hull_cache_eviction_count += 1;
@@ -1962,7 +1962,7 @@ static u32 TriCcwHullEECheck(struct sat_EdgeQuery *query, const struct plane *tr
 	const u32 f2_1 = hull->e[e2_1].face_ccw;
 	const u32 f2_2 = hull->e[e2_2].face_ccw;
 	const struct segment hull_s = SegmentConstruct(hull->v[hull->e[e2_1].origin], hull->v[hull->e[e2_2].origin]);
-	const v3 n2_2 = V3Negate(DcelFaceDirectionLocal(hull, f2_2));
+	const v3 n2_2 = V3Negate(hull->plane[f2_2].normal);
 
 	/* 
 	 * test if A, -B edges intersect on gauss map, only if they do, 
@@ -2106,7 +2106,11 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_SatCache *new
     struct ds_DynamicsMetrics *metrics = &g_dynamics_worker[ds_ThreadSelfIndex()].metrics;
     
     struct dcel hull_tri = DcelTriStub();
+    struct plane tri_face_plane[2];
     hull_tri.v = (v3 *) tri;
+    hull_tri.plane = tri_face_plane;
+    const u32 tri_nondegenerate = DcelPlanesTryCompute(&hull_tri);
+    ds_AssertString(tri_nondegenerate, "mesh triangle without area");
     const struct dcel *h[2] = { &hull_tri, hull };
     const v3 *v[2] = { tri, hull->v };
 
@@ -2170,7 +2174,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_SatCache *new
                 const u32 b_f = sat_FeatureIdFaceCheck(old_cache->feature[1]);
                 const u32 b_v = 1 - b_f;
                 const u32 face = sat_FeatureIdIndex(old_cache->feature[b_f]);
-	        	new_cache->normal = DcelFaceNormalLocal(h[b_f], face);
+	        	new_cache->normal = h[b_f]->plane[face].normal;
                 if (V3Dot(new_cache->normal, old_cache->normal) < g_numerics_config->manifold_cache_normal_parallel_check_eps) 
                 { 
                     metrics->mesh_cache_eviction_count += 1;
@@ -2244,14 +2248,14 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_SatCache *new
         u32 separation_axis_found = 0;
     	for (u32 fi = 0; fi < hull->f_count; ++fi)
     	{
-            const struct plane sep_plane = DcelFacePlaneLocal(hull, fi);
+            const struct plane sep_plane = hull->plane[fi];
 
     		const f32 dist0 = PlanePointSignedDistance(&sep_plane, tri[0]);
     		const f32 dist1 = PlanePointSignedDistance(&sep_plane, tri[1]);
     		const f32 dist2 = PlanePointSignedDistance(&sep_plane, tri[2]);
     		const f32 min_dist = F32Min(F32Min(dist0, dist1), dist2);
 
-    		if (f_query[1].depth < min_dist*V3LengthSquared(sep_plane.normal_direction))
+    		if (f_query[1].depth < min_dist)
     		{
                 f_query[1].fi = fi;
     			f_query[1].depth = min_dist;
@@ -2265,11 +2269,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_SatCache *new
     	}
         //ProfZoneEnd;
 
-        const f32 n_dir_len = V3Length(min_plane.normal_direction);
-        min_plane.normal_direction = V3Scale(min_plane.normal_direction, 1.0f/n_dir_len);
-        min_plane.signed_distance /= n_dir_len;
     	f_query[1].normal = min_plane.normal;
-        f_query[1].depth /= n_dir_len;
 
         if (separation_axis_found)
         {
@@ -2299,7 +2299,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_SatCache *new
 
         for (u32 fi = 0; fi < hull->f_count; ++fi)
         {
-            const v3 f_dir = V3Negate(DcelFaceDirectionLocal(hull, fi));
+            const v3 f_dir = V3Negate(hull->plane[fi].normal);
             const u32 ei_end = hull->f[fi].first + hull->f[fi].count;
             for (u32 ei = hull->f[fi].first; ei < ei_end; ++ei)
             {
@@ -2398,6 +2398,13 @@ struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct
         hull_bvh_local_space.v[i] = V3Add(M3V3Mul(R, hull->v[i]), T);
         min = V3Min(min, hull_bvh_local_space.v[i]);
         max = V3Max(max, hull_bvh_local_space.v[i]);
+    }
+
+    /* the copy's planes move with its vertices */
+    hull_bvh_local_space.plane = ArenaPush(tmp, hull->f_count*sizeof(struct plane));
+    for (u32 fi = 0; fi < hull->f_count; ++fi)
+    {
+        hull_bvh_local_space.plane[fi] = DcelFacePlaneWorld(hull, R, T, fi);
     }
 
 	bbox_transform.min = min;
@@ -2868,12 +2875,10 @@ struct c_ContactResult TMP_c_HullSphereContact(struct arena *frame, const struct
 		f32 min_depth = F32_INFINITY;
 		for (u32 fi = 0; fi < h->f_count; ++fi)
 		{
-			struct plane pl = DcelFacePlaneLocal(h, fi);
-            PlaneNormalize(&pl);
-            const f32 depth = -PlanePointSignedDistance(&pl, p);
+            const f32 depth = -PlanePointSignedDistance(h->plane + fi, p);
 			if (depth < min_depth)
 			{
-				m->n = pl.normal_direction;
+				m->n = h->plane[fi].normal;
 				min_depth = depth;
 			}
 		}

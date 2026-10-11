@@ -1063,6 +1063,17 @@ static struct dcelEdge box_edge[] =
 	{ .origin = 7, .twin = 13,  .face_ccw = 5, },
 };
 
+/* box_face's planes for box_stub_vertex (what DcelPlanesTryCompute returns for them) */
+static struct plane box_stub_plane[6] =
+{
+	{ .normal = {{  0.0f,  1.0f,  0.0f }}, .signed_distance = 0.5f },
+	{ .normal = {{  1.0f,  0.0f,  0.0f }}, .signed_distance = 0.5f },
+	{ .normal = {{  0.0f,  0.0f, -1.0f }}, .signed_distance = 0.5f },
+	{ .normal = {{ -1.0f,  0.0f,  0.0f }}, .signed_distance = 0.5f },
+	{ .normal = {{  0.0f,  0.0f,  1.0f }}, .signed_distance = 0.5f },
+	{ .normal = {{  0.0f, -1.0f,  0.0f }}, .signed_distance = 0.5f },
+};
+
 struct dcel DcelBoxStub(void)
 {
 	struct dcel box = 
@@ -1070,6 +1081,7 @@ struct dcel DcelBoxStub(void)
 		.v = box_stub_vertex,
 		.e = box_edge,
 		.f = box_face,
+		.plane = box_stub_plane,
 		.e_count = 24,
 		.v_count = 8,
 		.f_count = 6,
@@ -1100,6 +1112,7 @@ struct dcel DcelTriStub(void)
 	struct dcel tri = 
 	{
 		.v = NULL,
+		.plane = NULL,
 		.e = tri_edge,
 		.f = tri_face,
 		.e_count = 6,
@@ -1126,6 +1139,7 @@ struct dcel DcelBox(struct arena *mem, const v3 hw)
 	struct dcel box = 
 	{
 		.v = box_vertex,
+		.plane = ArenaPush(mem, 6*sizeof(struct plane)),
 		.e = box_edge,
 		.f = box_face,
 		.e_count = 24,
@@ -1133,51 +1147,74 @@ struct dcel DcelBox(struct arena *mem, const v3 hw)
 		.f_count = 6,
 	};
 
+	if (!DcelPlanesTryCompute(&box))
+	{
+		Log(T_PHYSICS, S_WARNING, "DcelBox: degenerate box (half widths %f, %f, %f), using the box stub", hw.x, hw.y, hw.z);
+		ds_AssertString(0, "DcelBox: degenerate box");
+		box = DcelBoxStub();
+	}
+
 	return box; 
 }
 
-v3 DcelFaceNormal(const struct dcel *h, const m3 rot, const u32 fi)
+u32 DcelPlanesTryCompute(struct dcel *h)
 {
-    return M3V3Mul(rot, DcelFaceNormalLocal(h, fi));
+	u32 valid = 1;
+	for (u32 fi = 0; fi < h->f_count; ++fi)
+	{
+		/*
+		 * Newell's method. Every edge (v1, v2) of the face adds the doubled signed area of its shadow on the
+		 * yz, zx and xy planes (trapezoid rule); summed over the closed polygon these are the components of
+		 * twice the area vector, area * unit normal, pointing to the side from which the face is CCW. For a
+		 * triangle it equals the cross product (v1 - v0) x (v2 - v0). Coordinates are taken relative to the
+		 * face's first vertex o to keep the products small (less rounding).
+		 */
+		const struct dcelFace *f = h->f + fi;
+		const v3 o = h->v[h->e[f->first].origin];
+		v3 n = V3Zero();
+		v3 sum = V3Zero();
+		for (u32 i = 0; i < f->count; ++i)
+		{
+			const u32 i1 = h->e[f->first + i].origin;
+			const u32 i2 = h->e[f->first + ((i + 1) % f->count)].origin;
+			const v3 v1 = V3Sub(h->v[i1], o);
+			const v3 v2 = V3Sub(h->v[i2], o);
+			n.x += (v1.y - v2.y) * (v1.z + v2.z);
+			n.y += (v1.z - v2.z) * (v1.x + v2.x);
+			n.z += (v1.x - v2.x) * (v1.y + v2.y);
+			sum = V3Add(sum, v1);
+		}
+
+		/* |n| = 2 * area; 0: the face has no area, so no normal (normalizing would give Inf/NaN) */
+		const f32 length = V3Length(n);
+		if (length > 0.0f)
+		{
+			/* the plane passes through the average of the face's vertices, spreading their deviation */
+			const v3 centroid = V3Add(o, V3Scale(sum, 1.0f / (f32) f->count));
+			h->plane[fi].normal = V3Scale(n, 1.0f / length);
+			h->plane[fi].signed_distance = V3Dot(h->plane[fi].normal, centroid);
+		}
+		else
+		{
+			valid = 0;
+		}
+	}
+
+	return valid;
 }
 
-v3 DcelFaceDirection(const struct dcel *h, const m3 rot, const u32 fi)
+struct plane DcelFacePlaneWorld(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi)
 {
-    return M3V3Mul(rot, DcelFaceDirectionLocal(h, fi));
-}
-
-v3 DcelFaceDirectionLocal(const struct dcel *h, const u32 fi)
-{
-	struct dcelEdge *e0 = h->e + h->f[fi].first;
-	struct dcelEdge *e1 = h->e + h->f[fi].first + 1;
-	struct dcelEdge *e2 = h->e + h->f[fi].first + 2;
-    return TriCcwNormalDirection(h->v[e0->origin], h->v[e1->origin], h->v[e2->origin]);
-}
-
-v3 DcelFaceNormalLocal(const struct dcel *h, const u32 fi)
-{
-	const v3 normal = DcelFaceDirectionLocal(h, fi);
-	return V3Scale(normal, 1.0f/V3Length(normal));
-}
-
-struct plane DcelFacePlane(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi)
-{
-	const v3 n = M3V3Mul(rot, DcelFaceNormalLocal(h, fi));
-	const v3 p = V3Add(M3V3Mul(rot, h->v[h->e[h->f[fi].first].origin]), pos);
-	return PlaneConstruct(n, p);
-}
-
-struct plane DcelFacePlaneLocal(const struct dcel *h, const u32 fi)
-{
-    const u32 i0  = h->e[h->f[fi].first + 0].origin;
-    const u32 i1  = h->e[h->f[fi].first + 1].origin;
-    const u32 i2  = h->e[h->f[fi].first + 2].origin;
-    return PlaneConstructFromCcwTriangle(h->v[i0], h->v[i1], h->v[i2]);
+	/* a point x on the local plane maps to rot x + pos: dot(rot n, rot x + pos) = dot(n, x) + dot(rot n, pos) */
+	struct plane pl;
+	pl.normal = M3V3Mul(rot, h->plane[fi].normal);
+	pl.signed_distance = h->plane[fi].signed_distance + V3Dot(pl.normal, pos);
+	return pl;
 }
 
 struct segment DcelFaceClipSegment(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi, const struct segment *s)
 {
-	const v3 f_n = DcelFaceNormal(h, rot, fi);
+	const v3 f_n = M3V3Mul(rot, h->plane[fi].normal);
 
 	f32 min_p = 0.0f;
 	f32 max_p = 1.0f;
@@ -1904,13 +1941,14 @@ struct dcel DcelDdcel(struct arena *mem, const struct ddcel *ddcel)
 		.v = ArenaPushMemcpy(mem, ddcel->v, ddcel->v_count*sizeof(v3)),
 		.e = ArenaPush(mem, ddcel->edge_pool.count*sizeof(struct dcelEdge)),
 		.f = ArenaPush(mem, ddcel->face_pool.count*sizeof(struct dcelFace)),
+		.plane = ArenaPush(mem, ddcel->face_pool.count*sizeof(struct plane)),
 		.v_count = ddcel->v_count,
 		.e_count = ddcel->edge_pool.count,
 		.f_count = ddcel->face_pool.count,
 	};
 
 
-	if (cpy.v && cpy.e && cpy.f)
+	if (cpy.v && cpy.e && cpy.f && cpy.plane)
 	{
 		ArenaPushRecord(mem);
 		u32 *emap = ArenaPush(mem, sizeof(u32) * ddcel->edge_pool.count_max);
@@ -2023,7 +2061,19 @@ struct dcel DcelConvexHull(struct arena *mem, const v3 *v, const u32 v_count, co
 		DdcelAssertTopology(&ddcel);
 	}
 
+	ArenaPushRecord(mem);
 	dcel = DcelDdcel(mem, &ddcel);	
+	if (dcel.f_count && !DcelPlanesTryCompute(&dcel))
+	{
+		Log(T_PHYSICS, S_WARNING, "DcelConvexHull: hull of %u points has a degenerate face, using the box stub", v_count);
+		ds_AssertString(0, "DcelConvexHull: degenerate face");
+		ArenaPopRecord(mem);
+		dcel = DcelBoxStub();
+	}
+	else
+	{
+		ArenaRemoveRecord(mem);
+	}
 end:
 	ArenaPopScratch();
 	ArenaPopScratch();

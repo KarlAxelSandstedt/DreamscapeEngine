@@ -233,11 +233,11 @@ f32 HullRaycastParameter(const struct dcel *hull, const struct ray *ray)
 	for (u32 fi = 0; fi < hull->f_count; ++fi)
 	{
 		/*
-		The face's plane n.(p - v) = 0, n outward and unnormalized. On the line p = o + t*d:
+		The face's plane n.(p - v) = 0, n the stored outward unit normal. On the line p = o + t*d:
 
 			t = n.(v - o) / n.d = num / denom
 		*/
-		const v3 n = DcelFaceDirectionLocal(hull, fi);
+		const v3 n = hull->plane[fi].normal;
 		const v3 v = hull->v[hull->e[hull->f[fi].first].origin];
 		const f32 denom = V3Dot(n, ray->dir);
 		const f32 num = V3Dot(n, V3Sub(v, ray->origin));
@@ -253,7 +253,7 @@ f32 HullRaycastParameter(const struct dcel *hull, const struct ray *ray)
 		}
 		else if (num < 0.0f)
 		{
-			/* parallel to the face and outside its halfspace (a degenerate face has n = 0: skipped) */
+			/* parallel to the face and outside its halfspace */
 			return F32_INFINITY;
 		}
 
