@@ -52,8 +52,8 @@ struct GJKSimplex
 };
 
 /*
- * Data shared by the GJK functions of one query: both vertex sets (local frames), the transform of B into
- * A's frame, and A's frame for the world-space outputs.
+ * Data shared by the GJK functions of one query: both vertex sets (local frames) and the transform of B into
+ * A's frame.
  */
 struct GJKHelper
 {
@@ -62,7 +62,6 @@ struct GJKHelper
     m3                      rot;        /* B to A: p_A = rot * p_B + pos */
     m3                      rot_t;      /* rot^T: directions from A's frame into B's */
     v3                      pos;
-    const ds_TransformWorld *t_a;       /* A to world */
 };
 
 /* Set up the vset of shape (hull, sphere or capsule) in its local frame. */
@@ -99,15 +98,13 @@ static void GJKVertexSetInit(struct GJKVertexSet *vset, const struct c_Shape *sh
     }
 }
 
-static void GJKHelperInit(struct GJKHelper *helper, const struct c_Shape *shape_a, const ds_TransformWorld *t_a, const struct c_Shape *shape_b, const ds_TransformWorld *t_b)
+static void GJKHelperInit(struct GJKHelper *helper, const struct c_Shape *shape_a, const struct c_Shape *shape_b, const ds_Transform *b_to_a)
 {
     GJKVertexSetInit(&helper->vset_a, shape_a);
     GJKVertexSetInit(&helper->vset_b, shape_b);
-    const ds_Transform relative = ds_TransformWorldRelative(t_a, t_b);
-    helper->rot = M3Q(relative.rotation);
+    helper->rot = M3Q(b_to_a->rotation);
     helper->rot_t = M3Transpose(helper->rot);
-    helper->pos = relative.position;
-    helper->t_a = t_a;
+    helper->pos = b_to_a->position;
 }
 
 /* Simplex vertex of index_a of A and index_b of B; B is moved into A's frame. */
@@ -247,25 +244,25 @@ static void GJKCacheInit(struct GJKCache *cache, const struct GJKSimplex *simple
  * Overlap/touching result (1, 1b, 4a): the origin lies on the simplex of B - A (within the touch band), so
  * sum_i w_i b_i ~ sum_i w_i a_i. Both witness points are taken from A's blend: c_a == c_b, n = 0.
  */
-static f32 GJKOverlap(v3f64 *c_a, v3f64 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKHelper *helper, const struct GJKSimplex *simplex)
+static f32 GJKOverlap(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKSimplex *simplex)
 {
     v3 c = V3Zero();
     for (u32 i = 0; i < simplex->count; ++i)
     {
         c = V3AddScaled(c, simplex->v[i].a, simplex->weight[i]);
     }
-    *c_a = ds_TransformWorldPointToWorld(helper->t_a, c);
-    *c_b = *c_a;
+    *c_a = c;
+    *c_b = c;
     *n = V3Zero();
     GJKCacheInit(cache_out, simplex);
     return 0.0f;
 }
 
 /* API and outputs: collision.h */
-f32 GJK(v3f64 *c_a, v3f64 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct c_Shape *shape_a, const ds_TransformWorld *t_a, const struct c_Shape *shape_b, const ds_TransformWorld *t_b, const f32 cutoff_distance)
+f32 GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct c_Shape *shape_a, const struct c_Shape *shape_b, const ds_Transform *b_to_a, const f32 cutoff_distance)
 {
     struct GJKHelper helper;
-    GJKHelperInit(&helper, shape_a, t_a, shape_b, t_b);
+    GJKHelperInit(&helper, shape_a, shape_b, b_to_a);
     const f32 cutoff_distance_sq = cutoff_distance*cutoff_distance;
 
     /* warm start from the cache unless its length/area/volume changed by more than 2x */
@@ -329,7 +326,7 @@ f32 GJK(v3f64 *c_a, v3f64 *c_b, v3 *n, struct GJKCache *cache_out, const struct 
     v3 dir = V3Negate(backup.v[0].minkowski);
     if (V3LengthSquared(dir) < GJK_DIR_LENGTH_SQ_MIN)
     {
-        return GJKOverlap(c_a, c_b, n, cache_out, &helper, &backup);
+        return GJKOverlap(c_a, c_b, n, cache_out, &backup);
     }
 
     f32 distance_sq = F32_INFINITY;
@@ -386,7 +383,7 @@ f32 GJK(v3f64 *c_a, v3f64 *c_b, v3 *n, struct GJKCache *cache_out, const struct 
         /* 1 */
         if (region == VORONOI_T0123)
         {
-            return GJKOverlap(c_a, c_b, n, cache_out, &helper, &simplex);
+            return GJKOverlap(c_a, c_b, n, cache_out, &simplex);
         }
 
         v3 closest = V3Zero();
@@ -400,7 +397,7 @@ f32 GJK(v3f64 *c_a, v3f64 *c_b, v3 *n, struct GJKCache *cache_out, const struct 
         const f32 touch_tolerance = GJK_TOUCH_TOLERANCE * F32_EPSILON;
         if (iteration_distance_sq <= touch_tolerance * touch_tolerance * vertex_length_sq_max)
         {
-            return GJKOverlap(c_a, c_b, n, cache_out, &helper, &simplex);
+            return GJKOverlap(c_a, c_b, n, cache_out, &simplex);
         }
 
         /* 3: no strict progress (or NaN) */
@@ -417,7 +414,7 @@ f32 GJK(v3f64 *c_a, v3f64 *c_b, v3 *n, struct GJKCache *cache_out, const struct 
             /* 4a: |dir| = |a| = distance ~ 0 */
             if (simplex.count == 1)
             {
-                return GJKOverlap(c_a, c_b, n, cache_out, &helper, &simplex);
+                return GJKOverlap(c_a, c_b, n, cache_out, &simplex);
             }
 
             /* 4b */
@@ -483,14 +480,36 @@ f32 GJK(v3f64 *c_a, v3f64 *c_b, v3 *n, struct GJKCache *cache_out, const struct 
      * dir (the feature's geometry), not from p_b - p_a. dir points from the closest point to the origin,
      * and closest = p_b - p_a, so the normal from A to B is -dir.
      */
-    *c_a = ds_TransformWorldPointToWorld(t_a, p_a);
-    *c_b = ds_TransformWorldPointToWorld(t_a, p_b);
-    *n = QUnitRotate(t_a->rotation, V3Scale(dir, -1.0f / V3Length(dir)));
+    *c_a = p_a;
+    *c_b = p_b;
+    *n = V3Scale(dir, -1.0f / V3Length(dir));
     GJKCacheInit(cache_out, &simplex);
 
     /* the result simplex passed 1b (or is the first vertex, 4a): 0 is only returned through GJKOverlap */
     const f32 distance = V3Length(closest);
     ds_Assert(distance > 0.0f);
+    return distance;
+}
+
+/* API and outputs: collision.h. GJK in A's frame; outputs to world (garbage stays garbage on F32_INFINITY). */
+f32 GJKWorld(v3f64 *c_a, v3f64 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct c_Shape *shape_a, const ds_TransformWorld *t_a, const struct c_Shape *shape_b, const ds_TransformWorld *t_b, const f32 cutoff_distance)
+{
+    const ds_Transform b_to_a = ds_TransformWorldRelative(t_a, t_b);
+    v3 c_a_local, c_b_local, n_local;
+    const f32 distance = GJK(&c_a_local, &c_b_local, &n_local, cache_out, cache_in, shape_a, shape_b, &b_to_a, cutoff_distance);
+    if (distance == 0.0f)
+    {
+        *c_a = ds_TransformWorldPointToWorld(t_a, c_a_local);
+        *c_b = *c_a;
+        *n = V3Zero();
+    }
+    else if (distance != F32_INFINITY)
+    {
+        *c_a = ds_TransformWorldPointToWorld(t_a, c_a_local);
+        *c_b = ds_TransformWorldPointToWorld(t_a, c_b_local);
+        *n = QUnitRotate(t_a->rotation, n_local);
+    }
+
     return distance;
 }
 
@@ -582,7 +601,7 @@ f32 c_HullSphereDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const d
 
 	v3 n;
 	struct GJKCache cache;
-	const f32 dist = GJK(c1, c2, &n, &cache, NULL, s1, t1, s2, t2, F32_INFINITY);
+	const f32 dist = GJKWorld(c1, c2, &n, &cache, NULL, s1, t1, s2, t2, F32_INFINITY);
 	if (dist <= s2->sphere.radius)
 	{  
         return 0.0f;
@@ -599,7 +618,7 @@ f32 c_HullCapsuleDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const 
 
 	v3 n;
 	struct GJKCache cache;
-	const f32 dist = GJK(c1, c2, &n, &cache, NULL, s1, t1, s2, t2, F32_INFINITY);
+	const f32 dist = GJKWorld(c1, c2, &n, &cache, NULL, s1, t1, s2, t2, F32_INFINITY);
 	if (dist <= s2->capsule.radius)
 	{
         return 0.0f;
@@ -616,7 +635,7 @@ f32 c_HullDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_Tran
 
 	v3 n;
 	struct GJKCache cache;
-	return GJK(c1, c2, &n, &cache, NULL, s1, t1, s2, t2, F32_INFINITY);
+	return GJKWorld(c1, c2, &n, &cache, NULL, s1, t1, s2, t2, F32_INFINITY);
 }
 
 f32 c_TriMeshBvhSphereDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2)

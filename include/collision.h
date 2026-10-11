@@ -270,18 +270,20 @@ Description:
     Distance, closest points and normal of two convex shapes, computed in A's frame. Shapes closer than
     the rounding noise band GJK_TOUCH_TOLERANCE * eps * L (L ~ the shapes' extent in A's frame) count as
     touching. Uses the pushed numerics config (gjk_max_iterations).
+    GJK         B given in A's frame (b_to_a: p_A = b_to_a.rotation p_B + b_to_a.position); outputs in A's
+                frame (f32). For callers that work in A's frame anyway (contacts).
+    GJKWorld    world transforms: b_to_a = ds_TransformWorldRelative(t_a, t_b), then GJK, then the outputs
+                to world (c_a, c_b f64 points, n world).
 
 Usage:
     struct GJKCache cache;
-    v3f64 c_a, c_b;
-    v3 n;
-    const f32 d = GJK(&c_a, &c_b, &n, &cache, cache_in,
-                      shape_a, &transform_a, shape_b, &transform_b, cutoff_distance);
+    v3 c_a, c_b, n;
+    const f32 d = GJK(&c_a, &c_b, &n, &cache, cache_in, shape_a, shape_b, &b_to_a, cutoff_distance);
 
     d == 0.0f           overlap or touch; c_a == c_b, n = 0
     d == F32_INFINITY   a separating plane proves distance > cutoff_distance; c_a, c_b, n garbage
-    otherwise           the distance; c_a, c_b the closest points and n the unit normal from A to B (world
-                        space), n accurate to ~6 eps * L / distance radians. Only an upper bound if the
+    otherwise           the distance; c_a, c_b the closest points and n the unit normal from A to B,
+                        n accurate to ~6 eps * L / distance radians. Only an upper bound if the
                         iteration limit was reached
 
     cache_in            NULL or the pair's previous cache_out; warm-starts the search unless the cached
@@ -291,7 +293,8 @@ Usage:
                         may still exceed it; callers compare.
 
 Internals:
-    c_distance.c: the termination cases and the derivation of the touch band.
+    c_distance.c: the termination cases and the derivation of the touch band. GJKWorld returns the same
+    bits as GJK followed by ds_TransformWorldPointToWorld / QUnitRotate.
 */
 
 /*
@@ -310,7 +313,8 @@ struct GJKCache
 /* touch band width in units of the rounding noise eps * L (see c_distance.c) */
 #define GJK_TOUCH_TOLERANCE 100.0f
 
-f32     GJK(v3f64 *c_a, v3f64 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct c_Shape *shape_a, const ds_TransformWorld *t_a, const struct c_Shape *shape_b, const ds_TransformWorld *t_b, const f32 cutoff_distance);
+f32     GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct c_Shape *shape_a, const struct c_Shape *shape_b, const ds_Transform *b_to_a, const f32 cutoff_distance);
+f32     GJKWorld(v3f64 *c_a, v3f64 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct c_Shape *shape_a, const ds_TransformWorld *t_a, const struct c_Shape *shape_b, const ds_TransformWorld *t_b, const f32 cutoff_distance);
 
 f32     c_SphereDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2);
 f32     c_CapsuleSphereDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2);

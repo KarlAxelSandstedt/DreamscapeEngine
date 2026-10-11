@@ -78,7 +78,7 @@ u32 c_HullSphereTest(const struct c_Shape *s1, const ds_TransformWorld *t1, cons
     v3f64 c1, c2;
     v3 n;
     struct GJKCache cache;
-    return GJK(&c1, &c2, &n, &cache, NULL, s1, t1, s2, t2, s2->sphere.radius) <= s2->sphere.radius;
+    return GJKWorld(&c1, &c2, &n, &cache, NULL, s1, t1, s2, t2, s2->sphere.radius) <= s2->sphere.radius;
 }
 
 u32 c_HullCapsuleTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2)
@@ -89,7 +89,7 @@ u32 c_HullCapsuleTest(const struct c_Shape *s1, const ds_TransformWorld *t1, con
     v3f64 c1, c2;
     v3 n;
     struct GJKCache cache;
-    return GJK(&c1, &c2, &n, &cache, NULL, s1, t1, s2, t2, s2->capsule.radius) <= s2->capsule.radius;
+    return GJKWorld(&c1, &c2, &n, &cache, NULL, s1, t1, s2, t2, s2->capsule.radius) <= s2->capsule.radius;
 }
 
 u32 c_HullTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2)
@@ -100,7 +100,7 @@ u32 c_HullTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const stru
     v3f64 c1, c2;
     v3 n;
     struct GJKCache cache;
-    return GJK(&c1, &c2, &n, &cache, NULL, s1, t1, s2, t2, 0.0f) == 0.0f;
+    return GJKWorld(&c1, &c2, &n, &cache, NULL, s1, t1, s2, t2, 0.0f) == 0.0f;
 }
 
 u32 c_TriMeshBvhSphereTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2)

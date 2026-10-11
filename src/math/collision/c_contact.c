@@ -297,7 +297,7 @@ struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_C
 	const f32 r_sum = s[1]->sphere.radius;
 	result.gjk_cache = ArenaPushPacked(frame, sizeof(struct GJKCache));
 	v3f64 c_world[2] = { 0 };
-	const f32 dist = GJK(&c_world[0], &c_world[1], &normal, result.gjk_cache, cached_result->gjk_cache, s[0], &tw[0], s[1], &tw[1], r_sum);
+	const f32 dist = GJKWorld(&c_world[0], &c_world[1], &normal, result.gjk_cache, cached_result->gjk_cache, s[0], &tw[0], s[1], &tw[1], r_sum);
 	c[0] = V3F64Demote(c_world[0]);
 	c[1] = V3F64Demote(c_world[1]);
 
@@ -374,7 +374,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 	v3 c[2], normal;
 	result.gjk_cache = ArenaPushPacked(frame, sizeof(struct GJKCache));
 	v3f64 c_world[2] = { 0 };
-	const f32 dist = GJK(&c_world[0], &c_world[1], &normal, result.gjk_cache, cached_result->gjk_cache, s[0], &tw[0], s[1], &tw[1], s[1]->capsule.radius);
+	const f32 dist = GJKWorld(&c_world[0], &c_world[1], &normal, result.gjk_cache, cached_result->gjk_cache, s[0], &tw[0], s[1], &tw[1], s[1]->capsule.radius);
 	c[0] = V3F64Demote(c_world[0]);
 	c[1] = V3F64Demote(c_world[1]);
 	const f32 dist_sq = dist*dist;
@@ -396,8 +396,8 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 		    struct GJKCache unused_cache;
 		    v3f64 unused_c[2];
 		    v3 unused_n;
-		    const u32 cap_p0_inside = (GJK(&unused_c[0], &unused_c[1], &unused_n, &unused_cache, NULL, s[0], &tw[0], &point, &t_p0, 0.0f) == 0.0f) ? 1 : 0;
-		    const u32 cap_p1_inside = (GJK(&unused_c[0], &unused_c[1], &unused_n, &unused_cache, NULL, s[0], &tw[0], &point, &t_p1, 0.0f) == 0.0f) ? 1 : 0;
+		    const u32 cap_p0_inside = (GJKWorld(&unused_c[0], &unused_c[1], &unused_n, &unused_cache, NULL, s[0], &tw[0], &point, &t_p0, 0.0f) == 0.0f) ? 1 : 0;
+		    const u32 cap_p1_inside = (GJKWorld(&unused_c[0], &unused_c[1], &unused_n, &unused_cache, NULL, s[0], &tw[0], &point, &t_p1, 0.0f) == 0.0f) ? 1 : 0;
 
 			u32 edge_best = 0; 
 			u32 best_index = 0;
@@ -2828,11 +2828,60 @@ struct c_ContactResult TMP_c_CapsuleContact(struct arena *frame, const struct c_
 }
 #endif
 
-/* TMP: adapter over c_HullSphereContact until rewritten */
 struct c_ContactResult TMP_c_HullSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
 {
-    struct c_ContactResult result = c_HullSphereContact(frame, cached_result, s, t, 0);
-    TMP_c_ContactResultToLocal(&result, &t[0]);
+	ds_Assert(s[0]->type == C_SHAPE_CONVEX_HULL);
+	ds_Assert(s[1]->type == C_SHAPE_SPHERE);
+
+    struct c_ContactResult result = { 0 };
+    const f32 radius = s[1]->sphere.radius;
+
+    struct GJKCache cache;
+    v3f64 c[2];
+    v3 n;
+    const f32 distance = GJKWorld(c+0, c+1, &n, &cache, NULL, s[0], t+0, s[1], t+1, radius);
+    if (radius < distance)
+    {
+        return result;
+    }
+
+    result.manifold_count = 1;
+    result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
+    struct c_Manifold *m = result.manifold;
+	m->v_count = 1;
+
+    /* shallow penetration */
+    if (0.0f < distance)
+    {
+        /* GJK's output is in world space */
+        const q inv = QConj(t[0].rotation);
+        m->n = QUnitRotate(inv, n);
+        m->v[0] = QUnitRotate(inv, V3F64Demote(V3F64Sub(c[0], t[0].position)));
+        m->depth[0] = radius - distance;
+    }
+	/* deep penetration */
+    else
+    {
+		const struct dcel *h = &s[0]->hull;
+        const v3 p = QUnitRotate(QConj(t[0].rotation), V3F64Demote(V3F64Sub(t[1].position, t[0].position)));
+
+		f32 min_depth = F32_INFINITY;
+		for (u32 fi = 0; fi < h->f_count; ++fi)
+		{
+			struct plane pl = DcelFacePlaneLocal(h, fi);
+            PlaneNormalize(&pl);
+            const f32 depth = -PlanePointSignedDistance(&pl, p);
+			if (depth < min_depth)
+			{
+				m->n = pl.normal_direction;
+				min_depth = depth;
+			}
+		}
+        min_depth = F32Max(0.0f, min_depth);
+		m->depth[0] = min_depth + radius;
+		m->v[0] = V3Add(p, V3Scale(m->n, min_depth));
+	}
+
     return result;
 }
 

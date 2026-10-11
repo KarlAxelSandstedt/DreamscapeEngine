@@ -573,7 +573,7 @@ static u32 GjkTestQuery(struct gjk_TestStats *stats, f32 *d_out, struct GJKCache
     const ds_TransformWorld t_b = ds_TransformPromote(&b->t);
     v3f64 c_a, c_b;
     v3 n;
-    const f32 d = GJK(&c_a, &c_b, &n, cache_out, cache_in, &a->shape, &t_a, &b->shape, &t_b, cutoff);
+    const f32 d = GJKWorld(&c_a, &c_b, &n, cache_out, cache_in, &a->shape, &t_a, &b->shape, &t_b, cutoff);
     *d_out = d;
     stats->query_count += 1;
 
