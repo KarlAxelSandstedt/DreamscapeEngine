@@ -191,7 +191,7 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
     
         /* derive new world transform from updated angle and world center of mass */
         const q rotation = bcomp->rotation;
-        const v3 rotated_local_center_of_mass = QV3Rotate(rotation, sim->local_center_of_mass);
+        const v3 rotated_local_center_of_mass = QUnitRotate(rotation, sim->local_center_of_mass);
         sim->world.position = V3Sub(bcomp->center_of_mass, rotated_local_center_of_mass);
         sim->world.rotation = rotation;
 
@@ -429,12 +429,12 @@ void ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 col
                     continue;
                 }
 
-                const q body0_inverse_rotation = QInverse(sim[0]->world.rotation);
+                const q body0_inverse_rotation = QConj(sim[0]->world.rotation);
 
                 for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
                 {
                 	struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
-                    const v3 r = QV3Rotate(body0_inverse_rotation, ccp->r[0]);
+                    const v3 r = QUnitRotate(body0_inverse_rotation, ccp->r[0]);
 
                     //TODO Make this test better
 	            	u32 best = U32_MAX;
@@ -469,8 +469,8 @@ void ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 col
 	            		bcomp[0]->linear_velocity = V3AddScaled(bcomp[0]->linear_velocity, total_cached_impulse, -sim[0]->inv_mass);
 	            		bcomp[1]->linear_velocity = V3AddScaled(bcomp[1]->linear_velocity, total_cached_impulse, sim[1]->inv_mass);
 
-                        ccp->r[0] = QV3Rotate(sim[0]->world.rotation, ccache->r1[best]);
-                        ccp->r[1] = QV3Rotate(sim[1]->world.rotation, ccache->r2[best]);
+                        ccp->r[0] = QUnitRotate(sim[0]->world.rotation, ccache->r1[best]);
+                        ccp->r[1] = QUnitRotate(sim[1]->world.rotation, ccache->r2[best]);
 
 	            		const v3 delta_w0 = M3V3Mul(sim[0]->world_inv_inertia, V3Cross(ccp->r[0], total_cached_impulse));
 	            		bcomp[0]->angular_velocity = V3Sub(bcomp[0]->angular_velocity, delta_w0);
@@ -626,27 +626,27 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline
 
             const q sim_inv_rotation[2] =
             {
-                QInverse(sim[0]->world.rotation),
-                QInverse(sim[1]->world.rotation),
+                QConj(sim[0]->world.rotation),
+                QConj(sim[1]->world.rotation),
             };
             const q bcomp_inv_rotation[2] =
             {
-                QInverse(bcomp[0]->rotation),
-                QInverse(bcomp[1]->rotation),
+                QConj(bcomp[0]->rotation),
+                QConj(bcomp[1]->rotation),
             };
 		    for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
 		    {
                 /* Cache */
                 struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
-		    	ccache->r1[ccpi] = QV3Rotate(sim_inv_rotation[0], ccp->r[0]);
-		    	ccache->r2[ccpi] = QV3Rotate(sim_inv_rotation[1], ccp->r[1]);
+		    	ccache->r1[ccpi] = QUnitRotate(sim_inv_rotation[0], ccp->r[0]);
+		    	ccache->r2[ccpi] = QUnitRotate(sim_inv_rotation[1], ccp->r[1]);
 		    	ccache->normal_impulse[ccpi] = ccp->normal_impulse;
 		    	ccache->tangent_impulse[ccpi][0] = ccp->tangent_impulse[0];
 		    	ccache->tangent_impulse[ccpi][1] = ccp->tangent_impulse[1];
 
                 /* Init Position */
-                ccp->r[0] = QV3Rotate(bcomp_inv_rotation[0], ccp->r[0]);
-                ccp->r[1] = QV3Rotate(bcomp_inv_rotation[1], ccp->r[1]);
+                ccp->r[0] = QUnitRotate(bcomp_inv_rotation[0], ccp->r[0]);
+                ccp->r[1] = QUnitRotate(bcomp_inv_rotation[1], ccp->r[1]);
             }
         }
     }
@@ -693,8 +693,8 @@ void ds_PositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 c
 		        const m3 inv_inertia1 = M3Mul(M3Mul(rot1, sim[1]->local_inv_inertia), M3Transpose(rot1));
 		        sim[1]->world_inv_inertia = inv_inertia1;
 
-                const v3 r0 = QV3Rotate(bcomp[0]->rotation, ccp->r[0]);
-                const v3 r1 = QV3Rotate(bcomp[1]->rotation, ccp->r[1]);
+                const v3 r0 = QUnitRotate(bcomp[0]->rotation, ccp->r[0]);
+                const v3 r1 = QUnitRotate(bcomp[1]->rotation, ccp->r[1]);
 
 		    	const v3 rn0 = V3Cross(r0, cc->normal);
 		    	const v3 rn1 = V3Cross(r1, cc->normal);

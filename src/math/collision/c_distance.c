@@ -485,7 +485,7 @@ f32 GJK(v3f64 *c_a, v3f64 *c_b, v3 *n, struct GJKCache *cache_out, const struct 
      */
     *c_a = ds_TransformWorldPointToWorld(t_a, p_a);
     *c_b = ds_TransformWorldPointToWorld(t_a, p_b);
-    *n = QV3Rotate(t_a->rotation, V3Scale(dir, -1.0f / V3Length(dir)));
+    *n = QUnitRotate(t_a->rotation, V3Scale(dir, -1.0f / V3Length(dir)));
     GJKCacheInit(cache_out, &simplex);
 
     /* the result simplex passed 1b (or is the first vertex, 4a): 0 is only returned through GJKOverlap */
@@ -529,7 +529,7 @@ f32 c_CapsuleSphereDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, cons
 
     const struct capsule *cap = &s1->capsule;
     const f32 r_sum = cap->radius + s2->sphere.radius;
-    const v3 axis = QV3Rotate(t1->rotation, V3(0.0f, cap->half_height, 0.0f));
+    const v3 axis = QUnitRotate(t1->rotation, V3(0.0f, cap->half_height, 0.0f));
     const struct segment seg = SegmentConstruct(axis, V3Negate(axis));
     const v3 p = V3F64Demote(V3F64Sub(t2->position, t1->position));
 
@@ -555,8 +555,8 @@ f32 c_CapsuleDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_T
     const struct capsule *cap1 = &s1->capsule;
     const struct capsule *cap2 = &s2->capsule;
     const f32 r_sum = cap1->radius + cap2->radius;
-    const v3 axis1 = QV3Rotate(t1->rotation, V3(0.0f, cap1->half_height, 0.0f));
-    const v3 axis2 = QV3Rotate(t2->rotation, V3(0.0f, cap2->half_height, 0.0f));
+    const v3 axis1 = QUnitRotate(t1->rotation, V3(0.0f, cap1->half_height, 0.0f));
+    const v3 axis2 = QUnitRotate(t2->rotation, V3(0.0f, cap2->half_height, 0.0f));
     const v3 p2 = V3F64Demote(V3F64Sub(t2->position, t1->position));
     const struct segment seg1 = SegmentConstruct(axis1, V3Negate(axis1));
     const struct segment seg2 = SegmentConstruct(V3Add(p2, axis2), V3Sub(p2, axis2));

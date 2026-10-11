@@ -154,7 +154,7 @@ v3 SegmentBc(const struct segment *s, const f32 t)
                                                                         
 struct segment SegmentCapsuleTransform(const struct capsule *cap, const ds_Transform *t)
 {
-    const v3 p = QV3Rotate(t->rotation, V3(0.0f, cap->half_height, 0.0f));
+    const v3 p = QUnitRotate(t->rotation, V3(0.0f, cap->half_height, 0.0f));
 	return SegmentConstruct(V3Add(p, t->position), V3Add(V3Negate(p), t->position));
 }
 

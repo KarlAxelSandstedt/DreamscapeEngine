@@ -46,7 +46,7 @@ u32 c_CapsuleSphereTest(const struct c_Shape *s1, const ds_TransformWorld *t1, c
 
     const struct capsule *cap = &s1->capsule;
     const f32 r_sum = cap->radius + s2->sphere.radius;
-    const v3 axis = QV3Rotate(t1->rotation, V3(0.0f, cap->half_height, 0.0f));
+    const v3 axis = QUnitRotate(t1->rotation, V3(0.0f, cap->half_height, 0.0f));
     const struct segment seg = SegmentConstruct(axis, V3Negate(axis));
     const v3 p = V3F64Demote(V3F64Sub(t2->position, t1->position));
 
@@ -60,8 +60,8 @@ u32 c_CapsuleTest(const struct c_Shape *s1, const ds_TransformWorld *t1, const s
     ds_Assert(s2->type == C_SHAPE_CAPSULE);
 
     const f32 r_sum = s1->capsule.radius + s2->capsule.radius;
-    const v3 axis1 = QV3Rotate(t1->rotation, V3(0.0f, s1->capsule.half_height, 0.0f));
-    const v3 axis2 = QV3Rotate(t2->rotation, V3(0.0f, s2->capsule.half_height, 0.0f));
+    const v3 axis1 = QUnitRotate(t1->rotation, V3(0.0f, s1->capsule.half_height, 0.0f));
+    const v3 axis2 = QUnitRotate(t2->rotation, V3(0.0f, s2->capsule.half_height, 0.0f));
     const v3 p2 = V3F64Demote(V3F64Sub(t2->position, t1->position));
     const struct segment seg1 = SegmentConstruct(axis1, V3Negate(axis1));
     const struct segment seg2 = SegmentConstruct(V3Add(p2, axis2), V3Sub(p2, axis2));

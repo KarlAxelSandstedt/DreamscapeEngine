@@ -45,6 +45,7 @@ u32 c_ManifoldCheck(const struct c_Manifold *cm)
     const u32 bad_normal = V3Length(cm->n) == 0.0f;
     for (u32 i = 0; i < cm->v_count; ++i)
     {
+        ds_Assert(cm->depth[i] >= 0.0f);
         const u32 bad_collision = bad_normal
             || V3Length(cm->v[i]) > 10000.0f
             || F32TestNan(cm->v[i].buf[0])
@@ -101,29 +102,6 @@ void c_ManifoldTransform(struct c_Manifold *dst, const struct c_Manifold *src, c
 
 struct c_ContactResult c_SphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_TransformWorld tw[2], const u32 ref)
 {
-	//ds_Assert(s[0]->type == C_SHAPE_SPHERE);
-	//ds_Assert(s[1]->type == C_SHAPE_SPHERE);
-
-    //const f32 r_sum = s[0]->sphere.radius + s[1]->sphere.radius;
-
-    //struct c_ContactResult result = { 0 };
-    //const u32 inc = 1 - ref;
-
-    //const v3 p = V3F64Demote(V3F64Sub(tw[inc].position, tw[ref].position));
-    //const f32 dist_sq = V3LengthSqured(c);
-    //if (dist_sq <= r_sum*r_sum)
-    //{
-    //    result.manifold_count = 1;
-    //    result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
-    //    struct c_Manifold *manifold = result.manifold;
-    //    manifold->n = (dist_sq > 0.0f)
-    //                ? V3Normalize(p)
-    //                : V3(0.0f, 1.0f, 0.0f);
-	//	manifold->v_count = 1;
-    //}
-
-    //return result;
-
 	/* TODO(f64 P2 contacts): manifolds are built in world f32 until they are relative to t[ref] */
 	const ds_Transform t[2] =
 	{
@@ -181,7 +159,7 @@ struct c_ContactResult c_CapsuleSphereContact(struct arena *frame, const struct 
 
 	v3 c[2], diff;
 
-    const v3 s_p1 = QV3Rotate(t[0].rotation, V3(0.0f, cap->half_height, 0.0f));
+    const v3 s_p1 = QUnitRotate(t[0].rotation, V3(0.0f, cap->half_height, 0.0f));
 	struct segment seg = SegmentConstruct(s_p1, V3Negate(s_p1));
 
 	c[1] = V3Sub(t[1].position, t[0].position);
@@ -197,7 +175,7 @@ struct c_ContactResult c_CapsuleSphereContact(struct arena *frame, const struct 
 		if (dist_sq <= COLLISION_POINT_DIST_SQ)
 		{
 			//TODO Degerate case: normal should be context dependent
-			V3CreateBasis(&manifold->n, &diff, QV3Rotate(t[0].rotation, V3(0.0f, 1.0f, 0.0f)));
+			V3CreateBasis(&manifold->n, &diff, QUnitRotate(t[0].rotation, V3(0.0f, 1.0f, 0.0f)));
             manifold->v[0] = t[0].position;
 			manifold->depth[0] = r_sum;
             ds_AssertString(0, "Implement Degenerate CapsuleSphere contact case properly");
@@ -266,7 +244,7 @@ struct c_ContactResult c_CapsuleContact(struct arena *frame, const struct c_Cont
 			if (cross_dist_sq <= COLLISION_POINT_DIST_SQ)
 			{
 				//TODO Normal should be context dependent
-                V3CreateBasis(&manifold->n, &p0, QV3Rotate(t[ref].rotation, V3(0.0f, 1.0f, 0.0f)));
+                V3CreateBasis(&manifold->n, &p0, QUnitRotate(t[ref].rotation, V3(0.0f, 1.0f, 0.0f)));
 			}
 			/* Degenerate Case 2: Non-Parallel capsules, */
 			else
@@ -1565,7 +1543,7 @@ struct c_ContactResult c_TriMeshBvhSphereContact(struct arena *frame, const stru
 	const struct sphere *sph = &s[1]->sphere;
 
 	struct aabb bbox_transform;
-	const v3 sph_center = QV3Rotate(QInverse(tf[0].rotation), V3Sub(tf[1].position, tf[0].position));
+	const v3 sph_center = QUnitRotate(QConj(tf[0].rotation), V3Sub(tf[1].position, tf[0].position));
 	bbox_transform.min = V3AddConstant(sph_center, -sph->radius);
 	bbox_transform.max = V3AddConstant(sph_center, sph->radius);
 
@@ -1854,10 +1832,10 @@ struct c_ContactResult c_TriMeshBvhCapsuleContact(struct arena *frame, const str
 
     const struct triMeshBvh *mesh_bvh = &s[0]->mesh_bvh;
     /* bvh local-space capsule segment */
-    const q q_inv = QInverse(tf[0].rotation);
+    const q q_inv = QConj(tf[0].rotation);
     const struct segment cap_mesh_space_s = SegmentConstruct(
-            QV3Rotate(q_inv, V3Sub(cap_s.p[0], tf[0].position)),
-            QV3Rotate(q_inv, V3Sub(cap_s.p[1], tf[0].position)));
+            QUnitRotate(q_inv, V3Sub(cap_s.p[0], tf[0].position)),
+            QUnitRotate(q_inv, V3Sub(cap_s.p[1], tf[0].position)));
 	struct aabb bbox_transform = BboxSegment(&cap_mesh_space_s);
 	bbox_transform.min = V3AddConstant(bbox_transform.min, -cap->radius);
 	bbox_transform.max = V3AddConstant(bbox_transform.max, cap->radius);
@@ -2435,9 +2413,9 @@ struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct
      *                    = R_INV_bvh*R_hull*v_hull_local_space + R_INV_bvh*(T_hull - T_bvh)
      *                    = R*v_hull + T
      */
-    const q q_inv = QInverse(tf[0].rotation);
+    const q q_inv = QConj(tf[0].rotation);
     const q q_R = QMul(q_inv, tf[1].rotation);
-    const v3 T = QV3Rotate(q_inv, V3Sub(tf[1].position, tf[0].position));
+    const v3 T = QUnitRotate(q_inv, V3Sub(tf[1].position, tf[0].position));
     const m3 R = M3Q(q_R);
 
     struct arena *tmp = ArenaPushScratch();
@@ -2614,7 +2592,7 @@ struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct
 /* TMP: the old functions' world manifolds, with shape t as reference, expressed in t's frame */
 static void TMP_c_ContactResultToLocal(struct c_ContactResult *result, const ds_TransformWorld *t)
 {
-    const m3 rot_inv = M3Q(QInverse(t->rotation));
+    const m3 rot_inv = M3Q(QConj(t->rotation));
     const v3 pos = V3F64Demote(t->position);
     for (u32 mi = 0; mi < result->manifold_count; ++mi)
     {
@@ -2627,29 +2605,261 @@ static void TMP_c_ContactResultToLocal(struct c_ContactResult *result, const ds_
     }
 }
 
-/* TMP: adapter over c_SphereContact until rewritten */
+/*
+ * Preconditions:
+ *      radii >= 0                              (otherwise r_sum - dist can be negative)
+ *      r_sum == 0 or ~1.1e-19 <= r_sum <= ~1.8e19 m
+ *                                              (r_sum^2 neither underflows nor overflows; below, a subnormal
+ *                                              r_sum^2 can round up, so dist > r_sum; above, r_sum^2 = Inf accepts
+ *                                              any distance: dist = Inf, depth = -Inf, n = 0)
+ *      finite positions, unit rotation
+ *      IEEE subnormals (no flush-to-zero), correctly rounded sqrtf
+ *
+ * Guarantees (given the preconditions):
+ *      depth >= 0 exactly: the branch requires dist_sq <= fl(r_sum^2); a correctly rounded sqrt is monotone and
+ *      sqrt(fl(x^2)) = |x| in binary floating point (no under/overflow), so dist <= r_sum.
+ *
+ *      n finite: dist > 0 implies dist >= sqrt(1.4e-45) ~ 3.7e-23 (smallest positive subnormal dist_sq), so
+ *      1/dist <= 2.7e22, and |n_i| = |p_i| / dist <= sqrt(1.5) ~ 1.22 (a subnormal p_i^2 rounds down by at
+ *      most 1.5x; p_i^2 underflowing to 0 means |p_i| <= 2.6e-23). |n| = 1 up to O(eps) whenever dist_sq is
+ *      a normal float (|p| >~ 1.1e-19); below that, |n| lies in ~[0.7, 1.22].
+ *
+ * Degenerate input:
+ *      dist == 0 (coincident centers): n = (1, 0, 0) in s[0]'s frame (arbitrary; rotates with s[0] in world),
+ *      depth = r_sum, v = r0 n.
+ *      |p| below the positions' resolution (~eps max(|a|, |b|)): n is valid but its direction is noise.
+ */
 struct c_ContactResult TMP_c_SphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
 {
-    struct c_ContactResult result = c_SphereContact(frame, cached_result, s, t, 0);
-    TMP_c_ContactResultToLocal(&result, &t[0]);
+    ds_Assert(s[0]->type == C_SHAPE_SPHERE);
+	ds_Assert(s[1]->type == C_SHAPE_SPHERE);
+
+    struct c_ContactResult result = { 0 };
+
+    const f32 r_sum = s[0]->sphere.radius + s[1]->sphere.radius;
+    const v3 p = QUnitRotate(QConj(t[0].rotation), V3F64Demote(V3F64Sub(t[1].position, t[0].position)));
+    const f32 dist_sq = V3LengthSquared(p);
+    if (dist_sq <= r_sum*r_sum)
+    {
+        /* Note: When |p| is 0 or close to 0, the normal becomes arbitrary or noise, respectively. */
+        const f32 dist = F32Sqrt(dist_sq);
+
+        result.manifold_count = 1;
+        result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
+        struct c_Manifold *manifold = result.manifold;
+
+        manifold->n = (dist > 0.0f)
+                    ? V3Scale(p, 1.0f / dist)
+                    : V3(1.0f, 0.0f, 0.0f);
+		manifold->v_count = 1;
+        manifold->depth[0] = r_sum - dist;
+        manifold->v[0] = V3Scale(manifold->n, s[0]->sphere.radius);
+    }
+
     return result;
 }
 
-/* TMP: adapter over c_CapsuleSphereContact until rewritten */
+/*
+ * Capsule vs sphere: the sphere vs sphere contact against the closest axis point c = (0, clamp(p.y, -h, h), 0),
+ * p = sphere center in the capsule's frame; d = p - c.
+ *
+ * Preconditions: as TMP_c_SphereContact, with r_sum = capsule radius + sphere radius.
+ *
+ * Guarantees: as TMP_c_SphereContact (the proofs only use that the test and the sqrt share dist_sq).
+ *      n, v and depth are continuous in p (clamp is continuous; no region switch at the caps).
+ *
+ * Degenerate input:
+ *      d == 0 (center on the segment): n = (1, 0, 0) in s[0]'s frame (perpendicular to the axis: a shortest
+ *      way out), depth = r_sum, v = c + r_capsule n.
+ *      |d| below the positions' resolution: n is valid but its direction is noise.
+ */
 struct c_ContactResult TMP_c_CapsuleSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
 {
-    struct c_ContactResult result = c_CapsuleSphereContact(frame, cached_result, s, t, 0);
-    TMP_c_ContactResultToLocal(&result, &t[0]);
+    ds_Assert(s[0]->type == C_SHAPE_CAPSULE);
+    ds_Assert(s[1]->type == C_SHAPE_SPHERE);
+
+    struct c_ContactResult result = { 0 };
+
+    const v3 p = QUnitRotate(QConj(t[0].rotation), V3F64Demote(V3F64Sub(t[1].position, t[0].position)));
+    const f32 r_sum = s[0]->capsule.radius + s[1]->sphere.radius;
+
+    const f32 clamp_y = F32Clamp(p.y, -s[0]->capsule.half_height, s[0]->capsule.half_height);
+    const f32 diff_y = p.y - clamp_y;
+    const f32 dist_sq = p.x*p.x + p.z*p.z + diff_y*diff_y;
+    if (dist_sq <= r_sum*r_sum)
+    {
+        result.manifold_count = 1;
+        result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
+        struct c_Manifold *m = result.manifold;
+
+        const f32 dist = F32Sqrt(dist_sq);
+        m->v_count = 1;
+        /* degenerate case: sphere center is on capsule segment.*/
+        m->n = (dist > 0.0f)
+            ? V3Scale(V3(p.x, diff_y, p.z), 1.0f/dist)
+            : V3(1.0f, 0.0f, 0.0f);
+        m->v[0] = V3Add(V3(0.0f, clamp_y, 0.0f), V3Scale(m->n, s[0]->capsule.radius));
+        m->depth[0] = r_sum - dist;
+        ds_Assert(m->depth[0] >= 0.0f);
+    }
+
     return result;
 }
+
 
 /* TMP: adapter over c_CapsuleContact until rewritten */
 struct c_ContactResult TMP_c_CapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
 {
-    struct c_ContactResult result = c_CapsuleContact(frame, cached_result, s, t, 0);
-    TMP_c_ContactResultToLocal(&result, &t[0]);
+    ds_Assert(s[0]->type == C_SHAPE_CAPSULE);
+    ds_Assert(s[1]->type == C_SHAPE_CAPSULE);
+
+    struct c_ContactResult result = { 0 };
+
+    const f32 r_sum = s[0]->capsule.radius + s[1]->capsule.radius;
+    const q inv = QConj(t[0].rotation);
+    const v3 c = QUnitRotate(inv, V3F64Demote(V3F64Sub(t[1].position, t[0].position)));
+    const v3 hdir = QUnitRotate(inv, QYUnitRotate(t[1].rotation, s[1]->capsule.half_height));
+
+    /* segment of capsule 1 in 0-frame*/
+    const struct segment seg = SegmentConstruct(V3Sub(c, hdir), V3Add(c, hdir));
+
+
+
     return result;
 }
+
+/* Reference: agent's version of TMP_c_CapsuleContact (unrequested, kept for comparison; not compiled) */
+#if 0
+/*
+ * Capsule vs capsule (Gregorius): the closest points of the core segments give n and one point; nearly parallel
+ * cores give two points instead, core 1 clipped to core 0's slab |y| <= h0, each with its own depth along n.
+ * Local to s[0] (see c_Manifold): core 0 is the y-axis, so the closest-point system reduces to the xz projection.
+ *
+ * Closest points: P(y) = (0, y, 0), |y| <= h0; Q(u) = c + u e, |u| <= 1 (c, e: capsule 1's center, half axis).
+ *      lines:  u = -(c_xz . e_xz) / |e_xz|^2        (origin projected onto core 1's xz shadow; no cancellation)
+ *      clamp u to [-1, 1]; y = c.y + u e.y; if |y| > h0: clamp y, u = clamp(e . (P(y) - c) / |e|^2)
+ *      (Ericson 5.1.9 with the roles of the segments swapped)
+ *
+ * Preconditions: as TMP_c_SphereContact, with r_sum = r0 + r1.
+ *
+ * Guarantees (given the preconditions):
+ *      no Inf/NaN: divisions only by |e_xz|^2 > 0, |e|^2 > 0 or e.y != 0, with finite numerators; an Inf quotient
+ *      is clamped. n finite as in TMP_c_SphereContact (also the cross product: its |.|^2 is e_xz_sq bit for bit).
+ *      depth >= 0: one point as in TMP_c_SphereContact; two points only when both clipped depths are >= 0.
+ *
+ * Degenerate input:
+ *      dist == 0 (cores intersect): n = +-(0, 1, 0) x e / |e_xz|, oriented towards capsule 1's center;
+ *      also parallel (e_xz == 0, coaxial): n = (1, 0, 0) in s[0]'s frame. depth = r_sum.
+ *      h1 == 0: u = 0 (capsule 1 is a sphere). h0 == 0: y = 0; the slab is a plane, so one point.
+ *      |d| below the positions' resolution: n is valid but its direction is noise.
+ */
+struct c_ContactResult TMP_c_CapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+{
+    ds_Assert(s[0]->type == C_SHAPE_CAPSULE);
+    ds_Assert(s[1]->type == C_SHAPE_CAPSULE);
+
+    struct c_ContactResult result = { 0 };
+
+    const f32 r0 = s[0]->capsule.radius;
+    const f32 h0 = s[0]->capsule.half_height;
+    const f32 r_sum = r0 + s[1]->capsule.radius;
+    const q inv = QConj(t[0].rotation);
+    const v3 c = QUnitRotate(inv, V3F64Demote(V3F64Sub(t[1].position, t[0].position)));
+    const v3 e = QUnitRotate(inv, QYUnitRotate(t[1].rotation, s[1]->capsule.half_height));
+
+    const f32 e_xz_sq = e.x*e.x + e.z*e.z;
+    const f32 e_sq = e_xz_sq + e.y*e.y;
+
+    /* closest points P(y), Q(u) */
+    f32 u = (e_xz_sq > 0.0f)
+          ? F32Clamp(-(c.x*e.x + c.z*e.z) / e_xz_sq, -1.0f, 1.0f)
+          : 0.0f;
+    f32 y = c.y + u*e.y;
+    if (y < -h0 || h0 < y)
+    {
+        y = F32Clamp(y, -h0, h0);
+        u = (e_sq > 0.0f)
+          ? F32Clamp((e.y*(y - c.y) - e.x*c.x - e.z*c.z) / e_sq, -1.0f, 1.0f)
+          : 0.0f;
+    }
+
+    const v3 p = V3(0.0f, y, 0.0f);
+    const v3 d = V3Sub(V3AddScaled(c, e, u), p);
+    const f32 dist_sq = V3LengthSquared(d);
+    if (dist_sq <= r_sum*r_sum)
+    {
+        const f32 dist = F32Sqrt(dist_sq);
+        v3 n;
+        if (dist > 0.0f)
+        {
+            n = V3Scale(d, 1.0f/dist);
+        }
+        /* degenerate case: cores intersect; n is perpendicular to both */
+        else if (e_xz_sq > 0.0f)
+        {
+            n = V3Scale(V3(e.z, 0.0f, -e.x), 1.0f/F32Sqrt(e_xz_sq));
+            if (n.x*c.x + n.z*c.z < 0.0f)
+            {
+                n = V3Negate(n);
+            }
+        }
+        /* degenerate case: cores coaxial */
+        else
+        {
+            n = V3(1.0f, 0.0f, 0.0f);
+        }
+
+        result.manifold_count = 1;
+        result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
+        struct c_Manifold *m = result.manifold;
+
+        m->n = n;
+        m->v_count = 1;
+        m->depth[0] = r_sum - dist;
+        m->v[0] = V3AddScaled(p, n, r0);
+        ds_Assert(m->depth[0] >= 0.0f);
+
+        /*
+         * Nearly parallel (tan^2 < 4e-3, ~3.6 deg; e.y != 0 since e.y^2 > 0): clip core 1 to the slab |y| <= h0,
+         * u at y = -+h0 is (-+h0 - c.y) / e.y. Keep the two points only when both overlap, else the closest point.
+         */
+        if (e_xz_sq < 4.0e-3f*(e.y*e.y))
+        {
+            const f32 u_a = (-h0 - c.y) / e.y;
+            const f32 u_b = ( h0 - c.y) / e.y;
+            const f32 u_clip[2] =
+            {
+                F32Max(-1.0f, F32Min(u_a, u_b)),
+                F32Min( 1.0f, F32Max(u_a, u_b)),
+            };
+
+            if (u_clip[0] < u_clip[1])
+            {
+                v3 v[2];
+                f32 depth[2];
+                for (u32 i = 0; i < 2; ++i)
+                {
+                    const v3 q_i = V3AddScaled(c, e, u_clip[i]);
+                    const v3 p_i = V3(0.0f, F32Clamp(q_i.y, -h0, h0), 0.0f);
+                    depth[i] = r_sum - V3Dot(V3Sub(q_i, p_i), n);
+                    v[i] = V3AddScaled(p_i, n, r0);
+                }
+
+                if (depth[0] >= 0.0f && depth[1] >= 0.0f)
+                {
+                    m->v_count = 2;
+                    m->v[0] = v[0];
+                    m->v[1] = v[1];
+                    m->depth[0] = depth[0];
+                    m->depth[1] = depth[1];
+                }
+            }
+        }
+    }
+
+    return result;
+}
+#endif
 
 /* TMP: adapter over c_HullSphereContact until rewritten */
 struct c_ContactResult TMP_c_HullSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])

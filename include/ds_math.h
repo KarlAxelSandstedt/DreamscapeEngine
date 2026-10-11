@@ -66,11 +66,11 @@ static inline ds_Transform ds_TransformIdentity(void)
  */
 static inline ds_Transform ds_TransformRelative(const ds_Transform *reference, const ds_Transform *target)
 {
-    const q inv = QInverse(reference->rotation);
+    const q inv = QConj(reference->rotation);
     const ds_Transform relative =
     {
         .rotation = QMul(inv, target->rotation),
-        .position = QV3Rotate(inv, V3Sub(target->position, reference->position)),
+        .position = QUnitRotate(inv, V3Sub(target->position, reference->position)),
     };
 
     return relative;
@@ -82,7 +82,7 @@ static inline ds_Transform ds_TransformRelative(const ds_Transform *reference, c
  */
 static inline v3 ds_TransformPointToLocal(const ds_Transform *reference, const v3 target)
 {
-    return QV3Rotate(QInverse(reference->rotation), V3Sub(target, reference->position));
+    return QUnitRotate(QConj(reference->rotation), V3Sub(target, reference->position));
 }
 
 /*
@@ -122,11 +122,11 @@ static inline ds_TransformWorld ds_TransformPromote(const ds_Transform *transfor
  */
 static inline ds_Transform ds_TransformWorldRelative(const ds_TransformWorld *reference, const ds_TransformWorld *target)
 {
-    const q inv = QInverse(reference->rotation);
+    const q inv = QConj(reference->rotation);
     const ds_Transform relative =
     {
         .rotation = QMul(inv, target->rotation),
-        .position = QV3Rotate(inv, V3F64Demote(V3F64Sub(target->position, reference->position))),
+        .position = QUnitRotate(inv, V3F64Demote(V3F64Sub(target->position, reference->position))),
     };
     return relative;
 }
@@ -141,7 +141,7 @@ static inline ds_TransformWorld ds_TransformWorldChild(const ds_TransformWorld *
     const ds_TransformWorld result =
     {
         .rotation = QMul(parent->rotation, child->rotation),
-        .position = V3F64Add(parent->position, V3Promote(QV3Rotate(parent->rotation, child->position))),
+        .position = V3F64Add(parent->position, V3Promote(QUnitRotate(parent->rotation, child->position))),
     };
     return result;
 }
@@ -149,13 +149,13 @@ static inline ds_TransformWorld ds_TransformWorldChild(const ds_TransformWorld *
 /* Return the local position of the world point target within reference's frame. */
 static inline v3 ds_TransformWorldPointToLocal(const ds_TransformWorld *reference, const v3f64 target)
 {
-    return QV3Rotate(QInverse(reference->rotation), V3F64Demote(V3F64Sub(target, reference->position)));
+    return QUnitRotate(QConj(reference->rotation), V3F64Demote(V3F64Sub(target, reference->position)));
 }
 
 /* Return the world position of the point local, given in reference's frame. */
 static inline v3f64 ds_TransformWorldPointToWorld(const ds_TransformWorld *reference, const v3 local)
 {
-    return V3F64Add(reference->position, V3Promote(QV3Rotate(reference->rotation, local)));
+    return V3F64Add(reference->position, V3Promote(QUnitRotate(reference->rotation, local)));
 }
 
 #ifdef __cplusplus

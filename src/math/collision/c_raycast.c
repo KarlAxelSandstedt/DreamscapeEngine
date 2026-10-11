@@ -501,7 +501,7 @@ f32 CapsuleRaycastWorldParameter(const struct capsule *capsule, const ds_Transfo
 	const struct ray local =
 	{
 		.origin = ds_TransformWorldPointToLocal(transform, ray->origin),
-		.dir = QV3Rotate(QInverse(transform->rotation), ray->dir),
+		.dir = QUnitRotate(QConj(transform->rotation), ray->dir),
 	};
 	return CapsuleRaycastParameter(capsule, &local);
 }
@@ -511,7 +511,7 @@ f32 HullRaycastWorldParameter(const struct dcel *hull, const ds_TransformWorld *
 	const struct ray local =
 	{
 		.origin = ds_TransformWorldPointToLocal(transform, ray->origin),
-		.dir = QV3Rotate(QInverse(transform->rotation), ray->dir),
+		.dir = QUnitRotate(QConj(transform->rotation), ray->dir),
 	};
 	return HullRaycastParameter(hull, &local);
 }
@@ -521,7 +521,7 @@ f32 TriMeshBvhRaycastWorldParameter(const struct triMeshBvh *mesh_bvh, const ds_
 	const struct ray local =
 	{
 		.origin = ds_TransformWorldPointToLocal(transform, ray->origin),
-		.dir = QV3Rotate(QInverse(transform->rotation), ray->dir),
+		.dir = QUnitRotate(QConj(transform->rotation), ray->dir),
 	};
 	return TriMeshBvhRaycastParameter(mesh_bvh, &local);
 }
@@ -531,7 +531,7 @@ f32 AabbRaycastWorldParameter(const struct aabb *aabb, const ds_TransformWorld *
 	const struct ray local =
 	{
 		.origin = ds_TransformWorldPointToLocal(transform, ray->origin),
-		.dir = QV3Rotate(QInverse(transform->rotation), ray->dir),
+		.dir = QUnitRotate(QConj(transform->rotation), ray->dir),
 	};
 	return AabbRaycastParameter(aabb, &local);
 }
@@ -541,7 +541,7 @@ f32 TriRaycastWorldParameter(const v3 a, const v3 b, const v3 c, const ds_Transf
 	const struct ray local =
 	{
 		.origin = ds_TransformWorldPointToLocal(transform, ray->origin),
-		.dir = QV3Rotate(QInverse(transform->rotation), ray->dir),
+		.dir = QUnitRotate(QConj(transform->rotation), ray->dir),
 	};
 	return TriRaycastParameter(a, b, c, &local);
 }

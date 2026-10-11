@@ -885,7 +885,7 @@ struct test_Output GjkTestRotationConventionTest(struct test_Environment *env)
         struct d3 r[3];
         D3Rotation(r, rot);
         const struct d3 expected = D3Transform(r, D3(0.0, 0.0, 0.0), p);
-        const struct d3 actual = D3V3(QV3Rotate(rot, p));
+        const struct d3 actual = D3V3(QUnitRotate(rot, p));
         if (D3Length(D3Sub(expected, actual)) > 1e-5)
         {
             TEST_FAILURE;
@@ -1036,7 +1036,7 @@ struct test_Output GjkDegenerateTest(struct test_Environment *env)
         { "point on a face",                &box,   origin, &point,         GjkTestTransform(QIdentity(), V3(1.0f, 0.3f, 0.2f)), 0.0f },
         { "point on a vertex",              &box,   origin, &point,         GjkTestTransform(QIdentity(), V3(1.0f, 1.0f, 1.0f)), 0.0f },
         { "point on an edge",               &box,   origin, &point,         GjkTestTransform(QIdentity(), V3(1.0f, 1.0f, 0.5f)), 0.0f },
-        { "point on a rotated edge",        &box,   rotated, &point,        GjkTestTransform(QIdentity(), QV3Rotate(rot_box, V3(1.0f, 1.0f, 0.5f))), 0.0f },
+        { "point on a rotated edge",        &box,   rotated, &point,        GjkTestTransform(QIdentity(), QUnitRotate(rot_box, V3(1.0f, 1.0f, 0.5f))), 0.0f },
         { "point at the center",            &box,   origin, &point,         origin, 0.0f },
         { "point off a vertex",             &box,   origin, &point,         GjkTestTransform(QIdentity(), V3(2.0f, 2.0f, 2.0f)), 1.7320508f },
         { "identical boxes",                &box,   origin, &box,           origin, 0.0f },

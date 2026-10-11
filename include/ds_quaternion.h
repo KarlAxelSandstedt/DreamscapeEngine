@@ -115,8 +115,8 @@ static ds_ForceInline q QNormalize(const q a)
 	return QScale(a, 1.0f / QNorm(a));
 }
 
-/* Rotate v by a: ava^-1 = v + 2*a_w*Cross(a_xyz, v) + 2*Cross(a_xyz, Cross(a_xyz, v)) */
-static ds_ForceInline v3 QV3Rotate(const q a, const v3 v)
+/* Rotate v by unit a: ava^-1 = v + 2*a_w*Cross(a_xyz, v) + 2*Cross(a_xyz, Cross(a_xyz, v)) */
+static ds_ForceInline v3 QUnitRotate(const q a, const v3 v)
 {
 	const v3 c = V3(2.0f*(a.y*v.z - a.z*v.y),
 			2.0f*(a.z*v.x - a.x*v.z),
@@ -125,6 +125,17 @@ static ds_ForceInline v3 QV3Rotate(const q a, const v3 v)
 	return V3(v.x + a.w*c.x + a.y*c.z - a.z*c.y,
 		  v.y + a.w*c.y + a.z*c.x - a.x*c.z,
 		  v.z + a.w*c.z + a.x*c.y - a.y*c.x);
+}
+
+/* QUnitRotate with v = (0, y, 0); same addition order */
+static ds_ForceInline v3 QYUnitRotate(const q a, const f32 y)
+{
+	const f32 cx = -2.0f*a.z*y;
+	const f32 cz = 2.0f*a.x*y;
+
+	return V3(a.w*cx + a.y*cz,
+		  y + a.z*cx - a.x*cz,
+		  a.w*cz - a.y*cx);
 }
 
 #ifdef __cplusplus
