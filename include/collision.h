@@ -220,8 +220,17 @@ void	c_ShapeUpdateMassProperties(struct c_Shape *shape);
 c_Manifold
 ==========
 a c_Manifold (contact manifold) contains the required information about how two shapes
-are colliding for our physics solvers to solve them. One of the shapes are viewed as 
-the reference shape. 
+are colliding for our physics solvers to solve them. One of the shapes are viewed as
+the reference shape.
+
+The same struct is used in two frames (TMP during the contact refactor):
+    local   TMP_c_*Contact output, in the frame of the shape it is local to (convex pairs: s[0]; mesh
+            pairs: the convex shape), which is the reference: n points away from it, v[i] lies on its
+            surface and the other shape's deepest point is v[i] - depth[i]*n.
+    solver  TMP_ds_ShapeConvexContact/TMP_ds_ShapeMeshContact output (ds_Contact.narrowphase): the
+            reference is the shape of the lower body index, rotated to world; TODO(decision 3): translated
+            to world f32 points for now.
+The old c_*Contact functions return the solver form directly (world, reference = reference_index).
 */
 struct c_Manifold
 {
@@ -328,15 +337,36 @@ struct c_ContactResult
                                                        is manifold[m].                          */
 };
 
-struct c_ContactResult  c_SphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-struct c_ContactResult  c_CapsuleSphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-struct c_ContactResult  c_CapsuleContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-struct c_ContactResult  c_HullSphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-struct c_ContactResult  c_HullCapsuleContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-struct c_ContactResult  c_HullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-struct c_ContactResult  c_TriMeshBvhSphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-struct c_ContactResult  c_TriMeshBvhCapsuleContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
-struct c_ContactResult  c_TriMeshBvhHullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_Transform t[2], const u32 reference_index);
+struct c_ContactResult  c_SphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_TransformWorld t[2], const u32 reference_index);
+struct c_ContactResult  c_CapsuleSphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_TransformWorld t[2], const u32 reference_index);
+struct c_ContactResult  c_CapsuleContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_TransformWorld t[2], const u32 reference_index);
+struct c_ContactResult  c_HullSphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_TransformWorld t[2], const u32 reference_index);
+struct c_ContactResult  c_HullCapsuleContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_TransformWorld t[2], const u32 reference_index);
+struct c_ContactResult  c_HullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2], const u32 reference_index);
+struct c_ContactResult  c_TriMeshBvhSphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_TransformWorld t[2], const u32 reference_index);
+struct c_ContactResult  c_TriMeshBvhCapsuleContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_TransformWorld t[2], const u32 reference_index);
+struct c_ContactResult  c_TriMeshBvhHullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2], const u32 reference_index);
+
+/*
+ * TMP (contact refactor; replaces the functions above one by one): no reference index. Convex pairs return
+ * a local manifold in s[0]'s frame (n from s[0] to s[1]); TMP_ds_ShapeConvexContact transforms it to the
+ * solver form (see c_Manifold).
+ */
+struct c_ContactResult  TMP_c_SphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2]);
+struct c_ContactResult  TMP_c_CapsuleSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2]);
+struct c_ContactResult  TMP_c_CapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2]);
+struct c_ContactResult  TMP_c_HullSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2]);
+struct c_ContactResult  TMP_c_HullCapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2]);
+struct c_ContactResult  TMP_c_HullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2]);
+
+/*
+ * TMP mesh contacts: one local manifold per contacting triangle, local to the convex shape: in its frame,
+ * n points from the convex shape to the mesh and v[i] lies on the convex shape's surface.
+ * TMP_ds_ShapeMeshContact transforms them to the solver form (see c_Manifold).
+ */
+struct c_ContactResult  TMP_c_MeshSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *sphere, const ds_TransformWorld *t_sphere);
+struct c_ContactResult  TMP_c_MeshCapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *capsule, const ds_TransformWorld *t_capsule);
+struct c_ContactResult  TMP_c_MeshHullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *hull, const ds_TransformWorld *t_hull);
 
 /********************************** RAYCAST **********************************/
 
@@ -355,6 +385,7 @@ struct rayWoop
 	f32	sy;		/* dir[ky] / dir[kz] */
 	f32	sz;		/* 1 / dir[kz] */
 };
+struct rayWoop  RayWoop(const struct ray *ray);
 
 /*
  * Return the smallest t >= 0 at which origin + t*dir is on the shape's surface (the first surface hit), or
@@ -375,7 +406,6 @@ f32 TriMeshBvhRaycastParameter(const struct triMeshBvh *mesh_bvh, const struct r
  */
 f32 TriRaycastParameter(const v3 a, const v3 b, const v3 c, const struct ray *ray);
 /* TriRaycastParameter with the ray set up once (RayWoop) for many triangles, e.g. a mesh */
-struct rayWoop  RayWoop(const struct ray *ray);
 f32 TriRaycastParameterEx(const struct rayWoop *ray, const v3 a, const v3 b, const v3 c);
 
 /*

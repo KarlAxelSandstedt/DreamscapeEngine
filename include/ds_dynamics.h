@@ -391,6 +391,35 @@ f32 	    ds_ShapeDistance(v3 *c1, v3 *c2, const struct ds_Dynamics *pipeline, co
  */
 void        ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index);
 /*
+Contact pipeline
+----------------
+TODO: move/cleanup (central notes on the narrowphase -> solver contract during the contact refactor).
+
+Pair order (the narrowphase computes in the frame of the first shape):
+    convex pairs    the more complex shape first: hull > capsule > sphere; equal types: the contact key's
+                    order (lower shape index first).
+    mesh pairs      (mesh, convex), computed in the convex shape's frame. Mesh vs mesh is not supported.
+
+Assumptions:
+    caches          SAT and GJK caches belong to the ordered pair (first -> second shape), so the pair order
+                    must stay the same between frames. TODO: cached normals in the local frame or in world.
+    static meshes   mesh pair manifolds are local to the convex shape, so the mesh-side anchor is ~ the
+                    distance to the mesh's origin; harmless only because the mesh body has 0 inverse mass.
+    mesh extent     mesh contacts carry a surface error of ~eps*d (d = distance from the mesh's origin; 0.06 mm
+                    at 1 km, 1.2 mm at 10 km) that no frame choice removes: chunk large meshes.
+*/
+
+/*
+ * TMP (contact refactor): ds_ShapeContact for convex pairs, over the TMP_c_*Contact functions; transforms
+ * their local manifolds to the solver form (c_Manifold, collision.h).
+ */
+void        TMP_ds_ShapeConvexContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index);
+/*
+ * TMP (contact refactor): ds_ShapeContact for mesh pairs, over the TMP_c_Mesh*Contact functions; transforms
+ * their local manifolds to the solver form (c_Manifold, collision.h).
+ */
+void        TMP_ds_ShapeMeshContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index);
+/*
  * Return the smallest t >= 0 at which ray.origin + t*ray.dir is on the shape's surface (the first surface hit,
  * two-sided, see collision.h), or F32_INFINITY. The ray is in world space. Precondition: |ray->dir|^2 > 0
  * (asserted).

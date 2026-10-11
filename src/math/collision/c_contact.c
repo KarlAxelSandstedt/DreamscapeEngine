@@ -99,10 +99,37 @@ void c_ManifoldTransform(struct c_Manifold *dst, const struct c_Manifold *src, c
 
 /********************************** CONTACT MANIFOLD METHODS **********************************/
 
-struct c_ContactResult c_SphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 ref)
+struct c_ContactResult c_SphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_TransformWorld tw[2], const u32 ref)
 {
-	ds_Assert(s[0]->type == C_SHAPE_SPHERE);
-	ds_Assert(s[1]->type == C_SHAPE_SPHERE);
+	//ds_Assert(s[0]->type == C_SHAPE_SPHERE);
+	//ds_Assert(s[1]->type == C_SHAPE_SPHERE);
+
+    //const f32 r_sum = s[0]->sphere.radius + s[1]->sphere.radius;
+
+    //struct c_ContactResult result = { 0 };
+    //const u32 inc = 1 - ref;
+
+    //const v3 p = V3F64Demote(V3F64Sub(tw[inc].position, tw[ref].position));
+    //const f32 dist_sq = V3LengthSqured(c);
+    //if (dist_sq <= r_sum*r_sum)
+    //{
+    //    result.manifold_count = 1;
+    //    result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
+    //    struct c_Manifold *manifold = result.manifold;
+    //    manifold->n = (dist_sq > 0.0f)
+    //                ? V3Normalize(p)
+    //                : V3(0.0f, 1.0f, 0.0f);
+	//	manifold->v_count = 1;
+    //}
+
+    //return result;
+
+	/* TODO(f64 P2 contacts): manifolds are built in world f32 until they are relative to t[ref] */
+	const ds_Transform t[2] =
+	{
+		{ .rotation = tw[0].rotation, .position = V3F64Demote(tw[0].position) },
+		{ .rotation = tw[1].rotation, .position = V3F64Demote(tw[1].position) },
+	};
 
     struct c_ContactResult result = { 0 };
     const u32 inc = 1 - ref;
@@ -135,10 +162,17 @@ struct c_ContactResult c_SphereContact(struct arena *frame, const struct c_Conta
     return result;
 }
 
-struct c_ContactResult c_CapsuleSphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 ref)
+struct c_ContactResult c_CapsuleSphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_TransformWorld tw[2], const u32 ref)
 {
 	ds_Assert(s[0]->type == C_SHAPE_CAPSULE);
 	ds_Assert(s[1]->type == C_SHAPE_SPHERE);
+
+	/* TODO(f64 P2 contacts): manifolds are built in world f32 until they are relative to t[ref] */
+	const ds_Transform t[2] =
+	{
+		{ .rotation = tw[0].rotation, .position = V3F64Demote(tw[0].position) },
+		{ .rotation = tw[1].rotation, .position = V3F64Demote(tw[1].position) },
+	};
 
     struct c_ContactResult result = { 0 };
 
@@ -185,10 +219,17 @@ struct c_ContactResult c_CapsuleSphereContact(struct arena *frame, const struct 
     return result;
 }
 
-struct c_ContactResult c_CapsuleContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_Transform t[2], const u32 ref)
+struct c_ContactResult c_CapsuleContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_TransformWorld tw[2], const u32 ref)
 {
 	ds_Assert(s[0]->type == C_SHAPE_CAPSULE);
 	ds_Assert(s[1]->type == C_SHAPE_CAPSULE);
+
+	/* TODO(f64 P2 contacts): manifolds are built in world f32 until they are relative to t[ref] */
+	const ds_Transform t[2] =
+	{
+		{ .rotation = tw[0].rotation, .position = V3F64Demote(tw[0].position) },
+		{ .rotation = tw[1].rotation, .position = V3F64Demote(tw[1].position) },
+	};
 
     struct c_ContactResult result = { 0 };
     const u32 inc = 1 - ref;
@@ -291,10 +332,17 @@ static void c_HullSphereShallowManifold(struct c_Manifold *manifold, const f32 r
     }   
 }
 
-struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_Transform t[2], const u32 ref)
+struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld tw[2], const u32 ref)
 {
 	ds_Assert(s[0]->type == C_SHAPE_CONVEX_HULL);
 	ds_Assert(s[1]->type == C_SHAPE_SPHERE);
+
+	/* TODO(f64 P2 contacts): manifolds are built in world f32 until they are relative to t[ref] */
+	const ds_Transform t[2] =
+	{
+		{ .rotation = tw[0].rotation, .position = V3F64Demote(tw[0].position) },
+		{ .rotation = tw[1].rotation, .position = V3F64Demote(tw[1].position) },
+	};
 
     struct c_ContactResult result = { 0 };
     const u32 inc = 1 - ref;
@@ -303,10 +351,8 @@ struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_C
 	v3 c[2], normal;
 	const f32 r_sum = s[1]->sphere.radius;
 	result.gjk_cache = ArenaPushPacked(frame, sizeof(struct GJKCache));
-	/* TODO(f64 P2 contacts): build the manifold in A's frame; GJK's points demoted to world f32 for now */
-	const ds_TransformWorld w[2] = { ds_TransformPromote(&t[0]), ds_TransformPromote(&t[1]) };
 	v3f64 c_world[2] = { 0 };
-	const f32 dist = GJK(&c_world[0], &c_world[1], &normal, result.gjk_cache, cached_result->gjk_cache, s[0], &w[0], s[1], &w[1], r_sum);
+	const f32 dist = GJK(&c_world[0], &c_world[1], &normal, result.gjk_cache, cached_result->gjk_cache, s[0], &tw[0], s[1], &tw[1], r_sum);
 	c[0] = V3F64Demote(c_world[0]);
 	c[1] = V3F64Demote(c_world[1]);
 
@@ -361,10 +407,17 @@ struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_C
     return result;
 }
 
-struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_Transform t[2], const u32 ref)
+struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld tw[2], const u32 ref)
 {
 	ds_Assert(s[0]->type == C_SHAPE_CONVEX_HULL);
 	ds_Assert(s[1]->type == C_SHAPE_CAPSULE);
+
+	/* TODO(f64 P2 contacts): manifolds are built in world f32 until they are relative to t[ref] */
+	const ds_Transform t[2] =
+	{
+		{ .rotation = tw[0].rotation, .position = V3F64Demote(tw[0].position) },
+		{ .rotation = tw[1].rotation, .position = V3F64Demote(tw[1].position) },
+	};
 
     struct c_ContactResult result = { 0 };
     const u32 inc = 1 - ref;
@@ -375,10 +428,8 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 
 	v3 c[2], normal;
 	result.gjk_cache = ArenaPushPacked(frame, sizeof(struct GJKCache));
-	/* TODO(f64 P2 contacts): build the manifold in A's frame; GJK's points demoted to world f32 for now */
-	const ds_TransformWorld w[2] = { ds_TransformPromote(&t[0]), ds_TransformPromote(&t[1]) };
 	v3f64 c_world[2] = { 0 };
-	const f32 dist = GJK(&c_world[0], &c_world[1], &normal, result.gjk_cache, cached_result->gjk_cache, s[0], &w[0], s[1], &w[1], s[1]->capsule.radius);
+	const f32 dist = GJK(&c_world[0], &c_world[1], &normal, result.gjk_cache, cached_result->gjk_cache, s[0], &tw[0], s[1], &tw[1], s[1]->capsule.radius);
 	c[0] = V3F64Demote(c_world[0]);
 	c[1] = V3F64Demote(c_world[1]);
 	const f32 dist_sq = dist*dist;
@@ -400,8 +451,8 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 		    struct GJKCache unused_cache;
 		    v3f64 unused_c[2];
 		    v3 unused_n;
-		    const u32 cap_p0_inside = (GJK(&unused_c[0], &unused_c[1], &unused_n, &unused_cache, NULL, s[0], &w[0], &point, &t_p0, 0.0f) == 0.0f) ? 1 : 0;
-		    const u32 cap_p1_inside = (GJK(&unused_c[0], &unused_c[1], &unused_n, &unused_cache, NULL, s[0], &w[0], &point, &t_p1, 0.0f) == 0.0f) ? 1 : 0;
+		    const u32 cap_p0_inside = (GJK(&unused_c[0], &unused_c[1], &unused_n, &unused_cache, NULL, s[0], &tw[0], &point, &t_p0, 0.0f) == 0.0f) ? 1 : 0;
+		    const u32 cap_p1_inside = (GJK(&unused_c[0], &unused_c[1], &unused_n, &unused_cache, NULL, s[0], &tw[0], &point, &t_p1, 0.0f) == 0.0f) ? 1 : 0;
 
 			u32 edge_best = 0; 
 			u32 best_index = 0;
@@ -1111,11 +1162,18 @@ void sat_EdgeQueryCollisionResult(struct c_Manifold *manifold, struct c_SatCache
  * 	(Game Physics Pearls, Chapter 4)
  *	(GDC 2013 Dirk Gregorius, https://www.gdcvault.com/play/1017646/Physics-for-Game-Programmers-The)
  */
-struct c_ContactResult c_HullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_Transform t[2], const u32 ref)
+struct c_ContactResult c_HullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld tw[2], const u32 ref)
 {
     //ProfZone;
 	ds_Assert(s[0]->type == C_SHAPE_CONVEX_HULL);
 	ds_Assert(s[1]->type == C_SHAPE_CONVEX_HULL);
+
+	/* TODO(f64 P2 contacts): manifolds are built in world f32 until they are relative to t[ref] */
+	const ds_Transform t[2] =
+	{
+		{ .rotation = tw[0].rotation, .position = V3F64Demote(tw[0].position) },
+		{ .rotation = tw[1].rotation, .position = V3F64Demote(tw[1].position) },
+	};
 
     struct ds_DynamicsMetrics *metrics = &g_dynamics_worker[ds_ThreadSelfIndex()].metrics;
     metrics->hull_call_count += 1;
@@ -1487,12 +1545,19 @@ static const u32 delayed_vertex_map[TRI_VORONOI_COUNT][2] =
     { U32_MAX, U32_MAX },
 };
 
-struct c_ContactResult c_TriMeshBvhSphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_Transform tf[2], const u32 ref)
+struct c_ContactResult c_TriMeshBvhSphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_TransformWorld tw[2], const u32 ref)
 {
     //ProfZone;
 
 	ds_Assert(s[0]->type == C_SHAPE_TRI_MESH);
 	ds_Assert(s[1]->type == C_SHAPE_SPHERE);
+
+	/* TODO(f64 P2 contacts): manifolds are built in world f32 until they are relative to t[ref] */
+	const ds_Transform tf[2] =
+	{
+		{ .rotation = tw[0].rotation, .position = V3F64Demote(tw[0].position) },
+		{ .rotation = tw[1].rotation, .position = V3F64Demote(tw[1].position) },
+	};
 
     struct c_ContactResult result = { 0 };
 
@@ -1768,10 +1833,17 @@ static void c_TriCapsuleManifold(struct c_Manifold *m, const struct c_TriMeshBvh
 	}
 }
 
-struct c_ContactResult c_TriMeshBvhCapsuleContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_Transform tf[2], const u32 reference_index)
+struct c_ContactResult c_TriMeshBvhCapsuleContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_TransformWorld tw[2], const u32 reference_index)
 {
 	ds_Assert(s[0]->type == C_SHAPE_TRI_MESH);
 	ds_Assert(s[1]->type == C_SHAPE_CAPSULE);
+
+	/* TODO(f64 P2 contacts): manifolds are built in world f32 until they are relative to t[ref] */
+	const ds_Transform tf[2] =
+	{
+		{ .rotation = tw[0].rotation, .position = V3F64Demote(tw[0].position) },
+		{ .rotation = tw[1].rotation, .position = V3F64Demote(tw[1].position) },
+	};
 
     struct c_ContactResult result = { 0 };
 
@@ -2339,10 +2411,17 @@ sat_cleanup:
 	return colliding;
 }
 
-struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_Transform tf[2], const u32 reference_index)
+struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld tw[2], const u32 reference_index)
 {
 	ds_Assert(s[0]->type == C_SHAPE_TRI_MESH);
 	ds_Assert(s[1]->type == C_SHAPE_CONVEX_HULL);
+
+	/* TODO(f64 P2 contacts): manifolds are built in world f32 until they are relative to t[ref] */
+	const ds_Transform tf[2] =
+	{
+		{ .rotation = tw[0].rotation, .position = V3F64Demote(tw[0].position) },
+		{ .rotation = tw[1].rotation, .position = V3F64Demote(tw[1].position) },
+	};
 
     struct c_ContactResult result = { 0 };
 
@@ -2527,5 +2606,101 @@ struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct
 
     //ProfZoneEnd;
     
+    return result;
+}
+
+/********************************** TMP CONTACT MANIFOLD METHODS **********************************/
+
+/* TMP: the old functions' world manifolds, with shape t as reference, expressed in t's frame */
+static void TMP_c_ContactResultToLocal(struct c_ContactResult *result, const ds_TransformWorld *t)
+{
+    const m3 rot_inv = M3Q(QInverse(t->rotation));
+    const v3 pos = V3F64Demote(t->position);
+    for (u32 mi = 0; mi < result->manifold_count; ++mi)
+    {
+        struct c_Manifold *manifold = result->manifold + mi;
+        manifold->n = M3V3Mul(rot_inv, manifold->n);
+        for (u32 i = 0; i < manifold->v_count; ++i)
+        {
+            manifold->v[i] = M3V3Mul(rot_inv, V3Sub(manifold->v[i], pos));
+        }
+    }
+}
+
+/* TMP: adapter over c_SphereContact until rewritten */
+struct c_ContactResult TMP_c_SphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+{
+    struct c_ContactResult result = c_SphereContact(frame, cached_result, s, t, 0);
+    TMP_c_ContactResultToLocal(&result, &t[0]);
+    return result;
+}
+
+/* TMP: adapter over c_CapsuleSphereContact until rewritten */
+struct c_ContactResult TMP_c_CapsuleSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+{
+    struct c_ContactResult result = c_CapsuleSphereContact(frame, cached_result, s, t, 0);
+    TMP_c_ContactResultToLocal(&result, &t[0]);
+    return result;
+}
+
+/* TMP: adapter over c_CapsuleContact until rewritten */
+struct c_ContactResult TMP_c_CapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+{
+    struct c_ContactResult result = c_CapsuleContact(frame, cached_result, s, t, 0);
+    TMP_c_ContactResultToLocal(&result, &t[0]);
+    return result;
+}
+
+/* TMP: adapter over c_HullSphereContact until rewritten */
+struct c_ContactResult TMP_c_HullSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+{
+    struct c_ContactResult result = c_HullSphereContact(frame, cached_result, s, t, 0);
+    TMP_c_ContactResultToLocal(&result, &t[0]);
+    return result;
+}
+
+/* TMP: adapter over c_HullCapsuleContact until rewritten */
+struct c_ContactResult TMP_c_HullCapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+{
+    struct c_ContactResult result = c_HullCapsuleContact(frame, cached_result, s, t, 0);
+    TMP_c_ContactResultToLocal(&result, &t[0]);
+    return result;
+}
+
+/* TMP: adapter over c_HullContact until rewritten */
+struct c_ContactResult TMP_c_HullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+{
+    struct c_ContactResult result = c_HullContact(frame, cached_result, s, t, 0);
+    TMP_c_ContactResultToLocal(&result, &t[0]);
+    return result;
+}
+
+/* TMP: adapter over c_TriMeshBvhSphereContact (reference = the sphere) until rewritten */
+struct c_ContactResult TMP_c_MeshSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *sphere, const ds_TransformWorld *t_sphere)
+{
+    const struct c_Shape *s[2] = { mesh, sphere };
+    const ds_TransformWorld t[2] = { *t_mesh, *t_sphere };
+    struct c_ContactResult result = c_TriMeshBvhSphereContact(frame, cached_result, s, t, 1);
+    TMP_c_ContactResultToLocal(&result, t_sphere);
+    return result;
+}
+
+/* TMP: adapter over c_TriMeshBvhCapsuleContact (reference = the capsule) until rewritten */
+struct c_ContactResult TMP_c_MeshCapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *capsule, const ds_TransformWorld *t_capsule)
+{
+    const struct c_Shape *s[2] = { mesh, capsule };
+    const ds_TransformWorld t[2] = { *t_mesh, *t_capsule };
+    struct c_ContactResult result = c_TriMeshBvhCapsuleContact(frame, cached_result, s, t, 1);
+    TMP_c_ContactResultToLocal(&result, t_capsule);
+    return result;
+}
+
+/* TMP: adapter over c_TriMeshBvhHullContact (reference = the hull) until rewritten */
+struct c_ContactResult TMP_c_MeshHullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *hull, const ds_TransformWorld *t_hull)
+{
+    const struct c_Shape *s[2] = { mesh, hull };
+    const ds_TransformWorld t[2] = { *t_mesh, *t_hull };
+    struct c_ContactResult result = c_TriMeshBvhHullContact(frame, cached_result, s, t, 1);
+    TMP_c_ContactResultToLocal(&result, t_hull);
     return result;
 }
