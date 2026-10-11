@@ -950,6 +950,7 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 
 	ArenaPopScratch();
 
+	/* centered on its box: not required, but f32 vertices are most precise near the origin */
 	const struct aabb bbox = TriMeshBbox(&mesh);
 	const v3 local_origin = V3Scale(V3Add(bbox.min, bbox.max), -0.5f);
 	for (u32 i = 0; i < mesh.v_count; ++i)

@@ -693,8 +693,6 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
 		node->bbox = BboxUnion(node->bbox, bbox_tri[i]);
 	}
 
-	ds_AssertString(V3Length(V3Scale(V3Add(node->bbox.min, node->bbox.max), 0.5f)) < 0.0001f, "Center should most likely be 0.0, so the root box center defines a local origin!");
-	
 	/* Process triangles from left to right, depth-first. */
 	while (sc--)
 	{

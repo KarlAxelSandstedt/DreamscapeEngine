@@ -330,8 +330,8 @@ void AabbUnion(struct aabb *box_union, const struct aabb *a, const struct aabb *
 void AabbRotate(struct aabb *dst, const struct aabb *src, const m3 rotation)
 {
 	/*
-	 * Since we may pick any sign for hw[k], and the support point in any direction for an AABB is
-	 * one of its corners, we derive new hw as hw_new[k] = V3Abs(rot.row[k])*hw_old;
+	 * The box is {c + hw*s : s in [-1, 1]^3}; rotated, {R c + R (hw*s)}. The support point of a box in any
+	 * direction is a corner, so the rotated box's half widths are hw_new[k] = |R row k| . hw, around R c.
 	 */
 
 	const v3 x = V3Abs(V3(rotation.a11, rotation.a12, rotation.a13));
@@ -341,9 +341,9 @@ void AabbRotate(struct aabb *dst, const struct aabb *src, const m3 rotation)
 	const v3 center = V3Scale(V3Add(src->min, src->max), 0.5f);
 	const v3 hw_src = V3Scale(V3Sub(src->max, src->min), 0.5f);
 	const v3 hw = V3(V3Dot(x, hw_src), V3Dot(y, hw_src), V3Dot(z, hw_src));
-	/* NOTE: the center is kept, not rotated (as before the min/max refactor); callers use boxes centered at 0 */
-	dst->min = V3Sub(center, hw);
-	dst->max = V3Add(center, hw);
+	const v3 center_rotated = M3V3Mul(rotation, center);
+	dst->min = V3Sub(center_rotated, hw);
+	dst->max = V3Add(center_rotated, hw);
 }
 
 u32 AabbTest(const struct aabb *a, const struct aabb *b)
