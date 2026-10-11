@@ -180,7 +180,6 @@ struct plane PlaneConstruct(const v3 n, const v3 p)
 {
 	struct plane pl;
 	pl.normal_direction = n;
-    pl.inv_dot_nn = 1.0f / V3Dot(n,n);
 	pl.signed_distance = V3Dot(n, p);
 	return pl;
 }
@@ -189,7 +188,6 @@ struct plane PlaneConstructNormalized(const v3 n, const v3 p)
 {
 	struct plane pl;
 	pl.normal = V3Normalize(n);
-    pl.inv_dot_nn = 1.0f;
 	pl.signed_distance = V3Dot(pl.normal, p);
 	return pl;
 }
@@ -210,7 +208,6 @@ void PlaneNormalize(struct plane *pl)
     const f32 n_dir_len = V3Length(pl->normal_direction);
     pl->normal_direction = V3Scale(pl->normal_direction, 1.0f/n_dir_len);
     pl->signed_distance /= n_dir_len;
-    pl->inv_dot_nn = 1.0f;
 }
 
 u32 PlanePointInfrontCheck(const struct plane *pl, const v3 p)
@@ -280,7 +277,12 @@ f32 PlanePointDistance(const struct plane *pl, const v3 p)
 
 f32 PlanePointProjection(v3 *proj, const struct plane *pl, const v3 p)
 {
-	const f32 n_units = PlanePointSignedDistance(pl, p) * pl->inv_dot_nn;
+	/*
+	 * x = p - t n lies on the plane when dot(n, p - t n) = signed_distance, i.e.
+	 *      t = (dot(n, p) - signed_distance) / dot(n, n) = PlanePointSignedDistance / |n|^2
+	 */
+	const f32 inv_dot_nn = 1.0f / V3Dot(pl->normal_direction, pl->normal_direction);
+	const f32 n_units = PlanePointSignedDistance(pl, p) * inv_dot_nn;
     *proj = V3AddScaled(p, pl->normal_direction, -n_units);
     return n_units;
 }

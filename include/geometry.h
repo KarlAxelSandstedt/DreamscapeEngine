@@ -39,12 +39,20 @@ struct aabb
 	v3 max;
 };
 
-/**
- * plane: geomtrical primitive
- * normal: normal of plane 
- * OR normal_dir: normal direction of plane (To make it explicit in code when we choose not to normalize the direction)
- * signed_distance: Signed distance (in |normal_direction| units) to plane; plane.normal * signed_distance is point on plane.
+/*
+ * plane: the points x with dot(n, x) = signed_distance, where n is the stored normal (16 B).
  *
+ * normal / normal_direction: the same storage under two names; code reads .normal when the plane is known to
+ * be normalized (|n| = 1) and .normal_direction when it may have any length > 0. PlaneConstruct* keep the
+ * given direction's length, the *Normalized constructors and PlaneNormalize make it 1.
+ *
+ * signed_distance: dot(n, p) for any point p on the plane. For a unit normal it is the plane's signed
+ * distance from the origin (signed_distance * normal is the point of the plane closest to the origin); for a
+ * direction of any length it is that distance times |n|.
+ *
+ * Point distances follow the same rule: PlanePointSignedDistance = dot(n, x) - signed_distance is the true
+ * signed distance times |n| (exact distance only for a unit normal). Functions that need 1/|n|^2 compute it
+ * (PlanePointProjection).
  */
 struct plane 
 {
@@ -58,7 +66,6 @@ struct plane
 	    f32 signed_distance;
         f32 signed_normal_unit_distance;
     };
-    f32 inv_dot_nn; /* 1.0f / Dot(normal,normal) */
 };
 
 /*
@@ -148,7 +155,7 @@ struct plane 	PlaneConstructNormalized(const v3 n, const v3 p);
 struct plane 	PlaneConstructFromCcwTriangle(const v3 a, const v3 b, const v3 c);
 /* Construct normalized plane from CCW triangle abc */
 struct plane 	PlaneConstructNormalizedFromCcwTriangle(const v3 a, const v3 b, const v3 c);
-/* Normalize the plane's normal direction (and update affected internals) */
+/* Normalize the plane's normal direction and rescale signed_distance accordingly */
 void            PlaneNormalize(struct plane *pl);
 /* Return 1 if p is infront of plane, i.e. a positive signed distance, otherwise 0 */
 u32 		    PlanePointInfrontCheck(const struct plane *pl, const v3 p);
@@ -178,7 +185,10 @@ u32 		    PlaneSegmentTest(const struct plane *pl, const struct segment *s);
 f32 		    PlanePointSignedDistance(const struct plane *pl, const v3 p);
 /* return absolute distance multiplied by |normal_direction| between plane and point */
 f32 		    PlanePointDistance(const struct plane *pl, const v3 p);
-/* return the signed distance (measured in |plane.normal_direction| units) of point p to plane pl, and set the projection of p onto pl. */
+/*
+ * Set proj to the projection of p onto pl and return t = PlanePointSignedDistance / |n|^2, the signed distance
+ * measured in multiples of n = pl->normal_direction: proj = p - t n. For a unit normal t is the signed distance.
+ */
 f32 		    PlanePointProjection(v3 *proj, const struct plane *pl, const v3 p);
 
 /********************************** AABB ************************************/

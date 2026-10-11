@@ -2834,12 +2834,15 @@ struct c_ContactResult TMP_c_HullSphereContact(struct arena *frame, const struct
 	ds_Assert(s[1]->type == C_SHAPE_SPHERE);
 
     struct c_ContactResult result = { 0 };
-    const f32 radius = s[1]->sphere.radius;
+    result.gjk_cache = ArenaPushPacked(frame, sizeof(struct GJKCache));
 
-    struct GJKCache cache;
-    v3f64 c[2];
-    v3 n;
-    const f32 distance = GJKWorld(c+0, c+1, &n, &cache, NULL, s[0], t+0, s[1], t+1, radius);
+    const f32 radius = s[1]->sphere.radius;
+    const q inv = QConj(t[0].rotation);
+    const v3 p = QUnitRotate(inv, V3F64Demote(V3F64Sub(t[1].position, t[0].position)));
+    const ds_Transform b_to_a = { .rotation = QIdentity(), .position = p };
+
+    v3 c[2], n;
+    const f32 distance = GJK(c+0, c+1, &n, result.gjk_cache, cached_result->gjk_cache, s[0], s[1], &b_to_a, radius);
     if (radius < distance)
     {
         return result;
@@ -2853,17 +2856,14 @@ struct c_ContactResult TMP_c_HullSphereContact(struct arena *frame, const struct
     /* shallow penetration */
     if (0.0f < distance)
     {
-        /* GJK's output is in world space */
-        const q inv = QConj(t[0].rotation);
-        m->n = QUnitRotate(inv, n);
-        m->v[0] = QUnitRotate(inv, V3F64Demote(V3F64Sub(c[0], t[0].position)));
+        m->n = n;
+        m->v[0] = c[0];
         m->depth[0] = radius - distance;
     }
 	/* deep penetration */
     else
     {
 		const struct dcel *h = &s[0]->hull;
-        const v3 p = QUnitRotate(QConj(t[0].rotation), V3F64Demote(V3F64Sub(t[1].position, t[0].position)));
 
 		f32 min_depth = F32_INFINITY;
 		for (u32 fi = 0; fi < h->f_count; ++fi)
