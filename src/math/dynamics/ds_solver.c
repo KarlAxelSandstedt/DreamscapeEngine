@@ -223,7 +223,8 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
                 if (dirty->reinsert)
                 {
                     proxy_range->reinsert_count += 1;
-                    dirty->bbox.hw = V3AddConstant(dirty->bbox.hw, shape->margin);
+                    dirty->bbox.min = V3AddConstant(dirty->bbox.min, -shape->margin);
+                    dirty->bbox.max = V3AddConstant(dirty->bbox.max, shape->margin);
                 }
 
                 proxy_range->count += 1;

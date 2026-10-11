@@ -29,15 +29,14 @@ extern "C" {
 
 /****************** GEOMETRIC PRIMITIVES ******************/
 
-/**
- * AABB: geomtrical primitive; Axis aligned bounding box
- * center: center of the box
- * hw: half width of the box in each dimension
+/*
+ * aabb: geometrical primitive; axis aligned bounding box, the points p with min <= p <= max. Stored as bounds so
+ * that boxes built from points, and unions, are exact (no rounding from a center/half width round trip).
  */
 struct aabb 
 {
-	v3 center;
-	v3 hw;
+	v3 min;
+	v3 max;
 };
 
 /**
@@ -62,15 +61,9 @@ struct plane
     f32 inv_dot_nn; /* 1.0f / Dot(normal,normal) */
 };
 
-/**
- * ray: geomtrical primitive
- * origin: Origin of ray
- * dir.direction with length. 
- *
- * NOTE: When deriving parameters t using rays, it is always in the context origin + t * dir. For example,
- * 	If for a given ray we get a collision at a point p with parameter t, The follow will always hold:
- *
- * 	p = ray.origin + t * ray.dir.
+/*
+ * ray: geometrical primitive. dir is not normalized; a ray parameter t names the point origin + t*dir, so t is
+ * measured in units of |dir|.
  */
 struct ray
 {
@@ -215,12 +208,6 @@ struct aabb	BboxPointUnion(const struct aabb a, const v3 p);
 struct aabb	BboxTriangle(const v3 p0, const v3 p1, const v3 p2);
 /* Return bounding box of the vertex set */
 struct aabb	BboxVertexSet(const v3 *p, const u32 count);
-
-/* Setup parameters for extended raycasting functions. */
-void 		AabbRaycastParameterExSetup(v3 *multiplier, v3u32 *dir_sign_bit, const struct ray *ray);
-/* Extended AabbRaycastParameter optimized for multiple raycasts against AABBs using same ray. 
- * return t: smallest t >= 0 such that p = origin + t*dir is a point in the AABB volume, or F32_INF if no such t exist */
-f32 		AabbRaycastParameterEx(const struct aabb *aabb, const struct ray *ray, const v3 multiplier, const v3u32 dir_sign_bit);
 
 /********************************* tri_mesh **********************************/
 

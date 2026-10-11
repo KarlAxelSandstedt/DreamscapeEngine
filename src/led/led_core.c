@@ -951,7 +951,7 @@ static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32
 	ArenaPopScratch();
 
 	const struct aabb bbox = TriMeshBbox(&mesh);
-	const v3 local_origin = V3Scale(bbox.center, -1.0f);
+	const v3 local_origin = V3Scale(V3Add(bbox.min, bbox.max), -0.5f);
 	for (u32 i = 0; i < mesh.v_count; ++i)
 	{
 		mesh.v[i] = V3Add(mesh.v[i], local_origin);

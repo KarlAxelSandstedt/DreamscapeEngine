@@ -113,7 +113,8 @@ u32 BvhTryDeserialize(struct arena *mem, struct ss *ss, struct bvh *bvh, const u
 
 static f32 BodySah(const struct aabb *box)
 {
-	return box->hw.x*(box->hw.y + box->hw.z) + box->hw.y*box->hw.z;
+	const v3 hw = V3Scale(V3Sub(box->max, box->min), 0.5f);
+	return hw.x*(hw.y + hw.z) + hw.y*hw.z;
 }
 
 static f32 BvhCostRecursive(const struct bvh *bvh, const u32 index)
@@ -692,7 +693,7 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
 		node->bbox = BboxUnion(node->bbox, bbox_tri[i]);
 	}
 
-	ds_AssertString(V3Length(node->bbox.center) < 0.0001f, "Center should most likely be 0.0, so the root box center defines a local origin!");
+	ds_AssertString(V3Length(V3Scale(V3Add(node->bbox.min, node->bbox.max), 0.5f)) < 0.0001f, "Center should most likely be 0.0, so the root box center defines a local origin!");
 	
 	/* Process triangles from left to right, depth-first. */
 	while (sc--)
@@ -710,8 +711,8 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
 		}
 
 		ProfZoneNamed("mesh_bvh.bvh construction iteration");
-		const v3 bbox_max = V3Add(node->bbox.center, node->bbox.hw);
-		const v3 bbox_min = V3Sub(node->bbox.center, node->bbox.hw);
+		const v3 bbox_max = node->bbox.max;
+		const v3 bbox_min = node->bbox.min;
 
 		u32 best_axis = U32_MAX;
 		u32 best_split = U32_MAX;
@@ -731,7 +732,7 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
 			for (u32 i = tri_first; i < tri_first + tri_count; ++i)
 			{
 				const u32 tri = mesh_bvh.tri[i];
-				const f32 val = bin_count * (bbox_tri[tri].center.buf[axis] - bbox_min.buf[axis]) / (bbox_max.buf[axis] - bbox_min.buf[axis]);
+				const f32 val = bin_count * (0.5f*(bbox_tri[tri].min.buf[axis] + bbox_tri[tri].max.buf[axis]) - bbox_min.buf[axis]) / (bbox_max.buf[axis] - bbox_min.buf[axis]);
 				const u8 bi = (u8) F32Clamp(val, 0.0f, bin_count - 0.01f);
 				centroid_bin_map[axis][tri] = bi;
 				axis_bin_bbox[axis][bi] = (axis_bin_tri_count[axis][bi] > 0)
@@ -874,20 +875,29 @@ end:
 	return mesh_bvh;
 }
 
+/* the box's queue key: the entry t into its volume (0 if the origin is inside), F32_INFINITY on a miss */
+static f32 BvhNodeRaycastParameter(const struct rayAabb *ray, const struct aabb *bbox)
+{
+	const intv t = AabbRaycastInterval(ray, bbox);
+	const f32 t_entry = F32Max(t.low, 0.0f);
+	return (t_entry <= t.high)
+		? t_entry
+		: F32_INFINITY;
+}
+
 struct bvhRaycastInfo BvhRaycastInit(struct arena *mem, const struct bvh *bvh, const struct ray *ray)
 {
 	struct bvhRaycastInfo info =
 	{
 		.hit = u32f32_inline(U32_MAX, F32_INFINITY),
 		.node = (struct bvhNode *) bvh->pool.buf,
-		.ray = ray,
+		.ray = RayAabb(ray),
 		.bvh = bvh,
 	};
 
 	if (bvh->bt.count) 
 	{
-		AabbRaycastParameterExSetup(&info.multiplier, &info.dir_sign_bit, info.ray);
-		const f32 root_hit_param = AabbRaycastParameterEx(&info.node[info.bvh->bt.root].bbox, info.ray, info.multiplier, info.dir_sign_bit);
+		const f32 root_hit_param = BvhNodeRaycastParameter(&info.ray, &info.node[info.bvh->bt.root].bbox);
 		if (root_hit_param < F32_INFINITY) 
 		{
 			info.hit_queue = MinQueueFixedAllocAll(mem);
@@ -901,8 +911,8 @@ struct bvhRaycastInfo BvhRaycastInit(struct arena *mem, const struct bvh *bvh, c
 void BvhRaycastTestAndPushChildren(struct bvhRaycastInfo *info, const u32f32 popped_tuple)
 {
 	const struct bvhNode *node = info->node;
-	const f32 distance_left = AabbRaycastParameterEx(&node[node[popped_tuple.u].bt_child[0]].bbox, info->ray, info->multiplier, info->dir_sign_bit);
-	const f32 distance_right = AabbRaycastParameterEx(&node[node[popped_tuple.u].bt_child[1]].bbox, info->ray, info->multiplier, info->dir_sign_bit);
+	const f32 distance_left = BvhNodeRaycastParameter(&info->ray, &node[node[popped_tuple.u].bt_child[0]].bbox);
+	const f32 distance_right = BvhNodeRaycastParameter(&info->ray, &node[node[popped_tuple.u].bt_child[1]].bbox);
 
 	if (distance_left < F32_INFINITY)
 	{

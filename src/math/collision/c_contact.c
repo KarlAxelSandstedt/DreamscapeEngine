@@ -1500,8 +1500,9 @@ struct c_ContactResult c_TriMeshBvhSphereContact(struct arena *frame, const stru
 	const struct sphere *sph = &s[1]->sphere;
 
 	struct aabb bbox_transform;
-	bbox_transform.center = QV3Rotate(QInverse(tf[0].rotation), V3Sub(tf[1].position, tf[0].position));
-	bbox_transform.hw = V3(sph->radius, sph->radius, sph->radius);
+	const v3 sph_center = QV3Rotate(QInverse(tf[0].rotation), V3Sub(tf[1].position, tf[0].position));
+	bbox_transform.min = V3AddConstant(sph_center, -sph->radius);
+	bbox_transform.max = V3AddConstant(sph_center, sph->radius);
 
     struct c_TriMeshBvhIterator it;
     c_TriMeshBvhIteratorAlloc(&it, mesh_bvh, &bbox_transform);
@@ -1786,7 +1787,8 @@ struct c_ContactResult c_TriMeshBvhCapsuleContact(struct arena *frame, const str
             QV3Rotate(q_inv, V3Sub(cap_s.p[0], tf[0].position)),
             QV3Rotate(q_inv, V3Sub(cap_s.p[1], tf[0].position)));
 	struct aabb bbox_transform = BboxSegment(&cap_mesh_space_s);
-	bbox_transform.hw = V3Add(bbox_transform.hw, V3(cap->radius, cap->radius, cap->radius));
+	bbox_transform.min = V3AddConstant(bbox_transform.min, -cap->radius);
+	bbox_transform.max = V3AddConstant(bbox_transform.max, cap->radius);
 
     const m3 bvh_rotation = M3Q(tf[0].rotation);
 
@@ -2374,8 +2376,8 @@ struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct
         max = V3Max(max, hull_bvh_local_space.v[i]);
     }
 
-	bbox_transform.hw = V3Scale(V3Sub(max, min), 0.5f);
-	bbox_transform.center = V3Add(min, bbox_transform.hw);
+	bbox_transform.min = min;
+	bbox_transform.max = max;
 
     const m3 bvh_rotation = M3Q(tf[0].rotation);
 

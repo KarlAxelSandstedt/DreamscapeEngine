@@ -115,26 +115,28 @@ struct triMeshBvh   TriMeshBvhConstruct(struct arena *mem, const struct triMesh 
 /*
 bvh raycasting
 ==============
-To implement raycast using external primitives, one can use the following code:
+Nodes are visited in order of their box's entry t (the smallest t >= 0 in the box's volume, 0 if the origin is
+inside it), so the search stops once the best hit is nearer than the next box. BvhRaycastInit takes all of mem
+for the node queue: pass a scratch arena and push/pop (or flush) around each traversal. Raycasting your own
+primitives in the leaves (see TriMeshBvhRaycastParameter, ds_DynamicsRaycastParameter):
 
-	ArenaPushRecord(mem);
-
+	struct arena *mem = ArenaPushScratch();
 	struct bvhRaycastInfo info = BvhRaycastInit(mem, bvh, ray);
 	while (info.hit_queue.count)
 	{
 		const u32f32 tuple = MinQueueFixedPop(&info.hit_queue);
 		if (info.hit.f < tuple.f)
 		{
-			break;	
+			break;
 		}
 
-		if (bt_LeafCheck(info.node + tuple.u))
+		if (ds_BTLeafCheck(info.node + tuple.u))
 		{
-			//TODO: Here you implement raycasting against your external primitive.
-			const f32 t = external_primitive_raycast(...);
+			// raycast the leaf's primitive(s), e.g. primitive = info.node[tuple.u].bt_child[0]
+			const f32 t = primitive_raycast_parameter(primitive, ray);
 			if (t < info.hit.f)
 			{
-				info.hit = u32f32_inline(tuple.u, t);
+				info.hit = u32f32_inline(primitive, t);
 			}
 		}
 		else
@@ -142,23 +144,38 @@ To implement raycast using external primitives, one can use the following code:
 			BvhRaycastTestAndPushChildren(&info, tuple);
 		}
 	}
-
-	ArenaPopRecord(mem);
+	ArenaPopScratch();
 */
+
+/* the ray prepared for repeated box tests */
+struct rayAabb
+{
+	v3	    origin;
+	v3	    inv_dir;	/* 1 / dir, +-inf on an axis where dir is 0 */
+	v3u32	sign;		/* sign bit of dir: 1 -> the near slab plane is the box's max */
+};
+
+struct rayAabb  RayAabb(const struct ray *ray);
+/*
+ * Return the interval [low, high] of t for which origin + t*dir is in the box (the whole line, t < 0 included);
+ * empty if high < low. Conservative: rounding never shortens it, so a BVH traversal never skips a box the ray
+ * touches (it may keep one the ray misses by an ulp). Raycasts apply the first surface hit rule to it
+ * (AabbRaycastParameter); a BVH orders boxes by max(low, 0), the entry into the box's volume.
+ */
+intv            AabbRaycastInterval(const struct rayAabb *ray, const struct aabb *aabb);
+
 struct bvhRaycastInfo
 {
 	u32f32			hit;
-	v3 			    multiplier;
-	v3u32 		    dir_sign_bit;
+	struct rayAabb	ray;
 	struct minQueueFixed	hit_queue;
-	const struct ray *	ray;
 	const struct bvh *	bvh;
 	const struct bvhNode *	node;
 };
 
-/* Initiate raycast information */
+/* Return the traversal state with the root queued if the ray hits its box; uses all of mem for the queue */
 struct bvhRaycastInfo	BvhRaycastInit(struct arena *mem, const struct bvh *bvh, const struct ray *ray);
-/* test Raycasting against child nodes and push hit children onto queue */
+/* Queue the popped node's children whose boxes the ray hits, keyed by their entry t */
 void 			        BvhRaycastTestAndPushChildren(struct bvhRaycastInfo *info, const u32f32 popped_tuple);
 
 
@@ -324,6 +341,22 @@ struct c_ContactResult  c_TriMeshBvhHullContact(struct arena *frame, const struc
 /********************************** RAYCAST **********************************/
 
 /*
+ * The ray sheared into ray space, where it is the +z axis from the origin (Woop, Benthin, Wald 2013). Built once
+ * per ray and shared by every triangle test, so a vertex transforms identically in all its triangles (what makes
+ * the tests watertight).
+ */
+struct rayWoop
+{
+	v3	origin;
+	u32	kx;		/* kz: the axis of dir's largest |component|; kx = (kz + 1) % 3, ky = (kx + 1) % 3 */
+	u32	ky;
+	u32	kz;
+	f32	sx;		/* dir[kx] / dir[kz] */
+	f32	sy;		/* dir[ky] / dir[kz] */
+	f32	sz;		/* 1 / dir[kz] */
+};
+
+/*
  * Return the smallest t >= 0 at which origin + t*dir is on the shape's surface (the first surface hit), or
  * F32_INFINITY. Two-sided: surfaces count from either side, so an origin inside a solid returns its exit.
  * The ray is in the shape's local frame.
@@ -334,12 +367,16 @@ f32 SphereRaycastParameter(const struct sphere *sphere, const struct ray *ray);
 f32 CapsuleRaycastParameter(const struct capsule *capsule, const struct ray *ray);
 /* hull: a closed convex polyhedron with planar faces */
 f32 HullRaycastParameter(const struct dcel *hull, const struct ray *ray);
+f32 AabbRaycastParameter(const struct aabb *aabb, const struct ray *ray);
 f32 TriMeshBvhRaycastParameter(const struct triMeshBvh *mesh_bvh, const struct ray *ray);
 /*
  * triangle abc, any winding (no culling). A ray in the triangle's plane misses; an origin on the triangle with
- * dir out of its plane returns 0. A mesh casts many triangles per ray: build the ray setup once (c_raycast.c).
+ * dir out of its plane returns 0.
  */
 f32 TriRaycastParameter(const v3 a, const v3 b, const v3 c, const struct ray *ray);
+/* TriRaycastParameter with the ray set up once (RayWoop) for many triangles, e.g. a mesh */
+struct rayWoop  RayWoop(const struct ray *ray);
+f32 TriRaycastParameterEx(const struct rayWoop *ray, const v3 a, const v3 b, const v3 c);
 
 /*
  * The local functions above, with the ray in world space and the shape placed by transform. t is the
@@ -348,6 +385,7 @@ f32 TriRaycastParameter(const v3 a, const v3 b, const v3 c, const struct ray *ra
 f32 SphereRaycastWorldParameter(const struct sphere *sphere, const ds_TransformWorld *transform, const struct rayWorld *ray);
 f32 CapsuleRaycastWorldParameter(const struct capsule *capsule, const ds_TransformWorld *transform, const struct rayWorld *ray);
 f32 HullRaycastWorldParameter(const struct dcel *hull, const ds_TransformWorld *transform, const struct rayWorld *ray);
+f32 AabbRaycastWorldParameter(const struct aabb *aabb, const ds_TransformWorld *transform, const struct rayWorld *ray);
 f32 TriMeshBvhRaycastWorldParameter(const struct triMeshBvh *mesh_bvh, const ds_TransformWorld *transform, const struct rayWorld *ray);
 f32 TriRaycastWorldParameter(const v3 a, const v3 b, const v3 c, const ds_TransformWorld *transform, const struct rayWorld *ray);
 

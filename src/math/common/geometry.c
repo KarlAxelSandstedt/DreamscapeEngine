@@ -160,14 +160,7 @@ struct segment SegmentCapsuleTransform(const struct capsule *cap, const ds_Trans
 
 struct aabb BboxSegment(const struct segment *s)
 {
-	struct aabb bbox;
-
-	const v3 min = V3Min(s->p[0], s->p[1]);
-	const v3 max = V3Max(s->p[0], s->p[1]);
-
-	bbox.hw = V3Scale(V3Sub(max, min), 0.5f);
-	bbox.center = V3Add(min, bbox.hw);
-
+	const struct aabb bbox = { .min = V3Min(s->p[0], s->p[1]), .max = V3Max(s->p[0], s->p[1]) };
     return bbox;
 }
 
@@ -294,13 +287,14 @@ f32 PlanePointProjection(v3 *proj, const struct plane *pl, const v3 p)
 
 u32 AabbMaxAxis(const struct aabb a)
 {
+    const v3 size = V3Sub(a.max, a.min);
     u32 axis = 0;
-    if (a.hw.x < a.hw.y)
+    if (size.x < size.y)
     {
         axis = 1;
     }
 
-    if (a.hw.buf[axis] < a.hw.z)
+    if (size.buf[axis] < size.z)
     {
         axis = 2;
     }
@@ -323,19 +317,14 @@ struct aabb BboxVertexSet(const v3 *v, const u32 count)
         max = V3Max(max, v[i]);
 	}
 
-    struct aabb bbox;
-	bbox.hw = V3Scale(V3Sub(max, min), 0.5f);
-	bbox.center = V3Add(min, bbox.hw);
+    const struct aabb bbox = { .min = min, .max = max };
     return bbox;
 }
 
 void AabbUnion(struct aabb *box_union, const struct aabb *a, const struct aabb *b)
 {
-	const v3 min = V3Min(V3Sub(a->center, a->hw), V3Sub(b->center, b->hw));
-	const v3 max = V3Max(V3Add(a->center, a->hw), V3Add(b->center, b->hw));
-	
-	box_union->hw = V3Scale(V3Sub(max, min), 0.5f);
-	box_union->center = V3Add(box_union->hw, min);
+	box_union->min = V3Min(a->min, b->min);
+	box_union->max = V3Max(a->max, b->max);
 }
 
 void AabbRotate(struct aabb *dst, const struct aabb *src, const m3 rotation)
@@ -349,120 +338,49 @@ void AabbRotate(struct aabb *dst, const struct aabb *src, const m3 rotation)
 	const v3 y = V3Abs(V3(rotation.a21, rotation.a22, rotation.a23));
 	const v3 z = V3Abs(V3(rotation.a31, rotation.a32, rotation.a33));
 
-	dst->hw = V3(V3Dot(x, src->hw), V3Dot(y, src->hw), V3Dot(z, src->hw));
-	dst->center = src->center;
+	const v3 center = V3Scale(V3Add(src->min, src->max), 0.5f);
+	const v3 hw_src = V3Scale(V3Sub(src->max, src->min), 0.5f);
+	const v3 hw = V3(V3Dot(x, hw_src), V3Dot(y, hw_src), V3Dot(z, hw_src));
+	/* NOTE: the center is kept, not rotated (as before the min/max refactor); callers use boxes centered at 0 */
+	dst->min = V3Sub(center, hw);
+	dst->max = V3Add(center, hw);
 }
 
 u32 AabbTest(const struct aabb *a, const struct aabb *b)
 {
-	if (b->center.x - b->hw.x - (a->center.x + a->hw.x) > 0.0f 
-			|| a->center.x - a->hw.x - (b->center.x + b->hw.x) > 0.0f) { return 0; }
-	if (b->center.y - b->hw.y - (a->center.y + a->hw.y) > 0.0f 
-			|| a->center.y - a->hw.y - (b->center.y + b->hw.y) > 0.0f) { return 0; }
-	if (b->center.z - b->hw.z - (a->center.z + a->hw.z) > 0.0f 
-			|| a->center.z - a->hw.z - (b->center.z + b->hw.z) > 0.0f) { return 0; }
+	if (b->min.x > a->max.x || a->min.x > b->max.x) { return 0; }
+	if (b->min.y > a->max.y || a->min.y > b->max.y) { return 0; }
+	if (b->min.z > a->max.z || a->min.z > b->max.z) { return 0; }
 
 	return 1;
 }
 
 u32 AabbContains(const struct aabb *a, const struct aabb *b)
 {
-	if (b->center.x - b->hw.x < a->center.x - a->hw.x) { return 0; }
-	if (b->center.y - b->hw.y < a->center.y - a->hw.y) { return 0; }
-	if (b->center.z - b->hw.z < a->center.z - a->hw.z) { return 0; }
+	if (b->min.x < a->min.x) { return 0; }
+	if (b->min.y < a->min.y) { return 0; }
+	if (b->min.z < a->min.z) { return 0; }
 	
-	if (b->center.x + b->hw.x > a->center.x + a->hw.x) { return 0; }
-	if (b->center.y + b->hw.y > a->center.y + a->hw.y) { return 0; }
-	if (b->center.z + b->hw.z > a->center.z + a->hw.z) { return 0; }
+	if (b->max.x > a->max.x) { return 0; }
+	if (b->max.y > a->max.y) { return 0; }
+	if (b->max.z > a->max.z) { return 0; }
 
 	return 1;
 }
 
 u32 AabbContainsMargin(const struct aabb *a, const struct aabb *b, const f32 margin)
 {
-	if (b->center.x - b->hw.x < a->center.x - a->hw.x - margin) { return 0; }
-	if (b->center.y - b->hw.y < a->center.y - a->hw.y - margin) { return 0; }
-	if (b->center.z - b->hw.z < a->center.z - a->hw.z - margin) { return 0; }
+	if (b->min.x < a->min.x - margin) { return 0; }
+	if (b->min.y < a->min.y - margin) { return 0; }
+	if (b->min.z < a->min.z - margin) { return 0; }
 	
-	if (b->center.x + b->hw.x > a->center.x + a->hw.x + margin) { return 0; }
-	if (b->center.y + b->hw.y > a->center.y + a->hw.y + margin) { return 0; }
-	if (b->center.z + b->hw.z > a->center.z + a->hw.z + margin) { return 0; }
+	if (b->max.x > a->max.x + margin) { return 0; }
+	if (b->max.y > a->max.y + margin) { return 0; }
+	if (b->max.z > a->max.z + margin) { return 0; }
 
 	return 1;
 }
 	
-void AabbRaycastParameterExSetup(v3 *multiplier, v3u32 *dir_sign_bit, const struct ray *ray)
-{
-	*multiplier = V3(1.0f / (ray->dir.x),
-			 1.0f / (ray->dir.y),
-			 1.0f / (ray->dir.z));
-
-	*dir_sign_bit = V3U32((u32) F32SignBit(ray->dir.x),
-			      (u32) F32SignBit(ray->dir.y),
-			      (u32) F32SignBit(ray->dir.z));
-}
-
-/*
-	Quick Derivation: (For more information, see Christer Ericsson, Real-time collision detection ch 5.3)
-	X = P + tD 
-	Xn = dist
-
-	aabb axis aligned =>
-
-	find t such that 
-			Xn = dist
-		<=>	X[axis] * n[axis] = dist
-		<=>	(P[axis] + t*D[axis]) * n[axis] = dist
-		<=>	t = (dist - P[axis]*n[axis]) / (D[axis]*n[axis])	
-		<=>	t = (dist - P[axis]) / D[axis]				(we assume n[axis] == 1.0f always)
-
-		Note (1):
-	
-			If ray is perpendicular, do point_slab test of origin instead	
-
-		optimization (1):
-
-			1.0f / D[axis]*n[axis] precomputed.
-*/
-f32 AabbRaycastParameterEx(const struct aabb *aabb, const struct ray *ray, const v3 multiplier, const v3u32 dir_sign_bit)
-{
-	const v3 box_min = V3Sub(aabb->center, aabb->hw);
-	const v3 box_max = V3Add(aabb->center, aabb->hw);
-
-	f32 t_min = 0.0f;
-	f32 t_max = F32_INFINITY;
-
-	for (u32 axis = 0; axis < 3; ++axis)
-	{
-		/* If parallel to slab, point_slab test */
-        //TODO fix hardcoded values here
-		if (F32Abs(ray->dir.buf[axis]) < 10.0f * F32_EPSILON)
-		{
-			if (ray->origin.buf[axis] < box_min.buf[axis] || ray->origin.buf[axis] > box_max.buf[axis]) { return F32_INFINITY; }
-		}
-		else
-		{
-			const f32 t_1 = (box_min.buf[axis] - ray->origin.buf[axis]) * multiplier.buf[axis];
-			const f32 t_2 = (box_max.buf[axis] - ray->origin.buf[axis]) * multiplier.buf[axis];
-
-			/* if sign bit, we hit min_plane last, max_plane first => t_1 > t_2, else t_2 > t_1 */
-			const f32 t_min_axis = (1-dir_sign_bit.buf[axis])*t_1 + dir_sign_bit.buf[axis]*t_2;
-			const f32 t_max_axis = (1-dir_sign_bit.buf[axis])*t_2 + dir_sign_bit.buf[axis]*t_1;
-
-			ds_Assert(t_min_axis <= t_max_axis);
-			t_min = F32Max(t_min, t_min_axis);
-			t_max = F32Min(t_max, t_max_axis);
-
-			if (t_min > t_max)
-			{
-				return F32_INFINITY;
-			}
-		}
-	}
-
-	return t_min;
-}
-
 u64 AabbPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const v4 color)
 {
 	return AabbTransformPushLinesBuffered(buf, bufsize, box, V3Zero(), M3Identity(), color);
@@ -476,39 +394,40 @@ u64 AabbTransformPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb
 		return 0;
 	}
 
-	const v3 end = V3Sub(box->center, box->hw);
+	const v3 end = box->min;
+	const v3 size = V3Sub(box->max, box->min);
 	const v3 line[24] =
 	{
 		V3(end.x, 		                end.y, 		            end.z),
-		V3(end.x + 2.0f*box->hw.x,    end.y, 		            end.z),
+		V3(end.x + size.x,    end.y, 		            end.z),
 		V3(end.x, 		                end.y, 		            end.z),
-		V3(end.x, 		                end.y + 2.0f*box->hw.y,   end.z),
+		V3(end.x, 		                end.y + size.y,   end.z),
 		V3(end.x, 		                end.y, 		            end.z),
-		V3(end.x, 		                end.y, 	                end.z + 2.0f*box->hw.z),
+		V3(end.x, 		                end.y, 	                end.z + size.z),
 
-		V3(end.x + 2.0f*box->hw.x,    end.y, 		            end.z),
-		V3(end.x + 2.0f*box->hw.x,    end.y + 2.0f*box->hw.y,   end.z),
-		V3(end.x + 2.0f*box->hw.x,    end.y, 		            end.z),
-		V3(end.x + 2.0f*box->hw.x,    end.y,                     end.z + 2.0f*box->hw.z),
+		V3(end.x + size.x,    end.y, 		            end.z),
+		V3(end.x + size.x,    end.y + size.y,   end.z),
+		V3(end.x + size.x,    end.y, 		            end.z),
+		V3(end.x + size.x,    end.y,                     end.z + size.z),
 
-		V3(end.x, 		            end.y + 2.0f*box->hw.y,   end.z),
-		V3(end.x, 		            end.y + 2.0f*box->hw.y,   end.z + 2.0f*box->hw.z),
-		V3(end.x, 		            end.y + 2.0f*box->hw.y,   end.z),
-		V3(end.x + 2.0f*box->hw.x,   end.y + 2.0f*box->hw.y,   end.z),
+		V3(end.x, 		            end.y + size.y,   end.z),
+		V3(end.x, 		            end.y + size.y,   end.z + size.z),
+		V3(end.x, 		            end.y + size.y,   end.z),
+		V3(end.x + size.x,   end.y + size.y,   end.z),
 
-		V3(end.x, 		            end.y, 	                end.z + 2.0f*box->hw.z),
-		V3(end.x, 		            end.y + 2.0f*box->hw.y,   end.z + 2.0f*box->hw.z),
-		V3(end.x, 		            end.y, 	                end.z + 2.0f*box->hw.z),
-		V3(end.x + 2.0f*box->hw.x,   end.y, 	                end.z + 2.0f*box->hw.z),
+		V3(end.x, 		            end.y, 	                end.z + size.z),
+		V3(end.x, 		            end.y + size.y,   end.z + size.z),
+		V3(end.x, 		            end.y, 	                end.z + size.z),
+		V3(end.x + size.x,   end.y, 	                end.z + size.z),
 
-		V3(end.x + 2.0f*box->hw.x,   end.y + 2.0f*box->hw.y,   end.z),
-		V3(end.x + 2.0f*box->hw.x,   end.y + 2.0f*box->hw.y,   end.z + 2.0f*box->hw.z),
+		V3(end.x + size.x,   end.y + size.y,   end.z),
+		V3(end.x + size.x,   end.y + size.y,   end.z + size.z),
 
-		V3(end.x, 		            end.y + 2.0f*box->hw.y,   end.z + 2.0f*box->hw.z),
-		V3(end.x + 2.0f*box->hw.x,   end.y + 2.0f*box->hw.y,   end.z + 2.0f*box->hw.z),
+		V3(end.x, 		            end.y + size.y,   end.z + size.z),
+		V3(end.x + size.x,   end.y + size.y,   end.z + size.z),
 
-		V3(end.x + 2.0f*box->hw.x,   end.y, 	                end.z + 2.0f*box->hw.z),
-		V3(end.x + 2.0f*box->hw.x,   end.y + 2.0f*box->hw.y,   end.z + 2.0f*box->hw.z),
+		V3(end.x + size.x,   end.y, 	                end.z + size.z),
+		V3(end.x + size.x,   end.y + size.y,   end.z + size.z),
 	};
 
 	f32 *v = (f32*) buf;
@@ -524,52 +443,19 @@ u64 AabbTransformPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb
 
 struct aabb BboxTriangle(const v3 p0, const v3 p1, const v3 p2)
 {
-	struct aabb bbox;
-
-	const v3 min = V3Min(V3Min(p0, p1), p2);
-	const v3 max = V3Max(V3Max(p0, p1), p2);
-
-	bbox.hw = V3Scale(V3Sub(max, min), 0.5f);
-	bbox.center = V3Add(min, bbox.hw);
-
+	const struct aabb bbox = { .min = V3Min(V3Min(p0, p1), p2), .max = V3Max(V3Max(p0, p1), p2) };
 	return bbox;
 }
 
 struct aabb BboxUnion(const struct aabb a, const struct aabb b)
 {
-	struct aabb bbox;
-	const v3 min = V3Min(V3Sub(a.center, a.hw), V3Sub(b.center, b.hw));
-	const v3 max = V3Max(V3Add(a.center, a.hw), V3Add(b.center, b.hw));
-	
-	bbox.hw = V3Scale(V3Sub(max, min), 0.5f);
-	bbox.center = V3Add(bbox.hw, min);
-
+	const struct aabb bbox = { .min = V3Min(a.min, b.min), .max = V3Max(a.max, b.max) };
 	return bbox;
 }
 
 struct aabb	BboxPointUnion(const struct aabb a, const v3 p)
 {
-    const v3 diff = V3Sub(p, a.center);
-    const v3 diff_abs = V3Abs(diff);
-
-    struct aabb bbox = a;
-    for (u32 i = 0; i < 3; ++i)
-    {
-        const f32 diff_hw = (diff_abs.buf[i] - a.hw.buf[i]) / 2.0f;
-        if (diff_hw > 0.0f)
-        {
-            bbox.hw.buf[i] += diff_hw;
-            if (diff.buf[i] < 0.0f)
-            {
-                bbox.center.buf[i] -= diff_hw;
-            }
-            else
-            {
-                bbox.center.buf[i] += diff_hw;
-            }
-        }
-    }
-
+	const struct aabb bbox = { .min = V3Min(a.min, p), .max = V3Max(a.max, p) };
     return bbox;
 }
 

@@ -274,22 +274,7 @@ f32 HullRaycastParameter(const struct dcel *hull, const struct ray *ray)
 		: F32_INFINITY;
 }
 
-/*
-The ray sheared into ray space, where it is the +z axis from the origin. Built once per ray, shared by every
-triangle test so that a vertex transforms identically in all its triangles (what makes the tests watertight).
-*/
-struct rayWoop
-{
-	v3	origin;
-	u32	kx;		/* kz: the axis of dir's largest |component|; kx = (kz + 1) % 3, ky = (kx + 1) % 3 */
-	u32	ky;
-	u32	kz;
-	f32	sx;		/* dir[kx] / dir[kz] */
-	f32	sy;		/* dir[ky] / dir[kz] */
-	f32	sz;		/* 1 / dir[kz] */
-};
-
-static struct rayWoop RayWoop(const struct ray *ray)
+struct rayWoop RayWoop(const struct ray *ray)
 {
 	/* the largest |component| (ties keep the lower axis); dir != 0, so dir[kz] != 0 */
 	u32 kz = 0;
@@ -315,7 +300,7 @@ static struct rayWoop RayWoop(const struct ray *ray)
 	return woop;
 }
 
-static f32 WoopRaycastParameter(const struct rayWoop *ray, const v3 a, const v3 b, const v3 c)
+f32 TriRaycastParameterEx(const struct rayWoop *ray, const v3 a, const v3 b, const v3 c)
 {
 	/*
 	References: Woop, Benthin, Wald, "Watertight Ray/Triangle Intersection", Journal of Computer Graphics
@@ -377,6 +362,76 @@ static f32 WoopRaycastParameter(const struct rayWoop *ray, const v3 a, const v3 
 	return T*rcp_det;
 }
 
+struct rayAabb RayAabb(const struct ray *ray)
+{
+	/* dir[i] == 0 gives 1/dir[i] = +-inf (signed like the zero), handled in AabbRaycastInterval */
+	const struct rayAabb ray_aabb =
+	{
+		.origin = ray->origin,
+		.inv_dir = V3(1.0f / ray->dir.x, 1.0f / ray->dir.y, 1.0f / ray->dir.z),
+		.sign = V3U32(F32SignBit(ray->dir.x), F32SignBit(ray->dir.y), F32SignBit(ray->dir.z)),
+	};
+	return ray_aabb;
+}
+
+intv AabbRaycastInterval(const struct rayAabb *ray, const struct aabb *aabb)
+{
+	/*
+	References: Williams, Barrus, Morley, Shirley, "An Efficient and Robust Ray-Box Intersection Algorithm",
+	Journal of Graphics Tools 10(1), 2005; Ize, "Robust BVH Ray Traversal", JCGT 2(2), 2013 (as in pbrt-v3,
+	Bounds3::IntersectP).
+
+	Per axis the line is inside the slab for t in [t_near, t_far]:
+
+		t_near = (near - o) / d,	t_far = (far - o) / d,		near = min if d >= 0, else max
+
+	dir[i] == 0 gives +-inf (origin inside or outside the slab), or NaN = 0*inf for an origin exactly on a slab
+	plane. F32Max(a, b) = (a > b) ? a : b returns b for a NaN a, so the per-axis value goes first: the axis is
+	then ignored, which is right since the origin is on the plane, hence in the slab.
+
+	Ize: each t carries at most 3 roundings (subtraction, reciprocal, product); scaling t_far by 1 + 2*gamma(3),
+	gamma(n) = n*u / (1 - n*u), u = 2^-24, keeps [t_near, t_far] from ever being shorter than the exact one.
+	*/
+	const f32 t_far_scale = 1.0f + 2.0f*(3.0f*0x1p-24f / (1.0f - 3.0f*0x1p-24f));
+
+	/* the whole line, clipped by each axis' slab */
+	f32 t_min = -F32_INFINITY;
+	f32 t_max = F32_INFINITY;
+	for (u32 axis = 0; axis < 3; ++axis)
+	{
+		const f32 near_plane = (ray->sign.buf[axis]) ? aabb->max.buf[axis] : aabb->min.buf[axis];
+		const f32 far_plane = (ray->sign.buf[axis]) ? aabb->min.buf[axis] : aabb->max.buf[axis];
+		const f32 t_near = (near_plane - ray->origin.buf[axis]) * ray->inv_dir.buf[axis];
+		const f32 t_far = (far_plane - ray->origin.buf[axis]) * ray->inv_dir.buf[axis] * t_far_scale;
+		t_min = F32Max(t_near, t_min);
+		t_max = F32Min(t_far, t_max);
+	}
+
+	return intv_inline(t_min, t_max);
+}
+
+f32 AabbRaycastParameter(const struct aabb *aabb, const struct ray *ray)
+{
+	ds_Assert(V3Dot(ray->dir, ray->dir) > 0.0f);
+
+	const struct rayAabb ray_aabb = RayAabb(ray);
+	const intv t = AabbRaycastInterval(&ray_aabb, aabb);
+	if (t.high < t.low)
+	{
+		return F32_INFINITY;
+	}
+
+	if (0.0f <= t.low)
+	{
+		return t.low;
+	}
+
+	/* the entry is behind the origin: the exit decides */
+	return (0.0f <= t.high)
+		? t.high
+		: F32_INFINITY;
+}
+
 f32 TriMeshBvhRaycastParameter(const struct triMeshBvh *mesh_bvh, const struct ray *ray)
 {
 	ProfZone;
@@ -404,7 +459,7 @@ f32 TriMeshBvhRaycastParameter(const struct triMeshBvh *mesh_bvh, const struct r
 			{
 				const struct triMesh *mesh = mesh_bvh->mesh;
 				const v3u32 tri = mesh->tri[mesh_bvh->tri[i]];
-				const f32 t = WoopRaycastParameter(&woop, mesh->v[tri.x], mesh->v[tri.y], mesh->v[tri.z]);
+				const f32 t = TriRaycastParameterEx(&woop, mesh->v[tri.x], mesh->v[tri.y], mesh->v[tri.z]);
 				if (t < info.hit.f)
 				{
 					info.hit = u32f32_inline(mesh_bvh->tri[i], t);
@@ -427,7 +482,7 @@ f32 TriRaycastParameter(const v3 a, const v3 b, const v3 c, const struct ray *ra
 	ds_Assert(V3Dot(ray->dir, ray->dir) > 0.0f);
 
 	const struct rayWoop woop = RayWoop(ray);
-	return WoopRaycastParameter(&woop, a, b, c);
+	return TriRaycastParameterEx(&woop, a, b, c);
 }
 
 f32 SphereRaycastWorldParameter(const struct sphere *sphere, const ds_TransformWorld *transform, const struct rayWorld *ray)
@@ -469,6 +524,16 @@ f32 TriMeshBvhRaycastWorldParameter(const struct triMeshBvh *mesh_bvh, const ds_
 		.dir = QV3Rotate(QInverse(transform->rotation), ray->dir),
 	};
 	return TriMeshBvhRaycastParameter(mesh_bvh, &local);
+}
+
+f32 AabbRaycastWorldParameter(const struct aabb *aabb, const ds_TransformWorld *transform, const struct rayWorld *ray)
+{
+	const struct ray local =
+	{
+		.origin = ds_TransformWorldPointToLocal(transform, ray->origin),
+		.dir = QV3Rotate(QInverse(transform->rotation), ray->dir),
+	};
+	return AabbRaycastParameter(aabb, &local);
 }
 
 f32 TriRaycastWorldParameter(const v3 a, const v3 b, const v3 c, const ds_TransformWorld *transform, const struct rayWorld *ray)
