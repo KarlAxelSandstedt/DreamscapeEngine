@@ -2779,7 +2779,12 @@ struct c_ContactResult TMP_c_CapsuleContact(struct arena *frame, const struct c_
     result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
     struct c_Manifold *manifold = result.manifold;
 
-    if (dist > 0.0f)
+    /*
+     * Q1_shift carries rounding error ~ eps (|c| + |e| + h0): below the noise band (as GJK's touch band, 100 eps L)
+     * its direction is noise, so the cores count as touching or crossing.
+     */
+    const f32 dist_noise = 100.0f*F32_EPSILON*(F32Abs(c.x) + F32Abs(c.y) + F32Abs(c.z) + F32Abs(e.x) + F32Abs(e.y) + F32Abs(e.z) + s[0]->capsule.half_height);
+    if (dist > dist_noise)
     {
         manifold->n = V3Scale(Q1_shift, 1.0f / dist);
     }
@@ -3053,6 +3058,8 @@ struct c_ContactResult TMP_c_HullCapsuleContact(struct arena *frame, const struc
      * separation): the closest points of the edge's and the core's lines, v on the hull edge. Only if both lie
      * within the segments (Box3D): otherwise other features realize the axis, and the edge and core don't meet
      * along it (e.g. an edge accepted by the Gauss test on rounding noise, its axis ~ a face normal).
+     * The clipped separation favours two-point face contacts (Box3D) over the best axis: a stick across an edge
+     * keeps the face normal until it sinks more than sat_face_bias / (1 - 1/sqrt 2).
      */
     if (e_query.e1 != U32_MAX && (!face_contact || depth[deeper] + g_numerics_config->sat_face_bias < e_query.depth))
     {

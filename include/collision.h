@@ -284,7 +284,10 @@ Usage:
     d == F32_INFINITY   a separating plane proves distance > cutoff_distance; c_a, c_b, n garbage
     otherwise           the distance; c_a, c_b the closest points and n the unit normal from A to B,
                         n accurate to ~6 eps * L / distance radians. Only an upper bound if the
-                        iteration limit was reached
+                        iteration limit was reached. GJK stops once d is within its tolerance, so the
+                        final simplex can be non-optimal: n's error is first order where d's is second
+                        order, and n can be less accurate than the bound above (rare; mostly when one
+                        shape is hundreds of times larger than the other)
 
     cache_in            NULL or the pair's previous cache_out; warm-starts the search unless the cached
                         simplex changed size by more than 2x. cache_out is always written.

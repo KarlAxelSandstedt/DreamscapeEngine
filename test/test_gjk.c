@@ -22,12 +22,14 @@ transforms), without a reference distance:
         |d - |c_b - c_a||           <= tol_p        d agrees with the points
 
     An overestimate is reported as an early stop if GJK's final simplex, solved in double (d_s), is
-    itself above lo, else as f32 error on that simplex. A final simplex can be non-optimal and still
+    itself above lo, else as f32 error on that simplex. Both are accepted (counted) when the shapes' extents
+    differ by GJK_TEST_ACCEPTED_SIZE_RATIO or more. A final simplex can be non-optimal and still
     give d within tol (its distance error is second order in its normal's error), and n can be inaccurate
     for d ~ eps * L or short simplex edges; both are only counted, and the worst normal gap d - g(n) printed.
 
     overlap (d == 0):   SAT finds no axis separating A and B by more than tol + GJK's touch band
-                        (GJK_TOUCH_TOLERANCE * eps * max(extent A, extent B + |pos_B - pos_A|))
+                        (GJK_TOUCH_TOLERANCE * eps * max(extent A, extent B + |pos_B - pos_A|)); accepted
+                        (counted) at size ratios >= GJK_TEST_ACCEPTED_SIZE_RATIO
     cutoff (F32_INFINITY): the cutoff-free result certifies and is >= cutoff - tol
 
 sat is the largest separation of A and B over the SAT axes (face normals of both, cross products of
@@ -44,6 +46,13 @@ Each test prints the worst observed error in units of F32_EPSILON * L, to tighte
 */
 
 #define GJK_TEST_TOLERANCE  64.0
+/*
+ * Overestimates (early stops, f32 error on the final simplex) and false overlaps are accepted, counted, not
+ * failed, when one shape is this many times larger than the other (extent ratio): needle simplices of B - A
+ * (gjk_design.txt; owner 2026-10-09: not fixed, content bounds the size ratio). Every such failure observed had
+ * ratio >= 836.
+ */
+#define GJK_TEST_ACCEPTED_SIZE_RATIO 500.0
 #define GJK_TEST_HULL_COUNT 64
 
 /********************************** double precision helpers **********************************/
@@ -122,6 +131,11 @@ static f64 D3Length(const struct d3 a)
 static f64 F64MaxTest(const f64 a, const f64 b)
 {
     return (a > b) ? a : b;
+}
+
+static f64 F64MinTest(const f64 a, const f64 b)
+{
+    return (a < b) ? a : b;
 }
 
 static f64 F64AbsTest(const f64 a)
@@ -321,11 +335,12 @@ struct gjk_TestStats
     u64 simplex_gap_count;  /* separated results with d_s - lo > tol            */
     f64 max_point;          /* max |d - |c_b - c_a|| / (eps (L + |pos_A|)) */
     f64 max_sat;            /* max sat / (eps L), overlaps          */
+    u64 accepted_count;     /* overestimates and false overlaps accepted: size ratio >= GJK_TEST_ACCEPTED_SIZE_RATIO */
 };
 
 static void GjkTestStatsPrint(const char *id, const struct gjk_TestStats *stats)
 {
-    fprintf(stdout, "\t%s: %llu queries (%llu separated, %llu overlap, %llu cutoff); worst in eps*L: gap %.3g (at d = %.3g), rounding %.3g (at d = %.3g), points %.3g, overlap sat %.3g; normal gap %.3g (at d = %.3g), %llu above tol; %llu non-optimal final simplices\n",
+    fprintf(stdout, "\t%s: %llu queries (%llu separated, %llu overlap, %llu cutoff); worst in eps*L: gap %.3g (at d = %.3g), rounding %.3g (at d = %.3g), points %.3g, overlap sat %.3g; normal gap %.3g (at d = %.3g), %llu above tol; %llu non-optimal final simplices; %llu accepted (size ratio)\n",
         id,
         (long long unsigned int) stats->query_count,
         (long long unsigned int) stats->separated_count,
@@ -333,7 +348,7 @@ static void GjkTestStatsPrint(const char *id, const struct gjk_TestStats *stats)
         (long long unsigned int) stats->cutoff_count,
         stats->max_gap, stats->max_gap_d, stats->max_round, stats->max_round_d, stats->max_point, stats->max_sat,
         stats->max_normal_gap, stats->max_normal_gap_d, (long long unsigned int) stats->normal_gap_count,
-        (long long unsigned int) stats->simplex_gap_count);
+        (long long unsigned int) stats->simplex_gap_count, (long long unsigned int) stats->accepted_count);
 }
 
 static void GjkTestShapePrint(const char *name, const struct gjk_TestShape *s)
@@ -638,6 +653,10 @@ static u32 GjkTestQuery(struct gjk_TestStats *stats, f32 *d_out, struct GJKCache
         {
             failure = "overlap: c_a != c_b or n != 0";
         }
+        else if (sat > tol + touch_band && F64MinTest(a->extent, b->extent) * GJK_TEST_ACCEPTED_SIZE_RATIO <= F64MaxTest(a->extent, b->extent))
+        {
+            stats->accepted_count += 1;
+        }
         else if (sat > tol + touch_band)
         {
             failure = "overlap, but SAT separates";
@@ -699,6 +718,11 @@ static u32 GjkTestQuery(struct gjk_TestStats *stats, f32 *d_out, struct GJKCache
         else if (point_err > tol_p)
         {
             failure = "d != |c_b - c_a|";
+        }
+        else if (converged && d - lo > tol && hi - lo <= 1e-9 * scale
+                 && F64MinTest(a->extent, b->extent) * GJK_TEST_ACCEPTED_SIZE_RATIO <= F64MaxTest(a->extent, b->extent))
+        {
+            stats->accepted_count += 1;
         }
         else if (converged && d - lo > tol)
         {

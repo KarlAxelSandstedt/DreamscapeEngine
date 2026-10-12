@@ -91,7 +91,7 @@ struct test_Output TriCcwPointDistanceSquaredTest(struct test_Environment *env)
             //if (V3Dot(segment.dir, segment.dir) < 0.0001)
             //    continue;
 
-            enum TriVoronoiRegion region_slow;
+            enum TriVoronoiRegion region_slow = TRI_VORONOI_FACE;
             v3 c_t, c_s;
             const f32 dist = F32Sqrt(TriCcwSegmentDistanceSquared(&c_t, &c_s, &region, &segment, &tv));
             const f32 dist_slow = F32Sqrt(TriCcwSegmentDistanceSquaredSlow(&region_slow, &segment, &tv));
@@ -113,14 +113,72 @@ struct test_Output TriCcwPointDistanceSquaredTest(struct test_Environment *env)
                 fprintf(stderr, "slow region: %s\n", g_table_tri_voronoi_region_string[region_slow]);
                 if (max_diff > 0.003f)
                 {
-                    Breakpoint(max_diff > 0.003f);
-                    TriCcwSegmentDistanceSquared(&c_t, &c_s, &region, &segment, &tv);
-                    TriCcwSegmentDistanceSquaredSlow(&region_slow, &segment, &tv);
+                    TEST_FAILURE;
                 }
             }
         }
         if (g)
             fprintf(stderr, "Triangle %u: percentage of tri-seg pair yielding a maximum difference >1e-6: %.2f%%\n", i, 100.0f * (f32) g / n);
+    }
+
+	return output;
+}
+
+/*
+ * SegmentDistanceSquared with short and degenerate segments (length 1 .. subnormal .. 0): the parameters stay in
+ * [0, 1], the points on their segments, the distance finite and within the short segment's length of the
+ * distance from its first end (SegmentPointDistanceSquared).
+ */
+static u32 SegmentShortCase(const v3 a0, const v3 a_dir, const v3 b0, const v3 b1)
+{
+    const struct segment a = SegmentConstruct(a0, V3Add(a0, a_dir));
+    const struct segment b = SegmentConstruct(b0, b1);
+    f32 t1, t2;
+    SegmentClosestParameter(&t1, &t2, &a, &b);
+    if (!(0.0f <= t1 && t1 <= 1.0f && 0.0f <= t2 && t2 <= 1.0f))
+    {
+        fprintf(stderr, "SegmentShortCase: t1 %g t2 %g\n", t1, t2);
+        return 0;
+    }
+
+    v3 c1, c2, c;
+    const f32 dist = F32Sqrt(SegmentDistanceSquared(&c1, &c2, &a, &b));
+    const f32 ref = F32Sqrt(SegmentPointDistanceSquared(&c, &b, a0));
+    const f32 len = V3Length(a_dir);
+    const u32 ok = (dist == dist) && dist <= ref + 1e-6f && dist >= ref - len - 1e-6f;
+    if (!ok)
+    {
+        fprintf(stderr, "SegmentShortCase: |a| %g dist %.9g ref %.9g\n", len, dist, ref);
+    }
+    return ok;
+}
+
+struct test_Output SegmentShortTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    const f32 length[] = { 1.0f, 1e-2f, 3e-3f, 1e-4f, 1e-8f, 1e-15f, 1e-20f, 1e-22f, 1e-23f, 1e-30f, 1e-38f, 1e-40f, 1e-45f, 0.0f };
+    const v3 b0 = V3(-1.0f, 0.5f, 0.25f);
+    const v3 b1 = V3(1.0f, 0.5f, -0.25f);
+    for (u32 i = 0; i < sizeof(length) / sizeof(length[0]); ++i)
+    {
+        for (u32 k = 0; k < 1000; ++k)
+        {
+            const v3 a0 = V3(RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f));
+            const v3 dir = V3Scale(V3UnitSphere(), length[i]);
+            /* short a vs a unit b, b vs short a, two short segments, short a parallel to b */
+            TEST_TRUE(SegmentShortCase(a0, dir, b0, b1));
+            TEST_TRUE(SegmentShortCase(a0, V3Scale(V3Sub(b1, b0), length[i]), b0, b1));
+            TEST_TRUE(SegmentShortCase(a0, dir, b0, V3Add(b0, V3Scale(V3UnitSphere(), length[i]))));
+            {
+                const struct segment a = SegmentConstruct(b0, b1);
+                const struct segment s = SegmentConstruct(a0, V3Add(a0, dir));
+                v3 c1, c2, c;
+                const f32 dist = F32Sqrt(SegmentDistanceSquared(&c1, &c2, &a, &s));
+                const f32 ref = F32Sqrt(SegmentPointDistanceSquared(&c, &a, a0));
+                TEST_TRUE(dist == dist && dist <= ref + 1e-6f && dist >= ref - length[i] - 1e-6f);
+            }
+        }
     }
 
 	return output;
@@ -215,6 +273,7 @@ struct test_Output DcelFaceSegmentClipTest(struct test_Environment *env)
 static struct test_Output (*geometry_tests[])(struct test_Environment *) =
 {
 	TriCcwPointDistanceSquaredTest,
+	SegmentShortTest,
 	DcelFaceSegmentClipTest,
 };
 

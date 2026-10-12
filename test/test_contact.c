@@ -295,8 +295,10 @@ static u32 CtVerify(struct ct_Stats *stats, const struct ct_Manifold *m, const s
             stats->worst_ny = F64MaxTest(stats->worst_ny, F64AbsTest(ny));
             if (F64AbsTest(ny) > 0.1)
             {
+                /* audit F1: a noise normal (cores overlapping); two point manifolds have |n.y| <= the tilt */
                 stats->two_point_steep += 1;
                 stats->steep_dist = F64MaxTest(stats->steep_dist, dist / L);
+                fail = "two point: steep n (noise normal)";
             }
         }
 
@@ -1790,6 +1792,590 @@ struct test_Output HullCapsuleContactTimingTest(struct test_Environment *env)
 	return output;
 }
 
+/********************************** hull vs hull **********************************/
+
+/*
+Hull vs hull (TMP_c_HullContact), checked in double precision in A's frame (the manifold's frame). B's vertices,
+face normals and edge directions are moved into A's frame in double. With sep(n) = min_B n.x - max_A n.x:
+
+    sat = max sep(n) over A's face normals, minus B's face normals and +-cross(edge A, edge B)
+        = the signed distance if A and B intersect (exact: the face normals of the Minkowski difference)
+
+Every manifold must satisfy, with L = max(extent A, extent B, |x_B - x_A|), tol = CONTACT_TEST_TOLERANCE eps L:
+
+    contact iff sat < 0                         (undecided within tol)
+    c_ManifoldCheck, v_count in 1..4, |n| = 1
+    depth_i <= -sep(n) + tol                    (n separates as deep as it claims)
+    v_i on A's surface                          |sdf_A(v_i)| <= tol
+    v_i - depth_i n on B's surface              |sdf_B(v_i - depth_i n)| <= tol (point and depth agree)
+    translating both by an exactly representable offset gives identical bits
+    the same checks with the previous result as the cache: same pose, and B moved by ~1e-3 L
+
+Failures are counted by kind (first example printed); any failure fails the test.
+*/
+
+static struct ds_DynamicsWorker hh_worker[DS_THREAD_COUNT_MAX];
+
+enum hh_Fail
+{
+    HH_FAIL_NONE,
+    HH_FAIL_INVALID,        /* manifold count, c_ManifoldCheck, v_count */
+    HH_FAIL_MISSED,         /* sat < -tol, no contact */
+    HH_FAIL_FALSE,          /* sat > tol, contact */
+    HH_FAIL_NORMAL,         /* |n| != 1 */
+    HH_FAIL_DEPTH,          /* depth > -sep(n) + tol */
+    HH_FAIL_SURFACE_A,      /* v not on A's surface */
+    HH_FAIL_SURFACE_B,      /* v - depth n not on B's surface */
+    HH_FAIL_TRANSLATION,    /* translated result differs */
+    HH_FAIL_COUNT
+};
+
+static const char *hh_fail_id[HH_FAIL_COUNT] =
+{
+    "none", "invalid", "missed contact", "false contact", "|n| != 1", "depth deeper than sep(n)",
+    "v off A", "v - depth n off B", "translation",
+};
+
+struct hh_Stats
+{
+    u64 tests;
+    u64 contacts;
+    u64 v_count[5];
+    u64 undecided;
+    u64 fail[HH_FAIL_COUNT];
+    f64 worst_surface_a;    /* / (eps L) */
+    f64 worst_surface_b;    /* / (eps L) */
+    f64 worst_gap;          /* deep: (sat - sep(n)) / L */
+    u64 missed_origin_outside;
+};
+
+/* B moved into A's frame (double): vertices, face normals and offsets, edge directions */
+static void HhHullInFrame(struct ch_Hull *out, const struct ch_Hull *b, const struct ch_Hull *a)
+{
+    *out = *b;
+    const struct dcel *dcel = &b->shape.hull;
+    for (u32 i = 0; i < b->v_count; ++i)
+    {
+        out->v[i] = D3RotationTMul(a->r, D3Sub(D3Add(D3RotationMul(b->r, b->v[i]), b->pos), a->pos));
+    }
+    for (u32 fi = 0; fi < b->f_count; ++fi)
+    {
+        out->fn[fi] = D3RotationTMul(a->r, D3RotationMul(b->r, b->fn[fi]));
+        const struct dcelFace *f = dcel->f + fi;
+        out->fd[fi] = -1e300;
+        for (u32 i = 0; i < f->count; ++i)
+        {
+            out->fd[fi] = F64MaxTest(out->fd[fi], D3Dot(out->fn[fi], out->v[dcel->e[f->first + i].origin]));
+        }
+    }
+    for (u32 i = 0; i < b->e_count; ++i)
+    {
+        out->ed[i] = D3RotationTMul(a->r, D3RotationMul(b->r, b->ed[i]));
+    }
+}
+
+static f64 HhMin(const struct ch_Hull *h, const struct d3 n)
+{
+    f64 min = 1e300;
+    for (u32 i = 0; i < h->v_count; ++i)
+    {
+        min = F64MinTest(min, D3Dot(n, h->v[i]));
+    }
+    return min;
+}
+
+/* separation of A and B (in A's frame) along unit n, from A towards B */
+static f64 HhSeparation(const struct ch_Hull *a, const struct ch_Hull *b, const struct d3 n)
+{
+    return HhMin(b, n) - ChSupport(a, n);
+}
+
+static f64 HhSat(const struct ch_Hull *a, const struct ch_Hull *b)
+{
+    f64 sat = -1e300;
+    for (u32 fi = 0; fi < a->f_count; ++fi)
+    {
+        sat = F64MaxTest(sat, HhSeparation(a, b, a->fn[fi]));
+    }
+    for (u32 fi = 0; fi < b->f_count; ++fi)
+    {
+        sat = F64MaxTest(sat, HhSeparation(a, b, D3Scale(b->fn[fi], -1.0)));
+    }
+    for (u32 i = 0; i < a->e_count; ++i)
+    {
+        for (u32 j = 0; j < b->e_count; ++j)
+        {
+            const struct d3 c = D3Cross(a->ed[i], b->ed[j]);
+            const f64 c_sq = D3Dot(c, c);
+            if (c_sq > 1e-24*D3Dot(a->ed[i], a->ed[i])*D3Dot(b->ed[j], b->ed[j]) && c_sq > 0.0)
+            {
+                const struct d3 n = D3Scale(c, 1.0 / F64SqrtTest(c_sq));
+                sat = F64MaxTest(sat, HhSeparation(a, b, n));
+                sat = F64MaxTest(sat, HhSeparation(a, b, D3Scale(n, -1.0)));
+            }
+        }
+    }
+    return sat;
+}
+
+static void HhPrint(const struct ch_Hull *a, const struct ch_Hull *b)
+{
+    const struct ch_Hull *h[2] = { a, b };
+    for (u32 k = 0; k < 2; ++k)
+    {
+        if (h[k]->is_box)
+        {
+            fprintf(stderr, "\t%c: box hw { %.9g, %.9g, %.9g }", 'A' + k, h[k]->hw.x, h[k]->hw.y, h[k]->hw.z);
+        }
+        else
+        {
+            fprintf(stderr, "\t%c: hull %u vertices, extent %.9g", 'A' + k, h[k]->v_count, h[k]->extent);
+        }
+        fprintf(stderr, " rot { %.9g, %.9g, %.9g, %.9g } pos { %.17g, %.17g, %.17g }\n", h[k]->t.rotation.x,
+            h[k]->t.rotation.y, h[k]->t.rotation.z, h[k]->t.rotation.w, h[k]->pos.x, h[k]->pos.y, h[k]->pos.z);
+    }
+}
+
+/* contact of (a, b); 0 and HH_FAIL_INVALID printed if the result is malformed */
+static u32 HhContact(struct arena *frame, struct c_ContactResult *result, const struct ch_Hull *a, const struct ch_Hull *b, const struct c_ContactResult *cached)
+{
+    const struct c_Shape *s[2] = { &a->shape, &b->shape };
+    const ds_TransformWorld t[2] = { a->t, b->t };
+    const struct c_ContactResult none = { 0 };
+    *result = TMP_c_HullContact(frame, (cached) ? cached : &none, s, t);
+    return result->manifold_count == 0
+        || (result->manifold_count == 1 && c_ManifoldCheck(result->manifold)
+            && 1 <= result->manifold->v_count && result->manifold->v_count <= 4);
+}
+
+/* checks one result of (a, b) against the reference; returns the failure kind */
+static enum hh_Fail HhVerify(struct hh_Stats *stats, const struct c_ContactResult *result, const struct ch_Hull *a, const struct ch_Hull *b)
+{
+    struct ch_Hull bt;
+    HhHullInFrame(&bt, b, a);
+    const f64 L = F64MaxTest(F64MaxTest(a->extent, b->extent), D3Length(D3Sub(b->pos, a->pos)));
+    const f64 eps_l = F32_EPSILON * L;
+    const f64 tol = CONTACT_TEST_TOLERANCE * eps_l;
+    const f64 sat = HhSat(a, &bt);
+    const u32 contact = (result->manifold_count == 1);
+
+    stats->tests += 1;
+    if (F64AbsTest(sat) <= tol)
+    {
+        stats->undecided += 1;
+    }
+    else if (sat < 0.0 && !contact)
+    {
+        /* TMP diagnosis: A's frame origin inside A? */
+        stats->missed_origin_outside += (ChHullSdf(a, D3(0.0, 0.0, 0.0)) > 0.0);
+        return HH_FAIL_MISSED;
+    }
+    else if (sat > 0.0 && contact)
+    {
+        return HH_FAIL_FALSE;
+    }
+
+    if (!contact)
+    {
+        return HH_FAIL_NONE;
+    }
+
+    const struct c_Manifold *m = result->manifold;
+    const struct d3 n = D3V3(m->n);
+    const f64 n_len = D3Length(n);
+    if (F64AbsTest(n_len - 1.0) > 1e-5)
+    {
+        return HH_FAIL_NORMAL;
+    }
+
+    const f64 sep = HhSeparation(a, &bt, D3Scale(n, 1.0 / n_len));
+    for (u32 i = 0; i < m->v_count; ++i)
+    {
+        const struct d3 v = D3V3(m->v[i]);
+        const f64 surface_a = F64AbsTest(ChHullSdf(a, v));
+        const f64 surface_b = F64AbsTest(ChHullSdf(&bt, D3Sub(v, D3Scale(n, m->depth[i]))));
+        stats->worst_surface_a = F64MaxTest(stats->worst_surface_a, surface_a / eps_l);
+        stats->worst_surface_b = F64MaxTest(stats->worst_surface_b, surface_b / eps_l);
+        if (m->depth[i] > -sep + tol)
+        {
+            return HH_FAIL_DEPTH;
+        }
+        if (surface_a > tol)
+        {
+            return HH_FAIL_SURFACE_A;
+        }
+        if (surface_b > tol)
+        {
+            return HH_FAIL_SURFACE_B;
+        }
+    }
+
+    if (sat < -tol)
+    {
+        stats->worst_gap = F64MaxTest(stats->worst_gap, (sat - sep) / L);
+    }
+    stats->contacts += 1;
+    stats->v_count[m->v_count] += 1;
+    return HH_FAIL_NONE;
+}
+
+static void HhCount(struct hh_Stats *stats, const enum hh_Fail fail, const struct c_ContactResult *result, const struct ch_Hull *a, const struct ch_Hull *b, const char *what)
+{
+    if (fail == HH_FAIL_NONE)
+    {
+        return;
+    }
+    if (stats->fail[fail] == 0)
+    {
+        struct ch_Hull bt;
+        HhHullInFrame(&bt, b, a);
+        fprintf(stderr, "\tHull contact (%s) failed: %s, sat %.9g\n", what, hh_fail_id[fail], HhSat(a, &bt));
+        HhPrint(a, b);
+        if (result->manifold_count)
+        {
+            c_ManifoldDebugPrint(result->manifold);
+        }
+    }
+    stats->fail[fail] += 1;
+}
+
+/* contact of (a, b): fresh, translated, with the cache (same pose and b moved) */
+static void HhCheckPair(struct arena *frame, struct hh_Stats *fresh, struct hh_Stats *cached, const struct ch_Hull *a, const struct ch_Hull *b)
+{
+    struct c_ContactResult r;
+    if (!HhContact(frame, &r, a, b, NULL))
+    {
+        HhCount(fresh, HH_FAIL_INVALID, &r, a, b, "fresh");
+        return;
+    }
+    HhCount(fresh, HhVerify(fresh, &r, a, b), &r, a, b, "fresh");
+
+    /* an exactly representable offset leaves x_B - x_A exact in f64: identical bits */
+    struct ch_Hull a_t = *a, b_t = *b;
+    const struct d3 offset = D3(4096.0, -1024.0, 65536.0);
+    a_t.t.position = V3F64(a->pos.x + offset.x, a->pos.y + offset.y, a->pos.z + offset.z);
+    b_t.t.position = V3F64(b->pos.x + offset.x, b->pos.y + offset.y, b->pos.z + offset.z);
+    if (V3F64Sub(b_t.t.position, a_t.t.position).x == V3F64Sub(b->t.position, a->t.position).x
+     && V3F64Sub(b_t.t.position, a_t.t.position).y == V3F64Sub(b->t.position, a->t.position).y
+     && V3F64Sub(b_t.t.position, a_t.t.position).z == V3F64Sub(b->t.position, a->t.position).z)
+    {
+        struct c_ContactResult r_t;
+        HhContact(frame, &r_t, &a_t, &b_t, NULL);
+        u32 same = (r_t.manifold_count == r.manifold_count);
+        if (same && r.manifold_count)
+        {
+            const struct c_Manifold *m = r.manifold, *m_t = r_t.manifold;
+            same = m_t->v_count == m->v_count && memcmp(&m_t->n, &m->n, sizeof(v3)) == 0;
+            for (u32 i = 0; same && i < m->v_count; ++i)
+            {
+                same = memcmp(&m_t->v[i], &m->v[i], sizeof(v3)) == 0 && memcmp(&m_t->depth[i], &m->depth[i], sizeof(f32)) == 0;
+            }
+        }
+        if (!same)
+        {
+            HhCount(fresh, HH_FAIL_TRANSLATION, &r, a, b, "translated");
+        }
+    }
+
+    /* the cache: same pose, then b moved by ~1e-3 L */
+    struct c_ContactResult r_c;
+    if (!HhContact(frame, &r_c, a, b, &r))
+    {
+        HhCount(cached, HH_FAIL_INVALID, &r_c, a, b, "cached, same pose");
+        return;
+    }
+    HhCount(cached, HhVerify(cached, &r_c, a, b), &r_c, a, b, "cached, same pose");
+
+    struct ch_Hull b_m = *b;
+    const f64 L = F64MaxTest(F64MaxTest(a->extent, b->extent), D3Length(D3Sub(b->pos, a->pos)));
+    b_m.pos = D3Add(b->pos, D3Scale(D3V3(CtUnit()), 1e-3*L));
+    b_m.t.position = V3F64(b_m.pos.x, b_m.pos.y, b_m.pos.z);
+    if (!HhContact(frame, &r_c, a, &b_m, &r))
+    {
+        HhCount(cached, HH_FAIL_INVALID, &r_c, a, &b_m, "cached, moved");
+        return;
+    }
+    HhCount(cached, HhVerify(cached, &r_c, a, &b_m), &r_c, a, &b_m, "cached, moved");
+}
+
+static u64 HhFailures(const struct hh_Stats *s)
+{
+    u64 count = 0;
+    for (u32 k = 1; k < HH_FAIL_COUNT; ++k)
+    {
+        count += s->fail[k];
+    }
+    return count;
+}
+
+static void HhStatsPrint(const char *id, const struct hh_Stats *s)
+{
+    fprintf(stdout, "\t%s: %llu tests, %llu contacts (points 1/2/3/4: %llu/%llu/%llu/%llu), %llu undecided; worst / (eps L): surface A %.1f, B %.1f; deep gap / L %.3g; failures:",
+        id, (unsigned long long) s->tests, (unsigned long long) s->contacts, (unsigned long long) s->v_count[1],
+        (unsigned long long) s->v_count[2], (unsigned long long) s->v_count[3], (unsigned long long) s->v_count[4],
+        (unsigned long long) s->undecided, s->worst_surface_a, s->worst_surface_b, s->worst_gap);
+    u32 any = 0;
+    for (u32 k = 1; k < HH_FAIL_COUNT; ++k)
+    {
+        if (s->fail[k])
+        {
+            fprintf(stdout, " %s %llu,", hh_fail_id[k], (unsigned long long) s->fail[k]);
+            any = 1;
+        }
+    }
+    fprintf(stdout, "%s (missed with A's origin outside A: %llu)\n", (any) ? "" : " none", (unsigned long long) s->missed_origin_outside);
+}
+
+/* rotation taking unit a to unit b */
+static q HhRotationFromTo(const v3 a, const v3 b)
+{
+    const v3 axis = V3Cross(a, b);
+    const f32 s = V3Length(axis);
+    const f32 c = V3Dot(a, b);
+    if (s < 1e-6f)
+    {
+        return (c > 0.0f) ? QIdentity() : QUnitAxisAngle(ChPerpendicular(a), F32_PI);
+    }
+    return QUnitAxisAngle(V3Scale(axis, 1.0f / s), F32Acos(F32Clamp(c, -1.0f, 1.0f)));
+}
+
+/* kind 0: box, 1: slab (one half width 1e-2 of the others), 2: random hull; size = its scale */
+static void HhHull(struct arena *mem, struct ch_Hull *h, const u32 kind, const f32 size, const q rotation, const struct d3 pos)
+{
+    if (kind < 2)
+    {
+        v3 hw = V3(size*RngF32Range(0.1f, 1.0f), size*RngF32Range(0.1f, 1.0f), size*RngF32Range(0.1f, 1.0f));
+        if (kind == 1)
+        {
+            hw.y = 1e-2f*size;
+        }
+        const struct c_Shape box = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(mem, hw) };
+        ChHullInit(h, &box, 1, hw, rotation, pos);
+    }
+    else
+    {
+        const struct c_Shape hull = ChRandomHullShape(mem, size);
+        ChHullInit(h, &hull, 0, V3(0.0f, 0.0f, 0.0f), rotation, pos);
+    }
+}
+
+static v3 HhFaceCentroid(const struct dcel *d, const u32 fi)
+{
+    const struct dcelFace *f = d->f + fi;
+    v3 c = V3(0.0f, 0.0f, 0.0f);
+    for (u32 i = 0; i < f->count; ++i)
+    {
+        c = V3Add(c, d->v[d->e[f->first + i].origin]);
+    }
+    return V3Scale(c, 1.0f / (f32) f->count);
+}
+
+/* min over d's vertices of n.(R v) */
+static f32 HhMinRotated(const struct dcel *d, const q rot, const v3 n)
+{
+    f32 min = F32_INFINITY;
+    for (u32 i = 0; i < d->v_count; ++i)
+    {
+        min = F32Min(min, V3Dot(n, QUnitRotate(rot, d->v[i])));
+    }
+    return min;
+}
+
+/*
+ * B relative to A (given), by mode; B's local rotation and center in A's frame, then world:
+ *  0: random pose near A
+ *  1: face on face (B's face anti-parallel to A's, tilted 0 .. 0.2 rad), gap -0.05 .. 0.02 extent B
+ *  2: edge across edge (B's edge bisector opposite A's, random twist), gap -0.03 .. 0.02 extents
+ *  3: vertex on face (a vertex of B pointing into A's face), gap -0.05 .. 0.02 extent B
+ *  4: center inside A
+ *  5: apart (no contact): 1 .. 2 times the extents
+ */
+static void HhHullNear(struct arena *mem, struct ch_Hull *b, const struct ch_Hull *a, const u32 kind, const u32 mode)
+{
+    const struct dcel *da = &a->shape.hull;
+    const f32 ext_a = (f32) a->extent;
+    const f32 size = ext_a * RngF32Range(0.2f, 3.0f);
+
+    /* B's shape first (at the origin), to place it */
+    struct ch_Hull tmp;
+    HhHull(mem, &tmp, kind, size, QIdentity(), D3(0.0, 0.0, 0.0));
+    const struct dcel *db = &tmp.shape.hull;
+    const f32 ext_b = (f32) tmp.extent;
+
+    q rot = CtRotation();
+    v3 center = V3(0.0f, 0.0f, 0.0f);
+    switch (mode)
+    {
+        case 1:
+        {
+            const u32 fa = (u32) RngU64Range(0, da->f_count - 1);
+            const u32 fb = (u32) RngU64Range(0, db->f_count - 1);
+            const v3 n = da->plane[fa].normal;
+            const f32 tilt[] = { 0.0f, 1e-3f, 1e-2f, 0.05f, 0.2f };
+            rot = HhRotationFromTo(db->plane[fb].normal, V3Negate(n));
+            rot = QMul(QUnitAxisAngle(n, RngF32Range(0.0f, 2.0f*F32_PI)), rot);
+            rot = QMul(QUnitAxisAngle(ChPerpendicular(n), tilt[RngU64Range(0, 4)]), rot);
+            const v3 corner = da->v[da->e[da->f[fa].first].origin];
+            const v3 centroid = HhFaceCentroid(da, fa);
+            const v3 on_face = V3Add(centroid, V3Scale(V3Sub(corner, centroid), RngF32Range(0.0f, 1.0f)));
+            const f32 gap = ext_b * RngF32Range(-0.05f, 0.02f);
+            center = V3Add(on_face, V3Scale(n, gap - HhMinRotated(db, rot, n)));
+        } break;
+
+        case 2:
+        {
+            const u32 ea = (u32) RngU64Range(0, da->e_count - 1);
+            const u32 eb = (u32) RngU64Range(0, db->e_count - 1);
+            const v3 ua = V3Normalize(V3Add(da->plane[da->e[ea].face_ccw].normal, da->plane[da->e[da->e[ea].twin].face_ccw].normal));
+            const v3 ub = V3Normalize(V3Add(db->plane[db->e[eb].face_ccw].normal, db->plane[db->e[db->e[eb].twin].face_ccw].normal));
+            rot = HhRotationFromTo(ub, V3Negate(ua));
+            rot = QMul(QUnitAxisAngle(ua, RngF32Range(0.0f, 2.0f*F32_PI)), rot);
+            const v3 a0 = da->v[da->e[ea].origin];
+            const v3 a1 = da->v[da->e[da->e[ea].twin].origin];
+            const v3 on_edge = V3Add(a0, V3Scale(V3Sub(a1, a0), RngF32Range(0.0f, 1.0f)));
+            const v3 b_mid = V3Scale(V3Add(db->v[db->e[eb].origin], db->v[db->e[db->e[eb].twin].origin]), 0.5f);
+            const f32 gap = (ext_a + ext_b) * RngF32Range(-0.03f, 0.02f);
+            center = V3Sub(V3Add(on_edge, V3Scale(ua, gap)), QUnitRotate(rot, b_mid));
+        } break;
+
+        case 3:
+        {
+            const u32 fa = (u32) RngU64Range(0, da->f_count - 1);
+            const v3 n = da->plane[fa].normal;
+            const v3 vb = db->v[RngU64Range(0, db->v_count - 1)];
+            rot = HhRotationFromTo(V3Normalize(vb), V3Negate(n));
+            rot = QMul(QUnitAxisAngle(n, RngF32Range(0.0f, 2.0f*F32_PI)), rot);
+            const v3 corner = da->v[da->e[da->f[fa].first].origin];
+            const v3 centroid = HhFaceCentroid(da, fa);
+            const v3 on_face = V3Add(centroid, V3Scale(V3Sub(corner, centroid), RngF32Range(0.0f, 1.0f)));
+            const f32 gap = ext_b * RngF32Range(-0.05f, 0.02f);
+            center = V3Add(on_face, V3Scale(n, gap - HhMinRotated(db, rot, n)));
+        } break;
+
+        case 4:
+        {
+            center = V3Scale(da->v[RngU64Range(0, da->v_count - 1)], RngF32Range(0.0f, 0.8f));
+        } break;
+
+        case 5:
+        {
+            center = V3Scale(CtUnit(), (ext_a + ext_b) * RngF32Range(1.0f, 2.0f));
+        } break;
+
+        default:
+        {
+            center = V3Scale(CtUnit(), (ext_a + ext_b) * RngF32Range(0.0f, 1.2f));
+        } break;
+    }
+
+    ChHullInit(b, &tmp.shape, tmp.is_box, V3((f32) tmp.hw.x, (f32) tmp.hw.y, (f32) tmp.hw.z), QMul(a->t.rotation, rot), ChLocalToWorld(a, center));
+}
+
+static struct ds_DynamicsWorker *HhWorkerPush(void)
+{
+    struct ds_DynamicsWorker *prev = g_dynamics_worker;
+    memset(hh_worker, 0, sizeof(hh_worker));
+    g_dynamics_worker = hh_worker;
+    return prev;
+}
+
+/* hand-made cases: A = [-1, 1]^3 at the origin, unrotated */
+struct test_Output HullContactCasesTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+    ContactTestConfigPush();
+    struct ds_DynamicsWorker *prev = HhWorkerPush();
+
+    const v3 hw = V3(1.0f, 1.0f, 1.0f);
+    const struct c_Shape box = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(env->mem_1, hw) };
+    struct ch_Hull a, b;
+    ChHullInit(&a, &box, 1, hw, QIdentity(), D3(0.0, 0.0, 0.0));
+    struct hh_Stats stats = { 0 };
+    struct c_ContactResult r;
+
+    /* separated: B 0.1 above */
+    ChHullInit(&b, &box, 1, hw, QIdentity(), D3(0.0, 2.1, 0.0));
+    TEST_TRUE(HhContact(env->mem_2, &r, &a, &b, NULL) && HhVerify(&stats, &r, &a, &b) == HH_FAIL_NONE);
+    TEST_EQUAL(r.manifold_count, 0);
+
+    /* face on face, 0.1 deep: four points at the corners (+-1, 1, +-1), n = +y, depth 0.1 */
+    ChHullInit(&b, &box, 1, hw, QIdentity(), D3(0.0, 1.9, 0.0));
+    TEST_TRUE(HhContact(env->mem_2, &r, &a, &b, NULL) && HhVerify(&stats, &r, &a, &b) == HH_FAIL_NONE);
+    if (r.manifold->v_count != 4) { c_ManifoldDebugPrint(r.manifold); }
+    TEST_EQUAL(r.manifold->v_count, 4);
+    TEST_TRUE(CtNearD3(D3V3(r.manifold->n), D3(0.0, 1.0, 0.0)));
+    for (u32 i = 0; i < 4; ++i)
+    {
+        TEST_TRUE(CtNear(r.manifold->depth[i], 0.1) && CtNear(r.manifold->v[i].y, 1.0));
+    }
+
+    /* B turned 45 deg about y: the clip is an octagon, reduced to four points, all 0.1 deep */
+    ChHullInit(&b, &box, 1, hw, QUnitAxisAngle(V3(0.0f, 1.0f, 0.0f), F32_PI/4.0f), D3(0.0, 1.9, 0.0));
+    TEST_TRUE(HhContact(env->mem_2, &r, &a, &b, NULL) && HhVerify(&stats, &r, &a, &b) == HH_FAIL_NONE);
+    TEST_EQUAL(r.manifold->v_count, 4);
+    for (u32 i = 0; i < 4; ++i)
+    {
+        TEST_TRUE(CtNear(r.manifold->depth[i], 0.1));
+    }
+
+    /* B turned 45 deg about x, its lower edge (along x) 0.05 into the top face: two points (+-1, 1, 0), depth 0.05 */
+    ChHullInit(&b, &box, 1, hw, QUnitAxisAngle(V3(1.0f, 0.0f, 0.0f), F32_PI/4.0f), D3(0.0, 0.95 + 1.41421356, 0.0));
+    TEST_TRUE(HhContact(env->mem_2, &r, &a, &b, NULL) && HhVerify(&stats, &r, &a, &b) == HH_FAIL_NONE);
+    TEST_EQUAL(r.manifold->v_count, 2);
+    TEST_TRUE(CtNearD3(D3V3(r.manifold->n), D3(0.0, 1.0, 0.0)));
+    TEST_TRUE(CtNear(r.manifold->depth[0], 0.05) && CtNear(r.manifold->depth[1], 0.05));
+
+    g_dynamics_worker = prev;
+	return output;
+}
+
+/* random pairs: {box, box}, {box, hull}, {hull, hull}, {slab, box} x every mode; fresh, translated and cached */
+struct test_Output HullContactRandomTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+    ContactTestConfigPush();
+    struct ds_DynamicsWorker *prev = HhWorkerPush();
+
+    const char *pair_id[] = { "box/box", "box/hull", "hull/hull", "slab/box" };
+    const u32 kind_a[] = { 0, 0, 2, 1 };
+    const u32 kind_b[] = { 0, 2, 2, 0 };
+    const char *mode_id[] = { "random", "face on face", "edge on edge", "vertex on face", "inside", "apart" };
+    const u32 count[] = { 4000, 2000, 1000, 2000 };
+    u64 failures = 0;
+    for (u32 far = 0; far < 2; ++far)
+    for (u32 p = 0; p < 4; ++p)
+    {
+        for (u32 mode = 0; mode < 6; ++mode)
+        {
+            struct hh_Stats fresh = { 0 }, cached = { 0 };
+            for (u32 i = 0; i < count[p]; ++i)
+            {
+                struct arena record = *env->mem_2;
+                struct ch_Hull a, b;
+                /* near the origin (|x| <= 1), then anywhere up to 1e6 */
+                const struct d3 pos = (far) ? CtWorldPosition() : D3Scale(D3V3(CtUnit()), RngF32Normalized());
+                HhHull(env->mem_2, &a, kind_a[p], CtSize(), CtRotation(), pos);
+                HhHullNear(env->mem_2, &b, &a, kind_b[p], mode);
+                HhCheckPair(env->mem_2, &fresh, &cached, &a, &b);
+                *env->mem_2 = record;
+            }
+            char id[96];
+            snprintf(id, sizeof(id), "%s, %s, %s", (far) ? "far" : "near", pair_id[p], mode_id[mode]);
+            HhStatsPrint(id, &fresh);
+            snprintf(id, sizeof(id), "%s, %s, %s (cached)", (far) ? "far" : "near", pair_id[p], mode_id[mode]);
+            HhStatsPrint(id, &cached);
+            failures += HhFailures(&fresh) + HhFailures(&cached);
+        }
+    }
+
+    g_dynamics_worker = prev;
+    if (failures)
+    {
+        TEST_FAILURE;
+    }
+	return output;
+}
+
 static struct test_Output (*contact_tests[])(struct test_Environment *) =
 {
     CapsuleContactCasesTest,
@@ -1799,6 +2385,8 @@ static struct test_Output (*contact_tests[])(struct test_Environment *) =
     HullCapsuleContactRandomTest,
     HullCapsuleContactSweepTest,
     HullCapsuleContactTimingTest,
+    HullContactCasesTest,
+    HullContactRandomTest,
 };
 
 struct suite_Correctness m_contact_suite =

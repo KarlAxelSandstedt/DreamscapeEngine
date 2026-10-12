@@ -30,7 +30,6 @@
 #include "ds_float.h"
 
 //TODO what to do with this?
-#define MIN_SEGMENT_LENGTH_SQ	(100.0f*F32_EPSILON)
 
 struct ray RayConstruct(const v3 origin, const v3 dir)
 {
@@ -65,7 +64,11 @@ void SegmentClosestParameter(f32 *t1, f32 *t2, const struct segment *s1, const s
 	*t1 = 0.0f;
 	*t2 = 0.0f;
 
-	if (d1d1 >= MIN_SEGMENT_LENGTH_SQ && d2d2 >= MIN_SEGMENT_LENGTH_SQ)
+	/*
+	 * A segment is a point only if |dir|^2 == 0: every quotient below is clamped (Inf included) or already in
+	 * [0, divisor], so short segments need no length threshold.
+	 */
+	if (d1d1 > 0.0f && d2d2 > 0.0f)
 	{
 		const f32 d1d2 = V3Dot(s1->dir, s2->dir);
 		const f32 diffd1 = V3Dot(diff, s1->dir);
@@ -105,7 +108,7 @@ void SegmentClosestParameter(f32 *t1, f32 *t2, const struct segment *s1, const s
 		}
 	}
 	/* S2 is point */
-	else if (d1d1 >= MIN_SEGMENT_LENGTH_SQ)
+	else if (d1d1 > 0.0f)
 	{
 		/* 
 		 * SIGNED PROJECTED LENGTH 
@@ -115,7 +118,7 @@ void SegmentClosestParameter(f32 *t1, f32 *t2, const struct segment *s1, const s
 		 */
         *t1 = F32Clamp(V3Dot(diff, s1->dir) / d1d1, 0.0f, 1.0f);
 	}
-	else if (d2d2 >= MIN_SEGMENT_LENGTH_SQ)
+	else if (d2d2 > 0.0f)
 	{
 		*t2 = F32Clamp(-V3Dot(diff, s2->dir) / d2d2, 0.0f, 1.0f);
 	}
@@ -137,7 +140,7 @@ f32 SegmentPointDistanceSquared(v3 *c, const struct segment *s, const v3 p)
 {
 	f32 t = 0.0f;
 	
-	if (V3LengthSquared(s->dir) >= MIN_SEGMENT_LENGTH_SQ)
+	if (V3LengthSquared(s->dir) > 0.0f)
 	{
 		const v3 diff = V3Sub(p, s->p[0]);
 		t = F32Clamp(V3Dot(diff, s->dir) / V3Dot(s->dir, s->dir), 0.0f, 1.0f);
