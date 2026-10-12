@@ -126,9 +126,96 @@ struct test_Output TriCcwPointDistanceSquaredTest(struct test_Environment *env)
 	return output;
 }
 
+static u32 ClipNear(const v3 a, const v3 b)
+{
+    return V3Length(V3Sub(a, b)) <= 1e-6f;
+}
+
+/*
+ * clip s to face fi of the moved box; 1 if non-empty and the result is (e0, e1); with_local (identity transform):
+ * DcelFaceSegmentClip too.
+ */
+static u32 ClipCase(const struct dcel *box, const m3 rot, const v3 pos, const u32 local, const u32 fi, const v3 p0, const v3 p1, const v3 e0, const v3 e1)
+{
+    const struct segment s = SegmentConstruct(p0, p1);
+    struct segment clip, clip_local;
+    if (!DcelFaceSegmentClipWorld(&clip, box, rot, pos, fi, &s) || !ClipNear(clip.p[0], e0) || !ClipNear(clip.p[1], e1))
+    {
+        return 0;
+    }
+    return !local || (DcelFaceSegmentClip(&clip_local, box, fi, &s) && ClipNear(clip_local.p[0], e0) && ClipNear(clip_local.p[1], e1));
+}
+
+/* clip s to face fi of the moved box; 1 if empty (with_local: DcelFaceSegmentClip too) */
+static u32 ClipEmptyCase(const struct dcel *box, const m3 rot, const v3 pos, const u32 local, const u32 fi, const v3 p0, const v3 p1)
+{
+    const struct segment s = SegmentConstruct(p0, p1);
+    struct segment clip;
+    return !DcelFaceSegmentClipWorld(&clip, box, rot, pos, fi, &s) && (!local || !DcelFaceSegmentClip(&clip, box, fi, &s));
+}
+
+/*
+ * DcelFaceSegmentClip/World on the unit box stub ([-0.5, 0.5]^3, face 0 = +y): the face's sides are
+ * |x|, |z| <= 0.5. Segments at y = 0.7 (above the face; the clip does not project onto it).
+ */
+struct test_Output DcelFaceSegmentClipTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    const struct dcel box = DcelBoxStub();
+    const m3 I = M3Identity();
+    const v3 o = V3(0.0f, 0.0f, 0.0f);
+    const u32 with_local = 1;
+
+    /* inside: unchanged */
+    TEST_TRUE(ClipCase(&box, I, o, with_local, 0, V3(-0.2f, 0.7f, 0.0f), V3(0.3f, 0.7f, 0.1f), V3(-0.2f, 0.7f, 0.0f), V3(0.3f, 0.7f, 0.1f)));
+    /* crosses one side: p1 moved, p0 kept */
+    TEST_TRUE(ClipCase(&box, I, o, with_local, 0, V3(0.0f, 0.7f, 0.0f), V3(1.0f, 0.7f, 0.0f), V3(0.0f, 0.7f, 0.0f), V3(0.5f, 0.7f, 0.0f)));
+    /* crosses one side: p0 moved, p1 kept */
+    TEST_TRUE(ClipCase(&box, I, o, with_local, 0, V3(1.0f, 0.7f, 0.0f), V3(0.0f, 0.7f, 0.0f), V3(0.5f, 0.7f, 0.0f), V3(0.0f, 0.7f, 0.0f)));
+    /* crosses two opposite sides; direction kept */
+    TEST_TRUE(ClipCase(&box, I, o, with_local, 0, V3(-1.0f, 0.7f, 0.2f), V3(1.0f, 0.7f, 0.2f), V3(-0.5f, 0.7f, 0.2f), V3(0.5f, 0.7f, 0.2f)));
+    TEST_TRUE(ClipCase(&box, I, o, with_local, 0, V3(1.0f, 0.7f, 0.2f), V3(-1.0f, 0.7f, 0.2f), V3(0.5f, 0.7f, 0.2f), V3(-0.5f, 0.7f, 0.2f)));
+    /* diagonal through two adjacent sides */
+    TEST_TRUE(ClipCase(&box, I, o, with_local, 0, V3(-1.0f, 0.7f, -1.0f), V3(1.0f, 0.7f, 1.0f), V3(-0.5f, 0.7f, -0.5f), V3(0.5f, 0.7f, 0.5f)));
+    /* along the face normal: no projection, unchanged */
+    TEST_TRUE(ClipCase(&box, I, o, with_local, 0, V3(0.1f, -2.0f, 0.1f), V3(0.1f, 2.0f, 0.1f), V3(0.1f, -2.0f, 0.1f), V3(0.1f, 2.0f, 0.1f)));
+
+    /* wholly outside one side (spans the z range): empty */
+    TEST_TRUE(ClipEmptyCase(&box, I, o, with_local, 0, V3(0.6f, 0.7f, -1.0f), V3(0.8f, 0.7f, 1.0f)));
+    /* misses the corner (x + z = 1.2): every side alone keeps a part, together nothing */
+    TEST_TRUE(ClipEmptyCase(&box, I, o, with_local, 0, V3(1.2f, 0.7f, 0.0f), V3(0.0f, 0.7f, 1.2f)));
+    /* along the face normal, outside: empty */
+    TEST_TRUE(ClipEmptyCase(&box, I, o, with_local, 0, V3(0.6f, -2.0f, 0.1f), V3(0.6f, 2.0f, 0.1f)));
+
+    /* in a side plane (x = 0.5): kept, clipped by the z sides, finite */
+    TEST_TRUE(ClipCase(&box, I, o, with_local, 0, V3(0.5f, 0.7f, -1.0f), V3(0.5f, 0.7f, 1.0f), V3(0.5f, 0.7f, -0.5f), V3(0.5f, 0.7f, 0.5f)));
+    /* touches a side at an end: a single point */
+    TEST_TRUE(ClipCase(&box, I, o, with_local, 0, V3(0.5f, 0.7f, 0.0f), V3(1.0f, 0.7f, 0.0f), V3(0.5f, 0.7f, 0.0f), V3(0.5f, 0.7f, 0.0f)));
+
+    /* degenerate (p0 == p1): itself inside, empty outside */
+    TEST_TRUE(ClipCase(&box, I, o, with_local, 0, V3(0.1f, 0.7f, 0.1f), V3(0.1f, 0.7f, 0.1f), V3(0.1f, 0.7f, 0.1f), V3(0.1f, 0.7f, 0.1f)));
+    TEST_TRUE(ClipEmptyCase(&box, I, o, with_local, 0, V3(0.6f, 0.7f, 0.1f), V3(0.6f, 0.7f, 0.1f)));
+
+    /* other faces: face 1 = +x (sides |y|, |z| <= 0.5), face 5 = -y */
+    TEST_TRUE(ClipCase(&box, I, o, with_local, 1, V3(0.7f, -1.0f, 0.0f), V3(0.7f, 1.0f, 0.0f), V3(0.7f, -0.5f, 0.0f), V3(0.7f, 0.5f, 0.0f)));
+    TEST_TRUE(ClipCase(&box, I, o, with_local, 5, V3(0.0f, -0.7f, 0.0f), V3(1.0f, -0.7f, 0.0f), V3(0.0f, -0.7f, 0.0f), V3(0.5f, -0.7f, 0.0f)));
+
+    /* moved box: rotated 90 deg about y (x -> -z), at (10, 0, 0); face 0 stays +y, sides |x - 10|, |z| <= 0.5 */
+    {
+        const m3 rot = M3QUnit(QUnitAxisAngle(V3(0.0f, 1.0f, 0.0f), F32_PI/2.0f));
+        const v3 pos = V3(10.0f, 0.0f, 0.0f);
+        TEST_TRUE(ClipCase(&box, rot, pos, 0, 0, V3(10.0f, 0.7f, 0.0f), V3(10.0f, 0.7f, 2.0f), V3(10.0f, 0.7f, 0.0f), V3(10.0f, 0.7f, 0.5f)));
+        TEST_TRUE(ClipEmptyCase(&box, rot, pos, 0, 0, V3(0.0f, 0.7f, 0.0f), V3(1.0f, 0.7f, 0.0f)));
+    }
+
+	return output;
+}
+
 static struct test_Output (*geometry_tests[])(struct test_Environment *) =
 {
 	TriCcwPointDistanceSquaredTest,
+	DcelFaceSegmentClipTest,
 };
 
 struct suite_Correctness m_geometry_suite =

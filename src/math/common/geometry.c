@@ -1221,47 +1221,87 @@ struct plane DcelFacePlaneWorld(const struct dcel *h, const m3 rot, const v3 pos
 	return PlaneTransform(h->plane + fi, rot, pos);
 }
 
-struct segment DcelFaceClipSegment(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi, const struct segment *s)
+u32 DcelSupportFace(const struct dcel *h, const v3 dir)
 {
-	const v3 f_n = M3V3Mul(rot, h->plane[fi].normal);
+	u32 best = 0;
+	f32 best_dot = V3Dot(h->plane[0].normal, dir);
+	for (u32 fi = 1; fi < h->f_count; ++fi)
+	{
+		const f32 dot = V3Dot(h->plane[fi].normal, dir);
+		if (best_dot < dot)
+		{
+			best = fi;
+			best_dot = dot;
+		}
+	}
 
-	f32 min_p = 0.0f;
-	f32 max_p = 1.0f;
+	return best;
+}
+
+/* Clip [t_min, t_max] of s to the outward side plane pl (keep signed distance <= 0); return 0 if s lies wholly in front */
+static u32 DcelSegmentSideClip(f32 *t_min, f32 *t_max, const struct plane *pl, const struct segment *s)
+{
+	const f32 d0 = PlanePointSignedDistance(pl, s->p[0]);
+	const f32 d1 = PlanePointSignedDistance(pl, s->p[1]);
+	if (0.0f < d0 && 0.0f < d1)
+	{
+		return 0;
+	}
+
+	/* signs differ: d0 - d1 != 0 and t = d0 / (d0 - d1) is in [0, 1] */
+	if (0.0f < d0)
+	{
+		*t_min = F32Max(*t_min, d0 / (d0 - d1));
+	}
+	else if (0.0f < d1)
+	{
+		*t_max = F32Min(*t_max, d0 / (d0 - d1));
+	}
+
+	return 1;
+}
+
+u32 DcelFaceSegmentClip(struct segment *clip, const struct dcel *h, const u32 fi, const struct segment *s)
+{
+	const v3 f_n = h->plane[fi].normal;
+
+	f32 t_min = 0.0f;
+	f32 t_max = 1.0f;
 
 	struct dcelFace *f = h->f + fi;
 	for (u32 i = 0; i < f->count; ++i)
 	{
-		const u32 e0 = f->first + i;
-		const u32 e1 = f->first + ((i + 1) % f->count);
-		struct plane clip_plane = DcelFaceClipPlane(h, rot, pos, f_n, e0, e1);
-
-		const f32 bc_c = PlaneSegmentClipParameter(&clip_plane, s);
-		if (min_p <= bc_c && bc_c <= max_p)
+		const v3 p0 = h->v[h->e[f->first + i].origin];
+		const v3 p1 = h->v[h->e[f->first + ((i + 1) % f->count)].origin];
+		const v3 n = V3Cross(V3Sub(p1, p0), f_n);
+		const struct plane clip_plane = PlaneConstruct(V3Scale(n, 1.0f/V3Length(n)), p0);
+		if (!DcelSegmentSideClip(&t_min, &t_max, &clip_plane, s))
 		{
-			if (V3Dot(s->dir, clip_plane.normal) >= 0.0f)
-			{
-				max_p = bc_c;
-			}
-			else
-			{
-				min_p = bc_c;
-			}
+			return 0;
 		}
-	}	
+	}
 
-	return SegmentConstruct(SegmentBc(s, min_p), SegmentBc(s, max_p));
+	if (t_max < t_min)
+	{
+		return 0;
+	}
+
+	*clip = SegmentConstruct(SegmentBc(s, t_min), SegmentBc(s, t_max));
+	return 1;
 }
 
-struct plane DcelFaceClipPlane(const struct dcel *h, const m3 rot, const v3 pos, const v3 face_normal, const u32 e0, const u32 e1)
+u32 DcelFaceSegmentClipWorld(struct segment *clip, const struct dcel *h, const m3 rot, const v3 pos, const u32 fi, const struct segment *s)
 {
-	struct dcelEdge *edge0 = h->e + e0; 
-	struct dcelEdge *edge1 = h->e + e1; 
+	/* s to the hull's frame: p -> rot^T (p - pos) */
+	const struct segment s_local = SegmentConstruct(V3M3Mul(V3Sub(s->p[0], pos), rot), V3M3Mul(V3Sub(s->p[1], pos), rot));
+	struct segment clip_local;
+	if (!DcelFaceSegmentClip(&clip_local, h, fi, &s_local))
+	{
+		return 0;
+	}
 
-	const v3 p0 = V3Add(M3V3Mul(rot, h->v[edge0->origin]), pos);
-	const v3 p1 = V3Add(M3V3Mul(rot, h->v[edge1->origin]), pos);
-	const v3 n = V3Cross(V3Sub(p1, p0), face_normal);
-
-	return PlaneConstruct(V3Scale(n, 1.0f/V3Length(n)), p0);
+	*clip = SegmentConstruct(V3Add(M3V3Mul(rot, clip_local.p[0]), pos), V3Add(M3V3Mul(rot, clip_local.p[1]), pos));
+	return 1;
 }
 
 v3 DcelEdgeDirection(const struct dcel *h, const u32 ei)

@@ -377,11 +377,20 @@ u32             DcelPlanesTryCompute(struct dcel *h);
 
 /* Return face fi's plane transformed by p -> rot p + pos (local planes: h->plane[fi]) */
 struct plane 	DcelFacePlaneWorld(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi);
+/*
+ * Return the index of the face whose outward unit normal has the largest dot product with dir (the face most
+ * facing dir). dir need not be unit. Ties go to the lowest index; dir == 0 returns 0.
+ */
+u32             DcelSupportFace(const struct dcel *h, const v3 dir);
 
-struct plane 	DcelFaceClipPlane(const struct dcel *h, const m3 rot, const v3 pos, const v3 face_normal, const u32 e0, const u32 e1); /* Return clip plane of face containing edge e0e1, orthogonal to the face normal */
-
-/* TODO: document, go through ... */
-struct segment 	DcelFaceClipSegment(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi, const struct segment *s); /* clip segment against face fi's edge-planes (No projection onto face plane!) */
+/*
+ * Clip s (in the hull's frame) to the side planes of face fi (planes through its edges, orthogonal to the face).
+ * Return 1 and the clipped part in clip (not projected onto the face), or 0 if nothing of s lies within the
+ * face's sides (clip unwritten). A degenerate s (p[0] == p[1]) gives 0 or itself.
+ */
+u32         	DcelFaceSegmentClip(struct segment *clip, const struct dcel *h, const u32 fi, const struct segment *s);
+/* DcelFaceSegmentClip with s in the frame where the hull is moved by p -> rot p + pos (rot a rotation) */
+u32         	DcelFaceSegmentClipWorld(struct segment *clip, const struct dcel *h, const m3 rot, const v3 pos, const u32 fi, const struct segment *s);
 
 v3 		DcelEdgeNormal(const struct dcel *h, const u32 ei);
 v3 		DcelEdgeDirection(const struct dcel *h, const u32 ei);

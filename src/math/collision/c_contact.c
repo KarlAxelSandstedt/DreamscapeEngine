@@ -452,7 +452,8 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 			else
 			{
 				manifold->v_count = 2;
-				struct segment seg = DcelFaceClipSegment(h, rot, pos, best_index, &cap_s);
+				struct segment seg = cap_s;
+				DcelFaceSegmentClipWorld(&seg, h, rot, pos, best_index, &cap_s);
 				const struct plane pl = DcelFacePlaneWorld(h, rot, pos, best_index);
 
 				if (cap_p0_inside == 1 && cap_p1_inside == 0)
@@ -529,7 +530,8 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 				manifold->v_count = 2;
 				manifold->depth[0] = s[1]->capsule.radius + V3Dot(manifold->n, c[0]) - V3Dot(manifold->n, c[1]);
 				manifold->depth[1] = manifold->depth[0];
-				const struct segment cap_clip = DcelFaceClipSegment(h, rot, pos, best_face, &cap_s);
+				struct segment cap_clip = cap_s;
+				DcelFaceSegmentClipWorld(&cap_clip, h, rot, pos, best_face, &cap_s);
 				manifold->v[0] = cap_clip.p[0];
 				manifold->v[1] = cap_clip.p[1];
                 if (ref == 0)
@@ -2681,7 +2683,7 @@ struct c_ContactResult TMP_c_CapsuleSphereContact(struct arena *frame, const str
 }
 
 
-/* Preconditions: e_len_sq_xz < 0.0025 e.y^2 (so e.y != 0); c, e, n as in TMP_c_CapsuleContact.  */
+/* Preconditions: e_len_sq_xz < capsule_parallel_tan_sq e.y^2 (so e.y != 0); c, e, n as in TMP_c_CapsuleContact.  */
 static u32 c_CapsuleParallelManifold(struct c_Manifold *manifold, const v3 c, const v3 e, const f32 h0, const f32 r0, const f32 r_sum)
 {
     const f32 u0 = (-h0 - c.y) / e.y;
@@ -2799,10 +2801,10 @@ struct c_ContactResult TMP_c_CapsuleContact(struct arena *frame, const struct c_
     /*
      * Y-axis parallel check of e:
      * 
-     *      tan(theta) = sqrt(e_len_sq_xz) / |e.y|, so e_len_sq_xz < 0.0025 e.y^2 <=> tan(theta) < 0.05
-     * <=> theta < 2.86 deg. Relative (scale-free in e); antiparallel counts; e == 0 fails.
+     *      tan(theta) = sqrt(e_len_sq_xz) / |e.y|, so e_len_sq_xz < tan_sq e.y^2 <=> theta < max angle
+     * (default 2.86 deg: tan_sq ~ 0.0025). Relative (scale-free in e); antiparallel counts; e == 0 fails.
      */
-    if (e_len_sq_xz < 0.0025f*e.y*e.y
+    if (e_len_sq_xz < g_numerics_config->capsule_parallel_tan_sq*e.y*e.y
         && c_CapsuleParallelManifold(manifold, c, e, s[0]->capsule.half_height, s[0]->capsule.radius, r_sum))
     {
         return result;
@@ -2870,11 +2872,251 @@ struct c_ContactResult TMP_c_HullSphereContact(struct arena *frame, const struct
     return result;
 }
 
-/* TMP: adapter over c_HullCapsuleContact until rewritten */
+/*
+ * Hull edge e1 (s1, between faces with normals n1_1, n1_2) vs the capsule core: if the pair is a candidate (Gauss
+ * map) and not parallel, compute its axis and separation and keep it in query if it separates more.
+ */
+static void HullCapsuleEECheck(struct sat_EdgeQuery *query, const u32 e1, const struct segment *s1, const v3 n1_1, const v3 n1_2, const struct segment *core)
+{
+	const f32 n1_1d = V3Dot(n1_1, core->dir);
+	const f32 n1_2d = V3Dot(n1_2, core->dir);
+
+	/*
+	 * Gauss map test: the hull edge is the arc n1_1 -> n1_2. The core has no faces, so every direction
+	 * perpendicular to it sees the whole core as extreme: its Gauss map is the great circle n.dir = 0.
+	 * The pair can realize a separating axis iff the arc crosses the circle, i.e. its end points lie on
+	 * opposite sides of the circle's plane:
+	 *
+	 *	n1_1d * n1_2d < 0
+	 *
+	 * (EEIsMinkowskiFace with the second arc replaced by a full circle: only the first plane test remains.)
+	 * A zero length core gives 0 and is never a candidate.
+	 */
+	if (n1_1d*n1_2d < 0.0f)
+	{
+		/* Skip nearly parallel pairs: their cross product is noise, and a face realizes the axis then */
+		const v3 cross = V3Cross(s1->dir, core->dir);
+		const f32 s1s1_d = V3Dot(s1->dir, s1->dir);
+		const f32 s2s2_d = V3Dot(core->dir, core->dir);
+		if (V3Dot(cross, cross) >= g_numerics_config->edge_parallel_sin_sq*s1s1_d*s2s2_d)
+		{
+			/*
+			 * The axis is the arc's point on the circle: n(t) = (1 - t) n1_1 + t n1_2 with n(t).dir = 0,
+			 *
+			 *	(1 - t) n1_1d + t n1_2d = 0  <=>  t = n1_1d / (n1_1d - n1_2d)
+			 *
+			 * The signs differ, so |n1_1d - n1_2d| >= |n1_1d| and t is in [0, 1]. Lying between two
+			 * outward face normals, the axis points out of the hull: no hull center needed to orient it.
+			 */
+			const f32 t = n1_1d / (n1_1d - n1_2d);
+			v3 axis = V3Interpolate(n1_2, n1_1, t);
+			const f32 axis_len_sq = V3Dot(axis, axis);
+			/* 0 only for antiparallel n1_1, n1_2 (a knife edge): excluded by the c_Shape preconditions */
+			ds_Assert(axis_len_sq > 1000.0f*F32_MIN_POSITIVE_NORMAL);
+			axis = V3Scale(axis, 1.0f / F32Sqrt(axis_len_sq));
+
+			/* The axis is perpendicular to both lines, so any pair of points measures the separation */
+			const f32 separation = V3Dot(axis, V3Sub(core->p[0], s1->p[0]));
+			if (query->depth < separation)
+			{
+				query->depth = separation;
+				query->normal = axis;
+				query->s1 = *s1;
+				query->s2 = *core;
+				query->e1 = e1;
+				query->e2 = 0;
+			}
+		}
+	}
+}
+
+/*
+ * Edge query (Gregorius; as HullContactEESeparation): every hull edge once against the core. query keeps the
+ * largest separation; no early out, as GJK already found the shapes touching.
+ */
+static void HullCapsuleEESeparation(struct sat_EdgeQuery *query, const struct dcel *h, const struct segment *core)
+{
+	for (u32 f1 = 0; f1 < h->f_count; ++f1)
+	{
+		const v3 n1_1 = h->plane[f1].normal;
+		const u32 end_1 = h->f[f1].first + h->f[f1].count;
+		for (u32 e1_1 = h->f[f1].first; e1_1 < end_1; ++e1_1)
+		{
+			const u32 e1_2 = h->e[e1_1].twin;
+			if (e1_2 < e1_1) { continue; }
+
+			const struct segment s1 = SegmentConstruct(h->v[h->e[e1_1].origin], h->v[h->e[e1_2].origin]);
+			const v3 n1_2 = h->plane[h->e[e1_2].face_ccw].normal;
+			HullCapsuleEECheck(query, e1_1, &s1, n1_1, n1_2, core);
+		}
+	}
+}
+
+/*
+ * Hull vs capsule: local manifold in the hull's frame (n from hull to capsule). GJK against the capsule's core;
+ * shallow: the core clipped to the reference face (two points) if it lies along it, else one point from the
+ * closest points; deep (core touches the hull): SAT face and edge queries; the core clipped to the reference
+ * face, or the closest points of the best edge and the core if that edge separates more by sat_face_bias.
+ */
 struct c_ContactResult TMP_c_HullCapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
 {
-    struct c_ContactResult result = c_HullCapsuleContact(frame, cached_result, s, t, 0);
-    TMP_c_ContactResultToLocal(&result, &t[0]);
+	ds_Assert(s[0]->type == C_SHAPE_CONVEX_HULL);
+	ds_Assert(s[1]->type == C_SHAPE_CAPSULE);
+
+    struct c_ContactResult result = { 0 };
+    result.gjk_cache = ArenaPushPacked(frame, sizeof(struct GJKCache));
+
+    const f32 radius = s[1]->capsule.radius;
+    const ds_Transform b_to_a = ds_TransformWorldRelative(&t[0], &t[1]);
+
+    v3 c[2], n;
+    const f32 distance = GJK(c+0, c+1, &n, result.gjk_cache, cached_result->gjk_cache, s[0], s[1], &b_to_a, radius);
+    if (radius < distance)
+    {
+        return result;
+    }
+
+    result.manifold_count = 1;
+    result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
+    struct c_Manifold *m = result.manifold;
+
+    const struct dcel *h = &s[0]->hull;
+    const struct segment core = SegmentCapsuleTransform(&s[1]->capsule, &b_to_a);
+
+    /* shallow penetration: distance > 0 is beyond GJK's touch band (100 eps L), so the GJK normal is reliable */
+    if (0.0f < distance)
+    {
+        /*
+         * Two points if the GJK normal is within face_parallel_max_degrees of the reference face's normal and
+         * both ends of the clipped core touch (d_i <= r); otherwise one point. Each end has its own depth.
+         */
+        const u32 ref = DcelSupportFace(h, n);
+        const struct plane *ref_pl = h->plane + ref;
+        struct segment ref_clip;
+        if (g_numerics_config->face_parallel_cos < V3Dot(ref_pl->normal, n)
+            && DcelFaceSegmentClip(&ref_clip, h, ref, &core))
+        {
+            const f32 d0 = PlanePointSignedDistance(ref_pl, ref_clip.p[0]);
+            const f32 d1 = PlanePointSignedDistance(ref_pl, ref_clip.p[1]);
+            if (d0 <= radius && d1 <= radius)
+            {
+                m->v_count = 2;
+                m->n = ref_pl->normal;
+                m->v[0] = V3Sub(ref_clip.p[0], V3Scale(ref_pl->normal, d0));
+                m->v[1] = V3Sub(ref_clip.p[1], V3Scale(ref_pl->normal, d1));
+                m->depth[0] = radius - d0;
+                m->depth[1] = radius - d1;
+                return result;
+            }
+        }
+
+        m->v_count = 1;
+        m->n = n;
+        m->v[0] = c[0];
+        m->depth[0] = radius - distance;
+        return result;
+    }
+
+    /* deep penetration: the core's separation along face fi is the signed distance of its deeper end */
+
+    u32 face = 0;
+    f32 max_separation = -F32_INFINITY;
+    for (u32 fi = 0; fi < h->f_count; ++fi)
+    {
+        const f32 d0 = PlanePointSignedDistance(h->plane + fi, core.p[0]);
+        const f32 d1 = PlanePointSignedDistance(h->plane + fi, core.p[1]);
+        const f32 separation = F32Min(d0, d1);
+        if (max_separation < separation)
+        {
+            face = fi;
+            max_separation = separation;
+        }
+    }
+
+    /* face contact: the core clipped to the face; empty if nothing is left or no clipped end touches (d > r) */
+    const struct plane *pl = h->plane + face;
+    struct segment clip = core;
+    const u32 clipped = DcelFaceSegmentClip(&clip, h, face, &core);
+    const f32 depth[2] =
+    {
+        PlanePointSignedDistance(pl, clip.p[0]),
+        PlanePointSignedDistance(pl, clip.p[1]),
+    };
+    const u32 deeper = (depth[0] <= depth[1]) ? 0 : 1;
+    const u32 face_contact = clipped && depth[deeper] <= radius;
+
+    struct sat_EdgeQuery e_query = { .depth = -F32_INFINITY, .e1 = U32_MAX };
+    HullCapsuleEESeparation(&e_query, h, &core);
+
+    /*
+     * Edge contact if the face contact is empty or the edge separates more by sat_face_bias (face: the clipped
+     * separation): the closest points of the edge's and the core's lines, v on the hull edge. Only if both lie
+     * within the segments (Box3D): otherwise other features realize the axis, and the edge and core don't meet
+     * along it (e.g. an edge accepted by the Gauss test on rounding noise, its axis ~ a face normal).
+     */
+    if (e_query.e1 != U32_MAX && (!face_contact || depth[deeper] + g_numerics_config->sat_face_bias < e_query.depth))
+    {
+        /*
+         * Line closest points s1.p0 + s d1, s2.p0 + t d2, with w = s1.p0 - s2.p0:
+         *
+         *	s = (d1d2 d2w - d1w d2d2) / den,  t = (d1d1 d2w - d1d2 d1w) / den
+         *	den = d1d1 d2d2 - d1d2^2 = |d1 x d2|^2
+         *
+         * den >= edge_parallel_sin_sq d1d1 d2d2 > 0: the edge passed the parallel test.
+         */
+        const v3 d1 = e_query.s1.dir;
+        const v3 d2 = e_query.s2.dir;
+        const v3 w = V3Sub(e_query.s1.p[0], e_query.s2.p[0]);
+        const f32 d1d1 = V3Dot(d1, d1);
+        const f32 d1d2 = V3Dot(d1, d2);
+        const f32 d2d2 = V3Dot(d2, d2);
+        const f32 d1w = V3Dot(d1, w);
+        const f32 d2w = V3Dot(d2, w);
+        const v3 cross = V3Cross(d1, d2);
+        const f32 den = V3Dot(cross, cross);
+        const f32 s_edge = (d1d2*d2w - d1w*d2d2) / den;
+        const f32 t_core = (d1d1*d2w - d1d2*d1w) / den;
+        if (0.0f <= s_edge && s_edge <= 1.0f && 0.0f <= t_core && t_core <= 1.0f)
+        {
+            m->v_count = 1;
+            m->n = e_query.normal;
+            m->v[0] = SegmentBc(&e_query.s1, s_edge);
+            m->depth[0] = F32Max(0.0f, radius - e_query.depth);
+            return result;
+        }
+    }
+
+    m->n = pl->normal;
+
+    /* as in the shallow path: two points if both clipped ends touch (d_i <= r), else the deeper end */
+    if (face_contact)
+    {
+        if (depth[1 - deeper] <= radius)
+        {
+            m->v_count = 2;
+            m->v[0] = V3Sub(clip.p[0], V3Scale(pl->normal, depth[0]));
+            m->v[1] = V3Sub(clip.p[1], V3Scale(pl->normal, depth[1]));
+            m->depth[0] = radius - depth[0];
+            m->depth[1] = radius - depth[1];
+            return result;
+        }
+
+        m->v_count = 1;
+        m->v[0] = V3Sub(clip.p[deeper], V3Scale(pl->normal, depth[deeper]));
+        m->depth[0] = radius - depth[deeper];
+        return result;
+    }
+
+    /*
+     * No face or edge contact: in exact arithmetic only when the shapes touch without intersecting (GJK's touch
+     * band: apart by < 100 eps L), where the face clip can be empty and the realizing edge can be skipped as
+     * parallel. GJK's point (c[0] == c[1]) is where they touch; touching: depth r, the face normal as the best
+     * available direction.
+     */
+    m->v_count = 1;
+    m->v[0] = c[0];
+    m->depth[0] = radius;
+
     return result;
 }
 

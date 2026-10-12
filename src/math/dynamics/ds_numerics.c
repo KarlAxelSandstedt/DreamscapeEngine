@@ -32,6 +32,13 @@ struct ds_NumericsConfig ds_NumericsConfigDefault(void)
     config.dbvh_reinsert_threshold_pending = 0.25f;
     config.cache_count_max_pending = 32;
     config.gjk_max_iterations_pending = 32;
+    /* tan(2.86 deg) ~ 0.05 */
+    config.capsule_parallel_max_degrees_pending = 2.86f;
+    /* Box3D: cos(3.62 deg) ~ 0.998 */
+    config.face_parallel_max_degrees_pending = 3.62f;
+    /* hull-hull's former hard-coded cut-off (sin^2(0.5 deg) ~ 7.62e-5); Box3D: ~0.29 deg */
+    config.edge_parallel_max_degrees_pending = 0.5f;
+    config.sat_face_bias_pending = 5.0f * DS_UNIT_MM;
 
     return config;
 }
@@ -61,6 +68,23 @@ void ds_NumericsConfigPush(struct ds_NumericsConfig *config)
 
     config->gjk_max_iterations_pending = (config->gjk_max_iterations_pending > 0) ? config->gjk_max_iterations_pending : 1;
     config->gjk_max_iterations = config->gjk_max_iterations_pending;
+
+    config->capsule_parallel_max_degrees_pending = F32Clamp(config->capsule_parallel_max_degrees_pending, 0.0f, 45.0f);
+    config->capsule_parallel_max_degrees = config->capsule_parallel_max_degrees_pending;
+    const f32 capsule_tan = F32Tan(config->capsule_parallel_max_degrees * F32_PI2 / 360);
+    config->capsule_parallel_tan_sq = capsule_tan*capsule_tan;
+
+    config->face_parallel_max_degrees_pending = F32Clamp(config->face_parallel_max_degrees_pending, 0.0f, 45.0f);
+    config->face_parallel_max_degrees = config->face_parallel_max_degrees_pending;
+    config->face_parallel_cos = F32Cos(config->face_parallel_max_degrees * F32_PI2 / 360);
+
+    config->edge_parallel_max_degrees_pending = F32Clamp(config->edge_parallel_max_degrees_pending, 0.0f, 45.0f);
+    config->edge_parallel_max_degrees = config->edge_parallel_max_degrees_pending;
+    const f32 edge_sin = F32Sin(config->edge_parallel_max_degrees * F32_PI2 / 360);
+    config->edge_parallel_sin_sq = edge_sin*edge_sin;
+
+    config->sat_face_bias_pending = F32Clamp(config->sat_face_bias_pending, 0.0f, F32_INFINITY);
+    config->sat_face_bias = config->sat_face_bias_pending;
 }
 
 void ds_NumericsConfigPop(void)

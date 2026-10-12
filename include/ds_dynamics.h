@@ -81,6 +81,40 @@ struct ds_NumericsConfig
     u32 cache_count_max_pending;
     u32 cache_count_max;
 
+    /*
+     * Capsule vs capsule: maximum degrees between the two cores for a two-point (side by side) manifold.
+     * Derived: tan^2 of the angle; the cores are parallel iff |e_xz|^2 < tan_sq * e_y^2 (e = core 1's axis in
+     * capsule 0's frame, core 0 along y).
+     */
+    f32 capsule_parallel_max_degrees_pending;
+    f32 capsule_parallel_max_degrees;
+    f32 capsule_parallel_tan_sq;
+
+    /*
+     * Hull vs capsule (shallow): maximum degrees between the GJK normal and the reference face's normal for
+     * clipping the core to that face (two points). Derived: cos of the angle; aligned iff n_face . n > cos.
+     */
+    f32 face_parallel_max_degrees_pending;
+    f32 face_parallel_max_degrees;
+    f32 face_parallel_cos;
+
+    /*
+     * Edge-edge SAT queries (hull-capsule; hull-hull when refactored): maximum degrees between two edges (a hull
+     * edge and a capsule core) for them to count as parallel and be skipped (their cross product is noise).
+     * Derived: sin^2 of the angle; parallel iff |d1 x d2|^2 < sin_sq * |d1|^2 |d2|^2.
+     */
+    f32 edge_parallel_max_degrees_pending;
+    f32 edge_parallel_max_degrees;
+    f32 edge_parallel_sin_sq;
+
+    /*
+     * SAT face vs edge choice (hull-capsule; hull-hull when refactored): the edge contact replaces the face
+     * contact only if it separates more by this margin (m). Biases towards the face (two points, stable normal)
+     * so rounding can't flip the choice every tick. Absolute (Box3D: linear slop, 0.005 m).
+     */
+    f32 sat_face_bias_pending;
+    f32 sat_face_bias;
+
     /* Max GJK iterations (support point evaluations) per distance query; at least 1 */
     u32 gjk_max_iterations_pending;
     u32 gjk_max_iterations;
