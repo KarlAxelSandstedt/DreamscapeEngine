@@ -2681,7 +2681,48 @@ struct c_ContactResult TMP_c_CapsuleSphereContact(struct arena *frame, const str
 }
 
 
-/* TMP: adapter over c_CapsuleContact until rewritten */
+/* Preconditions: e_len_sq_xz < 0.0025 e.y^2 (so e.y != 0); c, e, n as in TMP_c_CapsuleContact.  */
+static u32 c_CapsuleParallelManifold(struct c_Manifold *manifold, const v3 c, const v3 e, const f32 h0, const f32 r0, const f32 r_sum)
+{
+    const f32 u0 = (-h0 - c.y) / e.y;
+    const f32 u1 = ( h0 - c.y) / e.y;
+    const f32 u_min = F32Max(-1.0f, F32Min(u0, u1));
+    const f32 u_max = F32Min( 1.0f, F32Max(u0, u1));
+    if (u_min >= u_max)
+    {
+        /* no part of core 1 is beside core 0 (end to end) */
+        return 0;
+    }
+
+    const f32 u[2] = { u_min, u_max };
+    v3 v[2];
+    f32 depth[2];
+    for (u32 i = 0; i < 2; ++i)
+    {
+        const v3 q = V3Add(c, V3Scale(e, u[i]));
+        /* q.y is within [-h0, h0] up to round-off */
+        const v3 p = V3(0.0f, F32Clamp(q.y, -h0, h0), 0.0f);
+        depth[i] = r_sum - V3Dot(V3Sub(q, p), manifold->n);
+        if (depth[i] < 0.0f)
+        {
+            /* tilted: this end doesn't touch */
+            return 0;
+        }
+        v[i] = V3Add(p, V3Scale(manifold->n, r0));
+    }
+
+    manifold->v_count = 2;
+    manifold->v[0] = v[0];
+    manifold->v[1] = v[1];
+    manifold->depth[0] = depth[0];
+    manifold->depth[1] = depth[1];
+    return 1;
+}
+
+/*
+ * Capsule vs capsule: local manifold in s[0]'s frame (n from s[0] to s[1]); one point, or two when the
+ * capsules are nearly parallel and lie side by side.
+ */
 struct c_ContactResult TMP_c_CapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
 {
     ds_Assert(s[0]->type == C_SHAPE_CAPSULE);
@@ -2692,148 +2733,87 @@ struct c_ContactResult TMP_c_CapsuleContact(struct arena *frame, const struct c_
     const f32 r_sum = s[0]->capsule.radius + s[1]->capsule.radius;
     const q inv = QConj(t[0].rotation);
     const v3 c = QUnitRotate(inv, V3F64Demote(V3F64Sub(t[1].position, t[0].position)));
-    const v3 hdir = QUnitRotate(inv, QYUnitRotate(t[1].rotation, s[1]->capsule.half_height));
-
-    /* segment of capsule 1 in 0-frame*/
-    const struct segment seg = SegmentConstruct(V3Sub(c, hdir), V3Add(c, hdir));
-
-
-
-    return result;
-}
-
-/* Reference: agent's version of TMP_c_CapsuleContact (unrequested, kept for comparison; not compiled) */
-#if 0
-/*
- * Capsule vs capsule (Gregorius): the closest points of the core segments give n and one point; nearly parallel
- * cores give two points instead, core 1 clipped to core 0's slab |y| <= h0, each with its own depth along n.
- * Local to s[0] (see c_Manifold): core 0 is the y-axis, so the closest-point system reduces to the xz projection.
- *
- * Closest points: P(y) = (0, y, 0), |y| <= h0; Q(u) = c + u e, |u| <= 1 (c, e: capsule 1's center, half axis).
- *      lines:  u = -(c_xz . e_xz) / |e_xz|^2        (origin projected onto core 1's xz shadow; no cancellation)
- *      clamp u to [-1, 1]; y = c.y + u e.y; if |y| > h0: clamp y, u = clamp(e . (P(y) - c) / |e|^2)
- *      (Ericson 5.1.9 with the roles of the segments swapped)
- *
- * Preconditions: as TMP_c_SphereContact, with r_sum = r0 + r1.
- *
- * Guarantees (given the preconditions):
- *      no Inf/NaN: divisions only by |e_xz|^2 > 0, |e|^2 > 0 or e.y != 0, with finite numerators; an Inf quotient
- *      is clamped. n finite as in TMP_c_SphereContact (also the cross product: its |.|^2 is e_xz_sq bit for bit).
- *      depth >= 0: one point as in TMP_c_SphereContact; two points only when both clipped depths are >= 0.
- *
- * Degenerate input:
- *      dist == 0 (cores intersect): n = +-(0, 1, 0) x e / |e_xz|, oriented towards capsule 1's center;
- *      also parallel (e_xz == 0, coaxial): n = (1, 0, 0) in s[0]'s frame. depth = r_sum.
- *      h1 == 0: u = 0 (capsule 1 is a sphere). h0 == 0: y = 0; the slab is a plane, so one point.
- *      |d| below the positions' resolution: n is valid but its direction is noise.
- */
-struct c_ContactResult TMP_c_CapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
-{
-    ds_Assert(s[0]->type == C_SHAPE_CAPSULE);
-    ds_Assert(s[1]->type == C_SHAPE_CAPSULE);
-
-    struct c_ContactResult result = { 0 };
-
-    const f32 r0 = s[0]->capsule.radius;
-    const f32 h0 = s[0]->capsule.half_height;
-    const f32 r_sum = r0 + s[1]->capsule.radius;
-    const q inv = QConj(t[0].rotation);
-    const v3 c = QUnitRotate(inv, V3F64Demote(V3F64Sub(t[1].position, t[0].position)));
     const v3 e = QUnitRotate(inv, QYUnitRotate(t[1].rotation, s[1]->capsule.half_height));
 
-    const f32 e_xz_sq = e.x*e.x + e.z*e.z;
-    const f32 e_sq = e_xz_sq + e.y*e.y;
+    const f32 e_len_sq_xz = e.x*e.x + e.z*e.z;
+ 
+    /*
+     * in xz: 
+     *  Q(u) = c + u*e;
+     *  QDist(u) = (c + u*e).(c + u*e) = c.c + (u^2)*e.e + 2*u*c.e;
+     *  QDist'(u) = 2*u*e.e + 2c.e.
+     *
+     *  Min at QDist'(u) = 0 => u = -c.e / e.e
+     *
+     *  u yields closest point (in xz) on Q(u) = c + u*e. if e_len_sq_xz == 0, core 1 is parallel
+     *  to y and every u is equally close, so u = 0 is valid.
+     */
+    const f32 u0 = (e_len_sq_xz > 0.0f) ? F32Clamp(-(c.x*e.x + c.z*e.z) / e_len_sq_xz, -1.0f, 1.0f) : 0.0f;
 
-    /* closest points P(y), Q(u) */
-    f32 u = (e_xz_sq > 0.0f)
-          ? F32Clamp(-(c.x*e.x + c.z*e.z) / e_xz_sq, -1.0f, 1.0f)
-          : 0.0f;
-    f32 y = c.y + u*e.y;
-    if (y < -h0 || h0 < y)
+    const v3 Q1 = V3Add(c, V3Scale(e, u0));
+    const f32 Q0_y = F32Clamp(Q1.y, -s[0]->capsule.half_height, s[0]->capsule.half_height);
+    v3 Q1_shift;
+    if (Q1.y == Q0_y)
     {
-        y = F32Clamp(y, -h0, h0);
-        u = (e_sq > 0.0f)
-          ? F32Clamp((e.y*(y - c.y) - e.x*c.x - e.z*c.z) / e_sq, -1.0f, 1.0f)
-          : 0.0f;
+        /* u0 minimizes the xz-distance and the y-distance is 0, so (u0, Q0_y) is the closest pair in xyz. */
+        Q1_shift = V3(Q1.x, 0.0f, Q1.z);
+    }
+    else
+    {
+        const f32 e_len_sq = e_len_sq_xz + e.y*e.y;
+        const v3 c_shift = V3(c.x, c.y - Q0_y, c.z);
+        const f32 u1 = (e_len_sq > 0.0f) ? F32Clamp(-V3Dot(c_shift, e) / e_len_sq, -1.0f, 1.0f) : 0.0f;
+        Q1_shift = V3Add(c_shift, V3Scale(e, u1));
     }
 
-    const v3 p = V3(0.0f, y, 0.0f);
-    const v3 d = V3Sub(V3AddScaled(c, e, u), p);
-    const f32 dist_sq = V3LengthSquared(d);
-    if (dist_sq <= r_sum*r_sum)
+    const f32 dist_sq = V3LengthSquared(Q1_shift);
+    if (dist_sq > r_sum*r_sum)
     {
-        const f32 dist = F32Sqrt(dist_sq);
-        v3 n;
-        if (dist > 0.0f)
+        return result;
+    }
+
+    const f32 dist = F32Sqrt(dist_sq);
+    result.manifold_count = 1;
+    result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
+    struct c_Manifold *manifold = result.manifold;
+
+    if (dist > 0.0f)
+    {
+        manifold->n = V3Scale(Q1_shift, 1.0f / dist);
+    }
+    else if (e_len_sq_xz > 0.0f)
+    {
+        /* cores cross: y x e is perpendicular to both cores; orient it towards capsule 1's center */
+        manifold->n = V3Scale(V3(e.z, 0.0f, -e.x), 1.0f / F32Sqrt(e_len_sq_xz));
+        if (manifold->n.x*c.x + manifold->n.z*c.z < 0.0f)
         {
-            n = V3Scale(d, 1.0f/dist);
-        }
-        /* degenerate case: cores intersect; n is perpendicular to both */
-        else if (e_xz_sq > 0.0f)
-        {
-            n = V3Scale(V3(e.z, 0.0f, -e.x), 1.0f/F32Sqrt(e_xz_sq));
-            if (n.x*c.x + n.z*c.z < 0.0f)
-            {
-                n = V3Negate(n);
-            }
-        }
-        /* degenerate case: cores coaxial */
-        else
-        {
-            n = V3(1.0f, 0.0f, 0.0f);
-        }
-
-        result.manifold_count = 1;
-        result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
-        struct c_Manifold *m = result.manifold;
-
-        m->n = n;
-        m->v_count = 1;
-        m->depth[0] = r_sum - dist;
-        m->v[0] = V3AddScaled(p, n, r0);
-        ds_Assert(m->depth[0] >= 0.0f);
-
-        /*
-         * Nearly parallel (tan^2 < 4e-3, ~3.6 deg; e.y != 0 since e.y^2 > 0): clip core 1 to the slab |y| <= h0,
-         * u at y = -+h0 is (-+h0 - c.y) / e.y. Keep the two points only when both overlap, else the closest point.
-         */
-        if (e_xz_sq < 4.0e-3f*(e.y*e.y))
-        {
-            const f32 u_a = (-h0 - c.y) / e.y;
-            const f32 u_b = ( h0 - c.y) / e.y;
-            const f32 u_clip[2] =
-            {
-                F32Max(-1.0f, F32Min(u_a, u_b)),
-                F32Min( 1.0f, F32Max(u_a, u_b)),
-            };
-
-            if (u_clip[0] < u_clip[1])
-            {
-                v3 v[2];
-                f32 depth[2];
-                for (u32 i = 0; i < 2; ++i)
-                {
-                    const v3 q_i = V3AddScaled(c, e, u_clip[i]);
-                    const v3 p_i = V3(0.0f, F32Clamp(q_i.y, -h0, h0), 0.0f);
-                    depth[i] = r_sum - V3Dot(V3Sub(q_i, p_i), n);
-                    v[i] = V3AddScaled(p_i, n, r0);
-                }
-
-                if (depth[0] >= 0.0f && depth[1] >= 0.0f)
-                {
-                    m->v_count = 2;
-                    m->v[0] = v[0];
-                    m->v[1] = v[1];
-                    m->depth[0] = depth[0];
-                    m->depth[1] = depth[1];
-                }
-            }
+            manifold->n = V3Negate(manifold->n);
         }
     }
+    else
+    {
+        /* cores coaxial: any direction perpendicular to y */
+        manifold->n = V3(1.0f, 0.0f, 0.0f);
+    }
+
+    /*
+     * Y-axis parallel check of e:
+     * 
+     *      tan(theta) = sqrt(e_len_sq_xz) / |e.y|, so e_len_sq_xz < 0.0025 e.y^2 <=> tan(theta) < 0.05
+     * <=> theta < 2.86 deg. Relative (scale-free in e); antiparallel counts; e == 0 fails.
+     */
+    if (e_len_sq_xz < 0.0025f*e.y*e.y
+        && c_CapsuleParallelManifold(manifold, c, e, s[0]->capsule.half_height, s[0]->capsule.radius, r_sum))
+    {
+        return result;
+    }
+
+    manifold->v_count = 1;
+    manifold->depth[0] = r_sum - dist;
+    manifold->v[0] = V3Add(V3(0.0f, Q0_y, 0.0f), V3Scale(manifold->n, s[0]->capsule.radius));
 
     return result;
 }
-#endif
 
 struct c_ContactResult TMP_c_HullSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
 {

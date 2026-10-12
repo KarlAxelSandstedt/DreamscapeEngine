@@ -15,6 +15,7 @@ add_library(DreamscapeTestAPI
 	test_rng.c
 	test_geometry.c
 	test_gjk.c
+	test_contact.c
 	test_config.c
 )
 
