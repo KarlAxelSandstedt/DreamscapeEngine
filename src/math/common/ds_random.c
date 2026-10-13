@@ -58,7 +58,7 @@ void RngPopState(void)
 }
 
 /*  Written in 2018 by David Blackman and Sebastiano Vigna (vigna@acm.org) */
-inline u64 RngU64(void)
+u64 RngU64(void)
 {
 	const u64 result = Rotl(tl_xoshiro_256[1] * 5, 7) * 9;
 
