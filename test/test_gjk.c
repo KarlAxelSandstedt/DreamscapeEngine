@@ -919,7 +919,7 @@ struct test_Output GjkTestRotationConventionTest(struct test_Environment *env)
 	return output;
 }
 
-/* hull vs point, including the inside test (cutoff 0) of c_HullCapsuleContact's deep path */
+/* hull vs point, including the inside test (cutoff 0) */
 struct test_Output GjkHullPointTest(struct test_Environment *env)
 {
 	struct test_Output output = { .success = 1, .id = __func__ };

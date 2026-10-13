@@ -122,10 +122,6 @@ struct ray 	RayConstruct(const v3 origin, const v3 dir);
 
 /* construct segment */
 struct segment 	SegmentConstruct(const v3 p0, const v3 p1);
-/* Return 1 if the end-points of s are within a distance of sqrt(min_dist_sq) of each other, otherwise return 0. */
-u32             SegmentPointCheck(const struct segment *s, const f32 min_dist_sq);
-/* Return 1 if s1 and s2 are parallel, otherwise return 0. */
-u32             SegmentParallelCheck(const struct segment *s1, const struct segment *s2, const f32 eps);
 /* return squared distance between s1 and s2; set c1, c2 to closest point on s1, s2 respectively  */
 f32 		    SegmentDistanceSquared(v3 *c1, v3 *c2, const struct segment *s1, const struct segment *s2);
 /* return parameters t1,t2 of closest points c1,c2 on s1,s2 such that ci = si.p0(1-ti) + s1.p1*ti  */
@@ -160,8 +156,6 @@ struct plane 	PlaneConstruct(const v3 n, const v3 p);
 struct plane 	PlaneConstructNormalized(const v3 n, const v3 p); 
 /* Construct plane from CCW triangle abc */
 struct plane 	PlaneConstructFromCcwTriangle(const v3 a, const v3 b, const v3 c);
-/* Construct normalized plane from CCW triangle abc */
-struct plane 	PlaneConstructNormalizedFromCcwTriangle(const v3 a, const v3 b, const v3 c);
 /* Normalize the plane's normal direction and rescale signed_distance accordingly */
 void            PlaneNormalize(struct plane *pl);
 /*
@@ -173,20 +167,12 @@ struct plane    PlaneTransform(const struct plane *pl, const m3 rot, const v3 po
 u32 		    PlanePointInfrontCheck(const struct plane *pl, const v3 p);
 /* Return 1 if p is behind plane, i.e. a negative signed distance, otherwise 0 */
 u32 		    PlanePointBehindCheck(const struct plane *pl, const v3 p);
-/* Return 1 if segment is parallel to plane, otherwise return 0. */
-u32             PlaneSegmentParallelCheck(const struct plane *pl, const struct segment *s);
 /* 
  * return t: s.p0 + t*s.dir is point on plane 
  *
  * WARNING: if the segment lies on the plane, NaN is returned.
  */
 f32 		    PlaneSegmentClipParameter(const struct plane *pl, const struct segment *s);
-/* 
- * return 1 if clip happened, otherwise 0. If 1, return valid clip point 
- *
- * WARNING: if the segment lies on the plane, 0 is returned and clip is set to NaN.
- */
-u32 		    PlaneSegmentClip(v3 *clip, const struct plane *pl, const struct segment *s);
 /* 
  * return 1 if clip happened, otherwise 0 
  *
@@ -247,44 +233,11 @@ struct triMesh
 /* return bounding box of triMesh */
 struct aabb	TriMeshBbox(const struct triMesh *mesh);
 
-/*
-TriVoronoi
-==========
-Shared data for triangle voronoi calculation 
-*/
-
-/* WARNING: Do not change ordering! */
-enum TriVoronoiRegion
-{
-    TRI_VORONOI_VERTEX0,
-    TRI_VORONOI_VERTEX1,
-    TRI_VORONOI_VERTEX2,
-    TRI_VORONOI_EDGE01,
-    TRI_VORONOI_EDGE12,
-    TRI_VORONOI_EDGE20,
-    TRI_VORONOI_FACE,
-    TRI_VORONOI_COUNT
-};
-
-extern const char *g_table_tri_voronoi_region_string[TRI_VORONOI_COUNT];
-
-struct TriVoronoiTMP
-{
-    struct segment  s[3];           /* edge segment */
-    struct plane    edge_plane[3];  /* edge plane orthogonal to face plane */
-    struct plane    face_plane;     /* triangle plane (CCW) */
-    v3            t[3];
-};
-
-
 /* Get normal of ccw triangle */
 v3 		TriCcwNormal(const v3 p0, const v3 p1, const v3 p2);
 /* Get normal direction of ccw triangle */
 v3 		TriCcwNormalDirection(const v3 p0, const v3 p1, const v3 p2);
 
-
-/* Setup a TriVoronoi struct corresponding to the CCW triangle t and return true if t is robust, false otherwise.  */
-u32         TriVoronoiInitCcw(struct TriVoronoiTMP *tv, const v3 t[3]);
 
 /*
  * Return the feature of triangle (t0, t1, t2) closest to segment (s0, s1), its barycentric weights (as TriVoronoi)
@@ -295,40 +248,6 @@ u32         TriVoronoiInitCcw(struct TriVoronoiTMP *tv, const v3 t[3]);
  * by the end point and edge candidates. Returns VORONOI_INVALID only for NaN input or distances beyond f32 (~1e19).
  */
 enum voronoi    TriSegmentVoronoi(f32 w[3], f32 *s, const v3 t0, const v3 t1, const v3 t2, const v3 s0, const v3 s1);
-
-/* 
- * Return squared distance from segment s to triangle t, and set c_s to be the closest point on s, and c_t to be 
- * the closest point on the triangle.
- *
- * NOTE: If the returned distance is 0.0f, c_t is not necessarily c_s, but instead c_t ~= c_s. Use one of the points
- * for consistency if needed.
- */
-f32 		TriCcwSegmentDistanceSquared(v3 *c_t, v3 *c_s, enum TriVoronoiRegion *region, const struct segment *s, const struct TriVoronoiTMP *tv);
-
-/* 
- * Return squared distance from point p to triangle t, and set c to be the closest point on the triangle. 
- * lambda_count is set to indicate the number of non-zero lambda components, and lambda is set to the 
- * barocentric coordinates:
- */
-f32         TriCcwPointDistanceSquared(v3 *c, enum TriVoronoiRegion *region, const v3 point, const struct TriVoronoiTMP *tv);
-
-/* 
- * Return t in [0,1] such that clip = s.p0*(1-t) + s.p1*t is a point on the given plane. If no such t exist, 
- * return F32_INFINITY. 
- */
-f32         TriCcwSegmentClipParameter(v3 *clip, const struct segment *s, const struct TriVoronoiTMP *tv);
-
-/* 
- * Return 1 if segment clips triangle, 0 otherwise. If clip, set the clip point.
- */
-u32         TriCcwSegmentClip(v3 *clip, const struct segment *s, const struct TriVoronoiTMP *tv);
-
-/* 
- * Return the remaining segment when clipping s against all side-planes of the triangle. WARNING: Assumes s in
- * at least partially within the voronoi face region.
- */
-struct segment  TriCcwSegmentSideClip(const struct segment *s, const struct TriVoronoiTMP *tv);
-
 
 /********************************** dcel ************************************/
 
@@ -395,8 +314,6 @@ u32             DcelPlanesTryCompute(struct dcel *h);
 /* Compute h->bbox: the bounding box of h->v (DcelConvexHull and DcelBox call it; stubs: see DcelTriStub) */
 void            DcelBboxCompute(struct dcel *h);
 
-/* Return face fi's plane transformed by p -> rot p + pos (local planes: h->plane[fi]) */
-struct plane 	DcelFacePlaneWorld(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi);
 /*
  * Return the index of the face whose outward unit normal has the largest dot product with dir (the face most
  * facing dir). dir need not be unit. Ties go to the lowest index; dir == 0 returns 0.
@@ -409,12 +326,9 @@ u32             DcelSupportFace(const struct dcel *h, const v3 dir);
  * face's sides (clip unwritten). A degenerate s (p[0] == p[1]) gives 0 or itself.
  */
 u32         	DcelFaceSegmentClip(struct segment *clip, const struct dcel *h, const u32 fi, const struct segment *s);
-/* DcelFaceSegmentClip with s in the frame where the hull is moved by p -> rot p + pos (rot a rotation) */
-u32         	DcelFaceSegmentClipWorld(struct segment *clip, const struct dcel *h, const m3 rot, const v3 pos, const u32 fi, const struct segment *s);
 
 v3 		DcelEdgeNormal(const struct dcel *h, const u32 ei);
 v3 		DcelEdgeDirection(const struct dcel *h, const u32 ei);
-struct segment 	DcelEdgeSegment(const struct dcel *h, const m3 rot, const v3 pos, const u32 ei);
 
 void 		DcelAssertTopology(struct dcel *dcel);
 

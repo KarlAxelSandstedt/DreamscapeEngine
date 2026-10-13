@@ -228,15 +228,6 @@ f32 (*c_distance_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(v3f64 *c1, v3f64 *c2, co
 	{ c_TriMeshBvhSphereDistance,	c_TriMeshBvhCapsuleDistance, 	c_TriMeshBvhHullDistance,	0, },
 };
 
-struct c_ContactResult  (*c_contact_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(struct arena *, const struct c_ContactResult *, const struct c_Shape *[2], const ds_TransformWorld [2], const u32) =
-{
-	{ c_SphereContact,	 	        0, 				            0,			                0, },
-	{ c_CapsuleSphereContact, 	    c_CapsuleContact,			0,			                0, },
-	{ c_HullSphereContact, 	  	    c_HullCapsuleContact,		c_HullContact, 		        0, },
-	{ c_TriMeshBvhSphereContact,    c_TriMeshBvhCapsuleContact, c_TriMeshBvhHullContact,    0, },
-};
-
-
 f32 (*c_raycast_parameter_methods[C_SHAPE_COUNT])(const struct c_Shape *, const ds_TransformWorld *, const struct rayWorld *) =
 {
 	c_SphereRaycastParameter,
@@ -281,60 +272,6 @@ f32 ds_ShapeDistance(v3 *c1, v3 *c2, const struct ds_Dynamics *pipeline, const s
     *c1 = V3F64Demote(p1);
     *c2 = V3F64Demote(p2);
     return dist;
-}
-
-void ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index)
-{
-    struct ds_Contact *c = pipeline->contact_pool.buf + contact_index;
-
-    const struct ds_Shape *s[2] =
-    {
-        pipeline->shape_pool.buf + c->key.shape[0],
-        pipeline->shape_pool.buf + c->key.shape[1],
-    };
-
-    const struct c_Shape *c_s[2] =
-    {
-        pipeline->cshape_db->pool.buf + s[0]->cshape_handle,
-        pipeline->cshape_db->pool.buf + s[1]->cshape_handle,
-    };
-
-    /* index of most complex shape in c_s_arr */
-    const u32 m = (c_s[0]->type >= c_s[1]->type) 
-                ? 0
-                : 1;
-
-    const u32 reference = (s[m]->body < s[1-m]->body)
-                        ? 0
-                        : 1;
-    const struct c_Shape *c_s_arr[2] = 
-    { 
-        c_s[m], 
-        c_s[1-m],
-    };
-
-    ds_Transform t[2];
-    ds_ShapeWorldTransform(t + 0, pipeline, s[m]);
-    ds_ShapeWorldTransform(t + 1, pipeline, s[1-m]);
-    /* TODO(f64 P3): world transforms once bodies store ds_TransformWorld */
-    const ds_TransformWorld t_arr[2] = { ds_TransformPromote(t + 0), ds_TransformPromote(t + 1) };
-
-    const struct c_ContactResult result = c_contact_methods[c_s[m]->type][c_s[1-m]->type](frame, &c->narrowphase, c_s_arr, t_arr, reference);
-
-#ifdef DS_DEBUG
-    for (u32 i = 0; i < result.manifold_count; ++i)
-    {
-        if (!c_ManifoldCheck(result.manifold + i))
-        {
-            c_ManifoldDebugPrint(result.manifold + i);
-            Breakpoint(1);
-            /* rerun to step into the failing case */
-            c_contact_methods[c_s[m]->type][c_s[1-m]->type](frame, &c->narrowphase, c_s_arr, t_arr, reference);
-            break;
-        }
-    }
-#endif
-	c->narrowphase = result;
 }
 
 /*

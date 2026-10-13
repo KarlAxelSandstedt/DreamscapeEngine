@@ -57,21 +57,6 @@ struct ds_NumericsConfig
     f32 v3_parallel_check_max_degrees;
     f32 v3_parallel_check_eps;
 
-    /*
-     * Maximum degrees allowed for temporal consistency between a cached and new manifold normal.
-     * Old contact functions only (c_HullContact, mesh); TMP_c_HullContact uses sat_cache_tolerance.
-     */
-    f32 manifold_cache_normal_parallel_check_max_degrees_pending;
-    f32 manifold_cache_normal_parallel_check_max_degrees;
-    f32 manifold_cache_normal_parallel_check_eps;
-
-    /*
-     * Maximum difference allowed for temporal consistency between a cached and new manifold depth.
-     * Old contact functions only (c_HullContact, mesh); TMP_c_HullContact uses sat_cache_tolerance.
-     */
-    f32 manifold_cache_depth_max_diff_allowed_pending;
-    f32 manifold_cache_depth_max_diff_allowed;
-
     /* Fraction of dirty dbvh proxies that may be re-inserted before triggering a dbvh rebuild  */
     f32 dbvh_reinsert_threshold_pending;
     f32 dbvh_reinsert_threshold;
@@ -427,10 +412,6 @@ u32	        ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Sha
  * closest points c1 and c2. If the shapes are intersecting, return 0.0f. 
  */
 f32 	    ds_ShapeDistance(v3 *c1, v3 *c2, const struct ds_Dynamics *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
-/* 
- * Run the contact's collision computation and set its manifold(s) and cache(s).
- */
-void        ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index);
 /*
 Contact pipeline
 ----------------
@@ -605,20 +586,8 @@ the contact results may be re-used the next frame if a set of conditions are ful
 
 ::: Internals :::
 
-To ensure temporal coherence when reusing contact information, we currently test:
-
-  1. A penetration check for the cached features: Are we even still penetrating for the given features?
-
-  2. Has the new contact normal drifted to much from the cached normal? The number of degrees-drift per frame 
-     is found in ds_NumericsConfig.
-
-  3. Is the cached feature that produced the deepest point still the deepest feature in the new contact? This
-     test is only relevant for face contacts, as the deepest point may come from the incident body's vertex set
-     or from the body's edge set as a clipped point.
-
-  4. We allow a maximum change in penetration depth per frame, governed by a value in ds_NumericsConfig.
-
-(Old contact functions. TMP_c_HullContact: sat_CacheTryReuse, one rule: |depth change| < sat_cache_tolerance.)
+sat_CacheTryReuse (c_contact.c): a separating axis is reused while it still separates; a contact is rebuilt from its
+cached features and reused while its depth changed by less than sat_cache_tolerance (ds_NumericsConfig).
 */
 
 enum sat_CacheType

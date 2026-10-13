@@ -230,7 +230,6 @@ The same struct is used in two frames (TMP during the contact refactor):
     solver  TMP_ds_ShapeConvexContact/TMP_ds_ShapeMeshContact output (ds_Contact.narrowphase): the
             reference is the shape of the lower body index, rotated to world; TODO(decision 3): translated
             to world f32 points for now.
-The old c_*Contact functions return the solver form directly (world, reference = reference_index).
 */
 struct c_Manifold
 {
@@ -344,18 +343,8 @@ struct c_ContactResult
                                                        is manifold[m].                          */
 };
 
-struct c_ContactResult  c_SphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_TransformWorld t[2], const u32 reference_index);
-struct c_ContactResult  c_CapsuleSphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_TransformWorld t[2], const u32 reference_index);
-struct c_ContactResult  c_CapsuleContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_TransformWorld t[2], const u32 reference_index);
-struct c_ContactResult  c_HullSphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_TransformWorld t[2], const u32 reference_index);
-struct c_ContactResult  c_HullCapsuleContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_TransformWorld t[2], const u32 reference_index);
-struct c_ContactResult  c_HullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2], const u32 reference_index);
-struct c_ContactResult  c_TriMeshBvhSphereContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_TransformWorld t[2], const u32 reference_index);
-struct c_ContactResult  c_TriMeshBvhCapsuleContact(struct arena *frame, const struct c_ContactResult *not_used, const struct c_Shape *s[2], const ds_TransformWorld t[2], const u32 reference_index);
-struct c_ContactResult  c_TriMeshBvhHullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2], const u32 reference_index);
-
 /*
- * TMP (contact refactor; replaces the functions above one by one): no reference index. Convex pairs return
+ * TMP (contact refactor): no reference index. Convex pairs return
  * a local manifold in s[0]'s frame (n from s[0] to s[1]); TMP_ds_ShapeConvexContact transforms it to the
  * solver form (see c_Manifold).
  */

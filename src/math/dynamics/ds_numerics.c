@@ -26,8 +26,6 @@ struct ds_NumericsConfig ds_NumericsConfigDefault(void)
 {
     struct ds_NumericsConfig config = { 0 };
     config.v3_parallel_check_max_degrees_pending = 0.5f;
-    config.manifold_cache_normal_parallel_check_max_degrees_pending = 10.0f;
-    config.manifold_cache_depth_max_diff_allowed_pending = DS_UNIT_CM;
     config.dbvh_reinsert_threshold_pending = 0.25f;
     config.cache_count_max_pending = 32;
     config.gjk_max_iterations_pending = 32;
@@ -52,14 +50,6 @@ void ds_NumericsConfigPush(struct ds_NumericsConfig *config)
     config->v3_parallel_check_max_degrees_pending = F32Clamp(config->v3_parallel_check_max_degrees_pending, 0.0f, 45.0f);
     config->v3_parallel_check_max_degrees = config->v3_parallel_check_max_degrees_pending;
     config->v3_parallel_check_eps = V3ParallelCheckEpsilon(config->v3_parallel_check_max_degrees);
-
-    /* Since we are dealing with normals, easy test becomes Dot(a,b) > eps, eps = cos(max_degrees_in_radian) */
-    config->manifold_cache_normal_parallel_check_max_degrees_pending = F32Clamp(config->manifold_cache_normal_parallel_check_max_degrees_pending, 0.0f, 45.0f);
-    config->manifold_cache_normal_parallel_check_max_degrees = config->manifold_cache_normal_parallel_check_max_degrees_pending;
-    config->manifold_cache_normal_parallel_check_eps = F32Cos(config->manifold_cache_normal_parallel_check_max_degrees * F32_PI2 / 360);
-
-    config->manifold_cache_depth_max_diff_allowed_pending = F32Clamp(config->manifold_cache_depth_max_diff_allowed_pending, 0.0f, F32_INFINITY);
-    config->manifold_cache_depth_max_diff_allowed = config->manifold_cache_depth_max_diff_allowed_pending;
 
     config->cache_count_max = config->cache_count_max_pending;
 

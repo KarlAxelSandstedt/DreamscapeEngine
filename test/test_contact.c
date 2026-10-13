@@ -2873,41 +2873,13 @@ struct test_Output SphereContactCasesTest(struct test_Environment *env)
 /********************************** mesh contacts **********************************/
 
 /*
-Mesh vs sphere/capsule/hull (TMP_c_Mesh*Contact = c_MeshContact): the new shared path against the old functions
-(c_TriMeshBvh*Contact with the convex shape as reference, world manifolds moved into the convex shape's frame).
-Sphere: the per-triangle results must agree up to the frame change's rounding; triangles reported by only one side
-(a touch decided by rounding) are counted. Capsule and hull: the triangle-tailored routines differ from the old
-ones by design (deep, two-point, face/edge rules; the old hull routine's false separating edge axes), so only single
-points are compared (capsules: shallow ones; not compared: counted). The new results must also pass
-c_ManifoldCheck and give identical bits under an exactly representable translation.
+Mesh vs sphere/capsule/hull (TMP_c_Mesh*Contact = c_MeshContact).
 Terrain: a height field grid (CCW, upward faces), random pose; flat (relief 0) for the ghost-normal test.
 */
 
 #define MC_GRID 12
 
 static struct ds_DynamicsWorker mc_worker[DS_THREAD_COUNT_MAX];
-
-struct mc_Stats
-{
-    u64 tests;
-    u64 manifolds_new;
-    u64 manifolds_old;
-    u64 tri_only_new;       /* triangles only the new path reports */
-    u64 tri_only_old;       /* triangles only the old path reports */
-    u64 v_count_differs;
-    u64 not_compared;       /* capsules: deep or two-point manifolds (different rules by design) */
-    f64 worst_n;            /* |n_new - n_old| */
-    f64 worst_depth;        /* |depth_new - depth_old| / L */
-    f64 worst_v;            /* |v_new - v_old| / L */
-};
-
-static void McStatsPrint(const char *id, const struct mc_Stats *s)
-{
-    fprintf(stdout, "\t%s: %llu tests, manifolds new %llu old %llu (only new %llu, only old %llu, v_count differs %llu, not compared %llu); worst: |dn| %.3g, |d depth| / L %.3g, |dv| / L %.3g\n",
-        id, (unsigned long long) s->tests, (unsigned long long) s->manifolds_new, (unsigned long long) s->manifolds_old,
-        (unsigned long long) s->tri_only_new, (unsigned long long) s->tri_only_old, (unsigned long long) s->v_count_differs,
-        (unsigned long long) s->not_compared, s->worst_n, s->worst_depth, s->worst_v);
-}
 
 /* relief 0: a flat grid (y = 0); rotation (optional): the grid rotated in mesh space (not axis-aligned there) */
 static struct c_Shape McTerrain(struct arena *mem, const f32 cell, const f32 relief, const q *rotation)
@@ -2942,228 +2914,6 @@ static struct c_Shape McTerrain(struct arena *mem, const f32 cell, const f32 rel
     struct c_Shape shape = { .type = C_SHAPE_TRI_MESH };
     shape.mesh_bvh = TriMeshBvhConstruct(mem, mesh, 8);
     return shape;
-}
-
-/* the old world manifolds (convex reference) in the convex shape's frame, double */
-static void McOldToLocal(struct c_Manifold *m, const ds_TransformWorld *t_convex)
-{
-    struct d3 r[3];
-    D3Rotation(r, t_convex->rotation);
-    const struct d3 pos = D3(V3F64Demote(t_convex->position).x, V3F64Demote(t_convex->position).y, V3F64Demote(t_convex->position).z);
-    const struct d3 n = D3RotationTMul(r, D3V3(m->n));
-    m->n = V3((f32) n.x, (f32) n.y, (f32) n.z);
-    for (u32 i = 0; i < m->v_count; ++i)
-    {
-        const struct d3 v = D3RotationTMul(r, D3Sub(D3V3(m->v[i]), pos));
-        m->v[i] = V3((f32) v.x, (f32) v.y, (f32) v.z);
-    }
-}
-
-static const struct c_Manifold *McFind(const struct c_ContactResult *r, const u32 tri)
-{
-    for (u32 i = 0; i < r->manifold_count; ++i)
-    {
-        if (r->tri[i] == tri)
-        {
-            return r->manifold + r->tri_manifold[i];
-        }
-    }
-    return NULL;
-}
-
-static u32 McCheckPair(struct arena *frame, struct mc_Stats *stats, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex, const f64 L, const u32 compare)
-{
-    const struct c_ContactResult none = { 0 };
-    typedef struct c_ContactResult (*mesh_fn)(struct arena *, const struct c_ContactResult *, const struct c_Shape *, const ds_TransformWorld *, const struct c_Shape *, const ds_TransformWorld *);
-    const mesh_fn fn[] = { TMP_c_MeshSphereContact, TMP_c_MeshCapsuleContact, TMP_c_MeshHullContact };
-    const struct c_ContactResult r_new = fn[convex->type](frame, &none, mesh, t_mesh, convex, t_convex);
-
-    /* the old functions work in world f32: far from the origin small triangles degenerate (audit B3); compare near it */
-    const struct c_Shape *s[2] = { mesh, convex };
-    const ds_TransformWorld t[2] = { *t_mesh, *t_convex };
-    struct c_ContactResult r_old = { 0 };
-    if (compare)
-    {
-        r_old = (convex->type == C_SHAPE_SPHERE) ? c_TriMeshBvhSphereContact(frame, &none, s, t, 1)
-              : (convex->type == C_SHAPE_CAPSULE) ? c_TriMeshBvhCapsuleContact(frame, &none, s, t, 1)
-              : c_TriMeshBvhHullContact(frame, &none, s, t, 1);
-    }
-
-    stats->tests += 1;
-    stats->manifolds_new += r_new.manifold_count;
-    stats->manifolds_old += r_old.manifold_count;
-
-    for (u32 i = 0; i < r_new.manifold_count; ++i)
-    {
-        if (!c_ManifoldCheck(r_new.manifold + i) || r_new.manifold[i].v_count < 1)
-        {
-            fprintf(stderr, "Mesh contact: invalid manifold (triangle %u)\n", r_new.tri[i]);
-            c_ManifoldDebugPrint(r_new.manifold + i);
-            return 0;
-        }
-    }
-
-    for (u32 i = 0; compare && i < r_new.manifold_count; ++i)
-    {
-        const struct c_Manifold *m_new = r_new.manifold + r_new.tri_manifold[i];
-        const struct c_Manifold *m_old_world = McFind(&r_old, r_new.tri[i]);
-        if (!m_old_world)
-        {
-            stats->tri_only_new += 1;
-            continue;
-        }
-        struct c_Manifold m_old = *m_old_world;
-        McOldToLocal(&m_old, t_convex);
-        if (convex->type != C_SHAPE_SPHERE && !(m_new->v_count == 1 && m_old.v_count == 1
-            && (convex->type != C_SHAPE_CAPSULE || m_new->depth[0] < 0.999f*convex->capsule.radius)))
-        {
-            stats->not_compared += 1;
-            continue;
-        }
-        if (m_old.v_count != m_new->v_count)
-        {
-            stats->v_count_differs += 1;
-            continue;
-        }
-        stats->worst_n = F64MaxTest(stats->worst_n, D3Length(D3Sub(D3V3(m_new->n), D3V3(m_old.n))));
-        for (u32 k = 0; k < m_new->v_count; ++k)
-        {
-            stats->worst_depth = F64MaxTest(stats->worst_depth, F64AbsTest((f64) m_new->depth[k] - (f64) m_old.depth[k]) / L);
-            stats->worst_v = F64MaxTest(stats->worst_v, D3Length(D3Sub(D3V3(m_new->v[k]), D3V3(m_old.v[k]))) / L);
-        }
-    }
-    for (u32 i = 0; i < r_old.manifold_count; ++i)
-    {
-        stats->tri_only_old += (McFind(&r_new, r_old.tri[i]) == NULL);
-    }
-
-    /* an exactly representable offset leaves the relative pose exact in f64: identical bits */
-    const struct d3 offset = D3(4096.0, -1024.0, 65536.0);
-    const ds_TransformWorld t_mesh_t = { .rotation = t_mesh->rotation, .position = V3F64(t_mesh->position.x + offset.x, t_mesh->position.y + offset.y, t_mesh->position.z + offset.z) };
-    const ds_TransformWorld t_convex_t = { .rotation = t_convex->rotation, .position = V3F64(t_convex->position.x + offset.x, t_convex->position.y + offset.y, t_convex->position.z + offset.z) };
-    if (V3F64Sub(t_convex_t.position, t_mesh_t.position).x == V3F64Sub(t_convex->position, t_mesh->position).x
-     && V3F64Sub(t_convex_t.position, t_mesh_t.position).y == V3F64Sub(t_convex->position, t_mesh->position).y
-     && V3F64Sub(t_convex_t.position, t_mesh_t.position).z == V3F64Sub(t_convex->position, t_mesh->position).z)
-    {
-        const struct c_ContactResult r_t = fn[convex->type](frame, &none, mesh, &t_mesh_t, convex, &t_convex_t);
-        u32 same = (r_t.manifold_count == r_new.manifold_count);
-        for (u32 i = 0; same && i < r_new.manifold_count; ++i)
-        {
-            const struct c_Manifold *a = r_new.manifold + i, *b = r_t.manifold + i;
-            same = (r_t.tri[i] == r_new.tri[i]) && a->v_count == b->v_count && memcmp(&a->n, &b->n, sizeof(v3)) == 0;
-            for (u32 k = 0; same && k < a->v_count; ++k)
-            {
-                same = memcmp(&a->v[k], &b->v[k], sizeof(v3)) == 0 && memcmp(&a->depth[k], &b->depth[k], sizeof(f32)) == 0;
-            }
-        }
-        if (!same)
-        {
-            fprintf(stderr, "Mesh contact: translated result differs\n");
-            return 0;
-        }
-    }
-
-    return 1;
-}
-
-/* the new shared path vs the old functions: spheres, capsules, boxes, hulls near a random terrain */
-struct test_Output MeshContactCompareTest(struct test_Environment *env)
-{
-	struct test_Output output = { .success = 1, .id = __func__ };
-    ContactTestConfigPush();
-
-    /* the old mesh functions draw debug segments and count metrics */
-    struct ds_DynamicsWorker *prev = g_dynamics_worker;
-    memset(mc_worker, 0, sizeof(mc_worker));
-    for (u32 i = 0; i < DS_THREAD_COUNT_MAX; ++i)
-    {
-        ds_CPoolAlloc(NULL, mc_worker[i].draw.debug_segment_pool, 1024, GROWABLE);
-    }
-    g_dynamics_worker = mc_worker;
-
-    const char *kind_id[] = { "sphere", "capsule", "box", "hull" };
-    for (u32 compare = 1; compare != U32_MAX; --compare)
-    for (u32 k = 0; k < 4; ++k)
-    {
-        struct mc_Stats stats = { 0 };
-        for (u32 i = 0; i < 4000; ++i)
-        {
-            struct arena record = *env->mem_2;
-            const f32 cell = CtSize();
-            const struct c_Shape mesh = McTerrain(env->mem_2, cell, 1.0f, NULL);
-            /* compared with the old functions: near the origin (|x| <= 1); else anywhere up to 1e6 (new path only) */
-            const struct d3 mesh_pos = (compare) ? D3Scale(D3V3(CtUnit()), RngF32Normalized()) : CtWorldPosition();
-            const ds_TransformWorld t_mesh = { .rotation = CtRotation(), .position = V3F64(mesh_pos.x, mesh_pos.y, mesh_pos.z) };
-
-            /* the convex shape, sized like the cells */
-            struct c_Shape convex = { 0 };
-            f32 reach;
-            if (k == 0)
-            {
-                convex.type = C_SHAPE_SPHERE;
-                convex.sphere.radius = cell*RngF32Range(0.1f, 2.0f);
-                reach = convex.sphere.radius;
-            }
-            else if (k == 1)
-            {
-                convex.type = C_SHAPE_CAPSULE;
-                convex.capsule.radius = cell*RngF32Range(0.1f, 1.0f);
-                convex.capsule.half_height = cell*RngF32Range(0.1f, 2.0f);
-                reach = convex.capsule.radius + convex.capsule.half_height;
-            }
-            else
-            {
-                struct ch_Hull h;
-                ChRandomHull(env->mem_2, &h, (k == 2) ? 0 : 2);
-                convex = h.shape;
-                /* rescale: ChRandomHull's size is independent of the cell */
-                const f32 scale = cell*RngF32Range(0.3f, 2.0f) / (f32) h.extent;
-                for (u32 v = 0; v < convex.hull.v_count; ++v)
-                {
-                    convex.hull.v[v] = V3Scale(convex.hull.v[v], scale);
-                }
-                for (u32 f = 0; f < convex.hull.f_count; ++f)
-                {
-                    convex.hull.plane[f].signed_distance *= scale;
-                }
-                DcelBboxCompute(&convex.hull);
-                c_ShapeUpdateMassProperties(&convex);
-                reach = (f32) h.extent * scale;
-            }
-
-            /* near a random triangle: its centroid moved along its normal by -reach .. 1.5 reach (mesh frame) */
-            const struct triMesh *tm = mesh.mesh_bvh.mesh;
-            const v3u32 tri = tm->tri[RngU64Range(0, tm->tri_count - 1)];
-            const v3 a = tm->v[tri.buf[0]], b = tm->v[tri.buf[1]], c = tm->v[tri.buf[2]];
-            const v3 centroid = V3Scale(V3Add(V3Add(a, b), c), 1.0f / 3.0f);
-            const v3 normal = V3Normalize(V3Cross(V3Sub(b, a), V3Sub(c, a)));
-            const v3 local = V3Add(centroid, V3Scale(normal, reach*RngF32Range(-1.0f, 1.5f)));
-            struct d3 rm[3];
-            D3Rotation(rm, t_mesh.rotation);
-            const struct d3 world = D3Add(D3(t_mesh.position.x, t_mesh.position.y, t_mesh.position.z), D3RotationMul(rm, D3V3(local)));
-            const ds_TransformWorld t_convex = { .rotation = CtRotation(), .position = V3F64(world.x, world.y, world.z) };
-
-            const f64 L = F64MaxTest((f64) reach, (f64) cell*MC_GRID);
-            const u32 ok = McCheckPair(env->mem_2, &stats, &mesh, &t_mesh, &convex, &t_convex, L, compare);
-            *env->mem_2 = record;
-            if (!ok)
-            {
-                fprintf(stderr, "\t(%s, case %u)\n", kind_id[k], i);
-                g_dynamics_worker = prev;
-                TEST_FAILURE;
-            }
-        }
-        char id[64];
-        snprintf(id, sizeof(id), "%s, %s", kind_id[k], (compare) ? "near (vs old)" : "far (new only)");
-        McStatsPrint(id, &stats);
-    }
-
-    for (u32 i = 0; i < DS_THREAD_COUNT_MAX; ++i)
-    {
-        ds_CPoolDealloc(mc_worker[i].draw.debug_segment_pool);
-    }
-    g_dynamics_worker = prev;
-	return output;
 }
 
 /* a one-triangle mesh (t0, t1, t2) */
@@ -4284,7 +4034,6 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
 
 static struct test_Output (*mesh_contact_tests[])(struct test_Environment *) =
 {
-    MeshContactCompareTest,
     MeshSphereCasesTest,
     MeshCapsuleCasesTest,
     MeshFlatGridTest,
