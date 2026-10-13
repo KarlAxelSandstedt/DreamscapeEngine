@@ -4,16 +4,16 @@
 
 uniform vec2	resolution;
 
-in vec4 node_rect;		/* shared: center[2], size[2] 	*/
-in vec4 visible_rect;		/* shared: center[2], size[2] 	*/
-in vec4 uv_rect;		/* shared: center[2], size[2] 	*/
-in vec4 background_color;	/* shared			*/
-in vec4 border_color;		/* shared			*/
-in vec4 sprite_color;		/* shared			*/
-in vec3 extra;			/* shared: border_size[1]
-				   shared: corner_radius[1]
-				   shared: edge_softness[1] 	*/
-in mat4 gradient_color; 	/* shared                       */
+layout(location = 0) in vec4 node_rect;		/* shared: center[2], size[2] 	*/
+layout(location = 1) in vec4 visible_rect;	/* shared: center[2], size[2] 	*/
+layout(location = 2) in vec4 uv_rect;		/* shared: center[2], size[2] 	*/
+layout(location = 3) in vec4 background_color;	/* shared			*/
+layout(location = 4) in vec4 border_color;	/* shared			*/
+layout(location = 5) in vec4 sprite_color;	/* shared			*/
+layout(location = 6) in vec3 extra;		/* shared: border_size[1]
+					   	   shared: corner_radius[1]
+					   	   shared: edge_softness[1] 	*/
+layout(location = 7) in mat4 gradient_color; 	/* shared                       */
 
 out vec2 	uv;
 out vec2 	n_rect_center;

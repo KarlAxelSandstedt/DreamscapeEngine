@@ -649,7 +649,7 @@ static void r_SceneRender(const struct led *led, const u32 window)
 				ds_glActiveTexture(GL_TEXTURE0 + tx_index);
 				//TODO setup compile time arrays as with g_r_core->program[program].gl_program (?????)
 				ds_glBindTexture(GL_TEXTURE_2D, g_r_core->texture[texture].handle);
-				const i32 texture_addr = ds_glGetUniformLocation(g_r_core->program[program].gl_program, "texture");
+				const i32 texture_addr = ds_glGetUniformLocation(g_r_core->program[program].gl_program, "texture_atlas");
 				ds_glUniform1i(texture_addr, tx_index);
 				ds_glViewport(0, 0, (i32) sys_win->size.x, (i32) sys_win->size.y); 
 			} break;

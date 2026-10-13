@@ -110,29 +110,29 @@ static void r_MaterialStaticAssert(void)
 
 static void r_ShaderSourceAndCompile(GLuint shader, const char *filepath)
 {
-	FILE *file = fopen(filepath, "r");
+	struct arena *tmp = ArenaPushScratch();
+	const struct dsBuffer source = FileDumpAtCwd(tmp, filepath);
+	if (source.data == NULL)
+	{
+		Log(T_RENDERER, S_FATAL, "Failed to read shader %s", filepath);
+		FatalCleanupAndExit();
+	}
 
-	char buf[4096];
-	memset(buf, 0, sizeof(buf));
-	fseek(file, 0, SEEK_END);
-	long int size = ftell(file);
-	fseek(file, 0, SEEK_SET);
-	fread(buf, 1, size, file);
+	/* the file is not NUL-terminated: pass its length; glShaderSource copies the source */
+	const GLchar *source_ptr = (const GLchar *) source.data;
+	const GLint source_len = (GLint) source.size;
+	ds_glShaderSource(shader, 1, &source_ptr, &source_len);
+	ArenaPopScratch();
 
-	const GLchar *buf_ptr = buf;
-	ds_glShaderSource(shader, 1, &buf_ptr, 0);
-
-	fclose(file);
-
-	ds_glCompileShader(shader);	
+	ds_glCompileShader(shader);
 
 	GLint compiled;
 	ds_glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
 	if (compiled == GL_FALSE)
 	{
+		char buf[4096];
 		GLsizei len = 0;
-		ds_glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &len);
-		ds_glGetShaderInfoLog(shader, len, &len, buf);
+		ds_glGetShaderInfoLog(shader, sizeof(buf), &len, buf);
 		Log(T_RENDERER, S_FATAL, "Failed to compile %s, %s", filepath, buf);
 		FatalCleanupAndExit();
 	}
@@ -158,8 +158,7 @@ void r_ShaderCompile(u32 *prg, const char *v_filepath, const char *f_filepath)
 	{
 		char buf[4096];
 		GLsizei len = 0;
-		ds_glGetProgramiv(*prg, GL_INFO_LOG_LENGTH, &len);
-		ds_glGetProgramInfoLog(*prg, len, &len, buf);
+		ds_glGetProgramInfoLog(*prg, sizeof(buf), &len, buf);
 		Log(T_RENDERER, S_FATAL, "Failed to Link program: %s", buf);
 		FatalCleanupAndExit();
 	}

@@ -29,8 +29,8 @@ out float 	corner_radius;
 out float 	edge_softness;
 
 /* br - tr - tl - bl */
-const float x_sign[4] = float[4]( 1.0, 1.0, -1.0, -1.0);
-const float y_sign[4] = float[4](-1.0, 1.0,  1.0, -1.0);
+const vec4 x_sign = vec4( 1.0, 1.0, -1.0, -1.0);
+const vec4 y_sign = vec4(-1.0, 1.0,  1.0, -1.0);
 
 void main()
 {

@@ -1,17 +1,19 @@
-attribute vec4 a_translation_blend;	/* shared: instance translation[3], blend[1] 	*/
-attribute vec4 a_rotation;      	/* shared: instance rotation quaternion 	*/
-attribute vec4 a_color;         	/* shared: instance color			*/
-attribute vec3 a_position;      	/* local:  vertex position			*/
-attribute vec3 a_normal;        	/* local:  vertex normal			*/
+#version 300 es
 
-uniform float aspect_ratio;
-uniform mat4 view;
-uniform mat4 perspective;
+layout(location = 0) in vec4 a_translation_blend;	/* shared: instance translation[3] and color blend[1] 	*/
+layout(location = 1) in vec4 a_rotation;		/* shared: instance rotation quaternion  		*/
+layout(location = 2) in vec4 a_color;			/* shared: instance color		 		*/
+layout(location = 3) in vec3 a_position;		/* local:  vertex position		 		*/
+layout(location = 4) in vec3 a_normal;			/* local:  vertex normal		 		*/
 
-varying vec3 FragPos;
-varying vec4 color;
-varying vec3 normal;
-varying float blend;
+uniform float 	aspect_ratio;
+uniform mat4 	view;
+uniform mat4 	perspective;
+
+out vec3 	FragPos;
+out vec4 	color;
+out vec3 	normal;
+out float	blend;
 
 void main()
 {

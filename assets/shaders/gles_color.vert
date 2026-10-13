@@ -1,11 +1,13 @@
-attribute vec3 position;
-attribute vec4 color;
+#version 300 es
+
+layout(location = 0) in vec3 position;
+layout(location = 1) in vec4 color;
 
 uniform float aspect_ratio;
 uniform mat4 view;
 uniform mat4 perspective;
 
-varying vec4 out_color;
+out vec4 out_color;
 
 void main()
 {
