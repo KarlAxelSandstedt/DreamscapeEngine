@@ -140,7 +140,7 @@ static void led_ProjectMenuUi(struct led *led, const struct ui_Visual *visual)
 					}
 					else
 					{
-						err = FileTryCreate(&project_window->mem_persistent, &led->project.file, cstr_project_name, &led->project.folder, 0);
+						err = FileTryCreate(&project_window->mem_persistent, &led->project.file, cstr_project_name, &led->project.folder, FILE_FLAGS_NONE);
 						if (err != FS_SUCCESS)
 						{
 							switch (err)

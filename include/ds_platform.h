@@ -90,6 +90,7 @@ void	RngSystem(void *buf, const u64 size);
 
 #endif
 
+#define FILE_FLAGS_NONE	0
 #define FILE_READ	    0
 #define FILE_WRITE	    (1 << 0)
 #define FILE_TRUNCATE	(1 << 1)
