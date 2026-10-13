@@ -2875,10 +2875,11 @@ struct test_Output SphereContactCasesTest(struct test_Environment *env)
 /*
 Mesh vs sphere/capsule/hull (TMP_c_Mesh*Contact = c_MeshContact): the new shared path against the old functions
 (c_TriMeshBvh*Contact with the convex shape as reference, world manifolds moved into the convex shape's frame).
-Sphere and hull: the per-triangle results must agree up to the frame change's rounding; triangles reported by only
-one side (a touch decided by rounding) are counted. Capsule: the triangle-tailored routine differs from the old one
-by design (deep and two-point rules), so only shallow single points are compared (not compared: counted). The new
-results must also pass c_ManifoldCheck and give identical bits under an exactly representable translation.
+Sphere: the per-triangle results must agree up to the frame change's rounding; triangles reported by only one side
+(a touch decided by rounding) are counted. Capsule and hull: the triangle-tailored routines differ from the old
+ones by design (deep, two-point, face/edge rules; the old hull routine's false separating edge axes), so only single
+points are compared (capsules: shallow ones; not compared: counted). The new results must also pass
+c_ManifoldCheck and give identical bits under an exactly representable translation.
 Terrain: a height field grid (CCW, upward faces), random pose; flat (relief 0) for the ghost-normal test.
 */
 
@@ -2908,8 +2909,8 @@ static void McStatsPrint(const char *id, const struct mc_Stats *s)
         (unsigned long long) s->not_compared, s->worst_n, s->worst_depth, s->worst_v);
 }
 
-/* relief 0: a flat grid (y = 0) */
-static struct c_Shape McTerrain(struct arena *mem, const f32 cell, const f32 relief)
+/* relief 0: a flat grid (y = 0); rotation (optional): the grid rotated in mesh space (not axis-aligned there) */
+static struct c_Shape McTerrain(struct arena *mem, const f32 cell, const f32 relief, const q *rotation)
 {
     const u32 n = MC_GRID + 1;
     struct triMesh *mesh = ArenaPush(mem, sizeof(struct triMesh));
@@ -2924,7 +2925,7 @@ static struct c_Shape McTerrain(struct arena *mem, const f32 cell, const f32 rel
             const f32 x = cell*(f32) i;
             const f32 z = cell*(f32) j;
             const f32 y = relief*cell*(0.6f*F32Sin(0.7f*(f32) i) + 0.4f*F32Cos(0.9f*(f32) j) + 0.2f*RngF32Range(-1.0f, 1.0f));
-            mesh->v[i*n + j] = V3(x, y, z);
+            mesh->v[i*n + j] = (rotation) ? QUnitRotate(*rotation, V3(x, y, z)) : V3(x, y, z);
         }
     }
     u32 t = 0;
@@ -3013,8 +3014,8 @@ static u32 McCheckPair(struct arena *frame, struct mc_Stats *stats, const struct
         }
         struct c_Manifold m_old = *m_old_world;
         McOldToLocal(&m_old, t_convex);
-        if (convex->type == C_SHAPE_CAPSULE
-            && !(m_new->v_count == 1 && m_old.v_count == 1 && m_new->depth[0] < 0.999f*convex->capsule.radius))
+        if (convex->type != C_SHAPE_SPHERE && !(m_new->v_count == 1 && m_old.v_count == 1
+            && (convex->type != C_SHAPE_CAPSULE || m_new->depth[0] < 0.999f*convex->capsule.radius)))
         {
             stats->not_compared += 1;
             continue;
@@ -3089,7 +3090,7 @@ struct test_Output MeshContactCompareTest(struct test_Environment *env)
         {
             struct arena record = *env->mem_2;
             const f32 cell = CtSize();
-            const struct c_Shape mesh = McTerrain(env->mem_2, cell, 1.0f);
+            const struct c_Shape mesh = McTerrain(env->mem_2, cell, 1.0f, NULL);
             /* compared with the old functions: near the origin (|x| <= 1); else anywhere up to 1e6 (new path only) */
             const struct d3 mesh_pos = (compare) ? D3Scale(D3V3(CtUnit()), RngF32Normalized()) : CtWorldPosition();
             const ds_TransformWorld t_mesh = { .rotation = CtRotation(), .position = V3F64(mesh_pos.x, mesh_pos.y, mesh_pos.z) };
@@ -3165,22 +3166,28 @@ struct test_Output MeshContactCompareTest(struct test_Environment *env)
 	return output;
 }
 
-/* a one-triangle mesh: (0,0,0), (0,0,size), (size,0,0); ccw normal +y */
-static struct c_Shape McSingleTriangle(struct arena *mem, const f32 size)
+/* a one-triangle mesh (t0, t1, t2) */
+static struct c_Shape McOneTriangle(struct arena *mem, const v3 t0, const v3 t1, const v3 t2)
 {
     struct triMesh *mesh = ArenaPush(mem, sizeof(struct triMesh));
     mesh->v_count = 3;
     mesh->tri_count = 1;
     mesh->v = ArenaPush(mem, 3*sizeof(v3));
     mesh->tri = ArenaPush(mem, sizeof(v3u32));
-    mesh->v[0] = V3(0.0f, 0.0f, 0.0f);
-    mesh->v[1] = V3(0.0f, 0.0f, size);
-    mesh->v[2] = V3(size, 0.0f, 0.0f);
+    mesh->v[0] = t0;
+    mesh->v[1] = t1;
+    mesh->v[2] = t2;
     mesh->tri[0] = (v3u32) { .buf = { 0, 1, 2 } };
 
     struct c_Shape shape = { .type = C_SHAPE_TRI_MESH };
     shape.mesh_bvh = TriMeshBvhConstruct(mem, mesh, 8);
     return shape;
+}
+
+/* a one-triangle mesh: (0,0,0), (0,0,size), (size,0,0); ccw normal +y */
+static struct c_Shape McSingleTriangle(struct arena *mem, const f32 size)
+{
+    return McOneTriangle(mem, V3(0.0f, 0.0f, 0.0f), V3(0.0f, 0.0f, size), V3(size, 0.0f, 0.0f));
 }
 
 /*
@@ -3713,32 +3720,45 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
 }
 
 /*
- * Spheres and capsules touching a flat grid (McTerrain, relief 0) near a shared vertex, an edge midpoint, a face's
- * diagonal or a random point; capsules parallel to the grid or tilted up from their lowest point. Their lowest point
- * lies 0.2 .. 0.95 r above the grid. Every manifold that survives the internal-edge filter has the grid's normal (no
- * ghost normals), at least one survives, and the deepest depth is r - height.
+ * Shapes touching a flat grid (McTerrain, relief 0) near a shared vertex, an edge midpoint, a face's diagonal or a
+ * random point; every manifold that survives the internal-edge filter must have the grid's normal (no ghost
+ * normals), and at least one must survive (no missed contact).
+ *      spheres, capsules (parallel to the grid or tilted up): lowest point 0.2 .. 0.95 r above; deepest r - height
+ *      boxes resting flat (tilted 0, 1e-7, 1e-5, 1e-3, random yaw), lowest corner p = 0.5 .. 2 % of the cell
+ *      deep; the grid rotated in mesh space, so the triangles reach the box's frame with rounding (a box edge
+ *      lies in the grid's plane up to it: the configuration that broke the old triangle edge check). Normal within
+ *      2 tilt of the grid's (a box face may be the reference); deepest p up to 3 tilt max(hw)
+ *      random hulls resting on their lowest vertex (p as boxes, at most half their height), rotated grid: normal
+ *      within 0.1 (a hull face within ~4 p / cell of the grid's plane may be the reference)
+ * Boxes and hulls: ghost normals are counted, not failed. A triangle beside the shape whose vertex pokes into its side
+ * face gets the side face's contact (the honest axis for that triangle alone); the internal-edge scheme keeps it when
+ * the contact's triangle features cover all three vertices (as the old routine). Pending the internal-edge decision.
  */
 struct test_Output MeshFlatGridTest(struct test_Environment *env)
 {
 	struct test_Output output = { .success = 1, .id = __func__ };
     ContactTestConfigPush();
+    /* the hull path counts metrics */
+    struct ds_DynamicsWorker *prev = g_dynamics_worker;
+    memset(mc_worker, 0, sizeof(mc_worker));
+    g_dynamics_worker = mc_worker;
     const struct c_ContactResult none = { 0 };
-    const char *kind_id[] = { "sphere", "capsule" };
-    for (u32 kind = 0; kind < 2; ++kind)
+    const char *kind_id[] = { "sphere", "capsule", "box", "hull" };
+    static const f32 tilt_set[] = { 0.0f, 1e-7f, 1e-5f, 1e-3f };
+    for (u32 kind = 0; kind < 4; ++kind)
     {
         u64 manifolds = 0;
         f64 worst_n = 0.0, worst_depth = 0.0;
+        u64 ghost = 0;
         for (u32 i = 0; i < 8000; ++i)
         {
             struct arena record = *env->mem_2;
             const f32 cell = CtSize();
-            const struct c_Shape mesh = McTerrain(env->mem_2, cell, 0.0f);
+            const q q_grid = (kind >= 2) ? CtRotation() : QIdentity();
+            const struct c_Shape mesh = McTerrain(env->mem_2, cell, 0.0f, (kind >= 2) ? &q_grid : NULL);
             const struct d3 mesh_pos = CtWorldPosition();
             const q q_mesh = CtRotation();
             const ds_TransformWorld t_mesh = { .rotation = q_mesh, .position = V3F64(mesh_pos.x, mesh_pos.y, mesh_pos.z) };
-            const f32 r = cell*RngF32Range(0.05f, 0.5f);
-            const f32 h = cell*RngF32Range(0.1f, 1.5f);
-            const f32 height = r*RngF32Range(0.2f, 0.95f);
 
             const f32 gi = (f32) RngU64Range(3, MC_GRID - 3), gj = (f32) RngU64Range(3, MC_GRID - 3);
             const u64 where = RngU64Range(0, 3);
@@ -3747,76 +3767,518 @@ struct test_Output MeshFlatGridTest(struct test_Environment *env)
                    : (where == 2) ? V3(gi + 0.5f, 0.0f, gj + 0.5f)
                    : V3(gi + RngF32Normalized(), 0.0f, gj + RngF32Normalized());
             low = V3Scale(low, cell);
-            low.y = height;
 
+            /* the shape's pose in grid coordinates (the grid is y = 0 there), then mesh = q_grid grid */
             struct c_Shape convex = { 0 };
-            q q_convex;
-            v3 center = low;
-            if (kind == 0)
+            q q_local = QIdentity();
+            struct d3 center = D3V3(low);
+            f64 expected_depth = 0.0, tol_n = 1e-3, tol_depth = 0.0;
+            f32 r = 0.0f, h = 0.0f;
+            u32 check_depth = 1;
+            if (kind <= 1)
             {
-                convex.type = C_SHAPE_SPHERE;
-                convex.sphere.radius = r;
-                q_convex = CtRotation();
+                r = cell*RngF32Range(0.05f, 0.5f);
+                h = cell*RngF32Range(0.1f, 1.5f);
+                const f32 height = r*RngF32Range(0.2f, 0.95f);
+                center.y = (f64) height;
+                expected_depth = (f64) r - (f64) height;
+                tol_depth = 1e-4*F64MaxTest(F64MaxTest((f64) cell, (f64) r), (f64) h);
+                if (kind == 0)
+                {
+                    convex.type = C_SHAPE_SPHERE;
+                    convex.sphere.radius = r;
+                    q_local = CtRotation();
+                }
+                else
+                {
+                    convex.type = C_SHAPE_CAPSULE;
+                    convex.capsule.radius = r;
+                    convex.capsule.half_height = h;
+                    /* parallel to the grid, or tilted up from the lowest point (beyond face_parallel_max_degrees) */
+                    v3 axis = CtUnitXZ();
+                    if (RngU64Range(0, 1))
+                    {
+                        axis = V3Normalize(V3Add(axis, V3(0.0f, RngF32Range(0.2f, 3.0f), 0.0f)));
+                        center = D3Add(center, D3Scale(D3V3(axis), (f64) h));
+                    }
+                    q_local = McAxisRotation(axis);
+                }
             }
             else
             {
-                convex.type = C_SHAPE_CAPSULE;
-                convex.capsule.radius = r;
-                convex.capsule.half_height = h;
-                /* parallel to the grid, or tilted up from the lowest point (beyond face_parallel_max_degrees) */
-                v3 axis = CtUnitXZ();
-                if (RngU64Range(0, 1))
+                const f32 tilt = tilt_set[RngU64Range(0, 3)];
+                v3 hw = V3(0.0f, 0.0f, 0.0f);
+                if (kind == 2)
                 {
-                    axis = V3Normalize(V3Add(axis, V3(0.0f, RngF32Range(0.2f, 3.0f), 0.0f)));
-                    center = V3Add(low, V3Scale(axis, h));
+                    hw = V3(cell*RngF32Range(0.3f, 1.5f), cell*RngF32Range(0.3f, 1.5f), cell*RngF32Range(0.3f, 1.5f));
+                    convex.type = C_SHAPE_CONVEX_HULL;
+                    convex.hull = DcelBox(env->mem_2, hw);
+                    q_local = QNormalize(QMul(QUnitAxisAngle(V3(0.0f, 1.0f, 0.0f), RngF32Range(0.0f, 2.0f*F32_PI)), QUnitAxisAngle(CtUnitXZ(), tilt)));
+                    tol_n = 1e-4 + 2.0*(f64) tilt;
                 }
-                q_convex = QNormalize(QMul(q_mesh, McAxisRotation(axis)));
+                else
+                {
+                    convex = ChRandomHullShape(env->mem_2, cell*RngF32Range(0.3f, 1.5f));
+                    q_local = CtRotation();
+                    tol_n = 0.1;
+                    check_depth = 0;
+                }
+                c_ShapeUpdateMassProperties(&convex);
+                /* the lowest vertex p below the grid; at most half the shape's height (a flat hull lying within p of the
+                 * grid would pass under it: a triangle is a surface, not a half-space) */
+                struct d3 rl[3];
+                D3Rotation(rl, q_local);
+                f64 lowest = 1e300, highest = -1e300, extent = 0.0;
+                for (u32 k = 0; k < convex.hull.v_count; ++k)
+                {
+                    const f64 y = D3RotationMul(rl, D3V3(convex.hull.v[k])).y;
+                    lowest = F64MinTest(lowest, y);
+                    highest = F64MaxTest(highest, y);
+                    extent = F64MaxTest(extent, D3Length(D3V3(convex.hull.v[k])));
+                }
+                const f64 p = F64MinTest((f64) cell*(f64) RngF32Range(0.005f, 0.02f), 0.5*(highest - lowest));
+                center.y = -lowest - p;
+                expected_depth = p;
+                tol_depth = 1e-4*F64MaxTest((f64) cell, extent) + 3.0*(f64) tilt*extent;
             }
-            struct d3 rm[3], rc[3];
-            D3Rotation(rm, q_mesh);
-            D3Rotation(rc, q_convex);
-            const struct d3 pos_c = D3Add(mesh_pos, D3RotationMul(rm, D3V3(center)));
-            const ds_TransformWorld t_convex = { .rotation = q_convex, .position = V3F64(pos_c.x, pos_c.y, pos_c.z) };
-            const struct c_ContactResult res = (kind == 0)
-                ? TMP_c_MeshSphereContact(env->mem_2, &none, &mesh, &t_mesh, &convex, &t_convex)
-                : TMP_c_MeshCapsuleContact(env->mem_2, &none, &mesh, &t_mesh, &convex, &t_convex);
 
-            const struct d3 down = D3RotationTMul(rc, D3RotationMul(rm, D3(0.0, -1.0, 0.0)));
-            const f64 tol = 1e-4*F64MaxTest(F64MaxTest((f64) cell, (f64) r), (f64) h);
+            const q q_convex = QNormalize(QMul(QMul(q_mesh, q_grid), q_local));
+            struct d3 rm[3], rg[3], rc[3];
+            D3Rotation(rm, q_mesh);
+            D3Rotation(rg, q_grid);
+            D3Rotation(rc, q_convex);
+            const struct d3 pos_c = D3Add(mesh_pos, D3RotationMul(rm, D3RotationMul(rg, center)));
+            const ds_TransformWorld t_convex = { .rotation = q_convex, .position = V3F64(pos_c.x, pos_c.y, pos_c.z) };
+            const struct c_ContactResult res = (kind == 0) ? TMP_c_MeshSphereContact(env->mem_2, &none, &mesh, &t_mesh, &convex, &t_convex)
+                                             : (kind == 1) ? TMP_c_MeshCapsuleContact(env->mem_2, &none, &mesh, &t_mesh, &convex, &t_convex)
+                                             : TMP_c_MeshHullContact(env->mem_2, &none, &mesh, &t_mesh, &convex, &t_convex);
+
+            const struct d3 down = D3RotationTMul(rc, D3RotationMul(rm, D3RotationMul(rg, D3(0.0, -1.0, 0.0))));
             u32 ok = (res.manifold_count >= 1);
             f64 deepest = 0.0;
             for (u32 k = 0; ok && k < res.manifold_count; ++k)
             {
                 const struct c_Manifold *m = res.manifold + k;
                 const f64 dn = D3Length(D3Sub(D3V3(m->n), down));
-                worst_n = F64MaxTest(worst_n, dn);
-                ok = c_ManifoldCheck(m) && dn <= 1e-3;
+                /* boxes and hulls: counted (internal edges; see the comment above) */
+                worst_n = F64MaxTest(worst_n, dn / tol_n);
+                ghost += (kind >= 2 && dn > tol_n);
+                ok = c_ManifoldCheck(m) && (dn <= tol_n || kind >= 2);
                 for (u32 j = 0; j < m->v_count; ++j)
                 {
                     deepest = F64MaxTest(deepest, (f64) m->depth[j]);
                 }
             }
-            if (ok)
+            if (ok && check_depth)
             {
-                worst_depth = F64MaxTest(worst_depth, F64AbsTest(deepest - ((f64) r - (f64) height)) / tol);
-                ok = F64AbsTest(deepest - ((f64) r - (f64) height)) <= tol;
+                worst_depth = F64MaxTest(worst_depth, F64AbsTest(deepest - expected_depth) / tol_depth);
+                ok = F64AbsTest(deepest - expected_depth) <= tol_depth;
             }
             manifolds += res.manifold_count;
             *env->mem_2 = record;
             if (!ok)
             {
-                fprintf(stderr, "Mesh flat grid (%s, query %u, where %llu): manifolds %u, r %g, height %g, deepest %g\n",
-                    kind_id[kind], i, (unsigned long long) where, res.manifold_count, (f64) r, (f64) height, deepest);
+                fprintf(stderr, "Mesh flat grid (%s, query %u, where %llu): manifolds %u, expected depth %g, deepest %g, tol_n %g\n",
+                    kind_id[kind], i, (unsigned long long) where, res.manifold_count, expected_depth, deepest, tol_n);
                 for (u32 k = 0; k < res.manifold_count; ++k)
                 {
                     c_ManifoldDebugPrint(res.manifold + k);
                 }
+                g_dynamics_worker = prev;
                 TEST_FAILURE;
             }
         }
-        fprintf(stdout, "\t%s on a flat grid: 8000 touching, %.2f manifolds/query; worst |n - n_grid| %.3g, |deepest - (r - height)| / tol %.3g\n",
-            kind_id[kind], (f64) manifolds / 8000.0, worst_n, worst_depth);
+        fprintf(stdout, "\t%s on a flat grid: 8000 touching, %.2f manifolds/query; worst |n - n_grid| / tol %.3g, |deepest - expected| / tol %.3g; ghost normals (counted) %llu\n",
+            kind_id[kind], (f64) manifolds / 8000.0, worst_n, worst_depth, (unsigned long long) ghost);
     }
+    g_dynamics_worker = prev;
+	return output;
+}
+
+/********************************** mesh vs hull **********************************/
+
+/*
+Hull vs one triangle (TMP_c_MeshHullContact), checked in double in the hull's frame against the SAT reference
+(as the hull-hull tests): with sep(n) = min_tri n.x - max_hull n.x,
+
+    sat = max sep(n) over the hull's face normals, +-n_t and +-cross(hull edge, triangle edge)
+
+Every result: contact iff sat < 0 (undecided within tol); c_ManifoldCheck, v_count 1..4, |n| = 1;
+depth_i <= -sep(n) + tol (n separates as deep as it claims); v_i on the hull (|sdf| <= tol); v_i - depth_i n on the
+triangle. For touching pairs (|sat| <= tol) the two surface checks are counted, not failed: the fallback (no clipped
+point penetrates, no edge contact; as TMP_c_HullContact) takes the deepest vertex of one side over the other's
+reference plane, which can lie beside the reference face (open: a closest-points fallback, as Box3D's GJK).
+tol = CONTACT_TEST_TOLERANCE eps L, L = max(hull extent, |t_i|) in the hull's frame. A result built from a cache
+may claim up to sat_cache_tolerance more (slack).
+*/
+
+/* the mesh's vertices tm (mesh frame) in the hull's frame, double */
+static void McTriangleInHull(struct d3 out[3], const struct ch_Hull *h, const struct d3 rm[3], const struct d3 pos_m, const v3 tm[3])
+{
+    for (u32 k = 0; k < 3; ++k)
+    {
+        out[k] = D3RotationTMul(h->r, D3Sub(D3Add(pos_m, D3RotationMul(rm, D3V3(tm[k]))), h->pos));
+    }
+}
+
+/* separation of the hull and triangle t (hull frame) along unit n, from the hull towards the triangle */
+static f64 McHullTriSeparation(const struct ch_Hull *h, const struct d3 t[3], const struct d3 n)
+{
+    return F64MinTest(F64MinTest(D3Dot(n, t[0]), D3Dot(n, t[1])), D3Dot(n, t[2])) - ChSupport(h, n);
+}
+
+static f64 McHullTriSat(const struct ch_Hull *h, const struct d3 t[3])
+{
+    f64 sat = -1e300;
+    for (u32 fi = 0; fi < h->f_count; ++fi)
+    {
+        sat = F64MaxTest(sat, McHullTriSeparation(h, t, h->fn[fi]));
+    }
+    const struct d3 n = D3Cross(D3Sub(t[1], t[0]), D3Sub(t[2], t[0]));
+    const f64 n_len = D3Length(n);
+    if (n_len > 0.0)
+    {
+        sat = F64MaxTest(sat, McHullTriSeparation(h, t, D3Scale(n, 1.0 / n_len)));
+        sat = F64MaxTest(sat, McHullTriSeparation(h, t, D3Scale(n, -1.0 / n_len)));
+    }
+    for (u32 i = 0; i < h->e_count; ++i)
+    {
+        for (u32 a = 0; a < 3; ++a)
+        {
+            const struct d3 e = D3Sub(t[(a + 1) % 3], t[a]);
+            const struct d3 c = D3Cross(h->ed[i], e);
+            const f64 c_sq = D3Dot(c, c);
+            if (c_sq > 1e-24*D3Dot(h->ed[i], h->ed[i])*D3Dot(e, e) && c_sq > 0.0)
+            {
+                const struct d3 axis = D3Scale(c, 1.0 / F64SqrtTest(c_sq));
+                sat = F64MaxTest(sat, McHullTriSeparation(h, t, axis));
+                sat = F64MaxTest(sat, McHullTriSeparation(h, t, D3Scale(axis, -1.0)));
+            }
+        }
+    }
+    return sat;
+}
+
+/* the checks above; NULL if passed, else what failed; touching_off counts the touching pairs' surface misses */
+static const char *McHullTriVerify(u64 *touching_off, const struct c_ContactResult *r, const struct ch_Hull *h, const struct d3 t[3], const f64 tol, const f64 slack)
+{
+    const f64 sat = McHullTriSat(h, t);
+    if (r->manifold_count == 0)
+    {
+        return (sat < -tol) ? "missed contact" : NULL;
+    }
+    if (sat > tol + slack)
+    {
+        return "false contact";
+    }
+    const struct c_Manifold *m = r->manifold;
+    if (r->manifold_count != 1 || !c_ManifoldCheck(m) || m->v_count < 1 || m->v_count > 4)
+    {
+        return "invalid manifold";
+    }
+    const struct d3 n = D3V3(m->n);
+    if (F64AbsTest(D3Length(n) - 1.0) > 1e-5)
+    {
+        return "|n| != 1";
+    }
+    const f64 sep = McHullTriSeparation(h, t, n);
+    u32 off = 0;
+    for (u32 i = 0; i < m->v_count; ++i)
+    {
+        if ((f64) m->depth[i] > -sep + tol + slack)
+        {
+            return "depth deeper than sep(n)";
+        }
+        const struct d3 x = D3Sub(D3V3(m->v[i]), D3Scale(n, (f64) m->depth[i]));
+        if (F64AbsTest(ChHullSdf(h, D3V3(m->v[i]))) > tol)
+        {
+            off = 1;
+            if (F64AbsTest(sat) > tol)
+            {
+                return "v off the hull";
+            }
+        }
+        if (D3Length(D3Sub(McTriangleClosest(t, x), x)) > tol + slack)
+        {
+            off = 1;
+            if (F64AbsTest(sat) > tol)
+            {
+                return "v - depth n off the triangle";
+            }
+        }
+    }
+    *touching_off += off;
+    return NULL;
+}
+
+static f64 McHullTriTol(const struct ch_Hull *h, const struct d3 t[3])
+{
+    f64 L = h->extent;
+    for (u32 k = 0; k < 3; ++k)
+    {
+        L = F64MaxTest(L, D3Length(t[k]));
+    }
+    return CONTACT_TEST_TOLERANCE * F32_EPSILON * L;
+}
+
+static void McHullPrint(const struct c_ContactResult *r, const struct ch_Hull *h, const struct d3 t[3])
+{
+    fprintf(stderr, "\thull: %s, %u vertices, extent %.9g, rot { %.9g, %.9g, %.9g, %.9g } pos { %.17g, %.17g, %.17g }\n",
+        (h->is_box) ? "box" : "hull", h->v_count, h->extent, (f64) h->t.rotation.x, (f64) h->t.rotation.y, (f64) h->t.rotation.z,
+        (f64) h->t.rotation.w, h->pos.x, h->pos.y, h->pos.z);
+    for (u32 k = 0; k < 3; ++k)
+    {
+        fprintf(stderr, "\ttriangle (hull frame) %u: { %.17g, %.17g, %.17g }\n", k, t[k].x, t[k].y, t[k].z);
+    }
+    fprintf(stderr, "\tsat %g, sep(n) %g\n", McHullTriSat(h, t), (r->manifold_count) ? McHullTriSeparation(h, t, D3V3(r->manifold->n)) : 0.0);
+    if (r->manifold_count)
+    {
+        c_ManifoldDebugPrint(r->manifold);
+    }
+}
+
+/*
+ * Box (half width 0.05 S) vs one triangle ((0,0,0), (0,0,S), (S,0,0), ccw normal +y), p = 0.01 S, random poses
+ * (mesh frame; n from the hull to the mesh):
+ *      resting on the face, p deep                     4 points, n = -y, depths p
+ *      the same under the triangle                     4 points, n = +y, depths p (two-sided)
+ *      a corner down on the face, p deep               1 point, n = -y, depth p
+ *      resting across edge z = 0                       4 points (2 corners, 2 on the edge), n = -y, depths p
+ *      a stick (0.005 S thick) across edge z = 0 as in the capsule's deep edge case: n = (0, 1, 1) / sqrt 2,
+ *      deepest delta + thickness (the stick's face or the edge pair: the same axis)
+ * and every result passes McHullTriVerify.
+ */
+struct test_Output MeshHullCasesTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+    ContactTestConfigPush();
+    struct ds_DynamicsWorker *prev = g_dynamics_worker;
+    memset(mc_worker, 0, sizeof(mc_worker));
+    g_dynamics_worker = mc_worker;
+    const struct c_ContactResult none = { 0 };
+
+    static const f32 tri_size[] = { 1e-2f, 1.0f, 1e2f };
+    const f64 sqrt2 = 1.4142135623730951, sqrt3 = 1.7320508075688772;
+    for (u32 si = 0; si < 3; ++si)
+    for (u32 k = 0; k < 5; ++k)
+    for (u32 rep = 0; rep < 20; ++rep)
+    {
+        const f64 S = (f64) tri_size[si];
+        const f64 p = 0.01*S;
+        const struct d3 C = D3(S / 3.0, 0.0, S / 3.0);
+        v3 hw = V3((f32) (0.05*S), (f32) (0.05*S), (f32) (0.05*S));
+        q q_local = QIdentity();
+        struct d3 center = D3Add(C, D3(0.0, (f64) hw.y - p, 0.0));
+        struct d3 n_expected = D3(0.0, -1.0, 0.0);
+        f64 deepest_expected = p;
+        u32 v_count = 4;
+        if (k == 1)
+        {
+            center = D3Sub(C, D3(0.0, (f64) hw.y - p, 0.0));
+            n_expected = D3(0.0, 1.0, 0.0);
+        }
+        else if (k == 2)
+        {
+            const q corner_to_y = QConj(McAxisRotation(V3(0.57735027f, 0.57735027f, 0.57735027f)));
+            q_local = QNormalize(QMul(QUnitAxisAngle(V3(1.0f, 0.0f, 0.0f), F32_PI), corner_to_y));
+            center = D3Add(C, D3(0.0, (f64) hw.x*sqrt3 - p, 0.0));
+            v_count = 1;
+        }
+        else if (k == 3)
+        {
+            center = D3((f64) S / 3.0, (f64) hw.y - p, 0.0);
+        }
+        else if (k == 4)
+        {
+            const f64 eps = 0.005*S, delta = 0.002*S;
+            hw = V3((f32) eps, (f32) (0.3*S), (f32) eps);
+            q_local = McAxisRotation(V3(0.0f, 0.70710678f, -0.70710678f));
+            const struct d3 a_edge = D3(0.0, -1.0 / sqrt2, -1.0 / sqrt2);
+            center = D3Sub(D3(0.5*S, 0.0, 0.0), D3Scale(a_edge, delta));
+            n_expected = D3Scale(a_edge, -1.0);
+            deepest_expected = delta + eps;
+            v_count = 0;
+        }
+
+        struct arena record = *env->mem_2;
+        const struct c_Shape mesh = McSingleTriangle(env->mem_2, (f32) S);
+        const struct c_Shape box = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(env->mem_2, hw) };
+        const struct d3 pos_m = CtWorldPosition();
+        const q q_mesh = CtRotation();
+        struct d3 rm[3];
+        D3Rotation(rm, q_mesh);
+        struct ch_Hull h;
+        ChHullInit(&h, &box, 1, hw, QNormalize(QMul(q_mesh, q_local)), D3Add(pos_m, D3RotationMul(rm, center)));
+        const ds_TransformWorld t_mesh = { .rotation = q_mesh, .position = V3F64(pos_m.x, pos_m.y, pos_m.z) };
+        const struct c_ContactResult r = TMP_c_MeshHullContact(env->mem_2, &none, &mesh, &t_mesh, &h.shape, &h.t);
+        struct d3 t[3];
+        McTriangleInHull(t, &h, rm, pos_m, mesh.mesh_bvh.mesh->v);
+        const f64 tol = 1e-4*S;
+        const struct d3 n_hull = D3RotationTMul(h.r, D3RotationMul(rm, n_expected));
+        u64 touching_off = 0;
+        const char *fail = McHullTriVerify(&touching_off, &r, &h, t, McHullTriTol(&h, t), 0.0);
+        if (!fail && r.manifold_count != 1)
+        {
+            fail = "no contact";
+        }
+        if (!fail)
+        {
+            const struct c_Manifold *m = r.manifold;
+            f64 deepest = 0.0;
+            for (u32 i = 0; i < m->v_count; ++i)
+            {
+                deepest = F64MaxTest(deepest, (f64) m->depth[i]);
+                if (k != 2 && k != 4 && F64AbsTest((f64) m->depth[i] - p) > tol)
+                {
+                    fail = "depth";
+                }
+            }
+            if ((v_count && m->v_count != v_count) || D3Length(D3Sub(D3V3(m->n), n_hull)) > 1e-4)
+            {
+                fail = "point count or normal";
+            }
+            if (F64AbsTest(deepest - deepest_expected) > tol)
+            {
+                fail = "deepest";
+            }
+        }
+        *env->mem_2 = record;
+        if (fail)
+        {
+            fprintf(stderr, "Mesh hull case %u (size %g): %s; expected n (hull frame) (%g, %g, %g), %u points, deepest %g\n",
+                k, S, fail, n_hull.x, n_hull.y, n_hull.z, v_count, deepest_expected);
+            McHullPrint(&r, &h, t);
+            g_dynamics_worker = prev;
+            TEST_FAILURE;
+        }
+    }
+
+    g_dynamics_worker = prev;
+	return output;
+}
+
+/*
+ * Random hulls (boxes, slabs, hulls; ChRandomHull) vs one triangle, the triangle given in the hull's frame and moved
+ * into a random mesh pose (both windings):
+ *      0: a random triangle near the hull
+ *      1: in the plane of a hull face moved by 0, +-1e-6, +-1e-4, +-1e-2 extent along its normal (resting, the
+ *         face parallel to the triangle: the configuration of the old triangle edge check's false separations)
+ * Every result passes McHullTriVerify; again at the same pose with the result as the cache (no eviction allowed,
+ * same checks), and moved by 1e-3 L with the cache (slack sat_cache_tolerance).
+ */
+struct test_Output MeshHullRandomTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+    ContactTestConfigPush();
+    struct ds_DynamicsWorker *prev = g_dynamics_worker;
+    memset(mc_worker, 0, sizeof(mc_worker));
+    g_dynamics_worker = mc_worker;
+    struct ds_DynamicsMetrics *metrics = &g_dynamics_worker[ds_ThreadSelfIndex()].metrics;
+    const struct c_ContactResult none = { 0 };
+    static const f64 offset[] = { 0.0, 1e-6, -1e-6, 1e-4, -1e-4, 1e-2, -1e-2 };
+
+    u64 contacts = 0, separated = 0, probes = 0, evictions = 0, v_count[5] = { 0 }, touching_off = 0;
+    for (u32 i = 0; i < 20000; ++i)
+    {
+        struct arena record = *env->mem_2;
+        struct ch_Hull h;
+        ChRandomHull(env->mem_2, &h, (u32) RngU64Range(0, 2));
+        const f64 E = h.extent;
+        const u64 mode = RngU64Range(0, 1);
+
+        /* the triangle in the hull's frame: a center and two in-plane directions */
+        struct d3 c, n;
+        if (mode == 0)
+        {
+            c = D3Scale(D3V3(CtUnit()), E*(f64) RngF32Range(0.0f, 1.3f));
+            n = D3V3(CtUnit());
+        }
+        else
+        {
+            const u32 fi = (u32) RngU64Range(0, h.f_count - 1);
+            const struct dcelFace *f = h.shape.hull.f + fi;
+            c = D3(0.0, 0.0, 0.0);
+            for (u32 k = 0; k < f->count; ++k)
+            {
+                c = D3Add(c, h.v[h.shape.hull.e[f->first + k].origin]);
+            }
+            c = D3Scale(c, 1.0 / (f64) f->count);
+            n = h.fn[fi];
+            c = D3Add(c, D3Scale(n, offset[RngU64Range(0, 6)]*E));
+        }
+        struct d3 u = D3Cross(n, (F64AbsTest(n.x) < 0.6) ? D3(1.0, 0.0, 0.0) : D3(0.0, 1.0, 0.0));
+        u = D3Scale(u, 1.0 / D3Length(u));
+        const struct d3 w = D3Cross(n, u);
+        struct d3 t_local[3];
+        for (u32 k = 0; k < 3; ++k)
+        {
+            const f64 angle = 2.0*F32_PI*((f64) k + 0.3*(f64) RngF32Normalized()) / 3.0;
+            const f64 radius = E*(f64) RngF32Range(0.3f, 3.0f);
+            t_local[k] = D3Add(c, D3Add(D3Scale(u, radius*(f64) F32Cos((f32) angle)), D3Scale(w, radius*(f64) F32Sin((f32) angle))));
+        }
+
+        /* mesh pose: at the triangle's center, random rotation; vertices relative to it (f32) */
+        const q q_mesh = CtRotation();
+        struct d3 rm[3];
+        D3Rotation(rm, q_mesh);
+        const struct d3 pos_m = D3Add(h.pos, D3RotationMul(h.r, c));
+        v3 tm[3];
+        const u32 flip = (u32) RngU64Range(0, 1);
+        for (u32 k = 0; k < 3; ++k)
+        {
+            const struct d3 local = D3RotationTMul(rm, D3RotationMul(h.r, D3Sub(t_local[(flip) ? 2 - k : k], c)));
+            tm[k] = V3((f32) local.x, (f32) local.y, (f32) local.z);
+        }
+        const struct c_Shape mesh = McOneTriangle(env->mem_2, tm[0], tm[1], tm[2]);
+        const ds_TransformWorld t_mesh = { .rotation = q_mesh, .position = V3F64(pos_m.x, pos_m.y, pos_m.z) };
+        struct d3 t[3];
+        McTriangleInHull(t, &h, rm, pos_m, tm);
+        const f64 tol = McHullTriTol(&h, t);
+
+        const struct c_ContactResult r = TMP_c_MeshHullContact(env->mem_2, &none, &mesh, &t_mesh, &h.shape, &h.t);
+        const char *fail = McHullTriVerify(&touching_off, &r, &h, t, tol, 0.0);
+        const char *stage = "first";
+        contacts += (r.manifold_count != 0);
+        separated += (r.manifold_count == 0);
+        v_count[(r.manifold_count) ? r.manifold->v_count : 0] += 1;
+
+        if (!fail)
+        {
+            /* the same pose with the result as the cache: every cache reused */
+            const u32 p0 = metrics->mesh_cache_probe_count, e0 = metrics->mesh_cache_eviction_count;
+            const struct c_ContactResult again = TMP_c_MeshHullContact(env->mem_2, &r, &mesh, &t_mesh, &h.shape, &h.t);
+            probes += metrics->mesh_cache_probe_count - p0;
+            evictions += metrics->mesh_cache_eviction_count - e0;
+            stage = "cached, same pose";
+            /* touching (|sat| <= tol): the query's and the cache's separations may round to opposite sides of 0 */
+            const u32 decided = F64AbsTest(McHullTriSat(&h, t)) > tol;
+            fail = (decided && metrics->mesh_cache_eviction_count != e0) ? "cache evicted at the same pose" : McHullTriVerify(&touching_off, &again, &h, t, tol, 0.0);
+        }
+        if (!fail)
+        {
+            /* moved by 1e-3 L with the cache */
+            const struct d3 shift = D3Scale(D3V3(CtUnit()), 1e-3*tol / (CONTACT_TEST_TOLERANCE * F32_EPSILON));
+            const struct d3 pos_moved = D3Add(pos_m, shift);
+            const ds_TransformWorld t_moved = { .rotation = q_mesh, .position = V3F64(pos_moved.x, pos_moved.y, pos_moved.z) };
+            const struct c_ContactResult moved = TMP_c_MeshHullContact(env->mem_2, &r, &mesh, &t_moved, &h.shape, &h.t);
+            McTriangleInHull(t, &h, rm, pos_moved, tm);
+            stage = "cached, moved";
+            fail = McHullTriVerify(&touching_off, &moved, &h, t, tol, (f64) g_numerics_config->sat_cache_tolerance);
+        }
+        *env->mem_2 = record;
+        if (fail)
+        {
+            fprintf(stderr, "Mesh hull random %u (mode %llu, %s): %s\n", i, (unsigned long long) mode, stage, fail);
+            McHullPrint(&r, &h, t);
+            g_dynamics_worker = prev;
+            TEST_FAILURE;
+        }
+    }
+    fprintf(stdout, "\thull on a triangle: 20000 random (%llu contacts: %llu / %llu / %llu / %llu with 1 / 2 / 3 / 4 points; %llu apart); cache at the same pose: %llu probed, %llu evicted; touching results with a point off a surface (counted) %llu\n",
+        (unsigned long long) contacts, (unsigned long long) v_count[1], (unsigned long long) v_count[2], (unsigned long long) v_count[3],
+        (unsigned long long) v_count[4], (unsigned long long) separated, (unsigned long long) probes, (unsigned long long) evictions, (unsigned long long) touching_off);
+
+    g_dynamics_worker = prev;
 	return output;
 }
 
@@ -3826,6 +4288,8 @@ static struct test_Output (*mesh_contact_tests[])(struct test_Environment *) =
     MeshSphereCasesTest,
     MeshCapsuleCasesTest,
     MeshFlatGridTest,
+    MeshHullCasesTest,
+    MeshHullRandomTest,
 };
 
 struct suite_Correctness m_mesh_contact_suite =
