@@ -2392,6 +2392,484 @@ struct test_Output HullContactRandomTest(struct test_Environment *env)
 	return output;
 }
 
+/********************************** sphere contacts **********************************/
+
+/*
+Sphere vs sphere, capsule vs sphere, hull vs sphere (TMP_c_SphereContact, TMP_c_CapsuleSphereContact,
+TMP_c_HullSphereContact), checked in double precision in s[0]'s frame against the exact signed distance sd from
+the sphere's center c to s[0]'s core (sphere: its center; capsule: its segment; box: exact; other hulls: the largest
+face plane distance, exact inside and a lower bound outside). With r_sum = r0 + r1 (r0 = 0 for hulls):
+
+    contact iff sd <= r_sum                     (boxes, spheres, capsules; undecided within tol); other hulls:
+                                                sat > r_sum + tol -> none, sat < -tol -> contact
+    c_ManifoldCheck, v_count = 1, |n| = 1
+    depth = r_sum - sd                          (hulls: shallow only for boxes; inside: r - sat)
+    v on s[0]'s surface, v - depth n on the sphere's surface (|v - depth n - c| = r1); random hulls' faces are
+                                                planar only to DcelConvexHull's tolerance (100 eps size): added to
+                                                the surface and depth checks
+    n optimal (sd well above 0): the sphere's separation along n reaches sd
+    hulls, shallow (GJK's distance and normal): depth and normal errors beyond tol are counted, not failed (GJK's
+    accepted accuracy: optimal only up to its distance tolerance; f32 error grows with distance / feature size)
+    degenerate: c at s[0]'s core (center, axis): n perpendicular to the capsule axis, depth = r_sum
+    translating both by an exactly representable offset gives identical bits
+*/
+
+struct sp_Shape
+{
+    struct c_Shape      shape;
+    ds_TransformWorld   t;
+    struct d3           r[3];
+    struct d3           pos;
+};
+
+static void SpInit(struct sp_Shape *s, const struct c_Shape *shape, const q rotation, const struct d3 pos)
+{
+    s->shape = *shape;
+    s->t.rotation = rotation;
+    s->t.position = V3F64(pos.x, pos.y, pos.z);
+    s->pos = pos;
+    D3Rotation(s->r, rotation);
+}
+
+/* x in s's frame */
+static struct d3 SpLocal(const struct d3 r[3], const struct d3 pos, const struct d3 x)
+{
+    return D3RotationTMul(r, D3Sub(x, pos));
+}
+
+struct sp_Stats
+{
+    u64 tests;
+    u64 contacts;
+    u64 undecided;
+    f64 worst_depth;        /* |depth - (r_sum - sd)| / (eps L) */
+    f64 worst_surface_0;    /* v off s[0]'s surface / (eps L) */
+    f64 worst_surface_1;    /* v - depth n off the sphere / (eps L) */
+    f64 worst_normal;       /* (sd - sep(n)) / (eps L) */
+    u64 gjk_normal_outliers;/* hulls, shallow (GJK's normal): n beyond GJK's documented accuracy (accepted, collision.h) */
+    u64 gjk_depth_outliers; /* hulls, shallow (GJK's distance): depth beyond tol (accepted: GJK's f32 error grows with
+                               distance / feature size, gjk_design.txt) */
+};
+
+static void SpStatsPrint(const char *id, const struct sp_Stats *s)
+{
+    fprintf(stdout, "\t%s: %llu tests, %llu contacts, %llu undecided; worst / (eps L): depth %.1f, surface 0 %.1f, sphere %.1f, normal %.1f\n",
+        id, (unsigned long long) s->tests, (unsigned long long) s->contacts, (unsigned long long) s->undecided,
+        s->worst_depth, s->worst_surface_0, s->worst_surface_1, s->worst_normal);
+    if (s->gjk_normal_outliers || s->gjk_depth_outliers)
+    {
+        fprintf(stdout, "\t\tGJK outliers (accepted): normal %llu, depth %llu\n", (unsigned long long) s->gjk_normal_outliers, (unsigned long long) s->gjk_depth_outliers);
+    }
+}
+
+/*
+ * kind 0: sphere, 1: capsule, 2: hull (h). c: the sphere's center in s[0]'s frame; sd: exact signed distance of c
+ * to s[0]'s core (hull: box exact, else sat); exact: sd is exact (not a lower bound); surface_0(x): distance of x
+ * to s[0]'s surface; sep(n): separation of the sphere's center from s[0]'s core along n.
+ */
+struct sp_Ref
+{
+    u32 kind;
+    f64 r0;                 /* s[0]'s radius (hull: 0) */
+    f64 h0;                 /* capsule half height */
+    const struct ch_Hull *hull;
+    struct d3 c;
+    f64 sd;
+    u32 exact;
+};
+
+static f64 SpCoreDistance(const struct sp_Ref *ref, const struct d3 x)
+{
+    switch (ref->kind)
+    {
+        case 0: return D3Length(x);
+        case 1: return CtPointSegmentDistance(D3(0.0, -ref->h0, 0.0), D3(0.0, ref->h0, 0.0), x);
+        default:
+        {
+            const f64 sdf = ChHullSdf(ref->hull, x);
+            return (ref->hull->is_box && sdf > 0.0) ? ChBoxPointDistance(ref->hull, x) : sdf;
+        }
+    }
+}
+
+static f64 SpSeparation(const struct sp_Ref *ref, const struct d3 n)
+{
+    f64 support;
+    switch (ref->kind)
+    {
+        case 0: support = 0.0; break;
+        case 1: support = ref->h0 * F64AbsTest(n.y); break;
+        default: support = ChSupport(ref->hull, n); break;
+    }
+    return D3Dot(n, ref->c) - support;
+}
+
+static void SpRefInit(struct sp_Ref *ref, const u32 kind, const struct c_Shape *s0, const struct ch_Hull *hull, const struct d3 c)
+{
+    ref->kind = kind;
+    ref->hull = hull;
+    ref->c = c;
+    ref->r0 = (kind == 0) ? s0->sphere.radius : (kind == 1) ? s0->capsule.radius : 0.0;
+    ref->h0 = (kind == 1) ? s0->capsule.half_height : 0.0;
+    ref->sd = SpCoreDistance(ref, c);
+    ref->exact = (kind != 2) || hull->is_box || ref->sd <= 0.0;
+}
+
+static const char *SpVerify(struct sp_Stats *stats, const struct c_ContactResult *result, const struct sp_Ref *ref, const f64 r1, const f64 L, const u32 gjk_path)
+{
+    const f64 eps_l = F32_EPSILON * L;
+    const f64 tol = CONTACT_TEST_TOLERANCE * eps_l;
+    const f64 r_sum = ref->r0 + r1;
+    const u32 contact = (result->manifold_count == 1);
+    stats->tests += 1;
+
+    if (result->manifold_count > 1 || (contact && (!c_ManifoldCheck(result->manifold) || result->manifold->v_count != 1)))
+    {
+        return "invalid manifold";
+    }
+    if (F64AbsTest(ref->sd - r_sum) <= tol)
+    {
+        stats->undecided += 1;
+    }
+    else if (ref->exact && contact != (ref->sd < r_sum))
+    {
+        return "contact";
+    }
+    else if (!ref->exact && contact && ref->sd > r_sum + tol)
+    {
+        return "contact, but the reference separates";
+    }
+    if (!contact)
+    {
+        return NULL;
+    }
+
+    const struct c_Manifold *m = result->manifold;
+    const struct d3 n = D3V3(m->n);
+    if (F64AbsTest(D3Length(n) - 1.0) > 1e-5)
+    {
+        return "|n| != 1";
+    }
+
+    const struct d3 v = D3V3(m->v[0]);
+    const f64 depth = m->depth[0];
+    const f64 surface_0 = F64AbsTest(SpCoreDistance(ref, v) - ref->r0);
+    const f64 surface_1 = F64AbsTest(D3Length(D3Sub(D3Sub(v, D3Scale(n, depth)), ref->c)) - r1);
+    stats->worst_surface_0 = F64MaxTest(stats->worst_surface_0, surface_0 / eps_l);
+    stats->worst_surface_1 = F64MaxTest(stats->worst_surface_1, surface_1 / eps_l);
+    /* random hulls: DcelConvexHull merges points within 100 eps size, so faces are planar only to that */
+    const f64 hull_tol = (ref->kind == 2 && !ref->hull->is_box) ? 200.0 * F32_EPSILON * ref->hull->extent : 0.0;
+    if (surface_0 > tol + hull_tol)
+    {
+        return "v not on s[0]'s surface";
+    }
+    if (surface_1 > tol)
+    {
+        return "v - depth n not on the sphere";
+    }
+
+    if (ref->exact)
+    {
+        const f64 err = F64AbsTest(depth - (r_sum - ref->sd));
+        stats->worst_depth = F64MaxTest(stats->worst_depth, err / eps_l);
+        if (err > tol + hull_tol)
+        {
+            if (!gjk_path)
+            {
+                return "depth != r_sum - sd";
+            }
+            stats->gjk_depth_outliers += 1;
+        }
+    }
+
+    const f64 sep = SpSeparation(ref, n);
+    if (depth > r_sum - sep + tol + hull_tol)
+    {
+        return "depth deeper than the separation along n";
+    }
+    if (ref->exact && ref->sd > 1e-3*L)
+    {
+        const f64 err = ref->sd - sep;
+        stats->worst_normal = F64MaxTest(stats->worst_normal, err / eps_l);
+        if (err > tol*(1.0 + L/ref->sd))
+        {
+            if (!gjk_path)
+            {
+                return "n not optimal";
+            }
+            /* hull, shallow: GJK's normal; its final simplex is optimal only up to the distance tolerance */
+            stats->gjk_normal_outliers += 1;
+        }
+    }
+
+    stats->contacts += 1;
+    return NULL;
+}
+
+typedef struct c_ContactResult (*sp_ContactFn)(struct arena *, const struct c_ContactResult *, const struct c_Shape *[2], const ds_TransformWorld [2]);
+
+static u32 SpCheckPair(struct arena *frame, struct sp_Stats *stats, const sp_ContactFn contact, const u32 kind, const struct sp_Shape *s0, const struct ch_Hull *hull, const struct sp_Shape *s1)
+{
+    const struct c_Shape *s[2] = { &s0->shape, &s1->shape };
+    const ds_TransformWorld t[2] = { s0->t, s1->t };
+    const struct c_ContactResult none = { 0 };
+    const struct c_ContactResult result = contact(frame, &none, s, t);
+
+    struct sp_Ref ref;
+    SpRefInit(&ref, kind, &s0->shape, hull, SpLocal(s0->r, s0->pos, s1->pos));
+    const f64 r1 = s1->shape.sphere.radius;
+    const f64 ext_0 = (kind == 0) ? ref.r0 : (kind == 1) ? ref.h0 + ref.r0 : hull->extent;
+    const f64 L = F64MaxTest(F64MaxTest(ext_0, r1), D3Length(ref.c));
+    /* hull: the contact's path (its own GJK query: distance > 0 -> GJK's closest points and normal) */
+    u32 gjk_path = 0;
+    if (kind == 2)
+    {
+        const ds_Transform t_1_to_0 = ds_TransformWorldRelative(&t[0], &t[1]);
+        struct GJKCache gjk_cache;
+        v3 gjk_c[2], gjk_n;
+        gjk_path = (GJK(gjk_c + 0, gjk_c + 1, &gjk_n, &gjk_cache, NULL, s[0], s[1], &t_1_to_0, (f32) r1) > 0.0f);
+    }
+    const char *fail = SpVerify(stats, &result, &ref, r1, L, gjk_path);
+
+    /* an exactly representable offset leaves x1 - x0 exact in f64: identical bits */
+    if (!fail)
+    {
+        const struct d3 offset = D3(4096.0, -1024.0, 65536.0);
+        const ds_TransformWorld t_t[2] =
+        {
+            { .rotation = s0->t.rotation, .position = V3F64(s0->pos.x + offset.x, s0->pos.y + offset.y, s0->pos.z + offset.z) },
+            { .rotation = s1->t.rotation, .position = V3F64(s1->pos.x + offset.x, s1->pos.y + offset.y, s1->pos.z + offset.z) },
+        };
+        if (V3F64Sub(t_t[1].position, t_t[0].position).x == V3F64Sub(t[1].position, t[0].position).x
+         && V3F64Sub(t_t[1].position, t_t[0].position).y == V3F64Sub(t[1].position, t[0].position).y
+         && V3F64Sub(t_t[1].position, t_t[0].position).z == V3F64Sub(t[1].position, t[0].position).z)
+        {
+            const struct c_ContactResult r_t = contact(frame, &none, s, t_t);
+            u32 same = (r_t.manifold_count == result.manifold_count);
+            if (same && result.manifold_count)
+            {
+                same = memcmp(&r_t.manifold->n, &result.manifold->n, sizeof(v3)) == 0
+                    && memcmp(&r_t.manifold->v[0], &result.manifold->v[0], sizeof(v3)) == 0
+                    && memcmp(&r_t.manifold->depth[0], &result.manifold->depth[0], sizeof(f32)) == 0;
+            }
+            if (!same)
+            {
+                fail = "translated result differs";
+            }
+        }
+    }
+
+    if (fail)
+    {
+        fprintf(stderr, "Sphere contact (kind %u) failed: %s; sd %.9g r0 %.9g h0 %.9g r1 %.9g L %.9g\n", kind, fail, ref.sd, ref.r0, ref.h0, r1, L);
+        fprintf(stderr, "\ts[0] rot { %.9g, %.9g, %.9g, %.9g } pos { %.17g, %.17g, %.17g }; sphere pos { %.17g, %.17g, %.17g }\n",
+            s0->t.rotation.x, s0->t.rotation.y, s0->t.rotation.z, s0->t.rotation.w, s0->pos.x, s0->pos.y, s0->pos.z,
+            s1->pos.x, s1->pos.y, s1->pos.z);
+        if (result.manifold_count)
+        {
+            c_ManifoldDebugPrint(result.manifold);
+        }
+        return 0;
+    }
+    return 1;
+}
+
+/*
+ * The sphere's center relative to s[0] (local), by mode:
+ *  0: random near s[0]
+ *  1: on the touching shell: core distance r_sum * (1 +- 1e-6 .. 1e-2)
+ *  2: deep: core distance 0 .. 0.5 r_sum (hulls: inside)
+ *  3: degenerate: at s[0]'s core (sphere: its center; capsule: on its axis; hull: its center of mass)
+ */
+static struct d3 SpCenterNear(const u32 kind, const struct c_Shape *s0, const struct ch_Hull *hull, const f64 r1, const u32 mode)
+{
+    const f64 r0 = (kind == 0) ? s0->sphere.radius : (kind == 1) ? s0->capsule.radius : 0.0;
+    const f64 h0 = (kind == 1) ? s0->capsule.half_height : 0.0;
+    const f64 r_sum = r0 + r1;
+    const struct d3 u = D3V3(CtUnit());
+
+    /* a core point and the outward direction there */
+    struct d3 core = D3(0.0, 0.0, 0.0);
+    struct d3 out = u;
+    if (kind == 1)
+    {
+        core = D3(0.0, h0 * RngF32Range(-1.2f, 1.2f), 0.0);
+        core.y = F64ClampTest(core.y, -h0, h0);
+        if (F64AbsTest(core.y) < h0)
+        {
+            const v3 xz = CtUnitXZ();
+            out = D3V3(xz);
+        }
+    }
+    else if (kind == 2)
+    {
+        const struct dcel *d = &hull->shape.hull;
+        const u32 fi = (u32) RngU64Range(0, d->f_count - 1);
+        const v3 centroid = HhFaceCentroid(d, fi);
+        const v3 corner = d->v[d->e[d->f[fi].first].origin];
+        core = D3V3(V3Add(centroid, V3Scale(V3Sub(corner, centroid), RngF32Range(0.0f, 1.0f))));
+        out = hull->fn[fi];
+    }
+
+    switch (mode)
+    {
+        case 1:
+        {
+            const f64 rel[] = { 1e-6, 1e-4, 1e-2 };
+            const f64 d = r_sum * (1.0 + ((RngU64Range(0, 1)) ? 1.0 : -1.0) * rel[RngU64Range(0, 2)]);
+            return D3Add(core, D3Scale(out, d));
+        }
+        case 2:
+        {
+            if (kind == 2)
+            {
+                const struct d3 com = D3V3(hull->shape.center_of_mass);
+                return D3Add(com, D3Scale(D3Sub(core, com), RngF32Range(0.0f, 0.99f)));
+            }
+            return D3Add(core, D3Scale(out, r_sum * RngF32Range(0.0f, 0.5f)));
+        }
+        case 3:
+        {
+            return (kind == 2) ? D3V3(hull->shape.center_of_mass) : core;
+        }
+        default:
+        {
+            const f64 reach = h0 + r_sum + ((kind == 2) ? hull->extent : 0.0);
+            return D3Scale(u, reach * RngF32Range(0.0f, 1.3f));
+        }
+    }
+}
+
+/* random s[0] (sphere, capsule, box, slab, hull) and spheres, every mode */
+struct test_Output SphereContactRandomTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+    ContactTestConfigPush();
+
+    const char *kind_id[] = { "sphere/sphere", "capsule/sphere", "box/sphere", "slab/sphere", "hull/sphere" };
+    const char *mode_id[] = { "random", "touching", "deep", "degenerate" };
+    const sp_ContactFn fn[] = { TMP_c_SphereContact, TMP_c_CapsuleSphereContact, TMP_c_HullSphereContact };
+    for (u32 k = 0; k < 5; ++k)
+    {
+        const u32 kind = (k < 2) ? k : 2;
+        for (u32 mode = 0; mode < 4; ++mode)
+        {
+            struct sp_Stats stats = { 0 };
+            for (u32 i = 0; i < 20000; ++i)
+            {
+                struct arena record = *env->mem_2;
+                const q rot = CtRotation();
+                const struct d3 pos = CtWorldPosition();
+                struct sp_Shape s0, s1;
+                struct ch_Hull hull;
+                struct c_Shape shape0 = { 0 };
+                if (kind == 0)
+                {
+                    shape0.type = C_SHAPE_SPHERE;
+                    shape0.sphere.radius = CtSize();
+                }
+                else if (kind == 1)
+                {
+                    shape0.type = C_SHAPE_CAPSULE;
+                    shape0.capsule.half_height = CtSize();
+                    shape0.capsule.radius = CtSize();
+                }
+                else
+                {
+                    ChRandomHull(env->mem_2, &hull, k - 2);
+                    shape0 = hull.shape;
+                }
+                SpInit(&s0, &shape0, rot, pos);
+                if (kind == 2)
+                {
+                    hull.t = s0.t;
+                    hull.pos = pos;
+                    D3Rotation(hull.r, rot);
+                }
+
+                struct c_Shape sphere = { .type = C_SHAPE_SPHERE };
+                sphere.sphere.radius = CtSize();
+                const struct d3 c = SpCenterNear(kind, &shape0, &hull, sphere.sphere.radius, mode);
+                SpInit(&s1, &sphere, CtRotation(), D3Add(pos, D3RotationMul(s0.r, c)));
+
+                const u32 ok = SpCheckPair(env->mem_2, &stats, fn[kind], kind, &s0, &hull, &s1);
+                *env->mem_2 = record;
+                if (!ok)
+                {
+                    fprintf(stderr, "\t(%s, %s, case %u)\n", kind_id[k], mode_id[mode], i);
+                    TEST_FAILURE;
+                }
+            }
+            char id[64];
+            snprintf(id, sizeof(id), "%s, %s", kind_id[k], mode_id[mode]);
+            SpStatsPrint(id, &stats);
+        }
+    }
+
+	return output;
+}
+
+/* hand-made cases with known answers; s[0] at the origin, unrotated */
+struct test_Output SphereContactCasesTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+    ContactTestConfigPush();
+    const struct c_ContactResult none = { 0 };
+    struct c_ContactResult r;
+
+    struct c_Shape a = { .type = C_SHAPE_SPHERE }, b = { .type = C_SHAPE_SPHERE };
+    a.sphere.radius = 1.0f;
+    b.sphere.radius = 0.5f;
+    const struct c_Shape *s[2] = { &a, &b };
+    ds_TransformWorld t[2] = { { .rotation = QIdentity(), .position = V3F64(0.0, 0.0, 0.0) }, { .rotation = QIdentity() } };
+
+    /* spheres apart, touching, overlapping (n = +x, depth 0.25, v = (1, 0, 0)), coincident (n = (1, 0, 0), depth 1.5) */
+    t[1].position = V3F64(1.6, 0.0, 0.0);
+    r = TMP_c_SphereContact(env->mem_2, &none, s, t);
+    TEST_EQUAL(r.manifold_count, 0);
+    t[1].position = V3F64(1.5, 0.0, 0.0);
+    r = TMP_c_SphereContact(env->mem_2, &none, s, t);
+    TEST_TRUE(r.manifold_count == 1 && r.manifold->depth[0] == 0.0f);
+    t[1].position = V3F64(1.25, 0.0, 0.0);
+    r = TMP_c_SphereContact(env->mem_2, &none, s, t);
+    TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.25) && CtNearD3(D3V3(r.manifold->n), D3(1.0, 0.0, 0.0)) && CtNearD3(D3V3(r.manifold->v[0]), D3(1.0, 0.0, 0.0)));
+    t[1].position = V3F64(0.0, 0.0, 0.0);
+    r = TMP_c_SphereContact(env->mem_2, &none, s, t);
+    TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 1.5) && CtNearD3(D3V3(r.manifold->n), D3(1.0, 0.0, 0.0)));
+
+    /* capsule (h 1, r 1) vs sphere: beside (n = +z, depth 0.25), beyond the cap (n = +y), on the axis (n = (1, 0, 0), depth 1.5) */
+    struct c_Shape cap = { .type = C_SHAPE_CAPSULE };
+    cap.capsule.half_height = 1.0f;
+    cap.capsule.radius = 1.0f;
+    s[0] = &cap;
+    t[1].position = V3F64(0.0, 0.5, 1.25);
+    r = TMP_c_CapsuleSphereContact(env->mem_2, &none, s, t);
+    TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.25) && CtNearD3(D3V3(r.manifold->n), D3(0.0, 0.0, 1.0)) && CtNearD3(D3V3(r.manifold->v[0]), D3(0.0, 0.5, 1.0)));
+    t[1].position = V3F64(0.0, 2.25, 0.0);
+    r = TMP_c_CapsuleSphereContact(env->mem_2, &none, s, t);
+    TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.25) && CtNearD3(D3V3(r.manifold->n), D3(0.0, 1.0, 0.0)));
+    t[1].position = V3F64(0.0, -0.5, 0.0);
+    r = TMP_c_CapsuleSphereContact(env->mem_2, &none, s, t);
+    TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 1.5) && CtNearD3(D3V3(r.manifold->n), D3(1.0, 0.0, 0.0)));
+
+    /* box [-1, 1]^3 vs sphere: above the top face (n = +y, depth 0.25, v = (0.3, 1, 0)), beyond a corner, inside (nearest face) */
+    const v3 hw = V3(1.0f, 1.0f, 1.0f);
+    struct c_Shape box = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(env->mem_1, hw) };
+    c_ShapeUpdateMassProperties(&box);
+    s[0] = &box;
+    t[1].position = V3F64(0.3, 1.25, 0.0);
+    r = TMP_c_HullSphereContact(env->mem_2, &none, s, t);
+    TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.25) && CtNearD3(D3V3(r.manifold->n), D3(0.0, 1.0, 0.0)) && CtNearD3(D3V3(r.manifold->v[0]), D3(0.3, 1.0, 0.0)));
+    t[1].position = V3F64(1.2, 1.2, 1.2);
+    r = TMP_c_HullSphereContact(env->mem_2, &none, s, t);
+    TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.5 - 0.34641016) && CtNearD3(D3V3(r.manifold->n), D3(0.57735027, 0.57735027, 0.57735027)) && CtNearD3(D3V3(r.manifold->v[0]), D3(1.0, 1.0, 1.0)));
+    t[1].position = V3F64(0.0, 0.8, 0.1);
+    r = TMP_c_HullSphereContact(env->mem_2, &none, s, t);
+    TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.7) && CtNearD3(D3V3(r.manifold->n), D3(0.0, 1.0, 0.0)) && CtNearD3(D3V3(r.manifold->v[0]), D3(0.0, 1.0, 0.1)));
+
+	return output;
+}
+
 static struct test_Output (*contact_tests[])(struct test_Environment *) =
 {
     CapsuleContactCasesTest,
@@ -2403,6 +2881,8 @@ static struct test_Output (*contact_tests[])(struct test_Environment *) =
     HullCapsuleContactTimingTest,
     HullContactCasesTest,
     HullContactRandomTest,
+    SphereContactCasesTest,
+    SphereContactRandomTest,
 };
 
 struct suite_Correctness m_contact_suite =

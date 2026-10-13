@@ -488,6 +488,21 @@ void TMP_ds_ShapeMeshContact(struct arena *frame, const struct ds_Dynamics *pipe
 	c->narrowphase = result;
 }
 
+void TMP_ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index)
+{
+    const struct ds_Contact *c = pipeline->contact_pool.buf + contact_index;
+    const u32 type_0 = pipeline->cshape_db->pool.buf[pipeline->shape_pool.buf[c->key.shape[0]].cshape_handle].type;
+    const u32 type_1 = pipeline->cshape_db->pool.buf[pipeline->shape_pool.buf[c->key.shape[1]].cshape_handle].type;
+    if (type_0 == C_SHAPE_TRI_MESH || type_1 == C_SHAPE_TRI_MESH)
+    {
+        TMP_ds_ShapeMeshContact(frame, pipeline, contact_index);
+    }
+    else
+    {
+        TMP_ds_ShapeConvexContact(frame, pipeline, contact_index);
+    }
+}
+
 f32 ds_ShapeRaycastParameter(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct ray *ray)
 {
     ds_Assert(V3Dot(ray->dir, ray->dir) > 0.0f);

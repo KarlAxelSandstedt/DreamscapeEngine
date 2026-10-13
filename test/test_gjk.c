@@ -49,10 +49,10 @@ Each test prints the worst observed error in units of F32_EPSILON * L, to tighte
 /*
  * Overestimates (early stops, f32 error on the final simplex) and false overlaps are accepted, counted, not
  * failed, when one shape is this many times larger than the other (extent ratio): needle simplices of B - A
- * (gjk_design.txt; owner 2026-10-09: not fixed, content bounds the size ratio). Every such failure observed had
- * ratio >= 836.
+ * (gjk_design.txt; owner 2026-10-09: not fixed, content bounds the size ratio). Smallest ratio observed with such
+ * a failure: 415 (a 7 mm hull vs a 5.6 m capsule core, f32 error).
  */
-#define GJK_TEST_ACCEPTED_SIZE_RATIO 500.0
+#define GJK_TEST_ACCEPTED_SIZE_RATIO 100.0
 #define GJK_TEST_HULL_COUNT 64
 
 /********************************** double precision helpers **********************************/

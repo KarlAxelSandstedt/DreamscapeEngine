@@ -2902,8 +2902,11 @@ struct c_ContactResult TMP_c_HullSphereContact(struct arena *frame, const struct
 				min_depth = depth;
 			}
 		}
-        min_depth = F32Max(0.0f, min_depth);
-		m->depth[0] = min_depth + radius;
+        /*
+         * min_depth < 0: the center lies outside by -min_depth (within GJK's touch band); unclamped, v is the
+         * projection onto the face's plane from either side and the depth exact.
+         */
+		m->depth[0] = F32Max(0.0f, radius + min_depth);
 		m->v[0] = V3Add(p, V3Scale(m->n, min_depth));
 	}
 

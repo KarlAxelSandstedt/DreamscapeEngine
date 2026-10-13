@@ -362,7 +362,7 @@ u32 ds_NarrowJobPhaseDispatch(const ds_JobId job)
                 for (u32 si = low; si < high; ++si)
                 {
                     const u32 ci = color->contact_pool.buf[si];
-                    ds_ShapeContact(frame, pipeline, ci);
+                    TMP_ds_ShapeContact(frame, pipeline, ci);
                 }
             }
         }
@@ -380,7 +380,7 @@ u32 ds_NarrowJobPhaseDispatch(const ds_JobId job)
             for (u32 si = low; si < high; ++si)
             {
                 const u32 ci = active->contact_pool.buf[si];
-                ds_ShapeContact(frame, pipeline, ci);
+                TMP_ds_ShapeContact(frame, pipeline, ci);
             }
         }
         ProfZoneEnd;
