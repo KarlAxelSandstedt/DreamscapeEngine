@@ -112,8 +112,7 @@ void SemaphoreDestroy(semaphore *sem)
 
 void SemaphorePost(semaphore *sem)
 {
-	u32 sem_val;
-	if (!ReleaseSemaphore(*sem, 1, &sem_val))
+	if (!ReleaseSemaphore(*sem, 1, NULL))
 	{
 		LogSystemError(S_FATAL);
 		FatalCleanupAndExit();

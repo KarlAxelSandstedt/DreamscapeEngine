@@ -747,7 +747,7 @@ void FileTimeToString(FILETIME ft, char* buffer, size_t bufferSize)
 	SYSTEMTIME st;
 	if (!FileTimeToSystemTime(&ft, &st)) 
 	{
-		snprintf(buffer, bufferSize, "Error converting FILETIME: %d", GetLastError());
+		snprintf(buffer, bufferSize, "Error converting FILETIME: %lu", GetLastError());
 		return;
 	}
 	
