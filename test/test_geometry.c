@@ -924,6 +924,242 @@ struct test_Output VoronoiNearFlatTest(struct test_Environment *env)
 	return output;
 }
 
+/* closest points of segments (p1, q1), (p2, q2) in double (Ericson 5.1.9, degenerate segments included) */
+static f64 VdSegmentSegment(const struct vd3 p1, const struct vd3 q1, const struct vd3 p2, const struct vd3 q2)
+{
+    const struct vd3 d1 = Vd3Sub(q1, p1), d2 = Vd3Sub(q2, p2), r = Vd3Sub(p1, p2);
+    const f64 a = Vd3Dot(d1, d1), e = Vd3Dot(d2, d2), f = Vd3Dot(d2, r);
+    f64 s = 0.0, t = 0.0;
+    if (a <= 0.0 && e <= 0.0)
+    {
+    }
+    else if (a <= 0.0)
+    {
+        t = f / e;
+        t = (t < 0.0) ? 0.0 : (t > 1.0) ? 1.0 : t;
+    }
+    else
+    {
+        const f64 c = Vd3Dot(d1, r);
+        if (e <= 0.0)
+        {
+            s = -c / a;
+            s = (s < 0.0) ? 0.0 : (s > 1.0) ? 1.0 : s;
+        }
+        else
+        {
+            const f64 b = Vd3Dot(d1, d2), denom = a*e - b*b;
+            s = (denom > 0.0) ? (b*f - c*e) / denom : 0.0;
+            s = (s < 0.0) ? 0.0 : (s > 1.0) ? 1.0 : s;
+            t = (b*s + f) / e;
+            if (t < 0.0)
+            {
+                t = 0.0;
+                s = -c / a;
+                s = (s < 0.0) ? 0.0 : (s > 1.0) ? 1.0 : s;
+            }
+            else if (t > 1.0)
+            {
+                t = 1.0;
+                s = (b - c) / a;
+                s = (s < 0.0) ? 0.0 : (s > 1.0) ? 1.0 : s;
+            }
+        }
+    }
+    return Vd3Length(Vd3Sub(Vd3Add(p1, Vd3Scale(d1, s)), Vd3Add(p2, Vd3Scale(d2, t))));
+}
+
+/* distance of segment (s0, s1) and triangle t in double: piercing, end points vs the triangle, edges vs the segment */
+static f64 VdSegmentTriangle(const struct vd3 *t, const struct vd3 s0, const struct vd3 s1)
+{
+    const struct vd3 n = Vd3Cross(Vd3Sub(t[1], t[0]), Vd3Sub(t[2], t[0]));
+    const f64 h0 = Vd3Dot(n, Vd3Sub(s0, t[0])), h1 = Vd3Dot(n, Vd3Sub(s1, t[0]));
+    if ((h0 < 0.0 && h1 > 0.0) || (h0 > 0.0 && h1 < 0.0))
+    {
+        const struct vd3 x = Vd3Add(s0, Vd3Scale(Vd3Sub(s1, s0), h0 / (h0 - h1)));
+        if (Vd3Length(Vd3Sub(VdClosest(t, 3, 0x7, x), x)) == 0.0)
+        {
+            return 0.0;
+        }
+    }
+    f64 d = VdMax(0.0, Vd3Length(Vd3Sub(VdClosest(t, 3, 0x7, s0), s0)));
+    d = (Vd3Length(Vd3Sub(VdClosest(t, 3, 0x7, s1), s1)) < d) ? Vd3Length(Vd3Sub(VdClosest(t, 3, 0x7, s1), s1)) : d;
+    for (u32 a = 0; a < 3; ++a)
+    {
+        const f64 e = VdSegmentSegment(t[a], t[(a + 1) % 3], s0, s1);
+        d = (e < d) ? e : d;
+    }
+    return d;
+}
+
+/*
+ * TriSegmentVoronoi against VdSegmentTriangle: the contract (w as TriVoronoi, s in [0, 1]) and the distance of the
+ * returned points, d <= d_ref + tol (tol as VdQuery, S = max |t_i - s_j|). Triangles: well-shaped, slivers, exact
+ * lattice degenerate; segments: piercing, parallel just above and below, in the plane, through edges and vertices,
+ * zero-length and short, far; both windings.
+ */
+struct test_Output VoronoiTriSegmentTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+    const char *family_id[] = { "well-shaped", "slivers", "degenerate" };
+    static const f64 offset[] = { 0.0, 1e-9, 1e-7, 1e-5, 1e-3, 1e-1, 1.0 };
+    for (u32 family = 0; family < 3; ++family)
+    {
+        u64 n = 0, invalid = 0;
+        f64 worst = 0.0;
+        for (u32 i = 0; i < 20000; ++i)
+        {
+            const f64 scale = (family == 2) ? (f64) (1u << RngU64Range(0, 12)) / 64.0 : VdScale();
+            struct vd3 t[3];
+            if (family == 0)
+            {
+                for (;;)
+                {
+                    for (u32 k = 0; k < 3; ++k)
+                    {
+                        t[k] = Vd3Scale(VdBall(), scale);
+                    }
+                    const f64 e_max = VdMax(VdMax(Vd3Length(Vd3Sub(t[1], t[0])), Vd3Length(Vd3Sub(t[2], t[1]))), Vd3Length(Vd3Sub(t[0], t[2])));
+                    if (Vd3Length(Vd3Cross(Vd3Sub(t[1], t[0]), Vd3Sub(t[2], t[0]))) >= 0.2*e_max*e_max)
+                    {
+                        break;
+                    }
+                }
+            }
+            else if (family == 1)
+            {
+                static const f64 eps[] = { 1e-2, 1e-4, 1e-6 };
+                t[0] = Vd3Scale(VdBall(), scale);
+                t[1] = Vd3Scale(VdBall(), scale);
+                const f64 a = (f64) RngF32Range(-0.5f, 1.5f);
+                t[2] = Vd3Add(Vd3Add(t[0], Vd3Scale(Vd3Sub(t[1], t[0]), a)), Vd3Scale(VdUnit(), eps[RngU64Range(0, 2)]*scale));
+            }
+            else
+            {
+                const struct vd3 base = Vd3((f64) RngU64Range(0, 64) - 32.0, (f64) RngU64Range(0, 64) - 32.0, (f64) RngU64Range(0, 64) - 32.0);
+                const struct vd3 d1 = Vd3((f64) RngU64Range(0, 8) - 4.0, (f64) RngU64Range(0, 8) - 4.0, (f64) RngU64Range(0, 8) - 4.0);
+                for (u32 k = 0; k < 3; ++k)
+                {
+                    t[k] = Vd3Scale(Vd3Add(base, Vd3Scale(d1, (f64) RngU64Range(0, 6) - 3.0)), scale);
+                }
+            }
+
+            /* segment: through a point of the triangle (vertex, edge, face) or near it, in a chosen direction */
+            const struct vd3 normal = Vd3Cross(Vd3Sub(t[1], t[0]), Vd3Sub(t[2], t[0]));
+            const f64 normal_len = Vd3Length(normal);
+            const struct vd3 unit_n = (normal_len > 0.0) ? Vd3Scale(normal, 1.0 / normal_len) : VdUnit();
+            f64 a = (f64) RngF32Normalized(), b = (f64) RngF32Normalized();
+            if (a + b > 1.0)
+            {
+                a = 1.0 - a;
+                b = 1.0 - b;
+            }
+            const u64 at = RngU64Range(0, 2);
+            struct vd3 q = (at == 0) ? t[RngU64Range(0, 2)]
+                         : (at == 1) ? Vd3Add(t[0], Vd3Scale(Vd3Sub(t[1], t[0]), a))
+                         : Vd3Add(t[0], Vd3Add(Vd3Scale(Vd3Sub(t[1], t[0]), a), Vd3Scale(Vd3Sub(t[2], t[0]), b)));
+            q = Vd3Add(q, Vd3Scale(unit_n, ((RngU64Range(0, 1)) ? 1.0 : -1.0)*offset[RngU64Range(0, 6)]*scale));
+            /* direction: random, along the normal (piercing), in the plane (parallel) */
+            const u64 kind = RngU64Range(0, 2);
+            struct vd3 dir = VdUnit();
+            if (kind == 1)
+            {
+                dir = unit_n;
+            }
+            else if (kind == 2)
+            {
+                dir = Vd3Sub(dir, Vd3Scale(unit_n, Vd3Dot(dir, unit_n)));
+                const f64 dir_len = Vd3Length(dir);
+                dir = (dir_len > 0.0) ? Vd3Scale(dir, 1.0 / dir_len) : unit_n;
+            }
+            static const f64 length[] = { 0.0, 1e-6, 1e-2, 0.5, 2.0, 10.0 };
+            const f64 len = length[RngU64Range(0, 5)]*scale;
+            const f64 along = (f64) RngF32Range(-1.0f, 1.0f);
+            const struct vd3 s0_d = Vd3Add(q, Vd3Scale(dir, (along - 1.0)*0.5*len));
+            const struct vd3 s1_d = Vd3Add(q, Vd3Scale(dir, (along + 1.0)*0.5*len));
+
+            v3 tf[3];
+            struct vd3 tr[3];
+            const u32 flip = (u32) RngU64Range(0, 1);
+            for (u32 k = 0; k < 3; ++k)
+            {
+                tf[k] = VdRound(t[(flip) ? 2 - k : k]);
+                tr[k] = Vd3V3(tf[k]);
+            }
+            const v3 s0 = VdRound(s0_d), s1 = VdRound(s1_d);
+            const struct vd3 sr0 = Vd3V3(s0), sr1 = Vd3V3(s1);
+
+            f32 w[3] = { -1.0f, -1.0f, -1.0f };
+            f32 sp = -1.0f;
+            const enum voronoi r = TriSegmentVoronoi(w, &sp, tf[0], tf[1], tf[2], s0, s1);
+            n += 1;
+            if (r == VORONOI_INVALID)
+            {
+                invalid += 1;
+                fprintf(stderr, "TriSegmentVoronoi: VORONOI_INVALID\n");
+                TEST_FAILURE;
+            }
+
+            f64 S = 0.0, A = VdMax(Vd3Length(sr0), Vd3Length(sr1));
+            for (u32 k = 0; k < 3; ++k)
+            {
+                S = VdMax(S, VdMax(Vd3Length(Vd3Sub(tr[k], sr0)), Vd3Length(Vd3Sub(tr[k], sr1))));
+                A = VdMax(A, Vd3Length(tr[k]));
+            }
+            const f64 unit = F32_EPSILON * (VdMax(S, 1e-30) * VdKappa(tr, 3, VdMax(S, 1e-30), 0) + A);
+            f64 sum = 0.0;
+            struct vd3 c_t = Vd3(0.0, 0.0, 0.0);
+            u32 ok = (0.0f <= sp && sp <= 1.0f) && ((u32) r >> 3) == 0;
+            for (u32 k = 0; k < 3; ++k)
+            {
+                ok &= (w[k] >= 0.0f && w[k] <= 1.0f) && (((r >> k) & 0x1) || w[k] == 0.0f);
+                sum += (f64) w[k];
+                c_t = Vd3Add(c_t, Vd3Scale(tr[k], (f64) w[k]));
+            }
+            ok &= VdAbs(sum - 1.0) <= 8.0 * F32_EPSILON;
+            const struct vd3 c_s = Vd3Add(sr0, Vd3Scale(Vd3Sub(sr1, sr0), (f64) sp));
+            const f64 d = Vd3Length(Vd3Sub(c_t, c_s));
+            const f64 d_ref = VdSegmentTriangle(tr, sr0, sr1);
+            worst = VdMax(worst, (d - d_ref) / unit);
+            if (!ok || d > d_ref + VD_TOLERANCE*unit)
+            {
+                fprintf(stderr, "TriSegmentVoronoi (%s): region 0x%x, w = (%g, %g, %g), s = %g, d = %g, d_ref = %g, tol %g\n",
+                    family_id[family], (u32) r, (f64) w[0], (f64) w[1], (f64) w[2], (f64) sp, d, d_ref, VD_TOLERANCE*unit);
+                for (u32 k = 0; k < 3; ++k)
+                {
+                    fprintf(stderr, "\tt[%u] = (%a, %a, %a)\n", k, (f64) tf[k].x, (f64) tf[k].y, (f64) tf[k].z);
+                }
+                fprintf(stderr, "\ts0 = (%a, %a, %a), s1 = (%a, %a, %a)\n", (f64) s0.x, (f64) s0.y, (f64) s0.z, (f64) s1.x, (f64) s1.y, (f64) s1.z);
+                TEST_FAILURE;
+            }
+        }
+        fprintf(stdout, "\ttriangle-segment, %s: %llu queries, INVALID %llu; worst (d - d_ref) / (u (S kappa + A)): %.3g\n",
+            family_id[family], (unsigned long long) n, (unsigned long long) invalid, worst);
+    }
+
+    /* exact: triangle (0,0,0) (4,0,0) (0,4,0) */
+    {
+        const v3 t0 = V3(0.0f, 0.0f, 0.0f), t1 = V3(4.0f, 0.0f, 0.0f), t2 = V3(0.0f, 4.0f, 0.0f);
+        f32 w[3], sp;
+        /* piercing the face */
+        TEST_TRUE(TriSegmentVoronoi(w, &sp, t0, t1, t2, V3(1.0f, 1.0f, -1.0f), V3(1.0f, 1.0f, 1.0f)) == VORONOI_F012 && sp == 0.5f && w[0] == 0.5f && w[1] == 0.25f && w[2] == 0.25f);
+        /* in the plane, across edge 01: on the edge */
+        TEST_TRUE(TriSegmentVoronoi(w, &sp, t0, t1, t2, V3(2.0f, -1.0f, 0.0f), V3(2.0f, -3.0f, 0.0f)) == VORONOI_E01 && sp == 0.0f && w[0] == 0.5f && w[1] == 0.5f);
+        /* above vertex 0 along the normal: V0 at distance 1 */
+        TEST_TRUE(TriSegmentVoronoi(w, &sp, t0, t1, t2, V3(0.0f, 0.0f, 1.0f), V3(0.0f, 0.0f, 3.0f)) == VORONOI_V0 && sp == 0.0f && w[0] == 1.0f);
+        /* ending on vertex 1 from outside */
+        TEST_TRUE(TriSegmentVoronoi(w, &sp, t0, t1, t2, V3(6.0f, -1.0f, 0.0f), V3(4.0f, 0.0f, 0.0f)) == VORONOI_V1 && sp == 1.0f && w[1] == 1.0f);
+        /* beside edge 12, parallel to it in the plane: E12, distance sqrt 2 */
+        TEST_TRUE(TriSegmentVoronoi(w, &sp, t0, t1, t2, V3(4.0f, 2.0f, 0.0f), V3(2.0f, 4.0f, 0.0f)) == VORONOI_E12);
+        /* zero-length segment over the face: the point query */
+        TEST_TRUE(TriSegmentVoronoi(w, &sp, t0, t1, t2, V3(1.0f, 1.0f, 2.0f), V3(1.0f, 1.0f, 2.0f)) == VORONOI_F012 && w[0] == 0.5f && w[1] == 0.25f);
+        /* collinear triangle: the segment vs its edges */
+        TEST_TRUE(TriSegmentVoronoi(w, &sp, t0, V3(2.0f, 0.0f, 0.0f), t1, V3(1.0f, -1.0f, 0.0f), V3(1.0f, 1.0f, 0.0f)) != VORONOI_INVALID);
+    }
+
+	return output;
+}
+
 static u32 VdExactCase(const v3 *t, const u32 count, const v3 p, const enum voronoi region, const f32 *w_expected)
 {
     for (u32 origin = 0; origin < 2; ++origin)
@@ -1079,6 +1315,7 @@ static struct test_Output (*voronoi_tests[])(struct test_Environment *) =
 	VoronoiSliverTest,
 	VoronoiDegenerateTest,
 	VoronoiNearFlatTest,
+	VoronoiTriSegmentTest,
 };
 
 struct suite_Correctness m_voronoi_suite =

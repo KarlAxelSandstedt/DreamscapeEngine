@@ -3533,6 +3533,7 @@ struct c_MeshContactHelper
     m3                          rot_inv;    /* convex_to_mesh's inverse: x_convex = rot_inv (x_mesh - pos) */
     v3                          pos;
     struct aabb                 bbox;       /* the convex shape's box in mesh space */
+    struct aabb                 local;      /* the convex shape's box in its own frame */
 
     const struct bvhNode *      node;
     const struct bvhNode **     stack;
@@ -3586,6 +3587,7 @@ static void c_MeshContactInit(struct c_MeshContactHelper *helper, const struct c
             local = convex->hull.bbox;
         } break;
     }
+    helper->local = local;
     const v3 center = V3Add(M3V3Mul(rot, V3Scale(V3Add(local.min, local.max), 0.5f)), helper->pos);
     const m3 rot_abs = M3Columns(V3Abs(rot.col[0]), V3Abs(rot.col[1]), V3Abs(rot.col[2]));
     const v3 half = M3V3Mul(rot_abs, V3Scale(V3Sub(local.max, local.min), 0.5f));
@@ -3611,45 +3613,58 @@ static void c_MeshContactInit(struct c_MeshContactHelper *helper, const struct c
     helper->record_len = records.len;
 }
 
-/* The next triangle whose leaf's box overlaps the convex shape's: its index and vertices in the convex shape's frame */
+/*
+ * The next triangle that can touch the convex shape: in a leaf whose box overlaps the shape's (mesh space), with its own
+ * box, in the shape's frame, overlapping the shape's local box (exact: the shape lies inside its box; touching kept).
+ * Returns its index and vertices in the convex shape's frame.
+ */
 static u32 c_MeshContactNext(struct c_MeshContactHelper *helper, u32 *tri_index, v3 tri[3])
 {
-    while (helper->leaf_next > helper->leaf_last)
+    for (;;)
     {
-        if (helper->stack_count == 0)
+        while (helper->leaf_next > helper->leaf_last)
         {
-            return 0;
+            if (helper->stack_count == 0)
+            {
+                return 0;
+            }
+
+            const struct bvhNode *node = helper->stack[--helper->stack_count];
+            if (ds_BTLeafCheck(node))
+            {
+                helper->leaf_next = node->bt_child[0];
+                helper->leaf_last = node->bt_child[0] + node->bt_child[1] - 1;
+                continue;
+            }
+
+            const struct bvhNode *left = helper->node + node->bt_child[0];
+            const struct bvhNode *right = helper->node + node->bt_child[1];
+            if (AabbTest(&helper->bbox, &right->bbox))
+            {
+                ds_Assert(helper->stack_count < helper->mesh_bvh->depth + 1);
+                helper->stack[helper->stack_count++] = right;
+            }
+            if (AabbTest(&helper->bbox, &left->bbox))
+            {
+                ds_Assert(helper->stack_count < helper->mesh_bvh->depth + 1);
+                helper->stack[helper->stack_count++] = left;
+            }
         }
 
-        const struct bvhNode *node = helper->stack[--helper->stack_count];
-        if (ds_BTLeafCheck(node))
+        *tri_index = helper->mesh_bvh->tri[helper->leaf_next++];
+        const u32 *v = helper->mesh->tri[*tri_index].buf;
+        for (u32 i = 0; i < 3; ++i)
         {
-            helper->leaf_next = node->bt_child[0];
-            helper->leaf_last = node->bt_child[0] + node->bt_child[1] - 1;
-            continue;
+            tri[i] = M3V3Mul(helper->rot_inv, V3Sub(helper->mesh->v[v[i]], helper->pos));
         }
 
-        const struct bvhNode *left = helper->node + node->bt_child[0];
-        const struct bvhNode *right = helper->node + node->bt_child[1];
-        if (AabbTest(&helper->bbox, &right->bbox))
+        /* in the shape's frame its box is exact (a leaf's box in mesh space bounds the rotated box: looser) */
+        const struct aabb tri_bbox = { .min = V3Min(V3Min(tri[0], tri[1]), tri[2]), .max = V3Max(V3Max(tri[0], tri[1]), tri[2]) };
+        if (AabbTest(&tri_bbox, &helper->local))
         {
-            ds_Assert(helper->stack_count < helper->mesh_bvh->depth + 1);
-            helper->stack[helper->stack_count++] = right;
-        }
-        if (AabbTest(&helper->bbox, &left->bbox))
-        {
-            ds_Assert(helper->stack_count < helper->mesh_bvh->depth + 1);
-            helper->stack[helper->stack_count++] = left;
+            return 1;
         }
     }
-
-    *tri_index = helper->mesh_bvh->tri[helper->leaf_next++];
-    const u32 *v = helper->mesh->tri[*tri_index].buf;
-    for (u32 i = 0; i < 3; ++i)
-    {
-        tri[i] = M3V3Mul(helper->rot_inv, V3Sub(helper->mesh->v[v[i]], helper->pos));
-    }
-    return 1;
 }
 
 static struct c_MeshTri *c_MeshContactPush(struct c_MeshContactHelper *helper, const u32 tri_index)
@@ -3668,14 +3683,18 @@ static struct c_MeshTri *c_MeshContactPush(struct c_MeshContactHelper *helper, c
     return r;
 }
 
-/* the delayed vertices of a triangle's Voronoi region (face: none) */
-static void c_MeshTriRegionDelayed(struct c_MeshTri *r, const enum TriVoronoiRegion region)
+/* the delayed vertices of a feature given as a mask of the triangle's vertices (enum voronoi; face: none) */
+static void c_MeshTriRegionMaskDelayed(struct c_MeshTri *r, const u32 mask)
 {
-    if (region != TRI_VORONOI_FACE)
+    if (mask != VORONOI_F012)
     {
-        r->delayed[0] = delayed_vertex_map[region][0];
-        r->delayed[1] = delayed_vertex_map[region][1];
-        r->delayed_count = (r->delayed[0] == r->delayed[1]) ? 1 : 2;
+        for (u32 i = 0; i < 3; ++i)
+        {
+            if (mask & (1u << i))
+            {
+                r->delayed[r->delayed_count++] = i;
+            }
+        }
     }
 }
 
@@ -3699,16 +3718,12 @@ static void c_MeshSphereTriangles(struct c_MeshContactHelper *helper, const stru
     {
         /*
          * as TMP_c_HullSphereContact, two-sided: the triangle is a flat hull with faces +-n_t; center = origin.
-         * Degenerate (rounding: VORONOI_INVALID; deep with n_t = 0): no contact. Triangles have area by c_Shape
-         * precondition, so both only assert.
+         * Triangles have area (c_Shape precondition), so VORONOI_INVALID (zero |e|^2 or |n|^2, NaN) and n_t = 0
+         * are only asserted.
          */
         f32 w[3];
         const enum voronoi region = TriOriginVoronoi(w, tri[0], tri[1], tri[2]);
-        if (region == VORONOI_INVALID)
-        {
-            ds_AssertString(0, "mesh triangle without area (c_Shape precondition)");
-            continue;
-        }
+        ds_AssertString(region != VORONOI_INVALID, "mesh triangle without area or NaN input (c_Shape precondition)");
 
         const v3 c = V3Add(V3Add(V3Scale(tri[0], w[0]), V3Scale(tri[1], w[1])), V3Scale(tri[2], w[2]));
         const f32 distance_sq = V3LengthSquared(c);
@@ -3733,11 +3748,7 @@ static void c_MeshSphereTriangles(struct c_MeshContactHelper *helper, const stru
         {
             const v3 n_dir = V3Cross(V3Sub(tri[1], tri[0]), V3Sub(tri[2], tri[0]));
             const f32 n_dir_length_sq = V3LengthSquared(n_dir);
-            if (n_dir_length_sq == 0.0f)
-            {
-                ds_AssertString(0, "mesh triangle without area (c_Shape precondition)");
-                continue;
-            }
+            ds_AssertString(n_dir_length_sq > 0.0f, "mesh triangle without area (c_Shape precondition)");
             const v3 n_t = V3Scale(n_dir, 1.0f / F32Sqrt(n_dir_length_sq));
             const f32 distance = -V3Dot(n_t, tri[0]);
             n = (0.0f <= distance) ? V3Scale(n_t, -1.0f) : n_t;
@@ -3752,46 +3763,231 @@ static void c_MeshSphereTriangles(struct c_MeshContactHelper *helper, const stru
         m->depth[0] = depth;
         r->contact = 1;
         r->depth = depth;
-        /* edge/vertex regions wait for the internal-edge filter: the region's vertices (mask bits) */
-        if (region != VORONOI_F012)
-        {
-            for (u32 i = 0; i < 3; ++i)
-            {
-                if (region & (1u << i))
-                {
-                    r->delayed[r->delayed_count++] = i;
-                }
-            }
-        }
+        /* edge/vertex regions wait for the internal-edge filter */
+        c_MeshTriRegionMaskDelayed(r, region);
     }
 }
 
+/*
+ * Clip s to the side planes of triangle t (the planes through its edges along n, n = (t1 - t0) x (t2 - t0): the
+ * prism over the triangle). Inclusive: ends on a side plane are kept, so the clip can be a single point (as
+ * DcelFaceSegmentClip). Returns 0 if nothing is left. Each crossing divides only where the end points' signs
+ * differ, so the parameter is bounded.
+ */
+static u32 c_TriSegmentSideClip(struct segment *clip, const v3 t[3], const v3 n, const struct segment *s)
+{
+    f32 lo = 0.0f;
+    f32 hi = 1.0f;
+    for (u32 a = 0; a < 3; ++a)
+    {
+        const u32 b = (a + 1) % 3;
+        /* outward (ccw about n): the triangle lies on the side m . (x - t_a) <= 0 */
+        const v3 m = V3Cross(V3Sub(t[b], t[a]), n);
+        const f32 d0 = V3Dot(m, V3Sub(s->p[0], t[a]));
+        const f32 d1 = V3Dot(m, V3Sub(s->p[1], t[a]));
+        if (0.0f < d0 && 0.0f < d1)
+        {
+            return 0;
+        }
+        else if (0.0f < d0)
+        {
+            lo = F32Max(lo, d0 / (d0 - d1));
+        }
+        else if (0.0f < d1)
+        {
+            hi = F32Min(hi, d0 / (d0 - d1));
+        }
+    }
+
+    if (hi < lo)
+    {
+        return 0;
+    }
+
+    *clip = SegmentConstruct(SegmentBc(s, lo), SegmentBc(s, hi));
+    return 1;
+}
+
+/*
+ * Capsule vs triangle (two-sided), tailored from TMP_c_HullCapsuleContact: the triangle is a flat hull with faces
+ * +-n_t and three knife edges, and TriSegmentVoronoi replaces GJK. In the capsule's frame; the manifold follows the
+ * mesh convention (n from the capsule to the mesh, v on the capsule's surface).
+ */
 static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const struct capsule *capsule)
 {
+    const f32 radius = capsule->radius;
     /* the core in the capsule's frame (SegmentCapsuleTransform's order) */
     const struct segment core = SegmentConstruct(V3(0.0f, capsule->half_height, 0.0f), V3(0.0f, -capsule->half_height, 0.0f));
+    const f32 touch_tolerance = GJK_TOUCH_TOLERANCE * F32_EPSILON;
     u32 tri_index;
     v3 tri[3];
     while (c_MeshContactNext(helper, &tri_index, tri))
     {
-        struct c_TriMeshBvhContact tc;
-        const u32 robust = TriVoronoiInitCcw(&tc.tv, tri);
-        ds_AssertString(robust, "mesh triangle without area (c_Shape precondition)");
-        tc.dist_sq = TriCcwSegmentDistanceSquared(&tc.c[0], &tc.c[1], &tc.region, &core, &tc.tv);
-        if (tc.dist_sq <= capsule->radius*capsule->radius)
+        f32 w[3], s;
+        const enum voronoi region = TriSegmentVoronoi(w, &s, tri[0], tri[1], tri[2], core.p[0], core.p[1]);
+        ds_AssertString(region != VORONOI_INVALID, "TriSegmentVoronoi: NaN input or distances beyond f32");
+
+        const v3 c_t = V3Add(V3Add(V3Scale(tri[0], w[0]), V3Scale(tri[1], w[1])), V3Scale(tri[2], w[2]));
+        const v3 c_s = SegmentBc(&core, s);
+        const f32 distance_sq = V3DistanceSquared(c_t, c_s);
+        if (radius*radius < distance_sq)
         {
-            struct c_MeshTri *r = c_MeshContactPush(helper, tri_index);
-            /*
-             * TODO(bug, audit A1/A2): deep edge contact: depth without the radius, n from normalizing c[ref] - c[inc]
-             * (0 when the core crosses the edge: NaN).
-             * TODO(decision, audit D3): two points via PlaneSegmentParallelCheck (~6.3 deg, shared depth);
-             * hull-capsule uses face_parallel_cos and per-point depths.
-             */
-            c_TriCapsuleManifold(&r->manifold, &tc, capsule, &core, 1);
-            r->contact = 1;
-            r->depth = c_ManifoldDeepest(&r->manifold);
-            c_MeshTriRegionDelayed(r, tc.region);
+            continue;
         }
+
+        const v3 n_dir = V3Cross(V3Sub(tri[1], tri[0]), V3Sub(tri[2], tri[0]));
+        const f32 n_dir_length_sq = V3LengthSquared(n_dir);
+        ds_AssertString(n_dir_length_sq > 0.0f, "mesh triangle without area (c_Shape precondition)");
+        const v3 n_t = V3Scale(n_dir, 1.0f / F32Sqrt(n_dir_length_sq));
+
+        struct c_MeshTri *r = c_MeshContactPush(helper, tri_index);
+        struct c_Manifold *m = &r->manifold;
+        r->contact = 1;
+        u32 delayed_region = region;
+
+        /* GJK's touch band, L = max of |t_i| and the core's half height (the capsule's center is the origin) */
+        const f32 l_sq = F32Max(F32Max(F32Max(V3LengthSquared(tri[0]), V3LengthSquared(tri[1])), V3LengthSquared(tri[2])),
+                                capsule->half_height*capsule->half_height);
+        /* shallow penetration */
+        if (touch_tolerance*touch_tolerance*l_sq < distance_sq)
+        {
+            const f32 distance = F32Sqrt(distance_sq);
+            const v3 n = V3Scale(V3Sub(c_t, c_s), 1.0f / distance);
+
+            /*
+             * Two points if n is within face_parallel_max_degrees of the face normal facing the capsule (f, from the
+             * triangle to the capsule: -n ~ f) and both ends of the clipped core touch (d_i <= r); otherwise one
+             * point. Each end has its own depth. As for hulls, the closest feature may be an edge (a core parallel
+             * to the face is as close to it as to the edge it crosses).
+             */
+            const v3 f = (V3Dot(n, n_t) < 0.0f) ? n_t : V3Scale(n_t, -1.0f);
+            struct segment clip;
+            if (g_numerics_config->face_parallel_cos < -V3Dot(n, f)
+                && c_TriSegmentSideClip(&clip, tri, n_dir, &core))
+            {
+                const f32 d0 = V3Dot(f, V3Sub(clip.p[0], tri[0]));
+                const f32 d1 = V3Dot(f, V3Sub(clip.p[1], tri[0]));
+                if (d0 <= radius && d1 <= radius)
+                {
+                    m->v_count = 2;
+                    m->n = V3Scale(f, -1.0f);
+                    m->v[0] = V3Add(clip.p[0], V3Scale(m->n, radius));
+                    m->v[1] = V3Add(clip.p[1], V3Scale(m->n, radius));
+                    m->depth[0] = radius - d0;
+                    m->depth[1] = radius - d1;
+                    r->depth = c_ManifoldDeepest(m);
+                    continue;
+                }
+            }
+
+            m->v_count = 1;
+            m->n = n;
+            m->v[0] = V3Add(c_s, V3Scale(n, radius));
+            m->depth[0] = radius - distance;
+            r->depth = m->depth[0];
+            c_MeshTriRegionMaskDelayed(r, delayed_region);
+            continue;
+        }
+
+        /* deep penetration (the core touches the triangle): faces +-n_t, the core's deeper end */
+        const f32 h0 = V3Dot(n_t, V3Sub(core.p[0], tri[0]));
+        const f32 h1 = V3Dot(n_t, V3Sub(core.p[1], tri[0]));
+        /* front: min(h0, h1); back: min(-h0, -h1); the larger separates more (tie: front) */
+        const v3 f = (-F32Max(h0, h1) <= F32Min(h0, h1)) ? n_t : V3Scale(n_t, -1.0f);
+
+        /* face contact: the core clipped to the triangle; empty if nothing is left or no clipped end touches */
+        struct segment clip = core;
+        const u32 clipped = c_TriSegmentSideClip(&clip, tri, n_dir, &core);
+        const f32 depth[2] =
+        {
+            V3Dot(f, V3Sub(clip.p[0], tri[0])),
+            V3Dot(f, V3Sub(clip.p[1], tri[0])),
+        };
+        const u32 deeper = (depth[0] <= depth[1]) ? 0 : 1;
+        const u32 face_contact = clipped && depth[deeper] <= radius;
+
+        /*
+         * Edges: a knife edge's Gauss map arc is the half circle from n_t through its outward normal m_e to -n_t, so
+         * every edge not parallel to the core is a candidate; the axis cross(e, core) points out along m_e.
+         */
+        f32 edge_separation = -F32_INFINITY;
+        u32 edge = U32_MAX;
+        v3 edge_axis = V3(0.0f, 0.0f, 0.0f);
+        for (u32 a = 0; a < 3; ++a)
+        {
+            const u32 b = (a + 1) % 3;
+            const v3 e = V3Sub(tri[b], tri[a]);
+            const v3 cross = V3Cross(e, core.dir);
+            const f32 cross_sq = V3Dot(cross, cross);
+            if (cross_sq <= g_numerics_config->edge_parallel_sin_sq*V3Dot(e, e)*V3Dot(core.dir, core.dir))
+            {
+                continue;
+            }
+
+            v3 axis = V3Scale(cross, 1.0f / F32Sqrt(cross_sq));
+            if (V3Dot(axis, V3Cross(e, n_t)) < 0.0f)
+            {
+                axis = V3Scale(axis, -1.0f);
+            }
+            /* the axis is perpendicular to both lines, so any pair of points measures the separation */
+            const f32 separation = V3Dot(axis, V3Sub(core.p[0], tri[a]));
+            if (edge_separation < separation)
+            {
+                edge_separation = separation;
+                edge = a;
+                edge_axis = axis;
+            }
+        }
+
+        /* edge contact as in TMP_c_HullCapsuleContact: within both segments, separating more by sat_face_bias */
+        if (edge != U32_MAX && (!face_contact || depth[deeper] + g_numerics_config->sat_face_bias < edge_separation))
+        {
+            const struct segment e = SegmentConstruct(tri[edge], tri[(edge + 1) % 3]);
+            f32 t_edge, t_core;
+            if (SegmentLineClosestParameterCheck(&t_edge, &t_core, &e, &core))
+            {
+                m->v_count = 1;
+                m->n = V3Scale(edge_axis, -1.0f);
+                m->v[0] = V3Add(SegmentBc(&core, t_core), V3Scale(m->n, radius));
+                m->depth[0] = F32Max(0.0f, radius - edge_separation);
+                r->depth = m->depth[0];
+                c_MeshTriRegionMaskDelayed(r, (1u << edge) | (1u << ((edge + 1) % 3)));
+                continue;
+            }
+        }
+
+        m->n = V3Scale(f, -1.0f);
+
+        /* as in the shallow path: two points if both clipped ends touch (d_i <= r), else the deeper end */
+        if (face_contact)
+        {
+            if (depth[1 - deeper] <= radius)
+            {
+                m->v_count = 2;
+                m->v[0] = V3Add(clip.p[0], V3Scale(m->n, radius));
+                m->v[1] = V3Add(clip.p[1], V3Scale(m->n, radius));
+                m->depth[0] = radius - depth[0];
+                m->depth[1] = radius - depth[1];
+                r->depth = c_ManifoldDeepest(m);
+                continue;
+            }
+
+            m->v_count = 1;
+            m->v[0] = V3Add(clip.p[deeper], V3Scale(m->n, radius));
+            m->depth[0] = radius - depth[deeper];
+            r->depth = m->depth[0];
+            continue;
+        }
+
+        /*
+         * No face or edge contact: only when the core touches the triangle within GJK's touch band (the clip can be
+         * empty and the realizing edge skipped as parallel). Touching: depth r at the closest core point.
+         */
+        m->v_count = 1;
+        m->v[0] = V3Add(c_s, V3Scale(m->n, radius));
+        m->depth[0] = radius;
+        r->depth = radius;
+        c_MeshTriRegionMaskDelayed(r, delayed_region);
     }
 }
 

@@ -26,6 +26,7 @@ extern "C" {
 
 #include "ds_allocator.h"
 #include "ds_math.h"
+#include "ds_voronoi.h"
 
 /****************** GEOMETRIC PRIMITIVES ******************/
 
@@ -284,6 +285,16 @@ v3 		TriCcwNormalDirection(const v3 p0, const v3 p1, const v3 p2);
 
 /* Setup a TriVoronoi struct corresponding to the CCW triangle t and return true if t is robust, false otherwise.  */
 u32         TriVoronoiInitCcw(struct TriVoronoiTMP *tv, const v3 t[3]);
+
+/*
+ * Return the feature of triangle (t0, t1, t2) closest to segment (s0, s1), its barycentric weights (as TriVoronoi)
+ * and *s, the segment's parameter: the closest points are sum w[i] t_i and s0 + *s (s1 - s0), *s in [0, 1].
+ * A segment piercing the triangle gives VORONOI_F012 at the crossing (distance 0). Any winding.
+ *
+ * Degenerate input: a segment in the triangle's plane, a zero-length segment, or a collinear triangle is handled
+ * by the end point and edge candidates. Returns VORONOI_INVALID only for NaN input or distances beyond f32 (~1e19).
+ */
+enum voronoi    TriSegmentVoronoi(f32 w[3], f32 *s, const v3 t0, const v3 t1, const v3 t2, const v3 s0, const v3 s1);
 
 /* 
  * Return squared distance from segment s to triangle t, and set c_s to be the closest point on s, and c_t to be 
