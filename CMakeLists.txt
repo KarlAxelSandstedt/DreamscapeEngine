@@ -169,8 +169,14 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 		add_compile_options(/Zi)
 	endif ()
 
+	# MSVC has neither: say so instead of building without them
+	if (DS_TSAN OR DS_UBSAN)
+		message(WARNING "DS_TSAN and DS_UBSAN are not supported on Windows (MSVC); building without them.")
+		set(DS_TSAN OFF)
+		set(DS_UBSAN OFF)
+	endif ()
+
 	if (DS_DEBUG)
-		add_compile_definitions(DS_DEBUG)
 		add_compile_options(/Zi)
 	endif ()
 
@@ -205,6 +211,9 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 	add_compile_options(/std:c11 /experimental:c11atomics)
 	#parallel compilation
 	add_compile_options(/MP)
+
+	# the platform layer and printf-family calls use the C library on purpose; MSVC's *_s variants are not portable (C4996)
+	add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 
 endif ()
 
@@ -303,11 +312,6 @@ if (DS_TEST)
     add_subdirectory(${DS_TEST_PATH})
     target_link_libraries(${DS_TEST_EXECUTABLE} PRIVATE Dreamscape::Test)
 	target_link_libraries(${DS_TEST_EXECUTABLE} PRIVATE Dreamscape)
-	
-	add_custom_command(TARGET ${DS_TEST_EXECUTABLE} POST_BUILD
-		COMMAND ${CMAKE_COMMAND} -E copy_if_different
-		$<TARGET_FILE:SDL3::SDL3>
-		$<TARGET_FILE_DIR:${DS_TEST_EXECUTABLE}>)
 endif ()
 
 # For CPack and installation process, good information can be found at:
