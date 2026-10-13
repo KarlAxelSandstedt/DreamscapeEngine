@@ -572,8 +572,6 @@ struct PolygonClipPoint
     v3              v;
 };
 
-DEFINE_CPOOL_STRUCT(PolygonClipPoint);
-
 /*
  * Sutherland-Hodgman 3D polygon clipping + negative face voronoi region projection: 
  *
@@ -581,7 +579,6 @@ DEFINE_CPOOL_STRUCT(PolygonClipPoint);
  *  infront of the face is discarded, after which the remaining points are projected
  *  onto the face and stored in cp, with their corresponding positive depth in cp_depth.
  *  
- * clip_stack[0]: Expected to be filled with polygon vertices in counter-clockwise order.
  *            fv: Expected to be filled with face vertices in counter-clockwise order.
  */
 static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureId **features, v3 **cp, f32 **cp_depth, u32 *cp_deepest, u32 *cp_count, f32 *max_depth, u32 *deepest_feature, const struct dcel *h[2], const v3 *v[2], const u32 f[2], const u32 b_f, const v3 face_normal)
@@ -591,75 +588,88 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureI
 	struct dcelFace *inc_face = h[b_v]->f + f[b_v];
 
     const u32 count = 2*inc_face->count + ref_face->count;
-    ds_CPool(PolygonClipPoint) clip_stack[2];
-	ds_CPoolAlloc(mem, clip_stack[0], count, NOT_GROWABLE);
-	ds_CPoolAlloc(mem, clip_stack[1], count, NOT_GROWABLE);
+    struct PolygonClipPoint *poly[2] =
+    {
+        ArenaPush(mem, count*sizeof(struct PolygonClipPoint)),
+        ArenaPush(mem, count*sizeof(struct PolygonClipPoint)),
+    };
+    u32 poly_count[2] = { 0, 0 };
 	v3 *ref_v = ArenaPush(mem, ref_face->count * sizeof(v3));
 	*cp = ArenaPush(mem, count*sizeof(v3));
 	*cp_depth = ArenaPush(mem, count*sizeof(f32));
 	*features = ArenaPush(mem, count*sizeof(sat_FeatureId));
 
+	v3 ref_center = V3(0.0f, 0.0f, 0.0f);
 	for (u32 i = 0; i < ref_face->count; ++i)
 	{
 		const u32 vi = h[b_f]->e[ref_face->first + i].origin;
 		ref_v[i] = v[b_f][vi];
+		ref_center = V3Add(ref_center, ref_v[i]);
 	}
-    struct plane ref_plane = PlaneConstruct(face_normal, ref_v[0]);
+    /* through the face's vertex average, as the stored planes (DcelPlanesTryCompute): depths agree with the face query */
+    struct plane ref_plane = PlaneConstruct(face_normal, V3Scale(ref_center, 1.0f / (f32) ref_face->count));
 
 	u32 cur = 0;
 	for (u32 i = 0; i < inc_face->count; ++i)
 	{
 		const u32 vi = h[b_v]->e[inc_face->first + i].origin;
-        struct PolygonClipPoint pcp = 
-        { 
+        struct PolygonClipPoint pcp =
+        {
             .index = 0,
             .feature[0] = sat_FeatureIdConstruct(vi, SAT_FEATURE_TYPE_VERTEX),
             .feature[1] = sat_FeatureIdConstruct(inc_face->first + i, SAT_FEATURE_TYPE_EDGE),
         };
         pcp.v = v[b_v][vi];
-		ds_CPoolPushMemcpy(clip_stack[cur], &pcp);
+		poly[cur][poly_count[cur]++] = pcp;
 	}
 
     /* Clip polygon against voronoi face region */
 	for (u32 j = 0; j < ref_face->count; ++j)
 	{
-		const u32 prev = cur;
-		cur = 1 - cur;
-		ds_CPoolFlush(clip_stack[cur]);
-
 		const v3 side_plane_direction = V3Cross(V3Sub(ref_v[(j+1) % ref_face->count], ref_v[j]), ref_plane.normal);
-		struct plane side_plane = PlaneConstruct(side_plane_direction, ref_v[j]);
+		const struct plane side_plane = PlaneConstruct(side_plane_direction, ref_v[j]);
 
-		for (u32 i = 0; i < clip_stack[prev].count; ++i)
-		{
-			const struct segment clip_edge = SegmentConstruct(clip_stack[prev].buf[i].v, clip_stack[prev].buf[(i+1) % clip_stack[prev].count].v);
-			const f32 t = PlaneSegmentClipParameter(&side_plane, &clip_edge);
-            struct PolygonClipPoint pcp = clip_stack[prev].buf[i];
-            pcp.v = SegmentBc(&clip_edge, t);
-            pcp.index = 1;
+        const struct PolygonClipPoint *in = poly[cur];
+        const u32 in_count = poly_count[cur];
+        struct PolygonClipPoint *out = poly[1 - cur];
+        u32 out_count = 0;
+        if (in_count)
+        {
+            /* edges (in_count - 1 -> 0), (0 -> 1), ...; keep the part with d <= 0 */
+            struct PolygonClipPoint v1 = in[in_count - 1];
+            f32 d1 = PlanePointSignedDistance(&side_plane, v1.v);
+            for (u32 i = 0; i < in_count; ++i)
+            {
+                const struct PolygonClipPoint v2 = in[i];
+                const f32 d2 = PlanePointSignedDistance(&side_plane, v2.v);
+                if ((d1 < 0.0f && 0.0f < d2) || (0.0f < d1 && d2 < 0.0f))
+                {
+                    /* signs strictly opposite: d1 - d2 != 0 and the fraction lies in (0, 1); v1's edge feature */
+                    struct PolygonClipPoint crossing = v1;
+                    crossing.index = 1;
+                    crossing.v = V3Add(v1.v, V3Scale(V3Sub(v2.v, v1.v), d1 / (d1 - d2)));
+                    out[out_count++] = crossing;
+                }
+                if (d2 <= 0.0f)
+                {
+                    out[out_count++] = v2;
+                }
+                v1 = v2;
+                d1 = d2;
+            }
+        }
 
-			if (PlanePointBehindCheck(&side_plane, clip_edge.p[0]))
-			{
-				ds_CPoolPushMemcpy(clip_stack[cur], &clip_stack[prev].buf[i]);
-				if (0.0f < t && t < 1.0f)
-				{
-				    ds_CPoolPushMemcpy(clip_stack[cur], &pcp);
-				}
-			}
-			else if (PlanePointBehindCheck(&side_plane, clip_edge.p[1]))
-			{
-				ds_CPoolPushMemcpy(clip_stack[cur], &pcp);
-			}
-		}
+        cur = 1 - cur;
+        poly_count[cur] = out_count;
 	}
 
 	*max_depth = -F32_INFINITY;
     *deepest_feature = 0;
     *cp_deepest = 0;
     *cp_count = 0;
-	for (u32 i = 0; i < clip_stack[cur].count; ++i)
+	for (u32 i = 0; i < poly_count[cur]; ++i)
 	{
-        const struct PolygonClipPoint *pcp = clip_stack[cur].buf + i;
+        const struct PolygonClipPoint *pcp = poly[cur] + i;
 		(*cp)[*cp_count] = pcp->v;
         (*cp_depth)[ *cp_count ] = -PlanePointSignedDistance(&ref_plane, (*cp)[ *cp_count ]);
 
@@ -677,7 +687,7 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureI
 		}
 	}
 
-    ds_Assert(*cp_count <= count); 
+    ds_Assert(*cp_count <= count);
 }
 
 static u32 PolygonCcwContact(struct c_Manifold *cm, sat_FeatureId cm_features[4], const v3 cm_n, const sat_FeatureId *features, const v3 *cp, const f32 *depth, const u32 cp_deepest, const u32 cp_count)
@@ -835,6 +845,7 @@ struct sat_FaceQuery
 {
 	v3 normal;
 	u32 fi;
+	u32 vi;     /* the other hull's deepest vertex (TMP_c_HullContact) */
 	f32 depth;
 };
 
@@ -848,16 +859,37 @@ struct sat_EdgeQuery
 	f32 depth;
 };
 
-static u32 HullFaceContact(struct arena *mem_tmp, struct c_Manifold *cm, sat_FeatureId cm_features[4], f32 *max_depth, sat_FeatureId *max_feature, const struct sat_FaceQuery *query, const struct dcel *h[2], const v3 *v[2], const u32 b_f, const u32 ref)
+/*
+ * pl: both hulls' face planes in v's frame; then the incident face is the face of b_v most anti-parallel to the
+ * reference normal (stored planes, as DcelSupportFace). NULL (old callers, world space): normals from each face's first
+ * triangle.
+ */
+static u32 HullFaceContact(struct arena *mem_tmp, struct c_Manifold *cm, sat_FeatureId cm_features[4], f32 *max_depth, sat_FeatureId *max_feature, const struct sat_FaceQuery *query, const struct dcel *h[2], const v3 *v[2], const struct plane *pl[2], const u32 b_f, const u32 ref)
 {
 	/* (1) determine incident_face */
     const u32 b_v = 1 - b_f;
     u32 f[2];
     f[b_f] = query->fi;
     f[b_v] = 0;
+    if (pl)
+    {
+        f32 min_dot = V3Dot(pl[b_v][0].normal, query->normal);
+        for (u32 fi = 1; fi < h[b_v]->f_count; ++fi)
+        {
+            const f32 dot = V3Dot(pl[b_v][fi].normal, query->normal);
+            if (dot < min_dot)
+            {
+                min_dot = dot;
+                f[b_v] = fi;
+            }
+        }
+    }
+	/*
+	 * TODO(remove): normals from each face's first triangle for the old callers passing pl == NULL (c_HullContact,
+	 * TriCcwHullContact); remove with them, then make pl required.
+	 */
 	f32 min_cos_sq = 1.0f;
-    //f32 min_dot = 1.0f;
-	for (u32 fi = 0; fi < h[b_v]->f_count; ++fi)
+	for (u32 fi = 0; !pl && fi < h[b_v]->f_count; ++fi)
 	{
 		const u32 i0  = h[b_v]->e[h[b_v]->f[fi].first + 0].origin;
 		const u32 i1  = h[b_v]->e[h[b_v]->f[fi].first + 1].origin;
@@ -895,14 +927,15 @@ static u32 HullFaceContact(struct arena *mem_tmp, struct c_Manifold *cm, sat_Fea
     {
         const v3 cm_n = V3Scale(query->normal, -1.0f);
         collision = PolygonCcwContact(cm, cm_features, cm_n, features, cp, depth, deepest_point, cp_count);
-        cm->v[0] = V3AddScaled(cm->v[0], cm->n, cm->depth[0]);
-        cm->v[1] = V3AddScaled(cm->v[1], cm->n, cm->depth[1]);
-        cm->v[2] = V3AddScaled(cm->v[2], cm->n, cm->depth[2]);
-        cm->v[3] = V3AddScaled(cm->v[3], cm->n, cm->depth[3]);
+        for (u32 i = 0; i < cm->v_count; ++i)
+        {
+            cm->v[i] = V3AddScaled(cm->v[i], cm->n, cm->depth[i]);
+        }
     }
 
     return collision;
 }
+
 
 static u32 HullContactFVSeparation(struct sat_FaceQuery *query, const struct dcel *h1, const v3 *v1_world, const struct dcel *h2, const v3 *v2_world)
 {
@@ -1209,7 +1242,7 @@ struct c_ContactResult c_HullContact(struct arena *frame, const struct c_Contact
                 face_query.normal = result.cache->normal;
 
                 sat_FeatureId manifold_features[4];
-	        	colliding = HullFaceContact(mem_tmp, result.manifold, manifold_features, &result.cache->depth, result.cache->feature + b_v, &face_query, h, (const v3 **) v_world, b_f, ref);
+	        	colliding = HullFaceContact(mem_tmp, result.manifold, manifold_features, &result.cache->depth, result.cache->feature + b_v, &face_query, h, (const v3 **) v_world, NULL, b_f, ref);
                 if (!colliding 
                         || result.cache->feature[b_v] != cache->feature[b_v]
                         || F32Abs(result.cache->depth - cache->depth) >= g_numerics_config->manifold_cache_depth_max_diff_allowed)
@@ -1267,7 +1300,7 @@ struct c_ContactResult c_HullContact(struct arena *frame, const struct c_Contact
 
         f32 max_depth;
         sat_FeatureId manifold_features[4];
-		colliding = HullFaceContact(mem_tmp, result.manifold, manifold_features, &max_depth, result.cache->feature + b_v, f_query + b_f, h, (const v3 **) v_world, b_f, ref);
+		colliding = HullFaceContact(mem_tmp, result.manifold, manifold_features, &max_depth, result.cache->feature + b_v, f_query + b_f, h, (const v3 **) v_world, NULL, b_f, ref);
 
 		if (colliding)
 		{
@@ -2187,7 +2220,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_SatCache *new
                 face_query.normal = new_cache->normal;
 
                 sat_FeatureId manifold_features[4];
-	        	colliding = HullFaceContact(tmp, manifold, manifold_features, &new_cache->depth, new_cache->feature + b_v, &face_query, h, v, b_f, ref);
+	        	colliding = HullFaceContact(tmp, manifold, manifold_features, &new_cache->depth, new_cache->feature + b_v, &face_query, h, v, NULL, b_f, ref);
                 if (!colliding 
                         || new_cache->feature[b_v] != old_cache->feature[b_v]
                         || F32Abs(new_cache->depth - old_cache->depth) >= g_numerics_config->manifold_cache_depth_max_diff_allowed)
@@ -2332,7 +2365,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_SatCache *new
         new_cache->feature[b_f] = sat_FeatureIdConstruct(f_query[b_f].fi, SAT_FEATURE_TYPE_FACE);
         new_cache->normal = f_query[b_f].normal;
         sat_FeatureId manifold_features[4];
-        colliding = HullFaceContact(tmp, manifold, manifold_features, &new_cache->depth, new_cache->feature + b_v, f_query + b_f, h, v, b_f, ref);
+        colliding = HullFaceContact(tmp, manifold, manifold_features, &new_cache->depth, new_cache->feature + b_v, f_query + b_f, h, v, NULL, b_f, ref);
 
         TriCcwHullDelayedSet(delayed_set, delayed_count, &hull_tri, manifold_features, manifold->v_count, b_f);
 
@@ -2833,10 +2866,10 @@ struct c_ContactResult TMP_c_HullSphereContact(struct arena *frame, const struct
     const f32 radius = s[1]->sphere.radius;
     const q inv = QConj(t[0].rotation);
     const v3 p = QUnitRotate(inv, V3F64Demote(V3F64Sub(t[1].position, t[0].position)));
-    const ds_Transform b_to_a = { .rotation = QIdentity(), .position = p };
+    const ds_Transform t_1_to_0 = { .rotation = QIdentity(), .position = p };
 
     v3 c[2], n;
-    const f32 distance = GJK(c+0, c+1, &n, result.gjk_cache, cached_result->gjk_cache, s[0], s[1], &b_to_a, radius);
+    const f32 distance = GJK(c+0, c+1, &n, result.gjk_cache, cached_result->gjk_cache, s[0], s[1], &t_1_to_0, radius);
     if (radius < distance)
     {
         return result;
@@ -2903,7 +2936,7 @@ static void HullCapsuleEECheck(struct sat_EdgeQuery *query, const u32 e1, const 
 		const v3 cross = V3Cross(s1->dir, core->dir);
 		const f32 s1s1_d = V3Dot(s1->dir, s1->dir);
 		const f32 s2s2_d = V3Dot(core->dir, core->dir);
-		if (V3Dot(cross, cross) >= g_numerics_config->edge_parallel_sin_sq*s1s1_d*s2s2_d)
+		if (V3Dot(cross, cross) > g_numerics_config->edge_parallel_sin_sq*s1s1_d*s2s2_d)
 		{
 			/*
 			 * The axis is the arc's point on the circle: n(t) = (1 - t) n1_1 + t n1_2 with n(t).dir = 0,
@@ -2972,10 +3005,10 @@ struct c_ContactResult TMP_c_HullCapsuleContact(struct arena *frame, const struc
     result.gjk_cache = ArenaPushPacked(frame, sizeof(struct GJKCache));
 
     const f32 radius = s[1]->capsule.radius;
-    const ds_Transform b_to_a = ds_TransformWorldRelative(&t[0], &t[1]);
+    const ds_Transform t_1_to_0 = ds_TransformWorldRelative(&t[0], &t[1]);
 
     v3 c[2], n;
-    const f32 distance = GJK(c+0, c+1, &n, result.gjk_cache, cached_result->gjk_cache, s[0], s[1], &b_to_a, radius);
+    const f32 distance = GJK(c+0, c+1, &n, result.gjk_cache, cached_result->gjk_cache, s[0], s[1], &t_1_to_0, radius);
     if (radius < distance)
     {
         return result;
@@ -2986,7 +3019,7 @@ struct c_ContactResult TMP_c_HullCapsuleContact(struct arena *frame, const struc
     struct c_Manifold *m = result.manifold;
 
     const struct dcel *h = &s[0]->hull;
-    const struct segment core = SegmentCapsuleTransform(&s[1]->capsule, &b_to_a);
+    const struct segment core = SegmentCapsuleTransform(&s[1]->capsule, &t_1_to_0);
 
     /* shallow penetration: distance > 0 is beyond GJK's touch band (100 eps L), so the GJK normal is reliable */
     if (0.0f < distance)
@@ -3063,31 +3096,13 @@ struct c_ContactResult TMP_c_HullCapsuleContact(struct arena *frame, const struc
      */
     if (e_query.e1 != U32_MAX && (!face_contact || depth[deeper] + g_numerics_config->sat_face_bias < e_query.depth))
     {
-        /*
-         * Line closest points s1.p0 + s d1, s2.p0 + t d2, with w = s1.p0 - s2.p0:
-         *
-         *	s = (d1d2 d2w - d1w d2d2) / den,  t = (d1d1 d2w - d1d2 d1w) / den
-         *	den = d1d1 d2d2 - d1d2^2 = |d1 x d2|^2
-         *
-         * den >= edge_parallel_sin_sq d1d1 d2d2 > 0: the edge passed the parallel test.
-         */
-        const v3 d1 = e_query.s1.dir;
-        const v3 d2 = e_query.s2.dir;
-        const v3 w = V3Sub(e_query.s1.p[0], e_query.s2.p[0]);
-        const f32 d1d1 = V3Dot(d1, d1);
-        const f32 d1d2 = V3Dot(d1, d2);
-        const f32 d2d2 = V3Dot(d2, d2);
-        const f32 d1w = V3Dot(d1, w);
-        const f32 d2w = V3Dot(d2, w);
-        const v3 cross = V3Cross(d1, d2);
-        const f32 den = V3Dot(cross, cross);
-        const f32 s_edge = (d1d2*d2w - d1w*d2d2) / den;
-        const f32 t_core = (d1d1*d2w - d1d2*d1w) / den;
-        if (0.0f <= s_edge && s_edge <= 1.0f && 0.0f <= t_core && t_core <= 1.0f)
+        /* not parallel: the edge passed the parallel test */
+        f32 t_edge, t_core;
+        if (SegmentLineClosestParameterCheck(&t_edge, &t_core, &e_query.s1, &e_query.s2))
         {
             m->v_count = 1;
             m->n = e_query.normal;
-            m->v[0] = SegmentBc(&e_query.s1, s_edge);
+            m->v[0] = SegmentBc(&e_query.s1, t_edge);
             m->depth[0] = F32Max(0.0f, radius - e_query.depth);
             return result;
         }
@@ -3127,11 +3142,363 @@ struct c_ContactResult TMP_c_HullCapsuleContact(struct arena *frame, const struc
     return result;
 }
 
-/* TMP: adapter over c_HullContact until rewritten */
+/*
+ * Face query (Gregorius): every face of one hull (planes pl, in the common frame) against the other hull's vertices
+ * v; a face's separation is the smallest signed distance of v. query keeps the largest; returns 1 at a separating
+ * face (separation > 0).
+ */
+static u32 HullFaceQuery(struct sat_FaceQuery *query, const struct plane *pl, const u32 f_count, const v3 *v, const u32 v_count)
+{
+	for (u32 fi = 0; fi < f_count; ++fi)
+	{
+		f32 min_dist = F32_INFINITY;
+		u32 min_vi = 0;
+		for (u32 i = 0; i < v_count; ++i)
+		{
+			const f32 dist = PlanePointSignedDistance(pl + fi, v[i]);
+			if (dist < min_dist)
+			{
+				min_dist = dist;
+				min_vi = i;
+			}
+		}
+
+		if (query->depth < min_dist)
+		{
+			query->fi = fi;
+			query->vi = min_vi;
+			query->depth = min_dist;
+			query->normal = pl[fi].normal;
+		}
+
+		if (min_dist > 0.0f)
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+/*
+ * Edge pair (e1 of hull 1 = h[0], e2 of hull 2 = h[1]; planes and vertices in hull 1's frame): if a face of the
+ * Minkowski difference of hulls 1 and 2 (Gauss map test, hull 2's normals negated) and not parallel, its axis
+ * cross(e1, e2) oriented away from hull 1's center of mass and its separation; kept in query if larger. Orientation:
+ * e1 is hull 1's support along a valid axis L, so L.(e1 - C) > 0 for every C inside hull 1 (a margin of at least
+ * hull 1's inner radius).
+ */
+static void HullEdgeCheck(struct sat_EdgeQuery *query, const struct dcel *h[2], const v3 *v[2], const struct plane *pl[2], const v3 center_1, const u32 e1, const u32 e2)
+{
+	const u32 t1 = h[0]->e[e1].twin;
+	const u32 t2 = h[1]->e[e2].twin;
+	const struct segment s1 = SegmentConstruct(v[0][h[0]->e[e1].origin], v[0][h[0]->e[t1].origin]);
+	const struct segment s2 = SegmentConstruct(v[1][h[1]->e[e2].origin], v[1][h[1]->e[t2].origin]);
+	const v3 n1_1 = pl[0][h[0]->e[e1].face_ccw].normal;
+	const v3 n1_2 = pl[0][h[0]->e[t1].face_ccw].normal;
+	const v3 n2_1 = V3Negate(pl[1][h[1]->e[e2].face_ccw].normal);
+	const v3 n2_2 = V3Negate(pl[1][h[1]->e[t2].face_ccw].normal);
+	if (!EEIsMinkowskiFace(n1_1, n1_2, n2_1, n2_2, s1.dir, s2.dir))
+	{
+		return;
+	}
+
+	/* parallel pairs: their cross product is noise (and no face of the Minkowski difference beyond the faces') */
+	v3 axis = V3Cross(s1.dir, s2.dir);
+	const f32 axis_sq = V3Dot(axis, axis);
+	if (axis_sq <= g_numerics_config->edge_parallel_sin_sq*V3Dot(s1.dir, s1.dir)*V3Dot(s2.dir, s2.dir))
+	{
+		return;
+	}
+
+	axis = V3Scale(axis, 1.0f / F32Sqrt(axis_sq));
+	if (V3Dot(axis, V3Sub(s1.p[0], center_1)) < 0.0f)
+	{
+		axis = V3Negate(axis);
+	}
+
+	const f32 separation = V3Dot(axis, V3Sub(s2.p[0], s1.p[0]));
+	if (query->depth < separation)
+	{
+		query->depth = separation;
+		query->normal = axis;
+		query->s1 = s1;
+		query->s2 = s2;
+		query->e1 = e1;
+		query->e2 = e2;
+	}
+}
+
+/* Edge query (Gregorius): every edge pair once. Returns 1 at a separating axis (separation > 0). */
+static u32 HullEdgeQuery(struct sat_EdgeQuery *query, const struct dcel *h[2], const v3 *v[2], const struct plane *pl[2], const v3 center_1)
+{
+	for (u32 e1 = 0; e1 < h[0]->e_count; ++e1)
+	{
+		if (h[0]->e[e1].twin < e1) { continue; }
+		for (u32 e2 = 0; e2 < h[1]->e_count; ++e2)
+		{
+			if (h[1]->e[e2].twin < e2) { continue; }
+			HullEdgeCheck(query, h, v, pl, center_1, e1, e2);
+			if (query->depth > 0.0f)
+			{
+				return 1;
+			}
+		}
+	}
+
+	return 0;
+}
+
+/*
+ * Edge contact from query: the closest points of the edges' lines, v on s1 (hull 1's edge); only if both lie within the
+ * segments (Box3D: otherwise other features realize the axis). Writes the EE cache; returns 1 if built.
+ */
+static u32 HullEdgeContact(struct c_Manifold *m, struct c_SatCache *cache, const struct sat_EdgeQuery *query)
+{
+	/* not parallel: the pair passed the parallel test */
+	f32 t1, t2;
+	if (!SegmentLineClosestParameterCheck(&t1, &t2, &query->s1, &query->s2))
+	{
+		return 0;
+	}
+
+	m->v_count = 1;
+	m->n = query->normal;
+	m->v[0] = SegmentBc(&query->s1, t1);
+	m->depth[0] = F32Max(0.0f, -query->depth);
+
+	cache->type = SAT_CACHE_CONTACT_EE;
+	cache->depth = m->depth[0];
+	cache->normal = m->n;
+	cache->feature[0] = sat_FeatureIdConstruct(query->e1, SAT_FEATURE_TYPE_EDGE);
+	cache->feature[1] = sat_FeatureIdConstruct(query->e2, SAT_FEATURE_TYPE_EDGE);
+	return 1;
+}
+
+/* a separating axis for the SAT cache: normal from s[0] to s[1], separation > 0 */
+static void sat_CacheSeparation(struct c_SatCache *cache, const v3 normal, const f32 separation)
+{
+	cache->type = SAT_CACHE_SEPARATION;
+	cache->normal = normal;
+	cache->depth = separation;
+}
+
+/* a pair for the SAT cache: dcels, vertices and face planes in a common frame (s[0]'s for hulls) */
+struct sat_Pair
+{
+	const struct dcel *	h[2];
+	const v3 *			v[2];
+	const struct plane *pl[2];
+	v3					center_0;	/* s[0]'s center of mass: edge axis orientation (hulls) */
+};
+
+/*
+ * SAT cache (Box3D): re-check old_cache for the pair. A separating axis is reused while it separates; a contact is
+ * rebuilt from its features (face: clipped on the cached face; edge pair: re-checked and its closest points) and reused
+ * while its depth moved by less than sat_cache_tolerance. Returns 1 if reused: new_cache written, *colliding set, for a
+ * contact also m and (face contacts) its features. triangle: s[0] is a mesh triangle (its own edge check; connected
+ * with the mesh rewrite).
+ */
+static u32 sat_CacheTryReuse(struct c_Manifold *m, u32 *colliding, sat_FeatureId features[4], struct c_SatCache *new_cache, struct arena *mem_tmp, const struct sat_Pair *pair, const struct c_SatCache *old_cache, const u32 triangle)
+{
+	ds_AssertString(!triangle, "sat_CacheTryReuse: the triangle side is connected with the mesh rewrite");
+	struct ds_DynamicsMetrics *metrics = &g_dynamics_worker[ds_ThreadSelfIndex()].metrics;
+	u32 *probe = (triangle) ? &metrics->mesh_cache_probe_count : &metrics->hull_cache_probe_count;
+	u32 *eviction = (triangle) ? &metrics->mesh_cache_eviction_count : &metrics->hull_cache_eviction_count;
+	const f32 tolerance = g_numerics_config->sat_cache_tolerance;
+	const struct dcel *h[2] = { pair->h[0], pair->h[1] };
+	const v3 *v[2] = { pair->v[0], pair->v[1] };
+	const struct plane *pl[2] = { pair->pl[0], pair->pl[1] };
+	*probe += 1;
+	*colliding = 0;
+
+	switch (old_cache->type)
+	{
+		case SAT_CACHE_SEPARATION:
+		{
+			const v3 support_0 = v[0][V3Support(v[0], h[0]->v_count, old_cache->normal)];
+			const v3 support_1 = v[1][V3Support(v[1], h[1]->v_count, V3Negate(old_cache->normal))];
+			const f32 separation = V3Dot(support_1, old_cache->normal) - V3Dot(support_0, old_cache->normal);
+			if (separation > 0.0f)
+			{
+				sat_CacheSeparation(new_cache, old_cache->normal, separation);
+				return 1;
+			}
+		} break;
+
+		case SAT_CACHE_CONTACT_EE:
+		{
+			struct sat_EdgeQuery e_query = { .depth = -F32_INFINITY, .e1 = U32_MAX };
+			HullEdgeCheck(&e_query, h, v, pl, pair->center_0, sat_FeatureIdIndex(old_cache->feature[0]), sat_FeatureIdIndex(old_cache->feature[1]));
+			if (e_query.e1 != U32_MAX && e_query.depth < 0.0f && HullEdgeContact(m, new_cache, &e_query)
+					&& F32Abs(new_cache->depth - old_cache->depth) < tolerance)
+			{
+				*colliding = 1;
+				return 1;
+			}
+		} break;
+
+		case SAT_CACHE_CONTACT_FV:
+		{
+			/* b_f = body with reference/contact face, b_v = incident body with penetrating vertices */
+			const u32 b_f = sat_FeatureIdFaceCheck(old_cache->feature[1]);
+			const u32 b_v = 1 - b_f;
+			const u32 face = sat_FeatureIdIndex(old_cache->feature[b_f]);
+			struct sat_FaceQuery face_query = { .fi = face, .normal = pl[b_f][face].normal };
+			f32 depth;
+			if (HullFaceContact(mem_tmp, m, features, &depth, new_cache->feature + b_v, &face_query, h, v, pl, b_f, 0)
+					&& F32Abs(depth - old_cache->depth) < tolerance)
+			{
+				new_cache->type = SAT_CACHE_CONTACT_FV;
+				new_cache->feature[b_f] = old_cache->feature[b_f];
+				new_cache->depth = depth;
+				new_cache->normal = face_query.normal;
+				*colliding = 1;
+				return 1;
+			}
+		} break;
+
+		default:
+		{
+			ds_AssertString(0, "Shouldn't be reachable");
+		} break;
+	}
+
+	*eviction += 1;
+	*colliding = 0;
+	return 0;
+}
+
+static u32 sat_CacheConvexTryReuse(struct c_Manifold *m, u32 *colliding, struct c_SatCache *new_cache, struct arena *mem_tmp, const struct sat_Pair *pair, const struct c_SatCache *old_cache)
+{
+	sat_FeatureId features[4];
+	return sat_CacheTryReuse(m, colliding, features, new_cache, mem_tmp, pair, old_cache, 0);
+}
+
+/*
+ * Hull vs hull (Gregorius' SAT): local manifold in s[0]'s frame (n from s[0] to s[1]). s[1]'s vertices and face
+ * planes are moved into s[0]'s frame; s[0] uses its stored planes. Face queries of both hulls and the edge query
+ * (Gauss map pruned, axes oriented by s[0]'s center of mass); separated if any axis separates. Otherwise the face
+ * contact (incident face clipped to the reference face, the face with the larger separation), replaced by the edge
+ * contact if the clip is empty or the edge separates more than the clipped face by sat_face_bias (Box3D). The SAT
+ * cache is tried first.
+ */
 struct c_ContactResult TMP_c_HullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
 {
-    struct c_ContactResult result = c_HullContact(frame, cached_result, s, t, 0);
-    TMP_c_ContactResultToLocal(&result, &t[0]);
+	ds_Assert(s[0]->type == C_SHAPE_CONVEX_HULL);
+	ds_Assert(s[1]->type == C_SHAPE_CONVEX_HULL);
+
+    struct ds_DynamicsMetrics *metrics = &g_dynamics_worker[ds_ThreadSelfIndex()].metrics;
+    metrics->hull_call_count += 1;
+
+    u32 colliding = 0;
+    struct c_ContactResult result = { 0 };
+    result.cache_count = 1;
+    result.cache = ArenaPushPacked(frame, sizeof(struct c_SatCache));
+    result.manifold_count = 1;
+    result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
+
+    struct arena *mem_tmp = ArenaPushScratch();
+
+    /* s[1] in s[0]'s frame: vertices and face planes */
+    const ds_Transform t_1_to_0 = ds_TransformWorldRelative(&t[0], &t[1]);
+    const m3 rot = M3QUnit(t_1_to_0.rotation);
+    const struct dcel *h[2] = { &s[0]->hull, &s[1]->hull };
+    v3 *v_1 = ArenaPush(mem_tmp, h[1]->v_count * sizeof(v3));
+    struct plane *pl_1 = ArenaPush(mem_tmp, h[1]->f_count * sizeof(struct plane));
+	for (u32 i = 0; i < h[1]->v_count; ++i)
+	{
+		v_1[i] = V3Add(M3V3Mul(rot, h[1]->v[i]), t_1_to_0.position);
+	}
+	for (u32 fi = 0; fi < h[1]->f_count; ++fi)
+	{
+		pl_1[fi] = PlaneTransform(h[1]->plane + fi, rot, t_1_to_0.position);
+	}
+    const v3 *v[2] = { h[0]->v, v_1 };
+    const struct plane *pl[2] = { h[0]->plane, pl_1 };
+    const v3 center_0 = s[0]->center_of_mass;
+
+    const struct sat_Pair pair = { .h = { h[0], h[1] }, .v = { v[0], v[1] }, .pl = { pl[0], pl[1] }, .center_0 = center_0 };
+    if (cached_result->cache_count && sat_CacheConvexTryReuse(result.manifold, &colliding, result.cache, mem_tmp, &pair, cached_result->cache))
+    {
+        goto sat_cleanup;
+    }
+
+	struct sat_FaceQuery f_query[2] = { { .depth = -F32_INFINITY }, { .depth = -F32_INFINITY } };
+	struct sat_EdgeQuery e_query = { .depth = -F32_INFINITY, .e1 = U32_MAX };
+
+	if (HullFaceQuery(&f_query[0], pl[0], h[0]->f_count, v[1], h[1]->v_count))
+	{
+		sat_CacheSeparation(result.cache, f_query[0].normal, f_query[0].depth);
+		goto sat_cleanup;
+	}
+
+	if (HullFaceQuery(&f_query[1], pl[1], h[1]->f_count, v[0], h[0]->v_count))
+	{
+		sat_CacheSeparation(result.cache, V3Negate(f_query[1].normal), f_query[1].depth);
+		goto sat_cleanup;
+	}
+
+	if (HullEdgeQuery(&e_query, h, v, pl, center_0))
+	{
+		sat_CacheSeparation(result.cache, e_query.normal, e_query.depth);
+		goto sat_cleanup;
+    }
+
+    /* face contact on the face with the larger separation; its clipped separation is -(deepest clipped depth) */
+    const u32 b_f = (f_query[0].depth < f_query[1].depth);
+    const u32 b_v = 1 - b_f;
+    f32 max_depth;
+    sat_FeatureId manifold_features[4];
+    const u32 face_contact = HullFaceContact(mem_tmp, result.manifold, manifold_features, &max_depth, result.cache->feature + b_v, f_query + b_f, h, v, pl, b_f, 0);
+
+    /* Edge contact if the face contact is empty or the edge separates more than the clipped face by sat_face_bias */
+    colliding = 1;
+    if (e_query.e1 != U32_MAX && (!face_contact || -max_depth + g_numerics_config->sat_face_bias < e_query.depth)
+            && HullEdgeContact(result.manifold, result.cache, &e_query))
+    {
+        goto sat_cleanup;
+    }
+
+    if (face_contact)
+    {
+        result.cache->type = SAT_CACHE_CONTACT_FV;
+        result.cache->feature[b_f] = sat_FeatureIdConstruct(f_query[b_f].fi, SAT_FEATURE_TYPE_FACE);
+        result.cache->depth = max_depth;
+        result.cache->normal = f_query[b_f].normal;
+        goto sat_cleanup;
+    }
+
+    /*
+     * No face or edge contact (the clip came out empty, the edge's closest points outside the segments): the face
+     * query's deepest vertex of the incident hull and its projection onto the reference plane. Nothing to cache.
+     */
+    {
+        const struct sat_FaceQuery *fq = f_query + b_f;
+        const v3 p = v[b_v][fq->vi];
+        struct c_Manifold *m = result.manifold;
+        m->v_count = 1;
+        m->depth[0] = F32Max(0.0f, -fq->depth);
+        if (b_f == 0)
+        {
+            m->n = fq->normal;
+            m->v[0] = V3Sub(p, V3Scale(fq->normal, fq->depth));
+        }
+        else
+        {
+            m->n = V3Negate(fq->normal);
+            m->v[0] = p;
+        }
+        result.cache_count = 0;
+    }
+
+sat_cleanup:
+    if (!colliding)
+    {
+        ArenaPopPacked(frame, sizeof(struct c_Manifold));
+        result.manifold_count = 0;
+        result.manifold = NULL;
+    }
+    ArenaPopScratch();
     return result;
 }
 

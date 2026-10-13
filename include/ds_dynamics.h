@@ -57,21 +57,20 @@ struct ds_NumericsConfig
     f32 v3_parallel_check_max_degrees;
     f32 v3_parallel_check_eps;
 
-    /* Maximum degrees allowed for temporal consistency between a cached and new manifold normal */
+    /*
+     * Maximum degrees allowed for temporal consistency between a cached and new manifold normal.
+     * Old contact functions only (c_HullContact, mesh); TMP_c_HullContact uses sat_cache_tolerance.
+     */
     f32 manifold_cache_normal_parallel_check_max_degrees_pending;
     f32 manifold_cache_normal_parallel_check_max_degrees;
     f32 manifold_cache_normal_parallel_check_eps;
 
-    /* Maximum difference allowed for temporal consistency between a cached and new manifold depth */
+    /*
+     * Maximum difference allowed for temporal consistency between a cached and new manifold depth.
+     * Old contact functions only (c_HullContact, mesh); TMP_c_HullContact uses sat_cache_tolerance.
+     */
     f32 manifold_cache_depth_max_diff_allowed_pending;
     f32 manifold_cache_depth_max_diff_allowed;
-
-    /* 
-     * Maximum velocity along the contact normal  allowed for temporal consistency between a cached and 
-     * new manifold 
-     */
-    f32 manifold_cache_linear_velocity_max_diff_allowed_pending;
-    f32 manifold_cache_linear_velocity_max_diff_allowed;
 
     /* Fraction of dirty dbvh proxies that may be re-inserted before triggering a dbvh rebuild  */
     f32 dbvh_reinsert_threshold_pending;
@@ -114,6 +113,14 @@ struct ds_NumericsConfig
      */
     f32 sat_face_bias_pending;
     f32 sat_face_bias;
+
+    /*
+     * SAT cache (sat_CacheTryReuse): a cached contact is rebuilt from its features and reused while its depth moved by
+     * less than this (m) since the last tick (Box3D: linear slop). A cached separating axis is reused while it
+     * separates.
+     */
+    f32 sat_cache_tolerance_pending;
+    f32 sat_cache_tolerance;
 
     /* Max GJK iterations (support point evaluations) per distance query; at least 1 */
     u32 gjk_max_iterations_pending;
@@ -607,12 +614,9 @@ To ensure temporal coherence when reusing contact information, we currently test
      test is only relevant for face contacts, as the deepest point may come from the incident body's vertex set
      or from the body's edge set as a clipped point.
 
-  4. We allow a maximum change in penetration depth per frame, governed by a value in ds_NumericsConfig. This test
-     may be unnecessary as we are already doing a linear velocity check.
+  4. We allow a maximum change in penetration depth per frame, governed by a value in ds_NumericsConfig.
 
-  5. We allow a maximum difference in velocity between the two bodies along the contact normal. If the separating
-     velocity is high, the chances are that our manifold is not coherent and we may as well not even try to rebuilt
-     it (a rather costly endevaour). As in the other case, the max difference is found in ds_NumericsConfig.
+(Old contact functions. TMP_c_HullContact: sat_CacheTryReuse, one rule: |depth change| < sat_cache_tolerance.)
 */
 
 enum sat_CacheType

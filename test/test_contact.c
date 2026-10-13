@@ -864,6 +864,8 @@ static void ChHullInit(struct ch_Hull *h, const struct c_Shape *shape, const u32
     ds_Assert(dcel->v_count <= CH_VERTEX_MAX && dcel->f_count <= CH_FACE_MAX && dcel->e_count <= 2*CH_EDGE_MAX);
 
     h->shape = *shape;
+    /* center of mass (the hull contact orients edge axes by it), as the engine sets it */
+    c_ShapeUpdateMassProperties(&h->shape);
     h->t.rotation = rotation;
     h->t.position = V3F64(pos.x, pos.y, pos.z);
     h->pos = pos;
@@ -1809,7 +1811,9 @@ Every manifold must satisfy, with L = max(extent A, extent B, |x_B - x_A|), tol 
     v_i on A's surface                          |sdf_A(v_i)| <= tol
     v_i - depth_i n on B's surface              |sdf_B(v_i - depth_i n)| <= tol (point and depth agree)
     translating both by an exactly representable offset gives identical bits
-    the same checks with the previous result as the cache: same pose, and B moved by ~1e-3 L
+    the same checks with the previous result as the cache: same pose, and B moved by ~1e-3 L; a cached result
+    may claim up to sat_cache_tolerance more depth (also for separated shapes): the cache's
+    acceptance tolerance
 
 Failures are counted by kind (first example printed); any failure fails the test.
 */
@@ -1846,7 +1850,6 @@ struct hh_Stats
     f64 worst_surface_a;    /* / (eps L) */
     f64 worst_surface_b;    /* / (eps L) */
     f64 worst_gap;          /* deep: (sat - sep(n)) / L */
-    u64 missed_origin_outside;
 };
 
 /* B moved into A's frame (double): vertices, face normals and offsets, edge directions */
@@ -1949,7 +1952,7 @@ static u32 HhContact(struct arena *frame, struct c_ContactResult *result, const 
 }
 
 /* checks one result of (a, b) against the reference; returns the failure kind */
-static enum hh_Fail HhVerify(struct hh_Stats *stats, const struct c_ContactResult *result, const struct ch_Hull *a, const struct ch_Hull *b)
+static enum hh_Fail HhVerifySlack(struct hh_Stats *stats, const struct c_ContactResult *result, const struct ch_Hull *a, const struct ch_Hull *b, const f64 slack)
 {
     struct ch_Hull bt;
     HhHullInFrame(&bt, b, a);
@@ -1966,11 +1969,9 @@ static enum hh_Fail HhVerify(struct hh_Stats *stats, const struct c_ContactResul
     }
     else if (sat < 0.0 && !contact)
     {
-        /* TMP diagnosis: A's frame origin inside A? */
-        stats->missed_origin_outside += (ChHullSdf(a, D3(0.0, 0.0, 0.0)) > 0.0);
         return HH_FAIL_MISSED;
     }
-    else if (sat > 0.0 && contact)
+    else if (sat > slack && contact)
     {
         return HH_FAIL_FALSE;
     }
@@ -1996,15 +1997,15 @@ static enum hh_Fail HhVerify(struct hh_Stats *stats, const struct c_ContactResul
         const f64 surface_b = F64AbsTest(ChHullSdf(&bt, D3Sub(v, D3Scale(n, m->depth[i]))));
         stats->worst_surface_a = F64MaxTest(stats->worst_surface_a, surface_a / eps_l);
         stats->worst_surface_b = F64MaxTest(stats->worst_surface_b, surface_b / eps_l);
-        if (m->depth[i] > -sep + tol)
+        if (m->depth[i] > -sep + tol + slack)
         {
             return HH_FAIL_DEPTH;
         }
-        if (surface_a > tol)
+        if (surface_a > tol + slack)
         {
             return HH_FAIL_SURFACE_A;
         }
-        if (surface_b > tol)
+        if (surface_b > tol + slack)
         {
             return HH_FAIL_SURFACE_B;
         }
@@ -2017,6 +2018,21 @@ static enum hh_Fail HhVerify(struct hh_Stats *stats, const struct c_ContactResul
     stats->contacts += 1;
     stats->v_count[m->v_count] += 1;
     return HH_FAIL_NONE;
+}
+
+static enum hh_Fail HhVerify(struct hh_Stats *stats, const struct c_ContactResult *result, const struct ch_Hull *a, const struct ch_Hull *b)
+{
+    return HhVerifySlack(stats, result, a, b, 0.0);
+}
+
+/*
+ * A cached result is accepted while its depth moved by less than sat_cache_tolerance (the cache
+ * trades exactness for coherence): it may claim that much depth beyond the reference, also for separated shapes,
+ * and its points may lie that far off the surfaces (a face rebuilt for separated hulls: contact_audit.txt I3).
+ */
+static enum hh_Fail HhVerifyCached(struct hh_Stats *stats, const struct c_ContactResult *result, const struct ch_Hull *a, const struct ch_Hull *b)
+{
+    return HhVerifySlack(stats, result, a, b, g_numerics_config->sat_cache_tolerance);
 }
 
 static void HhCount(struct hh_Stats *stats, const enum hh_Fail fail, const struct c_ContactResult *result, const struct ch_Hull *a, const struct ch_Hull *b, const char *what)
@@ -2084,7 +2100,7 @@ static void HhCheckPair(struct arena *frame, struct hh_Stats *fresh, struct hh_S
         HhCount(cached, HH_FAIL_INVALID, &r_c, a, b, "cached, same pose");
         return;
     }
-    HhCount(cached, HhVerify(cached, &r_c, a, b), &r_c, a, b, "cached, same pose");
+    HhCount(cached, HhVerifyCached(cached, &r_c, a, b), &r_c, a, b, "cached, same pose");
 
     struct ch_Hull b_m = *b;
     const f64 L = F64MaxTest(F64MaxTest(a->extent, b->extent), D3Length(D3Sub(b->pos, a->pos)));
@@ -2095,7 +2111,7 @@ static void HhCheckPair(struct arena *frame, struct hh_Stats *fresh, struct hh_S
         HhCount(cached, HH_FAIL_INVALID, &r_c, a, &b_m, "cached, moved");
         return;
     }
-    HhCount(cached, HhVerify(cached, &r_c, a, &b_m), &r_c, a, &b_m, "cached, moved");
+    HhCount(cached, HhVerifyCached(cached, &r_c, a, &b_m), &r_c, a, &b_m, "cached, moved");
 }
 
 static u64 HhFailures(const struct hh_Stats *s)
@@ -2123,7 +2139,7 @@ static void HhStatsPrint(const char *id, const struct hh_Stats *s)
             any = 1;
         }
     }
-    fprintf(stdout, "%s (missed with A's origin outside A: %llu)\n", (any) ? "" : " none", (unsigned long long) s->missed_origin_outside);
+    fprintf(stdout, "%s\n", (any) ? "" : " none");
 }
 
 /* rotation taking unit a to unit b */
@@ -2298,10 +2314,9 @@ struct test_Output HullContactCasesTest(struct test_Environment *env)
     TEST_TRUE(HhContact(env->mem_2, &r, &a, &b, NULL) && HhVerify(&stats, &r, &a, &b) == HH_FAIL_NONE);
     TEST_EQUAL(r.manifold_count, 0);
 
-    /* face on face, 0.1 deep: four points at the corners (+-1, 1, +-1), n = +y, depth 0.1 */
+    /* face on face, 0.1 deep: four points at the corners (+-1, 1, +-1) (on A's side planes), n = +y, depth 0.1 */
     ChHullInit(&b, &box, 1, hw, QIdentity(), D3(0.0, 1.9, 0.0));
     TEST_TRUE(HhContact(env->mem_2, &r, &a, &b, NULL) && HhVerify(&stats, &r, &a, &b) == HH_FAIL_NONE);
-    if (r.manifold->v_count != 4) { c_ManifoldDebugPrint(r.manifold); }
     TEST_EQUAL(r.manifold->v_count, 4);
     TEST_TRUE(CtNearD3(D3V3(r.manifold->n), D3(0.0, 1.0, 0.0)));
     for (u32 i = 0; i < 4; ++i)
@@ -2318,12 +2333,13 @@ struct test_Output HullContactCasesTest(struct test_Environment *env)
         TEST_TRUE(CtNear(r.manifold->depth[i], 0.1));
     }
 
-    /* B turned 45 deg about x, its lower edge (along x) 0.05 into the top face: two points (+-1, 1, 0), depth 0.05 */
+    /* B turned 45 deg about x, its lower edge (along x, ends on A's side planes) 0.05 into the top face: two points (+-1, 1, 0), depth 0.05 */
     ChHullInit(&b, &box, 1, hw, QUnitAxisAngle(V3(1.0f, 0.0f, 0.0f), F32_PI/4.0f), D3(0.0, 0.95 + 1.41421356, 0.0));
     TEST_TRUE(HhContact(env->mem_2, &r, &a, &b, NULL) && HhVerify(&stats, &r, &a, &b) == HH_FAIL_NONE);
     TEST_EQUAL(r.manifold->v_count, 2);
     TEST_TRUE(CtNearD3(D3V3(r.manifold->n), D3(0.0, 1.0, 0.0)));
     TEST_TRUE(CtNear(r.manifold->depth[0], 0.05) && CtNear(r.manifold->depth[1], 0.05));
+    TEST_TRUE(CtNear(F64AbsTest(r.manifold->v[0].x), 1.0) && CtNear(r.manifold->v[0].x, -r.manifold->v[1].x));
 
     g_dynamics_worker = prev;
 	return output;

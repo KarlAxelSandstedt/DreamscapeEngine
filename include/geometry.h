@@ -129,6 +129,12 @@ u32             SegmentParallelCheck(const struct segment *s1, const struct segm
 f32 		    SegmentDistanceSquared(v3 *c1, v3 *c2, const struct segment *s1, const struct segment *s2);
 /* return parameters t1,t2 of closest points c1,c2 on s1,s2 such that ci = si.p0(1-ti) + s1.p1*ti  */
 void		    SegmentClosestParameter(f32 *t1, f32 *t2, const struct segment *s1, const struct segment *s2);
+/*
+ * Closest points of the lines through s1 and s2, s1.p0 + t1 s1.dir and s2.p0 + t2 s2.dir: return 1 and t1, t2 if both
+ * lie in [0, 1] (the lines' closest points lie within the segments), else 0. Precondition: the segments are not
+ * parallel, |s1.dir x s2.dir|^2 > 0 (callers' parallel tests guarantee it; asserted in debug).
+ */
+u32             SegmentLineClosestParameterCheck(f32 *t1, f32 *t2, const struct segment *s1, const struct segment *s2);
 /* return squared distance between s and p; set c to the closest point on s to p */
 f32 		    SegmentPointDistanceSquared(v3 *c, const struct segment *s, const v3 p);
 /* Return parameter t of projected barycentric point p to segment s: PROJECTION_ON_LINE(p) = s.p0*(1-t) + s.p1*t */

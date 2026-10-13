@@ -127,6 +127,34 @@ void SegmentClosestParameter(f32 *t1, f32 *t2, const struct segment *s1, const s
 	ds_Assert(0.0f <= *t2 && *t2 <= 1.0f);
 }
 
+u32 SegmentLineClosestParameterCheck(f32 *t1, f32 *t2, const struct segment *s1, const struct segment *s2)
+{
+	/*
+	 * Lines s1.p0 + t1 d1, s2.p0 + t2 d2, with w = s1.p0 - s2.p0: the closest pair is where the difference is
+	 * perpendicular to both directions,
+	 *
+	 *	t1 = (d1d2 d2w - d1w d2d2) / den,  t2 = (d1d1 d2w - d1d2 d1w) / den
+	 *	den = d1d1 d2d2 - d1d2^2 = |d1 x d2|^2
+	 *
+	 * den from the cross product: no cancellation for nearly parallel lines.
+	 */
+	const v3 d1 = s1->dir;
+	const v3 d2 = s2->dir;
+	const v3 w = V3Sub(s1->p[0], s2->p[0]);
+	const f32 d1d1 = V3Dot(d1, d1);
+	const f32 d1d2 = V3Dot(d1, d2);
+	const f32 d2d2 = V3Dot(d2, d2);
+	const f32 d1w = V3Dot(d1, w);
+	const f32 d2w = V3Dot(d2, w);
+	const v3 cross = V3Cross(d1, d2);
+	const f32 den = V3Dot(cross, cross);
+	ds_Assert(den > 0.0f);
+
+	*t1 = (d1d2*d2w - d1w*d2d2) / den;
+	*t2 = (d1d1*d2w - d1d2*d1w) / den;
+	return (0.0f <= *t1 && *t1 <= 1.0f && 0.0f <= *t2 && *t2 <= 1.0f);
+}
+
 f32 SegmentDistanceSquared(v3 *c1, v3 *c2, const struct segment *s1, const struct segment *s2)
 {
     f32 t1, t2;
