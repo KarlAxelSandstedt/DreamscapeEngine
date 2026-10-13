@@ -158,13 +158,21 @@ static void ds_DeterminismGenerate(struct arena *persistent, struct ds_Determini
  *  emrun DreamscapeTest.html config_path --load file       replay with config_path (file.cfg, possibly with another
  *                                                          thread_count) and compare every frame's hash
  *
- *  The browser's files (MEMFS) do not outlive the page: --load only finds files written in the same page.
+ *  The browser's files (MEMFS) do not outlive the page: host_files.js copies the argument files from the
+ *  build directory into the page, and the files --generate writes are sent back to it (emrun
+ *  --dump-out-directory). script/web/determinism.(sh/bat) run the whole test.
  */
 static struct arena g_persistent;
 static struct ds_DeterminismTest g_test;
 static struct led *g_editor;
 static u32 g_success = 1;
 static u64 g_frame = 0;
+
+/* send a file the page wrote to the emrun server, which writes it into --dump-out-directory */
+static void ds_HostFileSend(const char *path)
+{
+    EM_ASM({ const path = UTF8ToString($0); emrun_file_dump(path, FS.readFile(path)); }, path);
+}
 
 static void ds_DeterminismEnd(void)
 {
@@ -182,10 +190,16 @@ static void ds_DeterminismEnd(void)
     if (g_test.generate)
     {
         ds_DeterminismGenerate(&g_persistent, &g_test);
+        /* before ArenaFree: the paths live on g_persistent */
+        ds_HostFileSend(g_test.file_cstr);
+        ds_HostFileSend(g_test.config_cstr);
     }
 
 	ArenaFree(&g_persistent);
 	ds_Shutdown();
+
+    /* main's return value: emrun waits for the file uploads, then exits with this code */
+    emscripten_force_exit((g_success) ? 0 : 1);
 }
 
 /* one frame per browser animation frame: the browser's main thread must not block */

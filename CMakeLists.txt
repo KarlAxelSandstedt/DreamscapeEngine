@@ -282,6 +282,13 @@ if (DS_TEST)
 		set(CMAKE_EXECUTABLE_SUFFIX ".html")
 		add_executable(${DS_TEST_EXECUTABLE} "${DS_TEST_MODULE_PATH}/wasm/main.c")
 
+		if (DS_TEST_DETERMINISM)
+			# test files to and from the build directory, see host_files.js
+			set(DS_HOST_FILES_JS "${DS_TEST_MODULE_PATH}/wasm/host_files.js")
+			target_link_options(${DS_TEST_EXECUTABLE} PRIVATE "--pre-js=${DS_HOST_FILES_JS}")
+			set_property(TARGET ${DS_TEST_EXECUTABLE} APPEND PROPERTY LINK_DEPENDS "${DS_HOST_FILES_JS}")
+		endif ()
+
 	elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 
 		add_executable(${DS_TEST_EXECUTABLE} "${DS_TEST_MODULE_PATH}/linux/main.c")
