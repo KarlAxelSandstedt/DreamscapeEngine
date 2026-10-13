@@ -42,10 +42,11 @@ cd build
 cmake --build . --parallel
 
 # headless browser with its own profile in build/; emrun writes the page's output files into build/
-# (--dump-out-directory) and closes the browser when the page exits
+# (--dump-out-directory) and closes the browser when the page exits. A page that never exits (or never
+# connects) fails after --timeout seconds instead of hanging the script.
 BROWSER="${BROWSER:-/usr/bin/brave-browser}"
 web_run() {
-    emrun --kill_exit --dump-out-directory=. --browser="$BROWSER" \
+    emrun --timeout=900 --kill_exit --dump-out-directory=. --browser="$BROWSER" \
         --browser_args="--headless=new --enable-unsafe-swiftshader --user-data-dir=$PWD/browser_profile --no-first-run --no-default-browser-check" \
         DreamscapeTest.html -- "$@"
 }

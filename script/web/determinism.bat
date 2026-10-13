@@ -46,10 +46,11 @@ cd build
 cmake --build . --parallel || exit /b 1
 
 REM headless browser with its own profile in build\; emrun writes the page's output files into build\
-REM (--dump-out-directory) and closes the browser when the page exits. emrun splits --browser_args
+REM (--dump-out-directory) and closes the browser when the page exits. A page that never exits (or never
+REM connects) fails after --timeout seconds instead of hanging the script. emrun splits --browser_args
 REM like a POSIX shell, so the profile path uses forward slashes.
 set "PROFILE_DIR=%CD:\=/%/browser_profile"
-set "WEB_RUN=emrun --kill_exit --dump-out-directory=. --browser="%BROWSER%" --browser_args="--headless=new --use-angle=d3d11 --user-data-dir=%PROFILE_DIR% --no-first-run --no-default-browser-check" DreamscapeTest.html --"
+set "WEB_RUN=emrun --timeout=900 --kill_exit --dump-out-directory=. --browser="%BROWSER%" --browser_args="--headless=new --use-angle=d3d11 --user-data-dir=%PROFILE_DIR% --no-first-run --no-default-browser-check" DreamscapeTest.html --"
 
 REM reference: serial, system seed (config/determinism.cfg); writes determinism.bin and the config it ran
 REM with, determinism.bin.cfg. Each replay uses that config with another thread_count (0: default).
