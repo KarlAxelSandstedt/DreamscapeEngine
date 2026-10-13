@@ -2358,7 +2358,7 @@ struct test_Output HullContactRandomTest(struct test_Environment *env)
     const char *mode_id[] = { "random", "face on face", "edge on edge", "vertex on face", "inside", "apart" };
     const u32 count[] = { 4000, 2000, 1000, 2000 };
     u64 failures = 0;
-    for (u32 far = 0; far < 2; ++far)
+    for (u32 far_away = 0; far_away < 2; ++far_away)
     for (u32 p = 0; p < 4; ++p)
     {
         for (u32 mode = 0; mode < 6; ++mode)
@@ -2369,16 +2369,16 @@ struct test_Output HullContactRandomTest(struct test_Environment *env)
                 struct arena record = *env->mem_2;
                 struct ch_Hull a, b;
                 /* near the origin (|x| <= 1), then anywhere up to 1e6 */
-                const struct d3 pos = (far) ? CtWorldPosition() : D3Scale(D3V3(CtUnit()), RngF32Normalized());
+                const struct d3 pos = (far_away) ? CtWorldPosition() : D3Scale(D3V3(CtUnit()), RngF32Normalized());
                 HhHull(env->mem_2, &a, kind_a[p], CtSize(), CtRotation(), pos);
                 HhHullNear(env->mem_2, &b, &a, kind_b[p], mode);
                 HhCheckPair(env->mem_2, &fresh, &cached, &a, &b);
                 *env->mem_2 = record;
             }
             char id[96];
-            snprintf(id, sizeof(id), "%s, %s, %s", (far) ? "far" : "near", pair_id[p], mode_id[mode]);
+            snprintf(id, sizeof(id), "%s, %s, %s", (far_away) ? "far" : "near", pair_id[p], mode_id[mode]);
             HhStatsPrint(id, &fresh);
-            snprintf(id, sizeof(id), "%s, %s, %s (cached)", (far) ? "far" : "near", pair_id[p], mode_id[mode]);
+            snprintf(id, sizeof(id), "%s, %s, %s (cached)", (far_away) ? "far" : "near", pair_id[p], mode_id[mode]);
             HhStatsPrint(id, &cached);
             failures += HhFailures(&fresh) + HhFailures(&cached);
         }

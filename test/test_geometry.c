@@ -579,8 +579,8 @@ struct test_Output VoronoiWellShapedTest(struct test_Environment *env)
         for (u32 i = 0; i < 4000; ++i)
         {
             const f64 scale = VdScale();
-            static const f64 far[] = { 0.0, 1.0, 1e2, 1e4 };
-            const struct vd3 T = Vd3Scale(VdUnit(), far[RngU64Range(0, 3)]*scale);
+            static const f64 far_scale[] = { 0.0, 1.0, 1e2, 1e4 };
+            const struct vd3 T = Vd3Scale(VdUnit(), far_scale[RngU64Range(0, 3)]*scale);
             struct vd3 t[4];
             for (;;)
             {
@@ -714,8 +714,8 @@ struct test_Output VoronoiNearFlatTest(struct test_Environment *env)
     for (u32 i = 0; i < 6000; ++i)
     {
         const f64 scale = VdScale();
-        static const f64 far[] = { 0.0, 1.0, 1e2 };
-        const struct vd3 T = Vd3Scale(VdUnit(), far[RngU64Range(0, 2)]*scale);
+        static const f64 far_scale[] = { 0.0, 1.0, 1e2 };
+        const struct vd3 T = Vd3Scale(VdUnit(), far_scale[RngU64Range(0, 2)]*scale);
         struct vd3 t[4];
         struct vd3 n;
         f64 n_len;
