@@ -279,12 +279,16 @@ static void sdl3_CreateGlContext(struct nativeWindow *native)
 		FatalCleanupAndExit();
 	}
 
+#if __DS_PLATFORM__ == __DS_WEB__
+	/* keep the default: the browser presents at requestAnimationFrame only; interval 0 moves the main loop to setTimeout(0) */
+#else
 	/* turn off vsync for context (dont block on SWAP until window refresh (or something...) */
 	if (!SDL_GL_SetSwapInterval(0))
 	{
 		LogString(T_SYSTEM, S_FATAL, SDL_GetError());
 		FatalCleanupAndExit();
 	}
+#endif
 
 	static u64 once = 1;
 	if (once)

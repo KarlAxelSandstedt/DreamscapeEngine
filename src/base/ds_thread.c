@@ -267,7 +267,7 @@ ds_Thread *ds_ThreadClone(struct arena *mem, void (*start)(ds_Thread *), void *a
 
   	LPSECURITY_ATTRIBUTES   lpThreadAttributes = NULL; 	/* default attributes */
   	DWORD                   dwCreationFlags = 0;		/* default creation flags */
-	thr->native = CreateThread(lpThreadAttributes, stack_size, ds_ThreadCloneStart, thr, dwCreationFlags, NULL);
+	thr->native = CreateThread(lpThreadAttributes, thr->stack_size, ds_ThreadCloneStart, thr, dwCreationFlags, NULL);
 	if (!thr->native)
 	{
 		LogSystemError(S_FATAL);

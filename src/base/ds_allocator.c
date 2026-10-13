@@ -770,35 +770,49 @@ struct ring RingAlloc(const u64 mem_hint)
 		return RingEmpty();
 	}
 
+	/* split into two placeholders, [alloc, alloc + bufsize) and [alloc + bufsize, alloc + 2*bufsize) */
 	if (!VirtualFree(alloc, bufsize, MEM_RELEASE | MEM_PRESERVE_PLACEHOLDER))
 	{
 		LogSystemError(S_ERROR);
+		VirtualFree(alloc, 0, MEM_RELEASE);
 		return RingEmpty();
 	}
 
+	/* fails with NULL, not INVALID_HANDLE_VALUE */
 	HANDLE map = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, (DWORD) (bufsize >> 32), (DWORD) ((u32) bufsize), NULL);
-	if (map == INVALID_HANDLE_VALUE)
+	if (map == NULL)
 	{
 		LogSystemError(S_ERROR);
-		return RingEmpty();
+		goto release_placeholders;
 	}
 
 	u8 *buf = MapViewOfFile3(map, INVALID_HANDLE_VALUE, alloc, 0, bufsize, MEM_REPLACE_PLACEHOLDER, PAGE_READWRITE, NULL, 0);
 	if (buf == NULL)
 	{
 		LogSystemError(S_ERROR);
-		return RingEmpty();
+		goto close_map;
 	}
 
 	if (MapViewOfFile3(map, INVALID_HANDLE_VALUE, alloc + bufsize, 0, bufsize, MEM_REPLACE_PLACEHOLDER, PAGE_READWRITE, NULL, 0) == NULL)
 	{
 		LogSystemError(S_ERROR);
+		UnmapViewOfFile(buf);
+		CloseHandle(map);
+		VirtualFree(alloc + bufsize, 0, MEM_RELEASE);
 		return RingEmpty();
 	}
 
+	/* the views keep the mapping alive */
 	CloseHandle(map);
 
 	return (struct ring) { .mem_total = bufsize, .mem_left = bufsize, .offset = 0, .buf = buf };
+
+close_map:
+	CloseHandle(map);
+release_placeholders:
+	VirtualFree(alloc, 0, MEM_RELEASE);
+	VirtualFree(alloc + bufsize, 0, MEM_RELEASE);
+	return RingEmpty();
 }
 
 void RingDealloc(struct ring *ring)

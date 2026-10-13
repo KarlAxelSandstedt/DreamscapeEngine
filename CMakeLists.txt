@@ -171,12 +171,25 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 
 	if (DS_DEBUG)
 		add_compile_definitions(DS_DEBUG)
-		add_compile_options(/Od /Zi)
+		add_compile_options(/Zi)
 	endif ()
 
+	# as on Linux, DS_OPTIMIZE alone sets the optimization level
 	if (DS_OPTIMIZE)
 		add_compile_options(/O2)
-	endif ()	
+	else ()
+		add_compile_options(/Od)
+	endif ()
+
+	# CMake's MSVC Debug defaults: /Od conflicts with /O2 (warning D9025), /RTC1 is incompatible with /O2 and /fsanitize=address
+	if (DS_OPTIMIZE)
+		string(REPLACE "/Od" "" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
+		string(REPLACE "/Od" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+	endif ()
+	if (DS_OPTIMIZE OR DS_ASAN)
+		string(REPLACE "/RTC1" "" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
+		string(REPLACE "/RTC1" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+	endif ()
 
 	# avoids x87 fp-instructions entirely (extended precision bad for consistency)
 	add_compile_options(/arch:SSE2)
@@ -275,7 +288,8 @@ if (DS_TEST)
 		
 	elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 
-		add_executable(${DS_TEST_EXECUTABLE} WIN32 "${DS_TEST_MODULE_PATH}/windows/WinMain.c")
+		# console subsystem: stderr (logging before LogInit, test results) must be visible
+		add_executable(${DS_TEST_EXECUTABLE} "${DS_TEST_MODULE_PATH}/windows/main.c")
 
 	endif()
 

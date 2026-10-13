@@ -83,7 +83,8 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
     ds_JobPhaseAlloc(mem, &pipeline->rebuild_phase->phase, REBUILD_JOB_COUNT, ds_RebuildJobPhaseDispatch);
     ds_JobPhaseAlloc(mem, &pipeline->removal_phase->phase, REMOVAL_JOB_COUNT, ds_RemovalJobPhaseDispatch);
 
-    ds_StaticAssert((u64) &((struct ds_DynamicsWorker *)0)->frame_arr[1] < (u64) &((struct ds_DynamicsWorker *)0)->pad, "");
+    /* &frame_arr[1] as frame_arr + sizeof: MSVC rejects subscripts in constant expressions */
+    ds_StaticAssert((u64) &((struct ds_DynamicsWorker *)0)->frame_arr + sizeof(struct arena) < (u64) &((struct ds_DynamicsWorker *)0)->pad, "");
     ds_StaticAssert((u64) &((struct ds_DynamicsWorker *)0)->frame < (u64) &((struct ds_DynamicsWorker *)0)->pad, "");
     ds_StaticAssert((u64) &((struct ds_DynamicsWorker *)0)->metrics < (u64) &((struct ds_DynamicsWorker *)0)->pad, "");
     pipeline->worker = ArenaPushAligned(mem, worker_count*sizeof(struct ds_DynamicsWorker), DS_CACHE_LINE);
@@ -1548,7 +1549,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
             }
 		}
 	}
-DONE:
+DONE:;
 }
 
 void ds_DynamicsSleepEnable(struct ds_Dynamics *pipeline)

@@ -32,8 +32,8 @@ Description:
 Usage:
     Log(T_PHYSICS, S_WARNING, "body %u: %k", index, &name);
     LogString(T_SYSTEM, S_NOTE, "plain text");              (no format arguments)
-    LogSystemError(S_ERROR);                                (text of the last system error, errno)
-    LogSystemErrorCode(S_ERROR, code);                      (text of a given errno code; Linux/web/(TODO: Windows))
+    LogSystemError(S_ERROR);                                (text of the last system error: errno, Windows GetLastError())
+    LogSystemErrorCode(S_ERROR, code);                      (text of a given errno / Windows error code)
 
 Internals:
     A ticket factory hands out the LOG_MAX_MESSAGES slots as a ring. A thread that finds no free slot becomes
@@ -91,12 +91,14 @@ void 	LogWriteMessage(const enum system_id system, const enum severity_id severi
 
 #elif __DS_PLATFORM__ == __DS_WIN64__
 
-	#define LogSystemError(severity)		_LogSystemError(severity, __func__, __FILE__, __LINE__)
-	#define _LogSystemError(severity, func, file, line)							\
+	/* GetLastError() is evaluated at the call, before anything can overwrite it */
+	#define LogSystemError(severity)		_LogSystemErrorCode(severity, GetLastError(), __func__, __FILE__, __LINE__)
+	#define LogSystemErrorCode(severity, code)	_LogSystemErrorCode(severity, code, __func__, __FILE__, __LINE__)
+	#define _LogSystemErrorCode(severity, code, func, file, line)						\
 	{													\
 		u8 _err_buf[ERROR_BUFSIZE];									\
-		const utf8 _err_str = Utf8SystemErrorCodeStringBuffered(_err_buf, ERROR_BUFSIZE, 0);	\
-		Log(T_SYSTEM, severity, "At %s:%u in function %s - %k\n", file, line, func, &_err_str);		\
+		const utf8 _err_str = Utf8SystemErrorCodeStringBuffered(_err_buf, ERROR_BUFSIZE, code);	\
+		Log(T_SYSTEM, severity, "At %s:%u in function %s - %k", file, line, func, &_err_str);		\
 	}
 
 #endif

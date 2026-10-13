@@ -42,4 +42,4 @@ cmake --build . --parallel
 
 emrun --browser=/usr/bin/brave-browser DreamscapeTest.html ../config/default.cfg
 #node engine_sandbox.js
-c
+cd ..

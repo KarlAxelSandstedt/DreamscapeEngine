@@ -23,6 +23,8 @@
 #undef Log
 #endif
 
+#include <inttypes.h>
+
 #include "asset_local.h"
 
 #ifdef DS_DEV
@@ -409,7 +411,7 @@ void SsffDebugPrint(FILE *out, const struct ssff_header *ssff)
 	fprintf(stderr, "ssff[%p]\n{\n", ssff);
 
 	fprintf(stderr, "\theader[0]\n\t{\n");
-	fprintf(stderr, "\t\t.size = %lu\n", ssff->size);
+	fprintf(stderr, "\t\t.size = %" PRIu64 "\n", ssff->size);
 	fprintf(stderr, "\t\t.collection_count = %u\n", ssff->collection_count);
 	fprintf(stderr, "\t\t.collection_offset = %u\n", ssff->collection_offset);
 	fprintf(stderr, "\t}\n");

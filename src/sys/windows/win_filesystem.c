@@ -26,21 +26,36 @@
 #include "ds_base.h"
 #include "ds_platform.h"
 
+/*
+ * dir == NULL: relative to the process' current working directory (Linux's AT_FDCWD), so *AtCwd
+ * calls work before ds_PlatformApiInit sets g_sys_env->cwd (ds_Init reads its config before that).
+ */
 static enum fsError WAbsolutePathFromRelativePathAndDirectory(WCHAR w_absolute_path[MAX_PATH], const char *relative_path, const struct file *dir)
 {
 	WCHAR w_directory_path[MAX_PATH];
 	WCHAR w_relative_path[MAX_PATH];
 
-	if (!GetFinalPathNameByHandleW(dir->handle, w_directory_path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS))
+	const int len_relative = MultiByteToWideChar(CP_UTF8, 0, relative_path, -1, w_relative_path, MAX_PATH);
+	if (!len_relative)
 	{
 		LogSystemError(S_ERROR);
 		return FS_HANDLE_INVALID;
 	}
 
-	const int len_relative = MultiByteToWideChar(CP_UTF8, 0, relative_path, -1, w_relative_path, MAX_PATH);
-	if (!len_relative)
+	if (dir == NULL)
 	{
-		LogSystemError(S_ERROR);	
+		const DWORD len_absolute = GetFullPathNameW(w_relative_path, MAX_PATH, w_absolute_path, NULL);
+		if (len_absolute == 0 || MAX_PATH <= len_absolute)
+		{
+			LogSystemError(S_ERROR);
+			return FS_HANDLE_INVALID;
+		}
+		return FS_SUCCESS;
+	}
+
+	if (!GetFinalPathNameByHandleW(dir->handle, w_directory_path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS))
+	{
+		LogSystemError(S_ERROR);
 		return FS_HANDLE_INVALID;
 	}
 
@@ -95,8 +110,8 @@ enum fsError FileTryCreate(struct arena *mem, struct file *file, const char *fil
 	else
 	{
 		WCHAR w_absolute_path[MAX_PATH];
-		if (WAbsolutePathFromRelativePathAndDirectory(w_absolute_path, filename, dir) == FS_SUCCESS)
-
+		err = WAbsolutePathFromRelativePathAndDirectory(w_absolute_path, filename, dir);
+		if (err == FS_SUCCESS)
 		{
 			const DWORD creationDisposition = (truncate)
 				? CREATE_ALWAYS
@@ -114,13 +129,15 @@ enum fsError FileTryCreate(struct arena *mem, struct file *file, const char *fil
 			{
 				switch (GetLastError())
 				{
+					/* CREATE_NEW fails with ERROR_FILE_EXISTS */
+					case ERROR_FILE_EXISTS:
 					case ERROR_ALREADY_EXISTS: { err = FS_ALREADY_EXISTS; } break;
-					case ERROR_FILE_NOT_FOUND: { err = FS_PATH_INVALID; } break;
+					case ERROR_FILE_NOT_FOUND:
+					case ERROR_PATH_NOT_FOUND: { err = FS_PATH_INVALID; } break;
 					case ERROR_ACCESS_DENIED: { err = FS_PERMISSION_DENIED; } break;
-					default: { err = FS_ERROR_UNSPECIFIED; } break;
+					case ERROR_DIRECTORY: { err = FS_FILE_IS_NOT_DIRECTORY; } break;
+					default: { err = FS_ERROR_UNSPECIFIED; LogSystemError(S_ERROR); } break;
 				}
-
-				LogSystemError(S_ERROR);	
 			}
 		}
 	}
@@ -136,7 +153,7 @@ enum fsError FileTryCreate(struct arena *mem, struct file *file, const char *fil
 
 enum fsError FileTryCreateAtCwd(struct arena *mem, struct file *file, const char *filename, const u32 truncate)
 {
-	return FileTryCreate(mem, file, filename, &g_sys_env->cwd, truncate);
+	return FileTryCreate(mem, file, filename, NULL, truncate);
 }
 
 enum fsError FileTryOpen(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 writeable)
@@ -152,14 +169,15 @@ enum fsError FileTryOpen(struct arena *mem, struct file *file, const char *filen
 	else
 	{
 		WCHAR w_absolute_path[MAX_PATH];
-		if (WAbsolutePathFromRelativePathAndDirectory(w_absolute_path, filename, dir) == FS_SUCCESS)
+		err = WAbsolutePathFromRelativePathAndDirectory(w_absolute_path, filename, dir);
+		if (err == FS_SUCCESS)
 		{
 			const DWORD desiredAccess = (writeable)
 				? GENERIC_READ | GENERIC_WRITE
 				: GENERIC_READ;
 
 			file->handle = CreateFileW(w_absolute_path
-				, desiredAccess 
+				, desiredAccess
 				, FILE_SHARE_READ
 				, NULL
 				, OPEN_EXISTING
@@ -170,13 +188,12 @@ enum fsError FileTryOpen(struct arena *mem, struct file *file, const char *filen
 			{
 				switch (GetLastError())
 				{
-					case ERROR_ALREADY_EXISTS: { err = FS_ALREADY_EXISTS; } break;
-					case ERROR_FILE_NOT_FOUND: { err = FS_PATH_INVALID; } break;
+					case ERROR_FILE_NOT_FOUND:
+					case ERROR_PATH_NOT_FOUND: { err = FS_PATH_INVALID; } break;
 					case ERROR_ACCESS_DENIED: { err = FS_PERMISSION_DENIED; } break;
-					default: { err = FS_ERROR_UNSPECIFIED; } break;
+					case ERROR_DIRECTORY: { err = FS_FILE_IS_NOT_DIRECTORY; } break;
+					default: { err = FS_ERROR_UNSPECIFIED; LogSystemError(S_ERROR); } break;
 				}
-
-				LogSystemError(S_ERROR);	
 			}
 		}
 	}
@@ -184,7 +201,7 @@ enum fsError FileTryOpen(struct arena *mem, struct file *file, const char *filen
 	if (err == FS_SUCCESS)
 	{
 		file->path = Utf8Cstr(mem, filename);
-		file->type = FILE_DIRECTORY;
+		file->type = FILE_REGULAR;
 	}
 
 	return err;
@@ -192,7 +209,7 @@ enum fsError FileTryOpen(struct arena *mem, struct file *file, const char *filen
 
 enum fsError FileTryOpenAtCwd(struct arena *mem, struct file *file, const char *filename, const u32 writeable)
 {
-	return FileTryOpen(mem, file, filename, &g_sys_env->cwd, writeable);
+	return FileTryOpen(mem, file, filename, NULL, writeable);
 }
 
 enum fsError DirectoryTryCreate(struct arena *mem, struct file *dir, const char *filename, const struct file *parent_dir)
@@ -208,7 +225,8 @@ enum fsError DirectoryTryCreate(struct arena *mem, struct file *dir, const char 
 	else
 	{
 		WCHAR w_absolute_path[MAX_PATH];
-		if (WAbsolutePathFromRelativePathAndDirectory(w_absolute_path, filename, parent_dir) == FS_SUCCESS)
+		err = WAbsolutePathFromRelativePathAndDirectory(w_absolute_path, filename, parent_dir);
+		if (err == FS_SUCCESS)
 		{
 			if (CreateDirectoryW(w_absolute_path, NULL))
 			{
@@ -219,19 +237,19 @@ enum fsError DirectoryTryCreate(struct arena *mem, struct file *dir, const char 
 					, OPEN_EXISTING
 					, FILE_FLAG_BACKUP_SEMANTICS
 					, NULL);
-
 			}
-			else
+
+			if (dir->handle == FILE_HANDLE_INVALID)
 			{
 				switch (GetLastError())
 				{
 					case ERROR_ALREADY_EXISTS: { err = FS_ALREADY_EXISTS; } break;
-					case ERROR_FILE_NOT_FOUND: { err = FS_PATH_INVALID; } break;
+					case ERROR_FILE_NOT_FOUND:
+					case ERROR_PATH_NOT_FOUND: { err = FS_PATH_INVALID; } break;
 					case ERROR_ACCESS_DENIED: { err = FS_PERMISSION_DENIED; } break;
-					default: { err = FS_ERROR_UNSPECIFIED; } break;
+					case ERROR_DIRECTORY: { err = FS_FILE_IS_NOT_DIRECTORY; } break;
+					default: { err = FS_ERROR_UNSPECIFIED; LogSystemError(S_ERROR); } break;
 				}
-
-				LogSystemError(S_ERROR);	
 			}
 		}
 	}
@@ -247,7 +265,7 @@ enum fsError DirectoryTryCreate(struct arena *mem, struct file *dir, const char 
 
 enum fsError DirectoryTryCreateAtCwd(struct arena *mem, struct file *dir, const char *filename)
 {
-	return DirectoryTryCreate(mem, dir, filename, &g_sys_env->cwd);
+	return DirectoryTryCreate(mem, dir, filename, NULL);
 }
 
 enum fsError DirectoryTryOpen(struct arena *mem, struct file *dir, const char *filename, const struct file *parent_dir)
@@ -263,7 +281,8 @@ enum fsError DirectoryTryOpen(struct arena *mem, struct file *dir, const char *f
 	else
 	{
 		WCHAR w_absolute_path[MAX_PATH];
-		if (WAbsolutePathFromRelativePathAndDirectory(w_absolute_path, filename, parent_dir) == FS_SUCCESS)
+		err = WAbsolutePathFromRelativePathAndDirectory(w_absolute_path, filename, parent_dir);
+		if (err == FS_SUCCESS)
 		{
 			dir->handle = CreateFileW(w_absolute_path
 				, GENERIC_READ | FILE_LIST_DIRECTORY
@@ -277,12 +296,12 @@ enum fsError DirectoryTryOpen(struct arena *mem, struct file *dir, const char *f
 			{
 				switch (GetLastError())
 				{
-					case ERROR_FILE_NOT_FOUND: { err = FS_PATH_INVALID; } break;
+					case ERROR_FILE_NOT_FOUND:
+					case ERROR_PATH_NOT_FOUND: { err = FS_PATH_INVALID; } break;
 					case ERROR_ACCESS_DENIED: { err = FS_PERMISSION_DENIED; } break;
-					default: { err = FS_ERROR_UNSPECIFIED; } break;
+					case ERROR_DIRECTORY: { err = FS_FILE_IS_NOT_DIRECTORY; } break;
+					default: { err = FS_ERROR_UNSPECIFIED; LogSystemError(S_ERROR); } break;
 				}
-
-				LogSystemError(S_ERROR);	
 			}
 		}
 	}
@@ -298,14 +317,14 @@ enum fsError DirectoryTryOpen(struct arena *mem, struct file *dir, const char *f
 
 enum fsError DirectoryTryOpenAtCwd(struct arena *mem, struct file *dir, const char *filename)
 {
-	return DirectoryTryOpen(mem, dir, filename, &g_sys_env->cwd); 
+	return DirectoryTryOpen(mem, dir, filename, NULL); 
 }
 
 struct dsBuffer FileDump(struct arena *mem, const char *path, const struct file *dir)
 {
 	struct file file = FileNull();
 	struct dsBuffer buf = { 0 };
-	if (!FileTryOpen(mem, &file, path, dir, FILE_READ) == FS_SUCCESS)
+	if (FileTryOpen(mem, &file, path, dir, FILE_READ) != FS_SUCCESS)
 	{
 		return buf;
 	}
@@ -343,7 +362,7 @@ struct dsBuffer FileDump(struct arena *mem, const char *path, const struct file 
 
 struct dsBuffer FileDumpAtCwd(struct arena *mem, const char *path)
 {
-	return FileDump(mem, path, &g_sys_env->cwd);
+	return FileDump(mem, path, NULL);
 }
 
 u32 FileSetSize(const struct file *file, const u64 size)
@@ -369,19 +388,13 @@ void FileClose(struct file *file)
 }
 
 
+/* WriteFile takes a DWORD size */
+#define FILE_WRITE_CHUNK_MAX	(1u << 30)
+
+/* as on Linux: no sync (FileSync), writing past the end extends the file */
 u64 FileWriteOffset(const struct file *file, const u8 *buf, const u64 size, const u64 offset)
 {
-	LARGE_INTEGER l_size;
-	if (!GetFileSizeEx(file->handle, &l_size))
-	{
-		LogSystemError(S_ERROR);
-		return 0;
-	}
-
-	if ((u64) l_size.QuadPart < offset + size)
-	{
-		FileSetSize(file, offset + size);
-	}
+	if (!buf || size == 0) { return 0; }
 
 	LARGE_INTEGER l_offset = { .QuadPart = offset };
 	if (!SetFilePointerEx(file->handle, l_offset, NULL, FILE_BEGIN))
@@ -390,21 +403,27 @@ u64 FileWriteOffset(const struct file *file, const u8 *buf, const u64 size, cons
 		return 0;
 	}
 
-	DWORD bytes_written;
-	/* bytes_written are zeroed inside, before error checking */
-	if (!WriteFile(file->handle, buf, (DWORD) size, &bytes_written, NULL))
+	u64 total = 0;
+	while (total < size)
 	{
-		LogSystemError(S_ERROR);
+		const DWORD chunk = (DWORD) ((size - total < FILE_WRITE_CHUNK_MAX) ? size - total : FILE_WRITE_CHUNK_MAX);
+		DWORD count;
+		if (!WriteFile(file->handle, buf + total, chunk, &count, NULL))
+		{
+			LogSystemError(S_ERROR);
+			break;
+		}
+
+		total += count;
 	}
 
-	/* Seems like no memory maps will see our writes if we do not sync... TODO: Fix sane api */
-	FileSync(file);
-	ds_AssertMessage(bytes_written == size, "bytes_written = %u, size = %u\n", bytes_written, size); 
-	return bytes_written;
+	return total;
 }
 
 u64 FileWriteAppend(const struct file *file, const u8 *buf, const u64 size)
 {
+	if (!buf || size == 0) { return 0; }
+
 	LARGE_INTEGER distance_to_move = { .QuadPart = 0 };
 	if (!SetFilePointerEx(file->handle, distance_to_move, NULL, FILE_END))
 	{
@@ -412,19 +431,21 @@ u64 FileWriteAppend(const struct file *file, const u8 *buf, const u64 size)
 		return 0;
 	}
 
-	DWORD bytes_written;
-	/* bytes_written are zeroed inside, before error checking */
-	if (!WriteFile(file->handle, buf, (DWORD) size, &bytes_written, NULL))
+	u64 total = 0;
+	while (total < size)
 	{
-		LogSystemError(S_ERROR);
+		const DWORD chunk = (DWORD) ((size - total < FILE_WRITE_CHUNK_MAX) ? size - total : FILE_WRITE_CHUNK_MAX);
+		DWORD count;
+		if (!WriteFile(file->handle, buf + total, chunk, &count, NULL))
+		{
+			LogSystemError(S_ERROR);
+			break;
+		}
+
+		total += count;
 	}
 
-	/* Seems like no memory maps will see our writes if we do not sync... TODO: Fix sane api */
-	FileSync(file);
-
-	ds_AssertMessage(bytes_written == size, "bytes_written = %u, size = %u\n", bytes_written, size); 
-
-	return bytes_written;
+	return total;
 }
 
 

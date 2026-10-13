@@ -25,17 +25,12 @@
 #include <errno.h>
 #include <stdio.h>
 
-#define SEM_SHARED 1
 #define SEM_NOT_SHARED 0
 
 void SemaphoreInit(semaphore *sem, const u32 val)
 {
-#if __DS_PLATFORM__ == __DS_WEB__
-	/* emscripten recommends "inter-process sharing" for thread safety? */
-	if (sem_init(sem, SEM_SHARED, val) == -1)
-#else
-	if (sem_init(sem, SEM_NOT_SHARED, val) == -1)
-#endif
+	/* != 0: emscripten returns ENOTSUP for pshared != 0 (not -1) and leaves sem uninitialized */
+	if (sem_init(sem, SEM_NOT_SHARED, val) != 0)
 	{
 		LogSystemError(S_FATAL);
 		FatalCleanupAndExit();

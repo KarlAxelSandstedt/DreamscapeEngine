@@ -18,6 +18,7 @@
 */
 
 #include <string.h>
+#include <inttypes.h>
 
 #include "ui_local.h"
 
@@ -575,7 +576,7 @@ void ui_TimelineDrag(void)
 		config->ns_interval_end = config->ns_interval_start + config->ns_interval_size;
 
 
-		fprintf(stderr, "%lu\n", config->ns_interval_size);
+		fprintf(stderr, "%" PRIu64 "\n", config->ns_interval_size);
 	}
 }
 

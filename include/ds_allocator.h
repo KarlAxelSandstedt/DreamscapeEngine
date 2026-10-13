@@ -107,9 +107,11 @@ not as a requirement the platform must adhere to.
 #define DS_SMALL_ALLOCATION_ALIGNMENT   (DS_CACHE_LINE)
 
 #if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
+    #include <stdlib.h>
     #define ds_SmallAlloc(address_ptr, size)  posix_memalign(address_ptr, DS_SMALL_ALLOCATION_ALIGNMENT, size)
     #define ds_SmallFree(address)             free(address)
 #elif __DS_PLATFORM__ == __DS_WIN64__
+    #include <malloc.h>
     #define ds_SmallAlloc(address_ptr, size)  (*(address_ptr) = _aligned_malloc(size, DS_SMALL_ALLOCATION_ALIGNMENT))
     #define ds_SmallFree(address)             _aligned_free(address)
 #endif
@@ -540,7 +542,7 @@ free-list order; the count allocated slots as raw bytes, each with pool_slot rep
 Slot positions and the free-list order are restored exactly.
 */
 
-#define POOL_NODE 	        u32 pool_slot;
+#define POOL_NODE 	        u32 pool_slot
 #define POOL_NULL		        0xffffffff
 #define POOL_ALLOCATION_MASK	0x80000000
 #define POOL_INDEX_MASK		    0x7fffffff
@@ -787,7 +789,7 @@ POOL_TRY_DESERIALIZE_DECLARE(T)                                                 
 	                                     (u64) &(((struct T *)0)->pool_slot), growable);            \
 }
 
-#define POOL_NODE 	        u32 pool_slot;
+#define POOL_NODE 	        u32 pool_slot
 
 
 /*

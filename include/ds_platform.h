@@ -44,7 +44,7 @@ void 	ds_PlatformApiShutdown(void);
 
 /* 
  * Write random bytes into buf[size] using platform API. On linux, this is done by 
- * getrandom; on the Web we read from /dev/urandom. On windows ...TODO
+ * getrandom; on the Web we read from /dev/urandom; on Windows, BCryptGenRandom (system RNG).
  */
 void	RngSystem(void *buf, const u64 size);
 
@@ -145,9 +145,9 @@ u32		Utf8PathRelativeCheck(const utf8 path);
 
 /* try close file if it is open and set to FileNull  */
 void 		FileClose(struct file *file);
-/* Try create and open a file at the given directory; If the file already exist, error is returned. */
+/* Try create and open a file at the given directory; If the file already exists, it is truncated if truncate is set, otherwise FS_ALREADY_EXISTS is returned. */
 enum fsError 	FileTryCreate(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 truncate);
-/* Try create and open a file at the cwd; If the file already exist, error is returned. */
+/* Try create and open a file at the cwd; If the file already exists, it is truncated if truncate is set, otherwise FS_ALREADY_EXISTS is returned. */
 enum fsError 	FileTryCreateAtCwd(struct arena *mem, struct file *file, const char *filename, const u32 truncate);
 /* Try open a file at the given directory; If the file does not exist, error is returned. */
 enum fsError 	FileTryOpen(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 writeable);

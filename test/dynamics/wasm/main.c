@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025,2026 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt 
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -19,11 +19,10 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <emscripten/console.h>
-#include <emscripten/wasm_worker.h>
-#include <emscripten/threading.h>
+#include <emscripten/emscripten.h>
 
 #include "ds_base.h" 
+#include "ds_init.h"
 #include "ds_math.h"
 #include "ds_platform.h"
 #include "ds_graphics.h"
@@ -32,79 +31,61 @@
 #include "ds_led.h"
 #include "ds_job.h"
 
-struct arena mem_persistent;
-struct led *editor;
+#include "ds_vector.h"
 
+/* the program's own memory; ds_Init's persistent arena belongs to the engine */
+static struct arena g_persistent;
+static struct led *g_editor;
+static u64 g_old_time;
+
+/* one frame per browser animation frame: the browser's main thread must not block */
 static void ds_MainLoop(void)
 {
-	static u64 old_time = 0;
-	old_time = editor->ns;
-	if (editor->running)
+	if (!g_editor->running)
 	{
-		ds_DeallocTaggedWindows();
-
-        ds_JobSchedulerFrameClear();
-
-		const u64 new_time = ds_TimeNs();
-		const u64 ns_tick = new_time - old_time;
-		old_time = new_time;
-
-		ds_ProcessEvents();
-
-		led_Main(editor, ns_tick);
-		led_UiMain(editor);
-		r_EditorMain(editor);
+		emscripten_cancel_main_loop();
+		led_Dealloc(g_editor);
+		ArenaFree(&g_persistent);
+		ds_Shutdown();
+		return;
 	}
-	else
-	{
-		static u32 cleanup = 1;
-		if (cleanup)
-		{
-	        led_Dealloc(editor);
-	        AssetShutdown();
-	        ds_GraphicsApiShutdown();
-	        ds_PlatformApiShutdown();
-	        LogShutdown();
-	        ds_MemApiShutdown();
-			cleanup = 0;
-		}
-	}
+
+	ProfFrameMark;
+
+	ds_DeallocTaggedWindows();
+
+    ds_JobSchedulerFrameClear();
+
+	const u64 new_time = ds_TimeNs();
+	const u64 ns_tick = new_time - g_old_time;
+	g_old_time = new_time;
+
+	ds_ProcessEvents();
+
+	led_Main(g_editor, ns_tick);
+	led_UiMain(g_editor);
+	r_EditorMain(g_editor);
 }
 
+/* emrun DreamscapeTest.html [config_path] */
 int main(int argc, char *argv[])
-{	
-    u64 seed[4];
-	RngSystem(seed, sizeof(seed));
-	Xoshiro256Init(seed);
+{
+	ds_Init((argc > 1) ? argv[1] : NULL, "log.txt");
 
-	ds_MemApiInit();
+	g_persistent = ArenaAlloc(NULL, 64*1024*1024);
+	if (!g_persistent.stack_ptr)
+	{
+		LogString(T_SYSTEM, S_FATAL, "Failed to allocate the program's persistent arena");
+		FatalCleanupAndExit();
+	}
 
-	mem_persistent = ArenaAlloc(NULL, 256*1024*1024);
-	LogInit(&mem_persistent, "log.txt");
-
-	ds_TimeApiInit(&mem_persistent);
-
-    const u64 thread_framesize = 4*1024*1024;
-    const u64 thread_scratchsize = 1*1024*1024;
-    const u64 scratch_count = 5;
-	ds_ThreadMasterInit(&mem_persistent, thread_framesize, thread_scratchsize, scratch_count);
-	ds_ArchConfigInit(&mem_persistent);
-
-	ds_StringApiInit(g_arch_config->logical_core_count);
-
-	ds_PlatformApiInit(&mem_persistent, thread_framesize, thread_scratchsize, scratch_count);
-
-	ds_GraphicsApiInit();
-
-	ds_UiApiInit();
-
-	AssetInit(&mem_persistent);
-
-	editor = led_Alloc();
+	g_editor = led_Alloc(g_config->thread_count, g_config->thread_framesize);
 
 	const u64 renderer_framerate = 144;	
-	r_Init(&mem_persistent, NSEC_PER_SEC / renderer_framerate, 16*1024*1024, 1024, &editor->render_mesh_db);
+	r_Init(&g_persistent, NSEC_PER_SEC / renderer_framerate, 16*1024*1024, 1024, &g_editor->render_mesh_db);
 	
+	g_old_time = g_editor->ns;
+	/* never returns: main's locals would not outlive it */
 	emscripten_set_main_loop(ds_MainLoop, 0, 1);
 
 	return 0;

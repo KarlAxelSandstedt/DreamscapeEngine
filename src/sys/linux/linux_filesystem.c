@@ -61,7 +61,9 @@ enum fsError FileTryCreate(struct arena *mem, struct file *file, const char *fil
 	}
 	else
 	{
-		file->handle = openat(dir->handle, filename, O_CREAT | (O_TRUNC * (!!truncate)) | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP);
+		/* O_EXCL without truncate: an existing file is an error (EEXIST) */
+		const int flags = (truncate) ? O_CREAT | O_TRUNC | O_RDWR : O_CREAT | O_EXCL | O_RDWR;
+		file->handle = openat(dir->handle, filename, flags, S_IRUSR | S_IWUSR | S_IRGRP);
 		if (file->handle == FILE_HANDLE_INVALID)
 		{
 			switch (errno)

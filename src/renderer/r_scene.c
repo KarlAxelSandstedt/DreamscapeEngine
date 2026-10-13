@@ -19,6 +19,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
 
 #include "r_local.h"
 #define XXH_INLINE_ALL
@@ -864,9 +865,9 @@ void r_CommandKeyPrint(const u64 key)
 
 	fprintf(stderr, "render command key:\n");
 	fprintf(stderr, "\tscreen: %s\n", screen_str);
-	fprintf(stderr, "\tdepth: %lu\n", R_CMD_DEPTH_GET(key));
+	fprintf(stderr, "\tdepth: %" PRIu64 "\n", (u64) R_CMD_DEPTH_GET(key));
 	fprintf(stderr, "\ttransparency: %s\n", transparency_str);
-	fprintf(stderr, "\tmaterial: %lu\n", R_CMD_MATERIAL_GET(key));
+	fprintf(stderr, "\tmaterial: %" PRIu64 "\n", (u64) R_CMD_MATERIAL_GET(key));
 	fprintf(stderr, "\tprimitive: %s\n", primitive_str);
 	fprintf(stderr, "\tinstanced: %s\n", instanced_str);
 	fprintf(stderr, "\tlayout: %s\n", elements_str);

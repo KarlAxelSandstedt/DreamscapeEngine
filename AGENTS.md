@@ -12,16 +12,22 @@ Synchronization: use ds_atomic.h with explicit orderings; never rely on x86's
 strong memory ordering (other architectures may be added).
 Platforms: Linux, Windows, and Web through Emscripten.
 Compilers: GCC, MSVC, Clang
-Graphics: OpenGL 3.x/WebGL 2.x
+Graphics: OpenGL 3.3 core (Linux, Windows) and WebGL 2.0 (OpenGL ES 3.0, web).
+One renderer serves both, so it uses only the subset that works on both: no GL
+call, format, extension or limit that WebGL 2 lacks. Every shader exists twice,
+assets/shaders/<name> (#version 330 core) and gles_<name> (#version 300 es);
+change both.
 External libraries: SDL3, dtoa, freetype, stb_image, tracy, xxHash.
 
-Useful builds (script/linux/*.sh, script/windows/*.bat, script/web/*.sh; they
-run from the repository root wherever they are called from):
-    determinism.sh - fresh reference + replay at several thread counts (tests
-        one build). An old .bin is only valid for the version that recorded it.
+Useful builds (script/linux/*.sh, script/windows/*.bat, script/web/*.sh, and
+script/web/*.bat for web builds on Windows; they run from the repository root
+wherever they are called from):
+    determinism.(sh/bat) - fresh reference + replay at several thread counts
+        (tests one build). An old .bin is only valid for the version that
+        recorded it.
     run.(sh/bat) - optimized build
     debug.(sh/bat) - debugging build
-    address_sanitize.sh - memory corruption detection + poisoning with ASan
+    address_sanitize.(sh/bat) - memory corruption detection + poisoning with ASan
     thread_sanitize.sh - thread race detection with TSan
     undefined_behaviour_sanitize.sh - undefined behaviour detection with UBSan
 

@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <inttypes.h>
 
 #include "ds_base.h" 
 #include "ds_init.h"
@@ -204,7 +205,7 @@ int main(int argc, char *argv[])
         }
         else
         {
-            fprintf(stderr, "checking index %lu of %u: (%lu, %lu)\n", frame, test.hash_pool.count, hash, ((frame >= test.hash_pool.count) ? U64_MAX : test.hash_pool.buf[ frame ]));
+            fprintf(stderr, "checking index %" PRIu64 " of %u: (%" PRIu64 ", %" PRIu64 ")\n", frame, test.hash_pool.count, hash, ((frame >= test.hash_pool.count) ? U64_MAX : test.hash_pool.buf[ frame ]));
             if (frame >= test.hash_pool.count || hash != test.hash_pool.buf[ frame ])
             {
                 success = 0;

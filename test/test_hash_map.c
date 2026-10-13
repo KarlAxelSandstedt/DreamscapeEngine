@@ -68,7 +68,7 @@ void ds_StructureTHashMapTestReset(void *args)
 {
     if (ds_ThreadSelfIndex() == 0)
     {
-	    struct ds_StructureTPool *pool = AtomicLoadAcq64(&g_tpool);
+	    struct ds_StructureTPool *pool = (struct ds_StructureTPool *) AtomicLoadAcq64(&g_tpool);
         if (!first)
         {
             ds_StructureTPoolDealloc(pool);
@@ -88,7 +88,7 @@ void ds_StructureTHashMapTestFree(void *args)
 {
     if (ds_ThreadSelfIndex() == 0 && g_tpool)
     {
-	    struct ds_StructureTPool *pool = AtomicLoadAcq64(&g_tpool);
+	    struct ds_StructureTPool *pool = (struct ds_StructureTPool *) AtomicLoadAcq64(&g_tpool);
         g_tpool = NULL;
         ds_StructureTPoolDealloc(pool);
         ds_StructureTHashMapDealloc(&g_tmap);
@@ -99,7 +99,7 @@ void ds_StructureTHashMapTestFree(void *args)
 
 void ds_StructureTHashMapAddAllRemoveAllTest(void *null)
 {
-	struct ds_StructureTPool *pool = AtomicLoadAcq64(&g_tpool);
+	struct ds_StructureTPool *pool = (struct ds_StructureTPool *) AtomicLoadAcq64(&g_tpool);
     const u32 count = 10000;
     u32 indices[10000]; 
     const u32 t = ds_ThreadSelfIndex();

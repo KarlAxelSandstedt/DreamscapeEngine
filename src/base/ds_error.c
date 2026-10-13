@@ -182,8 +182,10 @@ void FatalCleanupAndExit()
 	}
 }
 
-utf8 Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 garbage)
+utf8 Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 code)
 {
+	ds_Assert(bufsize > 0);
+
 	utf8 err_str =
 	{
 		.buf = buf,
@@ -191,14 +193,20 @@ utf8 Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 gar
 		.len = 0,
 	};
 
-	const DWORD code = GetLastError();
-	err_str.len  = FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM |FORMAT_MESSAGE_IGNORE_INSERTS,
+	/* system messages are ASCII: byte count == codepoint count */
+	err_str.len  = FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM |FORMAT_MESSAGE_IGNORE_INSERTS,
 					 NULL,
-					 code,
+					 (DWORD) code,
 					 0,
-					 buf,
+					 (char *) buf,
 					 (DWORD) bufsize,
 					 NULL);
+
+	/* drop the trailing "\r\n" */
+	while (err_str.len > 0 && (buf[err_str.len - 1] == '\n' || buf[err_str.len - 1] == '\r'))
+	{
+		err_str.len -= 1;
+	}
 
 	return (err_str.len > 0) ? err_str : Utf8Empty();
 }

@@ -61,7 +61,7 @@ void ds_StructTPoolIncrementTestReset(void *args)
 {
     if (ds_ThreadSelfIndex() == 0)
     {
-	    struct ds_StructTPool *pool = AtomicLoadAcq64(&g_tpool);
+	    struct ds_StructTPool *pool = (struct ds_StructTPool *) AtomicLoadAcq64(&g_tpool);
         if (!first)
         {
             ds_StructTPoolDealloc(pool);
@@ -76,7 +76,7 @@ void ds_StructTPoolIncrementTestFree(void *args)
 {
     if (ds_ThreadSelfIndex() == 0 && g_tpool)
     {
-	    struct ds_StructTPool *pool = AtomicLoadAcq64(&g_tpool);
+	    struct ds_StructTPool *pool = (struct ds_StructTPool *) AtomicLoadAcq64(&g_tpool);
         g_tpool = NULL;
         ds_StructTPoolDealloc(pool);
         free(pool);
@@ -86,7 +86,7 @@ void ds_StructTPoolIncrementTestFree(void *args)
 
 void ds_StructTPoolIncrementTest(void *void_pool)
 {
-	struct ds_StructTPool *pool = AtomicLoadAcq64(&g_tpool);
+	struct ds_StructTPool *pool = (struct ds_StructTPool *) AtomicLoadAcq64(&g_tpool);
     for (u32 i = 0; i < 1024*64; ++i)
     {
         const u32 index = ds_StructTPoolIncrement(pool).index;
@@ -97,7 +97,7 @@ void ds_StructTPoolIncrementTest(void *void_pool)
 
 void ds_StructTStackTest(void *void_pool)
 {
-	struct ds_StructTPool *pool = AtomicLoadAcq64(&g_tpool);
+	struct ds_StructTPool *pool = (struct ds_StructTPool *) AtomicLoadAcq64(&g_tpool);
     const u32 count = 200;
     if (ds_ThreadSelfIndex() == 0)
     {

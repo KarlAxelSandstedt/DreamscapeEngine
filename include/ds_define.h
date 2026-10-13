@@ -107,8 +107,6 @@ extern "C" {
 	#define ds_ForceInline __forceinline
     #define ds_AcqRelCompilerBarrier atomic_signal_fence(memory_order_acq_rel)
 
-    #define ds_
-
 #endif
 
 /* Most threads the engine creates and indexes (thread index < DS_THREAD_COUNT_MAX), main thread included */

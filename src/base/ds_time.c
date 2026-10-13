@@ -276,11 +276,19 @@ void ds_TimeApiInit(struct arena *persistent)
 #include <windows.h>
 #include <intrin.h>
 
+static u64 g_qpc_freq;
+
+/* exact for any QPC frequency; NSEC_PER_SEC / freq is not an integer in general */
+static u64 NsFromQpc(const u64 ticks)
+{
+	return (ticks / g_qpc_freq) * NSEC_PER_SEC + (ticks % g_qpc_freq) * NSEC_PER_SEC / g_qpc_freq;
+}
+
 u64 ds_TimeNs(void)
 {
 	LARGE_INTEGER ret_val;
 	QueryPerformanceCounter(&ret_val);
-	return (u64) ret_val.QuadPart * g_timer.ns_resolution - g_timer.ns_start;
+	return NsFromQpc((u64) ret_val.QuadPart) - g_timer.ns_start;
 }
 
 struct ping_pong_data
@@ -303,8 +311,8 @@ static DWORD WINAPI PingPongReference(void *data_void)
 
 	GROUP_AFFINITY affinity = { 0 };
 	affinity.Group = 0;
-	affinity.Mask = 0;
-	
+	affinity.Mask = 1;
+
 	if (!SetThreadGroupAffinity(thread, &affinity, NULL))
 	{
 		LogString(T_SYSTEM, S_FATAL, "Failed to set thread affinity in TscEstimateSkew, exiting.");	
@@ -455,12 +463,13 @@ void ds_TimeApiInit(struct arena *persistent)
 	u32 tmp;
 	/* instruction fence */
 	g_precision_timer.tsc_start = __rdtscp(&tmp);
-	g_timer.ns_start = ret_val.QuadPart;
+	const u64 qpc_start = ret_val.QuadPart;
 	QueryPerformanceFrequency(&ret_val);
-	u64 freq = ret_val.QuadPart;
+	g_qpc_freq = ret_val.QuadPart;
 
-	g_timer.ns_resolution = NSEC_PER_SEC / freq;
-	g_timer.ns_start *= g_timer.ns_resolution;
+	/* reported only, rounded up */
+	g_timer.ns_resolution = (NSEC_PER_SEC + g_qpc_freq - 1) / g_qpc_freq;
+	g_timer.ns_start = NsFromQpc(qpc_start);
 	g_timer.tsc_start = g_precision_timer.tsc_start;
 
 	const u64 ms = 100;
@@ -468,7 +477,7 @@ void ds_TimeApiInit(struct arena *persistent)
 	for (;;)
 	{
 		QueryPerformanceCounter(&ret_val);
-		if (goal <= (u64) ret_val.QuadPart * g_timer.ns_resolution)
+		if (goal <= NsFromQpc((u64) ret_val.QuadPart))
 		{
 			break;
 		}

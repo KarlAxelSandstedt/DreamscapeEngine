@@ -176,7 +176,12 @@ extern "C" {
 
 	#include <intrin.h>
 	#include <immintrin.h>
-	
+
+	/* the load and store mappings below are the x64 ones (ARM64 needs __ldar/__stlr or _acq/_rel intrinsics) */
+	#if !defined(_M_X64)
+		#error "ds_atomic.h: MSVC atomics are implemented for x64 only"
+	#endif
+
 	/* returns signed integers  */
 	#define AtomicFetchAddRlx32(fetch_addr, val)	_InterlockedExchangeAdd((long volatile *) (fetch_addr), (long) (val))
 	#define AtomicFetchAddAcq32(fetch_addr, val)	_InterlockedExchangeAdd((long volatile *) (fetch_addr), (long) (val))
@@ -222,6 +227,32 @@ extern "C" {
 		return success;
 	}
 
+	/* functions, not macros: val is evaluated once */
+	__forceinline long ds_InterlockedAddFetch(long volatile *fetch_addr, const long val)
+	{
+		return _InterlockedExchangeAdd(fetch_addr, val) + val;
+	}
+
+	__forceinline __int64 ds_InterlockedAddFetch64(__int64 volatile *fetch_addr, const __int64 val)
+	{
+		return _InterlockedExchangeAdd64(fetch_addr, val) + val;
+	}
+
+	/* x64: an aligned load is already an acquire load (and seq_cst, as seq_cst stores are xchg); the barrier keeps the compiler from moving later accesses before it */
+	__forceinline long ds_LoadAcq32(const volatile long *fetch_addr)
+	{
+		const long val = __iso_volatile_load32((const volatile __int32 *) fetch_addr);
+		_ReadWriteBarrier();
+		return val;
+	}
+
+	__forceinline __int64 ds_LoadAcq64(const volatile __int64 *fetch_addr)
+	{
+		const __int64 val = __iso_volatile_load64(fetch_addr);
+		_ReadWriteBarrier();
+		return val;
+	}
+
 	/* if (dst == cmp) set dst to exch_val */
 	#define AtomicCompareExchangeRlxRlx32(dst_addr, cmp_addr, exch_val)	ds_InterlockedCompareExchange((long volatile *) (dst_addr), (long) (exch_val), (long*) (cmp_addr))
 #define AtomicCompareExchangeAcqRlx32(dst_addr, cmp_addr, exch_val)		ds_InterlockedCompareExchange((long volatile *) (dst_addr), (long) (exch_val), (long*) (cmp_addr))
@@ -243,49 +274,49 @@ extern "C" {
 	
 	#define AtomicStoreRlx32(dst_addr, val)		_InterlockedExchange((long volatile *) (dst_addr), (long) (val))
 	#define AtomicStoreRel32(dst_addr, val)		_InterlockedExchange((long volatile *) (dst_addr), (long) (val))
-	#define AtomicStoreSeqCst32(dst_addr, val)	_InterlockedExchange(dst_addr, val)
+	#define AtomicStoreSeqCst32(dst_addr, val)	_InterlockedExchange((long volatile *) (dst_addr), (long) (val))
 	               
 	#define AtomicStoreRlx64(dst_addr, val)		_InterlockedExchange64((__int64 volatile *) (dst_addr), (__int64) (val))
 	#define AtomicStoreRel64(dst_addr, val)		_InterlockedExchange64((__int64 volatile *) (dst_addr), (__int64) (val))
 	#define AtomicStoreSeqCst64(dst_addr, val)	_InterlockedExchange64((__int64 volatile *) (dst_addr), (__int64) (val))
 	
-	#define AtomicAddFetchRlx32(fetch_addr, val)	(AtomicFetchAddRlx32(fetch_addr, val) + ((long) val))
-	#define AtomicAddFetchAcq32(fetch_addr, val)	(AtomicFetchAddAcq32(fetch_addr, val) + ((long) val))
-	#define AtomicAddFetchRel32(fetch_addr, val)	(AtomicFetchAddRel32(fetch_addr, val) + ((long) val))
-	#define AtomicAddFetchAcqRel32(fetch_addr, val)	(AtomicFetchAddAcqRel32(fetch_addr, val) + ((long) val))
-	#define AtomicAddFetchSeqCst32(fetch_addr, val)	(AtomicFetchAddSeqCst32(fetch_addr, val) + ((long) val))
+	#define AtomicAddFetchRlx32(fetch_addr, val)	ds_InterlockedAddFetch((long volatile *) (fetch_addr), (long) (val))
+	#define AtomicAddFetchAcq32(fetch_addr, val)	ds_InterlockedAddFetch((long volatile *) (fetch_addr), (long) (val))
+	#define AtomicAddFetchRel32(fetch_addr, val)	ds_InterlockedAddFetch((long volatile *) (fetch_addr), (long) (val))
+	#define AtomicAddFetchAcqRel32(fetch_addr, val)	ds_InterlockedAddFetch((long volatile *) (fetch_addr), (long) (val))
+	#define AtomicAddFetchSeqCst32(fetch_addr, val)	ds_InterlockedAddFetch((long volatile *) (fetch_addr), (long) (val))
 	                                                                                                         
-	#define AtomicAddFetchRlx64(fetch_addr, val)	(AtomicFetchAddRlx64(fetch_addr, val) + ((__int64) val))
-	#define AtomicAddFetchAcq64(fetch_addr, val)	(AtomicFetchAddAcq64(fetch_addr, val) + ((__int64) val))
-	#define AtomicAddFetchRel64(fetch_addr, val)	(AtomicFetchAddRel64(fetch_addr, val) + ((__int64) val))
-	#define AtomicAddFetchAcqRel64(fetch_addr, val)	(AtomicFetchAddAcqRel64(fetch_addr, val) + ((__int64) val))
-	#define AtomicAddFetchSeqCst64(fetch_addr, val)	(AtomicFetchAddSeqCst64(fetch_addr, val) + ((__int64) val))
+	#define AtomicAddFetchRlx64(fetch_addr, val)	ds_InterlockedAddFetch64((__int64 volatile *) (fetch_addr), (__int64) (val))
+	#define AtomicAddFetchAcq64(fetch_addr, val)	ds_InterlockedAddFetch64((__int64 volatile *) (fetch_addr), (__int64) (val))
+	#define AtomicAddFetchRel64(fetch_addr, val)	ds_InterlockedAddFetch64((__int64 volatile *) (fetch_addr), (__int64) (val))
+	#define AtomicAddFetchAcqRel64(fetch_addr, val)	ds_InterlockedAddFetch64((__int64 volatile *) (fetch_addr), (__int64) (val))
+	#define AtomicAddFetchSeqCst64(fetch_addr, val)	ds_InterlockedAddFetch64((__int64 volatile *) (fetch_addr), (__int64) (val))
 	
-	#define AtomicSubFetchRlx32(fetch_addr, val)	(AtomicFetchSubRlx32(fetch_addr, val) - ((long) val))
-	#define AtomicSubFetchAcq32(fetch_addr, val)	(AtomicFetchSubAcq32(fetch_addr, val) - ((long) val))
-	#define AtomicSubFetchRel32(fetch_addr, val)	(AtomicFetchSubRel32(fetch_addr, val) - ((long) val))
-	#define AtomicSubFetchSeqCst32(fetch_addr, val)	(AtomicFetchSubSeqCst32(fetch_addr, val) - ((long) val))
+	#define AtomicSubFetchRlx32(fetch_addr, val)	ds_InterlockedAddFetch((long volatile *) (fetch_addr), -(long) (val))
+	#define AtomicSubFetchAcq32(fetch_addr, val)	ds_InterlockedAddFetch((long volatile *) (fetch_addr), -(long) (val))
+	#define AtomicSubFetchRel32(fetch_addr, val)	ds_InterlockedAddFetch((long volatile *) (fetch_addr), -(long) (val))
+	#define AtomicSubFetchSeqCst32(fetch_addr, val)	ds_InterlockedAddFetch((long volatile *) (fetch_addr), -(long) (val))
 	                                                                                                      
-	#define AtomicSubFetchRlx64(fetch_addr, val)	(AtomicFetchSubRlx64(fetch_addr, val) - ((__int64) val))
-	#define AtomicSubFetchAcq64(fetch_addr, val)	(AtomicFetchSubAcq64(fetch_addr, val) - ((__int64) val))
-	#define AtomicSubFetchRel64(fetch_addr, val)	(AtomicFetchSubRel64(fetch_addr, val) - ((__int64) val) )
-	#define AtomicSubFetchSeqCst64(fetch_addr, val)	(AtomicFetchSubSeqCst64(fetch_addr, val) - ((__int64) val))
+	#define AtomicSubFetchRlx64(fetch_addr, val)	ds_InterlockedAddFetch64((__int64 volatile *) (fetch_addr), -(__int64) (val))
+	#define AtomicSubFetchAcq64(fetch_addr, val)	ds_InterlockedAddFetch64((__int64 volatile *) (fetch_addr), -(__int64) (val))
+	#define AtomicSubFetchRel64(fetch_addr, val)	ds_InterlockedAddFetch64((__int64 volatile *) (fetch_addr), -(__int64) (val))
+	#define AtomicSubFetchSeqCst64(fetch_addr, val)	ds_InterlockedAddFetch64((__int64 volatile *) (fetch_addr), -(__int64) (val))
 	
-	#define AtomicLoadRlx32(fetch_addr)		AtomicAddFetchRlx32(fetch_addr, 0)
-	#define AtomicLoadAcq32(fetch_addr)		AtomicAddFetchAcq32(fetch_addr, 0)
-	#define AtomicLoadSeqCst32(fetch_addr)		AtomicAddFetchSeqCst32(fetch_addr, 0)
-	
-	#define AtomicLoadRlx64(fetch_addr)		AtomicAddFetchRlx64(fetch_addr, 0)
-	#define AtomicLoadAcq64(fetch_addr)		AtomicAddFetchAcq64(fetch_addr, 0)
-	#define AtomicLoadSeqCst64(fetch_addr)		AtomicAddFetchSeqCst64(fetch_addr, 0)
-	
-	#define AtomicLoadToAddrRlx32(fetch_addr, dst_addr)	(*(dst_addr) = AtomicAddFetchRlx32(fetch_addr, 0))
-	#define AtomicLoadToAddrAcq32(fetch_addr, dst_addr)	(*(dst_addr) = AtomicAddFetchAcq32(fetch_addr, 0))
-	#define AtomicLoadToAddrSeqCst32(fetch_addr, dst_addr)	(*(dst_addr) = AtomicAddFetchSeqCst32(fetch_addr, 0))
-	
-	#define AtomicLoadToAddrRlx64(fetch_addr, dst_addr)	(*(dst_addr) = AtomicAddFetchRlx64(fetch_addr, 0))
-	#define AtomicLoadToAddrAcq64(fetch_addr, dst_addr)	(*(dst_addr) = AtomicAddFetchAcq64(fetch_addr, 0))
-	#define AtomicLoadToAddrSeqCst64(fetch_addr, dst_addr)	(*(dst_addr) = AtomicAddFetchSeqCst64(fetch_addr, 0))
+	#define AtomicLoadRlx32(fetch_addr)		((long) __iso_volatile_load32((const volatile __int32 *) (fetch_addr)))
+	#define AtomicLoadAcq32(fetch_addr)		ds_LoadAcq32((const volatile long *) (fetch_addr))
+	#define AtomicLoadSeqCst32(fetch_addr)		ds_LoadAcq32((const volatile long *) (fetch_addr))
+
+	#define AtomicLoadRlx64(fetch_addr)		__iso_volatile_load64((const volatile __int64 *) (fetch_addr))
+	#define AtomicLoadAcq64(fetch_addr)		ds_LoadAcq64((const volatile __int64 *) (fetch_addr))
+	#define AtomicLoadSeqCst64(fetch_addr)		ds_LoadAcq64((const volatile __int64 *) (fetch_addr))
+
+	#define AtomicLoadToAddrRlx32(fetch_addr, dst_addr)	(*(dst_addr) = AtomicLoadRlx32(fetch_addr))
+	#define AtomicLoadToAddrAcq32(fetch_addr, dst_addr)	(*(dst_addr) = AtomicLoadAcq32(fetch_addr))
+	#define AtomicLoadToAddrSeqCst32(fetch_addr, dst_addr)	(*(dst_addr) = AtomicLoadSeqCst32(fetch_addr))
+
+	#define AtomicLoadToAddrRlx64(fetch_addr, dst_addr)	(*(dst_addr) = AtomicLoadRlx64(fetch_addr))
+	#define AtomicLoadToAddrAcq64(fetch_addr, dst_addr)	(*(dst_addr) = AtomicLoadAcq64(fetch_addr))
+	#define AtomicLoadToAddrSeqCst64(fetch_addr, dst_addr)	(*(dst_addr) = AtomicLoadSeqCst64(fetch_addr))
 	
 	#define AtomicStoreFromAddrRlx32(dst_addr, src_addr)	AtomicStoreRlx32(dst_addr, *(src_addr))
 	#define AtomicStoreFromAddrRel32(dst_addr, src_addr)	AtomicStoreRel32(dst_addr, *(src_addr))
