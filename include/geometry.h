@@ -344,6 +344,7 @@ struct dcel
 {
 	struct dcelFace *f;		/* f[i] = half-edge of face i */
 	struct plane *  plane;	/* plane[i] = face i's plane: unit normal pointing out of the hull (DcelPlanesTryCompute) */
+	struct aabb     bbox;   /* local bounding box of v (DcelBboxCompute) */
 	struct dcelEdge *e;
 	v3 *	v;
 	u32 f_count;
@@ -354,11 +355,11 @@ struct dcel
 /* return dcel { 0 } */
 struct dcel 	DcelEmpty(void);
 /*
- * Return the triangle stub: two faces (front 0-1-2, back 0-2-1) without vertices or planes. The caller sets
- * v (3 vertices) and plane (2 planes, e.g. through DcelPlanesTryCompute).
+ * Return the triangle stub: two faces (front 0-1-2, back 0-2-1) without vertices, planes or box. The caller sets
+ * v (3 vertices), plane (2 planes, e.g. through DcelPlanesTryCompute) and bbox (DcelBboxCompute; flat).
  */
 struct dcel     DcelTriStub(void);
-/* return dcel box stub: unit cube centered at the origin, static memory (planes included) */
+/* return dcel box stub: unit cube centered at the origin, static memory (planes and box included) */
 struct dcel 	DcelBoxStub(void);
 /*
  * return arena allocated dcel box with given half widths. Degenerate (a half width of 0): asserts in debug;
@@ -380,6 +381,8 @@ struct dcel 	DcelConvexHull(struct arena *mem, const v3 *v, const u32 v_count, c
  * planes of degenerate faces are then garbage).
  */
 u32             DcelPlanesTryCompute(struct dcel *h);
+/* Compute h->bbox: the bounding box of h->v (DcelConvexHull and DcelBox call it; stubs: see DcelTriStub) */
+void            DcelBboxCompute(struct dcel *h);
 
 /* Return face fi's plane transformed by p -> rot p + pos (local planes: h->plane[fi]) */
 struct plane 	DcelFacePlaneWorld(const struct dcel *h, const m3 rot, const v3 pos, const u32 fi);

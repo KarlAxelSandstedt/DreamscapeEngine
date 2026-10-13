@@ -133,6 +133,10 @@ static inline enum voronoi TriOriginVoronoi(f32 w[3], const v3 t0, const v3 t1, 
  *
  * A flat (coplanar) tetrahedron gives its closest face, edge or vertex. Returns VORONOI_INVALID only if
  * every candidate face is numerically degenerate (rounding); w is then garbage.
+ *
+ * WARNING: nearly flat tetrahedra (volume within rounding, or a tiny dihedral angle) can give the wrong face:
+ * the bc[i] signs that select the candidate faces are noise there (up to ~0.6 S off, ~1% of points on flat
+ * inputs; agent_notes/gjk_design.txt).
  */
 static inline enum voronoi TetrahedronVoronoi(f32 w[4], const v3 t0, const v3 t1, const v3 t2, const v3 t3, const v3 p);
 /* TetrahedronVoronoi with origin as the query point. */
@@ -398,6 +402,54 @@ static inline enum voronoi SegmentOriginVoronoi(f32 w[2], const v3 s0, const v3 
     return r;
 }
 
+/*
+ * TriVoronoi when no region test passed: in exact arithmetic the face (Ericson 5.1.5), but the segment numerators
+ * and bc012 round independently, so near a region boundary every test can fail (e.g. over a vertex, or bc12[1]
+ * rounding to 0 on the E12/V1 boundary while bc012[0] is clearly negative). The closest point then lies within
+ * rounding of an edge: the closest of the three edges' clamped points (strict <: the first edge wins ties).
+ * r_i = t_i - p; bc01, bc12, bc20: the edges' segment numerators.
+ */
+static inline enum voronoi TriVoronoiFallback(f32 w[3], const v3 r0, const v3 r1, const v3 r2, const f32 bc01[2], const f32 bc12[2], const f32 bc20[2])
+{
+    const v3 r[3] = { r0, r1, r2 };
+    const f32 *bc_edge[3] = { bc01, bc12, bc20 };
+    enum voronoi best = VORONOI_INVALID;
+    f32 best_dist_sq = F32_INFINITY;
+    for (u32 a = 0; a < 3; ++a)
+    {
+        const u32 b = (a + 1) % 3;
+        /* as SegmentVoronoi: bc[0] <= 0 gives vertex b first */
+        f32 w_a = 0.0f;
+        f32 w_b = 1.0f;
+        if (bc_edge[a][0] > 0.0f && bc_edge[a][1] <= 0.0f)
+        {
+            w_a = 1.0f;
+            w_b = 0.0f;
+        }
+        else if (bc_edge[a][0] > 0.0f)
+        {
+            const f32 sum = bc_edge[a][0] + bc_edge[a][1];
+            w_a = bc_edge[a][0] / sum;
+            w_b = bc_edge[a][1] / sum;
+        }
+
+        const v3 c = V3Add(V3Scale(r[a], w_a), V3Scale(r[b], w_b));
+        const f32 dist_sq = V3Dot(c, c);
+        if (dist_sq < best_dist_sq)
+        {
+            best_dist_sq = dist_sq;
+            w[0] = 0.0f;
+            w[1] = 0.0f;
+            w[2] = 0.0f;
+            w[a] = w_a;
+            w[b] = w_b;
+            best = (enum voronoi) (((w_a > 0.0f) << a) | ((w_b > 0.0f) << b));
+        }
+    }
+
+    return best;
+}
+
 static inline enum voronoi TriVoronoi(f32 w[3], const v3 t0, const v3 t1, const v3 t2, const v3 p)
 {
     f32 bc01[2], bc12[2], bc20[2], bc012[3], div01, div12, div20, div012;
@@ -469,7 +521,7 @@ static inline enum voronoi TriVoronoi(f32 w[3], const v3 t0, const v3 t1, const 
             : VORONOI_INVALID;
     }
 
-    return VORONOI_INVALID;
+    return TriVoronoiFallback(w, V3Sub(t0, p), V3Sub(t1, p), V3Sub(t2, p), bc01, bc12, bc20);
 }
 
 static inline enum voronoi TriOriginVoronoi(f32 w[3], const v3 t0, const v3 t1, const v3 t2)
@@ -543,7 +595,7 @@ static inline enum voronoi TriOriginVoronoi(f32 w[3], const v3 t0, const v3 t1, 
             : VORONOI_INVALID;
     }
 
-    return VORONOI_INVALID;
+    return TriVoronoiFallback(w, t0, t1, t2, bc01, bc12, bc20);
 }
 
 /* vertices of the face opposite t_f, in increasing order */

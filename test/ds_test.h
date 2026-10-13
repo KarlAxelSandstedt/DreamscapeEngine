@@ -239,8 +239,10 @@ extern struct suite_Correctness *serialize_correctness_suite;
 extern struct suite_Correctness *THashMap_correctness_suite;
 extern struct suite_Correctness *jobscheduler_correctness_suite;
 extern struct suite_Correctness *geometry_correctness_suite;
+extern struct suite_Correctness *voronoi_correctness_suite;
 extern struct suite_Correctness *gjk_correctness_suite;
 extern struct suite_Correctness *contact_correctness_suite;
+extern struct suite_Correctness *mesh_contact_correctness_suite;
 extern struct suite_Correctness *config_correctness_suite;
 
 #endif

@@ -24,6 +24,7 @@
 #include "ds_float.h"
 #include "ds_vector.h"
 #include "ds_matrix.h"
+#include "ds_voronoi.h"
 
 /********************************** Contact Manifold helpers **********************************/
 
@@ -2145,6 +2146,7 @@ static u32 TriCcwHullContact(struct c_Manifold *manifold, struct c_SatCache *new
     hull_tri.v = (v3 *) tri;
     hull_tri.plane = tri_face_plane;
     const u32 tri_nondegenerate = DcelPlanesTryCompute(&hull_tri);
+    DcelBboxCompute(&hull_tri);
     ds_AssertString(tri_nondegenerate, "mesh triangle without area");
     const struct dcel *h[2] = { &hull_tri, hull };
     const v3 *v[2] = { tri, hull->v };
@@ -2441,6 +2443,7 @@ struct c_ContactResult c_TriMeshBvhHullContact(struct arena *frame, const struct
     {
         hull_bvh_local_space.plane[fi] = DcelFacePlaneWorld(hull, R, T, fi);
     }
+    DcelBboxCompute(&hull_bvh_local_space);
 
 	bbox_transform.min = min;
 	bbox_transform.max = max;
@@ -3505,32 +3508,446 @@ sat_cleanup:
     return result;
 }
 
-/* TMP: adapter over c_TriMeshBvhSphereContact (reference = the sphere) until rewritten */
+/* a tested triangle (c_MeshContact) */
+struct c_MeshTri
+{
+    u32                 tri;
+    u32                 contact;        /* else (hulls) a cached separating axis */
+    u32                 delayed_count;  /* 0: face contact; 1, 2: the triangle's vertices (0..2) of an edge/vertex contact */
+    u32                 delayed[2];
+    f32                 depth;          /* deepest point: the delayed phase goes deepest first */
+    struct c_Manifold   manifold;       /* local to the convex shape */
+    struct c_SatCache   cache;          /* hulls */
+};
+
+/*
+ * Mesh vs convex shape, shared parts: c_MeshContactInit (pose, box, traversal), c_MeshContactNext (the next
+ * candidate triangle, in the convex shape's frame), c_MeshContactPush (a record), c_MeshContactFinish (internal
+ * edges, output). The shape loops in between test triangles against the convex shape as stored (sphere at the
+ * origin, capsule along y, hull with its stored planes).
+ */
+struct c_MeshContactHelper
+{
+    const struct triMesh *      mesh;
+    const struct triMeshBvh *   mesh_bvh;
+    m3                          rot_inv;    /* convex_to_mesh's inverse: x_convex = rot_inv (x_mesh - pos) */
+    v3                          pos;
+    struct aabb                 bbox;       /* the convex shape's box in mesh space */
+
+    const struct bvhNode *      node;
+    const struct bvhNode **     stack;
+    u32                         stack_count;
+    u32                         leaf_next;  /* the current leaf's remaining triangles: leaf_next .. leaf_last */
+    u32                         leaf_last;
+
+    struct arena *              tmp_records;
+    struct arena *              tmp;
+    struct c_MeshTri *          record;
+    u32                         record_count;
+    u32                         record_len;
+};
+
+static void c_MeshContactInit(struct c_MeshContactHelper *helper, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex)
+{
+	ds_Assert(mesh->type == C_SHAPE_TRI_MESH);
+	ds_Assert(convex->type < C_SHAPE_TRI_MESH);
+
+    helper->mesh_bvh = &mesh->mesh_bvh;
+    helper->mesh = mesh->mesh_bvh.mesh;
+
+    /*
+     * convex_to_mesh: x_mesh = rot x_convex + pos. Triangles use its inverse, rot^T (x_mesh - pos): subtracting
+     * first, the rotation only rounds a small vector (rot^T x_mesh - rot^T pos would round the large x_mesh).
+     */
+    const ds_Transform convex_to_mesh = ds_TransformWorldRelative(t_mesh, t_convex);
+    const m3 rot = M3QUnit(convex_to_mesh.rotation);
+    helper->rot_inv = M3QUnit(QConj(convex_to_mesh.rotation));
+    helper->pos = convex_to_mesh.position;
+
+    /* the convex shape's local box, moved into mesh space: center rot c + pos, half widths |rot| e */
+    struct aabb local;
+    switch (convex->type)
+    {
+        case C_SHAPE_SPHERE:
+        {
+            const f32 r = convex->sphere.radius;
+            local = (struct aabb) { .min = V3(-r, -r, -r), .max = V3(r, r, r) };
+        } break;
+
+        case C_SHAPE_CAPSULE:
+        {
+            const f32 r = convex->capsule.radius;
+            const f32 h = convex->capsule.half_height + r;
+            local = (struct aabb) { .min = V3(-r, -h, -r), .max = V3(r, h, r) };
+        } break;
+
+        default:
+        {
+            local = convex->hull.bbox;
+        } break;
+    }
+    const v3 center = V3Add(M3V3Mul(rot, V3Scale(V3Add(local.min, local.max), 0.5f)), helper->pos);
+    const m3 rot_abs = M3Columns(V3Abs(rot.col[0]), V3Abs(rot.col[1]), V3Abs(rot.col[2]));
+    const v3 half = M3V3Mul(rot_abs, V3Scale(V3Sub(local.max, local.min), 0.5f));
+    helper->bbox = (struct aabb) { .min = V3Sub(center, half), .max = V3Add(center, half) };
+
+    /* TODO(perf, audit E2): 2 scratch arenas here (records, the rest), TriCcwHullContact a third */
+    helper->tmp_records = ArenaPushScratch();
+    helper->tmp = ArenaPushScratch();
+    helper->node = helper->mesh_bvh->bvh.pool.buf;
+    helper->stack = ArenaPush(helper->tmp, (helper->mesh_bvh->depth + 1)*sizeof(struct bvhNode *));
+    helper->stack_count = 0;
+    helper->leaf_next = 1;
+    helper->leaf_last = 0;
+    const struct bvhNode *root = helper->node + helper->mesh_bvh->bvh.bt.root;
+    if (AabbTest(&helper->bbox, &root->bbox))
+    {
+        helper->stack[helper->stack_count++] = root;
+    }
+
+    struct memArray records = ArenaPushAlignedAll(helper->tmp_records, sizeof(struct c_MeshTri), 8);
+    helper->record = records.addr;
+    helper->record_count = 0;
+    helper->record_len = records.len;
+}
+
+/* The next triangle whose leaf's box overlaps the convex shape's: its index and vertices in the convex shape's frame */
+static u32 c_MeshContactNext(struct c_MeshContactHelper *helper, u32 *tri_index, v3 tri[3])
+{
+    while (helper->leaf_next > helper->leaf_last)
+    {
+        if (helper->stack_count == 0)
+        {
+            return 0;
+        }
+
+        const struct bvhNode *node = helper->stack[--helper->stack_count];
+        if (ds_BTLeafCheck(node))
+        {
+            helper->leaf_next = node->bt_child[0];
+            helper->leaf_last = node->bt_child[0] + node->bt_child[1] - 1;
+            continue;
+        }
+
+        const struct bvhNode *left = helper->node + node->bt_child[0];
+        const struct bvhNode *right = helper->node + node->bt_child[1];
+        if (AabbTest(&helper->bbox, &right->bbox))
+        {
+            ds_Assert(helper->stack_count < helper->mesh_bvh->depth + 1);
+            helper->stack[helper->stack_count++] = right;
+        }
+        if (AabbTest(&helper->bbox, &left->bbox))
+        {
+            ds_Assert(helper->stack_count < helper->mesh_bvh->depth + 1);
+            helper->stack[helper->stack_count++] = left;
+        }
+    }
+
+    *tri_index = helper->mesh_bvh->tri[helper->leaf_next++];
+    const u32 *v = helper->mesh->tri[*tri_index].buf;
+    for (u32 i = 0; i < 3; ++i)
+    {
+        tri[i] = M3V3Mul(helper->rot_inv, V3Sub(helper->mesh->v[v[i]], helper->pos));
+    }
+    return 1;
+}
+
+static struct c_MeshTri *c_MeshContactPush(struct c_MeshContactHelper *helper, const u32 tri_index)
+{
+    if (helper->record_count == helper->record_len)
+    {
+        Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
+        FatalCleanupAndExit();
+    }
+
+    struct c_MeshTri *r = helper->record + helper->record_count++;
+    r->tri = tri_index;
+    r->contact = 0;
+    r->delayed_count = 0;
+    r->depth = 0.0f;
+    return r;
+}
+
+/* the delayed vertices of a triangle's Voronoi region (face: none) */
+static void c_MeshTriRegionDelayed(struct c_MeshTri *r, const enum TriVoronoiRegion region)
+{
+    if (region != TRI_VORONOI_FACE)
+    {
+        r->delayed[0] = delayed_vertex_map[region][0];
+        r->delayed[1] = delayed_vertex_map[region][1];
+        r->delayed_count = (r->delayed[0] == r->delayed[1]) ? 1 : 2;
+    }
+}
+
+static f32 c_ManifoldDeepest(const struct c_Manifold *m)
+{
+    f32 deepest = 0.0f;
+    for (u32 i = 0; i < m->v_count; ++i)
+    {
+        deepest = F32Max(deepest, m->depth[i]);
+    }
+    return deepest;
+}
+
+static void c_MeshSphereTriangles(struct c_MeshContactHelper *helper, const struct sphere *sphere)
+{
+    const f32 radius = sphere->radius;
+    const f32 touch_tolerance = GJK_TOUCH_TOLERANCE * F32_EPSILON;
+    u32 tri_index;
+    v3 tri[3];
+    while (c_MeshContactNext(helper, &tri_index, tri))
+    {
+        /*
+         * as TMP_c_HullSphereContact, two-sided: the triangle is a flat hull with faces +-n_t; center = origin.
+         * Degenerate (rounding: VORONOI_INVALID; deep with n_t = 0): no contact. Triangles have area by c_Shape
+         * precondition, so both only assert.
+         */
+        f32 w[3];
+        const enum voronoi region = TriOriginVoronoi(w, tri[0], tri[1], tri[2]);
+        if (region == VORONOI_INVALID)
+        {
+            ds_AssertString(0, "mesh triangle without area (c_Shape precondition)");
+            continue;
+        }
+
+        const v3 c = V3Add(V3Add(V3Scale(tri[0], w[0]), V3Scale(tri[1], w[1])), V3Scale(tri[2], w[2]));
+        const f32 distance_sq = V3LengthSquared(c);
+        if (radius*radius < distance_sq)
+        {
+            continue;
+        }
+
+        v3 n;
+        f32 depth;
+        /* GJK's touch band, L = max |t_i| (the sphere's center is the origin) */
+        const f32 l_sq = F32Max(F32Max(V3LengthSquared(tri[0]), V3LengthSquared(tri[1])), V3LengthSquared(tri[2]));
+        /* shallow penetration */
+        if (touch_tolerance*touch_tolerance*l_sq < distance_sq)
+        {
+            const f32 distance = F32Sqrt(distance_sq);
+            n = V3Scale(c, 1.0f / distance);
+            depth = radius - distance;
+        }
+        /* deep penetration: the face the center is in front of (on the plane: +n_t) */
+        else
+        {
+            const v3 n_dir = V3Cross(V3Sub(tri[1], tri[0]), V3Sub(tri[2], tri[0]));
+            const f32 n_dir_length_sq = V3LengthSquared(n_dir);
+            if (n_dir_length_sq == 0.0f)
+            {
+                ds_AssertString(0, "mesh triangle without area (c_Shape precondition)");
+                continue;
+            }
+            const v3 n_t = V3Scale(n_dir, 1.0f / F32Sqrt(n_dir_length_sq));
+            const f32 distance = -V3Dot(n_t, tri[0]);
+            n = (0.0f <= distance) ? V3Scale(n_t, -1.0f) : n_t;
+            depth = F32Max(0.0f, radius - F32Abs(distance));
+        }
+
+        struct c_MeshTri *r = c_MeshContactPush(helper, tri_index);
+        struct c_Manifold *m = &r->manifold;
+        m->v_count = 1;
+        m->n = n;
+        m->v[0] = V3Scale(n, radius);
+        m->depth[0] = depth;
+        r->contact = 1;
+        r->depth = depth;
+        /* edge/vertex regions wait for the internal-edge filter: the region's vertices (mask bits) */
+        if (region != VORONOI_F012)
+        {
+            for (u32 i = 0; i < 3; ++i)
+            {
+                if (region & (1u << i))
+                {
+                    r->delayed[r->delayed_count++] = i;
+                }
+            }
+        }
+    }
+}
+
+static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const struct capsule *capsule)
+{
+    /* the core in the capsule's frame (SegmentCapsuleTransform's order) */
+    const struct segment core = SegmentConstruct(V3(0.0f, capsule->half_height, 0.0f), V3(0.0f, -capsule->half_height, 0.0f));
+    u32 tri_index;
+    v3 tri[3];
+    while (c_MeshContactNext(helper, &tri_index, tri))
+    {
+        struct c_TriMeshBvhContact tc;
+        const u32 robust = TriVoronoiInitCcw(&tc.tv, tri);
+        ds_AssertString(robust, "mesh triangle without area (c_Shape precondition)");
+        tc.dist_sq = TriCcwSegmentDistanceSquared(&tc.c[0], &tc.c[1], &tc.region, &core, &tc.tv);
+        if (tc.dist_sq <= capsule->radius*capsule->radius)
+        {
+            struct c_MeshTri *r = c_MeshContactPush(helper, tri_index);
+            /*
+             * TODO(bug, audit A1/A2): deep edge contact: depth without the radius, n from normalizing c[ref] - c[inc]
+             * (0 when the core crosses the edge: NaN).
+             * TODO(decision, audit D3): two points via PlaneSegmentParallelCheck (~6.3 deg, shared depth);
+             * hull-capsule uses face_parallel_cos and per-point depths.
+             */
+            c_TriCapsuleManifold(&r->manifold, &tc, capsule, &core, 1);
+            r->contact = 1;
+            r->depth = c_ManifoldDeepest(&r->manifold);
+            c_MeshTriRegionDelayed(r, tc.region);
+        }
+    }
+}
+
+static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct c_ContactResult *cached_result, const struct dcel *hull)
+{
+    u32 tri_index;
+    v3 tri[3];
+    while (c_MeshContactNext(helper, &tri_index, tri))
+    {
+        /*
+         * TODO(rewrite): TriCcwHullContact is the old SAT (relative 0.99 face/edge rule on unclipped separations,
+         * empty clip -> no contact, edge axes oriented by the triangle's centroid, the old cache rules); as
+         * TMP_c_HullContact, with a triangle edge check and sat_CacheMeshTryReuse.
+         * TODO(perf, audit C5): linear search for the triangle's cache.
+         */
+        const struct c_SatCache *old_cache = NULL;
+        for (u32 ci = 0; ci < cached_result->cache_count; ++ci)
+        {
+            if (cached_result->cache[ci].tri == tri_index)
+            {
+                old_cache = cached_result->cache + ci;
+                break;
+            }
+        }
+
+        /* every tested triangle is kept: a separating axis is cached too */
+        struct c_MeshTri *r = c_MeshContactPush(helper, tri_index);
+        r->cache.tri = tri_index;
+        r->contact = TriCcwHullContact(&r->manifold, &r->cache, r->delayed, &r->delayed_count, old_cache, tri, hull, 1);
+        r->depth = (r->contact) ? c_ManifoldDeepest(&r->manifold) : 0.0f;
+    }
+}
+
+/* One manifold per record that survives the internal-edge filter; caches: every record's (hulls) */
+static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *result, struct c_MeshContactHelper *helper, const u32 cache)
+{
+    u32 contact_count = 0;
+    u32 delayed_count = 0;
+    for (u32 i = 0; i < helper->record_count; ++i)
+    {
+        contact_count += helper->record[i].contact;
+        delayed_count += (helper->record[i].contact && helper->record[i].delayed_count);
+    }
+
+    const u32 cache_len = (cache) ? ((helper->record_count < g_numerics_config->cache_count_max) ? helper->record_count : g_numerics_config->cache_count_max) : 0;
+    result->cache = (cache_len) ? ArenaPushPacked(frame, cache_len*sizeof(struct c_SatCache)) : NULL;
+    result->manifold = ArenaPush(frame, contact_count*sizeof(struct c_Manifold));
+    result->tri = ArenaPush(frame, contact_count*sizeof(u32));
+    u32 *delayed = ArenaPush(helper->tmp, delayed_count*sizeof(u32));
+    struct ds_BitSet void_bitset = ds_BitSetAlloc(helper->tmp, helper->mesh->v_count, 0, NOT_GROWABLE);
+    if ((contact_count && (!result->manifold || !result->tri)) || (delayed_count && !delayed) || (cache_len && !result->cache))
+    {
+        Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
+        FatalCleanupAndExit();
+    }
+
+    /*
+     * internal edges (TODO(decision): keep this void/delayed scheme or Box3D's): face contacts are emitted and void
+     * their 3 vertices; edge/vertex contacts wait, deepest first, and are dropped if their vertices are voided.
+     * TODO(perf, audit C5): insertion sorts (here, c_ContactResultSortTriangles).
+     */
+    u32 delayed_n = 0;
+    for (u32 i = 0; i < helper->record_count; ++i)
+    {
+        const struct c_MeshTri *r = helper->record + i;
+        if (!r->contact)
+        {
+            if (result->cache_count < cache_len)
+            {
+                result->cache[result->cache_count++] = r->cache;
+            }
+            continue;
+        }
+
+        if (r->delayed_count)
+        {
+            u32 d = delayed_n++;
+            for (; d && helper->record[delayed[d-1]].depth < r->depth; --d)
+            {
+                delayed[d] = delayed[d-1];
+            }
+            delayed[d] = i;
+            continue;
+        }
+
+        result->manifold[result->manifold_count] = r->manifold;
+        result->tri[result->manifold_count] = r->tri;
+        result->manifold_count += 1;
+        if (result->cache_count < cache_len)
+        {
+            result->cache[result->cache_count++] = r->cache;
+        }
+        const u32 *v = helper->mesh->tri[r->tri].buf;
+        ds_BitSetSet(&void_bitset, v[0], 1);
+        ds_BitSetSet(&void_bitset, v[1], 1);
+        ds_BitSetSet(&void_bitset, v[2], 1);
+    }
+
+    for (u32 i = 0; i < delayed_n; ++i)
+    {
+        const struct c_MeshTri *r = helper->record + delayed[i];
+        const u32 *v = helper->mesh->tri[r->tri].buf;
+        const u32 voided = (r->delayed_count == 1)
+            ? ds_BitSetGet(&void_bitset, v[ r->delayed[0] ])
+            : ds_BitSetGet(&void_bitset, v[ r->delayed[0] ]) && ds_BitSetGet(&void_bitset, v[ r->delayed[1] ]);
+        if (!voided)
+        {
+            result->manifold[result->manifold_count] = r->manifold;
+            result->tri[result->manifold_count] = r->tri;
+            result->manifold_count += 1;
+            if (result->cache_count < cache_len)
+            {
+                result->cache[result->cache_count++] = r->cache;
+            }
+        }
+        ds_BitSetSet(&void_bitset, v[0], 1);
+        ds_BitSetSet(&void_bitset, v[1], 1);
+        ds_BitSetSet(&void_bitset, v[2], 1);
+    }
+
+    ArenaPopScratch();
+    ArenaPopScratch();
+    c_ContactResultSortTriangles(frame, result);
+}
+
+/*
+ * Mesh vs convex shape (sphere, capsule, hull): one manifold per contacting triangle, local to the convex shape (n from
+ * it to the mesh, v on its surface). The per-triangle routines are the old ones (frame-agnostic, called with the
+ * convex shape as reference).
+ */
+static struct c_ContactResult c_MeshContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex)
+{
+    struct c_ContactResult result = { 0 };
+    struct c_MeshContactHelper helper;
+    c_MeshContactInit(&helper, mesh, t_mesh, convex, t_convex);
+    switch (convex->type)
+    {
+        case C_SHAPE_SPHERE:    { c_MeshSphereTriangles(&helper, &convex->sphere); } break;
+        case C_SHAPE_CAPSULE:   { c_MeshCapsuleTriangles(&helper, &convex->capsule); } break;
+        default:                { c_MeshHullTriangles(&helper, cached_result, &convex->hull); } break;
+    }
+    c_MeshContactFinish(frame, &result, &helper, convex->type == C_SHAPE_CONVEX_HULL);
+    return result;
+}
+
 struct c_ContactResult TMP_c_MeshSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *sphere, const ds_TransformWorld *t_sphere)
 {
-    const struct c_Shape *s[2] = { mesh, sphere };
-    const ds_TransformWorld t[2] = { *t_mesh, *t_sphere };
-    struct c_ContactResult result = c_TriMeshBvhSphereContact(frame, cached_result, s, t, 1);
-    TMP_c_ContactResultToLocal(&result, t_sphere);
-    return result;
+    return c_MeshContact(frame, cached_result, mesh, t_mesh, sphere, t_sphere);
 }
 
-/* TMP: adapter over c_TriMeshBvhCapsuleContact (reference = the capsule) until rewritten */
 struct c_ContactResult TMP_c_MeshCapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *capsule, const ds_TransformWorld *t_capsule)
 {
-    const struct c_Shape *s[2] = { mesh, capsule };
-    const ds_TransformWorld t[2] = { *t_mesh, *t_capsule };
-    struct c_ContactResult result = c_TriMeshBvhCapsuleContact(frame, cached_result, s, t, 1);
-    TMP_c_ContactResultToLocal(&result, t_capsule);
-    return result;
+    return c_MeshContact(frame, cached_result, mesh, t_mesh, capsule, t_capsule);
 }
 
-/* TMP: adapter over c_TriMeshBvhHullContact (reference = the hull) until rewritten */
 struct c_ContactResult TMP_c_MeshHullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *hull, const ds_TransformWorld *t_hull)
 {
-    const struct c_Shape *s[2] = { mesh, hull };
-    const ds_TransformWorld t[2] = { *t_mesh, *t_hull };
-    struct c_ContactResult result = c_TriMeshBvhHullContact(frame, cached_result, s, t, 1);
-    TMP_c_ContactResultToLocal(&result, t_hull);
-    return result;
+    return c_MeshContact(frame, cached_result, mesh, t_mesh, hull, t_hull);
 }

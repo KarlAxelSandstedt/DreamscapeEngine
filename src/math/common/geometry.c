@@ -1123,6 +1123,7 @@ struct dcel DcelBoxStub(void)
 	struct dcel box = 
 	{
 		.v = box_stub_vertex,
+		.bbox = { .min = {{ -0.5f, -0.5f, -0.5f }}, .max = {{ 0.5f, 0.5f, 0.5f }} },
 		.e = box_edge,
 		.f = box_face,
 		.plane = box_stub_plane,
@@ -1197,8 +1198,23 @@ struct dcel DcelBox(struct arena *mem, const v3 hw)
 		ds_AssertString(0, "DcelBox: degenerate box");
 		box = DcelBoxStub();
 	}
+	else
+	{
+		DcelBboxCompute(&box);
+	}
 
 	return box; 
+}
+
+void DcelBboxCompute(struct dcel *h)
+{
+	h->bbox.min = V3(F32_INFINITY, F32_INFINITY, F32_INFINITY);
+	h->bbox.max = V3(-F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
+	for (u32 i = 0; i < h->v_count; ++i)
+	{
+		h->bbox.min = V3Min(h->bbox.min, h->v[i]);
+		h->bbox.max = V3Max(h->bbox.max, h->v[i]);
+	}
 }
 
 u32 DcelPlanesTryCompute(struct dcel *h)
@@ -2152,6 +2168,7 @@ struct dcel DcelConvexHull(struct arena *mem, const v3 *v, const u32 v_count, co
 	}
 	else
 	{
+		DcelBboxCompute(&dcel);
 		ArenaRemoveRecord(mem);
 	}
 end:
