@@ -32,7 +32,7 @@ static ds_ThreadLocal struct ds_BodyCompute tl_static_bcomp =
 {
     .linear_velocity = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
     .angular_velocity = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
-    .center_of_mass = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
+    .delta_position = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
     .rotation = { .x = 0.0f, .y = 0.0f, .z = 0.0f, .w = 1.0f },
     .flags = 0,
 };
@@ -126,8 +126,8 @@ void ds_BodyUpdateSolverDataRange(struct ds_Dynamics *pipeline, const u32 low, c
         sim->world_inv_inertia = M3Mul(M3Mul(rot, sim->local_inv_inertia), rot_inv);
 
         bcomp->rotation = sim->world.rotation;
-        /* TODO(f64 P3): f32 world center of mass until the solver's delta state (f64_positions.txt S2-S7) */
-        bcomp->center_of_mass = V3Add(M3V3Mul(rot, sim->local_center_of_mass), V3F64Demote(sim->world.position));
+        sim->world_center_of_mass = V3F64Add(sim->world.position, V3Promote(M3V3Mul(rot, sim->local_center_of_mass)));
+        bcomp->delta_position = V3Zero();
 
         /* integrate new velocities using external forces */
         const v3 linear_velocity = V3AddScaled(bcomp->linear_velocity, g_solver_config->gravity, pipeline->timestep);
@@ -156,7 +156,7 @@ void ds_BodyIntegrateVelocitiesRange(struct ds_Dynamics *pipeline, const u32 low
         const f32 t_linear = 1.0f / F32Clamp(div_linear, 1.0f, F32_INFINITY);
         const f32 t_angular = 1.0f / F32Clamp(div_angular, 1.0f, F32_INFINITY);
 
-	    bcomp->center_of_mass = V3AddScaled(bcomp->center_of_mass, linear_velocity, pipeline->timestep * t_linear);
+	    bcomp->delta_position = V3AddScaled(bcomp->delta_position, linear_velocity, pipeline->timestep * t_linear);
 
         const q rotation = bcomp->rotation;
         const q a_vel_quat = Q(angular_velocity.x * t_angular,
@@ -193,8 +193,8 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
         /* derive new world transform from updated angle and world center of mass */
         const q rotation = bcomp->rotation;
         const v3 rotated_local_center_of_mass = QUnitRotate(rotation, sim->local_center_of_mass);
-        /* TODO(f64 P3): com_start + delta_position in f64 (f64_positions.txt S7) */
-        sim->world.position = V3Promote(V3Sub(bcomp->center_of_mass, rotated_local_center_of_mass));
+        const v3f64 center_of_mass = V3F64Add(sim->world_center_of_mass, V3Promote(bcomp->delta_position));
+        sim->world.position = V3F64Sub(center_of_mass, V3Promote(rotated_local_center_of_mass));
         sim->world.rotation = rotation;
 
         for (u32 j = body->shape_list.first; (i32) j != DLL_SENTINEL; j = shape->body_shape.next)
@@ -312,18 +312,19 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
 		    	ccp->tangent_impulse[0] = 0.0f;
 		    	ccp->tangent_impulse[1] = 0.0f;
 
-                ccp->v = m->v[ccpi];
-		    	ccp->r[0] = V3Sub(ccp->v, bcomp[0]->center_of_mass);
-		    	ccp->r[1] = V3AddScaled(V3Sub(ccp->v, bcomp[1]->center_of_mass), m->n, -m->depth[ccpi]);
+                /* TODO(f64 P3): anchors from the narrowphase (step B); the static sentinel's com is the origin */
+                const v3 com0 = V3F64Demote(sim[0]->world_center_of_mass);
+                const v3 com1 = V3F64Demote(sim[1]->world_center_of_mass);
+		    	ccp->r[0] = V3Sub(m->v[ccpi], com0);
+		    	ccp->r[1] = V3AddScaled(V3Sub(m->v[ccpi], com1), m->n, -m->depth[ccpi]);
+                ccp->com_separation = -m->depth[ccpi] - V3Dot(V3Sub(ccp->r[1], ccp->r[0]), m->n);
 
                 /*
-                 * Currently, we use a sentinel with COM = origin for static bodies. This becomes problematic
-                 * for large levers r[0]/r[1]. Consider the case when the static body is the reference; we check
-                 * the new r[0]=ccp->v, against the cached lever. For large enough r[0], it will always hold
-                 * that |r[0] - r[0]_cached|^2 = 0.0f <= limit_sq, so we will continue alias the old contact despite
-                 * moving far away from it.
+                 * TODO(f64 P3 step B): static bodies enter with a sentinel com at the origin, so a static anchor is
+                 * a world point. The warm start matches anchors within 1 cm (ds_ContactConstraintWarmupRange), which
+                 * holds while the f32 spacing of such points stays well below 1 cm (|p| < ~100 km). Anchors relative
+                 * to the static body's com (step B) remove the limit; shape size limits go in the c_Shape checker.
                  */
-                ds_Assert(V3Dot(ccp->v, ccp->v) < 10000.0f*10000.0f);
 
                 const m3 inv_inertia0 = sim[0]->world_inv_inertia;
                 const m3 inv_inertia1 = sim[1]->world_inv_inertia;
@@ -705,9 +706,13 @@ void ds_PositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 c
                 const f32 K = sim[0]->inv_mass + sim[1]->inv_mass + V3Dot(M3V3Mul(inv_inertia0, rn0), rn0) + V3Dot(M3V3Mul(inv_inertia1, rn1), rn1);
 
                 /* constraint */
-                const v3 p0 = V3Add(r0, bcomp[0]->center_of_mass);
-                const v3 p1 = V3Add(r1, bcomp[1]->center_of_mass);
-                const f32 distance = V3Dot(p1, cc->normal) - V3Dot(p0, cc->normal);
+                /*
+                 * p_i = com_i + r_i with com_i = com_i(step start) + delta_position_i:
+                 *      distance = dot(p1 - p0, n)
+                 *               = com_separation + dot((delta_position_1 - delta_position_0) + (r1 - r0), n)
+                 */
+                const v3 delta = V3Add(V3Sub(bcomp[1]->delta_position, bcomp[0]->delta_position), V3Sub(r1, r0));
+                const f32 distance = ccp->com_separation + V3Dot(delta, cc->normal);
                 min_separation = F32Max(min_separation, distance);
                 const f32 biased_slop_distance = g_solver_config->baumgarte_constant * (distance + g_solver_config->linear_slop);
 
@@ -718,8 +723,8 @@ void ds_PositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 c
                     : 0.0f;
 
                 const v3 impulse_vector = V3Scale(cc->normal, impulse);
-                bcomp[0]->center_of_mass = V3AddScaled(bcomp[0]->center_of_mass, impulse_vector, -sim[0]->inv_mass);
-                bcomp[1]->center_of_mass = V3AddScaled(bcomp[1]->center_of_mass, impulse_vector,  sim[1]->inv_mass);
+                bcomp[0]->delta_position = V3AddScaled(bcomp[0]->delta_position, impulse_vector, -sim[0]->inv_mass);
+                bcomp[1]->delta_position = V3AddScaled(bcomp[1]->delta_position, impulse_vector,  sim[1]->inv_mass);
                 /* flipped cross for correct sign! */
                 /* instantaneous torque, assume delta_t = 1 */
                 const v3 w0 = M3V3Mul(inv_inertia0, V3Cross(impulse_vector, r0));

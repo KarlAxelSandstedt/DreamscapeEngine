@@ -64,7 +64,17 @@ void c_ManifoldTransform(struct c_Manifold *dst, const struct c_Manifold *src, c
     }
 }
 
-/********************************** CONTACT MANIFOLD METHODS **********************************/
+static f32 c_ManifoldDeepest(const struct c_Manifold *m)
+{
+    f32 deepest = 0.0f;
+    for (u32 i = 0; i < m->v_count; ++i)
+    {
+        deepest = F32Max(deepest, m->depth[i]);
+    }
+    return deepest;
+}
+
+/********************************** Contact Methods **********************************/
 
 typedef struct PolygonClipPoint PolygonClipPoint;
 struct PolygonClipPoint
@@ -1672,16 +1682,6 @@ static void c_MeshTriRegionMaskDelayed(struct c_MeshTri *r, const u32 mask)
             }
         }
     }
-}
-
-static f32 c_ManifoldDeepest(const struct c_Manifold *m)
-{
-    f32 deepest = 0.0f;
-    for (u32 i = 0; i < m->v_count; ++i)
-    {
-        deepest = F32Max(deepest, m->depth[i]);
-    }
-    return deepest;
 }
 
 static void c_MeshSphereTriangles(struct c_MeshContactHelper *helper, const struct sphere *sphere)

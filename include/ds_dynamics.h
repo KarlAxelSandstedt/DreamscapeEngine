@@ -532,8 +532,8 @@ struct ds_BodySim
 	ds_TransformWorld world;	                /* local body frame to world transform. Rotation is 
                                                    about the local origin (not center of mass!)         */
 	v3		        local_center_of_mass;	    /* local body frame center of mass                      */
-	v3f64	        world_center_of_mass;	    /* unused; TODO(f64 P3): the step start's center of mass
-                                                   (f64_positions.txt S1)                               */
+	v3f64	        world_center_of_mass;	    /* world center of mass at the step's start; the solver
+                                                   moves it by ds_BodyCompute.delta_position            */
 	m3 		        local_inv_inertia;          /* local inertia tensor                                 */
 	m3 		        world_inv_inertia;          /* world inertia tensor                                 */
 };
@@ -550,7 +550,7 @@ struct ds_BodyCompute
 	v3 		        linear_velocity;        /* linear velocity of body */
 	v3 		        angular_velocity;       /* angular velocity of body (about local center of mass,
                                                not local origin!)                                   */
-    v3              center_of_mass;         /* world-space  */
+    v3              delta_position;         /* center of mass displacement since the step's start */
     q               rotation;
     u32             flags;
 
@@ -1031,8 +1031,9 @@ Individual constraint point within a contact constraint.
 */
 struct ds_ContactConstraintPoint 
 {
-    v3      v;                  /* contact point                                */
     v3      r[2];               /* levers: body center to contact_point         */
+    f32     com_separation;     /* dot(com1 - com0, n) at the step's start, from the levers:
+                                   -depth - dot(r[1] - r[0], n)                 */
 	f32 	normal_impulse;	    /* Normal impulse produced by the contact       */
 	f32	    velocity_bias;	    /* scale of velocity_bias along contact normal  */
 	f32	    normal_mass;	    /* 1.0f / row(J,i)*Inv(M)*J^T                   */
