@@ -485,7 +485,7 @@ void c_ContactResultSortTriangles(struct arena *frame, struct c_ContactResult *r
     //ProfZoneEnd;
 }
 
-/********************************** TMP CONTACT MANIFOLD METHODS **********************************/
+/********************************** SHAPE CONTACTS **********************************/
 
 /*
  * Preconditions:
@@ -511,7 +511,7 @@ void c_ContactResultSortTriangles(struct arena *frame, struct c_ContactResult *r
  *      depth = r_sum, v = r0 n.
  *      |p| below the positions' resolution (~eps max(|a|, |b|)): n is valid but its direction is noise.
  */
-struct c_ContactResult TMP_c_SphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+struct c_ContactResult c_SphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
 {
     ds_Assert(s[0]->type == C_SHAPE_SPHERE);
 	ds_Assert(s[1]->type == C_SHAPE_SPHERE);
@@ -545,9 +545,9 @@ struct c_ContactResult TMP_c_SphereContact(struct arena *frame, const struct c_C
  * Capsule vs sphere: the sphere vs sphere contact against the closest axis point c = (0, clamp(p.y, -h, h), 0),
  * p = sphere center in the capsule's frame; d = p - c.
  *
- * Preconditions: as TMP_c_SphereContact, with r_sum = capsule radius + sphere radius.
+ * Preconditions: as c_SphereContact, with r_sum = capsule radius + sphere radius.
  *
- * Guarantees: as TMP_c_SphereContact (the proofs only use that the test and the sqrt share dist_sq).
+ * Guarantees: as c_SphereContact (the proofs only use that the test and the sqrt share dist_sq).
  *      n, v and depth are continuous in p (clamp is continuous; no region switch at the caps).
  *
  * Degenerate input:
@@ -555,7 +555,7 @@ struct c_ContactResult TMP_c_SphereContact(struct arena *frame, const struct c_C
  *      way out), depth = r_sum, v = c + r_capsule n.
  *      |d| below the positions' resolution: n is valid but its direction is noise.
  */
-struct c_ContactResult TMP_c_CapsuleSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+struct c_ContactResult c_CapsuleSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
 {
     ds_Assert(s[0]->type == C_SHAPE_CAPSULE);
     ds_Assert(s[1]->type == C_SHAPE_SPHERE);
@@ -589,7 +589,7 @@ struct c_ContactResult TMP_c_CapsuleSphereContact(struct arena *frame, const str
 }
 
 
-/* Preconditions: e_len_sq_xz < capsule_parallel_tan_sq e.y^2 (so e.y != 0); c, e, n as in TMP_c_CapsuleContact.  */
+/* Preconditions: e_len_sq_xz < capsule_parallel_tan_sq e.y^2 (so e.y != 0); c, e, n as in c_CapsuleContact.  */
 static u32 c_CapsuleParallelManifold(struct c_Manifold *manifold, const v3 c, const v3 e, const f32 h0, const f32 r0, const f32 r_sum)
 {
     const f32 u0 = (-h0 - c.y) / e.y;
@@ -631,7 +631,7 @@ static u32 c_CapsuleParallelManifold(struct c_Manifold *manifold, const v3 c, co
  * Capsule vs capsule: local manifold in s[0]'s frame (n from s[0] to s[1]); one point, or two when the
  * capsules are nearly parallel and lie side by side.
  */
-struct c_ContactResult TMP_c_CapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+struct c_ContactResult c_CapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
 {
     ds_Assert(s[0]->type == C_SHAPE_CAPSULE);
     ds_Assert(s[1]->type == C_SHAPE_CAPSULE);
@@ -728,7 +728,7 @@ struct c_ContactResult TMP_c_CapsuleContact(struct arena *frame, const struct c_
     return result;
 }
 
-struct c_ContactResult TMP_c_HullSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
 {
 	ds_Assert(s[0]->type == C_SHAPE_CONVEX_HULL);
 	ds_Assert(s[1]->type == C_SHAPE_SPHERE);
@@ -872,7 +872,7 @@ static void HullCapsuleEESeparation(struct sat_EdgeQuery *query, const struct dc
  * closest points; deep (core touches the hull): SAT face and edge queries; the core clipped to the reference
  * face, or the closest points of the best edge and the core if that edge separates more by sat_face_bias.
  */
-struct c_ContactResult TMP_c_HullCapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
 {
 	ds_Assert(s[0]->type == C_SHAPE_CONVEX_HULL);
 	ds_Assert(s[1]->type == C_SHAPE_CAPSULE);
@@ -1431,7 +1431,7 @@ static u32 sat_PairContact(struct c_Manifold *m, sat_FeatureId features[4], stru
  * Hull vs hull: local manifold in s[0]'s frame (n from s[0] to s[1]). s[1]'s vertices and face planes are moved into
  * s[0]'s frame; s[0] uses its stored planes. SAT and cache: sat_PairContact.
  */
-struct c_ContactResult TMP_c_HullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+struct c_ContactResult c_HullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
 {
 	ds_Assert(s[0]->type == C_SHAPE_CONVEX_HULL);
 	ds_Assert(s[1]->type == C_SHAPE_CONVEX_HULL);
@@ -1693,7 +1693,7 @@ static void c_MeshSphereTriangles(struct c_MeshContactHelper *helper, const stru
     while (c_MeshContactNext(helper, &tri_index, tri))
     {
         /*
-         * as TMP_c_HullSphereContact, two-sided: the triangle is a flat hull with faces +-n_t; center = origin.
+         * as c_HullSphereContact, two-sided: the triangle is a flat hull with faces +-n_t; center = origin.
          * Triangles have area (c_Shape precondition), so VORONOI_INVALID (zero |e|^2 or |n|^2, NaN) and n_t = 0
          * are only asserted.
          */
@@ -1785,7 +1785,7 @@ static u32 c_TriSegmentSideClip(struct segment *clip, const v3 t[3], const v3 n,
 }
 
 /*
- * Capsule vs triangle (two-sided), tailored from TMP_c_HullCapsuleContact: the triangle is a flat hull with faces
+ * Capsule vs triangle (two-sided), tailored from c_HullCapsuleContact: the triangle is a flat hull with faces
  * +-n_t and three knife edges, and TriSegmentVoronoi replaces GJK. In the capsule's frame; the manifold follows the
  * mesh convention (n from the capsule to the mesh, v on the capsule's surface).
  */
@@ -1915,7 +1915,7 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
             }
         }
 
-        /* edge contact as in TMP_c_HullCapsuleContact: within both segments, separating more by sat_face_bias */
+        /* edge contact as in c_HullCapsuleContact: within both segments, separating more by sat_face_bias */
         if (edge != U32_MAX && (!face_contact || depth[deeper] + g_numerics_config->sat_face_bias < edge_separation))
         {
             const struct segment e = SegmentConstruct(tri[edge], tri[(edge + 1) % 3]);

@@ -6,7 +6,7 @@
 /*
 Contact tests
 =============
-Capsule vs capsule (TMP_c_CapsuleContact), checked in double precision against the exact inputs (the f32
+Capsule vs capsule (c_CapsuleContact), checked in double precision against the exact inputs (the f32
 shapes and rotations, the f64 positions). The reference is the distance between the two cores:
 
     dist* = min over the unit square of a convex quadratic: the unconstrained minimum if it lies inside,
@@ -160,7 +160,7 @@ static f64 CtSegmentDistance(const struct d3 a0, const struct d3 a1, const struc
     return dist;
 }
 
-/* a manifold of TMP_c_CapsuleContact in world space (double) */
+/* a manifold of c_CapsuleContact in world space (double) */
 struct ct_Manifold
 {
     u32         contact;
@@ -175,7 +175,7 @@ static u32 CtContact(struct arena *frame, struct ct_Manifold *m, const struct ct
 {
     const struct c_Shape *s[2] = { &a->shape, &b->shape };
     const ds_TransformWorld t[2] = { a->t, b->t };
-    const struct c_ContactResult result = TMP_c_CapsuleContact(frame, NULL, s, t);
+    const struct c_ContactResult result = c_CapsuleContact(frame, NULL, s, t);
 
     *m = (struct ct_Manifold) { 0 };
     if (result.manifold_count == 0)
@@ -801,7 +801,7 @@ struct test_Output CapsuleContactThresholdTest(struct test_Environment *env)
 /********************************** hull vs capsule **********************************/
 
 /*
-Hull vs capsule (TMP_c_HullCapsuleContact), checked in double precision in the hull's frame (the manifold's
+Hull vs capsule (c_HullCapsuleContact), checked in double precision in the hull's frame (the manifold's
 frame). The hull's f32 vertices are exact; face normals are recomputed in double (Newell). With the core a, b
 in the hull's frame and sep(n) = min(n.a, n.b) - max_hull n.x the core's separation along unit n:
 
@@ -1008,7 +1008,7 @@ static u32 ChContact(struct arena *frame, struct c_Manifold *m, u32 *contact, co
     const struct c_Shape *s[2] = { &h->shape, &c->shape };
     const ds_TransformWorld t[2] = { h->t, c->t };
     const struct c_ContactResult cached = { 0 };
-    const struct c_ContactResult result = TMP_c_HullCapsuleContact(frame, &cached, s, t);
+    const struct c_ContactResult result = c_HullCapsuleContact(frame, &cached, s, t);
 
     *contact = 0;
     if (result.manifold_count == 0)
@@ -1779,7 +1779,7 @@ struct test_Output HullCapsuleContactTimingTest(struct test_Environment *env)
             const ds_TransformWorld t[2] = { pair[i].t, pair[i].capsule.t };
             const struct c_ContactResult cached = { 0 };
             const u64 start = ds_TimeNs();
-            const struct c_ContactResult result = TMP_c_HullCapsuleContact(env->mem_2, &cached, s, t);
+            const struct c_ContactResult result = c_HullCapsuleContact(env->mem_2, &cached, s, t);
             const u64 end = ds_TimeNs();
             manifolds += result.manifold_count;
             ns[pair[i].deep] += end - start;
@@ -1797,7 +1797,7 @@ struct test_Output HullCapsuleContactTimingTest(struct test_Environment *env)
 /********************************** hull vs hull **********************************/
 
 /*
-Hull vs hull (TMP_c_HullContact), checked in double precision in A's frame (the manifold's frame). B's vertices,
+Hull vs hull (c_HullContact), checked in double precision in A's frame (the manifold's frame). B's vertices,
 face normals and edge directions are moved into A's frame in double. With sep(n) = min_B n.x - max_A n.x:
 
     sat = max sep(n) over A's face normals, minus B's face normals and +-cross(edge A, edge B)
@@ -1945,7 +1945,7 @@ static u32 HhContact(struct arena *frame, struct c_ContactResult *result, const 
     const struct c_Shape *s[2] = { &a->shape, &b->shape };
     const ds_TransformWorld t[2] = { a->t, b->t };
     const struct c_ContactResult none = { 0 };
-    *result = TMP_c_HullContact(frame, (cached) ? cached : &none, s, t);
+    *result = c_HullContact(frame, (cached) ? cached : &none, s, t);
     return result->manifold_count == 0
         || (result->manifold_count == 1 && c_ManifoldCheck(result->manifold)
             && 1 <= result->manifold->v_count && result->manifold->v_count <= 4);
@@ -2395,8 +2395,8 @@ struct test_Output HullContactRandomTest(struct test_Environment *env)
 /********************************** sphere contacts **********************************/
 
 /*
-Sphere vs sphere, capsule vs sphere, hull vs sphere (TMP_c_SphereContact, TMP_c_CapsuleSphereContact,
-TMP_c_HullSphereContact), checked in double precision in s[0]'s frame against the exact signed distance sd from
+Sphere vs sphere, capsule vs sphere, hull vs sphere (c_SphereContact, c_CapsuleSphereContact,
+c_HullSphereContact), checked in double precision in s[0]'s frame against the exact signed distance sd from
 the sphere's center c to s[0]'s core (sphere: its center; capsule: its segment; box: exact; other hulls: the largest
 face plane distance, exact inside and a lower bound outside). With r_sum = r0 + r1 (r0 = 0 for hulls):
 
@@ -2748,7 +2748,7 @@ struct test_Output SphereContactRandomTest(struct test_Environment *env)
 
     const char *kind_id[] = { "sphere/sphere", "capsule/sphere", "box/sphere", "slab/sphere", "hull/sphere" };
     const char *mode_id[] = { "random", "touching", "deep", "degenerate" };
-    const sp_ContactFn fn[] = { TMP_c_SphereContact, TMP_c_CapsuleSphereContact, TMP_c_HullSphereContact };
+    const sp_ContactFn fn[] = { c_SphereContact, c_CapsuleSphereContact, c_HullSphereContact };
     for (u32 k = 0; k < 5; ++k)
     {
         const u32 kind = (k < 2) ? k : 2;
@@ -2825,16 +2825,16 @@ struct test_Output SphereContactCasesTest(struct test_Environment *env)
 
     /* spheres apart, touching, overlapping (n = +x, depth 0.25, v = (1, 0, 0)), coincident (n = (1, 0, 0), depth 1.5) */
     t[1].position = V3F64(1.6, 0.0, 0.0);
-    r = TMP_c_SphereContact(env->mem_2, &none, s, t);
+    r = c_SphereContact(env->mem_2, &none, s, t);
     TEST_EQUAL(r.manifold_count, 0);
     t[1].position = V3F64(1.5, 0.0, 0.0);
-    r = TMP_c_SphereContact(env->mem_2, &none, s, t);
+    r = c_SphereContact(env->mem_2, &none, s, t);
     TEST_TRUE(r.manifold_count == 1 && r.manifold->depth[0] == 0.0f);
     t[1].position = V3F64(1.25, 0.0, 0.0);
-    r = TMP_c_SphereContact(env->mem_2, &none, s, t);
+    r = c_SphereContact(env->mem_2, &none, s, t);
     TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.25) && CtNearD3(D3V3(r.manifold->n), D3(1.0, 0.0, 0.0)) && CtNearD3(D3V3(r.manifold->v[0]), D3(1.0, 0.0, 0.0)));
     t[1].position = V3F64(0.0, 0.0, 0.0);
-    r = TMP_c_SphereContact(env->mem_2, &none, s, t);
+    r = c_SphereContact(env->mem_2, &none, s, t);
     TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 1.5) && CtNearD3(D3V3(r.manifold->n), D3(1.0, 0.0, 0.0)));
 
     /* capsule (h 1, r 1) vs sphere: beside (n = +z, depth 0.25), beyond the cap (n = +y), on the axis (n = (1, 0, 0), depth 1.5) */
@@ -2843,13 +2843,13 @@ struct test_Output SphereContactCasesTest(struct test_Environment *env)
     cap.capsule.radius = 1.0f;
     s[0] = &cap;
     t[1].position = V3F64(0.0, 0.5, 1.25);
-    r = TMP_c_CapsuleSphereContact(env->mem_2, &none, s, t);
+    r = c_CapsuleSphereContact(env->mem_2, &none, s, t);
     TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.25) && CtNearD3(D3V3(r.manifold->n), D3(0.0, 0.0, 1.0)) && CtNearD3(D3V3(r.manifold->v[0]), D3(0.0, 0.5, 1.0)));
     t[1].position = V3F64(0.0, 2.25, 0.0);
-    r = TMP_c_CapsuleSphereContact(env->mem_2, &none, s, t);
+    r = c_CapsuleSphereContact(env->mem_2, &none, s, t);
     TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.25) && CtNearD3(D3V3(r.manifold->n), D3(0.0, 1.0, 0.0)));
     t[1].position = V3F64(0.0, -0.5, 0.0);
-    r = TMP_c_CapsuleSphereContact(env->mem_2, &none, s, t);
+    r = c_CapsuleSphereContact(env->mem_2, &none, s, t);
     TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 1.5) && CtNearD3(D3V3(r.manifold->n), D3(1.0, 0.0, 0.0)));
 
     /* box [-1, 1]^3 vs sphere: above the top face (n = +y, depth 0.25, v = (0.3, 1, 0)), beyond a corner, inside (nearest face) */
@@ -2858,13 +2858,13 @@ struct test_Output SphereContactCasesTest(struct test_Environment *env)
     c_ShapeUpdateMassProperties(&box);
     s[0] = &box;
     t[1].position = V3F64(0.3, 1.25, 0.0);
-    r = TMP_c_HullSphereContact(env->mem_2, &none, s, t);
+    r = c_HullSphereContact(env->mem_2, &none, s, t);
     TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.25) && CtNearD3(D3V3(r.manifold->n), D3(0.0, 1.0, 0.0)) && CtNearD3(D3V3(r.manifold->v[0]), D3(0.3, 1.0, 0.0)));
     t[1].position = V3F64(1.2, 1.2, 1.2);
-    r = TMP_c_HullSphereContact(env->mem_2, &none, s, t);
+    r = c_HullSphereContact(env->mem_2, &none, s, t);
     TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.5 - 0.34641016) && CtNearD3(D3V3(r.manifold->n), D3(0.57735027, 0.57735027, 0.57735027)) && CtNearD3(D3V3(r.manifold->v[0]), D3(1.0, 1.0, 1.0)));
     t[1].position = V3F64(0.0, 0.8, 0.1);
-    r = TMP_c_HullSphereContact(env->mem_2, &none, s, t);
+    r = c_HullSphereContact(env->mem_2, &none, s, t);
     TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.7) && CtNearD3(D3V3(r.manifold->n), D3(0.0, 1.0, 0.0)) && CtNearD3(D3V3(r.manifold->v[0]), D3(0.0, 1.0, 0.1)));
 
 	return output;
@@ -3656,7 +3656,7 @@ Hull vs one triangle (TMP_c_MeshHullContact), checked in double in the hull's fr
 Every result: contact iff sat < 0 (undecided within tol); c_ManifoldCheck, v_count 1..4, |n| = 1;
 depth_i <= -sep(n) + tol (n separates as deep as it claims); v_i on the hull (|sdf| <= tol); v_i - depth_i n on the
 triangle. For touching pairs (|sat| <= tol) the two surface checks are counted, not failed: the fallback (no clipped
-point penetrates, no edge contact; as TMP_c_HullContact) takes the deepest vertex of one side over the other's
+point penetrates, no edge contact; as c_HullContact) takes the deepest vertex of one side over the other's
 reference plane, which can lie beside the reference face (open: a closest-points fallback, as Box3D's GJK).
 tol = CONTACT_TEST_TOLERANCE eps L, L = max(hull extent, |t_i|) in the hull's frame. A result built from a cache
 may claim up to sat_cache_tolerance more (slack).
