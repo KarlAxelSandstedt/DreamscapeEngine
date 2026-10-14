@@ -239,6 +239,18 @@ static ds_ForceInline v3 V3F64Demote(const v3f64 a)
 	return V3((f32) a.x, (f32) a.y, (f32) a.z);
 }
 
+/* rounds each coordinate toward -inf (F64DemoteDownwards) */
+static ds_ForceInline v3 V3F64DemoteDownwards(const v3f64 a)
+{
+	return V3(F64DemoteDownwards(a.x), F64DemoteDownwards(a.y), F64DemoteDownwards(a.z));
+}
+
+/* rounds each coordinate toward +inf (F64DemoteUpwards) */
+static ds_ForceInline v3 V3F64DemoteUpwards(const v3f64 a)
+{
+	return V3(F64DemoteUpwards(a.x), F64DemoteUpwards(a.y), F64DemoteUpwards(a.z));
+}
+
 static ds_ForceInline v3f64 V3F64Add(const v3f64 a, const v3f64 b)
 {
 	return V3F64(a.x + b.x, a.y + b.y, a.z + b.z);

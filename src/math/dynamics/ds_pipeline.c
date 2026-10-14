@@ -1787,7 +1787,7 @@ u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const str
         return u32f32_inline(U32_MAX, F32_INFINITY);
     }
 
-    /* TODO(f64 P5): the BVH boxes are f32 world boxes, searched with the demoted ray */
+    /* the BVHs hold f32 world boxes, searched with the demoted ray; shapes test the f64 ray */
     const struct ray ray_bvh = { .origin = V3F64Demote(ray->origin), .dir = ray->dir };
     struct arena *tmp = ArenaPushScratch();
 

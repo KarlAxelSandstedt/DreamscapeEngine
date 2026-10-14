@@ -354,6 +354,12 @@ void AabbRotate(struct aabb *dst, const struct aabb *src, const m3 rotation)
 	dst->max = V3Add(center_rotated, hw);
 }
 
+void AabbTranslateOutward(struct aabb *dst, const struct aabb *local, const v3f64 origin)
+{
+    dst->min = V3F64DemoteDownwards(V3F64Add(origin, V3Promote(local->min)));
+    dst->max = V3F64DemoteUpwards(V3F64Add(origin, V3Promote(local->max)));
+}
+
 u32 AabbTest(const struct aabb *a, const struct aabb *b)
 {
 	if (b->min.x > a->max.x || a->min.x > b->max.x) { return 0; }

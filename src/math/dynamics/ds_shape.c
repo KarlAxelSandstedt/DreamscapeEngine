@@ -162,14 +162,13 @@ struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct d
     ds_TransformWorld t_world;
     ds_ShapeWorldTransform(&t_world, pipeline, shape);
 	const m3 rot = M3QUnit(t_world.rotation);
-    /* TODO(f64 P5): f64 bounds rounded outward to f32 (f64_positions.txt E4) */
-	const v3 world_position = V3F64Demote(t_world.position);
+    /* the box relative to the shape's position (rotation only), then translated in f64 and rounded outward */
 
 	if (shape->cshape_type == C_SHAPE_CONVEX_HULL)
 	{
 		for (u32 i = 0; i < cshape->hull.v_count; ++i)
 		{
-			const v3 v = V3Add(M3V3Mul(rot, cshape->hull.v[i]), world_position);
+			const v3 v = M3V3Mul(rot, cshape->hull.v[i]);
 			min = V3Min(min, v);
 			max = V3Max(max, v);
 		}
@@ -177,17 +176,14 @@ struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct d
 	else if (shape->cshape_type == C_SHAPE_SPHERE)
 	{
 		const f32 r = cshape->sphere.radius;
-		min = V3Add(V3(-r, -r, -r), world_position);
-		max = V3Add(V3(r, r, r), world_position);
+		min = V3(-r, -r, -r);
+		max = V3(r, r, r);
 	}
 	else if (shape->cshape_type == C_SHAPE_CAPSULE)
 	{
 		const v3 v = M3V3Mul(rot, V3(0.0f, cshape->capsule.half_height, 0.0f));
 		max = V3AddConstant(V3Abs(v), cshape->capsule.radius);
 		min = V3Negate(max);
-
-		min = V3Add(min, world_position);
-		max = V3Add(max, world_position);
 	}
 	else if (shape->cshape_type == C_SHAPE_TRI_MESH)
 	{
@@ -199,11 +195,13 @@ struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct d
 		const struct bvhNode *node = cshape->mesh_bvh.bvh.pool.buf;
 		struct aabb bbox;
 		AabbRotate(&bbox, &node[cshape->mesh_bvh.bvh.bt.root].bbox, rot);
-		min = V3Add(bbox.min, world_position);
-		max = V3Add(bbox.max, world_position);
+		min = bbox.min;
+		max = bbox.max;
 	}
 
-	const struct aabb bbox = { .min = min, .max = max };
+	const struct aabb local = { .min = min, .max = max };
+	struct aabb bbox;
+	AabbTranslateOutward(&bbox, &local, t_world.position);
 	return bbox;
 }
 

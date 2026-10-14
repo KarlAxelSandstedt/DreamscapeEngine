@@ -207,7 +207,7 @@ void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId i
 	body->mass = 0.0f;
     sim->local_center_of_mass = V3Zero();
 
-    /* static bodies and bodies without shapes: zero mass, center of mass at the body origin (Box3D) */
+    /* static bodies and bodies without shapes: zero mass, center of mass at the body origin */
     if (!ds_BodyDynamicCheck(body) || body->shape_list.count == 0)
     {
         sim->inv_mass = 0.0f;

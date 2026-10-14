@@ -975,9 +975,9 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
     /*
      * Edge contact if the face contact is empty or the edge separates more by sat_face_bias (face: the clipped
      * separation): the closest points of the edge's and the core's lines, v on the hull edge. Only if both lie
-     * within the segments (Box3D): otherwise other features realize the axis, and the edge and core don't meet
+     * within the segments: otherwise other features realize the axis, and the edge and core don't meet
      * along it (e.g. an edge accepted by the Gauss test on rounding noise, its axis ~ a face normal).
-     * The clipped separation favours two-point face contacts (Box3D) over the best axis: a stick across an edge
+     * The clipped separation favours two-point face contacts over the best axis: a stick across an edge
      * keeps the face normal until it sinks more than sat_face_bias / (1 - 1/sqrt 2).
      */
     if (e_query.e1 != U32_MAX && (!face_contact || depth[deeper] + g_numerics_config->sat_face_bias < e_query.depth))
@@ -1136,7 +1136,7 @@ static u32 HullEdgeQuery(struct sat_EdgeQuery *query, const struct dcel *const h
 
 /*
  * Edge contact from query: the closest points of the edges' lines, v on s1 (hull 1's edge); only if both lie within the
- * segments (Box3D: otherwise other features realize the axis). Writes the EE cache; returns 1 if built.
+ * segments (otherwise other features realize the axis). Writes the EE cache; returns 1 if built.
  */
 static u32 HullEdgeContact(struct c_Manifold *m, struct c_SatCache *cache, const struct sat_EdgeQuery *query)
 {
@@ -1264,7 +1264,7 @@ struct sat_Pair
 };
 
 /*
- * SAT cache (Box3D): re-check old_cache for the pair. A separating axis is reused while it separates; a contact is
+ * SAT cache: re-check old_cache for the pair. A separating axis is reused while it separates; a contact is
  * rebuilt from its features (face: clipped on the cached face; edge pair: re-checked and its closest points) and reused
  * while its depth moved by less than sat_cache_tolerance. Returns 1 if reused: new_cache written, *colliding set, for a
  * contact also m and (face contacts) its features.
@@ -1351,7 +1351,7 @@ static u32 sat_CacheTryReuse(struct c_Manifold *m, u32 *colliding, sat_FeatureId
  * query (SAT_PAIR_HULL: Gauss map pruned, axes oriented by center_0; SAT_PAIR_TRIANGLE: knife edges); separated if any
  * axis separates. Otherwise the face contact (incident face clipped to the reference face, the face with the larger
  * separation), replaced by the edge contact if the clip is empty or the edge separates more than the clipped face by
- * sat_face_bias (Box3D). Returns 1 if colliding: m written, and for a face contact its points' features. cache: the
+ * sat_face_bias. Returns 1 if colliding: m written, and for a face contact its points' features. cache: the
  * separating axis or the contact's features; SAT_CACHE_NONE for the fallback contact.
  */
 static u32 sat_PairContact(struct c_Manifold *m, sat_FeatureId features[4], struct c_SatCache *cache, struct arena *mem_tmp, const struct sat_Pair *pair, const struct c_SatCache *old_cache)

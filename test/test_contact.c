@@ -819,7 +819,7 @@ Every manifold must satisfy, with L = max(hull extent, h, r, |x1 - x0|), tol = C
                                                 edge parallel angle: nearly parallel lines' closest points)
     shallow one point (boxes): depth = r - dist*, n optimal: -sep(n) <= r - ... as in the capsule tests
     deep (sat < -tol): measured only (sat - sep(n)): a face contact competes with the edges through its
-                                                clipped separation (Box3D), not the core's separation along n
+                                                clipped separation, not the core's separation along n
     translating both shapes by an exactly representable offset gives identical bits
 */
 
@@ -1197,7 +1197,7 @@ static u32 ChVerify(struct ch_Stats *stats, const u32 contact, const struct c_Ma
 
         /*
          * Deep: not checked for optimality. A face contact competes with the edges through its clipped
-         * separation (as Box3D), which can be far above the core's separation along the face normal (the clip
+         * separation, which can be far above the core's separation along the face normal (the clip
          * drops the deep part), so n can be far from the best axis. Measured instead.
          */
         if (!fail && deep)
@@ -3780,7 +3780,7 @@ Every result: contact iff sat < 0 (undecided within tol); c_ManifoldCheck, v_cou
 depth_i <= -sep(n) + tol (n separates as deep as it claims); v_i on the hull (|sdf| <= tol); v_i - depth_i n on the
 triangle. For touching pairs (|sat| <= tol) the two surface checks are counted, not failed: the fallback (no clipped
 point penetrates, no edge contact; as c_HullContact) takes the deepest vertex of one side over the other's
-reference plane, which can lie beside the reference face (open: a closest-points fallback, as Box3D's GJK).
+reference plane, which can lie beside the reference face (open: a GJK closest-points fallback).
 tol = CONTACT_TEST_TOLERANCE eps L, L = max(hull extent, |t_i|) in the hull's frame. A result built from a cache
 may claim up to sat_cache_tolerance more (slack).
 */

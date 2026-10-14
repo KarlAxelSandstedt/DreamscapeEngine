@@ -401,6 +401,7 @@ struct slot ds_ShapeLookup(const struct ds_Dynamics *pipeline, const ds_ShapeId 
 void        ds_ShapeWorldTransform(ds_TransformWorld *t, const struct ds_Dynamics *pipeline, const struct ds_Shape *shape);
 /* 
  * Calculate the world bounding box of the shape, taking into account the shape and its body's Transform. 
+ * f32, rounded outward from the f64 position: it contains the shape at any distance from the origin.
  */
 struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape);
 /* 

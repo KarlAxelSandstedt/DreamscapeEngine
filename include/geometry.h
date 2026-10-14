@@ -195,6 +195,8 @@ f32 		    PlanePointProjection(v3 *proj, const struct plane *pl, const v3 p);
 void		AabbUnion(struct aabb *box_union, const struct aabb *a, const struct aabb *b);
 /* Return AABB of rotated AABB. */
 void		AabbRotate(struct aabb *dst, const struct aabb *src, const m3 rotation);
+/* dst = local translated by origin (f64), rounded outward to f32: dst contains the f64 box at any distance */
+void		AabbTranslateOutward(struct aabb *dst, const struct aabb *local, const v3f64 origin);
 /* Return 1 if a and b intersect, 0 otherwise  */
 u32 		AabbTest(const struct aabb *a, const struct aabb *b);
 /* Return 1 if a fully contains b, 0 otherwise  */
@@ -305,7 +307,7 @@ struct dcel 	DcelConvexHull(struct arena *mem, const v3 *v, const u32 v_count, c
 
 /*
  * Compute h->plane[0 .. f_count) (memory set by the caller) with Newell's method: per face, the summed
- * vector over all of its edges is twice the face's area times its unit normal (Box3D b3NewellPlane), and the
+ * vector over all of its edges is twice the face's area times its unit normal, and the
  * plane goes through the average of the face's vertices. Using every vertex keeps the normal accurate for
  * polygons whose first triangle is thin. Return 1 if every face has a nonzero area, otherwise 0 (the
  * planes of degenerate faces are then garbage).
