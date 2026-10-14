@@ -689,8 +689,7 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 					instance = g_scene->instance_pool.buf + r_cmd->instance;
 					proxy = r_Proxy3dAddress(instance->unit);
 
-					/* TODO(f64 R2): f64 proxy positions (drop the promote) */
-					const v3 translation = V3F64Demote(V3F64Sub(V3Promote(proxy->spec_position), g_scene->view_origin));
+					const v3 translation = V3F64Demote(V3F64Sub(proxy->spec_position, g_scene->view_origin));
 					memcpy(shared_data + S_PROXY3D_TRANSLATION_BLEND_OFFSET, &translation, sizeof(v3));
 					memcpy(shared_data + S_PROXY3D_TRANSLATION_BLEND_OFFSET + sizeof(v3), &proxy->blend, sizeof(f32));
 					memcpy(shared_data + S_PROXY3D_ROTATION_OFFSET, &proxy->spec_rotation, sizeof(q));

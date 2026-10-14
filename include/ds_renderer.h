@@ -263,7 +263,7 @@ struct r_Proxy3d_config
 	u64	ns_time;
 	u32	parent;
 
-	v3	position;
+	v3f64	position;
 	q	rotation;
 	v3	linear_velocity;
 	v3	angular_velocity;
@@ -281,11 +281,11 @@ typedef struct r_Proxy3d
     HI_NODE;
 
 	u32	flags;
-	v3	spec_position;
+	v3f64	spec_position;
 	q	spec_rotation;
 
 	u64	ns_at_update;	/* ns elapsed at the time of last update to position and rotation */
-	v3	position;	/* position of unit; interpreted according to its pos_type.  */
+	v3f64	position;	/* position of unit; interpreted according to its pos_type.  */
 	q	rotation;
 
 	u32	mesh;
@@ -310,7 +310,7 @@ void			r_Proxy3dDealloc(struct arena *tmp, const u32 proxy);
 /* return the proxy3d of the unit given that the unit exist and has a proxy3d; otherwise return NULL. */
 struct r_Proxy3d *	r_Proxy3dAddress(const u32 proxy);
 /* set the proxy */
-void 			r_Proxy3dLinearSpeculationSet(const v3 position, const q rotation, const v3 linear_velocity, const v3 angular_velocity, const u64 ns_time, const u32 proxy);
+void 			r_Proxy3dLinearSpeculationSet(const v3f64 position, const q rotation, const v3 linear_velocity, const v3 angular_velocity, const u64 ns_time, const u32 proxy);
 
 /********************************************************
  *			r_scene.c			*

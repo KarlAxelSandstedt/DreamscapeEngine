@@ -242,8 +242,8 @@ void r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_siz
 	g_r_core->proxy3d_root = slot3d.index;
 	ds_Assert(g_r_core->proxy3d_root == PROXY3D_ROOT);
 	struct r_Proxy3d *stub3d = slot3d.address;
-	stub3d->position = V3Zero();
-	stub3d->spec_position = V3Zero();
+	stub3d->position = V3F64(0.0, 0.0, 0.0);
+	stub3d->spec_position = V3F64(0.0, 0.0, 0.0);
 	stub3d->rotation = QUnitAxisAngle(V3(0.0f, 1.0f, 0.0f), 0.0f);
 	stub3d->spec_rotation = stub3d->rotation;
 	stub3d->linear.linear_velocity = V3Zero();
@@ -330,8 +330,8 @@ void r_CoreFlush(void)
 	g_r_core->proxy3d_root = slot3d.index;
 	ds_Assert(g_r_core->proxy3d_root == PROXY3D_ROOT);
 	struct r_Proxy3d *stub3d = slot3d.address;
-	stub3d->position = V3Zero();
-	stub3d->spec_position = V3Zero();
+	stub3d->position = V3F64(0.0, 0.0, 0.0);
+	stub3d->spec_position = V3F64(0.0, 0.0, 0.0);
 	stub3d->rotation = QUnitAxisAngle(V3(0.0f, 1.0f, 0.0f), 0.0f);
 	stub3d->spec_rotation = stub3d->rotation;
 	stub3d->linear.linear_velocity = V3Zero();

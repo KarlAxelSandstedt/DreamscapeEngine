@@ -272,7 +272,8 @@ static void led_NodeAttachRigidBodyPrefabInternal(struct led *led, const u32 nod
         .blend = node->blend,
 	};
     config.color = node->color;
-	config.position = node->transform.position;
+	/* TODO(f64 E2): f64 node transforms (drop the promote) */
+	config.position = V3Promote(node->transform.position);
 	config.rotation = node->transform.rotation;
 
     node->flags |= LED_BODY_PREFAB;
@@ -302,7 +303,7 @@ static void led_NodeAttachRigidBodyPrefabInternal(struct led *led, const u32 nod
 
 		config.mesh = render_mesh->id;
         config.parent = node->proxy;
-		config.position = child->transform.position;
+		config.position = V3Promote(child->transform.position);
 		config.rotation = child->transform.rotation;
 		child->proxy = r_Proxy3dAlloc(&config);
     }
@@ -1901,7 +1902,7 @@ static void led_EngineRun(struct led *led)
                         const v3 angular_velocity = V3Zero();
                         const u64 ns = led->physics.ns_start + led->physics.frames_completed*led->physics.ns_tick; 
 
-	                	r_Proxy3dLinearSpeculationSet(V3F64Demote(sim->world.position)
+	                	r_Proxy3dLinearSpeculationSet(sim->world.position
 	                			, sim->world.rotation
 	                			, linear_velocity
 	                			, angular_velocity
@@ -1947,7 +1948,7 @@ static void led_EngineRun(struct led *led)
             const struct led_Node *node = led->node_hierarchy.pool.buf + body->entity;
             const u64 ns = led->physics.ns_start + led->physics.frames_completed*led->physics.ns_tick; 
 
-	    	r_Proxy3dLinearSpeculationSet(V3F64Demote(sim->world.position)
+	    	r_Proxy3dLinearSpeculationSet(sim->world.position
 	    			, sim->world.rotation
 	    			, compute->linear_velocity
 	    			, compute->angular_velocity
@@ -1974,7 +1975,8 @@ static void led_EngineFlush(struct led *led)
 		struct led_Node *node = led->node_hierarchy.pool.buf + it.at;
         if (node->flags & LED_PROXY3D)
         {
-            r_Proxy3dLinearSpeculationSet(node->transform.position
+            /* TODO(f64 E2): f64 node transforms (drop the promote) */
+            r_Proxy3dLinearSpeculationSet(V3Promote(node->transform.position)
 					, node->transform.rotation
 					, V3Zero()
 					, V3Zero()

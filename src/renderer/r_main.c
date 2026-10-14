@@ -409,8 +409,7 @@ static void r_EditorDraw(const struct led *led)
             continue;
         }
 
-		/* TODO(f64 R2): f64 proxy positions (drop the promote) */
-		const f32 dist = V3Length(V3F64Demote(V3F64Sub(V3Promote(proxy->spec_position), led->cam.position)));
+		const f32 dist = V3Length(V3F64Demote(V3F64Sub(proxy->spec_position, led->cam.position)));
 		const u32 unit_exponent = F32ExponentBits(dist);
 		const u64 depth = (unit_exponent <= depth_exponent && unit_exponent > (depth_exponent - 23))
 			? (0x00800000 | F32MantissaBits(dist)) >> (depth_exponent - unit_exponent + 1)
