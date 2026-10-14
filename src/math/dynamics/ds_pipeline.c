@@ -1761,7 +1761,9 @@ u64 ds_DynamicsOrientationHash(const struct ds_Dynamics *pipeline)
 
         XXH3_64bits_update(state, &i, sizeof(u32));
         XXH3_64bits_update(state, &body->flags, sizeof(body->flags));
-        XXH3_64bits_update(state, &sim->world.position, sizeof(v3));
+        /* TODO(f64 P3): hash the f64 position once positions are no longer f32 values (references regenerated) */
+        const v3 position = V3F64Demote(sim->world.position);
+        XXH3_64bits_update(state, &position, sizeof(v3));
         XXH3_64bits_update(state, &sim->world.rotation, sizeof(q));
         if (body->set == SOLVER_SET_ACTIVE)
         {

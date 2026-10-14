@@ -153,7 +153,8 @@ void ds_ShapeWorldTransform(ds_Transform *t, const struct ds_Dynamics *pipeline,
     const m3 rot = M3QUnit(world_rotation);
 
     t->rotation = QMul(world_rotation, shape->t_local.rotation);
-    t->position = V3Add(M3V3Mul(rot, shape->t_local.position), sim->world.position);
+    /* TODO(f64 P3): return a ds_TransformWorld (ds_TransformWorldChild) instead of the f32 sum */
+    t->position = V3Add(M3V3Mul(rot, shape->t_local.position), V3F64Demote(sim->world.position));
 }
 
 struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape)
@@ -244,7 +245,7 @@ u32 ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, 
     ds_Transform t0, t1;
     ds_ShapeWorldTransform(&t0, pipeline, s0);
     ds_ShapeWorldTransform(&t1, pipeline, s1);
-    /* TODO(f64 P3): world transforms once bodies store ds_TransformWorld */
+    /* TODO(f64 P3): world transforms once ds_ShapeWorldTransform returns them */
     const ds_TransformWorld w0 = ds_TransformPromote(&t0);
     const ds_TransformWorld w1 = ds_TransformPromote(&t1);
 	
@@ -261,7 +262,7 @@ f32 ds_ShapeDistance(v3 *c0, v3 *c1, const struct ds_Dynamics *pipeline, const s
     ds_Transform t0, t1;
     ds_ShapeWorldTransform(&t0, pipeline, s0);
     ds_ShapeWorldTransform(&t1, pipeline, s1);
-    /* TODO(f64 P3): world transforms and v3f64 points once bodies store ds_TransformWorld */
+    /* TODO(f64 P3): world transforms once ds_ShapeWorldTransform returns them; v3f64 points */
     const ds_TransformWorld w0 = ds_TransformPromote(&t0);
     const ds_TransformWorld w1 = ds_TransformPromote(&t1);
 
@@ -341,7 +342,7 @@ void ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, co
     ds_Transform t[2];
     ds_ShapeWorldTransform(t + 0, pipeline, s[0]);
     ds_ShapeWorldTransform(t + 1, pipeline, s[1]);
-    /* TODO(f64 P3): world transforms once bodies store ds_TransformWorld */
+    /* TODO(f64 P3): world transforms once ds_ShapeWorldTransform returns them */
     const ds_TransformWorld t_world[2] = { ds_TransformPromote(t + 0), ds_TransformPromote(t + 1) };
 
     struct c_ContactResult result = (c_s[other]->type == C_SHAPE_TRI_MESH)

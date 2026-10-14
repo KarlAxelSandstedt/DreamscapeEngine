@@ -42,10 +42,10 @@ static ds_ThreadLocal struct ds_BodySim tl_static_body_sim =
     .body = 0,
     .flags = 0,
     .inv_mass = 0,
-    .world.position = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
+    .world.position = { .x = 0.0, .y = 0.0, .z = 0.0 },
     .world.rotation = { .x = 0.0f, .y = 0.0f, .z = 0.0f, .w = 1.0f },
     .local_center_of_mass = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
-    .world_center_of_mass = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
+    .world_center_of_mass = { .x = 0.0, .y = 0.0, .z = 0.0 },
     .local_inv_inertia = { .buf = { 0.0f } },
     .world_inv_inertia = { .buf = { 0.0f } },
 };
@@ -126,7 +126,8 @@ void ds_BodyUpdateSolverDataRange(struct ds_Dynamics *pipeline, const u32 low, c
         sim->world_inv_inertia = M3Mul(M3Mul(rot, sim->local_inv_inertia), rot_inv);
 
         bcomp->rotation = sim->world.rotation;
-        bcomp->center_of_mass = V3Add(M3V3Mul(rot, sim->local_center_of_mass), sim->world.position);
+        /* TODO(f64 P3): f32 world center of mass until the solver's delta state (f64_positions.txt S2-S7) */
+        bcomp->center_of_mass = V3Add(M3V3Mul(rot, sim->local_center_of_mass), V3F64Demote(sim->world.position));
 
         /* integrate new velocities using external forces */
         const v3 linear_velocity = V3AddScaled(bcomp->linear_velocity, g_solver_config->gravity, pipeline->timestep);
@@ -192,7 +193,8 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
         /* derive new world transform from updated angle and world center of mass */
         const q rotation = bcomp->rotation;
         const v3 rotated_local_center_of_mass = QUnitRotate(rotation, sim->local_center_of_mass);
-        sim->world.position = V3Sub(bcomp->center_of_mass, rotated_local_center_of_mass);
+        /* TODO(f64 P3): com_start + delta_position in f64 (f64_positions.txt S7) */
+        sim->world.position = V3Promote(V3Sub(bcomp->center_of_mass, rotated_local_center_of_mass));
         sim->world.rotation = rotation;
 
         for (u32 j = body->shape_list.first; (i32) j != DLL_SENTINEL; j = shape->body_shape.next)

@@ -526,10 +526,11 @@ struct ds_BodySim
     u32             body;                       /* RigidBody index                                      */
     u32             flags;
     f32             inv_mass;                   /* Inverse mass                                         */
-	ds_Transform    world;		                /* local body frame to world transform. Rotation is 
+	ds_TransformWorld world;	                /* local body frame to world transform. Rotation is 
                                                    about the local origin (not center of mass!)         */
 	v3		        local_center_of_mass;	    /* local body frame center of mass                      */
-	v3		        world_center_of_mass;	    /* world body frame center of mass                      */
+	v3f64	        world_center_of_mass;	    /* unused; TODO(f64 P3): the step start's center of mass
+                                                   (f64_positions.txt S1)                               */
 	m3 		        local_inv_inertia;          /* local inertia tensor                                 */
 	m3 		        world_inv_inertia;          /* world inertia tensor                                 */
 };
@@ -555,7 +556,7 @@ struct ds_BodyCompute
 DEFINE_CPOOL_STRUCT(ds_BodyCompute);
 
 /* Add a new rigid body with the prefab properties, and return its unique identifier. */
-ds_BodyId  ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *prefab, const ds_Transform *t_world, const u32 entity);
+ds_BodyId  ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *prefab, const ds_TransformWorld *t_world, const u32 entity);
 /* Free the given body */
 void            ds_BodyRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, const ds_BodyId id);
 /* Lookup the given body and return it. If it does not exist, return DS_ID_NULL.  */

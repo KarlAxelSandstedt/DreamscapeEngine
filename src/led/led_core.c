@@ -1901,7 +1901,7 @@ static void led_EngineRun(struct led *led)
                         const v3 angular_velocity = V3Zero();
                         const u64 ns = led->physics.ns_start + led->physics.frames_completed*led->physics.ns_tick; 
 
-	                	r_Proxy3dLinearSpeculationSet(sim->world.position
+	                	r_Proxy3dLinearSpeculationSet(V3F64Demote(sim->world.position)
 	                			, sim->world.rotation
 	                			, linear_velocity
 	                			, angular_velocity
@@ -1947,7 +1947,7 @@ static void led_EngineRun(struct led *led)
             const struct led_Node *node = led->node_hierarchy.pool.buf + body->entity;
             const u64 ns = led->physics.ns_start + led->physics.frames_completed*led->physics.ns_tick; 
 
-	    	r_Proxy3dLinearSpeculationSet(sim->world.position
+	    	r_Proxy3dLinearSpeculationSet(V3F64Demote(sim->world.position)
 	    			, sim->world.rotation
 	    			, compute->linear_velocity
 	    			, compute->angular_velocity
@@ -2010,7 +2010,8 @@ static void led_EngineInit(struct led *led)
         if (node->flags & LED_BODY_PREFAB)
         {
             const struct ds_BodyPrefab *body_prefab = led->body_prefab_db.pool.buf + node->body_prefab;
-	    	const ds_BodyId body = ds_BodyAdd(&led->physics, body_prefab, &node->transform, it.at);
+	    	const ds_TransformWorld t_world = ds_TransformPromote(&node->transform);
+	    	const ds_BodyId body = ds_BodyAdd(&led->physics, body_prefab, &t_world, it.at);
             node->body = body;
     
             //TODO mass properties should be calculated on AttachShape....

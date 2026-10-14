@@ -25,7 +25,7 @@
 POOL_DEFINE(ds_Body);
 SDB_DEFINE(ds_BodyPrefab);
 
-ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *prefab, const ds_Transform *world, const u32 entity)
+ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *prefab, const ds_TransformWorld *world, const u32 entity)
 {
     const u32 old_max = pipeline->body_pool.count_max;
 	const struct slot body_slot = ds_BodyPoolAdd(&pipeline->body_pool);
