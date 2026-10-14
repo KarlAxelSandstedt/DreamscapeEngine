@@ -44,6 +44,16 @@ for %%T in (0 1 2) do (
     .\DreamscapeTest.exe determinism_%%T.cfg --load determinism.bin
 )
 
+REM far from the origin: the same seed, the scene built around (10 km, 10 km, 10 km) (f64 world positions);
+REM determinism_far.bin stores the origin, so the replays run there too.
+.\DreamscapeTest.exe determinism.bin.cfg --generate determinism_far.bin --origin 10000 10000 10000
+REM 3 4 5 6 7 8
+for %%T in (0 1 2) do (
+    findstr /v /b /c:"thread_count:" determinism_far.bin.cfg > determinism_far_%%T.cfg
+    >> determinism_far_%%T.cfg echo thread_count: %%T
+    .\DreamscapeTest.exe determinism_far_%%T.cfg --load determinism_far.bin
+)
+
 cd ..
 exit /b
 

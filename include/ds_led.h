@@ -225,6 +225,8 @@ struct led
     u32			            draw_sbvh;
     u32			            draw_manifold;
     u32			            draw_lines;
+
+    v3f64                   scene_origin;   /* world position the setup scenes are built around (default 0); set before the first led_Main */
 };
 
 extern const char **body_color_mode_str;

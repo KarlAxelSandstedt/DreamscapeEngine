@@ -59,4 +59,12 @@ for THREAD_COUNT in 0 1 2; do # 3 4 5 6 7 8
     web_run "determinism_$THREAD_COUNT.cfg" --load determinism.bin
 done
 
+# far from the origin: the same seed, the scene built around (10 km, 10 km, 10 km) (f64 world positions);
+# determinism_far.bin stores the origin, so the replays run there too.
+web_run determinism.bin.cfg --generate determinism_far.bin --origin 10000 10000 10000
+for THREAD_COUNT in 0 1 2; do # 3 4 5 6 7 8
+    sed "s/^thread_count:.*/thread_count: $THREAD_COUNT/" determinism_far.bin.cfg > "determinism_far_$THREAD_COUNT.cfg"
+    web_run "determinism_far_$THREAD_COUNT.cfg" --load determinism_far.bin
+done
+
 cd ..
