@@ -77,7 +77,7 @@ void ds_WSDequeTest(void *void_pool)
         its++;
         if (its == 1000)
         {
-            AtomicFetchAddRlx64(&inc, local_inc);
+            AtomicFetchAddRlx32(&inc, local_inc);
             its = 0;
             local_inc = 0;
         }

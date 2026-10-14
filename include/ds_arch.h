@@ -65,7 +65,9 @@ struct dsArchConfig
 	u32		sse4_2 : 1;
 	u32		avx : 1;
 	u32		avx2 : 1;
-	u32		bmi1 : 1;	/* bit manipulation instructions (ctz, ctzl, ...) */
+	u32		bmi1 : 1;	/* tzcnt (Ctz32/64), andn, blsr, ... */
+	u32		popcnt : 1;	/* popcnt (C32/64, Cz32/64) */
+	u32		lzcnt : 1;	/* lzcnt (Clz32/64); AMD calls it ABM */
 
 	u32		Rdtsc : 1;	/* profiling timer support  */
 	u32		Rdtscp : 1;	/* profiling timer support  */
@@ -84,7 +86,7 @@ pid	ds_Pid(void);
 void 	ds_Cpuid(u32 *eax, u32 *ebx, u32 *ecx, u32 *edx, const u32 function);
 void 	ds_CpuidEx(u32 *eax, u32 *ebx, u32 *ecx, u32 *edx, const u32 function, const u32 subfunction);
 
-/* sets up g_arch_config. returns 1 on intrinsics requirements fullfilled, 0 otherwise. */
+/* sets up g_arch_config. returns 1 if the CPU meets the baseline (AGENTS.md: SSE2, POPCNT, LZCNT, BMI1; always on web), else logs what is missing and returns 0. */
 u32 	ds_ArchConfigInit(struct arena *mem);
 
 #ifdef __cplusplus

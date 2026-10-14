@@ -446,7 +446,7 @@ THASH_ADD_DECLARE(struct_name)                                                  
         new_hash = THASH_TAG_FIELD_INCREMENTED(local_hash) | index;                     \
         const u64 old_next = THASH_NEXT_MASK & local_hash;                              \
         AtomicStoreRlx64(&node->a_hash_node, tag | old_next);                           \
-    } while (!AtomicCompareExchangeRelAcq64(map->a_hash + h, &local_hash, new_hash));   \
+    } while (!AtomicCompareExchangeAcqRelAcq64(map->a_hash + h, &local_hash, new_hash)); \
 }
 
 #define THASH_REMOVE_DEFINE(struct_name, key_Type)                                                          \

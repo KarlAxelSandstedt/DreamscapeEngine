@@ -162,6 +162,8 @@ static void dsArchConfig_log(void)
 	Log(T_SYSTEM, S_NOTE, "avx : Supported(%s)", (config.avx) ? yes : no);
 	Log(T_SYSTEM, S_NOTE, "avx2 : Supported(%s)", (config.avx2) ? yes : no);
 	Log(T_SYSTEM, S_NOTE, "bmi1 : Supported(%s)", (config.bmi1) ? yes : no);
+	Log(T_SYSTEM, S_NOTE, "popcnt : Supported(%s)", (config.popcnt) ? yes : no);
+	Log(T_SYSTEM, S_NOTE, "lzcnt : Supported(%s)", (config.lzcnt) ? yes : no);
 	Log(T_SYSTEM, S_NOTE, "Rdtsc : Supported(%s)", (config.Rdtsc) ? yes : no);
 	Log(T_SYSTEM, S_NOTE, "Rdtscp : Supported(%s)", (config.Rdtscp) ? yes : no);
 	Log(T_SYSTEM, S_NOTE, "tsc_invariant : Supported(%s)", (config.tsc_invariant) ? yes : no);
@@ -221,20 +223,23 @@ static u32 internal_get_amd_arch_config(struct arena *mem)
 	config.sse4_1 = (ecx >> 19) & 0x1;
 	config.sse4_2 = (ecx >> 20) & 0x1;
 	config.avx = (ecx >> 28) & 0x1;
+	config.popcnt = (ecx >> 23) & 0x1;
 
 	ds_CpuidEx(&eax, &ebx, &ecx, &edx, bmi_avx2_func, 0);
 	config.bmi1 = (ebx >> 3) & 0x1;
 	config.avx2 = (ebx >> 5) & 0x1;
 
 	config.Rdtscp = 0;
-	if (Rdtscp_func < largest_extended_function_number)
+	config.lzcnt = 0;
+	if (Rdtscp_func <= largest_extended_function_number)
 	{
 		ds_Cpuid(&eax, &ebx, &ecx, &edx, Rdtscp_func);
 		config.Rdtscp = (edx >> 27) & 0x1;
+		config.lzcnt = (ecx >> 5) & 0x1;
 	}
 
 	config.tsc_invariant = 0;
-	if (tsc_invariant_func < largest_extended_function_number)
+	if (tsc_invariant_func <= largest_extended_function_number)
 	{
 		ds_Cpuid(&eax, &ebx, &ecx, &edx, tsc_invariant_func);
 		config.tsc_invariant = (edx >> 8) & 0x1;
@@ -435,20 +440,23 @@ static u32 internal_get_intel_arch_config(struct arena *mem)
 	config.sse4_1 = (ecx >> 19) & 0x1;
 	config.sse4_2 = (ecx >> 20) & 0x1;
 	config.avx = (ecx >> 28) & 0x1;
+	config.popcnt = (ecx >> 23) & 0x1;
 
 	ds_CpuidEx(&eax, &ebx, &ecx, &edx, bmi_avx2_func, 0);
 	config.bmi1 = (ebx >> 3) & 0x1;
 	config.avx2 = (ebx >> 5) & 0x1;
 
 	config.Rdtscp = 0;
-	if (Rdtscp_func < largest_extended_function_number)
+	config.lzcnt = 0;
+	if (Rdtscp_func <= largest_extended_function_number)
 	{
 		ds_Cpuid(&eax, &ebx, &ecx, &edx, Rdtscp_func);
 		config.Rdtscp = (edx >> 27) & 0x1;
+		config.lzcnt = (ecx >> 5) & 0x1;
 	}
 
 	config.tsc_invariant = 0;
-	if (tsc_invariant_func < largest_extended_function_number)
+	if (tsc_invariant_func <= largest_extended_function_number)
 	{
 		ds_Cpuid(&eax, &ebx, &ecx, &edx, tsc_invariant_func);
 		config.tsc_invariant = (edx >> 8) & 0x1;
@@ -532,7 +540,18 @@ u32 ds_ArchConfigInit(struct arena *mem)
 	}
 	else
 	{
-		Log(T_SYSTEM, S_NOTE, 0, "cpu signature - %k [supported (N)]", &config.vendor_string);
+		Log(T_SYSTEM, S_FATAL, "cpu signature - %k [supported (N)]", &config.vendor_string);
+		requirements_fullfilled = 0;
+	}
+
+	/* the build emits these unconditionally (AGENTS.md, CPU baseline) */
+	if (requirements_fullfilled && !(config.sse2 && config.popcnt && config.lzcnt && config.bmi1))
+	{
+		Log(T_SYSTEM, S_FATAL, "cpu lacks the baseline: sse2 (%s), popcnt (%s), lzcnt (%s), bmi1 (%s)",
+			(config.sse2) ? "Y" : "N",
+			(config.popcnt) ? "Y" : "N",
+			(config.lzcnt) ? "Y" : "N",
+			(config.bmi1) ? "Y" : "N");
 		requirements_fullfilled = 0;
 	}
 #endif

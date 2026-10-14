@@ -59,7 +59,7 @@ extern "C" {
 
 #if defined(__EMSCRIPTEN__)
 
-	#define __DS_COMPILER__ __DS_EMSCRIPTEN__ 
+	#define __DS_COMPILER__ __DS_CLANG__	/* emcc is clang; __DS_PLATFORM__ == __DS_WEB__ tells the web build apart */
 	#define DS_LITTLE_ENDIAN
 	#define ds_ThreadLocal __thread
 	#define ds_StaticAssert(ds_Assertion, str)	_Static_assert(ds_Assertion, str)

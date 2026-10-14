@@ -156,6 +156,9 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 	# avoids x87 fp-instructions entirely (extended precision bad for consistency)
 	add_compile_options(-mfpmath=sse)
 
+	# CPU baseline (AGENTS.md): lzcnt, tzcnt, popcnt for ds_atomic.h's bit ops; integer only, float results unchanged
+	add_compile_options(-mpopcnt -mlzcnt -mbmi)
+
 	# determinism: never fuse a*b + c into an FMA (GCC's default in GNU C mode is -ffp-contract=fast)
 	add_compile_options(-ffp-contract=off)
 
@@ -199,6 +202,11 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 
 	# avoids x87 fp-instructions entirely (extended precision bad for consistency)
 	add_compile_options(/arch:SSE2)
+
+	# CPU baseline (AGENTS.md): MSVC's _lzcnt/_tzcnt/__popcnt intrinsics need no flag, clang-cl's builtins do
+	if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
+		add_compile_options(/clang:-mpopcnt /clang:-mlzcnt /clang:-mbmi)
+	endif ()
 
 	# determinism: IEEE-preserving optimizations only, no FMA contraction (don't add /fp:fast or /fp:contract)
 	if (CMAKE_C_COMPILER_ID STREQUAL "Clang")

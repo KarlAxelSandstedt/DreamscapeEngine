@@ -8,6 +8,9 @@ Platform and Builds
 ===================
 
 Architectures: 64-bit x86
+CPU baseline (2013: Intel Haswell, AMD Piledriver): SSE2, POPCNT, LZCNT, BMI1.
+CMakeLists.txt passes -mpopcnt -mlzcnt -mbmi (Linux, clang-cl; MSVC needs no
+flag); ds_ArchConfigInit refuses to start without them.
 Synchronization: use ds_atomic.h with explicit orderings; never rely on x86's
 strong memory ordering (other architectures may be added).
 Platforms: Linux, Windows, and Web through Emscripten.
@@ -68,7 +71,8 @@ produce bit-identical results. Hence:
 - no code whose float results depend on compiler choices (FMA contraction,
   fast-math, intrinsics with differing precision). CMakeLists.txt enforces
   no contraction (-ffp-contract=off, MSVC /fp:precise); never add -march,
-  -mfma, -ffast-math, /fp:fast or /fp:contract.
+  -mfma, -ffast-math, /fp:fast or /fp:contract. The baseline's integer-only
+  flags (-mpopcnt -mlzcnt -mbmi) are the exception.
 
 Numerical Robustness
 ====================

@@ -138,6 +138,28 @@ static struct test_Output AtomicSingleThreadTest(struct test_Environment *env)
     TEST_EQUAL(U32_MAX, (u32) AtomicLoadRlx32(&a32));
     TEST_EQUAL(0, (u32) AtomicAddFetchRlx32(&a32, 1));
 
+    /* results are u32/u64 on every compiler: no sign extension of values >= 2^31 into 64 bits */
+    a32 = 0x80000001u;
+    const u64 widened_load = AtomicLoadAcq32(&a32);
+    const u64 widened_fetch = AtomicFetchAddRlx32(&a32, 1);
+    const u64 widened_add_fetch = AtomicAddFetchRlx32(&a32, 1);
+    TEST_EQUAL(0x80000001ull, widened_load);
+    TEST_EQUAL(0x80000001ull, widened_fetch);
+    TEST_EQUAL(0x80000003ull, widened_add_fetch);
+    TEST_EQUAL(0x80000003ull / 512, AtomicLoadRlx32(&a32) / 512);
+
+    /* subtrahends >= 2^31 / 2^63 (MSVC negated them as signed: -(long) 0x80000000 overflows) */
+    TEST_EQUAL(0x80000003u, (u32) AtomicFetchSubRlx32(&a32, 0x80000000u));
+    TEST_EQUAL(3, a32);
+    TEST_EQUAL(4, (u32) AtomicSubFetchRlx32(&a32, U32_MAX));
+    TEST_EQUAL(0x80000004u, (u32) AtomicSubFetchAcq32(&a32, 0x80000000u));
+    u64 sub64 = 5;
+    TEST_EQUAL(5, (u64) AtomicFetchSubRlx64(&sub64, 0x8000000000000000ull));
+    TEST_EQUAL(0x8000000000000005ull, sub64);
+    TEST_EQUAL(0x8000000000000006ull, (u64) AtomicSubFetchRel64(&sub64, U64_MAX));
+    TEST_EQUAL(6, (u64) AtomicSubFetchSeqCst64(&sub64, 0x8000000000000000ull));
+    AtomicStoreRlx32(&a32, 0);
+
     u32 cmp32 = 1;
     TEST_FALSE(AtomicCompareExchangeAcqRlx32(&a32, &cmp32, 7));
     TEST_EQUAL(0, cmp32);
@@ -164,7 +186,7 @@ static struct test_Output AtomicSingleThreadTest(struct test_Environment *env)
     u64 to_addr = 0;
     AtomicLoadToAddrAcq64(&a64, &to_addr);
     TEST_EQUAL(0x123456789abcdef0ull, to_addr);
-    const u64 from_addr = 42;
+    u64 from_addr = 42;
     AtomicStoreFromAddrRel64(&a64, &from_addr);
     TEST_EQUAL(42, a64);
 
