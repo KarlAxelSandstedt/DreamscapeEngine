@@ -91,7 +91,10 @@ API
 1. New functions, files, abstractions, APIs, and refactors of nearby code within
 the engine are proposed, never implemented, unless the task explicitly asks for
 it. Reason: the owner must understand the entire engine, so it is written mostly
-by a human.
+by a human. Exception: in test/ (shared with the owner), add any tests you deem
+useful without asking. Never delete or repurpose the owner's files there (the
+per-platform main.c entrypoints and other debug/run files). Random tests must
+reproduce from their seed on every compiler.
 
 2. Strongly prefer the engine API in include/ over external libraries. The C
 standard library is banned (incl. math.h). The only exceptions are the printf
