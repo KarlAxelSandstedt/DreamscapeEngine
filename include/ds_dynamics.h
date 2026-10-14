@@ -595,6 +595,7 @@ enum sat_CacheType
 	SAT_CACHE_SEPARATION,   /* Seperation axis found    */
 	SAT_CACHE_CONTACT_FV,   /* Face-Vertex Contact      */
 	SAT_CACHE_CONTACT_EE,   /* Edge-Edge Contact        */
+	SAT_CACHE_NONE,         /* Nothing to cache (fallback contact); never stored in a c_ContactResult */
 	SAT_CACHE_COUNT,
 };
 
@@ -634,6 +635,10 @@ struct c_SatCache
      * type == SEPARATION:
      *      normal == separation axis pointing from reference body 
      *      depth == separation distance (positive)
+     *
+     * type == NONE:
+     *  feature[i].type == FACE => i has the reference face
+     *  feature[i].type == VERTEX => i has the deepest vertex
      */
     sat_FeatureId   feature[2];
     f32             depth;      
