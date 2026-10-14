@@ -507,19 +507,19 @@ void c_ContactResultSortTriangles(struct arena *frame, struct c_ContactResult *r
  *      a normal float (|p| >~ 1.1e-19); below that, |n| lies in ~[0.7, 1.22].
  *
  * Degenerate input:
- *      dist == 0 (coincident centers): n = (1, 0, 0) in s[0]'s frame (arbitrary; rotates with s[0] in world),
+ *      dist == 0 (coincident centers): n = (1, 0, 0) in s0's frame (arbitrary; rotates with s0 in world),
  *      depth = r_sum, v = r0 n.
  *      |p| below the positions' resolution (~eps max(|a|, |b|)): n is valid but its direction is noise.
  */
-struct c_ContactResult c_SphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+struct c_ContactResult c_SphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
-    ds_Assert(s[0]->type == C_SHAPE_SPHERE);
-	ds_Assert(s[1]->type == C_SHAPE_SPHERE);
+    ds_Assert(s0->type == C_SHAPE_SPHERE);
+	ds_Assert(s1->type == C_SHAPE_SPHERE);
 
     struct c_ContactResult result = { 0 };
 
-    const f32 r_sum = s[0]->sphere.radius + s[1]->sphere.radius;
-    const v3 p = QUnitRotate(QConj(t[0].rotation), V3F64Demote(V3F64Sub(t[1].position, t[0].position)));
+    const f32 r_sum = s0->sphere.radius + s1->sphere.radius;
+    const v3 p = QUnitRotate(QConj(t0->rotation), V3F64Demote(V3F64Sub(t1->position, t0->position)));
     const f32 dist_sq = V3LengthSquared(p);
     if (dist_sq <= r_sum*r_sum)
     {
@@ -535,7 +535,7 @@ struct c_ContactResult c_SphereContact(struct arena *frame, const struct c_Conta
                     : V3(1.0f, 0.0f, 0.0f);
 		manifold->v_count = 1;
         manifold->depth[0] = r_sum - dist;
-        manifold->v[0] = V3Scale(manifold->n, s[0]->sphere.radius);
+        manifold->v[0] = V3Scale(manifold->n, s0->sphere.radius);
     }
 
     return result;
@@ -551,21 +551,21 @@ struct c_ContactResult c_SphereContact(struct arena *frame, const struct c_Conta
  *      n, v and depth are continuous in p (clamp is continuous; no region switch at the caps).
  *
  * Degenerate input:
- *      d == 0 (center on the segment): n = (1, 0, 0) in s[0]'s frame (perpendicular to the axis: a shortest
+ *      d == 0 (center on the segment): n = (1, 0, 0) in s0's frame (perpendicular to the axis: a shortest
  *      way out), depth = r_sum, v = c + r_capsule n.
  *      |d| below the positions' resolution: n is valid but its direction is noise.
  */
-struct c_ContactResult c_CapsuleSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+struct c_ContactResult c_CapsuleSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
-    ds_Assert(s[0]->type == C_SHAPE_CAPSULE);
-    ds_Assert(s[1]->type == C_SHAPE_SPHERE);
+    ds_Assert(s0->type == C_SHAPE_CAPSULE);
+    ds_Assert(s1->type == C_SHAPE_SPHERE);
 
     struct c_ContactResult result = { 0 };
 
-    const v3 p = QUnitRotate(QConj(t[0].rotation), V3F64Demote(V3F64Sub(t[1].position, t[0].position)));
-    const f32 r_sum = s[0]->capsule.radius + s[1]->sphere.radius;
+    const v3 p = QUnitRotate(QConj(t0->rotation), V3F64Demote(V3F64Sub(t1->position, t0->position)));
+    const f32 r_sum = s0->capsule.radius + s1->sphere.radius;
 
-    const f32 clamp_y = F32Clamp(p.y, -s[0]->capsule.half_height, s[0]->capsule.half_height);
+    const f32 clamp_y = F32Clamp(p.y, -s0->capsule.half_height, s0->capsule.half_height);
     const f32 diff_y = p.y - clamp_y;
     const f32 dist_sq = p.x*p.x + p.z*p.z + diff_y*diff_y;
     if (dist_sq <= r_sum*r_sum)
@@ -580,7 +580,7 @@ struct c_ContactResult c_CapsuleSphereContact(struct arena *frame, const struct 
         m->n = (dist > 0.0f)
             ? V3Scale(V3(p.x, diff_y, p.z), 1.0f/dist)
             : V3(1.0f, 0.0f, 0.0f);
-        m->v[0] = V3Add(V3(0.0f, clamp_y, 0.0f), V3Scale(m->n, s[0]->capsule.radius));
+        m->v[0] = V3Add(V3(0.0f, clamp_y, 0.0f), V3Scale(m->n, s0->capsule.radius));
         m->depth[0] = r_sum - dist;
         ds_Assert(m->depth[0] >= 0.0f);
     }
@@ -628,20 +628,20 @@ static u32 c_CapsuleParallelManifold(struct c_Manifold *manifold, const v3 c, co
 }
 
 /*
- * Capsule vs capsule: local manifold in s[0]'s frame (n from s[0] to s[1]); one point, or two when the
+ * Capsule vs capsule: local manifold in s0's frame (n from s0 to s1); one point, or two when the
  * capsules are nearly parallel and lie side by side.
  */
-struct c_ContactResult c_CapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+struct c_ContactResult c_CapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
-    ds_Assert(s[0]->type == C_SHAPE_CAPSULE);
-    ds_Assert(s[1]->type == C_SHAPE_CAPSULE);
+    ds_Assert(s0->type == C_SHAPE_CAPSULE);
+    ds_Assert(s1->type == C_SHAPE_CAPSULE);
 
     struct c_ContactResult result = { 0 };
 
-    const f32 r_sum = s[0]->capsule.radius + s[1]->capsule.radius;
-    const q inv = QConj(t[0].rotation);
-    const v3 c = QUnitRotate(inv, V3F64Demote(V3F64Sub(t[1].position, t[0].position)));
-    const v3 e = QUnitRotate(inv, QYUnitRotate(t[1].rotation, s[1]->capsule.half_height));
+    const f32 r_sum = s0->capsule.radius + s1->capsule.radius;
+    const q inv = QConj(t0->rotation);
+    const v3 c = QUnitRotate(inv, V3F64Demote(V3F64Sub(t1->position, t0->position)));
+    const v3 e = QUnitRotate(inv, QYUnitRotate(t1->rotation, s1->capsule.half_height));
 
     const f32 e_len_sq_xz = e.x*e.x + e.z*e.z;
  
@@ -659,7 +659,7 @@ struct c_ContactResult c_CapsuleContact(struct arena *frame, const struct c_Cont
     const f32 u0 = (e_len_sq_xz > 0.0f) ? F32Clamp(-(c.x*e.x + c.z*e.z) / e_len_sq_xz, -1.0f, 1.0f) : 0.0f;
 
     const v3 Q1 = V3Add(c, V3Scale(e, u0));
-    const f32 Q0_y = F32Clamp(Q1.y, -s[0]->capsule.half_height, s[0]->capsule.half_height);
+    const f32 Q0_y = F32Clamp(Q1.y, -s0->capsule.half_height, s0->capsule.half_height);
     v3 Q1_shift;
     if (Q1.y == Q0_y)
     {
@@ -689,7 +689,7 @@ struct c_ContactResult c_CapsuleContact(struct arena *frame, const struct c_Cont
      * Q1_shift carries rounding error ~ eps (|c| + |e| + h0): below the noise band (as GJK's touch band, 100 eps L)
      * its direction is noise, so the cores count as touching or crossing.
      */
-    const f32 dist_noise = 100.0f*F32_EPSILON*(F32Abs(c.x) + F32Abs(c.y) + F32Abs(c.z) + F32Abs(e.x) + F32Abs(e.y) + F32Abs(e.z) + s[0]->capsule.half_height);
+    const f32 dist_noise = 100.0f*F32_EPSILON*(F32Abs(c.x) + F32Abs(c.y) + F32Abs(c.z) + F32Abs(e.x) + F32Abs(e.y) + F32Abs(e.z) + s0->capsule.half_height);
     if (dist > dist_noise)
     {
         manifold->n = V3Scale(Q1_shift, 1.0f / dist);
@@ -716,33 +716,33 @@ struct c_ContactResult c_CapsuleContact(struct arena *frame, const struct c_Cont
      * (default 2.86 deg: tan_sq ~ 0.0025). Relative (scale-free in e); antiparallel counts; e == 0 fails.
      */
     if (e_len_sq_xz < g_numerics_config->capsule_parallel_tan_sq*e.y*e.y
-        && c_CapsuleParallelManifold(manifold, c, e, s[0]->capsule.half_height, s[0]->capsule.radius, r_sum))
+        && c_CapsuleParallelManifold(manifold, c, e, s0->capsule.half_height, s0->capsule.radius, r_sum))
     {
         return result;
     }
 
     manifold->v_count = 1;
     manifold->depth[0] = r_sum - dist;
-    manifold->v[0] = V3Add(V3(0.0f, Q0_y, 0.0f), V3Scale(manifold->n, s[0]->capsule.radius));
+    manifold->v[0] = V3Add(V3(0.0f, Q0_y, 0.0f), V3Scale(manifold->n, s0->capsule.radius));
 
     return result;
 }
 
-struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
-	ds_Assert(s[0]->type == C_SHAPE_CONVEX_HULL);
-	ds_Assert(s[1]->type == C_SHAPE_SPHERE);
+	ds_Assert(s0->type == C_SHAPE_CONVEX_HULL);
+	ds_Assert(s1->type == C_SHAPE_SPHERE);
 
     struct c_ContactResult result = { 0 };
     result.gjk_cache = ArenaPushPacked(frame, sizeof(struct GJKCache));
 
-    const f32 radius = s[1]->sphere.radius;
-    const q inv = QConj(t[0].rotation);
-    const v3 p = QUnitRotate(inv, V3F64Demote(V3F64Sub(t[1].position, t[0].position)));
+    const f32 radius = s1->sphere.radius;
+    const q inv = QConj(t0->rotation);
+    const v3 p = QUnitRotate(inv, V3F64Demote(V3F64Sub(t1->position, t0->position)));
     const ds_Transform t_1_to_0 = { .rotation = QIdentity(), .position = p };
 
     v3 c[2], n;
-    const f32 distance = GJK(c+0, c+1, &n, result.gjk_cache, cached_result->gjk_cache, s[0], s[1], &t_1_to_0, radius);
+    const f32 distance = GJK(c+0, c+1, &n, result.gjk_cache, cached_result->gjk_cache, s0, s1, &t_1_to_0, radius);
     if (radius < distance)
     {
         return result;
@@ -763,7 +763,7 @@ struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_C
 	/* deep penetration */
     else
     {
-		const struct dcel *h = &s[0]->hull;
+		const struct dcel *h = &s0->hull;
 
 		f32 min_depth = F32_INFINITY;
 		for (u32 fi = 0; fi < h->f_count; ++fi)
@@ -872,19 +872,19 @@ static void HullCapsuleEESeparation(struct sat_EdgeQuery *query, const struct dc
  * closest points; deep (core touches the hull): SAT face and edge queries; the core clipped to the reference
  * face, or the closest points of the best edge and the core if that edge separates more by sat_face_bias.
  */
-struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
-	ds_Assert(s[0]->type == C_SHAPE_CONVEX_HULL);
-	ds_Assert(s[1]->type == C_SHAPE_CAPSULE);
+	ds_Assert(s0->type == C_SHAPE_CONVEX_HULL);
+	ds_Assert(s1->type == C_SHAPE_CAPSULE);
 
     struct c_ContactResult result = { 0 };
     result.gjk_cache = ArenaPushPacked(frame, sizeof(struct GJKCache));
 
-    const f32 radius = s[1]->capsule.radius;
-    const ds_Transform t_1_to_0 = ds_TransformWorldRelative(&t[0], &t[1]);
+    const f32 radius = s1->capsule.radius;
+    const ds_Transform t_1_to_0 = ds_TransformWorldRelative(t0, t1);
 
     v3 c[2], n;
-    const f32 distance = GJK(c+0, c+1, &n, result.gjk_cache, cached_result->gjk_cache, s[0], s[1], &t_1_to_0, radius);
+    const f32 distance = GJK(c+0, c+1, &n, result.gjk_cache, cached_result->gjk_cache, s0, s1, &t_1_to_0, radius);
     if (radius < distance)
     {
         return result;
@@ -894,8 +894,8 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
     result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
     struct c_Manifold *m = result.manifold;
 
-    const struct dcel *h = &s[0]->hull;
-    const struct segment core = SegmentCapsuleTransform(&s[1]->capsule, &t_1_to_0);
+    const struct dcel *h = &s0->hull;
+    const struct segment core = SegmentCapsuleTransform(&s1->capsule, &t_1_to_0);
 
     /* shallow penetration: distance > 0 is beyond GJK's touch band (100 eps L), so the GJK normal is reliable */
     if (0.0f < distance)
@@ -1151,7 +1151,7 @@ static u32 HullEdgeContact(struct c_Manifold *m, struct c_SatCache *cache, const
 }
 
 /*
- * Hull edge e1 (s[0], as stored) vs triangle edge a (s[1]: t_a -> t_b, ccw about n_t). The triangle's edges are knife
+ * Hull edge e1 (s0, as stored) vs triangle edge a (s1: t_a -> t_b, ccw about n_t). The triangle's edges are knife
  * edges: the Gauss arc of edge a is the half circle n_t -> m_e -> -n_t, m_e = (t_b - t_a) x n_t (outward), so
  * EEIsMinkowskiFace (arcs shorter than pi) cannot tell which half is meant. The pair realizes a face of the Minkowski
  * difference iff the hull's arc n1 -> n2 meets the negated half circle:
@@ -1228,7 +1228,7 @@ static u32 HullTriangleEdgeQuery(struct sat_EdgeQuery *query, const struct dcel 
 	return 0;
 }
 
-/* a separating axis for the SAT cache: normal from s[0] to s[1], separation > 0 */
+/* a separating axis for the SAT cache: normal from s0 to s1, separation > 0 */
 static void sat_CacheSeparation(struct c_SatCache *cache, const v3 normal, const f32 separation)
 {
 	cache->type = SAT_CACHE_SEPARATION;
@@ -1236,21 +1236,21 @@ static void sat_CacheSeparation(struct c_SatCache *cache, const v3 normal, const
 	cache->depth = separation;
 }
 
-/* what s[1] of a sat_Pair is */
+/* what s1 of a sat_Pair is */
 enum sat_PairType
 {
 	SAT_PAIR_HULL,		/* a hull: Gauss map pruned edge pairs, axes oriented by center_0 */
 	SAT_PAIR_TRIANGLE,	/* a mesh triangle (DcelTriStub, pl[1] = +-n_t): knife edges (HullTriangleEdgeCheck) */
 };
 
-/* a pair for the SAT: dcels, vertices and face planes in a common frame (s[0]'s) */
+/* a pair for the SAT: dcels, vertices and face planes in a common frame (s0's) */
 struct sat_Pair
 {
 	enum sat_PairType	type;
 	const struct dcel *	h[2];
 	const v3 *			v[2];
 	const struct plane *pl[2];
-	v3					center_0;	/* s[0]'s center of mass: edge axis orientation (SAT_PAIR_HULL) */
+	v3					center_0;	/* s0's center of mass: edge axis orientation (SAT_PAIR_HULL) */
 };
 
 /*
@@ -1428,13 +1428,13 @@ static u32 sat_PairContact(struct c_Manifold *m, sat_FeatureId features[4], stru
 }
 
 /*
- * Hull vs hull: local manifold in s[0]'s frame (n from s[0] to s[1]). s[1]'s vertices and face planes are moved into
- * s[0]'s frame; s[0] uses its stored planes. SAT and cache: sat_PairContact.
+ * Hull vs hull: local manifold in s0's frame (n from s0 to s1). s1's vertices and face planes are moved into
+ * s0's frame; s0 uses its stored planes. SAT and cache: sat_PairContact.
  */
-struct c_ContactResult c_HullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+struct c_ContactResult c_HullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
-	ds_Assert(s[0]->type == C_SHAPE_CONVEX_HULL);
-	ds_Assert(s[1]->type == C_SHAPE_CONVEX_HULL);
+	ds_Assert(s0->type == C_SHAPE_CONVEX_HULL);
+	ds_Assert(s1->type == C_SHAPE_CONVEX_HULL);
 
     struct ds_DynamicsMetrics *metrics = &g_dynamics_worker[ds_ThreadSelfIndex()].metrics;
     metrics->hull_call_count += 1;
@@ -1447,10 +1447,10 @@ struct c_ContactResult c_HullContact(struct arena *frame, const struct c_Contact
 
     struct arena *mem_tmp = ArenaPushScratch();
 
-    /* s[1] in s[0]'s frame: vertices and face planes */
-    const ds_Transform t_1_to_0 = ds_TransformWorldRelative(&t[0], &t[1]);
+    /* s1 in s0's frame: vertices and face planes */
+    const ds_Transform t_1_to_0 = ds_TransformWorldRelative(t0, t1);
     const m3 rot = M3QUnit(t_1_to_0.rotation);
-    const struct dcel *h[2] = { &s[0]->hull, &s[1]->hull };
+    const struct dcel *h[2] = { &s0->hull, &s1->hull };
     v3 *v_1 = ArenaPush(mem_tmp, h[1]->v_count * sizeof(v3));
     struct plane *pl_1 = ArenaPush(mem_tmp, h[1]->f_count * sizeof(struct plane));
 	for (u32 i = 0; i < h[1]->v_count; ++i)
@@ -1463,7 +1463,7 @@ struct c_ContactResult c_HullContact(struct arena *frame, const struct c_Contact
 	}
     const v3 *v[2] = { h[0]->v, v_1 };
     const struct plane *pl[2] = { h[0]->plane, pl_1 };
-    const v3 center_0 = s[0]->center_of_mass;
+    const v3 center_0 = s0->center_of_mass;
 
     const struct sat_Pair pair = { .type = SAT_PAIR_HULL, .h = { h[0], h[1] }, .v = { v[0], v[1] }, .pl = { pl[0], pl[1] }, .center_0 = center_0 };
     const struct c_SatCache *old_cache = (cached_result->cache_count) ? cached_result->cache : NULL;
@@ -1996,7 +1996,7 @@ static void c_MeshHullTriDelayed(struct c_MeshTri *r, const struct dcel *stub, c
 }
 
 /*
- * Hull vs triangle (two-sided): sat_PairContact with the hull as s[0] (as stored) and the triangle as s[1]
+ * Hull vs triangle (two-sided): sat_PairContact with the hull as s0 (as stored) and the triangle as s1
  * (SAT_PAIR_TRIANGLE: a DcelTriStub with planes +-n_t, in the hull's frame): n from the hull to the mesh, v on the hull
  * (the mesh convention). Every tested triangle keeps a record: its contact, or its separating axis for the cache.
  */
@@ -2013,7 +2013,7 @@ static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct
         ds_AssertString(n_dir_length_sq > 0.0f, "mesh triangle without area (c_Shape precondition)");
         const v3 n_t = V3Scale(n_dir, 1.0f / F32Sqrt(n_dir_length_sq));
 
-        /* the triangle as s[1]: face 0 ccw about n_t, face 1 its back */
+        /* the triangle as s1: face 0 ccw about n_t, face 1 its back */
         struct plane pl_tri[2] = { PlaneConstruct(n_t, tri[0]), PlaneConstruct(V3Negate(n_t), tri[0]) };
         struct dcel stub = DcelTriStub();
         stub.v = tri;
@@ -2142,11 +2142,11 @@ static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *res
 
 /*
  * Mesh vs convex shape (sphere, capsule, hull): one manifold per contacting triangle, local to the convex shape (n from
- * it to the mesh, v on its surface). The per-triangle routines are the old ones (frame-agnostic, called with the
- * convex shape as reference).
+ * it to the mesh, v on its surface).
  */
-static struct c_ContactResult c_MeshContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex)
+struct c_ContactResult c_MeshContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex)
 {
+    ds_Assert(convex->type < C_SHAPE_TRI_MESH);
     struct c_ContactResult result = { 0 };
     struct c_MeshContactHelper helper;
     c_MeshContactInit(&helper, mesh, t_mesh, convex, t_convex);
@@ -2158,19 +2158,4 @@ static struct c_ContactResult c_MeshContact(struct arena *frame, const struct c_
     }
     c_MeshContactFinish(frame, &result, &helper, convex->type == C_SHAPE_CONVEX_HULL);
     return result;
-}
-
-struct c_ContactResult TMP_c_MeshSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *sphere, const ds_TransformWorld *t_sphere)
-{
-    return c_MeshContact(frame, cached_result, mesh, t_mesh, sphere, t_sphere);
-}
-
-struct c_ContactResult TMP_c_MeshCapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *capsule, const ds_TransformWorld *t_capsule)
-{
-    return c_MeshContact(frame, cached_result, mesh, t_mesh, capsule, t_capsule);
-}
-
-struct c_ContactResult TMP_c_MeshHullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *hull, const ds_TransformWorld *t_hull)
-{
-    return c_MeshContact(frame, cached_result, mesh, t_mesh, hull, t_hull);
 }

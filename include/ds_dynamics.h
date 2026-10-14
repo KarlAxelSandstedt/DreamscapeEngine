@@ -432,16 +432,9 @@ Assumptions:
 */
 
 /*
- * Convex pairs: the c_*Contact function of the pair's shape types; transforms its local manifold to the solver
- * form (c_Manifold, collision.h).
+ * The pipeline's contact entry: the pair's contact local to one shape (convex pairs: the more complex shape,
+ * c_*Contact; mesh pairs: the convex shape, c_MeshContact), transformed to the solver form (c_Manifold, collision.h).
  */
-void        ds_ShapeConvexContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index);
-/*
- * Mesh pairs: the mesh contact function of the convex shape's type (collision.h); transforms its local manifolds
- * to the solver form (c_Manifold, collision.h).
- */
-void        ds_ShapeMeshContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index);
-/* The pipeline's contact entry: mesh pairs to ds_ShapeMeshContact, else ds_ShapeConvexContact */
 void        ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index);
 /*
  * Return the smallest t >= 0 at which ray.origin + t*ray.dir is on the shape's surface (the first surface hit,

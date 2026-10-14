@@ -175,7 +175,7 @@ static u32 CtContact(struct arena *frame, struct ct_Manifold *m, const struct ct
 {
     const struct c_Shape *s[2] = { &a->shape, &b->shape };
     const ds_TransformWorld t[2] = { a->t, b->t };
-    const struct c_ContactResult result = c_CapsuleContact(frame, NULL, s, t);
+    const struct c_ContactResult result = c_CapsuleContact(frame, NULL, s[0], &t[0], s[1], &t[1]);
 
     *m = (struct ct_Manifold) { 0 };
     if (result.manifold_count == 0)
@@ -1008,7 +1008,7 @@ static u32 ChContact(struct arena *frame, struct c_Manifold *m, u32 *contact, co
     const struct c_Shape *s[2] = { &h->shape, &c->shape };
     const ds_TransformWorld t[2] = { h->t, c->t };
     const struct c_ContactResult cached = { 0 };
-    const struct c_ContactResult result = c_HullCapsuleContact(frame, &cached, s, t);
+    const struct c_ContactResult result = c_HullCapsuleContact(frame, &cached, s[0], &t[0], s[1], &t[1]);
 
     *contact = 0;
     if (result.manifold_count == 0)
@@ -1779,7 +1779,7 @@ struct test_Output HullCapsuleContactTimingTest(struct test_Environment *env)
             const ds_TransformWorld t[2] = { pair[i].t, pair[i].capsule.t };
             const struct c_ContactResult cached = { 0 };
             const u64 start = ds_TimeNs();
-            const struct c_ContactResult result = c_HullCapsuleContact(env->mem_2, &cached, s, t);
+            const struct c_ContactResult result = c_HullCapsuleContact(env->mem_2, &cached, s[0], &t[0], s[1], &t[1]);
             const u64 end = ds_TimeNs();
             manifolds += result.manifold_count;
             ns[pair[i].deep] += end - start;
@@ -1945,7 +1945,7 @@ static u32 HhContact(struct arena *frame, struct c_ContactResult *result, const 
     const struct c_Shape *s[2] = { &a->shape, &b->shape };
     const ds_TransformWorld t[2] = { a->t, b->t };
     const struct c_ContactResult none = { 0 };
-    *result = c_HullContact(frame, (cached) ? cached : &none, s, t);
+    *result = c_HullContact(frame, (cached) ? cached : &none, s[0], &t[0], s[1], &t[1]);
     return result->manifold_count == 0
         || (result->manifold_count == 1 && c_ManifoldCheck(result->manifold)
             && 1 <= result->manifold->v_count && result->manifold->v_count <= 4);
@@ -2606,14 +2606,14 @@ static const char *SpVerify(struct sp_Stats *stats, const struct c_ContactResult
     return NULL;
 }
 
-typedef struct c_ContactResult (*sp_ContactFn)(struct arena *, const struct c_ContactResult *, const struct c_Shape *[2], const ds_TransformWorld [2]);
+typedef struct c_ContactResult (*sp_ContactFn)(struct arena *, const struct c_ContactResult *, const struct c_Shape *, const ds_TransformWorld *, const struct c_Shape *, const ds_TransformWorld *);
 
 static u32 SpCheckPair(struct arena *frame, struct sp_Stats *stats, const sp_ContactFn contact, const u32 kind, const struct sp_Shape *s0, const struct ch_Hull *hull, const struct sp_Shape *s1)
 {
     const struct c_Shape *s[2] = { &s0->shape, &s1->shape };
     const ds_TransformWorld t[2] = { s0->t, s1->t };
     const struct c_ContactResult none = { 0 };
-    const struct c_ContactResult result = contact(frame, &none, s, t);
+    const struct c_ContactResult result = contact(frame, &none, s[0], &t[0], s[1], &t[1]);
 
     struct sp_Ref ref;
     SpRefInit(&ref, kind, &s0->shape, hull, SpLocal(s0->r, s0->pos, s1->pos));
@@ -2644,7 +2644,7 @@ static u32 SpCheckPair(struct arena *frame, struct sp_Stats *stats, const sp_Con
          && V3F64Sub(t_t[1].position, t_t[0].position).y == V3F64Sub(t[1].position, t[0].position).y
          && V3F64Sub(t_t[1].position, t_t[0].position).z == V3F64Sub(t[1].position, t[0].position).z)
         {
-            const struct c_ContactResult r_t = contact(frame, &none, s, t_t);
+            const struct c_ContactResult r_t = contact(frame, &none, s[0], &t_t[0], s[1], &t_t[1]);
             u32 same = (r_t.manifold_count == result.manifold_count);
             if (same && result.manifold_count)
             {
@@ -2825,16 +2825,16 @@ struct test_Output SphereContactCasesTest(struct test_Environment *env)
 
     /* spheres apart, touching, overlapping (n = +x, depth 0.25, v = (1, 0, 0)), coincident (n = (1, 0, 0), depth 1.5) */
     t[1].position = V3F64(1.6, 0.0, 0.0);
-    r = c_SphereContact(env->mem_2, &none, s, t);
+    r = c_SphereContact(env->mem_2, &none, s[0], &t[0], s[1], &t[1]);
     TEST_EQUAL(r.manifold_count, 0);
     t[1].position = V3F64(1.5, 0.0, 0.0);
-    r = c_SphereContact(env->mem_2, &none, s, t);
+    r = c_SphereContact(env->mem_2, &none, s[0], &t[0], s[1], &t[1]);
     TEST_TRUE(r.manifold_count == 1 && r.manifold->depth[0] == 0.0f);
     t[1].position = V3F64(1.25, 0.0, 0.0);
-    r = c_SphereContact(env->mem_2, &none, s, t);
+    r = c_SphereContact(env->mem_2, &none, s[0], &t[0], s[1], &t[1]);
     TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.25) && CtNearD3(D3V3(r.manifold->n), D3(1.0, 0.0, 0.0)) && CtNearD3(D3V3(r.manifold->v[0]), D3(1.0, 0.0, 0.0)));
     t[1].position = V3F64(0.0, 0.0, 0.0);
-    r = c_SphereContact(env->mem_2, &none, s, t);
+    r = c_SphereContact(env->mem_2, &none, s[0], &t[0], s[1], &t[1]);
     TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 1.5) && CtNearD3(D3V3(r.manifold->n), D3(1.0, 0.0, 0.0)));
 
     /* capsule (h 1, r 1) vs sphere: beside (n = +z, depth 0.25), beyond the cap (n = +y), on the axis (n = (1, 0, 0), depth 1.5) */
@@ -2843,13 +2843,13 @@ struct test_Output SphereContactCasesTest(struct test_Environment *env)
     cap.capsule.radius = 1.0f;
     s[0] = &cap;
     t[1].position = V3F64(0.0, 0.5, 1.25);
-    r = c_CapsuleSphereContact(env->mem_2, &none, s, t);
+    r = c_CapsuleSphereContact(env->mem_2, &none, s[0], &t[0], s[1], &t[1]);
     TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.25) && CtNearD3(D3V3(r.manifold->n), D3(0.0, 0.0, 1.0)) && CtNearD3(D3V3(r.manifold->v[0]), D3(0.0, 0.5, 1.0)));
     t[1].position = V3F64(0.0, 2.25, 0.0);
-    r = c_CapsuleSphereContact(env->mem_2, &none, s, t);
+    r = c_CapsuleSphereContact(env->mem_2, &none, s[0], &t[0], s[1], &t[1]);
     TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.25) && CtNearD3(D3V3(r.manifold->n), D3(0.0, 1.0, 0.0)));
     t[1].position = V3F64(0.0, -0.5, 0.0);
-    r = c_CapsuleSphereContact(env->mem_2, &none, s, t);
+    r = c_CapsuleSphereContact(env->mem_2, &none, s[0], &t[0], s[1], &t[1]);
     TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 1.5) && CtNearD3(D3V3(r.manifold->n), D3(1.0, 0.0, 0.0)));
 
     /* box [-1, 1]^3 vs sphere: above the top face (n = +y, depth 0.25, v = (0.3, 1, 0)), beyond a corner, inside (nearest face) */
@@ -2858,13 +2858,13 @@ struct test_Output SphereContactCasesTest(struct test_Environment *env)
     c_ShapeUpdateMassProperties(&box);
     s[0] = &box;
     t[1].position = V3F64(0.3, 1.25, 0.0);
-    r = c_HullSphereContact(env->mem_2, &none, s, t);
+    r = c_HullSphereContact(env->mem_2, &none, s[0], &t[0], s[1], &t[1]);
     TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.25) && CtNearD3(D3V3(r.manifold->n), D3(0.0, 1.0, 0.0)) && CtNearD3(D3V3(r.manifold->v[0]), D3(0.3, 1.0, 0.0)));
     t[1].position = V3F64(1.2, 1.2, 1.2);
-    r = c_HullSphereContact(env->mem_2, &none, s, t);
+    r = c_HullSphereContact(env->mem_2, &none, s[0], &t[0], s[1], &t[1]);
     TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.5 - 0.34641016) && CtNearD3(D3V3(r.manifold->n), D3(0.57735027, 0.57735027, 0.57735027)) && CtNearD3(D3V3(r.manifold->v[0]), D3(1.0, 1.0, 1.0)));
     t[1].position = V3F64(0.0, 0.8, 0.1);
-    r = c_HullSphereContact(env->mem_2, &none, s, t);
+    r = c_HullSphereContact(env->mem_2, &none, s[0], &t[0], s[1], &t[1]);
     TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.7) && CtNearD3(D3V3(r.manifold->n), D3(0.0, 1.0, 0.0)) && CtNearD3(D3V3(r.manifold->v[0]), D3(0.0, 1.0, 0.1)));
 
 	return output;
@@ -2873,7 +2873,7 @@ struct test_Output SphereContactCasesTest(struct test_Environment *env)
 /********************************** mesh contacts **********************************/
 
 /*
-Mesh vs sphere/capsule/hull (TMP_c_Mesh*Contact = c_MeshContact).
+Mesh vs sphere/capsule/hull (c_MeshContact).
 Terrain: a height field grid (CCW, upward faces), random pose; flat (relief 0) for the ghost-normal test.
 */
 
@@ -2981,7 +2981,7 @@ struct test_Output MeshSphereCasesTest(struct test_Environment *env)
         struct c_Shape sphere = { .type = C_SHAPE_SPHERE };
         sphere.sphere.radius = radius;
 
-        const struct c_ContactResult r = TMP_c_MeshSphereContact(env->mem_2, &none, &mesh, &t_mesh, &sphere, &t_sphere);
+        const struct c_ContactResult r = c_MeshContact(env->mem_2, &none, &mesh, &t_mesh, &sphere, &t_sphere);
         /* n_t in the sphere's frame */
         const v3 n_t = QUnitRotate(QConj(q_sphere), QUnitRotate(t_mesh.rotation, V3(0.0f, 1.0f, 0.0f)));
         const v3 n_expected = V3Scale(n_t, (h < 0.0f) ? 1.0f : -1.0f);
@@ -3037,7 +3037,7 @@ struct test_Output MeshSphereCasesTest(struct test_Environment *env)
         struct c_Shape sphere = { .type = C_SHAPE_SPHERE };
         sphere.sphere.radius = radius;
 
-        const struct c_ContactResult r = TMP_c_MeshSphereContact(env->mem_2, &none, &mesh, &t_mesh, &sphere, &t_sphere);
+        const struct c_ContactResult r = c_MeshContact(env->mem_2, &none, &mesh, &t_mesh, &sphere, &t_sphere);
         const v3 n_t = QUnitRotate(QConj(q_sphere), QUnitRotate(t_mesh.rotation, V3(0.0f, 1.0f, 0.0f)));
         u32 ok = (r.manifold_count == 1);
         const struct c_Manifold *m = r.manifold;
@@ -3177,7 +3177,7 @@ static struct mc_CapsuleCase McCapsuleCase(struct arena *mem, const struct c_Sha
     struct c_Shape capsule = { .type = C_SHAPE_CAPSULE };
     capsule.capsule.radius = radius;
     capsule.capsule.half_height = half_height;
-    cc.result = TMP_c_MeshCapsuleContact(mem, &none, mesh, &t_mesh, &capsule, &t_capsule);
+    cc.result = c_MeshContact(mem, &none, mesh, &t_mesh, &capsule, &t_capsule);
     for (u32 k = 0; k < 3; ++k)
     {
         const struct d3 world = D3Add(pos_m, D3RotationMul(cc.rm, D3V3(mesh->mesh_bvh.mesh->v[k])));
@@ -3599,9 +3599,7 @@ struct test_Output MeshFlatGridTest(struct test_Environment *env)
             D3Rotation(rc, q_convex);
             const struct d3 pos_c = D3Add(mesh_pos, D3RotationMul(rm, D3RotationMul(rg, center)));
             const ds_TransformWorld t_convex = { .rotation = q_convex, .position = V3F64(pos_c.x, pos_c.y, pos_c.z) };
-            const struct c_ContactResult res = (kind == 0) ? TMP_c_MeshSphereContact(env->mem_2, &none, &mesh, &t_mesh, &convex, &t_convex)
-                                             : (kind == 1) ? TMP_c_MeshCapsuleContact(env->mem_2, &none, &mesh, &t_mesh, &convex, &t_convex)
-                                             : TMP_c_MeshHullContact(env->mem_2, &none, &mesh, &t_mesh, &convex, &t_convex);
+            const struct c_ContactResult res = c_MeshContact(env->mem_2, &none, &mesh, &t_mesh, &convex, &t_convex);
 
             const struct d3 down = D3RotationTMul(rc, D3RotationMul(rm, D3RotationMul(rg, D3(0.0, -1.0, 0.0))));
             u32 ok = (res.manifold_count >= 1);
@@ -3648,7 +3646,7 @@ struct test_Output MeshFlatGridTest(struct test_Environment *env)
 /********************************** mesh vs hull **********************************/
 
 /*
-Hull vs one triangle (TMP_c_MeshHullContact), checked in double in the hull's frame against the SAT reference
+Hull vs one triangle (c_MeshContact), checked in double in the hull's frame against the SAT reference
 (as the hull-hull tests): with sep(n) = min_tri n.x - max_hull n.x,
 
     sat = max sep(n) over the hull's face normals, +-n_t and +-cross(hull edge, triangle edge)
@@ -3860,7 +3858,7 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
         struct ch_Hull h;
         ChHullInit(&h, &box, 1, hw, QNormalize(QMul(q_mesh, q_local)), D3Add(pos_m, D3RotationMul(rm, center)));
         const ds_TransformWorld t_mesh = { .rotation = q_mesh, .position = V3F64(pos_m.x, pos_m.y, pos_m.z) };
-        const struct c_ContactResult r = TMP_c_MeshHullContact(env->mem_2, &none, &mesh, &t_mesh, &h.shape, &h.t);
+        const struct c_ContactResult r = c_MeshContact(env->mem_2, &none, &mesh, &t_mesh, &h.shape, &h.t);
         struct d3 t[3];
         McTriangleInHull(t, &h, rm, pos_m, mesh.mesh_bvh.mesh->v);
         const f64 tol = 1e-4*S;
@@ -3985,7 +3983,7 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
         McTriangleInHull(t, &h, rm, pos_m, tm);
         const f64 tol = McHullTriTol(&h, t);
 
-        const struct c_ContactResult r = TMP_c_MeshHullContact(env->mem_2, &none, &mesh, &t_mesh, &h.shape, &h.t);
+        const struct c_ContactResult r = c_MeshContact(env->mem_2, &none, &mesh, &t_mesh, &h.shape, &h.t);
         const char *fail = McHullTriVerify(&touching_off, &r, &h, t, tol, 0.0);
         const char *stage = "first";
         contacts += (r.manifold_count != 0);
@@ -3996,7 +3994,7 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
         {
             /* the same pose with the result as the cache: every cache reused */
             const u32 p0 = metrics->mesh_cache_probe_count, e0 = metrics->mesh_cache_eviction_count;
-            const struct c_ContactResult again = TMP_c_MeshHullContact(env->mem_2, &r, &mesh, &t_mesh, &h.shape, &h.t);
+            const struct c_ContactResult again = c_MeshContact(env->mem_2, &r, &mesh, &t_mesh, &h.shape, &h.t);
             probes += metrics->mesh_cache_probe_count - p0;
             evictions += metrics->mesh_cache_eviction_count - e0;
             stage = "cached, same pose";
@@ -4010,7 +4008,7 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
             const struct d3 shift = D3Scale(D3V3(CtUnit()), 1e-3*tol / (CONTACT_TEST_TOLERANCE * F32_EPSILON));
             const struct d3 pos_moved = D3Add(pos_m, shift);
             const ds_TransformWorld t_moved = { .rotation = q_mesh, .position = V3F64(pos_moved.x, pos_moved.y, pos_moved.z) };
-            const struct c_ContactResult moved = TMP_c_MeshHullContact(env->mem_2, &r, &mesh, &t_moved, &h.shape, &h.t);
+            const struct c_ContactResult moved = c_MeshContact(env->mem_2, &r, &mesh, &t_moved, &h.shape, &h.t);
             McTriangleInHull(t, &h, rm, pos_moved, tm);
             stage = "cached, moved";
             fail = McHullTriVerify(&touching_off, &moved, &h, t, tol, (f64) g_numerics_config->sat_cache_tolerance);
