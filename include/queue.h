@@ -59,14 +59,14 @@ struct minQueue
 	struct queueObjectPool 	object_pool;
 	struct queueElement *	elements;
 	u32			growable;
-	struct ds_MemSlot		mem_elements;
+	u32			heap_allocated;	/* elements (and the pool) are ds_Alloc blocks */
 };
 
 /* Allocate a new priority queue. */
 struct minQueue	MinQueueAlloc(struct arena *arena, const u32 initial_length, const u32 growable);
 /* Free a queue and all it's resources. */
 void 		MinQueueDealloc(struct minQueue * const queue);
-/* append new element with given priority to queue, return its object index */
+/* append new element with given priority to queue, return its object index; fatal if a non-growable queue is full */
 u32 		MinQueuePush(struct minQueue * const queue, const f32 priority, const u32 external_index);
 /* return external index corresponding to extracted queue element */
 u32 		MinQueuePop(struct minQueue * const queue);
@@ -88,7 +88,7 @@ struct minQueueFixed
 	u32 		count;
 	u32		length;
 	u32		growable;
-	struct ds_MemSlot	mem_element;
+	u32		heap_allocated;	/* element is a ds_Alloc block */
 };
 
 /* Alocate a new priority queue */

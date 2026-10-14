@@ -38,16 +38,10 @@ struct ds_BitSet ds_BitSetAllocEx(struct arena *mem, const u64 bit_count, const 
 		.growable = growable,
 	};
 
-	if (mem)
-	{
-		set.bits = ArenaPush(mem, set.block_count * sizeof(u64));
-	}
-	else
-	{
-		set.bits = ds_Alloc(&set.mem_slot, set.block_count * sizeof(u64), NO_HUGE_PAGES);
-		set.block_count = set.mem_slot.size / sizeof(u64);
-		set.bit_count = set.block_count * DS_BITSET_BLOCK_BITCOUNT;
-	}
+	set.bits = (mem)
+		? ArenaPush(mem, set.block_count * sizeof(u64))
+		: ds_Alloc(set.block_count * sizeof(u64), sizeof(u64));
+	set.heap_allocated = (mem == NULL && set.bits);
 
 	if (set.bits == NULL)
 	{
@@ -67,7 +61,11 @@ struct ds_BitSet ds_BitSetAlloc(struct arena *mem, const u64 bit_count, const u6
 
 void ds_BitSetDealloc(struct ds_BitSet *set)
 {
-	ds_Free(&set->mem_slot);
+	if (set->heap_allocated)
+	{
+		ds_Free(set->bits);
+		set->heap_allocated = 0;
+	}
 }
 
 void ds_BitSetIncreaseSize(struct ds_BitSet *set, const u64 bit_count, const u64 clear_bit)
@@ -78,8 +76,9 @@ void ds_BitSetIncreaseSize(struct ds_BitSet *set, const u64 bit_count, const u64
 	const u64 new_blocks_start = set->block_count;
 	const u64 new_block_count = (bit_count + DS_BITSET_BLOCK_BITCOUNT - 1) / DS_BITSET_BLOCK_BITCOUNT;
 
-	set->bits = ds_Realloc(&set->mem_slot, new_block_count * sizeof(u64));
-	set->block_count = set->mem_slot.size / sizeof(u64);
+	set->bits = ds_Realloc(set->bits, set->block_count * sizeof(u64), new_block_count * sizeof(u64), sizeof(u64));
+	set->heap_allocated = 1;
+	set->block_count = new_block_count;
 	set->bit_count = set->block_count * DS_BITSET_BLOCK_BITCOUNT;
 
 	for (u64 i = new_blocks_start; i < set->block_count; ++i)
@@ -138,9 +137,6 @@ u32 ds_BitSetTryDeserialize(struct arena *mem, struct ss *ss, struct ds_BitSet *
 		return 0;
 	}
 
-	/* A heap allocation may round the capacity up; keep the serialized block count exact */
-	set->block_count = block_count;
-	set->bit_count = block_count*DS_BITSET_BLOCK_BITCOUNT;
 	ss_ReadU64LeN(set->bits, ss, block_count);
 
 	return 1;

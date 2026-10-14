@@ -49,28 +49,9 @@ u32 PowerOfTwoCheck(const u64 n)
 
 u64 PowerOfTwoCeil(const u64 n)
 {
-	if (n == 0)
-	{
-		return 1;
-	}
-
-	if (PowerOfTwoCheck(n))
-	{
-		return n;
-	}
-
-	/* [1, 63] */
-	const u32 lz = Clz64(n);
-	ds_AssertString(lz > 0, "Overflow in PowerOfTwoCeil");
-	return (u64) 0x8000000000000000 >> (lz-1);
-}
-
-u64 ds_AllocSizeCeil(const u64 size)
-{
-	const u64 mod = size & (g_mem_config->alloc_size_min - 1);
-	return (mod) 
-		? size + g_mem_config->alloc_size_min - mod
-		: size;
+	ds_AssertString(n <= ((u64) 1 << 63), "Overflow in PowerOfTwoCeil");
+	/* 2^k >= n > 2^(k-1) <=> n-1 has bit length k */
+	return (n <= 1) ? 1 : (u64) 1 << (64 - Clz64(n - 1));
 }
 
 void ds_MemApiShutdown(void)
@@ -80,229 +61,133 @@ void ds_MemApiShutdown(void)
 void ds_MemApiInit()
 {
 	g_mem_config->page_size = ds_Pagesize();
-	g_mem_config->alloc_size_min = g_mem_config->page_size;
-	ds_Assert( PowerOfTwoCheck( g_mem_config->alloc_size_min ) );
+	ds_Assert( PowerOfTwoCheck( g_mem_config->page_size ) );
 }
 
-void ds_SmallRealloc(void **addr, const u64 old_size, const u64 new_size)
-{
-	if (old_size < new_size)
-	{
-        void *new_addr = NULL;
-        ds_SmallAlloc(&new_addr, new_size);
-        if (new_addr == NULL)
-        {
-			LogString(T_SYSTEM, S_FATAL, "Failed to reallocate in ds_SmallRealloc, exiting.");
-			FatalCleanupAndExit();
-        }
+/* debug builds fill new memory: nothing may rely on it being zeroed */
+#ifdef DS_DEBUG
+	#define DS_ALLOC_DEBUG_FILL(addr, size)	memset((addr), 0xa5, (size))
+#else
+	#define DS_ALLOC_DEBUG_FILL(addr, size)
+#endif
 
-        if (old_size)
-        {
-            memcpy(new_addr, *addr, old_size);
-            ds_SmallFree(*addr);
-        }
-        *addr = new_addr;
-    }
-}
+#if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
 
-#if __DS_PLATFORM__ == __DS_LINUX__
-
-#include <unistd.h>
+#include <stddef.h>
 #include <sys/mman.h>
 
-void *ds_Alloc(struct ds_MemSlot *slot, const u64 size, const u32 huge_pages)
+void *ds_Alloc(const u64 size, const u64 alignment)
 {
+	ds_Assert(PowerOfTwoCheck(alignment));
 	if (size == 0)
 	{
-		*slot = (struct ds_MemSlot) { .huge_pages = huge_pages };
 		return NULL;
 	}
 
-	u64 size_used = ds_AllocSizeCeil(size);
-	void *addr = mmap(NULL, size_used, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (addr == MAP_FAILED)
+	/* posix_memalign: the alignment must be a multiple of sizeof(void *) */
+	const u64 alignment_used = (alignment < sizeof(void *)) ? sizeof(void *) : alignment;
+	void *addr = NULL;
+	if (posix_memalign(&addr, alignment_used, size) != 0)
 	{
-		addr = NULL;
-		size_used = 0;
-	}
-	else if (huge_pages)
-	{
-		madvise(addr, size_used, MADV_HUGEPAGE);
-	}
-
-	slot->address = addr;
-	slot->size = size_used;
-	slot->huge_pages = huge_pages;
-
-	ds_Assert(((u64) slot->address) % g_mem_config->page_size == 0);
-
-	return slot->address;
-}
-
-/* Grow a non-empty slot to size > slot->size; on failure, slot->address is NULL. */
-static void ds_MemSlotGrow(struct ds_MemSlot *slot, const u64 size)
-{
-	if (slot->huge_pages)
-	{
-		struct ds_MemSlot new_slot;
-		if (ds_Alloc(&new_slot, size, HUGE_PAGES))
-		{
-			memcpy(new_slot.address, slot->address, slot->size);
-		}
-		ds_Free(slot);
-		*slot = new_slot;
-	}
-	else
-	{
-		void *addr = mremap(slot->address, slot->size, size, MREMAP_MAYMOVE);
-		slot->address = (addr == MAP_FAILED) ? NULL : addr;
-		slot->size = size;
-	}
-}
-
-void ds_Free(struct ds_MemSlot *slot)
-{
-    if (slot->address)
-    {
-	    munmap(slot->address, slot->size);	
-    }
-	slot->address = NULL;
-	slot->size = 0;
-	slot->huge_pages = 0;
-}
-
-#elif __DS_PLATFORM__ == __DS_WEB__
-
-#include <unistd.h>
-#include <sys/mman.h>
-
-void *ds_Alloc(struct ds_MemSlot *slot, const u64 size, const u32 garbage)
-{
-	if (size == 0)
-	{
-		*slot = (struct ds_MemSlot) { 0 };
 		return NULL;
 	}
 
-	u64 size_used = ds_AllocSizeCeil(size);
-	void *addr = mmap(NULL, size_used, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (addr == MAP_FAILED)
-	{
-		addr = NULL;
-		size_used = 0;
-	}
-
-	slot->address = addr;
-	slot->size = size_used;
-	slot->huge_pages = 0;
-
-	ds_Assert(((u64) slot->address) % g_mem_config->page_size == 0);
-
-	return slot->address;
+	DS_ALLOC_DEBUG_FILL(addr, size);
+	return addr;
 }
 
-/* Grow a non-empty slot to size > slot->size; on failure, slot->address is NULL. */
-static void ds_MemSlotGrow(struct ds_MemSlot *slot, const u64 size)
+/* resize a non-NULL block to new_size > 0; NULL on failure */
+static void *ds_ReallocPlatform(void *addr, const u64 old_size, const u64 new_size, const u64 alignment)
 {
-	struct ds_MemSlot new_slot;
-	if (ds_Alloc(&new_slot, size, slot->huge_pages))
+	/* realloc keeps malloc's alignment (max_align_t); glibc moves large blocks with mremap, without a copy */
+	if (alignment <= _Alignof(max_align_t))
 	{
-		memcpy(new_slot.address, slot->address, slot->size);
+		return realloc(addr, new_size);
 	}
-	ds_Free(slot);
-	*slot = new_slot;
+
+	void *new_addr = ds_Alloc(new_size, alignment);
+	if (new_addr)
+	{
+		memcpy(new_addr, addr, (old_size < new_size) ? old_size : new_size);
+		free(addr);
+	}
+	return new_addr;
 }
 
-void ds_Free(struct ds_MemSlot *slot)
+void ds_Free(void *addr)
 {
-	if (slot->address)
-	{
-		munmap(slot->address, slot->size);	
-	}
-	slot->address = NULL;
-	slot->size = 0;
-	slot->huge_pages = 0;
+	free(addr);
 }
+
 #elif __DS_PLATFORM__ == __DS_WIN64__
 
-void *ds_Alloc(struct ds_MemSlot *slot, const u64 size, const u32 huge_pages)
+#include <malloc.h>
+
+void *ds_Alloc(const u64 size, const u64 alignment)
 {
+	ds_Assert(PowerOfTwoCheck(alignment));
 	if (size == 0)
 	{
-		*slot = (struct ds_MemSlot) { .huge_pages = huge_pages };
 		return NULL;
 	}
 
-	u64 size_used = ds_AllocSizeCeil(size);
-
-	/* TODO: We skip huge pages here... */
-	void *addr = VirtualAlloc(NULL, size_used, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-	if (!addr)
+	void *addr = _aligned_malloc(size, alignment);
+	if (addr)
 	{
-		LogSystemError(S_ERROR);
-		addr = NULL;
-		size_used = 0;
+		DS_ALLOC_DEBUG_FILL(addr, size);
 	}
-
-	slot->address = addr;
-	slot->size = size_used;
-	slot->huge_pages = huge_pages;
-
-	ds_Assert(((u64) slot->address) % g_mem_config->page_size == 0);
-
-	return slot->address;
+	return addr;
 }
 
-/* Grow a non-empty slot to size > slot->size; on failure, slot->address is NULL. */
-static void ds_MemSlotGrow(struct ds_MemSlot *slot, const u64 size)
+/* resize a non-NULL block to new_size > 0; NULL on failure */
+static void *ds_ReallocPlatform(void *addr, const u64 old_size, const u64 new_size, const u64 alignment)
 {
-	struct ds_MemSlot new_slot;
-	if (ds_Alloc(&new_slot, size, slot->huge_pages))
-	{
-		memcpy(new_slot.address, slot->address, slot->size);
-	}
-	ds_Free(slot);
-	*slot = new_slot;
+	return _aligned_realloc(addr, new_size, alignment);
 }
 
-void ds_Free(struct ds_MemSlot *slot)
+void ds_Free(void *addr)
 {
-	if (slot->address && !VirtualFree(slot->address, 0, MEM_RELEASE))
-	{
-		LogSystemError(S_ERROR);
-	}
-	slot->address = NULL;
-	slot->size = 0;
-	slot->huge_pages = 0;
+	_aligned_free(addr);
 }
 
-#elif 
+#else
 
 #error
 
 #endif
 
-void *ds_Realloc(struct ds_MemSlot *slot, const u64 size)
+/*
+TODO: a dedicated heap allocator. It would know its block sizes, so old_size could go (only the aligned
+copy on Linux/web needs it).
+*/
+void *ds_Realloc(void *addr, const u64 old_size, const u64 new_size, const u64 alignment)
 {
-	if (slot->address == NULL)
+	ds_Assert(PowerOfTwoCheck(alignment));
+	if (new_size == 0)
 	{
-		if (ds_Alloc(slot, size, slot->huge_pages) == NULL && size)
-		{
-			LogString(T_SYSTEM, S_FATAL, "Failed to allocate empty memSlot in ds_Realloc, exiting.");
-			FatalCleanupAndExit();
-		}
-	}
-	else if (slot->size < size)
-	{
-		ds_MemSlotGrow(slot, size);
-		if (slot->address == NULL)
-		{
-			LogString(T_SYSTEM, S_FATAL, "Failed to reallocate memSlot in ds_Realloc, exiting.");
-			FatalCleanupAndExit();
-		}
+		ds_Free(addr);
+		return NULL;
 	}
 
-	return slot->address;
+	void *new_addr = (addr)
+		? ds_ReallocPlatform(addr, old_size, new_size, alignment)
+		: ds_Alloc(new_size, alignment);
+	if (new_addr == NULL)
+	{
+		/* a failed resize leaves addr intact: a shrink keeps the larger block, only growth is fatal */
+		if (addr && new_size <= old_size)
+		{
+			return addr;
+		}
+		LogString(T_SYSTEM, S_FATAL, "Failed to grow a block in ds_Realloc, exiting.");
+		FatalCleanupAndExit();
+	}
+
+	if (addr && old_size < new_size)
+	{
+		DS_ALLOC_DEBUG_FILL((u8 *) new_addr + old_size, new_size - old_size);
+	}
+	return new_addr;
 }
 
 
@@ -314,21 +199,12 @@ u32 ds_CPoolAllocInternal(struct arena *mem, void **buf, u32 *length, u32 *count
 	*count = 0;
 	*growable = alloc_growable;
 	*heap_allocated = 0;
-	if (alloc_length == 0)
-	{
-		return 1;
-	}
 
-	void *addr = NULL;
+	/* the stub is allocated for alloc_length == 0 too: pushes onto a full pool write into it */
 	const u64 size = slot_size*((u64) alloc_length + 1);
-	if (mem)
-	{
-		addr = ArenaPushAligned(mem, size, DS_SMALL_ALLOCATION_ALIGNMENT);
-	}
-	else
-	{
-		ds_SmallAlloc(&addr, size);
-	}
+	void *addr = (mem)
+		? ArenaPushAligned(mem, size, DS_CACHE_LINE)
+		: ds_Alloc(size, DS_CACHE_LINE);
 
 	ds_Assert((u64) addr % DS_CACHE_LINE == 0);
 	if (addr == NULL)
@@ -416,10 +292,10 @@ void ds_PoolSerializeInternal(struct ss *ss, const void *buf, const u32 length, 
 	}
 }
 
-u32 ds_PoolAllocInternal(struct arena *mem, struct ds_MemSlot *mem_slot, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u32 alloc_length, const u32 alloc_growable)
+u32 ds_PoolAllocInternal(struct arena *mem, u32 *heap_allocated, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u32 alloc_length, const u32 alloc_growable)
 {
 	ds_Assert(!alloc_growable || !mem);
-	*mem_slot = (struct ds_MemSlot) { 0 };
+	*heap_allocated = 0;
 	*buf = NULL;
 	*length = 0;
 	*count = 0;
@@ -427,36 +303,30 @@ u32 ds_PoolAllocInternal(struct arena *mem, struct ds_MemSlot *mem_slot, void **
 	*next_free = POOL_INDEX_MASK;
 	*growable = alloc_growable;
 
-	u32 length_used = alloc_length;
-	u8 *addr;
-	if (mem)
-	{
-		addr = ArenaPush(mem, slot_size * ((u64) alloc_length + 1));
-	}
-	else
-	{
-		addr = ds_Alloc(mem_slot, slot_size * ((u64) alloc_length + 1), HUGE_PAGES);
-		length_used = (u32) (mem_slot->size / slot_size - 1);
-	}
-
+	const u64 size = slot_size * ((u64) alloc_length + 1);
+	u8 *addr = (mem)
+		? ArenaPush(mem, size)
+		: ds_Alloc(size, DS_CACHE_LINE);
 	if (addr == NULL)
 	{
 		return 0;
 	}
 
 	*buf = addr + slot_size;
-	*length = length_used;
-	PoisonAddress(*buf, slot_size * length_used);
+	*length = alloc_length;
+	*heap_allocated = (mem == NULL);
+	PoisonAddress(*buf, slot_size * alloc_length);
 	return 1;
 }
 
-u32 ds_PoolTryDeserializeInternal(struct arena *mem, struct ss *ss, struct ds_MemSlot *mem_slot, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u64 pool_slot_offset, const u32 alloc_growable)
+u32 ds_PoolTryDeserializeInternal(struct arena *mem, struct ss *ss, u32 *heap_allocated, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u64 pool_slot_offset, const u32 alloc_growable)
 {
 	ds_Assert(ss->bit_index % 8 == 0);
 
 	const u64 bit_index = ss->bit_index;
 	const u64 mem_left = (mem) ? mem->mem_left : 0;
-	*mem_slot = (struct ds_MemSlot) { 0 };
+	*heap_allocated = 0;
+	*buf = NULL;
 	if (ss_BytesLeft(ss) < 3*sizeof(u32))
 	{
 		goto failure;
@@ -472,13 +342,24 @@ u32 ds_PoolTryDeserializeInternal(struct arena *mem, struct ss *ss, struct ds_Me
 	if (serialized_count > serialized_count_max || serialized_count_max > serialized_length
 		|| serialized_length >= POOL_INDEX_MASK || free_count > bytes_left / sizeof(u32)
 		|| serialized_count > (bytes_left - free_count*sizeof(u32)) / slot_size
-		|| !ds_PoolAllocInternal(mem, mem_slot, buf, length, count, count_max, next_free, growable, slot_size, serialized_length, alloc_growable))
+		|| !ds_PoolAllocInternal(mem, heap_allocated, buf, length, count, count_max, next_free, growable, slot_size, serialized_length, alloc_growable))
 	{
 		goto failure;
 	}
 
-	/* indices are written into the pool buffer; an out-of-range index fails the deserialization */
+	/*
+	 * indices are written into the pool buffer, so each one must be in range and appear once (free list
+	 * and allocated slots together cover [0, count_max)): pool_slot starts as POOL_INDEX_MASK, a state no
+	 * finished slot has (allocated: 0, free: mask bit set), and a second visit fails the deserialization
+	 */
 	u8 *base = *buf;
+	for (u32 i = 0; i < serialized_count_max; ++i)
+	{
+		u32 *pool_slot = (u32 *) (base + i*slot_size + pool_slot_offset);
+		UnpoisonAddress(pool_slot, sizeof(u32));
+		*pool_slot = POOL_INDEX_MASK;
+	}
+
 	u32 *prev_link = next_free;
 	for (u64 i = 0; i < free_count; ++i)
 	{
@@ -489,14 +370,15 @@ u32 ds_PoolTryDeserializeInternal(struct arena *mem, struct ss *ss, struct ds_Me
 		}
 
 		u32 *link = (u32 *) (base + index*slot_size + pool_slot_offset);
-		UnpoisonAddress(link, sizeof(u32));
+		if (*link != POOL_INDEX_MASK)
+		{
+			goto failure;
+		}
+
+		/* end of the list until a successor is linked */
+		*link = POOL_ALLOCATION_MASK | POOL_INDEX_MASK;
 		*prev_link = (prev_link == next_free) ? index : (POOL_ALLOCATION_MASK | index);
 		prev_link = link;
-	}
-
-	if (prev_link != next_free)
-	{
-		*prev_link = POOL_ALLOCATION_MASK | POOL_INDEX_MASK;
 	}
 
 	for (u32 i = 0; i < serialized_count; ++i)
@@ -510,6 +392,11 @@ u32 ds_PoolTryDeserializeInternal(struct arena *mem, struct ss *ss, struct ds_Me
 		}
 
 		u8 *slot = base + index*slot_size;
+		if (*(u32 *) (slot + pool_slot_offset) != POOL_INDEX_MASK)
+		{
+			goto failure;
+		}
+
 		UnpoisonAddress(slot, slot_size);
 		ss_Read8N((b8 *) slot, ss, slot_size);
 		*(u32 *) (slot + pool_slot_offset) = 0;
@@ -524,10 +411,11 @@ failure:
 	{
 		ArenaPopPacked(mem, mem_left - mem->mem_left);
 	}
-	else
+	else if (*buf)
 	{
-		ds_Free(mem_slot);
+		ds_Free((u8 *) *buf - slot_size);
 	}
+	*heap_allocated = 0;
 	*buf = NULL;
 	*length = 0;
 	*count = 0;
@@ -542,12 +430,16 @@ void ArenaPushRecord(struct arena *ar)
 {
 	const u64 rec_mem_left = ar->mem_left;
 	struct arenaRecord *record = ArenaPush(ar, sizeof(struct arenaRecord));
-	if (record)
+	/* a missing record would make the matching ArenaPopRecord pop the outer record */
+	if (!record)
 	{
-		record->prev = ar->record;
-		record->rec_mem_left = rec_mem_left;
-		ar->record = record;
+		LogString(T_SYSTEM, S_FATAL, "Arena full in ArenaPushRecord, exiting.");
+		FatalCleanupAndExit();
 	}
+
+	record->prev = ar->record;
+	record->rec_mem_left = rec_mem_left;
+	ar->record = record;
 }
 
 void ArenaPopRecord(struct arena *ar)
@@ -579,32 +471,17 @@ struct arena ArenaAlloc(struct arena *mem, const u64 size)
 		.record = NULL,
 	};
 
-    if (mem)
-    {
-        ar.stack_ptr = ArenaPushAligned(mem, size, DS_CACHE_LINE);
+	ar.stack_ptr = (mem)
+		? ArenaPushAligned(mem, size, DS_CACHE_LINE)
+		: ds_Alloc(size, DS_CACHE_LINE);
+	if (ar.stack_ptr)
+	{
+		ar.mem_size = size;
+		ar.mem_left = size;
+		ar.heap_allocated = (mem == NULL);
+		PoisonAddress(ar.stack_ptr, ar.mem_left);
+	}
 
-	    if (ar.stack_ptr)
-	    {
-	    	ar.mem_size = size;
-	    	ar.mem_left = size;
-	    	PoisonAddress(ar.stack_ptr, ar.mem_left);
-	    }
-    }
-    else
-    {
-	    ar.stack_ptr = (size >= 2*1024*1024)
-	    	? ds_Alloc(&ar.slot, size, HUGE_PAGES)
-	    	: ds_Alloc(&ar.slot, size, NO_HUGE_PAGES);
-
-	    if (ar.stack_ptr)
-	    {
-	    	ar.mem_size = ar.slot.size;
-	    	ar.mem_left = ar.slot.size;
-	    	PoisonAddress(ar.stack_ptr, ar.mem_left);
-	    }
-    }
-
-	
 	return ar;
 }
 
@@ -612,7 +489,11 @@ void ArenaFree(struct arena *ar)
 {
 	ar->stack_ptr -= ar->mem_size - ar->mem_left;
 	UnpoisonAddress(ar->stack_ptr, ar->mem_size);
-	ds_Free(&ar->slot);
+	if (ar->heap_allocated)
+	{
+		ds_Free(ar->stack_ptr);
+	}
+	ar->heap_allocated = 0;
 	ar->mem_size = 0;
 	ar->mem_left = 0;
 	ar->stack_ptr = NULL;
@@ -642,10 +523,9 @@ void *ArenaPushAligned(struct arena *ar, const u64 size, const u64 alignment)
 	void* alloc_addr = NULL;
 	if (size) 
 	{ 
-		const u64 mod = ((u64) ar->stack_ptr) & (alignment - 1);
-		const u64 push_alignment = (!!mod) * (alignment - mod);
-
-		if (ar->mem_left >= size + push_alignment) 
+		/* bytes up to the next multiple of alignment */
+		const u64 push_alignment = (0 - (u64) ar->stack_ptr) & (alignment - 1);
+		if (ar->mem_left >= size + push_alignment)
 		{
 			UnpoisonAddress(ar->stack_ptr + push_alignment, size);
 			alloc_addr = ar->stack_ptr + push_alignment;
@@ -684,8 +564,8 @@ struct memArray ArenaPushAlignedAll(struct arena *ar, const u64 slot_size, const
 	ds_Assert(PowerOfTwoCheck(alignment) == 1 && slot_size > 0);
 
 	struct memArray array = { .len = 0, .addr = NULL, .memPushed = 0 };
-	const u64 mod = ((u64) ar->stack_ptr) & (alignment - 1);
-	const u64 push_alignment = (!!mod) * (alignment - mod);
+	/* bytes up to the next multiple of alignment */
+	const u64 push_alignment = (0 - (u64) ar->stack_ptr) & (alignment - 1);
 	if (push_alignment + slot_size <= ar->mem_left)
 	{
 		array.len = (ar->mem_left - push_alignment) / slot_size;
@@ -711,10 +591,11 @@ struct ring RingEmpty()
 struct ring RingAlloc(const u64 mem_hint)
 {
 	ds_Assert(mem_hint);
-	const u64 mod = mem_hint % g_mem_config->page_size;
 
 	struct ring ring = { 0 };
-	ring.mem_total = mem_hint + (!!mod) * (g_mem_config->page_size - mod),
+	/* whole pages (page_size is a power of two) */
+	const u64 page = g_mem_config->page_size;
+	ring.mem_total = (mem_hint + page - 1) & ~(page - 1);
 	ring.mem_left = ring.mem_total;
 	ring.offset = 0;
 	ring.buf = mmap(NULL, ring.mem_total << 1, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -836,12 +717,10 @@ void RingFlush(struct ring *ring)
 	ring->offset = 0;
 }
 
-struct ds_MemSlot RingPushStart(struct ring *ring, const u64 size)
+struct ringSlot RingPushStart(struct ring *ring, const u64 size)
 {
-	ds_AssertString(size <= ring->mem_left, "ring allocator OOM");
-
-	struct ds_MemSlot buf = { 0 };
-	if (size <= ring->mem_left)
+	struct ringSlot buf = { 0 };
+	if (size && size <= ring->mem_left)
 	{
 		ring->mem_left -= size;
 		buf.address = ring->buf + ((ring->offset + ring->mem_left) % ring->mem_total);
@@ -851,12 +730,10 @@ struct ds_MemSlot RingPushStart(struct ring *ring, const u64 size)
 	return buf;
 }
 
-struct ds_MemSlot RingPushEnd(struct ring *ring, const u64 size)
+struct ringSlot RingPushEnd(struct ring *ring, const u64 size)
 {
-	ds_AssertString(size <= ring->mem_left, "ring allocator OOM");
-
-	struct ds_MemSlot buf = { 0 };
-	if (size <= ring->mem_left)
+	struct ringSlot buf = { 0 };
+	if (size && size <= ring->mem_left)
 	{
 		buf.address = ring->buf + ring->offset;
 		buf.size = size;

@@ -32,7 +32,7 @@ static void ds_WSDequeStaticAssert(void)
     ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->a_mem_count == 128, "");
     ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->owner == 132, "");
     ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->to_publish == 136, "");
-    ds_StaticAssert(sizeof(struct ds_WSDeque) == 27*DS_CACHE_LINE, "Unexpected size of ds_WSDeque");
+    ds_StaticAssert(sizeof(struct ds_WSDeque) == 15*DS_CACHE_LINE, "Unexpected size of ds_WSDeque");
 }
 
 static void ds_WorkerStaticAssert(void)
@@ -89,7 +89,7 @@ void ds_WSDequeAlloc(struct ds_WSDeque *deque, const u32 owner, const u64 len)
     deque->to_publish = 0;
     deque->mem[0].len = PowerOfTwoCeil(len);
     deque->mem[0].mask = deque->mem[0].len - 1;
-    deque->mem[0].id = ds_Alloc(&deque->mem[0].mem, deque->mem[0].len*sizeof(ds_JobId), NO_HUGE_PAGES);
+    deque->mem[0].id = ds_Alloc(deque->mem[0].len*sizeof(ds_JobId), DS_CACHE_LINE);
     if (!deque->mem[0].id) 
 	{
 		LogString(T_SYSTEM, S_FATAL, "Failed to reallocate memSlot in ds_Alloc, exiting.");
@@ -110,9 +110,7 @@ static void ds_WSDequeRealloc(struct ds_WSDeque *deque)
 
     deque->mem[local_mem_count].len = 2*deque->mem[local_mem_count - 1].len;
     deque->mem[local_mem_count].mask = deque->mem[local_mem_count].len - 1;
-    deque->mem[local_mem_count].id = ds_Alloc(&deque->mem[local_mem_count].mem 
-                                              ,deque->mem[local_mem_count].len*sizeof(ds_JobId)
-                                              ,NO_HUGE_PAGES);
+    deque->mem[local_mem_count].id = ds_Alloc(deque->mem[local_mem_count].len*sizeof(ds_JobId), DS_CACHE_LINE);
     if (!deque->mem[local_mem_count].id)
     {
 		LogString(T_SYSTEM, S_FATAL, "Failed to reallocate memSlot in ds_Realloc, exiting.");
@@ -142,7 +140,7 @@ void ds_WSDequeDealloc(struct ds_WSDeque *deque)
 
     for (u32 i = 0; i < local_mem_count; ++i)
     {
-        ds_Free(&deque->mem[i].mem);
+        ds_Free(deque->mem[i].id);
     }
 }
 

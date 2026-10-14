@@ -114,7 +114,7 @@ stream right after the allocator: func(mem, ss, outputs, inputs).
 Memory and Lifetime Handling (ds_allocator.h)
 =============================================
 
-1. General-purpose allocation (ds_Alloc, ds_SmallAlloc) is only allowed in rules 2
+1. General-purpose allocation (ds_Alloc, ds_Realloc) is only allowed in rules 2
 and 4. Reason: avoid complicated lifetimes as far as possible.
 
 2. Persistent data (program or subsystem lifetime) goes on a persistent arena if
@@ -125,10 +125,11 @@ fixed-size, or in a ds_Alloc'd block if it grows.
      indices; use them as handles, never addresses (addresses move when a
      growable pool grows). Use when others hold references.
    - ds_CPool(T), ds_CPoolPush/Pop/...: compact, removal moves the last
-     element into the hole. Use when nothing refers to elements by index.
+     element into the hole. Use for dense data iterated as an array;
+     whoever holds the moved element's index updates it.
 
 4. Unknown-lifetime data that fits no pool (unusual form, lifetime of a large
-and unknown number of frames) uses ds_Alloc/ds_SmallAlloc. Example: sleeping
+and unknown number of frames) uses ds_Alloc/ds_Realloc. Example: sleeping
 island data in the physics engine; arrays of varying lengths and types that
 live while the island sleeps.
 

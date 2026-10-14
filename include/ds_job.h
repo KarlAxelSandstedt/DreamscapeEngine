@@ -73,7 +73,6 @@ struct ds_WSDequeMem
     ds_JobId *          id; 
     u64                 len;
     u64                 mask;
-    struct ds_MemSlot   mem;
 };
 
 struct ds_WSDeque

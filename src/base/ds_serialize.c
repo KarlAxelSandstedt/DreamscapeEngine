@@ -140,24 +140,14 @@ struct ss ss_Alloc(struct arena *mem, const u64 bufsize)
 {
 	struct ss ss = { 0 };
 
-	u64 actual_bufsize;
-	if (mem)
-	{
-		actual_bufsize = bufsize;
-		ss.buf = ArenaPush(mem, actual_bufsize);
-	}
-	else
-	{
-		actual_bufsize = ds_AllocSizeCeil(bufsize);
-		ss.buf = (actual_bufsize >= 1024*1024) 
-			? ds_Alloc(&ss.mem_slot, actual_bufsize, HUGE_PAGES)
-			: ds_Alloc(&ss.mem_slot, actual_bufsize, NO_HUGE_PAGES);
-	}
-
+	ss.buf = (mem)
+		? ArenaPush(mem, bufsize)
+		: ds_Alloc(bufsize, DS_CACHE_LINE);
 	if (ss.buf)
 	{
-		ss.bit_count = actual_bufsize * 8;
-		ss.bit_index = 0;	
+		ss.bit_count = bufsize * 8;
+		ss.bit_index = 0;
+		ss.heap_allocated = (mem == NULL);
 	}
 
 	return ss;
@@ -165,9 +155,10 @@ struct ss ss_Alloc(struct arena *mem, const u64 bufsize)
 
 void ss_Free(struct ss *ss)
 {
-	if (ss->mem_slot.address)
+	if (ss->heap_allocated)
 	{
-		ds_Free(&ss->mem_slot);
+		ds_Free(ss->buf);
+		ss->heap_allocated = 0;
 	}
 }
 

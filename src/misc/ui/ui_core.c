@@ -124,10 +124,7 @@ struct ui *ui_Alloc(void)
 {
 	ds_StaticAssert(sizeof(struct ui_Size) == 16, "Expected size");
 
-	struct ds_MemSlot mem_slot;
-	struct ui *ui = ds_Alloc(&mem_slot, sizeof(struct ui), NO_HUGE_PAGES);
-	ui->mem_slot = mem_slot;
-	
+	struct ui *ui = ds_Alloc(sizeof(struct ui), DS_CACHE_LINE);
 	memset(ui, 0, sizeof(struct ui));
 	ui->node_hierarchy = ui_NodeHIAlloc(NULL, INITIAL_UNIT_COUNT, GROWABLE);
 	ui->node_map = ds_HashMapAlloc(NULL, U16_MAX, U16_MAX, GROWABLE);
@@ -267,7 +264,7 @@ void ui_Dealloc(struct ui *ui)
 	ds_CPoolDealloc(ui->bucket_pool);
 	ds_HashMapDealloc(&ui->bucket_map);
 	ui_NodeHIDealloc(&ui->node_hierarchy);
-	ds_Free(&ui->mem_slot);
+	ds_Free(ui);
 	if (g_ui == ui)
 	{
 		g_ui = NULL;

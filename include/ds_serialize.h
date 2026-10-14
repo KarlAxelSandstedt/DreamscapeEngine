@@ -120,7 +120,7 @@ extern "C" {
  */
 struct ss
 {
-	struct ds_MemSlot   mem_slot;
+	u32                 heap_allocated;	/* buf is a ds_Alloc block (ss_Alloc without arena) */
 	u64 		        bit_index;	
 	u64 		        bit_count;
 	u8 *		        buf;

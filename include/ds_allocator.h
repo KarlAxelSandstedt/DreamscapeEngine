@@ -17,6 +17,24 @@
 ==========================================================================
 */
 
+/*
+ds_allocator.h
+==============
+Memory allocation for the engine: heap blocks, arenas, a mirrored ring buffer, and three pools for
+objects of one type. Which allocator for which lifetime: AGENTS.md, "Memory and Lifetime Handling".
+
+Contents (in this order):
+    Poisoning   PoisonAddress/UnpoisonAddress: ASan markers (DS_ASAN), no-ops otherwise.
+    Utilities   PowerOfTwoCheck/PowerOfTwoCeil; g_mem_config (page size).
+    Heap        ds_Alloc/ds_Realloc/ds_Free: aligned blocks of exactly the requested size.
+    Arena       stack allocator (push, pop, records) on a heap block or inside another arena.
+    Ring        ring buffer whose end wraps through mirrored virtual memory (Linux, Windows).
+    CPool       ds_CPool(T): compact typed array; removal moves the last element into the hole.
+    Pool        POOL_NODE structs: stable indices, free list, serializable.
+    TPool       TPOOL_NODE structs: thread-safe pool whose addresses never move.
+    TStack      Treiber stack, the TPool's per-thread free lists.
+*/
+
 #ifndef __DS_ALLOCATOR_H__
 #define __DS_ALLOCATOR_H__
 
@@ -58,18 +76,6 @@ Memory utility tools.
 u32 PowerOfTwoCheck(const u64 n);
 /* Return smallest value 2^k >= n where k >= 0 */
 u64	PowerOfTwoCeil(const u64 n);
-/* Return smallest possible allocation size for ds_Alloc that size fits in */
-u64	ds_AllocSizeCeil(const u64 size);
-
-/*
-memSlot: ds_Alloc return value containing the required information for any sequent ds_Realloc or ds_Free call.
- */
-struct ds_MemSlot
-{
-	void *  address;	/* base memory address */
-	u64	    size;		/* memory size (>= requested size)  */
-	u32	    huge_pages;	/* huge memory pages were requested (Up to the kernel to decide) */
-};
 
 /*
 memConfig 
@@ -80,7 +86,6 @@ Global memory configuration structure.
 struct memConfig
 {
 	u64				page_size;
-	u64				alloc_size_min;
 };
 extern struct memConfig *g_mem_config;
 
@@ -91,83 +96,45 @@ void ds_MemApiShutdown(void);
 
 
 /*
-Heap allocator
-==============
-Heap allocation methods. Do not use free on any memory from ds_Alloc; instead, use ds_Free, which properly 
-handles memSlot allocations. Note that, unlike Linux, Windows does not support overcommiting, so the total
-sum of virtual memory used in the system must be <= Memory Cap (Physical + ...).  Furthermore, Wasm does 
-not support virtual memory in any form (?), so it is even more constrained.  If needed, we can get around 
-this on Windows when using arenas by commiting pages manually in VirtualAlloc as they are needed.
-
-The API allows for HUGE_PAGE requests; this should be view as advising the platform of our memory usage, 
-not as a requirement the platform must adhere to. 
-*/
-
-#define DS_SMALL_ALLOCATION_LIMIT       (1024*1024 - 1)
-#define DS_SMALL_ALLOCATION_ALIGNMENT   (DS_CACHE_LINE)
-
-#if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
-    #include <stdlib.h>
-    #define ds_SmallAlloc(address_ptr, size)  posix_memalign(address_ptr, DS_SMALL_ALLOCATION_ALIGNMENT, size)
-    #define ds_SmallFree(address)             free(address)
-#elif __DS_PLATFORM__ == __DS_WIN64__
-    #include <malloc.h>
-    #define ds_SmallAlloc(address_ptr, size)  (*(address_ptr) = _aligned_malloc(size, DS_SMALL_ALLOCATION_ALIGNMENT))
-    #define ds_SmallFree(address)             _aligned_free(address)
-#endif
-
-/* Grow the ds_SmallAlloc allocated address */
-void    ds_SmallRealloc(void **addr, const u64 old_size, const u64 new_size);
-
-
-#define HUGE_PAGES	1
-#define NO_HUGE_PAGES	0
-
-/* 
- * Return a (at least) page size aligned allocation with at least size bytes. If huge_pages is true, the 
- * kernel is advised to use huge pages in the allocation. On success, the function sets the input memSlot
- * and returns a non-NULL valid memory address. On failure, the function returns NULL, and sets
- * slot->address = NULL and slot->size = 0; size == 0 gives an empty slot that keeps huge_pages for ds_Realloc.
- */
-void *	ds_Alloc(struct ds_MemSlot *slot, const u64 size, const u32 huge_pages);
-/* 
- * Reallocates the ds_Alloc memSlot, advising the kernel to use the same page policy for the new allocation. 
- * An empty slot is allocated with ds_Alloc. On failure, the application fatally cleans up and exit. 
- */
-void *	ds_Realloc(struct ds_MemSlot *slot, const u64 size);
-/*
- * Free a ds_Alloc memSlot; no-op on an empty slot. 
- */
-void	ds_Free(struct ds_MemSlot *slot);
-
-
-/*
-Arena allocator
-===============
-Arena: contiguous memory allocator used for stack-like memory management. 
+Heap API
+--------
+General purpose heap allocator.
 */
 
 /*
- * memArray: ArenaPushAlignedAll return value. To pop all memory acquired in the allocation, call
- *	
- *	ArenaPopPacked(arena, ret.memPushed).
- *
- * If you wish to keep N elements in the array, then call
- *
- *	ArenaPopPacked(arena, sizeof(element_type) * (ret.len - N)).
- */
+Return size bytes aligned to alignment (a power of two), or NULL on failure or size == 0. The contents are
+uninitialized.
+*/
+void *	ds_Alloc(const u64 size, const u64 alignment);
+/*
+Resize addr, a block of old_size bytes allocated with this alignment (NULL: allocate), to new_size bytes,
+keeping the first min(old_size, new_size) bytes; the block may move and added bytes are uninitialized.
+new_size == 0 frees addr and returns NULL. If growing fails, FatalCleanupAndExit; if shrinking fails,
+addr is returned unchanged.
+*/
+void *	ds_Realloc(void *addr, const u64 old_size, const u64 new_size, const u64 alignment);
+/* Free a ds_Alloc/ds_Realloc block (never with free); no-op on NULL. */
+void	ds_Free(void *addr);
+
+
+/*
+Arena API
+---------
+Stack allocator: pushes move a pointer forward, pops release the most recent pushes (LIFO).
+*/
+
+/*
+ArenaPushAlignedAll result. Pop all of it with ArenaPopPacked(ar, array.memPushed); to keep the first N
+slots, pop slot_size * (array.len - N).
+*/
 struct memArray
 {
-	void *	addr;
-	u64	len;		/* */
-	u64	memPushed;	/* NOTE: recorded pushed number of bytes to be used in ArenaPopPacked(*) */
+	void *	addr;		/* NULL if not even one slot fit */
+	u64	len;		/* slots pushed */
+	u64	memPushed;	/* bytes pushed, alignment padding included */
 };
 
-/* 
- * arenaRecord is an internal structu used to record an arena's state. The pushed records create a linked 
- * list in the arena, and by popping a record, the arena pops any allocations made after the most recently 
- * pushed record. 
- */
+/* Internal: a record lives in its arena; records form a list from the latest to the oldest. */
 struct arenaRecord
 {
 	struct arenaRecord *	prev;
@@ -176,40 +143,46 @@ struct arenaRecord
 
 struct arena 
 {
-	u8 * 			stack_ptr;
+	u8 * 			stack_ptr;	/* next free byte */
 	u64 			mem_size;
 	u64 			mem_left;
-	struct arenaRecord *	record;		/* NULL == no record */
-	struct ds_MemSlot		slot;
+	struct arenaRecord *	record;		/* latest record, NULL == no record */
+	u32			heap_allocated;	/* memory from ds_Alloc (else from a parent arena) */
 };
 
-/* Record arena memory position */
-void		ArenaPushRecord(struct arena *ar);
-/* Return to last recorded memory position, given that recorded mem_left >= current mem_left. */
-void		ArenaPopRecord(struct arena *ar);
-/* Remove last recorded memory position, if any. */
-void 		ArenaRemoveRecord(struct arena *ar);
-
-/* If allocation failed, return arena = { 0 } */
+/*
+Return an arena of size bytes, cache-line aligned: a ds_Alloc block if mem == NULL, else pushed onto mem
+(it is released when mem pops it, not by ArenaFree). On failure, the arena is { 0 }.
+*/
 struct arena ArenaAlloc(struct arena *mem, const u64 size);
-/* free heap memory and set *ar = empty_arena */
+/* Free a heap arena's block (no-op for an arena inside another) and leave the arena empty, size 0. */
 void		ArenaFree(struct arena *ar);
-/* flush contents, reset stack to start of stack */
+/* Pop everything and drop all records. */
 void		ArenaFlush(struct arena* ar);	
 
-/* pop arena memory */
+/* Record the current position. Fatal (FatalCleanupAndExit) if the arena has no room for the record. */
+void		ArenaPushRecord(struct arena *ar);
+/* Pop back to the latest record and remove it; no-op without records. */
+void		ArenaPopRecord(struct arena *ar);
+/* Remove the latest record without popping (the memory pushed since stays); no-op without records. */
+void 		ArenaRemoveRecord(struct arena *ar);
+
+/* Release the last mem_to_pop bytes pushed (alignment padding included); at most the bytes in use. */
 void 		ArenaPopPacked(struct arena *ar, const u64 mem_to_pop);
 
-/* Return address to aligned data of given size on success, otherwise return NULL. */
+/*
+Return size bytes aligned to alignment (a power of two), or NULL (arena unchanged) if size == 0 or they
+don't fit.
+*/
 void *		ArenaPushAligned(struct arena *ar, const u64 size, const u64 alignment);
-/* Return address to zeroed-out aligned data of given size on success, otherwise return NULL. */
+/* ArenaPushAligned, with the bytes set to 0. */
 void *		ArenaPushAlignedZero(struct arena *ar, const u64 size, const u64 alignment);
-/* Return address to aligned data of given size and copy [size] bytes of copy's content into it on success, 
- * otherwise return NULL. */
+/* ArenaPushAligned, with size bytes copied from copy. */
 void *		ArenaPushAlignedMemcpy(struct arena *ar, const void *copy, const u64 size, const u64 alignment);
-/* ArenaPush_alignement but we push the whole arena given a slot size, and return the number of slots aquired.  */
+/* Push every whole slot_size slot that fits after the alignment padding (see struct memArray). */
 struct memArray	ArenaPushAlignedAll(struct arena *ar, const u64 slot_size, const u64 alignment);
 
+/* Packed: no alignment. Default: DEFAULT_MEMORY_ALIGNMENT (8) bytes. */
 #define		ArenaPushPacked(ar, size)		ArenaPushAligned(ar, size, 1)
 #define		ArenaPushPackedZero(ar, size)		ArenaPushAlignedZero(ar, size, 1)
 #define		ArenaPushPackedMemcpy(ar, copy, size)	ArenaPushAlignedMemcpy(ar, copy, size, 1)
@@ -219,59 +192,124 @@ struct memArray	ArenaPushAlignedAll(struct arena *ar, const u64 slot_size, const
 #define		ArenaPushMemcpy(ar, copy, size)		ArenaPushAlignedMemcpy(ar, copy, size, DEFAULT_MEMORY_ALIGNMENT)
 
 /*
-Ring Allocator
-==============
-Ring allocator based on virtual memory wrapping.
+Ring API
+--------
+Ring buffer mapped twice back to back in virtual memory, so an allocation that runs past the end continues
+at the start and is still contiguous. Linux and Windows only (no web implementation).
 */
 
+/*
+The bytes in use are the mem_total - mem_left bytes ending at offset (wrapping), from the start (oldest)
+to the end (newest).
+*/
 struct ring
 {
 	u64 mem_total;
 	u64 mem_left;
-	u64 offset;	/* offset to write from base pointer buf */
-	u8 *buf;	
+	u64 offset;	/* end of the bytes in use: where RingPushEnd writes */
+	u8 *buf;	/* buf[0, 2*mem_total): the second half mirrors the first */
 };
 
-/* return an empty ring */
+/* RingPushStart/RingPushEnd result: { NULL, 0 } on failure */
+struct ringSlot
+{
+	u8 *	address;
+	u64	size;
+};
+
+/* Return the empty ring (no memory). */
 struct ring 	    RingEmpty(void);	
-/* 
- * Allocated virtual memory wrapped ring buffer using mem_hint as a minimum memsize.
- * The final size depends on the page size of the underlying system. Returns the
- * allocated ring allocator on SUCCESS, or an empty allocator on FAILURE.
- */
+/*
+Return a ring of at least mem_hint bytes (Linux: rounded up to whole pages; Windows: to a power of two of
+at least the allocation granularity, 64 KiB), or the empty ring on failure.
+*/
 struct ring 	    RingAlloc(const u64 mem_hint);	
-/* free ring allocator resources */
+/* Unmap the ring and leave it empty. */
 void 		        RingDealloc(struct ring *ring);			
-/* flush ring memory and set offset to 0 */
+/* Release all bytes and restart at offset 0. */
 void		        RingFlush(struct ring *ring);
-/* return allocaction[size], and do not advance the ring write offset on success; empty buffer on FAILURE. */
-struct ds_MemSlot 	RingPushStart(struct ring *ring, const u64 size);
-/* return allocaction[size], and advance the ring write offset on success; empty buffer on FAILURE. */
-struct ds_MemSlot 	RingPushEnd(struct ring *ring, const u64 size);
-/* release bytes in ring in fifo order. */
+/* Push size bytes before the start (the end and offset stay); { NULL, 0 } if size == 0 or they don't fit. */
+struct ringSlot 	RingPushStart(struct ring *ring, const u64 size);
+/* Push size bytes at the end, advancing offset; { NULL, 0 } if size == 0 or they don't fit. */
+struct ringSlot 	RingPushEnd(struct ring *ring, const u64 size);
+/* Release the size oldest bytes (FIFO with RingPushEnd). */
 void 		        RingPopStart(struct ring *ring, const u64 size); 
-/* release bytes in ring in lifo order. */
+/* Release the size newest bytes, moving offset back (LIFO with RingPushEnd). */
 void 		        RingPopEnd(struct ring *ring, const u64 size); 
 
 /*
-Compact Pool Allocator
-======================
-Pool allocator that handles allocation and deallocation of a specific type. The allocations are kept compact; all
-allocations are push onto the end of the occupied memory, and the removal any element not at the end results in 
-the end element (if any) overwriting the removed slot.
+CPool API
+---------
+Compact pool of one type T: count elements packed in buf[0, count), length slots, so the data stays
+dense and iterates as a plain array. Pushes append; removing any element but the last moves the last one
+into its hole, so holders of the moved element's index must be updated. A CPool lives in an arena (fixed
+length) or on the heap (fixed, or growable: the length doubles when a push finds the pool full, and buf
+moves).
+
+::: Usage and Documentation :::
+
+ds_CPool(T) is the pool type. Defined here for voidptr, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64,
+v2, v3, v4 (DEFINE_CPOOL_NATIVE(T), T a type name) and intv (DEFINE_CPOOL_STRUCT(T), for struct T).
+
+    ds_CPool(u32) pool;
+    ds_CPoolAlloc(NULL, pool, 64, GROWABLE);
+    ds_CPoolPushValue(pool, 7);
+    for (u32 i = 0; i < pool.count; ++i) { ... pool.buf[i] ... }
+    ds_CPoolRemoveAndSwap(pool, 0);
+    ds_CPoolDealloc(pool);
+
+The macros (pool is a ds_CPool(T) lvalue; arguments may be evaluated more than once):
+
+    // Allocate length slots in mem (fixed) or on the heap (mem == NULL; growable allowed). On failure the
+    // pool is empty (buf NULL, length 0). Length 0 is valid: a push then reports full (or grows).
+    ds_CPoolAlloc(mem, pool, length, growable)
+
+    // Free a heap pool's memory (arena memory stays with the arena); the pool becomes empty.
+    ds_CPoolDealloc(pool)
+
+    // Remove all elements.
+    ds_CPoolFlush(pool)
+
+    // Append an uninitialized slot and return { address, index }; full and not growable:
+    // { stub address, U32_MAX }.
+    struct slot     ds_CPoolPush(pool)
+
+    // ds_CPoolPush, then copy sizeof(T) bytes from src into the slot (into the stub when full).
+    struct slot     ds_CPoolPushMemcpy(pool, src)
+
+    // ds_CPoolPush, then assign val to the slot (to the stub when full).
+    void            ds_CPoolPushValue(pool, val)
+
+    // Remove the last element, or the last pop_count elements (pop_count <= count).
+    void            ds_CPoolPop(pool)
+    void            ds_CPoolPopBatch(pool, pop_count)
+
+    // Remove buf[index] (index < count): the last element moves into its slot.
+    ds_CPoolRemoveAndSwap(pool, index)
+
+    // The last element, or its address; on an empty pool, the stub.
+    T               ds_CPoolTop(pool)
+    T *             ds_CPoolTopAddress(pool)
+
+    // Upper bound of the arena bytes ds_CPoolAlloc(mem, pool, length, ...) pushes for slot_size-byte slots.
+    u64             ds_CPoolAllocMemoryRequirement(length, slot_size)
+
+    // Bytes ds_CPoolSerialize writes.
+    u64             ds_CPoolSerializeSize(pool)
+
+    // Write the pool to ss (at a byte boundary; it must fit: ds_CPoolSerializeSize).
+    void            ds_CPoolSerialize(ss, pool)
+
+    // Read a pool from ss into mem (fixed) or the heap (mem == NULL; growable allowed). Returns 1 on
+    // success; 0 if mem is full or ss holds no valid CPool (the pool is empty, ss's position unchanged).
+    u32             ds_CPoolTryDeserialize(mem, ss, pool, growable)
 
 ::: Internals :::
 
-The memory layout is as follows
-
-    pool.length = N
-    pool.count = 0
-
-    Allocated Memory:
-    pool.buf[-1 == STUB]    <- stub address just before usable buffer
-    pool.buf[0...(N-1)]
-
-Note that the allocated memory is of length+1; the stub is rather opaque. 
+buf[-1] is a stub slot, allocated even for length 0, so a full pool always has an address to hand out:
+pushes onto a full fixed pool write into it, harmlessly. Index -1 (DS_STUB_INDEX) is therefore
+addressable: intrusive lists over pools (ds_list.h) use it as their sentinel. The allocation (stub
+included) is cache-line aligned. Serialized format (LE): u32 length, u32 count, then the count elements as raw bytes.
 */
 
 #define DS_STUB_INDEX               -1
@@ -286,7 +324,6 @@ typedef struct ds_CPool(T)		    \
 	u32		            growable;	\
 	u32		            heap_allocated;	\
 	T *                 buf;	    \
-	struct ds_MemSlot	mem_slot;	\
 } ds_CPool(T)
 typedef void * voidptr;
 DEFINE_CPOOL_NATIVE(voidptr);
@@ -315,14 +352,12 @@ typedef struct ds_CPool(T)		    \
 } ds_CPool(T)
 DEFINE_CPOOL_STRUCT(intv);
 
-/* Arena allocation memory requirement upper bound */
 #define ds_CPoolAllocMemoryRequirement(__length, __slot_size)                           \
-    (DS_SMALL_ALLOCATION_ALIGNMENT + ((__length)+1)*(__slot_size))
+    (DS_CACHE_LINE + ((__length)+1)*(__slot_size))
 
 /* Internal: ds_CPoolAlloc as a function. Returns 1 on success and 0 on failure. */
 u32 ds_CPoolAllocInternal(struct arena *mem, void **buf, u32 *length, u32 *count, u32 *growable, u32 *heap_allocated, const u64 slot_size, const u32 alloc_length, const u32 alloc_growable);
 
-/* Allocate and setup the CPool.  */
 #define ds_CPoolAlloc(mem, pool, __length, __growable)                                  \
 do                                                                                      \
 {                                                                                       \
@@ -332,20 +367,18 @@ do                                                                              
                           (__length), (__growable));                                    \
 } while (0)
 
-/* Deallocate (if any) CPool resources */
 #define ds_CPoolDealloc(pool)                                                           \
 do                                                                                      \
 {                                                                                       \
     if ((pool).buf && (pool).heap_allocated)                                            \
     {                                                                                   \
-        ds_SmallFree((pool).buf-1);                                                     \
+        ds_Free((pool).buf-1);                                                          \
     }                                                                                   \
     (pool).buf = NULL;                                                                  \
     (pool).length = 0;                                                                  \
     (pool).count = 0;                                                                   \
 } while (0)
 
-/* Flush all CPool allocations */
 #define ds_CPoolFlush( pool )                                                           \
 do                                                                                      \
 {                                                                                       \
@@ -366,10 +399,10 @@ static inline struct slot ds_CPoolPushInternal(void **buf, u32 *count, u32 *leng
                              ? (*length) << 1
                              : 1;
         const u64 new_size = (new_length+1) * slot_size;
-        /* an empty pool (length 0) has no buffer yet */
+        /* a deallocated pool has no buffer */
         const u64 old_size = (*buf) ? ((*length)+1) * slot_size : 0;
         void *base = (*buf) ? (u8 *)(*buf) - slot_size : NULL;
-        ds_SmallRealloc(&base, old_size, new_size);    
+        base = ds_Realloc(base, old_size, new_size, DS_CACHE_LINE);
         PoisonAddress(base, new_size);                                
         UnpoisonAddress(base, (*count + 1)*slot_size);                
         *buf = (u8 *) base + slot_size;
@@ -390,21 +423,8 @@ static inline struct slot ds_CPoolPushMemcpyInternal(void **buf, u32 *count, u32
     return slot;
 }
 
-/* 
- * return allocated slot at the end of the occupied memory in the buffer, or { STUB_ADDRESS, U32_MAX } 
- * if the CPool is full and not growable.
- */
 #define ds_CPoolPush( pool ) ds_CPoolPushInternal((void **) &(pool).buf, &(pool).count, &(pool).length, &(pool).heap_allocated, sizeof((pool).buf[0]), (pool).growable)
-
-/* 
- * return allocated slot at the end of the occupied memory in the buffer, or { STUB_ADDRESS, U32_MAX } 
- * if the CPool is full and not growable. The returned address will always be memcpy'd to.
- */
 #define ds_CPoolPushMemcpy( pool, src ) ds_CPoolPushMemcpyInternal((void **) &(pool).buf, &(pool).count, &(pool).length, &(pool).heap_allocated, sizeof((pool).buf[0]), (pool).growable, (src))
-
-/* 
- * Allocate a new slot at the end of the occupied memory in the buffer; on success, set the slot's value.
- */
 #define ds_CPoolPushValue( pool, val )                                                      \
 do                                                                                          \
 {                                                                                           \
@@ -421,30 +441,26 @@ do                                                                              
 #define ds_CPoolPopBatch( pool, pop_count )                                                 \
 do									                                                        \
 {									                                                        \
-	ds_Assert(pop_count <= (pool).count);						                            \
-	PoisonAddress((pool).buf + (pool).count - pop_count, pop_count*sizeof((pool).buf[0]));	\
-	(pool).count -= pop_count;						                                        \
+	ds_Assert((pop_count) <= (pool).count);						                            \
+	PoisonAddress((pool).buf + (pool).count - (pop_count), (pop_count)*sizeof((pool).buf[0]));	\
+	(pool).count -= (pop_count);						                                        \
 } while (0)
 
 #define ds_CPoolPop( pool ) ds_CPoolPopBatch(pool, 1)                                      
 
-/* Overwrite buf[index] with buf[end] and decrement count */
 #define ds_CPoolRemoveAndSwap( pool, index )                                            \
 do                                                                                      \
 {                                                                                       \
-	ds_Assert((pool).count && index < (pool).count);						            \
+	ds_Assert((pool).count && (index) < (pool).count);						            \
 	(pool).count -= 1;						                                            \
-    if (index != (pool).count)                                                          \
+    if ((index) != (pool).count)                                                        \
     {                                                                                   \
         memcpy((pool).buf + (index), (pool).buf + (pool).count, sizeof((pool).buf[0])); \
     }                                                                                   \
 	PoisonAddress((pool).buf + (pool).count, sizeof((pool).buf[0]));	                \
 } while (0)
 
-/* Return top value, or stub in count == 0 */
 #define ds_CPoolTop( pool ) ((pool).buf[(i32) (pool).count - 1])
-
-/* Return top address, or stub addres in count == 0 */
 #define ds_CPoolTopAddress( pool ) ((pool).buf + (i32) (pool).count - 1)
 
 struct ss;
@@ -453,17 +469,8 @@ void ds_CPoolSerializeInternal(struct ss *ss, const void *buf, const u32 length,
 /* Internal: see ds_CPoolTryDeserialize. */
 u32  ds_CPoolTryDeserializeInternal(struct arena *mem, struct ss *ss, void **buf, u32 *length, u32 *count, u32 *growable, u32 *heap_allocated, const u64 slot_size, const u32 alloc_growable);
 
-/* Return the required size when serializing the CPool. */
 #define ds_CPoolSerializeSize( pool ) (2*sizeof(u32) + (u64) (pool).count*sizeof((pool).buf[0]))
-
-/* Serialize the CPool. WARNING: Assumes pool fits in the stream. */
 #define ds_CPoolSerialize( ss, pool ) ds_CPoolSerializeInternal((ss), (pool).buf, (pool).length, (pool).count, sizeof((pool).buf[0]))
-
-/* 
- * Returns 1 on success and 0 on failure. On failure, the pool is set to empty. 
- * Failure may occur due to out-of-memory in mem, or the stream doesn't contain
- * a CPool.
- */
 #define ds_CPoolTryDeserialize( mem, ss, pool, __growable )                                     \
     ds_CPoolTryDeserializeInternal((mem), (ss), (void **) &(pool).buf, &(pool).length,          \
                                    &(pool).count, &(pool).growable, &(pool).heap_allocated,     \
@@ -471,75 +478,77 @@ u32  ds_CPoolTryDeserializeInternal(struct arena *mem, struct ss *ss, void **buf
 
 
 /*
-Pool Allocator
-==============
-Intrusive pool allocator that handles allocation and deallocation of a specific struct. In order to use the
-pool allocator for a specific struct, the struct should contain the POOL_NODE macro; it defines
-internal slot state for the struct. The pool allocator can allocate at most 2^31 slots.
-
-Index -1 is reserved for the opaque stub; Its data should be viewed as garbage, and the stub
-is only there to allow building simpler access algorithms on top of the pool.
+Pool API
+--------
+Intrusive pool of struct Type: a slot keeps its index for its whole lifetime, so indices are the handles
+others hold. Adds reuse removed slots, so live slots are scattered over buf[0, count_max). A pool lives in
+an arena (fixed length) or on the heap (fixed, or growable: the length roughly doubles when an add finds
+the pool full, and buf moves, so hold indices, never addresses). At most 2^31 - 2 slots: growing past
+that is fatal.
 
 ::: Usage and Documentation :::
 
-To declare/define the allocator for a specific struct, say ds_Struct, add the 
-following in the definition of ds_Struct
+struct Type contains POOL_NODE (its pool_slot field belongs to the pool). POOL_DECLARE(Type) declares
+struct TypePool and the functions below (in a header), POOL_DEFINE(Type) defines them (in one source
+file).
 
-    struct ds_Struct
-    {
-        ...
-        POOL_NODE;
-        ...
-    };
+    struct node { POOL_NODE; ... };
+    POOL_DECLARE(node);
+    POOL_DEFINE(node)
 
-and write
+    struct nodePool pool = nodePoolAlloc(NULL, 128, GROWABLE);
+    const struct slot slot = nodePoolAdd(&pool);              (slot.index is the handle)
+    for (u32 i = 0; i < pool.count_max; ++i)
+        if (ds_PoolSlotAllocated(pool.buf + i)) { ... }       (iterate the live slots)
+    nodePoolRemove(&pool, slot.index);
+    nodePoolDealloc(&pool);
 
-    POOL_DECLARE(ds_Struct)
-    POOL_DEFINE(ds_Struct)
+The functions:
 
-at the appropriate places. POOL_DECLARE defines the ds_StructPool struct and
-the ds_StructPool*** functions, and POOL_DEFINE generates the implementations
-of each function. The functions generated are the following:
+    // Allocate length slots in mem (fixed) or on the heap (mem == NULL; growable allowed). On failure the
+    // pool is empty (buf NULL, length 0).
+    struct TypePool TypePoolAlloc(struct arena *mem, const u32 length, const u32 growable)
 
-    // Allocation of pool (in mem if provided). On error, an empty pool (length == 0), is returned.
-    ds_StructPool   ds_StructPoolAlloc(mem, length, growable)	
+    // Free a heap pool's memory (arena memory stays with the arena); the pool becomes empty.
+    void            TypePoolDealloc(struct TypePool *pool)
 
-    // Deallocate pool.
-    void		    ds_StructPoolDealloc(struct ds_StructPool *pool)
+    // Remove all slots; the next adds return indices 0, 1, 2, ...
+    void            TypePoolFlush(struct TypePool *pool)
 
-    // Deallocate all allocations inside pool.
-    void		    ds_StructPoolFlush(struct ds_StructPool *pool)
+    // Allocate a slot and return { address, index }: the most recently removed slot, else the next unused
+    // one. Its contents are uninitialized (pool_slot aside). Full and not growable: { NULL, POOL_NULL }.
+    struct slot     TypePoolAdd(struct TypePool *pool)
 
-    // alloc new slot; on error return (NULL, U32_MAX)
-    struct slot	    ds_StructPoolAdd(struct ds_StructPool *pool)
+    // Remove an allocated slot, by index or by address.
+    void            TypePoolRemove(struct TypePool *pool, const u32 index)
+    void            TypePoolRemoveAddress(struct TypePool *pool, const struct Type *addr)
 
-    // remove slot given index
-    void		    ds_StructPoolRemove(struct ds_StructPool *pool, const u32 index)
+    // Return the index of a slot's address.
+    u32             TypePoolIndex(const struct TypePool *pool, const struct Type *addr)
 
-    // remove slot given address
-    void		    ds_StructPoolRemoveAddress(struct ds_StructPool *pool, const struct ds_Struct *addr)
+    // 1 if the slot at ptr (in buf[0, count_max)) is allocated (a macro).
+    u32             ds_PoolSlotAllocated(const struct Type *ptr)
 
-    // return index of address 
-    u32		        ds_StructPoolIndex(const struct ds_StructPool *pool, const struct ds_Struct *addr)
+    // Bytes TypePoolSerialize writes.
+    u64             TypePoolSerializeSize(const struct TypePool *pool)
 
-    // Return the required size when serializing the pool.
-    u64             ds_StructPoolSerializeSize(const struct ds_StructPool *pool)
+    // Write the pool to ss (at a byte boundary; it must fit: TypePoolSerializeSize).
+    void            TypePoolSerialize(struct ss *ss, const struct TypePool *pool)
 
-    // Serialize the pool. WARNING: Assumes pool fits in the stream.
-    void            ds_StructPoolSerialize(struct ss *ss, const struct ds_StructPool *pool)
+    // Read a pool from ss into mem (fixed) or the heap (mem == NULL; growable allowed), with slot positions
+    // and free-list order as written (later adds return the same indices). Returns 1 on success; 0 if mem
+    // is full or ss holds no valid pool: inconsistent counts, an index out of range or repeated (the pool
+    // is empty, ss's position unchanged).
+    u32             TypePoolTryDeserialize(struct arena *mem, struct ss *ss, struct TypePool *pool, const u32 growable)
 
-    // Deserialize into *pool (in mem if provided). Returns 1 on success and 0 on failure.
-    u32             ds_StructPoolTryDeserialize(struct arena *mem, struct ss *ss, struct ds_StructPool *pool, const u32 growable)
+::: Internals :::
 
-::: Internal ::: 
-
-Each struct contains a slot state variable (u32). For allocated slots the state is <= 0x7fffffff.
-For unallocated slots, the most signficicant bit is set and the 31 lower bits represents an index to the 
-next free slot in the chain. The end of the free chain is represented by POOL_NULL.
-
-Serialized format (LE): u32 length, count, count_max; the count_max - count free slot indices in
-free-list order; the count allocated slots as raw bytes, each with pool_slot replaced by its index.
-Slot positions and the free-list order are restored exactly.
+buf[-1] is a stub slot, so index -1 (DS_STUB_INDEX) is addressable: intrusive lists over pools
+(ds_list.h) use it as their sentinel. pool_slot is 0 for an allocated slot; a removed slot holds
+POOL_ALLOCATION_MASK | the next free index, POOL_INDEX_MASK ending the free list. Growth reallocates
+(length + 1)*2 slots, stub included. Serialized format (LE): u32 length, count, count_max; the
+count_max - count free indices in free-list order; the count allocated slots as raw bytes, each with
+pool_slot replaced by its index.
 */
 
 #define POOL_NODE 	        u32 pool_slot
@@ -550,20 +559,12 @@ Slot positions and the free-list order are restored exactly.
 #define ds_PoolSlotAllocated(ptr)	(!((ptr)->pool_slot & POOL_ALLOCATION_MASK))
 
 
-#define POOL_SLOT_STATE 	u32 slot_allocation_state
-#define PoolSlotAllocated(ptr)	(!((ptr)->slot_allocation_state & POOL_ALLOCATION_MASK))
-#define PoolSlotNext(ptr)	((ptr)->slot_allocation_state & POOL_INDEX_MASK)
-#define PoolSlotGeneration(ptr)	((ptr)->slot_generation_state)
-#define GENERATIONAL_POOL_SLOT_STATE	u32 slot_allocation_state;	\
-					u32 slot_generation_state
-
-
 /* Internal: see PoolAlloc. Returns 1 on success and 0 on failure. */
-u32  ds_PoolAllocInternal(struct arena *mem, struct ds_MemSlot *mem_slot, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u32 alloc_length, const u32 alloc_growable);
+u32  ds_PoolAllocInternal(struct arena *mem, u32 *heap_allocated, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u32 alloc_length, const u32 alloc_growable);
 /* Internal: see PoolSerialize. */
 void ds_PoolSerializeInternal(struct ss *ss, const void *buf, const u32 length, const u32 count, const u32 count_max, const u32 next_free, const u64 slot_size, const u64 pool_slot_offset);
 /* Internal: see PoolTryDeserialize. */
-u32  ds_PoolTryDeserializeInternal(struct arena *mem, struct ss *ss, struct ds_MemSlot *mem_slot, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u64 pool_slot_offset, const u32 alloc_growable);
+u32  ds_PoolTryDeserializeInternal(struct arena *mem, struct ss *ss, u32 *heap_allocated, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u64 pool_slot_offset, const u32 alloc_growable);
 
 #define POOL_DECLARE(T)                                                                          \
         POOL_STRUCT_DEFINE(T);                                                                   \
@@ -593,14 +594,13 @@ u32  ds_PoolTryDeserializeInternal(struct arena *mem, struct ss *ss, struct ds_M
 #define POOL_STRUCT_DEFINE(T)                                                                       \
 typedef struct T ## Pool                                                                            \
 {                                                                                                   \
-	struct ds_MemSlot mem_slot;	/* If heap allocated, mem_slot.address set to valid address,        \
-                                   otherwise NULL.                                              */  \
 	struct T *buf;		                                                                            \
 	u32 length;			        /* array length 				                                */  \
 	u32 count;			        /* current count of occupied slots 		                        */  \
 	u32 count_max;		        /* max count used over the object's lifetime 	                */  \
 	u32 next_free;		        /* next free index if != POOL_INDEX_MASK 		                */  \
 	u32 growable;		        /* is the memory growable? 			                            */  \
+	u32 heap_allocated;	        /* buf - 1 is a ds_Alloc block (else arena memory)              */  \
 } T ## Pool
 
 #define POOL_ALLOC_DECLARE(T)                                                                       \
@@ -643,7 +643,7 @@ u32                 T ## PoolTryDeserialize(struct arena *mem, struct ss *ss,   
 POOL_ALLOC_DECLARE(T)                                                                               \
 {                                                                                                   \
 	struct T ## Pool pool;                                                                          \
-	ds_PoolAllocInternal(mem, &pool.mem_slot, (void **) &pool.buf, &pool.length, &pool.count,       \
+	ds_PoolAllocInternal(mem, &pool.heap_allocated, (void **) &pool.buf, &pool.length, &pool.count, \
 	                     &pool.count_max, &pool.next_free, &pool.growable, sizeof(struct T),        \
 	                     length, growable);                                                         \
 	return pool;                                                                                    \
@@ -652,10 +652,16 @@ POOL_ALLOC_DECLARE(T)                                                           
 #define POOL_DEALLOC_DEFINE(T)                                                                      \
 POOL_DEALLOC_DECLARE(T)                                                                             \
 {                                                                                                   \
-	if (pool->mem_slot.address)                                                                     \
+	if (pool->heap_allocated && pool->buf)                                                          \
 	{                                                                                               \
-		ds_Free(&pool->mem_slot);                                                                   \
+		ds_Free(pool->buf - 1);                                                                     \
 	}                                                                                               \
+	pool->buf = NULL;                                                                               \
+	pool->length = 0;                                                                               \
+	pool->count = 0;                                                                                \
+	pool->count_max = 0;                                                                            \
+	pool->next_free = POOL_INDEX_MASK;                                                              \
+	pool->heap_allocated = 0;                                                                       \
 }
 
 #define POOL_FLUSH_DEFINE(T)                                                                        \
@@ -708,12 +714,9 @@ POOL_ADD_DECLARE(T)                                                             
 	    	new_length_including_stub = length_max;                                                 \
 	    }                                                                                           \
 	                                                                                                \
-	    pool->buf = ds_Realloc(&pool->mem_slot, new_length_including_stub*sizeof(struct T));        \
-	    if (!pool->buf)                                                                             \
-	    {                                                                                           \
-	    	LogString(T_SYSTEM, S_FATAL, "pool reallocation failed, exiting");                      \
-	    	FatalCleanupAndExit();                                                                  \
-	    }                                                                                           \
+	    /* ds_Realloc is fatal on failure */                                                        \
+	    pool->buf = ds_Realloc(pool->buf - 1, old_length_including_stub*sizeof(struct T),           \
+	                           new_length_including_stub*sizeof(struct T), DS_CACHE_LINE);         \
 	    UnpoisonAddress(pool->buf, old_length_including_stub*sizeof(struct T));                     \
 	    PoisonAddress(pool->buf + old_length_including_stub,                                        \
                 (new_length_including_stub-old_length_including_stub)*sizeof(struct T));            \
@@ -783,107 +786,77 @@ POOL_SERIALIZE_DECLARE(T)                                                       
 #define POOL_TRY_DESERIALIZE_DEFINE(T)                                                              \
 POOL_TRY_DESERIALIZE_DECLARE(T)                                                                     \
 {                                                                                                   \
-	return ds_PoolTryDeserializeInternal(mem, ss, &pool->mem_slot, (void **) &pool->buf,           \
+	return ds_PoolTryDeserializeInternal(mem, ss, &pool->heap_allocated, (void **) &pool->buf,     \
 	                                     &pool->length, &pool->count, &pool->count_max,             \
 	                                     &pool->next_free, &pool->growable, sizeof(struct T),       \
 	                                     (u64) &(((struct T *)0)->pool_slot), growable);            \
 }
 
-#define POOL_NODE 	        u32 pool_slot
-
 
 /*
-TPool
-=====
-A thread-safe pool allocator where every operation can be called by any thread, at any time;
-based on Treiber stack free-lists.
+TPool API
+---------
+Thread-safe pool of struct Type: adds, removes and address lookups may run on any threads at the same
+time. Slots are never moved (the pool grows by adding blocks), so addresses stay valid for the pool's
+lifetime and may be held like indices. Which index an add returns depends on thread timing.
 
 ::: Usage and Documentation :::
 
-To declare/define the allocator for a specific struct, say ds_Struct, add the 
-following in the definition of ds_Struct
+struct Type contains TPOOL_NODE (its fields belong to the pool). TPOOL_DECLARE(Type) declares struct
+TypeTPool and the functions below (in a header), TPOOL_DEFINE(Type) defines them (in one source file).
+Every thread using the pool needs ds_ThreadSelfIndex() < the logical_core_count given to Alloc.
 
-    struct ds_Struct
-    {
-        ...
-        TPOOL_NODE;
-        ...
-    };
+    struct node { TPOOL_NODE; ... };
+    TPOOL_DECLARE(node)
+    TPOOL_DEFINE(node)
 
-and write
+    struct nodeTPool pool;
+    nodeTPoolAlloc(&pool, g_arch_config->logical_core_count, 1024);
+    const struct slot slot = nodeTPoolAdd(&pool);                     (any thread)
+    nodeTPoolRemove(&pool, slot.index);                               (any thread)
+    nodeTPoolDealloc(&pool);
 
-    TPOOL_DECLARE(ds_Struct)
-    TPOOL_DEFINE(ds_Struct)
+The functions (Alloc, Dealloc and Flush only while no other thread uses the pool):
 
-at the appropriate places. TPOOL_DECLARE defines the dsStructTPool struct and
-the ds_StructTPool*** functions, and TPOOL_DEFINE generates the implementations
-of each function. The functions generated are the following:
+    // Set up the pool with a first block of PowerOfTwoCeil(initial_count) slots (initial_count <= 2^31)
+    // and one free list per thread index < logical_core_count. Fatal if memory runs out.
+    void            TypeTPoolAlloc(struct TypeTPool *pool, const u32 logical_core_count, const u32 initial_count)
 
-    // Allocation of pool.
-    void        ds_StructTPoolAlloc(struct ds_StructTPool *pool, const u32 initial_count, const u64 slot_size);
-    
-    // Deallocation of pool (passing ptr here since pool contains sync-point)
-    void        ds_StructTPoolDealloc(struct ds_StructTPool *pool);
-    
-    // Dealloc all slot allocations, resetting the pool's count_max to 0
-    void        ds_StructTPoolFlush(struct ds_StructTPool *pool);
-    
-    // Alloc new slot 
-    struct slot ds_StructTPoolAdd(struct ds_StructTPool *pool);
-    
-    // Remove slot given index 
-    void		ds_StructTPoolRemove(struct ds_StructTPool *pool, const u32 index);
-    
-    // Return address of index 
-    void *		ds_StructTPoolAddress(const struct ds_StructTPool *pool, const u32 index);
+    // Free all blocks and free lists.
+    void            TypeTPoolDealloc(struct TypeTPool *pool)
 
-    // Allocate a previously untouched slot by increment the global TPool a_count_max
-    // counter. If additional memory is needed, the thread synchronizes with other 
-    // threads to allocate the needed memory.
-    struct slot ds_TPoolIncrement(struct ds_TPool *pool);
+    // Remove all slots (the blocks stay); the next fresh slots start at index 0.
+    void            TypeTPoolFlush(struct TypeTPool *pool)
 
+    // Allocate a slot and return { address, index }: from the calling thread's free list, else stolen
+    // from another thread's list, else a fresh slot (TypeTPoolIncrement). Contents are uninitialized.
+    struct slot     TypeTPoolAdd(struct TypeTPool *pool)
+
+    // Remove the slot at index onto the calling thread's free list.
+    void            TypeTPoolRemove(struct TypeTPool *pool, const u32 index)
+
+    // Return the address of the slot at index.
+    struct Type *   TypeTPoolAddress(const struct TypeTPool *pool, const u32 index)
+
+    // Allocate a never used slot (past every slot handed out so far), adding a block if needed (one
+    // thread adds it while the others wait). Fatal if memory runs out.
+    struct slot     TypeTPoolIncrement(struct TypeTPool *pool)
 
 ::: Internals :::
 
-By enforcing that the pool length is always a power of two, and that the length
-doubles every time we increase the pool's size, we derive addresses from indices
-the following way:
-                                                               bN   
-    1.  Initial block contain PowerOfTwo slots   length: (0...010...0)
-                                                 mask:   (0...001...1)
+Free lists are TStacks (below), one per thread index, each on its own cache line; an add tries its own
+list, then 2*logical_core_count random others. Block 0 has N = initial_length (a power of two) slots,
+block 1 also N, block k >= 1 has N << (k-1), so the pool length doubles with each block and an index maps
+to its block without a search:
 
-    2.  Each block doubles the max_count, so we get the following sequence of blocksizes
+    blocks:   [N][N][2N][4N][8N] ...   (block k >= 1 starts at index N << (k-1))
+    shift = log2(N) = Ctz32(N)
 
-             0  1  2   3   4   5  
-            [I][I][2I][4I][8I][16I] ...
+    i < N:   block 0, offset i
+    i >= N:  block  = 1 + (bit index of the leading 1 of i >> shift) = 32 - Clz32(i >> shift)
+             offset = i & ((N << (block-1)) - 1)       (block k >= 1 holds the indices with that leading bit)
 
-
-The address of index i is derived as follows:
-
-    N denotes the initial length of the pool.
-    bN denotes the bit index of N (starting from 0)
-
-    mask = N-1 
-    shift = CountTrailingZeroes(N) = BitLength(mask)
-
-    // Special case, we are indexing block 0
-    if (i < N)
-        block = 0
-        index = i
-
-    // Common case, we are indexing block m > 0
-    else
-        block = 1 + ( (bit index of leading 1 in i) - bN )
-              = 1 + ( (bit index of leading 1 in (i >> shift) )
-              = 1 + (31 - CountLeadingZeroes(i >> shift))
-              = 32 - CountLeadingZeroes(i >> shift)
-
-        // block 1 shares the same length as block 0 => (block-1)
-        block_index_mask = (bit index of leading 1 in i) - 1
-                         = (N << (block-1)) - 1
-        index = i & block_index_mask
-
-    return pool->mem[ block ].slot[ index ]
+At most 32 blocks (a_length < 2^31).
 */
 
 #define TPOOL_NODE  TSTACK_NODE(FreeList)
@@ -925,10 +898,8 @@ struct struct_name ## TPool                                                     
     u32                 steal_max_iterations;                                                               \
     u32                 free_list_count;                                                                    \
     struct struct_name ## FreeList ## TStack *t_free_list;                                                  \
-    struct ds_MemSlot   t_free_list_mem;                                                                    \
                                                                                                             \
     struct struct_name *block[32];                                                                          \
-    struct ds_MemSlot   mem[32];                                                                            \
 }
 
 #define TPOOL_ALLOC_DECLARE(struct_name)                                                                    \
@@ -968,14 +939,13 @@ TPOOL_ALLOC_DECLARE(struct_name)                                                
     ds_StaticAssert(sizeof(pool->t_free_list[0]) % 64 == 0, "Size of TStacks should be multiple of 64");    \
     pool->free_list_count = logical_core_count;                                                             \
     pool->steal_max_iterations = 2*logical_core_count;                                                      \
-    ds_Alloc(&pool->t_free_list_mem, pool->free_list_count*sizeof(pool->t_free_list[0]), NO_HUGE_PAGES);    \
-    if (!pool->t_free_list_mem.address)                                                                     \
+    pool->t_free_list = ds_Alloc(pool->free_list_count*sizeof(pool->t_free_list[0]), DS_CACHE_LINE);        \
+    if (!pool->t_free_list)                                                                                 \
     {                                                                                                       \
 			LogString(T_SYSTEM, S_FATAL, "Failed to Allocate ds_TPool free list memory, exiting.");         \
 			FatalCleanupAndExit();                                                                          \
     }                                                                                                       \
                                                                                                             \
-    pool->t_free_list = pool->t_free_list_mem.address;                                                      \
     for (u32 i = 0; i < logical_core_count; ++i)                                                            \
     {                                                                                                       \
         struct_name ## FreeListTStackInit(pool->t_free_list + i, pool);                                     \
@@ -983,11 +953,8 @@ TPOOL_ALLOC_DECLARE(struct_name)                                                
     }                                                                                                       \
                                                                                                             \
     const u64 memsize = pool->block_length_next*sizeof(pool->block[0][0]);                                  \
-    (memsize < 1024*1024)                                                                                   \
-        ? ds_Alloc(pool->mem + 0, memsize, NO_HUGE_PAGES)                                                   \
-        : ds_Alloc(pool->mem + 0, memsize, HUGE_PAGES);                                                     \
-    pool->block[0] = pool->mem[0].address;                                                                  \
-    if (!pool->mem[0].address)                                                                              \
+    pool->block[0] = ds_Alloc(memsize, DS_CACHE_LINE);                                                      \
+    if (!pool->block[0])                                                                                    \
     {                                                                                                       \
 			Log(T_SYSTEM, S_FATAL, "Failed to Allocate ds_TPool with initial size %lu, exiting.", memsize); \
 			FatalCleanupAndExit();                                                                          \
@@ -1002,9 +969,9 @@ TPOOL_DEALLOC_DECLARE(struct_name)                                              
     ds_Assert(force_read == 0);                                                                             \
     for (u32 i = 0; i < pool->block_count; ++i)                                                             \
     {                                                                                                       \
-        ds_Free(pool->mem + i);                                                                             \
+        ds_Free(pool->block[i]);                                                                            \
     }                                                                                                       \
-    ds_Free(&pool->t_free_list_mem);                                                                        \
+    ds_Free(pool->t_free_list);                                                                             \
 }
 
 #define TPOOL_FLUSH_DEFINE(struct_name)                                                                     \
@@ -1037,12 +1004,8 @@ TPOOL_INCREMENT_DECLARE(struct_name)                                            
                 const u32 new_length = 2*pool->a_length;                                                    \
                                                                                                             \
                 const u64 memsize = pool->block_length_next*sizeof(pool->block[0][0]);                      \
-                (memsize < 1024*1024)                                                                       \
-                    ? ds_Alloc(pool->mem + pool->block_count, memsize, NO_HUGE_PAGES)                       \
-                    : ds_Alloc(pool->mem + pool->block_count, memsize, HUGE_PAGES);                         \
-                pool->block[pool->block_count] = pool->mem[pool->block_count].address;                      \
-                                                                                                            \
-                if (!pool->mem[pool->block_count].address)                                                  \
+                pool->block[pool->block_count] = ds_Alloc(memsize, DS_CACHE_LINE);                          \
+                if (!pool->block[pool->block_count])                                                        \
                 {                                                                                           \
 	            		Log(T_SYSTEM, S_FATAL, "Failed to Allocate ds_TPool block with size %lu, exiting.", \
                                 memsize);                                                                   \
@@ -1110,46 +1073,35 @@ TPOOL_ADDRESS_DECLARE(struct_name)                                              
 }                                                           
 
 /*
-TStack
-======
-An intrusive parallel Treiber Stack implementation built on top of TPools.
+TStack API
+----------
+Lock-free (Treiber) stack of slot indices, intrusive in the slots of a TypeTPool: the TPool's free lists.
+Push and pop may run on any threads at the same time.
 
 ::: Usage and Documentation :::
 
-To declare/define the Treiber Stack functions for a stack node struct (say ds_Struct),
-name and add the necessary stack node state in the struct:
+struct Type contains TSTACK_NODE(name); TSTACK_DECLARE(Type, name) / TSTACK_DEFINE(Type, name) generate
+the functions below (TPOOL_DECLARE/TPOOL_DEFINE do it for TPOOL_NODE, name = FreeList).
 
-    struct ds_Struct
-    {
-        ...
-        TSTACK_NODE(FreeList);
-        ...
-    };
+    // Make the stack empty and bind it to pool (whose slots hold the nodes).
+    void            TypenameTStackInit(struct TypenameTStack *stack, struct TypeTPool *pool)
 
-and write:
+    // Make the stack empty (not concurrently with push or pop).
+    void            TypenameTStackFlush(struct TypenameTStack *stack)
 
-    TSTACK_DECLARE(ds_Struct, FreeList)
-    TSTACK_DEFINE(ds_Struct, FreeList)
+    // Push the slot at index.
+    void            TypenameTStackPush(struct TypenameTStack *stack, const u32 index)
 
-at the appropriate places. This Declares and Generates the following functions
-    
-    // Init a TStack
-    void ds_StructFreeListTStackInit(struct ds_StructFreeListTStack *stack, struct ds_StructTPool *pool)
+    // Pop the latest pushed slot: { address, index }, or { NULL, U32_MAX } if the stack is empty.
+    struct slot     TypenameTStackPop(struct TypenameTStack *stack)
 
-    // Flush a TStack
-    void ds_StructFreeListTStackFlush(ds_StructFreeListTStack *stack)
+::: Internals :::
 
-    // Push a TStack node
-    void ds_StructFreeListTStackPush(ds_StructFreeListTStack *stack, const u32 index)
-    
-    // Pop a TStack node. On failure, return empty slot { .address = NULL, .index = U32_MAX }
-    struct slot ds_StructFreeListTStackPop(struct ds_StructFreeListTStack *stack)
+The head is (tag << 32) | index of the top slot, TSTACK_NULL if empty; nameTail in each slot holds the
+head below it. Each push increments the slot's nameTag, so a slot popped and pushed back between another
+thread's load and compare-exchange changes the head (no ABA).
 */
 
-/*
- * Name ## Tail: "previous" or "lower" node  in stack, (or TSTACK_NULL)
- * Name ## Tag: incremented generational value of node to remove ABA problems
- */
 #define TSTACK_NODE(name)                                                                                       \
     u64 name ## Tail;                                                                                           \
     u32 name ## Tag

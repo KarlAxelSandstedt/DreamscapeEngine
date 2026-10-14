@@ -44,8 +44,7 @@ struct ds_HashMap
 	u32		            index_len;
 	u32		            hash_mask;
 	u32		            growable;
-	struct ds_MemSlot	mem_hash;
-	struct ds_MemSlot	mem_index;
+	u32		            heap_allocated;	/* hash and index are ds_Alloc blocks */
 };
 
 /* Allocate a map with at least the given lengths (rounded up). On failure, an empty map is returned. */
@@ -214,7 +213,7 @@ struct struct_name ## THashMap                  \
     u64 *                           a_hash;     \
     u32                             hash_len;   \
     u32                             hash_mask;  \
-    struct ds_MemSlot               hash_mem;   \
+    u32                             heap_allocated; \
 }
 
 #define THASH_ALLOC_DECLARE(struct_name)                                                                \
@@ -264,17 +263,11 @@ THASH_ALLOC_DECLARE(struct_name)                                                
     ds_Assert(hash_len && (hash_len >> 31) == 0);                                                       \
                                                                                                         \
     struct struct_name ## THashMap map;                                                                 \
-	if (mem)                                                                                            \
-	{                                                                                                   \
-		map.hash_len = (u32) PowerOfTwoCeil(hash_len);                                                  \
-        map.hash_mem = (struct ds_MemSlot) { 0 };                                                       \
-		map.a_hash = ArenaPushAligned(mem, map.hash_len * sizeof(u64), 8);                              \
-	}                                                                                                   \
-	else                                                                                                \
-	{                                                                                                   \
-		map.hash_len = (u32) PowerOfTwoCeil( ds_AllocSizeCeil(hash_len * sizeof(u64))  / sizeof(u64) ); \
-		map.a_hash = ds_Alloc(&map.hash_mem, map.hash_len * sizeof(u64), HUGE_PAGES);                   \
-	}                                                                                                   \
+	map.hash_len = (u32) PowerOfTwoCeil(hash_len);                                                      \
+	map.heap_allocated = (mem == NULL);                                                                 \
+	map.a_hash = (mem)                                                                                  \
+		? ArenaPushAligned(mem, map.hash_len * sizeof(u64), 8)                                          \
+		: ds_Alloc(map.hash_len * sizeof(u64), 8);                                                      \
                                                                                                         \
 	if (!map.a_hash)                                                                                    \
 	{                                                                                                   \
@@ -290,9 +283,9 @@ THASH_ALLOC_DECLARE(struct_name)                                                
 #define THASH_DEALLOC_DEFINE(struct_name)   \
 THASH_DEALLOC_DECLARE(struct_name)          \
 {                                           \
-    if (map->hash_mem.address)              \
+    if (map->heap_allocated)                \
     {                                       \
-        ds_Free(&map->hash_mem);            \
+        ds_Free(map->a_hash);               \
     }                                       \
 } 
 
@@ -348,11 +341,12 @@ THASH_DESERIALIZE_DECLARE(struct_name)                                      \
     {                                                                       \
         .hash_len = hash_len,                                               \
         .hash_mask = hash_len-1,                                            \
+        .heap_allocated = (mem == NULL),                                    \
     };                                                                      \
                                                                             \
 	map.a_hash = (mem)                                                      \
 	    ? ArenaPushAligned(mem, map.hash_len*sizeof(u64), 8)                \
-		: ds_Alloc(&map.hash_mem, hash_len*sizeof(u64), HUGE_PAGES);        \
+		: ds_Alloc(hash_len*sizeof(u64), 8);                                \
                                                                             \
 	if (!map.a_hash)                                                        \
 	{                                                                       \

@@ -163,8 +163,9 @@ struct minQueue MinQueueAlloc(struct arena *arena, const u32 initial_length, con
 	}
 	else
 	{
-		queue.object_pool = queueObjectPoolAlloc(NULL, initial_length, !GROWABLE);
-		queue.elements = ds_Alloc(&queue.mem_elements, queue.object_pool.length * sizeof(struct queueElement), queue.object_pool.mem_slot.huge_pages);
+		queue.object_pool = queueObjectPoolAlloc(NULL, initial_length, growable);
+		queue.elements = ds_Alloc(queue.object_pool.length * sizeof(struct queueElement), sizeof(struct queueElement));
+		queue.heap_allocated = 1;
 	}
 
 	queue.growable = growable;
@@ -180,10 +181,11 @@ struct minQueue MinQueueAlloc(struct arena *arena, const u32 initial_length, con
 
 void MinQueueDealloc(struct minQueue * const queue)
 {
-	if (queue->mem_elements.address)
+	if (queue->heap_allocated)
 	{
 		queueObjectPoolDealloc(&queue->object_pool);
-		ds_Free(&queue->mem_elements);
+		ds_Free(queue->elements);
+		queue->heap_allocated = 0;
 	}
 }
 
@@ -210,10 +212,17 @@ u32 MinQueuePush(struct minQueue * const queue, const f32 priority, const u32 ex
 	const u32 old_length = queue->object_pool.length;
 	const u32 queue_index = queue->object_pool.count;
 	struct slot slot = queueObjectPoolAdd(&queue->object_pool);
+	if (!slot.address)
+	{
+		LogString(T_SYSTEM, S_FATAL, "Non-growable min queue full in MinQueuePush, exiting.");
+		FatalCleanupAndExit();
+	}
+
 	if (old_length != queue->object_pool.length)
 	{
 		ds_Assert(queue->growable);
-		queue->elements = ds_Realloc(&queue->mem_elements, queue->object_pool.length*sizeof(struct queueElement));
+		queue->elements = ds_Realloc(queue->elements, old_length*sizeof(struct queueElement),
+			queue->object_pool.length*sizeof(struct queueElement), sizeof(struct queueElement));
 	}
 
 	queue->elements[queue_index].priority = priority;
@@ -306,16 +315,11 @@ struct minQueueFixed MinQueueFixedAlloc(struct arena *mem, const u32 initial_len
 		.growable = growable,
 	};
 
-	if (mem)
-	{
-		queue.element = ArenaPush(mem, initial_length*sizeof(u32f32));
-		queue.length = initial_length;
-	}
-	else
-	{
-		queue.element = ds_Alloc(&queue.mem_element, initial_length*sizeof(u32f32), HUGE_PAGES);
-		queue.length = queue.mem_element.size / sizeof(u32f32);	
-	}
+	queue.element = (mem)
+		? ArenaPush(mem, initial_length*sizeof(u32f32))
+		: ds_Alloc(initial_length*sizeof(u32f32), sizeof(u32f32));
+	queue.length = initial_length;
+	queue.heap_allocated = (mem == NULL);
 
 	if (queue.element == NULL)
 	{
@@ -340,9 +344,10 @@ struct minQueueFixed MinQueueFixedAllocAll(struct arena *mem)
 
 void MinQueueFixedDealloc(struct minQueueFixed *queue)
 {
-	if (queue->mem_element.address)
+	if (queue->heap_allocated)
 	{
-		ds_Free(&queue->mem_element);
+		ds_Free(queue->element);
+		queue->heap_allocated = 0;
 	}
 }
 
@@ -370,8 +375,8 @@ void MinQueueFixedPush(struct minQueueFixed *queue, const u32 id, const f32 prio
 	{
 		if (queue->growable)
 		{
+			queue->element = ds_Realloc(queue->element, queue->length*sizeof(u32f32), 2*queue->length*sizeof(u32f32), sizeof(u32f32));
 			queue->length *= 2;
-			queue->element = ds_Realloc(&queue->mem_element, queue->length*sizeof(u32f32));
 		}	
 		else
 		{

@@ -724,7 +724,6 @@ struct ui_Node *ui_NodeTop(void);
 /* Per window ui struct */
 struct ui
 {
-	struct ds_MemSlot		mem_slot;
 	struct ui_Interaction	inter;
 
 	ds_CPool(ui_DrawBucket)	bucket_pool;

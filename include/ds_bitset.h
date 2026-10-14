@@ -36,7 +36,7 @@ struct ds_BitSet
 	u64 		        bit_count;
 	u64 * 		        bits;
 	u32 		        growable;
-	struct ds_MemSlot 	mem_slot;
+	u32		            heap_allocated;	/* bits is a ds_Alloc block */
 };
 
 /* Return a bitset with bit_count >= bit_count, with all bits cleared to clear_bit. On failure, an empty bitset is returned. */

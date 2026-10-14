@@ -244,5 +244,7 @@ extern struct suite_Correctness *gjk_correctness_suite;
 extern struct suite_Correctness *contact_correctness_suite;
 extern struct suite_Correctness *mesh_contact_correctness_suite;
 extern struct suite_Correctness *config_correctness_suite;
+extern struct suite_Correctness *container_correctness_suite;
+extern struct suite_Correctness *base_correctness_suite;
 
 #endif

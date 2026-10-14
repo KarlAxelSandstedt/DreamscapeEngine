@@ -125,10 +125,8 @@ struct test_PerformanceSerial allocator_serial_test[] =
     0
 };
 
-struct suite_Correctness storage_allocator_correctness_suite =
-{
-    0
-};
+/* defined in test_allocator_correctness.c */
+extern struct suite_Correctness storage_allocator_correctness_suite;
 
 struct test_PerformanceParallel allocator_parallel_test[] =
 {    

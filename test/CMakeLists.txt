@@ -10,6 +10,9 @@ add_library(DreamscapeTestAPI
 	test_string.c
 	test_serialize.c
 	test_allocator.c
+	test_allocator_correctness.c
+	test_container_correctness.c
+	test_base_correctness.c
     test_hash_map.c
 	test_hash.c
 	test_rng.c

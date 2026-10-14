@@ -37,13 +37,14 @@ struct ds_HashMap ds_HashMapAllocEx(struct arena *mem, const u32 hash_len, const
 	const u64 mem_left = (mem) ? mem->mem_left : 0;
 	if (mem)
 	{
-		map.hash = ArenaPush(mem, map.hash_len * sizeof(u32)); 
-		map.index = ArenaPush(mem, map.index_len * sizeof(u32)); 
+		map.hash = ArenaPush(mem, map.hash_len * sizeof(u32));
+		map.index = ArenaPush(mem, map.index_len * sizeof(u32));
 	}
 	else
 	{
-		map.hash = ds_Alloc(&map.mem_hash, map.hash_len * sizeof(u32), HUGE_PAGES);
-		map.index = ds_Alloc(&map.mem_index, map.index_len * sizeof(u32), HUGE_PAGES);
+		map.hash = ds_Alloc(map.hash_len * sizeof(u32), sizeof(u32));
+		map.index = ds_Alloc(map.index_len * sizeof(u32), sizeof(u32));
+		map.heap_allocated = 1;
 	}
 
 	if (!map.hash || !map.index)
@@ -52,8 +53,11 @@ struct ds_HashMap ds_HashMapAllocEx(struct arena *mem, const u32 hash_len, const
 		{
 			ArenaPopPacked(mem, mem_left - mem->mem_left);
 		}
-		ds_Free(&map.mem_hash);
-		ds_Free(&map.mem_index);
+		else
+		{
+			ds_Free(map.hash);
+			ds_Free(map.index);
+		}
 		return (struct ds_HashMap) { .growable = growable };
 	}
 
@@ -64,21 +68,9 @@ struct ds_HashMap ds_HashMapAlloc(struct arena *mem, const u32 hash_len, const u
 {
 	ds_Assert(hash_len && index_len && (hash_len >> 31) == 0);
 
-	u32 hash_len_used;
-	u32 index_len_used;
-	if (mem)
-	{
-		hash_len_used = (u32) PowerOfTwoCeil(hash_len);
-		index_len_used = index_len;
-	}
-	else
-	{
-		/* use the whole heap allocation */
-		hash_len_used = (u32) PowerOfTwoCeil( ds_AllocSizeCeil(hash_len * sizeof(u32))  / sizeof(u32) );
-		index_len_used = (u32) ds_AllocSizeCeil(index_len * sizeof(u32)) / sizeof(u32);
-	}
-	index_len_used = (hash_len_used <= index_len_used)
-		? index_len_used
+	const u32 hash_len_used = (u32) PowerOfTwoCeil(hash_len);
+	const u32 index_len_used = (hash_len_used <= index_len)
+		? index_len
 		: hash_len_used;
 
 	struct ds_HashMap map = ds_HashMapAllocEx(mem, hash_len_used, index_len_used, growable);
@@ -92,11 +84,12 @@ struct ds_HashMap ds_HashMapAlloc(struct arena *mem, const u32 hash_len, const u
 
 void ds_HashMapDealloc(struct ds_HashMap *map)
 {
-	if (map->mem_hash.address)
+	if (map->heap_allocated)
 	{
-		ds_Free(&map->mem_hash);
-		ds_Free(&map->mem_index);
-	}	
+		ds_Free(map->hash);
+		ds_Free(map->index);
+		map->heap_allocated = 0;
+	}
 }
 
 void ds_HashMapFlush(struct ds_HashMap *map)
@@ -164,11 +157,11 @@ u32 ds_HashMapAdd(struct ds_HashMap *map, const u32 hash, const u32 index)
 	{
 		if (map->growable)
 		{
-			const u64 size = (index < 2*map->index_len)
-				? 2*map->mem_index.size
-				: (index+1) * sizeof(u32);
-			map->index = ds_Realloc(&map->mem_index, size);
-			map->index_len = (u32) size / sizeof(u32);
+			const u64 new_len = (index < 2*(u64) map->index_len)
+				? 2*(u64) map->index_len
+				: (u64) index + 1;
+			map->index = ds_Realloc(map->index, map->index_len*sizeof(u32), new_len*sizeof(u32), sizeof(u32));
+			map->index_len = (u32) new_len;
 		}
 		else
 		{
