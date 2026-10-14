@@ -19,14 +19,13 @@
 
 #include "ds_job.h"
 
-POOL_DEFINE(ds_Island);
 
 /* Add new body to island */
 static void ds_IslandAddBody(struct ds_Dynamics *pipeline, const u32 island_index, const u32 body)
 {
     struct ds_Island *is = pipeline->island_pool.buf + island_index;
 	struct ds_Body *b = pipeline->body_pool.buf + body;
-	b->island = ds_IslandPoolIndex(&pipeline->island_pool, is);
+	b->island = ds_PoolIndex(pipeline->island_pool, is);
     if (b->set != is->set)
     {
         ds_SolverSetMoveBody(pipeline, body, is->set);
@@ -39,7 +38,7 @@ static struct slot ds_IslandAlloc(struct ds_Dynamics *pipeline, const u32 set)
     ds_Assert(set != SOLVER_SET_STATIC);
 
     const u32 old_max = pipeline->island_pool.count;
-	struct slot slot = ds_IslandPoolAdd(&pipeline->island_pool);
+	struct slot slot = ds_PoolAdd(pipeline->island_pool);
     if (pipeline->island_high_energy_set.bit_count < pipeline->island_pool.count)
     {
         ds_BitSetIncreaseSize(&pipeline->island_high_energy_set, pipeline->island_pool.count, 0);
@@ -285,7 +284,7 @@ void ds_IslandRemove(struct ds_Dynamics *pipeline, const u32 island_index)
             island_to_update->set_island_index = island->set_island_index; 
         }
     }
-	ds_IslandPoolRemove(&pipeline->island_pool, island_index);
+	ds_PoolRemove(pipeline->island_pool, island_index);
 }
 
 void ds_IslandSplit(struct ds_Dynamics *pipeline, const u32 island_to_split)

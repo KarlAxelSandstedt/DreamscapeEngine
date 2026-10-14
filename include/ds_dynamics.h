@@ -328,7 +328,7 @@ struct ds_Shape
 
 	ds_Transform	t_local;	        /* local body frame transform 			            */
 };
-POOL_DECLARE(ds_Shape);
+DEFINE_POOL(ds_Shape);
 
 /*
 ds_ShapePrefab  
@@ -376,7 +376,7 @@ struct ds_ShapePrefabInstance
     u32                 shape_prefab;
 	ds_Transform	    t_local;	/* local body frame transform        */
 };
-POOL_DECLARE(ds_ShapePrefabInstance);
+DEFINE_POOL(ds_ShapePrefabInstance);
 
 /* 
  * Allocates a shape according to the values set in Prefab and with given local body frame transform. On success, 
@@ -520,7 +520,7 @@ struct ds_Body
     //TODO temporary
 	u32 	        entity;
 };
-POOL_DECLARE(ds_Body);
+DEFINE_POOL(ds_Body);
 
 
 /*
@@ -705,7 +705,7 @@ struct ds_Contact
      */
     struct c_ContactResult      narrowphase;
 };
-POOL_DECLARE(ds_Contact);
+DEFINE_POOL(ds_Contact);
 
 /* Add and return new contact with unique key and update pipeline state */
 struct slot ds_ContactAdd(struct ds_Dynamics *pipeline, const struct ds_ContactKey key);
@@ -819,7 +819,7 @@ struct ds_Joint
                                            color == CG_COLOR_NOT_SET, sim is an index into the joint's 
                                            set->jointsim_pool.                                              */
 };
-POOL_DECLARE(ds_Joint);
+DEFINE_POOL(ds_Joint);
 
 /* 
  * Setup a joint between bodies b0 and b1 with anchors defined by the input local_frames. On success, 
@@ -950,7 +950,7 @@ struct ds_SolverSet
     /* Islands in set */
     ds_CPool(u32)               island_pool;
 };
-POOL_DECLARE(ds_SolverSet);
+DEFINE_POOL(ds_SolverSet);
 
 
 /* Allocate and setup a ds_SolverSet. If mem_set is provided, it will be used for allocating resources */
@@ -1006,7 +1006,7 @@ struct ds_Island
 //TODO RMEOVE
 	v4 color;
 };
-POOL_DECLARE(ds_Island);
+DEFINE_POOL(ds_Island);
 
 /*  Return the island corresponding the id; If it doesn't exist, return (NULL, U32_MAX). */
 struct slot ds_IslandLookup(struct ds_Dynamics *pipeline, const ds_IslandId id);
@@ -1543,7 +1543,7 @@ struct ds_PhysicsEvent
         };
 	};
 };
-POOL_DECLARE(ds_PhysicsEvent);
+DEFINE_POOL(ds_PhysicsEvent);
 
 enum rigidBodyColorMode
 {
@@ -1583,10 +1583,10 @@ struct ds_Dynamics
 	c_ShapeSDB *	                cshape_db;		        /* externally owned */
 	ds_BodyPrefabSDB *	            body_prefab_db;		    /* externally owned */
 
-	struct ds_BodyPool              body_pool;
+	ds_Pool(ds_Body)              body_pool;
     struct ds_BitSet                body_usage_set;         /* Bodies in use */
 
-	struct ds_ShapePool	            shape_pool;
+	ds_Pool(ds_Shape)	            shape_pool;
     struct ds_BitSet                shape_dynamic_usage_set;/* Shapes in use */
 	struct bvh 		                dynamic_bvh;            /* bvh of dynamic shapes */
 	struct bvh 		                static_bvh;             /* bvh of static shapes */
@@ -1594,14 +1594,14 @@ struct ds_Dynamics
     struct ds_BitSet                shape_dirty_set;    
     ds_CPool(ds_ProxyQuery)         dirty_shape_query;
 
-    struct ds_JointPool             joint_pool;
+    ds_Pool(ds_Joint)             joint_pool;
 
-	struct ds_PhysicsEventPool      event_pool;
+	ds_Pool(ds_PhysicsEvent)      event_pool;
 	struct DLL		            event_list;
 
     struct ds_CGraph                cgraph;
 
-    struct ds_SolverSetPool         solver_set_pool;        /* index 0,1,2 reserved for DISABLED,STATIC,ACTIVE sets */
+    ds_Pool(ds_SolverSet)         solver_set_pool;        /* index 0,1,2 reserved for DISABLED,STATIC,ACTIVE sets */
 
     /* contact net list nodes are owned as follows:
 	 *
@@ -1609,12 +1609,12 @@ struct ds_Dynamics
 	 *  contact->key.shape1 owns slot 1
 	 *
 	 * i.e. the smaller index owns slot 0 and the larger index owns slot 1.  */
-    struct ds_ContactPool           contact_pool;   
+    ds_Pool(ds_Contact)           contact_pool;   
 	struct ds_HashMap	            contact_map;		
     struct ds_BitSet                contact_usage_set;
 
     ds_IslandId                     island_to_split;            /* */
-	struct ds_IslandPool            island_pool;	    
+	ds_Pool(ds_Island)            island_pool;	    
     struct ds_BitSet                island_high_energy_set;   /* High energy islands per-frame. */
 
 	//TODO temporary, move somewhere else.

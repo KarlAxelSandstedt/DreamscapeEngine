@@ -140,7 +140,7 @@ struct ds_JointSim *ds_CGraphJointAdd(struct ds_Dynamics *pipeline, struct ds_Jo
 
     joint->set = SOLVER_SET_NULL;
     joint->sim = slot.index;
-    color->joint_sim_pool.buf[slot.index].joint = ds_JointPoolIndex(&pipeline->joint_pool, joint);
+    color->joint_sim_pool.buf[slot.index].joint = ds_PoolIndex(pipeline->joint_pool, joint);
     return slot.address;
 }
 
@@ -191,7 +191,7 @@ void ds_CGraphContactAdd(struct arena *frame, struct ds_Dynamics *pipeline, stru
     struct ds_CGraphColor *color = pipeline->cgraph.color + contact->color;
 
     contact->compute = ds_CPoolPush(color->contact_pool).index;
-    color->contact_pool.buf[ contact->compute ] = ds_ContactPoolIndex(&pipeline->contact_pool, contact);
+    color->contact_pool.buf[ contact->compute ] = ds_PoolIndex(pipeline->contact_pool, contact);
 
     struct slot ccomp_slot = ds_CPoolPush(color->contact_compute_pool);
     struct ds_ContactCompute *ccomp = ccomp_slot.address;

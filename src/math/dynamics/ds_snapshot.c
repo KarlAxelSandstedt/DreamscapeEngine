@@ -111,24 +111,24 @@ u32 ds_DynamicsHeapDataTryDeserialize(struct arena *mem, struct ss *ss, void **d
 u64 ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline)
 {
 	u64 size = DS_SNAPSHOT_HEADER_SIZE
-		+ ds_BodyPoolSerializeSize(&pipeline->body_pool)
+		+ ds_PoolSerializeSize(pipeline->body_pool)
 		+ ds_BitSetSerializeSize(&pipeline->body_usage_set)
-		+ ds_JointPoolSerializeSize(&pipeline->joint_pool)
-		+ ds_ShapePoolSerializeSize(&pipeline->shape_pool)
+		+ ds_PoolSerializeSize(pipeline->joint_pool)
+		+ ds_PoolSerializeSize(pipeline->shape_pool)
 		+ ds_BitSetSerializeSize(&pipeline->shape_dynamic_usage_set)
 		+ BvhSerializeSize(&pipeline->dynamic_bvh)
 		+ BvhSerializeSize(&pipeline->static_bvh)
 		+ ds_BitSetSerializeSize(&pipeline->shape_dirty_set)
 		+ ds_CPoolSerializeSize(pipeline->dirty_shape_query)
-		+ ds_PhysicsEventPoolSerializeSize(&pipeline->event_pool)
+		+ ds_PoolSerializeSize(pipeline->event_pool)
 		+ DLLSerializeSize(pipeline->event_list)
-		+ ds_ContactPoolSerializeSize(&pipeline->contact_pool)
+		+ ds_PoolSerializeSize(pipeline->contact_pool)
 		+ ds_HashMapSerializeSize(&pipeline->contact_map)
 		+ ds_BitSetSerializeSize(&pipeline->contact_usage_set)
-		+ ds_IslandPoolSerializeSize(&pipeline->island_pool)
+		+ ds_PoolSerializeSize(pipeline->island_pool)
 		+ ds_BitSetSerializeSize(&pipeline->island_high_energy_set)
 		+ ds_CGraphSerializeSize(pipeline)
-		+ ds_SolverSetPoolSerializeSize(&pipeline->solver_set_pool);
+		+ ds_PoolSerializeSize(pipeline->solver_set_pool);
 
 	for (u32 i = 0; i < pipeline->solver_set_pool.count_max; ++i)
 	{
@@ -172,26 +172,26 @@ void ds_DynamicsSerialize(struct ss *ss, const struct ds_Dynamics *pipeline)
 	ss_Write8N(ss, (const b8 *) &pipeline->margin, sizeof(pipeline->margin));
 	ss_WriteU64Le(ss, pipeline->island_to_split);
 
-	ds_BodyPoolSerialize(ss, &pipeline->body_pool);
+	ds_PoolSerialize(ss, pipeline->body_pool);
 	ds_BitSetSerialize(ss, &pipeline->body_usage_set);
-	ds_JointPoolSerialize(ss, &pipeline->joint_pool);
-	ds_ShapePoolSerialize(ss, &pipeline->shape_pool);
+	ds_PoolSerialize(ss, pipeline->joint_pool);
+	ds_PoolSerialize(ss, pipeline->shape_pool);
 	ds_BitSetSerialize(ss, &pipeline->shape_dynamic_usage_set);
 	BvhSerialize(ss, &pipeline->dynamic_bvh);
 	BvhSerialize(ss, &pipeline->static_bvh);
 	ds_BitSetSerialize(ss, &pipeline->shape_dirty_set);
 	ds_CPoolSerialize(ss, pipeline->dirty_shape_query);
-	ds_PhysicsEventPoolSerialize(ss, &pipeline->event_pool);
+	ds_PoolSerialize(ss, pipeline->event_pool);
 	DLLSerialize(ss, pipeline->event_list);
-	ds_ContactPoolSerialize(ss, &pipeline->contact_pool);
+	ds_PoolSerialize(ss, pipeline->contact_pool);
 	ds_HashMapSerialize(ss, &pipeline->contact_map);
 	ds_BitSetSerialize(ss, &pipeline->contact_usage_set);
-	ds_IslandPoolSerialize(ss, &pipeline->island_pool);
+	ds_PoolSerialize(ss, pipeline->island_pool);
 	ds_BitSetSerialize(ss, &pipeline->island_high_energy_set);
 
 	ds_CGraphSerialize(ss, pipeline);
 
-	ds_SolverSetPoolSerialize(ss, &pipeline->solver_set_pool);
+	ds_PoolSerialize(ss, pipeline->solver_set_pool);
 	for (u32 i = 0; i < pipeline->solver_set_pool.count_max; ++i)
 	{
 		if (ds_PoolSlotAllocated(pipeline->solver_set_pool.buf + i))
@@ -243,24 +243,24 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynami
 	}
 
 	/* the contact pool precedes its owners, which check their contact indices against it */
-	if (!ds_BodyPoolTryDeserialize(NULL, ss, &pipeline->body_pool, GROWABLE)
+	if (!ds_PoolTryDeserialize(NULL, ss, pipeline->body_pool, GROWABLE)
 		|| !ds_BitSetTryDeserialize(NULL, ss, &pipeline->body_usage_set, GROWABLE)
-		|| !ds_JointPoolTryDeserialize(NULL, ss, &pipeline->joint_pool, GROWABLE)
-		|| !ds_ShapePoolTryDeserialize(NULL, ss, &pipeline->shape_pool, GROWABLE)
+		|| !ds_PoolTryDeserialize(NULL, ss, pipeline->joint_pool, GROWABLE)
+		|| !ds_PoolTryDeserialize(NULL, ss, pipeline->shape_pool, GROWABLE)
 		|| !ds_BitSetTryDeserialize(NULL, ss, &pipeline->shape_dynamic_usage_set, GROWABLE)
 		|| !BvhTryDeserialize(NULL, ss, &pipeline->dynamic_bvh, GROWABLE)
 		|| !BvhTryDeserialize(NULL, ss, &pipeline->static_bvh, GROWABLE)
 		|| !ds_BitSetTryDeserialize(NULL, ss, &pipeline->shape_dirty_set, GROWABLE)
 		|| !ds_CPoolTryDeserialize(NULL, ss, pipeline->dirty_shape_query, GROWABLE)
-		|| !ds_PhysicsEventPoolTryDeserialize(NULL, ss, &pipeline->event_pool, GROWABLE)
+		|| !ds_PoolTryDeserialize(NULL, ss, pipeline->event_pool, GROWABLE)
 		|| !DLLTryDeserialize(ss, pipeline->event_list)
-		|| !ds_ContactPoolTryDeserialize(NULL, ss, &pipeline->contact_pool, GROWABLE)
+		|| !ds_PoolTryDeserialize(NULL, ss, pipeline->contact_pool, GROWABLE)
 		|| !ds_HashMapTryDeserialize(NULL, ss, &pipeline->contact_map, GROWABLE)
 		|| !ds_BitSetTryDeserialize(NULL, ss, &pipeline->contact_usage_set, GROWABLE)
-		|| !ds_IslandPoolTryDeserialize(NULL, ss, &pipeline->island_pool, GROWABLE)
+		|| !ds_PoolTryDeserialize(NULL, ss, pipeline->island_pool, GROWABLE)
 		|| !ds_BitSetTryDeserialize(NULL, ss, &pipeline->island_high_energy_set, GROWABLE)
 		|| !ds_CGraphTryDeserialize(ss, pipeline)
-		|| !ds_SolverSetPoolTryDeserialize(NULL, ss, &pipeline->solver_set_pool, GROWABLE))
+		|| !ds_PoolTryDeserialize(NULL, ss, pipeline->solver_set_pool, GROWABLE))
 	{
 		goto failure;
 	}

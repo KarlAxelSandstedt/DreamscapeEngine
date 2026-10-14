@@ -46,14 +46,14 @@ struct bvhNode
     POOL_NODE;
 	struct aabb bbox;
 };
-POOL_DECLARE(bvhNode);
+DEFINE_POOL(bvhNode);
 
 struct bvh
 {
     struct ds_BT        bt;  
     struct ds_BitSet    leaf_set;       /* dynamic specific */
     struct ds_BitSet    internal_set;   /* dynamic specific */
-    struct bvhNodePool  pool;
+    ds_Pool(bvhNode)  pool;
 	struct minQueue	    cost_queue;	    /* dynamic specific */
 	u32			        heap_allocated;
 };

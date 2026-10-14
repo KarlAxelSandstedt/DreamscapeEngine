@@ -22,7 +22,6 @@
 #include "cmd.h"
 #include "ds_hash_map.h"
 
-POOL_DEFINE(cmd);
 DEFINE_CPOOL_STRUCT(cmdFunction);
 
 static struct ds_HashMap g_name_to_cmd_f_map;
@@ -56,7 +55,7 @@ void ds_CmdApiShutdown(void)
 struct cmdQueue CmdQueueAlloc(void)
 {
 	struct cmdQueue queue = { 0 };
-	queue.cmd_pool = cmdPoolAlloc(NULL, 64, GROWABLE);
+	ds_PoolAlloc(NULL, queue.cmd_pool, 64, GROWABLE);
 	LLFlush(queue.cmd_list);
 	LLFlush(queue.cmd_list_next_frame);
 	return queue;
@@ -64,7 +63,7 @@ struct cmdQueue CmdQueueAlloc(void)
 
 void CmdQueueDealloc(struct cmdQueue *queue)
 {
-	cmdPoolDealloc(&queue->cmd_pool);
+	ds_PoolDealloc(queue->cmd_pool);
 }
 
 void CmdQueueSet(struct cmdQueue *queue)
@@ -294,7 +293,7 @@ void CmdQueueExecute(void)
 			CmdTokenizeString(tmp, g_queue->cmd_exec);
 		}
 		g_queue->cmd_exec->function->call();
-		cmdPoolRemove(&g_queue->cmd_pool, i);
+		ds_PoolRemove(g_queue->cmd_pool, i);
 	}
 
 	g_queue->cmd_list = g_queue->cmd_list_next_frame;
@@ -305,7 +304,7 @@ void CmdQueueExecute(void)
 
 void CmdQueueFlush(struct cmdQueue *queue)
 {
-	cmdPoolFlush(&queue->cmd_pool);
+	ds_PoolFlush(queue->cmd_pool);
 	LLFlush(g_queue->cmd_list);
 	LLFlush(g_queue->cmd_list_next_frame);
 }
@@ -378,7 +377,7 @@ void CmdSubmitUtf8(const utf8 string)
 
 void CmdQueueSubmitUtf8(struct cmdQueue *queue, const utf8 string)
 {
-	struct slot slot = cmdPoolAdd(&queue->cmd_pool);
+	struct slot slot = ds_PoolAdd(queue->cmd_pool);
 	struct cmd *cmd = slot.address;
 	cmd->args_type = CMD_ARGS_TOKEN;
 	cmd->string = string;
@@ -393,7 +392,7 @@ void CmdSubmit(const u32 cmdFunction)
 
 void CmdQueueSubmit(struct cmdQueue *queue, const u32 cmdFunction)
 {
-	struct slot slot = cmdPoolAdd(&queue->cmd_pool);
+	struct slot slot = ds_PoolAdd(queue->cmd_pool);
 	struct cmd *cmd = slot.address;
 	cmd->args_type = CMD_ARGS_REGISTER;
 	cmd->function = g_cmd_f.buf + cmdFunction;
@@ -408,7 +407,7 @@ void CmdQueueSubmit(struct cmdQueue *queue, const u32 cmdFunction)
 
 void CmdQueueSubmitNextFrame(struct cmdQueue *queue, const u32 cmdFunction)
 {
-	struct slot slot = cmdPoolAdd(&queue->cmd_pool);
+	struct slot slot = ds_PoolAdd(queue->cmd_pool);
 	struct cmd *cmd = slot.address;
 	cmd->args_type = CMD_ARGS_REGISTER;
 	cmd->function = g_cmd_f.buf + cmdFunction;
@@ -448,7 +447,7 @@ void CmdSubmitFormatNextFrame(struct arena *mem, const char *format, ...)
 
 void CmdQueueSubmitUtf8NextFrame(struct cmdQueue *queue, const utf8 string)
 {
-	struct slot slot = cmdPoolAdd(&queue->cmd_pool);
+	struct slot slot = ds_PoolAdd(queue->cmd_pool);
 	struct cmd *cmd = slot.address;
 	cmd->args_type = CMD_ARGS_TOKEN;
 	cmd->string = string;

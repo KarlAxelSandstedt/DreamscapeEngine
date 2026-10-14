@@ -36,7 +36,7 @@ struct r_Scene *r_SceneAlloc(void)
 	scene->frame = 0;
 
 	scene->proxy3d_to_instance_map = ds_HashMapAlloc(NULL, 4096, 4096, GROWABLE);
-	scene->instance_pool = r_InstancePoolAlloc(NULL, 4096, GROWABLE);
+	ds_PoolAlloc(NULL, scene->instance_pool, 4096, GROWABLE);
 
 	LLFlush(scene->instance_new_list);
 
@@ -50,7 +50,7 @@ struct r_Scene *r_SceneAlloc(void)
 
 void r_SceneDealloc(struct r_Scene *scene)
 {
-	r_InstancePoolDealloc(&scene->instance_pool);
+	ds_PoolDealloc(scene->instance_pool);
 	ds_HashMapDealloc(&scene->proxy3d_to_instance_map);
 	ArenaFree(scene->mem_frame_arr + 0),
 	ArenaFree(scene->mem_frame_arr + 1),
@@ -190,7 +190,7 @@ static void r_scene_sort_commands_and_prune_instances(void)
 					const u32 hash = (u32) XXH3_64bits(&cached_instance->unit, sizeof(u32));
 					ds_HashMapRemove(&g_scene->proxy3d_to_instance_map, hash, index);
 				}
-				r_InstancePoolRemove(&g_scene->instance_pool, index);
+				ds_PoolRemove(g_scene->instance_pool, index);
 				g_scene->cmd_cache[cache_i].allocated = 0;
 			}
 
@@ -229,7 +229,7 @@ static void r_scene_sort_commands_and_prune_instances(void)
 				const u32 hash = (u32) XXH3_64bits(&cached_instance->unit, sizeof(u32));
 				ds_HashMapRemove(&g_scene->proxy3d_to_instance_map, hash, index);
 			}
-			r_InstancePoolRemove(&g_scene->instance_pool, index);
+			ds_PoolRemove(g_scene->instance_pool, index);
 			g_scene->cmd_cache[cache_i].allocated = 0;
 		}
 	}
@@ -751,7 +751,7 @@ struct r_Instance *r_InstanceAdd(const u32 unit, const u64 cmd)
 
 	if (index == HASH_NULL)
 	{
-		struct slot slot = r_InstancePoolAdd(&g_scene->instance_pool);
+		struct slot slot = ds_PoolAdd(g_scene->instance_pool);
 		ds_HashMapAdd(&g_scene->proxy3d_to_instance_map, hash, slot.index);
 		LLPrepend(g_scene->instance_new_list, g_scene->instance_pool.buf, slot.index, next);
 
@@ -782,7 +782,7 @@ struct r_Instance *r_InstanceAdd(const u32 unit, const u64 cmd)
 
 struct r_Instance *r_InstanceAddNonCached(const u64 cmd)
 {
-	struct slot slot = r_InstancePoolAdd(&g_scene->instance_pool);
+	struct slot slot = ds_PoolAdd(g_scene->instance_pool);
 	LLPrepend(g_scene->instance_new_list, g_scene->instance_pool.buf, slot.index, next);
 
 	struct r_Instance *instance = g_scene->instance_pool.buf + slot.index;

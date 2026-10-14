@@ -118,7 +118,7 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 	//g_editor->node_selected_list = dll2_Init(struct led_Node);
 	g_editor->render_mesh_db = r_MeshSDBAlloc(NULL, 32, GROWABLE);
 	g_editor->shape_prefab_db = ds_ShapePrefabSDBAlloc(NULL, 32, GROWABLE);
-    g_editor->shape_prefab_instance_pool = ds_ShapePrefabInstancePoolAlloc(NULL, 16384, GROWABLE);
+    ds_PoolAlloc(NULL, g_editor->shape_prefab_instance_pool, 16384, GROWABLE);
 	g_editor->body_prefab_db = ds_BodyPrefabSDBAlloc(NULL, 32, GROWABLE);
 	g_editor->cs_db = c_ShapeSDBAlloc(NULL, 32, GROWABLE);
 	g_editor->physics = ds_DynamicsAlloc(&g_editor->mem_persistent, 1024, NSEC_PER_SEC / (u64) 60, 16*1024*1024, &g_editor->cs_db, &g_editor->body_prefab_db, thread_count, thread_framesize);
@@ -147,7 +147,7 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 	shape_stub->friction = 0.0f;
     shape_stub->render_mesh = r_MeshSDBReference(&g_editor->render_mesh_db, Utf8Empty()).index;
 
-    struct slot slot = ds_ShapePrefabInstancePoolAdd(&g_editor->shape_prefab_instance_pool);
+    struct slot slot = ds_PoolAdd(g_editor->shape_prefab_instance_pool);
     const u32 instance_index = slot.index;
     struct ds_ShapePrefabInstance *instance = slot.address;
     instance->id = Utf8CstrBuffered(instance->id_buf, PREFAB_BUFSIZE, "Stub");
@@ -186,7 +186,7 @@ void led_Dealloc(struct led *led)
 {
 	ds_DynamicsFree(&g_editor->physics);
 	led_ProjectMenuDealloc(&led->project_menu);
-    ds_ShapePrefabInstancePoolDealloc(&led->shape_prefab_instance_pool);
+    ds_PoolDealloc(led->shape_prefab_instance_pool);
     ds_CPoolDealloc(g_editor->joint_pool);
 	ds_HashMapDealloc(&led->node_map);
 	led_NodeHIDealloc(&led->node_hierarchy);

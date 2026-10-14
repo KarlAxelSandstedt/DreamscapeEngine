@@ -178,7 +178,7 @@ struct ds_Window *ds_WindowAddress(const u32 index)
 
 u32 ds_WindowIndex(const struct ds_Window *win)
 {
-	return ds_WindowPoolIndex(&g_window_hierarchy->pool, win);
+	return ds_PoolIndex(g_window_hierarchy->pool, win);
 }
 
 void ds_WindowSetCurrentGlContext(const u32 window)

@@ -46,12 +46,12 @@ extern "C" {
 typedef struct T ## SDB                 \
 {                                       \
 	struct ds_HashMap 	hash;           \
-	struct T ## Pool	pool;           \
+	ds_Pool(T)		pool;           \
 	struct DLL	    allocated_list; \
 } T ## SDB
 
 #define SDB_DECLARE(T)                  \
-    POOL_DECLARE(T);                    \
+    DEFINE_POOL(T);                    \
     DEFINE_SDB_STRUCT(T);               \
     DECLARE_SDB_ALLOC(T);               \
     DECLARE_SDB_DEALLOC(T);             \
@@ -64,7 +64,6 @@ typedef struct T ## SDB                 \
     DECLARE_SDB_DEREFERENCE(T)          
 
 #define SDB_DEFINE(T)                   \
-    POOL_DEFINE(T)                      \
     DEFINE_SDB_ALLOC(T)                 \
     DEFINE_SDB_DEALLOC(T)               \
     DEFINE_SDB_FLUSH(T)                 \
@@ -127,7 +126,7 @@ DECLARE_SDB_ALLOC(T)                                                            
 {                                                                                                   \
     struct T ## SDB db = { 0 };                                                                     \
     db.hash = ds_HashMapAlloc(mem, initial_length, initial_length, growable);                       \
-    db.pool = T ## PoolAlloc(mem, initial_length, growable);                                        \
+    ds_PoolAlloc(mem, db.pool, initial_length, growable);                                        \
     DLLFlush(db.allocated_list);                                                                 \
                                                                                                     \
 	if (!db.hash.hash || !db.pool.length)                                                           \
@@ -139,7 +138,7 @@ DECLARE_SDB_ALLOC(T)                                                            
     const utf8 stub_id = Utf8Empty();                                                               \
 	const u32 key = Utf8Hash(stub_id);                                                              \
                                                                                                     \
-	struct slot slot = T ## PoolAdd(&db.pool);                                                      \
+	struct slot slot = ds_PoolAdd(db.pool);                                                      \
 	ds_Assert(slot.index == SDB_STUB);                                                              \
                                                                                                     \
 	ds_HashMapAdd(&db.hash, key, slot.index);                                                       \
@@ -151,7 +150,7 @@ DECLARE_SDB_ALLOC(T)                                                            
 #define DEFINE_SDB_DEALLOC(T)                                                                       \
 DECLARE_SDB_DEALLOC(T)                                                                              \
 {                                                                                                   \
-	T ## PoolDealloc(&db->pool);                                                                    \
+	ds_PoolDealloc(db->pool);                                                                    \
 	ds_HashMapDealloc(&db->hash);                                                                   \
 }                                                                                                   
 
@@ -159,13 +158,13 @@ DECLARE_SDB_DEALLOC(T)                                                          
 DECLARE_SDB_FLUSH(T)                                                                                \
 {                                                                                                   \
     ds_HashMapFlush(&db->hash);                                                                     \
-    T ## PoolFlush(&db->pool);                                                                      \
+    ds_PoolFlush(db->pool);                                                                      \
     DLLFlush(db->allocated_list);                                                                \
                                                                                                     \
     const utf8 stub_id = Utf8Empty();                                                               \
 	const u32 key = Utf8Hash(stub_id);                                                              \
                                                                                                     \
-	struct slot slot = T ## PoolAdd(&db->pool);                                                     \
+	struct slot slot = ds_PoolAdd(db->pool);                                                     \
 	ds_Assert(slot.index == SDB_STUB);                                                              \
                                                                                                     \
 	ds_HashMapAdd(&db->hash, key, slot.index);                                                      \
@@ -186,7 +185,7 @@ DECLARE_SDB_ADD(T)                                                              
 	if (id.buf)                                                                                     \
 	{                                                                                               \
 		const u32 key = Utf8Hash(id);                                                               \
-		struct slot slot = T ## PoolAdd(&db->pool);                                                 \
+		struct slot slot = ds_PoolAdd(db->pool);                                                 \
 		ds_HashMapAdd(&db->hash, key, slot.index);                                                  \
                                                                                                     \
 		DLLAppend(db->allocated_list, db->pool.buf, slot.index, strdb_allocated);                \
@@ -206,7 +205,7 @@ DECLARE_SDB_ADD_AND_ALIAS(T)                                                    
 	}                                                                                               \
                                                                                                     \
 	const u32 key = Utf8Hash(id_to_alias);                                                          \
-	struct slot slot = T ## PoolAdd(&db->pool);                                                     \
+	struct slot slot = ds_PoolAdd(db->pool);                                                     \
 	ds_HashMapAdd(&db->hash, key, slot.index);                                                      \
                                                                                                     \
 	DLLAppend(db->allocated_list, db->pool.buf, slot.index, strdb_allocated);                    \
@@ -225,7 +224,7 @@ DECLARE_SDB_REMOVE(T)                                                           
 	    const u32 key = Utf8Hash(db->pool.buf[slot.index].id);                                      \
 		DLLRemove(db->allocated_list, db->pool.buf, slot.index, strdb_allocated);                \
 		ds_HashMapRemove(&db->hash, key, slot.index);                                               \
-		T ## PoolRemove(&db->pool, slot.index);                                                     \
+		ds_PoolRemove(db->pool, slot.index);                                                     \
 	}                                                                                               \
 }                                                                                                   
 

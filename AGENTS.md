@@ -121,7 +121,7 @@ and 4. Reason: avoid complicated lifetimes as far as possible.
 fixed-size, or in a ds_Alloc'd block if it grows.
 
 3. Unknown-lifetime objects go in a typed, macro-generated pool:
-   - POOL_DECLARE(T)/POOL_DEFINE(T) -> TPool, TPoolAdd/Remove/...: stable
+   - DEFINE_POOL(T) -> ds_Pool(T), ds_PoolAdd/Remove/...: stable
      indices; use them as handles, never addresses (addresses move when a
      growable pool grows). Use when others hold references.
    - ds_CPool(T), ds_CPoolPush/Pop/...: compact, removal moves the last

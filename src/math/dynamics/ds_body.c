@@ -22,13 +22,12 @@
 #include "ds_quaternion.h"
 #include "ds_matrix.h"
 
-POOL_DEFINE(ds_Body);
 SDB_DEFINE(ds_BodyPrefab);
 
 ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *prefab, const ds_Transform *world, const u32 entity)
 {
     const u32 old_max = pipeline->body_pool.count_max;
-	const struct slot body_slot = ds_BodyPoolAdd(&pipeline->body_pool);
+	const struct slot body_slot = ds_PoolAdd(pipeline->body_pool);
 	struct ds_Body *body = body_slot.address;
 
     if (old_max != pipeline->body_pool.count_max)
@@ -167,7 +166,7 @@ void ds_BodyRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, const ds
     {
         ds_CPoolRemoveAndSwap(set->body_compute_pool, body->sim);
     }
-	ds_BodyPoolRemove(&pipeline->body_pool, ds_IdIndex(id));
+	ds_PoolRemove(pipeline->body_pool, ds_IdIndex(id));
 	PhysicsEventBodyRemoved(pipeline, entity);
 }
 

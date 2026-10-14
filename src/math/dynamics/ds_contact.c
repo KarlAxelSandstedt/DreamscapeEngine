@@ -17,7 +17,6 @@
 ==========================================================================
 */
 
-POOL_DEFINE(ds_Contact);
 
 struct ds_ContactKey ds_ContactKeyCanonical(const u32 shape0, const u32 shape1)
 {
@@ -56,7 +55,7 @@ struct slot ds_ContactAdd(struct ds_Dynamics *pipeline, const struct ds_ContactK
     };
 
     const u32 old_max = pipeline->contact_pool.count_max;
-	const struct slot contact_slot = ds_ContactPoolAdd(&pipeline->contact_pool);
+	const struct slot contact_slot = ds_PoolAdd(pipeline->contact_pool);
     struct ds_Contact *c = contact_slot.address;
     if (old_max != pipeline->contact_pool.count_max)
     {
@@ -140,7 +139,7 @@ void ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 index)
     DLLRemoveEx(shape0->contact_list, buf, index, shape_contact[prev0], shape_contact[0], shape_contact[next0]);
     DLLRemoveEx(shape1->contact_list, buf, index, shape_contact[prev1], shape_contact[1], shape_contact[next1]);
         
-    ds_ContactPoolRemove(&pipeline->contact_pool, index);
+    ds_PoolRemove(pipeline->contact_pool, index);
     ds_BitSetSet(&pipeline->contact_usage_set, index, 0);
 }
 

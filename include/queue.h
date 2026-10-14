@@ -46,7 +46,7 @@ struct queueObject
 	u32 	external_index;
 	u32	    queue_index;
 };
-POOL_DECLARE(queueObject);
+DEFINE_POOL(queueObject);
 
 struct queueElement 
 {
@@ -56,7 +56,7 @@ struct queueElement
 
 struct minQueue 
 {
-	struct queueObjectPool 	object_pool;
+	ds_Pool(queueObject) 	object_pool;
 	struct queueElement *	elements;
 	u32			growable;
 	u32			heap_allocated;	/* elements (and the pool) are ds_Alloc blocks */

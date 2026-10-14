@@ -446,7 +446,7 @@ struct ds_Event
 
 	utf8	utf8;
 };
-POOL_DECLARE(ds_Event);
+DEFINE_POOL(ds_Event);
 
 /* process native window events and update corresponding system window states */
 void	ds_ProcessEvents(void);

@@ -319,6 +319,42 @@ u32 ds_PoolAllocInternal(struct arena *mem, u32 *heap_allocated, void **buf, u32
 	return 1;
 }
 
+#ifdef DS_ASSERT_DEBUG
+void ds_PoolAssertFailedInternal(const char *file, const u32 line, const char *func)
+{
+	Log(T_ASSERT, S_FATAL, "ds_Assertion failed at %s:%u in function %s", file, line, func);
+	Breakpoint(1);
+	FatalCleanupAndExit();
+}
+#endif
+
+void ds_PoolGrowInternal(void **buf, u32 *length, const u64 slot_size)
+{
+	const u32 length_max = (U32_MAX >> 1);
+	const u32 old_length_including_stub = *length + 1;
+	if (old_length_including_stub == length_max)
+	{
+		LogString(T_SYSTEM, S_FATAL, "pool allocator full, exiting");
+		FatalCleanupAndExit();
+	}
+
+	u32 new_length_including_stub = old_length_including_stub << 1;
+	if (new_length_including_stub > length_max)
+	{
+		new_length_including_stub = length_max;
+	}
+
+	/* ds_Realloc is fatal on failure */
+	u8 *base = ds_Realloc((u8 *) *buf - slot_size, old_length_including_stub*slot_size,
+	                      new_length_including_stub*slot_size, DS_CACHE_LINE);
+	UnpoisonAddress(base, old_length_including_stub*slot_size);
+	PoisonAddress(base + old_length_including_stub*slot_size,
+	              (new_length_including_stub - old_length_including_stub)*slot_size);
+
+	*buf = base + slot_size;
+	*length = new_length_including_stub - 1;
+}
+
 u32 ds_PoolTryDeserializeInternal(struct arena *mem, struct ss *ss, u32 *heap_allocated, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u64 pool_slot_offset, const u32 alloc_growable)
 {
 	ds_Assert(ss->bit_index % 8 == 0);

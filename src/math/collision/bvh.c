@@ -23,7 +23,6 @@
 
 #include "collision.h"
 
-POOL_DEFINE(bvhNode);
 
 //TODO can play around with these
 #define COST_TRAVERSAL  1.0f	/* Overhead of internal node traversal (AABB testing of children) */
@@ -37,10 +36,10 @@ struct bvh DbvhAlloc(struct arena *mem, const u32 initial_length, const u32 grow
 	{
         .leaf_set = ds_BitSetAlloc(mem, initial_length, 0, growable),
         .internal_set = ds_BitSetAlloc(mem, initial_length, 0, growable),
-		.pool = bvhNodePoolAlloc(mem, initial_length, growable),
 		.cost_queue = MinQueueAlloc(NULL, COST_QUEUE_INITIAL_COUNT, growable),
-		.heap_allocated = !mem,	
+		.heap_allocated = !mem,
 	};
+	ds_PoolAlloc(mem, bvh.pool, initial_length, growable);
 
     ds_BTFlush(bvh.bt);
 
@@ -51,7 +50,7 @@ void BvhFree(struct bvh *bvh)
 {
     ds_BitSetDealloc(&bvh->internal_set);
     ds_BitSetDealloc(&bvh->leaf_set);
-    bvhNodePoolDealloc(&bvh->pool);
+    ds_PoolDealloc(bvh->pool);
 	MinQueueDealloc(&bvh->cost_queue);
 }
 
@@ -60,7 +59,7 @@ u64 BvhSerializeSize(const struct bvh *bvh)
 	return 2*sizeof(u32) 
 		+ ds_BitSetSerializeSize(&bvh->leaf_set) 
 		+ ds_BitSetSerializeSize(&bvh->internal_set) 
-		+ bvhNodePoolSerializeSize(&bvh->pool);
+		+ ds_PoolSerializeSize(bvh->pool);
 }
 
 void BvhSerialize(struct ss *ss, const struct bvh *bvh)
@@ -71,7 +70,7 @@ void BvhSerialize(struct ss *ss, const struct bvh *bvh)
 	ss_WriteU32Le(ss, bvh->bt.count);
 	ds_BitSetSerialize(ss, &bvh->leaf_set);
 	ds_BitSetSerialize(ss, &bvh->internal_set);
-	bvhNodePoolSerialize(ss, &bvh->pool);
+	ds_PoolSerialize(ss, bvh->pool);
 }
 
 u32 BvhTryDeserialize(struct arena *mem, struct ss *ss, struct bvh *bvh, const u32 growable)
@@ -89,7 +88,7 @@ u32 BvhTryDeserialize(struct arena *mem, struct ss *ss, struct bvh *bvh, const u
 	bvh->bt.count = ss_ReadU32Le(ss);
 	if (!ds_BitSetTryDeserialize(mem, ss, &bvh->leaf_set, growable)
 		|| !ds_BitSetTryDeserialize(mem, ss, &bvh->internal_set, growable)
-		|| !bvhNodePoolTryDeserialize(mem, ss, &bvh->pool, growable))
+		|| !ds_PoolTryDeserialize(mem, ss, bvh->pool, growable))
 	{
 		if (mem)
 		{
@@ -99,7 +98,7 @@ u32 BvhTryDeserialize(struct arena *mem, struct ss *ss, struct bvh *bvh, const u
 		{
 			ds_BitSetDealloc(&bvh->leaf_set);
 			ds_BitSetDealloc(&bvh->internal_set);
-			bvhNodePoolDealloc(&bvh->pool);
+			ds_PoolDealloc(bvh->pool);
 		}
 		*bvh = (struct bvh) { .heap_allocated = !mem };
 		ds_BTFlush(bvh->bt);
@@ -150,7 +149,7 @@ void DbvhFlush(struct bvh *bvh)
     ds_BitSetClear(&bvh->internal_set, 0);
     ds_BitSetClear(&bvh->leaf_set, 0);
 	ds_BTFlush(bvh->bt);
-    bvhNodePoolFlush(&bvh->pool);
+    ds_PoolFlush(bvh->pool);
 	MinQueueFlush(&bvh->cost_queue);
 }
 
@@ -253,7 +252,7 @@ static void DbvhInternalBalanceNode(struct bvh *bvh, const u32 node)
 
 u32 DbvhInsert(struct bvh *bvh, const u32 body, const u32 shape, const struct aabb *bbox)
 {
-    struct slot leaf = bvhNodePoolAdd(&bvh->pool);
+    struct slot leaf = ds_PoolAdd(bvh->pool);
     struct slot internal = { .address = NULL, .index = U32_MAX };
 	if (bvh->bt.root == BT_INDEX_NULL)
 	{
@@ -267,7 +266,7 @@ u32 DbvhInsert(struct bvh *bvh, const u32 body, const u32 shape, const struct aa
 	}
 	else
 	{
-		internal = bvhNodePoolAdd(&bvh->pool);
+		internal = ds_PoolAdd(bvh->pool);
 	    struct bvhNode *nodes = bvh->pool.buf;
 		nodes[leaf.index].bbox = *bbox;
 		nodes[leaf.index].bt_parent = BT_LEAF_MASK | internal.index;
@@ -386,7 +385,7 @@ void DbvhRemove(struct bvh *bvh, const u32 index)
 	{
 		bvh->bt.root = BT_INDEX_NULL;
         bvh->bt.count -= 1;
-        bvhNodePoolRemove(&bvh->pool, index);
+        ds_PoolRemove(bvh->pool, index);
 	}
 	else
 	{
@@ -398,8 +397,8 @@ void DbvhRemove(struct bvh *bvh, const u32 index)
 		const u32 grand_parent = nodes[parent].bt_parent;
 		nodes[sibling].bt_parent = (nodes[sibling].bt_parent & BT_LEAF_MASK) | grand_parent;
 
-        bvhNodePoolRemove(&bvh->pool, parent);
-        bvhNodePoolRemove(&bvh->pool, index);
+        ds_PoolRemove(bvh->pool, parent);
+        ds_PoolRemove(bvh->pool, index);
         bvh->bt.count -= 2;
 
 		/* set new root */
@@ -625,13 +624,13 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
 		{ 
             .internal_set = { 0 },
             .leaf_set = { 0 },
-			.pool = bvhNodePoolAlloc(mem, max_node_count_required, NOT_GROWABLE),
 			.heap_allocated = 0,
 		},
 		.tri = ArenaPush(mem, mesh->tri_count*sizeof(u32)),
 		.tri_count = mesh->tri_count,
         .depth = 0,
 	};
+	ds_PoolAlloc(mem, mesh_bvh.bvh.pool, max_node_count_required, NOT_GROWABLE);
     ds_BTFlush(mesh_bvh.bvh.bt);
 
     struct arena *tmp1 = ArenaPushScratch();
@@ -669,7 +668,7 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
     u32 *depth_stack = depth_arr.addr;
 	u32 node_stack_size = arr.len;
 	u32 sc = 1;
-    struct slot root = bvhNodePoolAdd(&mesh_bvh.bvh.pool);
+    struct slot root = ds_PoolAdd(mesh_bvh.bvh.pool);
 	ds_BTAddRoot(mesh_bvh.bvh.bt, mesh_bvh.bvh.pool.buf, root.index);
 	struct bvhNode *node = root.address;
 	/* bt_child[0] = tri_first,
@@ -812,8 +811,8 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
 				}
 
 
-				const struct slot slot_left = bvhNodePoolAdd(&mesh_bvh.bvh.pool);
-                const struct slot slot_right = bvhNodePoolAdd(&mesh_bvh.bvh.pool);
+				const struct slot slot_left = ds_PoolAdd(mesh_bvh.bvh.pool);
+                const struct slot slot_right = ds_PoolAdd(mesh_bvh.bvh.pool);
 
 				ds_BTAddChildren(mesh_bvh.bvh.bt, mesh_bvh.bvh.pool.buf, node_stack[sc], slot_left.index, slot_right.index);
 				ds_Assert(slot_left.address && slot_right.address);

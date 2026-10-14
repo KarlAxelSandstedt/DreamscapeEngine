@@ -17,7 +17,6 @@
 ==========================================================================
 */
 
-POOL_DEFINE(ds_Joint);
 
 ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const ds_BodyId b0_id, const ds_Transform *local_frame0, const ds_BodyId b1_id, const ds_Transform *local_frame1)
 {
@@ -31,7 +30,7 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const ds_BodyId b0_id, cons
     }
 
     const u32 old_max = pipeline->joint_pool.count_max;
-    struct slot slot_joint = ds_JointPoolAdd(&pipeline->joint_pool);
+    struct slot slot_joint = ds_PoolAdd(pipeline->joint_pool);
     struct ds_Joint *joint = slot_joint.address;
     if (old_max != pipeline->joint_pool.count_max)
     {
@@ -95,7 +94,7 @@ void ds_JointStaticRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, co
         }
     }
     ds_JointUnlink(pipeline, joint, index);
-    ds_JointPoolRemove(&pipeline->joint_pool, index);
+    ds_PoolRemove(pipeline->joint_pool, index);
 
     //TODO signal affected island for wakeup / slip
 }
@@ -108,7 +107,7 @@ void ds_JointDynamicRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, c
     //struct ds_Joint *joint = pipeline->joint_pool.buf + index;
     //ds_CGraphJointRemove(pipeline, joint);
     //ds_JointUnlink(pipeline, joint, index);
-    //ds_JointPoolRemove(&pipeline->joint_pool, index);
+    //ds_PoolRemove(pipeline->joint_pool, index);
 
     ////TODO signal affected island for wakeup / slip
 }

@@ -203,7 +203,7 @@ struct gl_State
 
 	struct gl_Functions	func;
 };
-POOL_DECLARE(gl_State);
+DEFINE_POOL(gl_State);
 
 struct gl_TextureUnitBinding
 {
@@ -213,7 +213,7 @@ struct gl_TextureUnitBinding
 	struct DLLNode texture_binding;
 	POOL_NODE;
 };
-POOL_DECLARE(gl_TextureUnitBinding);
+DEFINE_POOL(gl_TextureUnitBinding);
 
 struct gl_Texture
 {
@@ -234,7 +234,7 @@ struct gl_Texture
 	GLenum		format;
 	GLenum		type;
 };
-POOL_DECLARE(gl_Texture);
+DEFINE_POOL(gl_Texture);
 
 struct gl_TextureUnit
 {

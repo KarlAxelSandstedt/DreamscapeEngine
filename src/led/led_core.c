@@ -679,7 +679,7 @@ static void led_ShapePrefabInstanceRemove(struct led *led, const u32 i)
 {
     const struct ds_ShapePrefabInstance *instance = led->shape_prefab_instance_pool.buf + i;
     ds_ShapePrefabSDBDereference(&led->shape_prefab_db, instance->shape_prefab);
-    ds_ShapePrefabInstancePoolRemove(&led->shape_prefab_instance_pool, i);
+    ds_PoolRemove(led->shape_prefab_instance_pool, i);
 }
 
 void led_RigidBodyPrefabRemove(struct led *led, const utf8 id)
@@ -728,7 +728,7 @@ void led_RigidBodyPrefabAttachShape(struct led *led, const utf8 rb_id, const utf
     }
     else
     {
-        struct slot slot = ds_ShapePrefabInstancePoolAdd(&led->shape_prefab_instance_pool);
+        struct slot slot = ds_PoolAdd(led->shape_prefab_instance_pool);
         struct ds_ShapePrefabInstance *instance = slot.address;
 
         DLLPrepend(body_prefab->shape_list, led->shape_prefab_instance_pool.buf, slot.index, body_shape);
@@ -1957,7 +1957,7 @@ static void led_EngineRun(struct led *led)
     }
         
 	
-	ds_PhysicsEventPoolFlush(&led->physics.event_pool);
+	ds_PoolFlush(led->physics.event_pool);
 
     //ds_DynamicsPrintUsage(&led->physics);
 }

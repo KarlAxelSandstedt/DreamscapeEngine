@@ -22,12 +22,11 @@
 
 #include "ds_vector.h"
 
-POOL_DEFINE(ds_SolverSet);
 
 struct slot ds_SolverSetAdd(struct arena *mem_set, struct ds_Dynamics *pipeline, const u32 initial_body_sim_count, const u32 initial_body_compute_count, const u32 initial_contact_count, const u32 initial_contact_compute_count, const u32 initial_joint_count, const u32 initial_island_count)
 {
     ProfZone;
-    struct slot slot = ds_SolverSetPoolAdd(&pipeline->solver_set_pool);
+    struct slot slot = ds_PoolAdd(pipeline->solver_set_pool);
     struct ds_SolverSet *set = slot.address;
     const u32 growable = (mem_set) 
                        ? 0 
@@ -119,7 +118,7 @@ void ds_SolverSetRemove(struct ds_Dynamics *pipeline, const u32 index)
         }
     }
 
-    ds_SolverSetPoolRemove(&pipeline->solver_set_pool, index);
+    ds_PoolRemove(pipeline->solver_set_pool, index);
 }
 
 void ds_SolverSetFlush(struct ds_Dynamics *pipeline, const u32 index)

@@ -24,7 +24,6 @@
 #include "ds_ui.h"
 #include "sys_local.h"
 
-POOL_DEFINE(ds_Event);
 
 void ds_WindowEventHandler(struct ds_Window *sys_win)
 {
@@ -241,7 +240,7 @@ void ds_ProcessEvents(void)
 				}
 				else
 				{
-					struct slot slot = ds_EventPoolAdd(&sys_win->ui->event_pool);
+					struct slot slot = ds_PoolAdd(sys_win->ui->event_pool);
 					DLLAppend(sys_win->ui->event_list, sys_win->ui->event_pool.buf, slot.index, node);
 					struct ds_Event *new = slot.address;
 					new->scancode = event.scancode;
@@ -260,7 +259,7 @@ void ds_ProcessEvents(void)
 				}
 				else
 				{
-					struct slot slot = ds_EventPoolAdd(&sys_win->ui->event_pool);
+					struct slot slot = ds_PoolAdd(sys_win->ui->event_pool);
 					DLLAppend(sys_win->ui->event_list, sys_win->ui->event_pool.buf, slot.index, node);
 					struct ds_Event *new = slot.address;
 					new->scancode = event.scancode;
@@ -318,7 +317,7 @@ void ds_ProcessEvents(void)
 
 			case DS_WINDOW_CONFIG:
 			{
-				ds_WindowConfigUpdate(ds_WindowPoolIndex(&g_window_hierarchy->pool, sys_win));
+				ds_WindowConfigUpdate(ds_PoolIndex(g_window_hierarchy->pool, sys_win));
 			} break;
 
 			//case DS_WINDOW_MINIMIZE:

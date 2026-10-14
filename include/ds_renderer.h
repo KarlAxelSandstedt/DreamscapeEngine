@@ -340,7 +340,7 @@ struct r_Instance
 		struct r_Mesh	      *mesh;
 	};
 };
-POOL_DECLARE(r_Instance);
+DEFINE_POOL(r_Instance);
 
 struct r_Instance *	r_InstanceAdd(const u32 unit, const u64 cmd);
 struct r_Instance *	r_InstanceAddNonCached(const u64 cmd); /* add non cached instance with no unit. This
@@ -425,7 +425,7 @@ struct r_Scene
 	u64 			frame;
 
 	struct ds_HashMap 		proxy3d_to_instance_map;/* map[ generation(32) | index(32) ] -> instance */
-	struct r_InstancePool 	instance_pool;		/* instance storage */
+	ds_Pool(r_Instance) 	instance_pool;		/* instance storage */
 	struct LL            instance_new_list;	/* non-cached instance 	*/
 
 	struct r_Command *	cmd_cache;		/* cached commands 		*/

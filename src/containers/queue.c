@@ -23,7 +23,6 @@
 #include "ds_base.h"
 #include "queue.h"
 
-POOL_DEFINE(queueObject);
 
 /**
  * parent_index() - get queue index of parent.
@@ -158,12 +157,12 @@ struct minQueue MinQueueAlloc(struct arena *arena, const u32 initial_length, con
 
 	if (arena)
 	{
-		queue.object_pool = queueObjectPoolAlloc(arena, initial_length, !GROWABLE);
+		ds_PoolAlloc(arena, queue.object_pool, initial_length, !GROWABLE);
 		queue.elements = ArenaPush(arena, initial_length * sizeof(struct queueElement));
 	}
 	else
 	{
-		queue.object_pool = queueObjectPoolAlloc(NULL, initial_length, growable);
+		ds_PoolAlloc(NULL, queue.object_pool, initial_length, growable);
 		queue.elements = ds_Alloc(queue.object_pool.length * sizeof(struct queueElement), sizeof(struct queueElement));
 		queue.heap_allocated = 1;
 	}
@@ -183,7 +182,7 @@ void MinQueueDealloc(struct minQueue * const queue)
 {
 	if (queue->heap_allocated)
 	{
-		queueObjectPoolDealloc(&queue->object_pool);
+		ds_PoolDealloc(queue->object_pool);
 		ds_Free(queue->elements);
 		queue->heap_allocated = 0;
 	}
@@ -202,7 +201,7 @@ u32 MinQueuePop(struct minQueue * const queue)
 	/* Check coherence of the queue from the start */
 	min_queue_heapify_down(queue, 0);
 
-	queueObjectPoolRemove(&queue->object_pool, index);
+	ds_PoolRemove(queue->object_pool, index);
 
 	return external_index;
 }
@@ -211,7 +210,7 @@ u32 MinQueuePush(struct minQueue * const queue, const f32 priority, const u32 ex
 {
 	const u32 old_length = queue->object_pool.length;
 	const u32 queue_index = queue->object_pool.count;
-	struct slot slot = queueObjectPoolAdd(&queue->object_pool);
+	struct slot slot = ds_PoolAdd(queue->object_pool);
 	if (!slot.address)
 	{
 		LogString(T_SYSTEM, S_FATAL, "Non-growable min queue full in MinQueuePush, exiting.");
@@ -251,7 +250,7 @@ void MinQueueDecreasePriority(struct minQueue * const queue, const u32 object_in
 
 void MinQueueFlush(struct minQueue * const queue)
 {
-	queueObjectPoolFlush(&queue->object_pool);
+	ds_PoolFlush(queue->object_pool);
 }
 
 static void min_queue_fixed_heapify_up(struct minQueueFixed * const queue, u32 queue_index)

@@ -23,7 +23,6 @@
 #include "transform.h"
 #include "ds_led.h"
 
-POOL_DEFINE(r_Instance);
 
 static struct r_Mesh *DebugContactManifoldSegmentsMesh(struct arena *mem, const struct led *led)
 {

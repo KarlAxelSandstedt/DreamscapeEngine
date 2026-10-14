@@ -732,7 +732,7 @@ struct ui
 	u32			            bucket_cache;	/* for quick cmd check */
 	u32			            bucket_count;
 
-	struct ds_EventPool		event_pool;
+	ds_Pool(ds_Event)		event_pool;
 	struct DLL		    event_list;
 
 	/* node map for all u's  */

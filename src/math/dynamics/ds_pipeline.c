@@ -25,7 +25,6 @@
 #include "ds_vector.h"
 #include "ds_job.h"
 
-POOL_DEFINE(ds_PhysicsEvent);
 
 struct ds_DynamicsWorker *g_dynamics_worker;
 
@@ -111,25 +110,25 @@ struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, c
 
 	ds_AssertString(PowerOfTwoCheck(initial_size), "For simplicity of future data structures, expect pipeline sizes to be powers of two");
 
-	pipeline.body_pool = ds_BodyPoolAlloc(NULL, initial_size, GROWABLE);
+	ds_PoolAlloc(NULL, pipeline.body_pool, initial_size, GROWABLE);
     pipeline.body_usage_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
 
-    pipeline.joint_pool = ds_JointPoolAlloc(NULL, initial_size, GROWABLE);
+    ds_PoolAlloc(NULL, pipeline.joint_pool, initial_size, GROWABLE);
 
-	pipeline.shape_pool = ds_ShapePoolAlloc(NULL, initial_size, GROWABLE);
+	ds_PoolAlloc(NULL, pipeline.shape_pool, initial_size, GROWABLE);
     pipeline.shape_dynamic_usage_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
 	pipeline.dynamic_bvh = DbvhAlloc(NULL, 2*initial_size, GROWABLE);
 	pipeline.static_bvh = DbvhAlloc(NULL, 2*initial_size, GROWABLE);
     pipeline.shape_dirty_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
     ds_CPoolAlloc(NULL, pipeline.dirty_shape_query, initial_size, GROWABLE);
 
-	pipeline.event_pool = ds_PhysicsEventPoolAlloc(NULL, 256, GROWABLE);
+	ds_PoolAlloc(NULL, pipeline.event_pool, 256, GROWABLE);
 
-    pipeline.contact_pool = ds_ContactPoolAlloc(NULL, 8*initial_size, GROWABLE);
+    ds_PoolAlloc(NULL, pipeline.contact_pool, 8*initial_size, GROWABLE);
     pipeline.contact_map = ds_HashMapAlloc(NULL, 8*initial_size, 8*initial_size, GROWABLE);
     pipeline.contact_usage_set = ds_BitSetAlloc(NULL, 8*initial_size, 0, GROWABLE);
 
-	pipeline.island_pool = ds_IslandPoolAlloc(NULL, initial_size, GROWABLE);
+	ds_PoolAlloc(NULL, pipeline.island_pool, initial_size, GROWABLE);
     pipeline.island_high_energy_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
 
     pipeline.margin_on = 0;
@@ -138,7 +137,7 @@ struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, c
     ds_CGraphAlloc(&pipeline, 4096);
     pipeline.numerics_config = ds_NumericsConfigDefault();
 
-    pipeline.solver_set_pool = ds_SolverSetPoolAlloc(NULL, 4096, GROWABLE);
+    ds_PoolAlloc(NULL, pipeline.solver_set_pool, 4096, GROWABLE);
     const struct slot set_disabled = ds_SolverSetAdd(NULL, &pipeline, 0, 0, 0, 0, 0,  0);
     const struct slot set_static = ds_SolverSetAdd(NULL, &pipeline, 256, 0, 0, 0, 0, 0);
     const struct slot set_active = ds_SolverSetAdd(NULL, &pipeline, 4096, 4096, 4096, 0, 0, 4096);
@@ -163,15 +162,15 @@ void ds_DynamicsFree(struct ds_Dynamics *pipeline)
     ds_CPoolDealloc(pipeline->dirty_shape_query);
 	BvhFree(&pipeline->dynamic_bvh);
 	BvhFree(&pipeline->static_bvh);
-    ds_ContactPoolDealloc(&pipeline->contact_pool);
+    ds_PoolDealloc(pipeline->contact_pool);
     ds_HashMapDealloc(&pipeline->contact_map);
     ds_BitSetDealloc(&pipeline->contact_usage_set);
-	ds_IslandPoolDealloc(&pipeline->island_pool);
+	ds_PoolDealloc(pipeline->island_pool);
     ds_BitSetDealloc(&pipeline->island_high_energy_set);
-	ds_BodyPoolDealloc(&pipeline->body_pool);
-	ds_PhysicsEventPoolDealloc(&pipeline->event_pool);
-	ds_ShapePoolDealloc(&pipeline->shape_pool);
-    ds_JointPoolDealloc(&pipeline->joint_pool);
+	ds_PoolDealloc(pipeline->body_pool);
+	ds_PoolDealloc(pipeline->event_pool);
+	ds_PoolDealloc(pipeline->shape_pool);
+    ds_PoolDealloc(pipeline->joint_pool);
     ds_CGraphDealloc(pipeline);
     ds_BitSetDealloc(&pipeline->body_usage_set);
     
@@ -183,7 +182,7 @@ void ds_DynamicsFree(struct ds_Dynamics *pipeline)
             ds_SolverSetRemove(pipeline, i);
         }
     }
-    ds_SolverSetPoolDealloc(&pipeline->solver_set_pool);
+    ds_PoolDealloc(pipeline->solver_set_pool);
 }
 
 static void ds_DynamicsClearFrame(struct ds_Dynamics *pipeline)
@@ -222,13 +221,13 @@ void ds_DynamicsFlush(struct ds_Dynamics *pipeline)
         }
     }
 
-    ds_ContactPoolFlush(&pipeline->contact_pool);
+    ds_PoolFlush(pipeline->contact_pool);
     ds_HashMapFlush(&pipeline->contact_map);
     ds_BitSetClear(&pipeline->contact_usage_set, 0);
 
-	ds_IslandPoolFlush(&pipeline->island_pool);
+	ds_PoolFlush(pipeline->island_pool);
 	
-	ds_BodyPoolFlush(&pipeline->body_pool);
+	ds_PoolFlush(pipeline->body_pool);
     ds_BitSetClear(&pipeline->body_usage_set, 0);
 
     ds_BitSetClear(&pipeline->shape_dynamic_usage_set, 0);
@@ -236,12 +235,12 @@ void ds_DynamicsFlush(struct ds_Dynamics *pipeline)
     ds_CPoolFlush(pipeline->dirty_shape_query);
 	DbvhFlush(&pipeline->dynamic_bvh);
 	DbvhFlush(&pipeline->static_bvh);
-	ds_ShapePoolFlush(&pipeline->shape_pool);
+	ds_PoolFlush(pipeline->shape_pool);
 
-	ds_PhysicsEventPoolFlush(&pipeline->event_pool);
+	ds_PoolFlush(pipeline->event_pool);
 	DLLFlush(pipeline->event_list);
 
-    ds_JointPoolFlush(&pipeline->joint_pool);
+    ds_PoolFlush(pipeline->joint_pool);
     ds_CGraphFlush(pipeline);
 
 	ArenaFlush(&pipeline->frame);
@@ -1848,7 +1847,7 @@ u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const str
 
 struct ds_PhysicsEvent *ds_PhysicsEventPush(struct ds_Dynamics *pipeline)
 {
-	struct slot slot = ds_PhysicsEventPoolAdd(&pipeline->event_pool);
+	struct slot slot = ds_PoolAdd(pipeline->event_pool);
     DLLAppend(pipeline->event_list, pipeline->event_pool.buf, slot.index, node);
 	struct ds_PhysicsEvent *event = slot.address;
 	event->ns = pipeline->ns_start + pipeline->frames_completed * pipeline->ns_tick;

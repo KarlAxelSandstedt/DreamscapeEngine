@@ -493,13 +493,12 @@ struct test_PoolNode
     u32 pad;
 };
 
-POOL_DECLARE(test_PoolNode);
-POOL_DEFINE(test_PoolNode)
+DEFINE_POOL(test_PoolNode);
 
 #define POOL_TEST_MAX 1024
 
 /* Pool state matches the model: count, allocation bits of [0, count_max), values of allocated slots. */
-static u32 PoolTestMatches(const struct test_PoolNodePool *pool, const u8 *alive, const u64 *value, const u32 count)
+static u32 PoolTestMatches(const ds_Pool(test_PoolNode) *pool, const u8 *alive, const u64 *value, const u32 count)
 {
     if (pool->count != count || pool->count_max > POOL_TEST_MAX)
     {
@@ -518,7 +517,7 @@ static u32 PoolTestMatches(const struct test_PoolNodePool *pool, const u8 *alive
 }
 
 /* Random adds and removes until full (fixed pools) or up to 400 slots (growable pool). */
-static u32 PoolTestRandomOps(struct test_PoolNodePool *pool, u8 *alive, u64 *value, u32 *count, const u32 op_count)
+static u32 PoolTestRandomOps(ds_Pool(test_PoolNode) *pool, u8 *alive, u64 *value, u32 *count, const u32 op_count)
 {
     for (u32 i = 0; i < op_count; ++i)
     {
@@ -531,7 +530,7 @@ static u32 PoolTestRandomOps(struct test_PoolNodePool *pool, u8 *alive, u64 *val
             }
 
             const u32 full = (pool->count == pool->length && !pool->growable);
-            const struct slot slot = test_PoolNodePoolAdd(pool);
+            const struct slot slot = ds_PoolAdd(*pool);
             if (full)
             {
                 if (slot.address != NULL || slot.index != POOL_NULL)
@@ -563,11 +562,11 @@ static u32 PoolTestRandomOps(struct test_PoolNodePool *pool, u8 *alive, u64 *val
             const u64 by_address = RngU64Range(0, 1);
             if (by_address)
             {
-                test_PoolNodePoolRemoveAddress(pool, pool->buf + index);
+                ds_PoolRemoveAddress(*pool, pool->buf + index);
             }
             else
             {
-                test_PoolNodePoolRemove(pool, index);
+                ds_PoolRemove(*pool, index);
             }
             alive[index] = 0;
             *count -= 1;
@@ -591,9 +590,11 @@ static struct test_Output PoolTest(struct test_Environment *env)
     u64 *value = ArenaPush(env->mem_2, POOL_TEST_MAX*sizeof(u64));
     for (u32 variant = 0; variant < 3; ++variant)
     {
-        struct test_PoolNodePool pool = (variant == 0)
-            ? test_PoolNodePoolAlloc(env->mem_1, 100, NOT_GROWABLE)
-            : test_PoolNodePoolAlloc(NULL, (variant == 1) ? 100 : 1, (variant == 2) ? GROWABLE : NOT_GROWABLE);
+        ds_Pool(test_PoolNode) pool;
+        const u32 allocated = (variant == 0)
+            ? ds_PoolAlloc(env->mem_1, pool, 100, NOT_GROWABLE)
+            : ds_PoolAlloc(NULL, pool, (variant == 1) ? 100 : 1, (variant == 2) ? GROWABLE : NOT_GROWABLE);
+        TEST_EQUAL(1, allocated);
         TEST_NOT_EQUAL(NULL, pool.buf);
         TEST_TRUE((variant == 0) ? pool.length == 100 : pool.length >= ((variant == 1) ? 100 : 1));
 
@@ -601,12 +602,12 @@ static struct test_Output PoolTest(struct test_Environment *env)
         u32 count = 0;
         TEST_TRUE(PoolTestRandomOps(&pool, alive, value, &count, 4000));
 
-        test_PoolNodePoolFlush(&pool);
+        ds_PoolFlush(pool);
         TEST_EQUAL(0, pool.count);
         TEST_EQUAL(0, pool.count_max);
-        TEST_EQUAL(0, test_PoolNodePoolAdd(&pool).index);
+        TEST_EQUAL(0, ds_PoolAdd(pool).index);
 
-        test_PoolNodePoolDealloc(&pool);
+        ds_PoolDealloc(pool);
         TEST_EQUAL(NULL, pool.buf);
         TEST_EQUAL(0, pool.length);
         TEST_EQUAL(0, pool.count_max);
@@ -628,7 +629,8 @@ static struct test_Output PoolSerializeTest(struct test_Environment *env)
     u64 *value = ArenaPush(env->mem_2, POOL_TEST_MAX*sizeof(u64));
     u32 *free_order = ArenaPush(env->mem_2, POOL_TEST_MAX*sizeof(u32));
 
-    struct test_PoolNodePool pool = test_PoolNodePoolAlloc(NULL, 64, GROWABLE);
+    ds_Pool(test_PoolNode) pool;
+    ds_PoolAlloc(NULL, pool, 64, GROWABLE);
     u32 count = 0;
     TEST_TRUE(PoolTestRandomOps(&pool, alive, value, &count, 600));
     /* at least two free and two allocated slots (600 ops at 2/3 adds leave hundreds allocated) */
@@ -636,7 +638,7 @@ static struct test_Output PoolSerializeTest(struct test_Environment *env)
     {
         u32 index = 0;
         while (!alive[index]) { index += 1; }
-        test_PoolNodePoolRemove(&pool, index);
+        ds_PoolRemove(pool, index);
         alive[index] = 0;
         count -= 1;
     }
@@ -650,17 +652,17 @@ static struct test_Output PoolSerializeTest(struct test_Environment *env)
     }
     TEST_EQUAL(pool.count_max - pool.count, free_count);
 
-    const u64 size = test_PoolNodePoolSerializeSize(&pool);
+    const u64 size = ds_PoolSerializeSize(pool);
     struct ss ss = ss_Alloc(env->mem_1, size);
     TEST_NOT_EQUAL(NULL, ss.buf);
-    test_PoolNodePoolSerialize(&ss, &pool);
+    ds_PoolSerialize(&ss, pool);
     TEST_EQUAL(8*size, ss.bit_index);
 
     for (u32 heap = 0; heap <= 1; ++heap)
     {
         ss.bit_index = 0;
-        struct test_PoolNodePool read;
-        TEST_EQUAL(1, test_PoolNodePoolTryDeserialize((heap) ? NULL : env->mem_2, &ss, &read, (heap) ? GROWABLE : NOT_GROWABLE));
+        ds_Pool(test_PoolNode) read;
+        TEST_EQUAL(1, ds_PoolTryDeserialize((heap) ? NULL : env->mem_2, &ss, read, (heap) ? GROWABLE : NOT_GROWABLE));
         TEST_EQUAL(8*size, ss.bit_index);
         TEST_EQUAL(pool.count, read.count);
         TEST_EQUAL(pool.count_max, read.count_max);
@@ -669,16 +671,16 @@ static struct test_Output PoolSerializeTest(struct test_Environment *env)
         TEST_TRUE(PoolTestMatches(&read, alive, value, count));
         for (u32 i = 0; i < free_count; ++i)
         {
-            TEST_EQUAL(free_order[i], test_PoolNodePoolAdd(&read).index);
+            TEST_EQUAL(free_order[i], ds_PoolAdd(read).index);
         }
-        test_PoolNodePoolDealloc(&read);
+        ds_PoolDealloc(read);
     }
 
     const u64 mem_left = env->mem_2->mem_left;
-    struct test_PoolNodePool read;
+    ds_Pool(test_PoolNode) read;
 
     struct ss cut = ss_Buffered(ss.buf, size - 1);
-    TEST_EQUAL(0, test_PoolNodePoolTryDeserialize(env->mem_2, &cut, &read, NOT_GROWABLE));
+    TEST_EQUAL(0, ds_PoolTryDeserialize(env->mem_2, &cut, read, NOT_GROWABLE));
     TEST_EQUAL(0, cut.bit_index);
     TEST_EQUAL(NULL, read.buf);
     TEST_EQUAL(0, read.count);
@@ -724,7 +726,7 @@ static struct test_Output PoolSerializeTest(struct test_Environment *env)
             ss_WriteU32Le(&bad, corrupt_value[i]);
             bad.bit_index = 0;
 
-            TEST_EQUAL(0, test_PoolNodePoolTryDeserialize((heap) ? NULL : env->mem_2, &bad, &read, (heap) ? GROWABLE : NOT_GROWABLE));
+            TEST_EQUAL(0, ds_PoolTryDeserialize((heap) ? NULL : env->mem_2, &bad, read, (heap) ? GROWABLE : NOT_GROWABLE));
             TEST_EQUAL(0, bad.bit_index);
             TEST_EQUAL(NULL, read.buf);
             TEST_EQUAL(0, read.heap_allocated);
@@ -733,7 +735,7 @@ static struct test_Output PoolSerializeTest(struct test_Environment *env)
         }
     }
 
-    test_PoolNodePoolDealloc(&pool);
+    ds_PoolDealloc(pool);
 
 	return output;
 }

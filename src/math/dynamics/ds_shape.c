@@ -22,9 +22,7 @@
 #include "ds_quaternion.h"
 #include "ds_matrix.h"
 
-POOL_DEFINE(ds_Shape);
 SDB_DEFINE(ds_ShapePrefab);
-POOL_DEFINE(ds_ShapePrefabInstance);
 
 ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab *prefab, const ds_Transform *t, const ds_BodyId body_id)
 {
@@ -37,7 +35,7 @@ ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab
 
     ds_ShapeId id = DS_ID_NULL;
     const u32 old_max = pipeline->shape_pool.count_max;
-    const struct slot shape_slot = ds_ShapePoolAdd(&pipeline->shape_pool);
+    const struct slot shape_slot = ds_PoolAdd(pipeline->shape_pool);
 	struct ds_Shape *shape = shape_slot.address;
 
     if (old_max != pipeline->shape_pool.count_max)
@@ -111,7 +109,7 @@ void ds_ShapeDynamicRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, c
     DLLRemove(body->shape_list, pipeline->shape_pool.buf, shape_index, body_shape);
 	c_ShapeSDBDereference(pipeline->cshape_db, shape->cshape_handle);
 	DbvhRemove(&pipeline->dynamic_bvh, shape->proxy);
-	ds_ShapePoolRemove(&pipeline->shape_pool, shape_index);
+	ds_PoolRemove(pipeline->shape_pool, shape_index);
 }
 
 void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, struct ds_Body *body, const u32 index)
@@ -127,7 +125,7 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, s
     DLLRemove(body->shape_list, pipeline->shape_pool.buf, index, body_shape);
 	c_ShapeSDBDereference(pipeline->cshape_db, shape->cshape_handle);
 	DbvhRemove(&pipeline->static_bvh, shape->proxy);
-	ds_ShapePoolRemove(&pipeline->shape_pool, index);
+	ds_PoolRemove(pipeline->shape_pool, index);
 }
 
 struct slot ds_ShapeLookup(const struct ds_Dynamics *pipeline, const ds_ShapeId shape_id)

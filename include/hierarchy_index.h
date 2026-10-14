@@ -42,11 +42,11 @@ extern "C" {
 #define DEFINE_HI_STRUCT(T)     \
 typedef struct T ## HI          \
 {                               \
-    T ## Pool   pool;           \
+    ds_Pool(T)  pool;           \
 } T ## HI
 
 #define HI_DECLARE(T)                           \
-    POOL_DECLARE(T);                            \
+    DEFINE_POOL(T);                            \
     DEFINE_HI_STRUCT(T);                        \
     DECLARE_HI_ALLOC(T);                        \
     DECLARE_HI_DEALLOC(T);                      \
@@ -58,7 +58,6 @@ typedef struct T ## HI          \
     DECLARE_HI_APPLY_CUSTOM_FREE_AND_REMOVE(T)        
 
 #define HI_DEFINE(T)                            \
-    POOL_DEFINE(T)                              \
     DEFINE_HI_ALLOC(T)                          \
     DEFINE_HI_DEALLOC(T)                        \
     DEFINE_HI_FLUSH(T)                          \
@@ -116,11 +115,11 @@ DECLARE_HI_ALLOC(T)                                                 \
 {                                                                   \
     const u64 size = initial_size + 2;                              \
 	T ## HI hi = { 0 };                                             \
-	hi.pool = T ## PoolAlloc(mem, size, growable);                  \
+	ds_PoolAlloc(mem, hi.pool, size, growable);                  \
 	if (hi.pool.buf)                                                \
 	{                                                               \
-		const u32 root_index = T ## PoolAdd(&hi.pool).index;        \
-		const u32 orphan_index = T ## PoolAdd(&hi.pool).index;      \
+		const u32 root_index = ds_PoolAdd(hi.pool).index;        \
+		const u32 orphan_index = ds_PoolAdd(hi.pool).index;      \
                                                                     \
         T *root = hi.pool.buf + root_index;                         \
         T *orphan = hi.pool.buf + orphan_index;                     \
@@ -149,15 +148,15 @@ DECLARE_HI_ALLOC(T)                                                 \
 #define DEFINE_HI_DEALLOC(T)                                        \
 DECLARE_HI_DEALLOC(T)                                               \
 {                                                                   \
-    T ## PoolDealloc(&hi->pool);                                    \
+    ds_PoolDealloc(hi->pool);                                    \
 }
 
 #define DEFINE_HI_FLUSH(T)                                          \
 DECLARE_HI_FLUSH(T)                                                 \
 {                                                                   \
-	T ## PoolFlush(&hi->pool);                                      \
-	const u32 root_index = T ## PoolAdd(&hi->pool).index;           \
-	const u32 orphan_index = T ## PoolAdd(&hi->pool).index;         \
+	ds_PoolFlush(hi->pool);                                      \
+	const u32 root_index = ds_PoolAdd(hi->pool).index;           \
+	const u32 orphan_index = ds_PoolAdd(hi->pool).index;         \
                                                                     \
     T *root = hi->pool.buf + root_index;                            \
     T *orphan = hi->pool.buf + orphan_index;                        \
@@ -185,7 +184,7 @@ DECLARE_HI_ADD(T)                                                   \
 {                                                                   \
 	ds_Assert(parent_index < hi->pool.count_max);                   \
                                                                     \
-	struct slot slot = T ## PoolAdd(&hi->pool);                     \
+	struct slot slot = ds_PoolAdd(hi->pool);                     \
 	if (slot.index == U32_MAX)                                      \
 	{                                                               \
 		return (struct slot) { .index = HI_NULL, .address = NULL }; \
@@ -258,7 +257,7 @@ DECLARE_HI_REMOVE(T)                                                            
 				stack[sc++] = (u32) sub_next;                                       \
 			}                                                                       \
                                                                                     \
-			T ## PoolRemove(&hi->pool, sub_index);                                  \
+			ds_PoolRemove(hi->pool, sub_index);                                  \
 		}                                                                           \
 	    ArenaPopRecord(tmp);                                                        \
 	}                                                                               \
@@ -277,7 +276,7 @@ DECLARE_HI_REMOVE(T)                                                            
     hi->pool.buf[next].hi_prev = prev;                                              \
     hi->pool.buf[prev].hi_next = next;                                              \
                                                                                     \
-    T ## PoolRemove(&hi->pool, index);                                              \
+    ds_PoolRemove(hi->pool, index);                                              \
 }
 
 #define DEFINE_HI_APPLY_CUSTOM_FREE_AND_REMOVE(T)                                   \
@@ -325,7 +324,7 @@ DECLARE_HI_APPLY_CUSTOM_FREE_AND_REMOVE(T)                                      
 			}                                                                       \
                                                                                     \
 		    custom_free(hi, (u32) sub_index, data);                                 \
-			T ## PoolRemove(&hi->pool, sub_index);                                  \
+			ds_PoolRemove(hi->pool, sub_index);                                  \
 		}                                                                           \
 	    ArenaPopRecord(tmp);                                                        \
 	}                                                                               \
@@ -345,7 +344,7 @@ DECLARE_HI_APPLY_CUSTOM_FREE_AND_REMOVE(T)                                      
     hi->pool.buf[prev].hi_next = next;                                              \
                                                                                     \
 	custom_free(hi, (u32) index, data);                                             \
-    T ## PoolRemove(&hi->pool, index);                                              \
+    ds_PoolRemove(hi->pool, index);                                              \
 }
 
 #define DEFINE_HI_ADOPT_NODE_EXCLUSIVE(T)                                                               \

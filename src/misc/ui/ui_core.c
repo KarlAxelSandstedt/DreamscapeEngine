@@ -131,7 +131,7 @@ struct ui *ui_Alloc(void)
 	ds_CPoolAlloc(NULL, ui->bucket_pool, 64, GROWABLE);
 	DLLFlush(ui->bucket_list);
 	ui->bucket_map = ds_HashMapAlloc(NULL, 128, 128, GROWABLE);
-	ui->event_pool = ds_EventPoolAlloc(NULL, 32, GROWABLE);
+	ds_PoolAlloc(NULL, ui->event_pool, 32, GROWABLE);
     DLLFlush(ui->event_list);
 	ui->frame = 0;
 	ui->root = HI_ROOT;
@@ -260,7 +260,7 @@ void ui_Dealloc(struct ui *ui)
 	ds_CPoolDealloc(ui->floating_depth);
 	ds_CPoolDealloc(ui->fixed_depth);
 	ds_HashMapDealloc(&ui->node_map);
-	ds_EventPoolDealloc(&ui->event_pool);
+	ds_PoolDealloc(ui->event_pool);
 	ds_CPoolDealloc(ui->bucket_pool);
 	ds_HashMapDealloc(&ui->bucket_map);
 	ui_NodeHIDealloc(&ui->node_hierarchy);
@@ -1009,7 +1009,7 @@ static struct slot ui_TextSelectionAlloc(const struct ui_Node *node, const v4 co
 void ui_FrameEnd(void)
 {	
 	DLLFlush(g_ui->event_list);
-	ds_EventPoolFlush(&g_ui->event_pool);
+	ds_PoolFlush(g_ui->event_pool);
 
 	ui_NodePop();
 

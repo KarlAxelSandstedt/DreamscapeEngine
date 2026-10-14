@@ -104,11 +104,11 @@ struct cmd
 	union cmdRegister		    arg[CMD_REGISTER_COUNT];	/* defined if args_type == REGISTER */
 	enum cmdArgsType		    args_type;	
 };
-POOL_DECLARE(cmd);
+DEFINE_POOL(cmd);
 
 struct cmdQueue
 {
-	struct cmdPool	cmd_pool;
+	ds_Pool(cmd)	cmd_pool;
 	struct LL	cmd_list;
 	struct LL	cmd_list_next_frame;
 
