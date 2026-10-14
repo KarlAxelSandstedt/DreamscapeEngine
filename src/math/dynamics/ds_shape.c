@@ -247,7 +247,7 @@ u32 ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, 
 		: c_shape_tests[c_s1->type][c_s0->type](c_s1, &t1, c_s0, &t0);
 }
 
-f32 ds_ShapeDistance(v3 *c0, v3 *c1, const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, const struct ds_Shape *s1)
+f32 ds_ShapeDistance(v3f64 *c0, v3f64 *c1, const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, const struct ds_Shape *s1)
 {
  	const struct c_Shape *c_s0 = pipeline->cshape_db->pool.buf + s0->cshape_handle;
 	const struct c_Shape *c_s1 = pipeline->cshape_db->pool.buf + s1->cshape_handle;
@@ -256,14 +256,9 @@ f32 ds_ShapeDistance(v3 *c0, v3 *c1, const struct ds_Dynamics *pipeline, const s
     ds_ShapeWorldTransform(&t0, pipeline, s0);
     ds_ShapeWorldTransform(&t1, pipeline, s1);
 
-    /* TODO(f64 P3): output the v3f64 points */
-    v3f64 p0, p1;
-	const f32 dist = (c_s0->type >= c_s1->type)  
-		? c_distance_methods[c_s0->type][c_s1->type](&p0, &p1, c_s0, &t0, c_s1, &t1)
-		: c_distance_methods[c_s1->type][c_s0->type](&p1, &p0, c_s1, &t1, c_s0, &t0);
-    *c0 = V3F64Demote(p0);
-    *c1 = V3F64Demote(p1);
-    return dist;
+	return (c_s0->type >= c_s1->type)  
+		? c_distance_methods[c_s0->type][c_s1->type](c0, c1, c_s0, &t0, c_s1, &t1)
+		: c_distance_methods[c_s1->type][c_s0->type](c1, c0, c_s1, &t1, c_s0, &t0);
 }
 
 /*
@@ -362,14 +357,12 @@ void ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, co
 	c->narrowphase = result;
 }
 
-f32 ds_ShapeRaycastParameter(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct ray *ray)
+f32 ds_ShapeRaycastParameter(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct rayWorld *ray)
 {
     ds_Assert(V3Dot(ray->dir, ray->dir) > 0.0f);
     ds_TransformWorld transform;
     ds_ShapeWorldTransform(&transform, pipeline, shape);
-    /* TODO(f64 P3/P6): world ray from the callers */
-    const struct rayWorld ray_world = { .origin = V3Promote(ray->origin), .dir = ray->dir };
     const struct c_Shape *c_shape = pipeline->cshape_db->pool.buf + shape->cshape_handle;
 
-	return c_raycast_parameter_methods[c_shape->type](c_shape, &transform, &ray_world);
+	return c_raycast_parameter_methods[c_shape->type](c_shape, &transform, ray);
 }

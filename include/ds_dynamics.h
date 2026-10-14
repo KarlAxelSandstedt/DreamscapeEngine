@@ -411,7 +411,7 @@ u32	        ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Sha
  * Return, if no intersection was found, the distance between shapes s0 and s1 and their respective
  * closest points c0 and c1. If the shapes are intersecting, return 0.0f. 
  */
-f32 	    ds_ShapeDistance(v3 *c0, v3 *c1, const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, const struct ds_Shape *s1);
+f32 	    ds_ShapeDistance(v3f64 *c0, v3f64 *c1, const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, const struct ds_Shape *s1);
 /*
 Contact pipeline
 ----------------
@@ -441,7 +441,7 @@ void        ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipel
  * two-sided, see collision.h), or F32_INFINITY. The ray is in world space. Precondition: |ray->dir|^2 > 0
  * (asserted).
  */
-f32 	    ds_ShapeRaycastParameter(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct ray *ray);
+f32 	    ds_ShapeRaycastParameter(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct rayWorld *ray);
 
 
 /*
@@ -1657,7 +1657,7 @@ void			ds_DynamicsValidate(const struct ds_Dynamics *pipeline);
  * Return (shape index, t) of the first surface hit over all shapes (see ds_ShapeRaycastParameter), or
  * (U32_MAX, F32_INFINITY) on no hit or if |ray->dir|^2 == 0. The ray is in world space.
  */
-u32f32 			ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const struct ray *ray);
+u32f32 			ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const struct rayWorld *ray);
 /* enable sleeping in pipeline */
 void 			ds_DynamicsSleepEnable(struct ds_Dynamics *pipeline);
 /* disable sleeping in pipeline */

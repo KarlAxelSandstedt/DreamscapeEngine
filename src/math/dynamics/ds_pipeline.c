@@ -1778,7 +1778,7 @@ u64 ds_DynamicsOrientationHash(const struct ds_Dynamics *pipeline)
     return hash;
 }
 
-u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const struct ray *ray)
+u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const struct rayWorld *ray)
 {
     /* the one direction check for the whole query: the per-shape raycasts assume dir != 0 (a NaN
      * direction passes on to their asserts instead of being hidden as a miss) */
@@ -1787,9 +1787,11 @@ u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const str
         return u32f32_inline(U32_MAX, F32_INFINITY);
     }
 
+    /* TODO(f64 P5): the BVH boxes are f32 world boxes, searched with the demoted ray */
+    const struct ray ray_bvh = { .origin = V3F64Demote(ray->origin), .dir = ray->dir };
     struct arena *tmp = ArenaPushScratch();
 
-	struct bvhRaycastInfo d_info = BvhRaycastInit(tmp, &pipeline->dynamic_bvh, ray);
+	struct bvhRaycastInfo d_info = BvhRaycastInit(tmp, &pipeline->dynamic_bvh, &ray_bvh);
 	while (d_info.hit_queue.count)
 	{
 		const u32f32 tuple = MinQueueFixedPop(&d_info.hit_queue);
@@ -1816,7 +1818,7 @@ u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const str
 
     ArenaFlush(tmp);
 
-	struct bvhRaycastInfo s_info = BvhRaycastInit(tmp, &pipeline->static_bvh, ray);
+	struct bvhRaycastInfo s_info = BvhRaycastInit(tmp, &pipeline->static_bvh, &ray_bvh);
 	while (s_info.hit_queue.count)
 	{
 		const u32f32 tuple = MinQueueFixedPop(&s_info.hit_queue);
