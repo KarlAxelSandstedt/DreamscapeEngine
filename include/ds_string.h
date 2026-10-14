@@ -17,6 +17,42 @@
 ==========================================================================
 */
 
+/*
+ds_string.h
+===========
+UTF-8 and UTF-32 strings in caller memory (buffers or arenas): codepoint decoding and encoding, conversion
+to and from numbers, a printf-like formatter and substring search.
+
+Contents (in this order):
+    Types       utf8 (bytes, not null-terminated), utf32 (codepoints); Utf8Inline for ASCII literals.
+    Helpers     struct parseRetval (parser results), WordbreakCheck, Utf32Stream whitespace splitting.
+    C strings   CstrHash, CstrUtf8, F32Cstr/F64Cstr.
+    UTF-8       Utf8ReadCodepoint/Utf8WriteCodepoint, constructors, copies and conversions, parsers.
+    Substring   Utf8LookupSubstringInit/Utf8LookupSubstring (Knuth-Morris-Pratt).
+    Formatting  Utf8Format family (%s %k %i %u %li %lu %(d)f %p %%).
+    UTF-32      the same constructors, conversions and parsers for utf32.
+
+Strings
+-------
+- utf8: len codepoints in buf; size is the bytes readable at buf. Decoding never reads past size.
+- Bad UTF-8 (cut off by size, a bad lead or continuation byte, overlong, a surrogate, > U+10FFFF) decodes
+  as UTF8_BAD_CODEPOINT, one byte at a time. Lengths count it as one codepoint, so a string's len and its
+  bytes always agree, and text from files can't make a reader run past its data.
+- utf32: len codepoints in buf[max_len].
+
+Results
+-------
+- ...Buffered(buf, bufsize, ...): the result's size (max_len for utf32) is the buffer's capacity, so it can
+  be passed back as the buffer. Too small: an empty string. The formatter instead keeps the tokens before
+  the first one that does not fit. Cstr, Copy and Format put a '\0' after their bytes if there is room
+  (outside len), so a cut-off sequence at the end stays bad.
+- Arena versions take exactly the bytes they need (size = bytes); on failure an empty string.
+- Integer parsers return a struct parseRetval: PARSE_SUCCESS and the value, or a failure and 0. F32/F64
+  parsers (dtoa strtod) return the value, 0 for empty input.
+- Formatting F32/F64 with decimals > 0 rounds correctly (ties to even); decimals 0 gives the shortest
+  digits that read back to the same value.
+*/
+
 #ifndef __DS_STRING_H__
 #define __DS_STRING_H__
 
@@ -27,13 +63,6 @@
 #ifdef __cplusplus
 extern "C" { 
 #endif
-
-/*
- *	String Library 
- *
- *	utf8 - NOT null-terminated unicode string
- *	utf32 - 32bit unicode string
- */
 
 /* string literal to utf8; len counts bytes, so ASCII literals only */
 #define Utf8Inline(cstr) (utf8)  		\
@@ -47,8 +76,8 @@ typedef struct utf8 utf8;
 struct utf8 
 {
 	u8 *	buf;
-	u32 	size;		/* Number of bytes in buffer (>= the bytes of the len codepoints); decoding never reads past it */
-	u32 	len;		/* Length of string (not bytes) (not including **POSSIBLE** '\0') */
+	u32 	size;		/* bytes readable at buf (>= the bytes of the len codepoints); decoding never reads past it */
+	u32 	len;		/* codepoints (a possible trailing '\0' not included) */
 };
 DEFINE_CPOOL_STRUCT(utf8);
 

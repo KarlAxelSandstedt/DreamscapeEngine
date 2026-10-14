@@ -557,8 +557,11 @@ static struct test_Output utf8_format_regressions(struct test_Environment *env)
 	TEST_TRUE(FormatTestBytes(Utf8FormatBuffered(buf, sizeof(buf), "%s|%u", "\xC3\xA9\xE2\x82\xAC", 7), 4, "\xC3\xA9\xE2\x82\xAC|7"));
 	TEST_TRUE(FormatTestBytes(Utf8FormatBuffered(buf, sizeof(buf), "\xC3\xA9=%u\xE2\x82\xAC", 5), 4, "\xC3\xA9=5\xE2\x82\xAC"));
 	TEST_TRUE(FormatTestBytes(Utf8FormatBuffered(buf, sizeof(buf), "\xF0\x9F\x98\x80%s\xF0\x9F\x98\x80", "\xC3\xA9"), 3, "\xF0\x9F\x98\x80\xC3\xA9\xF0\x9F\x98\x80"));
-	/* a bad byte in the format is one (bad) codepoint, as the decoder reads it back (buf zeroed: stale continuation bytes after a cut-off sequence would complete it) */
-	memset(buf, 0, sizeof(buf));
+	/*
+	 * a bad byte in the format is one (bad) codepoint, as the decoder reads it back; the '\0' after the
+	 * output keeps stale continuation bytes from completing a cut-off sequence
+	 */
+	memset(buf, 0xAC, sizeof(buf));
 	TEST_TRUE(FormatTestBytes(Utf8FormatBuffered(buf, sizeof(buf), "\xC3" "A%u", 1), 3, "\xC3" "A1"));
 	TEST_TRUE(FormatTestBytes(Utf8FormatBuffered(buf, sizeof(buf), "x\xE2\x82", 0), 3, "x\xE2\x82"));
 	/* a sequence that does not fit is not split */
@@ -633,7 +636,26 @@ static struct test_Output utf8_decode_and_parse_regressions(struct test_Environm
 	/* Utf8CstrBuffered counts only the copied bytes, not stale continuation bytes after them */
 	u8 buf[64];
 	memset(buf, 0xAC, sizeof(buf));
-	TEST_EQUAL(3, Utf8CstrBuffered(buf, sizeof(buf), "A\xE2\x82").len);
+	/* size stays the capacity; the '\0' after the copy keeps a cut-off sequence bad */
+	const utf8 cut = Utf8CstrBuffered(buf, sizeof(buf), "A\xE2\x82");
+	TEST_EQUAL(3, cut.len);
+	TEST_EQUAL(sizeof(buf), cut.size);
+	TEST_EQUAL(3, Utf8SizeRequired(cut));
+	memset(buf + 8, 0xAC, sizeof(buf) - 8);
+	const utf8 cut_copy = Utf8CopyBuffered(buf + 8, sizeof(buf) - 8, cut);
+	TEST_EQUAL(3, cut_copy.len);
+	TEST_EQUAL(3, Utf8SizeRequired(cut_copy));
+	memset(buf, 0xAC, sizeof(buf));
+	const utf8 cut_format = Utf8FormatBuffered(buf, sizeof(buf), "%u\xE2\x82", 7);
+	TEST_EQUAL(3, cut_format.len);
+	TEST_EQUAL(3, Utf8SizeRequired(cut_format));
+
+	/* a len that claims more codepoints than size holds: the size, and so a copy, stops at size */
+	const utf8 lying = { .buf = buf, .size = 2, .len = 10 };
+	TEST_EQUAL(2, Utf8SizeRequired(lying));
+	u64 copied_bytes;
+	Utf8CopyBufferedAndReturnRequiredSize(&copied_bytes, buf + 16, 32, lying);
+	TEST_EQUAL(2, copied_bytes);
 
 	TEST_EQUAL(0, Utf8WriteCodepoint(buf, 4, 0xD800));
 	TEST_EQUAL(0, Utf8WriteCodepoint(buf, 4, 0xDFFF));

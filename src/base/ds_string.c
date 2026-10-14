@@ -243,7 +243,8 @@ u64 Utf8SizeRequired(const utf8 utf8)
 	{
 		Utf8ReadCodepoint(&size, &utf8, size);
 	}
-	return size;
+	/* len codepoints past size (a malformed utf8) read as bad bytes beyond it: never count those */
+	return (size < utf8.size) ? size : utf8.size;
 }
 
 utf8 Utf8F32Buffered(u8 buf[], const u64 bufsize, const u32 decimals, const f32 val)
@@ -1224,9 +1225,15 @@ utf8 Utf8FormatBufferedVariadic(u64 *reqsize, u8 *buf, const u64 bufsize, const 
 		format += token_length;
 	}
 
+	/* the terminator ends any cut-off sequence left by a bad byte in the format (size stays the capacity) */
+	if (offset < bufsize)
+	{
+		buf[offset] = '\0';
+	}
+
 	*reqsize = offset;
-	utf8 kstr = 
-	{ 
+	utf8 kstr =
+	{
 		.len = len,
 		.size = bufsize,
 		.buf = buf,
@@ -1293,13 +1300,16 @@ utf8 Utf8CstrBuffered(u8 buf[], const u64 bufsize, const char *cstr)
 	{
 		ret = (utf8) { .len = 0, .size = (u32) bufsize, .buf = buf };
 		memcpy(buf, cstr, bytes);
-		/* decode only the copied bytes: a sequence cut off at the end is bad, not completed by stale bytes */
+		/* decode only the copied bytes, and terminate them if there is room: a sequence cut off at the end stays bad */
 		const utf8 copied = { .buf = buf, .size = (u32) bytes, .len = 0 };
 		for (u64 offset = 0; offset < bytes; ret.len += 1)
 		{
 			Utf8ReadCodepoint(&offset, &copied, offset);
 		}
-
+		if (bytes < bufsize)
+		{
+			buf[bytes] = '\0';
+		}
 	}
 
 	return ret;
@@ -1311,11 +1321,11 @@ utf8 Utf8Cstr(struct arena *mem, const char *cstr)
 	utf8 ret = Utf8Alloc(mem, bytes);
 	if (ret.size)
 	{
+		/* ret.size is bytes */
 		memcpy(ret.buf, cstr, bytes);
-		const utf8 copied = { .buf = ret.buf, .size = (u32) bytes, .len = 0 };
 		for (u64 offset = 0; offset < bytes; ret.len += 1)
 		{
-			Utf8ReadCodepoint(&offset, &copied, offset);
+			Utf8ReadCodepoint(&offset, &ret, offset);
 		}
 	}
 
@@ -1356,12 +1366,7 @@ utf32 Utf32Cstr(struct arena *mem, const char *cstr)
 
 utf8 Utf8Copy(struct arena *mem, const utf8 str)
 {
-	u64 bufsize_req = 0;
-	for (u32 i = 0; i < str.len; ++i)
-	{
-		Utf8ReadCodepoint(&bufsize_req, &str, bufsize_req);
-	}
-
+	const u64 bufsize_req = Utf8SizeRequired(str);
 	utf8 copy = Utf8Alloc(mem, bufsize_req);
 	if (copy.size)
 	{
@@ -1382,17 +1387,18 @@ utf8 Utf8CopyBuffered(u8 buf[], const u64 bufsize, const utf8 str)
 utf8 Utf8CopyBufferedAndReturnRequiredSize(u64 *reqsize, u8 buf[], const u64 bufsize, const utf8 str)
 {
 	*reqsize = 0;
-	u64 bufsize_req = 0;
-	for (u32 i = 0; i < str.len; ++i)
-	{
-		Utf8ReadCodepoint(&bufsize_req, &str, bufsize_req);
-	}
+	const u64 bufsize_req = Utf8SizeRequired(str);
 
 	utf8 copy = Utf8Empty();
 	if (bufsize_req <= bufsize)
 	{
 		*reqsize = bufsize_req;
 		memcpy(buf, str.buf, bufsize_req);
+		/* terminated if there is room: a sequence cut off at the end stays bad (size stays the capacity) */
+		if (bufsize_req < bufsize)
+		{
+			buf[bufsize_req] = '\0';
+		}
 		copy = (utf8) { .len = str.len, .size = bufsize, .buf = buf };
 	}
 
@@ -1530,7 +1536,7 @@ utf8 Utf8Utf32BufferedNullTerminatedAndReturnRequiredSize(u64 *reqsize, u8 buf[]
 	utf8 ret = Utf8Utf32BufferedAndReturnRequiredSize(reqsize, buf, bufsize, str);
 	if (ret.len && *reqsize < bufsize)
 	{
-		ret.buf[*reqsize] = '\0';	
+		ret.buf[*reqsize] = '\0';
 		*reqsize += 1;
 	}
 	else
