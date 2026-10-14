@@ -45,7 +45,7 @@ void r_CameraDebugPrint(const struct r_Camera *cam)
 	fprintf(stderr, "YAW, PITCH: (%f, %f)\n", cam->yaw, cam->pitch);
 }
 
-struct r_Camera r_CameraInit(const v3 position, const v3 direction, const f32 fz_near, const f32 fz_far, const f32 aspect_ratio, const f32 fov_x)
+struct r_Camera r_CameraInit(const v3f64 position, const v3 direction, const f32 fz_near, const f32 fz_far, const f32 aspect_ratio, const f32 fov_x)
 {
 	ds_Assert(fov_x > 0.0f && fov_x < F32_PI);
 	ds_Assert(fz_near > 0.0f);
@@ -109,7 +109,7 @@ struct r_Camera r_CameraInit(const v3 position, const v3 direction, const f32 fz
 }
 
 void r_CameraConstruct(struct r_Camera *cam,
-		const v3 position,
+		const v3f64 position,
 	       	const v3 left,
 	       	const v3 up,
 	       	const v3 forward,
@@ -190,7 +190,7 @@ void FrustumProjectionPlaneCameraSpace(v3 *bottom_left, v3 *upper_right, const s
 	*upper_right = V3(-frustum_width / 2.0f, frustum_height / 2.0f, cam->fz_near);
 }
 
-void FrustumProjectionPlaneWorldSpace(v3 *bottom_left, v3 *upper_right, const struct r_Camera *cam)
+void FrustumProjectionPlaneWorldSpace(v3f64 *bottom_left, v3f64 *upper_right, const struct r_Camera *cam)
 {
 	f32 frustum_width, frustum_height;
 	FrustumProjectionPlaneSides(&frustum_width, &frustum_height, cam->fz_near, cam->fov_x, cam->aspect_ratio);
@@ -200,14 +200,14 @@ void FrustumProjectionPlaneWorldSpace(v3 *bottom_left, v3 *upper_right, const st
 	const m3 rot = M3SequentialRotation(up, cam->yaw, left, cam->pitch);
 
 	v3 v = V3(frustum_width / 2.0f, -frustum_height / 2.0f, cam->fz_near);
-	*bottom_left = V3Add(M3V3Mul(rot, v), cam->position);
+	*bottom_left = V3F64Add(cam->position, V3Promote(M3V3Mul(rot, v)));
 
 	v.x -= frustum_width;
 	v.y += frustum_height;
-	*upper_right = V3Add(M3V3Mul(rot, v), cam->position);
+	*upper_right = V3F64Add(cam->position, V3Promote(M3V3Mul(rot, v)));
 }
 
-v3 WindowSpaceToWorldSpace(const v2 pixel, const v2 win_size, const struct r_Camera * cam)
+v3f64 WindowSpaceToWorldSpace(const v2 pixel, const v2 win_size, const struct r_Camera * cam)
 {
 	const v3 left = V3(1.0f, 0.0f, 0.0f);
 	const v3 up = V3(0.0f, 1.0f, 0.0f);
@@ -217,5 +217,5 @@ v3 WindowSpaceToWorldSpace(const v2 pixel, const v2 win_size, const struct r_Cam
 	v3 bl, tr;
 	FrustumProjectionPlaneCameraSpace(&bl, &tr, cam);
 	const v3 camera_pixel = V3InterpolatePiecewise(bl, tr, alphas);	
-	return V3Add(M3V3Mul(rot, camera_pixel), cam->position);
+	return V3F64Add(cam->position, V3Promote(M3V3Mul(rot, camera_pixel)));
 }

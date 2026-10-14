@@ -391,6 +391,8 @@ static void r_EditorDraw(const struct led *led)
 	const u32 depth_exponent = 1 + F32ExponentBits(led->cam.fz_far);
 	ds_Assert(depth_exponent >= 23);
 
+	g_scene->view_origin = led->cam.position;
+
 	r_Proxy3dHierarchySpeculate(&g_r_core->frame, led->ns - led->ns_engine_paused);
 
     HII it;
@@ -407,7 +409,8 @@ static void r_EditorDraw(const struct led *led)
             continue;
         }
 
-		const f32 dist = V3Distance(proxy->spec_position, led->cam.position);
+		/* TODO(f64 R2): f64 proxy positions (drop the promote) */
+		const f32 dist = V3Length(V3F64Demote(V3F64Sub(V3Promote(proxy->spec_position), led->cam.position)));
 		const u32 unit_exponent = F32ExponentBits(dist);
 		const u64 depth = (unit_exponent <= depth_exponent && unit_exponent > (depth_exponent - 23))
 			? (0x00800000 | F32MantissaBits(dist)) >> (depth_exponent - unit_exponent + 1)
@@ -538,7 +541,11 @@ static void r_InternalProxy3dUniforms(const struct led *led, const u32 window)
 {
 	const struct r_Camera *cam = &led->cam;
 	const m4 perspective = M4Perspective(cam->aspect_ratio, cam->fov_x, cam->fz_near, cam->fz_far);
-	const m4 view = M4View(cam->position, cam->left, cam->up, cam->forward);
+	/* proxies are uploaded relative to the camera (g_scene->view_origin): the view only rotates, and the light (at the camera) is at the origin */
+	const m4 view = M4View(V3Zero(), cam->left, cam->up, cam->forward);
+	/* TODO(f64 R3): debug meshes (PROGRAM_COLOR, PROGRAM_LIGHTNING) still hold world f32 vertices */
+	const v3 cam_position_world = V3F64Demote(cam->position);
+	const m4 view_world = M4View(cam_position_world, cam->left, cam->up, cam->forward);
 	
 	ds_glUseProgram(g_r_core->program[PROGRAM_PROXY3D].gl_program);
 	GLint aspect_ratio_addr, view_addr, perspective_addr, light_position_addr;
@@ -547,7 +554,7 @@ static void r_InternalProxy3dUniforms(const struct led *led, const u32 window)
 	perspective_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_PROXY3D].gl_program, "perspective");
 	light_position_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_PROXY3D].gl_program, "light_position");
 	ds_glUniform1f(aspect_ratio_addr, (f32) cam->aspect_ratio);
-	ds_glUniform3f(light_position_addr, cam->position.x, cam->position.y, cam->position.z);
+	ds_glUniform3f(light_position_addr, 0.0f, 0.0f, 0.0f);
 	ds_glUniformMatrix4fv(perspective_addr, 1, GL_FALSE, perspective.buf);
 	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, view.buf);
 
@@ -557,9 +564,9 @@ static void r_InternalProxy3dUniforms(const struct led *led, const u32 window)
 	perspective_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_LIGHTNING].gl_program, "perspective");
 	light_position_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_LIGHTNING].gl_program, "light_position");
 	ds_glUniform1f(aspect_ratio_addr, (f32) cam->aspect_ratio);
-	ds_glUniform3f(light_position_addr, cam->position.x, cam->position.y, cam->position.z);
+	ds_glUniform3f(light_position_addr, cam_position_world.x, cam_position_world.y, cam_position_world.z);
 	ds_glUniformMatrix4fv(perspective_addr, 1, GL_FALSE, perspective.buf);
-	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, view.buf);
+	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, view_world.buf);
 	
 	
 	ds_glUseProgram(g_r_core->program[PROGRAM_COLOR].gl_program);
@@ -568,7 +575,7 @@ static void r_InternalProxy3dUniforms(const struct led *led, const u32 window)
 	perspective_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_COLOR].gl_program, "perspective");
 	ds_glUniform1f(aspect_ratio_addr, (f32) cam->aspect_ratio);
 	ds_glUniformMatrix4fv(perspective_addr, 1, GL_FALSE, perspective.buf);
-	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, view.buf);
+	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, view_world.buf);
 }
 
 static void r_InternalUiUniforms(const u32 window)

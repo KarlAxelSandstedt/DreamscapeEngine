@@ -74,7 +74,7 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 	//const vec3 up = {0.0f, 1.0f, 0.0f};
 	//const vec3 dir = {1.0f, 0.0f, 0.0f};
 	
-	const v3 position = V3(10.0f, 1.0f, 5.0f);
+	const v3f64 position = V3F64(10.0, 1.0, 5.0);
 	//const v3 position = V3(3.0f, 1.0f, -3.0f);
 	const v3 left = V3(1.0f, 0.0f, 0.0f);
 	const v3 up = V3(0.0f, 1.0f, 0.0f);
