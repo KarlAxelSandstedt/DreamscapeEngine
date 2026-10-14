@@ -23,14 +23,6 @@
 #include "ds_vector.h"
 #include "ds_matrix.h"
 
-/********************************** INTERSECTION TESTS **********************************/
-
-/*
- * The analytic tests compare squared core distances relative to t0's position (one f64 subtraction,
- * see c_distance.c). The hull tests run GJK with the radius as cutoff_distance, so a separating plane
- * ends the search early; the answer is the same as comparing the full distance.
- */
-
 u32 c_SphereTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
     ds_Assert(s0->type == C_SHAPE_SPHERE && s1->type == C_SHAPE_SPHERE);

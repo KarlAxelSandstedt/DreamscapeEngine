@@ -398,7 +398,7 @@ struct slot ds_ShapeLookup(const struct ds_Dynamics *pipeline, const ds_ShapeId 
 /*
  * Calculate the world transform of the shape.
  */
-void        ds_ShapeWorldTransform(ds_Transform *t, const struct ds_Dynamics *pipeline, const struct ds_Shape *shape);
+void        ds_ShapeWorldTransform(ds_TransformWorld *t, const struct ds_Dynamics *pipeline, const struct ds_Shape *shape);
 /* 
  * Calculate the world bounding box of the shape, taking into account the shape and its body's Transform. 
  */

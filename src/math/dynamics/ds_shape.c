@@ -144,17 +144,12 @@ struct slot ds_ShapeLookup(const struct ds_Dynamics *pipeline, const ds_ShapeId 
     return slot;
 }
 
-void ds_ShapeWorldTransform(ds_Transform *t, const struct ds_Dynamics *pipeline, const struct ds_Shape *shape)
+void ds_ShapeWorldTransform(ds_TransformWorld *t, const struct ds_Dynamics *pipeline, const struct ds_Shape *shape)
 {
 	const struct ds_Body *body = pipeline->body_pool.buf + shape->body;
     const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
     const struct ds_BodySim *sim = set->body_sim_pool.buf + body->sim;
-    const q world_rotation = sim->world.rotation;
-    const m3 rot = M3QUnit(world_rotation);
-
-    t->rotation = QMul(world_rotation, shape->t_local.rotation);
-    /* TODO(f64 P3): return a ds_TransformWorld (ds_TransformWorldChild) instead of the f32 sum */
-    t->position = V3Add(M3V3Mul(rot, shape->t_local.position), V3F64Demote(sim->world.position));
+    *t = ds_TransformWorldChild(&sim->world, &shape->t_local);
 }
 
 struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape)
@@ -164,10 +159,11 @@ struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct d
 
 	const struct c_Shape *cshape = pipeline->cshape_db->pool.buf + shape->cshape_handle;
 
-    ds_Transform t_world;
+    ds_TransformWorld t_world;
     ds_ShapeWorldTransform(&t_world, pipeline, shape);
 	const m3 rot = M3QUnit(t_world.rotation);
-	const v3 world_position = t_world.position;
+    /* TODO(f64 P5): f64 bounds rounded outward to f32 (f64_positions.txt E4) */
+	const v3 world_position = V3F64Demote(t_world.position);
 
 	if (shape->cshape_type == C_SHAPE_CONVEX_HULL)
 	{
@@ -242,16 +238,13 @@ u32 ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, 
  	const struct c_Shape *c_s0 = pipeline->cshape_db->pool.buf + s0->cshape_handle;
 	const struct c_Shape *c_s1 = pipeline->cshape_db->pool.buf + s1->cshape_handle;
 
-    ds_Transform t0, t1;
+    ds_TransformWorld t0, t1;
     ds_ShapeWorldTransform(&t0, pipeline, s0);
     ds_ShapeWorldTransform(&t1, pipeline, s1);
-    /* TODO(f64 P3): world transforms once ds_ShapeWorldTransform returns them */
-    const ds_TransformWorld w0 = ds_TransformPromote(&t0);
-    const ds_TransformWorld w1 = ds_TransformPromote(&t1);
 	
 	return (c_s0->type >= c_s1->type)  
-		? c_shape_tests[c_s0->type][c_s1->type](c_s0, &w0, c_s1, &w1)
-		: c_shape_tests[c_s1->type][c_s0->type](c_s1, &w1, c_s0, &w0);
+		? c_shape_tests[c_s0->type][c_s1->type](c_s0, &t0, c_s1, &t1)
+		: c_shape_tests[c_s1->type][c_s0->type](c_s1, &t1, c_s0, &t0);
 }
 
 f32 ds_ShapeDistance(v3 *c0, v3 *c1, const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, const struct ds_Shape *s1)
@@ -259,17 +252,15 @@ f32 ds_ShapeDistance(v3 *c0, v3 *c1, const struct ds_Dynamics *pipeline, const s
  	const struct c_Shape *c_s0 = pipeline->cshape_db->pool.buf + s0->cshape_handle;
 	const struct c_Shape *c_s1 = pipeline->cshape_db->pool.buf + s1->cshape_handle;
 
-    ds_Transform t0, t1;
+    ds_TransformWorld t0, t1;
     ds_ShapeWorldTransform(&t0, pipeline, s0);
     ds_ShapeWorldTransform(&t1, pipeline, s1);
-    /* TODO(f64 P3): world transforms once ds_ShapeWorldTransform returns them; v3f64 points */
-    const ds_TransformWorld w0 = ds_TransformPromote(&t0);
-    const ds_TransformWorld w1 = ds_TransformPromote(&t1);
 
+    /* TODO(f64 P3): output the v3f64 points */
     v3f64 p0, p1;
 	const f32 dist = (c_s0->type >= c_s1->type)  
-		? c_distance_methods[c_s0->type][c_s1->type](&p0, &p1, c_s0, &w0, c_s1, &w1)
-		: c_distance_methods[c_s1->type][c_s0->type](&p1, &p0, c_s1, &w1, c_s0, &w0);
+		? c_distance_methods[c_s0->type][c_s1->type](&p0, &p1, c_s0, &t0, c_s1, &t1)
+		: c_distance_methods[c_s1->type][c_s0->type](&p1, &p0, c_s1, &t1, c_s0, &t0);
     *c0 = V3F64Demote(p0);
     *c1 = V3F64Demote(p1);
     return dist;
@@ -339,11 +330,9 @@ void ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, co
     const u32 other = 1 - local;
     ds_Assert(c_s[local]->type < C_SHAPE_TRI_MESH);
 
-    ds_Transform t[2];
-    ds_ShapeWorldTransform(t + 0, pipeline, s[0]);
-    ds_ShapeWorldTransform(t + 1, pipeline, s[1]);
-    /* TODO(f64 P3): world transforms once ds_ShapeWorldTransform returns them */
-    const ds_TransformWorld t_world[2] = { ds_TransformPromote(t + 0), ds_TransformPromote(t + 1) };
+    ds_TransformWorld t_world[2];
+    ds_ShapeWorldTransform(t_world + 0, pipeline, s[0]);
+    ds_ShapeWorldTransform(t_world + 1, pipeline, s[1]);
 
     struct c_ContactResult result = (c_s[other]->type == C_SHAPE_TRI_MESH)
         ? c_MeshContact(frame, &c->narrowphase, c_s[other], &t_world[other], c_s[local], &t_world[local])
@@ -376,10 +365,9 @@ void ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, co
 f32 ds_ShapeRaycastParameter(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct ray *ray)
 {
     ds_Assert(V3Dot(ray->dir, ray->dir) > 0.0f);
-    ds_Transform t;
-    ds_ShapeWorldTransform(&t, pipeline, shape);
-    /* TODO(f64 P3/P6): world transform and world ray from the callers */
-    const ds_TransformWorld transform = ds_TransformPromote(&t);
+    ds_TransformWorld transform;
+    ds_ShapeWorldTransform(&transform, pipeline, shape);
+    /* TODO(f64 P3/P6): world ray from the callers */
     const struct rayWorld ray_world = { .origin = V3Promote(ray->origin), .dir = ray->dir };
     const struct c_Shape *c_shape = pipeline->cshape_db->pool.buf + shape->cshape_handle;
 

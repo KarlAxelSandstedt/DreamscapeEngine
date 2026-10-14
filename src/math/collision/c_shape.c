@@ -38,7 +38,6 @@ SDB_DEFINE(c_Shape);
 #define T_YZ	8
 #define T_ZX	9
 	    
-//TODO: REPLACE using table
 static u32 Comb(const u32 o, const u32 u)
 {
 	ds_Assert(u <= o);
