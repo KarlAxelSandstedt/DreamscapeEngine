@@ -406,12 +406,12 @@ struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct d
 /* 
  * Test for intersection between shapes. returns 1 if intersecting, else 0 
  */
-u32	        ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
+u32	        ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, const struct ds_Shape *s1);
 /* 
- * Return, if no intersection was found, the distance between shapes s1 and s2 and their respective
- * closest points c1 and c2. If the shapes are intersecting, return 0.0f. 
+ * Return, if no intersection was found, the distance between shapes s0 and s1 and their respective
+ * closest points c0 and c1. If the shapes are intersecting, return 0.0f. 
  */
-f32 	    ds_ShapeDistance(v3 *c1, v3 *c2, const struct ds_Dynamics *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
+f32 	    ds_ShapeDistance(v3 *c0, v3 *c1, const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, const struct ds_Shape *s1);
 /*
 Contact pipeline
 ----------------

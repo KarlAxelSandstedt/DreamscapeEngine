@@ -173,9 +173,7 @@ struct ct_Manifold
 
 static u32 CtContact(struct arena *frame, struct ct_Manifold *m, const struct ct_Capsule *a, const struct ct_Capsule *b)
 {
-    const struct c_Shape *s[2] = { &a->shape, &b->shape };
-    const ds_TransformWorld t[2] = { a->t, b->t };
-    const struct c_ContactResult result = c_CapsuleContact(frame, NULL, s[0], &t[0], s[1], &t[1]);
+    const struct c_ContactResult result = c_CapsuleContact(frame, NULL, &a->shape, &a->t, &b->shape, &b->t);
 
     *m = (struct ct_Manifold) { 0 };
     if (result.manifold_count == 0)
@@ -1005,10 +1003,8 @@ static void ChCore(struct d3 *a, struct d3 *b, const struct ch_Hull *h, const st
 
 static u32 ChContact(struct arena *frame, struct c_Manifold *m, u32 *contact, const struct ch_Hull *h, const struct ct_Capsule *c)
 {
-    const struct c_Shape *s[2] = { &h->shape, &c->shape };
-    const ds_TransformWorld t[2] = { h->t, c->t };
     const struct c_ContactResult cached = { 0 };
-    const struct c_ContactResult result = c_HullCapsuleContact(frame, &cached, s[0], &t[0], s[1], &t[1]);
+    const struct c_ContactResult result = c_HullCapsuleContact(frame, &cached, &h->shape, &h->t, &c->shape, &c->t);
 
     *contact = 0;
     if (result.manifold_count == 0)
@@ -1775,11 +1771,9 @@ struct test_Output HullCapsuleContactTimingTest(struct test_Environment *env)
         for (u32 i = 0; i < pair_count; ++i)
         {
             struct arena record = *env->mem_2;
-            const struct c_Shape *s[2] = { &pair[i].hull, &pair[i].capsule.shape };
-            const ds_TransformWorld t[2] = { pair[i].t, pair[i].capsule.t };
             const struct c_ContactResult cached = { 0 };
             const u64 start = ds_TimeNs();
-            const struct c_ContactResult result = c_HullCapsuleContact(env->mem_2, &cached, s[0], &t[0], s[1], &t[1]);
+            const struct c_ContactResult result = c_HullCapsuleContact(env->mem_2, &cached, &pair[i].hull, &pair[i].t, &pair[i].capsule.shape, &pair[i].capsule.t);
             const u64 end = ds_TimeNs();
             manifolds += result.manifold_count;
             ns[pair[i].deep] += end - start;
@@ -1942,10 +1936,8 @@ static void HhPrint(const struct ch_Hull *a, const struct ch_Hull *b)
 /* contact of (a, b); 0 and HH_FAIL_INVALID printed if the result is malformed */
 static u32 HhContact(struct arena *frame, struct c_ContactResult *result, const struct ch_Hull *a, const struct ch_Hull *b, const struct c_ContactResult *cached)
 {
-    const struct c_Shape *s[2] = { &a->shape, &b->shape };
-    const ds_TransformWorld t[2] = { a->t, b->t };
     const struct c_ContactResult none = { 0 };
-    *result = c_HullContact(frame, (cached) ? cached : &none, s[0], &t[0], s[1], &t[1]);
+    *result = c_HullContact(frame, (cached) ? cached : &none, &a->shape, &a->t, &b->shape, &b->t);
     return result->manifold_count == 0
         || (result->manifold_count == 1 && c_ManifoldCheck(result->manifold)
             && 1 <= result->manifold->v_count && result->manifold->v_count <= 4);
@@ -3643,6 +3635,139 @@ struct test_Output MeshFlatGridTest(struct test_Environment *env)
 	return output;
 }
 
+/* NULL if passed, else what failed */
+static const char *McTerrainCheck(struct arena *frame, u64 *manifolds, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex)
+{
+    const struct c_ContactResult none = { 0 };
+    const struct c_ContactResult r = c_MeshContact(frame, &none, mesh, t_mesh, convex, t_convex);
+    *manifolds += r.manifold_count;
+    for (u32 i = 0; i < r.manifold_count; ++i)
+    {
+        const struct c_Manifold *m = r.manifold + r.tri_manifold[i];
+        if (!c_ManifoldCheck(m) || m->v_count < 1)
+        {
+            fprintf(stderr, "\ttriangle %u:\n", r.tri[i]);
+            c_ManifoldDebugPrint(m);
+            return "invalid manifold";
+        }
+    }
+
+    /* an exactly representable offset leaves the relative pose exact in f64: identical bits */
+    const struct d3 offset = D3(4096.0, -1024.0, 65536.0);
+    const ds_TransformWorld t_mesh_t = { .rotation = t_mesh->rotation, .position = V3F64(t_mesh->position.x + offset.x, t_mesh->position.y + offset.y, t_mesh->position.z + offset.z) };
+    const ds_TransformWorld t_convex_t = { .rotation = t_convex->rotation, .position = V3F64(t_convex->position.x + offset.x, t_convex->position.y + offset.y, t_convex->position.z + offset.z) };
+    if (V3F64Sub(t_convex_t.position, t_mesh_t.position).x == V3F64Sub(t_convex->position, t_mesh->position).x
+     && V3F64Sub(t_convex_t.position, t_mesh_t.position).y == V3F64Sub(t_convex->position, t_mesh->position).y
+     && V3F64Sub(t_convex_t.position, t_mesh_t.position).z == V3F64Sub(t_convex->position, t_mesh->position).z)
+    {
+        const struct c_ContactResult r_t = c_MeshContact(frame, &none, mesh, &t_mesh_t, convex, &t_convex_t);
+        u32 same = (r_t.manifold_count == r.manifold_count);
+        for (u32 i = 0; same && i < r.manifold_count; ++i)
+        {
+            const struct c_Manifold *m = r.manifold + i, *m_t = r_t.manifold + i;
+            same = r_t.tri[i] == r.tri[i] && m_t->v_count == m->v_count && memcmp(&m_t->n, &m->n, sizeof(v3)) == 0;
+            for (u32 k = 0; same && k < m->v_count; ++k)
+            {
+                same = memcmp(&m_t->v[k], &m->v[k], sizeof(v3)) == 0 && memcmp(&m_t->depth[k], &m->depth[k], sizeof(f32)) == 0;
+            }
+        }
+        if (!same)
+        {
+            return "translated result differs";
+        }
+    }
+
+    return NULL;
+}
+
+/*
+ * Spheres, capsules, boxes and hulls near a random triangle of a random terrain (McTerrain, relief 1), the mesh up to
+ * 1e6 from the origin: every manifold valid (c_ManifoldCheck, at least one point), and the same bits when both poses
+ * move by an exact offset.
+ */
+struct test_Output MeshTerrainRandomTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+    ContactTestConfigPush();
+    /* the hull path counts metrics */
+    struct ds_DynamicsWorker *prev = g_dynamics_worker;
+    memset(mc_worker, 0, sizeof(mc_worker));
+    g_dynamics_worker = mc_worker;
+    const char *kind_id[] = { "sphere", "capsule", "box", "hull" };
+    for (u32 kind = 0; kind < 4; ++kind)
+    {
+        u64 manifolds = 0;
+        for (u32 i = 0; i < 4000; ++i)
+        {
+            struct arena record = *env->mem_2;
+            const f32 cell = CtSize();
+            const struct c_Shape mesh = McTerrain(env->mem_2, cell, 1.0f, NULL);
+            const struct d3 mesh_pos = CtWorldPosition();
+            const ds_TransformWorld t_mesh = { .rotation = CtRotation(), .position = V3F64(mesh_pos.x, mesh_pos.y, mesh_pos.z) };
+
+            /* the convex shape, sized like the cells */
+            struct c_Shape convex = { 0 };
+            f32 reach;
+            if (kind == 0)
+            {
+                convex.type = C_SHAPE_SPHERE;
+                convex.sphere.radius = cell*RngF32Range(0.1f, 2.0f);
+                reach = convex.sphere.radius;
+            }
+            else if (kind == 1)
+            {
+                convex.type = C_SHAPE_CAPSULE;
+                convex.capsule.radius = cell*RngF32Range(0.1f, 1.0f);
+                convex.capsule.half_height = cell*RngF32Range(0.1f, 2.0f);
+                reach = convex.capsule.radius + convex.capsule.half_height;
+            }
+            else
+            {
+                struct ch_Hull h;
+                ChRandomHull(env->mem_2, &h, (kind == 2) ? 0 : 2);
+                convex = h.shape;
+                /* rescale: ChRandomHull's size is independent of the cell */
+                const f32 scale = cell*RngF32Range(0.3f, 2.0f) / (f32) h.extent;
+                for (u32 v = 0; v < convex.hull.v_count; ++v)
+                {
+                    convex.hull.v[v] = V3Scale(convex.hull.v[v], scale);
+                }
+                for (u32 f = 0; f < convex.hull.f_count; ++f)
+                {
+                    convex.hull.plane[f].signed_distance *= scale;
+                }
+                DcelBboxCompute(&convex.hull);
+                c_ShapeUpdateMassProperties(&convex);
+                reach = (f32) h.extent * scale;
+            }
+
+            /* near a random triangle: its centroid moved along its normal by -reach .. 1.5 reach (mesh frame) */
+            const struct triMesh *tm = mesh.mesh_bvh.mesh;
+            const v3u32 tri = tm->tri[RngU64Range(0, tm->tri_count - 1)];
+            const v3 a = tm->v[tri.buf[0]], b = tm->v[tri.buf[1]], c = tm->v[tri.buf[2]];
+            const v3 centroid = V3Scale(V3Add(V3Add(a, b), c), 1.0f / 3.0f);
+            const v3 normal = V3Normalize(V3Cross(V3Sub(b, a), V3Sub(c, a)));
+            const v3 local = V3Add(centroid, V3Scale(normal, reach*RngF32Range(-1.0f, 1.5f)));
+            struct d3 rm[3];
+            D3Rotation(rm, t_mesh.rotation);
+            const struct d3 world = D3Add(mesh_pos, D3RotationMul(rm, D3V3(local)));
+            const ds_TransformWorld t_convex = { .rotation = CtRotation(), .position = V3F64(world.x, world.y, world.z) };
+
+            const char *fail = McTerrainCheck(env->mem_2, &manifolds, &mesh, &t_mesh, &convex, &t_convex);
+            *env->mem_2 = record;
+            if (fail)
+            {
+                fprintf(stderr, "Mesh terrain random (%s, case %u): %s\n", kind_id[kind], i, fail);
+                g_dynamics_worker = prev;
+                TEST_FAILURE;
+            }
+        }
+        fprintf(stdout, "\t%s on a random terrain: 4000 random, %.2f manifolds/query\n", kind_id[kind], (f64) manifolds / 4000.0);
+    }
+    g_dynamics_worker = prev;
+	return output;
+}
+
 /********************************** mesh vs hull **********************************/
 
 /*
@@ -4035,6 +4160,7 @@ static struct test_Output (*mesh_contact_tests[])(struct test_Environment *) =
     MeshSphereCasesTest,
     MeshCapsuleCasesTest,
     MeshFlatGridTest,
+    MeshTerrainRandomTest,
     MeshHullCasesTest,
     MeshHullRandomTest,
 };

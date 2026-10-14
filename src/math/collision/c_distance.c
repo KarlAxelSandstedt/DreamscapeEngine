@@ -259,10 +259,10 @@ static f32 GJKOverlap(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const
 }
 
 /* API and outputs: collision.h */
-f32 GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct c_Shape *shape_a, const struct c_Shape *shape_b, const ds_Transform *b_to_a, const f32 cutoff_distance)
+f32 GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct c_Shape *s0, const struct c_Shape *s1, const ds_Transform *t_1_to_0, const f32 cutoff_distance)
 {
     struct GJKHelper helper;
-    GJKHelperInit(&helper, shape_a, shape_b, b_to_a);
+    GJKHelperInit(&helper, s0, s1, t_1_to_0);
     const f32 cutoff_distance_sq = cutoff_distance*cutoff_distance;
 
     /* warm start from the cache unless its length/area/volume changed by more than 2x */
@@ -326,7 +326,7 @@ f32 GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKCac
     v3 dir = V3Negate(backup.v[0].minkowski);
     if (V3LengthSquared(dir) < GJK_DIR_LENGTH_SQ_MIN)
     {
-        return GJKOverlap(c_a, c_b, n, cache_out, &backup);
+        return GJKOverlap(c0, c1, n, cache_out, &backup);
     }
 
     f32 distance_sq = F32_INFINITY;
@@ -383,7 +383,7 @@ f32 GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKCac
         /* 1 */
         if (region == VORONOI_T0123)
         {
-            return GJKOverlap(c_a, c_b, n, cache_out, &simplex);
+            return GJKOverlap(c0, c1, n, cache_out, &simplex);
         }
 
         v3 closest = V3Zero();
@@ -397,7 +397,7 @@ f32 GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKCac
         const f32 touch_tolerance = GJK_TOUCH_TOLERANCE * F32_EPSILON;
         if (iteration_distance_sq <= touch_tolerance * touch_tolerance * vertex_length_sq_max)
         {
-            return GJKOverlap(c_a, c_b, n, cache_out, &simplex);
+            return GJKOverlap(c0, c1, n, cache_out, &simplex);
         }
 
         /* 3: no strict progress (or NaN) */
@@ -414,7 +414,7 @@ f32 GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKCac
             /* 4a: |dir| = |a| = distance ~ 0 */
             if (simplex.count == 1)
             {
-                return GJKOverlap(c_a, c_b, n, cache_out, &simplex);
+                return GJKOverlap(c0, c1, n, cache_out, &simplex);
             }
 
             /* 4b */
@@ -480,8 +480,8 @@ f32 GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKCac
      * dir (the feature's geometry), not from p_b - p_a. dir points from the closest point to the origin,
      * and closest = p_b - p_a, so the normal from A to B is -dir.
      */
-    *c_a = p_a;
-    *c_b = p_b;
+    *c0 = p_a;
+    *c1 = p_b;
     *n = V3Scale(dir, -1.0f / V3Length(dir));
     GJKCacheInit(cache_out, &simplex);
 
@@ -491,23 +491,23 @@ f32 GJK(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKCac
     return distance;
 }
 
-/* API and outputs: collision.h. GJK in A's frame; outputs to world (garbage stays garbage on F32_INFINITY). */
-f32 GJKWorld(v3f64 *c_a, v3f64 *c_b, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct c_Shape *shape_a, const ds_TransformWorld *t_a, const struct c_Shape *shape_b, const ds_TransformWorld *t_b, const f32 cutoff_distance)
+/* API and outputs: collision.h. GJK in s0's frame; outputs to world (garbage stays garbage on F32_INFINITY). */
+f32 GJKWorld(v3f64 *c0, v3f64 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1, const f32 cutoff_distance)
 {
-    const ds_Transform b_to_a = ds_TransformWorldRelative(t_a, t_b);
-    v3 c_a_local, c_b_local, n_local;
-    const f32 distance = GJK(&c_a_local, &c_b_local, &n_local, cache_out, cache_in, shape_a, shape_b, &b_to_a, cutoff_distance);
+    const ds_Transform t_1_to_0 = ds_TransformWorldRelative(t0, t1);
+    v3 c0_local, c1_local, n_local;
+    const f32 distance = GJK(&c0_local, &c1_local, &n_local, cache_out, cache_in, s0, s1, &t_1_to_0, cutoff_distance);
     if (distance == 0.0f)
     {
-        *c_a = ds_TransformWorldPointToWorld(t_a, c_a_local);
-        *c_b = *c_a;
+        *c0 = ds_TransformWorldPointToWorld(t0, c0_local);
+        *c1 = *c0;
         *n = V3Zero();
     }
     else if (distance != F32_INFINITY)
     {
-        *c_a = ds_TransformWorldPointToWorld(t_a, c_a_local);
-        *c_b = ds_TransformWorldPointToWorld(t_a, c_b_local);
-        *n = QUnitRotate(t_a->rotation, n_local);
+        *c0 = ds_TransformWorldPointToWorld(t0, c0_local);
+        *c1 = ds_TransformWorldPointToWorld(t0, c1_local);
+        *n = QUnitRotate(t0->rotation, n_local);
     }
 
     return distance;
@@ -516,17 +516,17 @@ f32 GJKWorld(v3f64 *c_a, v3f64 *c_b, v3 *n, struct GJKCache *cache_out, const st
 /********************************** DISTANCE METHODS **********************************/
 
 /*
- * The analytic distances work relative to t1's position: one f64 subtraction, then f32, so the rounding
+ * The analytic distances work relative to t0's position: one f64 subtraction, then f32, so the rounding
  * is relative to the shapes' separation, not their distance from the origin. The distance is the core
- * distance minus the radii (not |c2 - c1|, whose world-space points cancel).
+ * distance minus the radii (not |c1 - c0|, whose world-space points cancel).
  */
-f32 c_SphereDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2)
+f32 c_SphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
+    ds_Assert(s0->type == C_SHAPE_SPHERE);
     ds_Assert(s1->type == C_SHAPE_SPHERE);
-    ds_Assert(s2->type == C_SHAPE_SPHERE);
 
-    const f32 r_sum = s1->sphere.radius + s2->sphere.radius;
-    const v3 delta = V3F64Demote(V3F64Sub(t2->position, t1->position));
+    const f32 r_sum = s0->sphere.radius + s1->sphere.radius;
+    const v3 delta = V3F64Demote(V3F64Sub(t1->position, t0->position));
     const f32 dist_sq = V3LengthSquared(delta);
     if (dist_sq <= r_sum*r_sum)
     {
@@ -535,22 +535,22 @@ f32 c_SphereDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_Tr
 
     const f32 dist = F32Sqrt(dist_sq);
     const v3 n = V3Scale(delta, 1.0f / dist);
-    *c1 = V3F64Add(t1->position, V3Promote(V3Scale(n, s1->sphere.radius)));
-    *c2 = V3F64Add(t2->position, V3Promote(V3Scale(n, -s2->sphere.radius)));
+    *c0 = V3F64Add(t0->position, V3Promote(V3Scale(n, s0->sphere.radius)));
+    *c1 = V3F64Add(t1->position, V3Promote(V3Scale(n, -s1->sphere.radius)));
     /* r_sum*r_sum is rounded: dist can round to just below r_sum */
     return F32Max(0.0f, dist - r_sum);
 }
 
-f32 c_CapsuleSphereDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2)
+f32 c_CapsuleSphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
-    ds_Assert(s1->type == C_SHAPE_CAPSULE);
-    ds_Assert(s2->type == C_SHAPE_SPHERE);
+    ds_Assert(s0->type == C_SHAPE_CAPSULE);
+    ds_Assert(s1->type == C_SHAPE_SPHERE);
 
-    const struct capsule *cap = &s1->capsule;
-    const f32 r_sum = cap->radius + s2->sphere.radius;
-    const v3 axis = QUnitRotate(t1->rotation, V3(0.0f, cap->half_height, 0.0f));
+    const struct capsule *cap = &s0->capsule;
+    const f32 r_sum = cap->radius + s1->sphere.radius;
+    const v3 axis = QUnitRotate(t0->rotation, V3(0.0f, cap->half_height, 0.0f));
     const struct segment seg = SegmentConstruct(axis, V3Negate(axis));
-    const v3 p = V3F64Demote(V3F64Sub(t2->position, t1->position));
+    const v3 p = V3F64Demote(V3F64Sub(t1->position, t0->position));
 
     v3 c;
     const f32 dist_sq = SegmentPointDistanceSquared(&c, &seg, p);
@@ -561,96 +561,96 @@ f32 c_CapsuleSphereDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, cons
 
     const f32 dist = F32Sqrt(dist_sq);
     const v3 n = V3Scale(V3Sub(p, c), 1.0f / dist);
-    *c1 = V3F64Add(t1->position, V3Promote(V3AddScaled(c, n, cap->radius)));
-    *c2 = V3F64Add(t2->position, V3Promote(V3Scale(n, -s2->sphere.radius)));
+    *c0 = V3F64Add(t0->position, V3Promote(V3AddScaled(c, n, cap->radius)));
+    *c1 = V3F64Add(t1->position, V3Promote(V3Scale(n, -s1->sphere.radius)));
     return F32Max(0.0f, dist - r_sum);
 }
 
-f32 c_CapsuleDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2)
+f32 c_CapsuleDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
+    ds_Assert(s0->type == C_SHAPE_CAPSULE);
     ds_Assert(s1->type == C_SHAPE_CAPSULE);
-    ds_Assert(s2->type == C_SHAPE_CAPSULE);
 
+    const struct capsule *cap0 = &s0->capsule;
     const struct capsule *cap1 = &s1->capsule;
-    const struct capsule *cap2 = &s2->capsule;
-    const f32 r_sum = cap1->radius + cap2->radius;
+    const f32 r_sum = cap0->radius + cap1->radius;
+    const v3 axis0 = QUnitRotate(t0->rotation, V3(0.0f, cap0->half_height, 0.0f));
     const v3 axis1 = QUnitRotate(t1->rotation, V3(0.0f, cap1->half_height, 0.0f));
-    const v3 axis2 = QUnitRotate(t2->rotation, V3(0.0f, cap2->half_height, 0.0f));
-    const v3 p2 = V3F64Demote(V3F64Sub(t2->position, t1->position));
-    const struct segment seg1 = SegmentConstruct(axis1, V3Negate(axis1));
-    const struct segment seg2 = SegmentConstruct(V3Add(p2, axis2), V3Sub(p2, axis2));
+    const v3 p1 = V3F64Demote(V3F64Sub(t1->position, t0->position));
+    const struct segment seg0 = SegmentConstruct(axis0, V3Negate(axis0));
+    const struct segment seg1 = SegmentConstruct(V3Add(p1, axis1), V3Sub(p1, axis1));
 
-    v3 q1, q2;
-    const f32 dist_sq = SegmentDistanceSquared(&q1, &q2, &seg1, &seg2);
+    v3 q0, q1;
+    const f32 dist_sq = SegmentDistanceSquared(&q0, &q1, &seg0, &seg1);
     if (dist_sq <= r_sum*r_sum)
     {
         return 0.0f;
     }
 
     const f32 dist = F32Sqrt(dist_sq);
-    const v3 n = V3Scale(V3Sub(q2, q1), 1.0f / dist);
-    *c1 = V3F64Add(t1->position, V3Promote(V3AddScaled(q1, n, cap1->radius)));
-    *c2 = V3F64Add(t1->position, V3Promote(V3AddScaled(q2, n, -cap2->radius)));
+    const v3 n = V3Scale(V3Sub(q1, q0), 1.0f / dist);
+    *c0 = V3F64Add(t0->position, V3Promote(V3AddScaled(q0, n, cap0->radius)));
+    *c1 = V3F64Add(t0->position, V3Promote(V3AddScaled(q1, n, -cap1->radius)));
     return F32Max(0.0f, dist - r_sum);
 }
 
-f32 c_HullSphereDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2)
+f32 c_HullSphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
-	ds_Assert(s1->type == C_SHAPE_CONVEX_HULL);
-	ds_Assert(s2->type == C_SHAPE_SPHERE);
+	ds_Assert(s0->type == C_SHAPE_CONVEX_HULL);
+	ds_Assert(s1->type == C_SHAPE_SPHERE);
 
 	v3 n;
 	struct GJKCache cache;
-	const f32 dist = GJKWorld(c1, c2, &n, &cache, NULL, s1, t1, s2, t2, F32_INFINITY);
-	if (dist <= s2->sphere.radius)
+	const f32 dist = GJKWorld(c0, c1, &n, &cache, NULL, s0, t0, s1, t1, F32_INFINITY);
+	if (dist <= s1->sphere.radius)
 	{  
         return 0.0f;
 	}
 	
-	*c2 = V3F64Add(*c2, V3Promote(V3Scale(n, -s2->sphere.radius)));
-	return dist - s2->sphere.radius;
+	*c1 = V3F64Add(*c1, V3Promote(V3Scale(n, -s1->sphere.radius)));
+	return dist - s1->sphere.radius;
 }
 
-f32 c_HullCapsuleDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2)
+f32 c_HullCapsuleDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
-	ds_Assert(s1->type == C_SHAPE_CONVEX_HULL);
-	ds_Assert(s2->type == C_SHAPE_CAPSULE);
+	ds_Assert(s0->type == C_SHAPE_CONVEX_HULL);
+	ds_Assert(s1->type == C_SHAPE_CAPSULE);
 
 	v3 n;
 	struct GJKCache cache;
-	const f32 dist = GJKWorld(c1, c2, &n, &cache, NULL, s1, t1, s2, t2, F32_INFINITY);
-	if (dist <= s2->capsule.radius)
+	const f32 dist = GJKWorld(c0, c1, &n, &cache, NULL, s0, t0, s1, t1, F32_INFINITY);
+	if (dist <= s1->capsule.radius)
 	{
         return 0.0f;
 	}
 
-	*c2 = V3F64Add(*c2, V3Promote(V3Scale(n, -s2->capsule.radius)));
-	return dist - s2->capsule.radius;
+	*c1 = V3F64Add(*c1, V3Promote(V3Scale(n, -s1->capsule.radius)));
+	return dist - s1->capsule.radius;
 }
 
-f32 c_HullDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2)
+f32 c_HullDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
+	ds_Assert (s0->type == C_SHAPE_CONVEX_HULL);
 	ds_Assert (s1->type == C_SHAPE_CONVEX_HULL);
-	ds_Assert (s2->type == C_SHAPE_CONVEX_HULL);
 
 	v3 n;
 	struct GJKCache cache;
-	return GJKWorld(c1, c2, &n, &cache, NULL, s1, t1, s2, t2, F32_INFINITY);
+	return GJKWorld(c0, c1, &n, &cache, NULL, s0, t0, s1, t1, F32_INFINITY);
 }
 
-f32 c_TriMeshBvhSphereDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2)
+f32 c_TriMeshBvhSphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
 	ds_AssertString(0, "implement");
 	return 0.0f;
 }
 
-f32 c_TriMeshBvhCapsuleDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2)
+f32 c_TriMeshBvhCapsuleDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
 	ds_AssertString(0, "implement");
 	return 0.0f;
 }
 
-f32 c_TriMeshBvhHullDistance(v3f64 *c1, v3f64 *c2, const struct c_Shape *s1, const ds_TransformWorld *t1, const struct c_Shape *s2, const ds_TransformWorld *t2)
+f32 c_TriMeshBvhHullDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
 	ds_AssertString(0, "implement");
 	return 0.0f;

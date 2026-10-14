@@ -220,7 +220,7 @@ u32 (*c_shape_tests[C_SHAPE_COUNT][C_SHAPE_COUNT])(const struct c_Shape *, const
 	{ c_TriMeshBvhSphereTest,   c_TriMeshBvhCapsuleTest,    c_TriMeshBvhHullTest,	0, },
 };
 
-f32 (*c_distance_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(v3f64 *c1, v3f64 *c2, const struct c_Shape *, const ds_TransformWorld *, const struct c_Shape *, const ds_TransformWorld *) =
+f32 (*c_distance_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(v3f64 *c0, v3f64 *c1, const struct c_Shape *, const ds_TransformWorld *, const struct c_Shape *, const ds_TransformWorld *) =
 {
 	{ c_SphereDistance,	 	        0,				                0, 			                0, },
 	{ c_CapsuleSphereDistance,	    c_CapsuleDistance, 		        0, 			                0, },
@@ -236,41 +236,41 @@ f32 (*c_raycast_parameter_methods[C_SHAPE_COUNT])(const struct c_Shape *, const 
 	c_TriMeshBvhRaycastParameter,
 };
 
-u32 ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2)
+u32 ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, const struct ds_Shape *s1)
 {
- 	const struct c_Shape *c_s1 = pipeline->cshape_db->pool.buf + s1->cshape_handle;
-	const struct c_Shape *c_s2 = pipeline->cshape_db->pool.buf + s2->cshape_handle;
+ 	const struct c_Shape *c_s0 = pipeline->cshape_db->pool.buf + s0->cshape_handle;
+	const struct c_Shape *c_s1 = pipeline->cshape_db->pool.buf + s1->cshape_handle;
 
-    ds_Transform t1, t2;
+    ds_Transform t0, t1;
+    ds_ShapeWorldTransform(&t0, pipeline, s0);
     ds_ShapeWorldTransform(&t1, pipeline, s1);
-    ds_ShapeWorldTransform(&t2, pipeline, s2);
     /* TODO(f64 P3): world transforms once bodies store ds_TransformWorld */
+    const ds_TransformWorld w0 = ds_TransformPromote(&t0);
     const ds_TransformWorld w1 = ds_TransformPromote(&t1);
-    const ds_TransformWorld w2 = ds_TransformPromote(&t2);
 	
-	return (c_s1->type >= c_s2->type)  
-		? c_shape_tests[c_s1->type][c_s2->type](c_s1, &w1, c_s2, &w2)
-		: c_shape_tests[c_s2->type][c_s1->type](c_s2, &w2, c_s1, &w1);
+	return (c_s0->type >= c_s1->type)  
+		? c_shape_tests[c_s0->type][c_s1->type](c_s0, &w0, c_s1, &w1)
+		: c_shape_tests[c_s1->type][c_s0->type](c_s1, &w1, c_s0, &w0);
 }
 
-f32 ds_ShapeDistance(v3 *c1, v3 *c2, const struct ds_Dynamics *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2)
+f32 ds_ShapeDistance(v3 *c0, v3 *c1, const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, const struct ds_Shape *s1)
 {
- 	const struct c_Shape *c_s1 = pipeline->cshape_db->pool.buf + s1->cshape_handle;
-	const struct c_Shape *c_s2 = pipeline->cshape_db->pool.buf + s2->cshape_handle;
+ 	const struct c_Shape *c_s0 = pipeline->cshape_db->pool.buf + s0->cshape_handle;
+	const struct c_Shape *c_s1 = pipeline->cshape_db->pool.buf + s1->cshape_handle;
 
-    ds_Transform t1, t2;
+    ds_Transform t0, t1;
+    ds_ShapeWorldTransform(&t0, pipeline, s0);
     ds_ShapeWorldTransform(&t1, pipeline, s1);
-    ds_ShapeWorldTransform(&t2, pipeline, s2);
     /* TODO(f64 P3): world transforms and v3f64 points once bodies store ds_TransformWorld */
+    const ds_TransformWorld w0 = ds_TransformPromote(&t0);
     const ds_TransformWorld w1 = ds_TransformPromote(&t1);
-    const ds_TransformWorld w2 = ds_TransformPromote(&t2);
 
-    v3f64 p1, p2;
-	const f32 dist = (c_s1->type >= c_s2->type)  
-		? c_distance_methods[c_s1->type][c_s2->type](&p1, &p2, c_s1, &w1, c_s2, &w2)
-		: c_distance_methods[c_s2->type][c_s1->type](&p2, &p1, c_s2, &w2, c_s1, &w1);
+    v3f64 p0, p1;
+	const f32 dist = (c_s0->type >= c_s1->type)  
+		? c_distance_methods[c_s0->type][c_s1->type](&p0, &p1, c_s0, &w0, c_s1, &w1)
+		: c_distance_methods[c_s1->type][c_s0->type](&p1, &p0, c_s1, &w1, c_s0, &w0);
+    *c0 = V3F64Demote(p0);
     *c1 = V3F64Demote(p1);
-    *c2 = V3F64Demote(p2);
     return dist;
 }
 
