@@ -335,6 +335,13 @@ void ds_Init(const char *config_path, const char *log_path)
     ds_AssertString(!g_init_called, "ds_Init runs once per process");
     g_init_called = 1;
 
+    /* first: config parsing and arenas already run lzcnt/tzcnt (a missing LZCNT runs as bsr: wrong, no fault) */
+    if (!ds_ArchBaselineCheck())
+    {
+        LogString(T_SYSTEM, S_FATAL, "ds_Init: the CPU lacks the baseline (SSE2, POPCNT, LZCNT, BMI1)");
+        FatalCleanupAndExit();
+    }
+
     ds_MemApiInit();
 
     /* before the persistent arena (its size is in the config) and the log: report logged below */

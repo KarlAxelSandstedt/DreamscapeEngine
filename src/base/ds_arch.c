@@ -346,33 +346,33 @@ static void internal_intel_determine_cache_attributes(const u32 largest_standard
 
 	if ((eax & (1u << 31)) == 0)
 	{
-		no_report = internal_intel_determine_cache_attribute_byte((eax >> 8 ) & 0xff);
-		no_report = internal_intel_determine_cache_attribute_byte((eax >> 16) & 0xff);
-		no_report = internal_intel_determine_cache_attribute_byte((eax >> 24) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((eax >> 8 ) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((eax >> 16) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((eax >> 24) & 0xff);
 	}
 
 	if ((ebx & (1u << 31)) == 0)
 	{
-		no_report = internal_intel_determine_cache_attribute_byte((ebx      ) & 0xff);
-		no_report = internal_intel_determine_cache_attribute_byte((ebx >> 8 ) & 0xff);
-		no_report = internal_intel_determine_cache_attribute_byte((ebx >> 16) & 0xff);
-		no_report = internal_intel_determine_cache_attribute_byte((ebx >> 24) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((ebx      ) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((ebx >> 8 ) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((ebx >> 16) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((ebx >> 24) & 0xff);
 	}
 
 	if ((ecx & (1u << 31)) == 0)
 	{
-		no_report = internal_intel_determine_cache_attribute_byte((ecx      ) & 0xff);
-		no_report = internal_intel_determine_cache_attribute_byte((ecx >> 8 ) & 0xff);
-		no_report = internal_intel_determine_cache_attribute_byte((ecx >> 16) & 0xff);
-		no_report = internal_intel_determine_cache_attribute_byte((ecx >> 24) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((ecx      ) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((ecx >> 8 ) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((ecx >> 16) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((ecx >> 24) & 0xff);
 	}
 
 	if ((edx & (1u << 31)) == 0)
 	{
-		no_report = internal_intel_determine_cache_attribute_byte((edx      ) & 0xff);
-		no_report = internal_intel_determine_cache_attribute_byte((edx >> 8 ) & 0xff);
-		no_report = internal_intel_determine_cache_attribute_byte((edx >> 16) & 0xff);
-		no_report = internal_intel_determine_cache_attribute_byte((edx >> 24) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((edx      ) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((edx >> 8 ) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((edx >> 16) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((edx >> 24) & 0xff);
 	}
 
 	if (config.cacheline == 0 || no_report)
@@ -387,8 +387,8 @@ static void internal_intel_determine_cache_attributes(const u32 largest_standard
 				if (type == 0) { break; }
 				else if (type == 1)
 				{
-					ds_AssertString((eax & 0xe0) == 1, "Expects first indexable data cache to be level 1");
-					config.cacheline = ebx & 0xfff;
+					ds_AssertString(((eax >> 5) & 0x7) == 1, "Expects first indexable data cache to be level 1");
+					config.cacheline = (ebx & 0xfff) + 1;	/* EBX[11:0]: line size - 1 */
 					break;
 				}
 			}	
@@ -490,6 +490,34 @@ static u32 internal_get_intel_arch_config(struct arena *mem)
 	dsArchConfig_log();
 
 	return 1;
+}
+
+u32 ds_ArchBaselineCheck(void)
+{
+#if __DS_PLATFORM__ == __DS_WEB__
+	return 1;
+#else
+	/* the same leaves and bits on Intel and AMD */
+	u32 eax, ebx, ecx, edx;
+	ds_Cpuid(&eax, &ebx, &ecx, &edx, 0);
+	const u32 largest_standard_function_number = eax;
+	ds_Cpuid(&eax, &ebx, &ecx, &edx, (1u << 31));
+	const u32 largest_extended_function_number = eax;
+	if (largest_standard_function_number < 7 || largest_extended_function_number < (1u << 31) + 1)
+	{
+		return 0;
+	}
+
+	ds_Cpuid(&eax, &ebx, &ecx, &edx, 1);
+	const u32 sse2 = (edx >> 26) & 0x1;
+	const u32 popcnt = (ecx >> 23) & 0x1;
+	ds_CpuidEx(&eax, &ebx, &ecx, &edx, 7, 0);
+	const u32 bmi1 = (ebx >> 3) & 0x1;
+	ds_Cpuid(&eax, &ebx, &ecx, &edx, (1u << 31) + 1);
+	const u32 lzcnt = (ecx >> 5) & 0x1;
+
+	return sse2 & popcnt & bmi1 & lzcnt;
+#endif
 }
 
 u32 ds_ArchConfigInit(struct arena *mem)

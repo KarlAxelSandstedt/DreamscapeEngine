@@ -17,6 +17,8 @@
 ==========================================================================
 */
 
+#include <stdio.h>
+
 #include "ds_base.h"
 #include "ds_platform.h"
 
@@ -26,6 +28,7 @@ void ds_AssertFailed(const char *file, const u32 line, const char *func, const c
 	if (format == NULL)
 	{
 		Log(T_ASSERT, S_FATAL, "ds_Assertion failed at %s:%u in function %s", file, line, func);
+		fflush(stdout);
 		return;
 	}
 
@@ -36,6 +39,8 @@ void ds_AssertFailed(const char *file, const u32 line, const char *func, const c
 	const utf8 msg = Utf8FormatBufferedVariadic(&reqsize, buf, LOG_MAX_MESSAGE_SIZE, format, args);
 	va_end(args);
 	Log(T_ASSERT, S_FATAL, "ds_Assertion failed at %s:%u in function %s - %k", file, line, func, &msg);
+	/* the caller's Breakpoint kills the process without a debugger: get the message out first */
+	fflush(stdout);
 }
 #endif
 
@@ -58,7 +63,6 @@ static ds_ThreadLocal u32 tl_fatal_cleanup_running = 0;
 
 void FatalCleanupAndExit(void)
 {
-    Breakpoint(1);
 	if (tl_fatal_cleanup_running)
 	{
 		exit(1);
@@ -96,6 +100,9 @@ void FatalCleanupAndExit(void)
 		free(callstack);
 #endif
 		LogShutdown();
+		/* break only now: without a debugger the breakpoint kills the process, unflushed output is lost */
+		fflush(stdout);
+		Breakpoint(1);
 		exit(1);
 	}
 
@@ -161,33 +168,39 @@ void FatalCleanupAndExit()
     		SYSTEMTIME local_time;
     		GetLocalTime(&local_time);
 
-		struct arena *tmp = ArenaPushScratch();
-		const utf8 utf8_filename = Utf8Format(tmp, "%s_%s_latest.dmp"
-				, DS_EXECUTABLE_CSTR
-				, DS_VERSION_CSTR);
-		//const utf8 utf8_filename = Utf8Format(tmp, "%s_%s_%u%u%u_%u%u%u.dmp", 
-    		//           "engine_sandbox",
-		//	   "0_1", 
-    		//           local_time.wYear,
-		//	   local_time.wMonth,
-		//	   local_time.wDay, 
-    		//           local_time.wHour, 
-		//	   local_time.wMinute,
-		//	   local_time.wSecond);
-    	const char *filename = CstrUtf8(tmp, utf8_filename);
-		struct file dump = FileNull();
-		if (FileTryCreateAtCwd(tmp, &dump, filename, FILE_TRUNCATE) == FS_SUCCESS)
+		/* no scratch arenas before ds_ThreadMasterInit (e.g. ds_Init's CPU check): no dump then */
+		if (g_tl_self)
 		{
-			if (!MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), dump.handle, MiniDumpWithFullMemory, NULL, NULL, NULL))
+			struct arena *tmp = ArenaPushScratch();
+			const utf8 utf8_filename = Utf8Format(tmp, "%s_%s_latest.dmp"
+					, DS_EXECUTABLE_CSTR
+					, DS_VERSION_CSTR);
+			//const utf8 utf8_filename = Utf8Format(tmp, "%s_%s_%u%u%u_%u%u%u.dmp",
+			//           "engine_sandbox",
+			//	   "0_1",
+			//           local_time.wYear,
+			//	   local_time.wMonth,
+			//	   local_time.wDay,
+			//           local_time.wHour,
+			//	   local_time.wMinute,
+			//	   local_time.wSecond);
+			const char *filename = CstrUtf8(tmp, utf8_filename);
+			struct file dump = FileNull();
+			if (FileTryCreateAtCwd(tmp, &dump, filename, FILE_TRUNCATE) == FS_SUCCESS)
 			{
-				LogSystemError(S_ERROR);
+				if (!MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), dump.handle, MiniDumpWithFullMemory, NULL, NULL, NULL))
+				{
+					LogSystemError(S_ERROR);
+				}
+
+				FileClose(&dump);
 			}
-			
-			FileClose(&dump);
+			ArenaPopScratch();
 		}
-        ArenaPopScratch();
 
 		LogShutdown();
+		/* without a debugger the breakpoint kills the process, unflushed output is lost */
+		fflush(stdout);
 #if DS_DEBUG
 		Breakpoint(1);
 #endif
