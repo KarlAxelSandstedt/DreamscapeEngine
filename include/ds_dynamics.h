@@ -422,6 +422,9 @@ Pair order (the narrowphase computes in the frame of the first shape):
                     order (lower shape index first).
     mesh pairs      (mesh, convex), computed in the convex shape's frame. Mesh vs mesh is not supported.
 
+Reference: the solver form's reference is the contact key's shape[0], whose body is the solver's body 0
+(ds_ContactKeyAddress). Contacts between the same two bodies may therefore have opposite normals.
+
 Assumptions:
     caches          SAT and GJK caches belong to the ordered pair (first -> second shape), so the pair order
                     must stay the same between frames. TODO: cached normals in the local frame or in world.

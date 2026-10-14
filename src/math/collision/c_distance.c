@@ -21,7 +21,7 @@
 #include "collision.h"
 #include "ds_voronoi.h"
 
-/* =========================================== GJK ============================================== */
+/**************************************** GJK ********************************************/
 
 /* Shape vertex set/storage */
 struct GJKVertexSet
@@ -255,7 +255,6 @@ static f32 GJKOverlap(v3 *c_a, v3 *c_b, v3 *n, struct GJKCache *cache_out, const
     return 0.0f;
 }
 
-/* API and outputs: collision.h */
 f32 GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct c_Shape *s0, const struct c_Shape *s1, const ds_Transform *t_1_to_0, const f32 cutoff_distance)
 {
     struct GJKHelper helper;
@@ -488,7 +487,6 @@ f32 GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache
     return distance;
 }
 
-/* API and outputs: collision.h. GJK in s0's frame; outputs to world (garbage stays garbage on F32_INFINITY). */
 f32 GJKWorld(v3f64 *c0, v3f64 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1, const f32 cutoff_distance)
 {
     const ds_Transform t_1_to_0 = ds_TransformWorldRelative(t0, t1);
@@ -512,11 +510,7 @@ f32 GJKWorld(v3f64 *c0, v3f64 *c1, v3 *n, struct GJKCache *cache_out, const stru
 
 /********************************** DISTANCE METHODS **********************************/
 
-/*
- * The analytic distances work relative to t0's position: one f64 subtraction, then f32, so the rounding
- * is relative to the shapes' separation, not their distance from the origin. The distance is the core
- * distance minus the radii (not |c1 - c0|, whose world-space points cancel).
- */
+
 f32 c_SphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
     ds_Assert(s0->type == C_SHAPE_SPHERE);
@@ -534,7 +528,6 @@ f32 c_SphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_Tr
     const v3 n = V3Scale(delta, 1.0f / dist);
     *c0 = V3F64Add(t0->position, V3Promote(V3Scale(n, s0->sphere.radius)));
     *c1 = V3F64Add(t1->position, V3Promote(V3Scale(n, -s1->sphere.radius)));
-    /* r_sum*r_sum is rounded: dist can round to just below r_sum */
     return F32Max(0.0f, dist - r_sum);
 }
 

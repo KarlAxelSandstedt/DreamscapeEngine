@@ -333,10 +333,7 @@ void ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, co
         ? c_MeshContact(frame, &c->narrowphase, c_s[other], &t_world[other], c_s[local], &t_world[local])
         : c_convex_contact_methods[c_s[local]->type][c_s[other]->type](frame, &c->narrowphase, c_s[local], &t_world[local], c_s[other], &t_world[other]);
 
-    /* the solver's reference is the shape of the lower body index */
-    const u32 flip = (s[local]->body < s[other]->body)
-                   ? 0
-                   : 1;
+    const u32 flip = local;
     ds_ContactResultToSolver(&result, &t_world[local], flip);
 
 #ifdef DS_DEBUG

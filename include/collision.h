@@ -228,7 +228,7 @@ The same struct is used in two frames:
             pairs: the convex shape), which is the reference: n points away from it, v[i] lies on its
             surface and the other shape's deepest point is v[i] - depth[i]*n.
     solver  ds_ShapeContact output (ds_Contact.narrowphase): the
-            reference is the shape of the lower body index, rotated to world; TODO(decision 3): translated
+            reference is the contact key's shape[0], rotated to world; TODO(decision 3): translated
             to world f32 points for now.
 */
 struct c_Manifold
