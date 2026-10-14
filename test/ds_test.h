@@ -34,6 +34,11 @@ extern "C" {
 
 /* Correctness Test framework entry point */
 void ds_TestMainCorrectness(void);
+/*
+Run test(args) as worker_count jobs started together on the job scheduler's workers (main thread included;
+usually one job per worker, but a worker may take several). Returns when all jobs are done.
+*/
+void ds_TestRunParallel(void (*test)(void *), void *args);
 /* Performance Test framework entry point */
 void ds_TestMainPerformance(void);
 

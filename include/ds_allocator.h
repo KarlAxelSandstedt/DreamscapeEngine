@@ -30,9 +30,8 @@ Contents (in this order):
     Arena       stack allocator (push, pop, records) on a heap block or inside another arena.
     Ring        ring buffer whose end wraps through mirrored virtual memory (Linux, Windows).
     CPool       ds_CPool(T): compact typed array; removal moves the last element into the hole.
-    Pool        POOL_NODE structs: stable indices, free list, serializable.
-    TPool       TPOOL_NODE structs: thread-safe pool whose addresses never move.
-    TStack      Treiber stack, the TPool's per-thread free lists.
+    Pool        ds_Pool(T) of POOL_NODE structs: stable indices, free list, serializable.
+    TPool       ds_TPool(T) of TPOOL_NODE structs: thread-safe, addresses never move; lock-free free lists.
 */
 
 #ifndef __DS_ALLOCATOR_H__
@@ -47,6 +46,12 @@ extern "C" {
 
 #include "ds_define.h"
 #include "ds_types.h"
+#include "ds_assert.h"
+#include "ds_atomic.h"
+#include "ds_random.h"
+
+/* ds_thread.h includes this header: TPool needs only this declaration */
+u32 ds_ThreadSelfIndex(void);
 
 #define DEFAULT_MEMORY_ALIGNMENT	((u64) 8)
 
@@ -588,14 +593,6 @@ void ds_PoolSerializeInternal(struct ss *ss, const void *buf, const u32 length, 
 /* Internal: see ds_PoolTryDeserialize. */
 u32  ds_PoolTryDeserializeInternal(struct arena *mem, struct ss *ss, u32 *heap_allocated, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u64 pool_slot_offset, const u32 alloc_growable);
 
-/* Internal: asserts of the inline functions below (ds_Assert is defined after this header is included). */
-#ifdef DS_ASSERT_DEBUG
-void ds_PoolAssertFailedInternal(const char *file, const u32 line, const char *func);
-#define ds_PoolAssert(assertion)	if (assertion) { } else { ds_PoolAssertFailedInternal(__FILE__, __LINE__, __func__); }
-#else
-#define ds_PoolAssert(assertion)
-#endif
-
 /* Internal: see ds_PoolAdd. */
 static ds_ForceInline struct slot ds_PoolAddInternal(void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, const u32 growable, const u64 slot_size, const u64 pool_slot_offset)
 {
@@ -616,7 +613,7 @@ static ds_ForceInline struct slot ds_PoolAddInternal(void **buf, u32 *length, u3
 		allocation.address = (u8 *) *buf + allocation.index*slot_size;
 		UnpoisonAddress(allocation.address, slot_size);
 		const u32 pool_slot = *(const u32 *) ((u8 *) allocation.address + pool_slot_offset);
-		ds_PoolAssert(pool_slot & POOL_ALLOCATION_MASK);
+		ds_Assert(pool_slot & POOL_ALLOCATION_MASK);
 		*next_free = pool_slot & POOL_INDEX_MASK;
 	}
 	else
@@ -635,11 +632,11 @@ static ds_ForceInline struct slot ds_PoolAddInternal(void **buf, u32 *length, u3
 /* Internal: see ds_PoolRemove. */
 static ds_ForceInline void ds_PoolRemoveInternal(void *buf, u32 *count, u32 *next_free, const u32 count_max, const u32 index, const u64 slot_size, const u64 pool_slot_offset)
 {
-	ds_PoolAssert(index < count_max);
+	ds_Assert(index < count_max);
 
 	u8 *slot = (u8 *) buf + index*slot_size;
 	u32 *pool_slot = (u32 *) (slot + pool_slot_offset);
-	ds_PoolAssert((*pool_slot & POOL_ALLOCATION_MASK) == 0);
+	ds_Assert((*pool_slot & POOL_ALLOCATION_MASK) == 0);
 
 	*pool_slot = POOL_ALLOCATION_MASK | *next_free;
 	*next_free = index;
@@ -652,9 +649,9 @@ static ds_ForceInline void ds_PoolRemoveInternal(void *buf, u32 *count, u32 *nex
 /* Internal: debug checks of ds_PoolIndex (empty in release builds). */
 static ds_ForceInline void ds_PoolIndexCheck(const void *buf, const u32 length, const void *addr, const u64 slot_size)
 {
-	ds_PoolAssert((u64) addr >= (u64) buf);
-	ds_PoolAssert((u64) addr < (u64) buf + length*slot_size);
-	ds_PoolAssert(((u64) addr - (u64) buf) % slot_size == 0);
+	ds_Assert((u64) addr >= (u64) buf);
+	ds_Assert((u64) addr < (u64) buf + length*slot_size);
+	ds_Assert(((u64) addr - (u64) buf) % slot_size == 0);
 }
 
 #define ds_PoolAlloc(mem, pool, __length, __growable)                                                   \
@@ -725,52 +722,61 @@ lifetime and may be held like indices. Which index an add returns depends on thr
 
 ::: Usage and Documentation :::
 
-struct Type contains TPOOL_NODE (its fields belong to the pool). TPOOL_DECLARE(Type) declares struct
-TypeTPool and the functions below (in a header), TPOOL_DEFINE(Type) defines them (in one source file).
-Every thread using the pool needs ds_ThreadSelfIndex() < the logical_core_count given to Alloc.
+struct Type contains TPOOL_NODE (its fields belong to the pool). DEFINE_TPOOL(Type) defines the pool type
+ds_TPool(Type) (once, where Type is declared); the macros below work on any TPool type. Every thread using
+the pool needs ds_ThreadSelfIndex() < the logical_core_count given to Alloc.
 
     struct node { TPOOL_NODE; ... };
-    TPOOL_DECLARE(node)
-    TPOOL_DEFINE(node)
+    DEFINE_TPOOL(node);
 
-    struct nodeTPool pool;
-    nodeTPoolAlloc(&pool, g_arch_config->logical_core_count, 1024);
-    const struct slot slot = nodeTPoolAdd(&pool);                     (any thread)
-    nodeTPoolRemove(&pool, slot.index);                               (any thread)
-    nodeTPoolDealloc(&pool);
+    ds_TPool(node) pool;
+    ds_TPoolAlloc(pool, g_arch_config->logical_core_count, 1024);
+    const struct slot slot = ds_TPoolAdd(pool);                       (any thread)
+    ds_TPoolRemove(pool, slot.index);                                 (any thread)
+    ds_TPoolDealloc(pool);
 
-The functions (Alloc, Dealloc and Flush only while no other thread uses the pool):
+The macros (pool is a ds_TPool(Type) lvalue; arguments may be evaluated more than once; Alloc, Dealloc and
+Flush only while no other thread uses the pool):
 
     // Set up the pool with a first block of PowerOfTwoCeil(initial_count) slots (initial_count <= 2^31)
     // and one free list per thread index < logical_core_count. Fatal if memory runs out.
-    void            TypeTPoolAlloc(struct TypeTPool *pool, const u32 logical_core_count, const u32 initial_count)
+    void            ds_TPoolAlloc(pool, logical_core_count, initial_count)
 
     // Free all blocks and free lists.
-    void            TypeTPoolDealloc(struct TypeTPool *pool)
+    void            ds_TPoolDealloc(pool)
 
     // Remove all slots (the blocks stay); the next fresh slots start at index 0.
-    void            TypeTPoolFlush(struct TypeTPool *pool)
+    void            ds_TPoolFlush(pool)
 
     // Allocate a slot and return { address, index }: from the calling thread's free list, else stolen
-    // from another thread's list, else a fresh slot (TypeTPoolIncrement). Contents are uninitialized.
-    struct slot     TypeTPoolAdd(struct TypeTPool *pool)
+    // from another thread's list, else a fresh slot (ds_TPoolIncrement). Contents are uninitialized.
+    struct slot     ds_TPoolAdd(pool)
 
     // Remove the slot at index onto the calling thread's free list.
-    void            TypeTPoolRemove(struct TypeTPool *pool, const u32 index)
+    void            ds_TPoolRemove(pool, index)
 
     // Return the address of the slot at index.
-    struct Type *   TypeTPoolAddress(const struct TypeTPool *pool, const u32 index)
+    struct Type *   ds_TPoolAddress(pool, index)
 
     // Allocate a never used slot (past every slot handed out so far), adding a block if needed (one
     // thread adds it while the others wait). Fatal if memory runs out.
-    struct slot     TypeTPoolIncrement(struct TypeTPool *pool)
+    struct slot     ds_TPoolIncrement(pool)
+
+    // Push the slot at index onto, or pop the latest pushed slot from ({ NULL, U32_MAX } if empty),
+    // free list list (< logical_core_count). ds_TPoolRemove/ds_TPoolAdd use the calling thread's list.
+    void            ds_TPoolFreeListPush(pool, list, index)
+    struct slot     ds_TPoolFreeListPop(pool, list)
 
 ::: Internals :::
 
-Free lists are TStacks (below), one per thread index, each on its own cache line; an add tries its own
-list, then 2*logical_core_count random others. Block 0 has N = initial_length (a power of two) slots,
-block 1 also N, block k >= 1 has N << (k-1), so the pool length doubles with each block and an index maps
-to its block without a search:
+Free lists are lock-free (Treiber) stacks of slot indices, one per thread index, each on its own cache
+line (struct ds_TStack); an add tries its own list, then 2*logical_core_count random others. A list's head
+is (tag << 32) | index of its top slot, TSTACK_NULL if empty; tpool_tail in each slot holds the head below
+it. Each push increments the slot's tpool_tag, so a slot popped and pushed back between another thread's
+load and compare-exchange changes the head (no ABA).
+
+Block 0 has N = initial_length (a power of two) slots, block 1 also N, block k >= 1 has N << (k-1), so the
+pool length doubles with each block and an index maps to its block without a search:
 
     blocks:   [N][N][2N][4N][8N] ...   (block k >= 1 starts at index N << (k-1))
     shift = log2(N) = Ctz32(N)
@@ -779,332 +785,167 @@ to its block without a search:
     i >= N:  block  = 1 + (bit index of the leading 1 of i >> shift) = 32 - Clz32(i >> shift)
              offset = i & ((N << (block-1)) - 1)       (block k >= 1 holds the indices with that leading bit)
 
-At most 32 blocks (a_length < 2^31).
+At most 32 blocks (a_length < 2^31). Add, Remove, Address, the free-list operations and the fast path of
+Increment are force-inlined (sizeof(Type) and the node field offsets are constants there); Alloc, Dealloc,
+Flush and adding a block are out of line.
 */
 
-#define TPOOL_NODE  TSTACK_NODE(FreeList)
+#define TPOOL_NODE		u64 tpool_tail;		\
+				u32 tpool_tag
 
-#define TPOOL_DECLARE(struct_name)                                                                          \
-        TPOOL_STRUCT_DEFINE(struct_name);                                                                   \
-        TSTACK_DECLARE(struct_name, FreeList)                                                               \
-        TPOOL_ALLOC_DECLARE(struct_name);                                                                   \
-        TPOOL_DEALLOC_DECLARE(struct_name);                                                                 \
-        TPOOL_FLUSH_DECLARE(struct_name);                                                                   \
-        TPOOL_ADD_DECLARE(struct_name);                                                                     \
-        TPOOL_REMOVE_DECLARE(struct_name);                                                                  \
-        TPOOL_ADDRESS_DECLARE(struct_name);                                                                 \
-        TPOOL_INCREMENT_DECLARE(struct_name);                                                                
+#define TSTACK_NULL		U64_MAX
 
-#define TPOOL_DEFINE(struct_name)                                                                           \
-        TSTACK_DEFINE(struct_name, FreeList)                                                                \
-        TPOOL_ALLOC_DEFINE(struct_name)                                                                     \
-        TPOOL_DEALLOC_DEFINE(struct_name)                                                                   \
-        TPOOL_FLUSH_DEFINE(struct_name)                                                                     \
-        TPOOL_ADD_DEFINE(struct_name)                                                                       \
-        TPOOL_REMOVE_DEFINE(struct_name)                                                                    \
-        TPOOL_ADDRESS_DEFINE(struct_name)                                                                   \
-        TPOOL_INCREMENT_DEFINE(struct_name)                                                                 
+/* A free list, alone on its cache line. */
+struct ds_TStack
+{
+	u64	a_head;
+	u8	pad[DS_CACHE_LINE - sizeof(u64)];
+};
 
-#define TPOOL_STRUCT_DEFINE(struct_name)                                                                    \
-struct struct_name ## TPool                                                                                 \
-{                                                                                                           \
-    u32                 a_count_max;                                                                        \
-    u32                 a_length;                                                                           \
-    u32                 a_adding_memory;   /* Bool: Is allocating additional memory */                      \
-    u32                 block_count;                                                                        \
-    u32                 block_length_next;                                                                  \
-                                                                                                            \
-    u32                 initial_length;                                                                     \
-    u32                 shift;                                                                              \
-                                                                                                            \
-    /* indexed by thread's unique index */                                                                  \
-    u32                 steal_max_iterations;                                                               \
-    u32                 free_list_count;                                                                    \
-    struct struct_name ## FreeList ## TStack *t_free_list;                                                  \
-                                                                                                            \
-    struct struct_name *block[32];                                                                          \
+/* Internal: the type-independent part of a TPool. */
+struct ds_TPoolState
+{
+	u32			a_count_max;
+	u32			a_length;
+	u32			a_adding_memory;	/* Bool: Is allocating additional memory */
+	u32			block_count;
+	u32			block_length_next;
+
+	u32			initial_length;
+	u32			shift;
+
+	u32			steal_max_iterations;
+	u32			free_list_count;
+	struct ds_TStack *	t_free_list;		/* indexed by thread index */
+};
+
+#define ds_TPool(T) ds_TPool_ ## T
+
+#define DEFINE_TPOOL(T)                         \
+typedef struct ds_TPool(T)                      \
+{                                               \
+	struct ds_TPoolState	state;              \
+	struct T *		block[32];                  \
+} ds_TPool(T)
+
+/* Internal: see ds_TPoolAlloc, ds_TPoolDealloc, ds_TPoolFlush. */
+void ds_TPoolAllocInternal(struct ds_TPoolState *state, void **block, const u32 logical_core_count, const u32 initial_count, const u64 slot_size);
+void ds_TPoolDeallocInternal(struct ds_TPoolState *state, void **block);
+void ds_TPoolFlushInternal(struct ds_TPoolState *state);
+/* Internal: wait until slot index exists, adding a block if no other thread is (the cold path of Increment). */
+void ds_TPoolGrowInternal(struct ds_TPoolState *state, void **block, const u32 index, const u64 slot_size);
+
+/* Internal: block and offset in the block of slot index. */
+static ds_ForceInline u32 ds_TPoolBlockInternal(const struct ds_TPoolState *state, const u32 index)
+{
+	return (index < state->initial_length) ? 0 : 32 - Clz32(index >> state->shift);
 }
 
-#define TPOOL_ALLOC_DECLARE(struct_name)                                                                    \
-void                struct_name ## TPoolAlloc(struct struct_name ## TPool *pool,                            \
-                                              const u32 logical_core_count,                                 \
-                                              const u32 initial_count)
-
-#define TPOOL_DEALLOC_DECLARE(struct_name)                                                                  \
-void                struct_name ## TPoolDealloc(struct struct_name ## TPool *pool)
-
-#define TPOOL_FLUSH_DECLARE(struct_name)                                                                    \
-void                struct_name ## TPoolFlush(struct struct_name ## TPool *pool)
-
-#define TPOOL_ADD_DECLARE(struct_name)                                                                      \
-struct slot         struct_name ## TPoolAdd(struct struct_name ## TPool *pool)
-
-#define TPOOL_REMOVE_DECLARE(struct_name)                                                                   \
-void                struct_name ## TPoolRemove(struct struct_name ## TPool *pool, const u32 index)
-
-#define TPOOL_ADDRESS_DECLARE(struct_name)                                                                  \
-struct struct_name *struct_name ## TPoolAddress(const struct struct_name ## TPool *pool, const u32 index)
-
-#define TPOOL_INCREMENT_DECLARE(struct_name)                                                                \
-struct slot         struct_name ## TPoolIncrement(struct struct_name ## TPool *pool)
-
-
-#define TPOOL_ALLOC_DEFINE(struct_name)                                                                     \
-TPOOL_ALLOC_DECLARE(struct_name)                                                                            \
-{                                                                                                           \
-    ds_Assert(initial_count <= 0x80000000);                                                                 \
-    memset(pool, 0, sizeof(struct struct_name ## TPool));                                                   \
-    pool->block_count = 1;                                                                                  \
-    pool->block_length_next = PowerOfTwoCeil(initial_count);                                                \
-    pool->initial_length = pool->block_length_next;                                                         \
-    pool->shift = Ctz32(pool->initial_length);                                                              \
-                                                                                                            \
-    ds_StaticAssert(sizeof(pool->t_free_list[0]) % 64 == 0, "Size of TStacks should be multiple of 64");    \
-    pool->free_list_count = logical_core_count;                                                             \
-    pool->steal_max_iterations = 2*logical_core_count;                                                      \
-    pool->t_free_list = ds_Alloc(pool->free_list_count*sizeof(pool->t_free_list[0]), DS_CACHE_LINE);        \
-    if (!pool->t_free_list)                                                                                 \
-    {                                                                                                       \
-			LogString(T_SYSTEM, S_FATAL, "Failed to Allocate ds_TPool free list memory, exiting.");         \
-			FatalCleanupAndExit();                                                                          \
-    }                                                                                                       \
-                                                                                                            \
-    for (u32 i = 0; i < logical_core_count; ++i)                                                            \
-    {                                                                                                       \
-        struct_name ## FreeListTStackInit(pool->t_free_list + i, pool);                                     \
-        ds_Assert((u64) (pool->t_free_list + i) % 64 == 0);                                                 \
-    }                                                                                                       \
-                                                                                                            \
-    const u64 memsize = pool->block_length_next*sizeof(pool->block[0][0]);                                  \
-    pool->block[0] = ds_Alloc(memsize, DS_CACHE_LINE);                                                      \
-    if (!pool->block[0])                                                                                    \
-    {                                                                                                       \
-			Log(T_SYSTEM, S_FATAL, "Failed to Allocate ds_TPool with initial size %lu, exiting.", memsize); \
-			FatalCleanupAndExit();                                                                          \
-    }                                                                                                       \
-    AtomicStoreRel32(&pool->a_length, pool->block_length_next);                                             \
-}
- 
-#define TPOOL_DEALLOC_DEFINE(struct_name)                                                                   \
-TPOOL_DEALLOC_DECLARE(struct_name)                                                                          \
-{                                                                                                           \
-    const u32 force_read = AtomicLoadAcq32(&pool->a_adding_memory);                                         \
-    ds_Assert(force_read == 0);                                                                             \
-    for (u32 i = 0; i < pool->block_count; ++i)                                                             \
-    {                                                                                                       \
-        ds_Free(pool->block[i]);                                                                            \
-    }                                                                                                       \
-    ds_Free(pool->t_free_list);                                                                             \
+static ds_ForceInline u32 ds_TPoolOffsetInternal(const struct ds_TPoolState *state, const u32 index)
+{
+	return (index < state->initial_length) ? index : index & ((state->initial_length << (31 - Clz32(index >> state->shift))) - 1);
 }
 
-#define TPOOL_FLUSH_DEFINE(struct_name)                                                                     \
-TPOOL_FLUSH_DECLARE(struct_name)                                                                            \
-{                                                                                                           \
-    for (u32 i = 0; i < pool->free_list_count; ++i)                                                         \
-    {                                                                                                       \
-        struct_name ## FreeListTStackFlush(pool->t_free_list + i);                                          \
-    }                                                                                                       \
-    AtomicStoreRel32(&pool->a_count_max, 0);                                                                \
+/* Internal: untyped address of slot index. */
+static ds_ForceInline u8 *ds_TPoolAddressInternal(const struct ds_TPoolState *state, void *const *block, const u32 index, const u64 slot_size)
+{
+	return (u8 *) block[ds_TPoolBlockInternal(state, index)] + ds_TPoolOffsetInternal(state, index)*slot_size;
 }
 
-#define TPOOL_INCREMENT_DEFINE(struct_name)                                                                 \
-TPOOL_INCREMENT_DECLARE(struct_name)                                                                        \
-{                                                                                                           \
-    struct slot slot;                                                                                       \
-    slot.index = AtomicFetchAddRlx32(&pool->a_count_max, 1);                                                \
-    while (slot.index >= AtomicLoadAcq32(&pool->a_length))                                                  \
-    {                                                                                                       \
-        /* If we succeed to swap here, we get a fully up-to-date view of TPool in                           \
-         * our memory and also own the relevant parts of it.                                                \
-         */                                                                                                 \
-        u32 cmp_val = 0;                                                                                    \
-        const u32 exch_val = 1;                                                                             \
-        if (AtomicCompareExchangeAcqRlx32(&pool->a_adding_memory, &cmp_val, exch_val))                      \
-        {                                                                                                   \
-            if (slot.index >= pool->a_length)                                                               \
-            {                                                                                               \
-                ds_Assert(pool->a_length < 0x80000000);                                                     \
-                const u32 new_length = 2*pool->a_length;                                                    \
-                                                                                                            \
-                const u64 memsize = pool->block_length_next*sizeof(pool->block[0][0]);                      \
-                pool->block[pool->block_count] = ds_Alloc(memsize, DS_CACHE_LINE);                          \
-                if (!pool->block[pool->block_count])                                                        \
-                {                                                                                           \
-	            		Log(T_SYSTEM, S_FATAL, "Failed to Allocate ds_TPool block with size %lu, exiting.", \
-                                memsize);                                                                   \
-	            		FatalCleanupAndExit();                                                              \
-                }                                                                                           \
-                                                                                                            \
-                pool->block_count += 1;                                                                     \
-                pool->block_length_next *= 2;                                                               \
-                AtomicStoreRel32(&pool->a_length, new_length);                                              \
-            }                                                                                               \
-            AtomicStoreRel32(&pool->a_adding_memory, cmp_val);                                              \
-        }                                                                                                   \
-    }                                                                                                       \
-                                                                                                            \
-    slot.address = struct_name ## TPoolAddress(pool, slot.index);                                           \
-    return slot;                                                                                            \
+/* Internal: see ds_TPoolFreeListPush. */
+static ds_ForceInline void ds_TStackPushInternal(struct ds_TStack *stack, const struct ds_TPoolState *state, void *const *block, const u32 index, const u64 slot_size, const u64 tail_offset, const u64 tag_offset)
+{
+	u8 *node = ds_TPoolAddressInternal(state, block, index, slot_size);
+	u64 *tail = (u64 *) (node + tail_offset);
+	u32 *tag = (u32 *) (node + tag_offset);
+	*tag += 1;
+	const u64 new_head = ((u64) *tag << 32) + index;
+	*tail = AtomicLoadRlx64(&stack->a_head);
+	while (!AtomicCompareExchangeRelRlx64(&stack->a_head, tail, new_head));
 }
 
-#define TPOOL_ADD_DEFINE(struct_name)                                                                       \
-TPOOL_ADD_DECLARE(struct_name)                                                                              \
-{                                                                                                           \
-    struct slot slot = struct_name ## FreeListTStackPop(pool->t_free_list + ds_ThreadSelfIndex());          \
-    if (slot.address)                                                                                       \
-    {                                                                                                       \
-        return slot;                                                                                        \
-    }                                                                                                       \
-                                                                                                            \
-    for (u32 i = 0; i < pool->steal_max_iterations; ++i)                                                    \
-    {                                                                                                       \
-        const u32 t = RngU64Range(0, pool->free_list_count-1);                                              \
-        slot = struct_name ## FreeListTStackPop(pool->t_free_list + t);                                     \
-        if (slot.address)                                                                                   \
-        {                                                                                                   \
-            return slot;                                                                                    \
-        }                                                                                                   \
-    }                                                                                                       \
-                                                                                                            \
-    return struct_name ## TPoolIncrement(pool);                                                             \
+/* Internal: see ds_TPoolFreeListPop. */
+static ds_ForceInline struct slot ds_TStackPopInternal(struct ds_TStack *stack, const struct ds_TPoolState *state, void *const *block, const u64 slot_size, const u64 tail_offset)
+{
+	u8 *node;
+	u64 local_head = AtomicLoadAcq64(&stack->a_head);
+	do
+	{
+		if (local_head == TSTACK_NULL)
+		{
+			return (struct slot) { .address = NULL, .index = U32_MAX };
+		}
+		node = ds_TPoolAddressInternal(state, block, (u32) local_head, slot_size);
+	} while (!AtomicCompareExchangeAcqRelAcq64(&stack->a_head, &local_head, *(u64 *) (node + tail_offset)));
+
+	return (struct slot) { .address = node, .index = (u32) local_head };
 }
 
-#define TPOOL_REMOVE_DEFINE(struct_name)                                                                    \
-TPOOL_REMOVE_DECLARE(struct_name)                                                                           \
-{                                                                                                           \
-    struct_name ## FreeListTStackPush(pool->t_free_list + ds_ThreadSelfIndex(), index);                     \
+/* Internal: see ds_TPoolIncrement. */
+static ds_ForceInline struct slot ds_TPoolIncrementInternal(struct ds_TPoolState *state, void **block, const u64 slot_size)
+{
+	struct slot slot;
+	slot.index = AtomicFetchAddRlx32(&state->a_count_max, 1);
+	if (slot.index >= (u32) AtomicLoadAcq32(&state->a_length))
+	{
+		ds_TPoolGrowInternal(state, block, slot.index, slot_size);
+	}
+	slot.address = ds_TPoolAddressInternal(state, block, slot.index, slot_size);
+	return slot;
 }
 
-#define TPOOL_ADDRESS_DEFINE(struct_name)                                                                   \
-TPOOL_ADDRESS_DECLARE(struct_name)                                                                          \
-{                                                                                                           \
-    u32 bi;                                                                                                 \
-    u32 i;                                                                                                  \
-    if (index < pool->initial_length)                                                                       \
-    {                                                                                                       \
-        bi = 0;                                                                                             \
-        i = index;                                                                                          \
-    }                                                                                                       \
-    else                                                                                                    \
-    {                                                                                                       \
-        bi = 32 - Clz32(index >> pool->shift);                                                              \
-        const u32 mask = (pool->initial_length << (bi-1)) - 1;                                              \
-        i = index & mask;                                                                                   \
-    }                                                                                                       \
-                                                                                                            \
-    return pool->block[bi] + i;                                                                             \
-}                                                           
+/* Internal: see ds_TPoolAdd. */
+static ds_ForceInline struct slot ds_TPoolAddInternal(struct ds_TPoolState *state, void **block, const u64 slot_size, const u64 tail_offset)
+{
+	struct slot slot = ds_TStackPopInternal(state->t_free_list + ds_ThreadSelfIndex(), state, block, slot_size, tail_offset);
+	if (slot.address)
+	{
+		return slot;
+	}
 
-/*
-TStack API
-----------
-Lock-free (Treiber) stack of slot indices, intrusive in the slots of a TypeTPool: the TPool's free lists.
-Push and pop may run on any threads at the same time.
+	for (u32 i = 0; i < state->steal_max_iterations; ++i)
+	{
+		const u32 t = (u32) RngU64Range(0, state->free_list_count-1);
+		slot = ds_TStackPopInternal(state->t_free_list + t, state, block, slot_size, tail_offset);
+		if (slot.address)
+		{
+			return slot;
+		}
+	}
 
-::: Usage and Documentation :::
-
-struct Type contains TSTACK_NODE(name); TSTACK_DECLARE(Type, name) / TSTACK_DEFINE(Type, name) generate
-the functions below (TPOOL_DECLARE/TPOOL_DEFINE do it for TPOOL_NODE, name = FreeList).
-
-    // Make the stack empty and bind it to pool (whose slots hold the nodes).
-    void            TypenameTStackInit(struct TypenameTStack *stack, struct TypeTPool *pool)
-
-    // Make the stack empty (not concurrently with push or pop).
-    void            TypenameTStackFlush(struct TypenameTStack *stack)
-
-    // Push the slot at index.
-    void            TypenameTStackPush(struct TypenameTStack *stack, const u32 index)
-
-    // Pop the latest pushed slot: { address, index }, or { NULL, U32_MAX } if the stack is empty.
-    struct slot     TypenameTStackPop(struct TypenameTStack *stack)
-
-::: Internals :::
-
-The head is (tag << 32) | index of the top slot, TSTACK_NULL if empty; nameTail in each slot holds the
-head below it. Each push increments the slot's nameTag, so a slot popped and pushed back between another
-thread's load and compare-exchange changes the head (no ABA).
-*/
-
-#define TSTACK_NODE(name)                                                                                       \
-    u64 name ## Tail;                                                                                           \
-    u32 name ## Tag
-
-#define TSTACK_NULL U64_MAX
-
-#define TSTACK_DECLARE(struct_name, name)                                                                       \
-        TSTACK_STRUCT_DEFINE(struct_name, name);                                                                \
-        TSTACK_INIT_DECLARE(struct_name, name);                                                                 \
-        TSTACK_FLUSH_DECLARE(struct_name, name);                                                                \
-        TSTACK_PUSH_DECLARE(struct_name, name);                                                                 \
-        TSTACK_POP_DECLARE(struct_name, name);                                                                  \
-
-#define TSTACK_DEFINE(struct_name, name)                                                                        \
-        TSTACK_INIT_DEFINE(struct_name, name)                                                                   \
-        TSTACK_FLUSH_DEFINE(struct_name, name)                                                                  \
-        TSTACK_PUSH_DEFINE(struct_name, name)                                                                   \
-        TSTACK_POP_DEFINE(struct_name, name)                                                                    \
-
-
-#define TSTACK_STRUCT_DEFINE(struct_name, name)                                                                 \
-struct struct_name ## name ## TStack                                                                            \
-{                                                                                                               \
-    u64                             a_head;                                                                     \
-    struct struct_name ## TPool *   pool;                                                                       \
-    u8                              pad[64 - sizeof(u64) - sizeof(void *)];                                     \
+	return ds_TPoolIncrementInternal(state, block, slot_size);
 }
 
-#define TSTACK_INIT_DECLARE(struct_name, name)                                                                  \
-void        struct_name ## name ## TStackInit(struct struct_name ## name ## TStack *stack,                      \
-                                                         struct struct_name ## TPool *pool)
+/* Internal: node field offsets (constants; never reads block, see ds_PoolSlotOffset) */
+#define ds_TPoolTailOffset(pool)	((u64) &((1 ? NULL : (pool).block[0])->tpool_tail))
+#define ds_TPoolTagOffset(pool)		((u64) &((1 ? NULL : (pool).block[0])->tpool_tag))
 
-#define TSTACK_FLUSH_DECLARE(struct_name, name)                                                                 \
-void        struct_name ## name ## TStackFlush(struct struct_name ## name ## TStack *stack)
+#define ds_TPoolAlloc(pool, logical_core_count, initial_count)                                          \
+	ds_TPoolAllocInternal(&(pool).state, (void **) (pool).block, (logical_core_count), (initial_count), \
+	                      sizeof((pool).block[0][0]))
 
-#define TSTACK_PUSH_DECLARE(struct_name, name)                                                                  \
-void        struct_name ## name ## TStackPush(struct struct_name ## name ## TStack *stack, const u32 index)
+#define ds_TPoolDealloc(pool)	ds_TPoolDeallocInternal(&(pool).state, (void **) (pool).block)
+#define ds_TPoolFlush(pool)	ds_TPoolFlushInternal(&(pool).state)
 
-#define TSTACK_POP_DECLARE(struct_name, name)                                                                   \
-struct slot struct_name ## name ## TStackPop(struct struct_name ## name ## TStack *stack)
+#define ds_TPoolAddress(pool, index)                                                                    \
+	((pool).block[ds_TPoolBlockInternal(&(pool).state, (index))] + ds_TPoolOffsetInternal(&(pool).state, (index)))
 
-#define TSTACK_INIT_DEFINE(struct_name, name)                                                                   \
-TSTACK_INIT_DECLARE(struct_name, name)                                                                          \
-{                                                                                                               \
-    stack->pool = pool;                                                                                         \
-    AtomicStoreRel64(&stack->a_head, TSTACK_NULL);                                                              \
-}
+#define ds_TPoolIncrement(pool)                                                                         \
+	ds_TPoolIncrementInternal(&(pool).state, (void **) (pool).block, sizeof((pool).block[0][0]))
 
-#define TSTACK_FLUSH_DEFINE(struct_name, name)                                                                  \
-TSTACK_FLUSH_DECLARE(struct_name, name)                                                                         \
-{                                                                                                               \
-    AtomicStoreRel64(&stack->a_head, TSTACK_NULL);                                                              \
-}
+#define ds_TPoolAdd(pool)                                                                               \
+	ds_TPoolAddInternal(&(pool).state, (void **) (pool).block, sizeof((pool).block[0][0]), ds_TPoolTailOffset(pool))
 
-#define TSTACK_PUSH_DEFINE(struct_name, name)                                                                   \
-TSTACK_PUSH_DECLARE(struct_name, name)                                                                          \
-{                                                                                                               \
-    struct struct_name *node = struct_name ## TPoolAddress(stack->pool, index);                                 \
-    node->name ## Tag += 1;                                                                                     \
-    const u64 new_head = ((u64) node->name ## Tag << 32) + index;                                               \
-    node->name ## Tail = AtomicLoadRlx64(&stack->a_head);                                                       \
-    while (!AtomicCompareExchangeRelRlx64(&stack->a_head, &node->name ## Tail, new_head));                      \
-}
+#define ds_TPoolFreeListPush(pool, list, index)                                                         \
+	ds_TStackPushInternal((pool).state.t_free_list + (list), &(pool).state, (void **) (pool).block,     \
+	                      (index), sizeof((pool).block[0][0]), ds_TPoolTailOffset(pool), ds_TPoolTagOffset(pool))
 
-#define TSTACK_POP_DEFINE(struct_name, name)                                                                    \
-TSTACK_POP_DECLARE(struct_name, name)                                                                           \
-{                                                                                                               \
-    struct struct_name *node;                                                                                   \
-    u64 local_head = AtomicLoadAcq64(&stack->a_head);                                                           \
-    do                                                                                                          \
-    {                                                                                                           \
-        if (local_head == TSTACK_NULL)                                                                          \
-        {                                                                                                       \
-            return (struct slot) { .address = NULL, .index = U32_MAX };                                         \
-        }                                                                                                       \
-        node = struct_name ## TPoolAddress(stack->pool, (u32) local_head);                                      \
-    } while (!AtomicCompareExchangeAcqRelAcq64(&stack->a_head, &local_head, node->name ## Tail));               \
-                                                                                                                \
-    return (struct slot) { .address = node, .index = (u32) local_head };                                        \
-}
+#define ds_TPoolFreeListPop(pool, list)                                                                 \
+	ds_TStackPopInternal((pool).state.t_free_list + (list), &(pool).state, (void **) (pool).block,      \
+	                     sizeof((pool).block[0][0]), ds_TPoolTailOffset(pool))
+
+#define ds_TPoolRemove(pool, index)	ds_TPoolFreeListPush(pool, ds_ThreadSelfIndex(), index)
+
 
 #ifdef __cplusplus
 }

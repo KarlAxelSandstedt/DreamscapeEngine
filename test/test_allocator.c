@@ -41,17 +41,16 @@ struct ds_Struct
     u8  pad[52];
 };
 
-TPOOL_DECLARE(ds_Struct)
-TPOOL_DEFINE(ds_Struct)
+DEFINE_TPOOL(ds_Struct);
 
-static struct ds_StructTPool *g_tpool;
+static ds_TPool(ds_Struct) *g_tpool;
 static u32 first = 1;
 
 void *ds_StructTPoolIncrementTestInit(void)
 {
     if (ds_ThreadSelfIndex() == 0)
     {
-        AtomicStoreRel64(&g_tpool, malloc(sizeof(struct ds_StructTPool)));
+        AtomicStoreRel64(&g_tpool, malloc(sizeof(ds_TPool(ds_Struct))));
     }
 
     return &g_tpool;
@@ -61,14 +60,14 @@ void ds_StructTPoolIncrementTestReset(void *args)
 {
     if (ds_ThreadSelfIndex() == 0)
     {
-	    struct ds_StructTPool *pool = (struct ds_StructTPool *) AtomicLoadAcq64(&g_tpool);
+	    ds_TPool(ds_Struct) *pool = (ds_TPool(ds_Struct) *) AtomicLoadAcq64(&g_tpool);
         if (!first)
         {
-            ds_StructTPoolDealloc(pool);
+            ds_TPoolDealloc(*pool);
         }
         first = 0;
 
-        ds_StructTPoolAlloc(pool, g_arch_config->logical_core_count, 1);
+        ds_TPoolAlloc(*pool, g_arch_config->logical_core_count, 1);
     }
 }
 
@@ -76,9 +75,9 @@ void ds_StructTPoolIncrementTestFree(void *args)
 {
     if (ds_ThreadSelfIndex() == 0 && g_tpool)
     {
-	    struct ds_StructTPool *pool = (struct ds_StructTPool *) AtomicLoadAcq64(&g_tpool);
+	    ds_TPool(ds_Struct) *pool = (ds_TPool(ds_Struct) *) AtomicLoadAcq64(&g_tpool);
         g_tpool = NULL;
-        ds_StructTPoolDealloc(pool);
+        ds_TPoolDealloc(*pool);
         free(pool);
         first = 1;
     }
@@ -86,31 +85,31 @@ void ds_StructTPoolIncrementTestFree(void *args)
 
 void ds_StructTPoolIncrementTest(void *void_pool)
 {
-	struct ds_StructTPool *pool = (struct ds_StructTPool *) AtomicLoadAcq64(&g_tpool);
+	ds_TPool(ds_Struct) *pool = (ds_TPool(ds_Struct) *) AtomicLoadAcq64(&g_tpool);
     for (u32 i = 0; i < 1024*64; ++i)
     {
-        const u32 index = ds_StructTPoolIncrement(pool).index;
-        struct ds_Struct *addr = ds_StructTPoolAddress(pool, index);
+        const u32 index = ds_TPoolIncrement(*pool).index;
+        struct ds_Struct *addr = ds_TPoolAddress(*pool, index);
         memset(addr, 0xff, sizeof(*addr));
     }
 }
 
 void ds_StructTStackTest(void *void_pool)
 {
-	struct ds_StructTPool *pool = (struct ds_StructTPool *) AtomicLoadAcq64(&g_tpool);
+	ds_TPool(ds_Struct) *pool = (ds_TPool(ds_Struct) *) AtomicLoadAcq64(&g_tpool);
     const u32 count = 200;
     if (ds_ThreadSelfIndex() == 0)
     {
-        for (u32 i = 0; i < count*pool->free_list_count; ++i)
+        for (u32 i = 0; i < count*pool->state.free_list_count; ++i)
         {
-            struct slot slot = ds_StructTPoolIncrement(pool);
-            ds_StructFreeListTStackPush(pool->t_free_list + 0, slot.index);
+            struct slot slot = ds_TPoolIncrement(*pool);
+            ds_TPoolFreeListPush(*pool, 0, slot.index);
         }
     }
 
     for (u32 i = 0; i < count; )
     {
-        struct slot slot = ds_StructFreeListTStackPop(pool->t_free_list + 0);
+        struct slot slot = ds_TPoolFreeListPop(*pool, 0);
         if (slot.address)
         {
             i += 1;
@@ -154,8 +153,9 @@ struct suite_Performance storage_performance_allocator_suite =
 	.id = "Allocator Performance",
 	.parallel_test = allocator_parallel_test,
 	.parallel_test_count = sizeof(allocator_parallel_test) / sizeof(allocator_parallel_test[0]),
-	.serial_test = allocator_serial_test,
-	.serial_test_count = sizeof(allocator_serial_test) / sizeof(allocator_serial_test[0]),
+	/* no serial tests yet: allocator_serial_test only holds an empty entry, whose NULL test the runner calls */
+	.serial_test = NULL,
+	.serial_test_count = 0,
 };
 
 struct suite_Performance *allocator_performance_suite = &storage_performance_allocator_suite;

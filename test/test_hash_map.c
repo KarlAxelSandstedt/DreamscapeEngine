@@ -44,20 +44,19 @@ u32 u64Equivalence(const u64 *a, const u64 *b)
     return *a == *b;
 }
 
-TPOOL_DECLARE(ds_Structure)
-TPOOL_DEFINE(ds_Structure)
+DEFINE_TPOOL(ds_Structure);
 THASH_DECLARE(ds_Structure, u64)
 THASH_DEFINE(ds_Structure, key, u64, u64Hash, u64Equivalence)
 
 static struct ds_StructureTHashMap g_tmap;
-static struct ds_StructureTPool *g_tpool;
+static ds_TPool(ds_Structure) *g_tpool;
 static u32 first = 1;
 
 void *ds_StructureTHashMapTestInit(void)
 {
     if (ds_ThreadSelfIndex() == 0)
     {
-        AtomicStoreRel64(&g_tpool, malloc(sizeof(struct ds_StructureTPool)));
+        AtomicStoreRel64(&g_tpool, malloc(sizeof(ds_TPool(ds_Structure))));
         g_tmap = ds_StructureTHashMapAlloc(NULL, g_tpool, 4096);
     }
 
@@ -68,10 +67,10 @@ void ds_StructureTHashMapTestReset(void *args)
 {
     if (ds_ThreadSelfIndex() == 0)
     {
-	    struct ds_StructureTPool *pool = (struct ds_StructureTPool *) AtomicLoadAcq64(&g_tpool);
+	    ds_TPool(ds_Structure) *pool = (ds_TPool(ds_Structure) *) AtomicLoadAcq64(&g_tpool);
         if (!first)
         {
-            ds_StructureTPoolDealloc(pool);
+            ds_TPoolDealloc(*pool);
         }
         first = 0;
 
@@ -79,7 +78,7 @@ void ds_StructureTHashMapTestReset(void *args)
         {
             ds_Assert((AtomicLoadRlx64(g_tmap.a_hash + i) & THASH_NEXT_MASK) == THASH_NULL);
         }
-        ds_StructureTPoolAlloc(pool, g_arch_config->logical_core_count, 1);
+        ds_TPoolAlloc(*pool, g_arch_config->logical_core_count, 1);
         ds_StructureTHashMapFlush(&g_tmap);
     }
 }
@@ -88,9 +87,9 @@ void ds_StructureTHashMapTestFree(void *args)
 {
     if (ds_ThreadSelfIndex() == 0 && g_tpool)
     {
-	    struct ds_StructureTPool *pool = (struct ds_StructureTPool *) AtomicLoadAcq64(&g_tpool);
+	    ds_TPool(ds_Structure) *pool = (ds_TPool(ds_Structure) *) AtomicLoadAcq64(&g_tpool);
         g_tpool = NULL;
-        ds_StructureTPoolDealloc(pool);
+        ds_TPoolDealloc(*pool);
         ds_StructureTHashMapDealloc(&g_tmap);
         free(pool);
         first = 1;
@@ -99,13 +98,13 @@ void ds_StructureTHashMapTestFree(void *args)
 
 void ds_StructureTHashMapAddAllRemoveAllTest(void *null)
 {
-	struct ds_StructureTPool *pool = (struct ds_StructureTPool *) AtomicLoadAcq64(&g_tpool);
+	ds_TPool(ds_Structure) *pool = (ds_TPool(ds_Structure) *) AtomicLoadAcq64(&g_tpool);
     const u32 count = 10000;
     u32 indices[10000]; 
     const u32 t = ds_ThreadSelfIndex();
     for (u32 i = 0; i < count; ++i)
     {
-        struct slot slot = ds_StructureTPoolIncrement(pool);
+        struct slot slot = ds_TPoolIncrement(*pool);
         indices[i] = slot.index;
         struct ds_Structure *n = slot.address;
         n->key = indices[i]; 
@@ -117,7 +116,7 @@ void ds_StructureTHashMapAddAllRemoveAllTest(void *null)
     {
         const u64 key = indices[i]; 
         ds_StructureTHashMapRemove(&g_tmap, &key);
-        ds_StructureTPoolRemove(pool, indices[i]);
+        ds_TPoolRemove(*pool, indices[i]);
     }
 }
 

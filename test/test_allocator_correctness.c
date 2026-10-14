@@ -746,8 +746,7 @@ struct test_TNode
     u32 value;
 };
 
-TPOOL_DECLARE(test_TNode)
-TPOOL_DEFINE(test_TNode)
+DEFINE_TPOOL(test_TNode);
 
 /*
  * Single thread: increments hand out 0, 1, 2, ... across doubling blocks at distinct addresses; removed slots
@@ -757,38 +756,242 @@ static struct test_Output TPoolTest(struct test_Environment *env)
 {
 	struct test_Output output = { .success = 1, .id = __func__ };
 
-    struct test_TNodeTPool pool;
-    test_TNodeTPoolAlloc(&pool, g_arch_config->logical_core_count, 3);
-    TEST_EQUAL(4, pool.initial_length);
+    ds_TPool(test_TNode) pool;
+    ds_TPoolAlloc(pool, g_arch_config->logical_core_count, 3);
+    TEST_EQUAL(4, pool.state.initial_length);
 
     /* blocks 4, 4, 8, ..., 512 hold 1024 slots */
     const u32 n = 1000;
     for (u32 i = 0; i < n; ++i)
     {
-        const struct slot slot = test_TNodeTPoolIncrement(&pool);
+        const struct slot slot = ds_TPoolIncrement(pool);
         TEST_EQUAL(i, slot.index);
-        TEST_EQUAL(slot.address, (void *) test_TNodeTPoolAddress(&pool, i));
+        TEST_EQUAL(slot.address, (void *) ds_TPoolAddress(pool, i));
         ((struct test_TNode *) slot.address)->value = i;
     }
-    TEST_EQUAL(9, pool.block_count);
+    TEST_EQUAL(9, pool.state.block_count);
 
     u32 distinct = 1;
     for (u32 i = 0; i < n; ++i)
     {
-        distinct &= (test_TNodeTPoolAddress(&pool, i)->value == i);
+        distinct &= (ds_TPoolAddress(pool, i)->value == i);
     }
     TEST_TRUE(distinct);
 
-    test_TNodeTPoolRemove(&pool, 10);
-    test_TNodeTPoolRemove(&pool, 500);
-    TEST_EQUAL(500, test_TNodeTPoolAdd(&pool).index);
-    TEST_EQUAL(10, test_TNodeTPoolAdd(&pool).index);
-    TEST_EQUAL(n, test_TNodeTPoolAdd(&pool).index);
+    ds_TPoolRemove(pool, 10);
+    ds_TPoolRemove(pool, 500);
+    TEST_EQUAL(500, ds_TPoolAdd(pool).index);
+    TEST_EQUAL(10, ds_TPoolAdd(pool).index);
+    TEST_EQUAL(n, ds_TPoolAdd(pool).index);
 
-    test_TNodeTPoolFlush(&pool);
-    TEST_EQUAL(0, test_TNodeTPoolIncrement(&pool).index);
+    ds_TPoolFlush(pool);
+    TEST_EQUAL(0, ds_TPoolIncrement(pool).index);
 
-    test_TNodeTPoolDealloc(&pool);
+    ds_TPoolDealloc(pool);
+
+	return output;
+}
+
+struct test_PNode
+{
+    TPOOL_NODE;
+    u32 owner;
+    u32 index;
+};
+
+DEFINE_TPOOL(test_PNode);
+
+#define TPOOL_PARALLEL_HELD     2048
+#define TPOOL_PARALLEL_ROUNDS   64
+#define TPOOL_PARALLEL_OWNERS   (1u << 20)
+
+struct test_TPoolParallel
+{
+    ds_TPool(test_PNode)    pool;
+    u32 *                   a_owner;    /* a_owner[index]: id of the job holding slot index, 0 if free */
+    u32                     a_next_id;
+    u32                     a_errors;
+};
+
+/* Release a held slot: it must still be ours, untouched; then to our free list or another thread's. */
+static void TPoolParallelRelease(struct test_TPoolParallel *t, const u32 id, const u32 index)
+{
+    const struct test_PNode *node = ds_TPoolAddress(t->pool, index);
+    u32 expected = id;
+    if (node->owner != id || node->index != index || !AtomicCompareExchangeAcqRlx32(t->a_owner + index, &expected, 0))
+    {
+        AtomicAddFetchRlx32(&t->a_errors, 1);
+        return;
+    }
+
+    if (RngU64Range(0, 1))
+    {
+        ds_TPoolRemove(t->pool, index);
+    }
+    else
+    {
+        const u32 list = (u32) RngU64Range(0, t->pool.state.free_list_count - 1);
+        ds_TPoolFreeListPush(t->pool, list, index);
+    }
+}
+
+/* One job: rounds of filling up to TPOOL_PARALLEL_HELD slots and releasing a random half; then release all. */
+static void TPoolParallelJob(void *args)
+{
+    struct test_TPoolParallel *t = args;
+    const u32 id = AtomicAddFetchRlx32(&t->a_next_id, 1);
+    u32 held[TPOOL_PARALLEL_HELD];
+    u32 held_count = 0;
+
+    for (u32 round = 0; round < TPOOL_PARALLEL_ROUNDS; ++round)
+    {
+        while (held_count < TPOOL_PARALLEL_HELD)
+        {
+            const struct slot slot = ds_TPoolAdd(t->pool);
+            u32 expected = 0;
+            if (slot.index >= TPOOL_PARALLEL_OWNERS
+                || slot.address != (void *) ds_TPoolAddress(t->pool, slot.index)
+                || !AtomicCompareExchangeAcqRlx32(t->a_owner + slot.index, &expected, id))
+            {
+                /* handed out twice, or out of the owner table: count it and stop this job */
+                AtomicAddFetchRlx32(&t->a_errors, 1);
+                return;
+            }
+
+            struct test_PNode *node = slot.address;
+            node->owner = id;
+            node->index = slot.index;
+            held[held_count++] = slot.index;
+        }
+
+        for (u32 k = 0; k < TPOOL_PARALLEL_HELD / 2; ++k)
+        {
+            const u32 j = (u32) RngU64Range(0, held_count - 1);
+            TPoolParallelRelease(t, id, held[j]);
+            held[j] = held[--held_count];
+        }
+    }
+
+    while (held_count)
+    {
+        TPoolParallelRelease(t, id, held[--held_count]);
+    }
+}
+
+/*
+Every scheduler worker at once: rounds of adds and releases (half onto the own free list, half onto random
+other threads' lists, so slots move between threads and get stolen). Every slot handed out is claimed in an
+owner table with a compare-exchange (fails if two jobs hold it) and keeps its owner and index while held; at
+the end, every slot is free. Starts with 64 slots, so blocks are added while the jobs run.
+*/
+static struct test_Output TPoolParallelTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct test_TPoolParallel t;
+    ds_TPoolAlloc(t.pool, g_arch_config->logical_core_count, 64);
+    t.a_owner = ds_Alloc(TPOOL_PARALLEL_OWNERS*sizeof(u32), DS_CACHE_LINE);
+    TEST_NOT_EQUAL(NULL, t.a_owner);
+    memset(t.a_owner, 0, TPOOL_PARALLEL_OWNERS*sizeof(u32));
+    AtomicStoreRel32(&t.a_next_id, 0);
+    AtomicStoreRel32(&t.a_errors, 0);
+
+    ds_TestRunParallel(TPoolParallelJob, &t);
+
+    TEST_EQUAL(0, AtomicLoadAcq32(&t.a_errors));
+    TEST_EQUAL(g_scheduler->worker_count, (u32) AtomicLoadAcq32(&t.a_next_id));
+    TEST_TRUE((u32) AtomicLoadAcq32(&t.pool.state.a_count_max) <= TPOOL_PARALLEL_OWNERS);
+    TEST_TRUE(t.pool.state.block_count > 1);
+    u32 all_free = 1;
+    for (u32 i = 0; i < TPOOL_PARALLEL_OWNERS; ++i)
+    {
+        all_free &= (t.a_owner[i] == 0);
+    }
+    TEST_TRUE(all_free);
+
+    ds_Free(t.a_owner);
+    ds_TPoolDealloc(t.pool);
+
+	return output;
+}
+
+#define TSTACK_PARALLEL_NODES   16
+#define TSTACK_PARALLEL_OPS     200000
+
+/* One job: pop a slot from free list 0, claim it, release it, push it back; again and again. */
+static void TStackParallelJob(void *args)
+{
+    struct test_TPoolParallel *t = args;
+    const u32 id = AtomicAddFetchRlx32(&t->a_next_id, 1);
+    for (u32 i = 0; i < TSTACK_PARALLEL_OPS; ++i)
+    {
+        const struct slot slot = ds_TPoolFreeListPop(t->pool, 0);
+        if (!slot.address)
+        {
+            continue;
+        }
+
+        u32 expected = 0;
+        if (slot.index >= TSTACK_PARALLEL_NODES || !AtomicCompareExchangeAcqRlx32(t->a_owner + slot.index, &expected, id))
+        {
+            AtomicAddFetchRlx32(&t->a_errors, 1);
+            return;
+        }
+
+        struct test_PNode *node = slot.address;
+        node->owner = id;
+        expected = id;
+        if (node->owner != id || !AtomicCompareExchangeAcqRlx32(t->a_owner + slot.index, &expected, 0))
+        {
+            AtomicAddFetchRlx32(&t->a_errors, 1);
+            return;
+        }
+        ds_TPoolFreeListPush(t->pool, 0, slot.index);
+    }
+}
+
+/*
+Every scheduler worker hammers one free list holding TSTACK_PARALLEL_NODES slots (pop, claim, release,
+push): few nodes and one contended head is where ABA corrupts a Treiber stack without the push tags. A slot
+popped by two jobs at once fails its claim; at the end the list holds exactly the slots it started with.
+*/
+static struct test_Output TStackParallelTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct test_TPoolParallel t;
+    ds_TPoolAlloc(t.pool, g_arch_config->logical_core_count, TSTACK_PARALLEL_NODES);
+    t.a_owner = ds_Alloc(TSTACK_PARALLEL_NODES*sizeof(u32), DS_CACHE_LINE);
+    TEST_NOT_EQUAL(NULL, t.a_owner);
+    memset(t.a_owner, 0, TSTACK_PARALLEL_NODES*sizeof(u32));
+    AtomicStoreRel32(&t.a_next_id, 0);
+    AtomicStoreRel32(&t.a_errors, 0);
+    for (u32 i = 0; i < TSTACK_PARALLEL_NODES; ++i)
+    {
+        ds_TPoolFreeListPush(t.pool, 0, ds_TPoolIncrement(t.pool).index);
+    }
+
+    ds_TestRunParallel(TStackParallelJob, &t);
+    TEST_EQUAL(0, AtomicLoadAcq32(&t.a_errors));
+
+    /* drain: exactly the starting slots, each once (bounded: a corrupted list may cycle) */
+    u8 seen[TSTACK_PARALLEL_NODES] = { 0 };
+    u32 popped = 0;
+    for (u32 i = 0; i <= TSTACK_PARALLEL_NODES; ++i)
+    {
+        const struct slot slot = ds_TPoolFreeListPop(t.pool, 0);
+        if (!slot.address)
+        {
+            break;
+        }
+        TEST_TRUE(slot.index < TSTACK_PARALLEL_NODES && !seen[slot.index]);
+        seen[slot.index] = 1;
+        popped += 1;
+    }
+    TEST_EQUAL(TSTACK_PARALLEL_NODES, popped);
+
+    ds_Free(t.a_owner);
+    ds_TPoolDealloc(t.pool);
 
 	return output;
 }
@@ -805,6 +1008,8 @@ static struct test_Output (*allocator_tests[])(struct test_Environment *) =
     PoolTest,
     PoolSerializeTest,
     TPoolTest,
+    TPoolParallelTest,
+    TStackParallelTest,
 };
 
 struct suite_Correctness storage_allocator_correctness_suite =

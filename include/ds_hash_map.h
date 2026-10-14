@@ -117,7 +117,7 @@ of each function. The functions generated are the following:
     // Allocate hash map on heap if mem == NULL, otherwise push memory onto arena.
     // On failure, returns { 0 }.
     struct ds_StructTHashMap ds_StructTHashMapAlloc(struct arena *mem, 
-                                                    struct ds_StructureTPool *pool, 
+                                                    ds_TPool(ds_Structure) *pool,
                                                     const u32 hash_len)
 
     // Free hash map memory
@@ -209,7 +209,7 @@ of each function. The functions generated are the following:
 #define THASH_STRUCT_DEFINE(struct_name)        \
 struct struct_name ## THashMap                  \
 {                                               \
-    struct struct_name ## TPool *   pool;       \
+    ds_TPool(struct_name) *         pool;       \
     u64 *                           a_hash;     \
     u32                             hash_len;   \
     u32                             hash_mask;  \
@@ -218,7 +218,7 @@ struct struct_name ## THashMap                  \
 
 #define THASH_ALLOC_DECLARE(struct_name)                                                                \
 struct struct_name ## THashMap                                                                          \
-struct_name ## THashMapAlloc(struct arena *mem, struct struct_name ## TPool *pool, const u32 hash_len)
+struct_name ## THashMapAlloc(struct arena *mem, ds_TPool(struct_name) *pool, const u32 hash_len)
 
 #define THASH_DEALLOC_DECLARE(struct_name)                          \
 void                                                                \
@@ -375,7 +375,7 @@ try_again:                                                                      
             return 0;                                                                                               \
         }                                                                                                           \
                                                                                                                     \
-        *n_cur = struct_name ## TPoolAddress(map->pool, THASH_NEXT_MASK & (*snapshot_prev));                        \
+        *n_cur = ds_TPoolAddress(*map->pool, THASH_NEXT_MASK & (*snapshot_prev));                                   \
         /* TODO: Needed Acq?... */                                                                                  \
         *snapshot_cur = AtomicLoadAcq64(&(*n_cur)->a_hash_node);                                                    \
                                                                                                                     \

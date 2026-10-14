@@ -137,6 +137,43 @@ u32 ds_TestJobPhaseDispatch(const ds_JobId job)
     return job_diff;
 }
 
+void ds_TestRunParallel(void (*test)(void *), void *args)
+{
+	struct arena *mem = ArenaPushScratch();
+
+	struct ds_TestJobPhase phase;
+	ds_JobPhaseAlloc(mem, &phase.phase, TEST_JOB_COUNT, ds_TestJobPhaseDispatch);
+	phase.count = g_scheduler->worker_count;
+	phase.job = ArenaPush(mem, phase.count * sizeof(struct ds_TestJob));
+	for (u32 k = 0; k < phase.count; ++k)
+	{
+		phase.job[k].test = test;
+		phase.job[k].args = args;
+	}
+
+	/* the jobs wait at the barrier until all are published, so they start together */
+	AtomicStoreRel32(&phase.a_barrier, 0);
+	ds_JobPhaseBegin(&phase.phase);
+	for (u32 k = 0; k < phase.count; ++k)
+	{
+		ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(TEST_JOB, k));
+	}
+	ds_JobPhaseReserve(&phase.phase, TEST_JOB, phase.count);
+	AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, phase.count);
+	ds_JobPhaseAddFetchRemaining(&phase.phase, phase.count);
+	ds_WSDequePublish(g_scheduler->seed_deque);
+	for (u32 i = 1; i < phase.count; ++i)
+	{
+		SemaphorePost(&g_scheduler->jobs_are_available);
+	}
+	AtomicStoreRel32(&phase.a_barrier, 1);
+
+	ds_MasterRunAvailableJobs();
+	ds_JobPhaseEnd();
+
+	ArenaPopScratch();
+}
+
 static void run_performance_suite(struct suite_Performance *suite)
 {
 	fprintf(stdout, ":::::::::: Running peformance suite %s ::::::::::\n", suite->id);
@@ -298,8 +335,8 @@ void ds_TestMainCorrectness(void)
 void ds_TestMainPerformance(void)
 {
 	//run_performance_suite(jobscheduler_performance_suite);
-	//run_performance_suite(THashMap_performance_suite);
-	//run_performance_suite(allocator_performance_suite);
+	run_performance_suite(THashMap_performance_suite);
+	run_performance_suite(allocator_performance_suite);
 	//run_performance_suite(hash_performance_suite);
 	//run_performance_suite(rng_performance_suite);
 	run_performance_suite(serialize_performance_suite);

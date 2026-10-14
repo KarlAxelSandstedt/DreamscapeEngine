@@ -203,28 +203,33 @@ extern "C" {
 	#define AtomicFetchSubRel64(fetch_addr, val)	_InterlockedExchangeAdd64((__int64 volatile *) (fetch_addr), -(__int64) (val))
 	#define AtomicFetchSubSeqCst64(fetch_addr, val)	_InterlockedExchangeAdd64((__int64 volatile *) (fetch_addr), -(__int64) (val))
 	
+	/*
+	 * *cmp_addr is read once, before the exchange (as __atomic_compare_exchange_n does): it may be shared
+	 * memory that another thread changes once the exchange succeeded (a Treiber stack push passes the
+	 * pushed node's link), so reading it again afterwards could misreport success.
+	 */
 	__forceinline u32 ds_InterlockedCompareExchange(long volatile* dst_addr, long exch_val, long* cmp_addr)
 	{
-		const long initial_val = _InterlockedCompareExchange(dst_addr, exch_val, *cmp_addr);
-		u32 success = 1;
-		if (initial_val!= *cmp_addr)
+		const long expected = *cmp_addr;
+		const long initial_val = _InterlockedCompareExchange(dst_addr, exch_val, expected);
+		if (initial_val == expected)
 		{
-			success = 0;
-			*cmp_addr = initial_val;
+			return 1;
 		}
-		return success;
+		*cmp_addr = initial_val;
+		return 0;
 	}
 
 	__forceinline u32 ds_InterlockedCompareExchange64(__int64 volatile* dst_addr, __int64 exch_val, __int64* cmp_addr)
 	{
-		const __int64 initial_val = _InterlockedCompareExchange64(dst_addr, exch_val, *cmp_addr);
-		u32 success = 1;
-		if (initial_val != *cmp_addr)
+		const __int64 expected = *cmp_addr;
+		const __int64 initial_val = _InterlockedCompareExchange64(dst_addr, exch_val, expected);
+		if (initial_val == expected)
 		{
-			success = 0;
-			*cmp_addr = initial_val;
+			return 1;
 		}
-		return success;
+		*cmp_addr = initial_val;
+		return 0;
 	}
 
 	/* functions, not macros: val is evaluated once */

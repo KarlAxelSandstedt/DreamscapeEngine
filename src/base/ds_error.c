@@ -20,6 +20,25 @@
 #include "ds_base.h"
 #include "ds_platform.h"
 
+#ifdef DS_ASSERT_DEBUG
+void ds_AssertFailed(const char *file, const u32 line, const char *func, const char *format, ...)
+{
+	if (format == NULL)
+	{
+		Log(T_ASSERT, S_FATAL, "ds_Assertion failed at %s:%u in function %s", file, line, func);
+		return;
+	}
+
+	u8 buf[LOG_MAX_MESSAGE_SIZE];
+	u64 reqsize;
+	va_list args;
+	va_start(args, format);
+	const utf8 msg = Utf8FormatBufferedVariadic(&reqsize, buf, LOG_MAX_MESSAGE_SIZE, format, args);
+	va_end(args);
+	Log(T_ASSERT, S_FATAL, "ds_Assertion failed at %s:%u in function %s - %k", file, line, func, &msg);
+}
+#endif
+
 static u32 a_fatal_cleanup_initiated = 0;
 /* set on the thread doing the cleanup: a fatal error during the cleanup itself exits at once */
 static ds_ThreadLocal u32 tl_fatal_cleanup_running = 0;

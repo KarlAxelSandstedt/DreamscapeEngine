@@ -319,15 +319,6 @@ u32 ds_PoolAllocInternal(struct arena *mem, u32 *heap_allocated, void **buf, u32
 	return 1;
 }
 
-#ifdef DS_ASSERT_DEBUG
-void ds_PoolAssertFailedInternal(const char *file, const u32 line, const char *func)
-{
-	Log(T_ASSERT, S_FATAL, "ds_Assertion failed at %s:%u in function %s", file, line, func);
-	Breakpoint(1);
-	FatalCleanupAndExit();
-}
-#endif
-
 void ds_PoolGrowInternal(void **buf, u32 *length, const u64 slot_size)
 {
 	const u32 length_max = (U32_MAX >> 1);
@@ -353,6 +344,93 @@ void ds_PoolGrowInternal(void **buf, u32 *length, const u64 slot_size)
 
 	*buf = base + slot_size;
 	*length = new_length_including_stub - 1;
+}
+
+void ds_TPoolAllocInternal(struct ds_TPoolState *state, void **block, const u32 logical_core_count, const u32 initial_count, const u64 slot_size)
+{
+	ds_Assert(initial_count <= 0x80000000);
+	ds_StaticAssert(sizeof(struct ds_TStack) == DS_CACHE_LINE, "A free list should fill one cache line");
+
+	memset(state, 0, sizeof(*state));
+	memset(block, 0, 32*sizeof(void *));
+	state->block_count = 1;
+	state->block_length_next = (u32) PowerOfTwoCeil(initial_count);
+	state->initial_length = state->block_length_next;
+	state->shift = Ctz32(state->initial_length);
+
+	state->free_list_count = logical_core_count;
+	state->steal_max_iterations = 2*logical_core_count;
+	state->t_free_list = ds_Alloc(logical_core_count*sizeof(struct ds_TStack), DS_CACHE_LINE);
+	if (!state->t_free_list)
+	{
+		LogString(T_SYSTEM, S_FATAL, "Failed to Allocate ds_TPool free list memory, exiting.");
+		FatalCleanupAndExit();
+	}
+
+	for (u32 i = 0; i < logical_core_count; ++i)
+	{
+		AtomicStoreRel64(&state->t_free_list[i].a_head, TSTACK_NULL);
+	}
+
+	const u64 memsize = state->block_length_next*slot_size;
+	block[0] = ds_Alloc(memsize, DS_CACHE_LINE);
+	if (!block[0])
+	{
+		Log(T_SYSTEM, S_FATAL, "Failed to Allocate ds_TPool with initial size %lu, exiting.", memsize);
+		FatalCleanupAndExit();
+	}
+	AtomicStoreRel32(&state->a_length, state->block_length_next);
+}
+
+void ds_TPoolDeallocInternal(struct ds_TPoolState *state, void **block)
+{
+	const u32 force_read = AtomicLoadAcq32(&state->a_adding_memory);
+	ds_Assert(force_read == 0);
+	for (u32 i = 0; i < state->block_count; ++i)
+	{
+		ds_Free(block[i]);
+	}
+	ds_Free(state->t_free_list);
+}
+
+void ds_TPoolFlushInternal(struct ds_TPoolState *state)
+{
+	for (u32 i = 0; i < state->free_list_count; ++i)
+	{
+		AtomicStoreRel64(&state->t_free_list[i].a_head, TSTACK_NULL);
+	}
+	AtomicStoreRel32(&state->a_count_max, 0);
+}
+
+void ds_TPoolGrowInternal(struct ds_TPoolState *state, void **block, const u32 index, const u64 slot_size)
+{
+	while (index >= (u32) AtomicLoadAcq32(&state->a_length))
+	{
+		/* winning the swap gives an up-to-date view of the pool and makes this thread its only grower */
+		u32 cmp_val = 0;
+		const u32 exch_val = 1;
+		if (AtomicCompareExchangeAcqRlx32(&state->a_adding_memory, &cmp_val, exch_val))
+		{
+			if (index >= state->a_length)
+			{
+				ds_Assert(state->a_length < 0x80000000);
+				const u32 new_length = 2*state->a_length;
+
+				const u64 memsize = state->block_length_next*slot_size;
+				block[state->block_count] = ds_Alloc(memsize, DS_CACHE_LINE);
+				if (!block[state->block_count])
+				{
+					Log(T_SYSTEM, S_FATAL, "Failed to Allocate ds_TPool block with size %lu, exiting.", memsize);
+					FatalCleanupAndExit();
+				}
+
+				state->block_count += 1;
+				state->block_length_next *= 2;
+				AtomicStoreRel32(&state->a_length, new_length);
+			}
+			AtomicStoreRel32(&state->a_adding_memory, cmp_val);
+		}
+	}
 }
 
 u32 ds_PoolTryDeserializeInternal(struct arena *mem, struct ss *ss, u32 *heap_allocated, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u64 pool_slot_offset, const u32 alloc_growable)
