@@ -499,6 +499,21 @@ static u32 FormatTestUtf32Equal(struct arena *mem, const utf32 str, const char *
 	return 1;
 }
 
+/* str has len codepoints spelled by exactly the bytes of expected (a C string) */
+static u32 FormatTestBytes(const utf8 str, const u32 len, const char *expected)
+{
+	const u64 bytes = strlen(expected);
+	if (str.len != len || Utf8SizeRequired(str) != bytes)
+	{
+		return 0;
+	}
+	for (u64 i = 0; i < bytes; ++i)
+	{
+		if (str.buf[i] != (u8) expected[i]) { return 0; }
+	}
+	return 1;
+}
+
 /*
  * Formatter regressions: decimals within the leading zeros (exact-size buffer, no overrun), multi-digit
  * decimal counts, an empty %s, "%%", and a '%' inside a %s argument (what LogString now relies on).
@@ -537,6 +552,32 @@ static struct test_Output utf8_format_regressions(struct test_Environment *env)
 	TEST_TRUE(Utf8Equivalence(Utf8Inline("100%"), Utf8FormatBuffered(buf, sizeof(buf), "100%%")));
 	TEST_TRUE(Utf8Equivalence(Utf8Inline("%5%"), Utf8FormatBuffered(buf, sizeof(buf), "%%%u%%", 5)));
 	TEST_TRUE(Utf8Equivalence(Utf8Inline("50% done %s"), Utf8FormatBuffered(buf, sizeof(buf), "%s", "50% done %s")));
+
+	/* non-ASCII %s arguments and format characters: offsets advance by bytes, len counts codepoints */
+	TEST_TRUE(FormatTestBytes(Utf8FormatBuffered(buf, sizeof(buf), "%s|%u", "\xC3\xA9\xE2\x82\xAC", 7), 4, "\xC3\xA9\xE2\x82\xAC|7"));
+	TEST_TRUE(FormatTestBytes(Utf8FormatBuffered(buf, sizeof(buf), "\xC3\xA9=%u\xE2\x82\xAC", 5), 4, "\xC3\xA9=5\xE2\x82\xAC"));
+	TEST_TRUE(FormatTestBytes(Utf8FormatBuffered(buf, sizeof(buf), "\xF0\x9F\x98\x80%s\xF0\x9F\x98\x80", "\xC3\xA9"), 3, "\xF0\x9F\x98\x80\xC3\xA9\xF0\x9F\x98\x80"));
+	/* a bad byte in the format is one (bad) codepoint, as the decoder reads it back (buf zeroed: stale continuation bytes after a cut-off sequence would complete it) */
+	memset(buf, 0, sizeof(buf));
+	TEST_TRUE(FormatTestBytes(Utf8FormatBuffered(buf, sizeof(buf), "\xC3" "A%u", 1), 3, "\xC3" "A1"));
+	TEST_TRUE(FormatTestBytes(Utf8FormatBuffered(buf, sizeof(buf), "x\xE2\x82", 0), 3, "x\xE2\x82"));
+	/* a sequence that does not fit is not split */
+	TEST_EQUAL(0, Utf8FormatBuffered(buf, 1, "\xC3\xA9").len);
+	TEST_TRUE(FormatTestBytes(Utf8FormatBuffered(buf, 2, "\xC3\xA9"), 1, "\xC3\xA9"));
+	/* 300 x U+00E4, twice (was cut to half: each %s advanced by codepoints) */
+	char umlauts[601];
+	for (u32 i = 0; i < 300; ++i) { umlauts[2*i] = (char) 0xC3; umlauts[2*i+1] = (char) 0xA4; }
+	umlauts[600] = '\0';
+	u8 big[2048];
+	const utf8 twice = Utf8FormatBuffered(big, sizeof(big), "%s%s", umlauts, umlauts);
+	TEST_EQUAL(600, twice.len);
+	TEST_EQUAL(1200, Utf8SizeRequired(twice));
+	TEST_TRUE(Utf8Equivalence(twice, Utf8Format(env->mem_1, "%s%s", umlauts, umlauts)));
+
+	/* Utf8Format keeps exactly the bytes */
+	const utf8 formatted = Utf8Format(env->mem_1, "%s-\xE2\x82\xAC-%s", "\xC3\xA9", "\xC3\xA9");
+	TEST_EQUAL(5, formatted.len);
+	TEST_EQUAL(9, formatted.size);
 
 	return output;
 }

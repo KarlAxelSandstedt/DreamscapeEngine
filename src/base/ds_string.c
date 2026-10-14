@@ -1058,16 +1058,31 @@ static enum string_token internal_determine_format_parameter(const char *format,
 					type =  STRING_TOKEN_KAS_STRING;
 				} break;
 
-				/* "%%": a literal '%' (STRING_TOKEN_CHAR writes format[0]) */
+				/* "%%": a literal '%' (STRING_TOKEN_CHAR writes extra bytes from format[0]) */
 				case '%':
 				{
+					*extra = 1;
 					type = STRING_TOKEN_CHAR;
 				} break;
 			}
 		} break;
 
+		/*
+		 * one codepoint of the format: its whole UTF-8 sequence (extra bytes), or a single byte if it is
+		 * bad, so the output decodes to as many codepoints as were counted
+		 */
 		default:
 		{
+			u32 available = 1;
+			while (available < 4 && format[available] != '\0')
+			{
+				available += 1;
+			}
+			const utf8 sequence = { .buf = (u8 *) format, .size = available, .len = 0 };
+			u64 sequence_end;
+			Utf8ReadCodepoint(&sequence_end, &sequence, 0);
+			*token_length = (u32) sequence_end;
+			*extra = (u32) sequence_end;
 			type = STRING_TOKEN_CHAR;
 		} break;
 	}
@@ -1153,6 +1168,8 @@ utf8 Utf8FormatBufferedVariadic(u64 *reqsize, u8 *buf, const u64 bufsize, const 
 				{
 					pstr = Utf8CstrBuffered(buf + offset, bufsize - offset, cstr);
 					cont = pstr.len;
+					/* advance by bytes, not codepoints */
+					size = strlen(cstr);
 				}
 				else
 				{
@@ -1181,11 +1198,14 @@ utf8 Utf8FormatBufferedVariadic(u64 *reqsize, u8 *buf, const u64 bufsize, const 
 
 			case STRING_TOKEN_CHAR:
 			{
-				char cstr[2];
-				cstr[0] = format[0];
-				cstr[1] = '\0';
-				pstr = Utf8CstrBuffered(buf + offset, bufsize - offset, cstr);
-				cont = pstr.len;
+				/* one codepoint (or one bad byte) of extra bytes */
+				cont = (extra <= bufsize - offset);
+				if (cont)
+				{
+					memcpy(buf + offset, format, extra);
+					pstr = (utf8) { .buf = buf + offset, .len = 1, .size = extra };
+					size = extra;
+				}
 			} break;
 		}
 

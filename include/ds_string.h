@@ -200,7 +200,10 @@ u32			Utf8LookupSubstring(struct kmpSubstring *kmp_substring, const utf8 str);
  * 	%li 	- i64
  * 	%lu 	- u64
  * 	%p	- Pointer
- * Note: 
+ * 	%%	- '%'
+ * Other characters of the format are copied as UTF-8 (a bad byte as one bad codepoint). Output stops at
+ * the first token that does not fit, or an unknown % token.
+ * Note:
  * 	As variadic arguments will promote themselves (or self-promote), dangers arise when the function expects 64 bit values and the user gives 32 bit values or less.
  * 	The smaller values such as char, unsigned int, floats, will be promoted to some type (perhaps self-promotions) and generate storage for that type. Thus, formatting
  * 	chars or perhaps ints as %lli will result in undefined behaviour as the function will grab 64 bits from a 32 bit storage, generating garbage. Explicit casting removes this error.
