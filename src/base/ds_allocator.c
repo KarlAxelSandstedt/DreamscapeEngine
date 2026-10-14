@@ -716,14 +716,14 @@ struct ring RingAlloc(const u64 mem_hint)
 
 	if (ring.buf == MAP_FAILED)
 	{
-		LogString(T_SYSTEM, S_ERROR, "Failed to allocate ring allocator: %s", strerror(errno));
+		Log(T_SYSTEM, S_ERROR, "Failed to allocate ring allocator: %s", strerror(errno));
 		return RingEmpty();
 	}
 	void *p1 = mmap(ring.buf, ring.mem_total, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
 	void *p2 = mmap(ring.buf + ring.mem_total, ring.mem_total, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
 	if (p1 == MAP_FAILED || p2 == MAP_FAILED)
 	{
-		LogString(T_SYSTEM, S_ERROR, "Failed to allocate ring allocator: %s", strerror(errno));
+		Log(T_SYSTEM, S_ERROR, "Failed to allocate ring allocator: %s", strerror(errno));
 		return RingEmpty();
 	}
 

@@ -83,7 +83,7 @@ void FatalCleanupAndExit(void)
 		}
 		else
 		{
-			fprintf(stderr, "================== STACKTACE ==================\n");
+			fprintf(stderr, "================== STACKTRACE ==================\n");
 			for (i32 i = 0; i < count; ++i)
 			{
 				fprintf(stderr, "(%i) %s\n", i, strings[i]);
@@ -95,7 +95,7 @@ void FatalCleanupAndExit(void)
 		char *callstack = malloc(len + 256);
 		emscripten_get_callstack(EM_LOG_C_STACK | EM_LOG_JS_STACK, callstack, 0);
 		{
-			fprintf(stderr, "================== STACKTACE ==================\n%s", callstack);
+			fprintf(stderr, "================== STACKTRACE ==================\n%s", callstack);
 		}
 		free(callstack);
 #endif

@@ -488,8 +488,62 @@ static struct test_Output utf8_Utf32U64_i64_equivalence(struct test_Environment 
 	return output;
 }
 
+static u32 FormatTestUtf32Equal(struct arena *mem, const utf32 str, const char *expected)
+{
+	const utf32 exp = Utf32Utf8(mem, Utf8Cstr(mem, expected));
+	if (exp.len != str.len) { return 0; }
+	for (u64 i = 0; i < exp.len; ++i)
+	{
+		if (exp.buf[i] != str.buf[i]) { return 0; }
+	}
+	return 1;
+}
+
+/*
+ * Formatter regressions: decimals within the leading zeros (exact-size buffer, no overrun), multi-digit
+ * decimal counts, an empty %s, "%%", and a '%' inside a %s argument (what LogString now relies on).
+ */
+static struct test_Output utf8_format_regressions(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+	u8 buf[64];
+	u32 buf32[64];
+
+	/* 0.0001: four leading decimal zeroes; asking for <= 4 decimals writes only zeroes */
+	TEST_TRUE(Utf8Equivalence(Utf8Inline("0.00"), Utf8F64Buffered(buf, sizeof(buf), 2, 0.0001)));
+	TEST_TRUE(Utf8Equivalence(Utf8Inline("0.000"), Utf8F64Buffered(buf, sizeof(buf), 3, 0.0001)));
+	TEST_TRUE(Utf8Equivalence(Utf8Inline("-0.0"), Utf8F64Buffered(buf, sizeof(buf), 1, -0.0001)));
+	TEST_TRUE(Utf8Equivalence(Utf8Inline("0.01"), Utf8F64Buffered(buf, sizeof(buf), 2, 0.0123)));
+	memset(buf, 'x', sizeof(buf));
+	TEST_TRUE(Utf8Equivalence(Utf8Inline("0.00"), Utf8F64Buffered(buf, 4, 2, 0.0001)));
+	TEST_EQUAL('x', buf[4]);
+
+	TEST_TRUE(FormatTestUtf32Equal(env->mem_1, Utf32F64Buffered(buf32, 64, 2, 0.0001), "0.00"));
+	TEST_TRUE(FormatTestUtf32Equal(env->mem_1, Utf32F64Buffered(buf32, 64, 2, 0.0123), "0.01"));
+	for (u32 i = 0; i < 64; ++i) { buf32[i] = 'x'; }
+	TEST_TRUE(FormatTestUtf32Equal(env->mem_1, Utf32F64Buffered(buf32, 4, 2, 0.0001), "0.00"));
+	TEST_EQUAL('x', buf32[4]);
+
+	/* multi-digit decimal counts */
+	TEST_TRUE(Utf8Equivalence(Utf8Inline("1.5000000000"), Utf8FormatBuffered(buf, sizeof(buf), "%10f", 1.5)));
+	TEST_TRUE(Utf8Equivalence(Utf8Inline("1.500000000000"), Utf8FormatBuffered(buf, sizeof(buf), "%12f", 1.5)));
+
+	/* an empty %s writes nothing and formatting goes on */
+	TEST_TRUE(Utf8Equivalence(Utf8Inline("a  b 7"), Utf8FormatBuffered(buf, sizeof(buf), "a %s b %u", "", 7)));
+	TEST_TRUE(Utf8Equivalence(Utf8Inline("x"), Utf8FormatBuffered(buf, sizeof(buf), "%sx%s", "", "")));
+
+	/* "%%" and a '%' in an argument */
+	TEST_TRUE(Utf8Equivalence(Utf8Inline("100%"), Utf8FormatBuffered(buf, sizeof(buf), "100%%")));
+	TEST_TRUE(Utf8Equivalence(Utf8Inline("%5%"), Utf8FormatBuffered(buf, sizeof(buf), "%%%u%%", 5)));
+	TEST_TRUE(Utf8Equivalence(Utf8Inline("50% done %s"), Utf8FormatBuffered(buf, sizeof(buf), "%s", "50% done %s")));
+
+	return output;
+}
+
 static struct test_Output(*kas_string_tests[])(struct test_Environment *) =
 {
+	utf8_format_regressions,
 	DmgStrtod_utf32_f64_equivalence,
 	DmgStrtod_utf8_f64_equivalence,
 	DmgDtoa_functionallity_check,

@@ -31,7 +31,7 @@ Description:
 
 Usage:
     Log(T_PHYSICS, S_WARNING, "body %u: %k", index, &name);
-    LogString(T_SYSTEM, S_NOTE, "plain text");              (no format arguments)
+    LogString(T_SYSTEM, S_NOTE, msg);                       (msg printed as is, '%' included; no arguments)
     LogSystemError(S_ERROR);                                (text of the last system error: errno, Windows GetLastError())
     LogSystemErrorCode(S_ERROR, code);                      (text of a given errno / Windows error code)
 
@@ -75,7 +75,7 @@ void 	LogWriteMessage(const enum system_id system, const enum severity_id severi
 #ifdef DS_LOG
 
 /* must not have side-effects */
-#define LogString(system, severity, msg, ...)		LogWriteMessage(system, severity, msg)
+#define LogString(system, severity, msg)		LogWriteMessage(system, severity, "%s", msg)
 #define Log(system, severity, msg, ...)			    LogWriteMessage(system, severity, msg, __VA_ARGS__)
 
 #if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
@@ -105,7 +105,7 @@ void 	LogWriteMessage(const enum system_id system, const enum severity_id severi
 
 #else
 
-#define LogString(system, severity, msg, ...)
+#define LogString(system, severity, msg)
 #define Log(system, severity, msg, ...)
 
 #define LogSystemError(severity)		

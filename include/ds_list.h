@@ -99,7 +99,7 @@ do                                                                              
 #define LLPrepend(_ll_, _base_, _index_, _node_)                                                     \
 do                                                                                                      \
 {                                                                                                       \
-    ds_Assert((_index_) < 0x80000000);                                                                  \
+    ds_Assert((u32) (_index_) < 0x80000000);                                                            \
                                                                                                         \
     (_ll_).count += 1;                                                                                  \
     (_base_)[_index_]._node_ = (_ll_).first;                                                            \
@@ -200,7 +200,7 @@ do                                                                              
 do                                                                                                      \
 {                                                                                                       \
     ds_Assert((_dll_).last == DLL_SENTINEL || (_base_)[(_dll_).last]._last_.next == DLL_SENTINEL);      \
-    ds_Assert((_index_) < 0x80000000);                                                                  \
+    ds_Assert((u32) (_index_) < 0x80000000);                                                            \
                                                                                                         \
     (_dll_).count += 1;                                                                                 \
     (_base_)[(_dll_).last]._last_.next = (_index_);                                                     \
@@ -219,7 +219,7 @@ do                                                                              
 do                                                                                                      \
 {                                                                                                       \
     ds_Assert((_dll_).first == DLL_SENTINEL || (_base_)[(_dll_).first]._first_.prev == DLL_SENTINEL);   \
-    ds_Assert((_index_) < 0x80000000);                                                                  \
+    ds_Assert((u32) (_index_) < 0x80000000);                                                            \
                                                                                                         \
     (_dll_).count += 1;                                                                                 \
     (_base_)[(_dll_).first]._first_.prev = (_index_);                                                   \

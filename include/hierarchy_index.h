@@ -26,9 +26,20 @@
 extern "C" { 
 #endif
 
-#define	HI_NULL	    -1	
+#define	HI_NULL	    -1
 #define HI_ROOT	    0
 #define HI_ORPHAN	1
+
+/* debug: node is no ancestor of (or equal to) new_parent; adopting into its own subtree makes a cycle */
+#ifdef DS_ASSERT_DEBUG
+#define HI_ASSERT_NOT_IN_SUBTREE(hi, node, new_parent)                                        \
+    for (i32 _a_ = (i32) (new_parent); _a_ != HI_NULL; _a_ = (hi)->pool.buf[_a_].hi_parent)   \
+    {                                                                                         \
+        ds_AssertString(_a_ != (i32) (node), "new parent is inside the node's sub-hierarchy");\
+    }
+#else
+#define HI_ASSERT_NOT_IN_SUBTREE(hi, node, new_parent)
+#endif
 
 #define HI_NODE                 \
     i32         hi_parent;      \
@@ -80,9 +91,9 @@ void        T ## HIDealloc(T ## HI *hi)
 #define DECLARE_HI_FLUSH(T)                     \
 void        T ## HIFlush(T ## HI *hi)
 
-/* 
- * Allocate a hierarchy node and return the allocation slot on success, 
- * RETURNS (0, NULL) on failure.
+/*
+ * Allocate a hierarchy node as parent_index's last child and return its slot; a full fixed pool
+ * returns { .index = HI_NULL (U32_MAX), .address = NULL }.
  */
 #define DECLARE_HI_ADD(T)                       \
 struct slot T ## HIAdd(T ## HI *hi, const u32 parent_index)
@@ -91,20 +102,21 @@ struct slot T ## HIAdd(T ## HI *hi, const u32 parent_index)
 #define DECLARE_HI_REMOVE(T)                    \
 void        T ## HIRemove(struct arena *tmp, T ## HI *hi, const u32 index)
 
-/* 
- * node's children (and their subtrees) are adopted by node's parent, and node's new 
- * parent becomes parent_index 
+/*
+ * node's children (and their subtrees) are adopted by node's parent, in node's place, and node
+ * becomes new_parent_index's last child (any node but itself).
  */
 #define DECLARE_HI_ADOPT_NODE_EXCLUSIVE(T)      \
 void        T ## HIAdoptNodeExclusive(T ## HI *hi, const u32 index, const u32 new_parent_index)
 
-/* node's subtree is removed from current parent and added to new parent*/
+/* node's subtree becomes new_parent_index's last child; new_parent_index must not be in that subtree (debug assert) */
 #define DECLARE_HI_ADOPT(T)                     \
 void        T ## HIAdoptNode(T ## HI *hi, const u32 index, const u32 new_parent_index)
 
-/* 
- * apply a custom free to and deallocate a hierarchy node and its whole sub-hierarchy; 
- * the custom free takes in the index to remove 
+/*
+ * apply a custom free to and deallocate a hierarchy node and its whole sub-hierarchy;
+ * the custom free takes in the index to remove. It runs on the sub-hierarchy first (depth-first,
+ * while it is being taken apart), on index last: it must not walk the hierarchy.
  */
 #define DECLARE_HI_APPLY_CUSTOM_FREE_AND_REMOVE(T)  \
 void        T ## HIApplyCustomFreeAndRemove(struct arena *tmp, T ## HI *hi, const u32 index, void (*custom_free)(const T ## HI *hi, const u32, void *data), void *data)
@@ -350,7 +362,8 @@ DECLARE_HI_APPLY_CUSTOM_FREE_AND_REMOVE(T)                                      
 #define DEFINE_HI_ADOPT_NODE_EXCLUSIVE(T)                                                               \
 DECLARE_HI_ADOPT_NODE_EXCLUSIVE(T)                                                                      \
 {                                                                                                       \
-	ds_Assert(new_parent_index < hi->pool.count_max);                                                   \
+	ds_Assert(1 < index && index < hi->pool.count_max && new_parent_index < hi->pool.count_max);        \
+	ds_Assert(new_parent_index != index);                                                               \
                                                                                                         \
     T *node = hi->pool.buf + index;                                                                     \
     T *prev = hi->pool.buf + node->hi_prev;                                                             \
@@ -378,9 +391,14 @@ DECLARE_HI_ADOPT_NODE_EXCLUSIVE(T)                                              
         next->hi_prev = node->hi_last;                                                                  \
         last->hi_next = node->hi_next;                                                                  \
                                                                                                         \
-        for (T *child = first; child != hi->pool.buf + HI_NULL; child = hi->pool.buf + child->hi_next)  \
+        /* last->hi_next already continues into node's old siblings: stop at last */                  \
+        for (T *child = first;; child = hi->pool.buf + child->hi_next)                                  \
         {                                                                                               \
             child->hi_parent = node->hi_parent;                                                         \
+            if (child == last)                                                                          \
+            {                                                                                           \
+                break;                                                                                  \
+            }                                                                                           \
         }                                                                                               \
     }                                                                                                   \
     else                                                                                                \
@@ -421,6 +439,9 @@ DECLARE_HI_ADOPT_NODE_EXCLUSIVE(T)                                              
 #define DEFINE_HI_ADOPT(T)                                                                              \
 DECLARE_HI_ADOPT(T)                                                                                     \
 {                                                                                                       \
+    ds_Assert(1 < index && index < hi->pool.count_max && new_parent_index < hi->pool.count_max);        \
+    HI_ASSERT_NOT_IN_SUBTREE(hi, index, new_parent_index)                                               \
+                                                                                                        \
     T *node = hi->pool.buf + index;                                                                     \
     T *prev = hi->pool.buf + node->hi_prev;                                                             \
     T *next = hi->pool.buf + node->hi_next;                                                             \
@@ -444,6 +465,7 @@ DECLARE_HI_ADOPT(T)                                                             
     T *last = hi->pool.buf + parent->hi_last;                                                           \
     last->hi_next = (i32) index;                                                                        \
     node->hi_prev = parent->hi_last;                                                                    \
+    node->hi_next = HI_NULL;                                                                            \
     node->hi_parent = new_parent_index;                                                                 \
     parent->hi_last = (i32) index;                                                                      \
     if (parent->hi_first == HI_NULL)                                                                    \
@@ -455,7 +477,13 @@ DECLARE_HI_ADOPT(T)                                                             
 
 /*
  * Hierarchy index iterator: iterator for traversing a supplied node and it's entire sub-hierarchy in
- * depth-first order. 
+ * depth-first order (pre-order, root first), never its siblings. The iteration is finished when
+ * at == root again; another HIIAdvance would start over.
+ *
+ *     HIIInit(it, hi, root);
+ *     do { visit(it.at); HIIAdvance(it, hi); } while (it.at != root);
+ *
+ * To skip (or remove) the sub-hierarchy of it.at: HIISkip, then remove it, then HIIAdvance.
  */
 
 typedef struct HII
@@ -472,21 +500,9 @@ do                                                                              
     (_hii_).root = (i32) (_root_);                                                  \
     (_hii_).at = (i32) (_root_);                                                    \
                                                                                     \
+    /* root's siblings are outside its sub-hierarchy: no children means finished */ \
     const i32 _first_ = (_hi_).pool.buf[(_hii_).at].hi_first;                       \
-    if (_first_ != HI_NULL)                                                         \
-    {                                                                               \
-        (_hii_).next = _first_;                                                     \
-        break;                                                                      \
-    }                                                                               \
-                                                                                    \
-    const i32 _next_ = (_hi_).pool.buf[(_hii_).at].hi_next;                         \
-    if (_next_ != HI_NULL)                                                          \
-    {                                                                               \
-        (_hii_).next = _next_;                                                      \
-        break;                                                                      \
-    }                                                                               \
-                                                                                    \
-    (_hii_).next = (i32) (_root_);                                                  \
+    (_hii_).next = (_first_ != HI_NULL) ? _first_ : (i32) (_root_);                 \
 } while (0)
 
 /* 

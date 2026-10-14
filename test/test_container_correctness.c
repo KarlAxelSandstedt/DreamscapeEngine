@@ -25,6 +25,15 @@
 #include "ds_hash_map.h"
 #include "ds_list.h"
 #include "queue.h"
+#include "hierarchy_index.h"
+
+typedef struct test_HINode
+{
+    HI_NODE;
+    u32 value;
+} test_HINode;
+HI_DECLARE(test_HINode);
+HI_DEFINE(test_HINode)
 
 /* Every bit and the set-bit iterator of every block agree with the model. */
 static u32 BitSetTestMatches(const struct ds_BitSet *set, const u8 *model)
@@ -592,8 +601,261 @@ static struct test_Output MinQueueTest(struct test_Environment *env)
 	return output;
 }
 
+#define HI_TEST_MAX 64
+
+/* Hierarchy model: parent[i] for every alive node (roots HI_ROOT and HI_ORPHAN have HI_NULL). */
+struct hi_TestModel
+{
+    i32 parent[HI_TEST_MAX + 2];
+    u8  alive[HI_TEST_MAX + 2];
+    u32 alive_count;
+};
+
+static u32 HITestInSubtree(const struct hi_TestModel *model, i32 node, const i32 root)
+{
+    for (; node != HI_NULL; node = model->parent[node])
+    {
+        if (node == root) { return 1; }
+    }
+    return 0;
+}
+
+static i32 HITestRandomAlive(const struct hi_TestModel *model, const u32 min_index)
+{
+    for (;;)
+    {
+        const i32 i = (i32) RngU64Range(min_index, HI_TEST_MAX + 1);
+        if (model->alive[i]) { return i; }
+    }
+}
+
+/*
+ * Every alive node's child list walks forward to hi_last in hi_child_count steps, each child links back
+ * (hi_prev, hi_parent) and is the model's child; every non-root node is in exactly one list.
+ */
+static u32 HITestValid(const test_HINodeHI *hi, const struct hi_TestModel *model)
+{
+    u32 listed = 0;
+    for (i32 p = 0; p < (i32) hi->pool.count_max; ++p)
+    {
+        if (!model->alive[p]) { continue; }
+
+        const test_HINode *node = hi->pool.buf + p;
+        if (p > HI_ORPHAN && node->hi_parent != model->parent[p]) { return 0; }
+
+        u32 count = 0;
+        i32 prev = HI_NULL;
+        for (i32 c = node->hi_first; c != HI_NULL; c = hi->pool.buf[c].hi_next)
+        {
+            if (count == HI_TEST_MAX || c < 0 || c >= (i32) hi->pool.count_max || !model->alive[c]) { return 0; }
+            if (hi->pool.buf[c].hi_parent != p || hi->pool.buf[c].hi_prev != prev || model->parent[c] != p) { return 0; }
+            prev = c;
+            count += 1;
+        }
+        if (node->hi_last != prev || node->hi_child_count != count) { return 0; }
+        listed += count;
+    }
+    return listed + 2 == model->alive_count;
+}
+
+/*
+ * Iterate root's sub-hierarchy (HIIInit/HIIAdvance until at == root), calling HIISkip at random non-root
+ * nodes: every node of the sub-hierarchy without a skipped strict ancestor is visited once, nothing else.
+ */
+static u32 HITestIterate(const test_HINodeHI *hi, const struct hi_TestModel *model, const i32 root, const u32 skip)
+{
+    u8 visited[HI_TEST_MAX + 2] = { 0 };
+    u8 skipped[HI_TEST_MAX + 2] = { 0 };
+    u32 steps = 0;
+
+    HII it;
+    HIIInit(it, *hi, root);
+    do
+    {
+        const i32 at = it.at;
+        if (steps++ > HI_TEST_MAX + 2 || at < 0 || at >= HI_TEST_MAX + 2 || visited[at] || !HITestInSubtree(model, at, root))
+        {
+            return 0;
+        }
+        visited[at] = 1;
+        if (skip && at != root && RngU64Range(0, 3) == 0)
+        {
+            skipped[at] = 1;
+            HIISkip(it, *hi);
+        }
+        HIIAdvance(it, *hi);
+    }
+    while (it.at != root);
+
+    for (i32 i = 0; i < HI_TEST_MAX + 2; ++i)
+    {
+        if (!model->alive[i] || !HITestInSubtree(model, i, root)) { continue; }
+        u32 hidden = 0;
+        /* strict ancestors below root */
+        for (i32 a = model->parent[i]; i != root && a != root; a = model->parent[a])
+        {
+            hidden |= skipped[a];
+        }
+        if (visited[i] == hidden) { return 0; }
+    }
+    return 1;
+}
+
+static void HITestModelInit(struct hi_TestModel *model)
+{
+    memset(model, 0, sizeof(*model));
+    model->parent[HI_ROOT] = HI_NULL;
+    model->parent[HI_ORPHAN] = HI_NULL;
+    model->alive[HI_ROOT] = 1;
+    model->alive[HI_ORPHAN] = 1;
+    model->alive_count = 2;
+}
+
+static i32 HITestAdd(test_HINodeHI *hi, struct hi_TestModel *model, const i32 parent)
+{
+    const struct slot slot = test_HINodeHIAdd(hi, (u32) parent);
+    if (slot.address == NULL)
+    {
+        return HI_NULL;
+    }
+    model->parent[slot.index] = parent;
+    model->alive[slot.index] = 1;
+    model->alive_count += 1;
+    return (i32) slot.index;
+}
+
+/* #35: a childless iteration root with a next sibling is iterated alone (HIIInit used to step to the sibling). */
+static struct test_Output HierarchyIteratorSiblingRootTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct hi_TestModel model;
+    HITestModelInit(&model);
+    test_HINodeHI hi = test_HINodeHIAlloc(NULL, HI_TEST_MAX, NOT_GROWABLE);
+
+    const i32 a = HITestAdd(&hi, &model, HI_ROOT);
+    const i32 b = HITestAdd(&hi, &model, HI_ROOT);
+    HITestAdd(&hi, &model, b);
+
+    HII it;
+    HIIInit(it, hi, a);
+    TEST_EQUAL(a, it.at);
+    TEST_EQUAL(a, it.next);
+    HIIAdvance(it, hi);
+    TEST_EQUAL(a, it.at);
+
+    TEST_TRUE(HITestIterate(&hi, &model, a, 0));
+    TEST_TRUE(HITestIterate(&hi, &model, b, 0));
+    TEST_TRUE(HITestIterate(&hi, &model, HI_ROOT, 0));
+
+    test_HINodeHIDealloc(&hi);
+	return output;
+}
+
+/* #34: adopting a child that is not its parent's last leaves no link into its old siblings. */
+static struct test_Output HierarchyAdoptMiddleChildTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct hi_TestModel model;
+    HITestModelInit(&model);
+    test_HINodeHI hi = test_HINodeHIAlloc(NULL, HI_TEST_MAX, NOT_GROWABLE);
+
+    const i32 p = HITestAdd(&hi, &model, HI_ROOT);
+    const i32 q = HITestAdd(&hi, &model, HI_ROOT);
+    const i32 a = HITestAdd(&hi, &model, p);
+    const i32 b = HITestAdd(&hi, &model, p);
+    const i32 c = HITestAdd(&hi, &model, p);
+
+    test_HINodeHIAdoptNode(&hi, (u32) a, (u32) q);
+    model.parent[a] = q;
+    TEST_TRUE(HITestValid(&hi, &model));
+    TEST_EQUAL(HI_NULL, hi.pool.buf[a].hi_next);
+    TEST_EQUAL(b, hi.pool.buf[p].hi_first);
+    TEST_EQUAL(c, hi.pool.buf[p].hi_last);
+
+    /* back into its own (old) parent while not its last child: used to link the sibling list into a cycle */
+    test_HINodeHIAdoptNode(&hi, (u32) b, (u32) p);
+    TEST_TRUE(HITestValid(&hi, &model));
+    TEST_EQUAL(c, hi.pool.buf[p].hi_first);
+    TEST_EQUAL(b, hi.pool.buf[p].hi_last);
+
+    test_HINodeHIDealloc(&hi);
+	return output;
+}
+
+/*
+ * Random HIAdd / HIRemove / HIAdoptNode / HIAdoptNodeExclusive against a parent model; after every
+ * operation the links are checked and a random sub-hierarchy is iterated (with random HIISkip).
+ */
+static struct test_Output HierarchyRandomTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct hi_TestModel model;
+    HITestModelInit(&model);
+    test_HINodeHI hi = test_HINodeHIAlloc(NULL, HI_TEST_MAX, NOT_GROWABLE);
+    TEST_TRUE(hi.pool.buf != NULL);
+
+    for (u32 op = 0; op < 20000; ++op)
+    {
+        const u64 kind = (model.alive_count == 2) ? 0 : RngU64Range(0, 9);
+        if (kind <= 3)
+        {
+            HITestAdd(&hi, &model, HITestRandomAlive(&model, 0));
+        }
+        else if (kind == 4)
+        {
+            const i32 x = HITestRandomAlive(&model, HI_ORPHAN + 1);
+            test_HINodeHIRemove(env->mem_1, &hi, (u32) x);
+            for (i32 i = HI_ORPHAN + 1; i < HI_TEST_MAX + 2; ++i)
+            {
+                if (i != x && model.alive[i] && HITestInSubtree(&model, i, x))
+                {
+                    model.alive[i] = 0;
+                    model.alive_count -= 1;
+                }
+            }
+            model.alive[x] = 0;
+            model.alive_count -= 1;
+        }
+        else if (kind <= 7)
+        {
+            const i32 x = HITestRandomAlive(&model, HI_ORPHAN + 1);
+            i32 p;
+            do { p = HITestRandomAlive(&model, 0); } while (HITestInSubtree(&model, p, x));
+            test_HINodeHIAdoptNode(&hi, (u32) x, (u32) p);
+            model.parent[x] = p;
+        }
+        else
+        {
+            const i32 x = HITestRandomAlive(&model, HI_ORPHAN + 1);
+            i32 p;
+            do { p = HITestRandomAlive(&model, 0); } while (p == x);
+            test_HINodeHIAdoptNodeExclusive(&hi, (u32) x, (u32) p);
+            for (i32 i = 0; i < HI_TEST_MAX + 2; ++i)
+            {
+                if (model.alive[i] && model.parent[i] == x)
+                {
+                    model.parent[i] = model.parent[x];
+                }
+            }
+            model.parent[x] = p;
+        }
+
+        TEST_TRUE(HITestValid(&hi, &model));
+        TEST_TRUE(HITestIterate(&hi, &model, HITestRandomAlive(&model, 0), (u32) (op & 1)));
+    }
+
+    test_HINodeHIDealloc(&hi);
+	return output;
+}
+
 static struct test_Output (*container_tests[])(struct test_Environment *) =
 {
+    HierarchyIteratorSiblingRootTest,
+    HierarchyAdoptMiddleChildTest,
+    HierarchyRandomTest,
     BitSetTest,
     HashMapTest,
     DLLTest,

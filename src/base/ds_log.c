@@ -57,12 +57,15 @@ struct Log
 };
 
 static struct Log g_log;
+/* tickets this thread holds unfinished: a fatal error while formatting (an assert) must not wait on them */
+static ds_ThreadLocal u32 tl_tickets_held = 0;
 
 static void LogNamesInit(void)
 {
 	systems[T_SYSTEM] = Utf8Inline("System");
 	systems[T_RENDERER] = Utf8Inline("Renderer");
 	systems[T_PHYSICS] = Utf8Inline("Physics");
+	systems[T_CSG] = Utf8Inline("Csg");
 	systems[T_ASSET] = Utf8Inline("Asset");
 	systems[T_UTILITY] = Utf8Inline("Utility");
 	systems[T_PROFILER] = Utf8Inline("Profiler");
@@ -144,7 +147,15 @@ void LogShutdown()
 	AtomicStoreRel32(&g_log.tf.a_open, 0);
 	if (g_log.has_file)
 	{
-		internal_write_to_disk();
+		if (tl_tickets_held)
+		{
+			/* our own slot never completes: write the completed slots before it and stop */
+			LogTryWriteToDisk();
+		}
+		else
+		{
+			internal_write_to_disk();
+		}
 		fclose(g_log.file);
 	}
 	TicketFactoryDestroy(&g_log.tf);
@@ -196,6 +207,7 @@ void LogWriteMessage(const enum system_id system, const enum severity_id severit
 	}
 
 	if (ret == TICKET_FACTORY_CLOSED) { goto end; }
+	tl_tickets_held += 1;
 
 	struct Log_message *msg = g_log.msg + (ticket % LOG_MAX_MESSAGES);
 
@@ -237,6 +249,7 @@ void LogWriteMessage(const enum system_id system, const enum severity_id severit
 #endif
 	/* sync-point, msg ready for writing */
 	AtomicStoreRel32(&msg->a_in_use_and_completed, 1);
+	tl_tickets_held -= 1;
 end:
 	ProfZoneEnd;
 }

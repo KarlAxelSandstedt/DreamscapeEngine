@@ -284,8 +284,9 @@ utf8 Utf8F64Buffered(u8 buf[], const u64 bufsize, const u32 decimals, const f64 
 		}
 		else if (decimals <= decimal_zeroes_leading)
 		{
+			/* the wanted decimals are all leading zeroes: write only those */
 			decimals_in_dmg_wanted = 0;
-			decimal_zeroes_trailing = decimals;
+			decimal_zeroes_leading = decimals;
 		}
 		else if (decimals <= decimal_zeroes_leading + decimals_in_dmg)
 		{
@@ -661,8 +662,9 @@ utf32 Utf32F64Buffered(u32 buf[], const u64 buflen, const u32 decimals, const f6
 		}
 		else if (decimals <= decimal_zeroes_leading)
 		{
+			/* the wanted decimals are all leading zeroes: write only those */
 			decimals_in_dmg_wanted = 0;
-			decimal_zeroes_trailing = decimals;
+			decimal_zeroes_leading = decimals;
 		}
 		else if (decimals <= decimal_zeroes_leading + decimals_in_dmg)
 		{
@@ -982,7 +984,7 @@ static enum string_token internal_determine_format_parameter(const char *format,
 					*extra = format[*token_length-1] - '0';
 					for (; '0' <= format[*token_length] && format[*token_length] <= '9'; *token_length += 1)
 					{
-						*extra = (*extra << 1) + (format[*token_length] - '0');
+						*extra = (*extra * 10) + (format[*token_length] - '0');
 					}
 
 					 type = (format[(*token_length)++] == 'f')
@@ -1009,6 +1011,12 @@ static enum string_token internal_determine_format_parameter(const char *format,
 				case 'k':
 				{
 					type =  STRING_TOKEN_KAS_STRING;
+				} break;
+
+				/* "%%": a literal '%' (STRING_TOKEN_CHAR writes format[0]) */
+				case '%':
+				{
+					type = STRING_TOKEN_CHAR;
 				} break;
 			}
 		} break;
@@ -1095,8 +1103,16 @@ utf8 Utf8FormatBufferedVariadic(u64 *reqsize, u8 *buf, const u64 bufsize, const 
 			case STRING_TOKEN_C_STRING:
 			{
 				const char *cstr = va_arg(args, char *);
-				pstr = Utf8CstrBuffered(buf + offset, bufsize - offset, cstr);
-				cont = pstr.len;
+				/* len 0 means "did not fit" below: an empty string writes nothing and goes on */
+				if (cstr[0])
+				{
+					pstr = Utf8CstrBuffered(buf + offset, bufsize - offset, cstr);
+					cont = pstr.len;
+				}
+				else
+				{
+					pstr = Utf8Empty();
+				}
 			} break;
 
 			case STRING_TOKEN_KAS_STRING:
