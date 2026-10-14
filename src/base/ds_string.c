@@ -90,67 +90,77 @@ utf32 Utf32StreamConsumeNonWhitespace(utf32 *stream)
 
 u32 Utf8ReadCodepoint(u64 *new_offset, const utf8 *str, const u64 offset)
 {
-	u32 decoded = 0;
-	u32 bad_sequence = 0;
-
-	const u32 inv = ~((u32) (str->buf[offset]) << 24);
-	const u32 leading_ones_count = Clz32(inv);
-
-	switch (leading_ones_count)
+	/* a bad sequence consumes one byte, so decoding resynchronizes at the next lead byte */
+	*new_offset = offset + 1;
+	if (offset >= str->size)
 	{
-		case 0:
-		{
-			*new_offset = offset + 1;
-			decoded = (u32) (str->buf[offset] & 0x7f);
-		} break;
+		return UTF8_BAD_CODEPOINT;
+	}
 
+	const u8 *b = str->buf + offset;
+	const u32 b0 = b[0];
+	if (b0 < 0x80)
+	{
+		return b0;
+	}
+
+	/*
+	 * Each case reads only within str->size and folds its checks into one test: continuation bytes are
+	 * 10xx xxxx, and overlong forms, UTF-16 surrogates and values beyond U+10FFFF (F4 90+, F5-F7) are
+	 * bad. Measured faster than a branch-free form (clamped reads, blended result) on ASCII, Latin and
+	 * mixed text: the sequence size is well predicted.
+	 */
+	const u64 left = str->size - offset;
+	/* never 0: the low 24 bits are ones */
+	const u32 sequence_size = Clz32(~(b0 << 24));
+	u32 decoded;
+	switch (sequence_size)
+	{
 		case 2:
 		{
-			*new_offset = offset + 2;
-			decoded  = (u32) (str->buf[offset]   & 0x1f) << 6 
-			         | (u32) (str->buf[offset+1] & 0x3f);
-				
-			/* 
-			 * valid value : (10xx xxxx) 
-			 * expected    : (val & 0x1100 0000) ^ 1000 0000 == 0000 0000
-			 * bad	       : (00,01,11)00 0000   ^ 1000 0000 == 1x00 0000
-			 */
-			bad_sequence = !!((u32) ((str->buf[offset+1] & 0xc0) ^ 0x80));
+			if (left < 2) { return UTF8_BAD_CODEPOINT; }
+			const u32 b1 = b[1];
+			decoded = (b0 & 0x1f) << 6 | (b1 & 0x3f);
+			if (((b1 & 0xc0) ^ 0x80) | (decoded < 0x80))
+			{
+				return UTF8_BAD_CODEPOINT;
+			}
 		} break;
 
 		case 3:
 		{
-			*new_offset = offset + 3;
-			decoded  = (u32) (str->buf[offset]   & 0x0f) << 12 
-			         | (u32) (str->buf[offset+1] & 0x3f) << 6 
-			         | (u32) (str->buf[offset+2] & 0x3f);
-
-			bad_sequence = !!((u32) ((str->buf[offset+1] & 0xc0) ^ 0x80)
-			             	+ (u32) ((str->buf[offset+2] & 0xc0) ^ 0x80));
+			if (left < 3) { return UTF8_BAD_CODEPOINT; }
+			const u32 b1 = b[1];
+			const u32 b2 = b[2];
+			decoded = (b0 & 0x0f) << 12 | (b1 & 0x3f) << 6 | (b2 & 0x3f);
+			if (((b1 & 0xc0) ^ 0x80) | ((b2 & 0xc0) ^ 0x80) | (decoded < 0x800) | (decoded - 0xd800 < 0x800))
+			{
+				return UTF8_BAD_CODEPOINT;
+			}
 		} break;
 
 		case 4:
 		{
-			*new_offset = offset + 4;
-			decoded  = (u32) (str->buf[offset]   & 0x07) << 18 
-			         | (u32) (str->buf[offset+1] & 0x3f) << 12 
-			         | (u32) (str->buf[offset+2] & 0x3f) << 6 
-			         | (u32) (str->buf[offset+3] & 0x3f);
-
-			bad_sequence = !!((u32) ((str->buf[offset+1] & 0xc0) ^ 0x80)
-			             	+ (u32) ((str->buf[offset+2] & 0xc0) ^ 0x80)
-			  	     	+ (u32) ((str->buf[offset+3] & 0xc0) ^ 0x80));
+			if (left < 4) { return UTF8_BAD_CODEPOINT; }
+			const u32 b1 = b[1];
+			const u32 b2 = b[2];
+			const u32 b3 = b[3];
+			decoded = (b0 & 0x07) << 18 | (b1 & 0x3f) << 12 | (b2 & 0x3f) << 6 | (b3 & 0x3f);
+			/* decoded - 0x10000 wraps for overlong forms */
+			if (((b1 & 0xc0) ^ 0x80) | ((b2 & 0xc0) ^ 0x80) | ((b3 & 0xc0) ^ 0x80) | (decoded - 0x10000 > 0xfffff))
+			{
+				return UTF8_BAD_CODEPOINT;
+			}
 		} break;
-		
+
+		/* 1: a continuation byte as lead; 5-8: F8-FF */
 		default:
 		{
-			*new_offset = offset + 1;
-			bad_sequence = 1;
-		} break;
+			return UTF8_BAD_CODEPOINT;
+		}
 	}
 
-	decoded = decoded*(1-bad_sequence) + bad_sequence*UTF8_BAD_CODEPOINT;
-
+	*new_offset = offset + sequence_size;
 	return decoded;
 }
 
@@ -189,8 +199,17 @@ f64 F64Utf8(struct arena *tmp, const utf8 str)
 		return 0;
 	}
 
-	const char *cstr = CstrUtf8(tmp, str);
-	const f64 val = DmgStrtod(cstr, NULL);
+	/* the null-terminated copy is popped again, as in F64Utf32 */
+	f64 val = 0.0;
+	const u64 size = Utf8SizeRequired(str);
+	char *cstr = ArenaPushPacked(tmp, size+1);
+	if (cstr)
+	{
+		memcpy(cstr, str.buf, size);
+		cstr[size] = '\0';
+		val = DmgStrtod(cstr, NULL);
+		ArenaPopPacked(tmp, size+1);
+	}
 
 	return val;
 }
@@ -238,7 +257,10 @@ utf8 Utf8F64Buffered(u8 buf[], const u64 bufsize, const u32 decimals, const f64 
 
 	i32 sign;
 	i32 decpt;
-	char *dmg_str = DmgDtoa((f64) val, 0, 0, &decpt, &sign, NULL);
+	/* decimals: correctly rounded to that many (mode 3); 0: shortest round-trip digits (mode 0) */
+	char *dmg_str = (decimals)
+		? DmgDtoa((f64) val, 3, (int) decimals, &decpt, &sign, NULL)
+		: DmgDtoa((f64) val, 0, 0, &decpt, &sign, NULL);
 
 	/* INF / Nan */
 	if (decpt == 9999)
@@ -397,15 +419,19 @@ utf8 Utf8I64Buffered(u8 buf[], const u64 bufsize, const i64 val)
 	b64 b = { .i = val };
 	const u64 sign = b.u >> 63;
 	b.u = (1-sign)*b.u + sign*((~b.u) + 1);
-	if (sign + 2 <= bufsize)
+	/* the sign and at least one digit */
+	if (sign + 1 <= bufsize)
 	{
-		buf[0] = '-';
 		const utf8 str = Utf8U64Buffered(buf+sign, bufsize-sign, b.u);
 		if (str.len)
 		{
+			if (sign)
+			{
+				buf[0] = '-';
+			}
 			ret.buf = buf;
 			ret.len = str.len+sign;
-			ret.size = bufsize;		
+			ret.size = bufsize;
 		}
 	}
 
@@ -414,7 +440,8 @@ utf8 Utf8I64Buffered(u8 buf[], const u64 bufsize, const i64 val)
 
 struct parseRetval I64Utf8(const utf8 str)
 {
-	struct parseRetval ret = { .op_result = PARSE_SUCCESS, .i64 = 0 };
+	/* "" and "-" have no digits */
+	struct parseRetval ret = { .op_result = PARSE_STRING_INVALID, .i64 = 0 };
 	utf8 tmp = str;
 	if (tmp.len)
 	{
@@ -459,6 +486,11 @@ struct parseRetval I64Utf8(const utf8 str)
 
 struct parseRetval U64Utf8(const utf8 str)
 {
+	if (str.len == 0)
+	{
+		return (struct parseRetval) { .op_result = PARSE_STRING_INVALID, .u64 = 0 };
+	}
+
 	u64 overflow = 0;
 	u64 ret = 0;
 	for (u32 i = 0; i < str.len; ++i)
@@ -480,7 +512,8 @@ struct parseRetval U64Utf8(const utf8 str)
 
 struct parseRetval I64Utf32(const utf32 str)
 {
-	struct parseRetval ret = { .op_result = PARSE_SUCCESS, .i64 = 0 };
+	/* "" and "-" have no digits */
+	struct parseRetval ret = { .op_result = PARSE_STRING_INVALID, .i64 = 0 };
 	utf32 tmp = str;
 	if (tmp.len)
 	{
@@ -525,6 +558,11 @@ struct parseRetval I64Utf32(const utf32 str)
 
 struct parseRetval U64Utf32(const utf32 str)
 {
+	if (str.len == 0)
+	{
+		return (struct parseRetval) { .op_result = PARSE_STRING_INVALID, .u64 = 0 };
+	}
+
 	u64 overflow = 0;
 	u64 ret = 0;
 	for (u32 i = 0; i < str.len; ++i)
@@ -616,7 +654,10 @@ utf32 Utf32F64Buffered(u32 buf[], const u64 buflen, const u32 decimals, const f6
 
 	i32 sign;
 	i32 decpt;
-	char *dmg_str = DmgDtoa((f64) val, 0, 0, &decpt, &sign, NULL);
+	/* decimals: correctly rounded to that many (mode 3); 0: shortest round-trip digits (mode 0) */
+	char *dmg_str = (decimals)
+		? DmgDtoa((f64) val, 3, (int) decimals, &decpt, &sign, NULL)
+		: DmgDtoa((f64) val, 0, 0, &decpt, &sign, NULL);
 
 	/* INF / Nan */
 	if (decpt == 9999)
@@ -774,12 +815,16 @@ utf32 Utf32I64Buffered(u32 buf[], const u64 bufsize, const i64 val)
 	b64 b = { .i = val };
 	const u64 sign = b.u >> 63;
 	b.u = (1-sign)*b.u + sign*((~b.u) + 1);
-	if (sign + 2 <= bufsize)
+	/* the sign and at least one digit */
+	if (sign + 1 <= bufsize)
 	{
-		buf[0] = '-';
 		const utf32 str = Utf32U64Buffered(buf+sign, bufsize-sign, b.u);
 		if (str.len)
 		{
+			if (sign)
+			{
+				buf[0] = '-';
+			}
 			ret.buf = buf;
 			ret.len = str.len+sign;
 			ret.max_len = bufsize;		
@@ -1228,9 +1273,11 @@ utf8 Utf8CstrBuffered(u8 buf[], const u64 bufsize, const char *cstr)
 	{
 		ret = (utf8) { .len = 0, .size = (u32) bufsize, .buf = buf };
 		memcpy(buf, cstr, bytes);
+		/* decode only the copied bytes: a sequence cut off at the end is bad, not completed by stale bytes */
+		const utf8 copied = { .buf = buf, .size = (u32) bytes, .len = 0 };
 		for (u64 offset = 0; offset < bytes; ret.len += 1)
 		{
-			Utf8ReadCodepoint(&offset, &ret, offset);
+			Utf8ReadCodepoint(&offset, &copied, offset);
 		}
 
 	}
@@ -1245,9 +1292,10 @@ utf8 Utf8Cstr(struct arena *mem, const char *cstr)
 	if (ret.size)
 	{
 		memcpy(ret.buf, cstr, bytes);
+		const utf8 copied = { .buf = ret.buf, .size = (u32) bytes, .len = 0 };
 		for (u64 offset = 0; offset < bytes; ret.len += 1)
 		{
-			Utf8ReadCodepoint(&offset, &ret, offset);
+			Utf8ReadCodepoint(&offset, &copied, offset);
 		}
 	}
 
@@ -1392,6 +1440,12 @@ utf32 Utf32Utf8Buffered(u32 buf[], const u64 buflen, const utf8 str)
 u32 Utf8WriteCodepoint(u8 *buf, const u32 bufsize, const u32 codepoint)
 {
 	u32 len = 0;
+
+	/* surrogates have no UTF-8 form: Utf8ReadCodepoint would read them back as bad bytes */
+	if (0xd800 <= codepoint && codepoint <= 0xdfff)
+	{
+		return 0;
+	}
 
 	if (codepoint <= 0x7f && bufsize >= 1)
 	{

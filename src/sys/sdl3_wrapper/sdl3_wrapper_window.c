@@ -350,6 +350,8 @@ utf8 sdl3_Utf8GetClipboard(struct arena *mem)
 		utf8 utf8_null =  { .buf = (u8*) SDL_GetClipboardText() };
 		if (utf8_null.buf)
 		{
+			/* bytes with the '\0': decoding reads no further */
+			utf8_null.size = (u32) strlen((const char *) utf8_null.buf) + 1;
 			u32 len = 0;
 			u64 size = 0;
 			while (Utf8ReadCodepoint(&size, &utf8_null, size))

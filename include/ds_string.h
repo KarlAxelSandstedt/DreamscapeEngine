@@ -35,6 +35,7 @@ extern "C" {
  *	utf32 - 32bit unicode string
  */
 
+/* string literal to utf8; len counts bytes, so ASCII literals only */
 #define Utf8Inline(cstr) (utf8)  		\
 	{					\
 		.buf =  (u8 *) cstr,		\
@@ -45,8 +46,8 @@ extern "C" {
 typedef struct utf8 utf8;
 struct utf8 
 {
-	u8 *	buf;	
-	u32 	size;		/* Number of bytes in buffer */
+	u8 *	buf;
+	u32 	size;		/* Number of bytes in buffer (>= the bytes of the len codepoints); decoding never reads past it */
 	u32 	len;		/* Length of string (not bytes) (not including **POSSIBLE** '\0') */
 };
 DEFINE_CPOOL_STRUCT(utf8);
@@ -129,9 +130,13 @@ u32	                Utf8Hash(const utf8 utf8);
 u32		            Utf8Equivalence(const utf8 str1, const utf8 str2);	
 
 #define			UTF8_BAD_CODEPOINT	U32_MAX
-/* return utf32 codepoint on success, or UTF8_BAD_CODEPOINT on bad offset */
-u32 	            Utf8ReadCodepoint(u64 *new_offset, const utf8 *str, const u64 offset);	
-/* return length written into buf, or 0 of failure. */
+/*
+ * Decode the codepoint at byte offset and set new_offset past it. UTF8_BAD_CODEPOINT for offset >= size, a
+ * sequence cut off by size, a bad lead or continuation byte, overlong forms, surrogates and > U+10FFFF; a
+ * bad sequence advances new_offset by one byte.
+ */
+u32 	            Utf8ReadCodepoint(u64 *new_offset, const utf8 *str, const u64 offset);
+/* return length written into buf, or 0 on failure (buf too small, a surrogate or > U+10FFFF). */
 u32		            Utf8WriteCodepoint(u8 *buf, const u32 bufsize, const u32 codepoint);
 
 void 	            Utf8DebugPrint(const utf8 str);
@@ -163,8 +168,9 @@ utf8	            Utf8Utf32NullTerminated(struct arena *mem, const utf32 str);
 
 f32		            F32Utf8(struct arena *tmp, const utf8 str);
 f64		            F64Utf8(struct arena *tmp, const utf8 str);
-struct parseRetval 	U64Utf8(const utf8 str);	/* on overflow, return u64 value 0 		*/
-struct parseRetval 	I64Utf8(const utf8 str); 	/* on under/overflow, return i64 value 0 	*/
+/* decimal digits ('-' first for I64); "" and "-" are PARSE_STRING_INVALID; on any failure the value is 0 */
+struct parseRetval 	U64Utf8(const utf8 str);
+struct parseRetval 	I64Utf8(const utf8 str);
 
 /******************************** UTF8 substring lookup *******************************/
 
@@ -172,7 +178,7 @@ struct kmpSubstring
 {
 	utf32	substring;
 	u32 *	backtrack;	/* backtrack[substring.len] : KMP backtracking indices  */
-	u32	start;		/* if utf8, (start byte) else if utf32 (start index) */
+	u32	start;		/* codepoint index of the first match in str; U32_MAX for an empty substring (always found) */
 };
 /* initialize substring helper for substring matching using Knuth-Morris-Pratt algorithm (KMP) */
 struct kmpSubstring	Utf8LookupSubstringInit(struct arena *mem, const utf8 str);
@@ -190,7 +196,7 @@ u32			Utf8LookupSubstring(struct kmpSubstring *kmp_substring, const utf8 str);
  * 	%k 	- utf8 ptr
  * 	%i	- i32
  * 	%u	- u32
- * 	%(d)f  	- f64, optionally replace (d) with number of decimals, defaults to 7
+ * 	%(d)f  	- f64, rounded to (d) decimals, defaults to 7; %0f: shortest digits that read back exactly
  * 	%li 	- i64
  * 	%lu 	- u64
  * 	%p	- Pointer
@@ -230,8 +236,9 @@ utf32			Utf32Utf8(struct arena *mem, const utf8 str);
 
 f32			F32Utf32(struct arena *tmp, const utf32 str);
 f64			F64Utf32(struct arena *tmp, const utf32 str);
-struct parseRetval	U64Utf32(const utf32 str);	/* on overflow, return u64 value 0 		*/
-struct parseRetval	I64Utf32(const utf32 str); 	/* on under/overflow, return i64 value 0 	*/
+/* as U64Utf8 / I64Utf8 */
+struct parseRetval	U64Utf32(const utf32 str);
+struct parseRetval	I64Utf32(const utf32 str);
 
 #ifdef __cplusplus
 } 

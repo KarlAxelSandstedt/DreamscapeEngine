@@ -409,44 +409,44 @@ static struct test_Output utf8_Utf32U64_i64_equivalence(struct test_Environment 
 	utf8 str;
 	utf32 str32;
 
-	str = (utf8) { .buf = (u8 *) "18446744073709551616", .len = strlen("18446744073709551616") };
+	str = Utf8Inline("18446744073709551616");
 	str32 = Utf32Utf8(env->mem_1, str);
 	TEST_EQUAL(PARSE_OVERFLOW, U64Utf8(str).op_result);
 	TEST_EQUAL(PARSE_OVERFLOW, U64Utf32(str32).op_result);
 
-	str = (utf8) { .buf = (u8 *) "18446744073709551616000", .len = strlen("18446744073709551616000") };
+	str = Utf8Inline("18446744073709551616000");
 	str32 = Utf32Utf8(env->mem_1, str);
 	TEST_EQUAL(PARSE_OVERFLOW, U64Utf8(str).op_result);
 	TEST_EQUAL(PARSE_OVERFLOW, U64Utf32(str32).op_result);
 	  
-	str = (utf8) { .buf = (u8 *) "-0", .len = strlen("-0") };
+	str = Utf8Inline("-0");
 	str32 = Utf32Utf8(env->mem_1, str);
 	TEST_EQUAL(PARSE_STRING_INVALID, U64Utf8(str).op_result);
 	TEST_EQUAL(PARSE_STRING_INVALID, U64Utf32(str32).op_result);
 
-	str = (utf8) { .buf = (u8 *) "-0", .len = strlen("-0") };
+	str = Utf8Inline("-0");
 	str32 = Utf32Utf8(env->mem_1, str);
 	TEST_EQUAL(PARSE_SUCCESS, I64Utf8(str).op_result);
 	TEST_EQUAL(PARSE_SUCCESS, I64Utf32(str32).op_result);
 	TEST_EQUAL(0, I64Utf8(str).i64);
 	TEST_EQUAL(0, I64Utf32(str32).i64);
 
-	str = (utf8) { .buf = (u8 *) "-9223372036854775809", .len = strlen("-9223372036854775809") };
+	str = Utf8Inline("-9223372036854775809");
 	str32 = Utf32Utf8(env->mem_1, str);
 	TEST_EQUAL(PARSE_UNDERFLOW, I64Utf8(str).op_result);
 	TEST_EQUAL(PARSE_UNDERFLOW, I64Utf32(str32).op_result);
 
-	str = (utf8) { .buf = (u8 *) "-9223372036854775809000", .len = strlen("-9223372036854775809000") };
+	str = Utf8Inline("-9223372036854775809000");
 	str32 = Utf32Utf8(env->mem_1, str);
 	TEST_EQUAL(PARSE_UNDERFLOW, I64Utf8(str).op_result);
 	TEST_EQUAL(PARSE_UNDERFLOW, I64Utf32(str32).op_result);
 
-	str = (utf8) { .buf = (u8 *) "9223372036854775808", .len = strlen("9223372036854775808") };
+	str = Utf8Inline("9223372036854775808");
 	str32 = Utf32Utf8(env->mem_1, str);
 	TEST_EQUAL(PARSE_OVERFLOW, I64Utf8(str).op_result);
 	TEST_EQUAL(PARSE_OVERFLOW, I64Utf32(str32).op_result);
 	  
-	str = (utf8) { .buf = (u8 *) "92233720368547758080", .len = strlen("92233720368547758080") };
+	str = Utf8Inline("92233720368547758080");
 	str32 = Utf32Utf8(env->mem_1, str);
 	TEST_EQUAL(PARSE_OVERFLOW, I64Utf8(str).op_result);
 	TEST_EQUAL(PARSE_OVERFLOW, I64Utf32(str32).op_result);
@@ -541,9 +541,151 @@ static struct test_Output utf8_format_regressions(struct test_Environment *env)
 	return output;
 }
 
+/* Decode bytes[0, size) at offset; check the codepoint and the new offset. */
+static u32 DecodeTestCheck(const char *bytes, const u32 size, const u64 offset, const u32 expected, const u64 expected_offset)
+{
+	const utf8 str = { .buf = (u8 *) bytes, .size = size, .len = 0 };
+	u64 new_offset = 0;
+	const u32 codepoint = Utf8ReadCodepoint(&new_offset, &str, offset);
+	return codepoint == expected && new_offset == expected_offset;
+}
+
+/*
+ * Utf8ReadCodepoint on valid, truncated and invalid input (overlong, surrogate, > U+10FFFF, bad lead and
+ * continuation bytes; bad sequences advance one byte), Utf8WriteCodepoint's refusals, random bytes
+ * (decoding stays within size; every good codepoint re-encodes to its bytes), integer formatting into
+ * minimal buffers, integer parsing of "" and "-", F64 rounding and F64Utf8's arena use, KMP start index.
+ */
+static struct test_Output utf8_decode_and_parse_regressions(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+	TEST_TRUE(DecodeTestCheck("A", 1, 0, 'A', 1));
+	TEST_TRUE(DecodeTestCheck("\xC3\xA9", 2, 0, 0xE9, 2));
+	TEST_TRUE(DecodeTestCheck("\xE2\x82\xAC", 3, 0, 0x20AC, 3));
+	TEST_TRUE(DecodeTestCheck("\xF0\x9F\x98\x80", 4, 0, 0x1F600, 4));
+	TEST_TRUE(DecodeTestCheck("\xF4\x8F\xBF\xBF", 4, 0, 0x10FFFF, 4));
+
+	/* cut off by size: the bytes after it are never read */
+	TEST_TRUE(DecodeTestCheck("\xE2\x82\xAC", 2, 0, UTF8_BAD_CODEPOINT, 1));
+	TEST_TRUE(DecodeTestCheck("\xE2\x82\xAC", 2, 1, UTF8_BAD_CODEPOINT, 2));
+	TEST_TRUE(DecodeTestCheck("\xE2\x82\xAC", 2, 2, UTF8_BAD_CODEPOINT, 3));
+	TEST_TRUE(DecodeTestCheck("\xF0\x9F\x98\x80", 3, 0, UTF8_BAD_CODEPOINT, 1));
+
+	/* overlong, surrogate, beyond U+10FFFF, bad lead bytes */
+	TEST_TRUE(DecodeTestCheck("\xC0\x80", 2, 0, UTF8_BAD_CODEPOINT, 1));
+	TEST_TRUE(DecodeTestCheck("\xC1\xBF", 2, 0, UTF8_BAD_CODEPOINT, 1));
+	TEST_TRUE(DecodeTestCheck("\xE0\x9F\xBF", 3, 0, UTF8_BAD_CODEPOINT, 1));
+	TEST_TRUE(DecodeTestCheck("\xF0\x8F\xBF\xBF", 4, 0, UTF8_BAD_CODEPOINT, 1));
+	TEST_TRUE(DecodeTestCheck("\xED\xA0\x80", 3, 0, UTF8_BAD_CODEPOINT, 1));
+	TEST_TRUE(DecodeTestCheck("\xED\xBF\xBF", 3, 0, UTF8_BAD_CODEPOINT, 1));
+	TEST_TRUE(DecodeTestCheck("\xF4\x90\x80\x80", 4, 0, UTF8_BAD_CODEPOINT, 1));
+	TEST_TRUE(DecodeTestCheck("\xF5\x80\x80\x80", 4, 0, UTF8_BAD_CODEPOINT, 1));
+	TEST_TRUE(DecodeTestCheck("\xF8\x88\x80\x80\x80", 5, 0, UTF8_BAD_CODEPOINT, 1));
+	TEST_TRUE(DecodeTestCheck("\xFF", 1, 0, UTF8_BAD_CODEPOINT, 1));
+	TEST_TRUE(DecodeTestCheck("\x80", 1, 0, UTF8_BAD_CODEPOINT, 1));
+
+	/* a bad continuation byte is read again as a lead byte */
+	TEST_TRUE(DecodeTestCheck("\xC3" "A", 2, 0, UTF8_BAD_CODEPOINT, 1));
+	TEST_TRUE(DecodeTestCheck("\xC3" "A", 2, 1, 'A', 2));
+
+	/* Utf8CstrBuffered counts only the copied bytes, not stale continuation bytes after them */
+	u8 buf[64];
+	memset(buf, 0xAC, sizeof(buf));
+	TEST_EQUAL(3, Utf8CstrBuffered(buf, sizeof(buf), "A\xE2\x82").len);
+
+	TEST_EQUAL(0, Utf8WriteCodepoint(buf, 4, 0xD800));
+	TEST_EQUAL(0, Utf8WriteCodepoint(buf, 4, 0xDFFF));
+	TEST_EQUAL(0, Utf8WriteCodepoint(buf, 4, 0x110000));
+	TEST_EQUAL(0, Utf8WriteCodepoint(buf, 4, UTF8_BAD_CODEPOINT));
+	TEST_EQUAL(4, Utf8WriteCodepoint(buf, 4, 0x10FFFF));
+	TEST_EQUAL(3, Utf8WriteCodepoint(buf, 4, 0xE000));
+
+	/* random bytes, biased towards lead and continuation bytes */
+	for (u32 iter = 0; iter < 20000; ++iter)
+	{
+		u8 bytes[16];
+		const u32 size = (u32) RngU64Range(0, sizeof(bytes) - 4);
+		for (u32 i = 0; i < sizeof(bytes); ++i)
+		{
+			const u64 r = RngU64();
+			bytes[i] = (r & 1) ? (u8) (0x80 | ((r >> 1) & 0x3f)) : (u8) (r >> 8);
+		}
+
+		const utf8 str = { .buf = bytes, .size = size, .len = 0 };
+		u64 offset = 0;
+		while (offset < size)
+		{
+			u64 new_offset;
+			const u32 codepoint = Utf8ReadCodepoint(&new_offset, &str, offset);
+			TEST_TRUE(offset < new_offset && new_offset <= size);
+			if (codepoint == UTF8_BAD_CODEPOINT)
+			{
+				TEST_EQUAL(offset + 1, new_offset);
+			}
+			else
+			{
+				u8 encoded[4];
+				const u32 len = Utf8WriteCodepoint(encoded, sizeof(encoded), codepoint);
+				TEST_EQUAL(new_offset - offset, len);
+				for (u32 i = 0; i < len; ++i)
+				{
+					TEST_EQUAL(encoded[i], bytes[offset + i]);
+				}
+			}
+			offset = new_offset;
+		}
+	}
+
+	/* a sign and one digit fit exactly */
+	TEST_TRUE(Utf8Equivalence(Utf8Inline("7"), Utf8I64Buffered(buf, 1, 7)));
+	TEST_EQUAL(0, Utf8I64Buffered(buf, 1, -7).len);
+	TEST_TRUE(Utf8Equivalence(Utf8Inline("-7"), Utf8I64Buffered(buf, 2, -7)));
+	u32 buf32[4];
+	TEST_EQUAL(1, Utf32I64Buffered(buf32, 1, 7).len);
+	TEST_EQUAL('7', buf32[0]);
+	TEST_EQUAL(0, Utf32I64Buffered(buf32, 1, -7).len);
+	TEST_EQUAL(2, Utf32I64Buffered(buf32, 2, -7).len);
+
+	/* no digits */
+	TEST_EQUAL(PARSE_STRING_INVALID, U64Utf8(Utf8Inline("")).op_result);
+	TEST_EQUAL(PARSE_STRING_INVALID, I64Utf8(Utf8Inline("")).op_result);
+	TEST_EQUAL(PARSE_STRING_INVALID, I64Utf8(Utf8Inline("-")).op_result);
+	TEST_EQUAL(PARSE_STRING_INVALID, U64Utf32(Utf32Utf8(env->mem_1, Utf8Inline(""))).op_result);
+	TEST_EQUAL(PARSE_STRING_INVALID, I64Utf32(Utf32Utf8(env->mem_1, Utf8Inline(""))).op_result);
+	TEST_EQUAL(PARSE_STRING_INVALID, I64Utf32(Utf32Utf8(env->mem_1, Utf8Inline("-"))).op_result);
+	TEST_EQUAL(-12, I64Utf8(Utf8Inline("-12")).i64);
+
+	/* rounded, not truncated (dtoa mode 3: exact binary value, ties to even) */
+	TEST_TRUE(Utf8Equivalence(Utf8Inline("0.13"), Utf8F64Buffered(buf, sizeof(buf), 2, 0.129)));
+	TEST_TRUE(Utf8Equivalence(Utf8Inline("1.00"), Utf8F64Buffered(buf, sizeof(buf), 2, 0.999)));
+	TEST_TRUE(Utf8Equivalence(Utf8Inline("0.12"), Utf8F64Buffered(buf, sizeof(buf), 2, 0.125)));
+	TEST_TRUE(Utf8Equivalence(Utf8Inline("-2.50"), Utf8F64Buffered(buf, sizeof(buf), 2, -2.4999999)));
+	TEST_TRUE(Utf8Equivalence(Utf8Inline("100000000000000000000.00"), Utf8F64Buffered(buf, sizeof(buf), 2, 1e20)));
+	TEST_TRUE(Utf8Equivalence(Utf8Inline("2.5"), Utf8F64Buffered(buf, sizeof(buf), 0, 2.5)));
+	u32 buf32f[32];
+	TEST_TRUE(FormatTestUtf32Equal(env->mem_1, Utf32F64Buffered(buf32f, 32, 2, 0.129), "0.13"));
+
+	/* F64Utf8 gives its copy back */
+	const u64 mem_left = env->mem_1->mem_left;
+	for (u32 i = 0; i < 1000; ++i)
+	{
+		TEST_EQUAL(1.5, F64Utf8(env->mem_1, Utf8Inline("1.5")));
+	}
+	TEST_EQUAL(mem_left, env->mem_1->mem_left);
+
+	/* start is a codepoint index */
+	struct kmpSubstring kmp = Utf8LookupSubstringInit(env->mem_1, Utf8Inline("b"));
+	TEST_TRUE(Utf8LookupSubstring(&kmp, Utf8Inline("\xC3\xA9" "b")));
+	TEST_EQUAL(1, kmp.start);
+
+	return output;
+}
+
 static struct test_Output(*kas_string_tests[])(struct test_Environment *) =
 {
 	utf8_format_regressions,
+	utf8_decode_and_parse_regressions,
 	DmgStrtod_utf32_f64_equivalence,
 	DmgStrtod_utf8_f64_equivalence,
 	DmgDtoa_functionallity_check,
