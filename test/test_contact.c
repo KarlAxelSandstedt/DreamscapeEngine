@@ -181,25 +181,25 @@ static u32 CtContact(struct arena *frame, struct ct_Manifold *m, const struct ct
         return 1;
     }
 
-    if (result.manifold_count != 1 || !c_ManifoldCheck(result.manifold)
-            || result.manifold->v_count < 1 || result.manifold->v_count > 2)
+    if (result.manifold_count != 1 || !c_ManifoldCheck(result.contact_manifold)
+            || result.contact_manifold->v_count < 1 || result.contact_manifold->v_count > 2)
     {
         fprintf(stderr, "CtContact: invalid manifold (count %u)\n", result.manifold_count);
         if (result.manifold_count)
         {
-            c_ManifoldDebugPrint(result.manifold);
+            c_ManifoldDebugPrint(result.contact_manifold);
         }
         return 0;
     }
 
     m->contact = 1;
-    m->local = *result.manifold;
-    m->v_count = result.manifold->v_count;
-    m->n = D3RotationMul(a->r, D3V3(result.manifold->n));
+    m->local = *result.contact_manifold;
+    m->v_count = result.contact_manifold->v_count;
+    m->n = D3RotationMul(a->r, D3V3(result.contact_manifold->n));
     for (u32 i = 0; i < m->v_count; ++i)
     {
-        m->v[i] = D3Add(a->pos, D3RotationMul(a->r, D3V3(result.manifold->v[i])));
-        m->depth[i] = result.manifold->depth[i];
+        m->v[i] = D3Add(a->pos, D3RotationMul(a->r, D3V3(result.contact_manifold->v[i])));
+        m->depth[i] = result.contact_manifold->depth[i];
     }
 
     return 1;
@@ -1012,19 +1012,19 @@ static u32 ChContact(struct arena *frame, struct c_Manifold *m, u32 *contact, co
         return 1;
     }
 
-    if (result.manifold_count != 1 || !c_ManifoldCheck(result.manifold)
-            || result.manifold->v_count < 1 || result.manifold->v_count > 2)
+    if (result.manifold_count != 1 || !c_ManifoldCheck(result.contact_manifold)
+            || result.contact_manifold->v_count < 1 || result.contact_manifold->v_count > 2)
     {
         fprintf(stderr, "ChContact: invalid manifold (count %u)\n", result.manifold_count);
         if (result.manifold_count)
         {
-            c_ManifoldDebugPrint(result.manifold);
+            c_ManifoldDebugPrint(result.contact_manifold);
         }
         return 0;
     }
 
     *contact = 1;
-    *m = *result.manifold;
+    *m = *result.contact_manifold;
     return 1;
 }
 
@@ -1939,8 +1939,8 @@ static u32 HhContact(struct arena *frame, struct c_ContactResult *result, const 
     const struct c_ContactResult none = { 0 };
     *result = c_HullContact(frame, (cached) ? cached : &none, &a->shape, &a->t, &b->shape, &b->t);
     return result->manifold_count == 0
-        || (result->manifold_count == 1 && c_ManifoldCheck(result->manifold)
-            && 1 <= result->manifold->v_count && result->manifold->v_count <= 4);
+        || (result->manifold_count == 1 && c_ManifoldCheck(result->contact_manifold)
+            && 1 <= result->contact_manifold->v_count && result->contact_manifold->v_count <= 4);
 }
 
 /* checks one result of (a, b) against the reference; returns the failure kind */
@@ -1973,7 +1973,7 @@ static enum hh_Fail HhVerifySlack(struct hh_Stats *stats, const struct c_Contact
         return HH_FAIL_NONE;
     }
 
-    const struct c_Manifold *m = result->manifold;
+    const struct c_Manifold *m = result->contact_manifold;
     const struct d3 n = D3V3(m->n);
     const f64 n_len = D3Length(n);
     if (F64AbsTest(n_len - 1.0) > 1e-5)
@@ -2041,7 +2041,7 @@ static void HhCount(struct hh_Stats *stats, const enum hh_Fail fail, const struc
         HhPrint(a, b);
         if (result->manifold_count)
         {
-            c_ManifoldDebugPrint(result->manifold);
+            c_ManifoldDebugPrint(result->contact_manifold);
         }
     }
     stats->fail[fail] += 1;
@@ -2072,7 +2072,7 @@ static void HhCheckPair(struct arena *frame, struct hh_Stats *fresh, struct hh_S
         u32 same = (r_t.manifold_count == r.manifold_count);
         if (same && r.manifold_count)
         {
-            const struct c_Manifold *m = r.manifold, *m_t = r_t.manifold;
+            const struct c_Manifold *m = r.contact_manifold, *m_t = r_t.contact_manifold;
             same = m_t->v_count == m->v_count && memcmp(&m_t->n, &m->n, sizeof(v3)) == 0;
             for (u32 i = 0; same && i < m->v_count; ++i)
             {
@@ -2309,29 +2309,29 @@ struct test_Output HullContactCasesTest(struct test_Environment *env)
     /* face on face, 0.1 deep: four points at the corners (+-1, 1, +-1) (on A's side planes), n = +y, depth 0.1 */
     ChHullInit(&b, &box, 1, hw, QIdentity(), D3(0.0, 1.9, 0.0));
     TEST_TRUE(HhContact(env->mem_2, &r, &a, &b, NULL) && HhVerify(&stats, &r, &a, &b) == HH_FAIL_NONE);
-    TEST_EQUAL(r.manifold->v_count, 4);
-    TEST_TRUE(CtNearD3(D3V3(r.manifold->n), D3(0.0, 1.0, 0.0)));
+    TEST_EQUAL(r.contact_manifold->v_count, 4);
+    TEST_TRUE(CtNearD3(D3V3(r.contact_manifold->n), D3(0.0, 1.0, 0.0)));
     for (u32 i = 0; i < 4; ++i)
     {
-        TEST_TRUE(CtNear(r.manifold->depth[i], 0.1) && CtNear(r.manifold->v[i].y, 1.0));
+        TEST_TRUE(CtNear(r.contact_manifold->depth[i], 0.1) && CtNear(r.contact_manifold->v[i].y, 1.0));
     }
 
     /* B turned 45 deg about y: the clip is an octagon, reduced to four points, all 0.1 deep */
     ChHullInit(&b, &box, 1, hw, QUnitAxisAngle(V3(0.0f, 1.0f, 0.0f), F32_PI/4.0f), D3(0.0, 1.9, 0.0));
     TEST_TRUE(HhContact(env->mem_2, &r, &a, &b, NULL) && HhVerify(&stats, &r, &a, &b) == HH_FAIL_NONE);
-    TEST_EQUAL(r.manifold->v_count, 4);
+    TEST_EQUAL(r.contact_manifold->v_count, 4);
     for (u32 i = 0; i < 4; ++i)
     {
-        TEST_TRUE(CtNear(r.manifold->depth[i], 0.1));
+        TEST_TRUE(CtNear(r.contact_manifold->depth[i], 0.1));
     }
 
     /* B turned 45 deg about x, its lower edge (along x, ends on A's side planes) 0.05 into the top face: two points (+-1, 1, 0), depth 0.05 */
     ChHullInit(&b, &box, 1, hw, QUnitAxisAngle(V3(1.0f, 0.0f, 0.0f), F32_PI/4.0f), D3(0.0, 0.95 + 1.41421356, 0.0));
     TEST_TRUE(HhContact(env->mem_2, &r, &a, &b, NULL) && HhVerify(&stats, &r, &a, &b) == HH_FAIL_NONE);
-    TEST_EQUAL(r.manifold->v_count, 2);
-    TEST_TRUE(CtNearD3(D3V3(r.manifold->n), D3(0.0, 1.0, 0.0)));
-    TEST_TRUE(CtNear(r.manifold->depth[0], 0.05) && CtNear(r.manifold->depth[1], 0.05));
-    TEST_TRUE(CtNear(F64AbsTest(r.manifold->v[0].x), 1.0) && CtNear(r.manifold->v[0].x, -r.manifold->v[1].x));
+    TEST_EQUAL(r.contact_manifold->v_count, 2);
+    TEST_TRUE(CtNearD3(D3V3(r.contact_manifold->n), D3(0.0, 1.0, 0.0)));
+    TEST_TRUE(CtNear(r.contact_manifold->depth[0], 0.05) && CtNear(r.contact_manifold->depth[1], 0.05));
+    TEST_TRUE(CtNear(F64AbsTest(r.contact_manifold->v[0].x), 1.0) && CtNear(r.contact_manifold->v[0].x, -r.contact_manifold->v[1].x));
 
     g_dynamics_worker = prev;
 	return output;
@@ -2515,7 +2515,7 @@ static const char *SpVerify(struct sp_Stats *stats, const struct c_ContactResult
     const u32 contact = (result->manifold_count == 1);
     stats->tests += 1;
 
-    if (result->manifold_count > 1 || (contact && (!c_ManifoldCheck(result->manifold) || result->manifold->v_count != 1)))
+    if (result->manifold_count > 1 || (contact && (!c_ManifoldCheck(result->contact_manifold) || result->contact_manifold->v_count != 1)))
     {
         return "invalid manifold";
     }
@@ -2536,7 +2536,7 @@ static const char *SpVerify(struct sp_Stats *stats, const struct c_ContactResult
         return NULL;
     }
 
-    const struct c_Manifold *m = result->manifold;
+    const struct c_Manifold *m = result->contact_manifold;
     const struct d3 n = D3V3(m->n);
     if (F64AbsTest(D3Length(n) - 1.0) > 1e-5)
     {
@@ -2640,9 +2640,9 @@ static u32 SpCheckPair(struct arena *frame, struct sp_Stats *stats, const sp_Con
             u32 same = (r_t.manifold_count == result.manifold_count);
             if (same && result.manifold_count)
             {
-                same = memcmp(&r_t.manifold->n, &result.manifold->n, sizeof(v3)) == 0
-                    && memcmp(&r_t.manifold->v[0], &result.manifold->v[0], sizeof(v3)) == 0
-                    && memcmp(&r_t.manifold->depth[0], &result.manifold->depth[0], sizeof(f32)) == 0;
+                same = memcmp(&r_t.contact_manifold->n, &result.contact_manifold->n, sizeof(v3)) == 0
+                    && memcmp(&r_t.contact_manifold->v[0], &result.contact_manifold->v[0], sizeof(v3)) == 0
+                    && memcmp(&r_t.contact_manifold->depth[0], &result.contact_manifold->depth[0], sizeof(f32)) == 0;
             }
             if (!same)
             {
@@ -2659,7 +2659,7 @@ static u32 SpCheckPair(struct arena *frame, struct sp_Stats *stats, const sp_Con
             s1->pos.x, s1->pos.y, s1->pos.z);
         if (result.manifold_count)
         {
-            c_ManifoldDebugPrint(result.manifold);
+            c_ManifoldDebugPrint(result.contact_manifold);
         }
         return 0;
     }
@@ -2821,13 +2821,13 @@ struct test_Output SphereContactCasesTest(struct test_Environment *env)
     TEST_EQUAL(r.manifold_count, 0);
     t[1].position = V3F64(1.5, 0.0, 0.0);
     r = c_SphereContact(env->mem_2, &none, s[0], &t[0], s[1], &t[1]);
-    TEST_TRUE(r.manifold_count == 1 && r.manifold->depth[0] == 0.0f);
+    TEST_TRUE(r.manifold_count == 1 && r.contact_manifold->depth[0] == 0.0f);
     t[1].position = V3F64(1.25, 0.0, 0.0);
     r = c_SphereContact(env->mem_2, &none, s[0], &t[0], s[1], &t[1]);
-    TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.25) && CtNearD3(D3V3(r.manifold->n), D3(1.0, 0.0, 0.0)) && CtNearD3(D3V3(r.manifold->v[0]), D3(1.0, 0.0, 0.0)));
+    TEST_TRUE(r.manifold_count == 1 && CtNear(r.contact_manifold->depth[0], 0.25) && CtNearD3(D3V3(r.contact_manifold->n), D3(1.0, 0.0, 0.0)) && CtNearD3(D3V3(r.contact_manifold->v[0]), D3(1.0, 0.0, 0.0)));
     t[1].position = V3F64(0.0, 0.0, 0.0);
     r = c_SphereContact(env->mem_2, &none, s[0], &t[0], s[1], &t[1]);
-    TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 1.5) && CtNearD3(D3V3(r.manifold->n), D3(1.0, 0.0, 0.0)));
+    TEST_TRUE(r.manifold_count == 1 && CtNear(r.contact_manifold->depth[0], 1.5) && CtNearD3(D3V3(r.contact_manifold->n), D3(1.0, 0.0, 0.0)));
 
     /* capsule (h 1, r 1) vs sphere: beside (n = +z, depth 0.25), beyond the cap (n = +y), on the axis (n = (1, 0, 0), depth 1.5) */
     struct c_Shape cap = { .type = C_SHAPE_CAPSULE };
@@ -2836,13 +2836,13 @@ struct test_Output SphereContactCasesTest(struct test_Environment *env)
     s[0] = &cap;
     t[1].position = V3F64(0.0, 0.5, 1.25);
     r = c_CapsuleSphereContact(env->mem_2, &none, s[0], &t[0], s[1], &t[1]);
-    TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.25) && CtNearD3(D3V3(r.manifold->n), D3(0.0, 0.0, 1.0)) && CtNearD3(D3V3(r.manifold->v[0]), D3(0.0, 0.5, 1.0)));
+    TEST_TRUE(r.manifold_count == 1 && CtNear(r.contact_manifold->depth[0], 0.25) && CtNearD3(D3V3(r.contact_manifold->n), D3(0.0, 0.0, 1.0)) && CtNearD3(D3V3(r.contact_manifold->v[0]), D3(0.0, 0.5, 1.0)));
     t[1].position = V3F64(0.0, 2.25, 0.0);
     r = c_CapsuleSphereContact(env->mem_2, &none, s[0], &t[0], s[1], &t[1]);
-    TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.25) && CtNearD3(D3V3(r.manifold->n), D3(0.0, 1.0, 0.0)));
+    TEST_TRUE(r.manifold_count == 1 && CtNear(r.contact_manifold->depth[0], 0.25) && CtNearD3(D3V3(r.contact_manifold->n), D3(0.0, 1.0, 0.0)));
     t[1].position = V3F64(0.0, -0.5, 0.0);
     r = c_CapsuleSphereContact(env->mem_2, &none, s[0], &t[0], s[1], &t[1]);
-    TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 1.5) && CtNearD3(D3V3(r.manifold->n), D3(1.0, 0.0, 0.0)));
+    TEST_TRUE(r.manifold_count == 1 && CtNear(r.contact_manifold->depth[0], 1.5) && CtNearD3(D3V3(r.contact_manifold->n), D3(1.0, 0.0, 0.0)));
 
     /* box [-1, 1]^3 vs sphere: above the top face (n = +y, depth 0.25, v = (0.3, 1, 0)), beyond a corner, inside (nearest face) */
     const v3 hw = V3(1.0f, 1.0f, 1.0f);
@@ -2851,13 +2851,13 @@ struct test_Output SphereContactCasesTest(struct test_Environment *env)
     s[0] = &box;
     t[1].position = V3F64(0.3, 1.25, 0.0);
     r = c_HullSphereContact(env->mem_2, &none, s[0], &t[0], s[1], &t[1]);
-    TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.25) && CtNearD3(D3V3(r.manifold->n), D3(0.0, 1.0, 0.0)) && CtNearD3(D3V3(r.manifold->v[0]), D3(0.3, 1.0, 0.0)));
+    TEST_TRUE(r.manifold_count == 1 && CtNear(r.contact_manifold->depth[0], 0.25) && CtNearD3(D3V3(r.contact_manifold->n), D3(0.0, 1.0, 0.0)) && CtNearD3(D3V3(r.contact_manifold->v[0]), D3(0.3, 1.0, 0.0)));
     t[1].position = V3F64(1.2, 1.2, 1.2);
     r = c_HullSphereContact(env->mem_2, &none, s[0], &t[0], s[1], &t[1]);
-    TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.5 - 0.34641016) && CtNearD3(D3V3(r.manifold->n), D3(0.57735027, 0.57735027, 0.57735027)) && CtNearD3(D3V3(r.manifold->v[0]), D3(1.0, 1.0, 1.0)));
+    TEST_TRUE(r.manifold_count == 1 && CtNear(r.contact_manifold->depth[0], 0.5 - 0.34641016) && CtNearD3(D3V3(r.contact_manifold->n), D3(0.57735027, 0.57735027, 0.57735027)) && CtNearD3(D3V3(r.contact_manifold->v[0]), D3(1.0, 1.0, 1.0)));
     t[1].position = V3F64(0.0, 0.8, 0.1);
     r = c_HullSphereContact(env->mem_2, &none, s[0], &t[0], s[1], &t[1]);
-    TEST_TRUE(r.manifold_count == 1 && CtNear(r.manifold->depth[0], 0.7) && CtNearD3(D3V3(r.manifold->n), D3(0.0, 1.0, 0.0)) && CtNearD3(D3V3(r.manifold->v[0]), D3(0.0, 1.0, 0.1)));
+    TEST_TRUE(r.manifold_count == 1 && CtNear(r.contact_manifold->depth[0], 0.7) && CtNearD3(D3V3(r.contact_manifold->n), D3(0.0, 1.0, 0.0)) && CtNearD3(D3V3(r.contact_manifold->v[0]), D3(0.0, 1.0, 0.1)));
 
 	return output;
 }
@@ -2979,7 +2979,7 @@ struct test_Output MeshSphereCasesTest(struct test_Environment *env)
         const v3 n_expected = V3Scale(n_t, (h < 0.0f) ? 1.0f : -1.0f);
         const f64 depth_expected = (f64) radius - F64AbsTest((f64) h);
         u32 ok = (r.manifold_count == 1);
-        const struct c_Manifold *m = r.manifold;
+        const struct c_Manifold *m = r.contact_manifold;
         if (ok)
         {
             ok = c_ManifoldCheck(m) && m->v_count == 1
@@ -3032,7 +3032,7 @@ struct test_Output MeshSphereCasesTest(struct test_Environment *env)
         const struct c_ContactResult r = c_MeshContact(env->mem_2, &none, &mesh, &t_mesh, &sphere, &t_sphere);
         const v3 n_t = QUnitRotate(QConj(q_sphere), QUnitRotate(t_mesh.rotation, V3(0.0f, 1.0f, 0.0f)));
         u32 ok = (r.manifold_count == 1);
-        const struct c_Manifold *m = r.manifold;
+        const struct c_Manifold *m = r.contact_manifold;
         if (ok)
         {
             ok = c_ManifoldCheck(m) && m->v_count == 1
@@ -3284,7 +3284,7 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
             const struct mc_CapsuleCase cc = McCapsuleCase(env->mem_2, &mesh, r, h, c[k].center, c[k].axis);
             const struct d3 n_expected = McCapsuleDirection(&cc, c[k].n);
             u32 ok = (cc.result.manifold_count == 1);
-            const struct c_Manifold *m = cc.result.manifold;
+            const struct c_Manifold *m = cc.result.contact_manifold;
             f64 deepest = 0.0;
             if (ok)
             {
@@ -3347,7 +3347,7 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
             const f64 deepest_expected = (edge_case) ? (f64) r + delta : (f64) r + ((f64) h - delta) / sqrt2;
             const f64 tol = 1e-4*S;
             u32 ok = (cc.result.manifold_count == 1);
-            const struct c_Manifold *m = cc.result.manifold;
+            const struct c_Manifold *m = cc.result.contact_manifold;
             if (ok)
             {
                 f64 deepest = 0.0;
@@ -3405,17 +3405,17 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
         else
         {
             f64 deepest = 0.0;
-            ok = (cc.result.manifold_count == 1) && McCapsuleManifoldCheck(&deepest, cc.result.manifold, r, h, tol, 0)
-              && McCapsuleSoundCheck(cc.result.manifold, cc.tri, r, h, tol);
+            ok = (cc.result.manifold_count == 1) && McCapsuleManifoldCheck(&deepest, cc.result.contact_manifold, r, h, tol, 0)
+              && McCapsuleSoundCheck(cc.result.contact_manifold, cc.tri, r, h, tol);
             /* a shallow single point is the closest core point moved by r along n (n perpendicular to the core) */
-            if (ok && d_ref > 2.0*band && cc.result.manifold->v_count == 1)
+            if (ok && d_ref > 2.0*band && cc.result.contact_manifold->v_count == 1)
             {
-                ok = McCapsuleManifoldCheck(&deepest, cc.result.manifold, r, h, tol, 1);
+                ok = McCapsuleManifoldCheck(&deepest, cc.result.contact_manifold, r, h, tol, 1);
             }
             if (ok && d_ref > 2.0*band)
             {
                 shallow += 1;
-                const struct c_Manifold *m = cc.result.manifold;
+                const struct c_Manifold *m = cc.result.contact_manifold;
                 if (m->v_count == 1)
                 {
                     worst = F64MaxTest(worst, F64AbsTest(deepest - ((f64) r - d_ref)) / L);
@@ -3450,7 +3450,7 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
             fprintf(stderr, "Mesh capsule random %u: size %g, r %g, h %g, d_ref %g, manifolds %u\n", i, (f64) S, (f64) r, (f64) h, d_ref, cc.result.manifold_count);
             if (cc.result.manifold_count)
             {
-                c_ManifoldDebugPrint(cc.result.manifold);
+                c_ManifoldDebugPrint(cc.result.contact_manifold);
             }
             TEST_FAILURE;
         }
@@ -3598,7 +3598,7 @@ struct test_Output MeshFlatGridTest(struct test_Environment *env)
             f64 deepest = 0.0;
             for (u32 k = 0; ok && k < res.manifold_count; ++k)
             {
-                const struct c_Manifold *m = res.manifold + k;
+                const struct c_Manifold *m = res.contact_manifold + k;
                 const f64 dn = D3Length(D3Sub(D3V3(m->n), down));
                 /* boxes and hulls: counted (internal edges; see the comment above) */
                 worst_n = F64MaxTest(worst_n, dn / tol_n);
@@ -3622,7 +3622,7 @@ struct test_Output MeshFlatGridTest(struct test_Environment *env)
                     kind_id[kind], i, (unsigned long long) where, res.manifold_count, expected_depth, deepest, tol_n);
                 for (u32 k = 0; k < res.manifold_count; ++k)
                 {
-                    c_ManifoldDebugPrint(res.manifold + k);
+                    c_ManifoldDebugPrint(res.contact_manifold + k);
                 }
                 g_dynamics_worker = prev;
                 TEST_FAILURE;
@@ -3643,7 +3643,7 @@ static const char *McTerrainCheck(struct arena *frame, u64 *manifolds, const str
     *manifolds += r.manifold_count;
     for (u32 i = 0; i < r.manifold_count; ++i)
     {
-        const struct c_Manifold *m = r.manifold + r.tri_manifold[i];
+        const struct c_Manifold *m = r.contact_manifold + r.tri_manifold[i];
         if (!c_ManifoldCheck(m) || m->v_count < 1)
         {
             fprintf(stderr, "\ttriangle %u:\n", r.tri[i]);
@@ -3664,7 +3664,7 @@ static const char *McTerrainCheck(struct arena *frame, u64 *manifolds, const str
         u32 same = (r_t.manifold_count == r.manifold_count);
         for (u32 i = 0; same && i < r.manifold_count; ++i)
         {
-            const struct c_Manifold *m = r.manifold + i, *m_t = r_t.manifold + i;
+            const struct c_Manifold *m = r.contact_manifold + i, *m_t = r_t.contact_manifold + i;
             same = r_t.tri[i] == r.tri[i] && m_t->v_count == m->v_count && memcmp(&m_t->n, &m->n, sizeof(v3)) == 0;
             for (u32 k = 0; same && k < m->v_count; ++k)
             {
@@ -3844,7 +3844,7 @@ static const char *McHullTriVerify(u64 *touching_off, const struct c_ContactResu
     {
         return "false contact";
     }
-    const struct c_Manifold *m = r->manifold;
+    const struct c_Manifold *m = r->contact_manifold;
     if (r->manifold_count != 1 || !c_ManifoldCheck(m) || m->v_count < 1 || m->v_count > 4)
     {
         return "invalid manifold";
@@ -3903,10 +3903,10 @@ static void McHullPrint(const struct c_ContactResult *r, const struct ch_Hull *h
     {
         fprintf(stderr, "\ttriangle (hull frame) %u: { %.17g, %.17g, %.17g }\n", k, t[k].x, t[k].y, t[k].z);
     }
-    fprintf(stderr, "\tsat %g, sep(n) %g\n", McHullTriSat(h, t), (r->manifold_count) ? McHullTriSeparation(h, t, D3V3(r->manifold->n)) : 0.0);
+    fprintf(stderr, "\tsat %g, sep(n) %g\n", McHullTriSat(h, t), (r->manifold_count) ? McHullTriSeparation(h, t, D3V3(r->contact_manifold->n)) : 0.0);
     if (r->manifold_count)
     {
-        c_ManifoldDebugPrint(r->manifold);
+        c_ManifoldDebugPrint(r->contact_manifold);
     }
 }
 
@@ -3996,7 +3996,7 @@ struct test_Output MeshHullCasesTest(struct test_Environment *env)
         }
         if (!fail)
         {
-            const struct c_Manifold *m = r.manifold;
+            const struct c_Manifold *m = r.contact_manifold;
             f64 deepest = 0.0;
             for (u32 i = 0; i < m->v_count; ++i)
             {
@@ -4113,7 +4113,7 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
         const char *stage = "first";
         contacts += (r.manifold_count != 0);
         separated += (r.manifold_count == 0);
-        v_count[(r.manifold_count) ? r.manifold->v_count : 0] += 1;
+        v_count[(r.manifold_count) ? r.contact_manifold->v_count : 0] += 1;
 
         if (!fail)
         {

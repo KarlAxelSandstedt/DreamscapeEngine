@@ -537,8 +537,8 @@ struct c_ContactResult c_SphereContact(struct arena *frame, const struct c_Conta
         const f32 dist = F32Sqrt(dist_sq);
 
         result.manifold_count = 1;
-        result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
-        struct c_Manifold *manifold = result.manifold;
+        result.contact_manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
+        struct c_Manifold *manifold = result.contact_manifold;
 
         manifold->n = (dist > 0.0f)
                     ? V3Scale(p, 1.0f / dist)
@@ -581,8 +581,8 @@ struct c_ContactResult c_CapsuleSphereContact(struct arena *frame, const struct 
     if (dist_sq <= r_sum*r_sum)
     {
         result.manifold_count = 1;
-        result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
-        struct c_Manifold *m = result.manifold;
+        result.contact_manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
+        struct c_Manifold *m = result.contact_manifold;
 
         const f32 dist = F32Sqrt(dist_sq);
         m->v_count = 1;
@@ -692,8 +692,8 @@ struct c_ContactResult c_CapsuleContact(struct arena *frame, const struct c_Cont
 
     const f32 dist = F32Sqrt(dist_sq);
     result.manifold_count = 1;
-    result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
-    struct c_Manifold *manifold = result.manifold;
+    result.contact_manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
+    struct c_Manifold *manifold = result.contact_manifold;
 
     /*
      * Q1_shift carries rounding error ~ eps (|c| + |e| + h0): below the noise band (as GJK's touch band, 100 eps L)
@@ -759,8 +759,8 @@ struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_C
     }
 
     result.manifold_count = 1;
-    result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
-    struct c_Manifold *m = result.manifold;
+    result.contact_manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
+    struct c_Manifold *m = result.contact_manifold;
 	m->v_count = 1;
 
     /* shallow penetration */
@@ -901,8 +901,8 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
     }
 
     result.manifold_count = 1;
-    result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
-    struct c_Manifold *m = result.manifold;
+    result.contact_manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
+    struct c_Manifold *m = result.contact_manifold;
 
     const struct dcel *h = &s0->hull;
     const struct segment core = SegmentCapsuleTransform(&s1->capsule, &t_1_to_0);
@@ -1453,7 +1453,7 @@ struct c_ContactResult c_HullContact(struct arena *frame, const struct c_Contact
     result.cache_count = 1;
     result.cache = ArenaPushPacked(frame, sizeof(struct c_SatCache));
     result.manifold_count = 1;
-    result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
+    result.contact_manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
 
     struct arena *mem_tmp = ArenaPushScratch();
 
@@ -1478,7 +1478,7 @@ struct c_ContactResult c_HullContact(struct arena *frame, const struct c_Contact
     const struct sat_Pair pair = { .type = SAT_PAIR_HULL, .h = { h[0], h[1] }, .v = { v[0], v[1] }, .pl = { pl[0], pl[1] }, .center_0 = center_0 };
     const struct c_SatCache *old_cache = (cached_result->cache_count) ? cached_result->cache : NULL;
     sat_FeatureId features[4];
-    const u32 colliding = sat_PairContact(result.manifold, features, result.cache, mem_tmp, &pair, old_cache);
+    const u32 colliding = sat_PairContact(result.contact_manifold, features, result.cache, mem_tmp, &pair, old_cache);
     if (result.cache->type == SAT_CACHE_NONE)
     {
         result.cache_count = 0;
@@ -1488,7 +1488,7 @@ struct c_ContactResult c_HullContact(struct arena *frame, const struct c_Contact
     {
         ArenaPopPacked(frame, sizeof(struct c_Manifold));
         result.manifold_count = 0;
-        result.manifold = NULL;
+        result.contact_manifold = NULL;
     }
     ArenaPopScratch();
     return result;
@@ -2061,11 +2061,11 @@ static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *res
 
     const u32 cache_len = (cache) ? ((helper->record_count < g_numerics_config->cache_count_max) ? helper->record_count : g_numerics_config->cache_count_max) : 0;
     result->cache = (cache_len) ? ArenaPushPacked(frame, cache_len*sizeof(struct c_SatCache)) : NULL;
-    result->manifold = ArenaPush(frame, contact_count*sizeof(struct c_Manifold));
+    result->contact_manifold = ArenaPush(frame, contact_count*sizeof(struct c_Manifold));
     result->tri = ArenaPush(frame, contact_count*sizeof(u32));
     u32 *delayed = ArenaPush(helper->tmp, delayed_count*sizeof(u32));
     struct ds_BitSet void_bitset = ds_BitSetAlloc(helper->tmp, helper->mesh->v_count, 0, NOT_GROWABLE);
-    if ((contact_count && (!result->manifold || !result->tri)) || (delayed_count && !delayed) || (cache_len && !result->cache))
+    if ((contact_count && (!result->contact_manifold || !result->tri)) || (delayed_count && !delayed) || (cache_len && !result->cache))
     {
         Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
         FatalCleanupAndExit();
@@ -2100,7 +2100,7 @@ static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *res
             continue;
         }
 
-        result->manifold[result->manifold_count] = r->manifold;
+        result->contact_manifold[result->manifold_count] = r->manifold;
         result->tri[result->manifold_count] = r->tri;
         result->manifold_count += 1;
         if (result->cache_count < cache_len && r->cache.type != SAT_CACHE_NONE)
@@ -2122,7 +2122,7 @@ static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *res
             : ds_BitSetGet(&void_bitset, v[ r->delayed[0] ]) && ds_BitSetGet(&void_bitset, v[ r->delayed[1] ]);
         if (!voided)
         {
-            result->manifold[result->manifold_count] = r->manifold;
+            result->contact_manifold[result->manifold_count] = r->manifold;
             result->tri[result->manifold_count] = r->tri;
             result->manifold_count += 1;
             if (result->cache_count < cache_len && r->cache.type != SAT_CACHE_NONE)

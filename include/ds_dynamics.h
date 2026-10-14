@@ -436,7 +436,7 @@ Assumptions:
 
 /*
  * The pipeline's contact entry: the pair's contact local to one shape (convex pairs: the more complex shape,
- * c_*Contact; mesh pairs: the convex shape, c_MeshContact), transformed to the solver form (c_Manifold, collision.h).
+ * c_*Contact; mesh pairs: the convex shape, c_MeshContact), converted to the solver form (ds_SolverManifold).
  */
 void        ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index);
 /*
@@ -538,6 +538,12 @@ struct ds_BodySim
 	m3 		        world_inv_inertia;          /* world inertia tensor                                 */
 };
 DEFINE_CPOOL_STRUCT(ds_BodySim);
+
+/* Return the world center of mass of the sim's pose: world.position + R*local_center_of_mass, summed in f64. */
+static inline v3f64 ds_BodySimWorldCenterOfMass(const struct ds_BodySim *sim)
+{
+    return V3F64Add(sim->world.position, V3Promote(QUnitRotate(sim->world.rotation, sim->local_center_of_mass)));
+}
 
 
 /*
@@ -644,6 +650,31 @@ struct c_SatCache
 
 
 /*
+ds_SolverManifold
+=================
+A contact manifold in the solver's form: ds_ShapeContact converts the narrowphase's local manifolds
+(c_ContactResult.contact_manifold) in place, so ds_Contact.narrowphase.manifold names the same memory in this
+form; the two structs have the same size (ds_DynamicsStaticAssert). Body 0 is the body of the contact key's
+shape[0] (the reference), body 1 the body of shape[1]. Every vector is f32 in world axes, and none is a world
+position: points are offsets from a body's center of mass.
+
+    normal          unit, from body 0 to body 1
+    anchor0[i]      contact point i on body 0's surface, relative to body 0's center of mass
+    depth[i]        penetration depth (>= 0) of point i: body 1's deepest point is anchor0[i] - depth[i]*normal
+
+Body 1's anchors follow from ds_Contact.com_offset (com1 - com0, world axes):
+
+    anchor1[i] = anchor0[i] - com_offset - depth[i]*normal      (relative to body 1's center of mass)
+*/
+struct ds_SolverManifold
+{
+    v3      anchor0[4];     /* contact points on body 0's surface, relative to body 0's center of mass */
+    f32     depth[4];       /* penetration depths (>= 0)                                              */
+    v3      normal;         /* unit, from body 0 to body 1                                            */
+    u32     point_count;
+};
+
+/*
 ds_ContactKey
 =============
 The key is defined by the canonical form (s0,s1), where s0 < s1 and is used to lookup a contact
@@ -705,7 +736,9 @@ struct ds_Contact
      * pushed onto thread's current frame arena (double buffered). If the contact is sleeping,
      * the narrowphase is stored on the heap.
      */
-    struct c_ContactResult      narrowphase;
+    struct c_ContactResult      narrowphase;        /* manifold: solver form (ds_ShapeContact converted the
+                                                       narrowphase's contact_manifold in place)            */
+    v3                          com_offset;         /* com1 - com0 (world axes, f32 from an f64 subtraction) */
 };
 POOL_DECLARE(ds_Contact);
 
@@ -1031,9 +1064,11 @@ Individual constraint point within a contact constraint.
 */
 struct ds_ContactConstraintPoint 
 {
-    v3      r[2];               /* levers: body center to contact_point         */
-    f32     com_separation;     /* dot(com1 - com0, n) at the step's start, from the levers:
-                                   -depth - dot(r[1] - r[0], n)                 */
+    v3      r[2];               /* levers: body i's center of mass to its contact point (body 1: its deepest
+                                   point). World axes from contact prep through the velocity phase; body
+                                   axes from ds_PositionConstraintInitAndCacheImpulsesRange on (NGS rotates
+                                   them by the current rotation)                                        */
+    f32     com_separation;     /* dot(com1 - com0, n) at the step's start (ds_Contact.com_offset)      */
 	f32 	normal_impulse;	    /* Normal impulse produced by the contact       */
 	f32	    velocity_bias;	    /* scale of velocity_bias along contact normal  */
 	f32	    normal_mass;	    /* 1.0f / row(J,i)*Inv(M)*J^T                   */

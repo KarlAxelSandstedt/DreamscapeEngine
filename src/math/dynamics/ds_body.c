@@ -206,6 +206,18 @@ void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId i
 
 	body->mass = 0.0f;
     sim->local_center_of_mass = V3Zero();
+
+    /* static bodies and bodies without shapes: zero mass, center of mass at the body origin (Box3D) */
+    if (!ds_BodyDynamicCheck(body) || body->shape_list.count == 0)
+    {
+        sim->inv_mass = 0.0f;
+        sim->local_inv_inertia = M3(0.0f, 0.0f, 0.0f,
+                                    0.0f, 0.0f, 0.0f,
+                                    0.0f, 0.0f, 0.0f);
+        ArenaPopScratch();
+        return;
+    }
+
 	m3 body_inertia_tensor = M3(0.0f, 0.0f, 0.0f,
 				    0.0f, 0.0f, 0.0f,
 				    0.0f, 0.0f, 0.0f);
@@ -238,6 +250,8 @@ void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId i
 		inertia_tensor[i] = M3Mul(M3Mul(rot_local, shape_inertia), rot_local_inv);
 	}
 
+    /* zero volume or density on a dynamic body (TODO: c_Shape / body checker) */
+    ds_Assert(body->mass > 0.0f);
     sim->inv_mass = 1.0f / body->mass;
 	sim->local_center_of_mass = V3Scale(sim->local_center_of_mass, sim->inv_mass);
 

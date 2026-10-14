@@ -262,27 +262,35 @@ f32 ds_ShapeDistance(v3f64 *c0, v3f64 *c1, const struct ds_Dynamics *pipeline, c
 }
 
 /*
- * Local -> solver form (c_Manifold, collision.h); t is the shape the manifolds are local to. If the other
- * shape is the reference, its surface points are the local ones minus the depth:
+ * Convert the local manifolds (result->contact_manifold, c_Manifold) in place to the solver form (result->manifold,
+ * ds_SolverManifold; same size). t is the world pose of the shape the manifolds are local to. If the other shape is
+ * the reference (flip), its surface points are the local ones minus the depth:
  *      n' = -n,    v' = v - depth*n
- * TODO(decision 3): translated to world f32 points for the current solver.
+ * Points move from t's origin to body 0's center of mass com0 with one f64 subtraction:
+ *      anchor0 = R*v + demote(t.position - com0)
+ * Each local manifold is memcpy'd out before its memory is rewritten (character access: the compiler cannot move
+ * the c_Manifold reads past the ds_SolverManifold writes); afterwards the memory is only read in the solver form
+ * (arena memory takes the type of its last store).
  */
-static void ds_ContactResultToSolver(struct c_ContactResult *result, const ds_TransformWorld *t, const u32 flip)
+static void ds_ContactResultToSolver(struct c_ContactResult *result, const ds_TransformWorld *t, const v3f64 com0, const u32 flip)
 {
     const m3 rot = M3QUnit(t->rotation);
-    const v3 pos = V3F64Demote(t->position);
+    const v3 offset = V3F64Demote(V3F64Sub(t->position, com0));
     for (u32 mi = 0; mi < result->manifold_count; ++mi)
     {
-        struct c_Manifold *manifold = result->manifold + mi;
-        if (flip)
+        struct c_Manifold local;
+        memcpy(&local, result->contact_manifold + mi, sizeof(local));
+        struct ds_SolverManifold *solver = result->manifold + mi;
+        for (u32 i = 0; i < local.v_count; ++i)
         {
-            for (u32 i = 0; i < manifold->v_count; ++i)
-            {
-                manifold->v[i] = V3AddScaled(manifold->v[i], manifold->n, -manifold->depth[i]);
-            }
-            manifold->n = V3Negate(manifold->n);
+            const v3 v = (flip)
+                       ? V3AddScaled(local.v[i], local.n, -local.depth[i])
+                       : local.v[i];
+            solver->anchor0[i] = V3Add(M3V3Mul(rot, v), offset);
+            solver->depth[i] = local.depth[i];
         }
-        c_ManifoldTransform(manifold, manifold, rot, pos);
+        solver->normal = M3V3Mul(rot, (flip) ? V3Negate(local.n) : local.n);
+        solver->point_count = local.v_count;
     }
 }
 
@@ -333,15 +341,13 @@ void ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, co
         ? c_MeshContact(frame, &c->narrowphase, c_s[other], &t_world[other], c_s[local], &t_world[local])
         : c_convex_contact_methods[c_s[local]->type][c_s[other]->type](frame, &c->narrowphase, c_s[local], &t_world[local], c_s[other], &t_world[other]);
 
-    const u32 flip = local;
-    ds_ContactResultToSolver(&result, &t_world[local], flip);
-
 #ifdef DS_DEBUG
+    /* the local manifolds, before the conversion below overwrites them */
     for (u32 i = 0; i < result.manifold_count; ++i)
     {
-        if (!c_ManifoldCheck(result.manifold + i))
+        if (!c_ManifoldCheck(result.contact_manifold + i))
         {
-            c_ManifoldDebugPrint(result.manifold + i);
+            c_ManifoldDebugPrint(result.contact_manifold + i);
             Breakpoint(1);
             /* rerun to step into the failing case */
             (c_s[other]->type == C_SHAPE_TRI_MESH)
@@ -351,7 +357,19 @@ void ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, co
         }
     }
 #endif
+
+    const u32 flip = local;
+    v3f64 com[2];
+    for (u32 i = 0; i < 2; ++i)
+    {
+        const struct ds_Body *body = pipeline->body_pool.buf + s[i]->body;
+        const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
+        com[i] = ds_BodySimWorldCenterOfMass(set->body_sim_pool.buf + body->sim);
+    }
+    ds_ContactResultToSolver(&result, &t_world[local], com[0], flip);
+
 	c->narrowphase = result;
+    c->com_offset = V3F64Demote(V3F64Sub(com[1], com[0]));
 }
 
 f32 ds_ShapeRaycastParameter(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct rayWorld *ray)

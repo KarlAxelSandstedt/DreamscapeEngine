@@ -223,13 +223,10 @@ a c_Manifold (contact manifold) contains the required information about how two 
 are colliding for our physics solvers to solve them. One of the shapes are viewed as
 the reference shape.
 
-The same struct is used in two frames:
-    local   c_*Contact output, in the frame of the shape it is local to (convex pairs: s0; mesh
-            pairs: the convex shape), which is the reference: n points away from it, v[i] lies on its
-            surface and the other shape's deepest point is v[i] - depth[i]*n.
-    solver  ds_ShapeContact output (ds_Contact.narrowphase): the
-            reference is the contact key's shape[0], rotated to world; TODO(decision 3): translated
-            to world f32 points for now.
+c_*Contact output: a local manifold, in the frame of the shape it is local to (convex pairs: s0; mesh
+pairs: the convex shape), which is the reference: n points away from it, v[i] lies on its surface and the
+other shape's deepest point is v[i] - depth[i]*n. ds_ShapeContact converts it to the solver form
+(ds_SolverManifold, ds_dynamics.h).
 */
 struct c_Manifold
 {
@@ -330,11 +327,18 @@ f32     c_TriMeshBvhHullDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0,
 
 /********************************** CONTACT MANIFOLD METHODS **********************************/
 
+struct ds_SolverManifold;
+
 struct c_ContactResult
 {
     u32                         manifold_count;     /* Number of stored manifolds               */
     u32                         cache_count;        /* Number of stored caches                  */
-    struct c_Manifold *         manifold;           /* Manifolds (if any)                       */
+    union
+    {
+        struct c_Manifold *         contact_manifold;   /* c_*Contact output: local manifolds (if any) */
+        struct ds_SolverManifold *  manifold;           /* the same memory after ds_ShapeContact converted it
+                                                           in place: solver form (ds_dynamics.h)         */
+    };
     struct c_SatCache *         cache;              /* Caches (if any)                          */
     struct GJKCache *           gjk_cache;          /* GJK cache, at most one (NULL if none)    */
     u32 *                       tri;                /* Sorted triangles, low-to-high (if any)   */
@@ -345,7 +349,7 @@ struct c_ContactResult
 
 /*
  * Convex pairs: a local manifold in s0's frame (n from s0 to s1); s0 is the reference, so the
- * result has no reference index. ds_ShapeContact transforms it to the solver form (see c_Manifold).
+ * result has no reference index. ds_ShapeContact converts it to the solver form (ds_SolverManifold).
  */
 struct c_ContactResult  c_SphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
 struct c_ContactResult  c_CapsuleSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
@@ -357,7 +361,7 @@ struct c_ContactResult  c_HullContact(struct arena *frame, const struct c_Contac
 /*
  * Mesh contacts (convex: sphere, capsule or hull): one local manifold per contacting triangle, local to the
  * convex shape: in its frame, n points from the convex shape to the mesh and v[i] lies on the convex shape's
- * surface. ds_ShapeContact transforms them to the solver form (see c_Manifold).
+ * surface. ds_ShapeContact converts them to the solver form (ds_SolverManifold).
  */
 struct c_ContactResult  c_MeshContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex);
 

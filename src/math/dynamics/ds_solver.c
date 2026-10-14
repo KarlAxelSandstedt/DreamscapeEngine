@@ -126,7 +126,7 @@ void ds_BodyUpdateSolverDataRange(struct ds_Dynamics *pipeline, const u32 low, c
         sim->world_inv_inertia = M3Mul(M3Mul(rot, sim->local_inv_inertia), rot_inv);
 
         bcomp->rotation = sim->world.rotation;
-        sim->world_center_of_mass = V3F64Add(sim->world.position, V3Promote(M3V3Mul(rot, sim->local_center_of_mass)));
+        sim->world_center_of_mass = ds_BodySimWorldCenterOfMass(sim);
         bcomp->delta_position = V3Zero();
 
         /* integrate new velocities using external forces */
@@ -293,18 +293,18 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
 
         for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
         {
-            const struct c_Manifold *m = (c->narrowphase.tri)
-                                       ? c->narrowphase.manifold + c->narrowphase.tri_manifold[cci]
-                                       : c->narrowphase.manifold + cci;
+            const struct ds_SolverManifold *m = (c->narrowphase.tri)
+                                              ? c->narrowphase.manifold + c->narrowphase.tri_manifold[cci]
+                                              : c->narrowphase.manifold + cci;
 
     	    struct ds_ContactConstraint *cc = ccomp->cc + cci;
 
 		    cc->restitution = F32Max(s[0]->restitution, s[1]->restitution);
 		    cc->friction = F32Sqrt(s[0]->friction*s[1]->friction);
-            cc->normal = m->n;
+            cc->normal = m->normal;
 		    V3CreateBasis(&cc->tangent[0], &cc->tangent[1], cc->normal);
 
-		    cc->ccp_count = m->v_count;
+		    cc->ccp_count = m->point_count;
             for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
 		    {
 		    	struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
@@ -312,19 +312,9 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
 		    	ccp->tangent_impulse[0] = 0.0f;
 		    	ccp->tangent_impulse[1] = 0.0f;
 
-                /* TODO(f64 P3): anchors from the narrowphase (step B); the static sentinel's com is the origin */
-                const v3 com0 = V3F64Demote(sim[0]->world_center_of_mass);
-                const v3 com1 = V3F64Demote(sim[1]->world_center_of_mass);
-		    	ccp->r[0] = V3Sub(m->v[ccpi], com0);
-		    	ccp->r[1] = V3AddScaled(V3Sub(m->v[ccpi], com1), m->n, -m->depth[ccpi]);
-                ccp->com_separation = -m->depth[ccpi] - V3Dot(V3Sub(ccp->r[1], ccp->r[0]), m->n);
-
-                /*
-                 * TODO(f64 P3 step B): static bodies enter with a sentinel com at the origin, so a static anchor is
-                 * a world point. The warm start matches anchors within 1 cm (ds_ContactConstraintWarmupRange), which
-                 * holds while the f32 spacing of such points stays well below 1 cm (|p| < ~100 km). Anchors relative
-                 * to the static body's com (step B) remove the limit; shape size limits go in the c_Shape checker.
-                 */
+		    	ccp->r[0] = m->anchor0[ccpi];
+		    	ccp->r[1] = V3Sub(V3AddScaled(m->anchor0[ccpi], m->normal, -m->depth[ccpi]), c->com_offset);
+                ccp->com_separation = V3Dot(c->com_offset, m->normal);
 
                 const m3 inv_inertia0 = sim[0]->world_inv_inertia;
                 const m3 inv_inertia1 = sim[1]->world_inv_inertia;
@@ -402,7 +392,7 @@ void ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 col
         {
     	    struct ds_ContactConstraint *cc = ccomp->cc + cci;
             struct ds_ContactConstraintCache *ccache = ccomp->ccache;
-            struct c_Manifold *m = c->narrowphase.manifold;
+            const struct ds_SolverManifold *m = c->narrowphase.manifold;
             if (c->narrowphase.tri)
             {
                 ccache = NULL;
@@ -427,7 +417,7 @@ void ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 col
                  * If the cached contact's normal differ to musch from current, evict whole cache. 
                  * Note that we do not reuse the contact normal, but reuse cached r1, r2.
                  */
-                if (V3Dot(m->n, ccache->normal) < 0.9f)
+                if (V3Dot(m->normal, ccache->normal) < 0.9f)
                 {
                     continue;
                 }
