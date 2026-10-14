@@ -435,7 +435,7 @@ struct r_Scene
 
 	struct r_Bucket *	frame_bucket_list;
 
-	v3f64			view_origin;		/* world position 3d instance data is uploaded relative to (the camera; zero unless set this frame) */
+	v3f64			view_origin;		/* world position 3d draw data is uploaded relative to (the camera; zero unless set this frame) */
 };
 
 extern struct r_Scene *g_scene;
