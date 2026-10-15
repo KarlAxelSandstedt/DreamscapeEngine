@@ -229,6 +229,38 @@ static struct test_Output TicketFactoryTest(struct test_Environment *env)
 	return output;
 }
 
+/*
+ * Counting past 2^16 (Windows used to cap its semaphores at 65535: the 65536th post was fatal there), Wait on a
+ * positive count, TryWait on zero; Init with a large value.
+ */
+static struct test_Output SemaphoreTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    semaphore sem;
+    SemaphoreInit(&sem, 0);
+    TEST_EQUAL(0, SemaphoreTryWait(&sem));
+    const u32 count = 70000;
+    for (u32 i = 0; i < count; ++i)
+    {
+        SemaphorePost(&sem);
+    }
+    SemaphoreWait(&sem);
+    u32 taken = 1;
+    while (SemaphoreTryWait(&sem))
+    {
+        taken += 1;
+    }
+    TEST_EQUAL(count, taken);
+    SemaphoreDestroy(&sem);
+
+    SemaphoreInit(&sem, count);
+    TEST_EQUAL(1, SemaphoreTryWait(&sem));
+    SemaphoreDestroy(&sem);
+
+	return output;
+}
+
 /* constant expressions: usable in static initializers */
 static const i64 g_limits_min[4] = { I8_MIN, I16_MIN, I32_MIN, I64_MIN };
 
@@ -266,6 +298,7 @@ static struct test_Output (*base_tests[])(struct test_Environment *) =
     OverflowTest,
     AtomicSingleThreadTest,
     TicketFactoryTest,
+    SemaphoreTest,
 };
 
 struct suite_Correctness m_base_suite =

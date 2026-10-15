@@ -86,7 +86,8 @@ u32 SemaphoreTryWait(semaphore *sem)
 
 #elif __DS_PLATFORM__ == __DS_WIN64__
 
-#define SEM_MAX U16_MAX
+/* the same limit as glibc's SEM_VALUE_MAX: posting past 2^16 - 1 (the old maximum) was fatal on Windows only */
+#define SEM_MAX LONG_MAX
 
 void SemaphoreInit(semaphore *sem, const u32 val)	
 {
