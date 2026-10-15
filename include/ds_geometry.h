@@ -234,21 +234,13 @@ struct triMesh
 /* return bounding box of triMesh */
 struct aabb	TriMeshBbox(const struct triMesh *mesh);
 
-/* Get normal of ccw triangle */
-v3 		TriCcwNormal(const v3 p0, const v3 p1, const v3 p2);
-/* Get normal direction of ccw triangle */
-v3 		TriCcwNormalDirection(const v3 p0, const v3 p1, const v3 p2);
-
-
 /*
- * Return the feature of triangle (t0, t1, t2) closest to segment (s0, s1), its barycentric weights (as TriVoronoi)
- * and *s, the segment's parameter: the closest points are sum w[i] t_i and s0 + *s (s1 - s0), *s in [0, 1].
- * A segment piercing the triangle gives VORONOI_F012 at the crossing (distance 0). Any winding.
- *
- * Degenerate input: a segment in the triangle's plane, a zero-length segment, or a collinear triangle is handled
- * by the end point and edge candidates. Returns VORONOI_INVALID only for NaN input or distances beyond f32 (~1e19).
+ * Return 1 and the normal direction of the CCW triangle p0 p1 p2 in *dir (|dir| = twice the area); 0 for a degenerate
+ * triangle (collinear or coincident points, or |dir|^2 outside the f32 range), *dir = 0.
  */
-enum voronoi    TriSegmentVoronoi(f32 w[3], f32 *s, const v3 t0, const v3 t1, const v3 t2, const v3 s0, const v3 s1);
+static ds_ForceInline u32 TriCcwNormalDirectionTryCompute(v3 *dir, const v3 p0, const v3 p1, const v3 p2);
+/* Return 1 and the unit normal of the CCW triangle p0 p1 p2 in *normal; 0 for a degenerate triangle, *normal = 0 */
+static ds_ForceInline u32 TriCcwNormalTryCompute(v3 *normal, const v3 p0, const v3 p1, const v3 p2);
 
 /********************************** dcel ************************************/
 
@@ -338,10 +330,6 @@ void 		DcelAssertTopology(struct dcel *dcel);
 #else
 #define COLLISION_HULL_ASSERT(dcel)	
 #endif
-
-/********************************* vertex operations ***********************************/
-
-v3 	VertexCentroid(const v3 *vs, const u32 n);
 
 /****************************** segment: inline definitions *******************************/
 
@@ -613,6 +601,54 @@ static ds_ForceInline u32 AabbMaxAxis(const struct aabb a)
 	}
 
 	return axis;
+}
+
+/****************************** triangle: inline definitions *******************************/
+
+static ds_ForceInline u32 TriCcwNormalDirectionTryCompute(v3 *dir, const v3 p0, const v3 p1, const v3 p2)
+{
+	/*
+	 * The cross product of the two shortest edges, at the vertex opposite the longest edge: the same vector in
+	 * exact arithmetic at every vertex, the smallest rounding error in f32 (it scales with the two edges' lengths).
+	 */
+	const v3 e0 = V3Sub(p1, p0);
+	const v3 e1 = V3Sub(p2, p1);
+	const v3 e2 = V3Sub(p0, p2);
+	const f32 l0 = V3Dot(e0, e0);
+	const f32 l1 = V3Dot(e1, e1);
+	const f32 l2 = V3Dot(e2, e2);
+	v3 n;
+	if (l1 <= l0 && l2 <= l0)
+	{
+		n = V3Cross(e2, V3Negate(e1));	/* p0p1 longest: (p0 - p2) x (p1 - p2) */
+	}
+	else if (l2 <= l1)
+	{
+		n = V3Cross(e0, V3Negate(e2));	/* p1p2 longest: (p1 - p0) x (p2 - p0) */
+	}
+	else
+	{
+		n = V3Cross(e1, V3Negate(e0));	/* p2p0 longest: (p2 - p1) x (p0 - p1) */
+	}
+
+	const f32 len_sq = V3Dot(n, n);
+	ds_Assert(len_sq == len_sq);
+	const u32 valid = (0.0f < len_sq && len_sq < F32_INFINITY);
+	*dir = (valid) ? n : V3Zero();
+	return valid;
+}
+
+static ds_ForceInline u32 TriCcwNormalTryCompute(v3 *normal, const v3 p0, const v3 p1, const v3 p2)
+{
+	v3 dir;
+	if (!TriCcwNormalDirectionTryCompute(&dir, p0, p1, p2))
+	{
+		*normal = V3Zero();
+		return 0;
+	}
+
+	*normal = V3Scale(dir, 1.0f / F32Sqrt(V3Dot(dir, dir)));
+	return 1;
 }
 
 #ifdef __cplusplus

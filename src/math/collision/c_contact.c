@@ -328,8 +328,10 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, sat_FeatureId cm_features[4]
 			ds_Assert(max_i != max_neg_i);
 			ds_Assert(max_pos_i != max_neg_i);
 	
-			const v3 dir = TriCcwNormalDirection(cm->v[0], cp[max_pos_i], cm->v[2]);
-			if (V3Dot(dir, cm->n) < 0.0f)
+			/* collinear points have no orientation: then the order below */
+			v3 dir;
+			const u32 oriented = TriCcwNormalDirectionTryCompute(&dir, cm->v[0], cp[max_pos_i], cm->v[2]);
+			if (oriented && V3Dot(dir, cm->n) < 0.0f)
 			{
 				cm->v[3] = cp[max_pos_i];
 				cm->v[1] = cp[max_neg_i];

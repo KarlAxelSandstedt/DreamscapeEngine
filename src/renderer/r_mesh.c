@@ -257,9 +257,9 @@ void r_MeshHull(struct arena *mem, struct r_Mesh *mesh, const struct dcel *hull)
 		struct dcelEdge *e0 = hull->e + f->first;
 		struct dcelEdge *e1 = hull->e + f->first + 1;
 		struct dcelEdge *e2 = hull->e + f->first + 2;
-		const v3 normal = TriCcwNormal(hull->v[e0->origin],
-				hull->v[e1->origin],
-				hull->v[e2->origin]);
+		/* a degenerate face gets the zero normal (drawn unlit) */
+		v3 normal;
+		TriCcwNormalTryCompute(&normal, hull->v[e0->origin], hull->v[e1->origin], hull->v[e2->origin]);
 
 		const v3 p0 = hull->v[e0->origin]; 
 		const v3 p1 = hull->v[e1->origin];
@@ -331,9 +331,9 @@ void r_MeshTriMesh(struct arena *mem, struct r_Mesh *mesh, const struct triMesh 
 
 	for (u32 t = 0; t < tri_mesh->tri_count; ++t)
 	{
-		const v3 normal = TriCcwNormal(tri_mesh->v[tri_mesh->tri[t].buf[0]],
-				tri_mesh->v[tri_mesh->tri[t].buf[1]],
-				tri_mesh->v[tri_mesh->tri[t].buf[2]]);
+		/* a degenerate triangle gets the zero normal (drawn unlit) */
+		v3 normal;
+		TriCcwNormalTryCompute(&normal, tri_mesh->v[tri_mesh->tri[t].buf[0]], tri_mesh->v[tri_mesh->tri[t].buf[1]], tri_mesh->v[tri_mesh->tri[t].buf[2]]);
 
 		ArenaPushPackedMemcpy(mem, &tri_mesh->v[tri_mesh->tri[t].buf[0]], sizeof(v3));
 		//ArenaPushPackedMemcpy(mem, &color, sizeof(v4));

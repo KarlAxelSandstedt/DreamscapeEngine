@@ -1500,8 +1500,59 @@ struct test_Output SegmentPointTest(struct test_Environment *env)
 	return output;
 }
 
+/*
+ * TriCcwNormal(Direction)TryCompute: degenerate triangles fail with a zero vector; simple triangles are exact; needle
+ * triangles (the tiny angle at p0, where crossing the edges at p0 loses ~eps / angle) are within 16 eps of the f64
+ * normal of the same f32 input.
+ */
+struct test_Output TriNormalTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    v3 n;
+    TEST_EQUAL(0, TriCcwNormalTryCompute(&n, V3(0.0f, 0.0f, 0.0f), V3(1.0f, 0.0f, 0.0f), V3(2.0f, 0.0f, 0.0f)));
+    TEST_TRUE(n.x == 0.0f && n.y == 0.0f && n.z == 0.0f);
+    TEST_EQUAL(0, TriCcwNormalDirectionTryCompute(&n, V3(1.0f, 2.0f, 3.0f), V3(1.0f, 2.0f, 3.0f), V3(1.0f, 2.0f, 3.0f)));
+    TEST_TRUE(n.x == 0.0f && n.y == 0.0f && n.z == 0.0f);
+    /* |dir|^2 underflows: degenerate at f32 scale */
+    TEST_EQUAL(0, TriCcwNormalTryCompute(&n, V3(0.0f, 0.0f, 0.0f), V3(1e-25f, 0.0f, 0.0f), V3(0.0f, 1e-25f, 0.0f)));
+    TEST_EQUAL(1, TriCcwNormalTryCompute(&n, V3(0.0f, 0.0f, 0.0f), V3(1.0f, 0.0f, 0.0f), V3(0.0f, 1.0f, 0.0f)));
+    TEST_TRUE(n.x == 0.0f && n.y == 0.0f && n.z == 1.0f);
+    TEST_EQUAL(1, TriCcwNormalDirectionTryCompute(&n, V3(0.0f, 0.0f, 0.0f), V3(2.0f, 0.0f, 0.0f), V3(0.0f, 3.0f, 0.0f)));
+    TEST_TRUE(n.x == 0.0f && n.y == 0.0f && n.z == 6.0f);
+
+    f64 worst = 0.0;
+    for (u32 i = 0; i < 20000; ++i)
+    {
+        const v3 d = V3UnitSphere();
+        const v3 u = SegTestOrthogonal(d);
+        const v3 p0 = V3(RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f));
+        const f32 len = RngF32Range(1.0f, 10.0f);
+        const f32 width = len * RngF32Range(1e-5f, 1e-2f);
+        const v3 p1 = V3Add(p0, V3Scale(d, len));
+        const v3 p2 = V3Add(p1, V3Scale(u, width));
+        TEST_EQUAL(1, TriCcwNormalTryCompute(&n, p0, p1, p2));
+
+        const f64 a[3] = { (f64) p1.x - p0.x, (f64) p1.y - p0.y, (f64) p1.z - p0.z };
+        const f64 b[3] = { (f64) p2.x - p0.x, (f64) p2.y - p0.y, (f64) p2.z - p0.z };
+        const f64 r[3] = { a[1]*b[2] - a[2]*b[1], a[2]*b[0] - a[0]*b[2], a[0]*b[1] - a[1]*b[0] };
+        const f64 r_len_sq = r[0]*r[0] + r[1]*r[1] + r[2]*r[2];
+        /* |n x r| / |r| = sin of the angle between n and the reference */
+        const f64 c[3] = { n.y*r[2] - n.z*r[1], n.z*r[0] - n.x*r[2], n.x*r[1] - n.y*r[0] };
+        const f64 sin_sq = (c[0]*c[0] + c[1]*c[1] + c[2]*c[2]) / r_len_sq;
+        const f64 dot = n.x*r[0] + n.y*r[1] + n.z*r[2];
+        TEST_TRUE(dot > 0.0);
+        worst = (sin_sq > worst) ? sin_sq : worst;
+        TEST_TRUE(sin_sq <= (16.0*F32_EPSILON) * (16.0*F32_EPSILON));
+    }
+    fprintf(stdout, "\tTriNormalTest: 20000 needle triangles (angle 1e-5 .. 1e-2 at p0); largest normal angle error %.2e rad\n", F32Sqrt((f32) worst));
+
+	return output;
+}
+
 static struct test_Output (*geometry_tests[])(struct test_Environment *) =
 {
+	TriNormalTest,
 	SegmentNearParallelTest,
 	SegmentLineClosestTest,
 	SegmentPointTest,
