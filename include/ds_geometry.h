@@ -17,6 +17,24 @@
 ==========================================================================
 */
 
+/*
+ds_geometry.h
+=============
+Geometric primitives (rays, segments, planes, axis-aligned boxes, triangle meshes, convex polyhedra as a dcel) and
+the small computations on them that collision, the BVH and the renderer share. Included by ds_math.h.
+
+    Frames      f32, in whichever frame the caller works in; sphere, capsule and dcel are given in their own
+                local frame. f64 only where a ray or box is placed in the world (struct rayWorld,
+                AabbTranslateOutward).
+    Lengths     directions (segment and ray dir, a plane's normal_direction) keep their length unless a name says
+                Unit or Normalized; a parameter t counts in units of dir.
+    Degenerate  preconditions are asserted in debug only; ...TryCompute reports failure (returns 0, zero output).
+
+Sections: primitives, ray, segment, plane, AABB, tri_mesh, triangle, dcel; inline definitions at the bottom, in
+the same order. Source: src/math/common/ds_geometry.c. Queries between shapes and the hull builder (DcelConvexHull)
+are in collision.h; Voronoi regions of points, segments and triangles in ds_voronoi.h.
+*/
+
 #ifndef __DS_GEOMETRY_H__
 #define __DS_GEOMETRY_H__
 
@@ -132,9 +150,9 @@ void		    SegmentClosestParameter(f32 *t1, f32 *t2, const struct segment *s1, co
 /* Return the squared distance between s1 and s2; set c1, c2 to a closest pair of points on s1, s2 */
 static ds_ForceInline f32 SegmentDistanceSquared(v3 *c1, v3 *c2, const struct segment *s1, const struct segment *s2);
 /*
- * Closest points of the lines through s1 and s2, s1.p0 + t1 s1.dir and s2.p0 + t2 s2.dir: return 1 and t1, t2 if both
- * lie in [0, 1] (the lines' closest points lie within the segments), else 0. Precondition: the segments are not
- * parallel, |s1.dir x s2.dir|^2 > 0 (callers' parallel tests guarantee it; asserted in debug).
+ * Closest points of the lines through s1 and s2, s1.p0 + t1 s1.dir and s2.p0 + t2 s2.dir: set t1, t2 (always) and
+ * return 1 if both lie in [0, 1] (the lines' closest points lie within the segments), else 0. Precondition: the
+ * segments are not parallel, |s1.dir x s2.dir|^2 > 0 (callers' parallel tests guarantee it; asserted in debug).
  */
 static ds_ForceInline u32 SegmentLineClosestParameterCheck(f32 *t1, f32 *t2, const struct segment *s1, const struct segment *s2);
 /* Return the parameter t in [0, 1] of the point of s closest to p (a point segment: 1, the same point as 0) */
@@ -147,17 +165,21 @@ static ds_ForceInline f32 SegmentPointProjectedBcParameter(const struct segment 
  * One side of a polygon clip: shrink [*t_min, *t_max] to the parameters of s on the inner side of the plane through
  * the edge p0 -> p1 of a polygon CCW about n (any length > 0), the points x with ((p1 - p0) x n).(x - p0) <= 0
  * (inclusive). Return 0, range unchanged, if s lies strictly outside; otherwise 1. A zero-length edge clips nothing.
- * Every t written is in [0, 1].
+ * Every t written is in [0, 1]. Over several sides the range can become empty (*t_min > *t_max): the caller checks
+ * it after the last side.
  */
 static ds_ForceInline u32 SegmentEdgeSideClip(f32 *t_min, f32 *t_max, const struct segment *s, const v3 p0, const v3 p1, const v3 n);
 
 /********************************** plane ***********************************/
 
-/* Construct plane with given normal direction n containing point p */
+/* Return the plane through p with normal direction n (its length kept) */
 static ds_ForceInline struct plane Plane(const v3 n, const v3 p);
-/* Construct normalized plane with given normal direction n containing point p. Precondition: 0 < |n|^2 < inf (asserted) */
+/* Return the plane through p with unit normal n / |n|. Precondition: 0 < |n|^2 < inf (asserted) */
 static ds_ForceInline struct plane PlaneNormalized(const v3 n, const v3 p);
-/* Construct plane from CCW triangle abc (normal direction (b - a) x (c - a)). Precondition: abc not degenerate (asserted) */
+/*
+ * Return the plane of the CCW triangle abc, normal direction (b - a) x (c - a) (|n| = twice the area). Precondition:
+ * TriCcwNormalDirectionTryCompute succeeds on abc (asserted; release: the zero normal).
+ */
 static ds_ForceInline struct plane PlaneCcwTriangle(const v3 a, const v3 b, const v3 c);
 /*
  * Normalize the plane's normal direction and rescale signed_distance by the same factor. Precondition:
@@ -169,13 +191,13 @@ static ds_ForceInline void PlaneNormalize(struct plane *pl);
  * unit. Not for scaling or shearing maps: their normals transform by the inverse transpose.
  */
 static ds_ForceInline struct plane PlaneTransform(const struct plane *pl, const m3 rot, const v3 pos);
-/* return signed distance multiplied by |normal_direction| between plane and point (infront of plane == positive) */
+/* Return the signed distance of p from pl times |n|: positive in front of pl (the side n points to) */
 static ds_ForceInline f32 PlanePointSignedDistance(const struct plane *pl, const v3 p);
-/* return absolute distance multiplied by |normal_direction| between plane and point */
+/* Return the distance of p from pl times |n| (|PlanePointSignedDistance|) */
 static ds_ForceInline f32 PlanePointDistance(const struct plane *pl, const v3 p);
-/* Return 1 if p is infront of plane, i.e. a positive signed distance, otherwise 0 */
+/* Return 1 if p is strictly in front of pl (positive signed distance), otherwise 0 */
 static ds_ForceInline u32 PlanePointInfrontCheck(const struct plane *pl, const v3 p);
-/* Return 1 if p is behind plane, i.e. a negative signed distance, otherwise 0 */
+/* Return 1 if p is strictly behind pl (negative signed distance), otherwise 0 */
 static ds_ForceInline u32 PlanePointBehindCheck(const struct plane *pl, const v3 p);
 /*
  * Set proj to the projection of p onto pl and return t = PlanePointSignedDistance / |n|^2, the signed distance
@@ -195,8 +217,8 @@ static ds_ForceInline u32 PlaneSegmentTest(const struct plane *pl, const struct 
 /********************************** AABB ************************************/
 
 /*
- * Bbox* return a box by value; Aabb* test or translate boxes. Boxes are closed: they contain their boundary, and
- * boxes that touch intersect.
+ * Bbox* build boxes and return them by value; Aabb* query or translate them. Boxes are closed: they contain their
+ * boundary, and boxes that touch intersect.
  */
 
 /* Return the smallest box containing a and b */
@@ -243,12 +265,15 @@ struct triMesh
 /* Return the bounding box of all v_count vertices, unreferenced ones included; no vertices: the zero box */
 static ds_ForceInline struct aabb TriMeshBbox(const struct triMesh *mesh);
 
+/********************************* triangle *********************************/
+
 /*
- * Return 1 and the normal direction of the CCW triangle p0 p1 p2 in *dir (|dir| = twice the area); 0 for a degenerate
- * triangle (collinear or coincident points, or |dir|^2 outside the f32 range), *dir = 0.
+ * Return 1 and the normal direction of the CCW triangle p0 p1 p2 in *dir (|dir| = twice the area). Return 0 and
+ * *dir = 0 if the computed |dir|^2 is 0 or not finite: coincident points, collinear ones (rounding may leave them a
+ * tiny normal instead), or an area beyond the f32 range.
  */
 static ds_ForceInline u32 TriCcwNormalDirectionTryCompute(v3 *dir, const v3 p0, const v3 p1, const v3 p2);
-/* Return 1 and the unit normal of the CCW triangle p0 p1 p2 in *normal; 0 for a degenerate triangle, *normal = 0 */
+/* Return 1 and the unit normal of the CCW triangle p0 p1 p2 in *normal; 0 and *normal = 0 where the above returns 0 */
 static ds_ForceInline u32 TriCcwNormalTryCompute(v3 *normal, const v3 p0, const v3 p1, const v3 p2);
 
 /********************************** dcel ************************************/
@@ -314,14 +339,15 @@ static ds_ForceInline void DcelBboxCompute(struct dcel *h);
 
 /*
  * Return the index of the face whose outward unit normal has the largest dot product with dir (the face most
- * facing dir). dir need not be unit. Ties go to the lowest index; dir == 0 returns 0.
+ * facing dir). dir need not be unit. Ties go to the lowest index; dir == 0 returns 0. Precondition: f_count > 0, planes
+ * computed.
  */
 u32             DcelSupportFace(const struct dcel *h, const v3 dir);
 
 /*
  * Clip s (in the hull's frame) to the side planes of face fi (planes through its edges, orthogonal to the face).
  * Return 1 and the clipped part in clip (not projected onto the face), or 0 if nothing of s lies within the
- * face's sides (clip unwritten). A degenerate s (p[0] == p[1]) gives 0 or itself.
+ * face's sides (clip unwritten). A degenerate s (p[0] == p[1]) gives 0 or itself. Precondition: plane[fi] computed.
  */
 u32         	DcelFaceSegmentClip(struct segment *clip, const struct dcel *h, const u32 fi, const struct segment *s);
 
@@ -332,7 +358,8 @@ static ds_ForceInline v3 DcelEdgeUnitDirection(const struct dcel *h, const u32 e
 
 /*
  * Debug: assert (ds_Assert) the layout described above: the faces' edge ranges partition e, every edge's face_ccw
- * is its face, twins pair up and run opposite, indices are in range, and faces have at least 3 edges.
+ * is its face, twins pair up and run opposite, indices are in range, and faces have at least 3 edges. Does nothing
+ * without DS_DEBUG.
  */
 void 		DcelAssertTopology(const struct dcel *h);
 /* Debug: print h's vertices and faces to stderr */
@@ -651,6 +678,8 @@ static ds_ForceInline struct aabb TriMeshBbox(const struct triMesh *mesh)
 {
 	return BboxVertexSet(mesh->v, mesh->v_count);
 }
+
+/****************************** triangle: inline definitions *******************************/
 
 static ds_ForceInline u32 TriCcwNormalDirectionTryCompute(v3 *dir, const v3 p0, const v3 p1, const v3 p2)
 {
