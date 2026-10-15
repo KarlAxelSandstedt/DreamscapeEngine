@@ -17,6 +17,23 @@
 ==========================================================================
 */
 
+/*
+ds_types.h
+==========
+The engine's basic types, usable from every header (needs only stdint.h and ds_define.h).
+
+Contents (in this order):
+    Scalars     u8..u64, i8..i64, f32, f64; unions b8..b64 reinterpret the bits; limits U*_MAX, I*_MAX
+                (plain literals) and I*_MIN (typed constant expressions).
+    Allocator   struct slot { address, index }, what pool adds return; empty_slot = { NULL, U32_MAX }.
+    Math        q (quaternion, w the real part), v2..v4 (f32), v3f64 (world positions), integer vectors
+                v{2,3,4}{u32,u64,i32,i64}; x, y, z, w alias buf[0..3]. Constructors V3(x, y, z), Q(...), ...
+                Matrices m2..m4 are column-major; M2..M4 take their arguments in column-major order.
+    Misc        struct dsBuffer, intervals intv/intvu64/intvi64 { low, high }, u32f32 pairs, union reg,
+                axis, alignment and box-corner enums.
+    Logging     enum system_id (T_...) and enum severity_id (S_...).
+*/
+
 #ifndef __DREAMSCAPE_TYPES_H__
 #define __DREAMSCAPE_TYPES_H__
 
@@ -79,10 +96,10 @@ typedef union
 #define I32_MAX		2147483647
 #define I64_MAX		9223372036854775807
 
-#define I8_MIN		((b64) { .u = 0x80 }).i	
-#define I16_MIN		((b64) { .u = 0x8000 }).i	
-#define I32_MIN		((b64) { .u = 0x80000000 }).i	
-#define I64_MIN		((b64) { .u = 0x8000000000000000 }).i	
+#define I8_MIN		((i8) (-I8_MAX - 1))
+#define I16_MIN		((i16) (-I16_MAX - 1))
+#define I32_MIN		((i32) (-I32_MAX - 1))
+#define I64_MIN		((i64) (-I64_MAX - 1))
 
 /************** Allocator Helper **************/
 
@@ -498,7 +515,7 @@ enum system_id
 	T_COUNT
 };
 
-/* system identifiers for Logger, profiler ... */
+/* message severities for the Logger (AGENTS.md, Error Handling) */
 enum severity_id
 {
 	S_SUCCESS,

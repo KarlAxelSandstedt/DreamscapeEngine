@@ -227,8 +227,39 @@ static struct test_Output TicketFactoryTest(struct test_Environment *env)
 	return output;
 }
 
+/* constant expressions: usable in static initializers */
+static const i64 g_limits_min[4] = { I8_MIN, I16_MIN, I32_MIN, I64_MIN };
+
+/*
+ * ds_types.h limits against stdint.h (springclean 19: I8/I16/I32_MIN were positive), their types, and the
+ * layout the math unions promise (members alias buf, matrices column-major, no padding).
+ */
+static struct test_Output TypesTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    TEST_TRUE(I8_MIN == INT8_MIN && I16_MIN == INT16_MIN && I32_MIN == INT32_MIN && I64_MIN == INT64_MIN);
+    TEST_TRUE(I8_MAX == INT8_MAX && I16_MAX == INT16_MAX && I32_MAX == INT32_MAX && I64_MAX == INT64_MAX);
+    TEST_TRUE(U8_MAX == UINT8_MAX && U16_MAX == UINT16_MAX && U32_MAX == UINT32_MAX && U64_MAX == UINT64_MAX);
+    TEST_TRUE(sizeof(I8_MIN) == 1 && sizeof(I16_MIN) == 2 && sizeof(I32_MIN) == 4 && sizeof(I64_MIN) == 8);
+    TEST_TRUE(g_limits_min[0] == -128 && g_limits_min[1] == -32768 && g_limits_min[2] == -2147483647 - 1);
+    TEST_TRUE(g_limits_min[3] == INT64_MIN);
+
+    TEST_TRUE(sizeof(v2) == 8 && sizeof(v3) == 12 && sizeof(v4) == 16 && sizeof(q) == 16 && sizeof(v3f64) == 24);
+    TEST_TRUE(sizeof(m2) == 16 && sizeof(m3) == 36 && sizeof(m4) == 64);
+    const v3 v = V3(1.0f, 2.0f, 3.0f);
+    TEST_TRUE(v.buf[0] == 1.0f && v.buf[1] == 2.0f && v.buf[2] == 3.0f);
+    const m3 m = M3(1.0f, 2.0f, 3.0f,
+                    4.0f, 5.0f, 6.0f,
+                    7.0f, 8.0f, 9.0f);
+    TEST_TRUE(m.a21 == 2.0f && m.a12 == 4.0f && m.col[2].z == 9.0f && m.buf[1*3 + 0] == m.a12);
+
+	return output;
+}
+
 static struct test_Output (*base_tests[])(struct test_Environment *) =
 {
+    TypesTest,
     BitCountTest,
     OverflowTest,
     AtomicSingleThreadTest,
