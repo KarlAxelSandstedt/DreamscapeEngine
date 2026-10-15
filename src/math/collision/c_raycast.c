@@ -274,6 +274,11 @@ f32 HullRaycastParameter(const struct dcel *hull, const struct ray *ray)
 		: F32_INFINITY;
 }
 
+/*
+ * Watertight ray-triangle test (Woop, Benthin, Wald 2013): the ray is sheared into ray space, where it is the +z
+ * axis from the origin. Built once per ray and shared by every triangle test, so a vertex transforms identically
+ * in all its triangles, which is what makes the tests watertight.
+ */
 struct rayWoop RayWoop(const struct ray *ray)
 {
 	/* the largest |component| (ties keep the lower axis); dir != 0, so dir[kz] != 0 */

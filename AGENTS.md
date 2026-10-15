@@ -182,3 +182,11 @@ Comments
 
 Short; state only what a reader would otherwise get wrong, never the obvious.
 Multi-line comments: /* on its own line, then the text, then */ on its own line.
+
+Header documentation states what a function (or family of functions) does, its
+contracts (assumptions on the inputs), side effects and outputs. Internals are
+written very sparingly there; explanations of internals go in .c files. A
+header starts with a short block: what the file is for, its conventions and its
+sections. Each function group's documentation sits directly above its
+declarations. Exceptions, kept as they are: include/ds_voronoi.h and
+include/ds_init.h, whose internals the owner wrote to understand them deeply.
