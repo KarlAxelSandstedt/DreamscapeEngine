@@ -1,5 +1,5 @@
 #include "ds_test.h"
-#include "geometry.h"
+#include "ds_geometry.h"
 #include "collision.h"
 #include "ds_dynamics.h"
 

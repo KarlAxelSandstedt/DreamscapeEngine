@@ -20,7 +20,7 @@
 #include <string.h>
 #include "ds_base.h"
 #include "ds_math.h"
-#include "geometry.h"
+#include "ds_geometry.h"
 #include "ds_float.h"
 #include "ds_vector.h"
 #include "ds_matrix.h"
@@ -179,11 +179,6 @@ struct segment SegmentCapsuleTransform(const struct capsule *cap, const ds_Trans
 	return SegmentConstruct(V3Add(p, t->position), V3Add(V3Negate(p), t->position));
 }
 
-struct aabb BboxSegment(const struct segment *s)
-{
-	const struct aabb bbox = { .min = V3Min(s->p[0], s->p[1]), .max = V3Max(s->p[0], s->p[1]) };
-    return bbox;
-}
 
 f32 SegmentPointProjectedBcParameter(const struct segment *s, const v3 p)
 {	
@@ -197,22 +192,6 @@ f32 SegmentPointClosestBcParameter(const struct segment *s, const v3 p)
 	return F32Clamp(V3Dot(diff, s->dir) / V3Dot(s->dir, s->dir), 0.0f, 1.0f);
 }
 
-u32 AabbMaxAxis(const struct aabb a)
-{
-    const v3 size = V3Sub(a.max, a.min);
-    u32 axis = 0;
-    if (size.x < size.y)
-    {
-        axis = 1;
-    }
-
-    if (size.buf[axis] < size.z)
-    {
-        axis = 2;
-    }
-
-    return axis;
-}
 
 struct aabb BboxVertexSet(const v3 *v, const u32 count)
 {
@@ -233,149 +212,16 @@ struct aabb BboxVertexSet(const v3 *v, const u32 count)
     return bbox;
 }
 
-void AabbUnion(struct aabb *box_union, const struct aabb *a, const struct aabb *b)
-{
-	box_union->min = V3Min(a->min, b->min);
-	box_union->max = V3Max(a->max, b->max);
-}
 
-void AabbRotate(struct aabb *dst, const struct aabb *src, const m3 rotation)
-{
-	/*
-	 * The box is {c + hw*s : s in [-1, 1]^3}; rotated, {R c + R (hw*s)}. The support point of a box in any
-	 * direction is a corner, so the rotated box's half widths are hw_new[k] = |R row k| . hw, around R c.
-	 */
 
-	const v3 x = V3Abs(V3(rotation.a11, rotation.a12, rotation.a13));
-	const v3 y = V3Abs(V3(rotation.a21, rotation.a22, rotation.a23));
-	const v3 z = V3Abs(V3(rotation.a31, rotation.a32, rotation.a33));
 
-	const v3 center = V3Scale(V3Add(src->min, src->max), 0.5f);
-	const v3 hw_src = V3Scale(V3Sub(src->max, src->min), 0.5f);
-	const v3 hw = V3(V3Dot(x, hw_src), V3Dot(y, hw_src), V3Dot(z, hw_src));
-	const v3 center_rotated = M3V3Mul(rotation, center);
-	dst->min = V3Sub(center_rotated, hw);
-	dst->max = V3Add(center_rotated, hw);
-}
 
-void AabbTranslateOutward(struct aabb *dst, const struct aabb *local, const v3f64 origin)
-{
-    dst->min = V3F64DemoteDownwards(V3F64Add(origin, V3Promote(local->min)));
-    dst->max = V3F64DemoteUpwards(V3F64Add(origin, V3Promote(local->max)));
-}
 
-u32 AabbTest(const struct aabb *a, const struct aabb *b)
-{
-	if (b->min.x > a->max.x || a->min.x > b->max.x) { return 0; }
-	if (b->min.y > a->max.y || a->min.y > b->max.y) { return 0; }
-	if (b->min.z > a->max.z || a->min.z > b->max.z) { return 0; }
-
-	return 1;
-}
-
-u32 AabbContains(const struct aabb *a, const struct aabb *b)
-{
-	if (b->min.x < a->min.x) { return 0; }
-	if (b->min.y < a->min.y) { return 0; }
-	if (b->min.z < a->min.z) { return 0; }
 	
-	if (b->max.x > a->max.x) { return 0; }
-	if (b->max.y > a->max.y) { return 0; }
-	if (b->max.z > a->max.z) { return 0; }
 
-	return 1;
-}
 
-u32 AabbContainsMargin(const struct aabb *a, const struct aabb *b, const f32 margin)
-{
-	if (b->min.x < a->min.x - margin) { return 0; }
-	if (b->min.y < a->min.y - margin) { return 0; }
-	if (b->min.z < a->min.z - margin) { return 0; }
-	
-	if (b->max.x > a->max.x + margin) { return 0; }
-	if (b->max.y > a->max.y + margin) { return 0; }
-	if (b->max.z > a->max.z + margin) { return 0; }
 
-	return 1;
-}
-	
-u64 AabbPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const v4 color)
-{
-	return AabbTransformPushLinesBuffered(buf, bufsize, box, V3Zero(), M3Identity(), color);
-}
 
-u64 AabbTransformPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const v3 translation, const m3 rotation, const v4 color)
-{
-	const u64 bytes_written = 3*8*(sizeof(v3)+sizeof(v4));
-	if (bufsize < bytes_written)
-	{
-		return 0;
-	}
-
-	const v3 end = box->min;
-	const v3 size = V3Sub(box->max, box->min);
-	const v3 line[24] =
-	{
-		V3(end.x, 		                end.y, 		            end.z),
-		V3(end.x + size.x,    end.y, 		            end.z),
-		V3(end.x, 		                end.y, 		            end.z),
-		V3(end.x, 		                end.y + size.y,   end.z),
-		V3(end.x, 		                end.y, 		            end.z),
-		V3(end.x, 		                end.y, 	                end.z + size.z),
-
-		V3(end.x + size.x,    end.y, 		            end.z),
-		V3(end.x + size.x,    end.y + size.y,   end.z),
-		V3(end.x + size.x,    end.y, 		            end.z),
-		V3(end.x + size.x,    end.y,                     end.z + size.z),
-
-		V3(end.x, 		            end.y + size.y,   end.z),
-		V3(end.x, 		            end.y + size.y,   end.z + size.z),
-		V3(end.x, 		            end.y + size.y,   end.z),
-		V3(end.x + size.x,   end.y + size.y,   end.z),
-
-		V3(end.x, 		            end.y, 	                end.z + size.z),
-		V3(end.x, 		            end.y + size.y,   end.z + size.z),
-		V3(end.x, 		            end.y, 	                end.z + size.z),
-		V3(end.x + size.x,   end.y, 	                end.z + size.z),
-
-		V3(end.x + size.x,   end.y + size.y,   end.z),
-		V3(end.x + size.x,   end.y + size.y,   end.z + size.z),
-
-		V3(end.x, 		            end.y + size.y,   end.z + size.z),
-		V3(end.x + size.x,   end.y + size.y,   end.z + size.z),
-
-		V3(end.x + size.x,   end.y, 	                end.z + size.z),
-		V3(end.x + size.x,   end.y + size.y,   end.z + size.z),
-	};
-
-	f32 *v = (f32*) buf;
-	for (u32 i = 0; i < 24; ++i)
-	{
-		const v3 p = V3Add(M3V3Mul(rotation, line[i]), translation);
-		memcpy(v + 7*i + 0, &p, sizeof(v3));
-		memcpy(v + 7*i + 3, &color, sizeof(v4));
-	}
-
-	return bytes_written;
-}
-
-struct aabb BboxTriangle(const v3 p0, const v3 p1, const v3 p2)
-{
-	const struct aabb bbox = { .min = V3Min(V3Min(p0, p1), p2), .max = V3Max(V3Max(p0, p1), p2) };
-	return bbox;
-}
-
-struct aabb BboxUnion(const struct aabb a, const struct aabb b)
-{
-	const struct aabb bbox = { .min = V3Min(a.min, b.min), .max = V3Max(a.max, b.max) };
-	return bbox;
-}
-
-struct aabb	BboxPointUnion(const struct aabb a, const v3 p)
-{
-	const struct aabb bbox = { .min = V3Min(a.min, p), .max = V3Max(a.max, p) };
-    return bbox;
-}
 
 v3 VertexCentroid(const v3 *vs, const u32 n)
 {

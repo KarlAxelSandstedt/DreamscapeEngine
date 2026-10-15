@@ -1,5 +1,5 @@
 #include "ds_test.h"
-#include "geometry.h"
+#include "ds_geometry.h"
 #include "ds_voronoi.h"
 
 static v3 V3UnitSphere(void)
@@ -1265,8 +1265,75 @@ struct test_Output PlaneRandomTest(struct test_Environment *env)
 	return output;
 }
 
+/*
+ * BboxRotate: random boxes (half widths 1e-3 to 1e3, some flat; centers up to 1e4 from the origin) and rotations.
+ * Every corner rotated exactly (f64 sums of the exact products of the f32 entries) must lie in the result, and the
+ * result may exceed the exact rotated box by at most 16 eps of its error scale (|R| (|c| + h))_k.
+ */
+struct test_Output BboxRotateTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    const f32 half_width[] = { 1e-3f, 1.0f, 1e3f };
+    const f32 center[] = { 0.0f, 1.0f, 1e4f };
+    f64 worst_excess = 0.0;
+    for (u32 k = 0; k < 100000; ++k)
+    {
+        const f32 hs = half_width[k % 3];
+        const f32 cs = center[(k / 3) % 3];
+        const v3 c = V3(RngF32Range(-cs, cs), RngF32Range(-cs, cs), RngF32Range(-cs, cs));
+        v3 h = V3(RngF32Range(0.0f, hs), RngF32Range(0.0f, hs), RngF32Range(0.0f, hs));
+        if (k % 7 == 0) { h.buf[k % 3] = 0.0f; }
+        const struct aabb box = { .min = V3Sub(c, h), .max = V3Add(c, h) };
+        const m3 r = M3QUnit(QUnitAxisAngle(V3UnitSphere(), RngF32Range(-F32_PI, F32_PI)));
+        const struct aabb rotated = BboxRotate(box, r);
+
+        const f64 row[3][3] =
+        {
+            { r.a11, r.a12, r.a13 },
+            { r.a21, r.a22, r.a23 },
+            { r.a31, r.a32, r.a33 },
+        };
+        for (u32 axis = 0; axis < 3; ++axis)
+        {
+            f64 lo = (f64) F32_INFINITY;
+            f64 hi = -(f64) F32_INFINITY;
+            for (u32 i = 0; i < 8; ++i)
+            {
+                const f64 p[3] =
+                {
+                    (i & 1) ? box.max.x : box.min.x,
+                    (i & 2) ? box.max.y : box.min.y,
+                    (i & 4) ? box.max.z : box.min.z,
+                };
+                const f64 q = row[axis][0]*p[0] + row[axis][1]*p[1] + row[axis][2]*p[2];
+                lo = (q < lo) ? q : lo;
+                hi = (q > hi) ? q : hi;
+            }
+            TEST_TRUE((f64) rotated.min.buf[axis] <= lo && hi <= (f64) rotated.max.buf[axis]);
+
+            f64 scale = 0.0;
+            for (u32 j = 0; j < 3; ++j)
+            {
+                const f64 cj = 0.5*((f64) box.min.buf[j] + (f64) box.max.buf[j]);
+                const f64 hj = 0.5*((f64) box.max.buf[j] - (f64) box.min.buf[j]);
+                scale += ((row[axis][j] < 0.0) ? -row[axis][j] : row[axis][j]) * (((cj < 0.0) ? -cj : cj) + hj);
+            }
+            const f64 excess_lo = (lo - (f64) rotated.min.buf[axis]) / (F32_EPSILON * scale);
+            const f64 excess_hi = ((f64) rotated.max.buf[axis] - hi) / (F32_EPSILON * scale);
+            TEST_TRUE(excess_lo <= 16.0 && excess_hi <= 16.0);
+            worst_excess = (excess_lo > worst_excess) ? excess_lo : worst_excess;
+            worst_excess = (excess_hi > worst_excess) ? excess_hi : worst_excess;
+        }
+    }
+    fprintf(stdout, "\tBboxRotateTest: 100000 boxes contain their exactly rotated corners; largest excess %.2f eps of (|R| (|c| + h))_k\n", worst_excess);
+
+	return output;
+}
+
 static struct test_Output (*geometry_tests[])(struct test_Environment *) =
 {
+	BboxRotateTest,
 	PlaneExactTest,
 	PlaneRandomTest,
 	SegmentShortTest,

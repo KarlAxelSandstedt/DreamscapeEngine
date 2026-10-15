@@ -27,7 +27,7 @@ extern "C" {
 #include "ds_base.h"
 #include "string_database.h"
 #include "hierarchy_index.h"
-#include "geometry.h"
+#include "ds_geometry.h"
 #include "ds_list.h"
 
 /********************************************************

@@ -193,8 +193,7 @@ struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct d
         ds_Assert(V3Length(shape->t_local.position) == 0.0f);
         ds_Assert(shape->t_local.rotation.w == 1.0f);
 		const struct bvhNode *node = cshape->mesh_bvh.bvh.pool.buf;
-		struct aabb bbox;
-		AabbRotate(&bbox, &node[cshape->mesh_bvh.bvh.bt.root].bbox, rot);
+		const struct aabb bbox = BboxRotate(node[cshape->mesh_bvh.bvh.bt.root].bbox, rot);
 		min = bbox.min;
 		max = bbox.max;
 	}

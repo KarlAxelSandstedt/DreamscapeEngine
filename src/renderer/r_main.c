@@ -239,6 +239,46 @@ static void ColorVerticesToView(void *vertex_data, const u64 vertex_count, const
 	}
 }
 
+/*
+ * Write the 12 edges of box as 24 line vertices (L_COLOR layout: position, color), the corners rotated by rotation.
+ * Return the bytes written: 24*L_COLOR_STRIDE, or 0 if bufsize is smaller.
+ */
+static u64 AabbTransformPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const m3 rotation, const v4 color)
+{
+	const u64 bytes_written = 24*L_COLOR_STRIDE;
+	if (bufsize < bytes_written)
+	{
+		return 0;
+	}
+
+	/* corner i takes the max on the axes whose bit is set in i; an edge joins corners one bit apart */
+	v3 corner[8];
+	for (u32 i = 0; i < 8; ++i)
+	{
+		const v3 c = V3((i & 1) ? box->max.x : box->min.x, (i & 2) ? box->max.y : box->min.y, (i & 4) ? box->max.z : box->min.z);
+		corner[i] = M3V3Mul(rotation, c);
+	}
+
+	static const u8 edge[12][2] = { {0,1}, {2,3}, {4,5}, {6,7}, {0,2}, {1,3}, {4,6}, {5,7}, {0,4}, {1,5}, {2,6}, {3,7} };
+	u8 *vertex = buf;
+	for (u32 e = 0; e < 12; ++e)
+	{
+		for (u32 k = 0; k < 2; ++k)
+		{
+			memcpy(vertex, corner + edge[e][k], sizeof(v3));
+			memcpy(vertex + sizeof(v3), &color, sizeof(v4));
+			vertex += L_COLOR_STRIDE;
+		}
+	}
+
+	return bytes_written;
+}
+
+static u64 AabbPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const v4 color)
+{
+	return AabbTransformPushLinesBuffered(buf, bufsize, box, M3Identity(), color);
+}
+
 static struct r_Mesh *DebugLinesMesh(struct arena *mem, const struct ds_Dynamics *pipeline, const v3f64 origin)
 {
 	ArenaPushRecord(mem);
@@ -368,7 +408,7 @@ static struct r_Mesh *bvh_Mesh(struct arena *mem, const struct bvh *bvh, const v
 	while (sc--)
 	{
 	    u32 i = stack[sc];
-		const u64 bytes_written = AabbTransformPushLinesBuffered(vertex_data, mem_left, &nodes[i].bbox, V3Zero(), rot, color);
+		const u64 bytes_written = AabbTransformPushLinesBuffered(vertex_data, mem_left, &nodes[i].bbox, rot, color);
 
         ds_Assert(bytes_written == 24*L_COLOR_STRIDE);
 		vertex_data += bytes_written;

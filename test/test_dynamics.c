@@ -4,7 +4,7 @@
 #include "ds_vector.h"
 #include "ds_quaternion.h"
 #include "collision.h"
-#include "geometry.h"
+#include "ds_geometry.h"
 
 /*
 Dynamics tests

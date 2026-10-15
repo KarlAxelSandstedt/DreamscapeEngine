@@ -44,7 +44,7 @@ typedef struct
 } ds_TransformWorld;
 
 #include "transform.h"
-#include "geometry.h"
+#include "ds_geometry.h"
 
 static inline ds_Transform ds_TransformIdentity(void)
 {

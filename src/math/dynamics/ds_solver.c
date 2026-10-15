@@ -213,8 +213,7 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
                 {
                     const u32 parent_index = node->bt_parent & BT_INDEX_MASK;
                     const struct bvhNode *parent = pipeline->dynamic_bvh.pool.buf + parent_index;
-                    struct aabb enlarged_proxy;
-                    AabbUnion(&enlarged_proxy, proxy, &dirty->bbox);
+                    const struct aabb enlarged_proxy = BboxUnion(*proxy, dirty->bbox);
                     if (AabbContains(&parent->bbox, &enlarged_proxy))
                     {
                         *proxy = enlarged_proxy;

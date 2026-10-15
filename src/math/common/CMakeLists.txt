@@ -9,7 +9,7 @@ add_library(ds_math STATIC
 	"${DS_INCLUDE_PATH}/ds_quaternion.h"
 	"${DS_INCLUDE_PATH}/ds_matrix.h"
 	"${DS_INCLUDE_PATH}/ds_math.h"
-	"${DS_INCLUDE_PATH}/geometry.h"
+	"${DS_INCLUDE_PATH}/ds_geometry.h"
 	"${DS_INCLUDE_PATH}/transform.h"
 	"${DS_INCLUDE_PATH}/ds_random.h"
 )

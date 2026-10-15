@@ -141,8 +141,6 @@ v3 		    SegmentBc(const struct segment *s, const f32 t);
 /* Return the segment resulting from transforming the given capsule. */
 struct segment  SegmentCapsuleTransform(const struct capsule *cap, const ds_Transform *t);
 
-/* Return the bounding box of the segment  */
-struct aabb     BboxSegment(const struct segment *s);
 
 /********************************** plane ***********************************/
 
@@ -187,33 +185,36 @@ static ds_ForceInline u32 PlaneSegmentTest(const struct plane *pl, const struct 
 
 /********************************** AABB ************************************/
 
-/* Return smallest AABB that contains both a and b  */
-void		AabbUnion(struct aabb *box_union, const struct aabb *a, const struct aabb *b);
-/* Return AABB of rotated AABB. */
-void		AabbRotate(struct aabb *dst, const struct aabb *src, const m3 rotation);
-/* dst = local translated by origin (f64), rounded outward to f32: dst contains the f64 box at any distance */
-void		AabbTranslateOutward(struct aabb *dst, const struct aabb *local, const v3f64 origin);
-/* Return 1 if a and b intersect, 0 otherwise  */
-u32 		AabbTest(const struct aabb *a, const struct aabb *b);
-/* Return 1 if a fully contains b, 0 otherwise  */
-u32 		AabbContains(const struct aabb *a, const struct aabb *b);
-/* Return 1 if a (extended with given margin) fully contains b, 0 otherwise  */
-u32 		AabbContainsMargin(const struct aabb *a, const struct aabb *b, const f32 margin);
-/* sets up vertex buffer to use with glDrawArrays. Returns number of bytes written. */
-u64 		AabbPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const v4 color);
-/* sets up vertex buffer to use with glDrawArrays. Returns number of bytes written. */
-u64 		AabbTransformPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const v3 translation, const m3 rotation, const v4 color);
-/* Return the smallest index of the aabb with the maximum side length */
-u32         AabbMaxAxis(const struct aabb a);
+/*
+ * Bbox* return a box by value; Aabb* test or translate boxes. Boxes are closed: they contain their boundary, and
+ * boxes that touch intersect.
+ */
 
-/* Return bounding box of a and b  */
-struct aabb	BboxUnion(const struct aabb a, const struct aabb b);
-/* Return bounding box of aabb a and point p  */
-struct aabb	BboxPointUnion(const struct aabb a, const v3 p);
-/* Return bounding box of triangle */
-struct aabb	BboxTriangle(const v3 p0, const v3 p1, const v3 p2);
-/* Return bounding box of the vertex set */
+/* Return the smallest box containing a and b */
+static ds_ForceInline struct aabb BboxUnion(const struct aabb a, const struct aabb b);
+/* Return the smallest box containing a and the point p */
+static ds_ForceInline struct aabb BboxPointUnion(const struct aabb a, const v3 p);
+/* Return the bounding box of the triangle p0 p1 p2 */
+static ds_ForceInline struct aabb BboxTriangle(const v3 p0, const v3 p1, const v3 p2);
+/* Return the bounding box of the segment */
+static ds_ForceInline struct aabb BboxSegment(const struct segment *s);
+/* Return the bounding box of p[0 .. count); count == 0: the zero box at the origin */
 struct aabb	BboxVertexSet(const v3 *p, const u32 count);
+/*
+ * Return a box that contains R x for every x in box (R = rotation): conservative, it covers this computation's
+ * rounding, so it bounds any shape bounded by box, rotated by R.
+ */
+static ds_ForceInline struct aabb BboxRotate(const struct aabb box, const m3 rotation);
+/* dst = local translated by origin (f64), rounded outward to f32: dst contains the f64 box at any distance */
+static ds_ForceInline void AabbTranslateOutward(struct aabb *dst, const struct aabb *local, const v3f64 origin);
+/* Return 1 if a and b intersect (touching included), otherwise 0 */
+static ds_ForceInline u32 AabbTest(const struct aabb *a, const struct aabb *b);
+/* Return 1 if a contains b, otherwise 0 */
+static ds_ForceInline u32 AabbContains(const struct aabb *a, const struct aabb *b);
+/* Return 1 if a, extended by margin on every side, contains b, otherwise 0 */
+static ds_ForceInline u32 AabbContainsMargin(const struct aabb *a, const struct aabb *b, const f32 margin);
+/* Return the axis with the largest side length (ties: the lowest axis) */
+static ds_ForceInline u32 AabbMaxAxis(const struct aabb a);
 
 /********************************* tri_mesh **********************************/
 
@@ -433,6 +434,112 @@ static ds_ForceInline u32 PlaneSegmentTest(const struct plane *pl, const struct 
 	const f32 d0 = PlanePointSignedDistance(pl, s->p[0]);
 	const f32 d1 = PlanePointSignedDistance(pl, s->p[1]);
 	return !((0.0f < d0 && 0.0f < d1) || (d0 < 0.0f && d1 < 0.0f));
+}
+
+/****************************** AABB: inline definitions *******************************/
+
+static ds_ForceInline struct aabb BboxUnion(const struct aabb a, const struct aabb b)
+{
+	const struct aabb bbox = { .min = V3Min(a.min, b.min), .max = V3Max(a.max, b.max) };
+	return bbox;
+}
+
+static ds_ForceInline struct aabb BboxPointUnion(const struct aabb a, const v3 p)
+{
+	const struct aabb bbox = { .min = V3Min(a.min, p), .max = V3Max(a.max, p) };
+	return bbox;
+}
+
+static ds_ForceInline struct aabb BboxTriangle(const v3 p0, const v3 p1, const v3 p2)
+{
+	const struct aabb bbox = { .min = V3Min(V3Min(p0, p1), p2), .max = V3Max(V3Max(p0, p1), p2) };
+	return bbox;
+}
+
+static ds_ForceInline struct aabb BboxSegment(const struct segment *s)
+{
+	const struct aabb bbox = { .min = V3Min(s->p[0], s->p[1]), .max = V3Max(s->p[0], s->p[1]) };
+	return bbox;
+}
+
+static ds_ForceInline struct aabb BboxRotate(const struct aabb box, const m3 rotation)
+{
+	/*
+	 * box = {c + h*s : s in [-1, 1]^3}; rotated, {R c + R (h*s)}: half widths |R| h around R c (|R| entrywise).
+	 * With u = eps/2, the roundings of c, h and the 3-term dot products move each component by less than about
+	 * 4u (|R| (|c| + h))_k; the slack is 16u of that, which also covers the last two roundings.
+	 */
+	const v3 x = V3Abs(V3(rotation.a11, rotation.a12, rotation.a13));
+	const v3 y = V3Abs(V3(rotation.a21, rotation.a22, rotation.a23));
+	const v3 z = V3Abs(V3(rotation.a31, rotation.a32, rotation.a33));
+
+	const v3 c = V3Scale(V3Add(box.min, box.max), 0.5f);
+	const v3 h = V3Scale(V3Sub(box.max, box.min), 0.5f);
+	const v3 a = V3Add(V3Abs(c), h);
+	const v3 hw = V3(V3Dot(x, h), V3Dot(y, h), V3Dot(z, h));
+	const v3 slack = V3Scale(V3(V3Dot(x, a), V3Dot(y, a), V3Dot(z, a)), 8.0f * F32_EPSILON);
+	const v3 r = V3Add(hw, slack);
+	const v3 c_rotated = M3V3Mul(rotation, c);
+	const struct aabb rotated = { .min = V3Sub(c_rotated, r), .max = V3Add(c_rotated, r) };
+	return rotated;
+}
+
+static ds_ForceInline void AabbTranslateOutward(struct aabb *dst, const struct aabb *local, const v3f64 origin)
+{
+	dst->min = V3F64DemoteDownwards(V3F64Add(origin, V3Promote(local->min)));
+	dst->max = V3F64DemoteUpwards(V3F64Add(origin, V3Promote(local->max)));
+}
+
+static ds_ForceInline u32 AabbTest(const struct aabb *a, const struct aabb *b)
+{
+	if (b->min.x > a->max.x || a->min.x > b->max.x) { return 0; }
+	if (b->min.y > a->max.y || a->min.y > b->max.y) { return 0; }
+	if (b->min.z > a->max.z || a->min.z > b->max.z) { return 0; }
+
+	return 1;
+}
+
+static ds_ForceInline u32 AabbContains(const struct aabb *a, const struct aabb *b)
+{
+	if (b->min.x < a->min.x) { return 0; }
+	if (b->min.y < a->min.y) { return 0; }
+	if (b->min.z < a->min.z) { return 0; }
+
+	if (b->max.x > a->max.x) { return 0; }
+	if (b->max.y > a->max.y) { return 0; }
+	if (b->max.z > a->max.z) { return 0; }
+
+	return 1;
+}
+
+static ds_ForceInline u32 AabbContainsMargin(const struct aabb *a, const struct aabb *b, const f32 margin)
+{
+	if (b->min.x < a->min.x - margin) { return 0; }
+	if (b->min.y < a->min.y - margin) { return 0; }
+	if (b->min.z < a->min.z - margin) { return 0; }
+
+	if (b->max.x > a->max.x + margin) { return 0; }
+	if (b->max.y > a->max.y + margin) { return 0; }
+	if (b->max.z > a->max.z + margin) { return 0; }
+
+	return 1;
+}
+
+static ds_ForceInline u32 AabbMaxAxis(const struct aabb a)
+{
+	const v3 size = V3Sub(a.max, a.min);
+	u32 axis = 0;
+	if (size.x < size.y)
+	{
+		axis = 1;
+	}
+
+	if (size.buf[axis] < size.z)
+	{
+		axis = 2;
+	}
+
+	return axis;
 }
 
 #ifdef __cplusplus
