@@ -315,7 +315,7 @@ void ds_TestMainCorrectness(void)
 	};
 
 	//run_suite(jobscheduler_correctness_suite, &env, 1);
-	//run_suite(THashMap_correctness_suite, &env, 1);
+	run_suite(THashMap_correctness_suite, &env, 1);
 	run_suite(base_correctness_suite, &env, 1);
 	run_suite(allocator_correctness_suite, &env, 1);
 	run_suite(container_correctness_suite, &env, 1);

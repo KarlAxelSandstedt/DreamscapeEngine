@@ -88,8 +88,9 @@ void ds_HashMapDealloc(struct ds_HashMap *map)
 	{
 		ds_Free(map->hash);
 		ds_Free(map->index);
-		map->heap_allocated = 0;
 	}
+	/* no stale pointers or lengths, as ds_PoolDealloc */
+	*map = (struct ds_HashMap) { .growable = map->growable };
 }
 
 void ds_HashMapFlush(struct ds_HashMap *map)
@@ -185,21 +186,20 @@ void ds_HashMapRemove(struct ds_HashMap *map, const u32 hash, const u32 index)
 	if (map->hash[h] == index)
 	{
 		map->hash[h] = map->index[index];
-	}
-	else
-	{
-		for (u32 i = map->hash[h]; i != HASH_NULL; i = ds_HashMapNext(map, i))
-		{
-			if (map->index[i] == index)
-			{
-				map->index[i] = map->index[index];	
-				break;
-			}
-		}
+		map->index[index] = HASH_NULL;
+		return;
 	}
 
-	/* Only for debug purposes  */
-	map->index[index] = HASH_NULL;
+	for (u32 i = map->hash[h]; i != HASH_NULL; i = ds_HashMapNext(map, i))
+	{
+		if (map->index[i] == index)
+		{
+			map->index[i] = map->index[index];
+			/* only when found: index may link another hash's chain */
+			map->index[index] = HASH_NULL;
+			return;
+		}
+	}
 }
 
 u32 ds_HashMapFirst(const struct ds_HashMap *map, const u32 hash)
@@ -211,4 +211,94 @@ u32 ds_HashMapNext(const struct ds_HashMap *map, const u32 index)
 {
 	ds_Assert(index < map->index_len);
 	return map->index[index];
+}
+
+/*
+ * THashMap: the bucket array; the lock-free operations are force-inlined in ds_hash_map.h. A node is
+ * removed in two steps (Michael): mark its own link (THASH_MARK), so nothing is linked past it any more,
+ * then swing the previous link past it; a search that meets a marked node finishes the second step. Every
+ * successful compare-exchange retags the link, so a walk that read a link before it changed (the node
+ * was removed, reused or relinked meanwhile) sees a different value on its re-check and restarts.
+ */
+u32 ds_THashMapAllocInternal(struct arena *mem, struct ds_THashState *state, const u32 hash_len)
+{
+	ds_Assert(hash_len && (hash_len >> 31) == 0);
+
+	*state = (struct ds_THashState) { 0 };
+	const u32 len = (u32) PowerOfTwoCeil(hash_len);
+	u64 *bucket = (mem)
+		? ArenaPushAligned(mem, len*sizeof(u64), sizeof(u64))
+		: ds_Alloc(len*sizeof(u64), sizeof(u64));
+	if (!bucket)
+	{
+		return 0;
+	}
+
+	state->a_bucket = bucket;
+	state->hash_len = len;
+	state->hash_mask = len - 1;
+	state->heap_allocated = (mem == NULL);
+	ds_THashMapFlushInternal(state);
+	return 1;
+}
+
+void ds_THashMapDeallocInternal(struct ds_THashState *state)
+{
+	if (state->heap_allocated)
+	{
+		ds_Free(state->a_bucket);
+	}
+	*state = (struct ds_THashState) { 0 };
+}
+
+void ds_THashMapFlushInternal(struct ds_THashState *state)
+{
+	for (u32 i = 0; i < state->hash_len; ++i)
+	{
+		AtomicStoreRlx64(state->a_bucket + i, THASH_NULL);
+	}
+}
+
+void ds_THashMapSerializeInternal(struct ss *ss, const struct ds_THashState *state)
+{
+	ds_Assert(ss->bit_index % 8 == 0);
+	ds_Assert(sizeof(u32) + (u64) state->hash_len*sizeof(u64) <= ss_BytesLeft(ss));
+
+	ss_WriteU32Le(ss, state->hash_len);
+	ss_WriteU64LeN(ss, state->a_bucket, state->hash_len);
+}
+
+u32 ds_THashMapTryDeserializeInternal(struct arena *mem, struct ss *ss, struct ds_THashState *state)
+{
+	ds_Assert(ss->bit_index % 8 == 0);
+
+	*state = (struct ds_THashState) { 0 };
+	if (ss_BytesLeft(ss) < sizeof(u32))
+	{
+		return 0;
+	}
+
+	const u64 bit_index = ss->bit_index;
+	const u32 hash_len = ss_ReadU32Le(ss);
+	if (!PowerOfTwoCheck(hash_len) || (hash_len >> 31) || hash_len > ss_BytesLeft(ss) / sizeof(u64))
+	{
+		ss->bit_index = bit_index;
+		return 0;
+	}
+
+	u64 *bucket = (mem)
+		? ArenaPushAligned(mem, hash_len*sizeof(u64), sizeof(u64))
+		: ds_Alloc(hash_len*sizeof(u64), sizeof(u64));
+	if (!bucket)
+	{
+		ss->bit_index = bit_index;
+		return 0;
+	}
+
+	ss_ReadU64LeN(bucket, ss, hash_len);
+	state->a_bucket = bucket;
+	state->hash_len = hash_len;
+	state->hash_mask = hash_len - 1;
+	state->heap_allocated = (mem == NULL);
+	return 1;
 }

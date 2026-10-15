@@ -34,30 +34,30 @@ struct ds_Structure
     u64     key;
 };
 
-u32 u64Hash(const u64 *ptr)
+static u32 u64Hash(const u64 key)
 {
-    return (u32) XXH3_64bits(ptr, sizeof(u64)); 
+    return (u32) XXH3_64bits(&key, sizeof(u64));
 }
 
-u32 u64Equivalence(const u64 *a, const u64 *b)
+static u32 ds_StructureKeyEqual(const void *node, const void *key)
 {
-    return *a == *b;
+    return ((const struct ds_Structure *) node)->key == *(const u64 *) key;
 }
 
 DEFINE_TPOOL(ds_Structure);
-THASH_DECLARE(ds_Structure, u64)
-THASH_DEFINE(ds_Structure, key, u64, u64Hash, u64Equivalence)
+DEFINE_THASH(ds_Structure);
 
-static struct ds_StructureTHashMap g_tmap;
+static ds_THashMap(ds_Structure) g_tmap;
 static ds_TPool(ds_Structure) *g_tpool;
 static u32 first = 1;
+static u32 g_lookup_mismatches = 0;
 
 void *ds_StructureTHashMapTestInit(void)
 {
     if (ds_ThreadSelfIndex() == 0)
     {
         AtomicStoreRel64(&g_tpool, malloc(sizeof(ds_TPool(ds_Structure))));
-        g_tmap = ds_StructureTHashMapAlloc(NULL, g_tpool, 4096);
+        ds_THashMapAlloc(NULL, g_tmap, g_tpool, 4096);
     }
 
     return &g_tpool;
@@ -73,13 +73,17 @@ void ds_StructureTHashMapTestReset(void *args)
             ds_TPoolDealloc(*pool);
         }
         first = 0;
-
-        for (u32 i = 0; i < g_tmap.hash_len; ++i)
+        if (AtomicLoadRlx32(&g_lookup_mismatches))
         {
-            ds_Assert((AtomicLoadRlx64(g_tmap.a_hash + i) & THASH_NEXT_MASK) == THASH_NULL);
+            Log(T_SYSTEM, S_ERROR, "THashMap performance test: %u lookups failed", AtomicLoadRlx32(&g_lookup_mismatches));
+        }
+
+        for (u32 i = 0; i < g_tmap.state.hash_len; ++i)
+        {
+            ds_Assert(AtomicLoadRlx64(g_tmap.state.a_bucket + i) == THASH_NULL);
         }
         ds_TPoolAlloc(*pool, g_arch_config->logical_core_count, 1);
-        ds_StructureTHashMapFlush(&g_tmap);
+        ds_THashMapFlush(g_tmap);
     }
 }
 
@@ -90,32 +94,39 @@ void ds_StructureTHashMapTestFree(void *args)
 	    ds_TPool(ds_Structure) *pool = (ds_TPool(ds_Structure) *) AtomicLoadAcq64(&g_tpool);
         g_tpool = NULL;
         ds_TPoolDealloc(*pool);
-        ds_StructureTHashMapDealloc(&g_tmap);
+        ds_THashMapDealloc(g_tmap);
         free(pool);
         first = 1;
     }
 }
 
+/* every worker adds, looks up and removes its own 10000 nodes; the map is shared */
 void ds_StructureTHashMapAddAllRemoveAllTest(void *null)
 {
 	ds_TPool(ds_Structure) *pool = (ds_TPool(ds_Structure) *) AtomicLoadAcq64(&g_tpool);
     const u32 count = 10000;
-    u32 indices[10000]; 
-    const u32 t = ds_ThreadSelfIndex();
+    u32 indices[10000];
     for (u32 i = 0; i < count; ++i)
     {
         struct slot slot = ds_TPoolIncrement(*pool);
         indices[i] = slot.index;
         struct ds_Structure *n = slot.address;
-        n->key = indices[i]; 
-        AtomicStoreRlx64(&n->a_hash_node, 0);
-        ds_StructureTHashMapAdd(&g_tmap, n, indices[i]);
+        n->key = indices[i];
+        ds_THashMapAdd(g_tmap, u64Hash(n->key), indices[i]);
     }
+
+    u32 mismatches = 0;
+    for (u32 i = 0; i < count; ++i)
+    {
+        const u64 key = indices[i];
+        mismatches += (ds_THashMapLookup(g_tmap, u64Hash(key), &key, ds_StructureKeyEqual).index != indices[i]);
+    }
+    /* keeps the lookups in optimized builds; checked by the reset */
+    AtomicFetchAddRlx32(&g_lookup_mismatches, mismatches);
 
     for (u32 i = 0; i < count; ++i)
     {
-        const u64 key = indices[i]; 
-        ds_StructureTHashMapRemove(&g_tmap, &key);
+        ds_THashMapRemove(g_tmap, u64Hash(indices[i]), indices[i]);
         ds_TPoolRemove(*pool, indices[i]);
     }
 }
@@ -144,9 +155,130 @@ struct test_PerformanceParallel THashMap_parallel_test[] =
     },
 };
 
+#define THASH_TEST_COUNT 1000
+
+static u32 THashMapTestMatches(ds_THashMap(ds_Structure) *map, const u32 *index, const u8 *alive)
+{
+    for (u32 i = 0; i < THASH_TEST_COUNT; ++i)
+    {
+        const u64 key = 7*(u64) i;
+        const struct slot slot = ds_THashMapLookup(*map, u64Hash(key), &key, ds_StructureKeyEqual);
+        if ((alive[i]) ? (slot.index != index[i] || ((struct ds_Structure *) slot.address)->key != key) : (slot.address != NULL))
+        {
+            return 0;
+        }
+        /* a key never added */
+        const u64 missing = key + 1;
+        if (ds_THashMapLookup(*map, u64Hash(missing), &missing, ds_StructureKeyEqual).address != NULL)
+        {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/*
+ * Single thread, few buckets (long chains): adds, lookups, removes (of nodes not in the map too), re-adds
+ * of reused slots; serialize round trip over the same pool (LE); corrupt hash_len and truncated streams
+ * fail and keep the stream position; flush; dealloc leaves the map empty.
+ */
+static struct test_Output THashMapSerialTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    ds_TPool(ds_Structure) pool;
+    ds_TPoolAlloc(pool, g_arch_config->logical_core_count, 64);
+    ds_THashMap(ds_Structure) map;
+    TEST_EQUAL(1, ds_THashMapAlloc(env->mem_1, map, &pool, 60));
+    TEST_EQUAL(64, map.state.hash_len);
+
+    u32 *index = ArenaPush(env->mem_2, THASH_TEST_COUNT*sizeof(u32));
+    u8 *alive = ArenaPushZero(env->mem_2, THASH_TEST_COUNT);
+    for (u32 i = 0; i < THASH_TEST_COUNT; ++i)
+    {
+        const struct slot slot = ds_TPoolAdd(pool);
+        struct ds_Structure *n = slot.address;
+        n->key = 7*(u64) i;
+        ds_THashMapAdd(map, u64Hash(n->key), slot.index);
+        index[i] = slot.index;
+        alive[i] = 1;
+    }
+    TEST_TRUE(THashMapTestMatches(&map, index, alive));
+
+    for (u32 i = 0; i < THASH_TEST_COUNT; i += 2)
+    {
+        const u64 key = 7*(u64) i;
+        ds_THashMapRemove(map, u64Hash(key), index[i]);
+        /* no longer in the map: a no-op */
+        ds_THashMapRemove(map, u64Hash(key), index[i]);
+        ds_TPoolRemove(pool, index[i]);
+        alive[i] = 0;
+    }
+    TEST_TRUE(THashMapTestMatches(&map, index, alive));
+
+    /* the free slots come back: their links keep counting tags */
+    for (u32 i = 0; i < THASH_TEST_COUNT; i += 4)
+    {
+        const struct slot slot = ds_TPoolAdd(pool);
+        struct ds_Structure *n = slot.address;
+        n->key = 7*(u64) i;
+        ds_THashMapAdd(map, u64Hash(n->key), slot.index);
+        index[i] = slot.index;
+        alive[i] = 1;
+    }
+    TEST_TRUE(THashMapTestMatches(&map, index, alive));
+
+    const u64 size = ds_THashMapSerializeSize(map);
+    TEST_EQUAL(sizeof(u32) + 64*sizeof(u64), size);
+    struct ss ss = ss_Alloc(env->mem_1, size);
+    TEST_NOT_EQUAL(NULL, ss.buf);
+    ds_THashMapSerialize(&ss, map);
+    TEST_EQUAL(8*size, ss.bit_index);
+    TEST_EQUAL(64, ss.buf[0]);
+    ss.bit_index = 0;
+    ds_THashMap(ds_Structure) read;
+    TEST_EQUAL(1, ds_THashMapTryDeserialize(env->mem_3, &ss, read, &pool));
+    TEST_EQUAL(8*size, ss.bit_index);
+    TEST_TRUE(read.pool == &pool && read.state.hash_len == map.state.hash_len && read.state.hash_mask == map.state.hash_mask);
+    TEST_TRUE(THashMapTestMatches(&read, index, alive));
+
+    struct ss cut = ss_Buffered(ss.buf, size - 1);
+    TEST_EQUAL(0, ds_THashMapTryDeserialize(env->mem_3, &cut, read, &pool));
+    TEST_EQUAL(0, cut.bit_index);
+    TEST_EQUAL(NULL, read.state.a_bucket);
+    const u32 corrupt_hash_len[] = { 0, 63, 0x80000000 };
+    for (u32 c = 0; c < sizeof(corrupt_hash_len) / sizeof(corrupt_hash_len[0]); ++c)
+    {
+        ss.bit_index = 0;
+        ss_WriteU32Le(&ss, corrupt_hash_len[c]);
+        ss.bit_index = 0;
+        TEST_EQUAL(0, ds_THashMapTryDeserialize(env->mem_3, &ss, read, &pool));
+        TEST_EQUAL(0, ss.bit_index);
+    }
+
+    ds_THashMapFlush(map);
+    for (u32 i = 0; i < THASH_TEST_COUNT; ++i)
+    {
+        alive[i] = 0;
+    }
+    TEST_TRUE(THashMapTestMatches(&map, index, alive));
+
+    ds_THashMapDealloc(map);
+    TEST_TRUE(map.state.a_bucket == NULL && map.state.hash_len == 0);
+    ds_TPoolDealloc(pool);
+	return output;
+}
+
+static struct test_Output (*THashMap_tests[])(struct test_Environment *) =
+{
+    THashMapSerialTest,
+};
+
 struct suite_Correctness storage_THashMap_correctness_suite =
 {
-    0
+	.id = "THashMap",
+	.unit_test = THashMap_tests,
+	.unit_test_count = sizeof(THashMap_tests) / sizeof(THashMap_tests[0]),
 };
 
 struct suite_Performance storage_THashMap_performance_suite =
@@ -162,6 +294,3 @@ struct suite_Performance storage_THashMap_performance_suite =
 
 struct suite_Performance *THashMap_performance_suite = &storage_THashMap_performance_suite;
 struct suite_Correctness *THashMap_correctness_suite = &storage_THashMap_correctness_suite;
-
-
-

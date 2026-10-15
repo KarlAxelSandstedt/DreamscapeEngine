@@ -17,6 +17,16 @@
 ==========================================================================
 */
 
+/*
+ds_hash_map.h
+=============
+Hash maps from a 32-bit hash to indices of the caller's storage; the caller compares the keys.
+
+Contents (in this order):
+    ds_HashMap  hash -> chain of indices (u32 arrays), for pools and arrays; single-threaded, serializable.
+    THashMap    ds_THashMap(T): the same, lock-free and intrusive, over the nodes of a ds_TPool(T).
+*/
+
 #ifndef __DS_HASH_MAP_H__
 #define __DS_HASH_MAP_H__
 
@@ -31,9 +41,16 @@ extern "C" {
 
 /*
 ds_HashMap
-==========
-Hash map from a hash to a chain of indices. Users dereference the indices to compare the actual keys.
-hash_len is a power of two and index_len >= hash_len.
+----------
+    struct ds_HashMap map = ds_HashMapAlloc(NULL, 256, 256, GROWABLE);
+    ds_HashMapAdd(&map, Utf8Hash(id), index);
+    for (u32 i = ds_HashMapFirst(&map, Utf8Hash(id)); i != HASH_NULL; i = ds_HashMapNext(&map, i))
+        if (Utf8Equivalence(id, nodes[i].id)) { ... }
+    ds_HashMapRemove(&map, Utf8Hash(id), index);
+
+hash[hash & hash_mask] heads a chain linked through index[], so an index is in at most one chain at a
+time; hash_len is a power of two and never changes, index_len >= hash_len grows (growable maps) to fit the
+largest index added. Not thread-safe.
 */
 
 struct ds_HashMap
@@ -47,434 +64,296 @@ struct ds_HashMap
 	u32		            heap_allocated;	/* hash and index are ds_Alloc blocks */
 };
 
-/* Allocate a map with at least the given lengths (rounded up). On failure, an empty map is returned. */
+/*
+Return an empty map on mem (fixed; growable must be 0) or on the heap (mem == NULL): hash_len (> 0, < 2^31)
+rounded up to a power of two, index_len (> 0) raised to at least that. On failure, a map with hash NULL.
+*/
 struct ds_HashMap	ds_HashMapAlloc(struct arena *mem, const u32 hash_len, const u32 index_len, const u32 growable);
 /*
- * ds_HashMapAlloc with exact lengths and uncleared memory. Used by deserialization: the hash array
- * is only valid for the hash_len it was built with.
- */
+ds_HashMapAlloc with exact lengths (hash_len a power of two <= index_len < 2^31) and both arrays
+uninitialized: for filling them by hand, as deserialization does.
+*/
 struct ds_HashMap	ds_HashMapAllocEx(struct arena *mem, const u32 hash_len, const u32 index_len, const u32 growable);
-/* Free the map's heap memory. */
+/* Free a heap map's memory (an arena map's stays with the arena); the map becomes empty (hash NULL). */
 void		        ds_HashMapDealloc(struct ds_HashMap *map);
 /* Remove all (hash, index) pairs. */
 void		        ds_HashMapFlush(struct ds_HashMap *map);
-/* Return the required size when serializing the map. */
+/* Bytes ds_HashMapSerialize writes. */
 u64                 ds_HashMapSerializeSize(const struct ds_HashMap *map);
-/* Serialize the map. WARNING: Assumes map fits in the stream. */
+/*
+Write the map to ss (at a byte boundary; it must fit: ds_HashMapSerializeSize). Format (LE): u32 hash_len,
+u32 index_len, the hash array, the index array.
+*/
 void 		        ds_HashMapSerialize(struct ss *ss, const struct ds_HashMap *map);
-/* Returns 1 on success and 0 on failure. */
+/*
+Read a map from ss into mem (fixed) or the heap (mem == NULL; growable allowed). Returns 1 on success; 0 if
+the memory can't be allocated or ss holds no valid map (map has hash NULL, ss's position unchanged).
+*/
 u32                 ds_HashMapTryDeserialize(struct arena *mem, struct ss *ss, struct ds_HashMap *map, const u32 growable);
-/* Add the (hash, index) pair. Returns 1 on success and 0 if index doesn't fit a non-growable map. */
+/*
+Add the (hash, index) pair; index (< 2^31) must not be in the map. Returns 1 on success, 0 if index >=
+index_len in a fixed map.
+*/
 u32		            ds_HashMapAdd(struct ds_HashMap *map, const u32 hash, const u32 index);
-/* Remove the (hash, index) pair; no-op if it isn't in the map. */
+/* Remove the (hash, index) pair (index < index_len); no-op if it isn't in the map, also under another hash. */
 void		        ds_HashMapRemove(struct ds_HashMap *map, const u32 hash, const u32 index);
 /* Return the first index in the hash's chain, or HASH_NULL. */
 u32		            ds_HashMapFirst(const struct ds_HashMap *map, const u32 hash);
-/* Return the next index in the chain, or HASH_NULL. */
+/* Return the next index in the chain after index, or HASH_NULL. */
 u32		            ds_HashMapNext(const struct ds_HashMap *map, const u32 index);
 
 /*
-ThashMap
-========
-Intrusive hash map with thread-safe operations that can run concurrently. The hash
-map assumes that the underlying storage is a TPool. The implementation is based on
-Maged M. Michael's paper "High Performance Dynamic Lock-Free Hash Tables and List-Based Sets".
+THashMap
+--------
+Lock-free intrusive map from a 32-bit hash to the nodes of a ds_TPool(T): adds, removes and lookups may run
+on any threads at the same time (Maged M. Michael, "High Performance Dynamic Lock-Free Hash Tables and
+List-Based Sets"). As with ds_HashMap, the caller hashes the key; a node is added and removed by its pool
+index, and only Lookup compares keys, through the caller's equal function.
 
-::: Usage and Documentation :::
-
-To declare/define the THashMap functions a struct, say ds_Struct, name and add
-the following in the definition of ds_Struct
-
-    struct ds_Struct
+    struct node { TPOOL_NODE; THASH_NODE; u64 key; };
+    DEFINE_TPOOL(node);
+    DEFINE_THASH(node);
+    static u32 NodeKeyEqual(const void *node, const void *key)
     {
-        ...
-        THASH_NODE;
-        ...
-        key_Type    key_name;    
-    };
+        return ((const struct node *) node)->key == *(const u64 *) key;
+    }
 
-and implement the functinos
+    ds_THashMap(node) map;
+    ds_THashMapAlloc(NULL, map, &pool, 4096);
+    ds_THashMapAdd(map, hash, slot.index);                              (any thread)
+    const struct slot found = ds_THashMapLookup(map, hash, &key, NodeKeyEqual);   (any thread)
+    ds_THashMapRemove(map, hash, slot.index);                           (any thread)
+    ds_THashMapDealloc(map);
 
-u32 key_TypePtrHashFunction(const key_Type *key)
-{
-    // Hash key
-}
+struct T contains THASH_NODE (its field belongs to the map and needs no initialization). DEFINE_THASH(T)
+defines ds_THashMap(T) (once, after DEFINE_TPOOL(T)); the macros below work on any THashMap type.
 
-u32 key_TypePtrCmpFunction(const key_Type *keyA, const key_Type *keyB)
-{
-    // Return 1 if keyA and keyB are equivalent, otherwise return 0.
-}
+The macros (map is a ds_THashMap(T) lvalue; arguments may be evaluated more than once; Alloc, Dealloc, Flush,
+Serialize and TryDeserialize only while no other thread uses the map):
 
-and write
+    // Set up hash_len (> 0, < 2^31; rounded up to a power of two) empty buckets over pool (a ds_TPool(T) *),
+    // on mem (fixed) or the heap (mem == NULL). Returns 1, or 0 if the memory can't be allocated (the map
+    // is then empty: state.a_bucket NULL).
+    u32             ds_THashMapAlloc(mem, map, pool, hash_len)
 
-    THASH_DECLARE(ds_Struct, key_Type)
-    THASH_DEFINE(ds_Struct, key_name, key_Type, key_TypePtrHashFunction, key_TypePtrCmpFunction) 
+    // Free a heap map's buckets (an arena map's stay with the arena); the map becomes empty. The nodes stay
+    // in the pool.
+    void            ds_THashMapDealloc(map)
 
-at the appropriate places. THASH_DECLARE defines the ds_StructTHashMap struct and
-the ds_StructTHashMap*** functions and THASH_DEFINE generates the implementations
-of each function. The functions generated are the following:
+    // Empty every bucket.
+    void            ds_THashMapFlush(map)
 
-    // Allocate hash map on heap if mem == NULL, otherwise push memory onto arena.
-    // On failure, returns { 0 }.
-    struct ds_StructTHashMap ds_StructTHashMapAlloc(struct arena *mem, 
-                                                    ds_TPool(ds_Structure) *pool,
-                                                    const u32 hash_len)
+    // Add pool slot index (< 2^31) under hash. index must not be in the map, and the node's key in no
+    // other node (Lookup would return either).
+    void            ds_THashMapAdd(map, hash, index)
 
-    // Free hash map memory
-    void                     ds_StructTHashMapDealloc(struct ds_StructTHashMap *map)
+    // Return { address, index } of a node under hash that equal(node, key) accepts, or { NULL, U32_MAX }.
+    // equal may run on a node another thread is removing or reusing; it must only read the node (its
+    // answer is then discarded).
+    struct slot     ds_THashMapLookup(map, hash, key, equal)
 
-    // Flush/reset the hash map.
-    void		             ds_StructTHashMapFlush(struct ds_StructTHashMap *map);
+    // Remove the node index added under hash; no-op if it isn't in the map. Returns once the node is
+    // unlinked, so the caller may then give it back to the pool (springclean 81: to be verified by stress
+    // tests).
+    void            ds_THashMapRemove(map, hash, index)
 
-    // Serialize hash map into stream.
-    void                     ds_StructTHashMapSerialize(struct ss *ss, const struct ds_StructTHashMap *map);
+    // Bytes ds_THashMapSerialize writes.
+    u64             ds_THashMapSerializeSize(map)
 
-    // Deserialize and construct hash_map on arena if defined, otherwise alloc on
-    // heap. On failure, returns { 0 }.
-    struct ds_StructTHashMap ds_StructTHashMapDeserialize(struct arena *mem, struct ss *ss);
+    // Write the buckets to ss (at a byte boundary; they must fit). Format (LE): u32 hash_len, the u64
+    // buckets. The nodes' links go with their pool.
+    void            ds_THashMapSerialize(ss, map)
 
-    //Return slot with given key if found. Otherwise return (NULL, U32_MAX)
-    struct slot              ds_StructTHashMapLookup(struct ds_StructTHashMap *map, const key_Type *key)
-
-
-    // Add the node (at the given index, with a unique key) to the hash map. 
-    // NOTE: The node's key must be unique.
-    void                     ds_StructTHashMapAdd(struct ds_StructTHashMap *map, 
-                                                  struct ds_Structure *node, 
-                                                  const u32 index)
-
-    // Remove node with given key from HashMap. If no such node is found, no-op.
-    void                     ds_StructTHashMapRemove(struct ds_StructTHashMap *map, const key_Type *key)
-
-    //TODO Yield/Backoff technique performance boost????
-    //
-    // Internal function for looking up a node with the given key. If a snapshot in
-    // time is found where prev->cur, and cur contains the given key, the function
-    // returns 1 and sets teh following inputs:
-    //
-    //      *a_prev         = &n_prev->a_node_hash
-    //      *snapshot_prev  =  n_prev->a_node_hash (snapshot)
-    //      *snapshot_cur   =   n_cur->a_node_hash (snapshot)
-    //      *n_cur          = NextNode(*snapshot_prev)
-    //
-    // If no snapshot is found, the function returns 0.
-    u32                      ds_StructTHashMapFindSnapshot(u64 **a_prev, 
-                                                           u64 *snapshot_prev, 
-                                                           u64 *snapshot_cur, 
-                                                           struct ds_Struct **n_cur, 
-                                                           struct ds_StructTHashMap *map, 
-                                                           const key_Type *key)
-
-
-::: Internals :::
-
+    // Read the buckets from ss over pool (which must hold the same nodes) into mem (fixed) or the heap
+    // (mem == NULL). Returns 1; 0 if the memory can't be allocated or ss holds no valid map (hash_len 0,
+    // not a power of two, or truncated): the map is empty, ss's position unchanged.
+    u32             ds_THashMapTryDeserialize(mem, ss, map, pool)
 */
 
-#define THASH_NULL      THASH_NEXT_MASK
-/* [ABATag(32) | MarkedForRemoval(1) | Index(31) ] */
-#define THASH_NODE      u64 a_hash_node
+/* a node's link, and a bucket: [tag (32) | removed mark (1) | next index (31)], THASH_NULL ends a chain */
+#define THASH_NODE          u64 a_thash_next
+#define THASH_NULL          ((u64) 0x000000007fffffff)
 
-#define THASH_TAG_INCREMENT ((u64) 0x0000000100000000)
-#define THASH_TAG_MASK      ((u64) 0xffffffff00000000)
-#define THASH_MARK_MASK     ((u64) 0x0000000080000000)
-#define THASH_NEXT_MASK     ((u64) 0x000000007fffffff)
+/* Internal: the type-independent part of a THashMap. */
+struct ds_THashState
+{
+	u64 *	a_bucket;
+	u32	hash_len;
+	u32	hash_mask;
+	u32	heap_allocated;	/* a_bucket is a ds_Alloc block */
+};
 
-#define THASH_TAG_FIELD_INCREMENTED(hash_node)      \
-                    ((THASH_TAG_MASK & hash_node)   \
-                    + THASH_TAG_INCREMENT)
+#define ds_THashMap(T) ds_THashMap_ ## T
 
-#define THASH_DECLARE(struct_name, key_Type)                \
-        THASH_STRUCT_DEFINE(struct_name);                   \
-        THASH_ALLOC_DECLARE(struct_name);                   \
-        THASH_DEALLOC_DECLARE(struct_name);                 \
-        THASH_FLUSH_DECLARE(struct_name);                   \
-        THASH_SERIALIZE_DECLARE(struct_name);               \
-        THASH_DESERIALIZE_DECLARE(struct_name);             \
-        THASH_FIND_SNAPSHOT_DECLARE(struct_name, key_Type); \
-        THASH_LOOKUP_DECLARE(struct_name, key_Type);        \
-        THASH_ADD_DECLARE(struct_name);                     \
-        THASH_REMOVE_DECLARE(struct_name, key_Type);
-
-#define THASH_DEFINE(struct_name, key_name, key_Type, key_TypePtrHashFunction, key_TypePtrCmpFunction)              \
-        THASH_ALLOC_DEFINE(struct_name)                                                                             \
-        THASH_DEALLOC_DEFINE(struct_name)                                                                           \
-        THASH_FLUSH_DEFINE(struct_name)                                                                             \
-        THASH_SERIALIZE_DEFINE(struct_name)                                                                         \
-        THASH_DESERIALIZE_DEFINE(struct_name)                                                                       \
-        THASH_FIND_SNAPSHOT_DEFINE(struct_name, key_name, key_Type, key_TypePtrHashFunction, key_TypePtrCmpFunction)\
-        THASH_LOOKUP_DEFINE(struct_name, key_Type)                                                                  \
-        THASH_ADD_DEFINE(struct_name, key_name, key_TypePtrHashFunction)                                            \
-        THASH_REMOVE_DEFINE(struct_name, key_Type) 
-
-#define THASH_STRUCT_DEFINE(struct_name)        \
-struct struct_name ## THashMap                  \
+#define DEFINE_THASH(T)                         \
+typedef struct ds_THashMap(T)                   \
 {                                               \
-    ds_TPool(struct_name) *         pool;       \
-    u64 *                           a_hash;     \
-    u32                             hash_len;   \
-    u32                             hash_mask;  \
-    u32                             heap_allocated; \
+	struct ds_THashState	state;              \
+	ds_TPool(T) *		pool;                   \
+} ds_THashMap(T)
+
+/* Internal: see the macros above. */
+u32  ds_THashMapAllocInternal(struct arena *mem, struct ds_THashState *state, const u32 hash_len);
+void ds_THashMapDeallocInternal(struct ds_THashState *state);
+void ds_THashMapFlushInternal(struct ds_THashState *state);
+void ds_THashMapSerializeInternal(struct ss *ss, const struct ds_THashState *state);
+u32  ds_THashMapTryDeserializeInternal(struct arena *mem, struct ss *ss, struct ds_THashState *state);
+static ds_ForceInline u32 ds_THashFindInternal(u64 **a_prev, u64 *prev, u64 *cur, u32 *found, const struct ds_THashState *state, const struct ds_TPoolState *pool, void *const *block, const u64 slot_size, const u64 link_offset, const u32 hash, const u32 index, const void *key, u32 (*equal)(const void *, const void *));
+static ds_ForceInline void ds_THashMapAddInternal(const struct ds_THashState *state, const struct ds_TPoolState *pool, void *const *block, const u64 slot_size, const u64 link_offset, const u32 hash, const u32 index);
+static ds_ForceInline struct slot ds_THashMapLookupInternal(const struct ds_THashState *state, const struct ds_TPoolState *pool, void *const *block, const u64 slot_size, const u64 link_offset, const u32 hash, const void *key, u32 (*equal)(const void *, const void *));
+static ds_ForceInline void ds_THashMapRemoveInternal(const struct ds_THashState *state, const struct ds_TPoolState *pool, void *const *block, const u64 slot_size, const u64 link_offset, const u32 hash, const u32 index);
+
+/* Internal: byte offset of the link in T (a constant; never reads the pool, see ds_PoolSlotOffset). */
+#define ds_THashLinkOffset(map)	((u64) &((1 ? NULL : (map).pool->block[0])->a_thash_next))
+
+#define ds_THashMapPoolArgs(map)                                                                        \
+	&(map).pool->state, (void *const *) (map).pool->block, sizeof((map).pool->block[0][0]), ds_THashLinkOffset(map)
+
+#define ds_THashMapAlloc(mem, map, __pool, hash_len)                                                    \
+	((map).pool = (__pool), ds_THashMapAllocInternal((mem), &(map).state, (hash_len)))
+
+#define ds_THashMapDealloc(map)	ds_THashMapDeallocInternal(&(map).state)
+#define ds_THashMapFlush(map)	ds_THashMapFlushInternal(&(map).state)
+
+#define ds_THashMapAdd(map, hash, index)                                                                \
+	ds_THashMapAddInternal(&(map).state, ds_THashMapPoolArgs(map), (hash), (index))
+
+#define ds_THashMapLookup(map, hash, key, equal)                                                        \
+	ds_THashMapLookupInternal(&(map).state, ds_THashMapPoolArgs(map), (hash), (key), (equal))
+
+#define ds_THashMapRemove(map, hash, index)                                                             \
+	ds_THashMapRemoveInternal(&(map).state, ds_THashMapPoolArgs(map), (hash), (index))
+
+#define ds_THashMapSerializeSize(map)	(sizeof(u32) + (u64) (map).state.hash_len*sizeof(u64))
+#define ds_THashMapSerialize(ss, map)	ds_THashMapSerializeInternal((ss), &(map).state)
+#define ds_THashMapTryDeserialize(mem, ss, map, __pool)                                                 \
+	((map).pool = (__pool), ds_THashMapTryDeserializeInternal((mem), (ss), &(map).state))
+
+/******************************** THashMap inline definitions ********************************/
+
+#define THASH_NEXT_MASK     ((u64) 0x000000007fffffff)
+#define THASH_MARK          ((u64) 0x0000000080000000)
+#define THASH_TAG_MASK      ((u64) 0xffffffff00000000)
+#define THASH_TAG_ONE       ((u64) 0x0000000100000000)
+/* link value with the tag incremented: a changed link never compares equal to an old snapshot (no ABA) */
+#define THASH_RETAG(link)   (((link) & THASH_TAG_MASK) + THASH_TAG_ONE)
+
+static ds_ForceInline u64 *ds_THashLinkInternal(const struct ds_TPoolState *pool, void *const *block, const u32 index, const u64 slot_size, const u64 link_offset)
+{
+	return (u64 *) (ds_TPoolAddressInternal(pool, block, index, slot_size) + link_offset);
 }
 
-#define THASH_ALLOC_DECLARE(struct_name)                                                                \
-struct struct_name ## THashMap                                                                          \
-struct_name ## THashMapAlloc(struct arena *mem, ds_TPool(struct_name) *pool, const u32 hash_len)
+/*
+ * Walk the bucket of hash for the node index (equal == NULL) or a node equal() accepts, unlinking the
+ * removed (marked) nodes passed. Found: returns 1 with *a_prev the link that points at it, *prev that
+ * link's value, *cur the node's own link value and *found its index; else 0. A link that changed under
+ * the walk restarts it from the bucket.
+ */
+static ds_ForceInline u32 ds_THashFindInternal(u64 **a_prev, u64 *prev, u64 *cur, u32 *found, const struct ds_THashState *state, const struct ds_TPoolState *pool, void *const *block, const u64 slot_size, const u64 link_offset, const u32 hash, const u32 index, const void *key, u32 (*equal)(const void *, const void *))
+{
+try_again:
+	*a_prev = state->a_bucket + (hash & state->hash_mask);
+	*prev = AtomicLoadAcq64(*a_prev);
+	while ((*prev & THASH_NEXT_MASK) != THASH_NULL)
+	{
+		const u32 i = (u32) (*prev & THASH_NEXT_MASK);
+		u64 *a_cur = ds_THashLinkInternal(pool, block, i, slot_size, link_offset);
+		*cur = AtomicLoadAcq64(a_cur);
+		/* prev was marked, relinked or reused since we read it: cur may not follow it */
+		if (AtomicLoadAcq64(*a_prev) != *prev)
+		{
+			goto try_again;
+		}
 
-#define THASH_DEALLOC_DECLARE(struct_name)                          \
-void                                                                \
-struct_name ## THashMapDealloc(struct struct_name ## THashMap *map)
+		if (*cur & THASH_MARK)
+		{
+			const u64 unlinked = THASH_RETAG(*prev) | (*cur & THASH_NEXT_MASK);
+			if (!AtomicCompareExchangeRelRlx64(*a_prev, prev, unlinked))
+			{
+				goto try_again;
+			}
+			*prev = unlinked;
+			continue;
+		}
 
-#define THASH_FLUSH_DECLARE(struct_name)                            \
-void                                                                \
-struct_name ## THashMapFlush(struct struct_name ## THashMap *map) 
+		if (equal)
+		{
+			const u32 match = equal((u8 *) a_cur - link_offset, key);
+			/* the key reads complete before the re-check (LoadLoad): a reused node fails it */
+			ds_MemoryFenceAcquire;
+			if (AtomicLoadRlx64(*a_prev) != *prev)
+			{
+				goto try_again;
+			}
+			if (match)
+			{
+				*found = i;
+				return 1;
+			}
+		}
+		else if (i == index)
+		{
+			*found = i;
+			return 1;
+		}
 
-#define THASH_SERIALIZE_DECLARE(struct_name)                                                \
-void                                                                                        \
-struct_name ## THashMapSerialize(struct ss *ss, const struct struct_name ## THashMap *map) 
+		*a_prev = a_cur;
+		*prev = *cur;
+	}
 
-#define THASH_DESERIALIZE_DECLARE(struct_name)                          \
-struct struct_name ## THashMap                                          \
-struct_name ## THashMapDeserialize(struct arena *mem, struct ss *ss) 
-
-#define THASH_FIND_SNAPSHOT_DECLARE(struct_name, key_Type)                  \
-u32                                                                         \
-struct_name ## THashMapFindSnapshot(u64 **a_prev,                           \
-                                    u64 *snapshot_prev,                     \
-                                    u64 *snapshot_cur,                      \
-                                    struct struct_name **n_cur,             \
-                                    struct struct_name ## THashMap *map,    \
-                                    const key_Type *key)                                         
-
-#define THASH_LOOKUP_DECLARE(struct_name, key_Type)                                     \
-struct slot                                                                             \
-struct_name ## THashMapLookup(struct struct_name ## THashMap *map, const key_Type *key)
-
-#define THASH_ADD_DECLARE(struct_name)                                                                      \
-void                                                                                                        \
-struct_name ## THashMapAdd(struct struct_name ## THashMap *map, struct struct_name *node, const u32 index)
-
-#define THASH_REMOVE_DECLARE(struct_name, key_Type)                                     \
-void                                                                                    \
-struct_name ## THashMapRemove(struct struct_name ## THashMap *map, const key_Type *key)
-
-#define THASH_ALLOC_DEFINE(struct_name)                                                                 \
-THASH_ALLOC_DECLARE(struct_name)                                                                        \
-{                                                                                                       \
-    ds_Assert(hash_len && (hash_len >> 31) == 0);                                                       \
-                                                                                                        \
-    struct struct_name ## THashMap map;                                                                 \
-	map.hash_len = (u32) PowerOfTwoCeil(hash_len);                                                      \
-	map.heap_allocated = (mem == NULL);                                                                 \
-	map.a_hash = (mem)                                                                                  \
-		? ArenaPushAligned(mem, map.hash_len * sizeof(u64), 8)                                          \
-		: ds_Alloc(map.hash_len * sizeof(u64), 8);                                                      \
-                                                                                                        \
-	if (!map.a_hash)                                                                                    \
-	{                                                                                                   \
-		return (struct struct_name ## THashMap) { 0 };                                                  \
-	}                                                                                                   \
-                                                                                                        \
-    map.pool = pool;                                                                                    \
-	map.hash_mask = map.hash_len-1;                                                                     \
-    struct_name ## THashMapFlush(&map);                                                                 \
-    return map;                                                                                         \
-} 
-
-#define THASH_DEALLOC_DEFINE(struct_name)   \
-THASH_DEALLOC_DECLARE(struct_name)          \
-{                                           \
-    if (map->heap_allocated)                \
-    {                                       \
-        ds_Free(map->a_hash);               \
-    }                                       \
-} 
-
-#define THASH_FLUSH_DEFINE(struct_name)                 \
-THASH_FLUSH_DECLARE(struct_name)                        \
-{                                                       \
-	for (u32 i = 0; i < map->hash_len; ++i)             \
-	{                                                   \
-        AtomicStoreRel64(map->a_hash + i, THASH_NULL);  \
-	}                                                   \
-} 
-
-#define THASH_SERIALIZE_DEFINE(struct_name)                                     \
-THASH_SERIALIZE_DECLARE(struct_name)                                            \
-{                                                                               \
-    const u64 size_required = sizeof(u32) + map->hash_len*sizeof(u64);          \
-    if (size_required > ss_BytesLeft(ss))                                       \
-    {                                                                           \
-        Log(T_SYSTEM, S_ERROR, "Serial stream OOM when Serializing THashMap,    \
-                                Trying to write %luB with %luB left.",          \
-                                size_required, ss_BytesLeft(ss));               \
-        return;                                                                 \
-    }                                                                           \
-	ss_WriteU32Be(ss, map->hash_len);                                           \
-	ss_WriteU64BeN(ss, map->a_hash, map->hash_len);                             \
+	return 0;
 }
 
-#define THASH_DESERIALIZE_DEFINE(struct_name)                               \
-THASH_DESERIALIZE_DECLARE(struct_name)                                      \
-{                                                                           \
-    struct ss local_ss = *ss;                                               \
-	if (sizeof(u32) > ss_BytesLeft(ss))                                     \
-	{                                                                       \
-		Log(T_SYSTEM, S_ERROR, "Deserializing THashMap past byte boundary:  \
-                                Trying to read 4B with %luB left.",         \
-                                ss_BytesLeft(ss));                          \
-		return (struct struct_name ## THashMap) { 0 };                      \
-	}                                                                       \
-                                                                            \
-	const u32 hash_len = ss_ReadU32Be(ss);                                  \
-	ds_Assert(PowerOfTwoCheck(hash_len));                                   \
-	if (hash_len*sizeof(u64) > ss_BytesLeft(ss))                            \
-	{                                                                       \
-		Log(T_SYSTEM, S_ERROR, "Deserializing hash map past byte boundary:  \
-                                Trying to read %luB with %luB left.",       \
-                                hash_len*sizeof(u64),                       \
-                                ss_BytesLeft(ss));                          \
-        *ss = local_ss;                                                     \
-		return (struct struct_name ## THashMap) { 0 };                      \
-    }                                                                       \
-                                                                            \
-	struct struct_name ## THashMap map =                                    \
-    {                                                                       \
-        .hash_len = hash_len,                                               \
-        .hash_mask = hash_len-1,                                            \
-        .heap_allocated = (mem == NULL),                                    \
-    };                                                                      \
-                                                                            \
-	map.a_hash = (mem)                                                      \
-	    ? ArenaPushAligned(mem, map.hash_len*sizeof(u64), 8)                \
-		: ds_Alloc(hash_len*sizeof(u64), 8);                                \
-                                                                            \
-	if (!map.a_hash)                                                        \
-	{                                                                       \
-		LogString(T_SYSTEM, S_ERROR, "OOM when deserializing THashMap");    \
-        *ss = local_ss;                                                     \
-		return (struct struct_name ## THashMap) { 0 };                      \
-	}                                                                       \
-                                                                            \
-	ss_ReadU64BeN(map.a_hash, ss, hash_len);                                \
-                                                                            \
-	return map;                                                             \
+static ds_ForceInline void ds_THashMapAddInternal(const struct ds_THashState *state, const struct ds_TPoolState *pool, void *const *block, const u64 slot_size, const u64 link_offset, const u32 hash, const u32 index)
+{
+	ds_Assert(index < THASH_NULL);
+	u64 *a_node = ds_THashLinkInternal(pool, block, index, slot_size, link_offset);
+	u64 *a_bucket = state->a_bucket + (hash & state->hash_mask);
+	const u64 tag = THASH_RETAG(AtomicLoadRlx64(a_node));
+	u64 head = AtomicLoadAcq64(a_bucket);
+	u64 new_head;
+	do
+	{
+		AtomicStoreRlx64(a_node, tag | (head & THASH_NEXT_MASK));
+		new_head = THASH_RETAG(head) | index;
+	} while (!AtomicCompareExchangeAcqRelAcq64(a_bucket, &head, new_head));
 }
 
-#define THASH_FIND_SNAPSHOT_DEFINE(struct_name, key_name, key_Type, key_TypePtrHashFunction, key_TypePtrCmpFunction)\
-THASH_FIND_SNAPSHOT_DECLARE(struct_name, key_Type)                                                                  \
-{                                                                                                                   \
-    const u32 h = key_TypePtrHashFunction(key) & map->hash_mask;                                                    \
-try_again:                                                                                                          \
-    *a_prev = map->a_hash + h;                                                                                      \
-    *snapshot_prev = AtomicLoadAcq64(*a_prev) & (~THASH_MARK_MASK);                                                 \
-                                                                                                                    \
-    while(1)                                                                                                        \
-    {                                                                                                               \
-        if (((*snapshot_prev) & THASH_NEXT_MASK) == THASH_NULL)                                                     \
-        {                                                                                                           \
-            return 0;                                                                                               \
-        }                                                                                                           \
-                                                                                                                    \
-        *n_cur = ds_TPoolAddress(*map->pool, THASH_NEXT_MASK & (*snapshot_prev));                                   \
-        /* TODO: Needed Acq?... */                                                                                  \
-        *snapshot_cur = AtomicLoadAcq64(&(*n_cur)->a_hash_node);                                                    \
-                                                                                                                    \
-        /* If snapshot_prev is marked, OR the link has been updated, try again */                                   \
-        /* TODO: Needed Acq?... */                                                                                  \
-        const u64 local_prev = AtomicLoadAcq64(*a_prev);                                                            \
-        if (local_prev != *snapshot_prev)                                                                           \
-        {                                                                                                           \
-            goto try_again;                                                                                         \
-        }                                                                                                           \
-                                                                                                                    \
-        /* Zombie node; unlink */                                                                                   \
-        if ((*snapshot_cur) & THASH_MARK_MASK)                                                                      \
-        {                                                                                                           \
-            const u64 new_prev = THASH_TAG_FIELD_INCREMENTED(*snapshot_prev) + (THASH_NEXT_MASK & (*snapshot_cur)); \
-            /* TODO: Is this fine?... */                                                                            \
-            if (!AtomicCompareExchangeRelRlx64(*a_prev, snapshot_prev, new_prev))                                   \
-            {                                                                                                       \
-                goto try_again;                                                                                     \
-            }                                                                                                       \
-            *snapshot_prev = new_prev;                                                                              \
-        }                                                                                                           \
-        /* node may be up-to-date, or may have been deleted and re-inserted at this point. */                       \
-        else                                                                                                        \
-        {                                                                                                           \
-            const u32 key_found = key_TypePtrCmpFunction(key, &(*n_cur)->key_name);                                 \
-            /* #LoadLoad, #LoadStore, #StoreStore compiler barrier */                                               \
-            ds_AcqRelCompilerBarrier;                                                                               \
-            if (AtomicLoadRlx64(*a_prev) != *snapshot_prev)                                                         \
-            {                                                                                                       \
-                goto try_again;                                                                                     \
-            }                                                                                                       \
-                                                                                                                    \
-            if (key_found)                                                                                          \
-            {                                                                                                       \
-                return 1;                                                                                           \
-            }                                                                                                       \
-            *a_prev = &(*n_cur)->a_hash_node;                                                                       \
-            *snapshot_prev = (*snapshot_cur) & (~THASH_MARK_MASK);                                                  \
-        }                                                                                                           \
-    }                                                                                                               \
+static ds_ForceInline struct slot ds_THashMapLookupInternal(const struct ds_THashState *state, const struct ds_TPoolState *pool, void *const *block, const u64 slot_size, const u64 link_offset, const u32 hash, const void *key, u32 (*equal)(const void *, const void *))
+{
+	u64 *a_prev;
+	u64 prev, cur;
+	u32 found;
+	if (ds_THashFindInternal(&a_prev, &prev, &cur, &found, state, pool, block, slot_size, link_offset, hash, U32_MAX, key, equal))
+	{
+		return (struct slot) { .address = ds_TPoolAddressInternal(pool, block, found, slot_size), .index = found };
+	}
+	return (struct slot) { .address = NULL, .index = U32_MAX };
 }
 
-#define THASH_LOOKUP_DEFINE(struct_name, key_Type)                                                          \
-THASH_LOOKUP_DECLARE(struct_name, key_Type)                                                                 \
-{                                                                                                           \
-    u64 *a_prev;                                                                                            \
-    u64 snapshot_prev;                                                                                      \
-    u64 snapshot_cur;                                                                                       \
-    struct struct_name *n_cur;                                                                              \
-    return (struct_name ## THashMapFindSnapshot(&a_prev, &snapshot_prev, &snapshot_cur, &n_cur, map, key))  \
-            ? (struct slot) { .address = n_cur, .index = THASH_NEXT_MASK & snapshot_prev }                  \
-            : (struct slot) { .address = NULL, .index = U32_MAX };                                          \
-}
-#define THASH_ADD_DEFINE(struct_name, key_name, key_TypePtrHashFunction)                \
-THASH_ADD_DECLARE(struct_name)                                                          \
-{                                                                                       \
-    ds_Assert(struct_name ## THashMapLookup(map, &node->key_name).address == NULL);     \
-    ds_Assert(index < THASH_NULL);                                                      \
-                                                                                        \
-    const u32 h = key_TypePtrHashFunction(&node->key_name) & map->hash_mask;            \
-    const u64 tag = THASH_TAG_FIELD_INCREMENTED(AtomicLoadRlx64(&node->a_hash_node));   \
-                                                                                        \
-    u64 local_hash = AtomicLoadAcq64(map->a_hash + h);                                  \
-    u64 new_hash;                                                                       \
-    do                                                                                  \
-    {                                                                                   \
-        new_hash = THASH_TAG_FIELD_INCREMENTED(local_hash) | index;                     \
-        const u64 old_next = THASH_NEXT_MASK & local_hash;                              \
-        AtomicStoreRlx64(&node->a_hash_node, tag | old_next);                           \
-    } while (!AtomicCompareExchangeAcqRelAcq64(map->a_hash + h, &local_hash, new_hash)); \
-}
+static ds_ForceInline void ds_THashMapRemoveInternal(const struct ds_THashState *state, const struct ds_TPoolState *pool, void *const *block, const u64 slot_size, const u64 link_offset, const u32 hash, const u32 index)
+{
+	u64 *a_prev;
+	u64 prev, cur;
+	u32 found;
+	while (ds_THashFindInternal(&a_prev, &prev, &cur, &found, state, pool, block, slot_size, link_offset, hash, index, NULL, NULL))
+	{
+		/* mark: from now on nobody links past the node's link, and searches unlink it */
+		u64 *a_cur = ds_THashLinkInternal(pool, block, index, slot_size, link_offset);
+		const u64 marked = THASH_RETAG(cur) | THASH_MARK | (cur & THASH_NEXT_MASK);
+		if (!AtomicCompareExchangeRelRlx64(a_cur, &cur, marked))
+		{
+			continue;
+		}
 
-#define THASH_REMOVE_DEFINE(struct_name, key_Type)                                                          \
-THASH_REMOVE_DECLARE(struct_name, key_Type)                                                                 \
-{                                                                                                           \
-    u64 *a_prev;                                                                                            \
-    u64 snapshot_prev;                                                                                      \
-    u64 snapshot_cur;                                                                                       \
-    struct struct_name *n_cur;                                                                              \
-    while (1)                                                                                               \
-    {                                                                                                       \
-        if (!struct_name ## THashMapFindSnapshot(&a_prev, &snapshot_prev, &snapshot_cur, &n_cur, map, key)) \
-        {                                                                                                   \
-            return;                                                                                         \
-        }                                                                                                   \
-                                                                                                            \
-        const u64 new_cur = (snapshot_cur + THASH_TAG_INCREMENT) | THASH_MARK_MASK;                         \
-        if (!AtomicCompareExchangeRelRlx64(&n_cur->a_hash_node, &snapshot_cur, new_cur))                    \
-        {                                                                                                   \
-            continue;                                                                                       \
-        }                                                                                                   \
-                                                                                                            \
-        const u64 new_prev = THASH_TAG_FIELD_INCREMENTED(snapshot_prev) + (THASH_NEXT_MASK & snapshot_cur); \
-        if (!AtomicCompareExchangeRelRlx64(a_prev, &snapshot_prev, new_prev))                               \
-        {                                                                                                   \
-            struct_name ## THashMapFindSnapshot(&a_prev, &snapshot_prev, &snapshot_cur, &n_cur, map, key);  \
-        }                                                                                                   \
-    }                                                                                                       \
+		const u64 unlinked = THASH_RETAG(prev) | (cur & THASH_NEXT_MASK);
+		if (!AtomicCompareExchangeRelRlx64(a_prev, &prev, unlinked))
+		{
+			/* a search for index passes the whole chain and unlinks the marked node on the way */
+			ds_THashFindInternal(&a_prev, &prev, &cur, &found, state, pool, block, slot_size, link_offset, hash, index, NULL, NULL);
+		}
+		return;
+	}
 }
 
 #ifdef __cplusplus

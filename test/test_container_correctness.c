@@ -185,7 +185,7 @@ static u32 HashMapTestMatches(const struct ds_HashMap *map, const u8 *alive, con
 
 /*
  * Arena map (fixed) and heap map (growable past its index_len): random adds/removes with colliding hashes
- * against a model; a fixed map rejects indices >= index_len; flush; serialize round trips; corrupt streams.
+ * against a model, and no-op removes under a wrong hash; a fixed map rejects indices >= index_len; flush; serialize round trips; corrupt streams.
  */
 static struct test_Output HashMapTest(struct test_Environment *env)
 {
@@ -238,6 +238,16 @@ static struct test_Output HashMapTest(struct test_Environment *env)
                 ds_HashMapRemove(&map, hash_of[index], index);
                 alive[index] = 0;
                 alive_count -= 1;
+
+                /* a live index under a hash of another bucket is not in the map: a no-op (springclean 15) */
+                if (alive_count)
+                {
+                    do
+                    {
+                        index = (u32) RngU64Range(0, index_max - 1);
+                    } while (!alive[index]);
+                    ds_HashMapRemove(&map, hash_of[index] + 1, index);
+                }
             }
 
             if (i % 16 == 0)
@@ -296,6 +306,8 @@ static struct test_Output HashMapTest(struct test_Environment *env)
         TEST_TRUE(HashMapTestMatches(&map, alive, hash_of, 0, seen));
 
         ds_HashMapDealloc(&map);
+        /* no stale pointers or lengths (springclean 18) */
+        TEST_TRUE(map.hash == NULL && map.index == NULL && map.hash_len == 0 && map.index_len == 0 && map.heap_allocated == 0);
     }
 
 	return output;

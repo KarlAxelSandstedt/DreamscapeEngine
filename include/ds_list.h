@@ -17,6 +17,19 @@
 ==========================================================================
 */
 
+/*
+ds_list.h
+=========
+Intrusive singly (LL) and doubly (DLL) linked lists over an indexed node array, normally a ds_Pool's or
+ds_CPool's buf: nodes are linked by index (i32), never by address, so the lists survive the array moving.
+
+- base[-1] must be addressable: the macros write the link fields of the sentinel, LL_SENTINEL ==
+  DLL_SENTINEL == DS_STUB_INDEX (-1), instead of branching. Pools and CPools have that stub slot.
+- A list stores count, first and last (LL_SENTINEL when empty); indices are < 2^31. A node may be in
+  several lists at once through different link fields (the ...Ex macros link across fields).
+- No checks that a node is in, or not in, a list. Not thread-safe.
+*/
+
 #ifndef __DS_LIST_H__
 #define __DS_LIST_H__
 
@@ -29,33 +42,36 @@ extern "C" {
 
 /*
 LL
-==
-Intrusive linked list for indexed structures meant for ds_Pool/ds_CPool. It expects a sentinel/stub at index -1
-and can handle at most I32_MAX elements.
+--
+    struct node { POOL_NODE; LLNode next; ... };
+    struct LL list;
+    LLFlush(list);
+    LLAppend(list, pool.buf, slot.index, next);
+    for (i32 i = list.first; i != LL_SENTINEL; i = pool.buf[i].next) { ... }
 
-::: Usage :::
-    // Initialize / Flush _ll_ to the empty state 
-    LLFlush(_ll_)                                                    
+The macros (ll is a struct LL lvalue, base the node array, index a node's index, node the LLNode field;
+arguments may be evaluated more than once):
 
-    // Append _index_ to _ll_ 
-    LLAppend(_ll_, _base_, _index_, _node_)                                                    
-  
-    // Append _index_ to _ll_ and setup _base_[_ll_.last]._last_ -> _base_[_index_]._node_
-    // This macro exists for cases when we wish to use different next variables in the two
-    // nodes. 
-    LLAppendEx(_ll_, _base_, _index_, _last_, _node_)                                                    
-  
-    // Prepend _index_ to _ll_
-    LLPrepend(_ll_, _base_, _index_, _node_)                                                    
+    // Make ll empty (also the initialization).
+    LLFlush(ll)
 
-    // Return the required size when serializing _ll_
-    LLSerializeSize(_ll_)
+    // Append or prepend index (not in ll). Append writes base[last].node, base[LL_SENTINEL] when ll is empty.
+    LLAppend(ll, base, index, node)
+    LLPrepend(ll, base, index, node)
 
-    // Serialize _ll_; its nodes are serialized with their pool. WARNING: Assumes _ll_ fits in _ss_.
-    LLSerialize(_ss_, _ll_)
+    // LLAppend for nodes whose link lies in different fields: base[ll.last].last_field = index, then
+    // base[index].node = LL_SENTINEL.
+    LLAppendEx(ll, base, index, last_field, node)
 
-    // Deserialize _ll_ from _ss_. Returns 1 on success and 0 on failure.
-    LLTryDeserialize(_ss_, _ll_)
+    // Bytes LLSerialize writes: 12.
+    LLSerializeSize(ll)
+
+    // Write ll (LE: u32 count, first, last; the nodes go with their pool). ss must have room.
+    LLSerialize(ss, ll)
+
+    // Read ll from ss. Returns 1, or 0 (ll empty, ss unchanged) if fewer than 12 bytes are left. The indices
+    // are not checked against the pool.
+    u32 LLTryDeserialize(ss, ll)
 */
 
 #define LL_SENTINEL        DS_STUB_INDEX
@@ -113,10 +129,8 @@ do                                                                              
 
 
 
-/* Return the required size when serializing the list. */
 #define LLSerializeSize(_ll_)    (3*sizeof(u32))
 
-/* Serialize the list; its nodes are serialized with their pool. WARNING: Assumes list fits in the stream. */
 #define LLSerialize(_ss_, _ll_)                                                                         \
 do                                                                                                      \
 {                                                                                                       \
@@ -125,7 +139,6 @@ do                                                                              
     ss_WriteU32Le((_ss_), (u32) (_ll_).last);                                                           \
 } while (0)
 
-/* Returns 1 on success and 0 on failure. */
 #define LLTryDeserialize(_ss_, _ll_)                                                                    \
     ((ss_BytesLeft(_ss_) < LLSerializeSize(_ll_))                                                       \
         ? ((_ll_).count = 0, (_ll_).first = LL_SENTINEL, (_ll_).last = LL_SENTINEL, 0u)                 \
@@ -135,40 +148,43 @@ do                                                                              
 
 /*
 DLL
-===
-Intrusive doubly linked list for indexed structures meant for ds_Pool/ds_CPool. It expects a sentinel/stub at index -1
-and can handle at most I32_MAX elements.
+---
+    struct node { POOL_NODE; struct DLLNode dll; ... };
+    struct DLL list;
+    DLLFlush(list);
+    DLLAppend(list, pool.buf, slot.index, dll);
+    DLLRemove(list, pool.buf, slot.index, dll);
 
-::: Usage :::
-  
-    // Initialize / Flush _dll_ to the empty state 
-    DLLFlush(_dll_)
+The macros (dll is a struct DLL lvalue, base the node array, index a node's index, node the struct DLLNode
+field; arguments may be evaluated more than once):
 
-    // Append _index_ to _dll_ 
-    DLLAppend(_dll_, _base_, _index_, _node_)                                                    
-  
-    // Append _index_ to _dll_ and setup _base_[_dll_.last]._last_ <-> _base_[_index_]._node_
-    // This macro exists for cases when the list's nodes may alias different variables
-    DLLAppendEx(_dll_, _base_, _index_, _last_, _node_)                                                    
+    // Make dll empty (also the initialization).
+    DLLFlush(dll)
 
-    // Prepend _index_ to _dll_ and set  _base_[_index_]._node_.prev/next
-    DLLPrepend(_dll_, _base_, _index_, _node_)                                                    
-  
-    // Prepend _index_ to _dll_ and setup _base_[_dll_.first]._first_ <-> _base_[_index_]._node_
-    // This macro exists for cases when the list's nodes may alias different variables
-    DLLPrependEx(_dll_, _base_, _index_, _node_, _first_)                                        
-    
-    // Remove _index_ from _dll_ and set  _base_[_index_]._node_.prev to DLL_NOT_IN_LIST
-    DLLRemove(_dll_, _base_, _index_, _node_)                                                    
+    // Append or prepend index (not in dll). Writes base[DLL_SENTINEL] when dll is empty.
+    DLLAppend(dll, base, index, node)
+    DLLPrepend(dll, base, index, node)
 
-    // Return the required size when serializing _dll_
-    DLLSerializeSize(_dll_)
+    // Remove index (in dll); writes base[DLL_SENTINEL] at either end. The removed node's prev and next are
+    // left as they were (stale).
+    DLLRemove(dll, base, index, node)
 
-    // Serialize _dll_; its nodes are serialized with their pool. WARNING: Assumes _dll_ fits in _ss_.
-    DLLSerialize(_ss_, _dll_)
+    // For nodes whose links lie in different fields: the neighbour's link is last_field / first_field
+    // (Append, Prepend), or prev_field / next_field (Remove: base[prev].prev_field.next and
+    // base[next].next_field.prev); index's own link is node.
+    DLLAppendEx(dll, base, index, last_field, node)
+    DLLPrependEx(dll, base, index, node, first_field)
+    DLLRemoveEx(dll, base, index, prev_field, node, next_field)
 
-    // Deserialize _dll_ from _ss_. Returns 1 on success and 0 on failure.
-    DLLTryDeserialize(_ss_, _dll_)
+    // Bytes DLLSerialize writes: 12.
+    DLLSerializeSize(dll)
+
+    // Write dll (LE: u32 count, first, last; the nodes go with their pool). ss must have room.
+    DLLSerialize(ss, dll)
+
+    // Read dll from ss. Returns 1, or 0 (dll empty, ss unchanged) if fewer than 12 bytes are left. The
+    // indices are not checked against the pool.
+    u32 DLLTryDeserialize(ss, dll)
 */
 
 #define DLL_SENTINEL        DS_STUB_INDEX
@@ -256,10 +272,8 @@ do                                                                              
 } while (0)
 
 
-/* Return the required size when serializing the list. */
 #define DLLSerializeSize(_dll_)    (3*sizeof(u32))
 
-/* Serialize the list; its nodes are serialized with their pool. WARNING: Assumes list fits in the stream. */
 #define DLLSerialize(_ss_, _dll_)                                                                       \
 do                                                                                                      \
 {                                                                                                       \
@@ -268,7 +282,6 @@ do                                                                              
     ss_WriteU32Le((_ss_), (u32) (_dll_).last);                                                          \
 } while (0)
 
-/* Returns 1 on success and 0 on failure. */
 #define DLLTryDeserialize(_ss_, _dll_)                                                                  \
     ((ss_BytesLeft(_ss_) < DLLSerializeSize(_dll_))                                                     \
         ? ((_dll_).count = 0, (_dll_).first = DLL_SENTINEL, (_dll_).last = DLL_SENTINEL, 0u)            \
