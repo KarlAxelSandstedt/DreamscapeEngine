@@ -19,6 +19,7 @@
 
 #include "ds_test.h"
 #include "ticket_factory.h"
+#include "ds_graphics.h"
 
 static u32 BitTestClz64(const u64 x)
 {
@@ -291,6 +292,28 @@ static struct test_Output TypesTest(struct test_Environment *env)
 	return output;
 }
 
+/*
+ * Without a root window, ds_WindowLookup finds nothing and ds_DeallocTaggedWindows frees nothing, neither
+ * walking the hierarchy from HI_NULL. The editor's root window (if any) is hidden during the calls.
+ */
+static struct test_Output WindowNoRootTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    const i32 root = g_process_root_window;
+    g_process_root_window = HI_NULL;
+    const struct slot slot = ds_WindowLookup(0);
+    ds_DeallocTaggedWindows();
+    const i32 root_after = g_process_root_window;
+    g_process_root_window = root;
+
+    TEST_EQUAL(U32_MAX, slot.index);
+    TEST_TRUE(slot.address == NULL);
+    TEST_EQUAL(HI_NULL, root_after);
+
+	return output;
+}
+
 static struct test_Output (*base_tests[])(struct test_Environment *) =
 {
     TypesTest,
@@ -299,6 +322,7 @@ static struct test_Output (*base_tests[])(struct test_Environment *) =
     AtomicSingleThreadTest,
     TicketFactoryTest,
     SemaphoreTest,
+    WindowNoRootTest,
 };
 
 struct suite_Correctness m_base_suite =

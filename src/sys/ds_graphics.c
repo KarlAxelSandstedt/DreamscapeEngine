@@ -17,9 +17,6 @@
 ==========================================================================
 */
 
-#include <stdlib.h>
-#include <string.h>
-
 #include "ds_graphics.h"
 #include "ds_ui.h"
 #include "sys_local.h"
@@ -49,7 +46,12 @@ u32 ds_WindowAlloc(const char *title, const v2u32 position, const v2u32 size, co
 	struct ds_Window *sys_win = slot.address;
 
 	sys_win->mem_persistent = ArenaAlloc(NULL, 1024*1024);
-	sys_win->native = NativeWindowCreate(&sys_win->mem_persistent, (const char *) title, position, size);
+	if (!sys_win->mem_persistent.stack_ptr)
+	{
+		LogString(T_SYSTEM, S_FATAL, "Failed to allocate a window's persistent arena");
+		FatalCleanupAndExit();
+	}
+	sys_win->native = NativeWindowCreate(&sys_win->mem_persistent, title, position, size);
 
 	sys_win->ui = ui_Alloc();
 	sys_win->r_scene = r_SceneAlloc();
@@ -60,7 +62,7 @@ u32 ds_WindowAlloc(const char *title, const v2u32 position, const v2u32 size, co
 	sys_win->text_input_mode = 0;
 	
 	NativeWindowGlSetCurrent(sys_win->native);
-	sys_win->gl_state = gl_StateAlloc();
+	sys_win->gl_state = gl_StateAlloc(&sys_win->mem_persistent);
 	if (slot.index == 2)
 	{
 		/* root window */
@@ -119,7 +121,13 @@ void ds_DeallocTaggedWindows(void)
 		{
             HIISkip(it, *g_window_hierarchy);
 			HIApplyCustomFreeAndRemove(tmp, *g_window_hierarchy, index, ds_InternalWindowDealloc, NULL);
-
+			/* the root went with its whole hierarchy: nothing left to iterate, nor to free at shutdown */
+			if ((i32) index == g_process_root_window)
+			{
+				g_process_root_window = HI_NULL;
+				g_window = HI_NULL;
+				break;
+			}
 		}
         HIIAdvance(it, *g_window_hierarchy);
 	}
@@ -131,6 +139,10 @@ void ds_DeallocTaggedWindows(void)
 struct slot ds_WindowLookup(const u64 native_handle)
 {
     struct slot slot = { .index = U32_MAX, .address = NULL };
+	if (g_process_root_window == HI_NULL)
+	{
+		return slot;
+	}
 
     HII it;
     HIIInit(it, *g_window_hierarchy, g_process_root_window);
@@ -220,6 +232,7 @@ void ds_GraphicsApiShutdown(void)
 		HIApplyCustomFreeAndRemove(tmp, *g_window_hierarchy, g_process_root_window, ds_InternalWindowDealloc, NULL);
 		ArenaPopScratch();
 		g_process_root_window = HI_NULL;
+		g_window = HI_NULL;
 	}
 
 	gl_StateMemDealloc();

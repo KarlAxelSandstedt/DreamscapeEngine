@@ -471,8 +471,8 @@ void 		r_MeshTriMesh(struct arena *mem, struct r_Mesh *mesh, const struct triMes
 void 	gl_StateMemAlloc(void);
 /* free global gl state list */
 void 	gl_StateMemDealloc(void);
-/* alloc a new gl_state  */
-u32	gl_StateAlloc(void);
+/* alloc a new gl_state; its texture units are pushed on mem, which must outlive it (gl_StateDealloc) */
+u32	gl_StateAlloc(struct arena *mem);
 /* free a gl_state  */
 void 	gl_StateDealloc(const u32 gl_state);
 /* set gl state to current global */
@@ -536,7 +536,7 @@ static inline struct r_ColorSegment	r_ColorSegmentConstruct(const struct segment
  			hierarchy_node node
   		}
  
-  	where a hierarchy_index_node is defined as follows:
+  	where a hierarchy_node is defined as follows:
  
   		struct hierarchy_node
   		{

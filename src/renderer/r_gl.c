@@ -17,8 +17,6 @@
 ==========================================================================
 */
 
-#include <stdlib.h>
-
 #include "r_local.h"
 
 
@@ -999,7 +997,7 @@ void ds_glGetProgramInfoLog(GLuint program, GLsizei bufSize, GLsizei *length, GL
 	gl_state->func.glGetProgramInfoLog(program, bufSize, length, infoLog);
 }
 
-u32 gl_StateAlloc(void)
+u32 gl_StateAlloc(struct arena *mem)
 {
 	const u32 g_gl_state_prev = g_gl_state;
 	struct slot slot = ds_PoolAdd(g_gl_state_pool);
@@ -1080,7 +1078,7 @@ u32 gl_StateAlloc(void)
 	ds_glActiveTexture(GL_TEXTURE0 + 0);
 	ds_Assert(gl_state->tx_unit_active == 0);
 
-	gl_state->tx_unit = malloc(g_gl_limits->tx_unit_count * sizeof(struct gl_TextureUnit));
+	gl_state->tx_unit = ArenaPush(mem, g_gl_limits->tx_unit_count * sizeof(struct gl_TextureUnit));
 	for (GLuint i = 0; i < g_gl_limits->tx_unit_count; ++i)
 	{
 		gl_state->tx_unit[i].binding = DLL_SENTINEL;
@@ -1115,7 +1113,6 @@ void gl_StateDealloc(const u32 gl_state_index)
 		}
 	}
 
-	free(gl_state->tx_unit);
 	ds_PoolRemove(g_gl_state_pool, gl_state_index);
 
 	if (g_gl_state == gl_state_index)

@@ -119,14 +119,14 @@ static u32 sdl3_NativeCursorLock(struct nativeWindow *native)
 
 static u32 sdl3_NativeCursorUnlock(struct nativeWindow *native)
 {
-	u32 lock = 0;
+	u32 unlock = 1;
 	if (!SDL_SetWindowRelativeMouseMode(native->sdl_win, 0))
 	{
-		lock = 1;
+		unlock = 0;
 		LogString(T_SYSTEM, S_WARNING, SDL_GetError());
 	}
-	
-	return lock;
+
+	return unlock;
 }
 
 void sdl3_NativeCursorSetRectangle(struct nativeWindow *native, const v2 nat_position, const v2 size)
@@ -307,6 +307,14 @@ static struct nativeWindow *sdl3_NativeWindowCreate(struct arena *mem, const cha
 		LogString(T_SYSTEM, S_FATAL, SDL_GetError());
 		FatalCleanupAndExit();
 	}
+
+#if __DS_PLATFORM__ != __DS_WEB__
+	/* the canvas has no position; elsewhere a refusal (e.g. Wayland) leaves the window where the OS put it */
+	if (!SDL_SetWindowPosition(native->sdl_win, (i32) position.x, (i32) position.y))
+	{
+		LogString(T_SYSTEM, S_WARNING, SDL_GetError());
+	}
+#endif
 
 	sdl3_CreateGlContext(native);
 	return native;
