@@ -75,11 +75,11 @@ enum voronoi TriSegmentVoronoi(f32 w[3], f32 *s, const v3 t0, const v3 t1, const
     }
 
     /* the edges vs the segment */
-    const struct segment seg = SegmentConstruct(s0, s1);
+    const struct segment seg = Segment(s0, s1);
     for (u32 a = 0; a < 3; ++a)
     {
         const u32 b = (a + 1) % 3;
-        const struct segment edge = SegmentConstruct(t[a], t[b]);
+        const struct segment edge = Segment(t[a], t[b]);
         f32 t_edge, t_seg;
         SegmentClosestParameter(&t_edge, &t_seg, &edge, &seg);
         const v3 c = V3Sub(SegmentBc(&edge, t_edge), SegmentBc(&seg, t_seg));

@@ -413,7 +413,7 @@ u32 DcelFaceSegmentClip(struct segment *clip, const struct dcel *h, const u32 fi
 		const v3 p0 = h->v[h->e[f->first + i].origin];
 		const v3 p1 = h->v[h->e[f->first + ((i + 1) % f->count)].origin];
 		const v3 n = V3Cross(V3Sub(p1, p0), f_n);
-		const struct plane clip_plane = PlaneConstruct(V3Scale(n, 1.0f/V3Length(n)), p0);
+		const struct plane clip_plane = Plane(V3Scale(n, 1.0f/V3Length(n)), p0);
 		if (!DcelSegmentSideClip(&t_min, &t_max, &clip_plane, s))
 		{
 			return 0;
@@ -425,7 +425,7 @@ u32 DcelFaceSegmentClip(struct segment *clip, const struct dcel *h, const u32 fi
 		return 0;
 	}
 
-	*clip = SegmentConstruct(SegmentBc(s, t_min), SegmentBc(s, t_max));
+	*clip = Segment(SegmentBc(s, t_min), SegmentBc(s, t_max));
 	return 1;
 }
 

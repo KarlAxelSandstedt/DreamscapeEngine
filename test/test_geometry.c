@@ -17,8 +17,8 @@ static v3 V3UnitSphere(void)
  */
 static u32 SegmentShortCase(const v3 a0, const v3 a_dir, const v3 b0, const v3 b1)
 {
-    const struct segment a = SegmentConstruct(a0, V3Add(a0, a_dir));
-    const struct segment b = SegmentConstruct(b0, b1);
+    const struct segment a = Segment(a0, V3Add(a0, a_dir));
+    const struct segment b = Segment(b0, b1);
     f32 t1, t2;
     SegmentClosestParameter(&t1, &t2, &a, &b);
     if (!(0.0f <= t1 && t1 <= 1.0f && 0.0f <= t2 && t2 <= 1.0f))
@@ -57,8 +57,8 @@ struct test_Output SegmentShortTest(struct test_Environment *env)
             TEST_TRUE(SegmentShortCase(a0, V3Scale(V3Sub(b1, b0), length[i]), b0, b1));
             TEST_TRUE(SegmentShortCase(a0, dir, b0, V3Add(b0, V3Scale(V3UnitSphere(), length[i]))));
             {
-                const struct segment a = SegmentConstruct(b0, b1);
-                const struct segment s = SegmentConstruct(a0, V3Add(a0, dir));
+                const struct segment a = Segment(b0, b1);
+                const struct segment s = Segment(a0, V3Add(a0, dir));
                 v3 c1, c2, c;
                 const f32 dist = F32Sqrt(SegmentDistanceSquared(&c1, &c2, &a, &s));
                 const f32 ref = F32Sqrt(SegmentPointDistanceSquared(&c, &a, a0));
@@ -78,7 +78,7 @@ static u32 ClipNear(const v3 a, const v3 b)
 /* clip s to face fi of the box; 1 if non-empty and the result is (e0, e1) */
 static u32 ClipCase(const struct dcel *box, const u32 fi, const v3 p0, const v3 p1, const v3 e0, const v3 e1)
 {
-    const struct segment s = SegmentConstruct(p0, p1);
+    const struct segment s = Segment(p0, p1);
     struct segment clip;
     return DcelFaceSegmentClip(&clip, box, fi, &s) && ClipNear(clip.p[0], e0) && ClipNear(clip.p[1], e1);
 }
@@ -86,7 +86,7 @@ static u32 ClipCase(const struct dcel *box, const u32 fi, const v3 p0, const v3 
 /* clip s to face fi of the box; 1 if empty */
 static u32 ClipEmptyCase(const struct dcel *box, const u32 fi, const v3 p0, const v3 p1)
 {
-    const struct segment s = SegmentConstruct(p0, p1);
+    const struct segment s = Segment(p0, p1);
     struct segment clip;
     return !DcelFaceSegmentClip(&clip, box, fi, &s);
 }
@@ -1170,13 +1170,13 @@ struct test_Output PlaneExactTest(struct test_Environment *env)
 	struct test_Output output = { .success = 1, .id = __func__ };
 
     /* y = 1 with a unit normal and with |n| = 3 */
-    const struct plane pl = PlaneConstruct(V3(0.0f, 1.0f, 0.0f), V3(0.0f, 1.0f, 0.0f));
-    const struct plane pl3 = PlaneConstruct(V3(0.0f, 3.0f, 0.0f), V3(0.0f, 1.0f, 0.0f));
-    const struct segment crossing = SegmentConstruct(V3(0.0f, 0.0f, 0.0f), V3(0.0f, 2.0f, 0.0f));
-    const struct segment one_side = SegmentConstruct(V3(0.0f, 2.0f, 0.0f), V3(1.0f, 3.0f, 0.0f));
-    const struct segment parallel = SegmentConstruct(V3(0.0f, 2.0f, 0.0f), V3(1.0f, 2.0f, 0.0f));
-    const struct segment in_plane = SegmentConstruct(V3(0.0f, 1.0f, 0.0f), V3(1.0f, 1.0f, 0.0f));
-    const struct segment touching = SegmentConstruct(V3(0.0f, 1.0f, 0.0f), V3(0.0f, 3.0f, 0.0f));
+    const struct plane pl = Plane(V3(0.0f, 1.0f, 0.0f), V3(0.0f, 1.0f, 0.0f));
+    const struct plane pl3 = Plane(V3(0.0f, 3.0f, 0.0f), V3(0.0f, 1.0f, 0.0f));
+    const struct segment crossing = Segment(V3(0.0f, 0.0f, 0.0f), V3(0.0f, 2.0f, 0.0f));
+    const struct segment one_side = Segment(V3(0.0f, 2.0f, 0.0f), V3(1.0f, 3.0f, 0.0f));
+    const struct segment parallel = Segment(V3(0.0f, 2.0f, 0.0f), V3(1.0f, 2.0f, 0.0f));
+    const struct segment in_plane = Segment(V3(0.0f, 1.0f, 0.0f), V3(1.0f, 1.0f, 0.0f));
+    const struct segment touching = Segment(V3(0.0f, 1.0f, 0.0f), V3(0.0f, 3.0f, 0.0f));
 
     TEST_EQUAL(0.5f, PlaneSegmentClipParameter(&pl, &crossing));
     TEST_EQUAL(0.5f, PlaneSegmentClipParameter(&pl3, &crossing));
@@ -1202,11 +1202,11 @@ struct test_Output PlaneExactTest(struct test_Environment *env)
     PlaneNormalize(&normalized);
     TEST_EQUAL(1.0f, normalized.normal.y);
     TEST_EQUAL(1.0f, normalized.signed_distance);
-    const struct plane constructed = PlaneConstructNormalized(V3(0.0f, 3.0f, 0.0f), V3(2.0f, 1.0f, 4.0f));
+    const struct plane constructed = PlaneNormalized(V3(0.0f, 3.0f, 0.0f), V3(2.0f, 1.0f, 4.0f));
     TEST_EQUAL(1.0f, constructed.normal.y);
     TEST_EQUAL(1.0f, constructed.signed_distance);
 
-    const struct plane tri = PlaneConstructFromCcwTriangle(V3(0.0f, 0.0f, 2.0f), V3(1.0f, 0.0f, 2.0f), V3(0.0f, 1.0f, 2.0f));
+    const struct plane tri = PlaneCcwTriangle(V3(0.0f, 0.0f, 2.0f), V3(1.0f, 0.0f, 2.0f), V3(0.0f, 1.0f, 2.0f));
     TEST_EQUAL(1.0f, tri.normal_direction.z);
     TEST_EQUAL(2.0f, tri.signed_distance);
 
@@ -1227,13 +1227,13 @@ struct test_Output PlaneRandomTest(struct test_Environment *env)
         const f32 n_len = RngF32Range(0.5f, 2.0f);
         const v3 n = V3Scale(V3UnitSphere(), n_len);
         const v3 q = V3(RngF32Range(-scale, scale), RngF32Range(-scale, scale), RngF32Range(-scale, scale));
-        const struct plane pl = PlaneConstruct(n, q);
+        const struct plane pl = Plane(n, q);
         /* distances are rounded to ~eps |n| (|x| + |q|): with |x|, |q| <= ~2 sqrt(3) scale */
         const f32 tol = 64.0f * F32_EPSILON * n_len * scale;
 
         const v3 p0 = V3(RngF32Range(-scale, scale), RngF32Range(-scale, scale), RngF32Range(-scale, scale));
         const v3 p1 = V3(RngF32Range(-scale, scale), RngF32Range(-scale, scale), RngF32Range(-scale, scale));
-        const struct segment s = SegmentConstruct(p0, p1);
+        const struct segment s = Segment(p0, p1);
         const f32 d0 = PlanePointSignedDistance(&pl, p0);
         const f32 d1 = PlanePointSignedDistance(&pl, p1);
         const u32 one_side = (0.0f < d0 && 0.0f < d1) || (d0 < 0.0f && d1 < 0.0f);
@@ -1253,7 +1253,7 @@ struct test_Output PlaneRandomTest(struct test_Environment *env)
         PlaneNormalize(&unit);
         TEST_TRUE(F32Abs(V3Length(unit.normal) - 1.0f) <= 4.0f * F32_EPSILON);
         TEST_TRUE(F32Abs(PlanePointSignedDistance(&unit, q)) <= tol / n_len);
-        const struct plane constructed = PlaneConstructNormalized(n, q);
+        const struct plane constructed = PlaneNormalized(n, q);
         TEST_TRUE(F32Abs(PlanePointSignedDistance(&constructed, q)) <= tol / n_len);
 
         const m3 rot = M3QUnit(QUnitAxisAngle(V3UnitSphere(), RngF32Range(-F32_PI, F32_PI)));
@@ -1398,8 +1398,8 @@ struct test_Output SegmentNearParallelTest(struct test_Environment *env)
                 const f32 p = (f32) pos;
                 const v3 o = V3(RngF32Range(-p, p), RngF32Range(-p, p), RngF32Range(-p, p));
                 const v3 q = V3Add(V3Add(o, V3Scale(u, RngF32Range(0.0f, 1.0f))), V3Scale(d1, RngF32Range(-0.9f, 0.9f)));
-                const struct segment s1 = SegmentConstruct(o, V3Add(o, d1));
-                const struct segment s2 = SegmentConstruct(q, V3Add(q, d2));
+                const struct segment s1 = Segment(o, V3Add(o, d1));
+                const struct segment s2 = Segment(q, V3Add(q, d2));
 
                 v3 c1, c2;
                 const f32 dist = F32Sqrt(SegmentDistanceSquared(&c1, &c2, &s1, &s2));
@@ -1438,8 +1438,8 @@ struct test_Output SegmentLineClosestTest(struct test_Environment *env)
             const v3 d2 = V3Add(V3Scale(d1, F32Cos(angle)), V3Scale(u, sin_angle));
             const v3 p1 = V3(RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f));
             const v3 p2 = V3Add(V3Add(V3Add(p1, V3Scale(v, 0.1f)), V3Scale(d1, RngF32Range(-0.3f, 0.3f))), V3Scale(d2, -0.5f));
-            const struct segment s1 = SegmentConstruct(p1, V3Add(p1, d1));
-            const struct segment s2 = SegmentConstruct(p2, V3Add(p2, d2));
+            const struct segment s1 = Segment(p1, V3Add(p1, d1));
+            const struct segment s2 = Segment(p2, V3Add(p2, d2));
 
             f32 t1, t2;
             SegmentLineClosestParameterCheck(&t1, &t2, &s1, &s2);
@@ -1465,7 +1465,7 @@ struct test_Output SegmentPointTest(struct test_Environment *env)
 	struct test_Output output = { .success = 1, .id = __func__ };
 
     const v3 a = V3(1.0f, 2.0f, 3.0f);
-    const struct segment point = SegmentConstruct(a, a);
+    const struct segment point = Segment(a, a);
     const v3 p = V3(4.0f, 6.0f, 3.0f);
     const f32 t = SegmentPointClosestBcParameter(&point, p);
     TEST_TRUE(0.0f <= t && t <= 1.0f);
@@ -1478,7 +1478,7 @@ struct test_Output SegmentPointTest(struct test_Environment *env)
         const v3 s0 = V3(RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f));
         const v3 s1 = V3Add(s0, V3Scale(V3UnitSphere(), RngF32Range(0.01f, 5.0f)));
         const v3 q = V3(RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f));
-        const struct segment s = SegmentConstruct(s0, s1);
+        const struct segment s = Segment(s0, s1);
 
         const f64 d[3] = { (f64) s1.x - s0.x, (f64) s1.y - s0.y, (f64) s1.z - s0.z };
         const f64 w[3] = { (f64) q.x - s0.x, (f64) q.y - s0.y, (f64) q.z - s0.z };

@@ -119,7 +119,7 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureI
 		ref_center = V3Add(ref_center, ref_v[i]);
 	}
     /* through the face's vertex average, as the stored planes (DcelPlanesTryCompute): depths agree with the face query */
-    struct plane ref_plane = PlaneConstruct(face_normal, V3Scale(ref_center, 1.0f / (f32) ref_face->count));
+    struct plane ref_plane = Plane(face_normal, V3Scale(ref_center, 1.0f / (f32) ref_face->count));
 
 	u32 cur = 0;
 	for (u32 i = 0; i < inc_face->count; ++i)
@@ -139,7 +139,7 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureI
 	for (u32 j = 0; j < ref_face->count; ++j)
 	{
 		const v3 side_plane_direction = V3Cross(V3Sub(ref_v[(j+1) % ref_face->count], ref_v[j]), ref_plane.normal);
-		const struct plane side_plane = PlaneConstruct(side_plane_direction, ref_v[j]);
+		const struct plane side_plane = Plane(side_plane_direction, ref_v[j]);
 
         const struct PolygonClipPoint *in = poly[cur];
         const u32 in_count = poly_count[cur];
@@ -404,7 +404,7 @@ static u32 HullFaceContact(struct arena *mem_tmp, struct c_Manifold *cm, sat_Fea
 
 	//for (u32 i = 0; i < cp_count; ++i)
 	//{
-	//	ds_DynamicsDrawDebugSegment(SegmentConstruct(cp[i], cp[(i+1) % cp_count]), V4(0.8f, 0.6f, 0.1f, 1.0f));
+	//	ds_DynamicsDrawDebugSegment(Segment(cp[i], cp[(i+1) % cp_count]), V4(0.8f, 0.6f, 0.1f, 1.0f));
 	//}
 
     u32 collision;
@@ -871,7 +871,7 @@ static void HullCapsuleEESeparation(struct sat_EdgeQuery *query, const struct dc
 			const u32 e1_2 = h->e[e1_1].twin;
 			if (e1_2 < e1_1) { continue; }
 
-			const struct segment s1 = SegmentConstruct(h->v[h->e[e1_1].origin], h->v[h->e[e1_2].origin]);
+			const struct segment s1 = Segment(h->v[h->e[e1_1].origin], h->v[h->e[e1_2].origin]);
 			const v3 n1_2 = h->plane[h->e[e1_2].face_ccw].normal;
 			HullCapsuleEECheck(query, e1_1, &s1, n1_1, n1_2, core);
 		}
@@ -1079,8 +1079,8 @@ static void HullEdgeCheck(struct sat_EdgeQuery *query, const struct dcel *const 
 {
 	const u32 t1 = h[0]->e[e1].twin;
 	const u32 t2 = h[1]->e[e2].twin;
-	const struct segment s1 = SegmentConstruct(v[0][h[0]->e[e1].origin], v[0][h[0]->e[t1].origin]);
-	const struct segment s2 = SegmentConstruct(v[1][h[1]->e[e2].origin], v[1][h[1]->e[t2].origin]);
+	const struct segment s1 = Segment(v[0][h[0]->e[e1].origin], v[0][h[0]->e[t1].origin]);
+	const struct segment s2 = Segment(v[1][h[1]->e[e2].origin], v[1][h[1]->e[t2].origin]);
 	const v3 n1_1 = pl[0][h[0]->e[e1].face_ccw].normal;
 	const v3 n1_2 = pl[0][h[0]->e[t1].face_ccw].normal;
 	const v3 n2_1 = V3Negate(pl[1][h[1]->e[e2].face_ccw].normal);
@@ -1198,7 +1198,7 @@ static void HullTriangleEdgeCheck(struct sat_EdgeQuery *query, const struct dcel
 		return;
 	}
 
-	const struct segment s1 = SegmentConstruct(v[h->e[e1].origin], v[h->e[t1].origin]);
+	const struct segment s1 = Segment(v[h->e[e1].origin], v[h->e[t1].origin]);
 	const v3 cross = V3Cross(s1.dir, e);
 	if (V3Dot(cross, cross) <= g_numerics_config->edge_parallel_sin_sq*V3Dot(s1.dir, s1.dir)*V3Dot(e, e))
 	{
@@ -1215,7 +1215,7 @@ static void HullTriangleEdgeCheck(struct sat_EdgeQuery *query, const struct dcel
 		query->depth = separation;
 		query->normal = axis;
 		query->s1 = s1;
-		query->s2 = SegmentConstruct(tri[a], tri[b]);
+		query->s2 = Segment(tri[a], tri[b]);
 		query->e1 = e1;
 		query->e2 = a;
 	}
@@ -1781,7 +1781,7 @@ static u32 c_TriSegmentSideClip(struct segment *clip, const v3 t[3], const v3 n,
         return 0;
     }
 
-    *clip = SegmentConstruct(SegmentBc(s, lo), SegmentBc(s, hi));
+    *clip = Segment(SegmentBc(s, lo), SegmentBc(s, hi));
     return 1;
 }
 
@@ -1794,7 +1794,7 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
 {
     const f32 radius = capsule->radius;
     /* the core in the capsule's frame (SegmentCapsuleTransform's order) */
-    const struct segment core = SegmentConstruct(V3(0.0f, capsule->half_height, 0.0f), V3(0.0f, -capsule->half_height, 0.0f));
+    const struct segment core = Segment(V3(0.0f, capsule->half_height, 0.0f), V3(0.0f, -capsule->half_height, 0.0f));
     const f32 touch_tolerance = GJK_TOUCH_TOLERANCE * F32_EPSILON;
     u32 tri_index;
     v3 tri[3];
@@ -1918,7 +1918,7 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
         /* edge contact as in c_HullCapsuleContact: within both segments, separating more by sat_face_bias */
         if (edge != U32_MAX && (!face_contact || depth[deeper] + g_numerics_config->sat_face_bias < edge_separation))
         {
-            const struct segment e = SegmentConstruct(tri[edge], tri[(edge + 1) % 3]);
+            const struct segment e = Segment(tri[edge], tri[(edge + 1) % 3]);
             f32 t_edge, t_core;
             if (SegmentLineClosestParameterCheck(&t_edge, &t_core, &e, &core))
             {
@@ -2013,7 +2013,7 @@ static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct
         ds_AssertString(has_area, "mesh triangle without area (c_Shape precondition)");
 
         /* the triangle as s1: face 0 ccw about n_t, face 1 its back */
-        struct plane pl_tri[2] = { PlaneConstruct(n_t, tri[0]), PlaneConstruct(V3Negate(n_t), tri[0]) };
+        struct plane pl_tri[2] = { Plane(n_t, tri[0]), Plane(V3Negate(n_t), tri[0]) };
         struct dcel stub = DcelTriStub();
         stub.v = tri;
         stub.plane = pl_tri;

@@ -45,8 +45,8 @@ struct aabb
  * plane: the points x with dot(n, x) = signed_distance, where n is the stored normal (16 B).
  *
  * normal / normal_direction: the same storage under two names; code reads .normal when the plane is known to
- * be normalized (|n| = 1) and .normal_direction when it may have any length > 0. PlaneConstruct* keep the
- * given direction's length, the *Normalized constructors and PlaneNormalize make it 1.
+ * be normalized (|n| = 1) and .normal_direction when it may have any length > 0. Plane and PlaneCcwTriangle keep
+ * the given direction's length, PlaneNormalized and PlaneNormalize make it 1.
  *
  * signed_distance: dot(n, p) for any point p on the plane. For a unit normal it is the plane's signed
  * distance from the origin (signed_distance * normal is the point of the plane closest to the origin); for a
@@ -85,7 +85,7 @@ struct rayWorld
 
 /*
  * segment: geometrical primitive; the directed segment p[0] -> p[1]. dir = p[1] - p[0] (not normalized) must hold:
- * build segments with SegmentConstruct (or copy one), never by writing the fields one by one.
+ * build segments with Segment() (or copy one), never by writing the fields one by one.
  */
 struct segment
 {
@@ -122,7 +122,7 @@ static ds_ForceInline struct ray Ray(const v3 origin, const v3 dir);
  */
 
 /* Return the segment p0 -> p1 (dir = p1 - p0) */
-static ds_ForceInline struct segment SegmentConstruct(const v3 p0, const v3 p1);
+static ds_ForceInline struct segment Segment(const v3 p0, const v3 p1);
 /* Return p0 (1 - t) + p1 t; exactly p0 at t = 0 and p1 at t = 1 */
 static ds_ForceInline v3 SegmentBc(const struct segment *s, const f32 t);
 /* Return the capsule's core segment, transformed by t: from (0, half_height, 0) to (0, -half_height, 0) */
@@ -147,11 +147,11 @@ static ds_ForceInline f32 SegmentPointProjectedBcParameter(const struct segment 
 /********************************** plane ***********************************/
 
 /* Construct plane with given normal direction n containing point p */
-static ds_ForceInline struct plane PlaneConstruct(const v3 n, const v3 p);
+static ds_ForceInline struct plane Plane(const v3 n, const v3 p);
 /* Construct normalized plane with given normal direction n containing point p. Precondition: 0 < |n|^2 < inf (asserted) */
-static ds_ForceInline struct plane PlaneConstructNormalized(const v3 n, const v3 p);
+static ds_ForceInline struct plane PlaneNormalized(const v3 n, const v3 p);
 /* Construct plane from CCW triangle abc (normal direction (b - a) x (c - a)). Precondition: abc not degenerate (asserted) */
-static ds_ForceInline struct plane PlaneConstructFromCcwTriangle(const v3 a, const v3 b, const v3 c);
+static ds_ForceInline struct plane PlaneCcwTriangle(const v3 a, const v3 b, const v3 c);
 /*
  * Normalize the plane's normal direction and rescale signed_distance by the same factor. Precondition:
  * 0 < |n|^2 < inf (asserted)
@@ -344,7 +344,7 @@ static ds_ForceInline struct ray Ray(const v3 origin, const v3 dir)
 
 /****************************** segment: inline definitions *******************************/
 
-static ds_ForceInline struct segment SegmentConstruct(const v3 p0, const v3 p1)
+static ds_ForceInline struct segment Segment(const v3 p0, const v3 p1)
 {
 	const struct segment s = { .p = { p0, p1 }, .dir = V3Sub(p1, p0) };
 	return s;
@@ -358,7 +358,7 @@ static ds_ForceInline v3 SegmentBc(const struct segment *s, const f32 t)
 static ds_ForceInline struct segment SegmentCapsuleTransform(const struct capsule *cap, const ds_Transform *t)
 {
 	const v3 p = QUnitRotate(t->rotation, V3(0.0f, cap->half_height, 0.0f));
-	return SegmentConstruct(V3Add(p, t->position), V3Add(V3Negate(p), t->position));
+	return Segment(V3Add(p, t->position), V3Add(V3Negate(p), t->position));
 }
 
 static ds_ForceInline f32 SegmentDistanceSquared(v3 *c1, v3 *c2, const struct segment *s1, const struct segment *s2)
@@ -415,7 +415,7 @@ static ds_ForceInline f32 SegmentPointProjectedBcParameter(const struct segment 
 
 /****************************** plane: inline definitions *******************************/
 
-static ds_ForceInline struct plane PlaneConstruct(const v3 n, const v3 p)
+static ds_ForceInline struct plane Plane(const v3 n, const v3 p)
 {
 	struct plane pl;
 	pl.normal_direction = n;
@@ -423,7 +423,7 @@ static ds_ForceInline struct plane PlaneConstruct(const v3 n, const v3 p)
 	return pl;
 }
 
-static ds_ForceInline struct plane PlaneConstructNormalized(const v3 n, const v3 p)
+static ds_ForceInline struct plane PlaneNormalized(const v3 n, const v3 p)
 {
 	const f32 len_sq = V3Dot(n, n);
 	ds_Assert(0.0f < len_sq && len_sq < F32_INFINITY);
@@ -433,12 +433,12 @@ static ds_ForceInline struct plane PlaneConstructNormalized(const v3 n, const v3
 	return pl;
 }
 
-static ds_ForceInline struct plane PlaneConstructFromCcwTriangle(const v3 a, const v3 b, const v3 c)
+static ds_ForceInline struct plane PlaneCcwTriangle(const v3 a, const v3 b, const v3 c)
 {
 	v3 n;
 	const u32 valid = TriCcwNormalDirectionTryCompute(&n, a, b, c);
 	ds_Assert(valid);
-	return PlaneConstruct(n, a);
+	return Plane(n, a);
 }
 
 static ds_ForceInline void PlaneNormalize(struct plane *pl)

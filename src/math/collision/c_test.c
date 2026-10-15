@@ -39,7 +39,7 @@ u32 c_CapsuleSphereTest(const struct c_Shape *s0, const ds_TransformWorld *t0, c
     const struct capsule *cap = &s0->capsule;
     const f32 r_sum = cap->radius + s1->sphere.radius;
     const v3 axis = QUnitRotate(t0->rotation, V3(0.0f, cap->half_height, 0.0f));
-    const struct segment seg = SegmentConstruct(axis, V3Negate(axis));
+    const struct segment seg = Segment(axis, V3Negate(axis));
     const v3 p = V3F64Demote(V3F64Sub(t1->position, t0->position));
 
     v3 c;
@@ -55,8 +55,8 @@ u32 c_CapsuleTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const s
     const v3 axis0 = QUnitRotate(t0->rotation, V3(0.0f, s0->capsule.half_height, 0.0f));
     const v3 axis1 = QUnitRotate(t1->rotation, V3(0.0f, s1->capsule.half_height, 0.0f));
     const v3 p1 = V3F64Demote(V3F64Sub(t1->position, t0->position));
-    const struct segment seg0 = SegmentConstruct(axis0, V3Negate(axis0));
-    const struct segment seg1 = SegmentConstruct(V3Add(p1, axis1), V3Sub(p1, axis1));
+    const struct segment seg0 = Segment(axis0, V3Negate(axis0));
+    const struct segment seg1 = Segment(V3Add(p1, axis1), V3Sub(p1, axis1));
 
     v3 q0, q1;
     return SegmentDistanceSquared(&q0, &q1, &seg0, &seg1) <= r_sum*r_sum;
