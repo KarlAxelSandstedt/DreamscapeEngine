@@ -765,3 +765,128 @@ struct suite_Correctness m_kas_string_suite =
 };
 
 struct suite_Correctness *kas_string_correctness_suite = &m_kas_string_suite;
+
+/*
+ * String performance: the engine's hot calls. Formatting UI node ids (ui_NodeAllocF formats every node
+ * every frame), hashing and comparing ids, byte sizes, and utf8 -> utf32 for UI text.
+ */
+#define STRING_PERF_IDS 256
+
+struct string_PerfInput
+{
+	utf8    id[STRING_PERF_IDS];
+	utf8    id_copy[STRING_PERF_IDS];
+	u8      id_buf[2][STRING_PERF_IDS][32];
+	utf8    text;
+	u8      text_buf[4096];
+	u32     text32[4096];
+	u8      out[256];
+	u64     sum;
+};
+
+static void *string_PerfInit(void)
+{
+	struct string_PerfInput *in = ds_Alloc(sizeof(struct string_PerfInput), 64);
+	memset(in, 0, sizeof(*in));
+	for (u32 i = 0; i < STRING_PERF_IDS; ++i)
+	{
+		in->id[i] = Utf8FormatBuffered(in->id_buf[0][i], 32, "led_node_%u###tree_%u", i * 7919u, i);
+		in->id_copy[i] = Utf8FormatBuffered(in->id_buf[1][i], 32, "led_node_%u###tree_%u", i * 7919u, i);
+	}
+	/* UI text: mostly ASCII, some Latin-1 (2-byte) */
+	u32 n = 0;
+	for (u32 i = 0; n + 2 < sizeof(in->text_buf); ++i)
+	{
+		if (i % 13 == 12) { in->text_buf[n++] = 0xC3; in->text_buf[n++] = 0xA4; }
+		else              { in->text_buf[n++] = (u8) ('a' + i % 26); }
+	}
+	in->text = (utf8) { .buf = in->text_buf, .size = n, .len = 0 };
+	u64 offset = 0;
+	for (in->text.len = 0; offset < n; in->text.len += 1)
+	{
+		Utf8ReadCodepoint(&offset, &in->text, offset);
+	}
+	return in;
+}
+
+static void string_PerfFree(void *args)
+{
+	ds_Free(args);
+}
+
+#define string_format_ids_size ((u64) STRING_PERF_IDS * 4 * 24)
+static void string_format_ids(void *args)
+{
+	struct string_PerfInput *in = args;
+	for (u32 i = 0; i < STRING_PERF_IDS; ++i)
+	{
+		in->sum += Utf8FormatBuffered(in->out, sizeof(in->out), "###popup_display1_%u", i).len;
+		in->sum += Utf8FormatBuffered(in->out, sizeof(in->out), "%k###popup_display2_%u", &in->id[i], i).len;
+		in->sum += Utf8FormatBuffered(in->out, sizeof(in->out), "ui_TextInputModeDisable \"%k\"", &in->id[i]).len;
+		in->sum += Utf8FormatBuffered(in->out, sizeof(in->out), "###root_%p", (void *) in).len;
+	}
+}
+
+#define string_hash_ids_size ((u64) STRING_PERF_IDS * 64 * 20)
+static void string_hash_ids(void *args)
+{
+	struct string_PerfInput *in = args;
+	for (u32 r = 0; r < 64; ++r)
+	{
+		for (u32 i = 0; i < STRING_PERF_IDS; ++i)
+		{
+			in->sum += Utf8Hash(in->id[i]);
+		}
+	}
+}
+
+#define string_equivalence_ids_size ((u64) STRING_PERF_IDS * 64 * 20)
+static void string_equivalence_ids(void *args)
+{
+	struct string_PerfInput *in = args;
+	for (u32 r = 0; r < 64; ++r)
+	{
+		for (u32 i = 0; i < STRING_PERF_IDS; ++i)
+		{
+			in->sum += Utf8Equivalence(in->id[i], in->id_copy[i]);
+		}
+	}
+}
+
+#define string_size_required_size ((u64) 64 * 4096)
+static void string_size_required(void *args)
+{
+	struct string_PerfInput *in = args;
+	for (u32 r = 0; r < 64; ++r)
+	{
+		in->sum += Utf8SizeRequired(in->text);
+	}
+}
+
+#define string_utf32_text_size ((u64) 64 * 4096)
+static void string_utf32_text(void *args)
+{
+	struct string_PerfInput *in = args;
+	for (u32 r = 0; r < 64; ++r)
+	{
+		in->sum += Utf32Utf8Buffered(in->text32, 4096, in->text).len;
+	}
+}
+
+struct test_PerformanceSerial string_serial_test[] =
+{
+	{ .id = "string_format_ids",      .size = string_format_ids_size,      .test = &string_format_ids,      .test_init = &string_PerfInit, .test_free = &string_PerfFree, },
+	{ .id = "string_hash_ids",        .size = string_hash_ids_size,        .test = &string_hash_ids,        .test_init = &string_PerfInit, .test_free = &string_PerfFree, },
+	{ .id = "string_equivalence_ids", .size = string_equivalence_ids_size, .test = &string_equivalence_ids, .test_init = &string_PerfInit, .test_free = &string_PerfFree, },
+	{ .id = "string_size_required",   .size = string_size_required_size,   .test = &string_size_required,   .test_init = &string_PerfInit, .test_free = &string_PerfFree, },
+	{ .id = "string_utf32_text",      .size = string_utf32_text_size,      .test = &string_utf32_text,      .test_init = &string_PerfInit, .test_free = &string_PerfFree, },
+};
+
+struct suite_Performance storage_string_performance_suite =
+{
+	.id = "String Performance",
+	.serial_test = string_serial_test,
+	.serial_test_count = sizeof(string_serial_test) / sizeof(string_serial_test[0]),
+};
+
+struct suite_Performance *string_performance_suite = &storage_string_performance_suite;

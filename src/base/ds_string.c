@@ -439,149 +439,96 @@ utf8 Utf8I64Buffered(u8 buf[], const u64 bufsize, const i64 val)
 	return ret;
 }
 
-struct parseRetval I64Utf8(const utf8 str)
+/* decimal digits of a utf8 (bytes, b8) or a utf32 (codepoints, b32); exactly one of them is set */
+static struct parseRetval internal_ParseU64(const u8 *b8, const u32 *b32, const u32 len)
+{
+	if (len == 0)
+	{
+		return (struct parseRetval) { .op_result = PARSE_STRING_INVALID, .u64 = 0 };
+	}
+
+	u64 overflow = 0;
+	u64 ret = 0;
+	for (u32 i = 0; i < len; ++i)
+	{
+		const u64 c = (b8) ? b8[i] : b32[i];
+		if (c < '0' || '9' < c)
+		{
+			return (struct parseRetval) { .op_result = PARSE_STRING_INVALID, .u64 = 0 };
+		}
+
+		overflow |= U64MulReturnOverflow(&ret, ret, 10);
+		overflow |= U64AddReturnOverflow(&ret, ret, c-'0');
+	}
+
+	return (overflow)
+		? (struct parseRetval) { .op_result = PARSE_OVERFLOW, .u64 = 0   }
+		: (struct parseRetval) { .op_result = PARSE_SUCCESS,  .u64 = ret };
+}
+
+/* an optional '-', then digits (internal_ParseU64) */
+static struct parseRetval internal_ParseI64(const u8 *b8, const u32 *b32, const u32 len)
 {
 	/* "" and "-" have no digits */
-	struct parseRetval ret = { .op_result = PARSE_STRING_INVALID, .i64 = 0 };
-	utf8 tmp = str;
-	if (tmp.len)
+	if (len == 0)
 	{
-		u64 sign = 0;
-		if (tmp.buf[0] == '-')
-		{
-			tmp.len -= 1;
-			tmp.buf += 1;
-			sign = 1;
-		}
+		return (struct parseRetval) { .op_result = PARSE_STRING_INVALID, .i64 = 0 };
+	}
 
-		ret = U64Utf8(tmp);
-		if (!ret.op_result)
+	const u32 sign = (((b8) ? b8[0] : b32[0]) == '-');
+	struct parseRetval ret = internal_ParseU64((b8) ? b8 + sign : NULL, (b32) ? b32 + sign : NULL, len - sign);
+	if (!ret.op_result)
+	{
+		if (sign)
 		{
-			if (sign)
+			/* signed integer underflow */
+			if (ret.u64 > (u64) I64_MAX + 1)
 			{
-				/* signed integer underflow */
-				if (ret.u64 > (u64) I64_MAX + 1)
-				{
-					ret = (struct parseRetval) { .op_result = PARSE_UNDERFLOW, .i64 = 0 };
-				}
-				else
-				{
-					ret.u64 = (~ret.u64) + 1;
-				}
+				ret = (struct parseRetval) { .op_result = PARSE_UNDERFLOW, .i64 = 0 };
 			}
-			/* signed integer overflow */
-			else if (ret.u64 > I64_MAX)
+			else
 			{
-				ret = (struct parseRetval) { .op_result = PARSE_OVERFLOW, .i64 = 0 };
+				ret.u64 = (~ret.u64) + 1;
 			}
-		} 
-		else if (sign && ret.op_result == PARSE_OVERFLOW)
-		{
-			ret = (struct parseRetval) { .op_result = PARSE_UNDERFLOW, .i64 = 0 };
 		}
-
+		/* signed integer overflow */
+		else if (ret.u64 > I64_MAX)
+		{
+			ret = (struct parseRetval) { .op_result = PARSE_OVERFLOW, .i64 = 0 };
+		}
+	}
+	else if (sign && ret.op_result == PARSE_OVERFLOW)
+	{
+		ret = (struct parseRetval) { .op_result = PARSE_UNDERFLOW, .i64 = 0 };
 	}
 
 	return ret;
+}
+
+/*
+ * digits are ASCII, so a number's len codepoints are its first len bytes; len > size can't be all digits
+ * (and would read past size)
+ */
+struct parseRetval I64Utf8(const utf8 str)
+{
+	return internal_ParseI64(str.buf, NULL, (str.len <= str.size) ? str.len : 0);
 }
 
 struct parseRetval U64Utf8(const utf8 str)
 {
-	if (str.len == 0)
-	{
-		return (struct parseRetval) { .op_result = PARSE_STRING_INVALID, .u64 = 0 };
-	}
-
-	u64 overflow = 0;
-	u64 ret = 0;
-	for (u32 i = 0; i < str.len; ++i)
-	{
-		const u64 c = str.buf[i];
-		if (c < '0' || '9' < c)
-		{
-			return (struct parseRetval) { .op_result = PARSE_STRING_INVALID, .u64 = 0 };
-		}
-
-		overflow |= U64MulReturnOverflow(&ret, ret, 10);
-		overflow |= U64AddReturnOverflow(&ret, ret, c-'0');
-	}
-
-	return (overflow) 
-		? (struct parseRetval) { .op_result = PARSE_OVERFLOW, .u64 = 0   }
-		: (struct parseRetval) { .op_result = PARSE_SUCCESS,  .u64 = ret };
+	return internal_ParseU64(str.buf, NULL, (str.len <= str.size) ? str.len : 0);
 }
 
 struct parseRetval I64Utf32(const utf32 str)
 {
-	/* "" and "-" have no digits */
-	struct parseRetval ret = { .op_result = PARSE_STRING_INVALID, .i64 = 0 };
-	utf32 tmp = str;
-	if (tmp.len)
-	{
-		u64 sign = 0;
-		if (tmp.buf[0] == '-')
-		{
-			tmp.len -= 1;
-			tmp.buf += 1;
-			sign = 1;
-		}
-
-		ret = U64Utf32(tmp);
-		if (!ret.op_result)
-		{
-			if (sign)
-			{
-				/* signed integer underflow */
-				if (ret.u64 > (u64) I64_MAX + 1)
-				{
-					ret = (struct parseRetval) { .op_result = PARSE_UNDERFLOW, .i64 = 0 };
-				}
-				else
-				{
-					ret.u64 = (~ret.u64) + 1;
-				}
-			}
-			/* signed integer overflow */
-			else if (ret.u64 > I64_MAX)
-			{
-				ret = (struct parseRetval) { .op_result = PARSE_OVERFLOW, .i64 = 0 };
-			}
-		} 
-		else if (sign && ret.op_result == PARSE_OVERFLOW)
-		{
-			ret = (struct parseRetval) { .op_result = PARSE_UNDERFLOW, .i64 = 0 };
-		}
-
-	}
-
-	return ret;
+	return internal_ParseI64(NULL, str.buf, str.len);
 }
 
 struct parseRetval U64Utf32(const utf32 str)
 {
-	if (str.len == 0)
-	{
-		return (struct parseRetval) { .op_result = PARSE_STRING_INVALID, .u64 = 0 };
-	}
-
-	u64 overflow = 0;
-	u64 ret = 0;
-	for (u32 i = 0; i < str.len; ++i)
-	{
-		const u64 c = str.buf[i];
-		if (c < '0' || '9' < c)
-		{
-			return (struct parseRetval) { .op_result = PARSE_STRING_INVALID, .u64 = 0 };
-		}
-
-		overflow |= U64MulReturnOverflow(&ret, ret, 10);
-		overflow |= U64AddReturnOverflow(&ret, ret, c-'0');
-	}
-
-	return (overflow) 
-		? (struct parseRetval) { .op_result = PARSE_OVERFLOW, .u64 = 0   }
-		: (struct parseRetval) { .op_result = PARSE_SUCCESS,  .u64 = ret };
+	return internal_ParseU64(NULL, str.buf, str.len);
 }
+
 utf8 Utf8F32(struct arena *mem, const u32 decimals, const f32 val)
 {                                                               
 	return Utf8F64(mem, decimals, (f64) val);
@@ -649,191 +596,39 @@ utf32 Utf32F32Buffered(u32 buf[], const u64 buflen, const u32 decimals, const f3
 	return Utf32F64Buffered(buf, buflen, decimals, (f64) val);
 }                                                                                    
                                                                                      
+/*
+ * Numbers are ASCII: the utf8 formatter writes them into the first buflen bytes of buf, then they are widened
+ * in place from the back (byte i lies at or before u32 i, so every byte is read before it is overwritten).
+ */
+static utf32 internal_Utf32WidenAscii(u32 buf[], const u64 buflen, const utf8 str)
+{
+	if (str.len == 0)
+	{
+		return Utf32Empty();
+	}
+
+	const u8 *bytes = (const u8 *) buf;
+	for (u32 i = str.len; i > 0; --i)
+	{
+		buf[i-1] = bytes[i-1];
+	}
+
+	return (utf32) { .buf = buf, .len = str.len, .max_len = buflen };
+}
+
 utf32 Utf32F64Buffered(u32 buf[], const u64 buflen, const u32 decimals, const f64 val)
 {
-	utf32 str = Utf32Empty();
-
-	i32 sign;
-	i32 decpt;
-	/* decimals: correctly rounded to that many (mode 3); 0: shortest round-trip digits (mode 0) */
-	char *dmg_str = (decimals)
-		? DmgDtoa((f64) val, 3, (int) decimals, &decpt, &sign, NULL)
-		: DmgDtoa((f64) val, 0, 0, &decpt, &sign, NULL);
-
-	/* INF / Nan */
-	if (decpt == 9999)
-	{
-		str = Utf32CstrBuffered(buf, buflen, dmg_str);
-	}
-	else
-	{
-		const u64 dmg_len = strlen(dmg_str);
-		u64 integers_in_dmg = 0; 
-		u64 integer_zero_leading = 0; 
-		u64 integer_zeroes_trailing = 0;
-		u64 decimals_in_dmg = 0;
-		u64 decimal_zeroes_leading = 0;
-		u64 decimal_zeroes_trailing = 0;	
-		u64 decimals_in_dmg_wanted = 0;
-		u64 decimals_wanted = decimals;
-
-		/* 0.**** */
-		if (decpt < 1)
-		{
-			decimals_in_dmg = dmg_len;
-			integer_zero_leading = 1;
-			decimal_zeroes_leading = (u64) (-decpt);
-		}
-		/* ****.0 */
-		else if ((u64) decpt >= dmg_len)
-		{
-			integers_in_dmg = dmg_len;
-			integer_zeroes_trailing = (u64) decpt - dmg_len;
-		}
-		/* ****.**** */
-		else
-		{
-			integers_in_dmg = (u64) decpt;
-			decimals_in_dmg = dmg_len - (u64) decpt;
-		}
-
-		if (decimals == 0)
-		{
-			decimals_wanted = decimal_zeroes_leading + decimals_in_dmg;
-			decimals_in_dmg_wanted = decimals_in_dmg;
-		}
-		else if (decimals <= decimal_zeroes_leading)
-		{
-			/* the wanted decimals are all leading zeroes: write only those */
-			decimals_in_dmg_wanted = 0;
-			decimal_zeroes_leading = decimals;
-		}
-		else if (decimals <= decimal_zeroes_leading + decimals_in_dmg)
-		{
-			decimals_in_dmg_wanted = decimals - decimal_zeroes_leading;
-		}
-		else
-		{
-			decimals_in_dmg_wanted = decimals_in_dmg;
-			decimal_zeroes_trailing = decimals - decimal_zeroes_leading - decimals_in_dmg;
-		}
-
-		const u64 req_len = sign
-			+ integer_zero_leading 
-			+ integers_in_dmg
-			+ integer_zeroes_trailing
-			+ ((decimals_wanted) ? 1 + decimals_wanted : 0);
-
-		if (req_len <= buflen)
-		{
-			u32 i = 0;
-			u32 dmg_i = 0;
-
-			if (sign)
-			{
-				buf[i++] = '-';
-			}
-
-			if (integer_zero_leading)
-			{
-				buf[i++] = '0';			
-			}
-
-			for (u32 k = 0; k < integers_in_dmg; ++k)
-			{
-				buf[i++] = dmg_str[dmg_i++];			
-			}
-
-			for (u32 k = 0; k < integer_zeroes_trailing; ++k)
-			{
-				buf[i++] = '0';			
-			}
-
-			if (decimals_wanted)
-			{
-				buf[i++] = '.';			
-
-				for (u32 k = 0; k < decimal_zeroes_leading; ++k)
-				{
-					buf[i++] = '0';			
-				}
-
-				for (u32 k = 0; k < decimals_in_dmg_wanted; ++k)
-				{
-					buf[i++] = dmg_str[dmg_i++];			
-				}
-
-				for (u32 k = 0; k < decimal_zeroes_trailing; ++k)
-				{
-					buf[i++] = '0';			
-				}
-			}
-
-			ds_Assert(i == req_len);
-			str.buf = buf;
-			str.len = i;
-			str.max_len = i;
-		}
-	}
-
-	DmgDtoaFree(dmg_str);
-
-	return str;
+	return internal_Utf32WidenAscii(buf, buflen, Utf8F64Buffered((u8 *) buf, buflen, decimals, val));
 }
 
 utf32 Utf32U64Buffered(u32 buf[], const u64 bufsize, const u64 val)
 {
-	utf32 ret = Utf32Empty();
-
-	u8 tmp[64];
-	if (bufsize >= 1)
-	{
-		u64 v = val;
-		u32 len = 0;
-		do
-		{
-			tmp[64-1-len++] = '0' + (v % 10);
-			v /= 10;
-		} while (v && (len < bufsize));
-
-		if (v == 0)
-		{
-			ret = (utf32) { .buf = buf, .len = len, .max_len = bufsize, };
-			for (u32 i = 0; i < len; ++i)
-			{
-				buf[i] = tmp[64-len+i];
-			}
-		}
-	}
-
-	return ret;
+	return internal_Utf32WidenAscii(buf, bufsize, Utf8U64Buffered((u8 *) buf, bufsize, val));
 }
 
 utf32 Utf32I64Buffered(u32 buf[], const u64 bufsize, const i64 val)
 {
-	utf32 ret = Utf32Empty();
-
-	b64 b = { .i = val };
-	const u64 sign = b.u >> 63;
-	b.u = (1-sign)*b.u + sign*((~b.u) + 1);
-	/* the sign and at least one digit */
-	if (sign + 1 <= bufsize)
-	{
-		const utf32 str = Utf32U64Buffered(buf+sign, bufsize-sign, b.u);
-		if (str.len)
-		{
-			if (sign)
-			{
-				buf[0] = '-';
-			}
-			ret.buf = buf;
-			ret.len = str.len+sign;
-			ret.max_len = bufsize;		
-		}
-	}
-
-	return ret;
-
+	return internal_Utf32WidenAscii(buf, bufsize, Utf8I64Buffered((u8 *) buf, bufsize, val));
 }
 
 utf32 Utf32F32(struct arena *mem, const u32 decimals, const f32 val)
@@ -958,6 +753,7 @@ enum string_token
 	STRING_TOKEN_INVALID,
 	STRING_TOKEN_NULL,
 	STRING_TOKEN_CHAR,
+	STRING_TOKEN_PERCENT,
 	STRING_TOKEN_F32,
 	STRING_TOKEN_U32,
 	STRING_TOKEN_U64,
@@ -1059,31 +855,43 @@ static enum string_token internal_determine_format_parameter(const char *format,
 					type =  STRING_TOKEN_KAS_STRING;
 				} break;
 
-				/* "%%": a literal '%' (STRING_TOKEN_CHAR writes extra bytes from format[0]) */
 				case '%':
 				{
-					*extra = 1;
-					type = STRING_TOKEN_CHAR;
+					type = STRING_TOKEN_PERCENT;
 				} break;
 			}
 		} break;
 
 		/*
-		 * one codepoint of the format: its whole UTF-8 sequence (extra bytes), or a single byte if it is
-		 * bad, so the output decodes to as many codepoints as were counted
+		 * the literal run up to the next '%' or the end (token_length bytes); extra is its codepoint count,
+		 * a bad byte counting as one, as decoding the output reads it back
 		 */
 		default:
 		{
-			u32 available = 1;
-			while (available < 4 && format[available] != '\0')
+			u32 i = 0;
+			u32 count = 0;
+			while (format[i] != '\0' && format[i] != '%')
 			{
-				available += 1;
+				if ((u8) format[i] < 0x80)
+				{
+					i += 1;
+				}
+				else
+				{
+					u32 available = 1;
+					while (available < 4 && format[i + available] != '\0')
+					{
+						available += 1;
+					}
+					const utf8 sequence = { .buf = (u8 *) format + i, .size = available, .len = 0 };
+					u64 sequence_end;
+					Utf8ReadCodepoint(&sequence_end, &sequence, 0);
+					i += (u32) sequence_end;
+				}
+				count += 1;
 			}
-			const utf8 sequence = { .buf = (u8 *) format, .size = available, .len = 0 };
-			u64 sequence_end;
-			Utf8ReadCodepoint(&sequence_end, &sequence, 0);
-			*token_length = (u32) sequence_end;
-			*extra = (u32) sequence_end;
+			*token_length = i;
+			*extra = count;
 			type = STRING_TOKEN_CHAR;
 		} break;
 	}
@@ -1107,6 +915,8 @@ utf8 Utf8FormatBufferedVariadic(u64 *reqsize, u8 *buf, const u64 bufsize, const 
 	u32 offset = 0;
 	u32 extra = 0;
 	u32 cont = 1;
+	/* set by a literal run that only partly fits: write that part, then stop */
+	u32 last = 0;
 	while (cont)
 	{
 		u64 size = 0;
@@ -1199,13 +1009,41 @@ utf8 Utf8FormatBufferedVariadic(u64 *reqsize, u8 *buf, const u64 bufsize, const 
 
 			case STRING_TOKEN_CHAR:
 			{
-				/* one codepoint (or one bad byte) of extra bytes */
-				cont = (extra <= bufsize - offset);
+				/* the literal run of token_length bytes and extra codepoints */
+				u64 bytes = token_length;
+				u32 count = extra;
+				if (bytes > bufsize - offset)
+				{
+					/* keep the whole codepoints that fit, then stop */
+					const utf8 run = { .buf = (u8 *) format, .size = token_length, .len = 0 };
+					bytes = 0;
+					count = 0;
+					for (;;)
+					{
+						u64 next;
+						Utf8ReadCodepoint(&next, &run, bytes);
+						if (next > bufsize - offset)
+						{
+							break;
+						}
+						bytes = next;
+						count += 1;
+					}
+					last = 1;
+				}
+				memcpy(buf + offset, format, bytes);
+				pstr = (utf8) { .buf = buf + offset, .len = count, .size = bytes };
+				size = bytes;
+				cont = (count != 0);
+			} break;
+
+			case STRING_TOKEN_PERCENT:
+			{
+				cont = (offset < bufsize);
 				if (cont)
 				{
-					memcpy(buf + offset, format, extra);
-					pstr = (utf8) { .buf = buf + offset, .len = 1, .size = extra };
-					size = extra;
+					buf[offset] = '%';
+					pstr = (utf8) { .buf = buf + offset, .len = 1, .size = 1 };
 				}
 			} break;
 		}
@@ -1223,6 +1061,10 @@ utf8 Utf8FormatBufferedVariadic(u64 *reqsize, u8 *buf, const u64 bufsize, const 
 		len += pstr.len;
 		offset += size;
 		format += token_length;
+		if (last)
+		{
+			break;
+		}
 	}
 
 	/* the terminator ends any cut-off sequence left by a bad byte in the format (size stays the capacity) */
@@ -1262,22 +1104,10 @@ utf8 Utf8FormatVariadic(struct arena *mem, const char *format, va_list args)
 
 utf8 Utf8Format(struct arena *mem, const char *format, ...)
 {
-	const u64 mem_left = mem->mem_left;
 	va_list args;
 	va_start(args, format);
-	void *buf = ArenaPushPacked(mem, mem->mem_left);
-	u64 reqsize;
-	utf8 kstr = Utf8FormatBufferedVariadic(&reqsize, buf, mem_left, format, args);
+	const utf8 kstr = Utf8FormatVariadic(mem, format, args);
 	va_end(args);
-
-	if (kstr.len == 0)
-       	{
-		ArenaPopPacked(mem, mem_left);
-		return Utf8Empty();
-	}
-	
-	kstr.size = reqsize;
-	ArenaPopPacked(mem, mem_left - reqsize);
 	return kstr;
 }
 
@@ -1438,7 +1268,7 @@ utf32 Utf32Utf8(struct arena *mem, const utf8 str)
 		u64 offset = 0;
 		for (u32 i = 0; i < str.len; ++i)
 		{
-			buf[i] = Utf8ReadCodepoint(&offset, &str, offset);	
+			buf[i] = (offset < str.size && str.buf[offset] < 0x80) ? str.buf[offset++] : Utf8ReadCodepoint(&offset, &str, offset);	
 		}
 		conv = (utf32) { .len = str.len, .max_len = str.len, .buf = buf, };
 	}
@@ -1454,7 +1284,7 @@ utf32 Utf32Utf8Buffered(u32 buf[], const u64 buflen, const utf8 str)
 		u64 offset = 0;
 		for (u32 i = 0; i < str.len; ++i)
 		{
-			buf[i] = Utf8ReadCodepoint(&offset, &str, offset);	
+			buf[i] = (offset < str.size && str.buf[offset] < 0x80) ? str.buf[offset++] : Utf8ReadCodepoint(&offset, &str, offset);	
 		}
 
 		conv = (utf32) { .len = str.len, .max_len = buflen, .buf = buf, };
@@ -1609,28 +1439,23 @@ u32 Utf8Hash(const utf8 str)
 
 u32 Utf8Equivalence(const utf8 str1, const utf8 str2)
 {
-	u32 equivalence = 1;
-	u64 offset1 = 0; 
-	u64 offset2 = 0;
-	if (str1.len == str2.len)
+	if (str1.len != str2.len)
 	{
-		for (u32 i = 0; i < str1.len; ++i)
+		return 0;
+	}
+	const u64 size = Utf8SizeRequired(str1);
+	if (size != Utf8SizeRequired(str2))
+	{
+		return 0;
+	}
+	for (u64 i = 0; i < size; ++i)
+	{
+		if (str1.buf[i] != str2.buf[i])
 		{
-			const u32 codepoint1 = Utf8ReadCodepoint(&offset1, &str1, offset1);
-			const u32 codepoint2 = Utf8ReadCodepoint(&offset2, &str2, offset2);
-			if (codepoint1 != codepoint2)
-			{
-				equivalence = 0;
-				break;
-			}
+			return 0;
 		}
 	}
-	else
-	{
-		equivalence = 0;
-	}
-
-	return equivalence;
+	return 1;
 }
 
 struct kmpSubstring Utf8LookupSubstringInit(struct arena *mem, const utf8 str)
