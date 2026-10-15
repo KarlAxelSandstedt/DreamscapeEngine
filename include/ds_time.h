@@ -17,81 +17,85 @@
 ==========================================================================
 */
 
+/*
+ds_time.h
+=========
+Time since ds_TimeApiInit from the OS monotonic clock (consistent across threads), and conversions for the
+x86 time-stamp counter (TSC) that profiling and the performance tests use. The TSC parts are x64 only: the
+web has no Rdtsc, and its TscFrequency() is 0.
+*/
+
 #ifndef __DREAMSCAPE_TIMER_H__
 #define __DREAMSCAPE_TIMER_H__
 
 #ifdef __cplusplus
-extern "C" { 
+extern "C" {
 #endif
 
 /*
-ds_Time
-=======
-The ds_Time** API returns time elapsed since the API's initialization. There is no guarantee that the timings
-are synchronized between threads, so you should probably only call ds_Time* on the main thread, unless you are
-constructing some timing durations locally on a given thread. 
+Rdtsc(): the calling core's TSC. Rdtscp(core_addr): the same, once all earlier instructions have executed,
+and writes IA32_TSC_AUX (the OS's id of the core) to *core_addr.
 */
-
 #if (__DS_PLATFORM__ == __DS_WEB__)
 
 #elif (__DS_COMPILER__ == __DS_GCC__ || __DS_COMPILER__ == __DS_CLANG__)
 
 	#include <x86intrin.h>
 	#define	Rdtsc()			__rdtsc()
-	/* RDTSC + Read OS dependent IA32_TSC_AUX. All previous instructions finsish (RW finish?) before Rdtscp is run. */
 	#define	Rdtscp(core_addr)	__rdtscp(core_addr)
 
 #elif (__DS_COMPILER__ == __DS_MSVC__)
 
 	#include <intrin.h>
 	#define	Rdtsc()			__rdtsc()
-	/* RDTSC + Read OS dependent IA32_TSC_AUX. All previous instructions finsish (RW finish?) before Rdtscp is run. */
 	#define	Rdtscp(core_addr)	__rdtscp(core_addr)
 
 #endif
 
-/* Initialize API */
+/*
+Start the clocks: the OS clock and TSC origins, the TSC frequency (a 100 ms busy wait against the OS clock)
+and g_tsc_skew (a ping-pong between two threads pinned to core 0 and to each other core in turn; fatal if a
+thread can't be pinned).
+*/
 void	ds_TimeApiInit(struct arena *persistent);
-/* Return ns timing at the API's initialization */
-u64	ds_TimeNsAtStart(void);				
-/* Return seconds since initialization */
-u64	ds_TimeS(void);					
-/* Return ms since initialization */
-u64	ds_TimeMs(void); 					
-/* Return us since initialization */
-u64	ds_TimeUs(void); 					
-/* Return ns since initialization */
-u64	ds_TimeNs(void); 					
-/* Return ns timer resolution in ns */
-u64	NsResolution(void);				
+/* The OS clock reading (ns) at ds_TimeApiInit. */
+u64	ds_TimeNsAtStart(void);
+/* Time since ds_TimeApiInit, truncated to s, ms, us or ns. */
+u64	ds_TimeS(void);
+u64	ds_TimeMs(void);
+u64	ds_TimeUs(void);
+u64	ds_TimeNs(void);
+/* The OS clock's resolution in ns (Windows: one QPC tick, rounded up). */
+u64	NsResolution(void);
 
-/* Return ns since initialization given cpu tsc value */
-u64 	ds_TimeNsFromTsc(const u64 tsc);		
-/* Return tsc value since initialization given PLATFORM ns value (not ds_TimeNs()) */
-u64	ds_TimeTscFromNs(const u64 ns);			
-/* transform tsc to corresponding ns */
-u64 	NsFromTsc(const u64 tsc);			
-/* transform ns to corresponding tsc */
-u64	TscFromNs(const u64 ns);			
-/* transform tsc to ns, with an additional truth pair (ns, tsc) in order to reduce error */
-u64	NsFromTscTruthSource(const u64 tsc, const u64 ns_truth, const u64 cc_truth); 
-/* transform ns to tsc, with an additional truth pair (ns, tsc) in order to reduce error */
-u64	TscFromNsTruthSource(const u64 ns, const u64 ns_truth, const u64 cc_truth);  
-/* Return estimated tsc ticks per second */
-u64 	TscFrequency(void);				
-/* Return estimated seconds given the tick count */
-f64 	SFromTsc(const u64 ticks);			
+/* A TSC reading (>= the TSC at ds_TimeApiInit) as ns since ds_TimeApiInit. */
+u64 	ds_TimeNsFromTsc(const u64 tsc);
+/* An OS clock reading in ns (as ds_TimeNsAtStart counts, not ds_TimeNs) as TSC ticks since ds_TimeApiInit. */
+u64	ds_TimeTscFromNs(const u64 ns);
+/* A TSC tick count as ns, and ns as a tick count (through TscFrequency, in f64). */
+u64 	NsFromTsc(const u64 tsc);
+u64	TscFromNs(const u64 ns);
+/*
+The same for readings, through a pair (ns_truth, cc_truth) read at the same moment: the error grows with
+the distance to that pair instead of the time since ds_TimeApiInit.
+*/
+u64	NsFromTscTruthSource(const u64 tsc, const u64 ns_truth, const u64 cc_truth);
+u64	TscFromNsTruthSource(const u64 ns, const u64 ns_truth, const u64 cc_truth);
+/* TSC ticks per second, measured by ds_TimeApiInit (0 on the web). */
+u64 	TscFrequency(void);
+/* A TSC tick count in seconds. */
+f64 	SFromTsc(const u64 ticks);
 
-/* g_tsc_skew[Logical_core_count]: estimated skew from core 0.
- * given a tsc value from core c, its corresponding tsc value on core 0 is t_0 = t_c + skew,
- * so in code we get 
- * 			tsc_c = Rdtscp(&core_c)
- * 			tsc_0 = core_c + g_tsc_skew[c];
- */
+/*
+g_tsc_skew[c] (c < the logical core count): core c's TSC minus core 0's, as the ping-pong measured it, so
+tsc_0 ~ tsc_c - g_tsc_skew[c]. The measurement includes the one-way latency between the cores (tens to
+hundreds of ticks): with synchronized TSCs (modern CPUs) it is that latency, not skew. A negative value wraps
+(u64). Only logged at startup.
+*/
 extern u64 *	g_tsc_skew;
 
 #ifdef __cplusplus
-} 
+}
 #endif
 
 #endif
