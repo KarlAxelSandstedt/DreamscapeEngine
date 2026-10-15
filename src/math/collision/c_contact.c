@@ -1724,10 +1724,9 @@ static void c_MeshSphereTriangles(struct c_MeshContactHelper *helper, const stru
         /* deep penetration: the face the center is in front of (on the plane: +n_t) */
         else
         {
-            const v3 n_dir = V3Cross(V3Sub(tri[1], tri[0]), V3Sub(tri[2], tri[0]));
-            const f32 n_dir_length_sq = V3LengthSquared(n_dir);
-            ds_AssertString(n_dir_length_sq > 0.0f, "mesh triangle without area (c_Shape precondition)");
-            const v3 n_t = V3Scale(n_dir, 1.0f / F32Sqrt(n_dir_length_sq));
+            v3 n_t;
+            const u32 has_area = TriCcwNormalTryCompute(&n_t, tri[0], tri[1], tri[2]);
+            ds_AssertString(has_area, "mesh triangle without area (c_Shape precondition)");
             const f32 distance = -V3Dot(n_t, tri[0]);
             n = (0.0f <= distance) ? V3Scale(n_t, -1.0f) : n_t;
             depth = F32Max(0.0f, radius - F32Abs(distance));
@@ -1747,8 +1746,8 @@ static void c_MeshSphereTriangles(struct c_MeshContactHelper *helper, const stru
 }
 
 /*
- * Clip s to the side planes of triangle t (the planes through its edges along n, n = (t1 - t0) x (t2 - t0): the
- * prism over the triangle). Inclusive: ends on a side plane are kept, so the clip can be a single point (as
+ * Clip s to the side planes of triangle t (the planes through its edges along n, a normal of any length the
+ * triangle is CCW about: the prism over the triangle). Inclusive: ends on a side plane are kept, so the clip can be a single point (as
  * DcelFaceSegmentClip). Returns 0 if nothing is left. Each crossing divides only where the end points' signs
  * differ, so the parameter is bounded.
  */
@@ -1813,10 +1812,9 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
             continue;
         }
 
-        const v3 n_dir = V3Cross(V3Sub(tri[1], tri[0]), V3Sub(tri[2], tri[0]));
-        const f32 n_dir_length_sq = V3LengthSquared(n_dir);
-        ds_AssertString(n_dir_length_sq > 0.0f, "mesh triangle without area (c_Shape precondition)");
-        const v3 n_t = V3Scale(n_dir, 1.0f / F32Sqrt(n_dir_length_sq));
+        v3 n_t;
+        const u32 has_area = TriCcwNormalTryCompute(&n_t, tri[0], tri[1], tri[2]);
+        ds_AssertString(has_area, "mesh triangle without area (c_Shape precondition)");
 
         struct c_MeshTri *r = c_MeshContactPush(helper, tri_index);
         struct c_Manifold *m = &r->manifold;
@@ -1841,7 +1839,7 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
             const v3 f = (V3Dot(n, n_t) < 0.0f) ? n_t : V3Scale(n_t, -1.0f);
             struct segment clip;
             if (g_numerics_config->face_parallel_cos < -V3Dot(n, f)
-                && c_TriSegmentSideClip(&clip, tri, n_dir, &core))
+                && c_TriSegmentSideClip(&clip, tri, n_t, &core))
             {
                 const f32 d0 = V3Dot(f, V3Sub(clip.p[0], tri[0]));
                 const f32 d1 = V3Dot(f, V3Sub(clip.p[1], tri[0]));
@@ -1875,7 +1873,7 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
 
         /* face contact: the core clipped to the triangle; empty if nothing is left or no clipped end touches */
         struct segment clip = core;
-        const u32 clipped = c_TriSegmentSideClip(&clip, tri, n_dir, &core);
+        const u32 clipped = c_TriSegmentSideClip(&clip, tri, n_t, &core);
         const f32 depth[2] =
         {
             V3Dot(f, V3Sub(clip.p[0], tri[0])),
@@ -2010,10 +2008,9 @@ static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct
     while (c_MeshContactNext(helper, &tri_index, tri))
     {
         metrics->mesh_call_count += 1;
-        const v3 n_dir = V3Cross(V3Sub(tri[1], tri[0]), V3Sub(tri[2], tri[0]));
-        const f32 n_dir_length_sq = V3LengthSquared(n_dir);
-        ds_AssertString(n_dir_length_sq > 0.0f, "mesh triangle without area (c_Shape precondition)");
-        const v3 n_t = V3Scale(n_dir, 1.0f / F32Sqrt(n_dir_length_sq));
+        v3 n_t;
+        const u32 has_area = TriCcwNormalTryCompute(&n_t, tri[0], tri[1], tri[2]);
+        ds_AssertString(has_area, "mesh triangle without area (c_Shape precondition)");
 
         /* the triangle as s1: face 0 ccw about n_t, face 1 its back */
         struct plane pl_tri[2] = { PlaneConstruct(n_t, tri[0]), PlaneConstruct(V3Negate(n_t), tri[0]) };

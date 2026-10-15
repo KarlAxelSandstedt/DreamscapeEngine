@@ -32,7 +32,8 @@ extern "C" {
 
 /*
  * aabb: geometrical primitive; axis aligned bounding box, the points p with min <= p <= max. Stored as bounds so
- * that boxes built from points, and unions, are exact (no rounding from a center/half width round trip).
+ * that boxes built from points, and unions, are exact (no rounding from a center/half width round trip). The
+ * functions here take and return boxes with min <= max on every axis.
  */
 struct aabb 
 {
@@ -82,37 +83,36 @@ struct rayWorld
 	v3      dir;
 };
 
-/**
- * segment: geometrical primitive; directional two point segment
- * p0: segment start
- * p1: segment end 
- * dir: non-normalized direction vector
+/*
+ * segment: geometrical primitive; the directed segment p[0] -> p[1]. dir = p[1] - p[0] (not normalized) must hold:
+ * build segments with SegmentConstruct (or copy one), never by writing the fields one by one.
  */
 struct segment
 {
-	v3 p[2];	
-	v3 dir;	/* p[1]-p[0] */
+	v3 p[2];
+	v3 dir;
 };
 
-/* sphere: geometrical primitive, centered at its frame's origin */
+/* sphere: geometrical primitive, centered at its frame's origin; radius > 0 */
 struct sphere
 {
 	f32 radius;
 };
 
-/**
- * capsule: geometrical primitive
+/*
+ * capsule: geometrical primitive; the points within radius of the segment from (0, -half_height, 0) to
+ * (0, half_height, 0) in its frame. half_height > 0, radius > 0.
  */
 struct capsule
 {
-	f32 half_height;	/* capsule extends from [0, -half_height, 0] x [0, half_height, 0] */
-	f32 radius;	
+	f32 half_height;
+	f32 radius;
 };
 
 /*********************************** ray ************************************/
 
-/* return constructed ray */
-struct ray 	RayConstruct(const v3 origin, const v3 dir);
+/* Return the ray origin + t dir. Precondition: |dir|^2 > 0 (asserted) */
+static ds_ForceInline struct ray Ray(const v3 origin, const v3 dir);
 
 /********************************* segment **********************************/
 
@@ -221,7 +221,9 @@ static ds_ForceInline u32 AabbMaxAxis(const struct aabb a);
 /********************************* tri_mesh **********************************/
 
 /*
- * triangle mesh (CCW) - set of ungrouped triangles.
+ * triangle mesh: tri_count triangles, each three indices into the v_count vertices v; no adjacency. Precondition:
+ * every triangle has nonzero area (asserted by the mesh contacts). Collision is two-sided; the CCW winding only
+ * orients render normals.
  */
 struct triMesh
 {
@@ -231,8 +233,8 @@ struct triMesh
 	u32 		tri_count;
 };
 
-/* return bounding box of triMesh */
-struct aabb	TriMeshBbox(const struct triMesh *mesh);
+/* Return the bounding box of all v_count vertices, unreferenced ones included; no vertices: the zero box */
+static ds_ForceInline struct aabb TriMeshBbox(const struct triMesh *mesh);
 
 /*
  * Return 1 and the normal direction of the CCW triangle p0 p1 p2 in *dir (|dir| = twice the area); 0 for a degenerate
@@ -331,6 +333,15 @@ void 		DcelAssertTopology(struct dcel *dcel);
 #define COLLISION_HULL_ASSERT(dcel)	
 #endif
 
+/****************************** ray: inline definitions *******************************/
+
+static ds_ForceInline struct ray Ray(const v3 origin, const v3 dir)
+{
+	ds_Assert(V3Dot(dir, dir) > 0.0f);
+	const struct ray r = { .origin = origin, .dir = dir };
+	return r;
+}
+
 /****************************** segment: inline definitions *******************************/
 
 static ds_ForceInline struct segment SegmentConstruct(const v3 p0, const v3 p1)
@@ -424,9 +435,10 @@ static ds_ForceInline struct plane PlaneConstructNormalized(const v3 n, const v3
 
 static ds_ForceInline struct plane PlaneConstructFromCcwTriangle(const v3 a, const v3 b, const v3 c)
 {
-	const struct plane pl = PlaneConstruct(V3Cross(V3Sub(b, a), V3Sub(c, a)), a);
-	ds_Assert(V3Dot(pl.normal_direction, pl.normal_direction) > 0.0f);
-	return pl;
+	v3 n;
+	const u32 valid = TriCcwNormalDirectionTryCompute(&n, a, b, c);
+	ds_Assert(valid);
+	return PlaneConstruct(n, a);
 }
 
 static ds_ForceInline void PlaneNormalize(struct plane *pl)
@@ -603,7 +615,12 @@ static ds_ForceInline u32 AabbMaxAxis(const struct aabb a)
 	return axis;
 }
 
-/****************************** triangle: inline definitions *******************************/
+/****************************** tri_mesh: inline definitions *******************************/
+
+static ds_ForceInline struct aabb TriMeshBbox(const struct triMesh *mesh)
+{
+	return BboxVertexSet(mesh->v, mesh->v_count);
+}
 
 static ds_ForceInline u32 TriCcwNormalDirectionTryCompute(v3 *dir, const v3 p0, const v3 p1, const v3 p2)
 {

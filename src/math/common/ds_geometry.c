@@ -27,17 +27,6 @@
 #include "ds_hash_map.h"
 #include "ds_list.h"
 #include "queue.h"
-#include "ds_float.h"
-
-//TODO what to do with this?
-
-struct ray RayConstruct(const v3 origin, const v3 dir)
-{
-	ds_Assert(V3LengthSquared(dir) > 0.0f);
-
-	const struct ray r = { .origin = origin, .dir = dir };
-	return r;
-}
 
 
 void SegmentClosestParameter(f32 *t1, f32 *t2, const struct segment *s1, const struct segment *s2)
@@ -1270,9 +1259,3 @@ end:
 
 	return dcel;
 }
-
-struct aabb TriMeshBbox(const struct triMesh *mesh)
-{
-	return BboxVertexSet(mesh->v, mesh->v_count);	
-}
-
