@@ -22,7 +22,6 @@
 #include "ds_quaternion.h"
 #include "ds_matrix.h"
 
-SDB_DEFINE(ds_ShapePrefab);
 
 ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab *prefab, const ds_Transform *t, const ds_BodyId body_id)
 {
@@ -67,7 +66,7 @@ ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab
 	DLLFlush(shape->contact_list);
 
 	const struct c_Shape *cshape = pipeline->cshape_db->pool.buf + prefab->cshape;
-	const struct slot cshape_slot = c_ShapeSDBReference(pipeline->cshape_db, cshape->id);
+	const struct slot cshape_slot = ds_SDBReference(*pipeline->cshape_db, cshape->id);
 	shape->cshape_handle = cshape_slot.index;
 	shape->cshape_type = cshape->type;
 
@@ -107,7 +106,7 @@ void ds_ShapeDynamicRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, c
     ds_BitSetSet(&pipeline->shape_dynamic_usage_set, shape_index, 0);
     ds_BitSetSet(&pipeline->shape_dirty_set, shape_index, 0);
     DLLRemove(body->shape_list, pipeline->shape_pool.buf, shape_index, body_shape);
-	c_ShapeSDBDereference(pipeline->cshape_db, shape->cshape_handle);
+	ds_SDBDereference(*pipeline->cshape_db, shape->cshape_handle);
 	DbvhRemove(&pipeline->dynamic_bvh, shape->proxy);
 	ds_PoolRemove(pipeline->shape_pool, shape_index);
 }
@@ -123,7 +122,7 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, s
 
     ds_BitSetSet(&pipeline->shape_dirty_set, index, 0);
     DLLRemove(body->shape_list, pipeline->shape_pool.buf, index, body_shape);
-	c_ShapeSDBDereference(pipeline->cshape_db, shape->cshape_handle);
+	ds_SDBDereference(*pipeline->cshape_db, shape->cshape_handle);
 	DbvhRemove(&pipeline->static_bvh, shape->proxy);
 	ds_PoolRemove(pipeline->shape_pool, index);
 }

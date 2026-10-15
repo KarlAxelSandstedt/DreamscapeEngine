@@ -135,10 +135,10 @@ static void led_NodeRemoveResources(const led_NodeHI *hi, const u32 index, void 
     struct led *led = led_void;
     struct led_Node *node = hi->pool.buf + index;
 
-	ds_BodyPrefabSDBDereference(&led->body_prefab_db, node->body_prefab);
+	ds_SDBDereference(led->body_prefab_db, node->body_prefab);
     node->body_prefab = SDB_STUB;
 
-    ds_ShapePrefabSDBDereference(&led->shape_prefab_db, node->shape_prefab);
+    ds_SDBDereference(led->shape_prefab_db, node->shape_prefab);
     node->shape_prefab = SDB_STUB;
 
 	r_Proxy3dDealloc(&led->frame, node->proxy);
@@ -230,7 +230,7 @@ static void led_NodeDetachRigidBodyPrefabInternal(struct led *led, struct led_No
 {
     if (node->flags & LED_BODY_PREFAB)
     {
-	    ds_BodyPrefabSDBDereference(&led->body_prefab_db, node->body_prefab);
+	    ds_SDBDereference(led->body_prefab_db, node->body_prefab);
         struct led_Node *child = NULL;
         for (i32 i = node->hi_first; i != HI_NULL; )
         {
@@ -252,7 +252,7 @@ static void led_NodeDetachRigidBodyPrefabInternal(struct led *led, struct led_No
 
 static void led_NodeAttachRigidBodyPrefabInternal(struct led *led, const u32 node_index, const utf8 prefab)
 {
-    struct slot slot = ds_BodyPrefabSDBReference(&led->body_prefab_db, prefab);
+    struct slot slot = ds_SDBReference(led->body_prefab_db, prefab);
 	if (slot.index == SDB_STUB)
 	{
 		Log(T_LED, S_WARNING, "Failed to set of led node %k, prefab not found.", &prefab);
@@ -296,7 +296,7 @@ static void led_NodeAttachRigidBodyPrefabInternal(struct led *led, const u32 nod
 
         child->transform = instance->t_local;
         child->flags |= LED_SHAPE_PREFAB;
-        child->shape_prefab = ds_ShapePrefabSDBReference(&led->shape_prefab_db, shape->id).index;
+        child->shape_prefab = ds_SDBReference(led->shape_prefab_db, shape->id).index;
         child->color = node->color;
         child->blend = node->blend;
 
@@ -367,7 +367,7 @@ static struct slot led_CollisionShapeAdd(struct led *led, const struct c_Shape *
 	{
 		LogString(T_LED, S_WARNING, "Failed to allocate collision shape: shape->id must not be empty");
 	} 
-	else if (c_ShapeSDBLookup(&led->cs_db, shape->id).index != SDB_STUB) 
+	else if (ds_SDBLookup(led->cs_db, shape->id).index != SDB_STUB) 
 	{
 		LogString(T_LED, S_WARNING, "Failed to allocate collision shape: shape with given id already exist");
 	}
@@ -381,7 +381,8 @@ static struct slot led_CollisionShapeAdd(struct led *led, const struct c_Shape *
 		}
 		else
 		{
-			slot = c_ShapeSDBAddAndAlias(&led->cs_db, copy);
+			slot = ds_SDBAddAlias(led->cs_db, copy);
+			DLLAppend(led->cs_shape_list, led->cs_db.pool.buf, slot.index, led_shape_node);
 			struct c_Shape *new_shape = slot.address;
             new_shape->id = Utf8CopyBuffered(new_shape->id_buf, C_SHAPE_ID_SIZE, copy);
 			new_shape->type = shape->type;
@@ -546,13 +547,14 @@ void led_CollisionShapeRemove(struct led *led, const utf8 id)
 	if (slot.index != SDB_STUB && shape->reference_count == 0)
 	{
 		void *buf = shape->id.buf;
-		c_ShapeSDBRemove(&led->cs_db, id);
+		DLLRemove(led->cs_shape_list, led->cs_db.pool.buf, slot.index, led_shape_node);
+		ds_SDBRemove(led->cs_db, id);
 	}
 }
 
 struct slot led_CollisionShapeLookup(struct led *led, const utf8 id)
 {
-	return c_ShapeSDBLookup(&led->cs_db, id);
+	return ds_SDBLookup(led->cs_db, id);
 }
 
 struct slot led_ShapePrefabAdd(struct led *led, const utf8 id, const utf8 cshape, const f32 density, const f32 restitution, const f32 friction, const f32 margin)
@@ -562,7 +564,7 @@ struct slot led_ShapePrefabAdd(struct led *led, const utf8 id, const utf8 cshape
 	{
 		LogString(T_LED, S_WARNING, "Failed to allocate ds_ShapePrefab: prefab->id must not be empty");
 	} 
-	else if (ds_ShapePrefabSDBLookup(&led->shape_prefab_db, id).index != SDB_STUB) 
+	else if (ds_SDBLookup(led->shape_prefab_db, id).index != SDB_STUB) 
 	{
 		LogString(T_LED, S_WARNING, "Failed to allocate ds_ShapePrefab: prefab with given id already exist");
 	}
@@ -576,12 +578,12 @@ struct slot led_ShapePrefabAdd(struct led *led, const utf8 id, const utf8 cshape
 		}
 		else
 		{
-			struct slot ref = c_ShapeSDBReference(&led->cs_db, cshape);
+			struct slot ref = ds_SDBReference(led->cs_db, cshape);
 			if (ref.index == SDB_STUB)
 			{
 				LogString(T_LED, S_WARNING, "In ds_ShapePrefab: shape not found, stub_shape chosen");
 			}
-			slot = ds_ShapePrefabSDBAddAndAlias(&led->shape_prefab_db, copy);
+			slot = ds_SDBAddAlias(led->shape_prefab_db, copy);
 
 			struct ds_ShapePrefab *prefab = slot.address;
             prefab->id = Utf8CopyBuffered(prefab->id_buf, PREFAB_BUFSIZE, copy);
@@ -603,15 +605,15 @@ void led_ShapePrefabRemove(struct led *led, const utf8 id)
 	struct ds_ShapePrefab *prefab = slot.address;
 	if (slot.index != SDB_STUB && prefab->reference_count == 0)
 	{
-		c_ShapeSDBDereference(&led->cs_db, prefab->cshape);
-        r_MeshSDBDereference(&led->render_mesh_db, prefab->render_mesh);
-		ds_ShapePrefabSDBRemove(&led->shape_prefab_db, id);
+		ds_SDBDereference(led->cs_db, prefab->cshape);
+        ds_SDBDereference(led->render_mesh_db, prefab->render_mesh);
+		ds_SDBRemove(led->shape_prefab_db, id);
 	}	
 }
 
 struct slot led_ShapePrefabLookup(struct led *led, const utf8 id)
 {
-	return ds_ShapePrefabSDBLookup(&led->shape_prefab_db, id);
+	return ds_SDBLookup(led->shape_prefab_db, id);
 }
 
 void led_ShapePrefabAttachRenderMesh(struct led *led, const utf8 id, const utf8 render_mesh)
@@ -630,7 +632,7 @@ void led_ShapePrefabAttachRenderMesh(struct led *led, const utf8 id, const utf8 
 	{ 
         led_ShapePrefabDetachRenderMesh(led, id);
         struct ds_ShapePrefab *shape = slot_shape.address;
-        shape->render_mesh = r_MeshSDBReference(&led->render_mesh_db, render_mesh).index;
+        shape->render_mesh = ds_SDBReference(led->render_mesh_db, render_mesh).index;
     }
 }
 
@@ -640,7 +642,7 @@ void led_ShapePrefabDetachRenderMesh(struct led *led, const utf8 id)
     if (slot.index != SDB_STUB)
     {
         struct ds_ShapePrefab *shape = slot.address;
-        r_MeshSDBDereference(&led->render_mesh_db, shape->render_mesh);
+        ds_SDBDereference(led->render_mesh_db, shape->render_mesh);
     }
 }
 
@@ -651,7 +653,7 @@ struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const u32 dyn
 	{
 		LogString(T_LED, S_WARNING, "Failed to allocate body_prefab: prefab->id must not be empty");
 	} 
-	else if (ds_BodyPrefabSDBLookup(&led->body_prefab_db, id).index != SDB_STUB) 
+	else if (ds_SDBLookup(led->body_prefab_db, id).index != SDB_STUB) 
 	{
 		LogString(T_LED, S_WARNING, "Failed to allocate body_prefab: prefab with given id already exist");
 	}
@@ -665,7 +667,7 @@ struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const u32 dyn
 		}
 		else
 		{
-			struct ds_BodyPrefab *prefab = ds_BodyPrefabSDBAddAndAlias(&led->body_prefab_db, copy).address;
+			struct ds_BodyPrefab *prefab = ds_SDBAddAlias(led->body_prefab_db, copy).address;
             prefab->id = Utf8CopyBuffered(prefab->id_buf, PREFAB_BUFSIZE, copy);
             DLLFlush(prefab->shape_list);
 			prefab->dynamic = dynamic;
@@ -678,7 +680,7 @@ struct slot led_RigidBodyPrefabAdd(struct led *led, const utf8 id, const u32 dyn
 static void led_ShapePrefabInstanceRemove(struct led *led, const u32 i)
 {
     const struct ds_ShapePrefabInstance *instance = led->shape_prefab_instance_pool.buf + i;
-    ds_ShapePrefabSDBDereference(&led->shape_prefab_db, instance->shape_prefab);
+    ds_SDBDereference(led->shape_prefab_db, instance->shape_prefab);
     ds_PoolRemove(led->shape_prefab_instance_pool, i);
 }
 
@@ -696,13 +698,13 @@ void led_RigidBodyPrefabRemove(struct led *led, const utf8 id)
         }
 
 		void *buf = prefab->id.buf;
-		ds_BodyPrefabSDBRemove(&led->body_prefab_db, id);
+		ds_SDBRemove(led->body_prefab_db, id);
 	}	
 }
 
 struct slot led_RigidBodyPrefabLookup(struct led *led, const utf8 id)
 {
-	return ds_BodyPrefabSDBLookup(&led->body_prefab_db, id);
+	return ds_SDBLookup(led->body_prefab_db, id);
 }
 
 void led_RigidBodyPrefabAttachShape(struct led *led, const utf8 rb_id, const utf8 shape_id, const utf8 local_shape_id, const ds_Transform *t_local)
@@ -733,7 +735,7 @@ void led_RigidBodyPrefabAttachShape(struct led *led, const utf8 rb_id, const utf
 
         DLLPrepend(body_prefab->shape_list, led->shape_prefab_instance_pool.buf, slot.index, body_shape);
         instance->id = Utf8CopyBuffered(instance->id_buf, PREFAB_BUFSIZE, local_shape_id);
-        instance->shape_prefab = ds_ShapePrefabSDBReference(&led->shape_prefab_db, shape_id).index;
+        instance->shape_prefab = ds_SDBReference(led->shape_prefab_db, shape_id).index;
         instance->t_local = *t_local;
     }
 }
@@ -788,7 +790,7 @@ struct slot led_RenderMeshAdd(struct led *led, const utf8 id, const utf8 shape)
 	{
 		LogString(T_LED, S_WARNING, "Failed to allocate render mesh: id must not be empty");
 	} 
-	else if (r_MeshSDBLookup(&led->render_mesh_db, id).index != SDB_STUB) 
+	else if (ds_SDBLookup(led->render_mesh_db, id).index != SDB_STUB) 
 	{
 		LogString(T_LED, S_WARNING, "Failed to allocate render mesh: mesh with given id already exist");
 	}
@@ -802,11 +804,11 @@ struct slot led_RenderMeshAdd(struct led *led, const utf8 id, const utf8 shape)
 		}
 		else
 		{
-			slot = r_MeshSDBAddAndAlias(&led->render_mesh_db, copy);
+			slot = ds_SDBAddAlias(led->render_mesh_db, copy);
 			struct r_Mesh *mesh = slot.address;
             mesh->id = Utf8CopyBuffered(mesh->id_buf, R_MESH_BUFSIZE, copy);
 
-			struct slot ref = c_ShapeSDBLookup(&led->cs_db, shape);
+			struct slot ref = ds_SDBLookup(led->cs_db, shape);
 			if (ref.index == SDB_STUB)
 			{
 				LogString(T_LED, S_WARNING, "In render_mesh_add: shape not found, stub chosen");
@@ -829,18 +831,18 @@ struct slot led_RenderMeshAdd(struct led *led, const utf8 id, const utf8 shape)
 
 void led_RenderMeshRemove(struct led *led, const utf8 id)
 {
-	struct slot slot = r_MeshSDBLookup(&led->render_mesh_db, id);
+	struct slot slot = ds_SDBLookup(led->render_mesh_db, id);
 	struct r_Mesh *mesh = slot.address;
 	if (slot.index != SDB_STUB && mesh->reference_count == 0)
 	{
 		void *buf = mesh->id.buf;
-		r_MeshSDBRemove(&led->render_mesh_db, id);
+		ds_SDBRemove(led->render_mesh_db, id);
 	}
 }
 
 struct slot led_RenderMeshLookup(struct led *led, const utf8 id)
 {
-	return r_MeshSDBLookup(&led->render_mesh_db, id);
+	return ds_SDBLookup(led->render_mesh_db, id);
 }
 
 static struct triMesh TriMeshPerlinNoise(struct arena *mem_persistent, const u32 n, const f32 width)

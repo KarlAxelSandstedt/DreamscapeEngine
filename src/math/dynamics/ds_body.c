@@ -22,7 +22,6 @@
 #include "ds_quaternion.h"
 #include "ds_matrix.h"
 
-SDB_DEFINE(ds_BodyPrefab);
 
 ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *prefab, const ds_Transform *world, const u32 entity)
 {

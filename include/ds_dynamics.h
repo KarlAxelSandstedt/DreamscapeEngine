@@ -357,7 +357,7 @@ struct ds_ShapePrefab
      * simplicity in led, we store the mesh reference in prefab. */
     u32 render_mesh;
 };
-SDB_DECLARE(ds_ShapePrefab);
+DEFINE_SDB(ds_ShapePrefab);
 
 /*
 ds_ShapePrefabInstance
@@ -470,7 +470,7 @@ struct ds_BodyPrefab
 	//f32 	        mass;			    /* total body mass */
 	//mat3 	        inv_inertia_tensor;
 };
-SDB_DECLARE(ds_BodyPrefab);
+DEFINE_SDB(ds_BodyPrefab);
 
 /*
 ds_Body

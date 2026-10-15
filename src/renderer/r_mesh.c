@@ -21,7 +21,6 @@
 
 #include "r_local.h"
 
-SDB_DEFINE(r_Mesh);
 
 f32 stub_vertices[] =
 {

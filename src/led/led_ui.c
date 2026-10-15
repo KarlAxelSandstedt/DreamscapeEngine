@@ -565,7 +565,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 					const struct c_Shape *shape;
 					ui_list(&led->cs_list, "###%p", &led->cs_list)
-					for (i32 i = led->cs_db.allocated_list.first; i != DLL_SENTINEL; i = shape->strdb_allocated.next)
+					for (i32 i = led->cs_shape_list.first; i != DLL_SENTINEL; i = shape->led_shape_node.next)
 					{
 						shape = led->cs_db.pool.buf + i;
 						struct slot entry = ui_ListEntryAllocF(&led->cs_list, "###%p_%u", &led->cs_list, i);

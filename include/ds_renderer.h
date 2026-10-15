@@ -25,7 +25,7 @@ extern "C" {
 #endif
 
 #include "ds_base.h"
-#include "string_database.h"
+#include "ds_string_database.h"
 #include "hierarchy_index.h"
 #include "geometry.h"
 #include "ds_list.h"
@@ -48,7 +48,7 @@ struct r_Mesh
 	void *	vertex_data;		/* vertex_data[vertex_count] */
 	u64		local_stride;
 };
-SDB_DECLARE(r_Mesh);
+DEFINE_SDB(r_Mesh);
 /********************************************************
  *			r_Init.c			*
  ********************************************************/

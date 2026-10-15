@@ -188,7 +188,8 @@ struct led
 	struct ui_List 		    brush_list;
 
 	struct ds_Dynamics physics;
-    c_ShapeSDB 		        cs_db;	
+    c_ShapeSDB 		        cs_db;
+	struct DLL				cs_shape_list;		/* the shapes added to cs_db, in order (c_Shape.led_shape_node) */
 	struct ui_List 		    cs_list;
 	struct ui_DropdownMenu  cs_mesh_menu;
 	struct ui_DropdownMenu  rb_color_mode_menu;

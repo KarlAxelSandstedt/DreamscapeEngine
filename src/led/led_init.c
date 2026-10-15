@@ -116,11 +116,12 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 	g_editor->node_hierarchy = led_NodeHIAlloc(NULL, 16384, GROWABLE);
 	g_editor->node_map = ds_HashMapAlloc(NULL, 16384, 16384, GROWABLE);
 	//g_editor->node_selected_list = dll2_Init(struct led_Node);
-	g_editor->render_mesh_db = r_MeshSDBAlloc(NULL, 32, GROWABLE);
-	g_editor->shape_prefab_db = ds_ShapePrefabSDBAlloc(NULL, 32, GROWABLE);
+	ds_SDBAlloc(NULL, g_editor->render_mesh_db, 32, GROWABLE);
+	ds_SDBAlloc(NULL, g_editor->shape_prefab_db, 32, GROWABLE);
     ds_PoolAlloc(NULL, g_editor->shape_prefab_instance_pool, 16384, GROWABLE);
-	g_editor->body_prefab_db = ds_BodyPrefabSDBAlloc(NULL, 32, GROWABLE);
-	g_editor->cs_db = c_ShapeSDBAlloc(NULL, 32, GROWABLE);
+	ds_SDBAlloc(NULL, g_editor->body_prefab_db, 32, GROWABLE);
+	ds_SDBAlloc(NULL, g_editor->cs_db, 32, GROWABLE);
+	DLLFlush(g_editor->cs_shape_list);
 	g_editor->physics = ds_DynamicsAlloc(&g_editor->mem_persistent, 1024, NSEC_PER_SEC / (u64) 60, 16*1024*1024, &g_editor->cs_db, &g_editor->body_prefab_db, thread_count, thread_framesize);
     ds_CPoolAlloc(NULL, g_editor->joint_pool, 256, GROWABLE);
 
@@ -141,17 +142,17 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 	c_ShapeUpdateMassProperties(cshape_stub);
 
     struct ds_ShapePrefab *shape_stub = g_editor->shape_prefab_db.pool.buf + SDB_STUB;
-    shape_stub->cshape = c_ShapeSDBReference(&g_editor->cs_db, Utf8Empty()).index;
+    shape_stub->cshape = ds_SDBReference(g_editor->cs_db, Utf8Empty()).index;
 	shape_stub->density = 1.0f;
 	shape_stub->restitution = 0.0f;
 	shape_stub->friction = 0.0f;
-    shape_stub->render_mesh = r_MeshSDBReference(&g_editor->render_mesh_db, Utf8Empty()).index;
+    shape_stub->render_mesh = ds_SDBReference(g_editor->render_mesh_db, Utf8Empty()).index;
 
     struct slot slot = ds_PoolAdd(g_editor->shape_prefab_instance_pool);
     const u32 instance_index = slot.index;
     struct ds_ShapePrefabInstance *instance = slot.address;
     instance->id = Utf8CstrBuffered(instance->id_buf, PREFAB_BUFSIZE, "Stub");
-	instance->shape_prefab = ds_ShapePrefabSDBReference(&g_editor->shape_prefab_db, Utf8Empty()).index;
+	instance->shape_prefab = ds_SDBReference(g_editor->shape_prefab_db, Utf8Empty()).index;
     instance->t_local = ds_TransformIdentity();
 
 	struct ds_BodyPrefab *prefab_stub = g_editor->body_prefab_db.pool.buf + SDB_STUB;

@@ -26,7 +26,8 @@ extern "C" {
 
 #include "ds_base.h"
 #include "ds_math.h"
-#include "string_database.h"
+#include "ds_string_database.h"
+#include "ds_list.h"
 #include "queue.h"
 #include "tree.h"
 #include "ds_bitset.h"
@@ -195,6 +196,7 @@ struct c_Shape
 {
     u8                      id_buf[C_SHAPE_ID_SIZE];
     SDB_NODE;
+    struct DLLNode          led_shape_node;     /* the editor's list of shapes (led.cs_shape_list) */
 	
 	m3	                    inertia_tensor;		/* local shape frame intertia tensor (Assumes density=1.0, 
 			                		                to get the interia tensor given a density, just multiply
@@ -211,7 +213,7 @@ struct c_Shape
 		struct triMeshBvh 	mesh_bvh;
 	};
 };
-SDB_DECLARE(c_Shape);
+DEFINE_SDB(c_Shape);
 
 void	c_ShapeUpdateMassProperties(struct c_Shape *shape);
 

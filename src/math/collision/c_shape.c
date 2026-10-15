@@ -23,7 +23,6 @@
 #include "ds_vector.h"
 #include "ds_matrix.h"
 
-SDB_DEFINE(c_Shape);
 
 /********************************** Collision Shape Mass Properties **********************************/
 
