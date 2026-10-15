@@ -530,8 +530,9 @@ static struct test_Output MinQueueFixedTest(struct test_Environment *env)
 
 /*
  * Fixed heap queue kept within its initial length, and a growable heap queue that grows well past it:
- * random pushes, pops and priority decreases against a model by external index. Decreases only on object
- * indices < count (bug 11).
+ * random pushes, pops and priority decreases against a model by external index. A quarter of the
+ * priorities are +inf (a pop must never drop a live element, springclean 12); decreases hit any live
+ * object, also at object indices >= count after pops (springclean 11).
  */
 static struct test_Output MinQueueTest(struct test_Environment *env)
 {
@@ -556,7 +557,7 @@ static struct test_Output MinQueueTest(struct test_Environment *env)
             const u64 op = RngU64Range(0, push_weight + 2);
             if (op < push_weight && count < count_max)
             {
-                const f32 p = (f32) RngU64Range(0, 100);
+                const f32 p = (RngU64Range(0, 3) == 0) ? F32_INFINITY : (f32) RngU64Range(0, 100);
                 const u32 e = next_external++;
                 object[e] = MinQueuePush(&queue, p, e);
                 priority[e] = p;
@@ -586,12 +587,9 @@ static struct test_Output MinQueueTest(struct test_Environment *env)
                     e = (u32) RngU64Range(0, next_external - 1);
                 } while (!alive[e]);
 
-                if (object[e] < queue.object_pool.count)
-                {
-                    const f32 p = (f32) RngU64Range(0, 100);
-                    MinQueueDecreasePriority(&queue, object[e], p);
-                    priority[e] = (p < priority[e]) ? p : priority[e];
-                }
+                const f32 p = (f32) RngU64Range(0, 100);
+                MinQueueDecreasePriority(&queue, object[e], p);
+                priority[e] = (p < priority[e]) ? p : priority[e];
             }
             TEST_EQUAL(count, queue.object_pool.count);
         }

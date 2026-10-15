@@ -17,27 +17,42 @@
 ==========================================================================
 */
 
+/*
+queue.h
+=======
+Binary min-heaps of f32 priorities: the lowest priority is served first. Ties come out in an unspecified
+order; priorities must not be NaN (the order is then unspecified, but no element is lost). +inf is fine.
+
+Contents (in this order):
+    minQueue        (priority, external index) elements with a handle per element, so a queued element's
+                    priority can be lowered (MinQueueDecreasePriority).
+    minQueueFixed   (u32, priority) pairs without handles: push, pop, peek.
+
+Both live in an arena (fixed length) or on the heap (fixed, or growable: the storage doubles when a push
+finds the queue full). A push onto a full fixed queue is fatal. Not thread-safe.
+*/
+
 #ifndef __MIN_QUEUE_H__
 #define __MIN_QUEUE_H__
 
 #ifdef __cplusplus
-extern "C" { 
+extern "C" {
 #endif
 
 #include <stdio.h>
 #include "ds_allocator.h"
 
 /*
-min_queue
-=========
-A min prioritiy queue which prioritises objects with low priorities This means that an element having a low priority
-will be served faster than an element with a higher priority.
+minQueue
+--------
+    struct minQueue queue = MinQueueAlloc(NULL, 64, GROWABLE);
+    const u32 handle = MinQueuePush(&queue, cost, node);
+    MinQueueDecreasePriority(&queue, handle, lower_cost);
+    const u32 node = MinQueuePop(&queue);
+    MinQueueDealloc(&queue);
 
-HOW-TO-USE:
-	index = queue.push(priority, id) => queue.elements[index].{ priority, object_index }
-	object indices are only used to find storage for user-level indices.
-
-	extract minimum => returns external index corresponding to minimum (user_id = queue->object_index[i])
+elements[0, object_pool.count) is the heap; elements[0] is a minimum. A push returns the element's handle
+(object index), valid until the element is popped or the queue flushed; a pop returns its external index.
 */
 
 struct queueObject
@@ -62,24 +77,28 @@ struct minQueue
 	u32			heap_allocated;	/* elements (and the pool) are ds_Alloc blocks */
 };
 
-/* Allocate a new priority queue. */
+/*
+Return an empty queue of initial_length (> 0) elements on arena (fixed; growable must be 0) or on the heap
+(arena == NULL). Fatal if the memory can't be allocated.
+*/
 struct minQueue	MinQueueAlloc(struct arena *arena, const u32 initial_length, const u32 growable);
-/* Free a queue and all it's resources. */
+/* Free a heap queue's memory (an arena queue's stays with the arena). */
 void 		MinQueueDealloc(struct minQueue * const queue);
-/* append new element with given priority to queue, return its object index; fatal if a non-growable queue is full */
+/* Queue external_index with priority and return its handle. Fatal if a fixed queue is full. */
 u32 		MinQueuePush(struct minQueue * const queue, const f32 priority, const u32 external_index);
-/* return external index corresponding to extracted queue element */
+/* Remove a minimum and return its external index; the queue must not be empty. */
 u32 		MinQueuePop(struct minQueue * const queue);
-/* Decrease the priority of the object corresponding to queue_index if the priority is smaller than it's
-   current priority. If changes are made in the queue, the queue is updated and kept coherent.  */ 
+/* Lower the priority of the queued element object_index (a handle from MinQueuePush) to priority; no-op if
+   priority is not lower. */
 void 		MinQueueDecreasePriority(struct minQueue * const queue, const u32 object_index, const f32 priority);
-/* flush min_queue */
+/* Remove all elements; handles restart at 0. */
 void 		MinQueueFlush(struct minQueue * const queue);
 
 /*
-min_queue_fixed
-===============
-Simplified min queue for the case when re-insertion of elements (changing the priority) isn't needed.
+minQueueFixed
+-------------
+For when priorities never change: element[0, count) is the heap of (u = id, f = priority) pairs, element[0]
+a minimum.
 */
 
 struct minQueueFixed 
@@ -91,21 +110,25 @@ struct minQueueFixed
 	u32		heap_allocated;	/* element is a ds_Alloc block */
 };
 
-/* Alocate a new priority queue */
+/*
+Return an empty queue of initial_length elements on mem (fixed; growable must be 0) or on the heap
+(mem == NULL). initial_length 0 gives the empty queue { 0 }, which can't grow. Fatal if the memory can't be
+allocated.
+*/
 struct minQueueFixed	MinQueueFixedAlloc(struct arena *mem, const u32 initial_length, const u32 growable);
-/* Alocate a new priority queue using whole arena */
+/* Return a fixed queue over all whole elements that fit in mem (possibly length 0). */
 struct minQueueFixed	MinQueueFixedAllocAll(struct arena *mem);
-/* Free (if heap allocated) allocated memory */
+/* Free a heap queue's memory (an arena queue's stays with the arena). */
 void 			MinQueueFixedDealloc(struct minQueueFixed *queue);
-/* Flush queue resources */
+/* Remove all elements. */
 void			MinQueueFixedFlush(struct minQueueFixed *queue);
-/* Debug print */
+/* Debug print of the heap array to Log. */
 void 			MinQueueFixedPrint(FILE *Log, const struct minQueueFixed *queue);
-/* Push (id, priority) pair onto queue. */
+/* Queue (id, priority). Fatal if a fixed queue is full. */
 void 			MinQueueFixedPush(struct minQueueFixed *queue, const u32 id, const f32 priority);
-/* pop minimum element */
+/* Remove and return a minimum; the queue must not be empty. */
 u32f32 			MinQueueFixedPop(struct minQueueFixed *heap);
-/* peek minimum element */
+/* Return a minimum without removing it; the queue must not be empty. */
 u32f32 			MinQueueFixedPeek(const struct minQueueFixed *heap);
 
 #ifdef __cplusplus

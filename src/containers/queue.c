@@ -18,7 +18,6 @@
 */
 
 #include <stdio.h>
-#include <float.h>
 
 #include "ds_base.h"
 #include "queue.h"
@@ -109,7 +108,7 @@ static void min_queue_heapify_up(struct minQueue * const queue, u32 queue_index)
 static void recursion_done(struct minQueue * const queue, const u32 queue_index, const u32 small_priority_index);
 static void recursive_call(struct minQueue * const queue, const u32 queue_index, const u32 small_priority_index);
 
-void (*func[2])(struct minQueue * const, const u32, const u32) = { &recursion_done, &recursive_call };
+static void (*func[2])(struct minQueue * const, const u32, const u32) = { &recursion_done, &recursive_call };
 
 /**
  * min_queue_heapify_down() - Keeps the queue coherent when the element at queue_index has had 
@@ -194,14 +193,14 @@ u32 MinQueuePop(struct minQueue * const queue)
     const u32 index = queue->elements[0].object_index;
 	struct queueObject *obj = queue->object_pool.buf + index;
 	const u32 external_index = obj->external_index;
-	queue->elements[0].priority = FLT_MAX;
 
-	/* Keep the array of elements compact */
+	/*
+	 * move the last element to the root and drop the popped one from the count before heapifying: it must
+	 * not take part (a sentinel priority could tie with or lose to +inf and NaN priorities)
+	 */
 	min_queue_change_elements(queue, 0, queue->object_pool.count-1);
-	/* Check coherence of the queue from the start */
-	min_queue_heapify_down(queue, 0);
-
 	ds_PoolRemove(queue->object_pool, index);
+	min_queue_heapify_down(queue, 0);
 
 	return external_index;
 }
@@ -238,7 +237,9 @@ u32 MinQueuePush(struct minQueue * const queue, const f32 priority, const u32 ex
 
 void MinQueueDecreasePriority(struct minQueue * const queue, const u32 object_index, const f32 priority)
 {
-	ds_AssertString(object_index < queue->object_pool.count, "Queue index should be withing queue bounds");
+	/* object indices are pool slots: up to count_max, with holes left by pops */
+	ds_AssertString(object_index < queue->object_pool.count_max && ds_PoolSlotAllocated(queue->object_pool.buf + object_index),
+		"MinQueueDecreasePriority: object_index is not in the queue");
 
 	struct queueObject *obj = queue->object_pool.buf + object_index;
 	if (priority < queue->elements[obj->queue_index].priority) 
@@ -271,7 +272,7 @@ static void min_queue_fixed_heapify_up(struct minQueueFixed * const queue, u32 q
 static void queue_fixed_recursion_done(struct minQueueFixed * const queue, const u32 queue_index, const u32 small_priority_index);
 static void queue_fixed_recursive_call(struct minQueueFixed * const queue, const u32 queue_index, const u32 small_priority_index);
 
-void (*queue_fixed_func[2])(struct minQueueFixed * const, const u32, const u32) = { &queue_fixed_recursion_done, &queue_fixed_recursive_call };
+static void (*queue_fixed_func[2])(struct minQueueFixed * const, const u32, const u32) = { &queue_fixed_recursion_done, &queue_fixed_recursive_call };
 
 static void min_queue_fixed_heapify_down(struct minQueueFixed * const queue, const u32 queue_index)
 {
@@ -379,7 +380,9 @@ void MinQueueFixedPush(struct minQueueFixed *queue, const u32 id, const f32 prio
 		}	
 		else
 		{
-			return;
+			/* as MinQueuePush: callers (bvh raycasts) must not silently lose elements */
+			LogString(T_SYSTEM, S_FATAL, "Non-growable min queue fixed full in MinQueueFixedPush, exiting.");
+			FatalCleanupAndExit();
 		}
 	}
 
