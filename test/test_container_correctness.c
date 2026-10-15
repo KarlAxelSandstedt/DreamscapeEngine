@@ -157,6 +157,8 @@ static struct test_Output BitSetTest(struct test_Environment *env)
 
         ds_Free(model);
         ds_BitSetDealloc(&set);
+        /* no stale pointer or counts (springclean 18) */
+        TEST_TRUE(set.bits == NULL && set.block_count == 0 && set.bit_count == 0 && set.heap_allocated == 0);
     }
 
 	return output;

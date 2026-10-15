@@ -64,8 +64,9 @@ void ds_BitSetDealloc(struct ds_BitSet *set)
 	if (set->heap_allocated)
 	{
 		ds_Free(set->bits);
-		set->heap_allocated = 0;
 	}
+	/* no stale pointer or counts, as ds_PoolDealloc */
+	*set = (struct ds_BitSet) { .growable = set->growable };
 }
 
 void ds_BitSetIncreaseSize(struct ds_BitSet *set, const u64 bit_count, const u64 clear_bit)
