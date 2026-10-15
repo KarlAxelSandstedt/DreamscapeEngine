@@ -32,6 +32,7 @@ Contents (in this order):
     CPool       ds_CPool(T): compact typed array; removal moves the last element into the hole.
     Pool        ds_Pool(T) of POOL_NODE structs: stable indices, free list, serializable.
     TPool       ds_TPool(T) of TPOOL_NODE structs: thread-safe, addresses never move; lock-free free lists.
+The pools' inline definitions follow at the bottom, in the same order.
 */
 
 #ifndef __DS_ALLOCATOR_H__
@@ -309,7 +310,7 @@ The macros (pool is a ds_CPool(T) lvalue; arguments may be evaluated more than o
     // success; 0 if mem is full or ss holds no valid CPool (the pool is empty, ss's position unchanged).
     u32             ds_CPoolTryDeserialize(mem, ss, pool, growable)
 
-::: Internals :::
+::: Stub slot and serialized format :::
 
 buf[-1] is a stub slot, allocated even for length 0, so a full pool always has an address to hand out:
 pushes onto a full fixed pool write into it, harmlessly. Index -1 (DS_STUB_INDEX) is therefore
@@ -391,42 +392,9 @@ do                                                                              
     (pool).count = 0;                                                                   \
 } while (0)                                                                             
 
-static inline struct slot ds_CPoolPushInternal(void **buf, u32 *count, u32 *length, u32 *heap_allocated, const u64 slot_size, const u32 growable)
-{
-    if (*count == *length)
-    {                                                                                   
-        if (!growable)                                                           
-        {                                                                               
-            return (struct slot) { .index = U32_MAX, .address = (u8*)(*buf) - slot_size }; 
-        } 
-                                                                                        
-        const u64 new_length = (*length)
-                             ? (*length) << 1
-                             : 1;
-        const u64 new_size = (new_length+1) * slot_size;
-        /* a deallocated pool has no buffer */
-        const u64 old_size = (*buf) ? ((*length)+1) * slot_size : 0;
-        void *base = (*buf) ? (u8 *)(*buf) - slot_size : NULL;
-        base = ds_Realloc(base, old_size, new_size, DS_CACHE_LINE);
-        PoisonAddress(base, new_size);                                
-        UnpoisonAddress(base, (*count + 1)*slot_size);                
-        *buf = (u8 *) base + slot_size;
-        *length = (u32) new_length;
-        *heap_allocated = 1;
-    }
-
-    const struct slot slot = { .index = *count, .address = (u8*)(*buf) + *count*slot_size };
-    UnpoisonAddress(slot.address, slot_size);                
-    *count += 1;                                                              
-    return slot;
-}
-
-static inline struct slot ds_CPoolPushMemcpyInternal(void **buf, u32 *count, u32 *length, u32 *heap_allocated, const u64 slot_size, const u32 growable, const void *src)
-{
-    struct slot slot = ds_CPoolPushInternal(buf, count, length, heap_allocated, slot_size, growable);
-    memcpy(slot.address, src, slot_size);
-    return slot;
-}
+/* Internal: see ds_CPoolPush and ds_CPoolPushMemcpy. */
+static inline struct slot ds_CPoolPushInternal(void **buf, u32 *count, u32 *length, u32 *heap_allocated, const u64 slot_size, const u32 growable);
+static inline struct slot ds_CPoolPushMemcpyInternal(void **buf, u32 *count, u32 *length, u32 *heap_allocated, const u64 slot_size, const u32 growable, const void *src);
 
 #define ds_CPoolPush( pool ) ds_CPoolPushInternal((void **) &(pool).buf, &(pool).count, &(pool).length, &(pool).heap_allocated, sizeof((pool).buf[0]), (pool).growable)
 #define ds_CPoolPushMemcpy( pool, src ) ds_CPoolPushMemcpyInternal((void **) &(pool).buf, &(pool).count, &(pool).length, &(pool).heap_allocated, sizeof((pool).buf[0]), (pool).growable, (src))
@@ -546,15 +514,12 @@ than once):
     // is empty, ss's position unchanged).
     u32             ds_PoolTryDeserialize(mem, ss, pool, growable)
 
-::: Internals :::
+::: Stub slot and serialized format :::
 
 buf[-1] is a stub slot, so index -1 (DS_STUB_INDEX) is addressable: intrusive lists over pools
-(ds_list.h) use it as their sentinel. pool_slot is 0 for an allocated slot; a removed slot holds
-POOL_ALLOCATION_MASK | the next free index, POOL_INDEX_MASK ending the free list. Add and Remove are
-force-inlined; the macros pass sizeof(Type) and the offset of pool_slot, so both are constants in the
-inlined code. Growth is out of line (ds_PoolGrowInternal) and reallocates (length + 1)*2 slots, stub
-included. Serialized format (LE): u32 length, count, count_max; the count_max - count free indices in
-free-list order; the count allocated slots as raw bytes, each with pool_slot replaced by its index.
+(ds_list.h) use it as their sentinel. Serialized format (LE): u32 length, count, count_max; the
+count_max - count free indices in free-list order; the count allocated slots as raw bytes, each with
+pool_slot replaced by its index.
 */
 
 #define POOL_NODE 	        u32 pool_slot
@@ -593,66 +558,10 @@ void ds_PoolSerializeInternal(struct ss *ss, const void *buf, const u32 length, 
 /* Internal: see ds_PoolTryDeserialize. */
 u32  ds_PoolTryDeserializeInternal(struct arena *mem, struct ss *ss, u32 *heap_allocated, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u64 pool_slot_offset, const u32 alloc_growable);
 
-/* Internal: see ds_PoolAdd. */
-static ds_ForceInline struct slot ds_PoolAddInternal(void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, const u32 growable, const u64 slot_size, const u64 pool_slot_offset)
-{
-	if (*count == *length)
-	{
-		if (!growable)
-		{
-			return (struct slot) { .address = NULL, .index = POOL_NULL };
-		}
-		/* a full pool has no free slot, so the add below takes slot count_max */
-		ds_PoolGrowInternal(buf, length, slot_size);
-	}
-
-	struct slot allocation;
-	if (*next_free != POOL_INDEX_MASK)
-	{
-		allocation.index = *next_free;
-		allocation.address = (u8 *) *buf + allocation.index*slot_size;
-		UnpoisonAddress(allocation.address, slot_size);
-		const u32 pool_slot = *(const u32 *) ((u8 *) allocation.address + pool_slot_offset);
-		ds_Assert(pool_slot & POOL_ALLOCATION_MASK);
-		*next_free = pool_slot & POOL_INDEX_MASK;
-	}
-	else
-	{
-		allocation.index = *count_max;
-		allocation.address = (u8 *) *buf + allocation.index*slot_size;
-		UnpoisonAddress(allocation.address, slot_size);
-		*count_max += 1;
-	}
-
-	*(u32 *) ((u8 *) allocation.address + pool_slot_offset) = 0;
-	*count += 1;
-	return allocation;
-}
-
-/* Internal: see ds_PoolRemove. */
-static ds_ForceInline void ds_PoolRemoveInternal(void *buf, u32 *count, u32 *next_free, const u32 count_max, const u32 index, const u64 slot_size, const u64 pool_slot_offset)
-{
-	ds_Assert(index < count_max);
-
-	u8 *slot = (u8 *) buf + index*slot_size;
-	u32 *pool_slot = (u32 *) (slot + pool_slot_offset);
-	ds_Assert((*pool_slot & POOL_ALLOCATION_MASK) == 0);
-
-	*pool_slot = POOL_ALLOCATION_MASK | *next_free;
-	*next_free = index;
-	*count -= 1;
-
-	PoisonAddress(slot, pool_slot_offset);
-	PoisonAddress(slot + pool_slot_offset + sizeof(u32), slot_size - pool_slot_offset - sizeof(u32));
-}
-
-/* Internal: debug checks of ds_PoolIndex (empty in release builds). */
-static ds_ForceInline void ds_PoolIndexCheck(const void *buf, const u32 length, const void *addr, const u64 slot_size)
-{
-	ds_Assert((u64) addr >= (u64) buf);
-	ds_Assert((u64) addr < (u64) buf + length*slot_size);
-	ds_Assert(((u64) addr - (u64) buf) % slot_size == 0);
-}
+/* Internal: see ds_PoolAdd, ds_PoolRemove, and the debug checks of ds_PoolIndex (empty in release builds). */
+static ds_ForceInline struct slot ds_PoolAddInternal(void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, const u32 growable, const u64 slot_size, const u64 pool_slot_offset);
+static ds_ForceInline void ds_PoolRemoveInternal(void *buf, u32 *count, u32 *next_free, const u32 count_max, const u32 index, const u64 slot_size, const u64 pool_slot_offset);
+static ds_ForceInline void ds_PoolIndexCheck(const void *buf, const u32 length, const void *addr, const u64 slot_size);
 
 #define ds_PoolAlloc(mem, pool, __length, __growable)                                                   \
 	ds_PoolAllocInternal((mem), &(pool).heap_allocated, (void **) &(pool).buf, &(pool).length,         \
@@ -767,27 +676,7 @@ Flush only while no other thread uses the pool):
     void            ds_TPoolFreeListPush(pool, list, index)
     struct slot     ds_TPoolFreeListPop(pool, list)
 
-::: Internals :::
-
-Free lists are lock-free (Treiber) stacks of slot indices, one per thread index, each on its own cache
-line (struct ds_TStack); an add tries its own list, then 2*logical_core_count random others. A list's head
-is (tag << 32) | index of its top slot, TSTACK_NULL if empty; tpool_tail in each slot holds the head below
-it. Each push increments the slot's tpool_tag, so a slot popped and pushed back between another thread's
-load and compare-exchange changes the head (no ABA).
-
-Block 0 has N = initial_length (a power of two) slots, block 1 also N, block k >= 1 has N << (k-1), so the
-pool length doubles with each block and an index maps to its block without a search:
-
-    blocks:   [N][N][2N][4N][8N] ...   (block k >= 1 starts at index N << (k-1))
-    shift = log2(N) = Ctz32(N)
-
-    i < N:   block 0, offset i
-    i >= N:  block  = 1 + (bit index of the leading 1 of i >> shift) = 32 - Clz32(i >> shift)
-             offset = i & ((N << (block-1)) - 1)       (block k >= 1 holds the indices with that leading bit)
-
-At most 32 blocks (a_length < 2^31). Add, Remove, Address, the free-list operations and the fast path of
-Increment are force-inlined (sizeof(Type) and the node field offsets are constants there); Alloc, Dealloc,
-Flush and adding a block are out of line.
+A TPool must stay below 2^31 slots (asserted in debug builds only).
 */
 
 #define TPOOL_NODE		u64 tpool_tail;		\
@@ -834,6 +723,151 @@ void ds_TPoolDeallocInternal(struct ds_TPoolState *state, void **block);
 void ds_TPoolFlushInternal(struct ds_TPoolState *state);
 /* Internal: wait until slot index exists, adding a block if no other thread is (the cold path of Increment). */
 void ds_TPoolGrowInternal(struct ds_TPoolState *state, void **block, const u32 index, const u64 slot_size);
+
+/* Internal: block, offset in the block and untyped address of slot index. */
+static ds_ForceInline u32 ds_TPoolBlockInternal(const struct ds_TPoolState *state, const u32 index);
+static ds_ForceInline u32 ds_TPoolOffsetInternal(const struct ds_TPoolState *state, const u32 index);
+static ds_ForceInline u8 *ds_TPoolAddressInternal(const struct ds_TPoolState *state, void *const *block, const u32 index, const u64 slot_size);
+/* Internal: see ds_TPoolFreeListPush, ds_TPoolFreeListPop, ds_TPoolIncrement, ds_TPoolAdd. */
+static ds_ForceInline void ds_TStackPushInternal(struct ds_TStack *stack, const struct ds_TPoolState *state, void *const *block, const u32 index, const u64 slot_size, const u64 tail_offset, const u64 tag_offset);
+static ds_ForceInline struct slot ds_TStackPopInternal(struct ds_TStack *stack, const struct ds_TPoolState *state, void *const *block, const u64 slot_size, const u64 tail_offset);
+static ds_ForceInline struct slot ds_TPoolIncrementInternal(struct ds_TPoolState *state, void **block, const u64 slot_size);
+static ds_ForceInline struct slot ds_TPoolAddInternal(struct ds_TPoolState *state, void **block, const u64 slot_size, const u64 tail_offset);
+
+/* Internal: node field offsets (constants; never reads block, see ds_PoolSlotOffset) */
+#define ds_TPoolTailOffset(pool)	((u64) &((1 ? NULL : (pool).block[0])->tpool_tail))
+#define ds_TPoolTagOffset(pool)		((u64) &((1 ? NULL : (pool).block[0])->tpool_tag))
+
+#define ds_TPoolAlloc(pool, logical_core_count, initial_count)                                          \
+	ds_TPoolAllocInternal(&(pool).state, (void **) (pool).block, (logical_core_count), (initial_count), \
+	                      sizeof((pool).block[0][0]))
+
+#define ds_TPoolDealloc(pool)	ds_TPoolDeallocInternal(&(pool).state, (void **) (pool).block)
+#define ds_TPoolFlush(pool)	ds_TPoolFlushInternal(&(pool).state)
+
+#define ds_TPoolAddress(pool, index)                                                                    \
+	((pool).block[ds_TPoolBlockInternal(&(pool).state, (index))] + ds_TPoolOffsetInternal(&(pool).state, (index)))
+
+#define ds_TPoolIncrement(pool)                                                                         \
+	ds_TPoolIncrementInternal(&(pool).state, (void **) (pool).block, sizeof((pool).block[0][0]))
+
+#define ds_TPoolAdd(pool)                                                                               \
+	ds_TPoolAddInternal(&(pool).state, (void **) (pool).block, sizeof((pool).block[0][0]), ds_TPoolTailOffset(pool))
+
+#define ds_TPoolFreeListPush(pool, list, index)                                                         \
+	ds_TStackPushInternal((pool).state.t_free_list + (list), &(pool).state, (void **) (pool).block,     \
+	                      (index), sizeof((pool).block[0][0]), ds_TPoolTailOffset(pool), ds_TPoolTagOffset(pool))
+
+#define ds_TPoolFreeListPop(pool, list)                                                                 \
+	ds_TStackPopInternal((pool).state.t_free_list + (list), &(pool).state, (void **) (pool).block,      \
+	                     sizeof((pool).block[0][0]), ds_TPoolTailOffset(pool))
+
+#define ds_TPoolRemove(pool, index)	ds_TPoolFreeListPush(pool, ds_ThreadSelfIndex(), index)
+
+
+/******************************** CPool inline definitions ********************************/
+
+static inline struct slot ds_CPoolPushInternal(void **buf, u32 *count, u32 *length, u32 *heap_allocated, const u64 slot_size, const u32 growable)
+{
+    if (*count == *length)
+    {                                                                                   
+        if (!growable)                                                           
+        {                                                                               
+            return (struct slot) { .index = U32_MAX, .address = (u8*)(*buf) - slot_size }; 
+        } 
+                                                                                        
+        const u64 new_length = (*length)
+                             ? (*length) << 1
+                             : 1;
+        const u64 new_size = (new_length+1) * slot_size;
+        /* a deallocated pool has no buffer */
+        const u64 old_size = (*buf) ? ((*length)+1) * slot_size : 0;
+        void *base = (*buf) ? (u8 *)(*buf) - slot_size : NULL;
+        base = ds_Realloc(base, old_size, new_size, DS_CACHE_LINE);
+        PoisonAddress(base, new_size);                                
+        UnpoisonAddress(base, (*count + 1)*slot_size);                
+        *buf = (u8 *) base + slot_size;
+        *length = (u32) new_length;
+        *heap_allocated = 1;
+    }
+
+    const struct slot slot = { .index = *count, .address = (u8*)(*buf) + *count*slot_size };
+    UnpoisonAddress(slot.address, slot_size);                
+    *count += 1;                                                              
+    return slot;
+}
+
+static inline struct slot ds_CPoolPushMemcpyInternal(void **buf, u32 *count, u32 *length, u32 *heap_allocated, const u64 slot_size, const u32 growable, const void *src)
+{
+    struct slot slot = ds_CPoolPushInternal(buf, count, length, heap_allocated, slot_size, growable);
+    memcpy(slot.address, src, slot_size);
+    return slot;
+}
+
+/******************************** Pool inline definitions *********************************/
+
+/* Internal: see ds_PoolAdd. */
+static ds_ForceInline struct slot ds_PoolAddInternal(void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, const u32 growable, const u64 slot_size, const u64 pool_slot_offset)
+{
+	if (*count == *length)
+	{
+		if (!growable)
+		{
+			return (struct slot) { .address = NULL, .index = POOL_NULL };
+		}
+		/* a full pool has no free slot, so the add below takes slot count_max */
+		ds_PoolGrowInternal(buf, length, slot_size);
+	}
+
+	struct slot allocation;
+	if (*next_free != POOL_INDEX_MASK)
+	{
+		allocation.index = *next_free;
+		allocation.address = (u8 *) *buf + allocation.index*slot_size;
+		UnpoisonAddress(allocation.address, slot_size);
+		const u32 pool_slot = *(const u32 *) ((u8 *) allocation.address + pool_slot_offset);
+		ds_Assert(pool_slot & POOL_ALLOCATION_MASK);
+		*next_free = pool_slot & POOL_INDEX_MASK;
+	}
+	else
+	{
+		allocation.index = *count_max;
+		allocation.address = (u8 *) *buf + allocation.index*slot_size;
+		UnpoisonAddress(allocation.address, slot_size);
+		*count_max += 1;
+	}
+
+	*(u32 *) ((u8 *) allocation.address + pool_slot_offset) = 0;
+	*count += 1;
+	return allocation;
+}
+
+/* Internal: see ds_PoolRemove. */
+static ds_ForceInline void ds_PoolRemoveInternal(void *buf, u32 *count, u32 *next_free, const u32 count_max, const u32 index, const u64 slot_size, const u64 pool_slot_offset)
+{
+	ds_Assert(index < count_max);
+
+	u8 *slot = (u8 *) buf + index*slot_size;
+	u32 *pool_slot = (u32 *) (slot + pool_slot_offset);
+	ds_Assert((*pool_slot & POOL_ALLOCATION_MASK) == 0);
+
+	*pool_slot = POOL_ALLOCATION_MASK | *next_free;
+	*next_free = index;
+	*count -= 1;
+
+	PoisonAddress(slot, pool_slot_offset);
+	PoisonAddress(slot + pool_slot_offset + sizeof(u32), slot_size - pool_slot_offset - sizeof(u32));
+}
+
+/* Internal: debug checks of ds_PoolIndex (empty in release builds). */
+static ds_ForceInline void ds_PoolIndexCheck(const void *buf, const u32 length, const void *addr, const u64 slot_size)
+{
+	ds_Assert((u64) addr >= (u64) buf);
+	ds_Assert((u64) addr < (u64) buf + length*slot_size);
+	ds_Assert(((u64) addr - (u64) buf) % slot_size == 0);
+}
+
+/******************************** TPool inline definitions ********************************/
 
 /* Internal: block and offset in the block of slot index. */
 static ds_ForceInline u32 ds_TPoolBlockInternal(const struct ds_TPoolState *state, const u32 index)
@@ -915,36 +949,6 @@ static ds_ForceInline struct slot ds_TPoolAddInternal(struct ds_TPoolState *stat
 
 	return ds_TPoolIncrementInternal(state, block, slot_size);
 }
-
-/* Internal: node field offsets (constants; never reads block, see ds_PoolSlotOffset) */
-#define ds_TPoolTailOffset(pool)	((u64) &((1 ? NULL : (pool).block[0])->tpool_tail))
-#define ds_TPoolTagOffset(pool)		((u64) &((1 ? NULL : (pool).block[0])->tpool_tag))
-
-#define ds_TPoolAlloc(pool, logical_core_count, initial_count)                                          \
-	ds_TPoolAllocInternal(&(pool).state, (void **) (pool).block, (logical_core_count), (initial_count), \
-	                      sizeof((pool).block[0][0]))
-
-#define ds_TPoolDealloc(pool)	ds_TPoolDeallocInternal(&(pool).state, (void **) (pool).block)
-#define ds_TPoolFlush(pool)	ds_TPoolFlushInternal(&(pool).state)
-
-#define ds_TPoolAddress(pool, index)                                                                    \
-	((pool).block[ds_TPoolBlockInternal(&(pool).state, (index))] + ds_TPoolOffsetInternal(&(pool).state, (index)))
-
-#define ds_TPoolIncrement(pool)                                                                         \
-	ds_TPoolIncrementInternal(&(pool).state, (void **) (pool).block, sizeof((pool).block[0][0]))
-
-#define ds_TPoolAdd(pool)                                                                               \
-	ds_TPoolAddInternal(&(pool).state, (void **) (pool).block, sizeof((pool).block[0][0]), ds_TPoolTailOffset(pool))
-
-#define ds_TPoolFreeListPush(pool, list, index)                                                         \
-	ds_TStackPushInternal((pool).state.t_free_list + (list), &(pool).state, (void **) (pool).block,     \
-	                      (index), sizeof((pool).block[0][0]), ds_TPoolTailOffset(pool), ds_TPoolTagOffset(pool))
-
-#define ds_TPoolFreeListPop(pool, list)                                                                 \
-	ds_TStackPopInternal((pool).state.t_free_list + (list), &(pool).state, (void **) (pool).block,      \
-	                     sizeof((pool).block[0][0]), ds_TPoolTailOffset(pool))
-
-#define ds_TPoolRemove(pool, index)	ds_TPoolFreeListPush(pool, ds_ThreadSelfIndex(), index)
 
 
 #ifdef __cplusplus

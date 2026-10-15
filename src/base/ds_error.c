@@ -91,13 +91,15 @@ void FatalCleanupAndExit(void)
 			free(strings);
 		}
 #else
-		const int len = emscripten_get_callstack(EM_LOG_C_STACK | EM_LOG_JS_STACK, 0, 0);
-		char *callstack = malloc(len + 256);
-		emscripten_get_callstack(EM_LOG_C_STACK | EM_LOG_JS_STACK, callstack, 0);
+		/* the first call returns the bytes needed (with the '\0'); the stack may grow by the second call */
+		const int len = emscripten_get_callstack(EM_LOG_C_STACK | EM_LOG_JS_STACK, NULL, 0) + 256;
+		char *callstack = malloc(len);
+		if (callstack)
 		{
+			emscripten_get_callstack(EM_LOG_C_STACK | EM_LOG_JS_STACK, callstack, len);
 			fprintf(stderr, "================== STACKTRACE ==================\n%s", callstack);
+			free(callstack);
 		}
-		free(callstack);
 #endif
 		LogShutdown();
 		/* break only now: without a debugger the breakpoint kills the process, unflushed output is lost */
@@ -123,7 +125,7 @@ utf8 Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 cod
     const utf8 err_str = Utf8CstrBuffered(buf, bufsize, str);
 	if (err_str.len == 0)
 	{
-		Log(T_SYSTEM, S_ERROR, "strnlen failed to determine string length in %s, most likely due to no null-termination? Fix.", __func__);
+		Log(T_SYSTEM, S_ERROR, "%s: no text for error code %u (or it does not fit %u bytes)", __func__, code, bufsize);
 	}
 
 	return err_str;
@@ -139,7 +141,7 @@ utf8 Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 cod
 	if (strerror_r(code, (char *) tmpbuf, ERROR_BUFSIZE) != 0)
 	{
         str = "";
-		Log(T_SYSTEM, S_ERROR, "strnlen failed to determine string length in %s, most likely due to no null-termination? Fix.", __func__);
+		Log(T_SYSTEM, S_ERROR, "%s: strerror_r has no text for error code %u", __func__, code);
 	}
 
     const utf8 err_str = Utf8CstrBuffered(buf, bufsize, str);
@@ -165,45 +167,29 @@ void FatalCleanupAndExit()
 	if (AtomicCompareExchangeAcqRlx32(&a_fatal_cleanup_initiated, &desired, 1))
 	{
 		tl_fatal_cleanup_running = 1;
-    		SYSTEMTIME local_time;
-    		GetLocalTime(&local_time);
 
-		/* no scratch arenas before ds_ThreadMasterInit (e.g. ds_Init's CPU check): no dump then */
-		if (g_tl_self)
+		/*
+		 * a compile-time name opened with CreateFileA (process working directory): no scratch arena and no
+		 * engine state, so the dump is written even with the scratch arenas exhausted or before any init
+		 */
+		HANDLE dump = CreateFileA(DS_EXECUTABLE_CSTR "_" DS_VERSION_CSTR "_latest.dmp", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+		if (dump == INVALID_HANDLE_VALUE)
 		{
-			struct arena *tmp = ArenaPushScratch();
-			const utf8 utf8_filename = Utf8Format(tmp, "%s_%s_latest.dmp"
-					, DS_EXECUTABLE_CSTR
-					, DS_VERSION_CSTR);
-			//const utf8 utf8_filename = Utf8Format(tmp, "%s_%s_%u%u%u_%u%u%u.dmp",
-			//           "engine_sandbox",
-			//	   "0_1",
-			//           local_time.wYear,
-			//	   local_time.wMonth,
-			//	   local_time.wDay,
-			//           local_time.wHour,
-			//	   local_time.wMinute,
-			//	   local_time.wSecond);
-			const char *filename = CstrUtf8(tmp, utf8_filename);
-			struct file dump = FileNull();
-			if (FileTryCreateAtCwd(tmp, &dump, filename, FILE_TRUNCATE) == FS_SUCCESS)
+			LogSystemError(S_ERROR);
+		}
+		else
+		{
+			if (!MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), dump, MiniDumpWithDataSegs | MiniDumpWithIndirectlyReferencedMemory, NULL, NULL, NULL))
 			{
-				if (!MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), dump.handle, MiniDumpWithFullMemory, NULL, NULL, NULL))
-				{
-					LogSystemError(S_ERROR);
-				}
-
-				FileClose(&dump);
+				LogSystemError(S_ERROR);
 			}
-			ArenaPopScratch();
+			CloseHandle(dump);
 		}
 
 		LogShutdown();
 		/* without a debugger the breakpoint kills the process, unflushed output is lost */
 		fflush(stdout);
-#if DS_DEBUG
 		Breakpoint(1);
-#endif
 		exit(1);
 	}
 

@@ -52,7 +52,7 @@ Results
 - Arena versions take exactly the bytes they need; on failure an empty string.
 - Utf8Alloc / Utf8Buffered return an empty string over a buffer; the caller keeps its capacity.
 - Integer parsers return a struct parseRetval: PARSE_SUCCESS and the value, or a failure and 0. F32/F64
-  parsers (dtoa strtod) return the value, 0 for empty input.
+  parsers return the correctly rounded value, 0 for empty input.
 - Formatting F32/F64 with decimals > 0 rounds correctly (ties to even); decimals 0 gives the shortest
   digits that read back to the same value.
 */

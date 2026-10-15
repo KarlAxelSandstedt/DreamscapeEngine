@@ -292,6 +292,12 @@ void ds_PoolSerializeInternal(struct ss *ss, const void *buf, const u32 length, 
 	}
 }
 
+/*
+ * pool_slot is 0 for an allocated slot; a removed slot holds POOL_ALLOCATION_MASK | the next free index,
+ * POOL_INDEX_MASK ending the free list. Add and Remove are force-inlined (ds_allocator.h): the macros pass
+ * sizeof(Type) and the offset of pool_slot, so both are constants in the inlined code. Growth is out of
+ * line (ds_PoolGrowInternal) and reallocates (length + 1)*2 slots, stub included.
+ */
 u32 ds_PoolAllocInternal(struct arena *mem, u32 *heap_allocated, void **buf, u32 *length, u32 *count, u32 *count_max, u32 *next_free, u32 *growable, const u64 slot_size, const u32 alloc_length, const u32 alloc_growable)
 {
 	ds_Assert(!alloc_growable || !mem);
@@ -346,6 +352,27 @@ void ds_PoolGrowInternal(void **buf, u32 *length, const u64 slot_size)
 	*length = new_length_including_stub - 1;
 }
 
+/*
+ * Free lists are lock-free (Treiber) stacks of slot indices, one per thread index, each on its own cache
+ * line (struct ds_TStack); an add tries its own list, then 2*logical_core_count random others. A list's head
+ * is (tag << 32) | index of its top slot, TSTACK_NULL if empty; tpool_tail in each slot holds the head below
+ * it. Each push increments the slot's tpool_tag, so a slot popped and pushed back between another thread's
+ * load and compare-exchange changes the head (no ABA).
+ *
+ * Block 0 has N = initial_length (a power of two) slots, block 1 also N, block k >= 1 has N << (k-1), so the
+ * pool length doubles with each block and an index maps to its block without a search:
+ *
+ *     blocks:   [N][N][2N][4N][8N] ...   (block k >= 1 starts at index N << (k-1))
+ *     shift = log2(N) = Ctz32(N)
+ *
+ *     i < N:   block 0, offset i
+ *     i >= N:  block  = 1 + (bit index of the leading 1 of i >> shift) = 32 - Clz32(i >> shift)
+ *              offset = i & ((N << (block-1)) - 1)       (block k >= 1 holds the indices with that leading bit)
+ *
+ * At most 32 blocks (a_length < 2^31). Add, Remove, Address, the free-list operations and the fast path of
+ * Increment are force-inlined in ds_allocator.h (sizeof(Type) and the node field offsets are constants
+ * there); Alloc, Dealloc, Flush and adding a block are out of line.
+ */
 void ds_TPoolAllocInternal(struct ds_TPoolState *state, void **block, const u32 logical_core_count, const u32 initial_count, const u64 slot_size)
 {
 	ds_Assert(initial_count <= 0x80000000);

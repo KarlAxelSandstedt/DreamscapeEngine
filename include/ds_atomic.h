@@ -210,73 +210,15 @@ silently differ between compilers.
 	#define AtomicFetchSubRel64(fetch_addr, val)	(DS_ATOMIC_SIZE_CHECK(fetch_addr, 8), (u64) _InterlockedExchangeAdd64((__int64 volatile *) (fetch_addr), (__int64) (0ull - (u64) (val))))
 	#define AtomicFetchSubSeqCst64(fetch_addr, val)	(DS_ATOMIC_SIZE_CHECK(fetch_addr, 8), (u64) _InterlockedExchangeAdd64((__int64 volatile *) (fetch_addr), (__int64) (0ull - (u64) (val))))
 
-	/*
-	 * *cmp_addr is read once, before the exchange (as __atomic_compare_exchange_n does): it may be shared
-	 * memory that another thread changes once the exchange succeeded (a Treiber stack push passes the
-	 * pushed node's link), so reading it again afterwards could misreport success.
-	 */
-	__forceinline u32 ds_InterlockedCompareExchange(long volatile* dst_addr, long exch_val, long* cmp_addr)
-	{
-		const long expected = *cmp_addr;
-		const long initial_val = _InterlockedCompareExchange(dst_addr, exch_val, expected);
-		if (initial_val == expected)
-		{
-			return 1;
-		}
-		*cmp_addr = initial_val;
-		return 0;
-	}
-
-	__forceinline u32 ds_InterlockedCompareExchange64(__int64 volatile* dst_addr, __int64 exch_val, __int64* cmp_addr)
-	{
-		const __int64 expected = *cmp_addr;
-		const __int64 initial_val = _InterlockedCompareExchange64(dst_addr, exch_val, expected);
-		if (initial_val == expected)
-		{
-			return 1;
-		}
-		*cmp_addr = initial_val;
-		return 0;
-	}
-
-	/* functions, not macros: val is evaluated once; unsigned sum: wraps like the GCC builtins */
-	__forceinline u32 ds_InterlockedAddFetch(long volatile *fetch_addr, const long val)
-	{
-		return (u32) _InterlockedExchangeAdd(fetch_addr, val) + (u32) val;
-	}
-
-	__forceinline u64 ds_InterlockedAddFetch64(__int64 volatile *fetch_addr, const __int64 val)
-	{
-		return (u64) _InterlockedExchangeAdd64(fetch_addr, val) + (u64) val;
-	}
-
-	/* x64: an aligned load is already an acquire load (and seq_cst, as seq_cst stores are xchg); the barrier keeps the compiler from moving later accesses before it */
-	__forceinline u32 ds_LoadAcq32(const volatile long *fetch_addr)
-	{
-		const u32 val = (u32) __iso_volatile_load32((const volatile __int32 *) fetch_addr);
-		_ReadWriteBarrier();
-		return val;
-	}
-
-	__forceinline u64 ds_LoadAcq64(const volatile __int64 *fetch_addr)
-	{
-		const u64 val = (u64) __iso_volatile_load64(fetch_addr);
-		_ReadWriteBarrier();
-		return val;
-	}
-
-	/* x64: an aligned store is already a release store; the barrier keeps the compiler from moving earlier accesses after it */
-	__forceinline void ds_StoreRel32(volatile long *dst_addr, const long val)
-	{
-		_ReadWriteBarrier();
-		__iso_volatile_store32((volatile __int32 *) dst_addr, val);
-	}
-
-	__forceinline void ds_StoreRel64(volatile __int64 *dst_addr, const __int64 val)
-	{
-		_ReadWriteBarrier();
-		__iso_volatile_store64(dst_addr, val);
-	}
+	/* helpers behind the macros below, defined at the bottom */
+	__forceinline u32 ds_InterlockedCompareExchange(long volatile* dst_addr, long exch_val, long* cmp_addr);
+	__forceinline u32 ds_InterlockedCompareExchange64(__int64 volatile* dst_addr, __int64 exch_val, __int64* cmp_addr);
+	__forceinline u32 ds_InterlockedAddFetch(long volatile *fetch_addr, const long val);
+	__forceinline u64 ds_InterlockedAddFetch64(__int64 volatile *fetch_addr, const __int64 val);
+	__forceinline u32 ds_LoadAcq32(const volatile long *fetch_addr);
+	__forceinline u64 ds_LoadAcq64(const volatile __int64 *fetch_addr);
+	__forceinline void ds_StoreRel32(volatile long *dst_addr, const long val);
+	__forceinline void ds_StoreRel64(volatile __int64 *dst_addr, const __int64 val);
 
 	/* if (dst == cmp) set dst to exch_val */
 	#define AtomicCompareExchangeRlxRlx32(dst_addr, cmp_addr, exch_val)	(DS_ATOMIC_SIZE_CHECK(dst_addr, 4), ds_InterlockedCompareExchange((long volatile *) (dst_addr), (long) (exch_val), (long*) (cmp_addr)))
@@ -354,13 +296,8 @@ silently differ between compilers.
 	
 	#define U64AddReturnOverflow(dst_addr, src1, src2)	((u64) _addcarry_u64(0, src1, src2, dst_addr))
 	
-	__forceinline u64 U64MulReturnOverflow(u64 *dst, const u64 src1, const u64 src2)
-	{
-		u64 high;
-		*dst = _umul128(src1, src2, &high);	
-		return high;
-	}
-	
+	__forceinline u64 U64MulReturnOverflow(u64 *dst, const u64 src1, const u64 src2);
+
 	/******************************************** Bit Manipulation *********************************************/
 	
 	
@@ -372,6 +309,87 @@ silently differ between compilers.
 	#define C64(x)		((u32) __popcnt64((u64) (x)))
 	#define Cz32(x)		((u32) __popcnt(~(u32) (x)))
 	#define Cz64(x)		((u32) __popcnt64(~(u64) (x)))
+#endif
+
+/******************************************** MSVC inline definitions ********************************************/
+
+#if __DS_COMPILER__ == __DS_MSVC__
+
+	/*
+	 * *cmp_addr is read once, before the exchange (as __atomic_compare_exchange_n does): it may be shared
+	 * memory that another thread changes once the exchange succeeded (a Treiber stack push passes the
+	 * pushed node's link), so reading it again afterwards could misreport success.
+	 */
+	__forceinline u32 ds_InterlockedCompareExchange(long volatile* dst_addr, long exch_val, long* cmp_addr)
+	{
+		const long expected = *cmp_addr;
+		const long initial_val = _InterlockedCompareExchange(dst_addr, exch_val, expected);
+		if (initial_val == expected)
+		{
+			return 1;
+		}
+		*cmp_addr = initial_val;
+		return 0;
+	}
+
+	__forceinline u32 ds_InterlockedCompareExchange64(__int64 volatile* dst_addr, __int64 exch_val, __int64* cmp_addr)
+	{
+		const __int64 expected = *cmp_addr;
+		const __int64 initial_val = _InterlockedCompareExchange64(dst_addr, exch_val, expected);
+		if (initial_val == expected)
+		{
+			return 1;
+		}
+		*cmp_addr = initial_val;
+		return 0;
+	}
+
+	/* functions, not macros: val is evaluated once; unsigned sum: wraps like the GCC builtins */
+	__forceinline u32 ds_InterlockedAddFetch(long volatile *fetch_addr, const long val)
+	{
+		return (u32) _InterlockedExchangeAdd(fetch_addr, val) + (u32) val;
+	}
+
+	__forceinline u64 ds_InterlockedAddFetch64(__int64 volatile *fetch_addr, const __int64 val)
+	{
+		return (u64) _InterlockedExchangeAdd64(fetch_addr, val) + (u64) val;
+	}
+
+	/* x64: an aligned load is already an acquire load (and seq_cst, as seq_cst stores are xchg); the barrier keeps the compiler from moving later accesses before it */
+	__forceinline u32 ds_LoadAcq32(const volatile long *fetch_addr)
+	{
+		const u32 val = (u32) __iso_volatile_load32((const volatile __int32 *) fetch_addr);
+		_ReadWriteBarrier();
+		return val;
+	}
+
+	__forceinline u64 ds_LoadAcq64(const volatile __int64 *fetch_addr)
+	{
+		const u64 val = (u64) __iso_volatile_load64(fetch_addr);
+		_ReadWriteBarrier();
+		return val;
+	}
+
+	/* x64: an aligned store is already a release store; the barrier keeps the compiler from moving earlier accesses after it */
+	__forceinline void ds_StoreRel32(volatile long *dst_addr, const long val)
+	{
+		_ReadWriteBarrier();
+		__iso_volatile_store32((volatile __int32 *) dst_addr, val);
+	}
+
+	__forceinline void ds_StoreRel64(volatile __int64 *dst_addr, const __int64 val)
+	{
+		_ReadWriteBarrier();
+		__iso_volatile_store64(dst_addr, val);
+	}
+
+	__forceinline u64 U64MulReturnOverflow(u64 *dst, const u64 src1, const u64 src2)
+	{
+		u64 high;
+		*dst = _umul128(src1, src2, &high);
+		return high;
+	}
+
 #endif
 
 #ifdef __cplusplus

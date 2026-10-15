@@ -35,10 +35,10 @@ Usage:
     LogSystemError(S_ERROR);                                (text of the last system error: errno, Windows GetLastError())
     LogSystemErrorCode(S_ERROR, code);                      (text of a given errno / Windows error code)
 
-Internals:
-    A ticket factory hands out the LOG_MAX_MESSAGES slots as a ring. A thread that finds no free slot becomes
-    the disk writer (a_writing_to_disk) and writes the completed slots in order until it reaches one still
-    being formatted.
+File output:
+    Lines reach the file in the order their slots were taken, once LOG_MAX_MESSAGES are pending or at
+    LogShutdown. An S_FATAL message is written and flushed before Log returns (or by a concurrent LogShutdown), so it survives a process
+    that dies before LogShutdown (an assert's Breakpoint without a debugger).
 */
 
 #ifndef __DREAMSCAPE_LOG_H__
@@ -62,8 +62,9 @@ extern "C" {
  * created. 
  */
 void 	LogInit(struct arena *mem, const char *filepath);
-/* 
- * Write all pending messages to the file and close it; later messages are dropped.
+/*
+ * Write all pending messages to the file and close it; later messages are dropped. Only the first call
+ * does anything (later or concurrent calls return at once).
  */
 void 	LogShutdown(void);
 /*

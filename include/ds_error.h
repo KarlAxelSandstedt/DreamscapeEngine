@@ -38,7 +38,14 @@ extern "C" {
 
 #include "ds_string.h"
 
-/* Generate stacktrace and shutdown log gracefully, then exits */
+/*
+Never returns. The first caller writes a crash report (Linux: stack trace on stderr; web: call stack on
+stderr; Windows: minidump <executable>_<version>_latest.dmp in the working directory: stacks, globals and the
+memory they point to, not the whole heap), shuts down the log (LogShutdown) and ends the process:
+Breakpoint (a debugger stops there), then exit(1). Other
+threads calling it meanwhile wait for that exit; a fatal error during the cleanup exits at once. Safe
+before any engine init.
+*/
 void 	FatalCleanupAndExit(void);
 
 /* Write the text of a system error code into buf and return it; empty on failure. Thread-safe. */

@@ -45,7 +45,6 @@ the copy fails.
   id that is not present, so the empty id can't be added. Reference and Dereference leave the stub's count
   alone: callers use the stub as a default they reference freely.
 - reference_count is the callers' bookkeeping. The database frees no id. Not thread-safe.
-- Lookup is force-inlined: it compares each candidate's stored hash before its id.
 */
 
 #ifndef __DS_STRING_DATABASE_H__
@@ -155,7 +154,12 @@ void        ds_SDBFlushInternal(const struct ds_SDBPool pool, struct ds_HashMap 
 /* mem == NULL: alias str */
 struct slot ds_SDBAddInternal(struct arena *mem, const struct ds_SDBPool pool, struct ds_HashMap *hash, const struct ds_SDBLayout layout, const utf8 str);
 void        ds_SDBRemoveInternal(const struct ds_SDBPool pool, struct ds_HashMap *hash, const struct ds_SDBLayout layout, const utf8 str);
+static ds_ForceInline struct slot ds_SDBLookupInternal(void *buf, const struct ds_HashMap *hash, const struct ds_SDBLayout layout, const utf8 str);
+static ds_ForceInline struct slot ds_SDBReferenceInternal(void *buf, const struct ds_HashMap *hash, const struct ds_SDBLayout layout, const utf8 str);
 
+/******************************** inline definitions ********************************/
+
+/* force-inlined: callers get constant field offsets; the stored hash is compared before the id */
 static ds_ForceInline struct slot ds_SDBLookupInternal(void *buf, const struct ds_HashMap *hash, const struct ds_SDBLayout layout, const utf8 str)
 {
 	const u32 key = Utf8Hash(str);
