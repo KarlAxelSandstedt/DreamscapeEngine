@@ -570,9 +570,12 @@ utf8 CwdGet(struct arena *mem)
 		const DWORD len = GetCurrentDirectory(req_size, buf);
 		if (len)
 		{
-			str.buf = buf;
-			str.len = (u32) len;
-			str.size = (u32) req_size;
+			/* len bytes (ANSI, not necessarily UTF-8): count the codepoints as decoding reads them */
+			str = (utf8) { .buf = buf, .size = (u32) len, .len = 0 };
+			for (u64 offset = 0; offset < str.size; str.len += 1)
+			{
+				Utf8ReadCodepoint(&offset, &str, offset);
+			}
 		}
 		else
 		{

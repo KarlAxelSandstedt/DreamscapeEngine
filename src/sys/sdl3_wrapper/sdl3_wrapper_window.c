@@ -350,21 +350,17 @@ utf8 sdl3_Utf8GetClipboard(struct arena *mem)
 		utf8 utf8_null =  { .buf = (u8*) SDL_GetClipboardText() };
 		if (utf8_null.buf)
 		{
-			/* bytes with the '\0': decoding reads no further */
-			utf8_null.size = (u32) strlen((const char *) utf8_null.buf) + 1;
+			utf8_null.size = (u32) strlen((const char *) utf8_null.buf);
 			u32 len = 0;
-			u64 size = 0;
-			while (Utf8ReadCodepoint(&size, &utf8_null, size))
+			for (u64 offset = 0; offset < utf8_null.size; len += 1)
 			{
-				len += 1;
+				Utf8ReadCodepoint(&offset, &utf8_null, offset);
 			}
-			/* skip null */
-			size -= 1;
 
-			u8 *buf = ArenaPushMemcpy(mem, utf8_null.buf, size);
+			u8 *buf = ArenaPushMemcpy(mem, utf8_null.buf, utf8_null.size);
 			if (buf)
 			{
-				ret = (utf8) { .buf = buf, .len = len, .size = (u32) size };
+				ret = (utf8) { .buf = buf, .len = len, .size = utf8_null.size };
 			}
 			free (utf8_null.buf);
 		}

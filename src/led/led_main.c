@@ -30,7 +30,7 @@ void led_ProjectMenuMain(struct led *led)
 
 		struct ds_Window *sys_win = ds_WindowAddress(menu->window);
 		menu->input_line_new_project = ui_TextInputAlloc(&sys_win->mem_persistent, 32);
-		menu->utf8_new_project = Utf8Alloc(&sys_win->mem_persistent, 32*sizeof(u32));
+		menu->utf8_new_project = Utf8Alloc(&sys_win->mem_persistent, LED_PROJECT_NAME_BUFSIZE);
 	}
 
 	sys_win = ds_WindowAddress(menu->window);

@@ -221,7 +221,7 @@ utf8 Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 cod
 	utf8 err_str =
 	{
 		.buf = buf,
-		.size = bufsize,
+		.size = 0,
 		.len = 0,
 	};
 
@@ -239,6 +239,7 @@ utf8 Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 cod
 	{
 		err_str.len -= 1;
 	}
+	err_str.size = err_str.len;
 
 	return (err_str.len > 0) ? err_str : Utf8Empty();
 }

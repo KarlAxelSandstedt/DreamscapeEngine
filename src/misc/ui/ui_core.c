@@ -1653,8 +1653,12 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 	u32 hash_begin_offset = 0;
 	u64 offset = 0;
 	u32 text_len = formatted->len;
+	/* bytes of the text_len codepoints: codepoint_start keeps the byte offsets of the last three codepoints */
+	u32 text_bytes = formatted->size;
+	u64 codepoint_start[3] = { 0 };
 	for (u32 i = 0; i < formatted->len; ++i)
 	{
+		codepoint_start[i % 3] = offset;
 		const u32 codepoint = Utf8ReadCodepoint(&offset, formatted, offset);
 		if (codepoint == '#')
 		{
@@ -1664,16 +1668,19 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 				hash_begin_index = i+1;
 				hash_begin_offset = (u32) offset;
 				text_len = i-2;
+				text_bytes = (u32) codepoint_start[(i-2) % 3];
 				break;
 			}
 			else if (hash_count == 2 && i+1 == formatted->len)
 			{
 				text_len = i-2;
+				text_bytes = (u32) codepoint_start[(i-2) % 3];
 			}
 		}
 		else if (hash_count == 2)
 		{
 			text_len = i-2;
+			text_bytes = (u32) codepoint_start[(i-2) % 3];
 			break;
 		}
 		else
@@ -1806,7 +1813,7 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 					{
 						utf32 copy = (node->flags & (UI_TEXT_EXTERNAL | UI_TEXT_EXTERNAL_LAYOUT))
 							? Utf32Copy(g_ui->mem_frame, ds_CPoolTop(g_ui->external_text))
-							: Utf32Utf8(g_ui->mem_frame, (utf8) { .buf = formatted->buf, .len = text_len, .size = formatted->size });
+							: Utf32Utf8(g_ui->mem_frame, (utf8) { .buf = formatted->buf, .len = text_len, .size = text_bytes });
 
 						if (copy.len)
 						{
@@ -1846,7 +1853,7 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 			{
 				node->input.text = (node->flags & UI_TEXT_EXTERNAL)
 					? ds_CPoolTop(g_ui->external_text)
-					: Utf32Utf8(g_ui->mem_frame, (utf8) { .buf = formatted->buf, .len = text_len, .size = formatted->size });
+					: Utf32Utf8(g_ui->mem_frame, (utf8) { .buf = formatted->buf, .len = text_len, .size = text_bytes });
 
 				/* TODO wonky, would be nice to have it in immediate calculations, but wonky there as well... */
 				if (node->semantic_size[AXIS_2_X].type == UI_SIZE_TEXT)

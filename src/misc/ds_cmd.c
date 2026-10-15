@@ -97,7 +97,8 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 		codepoints_left -= 1;
 	}
 
-	token_start = text;
+	/* the command name starts after the leading whitespace */
+	token_start = text + i;
 	while (codepoints_left && (text[i] != ' ' && text[i] != '\t' && text[i] != '\n'))
 	{
 		Utf8ReadCodepoint(&i, &cmd->string, i);
@@ -105,7 +106,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 		codepoints_left -= 1;
 	}
 
-	token_string = (utf8) { .buf = token_start, .len = token_length, .size = token_length };
+	token_string = (utf8) { .buf = token_start, .len = token_length, .size = (u32) ((text + i) - token_start) };
 	cmd->function = CmdFunctionLookup(token_string).address;
 
 	if (cmd->function == NULL)
@@ -139,6 +140,8 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 
 		enum cmdToken token_type = CMD_TOKEN_INVALID;
 		u8 *token_start = text + i;
+		/* set for a quoted token: it ends before its closing quote */
+		u8 *token_end = NULL;
 		token_length = 0;
 		if (text[i] == '"')
 		{
@@ -159,7 +162,8 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 				cmd->arg[0].utf8 = Utf8FormatBuffered(buf, 256, "Error in tokenizing %k: non-closed string beginning.", &cmd->string); 
 				break;
 			}
-				
+
+			token_end = text + i;
 			i += 1;
 			codepoints_left -= 1;
 			token_type = CMD_TOKEN_STRING;
@@ -220,7 +224,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 			token_type = CMD_TOKEN_INVALID;
 		}
 
-		token_string = (utf8) { .buf = token_start, .len = token_length, .size = token_length };
+		token_string = (utf8) { .buf = token_start, .len = token_length, .size = (u32) (((token_end) ? token_end : text + i) - token_start) };
 		struct parseRetval ret = { .op_result = PARSE_SUCCESS };
 		switch (token_type)
 		{

@@ -351,9 +351,9 @@ u8 buf_us[] = { 0xce, 0xbc, 's', '\0' };
 u8 buf_ms[] = { 'm', 's', '\0' };
 u8 buf_s[]  = { 's', '\0' };
 
-const utf8 utf8_ns = { .buf = buf_ns, .len = 2 , .size = 3};
-const utf8 utf8_us = { .buf = buf_us, .len = 2 , .size = 4};
-const utf8 utf8_ms = { .buf = buf_ms, .len = 2 , .size = 3};
+const utf8 utf8_ns = { .buf = buf_ns, .len = 2 , .size = 2};
+const utf8 utf8_us = { .buf = buf_us, .len = 2 , .size = 3};
+const utf8 utf8_ms = { .buf = buf_ms, .len = 2 , .size = 2};
 const utf8 utf8_s  = { .buf = buf_s,  .len = 1 , .size = 1};
 
 static void TimeUnitConfigGenerate(struct ui_TimelineConfig *config)
@@ -723,7 +723,7 @@ void ui_PopupBuild(void)
 					if ((line->inter & UI_INTER_FOCUS) && g_ui->inter.key_clicked[DS_ENTER] && popup->state != UI_POPUP_STATE_PENDING_VERIFICATION)
 					{
 						CmdSubmitFormat(g_ui->mem_frame, "ui_TextInputModeDisable \"%k\"", &line->id);
-						*popup->input = Utf8Utf32Buffered(popup->input->buf, popup->input->size, popup->prompt->text);
+						*popup->input = Utf8Utf32Buffered(popup->input->buf, popup->input_capacity, popup->prompt->text);
 						popup->state = UI_POPUP_STATE_PENDING_VERIFICATION;
 					}
 
@@ -816,7 +816,7 @@ void ui_PopupUtf8Display(struct ui_Popup *popup, const utf8 display, const char 
 	}
 }
 
-void ui_PopupUtf8Input(struct ui_Popup *popup, utf8 *input, struct ui_TextInput *line, const utf8 description, const utf8 prefix, const char *title, const struct ui_Visual *visual)
+void ui_PopupUtf8Input(struct ui_Popup *popup, utf8 *input, struct ui_TextInput *line, const u32 input_capacity, const utf8 description, const utf8 prefix, const char *title, const struct ui_Visual *visual)
 {
 	if (popup->state == UI_POPUP_STATE_NULL)
 	{
@@ -830,6 +830,7 @@ void ui_PopupUtf8Input(struct ui_Popup *popup, utf8 *input, struct ui_TextInput 
 			popup->state = UI_POPUP_STATE_RUNNING;
 			popup->prompt = line;
 			popup->input = input;
+			popup->input_capacity = input_capacity;
 
 			g_queue->regs[0].ptr = popup;
 			g_queue->regs[1].ptr = (void *) visual;

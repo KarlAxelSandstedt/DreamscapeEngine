@@ -332,6 +332,7 @@ struct ui_Popup
 
 	struct ui_TextInput	*prompt;
 	utf8			*input;
+	u32			input_capacity;	/* bytes at input->buf */
 
 	union
 	{
@@ -354,7 +355,7 @@ struct ui_Popup ui_PopupNull(void);
 void		ui_PopupTryDestroyAndSetToNull(struct ui_Popup *popup);
 
 void 		ui_PopupUtf8Display(struct ui_Popup *popup, const utf8 display, const char *title, const struct ui_Visual *visual);
-void 		ui_PopupUtf8Input(struct ui_Popup *popup, utf8 *input, struct ui_TextInput *line, const utf8 description, const utf8 prefix, const char *title, const struct ui_Visual *visual);
+void 		ui_PopupUtf8Input(struct ui_Popup *popup, utf8 *input, struct ui_TextInput *line, const u32 input_capacity, const utf8 description, const utf8 prefix, const char *title, const struct ui_Visual *visual);
 void 		ui_PopupChoice(struct ui_Popup *popup, const utf8 description, const utf8 positive, const utf8 negative, const char *title, const struct ui_Visual *visual);
 
 /********************************************************************************************************/

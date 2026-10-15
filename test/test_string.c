@@ -29,7 +29,7 @@ static utf8 utf8_substring(struct arena *mem, const utf8 *string, const u32 star
 	if (len)
 	{
 		substring.buf = ArenaPushMemcpy(mem, string->buf + start, len+1);
-		substring.size = len+1;
+		substring.size = len;
 		substring.len = len;
 		substring.buf[len] = '\0';
 	}
@@ -45,7 +45,7 @@ static utf8 utf8_ascii_random(struct arena *mem, const u32 len)
 	utf8 substring =
 	{
 		.buf = ArenaPush(mem, len+1),
-		.size = len+1,
+		.size = len,
 		.len = len,
 	};
 	for (u32 i = 0; i < len; ++i)
@@ -558,8 +558,8 @@ static struct test_Output utf8_format_regressions(struct test_Environment *env)
 	TEST_TRUE(FormatTestBytes(Utf8FormatBuffered(buf, sizeof(buf), "\xC3\xA9=%u\xE2\x82\xAC", 5), 4, "\xC3\xA9=5\xE2\x82\xAC"));
 	TEST_TRUE(FormatTestBytes(Utf8FormatBuffered(buf, sizeof(buf), "\xF0\x9F\x98\x80%s\xF0\x9F\x98\x80", "\xC3\xA9"), 3, "\xF0\x9F\x98\x80\xC3\xA9\xF0\x9F\x98\x80"));
 	/*
-	 * a bad byte in the format is one (bad) codepoint, as the decoder reads it back; the '\0' after the
-	 * output keeps stale continuation bytes from completing a cut-off sequence
+	 * a bad byte in the format is one (bad) codepoint, as the decoder reads it back; bytes ends the
+	 * output, so stale continuation bytes after it never complete a cut-off sequence
 	 */
 	memset(buf, 0xAC, sizeof(buf));
 	TEST_TRUE(FormatTestBytes(Utf8FormatBuffered(buf, sizeof(buf), "\xC3" "A%u", 1), 3, "\xC3" "A1"));
@@ -636,10 +636,10 @@ static struct test_Output utf8_decode_and_parse_regressions(struct test_Environm
 	/* Utf8CstrBuffered counts only the copied bytes, not stale continuation bytes after them */
 	u8 buf[64];
 	memset(buf, 0xAC, sizeof(buf));
-	/* size stays the capacity; the '\0' after the copy keeps a cut-off sequence bad */
+	/* bytes ends the string: stale continuation bytes after a cut-off sequence are never read */
 	const utf8 cut = Utf8CstrBuffered(buf, sizeof(buf), "A\xE2\x82");
 	TEST_EQUAL(3, cut.len);
-	TEST_EQUAL(sizeof(buf), cut.size);
+	TEST_EQUAL(3, cut.size);
 	TEST_EQUAL(3, Utf8SizeRequired(cut));
 	memset(buf + 8, 0xAC, sizeof(buf) - 8);
 	const utf8 cut_copy = Utf8CopyBuffered(buf + 8, sizeof(buf) - 8, cut);
@@ -745,8 +745,69 @@ static struct test_Output utf8_decode_and_parse_regressions(struct test_Environm
 	return output;
 }
 
+/* decoding the len codepoints of str ends exactly at its byte count */
+static u32 BytesExact(const utf8 str)
+{
+	u64 offset = 0;
+	for (u32 i = 0; i < str.len; ++i)
+	{
+		Utf8ReadCodepoint(&offset, &str, offset);
+	}
+	return offset == Utf8SizeRequired(str);
+}
+
+/* every utf8 producer returns exactly the bytes of its len codepoints (ASCII, non-ASCII and bad bytes) */
+static struct test_Output utf8_bytes_invariant(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+	const char *cstrs[] = { "", "ascii", "\xC3\xA9\xE2\x82\xAC\xF0\x9F\x98\x80", "bad \xC3 \xE2\x82 \x80 end", "\xE2\x82" };
+	u8 buf[128];
+	u32 buf32[64];
+	for (u32 k = 0; k < sizeof(cstrs) / sizeof(cstrs[0]); ++k)
+	{
+		const utf8 a = Utf8Cstr(env->mem_1, cstrs[k]);
+		const utf8 b = Utf8CstrBuffered(buf, sizeof(buf), cstrs[k]);
+		TEST_TRUE(BytesExact(a));
+		TEST_TRUE(BytesExact(b));
+		TEST_EQUAL(strlen(cstrs[k]), Utf8SizeRequired(a));
+		TEST_EQUAL(strlen(cstrs[k]), Utf8SizeRequired(b));
+		TEST_TRUE(BytesExact(Utf8Copy(env->mem_1, a)));
+		TEST_TRUE(BytesExact(Utf8CopyBuffered(buf + 64, 64, a)));
+		TEST_TRUE(BytesExact(Utf8Format(env->mem_1, "%s|%k|%u", cstrs[k], &a, k)));
+		TEST_TRUE(BytesExact(Utf8FormatBuffered(buf, sizeof(buf), "x%sy", cstrs[k])));
+
+		const utf32 wide = Utf32Utf8(env->mem_1, a);
+		const utf8 narrow = Utf8Utf32(env->mem_1, wide);
+		/* bad codepoints have no UTF-8 form: the conversion back fails as a whole */
+		if (narrow.len)
+		{
+			TEST_TRUE(BytesExact(narrow));
+			TEST_TRUE(BytesExact(Utf8Utf32Buffered(buf, sizeof(buf), wide)));
+			TEST_TRUE(BytesExact(Utf8Utf32NullTerminated(env->mem_1, wide)));
+		}
+	}
+
+	TEST_TRUE(BytesExact(Utf8U64Buffered(buf, sizeof(buf), 1234567)));
+	TEST_TRUE(BytesExact(Utf8I64Buffered(buf, sizeof(buf), -1234567)));
+	TEST_TRUE(BytesExact(Utf8F64Buffered(buf, sizeof(buf), 3, -12.5)));
+	TEST_TRUE(BytesExact(Utf8U64(env->mem_1, 99)));
+	TEST_TRUE(BytesExact(Utf8I64(env->mem_1, -99)));
+	TEST_TRUE(BytesExact(Utf8F64(env->mem_1, 2, 0.5)));
+	TEST_TRUE(BytesExact(Utf8Inline("inline")));
+	TEST_EQUAL(6, Utf8SizeRequired(Utf8Inline("inline")));
+	TEST_EQUAL(7, Utf32U64Buffered(buf32, 64, 1234567).len);
+
+	/* an empty string over a buffer carries no capacity */
+	TEST_EQUAL(0, Utf8Buffered(buf, sizeof(buf)).size);
+	TEST_EQUAL(0, Utf8Alloc(env->mem_1, 16).size);
+
+	return output;
+}
+
 static struct test_Output(*kas_string_tests[])(struct test_Environment *) =
 {
+	utf8_bytes_invariant,
 	utf8_format_regressions,
 	utf8_decode_and_parse_regressions,
 	DmgStrtod_utf32_f64_equivalence,

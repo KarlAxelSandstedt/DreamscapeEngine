@@ -419,33 +419,24 @@ void FileMemorySyncUnmap(void *addr, const u64 length)
 
 utf8 CwdGet(struct arena *mem)
 {
-	utf8 cwd =
-	{
-		.size = 256,
-	};
-
+	u64 capacity = 256;
 	const u64 record = mem->mem_left;
-	cwd.buf = ArenaPush(mem, cwd.size);
-	while ((cwd.buf = (u8*) getcwd((char*) cwd.buf, cwd.size)) == NULL)
+	u8 *buf = ArenaPush(mem, capacity);
+	while ((buf = (u8*) getcwd((char*) buf, capacity)) == NULL)
 	{
 		ArenaPopPacked(mem, record - mem->mem_left);
-		cwd.size *= 2;	
-		if (errno != ENOMEM || cwd.size > mem->mem_left)
+		capacity *= 2;
+		if (errno != ENOMEM || capacity > mem->mem_left)
 		{
 			return Utf8Empty();
 		}
-		cwd.buf = ArenaPush(mem, cwd.size);
+		buf = ArenaPush(mem, capacity);
 	}
 
-	u64 offset = 0;
-	while (1)
+	utf8 cwd = { .buf = buf, .size = (u32) strlen((char *) buf), .len = 0 };
+	for (u64 offset = 0; offset < cwd.size; cwd.len += 1)
 	{
-		const u32 codepoint = Utf8ReadCodepoint(&offset, &cwd, offset);
-		if (codepoint == '\0')
-		{
-			break;
-		}
-		cwd.len += 1;
+		Utf8ReadCodepoint(&offset, &cwd, offset);
 	}
 	return cwd;
 }

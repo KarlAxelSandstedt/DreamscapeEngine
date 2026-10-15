@@ -34,19 +34,22 @@ Contents (in this order):
 
 Strings
 -------
-- utf8: len codepoints in buf; size is the bytes readable at buf. Decoding never reads past size.
+- utf8: buf[0, size) holds exactly the len codepoints; size is the string's bytes, never a capacity (the
+  owner of a buffer keeps that). Decoding never reads past size, and hashing, comparing and copying use
+  size directly.
 - Bad UTF-8 (cut off by size, a bad lead or continuation byte, overlong, a surrogate, > U+10FFFF) decodes
   as UTF8_BAD_CODEPOINT, one byte at a time. Lengths count it as one codepoint, so a string's len and its
-  bytes always agree, and text from files can't make a reader run past its data.
+  size always agree, and text from files can't make a reader run past its data.
+- A utf8 built by hand must keep that: size = the bytes of exactly len codepoints.
 - utf32: len codepoints in buf[max_len].
 
 Results
 -------
-- ...Buffered(buf, bufsize, ...): the result's size (max_len for utf32) is the buffer's capacity, so it can
-  be passed back as the buffer. Too small: an empty string. The formatter instead keeps the tokens before
-  the first one that does not fit. Cstr, Copy and Format put a '\0' after their bytes if there is room
-  (outside len), so a cut-off sequence at the end stays bad.
-- Arena versions take exactly the bytes they need (size = bytes); on failure an empty string.
+- ...Buffered(buf, bufsize, ...): writes at most bufsize bytes; size is the bytes written (for utf32,
+  max_len is the buffer's length). Too small: an empty string. The formatter instead keeps the tokens
+  before the first one that does not fit.
+- Arena versions take exactly the bytes they need; on failure an empty string.
+- Utf8Alloc / Utf8Buffered return an empty string over a buffer; the caller keeps its capacity.
 - Integer parsers return a struct parseRetval: PARSE_SUCCESS and the value, or a failure and 0. F32/F64
   parsers (dtoa strtod) return the value, 0 for empty input.
 - Formatting F32/F64 with decimals > 0 rounds correctly (ties to even); decimals 0 gives the shortest
@@ -68,7 +71,7 @@ extern "C" {
 #define Utf8Inline(cstr) (utf8)  		\
 	{					\
 		.buf =  (u8 *) cstr,		\
-		.size =	sizeof(cstr),		\
+		.size = sizeof(cstr)-1,	\
 		.len =	sizeof(cstr)-1,		\
 	}
 
@@ -76,7 +79,7 @@ typedef struct utf8 utf8;
 struct utf8 
 {
 	u8 *	buf;
-	u32 	size;		/* bytes readable at buf (>= the bytes of the len codepoints); decoding never reads past it */
+	u32 	size;		/* bytes of the len codepoints: buf[0, size) holds exactly the string; no capacity */
 	u32 	len;		/* codepoints (a possible trailing '\0' not included) */
 };
 DEFINE_CPOOL_STRUCT(utf8);
@@ -151,7 +154,7 @@ f64		F64Cstr(char **new_offset, const char *str);
 
 /************************************** UTF8 ***************************************/
 
-/* return required size to hold ut8.buf[len] */
+/* the bytes of the string (utf8.size) */
 u64                 Utf8SizeRequired(const utf8 utf8);
 /* Hash utf8 string */
 u32	                Utf8Hash(const utf8 utf8);
@@ -171,6 +174,7 @@ u32		            Utf8WriteCodepoint(u8 *buf, const u32 bufsize, const u32 codepo
 void 	            Utf8DebugPrint(const utf8 str);
 
 utf8 	            Utf8Empty(void);
+/* an empty string over bufsize bytes (pushed on mem, or buf); the caller keeps the capacity */
 utf8 	            Utf8Alloc(struct arena *mem, const u64 bufsize);
 utf8 	            Utf8Buffered(u8 buf[], const u64 bufsize);
 

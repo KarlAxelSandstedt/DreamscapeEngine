@@ -47,6 +47,8 @@ level editor fat struct node that interfaces with all sub-systems.
 
 
 #define LED_NODE_ID_SIZE    128
+/* bytes of the new-project name buffer (utf8_new_project; the popup writes at most this many) */
+#define LED_PROJECT_NAME_BUFSIZE    (32*sizeof(u32))
 #define LED_NODE_ROOT       2
 
 typedef struct led_Node

@@ -238,13 +238,7 @@ f64 F64Utf32(struct arena *tmp, const utf32 str)
 
 u64 Utf8SizeRequired(const utf8 utf8)
 {
-	u64 size = 0;
-	for (u32 i = 0; i < utf8.len; ++i)
-	{
-		Utf8ReadCodepoint(&size, &utf8, size);
-	}
-	/* len codepoints past size (a malformed utf8) read as bad bytes beyond it: never count those */
-	return (size < utf8.size) ? size : utf8.size;
+	return utf8.size;
 }
 
 utf8 Utf8F32Buffered(u8 buf[], const u64 bufsize, const u32 decimals, const f32 val)
@@ -375,7 +369,7 @@ utf8 Utf8F64Buffered(u8 buf[], const u64 bufsize, const u32 decimals, const f64 
 			ds_Assert(i == req_size);
 			str.buf = buf;
 			str.len = i;
-			str.size = bufsize;
+			str.size = i;
 		}
 	}
 
@@ -402,7 +396,7 @@ utf8 Utf8U64Buffered(u8 buf[], const u64 bufsize, const u64 val)
 
 		if (v == 0)
 		{
-			ret = (utf8) { .buf = buf, .len = len, .size = bufsize, };
+			ret = (utf8) { .buf = buf, .len = len, .size = len, };
 			for (u32 i = 0; i < len; ++i)
 			{
 				buf[i] = tmp[64-len+i];
@@ -432,7 +426,7 @@ utf8 Utf8I64Buffered(u8 buf[], const u64 bufsize, const i64 val)
 			}
 			ret.buf = buf;
 			ret.len = str.len+sign;
-			ret.size = bufsize;
+			ret.size = str.len+sign;
 		}
 	}
 
@@ -505,18 +499,15 @@ static struct parseRetval internal_ParseI64(const u8 *b8, const u32 *b32, const 
 	return ret;
 }
 
-/*
- * digits are ASCII, so a number's len codepoints are its first len bytes; len > size can't be all digits
- * (and would read past size)
- */
+/* digits are ASCII: a number is all of its bytes (anything else is PARSE_STRING_INVALID) */
 struct parseRetval I64Utf8(const utf8 str)
 {
-	return internal_ParseI64(str.buf, NULL, (str.len <= str.size) ? str.len : 0);
+	return internal_ParseI64(str.buf, NULL, str.size);
 }
 
 struct parseRetval U64Utf8(const utf8 str)
 {
-	return internal_ParseU64(str.buf, NULL, (str.len <= str.size) ? str.len : 0);
+	return internal_ParseU64(str.buf, NULL, str.size);
 }
 
 struct parseRetval I64Utf32(const utf32 str)
@@ -542,7 +533,6 @@ utf8 Utf8F64(struct arena *mem, const u32 decimals, const f64 val)
 	utf8 str = Utf8F64Buffered(buf, bufsize, decimals, val);
 	if (str.len)
 	{
-		str.size = str.len;
 		ArenaPopPacked(mem, bufsize - str.size);
 	}
 	else
@@ -561,7 +551,6 @@ utf8 Utf8U64(struct arena *mem, const u64 val)
 	utf8 str = Utf8U64Buffered(buf, bufsize, val);
 	if (str.len)
 	{
-		str.size = str.len;
 		ArenaPopPacked(mem, bufsize - str.size);
 	}
 	else
@@ -580,7 +569,6 @@ utf8 Utf8I64(struct arena *mem, const i64 val)
 	utf8 str = Utf8I64Buffered(buf, bufsize, val);
 	if (str.len)
 	{
-		str.size = str.len;
 		ArenaPopPacked(mem, bufsize - str.size);
 	}
 	else
@@ -705,15 +693,17 @@ utf32 Utf32Empty(void)
 
 utf8 Utf8Alloc(struct arena *mem, const u64 bufsize)
 {
+	/* an empty string over bufsize bytes; the caller keeps the capacity */
 	void *buf = ArenaPush(mem, bufsize);
 	return (buf)
-		? (utf8) { .len = 0, .size = bufsize, .buf = buf }
+		? (utf8) { .len = 0, .size = 0, .buf = buf }
 		: Utf8Empty();
 }
 
 utf8 Utf8Buffered(u8 buf[], const u64 bufsize)
 {
-	return (utf8) { .len = 0, .size = bufsize, .buf = buf };
+	/* an empty string over buf; the caller keeps the capacity (bufsize) */
+	return (utf8) { .len = 0, .size = 0, .buf = buf };
 }
 
 utf32 Utf32Alloc(struct arena *mem, const u32 len)
@@ -1067,17 +1057,11 @@ utf8 Utf8FormatBufferedVariadic(u64 *reqsize, u8 *buf, const u64 bufsize, const 
 		}
 	}
 
-	/* the terminator ends any cut-off sequence left by a bad byte in the format (size stays the capacity) */
-	if (offset < bufsize)
-	{
-		buf[offset] = '\0';
-	}
-
 	*reqsize = offset;
 	utf8 kstr =
 	{
 		.len = len,
-		.size = bufsize,
+		.size = offset,
 		.buf = buf,
 	};
 
@@ -1096,8 +1080,7 @@ utf8 Utf8FormatVariadic(struct arena *mem, const char *format, va_list args)
 		ArenaPopPacked(mem, mem_left);
 		return Utf8Empty();
 	}
-	
-	kstr.size = reqsize;
+
 	ArenaPopPacked(mem, mem_left - reqsize);
 	return kstr;
 }
@@ -1128,17 +1111,11 @@ utf8 Utf8CstrBuffered(u8 buf[], const u64 bufsize, const char *cstr)
 	utf8 ret = Utf8Empty();
 	if (bytes <= bufsize)
 	{
-		ret = (utf8) { .len = 0, .size = (u32) bufsize, .buf = buf };
+		ret = (utf8) { .len = 0, .size = (u32) bytes, .buf = buf };
 		memcpy(buf, cstr, bytes);
-		/* decode only the copied bytes, and terminate them if there is room: a sequence cut off at the end stays bad */
-		const utf8 copied = { .buf = buf, .size = (u32) bytes, .len = 0 };
 		for (u64 offset = 0; offset < bytes; ret.len += 1)
 		{
-			Utf8ReadCodepoint(&offset, &copied, offset);
-		}
-		if (bytes < bufsize)
-		{
-			buf[bytes] = '\0';
+			Utf8ReadCodepoint(&offset, &ret, offset);
 		}
 	}
 
@@ -1147,12 +1124,13 @@ utf8 Utf8CstrBuffered(u8 buf[], const u64 bufsize, const char *cstr)
 
 utf8 Utf8Cstr(struct arena *mem, const char *cstr)
 {
-	const u64 bytes = strlen(cstr);	
-	utf8 ret = Utf8Alloc(mem, bytes);
-	if (ret.size)
+	const u64 bytes = strlen(cstr);
+	u8 *buf = ArenaPush(mem, bytes);
+	utf8 ret = Utf8Empty();
+	if (buf)
 	{
-		/* ret.size is bytes */
-		memcpy(ret.buf, cstr, bytes);
+		ret = (utf8) { .len = 0, .size = (u32) bytes, .buf = buf };
+		memcpy(buf, cstr, bytes);
 		for (u64 offset = 0; offset < bytes; ret.len += 1)
 		{
 			Utf8ReadCodepoint(&offset, &ret, offset);
@@ -1196,12 +1174,13 @@ utf32 Utf32Cstr(struct arena *mem, const char *cstr)
 
 utf8 Utf8Copy(struct arena *mem, const utf8 str)
 {
-	const u64 bufsize_req = Utf8SizeRequired(str);
-	utf8 copy = Utf8Alloc(mem, bufsize_req);
-	if (copy.size)
+	const u64 bytes = Utf8SizeRequired(str);
+	u8 *buf = ArenaPush(mem, bytes);
+	utf8 copy = Utf8Empty();
+	if (buf)
 	{
-		memcpy(copy.buf, str.buf, bufsize_req);
-		copy.len = str.len;
+		memcpy(buf, str.buf, bytes);
+		copy = (utf8) { .len = str.len, .size = (u32) bytes, .buf = buf };
 	}
 
 	return copy;
@@ -1224,12 +1203,7 @@ utf8 Utf8CopyBufferedAndReturnRequiredSize(u64 *reqsize, u8 buf[], const u64 buf
 	{
 		*reqsize = bufsize_req;
 		memcpy(buf, str.buf, bufsize_req);
-		/* terminated if there is room: a sequence cut off at the end stays bad (size stays the capacity) */
-		if (bufsize_req < bufsize)
-		{
-			buf[bufsize_req] = '\0';
-		}
-		copy = (utf8) { .len = str.len, .size = bufsize, .buf = buf };
+		copy = (utf8) { .len = str.len, .size = (u32) bufsize_req, .buf = buf };
 	}
 
 	return copy;
@@ -1336,22 +1310,19 @@ u32 Utf8WriteCodepoint(u8 *buf, const u32 bufsize, const u32 codepoint)
 utf8 Utf8Utf32BufferedAndReturnRequiredSize(u64 *reqsize, u8 buf[], const u64 bufsize, const utf32 str)
 {
 	*reqsize = 0;
-	utf8 ret = { .buf = buf, .size = bufsize, .len = str.len };
-
 	for (u32 i = 0; i < str.len; ++i)
 	{
 		const u32 len = Utf8WriteCodepoint(buf + *reqsize, bufsize - *reqsize, str.buf[i]);
 		if (len == 0)
 		{
-			ret = Utf8Empty();
 			*reqsize = 0;
-			break;
+			return Utf8Empty();
 		}
 
 		*reqsize += len;
 	}
 
-	return ret;
+	return (utf8) { .buf = buf, .size = (u32) *reqsize, .len = str.len };
 }
 
 utf8 Utf8Utf32Buffered(u8 buf[], const u64 bufsize, const utf32 str)
@@ -1364,6 +1335,7 @@ utf8 Utf8Utf32Buffered(u8 buf[], const u64 bufsize, const utf32 str)
 utf8 Utf8Utf32BufferedNullTerminatedAndReturnRequiredSize(u64 *reqsize, u8 buf[], const u64 bufsize, const utf32 str)
 {
 	utf8 ret = Utf8Utf32BufferedAndReturnRequiredSize(reqsize, buf, bufsize, str);
+	/* the '\0' is in reqsize, not in the string's bytes */
 	if (ret.len && *reqsize < bufsize)
 	{
 		ret.buf[*reqsize] = '\0';
@@ -1392,7 +1364,6 @@ utf8 Utf8Utf32(struct arena *mem, const utf32 str32)
 	utf8 str = Utf8Utf32BufferedAndReturnRequiredSize(&reqsize, buf, bufsize, str32);
 	if (str.len)
 	{
-		str.size = reqsize;
 		ArenaPopPacked(mem, bufsize - reqsize);
 	}
 	else
@@ -1413,7 +1384,6 @@ utf8 Utf8Utf32NullTerminated(struct arena *mem, const utf32 str32)
 	utf8 str = Utf8Utf32BufferedNullTerminatedAndReturnRequiredSize(&reqsize, buf, bufsize, str32);
 	if (str.len)
 	{
-		str.size = reqsize;
 		ArenaPopPacked(mem, bufsize - reqsize);
 	}
 	else

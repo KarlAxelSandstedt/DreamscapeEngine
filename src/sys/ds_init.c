@@ -253,11 +253,15 @@ static utf8 ds_ConfigFormat(struct arena *mem, const struct ds_Config *config)
         return Utf8Empty();
     }
 
-    /* ASCII only: byte count == codepoint count */
-    u64 len = Utf8FormatBuffered(buf, DS_CONFIG_TEXT_MAX, "# DreamscapeEngine config: one \"key: value\" per line, '#' starts a comment\n").len;
+    /* pieces are appended at bytes; len counts their codepoints (comments may be non-ASCII) */
+    utf8 piece = Utf8FormatBuffered(buf, DS_CONFIG_TEXT_MAX, "# DreamscapeEngine config: one \"key: value\" per line, '#' starts a comment\n");
+    u64 bytes = piece.size;
+    u64 len = piece.len;
     for (u32 field = 0; field < DS_CONFIG_FIELD_COUNT; ++field)
     {
-        len += Utf8FormatBuffered(buf + len, DS_CONFIG_TEXT_MAX - len, "\n# %s\n%s:", g_config_field[field].comment, g_config_field[field].key).len;
+        piece = Utf8FormatBuffered(buf + bytes, DS_CONFIG_TEXT_MAX - bytes, "\n# %s\n%s:", g_config_field[field].comment, g_config_field[field].key);
+        bytes += piece.size;
+        len += piece.len;
         const u8 *src = (const u8 *) config + g_config_field[field].offset;
         for (u32 k = 0; k < g_config_field[field].count; ++k)
         {
@@ -272,12 +276,16 @@ static utf8 ds_ConfigFormat(struct arena *mem, const struct ds_Config *config)
                 memcpy(&value32, src + k*sizeof(u32), sizeof(u32));
                 value = value32;
             }
-            len += Utf8FormatBuffered(buf + len, DS_CONFIG_TEXT_MAX - len, " %lu", value).len;
+            piece = Utf8FormatBuffered(buf + bytes, DS_CONFIG_TEXT_MAX - bytes, " %lu", value);
+            bytes += piece.size;
+            len += piece.len;
         }
-        len += Utf8FormatBuffered(buf + len, DS_CONFIG_TEXT_MAX - len, "\n").len;
+        piece = Utf8FormatBuffered(buf + bytes, DS_CONFIG_TEXT_MAX - bytes, "\n");
+        bytes += piece.size;
+        len += piece.len;
     }
 
-    return (utf8) { .buf = buf, .size = DS_CONFIG_TEXT_MAX, .len = (u32) len };
+    return (utf8) { .buf = buf, .size = (u32) bytes, .len = (u32) len };
 }
 
 static void ds_ConfigReportLog(const struct ds_ConfigReport *report, const char *path)
@@ -323,7 +331,7 @@ u32 ds_ConfigTryWrite(struct arena *tmp, const struct ds_Config *config, const c
     struct file file = FileNull();
     if (text.len && FileTryCreateAtCwd(tmp, &file, path, 1) == FS_SUCCESS)
     {
-        written = (FileWriteAppend(&file, text.buf, text.len) == text.len);
+        written = (FileWriteAppend(&file, text.buf, text.size) == text.size);
         FileClose(&file);
     }
     ArenaPopRecord(tmp);

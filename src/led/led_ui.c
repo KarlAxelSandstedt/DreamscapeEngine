@@ -110,7 +110,7 @@ static void led_ProjectMenuUi(struct led *led, const struct ui_Visual *visual)
 
 			if ((ui_ButtonF(UI_DRAW_TEXT | UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_DRAW_ROUNDED_CORNERS, "New Project") & UI_INTER_LEFT_CLICK) && menu->popup_new_project.state == UI_POPUP_STATE_NULL)
 			{
-				ui_PopupUtf8Input(&menu->popup_new_project, &menu->utf8_new_project, &menu->input_line_new_project, Utf8Inline("Please enter the new project's name"), Utf8Inline("New Project:"), "New Project", visual);
+				ui_PopupUtf8Input(&menu->popup_new_project, &menu->utf8_new_project, &menu->input_line_new_project, LED_PROJECT_NAME_BUFSIZE, Utf8Inline("Please enter the new project's name"), Utf8Inline("New Project:"), "New Project", visual);
 			} 
 			else if (menu->popup_new_project.state == UI_POPUP_STATE_PENDING_VERIFICATION)
 			{
