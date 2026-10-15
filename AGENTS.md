@@ -205,4 +205,6 @@ Header layout, in this order:
     ...
 Inline functions are declared up front with the rest of their API
 (static ds_ForceInline ...;) and defined at the bottom, one block per API, so
-all APIs and their docs come first.
+all APIs and their docs come first. Macros are declared by their commented-out
+#define (//#define Name(args)) under their docs; the real #define goes with
+the inline definitions.

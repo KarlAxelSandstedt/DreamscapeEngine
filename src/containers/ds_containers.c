@@ -2,3 +2,4 @@
 #include "ds_queue.c"
 #include "ds_bitset.c"
 #include "ds_string_database.c"
+#include "ds_hierarchy.c"

@@ -25,7 +25,6 @@
 #include "sys_local.h"
 #include "ds_renderer.h"
 
-HI_DEFINE(ds_Window);
 
 struct ds_WindowHI g_window_hierarchy_storage = { 0 };
 struct ds_WindowHI *g_window_hierarchy = &g_window_hierarchy_storage;
@@ -44,7 +43,7 @@ static void ds_WindowDealloc(struct ds_Window *sys_win)
 
 u32 ds_WindowAlloc(const char *title, const v2u32 position, const v2u32 size, const u32 parent)
 {
-	struct slot slot = ds_WindowHIAdd(g_window_hierarchy, parent);
+	struct slot slot = HIAdd(*g_window_hierarchy, parent);
 	ds_Assert(parent != HI_ROOT || slot.index == 2);
 
 	struct ds_Window *sys_win = slot.address;
@@ -94,9 +93,9 @@ void ds_WindowTagSubHierarchyForDestruction(const u32 root)
     while (it.at != (i32) root);
 }
 
-static void ds_InternalWindowDealloc(const struct ds_WindowHI *hi, const u32 index, void *data)
+static void ds_InternalWindowDealloc(void *node, const u32 index, void *data)
 {
-	struct ds_Window *win = hi->pool.buf + index;
+	struct ds_Window *win = node;
 	ds_WindowDealloc(win);
 }
 
@@ -119,7 +118,7 @@ void ds_DeallocTaggedWindows(void)
 		if (sys_win->tagged_for_destruction)
 		{
             HIISkip(it, *g_window_hierarchy);
-			ds_WindowHIApplyCustomFreeAndRemove(tmp, g_window_hierarchy, index, ds_InternalWindowDealloc, NULL);
+			HIApplyCustomFreeAndRemove(tmp, *g_window_hierarchy, index, ds_InternalWindowDealloc, NULL);
 
 		}
         HIIAdvance(it, *g_window_hierarchy);
@@ -207,7 +206,7 @@ void ds_GraphicsApiInit(void)
 #if __GAPI__ == __DS_SDL3__
 	sdl3_WrapperInit();
 #endif
-	g_window_hierarchy_storage = ds_WindowHIAlloc(NULL, 8, GROWABLE);
+	HIAlloc(NULL, g_window_hierarchy_storage, 8, GROWABLE);
 	
 	gl_StateMemAlloc();
 }
@@ -218,13 +217,13 @@ void ds_GraphicsApiShutdown(void)
 	if (g_process_root_window != HI_NULL)
 	{
 		struct arena *tmp = ArenaPushScratch();
-		ds_WindowHIApplyCustomFreeAndRemove(tmp, g_window_hierarchy, g_process_root_window, ds_InternalWindowDealloc, NULL);
+		HIApplyCustomFreeAndRemove(tmp, *g_window_hierarchy, g_process_root_window, ds_InternalWindowDealloc, NULL);
 		ArenaPopScratch();
 		g_process_root_window = HI_NULL;
 	}
 
 	gl_StateMemDealloc();
-	ds_WindowHIDealloc(g_window_hierarchy);
+	HIDealloc(*g_window_hierarchy);
 #if __GAPI__ == __DS_SDL3__
 	sdl3_WrapperShutdown();
 #endif

@@ -28,7 +28,7 @@ extern "C" {
 #include "ds_math.h"
 #include "ds_graphics.h"
 #include "ds_asset.h"
-#include "hierarchy_index.h"
+#include "ds_hierarchy.h"
 #include "ds_list.h"
 
 #define UI_SCOPE(PUSH, POP)	for (i32 __i = ((PUSH), 0); __i < 1; ++__i, (POP))
@@ -687,7 +687,7 @@ typedef struct ui_Node
 	f32		edge_softness;
 	f32		corner_radius;
 } ui_Node;
-HI_DECLARE(ui_Node);
+DEFINE_HI(ui_Node);
 
 struct ui_NodeCache
 {

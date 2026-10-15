@@ -113,7 +113,7 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 	}
 	
 	g_editor->viewport_id = Utf8Format(&sys_win->mem_persistent, "viewport_%u", g_editor->window);
-	g_editor->node_hierarchy = led_NodeHIAlloc(NULL, 16384, GROWABLE);
+	HIAlloc(NULL, g_editor->node_hierarchy, 16384, GROWABLE);
 	g_editor->node_map = ds_HashMapAlloc(NULL, 16384, 16384, GROWABLE);
 	//g_editor->node_selected_list = dll2_Init(struct led_Node);
 	ds_SDBAlloc(NULL, g_editor->render_mesh_db, 32, GROWABLE);
@@ -160,7 +160,7 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
     DLLFlush(prefab_stub->shape_list);
     DLLAppend(prefab_stub->shape_list, g_editor->shape_prefab_instance_pool.buf, instance_index, body_shape);
 
-    slot = led_NodeHIAdd(&g_editor->node_hierarchy, HI_ROOT);
+    slot = HIAdd(g_editor->node_hierarchy, HI_ROOT);
     ds_Assert(slot.index == LED_NODE_ROOT);
 
 	g_editor->body_color_mode = RB_COLOR_MODE_BODY;
@@ -190,7 +190,7 @@ void led_Dealloc(struct led *led)
     ds_PoolDealloc(led->shape_prefab_instance_pool);
     ds_CPoolDealloc(g_editor->joint_pool);
 	ds_HashMapDealloc(&led->node_map);
-	led_NodeHIDealloc(&led->node_hierarchy);
+	HIDealloc(led->node_hierarchy);
 	ArenaFree(&led->frame);
 	ArenaFree(&led->mem_persistent);
 }

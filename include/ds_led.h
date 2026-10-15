@@ -31,7 +31,7 @@ extern "C" {
 #include "cmd.h"
 #include "ds_renderer.h"
 #include "ds_ui.h"
-#include "hierarchy_index.h"
+#include "ds_hierarchy.h"
 
 /*
 led_Node
@@ -71,7 +71,7 @@ typedef struct led_Node
     //TODO only used by shit joint on init temporarily
     ds_BodyId  body;
 } led_Node;
-HI_DECLARE(led_Node);
+DEFINE_HI(led_Node);
 
 
 

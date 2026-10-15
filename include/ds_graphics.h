@@ -27,7 +27,7 @@ extern "C" {
 #include "ds_base.h"
 #include "ds_string.h"
 #include "ds_hash_map.h"
-#include "hierarchy_index.h"
+#include "ds_hierarchy.h"
 #include "cmd.h"
 
 /*
@@ -84,7 +84,7 @@ typedef struct ds_Window
 
 	u32			gl_state;
 } ds_Window;
-HI_DECLARE(ds_Window);
+DEFINE_HI(ds_Window);
 
 /* alloc system_window resources, if no gl context exist, allocate context as well. */
 u32 			ds_WindowAlloc(const char *title, const v2u32 position, const v2u32 size, const u32 parent);

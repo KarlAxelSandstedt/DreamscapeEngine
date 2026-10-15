@@ -19,7 +19,6 @@
 
 #include "r_local.h"
 
-HI_DEFINE(r_Proxy3d);
 
 void r_Proxy3dBufferLocalLayoutSet(void)
 {
@@ -67,7 +66,7 @@ void r_Proxy3dLinearSpeculationSet(const v3 position, const q rotation, const v3
 
 u32 r_Proxy3dAlloc(const struct r_Proxy3d_config *config)
 {
-	struct slot slot = r_Proxy3dHIAdd(&g_r_core->proxy3d_hierarchy, config->parent);
+	struct slot slot = HIAdd(g_r_core->proxy3d_hierarchy, config->parent);
 	struct r_Proxy3d *proxy = slot.address;
 	proxy->flags = (config->parent != g_r_core->proxy3d_root)
 		? PROXY3D_DRAW | PROXY3D_RELATIVE
@@ -88,7 +87,7 @@ void r_Proxy3dDealloc(struct arena *tmp, const u32 proxy_index)
     {
 	    struct r_Proxy3d *proxy = r_Proxy3dAddress(proxy_index);
 	    ds_SDBDereference(*g_r_core->mesh_database, proxy->mesh);
-	    r_Proxy3dHIRemove(tmp, &g_r_core->proxy3d_hierarchy, proxy_index);
+	    HIRemove(tmp, g_r_core->proxy3d_hierarchy, proxy_index);
     }
 }
 

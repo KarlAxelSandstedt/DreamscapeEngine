@@ -23,7 +23,6 @@
 #include "ds_font.h"
 #include "ds_hash_map.h"
 
-HI_DEFINE(ui_Node);
 
 #define INITIAL_UNIT_COUNT	1024
 #define INITIAL_HASH_COUNT	1024
@@ -126,7 +125,7 @@ struct ui *ui_Alloc(void)
 
 	struct ui *ui = ds_Alloc(sizeof(struct ui), DS_CACHE_LINE);
 	memset(ui, 0, sizeof(struct ui));
-	ui->node_hierarchy = ui_NodeHIAlloc(NULL, INITIAL_UNIT_COUNT, GROWABLE);
+	HIAlloc(NULL, ui->node_hierarchy, INITIAL_UNIT_COUNT, GROWABLE);
 	ui->node_map = ds_HashMapAlloc(NULL, U16_MAX, U16_MAX, GROWABLE);
 	ds_CPoolAlloc(NULL, ui->bucket_pool, 64, GROWABLE);
 	DLLFlush(ui->bucket_list);
@@ -263,7 +262,7 @@ void ui_Dealloc(struct ui *ui)
 	ds_PoolDealloc(ui->event_pool);
 	ds_CPoolDealloc(ui->bucket_pool);
 	ds_HashMapDealloc(&ui->bucket_map);
-	ui_NodeHIDealloc(&ui->node_hierarchy);
+	HIDealloc(ui->node_hierarchy);
 	ds_Free(ui);
 	if (g_ui == ui)
 	{
@@ -321,9 +320,9 @@ static struct slot ui_RootF(const char *format, ...)
 	return ui_NodeAlloc(UI_FLAG_NONE, &id);
 }
 
-static void ui_NodeDealloc(const struct ui_NodeHI *node_hierarchy, const u32 index, void *data)
+static void ui_NodeDealloc(void *node_void, const u32 index, void *data)
 {
-	const struct ui_Node *node = node_hierarchy->pool.buf + index;
+	const struct ui_Node *node = node_void;
 	if ((node->flags & UI_NON_HASHED) == 0)
 	{
 		//fprintf(stderr, "pruning hashed orphan %s\n",(char*) ((struct ui_Node *) node)->id.buf);
@@ -1107,10 +1106,10 @@ void ui_FrameEnd(void)
 	{
 		struct ui_Node *node = g_ui->node_hierarchy.pool.buf + index;
 		const u32 next = node->hi_next;
-		ui_NodeHIApplyCustomFreeAndRemove(g_ui->mem_frame, &g_ui->node_hierarchy, index, &ui_NodeDealloc, NULL);
+		HIApplyCustomFreeAndRemove(g_ui->mem_frame, g_ui->node_hierarchy, index, &ui_NodeDealloc, NULL);
 		index = next;
 	}
-	ui_NodeHIAdoptNode(&g_ui->node_hierarchy, g_ui->root, HI_ORPHAN);
+	HIAdoptNode(g_ui->node_hierarchy, g_ui->root, HI_ORPHAN);
 }
 
 /* Calculate sizes known at time of creation, i.e. every size expect CHILDSUM */
@@ -1189,7 +1188,7 @@ static u32 ui_InternalPad(const u64 flags, const f32 value, const enum ui_SizeTy
 		return HI_ORPHAN;
 	}
 
-	struct slot slot = ui_NodeHIAdd(&g_ui->node_hierarchy, parent_index);
+	struct slot slot = HIAdd(g_ui->node_hierarchy, parent_index);
 	struct ui_Node *node = slot.address;
 	g_ui->node_count_frame += 1;
 
@@ -1416,7 +1415,7 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 	if (cache.last_frame_touched+1 != g_ui->frame)
 	{
 		hash = Utf8Hash(id);
-		slot = ui_NodeHIAdd(&g_ui->node_hierarchy, ds_CPoolTop(g_ui->parent));
+		slot = HIAdd(g_ui->node_hierarchy, ds_CPoolTop(g_ui->parent));
 		node = slot.address;
 		ds_HashMapAdd(&g_ui->node_map, hash, slot.index);
 	}
@@ -1425,7 +1424,7 @@ struct ui_NodeCache ui_NodeAllocCached(const u64 flags, const utf8 id, const utf
 		hash = node->hash;
 		slot.address = node;
 		slot.index = cache.index;
-		ui_NodeHIAdoptNodeExclusive(&g_ui->node_hierarchy, slot.index, ds_CPoolTop(g_ui->parent));
+		HIAdoptNodeExclusive(g_ui->node_hierarchy, slot.index, ds_CPoolTop(g_ui->parent));
 		inter = ui_NodeSetInteractions(node, node_flags, inter_recursive_mask);
 	}
 	
@@ -1731,7 +1730,7 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 	u64 inter = 0;
 	if (!slot.address)
 	{
-		slot = ui_NodeHIAdd(&g_ui->node_hierarchy, parent_index);
+		slot = HIAdd(g_ui->node_hierarchy, parent_index);
 		parent = g_ui->node_hierarchy.pool.buf + parent_index;
 		node = slot.address;
 		if ((flags & UI_NON_HASHED) == 0)
@@ -1745,7 +1744,7 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 	{
 		ds_Assert(node->last_frame_touched != g_ui->frame);
 		hash = node->hash;
-		ui_NodeHIAdoptNodeExclusive(&g_ui->node_hierarchy, slot.index, ds_CPoolTop(g_ui->parent));
+		HIAdoptNodeExclusive(g_ui->node_hierarchy, slot.index, ds_CPoolTop(g_ui->parent));
 		inter = ui_NodeSetInteractions(node, node_flags, inter_recursive_mask);
 	}
 

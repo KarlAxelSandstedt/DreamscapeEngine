@@ -5,7 +5,7 @@ add_library(DreamscapeContainers STATIC
     "${DS_INCLUDE_PATH}/ds_queue.h"
     "${DS_INCLUDE_PATH}/ds_bitset.h"
     "${DS_INCLUDE_PATH}/ds_list.h"
-    "${DS_INCLUDE_PATH}/hierarchy_index.h"
+    "${DS_INCLUDE_PATH}/ds_hierarchy.h"
     "${DS_INCLUDE_PATH}/ds_string_database.h"
     "${DS_INCLUDE_PATH}/ds_binary_tree.h"
 	"ds_containers.c"

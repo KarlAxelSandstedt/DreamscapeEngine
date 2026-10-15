@@ -14,6 +14,7 @@ add_library(DreamscapeTestAPI
 	test_container_correctness.c
 	test_base_correctness.c
     test_hash_map.c
+    test_hierarchy.c
 	test_hash.c
 	test_rng.c
 	test_geometry.c

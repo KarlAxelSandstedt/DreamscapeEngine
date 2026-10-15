@@ -20,7 +20,6 @@
 #include "led_local.h"
 #include "ds_random.h"
 
-HI_DEFINE(led_Node);
 
 struct slot led_NodeLookupId(struct led *led, const utf8 id)
 {
@@ -80,7 +79,7 @@ static ds_Id led_NodeAnonymousAdd(struct led *led, const ds_Id parent_id)
         parent = ds_IdIndex(parent_id);
     }
 
-    struct slot slot = led_NodeHIAdd(&led->node_hierarchy, parent);
+    struct slot slot = HIAdd(led->node_hierarchy, parent);
     return led_NodeInitalize(slot.address, slot.index, LED_ANONYMOUS);
 }
 
@@ -110,7 +109,7 @@ ds_Id led_NodeAdd(struct led *led, const utf8 id, const utf8 parent_id)
         return DS_ID_NULL;
     }
 
-    struct slot slot = led_NodeHIAdd(&led->node_hierarchy, parent);
+    struct slot slot = HIAdd(led->node_hierarchy, parent);
     if (!slot.address)
     {
 		LogString(T_LED, S_WARNING, "Failed to allocate led_node: node hierarchy is full");
@@ -120,7 +119,7 @@ ds_Id led_NodeAdd(struct led *led, const utf8 id, const utf8 parent_id)
 	node->id = Utf8CopyBuffered(node->id_buf, LED_NODE_ID_SIZE, id);	
 	if (!node->id.len)
 	{
-        led_NodeHIRemove(&led->frame, &led->node_hierarchy, slot.index);
+        HIRemove(&led->frame, led->node_hierarchy, slot.index);
 		Log(T_LED, S_WARNING, "Failed to allocate led_node: id size must be <= %luB", LED_NODE_ID_SIZE);
         return DS_ID_NULL;
 	} 
@@ -130,10 +129,10 @@ ds_Id led_NodeAdd(struct led *led, const utf8 id, const utf8 parent_id)
     return led_NodeInitalize(node, slot.index, LED_FLAG_NONE);
 }
 
-static void led_NodeRemoveResources(const led_NodeHI *hi, const u32 index, void *led_void)
+static void led_NodeRemoveResources(void *node_void, const u32 index, void *led_void)
 {
     struct led *led = led_void;
-    struct led_Node *node = hi->pool.buf + index;
+    struct led_Node *node = node_void;
 
 	ds_SDBDereference(led->body_prefab_db, node->body_prefab);
     node->body_prefab = SDB_STUB;
@@ -157,7 +156,7 @@ void led_NodeRemoveId(struct led *led, const utf8 id)
 	struct led_Node *node = slot.address;
     if (node)
     {
-        led_NodeHIApplyCustomFreeAndRemove(&led->frame, &led->node_hierarchy, slot.index, &led_NodeRemoveResources, led);
+        HIApplyCustomFreeAndRemove(&led->frame, led->node_hierarchy, slot.index, &led_NodeRemoveResources, led);
     }
 }
 
@@ -166,7 +165,7 @@ void led_NodeRemove(struct led *led, const ds_Id id)
     struct led_Node *node = led_NodeLookup(led, id).address;
     if (node && node->tagged_id == id)
     {
-        led_NodeHIApplyCustomFreeAndRemove(&led->frame, &led->node_hierarchy, ds_IdIndex(id), &led_NodeRemoveResources, led);
+        HIApplyCustomFreeAndRemove(&led->frame, led->node_hierarchy, ds_IdIndex(id), &led_NodeRemoveResources, led);
     }
 }
 
@@ -238,7 +237,7 @@ static void led_NodeDetachRigidBodyPrefabInternal(struct led *led, struct led_No
             const i32 next = child->hi_next;
             if (child->flags & LED_SHAPE_PREFAB)
             {
-                led_NodeHIApplyCustomFreeAndRemove(&led->frame, &led->node_hierarchy, i, &led_NodeRemoveResources, led);
+                HIApplyCustomFreeAndRemove(&led->frame, led->node_hierarchy, i, &led_NodeRemoveResources, led);
             }
             i = next;
         }

@@ -26,7 +26,7 @@ extern "C" {
 
 #include "ds_base.h"
 #include "ds_string_database.h"
-#include "hierarchy_index.h"
+#include "ds_hierarchy.h"
 #include "geometry.h"
 #include "ds_list.h"
 
@@ -301,7 +301,7 @@ typedef struct r_Proxy3d
 		} linear;
 	};
 } r_Proxy3d;
-HI_DECLARE(r_Proxy3d);
+DEFINE_HI(r_Proxy3d);
 
 /* return the handle of a newly allocated proxy3d. */
 u32 			r_Proxy3dAlloc(const struct r_Proxy3d_config *config);
