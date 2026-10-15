@@ -7,29 +7,9 @@ ds_ThreadLocal u64 tl_pushed_state[4];
 /* xoshiro_256** base state: stream 0; set by Xoshiro256Init before any other thread starts */
 u64 g_xoshiro_256[4];
 
-/*  Written in 2018 by David Blackman and Sebastiano Vigna (vigna@acm.org) */
-static u64 Rotl(const u64 x, i32 k) 
-{
-	return (x << k) | (x >> (64 - k));
-}
-
-/*  Written in 2018 by David Blackman and Sebastiano Vigna (vigna@acm.org) */
 u64 TestXoshiro256Next(void) 
 {
-	const u64 result = Rotl(g_xoshiro_256[1] * 5, 7) * 9;
-
-	const u64 t = g_xoshiro_256[1] << 17;
-
-	g_xoshiro_256[2] ^= g_xoshiro_256[0];
-	g_xoshiro_256[3] ^= g_xoshiro_256[1];
-	g_xoshiro_256[1] ^= g_xoshiro_256[2];
-	g_xoshiro_256[0] ^= g_xoshiro_256[3];
-
-	g_xoshiro_256[2] ^= t;
-
-	g_xoshiro_256[3] = Rotl(g_xoshiro_256[3], 45);
-
-	return result;
+	return Xoshiro256Next(g_xoshiro_256);
 }
 
 void Xoshiro256Init(const u64 seed[4])
@@ -39,112 +19,6 @@ void Xoshiro256Init(const u64 seed[4])
 	g_xoshiro_256[2] = seed[2];
 	g_xoshiro_256[3] = seed[3];
 	ThreadXoshiro256InitSequence(0);
-}
-
-void RngPushState(void)
-{
-	tl_pushed_state[0] = tl_xoshiro_256[0];
-	tl_pushed_state[1] = tl_xoshiro_256[1];
-	tl_pushed_state[2] = tl_xoshiro_256[2];
-	tl_pushed_state[3] = tl_xoshiro_256[3];
-}
-
-void RngPopState(void)
-{
-	tl_xoshiro_256[0] = tl_pushed_state[0];
-	tl_xoshiro_256[1] = tl_pushed_state[1];
-	tl_xoshiro_256[2] = tl_pushed_state[2];
-	tl_xoshiro_256[3] = tl_pushed_state[3];
-}
-
-/*  Written in 2018 by David Blackman and Sebastiano Vigna (vigna@acm.org) */
-u64 RngU64(void)
-{
-	const u64 result = Rotl(tl_xoshiro_256[1] * 5, 7) * 9;
-
-	const u64 t = tl_xoshiro_256[1] << 17;
-
-	tl_xoshiro_256[2] ^= tl_xoshiro_256[0];
-	tl_xoshiro_256[3] ^= tl_xoshiro_256[1];
-	tl_xoshiro_256[1] ^= tl_xoshiro_256[2];
-	tl_xoshiro_256[0] ^= tl_xoshiro_256[3];
-
-	tl_xoshiro_256[2] ^= t;
-
-	tl_xoshiro_256[3] = Rotl(tl_xoshiro_256[3], 45);
-
-	return result;
-}
-
-u64 RngU64Range(const u64 min, const u64 max)
-{
-	ds_Assert(min <= max);
-	const u64 r = RngU64();
-	const u64 interval = max-min+1;
-	return (interval == 0) ? r : (r % interval) + min;
-}
-
-/* SplitMix64 (Sebastiano Vigna, 2015): the seeding the xoshiro authors recommend */
-void RngLocalInit(struct rng *rng, const u64 seed)
-{
-	u64 x = seed;
-	for (u32 i = 0; i < 4; ++i)
-	{
-		x += 0x9e3779b97f4a7c15;
-		u64 z = x;
-		z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9;
-		z = (z ^ (z >> 27)) * 0x94d049bb133111eb;
-		rng->s[i] = z ^ (z >> 31);
-	}
-}
-
-/*  Written in 2018 by David Blackman and Sebastiano Vigna (vigna@acm.org) */
-u64 RngLocalU64(struct rng *rng)
-{
-	const u64 result = Rotl(rng->s[1] * 5, 7) * 9;
-	const u64 t = rng->s[1] << 17;
-	rng->s[2] ^= rng->s[0];
-	rng->s[3] ^= rng->s[1];
-	rng->s[1] ^= rng->s[2];
-	rng->s[0] ^= rng->s[3];
-	rng->s[2] ^= t;
-	rng->s[3] = Rotl(rng->s[3], 45);
-	return result;
-}
-
-u64 RngLocalU64Range(struct rng *rng, const u64 min, const u64 max)
-{
-	ds_Assert(min <= max);
-	const u64 r = RngLocalU64(rng);
-	const u64 interval = max-min+1;
-	return (interval == 0) ? r : (r % interval) + min;
-}
-
-f32 RngF32Normalized(void)
-{
-	return (f32) RngU64() / (f32) U64_MAX;
-}
-
-f32 RngF32Range(const f32 min, const f32 max)
-{
-	ds_Assert(min <= max);
-	return RngF32Normalized() * (max-min) + min;
-}
-
-
-/*  Written in 2018 by David Blackman and Sebastiano Vigna (vigna@acm.org); state passed in */
-static void Xoshiro256Next(u64 s[4])
-{
-	const u64 t = s[1] << 17;
-
-	s[2] ^= s[0];
-	s[3] ^= s[1];
-	s[1] ^= s[2];
-	s[0] ^= s[3];
-
-	s[2] ^= t;
-
-	s[3] = Rotl(s[3], 45);
 }
 
 /*  Written in 2018 by David Blackman and Sebastiano Vigna (vigna@acm.org): advance s by 2^128 calls */
