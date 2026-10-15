@@ -445,7 +445,7 @@ f32 TriMeshBvhRaycastParameter(const struct triMeshBvh *mesh_bvh, const struct r
 	struct bvhRaycastInfo info = BvhRaycastInit(mem_tmp, &mesh_bvh->bvh, ray);
 	while (info.hit_queue.count)
 	{
-		const u32f32 tuple = MinQueueFixedPop(&info.hit_queue);
+		const u32f32 tuple = ds_MinQueuePop(&info.hit_queue);
 		if (info.hit.f < tuple.f)
 		{
 			break;

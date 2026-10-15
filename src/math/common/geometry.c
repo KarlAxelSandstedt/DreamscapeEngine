@@ -26,7 +26,7 @@
 #include "ds_matrix.h"
 #include "ds_hash_map.h"
 #include "ds_list.h"
-#include "queue.h"
+#include "ds_queue.h"
 #include "ds_float.h"
 
 //TODO what to do with this?

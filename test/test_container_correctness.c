@@ -24,7 +24,7 @@
 #include "ds_bitset.h"
 #include "ds_hash_map.h"
 #include "ds_list.h"
-#include "queue.h"
+#include "ds_queue.h"
 #include "hierarchy_index.h"
 #include "ds_string_database.h"
 #include "ds_binary_tree.h"
@@ -495,7 +495,10 @@ static struct test_Output BTTest(struct test_Environment *env)
     u32 emptied = 0;
     for (u32 i = 0; i < 4000; ++i)
     {
-        /* phases: grow to ~400 nodes, shrink to empty, again */
+        /*
+         * phases of 500 steps: grow (3/4 adds, 1/4 removes; at most 800 nodes, 400 leaves), then remove only,
+         * which always reaches the empty tree (each removal takes one leaf), and again
+         */
         const u32 grow = (i / 500) % 2 == 0;
         const u64 op = RngU64Range(0, 3);
         if (bt.count == 0)
@@ -504,7 +507,7 @@ static struct test_Output BTTest(struct test_Environment *env)
             ds_BTAddRoot(bt, pool.buf, root.index);
             leaf[leaf_count++] = root.index;
         }
-        else if ((grow ? op < 3 : op == 0) && bt.count + 2 < 800)
+        else if (grow && op < 3 && bt.count + 2 < 800)
         {
             const u32 l = (u32) RngU64Range(0, leaf_count - 1);
             const u32 parent = leaf[l];
@@ -672,16 +675,16 @@ static struct test_Output LLTest(struct test_Environment *env)
  * Fixed arena queue and growable heap queue: random pushes and pops with tied priorities; every pop returns
  * a minimum of the model (peek agrees), and an (id, priority) pair that was pushed.
  */
-static struct test_Output MinQueueFixedTest(struct test_Environment *env)
+static struct test_Output ds_MinQueueTest(struct test_Environment *env)
 {
 	struct test_Output output = { .success = 1, .id = __func__ };
 
     u32f32 *model = ArenaPush(env->mem_2, 1000*sizeof(u32f32));
     for (u32 growable = 0; growable <= 1; ++growable)
     {
-        struct minQueueFixed queue = (growable)
-            ? MinQueueFixedAlloc(NULL, 4, GROWABLE)
-            : MinQueueFixedAlloc(env->mem_1, 1000, NOT_GROWABLE);
+        struct ds_MinQueue queue = (growable)
+            ? ds_MinQueueAlloc(NULL, 4, GROWABLE)
+            : ds_MinQueueAlloc(env->mem_1, 1000, NOT_GROWABLE);
         TEST_NOT_EQUAL(NULL, queue.element);
 
         u32 count = 0;
@@ -692,7 +695,7 @@ static struct test_Output MinQueueFixedTest(struct test_Environment *env)
             if (op < 2 && count < 900)
             {
                 const f32 priority = (f32) RngU64Range(0, 50);
-                MinQueueFixedPush(&queue, next_id, priority);
+                ds_MinQueuePush(&queue, next_id, priority);
                 model[count].u = next_id;
                 model[count].f = priority;
                 count += 1;
@@ -700,8 +703,8 @@ static struct test_Output MinQueueFixedTest(struct test_Environment *env)
             }
             else if (count)
             {
-                const u32f32 peek = MinQueueFixedPeek(&queue);
-                const u32f32 pop = MinQueueFixedPop(&queue);
+                const u32f32 peek = ds_MinQueuePeek(&queue);
+                const u32f32 pop = ds_MinQueuePop(&queue);
                 TEST_EQUAL(peek.u, pop.u);
                 u32 at = count;
                 f32 min = F32_INFINITY;
@@ -717,9 +720,9 @@ static struct test_Output MinQueueFixedTest(struct test_Environment *env)
             TEST_EQUAL(count, queue.count);
         }
 
-        MinQueueFixedFlush(&queue);
+        ds_MinQueueFlush(&queue);
         TEST_EQUAL(0, queue.count);
-        MinQueueFixedDealloc(&queue);
+        ds_MinQueueDealloc(&queue);
     }
 
 	return output;
@@ -751,7 +754,7 @@ static struct test_Output MinQueueTest(struct test_Environment *env)
         u32 count = 0;
         u32 count_reached = 0;
         u32 next_external = 0;
-        for (u32 i = 0; i < 4000 && next_external < MIN_QUEUE_TEST_MAX; ++i)
+        for (u32 i = 0; i < 6000 && next_external < MIN_QUEUE_TEST_MAX; ++i)
         {
             const u64 op = RngU64Range(0, push_weight + 2);
             if (op < push_weight && count < count_max)
@@ -1170,7 +1173,7 @@ static struct test_Output (*container_tests[])(struct test_Environment *) =
     DLLTest,
     BTTest,
     LLTest,
-    MinQueueFixedTest,
+    ds_MinQueueTest,
     MinQueueTest,
 };
 

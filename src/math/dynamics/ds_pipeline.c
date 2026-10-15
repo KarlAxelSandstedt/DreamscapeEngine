@@ -1789,7 +1789,7 @@ u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const str
 	struct bvhRaycastInfo d_info = BvhRaycastInit(tmp, &pipeline->dynamic_bvh, ray);
 	while (d_info.hit_queue.count)
 	{
-		const u32f32 tuple = MinQueueFixedPop(&d_info.hit_queue);
+		const u32f32 tuple = ds_MinQueuePop(&d_info.hit_queue);
 		if (d_info.hit.f < tuple.f)
 		{
 			break;	
@@ -1816,7 +1816,7 @@ u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const str
 	struct bvhRaycastInfo s_info = BvhRaycastInit(tmp, &pipeline->static_bvh, ray);
 	while (s_info.hit_queue.count)
 	{
-		const u32f32 tuple = MinQueueFixedPop(&s_info.hit_queue);
+		const u32f32 tuple = ds_MinQueuePop(&s_info.hit_queue);
 		if (s_info.hit.f < tuple.f)
 		{
 			break;	

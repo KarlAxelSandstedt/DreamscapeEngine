@@ -28,7 +28,7 @@ extern "C" {
 #include "ds_math.h"
 #include "ds_string_database.h"
 #include "ds_list.h"
-#include "queue.h"
+#include "ds_queue.h"
 #include "ds_binary_tree.h"
 #include "ds_bitset.h"
 
@@ -125,7 +125,7 @@ primitives in the leaves (see TriMeshBvhRaycastParameter, ds_DynamicsRaycastPara
 	struct bvhRaycastInfo info = BvhRaycastInit(mem, bvh, ray);
 	while (info.hit_queue.count)
 	{
-		const u32f32 tuple = MinQueueFixedPop(&info.hit_queue);
+		const u32f32 tuple = ds_MinQueuePop(&info.hit_queue);
 		if (info.hit.f < tuple.f)
 		{
 			break;
@@ -169,7 +169,7 @@ struct bvhRaycastInfo
 {
 	u32f32			hit;
 	struct rayAabb	ray;
-	struct minQueueFixed	hit_queue;
+	struct ds_MinQueue	hit_queue;
 	const struct bvh *	bvh;
 	const struct bvhNode *	node;
 };

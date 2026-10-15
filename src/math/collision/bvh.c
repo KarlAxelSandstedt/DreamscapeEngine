@@ -897,8 +897,8 @@ struct bvhRaycastInfo BvhRaycastInit(struct arena *mem, const struct bvh *bvh, c
 		const f32 root_hit_param = BvhNodeRaycastParameter(&info.ray, &info.node[info.bvh->bt.root].bbox);
 		if (root_hit_param < F32_INFINITY) 
 		{
-			info.hit_queue = MinQueueFixedAllocAll(mem);
-			MinQueueFixedPush(&info.hit_queue, bvh->bt.root, root_hit_param);
+			info.hit_queue = ds_MinQueueAllocAll(mem);
+			ds_MinQueuePush(&info.hit_queue, bvh->bt.root, root_hit_param);
 		}
 	}
 
@@ -913,7 +913,7 @@ void BvhRaycastTestAndPushChildren(struct bvhRaycastInfo *info, const u32f32 pop
 
 	if (distance_left < F32_INFINITY)
 	{
-		MinQueueFixedPush(&info->hit_queue, info->node[popped_tuple.u].bt_child[0], distance_left);
+		ds_MinQueuePush(&info->hit_queue, info->node[popped_tuple.u].bt_child[0], distance_left);
 	}
 
 	if (distance_right < F32_INFINITY)
@@ -923,6 +923,6 @@ void BvhRaycastTestAndPushChildren(struct bvhRaycastInfo *info, const u32f32 pop
 			LogString(T_SYSTEM, S_FATAL, "distance queue in bvh_raycast OOM, aborting");
 			FatalCleanupAndExit();
 		}
-		MinQueueFixedPush(&info->hit_queue, info->node[popped_tuple.u].bt_child[1], distance_right);
+		ds_MinQueuePush(&info->hit_queue, info->node[popped_tuple.u].bt_child[1], distance_right);
 	}
 }

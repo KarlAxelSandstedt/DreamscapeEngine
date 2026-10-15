@@ -20,7 +20,7 @@
 #include <stdio.h>
 
 #include "ds_base.h"
-#include "queue.h"
+#include "ds_queue.h"
 
 
 /**
@@ -254,7 +254,7 @@ void MinQueueFlush(struct minQueue * const queue)
 	ds_PoolFlush(queue->object_pool);
 }
 
-static void min_queue_fixed_heapify_up(struct minQueueFixed * const queue, u32 queue_index)
+static void min_queue_fixed_heapify_up(struct ds_MinQueue * const queue, u32 queue_index)
 {
 	u32 parent = parent_index(queue_index);
 
@@ -269,12 +269,12 @@ static void min_queue_fixed_heapify_up(struct minQueueFixed * const queue, u32 q
 	}
 }
 
-static void queue_fixed_recursion_done(struct minQueueFixed * const queue, const u32 queue_index, const u32 small_priority_index);
-static void queue_fixed_recursive_call(struct minQueueFixed * const queue, const u32 queue_index, const u32 small_priority_index);
+static void queue_fixed_recursion_done(struct ds_MinQueue * const queue, const u32 queue_index, const u32 small_priority_index);
+static void queue_fixed_recursive_call(struct ds_MinQueue * const queue, const u32 queue_index, const u32 small_priority_index);
 
-static void (*queue_fixed_func[2])(struct minQueueFixed * const, const u32, const u32) = { &queue_fixed_recursion_done, &queue_fixed_recursive_call };
+static void (*queue_fixed_func[2])(struct ds_MinQueue * const, const u32, const u32) = { &queue_fixed_recursion_done, &queue_fixed_recursive_call };
 
-static void min_queue_fixed_heapify_down(struct minQueueFixed * const queue, const u32 queue_index)
+static void min_queue_fixed_heapify_down(struct ds_MinQueue * const queue, const u32 queue_index)
 {
 	const u32 left = left_index(queue_index);
 	const u32 right = right_index(queue_index);
@@ -290,12 +290,12 @@ static void min_queue_fixed_heapify_down(struct minQueueFixed * const queue, con
 	queue_fixed_func[ ((u32) queue_index - smallest_priority_index) >> 31 ](queue, queue_index, smallest_priority_index);
 }
 
-static void queue_fixed_recursion_done(struct minQueueFixed * const queue, const u32 queue_index, const u32 small_priority_index)
+static void queue_fixed_recursion_done(struct ds_MinQueue * const queue, const u32 queue_index, const u32 small_priority_index)
 {
 	return;
 }
 
-static void queue_fixed_recursive_call(struct minQueueFixed * const queue, const u32 queue_index, const u32 smallest_priority_index)
+static void queue_fixed_recursive_call(struct ds_MinQueue * const queue, const u32 queue_index, const u32 smallest_priority_index)
 {
 	const u32f32 tuple = queue->element[queue_index];
 	queue->element[queue_index] = queue->element[smallest_priority_index];
@@ -304,12 +304,12 @@ static void queue_fixed_recursive_call(struct minQueueFixed * const queue, const
 }
 
 
-struct minQueueFixed MinQueueFixedAlloc(struct arena *mem, const u32 initial_length, const u32 growable)
+struct ds_MinQueue ds_MinQueueAlloc(struct arena *mem, const u32 initial_length, const u32 growable)
 {
 	ds_Assert(!growable || !mem);
-	if (!initial_length) { return (struct minQueueFixed) { 0 }; }
+	if (!initial_length) { return (struct ds_MinQueue) { 0 }; }
 
-	struct minQueueFixed queue =
+	struct ds_MinQueue queue =
 	{
 		.count = 0,
 		.growable = growable,
@@ -323,18 +323,18 @@ struct minQueueFixed MinQueueFixedAlloc(struct arena *mem, const u32 initial_len
 
 	if (queue.element == NULL)
 	{
-		LogString(T_SYSTEM, S_FATAL, "Failed to allocate min_queue_fixed memory, exiting.");
+		LogString(T_SYSTEM, S_FATAL, "Failed to allocate ds_MinQueue memory, exiting.");
 		FatalCleanupAndExit();
 	}
 
 	return queue;
 }
 
-struct minQueueFixed MinQueueFixedAllocAll(struct arena *mem)
+struct ds_MinQueue ds_MinQueueAllocAll(struct arena *mem)
 {
 	ds_Assert(mem);
 
-	struct minQueueFixed queue = { 0 };
+	struct ds_MinQueue queue = { 0 };
 	struct memArray arr = ArenaPushAlignedAll(mem, sizeof(u32f32), 4);
 	queue.length = arr.len;
 	queue.element = arr.addr;
@@ -342,7 +342,7 @@ struct minQueueFixed MinQueueFixedAllocAll(struct arena *mem)
 	return queue;
 }
 
-void MinQueueFixedDealloc(struct minQueueFixed *queue)
+void ds_MinQueueDealloc(struct ds_MinQueue *queue)
 {
 	if (queue->heap_allocated)
 	{
@@ -351,14 +351,14 @@ void MinQueueFixedDealloc(struct minQueueFixed *queue)
 	}
 }
 
-void MinQueueFixedFlush(struct minQueueFixed *queue)
+void ds_MinQueueFlush(struct ds_MinQueue *queue)
 {
 	queue->count = 0;
 }
 
-void MinQueueFixedPrint(FILE *Log, const struct minQueueFixed *queue)
+void ds_MinQueuePrint(FILE *Log, const struct ds_MinQueue *queue)
 {
-	fprintf(Log, "min queue_fixed %p: ", queue);
+	fprintf(Log, "ds_MinQueue %p: ", queue);
 	fprintf(Log, "{ ");
 	for (u32 i = 0; i < queue->count; ++i)
 	{
@@ -369,7 +369,7 @@ void MinQueueFixedPrint(FILE *Log, const struct minQueueFixed *queue)
 
 }
 
-void MinQueueFixedPush(struct minQueueFixed *queue, const u32 id, const f32 priority)
+void ds_MinQueuePush(struct ds_MinQueue *queue, const u32 id, const f32 priority)
 {
 	if (queue->count == queue->length)
 	{
@@ -381,7 +381,7 @@ void MinQueueFixedPush(struct minQueueFixed *queue, const u32 id, const f32 prio
 		else
 		{
 			/* as MinQueuePush: callers (bvh raycasts) must not silently lose elements */
-			LogString(T_SYSTEM, S_FATAL, "Non-growable min queue fixed full in MinQueueFixedPush, exiting.");
+			LogString(T_SYSTEM, S_FATAL, "Non-growable ds_MinQueue full in ds_MinQueuePush, exiting.");
 			FatalCleanupAndExit();
 		}
 	}
@@ -393,7 +393,7 @@ void MinQueueFixedPush(struct minQueueFixed *queue, const u32 id, const f32 prio
 	min_queue_fixed_heapify_up(queue, i);
 }
 
-u32f32 MinQueueFixedPop(struct minQueueFixed *queue)
+u32f32 ds_MinQueuePop(struct ds_MinQueue *queue)
 {
 	ds_AssertString(queue->count > 0, "Heap should have elements to extract\n");
 	queue->count -= 1;
@@ -405,7 +405,7 @@ u32f32 MinQueueFixedPop(struct minQueueFixed *queue)
 	return tuple;
 }
 
-u32f32 	MinQueueFixedPeek(const struct minQueueFixed *queue)
+u32f32 	ds_MinQueuePeek(const struct ds_MinQueue *queue)
 {
 	ds_AssertString(queue->count > 0, "Heap should have elements to extract\n");
 	return queue->element[0];
