@@ -179,6 +179,8 @@ Conventions, not rules: follow them in new code; don't rename old code.
   stream, hi_ hierarchy index.
 - Small common types: short lowercase type + uppercase function family
   (v3 -> V3Add, dll -> DLLAppend).
+- Small engine containers: a short uppercase name without ds_ for the type
+  and its functions (HI, DLL, LL, BT, MQ: struct BT, BTAddRoot, MQPush).
 - ds_Try...: may fail, returns a failure state. ...Check: returns a boolean.
 
 Comments

@@ -221,6 +221,8 @@ static struct test_Output TicketFactoryTest(struct test_Environment *env)
 
     AtomicStoreRel32(&tf.a_open, 0);
     TEST_EQUAL(TICKET_FACTORY_CLOSED, TicketFactoryTryGetTicket(&ticket, &tf));
+    /* closed: GetTicket ends its wait and says so (it returned an unwritten ticket) */
+    TEST_EQUAL(TICKET_FACTORY_CLOSED, TicketFactoryGetTicket(&tf));
 
     TicketFactoryDestroy(&tf);
 

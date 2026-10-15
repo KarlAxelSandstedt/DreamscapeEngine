@@ -17,6 +17,25 @@
 ==========================================================================
 */
 
+/*
+ticket_factory.h
+================
+Thread-safe FIFO tickets for a ring of max_tickets slots: a ticket t owns slot t % max_tickets until it is
+returned. At most max_tickets tickets are out at once; tickets are returned in order, in batches, by
+whoever serves them (ds_log.c writes completed log slots, then returns them).
+
+    struct ticketFactory tf;
+    TicketFactoryInit(&tf, 512);
+    u32 ticket;
+    if (TicketFactoryTryGetTicket(&ticket, &tf) == 1) { ... fill slot ticket % 512 ... }
+    TicketFactoryReturnTickets(&tf, served);      (the oldest served tickets, [a_serve, a_serve + served))
+
+Tickets count up from 0 and wrap at 2^32; max_tickets is a power of two, so slot indices stay continuous
+across the wrap. a_serve is the oldest ticket not yet returned, a_next the next ticket handed out.
+a_open == 0 closes the factory (set it directly, release order): TryGetTicket calls that start after the store
+see it closed; a call already past its check may still get a ticket.
+*/
+
 #ifndef __FIFO_TICKET_H__
 #define __FIFO_TICKET_H__
 
@@ -28,28 +47,30 @@ extern "C" {
 
 #define TICKET_FACTORY_CLOSED	U32_MAX
 
-/*
- * multiple ticket consumers with a maximum ticket count. It is up to the user to determine
- * when a batch of tickets should be returned, or "served".
- */
 struct ticketFactory
 {
-	semaphore 	available;	/* slots available for producers */
-	u32 		a_serve;	/* useful to keep track of where we are in array */
+	semaphore 	available;	/* tickets that may still be handed out */
+	u32 		a_serve;
 	u32 		a_next;
-	u32 		a_open;		/* when open, tickets can be retrieved */
-	u32 		max_tickets;	/* debug */
+	u32 		a_open;
+	u32 		max_tickets;
 };
 
-/* Initalize ticket factory address */
+/* Open tf with max_tickets (a power of two) tickets available. */
 void 	TicketFactoryInit(struct ticketFactory *tf, const u32 max_tickets);
-/* Destroy ticket factory */
+/* Free tf's semaphore; no thread may be waiting in or entering the factory. */
 void	TicketFactoryDestroy(struct ticketFactory *tf);
-/* Returns 0 on no ticket, 1 on ticket acquisition, or TICKET_FACTORY_CLOSED when no more tickets can be retrieved  */
+/*
+Hand out the next ticket into *ticket and return 1; return 0 (no ticket free: all max_tickets are out) or
+TICKET_FACTORY_CLOSED (closed), *ticket then unwritten. Never blocks.
+*/
 u32	TicketFactoryTryGetTicket(u32 *ticket, struct ticketFactory *tf);
-/* Wait on semaphore until we return a ticket.  UNDEFINED BEHAVIOUR when TICKET_FACTORY_CLOSED! */
+/*
+Spin until a ticket is free and return it. Returns TICKET_FACTORY_CLOSED once the factory is closed; that
+value is also a valid ticket after 2^32 - 1 others, so callers that close the factory use TryGetTicket.
+*/
 u32	TicketFactoryGetTicket(struct ticketFactory *tf);
-/* puts ticket range [a_serve, a_serve + count) up for use again  */
+/* Return the count oldest tickets out, [a_serve, a_serve + count), making them available again. */
 void	TicketFactoryReturnTickets(struct ticketFactory *tf, const u32 count);
 
 #ifdef __cplusplus
