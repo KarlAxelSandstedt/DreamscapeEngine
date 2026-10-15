@@ -27,6 +27,7 @@
 #include "queue.h"
 #include "hierarchy_index.h"
 #include "ds_string_database.h"
+#include "ds_binary_tree.h"
 
 typedef struct test_SdbNode
 {
@@ -351,6 +352,190 @@ static u32 DLLTestMatches(const struct DLL *list, const struct test_ListNode *ba
         }
     }
     return k == 0;
+}
+
+struct bt_test_node
+{
+    POOL_NODE;
+    BT_NODE;
+};
+DEFINE_POOL(bt_test_node);
+
+#define BT_TEST_MAX 1024
+
+/* nodes in the subtree of root by the depth-first iterator; order[] gets them in visiting order */
+static u32 BTTestSubtreeDF(u32 *order, const struct bt_test_node *buf, const u32 root)
+{
+    u32 n = 0;
+    BTI it;
+    BTDFInit(it, buf, root);
+    do
+    {
+        order[n++] = it.at;
+        BTDFAdvance(it, buf);
+    } while (it.at != it.root);
+    return n;
+}
+
+/*
+ * Every link has its reverse; depth first visits each node once, parents first; left-right visits each node
+ * once, children first; both visit count nodes. A left-right walk over the subtree of a random node (a leaf
+ * too) visits exactly the nodes of its depth-first walk and ends at the node's parent.
+ */
+static u32 BTTestCheck(const struct ds_BT *bt, const struct bt_test_node *buf, u8 *seen, u32 *order)
+{
+    if (bt->root == BT_INDEX_NULL)
+    {
+        return bt->count == 0;
+    }
+    if (!ds_BTRootCheck(buf + bt->root))
+    {
+        return 0;
+    }
+
+    memset(seen, 0, BT_TEST_MAX);
+    const u32 n = BTTestSubtreeDF(order, buf, bt->root);
+    for (u32 k = 0; k < n; ++k)
+    {
+        const u32 i = order[k];
+        if (seen[i])
+        {
+            return 0;
+        }
+        if (i != bt->root)
+        {
+            const u32 p = buf[i].bt_parent & BT_INDEX_MASK;
+            if (!seen[p] || (buf[p].bt_child[0] != i && buf[p].bt_child[1] != i))
+            {
+                return 0;
+            }
+        }
+        if (!ds_BTLeafCheck(buf + i))
+        {
+            if ((buf[buf[i].bt_child[0]].bt_parent & BT_INDEX_MASK) != i || (buf[buf[i].bt_child[1]].bt_parent & BT_INDEX_MASK) != i)
+            {
+                return 0;
+            }
+        }
+        seen[i] = 1;
+    }
+    if (n != bt->count || ds_BTLeafCount(*bt) != (n + 1) / 2)
+    {
+        return 0;
+    }
+
+    /* the subtree of a random node: its DF nodes are order[0, sub_n) of a second buffer half */
+    const u32 sub_root = order[(u32) RngU64Range(0, n - 1)];
+    u32 *sub = order + BT_TEST_MAX;
+    const u32 sub_n = BTTestSubtreeDF(sub, buf, sub_root);
+    memset(seen, 0, BT_TEST_MAX);
+    for (u32 k = 0; k < sub_n; ++k)
+    {
+        seen[sub[k]] = 1;
+    }
+
+    const u32 roots[2] = { bt->root, sub_root };
+    const u32 expect[2] = { n, sub_n };
+    for (u32 r = 0; r < 2; ++r)
+    {
+        u8 *done = seen + BT_TEST_MAX;
+        memset(done, 0, BT_TEST_MAX);
+        u32 visited = 0;
+        BTI it;
+        BTLRInit(it, buf, roots[r]);
+        if (it.root_parent != (buf[roots[r]].bt_parent & BT_INDEX_MASK))
+        {
+            return 0;
+        }
+        while (it.at != it.root_parent)
+        {
+            const u32 i = it.at;
+            if (done[i] || (r == 1 && !seen[i]) || visited == expect[r])
+            {
+                return 0;
+            }
+            if (!ds_BTLeafCheck(buf + i) && (!done[buf[i].bt_child[0]] || !done[buf[i].bt_child[1]]))
+            {
+                return 0;
+            }
+            done[i] = 1;
+            visited += 1;
+            BTLRAdvance(it, buf);
+        }
+        if (visited != expect[r])
+        {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+/*
+ * Random growth (two children for a random leaf) and removal of random leaves down to the empty tree and
+ * back, checked by BTTestCheck after every step (springclean 37: the promoted sibling's parent link; BTLRInit
+ * on a leaf below the root).
+ */
+static struct test_Output BTTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    u8 *seen = ArenaPush(env->mem_2, 2*BT_TEST_MAX);
+    u32 *order = ArenaPush(env->mem_2, 2*BT_TEST_MAX*sizeof(u32));
+    u32 *leaf = ArenaPush(env->mem_2, BT_TEST_MAX*sizeof(u32));
+    ds_Pool(bt_test_node) pool;
+    TEST_EQUAL(1, ds_PoolAlloc(NULL, pool, 64, GROWABLE));
+    struct ds_BT bt;
+    ds_BTFlush(bt);
+    TEST_TRUE(BTTestCheck(&bt, pool.buf, seen, order));
+
+    u32 leaf_count = 0;
+    u32 emptied = 0;
+    for (u32 i = 0; i < 4000; ++i)
+    {
+        /* phases: grow to ~400 nodes, shrink to empty, again */
+        const u32 grow = (i / 500) % 2 == 0;
+        const u64 op = RngU64Range(0, 3);
+        if (bt.count == 0)
+        {
+            const struct slot root = ds_PoolAdd(pool);
+            ds_BTAddRoot(bt, pool.buf, root.index);
+            leaf[leaf_count++] = root.index;
+        }
+        else if ((grow ? op < 3 : op == 0) && bt.count + 2 < 800)
+        {
+            const u32 l = (u32) RngU64Range(0, leaf_count - 1);
+            const u32 parent = leaf[l];
+            const struct slot left = ds_PoolAdd(pool);
+            const struct slot right = ds_PoolAdd(pool);
+            TEST_TRUE(left.index < BT_TEST_MAX && right.index < BT_TEST_MAX);
+            ds_BTAddChildren(bt, pool.buf, parent, left.index, right.index);
+            leaf[l] = left.index;
+            leaf[leaf_count++] = right.index;
+        }
+        else
+        {
+            const u32 l = (u32) RngU64Range(0, leaf_count - 1);
+            const u32 removed = leaf[l];
+            const u32 parent = pool.buf[removed].bt_parent & BT_INDEX_MASK;
+            ds_BTRemoveLeaf(bt, pool.buf, removed);
+            ds_PoolRemove(pool, removed);
+            if (parent != BT_INDEX_NULL)
+            {
+                ds_PoolRemove(pool, parent);
+            }
+            leaf[l] = leaf[--leaf_count];
+            emptied += (bt.count == 0);
+        }
+
+        TEST_EQUAL(leaf_count, ds_BTLeafCount(bt));
+        TEST_TRUE(BTTestCheck(&bt, pool.buf, seen, order));
+        ds_BTValidate(bt, pool.buf);
+    }
+    TEST_TRUE(emptied > 0);
+
+    ds_PoolDealloc(pool);
+	return output;
 }
 
 /* Random appends, prepends and removes against an order array; serialize round trip of the header. */
@@ -981,6 +1166,7 @@ static struct test_Output (*container_tests[])(struct test_Environment *) =
     BitSetTest,
     HashMapTest,
     DLLTest,
+    BTTest,
     LLTest,
     MinQueueFixedTest,
     MinQueueTest,

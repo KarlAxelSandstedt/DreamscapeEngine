@@ -17,8 +17,21 @@
 ==========================================================================
 */
 
-#ifndef __PD_TREE_H__
-#define __PD_TREE_H__
+/*
+ds_binary_tree.h
+================
+Intrusive binary tree over an indexed node array (normally a ds_Pool's buf), linked by 31-bit indices;
+the BVHs (bvh.c) are built on it. Every internal node has exactly two children. Parent and child indices
+need no particular order, which tree-based structures can exploit.
+
+Contents (in this order):
+    ds_BT   the tree: add a root, give a leaf two children, remove a leaf (with its parent), validate.
+    BTI     iterators over a subtree: depth first (BTDF..., parents first) and left-right (BTLR...,
+            children first).
+*/
+
+#ifndef __DS_BINARY_TREE_H__
+#define __DS_BINARY_TREE_H__
 
 #ifdef __cplusplus
 extern "C" { 
@@ -27,17 +40,46 @@ extern "C" {
 #include "ds_allocator.h"
 
 /*
-bt
-==
-Intrusive general binary tree for indexed structures from ds_***Pool/ds_CPool. With general we mean
-that we do not enforce a specific relation between parent and child indices, a property that can be
-exploited in certain tree based data structures.
+ds_BT
+-----
+    struct node { POOL_NODE; BT_NODE; ... };
+    struct ds_BT bt;
+    ds_BTFlush(bt);
+    ds_BTAddRoot(bt, pool.buf, root);
+    ds_BTAddChildren(bt, pool.buf, root, left, right);
 
-Since the external allocator is a pool, we support 31bit indices, leaving the topmost bit free in 
-parent, left and right. We store as the highest bit in parent the boolean indicating whether or not
-it is a leaf. If the bit is set, the node is a leaf. We do this so that bt_left, bt_right are left
-unused in leaves, and can be used as arbitrary u32's storing external information.
+bt_parent's top bit (BT_LEAF_MASK) marks a leaf, its other 31 bits are the parent index (BT_INDEX_NULL
+at the root). The tree leaves a leaf's bt_child[] alone: callers may store anything there. count is the
+number of nodes (odd, or 0). The macros don't check that an index is in the tree. Not thread-safe.
+
+The macros (bt is a struct ds_BT lvalue, buf the node array, node_addr a node pointer; arguments may be
+evaluated more than once):
+
+    // Set the leaf bit; 1 if node_addr is a leaf; 1 if node_addr is the root (no parent).
+    ds_BTLeafSet(node_addr)
+    ds_BTLeafCheck(node_addr)
+    ds_BTRootCheck(node_addr)
+
+    // Make bt empty (also the initialization).
+    ds_BTFlush(bt)
+
+    // Make root the only node of the empty bt, a leaf.
+    ds_BTAddRoot(bt, buf, root)
+
+    // Make the leaf parent internal, with the new leaves left (bt_child[0]) and right (bt_child[1]).
+    ds_BTAddChildren(bt, buf, parent, left, right)
+
+    // Remove leaf: the root leaf empties bt; any other leaf goes with its parent, and the sibling (with
+    // its subtree) takes the parent's place. The caller frees the removed nodes (leaf and parent).
+    ds_BTRemoveLeaf(bt, buf, leaf)
+
+    // Number of leaves: (count + 1) / 2.
+    u32 ds_BTLeafCount(bt)
+
+    // Debug check (asserts): every link matches its reverse link and count the reachable nodes.
+    ds_BTValidate(bt, buf)
 */
+
 
 #define BT_INDEX_NULL   BT_INDEX_MASK 
 #define BT_LEAF_MASK    0x80000000
@@ -71,7 +113,7 @@ do                                                              \
     ds_Assert((_bt_).count == 0);                               \
     ds_Assert((_bt_).root == BT_INDEX_NULL);                    \
     (_bt_).count = 1;                                           \
-    (_bt_).root = _root_;                                       \
+    (_bt_).root = (_root_);                                     \
     (_buf_)[_root_].bt_parent = BT_LEAF_MASK | BT_INDEX_NULL;   \
 }                                                               \
 while (0)
@@ -93,11 +135,11 @@ while (0)
 #define ds_BTRemoveLeaf(_bt_, _buf_, _leaf_)                                        \
 do                                                                                  \
 {                                                                                   \
-    ds_Assert((_bt_).count > 1);                                                    \
-    ds_Assert(ds_BTLeafCheck((_buf_) + (_leaf_));                                   \
+    ds_Assert((_bt_).count > 0);                                                    \
+    ds_Assert(ds_BTLeafCheck((_buf_) + (_leaf_)));                                  \
     if ((_leaf_) == (_bt_).root)                                                    \
     {                                                                               \
-        (_bt_).count -= 1;                                                          \
+        ds_Assert((_bt_).count == 1);                                               \
         ds_BTFlush(_bt_);                                                           \
     }                                                                               \
     else                                                                            \
@@ -107,13 +149,15 @@ do                                                                              
         const u32 _sibling_ = ((_buf_)[_parent_].bt_child[0] == (_leaf_))           \
                                 ? (_buf_)[_parent_].bt_child[1]                     \
                                 : (_buf_)[_parent_].bt_child[0];                    \
+        /* the sibling takes the parent's place; it keeps its leaf bit */           \
+        const u32 _grand_parent_ = (_buf_)[_parent_].bt_parent & BT_INDEX_MASK;     \
+        (_buf_)[_sibling_].bt_parent = ((_buf_)[_sibling_].bt_parent & BT_LEAF_MASK) | _grand_parent_; \
         if (_parent_ == (_bt_).root)                                                \
         {                                                                           \
             (_bt_).root = _sibling_;                                                \
         }                                                                           \
         else                                                                        \
         {                                                                           \
-            const u32 _grand_parent_ = (_buf_)[_parent_].bt_parent & BT_INDEX_MASK; \
             const u32 _p_ = (_buf_)[_grand_parent_].bt_child[1] == (_parent_);      \
             (_buf_)[_grand_parent_].bt_child[_p_] = _sibling_;                      \
         }                                                                           \
@@ -162,9 +206,30 @@ while (0)
 
 /*
 BTI
-===
-BT iterator 
- */
+---
+Iterators over the subtree of root (any node). it.at is the current node.
+
+    BTI it;
+    BTDFInit(it, buf, root);
+    do { ... it.at ...; BTDFAdvance(it, buf); } while (it.at != it.root);
+
+    BTLRInit(it, buf, root);
+    while (it.at != it.root_parent) { ... it.at ...; BTLRAdvance(it, buf); }
+
+    // Depth first, parents before children, bt_child[0] first: starts at root; after the last node
+    // (it.next == it.root), Advance returns it.at to root.
+    BTDFInit(it, buf, root)
+    BTDFAdvance(it, buf)
+
+    // Set it.next past the subtree of it.at (to it.root if none is left), so Advance skips that subtree.
+    BTDFSkip(it, buf)
+
+    // Left-right (post-order), children before parents, bt_child[0] first: starts at the first leaf; the
+    // walk ends when it.at reaches it.root_parent (root's parent; BT_INDEX_NULL for the tree's root).
+    BTLRInit(it, buf, root)
+    BTLRAdvance(it, buf)
+*/
+
 typedef struct BTI
 {
     u32 root;
@@ -173,7 +238,6 @@ typedef struct BTI
     u32 root_parent;
 } BTI;
 
-/* Setup depth-first iterator at the given node root */
 #define BTDFInit(_bti_, _buf_, _root_)                                              \
 do                                                                                  \
 {                                                                                   \
@@ -184,9 +248,6 @@ do                                                                              
                  : (_buf_)[_root_].bt_child[0];                                     \
 } while (0)
 
-/* 
- * Advance the iterator in depth-first ordering. 
- */
 #define BTDFAdvance(_bti_, _buf_)                                                                           \
 do                                                                                                          \
 {                                                                                                           \
@@ -205,10 +266,6 @@ do                                                                              
 }                                                                                                           \
 while (0)
 
-/* 
- * Set it.next to the next left(0)-first index outside of subtree of it.at. If the iterator is at the root,
- * it.next is set to root indicating that the iterator is finished.
- */
 #define BTDFSkip(_bti_, _buf_)                                                                              \
 do                                                                                                          \
 {                                                                                                           \
@@ -226,7 +283,6 @@ do                                                                              
 }                                                                                                           \
 while (0)
 
-/* Setup Left-Right (child[0]->child[1]->parent->...) iterator at the given node root */
 #define BTLRInit(_bti_, _buf_, _root_)                                              \
 do                                                                                  \
 {                                                                                   \
@@ -240,7 +296,8 @@ do                                                                              
         (_bti_).at = (_buf_)[(_bti_).at].bt_child[0];                               \
     }                                                                               \
                                                                                     \
-    if ((_bti_).next == BT_INDEX_NULL)                                              \
+    /* root a leaf (no right subtree to visit): root_parent ends the walk */        \
+    if ((_bti_).next == (_bti_).root_parent)                                        \
     {                                                                               \
         break;                                                                      \
     }                                                                               \
@@ -251,9 +308,6 @@ do                                                                              
     }                                                                               \
 } while (0)
 
-/* 
- * Advance the iterator in Left-Right ordering. 
- */
 #define BTLRAdvance(_bti_, _buf_)                                                                           \
 do                                                                                                          \
 {                                                                                                           \
