@@ -26,6 +26,15 @@
 #include "ds_list.h"
 #include "queue.h"
 #include "hierarchy_index.h"
+#include "string_database.h"
+
+typedef struct test_SdbNode
+{
+    SDB_NODE;
+    u32 value;
+} test_SdbNode;
+SDB_DECLARE(test_SdbNode);
+SDB_DEFINE(test_SdbNode)
 
 typedef struct test_HINode
 {
@@ -851,8 +860,100 @@ static struct test_Output HierarchyRandomTest(struct test_Environment *env)
 	return output;
 }
 
+/*
+ * String database (fixed size, on an arena): Add returns the new node's slot (it returned the failure slot);
+ * empty, duplicate and over-capacity ids fail and leave the database as it was; aliased ids; Remove and
+ * re-Add; the allocated list matches.
+ */
+static struct test_Output StringDatabaseTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    /* the stub and three nodes */
+    test_SdbNodeSDB db = test_SdbNodeSDBAlloc(env->mem_1, 4, NOT_GROWABLE);
+    TEST_EQUAL(SDB_STUB, test_SdbNodeSDBLookup(&db, Utf8Inline("a")).index);
+
+    const struct slot a = test_SdbNodeSDBAdd(env->mem_1, &db, Utf8Inline("a"));
+    TEST_TRUE(a.address != NULL && a.index != U32_MAX && a.index != SDB_STUB);
+    TEST_EQUAL(a.index, test_SdbNodeSDBLookup(&db, Utf8Inline("a")).index);
+    TEST_TRUE(Utf8Equivalence(Utf8Inline("a"), db.pool.buf[a.index].id));
+    TEST_EQUAL(0, db.pool.buf[a.index].reference_count);
+
+    /* empty (the stub's) and duplicate ids fail */
+    TEST_EQUAL(U32_MAX, test_SdbNodeSDBAdd(env->mem_1, &db, Utf8Empty()).index);
+    TEST_EQUAL(U32_MAX, test_SdbNodeSDBAdd(env->mem_1, &db, Utf8Inline("a")).index);
+    TEST_EQUAL(U32_MAX, test_SdbNodeSDBAddAndAlias(&db, Utf8Empty()).index);
+    TEST_EQUAL(U32_MAX, test_SdbNodeSDBAddAndAlias(&db, Utf8Inline("a")).index);
+
+    const struct slot b = test_SdbNodeSDBAddAndAlias(&db, Utf8Inline("b"));
+    const struct slot c = test_SdbNodeSDBAdd(env->mem_1, &db, Utf8Inline("c"));
+    TEST_TRUE(b.address != NULL && c.address != NULL);
+    TEST_EQUAL(3, db.allocated_list.count);
+
+    /* full: fails, and the database is unchanged */
+    TEST_EQUAL(U32_MAX, test_SdbNodeSDBAdd(env->mem_1, &db, Utf8Inline("d")).index);
+    TEST_EQUAL(U32_MAX, test_SdbNodeSDBAddAndAlias(&db, Utf8Inline("d")).index);
+    TEST_EQUAL(SDB_STUB, test_SdbNodeSDBLookup(&db, Utf8Inline("d")).index);
+    TEST_EQUAL(3, db.allocated_list.count);
+    TEST_EQUAL(b.index, test_SdbNodeSDBLookup(&db, Utf8Inline("b")).index);
+    TEST_EQUAL(c.index, test_SdbNodeSDBLookup(&db, Utf8Inline("c")).index);
+
+    /* remove, then the freed slot takes a new id */
+    test_SdbNodeSDBRemove(&db, Utf8Inline("b"));
+    TEST_EQUAL(SDB_STUB, test_SdbNodeSDBLookup(&db, Utf8Inline("b")).index);
+    TEST_EQUAL(2, db.allocated_list.count);
+    const struct slot d = test_SdbNodeSDBAdd(env->mem_1, &db, Utf8Inline("d"));
+    TEST_EQUAL(b.index, d.index);
+    TEST_EQUAL(d.index, test_SdbNodeSDBLookup(&db, Utf8Inline("d")).index);
+
+    /* removing the stub's id does nothing */
+    test_SdbNodeSDBRemove(&db, Utf8Empty());
+    TEST_EQUAL(SDB_STUB, test_SdbNodeSDBLookup(&db, Utf8Empty()).index);
+    TEST_EQUAL(3, db.allocated_list.count);
+
+	return output;
+}
+
+/* Reference / Dereference count found nodes only; the stub is a default callers reference freely. */
+static struct test_Output StringDatabaseReferenceTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    test_SdbNodeSDB db = test_SdbNodeSDBAlloc(NULL, 4, GROWABLE);
+    const struct slot a = test_SdbNodeSDBAdd(env->mem_1, &db, Utf8Inline("a"));
+
+    TEST_EQUAL(a.index, test_SdbNodeSDBReference(&db, Utf8Inline("a")).index);
+    TEST_EQUAL(a.index, test_SdbNodeSDBReference(&db, Utf8Inline("a")).index);
+    TEST_EQUAL(2, db.pool.buf[a.index].reference_count);
+    test_SdbNodeSDBDereference(&db, a.index);
+    TEST_EQUAL(1, db.pool.buf[a.index].reference_count);
+
+    /* the stub: an unknown id and the empty id */
+    TEST_EQUAL(SDB_STUB, test_SdbNodeSDBReference(&db, Utf8Inline("missing")).index);
+    TEST_EQUAL(SDB_STUB, test_SdbNodeSDBReference(&db, Utf8Empty()).index);
+    TEST_EQUAL(0, db.pool.buf[SDB_STUB].reference_count);
+    test_SdbNodeSDBDereference(&db, SDB_STUB);
+    test_SdbNodeSDBDereference(&db, SDB_STUB);
+    TEST_EQUAL(0, db.pool.buf[SDB_STUB].reference_count);
+
+    /* growable: many adds stay findable */
+    for (u32 i = 0; i < 100; ++i)
+    {
+        TEST_TRUE(test_SdbNodeSDBAdd(env->mem_1, &db, Utf8Format(env->mem_1, "id_%u", i)).address != NULL);
+    }
+    for (u32 i = 0; i < 100; ++i)
+    {
+        TEST_TRUE(test_SdbNodeSDBLookup(&db, Utf8Format(env->mem_1, "id_%u", i)).index != SDB_STUB);
+    }
+
+    test_SdbNodeSDBDealloc(&db);
+	return output;
+}
+
 static struct test_Output (*container_tests[])(struct test_Environment *) =
 {
+    StringDatabaseTest,
+    StringDatabaseReferenceTest,
     HierarchyIteratorSiblingRootTest,
     HierarchyAdoptMiddleChildTest,
     HierarchyRandomTest,
