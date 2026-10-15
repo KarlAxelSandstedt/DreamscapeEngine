@@ -426,7 +426,8 @@ utf8 CwdGet(struct arena *mem)
 	{
 		ArenaPopPacked(mem, record - mem->mem_left);
 		capacity *= 2;
-		if (errno != ENOMEM || capacity > mem->mem_left)
+		/* ERANGE: the path does not fit, retry with twice the capacity; any other error fails */
+		if (errno != ERANGE || capacity > mem->mem_left)
 		{
 			return Utf8Empty();
 		}

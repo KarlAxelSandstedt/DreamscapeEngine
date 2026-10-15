@@ -1673,8 +1673,9 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 			}
 			else if (hash_count == 2 && i+1 == formatted->len)
 			{
-				text_len = i-2;
-				text_bytes = (u32) codepoint_start[(i-2) % 3];
+				/* "text##" at the end: i is the second '#', the text is the i-1 codepoints before them ("##": none) */
+				text_len = i-1;
+				text_bytes = (u32) codepoint_start[(i-1) % 3];
 			}
 		}
 		else if (hash_count == 2)
