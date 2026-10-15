@@ -17,6 +17,13 @@
 ==========================================================================
 */
 
+/*
+ds_base.h
+=========
+The base layer in one include, plus the Tracy profiler macros (empty without DS_PROFILE; a ProfZone
+declares ctx, so one zone per scope). src/base/ds_base.c builds src/base as one translation unit.
+*/
+
 #ifndef __DREAMSCAPE_BASE_H__
 #define __DREAMSCAPE_BASE_H__
 
