@@ -180,12 +180,15 @@ void	c_ShapeUpdateMassProperties(struct c_Shape *shape);
 /*
  * Return the convex hull of v[0 .. v_count) as a dcel pushed on mem (c_hull.c). Its tolerance is
  * DcelConvexHullTolerance(v, v_count), tied to GJK's touch band: points within it of a face's plane count as on it,
- * the faces are flat to ~1.5 times it, and every input point lies within ~2.5 times it of the hull. Fewer than 4
- * points or no tetrahedron (all points within the tolerance of a point, line or plane): the empty dcel, nothing
- * pushed. Works on 3 of the thread's scratch arenas (the caller may hold at most thread_scratch_count - 3), about
- * 370 B of one per point: some 2,800 points fit the default 1 MiB. Too many points, a full conflict graph or a face
- * merge that cannot be made: a warning, the empty dcel. A finished hull with a zero-area face asserts in debug; in
- * release it is discarded with a warning and DcelBoxStub() is returned.
+ * the faces are flat to ~1.5 times it, and every input point lies within ~2.5 times it of the hull. Input scattered
+ * about a plane by more than the tolerance (noisy scans, perturbed boxes) is handled only roughly: faces are usually
+ * flat and containing to about twice the scatter, rarely far worse (a face outline with a reflex corner, its plane
+ * tilted), and about 1 in 500 such clouds gives the empty dcel. Fewer than 4 points or no tetrahedron (all points
+ * within the tolerance of a point, line or plane): the empty dcel, nothing pushed. Works on 3 of the thread's scratch
+ * arenas (the caller may hold at most thread_scratch_count - 3), about 370 B of one per point: some 2,800 points fit
+ * the default 1 MiB. Too many points, a full conflict graph or a face merge that cannot be made: a warning, the empty
+ * dcel. A finished hull with a zero-area face asserts in debug; in release it is discarded with a warning and
+ * DcelBoxStub() is returned.
  */
 struct dcel	DcelConvexHull(struct arena *mem, const v3 *v, const u32 v_count);
 /* Return DcelConvexHull's tolerance for v[0 .. v_count): GJK_TOUCH_TOLERANCE / 4 * eps * max |v| */

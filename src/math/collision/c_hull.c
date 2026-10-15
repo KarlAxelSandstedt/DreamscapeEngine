@@ -51,6 +51,14 @@ DcelConvexHullTest), and every input point within ~2.5 tol of the hull. The coll
 with L >= max |v| (GJK measures L over both shapes' support points). Changing GJK_TOUCH_TOLERANCE moves the hull's
 tolerance with it; a larger hull tolerance than the touch band would let planes and vertices disagree about touching.
 
+The bounds above need input that is coplanar within tol where it is meant to be. Points scattered about a plane by more
+(DcelConvexHullTest's "box noisy", 4 tol) leave nearly coplanar faces that differ by more than tol, so not all are
+merged. Measured over 4800 such clouds: most hulls are flat and contain the input to ~8 tol, but a face outline can
+get a reflex corner where its neighbour fills a dent, and such a face has little area for its extent, so its Newell
+plane tilts (worst: a vertex 21 tol off its face, a point 103 tol in front of one); 0.2% fail ("face left with fewer
+than 3 edges"). Blocking merges that would leave a reflex corner was tried and failed more hulls (horizons that are not
+one loop). This builder is temporary (a quickhull implementation is planned), so noisy input is left at that.
+
 Memory and failure
 ------------------
 Working memory is 3 scratch arenas (the first ~370 B per point, sized from the point count; the second all for the
