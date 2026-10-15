@@ -116,31 +116,33 @@ struct ray 	RayConstruct(const v3 origin, const v3 dir);
 
 /********************************* segment **********************************/
 
-/* construct segment */
-struct segment 	SegmentConstruct(const v3 p0, const v3 p1);
-/* return squared distance between s1 and s2; set c1, c2 to closest point on s1, s2 respectively  */
-f32 		    SegmentDistanceSquared(v3 *c1, v3 *c2, const struct segment *s1, const struct segment *s2);
-/* return parameters t1,t2 of closest points c1,c2 on s1,s2 such that ci = si.p0(1-ti) + s1.p1*ti  */
+/*
+ * A segment's parameter t names the point p0 (1 - t) + p1 t (SegmentBc). Point segments (p0 == p1) are valid
+ * input to every function here, unless a precondition says otherwise.
+ */
+
+/* Return the segment p0 -> p1 (dir = p1 - p0) */
+static ds_ForceInline struct segment SegmentConstruct(const v3 p0, const v3 p1);
+/* Return p0 (1 - t) + p1 t; exactly p0 at t = 0 and p1 at t = 1 */
+static ds_ForceInline v3 SegmentBc(const struct segment *s, const f32 t);
+/* Return the capsule's core segment, transformed by t: from (0, half_height, 0) to (0, -half_height, 0) */
+static ds_ForceInline struct segment SegmentCapsuleTransform(const struct capsule *cap, const ds_Transform *t);
+/* Set t1, t2 in [0, 1] to the parameters of a closest pair of points of s1 and s2 */
 void		    SegmentClosestParameter(f32 *t1, f32 *t2, const struct segment *s1, const struct segment *s2);
+/* Return the squared distance between s1 and s2; set c1, c2 to a closest pair of points on s1, s2 */
+static ds_ForceInline f32 SegmentDistanceSquared(v3 *c1, v3 *c2, const struct segment *s1, const struct segment *s2);
 /*
  * Closest points of the lines through s1 and s2, s1.p0 + t1 s1.dir and s2.p0 + t2 s2.dir: return 1 and t1, t2 if both
  * lie in [0, 1] (the lines' closest points lie within the segments), else 0. Precondition: the segments are not
  * parallel, |s1.dir x s2.dir|^2 > 0 (callers' parallel tests guarantee it; asserted in debug).
  */
-u32             SegmentLineClosestParameterCheck(f32 *t1, f32 *t2, const struct segment *s1, const struct segment *s2);
-/* return squared distance between s and p; set c to the closest point on s to p */
-f32 		    SegmentPointDistanceSquared(v3 *c, const struct segment *s, const v3 p);
-/* Return parameter t of projected barycentric point p to segment s: PROJECTION_ON_LINE(p) = s.p0*(1-t) + s.p1*t */
-f32		        SegmentPointProjectedBcParameter(const struct segment *s, const v3 p);
-/* Return parameter g of closest barycentric point p to segment s: PROJECTION_ON_SEGMENT(p) = s.p0*(1-t) + s.p1*t, 0.0f <= t <= 1.0f */
-f32 		    SegmentPointClosestBcParameter(const struct segment *s, const v3 p);
-/* set bc_p = s.p0*(1-t) + s.p1*t */
-v3 		    SegmentBc(const struct segment *s, const f32 t); 	
-
-
-/* Return the segment resulting from transforming the given capsule. */
-struct segment  SegmentCapsuleTransform(const struct capsule *cap, const ds_Transform *t);
-
+static ds_ForceInline u32 SegmentLineClosestParameterCheck(f32 *t1, f32 *t2, const struct segment *s1, const struct segment *s2);
+/* Return the parameter t in [0, 1] of the point of s closest to p (a point segment: 1, the same point as 0) */
+static ds_ForceInline f32 SegmentPointClosestBcParameter(const struct segment *s, const v3 p);
+/* Return the squared distance between s and p; set c to the point of s closest to p */
+static ds_ForceInline f32 SegmentPointDistanceSquared(v3 *c, const struct segment *s, const v3 p);
+/* Return the parameter t of p projected onto the line through s (any real t). Precondition: |s.dir|^2 > 0 (asserted) */
+static ds_ForceInline f32 SegmentPointProjectedBcParameter(const struct segment *s, const v3 p);
 
 /********************************** plane ***********************************/
 
@@ -340,6 +342,77 @@ void 		DcelAssertTopology(struct dcel *dcel);
 /********************************* vertex operations ***********************************/
 
 v3 	VertexCentroid(const v3 *vs, const u32 n);
+
+/****************************** segment: inline definitions *******************************/
+
+static ds_ForceInline struct segment SegmentConstruct(const v3 p0, const v3 p1)
+{
+	const struct segment s = { .p = { p0, p1 }, .dir = V3Sub(p1, p0) };
+	return s;
+}
+
+static ds_ForceInline v3 SegmentBc(const struct segment *s, const f32 t)
+{
+	return V3Interpolate(s->p[1], s->p[0], t);
+}
+
+static ds_ForceInline struct segment SegmentCapsuleTransform(const struct capsule *cap, const ds_Transform *t)
+{
+	const v3 p = QUnitRotate(t->rotation, V3(0.0f, cap->half_height, 0.0f));
+	return SegmentConstruct(V3Add(p, t->position), V3Add(V3Negate(p), t->position));
+}
+
+static ds_ForceInline f32 SegmentDistanceSquared(v3 *c1, v3 *c2, const struct segment *s1, const struct segment *s2)
+{
+	f32 t1, t2;
+	SegmentClosestParameter(&t1, &t2, s1, s2);
+	*c1 = SegmentBc(s1, t1);
+	*c2 = SegmentBc(s2, t2);
+	return V3DistanceSquared(*c1, *c2);
+}
+
+static ds_ForceInline u32 SegmentLineClosestParameterCheck(f32 *t1, f32 *t2, const struct segment *s1, const struct segment *s2)
+{
+	/*
+	 * Lines s1.p0 + t1 d1, s2.p0 + t2 d2, r = s2.p0 - s1.p0, n = d1 x d2: the closest pair has
+	 *
+	 *	t1 = (r x d2) . n / |n|^2,  t2 = (r x d1) . n / |n|^2
+	 *
+	 * (Lagrange's identity turns the dot product forms into these); the cross products keep the relative error
+	 * near eps / sin(angle) where the dot forms cancel to eps / sin^2(angle).
+	 */
+	const v3 r = V3Sub(s2->p[0], s1->p[0]);
+	const v3 n = V3Cross(s1->dir, s2->dir);
+	const f32 den = V3Dot(n, n);
+	ds_Assert(den > 0.0f);
+
+	*t1 = V3Dot(V3Cross(r, s2->dir), n) / den;
+	*t2 = V3Dot(V3Cross(r, s1->dir), n) / den;
+	return (0.0f <= *t1 && *t1 <= 1.0f && 0.0f <= *t2 && *t2 <= 1.0f);
+}
+
+static ds_ForceInline f32 SegmentPointClosestBcParameter(const struct segment *s, const v3 p)
+{
+	/* the weight of p1; a point segment gives VORONOI_V1 (t = 1, the same point); VORONOI_INVALID (rounding): p0 */
+	f32 w[2];
+	return (SegmentVoronoi(w, s->p[0], s->p[1], p) == VORONOI_INVALID)
+		? 0.0f
+		: w[1];
+}
+
+static ds_ForceInline f32 SegmentPointDistanceSquared(v3 *c, const struct segment *s, const v3 p)
+{
+	*c = SegmentBc(s, SegmentPointClosestBcParameter(s, p));
+	return V3DistanceSquared(*c, p);
+}
+
+static ds_ForceInline f32 SegmentPointProjectedBcParameter(const struct segment *s, const v3 p)
+{
+	f32 bc[2], divisor;
+	SegmentBCUnnormalized(bc, &divisor, s->p[0], s->p[1], p);
+	ds_Assert(divisor > 0.0f);
+	return bc[1] / divisor;
+}
 
 /****************************** plane: inline definitions *******************************/
 

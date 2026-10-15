@@ -39,11 +39,6 @@ struct ray RayConstruct(const v3 origin, const v3 dir)
 	return r;
 }
 
-struct segment SegmentConstruct(const v3 p0, const v3 p1)
-{
-	const struct segment s = { .p = { p0, p1 }, .dir = V3Sub(p1, p0) };
-	return s;
-}
 
 void SegmentClosestParameter(f32 *t1, f32 *t2, const struct segment *s1, const struct segment *s2)
 {
@@ -63,12 +58,17 @@ void SegmentClosestParameter(f32 *t1, f32 *t2, const struct segment *s1, const s
 		const f32 d1d2 = V3Dot(s1->dir, s2->dir);
 		const f32 diffd1 = V3Dot(diff, s1->dir);
 		const f32 diffd2 = V3Dot(diff, s2->dir);
-		const f32 denom = d1d1*d2d2 - d1d2*d1d2;
-		/* Check that the segments are not parallel */
-        //TODO is 0.0f good here, or should we use a degree test (V3ParallelCheck)?
+		/*
+		 * Lagrange's identity: d1d1 d2d2 - d1d2^2 = |d1 x d2|^2, and t1's numerator diffd1 d2d2 - diffd2 d1d2 is
+		 * (diff x d2) . (d1 x d2). The cross products keep their relative error near eps / sin(angle) for nearly
+		 * parallel segments, where the dot forms cancel to eps / sin^2(angle) and leave t1 arbitrary below
+		 * ~1e-3 rad (distance error up to angle * length). denom == 0: parallel, t1 = 0 is as good as any.
+		 */
+		const v3 n = V3Cross(s1->dir, s2->dir);
+		const f32 denom = V3Dot(n, n);
 		if (denom > 0.0f)
 		{
-			*t1 = F32Clamp((diffd1*d2d2 - diffd2*d1d2) / denom, 0.0f, 1.0f);
+			*t1 = F32Clamp(V3Dot(V3Cross(diff, s2->dir), n) / denom, 0.0f, 1.0f);
 		}
 
 		/*
@@ -117,80 +117,13 @@ void SegmentClosestParameter(f32 *t1, f32 *t2, const struct segment *s1, const s
 	ds_Assert(0.0f <= *t2 && *t2 <= 1.0f);
 }
 
-u32 SegmentLineClosestParameterCheck(f32 *t1, f32 *t2, const struct segment *s1, const struct segment *s2)
-{
-	/*
-	 * Lines s1.p0 + t1 d1, s2.p0 + t2 d2, with w = s1.p0 - s2.p0: the closest pair is where the difference is
-	 * perpendicular to both directions,
-	 *
-	 *	t1 = (d1d2 d2w - d1w d2d2) / den,  t2 = (d1d1 d2w - d1d2 d1w) / den
-	 *	den = d1d1 d2d2 - d1d2^2 = |d1 x d2|^2
-	 *
-	 * den from the cross product: no cancellation for nearly parallel lines.
-	 */
-	const v3 d1 = s1->dir;
-	const v3 d2 = s2->dir;
-	const v3 w = V3Sub(s1->p[0], s2->p[0]);
-	const f32 d1d1 = V3Dot(d1, d1);
-	const f32 d1d2 = V3Dot(d1, d2);
-	const f32 d2d2 = V3Dot(d2, d2);
-	const f32 d1w = V3Dot(d1, w);
-	const f32 d2w = V3Dot(d2, w);
-	const v3 cross = V3Cross(d1, d2);
-	const f32 den = V3Dot(cross, cross);
-	ds_Assert(den > 0.0f);
 
-	*t1 = (d1d2*d2w - d1w*d2d2) / den;
-	*t2 = (d1d1*d2w - d1d2*d1w) / den;
-	return (0.0f <= *t1 && *t1 <= 1.0f && 0.0f <= *t2 && *t2 <= 1.0f);
-}
 
-f32 SegmentDistanceSquared(v3 *c1, v3 *c2, const struct segment *s1, const struct segment *s2)
-{
-    f32 t1, t2;
-    SegmentClosestParameter(&t1, &t2, s1, s2);
-	*c1 = SegmentBc(s1, t1);
-	*c2 = SegmentBc(s2, t2);
-	return V3DistanceSquared(*c1, *c2);
-}
 
-f32 SegmentPointDistanceSquared(v3 *c, const struct segment *s, const v3 p)
-{
-	f32 t = 0.0f;
-	
-	if (V3LengthSquared(s->dir) > 0.0f)
-	{
-		const v3 diff = V3Sub(p, s->p[0]);
-		t = F32Clamp(V3Dot(diff, s->dir) / V3Dot(s->dir, s->dir), 0.0f, 1.0f);
-	}
-
-	*c = SegmentBc(s, t);
-	return V3DistanceSquared(*c, p);
-}
-
-v3 SegmentBc(const struct segment *s, const f32 t)
-{
-	return V3Interpolate(s->p[1], s->p[0], t);
-}
                                                                         
-struct segment SegmentCapsuleTransform(const struct capsule *cap, const ds_Transform *t)
-{
-    const v3 p = QUnitRotate(t->rotation, V3(0.0f, cap->half_height, 0.0f));
-	return SegmentConstruct(V3Add(p, t->position), V3Add(V3Negate(p), t->position));
-}
 
 
-f32 SegmentPointProjectedBcParameter(const struct segment *s, const v3 p)
-{	
-	const v3 diff = V3Sub(p, s->p[0]);
-	return V3Dot(diff, s->dir) / V3Dot(s->dir, s->dir);
-}
 
-f32 SegmentPointClosestBcParameter(const struct segment *s, const v3 p)
-{	
-	const v3 diff = V3Sub(p, s->p[0]);
-	return F32Clamp(V3Dot(diff, s->dir) / V3Dot(s->dir, s->dir), 0.0f, 1.0f);
-}
 
 
 struct aabb BboxVertexSet(const v3 *v, const u32 count)

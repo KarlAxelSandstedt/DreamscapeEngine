@@ -1331,8 +1331,180 @@ struct test_Output BboxRotateTest(struct test_Environment *env)
 	return output;
 }
 
+/* f64 helpers for the segment references: squared distance of point p to segment ab */
+static f64 SegTestPointSegmentSq(const f64 p[3], const f64 a[3], const f64 b[3])
+{
+    const f64 d[3] = { b[0] - a[0], b[1] - a[1], b[2] - a[2] };
+    const f64 w[3] = { p[0] - a[0], p[1] - a[1], p[2] - a[2] };
+    const f64 dd = d[0]*d[0] + d[1]*d[1] + d[2]*d[2];
+    f64 t = (dd > 0.0) ? (w[0]*d[0] + w[1]*d[1] + w[2]*d[2]) / dd : 0.0;
+    t = (t < 0.0) ? 0.0 : ((t > 1.0) ? 1.0 : t);
+    const f64 e[3] = { a[0] + t*d[0] - p[0], a[1] + t*d[1] - p[1], a[2] + t*d[2] - p[2] };
+    return e[0]*e[0] + e[1]*e[1] + e[2]*e[2];
+}
+
+/* exact squared distance of segments s1, s2 (f64, from their f32 end points): ternary search over s1 (convex) */
+static f64 SegTestSegmentSq(const struct segment *s1, const struct segment *s2)
+{
+    const f64 a0[3] = { s1->p[0].x, s1->p[0].y, s1->p[0].z }, a1[3] = { s1->p[1].x, s1->p[1].y, s1->p[1].z };
+    const f64 b0[3] = { s2->p[0].x, s2->p[0].y, s2->p[0].z }, b1[3] = { s2->p[1].x, s2->p[1].y, s2->p[1].z };
+    f64 lo = 0.0, hi = 1.0;
+    for (u32 i = 0; i < 200; ++i)
+    {
+        const f64 m1 = lo + (hi - lo) / 3.0, m2 = hi - (hi - lo) / 3.0;
+        f64 p1[3], p2[3];
+        for (u32 k = 0; k < 3; ++k) { p1[k] = a0[k] + m1*(a1[k] - a0[k]); p2[k] = a0[k] + m2*(a1[k] - a0[k]); }
+        if (SegTestPointSegmentSq(p1, b0, b1) < SegTestPointSegmentSq(p2, b0, b1)) { hi = m2; } else { lo = m1; }
+    }
+    f64 p[3];
+    for (u32 k = 0; k < 3; ++k) { p[k] = a0[k] + 0.5*(lo + hi)*(a1[k] - a0[k]); }
+    return SegTestPointSegmentSq(p, b0, b1);
+}
+
+/* a unit vector orthogonal to the unit vector d */
+static v3 SegTestOrthogonal(const v3 d)
+{
+    v3 u;
+    do
+    {
+        u = V3UnitSphere();
+        u = V3Sub(u, V3Scale(d, V3Dot(u, d)));
+    } while (V3Dot(u, u) < 0.01f);
+    return V3Normalize(u);
+}
+
+/*
+ * SegmentDistanceSquared on nearly parallel unit segments (angles 1e-1 .. 1e-7, overlapping, 0 .. 1 apart) in a
+ * local frame and up to 10 from the origin, against the exact distance: error <= 16 eps (1 + coordinate size).
+ * The dot-product form of SegmentClosestParameter erred by up to angle * length (1e-4 at 1e-4 rad).
+ */
+struct test_Output SegmentNearParallelTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    f32 worst = 0.0f;
+    for (u32 pos = 0; pos <= 10; pos += 10)
+    {
+        for (u32 k = 1; k <= 7; ++k)
+        {
+            f32 angle = 1.0f;
+            for (u32 j = 0; j < k; ++j) { angle *= 0.1f; }
+            for (u32 i = 0; i < 3000; ++i)
+            {
+                const v3 d1 = V3UnitSphere();
+                const v3 u = SegTestOrthogonal(d1);
+                const v3 w = SegTestOrthogonal(d1);
+                const v3 d2 = V3Add(V3Scale(d1, F32Cos(angle)), V3Scale(w, F32Sin(angle)));
+                const f32 p = (f32) pos;
+                const v3 o = V3(RngF32Range(-p, p), RngF32Range(-p, p), RngF32Range(-p, p));
+                const v3 q = V3Add(V3Add(o, V3Scale(u, RngF32Range(0.0f, 1.0f))), V3Scale(d1, RngF32Range(-0.9f, 0.9f)));
+                const struct segment s1 = SegmentConstruct(o, V3Add(o, d1));
+                const struct segment s2 = SegmentConstruct(q, V3Add(q, d2));
+
+                v3 c1, c2;
+                const f32 dist = F32Sqrt(SegmentDistanceSquared(&c1, &c2, &s1, &s2));
+                const f32 ref = F32Sqrt((f32) SegTestSegmentSq(&s1, &s2));
+                const f32 err = F32Abs(dist - ref);
+                worst = F32Max(worst, err / (F32_EPSILON * (1.0f + p)));
+                TEST_TRUE(err <= 16.0f * F32_EPSILON * (1.0f + 2.0f * p));
+            }
+        }
+    }
+    fprintf(stdout, "\tSegmentNearParallelTest: 42000 near-parallel pairs; largest error %.2f eps (1 + coordinate size)\n", worst);
+
+	return output;
+}
+
+/*
+ * SegmentLineClosestParameterCheck near its parallel limit (callers: >= 0.5 degrees): t1's error along a unit edge,
+ * against an f64 evaluation of the same f32 input, <= eps / sin^2(angle). The dot-product numerators exceeded it at
+ * every angle tested (2.7e-3 at 0.5 degrees).
+ */
+struct test_Output SegmentLineClosestTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    const f32 degrees[] = { 0.5f, 1.0f, 5.0f, 30.0f };
+    for (u32 a = 0; a < 4; ++a)
+    {
+        const f32 angle = degrees[a] * F32_PI / 180.0f;
+        const f32 sin_angle = F32Sin(angle);
+        f64 worst = 0.0;
+        for (u32 i = 0; i < 20000; ++i)
+        {
+            const v3 d1 = V3UnitSphere();
+            const v3 u = SegTestOrthogonal(d1);
+            const v3 v = V3Cross(d1, u);
+            const v3 d2 = V3Add(V3Scale(d1, F32Cos(angle)), V3Scale(u, sin_angle));
+            const v3 p1 = V3(RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f));
+            const v3 p2 = V3Add(V3Add(V3Add(p1, V3Scale(v, 0.1f)), V3Scale(d1, RngF32Range(-0.3f, 0.3f))), V3Scale(d2, -0.5f));
+            const struct segment s1 = SegmentConstruct(p1, V3Add(p1, d1));
+            const struct segment s2 = SegmentConstruct(p2, V3Add(p2, d2));
+
+            f32 t1, t2;
+            SegmentLineClosestParameterCheck(&t1, &t2, &s1, &s2);
+
+            const f64 b1[3] = { s1.dir.x, s1.dir.y, s1.dir.z }, b2[3] = { s2.dir.x, s2.dir.y, s2.dir.z };
+            const f64 r[3] = { (f64) s2.p[0].x - s1.p[0].x, (f64) s2.p[0].y - s1.p[0].y, (f64) s2.p[0].z - s1.p[0].z };
+            const f64 n[3] = { b1[1]*b2[2] - b1[2]*b2[1], b1[2]*b2[0] - b1[0]*b2[2], b1[0]*b2[1] - b1[1]*b2[0] };
+            const f64 rd2[3] = { r[1]*b2[2] - r[2]*b2[1], r[2]*b2[0] - r[0]*b2[2], r[0]*b2[1] - r[1]*b2[0] };
+            const f64 t1_ref = (rd2[0]*n[0] + rd2[1]*n[1] + rd2[2]*n[2]) / (n[0]*n[0] + n[1]*n[1] + n[2]*n[2]);
+            const f64 err = (t1 > t1_ref) ? t1 - t1_ref : t1_ref - t1;
+            worst = (err > worst) ? err : worst;
+        }
+        fprintf(stdout, "\tSegmentLineClosestTest: %4.1f degrees, largest t1 error %.2e (bound eps / sin^2 = %.2e)\n", degrees[a], worst, F32_EPSILON / (sin_angle*sin_angle));
+        TEST_TRUE(worst <= F32_EPSILON / (sin_angle*sin_angle));
+    }
+
+	return output;
+}
+
+/* point-segment functions: point segments, and random segments against f64 */
+struct test_Output SegmentPointTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    const v3 a = V3(1.0f, 2.0f, 3.0f);
+    const struct segment point = SegmentConstruct(a, a);
+    const v3 p = V3(4.0f, 6.0f, 3.0f);
+    const f32 t = SegmentPointClosestBcParameter(&point, p);
+    TEST_TRUE(0.0f <= t && t <= 1.0f);
+    v3 c;
+    TEST_EQUAL(25.0f, SegmentPointDistanceSquared(&c, &point, p));
+    TEST_TRUE(c.x == a.x && c.y == a.y && c.z == a.z);
+
+    for (u32 i = 0; i < 20000; ++i)
+    {
+        const v3 s0 = V3(RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f));
+        const v3 s1 = V3Add(s0, V3Scale(V3UnitSphere(), RngF32Range(0.01f, 5.0f)));
+        const v3 q = V3(RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f));
+        const struct segment s = SegmentConstruct(s0, s1);
+
+        const f64 d[3] = { (f64) s1.x - s0.x, (f64) s1.y - s0.y, (f64) s1.z - s0.z };
+        const f64 w[3] = { (f64) q.x - s0.x, (f64) q.y - s0.y, (f64) q.z - s0.z };
+        const f64 t_line = (w[0]*d[0] + w[1]*d[1] + w[2]*d[2]) / (d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
+        const f64 t_ref = (t_line < 0.0) ? 0.0 : ((t_line > 1.0) ? 1.0 : t_line);
+        const f32 len = V3Length(s.dir);
+        /* t is measured in units of |dir|: rounding of the coordinates (~20) gives ~eps 20 / |dir| */
+        const f64 tol = 64.0 * F32_EPSILON * 20.0 / len;
+
+        const f32 t_closest = SegmentPointClosestBcParameter(&s, q);
+        const f32 t_projected = SegmentPointProjectedBcParameter(&s, q);
+        TEST_TRUE(0.0f <= t_closest && t_closest <= 1.0f);
+        TEST_TRUE((t_closest > t_ref ? t_closest - t_ref : t_ref - t_closest) <= tol);
+        TEST_TRUE((t_projected > t_line ? t_projected - t_line : t_line - t_projected) <= tol * (1.0 + (t_line < 0.0 ? -t_line : t_line)));
+        const f32 dist_sq = SegmentPointDistanceSquared(&c, &s, q);
+        TEST_TRUE(F32Abs(V3DistanceSquared(c, q) - dist_sq) == 0.0f);
+    }
+
+	return output;
+}
+
 static struct test_Output (*geometry_tests[])(struct test_Environment *) =
 {
+	SegmentNearParallelTest,
+	SegmentLineClosestTest,
+	SegmentPointTest,
 	BboxRotateTest,
 	PlaneExactTest,
 	PlaneRandomTest,
