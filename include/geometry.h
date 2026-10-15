@@ -62,11 +62,7 @@ struct plane
 	    v3 normal;
 	    v3 normal_direction;
     };
-    union
-    {
-	    f32 signed_distance;
-        f32 signed_normal_unit_distance;
-    };
+    f32 signed_distance;
 };
 
 /*
@@ -151,43 +147,43 @@ struct aabb     BboxSegment(const struct segment *s);
 /********************************** plane ***********************************/
 
 /* Construct plane with given normal direction n containing point p */
-struct plane 	PlaneConstruct(const v3 n, const v3 p); 
-/* Construct normalized plane with given normal direction n containing point p */
-struct plane 	PlaneConstructNormalized(const v3 n, const v3 p); 
-/* Construct plane from CCW triangle abc */
-struct plane 	PlaneConstructFromCcwTriangle(const v3 a, const v3 b, const v3 c);
-/* Normalize the plane's normal direction and rescale signed_distance accordingly */
-void            PlaneNormalize(struct plane *pl);
+static ds_ForceInline struct plane PlaneConstruct(const v3 n, const v3 p);
+/* Construct normalized plane with given normal direction n containing point p. Precondition: 0 < |n|^2 < inf (asserted) */
+static ds_ForceInline struct plane PlaneConstructNormalized(const v3 n, const v3 p);
+/* Construct plane from CCW triangle abc (normal direction (b - a) x (c - a)). Precondition: abc not degenerate (asserted) */
+static ds_ForceInline struct plane PlaneConstructFromCcwTriangle(const v3 a, const v3 b, const v3 c);
+/*
+ * Normalize the plane's normal direction and rescale signed_distance by the same factor. Precondition:
+ * 0 < |n|^2 < inf (asserted)
+ */
+static ds_ForceInline void PlaneNormalize(struct plane *pl);
 /*
  * Return pl moved by the rigid transform x -> rot x + pos (rot a rotation matrix). Keeps |n|, so unit planes stay
  * unit. Not for scaling or shearing maps: their normals transform by the inverse transpose.
  */
-struct plane    PlaneTransform(const struct plane *pl, const m3 rot, const v3 pos);
-/* Return 1 if p is infront of plane, i.e. a positive signed distance, otherwise 0 */
-u32 		    PlanePointInfrontCheck(const struct plane *pl, const v3 p);
-/* Return 1 if p is behind plane, i.e. a negative signed distance, otherwise 0 */
-u32 		    PlanePointBehindCheck(const struct plane *pl, const v3 p);
-/* 
- * return t: s.p0 + t*s.dir is point on plane 
- *
- * WARNING: if the segment lies on the plane, NaN is returned.
- */
-f32 		    PlaneSegmentClipParameter(const struct plane *pl, const struct segment *s);
-/* 
- * return 1 if clip happened, otherwise 0 
- *
- * WARNING: if the segment lies on the plane, 0 is returned.
- */
-u32 		    PlaneSegmentTest(const struct plane *pl, const struct segment *s); 
+static ds_ForceInline struct plane PlaneTransform(const struct plane *pl, const m3 rot, const v3 pos);
 /* return signed distance multiplied by |normal_direction| between plane and point (infront of plane == positive) */
-f32 		    PlanePointSignedDistance(const struct plane *pl, const v3 p);
+static ds_ForceInline f32 PlanePointSignedDistance(const struct plane *pl, const v3 p);
 /* return absolute distance multiplied by |normal_direction| between plane and point */
-f32 		    PlanePointDistance(const struct plane *pl, const v3 p);
+static ds_ForceInline f32 PlanePointDistance(const struct plane *pl, const v3 p);
+/* Return 1 if p is infront of plane, i.e. a positive signed distance, otherwise 0 */
+static ds_ForceInline u32 PlanePointInfrontCheck(const struct plane *pl, const v3 p);
+/* Return 1 if p is behind plane, i.e. a negative signed distance, otherwise 0 */
+static ds_ForceInline u32 PlanePointBehindCheck(const struct plane *pl, const v3 p);
 /*
  * Set proj to the projection of p onto pl and return t = PlanePointSignedDistance / |n|^2, the signed distance
  * measured in multiples of n = pl->normal_direction: proj = p - t n. For a unit normal t is the signed distance.
+ * Precondition: 0 < |n|^2 < inf (asserted)
  */
-f32 		    PlanePointProjection(v3 *proj, const struct plane *pl, const v3 p);
+static ds_ForceInline f32 PlanePointProjection(v3 *proj, const struct plane *pl, const v3 p);
+/*
+ * Return t such that s.p0 + t*s.dir lies on the plane: t = d0 / (d0 - d1), from the end points' signed distances.
+ * End points strictly on opposite sides give t in [0, 1]. Parallel to the plane (d0 == d1): F32_INFINITY, or 0 if
+ * the segment lies in the plane.
+ */
+static ds_ForceInline f32 PlaneSegmentClipParameter(const struct plane *pl, const struct segment *s);
+/* Return 1 if the segment touches or crosses the plane (its end points are not strictly on one side), otherwise 0 */
+static ds_ForceInline u32 PlaneSegmentTest(const struct plane *pl, const struct segment *s);
 
 /********************************** AABB ************************************/
 
@@ -343,6 +339,101 @@ void 		DcelAssertTopology(struct dcel *dcel);
 /********************************* vertex operations ***********************************/
 
 v3 	VertexCentroid(const v3 *vs, const u32 n);
+
+/****************************** plane: inline definitions *******************************/
+
+static ds_ForceInline struct plane PlaneConstruct(const v3 n, const v3 p)
+{
+	struct plane pl;
+	pl.normal_direction = n;
+	pl.signed_distance = V3Dot(n, p);
+	return pl;
+}
+
+static ds_ForceInline struct plane PlaneConstructNormalized(const v3 n, const v3 p)
+{
+	const f32 len_sq = V3Dot(n, n);
+	ds_Assert(0.0f < len_sq && len_sq < F32_INFINITY);
+	struct plane pl;
+	pl.normal = V3Scale(n, 1.0f / F32Sqrt(len_sq));
+	pl.signed_distance = V3Dot(pl.normal, p);
+	return pl;
+}
+
+static ds_ForceInline struct plane PlaneConstructFromCcwTriangle(const v3 a, const v3 b, const v3 c)
+{
+	const struct plane pl = PlaneConstruct(V3Cross(V3Sub(b, a), V3Sub(c, a)), a);
+	ds_Assert(V3Dot(pl.normal_direction, pl.normal_direction) > 0.0f);
+	return pl;
+}
+
+static ds_ForceInline void PlaneNormalize(struct plane *pl)
+{
+	const f32 len_sq = V3Dot(pl->normal_direction, pl->normal_direction);
+	ds_Assert(0.0f < len_sq && len_sq < F32_INFINITY);
+	const f32 inv_len = 1.0f / F32Sqrt(len_sq);
+	pl->normal = V3Scale(pl->normal_direction, inv_len);
+	pl->signed_distance *= inv_len;
+}
+
+static ds_ForceInline struct plane PlaneTransform(const struct plane *pl, const m3 rot, const v3 pos)
+{
+	/*
+	 * A point x on pl (dot(n, x) = d) moves to rot x + pos. With n' = rot n, rotations keep dot products:
+	 *      dot(n', rot x + pos) = dot(n, x) + dot(n', pos) = d + dot(n', pos)
+	 */
+	struct plane moved;
+	moved.normal_direction = M3V3Mul(rot, pl->normal_direction);
+	moved.signed_distance = pl->signed_distance + V3Dot(moved.normal_direction, pos);
+	return moved;
+}
+
+static ds_ForceInline f32 PlanePointSignedDistance(const struct plane *pl, const v3 p)
+{
+	return V3Dot(pl->normal_direction, p) - pl->signed_distance;
+}
+
+static ds_ForceInline f32 PlanePointDistance(const struct plane *pl, const v3 p)
+{
+	return F32Abs(PlanePointSignedDistance(pl, p));
+}
+
+static ds_ForceInline u32 PlanePointInfrontCheck(const struct plane *pl, const v3 p)
+{
+	return (PlanePointSignedDistance(pl, p) > 0.0f);
+}
+
+static ds_ForceInline u32 PlanePointBehindCheck(const struct plane *pl, const v3 p)
+{
+	return (PlanePointSignedDistance(pl, p) < 0.0f);
+}
+
+static ds_ForceInline f32 PlanePointProjection(v3 *proj, const struct plane *pl, const v3 p)
+{
+	const f32 len_sq = V3Dot(pl->normal_direction, pl->normal_direction);
+	ds_Assert(0.0f < len_sq && len_sq < F32_INFINITY);
+	const f32 n_units = PlanePointSignedDistance(pl, p) / len_sq;
+	*proj = V3AddScaled(p, pl->normal_direction, -n_units);
+	return n_units;
+}
+
+static ds_ForceInline f32 PlaneSegmentClipParameter(const struct plane *pl, const struct segment *s)
+{
+	const f32 d0 = PlanePointSignedDistance(pl, s->p[0]);
+	const f32 d1 = PlanePointSignedDistance(pl, s->p[1]);
+	if (d0 == d1)
+	{
+		return (d0 == 0.0f) ? 0.0f : F32_INFINITY;
+	}
+	return d0 / (d0 - d1);
+}
+
+static ds_ForceInline u32 PlaneSegmentTest(const struct plane *pl, const struct segment *s)
+{
+	const f32 d0 = PlanePointSignedDistance(pl, s->p[0]);
+	const f32 d1 = PlanePointSignedDistance(pl, s->p[1]);
+	return !((0.0f < d0 && 0.0f < d1) || (d0 < 0.0f && d1 < 0.0f));
+}
 
 #ifdef __cplusplus
 } 

@@ -1159,8 +1159,116 @@ struct test_Output VoronoiExactTest(struct test_Environment *env)
 	return output;
 }
 
+/*
+ * Planes: exact cases, including the degenerate ones of the segment functions (parallel, in the plane, touching),
+ * and random planes and segments, where the clip parameter and the segment test must agree with the end points'
+ * signs and clip points, projections and transformed points must lie on the plane (tolerance scaled by |n| and
+ * the coordinates' size).
+ */
+struct test_Output PlaneExactTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    /* y = 1 with a unit normal and with |n| = 3 */
+    const struct plane pl = PlaneConstruct(V3(0.0f, 1.0f, 0.0f), V3(0.0f, 1.0f, 0.0f));
+    const struct plane pl3 = PlaneConstruct(V3(0.0f, 3.0f, 0.0f), V3(0.0f, 1.0f, 0.0f));
+    const struct segment crossing = SegmentConstruct(V3(0.0f, 0.0f, 0.0f), V3(0.0f, 2.0f, 0.0f));
+    const struct segment one_side = SegmentConstruct(V3(0.0f, 2.0f, 0.0f), V3(1.0f, 3.0f, 0.0f));
+    const struct segment parallel = SegmentConstruct(V3(0.0f, 2.0f, 0.0f), V3(1.0f, 2.0f, 0.0f));
+    const struct segment in_plane = SegmentConstruct(V3(0.0f, 1.0f, 0.0f), V3(1.0f, 1.0f, 0.0f));
+    const struct segment touching = SegmentConstruct(V3(0.0f, 1.0f, 0.0f), V3(0.0f, 3.0f, 0.0f));
+
+    TEST_EQUAL(0.5f, PlaneSegmentClipParameter(&pl, &crossing));
+    TEST_EQUAL(0.5f, PlaneSegmentClipParameter(&pl3, &crossing));
+    TEST_EQUAL(-1.0f, PlaneSegmentClipParameter(&pl, &one_side));
+    TEST_EQUAL(F32_INFINITY, PlaneSegmentClipParameter(&pl, &parallel));
+    TEST_EQUAL(0.0f, PlaneSegmentClipParameter(&pl, &in_plane));
+    TEST_EQUAL(0.0f, PlaneSegmentClipParameter(&pl, &touching));
+
+    TEST_EQUAL(1, PlaneSegmentTest(&pl, &crossing));
+    TEST_EQUAL(0, PlaneSegmentTest(&pl, &one_side));
+    TEST_EQUAL(0, PlaneSegmentTest(&pl, &parallel));
+    TEST_EQUAL(1, PlaneSegmentTest(&pl, &in_plane));
+    TEST_EQUAL(1, PlaneSegmentTest(&pl, &touching));
+
+    TEST_EQUAL(1, PlanePointInfrontCheck(&pl, V3(0.0f, 2.0f, 0.0f)));
+    TEST_EQUAL(0, PlanePointInfrontCheck(&pl, V3(0.0f, 1.0f, 0.0f)));
+    TEST_EQUAL(1, PlanePointBehindCheck(&pl, V3(0.0f, 0.0f, 0.0f)));
+    TEST_EQUAL(0, PlanePointBehindCheck(&pl, V3(0.0f, 1.0f, 0.0f)));
+    TEST_EQUAL(3.0f, PlanePointSignedDistance(&pl3, V3(7.0f, 2.0f, -5.0f)));
+    TEST_EQUAL(3.0f, PlanePointDistance(&pl3, V3(7.0f, 0.0f, -5.0f)));
+
+    struct plane normalized = pl3;
+    PlaneNormalize(&normalized);
+    TEST_EQUAL(1.0f, normalized.normal.y);
+    TEST_EQUAL(1.0f, normalized.signed_distance);
+    const struct plane constructed = PlaneConstructNormalized(V3(0.0f, 3.0f, 0.0f), V3(2.0f, 1.0f, 4.0f));
+    TEST_EQUAL(1.0f, constructed.normal.y);
+    TEST_EQUAL(1.0f, constructed.signed_distance);
+
+    const struct plane tri = PlaneConstructFromCcwTriangle(V3(0.0f, 0.0f, 2.0f), V3(1.0f, 0.0f, 2.0f), V3(0.0f, 1.0f, 2.0f));
+    TEST_EQUAL(1.0f, tri.normal_direction.z);
+    TEST_EQUAL(2.0f, tri.signed_distance);
+
+    v3 proj;
+    TEST_EQUAL(1.0f, PlanePointProjection(&proj, &pl3, V3(5.0f, 4.0f, 0.0f)));
+    TEST_TRUE(proj.x == 5.0f && proj.y == 1.0f && proj.z == 0.0f);
+
+	return output;
+}
+
+struct test_Output PlaneRandomTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    const f32 scale = 10.0f;
+    for (u32 k = 0; k < 20000; ++k)
+    {
+        const f32 n_len = RngF32Range(0.5f, 2.0f);
+        const v3 n = V3Scale(V3UnitSphere(), n_len);
+        const v3 q = V3(RngF32Range(-scale, scale), RngF32Range(-scale, scale), RngF32Range(-scale, scale));
+        const struct plane pl = PlaneConstruct(n, q);
+        /* distances are rounded to ~eps |n| (|x| + |q|): with |x|, |q| <= ~2 sqrt(3) scale */
+        const f32 tol = 64.0f * F32_EPSILON * n_len * scale;
+
+        const v3 p0 = V3(RngF32Range(-scale, scale), RngF32Range(-scale, scale), RngF32Range(-scale, scale));
+        const v3 p1 = V3(RngF32Range(-scale, scale), RngF32Range(-scale, scale), RngF32Range(-scale, scale));
+        const struct segment s = SegmentConstruct(p0, p1);
+        const f32 d0 = PlanePointSignedDistance(&pl, p0);
+        const f32 d1 = PlanePointSignedDistance(&pl, p1);
+        const u32 one_side = (0.0f < d0 && 0.0f < d1) || (d0 < 0.0f && d1 < 0.0f);
+        TEST_EQUAL(!one_side, PlaneSegmentTest(&pl, &s));
+        if (!one_side && d0 != d1)
+        {
+            const f32 t = PlaneSegmentClipParameter(&pl, &s);
+            TEST_TRUE(0.0f <= t && t <= 1.0f);
+            TEST_TRUE(F32Abs(PlanePointSignedDistance(&pl, SegmentBc(&s, t))) <= tol);
+        }
+
+        v3 proj;
+        PlanePointProjection(&proj, &pl, p0);
+        TEST_TRUE(F32Abs(PlanePointSignedDistance(&pl, proj)) <= tol);
+
+        struct plane unit = pl;
+        PlaneNormalize(&unit);
+        TEST_TRUE(F32Abs(V3Length(unit.normal) - 1.0f) <= 4.0f * F32_EPSILON);
+        TEST_TRUE(F32Abs(PlanePointSignedDistance(&unit, q)) <= tol / n_len);
+        const struct plane constructed = PlaneConstructNormalized(n, q);
+        TEST_TRUE(F32Abs(PlanePointSignedDistance(&constructed, q)) <= tol / n_len);
+
+        const m3 rot = M3QUnit(QUnitAxisAngle(V3UnitSphere(), RngF32Range(-F32_PI, F32_PI)));
+        const v3 pos = V3(RngF32Range(-scale, scale), RngF32Range(-scale, scale), RngF32Range(-scale, scale));
+        const struct plane moved = PlaneTransform(&pl, rot, pos);
+        TEST_TRUE(F32Abs(PlanePointSignedDistance(&moved, V3Add(M3V3Mul(rot, p0), pos)) - d0) <= 2.0f * tol);
+    }
+
+	return output;
+}
+
 static struct test_Output (*geometry_tests[])(struct test_Environment *) =
 {
+	PlaneExactTest,
+	PlaneRandomTest,
 	SegmentShortTest,
 	DcelFaceSegmentClipTest,
 };

@@ -185,8 +185,18 @@ Multi-line comments: /* on its own line, then the text, then */ on its own line.
 
 Header documentation states what a function (or family of functions) does, its
 contracts (assumptions on the inputs), side effects and outputs. Internals are
-written very sparingly there; explanations of internals go in .c files. A
-header starts with a short block: what the file is for, its conventions and its
-sections. Each function group's documentation sits directly above its
-declarations. Exceptions, kept as they are: include/ds_voronoi.h and
-include/ds_init.h, whose internals the owner wrote to understand them deeply.
+written very sparingly there; explanations of internals go in .c files.
+Exceptions, kept as they are: include/ds_voronoi.h and include/ds_init.h, whose
+internals the owner wrote to understand them deeply.
+
+Header layout, in this order:
+    header summary (what the file is for, its conventions, its sections)
+    API 1: docs and declarations
+    API 2: docs and declarations
+    ...
+    API 1: inline definitions
+    API 2: inline definitions
+    ...
+Inline functions are declared up front with the rest of their API
+(static ds_ForceInline ...;) and defined at the bottom, one block per API, so
+all APIs and their docs come first.
