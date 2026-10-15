@@ -25,7 +25,7 @@ the BVHs (bvh.c) are built on it. Every internal node has exactly two children. 
 need no particular order, which tree-based structures can exploit.
 
 Contents (in this order):
-    ds_BT   the tree: add a root, give a leaf two children, remove a leaf (with its parent), validate.
+    BT      the tree: add a root, give a leaf two children, remove a leaf (with its parent), validate.
     BTI     iterators over a subtree: depth first (BTDF..., parents first) and left-right (BTLR...,
             children first).
 */
@@ -40,44 +40,44 @@ extern "C" {
 #include "ds_allocator.h"
 
 /*
-ds_BT
------
+BT
+--
     struct node { POOL_NODE; BT_NODE; ... };
-    struct ds_BT bt;
-    ds_BTFlush(bt);
-    ds_BTAddRoot(bt, pool.buf, root);
-    ds_BTAddChildren(bt, pool.buf, root, left, right);
+    struct BT bt;
+    BTFlush(bt);
+    BTAddRoot(bt, pool.buf, root);
+    BTAddChildren(bt, pool.buf, root, left, right);
 
 bt_parent's top bit (BT_LEAF_MASK) marks a leaf, its other 31 bits are the parent index (BT_INDEX_NULL
 at the root). The tree leaves a leaf's bt_child[] alone: callers may store anything there. count is the
 number of nodes (odd, or 0). The macros don't check that an index is in the tree. Not thread-safe.
 
-The macros (bt is a struct ds_BT lvalue, buf the node array, node_addr a node pointer; arguments may be
+The macros (bt is a struct BT lvalue, buf the node array, node_addr a node pointer; arguments may be
 evaluated more than once):
 
     // Set the leaf bit; 1 if node_addr is a leaf; 1 if node_addr is the root (no parent).
-    ds_BTLeafSet(node_addr)
-    ds_BTLeafCheck(node_addr)
-    ds_BTRootCheck(node_addr)
+    BTLeafSet(node_addr)
+    BTLeafCheck(node_addr)
+    BTRootCheck(node_addr)
 
     // Make bt empty (also the initialization).
-    ds_BTFlush(bt)
+    BTFlush(bt)
 
     // Make root the only node of the empty bt, a leaf.
-    ds_BTAddRoot(bt, buf, root)
+    BTAddRoot(bt, buf, root)
 
     // Make the leaf parent internal, with the new leaves left (bt_child[0]) and right (bt_child[1]).
-    ds_BTAddChildren(bt, buf, parent, left, right)
+    BTAddChildren(bt, buf, parent, left, right)
 
     // Remove leaf: the root leaf empties bt; any other leaf goes with its parent, and the sibling (with
     // its subtree) takes the parent's place. The caller frees the removed nodes (leaf and parent).
-    ds_BTRemoveLeaf(bt, buf, leaf)
+    BTRemoveLeaf(bt, buf, leaf)
 
     // Number of leaves: (count + 1) / 2.
-    u32 ds_BTLeafCount(bt)
+    u32 BTLeafCount(bt)
 
     // Debug check (asserts): every link matches its reverse link and count the reachable nodes.
-    ds_BTValidate(bt, buf)
+    BTValidate(bt, buf)
 */
 
 
@@ -89,17 +89,17 @@ evaluated more than once):
     u32 bt_child[2];    \
     u32 bt_parent  
 
-struct ds_BT
+struct BT
 {
     u32 root;
     u32 count;
 };
 
-#define ds_BTLeafSet(node_addr)		    ((node_addr)->bt_parent |= BT_LEAF_MASK) 
-#define ds_BTLeafCheck(node_addr)		((node_addr)->bt_parent & BT_LEAF_MASK)
-#define ds_BTRootCheck(node_addr)		(((node_addr)->bt_parent & BT_INDEX_MASK) == BT_INDEX_NULL)
+#define BTLeafSet(node_addr)		    ((node_addr)->bt_parent |= BT_LEAF_MASK) 
+#define BTLeafCheck(node_addr)		((node_addr)->bt_parent & BT_LEAF_MASK)
+#define BTRootCheck(node_addr)		(((node_addr)->bt_parent & BT_INDEX_MASK) == BT_INDEX_NULL)
 
-#define ds_BTFlush(_bt_)        \
+#define BTFlush(_bt_)        \
 do                              \
 {                               \
     (_bt_).root = BT_INDEX_NULL;\
@@ -107,7 +107,7 @@ do                              \
 }                               \
 while (0)
 
-#define ds_BTAddRoot(_bt_, _buf_, _root_)                       \
+#define BTAddRoot(_bt_, _buf_, _root_)                       \
 do                                                              \
 {                                                               \
     ds_Assert((_bt_).count == 0);                               \
@@ -118,11 +118,11 @@ do                                                              \
 }                                                               \
 while (0)
 
-#define ds_BTAddChildren(_bt_, _buf_, _parent_, _left_, _right_)        \
+#define BTAddChildren(_bt_, _buf_, _parent_, _left_, _right_)        \
 do                                                                      \
 {                                                                       \
     ds_Assert((_bt_).count > 0);                                        \
-    ds_Assert(ds_BTLeafCheck((_buf_) + (_parent_)));                    \
+    ds_Assert(BTLeafCheck((_buf_) + (_parent_)));                    \
     (_bt_).count += 2;                                                  \
     (_buf_)[_parent_].bt_parent &= BT_INDEX_MASK;                       \
     (_buf_)[_parent_].bt_child[0] = (_left_);                           \
@@ -132,15 +132,15 @@ do                                                                      \
 }                                                                       \
 while (0)
 
-#define ds_BTRemoveLeaf(_bt_, _buf_, _leaf_)                                        \
+#define BTRemoveLeaf(_bt_, _buf_, _leaf_)                                        \
 do                                                                                  \
 {                                                                                   \
     ds_Assert((_bt_).count > 0);                                                    \
-    ds_Assert(ds_BTLeafCheck((_buf_) + (_leaf_)));                                  \
+    ds_Assert(BTLeafCheck((_buf_) + (_leaf_)));                                  \
     if ((_leaf_) == (_bt_).root)                                                    \
     {                                                                               \
         ds_Assert((_bt_).count == 1);                                               \
-        ds_BTFlush(_bt_);                                                           \
+        BTFlush(_bt_);                                                           \
     }                                                                               \
     else                                                                            \
     {                                                                               \
@@ -165,9 +165,9 @@ do                                                                              
 }                                                                                   \
 while (0)
 
-#define ds_BTLeafCount(_bt_)    (((_bt_).count) ? ((_bt_).count >> 1) + 1 : 0)
+#define BTLeafCount(_bt_)    (((_bt_).count) ? ((_bt_).count >> 1) + 1 : 0)
 
-#define ds_BTValidate(_bt_, _buf_)                                                          \
+#define BTValidate(_bt_, _buf_)                                                          \
 do                                                                                          \
 {                                                                                           \
     if ((_bt_).root == BT_INDEX_NULL)                                                       \
@@ -191,7 +191,7 @@ do                                                                              
                    || (_buf_)[_parent_].bt_child[1] == _it_.at, "(2)");                     \
         }                                                                                   \
                                                                                             \
-        if (!ds_BTLeafCheck((_buf_) + _it_.at))                                             \
+        if (!BTLeafCheck((_buf_) + _it_.at))                                             \
         {                                                                                   \
             ds_AssertString(((_buf_)[_left_].bt_parent & BT_INDEX_MASK) == _it_.at, "(3)"); \
             ds_AssertString(((_buf_)[_right_].bt_parent & BT_INDEX_MASK) == _it_.at, "(4)");\
@@ -243,7 +243,7 @@ do                                                                              
 {                                                                                   \
     (_bti_).root = (_root_);                                                        \
     (_bti_).at = (_root_);                                                          \
-    (_bti_).next = (ds_BTLeafCheck((_buf_) + (_root_)))                             \
+    (_bti_).next = (BTLeafCheck((_buf_) + (_root_)))                             \
                  ? (_bti_).root                                                     \
                  : (_buf_)[_root_].bt_child[0];                                     \
 } while (0)
@@ -256,7 +256,7 @@ do                                                                              
             || (_bti_).next == (_bti_).root);                                                               \
     (_bti_).at = (_bti_).next;                                                                              \
                                                                                                             \
-    if (!ds_BTLeafCheck((_buf_) + (_bti_).next))                                                            \
+    if (!BTLeafCheck((_buf_) + (_bti_).next))                                                            \
     {                                                                                                       \
         (_bti_).next = (_buf_)[(_bti_).next].bt_child[0];                                                   \
         break;                                                                                              \
@@ -290,7 +290,7 @@ do                                                                              
     (_bti_).at = (_root_);                                                          \
     (_bti_).root_parent = (_buf_)[(_bti_).root].bt_parent & BT_INDEX_MASK;          \
     (_bti_).next = (_bti_).root_parent;                                             \
-    while (!ds_BTLeafCheck((_buf_) + (_bti_).at))                                   \
+    while (!BTLeafCheck((_buf_) + (_bti_).at))                                   \
     {                                                                               \
         (_bti_).next = (_buf_)[(_bti_).at].bt_child[1];                             \
         (_bti_).at = (_buf_)[(_bti_).at].bt_child[0];                               \
@@ -302,7 +302,7 @@ do                                                                              
         break;                                                                      \
     }                                                                               \
                                                                                     \
-    while (!ds_BTLeafCheck((_buf_) + (_bti_).next))                                 \
+    while (!BTLeafCheck((_buf_) + (_bti_).next))                                 \
     {                                                                               \
         (_bti_).next = (_buf_)[(_bti_).next].bt_child[0];                           \
     }                                                                               \
@@ -320,7 +320,7 @@ do                                                                              
         if (_parent_ != (_bti_).root_parent && (_buf_)[_parent_].bt_child[0] == (_bti_).at)                 \
         {                                                                                                   \
             (_bti_).next = (_buf_)[_parent_].bt_child[1];                                                   \
-            while (!ds_BTLeafCheck((_buf_) + (_bti_).next))                                                 \
+            while (!BTLeafCheck((_buf_) + (_bti_).next))                                                 \
             {                                                                                               \
                 (_bti_).next = (_buf_)[(_bti_).next].bt_child[0];                                           \
             }                                                                                               \

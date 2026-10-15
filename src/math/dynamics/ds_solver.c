@@ -207,7 +207,7 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
                 dirty->shape = j;
                 dirty->reinsert = 1;
 
-                if (!ds_BTRootCheck(node))
+                if (!BTRootCheck(node))
                 {
                     const u32 parent_index = node->bt_parent & BT_INDEX_MASK;
                     const struct bvhNode *parent = pipeline->dynamic_bvh.pool.buf + parent_index;

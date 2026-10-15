@@ -1584,7 +1584,7 @@ static u32 c_MeshContactNext(struct c_MeshContactHelper *helper, u32 *tri_index,
             }
 
             const struct bvhNode *node = helper->stack[--helper->stack_count];
-            if (ds_BTLeafCheck(node))
+            if (BTLeafCheck(node))
             {
                 helper->leaf_next = node->bt_child[0];
                 helper->leaf_last = node->bt_child[0] + node->bt_child[1] - 1;

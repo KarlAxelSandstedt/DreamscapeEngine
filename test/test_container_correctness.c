@@ -384,13 +384,13 @@ static u32 BTTestSubtreeDF(u32 *order, const struct bt_test_node *buf, const u32
  * once, children first; both visit count nodes. A left-right walk over the subtree of a random node (a leaf
  * too) visits exactly the nodes of its depth-first walk and ends at the node's parent.
  */
-static u32 BTTestCheck(const struct ds_BT *bt, const struct bt_test_node *buf, u8 *seen, u32 *order)
+static u32 BTTestCheck(const struct BT *bt, const struct bt_test_node *buf, u8 *seen, u32 *order)
 {
     if (bt->root == BT_INDEX_NULL)
     {
         return bt->count == 0;
     }
-    if (!ds_BTRootCheck(buf + bt->root))
+    if (!BTRootCheck(buf + bt->root))
     {
         return 0;
     }
@@ -412,7 +412,7 @@ static u32 BTTestCheck(const struct ds_BT *bt, const struct bt_test_node *buf, u
                 return 0;
             }
         }
-        if (!ds_BTLeafCheck(buf + i))
+        if (!BTLeafCheck(buf + i))
         {
             if ((buf[buf[i].bt_child[0]].bt_parent & BT_INDEX_MASK) != i || (buf[buf[i].bt_child[1]].bt_parent & BT_INDEX_MASK) != i)
             {
@@ -421,7 +421,7 @@ static u32 BTTestCheck(const struct ds_BT *bt, const struct bt_test_node *buf, u
         }
         seen[i] = 1;
     }
-    if (n != bt->count || ds_BTLeafCount(*bt) != (n + 1) / 2)
+    if (n != bt->count || BTLeafCount(*bt) != (n + 1) / 2)
     {
         return 0;
     }
@@ -456,7 +456,7 @@ static u32 BTTestCheck(const struct ds_BT *bt, const struct bt_test_node *buf, u
             {
                 return 0;
             }
-            if (!ds_BTLeafCheck(buf + i) && (!done[buf[i].bt_child[0]] || !done[buf[i].bt_child[1]]))
+            if (!BTLeafCheck(buf + i) && (!done[buf[i].bt_child[0]] || !done[buf[i].bt_child[1]]))
             {
                 return 0;
             }
@@ -487,8 +487,8 @@ static struct test_Output BTTest(struct test_Environment *env)
     u32 *leaf = ArenaPush(env->mem_2, BT_TEST_MAX*sizeof(u32));
     ds_Pool(bt_test_node) pool;
     TEST_EQUAL(1, ds_PoolAlloc(NULL, pool, 64, GROWABLE));
-    struct ds_BT bt;
-    ds_BTFlush(bt);
+    struct BT bt;
+    BTFlush(bt);
     TEST_TRUE(BTTestCheck(&bt, pool.buf, seen, order));
 
     u32 leaf_count = 0;
@@ -504,7 +504,7 @@ static struct test_Output BTTest(struct test_Environment *env)
         if (bt.count == 0)
         {
             const struct slot root = ds_PoolAdd(pool);
-            ds_BTAddRoot(bt, pool.buf, root.index);
+            BTAddRoot(bt, pool.buf, root.index);
             leaf[leaf_count++] = root.index;
         }
         else if (grow && op < 3 && bt.count + 2 < 800)
@@ -514,7 +514,7 @@ static struct test_Output BTTest(struct test_Environment *env)
             const struct slot left = ds_PoolAdd(pool);
             const struct slot right = ds_PoolAdd(pool);
             TEST_TRUE(left.index < BT_TEST_MAX && right.index < BT_TEST_MAX);
-            ds_BTAddChildren(bt, pool.buf, parent, left.index, right.index);
+            BTAddChildren(bt, pool.buf, parent, left.index, right.index);
             leaf[l] = left.index;
             leaf[leaf_count++] = right.index;
         }
@@ -523,7 +523,7 @@ static struct test_Output BTTest(struct test_Environment *env)
             const u32 l = (u32) RngU64Range(0, leaf_count - 1);
             const u32 removed = leaf[l];
             const u32 parent = pool.buf[removed].bt_parent & BT_INDEX_MASK;
-            ds_BTRemoveLeaf(bt, pool.buf, removed);
+            BTRemoveLeaf(bt, pool.buf, removed);
             ds_PoolRemove(pool, removed);
             if (parent != BT_INDEX_NULL)
             {
@@ -533,9 +533,9 @@ static struct test_Output BTTest(struct test_Environment *env)
             emptied += (bt.count == 0);
         }
 
-        TEST_EQUAL(leaf_count, ds_BTLeafCount(bt));
+        TEST_EQUAL(leaf_count, BTLeafCount(bt));
         TEST_TRUE(BTTestCheck(&bt, pool.buf, seen, order));
-        ds_BTValidate(bt, pool.buf);
+        BTValidate(bt, pool.buf);
     }
     TEST_TRUE(emptied > 0);
 
@@ -675,16 +675,16 @@ static struct test_Output LLTest(struct test_Environment *env)
  * Fixed arena queue and growable heap queue: random pushes and pops with tied priorities; every pop returns
  * a minimum of the model (peek agrees), and an (id, priority) pair that was pushed.
  */
-static struct test_Output ds_MinQueueTest(struct test_Environment *env)
+static struct test_Output MQTest(struct test_Environment *env)
 {
 	struct test_Output output = { .success = 1, .id = __func__ };
 
     u32f32 *model = ArenaPush(env->mem_2, 1000*sizeof(u32f32));
     for (u32 growable = 0; growable <= 1; ++growable)
     {
-        struct ds_MinQueue queue = (growable)
-            ? ds_MinQueueAlloc(NULL, 4, GROWABLE)
-            : ds_MinQueueAlloc(env->mem_1, 1000, NOT_GROWABLE);
+        struct MQ queue = (growable)
+            ? MQAlloc(NULL, 4, GROWABLE)
+            : MQAlloc(env->mem_1, 1000, NOT_GROWABLE);
         TEST_NOT_EQUAL(NULL, queue.element);
 
         u32 count = 0;
@@ -695,7 +695,7 @@ static struct test_Output ds_MinQueueTest(struct test_Environment *env)
             if (op < 2 && count < 900)
             {
                 const f32 priority = (f32) RngU64Range(0, 50);
-                ds_MinQueuePush(&queue, next_id, priority);
+                MQPush(&queue, next_id, priority);
                 model[count].u = next_id;
                 model[count].f = priority;
                 count += 1;
@@ -703,8 +703,8 @@ static struct test_Output ds_MinQueueTest(struct test_Environment *env)
             }
             else if (count)
             {
-                const u32f32 peek = ds_MinQueuePeek(&queue);
-                const u32f32 pop = ds_MinQueuePop(&queue);
+                const u32f32 peek = MQPeek(&queue);
+                const u32f32 pop = MQPop(&queue);
                 TEST_EQUAL(peek.u, pop.u);
                 u32 at = count;
                 f32 min = F32_INFINITY;
@@ -720,9 +720,9 @@ static struct test_Output ds_MinQueueTest(struct test_Environment *env)
             TEST_EQUAL(count, queue.count);
         }
 
-        ds_MinQueueFlush(&queue);
+        MQFlush(&queue);
         TEST_EQUAL(0, queue.count);
-        ds_MinQueueDealloc(&queue);
+        MQDealloc(&queue);
     }
 
 	return output;
@@ -736,7 +736,7 @@ static struct test_Output ds_MinQueueTest(struct test_Environment *env)
  * priorities are +inf (a pop must never drop a live element, springclean 12); decreases hit any live
  * object, also at object indices >= count after pops (springclean 11).
  */
-static struct test_Output MinQueueTest(struct test_Environment *env)
+static struct test_Output MQATest(struct test_Environment *env)
 {
 	struct test_Output output = { .success = 1, .id = __func__ };
 
@@ -746,7 +746,7 @@ static struct test_Output MinQueueTest(struct test_Environment *env)
 
     for (u32 growable = 0; growable <= 1; ++growable)
     {
-        struct minQueue queue = MinQueueAlloc(NULL, (growable) ? 4 : 64, growable);
+        struct MQA queue = MQAAlloc(NULL, (growable) ? 4 : 64, growable);
         /* a growable queue reaches 1000 elements: past any page-rounded initial length */
         const u32 count_max = (growable) ? 1000 : 64;
         const u32 push_weight = (growable) ? 4 : 2;
@@ -761,7 +761,7 @@ static struct test_Output MinQueueTest(struct test_Environment *env)
             {
                 const f32 p = (RngU64Range(0, 3) == 0) ? F32_INFINITY : (f32) RngU64Range(0, 100);
                 const u32 e = next_external++;
-                object[e] = MinQueuePush(&queue, p, e);
+                object[e] = MQAPush(&queue, p, e);
                 priority[e] = p;
                 alive[e] = 1;
                 count += 1;
@@ -775,7 +775,7 @@ static struct test_Output MinQueueTest(struct test_Environment *env)
                     min = (alive[e] && priority[e] < min) ? priority[e] : min;
                 }
                 TEST_TRUE(queue.elements[0].priority == min);
-                const u32 e = MinQueuePop(&queue);
+                const u32 e = MQAPop(&queue);
                 TEST_TRUE(e < next_external && alive[e]);
                 TEST_TRUE(priority[e] == min);
                 alive[e] = 0;
@@ -790,7 +790,7 @@ static struct test_Output MinQueueTest(struct test_Environment *env)
                 } while (!alive[e]);
 
                 const f32 p = (f32) RngU64Range(0, 100);
-                MinQueueDecreasePriority(&queue, object[e], p);
+                MQADecreasePriority(&queue, object[e], p);
                 priority[e] = (p < priority[e]) ? p : priority[e];
             }
             TEST_EQUAL(count, queue.object_pool.count);
@@ -801,9 +801,9 @@ static struct test_Output MinQueueTest(struct test_Environment *env)
             TEST_EQUAL(count_max, count_reached);
         }
 
-        MinQueueFlush(&queue);
+        MQAFlush(&queue);
         TEST_EQUAL(0, queue.object_pool.count);
-        MinQueueDealloc(&queue);
+        MQADealloc(&queue);
     }
 
 	return output;
@@ -1173,8 +1173,8 @@ static struct test_Output (*container_tests[])(struct test_Environment *) =
     DLLTest,
     BTTest,
     LLTest,
-    ds_MinQueueTest,
-    MinQueueTest,
+    MQTest,
+    MQATest,
 };
 
 struct suite_Correctness m_container_suite =

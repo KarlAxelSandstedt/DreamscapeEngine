@@ -445,13 +445,13 @@ f32 TriMeshBvhRaycastParameter(const struct triMeshBvh *mesh_bvh, const struct r
 	struct bvhRaycastInfo info = BvhRaycastInit(mem_tmp, &mesh_bvh->bvh, ray);
 	while (info.hit_queue.count)
 	{
-		const u32f32 tuple = ds_MinQueuePop(&info.hit_queue);
+		const u32f32 tuple = MQPop(&info.hit_queue);
 		if (info.hit.f < tuple.f)
 		{
 			break;
 		}
 
-		if (ds_BTLeafCheck(info.node + tuple.u))
+		if (BTLeafCheck(info.node + tuple.u))
 		{
 			const u32 tri_first = info.node[tuple.u].bt_child[0];
 			const u32 tri_last = tri_first + info.node[tuple.u].bt_child[1] - 1;

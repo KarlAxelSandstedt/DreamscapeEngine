@@ -1306,7 +1306,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                         ProfZoneNamed("LeafArray Ordering");
 
                         const struct ds_BitSet *leaf_usage = &pipeline->dynamic_bvh.leaf_set;
-                        rebuild_phase->leaf_count = ds_BTLeafCount(pipeline->dynamic_bvh.bt);
+                        rebuild_phase->leaf_count = BTLeafCount(pipeline->dynamic_bvh.bt);
                         rebuild_phase->leaf_buf = ArenaPushAligned(&pipeline->frame, rebuild_phase->leaf_count*sizeof(struct ds_RebuildLeaf), DS_CACHE_LINE);
 
                         u32 li = 0;
@@ -1789,13 +1789,13 @@ u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const str
 	struct bvhRaycastInfo d_info = BvhRaycastInit(tmp, &pipeline->dynamic_bvh, ray);
 	while (d_info.hit_queue.count)
 	{
-		const u32f32 tuple = ds_MinQueuePop(&d_info.hit_queue);
+		const u32f32 tuple = MQPop(&d_info.hit_queue);
 		if (d_info.hit.f < tuple.f)
 		{
 			break;	
 		}
 
-		if (ds_BTLeafCheck(d_info.node + tuple.u))
+		if (BTLeafCheck(d_info.node + tuple.u))
 		{
 			const u32 si = d_info.node[tuple.u].bt_child[0];
 			const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
@@ -1816,13 +1816,13 @@ u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const str
 	struct bvhRaycastInfo s_info = BvhRaycastInit(tmp, &pipeline->static_bvh, ray);
 	while (s_info.hit_queue.count)
 	{
-		const u32f32 tuple = ds_MinQueuePop(&s_info.hit_queue);
+		const u32f32 tuple = MQPop(&s_info.hit_queue);
 		if (s_info.hit.f < tuple.f)
 		{
 			break;	
 		}
 
-		if (ds_BTLeafCheck(s_info.node + tuple.u))
+		if (BTLeafCheck(s_info.node + tuple.u))
 		{
 			const u32 si = s_info.node[tuple.u].bt_child[0];
 			const struct ds_Shape *shape = pipeline->shape_pool.buf + si;

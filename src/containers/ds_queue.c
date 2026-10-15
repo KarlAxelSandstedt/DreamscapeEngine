@@ -57,18 +57,18 @@ static u32 right_index(const u32 queue_index)
 }
 
 /**
- * min_queue_change_elements() - Change two elements in the element array, and update their corresponding 
+ * mqa_change_elements() - Change two elements in the element array, and update their corresponding 
  * 	data' queue_index
  *
  * queue - The queue
  * i1 - queue index of element 1
  * i2 - queue index of element 2
  */
-static void min_queue_change_elements(struct minQueue * const queue, const u32 i1, const u32 i2)
+static void mqa_change_elements(struct MQA * const queue, const u32 i1, const u32 i2)
 {
 	/* Update data queue indices */
-	struct queueObject *obj1 = queue->object_pool.buf + queue->elements[i1].object_index;
-	struct queueObject *obj2 = queue->object_pool.buf + queue->elements[i2].object_index;
+	struct MQAObject *obj1 = queue->object_pool.buf + queue->elements[i1].object_index;
+	struct MQAObject *obj2 = queue->object_pool.buf + queue->elements[i2].object_index;
 	obj1->queue_index = i2;
 	obj2->queue_index = i1;
 
@@ -84,7 +84,7 @@ static void min_queue_change_elements(struct minQueue * const queue, const u32 i
 }
 
 /**
- * min_queue_heapify_up() - Keep the queue coherent after a decrease of the queue_index's priority has been made.
+ * mqa_heapify_up() - Keep the queue coherent after a decrease of the queue_index's priority has been made.
  * 	A Decrease of the priority may destroy the coherency of the queue, as the parent should always be infront
  * 	of the children in the queue. decreasing the priority of a child may thus result in the child having a
  * 	lower priority than it's parent, so they have to be interchanged.
@@ -92,33 +92,33 @@ static void min_queue_change_elements(struct minQueue * const queue, const u32 i
  * queue - The queue
  * queue_index - The index of the queue element who just had it's priority decreased.
  */
-static void min_queue_heapify_up(struct minQueue * const queue, u32 queue_index)
+static void mqa_heapify_up(struct MQA * const queue, u32 queue_index)
 {
 	u32 parent = parent_index(queue_index);
 
 	/* Continue until parent's priority is smaller than child or the root has been reached */
 	while (parent != U32_MAX && queue->elements[queue_index].priority < queue->elements[parent].priority) 
 	{
-		min_queue_change_elements(queue, queue_index, parent);
+		mqa_change_elements(queue, queue_index, parent);
 		queue_index = parent;
 		parent = parent_index(queue_index); 
 	}
 }
 
-static void recursion_done(struct minQueue * const queue, const u32 queue_index, const u32 small_priority_index);
-static void recursive_call(struct minQueue * const queue, const u32 queue_index, const u32 small_priority_index);
+static void mqa_recursion_done(struct MQA * const queue, const u32 queue_index, const u32 small_priority_index);
+static void mqa_recursive_call(struct MQA * const queue, const u32 queue_index, const u32 small_priority_index);
 
-static void (*func[2])(struct minQueue * const, const u32, const u32) = { &recursion_done, &recursive_call };
+static void (*mqa_heapify_down_step[2])(struct MQA * const, const u32, const u32) = { &mqa_recursion_done, &mqa_recursive_call };
 
 /**
- * min_queue_heapify_down() - Keeps the queue coherent when the element at queue_index has had 
+ * mqa_heapify_down() - Keeps the queue coherent when the element at queue_index has had 
  * 	it's priority increased. Then the element may have a higher priority than it's children, breaking
  * 	the min-heap property.
  *
  * queue - The queue
  * queue_index - Index of the element whose priority has been increased
  */
-static void min_queue_heapify_down(struct minQueue * const queue, const u32 queue_index)
+static void mqa_heapify_down(struct MQA * const queue, const u32 queue_index)
 {
 	const u32 left = left_index(queue_index);
 	const u32 right = right_index(queue_index);
@@ -131,38 +131,38 @@ static void min_queue_heapify_down(struct minQueue * const queue, const u32 queu
 		smallest_priority_index = right;
 	
 	/* Child had smaller priority */
-	func[ ((u32) queue_index - smallest_priority_index) >> 31 ](queue, queue_index, smallest_priority_index);
+	mqa_heapify_down_step[ ((u32) queue_index - smallest_priority_index) >> 31 ](queue, queue_index, smallest_priority_index);
 }
 
-static void recursion_done(struct minQueue * const queue, const u32 queue_index, const u32 small_priority_index)
+static void mqa_recursion_done(struct MQA * const queue, const u32 queue_index, const u32 small_priority_index)
 {
 	return;
 }
 
-static void recursive_call(struct minQueue * const queue, const u32 queue_index, const u32 smallest_priority_index)
+static void mqa_recursive_call(struct MQA * const queue, const u32 queue_index, const u32 smallest_priority_index)
 {
-		min_queue_change_elements(queue, queue_index, smallest_priority_index);
+		mqa_change_elements(queue, queue_index, smallest_priority_index);
 		/* Now child may break the min-heap property */
-		min_queue_heapify_down(queue, smallest_priority_index);
+		mqa_heapify_down(queue, smallest_priority_index);
 }
 
-struct minQueue MinQueueAlloc(struct arena *arena, const u32 initial_length, const u32 growable)
+struct MQA MQAAlloc(struct arena *arena, const u32 initial_length, const u32 growable)
 {
 	ds_Assert(initial_length);
 	ds_Assert(!arena || !growable);
 	ds_StaticAssert(sizeof(u32f32) == 8, "");
 
-	struct minQueue queue = { 0 };
+	struct MQA queue = { 0 };
 
 	if (arena)
 	{
 		ds_PoolAlloc(arena, queue.object_pool, initial_length, !GROWABLE);
-		queue.elements = ArenaPush(arena, initial_length * sizeof(struct queueElement));
+		queue.elements = ArenaPush(arena, initial_length * sizeof(struct MQAElement));
 	}
 	else
 	{
 		ds_PoolAlloc(NULL, queue.object_pool, initial_length, growable);
-		queue.elements = ds_Alloc(queue.object_pool.length * sizeof(struct queueElement), sizeof(struct queueElement));
+		queue.elements = ds_Alloc(queue.object_pool.length * sizeof(struct MQAElement), sizeof(struct MQAElement));
 		queue.heap_allocated = 1;
 	}
 
@@ -177,7 +177,7 @@ struct minQueue MinQueueAlloc(struct arena *arena, const u32 initial_length, con
 	return queue;
 }
 
-void MinQueueDealloc(struct minQueue * const queue)
+void MQADealloc(struct MQA * const queue)
 {
 	if (queue->heap_allocated)
 	{
@@ -187,74 +187,74 @@ void MinQueueDealloc(struct minQueue * const queue)
 	}
 }
 
-u32 MinQueuePop(struct minQueue * const queue)
+u32 MQAPop(struct MQA * const queue)
 {
 	ds_AssertString(queue->object_pool.count > 0, "Queue should have elements to extract\n");
     const u32 index = queue->elements[0].object_index;
-	struct queueObject *obj = queue->object_pool.buf + index;
+	struct MQAObject *obj = queue->object_pool.buf + index;
 	const u32 external_index = obj->external_index;
 
 	/*
 	 * move the last element to the root and drop the popped one from the count before heapifying: it must
 	 * not take part (a sentinel priority could tie with or lose to +inf and NaN priorities)
 	 */
-	min_queue_change_elements(queue, 0, queue->object_pool.count-1);
+	mqa_change_elements(queue, 0, queue->object_pool.count-1);
 	ds_PoolRemove(queue->object_pool, index);
-	min_queue_heapify_down(queue, 0);
+	mqa_heapify_down(queue, 0);
 
 	return external_index;
 }
 
-u32 MinQueuePush(struct minQueue * const queue, const f32 priority, const u32 external_index)
+u32 MQAPush(struct MQA * const queue, const f32 priority, const u32 external_index)
 {
 	const u32 old_length = queue->object_pool.length;
 	const u32 queue_index = queue->object_pool.count;
 	struct slot slot = ds_PoolAdd(queue->object_pool);
 	if (!slot.address)
 	{
-		LogString(T_SYSTEM, S_FATAL, "Non-growable min queue full in MinQueuePush, exiting.");
+		LogString(T_SYSTEM, S_FATAL, "Non-growable min queue full in MQAPush, exiting.");
 		FatalCleanupAndExit();
 	}
 
 	if (old_length != queue->object_pool.length)
 	{
 		ds_Assert(queue->growable);
-		queue->elements = ds_Realloc(queue->elements, old_length*sizeof(struct queueElement),
-			queue->object_pool.length*sizeof(struct queueElement), sizeof(struct queueElement));
+		queue->elements = ds_Realloc(queue->elements, old_length*sizeof(struct MQAElement),
+			queue->object_pool.length*sizeof(struct MQAElement), sizeof(struct MQAElement));
 	}
 
 	queue->elements[queue_index].priority = priority;
 	queue->elements[queue_index].object_index = slot.index;
 
-	struct queueObject *object = slot.address;
+	struct MQAObject *object = slot.address;
 	object->external_index = external_index;
 	object->queue_index = queue_index;
 
-	min_queue_heapify_up(queue, queue_index);
+	mqa_heapify_up(queue, queue_index);
 
 	return slot.index;
 }
 
-void MinQueueDecreasePriority(struct minQueue * const queue, const u32 object_index, const f32 priority)
+void MQADecreasePriority(struct MQA * const queue, const u32 object_index, const f32 priority)
 {
 	/* object indices are pool slots: up to count_max, with holes left by pops */
 	ds_AssertString(object_index < queue->object_pool.count_max && ds_PoolSlotAllocated(queue->object_pool.buf + object_index),
-		"MinQueueDecreasePriority: object_index is not in the queue");
+		"MQADecreasePriority: object_index is not in the queue");
 
-	struct queueObject *obj = queue->object_pool.buf + object_index;
+	struct MQAObject *obj = queue->object_pool.buf + object_index;
 	if (priority < queue->elements[obj->queue_index].priority) 
 	{
 		queue->elements[obj->queue_index].priority = priority;
-		min_queue_heapify_up(queue, obj->queue_index);
+		mqa_heapify_up(queue, obj->queue_index);
 	}
 }
 
-void MinQueueFlush(struct minQueue * const queue)
+void MQAFlush(struct MQA * const queue)
 {
 	ds_PoolFlush(queue->object_pool);
 }
 
-static void min_queue_fixed_heapify_up(struct ds_MinQueue * const queue, u32 queue_index)
+static void mq_heapify_up(struct MQ * const queue, u32 queue_index)
 {
 	u32 parent = parent_index(queue_index);
 
@@ -269,12 +269,12 @@ static void min_queue_fixed_heapify_up(struct ds_MinQueue * const queue, u32 que
 	}
 }
 
-static void queue_fixed_recursion_done(struct ds_MinQueue * const queue, const u32 queue_index, const u32 small_priority_index);
-static void queue_fixed_recursive_call(struct ds_MinQueue * const queue, const u32 queue_index, const u32 small_priority_index);
+static void mq_recursion_done(struct MQ * const queue, const u32 queue_index, const u32 small_priority_index);
+static void mq_recursive_call(struct MQ * const queue, const u32 queue_index, const u32 small_priority_index);
 
-static void (*queue_fixed_func[2])(struct ds_MinQueue * const, const u32, const u32) = { &queue_fixed_recursion_done, &queue_fixed_recursive_call };
+static void (*mq_heapify_down_step[2])(struct MQ * const, const u32, const u32) = { &mq_recursion_done, &mq_recursive_call };
 
-static void min_queue_fixed_heapify_down(struct ds_MinQueue * const queue, const u32 queue_index)
+static void mq_heapify_down(struct MQ * const queue, const u32 queue_index)
 {
 	const u32 left = left_index(queue_index);
 	const u32 right = right_index(queue_index);
@@ -287,29 +287,29 @@ static void min_queue_fixed_heapify_down(struct ds_MinQueue * const queue, const
 		smallest_priority_index = right;
 	
 	/* Child had smaller priority */
-	queue_fixed_func[ ((u32) queue_index - smallest_priority_index) >> 31 ](queue, queue_index, smallest_priority_index);
+	mq_heapify_down_step[ ((u32) queue_index - smallest_priority_index) >> 31 ](queue, queue_index, smallest_priority_index);
 }
 
-static void queue_fixed_recursion_done(struct ds_MinQueue * const queue, const u32 queue_index, const u32 small_priority_index)
+static void mq_recursion_done(struct MQ * const queue, const u32 queue_index, const u32 small_priority_index)
 {
 	return;
 }
 
-static void queue_fixed_recursive_call(struct ds_MinQueue * const queue, const u32 queue_index, const u32 smallest_priority_index)
+static void mq_recursive_call(struct MQ * const queue, const u32 queue_index, const u32 smallest_priority_index)
 {
 	const u32f32 tuple = queue->element[queue_index];
 	queue->element[queue_index] = queue->element[smallest_priority_index];
 	queue->element[smallest_priority_index] = tuple;
-	min_queue_fixed_heapify_down(queue, smallest_priority_index);
+	mq_heapify_down(queue, smallest_priority_index);
 }
 
 
-struct ds_MinQueue ds_MinQueueAlloc(struct arena *mem, const u32 initial_length, const u32 growable)
+struct MQ MQAlloc(struct arena *mem, const u32 initial_length, const u32 growable)
 {
 	ds_Assert(!growable || !mem);
-	if (!initial_length) { return (struct ds_MinQueue) { 0 }; }
+	if (!initial_length) { return (struct MQ) { 0 }; }
 
-	struct ds_MinQueue queue =
+	struct MQ queue =
 	{
 		.count = 0,
 		.growable = growable,
@@ -323,18 +323,18 @@ struct ds_MinQueue ds_MinQueueAlloc(struct arena *mem, const u32 initial_length,
 
 	if (queue.element == NULL)
 	{
-		LogString(T_SYSTEM, S_FATAL, "Failed to allocate ds_MinQueue memory, exiting.");
+		LogString(T_SYSTEM, S_FATAL, "Failed to allocate MQ memory, exiting.");
 		FatalCleanupAndExit();
 	}
 
 	return queue;
 }
 
-struct ds_MinQueue ds_MinQueueAllocAll(struct arena *mem)
+struct MQ MQAllocAll(struct arena *mem)
 {
 	ds_Assert(mem);
 
-	struct ds_MinQueue queue = { 0 };
+	struct MQ queue = { 0 };
 	struct memArray arr = ArenaPushAlignedAll(mem, sizeof(u32f32), 4);
 	queue.length = arr.len;
 	queue.element = arr.addr;
@@ -342,7 +342,7 @@ struct ds_MinQueue ds_MinQueueAllocAll(struct arena *mem)
 	return queue;
 }
 
-void ds_MinQueueDealloc(struct ds_MinQueue *queue)
+void MQDealloc(struct MQ *queue)
 {
 	if (queue->heap_allocated)
 	{
@@ -351,14 +351,14 @@ void ds_MinQueueDealloc(struct ds_MinQueue *queue)
 	}
 }
 
-void ds_MinQueueFlush(struct ds_MinQueue *queue)
+void MQFlush(struct MQ *queue)
 {
 	queue->count = 0;
 }
 
-void ds_MinQueuePrint(FILE *Log, const struct ds_MinQueue *queue)
+void MQPrint(FILE *Log, const struct MQ *queue)
 {
-	fprintf(Log, "ds_MinQueue %p: ", queue);
+	fprintf(Log, "MQ %p: ", queue);
 	fprintf(Log, "{ ");
 	for (u32 i = 0; i < queue->count; ++i)
 	{
@@ -369,7 +369,7 @@ void ds_MinQueuePrint(FILE *Log, const struct ds_MinQueue *queue)
 
 }
 
-void ds_MinQueuePush(struct ds_MinQueue *queue, const u32 id, const f32 priority)
+void MQPush(struct MQ *queue, const u32 id, const f32 priority)
 {
 	if (queue->count == queue->length)
 	{
@@ -380,8 +380,8 @@ void ds_MinQueuePush(struct ds_MinQueue *queue, const u32 id, const f32 priority
 		}	
 		else
 		{
-			/* as MinQueuePush: callers (bvh raycasts) must not silently lose elements */
-			LogString(T_SYSTEM, S_FATAL, "Non-growable ds_MinQueue full in ds_MinQueuePush, exiting.");
+			/* as MQAPush: callers (bvh raycasts) must not silently lose elements */
+			LogString(T_SYSTEM, S_FATAL, "Non-growable MQ full in MQPush, exiting.");
 			FatalCleanupAndExit();
 		}
 	}
@@ -390,22 +390,22 @@ void ds_MinQueuePush(struct ds_MinQueue *queue, const u32 id, const f32 priority
 	queue->count += 1;
 	queue->element[i].f = priority;
 	queue->element[i].u = id;
-	min_queue_fixed_heapify_up(queue, i);
+	mq_heapify_up(queue, i);
 }
 
-u32f32 ds_MinQueuePop(struct ds_MinQueue *queue)
+u32f32 MQPop(struct MQ *queue)
 {
 	ds_AssertString(queue->count > 0, "Heap should have elements to extract\n");
 	queue->count -= 1;
 
 	const u32f32 tuple = queue->element[0];
 	queue->element[0] = queue->element[queue->count];
-	min_queue_fixed_heapify_down(queue, 0);
+	mq_heapify_down(queue, 0);
 
 	return tuple;
 }
 
-u32f32 	ds_MinQueuePeek(const struct ds_MinQueue *queue)
+u32f32 	MQPeek(const struct MQ *queue)
 {
 	ds_AssertString(queue->count > 0, "Heap should have elements to extract\n");
 	return queue->element[0];

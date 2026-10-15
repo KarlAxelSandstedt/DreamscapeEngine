@@ -353,7 +353,7 @@ static struct r_Mesh *bvh_Mesh(struct arena *mem, const struct bvh *bvh, const v
 		vertex_data += bytes_written;
 		mem_left -= bytes_written;
 
-		if (!ds_BTLeafCheck(nodes + i))
+		if (!BTLeafCheck(nodes + i))
 		{
 			if (sc+2 > arr.len)
 			{

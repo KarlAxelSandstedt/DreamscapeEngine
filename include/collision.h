@@ -51,11 +51,11 @@ DEFINE_POOL(bvhNode);
 
 struct bvh
 {
-    struct ds_BT        bt;  
+    struct BT        bt;  
     struct ds_BitSet    leaf_set;       /* dynamic specific */
     struct ds_BitSet    internal_set;   /* dynamic specific */
     ds_Pool(bvhNode)  pool;
-	struct minQueue	    cost_queue;	    /* dynamic specific */
+	struct MQA	    cost_queue;	    /* dynamic specific */
 	u32			        heap_allocated;
 };
 
@@ -125,13 +125,13 @@ primitives in the leaves (see TriMeshBvhRaycastParameter, ds_DynamicsRaycastPara
 	struct bvhRaycastInfo info = BvhRaycastInit(mem, bvh, ray);
 	while (info.hit_queue.count)
 	{
-		const u32f32 tuple = ds_MinQueuePop(&info.hit_queue);
+		const u32f32 tuple = MQPop(&info.hit_queue);
 		if (info.hit.f < tuple.f)
 		{
 			break;
 		}
 
-		if (ds_BTLeafCheck(info.node + tuple.u))
+		if (BTLeafCheck(info.node + tuple.u))
 		{
 			// raycast the leaf's primitive(s), e.g. primitive = info.node[tuple.u].bt_child[0]
 			const f32 t = primitive_raycast_parameter(primitive, ray);
@@ -169,7 +169,7 @@ struct bvhRaycastInfo
 {
 	u32f32			hit;
 	struct rayAabb	ray;
-	struct ds_MinQueue	hit_queue;
+	struct MQ	hit_queue;
 	const struct bvh *	bvh;
 	const struct bvhNode *	node;
 };
