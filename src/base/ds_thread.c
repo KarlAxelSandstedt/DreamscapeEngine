@@ -22,7 +22,7 @@
 #include "dtoa.h"
 
 ds_ThreadLocal struct ds_Thread *g_tl_self = NULL;
-u32 a_index_counter = 1;
+static u32 a_index_counter = 1;
 
 const char *thread_profiler_id[] = 
 {
@@ -194,10 +194,11 @@ void ds_ThreadWait(const ds_Thread *thr)
 {
 	void *garbage;
 
-	i32 status = pthread_join(thr->pthread, &garbage);
+	/* pthread_join returns its error number (errno is not set) */
+	const i32 status = pthread_join(thr->pthread, &garbage);
 	if (status != 0)
 	{
-		LogString(T_SYSTEM, S_FATAL, "Failed to alloc thread memory, aborting.");
+		LogSystemErrorCode(S_FATAL, (u32) status);
 		FatalCleanupAndExit();
 	}
 }
@@ -296,7 +297,7 @@ void ds_ThreadWait(const ds_Thread *thr)
 		}
 		else
 		{
-			LogString(T_SYSTEM, S_ERROR, "Unexpected disruption of thread wait in ds_ThreadWait\n");
+			LogString(T_SYSTEM, S_ERROR, "Unexpected disruption of thread wait in ds_ThreadWait");
 			return;
 		}
 	}
