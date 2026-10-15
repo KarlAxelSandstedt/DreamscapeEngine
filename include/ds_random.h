@@ -41,6 +41,24 @@ f32 	RngF32Normalized(void);
 /* gen [min, max] random number */
 f32 	RngF32Range(const f32 min, const f32 max);
 
+/*************************** LOCAL RNG API ***************************/
+
+/*
+ * A generator with its own state (xoshiro256**), independent of the thread's: the same seed gives the same numbers on
+ * every thread and platform, and using it leaves the thread's numbers unchanged. One user at a time (not thread-safe).
+ */
+struct rng
+{
+	u64 s[4];
+};
+
+/* Seed rng with any value (0 included); the state is SplitMix64's first four outputs from seed */
+void	RngLocalInit(struct rng *rng, const u64 seed);
+/* gen [0, U64_MAX] random number */
+u64 	RngLocalU64(struct rng *rng);
+/* gen [min, max] random number */
+u64 	RngLocalU64Range(struct rng *rng, const u64 min, const u64 max);
+
 /*************************** internal rng initialization ***************************/
 
 /*

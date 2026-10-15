@@ -1252,7 +1252,10 @@ struct dcel DcelConvexHull(struct arena *mem, const v3 *v, const u32 v_count, co
 	ddcel.f = (struct ddcelFace *) ddcel.face_pool.buf;
 	ddcel.ce = (struct conflictEdge *) ddcel.ce_pool.buf;
 
-	/* (1) permutation - Random permutation of remaining points */
+	/*
+	 * (1) permutation - Random permutation of remaining points. A local generator with a fixed seed: the hull depends
+	 * only on its input, not on the thread's random numbers (which it leaves untouched).
+	 */
 	for (u32 i = 0; i < v_count; ++i)
 	{
 		DLLFlush(ddcel.cv[i].ce_list);
@@ -1260,12 +1263,14 @@ struct dcel DcelConvexHull(struct arena *mem, const v3 *v, const u32 v_count, co
 		ddcel.cv[i].last_iter = U32_MAX;
 		ddcel.cv[i].last_face = U32_MAX;
 	}
+	struct rng rng;
+	RngLocalInit(&rng, 0);
 	for (u32 i = 0; i < v_count; ++i)
 	{
-		const u32 rng = (u32) RngU64Range(i, v_count-1);
+		const u32 j = (u32) RngLocalU64Range(&rng, i, v_count-1);
 		const u32 tmp = ddcel.cv[i].index;
-		ddcel.cv[i].index = ddcel.cv[rng].index;
-		ddcel.cv[rng].index = tmp;
+		ddcel.cv[i].index = ddcel.cv[j].index;
+		ddcel.cv[j].index = tmp;
 	}
 
 	/* (2) Get inital points for tetrahedron */

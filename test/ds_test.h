@@ -245,5 +245,6 @@ extern struct suite_Correctness *contact_correctness_suite;
 extern struct suite_Correctness *mesh_contact_correctness_suite;
 extern struct suite_Correctness *config_correctness_suite;
 extern struct suite_Correctness *dynamics_correctness_suite;
+extern struct suite_Correctness *rng_correctness_suite;
 
 #endif

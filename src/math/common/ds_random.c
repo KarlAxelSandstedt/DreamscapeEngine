@@ -84,6 +84,42 @@ u64 RngU64Range(const u64 min, const u64 max)
 	return (interval == 0) ? r : (r % interval) + min;
 }
 
+/* SplitMix64 (Sebastiano Vigna, 2015): the seeding the xoshiro authors recommend */
+void RngLocalInit(struct rng *rng, const u64 seed)
+{
+	u64 x = seed;
+	for (u32 i = 0; i < 4; ++i)
+	{
+		x += 0x9e3779b97f4a7c15;
+		u64 z = x;
+		z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9;
+		z = (z ^ (z >> 27)) * 0x94d049bb133111eb;
+		rng->s[i] = z ^ (z >> 31);
+	}
+}
+
+/*  Written in 2018 by David Blackman and Sebastiano Vigna (vigna@acm.org) */
+u64 RngLocalU64(struct rng *rng)
+{
+	const u64 result = Rotl(rng->s[1] * 5, 7) * 9;
+	const u64 t = rng->s[1] << 17;
+	rng->s[2] ^= rng->s[0];
+	rng->s[3] ^= rng->s[1];
+	rng->s[1] ^= rng->s[2];
+	rng->s[0] ^= rng->s[3];
+	rng->s[2] ^= t;
+	rng->s[3] = Rotl(rng->s[3], 45);
+	return result;
+}
+
+u64 RngLocalU64Range(struct rng *rng, const u64 min, const u64 max)
+{
+	ds_Assert(min <= max);
+	const u64 r = RngLocalU64(rng);
+	const u64 interval = max-min+1;
+	return (interval == 0) ? r : (r % interval) + min;
+}
+
 f32 RngF32Normalized(void)
 {
 	return (f32) RngU64() / (f32) U64_MAX;
