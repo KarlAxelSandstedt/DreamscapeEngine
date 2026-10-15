@@ -635,63 +635,95 @@ static void DdcelAssertTopology(const struct ddcel *ddcel)
 	ds_Assert(face_count >= 4);
 }
 
-u32 InternalConvexHullTetrahedronIndices(struct ddcel *ddcel, const f32 tol)
+/*
+ * Move the initial tetrahedron to cv[0 .. 4): the extreme points along the axis of the largest extent, the point
+ * farthest from their line, and the point farthest from their plane (ties: the lowest index). As large as the input
+ * allows, so its face normals are well conditioned. Return 0 if the points lie within tol of a point, a line or a
+ * plane: no tetrahedron.
+ */
+static u32 InternalConvexHullTetrahedronIndices(struct ddcel *ddcel, const f32 tol)
 {
-	v3 a, b, n;
+	const v3 *v = ddcel->v;
+	const u32 n = ddcel->v_count;
 
-	const f32 tol_sq = tol*tol;
-	u32 indices[4] = { 0 };
-	u32 i = 1;
-	/* Find two points not to close to each other */
-	for (; i < ddcel->v_count; ++i)
+	u32 i0 = 0;
+	u32 i1 = 0;
+	f32 extent = 0.0f;
+	for (u32 axis = 0; axis < 3; ++axis)
 	{
-		a = V3Sub(ddcel->v[ddcel->cv[i].index], ddcel->v[ddcel->cv[0].index]);
-		const f32 dist_sq = V3Dot(a, a);
-		if (dist_sq > tol_sq)
+		u32 lo = 0;
+		u32 hi = 0;
+		for (u32 i = 1; i < n; ++i)
 		{
-			//a = V3Scale(a, 1.0f / len);
-			indices[1] = i;
-			i += 1;
-			break;
+			lo = (v[i].buf[axis] < v[lo].buf[axis]) ? i : lo;
+			hi = (v[hi].buf[axis] < v[i].buf[axis]) ? i : hi;
 		}
-	}	
-
-	/* Find non-collinear point */
-	for (; i < ddcel->v_count; ++i)
-	{
-		b = V3Sub(ddcel->v[ddcel->cv[i].index], ddcel->v[ddcel->cv[0].index]);
-		n = V3Cross(a, b);
-		const f32 dist = V3Length(n);
-		const f32 area = dist / 2.0f;
-		if (area > tol_sq)
+		const f32 axis_extent = v[hi].buf[axis] - v[lo].buf[axis];
+		if (axis == 0 || extent < axis_extent)
 		{
-			indices[2] = i;
-			i += 1;
-			n = V3Scale(n, 1.0f / dist);
-			break;
+			extent = axis_extent;
+			i0 = lo;
+			i1 = hi;
 		}
 	}
-
-	/* Find non-coplanar point */
-	for (; i < ddcel->v_count; ++i)
+	const v3 d = V3Sub(v[i1], v[i0]);
+	const f32 dd = V3Dot(d, d);
+	if (!(tol*tol < dd))
 	{
-		a = V3Sub(ddcel->v[ddcel->cv[i].index], ddcel->v[ddcel->cv[0].index]);
-		const f32 height = V3Dot(a, n);
-		if (F32Abs(height) > tol)
-		{
-			indices[3] = i;
-			break;
-		}
+		return 0;
 	}
 
+	/* distance from the line i0 i1: |(v - v0) x d| / |d| */
+	u32 i2 = 0;
+	f32 best = 0.0f;
+	for (u32 i = 0; i < n; ++i)
+	{
+		const v3 c = V3Cross(V3Sub(v[i], v[i0]), d);
+		const f32 c_sq = V3Dot(c, c);
+		if (best < c_sq)
+		{
+			best = c_sq;
+			i2 = i;
+		}
+	}
+	if (!(tol*tol*dd < best))
+	{
+		return 0;
+	}
+
+	/* distance from the plane i0 i1 i2: |(v - v0).m| / |m| */
+	const v3 m = V3Cross(d, V3Sub(v[i2], v[i0]));
+	u32 i3 = 0;
+	best = 0.0f;
+	for (u32 i = 0; i < n; ++i)
+	{
+		const f32 height = F32Abs(V3Dot(V3Sub(v[i], v[i0]), m));
+		if (best < height)
+		{
+			best = height;
+			i3 = i;
+		}
+	}
+	if (!(tol*V3Length(m) < best))
+	{
+		return 0;
+	}
+
+	/* cv holds a permutation of the point indices: swap the four to the front (distinct, so each is at k >= j) */
+	const u32 index[4] = { i0, i1, i2, i3 };
 	for (u32 j = 0; j < 4; ++j)
 	{
-		struct conflictVertex tmp = ddcel->cv[j];
-		ddcel->cv[j] = ddcel->cv[indices[j]];
-		ddcel->cv[indices[j]] = tmp;
+		u32 k = j;
+		while (ddcel->cv[k].index != index[j])
+		{
+			k += 1;
+		}
+		const struct conflictVertex tmp = ddcel->cv[j];
+		ddcel->cv[j] = ddcel->cv[k];
+		ddcel->cv[k] = tmp;
 	}
 
-	return i < ddcel->v_count;
+	return 1;
 }
 
 /* Return 0 if a face of the initial tetrahedron is degenerate (no normal): no hull */
@@ -1060,77 +1092,104 @@ u32 ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 	return 1;
 }
 
-struct dcel DcelDdcel(struct arena *mem, const struct ddcel *ddcel)
+/*
+ * The finished hull as a dcel pushed on mem: faces in pool order, each face's edges contiguous in ring order, and only
+ * the vertices the edges use, in input order (interior points are dropped). The index maps are temporaries on tmp.
+ * tmp or mem full: the empty dcel, nothing pushed on mem.
+ */
+static struct dcel DcelDdcel(struct arena *mem, struct arena *tmp, const struct ddcel *ddcel)
 {
-	ArenaPushRecord(mem);
-	/* written here; the dcel's own pointers are const */
-	struct dcelEdge *edge = ArenaPush(mem, ddcel->edge_pool.count*sizeof(struct dcelEdge));
-	struct dcelFace *face = ArenaPush(mem, ddcel->face_pool.count*sizeof(struct dcelFace));
-	struct dcel cpy =
+	/* emap: ddcel edge -> dcel edge; vmap: input point -> dcel vertex, U32_MAX if no edge starts there */
+	u32 *emap = ArenaPush(tmp, ddcel->edge_pool.count_max*sizeof(u32));
+	u32 *vmap = ArenaPush(tmp, ddcel->v_count*sizeof(u32));
+	if (!emap || !vmap)
 	{
-		.v = ArenaPushMemcpy(mem, ddcel->v, ddcel->v_count*sizeof(v3)),
+		return DcelEmpty();
+	}
+	for (u32 i = 0; i < ddcel->v_count; ++i)
+	{
+		vmap[i] = U32_MAX;
+	}
+
+	u32 e_count = 0;
+	for (u32 fj = 0; fj < ddcel->face_pool.count_max; ++fj)
+	{
+		if (ds_PoolSlotAllocated(ddcel->f + fj))
+		{
+			u32 next = ddcel->f[fj].first;
+			for (u32 ei = 0; ei < ddcel->f[fj].count; ++ei)
+			{
+				emap[next] = e_count++;
+				vmap[ddcel->e[next].origin] = 0;
+				next = ddcel->e[next].next;
+			}
+		}
+	}
+
+	u32 v_count = 0;
+	for (u32 i = 0; i < ddcel->v_count; ++i)
+	{
+		if (vmap[i] != U32_MAX)
+		{
+			vmap[i] = v_count++;
+		}
+	}
+
+	ArenaPushRecord(mem);
+	v3 *v = ArenaPush(mem, v_count*sizeof(v3));
+	struct dcelEdge *edge = ArenaPush(mem, e_count*sizeof(struct dcelEdge));
+	struct dcelFace *face = ArenaPush(mem, ddcel->face_pool.count*sizeof(struct dcelFace));
+	struct plane *plane = ArenaPush(mem, ddcel->face_pool.count*sizeof(struct plane));
+	if (!v || !edge || !face || !plane)
+	{
+		ArenaPopRecord(mem);
+		return DcelEmpty();
+	}
+	ArenaRemoveRecord(mem);
+
+	for (u32 i = 0; i < ddcel->v_count; ++i)
+	{
+		if (vmap[i] != U32_MAX)
+		{
+			v[vmap[i]] = ddcel->v[i];
+		}
+	}
+
+	u32 off = 0;
+	u32 fi = 0;
+	for (u32 fj = 0; fj < ddcel->face_pool.count_max; ++fj)
+	{
+		if (ds_PoolSlotAllocated(ddcel->f + fj))
+		{
+			face[fi].count = ddcel->f[fj].count;
+			face[fi].first = off;
+			u32 next = ddcel->f[fj].first;
+			for (u32 ei = 0; ei < ddcel->f[fj].count; ++ei)
+			{
+				edge[off + ei].origin = vmap[ddcel->e[next].origin];
+				edge[off + ei].face_ccw = fi;
+				edge[off + ei].twin = emap[ddcel->e[next].twin];
+				next = ddcel->e[next].next;
+			}
+			off += ddcel->f[fj].count;
+			fi += 1;
+		}
+	}
+	ds_Assert(fi == ddcel->face_pool.count && off == e_count);
+
+	const struct dcel h =
+	{
+		.v = v,
 		.e = edge,
 		.f = face,
-		.plane = ArenaPush(mem, ddcel->face_pool.count*sizeof(struct plane)),
-		.v_count = ddcel->v_count,
-		.e_count = ddcel->edge_pool.count,
-		.f_count = ddcel->face_pool.count,
+		.plane = plane,
+		.v_count = v_count,
+		.e_count = e_count,
+		.f_count = fi,
 	};
-
-
-	if (cpy.v && cpy.e && cpy.f && cpy.plane)
-	{
-		ArenaPushRecord(mem);
-		u32 *emap = ArenaPush(mem, sizeof(u32) * ddcel->edge_pool.count_max);
-		u32 off = 0;
-		/* set dcel edge index into ddcel->edge.prev temporarily */
-		for (u32 fj = 0; fj < ddcel->face_pool.count_max; ++fj)
-		{
-			if (ds_PoolSlotAllocated(ddcel->f + fj))
-			{
-				u32 next = ddcel->f[fj].first;
-				for (u32 ei = 0; ei < ddcel->f[fj].count; ++ei)
-				{
-					emap[next] = off + ei;
-					next = ddcel->e[next].next;
-				}
-				off += ddcel->f[fj].count;
-			}
-		}
-
-		off = 0;
-		for (u32 fi = 0, fj = 0; fi < cpy.f_count; fj += 1)
-		{
-			ds_Assert(fj < ddcel->face_pool.count_max);
-			if (ds_PoolSlotAllocated(ddcel->f + fj))
-			{
-				face[fi].count = ddcel->f[fj].count;
-				face[fi].first = off;
-				u32 next = ddcel->f[fj].first;
-				for (u32 ei = 0; ei < ddcel->f[fj].count; ++ei)
-				{
-					edge[off + ei].origin = ddcel->e[next].origin;
-					edge[off + ei].face_ccw = fi;
-					edge[off + ei].twin = emap[ddcel->e[next].twin];
-					next = ddcel->e[next].next;
-				}
-				off += ddcel->f[fj].count;
-				fi += 1;
-			}
-		}
-
-		//DcelPrint(&cpy);
-		//DcelAssertTopology(&cpy);
-		ArenaPopRecord(mem);
-		ArenaRemoveRecord(mem);
-	}
-	else
-	{
-		ArenaPopRecord(mem);
-		cpy = DcelEmpty();
-	}
-
-	return cpy;
+	//DcelPrint(&h);
+	//DcelAssertTopology(&h);
+	return h;
 }
 
 struct dcel DcelConvexHull(struct arena *mem, const v3 *v, const u32 v_count, const f32 tol)
@@ -1196,7 +1255,7 @@ struct dcel DcelConvexHull(struct arena *mem, const v3 *v, const u32 v_count, co
 	}
 
 	ArenaPushRecord(mem);
-	dcel = DcelDdcel(mem, &ddcel);	
+	dcel = DcelDdcel(mem, &ddcel.tmp1, &ddcel);	
 	if (dcel.f_count && !DcelPlanesTryCompute(&dcel))
 	{
 		Log(T_PHYSICS, S_WARNING, "DcelConvexHull: hull of %u points has a degenerate face, using the box stub", v_count);
