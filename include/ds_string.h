@@ -39,7 +39,8 @@ Strings
   size directly.
 - Bad UTF-8 (cut off by size, a bad lead or continuation byte, overlong, a surrogate, > U+10FFFF) decodes
   as UTF8_BAD_CODEPOINT, one byte at a time. Lengths count it as one codepoint, so a string's len and its
-  size always agree, and text from files can't make a reader run past its data.
+  size always agree, and text from files can't make a reader run past its data. Encoding writes a bad
+  codepoint as U+FFFD, so utf32 -> utf8 never fails on content, only on a full buffer.
 - A utf8 built by hand must keep that: size = the bytes of exactly len codepoints.
 - utf32: len codepoints in buf[max_len].
 
@@ -168,7 +169,7 @@ u32		            Utf8Equivalence(const utf8 str1, const utf8 str2);
  * bad sequence advances new_offset by one byte.
  */
 u32 	            Utf8ReadCodepoint(u64 *new_offset, const utf8 *str, const u64 offset);
-/* return length written into buf, or 0 on failure (buf too small, a surrogate or > U+10FFFF). */
+/* return length written into buf, or 0 if buf is too small. A codepoint without a UTF-8 form (a surrogate, > U+10FFFF, UTF8_BAD_CODEPOINT) is written as U+FFFD. */
 u32		            Utf8WriteCodepoint(u8 *buf, const u32 bufsize, const u32 codepoint);
 
 void 	            Utf8DebugPrint(const utf8 str);

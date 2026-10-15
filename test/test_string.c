@@ -596,7 +596,7 @@ static u32 DecodeTestCheck(const char *bytes, const u32 size, const u64 offset, 
 
 /*
  * Utf8ReadCodepoint on valid, truncated and invalid input (overlong, surrogate, > U+10FFFF, bad lead and
- * continuation bytes; bad sequences advance one byte), Utf8WriteCodepoint's refusals, random bytes
+ * continuation bytes; bad sequences advance one byte), Utf8WriteCodepoint's U+FFFD, random bytes
  * (decoding stays within size; every good codepoint re-encodes to its bytes), integer formatting into
  * minimal buffers, integer parsing of "" and "-", F64 rounding and F64Utf8's arena use, KMP start index.
  */
@@ -657,12 +657,25 @@ static struct test_Output utf8_decode_and_parse_regressions(struct test_Environm
 	Utf8CopyBufferedAndReturnRequiredSize(&copied_bytes, buf + 16, 32, lying);
 	TEST_EQUAL(2, copied_bytes);
 
-	TEST_EQUAL(0, Utf8WriteCodepoint(buf, 4, 0xD800));
-	TEST_EQUAL(0, Utf8WriteCodepoint(buf, 4, 0xDFFF));
-	TEST_EQUAL(0, Utf8WriteCodepoint(buf, 4, 0x110000));
-	TEST_EQUAL(0, Utf8WriteCodepoint(buf, 4, UTF8_BAD_CODEPOINT));
+	/* no UTF-8 form: U+FFFD (EF BF BD); only a too small buffer fails */
+	const u32 no_form[4] = { 0xD800, 0xDFFF, 0x110000, UTF8_BAD_CODEPOINT };
+	for (u32 k = 0; k < 4; ++k)
+	{
+		memset(buf, 0, 4);
+		TEST_EQUAL(3, Utf8WriteCodepoint(buf, 4, no_form[k]));
+		TEST_EQUAL(0xEF, buf[0]);
+		TEST_EQUAL(0xBF, buf[1]);
+		TEST_EQUAL(0xBD, buf[2]);
+		TEST_EQUAL(0, Utf8WriteCodepoint(buf, 2, no_form[k]));
+	}
 	TEST_EQUAL(4, Utf8WriteCodepoint(buf, 4, 0x10FFFF));
 	TEST_EQUAL(3, Utf8WriteCodepoint(buf, 4, 0xE000));
+	TEST_EQUAL(0, Utf8WriteCodepoint(buf, 3, 0x10FFFF));
+
+	/* utf32 with bad codepoints converts back, each one as U+FFFD */
+	u32 with_bad[3] = { 'a', UTF8_BAD_CODEPOINT, 'b' };
+	const utf8 replaced = Utf8Utf32Buffered(buf, sizeof(buf), (utf32) { .buf = with_bad, .len = 3, .max_len = 3 });
+	TEST_TRUE(FormatTestBytes(replaced, 3, "a\xEF\xBF\xBD" "b"));
 
 	/* random bytes, biased towards lead and continuation bytes */
 	for (u32 iter = 0; iter < 20000; ++iter)
@@ -779,9 +792,10 @@ static struct test_Output utf8_bytes_invariant(struct test_Environment *env)
 
 		const utf32 wide = Utf32Utf8(env->mem_1, a);
 		const utf8 narrow = Utf8Utf32(env->mem_1, wide);
-		/* bad codepoints have no UTF-8 form: the conversion back fails as a whole */
-		if (narrow.len)
+		/* bad codepoints convert back as U+FFFD: every codepoint survives */
+		if (wide.len)
 		{
+			TEST_EQUAL(wide.len, narrow.len);
 			TEST_TRUE(BytesExact(narrow));
 			TEST_TRUE(BytesExact(Utf8Utf32Buffered(buf, sizeof(buf), wide)));
 			TEST_TRUE(BytesExact(Utf8Utf32NullTerminated(env->mem_1, wide)));

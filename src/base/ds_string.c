@@ -1271,37 +1271,38 @@ u32 Utf8WriteCodepoint(u8 *buf, const u32 bufsize, const u32 codepoint)
 {
 	u32 len = 0;
 
-	/* surrogates have no UTF-8 form: Utf8ReadCodepoint would read them back as bad bytes */
-	if (0xd800 <= codepoint && codepoint <= 0xdfff)
-	{
-		return 0;
-	}
+	/*
+	 * no UTF-8 form (surrogates, > U+10FFFF, UTF8_BAD_CODEPOINT): write U+FFFD, the replacement character,
+	 * so converting text with bad codepoints keeps the rest of it
+	 */
+	const u32 valid = (codepoint < 0xd800) || (0xdfff < codepoint && codepoint <= 0x10ffff);
+	const u32 cp = (valid) ? codepoint : 0xfffd;
 
-	if (codepoint <= 0x7f && bufsize >= 1)
+	if (cp <= 0x7f && bufsize >= 1)
 	{
 		len = 1;
-		buf[0] = (u8) (codepoint & 0x7f);
+		buf[0] = (u8) (cp & 0x7f);
 	}	
-	else if (codepoint <= 0x7ff && bufsize >= 2)
+	else if (cp <= 0x7ff && bufsize >= 2)
 	{
 		len = 2;
-		buf[0] = 0xc0 | (u8) ((codepoint >> 6) & 0x1f);
-		buf[1] = 0x80 | (u8) (codepoint & 0x3f);
+		buf[0] = 0xc0 | (u8) ((cp >> 6) & 0x1f);
+		buf[1] = 0x80 | (u8) (cp & 0x3f);
 	}
-	else if (codepoint <= 0xffff && bufsize >= 3)
+	else if (cp <= 0xffff && bufsize >= 3)
 	{
 		len = 3;
-		buf[0] = 0xe0 | (u8) ((codepoint >> 12) & 0x0f);
-		buf[1] = 0x80 | (u8) ((codepoint >> 6) & 0x3f);
-		buf[2] = 0x80 | (u8) (codepoint & 0x3f);
+		buf[0] = 0xe0 | (u8) ((cp >> 12) & 0x0f);
+		buf[1] = 0x80 | (u8) ((cp >> 6) & 0x3f);
+		buf[2] = 0x80 | (u8) (cp & 0x3f);
 	}
-	else if (codepoint <= 0x10ffff && bufsize >= 4)
+	else if (cp <= 0x10ffff && bufsize >= 4)
 	{
 		len = 4;
-		buf[0] = 0xf0 | (u8) ((codepoint >> 18) & 0x07);
-		buf[1] = 0x80 | (u8) ((codepoint >> 12) & 0x3f);
-		buf[2] = 0x80 | (u8) ((codepoint >> 6) & 0x3f);
-		buf[3] = 0x80 | (u8) (codepoint & 0x3f);
+		buf[0] = 0xf0 | (u8) ((cp >> 18) & 0x07);
+		buf[1] = 0x80 | (u8) ((cp >> 12) & 0x3f);
+		buf[2] = 0x80 | (u8) ((cp >> 6) & 0x3f);
+		buf[3] = 0x80 | (u8) (cp & 0x3f);
 	}
 
 	return len;
