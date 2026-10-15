@@ -19,7 +19,7 @@
 
 #include "ds_base.h"
 
-struct dsArchConfig config = { 0 };
+static struct dsArchConfig config = { 0 };
 const struct dsArchConfig *g_arch_config = &config;
 
 #if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
