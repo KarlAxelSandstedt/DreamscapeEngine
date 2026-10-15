@@ -312,7 +312,8 @@ DcelConvexHull on point clouds of size s, tol = 100 eps s (as the engine's calle
     determinism     the same points with another RNG state give the same hull, bit for bit
 
 Fewer than 4 points, and coincident, collinear or coplanar points (no tetrahedron within tol), give the empty dcel.
-Failures are counted by kind (first example printed); any failure fails the test.
+3200 points give a valid hull or, if they don't fit the scratch arena (config), the empty dcel. Failures are counted by
+kind (first example printed); any failure fails the test.
 */
 
 enum hullFail
@@ -574,8 +575,9 @@ static u32 HullCloud(v3 *p, const enum hullCloud cloud, const u32 count, const f
     return n;
 }
 
+/* expect: 0 the empty dcel, 1 a hull, 2 either (a hull must pass every check) */
 static void HullCase(struct hullStats *stats, struct test_Environment *env, const char *id, const v3 *p, const u32 n,
-        const f32 tol, const u32 expect_hull)
+        const f32 tol, const u32 expect)
 {
     struct arena record = *env->mem_1;
     u8 *used = ArenaPush(env->mem_1, n + 1);
@@ -585,17 +587,17 @@ static void HullCase(struct hullStats *stats, struct test_Environment *env, cons
     {
         RngU64();
     }
-    const struct dcel h2 = (expect_hull) ? DcelConvexHull(env->mem_1, p, n, tol) : DcelEmpty();
+    const struct dcel h2 = (h.f_count) ? DcelConvexHull(env->mem_1, p, n, tol) : DcelEmpty();
 
     enum hullFail fail = HULL_FAIL_NONE;
     const char *detail = "";
     f32 value = 0.0f;
     f32 outside = 0.0f;
-    if ((h.f_count != 0) != (expect_hull != 0))
+    if (expect != 2 && (h.f_count != 0) != (expect != 0))
     {
         fail = HULL_FAIL_EMPTY;
     }
-    else if (expect_hull)
+    else if (h.f_count)
     {
         fail = HullCheck(&detail, &value, &outside, used, &h, p, n, tol);
         if (fail == HULL_FAIL_NONE && !HullEqual(&h, &h2))
@@ -673,10 +675,14 @@ struct test_Output DcelConvexHullTest(struct test_Environment *env)
     }
     HullCase(&stats, env, "coplanar", p, 16, tol, 0);
 
-    /*
-     * The cases that hang or crash today: box surfaces (#65: 400 points at size 0.01 hang, 800 corrupt the edge list),
-     * fewer than 4 points (#63), 3200 points (#64).
-     */
+    for (u32 n = 0; n < 4; ++n)
+    {
+        HullCase(&stats, env, "fewer than 4", p, n, tol, 0);
+    }
+    const u32 n_large = HullCloud(p, HULL_CLOUD_SPHERE, 3200, 1.0f, tol);
+    HullCase(&stats, env, "sphere", p, n_large, tol, 2);
+
+    /* box surfaces last: they hang or corrupt the hull today (#65: 400 points at size 0.01 hang, 800 corrupt) */
     for (u32 si = 0; si < 3; ++si)
     {
         for (u32 ci = 0; ci < 4; ++ci)
@@ -689,13 +695,6 @@ struct test_Output DcelConvexHullTest(struct test_Environment *env)
             }
         }
     }
-    for (u32 n = 0; n < 4; ++n)
-    {
-        HullCase(&stats, env, "fewer than 4", p, n, tol, 0);
-    }
-    const u32 n = HullCloud(p, HULL_CLOUD_SPHERE, 3200, 1.0f, tol);
-    HullCase(&stats, env, "sphere", p, n, tol, 1);
-
     *env->mem_1 = record;
 
     u64 failures = 0;

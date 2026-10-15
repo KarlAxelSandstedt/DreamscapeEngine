@@ -797,7 +797,8 @@ static u32 InternalConvexHullTetrahedronDdcel(struct ddcel *ddcel, const f32 tol
 	return valid;
 }
 
-static void InternalConvexHullTetrahedronConflicts(struct ddcel *ddcel, const f32 tol)
+/* Return 0 if the conflict pool is full (logged): no hull */
+static u32 InternalConvexHullTetrahedronConflicts(struct ddcel *ddcel, const f32 tol)
 {
 	const v3 *v = ddcel->v;
 	const u32 v_count = ddcel->v_count;
@@ -813,6 +814,11 @@ static void InternalConvexHullTetrahedronConflicts(struct ddcel *ddcel, const f3
 			if (V3Dot(ddcel->f[f_i].normal, b) > tol)
 			{
 				struct slot slot = conflictEdgePoolAdd(&ddcel->ce_pool);
+				if (!slot.address)
+				{
+					Log(T_PHYSICS, S_WARNING, "DcelConvexHull: conflict graph full (%u point-face pairs), no hull", ddcel->ce_pool.length);
+					return 0;
+				}
 				DLLAppend(cv->ce_list, ddcel->ce_pool.buf, slot.index, vertex_edge);
 				DLLAppend(ddcel->f[f_i].ce_list, ddcel->ce_pool.buf, slot.index, face_edge);
 
@@ -822,9 +828,14 @@ static void InternalConvexHullTetrahedronConflicts(struct ddcel *ddcel, const f3
 			}
 		}
 	}
+
+	return 1;
 }
 
-/* Return 0 if a new face is degenerate (no normal): the ddcel is then left broken and the hull fails */
+/*
+ * Return 0 (logged) if a new face is degenerate (no normal) or the conflict pool is full: the ddcel is then left broken
+ * and the hull fails
+ */
 u32 ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 {
 	if (ddcel->cv[cvi].ce_list.count == 0) { return 1; }
@@ -1010,6 +1021,7 @@ u32 ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
             if (!TriCcwNormalTryCompute(&f->normal, ddcel->v[e0->origin], ddcel->v[e1->origin], ddcel->v[e2->origin]))
             {
                 /* the new point is collinear with this horizon edge, which the coplanar merge above missed */
+                Log(T_PHYSICS, S_WARNING, "DcelConvexHull: degenerate face while adding point %u of %u, no hull", cvi, ddcel->v_count);
                 return 0;
             }
 		
@@ -1027,6 +1039,11 @@ u32 ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 					if (V3Dot(f->normal, diff) > tol)
 					{
 						struct slot slot = conflictEdgePoolAdd(&ddcel->ce_pool);
+						if (!slot.address)
+						{
+							Log(T_PHYSICS, S_WARNING, "DcelConvexHull: conflict graph full (%u point-face pairs), no hull", ddcel->ce_pool.length);
+							return 0;
+						}
 						DLLAppend(f->ce_list, ddcel->ce_pool.buf, slot.index, face_edge);
 						DLLAppend(ddcel->cv[ce->vertex].ce_list, ddcel->ce_pool.buf, slot.index, vertex_edge);
 
@@ -1051,6 +1068,11 @@ u32 ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 					if (V3Dot(f->normal, diff) > tol)
 					{
 						struct slot slot = conflictEdgePoolAdd(&ddcel->ce_pool);
+						if (!slot.address)
+						{
+							Log(T_PHYSICS, S_WARNING, "DcelConvexHull: conflict graph full (%u point-face pairs), no hull", ddcel->ce_pool.length);
+							return 0;
+						}
 						DLLAppend(f->ce_list, ddcel->ce_pool.buf, slot.index, face_edge);
 						DLLAppend(ddcel->cv[ce->vertex].ce_list, ddcel->ce_pool.buf, slot.index, vertex_edge);
 
@@ -1195,7 +1217,10 @@ static struct dcel DcelDdcel(struct arena *mem, struct arena *tmp, const struct 
 struct dcel DcelConvexHull(struct arena *mem, const v3 *v, const u32 v_count, const f32 tol)
 {
 	struct dcel dcel = DcelEmpty();
-	if (v_count < 4) { goto end; }	
+	if (v_count < 4)
+	{
+		return dcel;
+	}
 
 	struct arena *tmp1 = ArenaPushScratch();
 	struct arena *tmp2 = ArenaPushScratch();
@@ -1214,6 +1239,15 @@ struct dcel DcelConvexHull(struct arena *mem, const v3 *v, const u32 v_count, co
 	};
 
 	ddcel.tmp1 = *ArenaPushScratch();
+	if (!ddcel.face_pool.length || !ddcel.edge_pool.length || !ddcel.ce_pool.length || !ddcel.cv || !ddcel.hv)
+	{
+		const u64 needed = (u64) 2*face_count_upper_bound*sizeof(struct ddcelFace)
+			+ (u64) (2 + edge_count_upper_bound)*sizeof(struct ddcelEdge)
+			+ (u64) v_count*(sizeof(struct conflictVertex) + sizeof(struct horizionVertex));
+		Log(T_PHYSICS, S_WARNING, "DcelConvexHull: %u points need %luB of scratch, the arena has %luB, no hull",
+			v_count, needed, tmp1->mem_size);
+		goto end;
+	}
 	ddcel.e = (struct ddcelEdge *) ddcel.edge_pool.buf;
 	ddcel.f = (struct ddcelFace *) ddcel.face_pool.buf;
 	ddcel.ce = (struct conflictEdge *) ddcel.ce_pool.buf;
@@ -1241,14 +1275,13 @@ struct dcel DcelConvexHull(struct arena *mem, const v3 *v, const u32 v_count, co
 	if (!InternalConvexHullTetrahedronDdcel(&ddcel, tol)) { goto end; }
 
 	/* (4) setup conflict graph */
-	InternalConvexHullTetrahedronConflicts(&ddcel, tol);
+	if (!InternalConvexHullTetrahedronConflicts(&ddcel, tol)) { goto end; }
 
 	/* iteratetively solve and add conflicts until no vertices left */
 	for (u32 i = 4; i < v_count; ++i)
 	{
 		if (!ConvexHullIteration(&ddcel, i, tol))
 		{
-			Log(T_PHYSICS, S_WARNING, "DcelConvexHull: degenerate face while adding point %u of %u, no hull", i, v_count);
 			goto end;
 		}
 		DdcelAssertTopology(&ddcel);

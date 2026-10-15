@@ -303,8 +303,10 @@ struct dcel 	DcelBoxStub(void);
  */
 struct dcel 	DcelBox(struct arena *mem, const v3 hw);
 /*
- * Return the convex hull of v[0 .. v_count), pushed on mem. Fewer than 4 points, no tetrahedron within tol, or a
- * degenerate face while building (logged as a warning): the empty dcel, nothing pushed. A finished hull with a
+ * Return the convex hull of v[0 .. v_count), pushed on mem. Fewer than 4 points or no tetrahedron within tol: the
+ * empty dcel, nothing pushed. Works on 3 of the thread's scratch arenas (the caller may hold at most
+ * thread_scratch_count - 3), about 360 B of one per point: some 2,800 points fit the default 1 MiB. Too many points,
+ * a full conflict graph or a degenerate face while building: a warning, the empty dcel. A finished hull with a
  * zero-area face asserts in debug; in release it is discarded with a warning and DcelBoxStub() is returned.
  */
 struct dcel 	DcelConvexHull(struct arena *mem, const v3 *v, const u32 v_count, const f32 tol);
