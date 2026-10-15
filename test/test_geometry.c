@@ -1,5 +1,6 @@
 #include "ds_test.h"
 #include "ds_geometry.h"
+#include "collision.h"
 #include "ds_voronoi.h"
 
 static v3 V3UnitSphere(void)
@@ -301,7 +302,8 @@ struct test_Output DcelPlanesTest(struct test_Environment *env)
 }
 
 /*
-DcelConvexHull on point clouds of size s, tol = 100 eps s (as the engine's callers). Every hull must have:
+DcelConvexHull on point clouds of size s; tol = DcelConvexHullTolerance (a quarter of GJK's touch band at the cloud's
+scale). Every hull must have:
 
     topology        the face edge ranges partition e, face_ccw names the face, twins pair up and run opposite,
                     V - E + F = 2 over the vertices the edges use
@@ -489,7 +491,8 @@ enum hullCloud
 {
     HULL_CLOUD_SPHERE,          /* on a sphere of radius s */
     HULL_CLOUD_CUBE,            /* in the cube [-s, s]^3 */
-    HULL_CLOUD_BOX_SURFACE,     /* on the cube's faces, moved by noise below tol (nearly coplanar sets) */
+    HULL_CLOUD_BOX_SURFACE,     /* on the cube's faces, moved by noise below tol (coplanar sets: merged) */
+    HULL_CLOUD_BOX_NOISY,       /* on the cube's faces, moved by up to 4 tol (nearly coplanar sets: not all merged) */
     HULL_CLOUD_CYLINDER,        /* rings of 32 on a cylinder: collinear vertical lines, coplanar caps */
     HULL_CLOUD_SMALL,           /* 4 .. 24 points as the contact and GJK tests' random hulls */
     HULL_CLOUD_DUPLICATES,      /* a sphere cloud, every point twice */
@@ -498,11 +501,11 @@ enum hullCloud
 
 static const char *hull_cloud_id[HULL_CLOUD_COUNT] =
 {
-    "sphere", "cube", "box surface", "cylinder", "small", "duplicates",
+    "sphere", "cube", "box surface", "box noisy", "cylinder", "small", "duplicates",
 };
 
 /* fill p[0 .. count) (count rounded down to whole rings of 32 for cylinders (>= 64), even for duplicates); return it */
-static u32 HullCloud(v3 *p, const enum hullCloud cloud, const u32 count, const f32 s, const f32 tol)
+static u32 HullCloud(v3 *p, const enum hullCloud cloud, const u32 count, const f32 s)
 {
     u32 n = count;
     switch (cloud)
@@ -524,15 +527,20 @@ static u32 HullCloud(v3 *p, const enum hullCloud cloud, const u32 count, const f
         } break;
 
         case HULL_CLOUD_BOX_SURFACE:
+        case HULL_CLOUD_BOX_NOISY:
         {
             for (u32 i = 0; i < n; ++i)
             {
-                v3 q = V3(RngF32Range(-s, s), RngF32Range(-s, s), RngF32Range(-s, s));
+                p[i] = V3(RngF32Range(-s, s), RngF32Range(-s, s), RngF32Range(-s, s));
                 const u32 axis = (u32) RngU64Range(0, 2);
-                q.buf[axis] = (RngU64Range(0, 1)) ? s : -s;
-                const f32 noise = 0.5f*tol;
+                p[i].buf[axis] = (RngU64Range(0, 1)) ? s : -s;
+            }
+            /* noise relative to the hull's own tolerance */
+            const f32 noise = ((cloud == HULL_CLOUD_BOX_SURFACE) ? 0.5f : 4.0f) * DcelConvexHullTolerance(p, n);
+            for (u32 i = 0; i < n; ++i)
+            {
                 const v3 d = V3(RngF32Range(-noise, noise), RngF32Range(-noise, noise), RngF32Range(-noise, noise));
-                p[i] = V3Add(q, d);
+                p[i] = V3Add(p[i], d);
             }
         } break;
 
@@ -577,17 +585,18 @@ static u32 HullCloud(v3 *p, const enum hullCloud cloud, const u32 count, const f
 
 /* expect: 0 the empty dcel, 1 a hull, 2 either (a hull must pass every check) */
 static void HullCase(struct hullStats *stats, struct test_Environment *env, const char *id, const v3 *p, const u32 n,
-        const f32 tol, const u32 expect)
+        const u32 expect)
 {
     struct arena record = *env->mem_1;
     u8 *used = ArenaPush(env->mem_1, n + 1);
-    const struct dcel h = DcelConvexHull(env->mem_1, p, n, tol);
+    const f32 tol = DcelConvexHullTolerance(p, n);
+    const struct dcel h = DcelConvexHull(env->mem_1, p, n);
     /* another RNG state for the second build */
     for (u32 i = 0; i < 3; ++i)
     {
         RngU64();
     }
-    const struct dcel h2 = (h.f_count) ? DcelConvexHull(env->mem_1, p, n, tol) : DcelEmpty();
+    const struct dcel h2 = (h.f_count) ? DcelConvexHull(env->mem_1, p, n) : DcelEmpty();
 
     enum hullFail fail = HULL_FAIL_NONE;
     const char *detail = "";
@@ -630,71 +639,52 @@ struct test_Output DcelConvexHullTest(struct test_Environment *env)
     const u32 count[4] = { 8, 64, 400, 1600 };
     for (u32 cloud = 0; cloud < HULL_CLOUD_COUNT; ++cloud)
     {
-        /* box surfaces hang or corrupt the hull today (#65): with the crashing cases below */
-        if (cloud == HULL_CLOUD_BOX_SURFACE)
-        {
-            continue;
-        }
         for (u32 si = 0; si < 3; ++si)
         {
             for (u32 ci = 0; ci < 4; ++ci)
             {
-                const u32 reps = (cloud == HULL_CLOUD_SMALL) ? 50 : 2;
+                /* nearly coplanar sets (box surfaces) exercise the face merging most */
+                const u32 box = (cloud == HULL_CLOUD_BOX_SURFACE || cloud == HULL_CLOUD_BOX_NOISY);
+                const u32 reps = (cloud == HULL_CLOUD_SMALL) ? 50 : ((box) ? 8 : 2);
                 for (u32 r = 0; r < reps; ++r)
                 {
-                    const f32 tol = 100.0f*F32_EPSILON*size[si];
                     /* cylinders: at least two rings */
                     const u32 c = (cloud == HULL_CLOUD_CYLINDER && count[ci] < 64) ? 64 : count[ci];
-                    const u32 n = HullCloud(p, cloud, c, size[si], tol);
-                    HullCase(&stats, env, hull_cloud_id[cloud], p, n, tol, 1);
+                    const u32 n = HullCloud(p, cloud, c, size[si]);
+                    HullCase(&stats, env, hull_cloud_id[cloud], p, n, 1);
                 }
             }
         }
     }
 
     /* a tetrahedron; no tetrahedron within tol: coincident, collinear and coplanar points */
-    const f32 tol = 100.0f*F32_EPSILON;
     p[0] = V3(0.0f, 0.0f, 0.0f);
     p[1] = V3(1.0f, 0.0f, 0.0f);
     p[2] = V3(0.0f, 1.0f, 0.0f);
     p[3] = V3(0.0f, 0.0f, 1.0f);
-    HullCase(&stats, env, "tetrahedron", p, 4, tol, 1);
+    HullCase(&stats, env, "tetrahedron", p, 4, 1);
     for (u32 i = 0; i < 16; ++i)
     {
         p[i] = V3(0.25f, -0.5f, 0.75f);
     }
-    HullCase(&stats, env, "coincident", p, 16, tol, 0);
+    HullCase(&stats, env, "coincident", p, 16, 0);
     for (u32 i = 0; i < 16; ++i)
     {
         p[i] = V3Scale(V3(1.0f, 2.0f, -2.0f), (f32) i - 7.5f);
     }
-    HullCase(&stats, env, "collinear", p, 16, tol, 0);
+    HullCase(&stats, env, "collinear", p, 16, 0);
     for (u32 i = 0; i < 16; ++i)
     {
         p[i] = V3(RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f), 0.0f);
     }
-    HullCase(&stats, env, "coplanar", p, 16, tol, 0);
+    HullCase(&stats, env, "coplanar", p, 16, 0);
 
     for (u32 n = 0; n < 4; ++n)
     {
-        HullCase(&stats, env, "fewer than 4", p, n, tol, 0);
+        HullCase(&stats, env, "fewer than 4", p, n, 0);
     }
-    const u32 n_large = HullCloud(p, HULL_CLOUD_SPHERE, 3200, 1.0f, tol);
-    HullCase(&stats, env, "sphere", p, n_large, tol, 2);
-
-    /* box surfaces last: they hang or corrupt the hull today (#65: 400 points at size 0.01 hang, 800 corrupt) */
-    for (u32 si = 0; si < 3; ++si)
-    {
-        for (u32 ci = 0; ci < 4; ++ci)
-        {
-            for (u32 r = 0; r < 2; ++r)
-            {
-                const f32 tol_s = 100.0f*F32_EPSILON*size[si];
-                const u32 n = HullCloud(p, HULL_CLOUD_BOX_SURFACE, count[ci], size[si], tol_s);
-                HullCase(&stats, env, "box surface", p, n, tol_s, 1);
-            }
-        }
-    }
+    const u32 n_large = HullCloud(p, HULL_CLOUD_SPHERE, 3200, 1.0f);
+    HullCase(&stats, env, "sphere", p, n_large, 2);
     *env->mem_1 = record;
 
     u64 failures = 0;

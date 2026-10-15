@@ -1342,7 +1342,7 @@ static struct c_Shape ChRandomHullShape(struct arena *mem, const f32 size)
             const v3 u = V3Scale(CtUnit(), RngF32Range(0.5f, 1.0f));
             p[i] = V3(u.x*axis_scale.x, u.y*axis_scale.y, u.z*axis_scale.z);
         }
-        shape.hull = DcelConvexHull(mem, p, count, 100.0f*F32_EPSILON*size);
+        shape.hull = DcelConvexHull(mem, p, count);
     } while (shape.hull.v_count < 4);
 
     return shape;
@@ -2397,8 +2397,8 @@ face plane distance, exact inside and a lower bound outside). With r_sum = r0 + 
     c_ManifoldCheck, v_count = 1, |n| = 1
     depth = r_sum - sd                          (hulls: shallow only for boxes; inside: r - sat)
     v on s[0]'s surface, v - depth n on the sphere's surface (|v - depth n - c| = r1); random hulls' faces are
-                                                planar only to DcelConvexHull's tolerance (100 eps size): added to
-                                                the surface and depth checks
+                                                flat only to ~1.5 DcelConvexHullTolerance: 2 of it added to the
+                                                surface and depth checks
     n optimal (sd well above 0): the sphere's separation along n reaches sd
     hulls, shallow (GJK's distance and normal): depth and normal errors beyond tol are counted, not failed (GJK's
     accepted accuracy: optimal only up to its distance tolerance; f32 error grows with distance / feature size)
@@ -2549,8 +2549,10 @@ static const char *SpVerify(struct sp_Stats *stats, const struct c_ContactResult
     const f64 surface_1 = F64AbsTest(D3Length(D3Sub(D3Sub(v, D3Scale(n, depth)), ref->c)) - r1);
     stats->worst_surface_0 = F64MaxTest(stats->worst_surface_0, surface_0 / eps_l);
     stats->worst_surface_1 = F64MaxTest(stats->worst_surface_1, surface_1 / eps_l);
-    /* random hulls: DcelConvexHull merges points within 100 eps size, so faces are planar only to that */
-    const f64 hull_tol = (ref->kind == 2 && !ref->hull->is_box) ? 200.0 * F32_EPSILON * ref->hull->extent : 0.0;
+    /* random hulls: faces flat only to ~1.5 DcelConvexHullTolerance */
+    const f64 hull_tol = (ref->kind == 2 && !ref->hull->is_box)
+        ? 2.0 * (f64) DcelConvexHullTolerance(ref->hull->shape.hull.v, ref->hull->shape.hull.v_count)
+        : 0.0;
     if (surface_0 > tol + hull_tol)
     {
         return "v not on s[0]'s surface";
