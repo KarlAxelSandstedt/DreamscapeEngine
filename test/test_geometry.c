@@ -135,6 +135,168 @@ struct test_Output DcelFaceSegmentClipTest(struct test_Environment *env)
     TEST_TRUE(ClipCase(&box, 1, V3(0.7f, -1.0f, 0.0f), V3(0.7f, 1.0f, 0.0f), V3(0.7f, -0.5f, 0.0f), V3(0.7f, 0.5f, 0.0f)));
     TEST_TRUE(ClipCase(&box, 5, V3(0.0f, -0.7f, 0.0f), V3(1.0f, -0.7f, 0.0f), V3(0.0f, -0.7f, 0.0f), V3(0.5f, -0.7f, 0.0f)));
 
+    /*
+     * A zero-length edge (v1 = v0) clips nothing: face 0 becomes the triangle v0 v2 v3, |x|, |z| <= 0.5 and x <= z.
+     * The old normalized side plane was NaN there (ignored by every comparison, so the result was the same).
+     */
+    v3 v[8];
+    for (u32 i = 0; i < 8; ++i)
+    {
+        v[i] = box.v[i];
+    }
+    v[1] = v[0];
+    struct dcel collapsed = box;
+    collapsed.v = v;
+    TEST_TRUE(ClipCase(&collapsed, 0, V3(-0.4f, 0.7f, 0.0f), V3(0.4f, 0.7f, 0.0f),
+                                      V3(-0.4f, 0.7f, 0.0f), V3(0.0f, 0.7f, 0.0f)));
+    TEST_TRUE(ClipEmptyCase(&collapsed, 0, V3(0.1f, 0.7f, -0.4f), V3(0.4f, 0.7f, -0.1f)));
+
+	return output;
+}
+
+static u32 DcelTestV3Equal(const v3 a, const v3 b)
+{
+    return a.x == b.x && a.y == b.y && a.z == b.z;
+}
+
+/*
+ * DcelBox for random half widths: the topology checks (DcelAssertTopology), outward planes (each face's normal is
+ * an axis up to the normalization's 2 eps, its distance the half width within 4 eps), every vertex on or behind
+ * every plane (on its own faces' planes exactly), the exact box, edge directions of exactly twice a half width
+ * along an axis, and DcelSupportFace on the axes. The stubs pass the topology checks too. Release builds also check
+ * that invalid half widths give the box stub (debug asserts on them).
+ */
+struct test_Output DcelBoxTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    const struct dcel stub = DcelBoxStub();
+    DcelAssertTopology(&stub);
+    v3 tri_v[3] = { V3(0.0f, 0.0f, 0.0f), V3(1.0f, 0.0f, 0.0f), V3(0.0f, 1.0f, 0.0f) };
+    struct dcel tri = DcelTriStub();
+    tri.v = tri_v;
+    DcelAssertTopology(&tri);
+
+    for (u32 i = 0; i < 1000; ++i)
+    {
+        struct arena record = *env->mem_2;
+        const v3 hw = V3(RngF32Range(1e-3f, 1e3f), RngF32Range(1e-3f, 1e3f), RngF32Range(1e-3f, 1e3f));
+        const struct dcel box = DcelBox(env->mem_2, hw);
+        TEST_TRUE(box.v != stub.v && box.f_count == 6 && box.e_count == 24 && box.v_count == 8);
+        DcelAssertTopology(&box);
+        TEST_TRUE(DcelTestV3Equal(box.bbox.min, V3Negate(hw)) && DcelTestV3Equal(box.bbox.max, hw));
+
+        for (u32 fi = 0; fi < box.f_count; ++fi)
+        {
+            const v3 n = box.plane[fi].normal;
+            const u32 axis = (n.x != 0.0f) ? 0 : ((n.y != 0.0f) ? 1 : 2);
+            TEST_TRUE(F32Abs(F32Abs(n.buf[axis]) - 1.0f) <= 2.0f*F32_EPSILON);
+            TEST_TRUE(n.buf[(axis + 1) % 3] == 0.0f && n.buf[(axis + 2) % 3] == 0.0f);
+            TEST_TRUE(F32Abs(box.plane[fi].signed_distance - hw.buf[axis]) <= 4.0f*F32_EPSILON*hw.buf[axis]);
+            for (u32 vi = 0; vi < box.v_count; ++vi)
+            {
+                TEST_TRUE(PlanePointSignedDistance(box.plane + fi, box.v[vi]) <= 0.0f);
+            }
+            for (u32 k = 0; k < box.f[fi].count; ++k)
+            {
+                TEST_TRUE(PlanePointSignedDistance(box.plane + fi, box.v[box.e[box.f[fi].first + k].origin]) == 0.0f);
+            }
+
+            /* the support face of n is this face */
+            TEST_EQUAL(fi, DcelSupportFace(&box, n));
+        }
+
+        for (u32 ei = 0; ei < box.e_count; ++ei)
+        {
+            const v3 dir = DcelEdgeDirection(&box, ei);
+            const v3 unit = DcelEdgeUnitDirection(&box, ei);
+            const u32 axis = (dir.x != 0.0f) ? 0 : ((dir.y != 0.0f) ? 1 : 2);
+            TEST_TRUE(F32Abs(dir.buf[axis]) == 2.0f*hw.buf[axis]);
+            TEST_TRUE(dir.buf[(axis + 1) % 3] == 0.0f && dir.buf[(axis + 2) % 3] == 0.0f);
+            TEST_TRUE(F32Abs(unit.buf[axis] - ((dir.buf[axis] < 0.0f) ? -1.0f : 1.0f)) <= 2.0f*F32_EPSILON);
+            TEST_TRUE(unit.buf[(axis + 1) % 3] == 0.0f && unit.buf[(axis + 2) % 3] == 0.0f);
+        }
+        *env->mem_2 = record;
+    }
+
+#ifndef DS_DEBUG
+    const v3 invalid[] =
+    {
+        V3(0.0f, 1.0f, 1.0f), V3(-1.0f, 1.0f, 1.0f), V3(1.0f, -1.0f, -1.0f), V3(1.0f, 1.0f, F32Nan()),
+    };
+    for (u32 i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i)
+    {
+        const struct dcel box = DcelBox(env->mem_2, invalid[i]);
+        TEST_TRUE(box.v == stub.v && box.plane == stub.plane);
+    }
+#endif
+
+	return output;
+}
+
+/*
+ * DcelPlanesTryCompute on the triangle stub: a triangle gives opposite unit normals (within 16 eps L^2 / |n| of the f64
+ * normal, L the longest edge, |n| twice the area) and planes through its vertices; collinear points and an area vector
+ * beyond f32 (coordinates 1e20) fail. DcelBboxCompute of no vertices is the zero box.
+ */
+struct test_Output DcelPlanesTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct plane pl[2];
+    struct dcel tri = DcelTriStub();
+    tri.plane = pl;
+
+    for (u32 i = 0; i < 10000; ++i)
+    {
+        v3 v[3];
+        for (u32 k = 0; k < 3; ++k)
+        {
+            v[k] = V3(RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f));
+        }
+        tri.v = v;
+        v3 n;
+        if (!TriCcwNormalTryCompute(&n, v[0], v[1], v[2]))
+        {
+            continue;
+        }
+        TEST_EQUAL(1, DcelPlanesTryCompute(&tri));
+
+        const f64 a[3] = { (f64) v[1].x - v[0].x, (f64) v[1].y - v[0].y, (f64) v[1].z - v[0].z };
+        const f64 b[3] = { (f64) v[2].x - v[0].x, (f64) v[2].y - v[0].y, (f64) v[2].z - v[0].z };
+        const f64 r[3] = { a[1]*b[2] - a[2]*b[1], a[2]*b[0] - a[0]*b[2], a[0]*b[1] - a[1]*b[0] };
+        const f64 r_len = (f64) F32Sqrt((f32) (r[0]*r[0] + r[1]*r[1] + r[2]*r[2]));
+        const f64 c[3] = { (f64) v[2].x - v[1].x, (f64) v[2].y - v[1].y, (f64) v[2].z - v[1].z };
+        const f64 a_sq = a[0]*a[0] + a[1]*a[1] + a[2]*a[2];
+        const f64 b_sq = b[0]*b[0] + b[1]*b[1] + b[2]*b[2];
+        const f64 c_sq = c[0]*c[0] + c[1]*c[1] + c[2]*c[2];
+        const f64 l_sq = (a_sq > b_sq) ? ((a_sq > c_sq) ? a_sq : c_sq) : ((b_sq > c_sq) ? b_sq : c_sq);
+        /* r_len is rounded to f32 (no f64 sqrt in the engine): its eps is covered by the bound */
+        const f64 tol = 16.0*F32_EPSILON*l_sq / r_len;
+        for (u32 f = 0; f < 2; ++f)
+        {
+            const f64 sign = (f == 0) ? 1.0 : -1.0;
+            const v3 m = pl[f].normal;
+            const f64 err[3] = { m.x - sign*r[0]/r_len, m.y - sign*r[1]/r_len, m.z - sign*r[2]/r_len };
+            TEST_TRUE(err[0]*err[0] + err[1]*err[1] + err[2]*err[2] <= tol*tol);
+            for (u32 k = 0; k < 3; ++k)
+            {
+                TEST_TRUE(F32Abs(PlanePointSignedDistance(pl + f, v[k])) <= 64.0f*F32_EPSILON*10.0f);
+            }
+        }
+    }
+
+    v3 collinear[3] = { V3(0.0f, 0.0f, 0.0f), V3(1.0f, 1.0f, 1.0f), V3(2.0f, 2.0f, 2.0f) };
+    tri.v = collinear;
+    TEST_EQUAL(0, DcelPlanesTryCompute(&tri));
+    v3 huge[3] = { V3(0.0f, 0.0f, 0.0f), V3(1e20f, 0.0f, 0.0f), V3(0.0f, 1e20f, 0.0f) };
+    tri.v = huge;
+    TEST_EQUAL(0, DcelPlanesTryCompute(&tri));
+
+    tri.v_count = 0;
+    DcelBboxCompute(&tri);
+    TEST_TRUE(DcelTestV3Equal(tri.bbox.min, V3Zero()) && DcelTestV3Equal(tri.bbox.max, V3Zero()));
+
 	return output;
 }
 
@@ -1561,6 +1723,8 @@ static struct test_Output (*geometry_tests[])(struct test_Environment *) =
 	PlaneRandomTest,
 	SegmentShortTest,
 	DcelFaceSegmentClipTest,
+	DcelBoxTest,
+	DcelPlanesTest,
 };
 
 struct suite_Correctness m_geometry_suite =

@@ -149,7 +149,13 @@ struct aabb BboxVertexSet(const v3 *v, const u32 count)
 
 
 
-v3 box_stub_vertex[8] =
+/*
+ * dcel: doubly-connected edge list (de Berg et al., Computational Geometry: Algorithms and Applications, section 2.2).
+ * It can also represent 2D planar graphs; here it holds convex polyhedra, each face one polygon without holes,
+ * implicitly defined by its first half edge.
+ */
+
+static v3 box_stub_vertex[8] =
 {
 	{ .x = 0.5f, .y = 0.5f, .z = 0.5f },
 	{ .x = 0.5f, .y = 0.5f, .z = -0.5f },
@@ -161,7 +167,7 @@ v3 box_stub_vertex[8] =
 	{ .x = -0.5f, .y = -0.5f, .z = 0.5f },
 };
 
-static struct dcelFace box_face[] =
+static const struct dcelFace box_face[] =
 {
 	{ .first  =  0, .count = 4 },
 	{ .first  =  4, .count = 4 },
@@ -171,7 +177,7 @@ static struct dcelFace box_face[] =
 	{ .first  = 20, .count = 4 },
 };
 
-static struct dcelEdge box_edge[] =
+static const struct dcelEdge box_edge[] =
 {
 	{ .origin = 0, .twin =  7,  .face_ccw = 0, },
 	{ .origin = 1, .twin = 11,  .face_ccw = 0, },
@@ -232,13 +238,13 @@ struct dcel DcelBoxStub(void)
 	return box; 
 }
 
-static struct dcelFace tri_face[2] =
+static const struct dcelFace tri_face[2] =
 {
 	{ .first  =  0, .count = 3 },
 	{ .first  =  3, .count = 3 },
 };
                                                         
-static struct dcelEdge tri_edge[6] =                    
+static const struct dcelEdge tri_edge[6] =                    
 {
 	{ .origin = 0, .twin = 5,  .face_ccw = 0, },     
 	{ .origin = 1, .twin = 4,  .face_ccw = 0, },    
@@ -267,6 +273,14 @@ struct dcel DcelTriStub(void)
 
 struct dcel DcelBox(struct arena *mem, const v3 hw)
 {
+	/* also rejects NaN; a negative half width would mirror the box and turn its planes inward */
+	if (!(0.0f < hw.x && 0.0f < hw.y && 0.0f < hw.z))
+	{
+		Log(T_PHYSICS, S_WARNING, "DcelBox: half widths (%f, %f, %f) not all > 0, using the box stub", hw.x, hw.y, hw.z);
+		ds_AssertString(0, "DcelBox: half widths must be > 0");
+		return DcelBoxStub();
+	}
+
 	v3 *box_vertex = ArenaPush(mem, 8*sizeof(v3));
 
 	box_vertex[0] = V3(hw.x,  hw.y,  hw.z); 
@@ -291,8 +305,8 @@ struct dcel DcelBox(struct arena *mem, const v3 hw)
 
 	if (!DcelPlanesTryCompute(&box))
 	{
-		Log(T_PHYSICS, S_WARNING, "DcelBox: degenerate box (half widths %f, %f, %f), using the box stub", hw.x, hw.y, hw.z);
-		ds_AssertString(0, "DcelBox: degenerate box");
+		Log(T_PHYSICS, S_WARNING, "DcelBox: no planes for half widths (%f, %f, %f), box stub used", hw.x, hw.y, hw.z);
+		ds_AssertString(0, "DcelBox: no planes (half widths beyond the f32 range)");
 		box = DcelBoxStub();
 	}
 	else
@@ -301,17 +315,6 @@ struct dcel DcelBox(struct arena *mem, const v3 hw)
 	}
 
 	return box; 
-}
-
-void DcelBboxCompute(struct dcel *h)
-{
-	h->bbox.min = V3(F32_INFINITY, F32_INFINITY, F32_INFINITY);
-	h->bbox.max = V3(-F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
-	for (u32 i = 0; i < h->v_count; ++i)
-	{
-		h->bbox.min = V3Min(h->bbox.min, h->v[i]);
-		h->bbox.max = V3Max(h->bbox.max, h->v[i]);
-	}
 }
 
 u32 DcelPlanesTryCompute(struct dcel *h)
@@ -342,9 +345,9 @@ u32 DcelPlanesTryCompute(struct dcel *h)
 			sum = V3Add(sum, v1);
 		}
 
-		/* |n| = 2 * area; 0: the face has no area, so no normal (normalizing would give Inf/NaN) */
+		/* |n| = 2 * area; 0 (no area) or Inf (|n|^2 beyond f32): no normal (normalizing would give 0 or NaN) */
 		const f32 length = V3Length(n);
-		if (length > 0.0f)
+		if (0.0f < length && length < F32_INFINITY)
 		{
 			/* the plane passes through the average of the face's vertices, spreading their deviation */
 			const v3 centroid = V3Add(o, V3Scale(sum, 1.0f / (f32) f->count));
@@ -377,47 +380,22 @@ u32 DcelSupportFace(const struct dcel *h, const v3 dir)
 	return best;
 }
 
-/* Clip [t_min, t_max] of s to the outward side plane pl (keep signed distance <= 0); return 0 if s lies wholly in front */
-static u32 DcelSegmentSideClip(f32 *t_min, f32 *t_max, const struct plane *pl, const struct segment *s)
-{
-	const f32 d0 = PlanePointSignedDistance(pl, s->p[0]);
-	const f32 d1 = PlanePointSignedDistance(pl, s->p[1]);
-	if (0.0f < d0 && 0.0f < d1)
-	{
-		return 0;
-	}
-
-	/* signs differ: d0 - d1 != 0 and t = d0 / (d0 - d1) is in [0, 1] */
-	if (0.0f < d0)
-	{
-		*t_min = F32Max(*t_min, d0 / (d0 - d1));
-	}
-	else if (0.0f < d1)
-	{
-		*t_max = F32Min(*t_max, d0 / (d0 - d1));
-	}
-
-	return 1;
-}
-
 u32 DcelFaceSegmentClip(struct segment *clip, const struct dcel *h, const u32 fi, const struct segment *s)
 {
-	const v3 f_n = h->plane[fi].normal;
-
+	const v3 n = h->plane[fi].normal;
+	const struct dcelFace *f = h->f + fi;
 	f32 t_min = 0.0f;
 	f32 t_max = 1.0f;
-
-	struct dcelFace *f = h->f + fi;
+	/* edges (last, first), (first, first + 1), ...: the previous vertex is p0, no index wrap per edge */
+	v3 p0 = h->v[h->e[f->first + f->count - 1].origin];
 	for (u32 i = 0; i < f->count; ++i)
 	{
-		const v3 p0 = h->v[h->e[f->first + i].origin];
-		const v3 p1 = h->v[h->e[f->first + ((i + 1) % f->count)].origin];
-		const v3 n = V3Cross(V3Sub(p1, p0), f_n);
-		const struct plane clip_plane = Plane(V3Scale(n, 1.0f/V3Length(n)), p0);
-		if (!DcelSegmentSideClip(&t_min, &t_max, &clip_plane, s))
+		const v3 p1 = h->v[h->e[f->first + i].origin];
+		if (!SegmentEdgeSideClip(&t_min, &t_max, s, p0, p1, n))
 		{
 			return 0;
 		}
+		p0 = p1;
 	}
 
 	if (t_max < t_min)
@@ -429,31 +407,9 @@ u32 DcelFaceSegmentClip(struct segment *clip, const struct dcel *h, const u32 fi
 	return 1;
 }
 
-v3 DcelEdgeDirection(const struct dcel *h, const u32 ei)
-{
-	struct dcelEdge *e0 = h->e + ei;
-	struct dcelFace *f = h->f + e0->face_ccw;
-	const u32 next = f->first + ((ei - f->first + 1) % f->count);
-	struct dcelEdge *e1 = h->e + next;
-	return V3Sub(h->v[e1->origin], h->v[e0->origin]);
-}
-
-v3 DcelEdgeNormal(const struct dcel *h, const u32 ei)
-{
-	const v3 dir = DcelEdgeDirection(h, ei);
-	return V3Scale(dir, 1.0f / V3Length(dir));
-}
-
-struct dcel DcelEmpty(void)
-{
-	struct dcel dcel = { 0 };
-
-	return dcel;
-}
-
 void DcelPrint(const struct dcel *dcel)
 {	
-	fprintf(stderr, "dcel[%p]\n{\n", dcel);	
+	fprintf(stderr, "dcel[%p]\n{\n", (const void *) dcel);	
 
 	fprintf(stderr, "\tv[%u]\n\t{\n", dcel->v_count);
 	for (u32 i = 0; i < dcel->v_count; ++i)
@@ -487,31 +443,29 @@ void DcelPrint(const struct dcel *dcel)
 	fprintf(stderr, "}\n");	
 }
 
-void DcelAssertTopology(struct dcel *dcel)
+void DcelAssertTopology(const struct dcel *h)
 {
-	struct dcelFace *f;
-	struct dcelEdge *e;
-	for (u32 i = 0; i < dcel->f_count; ++i)
+	/* the ranges are disjoint (an edge's face_ccw names one face) and their counts sum to e_count: a partition */
+	u32 edge_sum = 0;
+	for (u32 fi = 0; fi < h->f_count; ++fi)
 	{
-		f = dcel->f + i;
-		e = dcel->e + f->first;
-		for (u32 j = 0; j < f->count; ++j)
+		const struct dcelFace *f = h->f + fi;
+		ds_Assert(3 <= f->count && f->first + f->count <= h->e_count);
+		for (u32 i = 0; i < f->count; ++i)
 		{
-			ds_Assert(e->face_ccw == i);
- 			e = dcel->e + f->first + j + 1;
+			const u32 ei = f->first + i;
+			const u32 next = f->first + (i + 1) % f->count;
+			const struct dcelEdge *e = h->e + ei;
+			ds_Assert(e->face_ccw == fi);
+			ds_Assert(e->origin < h->v_count);
+			ds_Assert(e->twin < h->e_count && e->twin != ei);
+			ds_Assert(h->e[e->twin].twin == ei);
+			/* the twin runs the opposite way: it starts where e ends */
+			ds_Assert(h->e[e->twin].origin == h->e[next].origin);
 		}
-
-		if (f->first + f->count < dcel->e_count)
-		{
-			ds_Assert(e->face_ccw != i);
-		}
+		edge_sum += f->count;
 	}
-
-	for (u32 i = 0; i < dcel->e_count; ++i)
-	{
-		e = dcel->e + i;
-		ds_Assert(i == (dcel->e + e->twin)->twin);
-	}
+	ds_Assert(edge_sum == h->e_count);
 }
 
 struct ddcelFace
@@ -1109,11 +1063,14 @@ u32 ConvexHullIteration(struct ddcel *ddcel, const u32 cvi, const f32 tol)
 struct dcel DcelDdcel(struct arena *mem, const struct ddcel *ddcel)
 {
 	ArenaPushRecord(mem);
+	/* written here; the dcel's own pointers are const */
+	struct dcelEdge *edge = ArenaPush(mem, ddcel->edge_pool.count*sizeof(struct dcelEdge));
+	struct dcelFace *face = ArenaPush(mem, ddcel->face_pool.count*sizeof(struct dcelFace));
 	struct dcel cpy =
 	{
 		.v = ArenaPushMemcpy(mem, ddcel->v, ddcel->v_count*sizeof(v3)),
-		.e = ArenaPush(mem, ddcel->edge_pool.count*sizeof(struct dcelEdge)),
-		.f = ArenaPush(mem, ddcel->face_pool.count*sizeof(struct dcelFace)),
+		.e = edge,
+		.f = face,
 		.plane = ArenaPush(mem, ddcel->face_pool.count*sizeof(struct plane)),
 		.v_count = ddcel->v_count,
 		.e_count = ddcel->edge_pool.count,
@@ -1147,14 +1104,14 @@ struct dcel DcelDdcel(struct arena *mem, const struct ddcel *ddcel)
 			ds_Assert(fj < ddcel->face_pool.count_max);
 			if (ds_PoolSlotAllocated(ddcel->f + fj))
 			{
-				cpy.f[fi].count = ddcel->f[fj].count;
-				cpy.f[fi].first = off;
+				face[fi].count = ddcel->f[fj].count;
+				face[fi].first = off;
 				u32 next = ddcel->f[fj].first;
 				for (u32 ei = 0; ei < ddcel->f[fj].count; ++ei)
 				{
-					cpy.e[off + ei].origin = ddcel->e[next].origin;
-					cpy.e[off + ei].face_ccw = fi;
-					cpy.e[off + ei].twin = emap[ddcel->e[next].twin];
+					edge[off + ei].origin = ddcel->e[next].origin;
+					edge[off + ei].face_ccw = fi;
+					edge[off + ei].twin = emap[ddcel->e[next].twin];
 					next = ddcel->e[next].next;
 				}
 				off += ddcel->f[fj].count;

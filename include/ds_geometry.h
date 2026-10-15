@@ -143,6 +143,13 @@ static ds_ForceInline f32 SegmentPointClosestBcParameter(const struct segment *s
 static ds_ForceInline f32 SegmentPointDistanceSquared(v3 *c, const struct segment *s, const v3 p);
 /* Return the parameter t of p projected onto the line through s (any real t). Precondition: |s.dir|^2 > 0 (asserted) */
 static ds_ForceInline f32 SegmentPointProjectedBcParameter(const struct segment *s, const v3 p);
+/*
+ * One side of a polygon clip: shrink [*t_min, *t_max] to the parameters of s on the inner side of the plane through
+ * the edge p0 -> p1 of a polygon CCW about n (any length > 0), the points x with ((p1 - p0) x n).(x - p0) <= 0
+ * (inclusive). Return 0, range unchanged, if s lies strictly outside; otherwise 1. A zero-length edge clips nothing.
+ * Every t written is in [0, 1].
+ */
+static ds_ForceInline u32 SegmentEdgeSideClip(f32 *t_min, f32 *t_max, const struct segment *s, const v3 p0, const v3 p1, const v3 n);
 
 /********************************** plane ***********************************/
 
@@ -246,6 +253,15 @@ static ds_ForceInline u32 TriCcwNormalTryCompute(v3 *normal, const v3 p0, const 
 
 /********************************** dcel ************************************/
 
+/*
+ * dcel: a convex polyhedron as a doubly-connected edge list. Face fi's half edges are e[f[fi].first .. first + count),
+ * in order: each edge's successor is the next index (the last one's is first), and the face is CCW about its outward
+ * normal plane[fi].normal. e[ei].twin is the opposite half edge, on the neighbouring face: it starts where e[ei] ends.
+ * c_Shape hulls are closed and convex (c_Shape preconditions); the triangle stub is a flat hull with two faces.
+ *
+ * DcelBox and the stubs share their topology (e, f) with every other box or stub: static tables, read-only through the
+ * const pointers. The box stub's v and plane are static too; never write them.
+ */
 struct dcelFace
 {
 	u32 first;	/* first half edge */
@@ -259,55 +275,48 @@ struct dcelEdge
 	u32 face_ccw; 	/* face to the left of half edge */
 };
 
-/*
- * (Computational Geometry Algorithms and Applications, Section 2.2) 
- * dcel - doubly-connected edge list. Can represent convex 3d bodies (with no holes in polygons)
- * 	  and 2d planar graphs. A polygon in the data structure are implicitly defined by its 
- * 	  first half edge. 
- */
 struct dcel
 {
-	struct dcelFace *f;		/* f[i] = half-edge of face i */
+	const struct dcelFace *f;	/* f[i]: face i's half edges e[first .. first + count) */
 	struct plane *  plane;	/* plane[i] = face i's plane: unit normal pointing out of the hull (DcelPlanesTryCompute) */
 	struct aabb     bbox;   /* local bounding box of v (DcelBboxCompute) */
-	struct dcelEdge *e;
+	const struct dcelEdge *e;
 	v3 *	v;
 	u32 f_count;
 	u32 e_count;
 	u32 v_count;
 };
 
-/* return dcel { 0 } */
-struct dcel 	DcelEmpty(void);
+/* Return the empty dcel (no vertices, edges or faces) */
+static ds_ForceInline struct dcel DcelEmpty(void);
 /*
  * Return the triangle stub: two faces (front 0-1-2, back 0-2-1) without vertices, planes or box. The caller sets
  * v (3 vertices), plane (2 planes, e.g. through DcelPlanesTryCompute) and bbox (DcelBboxCompute; flat).
  */
 struct dcel     DcelTriStub(void);
-/* return dcel box stub: unit cube centered at the origin, static memory (planes and box included) */
+/* Return the box stub: the unit cube centered at the origin, planes and box included (static memory, read-only) */
 struct dcel 	DcelBoxStub(void);
 /*
- * return arena allocated dcel box with given half widths. Degenerate (a half width of 0): asserts in debug;
- * in release logs a warning and returns DcelBoxStub().
+ * Return the box with half widths hw, its vertices and planes pushed on mem (topology shared). Precondition: hw > 0
+ * on every axis. Otherwise, or if the planes can't be computed (hw beyond the f32 range): asserts in debug; in release
+ * logs a warning and returns DcelBoxStub().
  */
 struct dcel 	DcelBox(struct arena *mem, const v3 hw);
 /*
- * return arena allocated dcel convex hull of input points. On failure (fewer than 4 points, or no
- * tetrahedron within tol), an empty dcel is returned. A hull with a degenerate face (zero area) asserts in
- * debug; in release it is discarded with a warning and DcelBoxStub() is returned.
+ * Return the convex hull of v[0 .. v_count), pushed on mem. Fewer than 4 points, no tetrahedron within tol, or a
+ * degenerate face while building (logged as a warning): the empty dcel, nothing pushed. A finished hull with a
+ * zero-area face asserts in debug; in release it is discarded with a warning and DcelBoxStub() is returned.
  */
 struct dcel 	DcelConvexHull(struct arena *mem, const v3 *v, const u32 v_count, const f32 tol);
 
 /*
- * Compute h->plane[0 .. f_count) (memory set by the caller) with Newell's method: per face, the summed
- * vector over all of its edges is twice the face's area times its unit normal, and the
- * plane goes through the average of the face's vertices. Using every vertex keeps the normal accurate for
- * polygons whose first triangle is thin. Return 1 if every face has a nonzero area, otherwise 0 (the
- * planes of degenerate faces are then garbage).
+ * Compute h->plane[0 .. f_count) (memory set by the caller): each face's unit outward normal (its edges run CCW about
+ * it) and the plane through the average of its vertices. Return 1 if every face has a nonzero, finite area vector,
+ * otherwise 0; the planes of the faces without one are left unwritten.
  */
 u32             DcelPlanesTryCompute(struct dcel *h);
-/* Compute h->bbox: the bounding box of h->v (DcelConvexHull and DcelBox call it; stubs: see DcelTriStub) */
-void            DcelBboxCompute(struct dcel *h);
+/* Set h->bbox to the bounding box of h->v (no vertices: the zero box, as BboxVertexSet) */
+static ds_ForceInline void DcelBboxCompute(struct dcel *h);
 
 /*
  * Return the index of the face whose outward unit normal has the largest dot product with dir (the face most
@@ -322,16 +331,18 @@ u32             DcelSupportFace(const struct dcel *h, const v3 dir);
  */
 u32         	DcelFaceSegmentClip(struct segment *clip, const struct dcel *h, const u32 fi, const struct segment *s);
 
-v3 		DcelEdgeNormal(const struct dcel *h, const u32 ei);
-v3 		DcelEdgeDirection(const struct dcel *h, const u32 ei);
+/* Return the direction of half edge ei: its end (the twin's origin) minus its origin */
+static ds_ForceInline v3 DcelEdgeDirection(const struct dcel *h, const u32 ei);
+/* Return the unit direction of half edge ei. Precondition: the edge has a nonzero length (asserted) */
+static ds_ForceInline v3 DcelEdgeUnitDirection(const struct dcel *h, const u32 ei);
 
-void 		DcelAssertTopology(struct dcel *dcel);
-
-#ifdef DS_DEBUG
-#define COLLISION_HULL_ASSERT(dcel)	DcelAssertTopology(dcel)
-#else
-#define COLLISION_HULL_ASSERT(dcel)	
-#endif
+/*
+ * Debug: assert (ds_Assert) the layout described above: the faces' edge ranges partition e, every edge's face_ccw
+ * is its face, twins pair up and run opposite, indices are in range, and faces have at least 3 edges.
+ */
+void 		DcelAssertTopology(const struct dcel *h);
+/* Debug: print h's vertices and faces to stderr */
+void 		DcelPrint(const struct dcel *h);
 
 /****************************** ray: inline definitions *******************************/
 
@@ -411,6 +422,31 @@ static ds_ForceInline f32 SegmentPointProjectedBcParameter(const struct segment 
 	SegmentBCUnnormalized(bc, &divisor, s->p[0], s->p[1], p);
 	ds_Assert(divisor > 0.0f);
 	return bc[1] / divisor;
+}
+
+static ds_ForceInline u32 SegmentEdgeSideClip(f32 *t_min, f32 *t_max, const struct segment *s, const v3 p0, const v3 p1, const v3 n)
+{
+	/*
+	 * m = (p1 - p0) x n is the side plane's outward normal, left unnormalized: the signs and t = d0 / (d0 - d1)
+	 * don't depend on |m| (m = 0: d0 = d1 = 0, nothing clipped). Distances are taken from p0 to keep the products
+	 * small. A crossing divides only where the end points' signs differ, so t is in [0, 1].
+	 */
+	const v3 m = V3Cross(V3Sub(p1, p0), n);
+	const f32 d0 = V3Dot(m, V3Sub(s->p[0], p0));
+	const f32 d1 = V3Dot(m, V3Sub(s->p[1], p0));
+	if (0.0f < d0 && 0.0f < d1)
+	{
+		return 0;
+	}
+	else if (0.0f < d0)
+	{
+		*t_min = F32Max(*t_min, d0 / (d0 - d1));
+	}
+	else if (0.0f < d1)
+	{
+		*t_max = F32Min(*t_max, d0 / (d0 - d1));
+	}
+	return 1;
 }
 
 /****************************** plane: inline definitions *******************************/
@@ -666,6 +702,33 @@ static ds_ForceInline u32 TriCcwNormalTryCompute(v3 *normal, const v3 p0, const 
 
 	*normal = V3Scale(dir, 1.0f / F32Sqrt(V3Dot(dir, dir)));
 	return 1;
+}
+
+/****************************** dcel: inline definitions *******************************/
+
+static ds_ForceInline struct dcel DcelEmpty(void)
+{
+	const struct dcel h = { 0 };
+	return h;
+}
+
+static ds_ForceInline void DcelBboxCompute(struct dcel *h)
+{
+	h->bbox = BboxVertexSet(h->v, h->v_count);
+}
+
+static ds_ForceInline v3 DcelEdgeDirection(const struct dcel *h, const u32 ei)
+{
+	const struct dcelEdge *e = h->e + ei;
+	return V3Sub(h->v[h->e[e->twin].origin], h->v[e->origin]);
+}
+
+static ds_ForceInline v3 DcelEdgeUnitDirection(const struct dcel *h, const u32 ei)
+{
+	const v3 dir = DcelEdgeDirection(h, ei);
+	const f32 len_sq = V3Dot(dir, dir);
+	ds_Assert(0.0f < len_sq && len_sq < F32_INFINITY);
+	return V3Scale(dir, 1.0f / F32Sqrt(len_sq));
 }
 
 #ifdef __cplusplus
