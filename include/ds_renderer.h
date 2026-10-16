@@ -108,7 +108,8 @@ void r_CameraConstruct(struct r_Camera *cam,
  * setups up camera for 3d rendering 
  *
  * position - position in world
- * direction - direction of camera lense in world 
+ * direction - direction of camera lense in world (any length > 0); sets yaw and pitch so that r_CameraUpdateAxes
+ *             gives this frame; pitch is clamped as in r_CameraUpdateAngles (straight up/down: yaw 0, pitch at the limit)
  * fov_x - field of view in radians
  * fz_near - distance to nearest frustum plane (AFFECTS Depth calculations, see Z-fighting)
  * fz_far - distance to farther frustum plane (AFFECTS Depth calculations, see Z-fighting)

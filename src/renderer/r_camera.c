@@ -64,46 +64,24 @@ struct r_Camera r_CameraInit(const v3f64 position, const v3 direction, const f32
 		.fov_x = fov_x,
 	};
 
-	const v3 direction_xz = V3(direction.x, 0.0f, direction.z);
-	const f32 direction_xz_len = V3Length(direction_xz);
-	if (direction_xz_len < 0.001f)
+	/*
+	 * The angles that r_CameraUpdateAxes turns into direction: its forward is
+	 *
+	 *      (cos(pitch) sin(yaw), -sin(pitch), cos(pitch) cos(yaw)),
+	 *
+	 * so yaw is the angle of the horizontal part from +z (its sign that of x) and pitch = -asin(y / |direction|),
+	 * clamped as r_CameraUpdateAngles clamps it. Straight up or down the yaw is undefined: 0.
+	 */
+	const f32 len = V3Length(direction);
+	const f32 len_xz = F32Sqrt(direction.x*direction.x + direction.z*direction.z);
+	if (len_xz > 0.001f * len)
 	{
-		if (direction.y > 0.0f)
-		{
-			cam.up = V3(0.0f, 0.0f, -1.0f);
-			cam.forward = V3(0.0f, 1.0f, 0.0f);
-			cam.left = V3(1.0f, 0.0f, 0.0f);
-		}
-		else
-		{
-			cam.up = V3(0.0f, 0.0f, 1.0f);
-			cam.forward = V3(0.0f, -1.0f, 0.0f);
-			cam.left = V3(1.0f, 0.0f, 0.0f);
-		}
+		const f32 yaw = F32Acos(F32Clamp(direction.z / len_xz, -1.0f, 1.0f));
+		cam.yaw = (direction.x < 0.0f) ? -yaw : yaw;
 	}
-	else
-	{
-		const v3 x = V3(1.0f, 0.0f, 0.0f);
-		const v3 y = V3(0.0f, 1.0f, 0.0f);
-		const v3 z = V3(0.0f, 0.0f, 1.0f);
-
-		const f32 angle1 = (direction.x < 0.0f) 
-			? -F32Acos(direction.z / (direction_xz_len))
-			:  F32Acos(direction.z / (direction_xz_len));
-		const m3 rot1 = M3QUnit(QUnitAxisAngle(y, angle1));
-
-		const f32 angle2 = (direction.y > 0.0f)
-			? -F32Acos(direction_xz_len*direction_xz_len / (direction_xz_len * V3Length(direction)))
-			:  F32Acos(direction_xz_len*direction_xz_len / (direction_xz_len * V3Length(direction)));
-		const v3 v = M3V3Mul(rot1, x);
-		const m3 rot2 = M3QUnit(QAxisAngle(v, angle2));
-
-		const m3 rot = M3Mul(rot2, rot1);
-
-		cam.forward = M3V3Mul(rot, z);
-		cam.left = M3V3Mul(rot, x);
-		cam.up = M3V3Mul(rot, y);
-	}
+	const f32 pitch_max = F32_PI / 2.0f - 0.50f;
+	cam.pitch = F32Clamp(-F32Asin(F32Clamp(direction.y / len, -1.0f, 1.0f)), -pitch_max, pitch_max);
+	r_CameraUpdateAxes(&cam);
 
 	return cam;
 }

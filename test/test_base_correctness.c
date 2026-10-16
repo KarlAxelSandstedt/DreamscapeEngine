@@ -22,6 +22,7 @@
 #include "ds_test.h"
 #include "ticket_factory.h"
 #include "ds_graphics.h"
+#include "ds_renderer.h"
 
 static u32 BitTestClz64(const u64 x)
 {
@@ -999,6 +1000,44 @@ static struct test_Output PoseTest(struct test_Environment *env)
 }
 
 /*
+ * r_CameraInit: the camera looks along direction (pitch within r_CameraUpdateAngles' clamp), its frame is
+ * orthonormal with left = up x forward, and r_CameraUpdateAxes on its angles gives the same frame (the frame and
+ * the angles agree). Straight down: yaw 0, pitch clamped. yaw = pitch = 0 looks along +z.
+ */
+static struct test_Output CameraTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    const f32 pitch_max = F32_PI / 2.0f - 0.50f;
+    struct rng rng;
+    RngLocalInit(&rng, env->seed);
+    for (u32 n = 0; n < 2000; ++n)
+    {
+        const v3 d = VectorTestV3(&rng, -1.0f, 1.0f);
+        const f32 len = V3Length(d);
+        if (len < 0.1f || F32Abs(d.y) > len * F32Sin(pitch_max) * 0.999f) { continue; }
+
+        struct r_Camera cam = r_CameraInit(V3F64(1.0, 2.0, 3.0), d, 0.1f, 100.0f, 1.5f, F32_PI / 2.0f);
+        TEST_TRUE(VectorTestNear(cam.forward, V3Scale(d, 1.0f / len), 1e-5f));
+        TEST_TRUE(VectorTestNear(cam.left, V3Cross(cam.up, cam.forward), 1e-5f));
+        TEST_TRUE(F32Abs(V3Dot(cam.up, cam.forward)) <= 1e-5f && F32Abs(V3Length(cam.up) - 1.0f) <= 1e-5f);
+
+        const v3 forward = cam.forward;
+        const v3 left = cam.left;
+        const v3 up = cam.up;
+        r_CameraUpdateAxes(&cam);
+        TEST_TRUE(VectorTestNear(cam.forward, forward, 1e-6f) && VectorTestNear(cam.left, left, 1e-6f) && VectorTestNear(cam.up, up, 1e-6f));
+    }
+
+    const struct r_Camera down = r_CameraInit(V3F64(0.0, 0.0, 0.0), V3(0.0f, -2.0f, 0.0f), 0.1f, 100.0f, 1.5f, F32_PI / 2.0f);
+    TEST_TRUE(down.yaw == 0.0f && down.pitch == pitch_max);
+    const struct r_Camera ahead = r_CameraInit(V3F64(0.0, 0.0, 0.0), V3(0.0f, 0.0f, 3.0f), 0.1f, 100.0f, 1.5f, F32_PI / 2.0f);
+    TEST_TRUE(ahead.yaw == 0.0f && ahead.pitch == 0.0f && VectorTestNear(ahead.forward, V3(0.0f, 0.0f, 1.0f), 1e-6f));
+
+	return output;
+}
+
+/*
  * Without a root window, ds_WindowLookup finds nothing and ds_DeallocTaggedWindows frees nothing, neither
  * walking the hierarchy from HI_NULL. The editor's root window (if any) is hidden during the calls.
  */
@@ -1029,6 +1068,7 @@ static struct test_Output (*base_tests[])(struct test_Environment *) =
     MatrixTest,
     TransformTest,
     PoseTest,
+    CameraTest,
     BitCountTest,
     OverflowTest,
     AtomicSingleThreadTest,
