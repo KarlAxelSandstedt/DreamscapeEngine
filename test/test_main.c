@@ -314,10 +314,10 @@ void ds_TestMainCorrectness(void)
 		.seed = 2984395893,
 	};
 
-	//run_suite(jobscheduler_correctness_suite, &env, 1);
 	run_suite(THashMap_correctness_suite, &env, 1);
 	run_suite(base_correctness_suite, &env, 1);
 	run_suite(allocator_correctness_suite, &env, 1);
+	run_suite(jobscheduler_correctness_suite, &env, 1);
 	run_suite(container_correctness_suite, &env, 1);
 	run_suite(kas_string_correctness_suite, &env, 1);
 	//run_suite(serialize_correctness_suite, &env, 1);
