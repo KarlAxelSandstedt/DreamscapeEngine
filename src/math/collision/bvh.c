@@ -591,7 +591,7 @@ void BvhValidate(const struct bvh *bvh)
 	const struct bvhNode *node = bvh->pool.buf;
     BTI it;
     BTDFInit(it, bvh->pool.buf, bvh->bt.root);
-    while (it.next != it.root)
+    do
     {
         const u32 i = it.at;
         if (!BTRootCheck(node + i))
@@ -602,6 +602,7 @@ void BvhValidate(const struct bvh *bvh)
 
         BTDFAdvance(it, bvh->pool.buf);
     }
+    while (it.at != it.root);
 }
 
 struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *mesh, const u32 bin_count)
