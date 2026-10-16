@@ -17,11 +17,22 @@
 ==========================================================================
 */
 
+/*
+ds_random.h
+===========
+Pseudo-random numbers from xoshiro256** (not cryptographic): a generator per thread, seeded by ds_Init, and
+local generators (struct rng) seeded by their user. Integer arithmetic only, so a seed gives the same u64
+numbers on every platform and compiler. The simulation never draws from either; the engine's users are the
+job scheduler (steal victims), TPool (free-list choice), snapshot restores (worker arena) and the editor.
+
+Sections: thread generator, local generator, initialization; inline definitions at the bottom.
+*/
+
 #ifndef __DS_RANDOM_H__
 #define __DS_RANDOM_H__
 
 #ifdef __cplusplus
-extern "C" { 
+extern "C" {
 #endif
 
 #include "ds_types.h"
@@ -29,6 +40,20 @@ extern "C" {
 #include "ds_assert.h"
 
 /*************************** THREAD-SAFE RNG API ***************************/
+
+/*
+Each thread draws from its own generator: ds_Init seeds the base state (Xoshiro256Init: the config seed, or
+system entropy) and every thread starts on its own stream, the base advanced by (thread index) * 2^128 numbers
+(ThreadXoshiro256InitSequence; job system threads call it when they start). A thread's numbers depend only on
+the seed, its index and its own earlier draws. A thread never seeded has the all-zero state and draws 0 forever.
+
+- RngPushState saves the thread's state, RngPopState restores it: one saved state, not a stack (a second push
+  overwrites the first).
+- Ranges include both ends (min <= max, asserted; [0, U64_MAX] is allowed) and are min + r % (max - min + 1):
+  uniform up to a bias of (max - min + 1) / 2^64.
+- RngF32Normalized is (f32) r / (f32) U64_MAX, in [0, 1] with 1.0f included. RngF32Range is
+  min + n (max - min); it can exceed max by rounding when max - min is not exact in f32.
+*/
 
 /* push current thread local rng state */
 static ds_ForceInline void RngPushState(void);
