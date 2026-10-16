@@ -42,8 +42,9 @@ Conventions (the whole engine)
     Winding     triangles and dcel faces are counterclockwise about their outward normal; mesh collision is
                 two-sided (the winding orients render normals). GL culls back faces, front = CCW.
     Camera      the camera frame is left, up, forward with left = up x forward. View space is OpenGL's (looking
-                down -z), clip space z/w in [-1, 1] (transform.h). The renderer's camera (r_camera.c) looks along
-                +z at yaw = pitch = 0.
+                down -z), clip space z/w in [-1, 1] (transform.h). The camera's yaw and pitch (r_camera.c,
+                r_CameraUpdateAxes): at yaw = pitch = 0 it looks along +z with left +x; positive yaw turns forward
+                toward +x, positive pitch looks down; pitch is clamped short of straight up/down.
     UI          window coordinates have the bottom-left corner at (0, 0), y up.
 
 Sections: local poses, world poses; inline definitions at the bottom, in the same order.
