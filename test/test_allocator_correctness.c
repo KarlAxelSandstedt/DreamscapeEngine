@@ -996,6 +996,121 @@ static struct test_Output TStackParallelTest(struct test_Environment *env)
 	return output;
 }
 
+#if __DS_PLATFORM__ != __DS_WEB__
+
+#define RING_TEST_SLOTS 64
+
+/* the byte k of the allocation with the given id */
+static u8 RingTestByte(const u32 id, const u64 k)
+{
+    return (u8) (id * 31 + k * 7 + 1);
+}
+
+/*
+ * Ring: the second half mirrors the first in both directions; pushes that run past the end are contiguous and
+ * their bytes show at the start (and before the start for RingPushStart); failed pushes leave the ring unchanged;
+ * a random FIFO (RingPushEnd / RingPopStart) against a queue model, every byte checked through the slot and
+ * through its first-half address; LIFO RingPopEnd; RingDealloc leaves the ring empty.
+ */
+static struct test_Output RingTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct ring ring = RingAlloc(1);
+    TEST_TRUE(ring.buf != NULL && ring.mem_total >= 1 && ring.mem_left == ring.mem_total && ring.offset == 0);
+    const u64 total = ring.mem_total;
+
+    for (u64 k = 0; k < total; ++k) { ring.buf[k] = RingTestByte(1, k); }
+    for (u64 k = 0; k < total; ++k) { TEST_EQUAL(RingTestByte(1, k), ring.buf[total + k]); }
+    for (u64 k = 0; k < total; ++k) { ring.buf[total + k] = RingTestByte(2, k); }
+    for (u64 k = 0; k < total; ++k) { TEST_EQUAL(RingTestByte(2, k), ring.buf[k]); }
+
+    /* failures leave the ring as it was */
+    struct ringSlot slot = RingPushEnd(&ring, 0);
+    TEST_TRUE(slot.address == NULL && slot.size == 0);
+    slot = RingPushEnd(&ring, total + 1);
+    TEST_TRUE(slot.address == NULL && slot.size == 0 && ring.mem_left == total && ring.offset == 0);
+    slot = RingPushStart(&ring, total + 1);
+    TEST_TRUE(slot.address == NULL && ring.mem_left == total && ring.offset == 0);
+
+    /* a push across the end: contiguous, its tail at the start */
+    slot = RingPushEnd(&ring, total - 16);
+    TEST_TRUE(slot.address == ring.buf && ring.offset == total - 16);
+    RingPopStart(&ring, total - 16);
+    slot = RingPushEnd(&ring, 64);
+    TEST_TRUE(slot.address == ring.buf + total - 16 && slot.size == 64 && ring.offset == 48);
+    for (u64 k = 0; k < 64; ++k) { slot.address[k] = RingTestByte(3, k); }
+    for (u64 k = 16; k < 64; ++k) { TEST_EQUAL(RingTestByte(3, k), ring.buf[k - 16]); }
+
+    /* a push before the start wraps back over the end */
+    RingFlush(&ring);
+    slot = RingPushEnd(&ring, 32);
+    TEST_TRUE(slot.address == ring.buf);
+    slot = RingPushStart(&ring, 48);
+    TEST_TRUE(slot.address == ring.buf + total - 48 && ring.mem_left == total - 80 && ring.offset == 32);
+
+    /* LIFO */
+    RingPopEnd(&ring, 32);
+    TEST_TRUE(ring.offset == 0 && ring.mem_left == total - 48);
+    RingFlush(&ring);
+    TEST_TRUE(ring.offset == 0 && ring.mem_left == total);
+
+    /* FIFO against a queue model */
+    struct rng rng;
+    RngLocalInit(&rng, env->seed);
+    u8 *address[RING_TEST_SLOTS];
+    u64 size[RING_TEST_SLOTS];
+    u32 id[RING_TEST_SLOTS];
+    u32 first = 0;
+    u32 count = 0;
+    u64 used = 0;
+    for (u32 n = 0; n < 20000; ++n)
+    {
+        const u64 push_size = RngLocalU64Range(&rng, 1, total / 4);
+        const u32 push = (count < RING_TEST_SLOTS) && (count == 0 || RngLocalU64Range(&rng, 0, 1));
+        if (push)
+        {
+            slot = RingPushEnd(&ring, push_size);
+            if (used + push_size > total)
+            {
+                TEST_TRUE(slot.address == NULL && ring.mem_left == total - used);
+                continue;
+            }
+            TEST_TRUE(slot.address != NULL && slot.size == push_size);
+            TEST_TRUE(ring.buf <= slot.address && slot.address < ring.buf + total);
+            const u32 i = (first + count) % RING_TEST_SLOTS;
+            address[i] = slot.address;
+            size[i] = push_size;
+            id[i] = n;
+            for (u64 k = 0; k < push_size; ++k) { slot.address[k] = RingTestByte(n, k); }
+            count += 1;
+            used += push_size;
+        }
+        else
+        {
+            const u32 i = first;
+            const u64 at = (u64) (address[i] - ring.buf);
+            for (u64 k = 0; k < size[i]; ++k)
+            {
+                TEST_EQUAL(RingTestByte(id[i], k), address[i][k]);
+                TEST_EQUAL(RingTestByte(id[i], k), ring.buf[(at + k) % total]);
+            }
+            RingPopStart(&ring, size[i]);
+            first = (first + 1) % RING_TEST_SLOTS;
+            count -= 1;
+            used -= size[i];
+        }
+        TEST_EQUAL(total - used, ring.mem_left);
+    }
+
+    RingDealloc(&ring);
+    TEST_TRUE(ring.buf == NULL && ring.mem_total == 0 && ring.mem_left == 0);
+
+	return output;
+}
+
+#endif
+
 static struct test_Output (*allocator_tests[])(struct test_Environment *) =
 {
     PowerOfTwoTest,
@@ -1010,6 +1125,9 @@ static struct test_Output (*allocator_tests[])(struct test_Environment *) =
     TPoolTest,
     TPoolParallelTest,
     TStackParallelTest,
+#if __DS_PLATFORM__ != __DS_WEB__
+    RingTest,
+#endif
 };
 
 struct suite_Correctness storage_allocator_correctness_suite =

@@ -728,36 +728,54 @@ struct ring RingEmpty()
 #if __DS_PLATFORM__ == __DS_LINUX__
 
 #include <fcntl.h>
+#include <unistd.h>
+#include <sys/mman.h>
 
 struct ring RingAlloc(const u64 mem_hint)
 {
 	ds_Assert(mem_hint);
 
-	struct ring ring = { 0 };
 	/* whole pages (page_size is a power of two) */
 	const u64 page = g_mem_config->page_size;
-	ring.mem_total = (mem_hint + page - 1) & ~(page - 1);
-	ring.mem_left = ring.mem_total;
-	ring.offset = 0;
-	ring.buf = mmap(NULL, ring.mem_total << 1, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	const u64 mem_total = (mem_hint + page - 1) & ~(page - 1);
 
-	if (ring.buf == MAP_FAILED)
+	/* one memory object mapped twice (shared): writes through either view show in both */
+	const int fd = memfd_create("ds_ring", MFD_CLOEXEC);
+	if (fd == -1)
 	{
-		Log(T_SYSTEM, S_ERROR, "Failed to allocate ring allocator: %s", strerror(errno));
-		return RingEmpty();
-	}
-	void *p1 = mmap(ring.buf, ring.mem_total, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
-	void *p2 = mmap(ring.buf + ring.mem_total, ring.mem_total, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
-	if (p1 == MAP_FAILED || p2 == MAP_FAILED)
-	{
-		Log(T_SYSTEM, S_ERROR, "Failed to allocate ring allocator: %s", strerror(errno));
+		Log(T_SYSTEM, S_ERROR, "Failed to create the ring's memory: %s", strerror(errno));
 		return RingEmpty();
 	}
 
-	madvise(ring.buf, ring.mem_total << 1, MADV_HUGEPAGE);
-	madvise(ring.buf, ring.mem_total << 1, MADV_WILLNEED);
+	if (ftruncate(fd, (off_t) mem_total) == -1)
+	{
+		Log(T_SYSTEM, S_ERROR, "Failed to size the ring's memory: %s", strerror(errno));
+		close(fd);
+		return RingEmpty();
+	}
 
-	return ring;
+	/* reserve both halves, then map the object over each */
+	u8 *buf = mmap(NULL, 2*mem_total, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (buf == MAP_FAILED)
+	{
+		Log(T_SYSTEM, S_ERROR, "Failed to reserve the ring's address range: %s", strerror(errno));
+		close(fd);
+		return RingEmpty();
+	}
+
+	if (mmap(buf, mem_total, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0) == MAP_FAILED
+		|| mmap(buf + mem_total, mem_total, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0) == MAP_FAILED)
+	{
+		Log(T_SYSTEM, S_ERROR, "Failed to map the ring's views: %s", strerror(errno));
+		munmap(buf, 2*mem_total);
+		close(fd);
+		return RingEmpty();
+	}
+
+	/* the mappings keep the object alive */
+	close(fd);
+
+	return (struct ring) { .mem_total = mem_total, .mem_left = mem_total, .offset = 0, .buf = buf };
 }
 
 void RingDealloc(struct ring *ring)
