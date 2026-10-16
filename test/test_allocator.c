@@ -43,14 +43,15 @@ struct ds_Struct
 
 DEFINE_TPOOL(ds_Struct);
 
-static ds_TPool(ds_Struct) *g_tpool;
+/* the pool's address as a u64, so the 64-bit atomics work where pointers are 32 bits (wasm32) */
+static u64 g_tpool;
 static u32 first = 1;
 
 void *ds_StructTPoolIncrementTestInit(void)
 {
     if (ds_ThreadSelfIndex() == 0)
     {
-        AtomicStoreRel64(&g_tpool, malloc(sizeof(ds_TPool(ds_Struct))));
+        AtomicStoreRel64(&g_tpool, (u64) (uintptr_t) malloc(sizeof(ds_TPool(ds_Struct))));
     }
 
     return &g_tpool;
@@ -60,7 +61,7 @@ void ds_StructTPoolIncrementTestReset(void *args)
 {
     if (ds_ThreadSelfIndex() == 0)
     {
-	    ds_TPool(ds_Struct) *pool = (ds_TPool(ds_Struct) *) AtomicLoadAcq64(&g_tpool);
+	    ds_TPool(ds_Struct) *pool = (ds_TPool(ds_Struct) *) (uintptr_t) AtomicLoadAcq64(&g_tpool);
         if (!first)
         {
             ds_TPoolDealloc(*pool);
@@ -75,8 +76,8 @@ void ds_StructTPoolIncrementTestFree(void *args)
 {
     if (ds_ThreadSelfIndex() == 0 && g_tpool)
     {
-	    ds_TPool(ds_Struct) *pool = (ds_TPool(ds_Struct) *) AtomicLoadAcq64(&g_tpool);
-        g_tpool = NULL;
+	    ds_TPool(ds_Struct) *pool = (ds_TPool(ds_Struct) *) (uintptr_t) AtomicLoadAcq64(&g_tpool);
+        g_tpool = 0;
         ds_TPoolDealloc(*pool);
         free(pool);
         first = 1;
@@ -85,7 +86,7 @@ void ds_StructTPoolIncrementTestFree(void *args)
 
 void ds_StructTPoolIncrementTest(void *void_pool)
 {
-	ds_TPool(ds_Struct) *pool = (ds_TPool(ds_Struct) *) AtomicLoadAcq64(&g_tpool);
+	ds_TPool(ds_Struct) *pool = (ds_TPool(ds_Struct) *) (uintptr_t) AtomicLoadAcq64(&g_tpool);
     for (u32 i = 0; i < 1024*64; ++i)
     {
         const u32 index = ds_TPoolIncrement(*pool).index;
@@ -96,7 +97,7 @@ void ds_StructTPoolIncrementTest(void *void_pool)
 
 void ds_StructTStackTest(void *void_pool)
 {
-	ds_TPool(ds_Struct) *pool = (ds_TPool(ds_Struct) *) AtomicLoadAcq64(&g_tpool);
+	ds_TPool(ds_Struct) *pool = (ds_TPool(ds_Struct) *) (uintptr_t) AtomicLoadAcq64(&g_tpool);
     const u32 count = 200;
     if (ds_ThreadSelfIndex() == 0)
     {

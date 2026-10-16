@@ -48,7 +48,8 @@ DEFINE_TPOOL(ds_Structure);
 DEFINE_THASH(ds_Structure);
 
 static ds_THashMap(ds_Structure) g_tmap;
-static ds_TPool(ds_Structure) *g_tpool;
+/* the pool's address as a u64, so the 64-bit atomics work where pointers are 32 bits (wasm32) */
+static u64 g_tpool;
 static u32 first = 1;
 static u32 g_lookup_mismatches = 0;
 
@@ -56,8 +57,8 @@ void *ds_StructureTHashMapTestInit(void)
 {
     if (ds_ThreadSelfIndex() == 0)
     {
-        AtomicStoreRel64(&g_tpool, malloc(sizeof(ds_TPool(ds_Structure))));
-        ds_THashMapAlloc(NULL, g_tmap, g_tpool, 4096);
+        AtomicStoreRel64(&g_tpool, (u64) (uintptr_t) malloc(sizeof(ds_TPool(ds_Structure))));
+        ds_THashMapAlloc(NULL, g_tmap, (ds_TPool(ds_Structure) *) (uintptr_t) g_tpool, 4096);
     }
 
     return &g_tpool;
@@ -67,7 +68,7 @@ void ds_StructureTHashMapTestReset(void *args)
 {
     if (ds_ThreadSelfIndex() == 0)
     {
-	    ds_TPool(ds_Structure) *pool = (ds_TPool(ds_Structure) *) AtomicLoadAcq64(&g_tpool);
+	    ds_TPool(ds_Structure) *pool = (ds_TPool(ds_Structure) *) (uintptr_t) AtomicLoadAcq64(&g_tpool);
         if (!first)
         {
             ds_TPoolDealloc(*pool);
@@ -91,8 +92,8 @@ void ds_StructureTHashMapTestFree(void *args)
 {
     if (ds_ThreadSelfIndex() == 0 && g_tpool)
     {
-	    ds_TPool(ds_Structure) *pool = (ds_TPool(ds_Structure) *) AtomicLoadAcq64(&g_tpool);
-        g_tpool = NULL;
+	    ds_TPool(ds_Structure) *pool = (ds_TPool(ds_Structure) *) (uintptr_t) AtomicLoadAcq64(&g_tpool);
+        g_tpool = 0;
         ds_TPoolDealloc(*pool);
         ds_THashMapDealloc(g_tmap);
         free(pool);
@@ -103,7 +104,7 @@ void ds_StructureTHashMapTestFree(void *args)
 /* every worker adds, looks up and removes its own 10000 nodes; the map is shared */
 void ds_StructureTHashMapAddAllRemoveAllTest(void *null)
 {
-	ds_TPool(ds_Structure) *pool = (ds_TPool(ds_Structure) *) AtomicLoadAcq64(&g_tpool);
+	ds_TPool(ds_Structure) *pool = (ds_TPool(ds_Structure) *) (uintptr_t) AtomicLoadAcq64(&g_tpool);
     const u32 count = 10000;
     u32 indices[10000];
     for (u32 i = 0; i < count; ++i)
