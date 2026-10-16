@@ -31,6 +31,12 @@ void ds_WindowEventHandler(struct ds_Window *sys_win)
 	for (i32 i = sys_win->ui->event_list.first; i != DLL_SENTINEL; i = event->node.next)
 	{
 		event = sys_win->ui->event_pool.buf + i;
+		/* the list also holds key releases: a release must not repeat the press's toggle */
+		if (event->type != DS_KEY_PRESSED)
+		{
+			continue;
+		}
+
 		switch (event->keycode)
 		{
 			case DS_L:
@@ -66,10 +72,7 @@ void ds_WindowEventHandler(struct ds_Window *sys_win)
 				ds_WindowTagSubHierarchyForDestruction(ds_WindowIndex(sys_win));
 			} break;	
 
-			default:
-			{
-				fprintf(stderr, "Unhandled Press: %s\n", CstrDsKeycode(event->keycode));
-			} break;
+			default: { } break;
 		}
 	}
 }

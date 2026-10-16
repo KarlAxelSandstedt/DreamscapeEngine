@@ -23,6 +23,7 @@
 #include "ticket_factory.h"
 #include "ds_graphics.h"
 #include "ds_renderer.h"
+#include "ds_platform.h"
 
 static u32 BitTestClz64(const u64 x)
 {
@@ -1024,6 +1025,42 @@ static struct test_Output CameraTest(struct test_Environment *env)
 }
 
 /*
+ * CstrDsKeycode / CstrButton: the keys around the old misordering (springclean #135: PLUS and MINUS were listed
+ * after ENTER) by name, and every key and button has a name of its own (no NULL from an entry left out).
+ */
+static struct test_Output InputNameTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    const struct { enum dsKeycode key; const char *name; } pair[] =
+    {
+        { DS_ENTER, "DS_ENTER" }, { DS_F1, "DS_F1" }, { DS_F12, "DS_F12" }, { DS_TAB, "DS_TAB" },
+        { DS_RIGHT, "DS_RIGHT" }, { DS_DELETE, "DS_DELETE" }, { DS_PLUS, "DS_PLUS" }, { DS_MINUS, "DS_MINUS" },
+        { DS_HOME, "DS_HOME" }, { DS_0, "DS_0" }, { DS_A, "DS_A" }, { DS_Z, "DS_Z" }, { DS_NO_SYMBOL, "DS_NO_SYMBOL" },
+    };
+    for (u32 i = 0; i < sizeof(pair) / sizeof(pair[0]); ++i)
+    {
+        TEST_TRUE(CstrDsKeycode(pair[i].key) != NULL && strcmp(CstrDsKeycode(pair[i].key), pair[i].name) == 0);
+    }
+
+    for (u32 a = 0; a < DS_KEY_COUNT; ++a)
+    {
+        TEST_TRUE(CstrDsKeycode((enum dsKeycode) a) != NULL);
+        for (u32 b = 0; b < a; ++b)
+        {
+            TEST_TRUE(strcmp(CstrDsKeycode((enum dsKeycode) a), CstrDsKeycode((enum dsKeycode) b)) != 0);
+        }
+    }
+    for (u32 a = 0; a < MOUSE_BUTTON_COUNT; ++a)
+    {
+        TEST_TRUE(CstrButton((enum mouseButton) a) != NULL);
+    }
+    TEST_TRUE(strcmp(CstrButton(MOUSE_BUTTON_SCROLL), "MOUSE_BUTTON_SCROLL") == 0);
+
+	return output;
+}
+
+/*
  * Without a root window, ds_WindowLookup finds nothing and ds_DeallocTaggedWindows frees nothing, neither
  * walking the hierarchy from HI_NULL. The editor's root window (if any) is hidden during the calls.
  */
@@ -1055,6 +1092,7 @@ static struct test_Output (*base_tests[])(struct test_Environment *) =
     TransformTest,
     PoseTest,
     CameraTest,
+    InputNameTest,
     BitCountTest,
     OverflowTest,
     AtomicSingleThreadTest,
