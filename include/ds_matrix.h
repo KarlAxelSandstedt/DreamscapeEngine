@@ -17,6 +17,20 @@
 ==========================================================================
 */
 
+/*
+ds_matrix.h
+===========
+2x2, 3x3 and 4x4 f32 matrices (m2, m3, m4 in ds_types.h): construction, products with vectors and matrices,
+arithmetic, rotation matrices from quaternions, inverses. Column-major: aij is row i, column j, col[j-1] is column
+j, and M2/M3/M4(...) take their arguments column by column (ds_types.h). Included by ds_math.h.
+
+Everything is plain IEEE arithmetic in a fixed order: the same bits on every platform and compiler. Nothing is
+checked; the inverses report a zero determinant by returning it.
+
+Sections: construction; products with vectors; arithmetic; element bounds; rotations; inverses (ds_matrix.c);
+printing. Inline definitions at the bottom, in the same order.
+*/
+
 #ifndef __DS_MATRIX_H__
 #define __DS_MATRIX_H__
 
@@ -31,29 +45,109 @@ extern "C" {
 #include "ds_float.h"
 #include "ds_vector.h"
 
-static inline void M2Print(const char *text, const m2 m)
-{
-	printf("%s:\n| %f %f |\n| %f %f |\n", text,
-		m.col[0].x, m.col[1].x,
-		m.col[0].y, m.col[1].y);
-}
+/*********************************** construction ***********************************/
 
-static inline void M3Print(const char *text, const m3 m)
-{
-	printf("%s:\n| %f %f %f |\n| %f %f %f |\n| %f %f %f |\n", text,
-		m.col[0].x, m.col[1].x, m.col[2].x,
-		m.col[0].y, m.col[1].y, m.col[2].y,
-		m.col[0].z, m.col[1].z, m.col[2].z);
-}
+/*
+Identity matrices; Columns builds a matrix from its columns, Rows from its rows.
+*/
 
-static inline void M4Print(const char *text, const m4 m)
-{
-	printf("%s:\n| %f %f %f %f |\n| %f %f %f %f |\n| %f %f %f %f |\n| %f %f %f %f |\n", text,
-		m.col[0].x, m.col[1].x, m.col[2].x, m.col[3].x,
-		m.col[0].y, m.col[1].y, m.col[2].y, m.col[3].y,
-		m.col[0].z, m.col[1].z, m.col[2].z, m.col[3].z,
-		m.col[0].w, m.col[1].w, m.col[2].w, m.col[3].w);
-}
+static ds_ForceInline m2 M2Identity(void);
+static ds_ForceInline m3 M3Identity(void);
+static ds_ForceInline m4 M4Identity(void);
+static ds_ForceInline m2 M2Columns(const v2 c1, const v2 c2);
+static ds_ForceInline m3 M3Columns(const v3 c1, const v3 c2, const v3 c3);
+static ds_ForceInline m4 M4Columns(const v4 c1, const v4 c2, const v4 c3, const v4 c4);
+static ds_ForceInline m2 M2Rows(const v2 r1, const v2 r2);
+static ds_ForceInline m3 M3Rows(const v3 r1, const v3 r2, const v3 r3);
+static ds_ForceInline m4 M4Rows(const v4 r1, const v4 r2, const v4 r3, const v4 r4);
+
+/****************************** products with vectors *******************************/
+
+/*
+M3V3Mul(m, v) is the column vector m v, V3M3Mul(v, m) the row vector v^T m (= m^T v); likewise for 2 and 4.
+Each component sums its terms left to right.
+*/
+
+static ds_ForceInline v2 M2V2Mul(const m2 m, const v2 v);
+static ds_ForceInline v3 M3V3Mul(const m3 m, const v3 v);
+static ds_ForceInline v4 M4V4Mul(const m4 m, const v4 v);
+static ds_ForceInline v2 V2M2Mul(const v2 v, const m2 m);
+static ds_ForceInline v3 V3M3Mul(const v3 v, const m3 m);
+static ds_ForceInline v4 V4M4Mul(const v4 v, const m4 m);
+
+/************************************ arithmetic ************************************/
+
+/*
+Add (a + b), Sub (a - b) and Scale (m scale) work per element. Mul is the matrix product a b (column j is
+a b.col[j]). Transpose is m^T, OuterProduct(a, b) is a b^T.
+*/
+
+static ds_ForceInline m2 M2Add(const m2 a, const m2 b);
+static ds_ForceInline m3 M3Add(const m3 a, const m3 b);
+static ds_ForceInline m4 M4Add(const m4 a, const m4 b);
+static ds_ForceInline m2 M2Sub(const m2 a, const m2 b);
+static ds_ForceInline m3 M3Sub(const m3 a, const m3 b);
+static ds_ForceInline m4 M4Sub(const m4 a, const m4 b);
+static ds_ForceInline m2 M2Scale(const m2 m, const f32 scale);
+static ds_ForceInline m3 M3Scale(const m3 m, const f32 scale);
+static ds_ForceInline m4 M4Scale(const m4 m, const f32 scale);
+static ds_ForceInline m2 M2Mul(const m2 a, const m2 b);
+static ds_ForceInline m3 M3Mul(const m3 a, const m3 b);
+static ds_ForceInline m4 M4Mul(const m4 a, const m4 b);
+static ds_ForceInline m2 M2Transpose(const m2 m);
+static ds_ForceInline m3 M3Transpose(const m3 m);
+static ds_ForceInline m4 M4Transpose(const m4 m);
+static ds_ForceInline m2 M2OuterProduct(const v2 a, const v2 b);
+static ds_ForceInline m3 M3OuterProduct(const v3 a, const v3 b);
+static ds_ForceInline m4 M4OuterProduct(const v4 a, const v4 b);
+
+/********************************** element bounds **********************************/
+
+/*
+AbsMin and AbsMax return the smallest and the largest |aij| (for matrices without NaN).
+*/
+
+static ds_ForceInline f32 M2AbsMin(const m2 m);
+static ds_ForceInline f32 M3AbsMin(const m3 m);
+static ds_ForceInline f32 M4AbsMin(const m4 m);
+static ds_ForceInline f32 M2AbsMax(const m2 m);
+static ds_ForceInline f32 M3AbsMax(const m3 m);
+static ds_ForceInline f32 M4AbsMax(const m4 m);
+
+/************************************ rotations *************************************/
+
+/*
+M3QUnit(a) is the rotation matrix of the unit quaternion a: M3V3Mul(M3QUnit(a), v) is QUnitRotate(a, v) up to
+rounding. Precondition: |a| = 1, not checked; otherwise the diagonal is off by |a|^2 - 1 and the result is not a
+scaled rotation. M4QUnit is the same rotation as a 4x4 matrix (last row and column (0, 0, 0, 1)).
+*/
+
+static ds_ForceInline m3 M3QUnit(const q a);
+static ds_ForceInline m4 M4QUnit(const q a);
+
+/****************************** inverses (ds_matrix.c) ******************************/
+
+/*
+Inverse writes the inverse of a to *inv (the adjugate over the determinant) and returns the determinant. A zero
+determinant writes inf/NaN, so the caller checks it; nearly singular matrices give large, inaccurate inverses (no
+pivoting). Defined in ds_matrix.c.
+*/
+
+f32 M2Inverse(m2 *inv, const m2 a);
+f32 M3Inverse(m3 *inv, const m3 a);
+f32 M4Inverse(m4 *inv, const m4 a);
+
+/************************************* printing *************************************/
+
+/*
+Print text and the matrix, row by row, to stdout; for debugging.
+*/
+
+static inline void M2Print(const char *text, const m2 m);
+static inline void M3Print(const char *text, const m3 m);
+static inline void M4Print(const char *text, const m4 m);
+
+/************************* construction: inline definitions *************************/
 
 static ds_ForceInline m2 M2Identity(void)
 {
@@ -112,29 +206,8 @@ static ds_ForceInline m4 M4Rows(const v4 r1, const v4 r2, const v4 r3, const v4 
 		  r1.w, r2.w, r3.w, r4.w);
 }
 
-/* vec*mat */
-static ds_ForceInline v2 V2M2Mul(const v2 v, const m2 m)
-{
-	return V2(V2Dot(m.col[0], v),
-		  V2Dot(m.col[1], v));
-}
+/******************** products with vectors: inline definitions *********************/
 
-static ds_ForceInline v3 V3M3Mul(const v3 v, const m3 m)
-{
-	return V3(V3Dot(m.col[0], v),
-		  V3Dot(m.col[1], v),
-		  V3Dot(m.col[2], v));
-}
-
-static ds_ForceInline v4 V4M4Mul(const v4 v, const m4 m)
-{
-	return V4(V4Dot(m.col[0], v),
-		  V4Dot(m.col[1], v),
-		  V4Dot(m.col[2], v),
-		  V4Dot(m.col[3], v));
-}
-
-/* mat*vec */
 static ds_ForceInline v2 M2V2Mul(const m2 m, const v2 v)
 {
 	return V2(v.x * m.col[0].x + v.y * m.col[1].x,
@@ -156,7 +229,29 @@ static ds_ForceInline v4 M4V4Mul(const m4 m, const v4 v)
 		  v.x * m.col[0].w + v.y * m.col[1].w + v.z * m.col[2].w + v.w * m.col[3].w);
 }
 
-/* a + b */
+static ds_ForceInline v2 V2M2Mul(const v2 v, const m2 m)
+{
+	return V2(V2Dot(m.col[0], v),
+		  V2Dot(m.col[1], v));
+}
+
+static ds_ForceInline v3 V3M3Mul(const v3 v, const m3 m)
+{
+	return V3(V3Dot(m.col[0], v),
+		  V3Dot(m.col[1], v),
+		  V3Dot(m.col[2], v));
+}
+
+static ds_ForceInline v4 V4M4Mul(const v4 v, const m4 m)
+{
+	return V4(V4Dot(m.col[0], v),
+		  V4Dot(m.col[1], v),
+		  V4Dot(m.col[2], v),
+		  V4Dot(m.col[3], v));
+}
+
+/************************** arithmetic: inline definitions **************************/
+
 static ds_ForceInline m2 M2Add(const m2 a, const m2 b)
 {
 	return M2Columns(V2Add(a.col[0], b.col[0]),
@@ -178,7 +273,6 @@ static ds_ForceInline m4 M4Add(const m4 a, const m4 b)
 			 V4Add(a.col[3], b.col[3]));
 }
 
-/* a - b */
 static ds_ForceInline m2 M2Sub(const m2 a, const m2 b)
 {
 	return M2Columns(V2Sub(a.col[0], b.col[0]),
@@ -200,7 +294,6 @@ static ds_ForceInline m4 M4Sub(const m4 a, const m4 b)
 			 V4Sub(a.col[3], b.col[3]));
 }
 
-/* m*scale */
 static ds_ForceInline m2 M2Scale(const m2 m, const f32 scale)
 {
 	return M2Columns(V2Scale(m.col[0], scale),
@@ -222,7 +315,6 @@ static ds_ForceInline m4 M4Scale(const m4 m, const f32 scale)
 			 V4Scale(m.col[3], scale));
 }
 
-/* a*b */
 static ds_ForceInline m2 M2Mul(const m2 a, const m2 b)
 {
 	return M2Columns(M2V2Mul(a, b.col[0]),
@@ -244,7 +336,6 @@ static ds_ForceInline m4 M4Mul(const m4 a, const m4 b)
 			 M4V4Mul(a, b.col[3]));
 }
 
-/* m^T */
 static ds_ForceInline m2 M2Transpose(const m2 m)
 {
 	return M2Rows(m.col[0], m.col[1]);
@@ -260,7 +351,29 @@ static ds_ForceInline m4 M4Transpose(const m4 m)
 	return M4Rows(m.col[0], m.col[1], m.col[2], m.col[3]);
 }
 
-/* min |a_ij| */
+static ds_ForceInline m2 M2OuterProduct(const v2 a, const v2 b)
+{
+	return M2Columns(V2Scale(a, b.x),
+			 V2Scale(a, b.y));
+}
+
+static ds_ForceInline m3 M3OuterProduct(const v3 a, const v3 b)
+{
+	return M3Columns(V3Scale(a, b.x),
+			 V3Scale(a, b.y),
+			 V3Scale(a, b.z));
+}
+
+static ds_ForceInline m4 M4OuterProduct(const v4 a, const v4 b)
+{
+	return M4Columns(V4Scale(a, b.x),
+			 V4Scale(a, b.y),
+			 V4Scale(a, b.z),
+			 V4Scale(a, b.w));
+}
+
+/************************ element bounds: inline definitions ************************/
+
 static ds_ForceInline f32 M2AbsMin(const m2 m)
 {
 	const f32 a1 = F32Min(F32Abs(m.col[0].x), F32Abs(m.col[0].y));
@@ -285,7 +398,6 @@ static ds_ForceInline f32 M4AbsMin(const m4 m)
 	return F32Min(a1, F32Min(a2, F32Min(a3, a4)));
 }
 
-/* max |a_ij| */
 static ds_ForceInline f32 M2AbsMax(const m2 m)
 {
 	const f32 a1 = F32Max(F32Abs(m.col[0].x), F32Abs(m.col[0].y));
@@ -310,29 +422,8 @@ static ds_ForceInline f32 M4AbsMax(const m4 m)
 	return F32Max(a1, F32Max(a2, F32Max(a3, a4)));
 }
 
-/* a * b^T */
-static ds_ForceInline m2 M2OuterProduct(const v2 a, const v2 b)
-{
-	return M2Columns(V2Scale(a, b.x),
-			 V2Scale(a, b.y));
-}
+/************************** rotations: inline definitions ***************************/
 
-static ds_ForceInline m3 M3OuterProduct(const v3 a, const v3 b)
-{
-	return M3Columns(V3Scale(a, b.x),
-			 V3Scale(a, b.y),
-			 V3Scale(a, b.z));
-}
-
-static ds_ForceInline m4 M4OuterProduct(const v4 a, const v4 b)
-{
-	return M4Columns(V4Scale(a, b.x),
-			 V4Scale(a, b.y),
-			 V4Scale(a, b.z),
-			 V4Scale(a, b.w));
-}
-
-/* a is a normalised quaternion representing a CCW rotation. */
 static ds_ForceInline m3 M3QUnit(const q a)
 {
 	const f32 tr_part = 2.0f*a.w*a.w - 1.0f;
@@ -347,7 +438,6 @@ static ds_ForceInline m3 M3QUnit(const q a)
 		  q13 + q20, q23 - q10, tr_part + 2.0f*a.z*a.z);
 }
 
-/* a is a normalised quaternion representing a CCW rotation. */
 static ds_ForceInline m4 M4QUnit(const q a)
 {
 	const f32 tr_part = 2.0f*a.w*a.w - 1.0f;
@@ -363,10 +453,31 @@ static ds_ForceInline m4 M4QUnit(const q a)
 		  0.0f, 0.0f, 0.0f, 1.0f);
 }
 
-/* Returns determinant of a, and sets inverse, or garbage if it does not exist. (Implemented in ds_matrix.c) */
-f32 M2Inverse(m2 *inv, const m2 a);
-f32 M3Inverse(m3 *inv, const m3 a);
-f32 M4Inverse(m4 *inv, const m4 a);
+/*************************** printing: inline definitions ***************************/
+
+static inline void M2Print(const char *text, const m2 m)
+{
+	printf("%s:\n| %f %f |\n| %f %f |\n", text,
+		m.col[0].x, m.col[1].x,
+		m.col[0].y, m.col[1].y);
+}
+
+static inline void M3Print(const char *text, const m3 m)
+{
+	printf("%s:\n| %f %f %f |\n| %f %f %f |\n| %f %f %f |\n", text,
+		m.col[0].x, m.col[1].x, m.col[2].x,
+		m.col[0].y, m.col[1].y, m.col[2].y,
+		m.col[0].z, m.col[1].z, m.col[2].z);
+}
+
+static inline void M4Print(const char *text, const m4 m)
+{
+	printf("%s:\n| %f %f %f %f |\n| %f %f %f %f |\n| %f %f %f %f |\n| %f %f %f %f |\n", text,
+		m.col[0].x, m.col[1].x, m.col[2].x, m.col[3].x,
+		m.col[0].y, m.col[1].y, m.col[2].y, m.col[3].y,
+		m.col[0].z, m.col[1].z, m.col[2].z, m.col[3].z,
+		m.col[0].w, m.col[1].w, m.col[2].w, m.col[3].w);
+}
 
 #ifdef __cplusplus
 }

@@ -17,6 +17,16 @@
 ==========================================================================
 */
 
+/*
+transform.h
+===========
+Rotation matrices from axes and angles, and the camera's view and projection matrices in OpenGL's conventions
+(camera space looks down -z, clip space z/w in [-1, 1]). Angles are in radians. Everything here goes through the
+C library's trigonometric functions (directly or through QAxisAngle), so results may differ in the last bit
+between platforms: the renderer and the editor use these, the simulation does not. Source:
+src/math/common/transform.c. Included by ds_math.h.
+*/
+
 #ifndef __DS_MATH_TRANSFORMATION__
 #define __DS_MATH_TRANSFORMATION__
 
@@ -26,14 +36,31 @@ extern "C" {
 
 #include "ds_types.h"
 
-/* axes should be normalized */
-/* rotation matrix of axis_1(angle_1) (R) -> [R(axis_2)](angle_2) */
+/*
+M3Rotation(axis, angle) is the rotation by angle about axis by the right-hand rule; axis may have any nonzero
+length (a zero axis gives NaN). M3SequentialRotation rotates by angle_1 about axis_1, then by angle_2 about axis_2
+as turned by the first rotation (body-fixed axes): R(axis_1, angle_1) R(axis_2, angle_2) up to rounding.
+V3RotateCenter returns src rotated by rotation about the point center.
+*/
 m3 	M3SequentialRotation(const v3 axis_1, const f32 angle_1, const v3 axis_2, const f32 angle_2); 
 m3 	M3Rotation(const v3 axis, const f32 angle);
 v3 	V3RotateCenter(const m3 rotation, const v3 center, const v3 src);
 
+/*
+M4Perspective is the projection for a horizontal field of view fov_x, aspect_ratio = width / height and the near
+and far distances 0 < fz_near < fz_far: a camera-space point at z = -fz_near gets clip z/w = -1, at z = -fz_far
++1, and x = +-tan(fov_x / 2) |z| gets x/w = +-1 (y: the same over aspect_ratio).
+*/
 m4 	M4Perspective(const f32 aspect_ratio, const f32 fov_x, const f32 fz_near, const f32 fz_far);
 
+/*
+M4View maps world space to camera space for a camera at position with the orthonormal directions left, up and
+forward (left = up x forward): position goes to the origin, forward to -z, up to +y, left to -x.
+
+M4ViewYawPitch is M4View for a camera that looks along +x at yaw = pitch = 0, turned by pitch about +z (positive:
+up toward +y), then by yaw about +y (positive: +x toward -z). M4ViewLookAt looks from position at target.
+Precondition: target - position has a nonzero horizontal (x, z) part; otherwise the result is NaN.
+*/
 m4 	M4View(const v3 position, const v3 left, const v3 up, const v3 forward);
 m4 	M4ViewLookAt(const v3 position, const v3 target);
 m4 	M4ViewYawPitch(const v3 position, const f32 yaw, const f32 pitch);

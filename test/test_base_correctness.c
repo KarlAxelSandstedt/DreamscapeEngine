@@ -685,6 +685,319 @@ static struct test_Output QuaternionTest(struct test_Environment *env)
 	return output;
 }
 
+/* determinant of the n x n column-major buf by Gaussian elimination with partial pivoting, in f64 */
+static f64 MatrixTestDeterminant(const f32 *buf, const u32 n)
+{
+    f64 a[4][4];
+    for (u32 i = 0; i < n; ++i)
+    {
+        for (u32 j = 0; j < n; ++j)
+        {
+            a[i][j] = (f64) buf[j*n + i];
+        }
+    }
+
+    f64 det = 1.0;
+    for (u32 c = 0; c < n; ++c)
+    {
+        u32 pivot = c;
+        for (u32 r = c + 1; r < n; ++r)
+        {
+            const f64 m_r = (a[r][c] < 0.0) ? -a[r][c] : a[r][c];
+            const f64 m_p = (a[pivot][c] < 0.0) ? -a[pivot][c] : a[pivot][c];
+            if (m_r > m_p) { pivot = r; }
+        }
+        if (a[pivot][c] == 0.0) { return 0.0; }
+        if (pivot != c)
+        {
+            for (u32 j = 0; j < n; ++j) { const f64 t = a[c][j]; a[c][j] = a[pivot][j]; a[pivot][j] = t; }
+            det = -det;
+        }
+        det *= a[c][c];
+        for (u32 r = c + 1; r < n; ++r)
+        {
+            const f64 f = a[r][c] / a[c][c];
+            for (u32 j = c; j < n; ++j) { a[r][j] -= f * a[c][j]; }
+        }
+    }
+    return det;
+}
+
+/* n x n column-major entries in [-1, 1), plus diag on the diagonal (diagonally dominant for diag > n) */
+static void MatrixTestRandom(f32 *buf, struct rng *rng, const u32 n, const f32 diag)
+{
+    for (u32 j = 0; j < n; ++j)
+    {
+        for (u32 i = 0; i < n; ++i)
+        {
+            const f32 e = VectorTestF32(rng, -1.0f, 1.0f);
+            buf[j*n + i] = (i == j) ? e + diag : e;
+        }
+    }
+}
+
+/* max |(a b)_ij - I_ij| for n x n column-major a, b */
+static f32 MatrixTestIdentityError(const f32 *a, const f32 *b, const u32 n)
+{
+    f32 error = 0.0f;
+    for (u32 i = 0; i < n; ++i)
+    {
+        for (u32 j = 0; j < n; ++j)
+        {
+            f32 sum = 0.0f;
+            for (u32 k = 0; k < n; ++k) { sum += a[k*n + i] * b[j*n + k]; }
+            error = F32Max(error, F32Abs(sum - ((i == j) ? 1.0f : 0.0f)));
+        }
+    }
+    return error;
+}
+
+/*
+ * ds_matrix.h/.c: Rows is the transpose of Columns; V3M3Mul(v, m) equals M3V3Mul(m^T, v) bit for bit; M3Mul and
+ * M3V3Mul against f64 products; OuterProduct; AbsMin/AbsMax; M3QUnit against QUnitRotate and M4QUnit's 3x3 block;
+ * the 2x2, 3x3 and 4x4 inverses: determinant against f64 elimination, a inv = I, and exactly singular integer
+ * matrices returning determinant 0.
+ */
+static struct test_Output MatrixTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct rng rng;
+    RngLocalInit(&rng, env->seed);
+    for (u32 n = 0; n < 2000; ++n)
+    {
+        m3 a, b;
+        MatrixTestRandom(a.buf, &rng, 3, 0.0f);
+        MatrixTestRandom(b.buf, &rng, 3, 0.0f);
+        const v3 v = VectorTestV3(&rng, -1.0f, 1.0f);
+        const v3 w = VectorTestV3(&rng, -1.0f, 1.0f);
+
+        const m3 rows = M3Rows(a.col[0], a.col[1], a.col[2]);
+        const m3 at = M3Transpose(a);
+        for (u32 k = 0; k < 9; ++k) { TEST_TRUE(rows.buf[k] == at.buf[k]); }
+        TEST_TRUE(rows.a12 == a.a21 && rows.a13 == a.a31 && rows.a23 == a.a32);
+
+        const v3 row_product = V3M3Mul(v, a);
+        const v3 column_product = M3V3Mul(at, v);
+        TEST_EQUAL(FloatTestBitsOf(row_product.x), FloatTestBitsOf(column_product.x));
+        TEST_EQUAL(FloatTestBitsOf(row_product.y), FloatTestBitsOf(column_product.y));
+        TEST_EQUAL(FloatTestBitsOf(row_product.z), FloatTestBitsOf(column_product.z));
+
+        const v3 av = M3V3Mul(a, v);
+        const m3 ab = M3Mul(a, b);
+        for (u32 i = 0; i < 3; ++i)
+        {
+            f64 ref_av = 0.0;
+            for (u32 k = 0; k < 3; ++k) { ref_av += (f64) a.buf[k*3 + i] * (f64) v.buf[k]; }
+            TEST_TRUE(F32Abs(av.buf[i] - (f32) ref_av) <= 1e-6f);
+            for (u32 j = 0; j < 3; ++j)
+            {
+                f64 ref_ab = 0.0;
+                for (u32 k = 0; k < 3; ++k) { ref_ab += (f64) a.buf[k*3 + i] * (f64) b.buf[j*3 + k]; }
+                TEST_TRUE(F32Abs(ab.buf[j*3 + i] - (f32) ref_ab) <= 1e-6f);
+            }
+        }
+        TEST_TRUE(VectorTestNear(M3V3Mul(M3OuterProduct(v, w), a.col[0]), V3Scale(v, V3Dot(w, a.col[0])), 4e-6f));
+
+        f32 abs_min = F32Abs(a.buf[0]);
+        f32 abs_max = F32Abs(a.buf[0]);
+        for (u32 k = 1; k < 9; ++k)
+        {
+            abs_min = F32Min(abs_min, F32Abs(a.buf[k]));
+            abs_max = F32Max(abs_max, F32Abs(a.buf[k]));
+        }
+        TEST_TRUE(M3AbsMin(a) == abs_min && M3AbsMax(a) == abs_max);
+
+        const q r = QuaternionTestUnit(&rng);
+        const m3 rot = M3QUnit(r);
+        const m4 rot4 = M4QUnit(r);
+        TEST_TRUE(VectorTestNear(M3V3Mul(rot, v), QUnitRotate(r, v), 4e-6f));
+        for (u32 j = 0; j < 3; ++j)
+        {
+            TEST_TRUE(rot4.col[j].x == rot.col[j].x && rot4.col[j].y == rot.col[j].y && rot4.col[j].z == rot.col[j].z);
+            TEST_TRUE(rot4.col[j].w == 0.0f && rot4.col[3].buf[j] == 0.0f);
+        }
+        TEST_TRUE(rot4.a44 == 1.0f);
+
+        /* inverses of well-conditioned (diagonally dominant) matrices */
+        m2 c2, inv2;
+        m3 c3, inv3;
+        m4 c4, inv4;
+        MatrixTestRandom(c2.buf, &rng, 2, 3.0f);
+        MatrixTestRandom(c3.buf, &rng, 3, 4.0f);
+        MatrixTestRandom(c4.buf, &rng, 4, 5.0f);
+        const f32 det2 = M2Inverse(&inv2, c2);
+        const f32 det3 = M3Inverse(&inv3, c3);
+        const f32 det4 = M4Inverse(&inv4, c4);
+        const f64 ref2 = MatrixTestDeterminant(c2.buf, 2);
+        const f64 ref3 = MatrixTestDeterminant(c3.buf, 3);
+        const f64 ref4 = MatrixTestDeterminant(c4.buf, 4);
+        TEST_TRUE(F32Abs(det2 - (f32) ref2) <= 1e-5f * F32Abs((f32) ref2));
+        TEST_TRUE(F32Abs(det3 - (f32) ref3) <= 1e-5f * F32Abs((f32) ref3));
+        TEST_TRUE(F32Abs(det4 - (f32) ref4) <= 1e-5f * F32Abs((f32) ref4));
+        TEST_TRUE(MatrixTestIdentityError(c2.buf, inv2.buf, 2) <= 1e-5f && MatrixTestIdentityError(inv2.buf, c2.buf, 2) <= 1e-5f);
+        TEST_TRUE(MatrixTestIdentityError(c3.buf, inv3.buf, 3) <= 1e-5f && MatrixTestIdentityError(inv3.buf, c3.buf, 3) <= 1e-5f);
+        TEST_TRUE(MatrixTestIdentityError(c4.buf, inv4.buf, 4) <= 1e-5f && MatrixTestIdentityError(inv4.buf, c4.buf, 4) <= 1e-5f);
+    }
+
+    /* exactly singular: a column (or row) is a combination of others; small integers keep every product exact */
+    m2 inv2;
+    m3 inv3;
+    m4 inv4;
+    TEST_TRUE(M2Inverse(&inv2, M2(1.0f, 2.0f, 2.0f, 4.0f)) == 0.0f);
+    TEST_TRUE(M3Inverse(&inv3, M3(1.0f, 2.0f, 3.0f,  4.0f, 5.0f, 6.0f,  5.0f, 7.0f, 9.0f)) == 0.0f);
+    TEST_TRUE(M4Inverse(&inv4, M4(1.0f, 2.0f, 3.0f, 4.0f,  2.0f, 0.0f, 1.0f, 1.0f,  3.0f, 2.0f, 4.0f, 5.0f,  0.0f, 1.0f, 0.0f, 2.0f)) == 0.0f);
+
+	return output;
+}
+
+/* m (p, 1) */
+static v4 TransformTestApply(const m4 m, const v3 p)
+{
+    return M4V4Mul(m, V4(p.x, p.y, p.z, 1.0f));
+}
+
+/*
+ * transform.h conventions: M4Perspective's near, far and side planes land on clip -1/+1; M4View takes position to
+ * the origin and forward/up/left to -z/+y/-x; M4ViewYawPitch at 0 looks along +x and turns by pitch about +z, yaw
+ * about +y; M4ViewLookAt puts the target on -z; M3SequentialRotation is R(axis_1) R(axis_2); M3Rotation takes
+ * any axis length; V3RotateCenter keeps the distance to the center.
+ */
+static struct test_Output TransformTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    const f32 aspect = 16.0f / 9.0f;
+    const f32 fov_x = F32_PI / 2.5f;
+    const f32 near = 0.1f;
+    const f32 far = 100.0f;
+    const f32 t = F32Tan(fov_x / 2.0f);
+    const m4 projection = M4Perspective(aspect, fov_x, near, far);
+    const v4 p_near = TransformTestApply(projection, V3(0.0f, 0.0f, -near));
+    const v4 p_far = TransformTestApply(projection, V3(0.0f, 0.0f, -far));
+    const v4 p_side = TransformTestApply(projection, V3(t * 7.0f, 0.0f, -7.0f));
+    const v4 p_top = TransformTestApply(projection, V3(0.0f, -t * 7.0f / aspect, -7.0f));
+    TEST_TRUE(F32Abs(p_near.z / p_near.w + 1.0f) <= 1e-5f && F32Abs(p_far.z / p_far.w - 1.0f) <= 1e-5f);
+    TEST_TRUE(F32Abs(p_side.x / p_side.w - 1.0f) <= 1e-5f && F32Abs(p_top.y / p_top.w + 1.0f) <= 1e-5f);
+
+    struct rng rng;
+    RngLocalInit(&rng, env->seed);
+    for (u32 n = 0; n < 2000; ++n)
+    {
+        const v3 position = VectorTestV3(&rng, -100.0f, 100.0f);
+        const v3 offset = VectorTestV3(&rng, -10.0f, 10.0f);
+        const v3 axis_1 = VectorTestV3(&rng, -1.0f, 1.0f);
+        const v3 axis_2 = VectorTestV3(&rng, -1.0f, 1.0f);
+        const f32 angle_1 = VectorTestF32(&rng, -F32_PI, F32_PI);
+        const f32 angle_2 = VectorTestF32(&rng, -F32_PI, F32_PI);
+        const f32 scale = VectorTestF32(&rng, 0.5f, 4.0f);
+        const q r = QuaternionTestUnit(&rng);
+        if (V3Length(axis_1) < 0.1f || V3Length(axis_2) < 0.1f || offset.x*offset.x + offset.z*offset.z < 1.0f) { continue; }
+
+        /* a right-handed camera frame: left = up x forward */
+        const v3 forward = QUnitRotate(r, V3(1.0f, 0.0f, 0.0f));
+        const v3 up = QUnitRotate(r, V3(0.0f, 1.0f, 0.0f));
+        const v3 left = QUnitRotate(r, V3(0.0f, 0.0f, -1.0f));
+        const m4 view = M4View(position, left, up, forward);
+        const v4 o = TransformTestApply(view, position);
+        const v4 f = TransformTestApply(view, V3Add(position, forward));
+        const v4 u = TransformTestApply(view, V3Add(position, up));
+        const v4 l = TransformTestApply(view, V3Add(position, left));
+        TEST_TRUE(VectorTestNear(V3(o.x, o.y, o.z), V3Zero(), 1e-4f) && o.w == 1.0f);
+        TEST_TRUE(VectorTestNear(V3(f.x, f.y, f.z), V3(0.0f, 0.0f, -1.0f), 1e-4f));
+        TEST_TRUE(VectorTestNear(V3(u.x, u.y, u.z), V3(0.0f, 1.0f, 0.0f), 1e-4f));
+        TEST_TRUE(VectorTestNear(V3(l.x, l.y, l.z), V3(-1.0f, 0.0f, 0.0f), 1e-4f));
+
+        /* the target lands on -z at its distance */
+        const v4 target = TransformTestApply(M4ViewLookAt(position, V3Add(position, offset)), V3Add(position, offset));
+        TEST_TRUE(VectorTestNear(V3(target.x, target.y, target.z), V3(0.0f, 0.0f, -V3Length(offset)), 1e-3f));
+
+        const m3 sequential = M3SequentialRotation(axis_1, angle_1, axis_2, angle_2);
+        const m3 product = M3Mul(M3Rotation(axis_1, angle_1), M3Rotation(axis_2, angle_2));
+        for (u32 k = 0; k < 9; ++k) { TEST_TRUE(F32Abs(sequential.buf[k] - product.buf[k]) <= 1e-5f); }
+        const m3 rotation = M3Rotation(axis_1, angle_1);
+        const m3 rotation_scaled = M3Rotation(V3Scale(axis_1, scale), angle_1);
+        for (u32 k = 0; k < 9; ++k) { TEST_TRUE(F32Abs(rotation.buf[k] - rotation_scaled.buf[k]) <= 1e-6f); }
+        const v3 rotated = V3RotateCenter(rotation, position, V3Add(position, offset));
+        TEST_TRUE(F32Abs(V3Distance(rotated, position) - V3Length(offset)) <= 1e-4f);
+    }
+
+    /* yaw = pitch = 0 looks along +x; pitch turns +x up toward +y, yaw turns +x toward -z */
+    const v3 origin = V3(1.0f, 2.0f, 3.0f);
+    const v4 ahead = TransformTestApply(M4ViewYawPitch(origin, 0.0f, 0.0f), V3Add(origin, V3(1.0f, 0.0f, 0.0f)));
+    const v4 pitched = TransformTestApply(M4ViewYawPitch(origin, 0.0f, F32_PI / 4.0f), V3Add(origin, V3(1.0f, 1.0f, 0.0f)));
+    const v4 yawed = TransformTestApply(M4ViewYawPitch(origin, F32_PI / 4.0f, 0.0f), V3Add(origin, V3(1.0f, 0.0f, -1.0f)));
+    TEST_TRUE(VectorTestNear(V3(ahead.x, ahead.y, ahead.z), V3(0.0f, 0.0f, -1.0f), 1e-5f));
+    TEST_TRUE(VectorTestNear(V3(pitched.x, pitched.y, pitched.z), V3(0.0f, 0.0f, -F32Sqrt(2.0f)), 1e-5f));
+    TEST_TRUE(VectorTestNear(V3(yawed.x, yawed.y, yawed.z), V3(0.0f, 0.0f, -F32Sqrt(2.0f)), 1e-5f));
+
+	return output;
+}
+
+/* a world position about 10^7 m from the origin on every axis (f32's spacing there is 1 m) */
+static v3f64 PoseTestFar(struct rng *rng)
+{
+    const v3 r = VectorTestV3(rng, -1.0f, 1.0f);
+    return V3F64(1.0e7 + 1000.0 * r.x, -2.0e7 + 1000.0 * r.y, 3.0e7 + 1000.0 * r.z);
+}
+
+/*
+ * ds_math.h poses: world positions about 10^7 m from the origin keep f32 precision relative to the frames'
+ * separation (a point 1 m from a frame maps back within 1e-6 m; f32 positions there would be off by up to 0.5 m);
+ * a world relative pose composes back to the target and maps points as going through the world; the same for
+ * local poses; ds_TransformPromote is exact; the identities map points to themselves.
+ */
+static struct test_Output PoseTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct rng rng;
+    RngLocalInit(&rng, env->seed);
+    for (u32 n = 0; n < 2000; ++n)
+    {
+        const q reference_rotation = QuaternionTestUnit(&rng);
+        const v3f64 reference_position = PoseTestFar(&rng);
+        const q target_rotation = QuaternionTestUnit(&rng);
+        const v3 offset = VectorTestV3(&rng, -10.0f, 10.0f);
+        const v3 p = VectorTestV3(&rng, -1.0f, 1.0f);
+        const v3 local_position = VectorTestV3(&rng, -10.0f, 10.0f);
+
+        const ds_TransformWorld reference = { .rotation = reference_rotation, .position = reference_position };
+        const ds_TransformWorld target = { .rotation = target_rotation, .position = V3F64Add(reference_position, V3Promote(offset)) };
+
+        const v3 back = ds_TransformWorldPointToLocal(&reference, ds_TransformWorldPointToWorld(&reference, p));
+        TEST_TRUE(VectorTestNear(back, p, 1e-6f));
+
+        const ds_Transform relative = ds_TransformWorldRelative(&reference, &target);
+        const ds_TransformWorld composed = ds_TransformWorldChild(&reference, &relative);
+        TEST_TRUE(QuaternionTestNear(composed.rotation, target.rotation, 1e-6f));
+        TEST_TRUE(VectorTestNear(V3F64Demote(V3F64Sub(composed.position, target.position)), V3Zero(), 1e-5f));
+
+        const v3 via_world = ds_TransformWorldPointToLocal(&reference, ds_TransformWorldPointToWorld(&target, p));
+        const v3 via_relative = V3Add(QUnitRotate(relative.rotation, p), relative.position);
+        TEST_TRUE(VectorTestNear(via_world, via_relative, 1e-5f));
+
+        const ds_Transform a = { .rotation = reference_rotation, .position = local_position };
+        const ds_Transform b = { .rotation = target_rotation, .position = V3Add(local_position, offset) };
+        const ds_Transform local_relative = ds_TransformRelative(&a, &b);
+        const v3 local_via_parent = ds_TransformPointToLocal(&a, V3Add(QUnitRotate(b.rotation, p), b.position));
+        TEST_TRUE(VectorTestNear(local_via_parent, V3Add(QUnitRotate(local_relative.rotation, p), local_relative.position), 1e-5f));
+
+        const ds_TransformWorld promoted = ds_TransformPromote(&a);
+        TEST_TRUE(QuaternionTestEqual(promoted.rotation, a.rotation));
+        TEST_TRUE(promoted.position.x == (f64) a.position.x && promoted.position.y == (f64) a.position.y && promoted.position.z == (f64) a.position.z);
+
+        const ds_Transform identity = ds_TransformIdentity();
+        const ds_TransformWorld world_identity = ds_TransformWorldIdentity();
+        const v3 p_identity = ds_TransformPointToLocal(&identity, p);
+        const v3 p_world_identity = ds_TransformWorldPointToLocal(&world_identity, V3Promote(p));
+        TEST_TRUE(p_identity.x == p.x && p_identity.y == p.y && p_identity.z == p.z);
+        TEST_TRUE(p_world_identity.x == p.x && p_world_identity.y == p.y && p_world_identity.z == p.z);
+    }
+
+	return output;
+}
+
 /*
  * Without a root window, ds_WindowLookup finds nothing and ds_DeallocTaggedWindows frees nothing, neither
  * walking the hierarchy from HI_NULL. The editor's root window (if any) is hidden during the calls.
@@ -713,6 +1026,9 @@ static struct test_Output (*base_tests[])(struct test_Environment *) =
     FloatTest,
     VectorTest,
     QuaternionTest,
+    MatrixTest,
+    TransformTest,
+    PoseTest,
     BitCountTest,
     OverflowTest,
     AtomicSingleThreadTest,
