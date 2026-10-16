@@ -1060,6 +1060,103 @@ static struct test_Output InputNameTest(struct test_Environment *env)
 	return output;
 }
 
+#if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
+
+#include <unistd.h>
+#include <fcntl.h>
+
+#define FS_TEST_DIR "ds_filesystem_test"
+
+/* remove what FilesystemTest creates (also the leftovers of an interrupted run); C library, test only */
+static void FilesystemTestCleanup(void)
+{
+    const char *entry[] = { FS_TEST_DIR "/a.txt", FS_TEST_DIR "/dangling", FS_TEST_DIR "/sub" };
+    for (u32 i = 0; i < sizeof(entry) / sizeof(entry[0]); ++i)
+    {
+        unlink(entry[i]);
+        rmdir(entry[i]);
+    }
+    rmdir(FS_TEST_DIR);
+}
+
+/*
+ * The file API in a scratch directory under the working directory: create (and refuse an existing name without
+ * truncate), write, append, write at an offset, dump. Directories report FILE_DIRECTORY and refuse regular files
+ * (FS_TYPE_INVALID, springclean #142); a listing with a dangling symbolic link succeeds and lists it as
+ * FILE_UNRECOGNIZED (#141). A /sys file whose fstat size (a page) exceeds its contents dumps its contents (#140:
+ * the read loop hung). CwdGet on an arena too small for the path returns the empty path (#143).
+ */
+static struct test_Output FilesystemTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+    struct arena *mem = env->mem_1;
+
+    FilesystemTestCleanup();
+    struct file dir = FileNull();
+    TEST_EQUAL(FS_SUCCESS, DirectoryTryCreateAtCwd(mem, &dir, FS_TEST_DIR));
+    TEST_EQUAL(FILE_DIRECTORY, dir.type);
+
+    struct file file = FileNull();
+    TEST_EQUAL(FS_SUCCESS, FileTryCreate(mem, &file, "a.txt", &dir, 0));
+    TEST_EQUAL(FILE_REGULAR, file.type);
+    TEST_EQUAL(5, FileWriteAppend(&file, (const u8 *) "hello", 5));
+    TEST_EQUAL(6, FileWriteAppend(&file, (const u8 *) " world", 6));
+    TEST_EQUAL(1, FileWriteOffset(&file, (const u8 *) "J", 1, 0));
+    FileClose(&file);
+
+    struct file again = FileNull();
+    TEST_EQUAL(FS_ALREADY_EXISTS, FileTryCreate(mem, &again, "a.txt", &dir, 0));
+
+    const struct dsBuffer dump = FileDump(mem, "a.txt", &dir);
+    TEST_TRUE(dump.data != NULL && dump.size == 11 && memcmp(dump.data, "Jello world", 11) == 0);
+
+    struct file not_dir = FileNull();
+    TEST_EQUAL(FS_TYPE_INVALID, DirectoryTryOpen(mem, &not_dir, "a.txt", &dir));
+
+    struct file sub = FileNull();
+    TEST_EQUAL(FS_SUCCESS, DirectoryTryCreate(mem, &sub, "sub", &dir));
+    TEST_EQUAL(FILE_DIRECTORY, sub.type);
+    FileClose(&sub);
+    TEST_EQUAL(0, symlinkat("does_not_exist", dir.handle, "dangling"));
+
+    ds_CPool(file) entries;
+    ds_CPoolAlloc(NULL, entries, 8, GROWABLE);
+    TEST_EQUAL(FS_SUCCESS, DirectoryPushEntries(mem, &entries, &dir));
+    TEST_EQUAL(FILE_HANDLE_INVALID, dir.handle);
+    u32 found = 0;
+    for (u32 i = 0; i < entries.count; ++i)
+    {
+        const struct file *e = entries.buf + i;
+        if (Utf8Equivalence(e->path, Utf8Inline("a.txt")))         { found |= 1; TEST_EQUAL(FILE_REGULAR, e->type); }
+        else if (Utf8Equivalence(e->path, Utf8Inline("sub")))      { found |= 2; TEST_EQUAL(FILE_DIRECTORY, e->type); }
+        else if (Utf8Equivalence(e->path, Utf8Inline("dangling"))) { found |= 4; TEST_EQUAL(FILE_UNRECOGNIZED, e->type); }
+    }
+    ds_CPoolDealloc(entries);
+    TEST_EQUAL(7, found);
+
+    /* a pseudo-file: fstat says a page, read() ends after its few bytes */
+    const char *pseudo = "/sys/devices/system/cpu/online";
+    if (access(pseudo, R_OK) == 0)
+    {
+        const struct dsBuffer online = FileDumpAtCwd(mem, pseudo);
+        TEST_TRUE(online.data != NULL && 0 < online.size && online.size < 4096);
+    }
+
+    struct arena small = ArenaAlloc(NULL, 64);
+    TEST_TRUE(small.stack_ptr != NULL);
+    const utf8 cwd_small = CwdGet(&small);
+    ArenaFree(&small);
+    TEST_EQUAL(0, cwd_small.size);
+    const utf8 cwd = CwdGet(mem);
+    TEST_TRUE(cwd.size > 0 && cwd.buf[0] == '/');
+
+    FilesystemTestCleanup();
+
+	return output;
+}
+
+#endif
+
 /*
  * Without a root window, ds_WindowLookup finds nothing and ds_DeallocTaggedWindows frees nothing, neither
  * walking the hierarchy from HI_NULL. The editor's root window (if any) is hidden during the calls.
@@ -1093,6 +1190,9 @@ static struct test_Output (*base_tests[])(struct test_Environment *) =
     PoseTest,
     CameraTest,
     InputNameTest,
+#if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
+    FilesystemTest,
+#endif
     BitCountTest,
     OverflowTest,
     AtomicSingleThreadTest,
