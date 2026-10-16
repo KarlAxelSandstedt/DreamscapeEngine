@@ -201,7 +201,7 @@ void ds_DynamicsSerialize(struct ss *ss, const struct ds_Dynamics *pipeline)
 	}
 }
 
-u32 ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynamics *pipeline, c_ShapeSDB *cshape_db)
+u32 ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynamics *pipeline, ds_SDB(c_Shape) *cshape_db)
 {
 	ds_Assert(mem && ss->bit_index % 8 == 0);
 	/* frame data placement uses the rng; restore its state so deserialization doesn't affect the simulation */

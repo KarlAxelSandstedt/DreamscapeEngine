@@ -188,23 +188,23 @@ struct led
 	struct ui_List 		    brush_list;
 
 	struct ds_Dynamics physics;
-    c_ShapeSDB 		        cs_db;
+    ds_SDB(c_Shape) 		        cs_db;
 	struct DLL				cs_shape_list;		/* the shapes added to cs_db, in order (c_Shape.led_shape_node) */
 	struct ui_List 		    cs_list;
 	struct ui_DropdownMenu  cs_mesh_menu;
 	struct ui_DropdownMenu  rb_color_mode_menu;
 
-	ds_ShapePrefabSDB       shape_prefab_db;
+	ds_SDB(ds_ShapePrefab)       shape_prefab_db;
     ds_Pool(ds_ShapePrefabInstance) shape_prefab_instance_pool;    
 
-	ds_BodyPrefabSDB   body_prefab_db;
+	ds_SDB(ds_BodyPrefab)   body_prefab_db;
 	struct ui_List 		    body_prefab_list;
 	struct ui_DropdownMenu  body_prefab_mesh_menu;
 
-    r_MeshSDB			    render_mesh_db;
+    ds_SDB(r_Mesh)			    render_mesh_db;
 
 	struct ds_HashMap 		node_map;
-	led_NodeHI		        node_hierarchy;
+	HI(led_Node)		        node_hierarchy;
 
 	struct DLL		    node_selected_list;
 	struct ui_List		    node_ui_list;

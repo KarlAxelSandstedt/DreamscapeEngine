@@ -37,7 +37,7 @@ void ds_DynamicsStaticAssert(void)
     ds_StaticAssert(sizeof(struct ds_SolverManifold) == sizeof(struct c_Manifold), "");
 }
 
-void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, const u64 ns_tick, const u64 frame_memory, c_ShapeSDB *cshape_db, const u32 worker_count, const u64 worker_frame_size)
+void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, const u64 ns_tick, const u64 frame_memory, ds_SDB(c_Shape) *cshape_db, const u32 worker_count, const u64 worker_frame_size)
 {
 	*pipeline = (struct ds_Dynamics)
 	{
@@ -104,7 +104,7 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
 
 }
 
-struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, c_ShapeSDB *cshape_db, ds_BodyPrefabSDB *prefab_db, const u32 worker_count, const u64 worker_frame_size)
+struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, ds_SDB(c_Shape) *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size)
 {
 	struct ds_Dynamics pipeline;
 	ds_DynamicsAllocShell(mem, &pipeline, ns_tick, frame_memory, cshape_db, worker_count, worker_frame_size);

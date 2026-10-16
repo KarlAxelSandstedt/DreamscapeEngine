@@ -23,8 +23,8 @@
 #include "ds_renderer.h"
 
 
-struct ds_WindowHI g_window_hierarchy_storage = { 0 };
-struct ds_WindowHI *g_window_hierarchy = &g_window_hierarchy_storage;
+HI(ds_Window) g_window_hierarchy_storage = { 0 };
+HI(ds_Window) *g_window_hierarchy = &g_window_hierarchy_storage;
 i32 g_window = HI_NULL;
 i32 g_process_root_window = HI_NULL;
 

@@ -75,7 +75,7 @@ void 	ds_GraphicsApiShutdown(void);
  * g_window_hierarchy: all windows. g_process_root_window: the root window's index; HI_NULL before
  * ds_RootWindowAlloc and after the root window is freed. g_window: the current window (ds_WindowSetGlobal).
  */
-extern struct ds_WindowHI *	g_window_hierarchy;
+extern struct HI(ds_Window) *	g_window_hierarchy;
 extern i32 		g_process_root_window;
 extern i32 		g_window;
 

@@ -840,7 +840,7 @@ static i32 HITestRandomAlive(const struct hi_TestModel *model, const u32 min_ind
  * Every alive node's child list walks forward to hi_last in hi_child_count steps, each child links back
  * (hi_prev, hi_parent) and is the model's child; every non-root node is in exactly one list.
  */
-static u32 HITestValid(const test_HINodeHI *hi, const struct hi_TestModel *model)
+static u32 HITestValid(const HI(test_HINode) *hi, const struct hi_TestModel *model)
 {
     u32 listed = 0;
     for (i32 p = 0; p < (i32) hi->pool.count_max; ++p)
@@ -869,7 +869,7 @@ static u32 HITestValid(const test_HINodeHI *hi, const struct hi_TestModel *model
  * Iterate root's sub-hierarchy (HIIInit/HIIAdvance until at == root), calling HIISkip at random non-root
  * nodes: every node of the sub-hierarchy without a skipped strict ancestor is visited once, nothing else.
  */
-static u32 HITestIterate(const test_HINodeHI *hi, const struct hi_TestModel *model, const i32 root, const u32 skip)
+static u32 HITestIterate(const HI(test_HINode) *hi, const struct hi_TestModel *model, const i32 root, const u32 skip)
 {
     u8 visited[HI_TEST_MAX + 2] = { 0 };
     u8 skipped[HI_TEST_MAX + 2] = { 0 };
@@ -918,7 +918,7 @@ static void HITestModelInit(struct hi_TestModel *model)
     model->alive_count = 2;
 }
 
-static i32 HITestAdd(test_HINodeHI *hi, struct hi_TestModel *model, const i32 parent)
+static i32 HITestAdd(HI(test_HINode) *hi, struct hi_TestModel *model, const i32 parent)
 {
     const struct slot slot = HIAdd(*hi, (u32) parent);
     if (slot.address == NULL)
@@ -934,7 +934,7 @@ static i32 HITestAdd(test_HINodeHI *hi, struct hi_TestModel *model, const i32 pa
 /* #35: a childless iteration root with a next sibling is iterated alone (HIIInit used to step to the sibling). */
 struct hi_custom_record
 {
-    const test_HINodeHI *hi;
+    const HI(test_HINode) *hi;
     u32 index[8];
     u32 count;
     u32 bad_address;
@@ -960,7 +960,7 @@ static struct test_Output HierarchyCustomFreeTest(struct test_Environment *env)
 {
 	struct test_Output output = { .success = 1, .id = __func__ };
 
-    test_HINodeHI hi;
+    HI(test_HINode) hi;
     TEST_EQUAL(1, HIAlloc(NULL, hi, 4, GROWABLE));
     /* root -> a, s; a -> b, c; b -> d */
     u32 n[5];
@@ -1012,7 +1012,7 @@ static struct test_Output HierarchyIteratorSiblingRootTest(struct test_Environme
 
     struct hi_TestModel model;
     HITestModelInit(&model);
-    test_HINodeHI hi;
+    HI(test_HINode) hi;
     HIAlloc(NULL, hi, HI_TEST_MAX, NOT_GROWABLE);
 
     const i32 a = HITestAdd(&hi, &model, HI_ROOT);
@@ -1041,7 +1041,7 @@ static struct test_Output HierarchyAdoptMiddleChildTest(struct test_Environment 
 
     struct hi_TestModel model;
     HITestModelInit(&model);
-    test_HINodeHI hi;
+    HI(test_HINode) hi;
     HIAlloc(NULL, hi, HI_TEST_MAX, NOT_GROWABLE);
 
     const i32 p = HITestAdd(&hi, &model, HI_ROOT);
@@ -1077,7 +1077,7 @@ static struct test_Output HierarchyRandomTest(struct test_Environment *env)
 
     struct hi_TestModel model;
     HITestModelInit(&model);
-    test_HINodeHI hi;
+    HI(test_HINode) hi;
     HIAlloc(NULL, hi, HI_TEST_MAX, NOT_GROWABLE);
     TEST_TRUE(hi.pool.buf != NULL);
 
@@ -1145,7 +1145,7 @@ static struct test_Output StringDatabaseTest(struct test_Environment *env)
 	struct test_Output output = { .success = 1, .id = __func__ };
 
     /* the stub and three nodes */
-    test_SdbNodeSDB db;
+    ds_SDB(test_SdbNode) db;
     ds_SDBAlloc(env->mem_1, db, 4, NOT_GROWABLE);
     TEST_EQUAL(SDB_STUB, ds_SDBLookup(db, Utf8Inline("a")).index);
 
@@ -1195,7 +1195,7 @@ static struct test_Output StringDatabaseReferenceTest(struct test_Environment *e
 {
 	struct test_Output output = { .success = 1, .id = __func__ };
 
-    test_SdbNodeSDB db;
+    ds_SDB(test_SdbNode) db;
     ds_SDBAlloc(NULL, db, 4, GROWABLE);
     const struct slot a = ds_SDBAdd(env->mem_1, db, Utf8Inline("a"));
 

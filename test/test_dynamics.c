@@ -118,9 +118,9 @@ static ds_TransformWorld DynamicsTestPose(const struct ds_Dynamics *pipeline, co
 static void DynamicsTestRun(struct dynamics_TestResult *result, const struct dynamics_TestScene *scene, const v3f64 origin)
 {
     struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
-    c_ShapeSDB cshape_db = { 0 };
+    ds_SDB(c_Shape) cshape_db = { 0 };
     ds_SDBAlloc(NULL, cshape_db, 32, GROWABLE);
-    ds_BodyPrefabSDB prefab_db = { 0 };
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
     g_solver_config->pending_sleep_enabled = 0;

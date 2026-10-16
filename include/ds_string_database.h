@@ -23,7 +23,7 @@ ds_string_database.h
 A typed database of nodes keyed by a utf8 id: a ds_Pool(T) (stable indices as handles) and a hash map from
 the id's hash to indices. T is a struct with SDB_NODE among its members.
 
-    DEFINE_SDB(T);                                  ds_Pool(T) and the database type ds_SDB(T) (= T ## SDB)
+    DEFINE_SDB(T);                                  ds_Pool(T) and the database type ds_SDB(T)
 
     ds_SDBAlloc(mem, db, length, growable)          mem and growable as for pools; length includes the stub;
                                                     fatal on failure
@@ -65,7 +65,7 @@ extern "C" {
     u32                 reference_count;\
     POOL_NODE
 
-#define ds_SDB(T)	T ## SDB
+#define ds_SDB(T)	ds_SDB_ ## T
 
 #define DEFINE_SDB(T)                   \
 DEFINE_POOL(T);                         \

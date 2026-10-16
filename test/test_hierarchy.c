@@ -40,7 +40,7 @@ DEFINE_HI(perf_HINode);
 
 struct hi_PerfInput
 {
-	perf_HINodeHI	hi;
+	HI(perf_HINode)	hi;
 	struct arena	tmp;
 	u32		parent[HI_PERF_NODES];	/* the i-th add's parent: HI_ROOT or an earlier add */
 	u32		order[HI_PERF_NODES];	/* a fixed permutation of the adds, for adopts */

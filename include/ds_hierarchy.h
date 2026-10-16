@@ -26,9 +26,9 @@ on: HI_ROOT (index 0) and HI_ORPHAN (index 1), each with no parent. Not thread-s
 Sections: HI, the hierarchy (below), and HII, a depth-first iterator over a node's sub-hierarchy.
 
     struct node { HI_NODE; ... };
-    DEFINE_HI(node);                                    ds_Pool(node) and the type nodeHI = { ds_Pool(node) pool; }
+    DEFINE_HI(node);                                    ds_Pool(node) and the type HI(node) = { ds_Pool(node) pool; }
 
-    nodeHI hi;
+    HI(node) hi;
     HIAlloc(NULL, hi, 64, GROWABLE);
     const struct slot child = HIAdd(hi, HI_ROOT);
     HIRemove(tmp, hi, child.index);
@@ -47,7 +47,7 @@ extern "C" {
 /*
 HI
 --
-The macros: hi is a T ## HI lvalue, indices are u32, and arguments may be evaluated more than once. The
+The macros: hi is a HI(T) lvalue, indices are u32, and arguments may be evaluated more than once. The
 commented-out #defines are their declarations; the definitions are at the bottom.
 */
 
@@ -65,7 +65,7 @@ commented-out #defines are their declarations; the definitions are at the bottom
     u32         hi_child_count; \
     POOL_NODE
 
-#define HI(T) T ## HI
+#define HI(T) HI_ ## T
 
 #define DEFINE_HI(T)            \
 DEFINE_POOL(T);                 \

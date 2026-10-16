@@ -1619,8 +1619,8 @@ struct ds_Dynamics
 
     f32                             timestep;
 
-	c_ShapeSDB *	                cshape_db;		        /* externally owned */
-	ds_BodyPrefabSDB *	            body_prefab_db;		    /* externally owned */
+	ds_SDB(c_Shape) *	            cshape_db;		        /* externally owned */
+	ds_SDB(ds_BodyPrefab) *	        body_prefab_db;		    /* externally owned */
 
 	ds_Pool(ds_Body)              body_pool;
     struct ds_BitSet                body_usage_set;         /* Bodies in use */
@@ -1673,7 +1673,7 @@ struct ds_Dynamics
 /**************** PHYISCS PIPELINE API ****************/
 
 /* Initialize a new growable physics pipeline; ns_tick is the duration of a physics frame. */
-struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, c_ShapeSDB *cshape_db, ds_BodyPrefabSDB *prefab_db, const u32 worker_cont, const u64 worker_frame_size);
+struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, ds_SDB(c_Shape) *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_cont, const u64 worker_frame_size);
 /* free pipeline resources */
 void 			ds_DynamicsFree(struct ds_Dynamics *pipeline);
 /* Return the required size when serializing the pipeline. */
@@ -1684,7 +1684,7 @@ void            ds_DynamicsSerialize(struct ss *ss, const struct ds_Dynamics *pi
  * Returns 1 on success and 0 on failure. mem holds the pipeline shell (as in ds_DynamicsAlloc); everything 
  * else is heap allocated, so always free the pipeline with ds_DynamicsFree.
  */
-u32             ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynamics *pipeline, c_ShapeSDB *cshape_db);
+u32             ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynamics *pipeline, ds_SDB(c_Shape) *cshape_db);
 /* flush pipeline resources */
 void			ds_DynamicsFlush(struct ds_Dynamics *pipeline);
 /* pipeline main method: simulate a single physics frame and update internal state  */
@@ -1714,7 +1714,7 @@ void            ds_DynamicsPrintUsage(const struct ds_Dynamics *pipeline);
 /**************** PHYISCS PIPELINE INTERNAL API ****************/
 
 /* Internal: Allocate the pipeline without its simulation state (containers, gravity, margin, numerics). */
-void                        ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, const u64 ns_tick, const u64 frame_memory, c_ShapeSDB *cshape_db, const u32 worker_count, const u64 worker_frame_size);
+void                        ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, const u64 ns_tick, const u64 frame_memory, ds_SDB(c_Shape) *cshape_db, const u32 worker_count, const u64 worker_frame_size);
 /*
  * Internal: Read size bytes of frame data into a random worker frame (the next one if it is full) and set *dst.
  * Spreading the data leaves room in every worker frame, so a restore inside a tick doesn't starve a worker of

@@ -738,7 +738,7 @@ struct ui
 
 	/* node map for all u's  */
 	/* Shared allocator for all nodes  */
-	struct ui_NodeHI 		node_hierarchy;
+	HI(ui_Node) 		node_hierarchy;
 	struct ds_HashMap 		node_map;
 
 	ds_CPool(ui_TextSelection)	frame_text_selection;

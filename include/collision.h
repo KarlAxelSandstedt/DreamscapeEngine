@@ -132,7 +132,7 @@ struct triMeshBvh   TriMeshBvhConstruct(struct arena *mem, const struct triMesh 
 /********************************** SHAPES **********************************/
 
 /*
-A c_Shape is a sphere, capsule, convex hull (struct dcel) or triangle mesh with its BVH, stored in a c_ShapeSDB
+A c_Shape is a sphere, capsule, convex hull (struct dcel) or triangle mesh with its BVH, stored in a ds_SDB(c_Shape)
 under a string id. Mass properties are local, at density 1; meshes have none (static bodies only):
 
     const struct slot slot = c_ShapeSDBAddAndAlias(&db, id);
