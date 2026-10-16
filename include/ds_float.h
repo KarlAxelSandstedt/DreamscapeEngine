@@ -48,15 +48,8 @@ extern "C" {
 
 /******************************** constants *********************************/
 
-/*
-F32_PI is pi rounded to f32; F32_PI2 is 2 pi (not pi/2). F32_EPSILON is FLT_EPSILON, 2^-23. Exponents are
-unbiased (normal f32 have F32_MIN_EXPONENT..F32_MAX_EXPONENT). The extreme values are function calls (special
-values below): MAX_POSITIVE and MIN_POSITIVE are the largest and smallest positive value of their class,
-MAX_NEGATIVE the negative value closest to zero, MIN_NEGATIVE the most negative one.
-*/
-
-#define F32_PI				3.14159274101257324f
-#define F32_PI2    			(2.0f * F32_PI)
+#define F32_PI				3.14159274101257324f	/* pi rounded to f32 */
+#define F32_PI2    			(2.0f * F32_PI)	/* 2 pi (not pi/2) */
 
 #define	F32_SIGN_LENGTH			1
 #define	F32_EXPONENT_LENGTH		8
@@ -66,13 +59,13 @@ MAX_NEGATIVE the negative value closest to zero, MIN_NEGATIVE the most negative 
 #define	F32_EXPONENT_MASK		0x7f800000
 #define	F32_SIGNIFICAND_MASK		0x007fffff
 
-#define	F32_BIAS			127
-#define	F32_MAX_EXPONENT		127
+#define	F32_BIAS			127	/* exponent bias */
+#define	F32_MAX_EXPONENT		127	/* unbiased; normal f32 have F32_MIN_EXPONENT .. F32_MAX_EXPONENT */
 #define	F32_MIN_EXPONENT		-126
 
-#define	F32_MAX_POSITIVE_SUBNORMAL	F32MaxPositiveSubnormal()
+#define	F32_MAX_POSITIVE_SUBNORMAL	F32MaxPositiveSubnormal()	/* MAX/MIN_POSITIVE: largest/smallest positive of the class */
 #define	F32_MIN_POSITIVE_SUBNORMAL	F32MinPositiveSubnormal()
-#define	F32_MAX_NEGATIVE_SUBNORMAL	F32MaxNegativeSubnormal()
+#define	F32_MAX_NEGATIVE_SUBNORMAL	F32MaxNegativeSubnormal()	/* MAX_NEGATIVE: the negative closest to 0; MIN_NEGATIVE: the most negative */
 #define	F32_MIN_NEGATIVE_SUBNORMAL	F32MinNegativeSubnormal()
 
 #define	F32_MAX_POSITIVE_NORMAL		F32MaxPositiveNormal()
@@ -80,19 +73,10 @@ MAX_NEGATIVE the negative value closest to zero, MIN_NEGATIVE the most negative 
 #define	F32_MAX_NEGATIVE_NORMAL		F32MaxNegativeNormal()
 #define	F32_MIN_NEGATIVE_NORMAL		F32MinNegativeNormal()
 
-#define	F32_INFINITY			F32Inf(0)
-#define	F32_EPSILON			1.1920929e-7f
+#define	F32_INFINITY			F32Inf(0)	/* +inf */
+#define	F32_EPSILON			1.1920929e-7f	/* FLT_EPSILON, 2^-23 */
 
 /*********************** bit access and classification ***********************/
-
-/*
-union ieee32 views an f32 as its bits. The field functions return a field shifted down to bit 0;
-F32Construct assembles one without masking, so sign_bit must be 0 or 1, exponent_bits < 256 and
-mantissa_bits < 2^23.
-
-The tests and F32Classify read the bits only: they never raise, signaling NaNs included. They return 1 or 0;
-F32FiniteCheck is 1 unless f is NaN or +-inf. Normal and subnormal include both signs.
-*/
 
 enum ieee_type
 {
@@ -109,84 +93,101 @@ union ieee32
 	u32 bits;		/* SIGN_BIT(1) | EXPONENT(8) | SIGNIFICAND(23) */
 };
 
+/* assemble an f32 from its fields, not masked: sign_bit 0 or 1, exponent_bits < 256, mantissa_bits < 2^23 */
 static ds_ForceInline f32 F32Construct(const u32 sign_bit, const u32 exponent_bits, const u32 mantissa_bits);
+/* return sign bit shifted down */
 static ds_ForceInline u32 F32SignBit(const f32 f);
+/* return exponent bits  shifted down */
 static ds_ForceInline u32 F32ExponentBits(const f32 f);
+/* return mantissa bits */
 static ds_ForceInline u32 F32MantissaBits(const f32 f);
 
+/* 1 if f is NaN (signaling NaNs included); like all tests here it reads the bits only and never raises */
 static ds_ForceInline u32 F32TestNan(const f32 f);
+/* 1 if f is +inf */
 static ds_ForceInline u32 F32TestPositiveInf(const f32 f);
+/* 1 if f is -inf */
 static ds_ForceInline u32 F32TestNegativeInf(const f32 f);
+/* 1 if f is +0 */
 static ds_ForceInline u32 F32TestPositiveZero(const f32 f);
+/* 1 if f is -0 */
 static ds_ForceInline u32 F32TestNegativeZero(const f32 f);
+/* 1 if f is normal (either sign) */
 static ds_ForceInline u32 F32TestNormal(const f32 f);
+/* 1 if f is subnormal (either sign) */
 static ds_ForceInline u32 F32TestSubnormal(const f32 f);
+/* return f's class (NaN, inf, zero, subnormal, normal) */
 static ds_ForceInline enum ieee_type F32Classify(const f32 f);
+/* 1 if f is neither NaN nor Inf */
 static ds_ForceInline u32 F32FiniteCheck(const f32 f);
 
 /********************** sign, min, max, clamp, round ***********************/
 
-/*
-F32Sign is -1.0f when the sign bit is set (-0 and NaNs with the sign bit included), else 1.0f. F32Abs clears
-the sign bit (NaN stays NaN).
-
-F32Max and F32Min return the larger and the smaller argument by one comparison: a NaN first argument gives
-the second, a NaN second argument is returned. F32Clamp returns min if val <= min, max if val >= max, else
-val, so NaN passes through; min <= max is not checked.
-
-F32Round rounds to the nearest integer, halves to even (0.5 -> 0, 1.5 -> 2, -0.5 -> -0).
-*/
-
+/* return sign 1.0f or -1.0f: -1.0f when the sign bit is set (-0 and NaNs with the sign bit included) */
 static ds_ForceInline f32 F32Sign(const f32 f);
+/* |f|: clears the sign bit (NaN stays NaN) */
 static ds_ForceInline f32 F32Abs(const f32 f);
+/* the larger of a and b by one comparison: a NaN a gives b, a NaN b is returned */
 static ds_ForceInline f32 F32Max(const f32 a, const f32 b);
+/* the smaller of a and b by one comparison: a NaN a gives b, a NaN b is returned */
 static ds_ForceInline f32 F32Min(const f32 a, const f32 b);
+/* min if val <= min, max if val >= max, else val (NaN passes through; min <= max is not checked) */
 static ds_ForceInline f32 F32Clamp(const f32 val, const f32 min, const f32 max);
+/* the nearest integer, halves to even (0.5 -> 0, 1.5 -> 2, -0.5 -> -0) */
 static ds_ForceInline f32 F32Round(const f32 val);
 
 /************************* C library functions **************************/
 
-/*
-The C library's sqrtf, powf, cosf, ... Angles are in radians. F32Sqrt is correctly rounded (IEEE), the same
-bits everywhere. F32Pow and the trigonometric functions are not (see the top of the file).
-*/
-
+/* sqrtf: correctly rounded, the same bits on every platform */
 static ds_ForceInline f32 F32Sqrt(const f32 f);
+/* powf: not correctly rounded, may differ in the last bit between platforms */
 static ds_ForceInline f32 F32Pow(const f32 f, const f32 power);
+/* cosf (radians): not correctly rounded, may differ in the last bit between platforms */
 static ds_ForceInline f32 F32Cos(const f32 f);
+/* acosf (radians): not correctly rounded, may differ in the last bit between platforms */
 static ds_ForceInline f32 F32Acos(const f32 f);
+/* sinf (radians): not correctly rounded, may differ in the last bit between platforms */
 static ds_ForceInline f32 F32Sin(const f32 f);
+/* asinf (radians): not correctly rounded, may differ in the last bit between platforms */
 static ds_ForceInline f32 F32Asin(const f32 f);
+/* tanf (radians): not correctly rounded, may differ in the last bit between platforms */
 static ds_ForceInline f32 F32Tan(const f32 f);
+/* atanf (radians): not correctly rounded, may differ in the last bit between platforms */
 static ds_ForceInline f32 F32Atan(const f32 f);
 
 /*********************** directed rounding from f64 ************************/
 
 /*
-x rounded to f32 toward -inf (Downwards) or +inf (Upwards): the largest f32 <= x, the smallest f32 >= x.
-Beyond the f32 range that is +-FLT_MAX or +-inf; NaN stays NaN. Same bits everywhere.
-*/
-
+ * x rounded to f32 toward -inf (Downwards) or +inf (Upwards): the nearest f32, stepped once outward if the cast
+ * rounded the other way. nextafterf is an exact IEEE operation, so this is deterministic. NaN stays NaN.
+ * Beyond the f32 range: +-FLT_MAX or +-inf.
+ */
 static ds_ForceInline f32 F64DemoteDownwards(const f64 x);
 static ds_ForceInline f32 F64DemoteUpwards(const f64 x);
 
 /****************************** special values ******************************/
 
-/*
-F32Nan is a quiet NaN (all significand bits set). F32Inf and F32Zero take the sign: 0 positive, nonzero
-negative. The extreme values behind the F32_..._NORMAL and F32_..._SUBNORMAL constants.
-*/
-
+/* a quiet NaN (all significand bits set) */
 static ds_ForceInline f32 F32Nan(void);
+/* +inf if sign is 0, else -inf */
 static ds_ForceInline f32 F32Inf(const u32 sign);
+/* +0 if sign is 0, else -0 */
 static ds_ForceInline f32 F32Zero(const u32 sign);
+/* largest positive subnormal */
 static ds_ForceInline f32 F32MaxPositiveSubnormal(void);
+/* smallest positive subnormal */
 static ds_ForceInline f32 F32MinPositiveSubnormal(void);
+/* negative subnormal closest to 0 */
 static ds_ForceInline f32 F32MaxNegativeSubnormal(void);
+/* most negative subnormal */
 static ds_ForceInline f32 F32MinNegativeSubnormal(void);
+/* largest positive normal (FLT_MAX) */
 static ds_ForceInline f32 F32MaxPositiveNormal(void);
+/* smallest positive normal (FLT_MIN) */
 static ds_ForceInline f32 F32MinPositiveNormal(void);
+/* negative normal closest to 0 (-FLT_MIN) */
 static ds_ForceInline f32 F32MaxNegativeNormal(void);
+/* most negative normal (-FLT_MAX) */
 static ds_ForceInline f32 F32MinNegativeNormal(void);
 
 /********************************* printing *********************************/
@@ -362,7 +363,6 @@ static ds_ForceInline f32 F32Atan(const f32 f)
 
 /*************** directed rounding from f64: inline definitions ***************/
 
-/* the nearest f32, stepped once outward if the cast rounded the other way; nextafterf is exact */
 static ds_ForceInline f32 F64DemoteDownwards(const f64 x)
 {
 	const f32 f = (f32) x;
