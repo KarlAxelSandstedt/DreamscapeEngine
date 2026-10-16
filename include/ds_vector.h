@@ -138,7 +138,8 @@ Dot sums left to right ((x + y) + z). Length is the square root of LengthSquared
 (|b - a|^2). The squares overflow for components above about 1.8e19 and underflow below about 1e-19
 (subnormal; 0 below about 3e-23).
 
-Normalize returns a / |a|. Precondition: a != 0 and |a| inside that range; a = 0 gives NaN components.
+Normalize returns a / |a|. Precondition: |a|^2 > 0 (asserted in debug: a = 0, a square that underflows or NaN
+would give NaN components); |a| below the overflow range.
 
 Cross is a x b (right-handed), RecenterCross (a - center) x (b - center), TripleProduct the vector (a x b) x c.
 */
@@ -555,16 +556,19 @@ static ds_ForceInline f32 V4Length(const v4 a)
 
 static ds_ForceInline v2 V2Normalize(const v2 a)
 {
+	ds_Assert(V2LengthSquared(a) > 0.0f);
 	return V2Scale(a, 1.0f / V2Length(a));
 }
 
 static ds_ForceInline v3 V3Normalize(const v3 a)
 {
+	ds_Assert(V3LengthSquared(a) > 0.0f);
 	return V3Scale(a, 1.0f / V3Length(a));
 }
 
 static ds_ForceInline v4 V4Normalize(const v4 a)
 {
+	ds_Assert(V4LengthSquared(a) > 0.0f);
 	return V4Scale(a, 1.0f / V4Length(a));
 }
 
