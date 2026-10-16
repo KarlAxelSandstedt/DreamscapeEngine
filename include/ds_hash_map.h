@@ -48,9 +48,10 @@ ds_HashMap
         if (Utf8Equivalence(id, nodes[i].id)) { ... }
     ds_HashMapRemove(&map, Utf8Hash(id), index);
 
-hash[hash & hash_mask] heads a chain linked through index[], so an index is in at most one chain at a
-time; hash_len is a power of two and never changes, index_len >= hash_len grows (growable maps) to fit the
-largest index added. Not thread-safe.
+Hash map from a hash to a chain of indices. Users dereference the indices to compare the actual keys.
+hash_len is a power of two and index_len >= hash_len. hash[hash & hash_mask] heads a chain linked through
+index[], so an index is in at most one chain at a time; hash_len never changes, index_len grows (growable maps)
+to fit the largest index added. Not thread-safe.
 */
 
 struct ds_HashMap
@@ -65,41 +66,39 @@ struct ds_HashMap
 };
 
 /*
-Return an empty map on mem (fixed; growable must be 0) or on the heap (mem == NULL): hash_len (> 0, < 2^31)
-rounded up to a power of two, index_len (> 0) raised to at least that. On failure, a map with hash NULL.
-*/
+ * Allocate a map with at least the given lengths (rounded up: hash_len (> 0, < 2^31) to a power of two, index_len
+ * (> 0) to at least that), on mem (fixed; growable must be 0) or on the heap (mem == NULL). On failure, an empty
+ * map is returned (hash NULL).
+ */
 struct ds_HashMap	ds_HashMapAlloc(struct arena *mem, const u32 hash_len, const u32 index_len, const u32 growable);
 /*
-ds_HashMapAlloc with exact lengths (hash_len a power of two <= index_len < 2^31) and both arrays
-uninitialized: for filling them by hand, as deserialization does.
-*/
+ * ds_HashMapAlloc with exact lengths (hash_len a power of two <= index_len < 2^31) and uncleared memory. Used by
+ * deserialization: the hash array is only valid for the hash_len it was built with.
+ */
 struct ds_HashMap	ds_HashMapAllocEx(struct arena *mem, const u32 hash_len, const u32 index_len, const u32 growable);
-/* Free a heap map's memory (an arena map's stays with the arena); the map becomes empty (hash NULL). */
+/* Free the map's heap memory (an arena map's stays with the arena); the map becomes empty (hash NULL). */
 void		        ds_HashMapDealloc(struct ds_HashMap *map);
 /* Remove all (hash, index) pairs. */
 void		        ds_HashMapFlush(struct ds_HashMap *map);
-/* Bytes ds_HashMapSerialize writes. */
+/* Return the required size when serializing the map. */
 u64                 ds_HashMapSerializeSize(const struct ds_HashMap *map);
 /*
-Write the map to ss (at a byte boundary; it must fit: ds_HashMapSerializeSize). Format (LE): u32 hash_len,
-u32 index_len, the hash array, the index array.
-*/
+ * Serialize the map (at a byte boundary). WARNING: Assumes map fits in the stream (ds_HashMapSerializeSize).
+ * Format (LE): u32 hash_len, u32 index_len, the hash array, the index array.
+ */
 void 		        ds_HashMapSerialize(struct ss *ss, const struct ds_HashMap *map);
 /*
-Read a map from ss into mem (fixed) or the heap (mem == NULL; growable allowed). Returns 1 on success; 0 if
-the memory can't be allocated or ss holds no valid map (map has hash NULL, ss's position unchanged).
-*/
+ * Returns 1 on success and 0 on failure: the memory can't be allocated or ss holds no valid map (map has hash
+ * NULL, ss's position unchanged). Reads into mem (fixed) or the heap (mem == NULL; growable allowed).
+ */
 u32                 ds_HashMapTryDeserialize(struct arena *mem, struct ss *ss, struct ds_HashMap *map, const u32 growable);
-/*
-Add the (hash, index) pair; index (< 2^31) must not be in the map. Returns 1 on success, 0 if index >=
-index_len in a fixed map.
-*/
+/* Add the (hash, index) pair; index (< 2^31) must not be in the map. Returns 1 on success and 0 if index doesn't fit a non-growable map. */
 u32		            ds_HashMapAdd(struct ds_HashMap *map, const u32 hash, const u32 index);
 /* Remove the (hash, index) pair (index < index_len); no-op if it isn't in the map, also under another hash. */
 void		        ds_HashMapRemove(struct ds_HashMap *map, const u32 hash, const u32 index);
 /* Return the first index in the hash's chain, or HASH_NULL. */
 u32		            ds_HashMapFirst(const struct ds_HashMap *map, const u32 hash);
-/* Return the next index in the chain after index, or HASH_NULL. */
+/* Return the next index in the chain, or HASH_NULL. */
 u32		            ds_HashMapNext(const struct ds_HashMap *map, const u32 index);
 
 /*
