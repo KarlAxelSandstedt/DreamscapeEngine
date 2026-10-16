@@ -103,6 +103,12 @@ static inline v3 ds_TransformPointToLocal(const ds_Transform *reference, const v
 
 /*********************************** world poses ************************************/
 
+/*
+ * World transforms. Positions cross between f64 (world) and f32 (frames) only through these: world
+ * positions are subtracted in f64 before demoting, so the f32 rounding is relative to the frames'
+ * separation, not to their distance from the origin.
+ */
+
 /* Return the identity world pose (at the world origin) */
 static inline ds_TransformWorld ds_TransformWorldIdentity(void);
 
