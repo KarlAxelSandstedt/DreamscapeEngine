@@ -17,7 +17,6 @@
 ==========================================================================
 */
 
-#include <stdlib.h>
 #include "sdl3_wrapper_local.h"
 
 struct nativeWindow
@@ -370,7 +369,7 @@ utf8 sdl3_Utf8GetClipboard(struct arena *mem)
 			{
 				ret = (utf8) { .buf = buf, .len = len, .size = utf8_null.size };
 			}
-			free (utf8_null.buf);
+			SDL_free(utf8_null.buf);
 		}
 		else
 		{
