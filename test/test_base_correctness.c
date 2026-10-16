@@ -596,6 +596,95 @@ static struct test_Output VectorTest(struct test_Environment *env)
 	return output;
 }
 
+static u32 QuaternionTestEqual(const q a, const q b)
+{
+    return a.x == b.x && a.y == b.y && a.z == b.z && a.w == b.w;
+}
+
+static u32 QuaternionTestNear(const q a, const q b, const f32 tol)
+{
+    return F32Abs(a.x - b.x) <= tol && F32Abs(a.y - b.y) <= tol && F32Abs(a.z - b.z) <= tol && F32Abs(a.w - b.w) <= tol;
+}
+
+/* a random unit quaternion, components drawn one statement at a time */
+static q QuaternionTestUnit(struct rng *rng)
+{
+    while (1)
+    {
+        const v3 v = VectorTestV3(rng, -1.0f, 1.0f);
+        const f32 w = VectorTestF32(rng, -1.0f, 1.0f);
+        const q a = Q(v.x, v.y, v.z, w);
+        if (QNorm(a) >= 0.1f)
+        {
+            return QNormalize(a);
+        }
+    }
+}
+
+/*
+ * ds_quaternion.h conventions: the Hamilton table (ij = k, ...); QUnitAxisAngle by the right-hand rule and against
+ * Rodrigues' formula for random axes, angles and vectors; QAxisAngle normalizes its axis; QMul(a, b) rotates by b
+ * first; QConj and QInverse invert; QYUnitRotate equals QUnitRotate on (0, y, 0); QNormalize and QNorm.
+ */
+static struct test_Output QuaternionTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    const q one = QIdentity();
+    const q i = Q(1.0f, 0.0f, 0.0f, 0.0f);
+    const q j = Q(0.0f, 1.0f, 0.0f, 0.0f);
+    const q k = Q(0.0f, 0.0f, 1.0f, 0.0f);
+    const q minus_one = Q(0.0f, 0.0f, 0.0f, -1.0f);
+    TEST_TRUE(QuaternionTestEqual(QMul(i, i), minus_one) && QuaternionTestEqual(QMul(j, j), minus_one) && QuaternionTestEqual(QMul(k, k), minus_one));
+    TEST_TRUE(QuaternionTestEqual(QMul(i, j), k) && QuaternionTestEqual(QMul(j, i), QScale(k, -1.0f)));
+    TEST_TRUE(QuaternionTestEqual(QMul(j, k), i) && QuaternionTestEqual(QMul(k, j), QScale(i, -1.0f)));
+    TEST_TRUE(QuaternionTestEqual(QMul(k, i), j) && QuaternionTestEqual(QMul(i, k), QScale(j, -1.0f)));
+    TEST_TRUE(QuaternionTestEqual(QMul(one, i), i) && QuaternionTestEqual(QMul(k, one), k));
+
+    /* right-hand rule: a quarter turn about z takes x to y, about x takes y to z, about y takes z to x */
+    const v3 x_axis = V3(1.0f, 0.0f, 0.0f);
+    const v3 y_axis = V3(0.0f, 1.0f, 0.0f);
+    const v3 z_axis = V3(0.0f, 0.0f, 1.0f);
+    TEST_TRUE(VectorTestNear(QUnitRotate(QUnitAxisAngle(z_axis, F32_PI / 2.0f), x_axis), y_axis, 1e-6f));
+    TEST_TRUE(VectorTestNear(QUnitRotate(QUnitAxisAngle(x_axis, F32_PI / 2.0f), y_axis), z_axis, 1e-6f));
+    TEST_TRUE(VectorTestNear(QUnitRotate(QUnitAxisAngle(y_axis, F32_PI / 2.0f), z_axis), x_axis, 1e-6f));
+
+    struct rng rng;
+    RngLocalInit(&rng, env->seed);
+    for (u32 n = 0; n < 10000; ++n)
+    {
+        const v3 axis = VectorTestV3(&rng, -1.0f, 1.0f);
+        const f32 theta = VectorTestF32(&rng, -F32_PI, F32_PI);
+        const v3 v = VectorTestV3(&rng, -1.0f, 1.0f);
+        const f32 s = VectorTestF32(&rng, 0.1f, 10.0f);
+        const f32 y = VectorTestF32(&rng, -10.0f, 10.0f);
+        const q a = QuaternionTestUnit(&rng);
+        const q b = QuaternionTestUnit(&rng);
+        if (V3Length(axis) < 0.1f) { continue; }
+        const v3 u = V3Normalize(axis);
+
+        /* Rodrigues: v cos t + (u x v) sin t + u (u.v)(1 - cos t) */
+        const f32 c = F32Cos(theta);
+        const f32 sn = F32Sin(theta);
+        const v3 rodrigues = V3Add(V3Add(V3Scale(v, c), V3Scale(V3Cross(u, v), sn)), V3Scale(u, V3Dot(u, v) * (1.0f - c)));
+        const q r = QUnitAxisAngle(u, theta);
+        TEST_TRUE(VectorTestNear(QUnitRotate(r, v), rodrigues, 1e-5f));
+        TEST_TRUE(QuaternionTestNear(QAxisAngle(V3Scale(u, s), theta), r, 1e-6f));
+
+        TEST_TRUE(VectorTestNear(QUnitRotate(QMul(a, b), v), QUnitRotate(a, QUnitRotate(b, v)), 1e-5f));
+        TEST_TRUE(QuaternionTestNear(QMul(a, QConj(a)), one, 1e-6f));
+        const q c3 = QScale(a, 3.0f);
+        TEST_TRUE(QuaternionTestNear(QMul(c3, QInverse(c3)), one, 1e-6f));
+        TEST_TRUE(F32Abs(QNorm(c3) - 3.0f) <= 1e-5f && F32Abs(QNorm(QNormalize(c3)) - 1.0f) <= 1e-6f);
+
+        const v3 rotated = QUnitRotate(a, V3(0.0f, y, 0.0f));
+        const v3 rotated_y = QYUnitRotate(a, y);
+        TEST_TRUE(rotated.x == rotated_y.x && rotated.y == rotated_y.y && rotated.z == rotated_y.z);
+    }
+
+	return output;
+}
+
 /*
  * Without a root window, ds_WindowLookup finds nothing and ds_DeallocTaggedWindows frees nothing, neither
  * walking the hierarchy from HI_NULL. The editor's root window (if any) is hidden during the calls.
@@ -623,6 +712,7 @@ static struct test_Output (*base_tests[])(struct test_Environment *) =
     TypesTest,
     FloatTest,
     VectorTest,
+    QuaternionTest,
     BitCountTest,
     OverflowTest,
     AtomicSingleThreadTest,
