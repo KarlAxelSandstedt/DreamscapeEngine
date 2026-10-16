@@ -482,6 +482,7 @@ enum fsError DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct
 	DIR *dir_stream = fdopendir(dir->handle);
 	if (dir_stream == NULL)
 	{
+		FileClose(dir);
 		return FS_ERROR_UNSPECIFIED;
 	}
 
@@ -500,13 +501,10 @@ enum fsError DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct
 			break;
 		}
 
-		if (FileStatusPath(&status, ent->d_name, dir) != FS_SUCCESS)
-		{
-			ret = FS_ERROR_UNSPECIFIED;
-			break;
-		}
-
-		file->type = FileStatusGetType(&status);
+		/* fstatat follows links: a dangling link (or a vanished entry) is listed as unrecognized */
+		file->type = (fstatat(dir->handle, ent->d_name, &status, 0) == 0)
+			? FileStatusGetType(&status)
+			: FILE_UNRECOGNIZED;
 	}
 
 	if (ret != FS_SUCCESS)
