@@ -65,44 +65,46 @@ extern "C" {
 
 /*********************************** construction ***********************************/
 
-/*
-QIdentity is the rotation by 0. QAxisAngle(axis, angle) and QUnitAxisAngle(axis, angle) are the unit quaternion
-(sin(angle/2) u, cos(angle/2)) for the rotation by angle (radians) about u = axis / |axis| by the right-hand rule;
-QUnitAxisAngle takes u directly (|axis| = 1, not checked), QAxisAngle divides by |axis| (a zero axis gives NaN).
-Both use the C library's sin and cos: not the same bits on every platform.
-*/
-
+/* the rotation by 0: (0, 0, 0, 1) */
 static ds_ForceInline q QIdentity(void);
+/*
+ * Return quaternion representing rotation around (non-normalized) axis with given angle (radians, right-hand rule);
+ * a zero axis gives NaN. Uses the C library's sin/cos.
+ */
 static ds_ForceInline q QAxisAngle(const v3 axis, const f32 angle);
+/*
+ * Return quaternion representing rotation around (Normalized!) axis with given angle (radians, right-hand rule):
+ * (sin(angle/2) axis, cos(angle/2)). Uses the C library's sin/cos.
+ */
 static ds_ForceInline q QUnitAxisAngle(const v3 axis, const f32 angle);
 
 /************************************ arithmetic ************************************/
 
-/*
-QAdd, QSub (a - b) and QScale (a scale) work per component. QMul is the Hamilton product a b: rotating by QMul(a, b)
-rotates by b first, then by a. QConj negates x, y, z (the inverse of a unit quaternion). QNorm is |a|, QInverse
-conj(a) / |a|^2 and QNormalize a / |a|; a = 0 gives NaN.
-*/
-
+/* a + b per component */
 static ds_ForceInline q QAdd(const q a, const q b);
+/* a - b */
 static ds_ForceInline q QSub(const q a, const q b);
+/* Hamilton product a b: rotating by QMul(a, b) rotates by b first, then by a */
 static ds_ForceInline q QMul(const q a, const q b);
+/* a * scale per component */
 static ds_ForceInline q QScale(const q a, const f32 scale);
+/* conj(a) = (-x, -y, -z, w): the inverse of a unit quaternion */
 static ds_ForceInline q QConj(const q a);
+/* |a| */
 static ds_ForceInline f32 QNorm(const q a);
+/* a^-1 = conj(a) / |a|^2 (a = 0 gives NaN) */
 static ds_ForceInline q QInverse(const q a);
+/* a / |a| (a = 0 gives NaN) */
 static ds_ForceInline q QNormalize(const q a);
 
 /********************************* rotating vectors *********************************/
 
 /*
-QUnitRotate returns a v a^-1, v rotated by the unit quaternion a. Precondition: |a| = 1, not checked: otherwise
-the result is R v + (1 - |a|^2) (v - R v), R the rotation of a / |a|. QYUnitRotate(a, y) is QUnitRotate(a, V3(0, y, 0)) with the zero
-terms left out, the remaining additions in the same order: the same result except the sign of a zero component
-(and products in the subnormal range).
-*/
-
+ * Rotate v by unit a: ava^-1 = v + 2*a_w*Cross(a_xyz, v) + 2*Cross(a_xyz, Cross(a_xyz, v)). Precondition |a| = 1, not
+ * checked: otherwise the result is R v + (1 - |a|^2) (v - R v), R the rotation of a / |a|.
+ */
 static ds_ForceInline v3 QUnitRotate(const q a, const v3 v);
+/* QUnitRotate with v = (0, y, 0); same addition order: the same result except the sign of a zero component */
 static ds_ForceInline v3 QYUnitRotate(const q a, const f32 y);
 
 /************************* construction: inline definitions *************************/
