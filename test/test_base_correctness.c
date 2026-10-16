@@ -860,9 +860,8 @@ static v4 TransformTestApply(const m4 m, const v3 p)
 
 /*
  * transform.h conventions: M4Perspective's near, far and side planes land on clip -1/+1; M4View takes position to
- * the origin and forward/up/left to -z/+y/-x; M4ViewYawPitch at 0 looks along +x and turns by pitch about +z, yaw
- * about +y; M4ViewLookAt puts the target on -z; M3SequentialRotation is R(axis_1) R(axis_2); M3Rotation takes
- * any axis length; V3RotateCenter keeps the distance to the center.
+ * the origin and forward/up/left to -z/+y/-x; M3SequentialRotation is R(axis_1) R(axis_2); M3Rotation takes any
+ * axis length; V3RotateCenter keeps the distance to the center.
  */
 static struct test_Output TransformTest(struct test_Environment *env)
 {
@@ -893,7 +892,7 @@ static struct test_Output TransformTest(struct test_Environment *env)
         const f32 angle_2 = VectorTestF32(&rng, -F32_PI, F32_PI);
         const f32 scale = VectorTestF32(&rng, 0.5f, 4.0f);
         const q r = QuaternionTestUnit(&rng);
-        if (V3Length(axis_1) < 0.1f || V3Length(axis_2) < 0.1f || offset.x*offset.x + offset.z*offset.z < 1.0f) { continue; }
+        if (V3Length(axis_1) < 0.1f || V3Length(axis_2) < 0.1f) { continue; }
 
         /* a right-handed camera frame: left = up x forward */
         const v3 forward = QUnitRotate(r, V3(1.0f, 0.0f, 0.0f));
@@ -909,10 +908,6 @@ static struct test_Output TransformTest(struct test_Environment *env)
         TEST_TRUE(VectorTestNear(V3(u.x, u.y, u.z), V3(0.0f, 1.0f, 0.0f), 1e-4f));
         TEST_TRUE(VectorTestNear(V3(l.x, l.y, l.z), V3(-1.0f, 0.0f, 0.0f), 1e-4f));
 
-        /* the target lands on -z at its distance */
-        const v4 target = TransformTestApply(M4ViewLookAt(position, V3Add(position, offset)), V3Add(position, offset));
-        TEST_TRUE(VectorTestNear(V3(target.x, target.y, target.z), V3(0.0f, 0.0f, -V3Length(offset)), 1e-3f));
-
         const m3 sequential = M3SequentialRotation(axis_1, angle_1, axis_2, angle_2);
         const m3 product = M3Mul(M3Rotation(axis_1, angle_1), M3Rotation(axis_2, angle_2));
         for (u32 k = 0; k < 9; ++k) { TEST_TRUE(F32Abs(sequential.buf[k] - product.buf[k]) <= 1e-5f); }
@@ -922,15 +917,6 @@ static struct test_Output TransformTest(struct test_Environment *env)
         const v3 rotated = V3RotateCenter(rotation, position, V3Add(position, offset));
         TEST_TRUE(F32Abs(V3Distance(rotated, position) - V3Length(offset)) <= 1e-4f);
     }
-
-    /* yaw = pitch = 0 looks along +x; pitch turns +x up toward +y, yaw turns +x toward -z */
-    const v3 origin = V3(1.0f, 2.0f, 3.0f);
-    const v4 ahead = TransformTestApply(M4ViewYawPitch(origin, 0.0f, 0.0f), V3Add(origin, V3(1.0f, 0.0f, 0.0f)));
-    const v4 pitched = TransformTestApply(M4ViewYawPitch(origin, 0.0f, F32_PI / 4.0f), V3Add(origin, V3(1.0f, 1.0f, 0.0f)));
-    const v4 yawed = TransformTestApply(M4ViewYawPitch(origin, F32_PI / 4.0f, 0.0f), V3Add(origin, V3(1.0f, 0.0f, -1.0f)));
-    TEST_TRUE(VectorTestNear(V3(ahead.x, ahead.y, ahead.z), V3(0.0f, 0.0f, -1.0f), 1e-5f));
-    TEST_TRUE(VectorTestNear(V3(pitched.x, pitched.y, pitched.z), V3(0.0f, 0.0f, -F32Sqrt(2.0f)), 1e-5f));
-    TEST_TRUE(VectorTestNear(V3(yawed.x, yawed.y, yawed.z), V3(0.0f, 0.0f, -F32Sqrt(2.0f)), 1e-5f));
 
 	return output;
 }

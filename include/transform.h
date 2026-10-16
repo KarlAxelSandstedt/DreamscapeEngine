@@ -55,15 +55,10 @@ m4 	M4Perspective(const f32 aspect_ratio, const f32 fov_x, const f32 fz_near, co
 
 /*
 M4View maps world space to camera space for a camera at position with the orthonormal directions left, up and
-forward (left = up x forward): position goes to the origin, forward to -z, up to +y, left to -x.
-
-M4ViewYawPitch is M4View for a camera that looks along +x at yaw = pitch = 0, turned by pitch about +z (positive:
-up toward +y), then by yaw about +y (positive: +x toward -z). M4ViewLookAt looks from position at target.
-Precondition: target - position has a nonzero horizontal (x, z) part; otherwise the result is NaN.
+forward (left = up x forward): position goes to the origin, forward to -z, up to +y, left to -x. The camera's frame from
+yaw and pitch: r_CameraUpdateAxes (r_camera.c; convention in ds_math.h).
 */
 m4 	M4View(const v3 position, const v3 left, const v3 up, const v3 forward);
-m4 	M4ViewLookAt(const v3 position, const v3 target);
-m4 	M4ViewYawPitch(const v3 position, const f32 yaw, const f32 pitch);
 
 #ifdef __cplusplus
 } 
