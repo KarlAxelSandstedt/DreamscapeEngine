@@ -34,9 +34,9 @@
 extern v2 	(*ScreenPositionNativeToEngine)(struct nativeWindow *native, const v2 nat_pos);
 /*TODO: Transform system screen position into native screen position */
 extern v2 	(*ScreenPositionEngineToNative)(struct nativeWindow *native, const v2 sys_pos);
-/* Transform native window position into our system coordinate system, return 1 if position is inside window, 0 otherwise */
+/* Native window position (origin top-left, y down) to the engine's (origin bottom-left, y up) */
 extern v2 	(*WindowPositionNativeToEngine)(struct nativeWindow *native, const v2 nat_pos);
-/* Transform system window position into native coordinate system return 1 if position is inside window, 0 otherwise */
+/* The engine's window position to the native one (the inverse of WindowPositionNativeToEngine) */
 extern v2 	(*WindowPositionEngineToNative)(struct nativeWindow *native, const v2 sys_pos);
 
 /* setup system window */

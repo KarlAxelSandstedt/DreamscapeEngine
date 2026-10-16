@@ -17,6 +17,18 @@
 ==========================================================================
 */
 
+/*
+ds_platform.h
+=============
+The engine's interface to the operating system (Linux, Windows, web), implemented in src/sys: platform startup,
+system randomness, files and directories, the process environment (working directory, clipboard), keyboard and
+mouse codes, and system events. The graphics side (windows, GL) is in ds_graphics.h. Platform layer: its
+implementation may call the C library and OS APIs directly.
+
+Functions that can fail return enum fsError (FS_SUCCESS on success) unless their comment says otherwise. Paths are
+UTF-8, relative to a directory (struct file) or to the working directory (the ...AtCwd forms).
+*/
+
 #ifndef __DS_PLATFORM_H__
 #define __DS_PLATFORM_H__
 
@@ -33,7 +45,11 @@ extern "C" {
 /* 			    Platform Initialization			*/
 /************************************************************************/
 
-/* Initiate/cleanup system resources such as timers, input handling, system events, ... */
+/*
+ * Initiate/cleanup system resources: the working directory (g_sys_env->cwd; fatal if it can't be opened), the clock
+ * report, and the job scheduler with thread_count workers and the given per-thread arena sizes. Called by ds_Init and
+ * ds_Shutdown (ds_init.h), not by programs.
+ */
 void 	ds_PlatformApiInit(struct arena *mem, const u64 framesize, const u64 scratchsize, const u32 scratch_count, const u32 thread_count);
 void 	ds_PlatformApiShutdown(void);
 
@@ -45,6 +61,7 @@ void 	ds_PlatformApiShutdown(void);
 /* 
  * Write random bytes into buf[size] using platform API. On linux, this is done by 
  * getrandom; on the Web we read from /dev/urandom; on Windows, BCryptGenRandom (system RNG).
+ * Fatal if the system source fails.
  */
 void	RngSystem(void *buf, const u64 size);
 
@@ -128,51 +145,60 @@ struct file
 };
 DEFINE_CPOOL_STRUCT(file);
 
+/* the closed file: handle FILE_HANDLE_INVALID, empty path, FILE_NONE */
 struct file FileNull(void);
 
 /****************************************** path operations  ****************************************/
 
-/* returns 1 if the path is relative, otherwise 0.  */
+/* returns 1 if the path is relative, otherwise 0 (Linux, web: it starts with '/'; Windows: PathIsRelativeA). */
 u32		CstrPathRelativeCheck(const char *path);
 u32		Utf8PathRelativeCheck(const utf8 path);
 
 /**************************** file opening, creating, closing and dumping *************************/
 
 /*
- * Paths are relative to dir (or the cwd): FileTryCreate, FileTryOpen, DirectoryTryCreate and
- * DirectoryTryOpen return FS_PATH_INVALID for an absolute path. TODO platforms differ: FileDump accepts
- * absolute paths on Linux only (Windows goes through FileTryOpen); FileStatusPath rejects them on Linux.
+ * Paths are relative to dir (or the cwd): FileTryCreate, FileTryOpen, DirectoryTryCreate and DirectoryTryOpen
+ * return FS_PATH_INVALID for an absolute path. Platforms differ: FileDump accepts absolute paths on Linux and web
+ * (Windows goes through FileTryOpen); FileStatusPath rejects them on Linux.
+ *
+ * The Try functions below expect *file closed (FILE_HANDLE_INVALID; asserted), copy the path onto mem and set the
+ * type from the opened file. Errors besides those named: FS_PATH_INVALID (nothing at the path), FS_PERMISSION_DENIED,
+ * FS_FILE_IS_NOT_DIRECTORY (dir or a path component is not a directory), FS_ERROR_UNSPECIFIED.
  */
 
 /* try close file if it is open and set to FileNull  */
 void 		FileClose(struct file *file);
-/* Try create and open a file at the given directory; If the file already exists, it is truncated if truncate is set, otherwise FS_ALREADY_EXISTS is returned. */
+/* Try create and open a file at the given directory, for reading and writing; If the file already exists, it is truncated if truncate is set, otherwise FS_ALREADY_EXISTS is returned. */
 enum fsError 	FileTryCreate(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 truncate);
 /* Try create and open a file at the cwd; If the file already exists, it is truncated if truncate is set, otherwise FS_ALREADY_EXISTS is returned. */
 enum fsError 	FileTryCreateAtCwd(struct arena *mem, struct file *file, const char *filename, const u32 truncate);
-/* Try open a file at the given directory; If the file does not exist, error is returned. */
+/* Try open a file at the given directory, read-only unless writeable; If the file does not exist, FS_PATH_INVALID is returned. */
 enum fsError 	FileTryOpen(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 writeable);
-/* Try open a file at the cwd; If the file does not exist, error is returned. */
+/* Try open a file at the cwd; If the file does not exist, FS_PATH_INVALID is returned. */
 enum fsError 	FileTryOpenAtCwd(struct arena *mem, struct file *file, const char *filename, const u32 writeable);
 
-/* On success, return filled buffer. On failure, set buffer to empty buffer */
+/*
+ * On success, return filled buffer (on mem). On failure, set buffer to empty buffer (mem unchanged); an empty file
+ * also gives the empty buffer. A file shorter than its size claims (it shrank meanwhile, pseudo-files) gives what
+ * was read.
+ */
 struct dsBuffer FileDump(struct arena *mem, const char *path, const struct file *dir);
 struct dsBuffer FileDumpAtCwd(struct arena *mem, const char *path);
 
 /*********************************** file writing and  memory mapping *********************************/
 
-/* return number of bytes written  */
+/* write buf at file_offset; return number of bytes written (fewer on an error, which is logged; 0 if buf is empty) */
 u64 		FileWriteOffset(const struct file *file, const u8 *buf, const u64 bufsize, const u64 file_offset);
-/* return number of bytes written  */
+/* write buf at the end of the file; return number of bytes written (fewer on an error, which is logged; 0 if buf is empty) */
 u64 		FileWriteAppend(const struct file *file, const u8 *buf, const u64 bufsize);
 /* flush kernel io buffers -> up to hardware to actually store flushed io. NOTE: EXTREMELY SLOW OPERATION  */
 void 		FileSync(const struct file *file);
-/* returns 1 on successful size change, 0 or failure */
+/* returns 1 on successful size change, 0 on failure */
 u32		FileSetSize(const struct file *file, const u64 size);
 
-/* return memory mapped address of file and size of file, or NULL on failure. */
+/* return memory mapped address of the whole file and set *size to the file's size; NULL on failure. */
 void *		FileMemoryMap(u64 *size, const struct file *file, const u32 prot, const u32 flags);
-/* return memory mapped address of file, or NULL on failure   */
+/* return memory mapped address of file[offset, offset + length), growing the file first if it is shorter; NULL on failure */
 void *		FileMemoryMapPartial(const struct file *file, const u64 length, const u64 offset, const u32 prot, const u32 flags);
 /* unmap memory mapping */
 void 		FileMemoryUnmap(void *addr, const u64 length);
@@ -181,20 +207,22 @@ void 		FileMemorySyncUnmap(void *addr, const u64 length);
 
 /***************************** directory creation, reading and navigation *****************************/
 
-/* Try create and open a directory at the given directory; If the file already exist, error is returned. */
+/* Try create and open a directory at the given directory; If the file already exist, FS_ALREADY_EXISTS is returned. */
 enum fsError 	DirectoryTryCreate(struct arena *mem, struct file *dir, const char *filename, const struct file *parent_dir);
-/* Try create and open a directory at the cwd; If the file already exist, error is returned. */
+/* Try create and open a directory at the cwd; If the file already exist, FS_ALREADY_EXISTS is returned. */
 enum fsError 	DirectoryTryCreateAtCwd(struct arena *mem, struct file *dir, const char *filename);
-/* Try open a directory at the given directory; If the file does not exist, error is returned. */
+/* Try open a directory at the given directory; FS_PATH_INVALID if it does not exist, FS_TYPE_INVALID if it is not a directory. */
 enum fsError 	DirectoryTryOpen(struct arena *mem, struct file *dir, const char *filename, const struct file *parent_dir);
-/* Try open a directory at the cwd; If the file does not exist, error is returned. */
+/* Try open a directory at the cwd; FS_PATH_INVALID if it does not exist, FS_TYPE_INVALID if it is not a directory. */
 enum fsError 	DirectoryTryOpenAtCwd(struct arena *mem, struct file *dir, const char *filename);
-/* push directory file paths and states AND CLOSE DIRECTORY! 
+/* push directory file paths and states AND CLOSE DIRECTORY (on every path)! Every entry, "." and ".." included,
+ * gets its name (on mem) and type; entries whose status can't be read (dangling links) are FILE_UNRECOGNIZED.
  *
  * RETURNS:
- * 	DS_FS_SUCCESS on success,
- * 	DS_FS_BUFFER_TO_SMALL on out-of-memory,
- *	DS_FS_UNSPECIFIED on errors regarding opening and reading the directory.
+ * 	FS_SUCCESS on success,
+ * 	FS_BUFFER_TO_SMALL on out-of-memory,
+ *	FS_ERROR_UNSPECIFIED on errors regarding opening and reading the directory.
+ * On failure, vec and mem are as before.
  */
 enum fsError	DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct file *dir);
 
@@ -210,52 +238,50 @@ struct directoryNavigator
 	ds_CPool(file)	files;				/* file information 		*/
 };
 
-/* allocate initial memory */
+/* allocate initial memory (heap) */
 struct directoryNavigator 	DirectoryNavigatorAlloc(const u32 initial_memory_string_size, const u32 hash_size, const u32 initial_hash_index_size);
 /* deallocate  memory */
 void				DirectoryNavigatorDealloc(struct directoryNavigator *dn);	
 /* flush memory and reset data structure  */
 void				DirectoryNavigatorFlush(struct directoryNavigator *dn);
-/* returns number of paths containing substring. *index is set to u32[count] containing the matched indices.  */
+/* returns number of paths containing substring. *index is set to u32[count] (on mem) containing the matched indices.  */
 u32 				DirectoryNavigatorLookupSubstring(struct arena *mem, u32 **index, struct directoryNavigator *dn, const utf8 substring);
 /* returns file index, or if no file found, return HASH_NULL (=U32_MAX) */
 u32				DirectoryNavigatorLookup(const struct directoryNavigator *dn, const utf8 filename);
-/* enter given folder and update the directory_navigator state. 
- * WARNING: aliases input path.
+/* enter given folder (relative to the cwd) and update the directory_navigator state. 
+ * WARNING: aliases input path (no copy: path must outlive the navigator's use of it).
  * RETURNS:
- * 	DS_FS_SUCCESS (= 0) on success,
- * 	DS_FS_TYPE_INVALID if specified file is not a directory,
- * 	DS_FS_PATH_INVALID if the given file does not exist,
- * 	DS_FS_PERMISSION_DENIED if user to permitted.
+ * 	FS_SUCCESS (= 0) on success,
+ * 	FS_TYPE_INVALID if specified file is not a directory,
+ * 	FS_PATH_INVALID if the given file does not exist,
+ * 	FS_PERMISSION_DENIED if user not permitted.
  */
 enum fsError			DirectoryNavigatorEnterAndAliasPath(struct directoryNavigator *dn, const utf8 path);
 
 /**************************************** file status operations ****************************************/
 
-/* on success, set status, on error (ret_value != FS_SUCCESS), status becomes undefined */
+/* print the file status to stderr (debugging) */
 void		FileStatusDebugPrint(const file_status *stat);
 /* return file type from file status */
 enum fileType	FileStatusGetType(const file_status *status);
-/* Return the file status of a given file. On error ...
- * TODO: RETURNS:.. */
+/* Fill the file status of a given open file. Returns FS_SUCCESS or FS_ERROR_UNSPECIFIED (status undefined then). */
 enum fsError	FileStatusFile(file_status *status, const struct file *file);
-/* Return the file status of a given filepath. On error ...
- * TODO: RETURNS:.. */
+/* Fill the file status of a given filepath relative to dir. Returns FS_SUCCESS, FS_ERROR_UNSPECIFIED (status undefined
+ * then), or on Linux FS_PATH_INVALID for an absolute path. */
 enum fsError	FileStatusPath(file_status *status, const char *path, const struct file *dir);
 
 /************************************* process directory operations *************************************/
 
-/* Return the absolute path of the current working directory; string is set to empty on error. */
+/* Return the absolute path of the current working directory (on mem); string is set to empty on error, also when mem is too small. */
 utf8		CwdGet(struct arena *mem);
 
 /* Set g_sys_env->cwd and update process' internal current working directory.
  *
  * RETURNS:
- *	DS_FS_SUCCESS on success,
- *	DS_FS_PATH_INVALID if given file does not exist,
- * 	DS_FS_TYPE_INVALID if given file is not a normal directory,
- *	DS_FS_PERMISSION_DENIED if bad permissions.
- *	DS_FS_UNSPECIFIED on unexpected error.
+ *	FS_SUCCESS on success,
+ *	FS_PATH_INVALID if given file does not exist or is not a directory,
+ *	FS_PERMISSION_DENIED if bad permissions.
+ *	FS_ERROR_UNSPECIFIED on unexpected error.
  */
 enum fsError	CwdSet(struct arena *mem, const char *path);
 
@@ -275,8 +301,9 @@ extern struct dsSysEnv *g_sys_env;
 /* returns 1 if user running the process had root/administrator privileges */
 u32 		SystemAdminCheck(void);
 
-/* allocate utf8 on arena */
+/* allocate utf8 on arena; set by the graphics backend (graphics only, not headless) */
 extern utf8 	(*Utf8GetClipboard)(struct arena *mem);
+/* set the clipboard's text; set by the graphics backend (graphics only, not headless) */
 extern void 	(*CstrSetClipboard)(const char *utf8);
 
 
@@ -389,8 +416,10 @@ enum mouseScroll
 	MOUSE_SCROLL_COUNT
 };
 
+/* the current KEY_MOD_* bits; set by the graphics backend (graphics only, not headless) */
 extern u32	(*KeyModifiers)(void);
 	
+/* the enumerator's name (static string, for debugging) */
 const char *	CstrDsKeycode(const enum dsKeycode key);
 const char *	CstrButton(const enum mouseButton button);
 
@@ -448,7 +477,7 @@ struct ds_Event
 };
 DEFINE_POOL(ds_Event);
 
-/* process native window events and update corresponding system window states */
+/* process native window events and update corresponding system window states (graphics only; once per frame) */
 void	ds_ProcessEvents(void);
 
 #ifdef __cplusplus
