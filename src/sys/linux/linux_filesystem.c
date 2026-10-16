@@ -92,7 +92,8 @@ enum fsError FileTryCreate(struct arena *mem, struct file *file, const char *fil
 	return err;
 }
 
-enum fsError FileTryOpen(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 writeable)
+/* openat with flags; a directory open (O_DIRECTORY) of something else gives FS_TYPE_INVALID; type from fstat */
+static enum fsError FileTryOpenFlags(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const int flags)
 {
 	ds_Assert(file->handle == FILE_HANDLE_INVALID);
 	file->handle = FILE_HANDLE_INVALID;
@@ -104,7 +105,7 @@ enum fsError FileTryOpen(struct arena *mem, struct file *file, const char *filen
 	}
 	else
 	{
-		file->handle = openat(dir->handle, filename, (writeable) ? O_RDWR : O_RDONLY, S_IRUSR | S_IWUSR | S_IRGRP);
+		file->handle = openat(dir->handle, filename, flags);
 		if (file->handle == FILE_HANDLE_INVALID)
 		{
 			switch (errno)
@@ -113,8 +114,9 @@ enum fsError FileTryOpen(struct arena *mem, struct file *file, const char *filen
 				/* A directory component in pathname does not exist or is a dangling symbolic link */
 				case ENOENT: { err = FS_PATH_INVALID; } break;
 				/* path is relative but dirfd != FDCWD nor a valid file descriptor */
-				case EBADF: 
-				case ENOTDIR: { err = FS_FILE_IS_NOT_DIRECTORY; } break;
+				case EBADF: { err = FS_FILE_IS_NOT_DIRECTORY; } break;
+				/* O_DIRECTORY on something else, or a path component is not a directory */
+				case ENOTDIR: { err = (flags & O_DIRECTORY) ? FS_TYPE_INVALID : FS_FILE_IS_NOT_DIRECTORY; } break;
 				default: { err = FS_ERROR_UNSPECIFIED; } break;
 			}
 		}
@@ -123,11 +125,19 @@ enum fsError FileTryOpen(struct arena *mem, struct file *file, const char *filen
 
 	if (err == FS_SUCCESS)
 	{
+		file_status status;
 		file->path = Utf8Cstr(mem, filename);
-		file->type = FILE_REGULAR;
+		file->type = (FileStatusFile(&status, file) == FS_SUCCESS)
+			? FileStatusGetType(&status)
+			: FILE_UNRECOGNIZED;
 	}
 
 	return err;
+}
+
+enum fsError FileTryOpen(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 writeable)
+{
+	return FileTryOpenFlags(mem, file, filename, dir, (writeable) ? O_RDWR : O_RDONLY);
 }
 
 enum fsError DirectoryTryCreate(struct arena *mem, struct file *dir, const char *filename, const struct file *parent_dir)
@@ -145,7 +155,7 @@ enum fsError DirectoryTryCreate(struct arena *mem, struct file *dir, const char 
 		const mode_t mode = S_IRWXU | S_IRGRP | S_IROTH;
 		if (mkdirat(parent_dir->handle, filename, mode) == 0)
 		{
-			err = FileTryOpen(mem, dir, filename, parent_dir, FILE_READ);
+			err = DirectoryTryOpen(mem, dir, filename, parent_dir);
 		}
 		else
 		{
@@ -206,12 +216,19 @@ enum fsError DirectoryTryCreateAtCwd(struct arena *mem, struct file *dir, const 
 
 enum fsError DirectoryTryOpen(struct arena *mem, struct file *dir, const char *filename, const struct file *parent_dir)
 {
-	return FileTryOpen(mem, dir, filename, parent_dir, 0);
+	return FileTryOpenFlags(mem, dir, filename, parent_dir, O_RDONLY | O_DIRECTORY);
 }
 
 enum fsError DirectoryTryOpenAtCwd(struct arena *mem, struct file *dir, const char *filename)
 {
-	return FileTryOpenAtCwd(mem, dir, filename, 0);
+	const struct file cwd = 
+	{
+		.handle = AT_FDCWD,
+		.type = FILE_DIRECTORY,
+		.path = Utf8Empty(),
+	};
+
+	return DirectoryTryOpen(mem, dir, filename, &cwd);
 }
 
 struct dsBuffer FileDump(struct arena *mem, const char *path, const struct file *dir)
