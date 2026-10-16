@@ -49,10 +49,7 @@ extern "C" {
 
 /*********************************** zero vectors ***********************************/
 
-/*
-The zero vector of each type.
-*/
-
+/* the zero vector */
 static ds_ForceInline v2 V2Zero(void);
 static ds_ForceInline v3 V3Zero(void);
 static ds_ForceInline v4 V4Zero(void);
@@ -71,42 +68,47 @@ static ds_ForceInline v4i64 V4I64Zero(void);
 
 /**************************** component-wise arithmetic *****************************/
 
-/*
-Per component: Add, Sub (a - b), Mul, Div (a / b), Scale (scale a), AddScaled (a + scale b), AddConstant (c added
-to every component), Negate, Abs, Min and Max (F32Min/F32Max per component: a NaN in a gives b's component, a NaN
-in b is returned).
-*/
-
+/* a + b */
 static ds_ForceInline v2 V2Add(const v2 a, const v2 b);
 static ds_ForceInline v3 V3Add(const v3 a, const v3 b);
 static ds_ForceInline v4 V4Add(const v4 a, const v4 b);
+/* a - b */
 static ds_ForceInline v2 V2Sub(const v2 a, const v2 b);
 static ds_ForceInline v3 V3Sub(const v3 a, const v3 b);
 static ds_ForceInline v4 V4Sub(const v4 a, const v4 b);
+/* a * b per component */
 static ds_ForceInline v2 V2Mul(const v2 a, const v2 b);
 static ds_ForceInline v3 V3Mul(const v3 a, const v3 b);
 static ds_ForceInline v4 V4Mul(const v4 a, const v4 b);
+/* a / b (per component; a zero component of b gives inf or NaN) */
 static ds_ForceInline v2 V2Div(const v2 a, const v2 b);
 static ds_ForceInline v3 V3Div(const v3 a, const v3 b);
 static ds_ForceInline v4 V4Div(const v4 a, const v4 b);
+/* scale * a */
 static ds_ForceInline v2 V2Scale(const v2 a, const f32 scale);
 static ds_ForceInline v3 V3Scale(const v3 a, const f32 scale);
 static ds_ForceInline v4 V4Scale(const v4 a, const f32 scale);
+/* a + scale*b */
 static ds_ForceInline v2 V2AddScaled(const v2 a, const v2 b, const f32 scale);
 static ds_ForceInline v3 V3AddScaled(const v3 a, const v3 b, const f32 scale);
 static ds_ForceInline v4 V4AddScaled(const v4 a, const v4 b, const f32 scale);
+/* a + c in every component */
 static ds_ForceInline v2 V2AddConstant(const v2 a, const f32 c);
 static ds_ForceInline v3 V3AddConstant(const v3 a, const f32 c);
 static ds_ForceInline v4 V4AddConstant(const v4 a, const f32 c);
+/* -a */
 static ds_ForceInline v2 V2Negate(const v2 a);
 static ds_ForceInline v3 V3Negate(const v3 a);
 static ds_ForceInline v4 V4Negate(const v4 a);
+/* |a| per component */
 static ds_ForceInline v2 V2Abs(const v2 a);
 static ds_ForceInline v3 V3Abs(const v3 a);
 static ds_ForceInline v4 V4Abs(const v4 a);
+/* min[i] = F32Min(a[i], b[i]) (a NaN in a gives b's component, a NaN in b is returned) */
 static ds_ForceInline v2 V2Min(const v2 a, const v2 b);
 static ds_ForceInline v3 V3Min(const v3 a, const v3 b);
 static ds_ForceInline v4 V4Min(const v4 a, const v4 b);
+/* max[i] = F32Max(a[i], b[i]) (a NaN in a gives b's component, a NaN in b is returned) */
 static ds_ForceInline v2 V2Max(const v2 a, const v2 b);
 static ds_ForceInline v3 V3Max(const v3 a, const v3 b);
 static ds_ForceInline v4 V4Max(const v4 a, const v4 b);
@@ -114,71 +116,70 @@ static ds_ForceInline v4 V4Max(const v4 a, const v4 b);
 /***************************** world positions (v3f64) ******************************/
 
 /*
-v3f64: world positions, precise far from the origin. f64 is only for storage and the crossing; math runs in f32
-relative to a nearby point:
+ * v3f64: world positions, precise far from the origin. f64 is only for storage and the crossing; math
+ * runs in f32 relative to a nearby point:
+ *
+ *      local = V3F64Demote(V3F64Sub(p, base))      (rounding relative to |p - base|, not |p|)
+ *      p     = V3F64Add(p, V3Promote(delta))       (f32 increments back into world positions)
+ */
 
-     local = V3F64Demote(V3F64Sub(p, base))      (rounding relative to |p - base|, not |p|)
-     p     = V3F64Add(p, V3Promote(delta))       (f32 increments back into world positions)
-
-V3Promote is exact. V3F64Demote rounds each coordinate to the nearest f32, V3F64DemoteDownwards toward -inf and
-V3F64DemoteUpwards toward +inf (F64DemoteDownwards/Upwards; for conservative boxes). V3F64Sub is a - b.
-*/
-
+/* lossless */
 static ds_ForceInline v3f64 V3Promote(const v3 a);
+/* rounds each coordinate to the nearest f32 */
 static ds_ForceInline v3 V3F64Demote(const v3f64 a);
+/* rounds each coordinate toward -inf (F64DemoteDownwards) */
 static ds_ForceInline v3 V3F64DemoteDownwards(const v3f64 a);
+/* rounds each coordinate toward +inf (F64DemoteUpwards) */
 static ds_ForceInline v3 V3F64DemoteUpwards(const v3f64 a);
+/* a + b */
 static ds_ForceInline v3f64 V3F64Add(const v3f64 a, const v3f64 b);
+/* a - b */
 static ds_ForceInline v3f64 V3F64Sub(const v3f64 a, const v3f64 b);
 
 /*************************** products, lengths, distances ***************************/
 
-/*
-Dot sums left to right ((x + y) + z). Length is the square root of LengthSquared, Distance of DistanceSquared
-(|b - a|^2). The squares overflow for components above about 1.8e19 and underflow below about 1e-19
-(subnormal; 0 below about 3e-23).
-
-Normalize returns a / |a|. Precondition: |a|^2 > 0 (asserted in debug: a = 0, a square that underflows or NaN
-would give NaN components); |a| below the overflow range.
-
-Cross is a x b (right-handed), RecenterCross (a - center) x (b - center), TripleProduct the vector (a x b) x c.
-*/
-
+/* dot product, summed left to right ((x + y) + z) */
 static ds_ForceInline f32 V2Dot(const v2 a, const v2 b);
 static ds_ForceInline f32 V3Dot(const v3 a, const v3 b);
 static ds_ForceInline f32 V4Dot(const v4 a, const v4 b);
+/* |a|^2; overflows for components above about 1.8e19, underflows below about 1e-19 (0 below about 3e-23) */
 static ds_ForceInline f32 V2LengthSquared(const v2 a);
 static ds_ForceInline f32 V3LengthSquared(const v3 a);
 static ds_ForceInline f32 V4LengthSquared(const v4 a);
+/* |a| */
 static ds_ForceInline f32 V2Length(const v2 a);
 static ds_ForceInline f32 V3Length(const v3 a);
 static ds_ForceInline f32 V4Length(const v4 a);
+/* a / |a|. Precondition: |a|^2 > 0 (asserted in debug: a = 0, a square that underflows or NaN would give NaN components) */
 static ds_ForceInline v2 V2Normalize(const v2 a);
 static ds_ForceInline v3 V3Normalize(const v3 a);
 static ds_ForceInline v4 V4Normalize(const v4 a);
+/* |b - a|^2 */
 static ds_ForceInline f32 V2DistanceSquared(const v2 a, const v2 b);
 static ds_ForceInline f32 V3DistanceSquared(const v3 a, const v3 b);
 static ds_ForceInline f32 V4DistanceSquared(const v4 a, const v4 b);
+/* |b - a| */
 static ds_ForceInline f32 V2Distance(const v2 a, const v2 b);
 static ds_ForceInline f32 V3Distance(const v3 a, const v3 b);
 static ds_ForceInline f32 V4Distance(const v4 a, const v4 b);
+/* a cross b (right-handed) */
 static ds_ForceInline v3 V3Cross(const v3 a, const v3 b);
+/* (a-center) x (b-center) */
 static ds_ForceInline v3 V3RecenterCross(const v3 center, const v3 a, const v3 b);
+/* (a x b) x c */
 static ds_ForceInline v3 V3TripleProduct(const v3 a, const v3 b, const v3 c);
 
 /********************************** interpolation ***********************************/
 
-/*
-Interpolate returns a alpha + b (1 - alpha): alpha weights a, the reverse of the usual lerp(a, b, t); exactly a at
-alpha = 1 and b at alpha = 0. InterpolatePiecewise takes one alpha per component. Mix is the midpoint 0.5 (a + b).
-*/
-
+/* interpolate (alpha = 0.5f): the midpoint 0.5 (a + b) */
 static ds_ForceInline v2 V2Mix(const v2 a, const v2 b);
 static ds_ForceInline v3 V3Mix(const v3 a, const v3 b);
 static ds_ForceInline v4 V4Mix(const v4 a, const v4 b);
+/* a * alpha + b * (1-alpha): alpha weights a (the reverse of lerp(a, b, t)); exactly a at alpha = 1, b at alpha = 0 */
 static ds_ForceInline v2 V2Interpolate(const v2 a, const v2 b, const f32 alpha);
 static ds_ForceInline v3 V3Interpolate(const v3 a, const v3 b, const f32 alpha);
 static ds_ForceInline v4 V4Interpolate(const v4 a, const v4 b, const f32 alpha);
+/* a * alpha + b * (1-alpha), one alpha per component */
 static ds_ForceInline v2 V2InterpolatePiecewise(const v2 a, const v2 b, const v2 alpha);
 static ds_ForceInline v3 V3InterpolatePiecewise(const v3 a, const v3 b, const v3 alpha);
 static ds_ForceInline v4 V4InterpolatePiecewise(const v4 a, const v4 b, const v4 alpha);
@@ -186,35 +187,33 @@ static ds_ForceInline v4 V4InterpolatePiecewise(const v4 a, const v4 b, const v4
 /******************************* directions and bases *******************************/
 
 /*
-V3Support returns the index of the support vertex of v[0..count), the one maximizing dot(v[i], dir). Ties go to
-the lowest index (deterministic). dir needs no normalization; dir = 0 returns 0. count > 0 (asserted).
-
-V3RotateY rotates a by angle (radians) about +y by the right-hand rule (x turns toward -z).
-
-V3ParallelCheck returns 1 if sin^2 of the angle between a and b is below eps (antiparallel counts as parallel), 0
-if a or b is zero. It computes |a|^2 |b|^2 - (a.b)^2, which cancels for nearly parallel vectors: eps below about
-1e-6 is not resolved. V3ParallelCheckEpsilon(degrees) returns that eps, sin^2(degrees).
-
-V3CreateBasis writes n1 and n2: unit, orthogonal to each other and to n3. Precondition: |n3| = 1 (asserted within
-1.2e-3). n1 x n2 = -n3: (n1, n2, n3) is left-handed, (n2, n1, n3) right-handed. The construction switches at
-|n3.z| = 1/sqrt(2), so the basis jumps as n3 crosses it.
-
-V3FiniteCheck returns 1 if no component is NaN or +-inf.
-*/
-
+ * Return the index of the support vertex of v[0..count): the one maximizing dot(v[i], dir). Ties go to
+ * the lowest index (deterministic). dir needs no normalization; dir = 0 returns 0. count must be > 0.
+ */
 static ds_ForceInline u32 V3Support(const v3 *v, const u32 count, const v3 dir);
+/* CCW rotation around the y-axis by angle (radians; right-hand rule: x turns toward -z). Uses the C library's sin/cos */
 static ds_ForceInline v3 V3RotateY(const v3 a, const f32 angle);
+/* 
+ * Generate an appropriate epsilon for V3ParallelCheck given the upper-bound degrees for two vectors to be 
+ * considered parallel: sin^2(degrees) (the C library's sin).
+ */
 static ds_ForceInline f32 V3ParallelCheckEpsilon(const f32 degrees);
+/*
+ * Return 1 if the vectors are parallel, otherwise return 0: sin^2 of their angle below eps (antiparallel counts;
+ * 0 if a or b is zero). |a|^2 |b|^2 - (a.b)^2 cancels for nearly parallel vectors: eps below about 1e-6 is not resolved.
+ */
 static ds_ForceInline u32 V3ParallelCheck(const v3 a, const v3 b, const f32 eps);
+/*
+ * n3 Must be normalized! (asserted within 1.2e-3) Writes n1, n2: unit, orthogonal to each other and to n3, with
+ * n1 x n2 = -n3: (n1, n2, n3) is left-handed. The construction switches at |n3.z| = 1/sqrt(2).
+ */
 static ds_ForceInline void V3CreateBasis(v3 *n1, v3 *n2, const v3 n3);
+/* 1 if no component is NaN or Inf */
 static ds_ForceInline u32 V3FiniteCheck(const v3 v);
 
 /************************************* printing *************************************/
 
-/*
-Print text and the components to stderr, for debugging.
-*/
-
+/* print text and the components to stderr (debugging) */
 static inline void V2Print(const char *text, const v2 v);
 static inline void V3Print(const char *text, const v3 v);
 static inline void V4Print(const char *text, const v4 v);
