@@ -25,6 +25,40 @@
 
 struct ds_JobScheduler *g_scheduler = NULL;
 
+/*
+Internals
+=========
+Work-stealing deque: when the owner grows a deque, the old block is not freed. That greatly simplifies the
+synchronization with stealers, which may still read the old block, and costs little: the size doubles each time,
+so the old blocks add up to at most the current one (2^0 + 2^1 + ... + 2^(n-1) = 2^n - 1 <= 2^n). Ideally the
+initial size is tuned so that no growth happens; ds_WSDequeDealloc frees every block.
+
+Phases: sharing growable job arrays between threads is nasty business, so each phase allocates the maximum number
+of jobs of every type up front, at the cost of reserving more memory than used.
+
+Parallel-for chains end in a dummy loop so that "loop i finished" always has a loop i + 1 to release:
+    (1) thread T1 reaches loop i + 1 and spins acquiring loop[i + 1].a_ready,
+    (2) thread T2 works in loop i,
+    (3) T2 finishes loop i and releases loop[i + 1].a_ready.
+The last loop releases the dummy, which ds_ParallelForChainWait waits on.
+
+Open questions on PFWait (owner's notes, moved from ds_job.h):
+    2. Can we simplify the exponential pause stuff, or is it fine to only use << 1 increments?
+
+    3. We need to make sched_yield platform idependent,
+
+         PLATFORMS REQUIRED:
+
+                 Windows
+                 Linux
+                 WebAssembly + Emscripten
+
+         POSSIBLE FUTURE PLATFORMS
+
+                 modern game consoles
+*/
+
+
 static void ds_WSDequeStaticAssert(void)
 {
     ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->a_top == 0, "");
@@ -339,7 +373,7 @@ void ds_WorkerMain(ds_Thread *thr)
 
 	w->thr = thr;
 	AtomicFetchAddSeqCst32(&g_scheduler->a_running, 1);
-	LogString(T_SYSTEM, S_NOTE, "ds_Worker setup fished");
+	LogString(T_SYSTEM, S_NOTE, "ds_Worker setup finished");
 
     const u32 index_self = ds_ThreadSelfIndex();
 	while (AtomicLoadRlx32(&g_scheduler->a_running))
