@@ -31,7 +31,7 @@ extern "C" {
 #include "ds_platform.h"
 #include "sdl3_wrapper_public.h"
 
-/* load every GL function of func through SDL_GL_GetProcAddress (a missing one is logged and left NULL) */
+/* load every GL function of func through SDL_GL_GetProcAddress; a missing one is fatal */
 void			sdl3_GlFunctionsInit(struct gl_Functions *func);
 /*
  * If an SDL event the engine handles is pending, translate it into *event and return 1; skips the others; 0 when
