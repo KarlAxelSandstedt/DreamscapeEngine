@@ -63,6 +63,11 @@ Workflow
   changing that system. Shareable lists go there, nothing private. Agents
   commit and push their changes to it (the no-commit rule above is for this
   repo). "agent_notes/x.txt" in comments and notes means that repo's file.
+- Test only what your change affects: the suites covering the changed code.
+  No determinism, sanitizer or full-suite runs unless there is a reason
+  (e.g. the change touches the simulation, threading or memory handling).
+  Documentation and header-layout changes need no tests; at most a compile
+  when code moved.
 
 Determinism
 ===========
