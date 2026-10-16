@@ -47,69 +47,64 @@ extern "C" {
 
 /*********************************** construction ***********************************/
 
-/*
-Identity matrices; Columns builds a matrix from its columns, Rows from its rows.
-*/
-
+/* identity matrix */
 static ds_ForceInline m2 M2Identity(void);
 static ds_ForceInline m3 M3Identity(void);
 static ds_ForceInline m4 M4Identity(void);
+/* the matrix with the given columns */
 static ds_ForceInline m2 M2Columns(const v2 c1, const v2 c2);
 static ds_ForceInline m3 M3Columns(const v3 c1, const v3 c2, const v3 c3);
 static ds_ForceInline m4 M4Columns(const v4 c1, const v4 c2, const v4 c3, const v4 c4);
+/* the matrix with the given rows */
 static ds_ForceInline m2 M2Rows(const v2 r1, const v2 r2);
 static ds_ForceInline m3 M3Rows(const v3 r1, const v3 r2, const v3 r3);
 static ds_ForceInline m4 M4Rows(const v4 r1, const v4 r2, const v4 r3, const v4 r4);
 
 /****************************** products with vectors *******************************/
 
-/*
-M3V3Mul(m, v) is the column vector m v, V3M3Mul(v, m) the row vector v^T m (= m^T v); likewise for 2 and 4.
-Each component sums its terms left to right.
-*/
-
+/* mat*vec: m v (each component summed left to right) */
 static ds_ForceInline v2 M2V2Mul(const m2 m, const v2 v);
 static ds_ForceInline v3 M3V3Mul(const m3 m, const v3 v);
 static ds_ForceInline v4 M4V4Mul(const m4 m, const v4 v);
+/* vec*mat: v^T m (= m^T v) */
 static ds_ForceInline v2 V2M2Mul(const v2 v, const m2 m);
 static ds_ForceInline v3 V3M3Mul(const v3 v, const m3 m);
 static ds_ForceInline v4 V4M4Mul(const v4 v, const m4 m);
 
 /************************************ arithmetic ************************************/
 
-/*
-Add (a + b), Sub (a - b) and Scale (m scale) work per element. Mul is the matrix product a b (column j is
-a b.col[j]). Transpose is m^T, OuterProduct(a, b) is a b^T.
-*/
-
+/* a + b */
 static ds_ForceInline m2 M2Add(const m2 a, const m2 b);
 static ds_ForceInline m3 M3Add(const m3 a, const m3 b);
 static ds_ForceInline m4 M4Add(const m4 a, const m4 b);
+/* a - b */
 static ds_ForceInline m2 M2Sub(const m2 a, const m2 b);
 static ds_ForceInline m3 M3Sub(const m3 a, const m3 b);
 static ds_ForceInline m4 M4Sub(const m4 a, const m4 b);
+/* m*scale */
 static ds_ForceInline m2 M2Scale(const m2 m, const f32 scale);
 static ds_ForceInline m3 M3Scale(const m3 m, const f32 scale);
 static ds_ForceInline m4 M4Scale(const m4 m, const f32 scale);
+/* a*b */
 static ds_ForceInline m2 M2Mul(const m2 a, const m2 b);
 static ds_ForceInline m3 M3Mul(const m3 a, const m3 b);
 static ds_ForceInline m4 M4Mul(const m4 a, const m4 b);
+/* m^T */
 static ds_ForceInline m2 M2Transpose(const m2 m);
 static ds_ForceInline m3 M3Transpose(const m3 m);
 static ds_ForceInline m4 M4Transpose(const m4 m);
+/* a * b^T */
 static ds_ForceInline m2 M2OuterProduct(const v2 a, const v2 b);
 static ds_ForceInline m3 M3OuterProduct(const v3 a, const v3 b);
 static ds_ForceInline m4 M4OuterProduct(const v4 a, const v4 b);
 
 /********************************** element bounds **********************************/
 
-/*
-AbsMin and AbsMax return the smallest and the largest |aij| (for matrices without NaN).
-*/
-
+/* min |a_ij| (matrices without NaN) */
 static ds_ForceInline f32 M2AbsMin(const m2 m);
 static ds_ForceInline f32 M3AbsMin(const m3 m);
 static ds_ForceInline f32 M4AbsMin(const m4 m);
+/* max |a_ij| (matrices without NaN) */
 static ds_ForceInline f32 M2AbsMax(const m2 m);
 static ds_ForceInline f32 M3AbsMax(const m3 m);
 static ds_ForceInline f32 M4AbsMax(const m4 m);
@@ -117,32 +112,27 @@ static ds_ForceInline f32 M4AbsMax(const m4 m);
 /************************************ rotations *************************************/
 
 /*
-M3QUnit(a) is the rotation matrix of the unit quaternion a: M3V3Mul(M3QUnit(a), v) is QUnitRotate(a, v) up to
-rounding. Precondition: |a| = 1, not checked; otherwise the diagonal is off by |a|^2 - 1 and the result is not a
-scaled rotation. M4QUnit is the same rotation as a 4x4 matrix (last row and column (0, 0, 0, 1)).
-*/
-
+ * a is a normalised quaternion representing a CCW rotation (not checked: otherwise the diagonal is off by
+ * |a|^2 - 1). M3V3Mul(M3QUnit(a), v) is QUnitRotate(a, v) up to rounding.
+ */
 static ds_ForceInline m3 M3QUnit(const q a);
+/* a is a normalised quaternion representing a CCW rotation; M3QUnit as a 4x4 matrix (last row and column 0, 0, 0, 1) */
 static ds_ForceInline m4 M4QUnit(const q a);
 
 /****************************** inverses (ds_matrix.c) ******************************/
 
 /*
-Inverse writes the inverse of a to *inv (the adjugate over the determinant) and returns the determinant. A zero
-determinant writes inf/NaN, so the caller checks it; nearly singular matrices give large, inaccurate inverses (no
-pivoting). Defined in ds_matrix.c.
-*/
-
+ * Returns determinant of a, and sets inverse (the adjugate over the determinant), or garbage (inf/NaN) if it does
+ * not exist: check the determinant. No pivoting: nearly singular matrices give large, inaccurate inverses.
+ * (Implemented in ds_matrix.c)
+ */
 f32 M2Inverse(m2 *inv, const m2 a);
 f32 M3Inverse(m3 *inv, const m3 a);
 f32 M4Inverse(m4 *inv, const m4 a);
 
 /************************************* printing *************************************/
 
-/*
-Print text and the matrix, row by row, to stdout; for debugging.
-*/
-
+/* print text and the matrix, row by row, to stdout (debugging) */
 static inline void M2Print(const char *text, const m2 m);
 static inline void M3Print(const char *text, const m3 m);
 static inline void M4Print(const char *text, const m4 m);
