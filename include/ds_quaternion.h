@@ -17,6 +17,18 @@
 ==========================================================================
 */
 
+/*
+ds_quaternion.h
+===============
+Quaternions q = (x, y, z, w), w the scalar part, as rotations: construction, arithmetic, rotating vectors. The
+type and Q(x, y, z, w) are in ds_types.h; matrices from quaternions (M3QUnit) in ds_matrix.h. Included by ds_math.h.
+
+Everything is plain IEEE arithmetic in a fixed order, the same bits on every platform and compiler, except
+QAxisAngle and QUnitAxisAngle (the C library's sin and cos). Nothing is checked: a zero quaternion or axis gives NaN.
+
+Sections: construction, arithmetic, rotating vectors; inline definitions at the bottom, in the same order.
+*/
+
 #ifndef __DS_Q_H__
 #define __DS_Q_H__
 
@@ -51,31 +63,74 @@ extern "C" {
  *	      kj = -i
  */
 
+/*********************************** construction ***********************************/
+
+/*
+QIdentity is the rotation by 0. QAxisAngle(axis, angle) and QUnitAxisAngle(axis, angle) are the unit quaternion
+(sin(angle/2) u, cos(angle/2)) for the rotation by angle (radians) about u = axis / |axis| by the right-hand rule;
+QUnitAxisAngle takes u directly (|axis| = 1, not checked), QAxisAngle divides by |axis| (a zero axis gives NaN).
+Both use the C library's sin and cos: not the same bits on every platform.
+*/
+
+static ds_ForceInline q QIdentity(void);
+static ds_ForceInline q QAxisAngle(const v3 axis, const f32 angle);
+static ds_ForceInline q QUnitAxisAngle(const v3 axis, const f32 angle);
+
+/************************************ arithmetic ************************************/
+
+/*
+QAdd, QSub (a - b) and QScale (a scale) work per component. QMul is the Hamilton product a b: rotating by QMul(a, b)
+rotates by b first, then by a. QConj negates x, y, z (the inverse of a unit quaternion). QNorm is |a|, QInverse
+conj(a) / |a|^2 and QNormalize a / |a|; a = 0 gives NaN.
+*/
+
+static ds_ForceInline q QAdd(const q a, const q b);
+static ds_ForceInline q QSub(const q a, const q b);
+static ds_ForceInline q QMul(const q a, const q b);
+static ds_ForceInline q QScale(const q a, const f32 scale);
+static ds_ForceInline q QConj(const q a);
+static ds_ForceInline f32 QNorm(const q a);
+static ds_ForceInline q QInverse(const q a);
+static ds_ForceInline q QNormalize(const q a);
+
+/********************************* rotating vectors *********************************/
+
+/*
+QUnitRotate returns a v a^-1, v rotated by the unit quaternion a. Precondition: |a| = 1, not checked: otherwise
+the result is R v + (1 - |a|^2) (v - R v), R the rotation of a / |a|. QYUnitRotate(a, y) is QUnitRotate(a, V3(0, y, 0)) with the zero
+terms left out, the remaining additions in the same order: the same result except the sign of a zero component
+(and products in the subnormal range).
+*/
+
+static ds_ForceInline v3 QUnitRotate(const q a, const v3 v);
+static ds_ForceInline v3 QYUnitRotate(const q a, const f32 y);
+
+/************************* construction: inline definitions *************************/
+
 static ds_ForceInline q QIdentity(void)
 {
 	return Q(0.0f, 0.0f, 0.0f, 1.0f);
 }
 
-/* Return quaternion representing rotation around (non-normalized) axis with given angle */
 static ds_ForceInline q QAxisAngle(const v3 axis, const f32 angle)
 {
 	const f32 scale = F32Sin(angle/2.0f) / V3Length(axis);
 	return Q(scale * axis.x, scale * axis.y, scale * axis.z, F32Cos(angle/2.0f));
 }
 
-/* Return quaternion representing rotation around (Normalized!) axis with given angle */
 static ds_ForceInline q QUnitAxisAngle(const v3 axis, const f32 angle)
 {
 	const f32 scale = F32Sin(angle/2.0f);
 	return Q(scale * axis.x, scale * axis.y, scale * axis.z, F32Cos(angle/2.0f));
 }
 
+/************************** arithmetic: inline definitions **************************/
+
 static ds_ForceInline q QAdd(const q a, const q b)
 {
 	return Q(a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w);
 }
 
-/* a - b */
 static ds_ForceInline q QSub(const q a, const q b)
 {
 	return Q(a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w);
@@ -104,7 +159,6 @@ static ds_ForceInline f32 QNorm(const q a)
 	return F32Sqrt(a.x*a.x + a.y*a.y + a.z*a.z + a.w*a.w);
 }
 
-/* a^-1 = conj(a) / |a|^2 */
 static ds_ForceInline q QInverse(const q a)
 {
 	return QScale(QConj(a), 1.0f / (a.x*a.x + a.y*a.y + a.z*a.z + a.w*a.w));
@@ -115,7 +169,8 @@ static ds_ForceInline q QNormalize(const q a)
 	return QScale(a, 1.0f / QNorm(a));
 }
 
-/* Rotate v by unit a: ava^-1 = v + 2*a_w*Cross(a_xyz, v) + 2*Cross(a_xyz, Cross(a_xyz, v)) */
+/*********************** rotating vectors: inline definitions ***********************/
+
 static ds_ForceInline v3 QUnitRotate(const q a, const v3 v)
 {
 	const v3 c = V3(2.0f*(a.y*v.z - a.z*v.y),
@@ -127,7 +182,6 @@ static ds_ForceInline v3 QUnitRotate(const q a, const v3 v)
 		  v.z + a.w*c.z + a.x*c.y - a.y*c.x);
 }
 
-/* QUnitRotate with v = (0, y, 0); same addition order */
 static ds_ForceInline v3 QYUnitRotate(const q a, const f32 y)
 {
 	const f32 cx = -2.0f*a.z*y;
