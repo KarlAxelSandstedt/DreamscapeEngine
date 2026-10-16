@@ -25,7 +25,6 @@ struct ds_NumericsConfig *g_numerics_config = NULL;
 struct ds_NumericsConfig ds_NumericsConfigDefault(void)
 {
     struct ds_NumericsConfig config = { 0 };
-    config.v3_parallel_check_max_degrees_pending = 0.5f;
     config.dbvh_reinsert_threshold_pending = 0.25f;
     config.cache_count_max_pending = 32;
     config.gjk_max_iterations_pending = 32;
@@ -46,10 +45,6 @@ void ds_NumericsConfigPush(struct ds_NumericsConfig *config)
     g_numerics_config = config;
 
     config->dbvh_reinsert_threshold = F32Clamp(config->dbvh_reinsert_threshold_pending, 0.0f, 1.0f);
-
-    config->v3_parallel_check_max_degrees_pending = F32Clamp(config->v3_parallel_check_max_degrees_pending, 0.0f, 45.0f);
-    config->v3_parallel_check_max_degrees = config->v3_parallel_check_max_degrees_pending;
-    config->v3_parallel_check_eps = V3ParallelCheckEpsilon(config->v3_parallel_check_max_degrees);
 
     config->cache_count_max = config->cache_count_max_pending;
 

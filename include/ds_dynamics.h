@@ -52,11 +52,6 @@ ds_NumericsConfig stores configurable values to be used in numerical calculation
 
 struct ds_NumericsConfig
 {
-    /* Maximum degrees allowed between two vectors for them to be considered parallel */
-    f32 v3_parallel_check_max_degrees_pending;
-    f32 v3_parallel_check_max_degrees;
-    f32 v3_parallel_check_eps;
-
     /* Fraction of dirty dbvh proxies that may be re-inserted before triggering a dbvh rebuild  */
     f32 dbvh_reinsert_threshold_pending;
     f32 dbvh_reinsert_threshold;
