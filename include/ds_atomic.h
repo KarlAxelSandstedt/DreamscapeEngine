@@ -29,24 +29,13 @@ Contents (in this order):
     Overflow    U64AddReturnOverflow/U64MulReturnOverflow: nonzero on overflow; *dst gets the wrapped result.
     Bits        Clz/Ctz (leading/trailing zeroes), C (1-bits), Cz (0-bits), 32 and 64 bit.
 
-Atomics
--------
-Orderings: Rlx, Acq, Rel, AcqRel, SeqCst. A compare-exchange names both orderings (success, then
-failure: AcqRlx), a single name means both. Ops: FetchAdd/FetchSub return the old value,
-AddFetch/SubFetch the new one (both wrap), Load/Store, LoadToAddr/StoreFromAddr (copy through a
-pointer), CompareExchange.
-- Compare-exchange is strong: returns 1 if *dst was *cmp and is now exch_val; else returns 0 and
-  writes the current *dst to *cmp. *cmp is read once, before the exchange.
-- Results are u32/u64 on every compiler; stores return nothing.
-- Every operand pointer is checked at compile time to point at exactly 4 or 8 bytes.
-- MSVC (x64): RMW operations are lock-prefixed full barriers whatever the ordering; loads are plain
-  movs; Rlx/Rel stores are plain movs and SeqCst stores xchg.
-- FORCE_SEQ_CST (GCC/clang) turns every ordering into SeqCst; for ruling out ordering bugs.
-
-Bits
-----
-Clz/Ctz(0) is undefined (the GCC/clang builtins are, whatever the instruction). All return u32.
-They compile to lzcnt, tzcnt and popcnt: the CPU baseline (AGENTS.md), checked by ds_ArchConfigInit.
+Every atomic exists for each ordering in its name (Rlx, Acq, Rel, AcqRel, SeqCst; a compare-exchange names the
+success, then the failure ordering) and for 32 and 64 bits (u32/u64; pointers through the variant of their size,
+32 on wasm32). Results are u32/u64 on every compiler. Every operand pointer is checked at compile time to point at
+exactly 4 or 8 bytes. MSVC (x64): RMW operations are lock-prefixed full barriers whatever the ordering; loads are
+plain movs; Rlx/Rel stores are plain movs and SeqCst stores xchg. FORCE_SEQ_CST (GCC/clang) turns every ordering
+into SeqCst, for ruling out ordering bugs. The macros are declared below, one comment per family; their
+definitions follow per compiler.
 */
 
 #ifndef __DREAMSCAPE_ATOMIC_H__
@@ -59,6 +48,7 @@ extern "C" {
 #include "ds_define.h"
 
 #include <stdatomic.h>
+/* a fence of the named ordering (atomic_thread_fence) */
 #define ds_MemoryFenceAcquire atomic_thread_fence(memory_order_acquire)
 #define ds_MemoryFenceRelease atomic_thread_fence(memory_order_release)
 #define ds_MemoryFenceAcqRel  atomic_thread_fence(memory_order_acq_rel)
@@ -72,6 +62,50 @@ silently differ between compilers.
 #define DS_ATOMIC_SIZE_CHECK(p, n)	((void) sizeof(char[(sizeof(*(p)) == (n)) ? 1 : -1]))
 
 //#define FORCE_SEQ_CST
+
+/************************************ atomics *************************************/
+
+/* return *fetch_addr */
+//#define AtomicLoad{Rlx,Acq,SeqCst}{32,64}(fetch_addr)
+/* *dst_addr = *fetch_addr, the load atomic */
+//#define AtomicLoadToAddr{Rlx,Acq,SeqCst}{32,64}(fetch_addr, dst_addr)
+/* *dst_addr = val; returns nothing */
+//#define AtomicStore{Rlx,Rel,SeqCst}{32,64}(dst_addr, val)
+/* *dst_addr = *src_addr, the store atomic; returns nothing */
+//#define AtomicStoreFromAddr{Rlx,Rel,SeqCst}{32,64}(dst_addr, src_addr)
+/* *fetch_addr += val (wrapping); return the old value */
+//#define AtomicFetchAdd{Rlx,Acq,Rel,SeqCst}{32,64}(fetch_addr, val)
+/* *fetch_addr += val (wrapping); return the new value */
+//#define AtomicAddFetch{Rlx,Acq,Rel,AcqRel,SeqCst}{32,64}(fetch_addr, val)
+/* *fetch_addr -= val (wrapping); return the old value */
+//#define AtomicFetchSub{Rlx,Acq,Rel,SeqCst}{32,64}(fetch_addr, val)
+/* *fetch_addr -= val (wrapping); return the new value */
+//#define AtomicSubFetch{Rlx,Acq,Rel,SeqCst}{32,64}(fetch_addr, val)
+/*
+ * Strong compare-exchange: if *dst_addr == *cmp_addr, set *dst_addr = exch_val and return 1; else write the current
+ * *dst_addr to *cmp_addr and return 0. *cmp_addr is read once, before the exchange.
+ */
+//#define AtomicCompareExchange{RlxRlx,AcqRlx,AcqAcq,RelRlx,AcqRelAcq,SeqCstRlx,SeqCst}{32,64}(dst_addr, cmp_addr, exch_val)
+
+/************************************ overflow ************************************/
+
+/* *dst_addr = src1 + src2 (wrapped); nonzero on overflow */
+//#define U64AddReturnOverflow(dst_addr, src1, src2)
+/* *dst_addr = src1 * src2 (wrapped); nonzero on overflow */
+//#define U64MulReturnOverflow(dst_addr, src1, src2)
+
+/************************************** bits **************************************/
+
+/* the number of leading zero bits of x (u32); x == 0 is undefined. Compiles to lzcnt (the CPU baseline) */
+//#define Clz{32,64}(x)
+/* the number of trailing zero bits of x (u32); x == 0 is undefined. Compiles to tzcnt (the CPU baseline) */
+//#define Ctz{32,64}(x)
+/* the number of 1-bits of x (u32); popcnt */
+//#define C{32,64}(x)
+/* the number of 0-bits of x (u32) */
+//#define Cz{32,64}(x)
+
+/****************************** definitions per compiler ******************************/
 
 #if __DS_COMPILER__ == __DS_GCC__ || __DS_COMPILER__ == __DS_CLANG__
 
