@@ -460,6 +460,142 @@ static struct test_Output FloatTest(struct test_Environment *env)
 	return output;
 }
 
+/* uniform in [min, max) from the top 24 bits: the same value on every compiler */
+static f32 VectorTestF32(struct rng *rng, const f32 min, const f32 max)
+{
+    return min + (max - min) * ((f32) (RngLocalU64(rng) >> 40) * 0x1p-24f);
+}
+
+/* components drawn one statement at a time (argument evaluation order is unspecified) */
+static v3 VectorTestV3(struct rng *rng, const f32 min, const f32 max)
+{
+    const f32 x = VectorTestF32(rng, min, max);
+    const f32 y = VectorTestF32(rng, min, max);
+    const f32 z = VectorTestF32(rng, min, max);
+    return V3(x, y, z);
+}
+
+static u32 VectorTestNear(const v3 a, const v3 b, const f32 tol)
+{
+    return F32Abs(a.x - b.x) <= tol && F32Abs(a.y - b.y) <= tol && F32Abs(a.z - b.z) <= tol;
+}
+
+/*
+ * ds_vector.h contracts: V3Dot sums left to right; V3Normalize gives unit length; V3CreateBasis gives an
+ * orthonormal, left-handed (n1 x n2 = -n3) basis, on the axes, at both sides of its switch |n3.z| = 1/sqrt(2)
+ * and for random normals; V3Support returns the lowest index among the maxima (ties made by repeated points,
+ * dir = 0 included); V3Interpolate is exact at alpha 1 and 0; V3ParallelCheck around its threshold, antiparallel
+ * and zero vectors; V3RotateY turns x toward -z; the V3F64 demotions bracket their input.
+ */
+static struct test_Output VectorTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct rng rng;
+    RngLocalInit(&rng, env->seed);
+
+    for (u32 i = 0; i < 10000; ++i)
+    {
+        const v3 a = VectorTestV3(&rng, -1000.0f, 1000.0f);
+        const v3 b = VectorTestV3(&rng, -1000.0f, 1000.0f);
+        TEST_EQUAL(FloatTestBitsOf((a.x*b.x + a.y*b.y) + a.z*b.z), FloatTestBitsOf(V3Dot(a, b)));
+
+        TEST_TRUE(V3Interpolate(a, b, 1.0f).x == a.x && V3Interpolate(a, b, 1.0f).y == a.y && V3Interpolate(a, b, 1.0f).z == a.z);
+        TEST_TRUE(V3Interpolate(a, b, 0.0f).x == b.x && V3Interpolate(a, b, 0.0f).y == b.y && V3Interpolate(a, b, 0.0f).z == b.z);
+
+        if (V3Length(a) > 1e-3f)
+        {
+            TEST_TRUE(F32Abs(V3Length(V3Normalize(a)) - 1.0f) <= 1e-6f);
+        }
+    }
+
+    /* the axes, both sides of the switch at |z| = 1/sqrt(2), then random normals */
+    const f32 r = 1.0f / F32Sqrt(2.0f);
+    const v3 normal[] =
+    {
+        V3(1.0f, 0.0f, 0.0f), V3(-1.0f, 0.0f, 0.0f), V3(0.0f, 1.0f, 0.0f), V3(0.0f, -1.0f, 0.0f),
+        V3(0.0f, 0.0f, 1.0f), V3(0.0f, 0.0f, -1.0f),
+        V3Normalize(V3(r, 0.0f, r * 0.999f)), V3Normalize(V3(r, 0.0f, r * 1.001f)),
+        V3Normalize(V3(0.0f, -r, -r * 0.999f)), V3Normalize(V3(0.0f, -r, -r * 1.001f)),
+    };
+    const u32 normal_count = sizeof(normal) / sizeof(normal[0]);
+    for (u32 i = 0; i < normal_count + 10000; ++i)
+    {
+        v3 n3;
+        if (i < normal_count)
+        {
+            n3 = normal[i];
+        }
+        else
+        {
+            const v3 v = VectorTestV3(&rng, -1.0f, 1.0f);
+            if (V3Length(v) < 0.1f) { continue; }
+            n3 = V3Normalize(v);
+        }
+
+        v3 n1, n2;
+        V3CreateBasis(&n1, &n2, n3);
+        TEST_TRUE(F32Abs(V3Length(n1) - 1.0f) <= 1e-5f && F32Abs(V3Length(n2) - 1.0f) <= 1e-5f);
+        TEST_TRUE(F32Abs(V3Dot(n1, n2)) <= 1e-5f && F32Abs(V3Dot(n1, n3)) <= 1e-5f && F32Abs(V3Dot(n2, n3)) <= 1e-5f);
+        TEST_TRUE(VectorTestNear(V3Cross(n1, n2), V3Negate(n3), 1e-5f));
+    }
+
+    for (u32 i = 0; i < 1000; ++i)
+    {
+        v3 v[32];
+        const u32 count = (u32) RngLocalU64Range(&rng, 1, 32);
+        for (u32 k = 0; k < count; ++k)
+        {
+            v[k] = VectorTestV3(&rng, -1.0f, 1.0f);
+        }
+        /* a repeated point makes a tie, which the lower index wins */
+        const u32 from = (u32) RngLocalU64Range(&rng, 0, count - 1);
+        const u32 to = (u32) RngLocalU64Range(&rng, 0, count - 1);
+        v[to] = v[from];
+
+        const v3 dir = (i % 10 == 0) ? V3Zero() : VectorTestV3(&rng, -1.0f, 1.0f);
+        const u32 best = V3Support(v, count, dir);
+        TEST_TRUE(best < count);
+        const f32 best_dot = V3Dot(v[best], dir);
+        for (u32 k = 0; k < count; ++k)
+        {
+            TEST_TRUE(V3Dot(v[k], dir) <= best_dot);
+            TEST_TRUE(k >= best || V3Dot(v[k], dir) < best_dot);
+        }
+    }
+
+    /* b at angle theta from a, both lengths arbitrary; the threshold is 0.5 degrees */
+    const f32 eps = V3ParallelCheckEpsilon(0.5f);
+    const v3 a = V3Scale(V3Normalize(V3(1.0f, 2.0f, 3.0f)), 7.0f);
+    const v3 p = V3Normalize(V3Cross(a, V3(0.0f, 0.0f, 1.0f)));
+    const f32 degrees[] = { 0.0f, 0.25f, 0.45f, 0.55f, 1.0f, 90.0f };
+    const u32 parallel[] = { 1, 1, 1, 0, 0, 0 };
+    for (u32 i = 0; i < sizeof(degrees) / sizeof(degrees[0]); ++i)
+    {
+        const f32 theta = degrees[i] * F32_PI / 180.0f;
+        const v3 b = V3Scale(V3Add(V3Scale(V3Normalize(a), F32Cos(theta)), V3Scale(p, F32Sin(theta))), 0.3f);
+        TEST_EQUAL(parallel[i], V3ParallelCheck(a, b, eps));
+        TEST_EQUAL(parallel[i], V3ParallelCheck(a, V3Negate(b), eps));
+    }
+    TEST_EQUAL(0, V3ParallelCheck(a, V3Zero(), eps));
+    TEST_EQUAL(0, V3ParallelCheck(V3Zero(), V3Zero(), eps));
+
+    TEST_TRUE(VectorTestNear(V3RotateY(V3(1.0f, 0.0f, 0.0f), F32_PI / 2.0f), V3(0.0f, 0.0f, -1.0f), 1e-6f));
+    TEST_TRUE(VectorTestNear(V3RotateY(V3(0.0f, 0.0f, 1.0f), F32_PI / 2.0f), V3(1.0f, 0.0f, 0.0f), 1e-6f));
+
+    const v3f64 w = V3F64(0.1, -1e-30, 3e9 + 0.3);
+    const v3 w_down = V3F64DemoteDownwards(w);
+    const v3 w_up = V3F64DemoteUpwards(w);
+    const v3 w_near = V3F64Demote(w);
+    for (u32 k = 0; k < 3; ++k)
+    {
+        TEST_TRUE((f64) w_down.buf[k] <= w.buf[k] && w.buf[k] <= (f64) w_up.buf[k]);
+        TEST_TRUE(w_down.buf[k] <= w_near.buf[k] && w_near.buf[k] <= w_up.buf[k]);
+    }
+
+	return output;
+}
+
 /*
  * Without a root window, ds_WindowLookup finds nothing and ds_DeallocTaggedWindows frees nothing, neither
  * walking the hierarchy from HI_NULL. The editor's root window (if any) is hidden during the calls.
@@ -486,6 +622,7 @@ static struct test_Output (*base_tests[])(struct test_Environment *) =
 {
     TypesTest,
     FloatTest,
+    VectorTest,
     BitCountTest,
     OverflowTest,
     AtomicSingleThreadTest,
