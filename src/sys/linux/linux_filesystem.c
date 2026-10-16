@@ -247,19 +247,30 @@ struct dsBuffer FileDump(struct arena *mem, const char *path, const struct file 
 		return ds_buffer_empty;	
 	}
 
-	u64 bytes_left = buf.size;
-	i64 bytes_read_in_call;
-	while (0 < bytes_left)
+	u64 bytes_read = 0;
+	while (bytes_read < buf.size)
 	{
-		bytes_read_in_call = read(handle, buf.data + (buf.size - bytes_left), bytes_left);
-		if (bytes_read_in_call == -1)
+		const ssize_t count = read(handle, buf.data + bytes_read, buf.size - bytes_read);
+		if (count == -1)
 		{
+			if (errno == EINTR)
+			{
+				continue;
+			}
 			LogSystemError(S_ERROR);
 			buf = ds_buffer_empty;
 			*mem = record;
 			break;
 		}
-		bytes_left -= (u64) bytes_read_in_call;	
+
+		/* end of file before the fstat size: the file shrank meanwhile, keep what was read */
+		if (count == 0)
+		{
+			buf.size = bytes_read;
+			buf.mem_left = bytes_read;
+			break;
+		}
+		bytes_read += (u64) count;
 	}
 		
 	close(handle);
