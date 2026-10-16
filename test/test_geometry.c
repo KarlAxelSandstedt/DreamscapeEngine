@@ -1,5 +1,6 @@
 #include "ds_test.h"
-#include "geometry.h"
+#include "ds_geometry.h"
+#include "collision.h"
 #include "ds_voronoi.h"
 
 static v3 V3UnitSphere(void)
@@ -17,8 +18,8 @@ static v3 V3UnitSphere(void)
  */
 static u32 SegmentShortCase(const v3 a0, const v3 a_dir, const v3 b0, const v3 b1)
 {
-    const struct segment a = SegmentConstruct(a0, V3Add(a0, a_dir));
-    const struct segment b = SegmentConstruct(b0, b1);
+    const struct segment a = Segment(a0, V3Add(a0, a_dir));
+    const struct segment b = Segment(b0, b1);
     f32 t1, t2;
     SegmentClosestParameter(&t1, &t2, &a, &b);
     if (!(0.0f <= t1 && t1 <= 1.0f && 0.0f <= t2 && t2 <= 1.0f))
@@ -57,8 +58,8 @@ struct test_Output SegmentShortTest(struct test_Environment *env)
             TEST_TRUE(SegmentShortCase(a0, V3Scale(V3Sub(b1, b0), length[i]), b0, b1));
             TEST_TRUE(SegmentShortCase(a0, dir, b0, V3Add(b0, V3Scale(V3UnitSphere(), length[i]))));
             {
-                const struct segment a = SegmentConstruct(b0, b1);
-                const struct segment s = SegmentConstruct(a0, V3Add(a0, dir));
+                const struct segment a = Segment(b0, b1);
+                const struct segment s = Segment(a0, V3Add(a0, dir));
                 v3 c1, c2, c;
                 const f32 dist = F32Sqrt(SegmentDistanceSquared(&c1, &c2, &a, &s));
                 const f32 ref = F32Sqrt(SegmentPointDistanceSquared(&c, &a, a0));
@@ -78,7 +79,7 @@ static u32 ClipNear(const v3 a, const v3 b)
 /* clip s to face fi of the box; 1 if non-empty and the result is (e0, e1) */
 static u32 ClipCase(const struct dcel *box, const u32 fi, const v3 p0, const v3 p1, const v3 e0, const v3 e1)
 {
-    const struct segment s = SegmentConstruct(p0, p1);
+    const struct segment s = Segment(p0, p1);
     struct segment clip;
     return DcelFaceSegmentClip(&clip, box, fi, &s) && ClipNear(clip.p[0], e0) && ClipNear(clip.p[1], e1);
 }
@@ -86,7 +87,7 @@ static u32 ClipCase(const struct dcel *box, const u32 fi, const v3 p0, const v3 
 /* clip s to face fi of the box; 1 if empty */
 static u32 ClipEmptyCase(const struct dcel *box, const u32 fi, const v3 p0, const v3 p1)
 {
-    const struct segment s = SegmentConstruct(p0, p1);
+    const struct segment s = Segment(p0, p1);
     struct segment clip;
     return !DcelFaceSegmentClip(&clip, box, fi, &s);
 }
@@ -134,6 +135,614 @@ struct test_Output DcelFaceSegmentClipTest(struct test_Environment *env)
     /* other faces: face 1 = +x (sides |y|, |z| <= 0.5), face 5 = -y */
     TEST_TRUE(ClipCase(&box, 1, V3(0.7f, -1.0f, 0.0f), V3(0.7f, 1.0f, 0.0f), V3(0.7f, -0.5f, 0.0f), V3(0.7f, 0.5f, 0.0f)));
     TEST_TRUE(ClipCase(&box, 5, V3(0.0f, -0.7f, 0.0f), V3(1.0f, -0.7f, 0.0f), V3(0.0f, -0.7f, 0.0f), V3(0.5f, -0.7f, 0.0f)));
+
+    /*
+     * A zero-length edge (v1 = v0) clips nothing: face 0 becomes the triangle v0 v2 v3, |x|, |z| <= 0.5 and x <= z.
+     * The old normalized side plane was NaN there (ignored by every comparison, so the result was the same).
+     */
+    v3 v[8];
+    for (u32 i = 0; i < 8; ++i)
+    {
+        v[i] = box.v[i];
+    }
+    v[1] = v[0];
+    struct dcel collapsed = box;
+    collapsed.v = v;
+    TEST_TRUE(ClipCase(&collapsed, 0, V3(-0.4f, 0.7f, 0.0f), V3(0.4f, 0.7f, 0.0f),
+                                      V3(-0.4f, 0.7f, 0.0f), V3(0.0f, 0.7f, 0.0f)));
+    TEST_TRUE(ClipEmptyCase(&collapsed, 0, V3(0.1f, 0.7f, -0.4f), V3(0.4f, 0.7f, -0.1f)));
+
+	return output;
+}
+
+static u32 DcelTestV3Equal(const v3 a, const v3 b)
+{
+    return a.x == b.x && a.y == b.y && a.z == b.z;
+}
+
+/*
+ * DcelBox for random half widths: the topology checks (DcelAssertTopology), outward planes (each face's normal is
+ * an axis up to the normalization's 2 eps, its distance the half width within 4 eps), every vertex on or behind
+ * every plane (on its own faces' planes exactly), the exact box, edge directions of exactly twice a half width
+ * along an axis, and DcelSupportFace on the axes. The stubs pass the topology checks too. Release builds also check
+ * that invalid half widths give the box stub (debug asserts on them).
+ */
+struct test_Output DcelBoxTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    const struct dcel stub = DcelBoxStub();
+    DcelAssertTopology(&stub);
+    v3 tri_v[3] = { V3(0.0f, 0.0f, 0.0f), V3(1.0f, 0.0f, 0.0f), V3(0.0f, 1.0f, 0.0f) };
+    struct dcel tri = DcelTriStub();
+    tri.v = tri_v;
+    DcelAssertTopology(&tri);
+
+    for (u32 i = 0; i < 1000; ++i)
+    {
+        struct arena record = *env->mem_2;
+        const v3 hw = V3(RngF32Range(1e-3f, 1e3f), RngF32Range(1e-3f, 1e3f), RngF32Range(1e-3f, 1e3f));
+        const struct dcel box = DcelBox(env->mem_2, hw);
+        TEST_TRUE(box.v != stub.v && box.f_count == 6 && box.e_count == 24 && box.v_count == 8);
+        DcelAssertTopology(&box);
+        TEST_TRUE(DcelTestV3Equal(box.bbox.min, V3Negate(hw)) && DcelTestV3Equal(box.bbox.max, hw));
+
+        for (u32 fi = 0; fi < box.f_count; ++fi)
+        {
+            const v3 n = box.plane[fi].normal;
+            const u32 axis = (n.x != 0.0f) ? 0 : ((n.y != 0.0f) ? 1 : 2);
+            TEST_TRUE(F32Abs(F32Abs(n.buf[axis]) - 1.0f) <= 2.0f*F32_EPSILON);
+            TEST_TRUE(n.buf[(axis + 1) % 3] == 0.0f && n.buf[(axis + 2) % 3] == 0.0f);
+            TEST_TRUE(F32Abs(box.plane[fi].signed_distance - hw.buf[axis]) <= 4.0f*F32_EPSILON*hw.buf[axis]);
+            for (u32 vi = 0; vi < box.v_count; ++vi)
+            {
+                TEST_TRUE(PlanePointSignedDistance(box.plane + fi, box.v[vi]) <= 0.0f);
+            }
+            for (u32 k = 0; k < box.f[fi].count; ++k)
+            {
+                TEST_TRUE(PlanePointSignedDistance(box.plane + fi, box.v[box.e[box.f[fi].first + k].origin]) == 0.0f);
+            }
+
+            /* the support face of n is this face */
+            TEST_EQUAL(fi, DcelSupportFace(&box, n));
+        }
+
+        for (u32 ei = 0; ei < box.e_count; ++ei)
+        {
+            const v3 dir = DcelEdgeDirection(&box, ei);
+            const v3 unit = DcelEdgeUnitDirection(&box, ei);
+            const u32 axis = (dir.x != 0.0f) ? 0 : ((dir.y != 0.0f) ? 1 : 2);
+            TEST_TRUE(F32Abs(dir.buf[axis]) == 2.0f*hw.buf[axis]);
+            TEST_TRUE(dir.buf[(axis + 1) % 3] == 0.0f && dir.buf[(axis + 2) % 3] == 0.0f);
+            TEST_TRUE(F32Abs(unit.buf[axis] - ((dir.buf[axis] < 0.0f) ? -1.0f : 1.0f)) <= 2.0f*F32_EPSILON);
+            TEST_TRUE(unit.buf[(axis + 1) % 3] == 0.0f && unit.buf[(axis + 2) % 3] == 0.0f);
+        }
+        *env->mem_2 = record;
+    }
+
+#ifndef DS_DEBUG
+    const v3 invalid[] =
+    {
+        V3(0.0f, 1.0f, 1.0f), V3(-1.0f, 1.0f, 1.0f), V3(1.0f, -1.0f, -1.0f), V3(1.0f, 1.0f, F32Nan()),
+    };
+    for (u32 i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i)
+    {
+        const struct dcel box = DcelBox(env->mem_2, invalid[i]);
+        TEST_TRUE(box.v == stub.v && box.plane == stub.plane);
+    }
+#endif
+
+	return output;
+}
+
+/*
+ * DcelPlanesTryCompute on the triangle stub: a triangle gives opposite unit normals (within 16 eps L^2 / |n| of the f64
+ * normal, L the longest edge, |n| twice the area) and planes through its vertices (within the normal's error times L,
+ * plus rounding); collinear points and an area vector
+ * beyond f32 (coordinates 1e20) fail. DcelBboxCompute of no vertices is the zero box.
+ */
+struct test_Output DcelPlanesTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct plane pl[2];
+    struct dcel tri = DcelTriStub();
+    tri.plane = pl;
+
+    for (u32 i = 0; i < 10000; ++i)
+    {
+        v3 v[3];
+        for (u32 k = 0; k < 3; ++k)
+        {
+            v[k] = V3(RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f));
+        }
+        tri.v = v;
+        v3 n;
+        if (!TriCcwNormalTryCompute(&n, v[0], v[1], v[2]))
+        {
+            continue;
+        }
+        TEST_EQUAL(1, DcelPlanesTryCompute(&tri));
+
+        const f64 a[3] = { (f64) v[1].x - v[0].x, (f64) v[1].y - v[0].y, (f64) v[1].z - v[0].z };
+        const f64 b[3] = { (f64) v[2].x - v[0].x, (f64) v[2].y - v[0].y, (f64) v[2].z - v[0].z };
+        const f64 r[3] = { a[1]*b[2] - a[2]*b[1], a[2]*b[0] - a[0]*b[2], a[0]*b[1] - a[1]*b[0] };
+        const f64 r_len = (f64) F32Sqrt((f32) (r[0]*r[0] + r[1]*r[1] + r[2]*r[2]));
+        const f64 c[3] = { (f64) v[2].x - v[1].x, (f64) v[2].y - v[1].y, (f64) v[2].z - v[1].z };
+        const f64 a_sq = a[0]*a[0] + a[1]*a[1] + a[2]*a[2];
+        const f64 b_sq = b[0]*b[0] + b[1]*b[1] + b[2]*b[2];
+        const f64 c_sq = c[0]*c[0] + c[1]*c[1] + c[2]*c[2];
+        const f64 l_sq = (a_sq > b_sq) ? ((a_sq > c_sq) ? a_sq : c_sq) : ((b_sq > c_sq) ? b_sq : c_sq);
+        /* r_len is rounded to f32 (no f64 sqrt in the engine): its eps is covered by the bound */
+        const f64 tol = 16.0*F32_EPSILON*l_sq / r_len;
+        for (u32 f = 0; f < 2; ++f)
+        {
+            const f64 sign = (f == 0) ? 1.0 : -1.0;
+            const v3 m = pl[f].normal;
+            const f64 err[3] = { m.x - sign*r[0]/r_len, m.y - sign*r[1]/r_len, m.z - sign*r[2]/r_len };
+            const f64 err_sq = err[0]*err[0] + err[1]*err[1] + err[2]*err[2];
+            TEST_TRUE(err_sq <= tol*tol);
+            /* the plane passes through the centroid: a vertex is off by the normal's error times its distance (< L) */
+            const f64 off = (f64) F32Sqrt((f32) (err_sq*l_sq)) + 64.0*F32_EPSILON*10.0;
+            for (u32 k = 0; k < 3; ++k)
+            {
+                TEST_TRUE(F32Abs(PlanePointSignedDistance(pl + f, v[k])) <= off);
+            }
+        }
+    }
+
+    v3 collinear[3] = { V3(0.0f, 0.0f, 0.0f), V3(1.0f, 1.0f, 1.0f), V3(2.0f, 2.0f, 2.0f) };
+    tri.v = collinear;
+    TEST_EQUAL(0, DcelPlanesTryCompute(&tri));
+    v3 huge[3] = { V3(0.0f, 0.0f, 0.0f), V3(1e20f, 0.0f, 0.0f), V3(0.0f, 1e20f, 0.0f) };
+    tri.v = huge;
+    TEST_EQUAL(0, DcelPlanesTryCompute(&tri));
+
+    tri.v_count = 0;
+    DcelBboxCompute(&tri);
+    TEST_TRUE(DcelTestV3Equal(tri.bbox.min, V3Zero()) && DcelTestV3Equal(tri.bbox.max, V3Zero()));
+
+	return output;
+}
+
+/*
+DcelConvexHull on point clouds of size s; tol = DcelConvexHullTolerance (a quarter of GJK's touch band at the cloud's
+scale). Every hull must have:
+
+    topology        the face edge ranges partition e, face_ccw names the face, twins pair up and run opposite,
+                    V - E + F = 2 over the vertices the edges use
+    no unused v     every vertex is an edge's origin (interior input points are not kept)
+    planes          unit normals; every hull vertex on or behind every plane (4 tol); every face vertex on its
+                    plane (4 tol); no reflex face corner (a vertex more than 2 tol outside the previous edge)
+    containment     every input point on or behind every plane (4 tol)
+    determinism     the same points with another RNG state give the same hull, bit for bit
+
+Input scattered by more than tol ("box noisy", 4 tol) is handled only roughly (collision.h): its plane and
+containment distances and reflex corners are measured and printed, not failed, and an empty dcel is counted; topology,
+unused vertices, unit normals and determinism still fail.
+
+Fewer than 4 points, and coincident, collinear or coplanar points (no tetrahedron within tol), give the empty dcel.
+3200 points give a valid hull or, if they don't fit the scratch arena (config), the empty dcel. Failures are counted by
+kind (first example printed); any failure fails the test.
+*/
+
+enum hullFail
+{
+    HULL_FAIL_NONE,
+    HULL_FAIL_EMPTY,            /* empty where a hull exists, or the reverse */
+    HULL_FAIL_TOPOLOGY,
+    HULL_FAIL_UNUSED_VERTEX,
+    HULL_FAIL_PLANE,
+    HULL_FAIL_CONTAINMENT,
+    HULL_FAIL_DETERMINISM,
+    HULL_FAIL_COUNT
+};
+
+static const char *hull_fail_id[HULL_FAIL_COUNT] =
+{
+    "none", "empty / non-empty", "topology", "unused vertex", "plane", "containment", "determinism",
+};
+
+struct hullStats
+{
+    u64 hulls;
+    u64 fail[HULL_FAIL_COUNT];
+    u64 noisy_dented;           /* noisy hulls with a reflex face corner */
+    u64 noisy_empty;            /* noisy clouds that gave the empty dcel */
+    f32 worst;                  /* largest plane or containment distance (in tol), exact input */
+    f32 worst_noisy;            /* the same, noisy input */
+};
+
+/* the topology half of DcelAssertTopology without asserting, plus Euler's formula; *used_count: vertices in use */
+static u32 HullTopologyCheck(u32 *used_count, u8 *used, const struct dcel *h)
+{
+    for (u32 i = 0; i < h->v_count; ++i)
+    {
+        used[i] = 0;
+    }
+
+    u32 edge_sum = 0;
+    for (u32 fi = 0; fi < h->f_count; ++fi)
+    {
+        const struct dcelFace *f = h->f + fi;
+        if (f->count < 3 || h->e_count < f->first + f->count)
+        {
+            return 0;
+        }
+        for (u32 i = 0; i < f->count; ++i)
+        {
+            const u32 ei = f->first + i;
+            const u32 next = f->first + (i + 1) % f->count;
+            const struct dcelEdge *e = h->e + ei;
+            if (e->face_ccw != fi || h->v_count <= e->origin || h->e_count <= e->twin || e->twin == ei
+                || h->e[e->twin].twin != ei || h->e[e->twin].origin != h->e[next].origin)
+            {
+                return 0;
+            }
+            used[e->origin] = 1;
+        }
+        edge_sum += f->count;
+    }
+
+    *used_count = 0;
+    for (u32 i = 0; i < h->v_count; ++i)
+    {
+        *used_count += used[i];
+    }
+    return edge_sum == h->e_count && (i64) *used_count - (i64) (h->e_count / 2) + (i64) h->f_count == 2;
+}
+
+/*
+ * *detail: which check failed, *value: by how much (in tol, where it applies), *worst: largest plane or containment
+ * distance (in tol), *dented: 1 if a face has a reflex corner. noisy: the plane and containment checks only measure.
+ */
+static enum hullFail HullCheck(const char **detail, f32 *value, f32 *worst, u32 *dented, u8 *used,
+        const struct dcel *h, const v3 *p, const u32 count, const f32 tol, const u32 noisy)
+{
+    *detail = "";
+    *value = 0.0f;
+    *worst = 0.0f;
+    *dented = 0;
+    u32 used_count;
+    if (!HullTopologyCheck(&used_count, used, h))
+    {
+        return HULL_FAIL_TOPOLOGY;
+    }
+    if (used_count != h->v_count)
+    {
+        return HULL_FAIL_UNUSED_VERTEX;
+    }
+
+    for (u32 fi = 0; fi < h->f_count; ++fi)
+    {
+        const struct plane *pl = h->plane + fi;
+        if (F32Abs(V3Dot(pl->normal, pl->normal) - 1.0f) > 8.0f*F32_EPSILON)
+        {
+            *detail = "normal not unit";
+            return HULL_FAIL_PLANE;
+        }
+        for (u32 vi = 0; vi < h->v_count; ++vi)
+        {
+            *value = PlanePointSignedDistance(pl, h->v[vi]) / tol;
+            *worst = F32Max(*worst, *value);
+            if (!noisy && *value > 4.0f)
+            {
+                *detail = "hull vertex in front of a face";
+                return HULL_FAIL_PLANE;
+            }
+        }
+
+        const struct dcelFace *f = h->f + fi;
+        for (u32 i = 0; i < f->count; ++i)
+        {
+            const v3 a = h->v[h->e[f->first + i].origin];
+            const v3 b = h->v[h->e[f->first + (i + 1) % f->count].origin];
+            const v3 c = h->v[h->e[f->first + (i + 2) % f->count].origin];
+            *value = F32Abs(PlanePointSignedDistance(pl, a)) / tol;
+            *worst = F32Max(*worst, *value);
+            if (!noisy && *value > 4.0f)
+            {
+                *detail = "face vertex off its plane";
+                return HULL_FAIL_PLANE;
+            }
+            /* c's distance on the inner side of the line ab: the corner at b turns CCW about the normal */
+            *value = V3Dot(V3Cross(V3Sub(b, a), V3Sub(c, b)), pl->normal) / (V3Length(V3Sub(b, a)) * tol);
+            if (*value < -2.0f)
+            {
+                *dented = 1;
+                if (!noisy)
+                {
+                    *detail = "reflex face corner";
+                    return HULL_FAIL_PLANE;
+                }
+            }
+        }
+    }
+
+    for (u32 i = 0; i < count; ++i)
+    {
+        for (u32 fi = 0; fi < h->f_count; ++fi)
+        {
+            const f32 outside = PlanePointSignedDistance(h->plane + fi, p[i]) / tol;
+            *worst = F32Max(*worst, outside);
+            if (!noisy && outside > 4.0f)
+            {
+                *value = outside;
+                return HULL_FAIL_CONTAINMENT;
+            }
+        }
+    }
+
+    return HULL_FAIL_NONE;
+}
+
+static u32 HullEqual(const struct dcel *a, const struct dcel *b)
+{
+    if (a->v_count != b->v_count || a->e_count != b->e_count || a->f_count != b->f_count)
+    {
+        return 0;
+    }
+    for (u32 i = 0; i < a->v_count; ++i)
+    {
+        if (a->v[i].x != b->v[i].x || a->v[i].y != b->v[i].y || a->v[i].z != b->v[i].z)
+        {
+            return 0;
+        }
+    }
+    for (u32 i = 0; i < a->e_count; ++i)
+    {
+        if (a->e[i].origin != b->e[i].origin || a->e[i].twin != b->e[i].twin || a->e[i].face_ccw != b->e[i].face_ccw)
+        {
+            return 0;
+        }
+    }
+    for (u32 i = 0; i < a->f_count; ++i)
+    {
+        const struct plane pa = a->plane[i], pb = b->plane[i];
+        if (a->f[i].first != b->f[i].first || a->f[i].count != b->f[i].count
+            || pa.signed_distance != pb.signed_distance
+            || pa.normal.x != pb.normal.x || pa.normal.y != pb.normal.y || pa.normal.z != pb.normal.z)
+        {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+enum hullCloud
+{
+    HULL_CLOUD_SPHERE,          /* on a sphere of radius s */
+    HULL_CLOUD_CUBE,            /* in the cube [-s, s]^3 */
+    HULL_CLOUD_BOX_SURFACE,     /* on the cube's faces, moved by noise below tol (coplanar sets: merged) */
+    HULL_CLOUD_BOX_NOISY,       /* on the cube's faces, moved by up to 4 tol (nearly coplanar sets, not all merged) */
+    HULL_CLOUD_CYLINDER,        /* rings of 32 on a cylinder: collinear vertical lines, coplanar caps */
+    HULL_CLOUD_SMALL,           /* 4 .. 24 points as the contact and GJK tests' random hulls */
+    HULL_CLOUD_DUPLICATES,      /* a sphere cloud, every point twice */
+    HULL_CLOUD_COUNT
+};
+
+static const char *hull_cloud_id[HULL_CLOUD_COUNT] =
+{
+    "sphere", "cube", "box surface", "box noisy", "cylinder", "small", "duplicates",
+};
+
+/* the cloud's scatter about the cube's planes, in tol (0: exact) */
+static f32 HullCloudNoise(const enum hullCloud cloud)
+{
+    return (cloud == HULL_CLOUD_BOX_SURFACE) ? 0.5f : ((cloud == HULL_CLOUD_BOX_NOISY) ? 4.0f : 0.0f);
+}
+
+/* fill p[0 .. count) (count rounded down to whole rings of 32 for cylinders (>= 64), even for duplicates); return it */
+static u32 HullCloud(v3 *p, const enum hullCloud cloud, const u32 count, const f32 s)
+{
+    u32 n = count;
+    switch (cloud)
+    {
+        case HULL_CLOUD_SPHERE:
+        {
+            for (u32 i = 0; i < n; ++i)
+            {
+                p[i] = V3Scale(V3UnitSphere(), s);
+            }
+        } break;
+
+        case HULL_CLOUD_CUBE:
+        {
+            for (u32 i = 0; i < n; ++i)
+            {
+                p[i] = V3(RngF32Range(-s, s), RngF32Range(-s, s), RngF32Range(-s, s));
+            }
+        } break;
+
+        case HULL_CLOUD_BOX_SURFACE:
+        case HULL_CLOUD_BOX_NOISY:
+        {
+            for (u32 i = 0; i < n; ++i)
+            {
+                p[i] = V3(RngF32Range(-s, s), RngF32Range(-s, s), RngF32Range(-s, s));
+                const u32 axis = (u32) RngU64Range(0, 2);
+                p[i].buf[axis] = (RngU64Range(0, 1)) ? s : -s;
+            }
+            /* noise relative to the hull's own tolerance */
+            const f32 noise = HullCloudNoise(cloud) * DcelConvexHullTolerance(p, n);
+            for (u32 i = 0; i < n; ++i)
+            {
+                const v3 d = V3(RngF32Range(-noise, noise), RngF32Range(-noise, noise), RngF32Range(-noise, noise));
+                p[i] = V3Add(p[i], d);
+            }
+        } break;
+
+        case HULL_CLOUD_CYLINDER:
+        {
+            n = count - count % 32;
+            for (u32 i = 0; i < n; ++i)
+            {
+                const u32 ring = i / 32;
+                const f32 phi = 2.0f*F32_PI*(f32) (i % 32) / 32.0f;
+                const f32 y = s*(-1.0f + 2.0f*(f32) ring / (f32) (n / 32 - 1));
+                p[i] = V3(s*F32Cos(phi), y, s*F32Sin(phi));
+            }
+        } break;
+
+        case HULL_CLOUD_SMALL:
+        {
+            n = (u32) RngU64Range(4, 24);
+            const v3 axis_scale = V3(s*RngF32Range(0.2f, 1.0f), s*RngF32Range(0.2f, 1.0f),
+                                     s*RngF32Range(0.2f, 1.0f));
+            for (u32 i = 0; i < n; ++i)
+            {
+                const v3 u = V3Scale(V3UnitSphere(), RngF32Range(0.5f, 1.0f));
+                p[i] = V3(u.x*axis_scale.x, u.y*axis_scale.y, u.z*axis_scale.z);
+            }
+        } break;
+
+        case HULL_CLOUD_DUPLICATES:
+        {
+            n = count - count % 2;
+            for (u32 i = 0; i < n / 2; ++i)
+            {
+                p[2*i] = V3Scale(V3UnitSphere(), s);
+                p[2*i + 1] = p[2*i];
+            }
+        } break;
+
+        default: { n = 0; } break;
+    }
+    return n;
+}
+
+/* expect: 0 the empty dcel, 1 a hull, 2 either (a hull must pass every check); noisy: HullCheck's, empty counted */
+static void HullCase(struct hullStats *stats, struct test_Environment *env, const char *id, const v3 *p, const u32 n,
+        const u32 noisy, const u32 expect)
+{
+    struct arena record = *env->mem_1;
+    u8 *used = ArenaPush(env->mem_1, n + 1);
+    const f32 tol = DcelConvexHullTolerance(p, n);
+    const struct dcel h = DcelConvexHull(env->mem_1, p, n);
+    /* another RNG state for the second build */
+    for (u32 i = 0; i < 3; ++i)
+    {
+        RngU64();
+    }
+    const struct dcel h2 = (h.f_count) ? DcelConvexHull(env->mem_1, p, n) : DcelEmpty();
+
+    enum hullFail fail = HULL_FAIL_NONE;
+    const char *detail = "";
+    f32 value = 0.0f;
+    f32 worst = 0.0f;
+    u32 dented = 0;
+    if (noisy && !h.f_count)
+    {
+        stats->noisy_empty += 1;
+    }
+    else if (expect != 2 && (h.f_count != 0) != (expect != 0))
+    {
+        fail = HULL_FAIL_EMPTY;
+    }
+    else if (h.f_count)
+    {
+        fail = HullCheck(&detail, &value, &worst, &dented, used, &h, p, n, tol, noisy);
+        if (fail == HULL_FAIL_NONE && !HullEqual(&h, &h2))
+        {
+            fail = HULL_FAIL_DETERMINISM;
+            detail = "another hull from the same points";
+            value = 0.0f;
+        }
+    }
+
+    stats->hulls += 1;
+    if (noisy)
+    {
+        stats->noisy_dented += dented;
+        stats->worst_noisy = F32Max(stats->worst_noisy, worst);
+    }
+    else
+    {
+        stats->worst = F32Max(stats->worst, worst);
+    }
+    if (fail != HULL_FAIL_NONE && stats->fail[fail]++ == 0)
+    {
+        fprintf(stdout, "\tDcelConvexHullTest: first %s failure: %s, %u points, tol %g: v %u, e %u, f %u; %s %.3g\n",
+            hull_fail_id[fail], id, n, (f64) tol, h.v_count, h.e_count, h.f_count, detail, (f64) value);
+    }
+    *env->mem_1 = record;
+}
+
+struct test_Output DcelConvexHullTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct hullStats stats = { 0 };
+    struct arena record = *env->mem_1;
+    v3 *p = ArenaPush(env->mem_1, 3200*sizeof(v3));
+
+    const f32 size[3] = { 0.01f, 1.0f, 100.0f };
+    const u32 count[4] = { 8, 64, 400, 1600 };
+    for (u32 cloud = 0; cloud < HULL_CLOUD_COUNT; ++cloud)
+    {
+        for (u32 si = 0; si < 3; ++si)
+        {
+            for (u32 ci = 0; ci < 4; ++ci)
+            {
+                /* nearly coplanar sets (box surfaces) exercise the face merging most */
+                const u32 box = (cloud == HULL_CLOUD_BOX_SURFACE || cloud == HULL_CLOUD_BOX_NOISY);
+                const u32 reps = (cloud == HULL_CLOUD_SMALL) ? 50 : ((box) ? 8 : 2);
+                for (u32 r = 0; r < reps; ++r)
+                {
+                    /* cylinders: at least two rings */
+                    const u32 c = (cloud == HULL_CLOUD_CYLINDER && count[ci] < 64) ? 64 : count[ci];
+                    const u32 n = HullCloud(p, cloud, c, size[si]);
+                    HullCase(&stats, env, hull_cloud_id[cloud], p, n, HullCloudNoise(cloud) > 1.0f, 1);
+                }
+            }
+        }
+    }
+
+    /* a tetrahedron; no tetrahedron within tol: coincident, collinear and coplanar points */
+    p[0] = V3(0.0f, 0.0f, 0.0f);
+    p[1] = V3(1.0f, 0.0f, 0.0f);
+    p[2] = V3(0.0f, 1.0f, 0.0f);
+    p[3] = V3(0.0f, 0.0f, 1.0f);
+    HullCase(&stats, env, "tetrahedron", p, 4, 0, 1);
+    for (u32 i = 0; i < 16; ++i)
+    {
+        p[i] = V3(0.25f, -0.5f, 0.75f);
+    }
+    HullCase(&stats, env, "coincident", p, 16, 0, 0);
+    for (u32 i = 0; i < 16; ++i)
+    {
+        p[i] = V3Scale(V3(1.0f, 2.0f, -2.0f), (f32) i - 7.5f);
+    }
+    HullCase(&stats, env, "collinear", p, 16, 0, 0);
+    for (u32 i = 0; i < 16; ++i)
+    {
+        p[i] = V3(RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f), 0.0f);
+    }
+    HullCase(&stats, env, "coplanar", p, 16, 0, 0);
+
+    for (u32 n = 0; n < 4; ++n)
+    {
+        HullCase(&stats, env, "fewer than 4", p, n, 0, 0);
+    }
+    const u32 n_large = HullCloud(p, HULL_CLOUD_SPHERE, 3200, 1.0f);
+    HullCase(&stats, env, "sphere", p, n_large, 0, 2);
+    *env->mem_1 = record;
+
+    u64 failures = 0;
+    for (u32 k = 1; k < HULL_FAIL_COUNT; ++k)
+    {
+        failures += stats.fail[k];
+    }
+    fprintf(stdout, "\tDcelConvexHullTest: %llu hulls, %llu failing (empty %llu, topology %llu, unused vertex %llu, "
+        "plane %llu, containment %llu, determinism %llu); worst plane / containment distance %.2f tol; box noisy "
+        "(measured only): worst %.2f tol, %llu with a reflex face corner, %llu empty\n",
+        (unsigned long long) stats.hulls, (unsigned long long) failures,
+        (unsigned long long) stats.fail[HULL_FAIL_EMPTY], (unsigned long long) stats.fail[HULL_FAIL_TOPOLOGY],
+        (unsigned long long) stats.fail[HULL_FAIL_UNUSED_VERTEX], (unsigned long long) stats.fail[HULL_FAIL_PLANE],
+        (unsigned long long) stats.fail[HULL_FAIL_CONTAINMENT], (unsigned long long) stats.fail[HULL_FAIL_DETERMINISM],
+        (f64) stats.worst, (f64) stats.worst_noisy, (unsigned long long) stats.noisy_dented,
+        (unsigned long long) stats.noisy_empty);
+    TEST_EQUAL(0, failures);
 
 	return output;
 }
@@ -1159,10 +1768,411 @@ struct test_Output VoronoiExactTest(struct test_Environment *env)
 	return output;
 }
 
+/*
+ * Planes: exact cases, including the degenerate ones of the segment functions (parallel, in the plane, touching),
+ * and random planes and segments, where the clip parameter and the segment test must agree with the end points'
+ * signs and clip points, projections and transformed points must lie on the plane (tolerance scaled by |n| and
+ * the coordinates' size).
+ */
+struct test_Output PlaneExactTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    /* y = 1 with a unit normal and with |n| = 3 */
+    const struct plane pl = Plane(V3(0.0f, 1.0f, 0.0f), V3(0.0f, 1.0f, 0.0f));
+    const struct plane pl3 = Plane(V3(0.0f, 3.0f, 0.0f), V3(0.0f, 1.0f, 0.0f));
+    const struct segment crossing = Segment(V3(0.0f, 0.0f, 0.0f), V3(0.0f, 2.0f, 0.0f));
+    const struct segment one_side = Segment(V3(0.0f, 2.0f, 0.0f), V3(1.0f, 3.0f, 0.0f));
+    const struct segment parallel = Segment(V3(0.0f, 2.0f, 0.0f), V3(1.0f, 2.0f, 0.0f));
+    const struct segment in_plane = Segment(V3(0.0f, 1.0f, 0.0f), V3(1.0f, 1.0f, 0.0f));
+    const struct segment touching = Segment(V3(0.0f, 1.0f, 0.0f), V3(0.0f, 3.0f, 0.0f));
+
+    TEST_EQUAL(0.5f, PlaneSegmentClipParameter(&pl, &crossing));
+    TEST_EQUAL(0.5f, PlaneSegmentClipParameter(&pl3, &crossing));
+    TEST_EQUAL(-1.0f, PlaneSegmentClipParameter(&pl, &one_side));
+    TEST_EQUAL(F32_INFINITY, PlaneSegmentClipParameter(&pl, &parallel));
+    TEST_EQUAL(0.0f, PlaneSegmentClipParameter(&pl, &in_plane));
+    TEST_EQUAL(0.0f, PlaneSegmentClipParameter(&pl, &touching));
+
+    TEST_EQUAL(1, PlaneSegmentTest(&pl, &crossing));
+    TEST_EQUAL(0, PlaneSegmentTest(&pl, &one_side));
+    TEST_EQUAL(0, PlaneSegmentTest(&pl, &parallel));
+    TEST_EQUAL(1, PlaneSegmentTest(&pl, &in_plane));
+    TEST_EQUAL(1, PlaneSegmentTest(&pl, &touching));
+
+    TEST_EQUAL(1, PlanePointInfrontCheck(&pl, V3(0.0f, 2.0f, 0.0f)));
+    TEST_EQUAL(0, PlanePointInfrontCheck(&pl, V3(0.0f, 1.0f, 0.0f)));
+    TEST_EQUAL(1, PlanePointBehindCheck(&pl, V3(0.0f, 0.0f, 0.0f)));
+    TEST_EQUAL(0, PlanePointBehindCheck(&pl, V3(0.0f, 1.0f, 0.0f)));
+    TEST_EQUAL(3.0f, PlanePointSignedDistance(&pl3, V3(7.0f, 2.0f, -5.0f)));
+    TEST_EQUAL(3.0f, PlanePointDistance(&pl3, V3(7.0f, 0.0f, -5.0f)));
+
+    struct plane normalized = pl3;
+    PlaneNormalize(&normalized);
+    TEST_EQUAL(1.0f, normalized.normal.y);
+    TEST_EQUAL(1.0f, normalized.signed_distance);
+    const struct plane constructed = PlaneNormalized(V3(0.0f, 3.0f, 0.0f), V3(2.0f, 1.0f, 4.0f));
+    TEST_EQUAL(1.0f, constructed.normal.y);
+    TEST_EQUAL(1.0f, constructed.signed_distance);
+
+    const struct plane tri = PlaneCcwTriangle(V3(0.0f, 0.0f, 2.0f), V3(1.0f, 0.0f, 2.0f), V3(0.0f, 1.0f, 2.0f));
+    TEST_EQUAL(1.0f, tri.normal_direction.z);
+    TEST_EQUAL(2.0f, tri.signed_distance);
+
+    v3 proj;
+    TEST_EQUAL(1.0f, PlanePointProjection(&proj, &pl3, V3(5.0f, 4.0f, 0.0f)));
+    TEST_TRUE(proj.x == 5.0f && proj.y == 1.0f && proj.z == 0.0f);
+
+	return output;
+}
+
+struct test_Output PlaneRandomTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    const f32 scale = 10.0f;
+    for (u32 k = 0; k < 20000; ++k)
+    {
+        const f32 n_len = RngF32Range(0.5f, 2.0f);
+        const v3 n = V3Scale(V3UnitSphere(), n_len);
+        const v3 q = V3(RngF32Range(-scale, scale), RngF32Range(-scale, scale), RngF32Range(-scale, scale));
+        const struct plane pl = Plane(n, q);
+        /* distances are rounded to ~eps |n| (|x| + |q|): with |x|, |q| <= ~2 sqrt(3) scale */
+        const f32 tol = 64.0f * F32_EPSILON * n_len * scale;
+
+        const v3 p0 = V3(RngF32Range(-scale, scale), RngF32Range(-scale, scale), RngF32Range(-scale, scale));
+        const v3 p1 = V3(RngF32Range(-scale, scale), RngF32Range(-scale, scale), RngF32Range(-scale, scale));
+        const struct segment s = Segment(p0, p1);
+        const f32 d0 = PlanePointSignedDistance(&pl, p0);
+        const f32 d1 = PlanePointSignedDistance(&pl, p1);
+        const u32 one_side = (0.0f < d0 && 0.0f < d1) || (d0 < 0.0f && d1 < 0.0f);
+        TEST_EQUAL(!one_side, PlaneSegmentTest(&pl, &s));
+        if (!one_side && d0 != d1)
+        {
+            const f32 t = PlaneSegmentClipParameter(&pl, &s);
+            TEST_TRUE(0.0f <= t && t <= 1.0f);
+            TEST_TRUE(F32Abs(PlanePointSignedDistance(&pl, SegmentBc(&s, t))) <= tol);
+        }
+
+        v3 proj;
+        PlanePointProjection(&proj, &pl, p0);
+        TEST_TRUE(F32Abs(PlanePointSignedDistance(&pl, proj)) <= tol);
+
+        struct plane unit = pl;
+        PlaneNormalize(&unit);
+        TEST_TRUE(F32Abs(V3Length(unit.normal) - 1.0f) <= 4.0f * F32_EPSILON);
+        TEST_TRUE(F32Abs(PlanePointSignedDistance(&unit, q)) <= tol / n_len);
+        const struct plane constructed = PlaneNormalized(n, q);
+        TEST_TRUE(F32Abs(PlanePointSignedDistance(&constructed, q)) <= tol / n_len);
+
+        const m3 rot = M3QUnit(QUnitAxisAngle(V3UnitSphere(), RngF32Range(-F32_PI, F32_PI)));
+        const v3 pos = V3(RngF32Range(-scale, scale), RngF32Range(-scale, scale), RngF32Range(-scale, scale));
+        const struct plane moved = PlaneTransform(&pl, rot, pos);
+        TEST_TRUE(F32Abs(PlanePointSignedDistance(&moved, V3Add(M3V3Mul(rot, p0), pos)) - d0) <= 2.0f * tol);
+    }
+
+	return output;
+}
+
+/*
+ * BboxRotate: random boxes (half widths 1e-3 to 1e3, some flat; centers up to 1e4 from the origin) and rotations.
+ * Every corner rotated exactly (f64 sums of the exact products of the f32 entries) must lie in the result, and the
+ * result may exceed the exact rotated box by at most 16 eps of its error scale (|R| (|c| + h))_k.
+ */
+struct test_Output BboxRotateTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    const f32 half_width[] = { 1e-3f, 1.0f, 1e3f };
+    const f32 center[] = { 0.0f, 1.0f, 1e4f };
+    f64 worst_excess = 0.0;
+    for (u32 k = 0; k < 100000; ++k)
+    {
+        const f32 hs = half_width[k % 3];
+        const f32 cs = center[(k / 3) % 3];
+        const v3 c = V3(RngF32Range(-cs, cs), RngF32Range(-cs, cs), RngF32Range(-cs, cs));
+        v3 h = V3(RngF32Range(0.0f, hs), RngF32Range(0.0f, hs), RngF32Range(0.0f, hs));
+        if (k % 7 == 0) { h.buf[k % 3] = 0.0f; }
+        const struct aabb box = { .min = V3Sub(c, h), .max = V3Add(c, h) };
+        const m3 r = M3QUnit(QUnitAxisAngle(V3UnitSphere(), RngF32Range(-F32_PI, F32_PI)));
+        const struct aabb rotated = BboxRotate(box, r);
+
+        const f64 row[3][3] =
+        {
+            { r.a11, r.a12, r.a13 },
+            { r.a21, r.a22, r.a23 },
+            { r.a31, r.a32, r.a33 },
+        };
+        for (u32 axis = 0; axis < 3; ++axis)
+        {
+            f64 lo = (f64) F32_INFINITY;
+            f64 hi = -(f64) F32_INFINITY;
+            for (u32 i = 0; i < 8; ++i)
+            {
+                const f64 p[3] =
+                {
+                    (i & 1) ? box.max.x : box.min.x,
+                    (i & 2) ? box.max.y : box.min.y,
+                    (i & 4) ? box.max.z : box.min.z,
+                };
+                const f64 q = row[axis][0]*p[0] + row[axis][1]*p[1] + row[axis][2]*p[2];
+                lo = (q < lo) ? q : lo;
+                hi = (q > hi) ? q : hi;
+            }
+            TEST_TRUE((f64) rotated.min.buf[axis] <= lo && hi <= (f64) rotated.max.buf[axis]);
+
+            f64 scale = 0.0;
+            for (u32 j = 0; j < 3; ++j)
+            {
+                const f64 cj = 0.5*((f64) box.min.buf[j] + (f64) box.max.buf[j]);
+                const f64 hj = 0.5*((f64) box.max.buf[j] - (f64) box.min.buf[j]);
+                scale += ((row[axis][j] < 0.0) ? -row[axis][j] : row[axis][j]) * (((cj < 0.0) ? -cj : cj) + hj);
+            }
+            const f64 excess_lo = (lo - (f64) rotated.min.buf[axis]) / (F32_EPSILON * scale);
+            const f64 excess_hi = ((f64) rotated.max.buf[axis] - hi) / (F32_EPSILON * scale);
+            TEST_TRUE(excess_lo <= 16.0 && excess_hi <= 16.0);
+            worst_excess = (excess_lo > worst_excess) ? excess_lo : worst_excess;
+            worst_excess = (excess_hi > worst_excess) ? excess_hi : worst_excess;
+        }
+    }
+    fprintf(stdout, "\tBboxRotateTest: 100000 boxes contain their exactly rotated corners; largest excess %.2f eps of (|R| (|c| + h))_k\n", worst_excess);
+
+	return output;
+}
+
+/* f64 helpers for the segment references: squared distance of point p to segment ab */
+static f64 SegTestPointSegmentSq(const f64 p[3], const f64 a[3], const f64 b[3])
+{
+    const f64 d[3] = { b[0] - a[0], b[1] - a[1], b[2] - a[2] };
+    const f64 w[3] = { p[0] - a[0], p[1] - a[1], p[2] - a[2] };
+    const f64 dd = d[0]*d[0] + d[1]*d[1] + d[2]*d[2];
+    f64 t = (dd > 0.0) ? (w[0]*d[0] + w[1]*d[1] + w[2]*d[2]) / dd : 0.0;
+    t = (t < 0.0) ? 0.0 : ((t > 1.0) ? 1.0 : t);
+    const f64 e[3] = { a[0] + t*d[0] - p[0], a[1] + t*d[1] - p[1], a[2] + t*d[2] - p[2] };
+    return e[0]*e[0] + e[1]*e[1] + e[2]*e[2];
+}
+
+/* exact squared distance of segments s1, s2 (f64, from their f32 end points): ternary search over s1 (convex) */
+static f64 SegTestSegmentSq(const struct segment *s1, const struct segment *s2)
+{
+    const f64 a0[3] = { s1->p[0].x, s1->p[0].y, s1->p[0].z }, a1[3] = { s1->p[1].x, s1->p[1].y, s1->p[1].z };
+    const f64 b0[3] = { s2->p[0].x, s2->p[0].y, s2->p[0].z }, b1[3] = { s2->p[1].x, s2->p[1].y, s2->p[1].z };
+    f64 lo = 0.0, hi = 1.0;
+    for (u32 i = 0; i < 200; ++i)
+    {
+        const f64 m1 = lo + (hi - lo) / 3.0, m2 = hi - (hi - lo) / 3.0;
+        f64 p1[3], p2[3];
+        for (u32 k = 0; k < 3; ++k) { p1[k] = a0[k] + m1*(a1[k] - a0[k]); p2[k] = a0[k] + m2*(a1[k] - a0[k]); }
+        if (SegTestPointSegmentSq(p1, b0, b1) < SegTestPointSegmentSq(p2, b0, b1)) { hi = m2; } else { lo = m1; }
+    }
+    f64 p[3];
+    for (u32 k = 0; k < 3; ++k) { p[k] = a0[k] + 0.5*(lo + hi)*(a1[k] - a0[k]); }
+    return SegTestPointSegmentSq(p, b0, b1);
+}
+
+/* a unit vector orthogonal to the unit vector d */
+static v3 SegTestOrthogonal(const v3 d)
+{
+    v3 u;
+    do
+    {
+        u = V3UnitSphere();
+        u = V3Sub(u, V3Scale(d, V3Dot(u, d)));
+    } while (V3Dot(u, u) < 0.01f);
+    return V3Normalize(u);
+}
+
+/*
+ * SegmentDistanceSquared on nearly parallel unit segments (angles 1e-1 .. 1e-7, overlapping, 0 .. 1 apart) in a
+ * local frame and up to 10 from the origin, against the exact distance: error <= 16 eps (1 + coordinate size).
+ * The dot-product form of SegmentClosestParameter erred by up to angle * length (1e-4 at 1e-4 rad).
+ */
+struct test_Output SegmentNearParallelTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    f32 worst = 0.0f;
+    for (u32 pos = 0; pos <= 10; pos += 10)
+    {
+        for (u32 k = 1; k <= 7; ++k)
+        {
+            f32 angle = 1.0f;
+            for (u32 j = 0; j < k; ++j) { angle *= 0.1f; }
+            for (u32 i = 0; i < 3000; ++i)
+            {
+                const v3 d1 = V3UnitSphere();
+                const v3 u = SegTestOrthogonal(d1);
+                const v3 w = SegTestOrthogonal(d1);
+                const v3 d2 = V3Add(V3Scale(d1, F32Cos(angle)), V3Scale(w, F32Sin(angle)));
+                const f32 p = (f32) pos;
+                const v3 o = V3(RngF32Range(-p, p), RngF32Range(-p, p), RngF32Range(-p, p));
+                const v3 q = V3Add(V3Add(o, V3Scale(u, RngF32Range(0.0f, 1.0f))), V3Scale(d1, RngF32Range(-0.9f, 0.9f)));
+                const struct segment s1 = Segment(o, V3Add(o, d1));
+                const struct segment s2 = Segment(q, V3Add(q, d2));
+
+                v3 c1, c2;
+                const f32 dist = F32Sqrt(SegmentDistanceSquared(&c1, &c2, &s1, &s2));
+                const f32 ref = F32Sqrt((f32) SegTestSegmentSq(&s1, &s2));
+                const f32 err = F32Abs(dist - ref);
+                worst = F32Max(worst, err / (F32_EPSILON * (1.0f + p)));
+                TEST_TRUE(err <= 16.0f * F32_EPSILON * (1.0f + 2.0f * p));
+            }
+        }
+    }
+    fprintf(stdout, "\tSegmentNearParallelTest: 42000 near-parallel pairs; largest error %.2f eps (1 + coordinate size)\n", worst);
+
+	return output;
+}
+
+/*
+ * SegmentLineClosestParameterCheck near its parallel limit (callers: >= 0.5 degrees): t1's error along a unit edge,
+ * against an f64 evaluation of the same f32 input, <= eps / sin^2(angle). The dot-product numerators exceeded it at
+ * every angle tested (2.7e-3 at 0.5 degrees).
+ */
+struct test_Output SegmentLineClosestTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    const f32 degrees[] = { 0.5f, 1.0f, 5.0f, 30.0f };
+    for (u32 a = 0; a < 4; ++a)
+    {
+        const f32 angle = degrees[a] * F32_PI / 180.0f;
+        const f32 sin_angle = F32Sin(angle);
+        f64 worst = 0.0;
+        for (u32 i = 0; i < 20000; ++i)
+        {
+            const v3 d1 = V3UnitSphere();
+            const v3 u = SegTestOrthogonal(d1);
+            const v3 v = V3Cross(d1, u);
+            const v3 d2 = V3Add(V3Scale(d1, F32Cos(angle)), V3Scale(u, sin_angle));
+            const v3 p1 = V3(RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f));
+            const v3 p2 = V3Add(V3Add(V3Add(p1, V3Scale(v, 0.1f)), V3Scale(d1, RngF32Range(-0.3f, 0.3f))), V3Scale(d2, -0.5f));
+            const struct segment s1 = Segment(p1, V3Add(p1, d1));
+            const struct segment s2 = Segment(p2, V3Add(p2, d2));
+
+            f32 t1, t2;
+            SegmentLineClosestParameterCheck(&t1, &t2, &s1, &s2);
+
+            const f64 b1[3] = { s1.dir.x, s1.dir.y, s1.dir.z }, b2[3] = { s2.dir.x, s2.dir.y, s2.dir.z };
+            const f64 r[3] = { (f64) s2.p[0].x - s1.p[0].x, (f64) s2.p[0].y - s1.p[0].y, (f64) s2.p[0].z - s1.p[0].z };
+            const f64 n[3] = { b1[1]*b2[2] - b1[2]*b2[1], b1[2]*b2[0] - b1[0]*b2[2], b1[0]*b2[1] - b1[1]*b2[0] };
+            const f64 rd2[3] = { r[1]*b2[2] - r[2]*b2[1], r[2]*b2[0] - r[0]*b2[2], r[0]*b2[1] - r[1]*b2[0] };
+            const f64 t1_ref = (rd2[0]*n[0] + rd2[1]*n[1] + rd2[2]*n[2]) / (n[0]*n[0] + n[1]*n[1] + n[2]*n[2]);
+            const f64 err = (t1 > t1_ref) ? t1 - t1_ref : t1_ref - t1;
+            worst = (err > worst) ? err : worst;
+        }
+        fprintf(stdout, "\tSegmentLineClosestTest: %4.1f degrees, largest t1 error %.2e (bound eps / sin^2 = %.2e)\n", degrees[a], worst, F32_EPSILON / (sin_angle*sin_angle));
+        TEST_TRUE(worst <= F32_EPSILON / (sin_angle*sin_angle));
+    }
+
+	return output;
+}
+
+/* point-segment functions: point segments, and random segments against f64 */
+struct test_Output SegmentPointTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    const v3 a = V3(1.0f, 2.0f, 3.0f);
+    const struct segment point = Segment(a, a);
+    const v3 p = V3(4.0f, 6.0f, 3.0f);
+    const f32 t = SegmentPointClosestBcParameter(&point, p);
+    TEST_TRUE(0.0f <= t && t <= 1.0f);
+    v3 c;
+    TEST_EQUAL(25.0f, SegmentPointDistanceSquared(&c, &point, p));
+    TEST_TRUE(c.x == a.x && c.y == a.y && c.z == a.z);
+
+    for (u32 i = 0; i < 20000; ++i)
+    {
+        const v3 s0 = V3(RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f));
+        const v3 s1 = V3Add(s0, V3Scale(V3UnitSphere(), RngF32Range(0.01f, 5.0f)));
+        const v3 q = V3(RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f));
+        const struct segment s = Segment(s0, s1);
+
+        const f64 d[3] = { (f64) s1.x - s0.x, (f64) s1.y - s0.y, (f64) s1.z - s0.z };
+        const f64 w[3] = { (f64) q.x - s0.x, (f64) q.y - s0.y, (f64) q.z - s0.z };
+        const f64 t_line = (w[0]*d[0] + w[1]*d[1] + w[2]*d[2]) / (d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
+        const f64 t_ref = (t_line < 0.0) ? 0.0 : ((t_line > 1.0) ? 1.0 : t_line);
+        const f32 len = V3Length(s.dir);
+        /* t is measured in units of |dir|: rounding of the coordinates (~20) gives ~eps 20 / |dir| */
+        const f64 tol = 64.0 * F32_EPSILON * 20.0 / len;
+
+        const f32 t_closest = SegmentPointClosestBcParameter(&s, q);
+        const f32 t_projected = SegmentPointProjectedBcParameter(&s, q);
+        TEST_TRUE(0.0f <= t_closest && t_closest <= 1.0f);
+        TEST_TRUE((t_closest > t_ref ? t_closest - t_ref : t_ref - t_closest) <= tol);
+        TEST_TRUE((t_projected > t_line ? t_projected - t_line : t_line - t_projected) <= tol * (1.0 + (t_line < 0.0 ? -t_line : t_line)));
+        const f32 dist_sq = SegmentPointDistanceSquared(&c, &s, q);
+        TEST_TRUE(F32Abs(V3DistanceSquared(c, q) - dist_sq) == 0.0f);
+    }
+
+	return output;
+}
+
+/*
+ * TriCcwNormal(Direction)TryCompute: degenerate triangles fail with a zero vector; simple triangles are exact; needle
+ * triangles (the tiny angle at p0, where crossing the edges at p0 loses ~eps / angle) are within 16 eps of the f64
+ * normal of the same f32 input.
+ */
+struct test_Output TriNormalTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    v3 n;
+    TEST_EQUAL(0, TriCcwNormalTryCompute(&n, V3(0.0f, 0.0f, 0.0f), V3(1.0f, 0.0f, 0.0f), V3(2.0f, 0.0f, 0.0f)));
+    TEST_TRUE(n.x == 0.0f && n.y == 0.0f && n.z == 0.0f);
+    TEST_EQUAL(0, TriCcwNormalDirectionTryCompute(&n, V3(1.0f, 2.0f, 3.0f), V3(1.0f, 2.0f, 3.0f), V3(1.0f, 2.0f, 3.0f)));
+    TEST_TRUE(n.x == 0.0f && n.y == 0.0f && n.z == 0.0f);
+    /* |dir|^2 underflows: degenerate at f32 scale */
+    TEST_EQUAL(0, TriCcwNormalTryCompute(&n, V3(0.0f, 0.0f, 0.0f), V3(1e-25f, 0.0f, 0.0f), V3(0.0f, 1e-25f, 0.0f)));
+    TEST_EQUAL(1, TriCcwNormalTryCompute(&n, V3(0.0f, 0.0f, 0.0f), V3(1.0f, 0.0f, 0.0f), V3(0.0f, 1.0f, 0.0f)));
+    TEST_TRUE(n.x == 0.0f && n.y == 0.0f && n.z == 1.0f);
+    TEST_EQUAL(1, TriCcwNormalDirectionTryCompute(&n, V3(0.0f, 0.0f, 0.0f), V3(2.0f, 0.0f, 0.0f), V3(0.0f, 3.0f, 0.0f)));
+    TEST_TRUE(n.x == 0.0f && n.y == 0.0f && n.z == 6.0f);
+
+    f64 worst = 0.0;
+    for (u32 i = 0; i < 20000; ++i)
+    {
+        const v3 d = V3UnitSphere();
+        const v3 u = SegTestOrthogonal(d);
+        const v3 p0 = V3(RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f));
+        const f32 len = RngF32Range(1.0f, 10.0f);
+        const f32 width = len * RngF32Range(1e-5f, 1e-2f);
+        const v3 p1 = V3Add(p0, V3Scale(d, len));
+        const v3 p2 = V3Add(p1, V3Scale(u, width));
+        TEST_EQUAL(1, TriCcwNormalTryCompute(&n, p0, p1, p2));
+
+        const f64 a[3] = { (f64) p1.x - p0.x, (f64) p1.y - p0.y, (f64) p1.z - p0.z };
+        const f64 b[3] = { (f64) p2.x - p0.x, (f64) p2.y - p0.y, (f64) p2.z - p0.z };
+        const f64 r[3] = { a[1]*b[2] - a[2]*b[1], a[2]*b[0] - a[0]*b[2], a[0]*b[1] - a[1]*b[0] };
+        const f64 r_len_sq = r[0]*r[0] + r[1]*r[1] + r[2]*r[2];
+        /* |n x r| / |r| = sin of the angle between n and the reference */
+        const f64 c[3] = { n.y*r[2] - n.z*r[1], n.z*r[0] - n.x*r[2], n.x*r[1] - n.y*r[0] };
+        const f64 sin_sq = (c[0]*c[0] + c[1]*c[1] + c[2]*c[2]) / r_len_sq;
+        const f64 dot = n.x*r[0] + n.y*r[1] + n.z*r[2];
+        TEST_TRUE(dot > 0.0);
+        worst = (sin_sq > worst) ? sin_sq : worst;
+        TEST_TRUE(sin_sq <= (16.0*F32_EPSILON) * (16.0*F32_EPSILON));
+    }
+    fprintf(stdout, "\tTriNormalTest: 20000 needle triangles (angle 1e-5 .. 1e-2 at p0); largest normal angle error %.2e rad\n", F32Sqrt((f32) worst));
+
+	return output;
+}
+
 static struct test_Output (*geometry_tests[])(struct test_Environment *) =
 {
+	TriNormalTest,
+	SegmentNearParallelTest,
+	SegmentLineClosestTest,
+	SegmentPointTest,
+	BboxRotateTest,
+	PlaneExactTest,
+	PlaneRandomTest,
 	SegmentShortTest,
 	DcelFaceSegmentClipTest,
+	DcelBoxTest,
+	DcelPlanesTest,
+	DcelConvexHullTest,
 };
 
 struct suite_Correctness m_geometry_suite =

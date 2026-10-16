@@ -27,7 +27,7 @@ extern "C" {
 #include "ds_base.h"
 #include "ds_string_database.h"
 #include "ds_hierarchy.h"
-#include "geometry.h"
+#include "ds_geometry.h"
 #include "ds_list.h"
 
 /********************************************************
@@ -71,7 +71,7 @@ void 	r_EditorMain(const struct led *led);
 
 struct r_Camera 
 {
-	v3 position;
+	v3f64 position;     /* world; 3d draw data is uploaded relative to it (camera-relative rendering) */
 	v3 up;
 	v3 forward;
 	v3 left;
@@ -94,7 +94,7 @@ struct r_Camera
  * aspect_ratio - w/h
  */
 void r_CameraConstruct(struct r_Camera *cam,
-		const v3 position,
+		const v3f64 position,
 	       	const v3 left,
 	       	const v3 up,
 	       	const v3 forward,
@@ -114,7 +114,7 @@ void r_CameraConstruct(struct r_Camera *cam,
  * fz_far - distance to farther frustum plane (AFFECTS Depth calculations, see Z-fighting)
  * aspect_ratio - w/h
  */
-struct r_Camera	r_CameraInit(const v3 position, const v3 direction, const f32 fz_near, const f32 fz_far, const f32 aspect_ratio, const f32 fov_x);
+struct r_Camera	r_CameraInit(const v3f64 position, const v3 direction, const f32 fz_near, const f32 fz_far, const f32 aspect_ratio, const f32 fov_x);
 /* update camera axes from its rotation */
 void 		r_CameraUpdateAxes(struct r_Camera *cam);
 /* update camera angles */
@@ -134,12 +134,12 @@ m3 		r_Camera2dTransform(const v2 view_center, const f32 view_height, const f32 
 /* Retrieve side lengths of frustum projection plane */
 void 		FrustumProjectionPlaneSides(f32 *width, f32 *height, const f32 plane_distance, const f32 fov_x, const f32 aspect_ratio);
 /* Retreive camera frustum plane in world space coordinates */
-void 		FrustumProjectionPlaneWorldSpace(v3 *bottom_left, v3 *upper_right, const struct r_Camera *cam);
+void 		FrustumProjectionPlaneWorldSpace(v3f64 *bottom_left, v3f64 *upper_right, const struct r_Camera *cam);
 /* Retreive camera frustum plane in camera space coordinates */
 void 		FrustumProjectionPlaneCameraSpace(v3 *bottom_left, v3 *upper_right, const struct r_Camera *cam);
 
-/* maps window pixel to position in world */
-v3 		WindowSpaceToWorldSpace(const v2 pixel, const v2 win_size, const struct r_Camera *cam);
+/* maps window pixel to position in world (on the near plane) */
+v3f64 		WindowSpaceToWorldSpace(const v2 pixel, const v2 win_size, const struct r_Camera *cam);
 
 /************************************** Draw Command Key Layout and Macros ***************************************/
 
@@ -263,7 +263,7 @@ struct r_Proxy3d_config
 	u64	ns_time;
 	u32	parent;
 
-	v3	position;
+	v3f64	position;
 	q	rotation;
 	v3	linear_velocity;
 	v3	angular_velocity;
@@ -281,11 +281,11 @@ typedef struct r_Proxy3d
     HI_NODE;
 
 	u32	flags;
-	v3	spec_position;
+	v3f64	spec_position;
 	q	spec_rotation;
 
 	u64	ns_at_update;	/* ns elapsed at the time of last update to position and rotation */
-	v3	position;	/* position of unit; interpreted according to its pos_type.  */
+	v3f64	position;	/* position of unit; interpreted according to its pos_type.  */
 	q	rotation;
 
 	u32	mesh;
@@ -310,7 +310,7 @@ void			r_Proxy3dDealloc(struct arena *tmp, const u32 proxy);
 /* return the proxy3d of the unit given that the unit exist and has a proxy3d; otherwise return NULL. */
 struct r_Proxy3d *	r_Proxy3dAddress(const u32 proxy);
 /* set the proxy */
-void 			r_Proxy3dLinearSpeculationSet(const v3 position, const q rotation, const v3 linear_velocity, const v3 angular_velocity, const u64 ns_time, const u32 proxy);
+void 			r_Proxy3dLinearSpeculationSet(const v3f64 position, const q rotation, const v3 linear_velocity, const v3 angular_velocity, const u64 ns_time, const u32 proxy);
 
 /********************************************************
  *			r_scene.c			*
@@ -434,6 +434,8 @@ struct r_Scene
 	u32			cmd_frame_count;
 
 	struct r_Bucket *	frame_bucket_list;
+
+	v3f64			view_origin;		/* world position 3d draw data is uploaded relative to (the camera; zero unless set this frame) */
 };
 
 extern struct r_Scene *g_scene;

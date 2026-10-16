@@ -59,7 +59,7 @@ typedef struct led_Node
     u8              id_buf[LED_NODE_ID_SIZE];
 	utf8			id;             /* User-provided identifier */
 
-    ds_Transform    transform;      /* Transform relative to parent (or world origin if no parent) */
+    ds_TransformWorld transform;    /* Transform relative to parent (or world origin if no parent) */
 
 	u32			    body_prefab; 
     u32             shape_prefab;
@@ -87,13 +87,13 @@ struct slot         led_NodeLookupId(struct led *led, const utf8 id);
 /* Return node with the given ds_Id if it exist; otherwise return (NULL, U32_MAX).  */
 struct slot         led_NodeLookup(struct led *led, const ds_Id id);
 /* Set node position if it exist. */
-void		        led_NodeSetPositionId(struct led *led, const utf8 id, const v3 position);
+void		        led_NodeSetPositionId(struct led *led, const utf8 id, const v3f64 position);
 /* Set node position if it exist. */
 void		        led_NodeSetColor(struct led *led, const ds_Id id, const v4 color, const f32 blend);
 /* Set node color and blend factor if it exist. */
 void		        led_NodeSetColorId(struct led *led, const utf8 id, const v4 color, const f32 blend);
 /* Set node color and blend factor if it exist. */
-void		        led_NodeSetPosition(struct led *led, const ds_Id id, const v3 position);
+void		        led_NodeSetPosition(struct led *led, const ds_Id id, const v3f64 position);
 /* Set node to contain a rigid body if the node and the prefab exist */
 void		        led_NodeAttachRigidBodyPrefabId(struct led *led, const utf8 id, const utf8 prefab);
 /* Set node to contain a rigid body if the node and the prefab exist */
@@ -228,6 +228,8 @@ struct led
     u32			            draw_sbvh;
     u32			            draw_manifold;
     u32			            draw_lines;
+
+    v3f64                   scene_origin;   /* world position the setup scenes are built around (default 0); set before the first led_Main */
 };
 
 extern const char **body_color_mode_str;

@@ -73,6 +73,7 @@ void r_SceneFrameBegin(void)
 	g_scene->cmd_frame = NULL;
 	g_scene->cmd_frame_count = 0;
 	g_scene->frame_bucket_list = NULL;
+	g_scene->view_origin = V3F64(0.0, 0.0, 0.0);
 
 	ArenaFlush(g_scene->mem_frame);
 }
@@ -688,7 +689,8 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 					instance = g_scene->instance_pool.buf + r_cmd->instance;
 					proxy = r_Proxy3dAddress(instance->unit);
 
-					memcpy(shared_data + S_PROXY3D_TRANSLATION_BLEND_OFFSET, &proxy->spec_position, sizeof(v3));
+					const v3 translation = V3F64Demote(V3F64Sub(proxy->spec_position, g_scene->view_origin));
+					memcpy(shared_data + S_PROXY3D_TRANSLATION_BLEND_OFFSET, &translation, sizeof(v3));
 					memcpy(shared_data + S_PROXY3D_TRANSLATION_BLEND_OFFSET + sizeof(v3), &proxy->blend, sizeof(f32));
 					memcpy(shared_data + S_PROXY3D_ROTATION_OFFSET, &proxy->spec_rotation, sizeof(q));
 					memcpy(shared_data + S_PROXY3D_COLOR_OFFSET, &proxy->color, sizeof(v4));

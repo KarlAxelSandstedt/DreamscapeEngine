@@ -184,64 +184,89 @@ void r_MeshCapsule(struct arena *mem, struct r_Mesh *mesh, const f32 half_height
 	ds_Assert(refinement >= 2);
 	ds_Assert(half_height > 0.0f && radius > 0.0f);
 
-	const u32 n_long_slice = 2*refinement;
-	const u32 n_lat_cap_slice = refinement;
-	//TODO
-	const u32 n_lat_cyl_slice = refinement;
-	
-	struct memArray arr = ArenaPushAlignedAll(mem, sizeof(v3), 4);
-	v3 *v = arr.addr;
+	/*
+	 * r_MeshSphere's rings split at the equator: the upper hemisphere moved up by half_height, the lower one down, and
+	 * the cylinder between the two equator rings. Rings run from the top pole down (refinement per hemisphere, the
+	 * last upper and the first lower one on the equator); the normals are the sphere's, radial on the cylinder.
+	 */
+	const u32 points_per_ring = 2 * refinement;
+	const u32 ring_count = 2 * refinement;
+	const f32 polar_step = F32_PI / (2.0f * refinement);
+	const f32 azimuth_step = F32_PI / refinement;
 
-	//TODO
-	const u32 n = 2*n_lat_cap_slice*n_long_slice + n_lat_cyl_slice*n_long_slice + 2;
-	if (arr.len < n)
-	{
-		ArenaPopPacked(mem, arr.memPushed);
-		r_MeshStubBox(mesh);
-		return;
-	}
-	
-	u32 vi = 0;
-	v[vi++] = V3(0.0f, -half_height, 0.0f);
-	v[vi++] = V3(0.0f, half_height, 0.0f);
+	const u32 vertex_count = 2 + ring_count * points_per_ring;
+	const u64 vertex_size = sizeof(v3) + sizeof(v3);
+	u8 *vertex_data = ArenaPush(mem, vertex_count * vertex_size);
 
-	for (u32 i = 0; i < n_lat_cap_slice; ++i)
+	const u32 index_count = 2 * 3 * points_per_ring + (ring_count - 1) * points_per_ring * 6;
+	u32 *index_data = ArenaPush(mem, index_count * sizeof(u32));
+
+	u64 offset = 0;
+	v3 vertex = V3(0.0f, half_height + radius, 0.0f);
+	v3 n = V3(0.0f, 1.0f, 0.0f);
+	memcpy(vertex_data + offset, &vertex, sizeof(v3));
+	memcpy(vertex_data + offset + sizeof(v3), &n, sizeof(v3));
+	offset += vertex_size;
+
+	for (u32 i = 0; i < ring_count; ++i)
 	{
-		const f32 theta = (i + 1)*(F32_PI / 2.0f) / n_lat_cap_slice;
-		const f32 ring_radius = radius * F32Sin(theta);
-		const f32 y = -half_height - radius * F32Cos(theta);
-		for (u32 j = 0; j < n_long_slice; ++j)
+		const u32 upper = (i < refinement);
+		const f32 polar = polar_step * ((upper) ? i + 1 : i);
+		const f32 y = (upper) ? half_height : -half_height;
+		for (u32 j = 0; j < points_per_ring; ++j)
 		{
-			const f32 phi = j * 2.0f * F32_PI / n_long_slice;
-			v[vi++] = V3(ring_radius * F32Cos(phi),
-				     y,
-				     ring_radius * F32Sin(phi));
-
-			v[vi++] = V3(ring_radius * F32Cos(phi),
-				     -y,
-				     ring_radius * F32Sin(phi));
+			const f32 t = azimuth_step * j;
+			n = V3(F32Sin(polar) * F32Cos(t), F32Cos(polar), -F32Sin(polar) * F32Sin(t));
+			vertex = V3Add(V3Scale(n, radius), V3(0.0f, y, 0.0f));
+			memcpy(vertex_data + offset, &vertex, sizeof(v3));
+			memcpy(vertex_data + offset + sizeof(v3), &n, sizeof(v3));
+			offset += vertex_size;
 		}
 	}
 
-	for (u32 i = 0; i < n_lat_cyl_slice; ++i)
+	vertex = V3(0.0f, -half_height - radius, 0.0f);
+	n = V3(0.0f, -1.0f, 0.0f);
+	memcpy(vertex_data + offset, &vertex, sizeof(v3));
+	memcpy(vertex_data + offset + sizeof(v3), &n, sizeof(v3));
+
+	/* r_InternalMeshSphere's triangles: the top fan, a band of quads between consecutive rings, the bottom fan */
+	u32 k = 0;
+	for (u32 i = 0; i < points_per_ring; ++i)
 	{
-		const f32 y = -half_height + i*half_height / n_lat_cyl_slice;
-		for (u32 j = 0; j < n_long_slice; ++j)
+		index_data[k++] = 1 + ((i + 1) % points_per_ring);
+		index_data[k++] = 0;
+		index_data[k++] = 1 + i;
+	}
+
+	u32 ring = 1;
+	for (u32 i = 1; i < ring_count; ++i)
+	{
+		ring += points_per_ring;
+		for (u32 j = 0; j < points_per_ring; ++j)
 		{
-			const f32 phi = j * 2.0f * F32_PI / n_long_slice;
-			v[vi++] = V3(radius * F32Cos(phi),
-				     y,
-				     radius * F32Sin(phi));
+			index_data[k++] = ring + ((j + 1) % points_per_ring);
+			index_data[k++] = ring + j - points_per_ring;
+			index_data[k++] = ring + j;
+			index_data[k++] = ring + ((j + 1) % points_per_ring);
+			index_data[k++] = ring + ((j + 1) % points_per_ring) - points_per_ring;
+			index_data[k++] = ring + j - points_per_ring;
 		}
 	}
 
-	ds_Assert(vi == n);
-	ArenaPopPacked(mem, (arr.len - vi) * sizeof(v3));
+	for (u32 i = 0; i < points_per_ring; ++i)
+	{
+		index_data[k++] = ring + points_per_ring;
+		index_data[k++] = ring + ((i + 1) % points_per_ring);
+		index_data[k++] = ring + i;
+	}
+	ds_Assert(k == index_count);
 
-	struct arena *tmp = ArenaPushScratch();
-	struct dcel dcel = DcelConvexHull(tmp, v, vi, 100.0f * F32_EPSILON);
-	r_MeshHull(mem, mesh, &dcel);
-    ArenaPopScratch();
+	mesh->index_max_used = vertex_count - 1;
+	mesh->index_count = index_count;
+	mesh->index_data = index_data;
+	mesh->vertex_count = vertex_count;
+	mesh->vertex_data = (void *) vertex_data;
+	mesh->local_stride = vertex_size;
 }
 
 void r_MeshHull(struct arena *mem, struct r_Mesh *mesh, const struct dcel *hull)
@@ -252,13 +277,11 @@ void r_MeshHull(struct arena *mem, struct r_Mesh *mesh, const struct dcel *hull)
 
 	for (u32 fi = 0; fi < hull->f_count; ++fi)
 	{
-		struct dcelFace *f = hull->f + fi;
-		struct dcelEdge *e0 = hull->e + f->first;
-		struct dcelEdge *e1 = hull->e + f->first + 1;
-		struct dcelEdge *e2 = hull->e + f->first + 2;
-		const v3 normal = TriCcwNormal(hull->v[e0->origin],
-				hull->v[e1->origin],
-				hull->v[e2->origin]);
+		const struct dcelFace *f = hull->f + fi;
+		const struct dcelEdge *e0 = hull->e + f->first;
+		const struct dcelEdge *e1 = hull->e + f->first + 1;
+		const struct dcelEdge *e2 = hull->e + f->first + 2;
+		const v3 normal = hull->plane[fi].normal;
 
 		const v3 p0 = hull->v[e0->origin]; 
 		const v3 p1 = hull->v[e1->origin];
@@ -298,7 +321,7 @@ void r_MeshHull(struct arena *mem, struct r_Mesh *mesh, const struct dcel *hull)
 		ArenaPushPackedMemcpy(mem, indices, sizeof(indices));
 		mesh->index_count += 3;
 
-		struct dcelFace *f = hull->f + fi;
+		const struct dcelFace *f = hull->f + fi;
 		const u32 tri_count = f->count - 2;
 		for (u32 ti = 1; ti < tri_count; ++ti)
 		{
@@ -330,9 +353,9 @@ void r_MeshTriMesh(struct arena *mem, struct r_Mesh *mesh, const struct triMesh 
 
 	for (u32 t = 0; t < tri_mesh->tri_count; ++t)
 	{
-		const v3 normal = TriCcwNormal(tri_mesh->v[tri_mesh->tri[t].buf[0]],
-				tri_mesh->v[tri_mesh->tri[t].buf[1]],
-				tri_mesh->v[tri_mesh->tri[t].buf[2]]);
+		/* a degenerate triangle gets the zero normal (drawn unlit) */
+		v3 normal;
+		TriCcwNormalTryCompute(&normal, tri_mesh->v[tri_mesh->tri[t].buf[0]], tri_mesh->v[tri_mesh->tri[t].buf[1]], tri_mesh->v[tri_mesh->tri[t].buf[2]]);
 
 		ArenaPushPackedMemcpy(mem, &tri_mesh->v[tri_mesh->tri[t].buf[0]], sizeof(v3));
 		//ArenaPushPackedMemcpy(mem, &color, sizeof(v4));

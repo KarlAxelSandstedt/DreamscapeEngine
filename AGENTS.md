@@ -54,11 +54,15 @@ goto end). Your builds have profiling off, so you will not notice a mismatch.
 Workflow
 ========
 
-- Never commit or stage; the owner does.
+- Never commit, stage or push; the owner does.
 - Bugs found outside the current task: report them with a concise summary
   (math if needed); the owner decides who fixes them.
-- agent_notes/ (git-ignored) holds design docs; read the relevant one before
-  changing that system.
+- ../agent_notes/ (a separate git repo next to this one, shared by the owner's
+  machines; setup in its README.md, conventions in its CLAUDE.md) holds
+  design docs, audits, backlogs and todos. Read the relevant one before
+  changing that system. Shareable lists go there, nothing private. Agents
+  commit and push their changes to it (the no-commit rule above is for this
+  repo). "agent_notes/x.txt" in comments and notes means that repo's file.
 
 Determinism
 ===========

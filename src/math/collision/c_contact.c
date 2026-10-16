@@ -64,7 +64,17 @@ void c_ManifoldTransform(struct c_Manifold *dst, const struct c_Manifold *src, c
     }
 }
 
-/********************************** CONTACT MANIFOLD METHODS **********************************/
+static f32 c_ManifoldDeepest(const struct c_Manifold *m)
+{
+    f32 deepest = 0.0f;
+    for (u32 i = 0; i < m->v_count; ++i)
+    {
+        deepest = F32Max(deepest, m->depth[i]);
+    }
+    return deepest;
+}
+
+/********************************** Contact Methods **********************************/
 
 typedef struct PolygonClipPoint PolygonClipPoint;
 struct PolygonClipPoint
@@ -83,11 +93,11 @@ struct PolygonClipPoint
  *  
  *            fv: Expected to be filled with face vertices in counter-clockwise order.
  */
-static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureId **features, v3 **cp, f32 **cp_depth, u32 *cp_deepest, u32 *cp_count, f32 *max_depth, u32 *deepest_feature, const struct dcel *h[2], const v3 *v[2], const u32 f[2], const u32 b_f, const v3 face_normal)
+static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureId **features, v3 **cp, f32 **cp_depth, u32 *cp_deepest, u32 *cp_count, f32 *max_depth, u32 *deepest_feature, const struct dcel *const h[2], const v3 *const v[2], const u32 f[2], const u32 b_f, const v3 face_normal)
 {
     const u32 b_v = 1 - b_f;
-	struct dcelFace *ref_face = h[b_f]->f + f[b_f];
-	struct dcelFace *inc_face = h[b_v]->f + f[b_v];
+	const struct dcelFace *ref_face = h[b_f]->f + f[b_f];
+	const struct dcelFace *inc_face = h[b_v]->f + f[b_v];
 
     const u32 count = 2*inc_face->count + ref_face->count;
     struct PolygonClipPoint *poly[2] =
@@ -109,7 +119,7 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureI
 		ref_center = V3Add(ref_center, ref_v[i]);
 	}
     /* through the face's vertex average, as the stored planes (DcelPlanesTryCompute): depths agree with the face query */
-    struct plane ref_plane = PlaneConstruct(face_normal, V3Scale(ref_center, 1.0f / (f32) ref_face->count));
+    struct plane ref_plane = Plane(face_normal, V3Scale(ref_center, 1.0f / (f32) ref_face->count));
 
 	u32 cur = 0;
 	for (u32 i = 0; i < inc_face->count; ++i)
@@ -129,7 +139,7 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureI
 	for (u32 j = 0; j < ref_face->count; ++j)
 	{
 		const v3 side_plane_direction = V3Cross(V3Sub(ref_v[(j+1) % ref_face->count], ref_v[j]), ref_plane.normal);
-		const struct plane side_plane = PlaneConstruct(side_plane_direction, ref_v[j]);
+		const struct plane side_plane = Plane(side_plane_direction, ref_v[j]);
 
         const struct PolygonClipPoint *in = poly[cur];
         const u32 in_count = poly_count[cur];
@@ -318,8 +328,10 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, sat_FeatureId cm_features[4]
 			ds_Assert(max_i != max_neg_i);
 			ds_Assert(max_pos_i != max_neg_i);
 	
-			const v3 dir = TriCcwNormalDirection(cm->v[0], cp[max_pos_i], cm->v[2]);
-			if (V3Dot(dir, cm->n) < 0.0f)
+			/* collinear points have no orientation: then the order below */
+			v3 dir;
+			const u32 oriented = TriCcwNormalDirectionTryCompute(&dir, cm->v[0], cp[max_pos_i], cm->v[2]);
+			if (oriented && V3Dot(dir, cm->n) < 0.0f)
 			{
 				cm->v[3] = cp[max_pos_i];
 				cm->v[1] = cp[max_neg_i];
@@ -347,7 +359,7 @@ struct sat_FaceQuery
 {
 	v3 normal;
 	u32 fi;
-	u32 vi;     /* the other hull's deepest vertex (TMP_c_HullContact) */
+	u32 vi;     /* the other shape's deepest vertex (sat_PairContact's fallback) */
 	f32 depth;
 };
 
@@ -365,7 +377,7 @@ struct sat_EdgeQuery
  * pl: both hulls' face planes in v's frame; the incident face is the face of b_v most anti-parallel to the reference
  * normal (stored planes, as DcelSupportFace).
  */
-static u32 HullFaceContact(struct arena *mem_tmp, struct c_Manifold *cm, sat_FeatureId cm_features[4], f32 *max_depth, sat_FeatureId *max_feature, const struct sat_FaceQuery *query, const struct dcel *h[2], const v3 *v[2], const struct plane *pl[2], const u32 b_f, const u32 ref)
+static u32 HullFaceContact(struct arena *mem_tmp, struct c_Manifold *cm, sat_FeatureId cm_features[4], f32 *max_depth, sat_FeatureId *max_feature, const struct sat_FaceQuery *query, const struct dcel *const h[2], const v3 *const v[2], const struct plane *const pl[2], const u32 b_f, const u32 ref)
 {
 	/* (1) determine incident_face */
     const u32 b_v = 1 - b_f;
@@ -392,7 +404,7 @@ static u32 HullFaceContact(struct arena *mem_tmp, struct c_Manifold *cm, sat_Fea
 
 	//for (u32 i = 0; i < cp_count; ++i)
 	//{
-	//	ds_DynamicsDrawDebugSegment(SegmentConstruct(cp[i], cp[(i+1) % cp_count]), V4(0.8f, 0.6f, 0.1f, 1.0f));
+	//	ds_DynamicsDrawDebugSegment(Segment(cp[i], cp[(i+1) % cp_count]), V4(0.8f, 0.6f, 0.1f, 1.0f));
 	//}
 
     u32 collision;
@@ -450,7 +462,6 @@ void c_ContactResultSortTriangles(struct arena *frame, struct c_ContactResult *r
         return;
     }
 
-    //TODO Shit sort for now
     //ProfZoneNamed("Bad Triangle Sorting");
 
     result->tri_manifold = ArenaPushPacked(frame, result->manifold_count*sizeof(u32));
@@ -485,7 +496,7 @@ void c_ContactResultSortTriangles(struct arena *frame, struct c_ContactResult *r
     //ProfZoneEnd;
 }
 
-/********************************** TMP CONTACT MANIFOLD METHODS **********************************/
+/********************************** SHAPE CONTACTS **********************************/
 
 /*
  * Preconditions:
@@ -507,19 +518,19 @@ void c_ContactResultSortTriangles(struct arena *frame, struct c_ContactResult *r
  *      a normal float (|p| >~ 1.1e-19); below that, |n| lies in ~[0.7, 1.22].
  *
  * Degenerate input:
- *      dist == 0 (coincident centers): n = (1, 0, 0) in s[0]'s frame (arbitrary; rotates with s[0] in world),
+ *      dist == 0 (coincident centers): n = (1, 0, 0) in s0's frame (arbitrary; rotates with s0 in world),
  *      depth = r_sum, v = r0 n.
  *      |p| below the positions' resolution (~eps max(|a|, |b|)): n is valid but its direction is noise.
  */
-struct c_ContactResult TMP_c_SphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+struct c_ContactResult c_SphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
-    ds_Assert(s[0]->type == C_SHAPE_SPHERE);
-	ds_Assert(s[1]->type == C_SHAPE_SPHERE);
+    ds_Assert(s0->type == C_SHAPE_SPHERE);
+	ds_Assert(s1->type == C_SHAPE_SPHERE);
 
     struct c_ContactResult result = { 0 };
 
-    const f32 r_sum = s[0]->sphere.radius + s[1]->sphere.radius;
-    const v3 p = QUnitRotate(QConj(t[0].rotation), V3F64Demote(V3F64Sub(t[1].position, t[0].position)));
+    const f32 r_sum = s0->sphere.radius + s1->sphere.radius;
+    const v3 p = QUnitRotate(QConj(t0->rotation), V3F64Demote(V3F64Sub(t1->position, t0->position)));
     const f32 dist_sq = V3LengthSquared(p);
     if (dist_sq <= r_sum*r_sum)
     {
@@ -527,15 +538,15 @@ struct c_ContactResult TMP_c_SphereContact(struct arena *frame, const struct c_C
         const f32 dist = F32Sqrt(dist_sq);
 
         result.manifold_count = 1;
-        result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
-        struct c_Manifold *manifold = result.manifold;
+        result.contact_manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
+        struct c_Manifold *manifold = result.contact_manifold;
 
         manifold->n = (dist > 0.0f)
                     ? V3Scale(p, 1.0f / dist)
                     : V3(1.0f, 0.0f, 0.0f);
 		manifold->v_count = 1;
         manifold->depth[0] = r_sum - dist;
-        manifold->v[0] = V3Scale(manifold->n, s[0]->sphere.radius);
+        manifold->v[0] = V3Scale(manifold->n, s0->sphere.radius);
     }
 
     return result;
@@ -545,34 +556,34 @@ struct c_ContactResult TMP_c_SphereContact(struct arena *frame, const struct c_C
  * Capsule vs sphere: the sphere vs sphere contact against the closest axis point c = (0, clamp(p.y, -h, h), 0),
  * p = sphere center in the capsule's frame; d = p - c.
  *
- * Preconditions: as TMP_c_SphereContact, with r_sum = capsule radius + sphere radius.
+ * Preconditions: as c_SphereContact, with r_sum = capsule radius + sphere radius.
  *
- * Guarantees: as TMP_c_SphereContact (the proofs only use that the test and the sqrt share dist_sq).
+ * Guarantees: as c_SphereContact (the proofs only use that the test and the sqrt share dist_sq).
  *      n, v and depth are continuous in p (clamp is continuous; no region switch at the caps).
  *
  * Degenerate input:
- *      d == 0 (center on the segment): n = (1, 0, 0) in s[0]'s frame (perpendicular to the axis: a shortest
+ *      d == 0 (center on the segment): n = (1, 0, 0) in s0's frame (perpendicular to the axis: a shortest
  *      way out), depth = r_sum, v = c + r_capsule n.
  *      |d| below the positions' resolution: n is valid but its direction is noise.
  */
-struct c_ContactResult TMP_c_CapsuleSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+struct c_ContactResult c_CapsuleSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
-    ds_Assert(s[0]->type == C_SHAPE_CAPSULE);
-    ds_Assert(s[1]->type == C_SHAPE_SPHERE);
+    ds_Assert(s0->type == C_SHAPE_CAPSULE);
+    ds_Assert(s1->type == C_SHAPE_SPHERE);
 
     struct c_ContactResult result = { 0 };
 
-    const v3 p = QUnitRotate(QConj(t[0].rotation), V3F64Demote(V3F64Sub(t[1].position, t[0].position)));
-    const f32 r_sum = s[0]->capsule.radius + s[1]->sphere.radius;
+    const v3 p = QUnitRotate(QConj(t0->rotation), V3F64Demote(V3F64Sub(t1->position, t0->position)));
+    const f32 r_sum = s0->capsule.radius + s1->sphere.radius;
 
-    const f32 clamp_y = F32Clamp(p.y, -s[0]->capsule.half_height, s[0]->capsule.half_height);
+    const f32 clamp_y = F32Clamp(p.y, -s0->capsule.half_height, s0->capsule.half_height);
     const f32 diff_y = p.y - clamp_y;
     const f32 dist_sq = p.x*p.x + p.z*p.z + diff_y*diff_y;
     if (dist_sq <= r_sum*r_sum)
     {
         result.manifold_count = 1;
-        result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
-        struct c_Manifold *m = result.manifold;
+        result.contact_manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
+        struct c_Manifold *m = result.contact_manifold;
 
         const f32 dist = F32Sqrt(dist_sq);
         m->v_count = 1;
@@ -580,7 +591,7 @@ struct c_ContactResult TMP_c_CapsuleSphereContact(struct arena *frame, const str
         m->n = (dist > 0.0f)
             ? V3Scale(V3(p.x, diff_y, p.z), 1.0f/dist)
             : V3(1.0f, 0.0f, 0.0f);
-        m->v[0] = V3Add(V3(0.0f, clamp_y, 0.0f), V3Scale(m->n, s[0]->capsule.radius));
+        m->v[0] = V3Add(V3(0.0f, clamp_y, 0.0f), V3Scale(m->n, s0->capsule.radius));
         m->depth[0] = r_sum - dist;
         ds_Assert(m->depth[0] >= 0.0f);
     }
@@ -589,7 +600,7 @@ struct c_ContactResult TMP_c_CapsuleSphereContact(struct arena *frame, const str
 }
 
 
-/* Preconditions: e_len_sq_xz < capsule_parallel_tan_sq e.y^2 (so e.y != 0); c, e, n as in TMP_c_CapsuleContact.  */
+/* Preconditions: e_len_sq_xz < capsule_parallel_tan_sq e.y^2 (so e.y != 0); c, e, n as in c_CapsuleContact.  */
 static u32 c_CapsuleParallelManifold(struct c_Manifold *manifold, const v3 c, const v3 e, const f32 h0, const f32 r0, const f32 r_sum)
 {
     const f32 u0 = (-h0 - c.y) / e.y;
@@ -628,20 +639,20 @@ static u32 c_CapsuleParallelManifold(struct c_Manifold *manifold, const v3 c, co
 }
 
 /*
- * Capsule vs capsule: local manifold in s[0]'s frame (n from s[0] to s[1]); one point, or two when the
+ * Capsule vs capsule: local manifold in s0's frame (n from s0 to s1); one point, or two when the
  * capsules are nearly parallel and lie side by side.
  */
-struct c_ContactResult TMP_c_CapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+struct c_ContactResult c_CapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
-    ds_Assert(s[0]->type == C_SHAPE_CAPSULE);
-    ds_Assert(s[1]->type == C_SHAPE_CAPSULE);
+    ds_Assert(s0->type == C_SHAPE_CAPSULE);
+    ds_Assert(s1->type == C_SHAPE_CAPSULE);
 
     struct c_ContactResult result = { 0 };
 
-    const f32 r_sum = s[0]->capsule.radius + s[1]->capsule.radius;
-    const q inv = QConj(t[0].rotation);
-    const v3 c = QUnitRotate(inv, V3F64Demote(V3F64Sub(t[1].position, t[0].position)));
-    const v3 e = QUnitRotate(inv, QYUnitRotate(t[1].rotation, s[1]->capsule.half_height));
+    const f32 r_sum = s0->capsule.radius + s1->capsule.radius;
+    const q inv = QConj(t0->rotation);
+    const v3 c = QUnitRotate(inv, V3F64Demote(V3F64Sub(t1->position, t0->position)));
+    const v3 e = QUnitRotate(inv, QYUnitRotate(t1->rotation, s1->capsule.half_height));
 
     const f32 e_len_sq_xz = e.x*e.x + e.z*e.z;
  
@@ -659,7 +670,7 @@ struct c_ContactResult TMP_c_CapsuleContact(struct arena *frame, const struct c_
     const f32 u0 = (e_len_sq_xz > 0.0f) ? F32Clamp(-(c.x*e.x + c.z*e.z) / e_len_sq_xz, -1.0f, 1.0f) : 0.0f;
 
     const v3 Q1 = V3Add(c, V3Scale(e, u0));
-    const f32 Q0_y = F32Clamp(Q1.y, -s[0]->capsule.half_height, s[0]->capsule.half_height);
+    const f32 Q0_y = F32Clamp(Q1.y, -s0->capsule.half_height, s0->capsule.half_height);
     v3 Q1_shift;
     if (Q1.y == Q0_y)
     {
@@ -682,14 +693,14 @@ struct c_ContactResult TMP_c_CapsuleContact(struct arena *frame, const struct c_
 
     const f32 dist = F32Sqrt(dist_sq);
     result.manifold_count = 1;
-    result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
-    struct c_Manifold *manifold = result.manifold;
+    result.contact_manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
+    struct c_Manifold *manifold = result.contact_manifold;
 
     /*
      * Q1_shift carries rounding error ~ eps (|c| + |e| + h0): below the noise band (as GJK's touch band, 100 eps L)
      * its direction is noise, so the cores count as touching or crossing.
      */
-    const f32 dist_noise = 100.0f*F32_EPSILON*(F32Abs(c.x) + F32Abs(c.y) + F32Abs(c.z) + F32Abs(e.x) + F32Abs(e.y) + F32Abs(e.z) + s[0]->capsule.half_height);
+    const f32 dist_noise = 100.0f*F32_EPSILON*(F32Abs(c.x) + F32Abs(c.y) + F32Abs(c.z) + F32Abs(e.x) + F32Abs(e.y) + F32Abs(e.z) + s0->capsule.half_height);
     if (dist > dist_noise)
     {
         manifold->n = V3Scale(Q1_shift, 1.0f / dist);
@@ -716,41 +727,41 @@ struct c_ContactResult TMP_c_CapsuleContact(struct arena *frame, const struct c_
      * (default 2.86 deg: tan_sq ~ 0.0025). Relative (scale-free in e); antiparallel counts; e == 0 fails.
      */
     if (e_len_sq_xz < g_numerics_config->capsule_parallel_tan_sq*e.y*e.y
-        && c_CapsuleParallelManifold(manifold, c, e, s[0]->capsule.half_height, s[0]->capsule.radius, r_sum))
+        && c_CapsuleParallelManifold(manifold, c, e, s0->capsule.half_height, s0->capsule.radius, r_sum))
     {
         return result;
     }
 
     manifold->v_count = 1;
     manifold->depth[0] = r_sum - dist;
-    manifold->v[0] = V3Add(V3(0.0f, Q0_y, 0.0f), V3Scale(manifold->n, s[0]->capsule.radius));
+    manifold->v[0] = V3Add(V3(0.0f, Q0_y, 0.0f), V3Scale(manifold->n, s0->capsule.radius));
 
     return result;
 }
 
-struct c_ContactResult TMP_c_HullSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+struct c_ContactResult c_HullSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
-	ds_Assert(s[0]->type == C_SHAPE_CONVEX_HULL);
-	ds_Assert(s[1]->type == C_SHAPE_SPHERE);
+	ds_Assert(s0->type == C_SHAPE_CONVEX_HULL);
+	ds_Assert(s1->type == C_SHAPE_SPHERE);
 
     struct c_ContactResult result = { 0 };
     result.gjk_cache = ArenaPushPacked(frame, sizeof(struct GJKCache));
 
-    const f32 radius = s[1]->sphere.radius;
-    const q inv = QConj(t[0].rotation);
-    const v3 p = QUnitRotate(inv, V3F64Demote(V3F64Sub(t[1].position, t[0].position)));
+    const f32 radius = s1->sphere.radius;
+    const q inv = QConj(t0->rotation);
+    const v3 p = QUnitRotate(inv, V3F64Demote(V3F64Sub(t1->position, t0->position)));
     const ds_Transform t_1_to_0 = { .rotation = QIdentity(), .position = p };
 
     v3 c[2], n;
-    const f32 distance = GJK(c+0, c+1, &n, result.gjk_cache, cached_result->gjk_cache, s[0], s[1], &t_1_to_0, radius);
+    const f32 distance = GJK(c+0, c+1, &n, result.gjk_cache, cached_result->gjk_cache, s0, s1, &t_1_to_0, radius);
     if (radius < distance)
     {
         return result;
     }
 
     result.manifold_count = 1;
-    result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
-    struct c_Manifold *m = result.manifold;
+    result.contact_manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
+    struct c_Manifold *m = result.contact_manifold;
 	m->v_count = 1;
 
     /* shallow penetration */
@@ -763,7 +774,7 @@ struct c_ContactResult TMP_c_HullSphereContact(struct arena *frame, const struct
 	/* deep penetration */
     else
     {
-		const struct dcel *h = &s[0]->hull;
+		const struct dcel *h = &s0->hull;
 
 		f32 min_depth = F32_INFINITY;
 		for (u32 fi = 0; fi < h->f_count; ++fi)
@@ -859,7 +870,7 @@ static void HullCapsuleEESeparation(struct sat_EdgeQuery *query, const struct dc
 			const u32 e1_2 = h->e[e1_1].twin;
 			if (e1_2 < e1_1) { continue; }
 
-			const struct segment s1 = SegmentConstruct(h->v[h->e[e1_1].origin], h->v[h->e[e1_2].origin]);
+			const struct segment s1 = Segment(h->v[h->e[e1_1].origin], h->v[h->e[e1_2].origin]);
 			const v3 n1_2 = h->plane[h->e[e1_2].face_ccw].normal;
 			HullCapsuleEECheck(query, e1_1, &s1, n1_1, n1_2, core);
 		}
@@ -872,30 +883,30 @@ static void HullCapsuleEESeparation(struct sat_EdgeQuery *query, const struct dc
  * closest points; deep (core touches the hull): SAT face and edge queries; the core clipped to the reference
  * face, or the closest points of the best edge and the core if that edge separates more by sat_face_bias.
  */
-struct c_ContactResult TMP_c_HullCapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
-	ds_Assert(s[0]->type == C_SHAPE_CONVEX_HULL);
-	ds_Assert(s[1]->type == C_SHAPE_CAPSULE);
+	ds_Assert(s0->type == C_SHAPE_CONVEX_HULL);
+	ds_Assert(s1->type == C_SHAPE_CAPSULE);
 
     struct c_ContactResult result = { 0 };
     result.gjk_cache = ArenaPushPacked(frame, sizeof(struct GJKCache));
 
-    const f32 radius = s[1]->capsule.radius;
-    const ds_Transform t_1_to_0 = ds_TransformWorldRelative(&t[0], &t[1]);
+    const f32 radius = s1->capsule.radius;
+    const ds_Transform t_1_to_0 = ds_TransformWorldRelative(t0, t1);
 
     v3 c[2], n;
-    const f32 distance = GJK(c+0, c+1, &n, result.gjk_cache, cached_result->gjk_cache, s[0], s[1], &t_1_to_0, radius);
+    const f32 distance = GJK(c+0, c+1, &n, result.gjk_cache, cached_result->gjk_cache, s0, s1, &t_1_to_0, radius);
     if (radius < distance)
     {
         return result;
     }
 
     result.manifold_count = 1;
-    result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
-    struct c_Manifold *m = result.manifold;
+    result.contact_manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
+    struct c_Manifold *m = result.contact_manifold;
 
-    const struct dcel *h = &s[0]->hull;
-    const struct segment core = SegmentCapsuleTransform(&s[1]->capsule, &t_1_to_0);
+    const struct dcel *h = &s0->hull;
+    const struct segment core = SegmentCapsuleTransform(&s1->capsule, &t_1_to_0);
 
     /* shallow penetration: distance > 0 is beyond GJK's touch band (100 eps L), so the GJK normal is reliable */
     if (0.0f < distance)
@@ -932,7 +943,6 @@ struct c_ContactResult TMP_c_HullCapsuleContact(struct arena *frame, const struc
     }
 
     /* deep penetration: the core's separation along face fi is the signed distance of its deeper end */
-
     u32 face = 0;
     f32 max_separation = -F32_INFINITY;
     for (u32 fi = 0; fi < h->f_count; ++fi)
@@ -965,9 +975,9 @@ struct c_ContactResult TMP_c_HullCapsuleContact(struct arena *frame, const struc
     /*
      * Edge contact if the face contact is empty or the edge separates more by sat_face_bias (face: the clipped
      * separation): the closest points of the edge's and the core's lines, v on the hull edge. Only if both lie
-     * within the segments (Box3D): otherwise other features realize the axis, and the edge and core don't meet
+     * within the segments: otherwise other features realize the axis, and the edge and core don't meet
      * along it (e.g. an edge accepted by the Gauss test on rounding noise, its axis ~ a face normal).
-     * The clipped separation favours two-point face contacts (Box3D) over the best axis: a stick across an edge
+     * The clipped separation favours two-point face contacts over the best axis: a stick across an edge
      * keeps the face normal until it sinks more than sat_face_bias / (1 - 1/sqrt 2).
      */
     if (e_query.e1 != U32_MAX && (!face_contact || depth[deeper] + g_numerics_config->sat_face_bias < e_query.depth))
@@ -1063,12 +1073,12 @@ static u32 HullFaceQuery(struct sat_FaceQuery *query, const struct plane *pl, co
  * e1 is hull 1's support along a valid axis L, so L.(e1 - C) > 0 for every C inside hull 1 (a margin of at least
  * hull 1's inner radius).
  */
-static void HullEdgeCheck(struct sat_EdgeQuery *query, const struct dcel *h[2], const v3 *v[2], const struct plane *pl[2], const v3 center_1, const u32 e1, const u32 e2)
+static void HullEdgeCheck(struct sat_EdgeQuery *query, const struct dcel *const h[2], const v3 *const v[2], const struct plane *const pl[2], const v3 center_1, const u32 e1, const u32 e2)
 {
 	const u32 t1 = h[0]->e[e1].twin;
 	const u32 t2 = h[1]->e[e2].twin;
-	const struct segment s1 = SegmentConstruct(v[0][h[0]->e[e1].origin], v[0][h[0]->e[t1].origin]);
-	const struct segment s2 = SegmentConstruct(v[1][h[1]->e[e2].origin], v[1][h[1]->e[t2].origin]);
+	const struct segment s1 = Segment(v[0][h[0]->e[e1].origin], v[0][h[0]->e[t1].origin]);
+	const struct segment s2 = Segment(v[1][h[1]->e[e2].origin], v[1][h[1]->e[t2].origin]);
 	const v3 n1_1 = pl[0][h[0]->e[e1].face_ccw].normal;
 	const v3 n1_2 = pl[0][h[0]->e[t1].face_ccw].normal;
 	const v3 n2_1 = V3Negate(pl[1][h[1]->e[e2].face_ccw].normal);
@@ -1105,7 +1115,7 @@ static void HullEdgeCheck(struct sat_EdgeQuery *query, const struct dcel *h[2], 
 }
 
 /* Edge query (Gregorius): every edge pair once. Returns 1 at a separating axis (separation > 0). */
-static u32 HullEdgeQuery(struct sat_EdgeQuery *query, const struct dcel *h[2], const v3 *v[2], const struct plane *pl[2], const v3 center_1)
+static u32 HullEdgeQuery(struct sat_EdgeQuery *query, const struct dcel *const h[2], const v3 *const v[2], const struct plane *const pl[2], const v3 center_1)
 {
 	for (u32 e1 = 0; e1 < h[0]->e_count; ++e1)
 	{
@@ -1126,7 +1136,7 @@ static u32 HullEdgeQuery(struct sat_EdgeQuery *query, const struct dcel *h[2], c
 
 /*
  * Edge contact from query: the closest points of the edges' lines, v on s1 (hull 1's edge); only if both lie within the
- * segments (Box3D: otherwise other features realize the axis). Writes the EE cache; returns 1 if built.
+ * segments (otherwise other features realize the axis). Writes the EE cache; returns 1 if built.
  */
 static u32 HullEdgeContact(struct c_Manifold *m, struct c_SatCache *cache, const struct sat_EdgeQuery *query)
 {
@@ -1151,7 +1161,7 @@ static u32 HullEdgeContact(struct c_Manifold *m, struct c_SatCache *cache, const
 }
 
 /*
- * Hull edge e1 (s[0], as stored) vs triangle edge a (s[1]: t_a -> t_b, ccw about n_t). The triangle's edges are knife
+ * Hull edge e1 (s0, as stored) vs triangle edge a (s1: t_a -> t_b, ccw about n_t). The triangle's edges are knife
  * edges: the Gauss arc of edge a is the half circle n_t -> m_e -> -n_t, m_e = (t_b - t_a) x n_t (outward), so
  * EEIsMinkowskiFace (arcs shorter than pi) cannot tell which half is meant. The pair realizes a face of the Minkowski
  * difference iff the hull's arc n1 -> n2 meets the negated half circle:
@@ -1186,7 +1196,7 @@ static void HullTriangleEdgeCheck(struct sat_EdgeQuery *query, const struct dcel
 		return;
 	}
 
-	const struct segment s1 = SegmentConstruct(v[h->e[e1].origin], v[h->e[t1].origin]);
+	const struct segment s1 = Segment(v[h->e[e1].origin], v[h->e[t1].origin]);
 	const v3 cross = V3Cross(s1.dir, e);
 	if (V3Dot(cross, cross) <= g_numerics_config->edge_parallel_sin_sq*V3Dot(s1.dir, s1.dir)*V3Dot(e, e))
 	{
@@ -1203,7 +1213,7 @@ static void HullTriangleEdgeCheck(struct sat_EdgeQuery *query, const struct dcel
 		query->depth = separation;
 		query->normal = axis;
 		query->s1 = s1;
-		query->s2 = SegmentConstruct(tri[a], tri[b]);
+		query->s2 = Segment(tri[a], tri[b]);
 		query->e1 = e1;
 		query->e2 = a;
 	}
@@ -1228,7 +1238,7 @@ static u32 HullTriangleEdgeQuery(struct sat_EdgeQuery *query, const struct dcel 
 	return 0;
 }
 
-/* a separating axis for the SAT cache: normal from s[0] to s[1], separation > 0 */
+/* a separating axis for the SAT cache: normal from s0 to s1, separation > 0 */
 static void sat_CacheSeparation(struct c_SatCache *cache, const v3 normal, const f32 separation)
 {
 	cache->type = SAT_CACHE_SEPARATION;
@@ -1236,31 +1246,39 @@ static void sat_CacheSeparation(struct c_SatCache *cache, const v3 normal, const
 	cache->depth = separation;
 }
 
-/* a pair for the SAT cache: dcels, vertices and face planes in a common frame (s[0]'s for hulls) */
+/* what s1 of a sat_Pair is */
+enum sat_PairType
+{
+	SAT_PAIR_HULL,		/* a hull: Gauss map pruned edge pairs, axes oriented by center_0 */
+	SAT_PAIR_TRIANGLE,	/* a mesh triangle (DcelTriStub, pl[1] = +-n_t): knife edges (HullTriangleEdgeCheck) */
+};
+
+/* a pair for the SAT: dcels, vertices and face planes in a common frame (s0's) */
 struct sat_Pair
 {
+	enum sat_PairType	type;
 	const struct dcel *	h[2];
 	const v3 *			v[2];
 	const struct plane *pl[2];
-	v3					center_0;	/* s[0]'s center of mass: edge axis orientation (hulls) */
+	v3					center_0;	/* s0's center of mass: edge axis orientation (SAT_PAIR_HULL) */
 };
 
 /*
- * SAT cache (Box3D): re-check old_cache for the pair. A separating axis is reused while it separates; a contact is
+ * SAT cache: re-check old_cache for the pair. A separating axis is reused while it separates; a contact is
  * rebuilt from its features (face: clipped on the cached face; edge pair: re-checked and its closest points) and reused
  * while its depth moved by less than sat_cache_tolerance. Returns 1 if reused: new_cache written, *colliding set, for a
- * contact also m and (face contacts) its features. triangle: s[1] is a mesh triangle (DcelTriStub, pl[1][0] = +n_t):
- * its edges are re-checked as knife edges (HullTriangleEdgeCheck).
+ * contact also m and (face contacts) its features.
  */
-static u32 sat_CacheTryReuse(struct c_Manifold *m, u32 *colliding, sat_FeatureId features[4], struct c_SatCache *new_cache, struct arena *mem_tmp, const struct sat_Pair *pair, const struct c_SatCache *old_cache, const u32 triangle)
+static u32 sat_CacheTryReuse(struct c_Manifold *m, u32 *colliding, sat_FeatureId features[4], struct c_SatCache *new_cache, struct arena *mem_tmp, const struct sat_Pair *pair, const struct c_SatCache *old_cache)
 {
 	struct ds_DynamicsMetrics *metrics = &g_dynamics_worker[ds_ThreadSelfIndex()].metrics;
+	const u32 triangle = (pair->type == SAT_PAIR_TRIANGLE);
 	u32 *probe = (triangle) ? &metrics->mesh_cache_probe_count : &metrics->hull_cache_probe_count;
 	u32 *eviction = (triangle) ? &metrics->mesh_cache_eviction_count : &metrics->hull_cache_eviction_count;
 	const f32 tolerance = g_numerics_config->sat_cache_tolerance;
-	const struct dcel *h[2] = { pair->h[0], pair->h[1] };
-	const v3 *v[2] = { pair->v[0], pair->v[1] };
-	const struct plane *pl[2] = { pair->pl[0], pair->pl[1] };
+	const struct dcel *const *h = pair->h;
+	const v3 *const *v = pair->v;
+	const struct plane *const *pl = pair->pl;
 	*probe += 1;
 	*colliding = 0;
 
@@ -1328,41 +1346,121 @@ static u32 sat_CacheTryReuse(struct c_Manifold *m, u32 *colliding, sat_FeatureId
 	return 0;
 }
 
-static u32 sat_CacheConvexTryReuse(struct c_Manifold *m, u32 *colliding, struct c_SatCache *new_cache, struct arena *mem_tmp, const struct sat_Pair *pair, const struct c_SatCache *old_cache)
+/*
+ * SAT of a pair (Gregorius), the SAT cache tried first (old_cache NULL: none). Face queries of both shapes and the edge
+ * query (SAT_PAIR_HULL: Gauss map pruned, axes oriented by center_0; SAT_PAIR_TRIANGLE: knife edges); separated if any
+ * axis separates. Otherwise the face contact (incident face clipped to the reference face, the face with the larger
+ * separation), replaced by the edge contact if the clip is empty or the edge separates more than the clipped face by
+ * sat_face_bias. Returns 1 if colliding: m written, and for a face contact its points' features. cache: the
+ * separating axis or the contact's features; SAT_CACHE_NONE for the fallback contact.
+ */
+static u32 sat_PairContact(struct c_Manifold *m, sat_FeatureId features[4], struct c_SatCache *cache, struct arena *mem_tmp, const struct sat_Pair *pair, const struct c_SatCache *old_cache)
 {
-	sat_FeatureId features[4];
-	return sat_CacheTryReuse(m, colliding, features, new_cache, mem_tmp, pair, old_cache, 0);
+	u32 colliding;
+	if (old_cache && sat_CacheTryReuse(m, &colliding, features, cache, mem_tmp, pair, old_cache))
+	{
+		return colliding;
+	}
+
+	const struct dcel *const *h = pair->h;
+	const v3 *const *v = pair->v;
+	const struct plane *const *pl = pair->pl;
+	struct sat_FaceQuery f_query[2] = { { .depth = -F32_INFINITY }, { .depth = -F32_INFINITY } };
+	struct sat_EdgeQuery e_query = { .depth = -F32_INFINITY, .e1 = U32_MAX };
+
+	if (HullFaceQuery(&f_query[0], pl[0], h[0]->f_count, v[1], h[1]->v_count))
+	{
+		sat_CacheSeparation(cache, f_query[0].normal, f_query[0].depth);
+		return 0;
+	}
+
+	if (HullFaceQuery(&f_query[1], pl[1], h[1]->f_count, v[0], h[0]->v_count))
+	{
+		sat_CacheSeparation(cache, V3Negate(f_query[1].normal), f_query[1].depth);
+		return 0;
+	}
+
+	const u32 edge_separates = (pair->type == SAT_PAIR_TRIANGLE)
+		? HullTriangleEdgeQuery(&e_query, h[0], v[0], pl[0], v[1], pl[1][0].normal)
+		: HullEdgeQuery(&e_query, h, v, pl, pair->center_0);
+	if (edge_separates)
+	{
+		sat_CacheSeparation(cache, e_query.normal, e_query.depth);
+		return 0;
+	}
+
+	/* face contact on the face with the larger separation; its clipped separation is -(deepest clipped depth) */
+	const u32 b_f = (f_query[0].depth < f_query[1].depth);
+	const u32 b_v = 1 - b_f;
+	f32 max_depth;
+	const u32 face_contact = HullFaceContact(mem_tmp, m, features, &max_depth, cache->feature + b_v, f_query + b_f, h, v, pl, b_f, 0);
+
+	/* Edge contact if the face contact is empty or the edge separates more than the clipped face by sat_face_bias */
+	if (e_query.e1 != U32_MAX && (!face_contact || -max_depth + g_numerics_config->sat_face_bias < e_query.depth)
+			&& HullEdgeContact(m, cache, &e_query))
+	{
+		return 1;
+	}
+
+	if (face_contact)
+	{
+		cache->type = SAT_CACHE_CONTACT_FV;
+		cache->feature[b_f] = sat_FeatureIdConstruct(f_query[b_f].fi, SAT_FEATURE_TYPE_FACE);
+		cache->depth = max_depth;
+		cache->normal = f_query[b_f].normal;
+		return 1;
+	}
+
+	/*
+	 * No face or edge contact (the clip came out empty, the edge's closest points outside the segments): the face
+	 * query's deepest vertex of the incident shape and its projection onto the reference plane. Nothing to cache; the
+	 * features are written as a face contact's (a mesh triangle's vertex waits: c_MeshHullTriDelayed).
+	 */
+	const struct sat_FaceQuery *fq = f_query + b_f;
+	const v3 p = v[b_v][fq->vi];
+	m->v_count = 1;
+	m->depth[0] = F32Max(0.0f, -fq->depth);
+	if (b_f == 0)
+	{
+		m->n = fq->normal;
+		m->v[0] = V3Sub(p, V3Scale(fq->normal, fq->depth));
+	}
+	else
+	{
+		m->n = V3Negate(fq->normal);
+		m->v[0] = p;
+	}
+	cache->type = SAT_CACHE_NONE;
+	cache->feature[b_f] = sat_FeatureIdConstruct(fq->fi, SAT_FEATURE_TYPE_FACE);
+	cache->feature[b_v] = sat_FeatureIdConstruct(fq->vi, SAT_FEATURE_TYPE_VERTEX);
+	features[0] = cache->feature[b_v];
+	return 1;
 }
 
 /*
- * Hull vs hull (Gregorius' SAT): local manifold in s[0]'s frame (n from s[0] to s[1]). s[1]'s vertices and face
- * planes are moved into s[0]'s frame; s[0] uses its stored planes. Face queries of both hulls and the edge query
- * (Gauss map pruned, axes oriented by s[0]'s center of mass); separated if any axis separates. Otherwise the face
- * contact (incident face clipped to the reference face, the face with the larger separation), replaced by the edge
- * contact if the clip is empty or the edge separates more than the clipped face by sat_face_bias (Box3D). The SAT
- * cache is tried first.
+ * Hull vs hull: local manifold in s0's frame (n from s0 to s1). s1's vertices and face planes are moved into
+ * s0's frame; s0 uses its stored planes. SAT and cache: sat_PairContact.
  */
-struct c_ContactResult TMP_c_HullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s[2], const ds_TransformWorld t[2])
+struct c_ContactResult c_HullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
-	ds_Assert(s[0]->type == C_SHAPE_CONVEX_HULL);
-	ds_Assert(s[1]->type == C_SHAPE_CONVEX_HULL);
+	ds_Assert(s0->type == C_SHAPE_CONVEX_HULL);
+	ds_Assert(s1->type == C_SHAPE_CONVEX_HULL);
 
     struct ds_DynamicsMetrics *metrics = &g_dynamics_worker[ds_ThreadSelfIndex()].metrics;
     metrics->hull_call_count += 1;
 
-    u32 colliding = 0;
     struct c_ContactResult result = { 0 };
     result.cache_count = 1;
     result.cache = ArenaPushPacked(frame, sizeof(struct c_SatCache));
     result.manifold_count = 1;
-    result.manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
+    result.contact_manifold = ArenaPushPacked(frame, sizeof(struct c_Manifold));
 
     struct arena *mem_tmp = ArenaPushScratch();
 
-    /* s[1] in s[0]'s frame: vertices and face planes */
-    const ds_Transform t_1_to_0 = ds_TransformWorldRelative(&t[0], &t[1]);
+    /* s1 in s0's frame: vertices and face planes */
+    const ds_Transform t_1_to_0 = ds_TransformWorldRelative(t0, t1);
     const m3 rot = M3QUnit(t_1_to_0.rotation);
-    const struct dcel *h[2] = { &s[0]->hull, &s[1]->hull };
+    const struct dcel *h[2] = { &s0->hull, &s1->hull };
     v3 *v_1 = ArenaPush(mem_tmp, h[1]->v_count * sizeof(v3));
     struct plane *pl_1 = ArenaPush(mem_tmp, h[1]->f_count * sizeof(struct plane));
 	for (u32 i = 0; i < h[1]->v_count; ++i)
@@ -1375,88 +1473,22 @@ struct c_ContactResult TMP_c_HullContact(struct arena *frame, const struct c_Con
 	}
     const v3 *v[2] = { h[0]->v, v_1 };
     const struct plane *pl[2] = { h[0]->plane, pl_1 };
-    const v3 center_0 = s[0]->center_of_mass;
+    const v3 center_0 = s0->center_of_mass;
 
-    const struct sat_Pair pair = { .h = { h[0], h[1] }, .v = { v[0], v[1] }, .pl = { pl[0], pl[1] }, .center_0 = center_0 };
-    if (cached_result->cache_count && sat_CacheConvexTryReuse(result.manifold, &colliding, result.cache, mem_tmp, &pair, cached_result->cache))
+    const struct sat_Pair pair = { .type = SAT_PAIR_HULL, .h = { h[0], h[1] }, .v = { v[0], v[1] }, .pl = { pl[0], pl[1] }, .center_0 = center_0 };
+    const struct c_SatCache *old_cache = (cached_result->cache_count) ? cached_result->cache : NULL;
+    sat_FeatureId features[4];
+    const u32 colliding = sat_PairContact(result.contact_manifold, features, result.cache, mem_tmp, &pair, old_cache);
+    if (result.cache->type == SAT_CACHE_NONE)
     {
-        goto sat_cleanup;
-    }
-
-	struct sat_FaceQuery f_query[2] = { { .depth = -F32_INFINITY }, { .depth = -F32_INFINITY } };
-	struct sat_EdgeQuery e_query = { .depth = -F32_INFINITY, .e1 = U32_MAX };
-
-	if (HullFaceQuery(&f_query[0], pl[0], h[0]->f_count, v[1], h[1]->v_count))
-	{
-		sat_CacheSeparation(result.cache, f_query[0].normal, f_query[0].depth);
-		goto sat_cleanup;
-	}
-
-	if (HullFaceQuery(&f_query[1], pl[1], h[1]->f_count, v[0], h[0]->v_count))
-	{
-		sat_CacheSeparation(result.cache, V3Negate(f_query[1].normal), f_query[1].depth);
-		goto sat_cleanup;
-	}
-
-	if (HullEdgeQuery(&e_query, h, v, pl, center_0))
-	{
-		sat_CacheSeparation(result.cache, e_query.normal, e_query.depth);
-		goto sat_cleanup;
-    }
-
-    /* face contact on the face with the larger separation; its clipped separation is -(deepest clipped depth) */
-    const u32 b_f = (f_query[0].depth < f_query[1].depth);
-    const u32 b_v = 1 - b_f;
-    f32 max_depth;
-    sat_FeatureId manifold_features[4];
-    const u32 face_contact = HullFaceContact(mem_tmp, result.manifold, manifold_features, &max_depth, result.cache->feature + b_v, f_query + b_f, h, v, pl, b_f, 0);
-
-    /* Edge contact if the face contact is empty or the edge separates more than the clipped face by sat_face_bias */
-    colliding = 1;
-    if (e_query.e1 != U32_MAX && (!face_contact || -max_depth + g_numerics_config->sat_face_bias < e_query.depth)
-            && HullEdgeContact(result.manifold, result.cache, &e_query))
-    {
-        goto sat_cleanup;
-    }
-
-    if (face_contact)
-    {
-        result.cache->type = SAT_CACHE_CONTACT_FV;
-        result.cache->feature[b_f] = sat_FeatureIdConstruct(f_query[b_f].fi, SAT_FEATURE_TYPE_FACE);
-        result.cache->depth = max_depth;
-        result.cache->normal = f_query[b_f].normal;
-        goto sat_cleanup;
-    }
-
-    /*
-     * No face or edge contact (the clip came out empty, the edge's closest points outside the segments): the face
-     * query's deepest vertex of the incident hull and its projection onto the reference plane. Nothing to cache.
-     */
-    {
-        const struct sat_FaceQuery *fq = f_query + b_f;
-        const v3 p = v[b_v][fq->vi];
-        struct c_Manifold *m = result.manifold;
-        m->v_count = 1;
-        m->depth[0] = F32Max(0.0f, -fq->depth);
-        if (b_f == 0)
-        {
-            m->n = fq->normal;
-            m->v[0] = V3Sub(p, V3Scale(fq->normal, fq->depth));
-        }
-        else
-        {
-            m->n = V3Negate(fq->normal);
-            m->v[0] = p;
-        }
         result.cache_count = 0;
     }
 
-sat_cleanup:
     if (!colliding)
     {
         ArenaPopPacked(frame, sizeof(struct c_Manifold));
         result.manifold_count = 0;
-        result.manifold = NULL;
+        result.contact_manifold = NULL;
     }
     ArenaPopScratch();
     return result;
@@ -1652,16 +1684,6 @@ static void c_MeshTriRegionMaskDelayed(struct c_MeshTri *r, const u32 mask)
     }
 }
 
-static f32 c_ManifoldDeepest(const struct c_Manifold *m)
-{
-    f32 deepest = 0.0f;
-    for (u32 i = 0; i < m->v_count; ++i)
-    {
-        deepest = F32Max(deepest, m->depth[i]);
-    }
-    return deepest;
-}
-
 static void c_MeshSphereTriangles(struct c_MeshContactHelper *helper, const struct sphere *sphere)
 {
     const f32 radius = sphere->radius;
@@ -1671,7 +1693,7 @@ static void c_MeshSphereTriangles(struct c_MeshContactHelper *helper, const stru
     while (c_MeshContactNext(helper, &tri_index, tri))
     {
         /*
-         * as TMP_c_HullSphereContact, two-sided: the triangle is a flat hull with faces +-n_t; center = origin.
+         * as c_HullSphereContact, two-sided: the triangle is a flat hull with faces +-n_t; center = origin.
          * Triangles have area (c_Shape precondition), so VORONOI_INVALID (zero |e|^2 or |n|^2, NaN) and n_t = 0
          * are only asserted.
          */
@@ -1700,10 +1722,9 @@ static void c_MeshSphereTriangles(struct c_MeshContactHelper *helper, const stru
         /* deep penetration: the face the center is in front of (on the plane: +n_t) */
         else
         {
-            const v3 n_dir = V3Cross(V3Sub(tri[1], tri[0]), V3Sub(tri[2], tri[0]));
-            const f32 n_dir_length_sq = V3LengthSquared(n_dir);
-            ds_AssertString(n_dir_length_sq > 0.0f, "mesh triangle without area (c_Shape precondition)");
-            const v3 n_t = V3Scale(n_dir, 1.0f / F32Sqrt(n_dir_length_sq));
+            v3 n_t;
+            const u32 has_area = TriCcwNormalTryCompute(&n_t, tri[0], tri[1], tri[2]);
+            ds_AssertString(has_area, "mesh triangle without area (c_Shape precondition)");
             const f32 distance = -V3Dot(n_t, tri[0]);
             n = (0.0f <= distance) ? V3Scale(n_t, -1.0f) : n_t;
             depth = F32Max(0.0f, radius - F32Abs(distance));
@@ -1723,47 +1744,27 @@ static void c_MeshSphereTriangles(struct c_MeshContactHelper *helper, const stru
 }
 
 /*
- * Clip s to the side planes of triangle t (the planes through its edges along n, n = (t1 - t0) x (t2 - t0): the
- * prism over the triangle). Inclusive: ends on a side plane are kept, so the clip can be a single point (as
- * DcelFaceSegmentClip). Returns 0 if nothing is left. Each crossing divides only where the end points' signs
- * differ, so the parameter is bounded.
+ * DcelFaceSegmentClip for triangle t, CCW about n (any length): s clipped to the prism over t, inclusive. Returns 0 if
+ * nothing is left. Kept inline here: the general clip through a triangle stub measured 0.3% slower for capsule-mesh.
  */
 static u32 c_TriSegmentSideClip(struct segment *clip, const v3 t[3], const v3 n, const struct segment *s)
 {
-    f32 lo = 0.0f;
-    f32 hi = 1.0f;
-    for (u32 a = 0; a < 3; ++a)
-    {
-        const u32 b = (a + 1) % 3;
-        /* outward (ccw about n): the triangle lies on the side m . (x - t_a) <= 0 */
-        const v3 m = V3Cross(V3Sub(t[b], t[a]), n);
-        const f32 d0 = V3Dot(m, V3Sub(s->p[0], t[a]));
-        const f32 d1 = V3Dot(m, V3Sub(s->p[1], t[a]));
-        if (0.0f < d0 && 0.0f < d1)
-        {
-            return 0;
-        }
-        else if (0.0f < d0)
-        {
-            lo = F32Max(lo, d0 / (d0 - d1));
-        }
-        else if (0.0f < d1)
-        {
-            hi = F32Min(hi, d0 / (d0 - d1));
-        }
-    }
-
-    if (hi < lo)
+    f32 t_min = 0.0f;
+    f32 t_max = 1.0f;
+    if (!SegmentEdgeSideClip(&t_min, &t_max, s, t[0], t[1], n)
+        || !SegmentEdgeSideClip(&t_min, &t_max, s, t[1], t[2], n)
+        || !SegmentEdgeSideClip(&t_min, &t_max, s, t[2], t[0], n)
+        || t_max < t_min)
     {
         return 0;
     }
 
-    *clip = SegmentConstruct(SegmentBc(s, lo), SegmentBc(s, hi));
+    *clip = Segment(SegmentBc(s, t_min), SegmentBc(s, t_max));
     return 1;
 }
 
 /*
- * Capsule vs triangle (two-sided), tailored from TMP_c_HullCapsuleContact: the triangle is a flat hull with faces
+ * Capsule vs triangle (two-sided), tailored from c_HullCapsuleContact: the triangle is a flat hull with faces
  * +-n_t and three knife edges, and TriSegmentVoronoi replaces GJK. In the capsule's frame; the manifold follows the
  * mesh convention (n from the capsule to the mesh, v on the capsule's surface).
  */
@@ -1771,7 +1772,7 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
 {
     const f32 radius = capsule->radius;
     /* the core in the capsule's frame (SegmentCapsuleTransform's order) */
-    const struct segment core = SegmentConstruct(V3(0.0f, capsule->half_height, 0.0f), V3(0.0f, -capsule->half_height, 0.0f));
+    const struct segment core = Segment(V3(0.0f, capsule->half_height, 0.0f), V3(0.0f, -capsule->half_height, 0.0f));
     const f32 touch_tolerance = GJK_TOUCH_TOLERANCE * F32_EPSILON;
     u32 tri_index;
     v3 tri[3];
@@ -1789,10 +1790,9 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
             continue;
         }
 
-        const v3 n_dir = V3Cross(V3Sub(tri[1], tri[0]), V3Sub(tri[2], tri[0]));
-        const f32 n_dir_length_sq = V3LengthSquared(n_dir);
-        ds_AssertString(n_dir_length_sq > 0.0f, "mesh triangle without area (c_Shape precondition)");
-        const v3 n_t = V3Scale(n_dir, 1.0f / F32Sqrt(n_dir_length_sq));
+        v3 n_t;
+        const u32 has_area = TriCcwNormalTryCompute(&n_t, tri[0], tri[1], tri[2]);
+        ds_AssertString(has_area, "mesh triangle without area (c_Shape precondition)");
 
         struct c_MeshTri *r = c_MeshContactPush(helper, tri_index);
         struct c_Manifold *m = &r->manifold;
@@ -1817,7 +1817,7 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
             const v3 f = (V3Dot(n, n_t) < 0.0f) ? n_t : V3Scale(n_t, -1.0f);
             struct segment clip;
             if (g_numerics_config->face_parallel_cos < -V3Dot(n, f)
-                && c_TriSegmentSideClip(&clip, tri, n_dir, &core))
+                && c_TriSegmentSideClip(&clip, tri, n_t, &core))
             {
                 const f32 d0 = V3Dot(f, V3Sub(clip.p[0], tri[0]));
                 const f32 d1 = V3Dot(f, V3Sub(clip.p[1], tri[0]));
@@ -1851,7 +1851,7 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
 
         /* face contact: the core clipped to the triangle; empty if nothing is left or no clipped end touches */
         struct segment clip = core;
-        const u32 clipped = c_TriSegmentSideClip(&clip, tri, n_dir, &core);
+        const u32 clipped = c_TriSegmentSideClip(&clip, tri, n_t, &core);
         const f32 depth[2] =
         {
             V3Dot(f, V3Sub(clip.p[0], tri[0])),
@@ -1893,10 +1893,10 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
             }
         }
 
-        /* edge contact as in TMP_c_HullCapsuleContact: within both segments, separating more by sat_face_bias */
+        /* edge contact as in c_HullCapsuleContact: within both segments, separating more by sat_face_bias */
         if (edge != U32_MAX && (!face_contact || depth[deeper] + g_numerics_config->sat_face_bias < edge_separation))
         {
-            const struct segment e = SegmentConstruct(tri[edge], tri[(edge + 1) % 3]);
+            const struct segment e = Segment(tri[edge], tri[(edge + 1) % 3]);
             f32 t_edge, t_core;
             if (SegmentLineClosestParameterCheck(&t_edge, &t_core, &e, &core))
             {
@@ -1949,7 +1949,7 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
  * The delayed vertices of a hull-triangle contact (the cache tells which): an edge contact waits on the triangle edge's
  * vertices; a face contact on the hull's face (the triangle incident) on the triangle features in the manifold (a
  * vertex, or an edge's two vertices; three or more points, or all three vertices: none); a face contact on the
- * triangle's face does not wait.
+ * triangle's face does not wait. The fallback contact (SAT_CACHE_NONE) as a face contact.
  */
 static void c_MeshHullTriDelayed(struct c_MeshTri *r, const struct dcel *stub, const sat_FeatureId features[4])
 {
@@ -1958,7 +1958,8 @@ static void c_MeshHullTriDelayed(struct c_MeshTri *r, const struct dcel *stub, c
         const u32 a = sat_FeatureIdIndex(r->cache.feature[1]);
         c_MeshTriRegionMaskDelayed(r, (1u << a) | (1u << ((a + 1) % 3)));
     }
-    else if (r->cache.type == SAT_CACHE_CONTACT_FV && !sat_FeatureIdFaceCheck(r->cache.feature[1]) && r->manifold.v_count < 3)
+    else if ((r->cache.type == SAT_CACHE_CONTACT_FV || r->cache.type == SAT_CACHE_NONE)
+            && !sat_FeatureIdFaceCheck(r->cache.feature[1]) && r->manifold.v_count < 3)
     {
         u32 mask = 0;
         for (u32 i = 0; i < r->manifold.v_count; ++i)
@@ -1973,10 +1974,9 @@ static void c_MeshHullTriDelayed(struct c_MeshTri *r, const struct dcel *stub, c
 }
 
 /*
- * Hull vs triangle (two-sided), as TMP_c_HullContact with the hull as s[0] (as stored) and the triangle as s[1] (a
- * DcelTriStub with planes +-n_t, in the hull's frame): n from the hull to the mesh, v on the hull (the mesh
- * convention). The triangle's edges are knife edges (HullTriangleEdgeQuery). Every tested triangle keeps a record:
- * its contact, or its separating axis for the cache.
+ * Hull vs triangle (two-sided): sat_PairContact with the hull as s0 (as stored) and the triangle as s1
+ * (SAT_PAIR_TRIANGLE: a DcelTriStub with planes +-n_t, in the hull's frame): n from the hull to the mesh, v on the hull
+ * (the mesh convention). Every tested triangle keeps a record: its contact, or its separating axis for the cache.
  */
 static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct c_ContactResult *cached_result, const struct dcel *hull)
 {
@@ -1986,18 +1986,17 @@ static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct
     while (c_MeshContactNext(helper, &tri_index, tri))
     {
         metrics->mesh_call_count += 1;
-        const v3 n_dir = V3Cross(V3Sub(tri[1], tri[0]), V3Sub(tri[2], tri[0]));
-        const f32 n_dir_length_sq = V3LengthSquared(n_dir);
-        ds_AssertString(n_dir_length_sq > 0.0f, "mesh triangle without area (c_Shape precondition)");
-        const v3 n_t = V3Scale(n_dir, 1.0f / F32Sqrt(n_dir_length_sq));
+        v3 n_t;
+        const u32 has_area = TriCcwNormalTryCompute(&n_t, tri[0], tri[1], tri[2]);
+        ds_AssertString(has_area, "mesh triangle without area (c_Shape precondition)");
 
-        /* the triangle as s[1]: face 0 ccw about n_t, face 1 its back */
-        struct plane pl_tri[2] = { PlaneConstruct(n_t, tri[0]), PlaneConstruct(V3Negate(n_t), tri[0]) };
+        /* the triangle as s1: face 0 ccw about n_t, face 1 its back */
+        struct plane pl_tri[2] = { Plane(n_t, tri[0]), Plane(V3Negate(n_t), tri[0]) };
         struct dcel stub = DcelTriStub();
         stub.v = tri;
         stub.plane = pl_tri;
         /* center_0 orients HullEdgeCheck's axes; the triangle's edge check needs none */
-        const struct sat_Pair pair = { .h = { hull, &stub }, .v = { hull->v, tri }, .pl = { hull->plane, pl_tri }, .center_0 = V3(0.0f, 0.0f, 0.0f) };
+        const struct sat_Pair pair = { .type = SAT_PAIR_TRIANGLE, .h = { hull, &stub }, .v = { hull->v, tri }, .pl = { hull->plane, pl_tri }, .center_0 = V3(0.0f, 0.0f, 0.0f) };
 
         /* the triangle's cache: a linear search over at most cache_count_max entries (small next to the SAT) */
         const struct c_SatCache *old_cache = NULL;
@@ -2011,85 +2010,18 @@ static void c_MeshHullTriangles(struct c_MeshContactHelper *helper, const struct
         }
 
         struct c_MeshTri *r = c_MeshContactPush(helper, tri_index);
-        struct c_Manifold *m = &r->manifold;
         struct arena *mem_tmp = ArenaPushScratch();
         sat_FeatureId features[4];
-        u32 colliding = 0;
-        if (old_cache && sat_CacheTryReuse(m, &colliding, features, &r->cache, mem_tmp, &pair, old_cache, 1))
-        {
-            if (colliding)
-            {
-                c_MeshHullTriDelayed(r, &stub, features);
-            }
-        }
-        else
-        {
-            struct sat_FaceQuery f_query[2] = { { .depth = -F32_INFINITY }, { .depth = -F32_INFINITY } };
-            struct sat_EdgeQuery e_query = { .depth = -F32_INFINITY, .e1 = U32_MAX };
-            if (HullFaceQuery(&f_query[0], hull->plane, hull->f_count, tri, 3))
-            {
-                sat_CacheSeparation(&r->cache, f_query[0].normal, f_query[0].depth);
-            }
-            else if (HullFaceQuery(&f_query[1], pl_tri, 2, hull->v, hull->v_count))
-            {
-                sat_CacheSeparation(&r->cache, V3Negate(f_query[1].normal), f_query[1].depth);
-            }
-            else if (HullTriangleEdgeQuery(&e_query, hull, hull->v, hull->plane, tri, n_t))
-            {
-                sat_CacheSeparation(&r->cache, e_query.normal, e_query.depth);
-            }
-            else
-            {
-                /* face contact on the face with the larger separation; edge contact as in TMP_c_HullContact */
-                colliding = 1;
-                const u32 b_f = (f_query[0].depth < f_query[1].depth);
-                const u32 b_v = 1 - b_f;
-                f32 max_depth;
-                const u32 face_contact = HullFaceContact(mem_tmp, m, features, &max_depth, r->cache.feature + b_v, f_query + b_f, pair.h, pair.v, pair.pl, b_f, 0);
-                if (e_query.e1 != U32_MAX && (!face_contact || -max_depth + g_numerics_config->sat_face_bias < e_query.depth)
-                        && HullEdgeContact(m, &r->cache, &e_query))
-                {
-                    c_MeshHullTriDelayed(r, &stub, features);
-                }
-                else if (face_contact)
-                {
-                    r->cache.type = SAT_CACHE_CONTACT_FV;
-                    r->cache.feature[b_f] = sat_FeatureIdConstruct(f_query[b_f].fi, SAT_FEATURE_TYPE_FACE);
-                    r->cache.depth = max_depth;
-                    r->cache.normal = f_query[b_f].normal;
-                    c_MeshHullTriDelayed(r, &stub, features);
-                }
-                else
-                {
-                    /*
-                     * No face or edge contact (as TMP_c_HullContact): the face query's deepest vertex of the incident
-                     * side, projected onto the reference plane; it waits if it is the triangle's. Not cached
-                     * (SAT_CACHE_COUNT: c_MeshContactFinish skips it).
-                     */
-                    const struct sat_FaceQuery *fq = f_query + b_f;
-                    const v3 p = pair.v[b_v][fq->vi];
-                    m->v_count = 1;
-                    m->depth[0] = F32Max(0.0f, -fq->depth);
-                    if (b_f == 0)
-                    {
-                        m->n = fq->normal;
-                        m->v[0] = V3Sub(p, V3Scale(fq->normal, fq->depth));
-                        c_MeshTriRegionMaskDelayed(r, 1u << fq->vi);
-                    }
-                    else
-                    {
-                        m->n = V3Negate(fq->normal);
-                        m->v[0] = p;
-                    }
-                    r->cache.type = SAT_CACHE_COUNT;
-                }
-            }
-        }
+        const u32 colliding = sat_PairContact(&r->manifold, features, &r->cache, mem_tmp, &pair, old_cache);
         ArenaPopScratch();
+        if (colliding)
+        {
+            c_MeshHullTriDelayed(r, &stub, features);
+        }
 
         r->cache.tri = tri_index;
         r->contact = colliding;
-        r->depth = (colliding) ? c_ManifoldDeepest(m) : 0.0f;
+        r->depth = (colliding) ? c_ManifoldDeepest(&r->manifold) : 0.0f;
     }
 }
 
@@ -2106,11 +2038,11 @@ static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *res
 
     const u32 cache_len = (cache) ? ((helper->record_count < g_numerics_config->cache_count_max) ? helper->record_count : g_numerics_config->cache_count_max) : 0;
     result->cache = (cache_len) ? ArenaPushPacked(frame, cache_len*sizeof(struct c_SatCache)) : NULL;
-    result->manifold = ArenaPush(frame, contact_count*sizeof(struct c_Manifold));
+    result->contact_manifold = ArenaPush(frame, contact_count*sizeof(struct c_Manifold));
     result->tri = ArenaPush(frame, contact_count*sizeof(u32));
     u32 *delayed = ArenaPush(helper->tmp, delayed_count*sizeof(u32));
     struct ds_BitSet void_bitset = ds_BitSetAlloc(helper->tmp, helper->mesh->v_count, 0, NOT_GROWABLE);
-    if ((contact_count && (!result->manifold || !result->tri)) || (delayed_count && !delayed) || (cache_len && !result->cache))
+    if ((contact_count && (!result->contact_manifold || !result->tri)) || (delayed_count && !delayed) || (cache_len && !result->cache))
     {
         Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
         FatalCleanupAndExit();
@@ -2127,7 +2059,7 @@ static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *res
         const struct c_MeshTri *r = helper->record + i;
         if (!r->contact)
         {
-            if (result->cache_count < cache_len && r->cache.type < SAT_CACHE_COUNT)
+            if (result->cache_count < cache_len && r->cache.type != SAT_CACHE_NONE)
             {
                 result->cache[result->cache_count++] = r->cache;
             }
@@ -2145,10 +2077,10 @@ static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *res
             continue;
         }
 
-        result->manifold[result->manifold_count] = r->manifold;
+        result->contact_manifold[result->manifold_count] = r->manifold;
         result->tri[result->manifold_count] = r->tri;
         result->manifold_count += 1;
-        if (result->cache_count < cache_len && r->cache.type < SAT_CACHE_COUNT)
+        if (result->cache_count < cache_len && r->cache.type != SAT_CACHE_NONE)
         {
             result->cache[result->cache_count++] = r->cache;
         }
@@ -2167,10 +2099,10 @@ static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *res
             : ds_BitSetGet(&void_bitset, v[ r->delayed[0] ]) && ds_BitSetGet(&void_bitset, v[ r->delayed[1] ]);
         if (!voided)
         {
-            result->manifold[result->manifold_count] = r->manifold;
+            result->contact_manifold[result->manifold_count] = r->manifold;
             result->tri[result->manifold_count] = r->tri;
             result->manifold_count += 1;
-            if (result->cache_count < cache_len && r->cache.type < SAT_CACHE_COUNT)
+            if (result->cache_count < cache_len && r->cache.type != SAT_CACHE_NONE)
             {
                 result->cache[result->cache_count++] = r->cache;
             }
@@ -2187,11 +2119,11 @@ static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *res
 
 /*
  * Mesh vs convex shape (sphere, capsule, hull): one manifold per contacting triangle, local to the convex shape (n from
- * it to the mesh, v on its surface). The per-triangle routines are the old ones (frame-agnostic, called with the
- * convex shape as reference).
+ * it to the mesh, v on its surface).
  */
-static struct c_ContactResult c_MeshContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex)
+struct c_ContactResult c_MeshContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex)
 {
+    ds_Assert(convex->type < C_SHAPE_TRI_MESH);
     struct c_ContactResult result = { 0 };
     struct c_MeshContactHelper helper;
     c_MeshContactInit(&helper, mesh, t_mesh, convex, t_convex);
@@ -2203,19 +2135,4 @@ static struct c_ContactResult c_MeshContact(struct arena *frame, const struct c_
     }
     c_MeshContactFinish(frame, &result, &helper, convex->type == C_SHAPE_CONVEX_HULL);
     return result;
-}
-
-struct c_ContactResult TMP_c_MeshSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *sphere, const ds_TransformWorld *t_sphere)
-{
-    return c_MeshContact(frame, cached_result, mesh, t_mesh, sphere, t_sphere);
-}
-
-struct c_ContactResult TMP_c_MeshCapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *capsule, const ds_TransformWorld *t_capsule)
-{
-    return c_MeshContact(frame, cached_result, mesh, t_mesh, capsule, t_capsule);
-}
-
-struct c_ContactResult TMP_c_MeshHullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *hull, const ds_TransformWorld *t_hull)
-{
-    return c_MeshContact(frame, cached_result, mesh, t_mesh, hull, t_hull);
 }

@@ -32,7 +32,7 @@ static ds_ThreadLocal struct ds_BodyCompute tl_static_bcomp =
 {
     .linear_velocity = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
     .angular_velocity = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
-    .center_of_mass = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
+    .delta_position = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
     .rotation = { .x = 0.0f, .y = 0.0f, .z = 0.0f, .w = 1.0f },
     .flags = 0,
 };
@@ -42,10 +42,10 @@ static ds_ThreadLocal struct ds_BodySim tl_static_body_sim =
     .body = 0,
     .flags = 0,
     .inv_mass = 0,
-    .world.position = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
+    .world.position = { .x = 0.0, .y = 0.0, .z = 0.0 },
     .world.rotation = { .x = 0.0f, .y = 0.0f, .z = 0.0f, .w = 1.0f },
     .local_center_of_mass = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
-    .world_center_of_mass = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
+    .world_center_of_mass = { .x = 0.0, .y = 0.0, .z = 0.0 },
     .local_inv_inertia = { .buf = { 0.0f } },
     .world_inv_inertia = { .buf = { 0.0f } },
 };
@@ -126,7 +126,8 @@ void ds_BodyUpdateSolverDataRange(struct ds_Dynamics *pipeline, const u32 low, c
         sim->world_inv_inertia = M3Mul(M3Mul(rot, sim->local_inv_inertia), rot_inv);
 
         bcomp->rotation = sim->world.rotation;
-        bcomp->center_of_mass = V3Add(M3V3Mul(rot, sim->local_center_of_mass), sim->world.position);
+        sim->world_center_of_mass = ds_BodySimWorldCenterOfMass(sim);
+        bcomp->delta_position = V3Zero();
 
         /* integrate new velocities using external forces */
         const v3 linear_velocity = V3AddScaled(bcomp->linear_velocity, g_solver_config->gravity, pipeline->timestep);
@@ -155,7 +156,7 @@ void ds_BodyIntegrateVelocitiesRange(struct ds_Dynamics *pipeline, const u32 low
         const f32 t_linear = 1.0f / F32Clamp(div_linear, 1.0f, F32_INFINITY);
         const f32 t_angular = 1.0f / F32Clamp(div_angular, 1.0f, F32_INFINITY);
 
-	    bcomp->center_of_mass = V3AddScaled(bcomp->center_of_mass, linear_velocity, pipeline->timestep * t_linear);
+	    bcomp->delta_position = V3AddScaled(bcomp->delta_position, linear_velocity, pipeline->timestep * t_linear);
 
         const q rotation = bcomp->rotation;
         const q a_vel_quat = Q(angular_velocity.x * t_angular,
@@ -192,7 +193,8 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
         /* derive new world transform from updated angle and world center of mass */
         const q rotation = bcomp->rotation;
         const v3 rotated_local_center_of_mass = QUnitRotate(rotation, sim->local_center_of_mass);
-        sim->world.position = V3Sub(bcomp->center_of_mass, rotated_local_center_of_mass);
+        const v3f64 center_of_mass = V3F64Add(sim->world_center_of_mass, V3Promote(bcomp->delta_position));
+        sim->world.position = V3F64Sub(center_of_mass, V3Promote(rotated_local_center_of_mass));
         sim->world.rotation = rotation;
 
         for (u32 j = body->shape_list.first; (i32) j != DLL_SENTINEL; j = shape->body_shape.next)
@@ -211,8 +213,7 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
                 {
                     const u32 parent_index = node->bt_parent & BT_INDEX_MASK;
                     const struct bvhNode *parent = pipeline->dynamic_bvh.pool.buf + parent_index;
-                    struct aabb enlarged_proxy;
-                    AabbUnion(&enlarged_proxy, proxy, &dirty->bbox);
+                    const struct aabb enlarged_proxy = BboxUnion(*proxy, dirty->bbox);
                     if (AabbContains(&parent->bbox, &enlarged_proxy))
                     {
                         *proxy = enlarged_proxy;
@@ -291,18 +292,18 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
 
         for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
         {
-            const struct c_Manifold *m = (c->narrowphase.tri)
-                                       ? c->narrowphase.manifold + c->narrowphase.tri_manifold[cci]
-                                       : c->narrowphase.manifold + cci;
+            const struct ds_SolverManifold *m = (c->narrowphase.tri)
+                                              ? c->narrowphase.manifold + c->narrowphase.tri_manifold[cci]
+                                              : c->narrowphase.manifold + cci;
 
     	    struct ds_ContactConstraint *cc = ccomp->cc + cci;
 
 		    cc->restitution = F32Max(s[0]->restitution, s[1]->restitution);
 		    cc->friction = F32Sqrt(s[0]->friction*s[1]->friction);
-            cc->normal = m->n;
+            cc->normal = m->normal;
 		    V3CreateBasis(&cc->tangent[0], &cc->tangent[1], cc->normal);
 
-		    cc->ccp_count = m->v_count;
+		    cc->ccp_count = m->point_count;
             for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
 		    {
 		    	struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
@@ -310,18 +311,9 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
 		    	ccp->tangent_impulse[0] = 0.0f;
 		    	ccp->tangent_impulse[1] = 0.0f;
 
-                ccp->v = m->v[ccpi];
-		    	ccp->r[0] = V3Sub(ccp->v, bcomp[0]->center_of_mass);
-		    	ccp->r[1] = V3AddScaled(V3Sub(ccp->v, bcomp[1]->center_of_mass), m->n, -m->depth[ccpi]);
-
-                /*
-                 * Currently, we use a sentinel with COM = origin for static bodies. This becomes problematic
-                 * for large levers r[0]/r[1]. Consider the case when the static body is the reference; we check
-                 * the new r[0]=ccp->v, against the cached lever. For large enough r[0], it will always hold
-                 * that |r[0] - r[0]_cached|^2 = 0.0f <= limit_sq, so we will continue alias the old contact despite
-                 * moving far away from it.
-                 */
-                ds_Assert(V3Dot(ccp->v, ccp->v) < 10000.0f*10000.0f);
+		    	ccp->r[0] = m->anchor0[ccpi];
+		    	ccp->r[1] = V3Sub(V3AddScaled(m->anchor0[ccpi], m->normal, -m->depth[ccpi]), c->com_offset);
+                ccp->com_separation = V3Dot(c->com_offset, m->normal);
 
                 const m3 inv_inertia0 = sim[0]->world_inv_inertia;
                 const m3 inv_inertia1 = sim[1]->world_inv_inertia;
@@ -399,7 +391,7 @@ void ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 col
         {
     	    struct ds_ContactConstraint *cc = ccomp->cc + cci;
             struct ds_ContactConstraintCache *ccache = ccomp->ccache;
-            struct c_Manifold *m = c->narrowphase.manifold;
+            const struct ds_SolverManifold *m = c->narrowphase.manifold;
             if (c->narrowphase.tri)
             {
                 ccache = NULL;
@@ -424,7 +416,7 @@ void ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 col
                  * If the cached contact's normal differ to musch from current, evict whole cache. 
                  * Note that we do not reuse the contact normal, but reuse cached r1, r2.
                  */
-                if (V3Dot(m->n, ccache->normal) < 0.9f)
+                if (V3Dot(m->normal, ccache->normal) < 0.9f)
                 {
                     continue;
                 }
@@ -703,9 +695,13 @@ void ds_PositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 c
                 const f32 K = sim[0]->inv_mass + sim[1]->inv_mass + V3Dot(M3V3Mul(inv_inertia0, rn0), rn0) + V3Dot(M3V3Mul(inv_inertia1, rn1), rn1);
 
                 /* constraint */
-                const v3 p0 = V3Add(r0, bcomp[0]->center_of_mass);
-                const v3 p1 = V3Add(r1, bcomp[1]->center_of_mass);
-                const f32 distance = V3Dot(p1, cc->normal) - V3Dot(p0, cc->normal);
+                /*
+                 * p_i = com_i + r_i with com_i = com_i(step start) + delta_position_i:
+                 *      distance = dot(p1 - p0, n)
+                 *               = com_separation + dot((delta_position_1 - delta_position_0) + (r1 - r0), n)
+                 */
+                const v3 delta = V3Add(V3Sub(bcomp[1]->delta_position, bcomp[0]->delta_position), V3Sub(r1, r0));
+                const f32 distance = ccp->com_separation + V3Dot(delta, cc->normal);
                 min_separation = F32Max(min_separation, distance);
                 const f32 biased_slop_distance = g_solver_config->baumgarte_constant * (distance + g_solver_config->linear_slop);
 
@@ -716,8 +712,8 @@ void ds_PositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 c
                     : 0.0f;
 
                 const v3 impulse_vector = V3Scale(cc->normal, impulse);
-                bcomp[0]->center_of_mass = V3AddScaled(bcomp[0]->center_of_mass, impulse_vector, -sim[0]->inv_mass);
-                bcomp[1]->center_of_mass = V3AddScaled(bcomp[1]->center_of_mass, impulse_vector,  sim[1]->inv_mass);
+                bcomp[0]->delta_position = V3AddScaled(bcomp[0]->delta_position, impulse_vector, -sim[0]->inv_mass);
+                bcomp[1]->delta_position = V3AddScaled(bcomp[1]->delta_position, impulse_vector,  sim[1]->inv_mass);
                 /* flipped cross for correct sign! */
                 /* instantaneous torque, assume delta_t = 1 */
                 const v3 w0 = M3V3Mul(inv_inertia0, V3Cross(impulse_vector, r0));

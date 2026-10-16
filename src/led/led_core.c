@@ -62,7 +62,7 @@ static ds_Id led_NodeInitalize(struct led_Node *node, const u32 node_index, cons
 	node->body_prefab = SDB_STUB;
     node->shape_prefab = SDB_STUB;
     node->proxy = PROXY3D_NULL;
-    node->transform = ds_TransformIdentity();
+    node->transform = ds_TransformWorldIdentity();
     node->color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 
     return node->tagged_id;
@@ -169,7 +169,7 @@ void led_NodeRemove(struct led *led, const ds_Id id)
     }
 }
 
-void led_NodeSetPositionId(struct led *led, const utf8 id, const v3 position)
+void led_NodeSetPositionId(struct led *led, const utf8 id, const v3f64 position)
 {
 	struct slot slot = led_NodeLookupId(led, id);
 	struct led_Node *node = slot.address;
@@ -183,7 +183,7 @@ void led_NodeSetPositionId(struct led *led, const utf8 id, const v3 position)
 	}
 }
 
-void led_NodeSetPosition(struct led *led, const ds_Id id, const v3 position)
+void led_NodeSetPosition(struct led *led, const ds_Id id, const v3f64 position)
 {
 	struct led_Node *node = led_NodeLookup(led, id).address;
 	if (!node)
@@ -293,7 +293,7 @@ static void led_NodeAttachRigidBodyPrefabInternal(struct led *led, const u32 nod
         node = led->node_hierarchy.pool.buf + node_index;
         struct led_Node *child = led_NodeLookup(led, child_id).address;
 
-        child->transform = instance->t_local;
+        child->transform = ds_TransformPromote(&instance->t_local);
         child->flags |= LED_SHAPE_PREFAB;
         child->shape_prefab = ds_SDBReference(led->shape_prefab_db, shape->id).index;
         child->color = node->color;
@@ -973,6 +973,12 @@ static void led_DistanceJointAdd(struct led *led, const struct ds_DistanceJointP
 }
 
 #define ROPE_COUNT 10
+/* setup scenes: a layout position (relative to led->scene_origin) in world */
+static v3f64 led_ScenePosition(const struct led *led, const v3 layout)
+{
+    return V3F64Add(led->scene_origin, V3Promote(layout));
+}
+
 void led_RopeSetup(struct led *led)
 {
     ds_CPoolFlush(led->joint_pool);
@@ -1053,7 +1059,7 @@ void led_RopeSetup(struct led *led)
 
 	id = Utf8Format(sys_win->ui->mem_frame, "led_ceil");
     rope_id[0] = led_NodeAdd(led, id, Utf8Empty());
-    led_NodeSetPosition(led, rope_id[0], ceil_transform);
+    led_NodeSetPosition(led, rope_id[0], led_ScenePosition(led, ceil_transform));
     led_NodeAttachRigidBodyPrefab(led, rope_id[0], Utf8Inline("rb_ceil"));
     led_NodeSetColor(led, rope_id[0], floor_color, 1.0f);
     rope_t[0] = ds_TransformIdentity();
@@ -1073,7 +1079,7 @@ void led_RopeSetup(struct led *led)
 
 		id = Utf8Format(sys_win->ui->mem_frame, "rope_%u", i);
         rope_id[i+1] = led_NodeAdd(led, id, Utf8Empty());
-        led_NodeSetPosition(led, rope_id[i+1], translation);
+        led_NodeSetPosition(led, rope_id[i+1], led_ScenePosition(led, translation));
         led_NodeAttachRigidBodyPrefab(led, rope_id[i+1], Utf8Inline("rb_capsule"));
         led_NodeSetColor(led, rope_id[i+1], capsule_color, 1.0f);
         led_DistanceJointAdd(led, &prefab, rope_id[i], rope_t + i, rope_id[i+1], rope_t + i + 1, distance);
@@ -1093,7 +1099,7 @@ void led_RopeSetup(struct led *led)
                 floor_translation.z + fj*floor_hw.z*2.0f);
 		    id = Utf8Format(sys_win->ui->mem_frame, "led_floor_%u_%u", i, j);
             tagged_id = led_NodeAdd(led, id, Utf8Empty());
-            led_NodeSetPosition(led, tagged_id, floor_offset);
+            led_NodeSetPosition(led, tagged_id, led_ScenePosition(led, floor_offset));
             led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_floor"));
             led_NodeSetColor(led, tagged_id, floor_color, 1.0f);
         }
@@ -1198,12 +1204,12 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_CollisionSphereAdd(led, id, 0.5f);
 
 	struct dcel *c_ramp = ArenaPush(&sys_win->mem_persistent, sizeof(struct dcel));
-	*c_ramp = DcelConvexHull(&sys_win->mem_persistent, ramp_vertices, 6, F32_EPSILON * 100.0f);
+	*c_ramp = DcelConvexHull(&sys_win->mem_persistent, ramp_vertices, 6);
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_ramp");
     led_CollisionDcelAdd(led, id, c_ramp);
 
 	struct dcel *c_dsphere = ArenaPush(&sys_win->mem_persistent, sizeof(struct dcel));
-	*c_dsphere = DcelConvexHull(&sys_win->mem_persistent, dsphere_vertices, dsphere_v_count, F32_EPSILON * 100.0f);
+	*c_dsphere = DcelConvexHull(&sys_win->mem_persistent, dsphere_vertices, dsphere_v_count);
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_dsphere");
     led_CollisionDcelAdd(led, id, c_dsphere);
 
@@ -1332,7 +1338,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 
     id = Utf8Cstr(sys_win->ui->mem_frame, "led_mesh");
     tagged_id = led_NodeAdd(led, id, Utf8Empty());
-    led_NodeSetPosition(led, tagged_id, mesh_translation);
+    led_NodeSetPosition(led, tagged_id, led_ScenePosition(led, mesh_translation));
     led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_mesh"));
     led_NodeSetColor(led, tagged_id, mesh_color, 1.0f);
     struct led_Node *led_mesh = led->node_hierarchy.pool.buf + ds_IdIndex(tagged_id);
@@ -1353,7 +1359,7 @@ void led_WallSmashSimulationSetup(struct led *led)
                 floor_translation.z + fj*floor_hw.z*2.0f);
 		    id = Utf8Format(sys_win->ui->mem_frame, "led_floor_%u_%u", i, j);
             tagged_id = led_NodeAdd(led, id, Utf8Empty());
-            led_NodeSetPosition(led, tagged_id, floor_offset);
+            led_NodeSetPosition(led, tagged_id, led_ScenePosition(led, floor_offset));
             led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_floor"));
             led_NodeSetColor(led, tagged_id, floor_color, 1.0f);
         }
@@ -1361,7 +1367,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 	
     id = Utf8Cstr(sys_win->ui->mem_frame, "led_ramp");
     tagged_id = led_NodeAdd(led, id, Utf8Empty());
-    led_NodeSetPosition(led, tagged_id, ramp_translation);
+    led_NodeSetPosition(led, tagged_id, led_ScenePosition(led, ramp_translation));
     led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_ramp"));
     led_NodeSetColor(led, tagged_id, ramp_color, 1.0f);
 
@@ -1381,7 +1387,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 
 		id = Utf8Format(sys_win->ui->mem_frame, "multibox_%u", i);
         tagged_id = led_NodeAdd(led, id, Utf8Empty());
-        led_NodeSetPosition(led, tagged_id, translation);
+        led_NodeSetPosition(led, tagged_id, led_ScenePosition(led, translation));
         led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_multibox"));
         led_NodeSetColor(led, tagged_id, multibox_color, 1.0f);
     }
@@ -1396,7 +1402,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 
 		id = Utf8Format(sys_win->ui->mem_frame, "multidsphere_%u", i);
         tagged_id = led_NodeAdd(led, id, Utf8Empty());
-        led_NodeSetPosition(led, tagged_id, translation);
+        led_NodeSetPosition(led, tagged_id, led_ScenePosition(led, translation));
         led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_multidsphere"));
         led_NodeSetColor(led, tagged_id, multidsphere_color, 1.0f);
     }
@@ -1411,7 +1417,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 
 		id = Utf8Format(sys_win->ui->mem_frame, "capsule_%u", i);
         tagged_id = led_NodeAdd(led, id, Utf8Empty());
-        led_NodeSetPosition(led, tagged_id, translation);
+        led_NodeSetPosition(led, tagged_id, led_ScenePosition(led, translation));
         led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_capsule"));
         led_NodeSetColor(led, tagged_id, capsule_color, 1.0f);
 	}
@@ -1426,7 +1432,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 
 		id = Utf8Format(sys_win->ui->mem_frame, "dsphere_%u", i);
         tagged_id = led_NodeAdd(led, id, Utf8Empty());
-        led_NodeSetPosition(led, tagged_id, translation);
+        led_NodeSetPosition(led, tagged_id, led_ScenePosition(led, translation));
         led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_dsphere"));
         led_NodeSetColor(led, tagged_id, dsphere_color, 1.0f);
 	}
@@ -1447,7 +1453,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 
 				id = Utf8Format(sys_win->ui->mem_frame, "pyramid_%u_%u_%u", i, j, k);
                 tagged_id = led_NodeAdd(led, id, Utf8Empty());
-                led_NodeSetPosition(led, tagged_id, translation);
+                led_NodeSetPosition(led, tagged_id, led_ScenePosition(led, translation));
                 led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_box"));
                 //led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_capsule"));
                 //led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_s_sphere"));
@@ -1470,7 +1476,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 
 				id = Utf8Format(sys_win->ui->mem_frame, "tower1_%u_%u_%u", i, j, k);
                 tagged_id = led_NodeAdd(led, id, Utf8Empty());
-                led_NodeSetPosition(led, tagged_id, translation);
+                led_NodeSetPosition(led, tagged_id, led_ScenePosition(led, translation));
                 led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_box"));
                 led_NodeSetColor(led, tagged_id, tower1_color, 1.0f);
 			}
@@ -1491,7 +1497,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 			
 				id = Utf8Format(sys_win->ui->mem_frame, "tower2_%u_%u_%u", i, j, 0);
                 tagged_id = led_NodeAdd(led, id, Utf8Empty());
-                led_NodeSetPosition(led, tagged_id, translation);
+                led_NodeSetPosition(led, tagged_id, led_ScenePosition(led, translation));
                 led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_box"));
                 led_NodeSetColor(led, tagged_id, tower2_color, 1.0f);
 			}
@@ -2053,6 +2059,8 @@ void led_Core(struct led *led)
 		once = 0;
 		led_WallSmashSimulationSetup(led);
 		//led_RopeSetup(led);
+        /* the camera starts at the same place relative to the scene */
+        led->cam.position = V3F64Add(led->scene_origin, led->cam.position);
         led_Refresh(led);
         led_Run(led);
 	}

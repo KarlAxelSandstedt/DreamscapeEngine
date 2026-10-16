@@ -45,7 +45,7 @@ void r_Proxy3dBufferSharedLayoutSet(void)
 	ds_glVertexAttribDivisor(2, 1);
 }
 
-void r_Proxy3dLinearSpeculationSet(const v3 position, const q rotation, const v3 linear_velocity, const v3 angular_velocity, const u64 ns_time, const u32 proxy_index)
+void r_Proxy3dLinearSpeculationSet(const v3f64 position, const q rotation, const v3 linear_velocity, const v3 angular_velocity, const u64 ns_time, const u32 proxy_index)
 {
 	struct r_Proxy3d *proxy = r_Proxy3dAddress(proxy_index);
 
@@ -105,7 +105,7 @@ static void r_InternalProxy3dLocalSpeculativeOrientation(struct r_Proxy3d *proxy
 	{
 		case PROXY3D_SPECULATE_LINEAR:
 		{
-			proxy->spec_position = V3AddScaled(proxy->position, proxy->linear.linear_velocity, timestep);
+			proxy->spec_position = V3F64Add(proxy->position, V3Promote(V3Scale(proxy->linear.linear_velocity, timestep)));
 
 			const q a_vel_quat = Q(proxy->linear.angular_velocity.x, 
 					       proxy->linear.angular_velocity.y, 
@@ -151,7 +151,8 @@ void r_Proxy3dHierarchySpeculate(struct arena *mem, const u64 ns_time)
 				proxy->spec_rotation = proxy->rotation;	
 			}
 
-            proxy->spec_position = V3Add(M3V3Mul(M3QUnit(parent->spec_rotation), proxy->spec_position), parent->spec_position);
+            /* spec_position is relative to the parent here: a local offset, rotated in f32 */
+            proxy->spec_position = V3F64Add(parent->spec_position, V3Promote(M3V3Mul(M3QUnit(parent->spec_rotation), V3F64Demote(proxy->spec_position))));
             proxy->spec_rotation = QNormalize(QMul(parent->spec_rotation, proxy->spec_rotation));
 		}
 	}

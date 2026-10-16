@@ -490,10 +490,10 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 						const v2 cursor_viewport_position = V2(
 							g_ui->inter.cursor_position.x - node->pixel_position.x,
 							g_ui->inter.cursor_position.y - node->pixel_position.y);
-						v3 dir = WindowSpaceToWorldSpace(cursor_viewport_position, node->pixel_size, &led->cam);
-						dir = V3Sub(dir, led->cam.position);
+						const v3f64 pixel_world = WindowSpaceToWorldSpace(cursor_viewport_position, node->pixel_size, &led->cam);
+						v3 dir = V3F64Demote(V3F64Sub(pixel_world, led->cam.position));
 						dir = V3Scale(dir, 1.0f / V3Length(dir));
-						const struct ray ray = RayConstruct(led->cam.position, dir);
+						const struct rayWorld ray = { .origin = led->cam.position, .dir = dir };
 						const u32f32 hit = ds_DynamicsRaycastParameter(&led->physics, &ray);
 						if (hit.f < F32_INFINITY)
 						{

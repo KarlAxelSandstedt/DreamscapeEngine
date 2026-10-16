@@ -21,6 +21,7 @@ add_library(DreamscapeTestAPI
 	test_gjk.c
 	test_contact.c
 	test_config.c
+	test_dynamics.c
 )
 
 add_library(Dreamscape::Test ALIAS DreamscapeTestAPI)

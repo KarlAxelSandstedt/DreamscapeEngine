@@ -398,20 +398,21 @@ struct slot ds_ShapeLookup(const struct ds_Dynamics *pipeline, const ds_ShapeId 
 /*
  * Calculate the world transform of the shape.
  */
-void        ds_ShapeWorldTransform(ds_Transform *t, const struct ds_Dynamics *pipeline, const struct ds_Shape *shape);
+void        ds_ShapeWorldTransform(ds_TransformWorld *t, const struct ds_Dynamics *pipeline, const struct ds_Shape *shape);
 /* 
  * Calculate the world bounding box of the shape, taking into account the shape and its body's Transform. 
+ * f32, rounded outward from the f64 position: it contains the shape at any distance from the origin.
  */
 struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape);
 /* 
  * Test for intersection between shapes. returns 1 if intersecting, else 0 
  */
-u32	        ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
+u32	        ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, const struct ds_Shape *s1);
 /* 
- * Return, if no intersection was found, the distance between shapes s1 and s2 and their respective
- * closest points c1 and c2. If the shapes are intersecting, return 0.0f. 
+ * Return, if no intersection was found, the distance between shapes s0 and s1 and their respective
+ * closest points c0 and c1. If the shapes are intersecting, return 0.0f. 
  */
-f32 	    ds_ShapeDistance(v3 *c1, v3 *c2, const struct ds_Dynamics *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
+f32 	    ds_ShapeDistance(v3f64 *c0, v3f64 *c1, const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, const struct ds_Shape *s1);
 /*
 Contact pipeline
 ----------------
@@ -421,6 +422,9 @@ Pair order (the narrowphase computes in the frame of the first shape):
     convex pairs    the more complex shape first: hull > capsule > sphere; equal types: the contact key's
                     order (lower shape index first).
     mesh pairs      (mesh, convex), computed in the convex shape's frame. Mesh vs mesh is not supported.
+
+Reference: the solver form's reference is the contact key's shape[0], whose body is the solver's body 0
+(ds_ContactKeyAddress). Contacts between the same two bodies may therefore have opposite normals.
 
 Assumptions:
     caches          SAT and GJK caches belong to the ordered pair (first -> second shape), so the pair order
@@ -432,23 +436,16 @@ Assumptions:
 */
 
 /*
- * TMP (contact refactor): ds_ShapeContact for convex pairs, over the TMP_c_*Contact functions; transforms
- * their local manifolds to the solver form (c_Manifold, collision.h).
+ * The pipeline's contact entry: the pair's contact local to one shape (convex pairs: the more complex shape,
+ * c_*Contact; mesh pairs: the convex shape, c_MeshContact), converted to the solver form (ds_SolverManifold).
  */
-void        TMP_ds_ShapeConvexContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index);
-/*
- * TMP (contact refactor): ds_ShapeContact for mesh pairs, over the TMP_c_Mesh*Contact functions; transforms
- * their local manifolds to the solver form (c_Manifold, collision.h).
- */
-void        TMP_ds_ShapeMeshContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index);
-/* TMP (contact refactor): the pipeline's contact entry: mesh pairs to TMP_ds_ShapeMeshContact, else TMP_ds_ShapeConvexContact */
-void        TMP_ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index);
+void        ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index);
 /*
  * Return the smallest t >= 0 at which ray.origin + t*ray.dir is on the shape's surface (the first surface hit,
  * two-sided, see collision.h), or F32_INFINITY. The ray is in world space. Precondition: |ray->dir|^2 > 0
  * (asserted).
  */
-f32 	    ds_ShapeRaycastParameter(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct ray *ray);
+f32 	    ds_ShapeRaycastParameter(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct rayWorld *ray);
 
 
 /*
@@ -533,14 +530,21 @@ struct ds_BodySim
     u32             body;                       /* RigidBody index                                      */
     u32             flags;
     f32             inv_mass;                   /* Inverse mass                                         */
-	ds_Transform    world;		                /* local body frame to world transform. Rotation is 
+	ds_TransformWorld world;	                /* local body frame to world transform. Rotation is 
                                                    about the local origin (not center of mass!)         */
 	v3		        local_center_of_mass;	    /* local body frame center of mass                      */
-	v3		        world_center_of_mass;	    /* world body frame center of mass                      */
+	v3f64	        world_center_of_mass;	    /* world center of mass at the step's start; the solver
+                                                   moves it by ds_BodyCompute.delta_position            */
 	m3 		        local_inv_inertia;          /* local inertia tensor                                 */
 	m3 		        world_inv_inertia;          /* world inertia tensor                                 */
 };
 DEFINE_CPOOL_STRUCT(ds_BodySim);
+
+/* Return the world center of mass of the sim's pose: world.position + R*local_center_of_mass, summed in f64. */
+static inline v3f64 ds_BodySimWorldCenterOfMass(const struct ds_BodySim *sim)
+{
+    return V3F64Add(sim->world.position, V3Promote(QUnitRotate(sim->world.rotation, sim->local_center_of_mass)));
+}
 
 
 /*
@@ -553,7 +557,7 @@ struct ds_BodyCompute
 	v3 		        linear_velocity;        /* linear velocity of body */
 	v3 		        angular_velocity;       /* angular velocity of body (about local center of mass,
                                                not local origin!)                                   */
-    v3              center_of_mass;         /* world-space  */
+    v3              delta_position;         /* center of mass displacement since the step's start */
     q               rotation;
     u32             flags;
 
@@ -562,7 +566,7 @@ struct ds_BodyCompute
 DEFINE_CPOOL_STRUCT(ds_BodyCompute);
 
 /* Add a new rigid body with the prefab properties, and return its unique identifier. */
-ds_BodyId  ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *prefab, const ds_Transform *t_world, const u32 entity);
+ds_BodyId  ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *prefab, const ds_TransformWorld *t_world, const u32 entity);
 /* Free the given body */
 void            ds_BodyRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, const ds_BodyId id);
 /* Lookup the given body and return it. If it does not exist, return DS_ID_NULL.  */
@@ -595,6 +599,7 @@ enum sat_CacheType
 	SAT_CACHE_SEPARATION,   /* Seperation axis found    */
 	SAT_CACHE_CONTACT_FV,   /* Face-Vertex Contact      */
 	SAT_CACHE_CONTACT_EE,   /* Edge-Edge Contact        */
+	SAT_CACHE_NONE,         /* Nothing to cache (fallback contact); never stored in a c_ContactResult */
 	SAT_CACHE_COUNT,
 };
 
@@ -634,12 +639,41 @@ struct c_SatCache
      * type == SEPARATION:
      *      normal == separation axis pointing from reference body 
      *      depth == separation distance (positive)
+     *
+     * type == NONE:
+     *  feature[i].type == FACE => i has the reference face
+     *  feature[i].type == VERTEX => i has the deepest vertex
      */
     sat_FeatureId   feature[2];
     f32             depth;      
     v3            normal;     
 };
 
+
+/*
+ds_SolverManifold
+=================
+A contact manifold in the solver's form: ds_ShapeContact converts the narrowphase's local manifolds
+(c_ContactResult.contact_manifold) in place, so ds_Contact.narrowphase.manifold names the same memory in this
+form; the two structs have the same size (ds_DynamicsStaticAssert). Body 0 is the body of the contact key's
+shape[0] (the reference), body 1 the body of shape[1]. Every vector is f32 in world axes, and none is a world
+position: points are offsets from a body's center of mass.
+
+    normal          unit, from body 0 to body 1
+    anchor0[i]      contact point i on body 0's surface, relative to body 0's center of mass
+    depth[i]        penetration depth (>= 0) of point i: body 1's deepest point is anchor0[i] - depth[i]*normal
+
+Body 1's anchors follow from ds_Contact.com_offset (com1 - com0, world axes):
+
+    anchor1[i] = anchor0[i] - com_offset - depth[i]*normal      (relative to body 1's center of mass)
+*/
+struct ds_SolverManifold
+{
+    v3      anchor0[4];     /* contact points on body 0's surface, relative to body 0's center of mass */
+    f32     depth[4];       /* penetration depths (>= 0)                                              */
+    v3      normal;         /* unit, from body 0 to body 1                                            */
+    u32     point_count;
+};
 
 /*
 ds_ContactKey
@@ -703,7 +737,9 @@ struct ds_Contact
      * pushed onto thread's current frame arena (double buffered). If the contact is sleeping,
      * the narrowphase is stored on the heap.
      */
-    struct c_ContactResult      narrowphase;
+    struct c_ContactResult      narrowphase;        /* manifold: solver form (ds_ShapeContact converted the
+                                                       narrowphase's contact_manifold in place)            */
+    v3                          com_offset;         /* com1 - com0 (world axes, f32 from an f64 subtraction) */
 };
 DEFINE_POOL(ds_Contact);
 
@@ -1029,8 +1065,11 @@ Individual constraint point within a contact constraint.
 */
 struct ds_ContactConstraintPoint 
 {
-    v3      v;                  /* contact point                                */
-    v3      r[2];               /* levers: body center to contact_point         */
+    v3      r[2];               /* levers: body i's center of mass to its contact point (body 1: its deepest
+                                   point). World axes from contact prep through the velocity phase; body
+                                   axes from ds_PositionConstraintInitAndCacheImpulsesRange on (NGS rotates
+                                   them by the current rotation)                                        */
+    f32     com_separation;     /* dot(com1 - com0, n) at the step's start (ds_Contact.com_offset)      */
 	f32 	normal_impulse;	    /* Normal impulse produced by the contact       */
 	f32	    velocity_bias;	    /* scale of velocity_bias along contact normal  */
 	f32	    normal_mass;	    /* 1.0f / row(J,i)*Inv(M)*J^T                   */
@@ -1658,7 +1697,7 @@ void			ds_DynamicsValidate(const struct ds_Dynamics *pipeline);
  * Return (shape index, t) of the first surface hit over all shapes (see ds_ShapeRaycastParameter), or
  * (U32_MAX, F32_INFINITY) on no hit or if |ray->dir|^2 == 0. The ray is in world space.
  */
-u32f32 			ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const struct ray *ray);
+u32f32 			ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const struct rayWorld *ray);
 /* enable sleeping in pipeline */
 void 			ds_DynamicsSleepEnable(struct ds_Dynamics *pipeline);
 /* disable sleeping in pipeline */

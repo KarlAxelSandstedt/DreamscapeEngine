@@ -259,6 +259,22 @@ static ds_ForceInline f32 F32Zero(const u32 sign)
 	return val.f;
 }
 
+/*
+ * x rounded to f32 toward -inf (Downwards) or +inf (Upwards): the nearest f32, stepped once outward if the cast
+ * rounded the other way. nextafterf is an exact IEEE operation, so this is deterministic. NaN stays NaN.
+ */
+static ds_ForceInline f32 F64DemoteDownwards(const f64 x)
+{
+	const f32 f = (f32) x;
+	return ((f64) f > x) ? nextafterf(f, -F32_INFINITY) : f;
+}
+
+static ds_ForceInline f32 F64DemoteUpwards(const f64 x)
+{
+	const f32 f = (f32) x;
+	return ((f64) f < x) ? nextafterf(f, F32_INFINITY) : f;
+}
+
 static ds_ForceInline f32 F32MaxPositiveSubnormal(void)
 {
 	const union ieee32 val = { .bits = F32_SIGNIFICAND_MASK };

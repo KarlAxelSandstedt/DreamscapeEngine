@@ -47,7 +47,7 @@ void led_VisualInitDefaults(const u32 window)
 	//TODO
 	//g_visual->axes_r_handle = 
 
-	const v3 cam_position = V3(5.0f, 5.0f, 5.0f);
+	const v3f64 cam_position = V3F64(5.0, 5.0, 5.0);
 	const v3 cam_direction = V3(-1.0f, -1.0f, -1.0f);
 	const f32 fz_near = 0.0125f;
 	const f32 fz_far =  512.0f;

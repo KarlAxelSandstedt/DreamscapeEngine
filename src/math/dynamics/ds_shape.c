@@ -141,16 +141,12 @@ struct slot ds_ShapeLookup(const struct ds_Dynamics *pipeline, const ds_ShapeId 
     return slot;
 }
 
-void ds_ShapeWorldTransform(ds_Transform *t, const struct ds_Dynamics *pipeline, const struct ds_Shape *shape)
+void ds_ShapeWorldTransform(ds_TransformWorld *t, const struct ds_Dynamics *pipeline, const struct ds_Shape *shape)
 {
 	const struct ds_Body *body = pipeline->body_pool.buf + shape->body;
     const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
     const struct ds_BodySim *sim = set->body_sim_pool.buf + body->sim;
-    const q world_rotation = sim->world.rotation;
-    const m3 rot = M3QUnit(world_rotation);
-
-    t->rotation = QMul(world_rotation, shape->t_local.rotation);
-    t->position = V3Add(M3V3Mul(rot, shape->t_local.position), sim->world.position);
+    *t = ds_TransformWorldChild(&sim->world, &shape->t_local);
 }
 
 struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape)
@@ -160,16 +156,16 @@ struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct d
 
 	const struct c_Shape *cshape = pipeline->cshape_db->pool.buf + shape->cshape_handle;
 
-    ds_Transform t_world;
+    ds_TransformWorld t_world;
     ds_ShapeWorldTransform(&t_world, pipeline, shape);
 	const m3 rot = M3QUnit(t_world.rotation);
-	const v3 world_position = t_world.position;
+    /* the box relative to the shape's position (rotation only), then translated in f64 and rounded outward */
 
 	if (shape->cshape_type == C_SHAPE_CONVEX_HULL)
 	{
 		for (u32 i = 0; i < cshape->hull.v_count; ++i)
 		{
-			const v3 v = V3Add(M3V3Mul(rot, cshape->hull.v[i]), world_position);
+			const v3 v = M3V3Mul(rot, cshape->hull.v[i]);
 			min = V3Min(min, v);
 			max = V3Max(max, v);
 		}
@@ -177,17 +173,14 @@ struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct d
 	else if (shape->cshape_type == C_SHAPE_SPHERE)
 	{
 		const f32 r = cshape->sphere.radius;
-		min = V3Add(V3(-r, -r, -r), world_position);
-		max = V3Add(V3(r, r, r), world_position);
+		min = V3(-r, -r, -r);
+		max = V3(r, r, r);
 	}
 	else if (shape->cshape_type == C_SHAPE_CAPSULE)
 	{
 		const v3 v = M3V3Mul(rot, V3(0.0f, cshape->capsule.half_height, 0.0f));
 		max = V3AddConstant(V3Abs(v), cshape->capsule.radius);
 		min = V3Negate(max);
-
-		min = V3Add(min, world_position);
-		max = V3Add(max, world_position);
 	}
 	else if (shape->cshape_type == C_SHAPE_TRI_MESH)
 	{
@@ -197,13 +190,14 @@ struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct d
         ds_Assert(V3Length(shape->t_local.position) == 0.0f);
         ds_Assert(shape->t_local.rotation.w == 1.0f);
 		const struct bvhNode *node = cshape->mesh_bvh.bvh.pool.buf;
-		struct aabb bbox;
-		AabbRotate(&bbox, &node[cshape->mesh_bvh.bvh.bt.root].bbox, rot);
-		min = V3Add(bbox.min, world_position);
-		max = V3Add(bbox.max, world_position);
+		const struct aabb bbox = BboxRotate(node[cshape->mesh_bvh.bvh.bt.root].bbox, rot);
+		min = bbox.min;
+		max = bbox.max;
 	}
 
-	const struct aabb bbox = { .min = min, .max = max };
+	const struct aabb local = { .min = min, .max = max };
+	struct aabb bbox;
+	AabbTranslateOutward(&bbox, &local, t_world.position);
 	return bbox;
 }
 
@@ -217,7 +211,7 @@ u32 (*c_shape_tests[C_SHAPE_COUNT][C_SHAPE_COUNT])(const struct c_Shape *, const
 	{ c_TriMeshBvhSphereTest,   c_TriMeshBvhCapsuleTest,    c_TriMeshBvhHullTest,	0, },
 };
 
-f32 (*c_distance_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(v3f64 *c1, v3f64 *c2, const struct c_Shape *, const ds_TransformWorld *, const struct c_Shape *, const ds_TransformWorld *) =
+f32 (*c_distance_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(v3f64 *c0, v3f64 *c1, const struct c_Shape *, const ds_TransformWorld *, const struct c_Shape *, const ds_TransformWorld *) =
 {
 	{ c_SphereDistance,	 	        0,				                0, 			                0, },
 	{ c_CapsuleSphereDistance,	    c_CapsuleDistance, 		        0, 			                0, },
@@ -233,86 +227,82 @@ f32 (*c_raycast_parameter_methods[C_SHAPE_COUNT])(const struct c_Shape *, const 
 	c_TriMeshBvhRaycastParameter,
 };
 
-u32 ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2)
+u32 ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, const struct ds_Shape *s1)
 {
- 	const struct c_Shape *c_s1 = pipeline->cshape_db->pool.buf + s1->cshape_handle;
-	const struct c_Shape *c_s2 = pipeline->cshape_db->pool.buf + s2->cshape_handle;
+ 	const struct c_Shape *c_s0 = pipeline->cshape_db->pool.buf + s0->cshape_handle;
+	const struct c_Shape *c_s1 = pipeline->cshape_db->pool.buf + s1->cshape_handle;
 
-    ds_Transform t1, t2;
+    ds_TransformWorld t0, t1;
+    ds_ShapeWorldTransform(&t0, pipeline, s0);
     ds_ShapeWorldTransform(&t1, pipeline, s1);
-    ds_ShapeWorldTransform(&t2, pipeline, s2);
-    /* TODO(f64 P3): world transforms once bodies store ds_TransformWorld */
-    const ds_TransformWorld w1 = ds_TransformPromote(&t1);
-    const ds_TransformWorld w2 = ds_TransformPromote(&t2);
 	
-	return (c_s1->type >= c_s2->type)  
-		? c_shape_tests[c_s1->type][c_s2->type](c_s1, &w1, c_s2, &w2)
-		: c_shape_tests[c_s2->type][c_s1->type](c_s2, &w2, c_s1, &w1);
+	return (c_s0->type >= c_s1->type)  
+		? c_shape_tests[c_s0->type][c_s1->type](c_s0, &t0, c_s1, &t1)
+		: c_shape_tests[c_s1->type][c_s0->type](c_s1, &t1, c_s0, &t0);
 }
 
-f32 ds_ShapeDistance(v3 *c1, v3 *c2, const struct ds_Dynamics *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2)
+f32 ds_ShapeDistance(v3f64 *c0, v3f64 *c1, const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, const struct ds_Shape *s1)
 {
- 	const struct c_Shape *c_s1 = pipeline->cshape_db->pool.buf + s1->cshape_handle;
-	const struct c_Shape *c_s2 = pipeline->cshape_db->pool.buf + s2->cshape_handle;
+ 	const struct c_Shape *c_s0 = pipeline->cshape_db->pool.buf + s0->cshape_handle;
+	const struct c_Shape *c_s1 = pipeline->cshape_db->pool.buf + s1->cshape_handle;
 
-    ds_Transform t1, t2;
+    ds_TransformWorld t0, t1;
+    ds_ShapeWorldTransform(&t0, pipeline, s0);
     ds_ShapeWorldTransform(&t1, pipeline, s1);
-    ds_ShapeWorldTransform(&t2, pipeline, s2);
-    /* TODO(f64 P3): world transforms and v3f64 points once bodies store ds_TransformWorld */
-    const ds_TransformWorld w1 = ds_TransformPromote(&t1);
-    const ds_TransformWorld w2 = ds_TransformPromote(&t2);
 
-    v3f64 p1, p2;
-	const f32 dist = (c_s1->type >= c_s2->type)  
-		? c_distance_methods[c_s1->type][c_s2->type](&p1, &p2, c_s1, &w1, c_s2, &w2)
-		: c_distance_methods[c_s2->type][c_s1->type](&p2, &p1, c_s2, &w2, c_s1, &w1);
-    *c1 = V3F64Demote(p1);
-    *c2 = V3F64Demote(p2);
-    return dist;
+	return (c_s0->type >= c_s1->type)  
+		? c_distance_methods[c_s0->type][c_s1->type](c0, c1, c_s0, &t0, c_s1, &t1)
+		: c_distance_methods[c_s1->type][c_s0->type](c1, c0, c_s1, &t1, c_s0, &t0);
 }
 
 /*
- * TMP: local -> solver form (c_Manifold, collision.h); t is the shape the manifolds are local to. If the other
- * shape is the reference, its surface points are the local ones minus the depth:
+ * Convert the local manifolds (result->contact_manifold, c_Manifold) in place to the solver form (result->manifold,
+ * ds_SolverManifold; same size). t is the world pose of the shape the manifolds are local to. If the other shape is
+ * the reference (flip), its surface points are the local ones minus the depth:
  *      n' = -n,    v' = v - depth*n
- * TODO(decision 3): translated to world f32 points for the current solver.
+ * Points move from t's origin to body 0's center of mass com0 with one f64 subtraction:
+ *      anchor0 = R*v + demote(t.position - com0)
+ * Each local manifold is memcpy'd out before its memory is rewritten (character access: the compiler cannot move
+ * the c_Manifold reads past the ds_SolverManifold writes); afterwards the memory is only read in the solver form
+ * (arena memory takes the type of its last store).
  */
-static void TMP_ds_ContactResultToSolver(struct c_ContactResult *result, const ds_TransformWorld *t, const u32 flip)
+static void ds_ContactResultToSolver(struct c_ContactResult *result, const ds_TransformWorld *t, const v3f64 com0, const u32 flip)
 {
     const m3 rot = M3QUnit(t->rotation);
-    const v3 pos = V3F64Demote(t->position);
+    const v3 offset = V3F64Demote(V3F64Sub(t->position, com0));
     for (u32 mi = 0; mi < result->manifold_count; ++mi)
     {
-        struct c_Manifold *manifold = result->manifold + mi;
-        if (flip)
+        struct c_Manifold local;
+        memcpy(&local, result->contact_manifold + mi, sizeof(local));
+        struct ds_SolverManifold *solver = result->manifold + mi;
+        for (u32 i = 0; i < local.v_count; ++i)
         {
-            for (u32 i = 0; i < manifold->v_count; ++i)
-            {
-                manifold->v[i] = V3AddScaled(manifold->v[i], manifold->n, -manifold->depth[i]);
-            }
-            manifold->n = V3Negate(manifold->n);
+            const v3 v = (flip)
+                       ? V3AddScaled(local.v[i], local.n, -local.depth[i])
+                       : local.v[i];
+            solver->anchor0[i] = V3Add(M3V3Mul(rot, v), offset);
+            solver->depth[i] = local.depth[i];
         }
-        c_ManifoldTransform(manifold, manifold, rot, pos);
+        solver->normal = M3V3Mul(rot, (flip) ? V3Negate(local.n) : local.n);
+        solver->point_count = local.v_count;
     }
 }
 
-/* TMP: convex types precede C_SHAPE_TRI_MESH; [s[0]][s[1]] with s[0] the more complex shape */
-struct c_ContactResult  (*TMP_c_convex_contact_methods[C_SHAPE_TRI_MESH][C_SHAPE_TRI_MESH])(struct arena *, const struct c_ContactResult *, const struct c_Shape *[2], const ds_TransformWorld [2]) =
+/* convex types precede C_SHAPE_TRI_MESH; [s0->type][s1->type] with s0 the more complex shape */
+static struct c_ContactResult  (*c_convex_contact_methods[C_SHAPE_TRI_MESH][C_SHAPE_TRI_MESH])(struct arena *, const struct c_ContactResult *, const struct c_Shape *, const ds_TransformWorld *, const struct c_Shape *, const ds_TransformWorld *) =
 {
-	{ TMP_c_SphereContact,	 	        0, 				            0,                  },
-	{ TMP_c_CapsuleSphereContact, 	    TMP_c_CapsuleContact,       0,                  },
-	{ TMP_c_HullSphereContact, 	  	    TMP_c_HullCapsuleContact,   TMP_c_HullContact,  },
+	{ c_SphereContact,          0,                      0,              },
+	{ c_CapsuleSphereContact,   c_CapsuleContact,       0,              },
+	{ c_HullSphereContact,      c_HullCapsuleContact,   c_HullContact,  },
 };
 
-/* TMP: indexed by the convex shape's type */
-struct c_ContactResult  (*TMP_c_mesh_contact_methods[C_SHAPE_TRI_MESH])(struct arena *, const struct c_ContactResult *, const struct c_Shape *, const ds_TransformWorld *, const struct c_Shape *, const ds_TransformWorld *) =
-{
-	TMP_c_MeshSphereContact,
-	TMP_c_MeshCapsuleContact,
-	TMP_c_MeshHullContact,
-};
-
-void TMP_ds_ShapeConvexContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index)
+/*
+ * The pipeline's contact entry. The narrowphase returns manifolds local to one shape of the pair (c_*Contact: s0;
+ * c_MeshContact: the convex shape). local and other are the contact key indices of that shape and of the other one.
+ * local is the more complex shape (higher type; equal types: the contact key's order), except in mesh pairs: the
+ * mesh has the highest type, but c_MeshContact returns manifolds local to the convex shape.
+ */
+void ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index)
 {
     struct ds_Contact *c = pipeline->contact_pool.buf + contact_index;
 
@@ -328,124 +318,60 @@ void TMP_ds_ShapeConvexContact(struct arena *frame, const struct ds_Dynamics *pi
         pipeline->cshape_db->pool.buf + s[1]->cshape_handle,
     };
 
-    /* index of the more complex shape (equal types: the contact key's order) */
-    const u32 m = (c_s[0]->type >= c_s[1]->type) 
-                ? 0
-                : 1;
-    ds_Assert(c_s[m]->type < C_SHAPE_TRI_MESH);
-    const struct c_Shape *c_s_arr[2] = 
-    { 
-        c_s[m], 
-        c_s[1-m],
-    };
+    const u32 more_complex = (c_s[0]->type >= c_s[1]->type)
+                           ? 0
+                           : 1;
+    const u32 local = (c_s[more_complex]->type == C_SHAPE_TRI_MESH)
+                    ? 1 - more_complex
+                    : more_complex;
+    const u32 other = 1 - local;
+    ds_Assert(c_s[local]->type < C_SHAPE_TRI_MESH);
 
-    ds_Transform t[2];
-    ds_ShapeWorldTransform(t + 0, pipeline, s[m]);
-    ds_ShapeWorldTransform(t + 1, pipeline, s[1-m]);
-    /* TODO(f64 P3): world transforms once bodies store ds_TransformWorld */
-    const ds_TransformWorld t_arr[2] = { ds_TransformPromote(t + 0), ds_TransformPromote(t + 1) };
+    ds_TransformWorld t_world[2];
+    ds_ShapeWorldTransform(t_world + 0, pipeline, s[0]);
+    ds_ShapeWorldTransform(t_world + 1, pipeline, s[1]);
 
-    struct c_ContactResult result = TMP_c_convex_contact_methods[c_s[m]->type][c_s[1-m]->type](frame, &c->narrowphase, c_s_arr, t_arr);
-
-    /* the manifolds are local to c_s_arr[0]; the reference is the shape of the lower body index */
-    const u32 flip = (s[m]->body < s[1-m]->body)
-                   ? 0
-                   : 1;
-    TMP_ds_ContactResultToSolver(&result, &t_arr[0], flip);
+    struct c_ContactResult result = (c_s[other]->type == C_SHAPE_TRI_MESH)
+        ? c_MeshContact(frame, &c->narrowphase, c_s[other], &t_world[other], c_s[local], &t_world[local])
+        : c_convex_contact_methods[c_s[local]->type][c_s[other]->type](frame, &c->narrowphase, c_s[local], &t_world[local], c_s[other], &t_world[other]);
 
 #ifdef DS_DEBUG
+    /* the local manifolds, before the conversion below overwrites them */
     for (u32 i = 0; i < result.manifold_count; ++i)
     {
-        if (!c_ManifoldCheck(result.manifold + i))
+        if (!c_ManifoldCheck(result.contact_manifold + i))
         {
-            c_ManifoldDebugPrint(result.manifold + i);
+            c_ManifoldDebugPrint(result.contact_manifold + i);
             Breakpoint(1);
             /* rerun to step into the failing case */
-            TMP_c_convex_contact_methods[c_s[m]->type][c_s[1-m]->type](frame, &c->narrowphase, c_s_arr, t_arr);
+            (c_s[other]->type == C_SHAPE_TRI_MESH)
+                ? c_MeshContact(frame, &c->narrowphase, c_s[other], &t_world[other], c_s[local], &t_world[local])
+                : c_convex_contact_methods[c_s[local]->type][c_s[other]->type](frame, &c->narrowphase, c_s[local], &t_world[local], c_s[other], &t_world[other]);
             break;
         }
     }
 #endif
+
+    const u32 flip = local;
+    v3f64 com[2];
+    for (u32 i = 0; i < 2; ++i)
+    {
+        const struct ds_Body *body = pipeline->body_pool.buf + s[i]->body;
+        const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
+        com[i] = ds_BodySimWorldCenterOfMass(set->body_sim_pool.buf + body->sim);
+    }
+    ds_ContactResultToSolver(&result, &t_world[local], com[0], flip);
+
 	c->narrowphase = result;
+    c->com_offset = V3F64Demote(V3F64Sub(com[1], com[0]));
 }
 
-void TMP_ds_ShapeMeshContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index)
-{
-    struct ds_Contact *c = pipeline->contact_pool.buf + contact_index;
-
-    const struct ds_Shape *s[2] =
-    {
-        pipeline->shape_pool.buf + c->key.shape[0],
-        pipeline->shape_pool.buf + c->key.shape[1],
-    };
-
-    const struct c_Shape *c_s[2] =
-    {
-        pipeline->cshape_db->pool.buf + s[0]->cshape_handle,
-        pipeline->cshape_db->pool.buf + s[1]->cshape_handle,
-    };
-
-    /* index of the mesh */
-    const u32 m = (c_s[0]->type == C_SHAPE_TRI_MESH)
-                ? 0
-                : 1;
-    ds_Assert(c_s[m]->type == C_SHAPE_TRI_MESH && c_s[1-m]->type < C_SHAPE_TRI_MESH);
-
-    ds_Transform t[2];
-    ds_ShapeWorldTransform(t + 0, pipeline, s[m]);
-    ds_ShapeWorldTransform(t + 1, pipeline, s[1-m]);
-    /* TODO(f64 P3): world transforms once bodies store ds_TransformWorld */
-    const ds_TransformWorld t_mesh = ds_TransformPromote(t + 0);
-    const ds_TransformWorld t_convex = ds_TransformPromote(t + 1);
-
-    struct c_ContactResult result = TMP_c_mesh_contact_methods[c_s[1-m]->type](frame, &c->narrowphase, c_s[m], &t_mesh, c_s[1-m], &t_convex);
-
-    /* the manifolds are local to the convex shape; the reference is the shape of the lower body index */
-    const u32 flip = (s[1-m]->body < s[m]->body)
-                   ? 0
-                   : 1;
-    TMP_ds_ContactResultToSolver(&result, &t_convex, flip);
-
-#ifdef DS_DEBUG
-    for (u32 i = 0; i < result.manifold_count; ++i)
-    {
-        if (!c_ManifoldCheck(result.manifold + i))
-        {
-            c_ManifoldDebugPrint(result.manifold + i);
-            Breakpoint(1);
-            /* rerun to step into the failing case */
-            TMP_c_mesh_contact_methods[c_s[1-m]->type](frame, &c->narrowphase, c_s[m], &t_mesh, c_s[1-m], &t_convex);
-            break;
-        }
-    }
-#endif
-	c->narrowphase = result;
-}
-
-void TMP_ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index)
-{
-    const struct ds_Contact *c = pipeline->contact_pool.buf + contact_index;
-    const u32 type_0 = pipeline->cshape_db->pool.buf[pipeline->shape_pool.buf[c->key.shape[0]].cshape_handle].type;
-    const u32 type_1 = pipeline->cshape_db->pool.buf[pipeline->shape_pool.buf[c->key.shape[1]].cshape_handle].type;
-    if (type_0 == C_SHAPE_TRI_MESH || type_1 == C_SHAPE_TRI_MESH)
-    {
-        TMP_ds_ShapeMeshContact(frame, pipeline, contact_index);
-    }
-    else
-    {
-        TMP_ds_ShapeConvexContact(frame, pipeline, contact_index);
-    }
-}
-
-f32 ds_ShapeRaycastParameter(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct ray *ray)
+f32 ds_ShapeRaycastParameter(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct rayWorld *ray)
 {
     ds_Assert(V3Dot(ray->dir, ray->dir) > 0.0f);
-    ds_Transform t;
-    ds_ShapeWorldTransform(&t, pipeline, shape);
-    /* TODO(f64 P3/P6): world transform and world ray from the callers */
-    const ds_TransformWorld transform = ds_TransformPromote(&t);
-    const struct rayWorld ray_world = { .origin = V3Promote(ray->origin), .dir = ray->dir };
+    ds_TransformWorld transform;
+    ds_ShapeWorldTransform(&transform, pipeline, shape);
     const struct c_Shape *c_shape = pipeline->cshape_db->pool.buf + shape->cshape_handle;
 
-	return c_raycast_parameter_methods[c_shape->type](c_shape, &transform, &ray_world);
+	return c_raycast_parameter_methods[c_shape->type](c_shape, &transform, ray);
 }

@@ -1,5 +1,5 @@
 #include "ds_test.h"
-#include "geometry.h"
+#include "ds_geometry.h"
 #include "collision.h"
 #include "ds_dynamics.h"
 
@@ -817,7 +817,7 @@ static struct c_Shape GjkTestRandomHull(struct arena *mem)
             const v3 u = V3Scale(GjkTestUnit(), RngF32Range(0.5f, 1.0f));
             p[i] = V3(u.x*axis_scale.x, u.y*axis_scale.y, u.z*axis_scale.z);
         }
-        shape.hull = DcelConvexHull(mem, p, count, 100.0f*F32_EPSILON*size);
+        shape.hull = DcelConvexHull(mem, p, count);
     } while (shape.hull.v_count < 4);
 
     return shape;

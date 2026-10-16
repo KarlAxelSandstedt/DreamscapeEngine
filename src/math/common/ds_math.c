@@ -1,6 +1,7 @@
 #include <float.h>
 #include "ds_matrix.c"
-#include "geometry.c"
+#include "ds_geometry.c"
+#include "ds_voronoi.c"
 #include "transform.c"
 #include "ds_random.c"
 

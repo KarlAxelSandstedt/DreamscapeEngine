@@ -37,7 +37,6 @@
 #define T_YZ	8
 #define T_ZX	9
 	    
-//TODO: REPLACE using table
 static u32 Comb(const u32 o, const u32 u)
 {
 	ds_Assert(u <= o);
@@ -92,16 +91,10 @@ static void StaticsCalculateFaceIntegrals(f32 integrals[10], const struct c_Shap
 	f32 P_abb = 0.0f;
 
 	const v3 *v = shape->hull.v;
-	struct dcelFace *f = shape->hull.f + fi;
-	struct dcelEdge *e0 = shape->hull.e + f->first;
-	struct dcelEdge *e1 = shape->hull.e + f->first + 1;
-	struct dcelEdge *e2 = shape->hull.e + f->first + 2;
-
-	const v3 a = V3Sub(v[e1->origin], v[e0->origin]);
-	const v3 b = V3Sub(v[e2->origin], v[e0->origin]);
-	v3 n = V3Cross(a, b);
-	n = V3Scale(n, 1.0f / V3Length(n));
-	const f32 d = -V3Dot(n, v[e0->origin]);
+	const struct dcelFace *f = shape->hull.f + fi;
+	/* the face's plane n.x + d = 0, as stored (from all of its vertices: accurate where its first triangle is thin) */
+	const v3 n = shape->hull.plane[fi].normal;
+	const f32 d = -shape->hull.plane[fi].signed_distance;
 
 	u32 max_index = 0;
 	if (n.buf[max_index]*n.buf[max_index] < n.y*n.y) { max_index = 1; }
@@ -122,9 +115,9 @@ static void StaticsCalculateFaceIntegrals(f32 integrals[10], const struct c_Shap
 	const u32 tri_count = f->count - 2;
 	for (u32 i = 0; i < tri_count; ++i)
 	{
-		e0 = shape->hull.e + f->first;
-		e1 = shape->hull.e + f->first + 1 + i;
-		e2 = shape->hull.e + f->first + 2 + i;
+		const struct dcelEdge *e0 = shape->hull.e + f->first;
+		const struct dcelEdge *e1 = shape->hull.e + f->first + 1 + i;
+		const struct dcelEdge *e2 = shape->hull.e + f->first + 2 + i;
 
 		const v2 p0 = V2(v[e0->origin].buf[a_i], v[e0->origin].buf[b_i]);
 		const v2 p1 = V2(v[e1->origin].buf[a_i], v[e1->origin].buf[b_i]);

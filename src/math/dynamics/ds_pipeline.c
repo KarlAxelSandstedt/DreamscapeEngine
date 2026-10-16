@@ -33,6 +33,8 @@ void ds_DynamicsStaticAssert(void)
     ds_StaticAssert(sizeof(struct ds_BodyCompute) == DS_CACHE_LINE, "");
     ds_StaticAssert(sizeof(struct ds_RebuildThreadCompute) == DS_CACHE_LINE, "");
     ds_StaticAssert(sizeof(struct ds_RebuildJob) == DS_CACHE_LINE, "");
+    /* ds_ShapeContact converts c_ContactResult.contact_manifold in place into .manifold */
+    ds_StaticAssert(sizeof(struct ds_SolverManifold) == sizeof(struct c_Manifold), "");
 }
 
 void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, const u64 ns_tick, const u64 frame_memory, c_ShapeSDB *cshape_db, const u32 worker_count, const u64 worker_frame_size)
@@ -362,7 +364,7 @@ u32 ds_NarrowJobPhaseDispatch(const ds_JobId job)
                 for (u32 si = low; si < high; ++si)
                 {
                     const u32 ci = color->contact_pool.buf[si];
-                    TMP_ds_ShapeContact(frame, pipeline, ci);
+                    ds_ShapeContact(frame, pipeline, ci);
                 }
             }
         }
@@ -380,7 +382,7 @@ u32 ds_NarrowJobPhaseDispatch(const ds_JobId job)
             for (u32 si = low; si < high; ++si)
             {
                 const u32 ci = active->contact_pool.buf[si];
-                TMP_ds_ShapeContact(frame, pipeline, ci);
+                ds_ShapeContact(frame, pipeline, ci);
             }
         }
         ProfZoneEnd;
@@ -1760,7 +1762,7 @@ u64 ds_DynamicsOrientationHash(const struct ds_Dynamics *pipeline)
 
         XXH3_64bits_update(state, &i, sizeof(u32));
         XXH3_64bits_update(state, &body->flags, sizeof(body->flags));
-        XXH3_64bits_update(state, &sim->world.position, sizeof(v3));
+        XXH3_64bits_update(state, &sim->world.position, sizeof(v3f64));
         XXH3_64bits_update(state, &sim->world.rotation, sizeof(q));
         if (body->set == SOLVER_SET_ACTIVE)
         {
@@ -1775,7 +1777,7 @@ u64 ds_DynamicsOrientationHash(const struct ds_Dynamics *pipeline)
     return hash;
 }
 
-u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const struct ray *ray)
+u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const struct rayWorld *ray)
 {
     /* the one direction check for the whole query: the per-shape raycasts assume dir != 0 (a NaN
      * direction passes on to their asserts instead of being hidden as a miss) */
@@ -1784,9 +1786,11 @@ u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const str
         return u32f32_inline(U32_MAX, F32_INFINITY);
     }
 
+    /* the BVHs hold f32 world boxes, searched with the demoted ray; shapes test the f64 ray */
+    const struct ray ray_bvh = { .origin = V3F64Demote(ray->origin), .dir = ray->dir };
     struct arena *tmp = ArenaPushScratch();
 
-	struct bvhRaycastInfo d_info = BvhRaycastInit(tmp, &pipeline->dynamic_bvh, ray);
+	struct bvhRaycastInfo d_info = BvhRaycastInit(tmp, &pipeline->dynamic_bvh, &ray_bvh);
 	while (d_info.hit_queue.count)
 	{
 		const u32f32 tuple = MQPop(&d_info.hit_queue);
@@ -1813,7 +1817,7 @@ u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const str
 
     ArenaFlush(tmp);
 
-	struct bvhRaycastInfo s_info = BvhRaycastInit(tmp, &pipeline->static_bvh, ray);
+	struct bvhRaycastInfo s_info = BvhRaycastInit(tmp, &pipeline->static_bvh, &ray_bvh);
 	while (s_info.hit_queue.count)
 	{
 		const u32f32 tuple = MQPop(&s_info.hit_queue);
