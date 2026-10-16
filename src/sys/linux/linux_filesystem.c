@@ -449,17 +449,27 @@ utf8 CwdGet(struct arena *mem)
 {
 	u64 capacity = 256;
 	const u64 record = mem->mem_left;
+	/* never pass getcwd a NULL buffer: glibc would malloc the path itself, outside the arena */
 	u8 *buf = ArenaPush(mem, capacity);
-	while ((buf = (u8*) getcwd((char*) buf, capacity)) == NULL)
+	if (!buf)
 	{
+		return Utf8Empty();
+	}
+	while (getcwd((char*) buf, capacity) == NULL)
+	{
+		const int error = errno;
 		ArenaPopPacked(mem, record - mem->mem_left);
 		capacity *= 2;
 		/* ERANGE: the path does not fit, retry with twice the capacity; any other error fails */
-		if (errno != ERANGE || capacity > mem->mem_left)
+		if (error != ERANGE || capacity > mem->mem_left)
 		{
 			return Utf8Empty();
 		}
 		buf = ArenaPush(mem, capacity);
+		if (!buf)
+		{
+			return Utf8Empty();
+		}
 	}
 
 	utf8 cwd = { .buf = buf, .size = (u32) strlen((char *) buf), .len = 0 };
