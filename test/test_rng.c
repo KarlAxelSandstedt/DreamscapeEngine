@@ -81,9 +81,99 @@ struct test_Output RngLocalTest(struct test_Environment *env)
 	return output;
 }
 
+/* the base state (ds_random.c), saved and restored around RngThreadTest */
+extern u64 g_xoshiro_256[4];
+
+/*
+ * The thread generator's streams against reference values computed independently: xoshiro256**'s state update is
+ * linear over GF(2), so stream k's state is T^(k * 2^128) s, with T^(2^128) found by squaring the 256x256 matrix.
+ * Xoshiro256Init seeds the calling thread with stream 0; TestXoshiro256Next advances the base, so a stream seeded
+ * afterwards starts one number later; a pop restores the state of the last push. The thread's state and the base
+ * are restored before checking, so the test leaves both as it found them.
+ */
+struct test_Output RngThreadTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    const u64 seed[4] = { 0x0123456789abcdef, 0xfedcba9876543210, 0x0f1e2d3c4b5a6978, 0x8796a5b4c3d2e1f0 };
+    const u64 stream_state[2][4] =
+    {
+        { 0x562509e8dc029adf, 0x9a6c42a9513660f6, 0x18e74c7c7aaa05f3, 0x3a6c534749a71402 },
+        { 0xfeee4b3130d89471, 0xe0cab1ed04f3215b, 0xf73da890ce9d00d9, 0x04068dd8c7f02619 },
+    };
+    const u64 stream_first[3] = { 0x6666666666666c65, 0x83dbe1a347859f12, 0xd0a354ef5e6e8139 };
+    const u64 stream_0_second = 0xd90633608dbae0aa;
+
+    /* a pop restores the pushed state */
+    RngPushState();
+    const u64 pushed_first = RngU64();
+    const u64 pushed_second = RngU64();
+    RngPopState();
+
+    RngPushState();
+    const u64 popped_first = RngU64();
+    const u64 popped_second = RngU64();
+
+    u64 base[4];
+    for (u32 i = 0; i < 4; ++i) { base[i] = g_xoshiro_256[i]; }
+
+    Xoshiro256Init(seed);
+    const u64 init_first = RngU64();
+    const u64 init_second = RngU64();
+
+    u32 stream_ok = 1;
+    u64 first[3];
+    for (u32 k = 0; k < 3; ++k)
+    {
+        ThreadXoshiro256InitSequence(k);
+        for (u32 i = 0; k > 0 && i < 4; ++i)
+        {
+            stream_ok = stream_ok && tl_xoshiro_256[i] == stream_state[k-1][i];
+        }
+        first[k] = RngU64();
+    }
+
+    const u64 base_first = TestXoshiro256Next();
+    ThreadXoshiro256InitSequence(0);
+    const u64 advanced_first = RngU64();
+
+    /* ranges, from the seeded stream 0 */
+    Xoshiro256Init(seed);
+    u32 range_ok = 1;
+    for (u32 i = 0; i < 10000; ++i)
+    {
+        const u64 r = RngU64Range(10, 20);
+        const f32 n = RngF32Normalized();
+        const f32 f = RngF32Range(-1.0f, 1.0f);
+        range_ok = range_ok && 10 <= r && r <= 20
+            && RngU64Range(7, 7) == 7
+            && 0.0f <= n && n <= 1.0f
+            && -1.0f <= f && f <= 1.0f
+            && RngF32Range(2.0f, 2.0f) == 2.0f;
+        RngU64Range(0, U64_MAX);
+    }
+
+    Xoshiro256Init(base);
+    RngPopState();
+
+    TEST_TRUE(pushed_first == popped_first && pushed_second == popped_second);
+    TEST_TRUE(init_first == stream_first[0] && init_second == stream_0_second);
+    TEST_TRUE(stream_ok);
+    TEST_TRUE(first[0] == stream_first[0] && first[1] == stream_first[1] && first[2] == stream_first[2]);
+    TEST_TRUE(base_first == stream_first[0] && advanced_first == stream_0_second);
+    TEST_TRUE(range_ok);
+    for (u32 i = 0; i < 4; ++i)
+    {
+        TEST_TRUE(g_xoshiro_256[i] == base[i]);
+    }
+
+	return output;
+}
+
 static struct test_Output (*rng_tests[])(struct test_Environment *) =
 {
     RngLocalTest,
+    RngThreadTest,
 };
 
 struct suite_Correctness m_rng_suite =
