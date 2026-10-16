@@ -69,6 +69,15 @@ Workflow
   Documentation and header-layout changes need no tests; at most a compile
   when code moved.
 
+Conventions
+===========
+
+Units: 1.0f = 1 m, radians. Right-handed, +Y up (gravity (0, -g, 0)).
+Quaternions (x, y, z, w), w the scalar part, Hamilton product, right-hand rule;
+QMul(a, b) rotates by b first. Matrices are column-major and M3(...) takes its
+arguments column by column. Triangles and faces are CCW about their outward
+normal. Full list (frames, camera, UI): the summary of include/ds_math.h.
+
 Determinism
 ===========
 

@@ -28,6 +28,24 @@ through the functions here: world positions are subtracted in f64 before the dem
 relative to the frames' separation, not to their distance from the origin. Plain IEEE arithmetic: the same bits
 on every platform. src/math/common/ds_math.c is the math group's unity file.
 
+Conventions (the whole engine)
+------------------------------
+    Units       1.0f = 1 m (DS_UNIT_M); physics time in seconds; angles in radians.
+    Axes        right-handed, +Y up: gravity is (0, -g, 0).
+    Rotations   unit quaternions q = (x, y, z, w), w the scalar part, Hamilton product (ij = k). A positive angle
+                turns counterclockwise about its axis (right-hand rule). QMul(a, b) rotates by b first, then a.
+    Matrices    column-major (aij: row i, column j); M2/M3/M4(...) take their arguments column by column;
+                M3V3Mul(m, v) = m v, V3M3Mul(v, m) = v^T m.
+    Frames      a pose maps its frame into its parent's (p_parent = rot p + pos). A body's frame has its origin at
+                the body's position, not at its center of mass (local_center_of_mass, in the body frame); shapes
+                sit in the body frame by their t_local. World positions are f64 (ds_TransformWorld).
+    Winding     triangles and dcel faces are counterclockwise about their outward normal; mesh collision is
+                two-sided (the winding orients render normals). GL culls back faces, front = CCW.
+    Camera      the camera frame is left, up, forward with left = up x forward. View space is OpenGL's (looking
+                down -z), clip space z/w in [-1, 1] (transform.h). The renderer's camera (r_camera.c) looks along
+                +z at yaw = pitch = 0.
+    UI          window coordinates have the bottom-left corner at (0, 0), y up.
+
 Sections: local poses, world poses; inline definitions at the bottom, in the same order.
 */
 
