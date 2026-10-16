@@ -72,31 +72,34 @@ struct dsArchConfig
 	u32		sse4_2 : 1;
 	u32		avx : 1;
 	u32		avx2 : 1;
-	u32		bmi1 : 1;	/* tzcnt (Ctz32/64), andn, blsr, ... */
+	u32		bmi1 : 1;	/* bit manipulation instructions: tzcnt (Ctz32/64), andn, blsr, ... */
 	u32		popcnt : 1;	/* popcnt (C32/64, Cz32/64) */
 	u32		lzcnt : 1;	/* lzcnt (Clz32/64); AMD calls it ABM */
 
-	u32		Rdtsc : 1;
-	u32		Rdtscp : 1;
-	u32		tsc_invariant : 1;  /* the TSC ticks at a constant rate in every power state */
+	u32		Rdtsc : 1;	/* profiling timer support  */
+	u32		Rdtscp : 1;	/* profiling timer support  */
+	u32		tsc_invariant : 1;  /* tsc works as a wallclock timer, always ticking and at same frequency (in every power state) */
 };
 
 extern const struct dsArchConfig *g_arch_config;
 
-/* The OS's answers, as g_arch_config stores them (also usable before ds_ArchConfigInit). */
+/* return Logical core count (asks the OS; usable before ds_ArchConfigInit) */
 u32  	ds_LogicalCoreCount(void);
+/* return system pagesize (asks the OS; usable before ds_ArchConfigInit) */
 u64	ds_Pagesize(void);
+/* return process identifier */
 pid	ds_Pid(void);
-/* CPUID leaf function (subleaf subfunction); Linux: all zero for a leaf the CPU lacks; web: all zero. */
+/* cpu x86 querying: CPUID leaf function; Linux: all zero for a leaf the CPU lacks; web: all zero */
 void 	ds_Cpuid(u32 *eax, u32 *ebx, u32 *ecx, u32 *edx, const u32 function);
+/* ds_Cpuid with a subleaf (subfunction) */
 void 	ds_CpuidEx(u32 *eax, u32 *ebx, u32 *ecx, u32 *edx, const u32 function, const u32 subfunction);
 
 /* 1 if the CPU meets the baseline (always on the web), else 0. CPUID only: no memory, no log, safe before any init. */
 u32	ds_ArchBaselineCheck(void);
 /*
-Fill g_arch_config (strings on mem) and log it. Returns 1, or 0 for an unsupported vendor or a CPU without
-the baseline (logged; ds_Init then exits).
-*/
+ * sets up g_arch_config (strings on mem) and logs it. returns 1 on intrinsics requirements fullfilled, 0 otherwise
+ * (an unsupported vendor or a CPU without the baseline; logged, ds_Init then exits).
+ */
 u32 	ds_ArchConfigInit(struct arena *mem);
 
 #ifdef __cplusplus
