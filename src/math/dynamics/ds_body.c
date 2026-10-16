@@ -268,7 +268,9 @@ void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId i
 		body_inertia_tensor = M3Add(body_inertia_tensor, tmp1);
 		body_inertia_tensor = M3Sub(body_inertia_tensor, tmp2);
 	}
-    M3Inverse(&sim->local_inv_inertia, body_inertia_tensor);
+    /* positive mass gives a positive definite tensor; det <= 0 or NaN would make the inverse inf/NaN */
+    const f32 det = M3Inverse(&sim->local_inv_inertia, body_inertia_tensor);
+    ds_Assert(det > 0.0f);
     
     ArenaPopScratch();
 }
