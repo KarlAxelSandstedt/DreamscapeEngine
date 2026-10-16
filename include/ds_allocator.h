@@ -201,7 +201,8 @@ struct memArray	ArenaPushAlignedAll(struct arena *ar, const u64 slot_size, const
 Ring API
 --------
 Ring buffer mapped twice back to back in virtual memory, so an allocation that runs past the end continues
-at the start and is still contiguous. Linux and Windows only (no web implementation).
+at the start and is still contiguous. Web (no virtual memory): buf is a plain 2*mem_total block; every function
+behaves the same, but the halves do not mirror each other, so reach a slot only through its own address.
 */
 
 /*
@@ -213,7 +214,7 @@ struct ring
 	u64 mem_total;
 	u64 mem_left;
 	u64 offset;	/* end of the bytes in use: where RingPushEnd writes */
-	u8 *buf;	/* buf[0, 2*mem_total): the second half mirrors the first */
+	u8 *buf;	/* buf[0, 2*mem_total): the second half mirrors the first (not on web) */
 };
 
 /* RingPushStart/RingPushEnd result: { NULL, 0 } on failure */
@@ -226,7 +227,7 @@ struct ringSlot
 /* Return the empty ring (no memory). */
 struct ring 	    RingEmpty(void);	
 /*
-Return a ring of at least mem_hint bytes (Linux: rounded up to whole pages; Windows: to a power of two of
+Return a ring of at least mem_hint bytes (Linux, web: rounded up to whole pages; Windows: to a power of two of
 at least the allocation granularity, 64 KiB), or the empty ring on failure.
 */
 struct ring 	    RingAlloc(const u64 mem_hint);	

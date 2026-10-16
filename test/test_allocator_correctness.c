@@ -996,8 +996,6 @@ static struct test_Output TStackParallelTest(struct test_Environment *env)
 	return output;
 }
 
-#if __DS_PLATFORM__ != __DS_WEB__
-
 #define RING_TEST_SLOTS 64
 
 /* the byte k of the allocation with the given id */
@@ -1007,10 +1005,10 @@ static u8 RingTestByte(const u32 id, const u64 k)
 }
 
 /*
- * Ring: the second half mirrors the first in both directions; pushes that run past the end are contiguous and
- * their bytes show at the start (and before the start for RingPushStart); failed pushes leave the ring unchanged;
- * a random FIFO (RingPushEnd / RingPopStart) against a queue model, every byte checked through the slot and
- * through its first-half address; LIFO RingPopEnd; RingDealloc leaves the ring empty.
+ * Ring: the second half mirrors the first in both directions (not on web); pushes that run past the end are
+ * contiguous, their bytes showing at the start where mirrored; failed pushes leave the ring unchanged; a random FIFO
+ * (RingPushEnd / RingPopStart) against a queue model, every byte checked through the slot (and through its
+ * first-half address where mirrored); LIFO RingPopEnd; RingDealloc leaves the ring empty.
  */
 static struct test_Output RingTest(struct test_Environment *env)
 {
@@ -1020,10 +1018,12 @@ static struct test_Output RingTest(struct test_Environment *env)
     TEST_TRUE(ring.buf != NULL && ring.mem_total >= 1 && ring.mem_left == ring.mem_total && ring.offset == 0);
     const u64 total = ring.mem_total;
 
+#if __DS_PLATFORM__ != __DS_WEB__
     for (u64 k = 0; k < total; ++k) { ring.buf[k] = RingTestByte(1, k); }
     for (u64 k = 0; k < total; ++k) { TEST_EQUAL(RingTestByte(1, k), ring.buf[total + k]); }
     for (u64 k = 0; k < total; ++k) { ring.buf[total + k] = RingTestByte(2, k); }
     for (u64 k = 0; k < total; ++k) { TEST_EQUAL(RingTestByte(2, k), ring.buf[k]); }
+#endif
 
     /* failures leave the ring as it was */
     struct ringSlot slot = RingPushEnd(&ring, 0);
@@ -1040,7 +1040,9 @@ static struct test_Output RingTest(struct test_Environment *env)
     slot = RingPushEnd(&ring, 64);
     TEST_TRUE(slot.address == ring.buf + total - 16 && slot.size == 64 && ring.offset == 48);
     for (u64 k = 0; k < 64; ++k) { slot.address[k] = RingTestByte(3, k); }
+#if __DS_PLATFORM__ != __DS_WEB__
     for (u64 k = 16; k < 64; ++k) { TEST_EQUAL(RingTestByte(3, k), ring.buf[k - 16]); }
+#endif
 
     /* a push before the start wraps back over the end */
     RingFlush(&ring);
@@ -1093,7 +1095,9 @@ static struct test_Output RingTest(struct test_Environment *env)
             for (u64 k = 0; k < size[i]; ++k)
             {
                 TEST_EQUAL(RingTestByte(id[i], k), address[i][k]);
+#if __DS_PLATFORM__ != __DS_WEB__
                 TEST_EQUAL(RingTestByte(id[i], k), ring.buf[(at + k) % total]);
+#endif
             }
             RingPopStart(&ring, size[i]);
             first = (first + 1) % RING_TEST_SLOTS;
@@ -1109,8 +1113,6 @@ static struct test_Output RingTest(struct test_Environment *env)
 	return output;
 }
 
-#endif
-
 static struct test_Output (*allocator_tests[])(struct test_Environment *) =
 {
     PowerOfTwoTest,
@@ -1125,9 +1127,7 @@ static struct test_Output (*allocator_tests[])(struct test_Environment *) =
     TPoolTest,
     TPoolParallelTest,
     TStackParallelTest,
-#if __DS_PLATFORM__ != __DS_WEB__
     RingTest,
-#endif
 };
 
 struct suite_Correctness storage_allocator_correctness_suite =

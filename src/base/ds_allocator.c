@@ -787,6 +787,37 @@ void RingDealloc(struct ring *ring)
 	*ring = RingEmpty();
 }
 
+#elif __DS_PLATFORM__ == __DS_WEB__
+
+/*
+ * wasm has no virtual memory to map twice, so buf is a plain block of 2*mem_total bytes. The functions behave as
+ * on Linux: a slot is only reached through its own address, and the ring never hands out bytes of a live slot, so
+ * a slot that runs past the end needs no copy at the start. Only reading the second half through the first (or the
+ * reverse) does not work here.
+ */
+struct ring RingAlloc(const u64 mem_hint)
+{
+	ds_Assert(mem_hint);
+
+	/* whole pages (page_size is a power of two) */
+	const u64 page = g_mem_config->page_size;
+	const u64 mem_total = (mem_hint + page - 1) & ~(page - 1);
+	u8 *buf = ds_Alloc(2*mem_total, page);
+	if (buf == NULL)
+	{
+		Log(T_SYSTEM, S_ERROR, "Failed to allocate the ring (%lu bytes)", 2*mem_total);
+		return RingEmpty();
+	}
+
+	return (struct ring) { .mem_total = mem_total, .mem_left = mem_total, .offset = 0, .buf = buf };
+}
+
+void RingDealloc(struct ring *ring)
+{
+	ds_Free(ring->buf);
+	*ring = RingEmpty();
+}
+
 #elif __DS_PLATFORM__ == __DS_WIN64__
 
 #include <memoryapi.h>
