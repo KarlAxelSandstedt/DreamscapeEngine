@@ -1,6 +1,6 @@
 #include "ds_test.h"
 #include "ds_geometry.h"
-#include "collision.h"
+#include "ds_collision.h"
 #include "ds_voronoi.h"
 
 static v3 V3UnitSphere(void)
@@ -317,7 +317,7 @@ scale). Every hull must have:
     containment     every input point on or behind every plane (4 tol)
     determinism     the same points with another RNG state give the same hull, bit for bit
 
-Input scattered by more than tol ("box noisy", 4 tol) is handled only roughly (collision.h): its plane and
+Input scattered by more than tol ("box noisy", 4 tol) is handled only roughly (ds_collision.h): its plane and
 containment distances and reflex corners are measured and printed, not failed, and an empty dcel is counted; topology,
 unused vertices, unit normals and determinism still fail.
 

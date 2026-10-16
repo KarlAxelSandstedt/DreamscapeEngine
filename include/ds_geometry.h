@@ -32,7 +32,7 @@ the small computations on them that collision, the BVH and the renderer share. I
 
 Sections: primitives, ray, segment, plane, AABB, tri_mesh, triangle, dcel; inline definitions at the bottom, in
 the same order. Source: src/math/common/ds_geometry.c. Queries between shapes and the hull builder (DcelConvexHull)
-are in collision.h; Voronoi regions of points, segments and triangles in ds_voronoi.h.
+are in ds_collision.h; Voronoi regions of points, segments and triangles in ds_voronoi.h.
 */
 
 #ifndef __DS_GEOMETRY_H__

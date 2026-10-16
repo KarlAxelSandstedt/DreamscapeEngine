@@ -1,6 +1,6 @@
 #include "ds_test.h"
 #include "ds_geometry.h"
-#include "collision.h"
+#include "ds_collision.h"
 #include "ds_dynamics.h"
 
 /*
@@ -2495,7 +2495,7 @@ struct sp_Stats
     f64 worst_surface_0;    /* v off s[0]'s surface / (eps L) */
     f64 worst_surface_1;    /* v - depth n off the sphere / (eps L) */
     f64 worst_normal;       /* (sd - sep(n)) / (eps L) */
-    u64 gjk_normal_outliers;/* hulls, shallow (GJK's normal): n beyond GJK's documented accuracy (accepted, collision.h) */
+    u64 gjk_normal_outliers;/* hulls, shallow (GJK's normal): n beyond GJK's documented accuracy (accepted, ds_collision.h) */
     u64 gjk_depth_outliers; /* hulls, shallow (GJK's distance): depth beyond tol (accepted: GJK's f32 error grows with
                                distance / feature size, gjk_design.txt) */
 };

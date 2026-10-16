@@ -18,7 +18,7 @@
 */
 
 /*
-c_hull.c: DcelConvexHull, the convex hull of a point cloud as a dcel (collision.h).
+c_hull.c: DcelConvexHull, the convex hull of a point cloud as a dcel (ds_collision.h).
 
 Algorithm
 ---------
@@ -70,7 +70,7 @@ zero-area face asserts in debug and gives the box stub in release.
 #include "ds_base.h"
 #include "ds_math.h"
 #include "ds_list.h"
-#include "collision.h"
+#include "ds_collision.h"
 
 struct ddcelFace
 {

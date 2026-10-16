@@ -21,7 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "collision.h"
+#include "ds_collision.h"
 
 
 //TODO can play around with these

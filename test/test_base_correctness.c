@@ -17,6 +17,8 @@
 ==========================================================================
 */
 
+#include <float.h>
+
 #include "ds_test.h"
 #include "ticket_factory.h"
 #include "ds_graphics.h"
@@ -292,6 +294,172 @@ static struct test_Output TypesTest(struct test_Environment *env)
 	return output;
 }
 
+static f32 FloatTestBits(const u32 bits)
+{
+    const union ieee32 val = { .bits = bits };
+    return val.f;
+}
+
+static u32 FloatTestBitsOf(const f32 f)
+{
+    const union ieee32 val = { .f = f };
+    return val.bits;
+}
+
+static f64 FloatTestF64(const u64 bits)
+{
+    f64 x;
+    memcpy(&x, &bits, sizeof(x));
+    return x;
+}
+
+/* the next f32 above f by stepping its bits (f neither NaN nor +inf); independent of nextafterf */
+static f32 FloatTestNextUp(const f32 f)
+{
+    const u32 bits = FloatTestBitsOf(f);
+    if ((bits & ~F32_SIGN_MASK) == 0) { return FloatTestBits(1); }
+    return FloatTestBits((bits & F32_SIGN_MASK) ? bits - 1 : bits + 1);
+}
+
+static f32 FloatTestNextDown(const f32 f)
+{
+    return -FloatTestNextUp(-f);
+}
+
+/* x not NaN: F64DemoteDownwards(x) is the largest f32 <= x, F64DemoteUpwards(x) the smallest f32 >= x */
+static u32 FloatTestDemoteCheck(const f64 x)
+{
+    const f32 d = F64DemoteDownwards(x);
+    const f32 u = F64DemoteUpwards(x);
+    return (f64) d <= x && x < (f64) FloatTestNextUp(d)
+        && (f64) FloatTestNextDown(u) < x && x <= (f64) u;
+}
+
+/*
+ * ds_float.h: the constants against float.h; bit access and classification of every exponent (zero, low,
+ * full and random significands, both signs) against comparisons; min, max, clamp and round, NaN included;
+ * F64DemoteDownwards/Upwards on edges, random doubles over and beyond the f32 range, f32 values and the
+ * midpoints between neighbouring f32 values (ties for the cast).
+ */
+static struct test_Output FloatTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    /* FLT_TRUE_MIN without C11's float.h: 2^-126 * 2^-23, exact */
+    const f32 true_min = FLT_MIN * FLT_EPSILON;
+    TEST_TRUE(F32_MAX_POSITIVE_NORMAL == FLT_MAX && F32_MIN_NEGATIVE_NORMAL == -FLT_MAX);
+    TEST_TRUE(F32_MIN_POSITIVE_NORMAL == FLT_MIN && F32_MAX_NEGATIVE_NORMAL == -FLT_MIN);
+    TEST_TRUE(F32_MIN_POSITIVE_SUBNORMAL == true_min && F32_MAX_NEGATIVE_SUBNORMAL == -true_min);
+    TEST_TRUE(F32_MAX_POSITIVE_SUBNORMAL == FLT_MIN - true_min && F32_MIN_NEGATIVE_SUBNORMAL == -(FLT_MIN - true_min));
+    TEST_TRUE(F32_EPSILON == FLT_EPSILON);
+    TEST_TRUE(F32_SIGNIFICAND_LENGTH + 1 == FLT_MANT_DIG);
+    TEST_TRUE(F32_BIAS == FLT_MAX_EXP - 1 && F32_MAX_EXPONENT == FLT_MAX_EXP - 1 && F32_MIN_EXPONENT == FLT_MIN_EXP - 1);
+    TEST_TRUE(F32_PI == (f32) 3.14159265358979323846 && F32_PI2 == 2.0f * F32_PI);
+    TEST_TRUE(F32_INFINITY > FLT_MAX && F32Inf(1) < -FLT_MAX);
+    TEST_EQUAL(0, FloatTestBitsOf(F32Zero(0)));
+    TEST_EQUAL(F32_SIGN_MASK, FloatTestBitsOf(F32Zero(1)));
+    TEST_TRUE(F32TestNan(F32Nan()));
+
+    struct rng rng;
+    RngLocalInit(&rng, env->seed);
+
+    for (u32 sign = 0; sign <= 1; ++sign)
+    {
+        for (u32 exponent = 0; exponent <= 255; ++exponent)
+        {
+            for (u32 k = 0; k < 4; ++k)
+            {
+                const u32 significand = (k == 0) ? 0
+                    : (k == 1) ? 1
+                    : (k == 2) ? F32_SIGNIFICAND_MASK
+                    : (u32) RngLocalU64Range(&rng, 1, F32_SIGNIFICAND_MASK);
+                const u32 bits = (sign << 31) | (exponent << 23) | significand;
+                const f32 f = FloatTestBits(bits);
+
+                const u32 nan = (f != f);
+                const u32 inf = !nan && (f > FLT_MAX || f < -FLT_MAX);
+                const u32 zero = (f == 0.0f);
+                const u32 subnormal = !zero && -FLT_MIN < f && f < FLT_MIN;
+                const u32 normal = !nan && !inf && !zero && !subnormal;
+                const enum ieee_type type = nan ? IEEE_NAN
+                    : inf ? IEEE_INF
+                    : zero ? IEEE_ZERO
+                    : subnormal ? IEEE_SUBNORMAL
+                    : IEEE_NORMAL;
+
+                TEST_EQUAL(bits, FloatTestBitsOf(F32Construct(sign, exponent, significand)));
+                TEST_EQUAL(sign, F32SignBit(f));
+                TEST_EQUAL(exponent, F32ExponentBits(f));
+                TEST_EQUAL(significand, F32MantissaBits(f));
+                TEST_EQUAL(nan, F32TestNan(f));
+                TEST_EQUAL(!nan && !inf, F32FiniteCheck(f));
+                TEST_EQUAL(inf && !sign, F32TestPositiveInf(f));
+                TEST_EQUAL(inf && sign, F32TestNegativeInf(f));
+                TEST_EQUAL(zero && !sign, F32TestPositiveZero(f));
+                TEST_EQUAL(zero && sign, F32TestNegativeZero(f));
+                TEST_EQUAL(normal, F32TestNormal(f));
+                TEST_EQUAL(subnormal, F32TestSubnormal(f));
+                TEST_EQUAL(type, F32Classify(f));
+                TEST_EQUAL(bits & ~F32_SIGN_MASK, FloatTestBitsOf(F32Abs(f)));
+                TEST_TRUE(F32Sign(f) == (sign ? -1.0f : 1.0f));
+            }
+        }
+    }
+
+    const f32 nan = F32Nan();
+    TEST_TRUE(F32Max(1.0f, 2.0f) == 2.0f && F32Max(2.0f, 1.0f) == 2.0f);
+    TEST_TRUE(F32Min(1.0f, 2.0f) == 1.0f && F32Min(2.0f, 1.0f) == 1.0f);
+    TEST_TRUE(F32Clamp(-1.0f, 0.0f, 1.0f) == 0.0f && F32Clamp(2.0f, 0.0f, 1.0f) == 1.0f && F32Clamp(0.25f, 0.0f, 1.0f) == 0.25f);
+    /* a NaN first argument gives the second, a NaN second argument is returned; Clamp passes NaN through */
+    TEST_TRUE(F32Max(nan, 1.0f) == 1.0f && F32TestNan(F32Max(1.0f, nan)));
+    TEST_TRUE(F32Min(nan, 1.0f) == 1.0f && F32TestNan(F32Min(1.0f, nan)));
+    TEST_TRUE(F32TestNan(F32Clamp(nan, 0.0f, 1.0f)));
+    /* ties to even */
+    TEST_TRUE(F32Round(0.5f) == 0.0f && F32Round(1.5f) == 2.0f && F32Round(2.5f) == 2.0f && F32Round(-2.5f) == -2.0f);
+    TEST_EQUAL(F32_SIGN_MASK, FloatTestBitsOf(F32Round(-0.5f)));
+
+    /* edges: zeros, below the subnormals, the subnormal/normal border, around FLT_MAX and its rounding to inf */
+    const f64 edge[] =
+    {
+        0.0, -0.0, 0x1p-150, -0x1p-150, 0x1.8p-150, 0x1p-200, -0x1p-200, 0x1p-1074,
+        (f64) FLT_MIN, (f64) FLT_MIN - 0x1p-151, (f64) FLT_MIN + 0x1p-151, (f64) true_min,
+        (f64) FLT_MAX, (f64) FLT_MAX + 0x1p103, -((f64) FLT_MAX + 0x1p103), (f64) FLT_MAX + 0x1p102,
+        0x1p128, -0x1p128, 1e300, -1e300, 1.0, -1.0, 0.1, -0.1, 1.0 + 0x1p-24, 1.0 - 0x1p-25,
+    };
+    for (u32 i = 0; i < sizeof(edge) / sizeof(edge[0]); ++i)
+    {
+        TEST_TRUE(FloatTestDemoteCheck(edge[i]));
+    }
+    TEST_EQUAL(F32_SIGN_MASK, FloatTestBitsOf(F64DemoteDownwards(-0.0)));
+    TEST_EQUAL(F32_SIGN_MASK, FloatTestBitsOf(F64DemoteUpwards(-0.0)));
+    TEST_EQUAL(F32_SIGN_MASK, FloatTestBitsOf(F64DemoteUpwards(-0x1p-200)));
+    TEST_TRUE(F32TestPositiveInf(F64DemoteDownwards((f64) F32_INFINITY)) && F32TestPositiveInf(F64DemoteUpwards((f64) F32_INFINITY)));
+    TEST_TRUE(F32TestNegativeInf(F64DemoteDownwards((f64) F32Inf(1))) && F32TestNegativeInf(F64DemoteUpwards((f64) F32Inf(1))));
+    TEST_TRUE(F32TestNan(F64DemoteDownwards((f64) nan)) && F32TestNan(F64DemoteUpwards((f64) nan)));
+
+    for (u32 i = 0; i < 100000; ++i)
+    {
+        /* |x| in [2^-160, 2^140): below the f32 subnormals, the f32 range and beyond FLT_MAX */
+        const u64 x_sign = RngLocalU64(&rng) & ((u64) 1 << 63);
+        const u64 x_exponent = RngLocalU64Range(&rng, 1023 - 160, 1023 + 139);
+        const u64 x_significand = RngLocalU64(&rng) >> 12;
+        TEST_TRUE(FloatTestDemoteCheck(FloatTestF64(x_sign | (x_exponent << 52) | x_significand)));
+
+        /* a nonzero finite f32 f below FLT_MAX in magnitude: f is exact, the midpoint above it a tie */
+        const u32 f_sign = (u32) RngLocalU64Range(&rng, 0, 1) << 31;
+        const u32 f_magnitude = (u32) RngLocalU64Range(&rng, 1, 0x7f7ffffe);
+        const f32 f = FloatTestBits(f_sign | f_magnitude);
+        const f32 f_up = FloatTestNextUp(f);
+        const f64 midpoint = ((f64) f + (f64) f_up) / 2.0;
+        TEST_EQUAL(FloatTestBitsOf(f), FloatTestBitsOf(F64DemoteDownwards((f64) f)));
+        TEST_EQUAL(FloatTestBitsOf(f), FloatTestBitsOf(F64DemoteUpwards((f64) f)));
+        TEST_EQUAL(FloatTestBitsOf(f), FloatTestBitsOf(F64DemoteDownwards(midpoint)));
+        TEST_EQUAL(FloatTestBitsOf(f_up), FloatTestBitsOf(F64DemoteUpwards(midpoint)));
+    }
+
+	return output;
+}
+
 /*
  * Without a root window, ds_WindowLookup finds nothing and ds_DeallocTaggedWindows frees nothing, neither
  * walking the hierarchy from HI_NULL. The editor's root window (if any) is hidden during the calls.
@@ -317,6 +485,7 @@ static struct test_Output WindowNoRootTest(struct test_Environment *env)
 static struct test_Output (*base_tests[])(struct test_Environment *) =
 {
     TypesTest,
+    FloatTest,
     BitCountTest,
     OverflowTest,
     AtomicSingleThreadTest,

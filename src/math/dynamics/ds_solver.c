@@ -19,7 +19,7 @@
 
 #include <stdlib.h>
 
-#include "collision.h"
+#include "ds_collision.h"
 #include "ds_float.h"
 #include "ds_vector.h"
 #include "ds_quaternion.h"

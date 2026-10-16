@@ -18,7 +18,7 @@
 */
 
 #include "ds_dynamics.h"
-#include "collision.h"
+#include "ds_collision.h"
 #include "ds_voronoi.h"
 
 /**************************************** GJK ********************************************/
@@ -203,7 +203,7 @@ static v3 GJKSimplexSearchDirection(const struct GJKSimplex *simplex)
 #define GJK_DIR_LENGTH_SQ_MIN (1000.0f * F32_MIN_POSITIVE_NORMAL)
 
 /*
- * Touch tolerance (1b; GJK_TOUCH_TOLERANCE in collision.h). The shapes are reported as touching when
+ * Touch tolerance (1b; GJK_TOUCH_TOLERANCE in ds_collision.h). The shapes are reported as touching when
  *
  *      |closest| <= GJK_TOUCH_TOLERANCE * eps * L,     L = max(|a|, |b|) over the query's support points
  *

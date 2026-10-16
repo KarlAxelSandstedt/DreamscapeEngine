@@ -3,7 +3,7 @@
 #include "ds_dynamics.h"
 #include "ds_vector.h"
 #include "ds_quaternion.h"
-#include "collision.h"
+#include "ds_collision.h"
 #include "ds_geometry.h"
 
 /*

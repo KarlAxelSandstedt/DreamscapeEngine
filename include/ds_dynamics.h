@@ -28,7 +28,7 @@ extern "C" {
 #include "ds_math.h"
 #include "ds_renderer.h"
 #include "ds_list.h"
-#include "collision.h"
+#include "ds_collision.h"
 #include "ds_hash_map.h"
 #include "ds_bitset.h"
 #include "ds_job.h"
@@ -442,7 +442,7 @@ Assumptions:
 void        ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index);
 /*
  * Return the smallest t >= 0 at which ray.origin + t*ray.dir is on the shape's surface (the first surface hit,
- * two-sided, see collision.h), or F32_INFINITY. The ray is in world space. Precondition: |ray->dir|^2 > 0
+ * two-sided, see ds_collision.h), or F32_INFINITY. The ray is in world space. Precondition: |ray->dir|^2 > 0
  * (asserted).
  */
 f32 	    ds_ShapeRaycastParameter(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct rayWorld *ray);

@@ -18,8 +18,8 @@
 */
 
 /*
-collision.h
-===========
+ds_collision.h
+==============
 Collision shapes, the queries between two of them (intersection test, distance, contact manifold), raycasts,
 and bounding volume hierarchies (BVHs).
 
