@@ -119,121 +119,6 @@
 
  */
 
-/*
-	===== Derivation of Lookup table for bytes touched =====
-
-input: 		bits_left_in_initial_byte, bit_count (to read or write)
-output: 	bytes_touched
-
-Case 1:
-If bits_left_in_inital_byte <= bit_count  Then 
-
-		ds_Assert(bit_count <= 64);
-							
-							bits:	  543 210
-		(bit_count - bits_left_in_initial_byte) = 	  BBB bbb
-		bytes_touched = 1;
-		bytes_touched += BBB	
-		bytes_touched += (bbb) ? 1 : 0	
-
-Case 2:
-If bit_count < bits_left_in_initial_byte Then 
-							bits:	  543 210
-		(bit_count - bits_left_in_initial_byte) =   111...111 bbb
-										3 210
-		where bbb + abs_diff(bit_count, bits_left_in_initial_byte) ==   1 000
-
-							     abs_diff
-		1 - 2	=== 111...111 111	(Check 111 + 001 	== 1 000)
-		1 - 3	=== 111...111 110	(Check 110 + 010 	== 1 000)
-		1 - 4	=== 111...111 101	(Check 101 + 011 	== 1 000)
-		1 - 5	=== 111...111 100	(Check 100 + 100 	== 1 000)
-		1 - 6	=== 111...111 011	(Check 011 + 101 	== 1 000)
-		1 - 7	=== 111...111 010	(Check 010 + 110 	== 1 000)
-		1 - 8	=== 111...111 001	(Check 001 + 111 	== 1 000)
-
-
-Implementing Case1 we get:
-If bits_left_in_inital_byte <= bit_count  Then 
-							bits:	   543 210
-		diff = (bit_count - bits_left_in_initial_byte) =   BBB bbb
-
-		static lookup[8] = { 0, 1, 1, 1, 1, 1, 1, 1 };
-		bytes_touched = (1 + (diff >> 3) + lookup[diff & 0x7])
-			      = ((8 >> 3) + (diff >> 3) + lookup[diff & 0x7])
-			      = ((8 >> 3) + (diff >> 3) + lookup[diff & 0x7])
-			      = (((diff+8) >> 3) + lookup[diff & 0x7])
-			      = (((diff+8) >> 3) + lookup[(diff+8) & 0x7])
-
-Implementing Case2 we get:
-If bits_left_in_inital_byte <= bit_count  Then 
-
-		diff 	 = (bit_count - bits_left_in_initial_byte) 
-
-			bits:	     543 210
-			 =   111 ... 111 bbb
-
-			bits:	     543 210
-	=> 	diff + 8 =   000 ... 000 bbb
-
-		where bbb > 0:
-
-		We know that bytes_touched = 1 so the yields the correct result:
-
-		static lookup[8] = { 0, 1, 1, 1, 1, 1, 1, 1 };
-		bytes_touched = (((diff+8) >> 3) + lookup[(diff+8) & 0x7])
-			      = (0 + lookup[bbb])
-			      = (0 + 1)
-			      = 1
-
-We now see that we can unify case 1 and case 2 into a single unified execution path:
-
-Execution Path:
-		static lookup[8] = { 0, 1, 1, 1, 1, 1, 1, 1 };
-		val  = (bit_count - bits_left_in_initial_byte) + 8;
-		bytes_touched = ((val >> 3) + lookup[val & 0x7])
-					
-
-Now, since bit_count - bits_left_in_initial_byte + 8 lies between the range
-
-	[ 1-8+8, 64-1+8 ] = [ 1, 71 ]
-or,	[ 1-8, 64-1 ] = [ -7, 63 ]
-
-we can setup a Execution path lookup table for all computations:
-
-table[71] = { ((val >> 3) + lookup[val & 0x7]) : val = index+1 }
-*bytes_touched_lookup = table + 7
-
-Then:
-	bytes_touched = bytes_touched_lookup[bit_count - bits_left_in_initial_byte];
-		      = table[bit_count - bits_left_in_initial_byte + 7]
-		      = ((bit_count - bits_left_in_initial_byte + 8) >> 3) + lookup[(bit_count - bits_left_in_initial_byte + 8) & 0x7]
-
-
-	We may now choose between
-
-		1 subtraction + 1 lookup
-	vs. 	2 addition + 1 subtraction + 1 bit shift + 1 and + 1 lookup
-*/
-
-static const u32 bytes_touched_table[71] =
-{
-	       1, 1, 1, 1, 1, 1, 1,
-	    1, 2, 2, 2, 2, 2, 2, 2,
-	    2, 3, 3, 3, 3, 3, 3, 3,
-	    3, 4, 4, 4, 4, 4, 4, 4,
-	    4, 5, 5, 5, 5, 5, 5, 5,
-	    5, 6, 6, 6, 6, 6, 6, 6,
-	    6, 7, 7, 7, 7, 7, 7, 7,
-	    7, 8, 8, 8, 8, 8, 8, 8,
-	    8, 9, 9, 9, 9, 9, 9, 9,
-};
-
-/* aligned_table[stream->bit_index & 0x7] = byte_alignment */
-static const u32 aligned_table[8] = { 1, 0, 0, 0, 0, 0, 0, 0, };
-
-static const u32 *bytes_touched_lookup = bytes_touched_table + 7;
-
 struct ss ss_Alloc(struct arena *mem, const u64 bufsize)
 {
 	struct ss ss = { 0 };
@@ -889,25 +774,25 @@ static const u32 upper_write_shift_lookup[8][8] =
 	{ 7, 7, 7, 7, 7, 7, 7, 7, },
 };
  
-static u64 internal_read_1_aligned(const u8 *ptr, const u8 garbage_1, const u32 garbage_2, const i32 bit_count)
+static u64 internal_read_1_aligned(const u8 *ptr, const i32 bit_count)
 {
 	return (u64) ptr[0] >> (8-bit_count);
 }
 
-static u64 internal_read_2_le_aligned(const u8 *ptr, const u8 garbage_1, const u32 garbage_2, const i32 bit_count)
+static u64 internal_read_2_le_aligned(const u8 *ptr, const i32 bit_count)
 {
 	return (u64) ptr[0] 
 		| (((u64) ptr[1] >> (16-bit_count)) << 8);
 }
 
-static u64 internal_read_3_le_aligned(const u8 *ptr, const u8 garbage_1, const u32 garbage_2, const i32 bit_count)
+static u64 internal_read_3_le_aligned(const u8 *ptr, const i32 bit_count)
 {
 	return (u64) ptr[0] 
 		| ((u64) ptr[1] << 8) 
 		| (((u64) ptr[2] >> (24-bit_count)) << 16);
 }
 
-static u64 internal_read_4_le_aligned(const u8 *ptr, const u8 garbage_1, const u32 garbage_2, const i32 bit_count)
+static u64 internal_read_4_le_aligned(const u8 *ptr, const i32 bit_count)
 {
 	return (u64) ptr[0] 
 		| ((u64) ptr[1] << 8) 
@@ -915,7 +800,7 @@ static u64 internal_read_4_le_aligned(const u8 *ptr, const u8 garbage_1, const u
 		| (((u64) ptr[3] >> (32-bit_count)) << 24);
 }
 
-static u64 internal_read_5_le_aligned(const u8 *ptr, const u8 garbage_1, const u32 garbage_2, const i32 bit_count)
+static u64 internal_read_5_le_aligned(const u8 *ptr, const i32 bit_count)
 {
 	return (u64) ptr[0] 
 		| ((u64) ptr[1] << 8) 
@@ -924,7 +809,7 @@ static u64 internal_read_5_le_aligned(const u8 *ptr, const u8 garbage_1, const u
 		| (((u64) ptr[4] >> (40-bit_count)) << 32);
 }
 
-static u64 internal_read_6_le_aligned(const u8 *ptr, const u8 garbage_1, const u32 garbage_2, const i32 bit_count)
+static u64 internal_read_6_le_aligned(const u8 *ptr, const i32 bit_count)
 {
 	return (u64) ptr[0] 
 		| ((u64) ptr[1] << 8) 
@@ -934,7 +819,7 @@ static u64 internal_read_6_le_aligned(const u8 *ptr, const u8 garbage_1, const u
 		| (((u64) ptr[5] >> (48-bit_count)) << 40);
 }
 
-static u64 internal_read_7_le_aligned(const u8 *ptr, const u8 garbage_1, const u32 garbage_2, const i32 bit_count)
+static u64 internal_read_7_le_aligned(const u8 *ptr, const i32 bit_count)
 {
 	return (u64) ptr[0] 
 		| ((u64) ptr[1] << 8) 
@@ -945,7 +830,7 @@ static u64 internal_read_7_le_aligned(const u8 *ptr, const u8 garbage_1, const u
 		| (((u64) ptr[6] >> (56-bit_count)) << 48);
 }
 
-static u64 internal_read_8_le_aligned(const u8 *ptr, const u8 garbage_1, const u32 garbage_2, const i32 bit_count)
+static u64 internal_read_8_le_aligned(const u8 *ptr, const i32 bit_count)
 {
 	return (u64) ptr[0] 
 		| ((u64) ptr[1] << 8) 
@@ -957,25 +842,25 @@ static u64 internal_read_8_le_aligned(const u8 *ptr, const u8 garbage_1, const u
 		| (((u64) ptr[7] >> (64-bit_count)) << 56);
 }
 
-static void internal_write_1_aligned(u8 *ptr, const u32 garbage_1, const u64 bits, const u64 bit_count)
+static void internal_write_1_aligned(u8 *ptr, const u64 bits, const u64 bit_count)
 {
 	ptr[0] = (u8) bits << (8 - bit_count);
 }
 
-static void internal_write_2_le_aligned(u8 *ptr, const u32 garbage_1, const u64 bits, const u64 bit_count)
+static void internal_write_2_le_aligned(u8 *ptr, const u64 bits, const u64 bit_count)
 {
 	ptr[0] = (u8) bits;
 	ptr[1] = (u8) (bits >> 8) << (16 - bit_count);
 }
 
-static void internal_write_3_le_aligned(u8 *ptr, const u32 garbage_1, const u64 bits, const u64 bit_count)
+static void internal_write_3_le_aligned(u8 *ptr, const u64 bits, const u64 bit_count)
 {
 	ptr[0] = (u8) bits;
 	ptr[1] = (u8) (bits >> 8);
 	ptr[2] = (u8) (bits >> 16) << (24 - bit_count);
 }
 
-static void internal_write_4_le_aligned(u8 *ptr, const u32 garbage_1, const u64 bits, const u64 bit_count) 
+static void internal_write_4_le_aligned(u8 *ptr, const u64 bits, const u64 bit_count) 
 { 
 	ptr[0] = (u8) bits;
 	ptr[1] = (u8) (bits >> 8);
@@ -983,7 +868,7 @@ static void internal_write_4_le_aligned(u8 *ptr, const u32 garbage_1, const u64 
 	ptr[3] = (u8) (bits >> 24) << (32 - bit_count);
 }
 
-static void internal_write_5_le_aligned(u8 *ptr, const u32 garbage_1, const u64 bits, const u64 bit_count) 
+static void internal_write_5_le_aligned(u8 *ptr, const u64 bits, const u64 bit_count) 
 { 
 	ptr[0] = (u8) bits;
 	ptr[1] = (u8) (bits >> 8);
@@ -992,7 +877,7 @@ static void internal_write_5_le_aligned(u8 *ptr, const u32 garbage_1, const u64 
 	ptr[4] = (u8) (bits >> 32) << (40 - bit_count);
 }
 
-static void internal_write_6_le_aligned(u8 *ptr, const u32 garbage_1, const u64 bits, const u64 bit_count) 
+static void internal_write_6_le_aligned(u8 *ptr, const u64 bits, const u64 bit_count) 
 { 
 	ptr[0] = (u8) bits;
 	ptr[1] = (u8) (bits >> 8);
@@ -1002,7 +887,7 @@ static void internal_write_6_le_aligned(u8 *ptr, const u32 garbage_1, const u64 
 	ptr[5] = (u8) (bits >> 40) << (48 - bit_count);
 }
 
-static void internal_write_7_le_aligned(u8 *ptr, const u32 garbage_1, const u64 bits, const u64 bit_count) 
+static void internal_write_7_le_aligned(u8 *ptr, const u64 bits, const u64 bit_count) 
 { 
 	ptr[0] = (u8) bits;
 	ptr[1] = (u8) (bits >> 8);
@@ -1013,7 +898,7 @@ static void internal_write_7_le_aligned(u8 *ptr, const u32 garbage_1, const u64 
 	ptr[6] = (u8) (bits >> 48) << (56 - bit_count);
 }
 
-static void internal_write_8_le_aligned(u8 *ptr, const u32 garbage_1, const u64 bits, const u64 bit_count) 
+static void internal_write_8_le_aligned(u8 *ptr, const u64 bits, const u64 bit_count) 
 {
 	ptr[0] = (u8) bits;
 	ptr[1] = (u8) (bits >> 8);
@@ -1032,7 +917,6 @@ static u64 internal_read_1_straddling(const u8 *ptr, const u8 byte_lower_mask, c
 
 static u64 internal_read_2_le_straddling(const u8 *ptr, const u8 byte_lower_mask, const u32 byte_lower_mask_size, const i32 bit_count)
 {
-	const u8 byte_upper_mask = ~byte_lower_mask;
 	const u32 new_lower_mask_size = (8 + byte_lower_mask_size - (u32) bit_count);
 	
 	return    (STRADDLE_BYTE(0, byte_lower_mask, byte_lower_mask_size) >> shift_lookup[bit_count-8]) 
@@ -1041,7 +925,6 @@ static u64 internal_read_2_le_straddling(const u8 *ptr, const u8 byte_lower_mask
 
 static u64 internal_read_3_le_straddling(const u8 *ptr, const u8 byte_lower_mask, const u32 byte_lower_mask_size, const i32 bit_count)
 {
-	const u8 byte_upper_mask = ~byte_lower_mask;
 	const u32 new_lower_mask_size = (16 + byte_lower_mask_size - (u32) bit_count);
 
 	return           STRADDLE_BYTE(0, byte_lower_mask, byte_lower_mask_size) 
@@ -1051,7 +934,6 @@ static u64 internal_read_3_le_straddling(const u8 *ptr, const u8 byte_lower_mask
 
 static u64 internal_read_4_le_straddling(const u8 *ptr, const u8 byte_lower_mask, const u32 byte_lower_mask_size, const i32 bit_count)
 {
-	const u8 byte_upper_mask = ~byte_lower_mask;
 	const u32 new_lower_mask_size = (24 + byte_lower_mask_size - (u32) bit_count);
 
 	return          STRADDLE_BYTE(0, byte_lower_mask, byte_lower_mask_size) 
@@ -1062,7 +944,6 @@ static u64 internal_read_4_le_straddling(const u8 *ptr, const u8 byte_lower_mask
 
 static u64 internal_read_5_le_straddling(const u8 *ptr, const u8 byte_lower_mask, const u32 byte_lower_mask_size, const i32 bit_count)
 {
-	const u8 byte_upper_mask = ~byte_lower_mask;
 	const u32 new_lower_mask_size = (32 + byte_lower_mask_size - (u32) bit_count);
 
 	return          STRADDLE_BYTE(0, byte_lower_mask, byte_lower_mask_size) 
@@ -1074,7 +955,6 @@ static u64 internal_read_5_le_straddling(const u8 *ptr, const u8 byte_lower_mask
 
 static u64 internal_read_6_le_straddling(const u8 *ptr, const u8 byte_lower_mask, const u32 byte_lower_mask_size, const i32 bit_count)
 {
-	const u8 byte_upper_mask = ~byte_lower_mask;
 	const u32 new_lower_mask_size = (40 + byte_lower_mask_size - (u32) bit_count);
 
           return        STRADDLE_BYTE(0, byte_lower_mask, byte_lower_mask_size) 
@@ -1087,7 +967,6 @@ static u64 internal_read_6_le_straddling(const u8 *ptr, const u8 byte_lower_mask
 
 static u64 internal_read_7_le_straddling(const u8 *ptr, const u8 byte_lower_mask, const u32 byte_lower_mask_size, const i32 bit_count)
 {
-	const u8 byte_upper_mask = ~byte_lower_mask;
 	const u32 new_lower_mask_size = (48 + byte_lower_mask_size - (u32) bit_count);
 
           return        STRADDLE_BYTE(0, byte_lower_mask, byte_lower_mask_size) 
@@ -1101,7 +980,6 @@ static u64 internal_read_7_le_straddling(const u8 *ptr, const u8 byte_lower_mask
 
 static u64 internal_read_8_le_straddling(const u8 *ptr, const u8 byte_lower_mask, const u32 byte_lower_mask_size, const i32 bit_count)
 {
-	const u8 byte_upper_mask = ~byte_lower_mask;
 	const u32 new_lower_mask_size = (56 + byte_lower_mask_size - (u32) bit_count);
 
           return        STRADDLE_BYTE(0, byte_lower_mask, byte_lower_mask_size) 
@@ -1116,9 +994,6 @@ static u64 internal_read_8_le_straddling(const u8 *ptr, const u8 byte_lower_mask
 
 static u64 internal_read_9_le_straddling(const u8 *ptr, const u8 byte_lower_mask, const u32 byte_lower_mask_size, const i32 bit_count)
 {
-	const u8 byte_upper_mask = ~byte_lower_mask;
-	const u32 new_lower_mask_size = (64 + byte_lower_mask_size - (u32) bit_count);
-
           return        STRADDLE_BYTE(0, byte_lower_mask, byte_lower_mask_size) 
 	       | ((u64)(STRADDLE_BYTE(1, byte_lower_mask, byte_lower_mask_size)) << 8)
 	       | ((u64)(STRADDLE_BYTE(2, byte_lower_mask, byte_lower_mask_size)) << 16)
@@ -1268,74 +1143,6 @@ static void internal_write_9_le_straddling(u8 *ptr, const u32 byte_lower_mask_si
 	ptr[8]  =  ((u8) (bits >> 56) << upper_write_shift_lookup[byte_lower_mask_size][new_lower_mask_size]);
 }
 
-///* 
-// * internal_read_le_partial_table: function table to read a little endian value from stream
-// *
-// * USAGE:  table[aligned/straddling][bytes_touched] 
-// */
-//static u64 (*internal_read_le_partial_table[2][10])(const u8 *, const u8, const u32, const i32) = 
-//{
-//	{
-//		NULL,
-//		&internal_read_1_straddling,
-//		&internal_read_2_le_straddling,
-//		&internal_read_3_le_straddling,
-//		&internal_read_4_le_straddling,
-//		&internal_read_5_le_straddling,
-//		&internal_read_6_le_straddling,
-//		&internal_read_7_le_straddling,
-//		&internal_read_8_le_straddling,
-//		&internal_read_9_le_straddling,
-//	},
-//
-//	{
-//		NULL,
-//		&internal_read_1_aligned,
-//		&internal_read_2_le_aligned,
-//		&internal_read_3_le_aligned,
-//		&internal_read_4_le_aligned,
-//		&internal_read_5_le_aligned,
-//		&internal_read_6_le_aligned,
-//		&internal_read_7_le_aligned,
-//		&internal_read_8_le_aligned,
-//		NULL,
-//	},
-//};
-//
-///* 
-// * internal_write_le_partial_table: function table to write a Logical value (register) as little endian to stream
-// *
-// * USAGE:  table[aligned/straddling][bytes_touched] 
-// */
-//static void (*internal_write_le_partial_table[2][10])( u8 *, const u32, const u64, const u64) = 
-//{
-//	{
-//		NULL,
-//		&internal_write_1_straddling,
-//		&internal_write_2_le_straddling,
-//		&internal_write_3_le_straddling,
-//		&internal_write_4_le_straddling,
-//		&internal_write_5_le_straddling,
-//		&internal_write_6_le_straddling,
-//		&internal_write_7_le_straddling,
-//		&internal_write_8_le_straddling,
-//		&internal_write_9_le_straddling,
-//	},
-//
-//	{
-//		NULL,
-//		&internal_write_1_aligned,
-//		&internal_write_2_le_aligned,
-//		&internal_write_3_le_aligned,
-//		&internal_write_4_le_aligned,
-//		&internal_write_5_le_aligned,
-//		&internal_write_6_le_aligned,
-//		&internal_write_7_le_aligned,
-//		&internal_write_8_le_aligned,
-//		NULL,
-//	},
-//};
-
 void ss_WriteU64LePartial(struct ss *ss, const u64 val, const u64 bit_count)
 {
 	ds_Assert((ss->bit_index + bit_count) <= ss->bit_count);
@@ -1369,14 +1176,14 @@ void ss_WriteU64LePartial(struct ss *ss, const u64 val, const u64 bit_count)
 		const u32 bytes_touched = (bit_count + 7) >> 3;
 		switch (bytes_touched)
 		{
-			case 1: { internal_write_1_aligned(ptr, 0, masked_val, bit_count); } break;
-			case 2: { internal_write_2_le_aligned(ptr, 0, masked_val, bit_count); } break;
-			case 3: { internal_write_3_le_aligned(ptr, 0, masked_val, bit_count); } break;
-			case 4: { internal_write_4_le_aligned(ptr, 0, masked_val, bit_count); } break;
-			case 5: { internal_write_5_le_aligned(ptr, 0, masked_val, bit_count); } break;
-			case 6: { internal_write_6_le_aligned(ptr, 0, masked_val, bit_count); } break;
-			case 7: { internal_write_7_le_aligned(ptr, 0, masked_val, bit_count); } break;
-			case 8: { internal_write_8_le_aligned(ptr, 0, masked_val, bit_count); } break;
+			case 1: { internal_write_1_aligned(ptr, masked_val, bit_count); } break;
+			case 2: { internal_write_2_le_aligned(ptr, masked_val, bit_count); } break;
+			case 3: { internal_write_3_le_aligned(ptr, masked_val, bit_count); } break;
+			case 4: { internal_write_4_le_aligned(ptr, masked_val, bit_count); } break;
+			case 5: { internal_write_5_le_aligned(ptr, masked_val, bit_count); } break;
+			case 6: { internal_write_6_le_aligned(ptr, masked_val, bit_count); } break;
+			case 7: { internal_write_7_le_aligned(ptr, masked_val, bit_count); } break;
+			case 8: { internal_write_8_le_aligned(ptr, masked_val, bit_count); } break;
 		}
 	}
 	ss->bit_index += bit_count;
@@ -1391,7 +1198,6 @@ u64 ss_ReadU64LePartial(struct ss *ss, const u64 bit_count)
 	const u64 byte_upper_mask_size = ss->bit_index & 0x7;
 	const u8 byte_lower_mask = 0xff >> byte_upper_mask_size;
 	const u32 byte_lower_mask_size = 8 - byte_upper_mask_size;
-	const u32 bytes_touched = (byte_upper_mask_size + bit_count + 7) >> 3;
 
 	u64 val;
 	if (byte_upper_mask_size)
@@ -1415,14 +1221,14 @@ u64 ss_ReadU64LePartial(struct ss *ss, const u64 bit_count)
 		const u32 bytes_touched = (bit_count + 7) >> 3;
 		switch (bytes_touched)
 		{
-			case 1: { val = internal_read_1_aligned(ptr, 0, 0, bit_count); } break;
-			case 2: { val = internal_read_2_le_aligned(ptr, 0, 0, bit_count); } break;
-			case 3: { val = internal_read_3_le_aligned(ptr, 0, 0, bit_count); } break;
-			case 4: { val = internal_read_4_le_aligned(ptr, 0, 0, bit_count); } break;
-			case 5: { val = internal_read_5_le_aligned(ptr, 0, 0, bit_count); } break;
-			case 6: { val = internal_read_6_le_aligned(ptr, 0, 0, bit_count); } break;
-			case 7: { val = internal_read_7_le_aligned(ptr, 0, 0, bit_count); } break;
-			case 8: { val = internal_read_8_le_aligned(ptr, 0, 0, bit_count); } break;
+			case 1: { val = internal_read_1_aligned(ptr, bit_count); } break;
+			case 2: { val = internal_read_2_le_aligned(ptr, bit_count); } break;
+			case 3: { val = internal_read_3_le_aligned(ptr, bit_count); } break;
+			case 4: { val = internal_read_4_le_aligned(ptr, bit_count); } break;
+			case 5: { val = internal_read_5_le_aligned(ptr, bit_count); } break;
+			case 6: { val = internal_read_6_le_aligned(ptr, bit_count); } break;
+			case 7: { val = internal_read_7_le_aligned(ptr, bit_count); } break;
+			case 8: { val = internal_read_8_le_aligned(ptr, bit_count); } break;
 		}
 	}
 
@@ -1431,20 +1237,20 @@ u64 ss_ReadU64LePartial(struct ss *ss, const u64 bit_count)
 	return val;
 }
 
-static u64 internal_read_2_be_aligned(const u8 *ptr, const u8 garbage_1, const u32 garbage_2, const u64 bit_count)
+static u64 internal_read_2_be_aligned(const u8 *ptr, const u64 bit_count)
 {
 	return ((u64) ptr[0] << (bit_count-8))
 		| ((u64) ptr[1] >> (16-bit_count));
 }
 
-static u64 internal_read_3_be_aligned(const u8 *ptr, const u8 garbage_1, const u32 garbage_2, const u64 bit_count)
+static u64 internal_read_3_be_aligned(const u8 *ptr, const u64 bit_count)
 {
 	return ((u64) ptr[0] << (bit_count-8))
 		| ((u64) ptr[1] << (bit_count-16))
 		| ((u64) ptr[2] >> (24-bit_count));
 }
 
-static u64 internal_read_4_be_aligned(const u8 *ptr, const u8 garbage_1, const u32 garbage_2, const u64 bit_count)
+static u64 internal_read_4_be_aligned(const u8 *ptr, const u64 bit_count)
 {
 	return ((u64) ptr[0] << (bit_count-8))
 		| ((u64) ptr[1] << (bit_count-16))
@@ -1452,7 +1258,7 @@ static u64 internal_read_4_be_aligned(const u8 *ptr, const u8 garbage_1, const u
 		| ((u64) ptr[3] >> (32-bit_count));
 }
 
-static u64 internal_read_5_be_aligned(const u8 *ptr, const u8 garbage_1, const u32 garbage_2, const u64 bit_count)
+static u64 internal_read_5_be_aligned(const u8 *ptr, const u64 bit_count)
 {
 	return ((u64) ptr[0] << (bit_count-8))
 		| ((u64) ptr[1] << (bit_count-16))
@@ -1461,7 +1267,7 @@ static u64 internal_read_5_be_aligned(const u8 *ptr, const u8 garbage_1, const u
 		| ((u64) ptr[4] >> (40-bit_count));
 }
 
-static u64 internal_read_6_be_aligned(const u8 *ptr, const u8 garbage_1, const u32 garbage_2, const u64 bit_count)
+static u64 internal_read_6_be_aligned(const u8 *ptr, const u64 bit_count)
 {
 	return ((u64) ptr[0] << (bit_count-8))
 		| ((u64) ptr[1] << (bit_count-16))
@@ -1471,7 +1277,7 @@ static u64 internal_read_6_be_aligned(const u8 *ptr, const u8 garbage_1, const u
 		| ((u64) ptr[5] >> (48-bit_count));
 }
 
-static u64 internal_read_7_be_aligned(const u8 *ptr, const u8 garbage_1, const u32 garbage_2, const u64 bit_count)
+static u64 internal_read_7_be_aligned(const u8 *ptr, const u64 bit_count)
 {
 	return ((u64) ptr[0] << (bit_count-8))
 		| ((u64) ptr[1] << (bit_count-16))
@@ -1482,7 +1288,7 @@ static u64 internal_read_7_be_aligned(const u8 *ptr, const u8 garbage_1, const u
 		| ((u64) ptr[6] >> (56-bit_count));
 }
 
-static u64 internal_read_8_be_aligned(const u8 *ptr, const u8 garbage_1, const u32 garbage_2, const u64 bit_count)
+static u64 internal_read_8_be_aligned(const u8 *ptr, const u64 bit_count)
 {
 	return ((u64) ptr[0] << (bit_count-8))
 		| ((u64) ptr[1] << (bit_count-16))
@@ -1494,20 +1300,20 @@ static u64 internal_read_8_be_aligned(const u8 *ptr, const u8 garbage_1, const u
 		| ((u64) ptr[7] >> (64-bit_count));
 }
 
-static void internal_write_2_be_aligned(u8 *ptr, const u32 garbage_1, const u64 bits, const u64 bit_count)
+static void internal_write_2_be_aligned(u8 *ptr, const u64 bits, const u64 bit_count)
 {
 	ptr[0] = (u8) (bits >> (bit_count - 8));
 	ptr[1] = (u8) (bits << (16 - bit_count));
 }
 
-static void internal_write_3_be_aligned(u8 *ptr, const u32 garbage_1, const u64 bits, const u64 bit_count)
+static void internal_write_3_be_aligned(u8 *ptr, const u64 bits, const u64 bit_count)
 {
 	ptr[0] = (u8) (bits >> (bit_count - 8));
 	ptr[1] = (u8) (bits >> (bit_count - 16));
 	ptr[2] = (u8) (bits << (24 - bit_count));
 }
 
-static void internal_write_4_be_aligned(u8 *ptr, const u32 garbage_1, const u64 bits, const u64 bit_count) 
+static void internal_write_4_be_aligned(u8 *ptr, const u64 bits, const u64 bit_count) 
 { 
 	ptr[0] = (u8) (bits >> (bit_count - 8));
 	ptr[1] = (u8) (bits >> (bit_count - 16));
@@ -1515,7 +1321,7 @@ static void internal_write_4_be_aligned(u8 *ptr, const u32 garbage_1, const u64 
 	ptr[3] = (u8) (bits << (32 - bit_count));
 }
 
-static void internal_write_5_be_aligned(u8 *ptr, const u32 garbage_1, const u64 bits, const u64 bit_count) 
+static void internal_write_5_be_aligned(u8 *ptr, const u64 bits, const u64 bit_count) 
 { 
 	ptr[0] = (u8) (bits >> (bit_count - 8));
 	ptr[1] = (u8) (bits >> (bit_count - 16));
@@ -1524,7 +1330,7 @@ static void internal_write_5_be_aligned(u8 *ptr, const u32 garbage_1, const u64 
 	ptr[4] = (u8) (bits << (40 - bit_count));
 }
 
-static void internal_write_6_be_aligned(u8 *ptr, const u32 garbage_1, const u64 bits, const u64 bit_count) 
+static void internal_write_6_be_aligned(u8 *ptr, const u64 bits, const u64 bit_count) 
 { 
 	ptr[0] = (u8) (bits >> (bit_count - 8));
 	ptr[1] = (u8) (bits >> (bit_count - 16));
@@ -1534,7 +1340,7 @@ static void internal_write_6_be_aligned(u8 *ptr, const u32 garbage_1, const u64 
 	ptr[5] = (u8) (bits << (48 - bit_count));
 }
 
-static void internal_write_7_be_aligned(u8 *ptr, const u32 garbage_1, const u64 bits, const u64 bit_count) 
+static void internal_write_7_be_aligned(u8 *ptr, const u64 bits, const u64 bit_count) 
 { 
 	ptr[0] = (u8) (bits >> (bit_count - 8));
 	ptr[1] = (u8) (bits >> (bit_count - 16));
@@ -1545,7 +1351,7 @@ static void internal_write_7_be_aligned(u8 *ptr, const u32 garbage_1, const u64 
 	ptr[6] = (u8) (bits << (56 - bit_count));
 }
 
-static void internal_write_8_be_aligned(u8 *ptr, const u32 garbage_1, const u64 bits, const u64 bit_count) 
+static void internal_write_8_be_aligned(u8 *ptr, const u64 bits, const u64 bit_count) 
 {
 	ptr[0] = (u8) (bits >> (bit_count - 8));
 	ptr[1] = (u8) (bits >> (bit_count - 16));
@@ -1734,25 +1540,6 @@ u64 ss_ReadU64BePartial(struct ss *ss, const u64 bit_count)
 	const u64 byte_upper_mask_size = ss->bit_index & 0x7;
 	const u8 byte_lower_mask = 0xff >> byte_upper_mask_size;
 	const u32 byte_lower_mask_size = 8 - byte_upper_mask_size;
-	const u32 bytes_touched = (byte_upper_mask_size + bit_count + 7) >> 3;
-
-	//fprintf(stderr, "byte lower mask size: %u\n", byte_lower_mask_size % 8);
-	//fprintf(stderr, " ");
-	//for (u32 i = 0; i < byte_upper_mask_size; ++i)
-	//{
-	//	fprintf(stderr, " ");
-	//}
-	//fprintf(stderr, "V\n");
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] " , (ptr[0] >> 7) & 0x1, (ptr[0] >> 6) & 0x1, (ptr[0] >> 5) & 0x1, (ptr[0] >> 4) & 0x1, (ptr[0] >> 3) & 0x1, (ptr[0] >> 2) & 0x1, (ptr[0] >> 1) & 0x1, (ptr[0] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] " , (ptr[1] >> 7) & 0x1, (ptr[1] >> 6) & 0x1, (ptr[1] >> 5) & 0x1, (ptr[1] >> 4) & 0x1, (ptr[1] >> 3) & 0x1, (ptr[1] >> 2) & 0x1, (ptr[1] >> 1) & 0x1, (ptr[1] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[2] >> 7) & 0x1, (ptr[2] >> 6) & 0x1, (ptr[2] >> 5) & 0x1, (ptr[2] >> 4) & 0x1, (ptr[2] >> 3) & 0x1, (ptr[2] >> 2) & 0x1, (ptr[2] >> 1) & 0x1, (ptr[2] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[3] >> 7) & 0x1, (ptr[3] >> 6) & 0x1, (ptr[3] >> 5) & 0x1, (ptr[3] >> 4) & 0x1, (ptr[3] >> 3) & 0x1, (ptr[3] >> 2) & 0x1, (ptr[3] >> 1) & 0x1, (ptr[3] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[4] >> 7) & 0x1, (ptr[4] >> 6) & 0x1, (ptr[4] >> 5) & 0x1, (ptr[4] >> 4) & 0x1, (ptr[4] >> 3) & 0x1, (ptr[4] >> 2) & 0x1, (ptr[4] >> 1) & 0x1, (ptr[4] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[5] >> 7) & 0x1, (ptr[5] >> 6) & 0x1, (ptr[5] >> 5) & 0x1, (ptr[5] >> 4) & 0x1, (ptr[5] >> 3) & 0x1, (ptr[5] >> 2) & 0x1, (ptr[5] >> 1) & 0x1, (ptr[5] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[6] >> 7) & 0x1, (ptr[6] >> 6) & 0x1, (ptr[6] >> 5) & 0x1, (ptr[6] >> 4) & 0x1, (ptr[6] >> 3) & 0x1, (ptr[6] >> 2) & 0x1, (ptr[6] >> 1) & 0x1, (ptr[6] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[7] >> 7) & 0x1, (ptr[7] >> 6) & 0x1, (ptr[7] >> 5) & 0x1, (ptr[7] >> 4) & 0x1, (ptr[7] >> 3) & 0x1, (ptr[7] >> 2) & 0x1, (ptr[7] >> 1) & 0x1, (ptr[7] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u]\n\n", (ptr[8] >> 7) & 0x1, (ptr[8] >> 6) & 0x1, (ptr[8] >> 5) & 0x1, (ptr[8] >> 4) & 0x1, (ptr[8] >> 3) & 0x1, (ptr[8] >> 2) & 0x1, (ptr[8] >> 1) & 0x1, (ptr[8] >> 0) & 0x1);
-
 
 	u64 val;
 	if (byte_upper_mask_size)
@@ -1776,49 +1563,16 @@ u64 ss_ReadU64BePartial(struct ss *ss, const u64 bit_count)
 		const u32 bytes_touched = (bit_count + 7) >> 3;
 		switch (bytes_touched)
 		{
-			case 1: { val = internal_read_1_aligned(ptr, 0, 0, bit_count); } break;
-			case 2: { val = internal_read_2_be_aligned(ptr, 0, 0, bit_count); } break;
-			case 3: { val = internal_read_3_be_aligned(ptr, 0, 0, bit_count); } break;
-			case 4: { val = internal_read_4_be_aligned(ptr, 0, 0, bit_count); } break;
-			case 5: { val = internal_read_5_be_aligned(ptr, 0, 0, bit_count); } break;
-			case 6: { val = internal_read_6_be_aligned(ptr, 0, 0, bit_count); } break;
-			case 7: { val = internal_read_7_be_aligned(ptr, 0, 0, bit_count); } break;
-			case 8: { val = internal_read_8_be_aligned(ptr, 0, 0, bit_count); } break;
+			case 1: { val = internal_read_1_aligned(ptr, bit_count); } break;
+			case 2: { val = internal_read_2_be_aligned(ptr, bit_count); } break;
+			case 3: { val = internal_read_3_be_aligned(ptr, bit_count); } break;
+			case 4: { val = internal_read_4_be_aligned(ptr, bit_count); } break;
+			case 5: { val = internal_read_5_be_aligned(ptr, bit_count); } break;
+			case 6: { val = internal_read_6_be_aligned(ptr, bit_count); } break;
+			case 7: { val = internal_read_7_be_aligned(ptr, bit_count); } break;
+			case 8: { val = internal_read_8_be_aligned(ptr, bit_count); } break;
 		}
 	}
-
-	//fprintf(stderr, " ");
-	//for (u32 i = 0; i < byte_upper_mask_size; ++i)
-	//{
-	//	fprintf(stderr, " ");
-	//}
-	//for (u32 i = 0; i < bit_count; ++i)
-	//{
-	//	fprintf(stderr, " ");
-	//}
-	//for (u32 i = 1; i < bytes_touched; ++i)
-	//{
-	//	fprintf(stderr, "   ");
-	//}
-        //
-	//fprintf(stderr, "V\n");
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] " , (ptr[0] >> 7) & 0x1, (ptr[0] >> 6) & 0x1, (ptr[0] >> 5) & 0x1, (ptr[0] >> 4) & 0x1, (ptr[0] >> 3) & 0x1, (ptr[0] >> 2) & 0x1, (ptr[0] >> 1) & 0x1, (ptr[0] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] " , (ptr[1] >> 7) & 0x1, (ptr[1] >> 6) & 0x1, (ptr[1] >> 5) & 0x1, (ptr[1] >> 4) & 0x1, (ptr[1] >> 3) & 0x1, (ptr[1] >> 2) & 0x1, (ptr[1] >> 1) & 0x1, (ptr[1] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[2] >> 7) & 0x1, (ptr[2] >> 6) & 0x1, (ptr[2] >> 5) & 0x1, (ptr[2] >> 4) & 0x1, (ptr[2] >> 3) & 0x1, (ptr[2] >> 2) & 0x1, (ptr[2] >> 1) & 0x1, (ptr[2] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[3] >> 7) & 0x1, (ptr[3] >> 6) & 0x1, (ptr[3] >> 5) & 0x1, (ptr[3] >> 4) & 0x1, (ptr[3] >> 3) & 0x1, (ptr[3] >> 2) & 0x1, (ptr[3] >> 1) & 0x1, (ptr[3] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[4] >> 7) & 0x1, (ptr[4] >> 6) & 0x1, (ptr[4] >> 5) & 0x1, (ptr[4] >> 4) & 0x1, (ptr[4] >> 3) & 0x1, (ptr[4] >> 2) & 0x1, (ptr[4] >> 1) & 0x1, (ptr[4] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[5] >> 7) & 0x1, (ptr[5] >> 6) & 0x1, (ptr[5] >> 5) & 0x1, (ptr[5] >> 4) & 0x1, (ptr[5] >> 3) & 0x1, (ptr[5] >> 2) & 0x1, (ptr[5] >> 1) & 0x1, (ptr[5] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[6] >> 7) & 0x1, (ptr[6] >> 6) & 0x1, (ptr[6] >> 5) & 0x1, (ptr[6] >> 4) & 0x1, (ptr[6] >> 3) & 0x1, (ptr[6] >> 2) & 0x1, (ptr[6] >> 1) & 0x1, (ptr[6] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[7] >> 7) & 0x1, (ptr[7] >> 6) & 0x1, (ptr[7] >> 5) & 0x1, (ptr[7] >> 4) & 0x1, (ptr[7] >> 3) & 0x1, (ptr[7] >> 2) & 0x1, (ptr[7] >> 1) & 0x1, (ptr[7] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u]\n\n", (ptr[8] >> 7) & 0x1, (ptr[8] >> 6) & 0x1, (ptr[8] >> 5) & 0x1, (ptr[8] >> 4) & 0x1, (ptr[8] >> 3) & 0x1, (ptr[8] >> 2) & 0x1, (ptr[8] >> 1) & 0x1, (ptr[8] >> 0) & 0x1);
-
-	//fprintf(stderr, "reading bits[%lu]: ", bit_count);
-	//for (u32 i = 0; i < bit_count; ++i)
-	//{
-	//	fprintf(stderr, "%lu", (val >> (bit_count-1-i)) & 0x1);
-	//}
-	//fprintf(stderr, "\n\n");
-
 
 	ds_AssertString( ((~(U64_MAX >> (64 - bit_count))) & val) == 0, "Expect upper unused bits to be 0 in value to serialize");
 	ss->bit_index += bit_count;
@@ -1836,31 +1590,6 @@ void ss_WriteU64BePartial(struct ss *ss, const u64 val, const u64 bit_count)
 	u8 *ptr = ss->buf + (ss->bit_index >> 3);
 	const u32 byte_upper_mask_size = ss->bit_index & 0x7;
 	const u32 byte_lower_mask_size = 8 - byte_upper_mask_size;
-
-	//fprintf(stderr, "writing bits[%lu]: ", bit_count);
-	//for (u32 i = 0; i < bit_count; ++i)
-	//{
-	//	fprintf(stderr, "%lu", (masked_val >> (bit_count-1-i)) & 0x1);
-	//}
-	//fprintf(stderr, "\n");
-
-	//fprintf(stderr, "byte lower mask size: %u\n", byte_lower_mask_size % 8);
-	//fprintf(stderr, " ");
-	//for (u32 i = 0; i < byte_upper_mask_size; ++i)
-	//{
-	//	fprintf(stderr, " ");
-	//}
-	//fprintf(stderr, "V\n");
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] " , (ptr[0] >> 7) & 0x1, (ptr[0] >> 6) & 0x1, (ptr[0] >> 5) & 0x1, (ptr[0] >> 4) & 0x1, (ptr[0] >> 3) & 0x1, (ptr[0] >> 2) & 0x1, (ptr[0] >> 1) & 0x1, (ptr[0] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] " , (ptr[1] >> 7) & 0x1, (ptr[1] >> 6) & 0x1, (ptr[1] >> 5) & 0x1, (ptr[1] >> 4) & 0x1, (ptr[1] >> 3) & 0x1, (ptr[1] >> 2) & 0x1, (ptr[1] >> 1) & 0x1, (ptr[1] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[2] >> 7) & 0x1, (ptr[2] >> 6) & 0x1, (ptr[2] >> 5) & 0x1, (ptr[2] >> 4) & 0x1, (ptr[2] >> 3) & 0x1, (ptr[2] >> 2) & 0x1, (ptr[2] >> 1) & 0x1, (ptr[2] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[3] >> 7) & 0x1, (ptr[3] >> 6) & 0x1, (ptr[3] >> 5) & 0x1, (ptr[3] >> 4) & 0x1, (ptr[3] >> 3) & 0x1, (ptr[3] >> 2) & 0x1, (ptr[3] >> 1) & 0x1, (ptr[3] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[4] >> 7) & 0x1, (ptr[4] >> 6) & 0x1, (ptr[4] >> 5) & 0x1, (ptr[4] >> 4) & 0x1, (ptr[4] >> 3) & 0x1, (ptr[4] >> 2) & 0x1, (ptr[4] >> 1) & 0x1, (ptr[4] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[5] >> 7) & 0x1, (ptr[5] >> 6) & 0x1, (ptr[5] >> 5) & 0x1, (ptr[5] >> 4) & 0x1, (ptr[5] >> 3) & 0x1, (ptr[5] >> 2) & 0x1, (ptr[5] >> 1) & 0x1, (ptr[5] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[6] >> 7) & 0x1, (ptr[6] >> 6) & 0x1, (ptr[6] >> 5) & 0x1, (ptr[6] >> 4) & 0x1, (ptr[6] >> 3) & 0x1, (ptr[6] >> 2) & 0x1, (ptr[6] >> 1) & 0x1, (ptr[6] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[7] >> 7) & 0x1, (ptr[7] >> 6) & 0x1, (ptr[7] >> 5) & 0x1, (ptr[7] >> 4) & 0x1, (ptr[7] >> 3) & 0x1, (ptr[7] >> 2) & 0x1, (ptr[7] >> 1) & 0x1, (ptr[7] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u]\n\n", (ptr[8] >> 7) & 0x1, (ptr[8] >> 6) & 0x1, (ptr[8] >> 5) & 0x1, (ptr[8] >> 4) & 0x1, (ptr[8] >> 3) & 0x1, (ptr[8] >> 2) & 0x1, (ptr[8] >> 1) & 0x1, (ptr[8] >> 0) & 0x1);
-	
 
 	if (byte_upper_mask_size)
 	{
@@ -1883,44 +1612,17 @@ void ss_WriteU64BePartial(struct ss *ss, const u64 val, const u64 bit_count)
 		const u32 bytes_touched = (bit_count + 7) >> 3;
 		switch (bytes_touched)
 		{
-			case 1: { internal_write_1_aligned(ptr, 0, masked_val, bit_count); } break;
-			case 2: { internal_write_2_be_aligned(ptr, 0, masked_val, bit_count); } break;
-			case 3: { internal_write_3_be_aligned(ptr, 0, masked_val, bit_count); } break;
-			case 4: { internal_write_4_be_aligned(ptr, 0, masked_val, bit_count); } break;
-			case 5: { internal_write_5_be_aligned(ptr, 0, masked_val, bit_count); } break;
-			case 6: { internal_write_6_be_aligned(ptr, 0, masked_val, bit_count); } break;
-			case 7: { internal_write_7_be_aligned(ptr, 0, masked_val, bit_count); } break;
-			case 8: { internal_write_8_be_aligned(ptr, 0, masked_val, bit_count); } break;
+			case 1: { internal_write_1_aligned(ptr, masked_val, bit_count); } break;
+			case 2: { internal_write_2_be_aligned(ptr, masked_val, bit_count); } break;
+			case 3: { internal_write_3_be_aligned(ptr, masked_val, bit_count); } break;
+			case 4: { internal_write_4_be_aligned(ptr, masked_val, bit_count); } break;
+			case 5: { internal_write_5_be_aligned(ptr, masked_val, bit_count); } break;
+			case 6: { internal_write_6_be_aligned(ptr, masked_val, bit_count); } break;
+			case 7: { internal_write_7_be_aligned(ptr, masked_val, bit_count); } break;
+			case 8: { internal_write_8_be_aligned(ptr, masked_val, bit_count); } break;
 		}
 	}
 	ss->bit_index += bit_count;
-
-	//const u32 bytes_touched = (byte_upper_mask_size)
-	//	? (byte_upper_mask_size + bit_count + 7) >> 3
-	//	: (bit_count + 7) >> 3;
-	//fprintf(stderr, " ");
-	//for (u32 i = 0; i < byte_upper_mask_size; ++i)
-	//{
-	//	fprintf(stderr, " ");
-	//}
-	//for (u32 i = 0; i < bit_count; ++i)
-	//{
-	//	fprintf(stderr, " ");
-	//}
-	//for (u32 i = 1; i < bytes_touched; ++i)
-	//{
-	//	fprintf(stderr, "   ");
-	//}
-	//fprintf(stderr, "V\n");
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] " , (ptr[0] >> 7) & 0x1, (ptr[0] >> 6) & 0x1, (ptr[0] >> 5) & 0x1, (ptr[0] >> 4) & 0x1, (ptr[0] >> 3) & 0x1, (ptr[0] >> 2) & 0x1, (ptr[0] >> 1) & 0x1, (ptr[0] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] " , (ptr[1] >> 7) & 0x1, (ptr[1] >> 6) & 0x1, (ptr[1] >> 5) & 0x1, (ptr[1] >> 4) & 0x1, (ptr[1] >> 3) & 0x1, (ptr[1] >> 2) & 0x1, (ptr[1] >> 1) & 0x1, (ptr[1] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[2] >> 7) & 0x1, (ptr[2] >> 6) & 0x1, (ptr[2] >> 5) & 0x1, (ptr[2] >> 4) & 0x1, (ptr[2] >> 3) & 0x1, (ptr[2] >> 2) & 0x1, (ptr[2] >> 1) & 0x1, (ptr[2] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[3] >> 7) & 0x1, (ptr[3] >> 6) & 0x1, (ptr[3] >> 5) & 0x1, (ptr[3] >> 4) & 0x1, (ptr[3] >> 3) & 0x1, (ptr[3] >> 2) & 0x1, (ptr[3] >> 1) & 0x1, (ptr[3] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[4] >> 7) & 0x1, (ptr[4] >> 6) & 0x1, (ptr[4] >> 5) & 0x1, (ptr[4] >> 4) & 0x1, (ptr[4] >> 3) & 0x1, (ptr[4] >> 2) & 0x1, (ptr[4] >> 1) & 0x1, (ptr[4] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[5] >> 7) & 0x1, (ptr[5] >> 6) & 0x1, (ptr[5] >> 5) & 0x1, (ptr[5] >> 4) & 0x1, (ptr[5] >> 3) & 0x1, (ptr[5] >> 2) & 0x1, (ptr[5] >> 1) & 0x1, (ptr[5] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[6] >> 7) & 0x1, (ptr[6] >> 6) & 0x1, (ptr[6] >> 5) & 0x1, (ptr[6] >> 4) & 0x1, (ptr[6] >> 3) & 0x1, (ptr[6] >> 2) & 0x1, (ptr[6] >> 1) & 0x1, (ptr[6] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u] ", (ptr[7] >> 7) & 0x1, (ptr[7] >> 6) & 0x1, (ptr[7] >> 5) & 0x1, (ptr[7] >> 4) & 0x1, (ptr[7] >> 3) & 0x1, (ptr[7] >> 2) & 0x1, (ptr[7] >> 1) & 0x1, (ptr[7] >> 0) & 0x1);
-	//fprintf(stderr, "[%u%u%u%u%u%u%u%u]\n\n", (ptr[8] >> 7) & 0x1, (ptr[8] >> 6) & 0x1, (ptr[8] >> 5) & 0x1, (ptr[8] >> 4) & 0x1, (ptr[8] >> 3) & 0x1, (ptr[8] >> 2) & 0x1, (ptr[8] >> 1) & 0x1, (ptr[8] >> 0) & 0x1);
 }
 
 void ss_WriteI64LePartial(struct ss *ss, const i64 val, const u64 bit_count)
