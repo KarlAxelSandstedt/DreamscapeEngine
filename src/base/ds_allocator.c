@@ -255,7 +255,7 @@ u32 ds_CPoolTryDeserializeInternal(struct arena *mem, struct ss *ss, void **buf,
 	}
 
 	UnpoisonAddress(*buf, serialized_count*slot_size);
-	ss_Read8N((b8 *) *buf, ss, serialized_count*slot_size);
+	ss_Read8N(ss, (b8 *) *buf, serialized_count*slot_size);
 	*count = serialized_count;
 	return 1;
 }
@@ -539,7 +539,7 @@ u32 ds_PoolTryDeserializeInternal(struct arena *mem, struct ss *ss, u32 *heap_al
 		}
 
 		UnpoisonAddress(slot, slot_size);
-		ss_Read8N((b8 *) slot, ss, slot_size);
+		ss_Read8N(ss, (b8 *) slot, slot_size);
 		*(u32 *) (slot + pool_slot_offset) = 0;
 	}
 

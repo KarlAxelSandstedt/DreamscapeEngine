@@ -138,7 +138,7 @@ u32 ds_BitSetTryDeserialize(struct arena *mem, struct ss *ss, struct ds_BitSet *
 		return 0;
 	}
 
-	ss_ReadU64LeN(set->bits, ss, block_count);
+	ss_ReadU64LeN(ss, set->bits, block_count);
 
 	return 1;
 }

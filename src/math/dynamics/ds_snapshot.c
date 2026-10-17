@@ -77,7 +77,7 @@ u32 ds_DynamicsFrameDataTryDeserialize(struct ss *ss, void **dst, struct ds_Dyna
 		return 0;
 	}
 
-	ss_Read8N((b8 *) *dst, ss, size);
+	ss_Read8N(ss, (b8 *) *dst, size);
 	return 1;
 }
 
@@ -100,7 +100,7 @@ u32 ds_DynamicsHeapDataTryDeserialize(struct arena *mem, struct ss *ss, void **d
 		return 0;
 	}
 
-	ss_Read8N((b8 *) *dst, ss, size);
+	ss_Read8N(ss, (b8 *) *dst, size);
 	return 1;
 }
 
@@ -229,10 +229,10 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynami
 
 	ds_DynamicsAllocShell(mem, pipeline, ns_tick, frame_memory, cshape_db, worker_count, worker_frame_size);
 	pipeline->frames_completed = ss_ReadU64Le(ss);
-	ss_Read8N((b8 *) &pipeline->numerics_config, ss, sizeof(pipeline->numerics_config));
-	ss_Read8N((b8 *) &pipeline->gravity, ss, sizeof(pipeline->gravity));
+	ss_Read8N(ss, (b8 *) &pipeline->numerics_config, sizeof(pipeline->numerics_config));
+	ss_Read8N(ss, (b8 *) &pipeline->gravity, sizeof(pipeline->gravity));
 	pipeline->margin_on = ss_ReadU32Le(ss);
-	ss_Read8N((b8 *) &pipeline->margin, ss, sizeof(pipeline->margin));
+	ss_Read8N(ss, (b8 *) &pipeline->margin, sizeof(pipeline->margin));
 	pipeline->island_to_split = ss_ReadU64Le(ss);
 
 	/* frame data goes into the buffer the next tick reads (and does not flush) */

@@ -124,13 +124,13 @@ void 	ss_Write64Be(struct ss *ss, const b64 val);
  * read aligned byte(s): read len values into buf[0..len-1] as ss_Read8/16/32/64{Le,Be} would one by one.
  * bit_index % 8 == 0 and all len values fit in the stream (both asserted).
  */
-void	ss_Read8N(b8 *buf, struct ss *ss, const u64 len);
-void 	ss_Read16LeN(b16 *buf, struct ss *ss, const u64 len);
-void 	ss_Read16BeN(b16 *buf, struct ss *ss, const u64 len);
-void 	ss_Read32LeN(b32 *buf, struct ss *ss, const u64 len);
-void 	ss_Read32BeN(b32 *buf, struct ss *ss, const u64 len);
-void 	ss_Read64LeN(b64 *buf, struct ss *ss, const u64 len);
-void	ss_Read64BeN(b64 *buf, struct ss *ss, const u64 len);
+void	ss_Read8N(struct ss *ss, b8 *buf, const u64 len);
+void 	ss_Read16LeN(struct ss *ss, b16 *buf, const u64 len);
+void 	ss_Read16BeN(struct ss *ss, b16 *buf, const u64 len);
+void 	ss_Read32LeN(struct ss *ss, b32 *buf, const u64 len);
+void 	ss_Read32BeN(struct ss *ss, b32 *buf, const u64 len);
+void 	ss_Read64LeN(struct ss *ss, b64 *buf, const u64 len);
+void	ss_Read64BeN(struct ss *ss, b64 *buf, const u64 len);
 
 /*
  * write aligned byte(s): write buf[0..len-1] as ss_Write8/16/32/64{Le,Be} would one by one.
@@ -144,10 +144,10 @@ void 	ss_Write32BeN(struct ss *ss, const b32 *buf, const u64 len);
 void 	ss_Write64LeN(struct ss *ss, const b64 *buf, const u64 len);
 void 	ss_Write64BeN(struct ss *ss, const b64 *buf, const u64 len);
 
-/* read len u/i/f values into buf (cast to the bN array; I8: ss_ReadI8Array) */
-//#define ss_Read{U,I}8N(buf, ss, len)
-//#define ss_Read{U,I,F}{16,32,64}{Le,Be}N(buf, ss, len)
-/* write len u/i/f values from buf (U8: ss_WritUe8N; I8: ss_WriteI8Array) */
+/* read len u/i/f values into buf (cast to the bN array) */
+//#define ss_Read{U,I}8N(ss, buf, len)
+//#define ss_Read{U,I,F}{16,32,64}{Le,Be}N(ss, buf, len)
+/* write len u/i/f values from buf */
 //#define ss_Write{U,I}8N(ss, buf, len)
 //#define ss_Write{U,I,F}{16,32,64}{Le,Be}N(ss, buf, len)
 
@@ -226,43 +226,43 @@ i64 	ss_ReadI64BePartial(struct ss *ss, const u64 bit_count);
 #define ss_ReadF64Be(ss)        ss_Read64Be(ss).f
 #define ss_WriteF64Be(ss, val)  ss_Write64Be(ss, (b64) { .f = val })
 
-#define ss_ReadU8N(buf, ss, len)		ss_Read8N((b8 *) (buf), ss, len)
-#define ss_WritUe8N(ss, buf, len)		ss_Write8N(ss, (b8 *) (buf), len)
-#define ss_ReadU16LeN(buf, ss, len) 		ss_Read16LeN((b16 *) (buf), ss, len)
+#define ss_ReadU8N(ss, buf, len)		ss_Read8N(ss, (b8 *) (buf), len)
+#define ss_WriteU8N(ss, buf, len)		ss_Write8N(ss, (b8 *) (buf), len)
+#define ss_ReadU16LeN(ss, buf, len) 		ss_Read16LeN(ss, (b16 *) (buf), len)
 #define ss_WriteU16LeN(ss, buf, len) 		ss_Write16LeN(ss, (b16 *) (buf), len)
-#define ss_ReadU16BeN(buf, ss, len) 		ss_Read16BeN((b16 *) (buf), ss, len)
+#define ss_ReadU16BeN(ss, buf, len) 		ss_Read16BeN(ss, (b16 *) (buf), len)
 #define ss_WriteU16BeN(ss, buf, len) 		ss_Write16BeN(ss, (b16 *) (buf), len)
-#define ss_ReadU32LeN(buf, ss, len) 		ss_Read32LeN((b32 *) (buf), ss, len)
+#define ss_ReadU32LeN(ss, buf, len) 		ss_Read32LeN(ss, (b32 *) (buf), len)
 #define ss_WriteU32LeN(ss, buf, len) 		ss_Write32LeN(ss, (b32 *) (buf), len)
-#define ss_ReadU32BeN(buf, ss, len) 		ss_Read32BeN((b32 *) (buf), ss, len)
+#define ss_ReadU32BeN(ss, buf, len) 		ss_Read32BeN(ss, (b32 *) (buf), len)
 #define ss_WriteU32BeN(ss, buf, len) 		ss_Write32BeN(ss, (b32 *) (buf), len)
-#define ss_ReadU64LeN(buf, ss, len) 		ss_Read64LeN((b64 *) (buf), ss, len)
+#define ss_ReadU64LeN(ss, buf, len) 		ss_Read64LeN(ss, (b64 *) (buf), len)
 #define ss_WriteU64LeN(ss, buf, len) 		ss_Write64LeN(ss, (b64 *) (buf), len)
-#define ss_ReadU64BeN(buf, ss, len)		ss_Read64BeN((b64 *) (buf), ss, len)
+#define ss_ReadU64BeN(ss, buf, len)		ss_Read64BeN(ss, (b64 *) (buf), len)
 #define ss_WriteU64BeN(ss, buf, len) 		ss_Write64BeN(ss, (b64 *) (buf), len)
 
-#define ss_ReadI8Array(buf, ss, len)		ss_Read8N((b8 *) (buf), ss, len)
-#define ss_WriteI8Array(ss, buf, len)		ss_Write8N(ss, (b8 *) (buf), len)
-#define ss_ReadI16LeN(buf, ss, len) 		ss_Read16LeN((b16 *) (buf), ss, len)
+#define ss_ReadI8N(ss, buf, len)		ss_Read8N(ss, (b8 *) (buf), len)
+#define ss_WriteI8N(ss, buf, len)		ss_Write8N(ss, (b8 *) (buf), len)
+#define ss_ReadI16LeN(ss, buf, len) 		ss_Read16LeN(ss, (b16 *) (buf), len)
 #define ss_WriteI16LeN(ss, buf, len)		ss_Write16LeN(ss, (b16 *) (buf), len)
-#define ss_ReadI16BeN(buf, ss, len) 		ss_Read16BeN((b16 *) (buf), ss, len)
+#define ss_ReadI16BeN(ss, buf, len) 		ss_Read16BeN(ss, (b16 *) (buf), len)
 #define ss_WriteI16BeN(ss, buf, len)		ss_Write16BeN(ss, (b16 *) (buf), len)
-#define ss_ReadI32LeN(buf, ss, len) 		ss_Read32LeN((b32 *) (buf), ss, len)
+#define ss_ReadI32LeN(ss, buf, len) 		ss_Read32LeN(ss, (b32 *) (buf), len)
 #define ss_WriteI32LeN(ss, buf, len)		ss_Write32LeN(ss, (b32 *) (buf), len)
-#define ss_ReadI32BeN(buf, ss, len) 		ss_Read32BeN((b32 *) (buf), ss, len)
+#define ss_ReadI32BeN(ss, buf, len) 		ss_Read32BeN(ss, (b32 *) (buf), len)
 #define ss_WriteI32BeN(ss, buf, len)		ss_Write32BeN(ss, (b32 *) (buf), len)
-#define ss_ReadI64LeN(buf, ss, len) 		ss_Read64LeN((b64 *) (buf), ss, len)
+#define ss_ReadI64LeN(ss, buf, len) 		ss_Read64LeN(ss, (b64 *) (buf), len)
 #define ss_WriteI64LeN(ss, buf, len)		ss_Write64LeN(ss, (b64 *) (buf), len)
-#define ss_ReadI64BeN(buf, ss, len)		ss_Read64BeN((b64 *) (buf), ss, len)
+#define ss_ReadI64BeN(ss, buf, len)		ss_Read64BeN(ss, (b64 *) (buf), len)
 #define ss_WriteI64BeN(ss, buf, len)		ss_Write64BeN(ss, (b64 *) (buf), len)
 
-#define ss_ReadF32LeN(buf, ss, len) 		ss_Read32LeN((b32 *) (buf), ss, len)
+#define ss_ReadF32LeN(ss, buf, len) 		ss_Read32LeN(ss, (b32 *) (buf), len)
 #define ss_WriteF32LeN(ss, buf, len)		ss_Write32LeN(ss, (b32 *) (buf), len)
-#define ss_ReadF32BeN(buf, ss, len) 		ss_Read32BeN((b32 *) (buf), ss, len)
+#define ss_ReadF32BeN(ss, buf, len) 		ss_Read32BeN(ss, (b32 *) (buf), len)
 #define ss_WriteF32BeN(ss, buf, len)		ss_Write32BeN(ss, (b32 *) (buf), len)
-#define ss_ReadF64LeN(buf, ss, len) 		ss_Read64LeN((b64 *) (buf), ss, len)
+#define ss_ReadF64LeN(ss, buf, len) 		ss_Read64LeN(ss, (b64 *) (buf), len)
 #define ss_WriteF64LeN(ss, buf, len)		ss_Write64LeN(ss, (b64 *) (buf), len)
-#define ss_ReadF64BeN(buf, ss, len)		ss_Read64BeN((b64 *) (buf), ss, len)
+#define ss_ReadF64BeN(ss, buf, len)		ss_Read64BeN(ss, (b64 *) (buf), len)
 #define ss_WriteF64BeN(ss, buf, len)		ss_Write64BeN(ss, (b64 *) (buf), len)
 
 #define ss_WriteU32LePartial(ss, val, bit_count)	ss_WriteU64LePartial(ss, val, bit_count)

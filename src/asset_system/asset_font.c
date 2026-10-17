@@ -341,7 +341,7 @@ const struct font *FontDeserialize(struct assetFont *asset)
 	{
 		LogString(T_ASSET, S_ERROR, "Failed to deserialize font codepoint map");
 	}
-	ss_Read8N(font->pixmap, &ss, font->pixmap_height * font->pixmap_width);
+	ss_Read8N(&ss, font->pixmap, font->pixmap_height * font->pixmap_width);
 
 	FileMemoryUnmap(buf, size);
 	FileClose(&file);

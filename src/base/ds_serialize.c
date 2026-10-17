@@ -488,7 +488,7 @@ void ss_Write64Be(struct ss *ss, const b64 val)
 	*((b64 *) (ss->buf + offset)) = NaToBe64(val);
 }
 
-void ss_Read8N(b8 *buf, struct ss *ss, const u64 len)
+void ss_Read8N(struct ss *ss, b8 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 8*len) <= ss->bit_count);
@@ -516,7 +516,7 @@ void ss_Write8N(struct ss *ss, const b8 *buf, const u64 len)
 	}
 }
 
-void ss_Read16LeN(b16 *buf, struct ss *ss, const u64 len)
+void ss_Read16LeN(struct ss *ss, b16 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 16*len) <= ss->bit_count);
@@ -544,7 +544,7 @@ void ss_Write16LeN(struct ss *ss, const b16 *buf, const u64 len)
 	}
 }
 
-void ss_Read16BeN(b16 *buf, struct ss *ss, const u64 len)
+void ss_Read16BeN(struct ss *ss, b16 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 16*len) <= ss->bit_count);
@@ -572,7 +572,7 @@ void ss_Write16BeN(struct ss *ss, const b16 *buf, const u64 len)
 	}
 }
 
-void ss_Read32LeN(b32 *buf, struct ss *ss, const u64 len)
+void ss_Read32LeN(struct ss *ss, b32 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 32*len) <= ss->bit_count);
@@ -600,7 +600,7 @@ void ss_Write32LeN(struct ss *ss, const b32 *buf, const u64 len)
 	}
 }
 
-void ss_Read32BeN(b32 *buf, struct ss *ss, const u64 len)
+void ss_Read32BeN(struct ss *ss, b32 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 32*len) <= ss->bit_count);
@@ -628,7 +628,7 @@ void ss_Write32BeN(struct ss *ss, const b32 *buf, const u64 len)
 	}
 }
 
-void ss_Read64LeN(b64 *buf, struct ss *ss, const u64 len)
+void ss_Read64LeN(struct ss *ss, b64 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 64*len) <= ss->bit_count);
@@ -656,7 +656,7 @@ void ss_Write64LeN(struct ss *ss, const b64 *buf, const u64 len)
 	}
 }
 
-void ss_Read64BeN(b64 *buf, struct ss *ss, const u64 len)
+void ss_Read64BeN(struct ss *ss, b64 *buf, const u64 len)
 {
 	ds_Assert((ss->bit_index & 0x7) == 0);
 	ds_Assert((ss->bit_index + 64*len) <= ss->bit_count);

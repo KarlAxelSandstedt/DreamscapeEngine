@@ -145,8 +145,8 @@ u32 ds_HashMapTryDeserialize(struct arena *mem, struct ss *ss, struct ds_HashMap
 		return 0;
 	}
 
-	ss_ReadU32LeN(map->hash, ss, hash_len);
-	ss_ReadU32LeN(map->index, ss, index_len);
+	ss_ReadU32LeN(ss, map->hash, hash_len);
+	ss_ReadU32LeN(ss, map->index, index_len);
 	return 1;
 }
 
@@ -295,7 +295,7 @@ u32 ds_THashMapTryDeserializeInternal(struct arena *mem, struct ss *ss, struct d
 		return 0;
 	}
 
-	ss_ReadU64LeN(bucket, ss, hash_len);
+	ss_ReadU64LeN(ss, bucket, hash_len);
 	state->a_bucket = bucket;
 	state->hash_len = hash_len;
 	state->hash_mask = hash_len - 1;

@@ -162,7 +162,7 @@ static struct test_Output ss_randomized_aligned_array(void)
 					arr8_write[i].u = (u8) RngU64Range(0, U8_MAX);
 				}
 				ss_Write8N(ss_in, arr8_write, count);
-				ss_Read8N(arr8_read, ss_out, count);
+				ss_Read8N(ss_out, arr8_read, count);
 				for (u32 i = 0; i < count; ++i)
 				{
 					TEST_EQUAL(arr8_write[i].u, arr8_read[i].u);
@@ -176,7 +176,7 @@ static struct test_Output ss_randomized_aligned_array(void)
 					arr16_write[i].u = (u16) RngU64Range(0, U16_MAX);
 				}
 				ss_Write16LeN(ss_in, arr16_write, count);
-				ss_Read16LeN(arr16_read, ss_out, count);
+				ss_Read16LeN(ss_out, arr16_read, count);
 				for (u32 i = 0; i < count; ++i)
 				{
 					TEST_EQUAL(arr16_write[i].u, arr16_read[i].u);
@@ -190,7 +190,7 @@ static struct test_Output ss_randomized_aligned_array(void)
 					arr16_write[i].u = (u16) RngU64Range(0, U16_MAX);
 				}
 				ss_Write16BeN(ss_in, arr16_write, count);
-				ss_Read16BeN(arr16_read, ss_out, count);
+				ss_Read16BeN(ss_out, arr16_read, count);
 				for (u32 i = 0; i < count; ++i)
 				{
 					TEST_EQUAL(arr16_write[i].u, arr16_read[i].u);
@@ -204,7 +204,7 @@ static struct test_Output ss_randomized_aligned_array(void)
 					arr32_write[i].u = (u32) RngU64Range(0, U32_MAX);
 				}
 				ss_Write32LeN(ss_in, arr32_write, count);
-				ss_Read32LeN(arr32_read, ss_out, count);
+				ss_Read32LeN(ss_out, arr32_read, count);
 				for (u32 i = 0; i < count; ++i)
 				{
 					TEST_EQUAL(arr32_write[i].u, arr32_read[i].u);
@@ -218,7 +218,7 @@ static struct test_Output ss_randomized_aligned_array(void)
 					arr32_write[i].u = (u32) RngU64Range(0, U32_MAX);
 				}
 				ss_Write32BeN(ss_in, arr32_write, count);
-				ss_Read32BeN(arr32_read, ss_out, count);
+				ss_Read32BeN(ss_out, arr32_read, count);
 				for (u32 i = 0; i < count; ++i)
 				{
 					TEST_EQUAL(arr32_write[i].u, arr32_read[i].u);
@@ -232,7 +232,7 @@ static struct test_Output ss_randomized_aligned_array(void)
 					arr64_write[i].u = (u64) RngU64Range(0, U64_MAX);
 				}
 				ss_Write64LeN(ss_in, arr64_write, count);
-				ss_Read64LeN(arr64_read, ss_out, count);
+				ss_Read64LeN(ss_out, arr64_read, count);
 				for (u64 i = 0; i < count; ++i)
 				{
 					TEST_EQUAL(arr64_write[i].u, arr64_read[i].u);
@@ -246,7 +246,7 @@ static struct test_Output ss_randomized_aligned_array(void)
 					arr64_write[i].u = (u64) RngU64Range(0, U64_MAX);
 				}
 				ss_Write64BeN(ss_in, arr64_write, count);
-				ss_Read64BeN(arr64_read, ss_out, count);
+				ss_Read64BeN(ss_out, arr64_read, count);
 				for (u64 i = 0; i < count; ++i)
 				{
 					TEST_EQUAL(arr64_write[i].u, arr64_read[i].u);

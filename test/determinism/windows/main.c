@@ -167,7 +167,7 @@ static struct ds_DeterminismTest ds_DeterminismProcessArguments(struct arena *pe
         {
            ds_CPoolPush(test.hash_pool);
         }
-        ss_ReadU64BeN(test.hash_pool.buf, &ss, hash_count);
+        ss_ReadU64BeN(&ss, test.hash_pool.buf, hash_count);
 
         /* the RNG was seeded from the config in ds_Init */
         if (test.seed[0] != g_config->seed[0] || test.seed[1] != g_config->seed[1] || test.seed[2] != g_config->seed[2] || test.seed[3] != g_config->seed[3])
