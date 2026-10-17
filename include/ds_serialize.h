@@ -270,21 +270,21 @@ i64 	ss_ReadI64BePartial(struct ss *ss, const u64 bit_count);
 #define ss_WriteU32BePartial(ss, val, bit_count)	ss_WriteU64BePartial(ss, val, bit_count)
 #define ss_WriteU16BePartial(ss, val, bit_count)	ss_WriteU64BePartial(ss, val, bit_count)
 #define ss_WriteU8Partial(ss, val, bit_count)		ss_WriteU64BePartial(ss, val, bit_count)
-#define ss_ReadU32LePartial(ss, bit_count)		((u32) ss_ReadU64LePartial(ss, bit_count));
-#define ss_ReadU16LePartial(ss, bit_count)		((u16) ss_ReadU64LePartial(ss, bit_count));
-#define ss_ReadU32BePartial(ss, bit_count)		((u32) ss_ReadU64BePartial(ss, bit_count));
-#define ss_ReadU16BePartial(ss, bit_count)		((u16) ss_ReadU64BePartial(ss, bit_count));
-#define ss_ReadU8Partial(ss, bit_count)			((u8) ss_ReadU64BePartial(ss, bit_count));
+#define ss_ReadU32LePartial(ss, bit_count)		((u32) ss_ReadU64LePartial(ss, bit_count))
+#define ss_ReadU16LePartial(ss, bit_count)		((u16) ss_ReadU64LePartial(ss, bit_count))
+#define ss_ReadU32BePartial(ss, bit_count)		((u32) ss_ReadU64BePartial(ss, bit_count))
+#define ss_ReadU16BePartial(ss, bit_count)		((u16) ss_ReadU64BePartial(ss, bit_count))
+#define ss_ReadU8Partial(ss, bit_count)			((u8) ss_ReadU64BePartial(ss, bit_count))
 #define ss_WriteI32LePartial(ss, val, bit_count)	ss_WriteI64LePartial(ss, val, bit_count)
 #define ss_WriteI16LePartial(ss, val, bit_count)	ss_WriteI64LePartial(ss, val, bit_count)
 #define ss_WriteI32BePartial(ss, val, bit_count)	ss_WriteI64BePartial(ss, val, bit_count)
 #define ss_WriteI16BePartial(ss, val, bit_count)	ss_WriteI64BePartial(ss, val, bit_count)
 #define ss_WriteI8Partial(ss, val, bit_count)		ss_WriteI64BePartial(ss, val, bit_count)
-#define ss_ReadI32LePartial(ss, bit_count)		((i32) ss_ReadI64LePartial(ss, bit_count));
-#define ss_ReadI16LePartial(ss, bit_count)		((i16) ss_ReadI64LePartial(ss, bit_count));
-#define ss_ReadI32BePartial(ss, bit_count)		((i32) ss_ReadI64BePartial(ss, bit_count));
-#define ss_ReadI16BePartial(ss, bit_count)		((i16) ss_ReadI64BePartial(ss, bit_count));
-#define ss_ReadI8Partial(ss, bit_count)			((i8) ss_ReadI64BePartial(ss, bit_count));
+#define ss_ReadI32LePartial(ss, bit_count)		((i32) ss_ReadI64LePartial(ss, bit_count))
+#define ss_ReadI16LePartial(ss, bit_count)		((i16) ss_ReadI64LePartial(ss, bit_count))
+#define ss_ReadI32BePartial(ss, bit_count)		((i32) ss_ReadI64BePartial(ss, bit_count))
+#define ss_ReadI16BePartial(ss, bit_count)		((i16) ss_ReadI64BePartial(ss, bit_count))
+#define ss_ReadI8Partial(ss, bit_count)			((i8) ss_ReadI64BePartial(ss, bit_count))
 
 #ifdef __cplusplus
 } 
