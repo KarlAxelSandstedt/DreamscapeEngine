@@ -56,6 +56,7 @@ void ds_PlatformApiInit(struct arena *mem, const u64 framesize, const u64 scratc
 	{
 		LogString(T_SYSTEM, S_NOTE, "PerfCycles unavailable");
 	}
+	Log(T_SYSTEM, S_NOTE, "PerfBegin/PerfEnd empty pair: %lu ticks, %lu cycles", g_perf_overhead_ticks, g_perf_overhead_cycles);
 #endif
     const u64 stacksize = 64*1024;
     const u64 initial_deque_size = 4096;

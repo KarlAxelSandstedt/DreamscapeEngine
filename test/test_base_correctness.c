@@ -1181,7 +1181,7 @@ static struct test_Output WindowNoRootTest(struct test_Environment *env)
 
 #ifdef DS_PERFORMANCE_MEASUREMENT_API
 /*
-PerfWallClock / PerfCycles on a block of known cost: 1000 steps of x = x * x + c, a dependent chain of one
+PerfBegin / PerfEnd on a block of known cost: 1000 steps of x = x * x + c, a dependent chain of one
 imul (3 cycles) and one add (1 cycle) per step, so ~4000 core cycles; the minimum over many samples, minus the
 pair's overhead, must be 3-6 cycles per step on PerfCycles (an exact, user-only counter), and the wall clock's
 ticks per cycle must lie in the core clock's range (TSC / core: 0.3 .. 3). Without PerfCycles only the wall
@@ -1202,33 +1202,31 @@ static struct test_Output PerfBlockTest(struct test_Environment *env)
 		/* input loaded and result stored inside the block: the pair only orders memory operations, so a
 		 * register-only chain would be hoisted out of it (it was) */
 		g_perf_block_sink = RngU64() | 1;
-		const u64 c = PerfCyclesBegin();
-		const u64 t = PerfWallClockBegin();
+		const struct PerfStamp begin = PerfBegin();
 		u64 x = g_perf_block_sink;
 		for (u32 k = 0; k < steps; ++k)
 		{
 			x = x * x + 0x9E3779B97F4A7C15ull;
 		}
 		g_perf_block_sink = x;
-		const u64 dt = PerfWallClockEnd(t);
-		const u64 dc = PerfCyclesEnd(c);
-		ticks = (dt < ticks) ? dt : ticks;
-		cycles = (dc < cycles) ? dc : cycles;
+		const struct PerfStamp d = PerfEnd(begin);
+		ticks = (d.ticks < ticks) ? d.ticks : ticks;
+		cycles = (d.cycles < cycles) ? d.cycles : cycles;
 	}
 
 	fprintf(stdout, "\t%s: empty pair %llu ticks, %llu cycles; %u-step chain min %llu ticks, %llu cycles, before subtracting (PerfCycles %s)\n", __func__,
-		(unsigned long long) g_perf_wall_clock_overhead, (unsigned long long) g_perf_cycles_overhead,
+		(unsigned long long) g_perf_overhead_ticks, (unsigned long long) g_perf_overhead_cycles,
 		steps, (unsigned long long) ticks, (unsigned long long) cycles, PerfCyclesThreadAvailable() ? "available" : "unavailable");
 
-	TEST_NOT_ZERO(g_perf_wall_clock_overhead);
-	TEST_NOT_ZERO(ticks > g_perf_wall_clock_overhead);
-	ticks -= g_perf_wall_clock_overhead;
+	TEST_NOT_ZERO(g_perf_overhead_ticks);
+	TEST_NOT_ZERO(ticks > g_perf_overhead_ticks);
+	ticks -= g_perf_overhead_ticks;
 
 	if (PerfCyclesThreadAvailable())
 	{
-		TEST_NOT_ZERO(g_perf_cycles_overhead);
-		TEST_NOT_ZERO(cycles > g_perf_cycles_overhead);
-		cycles -= g_perf_cycles_overhead;
+		TEST_NOT_ZERO(g_perf_overhead_cycles);
+		TEST_NOT_ZERO(cycles > g_perf_overhead_cycles);
+		cycles -= g_perf_overhead_cycles;
 		TEST_NOT_ZERO(3 * steps <= cycles && cycles <= 6 * steps);
 		TEST_NOT_ZERO(3 * ticks >= cycles && ticks <= 3 * cycles);
 	}

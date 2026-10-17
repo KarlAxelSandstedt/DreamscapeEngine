@@ -11,6 +11,7 @@ add_library(DreamscapeBase
 	"${DS_INCLUDE_PATH}/ds_semaphore.h"
 	"${DS_INCLUDE_PATH}/ticket_factory.h"
 	"${DS_INCLUDE_PATH}/ds_time.h"
+	"${DS_INCLUDE_PATH}/ds_measure.h"
 	"${DS_INCLUDE_PATH}/ds_log.h"
 	"${DS_INCLUDE_PATH}/ds_arch.h"
 	"${DS_INCLUDE_PATH}/ds_thread.h"

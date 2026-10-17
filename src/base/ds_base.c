@@ -5,6 +5,7 @@
 #include "ds_semaphore.c"
 #include "ds_arch.c"
 #include "ds_time.c"
+#include "ds_measure.c"
 #include "ticket_factory.c"
 #include "ds_thread.c"
 #include "ds_log.c"

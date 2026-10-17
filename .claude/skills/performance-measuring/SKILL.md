@@ -1,24 +1,31 @@
 ---
 name: performance-measuring
 description: Measure the cost of engine code with the Perf block timers
-  (PerfWallClock, PerfCycles in ds_time.h) and compare variants or a
+  (PerfWallClock, PerfCycles, PerfBegin/PerfEnd in ds_measure.h) and compare variants or a
   speed-of-light bound. Use when asked to time, benchmark, profile or compare
   the speed of code, or when a change claims to be faster. In progress.
 ---
 
 # Performance measuring (in progress)
 
-The API is ds_time.h "Perf blocks", behind the CMake option
+The API is ds_measure.h (PerfWallClock, PerfCycles, and PerfBegin/PerfEnd
+reading both in one pair with its own overhead constants), behind the CMake option
 DS_PERFORMANCE_MEASUREMENT_API (configure with -DDS_PERFORMANCE_MEASUREMENT_API=ON;
 default OFF). Design and the measurements behind these rules:
 agent_notes/perf_timing_design.txt. Read the header's section before
 measuring; it is the contract.
 
 ## Build
-- Release: -DDS_DEBUG=OFF -DDS_OPTIMIZE=ON -DDS_PROFILE=OFF
-  -DDS_PERFORMANCE_MEASUREMENT_API=ON. DS_DEBUG keeps every ds_Assert and
-  validates the physics every tick; DS_PROFILE turns ProfZone into Tracy calls
-  inside the measured code.
+- Measured code is always compiled as release code, fully optimized:
+  -DDS_OPTIMIZE=ON (-O3 on GCC/Clang, /O2 on MSVC, the flags the shipped
+  build uses) with -DDS_DEBUG=OFF -DDS_PROFILE=OFF
+  -DDS_PERFORMANCE_MEASUREMENT_API=ON. A DS_DEBUG number is not a
+  measurement: it keeps every ds_Assert, validates the physics every tick and
+  is compiled without the optimizations that decide the cost of a block
+  (inlining, register allocation, vectorization). DS_PROFILE turns ProfZone
+  into Tracy calls inside the measured code.
+- Check the binary is what you think: the startup log's flags, and a changed
+  function's assembly (objdump) if a result looks implausible.
 - Never change the determinism flags (-ffp-contract=off, no -march, no
   fast-math). Same compiler, flags and seed for every variant.
 - Build hygiene as usual: kill own leftovers, nice -n 10, -j2, timeout -k,
@@ -35,13 +42,15 @@ measuring; it is the contract.
   release build); PerfCycles would need a driver.
 - Web: PerfWallClock is the browser clock in ns, clamped to 5-100 us. Only
   loops over many inputs can be timed; PerfCycles unavailable.
-- The laptop (i5-7200U): empty pair 35 ticks / 77 cycles; TSC 2.5 GHz, core
-  0.4-3.1 GHz. Record the machine, compiler and the two overheads with every
+- The laptop (i5-7200U): empty pairs 35 ticks (wall), 78 cycles (cycles),
+  109 ticks / 78 cycles (PerfBegin/End: its tick window encloses the two
+  counter reads); TSC 2.5 GHz, core 0.4-3.1 GHz. Record the machine, compiler and the two overheads with every
   result.
 
 ## Which API
-Read both in every measurement (the second read costs nothing); report one as
-the comparison figure and print the other beside it. Their ratio times
+Read both in every measurement with PerfBegin/PerfEnd (the second read costs
+nothing; subtract g_perf_overhead_ticks / g_perf_overhead_cycles from the
+minima); report one as the comparison figure and print the other beside it. Their ratio times
 TscFrequency() is the core clock during the block, which tells whether a
 difference between runs was the code or the frequency.
 - PerfCycles when the block is bound by the core: arithmetic, branches, loads
@@ -85,19 +94,17 @@ test_base_correctness.c):
     for (u32 i = 0; i < 4096; ++i)
     {
         g_input = RngU64() | 1;                 /* input in memory */
-        const u64 c = PerfCyclesBegin();
-        const u64 t = PerfWallClockBegin();
+        const struct PerfStamp begin = PerfBegin();
         u64 x = g_input;                        /* loaded inside */
         for (u32 k = 0; k < 1000; ++k) { x = x * x + 0x9E3779B97F4A7C15ull; }
         g_output = x;                           /* stored inside */
-        const u64 dt = PerfWallClockEnd(t);
-        const u64 dc = PerfCyclesEnd(c);
-        ticks = (dt < ticks) ? dt : ticks;
-        cycles = (dc < cycles) ? dc : cycles;
+        const struct PerfStamp d = PerfEnd(begin);
+        ticks = (d.ticks < ticks) ? d.ticks : ticks;
+        cycles = (d.cycles < cycles) ? d.cycles : cycles;
     }
-    cycles -= g_perf_cycles_overhead;           /* from the minimum only */
-    ticks -= g_perf_wall_clock_overhead;
-    /* laptop: 4070 cycles (4.07 per step: imul 3 + add 1), 3503 ticks -> core at 2.9 GHz */
+    cycles -= g_perf_overhead_cycles;           /* from the minimum only */
+    ticks -= g_perf_overhead_ticks;
+    /* laptop: 4002 cycles (4 per step: imul 3 + add 1), 3501 ticks -> core at 2.9 GHz */
 
 Memory-bound loop, wall time as the figure (a buffer larger than L2):
 

@@ -386,6 +386,9 @@ void ds_Init(const char *config_path, const char *log_path)
     Xoshiro256Init(config->seed);
 
     ds_TimeApiInit(&g_init_persistent);
+#ifdef DS_PERFORMANCE_MEASUREMENT_API
+    ds_MeasureApiInit();
+#endif
     /* logged only now: the log's timestamps need ds_TimeApiInit */
     if (!config_read)
     {
