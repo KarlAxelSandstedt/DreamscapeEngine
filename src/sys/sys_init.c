@@ -46,6 +46,17 @@ void ds_PlatformApiInit(struct arena *mem, const u64 framesize, const u64 scratc
 		Log(T_SYSTEM, S_NOTE, "core %u tsc skew (reltive to core 0): %lu", i, g_tsc_skew[i]);
 	}
 #endif
+#ifdef DS_PERFORMANCE_MEASUREMENT_API
+	Log(T_SYSTEM, S_NOTE, "PerfWallClock empty pair: %lu %s", g_perf_wall_clock_overhead, (__DS_PLATFORM__ == __DS_WEB__) ? "ns" : "ticks");
+	if (PerfCyclesThreadAvailable())
+	{
+		Log(T_SYSTEM, S_NOTE, "PerfCycles empty pair: %lu cycles", g_perf_cycles_overhead);
+	}
+	else
+	{
+		LogString(T_SYSTEM, S_NOTE, "PerfCycles unavailable");
+	}
+#endif
     const u64 stacksize = 64*1024;
     const u64 initial_deque_size = 4096;
     ds_JobSchedulerInit(mem, thread_count, stacksize, framesize, scratchsize, scratch_count, initial_deque_size); 

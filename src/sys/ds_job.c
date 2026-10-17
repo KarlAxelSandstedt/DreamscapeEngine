@@ -368,6 +368,9 @@ void ds_WorkerMain(ds_Thread *thr)
 	ds_AssertString(w == g_scheduler->worker + ds_ThreadSelfIndex(), "worker slot i belongs to thread index i");
 
 	ThreadXoshiro256InitSequence(ds_ThreadSelfIndex());
+#ifdef DS_PERFORMANCE_MEASUREMENT_API
+	PerfCyclesThreadInit();
+#endif
 
 	while (AtomicLoadAcq32(&g_scheduler->a_running) == 0);
 
@@ -391,6 +394,10 @@ void ds_WorkerMain(ds_Thread *thr)
 
         ds_TrySeedAndRunJobs(g_scheduler->worker + index_self, index_self);
 	}
+
+#ifdef DS_PERFORMANCE_MEASUREMENT_API
+	PerfCyclesThreadShutdown();
+#endif
 }
 
 void ds_MasterRunAvailableJobs(void)

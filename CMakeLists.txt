@@ -37,6 +37,8 @@ option(DS_PROFILE "DS_PROFILE enables internal profiling and the profiling API w
 
 option(DS_LOG "DS_LOG enabled the logging API and internal logging points in the library." ON)
 
+option(DS_PERFORMANCE_MEASUREMENT_API "DS_PERFORMANCE_MEASUREMENT_API enables the Perf block timers (ds_time.h) and their per-thread setup." OFF)
+
 option(DS_ASAN "DS_ASAN builds the library with Asan address sanitizing. If the user wishes to
 		use Asan, the user should compile his or her code with Asan, AND set DS_ASAN;
 		this is important as it enabled custom address poisoning code for both public

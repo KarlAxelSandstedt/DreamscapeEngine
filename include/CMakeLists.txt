@@ -17,6 +17,10 @@ if (DS_PROFILE)
 	target_include_directories(DreamscapeDefine INTERFACE tracy/public)
 endif ()
 
+if (DS_PERFORMANCE_MEASUREMENT_API)
+	target_compile_definitions(DreamscapeDefine INTERFACE DS_PERFORMANCE_MEASUREMENT_API)
+endif ()
+
 if (DS_LOG)
 	target_compile_definitions(DreamscapeDefine INTERFACE DS_LOG)
 endif ()
