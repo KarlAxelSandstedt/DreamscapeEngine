@@ -18,6 +18,7 @@
 */
 
 #include <stdlib.h>
+#include <string.h>
 
 #include <ds_base.h>
 
@@ -44,9 +45,13 @@
   
    		Implementation Example:
 			Write le16:	
-				((b16 *) (ss->buf + offset)) = na_to_le_16(val);
-        		Read: b16 val = 
-				le_to_na_16(*((b16 *) (ss->buf + offset)));
+				const b16 stored = NaToLe16(val);
+				memcpy(ss->buf + offset, &stored, sizeof(stored));
+        		Read: b16 val;
+				memcpy(&val, ss->buf + offset, sizeof(val));
+				val = LeToNa16(val);
+
+		memcpy, not a (b16 *) cast: the stream only guarantees byte alignment.
   
 		In the write example, from our register's perspective what happens is:
 		
@@ -369,7 +374,9 @@ b16 ss_Read16Le(struct ss *ss)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 16;
-	b16 val = LeToNa16(*((b16 *) (ss->buf + offset)));
+	b16 val;
+	memcpy(&val, ss->buf + offset, sizeof(val));
+	val = LeToNa16(val);
 	return val;
 }
 
@@ -380,7 +387,8 @@ void ss_Write16Le(struct ss *ss, const b16 val)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 16;
-	*((b16 *) (ss->buf + offset)) = NaToLe16(val);
+	const b16 stored = NaToLe16(val);
+	memcpy(ss->buf + offset, &stored, sizeof(stored));
 }
 
 b16 ss_Read16Be(struct ss *ss)
@@ -390,7 +398,9 @@ b16 ss_Read16Be(struct ss *ss)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 16;
-	b16 val = BeToNa16(*((b16 *) (ss->buf + offset)));
+	b16 val;
+	memcpy(&val, ss->buf + offset, sizeof(val));
+	val = BeToNa16(val);
 	return val;
 }
 
@@ -401,7 +411,8 @@ void ss_Write16Be(struct ss *ss, const b16 val)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 16;
-	*((b16 *) (ss->buf + offset)) = NaToBe16(val);
+	const b16 stored = NaToBe16(val);
+	memcpy(ss->buf + offset, &stored, sizeof(stored));
 }
 
 b32 ss_Read32Le(struct ss *ss)
@@ -411,7 +422,9 @@ b32 ss_Read32Le(struct ss *ss)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 32;
-	b32 val = LeToNa32(*((b32 *) (ss->buf + offset)));
+	b32 val;
+	memcpy(&val, ss->buf + offset, sizeof(val));
+	val = LeToNa32(val);
 	return val;
 }
 
@@ -422,7 +435,8 @@ void ss_Write32Le(struct ss *ss, const b32 val)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 32;
-	*((b32 *) (ss->buf + offset)) = NaToLe32(val);
+	const b32 stored = NaToLe32(val);
+	memcpy(ss->buf + offset, &stored, sizeof(stored));
 }
 
 b32 ss_Read32Be(struct ss *ss)
@@ -432,7 +446,9 @@ b32 ss_Read32Be(struct ss *ss)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 32;
-	b32 val = BeToNa32(*((b32 *) (ss->buf + offset)));
+	b32 val;
+	memcpy(&val, ss->buf + offset, sizeof(val));
+	val = BeToNa32(val);
 	return val;
 }
 
@@ -443,7 +459,8 @@ void ss_Write32Be(struct ss *ss, const b32 val)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 32;
-	*((b32 *) (ss->buf + offset)) = NaToBe32(val);
+	const b32 stored = NaToBe32(val);
+	memcpy(ss->buf + offset, &stored, sizeof(stored));
 }
 
 b64 ss_Read64Le(struct ss *ss)
@@ -453,7 +470,9 @@ b64 ss_Read64Le(struct ss *ss)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 64;
-	b64 val = LeToNa64(*((b64 *) (ss->buf + offset)));
+	b64 val;
+	memcpy(&val, ss->buf + offset, sizeof(val));
+	val = LeToNa64(val);
 	return val;
 }
 
@@ -464,7 +483,8 @@ void ss_Write64Le(struct ss *ss, const b64 val)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 64;
-	*((b64 *) (ss->buf + offset)) = NaToLe64(val);
+	const b64 stored = NaToLe64(val);
+	memcpy(ss->buf + offset, &stored, sizeof(stored));
 }
 
 b64 ss_Read64Be(struct ss *ss)
@@ -474,7 +494,9 @@ b64 ss_Read64Be(struct ss *ss)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 64;
-	b64 val = BeToNa64(*((b64 *) (ss->buf + offset)));
+	b64 val;
+	memcpy(&val, ss->buf + offset, sizeof(val));
+	val = BeToNa64(val);
 	return val;
 }
 
@@ -485,7 +507,8 @@ void ss_Write64Be(struct ss *ss, const b64 val)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 64;
-	*((b64 *) (ss->buf + offset)) = NaToBe64(val);
+	const b64 stored = NaToBe64(val);
+	memcpy(ss->buf + offset, &stored, sizeof(stored));
 }
 
 void ss_Read8N(struct ss *ss, b8 *buf, const u64 len)
@@ -523,10 +546,12 @@ void ss_Read16LeN(struct ss *ss, b16 *buf, const u64 len)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 16*len;
-	const b16 *src = (b16 *) (ss->buf + offset);
+	const u8 *src = ss->buf + offset;
 	for (u64 i = 0; i < len; ++i)
 	{
-		buf[i] = LeToNa16(src[i]);
+		b16 val;
+		memcpy(&val, src + i*sizeof(val), sizeof(val));
+		buf[i] = LeToNa16(val);
 	}
 }
 
@@ -537,10 +562,11 @@ void ss_Write16LeN(struct ss *ss, const b16 *buf, const u64 len)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 16*len;
-	b16 *dst = (b16 *) (ss->buf + offset);
+	u8 *dst = ss->buf + offset;
 	for (u64 i = 0; i < len; ++i)
 	{
-		dst[i] = NaToLe16(buf[i]);
+		const b16 stored = NaToLe16(buf[i]);
+		memcpy(dst + i*sizeof(stored), &stored, sizeof(stored));
 	}
 }
 
@@ -551,10 +577,12 @@ void ss_Read16BeN(struct ss *ss, b16 *buf, const u64 len)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 16*len;
-	const b16 *src = (b16 *) (ss->buf + offset);
+	const u8 *src = ss->buf + offset;
 	for (u64 i = 0; i < len; ++i)
 	{
-		buf[i] = BeToNa16(src[i]);
+		b16 val;
+		memcpy(&val, src + i*sizeof(val), sizeof(val));
+		buf[i] = BeToNa16(val);
 	}
 }
 
@@ -565,10 +593,11 @@ void ss_Write16BeN(struct ss *ss, const b16 *buf, const u64 len)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 16*len;
-	b16 *dst = (b16 *) (ss->buf + offset);
+	u8 *dst = ss->buf + offset;
 	for (u64 i = 0; i < len; ++i)
 	{
-		dst[i] = NaToBe16(buf[i]);
+		const b16 stored = NaToBe16(buf[i]);
+		memcpy(dst + i*sizeof(stored), &stored, sizeof(stored));
 	}
 }
 
@@ -579,10 +608,12 @@ void ss_Read32LeN(struct ss *ss, b32 *buf, const u64 len)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 32*len;
-	const b32 *src = (b32 *) (ss->buf + offset);
+	const u8 *src = ss->buf + offset;
 	for (u64 i = 0; i < len; ++i)
 	{
-		buf[i] = LeToNa32(src[i]);
+		b32 val;
+		memcpy(&val, src + i*sizeof(val), sizeof(val));
+		buf[i] = LeToNa32(val);
 	}
 }
 
@@ -593,10 +624,11 @@ void ss_Write32LeN(struct ss *ss, const b32 *buf, const u64 len)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 32*len;
-	b32 *dst = (b32 *) (ss->buf + offset);
+	u8 *dst = ss->buf + offset;
 	for (u64 i = 0; i < len; ++i)
 	{
-		dst[i] = NaToLe32(buf[i]);
+		const b32 stored = NaToLe32(buf[i]);
+		memcpy(dst + i*sizeof(stored), &stored, sizeof(stored));
 	}
 }
 
@@ -607,10 +639,12 @@ void ss_Read32BeN(struct ss *ss, b32 *buf, const u64 len)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 32*len;
-	const b32 *src = (b32 *) (ss->buf + offset);
+	const u8 *src = ss->buf + offset;
 	for (u64 i = 0; i < len; ++i)
 	{
-		buf[i] = BeToNa32(src[i]);
+		b32 val;
+		memcpy(&val, src + i*sizeof(val), sizeof(val));
+		buf[i] = BeToNa32(val);
 	}
 }
 
@@ -621,10 +655,11 @@ void ss_Write32BeN(struct ss *ss, const b32 *buf, const u64 len)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 32*len;
-	b32 *dst = (b32 *) (ss->buf + offset);
+	u8 *dst = ss->buf + offset;
 	for (u64 i = 0; i < len; ++i)
 	{
-		dst[i] = NaToBe32(buf[i]);
+		const b32 stored = NaToBe32(buf[i]);
+		memcpy(dst + i*sizeof(stored), &stored, sizeof(stored));
 	}
 }
 
@@ -635,10 +670,12 @@ void ss_Read64LeN(struct ss *ss, b64 *buf, const u64 len)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 64*len;
-	const b64 *src = (b64 *) (ss->buf + offset);
+	const u8 *src = ss->buf + offset;
 	for (u64 i = 0; i < len; ++i)
 	{
-		buf[i] = LeToNa64(src[i]);
+		b64 val;
+		memcpy(&val, src + i*sizeof(val), sizeof(val));
+		buf[i] = LeToNa64(val);
 	}
 }
 
@@ -649,10 +686,11 @@ void ss_Write64LeN(struct ss *ss, const b64 *buf, const u64 len)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 64*len;
-	b64 *dst = (b64 *) (ss->buf + offset);
+	u8 *dst = ss->buf + offset;
 	for (u64 i = 0; i < len; ++i)
 	{
-		dst[i] = NaToLe64(buf[i]);
+		const b64 stored = NaToLe64(buf[i]);
+		memcpy(dst + i*sizeof(stored), &stored, sizeof(stored));
 	}
 }
 
@@ -663,10 +701,12 @@ void ss_Read64BeN(struct ss *ss, b64 *buf, const u64 len)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 64*len;
-	const b64 *src = (b64 *) (ss->buf + offset);
+	const u8 *src = ss->buf + offset;
 	for (u64 i = 0; i < len; ++i)
 	{
-		buf[i] = BeToNa64(src[i]);
+		b64 val;
+		memcpy(&val, src + i*sizeof(val), sizeof(val));
+		buf[i] = BeToNa64(val);
 	}
 }
 
@@ -677,10 +717,11 @@ void ss_Write64BeN(struct ss *ss, const b64 *buf, const u64 len)
 
 	const u64 offset = ss->bit_index >> 3;
 	ss->bit_index += 64*len;
-	b64 *dst = (b64 *) (ss->buf + offset);
+	u8 *dst = ss->buf + offset;
 	for (u64 i = 0; i < len; ++i)
 	{
-		dst[i] = NaToBe64(buf[i]);
+		const b64 stored = NaToBe64(buf[i]);
+		memcpy(dst + i*sizeof(stored), &stored, sizeof(stored));
 	}
 }
 
