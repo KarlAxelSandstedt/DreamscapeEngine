@@ -229,7 +229,7 @@ i64 	ss_ReadI64BePartial(struct ss *ss, const u64 bit_count);
 #define ss_ReadU8N(buf, ss, len)		ss_Read8N((b8 *) (buf), ss, len)
 #define ss_WritUe8N(ss, buf, len)		ss_Write8N(ss, (b8 *) (buf), len)
 #define ss_ReadU16LeN(buf, ss, len) 		ss_Read16LeN((b16 *) (buf), ss, len)
-#define ss_WriteU16LeN(ss, buf, len) 		ss_Write16LeN((ss, b16 *) (buf), len)
+#define ss_WriteU16LeN(ss, buf, len) 		ss_Write16LeN(ss, (b16 *) (buf), len)
 #define ss_ReadU16BeN(buf, ss, len) 		ss_Read16BeN((b16 *) (buf), ss, len)
 #define ss_WriteU16BeN(ss, buf, len) 		ss_Write16BeN(ss, (b16 *) (buf), len)
 #define ss_ReadU32LeN(buf, ss, len) 		ss_Read32LeN((b32 *) (buf), ss, len)
