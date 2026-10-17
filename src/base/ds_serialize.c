@@ -22,6 +22,99 @@
 #include <ds_base.h>
 
 /*
+   ====== SERIALIZE_STREAM PARTIAL BYTE READING ======
+
+ 	  When we want to read n < 8 bits from a byte, we read from the "Logical high bit downwards, i.e. 
+ 	  		
+    	  					         HEAD
+    	 						  V
+ 	     		      | b7 b6 b5 b4 b3 b2 b1 b0 | b7 b6 b5 b4 b3 b2 b1 b0 |  
+ 	     		      | 	Byte k  	|  	Byte k+1	  |
+ 	 
+ 	  read(4) = 0 0 0 0 b7 b6 b5 b4;
+ 	 	    =>  			                     HEAD
+ 	 	             			              	      V
+ 	 	       	      | b7 b6 b5 b4 b3 b2 b1 b0 | b7 b6 b5 b4 b3 b2 b1 b0 | 
+ 	 	              | 	Byte k  	|  	Byte k+1          |
+ 	 
+ 	 
+   ====== SERIALIZE_STREAM WRITING INTERNALS ======
+   	
+   	(1) FULL ALIGNED BYTES: We read/write a full primitive (b8, b16, b32, b64) to a byte aligned address:
+  
+   		Implementation Example:
+			Write le16:	
+				((b16 *) (ss->buf + offset)) = na_to_le_16(val);
+        		Read: b16 val = 
+				le_to_na_16(*((b16 *) (ss->buf + offset)));
+  
+		In the write example, from our register's perspective what happens is:
+		
+					         B1			       B0	
+			Register  [ b15 b14 b13 b12 b11 b10 b9 b8 | b7 b6 b5 b4 b3 b2 b1 b0 ]
+		
+			=>	Register(LE)  [ b15 b14 b13 b12 b11 b10 b9 b8 | b7 b6 b5 b4 b3 b2 b1 b0 ]
+			=>	Register(BE)  [ b8 b7 b6 b5 b4 b3 b2 b1 b0 | b15 b14 b13 b12 b11 b10 b9 ]	(manual invert byte order)
+		
+		 *buf[0,1] = register;
+			=>	buf[0|1] = [ b8 b7 b6 b5 b4 b3 b2 b1 b0 | b15 b14 b13 b12 b11 b10 b9 ]	(LE)
+			=>	buf[0|1] = [ b8 b7 b6 b5 b4 b3 b2 b1 b0 | b15 b14 b13 b12 b11 b10 b9 ]  (BE)
+		
+			I.e. LE_write(register) => invert Logical byte order
+			I.e. BE_write(register) =>        Logical byte order
+
+		similarly, in the read example, from our register's perspective what happens is:
+		
+				buf[0|1] = [ b8 b7 b6 b5 b4 b3 b2 b1 b0 | b15 b14 b13 b12 b11 b10 b9 ]
+
+		 register = *buf[0|1];
+			=>	register = [ b15 b14 b13 b12 b11 b10 b9 b8 | b7 b6 b5 b4 b3 b2 b1 b0 ] (LE)
+			=>	register = [ b8 b7 b6 b5 b4 b3 b2 b1 b0 | b15 b14 b13 b12 b11 b10 b9 ] (BE)
+
+		manual flipping of the BE case give the correct register.
+
+   	(2) FULL UNALIGNED BITS: Exactly the same as the FULL ALIGNED BYTES case, except each byte (order depending or le/be write/read)
+	    		       is possibly straddling the serialize stream bytes.
+
+		Example be16 full write:
+			       stream:	[ b7  b6  b5  b4  b3  b2  b1  b0 | b7  b6  b5  b4  b3 b2 b1 b0 | b7 b6 b5 b4 b3 b2 b1 b0 ]
+			       b16: 			[ b15 b14 b13 b12  b11 b10 b9 b8 | b7 b6 b5 b4   b3 b2 b1 b0 ]
+
+
+   	(3) PARTIAL BITS: We write a a number of bits not divisible by 8.  Here is where ambiguity may appear; suppose we write 12 bits
+	using write16_partial_le. 
+       
+				  B1			      B0
+		Register [ x x x x b11 b10 b9 b8 | b7 b6 b5 b4 b3 b2 b1 b0 ]
+
+		Should the partial byte be stored at the start or at the end of the stream? i.e. should the state of the stream be 
+
+			
+	     Write happened here			Head after write 
+		      V					      V
+		[ ... b3 b2 b1 b0 | b11 b10 b9 b8 b7 b6 b5 b4 x x x .... ]	(partial byte at the beginning)
+		[ ... b7 b6 b5 b4 b3 b2 b1 b0 | b11 b10 b9 b8 x x x .... ]	(partial byte at the end)
+
+	It seems more reasonable to store the partial byte at the end, so we shall go with that convetion.
+
+   ====== SERIALIZE_STREAM SIGNED INTEGER WRITING ======
+	
+	Suppose we want to write n bits of a signed integer value. It is reasonable to store the sign bit as the most significant bit
+	and the rest of the n-1 bits in the usual order. Suppose and we wish to write a signed 16bit integer variable. Furthermore, 
+	suppose we know the 10 most significat bits of our variable contains the sign bit(-64 <= variable <= 63). Then we can store the
+	integer as follows:
+
+	Integer :  [ S S S S S S S S | S S b5 b4 b3 b2 b1 b0 ]
+	Register : [ x x x x x x x x | x S b5 b4 b3 b2 b1 b0 ]
+
+	We can now write it in partial le/be fashion, and when we read it back, we may expand the sign in the register to retrieve
+	the signed integer.
+
+	Register : [ S S S S S S S S | S S b5 b4 b3 b2 b1 b0 ]
+
+ */
+
+/*
 	===== Derivation of Lookup table for bytes touched =====
 
 input: 		bits_left_in_initial_byte, bit_count (to read or write)
