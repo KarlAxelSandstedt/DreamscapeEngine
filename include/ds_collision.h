@@ -227,10 +227,12 @@ touching. Reads the pushed numerics config (gjk_max_iterations).
     d == F32_INFINITY   farther than cutoff_distance; c0, c1, n garbage
     otherwise           the distance, the closest points and the unit normal from s0 to s1 (n accurate to
                         ~6 eps * L / d radians, rarely worse for shapes of very different sizes); only an upper
-                        bound if the iteration limit was reached
+                        bound when the loop stops early: the iteration limit, or a degenerate or non-improving
+                        simplex (seen for shapes of very different sizes)
     cache_in            NULL or the pair's previous cache_out (warm start); cache_out is always written
-    cutoff_distance     larger distances are of no interest (F32_INFINITY: none); a finite result can still
-                        exceed it, callers compare
+    cutoff_distance     larger distances are of no interest (F32_INFINITY: none); the early exit needs the
+                        distance to clear it by the touch band, and a finite result can still exceed it:
+                        callers compare
 */
 
 /*
@@ -240,7 +242,8 @@ touching. Reads the pushed numerics config (gjk_max_iterations).
  */
 struct GJKCache
 {
-    f32 metric;             /* length/area/volume of the cached simplex; flushed if it changes > 2x */
+    f32 metric;             /* length/area/volume of the cached simplex; flushed if it changes > 2x or (count > 1) falls
+                               below F32_EPSILON, an absolute threshold: tetrahedra below ~5 mm restart cold */
     u16 count;              /* 1..4 */
     u16 index_a[4];
     u16 index_b[4];

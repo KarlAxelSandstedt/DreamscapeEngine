@@ -1094,8 +1094,18 @@ struct test_Output GjkDegenerateTest(struct test_Environment *env)
         {
             fprintf(stderr, "GJK degenerate case \"%s\": d %.9g, expected %.9g (tol %.3g)\n", c[i].id, d, c[i].d, tol);
         }
+
+        /* cutoff 0 (c_HullTest's query): a touching pair must not be cut off by a noise-level support bound */
+        f32 d_cutoff;
+        struct GJKCache cache_cutoff;
+        const u32 ok_cutoff = GjkTestQuery(&stats, &d_cutoff, &cache_cutoff, NULL, &a, &b, 0.0f, 1);
+        const u32 touching = (c[i].d != 0.0f) || (d_cutoff == 0.0f);
+        if (!touching)
+        {
+            fprintf(stderr, "GJK degenerate case \"%s\": cutoff 0 gives %.9g for a touching pair\n", c[i].id, d_cutoff);
+        }
         *env->mem_2 = record;
-        if (!ok || !exact)
+        if (!ok || !exact || !ok_cutoff || !touching)
         {
             TEST_FAILURE;
         }

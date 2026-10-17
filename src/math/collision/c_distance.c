@@ -107,6 +107,7 @@ static void GJKHelperInit(struct GJKHelper *helper, const struct c_Shape *shape_
 /* Simplex vertex of index_a of A and index_b of B; B is moved into A's frame. */
 static struct GJKSimplexVertex GJKSimplexVertexInit(const struct GJKHelper *helper, const u32 index_a, const u32 index_b)
 {
+    ds_Assert(index_a < helper->vset_a.v_count && index_b < helper->vset_b.v_count);
     struct GJKSimplexVertex v;
     v.index_a = index_a;
     v.index_b = index_b;
@@ -160,14 +161,19 @@ static f32 GJKSimplexMetric(const struct GJKSimplex *simplex)
 }
 
 /*
- * Search direction: perpendicular to the closest feature, towards the origin. In exact math this is
- * -closest, but closest is blended with the weights and carries an absolute error of ~eps * shape size,
- * which dominates near contact (closest ~ 0). Derived from the feature's vertices instead, the error
- * only depends on the feature's shape, not on its distance to the origin.
+ * Search direction: perpendicular to the closest feature, towards the origin (in exact math -closest),
+ * derived from the feature's vertices:
  *
  *      vertex a:           -a
- *      edge ab:            ab x (ab x a)           (in the plane of ab and the origin)
- *      triangle abc:       +-(ab x ac)             (the side of the origin)
+ *      edge ab:            ab x (ab x a) = -|ab|^2 closest       (in the plane of ab and the origin)
+ *      triangle abc:       +-(ab x ac)                           (the side of the origin)
+ *
+ * Only the triangle gains precision: its normal comes from the edges alone, so its direction error stays
+ * ~eps however close the origin is, while the blended closest slides in-plane by the weights' rounding,
+ * ~eps L / d radians (L the vertex scale, d the distance; measured). The edge direction is as
+ * ill-conditioned as -closest (~eps L / d: the plane of ab and the origin is barely defined when the origin
+ * is near the line), but the outer cross product keeps it perpendicular to ab to ~eps, so the next support
+ * point is sought off the line.
  */
 static v3 GJKSimplexSearchDirection(const struct GJKSimplex *simplex)
 {
@@ -259,9 +265,7 @@ f32 GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache
 {
     struct GJKHelper helper;
     GJKHelperInit(&helper, s0, s1, t_1_to_0);
-    const f32 cutoff_distance_sq = cutoff_distance*cutoff_distance;
-
-    /* warm start from the cache unless its length/area/volume changed by more than 2x */
+    /* warm start from the cache unless its length/area/volume changed by more than 2x or is below F32_EPSILON (absolute) */
     struct GJKSimplex simplex = { 0 };
     if (cache_in)
     {
@@ -287,12 +291,13 @@ f32 GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache
     }
     struct GJKSimplex backup = { .count = 1, .v[0] = simplex.v[0], .weight[0] = 1.0f };
 
-    /* running max of |a|^2, |b|^2 over the support points, the scale of 1b */
+    /* running max of |a|^2, |b|^2 over the support points, the scale of the touch band (1b, 5) */
     f32 vertex_length_sq_max = 0.0f;
     for (u32 j = 0; j < simplex.count; ++j)
     {
         vertex_length_sq_max = F32Max(vertex_length_sq_max, F32Max(V3LengthSquared(simplex.v[j].a), V3LengthSquared(simplex.v[j].b)));
     }
+    const f32 touch_tolerance = GJK_TOUCH_TOLERANCE * F32_EPSILON;
 
     /*
      * Termination. After the loop, the result simplex is solved and dir is its search direction with
@@ -307,7 +312,7 @@ f32 GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache
      *      4b  |dir|^2 < MIN, count 2-3                degenerate edge/triangle (1b        backup
      *                                                  ruled out touching)
      *      5   the support bound proves                early exit                          return F32_INFINITY
-     *          distance > cutoff_distance
+     *          distance > cutoff_distance + 1b's band
      *      6   the support point makes no progress     converged                           simplex
      *          along dir (repeated support pair)
      *      7   iteration limit                         not converged                       backup (after the loop:
@@ -390,7 +395,6 @@ f32 GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache
 
         /* 1b */
         const f32 iteration_distance_sq = V3LengthSquared(closest);
-        const f32 touch_tolerance = GJK_TOUCH_TOLERANCE * F32_EPSILON;
         if (iteration_distance_sq <= touch_tolerance * touch_tolerance * vertex_length_sq_max)
         {
             return GJKOverlap(c0, c1, n, cache_out, &simplex);
@@ -428,10 +432,14 @@ f32 GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache
          * 5: B - A lies in the half-space dot(p, dir) <= dot(w, dir) of the support point w, so
          *
          *      distance >= -dot(w, dir) / |dir|
+         *
+         * The bound carries the same ~eps L noise as 1b's closest, so it must clear the cutoff by the touch
+         * band: a pair within the band of the cutoff (cutoff 0: touching) is never cut off on noise, it
+         * runs on and 1b decides.
          */
         const f32 support_dot = V3Dot(simplex.v[simplex.count].minkowski, dir);
-        const f32 support_dot_sq = support_dot*support_dot;
-        if (support_dot < 0.0f && support_dot_sq > cutoff_distance_sq*V3LengthSquared(dir))
+        const f32 cutoff = cutoff_distance + touch_tolerance*F32Sqrt(vertex_length_sq_max);
+        if (support_dot < 0.0f && support_dot*support_dot > cutoff*cutoff*V3LengthSquared(dir))
         {
             /* the candidate isn't counted: the solved simplex is cached */
             GJKCacheInit(cache_out, &simplex);
@@ -472,7 +480,8 @@ f32 GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache
     }
 
     /*
-     * The distance from the minkowski blend, not |p_b - p_a| (cancellation near contact); the normal from
+     * The distance from the minkowski blend: it repeats the loop's blend bit for bit, so the result agrees
+     * with 1b and 3 (|p_b - p_a| is no more precise: both carry ~eps L at any distance). The normal from
      * dir (the feature's geometry), not from p_b - p_a. dir points from the closest point to the origin,
      * and closest = p_b - p_a, so the normal from A to B is -dir.
      */
