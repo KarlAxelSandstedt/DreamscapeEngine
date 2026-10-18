@@ -78,6 +78,11 @@ struct ds_HashMap ds_HashMapAlloc(struct arena *mem, const u32 hash_len, const u
 	{
 		map.hash[i] = HASH_NULL;
 	}
+	/* never-added indices are serialized too: defined, not whatever the memory held */
+	for (u32 i = 0; i < map.index_len; ++i)
+	{
+		map.index[i] = HASH_NULL;
+	}
 
 	return map;
 }
@@ -162,6 +167,10 @@ u32 ds_HashMapAdd(struct ds_HashMap *map, const u32 hash, const u32 index)
 				? 2*(u64) map->index_len
 				: (u64) index + 1;
 			map->index = ds_Realloc(map->index, map->index_len*sizeof(u32), new_len*sizeof(u32), sizeof(u32));
+			for (u64 i = map->index_len; i < new_len; ++i)
+			{
+				map->index[i] = HASH_NULL;
+			}
 			map->index_len = (u32) new_len;
 		}
 		else
