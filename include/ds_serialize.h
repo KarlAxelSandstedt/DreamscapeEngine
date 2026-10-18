@@ -34,7 +34,9 @@ Bit order:
                  of byte i / 8, 
 
 and a partial value's bits go in least significant first, so at a byte boundary a value of 8*k bits has the
-bytes of the Le byte functions. .
+bytes of the Le byte functions. A signed partial value of n bits is its n-bit two's complement: the low n - 1
+bits of the value, then the sign as the last bit (stream bit bit_index + n - 1); reading sign-extends it to 64
+bits.
 
 Contracts (all asserted in debug only; with asserts off, a violation reads or writes out of bounds):
 the access fits in the stream (bit_index + size <= bit_count), byte access at a byte boundary, partial
