@@ -269,7 +269,7 @@ i32 wi, he, co;
 			struct ssffSprite *spr = (struct ssffSprite *) (((u8 *) header) + c[i].sprite_offset);
 			spr[s].pixel_offset = (u32) ((u64) sprite_pixel - (u64) header);
 
-			struct ss stream = ss_Buffered(sprite_pixel, c[i].bit_depth*width*height);
+			struct ss stream = ss_Buffered(sprite_pixel, c[i].bit_depth*width*height / 8 + 1);	/* the block's bytes */
 			
 			for (u32 y = sprite[i][s].y0; y <= sprite[i][s].y1; ++y)
 			{
@@ -363,15 +363,15 @@ struct ssffTextureReturn SsffTexture(struct arena *mem, const struct ssff_header
 		const struct ssff_collection *c = (struct ssff_collection *)(((u8 *) ssff) + ssff->collection_offset) + i;
 		const u32 *color_table = (u32 *)(((u8 *) ssff) + c->color_offset);
 		const struct ssffSprite *sprite = (struct ssffSprite *)(((u8 *) ssff) + c->sprite_offset);
-		ArenaPushPacked(mem, c[i].sprite_count * sizeof(struct sprite));
+		ArenaPushPacked(mem, c->sprite_count * sizeof(struct sprite));
 		u32 x_offset = 0;
 		u32 y_offset = 0;
-		for (u32 j = 0; j < c[i].sprite_count; ++j)
+		for (u32 j = 0; j < c->sprite_count; ++j)
 		{
 			const u32 sprite_width = sprite[j].x1 - sprite[j].x0 + 1;
 			const u32 sprite_height = sprite[j].y1 - sprite[j].y0 + 1;
 			void *sprite_pixel = (((u8 *) ssff) + sprite[j].pixel_offset);
-			struct ss stream = ss_Buffered(sprite_pixel, c[i].bit_depth*width*height);
+			struct ss stream = ss_Buffered(sprite_pixel, c->bit_depth*sprite_width*sprite_height / 8 + 1);	/* the block's bytes */
 			for (u32 y = 0; y < sprite_height; ++y)
 			{
 				for (u32 x = 0; x < sprite_width; ++x)
@@ -401,7 +401,7 @@ struct ssffTextureReturn SsffTexture(struct arena *mem, const struct ssff_header
 		}
 
 		y_offset += c->height;
-		ret.count += c[i].sprite_count;
+		ret.count += c->sprite_count;
 	}
 
 	return ret;
