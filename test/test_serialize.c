@@ -495,52 +495,94 @@ static struct test_Output ss_randomized_sequence_partial_signed(void)
 	return output;
 }
 
-struct ss_write_read_u32_partial_input 
+/*
+Partial write/read performance: n values of 1-32 bits, widths and values pregenerated in init (the RNG stays
+out of the region); the read's sum is stored inside the region. Random widths defeat the branch predictor,
+the schema repeats 16 widths as a fixed message layout would. Each init also writes the stream once, so the
+read tests have one to read.
+*/
+struct ss_partial_input
 {
-	struct ss ss_1;
-	struct ss ss_2;
-	u64 n;
+	struct ss	ss_w;
+	struct ss	ss_r;	/* the same buffer, its own position */
+	u64		n;
+	u8 *		bits;
+	u32 *		values;
+	u64		sum;
 };
 
-#define   ss_write_read_u32_partial_size    ((u64) 4*256*1024)
+#define   ss_partial_size    ((u64) 4*256*1024)
 
-void *ss_write_read_u32_partial_init(void)
+static void ss_partial_write(void *args)
 {
-	struct ss_write_read_u32_partial_input *input = malloc(sizeof(struct ss_write_read_u32_partial_input));
-	input->n = ss_write_read_u32_partial_size / 4;
-	input->ss_1 = ss_Alloc(NULL, ss_write_read_u32_partial_size);
-	input->ss_2 = input->ss_1;
-
-	return input;
-}
-
-void ss_write_read_u32_partial_reset(void *args)
-{
-	struct ss_write_read_u32_partial_input *input = args;
-	input->ss_1.bit_index = 0;
-	input->ss_2.bit_index = 0;
-}
-
-void ss_write_read_u32_partial_free(void *args)
-{
-	struct ss_write_read_u32_partial_input *input = args;
-	ss_Free(&input->ss_1);
-	free(input);
-}
-
-static void ss_write_read_u32_partial(void *args)
-{
-	struct ss_write_read_u32_partial_input *input = args;
-	struct ss *ss_in = &input->ss_1;
-	struct ss *ss_out = &input->ss_2;
-
-	for (u32 i = 0; i < input->n; ++i)
+	struct ss_partial_input *in = args;
+	struct ss *ss = &in->ss_w;
+	for (u64 i = 0; i < in->n; ++i)
 	{
-		const u64 bit_count = RngU64Range(1, 32);		
-		const u64 expected = RngU64Range(0, U32_MAX) >> (32-bit_count);
-		ss_WriteU32LePartial(ss_in, expected, bit_count);
-		const u32 actual = ss_ReadU32LePartial(ss_out, bit_count);
+		ss_WriteU32LePartial(ss, in->values[i], in->bits[i]);
 	}
+}
+
+static void ss_partial_read(void *args)
+{
+	struct ss_partial_input *in = args;
+	struct ss *ss = &in->ss_r;
+	u64 sum = 0;
+	for (u64 i = 0; i < in->n; ++i)
+	{
+		sum += ss_ReadU32LePartial(ss, in->bits[i]);
+	}
+	in->sum = sum;
+}
+
+static void ss_partial_write_read(void *args)
+{
+	struct ss_partial_input *in = args;
+	u64 sum = 0;
+	for (u64 i = 0; i < in->n; ++i)
+	{
+		ss_WriteU32LePartial(&in->ss_w, in->values[i], in->bits[i]);
+		sum += ss_ReadU32LePartial(&in->ss_r, in->bits[i]);
+	}
+	in->sum = sum;
+}
+
+static void *ss_partial_init(const u32 schema)
+{
+	static const u8 widths[16] = { 1, 32, 5, 12, 8, 3, 16, 24, 7, 1, 9, 32, 4, 20, 11, 2 };
+	struct ss_partial_input *in = malloc(sizeof(struct ss_partial_input));
+	in->n = ss_partial_size / 4;
+	in->ss_w = ss_Alloc(NULL, ss_partial_size);
+	in->ss_r = in->ss_w;
+	in->bits = malloc(in->n);
+	in->values = malloc(in->n * sizeof(u32));
+	for (u64 i = 0; i < in->n; ++i)
+	{
+		in->bits[i] = schema ? widths[i & 15] : (u8) RngU64Range(1, 32);
+		in->values[i] = (u32) (RngU64Range(0, U32_MAX) >> (32 - in->bits[i]));
+	}
+	in->sum = 0;
+	ss_partial_write(in);
+	return in;
+}
+
+static void *ss_partial_init_random(void)	{ return ss_partial_init(0); }
+static void *ss_partial_init_schema(void)	{ return ss_partial_init(1); }
+
+static void ss_partial_reset(void *args)
+{
+	struct ss_partial_input *in = args;
+	in->ss_w.bit_index = 0;
+	in->ss_r.bit_index = 0;
+}
+
+static void ss_partial_free(void *args)
+{
+	struct ss_partial_input *in = args;
+	free(in->values);
+	free(in->bits);
+	ss_Free(&in->ss_w);
+	free(in);
 }
 
 struct test_CorrectnessRepetition repetition_test[] =
@@ -563,14 +605,11 @@ struct suite_Correctness *serialize_correctness_suite = &m_serialize_suite;
 
 struct test_PerformanceSerial serialize_serial_test[] =
 {
-	{ 
-		.id = "ss_write_read_u32_partial", 
-		.size = ss_write_read_u32_partial_size,
-		.test = &ss_write_read_u32_partial,
-		.test_init = &ss_write_read_u32_partial_init,
-		.test_reset = &ss_write_read_u32_partial_reset,
-		.test_free = &ss_write_read_u32_partial_free,
-	},
+	{ .id = "ss_write_u32_partial_random", .size = ss_partial_size, .test = &ss_partial_write, .test_init = &ss_partial_init_random, .test_reset = &ss_partial_reset, .test_free = &ss_partial_free },
+	{ .id = "ss_read_u32_partial_random", .size = ss_partial_size, .test = &ss_partial_read, .test_init = &ss_partial_init_random, .test_reset = &ss_partial_reset, .test_free = &ss_partial_free },
+	{ .id = "ss_write_read_u32_partial", .size = ss_partial_size, .test = &ss_partial_write_read, .test_init = &ss_partial_init_random, .test_reset = &ss_partial_reset, .test_free = &ss_partial_free },
+	{ .id = "ss_write_u32_partial_schema", .size = ss_partial_size, .test = &ss_partial_write, .test_init = &ss_partial_init_schema, .test_reset = &ss_partial_reset, .test_free = &ss_partial_free },
+	{ .id = "ss_read_u32_partial_schema", .size = ss_partial_size, .test = &ss_partial_read, .test_init = &ss_partial_init_schema, .test_reset = &ss_partial_reset, .test_free = &ss_partial_free },
 };
 
 struct suite_Performance storage_performance_serialize_suite =

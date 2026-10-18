@@ -144,6 +144,7 @@ extern struct suite_Performance *allocator_performance_suite;
 extern struct suite_Performance *THashMap_performance_suite;
 extern struct suite_Performance *hierarchy_performance_suite;
 extern struct suite_Performance *jobscheduler_performance_suite;
+extern struct suite_Performance *memory_performance_suite;
 
 //extern struct suite_Correctness *array_list_suite;
 //extern struct suite_Correctness *hierarchy_index_suite;

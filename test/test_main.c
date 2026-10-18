@@ -351,6 +351,7 @@ void ds_TestMainPerformance(void)
 	run_performance_suite(serialize_performance_suite);
 	run_performance_suite(string_performance_suite);
 	run_performance_suite(hierarchy_performance_suite);
+	run_performance_suite(memory_performance_suite);
 }
 
 #else
