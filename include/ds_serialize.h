@@ -21,8 +21,7 @@
 ds_serialize.h
 ==============
 Serial streams (struct ss): a buffer read or written front to back, one value at a time, at a bit position
-(bit_index) that each call advances. Used for snapshots, container and pool serialization, the font and sprite
-assets and the determinism test files.
+(bit_index) that each call advances.
 
 Two kinds of access:
     Bytes       ss_Read/Write{8,16,32,64}{Le,Be}[N]: whole values at a byte boundary (asserted), in the
@@ -30,9 +29,12 @@ Two kinds of access:
     Partial     ss_Read/Write{U,I}{8,16,32,64}Partial: a value of bit_count (1-64) bits at any bit position.
 Both kinds may be mixed in one stream; a byte access after partial ones needs bit_index % 8 == 0.
 
-Bit order: stream bit i is bit i % 8 of byte i / 8, and a partial value's bits go in least significant first,
-so at a byte boundary a value of 8k bits has the bytes of the Le byte functions. All platforms we ship are
-little-endian, so this order makes the partial access a shift into an 8-byte window.
+Bit order: 
+    stream bit i  is bit i % 8 
+                 of byte i / 8, 
+
+and a partial value's bits go in least significant first, so at a byte boundary a value of 8*k bits has the
+bytes of the Le byte functions. .
 
 Contracts (all asserted in debug only; with asserts off, a violation reads or writes out of bounds):
 the access fits in the stream (bit_index + size <= bit_count), byte access at a byte boundary, partial
@@ -84,11 +86,6 @@ static ds_ForceInline u64		    ss_BytesLeft(const struct ss *ss);
 static ds_ForceInline u64			ss_BitsLeft(const struct ss *ss);
 
 /*************************** byte access ***************************/
-
-/*
- * TODO: CHECK / TRUNCATE b8 val upper bits to zero that are not to be written in functions calling ss_Write****
- * 	This simplifies Logic in write methods
- */
 
 /*
  * read aligned byte(s): return the next 8/16/32/64 bits as a value stored in the stream's byte order (Le/Be),
