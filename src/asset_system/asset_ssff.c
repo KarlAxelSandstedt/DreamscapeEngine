@@ -290,7 +290,7 @@ i32 wi, he, co;
 						}
 					}
 					//TODO ds_Assert(ci != U32_MAX);
-					ss_WriteU32BePartial(&stream, ci, c[i].bit_depth);
+					ss_WriteU32Partial(&stream, ci, c[i].bit_depth);
 				}
 			}
 
@@ -376,7 +376,7 @@ struct ssffTextureReturn SsffTexture(struct arena *mem, const struct ssff_header
 				for (u32 x = 0; x < sprite_width; ++x)
 				{
 					ds_AssertString(x_offset + x < width, "trying to write outside of row");
-					const u32 ci = ss_ReadU32BePartial(&stream, c->bit_depth);
+					const u32 ci = ss_ReadU32Partial(&stream, c->bit_depth);
 					const u32 color = color_table[ci];
 					pixel[4*((y_offset + y)*width + (x_offset + x)) + 0] = (u8) (color >> 24);
 					pixel[4*((y_offset + y)*width + (x_offset + x)) + 1] = (u8) (color >> 16);

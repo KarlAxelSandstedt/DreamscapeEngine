@@ -27,24 +27,25 @@ assets and the determinism test files.
 Two kinds of access:
     Bytes       ss_Read/Write{8,16,32,64}{Le,Be}[N]: whole values at a byte boundary (asserted), in the
                 stream's byte order Le or Be, independent of the machine's. N forms move an array.
-    Partial     ss_Read/Write{U,I}64{Le,Be}Partial: a value of bit_count (1-64) bits at any bit position.
+    Partial     ss_Read/Write{U,I}{8,16,32,64}Partial: a value of bit_count (1-64) bits at any bit position.
 Both kinds may be mixed in one stream; a byte access after partial ones needs bit_index % 8 == 0.
 
-Bit order: each byte is filled from its most significant bit down. A partial Be value is written most
-significant bit first. A partial Le value is cut into 8-bit groups from its least significant end; the groups
-go lowest first, each most significant bit first, and the last group holds the remaining 1-8 top bits. At a
-byte boundary with bit_count a multiple of 8, both equal the byte functions of the same byte order.
+Bit order: stream bit i is bit i % 8 of byte i / 8, and a partial value's bits go in least significant first,
+so at a byte boundary a value of 8k bits has the bytes of the Le byte functions. All platforms we ship are
+little-endian, so this order makes the partial access a shift into an 8-byte window.
 
 Contracts (all asserted in debug only; with asserts off, a violation reads or writes out of bounds):
 the access fits in the stream (bit_index + size <= bit_count), byte access at a byte boundary, partial
-bit_count in [1, 64]. Writes go front to back: a partial write ORs into the first byte when it starts inside
-it and zeroes the rest of its last byte, so writing over data already in the stream corrupts it.
+bit_count in [1, 64]. Writes go front to back: a partial write zeroes the rest of the 8 bytes from the byte
+holding bit_index (within the buffer), and takes the bits before bit_index in that byte from ss->acc, which only
+partial writes maintain, so a partial write after reads or byte writes starts at a byte boundary. Writing over
+data already in the stream corrupts it.
 
 The U/I/F macros wrap the b8/b16/b32/b64 functions for u, i and f values; the narrow partial macros wrap the
-64-bit functions. Internals (bit layout derivations): ds_serialize.c.
+64-bit functions.
 
-Sections: stream, byte access, byte array access, partial access; the inline definitions of the first three
-and the macro definitions at the bottom. Only the partial functions live in ds_serialize.c.
+Sections: stream, byte access, byte array access, partial access; their inline definitions and the macro
+definitions at the bottom. Everything is inline; there is no ds_serialize.c.
 */
 
 #ifndef __DS_SERIALIZE_H__
@@ -64,6 +65,7 @@ struct ss
 	u64 		        bit_index;	/* next bit to read or write, counted from buf[0] bit 7 */
 	u64 		        bit_count;	/* stream size in bits: 8 * bufsize */
 	u8 *		        buf;
+	u64		        acc;		/* partial writer: the byte at bit_index as it last stored it */
 };
 
 /*
@@ -155,36 +157,30 @@ static ds_ForceInline void 	ss_Write64BeN(struct ss *ss, const b64 *buf, const u
 /*************************** partial access ***************************/
 
 /*
- * read / write bit(s): bit_count in [1, 64] and bit_index + bit_count <= stream bit_count (both asserted);
- * any bit_index. Le/Be: the bit order in the summary. bit_index advances by bit_count.
+ * read / write bit(s) in the bit order of the summary: bit_count in [1, 64] and bit_index + bit_count <= stream
+ * bit_count (both asserted); any bit_index. bit_index advances by bit_count.
  */
 
-/* write the low bit_count bits of val; higher bits of val are dropped (not checked) */
-void 	ss_WriteU64LePartial(struct ss *ss, const u64 val, const u64 bit_count);
-/* write the low bit_count bits of val; higher bits of val are dropped (not checked) */
-void 	ss_WriteU64BePartial(struct ss *ss, const u64 val, const u64 bit_count);
 /* return the next bit_count bits as an unsigned value (bits above bit_count are 0) */
-u64 	ss_ReadU64LePartial(struct ss *ss, const u64 bit_count);
-/* return the next bit_count bits as an unsigned value (bits above bit_count are 0) */
-u64 	ss_ReadU64BePartial(struct ss *ss, const u64 bit_count);
-
+static ds_ForceInline u64	ss_ReadU64Partial(struct ss *ss, const u64 bit_count);
+/*
+ * write the low bit_count bits of val (higher bits are dropped) and zero the rest of the 8 bytes from the byte
+ * holding bit_index, within the buffer. The bits below bit_index in its byte come from ss->acc, which only
+ * partial writes maintain: a partial write after reads or byte writes on the stream must start at a byte
+ * boundary (writes go front to back anyway)
+ */
+static ds_ForceInline void	ss_WriteU64Partial(struct ss *ss, const u64 val, const u64 bit_count);
 /*
  * write val as a bit_count-bit two's complement integer (bit bit_count-1 is the sign). val must lie in
  * [-2^(bit_count-1), 2^(bit_count-1) - 1] (not checked; outside, the sign is kept and the rest truncated)
  */
-void 	ss_WriteI64LePartial(struct ss *ss, const i64 val, const u64 bit_count);
-/* as ss_WriteI64LePartial, Be bit order */
-void 	ss_WriteI64BePartial(struct ss *ss, const i64 val, const u64 bit_count);
+static ds_ForceInline void	ss_WriteI64Partial(struct ss *ss, const i64 val, const u64 bit_count);
 /* return the next bit_count bits as a two's complement integer, sign extended to 64 bits */
-i64 	ss_ReadI64LePartial(struct ss *ss, const u64 bit_count);
-/* as ss_ReadI64LePartial, Be bit order */
-i64 	ss_ReadI64BePartial(struct ss *ss, const u64 bit_count);
+static ds_ForceInline i64	ss_ReadI64Partial(struct ss *ss, const u64 bit_count);
 
-/* the 64-bit partial functions under narrower names; the reads cast the result. 8: Be (one byte has no order) */
-//#define ss_Write{U,I}{16,32}{Le,Be}Partial(ss, val, bit_count)
-//#define ss_Write{U,I}8Partial(ss, val, bit_count)
-//#define ss_Read{U,I}{16,32}{Le,Be}Partial(ss, bit_count)
-//#define ss_Read{U,I}8Partial(ss, bit_count)
+/* the 64-bit partial functions under narrower names; the reads cast the result */
+//#define ss_Write{U,I}{8,16,32}Partial(ss, val, bit_count)
+//#define ss_Read{U,I}{8,16,32}Partial(ss, bit_count)
 
 /*************************** stream: inline definitions ***************************/
 
@@ -682,6 +678,123 @@ static ds_ForceInline void ss_Write64BeN(struct ss *ss, const b64 *buf, const u6
 	}
 }
 
+/*************************** partial access: inline definitions ***************************/
+
+/* the low bit_count bits: a load instead of a shift by a variable count and its setup */
+static const u64 ss_partial_mask[65] =
+{
+	0x0000000000000000, 0x0000000000000001, 0x0000000000000003, 0x0000000000000007,
+	0x000000000000000f, 0x000000000000001f, 0x000000000000003f, 0x000000000000007f,
+	0x00000000000000ff, 0x00000000000001ff, 0x00000000000003ff, 0x00000000000007ff,
+	0x0000000000000fff, 0x0000000000001fff, 0x0000000000003fff, 0x0000000000007fff,
+	0x000000000000ffff, 0x000000000001ffff, 0x000000000003ffff, 0x000000000007ffff,
+	0x00000000000fffff, 0x00000000001fffff, 0x00000000003fffff, 0x00000000007fffff,
+	0x0000000000ffffff, 0x0000000001ffffff, 0x0000000003ffffff, 0x0000000007ffffff,
+	0x000000000fffffff, 0x000000001fffffff, 0x000000003fffffff, 0x000000007fffffff,
+	0x00000000ffffffff, 0x00000001ffffffff, 0x00000003ffffffff, 0x00000007ffffffff,
+	0x0000000fffffffff, 0x0000001fffffffff, 0x0000003fffffffff, 0x0000007fffffffff,
+	0x000000ffffffffff, 0x000001ffffffffff, 0x000003ffffffffff, 0x000007ffffffffff,
+	0x00000fffffffffff, 0x00001fffffffffff, 0x00003fffffffffff, 0x00007fffffffffff,
+	0x0000ffffffffffff, 0x0001ffffffffffff, 0x0003ffffffffffff, 0x0007ffffffffffff,
+	0x000fffffffffffff, 0x001fffffffffffff, 0x003fffffffffffff, 0x007fffffffffffff,
+	0x00ffffffffffffff, 0x01ffffffffffffff, 0x03ffffffffffffff, 0x07ffffffffffffff,
+	0x0fffffffffffffff, 0x1fffffffffffffff, 0x3fffffffffffffff, 0x7fffffffffffffff,
+	0xffffffffffffffff,
+};
+
+/*
+ * The window is the 8 stream bytes from the byte holding bit_index; its low n = bit_index % 8 bits are read
+ * already, so it holds 57-64 unread bits and the value is a shift and a mask. Only a value of 58-64 bits that
+ * starts inside a byte reaches past it, into the next byte. The window is loaded whole where 8 bytes remain
+ * and byte by byte (zeros above) at the end of the buffer; the value fits, so the zeros are never read.
+ */
+static ds_ForceInline u64 ss_ReadU64Partial(struct ss *ss, const u64 bit_count)
+{
+	ds_Assert(1 <= bit_count && bit_count <= 64);
+	ds_Assert(ss->bit_index + bit_count <= ss->bit_count);
+
+	const u64 p = ss->bit_index >> 3;
+	const u64 n = ss->bit_index & 7;
+	const u64 bytes_left = (ss->bit_count >> 3) - p;
+	b64 window = { .u = 0 };
+	if (bytes_left >= 8)
+	{
+		memcpy(&window, ss->buf + p, 8);
+	}
+	else
+	{
+		memcpy(&window, ss->buf + p, bytes_left);
+	}
+	window = LeToNa64(window);
+
+	const u64 mask = ss_partial_mask[bit_count];
+	u64 val = (window.u >> n) & mask;
+	if (n + bit_count > 64)
+	{
+		val |= (((u64) ss->buf[p + 8]) << (64 - n)) & mask;
+	}
+	ss->bit_index += bit_count;
+	return val;
+}
+
+/*
+ * The window is the 8 stream bytes from the byte holding bit_index: the n = bit_index % 8 bits written before
+ * (from acc) and the value above them. It is stored whole where 8 bytes remain, else only the bytes the value
+ * touches (the value fits). What is left of the window above the completed bytes is the next acc. A value of
+ * 58-64 bits that starts inside a byte overflows the window: the overflow is the next byte and the next acc.
+ */
+static ds_ForceInline void ss_WriteU64Partial(struct ss *ss, const u64 val, const u64 bit_count)
+{
+	ds_Assert(1 <= bit_count && bit_count <= 64);
+	ds_Assert(ss->bit_index + bit_count <= ss->bit_count);
+
+	const u64 p = ss->bit_index >> 3;
+	const u64 n = ss->bit_index & 7;
+	const u64 bytes_left = (ss->bit_count >> 3) - p;
+	const u64 masked = val & ss_partial_mask[bit_count];
+	const u64 window = (ss->acc & (((u64) 1 << n) - 1)) | (masked << n);
+	const u64 total = n + bit_count;
+
+	const b64 stored = NaToLe64((b64) { .u = window });
+	if (bytes_left >= 8)
+	{
+		memcpy(ss->buf + p, &stored, 8);
+	}
+	else
+	{
+		memcpy(ss->buf + p, &stored, (total + 7) >> 3);
+	}
+
+	ss->bit_index += bit_count;
+	if (total <= 64)
+	{
+		const u64 done = total >> 3;
+		ss->acc = (done < 8) ? window >> (8 * done) : 0;
+	}
+	else
+	{
+		const u64 overflow = masked >> (64 - n);
+		ss->buf[p + 8] = (u8) overflow;
+		ss->acc = overflow;
+	}
+}
+
+static ds_ForceInline void ss_WriteI64Partial(struct ss *ss, const i64 val, const u64 bit_count)
+{
+	b64 trunc = { .i = val };
+	const u64 mask = 0x7fffffffffffffff >> (64 - bit_count);
+	trunc.u = (trunc.u & mask) | ((trunc.u & 0x8000000000000000) >> (64 - bit_count));
+	ss_WriteU64Partial(ss, trunc.u, bit_count);
+}
+
+static ds_ForceInline i64 ss_ReadI64Partial(struct ss *ss, const u64 bit_count)
+{
+	b64 trunc = { .u = ss_ReadU64Partial(ss, bit_count) };
+	const u64 sign = trunc.u >> (bit_count - 1);
+	trunc.u |= (0xffffffffffffffff * sign) << (bit_count - 1);
+	return trunc.i;
+}
+
 /*************************** macro definitions ***************************/
 
 #define ss_ReadU8(ss)      	ss_Read8(ss).u
@@ -762,26 +875,18 @@ static ds_ForceInline void ss_Write64BeN(struct ss *ss, const b64 *buf, const u6
 #define ss_ReadF64BeN(ss, buf, len)		ss_Read64BeN(ss, (b64 *) (buf), len)
 #define ss_WriteF64BeN(ss, buf, len)		ss_Write64BeN(ss, (b64 *) (buf), len)
 
-#define ss_WriteU32LePartial(ss, val, bit_count)	ss_WriteU64LePartial(ss, val, bit_count)
-#define ss_WriteU16LePartial(ss, val, bit_count)	ss_WriteU64LePartial(ss, val, bit_count)
-#define ss_WriteU32BePartial(ss, val, bit_count)	ss_WriteU64BePartial(ss, val, bit_count)
-#define ss_WriteU16BePartial(ss, val, bit_count)	ss_WriteU64BePartial(ss, val, bit_count)
-#define ss_WriteU8Partial(ss, val, bit_count)		ss_WriteU64BePartial(ss, val, bit_count)
-#define ss_ReadU32LePartial(ss, bit_count)		((u32) ss_ReadU64LePartial(ss, bit_count))
-#define ss_ReadU16LePartial(ss, bit_count)		((u16) ss_ReadU64LePartial(ss, bit_count))
-#define ss_ReadU32BePartial(ss, bit_count)		((u32) ss_ReadU64BePartial(ss, bit_count))
-#define ss_ReadU16BePartial(ss, bit_count)		((u16) ss_ReadU64BePartial(ss, bit_count))
-#define ss_ReadU8Partial(ss, bit_count)			((u8) ss_ReadU64BePartial(ss, bit_count))
-#define ss_WriteI32LePartial(ss, val, bit_count)	ss_WriteI64LePartial(ss, val, bit_count)
-#define ss_WriteI16LePartial(ss, val, bit_count)	ss_WriteI64LePartial(ss, val, bit_count)
-#define ss_WriteI32BePartial(ss, val, bit_count)	ss_WriteI64BePartial(ss, val, bit_count)
-#define ss_WriteI16BePartial(ss, val, bit_count)	ss_WriteI64BePartial(ss, val, bit_count)
-#define ss_WriteI8Partial(ss, val, bit_count)		ss_WriteI64BePartial(ss, val, bit_count)
-#define ss_ReadI32LePartial(ss, bit_count)		((i32) ss_ReadI64LePartial(ss, bit_count))
-#define ss_ReadI16LePartial(ss, bit_count)		((i16) ss_ReadI64LePartial(ss, bit_count))
-#define ss_ReadI32BePartial(ss, bit_count)		((i32) ss_ReadI64BePartial(ss, bit_count))
-#define ss_ReadI16BePartial(ss, bit_count)		((i16) ss_ReadI64BePartial(ss, bit_count))
-#define ss_ReadI8Partial(ss, bit_count)			((i8) ss_ReadI64BePartial(ss, bit_count))
+#define ss_WriteU8Partial(ss, val, bit_count)		ss_WriteU64Partial(ss, val, bit_count)
+#define ss_WriteU16Partial(ss, val, bit_count)		ss_WriteU64Partial(ss, val, bit_count)
+#define ss_WriteU32Partial(ss, val, bit_count)		ss_WriteU64Partial(ss, val, bit_count)
+#define ss_ReadU8Partial(ss, bit_count)			((u8) ss_ReadU64Partial(ss, bit_count))
+#define ss_ReadU16Partial(ss, bit_count)		((u16) ss_ReadU64Partial(ss, bit_count))
+#define ss_ReadU32Partial(ss, bit_count)		((u32) ss_ReadU64Partial(ss, bit_count))
+#define ss_WriteI8Partial(ss, val, bit_count)		ss_WriteI64Partial(ss, val, bit_count)
+#define ss_WriteI16Partial(ss, val, bit_count)		ss_WriteI64Partial(ss, val, bit_count)
+#define ss_WriteI32Partial(ss, val, bit_count)		ss_WriteI64Partial(ss, val, bit_count)
+#define ss_ReadI8Partial(ss, bit_count)			((i8) ss_ReadI64Partial(ss, bit_count))
+#define ss_ReadI16Partial(ss, bit_count)		((i16) ss_ReadI64Partial(ss, bit_count))
+#define ss_ReadI32Partial(ss, bit_count)		((i32) ss_ReadI64Partial(ss, bit_count))
 
 #ifdef __cplusplus
 } 
