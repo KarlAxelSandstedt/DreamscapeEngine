@@ -2,7 +2,6 @@ cmake_minimum_required(VERSION 3.14.3)
 
 add_library(DreamscapeTestAPI
 	ds_test.h
-	test_repetition.c
 	test_main.c 
     test_job.c
     #test_container.c

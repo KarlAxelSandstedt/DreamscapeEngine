@@ -174,12 +174,14 @@ void ds_TestRunParallel(void (*test)(void *), void *args)
 	ArenaPopScratch();
 }
 
+#ifdef DS_PERFORMANCE_MEASUREMENT_API
+
 static void run_performance_suite(struct suite_Performance *suite)
 {
 	fprintf(stdout, ":::::::::: Running peformance suite %s ::::::::::\n", suite->id);
 
-	const u64 max_time_without_improvement = 10*TscFrequency();
-	struct rt tester;
+	const f64 retry_s = 10.0;
+	struct RT tester;
 	struct arena *mem = ArenaPushScratch();
 
 	for (u32 i = 0; i < suite->parallel_test_count; ++i)
@@ -204,7 +206,8 @@ static void run_performance_suite(struct suite_Performance *suite)
                 : NULL;
 		}
 
-		rt_Wave(&tester, suite->parallel_test[i].size, TscFrequency(), max_time_without_improvement, 1);
+		/* a phase's cost is its wall time: the master's cycle counter stops while it waits for the workers */
+		RTWave(&tester, suite->parallel_test[i].size, retry_s, RT_SELECT_TICKS);
 		do
 		{
 			RngPushState();
@@ -236,17 +239,17 @@ static void run_performance_suite(struct suite_Performance *suite)
                 }
 			    AtomicStoreRel32(&phase.a_barrier, 1);
 
-			    rt_BeginTime(&tester);	
+			    RTBeginTime(&tester);	
 
                 ds_MasterRunAvailableJobs();
                 ds_JobPhaseEnd();
 			    
-                rt_EndTime(&tester);
+                RTEndTime(&tester);
             }
 
 			ArenaPopRecord(mem);
 			RngPopState();
-		} while (rt_TestingCheck(&tester));
+		} while (RTTestingCheck(&tester));
 
 		if (suite->parallel_test[i].test_free)
 		{
@@ -256,7 +259,7 @@ static void run_performance_suite(struct suite_Performance *suite)
 			}
 		}
 
-		rt_PrintStatistics(&tester, stdout);
+		RTPrintStatistics(&tester, stdout);
 	}
 
     for (u32 i = 0; i < suite->serial_test_count; ++i)
@@ -268,7 +271,7 @@ static void run_performance_suite(struct suite_Performance *suite)
 			? suite->serial_test[i].test_init()
 			: NULL;
 
-		rt_Wave(&tester, suite->serial_test[i].size, TscFrequency(), max_time_without_improvement, 1);
+		RTWave(&tester, suite->serial_test[i].size, retry_s, RT_SELECT_CYCLES);
 		do
 		{
 			RngPushState();
@@ -277,22 +280,24 @@ static void run_performance_suite(struct suite_Performance *suite)
 				suite->serial_test[i].test_reset(args);
 			}		
 
-			rt_BeginTime(&tester);	
+			RTBeginTime(&tester);	
 			suite->serial_test[i].test(args);	
-			rt_EndTime(&tester);
+			RTEndTime(&tester);
 		
 			RngPopState();
-		} while (rt_TestingCheck(&tester));
+		} while (RTTestingCheck(&tester));
 
 		if (suite->serial_test[i].test_free)
 		{
 			suite->serial_test[i].test_free(args);
 		}
-		rt_PrintStatistics(&tester, stdout);
+		RTPrintStatistics(&tester, stdout);
 	}
 
     ArenaPopScratch();
 }
+
+#endif /* DS_PERFORMANCE_MEASUREMENT_API */
 
 void ds_TestMainCorrectness(void)
 {
@@ -334,6 +339,8 @@ void ds_TestMainCorrectness(void)
 	//run_suite(math_correctness_suite, &env, 1);
 }
 
+#ifdef DS_PERFORMANCE_MEASUREMENT_API
+
 void ds_TestMainPerformance(void)
 {
 	//run_performance_suite(jobscheduler_performance_suite);
@@ -345,3 +352,12 @@ void ds_TestMainPerformance(void)
 	run_performance_suite(string_performance_suite);
 	run_performance_suite(hierarchy_performance_suite);
 }
+
+#else
+
+void ds_TestMainPerformance(void)
+{
+	fprintf(stdout, "performance tests need DS_PERFORMANCE_MEASUREMENT_API (DS_TEST_PERFORMANCE defines it)\n");
+}
+
+#endif

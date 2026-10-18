@@ -163,4 +163,189 @@ void ds_MeasureApiInit(void)
 	g_perf_overhead_cycles = PerfCyclesThreadAvailable() ? both.cycles : 0;
 }
 
+/*
+RT
+==
+*/
+
+#if __DS_PLATFORM__ == __DS_WEB__
+
+/* PerfWallClock ticks are ns on the web */
+static u64 RTTicksPerSecond(void) { return NSEC_PER_SEC; }
+#else
+static u64 RTTicksPerSecond(void) { return TscFrequency(); }
+#endif
+
+static void RTError(struct RT *t, const char *msg)
+{
+	if (t->state != RT_ERROR)
+	{
+		t->state = RT_ERROR;
+		t->error = msg;
+		Log(T_SYSTEM, S_ERROR, "RT: %s", msg);
+	}
+}
+
+void RTWave(struct RT *t, const u64 bytes, const f64 retry_s, const enum RTSelect select)
+{
+	const enum RTSelect resolved = (select == RT_SELECT_CYCLES && PerfCyclesThreadAvailable())
+		? RT_SELECT_CYCLES
+		: RT_SELECT_TICKS;
+
+	switch (t->state)
+	{
+	    case RT_UNINITIALIZED:
+        {
+	    	t->bytes = bytes;
+	    	t->select = resolved;
+	    	break;
+        }
+
+	    case RT_COMPLETED:
+        {
+	    	if (bytes != t->bytes)
+	    	{
+	    		RTError(t, "bytes per repetition changed between waves");
+	    		return;
+	    	}
+	    	if (resolved != t->select)
+	    	{
+	    		RTError(t, "selection changed between waves");
+	    		return;
+	    	}
+	    	break;
+        }
+
+	    case RT_TESTING:
+        {
+	    	RTError(t, "wave started before the previous one completed");
+	    	return;
+        }
+
+	    case RT_ERROR:
+        {
+	    	return;
+        }
+	}
+
+	t->state = RT_TESTING;
+	t->retry_ticks = (u64) (retry_s * (f64) RTTicksPerSecond());
+	t->retry_start = PerfWallClockBegin();
+	t->enter_count = 0;
+	t->exit_count = 0;
+	t->current.ticks = 0;
+	t->current.cycles = 0;
+}
+
+u32 RTTestingCheck(struct RT *t)
+{
+	if (t->state != RT_TESTING)
+	{
+		return 0;
+	}
+	if (t->enter_count == 0)
+	{
+		RTError(t, "no timed region in the repetition");
+		return 0;
+	}
+	if (t->enter_count != t->exit_count)
+	{
+		RTError(t, "a timed region was not closed");
+		return 0;
+	}
+	if (t->count == 0)
+	{
+		t->regions = t->enter_count;
+	}
+	else if (t->regions != t->enter_count)
+	{
+		RTError(t, "timed region count changed between repetitions");
+		return 0;
+	}
+
+	const struct PerfStamp current = t->current;
+	const u64 now = PerfWallClockBegin();
+	const u64 figure = (t->select == RT_SELECT_CYCLES) ? current.cycles : current.ticks;
+	const u64 figure_min = (t->select == RT_SELECT_CYCLES) ? t->min.cycles : t->min.ticks;
+	const u64 figure_max = (t->select == RT_SELECT_CYCLES) ? t->max.cycles : t->max.ticks;
+	if (t->count == 0 || figure < figure_min)
+	{
+		t->min = current;
+		t->retry_start = now;
+	}
+	if (t->count == 0 || figure_max < figure)
+	{
+		t->max = current;
+	}
+	t->total.ticks += current.ticks;
+	t->total.cycles += current.cycles;
+	t->count += 1;
+
+	t->enter_count = 0;
+	t->exit_count = 0;
+	t->current.ticks = 0;
+	t->current.cycles = 0;
+
+	if (t->retry_ticks < now - t->retry_start)
+	{
+		t->state = RT_COMPLETED;
+		return 0;
+	}
+	return 1;
+}
+
+static f64 RTSeconds(const u64 ticks)
+{
+	return (f64) ticks / (f64) RTTicksPerSecond();
+}
+
+/* GB/s (1024^3), 0 for a zero time */
+static f64 RTThroughput(const u64 bytes, const f64 s)
+{
+	return (s > 0.0) ? (f64) bytes / s / (1024.0 * 1024.0 * 1024.0) : 0.0;
+}
+
+void RTPrintStatistics(const struct RT *t, FILE *file)
+{
+	if (t->state == RT_ERROR)
+	{
+		fprintf(file, "RT error: %s\n", t->error);
+		return;
+	}
+	if (t->count == 0)
+	{
+		fprintf(file, "RT: no repetitions\n");
+		return;
+	}
+
+	/* the pairs' own cost, once per region, out of the minimum only */
+	const u64 overhead_ticks = t->regions * g_perf_overhead_ticks;
+	const u64 overhead_cycles = t->regions * g_perf_overhead_cycles;
+	const u64 ticks_min = (overhead_ticks < t->min.ticks) ? t->min.ticks - overhead_ticks : 0;
+	const u64 cycles_min = (overhead_cycles < t->min.cycles) ? t->min.cycles - overhead_cycles : 0;
+
+	const f64 s_min = RTSeconds(ticks_min);
+	const f64 s_max = RTSeconds(t->max.ticks);
+	const f64 s_avg = RTSeconds(t->total.ticks) / (f64) t->count;
+
+	if (t->select == RT_SELECT_CYCLES)
+	{
+		const f64 ghz = (ticks_min) ? (f64) cycles_min / (f64) ticks_min * (f64) RTTicksPerSecond() / 1e9 : 0.0;
+		fprintf(file, "min: [%.5fms] %.3fGB/s  %llu cycles  %.4f cycles/B  core %.2f GHz  (%llu repetitions, overhead subtracted)\n",
+			s_min * 1e3, RTThroughput(t->bytes, s_min), (unsigned long long) cycles_min,
+			(f64) cycles_min / (f64) t->bytes, ghz, (unsigned long long) t->count);
+		fprintf(file, "max: [%.5fms] %.3fGB/s  %llu cycles\n",
+			s_max * 1e3, RTThroughput(t->bytes, s_max), (unsigned long long) t->max.cycles);
+		fprintf(file, "avg: [%.5fms] %.3fGB/s  %.0f cycles\n",
+			s_avg * 1e3, RTThroughput(t->bytes, s_avg), (f64) t->total.cycles / (f64) t->count);
+	}
+	else
+	{
+		fprintf(file, "min: [%.5fms] %.3fGB/s  %.4f ticks/B  (%llu repetitions, overhead subtracted; by wall time)\n",
+			s_min * 1e3, RTThroughput(t->bytes, s_min), (f64) ticks_min / (f64) t->bytes, (unsigned long long) t->count);
+		fprintf(file, "max: [%.5fms] %.3fGB/s\n", s_max * 1e3, RTThroughput(t->bytes, s_max));
+		fprintf(file, "avg: [%.5fms] %.3fGB/s\n", s_avg * 1e3, RTThroughput(t->bytes, s_avg));
+	}
+}
+
 #endif /* DS_PERFORMANCE_MEASUREMENT_API */

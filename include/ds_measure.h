@@ -21,8 +21,8 @@
 ds_measure.h
 ============
 Performance measurement: timing a code block with the TSC (PerfWallClock), the core's cycle counter
-(PerfCycles) or both (PerfBegin/PerfEnd). Only with DS_PERFORMANCE_MEASUREMENT_API. Inline definitions at the
-bottom.
+(PerfCycles) or both (PerfBegin/PerfEnd), and the repetition tester RT built on the last. Only with
+DS_PERFORMANCE_MEASUREMENT_API. Inline definitions at the bottom.
 */
 
 #ifndef __DREAMSCAPE_MEASURE_H__
@@ -32,6 +32,7 @@ bottom.
 extern "C" {
 #endif
 
+#include <stdio.h>
 #include "ds_time.h"
 
 #ifdef DS_PERFORMANCE_MEASUREMENT_API
@@ -116,24 +117,13 @@ static ds_ForceInline struct PerfStamp	PerfEnd(const struct PerfStamp begin);
 extern ds_ThreadLocal u32	tl_perf_cycles_index;
 extern u64			        g_perf_cycles_mask;
 
-/* TODO: We want to build a easy-to-use repetition tester that encloses a bit of code, repeatedly
- *       running it, and keeping track of best/total time spent in the function, and so on. When no
- *       improvement has been made to the time in quite some time, we end the repetition test. This works
- *       very well in serialized environments, but may require different APIs for multithreaded performance
- *       testing?
- *      
+/*     
  * TODO: goes in skill
- *  () How to properly instrument code
- *      () lfence + rdtsc yields a wall-clock timer which properly times the
- *          code inside, however, wall-clock timings come with the issue of
- *          not being able to distinguish turbo-modes, and so on.
- *      () hardware cycle counting yields a true measurement of actual performance
- *          but it only works on linux, and perhaps the overhead is to large / uncontrollable
- *          to use for small instruction block measurements?
- *      () Ideally, our API should use the best possible measurement tools available,
- *         so linux, windows and wasm measure differently.
- *      () Whenever the agent runs on new hardware / setup, it should first verify the overhead
- *          and use the appropriate API.
+ *  (O) How to properly instrument code (hw + tsc block timing)
+ *  () How to properly repetition test
+ *
+ *  () Whenever the agent runs on new hardware / setup, it should first verify the overhead
+ *     and use the appropriate API.
  *
  *  () How to derive best-case speed-of-light comparisions?
  *          "A basic baseline we cannot possibly beat, for example
@@ -145,6 +135,75 @@ extern u64			        g_perf_cycles_mask;
  *      () Estimate loads differently dependeing on volume?
  *          Can we assume L1/L2/L3/DRAM?
  */
+
+/*
+RT
+==
+Repetition tester: a block is run repeatedly, each repetition one or more RTBeginTime/RTEndTime regions, until no
+faster repetition has appeared for retry_s seconds; the fastest, slowest and total repetition are kept in both
+PerfBegin/PerfEnd counts. "Faster" is decided on core cycles (RT_SELECT_CYCLES, with a counter on the calling
+thread) or on wall ticks (RT_SELECT_TICKS: regions that wait on other threads, such as a job phase; also the
+fallback without a counter). RTPrintStatistics subtracts the pairs' cost (regions x g_perf_overhead_*) from the
+minimum only. A zeroed struct RT is a fresh tester; on an error it stays in RT_ERROR, the loop ends and
+RTPrintStatistics prints the error. On the web ticks are ns.
+
+    struct RT t = { 0 };
+    RTWave(&t, bytes_per_repetition, 10.0, RT_SELECT_CYCLES);
+    do
+    {
+        reset
+        RTBeginTime(&t);
+        code-block; 
+        RTEndTime(&t);
+    } while (RTTestingCheck(&t));
+    RTPrintStatistics(&t, stdout);
+*/
+
+enum RTSelect
+{
+	RT_SELECT_CYCLES,
+	RT_SELECT_TICKS,
+};
+
+enum RTState
+{
+	RT_UNINITIALIZED = 0,
+	RT_TESTING,
+	RT_COMPLETED,
+	RT_ERROR,
+};
+
+struct RT
+{
+	enum RTState		state;
+	enum RTSelect		select;		/* as RTWave resolved it: RT_SELECT_TICKS without a counter */
+	const char *		error;		/* the first error's message */
+	u32			regions;	/* timed regions per repetition, from the first one */
+	u32			enter_count;	/* the open repetition's regions */
+	u32			exit_count;
+	u64			bytes;		/* processed per repetition */
+	u64			retry_ticks;	/* wall ticks without a new minimum before the wave completes */
+	u64			retry_start;	/* wall ticks at the last new minimum */
+	struct PerfStamp	begin;		/* the open region's start */
+	struct PerfStamp	current;	/* the open repetition's sums */
+	u64			count;		/* repetitions */
+	struct PerfStamp	total;
+	struct PerfStamp	min;		/* the fastest repetition: both of its counts */
+	struct PerfStamp	max;		/* the slowest */
+};
+
+/* Start a wave (RT_UNINITIALIZED) or continue one (RT_COMPLETED: bytes and the selection must not change) */
+void	RTWave(struct RT *t, const u64 bytes, const f64 retry_s, const enum RTSelect select);
+/* Close the repetition: record it, restart the retry clock on a new minimum; return 1 to run another */
+u32	RTTestingCheck(struct RT *t);
+/* A timed region: all of a repetition's regions sum into it */
+static ds_ForceInline void	RTBeginTime(struct RT *t);
+static ds_ForceInline void	RTEndTime(struct RT *t);
+/*
+Print the fastest (overhead subtracted), slowest and average repetition: ms, GB/s and, selecting on cycles,
+cycles, cycles/B and the core clock during the fastest; the error in RT_ERROR
+*/
+void	RTPrintStatistics(const struct RT *t, FILE *file);
 
 /********************************** inline definitions **********************************/
 
@@ -269,6 +328,20 @@ static ds_ForceInline struct PerfStamp PerfEnd(const struct PerfStamp begin)
 }
 
 #endif
+
+static ds_ForceInline void RTBeginTime(struct RT *t)
+{
+	t->enter_count += 1;
+	t->begin = PerfBegin();
+}
+
+static ds_ForceInline void RTEndTime(struct RT *t)
+{
+	const struct PerfStamp d = PerfEnd(t->begin);
+	t->current.ticks += d.ticks;
+	t->current.cycles += d.cycles;
+	t->exit_count += 1;
+}
 
 #endif /* DS_PERFORMANCE_MEASUREMENT_API */
 

@@ -287,6 +287,8 @@ endif ()
 if (DS_TEST_PERFORMANCE)
 	set(DS_TEST ON)
 	set(DS_TEST_MODULE_PATH "${DS_TEST_PATH}/performance")
+	# the repetition tester measures with ds_measure.h
+	target_compile_definitions(DreamscapeDefine INTERFACE DS_PERFORMANCE_MEASUREMENT_API)
 endif ()
 
 if (DS_TEST_DETERMINISM)
