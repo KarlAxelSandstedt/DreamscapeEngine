@@ -22,7 +22,7 @@ ds_measure.h
 ============
 Performance measurement: timing a code block with the TSC (PerfWallClock), the core's cycle counter
 (PerfCycles) or both (PerfBegin/PerfEnd), and the repetition tester RT built on the last. Only with
-DS_PERFORMANCE_MEASUREMENT_API. Inline definitions at the bottom.
+DS_PERFORMANCE_MEASUREMENT_API. Sections: Perf blocks, RT; inline definitions at the bottom.
 */
 
 #ifndef __DREAMSCAPE_MEASURE_H__
@@ -64,7 +64,8 @@ Performance measuring blocks of code.
     Note 3: Within a measurement the block cannot overlap its neighbours, so it shows its latency,
     not the throughput it has inside a loop.
 
-PerfWallClock: best available wall-clock timer for performance measurements.
+PerfWallClock: best available wall-clock timer for performance measurements (x64: the TSC; web: ns from the OS
+clock).
 
 PerfBegin/PerfEnd: both in one pair (a struct PerfStamp), one fence per side; the repetition tester's pair. The
 tick window encloses the two cycle reads, so its tick cost is about three times the wall-clock pair's.
@@ -83,6 +84,7 @@ extern u64	g_perf_cycles_overhead;
 extern u64	g_perf_overhead_ticks;		/* PerfBegin/PerfEnd */
 extern u64	g_perf_overhead_cycles;
 
+/* a reading (PerfBegin) or the counts since one (PerfEnd) */
 struct PerfStamp
 {
 	u64	ticks;
@@ -92,9 +94,9 @@ struct PerfStamp
 /* Open the main thread's counter and measure the pairs' costs; after ds_TimeApiInit */
 void	ds_MeasureApiInit(void);
 
-/* Open thread's hardware counter; no-op if already open or unavailable. */
+/* Open the calling thread's hardware counter; no-op if already open, logged (S_NOTE) if unavailable */
 void	    PerfCyclesThreadInit(void);
-/* Close thread's hardware counter; no-op if already closed */
+/* Close the calling thread's hardware counter; no-op if already closed */
 void	    PerfCyclesThreadShutdown(void);
 /* Return 1 if the calling thread's counter is open */
 u32	        PerfCyclesThreadAvailable(void);
@@ -109,6 +111,7 @@ static ds_ForceInline u64	PerfCyclesBegin(void);
 /* Return core cycles since begin; 0 where unavailable */
 static ds_ForceInline u64	PerfCyclesEnd(const u64 begin);
 
+/* Return ticks and core cycles (cycles 0 where unavailable) */
 static ds_ForceInline struct PerfStamp	PerfBegin(void);
 /* Return ticks and cycles since begin (cycles 0 where unavailable) */
 static ds_ForceInline struct PerfStamp	PerfEnd(const struct PerfStamp begin);
@@ -117,38 +120,20 @@ static ds_ForceInline struct PerfStamp	PerfEnd(const struct PerfStamp begin);
 extern ds_ThreadLocal u32	tl_perf_cycles_index;
 extern u64			        g_perf_cycles_mask;
 
-/*     
- * TODO: goes in skill
- *  (O) How to properly instrument code (hw + tsc block timing)
- *  () How to properly repetition test
- *
- *  () Whenever the agent runs on new hardware / setup, it should first verify the overhead
- *     and use the appropriate API.
- *
- *  () How to derive best-case speed-of-light comparisions?
- *          "A basic baseline we cannot possibly beat, for example
- *           can we estimate the time it takes to simply load all
- *           data we work on, and compare our timings against that?"
- *      () Estimate bytes read
- *      () Estimate cache lines touched
- *      () Instructions-per-bytes?
- *      () Estimate loads differently dependeing on volume?
- *          Can we assume L1/L2/L3/DRAM?
- */
-
 /*
 RT
 ==
 Repetition tester: a block is run repeatedly, each repetition one or more RTBeginTime/RTEndTime regions, until no
 faster repetition has appeared for retry_s seconds; the fastest, slowest and total repetition are kept in both
-PerfBegin/PerfEnd counts. "Faster" is decided on core cycles (RT_SELECT_CYCLES, with a counter on the calling
-thread) or on wall ticks (RT_SELECT_TICKS: regions that wait on other threads, such as a job phase; also the
-fallback without a counter). RTPrintStatistics subtracts the pairs' cost (regions x g_perf_overhead_*) from the
-minimum only. A zeroed struct RT is a fresh tester; on an error it stays in RT_ERROR, the loop ends and
-RTPrintStatistics prints the error. On the web ticks are ns.
+PerfBegin/PerfEnd counts. "Faster" is decided on wall ticks: the fastest repetition is the one that ran
+uninterrupted at the highest clock, and its cycles are the block's cycles (a cycle minimum would prefer a low
+clock for memory-bound blocks, which wait a fixed time). RTPrintStatistics subtracts the pairs' cost (regions x
+g_perf_overhead_*) from the minimum only and prints cycles when the thread had a counter at RTWave; for a job
+phase they are the master's own. A zeroed struct RT is a fresh tester; on an error it stays in RT_ERROR, the loop
+ends and RTPrintStatistics prints the error. On the web ticks are ns.
 
     struct RT t = { 0 };
-    RTWave(&t, bytes_per_repetition, 10.0, RT_SELECT_CYCLES);
+    RTWave(&t, bytes_per_repetition, 10.0);
     do
     {
         reset
@@ -158,12 +143,6 @@ RTPrintStatistics prints the error. On the web ticks are ns.
     } while (RTTestingCheck(&t));
     RTPrintStatistics(&t, stdout);
 */
-
-enum RTSelect
-{
-	RT_SELECT_CYCLES,
-	RT_SELECT_TICKS,
-};
 
 enum RTState
 {
@@ -176,7 +155,7 @@ enum RTState
 struct RT
 {
 	enum RTState		state;
-	enum RTSelect		select;		/* as RTWave resolved it: RT_SELECT_TICKS without a counter */
+	u32			cycles;		/* the thread had a counter at RTWave: cycle figures are printed */
 	const char *		error;		/* the first error's message */
 	u32			regions;	/* timed regions per repetition, from the first one */
 	u32			enter_count;	/* the open repetition's regions */
@@ -192,16 +171,16 @@ struct RT
 	struct PerfStamp	max;		/* the slowest */
 };
 
-/* Start a wave (RT_UNINITIALIZED) or continue one (RT_COMPLETED: bytes and the selection must not change) */
-void	RTWave(struct RT *t, const u64 bytes, const f64 retry_s, const enum RTSelect select);
+/* Start a wave (RT_UNINITIALIZED) or continue one (RT_COMPLETED: bytes must not change) */
+void	RTWave(struct RT *t, const u64 bytes, const f64 retry_s);
 /* Close the repetition: record it, restart the retry clock on a new minimum; return 1 to run another */
 u32	RTTestingCheck(struct RT *t);
 /* A timed region: all of a repetition's regions sum into it */
 static ds_ForceInline void	RTBeginTime(struct RT *t);
 static ds_ForceInline void	RTEndTime(struct RT *t);
 /*
-Print the fastest (overhead subtracted), slowest and average repetition: ms, GB/s and, selecting on cycles,
-cycles, cycles/B and the core clock during the fastest; the error in RT_ERROR
+Print the fastest (overhead subtracted), slowest and average repetition: ms, GB/s and, with a counter, cycles,
+cycles/B and the core clock during the fastest; the error in RT_ERROR
 */
 void	RTPrintStatistics(const struct RT *t, FILE *file);
 

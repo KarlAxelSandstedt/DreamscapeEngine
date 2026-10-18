@@ -206,8 +206,8 @@ static void run_performance_suite(struct suite_Performance *suite)
                 : NULL;
 		}
 
-		/* a phase's cost is its wall time: the master's cycle counter stops while it waits for the workers */
-		RTWave(&tester, suite->parallel_test[i].size, retry_s, RT_SELECT_TICKS);
+		/* the cycles printed are the master's own: its counter stops while it waits for the workers */
+		RTWave(&tester, suite->parallel_test[i].size, retry_s);
 		do
 		{
 			RngPushState();
@@ -271,7 +271,7 @@ static void run_performance_suite(struct suite_Performance *suite)
 			? suite->serial_test[i].test_init()
 			: NULL;
 
-		RTWave(&tester, suite->serial_test[i].size, retry_s, RT_SELECT_CYCLES);
+		RTWave(&tester, suite->serial_test[i].size, retry_s);
 		do
 		{
 			RngPushState();

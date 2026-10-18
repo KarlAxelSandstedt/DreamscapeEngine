@@ -186,18 +186,14 @@ static void RTError(struct RT *t, const char *msg)
 	}
 }
 
-void RTWave(struct RT *t, const u64 bytes, const f64 retry_s, const enum RTSelect select)
+void RTWave(struct RT *t, const u64 bytes, const f64 retry_s)
 {
-	const enum RTSelect resolved = (select == RT_SELECT_CYCLES && PerfCyclesThreadAvailable())
-		? RT_SELECT_CYCLES
-		: RT_SELECT_TICKS;
-
 	switch (t->state)
 	{
 	    case RT_UNINITIALIZED:
         {
 	    	t->bytes = bytes;
-	    	t->select = resolved;
+	    	t->cycles = PerfCyclesThreadAvailable();
 	    	break;
         }
 
@@ -206,11 +202,6 @@ void RTWave(struct RT *t, const u64 bytes, const f64 retry_s, const enum RTSelec
 	    	if (bytes != t->bytes)
 	    	{
 	    		RTError(t, "bytes per repetition changed between waves");
-	    		return;
-	    	}
-	    	if (resolved != t->select)
-	    	{
-	    		RTError(t, "selection changed between waves");
 	    		return;
 	    	}
 	    	break;
@@ -265,15 +256,12 @@ u32 RTTestingCheck(struct RT *t)
 
 	const struct PerfStamp current = t->current;
 	const u64 now = PerfWallClockBegin();
-	const u64 figure = (t->select == RT_SELECT_CYCLES) ? current.cycles : current.ticks;
-	const u64 figure_min = (t->select == RT_SELECT_CYCLES) ? t->min.cycles : t->min.ticks;
-	const u64 figure_max = (t->select == RT_SELECT_CYCLES) ? t->max.cycles : t->max.ticks;
-	if (t->count == 0 || figure < figure_min)
+	if (t->count == 0 || current.ticks < t->min.ticks)
 	{
 		t->min = current;
 		t->retry_start = now;
 	}
-	if (t->count == 0 || figure_max < figure)
+	if (t->count == 0 || t->max.ticks < current.ticks)
 	{
 		t->max = current;
 	}
@@ -328,7 +316,7 @@ void RTPrintStatistics(const struct RT *t, FILE *file)
 	const f64 s_max = RTSeconds(t->max.ticks);
 	const f64 s_avg = RTSeconds(t->total.ticks) / (f64) t->count;
 
-	if (t->select == RT_SELECT_CYCLES)
+	if (t->cycles)
 	{
 		const f64 ghz = (ticks_min) ? (f64) cycles_min / (f64) ticks_min * (f64) RTTicksPerSecond() / 1e9 : 0.0;
 		fprintf(file, "min: [%.5fms] %.3fGB/s  %llu cycles  %.4f cycles/B  core %.2f GHz  (%llu repetitions, overhead subtracted)\n",
@@ -341,7 +329,7 @@ void RTPrintStatistics(const struct RT *t, FILE *file)
 	}
 	else
 	{
-		fprintf(file, "min: [%.5fms] %.3fGB/s  %.4f ticks/B  (%llu repetitions, overhead subtracted; by wall time)\n",
+		fprintf(file, "min: [%.5fms] %.3fGB/s  %.4f ticks/B  (%llu repetitions, overhead subtracted; no cycle counter)\n",
 			s_min * 1e3, RTThroughput(t->bytes, s_min), (f64) ticks_min / (f64) t->bytes, (unsigned long long) t->count);
 		fprintf(file, "max: [%.5fms] %.3fGB/s\n", s_max * 1e3, RTThroughput(t->bytes, s_max));
 		fprintf(file, "avg: [%.5fms] %.3fGB/s\n", s_avg * 1e3, RTThroughput(t->bytes, s_avg));
