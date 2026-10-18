@@ -4,6 +4,7 @@ add_library(DreamscapeTestAPI
 	ds_test.h
 	test_main.c 
 	test_memory.c
+	test_asset.c
     test_job.c
     #test_container.c
     #test_math.c

@@ -334,6 +334,7 @@ void ds_TestMainCorrectness(void)
     run_suite(config_correctness_suite, &env, 1);
     run_suite(dynamics_correctness_suite, &env, 1);
     run_suite(rng_correctness_suite, &env, 1);
+    run_suite(asset_correctness_suite, &env, 1);
 	//run_suite(array_list_correctness_suite, &env, 1);
 	//run_suite(hierarchy_correctness_index_suite, &env, 1);
 	//run_suite(math_correctness_suite, &env, 1);
