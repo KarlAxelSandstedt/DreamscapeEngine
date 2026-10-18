@@ -49,10 +49,15 @@ agent_notes/perf_machines.txt.
 5. Checksum of the outputs next to the time; variants must match.
 6. Realistic inputs, fixed seed (config `seed: a b c d`).
 7. Plain Rdtsc() only for blocks above ~10k ticks.
-8. Code layout is noise of up to 25% on Skylake-family cores (the machine
-   entry says): a variant that moves code can win or lose by alignment
-   alone. Confirm a difference with both builds under
-   -Wa,-mbranches-within-32B-boundaries before believing it.
+8. Code layout swings a loop by double digits on any core with a uop cache
+   or loop buffer: a variant that moves code can win or lose by alignment
+   alone. Confirm a difference survives equal layout (this machine's way is
+   in its entry) before believing it.
+9. Optimize what is portable: instructions per value, dependency chain
+   length, data-dependent branches, bytes and lines touched. A cycle gain
+   on one core without a gain in those is layout or microarchitecture:
+   measure it, note it, never design for it. The engine is tuned for no
+   single core.
 
 ## Repetition testing (RT, ds_measure.h)
 - Reset and input setup before RTBeginTime; several regions per repetition
