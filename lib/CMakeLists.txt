@@ -71,6 +71,16 @@ if (WIN32)
     target_link_libraries(SDL3::SDL3 INTERFACE imm32)
 endif()
 
+# the font builder renders TrueType only: no system zlib, bzip2, png, harfbuzz or brotli, which freetype
+# would otherwise detect on the host and leave as undefined references in its static library
+list(APPEND DS_FREETYPE_VARS
+    -DFT_DISABLE_ZLIB=TRUE
+    -DFT_DISABLE_BZIP2=TRUE
+    -DFT_DISABLE_PNG=TRUE
+    -DFT_DISABLE_HARFBUZZ=TRUE
+    -DFT_DISABLE_BROTLI=TRUE
+)
+
 # freetype appends its "d" postfix only for Debug (CMAKE_DEBUG_POSTFIX), not for empty or other types
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(FREETYPE "freetyped")

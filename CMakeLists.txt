@@ -227,6 +227,12 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 
 endif ()
 
+# before the subdirectories: add_compile_definitions only reaches targets created after it
+#TODO remove, consider using DS_DEBUG instead, or if required, add DS_DEV
+if (NOT CMAKE_BUILD_TYPE STREQUAL "Release")
+	add_compile_definitions(DS_DEV)
+endif()
+
 add_subdirectory("${DS_INCLUDE_PATH}")
 add_subdirectory("${DS_SRC_PATH}/base")
 add_subdirectory("${DS_SRC_PATH}/containers")
@@ -257,11 +263,6 @@ target_link_libraries(${PROJECT_NAME}
 		"${PROJECT_NAME}::Editor"
 		"${PROJECT_NAME}::Asset"
 )
-
-#TODO remove, consider using DS_DEBUG instead, or if required, add DS_DEV
-if (NOT CMAKE_BUILD_TYPE STREQUAL "Release")
-	add_compile_definitions(DS_DEV)
-endif()
 
 ######################### Testing ###########################
 

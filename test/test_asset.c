@@ -41,9 +41,26 @@ struct test_Output SsffRequestTest(struct test_Environment *env)
 	return output;
 }
 
+/* Request every font: in a DS_DEV build the request rebuilds it from its TTF with freetype and saves it */
+struct test_Output FontRequestTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+	const enum fontId id[] = { FONT_DEFAULT_SMALL, FONT_DEFAULT_MEDIUM };
+	for (u32 i = 0; i < sizeof(id) / sizeof(id[0]); ++i)
+	{
+		struct assetFont *asset = AssetRequestFont(env->mem_1, id[i]);
+		TEST_NOT_ZERO(asset->loaded);
+		TEST_NOT_ZERO(asset->font != NULL);
+	}
+
+	return output;
+}
+
 static struct test_Output (*asset_tests[])(struct test_Environment *) =
 {
 	SsffRequestTest,
+	FontRequestTest,
 };
 
 struct suite_Correctness m_asset_suite =

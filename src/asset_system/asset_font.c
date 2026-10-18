@@ -40,10 +40,8 @@ void InternalFreetypeFree(void)
 	FT_Done_FreeType(g_ft_library);
 }
 
-typedef	struct fontGlyph font_glyph;
-DECLARE_STACK(font_glyph);
-DEFINE_STACK(font_glyph);
-void FontBuild(struct arena *mem, const enum fontId id)
+DEFINE_CPOOL_STRUCT(fontGlyph);
+void FontBuild(struct arena *mem, const u32 id)
 {
 	struct assetFont *asset = g_asset_db->font[id];
 
@@ -68,7 +66,7 @@ void FontBuild(struct arena *mem, const enum fontId id)
 	i32 total_glyph_width = 0;
 	const u32 glyph_max_count = 4096;
     ds_CPool(voidptr) stack_pixels;
-    ds_CPool(font_glyph) stack_glyph;
+    ds_CPool(fontGlyph) stack_glyph;
     ds_CPoolAlloc(mem, stack_pixels, glyph_max_count, NOT_GROWABLE);
     ds_CPoolAlloc(mem, stack_glyph, glyph_max_count, NOT_GROWABLE);
 	
@@ -84,13 +82,13 @@ void FontBuild(struct arena *mem, const enum fontId id)
 	u8 *pixels = ArenaPushMemcpy(mem, face->glyph->bitmap.buffer, face->glyph->bitmap.width * face->glyph->bitmap.rows);
 	ds_CPoolPushValue(stack_pixels, pixels);
 	const u32 glyph_unknown_index = stack_glyph.count;
-	ds_CPoolPushValue(stack_glyph, (struct fontGlyph)
+	ds_CPoolPushValue(stack_glyph, ((struct fontGlyph)
 	{
 		.size = V2I32((i32) face->glyph->bitmap.width, (i32) face->glyph->bitmap.rows),
 		.bearing = V2I32(face->glyph->bitmap_left, face->glyph->bitmap_top),
 		.advance = (i32) face->glyph->advance.x >> 6,
 		.codepoint = 0,
-	});
+	}));
 
 	/* load ascii, Latin-1 Suplement, Latin Extend A, Latin Extend B  */
 	for (u32 c = 0x1; c <= 0x024f; ++c)
@@ -108,13 +106,13 @@ void FontBuild(struct arena *mem, const enum fontId id)
 		total_glyph_width += face->glyph->bitmap.width;
 		pixels = ArenaPushMemcpy(mem, face->glyph->bitmap.buffer, face->glyph->bitmap.width * face->glyph->bitmap.rows);
 		ds_CPoolPushValue(stack_pixels, pixels);
-		ds_CPoolPushValue(stack_glyph, (struct fontGlyph)
+		ds_CPoolPushValue(stack_glyph, ((struct fontGlyph)
 			{
 				.size = V2I32((i32) face->glyph->bitmap.width, (i32) face->glyph->bitmap.rows),
 				.bearing = V2I32(face->glyph->bitmap_left, face->glyph->bitmap_top),
 				.advance = (i32) face->glyph->advance.x >> 6,
 				.codepoint = c,
-			});
+			}));
 	}
 
 	/* Greek and Coptic */
@@ -133,13 +131,13 @@ void FontBuild(struct arena *mem, const enum fontId id)
 		total_glyph_width += face->glyph->bitmap.width;
 		pixels = ArenaPushMemcpy(mem, face->glyph->bitmap.buffer, face->glyph->bitmap.width * face->glyph->bitmap.rows);
 		ds_CPoolPushValue(stack_pixels, pixels);
-		ds_CPoolPushValue(stack_glyph, (struct fontGlyph)
+		ds_CPoolPushValue(stack_glyph, ((struct fontGlyph)
 			{
 				.size = V2I32((i32) face->glyph->bitmap.width, (i32) face->glyph->bitmap.rows),
 				.bearing = V2I32(face->glyph->bitmap_left, face->glyph->bitmap_top),
 				.advance = (i32) face->glyph->advance.x >> 6,
 				.codepoint = c,
-			});
+			}));
 	}
 
 	const u32 hash_len = (u32) PowerOfTwoCeil(stack_glyph.count);

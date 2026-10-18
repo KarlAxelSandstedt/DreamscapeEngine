@@ -350,6 +350,7 @@ struct ssffTextureReturn SsffTexture(struct arena *mem, const struct ssff_header
 	//	1.0f / (2.0f * height),
 	//};
 	u8 *pixel = malloc(width*height*sizeof(u32));
+	memset(pixel, 0, width*height*sizeof(u32));	/* outside the sprites: transparent, not garbage (the mipmaps sample it) */
 	struct ssffTextureReturn ret = 
 	{
 		.pixel = pixel,
