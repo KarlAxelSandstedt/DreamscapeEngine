@@ -17,8 +17,6 @@
 ==========================================================================
 */
 
-#include <string.h>
-
 void ds_CGraphAlloc(struct ds_Dynamics *pipeline, const u32 initial_count)
 {
     struct ds_CGraph *cg = &pipeline->cgraph;
@@ -74,7 +72,7 @@ void ds_CGraphFramePrepare(struct ds_Dynamics *pipeline)
         {
             if (i != CG_SERIAL_COLOR)
             {
-                ds_BitSetIncreaseSize(&cg->color[i].body_bitset, 64*pipeline->body_pool.length, 0);
+                ds_BitSetIncreaseSize(&cg->color[i].body_bitset, pipeline->body_pool.length, 0);
             }
         }
     }
