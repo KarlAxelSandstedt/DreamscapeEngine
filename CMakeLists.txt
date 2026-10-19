@@ -202,6 +202,11 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 		string(REPLACE "/RTC1" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
 	endif ()
 
+	# CMake's default /W3 (policy CMP0092 is OLD below 3.15): the engine's level comes from Dreamscape::Define
+	# (include/CMakeLists.txt), where a second /W would be overridden with warning D9025; lib/ keeps the compiler's
+	string(REGEX REPLACE "/W[0-4]" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+	string(REGEX REPLACE "/W[0-4]" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+
 	# avoids x87 fp-instructions entirely (extended precision bad for consistency)
 	add_compile_options(/arch:SSE2)
 
