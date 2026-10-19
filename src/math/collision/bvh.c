@@ -27,6 +27,7 @@
 //TODO can play around with these
 #define COST_TRAVERSAL  1.0f	/* Overhead of internal node traversal (AABB testing of children) */
 #define COST_INTERNAL 	1.5f	/* Overhead of triangle intersection tests */
+#define COST_QUEUE_INITIAL_COUNT 	64
 
 
 struct bvh DbvhAlloc(struct arena *mem, const u32 initial_length, const u32 growable)

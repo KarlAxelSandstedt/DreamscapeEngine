@@ -240,18 +240,6 @@ void c_ShapeUpdateMassProperties(struct c_Shape *shape)
 			StaticsCalculateFaceIntegrals(integrals, shape, fi, origin);
 		}
 
-		//		fprintf(stderr, "c_hull Volume integrals: %f, %f, %f, %f, %f, %f, %f, %f, %f, %f\n",
-		//				integrals[VOL ],
-		//				integrals[T_X ],
-		//				integrals[T_Y ],
-		//				integrals[T_Z ],
-		//				integrals[T_XX],
-		//				integrals[T_YY],
-		//				integrals[T_ZZ],
-		//      	                integrals[T_XY],
-		//      	                integrals[T_YZ],
-		//      	                integrals[T_ZX]);
-
 		shape->volume = integrals[VOL];
 		if (!(shape->volume > 0.0f))
 		{

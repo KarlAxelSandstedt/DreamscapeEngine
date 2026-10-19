@@ -66,8 +66,6 @@ struct bvhNode
 };
 DEFINE_POOL(bvhNode);
 
-#define COST_QUEUE_INITIAL_COUNT 	64 
-
 struct bvh
 {
     struct BT        bt;  
@@ -76,11 +74,6 @@ struct bvh
     ds_Pool(bvhNode)  pool;
 	struct MQA	    cost_queue;	    /* dynamic specific */
 	u32			        heap_allocated;
-};
-
-struct bvh_Query
-{
-    u32 tmp[2];
 };
 
 struct bvh_QuerySet
@@ -121,9 +114,9 @@ struct triMeshBvh
 {
 	const struct triMesh *	mesh;		
 	struct bvh		        bvh;
-	u32 *			        tri;		
-	u32			            tri_count;	
-    u32                     depth;      /* root=0, */
+	u32 *			        tri;		/* tri[tri_count]: the mesh's triangle indices in leaf order; a leaf's shape index indexes it */
+	u32			            tri_count;	/* = mesh->tri_count */
+    u32                     depth;      /* the deepest leaf's depth, root = 0 */
 };
 
 /* Return the mesh's bvh (bin_count: split candidates per axis, build quality); empty for an empty mesh. */
