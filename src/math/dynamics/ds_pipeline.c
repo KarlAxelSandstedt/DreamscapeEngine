@@ -137,7 +137,11 @@ struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, c
 	pipeline.margin = COLLISION_DEFAULT_MARGIN;
 
     ds_CGraphAlloc(&pipeline, 4096);
+    /* the defaults applied (the pending values resolved), so queries before the first tick see them; the global stays the caller's */
     pipeline.numerics_config = ds_NumericsConfigDefault();
+    struct ds_NumericsConfig *numerics_prev = g_numerics_config;
+    ds_NumericsConfigPush(&pipeline.numerics_config);
+    g_numerics_config = numerics_prev;
 
     ds_PoolAlloc(NULL, pipeline.solver_set_pool, 4096, GROWABLE);
     const struct slot set_disabled = ds_SolverSetAdd(NULL, &pipeline, 0, 0, 0, 0, 0,  0);
