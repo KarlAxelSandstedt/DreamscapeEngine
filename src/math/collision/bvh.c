@@ -17,10 +17,6 @@
 ==========================================================================
 */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include "ds_collision.h"
 
 
@@ -606,10 +602,12 @@ void BVHValidate(const struct BVH *bvh)
 
 struct triMeshBVH TriMeshBVHConstruct(struct arena *mem, const struct triMesh *mesh, const u32 bin_count)
 {
-	ds_Assert(bin_count);
+	ds_Assert(bin_count && bin_count <= 255);	/* bin indices are bytes */
 	if (!mesh->tri_count)
 	{
-		return (struct triMeshBVH) { 0 };
+		struct triMeshBVH none = { 0 };
+		BTFlush(none.bvh.bt);
+		return none;
 	}
 
 	ProfZone;
@@ -867,7 +865,7 @@ end:
 			+ mesh->tri_count*sizeof(struct aabb)
 			+ 3*mesh->tri_count*sizeof(u8) 
 			+ 3*bin_count*(sizeof(struct aabb) + sizeof(u32));
-		Log(T_SYSTEM, S_ERROR, "Failed to allocate bvh from triangle mesh, minimum size required: %lu\n", size_required);
+		Log(T_SYSTEM, S_ERROR, "Failed to allocate bvh from triangle mesh, minimum size required: %lu", size_required);
 		mesh_bvh = (struct triMeshBVH) { 0 };
 	}
 

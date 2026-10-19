@@ -302,8 +302,8 @@ struct test_Output TriMeshBVHTest(struct test_Environment *env)
 
     const struct triMesh empty = { 0 };
     const struct triMeshBVH none = TriMeshBVHConstruct(env->mem_1, &empty, 8);
-    TEST_NOT_ZERO(none.tri_count == 0 && none.bvh.bt.count == 0 && BTLeafCount(none.bvh.bt) == 0);
-    fprintf(stdout, "\tempty mesh: root %u (BT_INDEX_NULL %u)\n", none.bvh.bt.root, BT_INDEX_NULL);
+    TEST_NOT_ZERO(none.tri_count == 0 && none.bvh.bt.count == 0 && none.bvh.bt.root == BT_INDEX_NULL);
+    BVHValidate(&none.bvh);
 
     return output;
 }
