@@ -445,6 +445,11 @@ static u32 CtCheckPair(struct arena *frame, struct ct_Stats *stats, const struct
 
 /********************************** generators **********************************/
 
+/*
+ * One random draw per statement: C leaves the order of a call's arguments and of an expression's operands to the
+ * compiler, so V3(R(), R(), R()) is a different vector per compiler (springclean #200). Draws go left to right.
+ */
+
 static v3 CtUnit(void)
 {
     const f32 z = RngF32Range(-1.0f, 1.0f);
@@ -460,23 +465,36 @@ static v3 CtUnitXZ(void)
     return V3(F32Cos(theta), 0.0f, F32Sin(theta));
 }
 
+/* each component in [min, max], drawn x, y, z */
+static v3 CtV3Range(const f32 min, const f32 max)
+{
+    const f32 x = RngF32Range(min, max);
+    const f32 y = RngF32Range(min, max);
+    const f32 z = RngF32Range(min, max);
+    return V3(x, y, z);
+}
+
 static q CtRotation(void)
 {
-    return QUnitAxisAngle(CtUnit(), RngF32Range(0.0f, 2.0f*F32_PI));
+    const v3 axis = CtUnit();
+    return QUnitAxisAngle(axis, RngF32Range(0.0f, 2.0f*F32_PI));
 }
 
 /* sizes 1e-2 .. 3e2 */
 static f32 CtSize(void)
 {
     const f32 decade[] = { 1e-2f, 1e-1f, 1.0f, 1e1f, 1e2f };
-    return decade[RngU64Range(0, 4)] * RngF32Range(1.0f, 3.0f);
+    const f32 scale = decade[RngU64Range(0, 4)];
+    return scale * RngF32Range(1.0f, 3.0f);
 }
 
 /* world positions 0 .. 1e6 */
 static struct d3 CtWorldPosition(void)
 {
     const f64 range[] = { 0.0, 1.0, 1e3, 1e6 };
-    return D3Scale(D3V3(CtUnit()), range[RngU64Range(0, 3)] * RngF32Normalized());
+    const struct d3 u = D3V3(CtUnit());
+    const f64 scale = range[RngU64Range(0, 3)];
+    return D3Scale(u, scale * RngF32Normalized());
 }
 
 /* a point given in a's frame, in world space */
@@ -507,7 +525,8 @@ static void CtCapsuleNear(struct ct_Capsule *b, struct ct_Capsule *a, const u32 
     {
         case 0:
         {
-            const v3 c = V3Scale(CtUnit(), reach * RngF32Range(0.0f, 1.2f));
+            const v3 u = CtUnit();
+            const v3 c = V3Scale(u, reach * RngF32Range(0.0f, 1.2f));
             CtCapsuleInit(b, h1, r1, CtRotation(), CtLocalToWorld(a, c));
         } break;
 
@@ -515,25 +534,29 @@ static void CtCapsuleNear(struct ct_Capsule *b, struct ct_Capsule *a, const u32 
         {
             const f32 tilt[] = { 0.0f, 1e-6f, 1e-3f, 0.02f, 0.0499f, 0.05f, 0.0501f, 0.1f };
             const v3 side = CtUnitXZ();
-            const q rot = QMul(a->t.rotation, QUnitAxisAngle(CtUnitXZ(), tilt[RngU64Range(0, 7)]));
-            const v3 c = V3Add(V3Scale(side, r_sum * RngF32Range(0.5f, 1.2f)),
-                               V3(0.0f, (h0 + h1) * RngF32Range(-1.2f, 1.2f), 0.0f));
+            const v3 tilt_axis = CtUnitXZ();
+            const q rot = QMul(a->t.rotation, QUnitAxisAngle(tilt_axis, tilt[RngU64Range(0, 7)]));
+            const f32 out = r_sum * RngF32Range(0.5f, 1.2f);
+            const f32 up = (h0 + h1) * RngF32Range(-1.2f, 1.2f);
+            const v3 c = V3Add(V3Scale(side, out), V3(0.0f, up, 0.0f));
             CtCapsuleInit(b, h1, r1, (RngU64Range(0, 1)) ? rot : QMul(rot, QUnitAxisAngle(V3(1.0f, 0.0f, 0.0f), F32_PI)), CtLocalToWorld(a, c));
         } break;
 
         case 2:
         {
             const f32 offset[] = { 0.0f, 1e-7f, 1e-4f, 1e-2f };
-            const v3 c = V3Add(V3(0.0f, h0 * RngF32Range(-1.0f, 1.0f), 0.0f),
-                               V3Scale(CtUnitXZ(), reach * offset[RngU64Range(0, 3)]));
+            const f32 up = h0 * RngF32Range(-1.0f, 1.0f);
+            const v3 side = CtUnitXZ();
+            const v3 c = V3Add(V3(0.0f, up, 0.0f), V3Scale(side, reach * offset[RngU64Range(0, 3)]));
             CtCapsuleInit(b, h1, r1, CtRotation(), CtLocalToWorld(a, c));
         } break;
 
         case 3:
         {
             const f32 sign = (RngU64Range(0, 1)) ? 1.0f : -1.0f;
-            const v3 c = V3Add(V3(0.0f, sign * (h0 + RngF32Range(0.0f, h1 + r_sum)), 0.0f),
-                               V3Scale(CtUnitXZ(), r_sum * RngF32Range(0.0f, 1.5f)));
+            const f32 up = sign * (h0 + RngF32Range(0.0f, h1 + r_sum));
+            const v3 side = CtUnitXZ();
+            const v3 c = V3Add(V3(0.0f, up, 0.0f), V3Scale(side, r_sum * RngF32Range(0.0f, 1.5f)));
             CtCapsuleInit(b, h1, r1, CtRotation(), CtLocalToWorld(a, c));
         } break;
 
@@ -553,7 +576,8 @@ static void CtCapsuleNear(struct ct_Capsule *b, struct ct_Capsule *a, const u32 
             {
                 CtCapsuleInit(a, 0.0f, r0, a->t.rotation, a->pos);
             }
-            const v3 c = V3Scale(CtUnit(), reach * RngF32Range(0.0f, 1.2f));
+            const v3 u = CtUnit();
+            const v3 c = V3Scale(u, reach * RngF32Range(0.0f, 1.2f));
             CtCapsuleInit(b, h1, r1, CtRotation(), CtLocalToWorld(a, c));
         } break;
     }
@@ -719,7 +743,11 @@ struct test_Output CapsuleContactRandomTest(struct test_Environment *env)
         {
             struct arena record = *env->mem_2;
             struct ct_Capsule a, b;
-            CtCapsuleInit(&a, CtSize(), CtSize(), CtRotation(), CtWorldPosition());
+            const f32 h = CtSize();
+            const f32 r = CtSize();
+            const q rotation = CtRotation();
+            const struct d3 pos = CtWorldPosition();
+            CtCapsuleInit(&a, h, r, rotation, pos);
             CtCapsuleNear(&b, &a, mode);
             const u32 ok = CtCheckPair(env->mem_2, &stats, &a, &b);
             *env->mem_2 = record;
@@ -1338,10 +1366,11 @@ static struct c_Shape ChRandomHullShape(struct arena *mem, const f32 size)
     do
     {
         const u32 count = (u32) RngU64Range(4, 24);
-        const v3 axis_scale = V3(size*RngF32Range(0.2f, 1.0f), size*RngF32Range(0.2f, 1.0f), size*RngF32Range(0.2f, 1.0f));
+        const v3 axis_scale = V3Scale(CtV3Range(0.2f, 1.0f), size);
         for (u32 i = 0; i < count; ++i)
         {
-            const v3 u = V3Scale(CtUnit(), RngF32Range(0.5f, 1.0f));
+            const v3 dir = CtUnit();
+            const v3 u = V3Scale(dir, RngF32Range(0.5f, 1.0f));
             p[i] = V3(u.x*axis_scale.x, u.y*axis_scale.y, u.z*axis_scale.z);
         }
         shape.hull = DcelConvexHull(mem, p, count);
@@ -1358,7 +1387,7 @@ static void ChRandomHull(struct arena *mem, struct ch_Hull *h, const u32 kind)
     const struct d3 pos = CtWorldPosition();
     if (kind < 2)
     {
-        v3 hw = V3(size*RngF32Range(0.1f, 1.0f), size*RngF32Range(0.1f, 1.0f), size*RngF32Range(0.1f, 1.0f));
+        v3 hw = V3Scale(CtV3Range(0.1f, 1.0f), size);
         if (kind == 1)
         {
             hw.y = 1e-2f*size;
@@ -1394,8 +1423,14 @@ static void ChCapsuleNear(struct ct_Capsule *c, const struct ch_Hull *h, const u
     const struct dcel *dcel = &h->shape.hull;
     const f32 extent = (f32) h->extent;
     const f32 scale[] = { 0.01f, 0.1f, 0.5f, 1.0f, 2.0f };
-    const f32 r = extent * scale[RngU64Range(0, 3)] * RngF32Range(0.5f, 1.0f);
-    const f32 half_height = (mode == 5) ? 0.0f : extent * scale[RngU64Range(0, 4)] * RngF32Range(0.5f, 1.0f);
+    const f32 r_scale = extent * scale[RngU64Range(0, 3)];
+    const f32 r = r_scale * RngF32Range(0.5f, 1.0f);
+    f32 half_height = 0.0f;
+    if (mode != 5)
+    {
+        const f32 h_scale = extent * scale[RngU64Range(0, 4)];
+        half_height = h_scale * RngF32Range(0.5f, 1.0f);
+    }
     const f32 offset = r * RngF32Range(-1.0f, 1.3f);
 
     /* a random face and a random half-edge */
@@ -1426,20 +1461,24 @@ static void ChCapsuleNear(struct ct_Capsule *c, const struct ch_Hull *h, const u
         {
             const f32 tilt[] = { 0.0f, 1e-4f, 1e-2f, 0.06f, 0.0632f, 0.0633f, 0.07f, 0.2f };
             const v3 tangent = ChPerpendicular(fn);
-            dir = ChTilt(tangent, fn, tilt[RngU64Range(0, 7)] * ((RngU64Range(0, 1)) ? 1.0f : -1.0f));
+            const f32 angle = tilt[RngU64Range(0, 7)];
+            const f32 sign = (RngU64Range(0, 1)) ? 1.0f : -1.0f;
+            dir = ChTilt(tangent, fn, angle * sign);
             center = V3Add(on_face, V3Scale(fn, offset + F32Abs(V3Dot(dir, fn))*half_height));
         } break;
 
         case 2:
         {
-            dir = ChTilt(V3Normalize(V3Cross(edge_dir, ChPerpendicular(edge_dir))), edge_dir, RngF32Range(-0.3f, 0.3f));
+            const v3 across = V3Normalize(V3Cross(edge_dir, ChPerpendicular(edge_dir)));
+            dir = ChTilt(across, edge_dir, RngF32Range(-0.3f, 0.3f));
             center = V3Add(on_edge, V3Scale(bisector, offset));
         } break;
 
         case 3:
         {
             const f32 tilt[] = { 0.0f, 1e-4f, 1e-3f, 0.0086f, 0.0088f, 0.01f, 0.05f };
-            dir = ChTilt(edge_dir, ChPerpendicular(edge_dir), tilt[RngU64Range(0, 6)]);
+            const v3 axis = ChPerpendicular(edge_dir);
+            dir = ChTilt(edge_dir, axis, tilt[RngU64Range(0, 6)]);
             center = V3Add(on_edge, V3Scale(bisector, offset));
         } break;
 
@@ -1452,13 +1491,15 @@ static void ChCapsuleNear(struct ct_Capsule *c, const struct ch_Hull *h, const u
 
         case 6:
         {
-            dir = ChTilt(fn, ChPerpendicular(fn), RngF32Range(0.0f, 0.1f));
+            const v3 axis = ChPerpendicular(fn);
+            dir = ChTilt(fn, axis, RngF32Range(0.0f, 0.1f));
             center = V3Add(on_face, V3Scale(fn, offset + half_height));
         } break;
 
         default:
         {
-            center = V3Scale(CtUnit(), (extent + half_height + r) * RngF32Range(0.0f, 1.2f));
+            const v3 u = CtUnit();
+            center = V3Scale(u, (extent + half_height + r) * RngF32Range(0.0f, 1.2f));
             dir = CtUnit();
         } break;
     }
@@ -2174,7 +2215,7 @@ static void HhHull(struct arena *mem, struct ch_Hull *h, const u32 kind, const f
 {
     if (kind < 2)
     {
-        v3 hw = V3(size*RngF32Range(0.1f, 1.0f), size*RngF32Range(0.1f, 1.0f), size*RngF32Range(0.1f, 1.0f));
+        v3 hw = V3Scale(CtV3Range(0.1f, 1.0f), size);
         if (kind == 1)
         {
             hw.y = 1e-2f*size;
@@ -2244,7 +2285,8 @@ static void HhHullNear(struct arena *mem, struct ch_Hull *b, const struct ch_Hul
             const f32 tilt[] = { 0.0f, 1e-3f, 1e-2f, 0.05f, 0.2f };
             rot = HhRotationFromTo(db->plane[fb].normal, V3Negate(n));
             rot = QMul(QUnitAxisAngle(n, RngF32Range(0.0f, 2.0f*F32_PI)), rot);
-            rot = QMul(QUnitAxisAngle(ChPerpendicular(n), tilt[RngU64Range(0, 4)]), rot);
+            const v3 axis = ChPerpendicular(n);
+            rot = QMul(QUnitAxisAngle(axis, tilt[RngU64Range(0, 4)]), rot);
             const v3 corner = da->v[da->e[da->f[fa].first].origin];
             const v3 centroid = HhFaceCentroid(da, fa);
             const v3 on_face = V3Add(centroid, V3Scale(V3Sub(corner, centroid), RngF32Range(0.0f, 1.0f)));
@@ -2284,17 +2326,20 @@ static void HhHullNear(struct arena *mem, struct ch_Hull *b, const struct ch_Hul
 
         case 4:
         {
-            center = V3Scale(da->v[RngU64Range(0, da->v_count - 1)], RngF32Range(0.0f, 0.8f));
+            const v3 vertex = da->v[RngU64Range(0, da->v_count - 1)];
+            center = V3Scale(vertex, RngF32Range(0.0f, 0.8f));
         } break;
 
         case 5:
         {
-            center = V3Scale(CtUnit(), (ext_a + ext_b) * RngF32Range(1.0f, 2.0f));
+            const v3 u = CtUnit();
+            center = V3Scale(u, (ext_a + ext_b) * RngF32Range(1.0f, 2.0f));
         } break;
 
         default:
         {
-            center = V3Scale(CtUnit(), (ext_a + ext_b) * RngF32Range(0.0f, 1.2f));
+            const v3 u = CtUnit();
+            center = V3Scale(u, (ext_a + ext_b) * RngF32Range(0.0f, 1.2f));
         } break;
     }
 
@@ -2420,8 +2465,19 @@ struct test_Output HullContactRandomTest(struct test_Environment *env)
                 struct arena record = *env->mem_2;
                 struct ch_Hull a, b;
                 /* near the origin (|x| <= 1), then anywhere up to 1e6 */
-                const struct d3 pos = (far_away) ? CtWorldPosition() : D3Scale(D3V3(CtUnit()), RngF32Normalized());
-                HhHull(env->mem_2, &a, kind_a[p], CtSize(), CtRotation(), pos);
+                struct d3 pos;
+                if (far_away)
+                {
+                    pos = CtWorldPosition();
+                }
+                else
+                {
+                    const struct d3 u = D3V3(CtUnit());
+                    pos = D3Scale(u, RngF32Normalized());
+                }
+                const f32 size = CtSize();
+                const q rotation = CtRotation();
+                HhHull(env->mem_2, &a, kind_a[p], size, rotation, pos);
                 HhHullNear(env->mem_2, &b, &a, kind_b[p], mode);
                 HhCheckPair(env->mem_2, &fresh, &cached, &a, &b);
                 *env->mem_2 = record;
@@ -2769,7 +2825,8 @@ static struct d3 SpCenterNear(const u32 kind, const struct c_Shape *s0, const st
         case 1:
         {
             const f64 rel[] = { 1e-6, 1e-4, 1e-2 };
-            const f64 d = r_sum * (1.0 + ((RngU64Range(0, 1)) ? 1.0 : -1.0) * rel[RngU64Range(0, 2)]);
+            const f64 sign = (RngU64Range(0, 1)) ? 1.0 : -1.0;
+            const f64 d = r_sum * (1.0 + sign * rel[RngU64Range(0, 2)]);
             return D3Add(core, D3Scale(out, d));
         }
         case 2:
@@ -3449,7 +3506,8 @@ struct test_Output MeshCapsuleCasesTest(struct test_Environment *env)
             b = 1.0 - b;
         }
         const struct d3 on = D3((f64) S*b, 0.0, (f64) S*a);
-        const struct d3 center = D3Add(on, D3Scale(D3V3(CtUnit()), ((f64) r + (f64) h)*(f64) RngF32Range(0.0f, 1.2f)));
+        const struct d3 u = D3V3(CtUnit());
+        const struct d3 center = D3Add(on, D3Scale(u, ((f64) r + (f64) h)*(f64) RngF32Range(0.0f, 1.2f)));
         const v3 axis = CtUnit();
         const struct c_Shape mesh = McSingleTriangle(env->mem_2, S);
         const struct mc_CapsuleCase cc = McCapsuleCase(env->mem_2, &mesh, r, h, center, axis);
@@ -3565,10 +3623,25 @@ struct test_Output MeshFlatGridTest(struct test_Environment *env)
 
             const f32 gi = (f32) RngU64Range(3, MC_GRID - 3), gj = (f32) RngU64Range(3, MC_GRID - 3);
             const u64 where = RngU64Range(0, 3);
-            v3 low = (where == 0) ? V3(gi, 0.0f, gj)
-                   : (where == 1) ? V3(gi + 0.5f, 0.0f, gj)
-                   : (where == 2) ? V3(gi + 0.5f, 0.0f, gj + 0.5f)
-                   : V3(gi + RngF32Normalized(), 0.0f, gj + RngF32Normalized());
+            v3 low;
+            if (where == 0)
+            {
+                low = V3(gi, 0.0f, gj);
+            }
+            else if (where == 1)
+            {
+                low = V3(gi + 0.5f, 0.0f, gj);
+            }
+            else if (where == 2)
+            {
+                low = V3(gi + 0.5f, 0.0f, gj + 0.5f);
+            }
+            else
+            {
+                const f32 di = RngF32Normalized();
+                const f32 dj = RngF32Normalized();
+                low = V3(gi + di, 0.0f, gj + dj);
+            }
             low = V3Scale(low, cell);
 
             /* the shape's pose in grid coordinates (the grid is y = 0 there), then mesh = q_grid grid */
@@ -3613,10 +3686,12 @@ struct test_Output MeshFlatGridTest(struct test_Environment *env)
                 v3 hw = V3(0.0f, 0.0f, 0.0f);
                 if (kind == 2)
                 {
-                    hw = V3(cell*RngF32Range(0.3f, 1.5f), cell*RngF32Range(0.3f, 1.5f), cell*RngF32Range(0.3f, 1.5f));
+                    hw = V3Scale(CtV3Range(0.3f, 1.5f), cell);
                     convex.type = C_SHAPE_CONVEX_HULL;
                     convex.hull = DcelBox(env->mem_2, hw);
-                    q_local = QNormalize(QMul(QUnitAxisAngle(V3(0.0f, 1.0f, 0.0f), RngF32Range(0.0f, 2.0f*F32_PI)), QUnitAxisAngle(CtUnitXZ(), tilt)));
+                    const f32 spin = RngF32Range(0.0f, 2.0f*F32_PI);
+                    const v3 tilt_axis = CtUnitXZ();
+                    q_local = QNormalize(QMul(QUnitAxisAngle(V3(0.0f, 1.0f, 0.0f), spin), QUnitAxisAngle(tilt_axis, tilt)));
                     tol_n = 1e-4 + 2.0*(f64) tilt;
                 }
                 else
@@ -4124,7 +4199,8 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
         struct d3 c, n;
         if (mode == 0)
         {
-            c = D3Scale(D3V3(CtUnit()), E*(f64) RngF32Range(0.0f, 1.3f));
+            const struct d3 c_dir = D3V3(CtUnit());
+            c = D3Scale(c_dir, E*(f64) RngF32Range(0.0f, 1.3f));
             n = D3V3(CtUnit());
         }
         else
