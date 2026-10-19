@@ -722,6 +722,14 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
 		f32 best_score = F32_INFINITY;
 		for (u32 axis = 0; axis < 3; axis++)
 		{
+			/* flat along this axis: no split possible, and the binning below would be 0/0 */
+			const f32 extent = bbox_max.buf[axis] - bbox_min.buf[axis];
+			ds_Assert(extent == extent);
+			if (!(extent > 0.0f))
+			{
+				continue;
+			}
+
 			for (u32 bi = 0; bi < bin_count; ++bi)
 			{
 				axis_bin_tri_count[axis][bi] = 0;
