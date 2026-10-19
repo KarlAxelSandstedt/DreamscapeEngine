@@ -89,11 +89,11 @@ ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *p
 	}
 
     sim->body = body_slot.index;
-    sim->flags = body->flags;
     sim->world = *world;
+    /* no shapes yet: no mass, and no inertia either (ds_BodyUpdateMassProperties sets both from the shapes) */
     sim->inv_mass = 0.0f;
     sim->local_center_of_mass = V3Zero();
-    sim->local_inv_inertia = M3Identity();
+    sim->local_inv_inertia = M3Scale(M3Identity(), 0.0f);
 
 	return body->id;
 }
@@ -182,12 +182,6 @@ struct slot ds_BodyLookup(const struct ds_Dynamics *pipeline, const ds_BodyId id
     }
 
     return slot;
-}
-
-void ds_BodyUpdateLocalFrame(struct ds_Dynamics *pipeline, const u32 body, const ds_Transform t_apply_to_local)
-{
-	//TODO
-	ds_Assert(0);
 }
 
 void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId id)
