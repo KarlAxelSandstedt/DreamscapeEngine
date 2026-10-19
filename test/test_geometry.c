@@ -664,6 +664,12 @@ static void HullCase(struct hullStats *stats, struct test_Environment *env, cons
     {
         fprintf(stdout, "\tDcelConvexHullTest: first %s failure: %s, %u points, tol %g: v %u, e %u, f %u; %s %.3g\n",
             hull_fail_id[fail], id, n, (f64) tol, h.v_count, h.e_count, h.f_count, detail, (f64) value);
+        /* the input, exact (hex floats), one point per line: replayable in a harness */
+        fprintf(stderr, "DcelConvexHullTest failing cloud: %u points\n", n);
+        for (u32 i = 0; i < n; ++i)
+        {
+            fprintf(stderr, "%a %a %a\n", (f64) p[i].x, (f64) p[i].y, (f64) p[i].z);
+        }
     }
     *env->mem_1 = record;
 }
