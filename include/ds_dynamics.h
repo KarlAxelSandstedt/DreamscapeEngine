@@ -1622,7 +1622,7 @@ struct ds_Dynamics
 	struct BVH 		                dynamic_bvh;            /* bvh of dynamic shapes */
 	struct BVH 		                static_bvh;             /* bvh of static shapes */
 
-    struct ds_BitSet                shape_dirty_set;        /* the dynamic shapes the broadphase queries */
+    struct ds_BitSet                shape_dirty_set;        /* the shapes whose proxy box changed since the last broadphase: they query for pairs, then the set is cleared */
     ds_CPool(ds_ProxyQuery)         dirty_shape_query;      /* per shape index: the broadphase's new pairs of the frame */
 
     ds_Pool(ds_Joint)             joint_pool;

@@ -98,8 +98,13 @@ void 		        BVHValidate(const struct BVH *bvh);
 f32 		        BVHCost(const struct BVH *bvh);
 /* the shapes whose leaf boxes overlap node's box */
 struct BVHQuerySet BVHQuery(struct arena *mem, const struct BVH *bvh, const struct BVHNode *node);
-/* BVHQuery, only shapes with a body index > node's (bt_right) */
-struct BVHQuerySet BVHQueryAndFilterOnBody(struct arena *mem, const struct BVH *bvh, const struct BVHNode *node);
+/*
+ * BVHQuery for the broadphase, each pair reported once by one of its shapes and never two shapes of one body: a
+ * shape with a body index > node's (bt_child[1]), or a shape of another body whose bit in dirty is clear. node's
+ * shape (bt_child[0]) must be dirty: only dirty shapes query, so a pair of two dirty shapes comes from the
+ * smaller body index and a pair with one dirty shape from that shape.
+ */
+struct BVHQuerySet BVHQueryAndFilterOnBody(struct arena *mem, const struct BVH *bvh, const struct BVHNode *node, const struct ds_BitSet *dirty);
 
 /* an empty dynamic bvh */
 struct BVH		    DBVHAlloc(struct arena *mem, const u32 initial_length, const u32 growable);

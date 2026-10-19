@@ -290,7 +290,7 @@ u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
                 const u32 si = (u32) ds_BitBlockNext(&it);
                 const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
                 const struct BVHNode *node = pipeline->dynamic_bvh.pool.buf + shape->proxy;
-                const struct BVHQuerySet dynamic_query = BVHQueryAndFilterOnBody(tmp, &pipeline->dynamic_bvh, node);
+                const struct BVHQuerySet dynamic_query = BVHQueryAndFilterOnBody(tmp, &pipeline->dynamic_bvh, node, dirty);
                 const struct BVHQuerySet static_query = BVHQuery(tmp, &pipeline->static_bvh, node);
                 
                 query[si].dynamic_count = 0;
@@ -392,16 +392,19 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
      * Achieving Determinism and Parallelization in the Broadphase
      * ===========================================================
      *
-     * Every dynamic shape is dirty: its bit in shape_dirty_set is set when the shape is added and
-     * cleared when the shape is removed, nowhere else. The broadphase is a parallel-for over the
-     * bitset: each thread takes a range of blocks and queries their shapes against the pipeline's
-     * bounding volume hierarchies. The dynamic bvh query reports a pair once, from the shape of the
-     * smaller body index, and never two shapes of one body:
+     * A shape is dirty when its proxy box changed since the last broadphase: its bit in
+     * shape_dirty_set is set when the shape is added, when its proxy moves (the rebuild phase) and
+     * for every shape in use after a rebuild of the dynamic bvh; the set is cleared below once the
+     * contacts are added. The broadphase is a parallel-for over the bitset: each thread takes a
+     * range of blocks and queries their shapes against the pipeline's bounding volume hierarchies.
+     * Only dirty shapes query, so a sleeping island costs nothing here. The dynamic bvh query
+     * reports a pair once, and never two shapes of one body:
      *
-     *          overlap : (s0, s1)  => (shape[s0].body < shape[s1].body)
+     *          overlap : (s0, s1)  => (shape[s0].body < shape[s1].body) || (dirty[s0] && !dirty[s1])
      *
-     * This needs both shapes of a pair queried, which holds since every shape is. After a rebuild
-     * of the dynamic bvh the set is reset to the dynamic shapes in use.
+     * so a pair of two dirty shapes is reported by the smaller body index and a pair with one dirty
+     * shape by that shape, since the other does not query. Two proxy boxes that did not change
+     * cannot start overlapping, so the shapes that are not dirty find no new pairs.
      *
      * To achieve determinism, after a thread has queried a shape si, it stores the resulting query
      * data in
@@ -475,6 +478,9 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
                 }
 		    }
         }
+
+        /* consumed: the rebuild phase marks the shapes whose proxies move this tick */
+        ds_BitSetClear(&pipeline->shape_dirty_set, 0);
 
         ProfZoneEnd;
     }

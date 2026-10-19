@@ -47,15 +47,19 @@ static struct aabb BVHTestRandomBox(const f32 range, const f32 size_max)
 
 /*
 A query for leaf q (its box, its body) must return exactly the shapes whose leaf box overlaps it; with the body
-filter, only those of a larger body index. The engine's query set is compared as a set against brute force over
-the leaves in the tree (shape i is in the tree iff leaf[i].node != BT_INDEX_NULL).
+filter, only those of a larger body index or those of another body that are not dirty. The engine's query set
+is compared as a set against brute force over the leaves in the tree (shape i is in the tree iff
+leaf[i].node != BT_INDEX_NULL). dirty: the shapes' dirty bits for the filter (unused without it); q's bit is
+set for the query, the filter's precondition, and put back afterwards.
 */
-static u32 BVHTestQueriesAgree(struct arena *mem, const struct BVH *bvh, const struct BVHTestLeaf *leaf, const u32 count, const u32 q, const u32 filter)
+static u32 BVHTestQueriesAgree(struct arena *mem, const struct BVH *bvh, const struct BVHTestLeaf *leaf, const u32 count, const u32 q, const u32 filter, struct ds_BitSet *dirty)
 {
     ArenaPushRecord(mem);
     const struct BVHNode probe = { .bbox = leaf[q].box, .bt_child = { q, leaf[q].body } };
+    const u32 q_dirty = (filter) ? ds_BitSetGet(dirty, q) : 0;
+    if (filter) { ds_BitSetSet(dirty, q, 1); }
     const struct BVHQuerySet set = (filter)
-        ? BVHQueryAndFilterOnBody(mem, bvh, &probe)
+        ? BVHQueryAndFilterOnBody(mem, bvh, &probe, dirty)
         : BVHQuery(mem, bvh, &probe);
 
     u8 found[BVH_TEST_LEAF_MAX] = { 0 };
@@ -72,13 +76,14 @@ static u32 BVHTestQueriesAgree(struct arena *mem, const struct BVH *bvh, const s
     for (u32 i = 0; ok && i < count; ++i)
     {
         const u32 expected = (leaf[i].node != BT_INDEX_NULL) && AabbTest(&leaf[q].box, &leaf[i].box)
-                             && (!filter || leaf[q].body < leaf[i].body);
+                             && (!filter || leaf[q].body < leaf[i].body || (leaf[q].body != leaf[i].body && !ds_BitSetGet(dirty, i)));
         if (expected != found[i])
         {
             fprintf(stderr, "query %u (filter %u): shape %u %s, expected %s\n", q, filter, i, found[i] ? "returned" : "missing", expected ? "returned" : "absent");
             ok = 0;
         }
     }
+    if (filter) { ds_BitSetSet(dirty, q, q_dirty); }
     ArenaPopRecord(mem);
     return ok;
 }
@@ -98,11 +103,17 @@ struct test_Output DBVHQueryTest(struct test_Environment *env)
         leaf[i].node = DBVHInsert(&bvh, leaf[i].body, i, &leaf[i].box);
     }
     BVHValidate(&bvh);
+    /* about half the shapes dirty: the filter's one-sided reports are exercised both ways */
+    struct ds_BitSet dirty = ds_BitSetAlloc(NULL, count, 0, NOT_GROWABLE);
+    for (u32 i = 0; i < count; ++i)
+    {
+        ds_BitSetSet(&dirty, i, (u32) RngU64Range(0, 1));
+    }
     TEST_NOT_ZERO(BTLeafCount(bvh.bt) == count);
 
     for (u32 q = 0; q < count; ++q)
     {
-        if (!BVHTestQueriesAgree(env->mem_1, &bvh, leaf, count, q, 0) || !BVHTestQueriesAgree(env->mem_1, &bvh, leaf, count, q, 1))
+        if (!BVHTestQueriesAgree(env->mem_1, &bvh, leaf, count, q, 0, NULL) || !BVHTestQueriesAgree(env->mem_1, &bvh, leaf, count, q, 1, &dirty))
         {
             BVHFree(&bvh);
             TEST_FAILURE;
@@ -122,7 +133,7 @@ struct test_Output DBVHQueryTest(struct test_Environment *env)
     BVHValidate(&bvh);
     for (u32 q = 0; q < count; ++q)
     {
-        if (!BVHTestQueriesAgree(env->mem_1, &bvh, leaf, count, q, 0) || !BVHTestQueriesAgree(env->mem_1, &bvh, leaf, count, q, 1))
+        if (!BVHTestQueriesAgree(env->mem_1, &bvh, leaf, count, q, 0, NULL) || !BVHTestQueriesAgree(env->mem_1, &bvh, leaf, count, q, 1, &dirty))
         {
             BVHFree(&bvh);
             TEST_FAILURE;
@@ -142,7 +153,7 @@ struct test_Output DBVHQueryTest(struct test_Environment *env)
     TEST_NOT_ZERO(BTLeafCount(bvh.bt) == count);
     for (u32 q = 0; q < count; ++q)
     {
-        if (!BVHTestQueriesAgree(env->mem_1, &bvh, leaf, count, q, 0))
+        if (!BVHTestQueriesAgree(env->mem_1, &bvh, leaf, count, q, 0, NULL))
         {
             BVHFree(&bvh);
             TEST_FAILURE;
@@ -156,14 +167,15 @@ struct test_Output DBVHQueryTest(struct test_Environment *env)
         leaf[i].node = BT_INDEX_NULL;
     }
     TEST_NOT_ZERO(bvh.bt.root == BT_INDEX_NULL && BTLeafCount(bvh.bt) == 0);
-    TEST_NOT_ZERO(BVHTestQueriesAgree(env->mem_1, &bvh, leaf, count, 0, 0));
+    TEST_NOT_ZERO(BVHTestQueriesAgree(env->mem_1, &bvh, leaf, count, 0, 0, NULL));
     leaf[0].node = DBVHInsert(&bvh, leaf[0].body, 0, &leaf[0].box);
     BVHValidate(&bvh);
-    TEST_NOT_ZERO(BTLeafCount(bvh.bt) == 1 && BVHTestQueriesAgree(env->mem_1, &bvh, leaf, count, 0, 0));
+    TEST_NOT_ZERO(BTLeafCount(bvh.bt) == 1 && BVHTestQueriesAgree(env->mem_1, &bvh, leaf, count, 0, 0, NULL));
 
     DBVHFlush(&bvh);
     TEST_NOT_ZERO(bvh.bt.root == BT_INDEX_NULL);
     BVHFree(&bvh);
+    ds_BitSetDealloc(&dirty);
 
     return output;
 }
@@ -181,6 +193,11 @@ struct test_Output DBVHSerializeTest(struct test_Environment *env)
         leaf[i].box = BVHTestRandomBox(5.0f, 1.0f);
         leaf[i].body = i / 2;
         leaf[i].node = DBVHInsert(&bvh, leaf[i].body, i, &leaf[i].box);
+    }
+    struct ds_BitSet dirty = ds_BitSetAlloc(NULL, count, 0, NOT_GROWABLE);
+    for (u32 i = 0; i < count; ++i)
+    {
+        ds_BitSetSet(&dirty, i, (u32) RngU64Range(0, 1));
     }
 
     const u64 size = BVHSerializeSize(&bvh);
@@ -206,7 +223,7 @@ struct test_Output DBVHSerializeTest(struct test_Environment *env)
     }
     for (u32 q = 0; q < count; ++q)
     {
-        if (!BVHTestQueriesAgree(env->mem_1, &copy, leaf, count, q, 1))
+        if (!BVHTestQueriesAgree(env->mem_1, &copy, leaf, count, q, 1, &dirty))
         {
             BVHFree(&copy);
             BVHFree(&bvh);
@@ -218,7 +235,7 @@ struct test_Output DBVHSerializeTest(struct test_Environment *env)
     DBVHRemove(&copy, leaf[3].node);
     leaf[3].node = BT_INDEX_NULL;
     BVHValidate(&copy);
-    TEST_NOT_ZERO(BVHTestQueriesAgree(env->mem_1, &copy, leaf, count, 5, 0));
+    TEST_NOT_ZERO(BVHTestQueriesAgree(env->mem_1, &copy, leaf, count, 5, 0, NULL));
     leaf[3].node = DBVHInsert(&copy, leaf[3].body, 3, &leaf[3].box);
     BVHValidate(&copy);
 
@@ -230,6 +247,7 @@ struct test_Output DBVHSerializeTest(struct test_Environment *env)
 
     BVHFree(&copy);
     BVHFree(&bvh);
+    ds_BitSetDealloc(&dirty);
     return output;
 }
 

@@ -487,7 +487,7 @@ struct BVHQuerySet BVHQuery(struct arena *mem, const struct BVH *bvh, const stru
     return query;
 }
 
-struct BVHQuerySet BVHQueryAndFilterOnBody(struct arena *mem, const struct BVH *bvh, const struct BVHNode *node)
+struct BVHQuerySet BVHQueryAndFilterOnBody(struct arena *mem, const struct BVH *bvh, const struct BVHNode *node, const struct ds_BitSet *dirty)
 {
 	if (BTLeafCount(bvh->bt) < 1) { return (struct BVHQuerySet) { 0 }; }
 	const struct BVHNode *nodes = bvh->pool.buf;
@@ -515,7 +515,8 @@ struct BVHQuerySet BVHQueryAndFilterOnBody(struct arena *mem, const struct BVH *
         /* bt_child[1] == ds_Body index */
         if (BTLeafCheck(n))
         {
-            if (node->bt_child[1] < n->bt_child[1])
+            /* the cheap tests first; node is dirty (it queries), so it reports its pairs with the shapes that do not */
+            if (node->bt_child[1] < n->bt_child[1] || (node->bt_child[1] != n->bt_child[1] && !ds_BitSetGet(dirty, n->bt_child[0])))
             {
                 if (query.count == mem_arr.len)
                 {
