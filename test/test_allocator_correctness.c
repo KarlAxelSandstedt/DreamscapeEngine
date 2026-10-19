@@ -21,6 +21,7 @@
 
 #include "ds_test.h"
 #include "ds_serialize.h"
+#include "ds_init.h"
 
 /* Edges, and random n in (2^(k-1), 2^k] for every k. */
 static struct test_Output PowerOfTwoTest(struct test_Environment *env)
@@ -814,7 +815,7 @@ struct test_TPoolParallel
 };
 
 /* Release a held slot: it must still be ours, untouched; then to our free list or another thread's. */
-static void TPoolParallelRelease(struct test_TPoolParallel *t, const u32 id, const u32 index)
+static void TPoolParallelRelease(struct test_TPoolParallel *t, struct rng *rng, const u32 id, const u32 index)
 {
     const struct test_PNode *node = ds_TPoolAddress(t->pool, index);
     u32 expected = id;
@@ -824,13 +825,13 @@ static void TPoolParallelRelease(struct test_TPoolParallel *t, const u32 id, con
         return;
     }
 
-    if (RngU64Range(0, 1))
+    if (RngLocalU64Range(rng, 0, 1))
     {
         ds_TPoolRemove(t->pool, index);
     }
     else
     {
-        const u32 list = (u32) RngU64Range(0, t->pool.state.free_list_count - 1);
+        const u32 list = (u32) RngLocalU64Range(rng, 0, t->pool.state.free_list_count - 1);
         ds_TPoolFreeListPush(t->pool, list, index);
     }
 }
@@ -840,6 +841,9 @@ static void TPoolParallelJob(void *args)
 {
     struct test_TPoolParallel *t = args;
     const u32 id = AtomicAddFetchRlx32(&t->a_next_id, 1);
+    /* a job's draws depend on the seed and the job, not on the thread that happens to run it */
+    struct rng rng;
+    RngLocalInit(&rng, g_config->seed[0] ^ ((u64) id << 32));
     u32 held[TPOOL_PARALLEL_HELD];
     u32 held_count = 0;
 
@@ -866,15 +870,15 @@ static void TPoolParallelJob(void *args)
 
         for (u32 k = 0; k < TPOOL_PARALLEL_HELD / 2; ++k)
         {
-            const u32 j = (u32) RngU64Range(0, held_count - 1);
-            TPoolParallelRelease(t, id, held[j]);
+            const u32 j = (u32) RngLocalU64Range(&rng, 0, held_count - 1);
+            TPoolParallelRelease(t, &rng, id, held[j]);
             held[j] = held[--held_count];
         }
     }
 
     while (held_count)
     {
-        TPoolParallelRelease(t, id, held[--held_count]);
+        TPoolParallelRelease(t, &rng, id, held[--held_count]);
     }
 }
 

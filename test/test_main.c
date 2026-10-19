@@ -22,6 +22,13 @@
 
 #include "ds_test.h"
 
+/*
+Every test's random inputs depend on the config seed and the test's ordinal only: the main thread is reseeded
+with its own stream before each test (streams are 2^128 draws apart; 1024 keeps clear of the workers' indices),
+so neither the tests before it nor the parallel tests' scheduling-dependent draws reach it (springclean #105).
+*/
+static u32 test_stream = 1024;
+
 static void run_suite(struct suite_Correctness *suite, struct test_Environment *env, const u64 verbose)
 {
 	if (verbose) { fprintf(stdout, ":::::::::: Running suite %s ::::::::::\n", suite->id); }
@@ -36,6 +43,7 @@ static void run_suite(struct suite_Correctness *suite, struct test_Environment *
 		struct arena record_5 = *env->mem_5;
 		struct arena record_6 = *env->mem_6;
 
+		ThreadXoshiro256InitSequence(test_stream++);
 		struct test_Output out = suite->unit_test[i](env);
 		if (out.success)
 		{
@@ -60,6 +68,7 @@ static void run_suite(struct suite_Correctness *suite, struct test_Environment *
 
 	for (u64 i = 0; i < suite->repetition_test_count; ++i)
 	{
+		ThreadXoshiro256InitSequence(test_stream++);
 		RngPushState();
 		struct test_Output out;
 		u32 t;
