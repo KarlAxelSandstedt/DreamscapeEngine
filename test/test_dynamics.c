@@ -821,6 +821,114 @@ static struct test_Output DynamicsShapeTest(struct test_Environment *env)
     return output;
 }
 
+
+/********************************** bodies (ds_body.c) **********************************/
+
+static u32 DynamicsTestNear(const f32 a, const f32 b, const f32 scale)
+{
+    return F32Abs(a - b) <= 1e-4f * scale;
+}
+
+/*
+Bodies: a dynamic body of two spheres of different densities has the mass, center of mass and inverse inertia of
+the closed forms (parallel axis); a static body has none; lookups by id; a removal frees the body's usage bit and a
+second removal with the dead id is a no-op that leaves the other bodies untouched.
+*/
+static struct test_Output DynamicsBodyTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    ds_DynamicsSetGlobals(&pipeline);
+
+    const f32 r = 0.5f;
+    const utf8 id = Utf8Format(&mem, "sphere");
+    const struct slot slot = ds_SDBAddAlias(cshape_db, id);
+    struct c_Shape *cshape = slot.address;
+    cshape->id = Utf8CopyBuffered(cshape->id_buf, C_SHAPE_ID_SIZE, id);
+    cshape->type = C_SHAPE_SPHERE;
+    cshape->sphere.radius = r;
+    c_ShapeUpdateMassProperties(cshape);
+    const f32 volume = cshape->volume;
+
+    const struct ds_BodyPrefab dynamic_prefab = { .dynamic = 1 };
+    const struct ds_BodyPrefab static_prefab = { .dynamic = 0 };
+    const ds_TransformWorld t_a = { .rotation = QIdentity(), .position = V3F64(10.0, 20.0, 30.0) };
+    const ds_TransformWorld t_b = { .rotation = QNormalize(Q(0.1f, 0.2f, 0.3f, 0.9f)), .position = V3F64(-5.0, 0.0, 5.0) };
+    const ds_BodyId a = ds_BodyAdd(&pipeline, &dynamic_prefab, &t_a, 0);
+    const ds_BodyId b = ds_BodyAdd(&pipeline, &static_prefab, &t_b, 1);
+    TEST_NOT_ZERO(a != DS_ID_NULL && b != DS_ID_NULL && a != b);
+
+    /* two spheres on a: density 1 at x = +1, density 3 at x = -1 */
+    const struct ds_ShapePrefab light = { .cshape = slot.index, .density = 1.0f, .friction = 0.5f, .margin = 0.1f };
+    const struct ds_ShapePrefab heavy = { .cshape = slot.index, .density = 3.0f, .friction = 0.5f, .margin = 0.1f };
+    const ds_Transform at_plus = { .rotation = QIdentity(), .position = V3(1.0f, 0.0f, 0.0f) };
+    const ds_Transform at_minus = { .rotation = QIdentity(), .position = V3(-1.0f, 0.0f, 0.0f) };
+    TEST_NOT_ZERO(ds_ShapeAdd(&pipeline, &light, &at_plus, a) != DS_ID_NULL);
+    TEST_NOT_ZERO(ds_ShapeAdd(&pipeline, &heavy, &at_minus, a) != DS_ID_NULL);
+    TEST_NOT_ZERO(ds_ShapeAdd(&pipeline, &heavy, &at_minus, b) != DS_ID_NULL);
+
+    /* closed forms: masses V and 3V, com at -0.5; I_xx = 2/5 (4V) r^2, I_yy = I_zz = I_xx + V 1.5^2 + 3V 0.5^2 */
+    const f32 mass = 4.0f * volume;
+    const f32 i_xx = 0.4f * mass * r*r;
+    const f32 i_yy = i_xx + volume * 2.25f + 3.0f * volume * 0.25f;
+    {
+        const struct ds_Body *body = ds_BodyLookup(&pipeline, a).address;
+        TEST_NOT_ZERO(body != NULL && body->set == SOLVER_SET_ACTIVE && body->shape_list.count == 2);
+        const struct ds_SolverSet *set = pipeline.solver_set_pool.buf + body->set;
+        const struct ds_BodySim *sim = set->body_sim_pool.buf + body->sim;
+        TEST_NOT_ZERO(DynamicsTestNear(body->mass, mass, mass) && DynamicsTestNear(sim->inv_mass, 1.0f / mass, 1.0f / mass));
+        TEST_NOT_ZERO(DynamicsTestNear(sim->local_center_of_mass.x, -0.5f, 1.0f) && DynamicsTestNear(sim->local_center_of_mass.y, 0.0f, 1.0f) && DynamicsTestNear(sim->local_center_of_mass.z, 0.0f, 1.0f));
+        const m3 inv = sim->local_inv_inertia;
+        const f32 scale = 1.0f / i_xx;
+        TEST_NOT_ZERO(DynamicsTestNear(inv.a11, 1.0f / i_xx, scale) && DynamicsTestNear(inv.a22, 1.0f / i_yy, scale) && DynamicsTestNear(inv.a33, 1.0f / i_yy, scale));
+        TEST_NOT_ZERO(DynamicsTestNear(inv.a12, 0.0f, scale) && DynamicsTestNear(inv.a13, 0.0f, scale) && DynamicsTestNear(inv.a23, 0.0f, scale));
+        TEST_NOT_ZERO(sim->world.position.x == 10.0 && sim->world.position.y == 20.0 && sim->world.position.z == 30.0);
+    }
+    {
+        const struct ds_Body *body = ds_BodyLookup(&pipeline, b).address;
+        TEST_NOT_ZERO(body != NULL && body->set == SOLVER_SET_STATIC && body->island == POOL_NULL && body->mass == 0.0f);
+        const struct ds_SolverSet *set = pipeline.solver_set_pool.buf + body->set;
+        const struct ds_BodySim *sim = set->body_sim_pool.buf + body->sim;
+        TEST_NOT_ZERO(sim->inv_mass == 0.0f && sim->local_inv_inertia.a11 == 0.0f && sim->local_inv_inertia.a22 == 0.0f && sim->local_inv_inertia.a33 == 0.0f);
+    }
+
+    /* lookups: another generation of the same index is not found */
+    TEST_NOT_ZERO(ds_BodyLookup(&pipeline, a + DS_ID_GENERATION_INCREMENT).address == NULL);
+    TEST_NOT_ZERO(ds_BodyLookup(&pipeline, DS_ID_NULL).address == NULL);
+
+    /* removal: the usage bit goes, the id dies, and removing it again changes nothing */
+    const u32 index_a = ds_IdIndex(a);
+    ds_BodyRemove(&mem, &pipeline, a);
+    TEST_NOT_ZERO(ds_BodyLookup(&pipeline, a).address == NULL && pipeline.body_pool.count == 1 && pipeline.shape_pool.count == 1);
+    TEST_NOT_ZERO(ds_BitSetGet(&pipeline.body_usage_set, index_a) == 0);
+    const struct ds_Body *body_b = ds_BodyLookup(&pipeline, b).address;
+    const u32 sim_b = body_b->sim;
+    ds_BodyRemove(&mem, &pipeline, a);
+    TEST_NOT_ZERO(pipeline.body_pool.count == 1 && ds_BodyLookup(&pipeline, b).address == body_b && body_b->sim == sim_b);
+    const struct ds_SolverSet *static_set = pipeline.solver_set_pool.buf + SOLVER_SET_STATIC;
+    TEST_NOT_ZERO(static_set->body_sim_pool.count == 1 && static_set->body_sim_pool.buf[sim_b].world.position.x == -5.0);
+
+    /* the slot is reusable with a new generation */
+    const ds_BodyId c = ds_BodyAdd(&pipeline, &dynamic_prefab, &t_a, 2);
+    TEST_NOT_ZERO(c != DS_ID_NULL && c != a && ds_BodyLookup(&pipeline, a).address == NULL && ds_BodyLookup(&pipeline, c).address != NULL);
+
+    ds_BodyRemove(&mem, &pipeline, b);
+    ds_BodyRemove(&mem, &pipeline, c);
+    TEST_NOT_ZERO(pipeline.body_pool.count == 0 && pipeline.shape_pool.count == 0);
+
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
 {
     DynamicsRestingBoxTest,
@@ -828,6 +936,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsRestingSlopeTest,
     DynamicsSnapshotTest,
     DynamicsShapeTest,
+    DynamicsBodyTest,
 };
 
 struct suite_Correctness m_dynamics_suite =
