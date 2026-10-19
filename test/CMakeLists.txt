@@ -12,8 +12,6 @@ add_library(DreamscapeTestAPI
 	test_ui.c
 	test_cmd.c
     test_job.c
-    #test_container.c
-    #test_math.c
 	test_string.c
 	test_serialize.c
 	test_allocator.c

@@ -69,7 +69,6 @@ static void run_suite(struct suite_Correctness *suite, struct test_Environment *
 	for (u64 i = 0; i < suite->repetition_test_count; ++i)
 	{
 		ThreadXoshiro256InitSequence(test_stream++);
-		RngPushState();
 		/* a count of 0 runs nothing: a pass */
 		struct test_Output out = { .id = "(count 0)", .success = 1 };
 		u32 t;
@@ -95,7 +94,6 @@ static void run_suite(struct suite_Correctness *suite, struct test_Environment *
 		{
 			fprintf(stdout, "\tTest %s iteration (%u/%u)\tfailed: %s:%llu\n", out.id, (t+1), suite->repetition_test[i].count, out.file, (long long unsigned int) out.line);
 		}
-		RngPopState();
 	}
 
 	if (verbose) { fprintf(stdout, "Tests passed: (%llu/%llu)\n",  
@@ -351,9 +349,6 @@ void ds_TestMainCorrectness(void)
     run_suite(dynamics_correctness_suite, &env, 1);
     run_suite(rng_correctness_suite, &env, 1);
     run_suite(asset_correctness_suite, &env, 1);
-	//run_suite(array_list_correctness_suite, &env, 1);
-	//run_suite(hierarchy_correctness_index_suite, &env, 1);
-	//run_suite(math_correctness_suite, &env, 1);
 
 	ArenaFree(&mem_1);
 	ArenaFree(&mem_2);
