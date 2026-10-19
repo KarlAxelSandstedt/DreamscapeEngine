@@ -138,9 +138,15 @@ static f64 F64MinTest(const f64 a, const f64 b)
     return (a < b) ? a : b;
 }
 
+/* |a| by clearing the sign bit, as F32Abs: MSVC compiles (a < 0.0) ? -a : a that way too, C keeps -0 (springclean #207) */
 static f64 F64AbsTest(const f64 a)
 {
-    return (a < 0.0) ? -a : a;
+    u64 bits;
+    memcpy(&bits, &a, sizeof(bits));
+    bits &= ~((u64) 1 << 63);
+    f64 abs;
+    memcpy(&abs, &bits, sizeof(abs));
+    return abs;
 }
 
 /* rows of the rotation matrix of rot, normalized in double */

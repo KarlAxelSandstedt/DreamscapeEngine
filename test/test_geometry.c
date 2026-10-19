@@ -807,7 +807,16 @@ static struct vd3 Vd3Scale(const struct vd3 a, const f64 s) { return Vd3(s*a.x, 
 static f64 Vd3Dot(const struct vd3 a, const struct vd3 b) { return a.x*b.x + a.y*b.y + a.z*b.z; }
 static struct vd3 Vd3Cross(const struct vd3 a, const struct vd3 b) { return Vd3(a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x); }
 static f64 VdMax(const f64 a, const f64 b) { return (a > b) ? a : b; }
-static f64 VdAbs(const f64 a) { return (a < 0.0) ? -a : a; }
+/* |a| by clearing the sign bit, as F32Abs: MSVC compiles (a < 0.0) ? -a : a that way too, C keeps -0 (springclean #207) */
+static f64 VdAbs(const f64 a)
+{
+    u64 bits;
+    memcpy(&bits, &a, sizeof(bits));
+    bits &= ~((u64) 1 << 63);
+    f64 abs;
+    memcpy(&abs, &bits, sizeof(abs));
+    return abs;
+}
 static v3 VdRound(const struct vd3 a) { return V3((f32) a.x, (f32) a.y, (f32) a.z); }
 
 static f64 VdSqrt(const f64 x)
@@ -1965,7 +1974,7 @@ struct test_Output BboxRotateTest(struct test_Environment *env)
             {
                 const f64 cj = 0.5*((f64) box.min.buf[j] + (f64) box.max.buf[j]);
                 const f64 hj = 0.5*((f64) box.max.buf[j] - (f64) box.min.buf[j]);
-                scale += ((row[axis][j] < 0.0) ? -row[axis][j] : row[axis][j]) * (((cj < 0.0) ? -cj : cj) + hj);
+                scale += VdAbs(row[axis][j]) * (VdAbs(cj) + hj);
             }
             const f64 excess_lo = (lo - (f64) rotated.min.buf[axis]) / (F32_EPSILON * scale);
             const f64 excess_hi = ((f64) rotated.max.buf[axis] - hi) / (F32_EPSILON * scale);
