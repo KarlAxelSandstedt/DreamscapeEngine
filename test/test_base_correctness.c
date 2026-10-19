@@ -759,9 +759,9 @@ static f32 MatrixTestIdentityError(const f32 *a, const f32 *b, const u32 n)
 
 /*
  * ds_matrix.h/.c: Rows is the transpose of Columns; V3M3Mul(v, m) equals M3V3Mul(m^T, v) bit for bit; M3Mul and
- * M3V3Mul against f64 products; OuterProduct; AbsMin/AbsMax; M3QUnit against QUnitRotate and M4QUnit's 3x3 block;
- * the 2x2, 3x3 and 4x4 inverses: determinant against f64 elimination, a inv = I, and exactly singular integer
- * matrices returning determinant 0.
+ * M3V3Mul against f64 products; OuterProduct; M3QUnit against QUnitRotate and M4QUnit's 3x3 block; the 3x3 and
+ * 4x4 inverses: determinant against f64 elimination, a inv = I, and exactly singular integer matrices returning
+ * determinant 0.
  */
 static struct test_Output MatrixTest(struct test_Environment *env)
 {
@@ -804,15 +804,6 @@ static struct test_Output MatrixTest(struct test_Environment *env)
         }
         TEST_TRUE(VectorTestNear(M3V3Mul(M3OuterProduct(v, w), a.col[0]), V3Scale(v, V3Dot(w, a.col[0])), 4e-6f));
 
-        f32 abs_min = F32Abs(a.buf[0]);
-        f32 abs_max = F32Abs(a.buf[0]);
-        for (u32 k = 1; k < 9; ++k)
-        {
-            abs_min = F32Min(abs_min, F32Abs(a.buf[k]));
-            abs_max = F32Max(abs_max, F32Abs(a.buf[k]));
-        }
-        TEST_TRUE(M3AbsMin(a) == abs_min && M3AbsMax(a) == abs_max);
-
         const q r = QuaternionTestUnit(&rng);
         const m3 rot = M3QUnit(r);
         const m4 rot4 = M4QUnit(r);
@@ -825,31 +816,23 @@ static struct test_Output MatrixTest(struct test_Environment *env)
         TEST_TRUE(rot4.a44 == 1.0f);
 
         /* inverses of well-conditioned (diagonally dominant) matrices */
-        m2 c2, inv2;
         m3 c3, inv3;
         m4 c4, inv4;
-        MatrixTestRandom(c2.buf, &rng, 2, 3.0f);
         MatrixTestRandom(c3.buf, &rng, 3, 4.0f);
         MatrixTestRandom(c4.buf, &rng, 4, 5.0f);
-        const f32 det2 = M2Inverse(&inv2, c2);
         const f32 det3 = M3Inverse(&inv3, c3);
         const f32 det4 = M4Inverse(&inv4, c4);
-        const f64 ref2 = MatrixTestDeterminant(c2.buf, 2);
         const f64 ref3 = MatrixTestDeterminant(c3.buf, 3);
         const f64 ref4 = MatrixTestDeterminant(c4.buf, 4);
-        TEST_TRUE(F32Abs(det2 - (f32) ref2) <= 1e-5f * F32Abs((f32) ref2));
         TEST_TRUE(F32Abs(det3 - (f32) ref3) <= 1e-5f * F32Abs((f32) ref3));
         TEST_TRUE(F32Abs(det4 - (f32) ref4) <= 1e-5f * F32Abs((f32) ref4));
-        TEST_TRUE(MatrixTestIdentityError(c2.buf, inv2.buf, 2) <= 1e-5f && MatrixTestIdentityError(inv2.buf, c2.buf, 2) <= 1e-5f);
         TEST_TRUE(MatrixTestIdentityError(c3.buf, inv3.buf, 3) <= 1e-5f && MatrixTestIdentityError(inv3.buf, c3.buf, 3) <= 1e-5f);
         TEST_TRUE(MatrixTestIdentityError(c4.buf, inv4.buf, 4) <= 1e-5f && MatrixTestIdentityError(inv4.buf, c4.buf, 4) <= 1e-5f);
     }
 
     /* exactly singular: a column (or row) is a combination of others; small integers keep every product exact */
-    m2 inv2;
     m3 inv3;
     m4 inv4;
-    TEST_TRUE(M2Inverse(&inv2, M2(1.0f, 2.0f, 2.0f, 4.0f)) == 0.0f);
     TEST_TRUE(M3Inverse(&inv3, M3(1.0f, 2.0f, 3.0f,  4.0f, 5.0f, 6.0f,  5.0f, 7.0f, 9.0f)) == 0.0f);
     TEST_TRUE(M4Inverse(&inv4, M4(1.0f, 2.0f, 3.0f, 4.0f,  2.0f, 0.0f, 1.0f, 1.0f,  3.0f, 2.0f, 4.0f, 5.0f,  0.0f, 1.0f, 0.0f, 2.0f)) == 0.0f);
 

@@ -20,15 +20,6 @@
 #include "ds_math.h"
 #include "ds_matrix.h"
 
-f32 M2Inverse(m2 *inv, const m2 a)
-{
-	const f32 det = (a.a11*a.a22 - a.a12*a.a21);
-	const f32 div = 1.0f / det;
-	*inv = M2(div*a.a22, -div*a.a21, -div*a.a12, div*a.a11);
-
-	return det;
-}
-
 f32 M3Inverse(m3 *inv, const m3 a)
 {
 	/* co-factors */
