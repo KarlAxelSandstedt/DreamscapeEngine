@@ -194,7 +194,6 @@ static void ds_DynamicsClearFrame(struct ds_Dynamics *pipeline)
         ds_CPoolFlush(pipeline->worker[i].draw.debug_segment_pool);
 	}
 	ArenaFlush(&pipeline->frame);
-    ds_CGraphFramePrepare(pipeline);
     ds_BitSetClear(&pipeline->island_high_energy_set, 0);
 }
 
@@ -1701,6 +1700,8 @@ void ds_DynamicsTick(struct ds_Dynamics *pipeline)
 	{
 		ds_DynamicsClearFrame(pipeline);
 	}
+    /* before the first tick too: the body pool may have grown since the alloc */
+    ds_CGraphFramePrepare(pipeline);
 	pipeline->frames_completed += 1;
 
     const u64 f = pipeline->frames_completed & 0x1;
