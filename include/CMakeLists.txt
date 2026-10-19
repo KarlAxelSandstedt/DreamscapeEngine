@@ -12,12 +12,15 @@ if (DS_DEBUG)
 endif()
 
 # Warnings of the engine's targets (not lib/'s). Linux's set (CMakeLists.txt) is the reference; Windows follows it.
-if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
+	# a 64-bit integer silently cut to 32 bits; GCC has no such warning short of -Wconversion
+	target_compile_options(DreamscapeDefine INTERFACE -Wshorten-64-to-32)
+elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 	if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
-		# clang-cl: Linux's set (its /W4 is clang's -Wall -Wextra)
+		# clang-cl: Linux's set (its /W4 is clang's -Wall -Wextra) and Linux Clang's -Wshorten-64-to-32
 		target_compile_options(DreamscapeDefine INTERFACE /W4
 			/clang:-Wno-switch /clang:-Wno-unused-parameter /clang:-Wno-unused-variable
-			/clang:-Wno-unused-but-set-variable /clang:-Wno-unused-function)
+			/clang:-Wno-unused-but-set-variable /clang:-Wno-unused-function /clang:-Wshorten-64-to-32)
 	else ()
 		# MSVC: /W4 without what Linux's set does not report: unused parameters, locals and functions (its -Wno-
 		# list: C4100 C4101 C4189 C4505), narrowing (C4244 C4267 C4305, -Wconversion), shadowing (C4456 C4459,
