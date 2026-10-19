@@ -3,12 +3,26 @@
 #include "ds_collision.h"
 #include "ds_voronoi.h"
 
+/*
+ * One random draw per statement: C leaves the order of a call's arguments and of an expression's operands to the
+ * compiler, so V3(R(), R(), R()) is a different vector per compiler (springclean #200). Draws go left to right.
+ */
+
 static v3 V3UnitSphere(void)
 {
     const f32 z = RngF32Range(-1.0f, 1.0f);
     const f32 r = F32Sqrt(1 - z*z);
     const f32 theta = 2.0f*F32_PI*RngF32Normalized();
     return V3(r*F32Cos(theta), r*F32Sin(theta), z);
+}
+
+/* each component in [min, max], drawn x, y, z */
+static v3 V3RandomRange(const f32 min, const f32 max)
+{
+    const f32 x = RngF32Range(min, max);
+    const f32 y = RngF32Range(min, max);
+    const f32 z = RngF32Range(min, max);
+    return V3(x, y, z);
 }
 
 /*
@@ -51,7 +65,7 @@ struct test_Output SegmentShortTest(struct test_Environment *env)
     {
         for (u32 k = 0; k < 1000; ++k)
         {
-            const v3 a0 = V3(RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f));
+            const v3 a0 = V3RandomRange(-1.0f, 1.0f);
             const v3 dir = V3Scale(V3UnitSphere(), length[i]);
             /* short a vs a unit b, b vs short a, two short segments, short a parallel to b */
             TEST_TRUE(SegmentShortCase(a0, dir, b0, b1));
@@ -181,7 +195,7 @@ struct test_Output DcelBoxTest(struct test_Environment *env)
     for (u32 i = 0; i < 1000; ++i)
     {
         struct arena record = *env->mem_2;
-        const v3 hw = V3(RngF32Range(1e-3f, 1e3f), RngF32Range(1e-3f, 1e3f), RngF32Range(1e-3f, 1e3f));
+        const v3 hw = V3RandomRange(1e-3f, 1e3f);
         const struct dcel box = DcelBox(env->mem_2, hw);
         TEST_TRUE(box.v != stub.v && box.f_count == 6 && box.e_count == 24 && box.v_count == 8);
         DcelAssertTopology(&box);
@@ -254,7 +268,7 @@ struct test_Output DcelPlanesTest(struct test_Environment *env)
         v3 v[3];
         for (u32 k = 0; k < 3; ++k)
         {
-            v[k] = V3(RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f));
+            v[k] = V3RandomRange(-10.0f, 10.0f);
         }
         tri.v = v;
         v3 n;
@@ -550,7 +564,7 @@ static u32 HullCloud(v3 *p, const enum hullCloud cloud, const u32 count, const f
         {
             for (u32 i = 0; i < n; ++i)
             {
-                p[i] = V3(RngF32Range(-s, s), RngF32Range(-s, s), RngF32Range(-s, s));
+                p[i] = V3RandomRange(-s, s);
             }
         } break;
 
@@ -559,7 +573,7 @@ static u32 HullCloud(v3 *p, const enum hullCloud cloud, const u32 count, const f
         {
             for (u32 i = 0; i < n; ++i)
             {
-                p[i] = V3(RngF32Range(-s, s), RngF32Range(-s, s), RngF32Range(-s, s));
+                p[i] = V3RandomRange(-s, s);
                 const u32 axis = (u32) RngU64Range(0, 2);
                 p[i].buf[axis] = (RngU64Range(0, 1)) ? s : -s;
             }
@@ -567,7 +581,7 @@ static u32 HullCloud(v3 *p, const enum hullCloud cloud, const u32 count, const f
             const f32 noise = HullCloudNoise(cloud) * DcelConvexHullTolerance(p, n);
             for (u32 i = 0; i < n; ++i)
             {
-                const v3 d = V3(RngF32Range(-noise, noise), RngF32Range(-noise, noise), RngF32Range(-noise, noise));
+                const v3 d = V3RandomRange(-noise, noise);
                 p[i] = V3Add(p[i], d);
             }
         } break;
@@ -587,11 +601,11 @@ static u32 HullCloud(v3 *p, const enum hullCloud cloud, const u32 count, const f
         case HULL_CLOUD_SMALL:
         {
             n = (u32) RngU64Range(4, 24);
-            const v3 axis_scale = V3(s*RngF32Range(0.2f, 1.0f), s*RngF32Range(0.2f, 1.0f),
-                                     s*RngF32Range(0.2f, 1.0f));
+            const v3 axis_scale = V3Scale(V3RandomRange(0.2f, 1.0f), s);
             for (u32 i = 0; i < n; ++i)
             {
-                const v3 u = V3Scale(V3UnitSphere(), RngF32Range(0.5f, 1.0f));
+                const v3 dir = V3UnitSphere();
+                const v3 u = V3Scale(dir, RngF32Range(0.5f, 1.0f));
                 p[i] = V3(u.x*axis_scale.x, u.y*axis_scale.y, u.z*axis_scale.z);
             }
         } break;
@@ -716,7 +730,9 @@ struct test_Output DcelConvexHullTest(struct test_Environment *env)
     HullCase(&stats, env, "collinear", p, 16, 0, 0);
     for (u32 i = 0; i < 16; ++i)
     {
-        p[i] = V3(RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f), 0.0f);
+        const f32 x = RngF32Range(-1.0f, 1.0f);
+        const f32 y = RngF32Range(-1.0f, 1.0f);
+        p[i] = V3(x, y, 0.0f);
     }
     HullCase(&stats, env, "coplanar", p, 16, 0, 0);
 
@@ -821,7 +837,18 @@ static struct vd3 VdUnit(void)
 
 static struct vd3 VdBall(void)
 {
-    return Vd3Scale(VdUnit(), (f64) RngF32Normalized());
+    const struct vd3 u = VdUnit();
+    return Vd3Scale(u, (f64) RngF32Normalized());
+}
+
+/* each component an integer in [-range/2, range/2], drawn x, y, z */
+static struct vd3 VdLattice(const u64 range)
+{
+    const f64 half = (f64) (range / 2);
+    const f64 x = (f64) RngU64Range(0, range) - half;
+    const f64 y = (f64) RngU64Range(0, range) - half;
+    const f64 z = (f64) RngU64Range(0, range) - half;
+    return Vd3(x, y, z);
 }
 
 static void VdCandidate(struct vd3 *best, f64 *best_dist_sq, const struct vd3 c, const struct vd3 p)
@@ -1175,7 +1202,8 @@ static void VdStatsPrint(const char *family, const u32 count, const struct vd_St
 static f64 VdScale(void)
 {
     static const f64 decade[] = { 1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3 };
-    return decade[RngU64Range(0, 6)] * (1.0 + 2.0*(f64) RngF32Normalized());
+    const f64 d = decade[RngU64Range(0, 6)];
+    return d * (1.0 + 2.0*(f64) RngF32Normalized());
 }
 
 /* random well-shaped simplices (min edge, area, volume bounded by the max edge) */
@@ -1189,7 +1217,8 @@ struct test_Output VoronoiWellShapedTest(struct test_Environment *env)
         {
             const f64 scale = VdScale();
             static const f64 far_scale[] = { 0.0, 1.0, 1e2, 1e4 };
-            const struct vd3 T = Vd3Scale(VdUnit(), far_scale[RngU64Range(0, 3)]*scale);
+            const struct vd3 dir = VdUnit();
+            const struct vd3 T = Vd3Scale(dir, far_scale[RngU64Range(0, 3)]*scale);
             struct vd3 t[4];
             for (;;)
             {
@@ -1280,9 +1309,9 @@ struct test_Output VoronoiDegenerateTest(struct test_Environment *env)
         {
             /* power of two scale: lattice points stay exact */
             const f64 scale = (f64) (1u << RngU64Range(0, 12)) / 64.0;
-            struct vd3 base = Vd3((f64) RngU64Range(0, 64) - 32.0, (f64) RngU64Range(0, 64) - 32.0, (f64) RngU64Range(0, 64) - 32.0);
-            struct vd3 d1 = Vd3((f64) RngU64Range(0, 8) - 4.0, (f64) RngU64Range(0, 8) - 4.0, (f64) RngU64Range(0, 8) - 4.0);
-            struct vd3 d2 = Vd3((f64) RngU64Range(0, 8) - 4.0, (f64) RngU64Range(0, 8) - 4.0, (f64) RngU64Range(0, 8) - 4.0);
+            struct vd3 base = VdLattice(64);
+            struct vd3 d1 = VdLattice(8);
+            struct vd3 d2 = VdLattice(8);
             struct vd3 t[4];
             const u64 kind = RngU64Range(0, 2);
             for (u32 k = 0; k < count; ++k)
@@ -1324,7 +1353,8 @@ struct test_Output VoronoiNearFlatTest(struct test_Environment *env)
     {
         const f64 scale = VdScale();
         static const f64 far_scale[] = { 0.0, 1.0, 1e2 };
-        const struct vd3 T = Vd3Scale(VdUnit(), far_scale[RngU64Range(0, 2)]*scale);
+        const struct vd3 dir = VdUnit();
+        const struct vd3 T = Vd3Scale(dir, far_scale[RngU64Range(0, 2)]*scale);
         struct vd3 t[4];
         struct vd3 n;
         f64 n_len;
@@ -1340,7 +1370,9 @@ struct test_Output VoronoiNearFlatTest(struct test_Environment *env)
         n = Vd3Scale(n, 1.0 / n_len);
         const f64 a = (f64) RngF32Range(-0.5f, 1.5f), b = (f64) RngF32Range(-0.5f, 1.5f);
         const struct vd3 in_plane = Vd3Add(t[0], Vd3Add(Vd3Scale(Vd3Sub(t[1], t[0]), a), Vd3Scale(Vd3Sub(t[2], t[0]), b)));
-        t[3] = Vd3Add(in_plane, Vd3Scale(n, flatness[RngU64Range(0, 6)]*scale*((RngU64Range(0, 1)) ? 1.0 : -1.0)));
+        const f64 rise = flatness[RngU64Range(0, 6)];
+        const f64 sign = (RngU64Range(0, 1)) ? 1.0 : -1.0;
+        t[3] = Vd3Add(in_plane, Vd3Scale(n, rise*scale*sign));
 
         if (!VdQueries(stats, t, 4, scale, 0, 1))
         {
@@ -1363,7 +1395,10 @@ struct test_Output VoronoiNearFlatTest(struct test_Environment *env)
             }
             if (k % 3 == 0)
             {
-                q = Vd3Add(q, Vd3Scale(Vd3Sub(t[RngU64Range(0, 3)], t[RngU64Range(0, 3)]), 2.0*(f64) RngF32Normalized()));
+                const u64 i0 = RngU64Range(0, 3);
+                const u64 i1 = RngU64Range(0, 3);
+                const f64 w = 2.0*(f64) RngF32Normalized();
+                q = Vd3Add(q, Vd3Scale(Vd3Sub(t[i0], t[i1]), w));
             }
             q = Vd3Add(q, Vd3Scale(VdUnit(), 1e-6*scale));
             for (u32 origin = 0; origin < 2; ++origin)
@@ -1508,12 +1543,13 @@ struct test_Output VoronoiTriSegmentTest(struct test_Environment *env)
                 t[0] = Vd3Scale(VdBall(), scale);
                 t[1] = Vd3Scale(VdBall(), scale);
                 const f64 a = (f64) RngF32Range(-0.5f, 1.5f);
-                t[2] = Vd3Add(Vd3Add(t[0], Vd3Scale(Vd3Sub(t[1], t[0]), a)), Vd3Scale(VdUnit(), eps[RngU64Range(0, 2)]*scale));
+                const struct vd3 t2_dir = VdUnit();
+                t[2] = Vd3Add(Vd3Add(t[0], Vd3Scale(Vd3Sub(t[1], t[0]), a)), Vd3Scale(t2_dir, eps[RngU64Range(0, 2)]*scale));
             }
             else
             {
-                const struct vd3 base = Vd3((f64) RngU64Range(0, 64) - 32.0, (f64) RngU64Range(0, 64) - 32.0, (f64) RngU64Range(0, 64) - 32.0);
-                const struct vd3 d1 = Vd3((f64) RngU64Range(0, 8) - 4.0, (f64) RngU64Range(0, 8) - 4.0, (f64) RngU64Range(0, 8) - 4.0);
+                const struct vd3 base = VdLattice(64);
+                const struct vd3 d1 = VdLattice(8);
                 for (u32 k = 0; k < 3; ++k)
                 {
                     t[k] = Vd3Scale(Vd3Add(base, Vd3Scale(d1, (f64) RngU64Range(0, 6) - 3.0)), scale);
@@ -1534,7 +1570,8 @@ struct test_Output VoronoiTriSegmentTest(struct test_Environment *env)
             struct vd3 q = (at == 0) ? t[RngU64Range(0, 2)]
                          : (at == 1) ? Vd3Add(t[0], Vd3Scale(Vd3Sub(t[1], t[0]), a))
                          : Vd3Add(t[0], Vd3Add(Vd3Scale(Vd3Sub(t[1], t[0]), a), Vd3Scale(Vd3Sub(t[2], t[0]), b)));
-            q = Vd3Add(q, Vd3Scale(unit_n, ((RngU64Range(0, 1)) ? 1.0 : -1.0)*offset[RngU64Range(0, 6)]*scale));
+            const f64 sign = (RngU64Range(0, 1)) ? 1.0 : -1.0;
+            q = Vd3Add(q, Vd3Scale(unit_n, sign*offset[RngU64Range(0, 6)]*scale));
             /* direction: random, along the normal (piercing), in the plane (parallel) */
             const u64 kind = RngU64Range(0, 2);
             struct vd3 dir = VdUnit();
@@ -1835,13 +1872,13 @@ struct test_Output PlaneRandomTest(struct test_Environment *env)
     {
         const f32 n_len = RngF32Range(0.5f, 2.0f);
         const v3 n = V3Scale(V3UnitSphere(), n_len);
-        const v3 q = V3(RngF32Range(-scale, scale), RngF32Range(-scale, scale), RngF32Range(-scale, scale));
+        const v3 q = V3RandomRange(-scale, scale);
         const struct plane pl = Plane(n, q);
         /* distances are rounded to ~eps |n| (|x| + |q|): with |x|, |q| <= ~2 sqrt(3) scale */
         const f32 tol = 64.0f * F32_EPSILON * n_len * scale;
 
-        const v3 p0 = V3(RngF32Range(-scale, scale), RngF32Range(-scale, scale), RngF32Range(-scale, scale));
-        const v3 p1 = V3(RngF32Range(-scale, scale), RngF32Range(-scale, scale), RngF32Range(-scale, scale));
+        const v3 p0 = V3RandomRange(-scale, scale);
+        const v3 p1 = V3RandomRange(-scale, scale);
         const struct segment s = Segment(p0, p1);
         const f32 d0 = PlanePointSignedDistance(&pl, p0);
         const f32 d1 = PlanePointSignedDistance(&pl, p1);
@@ -1865,8 +1902,9 @@ struct test_Output PlaneRandomTest(struct test_Environment *env)
         const struct plane constructed = PlaneNormalized(n, q);
         TEST_TRUE(F32Abs(PlanePointSignedDistance(&constructed, q)) <= tol / n_len);
 
-        const m3 rot = M3QUnit(QUnitAxisAngle(V3UnitSphere(), RngF32Range(-F32_PI, F32_PI)));
-        const v3 pos = V3(RngF32Range(-scale, scale), RngF32Range(-scale, scale), RngF32Range(-scale, scale));
+        const v3 axis = V3UnitSphere();
+        const m3 rot = M3QUnit(QUnitAxisAngle(axis, RngF32Range(-F32_PI, F32_PI)));
+        const v3 pos = V3RandomRange(-scale, scale);
         const struct plane moved = PlaneTransform(&pl, rot, pos);
         TEST_TRUE(F32Abs(PlanePointSignedDistance(&moved, V3Add(M3V3Mul(rot, p0), pos)) - d0) <= 2.0f * tol);
     }
@@ -1890,11 +1928,12 @@ struct test_Output BboxRotateTest(struct test_Environment *env)
     {
         const f32 hs = half_width[k % 3];
         const f32 cs = center[(k / 3) % 3];
-        const v3 c = V3(RngF32Range(-cs, cs), RngF32Range(-cs, cs), RngF32Range(-cs, cs));
-        v3 h = V3(RngF32Range(0.0f, hs), RngF32Range(0.0f, hs), RngF32Range(0.0f, hs));
+        const v3 c = V3RandomRange(-cs, cs);
+        v3 h = V3RandomRange(0.0f, hs);
         if (k % 7 == 0) { h.buf[k % 3] = 0.0f; }
         const struct aabb box = { .min = V3Sub(c, h), .max = V3Add(c, h) };
-        const m3 r = M3QUnit(QUnitAxisAngle(V3UnitSphere(), RngF32Range(-F32_PI, F32_PI)));
+        const v3 rot_axis = V3UnitSphere();
+        const m3 r = M3QUnit(QUnitAxisAngle(rot_axis, RngF32Range(-F32_PI, F32_PI)));
         const struct aabb rotated = BboxRotate(box, r);
 
         const f64 row[3][3] =
@@ -2005,8 +2044,10 @@ struct test_Output SegmentNearParallelTest(struct test_Environment *env)
                 const v3 w = SegTestOrthogonal(d1);
                 const v3 d2 = V3Add(V3Scale(d1, F32Cos(angle)), V3Scale(w, F32Sin(angle)));
                 const f32 p = (f32) pos;
-                const v3 o = V3(RngF32Range(-p, p), RngF32Range(-p, p), RngF32Range(-p, p));
-                const v3 q = V3Add(V3Add(o, V3Scale(u, RngF32Range(0.0f, 1.0f))), V3Scale(d1, RngF32Range(-0.9f, 0.9f)));
+                const v3 o = V3RandomRange(-p, p);
+                const f32 along = RngF32Range(0.0f, 1.0f);
+                const f32 across = RngF32Range(-0.9f, 0.9f);
+                const v3 q = V3Add(V3Add(o, V3Scale(u, along)), V3Scale(d1, across));
                 const struct segment s1 = Segment(o, V3Add(o, d1));
                 const struct segment s2 = Segment(q, V3Add(q, d2));
 
@@ -2045,7 +2086,7 @@ struct test_Output SegmentLineClosestTest(struct test_Environment *env)
             const v3 u = SegTestOrthogonal(d1);
             const v3 v = V3Cross(d1, u);
             const v3 d2 = V3Add(V3Scale(d1, F32Cos(angle)), V3Scale(u, sin_angle));
-            const v3 p1 = V3(RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f));
+            const v3 p1 = V3RandomRange(-1.0f, 1.0f);
             const v3 p2 = V3Add(V3Add(V3Add(p1, V3Scale(v, 0.1f)), V3Scale(d1, RngF32Range(-0.3f, 0.3f))), V3Scale(d2, -0.5f));
             const struct segment s1 = Segment(p1, V3Add(p1, d1));
             const struct segment s2 = Segment(p2, V3Add(p2, d2));
@@ -2084,9 +2125,10 @@ struct test_Output SegmentPointTest(struct test_Environment *env)
 
     for (u32 i = 0; i < 20000; ++i)
     {
-        const v3 s0 = V3(RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f));
-        const v3 s1 = V3Add(s0, V3Scale(V3UnitSphere(), RngF32Range(0.01f, 5.0f)));
-        const v3 q = V3(RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f), RngF32Range(-10.0f, 10.0f));
+        const v3 s0 = V3RandomRange(-10.0f, 10.0f);
+        const v3 s_dir = V3UnitSphere();
+        const v3 s1 = V3Add(s0, V3Scale(s_dir, RngF32Range(0.01f, 5.0f)));
+        const v3 q = V3RandomRange(-10.0f, 10.0f);
         const struct segment s = Segment(s0, s1);
 
         const f64 d[3] = { (f64) s1.x - s0.x, (f64) s1.y - s0.y, (f64) s1.z - s0.z };
@@ -2135,7 +2177,7 @@ struct test_Output TriNormalTest(struct test_Environment *env)
     {
         const v3 d = V3UnitSphere();
         const v3 u = SegTestOrthogonal(d);
-        const v3 p0 = V3(RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f));
+        const v3 p0 = V3RandomRange(-1.0f, 1.0f);
         const f32 len = RngF32Range(1.0f, 10.0f);
         const f32 width = len * RngF32Range(1e-5f, 1e-2f);
         const v3 p1 = V3Add(p0, V3Scale(d, len));
