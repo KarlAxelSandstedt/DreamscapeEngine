@@ -100,9 +100,10 @@ ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *p
 
 void ds_BodyRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, const ds_BodyId id)
 {
+    /* a dead id (removed, its slot not reused) still matches the slot's id: the lookup also checks the slot is live */
     const u32 body_index = ds_IdIndex(id);
-	struct ds_Body *body = pipeline->body_pool.buf + body_index;
-    if (body->id != id)
+	struct ds_Body *body = ds_BodyLookup(pipeline, id).address;
+    if (!body)
     {
         return;
     }
@@ -165,7 +166,8 @@ void ds_BodyRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, const ds
     {
         ds_CPoolRemoveAndSwap(set->body_compute_pool, body->sim);
     }
-	ds_PoolRemove(pipeline->body_pool, ds_IdIndex(id));
+    ds_BitSetSet(&pipeline->body_usage_set, body_index, 0);
+	ds_PoolRemove(pipeline->body_pool, body_index);
 	PhysicsEventBodyRemoved(pipeline, entity);
 }
 
