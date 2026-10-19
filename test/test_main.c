@@ -346,6 +346,7 @@ void ds_TestMainCorrectness(void)
     run_suite(bvh_correctness_suite, &env, 1);
     run_suite(renderer_correctness_suite, &env, 1);
     run_suite(ui_correctness_suite, &env, 1);
+    run_suite(cmd_correctness_suite, &env, 1);
     run_suite(config_correctness_suite, &env, 1);
     run_suite(dynamics_correctness_suite, &env, 1);
     run_suite(rng_correctness_suite, &env, 1);
