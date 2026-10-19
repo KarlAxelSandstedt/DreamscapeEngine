@@ -83,7 +83,8 @@
  *	SsffBuild(SSFF_ID) -> Rebuild ssff completely; if first build, set collection_id for each used material.
  */
 
-static void internal_get_sprite_parameters(struct arena *mem, struct ssffSprite *sprite, u32 *color_count, u32 *color, const u8 *pixel, const u32 pixels_per_line, const u32 sprite_width, const u32 sprite_height, const u32 sprite_index)
+/* return 0 for a cell of clip color only: it is stored as its first pixel (one transparent pixel) */
+static u32 internal_get_sprite_parameters(struct arena *mem, struct ssffSprite *sprite, u32 *color_count, u32 *color, const u8 *pixel, const u32 pixels_per_line, const u32 sprite_width, const u32 sprite_height, const u32 sprite_index)
 {
 	//TODO  How to handle?
 	const u32 clip_color = 0x0;
@@ -145,6 +146,13 @@ static void internal_get_sprite_parameters(struct arena *mem, struct ssffSprite 
 		}
 	}
 
+	const u32 empty = (min_x > max_x);
+	if (empty)
+	{
+		min_x = max_x = sprite_index * sprite_width;
+		min_y = max_y = 0;
+	}
+
 	sprite->x0 = min_x;
 	sprite->x1 = max_x;
 	sprite->y0 = min_y;
@@ -156,6 +164,7 @@ static void internal_get_sprite_parameters(struct arena *mem, struct ssffSprite 
 	//		, sprite->y0
 	//		, sprite->y1
 	//		);
+	return !empty;
 }
 
 /*
@@ -196,7 +205,10 @@ void SsffBuild(struct arena *mem, const u32 ssff_id)
 
 		for (u32 s = 0; s < sprite_count[i]; ++s)
 		{
-			internal_get_sprite_parameters(mem, sprite[i] + s, color_count + i, color[i], pixel[i], png_width[i], info->png[i].sprite_width, png_height[i], s);
+			if (!internal_get_sprite_parameters(mem, sprite[i] + s, color_count + i, color[i], pixel[i], png_width[i], info->png[i].sprite_width, png_height[i], s))
+			{
+				Log(T_ASSET, S_WARNING, "%s: sprite %u is clip color only, stored as one transparent pixel", info->png[i].filepath, s);
+			}
 		}
 	}
 
