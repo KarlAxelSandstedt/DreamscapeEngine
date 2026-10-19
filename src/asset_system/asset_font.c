@@ -405,6 +405,13 @@ end:
 	return font;
 }
 
+void FontFree(struct assetFont *asset)
+{
+	InternalFontFree((struct font *) asset->font);
+	asset->font = NULL;
+	asset->loaded = 0;
+}
+
 /*
  * A font without glyphs: every codepoint maps to one empty glyph half a glyph height wide, the pixmap is one
  * transparent pixel, so layouts and draws run and show nothing.
@@ -475,9 +482,7 @@ struct assetFont *AssetRequestFont(struct arena *tmp, const enum fontId id)
 	{
 		if (asset->loaded)
 		{
-			ds_Free(asset->font->pixmap);
-			ds_Free(asset->font->glyph);
-			ds_Free((void *) asset->font);
+			FontFree(asset);
 		}
 
 		FontBuild(tmp, id);

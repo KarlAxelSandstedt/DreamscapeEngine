@@ -168,6 +168,8 @@ void 				FontSerialize(const struct assetFont *asset, const struct font *font);
 #endif
 /* heap allocate and load the font; NULL (logged) if the file is missing, unreadable or corrupt */
 const struct font *		FontDeserialize(const struct assetFont *asset);
+/* free a loaded font (deserialized or stub) and mark the asset unloaded */
+void				FontFree(struct assetFont *asset);
 /* debug print .kasfnt file to console */
 void 				FontDebugPrint(FILE *out, const struct font *font);
 

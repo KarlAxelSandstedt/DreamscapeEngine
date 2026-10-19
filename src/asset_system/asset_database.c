@@ -31,7 +31,21 @@ void AssetFlush(void)
 		if (asset->loaded)
 		{
 			ds_Free(asset->pixel);
+			asset->pixel = NULL;
 		}
 		asset->loaded = 0;
+	}
+
+	/* id 0 == FONT_NONE */
+	for (u32 id = 1; id < FONT_COUNT; ++id)
+	{
+		struct assetFont *asset = g_asset_db->font[id];
+#ifdef DS_DEV
+		asset->valid = 0;
+#endif
+		if (asset->loaded)
+		{
+			FontFree(asset);
+		}
 	}
 }
