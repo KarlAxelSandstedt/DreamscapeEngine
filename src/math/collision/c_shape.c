@@ -119,9 +119,7 @@ static void StaticsCalculateFaceIntegrals(f32 integrals[10], const struct c_Shap
 
 	//Vec3Set(n, n[a_i], n[b_i], n[y_i]);
 
-	/* TODO: REPLACE */
-	union { f32 f; u32 bits; } val = { .f = n.buf[y_i] };
-	const f32 n_sign = (val.bits >> 31) ? -1.0f : 1.0f;
+	const f32 n_sign = F32Sign(n.buf[y_i]);	/* the largest component of a unit normal: never a signed zero */
 
 	const u32 tri_count = f->count - 2;
 	for (u32 i = 0; i < tri_count; ++i)
@@ -247,7 +245,15 @@ void c_ShapeUpdateMassProperties(struct c_Shape *shape)
 		//      	                integrals[T_ZX]);
 
 		shape->volume = integrals[VOL];
-		ds_Assert(shape->volume > 0.0f);
+		if (!(shape->volume > 0.0f))
+		{
+			/* no faces (DcelConvexHull's empty dcel, DcelBoxStub) or flat: a unit sphere's properties, never NaN */
+			Log(T_SYSTEM, S_ERROR, "convex hull without volume (%u faces, volume %g): mass properties of a unit sphere", shape->hull.f_count, shape->volume);
+			shape->volume = 4.0f * F32_PI / 3.0f;
+			shape->center_of_mass = V3Zero();
+			shape->inertia_tensor = M3Scale(M3Identity(), 2.0f * shape->volume / 5.0f);
+			return;
+		}
 
 		/* center of mass */
 		com = V3(integrals[T_X] / shape->volume,
