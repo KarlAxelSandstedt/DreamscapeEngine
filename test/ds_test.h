@@ -109,11 +109,7 @@ struct suite_Correctness
 	const u64                                   repetition_test_count;
 };
 
-#ifdef KAS_DEBUG
-#define TEST_FAILURE { output.success = 0; output.file = __FILE__; output.line = __LINE__; Breakpoint(1); return output; }
-#else
 #define TEST_FAILURE { output.success = 0; output.file = __FILE__; output.line = __LINE__; return output; }
-#endif 
 #define PRINT_FAILURE(t1, t2, a, b, print) { fprintf(stderr, t1); print(stderr, a); fprintf(stderr, t2); print(stderr, b); }
 #define PRINT_SINGLE(t, a, print) { fprintf(stderr, t); print(a); }
 
