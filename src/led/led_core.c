@@ -2006,7 +2006,8 @@ static void led_EngineInit(struct led *led)
 	//TODO move this into engine flush
 	ds_DynamicsFlush(&led->physics);		
 	led->physics.ns_start = led->ns;
-	led->physics.ns_elapsed = -led->ns_delta;
+	/* wraps on purpose: led_EngineRun's first += ns_delta makes it 0 */
+	led->physics.ns_elapsed = 0 - led->ns_delta;
 	led->ns_engine_paused = 0;
 
     HII it; 
