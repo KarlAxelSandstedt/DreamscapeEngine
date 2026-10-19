@@ -615,29 +615,28 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline
 		    ccache->tangent[0] = cc->tangent[0];
 		    ccache->tangent[1] = cc->tangent[1];
 
+            /*
+             * The levers are world vectors of the step's start rotation R_s: r = R_s r_b. Both the cache and
+             * the position solver store the body vector r_b = R_s^T r; the position solver then rotates it by
+             * the current rotation, which starts at the integrated one R_e, so its levers move with the step's
+             * rotation (converting with R_e^T instead would give back r unrotated).
+             */
             const q sim_inv_rotation[2] =
             {
                 QConj(sim[0]->world.rotation),
                 QConj(sim[1]->world.rotation),
             };
-            const q bcomp_inv_rotation[2] =
-            {
-                QConj(bcomp[0]->rotation),
-                QConj(bcomp[1]->rotation),
-            };
 		    for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
 		    {
-                /* Cache */
                 struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
-		    	ccache->r1[ccpi] = QUnitRotate(sim_inv_rotation[0], ccp->r[0]);
-		    	ccache->r2[ccpi] = QUnitRotate(sim_inv_rotation[1], ccp->r[1]);
+                ccp->r[0] = QUnitRotate(sim_inv_rotation[0], ccp->r[0]);
+                ccp->r[1] = QUnitRotate(sim_inv_rotation[1], ccp->r[1]);
+
+		    	ccache->r1[ccpi] = ccp->r[0];
+		    	ccache->r2[ccpi] = ccp->r[1];
 		    	ccache->normal_impulse[ccpi] = ccp->normal_impulse;
 		    	ccache->tangent_impulse[ccpi][0] = ccp->tangent_impulse[0];
 		    	ccache->tangent_impulse[ccpi][1] = ccp->tangent_impulse[1];
-
-                /* Init Position */
-                ccp->r[0] = QUnitRotate(bcomp_inv_rotation[0], ccp->r[0]);
-                ccp->r[1] = QUnitRotate(bcomp_inv_rotation[1], ccp->r[1]);
             }
         }
     }
