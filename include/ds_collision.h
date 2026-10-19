@@ -276,8 +276,8 @@ v[i] - depth[i] n. The c_*Contact functions return local manifolds, in the refer
     c_MeshContact   one manifold per contacting triangle; the convex shape is the reference (n from it to the
                     mesh)
 ds_ShapeContact converts each in place to the solver form (ds_SolverManifold, ds_dynamics.h), hence the union
-in c_ContactResult. cached_result: the pair's previous result or NULL; the new result's arrays are pushed onto
-frame.
+in c_ContactResult. cached_result: the pair's previous result, or an empty result (zeroed) for none; never NULL.
+The new result's arrays are pushed onto frame.
 */
 
 struct c_Manifold
