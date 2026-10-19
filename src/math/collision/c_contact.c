@@ -402,11 +402,6 @@ static u32 HullFaceContact(struct arena *mem_tmp, struct c_Manifold *cm, sat_Fea
     sat_FeatureId *features;
     PolygonCcwClipNegativeFaceAndProject(mem_tmp, &features, &cp, &depth, &deepest_point, &cp_count, max_depth, max_feature, h, v, f, b_f, query->normal);
 
-	//for (u32 i = 0; i < cp_count; ++i)
-	//{
-	//	ds_DynamicsDrawDebugSegment(Segment(cp[i], cp[(i+1) % cp_count]), V4(0.8f, 0.6f, 0.1f, 1.0f));
-	//}
-
     u32 collision;
     if (b_f == ref)
     {

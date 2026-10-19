@@ -972,29 +972,6 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 								node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
 							}
 						}
-
-						ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
-						{
-							ui_Pad();
-							ui_Width(ui_SizePixel(24.0f, 1.0f))
-							node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_4").address;
-							ui_Pad();
-							ui_NodeAllocF(UI_DRAW_TEXT, "draw debug lines");
-							if (node->inter & UI_INTER_LEFT_CLICK)
-							{
-								led->draw_lines = !led->draw_lines;
-							}
-
-							if (led->draw_lines)
-							{
-								node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
-							}
-
-							if (node->inter & UI_INTER_HOVER)
-							{
-								node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
-							}
-						}
 					}
 
 					//struct led_Node *node = NULL;

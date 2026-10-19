@@ -278,54 +278,6 @@ static u64 AabbPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *
 	return AabbTransformPushLinesBuffered(buf, bufsize, box, M3Identity(), color);
 }
 
-static struct r_Mesh *DebugLinesMesh(struct arena *mem, const struct ds_Dynamics *pipeline, const v3f64 origin)
-{
-	ArenaPushRecord(mem);
-
-	u32 vertex_count = 0;
-	for (u32 i = 0; i < pipeline->worker_count; ++i)
-	{
-		vertex_count += 2*pipeline->worker[i].draw.debug_segment_pool.count;
-	}
-
-	struct r_Mesh *mesh = NULL;
- 	struct r_Mesh *tmp = ArenaPush(mem, sizeof(struct r_Mesh));
-	u8 *vertex_data = ArenaPush(mem, vertex_count*L_COLOR_STRIDE);
-	if (!tmp || !vertex_data) 
-	{ 
-		ArenaPopRecord(mem);
-		goto end;
-	}
-	ArenaRemoveRecord(mem);
-
-	mesh = tmp;
-	mesh->index_count = 0;
-	mesh->index_max_used = 0;
-	mesh->index_data = NULL;
-	mesh->vertex_count = vertex_count; 
-	mesh->vertex_data = vertex_data;
-	mesh->local_stride = L_COLOR_STRIDE;
-
-	u64 mem_left = mesh->vertex_count * L_COLOR_STRIDE;
-
-	for (u32 i = 0; i < pipeline->worker_count; ++i)
-	{
-		for (u32 j = 0; j < pipeline->worker[i].draw.debug_segment_pool.count; ++j)
-		{
-			memcpy((f32 *) vertex_data +  0, &pipeline->worker[i].draw.debug_segment_pool.buf[j].segment.p[0], sizeof(v3));
-			memcpy((f32 *) vertex_data +  3, &pipeline->worker[i].draw.debug_segment_pool.buf[j].color, sizeof(v4));
-			memcpy((f32 *) vertex_data +  7, &pipeline->worker[i].draw.debug_segment_pool.buf[j].segment.p[1], sizeof(v3));
-			memcpy((f32 *) vertex_data + 10, &pipeline->worker[i].draw.debug_segment_pool.buf[j].color, sizeof(v4));
-			vertex_data += 2*(sizeof(v3) + sizeof(v4));
-			mem_left -= 2*(sizeof(v3) + sizeof(v4));
-		}
-	}
-	ColorVerticesToView(mesh->vertex_data, (mesh->vertex_count*L_COLOR_STRIDE - mem_left) / L_COLOR_STRIDE, V3F64(0.0, 0.0, 0.0), origin);
-	ds_Assert(mem_left == 0);
-end:
-	return mesh;
-}
-
 static struct r_Mesh *BoundingBoxesMesh(struct arena *mem, const struct ds_Dynamics *pipeline, const v3f64 origin, const v4 color)
 {
 	ArenaPushRecord(mem);
@@ -546,20 +498,6 @@ static void r_EditorDraw(const struct led *led)
 		const u64 depth = 0x7fffff;
 		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
 		struct r_Mesh *mesh = BoundingBoxesMesh(&g_r_core->frame, &led->physics, g_scene->view_origin, led->bounding_box_color);
-		if (mesh)
-		{
-			struct r_Instance *instance = r_InstanceAddNonCached(cmd);
-			instance->type = R_INSTANCE_MESH;
-			instance->mesh = mesh;
-		}
-	}
-
-	if (led->draw_lines)
-	{
-		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
-		const u64 depth = 0x7fffff;
-		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		struct r_Mesh *mesh = DebugLinesMesh(&g_r_core->frame, &led->physics, g_scene->view_origin);
 		if (mesh)
 		{
 			struct r_Instance *instance = r_InstanceAddNonCached(cmd);

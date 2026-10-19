@@ -178,7 +178,6 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 	g_editor->draw_dbvh = 0;
 	g_editor->draw_sbvh = 0;
 	g_editor->draw_manifold = 0;
-	g_editor->draw_lines = 1;
 
 	g_editor->scene_origin = V3F64(0.0, 0.0, 0.0);
 
