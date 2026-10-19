@@ -17,8 +17,6 @@
 ==========================================================================
 */
 
-#include <stdlib.h>
-#include <string.h>
 #include <inttypes.h>
 
 #include "r_local.h"
@@ -29,7 +27,12 @@ struct r_Scene *g_scene = NULL;
 
 struct r_Scene *r_SceneAlloc(void)
 {
-	struct r_Scene *scene = malloc(sizeof(struct r_Scene));
+	struct r_Scene *scene = ds_Alloc(sizeof(struct r_Scene), 16);
+	if (!scene)
+	{
+		LogString(T_RENDERER, S_FATAL, "Failed to allocate the render scene");
+		FatalCleanupAndExit();
+	}
 	scene->mem_frame_arr[0] = ArenaAlloc(NULL, 64*1024*1024);
 	scene->mem_frame_arr[1] = ArenaAlloc(NULL, 64*1024*1024);
 	scene->mem_frame = scene->mem_frame_arr + 0;
@@ -52,9 +55,9 @@ void r_SceneDealloc(struct r_Scene *scene)
 {
 	ds_PoolDealloc(scene->instance_pool);
 	ds_HashMapDealloc(&scene->proxy3d_to_instance_map);
-	ArenaFree(scene->mem_frame_arr + 0),
-	ArenaFree(scene->mem_frame_arr + 1),
-	free(scene);
+	ArenaFree(scene->mem_frame_arr + 0);
+	ArenaFree(scene->mem_frame_arr + 1);
+	ds_Free(scene);
 }
 
 void r_SceneSetGlobal(struct r_Scene *scene)
@@ -253,6 +256,9 @@ void r_BufferConstructorBufferAlloc(struct r_BufferConstructor *constructor, con
 	struct r_Buffer *buf = ArenaPush(g_scene->mem_frame, sizeof(struct r_Buffer));
 	buf->next = NULL;
 	buf->c_l = c_new_l;
+	buf->local_vbo = 0;
+	buf->shared_vbo = 0;
+	buf->ebo = 0;
 	buf->local_size = 0;
 	buf->shared_size = 0;
 	buf->index_count = 0;
@@ -825,13 +831,13 @@ u64 r_CommandKey(const u64 screen, const u64 depth, const u64 transparency, cons
 		| ((u64) elements << R_CMD_ELEMENTS_LOW_BIT);
 }
 
-const char *screen_str_table[1 << R_CMD_SCREEN_LAYER_BITS] =
+static const char *screen_str_table[1 << R_CMD_SCREEN_LAYER_BITS] =
 {
 	"SCREEN_LAYER_HUD",
 	"SCREEN_LAYER_GAME",
 };
 
-const char *transparency_str_table[1 << R_CMD_TRANSPARENCY_BITS] =
+static const char *transparency_str_table[1 << R_CMD_TRANSPARENCY_BITS] =
 {
 	"TRANSPARENCY_NORMAL",
 	"TRANSPARENCY_SUBTRACTIVE",
@@ -839,19 +845,19 @@ const char *transparency_str_table[1 << R_CMD_TRANSPARENCY_BITS] =
 	"TRANSPARENCY_OPAQUE",
 };
 
-const char *primitive_str_table[1 << R_CMD_PRIMITIVE_BITS] =
+static const char *primitive_str_table[1 << R_CMD_PRIMITIVE_BITS] =
 {
 	"PRIMITIVE_TRIANGLE",
 	"PRIMITIVE_LINE",
 };
 
-const char *instanced_str_table[1 << R_CMD_INSTANCED_BITS] =
+static const char *instanced_str_table[1 << R_CMD_INSTANCED_BITS] =
 {
 	"NON_INSTANCED",
 	"INSTANCED",
 };
 
-const char *elements_str_table[1 << R_CMD_ELEMENTS_BITS] =
+static const char *elements_str_table[1 << R_CMD_ELEMENTS_BITS] =
 {
 	"ARRAYS",
 	"ELEMENTS",
