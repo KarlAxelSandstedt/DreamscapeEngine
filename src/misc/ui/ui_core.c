@@ -17,8 +17,6 @@
 ==========================================================================
 */
 
-#include <string.h>
-
 #include "ui_local.h"
 #include "ds_font.h"
 #include "ds_hash_map.h"
@@ -296,6 +294,7 @@ static void ui_DrawBucketAddNode(const u32 cmd, const u32 index)
 			bucket->count = 0;
 			bucket->list = NULL;
 		}
+		g_ui->bucket_cache = bi;
 	}
 
 	struct ui_DrawNode *tmp = bucket->list;
@@ -348,6 +347,10 @@ void ui_TextInputModeEnable(void)
 	}
 
 	node = ui_NodeLookup(&id).address;
+	if (!node)
+	{
+		return;
+	}
 	if (node->flags & UI_TEXT_EDIT_COPY_ON_FOCUS)
 	{
 		const u32 buflen = sizeof(g_ui->inter.text_internal_buf) / sizeof(u32);
@@ -472,7 +475,7 @@ static void ui_ChildsumLayoutSizeAndPruneNodes(void)
 	while (childsum_x.count)
 	{
 		struct ui_Node *node = ds_CPoolTop(childsum_x);
-        ds_CPoolPop(childsum_y);
+        ds_CPoolPop(childsum_x);
 		node->layout_size.buf[AXIS_2_X] = 0.0f;
 		struct ui_Node *child = NULL;
 		for (i32 i = node->hi_first; i != HI_NULL; i = child->hi_next)
@@ -1101,7 +1104,6 @@ void ui_FrameEnd(void)
 	}
 
 	struct ui_Node *orphan = g_ui->node_hierarchy.pool.buf + HI_ORPHAN;
-	struct ui_Node *node; 
 	for (i32 index = orphan->hi_first; index != HI_NULL;)
 	{
 		struct ui_Node *node = g_ui->node_hierarchy.pool.buf + index;
