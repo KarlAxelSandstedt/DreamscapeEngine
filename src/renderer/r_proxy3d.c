@@ -81,13 +81,17 @@ u32 r_Proxy3dAlloc(const struct r_Proxy3d_config *config)
 	return slot.index;
 }
 
+static void r_Proxy3dMeshDereference(void *node, const u32 index, void *data)
+{
+	const struct r_Proxy3d *proxy = node;
+	ds_SDBDereference(*g_r_core->mesh_database, proxy->mesh);
+}
+
 void r_Proxy3dDealloc(struct arena *tmp, const u32 proxy_index)
 {
     if (proxy_index != PROXY3D_NULL)
     {
-	    struct r_Proxy3d *proxy = r_Proxy3dAddress(proxy_index);
-	    ds_SDBDereference(*g_r_core->mesh_database, proxy->mesh);
-	    HIRemove(tmp, g_r_core->proxy3d_hierarchy, proxy_index);
+	    HIApplyCustomFreeAndRemove(tmp, g_r_core->proxy3d_hierarchy, proxy_index, &r_Proxy3dMeshDereference, NULL);
     }
 }
 
@@ -125,8 +129,6 @@ static void r_InternalProxy3dLocalSpeculativeOrientation(struct r_Proxy3d *proxy
 
 void r_Proxy3dHierarchySpeculate(struct arena *mem, const u64 ns_time)
 {
-	ArenaPushRecord(mem);
-
     HII it;
     HIIInit(it, g_r_core->proxy3d_hierarchy, g_r_core->proxy3d_root);
 	// skip root stub 
@@ -156,5 +158,4 @@ void r_Proxy3dHierarchySpeculate(struct arena *mem, const u64 ns_time)
             proxy->spec_rotation = QNormalize(QMul(parent->spec_rotation, proxy->spec_rotation));
 		}
 	}
-	ArenaPopRecord(mem);
 }
