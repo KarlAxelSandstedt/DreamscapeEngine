@@ -339,15 +339,21 @@ enum fsError DirectoryTryOpenAtCwd(struct arena *mem, struct file *dir, const ch
 	return DirectoryTryOpen(mem, dir, filename, NULL); 
 }
 
+/* ReadFile and WriteFile take a DWORD size */
+#define FILE_IO_CHUNK_MAX	(1u << 30)
+
 struct dsBuffer FileDump(struct arena *mem, const char *path, const struct file *dir)
 {
+	/* FileTryOpen copies the path onto mem: pop it, only the contents stay */
+	const struct arena record = *mem;
 	struct file file = FileNull();
-	struct dsBuffer buf = { 0 };
 	if (FileTryOpen(mem, &file, path, dir, FILE_READ) != FS_SUCCESS)
 	{
-		return buf;
+		return ds_buffer_empty;
 	}
+	*mem = record;
 
+	struct dsBuffer buf = ds_buffer_empty;
 	LARGE_INTEGER size;
 	if (!GetFileSizeEx(file.handle, &size))
 	{
@@ -355,23 +361,30 @@ struct dsBuffer FileDump(struct arena *mem, const char *path, const struct file 
 	}
 	else
 	{
-		buf.data = ArenaPush(mem, size.QuadPart);
-		if (buf.data)
+		buf.data = ArenaPush(mem, (u64) size.QuadPart);
+		buf.size = (buf.data) ? (u64) size.QuadPart : 0;
+		u64 bytes_read = 0;
+		while (bytes_read < buf.size)
 		{
-			DWORD bytes_read;
-			buf.size = size.QuadPart;
-			ds_Assert(size.QuadPart <= U32_MAX);
-			if (!ReadFile(file.handle, buf.data, (u32) buf.size, &bytes_read, NULL))
+			const DWORD chunk = (DWORD) ((buf.size - bytes_read < FILE_IO_CHUNK_MAX) ? buf.size - bytes_read : FILE_IO_CHUNK_MAX);
+			DWORD count;
+			if (!ReadFile(file.handle, buf.data + bytes_read, chunk, &count, NULL))
 			{
 				LogSystemError(S_ERROR);
-				buf.data = NULL;
-				buf.size = 0;
+				buf = ds_buffer_empty;
+				*mem = record;
+				break;
 			}
-			else
+
+			/* end of file before the size: the file shrank meanwhile, keep what was read */
+			if (count == 0)
 			{
-				ds_Assert(bytes_read == buf.size);
+				buf.size = bytes_read;
+				break;
 			}
+			bytes_read += count;
 		}
+		buf.mem_left = buf.size;
 	}
 	
 	FileClose(&file);
@@ -407,9 +420,6 @@ void FileClose(struct file *file)
 }
 
 
-/* WriteFile takes a DWORD size */
-#define FILE_WRITE_CHUNK_MAX	(1u << 30)
-
 /* as on Linux: no sync (FileSync), writing past the end extends the file */
 u64 FileWriteOffset(const struct file *file, const u8 *buf, const u64 size, const u64 offset)
 {
@@ -425,7 +435,7 @@ u64 FileWriteOffset(const struct file *file, const u8 *buf, const u64 size, cons
 	u64 total = 0;
 	while (total < size)
 	{
-		const DWORD chunk = (DWORD) ((size - total < FILE_WRITE_CHUNK_MAX) ? size - total : FILE_WRITE_CHUNK_MAX);
+		const DWORD chunk = (DWORD) ((size - total < FILE_IO_CHUNK_MAX) ? size - total : FILE_IO_CHUNK_MAX);
 		DWORD count;
 		if (!WriteFile(file->handle, buf + total, chunk, &count, NULL))
 		{
@@ -453,7 +463,7 @@ u64 FileWriteAppend(const struct file *file, const u8 *buf, const u64 size)
 	u64 total = 0;
 	while (total < size)
 	{
-		const DWORD chunk = (DWORD) ((size - total < FILE_WRITE_CHUNK_MAX) ? size - total : FILE_WRITE_CHUNK_MAX);
+		const DWORD chunk = (DWORD) ((size - total < FILE_IO_CHUNK_MAX) ? size - total : FILE_IO_CHUNK_MAX);
 		DWORD count;
 		if (!WriteFile(file->handle, buf + total, chunk, &count, NULL))
 		{

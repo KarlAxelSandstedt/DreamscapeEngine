@@ -1168,6 +1168,7 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
 static void FilesystemTestCleanup(void)
 {
     DeleteFileW(L"ds_filesystem_test\\a.txt");
+    DeleteFileW(L"ds_filesystem_test\\empty.txt");
     RemoveDirectoryW(L"ds_filesystem_test\\dangling");
     DeleteFileW(L"ds_filesystem_test\\dangling");
     RemoveDirectoryW(L"ds_filesystem_test\\sub");
@@ -1203,6 +1204,14 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
 
     const struct dsBuffer dump = FileDump(mem, "a.txt", &dir);
     TEST_TRUE(dump.data != NULL && dump.size == 11 && memcmp(dump.data, "Jello world", 11) == 0);
+
+    /* #166: an empty file dumps as the empty buffer, mem unchanged (no path copy left on it) */
+    struct file empty = FileNull();
+    TEST_EQUAL(FS_SUCCESS, FileTryCreate(mem, &empty, "empty.txt", &dir, 0));
+    FileClose(&empty);
+    const u64 mem_left_empty = mem->mem_left;
+    const struct dsBuffer dump_empty = FileDump(mem, "empty.txt", &dir);
+    TEST_TRUE(dump_empty.data == NULL && dump_empty.size == 0 && mem->mem_left == mem_left_empty);
 
     /* #163: a regular file is no directory */
     struct file not_dir = FileNull();
