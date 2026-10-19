@@ -16,7 +16,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 ==========================================================================
 */
-#include <stdlib.h>
+#include <errno.h>
 #include "ds_base.h"
 
 #if __DS_PLATFORM__ == __DS_LINUX__
@@ -32,6 +32,10 @@ void RngSystem(void *buf, const u64 size)
 		const ssize_t bytes_read = getrandom(((u8*) buf) + offset, bytes_left, 0);
 		if (bytes_read == -1)
 		{
+			if (errno == EINTR)
+			{
+				continue;	/* a signal during a large request */
+			}
 			LogSystemError(S_FATAL);
 			FatalCleanupAndExit();
 		}
@@ -58,7 +62,11 @@ void RngSystem(void *buf, const u64 size)
 	{
 		const u64 offset = size - bytes_left;
 		const ssize_t bytes_read = read(fd, ((u8*) buf) + offset, bytes_left);
-		if (bytes_read == -1)
+		if (bytes_read == -1 && errno == EINTR)
+		{
+			continue;
+		}
+		if (bytes_read <= 0)	/* 0: end of file, which /dev/urandom never gives; never loop on it */
 		{
 			LogSystemError(S_FATAL);
 			FatalCleanupAndExit();
