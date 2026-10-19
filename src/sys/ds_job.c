@@ -184,8 +184,12 @@ void ds_WSDequePushBottom(struct ds_WSDeque *deque, const ds_JobId id)
 
     u32 local_mem_count = AtomicLoadRlx32(&deque->a_mem_count);
     const u64 local_bottom = AtomicLoadRlx64(&deque->a_bottom);
-    /* Note: Paper uses Acquire here, not sure why as only a_top itself is modified by guest threads. */
-    const u64 local_top = AtomicLoadRlx64(&deque->a_top);
+    /*
+     * acquire (Le et al.): a stealer reads slot t, then CASes a_top to t + 1 (seq_cst). Seeing that a_top here
+     * orders its read of the slot before the owner's later write of a new id into the same physical slot
+     * (index t + len); relaxed, a weakly ordered core may let the stealer read the new id and still succeed.
+     */
+    const u64 local_top = AtomicLoadAcq64(&deque->a_top);
     if (deque->to_publish + local_bottom - local_top >= deque->mem[local_mem_count-1].len)
     {
         ds_WSDequeRealloc(deque);
