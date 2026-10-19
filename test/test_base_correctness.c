@@ -1210,6 +1210,7 @@ static void FilesystemTestCleanup(void)
 
     DeleteFileW(L"ds_filesystem_test\\a.txt");
     DeleteFileW(L"ds_filesystem_test\\empty.txt");
+    DeleteFileW(L"ds_filesystem_test\\map.txt");
     RemoveDirectoryW(L"ds_filesystem_test\\dangling");
     DeleteFileW(L"ds_filesystem_test\\dangling");
     RemoveDirectoryW(L"ds_filesystem_test\\sub");
@@ -1264,6 +1265,34 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
     FileClose(&writer);
     TEST_TRUE(dump_open.size == 11 && memcmp(dump_open.data, "Jello world", 11) == 0);
     TEST_EQUAL(FS_SUCCESS, writer_2_err);
+
+    /*
+     * #172: a write-only shared mapping writes to the file, a private one does not (copy-on-write); an offset need
+     * not be aligned; mapping past the end grows the file, also read-only and private; no execute, no none
+     */
+    struct file map_file = FileNull();
+    TEST_EQUAL(FS_SUCCESS, FileTryCreate(mem, &map_file, "map.txt", &dir, 0));
+    TEST_EQUAL(10, FileWriteAppend(&map_file, (const u8 *) "0123456789", 10));
+    u64 map_size = 0;
+    u8 *shared = FileMemoryMap(&map_size, &map_file, FS_PROT_WRITE, FS_MAP_SHARED);
+    TEST_TRUE(shared != NULL && map_size == 10);
+    shared[0] = 'a';
+    FileMemoryUnmap(shared, map_size);
+    u8 *copy = FileMemoryMapPartial(&map_file, 10, 0, FS_PROT_READ | FS_PROT_WRITE, FS_MAP_PRIVATE);
+    TEST_TRUE(copy != NULL && copy[0] == 'a');
+    copy[1] = 'b';
+    FileMemoryUnmap(copy, 10);
+    const u8 *unaligned = FileMemoryMapPartial(&map_file, 4, 3, FS_PROT_READ, FS_MAP_SHARED);
+    TEST_TRUE(unaligned != NULL && memcmp(unaligned, "3456", 4) == 0);
+    FileMemoryUnmap((void *) unaligned, 4);
+    const u8 *grown = FileMemoryMapPartial(&map_file, 16, 0, FS_PROT_READ, FS_MAP_PRIVATE);
+    TEST_TRUE(grown != NULL);
+    FileMemoryUnmap((void *) grown, 16);
+    TEST_TRUE(FileMemoryMap(&map_size, &map_file, FS_PROT_READ | FS_PROT_EXECUTE, FS_MAP_SHARED) == NULL);
+    TEST_TRUE(FileMemoryMap(&map_size, &map_file, FS_PROT_NONE, FS_MAP_SHARED) == NULL);
+    FileClose(&map_file);
+    const struct dsBuffer map_dump = FileDump(mem, "map.txt", &dir);
+    TEST_TRUE(map_dump.size == 16 && memcmp(map_dump.data, "a123456789", 10) == 0);
 
     /* #163: a regular file is no directory */
     struct file not_dir = FileNull();

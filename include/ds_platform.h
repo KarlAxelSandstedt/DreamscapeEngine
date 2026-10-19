@@ -103,7 +103,7 @@ void	RngSystem(void *buf, const u64 size);
 	#define FS_PROT_NONE         	0
 	
 	#define FS_MAP_SHARED        	0
-	#define FS_MAP_PRIVATE       	0
+	#define FS_MAP_PRIVATE       	1
 
 #endif
 
@@ -198,13 +198,23 @@ void 		FileSync(const struct file *file);
 /* returns 1 on successful size change, 0 on failure */
 u32		FileSetSize(const struct file *file, const u64 size);
 
+/*
+ * prot: FS_PROT_READ, or FS_PROT_READ | FS_PROT_WRITE (file opened writeable). flags: FS_MAP_SHARED (writes reach the
+ * file) or FS_MAP_PRIVATE (copy-on-write: writes stay in the mapping). Windows doesn't support FS_PROT_EXECUTE or
+ * FS_PROT_NONE: the mapping fails (NULL).
+ */
+
 /* return memory mapped address of the whole file and set *size to the file's size; NULL on failure. */
 void *		FileMemoryMap(u64 *size, const struct file *file, const u32 prot, const u32 flags);
 /* return memory mapped address of file[offset, offset + length), growing the file first if it is shorter; NULL on failure */
 void *		FileMemoryMapPartial(const struct file *file, const u64 length, const u64 offset, const u32 prot, const u32 flags);
 /* unmap memory mapping */
 void 		FileMemoryUnmap(void *addr, const u64 length);
-/* sync mmap before unmapping.  NOTE: EXTREMELY SLOW OPERATION */
+/*
+ * sync mmap before unmapping.  NOTE: EXTREMELY SLOW OPERATION
+ * Linux waits until the changes are written back (msync MS_SYNC); Windows only starts writing them (FlushViewOfFile):
+ * FileSync on the file afterwards waits for storage.
+ */
 void 		FileMemorySyncUnmap(void *addr, const u64 length);
 
 /***************************** directory creation, reading and navigation *****************************/

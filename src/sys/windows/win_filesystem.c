@@ -507,8 +507,8 @@ void FileSync(const struct file *file)
 }
 
 
-void *FileMemoryMap(u64 *size, const struct file *file, const u32 prot, const u32 garbage)
-{ 
+void *FileMemoryMap(u64 *size, const struct file *file, const u32 prot, const u32 flags)
+{
 	LARGE_INTEGER l_size;
 	void *map = NULL;
 	*size = 0;
@@ -519,14 +519,27 @@ void *FileMemoryMap(u64 *size, const struct file *file, const u32 prot, const u3
 	else
 	{
 		*size = l_size.QuadPart;
-		map = FileMemoryMapPartial(file, 0, 0, prot, garbage);
+		map = FileMemoryMapPartial(file, 0, 0, prot, flags);
 	}
 
 	return map;
 }
 
-void *FileMemoryMapPartial(const struct file *file, const u64 length, const u64 offset, const u32 prot, const u32 garbage)
+void *FileMemoryMapPartial(const struct file *file, const u64 length, const u64 offset, const u32 prot, const u32 flags)
 {
+	/* an execute view needs a file opened for execution, and a view without access fails */
+	if ((prot & FS_PROT_EXECUTE) || prot == FS_PROT_NONE)
+	{
+		LogString(T_SYSTEM, S_ERROR, "FileMemoryMapPartial: FS_PROT_EXECUTE and FS_PROT_NONE are not supported on Windows");
+		return NULL;
+	}
+
+	/* the section's protection and the view's access; a private view copies on write */
+	const u32 write = (prot & FS_PROT_WRITE) != 0;
+	const u32 copy_on_write = write && (flags & FS_MAP_PRIVATE);
+	const DWORD protection = (!write) ? PAGE_READONLY : (copy_on_write) ? PAGE_WRITECOPY : PAGE_READWRITE;
+	const DWORD access = (!write) ? FILE_MAP_READ : (copy_on_write) ? FILE_MAP_COPY : FILE_MAP_WRITE;
+
 	SYSTEM_INFO info;
 	GetSystemInfo(&info);
 	DWORD new_size_low = 0;
@@ -541,15 +554,23 @@ void *FileMemoryMapPartial(const struct file *file, const u64 length, const u64 
 		}
 		else if ((u64) l_size.QuadPart < offset + length)
 		{
-			new_size_high = (u32) ((offset + length) >> 32);
-			new_size_low = (u32) (offset + length);
+			/*
+			 * a shared writeable section grows the file itself; a read-only or private one can't, so the file
+			 * grows first then, as on Linux (SetEndOfFile fails while another view of the file is mapped)
+			 */
+			if (protection == PAGE_READWRITE)
+			{
+				new_size_high = (u32) ((offset + length) >> 32);
+				new_size_low = (u32) (offset + length);
+			}
+			else if (!FileSetSize(file, offset + length))
+			{
+				return NULL;
+			}
 		}
 	}
 	void *map = NULL;
-	const DWORD map_prot = ((prot & (FILE_MAP_READ | FILE_MAP_WRITE)) == (FILE_MAP_READ | FILE_MAP_WRITE))
-		? PAGE_READWRITE
-		: PAGE_READONLY;
-	HANDLE handle = CreateFileMappingA(file->handle, NULL, map_prot, new_size_high, new_size_low, NULL);
+	HANDLE handle = CreateFileMappingA(file->handle, NULL, protection, new_size_high, new_size_low, NULL);
 	if (handle == NULL)
 	{
 		LogSystemError(S_ERROR);
@@ -559,7 +580,7 @@ void *FileMemoryMapPartial(const struct file *file, const u64 length, const u64 
 		const DWORD mod = offset % info.dwAllocationGranularity;
 		const DWORD offset_high = (u32) ((offset-mod) >> 32);
 		const DWORD offset_low = (u32) (offset-mod);
-		map = MapViewOfFileEx(handle, prot, offset_high, offset_low, length + mod, NULL);
+		map = MapViewOfFileEx(handle, access, offset_high, offset_low, length + mod, NULL);
 
 		if (map == NULL)
 		{
