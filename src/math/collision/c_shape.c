@@ -141,7 +141,7 @@ static void StaticsCalculateFaceIntegrals(f32 integrals[10], const struct c_Shap
 		P_bbb += -StaticsLineIntegrals(p0, p1, p2, 0, 4, delta_a);
 		P_ab  +=  StaticsLineIntegrals(p0, p1, p2, 2, 1, delta_b);
 		P_aab +=  StaticsLineIntegrals(p0, p1, p2, 3, 1, delta_b);
-		P_abb +=  StaticsLineIntegrals(p0, p1, p2, 1, 3, delta_b);
+		P_abb += -StaticsLineIntegrals(p0, p1, p2, 1, 3, delta_a);	/* int a b^2 dA = -1/3 oint a b^3 da (Green) */
 	}
 
 	P_1   *= n_sign;
@@ -277,19 +277,17 @@ void c_ShapeUpdateMassProperties(struct c_Shape *shape)
 		shape->center_of_mass = V3Zero();
 		const f32 r = shape->capsule.radius;
 		const f32 h = shape->capsule.half_height;
-		const f32 hpr = h+r;
-		const f32 hmr = h-r;
-
 		shape->volume = 4.0f * F32_PI * r*r*r / 3.0f + 2.0f * h * F32_PI * r*r;
 
-		const f32 I_xx_cap_up = (4.0f * F32_PI * r*r * h*h*h + 3.0f * F32_PI * r*r*r*r * h) / 6.0f;
-		const f32 I_xx_sph_up = 2.0f * F32_PI * r*r * (hpr*hpr*hpr - hmr*hmr*hmr) / 3.0f + F32_PI * r*r*r*r*r;
-		const f32 I_xx_up = I_xx_sph_up + I_xx_cap_up;
+		/*
+		 * cylinder of mass m_c = 2 pi r^2 h about its center, and two hemispheres of mass m_h = 2/3 pi r^3 each,
+		 * centroid 3r/8 beyond the cylinder's end (parallel axis from the sphere center: 2/5 m_h r^2 + m_h (3hr/4 + h^2))
+		 */
+		const f32 m_c = 2.0f * F32_PI * r*r * h;
+		const f32 m_h = 2.0f * F32_PI * r*r*r / 3.0f;
+		const f32 I_xx_up = m_c * (r*r / 4.0f + h*h / 3.0f) + 2.0f * m_h * (2.0f * r*r / 5.0f + h*h + 3.0f * h*r / 4.0f);
 		const f32 I_zz_up = I_xx_up;
-
-		const f32 I_yy_cap_up = F32_PI * r*r*r*r * h;
-		const f32 I_yy_sph_up = 2.0f * F32_PI * r*r*r*r*r;
-		const f32 I_yy_up = I_yy_cap_up + I_yy_sph_up;
+		const f32 I_yy_up = m_c * r*r / 2.0f + 2.0f * m_h * 2.0f * r*r / 5.0f;
 
 		const f32 I_xy_up = 0;
 		const f32 I_yz_up = 0;
