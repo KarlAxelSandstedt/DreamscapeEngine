@@ -208,7 +208,7 @@ void LogWriteMessage(const enum system_id system, const enum severity_id severit
 	{
 		LogNamesInit();
 		u8 early_buf[LOG_MAX_MESSAGE_SIZE];
-		u64 early_req_size;
+		u32 early_req_size;
 		va_list early_args;
 		va_start(early_args, format);
 		const utf8 early = Utf8FormatBufferedVariadic(&early_req_size, early_buf, LOG_MAX_MESSAGE_SIZE, format, early_args);
@@ -248,8 +248,8 @@ void LogWriteMessage(const enum system_id system, const enum severity_id severit
 	msg->thread_id = thread_id;
 
 	/* prefix, then text, straight into the slot; 2 bytes stay free for '\n' and '\0' */
-	const u64 capacity = LOG_MAX_MESSAGE_SIZE - 2;
-	u64 size = Utf8SizeRequired(Utf8FormatBuffered(msg->buf, capacity, "[%lu.%lu%lu%lus] %k %k - Thread %u: ",
+	const u32 capacity = LOG_MAX_MESSAGE_SIZE - 2;
+	u32 size = Utf8SizeRequired(Utf8FormatBuffered(msg->buf, capacity, "[%lu.%lu%lu%lus] %k %k - Thread %u: ",
 		ms / 1000,
 		(ms / 100) % 10,
 		(ms / 10) % 10,
@@ -258,7 +258,7 @@ void LogWriteMessage(const enum system_id system, const enum severity_id severit
 		severities + severity,
 		thread_id));
 
-	u64 text_size;
+	u32 text_size;
 	va_list args;
 	va_start(args, format);
 	Utf8FormatBufferedVariadic(&text_size, msg->buf + size, capacity - size, format, args);
