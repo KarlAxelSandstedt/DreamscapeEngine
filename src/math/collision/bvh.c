@@ -515,7 +515,6 @@ struct BVHQuerySet BVHQueryAndFilterOnBody(struct arena *mem, const struct BVH *
         /* bt_child[1] == ds_Body index */
         if (BTLeafCheck(n))
         {
-            /* the cheap tests first; node is dirty (it queries), so it reports its pairs with the shapes that do not */
             if (node->bt_child[1] < n->bt_child[1] || (node->bt_child[1] != n->bt_child[1] && !ds_BitSetGet(dirty, n->bt_child[0])))
             {
                 if (query.count == mem_arr.len)
