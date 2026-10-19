@@ -334,6 +334,177 @@ struct test_Output ShapeOverlapTest(struct test_Environment *env)
     return output;
 }
 
+
+/********************************** distances **********************************/
+
+struct st_d3 { f64 x, y, z; };
+static struct st_d3 StD3(const v3 v) { return (struct st_d3) { v.x, v.y, v.z }; }
+static struct st_d3 StD3F64(const v3f64 v) { return (struct st_d3) { v.x, v.y, v.z }; }
+static struct st_d3 StSub(const struct st_d3 a, const struct st_d3 b) { return (struct st_d3) { a.x - b.x, a.y - b.y, a.z - b.z }; }
+static struct st_d3 StAdd(const struct st_d3 a, const struct st_d3 b) { return (struct st_d3) { a.x + b.x, a.y + b.y, a.z + b.z }; }
+static struct st_d3 StScale(const struct st_d3 a, const f64 s) { return (struct st_d3) { a.x*s, a.y*s, a.z*s }; }
+static f64 StDot(const struct st_d3 a, const struct st_d3 b) { return a.x*b.x + a.y*b.y + a.z*b.z; }
+static f64 StLength(const struct st_d3 a) { return ShapeTestF64Sqrt(StDot(a, a)); }
+static f64 StClamp01(const f64 a) { return (a < 0.0) ? 0.0 : (a > 1.0) ? 1.0 : a; }
+
+/* f64 closest points of two segments (Ericson 5.1.9); returns their distance */
+static f64 StSegmentDistance(const struct st_d3 p1, const struct st_d3 q1, const struct st_d3 p2, const struct st_d3 q2)
+{
+    const struct st_d3 d1 = StSub(q1, p1), d2 = StSub(q2, p2), r = StSub(p1, p2);
+    const f64 a = StDot(d1, d1), e = StDot(d2, d2), f = StDot(d2, r);
+    f64 s = 0.0, t = 0.0;
+    if (a <= 1e-300 && e <= 1e-300)
+    {
+        return StLength(r);
+    }
+    if (a <= 1e-300)
+    {
+        t = StClamp01(f / e);
+    }
+    else
+    {
+        const f64 c = StDot(d1, r);
+        if (e <= 1e-300)
+        {
+            s = StClamp01(-c / a);
+        }
+        else
+        {
+            const f64 b = StDot(d1, d2), denom = a*e - b*b;
+            s = (denom != 0.0) ? StClamp01((b*f - c*e) / denom) : 0.0;
+            t = (b*s + f) / e;
+            if (t < 0.0) { t = 0.0; s = StClamp01(-c / a); }
+            else if (t > 1.0) { t = 1.0; s = StClamp01((b - c) / a); }
+        }
+    }
+    return StLength(StSub(StAdd(p1, StScale(d1, s)), StAdd(p2, StScale(d2, t))));
+}
+
+/* the axis segment of a capsule in world f64 */
+static void StCapsuleSegment(struct st_d3 *p, struct st_d3 *q, const struct c_Shape *s, const ds_TransformWorld *t)
+{
+    const v3 axis = QUnitRotate(t->rotation, V3(0.0f, s->capsule.half_height, 0.0f));
+    *p = StAdd(StD3F64(t->position), StD3(axis));
+    *q = StSub(StD3F64(t->position), StD3(axis));
+}
+
+/* f64 distance between the surfaces of two spheres or capsules (negative when they overlap) */
+static f64 StCoreDistance(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
+{
+    struct st_d3 p0, q0, p1, q1;
+    f64 r0, r1;
+    if (s0->type == C_SHAPE_SPHERE) { p0 = q0 = StD3F64(t0->position); r0 = s0->sphere.radius; }
+    else { StCapsuleSegment(&p0, &q0, s0, t0); r0 = s0->capsule.radius; }
+    if (s1->type == C_SHAPE_SPHERE) { p1 = q1 = StD3F64(t1->position); r1 = s1->sphere.radius; }
+    else { StCapsuleSegment(&p1, &q1, s1, t1); r1 = s1->capsule.radius; }
+    return StSegmentDistance(p0, q0, p1, q1) - r0 - r1;
+}
+
+/* how far a world point is from a shape's surface, in its local frame: 0 on the surface, < 0 inside */
+static f32 StSurfaceDistance(const struct c_Shape *s, const ds_TransformWorld *t, const v3f64 p_world)
+{
+    const v3 p = ds_TransformWorldPointToLocal(t, p_world);
+    switch (s->type)
+    {
+        case C_SHAPE_SPHERE:
+        {
+            return V3Length(p) - s->sphere.radius;
+        }
+        case C_SHAPE_CAPSULE:
+        {
+            const f32 y = F32Clamp(p.y, -s->capsule.half_height, s->capsule.half_height);
+            return V3Length(V3Sub(p, V3(0.0f, y, 0.0f))) - s->capsule.radius;
+        }
+        default:
+        {
+            f32 best = -F32_INFINITY;
+            for (u32 fi = 0; fi < s->hull.f_count; ++fi)
+            {
+                const f32 d = V3Dot(s->hull.plane[fi].normal, p) - s->hull.plane[fi].signed_distance;
+                best = (d > best) ? d : best;
+            }
+            return best;
+        }
+    }
+}
+
+/*
+Each c_<S0><S1>Distance: the sphere and capsule pairs against an f64 reference, and for every separated pair the
+witness points lie on their shapes' surfaces and are the distance apart.
+*/
+struct test_Output ShapeDistanceTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct ds_NumericsConfig config = ds_NumericsConfigDefault();
+    ds_NumericsConfigPush(&config);
+
+    typedef f32 (*distance_func)(v3f64 *, v3f64 *, const struct c_Shape *, const ds_TransformWorld *, const struct c_Shape *, const ds_TransformWorld *);
+    const struct { const char *id; enum c_ShapeType t0, t1; distance_func distance; } pair[] =
+    {
+        { "sphere-sphere",   C_SHAPE_SPHERE,      C_SHAPE_SPHERE,  c_SphereDistance },
+        { "capsule-sphere",  C_SHAPE_CAPSULE,     C_SHAPE_SPHERE,  c_CapsuleSphereDistance },
+        { "capsule-capsule", C_SHAPE_CAPSULE,     C_SHAPE_CAPSULE, c_CapsuleDistance },
+        { "hull-sphere",     C_SHAPE_CONVEX_HULL, C_SHAPE_SPHERE,  c_HullSphereDistance },
+        { "hull-capsule",    C_SHAPE_CONVEX_HULL, C_SHAPE_CAPSULE, c_HullCapsuleDistance },
+        { "hull-hull",       C_SHAPE_CONVEX_HULL, C_SHAPE_CONVEX_HULL, c_HullDistance },
+    };
+
+    for (u32 p = 0; p < sizeof(pair) / sizeof(pair[0]); ++p)
+    {
+        u32 separated = 0;
+        f32 worst_surface = 0.0f, worst_length = 0.0f;
+        const u32 rounds = 400;
+        for (u32 round = 0; round < rounds; ++round)
+        {
+            ArenaPushRecord(env->mem_1);
+            const struct c_Shape s0 = ShapeTestRandom(env->mem_1, pair[p].t0);
+            const struct c_Shape s1 = ShapeTestRandom(env->mem_1, pair[p].t1);
+            const ds_TransformWorld t0 = ShapeTestPlacement(1.0f);
+            const ds_TransformWorld t1 = ShapeTestPlacement(2.0f);
+            const f32 scale = 8.0f;	/* positions to 2, extents to 1.5 */
+            const f32 tol = 1e-4f * scale;
+
+            v3f64 c0, c1;
+            const f32 d = pair[p].distance(&c0, &c1, &s0, &t0, &s1, &t1);
+            u32 ok = (d >= 0.0f && d == d);
+            if (pair[p].t0 != C_SHAPE_CONVEX_HULL && pair[p].t1 != C_SHAPE_CONVEX_HULL)
+            {
+                const f64 reference = StCoreDistance(&s0, &t0, &s1, &t1);
+                ok = ok && ((reference <= 0.0) ? (d == 0.0f) : (F32Abs((f32) reference - d) <= tol));
+                if (!ok)
+                {
+                    fprintf(stderr, "%s round %u: distance %.9g, reference %.9g\n", pair[p].id, round, d, reference);
+                }
+            }
+            if (ok && d > 0.0f)
+            {
+                separated += 1;
+                const f32 on0 = StSurfaceDistance(&s0, &t0, c0);
+                const f32 on1 = StSurfaceDistance(&s1, &t1, c1);
+                const f32 length = (f32) StLength(StSub(StD3F64(c1), StD3F64(c0)));
+                worst_surface = F32Max(worst_surface, F32Max(F32Abs(on0), F32Abs(on1)));
+                worst_length = F32Max(worst_length, F32Abs(length - d));
+                if (F32Abs(on0) > tol || F32Abs(on1) > tol || F32Abs(length - d) > tol)
+                {
+                    fprintf(stderr, "%s round %u: distance %.9g, witness on surfaces %.3g %.3g, witnesses %.9g apart\n", pair[p].id, round, d, on0, on1, length);
+                    ok = 0;
+                }
+            }
+            ArenaPopRecord(env->mem_1);
+            if (!ok)
+            {
+                ds_NumericsConfigPop();
+                TEST_FAILURE;
+            }
+        }
+        fprintf(stdout, "\t%s: %u of %u separated; witness error %.3g on the surfaces, %.3g in length\n", pair[p].id, separated, rounds, worst_surface, worst_length);
+    }
+
+    ds_NumericsConfigPop();
+    return output;
+}
+
 static struct test_Output (*shape_tests[])(struct test_Environment *) =
 {
     ShapeMassBoxTest,
@@ -341,6 +512,7 @@ static struct test_Output (*shape_tests[])(struct test_Environment *) =
     ShapeMassSphereTest,
     ShapeMassCapsuleTest,
     ShapeOverlapTest,
+    ShapeDistanceTest,
 };
 
 struct suite_Correctness m_shape_suite =
