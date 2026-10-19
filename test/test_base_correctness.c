@@ -1073,7 +1073,8 @@ static struct test_Output InputNameTest(struct test_Environment *env)
 /* remove what FilesystemTest creates (also the leftovers of an interrupted run); C library, test only */
 static void FilesystemTestCleanup(void)
 {
-    const char *entry[] = { FS_TEST_DIR "/a.txt", FS_TEST_DIR "/dangling", FS_TEST_DIR "/sub" };
+    const char *entry[] = { FS_TEST_DIR "/a.txt", FS_TEST_DIR "/dangling", FS_TEST_DIR "/link_file", FS_TEST_DIR "/link_dir",
+        FS_TEST_DIR "/sub" };
     for (u32 i = 0; i < sizeof(entry) / sizeof(entry[0]); ++i)
     {
         unlink(entry[i]);
@@ -1128,6 +1129,9 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
     TEST_EQUAL(FILE_HANDLE_INVALID, not_file.handle);
 
     TEST_EQUAL(0, symlinkat("does_not_exist", dir.handle, "dangling"));
+    /* springclean #173: a link counts as its target */
+    TEST_EQUAL(0, symlinkat("a.txt", dir.handle, "link_file"));
+    TEST_EQUAL(0, symlinkat("sub", dir.handle, "link_dir"));
 
     ds_CPool(file) entries;
     ds_CPoolAlloc(NULL, entries, 8, GROWABLE);
@@ -1137,12 +1141,14 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
     for (u32 i = 0; i < entries.count; ++i)
     {
         const struct file *e = entries.buf + i;
-        if (Utf8Equivalence(e->path, Utf8Inline("a.txt")))         { found |= 1; TEST_EQUAL(FILE_REGULAR, e->type); }
-        else if (Utf8Equivalence(e->path, Utf8Inline("sub")))      { found |= 2; TEST_EQUAL(FILE_DIRECTORY, e->type); }
-        else if (Utf8Equivalence(e->path, Utf8Inline("dangling"))) { found |= 4; TEST_EQUAL(FILE_UNRECOGNIZED, e->type); }
+        if (Utf8Equivalence(e->path, Utf8Inline("a.txt")))          { found |= 1; TEST_EQUAL(FILE_REGULAR, e->type); }
+        else if (Utf8Equivalence(e->path, Utf8Inline("sub")))       { found |= 2; TEST_EQUAL(FILE_DIRECTORY, e->type); }
+        else if (Utf8Equivalence(e->path, Utf8Inline("dangling")))  { found |= 4; TEST_EQUAL(FILE_UNRECOGNIZED, e->type); }
+        else if (Utf8Equivalence(e->path, Utf8Inline("link_file"))) { found |= 8; TEST_EQUAL(FILE_REGULAR, e->type); }
+        else if (Utf8Equivalence(e->path, Utf8Inline("link_dir")))  { found |= 16; TEST_EQUAL(FILE_DIRECTORY, e->type); }
     }
     ds_CPoolDealloc(entries);
-    TEST_EQUAL(7, found);
+    TEST_EQUAL(31, found);
 
     /* a pseudo-file: fstat says a page, read() ends after its few bytes */
     const char *pseudo = "/sys/devices/system/cpu/online";
@@ -1168,6 +1174,7 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
 #elif __DS_PLATFORM__ == __DS_WIN64__
 
 #include <shlwapi.h>
+#include <winioctl.h>
 
 #define FS_TEST_DIR "ds_filesystem_test"
 /* U+00E5 U+00E4 U+00F6 as UTF-8 and UTF-16, escaped: MSVC reads the source in the ANSI code page */
@@ -1202,9 +1209,67 @@ static u32 FilesystemTestLongDir(WCHAR w_path[MAX_PATH + 8])
     return name_len;
 }
 
+/*
+ * A junction (a mount point, as mklink /J makes it) at link to the absolute directory target; no privilege needed.
+ * The buffer is REPARSE_DATA_BUFFER's mount point form (a kernel header's): tag, data length, reserved, the names'
+ * offsets and lengths in bytes, then the substitute name ("\??\" + target) and the print name, both terminated.
+ */
+static u32 FilesystemTestJunction(const WCHAR *link, const WCHAR *target)
+{
+    struct
+    {
+        DWORD tag;
+        WORD data_length;
+        WORD reserved;
+        WORD substitute_offset;
+        WORD substitute_length;
+        WORD print_offset;
+        WORD print_length;
+        WCHAR names[2*MAX_PATH + 8];
+    } r = { 0 };
+    u32 target_len = 0;
+    while (target[target_len]) { ++target_len; }
+    if (MAX_PATH <= target_len)
+    {
+        return 0;
+    }
+
+    u32 n = 0;
+    for (const WCHAR *c = L"\\??\\"; *c; ++c) { r.names[n++] = *c; }
+    for (u32 i = 0; i < target_len; ++i) { r.names[n++] = target[i]; }
+    const u32 substitute_len = n;
+    r.names[n++] = L'\0';
+    for (u32 i = 0; i < target_len; ++i) { r.names[n++] = target[i]; }
+    r.names[n++] = L'\0';
+    r.tag = IO_REPARSE_TAG_MOUNT_POINT;
+    r.substitute_offset = 0;
+    r.substitute_length = (WORD) (substitute_len * sizeof(WCHAR));
+    r.print_offset = (WORD) ((substitute_len + 1) * sizeof(WCHAR));
+    r.print_length = (WORD) (target_len * sizeof(WCHAR));
+    r.data_length = (WORD) (4 * sizeof(WORD) + n * sizeof(WCHAR));
+
+    if (!CreateDirectoryW(link, NULL))
+    {
+        return 0;
+    }
+    HANDLE h = CreateFileW(link, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    if (h == INVALID_HANDLE_VALUE)
+    {
+        return 0;
+    }
+    DWORD returned;
+    const BOOL ok = DeviceIoControl(h, FSCTL_SET_REPARSE_POINT, &r, 8 + r.data_length, NULL, 0, &returned, NULL);
+    CloseHandle(h);
+    return ok != 0;
+}
+
 /* remove what FilesystemTest creates (also the leftovers of an interrupted run); OS API, test only */
 static void FilesystemTestCleanup(void)
 {
+    RemoveDirectoryW(L"ds_filesystem_test\\link_dir");
+    RemoveDirectoryW(L"ds_filesystem_test\\link_gone");
+    DeleteFileW(L"ds_filesystem_test\\link_file");
+
     WCHAR w_long_dir[MAX_PATH + 8];
     if (FilesystemTestLongDir(w_long_dir)) { RemoveDirectoryW(w_long_dir); }
 
@@ -1347,6 +1412,16 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
     const u32 have_link = CreateSymbolicLinkW(L"ds_filesystem_test\\dangling", L"does_not_exist",
             SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != 0;
 
+    /* #173 (4): a link counts as its target, a dangling link as FILE_UNRECOGNIZED (junctions need no privilege) */
+    WCHAR w_sub[MAX_PATH];
+    WCHAR w_gone[MAX_PATH];
+    TEST_TRUE(GetFullPathNameW(L"ds_filesystem_test\\sub", MAX_PATH, w_sub, NULL) != 0);
+    TEST_TRUE(GetFullPathNameW(L"ds_filesystem_test\\gone", MAX_PATH, w_gone, NULL) != 0);
+    TEST_TRUE(FilesystemTestJunction(L"ds_filesystem_test\\link_dir", w_sub));
+    TEST_TRUE(FilesystemTestJunction(L"ds_filesystem_test\\link_gone", w_gone));
+    const u32 have_file_link = CreateSymbolicLinkW(L"ds_filesystem_test\\link_file", L"a.txt",
+            SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != 0;
+
     const utf8 non_ascii_name = { .buf = (u8 *) FS_TEST_NON_ASCII, .size = sizeof(FS_TEST_NON_ASCII) - 1, .len = 3 };
     ds_CPool(file) entries;
     ds_CPoolAlloc(NULL, entries, 8, GROWABLE);
@@ -1360,13 +1435,34 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
         else if (Utf8Equivalence(e->path, Utf8Inline("sub")))               { found |= 2; TEST_EQUAL(FILE_DIRECTORY, e->type); }
         else if (Utf8Equivalence(e->path, non_ascii_name))                 { found |= 4; TEST_EQUAL(FILE_DIRECTORY, e->type); }
         else if (Utf8Equivalence(e->path, Utf8Inline("dangling")))          { found |= 8; TEST_EQUAL(FILE_UNRECOGNIZED, e->type); }
+        else if (Utf8Equivalence(e->path, Utf8Inline("link_dir")))          { found |= 16; TEST_EQUAL(FILE_DIRECTORY, e->type); }
+        else if (Utf8Equivalence(e->path, Utf8Inline("link_gone")))         { found |= 32; TEST_EQUAL(FILE_UNRECOGNIZED, e->type); }
+        else if (Utf8Equivalence(e->path, Utf8Inline("link_file")))         { found |= 64; TEST_EQUAL(FILE_REGULAR, e->type); }
     }
     ds_CPoolDealloc(entries);
-    TEST_EQUAL((have_link) ? 15 : 7, found);
+    TEST_EQUAL(7 + 16 + 32 + ((have_link) ? 8 : 0) + ((have_file_link) ? 64 : 0), found);
+
+    /* #173 (4): FileStatusPath follows a link, a dangling one fails; a directory opened through a link is the target */
+    struct file dir_again = FileNull();
+    TEST_EQUAL(FS_SUCCESS, DirectoryTryOpenAtCwd(mem, &dir_again, FS_TEST_DIR));
+    file_status link_status;
+    const enum fsError link_err = FileStatusPath(&link_status, "link_dir", &dir_again);
+    const u32 link_is_dir = (link_err == FS_SUCCESS) && FileStatusGetType(&link_status) == FILE_DIRECTORY;
+    const enum fsError gone_err = FileStatusPath(&link_status, "link_gone", &dir_again);
+    struct file through = FileNull();
+    const enum fsError through_err = DirectoryTryOpen(mem, &through, "link_dir", &dir_again);
+    file_status through_status;
+    const u32 through_is_dir = (through_err == FS_SUCCESS) && FileStatusFile(&through_status, &through) == FS_SUCCESS
+            && FileStatusGetType(&through_status) == FILE_DIRECTORY;
+    if (through.handle != FILE_HANDLE_INVALID) { FileClose(&through); }
+    FileClose(&dir_again);
+    TEST_TRUE(link_is_dir);
+    TEST_EQUAL(FS_ERROR_UNSPECIFIED, gone_err);
+    TEST_TRUE(through_is_dir);
 
     /*
      * #170: the final path of a directory doesn't fit MAX_PATH ("\\?\" + its 257 units): nothing is joined to it
-     * (FS_PATH_INVALID) and its status is not read (FS_ERROR_UNSPECIFIED)
+     * (FS_PATH_INVALID); its status is read through its handle, no path needed (#173)
      */
     WCHAR w_long_dir[MAX_PATH + 8];
     const u32 long_dir_len = FilesystemTestLongDir(w_long_dir);
@@ -1386,7 +1482,7 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
         const enum fsError deep_status_err = FileStatusFile(&deep_status, &deep);
         FileClose(&deep);
         TEST_EQUAL(FS_PATH_INVALID, in_deep_err);
-        TEST_EQUAL(FS_ERROR_UNSPECIFIED, deep_status_err);
+        TEST_TRUE(deep_status_err == FS_SUCCESS && FileStatusGetType(&deep_status) == FILE_DIRECTORY);
     }
 
     struct arena tiny = ArenaAlloc(NULL, 4);

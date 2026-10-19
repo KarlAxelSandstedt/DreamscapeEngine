@@ -76,6 +76,45 @@ static enum fsError WAbsolutePathFromRelativePathAndDirectory(WCHAR w_absolute_p
 	return FS_SUCCESS;
 }
 
+/* status of an open file; a handle opened through a link is its target's, as Linux's fstat */
+static u32 WStatusFromHandle(file_status *status, const HANDLE handle)
+{
+	BY_HANDLE_FILE_INFORMATION info;
+	if (!GetFileInformationByHandle(handle, &info))
+	{
+		return 0;
+	}
+
+	status->dwFileAttributes = info.dwFileAttributes;
+	status->ftCreationTime = info.ftCreationTime;
+	status->ftLastAccessTime = info.ftLastAccessTime;
+	status->ftLastWriteTime = info.ftLastWriteTime;
+	status->nFileSizeHigh = info.nFileSizeHigh;
+	status->nFileSizeLow = info.nFileSizeLow;
+	return 1;
+}
+
+/* status of what w_path names, links followed (Linux's fstatat); 0 if nothing opens there (a dangling link) */
+static u32 WStatusFollowLinks(file_status *status, const WCHAR *w_path)
+{
+	/* no access: attributes only; FILE_FLAG_BACKUP_SEMANTICS opens directories too */
+	const HANDLE handle = CreateFileW(w_path
+			, 0
+			, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE
+			, NULL
+			, OPEN_EXISTING
+			, FILE_FLAG_BACKUP_SEMANTICS
+			, NULL);
+	if (handle == INVALID_HANDLE_VALUE)
+	{
+		return 0;
+	}
+
+	const u32 success = WStatusFromHandle(status, handle);
+	CloseHandle(handle);
+	return success;
+}
+
 u32 SystemAdminCheck(void)
 {
 	return IsUserAnAdmin() ? 1 : 0;
@@ -789,9 +828,25 @@ enum fsError DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct
 			break;
 		}
 
-		/* the listing's own attributes: no second lookup that can fail (pagefile.sys, an entry removed meanwhile) */
-		const file_status status = { .dwFileAttributes = file_info.dwFileAttributes };
-		file->type = FileStatusGetType(&status);
+		/*
+		 * the listing's own attributes: no second lookup that can fail (pagefile.sys, an entry removed meanwhile);
+		 * but a link counts as its target, as on Linux, and a dangling link as unrecognized
+		 */
+		file_status status = { .dwFileAttributes = file_info.dwFileAttributes };
+		const u32 link = (file_info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)
+			&& (file_info.dwReserved0 == IO_REPARSE_TAG_SYMLINK || file_info.dwReserved0 == IO_REPARSE_TAG_MOUNT_POINT);
+		if (link)
+		{
+			WCHAR w_entry[MAX_PATH];
+			file->type = (WAbsolutePathFromRelativePathAndDirectory(w_entry, cstr_filename, dir) == FS_SUCCESS
+					&& WStatusFollowLinks(&status, w_entry))
+				? FileStatusGetType(&status)
+				: FILE_UNRECOGNIZED;
+		}
+		else
+		{
+			file->type = FileStatusGetType(&status);
+		}
 	} while (FindNextFileW(handle, &file_info) != 0);
 
 	if (ret == FS_SUCCESS && GetLastError() != ERROR_NO_MORE_FILES)
@@ -814,37 +869,22 @@ enum fsError DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct
 
 enum fsError FileStatusFile(file_status *status, const struct file *file)
 {
-	WCHAR w_path[MAX_PATH];
-	const DWORD len = GetFinalPathNameByHandleW(file->handle, w_path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
-	if (len == 0)
+	if (!WStatusFromHandle(status, file->handle))
 	{
 		LogSystemError(S_ERROR);
 		return FS_ERROR_UNSPECIFIED;
 	}
 
-	/* the path did not fit: len is the size required, and nothing was written */
-	if (MAX_PATH <= len)
-	{
-		return FS_ERROR_UNSPECIFIED;
-	}
-
-	enum fsError err = FS_SUCCESS;
-	if (!GetFileAttributesExW(w_path, GetFileExInfoStandard, status))
-	{
-		LogSystemError(S_ERROR);
-		err = FS_ERROR_UNSPECIFIED;
-	}
-
-	return err;
+	return FS_SUCCESS;
 }
 
 enum fsError FileStatusPath(file_status *status, const char *path, const struct file *dir)
-{	
+{
 	WCHAR w_path[MAX_PATH];
 	enum fsError err = WAbsolutePathFromRelativePathAndDirectory(w_path, path, dir);
 	if (err == FS_SUCCESS)
 	{
-		if (!GetFileAttributesExW(w_path, GetFileExInfoStandard, status))
+		if (!WStatusFollowLinks(status, w_path))
 		{
 			LogSystemError(S_ERROR);
 			err = FS_ERROR_UNSPECIFIED;
@@ -858,15 +898,13 @@ enum fileType FileStatusGetType(const file_status *status)
 {
 	enum fileType type;
 
+	/*
+	 * FileStatusFile/Path give a link's target; any other reparse point (a deduplicated file) is a file or a
+	 * directory like others
+	 */
 	if (status->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
 	{
 		type = FILE_DIRECTORY;
-	}
-	else if (status->dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)
-	{
-		/* reparse point  */
-		type = FILE_UNRECOGNIZED;
-
 	}
 	else if (status->dwFileAttributes & FILE_ATTRIBUTE_DEVICE)
 	{

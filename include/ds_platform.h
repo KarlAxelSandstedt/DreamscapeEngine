@@ -228,7 +228,8 @@ enum fsError 	DirectoryTryOpen(struct arena *mem, struct file *dir, const char *
 /* Try open a directory at the cwd; FS_PATH_INVALID if it does not exist, FS_TYPE_INVALID if it is not a directory. */
 enum fsError 	DirectoryTryOpenAtCwd(struct arena *mem, struct file *dir, const char *filename);
 /* push directory file paths and states AND CLOSE DIRECTORY (on every path)! Every entry, "." and ".." included,
- * gets its name (on mem) and type; entries whose status can't be read (dangling links) are FILE_UNRECOGNIZED.
+ * gets its name (on mem) and type; a link has its target's type, and entries whose status can't be read (dangling
+ * links) are FILE_UNRECOGNIZED.
  *
  * RETURNS:
  * 	FS_SUCCESS on success,
@@ -276,10 +277,11 @@ enum fsError			DirectoryNavigatorEnterAndAliasPath(struct directoryNavigator *dn
 void		FileStatusDebugPrint(const file_status *stat);
 /* return file type from file status */
 enum fileType	FileStatusGetType(const file_status *status);
-/* Fill the file status of a given open file. Returns FS_SUCCESS or FS_ERROR_UNSPECIFIED (status undefined then). */
+/* Fill the file status of a given open file (opened through a link: its target). Returns FS_SUCCESS or
+ * FS_ERROR_UNSPECIFIED (status undefined then). */
 enum fsError	FileStatusFile(file_status *status, const struct file *file);
-/* Fill the file status of a given filepath relative to dir. Returns FS_SUCCESS, FS_ERROR_UNSPECIFIED (status undefined
- * then), or on Linux FS_PATH_INVALID for an absolute path. */
+/* Fill the file status of a given filepath relative to dir, links followed (a dangling link fails). Returns FS_SUCCESS,
+ * FS_ERROR_UNSPECIFIED (status undefined then), or on Linux FS_PATH_INVALID for an absolute path. */
 enum fsError	FileStatusPath(file_status *status, const char *path, const struct file *dir);
 
 /************************************* process directory operations *************************************/
