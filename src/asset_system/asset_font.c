@@ -72,12 +72,12 @@ void FontBuild(struct arena *mem, const u32 id)
     ds_CPoolAlloc(mem, stack_pixels, glyph_max_count, NOT_GROWABLE);
     ds_CPoolAlloc(mem, stack_glyph, glyph_max_count, NOT_GROWABLE);
 	
-	/* setup no_found glyph */
-	//error = FT_Load_Char(face, 0, FT_LOAD_DEFAULT | FT_LOAD_FORCE_AUTOHINT | FT_LOAD_TARGET_NORMAL | FT_RENDER_MODE_NORMAL);
-	error = FT_Load_Char(face, 0, FT_LOAD_DEFAULT | FT_LOAD_FORCE_AUTOHINT | FT_LOAD_TARGET_NORMAL | FT_RENDER_MODE_NORMAL);
+	/* the not-found glyph (.notdef, the box), rendered like the others */
+	error = FT_Load_Char(face, 0, FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL);
 	if (error)
 	{
-		LogString(T_ASSET, S_FATAL, "Failed to load not-found-glyph");
+		LogString(T_ASSET, S_FATAL, "Failed to load the not-found glyph");
+		FatalCleanupAndExit();
 	}
 
 	total_glyph_width += face->glyph->bitmap.width;
