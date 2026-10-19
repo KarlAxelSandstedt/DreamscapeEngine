@@ -116,7 +116,7 @@ Return an empty queue of initial_length elements on mem (fixed; growable must be
 allocated.
 */
 struct MQ	MQAlloc(struct arena *mem, const u32 initial_length, const u32 growable);
-/* Return a fixed queue over all whole elements that fit in mem (possibly length 0). */
+/* Return a fixed queue over all whole elements that fit in mem (possibly length 0, at most U32_MAX). */
 struct MQ	MQAllocAll(struct arena *mem);
 /* Free a heap queue's memory (an arena queue's stays with the arena). */
 void 			MQDealloc(struct MQ *queue);

@@ -336,7 +336,7 @@ struct MQ MQAllocAll(struct arena *mem)
 
 	struct MQ queue = { 0 };
 	struct memArray arr = ArenaPushAlignedAll(mem, sizeof(u32f32), 4);
-	queue.length = arr.len;
+	queue.length = (arr.len > U32_MAX) ? U32_MAX : (u32) arr.len;
 	queue.element = arr.addr;
 
 	return queue;
