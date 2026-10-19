@@ -131,11 +131,16 @@ struct slot ds_ShapeLookup(const struct ds_Dynamics *pipeline, const ds_ShapeId 
 {
 
     struct slot slot = { .address = NULL, .index = U32_MAX };
-    struct ds_Shape *shape = pipeline->shape_pool.buf + ds_IdIndex(shape_id);
-    if (shape_id != DS_ID_NULL && ds_PoolSlotAllocated(shape) && shape->id == shape_id)
+    /* the index is bounded before the slot is read (as ds_BodyLookup) */
+    const u32 index = ds_IdIndex(shape_id);
+    if (index < pipeline->shape_pool.count_max)
     {
-        slot.address = shape;
-        slot.index = ds_IdIndex(shape_id);
+        struct ds_Shape *shape = pipeline->shape_pool.buf + index;
+        if (ds_PoolSlotAllocated(shape) && shape->id == shape_id)
+        {
+            slot.address = shape;
+            slot.index = index;
+        }
     }
 
     return slot;

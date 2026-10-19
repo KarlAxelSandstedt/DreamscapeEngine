@@ -174,11 +174,16 @@ void ds_BodyRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, const ds
 struct slot ds_BodyLookup(const struct ds_Dynamics *pipeline, const ds_BodyId id)
 {
     struct slot slot = { .address = NULL, .index = U32_MAX };
-    struct ds_Body *body = pipeline->body_pool.buf + ds_IdIndex(id);
-    if (ds_PoolSlotAllocated(body) && body->id == id)
+    /* the index is bounded before the slot is read: DS_ID_NULL, or an id from another pipeline, must not read past the pool */
+    const u32 index = ds_IdIndex(id);
+    if (index < pipeline->body_pool.count_max)
     {
-        slot.address = body;
-        slot.index = ds_IdIndex(id);
+        struct ds_Body *body = pipeline->body_pool.buf + index;
+        if (ds_PoolSlotAllocated(body) && body->id == id)
+        {
+            slot.address = body;
+            slot.index = index;
+        }
     }
 
     return slot;
