@@ -1863,10 +1863,11 @@ static void led_EngineRun(struct led *led)
 				struct ds_Island *is = ds_IslandLookup(&led->physics, event->island).address;
                 if (is)
 				{
-					is->color = V4(RngF32Normalized(), 
-						       RngF32Normalized(), 
-						       RngF32Normalized(), 
-						       0.7f);
+					/* drawn in a fixed order: an argument list's evaluation order is the compiler's */
+					const f32 red = RngF32Normalized();
+					const f32 green = RngF32Normalized();
+					const f32 blue = RngF32Normalized();
+					is->color = V4(red, green, blue, 0.7f);
 					if (led->body_color_mode == RB_COLOR_MODE_ISLAND)
 					{
 						led_ColorIsland(led, event->island, is->color);
