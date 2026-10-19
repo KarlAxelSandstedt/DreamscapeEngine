@@ -188,16 +188,18 @@ void SsffBuild(struct arena *mem, const u32 ssff_id)
 
 	for (u32 i = 0; i < info->png_count; ++i)
 	{
-		u32 comp;
-		pixel[i] = stbi_load((char *) info->png[i].filepath, (i32 *) png_width + i, (i32 *) png_height + i, (i32 *) &comp, 0);
+		i32 comp;	/* the file's channels; stb converts to the 4 requested */
+		pixel[i] = stbi_load((char *) info->png[i].filepath, (i32 *) png_width + i, (i32 *) png_height + i, &comp, 4);
 		if (!pixel[i])
 		{
 			Log(T_ASSET, S_FATAL, "%s: %s", info->png[i].filepath, stbi_failure_reason());
 			FatalCleanupAndExit();
 		}
-
-		ds_Assert(comp == 4);
-		ds_Assert(png_width[i] % info->png[i].sprite_width == 0);
+		if (png_width[i] % info->png[i].sprite_width != 0)
+		{
+			Log(T_ASSET, S_FATAL, "%s: width %u is not a multiple of the sprite width %u", info->png[i].filepath, png_width[i], info->png[i].sprite_width);
+			FatalCleanupAndExit();
+		}
 		sprite_count[i] = png_width[i] / info->png[i].sprite_width;
 		sprite[i] = ArenaPushPacked(mem, sprite_count[i] * sizeof(struct ssffSprite));
 		color[i] = (void *) mem->stack_ptr;
