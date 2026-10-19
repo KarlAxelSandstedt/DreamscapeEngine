@@ -17,9 +17,6 @@
 ==========================================================================
 */
 
-#include <stdlib.h>
-#include <string.h>
-
 #include "ds_vector.h"
 
 
@@ -197,13 +194,6 @@ void ds_SolverSetWakeUp(struct ds_Dynamics *pipeline, const u32 index)
         body->set = SOLVER_SET_ACTIVE;
         body->sim = sim_slot.index;
         body->low_velocity_time = 0.0f;
-
-        struct ds_Shape *shape;
-        for (i32 si = body->shape_list.first; si != DLL_SENTINEL; si = shape->body_shape.next)
-        {
-            shape = pipeline->shape_pool.buf + si;
-        }
-
         memcpy(new_sim, old_sim, sizeof(*new_sim));
 
         compute->flags = body->flags;
