@@ -122,6 +122,7 @@ void                        ds_NumericsConfigPop(void);
 /*
 ds_DynamicsProfile
 ==================
+The tick's timings, ns: the frame and each of its five phases (start, end, duration), filled by ds_DynamicsTick.
 */
 
 struct ds_DynamicsProfile
@@ -157,6 +158,7 @@ struct ds_DynamicsProfile
     u64 ns_removalphase_duration;    
 };
 
+/* print the frame's duration and each phase's duration and share of it, in ms, to file */
 void    ds_DynamicsProfilePrint(FILE *file, const struct ds_DynamicsProfile *profile);
 
 /*
@@ -1144,6 +1146,10 @@ struct solverConfig
 
 extern struct solverConfig *g_solver_config;
 
+/*
+ * set every field of g_solver_config (must point at a config) from the arguments, the pending copies equal to
+ * them; the iteration counts must be >= 1 (asserted), a velocity magnitude of 0 means no limit (inverse 0)
+ */
 void    SolverConfigInit(const u32 pgs_iteration_count, 
                          const u32 ngs_iteration_count, 
                          const u32 warmup_solver, 
@@ -1274,6 +1280,11 @@ struct ds_BroadJobPhase
     struct ds_Dynamics *            pipeline;
 };
 
+/*
+ * The phases' dispatch functions (ds_JobDispatchFunction, ds_job.h): run the job of the phase g_scheduler->phase
+ * points at and return the number of jobs it pushed minus 1 (U32_MAX for none). Set by ds_JobPhaseAlloc in the
+ * pipeline's allocation; the scheduler calls them, nothing else does.
+ */
 u32 ds_BroadJobPhaseDispatch(const ds_JobId job);
 
 /*
@@ -1301,6 +1312,7 @@ struct ds_NarrowJobPhase
     struct ds_Dynamics *            pipeline;
 };
 
+/* see ds_BroadJobPhaseDispatch */
 u32 ds_NarrowJobPhaseDispatch(const ds_JobId job);
 
 
@@ -1364,6 +1376,7 @@ struct ds_SolverJobPhase
     struct ds_ProxyRange *          proxy_range;
 };
 
+/* see ds_BroadJobPhaseDispatch */
 u32 ds_SolverJobPhaseDispatch(const ds_JobId job);
 
 /*
@@ -1444,6 +1457,7 @@ struct ds_RebuildJobPhase
     u8                              pad4[DS_CACHE_LINE];
 };
 
+/* see ds_BroadJobPhaseDispatch; the job's tag (ds_JobIdTag) selects the setup, range or leaf job */
 u32 ds_RebuildJobPhaseDispatch(const ds_JobId job);
 
 /*
@@ -1472,6 +1486,7 @@ struct ds_RemovalJobPhase
     struct ds_Dynamics *            pipeline;
 };
 
+/* see ds_BroadJobPhaseDispatch */
 u32 ds_RemovalJobPhaseDispatch(const ds_JobId job);
 
 
