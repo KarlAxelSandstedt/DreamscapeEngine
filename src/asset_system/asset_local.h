@@ -117,7 +117,11 @@ void 				SsffSave(const struct assetSsff *asset, const struct ssff_header *ssff)
 #endif
 /* dump the sheet onto mem; NULL if the file cannot be read */
 const struct ssff_header *	SsffLoad(struct arena *mem, const struct assetSsff *asset);
-/* heap allocate and construct texture with given width and height from ssff data. push, in order of generation, texture coordinates onto arena, and return values. */
+/*
+ * heap allocate (ds_Alloc) and construct the width x height texture from ssff data; push, in order of generation,
+ * the sprites' texture coordinates onto mem and return them. A sheet that does not fit the texture gives pixel NULL
+ * (logged), nothing pushed.
+ */
 struct ssffTextureReturn 	SsffTexture(struct arena *mem, const struct ssff_header *ssff, const u32 width, const u32 height);
 /* verbosely print ssff contents */
 void				SsffDebugPrint(FILE *out, const struct ssff_header *ssff);

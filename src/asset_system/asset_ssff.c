@@ -375,6 +375,30 @@ struct ssffTextureReturn SsffTexture(struct arena *mem, const struct ssff_header
 	//	1.0f / (2.0f * width),
 	//	1.0f / (2.0f * height),
 	//};
+	/* the collections stack as rows of the texture: each must fit in the row, the rows in the height */
+	u64 height_required = 0;
+	for (u32 i = 0; i < ssff->collection_count; ++i)
+	{
+		const struct ssff_collection *c = (struct ssff_collection *)(((u8 *) ssff) + ssff->collection_offset) + i;
+		const struct ssffSprite *sprite = (struct ssffSprite *)(((u8 *) ssff) + c->sprite_offset);
+		u64 row_width = 0;
+		u64 row_height = 0;
+		for (u32 j = 0; j < c->sprite_count; ++j)
+		{
+			row_width += (u64) sprite[j].x1 - sprite[j].x0 + 1;
+			const u64 sprite_height = (u64) sprite[j].y1 - sprite[j].y0 + 1;
+			row_height = (row_height < sprite_height) ? sprite_height : row_height;
+		}
+		height_required += c->height;
+		if (row_width > width || row_height > c->height || height_required > height)
+		{
+			Log(T_ASSET, S_ERROR, "sprite sheet collection %u (%llu x %llu, rows to %llu) does not fit the %u x %u texture",
+				i, (long long unsigned int) row_width, (long long unsigned int) row_height,
+				(long long unsigned int) height_required, width, height);
+			return (struct ssffTextureReturn) { 0 };
+		}
+	}
+
 	u8 *pixel = ds_Alloc(width*height*sizeof(u32), sizeof(u32));
 	if (!pixel)
 	{
@@ -407,7 +431,6 @@ struct ssffTextureReturn SsffTexture(struct arena *mem, const struct ssff_header
 			{
 				for (u32 x = 0; x < sprite_width; ++x)
 				{
-					ds_AssertString(x_offset + x < width, "trying to write outside of row");
 					const u32 ci = ss_ReadU32Partial(&stream, c->bit_depth);
 					const u32 color = (ci < c->color_count) ? color_table[ci] : 0;	/* corrupt index: transparent */
 					pixel[4*((y_offset + y)*width + (x_offset + x)) + 0] = (u8) (color >> 24);
