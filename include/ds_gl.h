@@ -34,6 +34,15 @@ extern "C" {
 #define APIENTRY	GL_APIENTRY
 #endif
 
+/*
+ds_gl.h
+=======
+The GL functions the renderer uses, as a table of pointers (struct gl_Functions) loaded per context by the
+platform's GlFunctionsInit (sdl3_wrapper_gl.c): the subset common to OpenGL 3.3 core and OpenGL ES 3.0, so one
+renderer serves desktop and web. The renderer calls them through the ds_gl* wrappers of r_local.h on the
+current gl_State (ds_renderer.h). The GL headers themselves come from lib/opengl (glcorearb.h, glext.h) on
+desktop and from Emscripten (GLES3/gl3.h) on web.
+*/
 
 typedef void 		(APIENTRY *type_glGetIntegerv)(GLenum pname, GLint *data);
 typedef const GLubyte * (APIENTRY *type_glGetString)(GLenum);
