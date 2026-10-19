@@ -844,7 +844,7 @@ void ds_glTexImage2D(const GLenum target,
 	struct gl_Texture *tx = InternalTxUnitGetTarget(target);
 
 	tx->level = level;
-	tx->internalformat = format;
+	tx->internalformat = internalformat;
 	tx->width = width;
 	tx->height = height;
 	tx->format = format;
@@ -909,7 +909,6 @@ void ds_glTexParameterf(const GLenum target, const GLenum pname, const GLfloat p
 void ds_glTexParameteriv(const GLenum target, const GLenum pname, const GLint *params)
 {
 	struct gl_State *gl_state = g_gl_state_pool.buf + g_gl_state;
-	struct gl_Texture *tx = InternalTxUnitGetTarget(target);
 
 	switch (pname)
 	{
@@ -922,7 +921,6 @@ void ds_glTexParameteriv(const GLenum target, const GLenum pname, const GLint *p
 void ds_glTexParameterfv(const GLenum target, const GLenum pname, const GLfloat *params)
 {
 	struct gl_State *gl_state = g_gl_state_pool.buf + g_gl_state;
-	struct gl_Texture *tx = InternalTxUnitGetTarget(target);
 
 	switch (pname)
 	{
@@ -1124,7 +1122,6 @@ void gl_StateDealloc(const u32 gl_state_index)
 void gl_StateSetCurrent(const u32 gl_state_index)
 {
 	g_gl_state = gl_state_index;
-	struct gl_State *gl_state = g_gl_state_pool.buf + gl_state_index;
 }
 
 void gl_StateMemAlloc(void)
