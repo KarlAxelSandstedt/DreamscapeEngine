@@ -38,7 +38,7 @@ void RngSystem(void *buf, const u64 size)
 	NTSTATUS status = BCryptOpenAlgorithmProvider(&hAlgorithm, pszAlgId, pszImplementation, dwFlags);
 	if (!BCRYPT_SUCCESS(status))
 	{
-		Log(T_SYSTEM, S_FATAL, "Couldn't open algorithm provider: %08x\n", status);
+		Log(T_SYSTEM, S_FATAL, "Couldn't open algorithm provider: NTSTATUS %u", (u32) status);
 		FatalCleanupAndExit();
 	}
 
@@ -51,7 +51,7 @@ void RngSystem(void *buf, const u64 size)
 		status = BCryptGenRandom(hAlgorithm, ((u8 *) buf) + offset, chunk, 0);
 		if (!BCRYPT_SUCCESS(status))
 		{
-			Log(T_SYSTEM, S_FATAL, "Couldn't generate BCrypt randomness: %08x\n", status);
+			Log(T_SYSTEM, S_FATAL, "Couldn't generate BCrypt randomness: NTSTATUS %u", (u32) status);
 			FatalCleanupAndExit();
 		}
 		bytes_left -= chunk;
@@ -60,7 +60,7 @@ void RngSystem(void *buf, const u64 size)
 	status = BCryptCloseAlgorithmProvider(hAlgorithm, 0);
 	if (!BCRYPT_SUCCESS(status))
 	{
-		Log(T_SYSTEM, S_FATAL, "Couldn't close algorithm provider: %08x\n", status);
+		Log(T_SYSTEM, S_FATAL, "Couldn't close algorithm provider: NTSTATUS %u", (u32) status);
 		FatalCleanupAndExit();
 	}
 }
