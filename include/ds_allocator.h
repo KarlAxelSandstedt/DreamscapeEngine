@@ -895,8 +895,12 @@ static ds_ForceInline void ds_TStackPushInternal(struct ds_TStack *stack, const 
 	u32 *tag = (u32 *) (node + tag_offset);
 	*tag += 1;
 	const u64 new_head = ((u64) *tag << 32) + index;
-	*tail = AtomicLoadRlx64(&stack->a_head);
-	while (!AtomicCompareExchangeRelRlx64(&stack->a_head, tail, new_head));
+	/* a popper may load the link meanwhile: atomic (relaxed: the release CAS orders the store before the publish) */
+	u64 expected = AtomicLoadRlx64(&stack->a_head);
+	do
+	{
+		AtomicStoreRlx64(tail, expected);
+	} while (!AtomicCompareExchangeRelRlx64(&stack->a_head, &expected, new_head));
 }
 
 /* Internal: see ds_TPoolFreeListPop. */
@@ -911,7 +915,7 @@ static ds_ForceInline struct slot ds_TStackPopInternal(struct ds_TStack *stack, 
 			return (struct slot) { .address = NULL, .index = U32_MAX };
 		}
 		node = ds_TPoolAddressInternal(state, block, (u32) local_head, slot_size);
-	} while (!AtomicCompareExchangeAcqRelAcq64(&stack->a_head, &local_head, *(u64 *) (node + tail_offset)));
+	} while (!AtomicCompareExchangeAcqRelAcq64(&stack->a_head, &local_head, AtomicLoadRlx64((u64 *) (node + tail_offset))));
 
 	return (struct slot) { .address = node, .index = (u32) local_head };
 }
