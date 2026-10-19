@@ -874,9 +874,7 @@ enum fileType FileStatusGetType(const file_status *status)
 	return type;
 }
 
-#include <time.h>
-
-void FileTimeToString(FILETIME ft, char* buffer, size_t bufferSize) 
+static void FileTimeToString(FILETIME ft, char* buffer, size_t bufferSize)
 {
 	SYSTEMTIME st;
 	if (!FileTimeToSystemTime(&ft, &st)) 
