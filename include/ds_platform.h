@@ -193,7 +193,7 @@ struct dsBuffer FileDumpAtCwd(struct arena *mem, const char *path);
 u64 		FileWriteOffset(const struct file *file, const u8 *buf, const u64 bufsize, const u64 file_offset);
 /* write buf at the end of the file; return number of bytes written (fewer on an error, which is logged; 0 if buf is empty) */
 u64 		FileWriteAppend(const struct file *file, const u8 *buf, const u64 bufsize);
-/* flush kernel io buffers -> up to hardware to actually store flushed io. NOTE: EXTREMELY SLOW OPERATION  */
+/* flush kernel io buffers -> up to hardware to actually store flushed io; a failure is logged. NOTE: EXTREMELY SLOW OPERATION  */
 void 		FileSync(const struct file *file);
 /* returns 1 on successful size change, 0 on failure */
 u32		FileSetSize(const struct file *file, const u64 size);

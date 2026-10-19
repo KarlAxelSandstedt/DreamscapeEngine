@@ -84,9 +84,10 @@ enum fsError FileTryCreate(struct arena *mem, struct file *file, const char *fil
 	if (err == FS_SUCCESS)
 	{
 		file_status status;
-		FileStatusFile(&status, file);
 		file->path = Utf8Cstr(mem, filename);
-		file->type = FileStatusGetType(&status);
+		file->type = (FileStatusFile(&status, file) == FS_SUCCESS)
+			? FileStatusGetType(&status)
+			: FILE_UNRECOGNIZED;
 	}
 
 	return err;
@@ -352,6 +353,10 @@ u64 FileWriteOffset(const struct file *file, const u8 *buf, const u64 bufsize, c
 		count = write(file->handle, buf + total, left);
 		if (count == -1)
 		{
+			if (errno == EINTR)
+			{
+				continue;
+			}
 			LogSystemError(S_ERROR);
 			break;
 		}
@@ -382,6 +387,10 @@ u64 FileWriteAppend(const struct file *file, const u8 *buf, const u64 bufsize)
 		count = write(file->handle, buf + total, left);
 		if (count == -1)
 		{
+			if (errno == EINTR)
+			{
+				continue;
+			}
 			LogSystemError(S_ERROR);
 			break;
 		}
@@ -395,7 +404,10 @@ u64 FileWriteAppend(const struct file *file, const u8 *buf, const u64 bufsize)
 
 void FileSync(const struct file *file)
 {
-	fsync(file->handle);
+	if (fsync(file->handle) == -1)
+	{
+		LogSystemError(S_ERROR);
+	}
 }
 
 void *FileMemoryMap(u64 *size, const struct file *file, const u32 prot, const u32 flags)
