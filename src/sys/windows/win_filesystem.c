@@ -207,8 +207,15 @@ enum fsError FileTryOpen(struct arena *mem, struct file *file, const char *filen
 				{
 					case ERROR_FILE_NOT_FOUND:
 					case ERROR_PATH_NOT_FOUND: { err = FS_PATH_INVALID; } break;
-					case ERROR_SHARING_VIOLATION:
-					case ERROR_ACCESS_DENIED: { err = FS_PERMISSION_DENIED; } break;
+					case ERROR_SHARING_VIOLATION: { err = FS_PERMISSION_DENIED; } break;
+					/* a directory (it opens only with FILE_FLAG_BACKUP_SEMANTICS) is no file: DirectoryTryOpen opens it */
+					case ERROR_ACCESS_DENIED:
+					{
+						const DWORD attributes = GetFileAttributesW(w_absolute_path);
+						err = (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY))
+							? FS_TYPE_INVALID
+							: FS_PERMISSION_DENIED;
+					} break;
 					case ERROR_DIRECTORY: { err = FS_FILE_IS_NOT_DIRECTORY; } break;
 					default: { err = FS_ERROR_UNSPECIFIED; LogSystemError(S_ERROR); } break;
 				}

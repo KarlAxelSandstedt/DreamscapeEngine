@@ -174,9 +174,9 @@ void 		FileClose(struct file *file);
 enum fsError 	FileTryCreate(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 truncate);
 /* Try create and open a file at the cwd; If the file already exists, it is truncated if truncate is set, otherwise FS_ALREADY_EXISTS is returned. */
 enum fsError 	FileTryCreateAtCwd(struct arena *mem, struct file *file, const char *filename, const u32 truncate);
-/* Try open a file at the given directory, read-only unless writeable; If the file does not exist, FS_PATH_INVALID is returned. */
+/* Try open a file at the given directory, read-only unless writeable; If the file does not exist, FS_PATH_INVALID is returned; a directory gives FS_TYPE_INVALID (DirectoryTryOpen opens those). */
 enum fsError 	FileTryOpen(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 writeable);
-/* Try open a file at the cwd; If the file does not exist, FS_PATH_INVALID is returned. */
+/* Try open a file at the cwd; If the file does not exist, FS_PATH_INVALID is returned; a directory gives FS_TYPE_INVALID. */
 enum fsError 	FileTryOpenAtCwd(struct arena *mem, struct file *file, const char *filename, const u32 writeable);
 
 /*

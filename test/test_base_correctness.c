@@ -1120,6 +1120,13 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
     TEST_EQUAL(FS_SUCCESS, DirectoryTryCreate(mem, &sub, "sub", &dir));
     TEST_EQUAL(FILE_DIRECTORY, sub.type);
     FileClose(&sub);
+
+    /* springclean #173: FileTryOpen refuses a directory (DirectoryTryOpen opens those), read-only or writeable */
+    struct file not_file = FileNull();
+    TEST_EQUAL(FS_TYPE_INVALID, FileTryOpen(mem, &not_file, "sub", &dir, FILE_READ));
+    TEST_EQUAL(FS_TYPE_INVALID, FileTryOpen(mem, &not_file, "sub", &dir, FILE_WRITE));
+    TEST_EQUAL(FILE_HANDLE_INVALID, not_file.handle);
+
     TEST_EQUAL(0, symlinkat("does_not_exist", dir.handle, "dangling"));
 
     ds_CPool(file) entries;
@@ -1326,6 +1333,12 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
     ArenaFree(&tiny_list);
     TEST_EQUAL(FS_BUFFER_TO_SMALL, few_err);
     TEST_TRUE(sub.handle == FILE_HANDLE_INVALID && few_count == 0 && tiny_list_after == tiny_list_left);
+
+    /* #173: FileTryOpen refuses a directory (DirectoryTryOpen opens those), read-only or writeable */
+    struct file not_file = FileNull();
+    TEST_EQUAL(FS_TYPE_INVALID, FileTryOpen(mem, &not_file, "sub", &dir, FILE_READ));
+    TEST_EQUAL(FS_TYPE_INVALID, FileTryOpen(mem, &not_file, "sub", &dir, FILE_WRITE));
+    TEST_EQUAL(FILE_HANDLE_INVALID, not_file.handle);
 
     struct file non_ascii = FileNull();
     TEST_EQUAL(FS_SUCCESS, DirectoryTryCreate(mem, &non_ascii, FS_TEST_NON_ASCII, &dir));

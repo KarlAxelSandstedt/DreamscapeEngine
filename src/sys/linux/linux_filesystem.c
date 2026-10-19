@@ -92,7 +92,7 @@ enum fsError FileTryCreate(struct arena *mem, struct file *file, const char *fil
 	return err;
 }
 
-/* openat with flags; a directory open (O_DIRECTORY) of something else gives FS_TYPE_INVALID; type from fstat */
+/* openat with flags; type from fstat. A directory open (O_DIRECTORY) of something else, and a file open of a directory, give FS_TYPE_INVALID */
 static enum fsError FileTryOpenFlags(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const int flags)
 {
 	ds_Assert(file->handle == FILE_HANDLE_INVALID);
@@ -117,19 +117,30 @@ static enum fsError FileTryOpenFlags(struct arena *mem, struct file *file, const
 				case EBADF: { err = FS_FILE_IS_NOT_DIRECTORY; } break;
 				/* O_DIRECTORY on something else, or a path component is not a directory */
 				case ENOTDIR: { err = (flags & O_DIRECTORY) ? FS_TYPE_INVALID : FS_FILE_IS_NOT_DIRECTORY; } break;
+				/* a directory opened for writing */
+				case EISDIR: { err = FS_TYPE_INVALID; } break;
 				default: { err = FS_ERROR_UNSPECIFIED; } break;
 			}
 		}
-	
+
 	}
 
 	if (err == FS_SUCCESS)
 	{
 		file_status status;
-		file->path = Utf8Cstr(mem, filename);
 		file->type = (FileStatusFile(&status, file) == FS_SUCCESS)
 			? FileStatusGetType(&status)
 			: FILE_UNRECOGNIZED;
+		/* a directory opens read-only, but FileTryOpen opens no directories: DirectoryTryOpen does */
+		if (!(flags & O_DIRECTORY) && file->type == FILE_DIRECTORY)
+		{
+			FileClose(file);
+			err = FS_TYPE_INVALID;
+		}
+		else
+		{
+			file->path = Utf8Cstr(mem, filename);
+		}
 	}
 
 	return err;
