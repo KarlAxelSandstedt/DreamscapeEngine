@@ -376,6 +376,7 @@ struct rayAabb
 	v3u32	sign;		/* sign bit of dir: 1 -> the near slab plane is the box's max */
 };
 
+/* the ray's box-test form: inv_dir and the slab signs from dir (a zero component gives +-inf, see the struct) */
 struct rayAabb  RayAabb(const struct ray *ray);
 /*
  * Return the interval [low, high] of t for which origin + t*dir is in the box (the whole line, t < 0 included);
@@ -408,6 +409,7 @@ struct rayWoop
 	f32	sy;		/* dir[ky] / dir[kz] */
 	f32	sz;		/* 1 / dir[kz] */
 };
+/* the ray's triangle-test form: the shear that maps dir onto +z of (kx, ky, kz); dir must be non-zero */
 struct rayWoop  RayWoop(const struct ray *ray);
 
 /* the first surface hit t >= 0 or F32_INFINITY; the ray in the shape's local frame */
