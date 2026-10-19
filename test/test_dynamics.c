@@ -81,6 +81,9 @@ Pipeline (DynamicsFirstTickTest, DynamicsFlushTest): 101 bodies added to a pipel
 and every contact is coloured (the per-colour body bit sets must have grown with the body pool before the first
 tick). A flushed pipeline is empty, forgets a split it had flagged, and simulates a new scene whose islands reuse
 the old slots and ids.
+
+Numerics config (DynamicsNumericsConfigTest): the defaults' derived values against tan^2, cos and sin^2 of their
+angles; out-of-range pending values clamped into the applied and the pending fields; the global set and cleared.
 */
 
 #define DYNAMICS_TEST_SETTLE_TICKS      120     /* 2 s at 60 Hz */
@@ -1695,6 +1698,43 @@ static struct test_Output DynamicsFlushTest(struct test_Environment *env)
     return output;
 }
 
+/* the numerics config's push: pending values clamped and applied, the derived values from the applied angles (file comment) */
+static struct test_Output DynamicsNumericsConfigTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+    struct ds_NumericsConfig *global_before = g_numerics_config;
+
+    /* the defaults and their derived values (tan^2 2.86, cos 3.62, sin^2 0.5 degrees) */
+    struct ds_NumericsConfig config = ds_NumericsConfigDefault();
+    ds_NumericsConfigPush(&config);
+    TEST_NOT_ZERO(g_numerics_config == &config);
+    TEST_NOT_ZERO(config.dbvh_reinsert_threshold == config.dbvh_reinsert_threshold_pending && config.gjk_max_iterations == config.gjk_max_iterations_pending && config.gjk_max_iterations >= 1);
+    TEST_NOT_ZERO(F32Abs(config.capsule_parallel_tan_sq - 0.00249579f) < 1e-6f);
+    TEST_NOT_ZERO(F32Abs(config.face_parallel_cos - 0.99800475f) < 1e-6f);
+    TEST_NOT_ZERO(F32Abs(config.edge_parallel_sin_sq - 7.6152422e-5f) < 1e-8f);
+
+    /* out-of-range pending values are clamped into the applied ones and back into the pending ones */
+    config.dbvh_reinsert_threshold_pending = 2.0f;
+    config.gjk_max_iterations_pending = 0;
+    config.capsule_parallel_max_degrees_pending = 90.0f;
+    config.face_parallel_max_degrees_pending = -1.0f;
+    config.edge_parallel_max_degrees_pending = 45.0f;
+    config.sat_face_bias_pending = -1.0f;
+    config.sat_cache_tolerance_pending = 3.0f;
+    ds_NumericsConfigPush(&config);
+    TEST_NOT_ZERO(config.dbvh_reinsert_threshold == 1.0f && config.dbvh_reinsert_threshold_pending == 1.0f);
+    TEST_NOT_ZERO(config.gjk_max_iterations == 1 && config.gjk_max_iterations_pending == 1);
+    TEST_NOT_ZERO(config.capsule_parallel_max_degrees == 45.0f && F32Abs(config.capsule_parallel_tan_sq - 1.0f) < 1e-5f);
+    TEST_NOT_ZERO(config.face_parallel_max_degrees == 0.0f && config.face_parallel_cos == 1.0f);
+    TEST_NOT_ZERO(config.edge_parallel_max_degrees == 45.0f && F32Abs(config.edge_parallel_sin_sq - 0.5f) < 1e-6f);
+    TEST_NOT_ZERO(config.sat_face_bias == 0.0f && config.sat_cache_tolerance == 3.0f);
+
+    ds_NumericsConfigPop();
+    TEST_NOT_ZERO(g_numerics_config == NULL);
+    g_numerics_config = global_before;
+    return output;
+}
+
 static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
 {
     DynamicsRestingBoxTest,
@@ -1712,6 +1752,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsBounceTest,
     DynamicsFirstTickTest,
     DynamicsFlushTest,
+    DynamicsNumericsConfigTest,
 };
 
 struct suite_Correctness m_dynamics_suite =
