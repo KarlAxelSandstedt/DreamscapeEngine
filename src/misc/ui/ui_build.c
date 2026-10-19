@@ -389,7 +389,8 @@ static void TimeUnitConfigGenerate(struct ui_TimelineConfig *config)
 	u64 ns_unit_line_last = (config->ns_interval_end / ns_unit_line_interval) * ns_unit_line_interval;
 	ns_unit_line_last = (ns_unit_line_last < ns_unit_line_first) ? ns_unit_line_first : ns_unit_line_last;
 
-	config->unit_line_count = 1 + (ns_unit_line_last - ns_unit_line_first) / ns_unit_line_interval;
+	/* the interval is >= 2/3 of the preferred one: at most 1 + 3 * unit_line_preferred_count (<= width) */
+	config->unit_line_count = (u32) (1 + (ns_unit_line_last - ns_unit_line_first) / ns_unit_line_interval);
 	config->unit_line_first = ns_unit_line_first;
 	config->unit_line_interval = ns_unit_line_interval;
 
@@ -896,7 +897,7 @@ void ui_TextOp(void)
 	/* ordinary text input  */ 
 	if (replace.len)
 	{
-		const u64 len_left = edit->max_len - edit->len;
+		const u32 len_left = edit->max_len - edit->len;
 		op.str_replace = Utf32Utf8(g_ui->mem_frame, replace);
 		if (len_left < op.str_replace.len)
 		{
@@ -1053,7 +1054,7 @@ void ui_TextOp(void)
 
 	/* apply text operation */
 	const u32 intv_len = op.high - op.low;
-	u64 new_len = edit->len;
+	u32 new_len = edit->len;
 
 	/* downward shift text above selected range to tightly pack with replacement string */
 	if (op.str_replace.len < intv_len)
