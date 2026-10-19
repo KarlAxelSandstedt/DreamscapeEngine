@@ -63,6 +63,13 @@ static-dynamic contacts, dynamic colours dynamic-dynamic ones, one contact per d
 colour's body bits mark exactly its dynamic bodies), the slab fills every dynamic colour and the rest of its
 contacts are serial. Removing the slab clears its bits and keeps the rest coloured; once the small boxes
 have landed on the ground, only the row's two contacts are in dynamic colours and none is serial.
+
+Joints (DynamicsJointTest; the finished bookkeeping only, agent_notes/joint_design.txt has the rest): a
+static-dynamic and a dynamic-dynamic joint found by id and not by a dead generation or the null id, in both
+bodies' lists, coloured static and dynamic with their sims pointing back and the local frames copied; a removal
+by id empties the lists, the colour and the lookup, a second one is a no-op; a reused slot gets a new
+generation; a body's removal takes its joints. No tick runs with a joint alive (the joints are not in any
+island yet, which the debug validation would catch).
 */
 
 #define DYNAMICS_TEST_SETTLE_TICKS      120     /* 2 s at 60 Hz */
@@ -1348,6 +1355,95 @@ static struct test_Output DynamicsGraphTest(struct test_Environment *env)
     return output;
 }
 
+static u32 JointTestV3Equal(const v3 a, const v3 b)
+{
+    return a.x == b.x && a.y == b.y && a.z == b.z;
+}
+
+/* the joint bookkeeping that is finished: add, lookup, remove (file comment) */
+static struct test_Output DynamicsJointTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 0;
+
+    const v3 hw = V3(0.5f, 0.5f, 0.5f);
+    const struct dynamics_TestBox scene[3] =
+    {
+        { .position = V3(0.0f, -1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(8.0f, 1.0f, 8.0f), .dynamic = 0, .friction = 0.5f },
+        { .position = V3(-2.0f, 3.0f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+        { .position = V3(2.0f, 3.0f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+    };
+    ds_BodyId id[3];
+    for (u32 i = 0; i < 3; ++i)
+    {
+        id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
+    }
+    const struct ds_Body *ground = ds_BodyLookup(&pipeline, id[0]).address;
+    const struct ds_Body *a = ds_BodyLookup(&pipeline, id[1]).address;
+    const struct ds_Body *b = ds_BodyLookup(&pipeline, id[2]).address;
+    const u32 index[3] = { ds_BodyLookup(&pipeline, id[0]).index, ds_BodyLookup(&pipeline, id[1]).index, ds_BodyLookup(&pipeline, id[2]).index };
+
+    /* a static-dynamic joint and a dynamic-dynamic one: found by id, in both bodies' lists, coloured with their sims pointing back */
+    const ds_Transform frame_ground = { .rotation = QIdentity(), .position = V3(-2.0f, 1.0f, 0.0f) };
+    const ds_Transform frame_a = { .rotation = QUnitAxisAngle(V3(0.0f, 1.0f, 0.0f), 0.5f), .position = V3(0.0f, -0.5f, 0.0f) };
+    const ds_Transform frame_b = { .rotation = QIdentity(), .position = V3(-0.5f, 0.0f, 0.0f) };
+    const ds_JointId j0 = ds_JointAdd(&pipeline, id[0], &frame_ground, id[1], &frame_a);
+    const ds_JointId j1 = ds_JointAdd(&pipeline, id[1], &frame_a, id[2], &frame_b);
+    TEST_NOT_ZERO(j0 != DS_ID_NULL && j1 != DS_ID_NULL && j0 != j1);
+    TEST_NOT_ZERO(ds_JointAdd(&pipeline, id[0], &frame_ground, DS_ID_NULL, &frame_a) == DS_ID_NULL);
+    TEST_NOT_ZERO(ds_JointLookup(&pipeline, DS_ID_NULL).address == NULL);
+    TEST_NOT_ZERO(ds_JointLookup(&pipeline, j0 + DS_ID_GENERATION_INCREMENT).address == NULL);
+    const struct slot s0 = ds_JointLookup(&pipeline, j0);
+    const struct slot s1 = ds_JointLookup(&pipeline, j1);
+    TEST_NOT_ZERO(s0.address != NULL && s1.address != NULL && s0.index == ds_IdIndex(j0) && s1.index == ds_IdIndex(j1));
+    const struct ds_Joint *joint0 = s0.address;
+    const struct ds_Joint *joint1 = s1.address;
+    TEST_NOT_ZERO(joint0->body[0] == index[0] && joint0->body[1] == index[1] && joint1->body[0] == index[1] && joint1->body[1] == index[2]);
+    TEST_NOT_ZERO(ground->joint_list.count == 1 && a->joint_list.count == 2 && b->joint_list.count == 1);
+    TEST_NOT_ZERO(joint0->set == SOLVER_SET_NULL && joint0->color <= CG_STATIC_COLOR_LAST);
+    TEST_NOT_ZERO(joint1->set == SOLVER_SET_NULL && CG_DYNAMIC_COLOR_FIRST <= joint1->color && joint1->color <= CG_DYNAMIC_COLOR_LAST);
+    const struct ds_JointSim *sim0 = pipeline.cgraph.color[joint0->color].joint_sim_pool.buf + joint0->sim;
+    const struct ds_JointSim *sim1 = pipeline.cgraph.color[joint1->color].joint_sim_pool.buf + joint1->sim;
+    TEST_NOT_ZERO(sim0->joint == s0.index && sim1->joint == s1.index);
+    TEST_NOT_ZERO(JointTestV3Equal(sim0->local_frame[0].position, frame_ground.position) && JointTestV3Equal(sim0->local_frame[1].position, frame_a.position));
+    TEST_NOT_ZERO(sim1->local_frame[0].rotation.x == frame_a.rotation.x && sim1->local_frame[0].rotation.w == frame_a.rotation.w && JointTestV3Equal(sim1->local_frame[1].position, frame_b.position));
+
+    /* removing one by id: gone from the lists, its colour and the lookup; a second removal is a no-op */
+    const u32 colour0 = joint0->color;
+    ds_JointRemove(&pipeline, j0);
+    TEST_NOT_ZERO(ds_JointLookup(&pipeline, j0).address == NULL && ds_JointLookup(&pipeline, j1).address == joint1);
+    TEST_NOT_ZERO(ground->joint_list.count == 0 && a->joint_list.count == 1 && b->joint_list.count == 1);
+    TEST_NOT_ZERO(pipeline.cgraph.color[colour0].joint_sim_pool.count == 0 && pipeline.joint_pool.count == 1);
+    ds_JointRemove(&pipeline, j0);
+    TEST_NOT_ZERO(pipeline.joint_pool.count == 1 && a->joint_list.first == (i32) s1.index);
+
+    /* a reused slot gets a new generation; removing a body takes its joints */
+    const ds_JointId j2 = ds_JointAdd(&pipeline, id[0], &frame_ground, id[2], &frame_b);
+    TEST_NOT_ZERO(ds_IdIndex(j2) == ds_IdIndex(j0) && j2 != j0 && ds_JointLookup(&pipeline, j0).address == NULL);
+    TEST_NOT_ZERO(b->joint_list.count == 2 && ground->joint_list.count == 1);
+    ds_BodyRemove(&mem, &pipeline, id[2]);
+    TEST_NOT_ZERO(pipeline.joint_pool.count == 0 && ground->joint_list.count == 0 && a->joint_list.count == 0);
+    TEST_NOT_ZERO(ds_JointLookup(&pipeline, j1).address == NULL && ds_JointLookup(&pipeline, j2).address == NULL);
+    for (u32 c = 0; c < CG_COLOR_COUNT; ++c)
+    {
+        TEST_NOT_ZERO(pipeline.cgraph.color[c].joint_sim_pool.count == 0);
+    }
+
+    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
 {
     DynamicsRestingBoxTest,
@@ -1360,6 +1456,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsIslandTest,
     DynamicsSleepTest,
     DynamicsGraphTest,
+    DynamicsJointTest,
 };
 
 struct suite_Correctness m_dynamics_suite =
