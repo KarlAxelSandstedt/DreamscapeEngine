@@ -551,8 +551,8 @@ struct assetFont *AssetRequestFont(struct arena *tmp, const enum fontId id)
 
 const struct fontGlyph *GlyphLookup(const struct font *font, const u32 codepoint)
 {
-	const struct fontGlyph *g;
-	u32 index = ds_HashMapFirst(&font->codepoint_to_glyph_map, codepoint);	
+	const struct fontGlyph *g = NULL;
+	u32 index = ds_HashMapFirst(&font->codepoint_to_glyph_map, codepoint);
 	for (; index != HASH_NULL; index = ds_HashMapNext(&font->codepoint_to_glyph_map, index))
 	{
 		g = font->glyph + index;

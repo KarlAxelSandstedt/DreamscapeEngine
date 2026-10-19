@@ -39,32 +39,80 @@ static enum fsError WAbsolutePathFromRelativePathAndDirectory(WCHAR w_absolute_p
 	if (!len_relative)
 	{
 		LogSystemError(S_ERROR);
-		return FS_HANDLE_INVALID;
+		return FS_PATH_INVALID;
 	}
 
 	if (dir == NULL)
 	{
 		const DWORD len_absolute = GetFullPathNameW(w_relative_path, MAX_PATH, w_absolute_path, NULL);
-		if (len_absolute == 0 || MAX_PATH <= len_absolute)
+		if (len_absolute == 0)
 		{
 			LogSystemError(S_ERROR);
-			return FS_HANDLE_INVALID;
+			return FS_PATH_INVALID;
 		}
-		return FS_SUCCESS;
+
+		/* the path did not fit: len_absolute is the size required */
+		return (len_absolute < MAX_PATH) ? FS_SUCCESS : FS_PATH_INVALID;
 	}
 
-	if (!GetFinalPathNameByHandleW(dir->handle, w_directory_path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS))
+	const DWORD len_directory = GetFinalPathNameByHandleW(dir->handle, w_directory_path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+	if (len_directory == 0)
 	{
 		LogSystemError(S_ERROR);
 		return FS_HANDLE_INVALID;
 	}
 
+	/* the path did not fit: len_directory is the size required, and nothing was written */
+	if (MAX_PATH <= len_directory)
+	{
+		return FS_PATH_INVALID;
+	}
+
 	if (PathCchCombine(w_absolute_path, MAX_PATH, w_directory_path, w_relative_path) != S_OK)
 	{
-		return FS_HANDLE_INVALID;
+		return FS_PATH_INVALID;
 	}
 
 	return FS_SUCCESS;
+}
+
+/* status of an open file; a handle opened through a link is its target's, as Linux's fstat */
+static u32 WStatusFromHandle(file_status *status, const HANDLE handle)
+{
+	BY_HANDLE_FILE_INFORMATION info;
+	if (!GetFileInformationByHandle(handle, &info))
+	{
+		return 0;
+	}
+
+	status->dwFileAttributes = info.dwFileAttributes;
+	status->ftCreationTime = info.ftCreationTime;
+	status->ftLastAccessTime = info.ftLastAccessTime;
+	status->ftLastWriteTime = info.ftLastWriteTime;
+	status->nFileSizeHigh = info.nFileSizeHigh;
+	status->nFileSizeLow = info.nFileSizeLow;
+	return 1;
+}
+
+/* status of what w_path names, links followed (Linux's fstatat); 0 if nothing opens there (a dangling link) */
+static u32 WStatusFollowLinks(file_status *status, const WCHAR *w_path)
+{
+	/* no access: attributes only; FILE_FLAG_BACKUP_SEMANTICS opens directories too */
+	const HANDLE handle = CreateFileW(w_path
+			, 0
+			, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE
+			, NULL
+			, OPEN_EXISTING
+			, FILE_FLAG_BACKUP_SEMANTICS
+			, NULL);
+	if (handle == INVALID_HANDLE_VALUE)
+	{
+		return 0;
+	}
+
+	const u32 success = WStatusFromHandle(status, handle);
+	CloseHandle(handle);
+	return success;
 }
 
 u32 SystemAdminCheck(void)
@@ -74,8 +122,15 @@ u32 SystemAdminCheck(void)
 
 u32 Utf8PathRelativeCheck(const utf8 path)
 {
+	/* as on Linux; MultiByteToWideChar fails on 0 bytes */
+	if (path.size == 0)
+	{
+		return 1;
+	}
+
 	const u32 req_size = (u32) Utf8SizeRequired(path);
-	WCHAR w_path[MAX_PATH];
+	/* + 1: the terminator after MAX_PATH converted units */
+	WCHAR w_path[MAX_PATH + 1];
 	const int len_relative = MultiByteToWideChar(CP_UTF8, 0, (char *) path.buf, req_size, w_path, MAX_PATH);
 	u32 relative = 0;
 	if (!len_relative)
@@ -119,7 +174,7 @@ enum fsError FileTryCreate(struct arena *mem, struct file *file, const char *fil
 
 			file->handle = CreateFileW(w_absolute_path
 				, GENERIC_READ | GENERIC_WRITE
-				, FILE_SHARE_READ
+				, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE
 				, NULL
 				, creationDisposition
 				, FILE_ATTRIBUTE_NORMAL
@@ -134,6 +189,7 @@ enum fsError FileTryCreate(struct arena *mem, struct file *file, const char *fil
 					case ERROR_ALREADY_EXISTS: { err = FS_ALREADY_EXISTS; } break;
 					case ERROR_FILE_NOT_FOUND:
 					case ERROR_PATH_NOT_FOUND: { err = FS_PATH_INVALID; } break;
+					case ERROR_SHARING_VIOLATION:
 					case ERROR_ACCESS_DENIED: { err = FS_PERMISSION_DENIED; } break;
 					case ERROR_DIRECTORY: { err = FS_FILE_IS_NOT_DIRECTORY; } break;
 					default: { err = FS_ERROR_UNSPECIFIED; LogSystemError(S_ERROR); } break;
@@ -178,7 +234,7 @@ enum fsError FileTryOpen(struct arena *mem, struct file *file, const char *filen
 
 			file->handle = CreateFileW(w_absolute_path
 				, desiredAccess
-				, FILE_SHARE_READ
+				, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE
 				, NULL
 				, OPEN_EXISTING
 				, FILE_ATTRIBUTE_NORMAL
@@ -190,7 +246,15 @@ enum fsError FileTryOpen(struct arena *mem, struct file *file, const char *filen
 				{
 					case ERROR_FILE_NOT_FOUND:
 					case ERROR_PATH_NOT_FOUND: { err = FS_PATH_INVALID; } break;
-					case ERROR_ACCESS_DENIED: { err = FS_PERMISSION_DENIED; } break;
+					case ERROR_SHARING_VIOLATION: { err = FS_PERMISSION_DENIED; } break;
+					/* a directory (it opens only with FILE_FLAG_BACKUP_SEMANTICS) is no file: DirectoryTryOpen opens it */
+					case ERROR_ACCESS_DENIED:
+					{
+						const DWORD attributes = GetFileAttributesW(w_absolute_path);
+						err = (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY))
+							? FS_TYPE_INVALID
+							: FS_PERMISSION_DENIED;
+					} break;
 					case ERROR_DIRECTORY: { err = FS_FILE_IS_NOT_DIRECTORY; } break;
 					default: { err = FS_ERROR_UNSPECIFIED; LogSystemError(S_ERROR); } break;
 				}
@@ -232,7 +296,7 @@ enum fsError DirectoryTryCreate(struct arena *mem, struct file *dir, const char 
 			{
 				dir->handle = CreateFileW(w_absolute_path
 					, GENERIC_READ | FILE_LIST_DIRECTORY
-					, FILE_SHARE_READ
+					, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE
 					, NULL
 					, OPEN_EXISTING
 					, FILE_FLAG_BACKUP_SEMANTICS
@@ -246,6 +310,7 @@ enum fsError DirectoryTryCreate(struct arena *mem, struct file *dir, const char 
 					case ERROR_ALREADY_EXISTS: { err = FS_ALREADY_EXISTS; } break;
 					case ERROR_FILE_NOT_FOUND:
 					case ERROR_PATH_NOT_FOUND: { err = FS_PATH_INVALID; } break;
+					case ERROR_SHARING_VIOLATION:
 					case ERROR_ACCESS_DENIED: { err = FS_PERMISSION_DENIED; } break;
 					case ERROR_DIRECTORY: { err = FS_FILE_IS_NOT_DIRECTORY; } break;
 					default: { err = FS_ERROR_UNSPECIFIED; LogSystemError(S_ERROR); } break;
@@ -286,7 +351,7 @@ enum fsError DirectoryTryOpen(struct arena *mem, struct file *dir, const char *f
 		{
 			dir->handle = CreateFileW(w_absolute_path
 				, GENERIC_READ | FILE_LIST_DIRECTORY
-				, FILE_SHARE_READ
+				, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE
 				, NULL
 				, OPEN_EXISTING
 				, FILE_FLAG_BACKUP_SEMANTICS
@@ -298,9 +363,29 @@ enum fsError DirectoryTryOpen(struct arena *mem, struct file *dir, const char *f
 				{
 					case ERROR_FILE_NOT_FOUND:
 					case ERROR_PATH_NOT_FOUND: { err = FS_PATH_INVALID; } break;
+					case ERROR_SHARING_VIOLATION:
 					case ERROR_ACCESS_DENIED: { err = FS_PERMISSION_DENIED; } break;
 					case ERROR_DIRECTORY: { err = FS_FILE_IS_NOT_DIRECTORY; } break;
 					default: { err = FS_ERROR_UNSPECIFIED; LogSystemError(S_ERROR); } break;
+				}
+			}
+			else
+			{
+				/* FILE_FLAG_BACKUP_SEMANTICS opens regular files too */
+				BY_HANDLE_FILE_INFORMATION info;
+				if (!GetFileInformationByHandle(dir->handle, &info))
+				{
+					err = FS_ERROR_UNSPECIFIED;
+					LogSystemError(S_ERROR);
+				}
+				else if (!(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+				{
+					err = FS_TYPE_INVALID;
+				}
+
+				if (err != FS_SUCCESS)
+				{
+					FileClose(dir);
 				}
 			}
 		}
@@ -320,15 +405,21 @@ enum fsError DirectoryTryOpenAtCwd(struct arena *mem, struct file *dir, const ch
 	return DirectoryTryOpen(mem, dir, filename, NULL); 
 }
 
+/* ReadFile and WriteFile take a DWORD size */
+#define FILE_IO_CHUNK_MAX	(1u << 30)
+
 struct dsBuffer FileDump(struct arena *mem, const char *path, const struct file *dir)
 {
+	/* FileTryOpen copies the path onto mem: pop it, only the contents stay */
+	const struct arena record = *mem;
 	struct file file = FileNull();
-	struct dsBuffer buf = { 0 };
 	if (FileTryOpen(mem, &file, path, dir, FILE_READ) != FS_SUCCESS)
 	{
-		return buf;
+		return ds_buffer_empty;
 	}
+	*mem = record;
 
+	struct dsBuffer buf = ds_buffer_empty;
 	LARGE_INTEGER size;
 	if (!GetFileSizeEx(file.handle, &size))
 	{
@@ -336,23 +427,30 @@ struct dsBuffer FileDump(struct arena *mem, const char *path, const struct file 
 	}
 	else
 	{
-		buf.data = ArenaPush(mem, size.QuadPart);
-		if (buf.data)
+		buf.data = ArenaPush(mem, (u64) size.QuadPart);
+		buf.size = (buf.data) ? (u64) size.QuadPart : 0;
+		u64 bytes_read = 0;
+		while (bytes_read < buf.size)
 		{
-			DWORD bytes_read;
-			buf.size = size.QuadPart;
-			ds_Assert(size.QuadPart <= U32_MAX);
-			if (!ReadFile(file.handle, buf.data, (u32) buf.size, &bytes_read, NULL))
+			const DWORD chunk = (DWORD) ((buf.size - bytes_read < FILE_IO_CHUNK_MAX) ? buf.size - bytes_read : FILE_IO_CHUNK_MAX);
+			DWORD count;
+			if (!ReadFile(file.handle, buf.data + bytes_read, chunk, &count, NULL))
 			{
 				LogSystemError(S_ERROR);
-				buf.data = NULL;
-				buf.size = 0;
+				buf = ds_buffer_empty;
+				*mem = record;
+				break;
 			}
-			else
+
+			/* end of file before the size: the file shrank meanwhile, keep what was read */
+			if (count == 0)
 			{
-				ds_Assert(bytes_read == buf.size);
+				buf.size = bytes_read;
+				break;
 			}
+			bytes_read += count;
 		}
+		buf.mem_left = buf.size;
 	}
 	
 	FileClose(&file);
@@ -384,12 +482,9 @@ void FileClose(struct file *file)
 	{
 		LogSystemError(S_ERROR);
 	}
-	file->handle = FILE_HANDLE_INVALID;
+	*file = FileNull();
 }
 
-
-/* WriteFile takes a DWORD size */
-#define FILE_WRITE_CHUNK_MAX	(1u << 30)
 
 /* as on Linux: no sync (FileSync), writing past the end extends the file */
 u64 FileWriteOffset(const struct file *file, const u8 *buf, const u64 size, const u64 offset)
@@ -406,7 +501,7 @@ u64 FileWriteOffset(const struct file *file, const u8 *buf, const u64 size, cons
 	u64 total = 0;
 	while (total < size)
 	{
-		const DWORD chunk = (DWORD) ((size - total < FILE_WRITE_CHUNK_MAX) ? size - total : FILE_WRITE_CHUNK_MAX);
+		const DWORD chunk = (DWORD) ((size - total < FILE_IO_CHUNK_MAX) ? size - total : FILE_IO_CHUNK_MAX);
 		DWORD count;
 		if (!WriteFile(file->handle, buf + total, chunk, &count, NULL))
 		{
@@ -434,7 +529,7 @@ u64 FileWriteAppend(const struct file *file, const u8 *buf, const u64 size)
 	u64 total = 0;
 	while (total < size)
 	{
-		const DWORD chunk = (DWORD) ((size - total < FILE_WRITE_CHUNK_MAX) ? size - total : FILE_WRITE_CHUNK_MAX);
+		const DWORD chunk = (DWORD) ((size - total < FILE_IO_CHUNK_MAX) ? size - total : FILE_IO_CHUNK_MAX);
 		DWORD count;
 		if (!WriteFile(file->handle, buf + total, chunk, &count, NULL))
 		{
@@ -458,8 +553,8 @@ void FileSync(const struct file *file)
 }
 
 
-void *FileMemoryMap(u64 *size, const struct file *file, const u32 prot, const u32 garbage)
-{ 
+void *FileMemoryMap(u64 *size, const struct file *file, const u32 prot, const u32 flags)
+{
 	LARGE_INTEGER l_size;
 	void *map = NULL;
 	*size = 0;
@@ -470,14 +565,27 @@ void *FileMemoryMap(u64 *size, const struct file *file, const u32 prot, const u3
 	else
 	{
 		*size = l_size.QuadPart;
-		map = FileMemoryMapPartial(file, 0, 0, prot, garbage);
+		map = FileMemoryMapPartial(file, 0, 0, prot, flags);
 	}
 
 	return map;
 }
 
-void *FileMemoryMapPartial(const struct file *file, const u64 length, const u64 offset, const u32 prot, const u32 garbage)
+void *FileMemoryMapPartial(const struct file *file, const u64 length, const u64 offset, const u32 prot, const u32 flags)
 {
+	/* an execute view needs a file opened for execution, and a view without access fails */
+	if ((prot & FS_PROT_EXECUTE) || prot == FS_PROT_NONE)
+	{
+		LogString(T_SYSTEM, S_ERROR, "FileMemoryMapPartial: FS_PROT_EXECUTE and FS_PROT_NONE are not supported on Windows");
+		return NULL;
+	}
+
+	/* the section's protection and the view's access; a private view copies on write */
+	const u32 write = (prot & FS_PROT_WRITE) != 0;
+	const u32 copy_on_write = write && (flags & FS_MAP_PRIVATE);
+	const DWORD protection = (!write) ? PAGE_READONLY : (copy_on_write) ? PAGE_WRITECOPY : PAGE_READWRITE;
+	const DWORD access = (!write) ? FILE_MAP_READ : (copy_on_write) ? FILE_MAP_COPY : FILE_MAP_WRITE;
+
 	SYSTEM_INFO info;
 	GetSystemInfo(&info);
 	DWORD new_size_low = 0;
@@ -492,15 +600,23 @@ void *FileMemoryMapPartial(const struct file *file, const u64 length, const u64 
 		}
 		else if ((u64) l_size.QuadPart < offset + length)
 		{
-			new_size_high = (u32) ((offset + length) >> 32);
-			new_size_low = (u32) (offset + length);
+			/*
+			 * a shared writeable section grows the file itself; a read-only or private one can't, so the file
+			 * grows first then, as on Linux (SetEndOfFile fails while another view of the file is mapped)
+			 */
+			if (protection == PAGE_READWRITE)
+			{
+				new_size_high = (u32) ((offset + length) >> 32);
+				new_size_low = (u32) (offset + length);
+			}
+			else if (!FileSetSize(file, offset + length))
+			{
+				return NULL;
+			}
 		}
 	}
 	void *map = NULL;
-	const DWORD map_prot = ((prot & (FILE_MAP_READ | FILE_MAP_WRITE)) == (FILE_MAP_READ | FILE_MAP_WRITE))
-		? PAGE_READWRITE
-		: PAGE_READONLY;
-	HANDLE handle = CreateFileMappingA(file->handle, NULL, map_prot, new_size_high, new_size_low, NULL);
+	HANDLE handle = CreateFileMappingA(file->handle, NULL, protection, new_size_high, new_size_low, NULL);
 	if (handle == NULL)
 	{
 		LogSystemError(S_ERROR);
@@ -510,7 +626,7 @@ void *FileMemoryMapPartial(const struct file *file, const u64 length, const u64 
 		const DWORD mod = offset % info.dwAllocationGranularity;
 		const DWORD offset_high = (u32) ((offset-mod) >> 32);
 		const DWORD offset_low = (u32) (offset-mod);
-		map = MapViewOfFileEx(handle, prot, offset_high, offset_low, length + mod, NULL);
+		map = MapViewOfFileEx(handle, access, offset_high, offset_low, length + mod, NULL);
 
 		if (map == NULL)
 		{
@@ -563,63 +679,110 @@ utf8 CwdGet(struct arena *mem)
 {
 	utf8 str = Utf8Empty();
 
-	const DWORD req_size = GetCurrentDirectory(0, NULL);
-	void *buf = ArenaPush(mem, req_size);
+	/* the W form: the A form returns the ANSI code page, not UTF-8 */
+	WCHAR w_path[MAX_PATH];
+	const DWORD w_len = GetCurrentDirectoryW(MAX_PATH, w_path);
+	if (w_len == 0)
+	{
+		LogSystemError(S_ERROR);
+		return str;
+	}
+
+	/* the path did not fit: w_len is the size required */
+	if (MAX_PATH <= w_len)
+	{
+		LogString(T_SYSTEM, S_ERROR, "CwdGet: the working directory is longer than MAX_PATH");
+		return str;
+	}
+
+	const int size = WideCharToMultiByte(CP_UTF8, 0, w_path, (int) w_len, NULL, 0, NULL, NULL);
+	if (size == 0)
+	{
+		LogSystemError(S_ERROR);
+		return str;
+	}
+
+	/* terminated, as GetCurrentDirectory left it */
+	u8 *buf = ArenaPush(mem, (u64) size + 1);
 	if (buf)
 	{
-		const DWORD len = GetCurrentDirectory(req_size, buf);
-		if (len)
+		WideCharToMultiByte(CP_UTF8, 0, w_path, (int) w_len, (char *) buf, size, NULL, NULL);
+		buf[size] = '\0';
+		str = (utf8) { .buf = buf, .size = (u32) size, .len = 0 };
+		for (u64 offset = 0; offset < str.size; str.len += 1)
 		{
-			/* len bytes (ANSI, not necessarily UTF-8): count the codepoints as decoding reads them */
-			str = (utf8) { .buf = buf, .size = (u32) len, .len = 0 };
-			for (u64 offset = 0; offset < str.size; str.len += 1)
-			{
-				Utf8ReadCodepoint(&offset, &str, offset);
-			}
-		}
-		else
-		{
-			LogSystemError(S_ERROR);
+			Utf8ReadCodepoint(&offset, &str, offset);
 		}
 	}
-	
 
 	return str;
 }
 
 enum fsError CwdSet(struct arena *mem, const char *path)
 {
-	enum fsError err = FS_SUCCESS;
-	HANDLE handle = CreateFileA((char *) path
+	WCHAR w_path[MAX_PATH];
+	if (!MultiByteToWideChar(CP_UTF8, 0, path, -1, w_path, MAX_PATH))
+	{
+		LogSystemError(S_ERROR);
+		return FS_PATH_INVALID;
+	}
+
+	HANDLE handle = CreateFileW(w_path
 			, GENERIC_READ
 			, FILE_SHARE_READ | FILE_SHARE_WRITE
 			, NULL
 			, OPEN_EXISTING
 			, FILE_FLAG_BACKUP_SEMANTICS
 			, NULL);
-	
+
+	enum fsError err = FS_SUCCESS;
 	if (handle == INVALID_HANDLE_VALUE)
 	{
-		g_sys_env->cwd.handle = FILE_HANDLE_INVALID;
+		switch (GetLastError())
+		{
+			case ERROR_FILE_NOT_FOUND:
+			case ERROR_PATH_NOT_FOUND: { err = FS_PATH_INVALID; } break;
+			case ERROR_ACCESS_DENIED: { err = FS_PERMISSION_DENIED; } break;
+			default: { err = FS_ERROR_UNSPECIFIED; LogSystemError(S_ERROR); } break;
+		}
+		return err;
+	}
+
+	/* FILE_FLAG_BACKUP_SEMANTICS opens regular files too */
+	BY_HANDLE_FILE_INFORMATION info;
+	if (!GetFileInformationByHandle(handle, &info))
+	{
 		err = FS_ERROR_UNSPECIFIED;
 		LogSystemError(S_ERROR);
 	}
-	else
+	else if (!(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
 	{
-		if (!SetCurrentDirectory((char *) path))
+		err = FS_PATH_INVALID;
+	}
+	else if (!SetCurrentDirectoryW(w_path))
+	{
+		switch (GetLastError())
 		{
-			/* We shouldn't use the underlying system cwd; instead, all *_at_cwd operations
-			 * go through g_sys_env on windows, so a WARNING is sufficient. */
-			err = FS_ERROR_UNSPECIFIED;
-			LogSystemError(S_WARNING);
+			case ERROR_ACCESS_DENIED: { err = FS_PERMISSION_DENIED; } break;
+			default: { err = FS_ERROR_UNSPECIFIED; LogSystemError(S_ERROR); } break;
 		}
-
-		g_sys_env->cwd.handle = handle;
-		g_sys_env->cwd.type = FILE_DIRECTORY;
-		g_sys_env->cwd.path = CwdGet(mem);	
 	}
 
-	return err;
+	/* g_sys_env->cwd changes only on success */
+	if (err != FS_SUCCESS)
+	{
+		if (!CloseHandle(handle))
+		{
+			LogSystemError(S_ERROR);
+		}
+		return err;
+	}
+
+	g_sys_env->cwd.handle = handle;
+	g_sys_env->cwd.type = FILE_DIRECTORY;
+	g_sys_env->cwd.path = CwdGet(mem);
+
+	return FS_SUCCESS;
 }
 
 enum fsError DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct file *dir)
@@ -627,6 +790,7 @@ enum fsError DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct
 	WCHAR w_path[MAX_PATH];
 	if (WAbsolutePathFromRelativePathAndDirectory(w_path, "*", dir) != FS_SUCCESS)
 	{
+		FileClose(dir);
 		return FS_ERROR_UNSPECIFIED;
 	}
 
@@ -635,6 +799,7 @@ enum fsError DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct
 	if (handle == INVALID_HANDLE_VALUE)
 	{
 		LogSystemError(S_ERROR);
+		FileClose(dir);
 		return FS_ERROR_UNSPECIFIED;
 	}
 	
@@ -643,7 +808,6 @@ enum fsError DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct
 	const u32 vec_record = vec->count;
 
 	enum fsError ret = FS_SUCCESS;
-	file_status status;
 	char cstr_filename[4*MAX_PATH];
 	do
 	{
@@ -658,16 +822,38 @@ enum fsError DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct
 		}
 
 		file->path = Utf8Cstr(mem, cstr_filename);
-		if (FileStatusPath(&status, cstr_filename, dir) != FS_SUCCESS)
+		if (file->path.len == 0)
 		{
-			ret = FS_ERROR_UNSPECIFIED;
+			ret = FS_BUFFER_TO_SMALL;
 			break;
 		}
 
-		file->type = FileStatusGetType(&status);
-
-
+		/*
+		 * the listing's own attributes: no second lookup that can fail (pagefile.sys, an entry removed meanwhile);
+		 * but a link counts as its target, as on Linux, and a dangling link as unrecognized
+		 */
+		file_status status = { .dwFileAttributes = file_info.dwFileAttributes };
+		const u32 link = (file_info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)
+			&& (file_info.dwReserved0 == IO_REPARSE_TAG_SYMLINK || file_info.dwReserved0 == IO_REPARSE_TAG_MOUNT_POINT);
+		if (link)
+		{
+			WCHAR w_entry[MAX_PATH];
+			file->type = (WAbsolutePathFromRelativePathAndDirectory(w_entry, cstr_filename, dir) == FS_SUCCESS
+					&& WStatusFollowLinks(&status, w_entry))
+				? FileStatusGetType(&status)
+				: FILE_UNRECOGNIZED;
+		}
+		else
+		{
+			file->type = FileStatusGetType(&status);
+		}
 	} while (FindNextFileW(handle, &file_info) != 0);
+
+	if (ret == FS_SUCCESS && GetLastError() != ERROR_NO_MORE_FILES)
+	{
+		LogSystemError(S_ERROR);
+		ret = FS_ERROR_UNSPECIFIED;
+	}
 
 	if (ret != FS_SUCCESS)
 	{
@@ -683,30 +869,22 @@ enum fsError DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct
 
 enum fsError FileStatusFile(file_status *status, const struct file *file)
 {
-	WCHAR w_path[MAX_PATH];
-	if (!GetFinalPathNameByHandleW(file->handle, w_path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS))
+	if (!WStatusFromHandle(status, file->handle))
 	{
 		LogSystemError(S_ERROR);
 		return FS_ERROR_UNSPECIFIED;
 	}
 
-	enum fsError err = FS_SUCCESS;
-	if (!GetFileAttributesExW(w_path, GetFileExInfoStandard, status))
-	{
-		LogSystemError(S_ERROR);
-		err = FS_ERROR_UNSPECIFIED;
-	}
-
-	return err;
+	return FS_SUCCESS;
 }
 
 enum fsError FileStatusPath(file_status *status, const char *path, const struct file *dir)
-{	
+{
 	WCHAR w_path[MAX_PATH];
 	enum fsError err = WAbsolutePathFromRelativePathAndDirectory(w_path, path, dir);
 	if (err == FS_SUCCESS)
 	{
-		if (!GetFileAttributesExW(w_path, GetFileExInfoStandard, status))
+		if (!WStatusFollowLinks(status, w_path))
 		{
 			LogSystemError(S_ERROR);
 			err = FS_ERROR_UNSPECIFIED;
@@ -720,15 +898,13 @@ enum fileType FileStatusGetType(const file_status *status)
 {
 	enum fileType type;
 
+	/*
+	 * FileStatusFile/Path give a link's target; any other reparse point (a deduplicated file) is a file or a
+	 * directory like others
+	 */
 	if (status->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
 	{
 		type = FILE_DIRECTORY;
-	}
-	else if (status->dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)
-	{
-		/* reparse point  */
-		type = FILE_UNRECOGNIZED;
-
 	}
 	else if (status->dwFileAttributes & FILE_ATTRIBUTE_DEVICE)
 	{
@@ -743,9 +919,7 @@ enum fileType FileStatusGetType(const file_status *status)
 	return type;
 }
 
-#include <time.h>
-
-void FileTimeToString(FILETIME ft, char* buffer, size_t bufferSize) 
+static void FileTimeToString(FILETIME ft, char* buffer, size_t bufferSize)
 {
 	SYSTEMTIME st;
 	if (!FileTimeToSystemTime(&ft, &st)) 

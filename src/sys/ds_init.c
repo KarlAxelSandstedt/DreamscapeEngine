@@ -256,8 +256,8 @@ static utf8 ds_ConfigFormat(struct arena *mem, const struct ds_Config *config)
 
     /* pieces are appended at bytes; len counts their codepoints (comments may be non-ASCII) */
     utf8 piece = Utf8FormatBuffered(buf, DS_CONFIG_TEXT_MAX, "# DreamscapeEngine config: one \"key: value\" per line, '#' starts a comment\n");
-    u64 bytes = piece.size;
-    u64 len = piece.len;
+    u32 bytes = piece.size;
+    u32 len = piece.len;
     for (u32 field = 0; field < DS_CONFIG_FIELD_COUNT; ++field)
     {
         piece = Utf8FormatBuffered(buf + bytes, DS_CONFIG_TEXT_MAX - bytes, "\n# %s\n%s:", g_config_field[field].comment, g_config_field[field].key);
@@ -286,7 +286,7 @@ static utf8 ds_ConfigFormat(struct arena *mem, const struct ds_Config *config)
         len += piece.len;
     }
 
-    return (utf8) { .buf = buf, .size = (u32) bytes, .len = (u32) len };
+    return (utf8) { .buf = buf, .size = bytes, .len = len };
 }
 
 static void ds_ConfigReportLog(const struct ds_ConfigReport *report, const char *path)

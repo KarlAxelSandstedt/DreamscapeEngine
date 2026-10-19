@@ -43,13 +43,16 @@ Strings
   codepoint as U+FFFD, so utf32 -> utf8 never fails on content, only on a full buffer.
 - A utf8 built by hand must keep that: size = the bytes of exactly len codepoints.
 - utf32: len codepoints in buf[max_len].
+- Sizes, lengths and buffer lengths are u32: a string holds at most U32_MAX bytes or codepoints, and so
+  does a C string passed in (cstr).
 
 Results
 -------
 - ...Buffered(buf, bufsize, ...): writes at most bufsize bytes; size is the bytes written (for utf32,
   max_len is the buffer's length). Too small: an empty string. The formatter instead keeps the tokens
   before the first one that does not fit.
-- Arena versions take exactly the bytes they need; on failure an empty string.
+- Arena versions take exactly the bytes they need (writing into at most U32_MAX of the arena's free
+  bytes); on failure an empty string.
 - Utf8Alloc / Utf8Buffered return an empty string over a buffer; the caller keeps its capacity.
 - Integer parsers return a struct parseRetval: PARSE_SUCCESS and the value, or a failure and 0. F32/F64
   parsers return the correctly rounded value, 0 for empty input.
@@ -156,7 +159,7 @@ f64		F64Cstr(char **new_offset, const char *str);
 /************************************** UTF8 ***************************************/
 
 /* the bytes of the string (utf8.size) */
-u64                 Utf8SizeRequired(const utf8 utf8);
+u32                 Utf8SizeRequired(const utf8 utf8);
 /* Hash utf8 string */
 u32	                Utf8Hash(const utf8 utf8);
 /* return 1 if utf8 contents are equivalent, 0 otherwise */
@@ -176,20 +179,20 @@ void 	            Utf8DebugPrint(const utf8 str);
 
 utf8 	            Utf8Empty(void);
 /* an empty string over bufsize bytes (pushed on mem, or buf); the caller keeps the capacity */
-utf8 	            Utf8Alloc(struct arena *mem, const u64 bufsize);
-utf8 	            Utf8Buffered(u8 buf[], const u64 bufsize);
+utf8 	            Utf8Alloc(struct arena *mem, const u32 bufsize);
+utf8 	            Utf8Buffered(u8 buf[], const u32 bufsize);
 
-utf8 	            Utf8CopyBuffered(u8 buf[], const u64 bufsize, const utf8 str);
-utf8 	            Utf8CopyBufferedAndReturnRequiredSize(u64 *reqsize, u8 buf[], const u64 bufsize, const utf8 str);
-utf8 	            Utf8CstrBuffered(u8 buf[], const u64 bufsize, const char *cstr);
-utf8 	            Utf8F32Buffered(u8 buf[], const u64 bufsize, const u32 decimals, const f32 val);
-utf8 	            Utf8F64Buffered(u8 buf[], const u64 bufsize, const u32 decimals, const f64 val);
-utf8 	            Utf8U64Buffered(u8 buf[], const u64 bufsize, const u64 val);
-utf8 	            Utf8I64Buffered(u8 buf[], const u64 bufsize, const i64 val);
-utf8 	            Utf8Utf32Buffered(u8 buf[], const u64 bufsize, const utf32 str);
-utf8 	            Utf8Utf32BufferedNullTerminated(u8 buf[], const u64 bufsize, const utf32 str);
-utf8 	            Utf8Utf32BufferedAndReturnRequiredSize(u64 *reqsize, u8 buf[], const u64 bufsize, const utf32 str);
-utf8 	            Utf8Utf32BufferedNullTerminatedAndReturnRequiredSize(u64 *reqsize, u8 buf[], const u64 bufsize, const utf32 str);
+utf8 	            Utf8CopyBuffered(u8 buf[], const u32 bufsize, const utf8 str);
+utf8 	            Utf8CopyBufferedAndReturnRequiredSize(u32 *reqsize, u8 buf[], const u32 bufsize, const utf8 str);
+utf8 	            Utf8CstrBuffered(u8 buf[], const u32 bufsize, const char *cstr);
+utf8 	            Utf8F32Buffered(u8 buf[], const u32 bufsize, const u32 decimals, const f32 val);
+utf8 	            Utf8F64Buffered(u8 buf[], const u32 bufsize, const u32 decimals, const f64 val);
+utf8 	            Utf8U64Buffered(u8 buf[], const u32 bufsize, const u64 val);
+utf8 	            Utf8I64Buffered(u8 buf[], const u32 bufsize, const i64 val);
+utf8 	            Utf8Utf32Buffered(u8 buf[], const u32 bufsize, const utf32 str);
+utf8 	            Utf8Utf32BufferedNullTerminated(u8 buf[], const u32 bufsize, const utf32 str);
+utf8 	            Utf8Utf32BufferedAndReturnRequiredSize(u32 *reqsize, u8 buf[], const u32 bufsize, const utf32 str);
+utf8 	            Utf8Utf32BufferedNullTerminatedAndReturnRequiredSize(u32 *reqsize, u8 buf[], const u32 bufsize, const utf32 str);
 
 utf8	            Utf8Copy(struct arena *mem, const utf8 str);
 utf8	            Utf8Cstr(struct arena *mem, const char *cstr);
@@ -244,8 +247,8 @@ u32			Utf8LookupSubstring(struct kmpSubstring *kmp_substring, const utf8 str);
  */
 utf8 			Utf8Format(struct arena *mem, const char *format, ...); 
 utf8 			Utf8FormatVariadic(struct arena *mem, const char *format, va_list args); 
-utf8 			Utf8FormatBuffered(u8 *buf, const u64 bufsize, const char *format, ...); 
-utf8 			Utf8FormatBufferedVariadic(u64 *reqsize, u8 *buf, const u64 bufsize, const char *format, va_list args);
+utf8 			Utf8FormatBuffered(u8 *buf, const u32 bufsize, const char *format, ...);
+utf8 			Utf8FormatBufferedVariadic(u32 *reqsize, u8 *buf, const u32 bufsize, const char *format, va_list args);
 
 /************************************** UTF32 ***************************************/
 
@@ -255,13 +258,13 @@ utf32 			Utf32Empty(void);
 utf32			Utf32Alloc(struct arena *mem, const u32 len);
 utf32			Utf32Buffered(u32 buf[], const u32 len);
 
-utf32			Utf32CopyBuffered(u32 buf[], const u64 buflen, const utf32 str);
-utf32			Utf32CstrBuffered(u32 buf[], const u64 buflen, const char *cstr);
-utf32			Utf32F32Buffered(u32 buf[], const u64 buflen, const u32 decimals, const f32 val);
-utf32			Utf32F64Buffered(u32 buf[], const u64 buflen, const u32 decimals, const f64 val);
-utf32			Utf32U64Buffered(u32 buf[], const u64 buflen, const u64 val);
-utf32			Utf32I64Buffered(u32 buf[], const u64 buflen, const i64 val);
-utf32			Utf32Utf8Buffered(u32 buf[], const u64 buflen, const utf8 str);
+utf32			Utf32CopyBuffered(u32 buf[], const u32 buflen, const utf32 str);
+utf32			Utf32CstrBuffered(u32 buf[], const u32 buflen, const char *cstr);
+utf32			Utf32F32Buffered(u32 buf[], const u32 buflen, const u32 decimals, const f32 val);
+utf32			Utf32F64Buffered(u32 buf[], const u32 buflen, const u32 decimals, const f64 val);
+utf32			Utf32U64Buffered(u32 buf[], const u32 buflen, const u64 val);
+utf32			Utf32I64Buffered(u32 buf[], const u32 buflen, const i64 val);
+utf32			Utf32Utf8Buffered(u32 buf[], const u32 buflen, const utf8 str);
 
 utf32			Utf32Copy(struct arena *mem, const utf32 str);
 utf32			Utf32Cstr(struct arena *mem, const char *cstr);

@@ -653,7 +653,7 @@ static struct test_Output utf8_decode_and_parse_regressions(struct test_Environm
 	/* a len that claims more codepoints than size holds: the size, and so a copy, stops at size */
 	const utf8 lying = { .buf = buf, .size = 2, .len = 10 };
 	TEST_EQUAL(2, Utf8SizeRequired(lying));
-	u64 copied_bytes;
+	u32 copied_bytes;
 	Utf8CopyBufferedAndReturnRequiredSize(&copied_bytes, buf + 16, 32, lying);
 	TEST_EQUAL(2, copied_bytes);
 

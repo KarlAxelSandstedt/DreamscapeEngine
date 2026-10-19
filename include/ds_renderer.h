@@ -54,7 +54,7 @@ DEFINE_SDB(r_Mesh);
  ********************************************************/
 
 /* initiate render state, ns_tick is ns per draw frame, or, if 0, redraw on every r_main() entry,  should be a power of 2 */
-void 	r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u64 core_unit_count, ds_SDB(r_Mesh) *mesh_database);
+void 	r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u32 core_unit_count, ds_SDB(r_Mesh) *mesh_database);
 
 /********************************************************
  *			r_main.c			*
@@ -480,28 +480,6 @@ u32	gl_StateAlloc(struct arena *mem);
 void 	gl_StateDealloc(const u32 gl_state);
 /* set gl state to current global */
 void 	gl_StateSetCurrent(const u32 gl_state);
-
-
-/********************************************************
- *			Some primitives				*
- ********************************************************/
-
-typedef struct r_ColorSegment 
-{
-	struct segment	segment;
-	v4		        color;
-} r_ColorSegment;
-DEFINE_CPOOL_STRUCT(r_ColorSegment);
-
-static inline struct r_ColorSegment	r_ColorSegmentConstruct(const struct segment segment, const v4 color)
-{
-	struct r_ColorSegment visual =
-	{
-		.segment = segment,
-		.color = color,
-	};
-	return visual;
-}
 
 /*
    Some notes in order of development; initial documentation is wrong and should instead be viewed as the thought

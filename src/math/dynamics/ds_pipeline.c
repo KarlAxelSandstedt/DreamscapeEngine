@@ -91,7 +91,6 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
     {
         pipeline->worker[i].frame_arr[0] = ArenaAlloc(NULL, worker_frame_size);
         pipeline->worker[i].frame_arr[1] = ArenaAlloc(NULL, worker_frame_size);
-        ds_CPoolAlloc(NULL, pipeline->worker[i].draw.debug_segment_pool, 4096, GROWABLE);
     }
 
     pipeline->profile_length = 8192;
@@ -156,7 +155,6 @@ void ds_DynamicsFree(struct ds_Dynamics *pipeline)
     {
         ArenaFree(pipeline->worker[i].frame_arr + 0);
         ArenaFree(pipeline->worker[i].frame_arr + 1);
-        ds_CPoolDealloc(pipeline->worker[i].draw.debug_segment_pool);
     }
 
     ds_BitSetDealloc(&pipeline->shape_dynamic_usage_set);
@@ -189,10 +187,6 @@ void ds_DynamicsFree(struct ds_Dynamics *pipeline)
 
 static void ds_DynamicsClearFrame(struct ds_Dynamics *pipeline)
 {
-	for (u32 i = 0; i < pipeline->worker_count; ++i)
-	{
-        ds_CPoolFlush(pipeline->worker[i].draw.debug_segment_pool);
-	}
 	ArenaFlush(&pipeline->frame);
     ds_BitSetClear(&pipeline->island_high_energy_set, 0);
 }
@@ -204,7 +198,6 @@ void ds_DynamicsFlush(struct ds_Dynamics *pipeline)
     {
         ArenaFlush(pipeline->worker[i].frame_arr + 0);
         ArenaFlush(pipeline->worker[i].frame_arr + 1);
-        ds_CPoolFlush(pipeline->worker[i].draw.debug_segment_pool);
     }
 
     memset(pipeline->profile_buf, 0, pipeline->profile_length*sizeof(struct ds_DynamicsProfile));

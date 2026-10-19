@@ -139,7 +139,7 @@ extern "C" {
 #define DS_THREAD_COUNT_MAX	64
 
 #ifdef DS_DEBUG
-	#define DS_PHYSICS_DEBUG	/* Physics debug events, physics debug rendering	*/
+	#define DS_PHYSICS_DEBUG	/* Physics pipeline validation every tick		*/
 	#define DS_ASSERT_DEBUG 	/* Asserts on 						*/
 	#define DS_GL_DEBUG		/* graphics debugging */
 #endif

@@ -194,7 +194,7 @@ void r_LightningBufferLayoutSetter(void)
 	ds_glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, (GLsizei)  stride, (void *)(sizeof(v3) + sizeof(v4)));
 }
 
-void r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u64 core_unit_count, ds_SDB(r_Mesh) *mesh_database)
+void r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u32 core_unit_count, ds_SDB(r_Mesh) *mesh_database)
 {
 	g_r_core->frames_elapsed = 0;	
 	g_r_core->ns_elapsed = 0;	

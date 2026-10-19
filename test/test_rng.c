@@ -19,6 +19,7 @@
 
 #include "ds_test.h"
 #include "ds_math.h"
+#include "ds_platform.h"
 
 /*
  * The local generator (struct rng) against reference values computed independently (SplitMix64 seeding, xoshiro256**):
@@ -170,10 +171,51 @@ struct test_Output RngThreadTest(struct test_Environment *env)
 	return output;
 }
 
+/*
+ * RngSystem fills the whole buffer: 4 KiB pre-filled with 0xa5 come back with every 64-byte block changed (a block
+ * left as it was by chance: 2^-512) and two fills differ. Size 0 leaves the buffer as it was, and is no error with a
+ * NULL buffer either (#197: fatal on Windows).
+ */
+struct test_Output RngSystemTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    const u32 size = 4096;
+    const u32 block = 64;
+    u8 *a = ArenaPush(env->mem_1, size);
+    u8 *b = ArenaPush(env->mem_1, size);
+    TEST_TRUE(a != NULL && b != NULL);
+    memset(a, 0xa5, size);
+    memset(b, 0xa5, size);
+    RngSystem(a, size);
+    RngSystem(b, size);
+
+    u32 blocks_changed = 0;
+    for (u32 k = 0; k < size / block; ++k)
+    {
+        u32 changed = 0;
+        for (u32 i = 0; i < block; ++i) { changed |= (a[k*block + i] != 0xa5); }
+        blocks_changed += changed;
+    }
+    TEST_EQUAL(size / block, blocks_changed);
+    TEST_TRUE(memcmp(a, b, size) != 0);
+
+    u8 c[8];
+    memset(c, 0xa5, sizeof(c));
+    RngSystem(c, 0);
+    u32 untouched = 1;
+    for (u32 i = 0; i < sizeof(c); ++i) { untouched = untouched && c[i] == 0xa5; }
+    TEST_TRUE(untouched);
+    RngSystem(NULL, 0);
+
+	return output;
+}
+
 static struct test_Output (*rng_tests[])(struct test_Environment *) =
 {
     RngLocalTest,
     RngThreadTest,
+    RngSystemTest,
 };
 
 struct suite_Correctness m_rng_suite =

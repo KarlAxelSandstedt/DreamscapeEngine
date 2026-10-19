@@ -11,6 +11,26 @@ if (DS_DEBUG)
 	target_compile_definitions(DreamscapeDefine INTERFACE DS_DEBUG DS_ASSERT)
 endif()
 
+# Warnings of the engine's targets (not lib/'s). Linux's set (CMakeLists.txt) is the reference; Windows follows it.
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
+	# a 64-bit integer silently cut to 32 bits; GCC has no such warning short of -Wconversion
+	target_compile_options(DreamscapeDefine INTERFACE -Wshorten-64-to-32)
+elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
+	if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
+		# clang-cl: Linux's set (its /W4 is clang's -Wall -Wextra) and Linux Clang's -Wshorten-64-to-32
+		target_compile_options(DreamscapeDefine INTERFACE /W4
+			/clang:-Wno-switch /clang:-Wno-unused-parameter /clang:-Wno-unused-variable
+			/clang:-Wno-unused-but-set-variable /clang:-Wno-unused-function /clang:-Wshorten-64-to-32)
+	else ()
+		# MSVC: /W4 without what Linux's set does not report: unused parameters, locals and functions (its -Wno-
+		# list: C4100 C4101 C4189 C4505), narrowing (C4244 C4267 C4305, -Wconversion), shadowing (C4456 C4459,
+		# -Wshadow), constant conditions (C4127), signed/unsigned conversion (C4245, -Wsign-conversion) and
+		# flexible array members (C4200)
+		target_compile_options(DreamscapeDefine INTERFACE /W4
+			/wd4100 /wd4101 /wd4189 /wd4505 /wd4244 /wd4267 /wd4305 /wd4456 /wd4459 /wd4127 /wd4245 /wd4200)
+	endif ()
+endif ()
+
 if (DS_PROFILE)
 	target_compile_definitions(DreamscapeDefine INTERFACE DS_PROFILE)
 	target_link_libraries(DreamscapeDefine INTERFACE Tracy::TracyClient)

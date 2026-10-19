@@ -1856,17 +1856,16 @@ static void led_EngineRun(struct led *led)
 				}
 			} break;
 
-//#ifdef DS_PHYSICS_DEBUG
 			case PHYSICS_EVENT_ISLAND_NEW:
 			{
 				struct ds_Island *is = ds_IslandLookup(&led->physics, event->island).address;
                 if (is)
 				{
-					/* drawn in a fixed order: an argument list's evaluation order is the compiler's */
-					const f32 red = RngF32Normalized();
-					const f32 green = RngF32Normalized();
-					const f32 blue = RngF32Normalized();
-					is->color = V4(red, green, blue, 0.7f);
+					/* one draw per statement: a call's argument order is the compiler's */
+					const f32 r = RngF32Normalized();
+					const f32 g = RngF32Normalized();
+					const f32 b = RngF32Normalized();
+					is->color = V4(r, g, b, 0.7f);
 					if (led->body_color_mode == RB_COLOR_MODE_ISLAND)
 					{
 						led_ColorIsland(led, event->island, is->color);
@@ -1878,7 +1877,6 @@ static void led_EngineRun(struct led *led)
 				}
 			} break;
 
-//#endif
 			case PHYSICS_EVENT_ISLAND_AWAKE:
 			{
 				if (led->body_color_mode == RB_COLOR_MODE_SLEEP)
@@ -2005,7 +2003,8 @@ static void led_EngineInit(struct led *led)
 	//TODO move this into engine flush
 	ds_DynamicsFlush(&led->physics);		
 	led->physics.ns_start = led->ns;
-	led->physics.ns_elapsed = -led->ns_delta;
+	/* wraps on purpose: led_EngineRun's first += ns_delta makes it 0 */
+	led->physics.ns_elapsed = 0 - led->ns_delta;
 	led->ns_engine_paused = 0;
 
     HII it; 

@@ -48,7 +48,7 @@ void r_UiDraw(struct ui *ui)
 
 		if (ui_CmdLayerGet(b->cmd) == UI_CMD_LAYER_TEXT)
 		{
-			u64 total_glyph_count = 0;
+			u32 total_glyph_count = 0;
 			struct ui_DrawNode *draw_node = instance->ui_bucket->list;
 			for (u32 i = 0; i < instance->ui_bucket->count; ++i)
 			{

@@ -47,7 +47,7 @@ static struct test_Output ss_randomized_aligned(void)
 	u64 size_left = ss_in->bit_count / 8;
 	while (size_left)
 	{
-		enum ss_Type type = RngU64Range(SS_WRITE8, SS_COUNT-1);
+		enum ss_Type type = (enum ss_Type) RngU64Range(SS_WRITE8, SS_COUNT-1);
 		if (size_left < ss_type_size[type])
 		{
 			continue;
@@ -147,7 +147,7 @@ static struct test_Output ss_randomized_aligned_array(void)
 	{
 		u64 count = RngU64Range(1, MAX_COUNT);
 		count = (count > MAX_COUNT) ? MAX_COUNT : count;	/* the bound where GCC can see it (-Wstringop-overflow) */
-		enum ss_Type type = RngU64Range(SS_WRITE8, SS_COUNT-1);
+		enum ss_Type type = (enum ss_Type) RngU64Range(SS_WRITE8, SS_COUNT-1);
 		if (size_left < count*ss_type_size[type])
 		{
 			continue;
@@ -281,7 +281,7 @@ static struct test_Output ss_randomized_partial(void)
 	u64 bits_left = ss_in->bit_count;
 	while (bits_left)
 	{
-		enum ss_Type type = RngU64Range(SS_WRITE8, SS_COUNT-1);
+		enum ss_Type type = (enum ss_Type) RngU64Range(SS_WRITE8, SS_COUNT-1);
 		const u64 bit_count = RngU64Range(1, 8*ss_type_size[type]);
 		if (bits_left < bit_count)
 		{
@@ -387,8 +387,8 @@ static struct test_Output ss_randomized_sequence_partial(void)
 	u64 bits_left = ss_in->bit_count;
 	while (bits_left)
 	{
-		seq[seq_len].type = RngU64Range(SS_WRITE8, SS_COUNT-1);
-		seq[seq_len].bit_count = RngU64Range(1, 8*ss_type_size[seq[seq_len].type]);
+		seq[seq_len].type = (enum ss_Type) RngU64Range(SS_WRITE8, SS_COUNT-1);
+		seq[seq_len].bit_count = (u32) RngU64Range(1, 8*ss_type_size[seq[seq_len].type]);
 		seq[seq_len].expected = RngU64Range(0, U64_MAX) >> (64-seq[seq_len].bit_count);
 		if (bits_left < seq[seq_len].bit_count)
 		{
@@ -448,8 +448,8 @@ static struct test_Output ss_randomized_sequence_partial_signed(void)
 	u64 bits_left = ss_in->bit_count;
 	while (bits_left)
 	{
-		seq[seq_len].type = RngU64Range(SS_WRITE8, SS_COUNT-1);
-		seq[seq_len].bit_count = RngU64Range(1, 8*ss_type_size[seq[seq_len].type]);
+		seq[seq_len].type = (enum ss_Type) RngU64Range(SS_WRITE8, SS_COUNT-1);
+		seq[seq_len].bit_count = (u32) RngU64Range(1, 8*ss_type_size[seq[seq_len].type]);
 		seq[seq_len].expected = RngU64Range(0, U64_MAX) >> (64-seq[seq_len].bit_count);
 		const u64 sign = seq[seq_len].expected >> (seq[seq_len].bit_count-1);
 		seq[seq_len].expected |= (U64_MAX << (seq[seq_len].bit_count-1)) * sign;

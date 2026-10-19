@@ -111,12 +111,15 @@ static struct test_Output OverflowTest(struct test_Environment *env)
 
     for (u32 i = 0; i < 1000; ++i)
     {
-        const u64 a = RngU64() >> RngU64Range(0, 63);
-        const u64 b = RngU64() >> RngU64Range(0, 63);
+        /* one draw per statement: the operands' order is the compiler's (springclean #200) */
+        const u64 a_bits = RngU64();
+        const u64 a = a_bits >> RngU64Range(0, 63);
+        const u64 b_bits = RngU64();
+        const u64 b = b_bits >> RngU64Range(0, 63);
         TEST_EQUAL((a + b < a), !!U64AddReturnOverflow(&dst, a, b));
         TEST_EQUAL(a + b, dst);
         const u32 overflow = (a != 0 && b > U64_MAX / a);
-        TEST_EQUAL(overflow, !!U64MulReturnOverflow(&dst, a, b));
+        TEST_EQUAL(overflow, (u32) !!U64MulReturnOverflow(&dst, a, b));
         TEST_EQUAL(a * b, dst);
     }
 
@@ -394,11 +397,11 @@ static struct test_Output FloatTest(struct test_Environment *env)
                 TEST_EQUAL(exponent, F32ExponentBits(f));
                 TEST_EQUAL(significand, F32MantissaBits(f));
                 TEST_EQUAL(nan, F32TestNan(f));
-                TEST_EQUAL(!nan && !inf, F32FiniteCheck(f));
-                TEST_EQUAL(inf && !sign, F32TestPositiveInf(f));
-                TEST_EQUAL(inf && sign, F32TestNegativeInf(f));
-                TEST_EQUAL(zero && !sign, F32TestPositiveZero(f));
-                TEST_EQUAL(zero && sign, F32TestNegativeZero(f));
+                TEST_EQUAL((u32) (!nan && !inf), F32FiniteCheck(f));
+                TEST_EQUAL((u32) (inf && !sign), F32TestPositiveInf(f));
+                TEST_EQUAL((u32) (inf && sign), F32TestNegativeInf(f));
+                TEST_EQUAL((u32) (zero && !sign), F32TestPositiveZero(f));
+                TEST_EQUAL((u32) (zero && sign), F32TestNegativeZero(f));
                 TEST_EQUAL(normal, F32TestNormal(f));
                 TEST_EQUAL(subnormal, F32TestSubnormal(f));
                 TEST_EQUAL(type, F32Classify(f));
@@ -870,12 +873,12 @@ static struct test_Output TransformTest(struct test_Environment *env)
 
     const f32 aspect = 16.0f / 9.0f;
     const f32 fov_x = F32_PI / 2.5f;
-    const f32 near = 0.1f;
-    const f32 far = 100.0f;
+    const f32 z_near = 0.1f;
+    const f32 z_far = 100.0f;
     const f32 t = F32Tan(fov_x / 2.0f);
-    const m4 projection = M4Perspective(aspect, fov_x, near, far);
-    const v4 p_near = TransformTestApply(projection, V3(0.0f, 0.0f, -near));
-    const v4 p_far = TransformTestApply(projection, V3(0.0f, 0.0f, -far));
+    const m4 projection = M4Perspective(aspect, fov_x, z_near, z_far);
+    const v4 p_near = TransformTestApply(projection, V3(0.0f, 0.0f, -z_near));
+    const v4 p_far = TransformTestApply(projection, V3(0.0f, 0.0f, -z_far));
     const v4 p_side = TransformTestApply(projection, V3(t * 7.0f, 0.0f, -7.0f));
     const v4 p_top = TransformTestApply(projection, V3(0.0f, -t * 7.0f / aspect, -7.0f));
     TEST_TRUE(F32Abs(p_near.z / p_near.w + 1.0f) <= 1e-5f && F32Abs(p_far.z / p_far.w - 1.0f) <= 1e-5f);
@@ -1070,7 +1073,8 @@ static struct test_Output InputNameTest(struct test_Environment *env)
 /* remove what FilesystemTest creates (also the leftovers of an interrupted run); C library, test only */
 static void FilesystemTestCleanup(void)
 {
-    const char *entry[] = { FS_TEST_DIR "/a.txt", FS_TEST_DIR "/dangling", FS_TEST_DIR "/sub" };
+    const char *entry[] = { FS_TEST_DIR "/a.txt", FS_TEST_DIR "/dangling", FS_TEST_DIR "/link_file", FS_TEST_DIR "/link_dir",
+        FS_TEST_DIR "/sub" };
     for (u32 i = 0; i < sizeof(entry) / sizeof(entry[0]); ++i)
     {
         unlink(entry[i]);
@@ -1117,7 +1121,17 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
     TEST_EQUAL(FS_SUCCESS, DirectoryTryCreate(mem, &sub, "sub", &dir));
     TEST_EQUAL(FILE_DIRECTORY, sub.type);
     FileClose(&sub);
+
+    /* springclean #173: FileTryOpen refuses a directory (DirectoryTryOpen opens those), read-only or writeable */
+    struct file not_file = FileNull();
+    TEST_EQUAL(FS_TYPE_INVALID, FileTryOpen(mem, &not_file, "sub", &dir, FILE_READ));
+    TEST_EQUAL(FS_TYPE_INVALID, FileTryOpen(mem, &not_file, "sub", &dir, FILE_WRITE));
+    TEST_EQUAL(FILE_HANDLE_INVALID, not_file.handle);
+
     TEST_EQUAL(0, symlinkat("does_not_exist", dir.handle, "dangling"));
+    /* springclean #173: a link counts as its target */
+    TEST_EQUAL(0, symlinkat("a.txt", dir.handle, "link_file"));
+    TEST_EQUAL(0, symlinkat("sub", dir.handle, "link_dir"));
 
     ds_CPool(file) entries;
     ds_CPoolAlloc(NULL, entries, 8, GROWABLE);
@@ -1127,12 +1141,14 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
     for (u32 i = 0; i < entries.count; ++i)
     {
         const struct file *e = entries.buf + i;
-        if (Utf8Equivalence(e->path, Utf8Inline("a.txt")))         { found |= 1; TEST_EQUAL(FILE_REGULAR, e->type); }
-        else if (Utf8Equivalence(e->path, Utf8Inline("sub")))      { found |= 2; TEST_EQUAL(FILE_DIRECTORY, e->type); }
-        else if (Utf8Equivalence(e->path, Utf8Inline("dangling"))) { found |= 4; TEST_EQUAL(FILE_UNRECOGNIZED, e->type); }
+        if (Utf8Equivalence(e->path, Utf8Inline("a.txt")))          { found |= 1; TEST_EQUAL(FILE_REGULAR, e->type); }
+        else if (Utf8Equivalence(e->path, Utf8Inline("sub")))       { found |= 2; TEST_EQUAL(FILE_DIRECTORY, e->type); }
+        else if (Utf8Equivalence(e->path, Utf8Inline("dangling")))  { found |= 4; TEST_EQUAL(FILE_UNRECOGNIZED, e->type); }
+        else if (Utf8Equivalence(e->path, Utf8Inline("link_file"))) { found |= 8; TEST_EQUAL(FILE_REGULAR, e->type); }
+        else if (Utf8Equivalence(e->path, Utf8Inline("link_dir")))  { found |= 16; TEST_EQUAL(FILE_DIRECTORY, e->type); }
     }
     ds_CPoolDealloc(entries);
-    TEST_EQUAL(7, found);
+    TEST_EQUAL(31, found);
 
     /* a pseudo-file: fstat says a page, read() ends after its few bytes */
     const char *pseudo = "/sys/devices/system/cpu/online";
@@ -1149,6 +1165,369 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
     TEST_EQUAL(0, cwd_small.size);
     const utf8 cwd = CwdGet(mem);
     TEST_TRUE(cwd.size > 0 && cwd.buf[0] == '/');
+
+    FilesystemTestCleanup();
+
+	return output;
+}
+
+#elif __DS_PLATFORM__ == __DS_WIN64__
+
+#include <shlwapi.h>
+#include <winioctl.h>
+
+#define FS_TEST_DIR "ds_filesystem_test"
+/* U+00E5 U+00E4 U+00F6 as UTF-8 and UTF-16, escaped: MSVC reads the source in the ANSI code page */
+#define FS_TEST_NON_ASCII "\xc3\xa5\xc3\xa4\xc3\xb6"
+#define FS_TEST_NON_ASCII_W L"\x00e5\x00e4\x00f6"
+/* a file name longer than a 64-byte arena */
+#define FS_TEST_LONG_NAME 150
+/* an absolute path that fits MAX_PATH, while "\\?\" + it (GetFinalPathNameByHandleW's form) does not */
+#define FS_TEST_LONG_PATH 257
+
+/*
+ * Write "\\?\" + the absolute path of a directory under FS_TEST_DIR whose absolute path is FS_TEST_LONG_PATH units
+ * long and return the length of its name; 0 if the working directory is too long for one.
+ */
+static u32 FilesystemTestLongDir(WCHAR w_path[MAX_PATH + 8])
+{
+    WCHAR cwd[MAX_PATH];
+    const u32 cwd_len = (u32) GetCurrentDirectoryW(MAX_PATH, cwd);
+    const u32 used = cwd_len + (u32) sizeof("\\" FS_TEST_DIR "\\") - 1;
+    if (cwd_len == 0 || MAX_PATH <= cwd_len || FS_TEST_LONG_PATH <= used || 255 < FS_TEST_LONG_PATH - used)
+    {
+        return 0;
+    }
+
+    const u32 name_len = FS_TEST_LONG_PATH - used;
+    u32 n = 0;
+    for (const WCHAR *c = L"\\\\?\\"; *c; ++c) { w_path[n++] = *c; }
+    for (u32 i = 0; i < cwd_len; ++i) { w_path[n++] = cwd[i]; }
+    for (const WCHAR *c = L"\\ds_filesystem_test\\"; *c; ++c) { w_path[n++] = *c; }
+    for (u32 i = 0; i < name_len; ++i) { w_path[n++] = L'd'; }
+    w_path[n] = L'\0';
+    return name_len;
+}
+
+/*
+ * A junction (a mount point, as mklink /J makes it) at link to the absolute directory target; no privilege needed.
+ * The buffer is REPARSE_DATA_BUFFER's mount point form (a kernel header's): tag, data length, reserved, the names'
+ * offsets and lengths in bytes, then the substitute name ("\??\" + target) and the print name, both terminated.
+ */
+static u32 FilesystemTestJunction(const WCHAR *link, const WCHAR *target)
+{
+    struct
+    {
+        DWORD tag;
+        WORD data_length;
+        WORD reserved;
+        WORD substitute_offset;
+        WORD substitute_length;
+        WORD print_offset;
+        WORD print_length;
+        WCHAR names[2*MAX_PATH + 8];
+    } r = { 0 };
+    u32 target_len = 0;
+    while (target[target_len]) { ++target_len; }
+    if (MAX_PATH <= target_len)
+    {
+        return 0;
+    }
+
+    u32 n = 0;
+    for (const WCHAR *c = L"\\??\\"; *c; ++c) { r.names[n++] = *c; }
+    for (u32 i = 0; i < target_len; ++i) { r.names[n++] = target[i]; }
+    const u32 substitute_len = n;
+    r.names[n++] = L'\0';
+    for (u32 i = 0; i < target_len; ++i) { r.names[n++] = target[i]; }
+    r.names[n++] = L'\0';
+    r.tag = IO_REPARSE_TAG_MOUNT_POINT;
+    r.substitute_offset = 0;
+    r.substitute_length = (WORD) (substitute_len * sizeof(WCHAR));
+    r.print_offset = (WORD) ((substitute_len + 1) * sizeof(WCHAR));
+    r.print_length = (WORD) (target_len * sizeof(WCHAR));
+    r.data_length = (WORD) (4 * sizeof(WORD) + n * sizeof(WCHAR));
+
+    if (!CreateDirectoryW(link, NULL))
+    {
+        return 0;
+    }
+    HANDLE h = CreateFileW(link, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    if (h == INVALID_HANDLE_VALUE)
+    {
+        return 0;
+    }
+    DWORD returned;
+    const BOOL ok = DeviceIoControl(h, FSCTL_SET_REPARSE_POINT, &r, 8 + r.data_length, NULL, 0, &returned, NULL);
+    CloseHandle(h);
+    return ok != 0;
+}
+
+/* remove what FilesystemTest creates (also the leftovers of an interrupted run); OS API, test only */
+static void FilesystemTestCleanup(void)
+{
+    RemoveDirectoryW(L"ds_filesystem_test\\link_dir");
+    RemoveDirectoryW(L"ds_filesystem_test\\link_gone");
+    DeleteFileW(L"ds_filesystem_test\\link_file");
+
+    WCHAR w_long_dir[MAX_PATH + 8];
+    if (FilesystemTestLongDir(w_long_dir)) { RemoveDirectoryW(w_long_dir); }
+
+    WCHAR long_file[sizeof("ds_filesystem_test\\sub\\") + FS_TEST_LONG_NAME];
+    u32 n = 0;
+    for (const WCHAR *c = L"ds_filesystem_test\\sub\\"; *c; ++c) { long_file[n++] = *c; }
+    for (u32 i = 0; i < FS_TEST_LONG_NAME; ++i) { long_file[n++] = L'l'; }
+    long_file[n] = L'\0';
+    DeleteFileW(long_file);
+
+    DeleteFileW(L"ds_filesystem_test\\a.txt");
+    DeleteFileW(L"ds_filesystem_test\\empty.txt");
+    DeleteFileW(L"ds_filesystem_test\\map.txt");
+    RemoveDirectoryW(L"ds_filesystem_test\\dangling");
+    DeleteFileW(L"ds_filesystem_test\\dangling");
+    RemoveDirectoryW(L"ds_filesystem_test\\sub");
+    RemoveDirectoryW(L"ds_filesystem_test\\" FS_TEST_NON_ASCII_W);
+    RemoveDirectoryW(L"ds_filesystem_test");
+}
+
+/*
+ * The Windows twin of the Linux FilesystemTest, plus UTF-8 names: a non-ASCII directory name round-trips through
+ * DirectoryTryCreate and DirectoryPushEntries. A dangling symbolic link (only if this account may create one:
+ * developer mode or admin) is listed as FILE_UNRECOGNIZED. Checks for a springclean finding name it.
+ */
+static struct test_Output FilesystemTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+    struct arena *mem = env->mem_1;
+
+    FilesystemTestCleanup();
+    struct file dir = FileNull();
+    TEST_EQUAL(FS_SUCCESS, DirectoryTryCreateAtCwd(mem, &dir, FS_TEST_DIR));
+    TEST_EQUAL(FILE_DIRECTORY, dir.type);
+
+    struct file file = FileNull();
+    TEST_EQUAL(FS_SUCCESS, FileTryCreate(mem, &file, "a.txt", &dir, 0));
+    TEST_EQUAL(FILE_REGULAR, file.type);
+    TEST_EQUAL(5, FileWriteAppend(&file, (const u8 *) "hello", 5));
+    TEST_EQUAL(6, FileWriteAppend(&file, (const u8 *) " world", 6));
+    TEST_EQUAL(1, FileWriteOffset(&file, (const u8 *) "J", 1, 0));
+    FileClose(&file);
+
+    struct file again = FileNull();
+    TEST_EQUAL(FS_ALREADY_EXISTS, FileTryCreate(mem, &again, "a.txt", &dir, 0));
+
+    const struct dsBuffer dump = FileDump(mem, "a.txt", &dir);
+    TEST_TRUE(dump.data != NULL && dump.size == 11 && memcmp(dump.data, "Jello world", 11) == 0);
+
+    /* #173: a closed file is FileNull: no handle, type or path */
+    TEST_TRUE(file.handle == FILE_HANDLE_INVALID && file.type == FILE_NONE && file.path.size == 0);
+
+    /* #166: an empty file dumps as the empty buffer, mem unchanged (no path copy left on it) */
+    struct file empty = FileNull();
+    TEST_EQUAL(FS_SUCCESS, FileTryCreate(mem, &empty, "empty.txt", &dir, 0));
+    FileClose(&empty);
+    const u64 mem_left_empty = mem->mem_left;
+    const struct dsBuffer dump_empty = FileDump(mem, "empty.txt", &dir);
+    TEST_TRUE(dump_empty.data == NULL && dump_empty.size == 0 && mem->mem_left == mem_left_empty);
+
+    /* #167: a file open for writing can be dumped and opened for writing again, as on Linux */
+    struct file writer = FileNull();
+    TEST_EQUAL(FS_SUCCESS, FileTryOpen(mem, &writer, "a.txt", &dir, FILE_WRITE));
+    const struct dsBuffer dump_open = FileDump(mem, "a.txt", &dir);
+    struct file writer_2 = FileNull();
+    const enum fsError writer_2_err = FileTryOpen(mem, &writer_2, "a.txt", &dir, FILE_WRITE);
+    if (writer_2.handle != FILE_HANDLE_INVALID) { FileClose(&writer_2); }
+    FileClose(&writer);
+    TEST_TRUE(dump_open.size == 11 && memcmp(dump_open.data, "Jello world", 11) == 0);
+    TEST_EQUAL(FS_SUCCESS, writer_2_err);
+
+    /*
+     * #172: a write-only shared mapping writes to the file, a private one does not (copy-on-write); an offset need
+     * not be aligned; mapping past the end grows the file, also read-only and private; no execute, no none
+     */
+    struct file map_file = FileNull();
+    TEST_EQUAL(FS_SUCCESS, FileTryCreate(mem, &map_file, "map.txt", &dir, 0));
+    TEST_EQUAL(10, FileWriteAppend(&map_file, (const u8 *) "0123456789", 10));
+    u64 map_size = 0;
+    u8 *shared = FileMemoryMap(&map_size, &map_file, FS_PROT_WRITE, FS_MAP_SHARED);
+    TEST_TRUE(shared != NULL && map_size == 10);
+    shared[0] = 'a';
+    FileMemoryUnmap(shared, map_size);
+    u8 *copy = FileMemoryMapPartial(&map_file, 10, 0, FS_PROT_READ | FS_PROT_WRITE, FS_MAP_PRIVATE);
+    TEST_TRUE(copy != NULL && copy[0] == 'a');
+    copy[1] = 'b';
+    FileMemoryUnmap(copy, 10);
+    const u8 *unaligned = FileMemoryMapPartial(&map_file, 4, 3, FS_PROT_READ, FS_MAP_SHARED);
+    TEST_TRUE(unaligned != NULL && memcmp(unaligned, "3456", 4) == 0);
+    FileMemoryUnmap((void *) unaligned, 4);
+    const u8 *grown = FileMemoryMapPartial(&map_file, 16, 0, FS_PROT_READ, FS_MAP_PRIVATE);
+    TEST_TRUE(grown != NULL);
+    FileMemoryUnmap((void *) grown, 16);
+    TEST_TRUE(FileMemoryMap(&map_size, &map_file, FS_PROT_READ | FS_PROT_EXECUTE, FS_MAP_SHARED) == NULL);
+    TEST_TRUE(FileMemoryMap(&map_size, &map_file, FS_PROT_NONE, FS_MAP_SHARED) == NULL);
+    FileClose(&map_file);
+    const struct dsBuffer map_dump = FileDump(mem, "map.txt", &dir);
+    TEST_TRUE(map_dump.size == 16 && memcmp(map_dump.data, "a123456789", 10) == 0);
+
+    /* #163: a regular file is no directory */
+    struct file not_dir = FileNull();
+    const enum fsError not_dir_err = DirectoryTryOpen(mem, &not_dir, "a.txt", &dir);
+    if (not_dir.handle != FILE_HANDLE_INVALID) { FileClose(&not_dir); }
+    TEST_EQUAL(FS_TYPE_INVALID, not_dir_err);
+
+    struct file sub = FileNull();
+    TEST_EQUAL(FS_SUCCESS, DirectoryTryCreate(mem, &sub, "sub", &dir));
+    TEST_EQUAL(FILE_DIRECTORY, sub.type);
+
+    /* #168: a listing out of memory is FS_BUFFER_TO_SMALL, the directory closed, entries and mem as before */
+    char long_name[FS_TEST_LONG_NAME + 1];
+    memset(long_name, 'l', FS_TEST_LONG_NAME);
+    long_name[FS_TEST_LONG_NAME] = '\0';
+    struct file long_file = FileNull();
+    TEST_EQUAL(FS_SUCCESS, FileTryCreate(mem, &long_file, long_name, &sub, 0));
+    FileClose(&long_file);
+    struct arena tiny_list = ArenaAlloc(NULL, 64);
+    TEST_TRUE(tiny_list.stack_ptr != NULL);
+    const u64 tiny_list_left = tiny_list.mem_left;
+    ds_CPool(file) few;
+    ds_CPoolAlloc(NULL, few, 8, GROWABLE);
+    const enum fsError few_err = DirectoryPushEntries(&tiny_list, &few, &sub);
+    const u32 few_count = few.count;
+    const u64 tiny_list_after = tiny_list.mem_left;
+    ds_CPoolDealloc(few);
+    ArenaFree(&tiny_list);
+    TEST_EQUAL(FS_BUFFER_TO_SMALL, few_err);
+    TEST_TRUE(sub.handle == FILE_HANDLE_INVALID && few_count == 0 && tiny_list_after == tiny_list_left);
+
+    /* #173: FileTryOpen refuses a directory (DirectoryTryOpen opens those), read-only or writeable */
+    struct file not_file = FileNull();
+    TEST_EQUAL(FS_TYPE_INVALID, FileTryOpen(mem, &not_file, "sub", &dir, FILE_READ));
+    TEST_EQUAL(FS_TYPE_INVALID, FileTryOpen(mem, &not_file, "sub", &dir, FILE_WRITE));
+    TEST_EQUAL(FILE_HANDLE_INVALID, not_file.handle);
+
+    struct file non_ascii = FileNull();
+    TEST_EQUAL(FS_SUCCESS, DirectoryTryCreate(mem, &non_ascii, FS_TEST_NON_ASCII, &dir));
+    FileClose(&non_ascii);
+
+    const u32 have_link = CreateSymbolicLinkW(L"ds_filesystem_test\\dangling", L"does_not_exist",
+            SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != 0;
+
+    /* #173 (4): a link counts as its target, a dangling link as FILE_UNRECOGNIZED (junctions need no privilege) */
+    WCHAR w_sub[MAX_PATH];
+    WCHAR w_gone[MAX_PATH];
+    TEST_TRUE(GetFullPathNameW(L"ds_filesystem_test\\sub", MAX_PATH, w_sub, NULL) != 0);
+    TEST_TRUE(GetFullPathNameW(L"ds_filesystem_test\\gone", MAX_PATH, w_gone, NULL) != 0);
+    TEST_TRUE(FilesystemTestJunction(L"ds_filesystem_test\\link_dir", w_sub));
+    TEST_TRUE(FilesystemTestJunction(L"ds_filesystem_test\\link_gone", w_gone));
+    const u32 have_file_link = CreateSymbolicLinkW(L"ds_filesystem_test\\link_file", L"a.txt",
+            SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != 0;
+
+    const utf8 non_ascii_name = { .buf = (u8 *) FS_TEST_NON_ASCII, .size = sizeof(FS_TEST_NON_ASCII) - 1, .len = 3 };
+    ds_CPool(file) entries;
+    ds_CPoolAlloc(NULL, entries, 8, GROWABLE);
+    TEST_EQUAL(FS_SUCCESS, DirectoryPushEntries(mem, &entries, &dir));
+    TEST_EQUAL(FILE_HANDLE_INVALID, dir.handle);
+    u32 found = 0;
+    for (u32 i = 0; i < entries.count; ++i)
+    {
+        const struct file *e = entries.buf + i;
+        if (Utf8Equivalence(e->path, Utf8Inline("a.txt")))                  { found |= 1; TEST_EQUAL(FILE_REGULAR, e->type); }
+        else if (Utf8Equivalence(e->path, Utf8Inline("sub")))               { found |= 2; TEST_EQUAL(FILE_DIRECTORY, e->type); }
+        else if (Utf8Equivalence(e->path, non_ascii_name))                 { found |= 4; TEST_EQUAL(FILE_DIRECTORY, e->type); }
+        else if (Utf8Equivalence(e->path, Utf8Inline("dangling")))          { found |= 8; TEST_EQUAL(FILE_UNRECOGNIZED, e->type); }
+        else if (Utf8Equivalence(e->path, Utf8Inline("link_dir")))          { found |= 16; TEST_EQUAL(FILE_DIRECTORY, e->type); }
+        else if (Utf8Equivalence(e->path, Utf8Inline("link_gone")))         { found |= 32; TEST_EQUAL(FILE_UNRECOGNIZED, e->type); }
+        else if (Utf8Equivalence(e->path, Utf8Inline("link_file")))         { found |= 64; TEST_EQUAL(FILE_REGULAR, e->type); }
+    }
+    ds_CPoolDealloc(entries);
+    TEST_EQUAL(7u + 16u + 32u + ((have_link) ? 8u : 0u) + ((have_file_link) ? 64u : 0u), found);
+
+    /* #173 (4): FileStatusPath follows a link, a dangling one fails; a directory opened through a link is the target */
+    struct file dir_again = FileNull();
+    TEST_EQUAL(FS_SUCCESS, DirectoryTryOpenAtCwd(mem, &dir_again, FS_TEST_DIR));
+    file_status link_status;
+    const enum fsError link_err = FileStatusPath(&link_status, "link_dir", &dir_again);
+    const u32 link_is_dir = (link_err == FS_SUCCESS) && FileStatusGetType(&link_status) == FILE_DIRECTORY;
+    const enum fsError gone_err = FileStatusPath(&link_status, "link_gone", &dir_again);
+    struct file through = FileNull();
+    const enum fsError through_err = DirectoryTryOpen(mem, &through, "link_dir", &dir_again);
+    file_status through_status;
+    const u32 through_is_dir = (through_err == FS_SUCCESS) && FileStatusFile(&through_status, &through) == FS_SUCCESS
+            && FileStatusGetType(&through_status) == FILE_DIRECTORY;
+    if (through.handle != FILE_HANDLE_INVALID) { FileClose(&through); }
+    FileClose(&dir_again);
+    TEST_TRUE(link_is_dir);
+    TEST_EQUAL(FS_ERROR_UNSPECIFIED, gone_err);
+    TEST_TRUE(through_is_dir);
+
+    /*
+     * #170: the final path of a directory doesn't fit MAX_PATH ("\\?\" + its 257 units): nothing is joined to it
+     * (FS_PATH_INVALID); its status is read through its handle, no path needed (#173)
+     */
+    WCHAR w_long_dir[MAX_PATH + 8];
+    const u32 long_dir_len = FilesystemTestLongDir(w_long_dir);
+    if (long_dir_len)
+    {
+        TEST_TRUE(CreateDirectoryW(w_long_dir, NULL) != 0);
+        char long_dir[MAX_PATH] = FS_TEST_DIR "\\";
+        const u32 long_dir_prefix = sizeof(FS_TEST_DIR "\\") - 1;
+        memset(long_dir + long_dir_prefix, 'd', long_dir_len);
+        long_dir[long_dir_prefix + long_dir_len] = '\0';
+        struct file deep = FileNull();
+        TEST_EQUAL(FS_SUCCESS, DirectoryTryOpenAtCwd(mem, &deep, long_dir));
+        struct file in_deep = FileNull();
+        const enum fsError in_deep_err = FileTryCreate(mem, &in_deep, "x", &deep, 0);
+        if (in_deep.handle != FILE_HANDLE_INVALID) { FileClose(&in_deep); }
+        file_status deep_status;
+        const enum fsError deep_status_err = FileStatusFile(&deep_status, &deep);
+        FileClose(&deep);
+        TEST_EQUAL(FS_PATH_INVALID, in_deep_err);
+        TEST_TRUE(deep_status_err == FS_SUCCESS && FileStatusGetType(&deep_status) == FILE_DIRECTORY);
+    }
+
+    struct arena tiny = ArenaAlloc(NULL, 4);
+    TEST_TRUE(tiny.stack_ptr != NULL);
+    const utf8 cwd_small = CwdGet(&tiny);
+    ArenaFree(&tiny);
+    TEST_EQUAL(0, cwd_small.size);
+    const utf8 cwd = CwdGet(mem);
+    TEST_TRUE(cwd.size > 0 && !PathIsRelativeA(CstrUtf8(mem, cwd)));
+
+    /* #164: the process cwd inside the non-ASCII directory, CwdGet returns it in UTF-8 */
+    WCHAR w_cwd[MAX_PATH];
+    TEST_TRUE(GetCurrentDirectoryW(MAX_PATH, w_cwd) != 0);
+    TEST_TRUE(SetCurrentDirectoryW(L"ds_filesystem_test\\" FS_TEST_NON_ASCII_W) != 0);
+    const utf8 cwd_non_ascii = CwdGet(mem);
+    SetCurrentDirectoryW(w_cwd);
+    const u32 suffix = sizeof(FS_TEST_NON_ASCII) - 1;
+    TEST_TRUE(cwd_non_ascii.size >= suffix
+            && memcmp(cwd_non_ascii.buf + cwd_non_ascii.size - suffix, FS_TEST_NON_ASCII, suffix) == 0);
+
+    /* #165: CwdSet into the non-ASCII directory succeeds; on a regular file it fails and keeps the cwd */
+    const struct file cwd_before = g_sys_env->cwd;
+    const enum fsError cwd_dir_err = CwdSet(mem, FS_TEST_DIR "\\" FS_TEST_NON_ASCII);
+    const struct file cwd_dir = g_sys_env->cwd;
+    if (cwd_dir.handle != cwd_before.handle && cwd_dir.handle != FILE_HANDLE_INVALID) { CloseHandle(cwd_dir.handle); }
+    g_sys_env->cwd = cwd_before;
+    SetCurrentDirectoryW(w_cwd);
+    TEST_EQUAL(FS_SUCCESS, cwd_dir_err);
+    TEST_TRUE(cwd_dir.path.size >= suffix
+            && memcmp(cwd_dir.path.buf + cwd_dir.path.size - suffix, FS_TEST_NON_ASCII, suffix) == 0);
+
+    const enum fsError cwd_file_err = CwdSet(mem, FS_TEST_DIR "\\a.txt");
+    const struct file cwd_file = g_sys_env->cwd;
+    if (cwd_file.handle != cwd_before.handle && cwd_file.handle != FILE_HANDLE_INVALID) { CloseHandle(cwd_file.handle); }
+    g_sys_env->cwd = cwd_before;
+    SetCurrentDirectoryW(w_cwd);
+    TEST_EQUAL(FS_PATH_INVALID, cwd_file_err);
+    TEST_TRUE(cwd_file.handle == cwd_before.handle && cwd_file.type == FILE_DIRECTORY);
+
+    /* #171: a path of exactly MAX_PATH units (its terminator went past the buffer) and the empty path are relative */
+    u8 max_path[MAX_PATH];
+    memset(max_path, 'a', MAX_PATH);
+    TEST_EQUAL(1, Utf8PathRelativeCheck((utf8) { .buf = max_path, .size = MAX_PATH, .len = MAX_PATH }));
+    TEST_EQUAL(1, Utf8PathRelativeCheck(Utf8Empty()));
+    TEST_EQUAL(0, Utf8PathRelativeCheck(Utf8Inline("C:\\x")));
 
     FilesystemTestCleanup();
 
@@ -1239,6 +1618,49 @@ static struct test_Output PerfBlockTest(struct test_Environment *env)
 }
 #endif
 
+/*
+ * springclean windows_backlog #58: Utf8SystemErrorCodeStringBuffered gives valid UTF-8, len its codepoint count and
+ * no trailing newline, for every code the system has a message for (Windows 0 .. 15999, Linux and web 0 .. 255);
+ * a text that doesn't fit the buffer is empty. On an English-only Windows the messages are ASCII, so the encoding
+ * part can only fail where other languages are installed.
+ */
+static struct test_Output SystemErrorStringTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+#if __DS_PLATFORM__ == __DS_WIN64__
+    const u32 code_count = 16000;
+#else
+    const u32 code_count = 256;
+#endif
+    u8 buf[ERROR_BUFSIZE];
+    u32 with_text = 0;
+    for (u32 code = 0; code < code_count; ++code)
+    {
+        const utf8 str = Utf8SystemErrorCodeStringBuffered(buf, ERROR_BUFSIZE, code);
+        if (str.size == 0)
+        {
+            continue;
+        }
+
+        with_text += 1;
+        u32 len = 0;
+        u32 valid = 1;
+        for (u64 offset = 0; offset < str.size; ++len)
+        {
+            valid = valid && Utf8ReadCodepoint(&offset, &str, offset) != UTF8_BAD_CODEPOINT;
+        }
+        TEST_TRUE(valid && len == str.len && str.buf[str.size - 1] != '\n' && str.buf[str.size - 1] != '\r');
+    }
+    TEST_TRUE(with_text > 0);
+
+    /* code 2 (ENOENT, ERROR_FILE_NOT_FOUND) has a text longer than 4 bytes */
+    u8 tiny_buf[4];
+    TEST_EQUAL(0, Utf8SystemErrorCodeStringBuffered(tiny_buf, sizeof(tiny_buf), 2).size);
+
+	return output;
+}
+
 static struct test_Output (*base_tests[])(struct test_Environment *) =
 {
 #ifdef DS_PERFORMANCE_MEASUREMENT_API
@@ -1253,9 +1675,10 @@ static struct test_Output (*base_tests[])(struct test_Environment *) =
     PoseTest,
     CameraTest,
     InputNameTest,
-#if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
+#if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__ || __DS_PLATFORM__ == __DS_WIN64__
     FilesystemTest,
 #endif
+    SystemErrorStringTest,
     BitCountTest,
     OverflowTest,
     AtomicSingleThreadTest,

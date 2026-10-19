@@ -278,54 +278,6 @@ static u64 AabbPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *
 	return AabbTransformPushLinesBuffered(buf, bufsize, box, M3Identity(), color);
 }
 
-static struct r_Mesh *DebugLinesMesh(struct arena *mem, const struct ds_Dynamics *pipeline, const v3f64 origin)
-{
-	ArenaPushRecord(mem);
-
-	u32 vertex_count = 0;
-	for (u32 i = 0; i < pipeline->worker_count; ++i)
-	{
-		vertex_count += 2*pipeline->worker[i].draw.debug_segment_pool.count;
-	}
-
-	struct r_Mesh *mesh = NULL;
- 	struct r_Mesh *tmp = ArenaPush(mem, sizeof(struct r_Mesh));
-	u8 *vertex_data = ArenaPush(mem, vertex_count*L_COLOR_STRIDE);
-	if (!tmp || !vertex_data) 
-	{ 
-		ArenaPopRecord(mem);
-		goto end;
-	}
-	ArenaRemoveRecord(mem);
-
-	mesh = tmp;
-	mesh->index_count = 0;
-	mesh->index_max_used = 0;
-	mesh->index_data = NULL;
-	mesh->vertex_count = vertex_count; 
-	mesh->vertex_data = vertex_data;
-	mesh->local_stride = L_COLOR_STRIDE;
-
-	u64 mem_left = mesh->vertex_count * L_COLOR_STRIDE;
-
-	for (u32 i = 0; i < pipeline->worker_count; ++i)
-	{
-		for (u32 j = 0; j < pipeline->worker[i].draw.debug_segment_pool.count; ++j)
-		{
-			memcpy((f32 *) vertex_data +  0, &pipeline->worker[i].draw.debug_segment_pool.buf[j].segment.p[0], sizeof(v3));
-			memcpy((f32 *) vertex_data +  3, &pipeline->worker[i].draw.debug_segment_pool.buf[j].color, sizeof(v4));
-			memcpy((f32 *) vertex_data +  7, &pipeline->worker[i].draw.debug_segment_pool.buf[j].segment.p[1], sizeof(v3));
-			memcpy((f32 *) vertex_data + 10, &pipeline->worker[i].draw.debug_segment_pool.buf[j].color, sizeof(v4));
-			vertex_data += 2*(sizeof(v3) + sizeof(v4));
-			mem_left -= 2*(sizeof(v3) + sizeof(v4));
-		}
-	}
-	ColorVerticesToView(mesh->vertex_data, (mesh->vertex_count*L_COLOR_STRIDE - mem_left) / L_COLOR_STRIDE, V3F64(0.0, 0.0, 0.0), origin);
-	ds_Assert(mem_left == 0);
-end:
-	return mesh;
-}
-
 static struct r_Mesh *BoundingBoxesMesh(struct arena *mem, const struct ds_Dynamics *pipeline, const v3f64 origin, const v4 color)
 {
 	ArenaPushRecord(mem);
@@ -554,20 +506,6 @@ static void r_EditorDraw(const struct led *led)
 		}
 	}
 
-	if (led->draw_lines)
-	{
-		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
-		const u64 depth = 0x7fffff;
-		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		struct r_Mesh *mesh = DebugLinesMesh(&g_r_core->frame, &led->physics, g_scene->view_origin);
-		if (mesh)
-		{
-			struct r_Instance *instance = r_InstanceAddNonCached(cmd);
-			instance->type = R_INSTANCE_MESH;
-			instance->mesh = mesh;
-		}
-	}
-
 	if (led->draw_manifold)
 	{
 
@@ -734,7 +672,13 @@ static void r_SceneRender(const struct led *led, const u32 window)
 		{
 			case R_CMD_PRIMITIVE_LINE: { mode = GL_LINES; } break;
 			case R_CMD_PRIMITIVE_TRIANGLE: { mode = GL_TRIANGLES; } break;
-			default: { ds_AssertString(0, "Unexpected draw primitive"); } break;
+			default:
+			{
+				/* no mode to draw with: skip the bucket */
+				ds_AssertString(0, "Unexpected draw primitive");
+				ProfZoneEnd;
+				continue;
+			}
 		}
 
 		u32 vao;
@@ -756,7 +700,7 @@ static void r_SceneRender(const struct led *led, const u32 window)
 
 				if (!b->instanced)
 				{
-					ds_glDrawArrays(mode, 0, buf->local_size / g_r_core->program[program].local_stride);
+					ds_glDrawArrays(mode, 0, (GLsizei) (buf->local_size / g_r_core->program[program].local_stride));
 				}
 				else
 				{
@@ -765,7 +709,7 @@ static void r_SceneRender(const struct led *led, const u32 window)
 					ds_glBufferData(GL_ARRAY_BUFFER, buf->shared_size, buf->shared_data, GL_STATIC_DRAW);
 					g_r_core->program[program].buffer_shared_layout_setter();
 
-					ds_glDrawArraysInstanced(mode, 0, buf->local_size / g_r_core->program[program].local_stride, buf->instance_count);
+					ds_glDrawArraysInstanced(mode, 0, (GLsizei) (buf->local_size / g_r_core->program[program].local_stride), buf->instance_count);
 					ds_glDeleteBuffers(1, &buf->shared_vbo);
 
 				}

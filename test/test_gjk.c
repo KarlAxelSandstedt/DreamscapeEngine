@@ -147,9 +147,15 @@ static f64 F64MinTest(const f64 a, const f64 b)
     return (a < b) ? a : b;
 }
 
+/* |a| by clearing the sign bit, as F32Abs: MSVC compiles (a < 0.0) ? -a : a that way too, C keeps -0 (springclean #207) */
 static f64 F64AbsTest(const f64 a)
 {
-    return (a < 0.0) ? -a : a;
+    u64 bits;
+    memcpy(&bits, &a, sizeof(bits));
+    bits &= ~((u64) 1 << 63);
+    f64 abs;
+    memcpy(&abs, &bits, sizeof(abs));
+    return abs;
 }
 
 /* rows of the rotation matrix of rot, normalized in double */
@@ -787,6 +793,11 @@ static void GjkTestConfigPush(const u32 gjk_max_iterations)
     ds_NumericsConfigPush(&g_gjk_test_config);
 }
 
+/*
+ * One random draw per statement: C leaves the order of a call's arguments and of an expression's operands to the
+ * compiler, so V3(R(), R(), R()) is a different vector per compiler (springclean #200). Draws go left to right.
+ */
+
 static v3 GjkTestUnit(void)
 {
     const f32 z = RngF32Range(-1.0f, 1.0f);
@@ -795,9 +806,19 @@ static v3 GjkTestUnit(void)
     return V3(r*F32Cos(theta), r*F32Sin(theta), z);
 }
 
+/* each component in [min, max], drawn x, y, z */
+static v3 GjkTestV3Range(const f32 min, const f32 max)
+{
+    const f32 x = RngF32Range(min, max);
+    const f32 y = RngF32Range(min, max);
+    const f32 z = RngF32Range(min, max);
+    return V3(x, y, z);
+}
+
 static q GjkTestRotation(void)
 {
-    return QUnitAxisAngle(GjkTestUnit(), RngF32Range(0.0f, 2.0f*F32_PI));
+    const v3 axis = GjkTestUnit();
+    return QUnitAxisAngle(axis, RngF32Range(0.0f, 2.0f*F32_PI));
 }
 
 /* rotation taking (0,1,0) to the unit vector t */
@@ -814,14 +835,17 @@ static q GjkTestRotationFromY(const v3 t)
 static f32 GjkTestSize(void)
 {
     const f32 decade[] = { 1e-2f, 1e-1f, 1.0f, 1e1f, 1e2f };
-    return decade[RngU64Range(0, 4)] * RngF32Range(1.0f, 3.0f);
+    const f32 scale = decade[RngU64Range(0, 4)];
+    return scale * RngF32Range(1.0f, 3.0f);
 }
 
 /* world offsets 0 .. 1e3 */
 static v3 GjkTestWorldPosition(void)
 {
     const f32 range[] = { 0.0f, 1.0f, 1e2f, 1e3f };
-    return V3Scale(GjkTestUnit(), range[RngU64Range(0, 3)] * RngF32Normalized());
+    const v3 u = GjkTestUnit();
+    const f32 scale = range[RngU64Range(0, 3)];
+    return V3Scale(u, scale * RngF32Normalized());
 }
 
 static struct c_Shape GjkTestRandomHull(struct arena *mem)
@@ -832,10 +856,11 @@ static struct c_Shape GjkTestRandomHull(struct arena *mem)
     do
     {
         const u32 count = (u32) RngU64Range(4, 24);
-        const v3 axis_scale = V3(size*RngF32Range(0.2f, 1.0f), size*RngF32Range(0.2f, 1.0f), size*RngF32Range(0.2f, 1.0f));
+        const v3 axis_scale = V3Scale(GjkTestV3Range(0.2f, 1.0f), size);
         for (u32 i = 0; i < count; ++i)
         {
-            const v3 u = V3Scale(GjkTestUnit(), RngF32Range(0.5f, 1.0f));
+            const v3 dir = GjkTestUnit();
+            const v3 u = V3Scale(dir, RngF32Range(0.5f, 1.0f));
             p[i] = V3(u.x*axis_scale.x, u.y*axis_scale.y, u.z*axis_scale.z);
         }
         shape.hull = DcelConvexHull(mem, p, count);
@@ -860,6 +885,14 @@ static ds_Transform GjkTestTransform(const q rotation, const v3 position)
     return t;
 }
 
+/* a random rotation, then a world position */
+static ds_Transform GjkTestRandomTransform(void)
+{
+    const q rotation = GjkTestRotation();
+    const v3 position = GjkTestWorldPosition();
+    return GjkTestTransform(rotation, position);
+}
+
 /*
  * A world point relative to hull A: far, near a vertex, near a face (both sides), or inside. Covers the
  * boundary cases of the inside test (cutoff 0).
@@ -867,12 +900,15 @@ static ds_Transform GjkTestTransform(const q rotation, const v3 position)
 static v3 GjkTestPointNear(const struct gjk_TestShape *a, const u32 mode)
 {
     const f64 offset_scale[] = { 1e-6, 1e-5, 1e-4, 1e-3, 1e-2 };
-    const f64 offset = a->extent * offset_scale[RngU64Range(0, 4)] * ((RngU64Range(0, 1)) ? 1.0 : -1.0);
+    const f64 offset_size = a->extent * offset_scale[RngU64Range(0, 4)];
+    const f64 sign = (RngU64Range(0, 1)) ? 1.0 : -1.0;
+    const f64 offset = offset_size * sign;
     switch (mode)
     {
         case 0:
         {
-            return V3Add(a->t.position, V3Scale(GjkTestUnit(), (f32) a->extent * RngF32Range(0.0f, 2.0f)));
+            const v3 u = GjkTestUnit();
+            return V3Add(a->t.position, V3Scale(u, (f32) a->extent * RngF32Range(0.0f, 2.0f)));
         }
 
         case 1:
@@ -926,7 +962,8 @@ struct test_Output GjkTestRotationConventionTest(struct test_Environment *env)
     for (u32 i = 0; i < 1000; ++i)
     {
         const q rot = GjkTestRotation();
-        const v3 p = V3Scale(GjkTestUnit(), RngF32Range(0.0f, 10.0f));
+        const v3 dir = GjkTestUnit();
+        const v3 p = V3Scale(dir, RngF32Range(0.0f, 10.0f));
         struct d3 r[3];
         D3Rotation(r, rot);
         const struct d3 expected = D3Transform(r, D3(0.0, 0.0, 0.0), p);
@@ -953,7 +990,7 @@ struct test_Output GjkHullPointTest(struct test_Environment *env)
     {
         struct arena record = *env->mem_2;
         struct gjk_TestShape a, b;
-        GjkTestShapeInit(env->mem_2, &a, hull + (i % GJK_TEST_HULL_COUNT), GjkTestTransform(GjkTestRotation(), GjkTestWorldPosition()));
+        GjkTestShapeInit(env->mem_2, &a, hull + (i % GJK_TEST_HULL_COUNT), GjkTestRandomTransform());
         GjkTestShapeInit(env->mem_2, &b, &point, GjkTestTransform(QIdentity(), GjkTestPointNear(&a, (u32) RngU64Range(0, 3))));
 
         f32 d;
@@ -982,7 +1019,7 @@ struct test_Output GjkHullSegmentTest(struct test_Environment *env)
     {
         struct arena record = *env->mem_2;
         struct gjk_TestShape a, b;
-        GjkTestShapeInit(env->mem_2, &a, hull + (i % GJK_TEST_HULL_COUNT), GjkTestTransform(GjkTestRotation(), GjkTestWorldPosition()));
+        GjkTestShapeInit(env->mem_2, &a, hull + (i % GJK_TEST_HULL_COUNT), GjkTestRandomTransform());
 
         struct c_Shape capsule = { .type = C_SHAPE_CAPSULE };
         capsule.capsule.half_height = (i % 10 == 0) ? 0.0f : (f32) a.extent * RngF32Range(0.0f, 1.0f);
@@ -1024,7 +1061,7 @@ struct test_Output GjkHullHullTest(struct test_Environment *env)
     {
         struct arena record = *env->mem_2;
         struct gjk_TestShape a, b;
-        GjkTestShapeInit(env->mem_2, &a, hull + (i % GJK_TEST_HULL_COUNT), GjkTestTransform(GjkTestRotation(), GjkTestWorldPosition()));
+        GjkTestShapeInit(env->mem_2, &a, hull + (i % GJK_TEST_HULL_COUNT), GjkTestRandomTransform());
 
         const struct c_Shape *hull_b = hull + RngU64Range(0, GJK_TEST_HULL_COUNT - 1);
         f64 extent_b = 0.0;
@@ -1032,7 +1069,8 @@ struct test_Output GjkHullHullTest(struct test_Environment *env)
         {
             extent_b = F64MaxTest(extent_b, D3Length(D3V3(hull_b->hull.v[j])));
         }
-        const v3 position = V3Add(a.t.position, V3Scale(GjkTestUnit(), (f32) (a.extent + extent_b) * RngF32Range(0.0f, 1.5f)));
+        const v3 dir = GjkTestUnit();
+        const v3 position = V3Add(a.t.position, V3Scale(dir, (f32) (a.extent + extent_b) * RngF32Range(0.0f, 1.5f)));
         GjkTestShapeInit(env->mem_2, &b, hull_b, GjkTestTransform(GjkTestRotation(), position));
 
         f32 d;
@@ -1163,13 +1201,14 @@ struct test_Output GjkCacheTest(struct test_Environment *env)
             default: { shape_b = hull[RngU64Range(0, GJK_TEST_HULL_COUNT - 1)]; } break;
         }
 
-        const ds_Transform t_a = GjkTestTransform(GjkTestRotation(), GjkTestWorldPosition());
+        const ds_Transform t_a = GjkTestRandomTransform();
         struct arena record = *env->mem_2;
         struct gjk_TestShape a, b;
         GjkTestShapeInit(env->mem_2, &a, shape_a, t_a);
 
         const f32 step = 0.02f * (f32) a.extent;
-        ds_Transform t_b = GjkTestTransform(GjkTestRotation(), GjkTestPointNear(&a, 0));
+        const q rotation_b = GjkTestRotation();
+        ds_Transform t_b = GjkTestTransform(rotation_b, GjkTestPointNear(&a, 0));
         struct GJKCache cache[2];
         u32 cache_valid = 0;
         for (u32 i = 0; i < 60; ++i)
@@ -1221,9 +1260,12 @@ struct test_Output GjkIterationLimitTest(struct test_Environment *env)
         {
             struct arena record = *env->mem_2;
             struct gjk_TestShape a, b;
-            GjkTestShapeInit(env->mem_2, &a, hull + (i % GJK_TEST_HULL_COUNT), GjkTestTransform(GjkTestRotation(), GjkTestWorldPosition()));
-            const v3 position = V3Add(a.t.position, V3Scale(GjkTestUnit(), (f32) a.extent * RngF32Range(0.0f, 3.0f)));
-            GjkTestShapeInit(env->mem_2, &b, hull + RngU64Range(0, GJK_TEST_HULL_COUNT - 1), GjkTestTransform(GjkTestRotation(), position));
+            GjkTestShapeInit(env->mem_2, &a, hull + (i % GJK_TEST_HULL_COUNT), GjkTestRandomTransform());
+            const v3 dir = GjkTestUnit();
+            const v3 position = V3Add(a.t.position, V3Scale(dir, (f32) a.extent * RngF32Range(0.0f, 3.0f)));
+            const struct c_Shape *hull_b = hull + RngU64Range(0, GJK_TEST_HULL_COUNT - 1);
+            const q rotation_b = GjkTestRotation();
+            GjkTestShapeInit(env->mem_2, &b, hull_b, GjkTestTransform(rotation_b, position));
 
             f32 d;
             struct GJKCache cache;

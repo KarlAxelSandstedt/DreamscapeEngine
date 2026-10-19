@@ -103,7 +103,7 @@ void	RngSystem(void *buf, const u64 size);
 	#define FS_PROT_NONE         	0
 	
 	#define FS_MAP_SHARED        	0
-	#define FS_MAP_PRIVATE       	0
+	#define FS_MAP_PRIVATE       	1
 
 #endif
 
@@ -159,7 +159,9 @@ u32		Utf8PathRelativeCheck(const utf8 path);
 /*
  * Paths are relative to dir (or the cwd): FileTryCreate, FileTryOpen, DirectoryTryCreate and DirectoryTryOpen
  * return FS_PATH_INVALID for an absolute path. Platforms differ: FileDump accepts absolute paths on Linux and web
- * (Windows goes through FileTryOpen); FileStatusPath rejects them on Linux.
+ * (Windows goes through FileTryOpen); FileStatusPath rejects them on Linux. On Windows, the joined absolute path (dir's
+ * in its "\\?\" form, then the relative one) must fit MAX_PATH (260 UTF-16 units with the terminator), else
+ * FS_PATH_INVALID.
  *
  * The Try functions below expect *file closed (FILE_HANDLE_INVALID; asserted), copy the path onto mem and set the
  * type from the opened file. Errors besides those named: FS_PATH_INVALID (nothing at the path), FS_PERMISSION_DENIED,
@@ -172,9 +174,9 @@ void 		FileClose(struct file *file);
 enum fsError 	FileTryCreate(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 truncate);
 /* Try create and open a file at the cwd; If the file already exists, it is truncated if truncate is set, otherwise FS_ALREADY_EXISTS is returned. */
 enum fsError 	FileTryCreateAtCwd(struct arena *mem, struct file *file, const char *filename, const u32 truncate);
-/* Try open a file at the given directory, read-only unless writeable; If the file does not exist, FS_PATH_INVALID is returned. */
+/* Try open a file at the given directory, read-only unless writeable; If the file does not exist, FS_PATH_INVALID is returned; a directory gives FS_TYPE_INVALID (DirectoryTryOpen opens those). */
 enum fsError 	FileTryOpen(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 writeable);
-/* Try open a file at the cwd; If the file does not exist, FS_PATH_INVALID is returned. */
+/* Try open a file at the cwd; If the file does not exist, FS_PATH_INVALID is returned; a directory gives FS_TYPE_INVALID. */
 enum fsError 	FileTryOpenAtCwd(struct arena *mem, struct file *file, const char *filename, const u32 writeable);
 
 /*
@@ -196,13 +198,23 @@ void 		FileSync(const struct file *file);
 /* returns 1 on successful size change, 0 on failure */
 u32		FileSetSize(const struct file *file, const u64 size);
 
+/*
+ * prot: FS_PROT_READ, or FS_PROT_READ | FS_PROT_WRITE (file opened writeable). flags: FS_MAP_SHARED (writes reach the
+ * file) or FS_MAP_PRIVATE (copy-on-write: writes stay in the mapping). Windows doesn't support FS_PROT_EXECUTE or
+ * FS_PROT_NONE: the mapping fails (NULL).
+ */
+
 /* return memory mapped address of the whole file and set *size to the file's size; NULL on failure. */
 void *		FileMemoryMap(u64 *size, const struct file *file, const u32 prot, const u32 flags);
 /* return memory mapped address of file[offset, offset + length), growing the file first if it is shorter; NULL on failure */
 void *		FileMemoryMapPartial(const struct file *file, const u64 length, const u64 offset, const u32 prot, const u32 flags);
 /* unmap memory mapping */
 void 		FileMemoryUnmap(void *addr, const u64 length);
-/* sync mmap before unmapping.  NOTE: EXTREMELY SLOW OPERATION */
+/*
+ * sync mmap before unmapping.  NOTE: EXTREMELY SLOW OPERATION
+ * Linux waits until the changes are written back (msync MS_SYNC); Windows only starts writing them (FlushViewOfFile):
+ * FileSync on the file afterwards waits for storage.
+ */
 void 		FileMemorySyncUnmap(void *addr, const u64 length);
 
 /***************************** directory creation, reading and navigation *****************************/
@@ -216,7 +228,8 @@ enum fsError 	DirectoryTryOpen(struct arena *mem, struct file *dir, const char *
 /* Try open a directory at the cwd; FS_PATH_INVALID if it does not exist, FS_TYPE_INVALID if it is not a directory. */
 enum fsError 	DirectoryTryOpenAtCwd(struct arena *mem, struct file *dir, const char *filename);
 /* push directory file paths and states AND CLOSE DIRECTORY (on every path)! Every entry, "." and ".." included,
- * gets its name (on mem) and type; entries whose status can't be read (dangling links) are FILE_UNRECOGNIZED.
+ * gets its name (on mem) and type; a link has its target's type, and entries whose status can't be read (dangling
+ * links) are FILE_UNRECOGNIZED.
  *
  * RETURNS:
  * 	FS_SUCCESS on success,
@@ -264,10 +277,11 @@ enum fsError			DirectoryNavigatorEnterAndAliasPath(struct directoryNavigator *dn
 void		FileStatusDebugPrint(const file_status *stat);
 /* return file type from file status */
 enum fileType	FileStatusGetType(const file_status *status);
-/* Fill the file status of a given open file. Returns FS_SUCCESS or FS_ERROR_UNSPECIFIED (status undefined then). */
+/* Fill the file status of a given open file (opened through a link: its target). Returns FS_SUCCESS or
+ * FS_ERROR_UNSPECIFIED (status undefined then). */
 enum fsError	FileStatusFile(file_status *status, const struct file *file);
-/* Fill the file status of a given filepath relative to dir. Returns FS_SUCCESS, FS_ERROR_UNSPECIFIED (status undefined
- * then), or on Linux FS_PATH_INVALID for an absolute path. */
+/* Fill the file status of a given filepath relative to dir, links followed (a dangling link fails). Returns FS_SUCCESS,
+ * FS_ERROR_UNSPECIFIED (status undefined then), or on Linux FS_PATH_INVALID for an absolute path. */
 enum fsError	FileStatusPath(file_status *status, const char *path, const struct file *dir);
 
 /************************************* process directory operations *************************************/
@@ -275,7 +289,7 @@ enum fsError	FileStatusPath(file_status *status, const char *path, const struct 
 /* Return the absolute path of the current working directory (on mem); string is set to empty on error, also when mem is too small. */
 utf8		CwdGet(struct arena *mem);
 
-/* Set g_sys_env->cwd and update process' internal current working directory.
+/* Set g_sys_env->cwd and update process' internal current working directory. On failure, both stay as they were.
  *
  * RETURNS:
  *	FS_SUCCESS on success,

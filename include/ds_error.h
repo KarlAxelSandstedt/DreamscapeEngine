@@ -48,7 +48,8 @@ before any engine init.
 */
 void 	FatalCleanupAndExit(void);
 
-/* Write the text of a system error code into buf and return it; empty on failure. Thread-safe. */
+/* Write the text of a system error code into buf and return it (UTF-8, in English where the system has English
+ * messages); empty on failure or when it does not fit. Thread-safe. */
 utf8	Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 code);
 
 

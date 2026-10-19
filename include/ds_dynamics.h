@@ -26,7 +26,6 @@ extern "C" {
 
 #include "ds_allocator.h"
 #include "ds_math.h"
-#include "ds_renderer.h"
 #include "ds_list.h"
 #include "ds_collision.h"
 #include "ds_hash_map.h"
@@ -186,25 +185,6 @@ void    ds_DynamicsMetricsPrint(FILE *file, const struct ds_DynamicsMetrics *met
 
 
 /*
-ds_DynamicsDraw
-===============
-Per-thread dynamics debug/information draw data of frame.
-*/
-
-struct ds_DynamicsDraw 
-{
-	ds_CPool(r_ColorSegment)	debug_segment_pool;
-};
-
-#ifdef DS_PHYSICS_DEBUG
-#define ds_DynamicsDrawDebugSegment(segment, color)							\
-	ds_CPoolPushValue(g_dynamics_worker[ds_ThreadSelfIndex()].draw.debug_segment_pool,  r_ColorSegmentConstruct(segment, color))
-#else
-#define ds_DynamicsDrawDebugSegment(segment, color)
-#endif
-
-
-/*
 ds_DynamicsWorker
 =================
 Worker owned dynamics data. Core to the pipeline here is the worker's double-buffered frame memory. 
@@ -217,7 +197,6 @@ struct ds_DynamicsWorker
     struct arena *              frame;
     
     struct ds_DynamicsMetrics   metrics;
-    struct ds_DynamicsDraw      draw;
 
     u8                          pad[DS_CACHE_LINE];
 };
@@ -1512,8 +1491,6 @@ u32 ds_RemovalJobPhaseDispatch(const ds_JobId job);
 		__physics_debug_event->island = island_index;						                \
 	}
 
-//#ifdef DS_PHYSICS_DEBUG
-
 #define	PhysicsEventBodyNew(pipeline, _body)		                                        \
 	{												                                        \
 		struct ds_PhysicsEvent *__physics_debug_event = ds_PhysicsEventPush(pipeline);	\
@@ -1546,20 +1523,6 @@ u32 ds_RemovalJobPhaseDispatch(const ds_JobId job);
 		__physics_debug_event->contact_removed_shapes[0] = shape0;				            \
 		__physics_debug_event->contact_removed_shapes[1] = shape1;				            \
 	}
-
-//#else
-//
-//#define	PhysicsEventBodyNew(pipeline, body)
-//#define	PhysicsEventBodyRemoved(pipeline, entity)
-//#define	PhysicsEventIslandAsleep(pipeline, island)
-//#define	PhysicsEventIslandAwake(pipeline, island) 
-//#define	PhysicsEventIslandNew(pipeline, island)   
-//#define	PhysicsEventIslandRemoved(pipeline, island)
-//#define   PhysicsEventIslandExpanded(pipeline, island) 
-//#define PhysicsEventContactNew(pipeline, contact)
-//#define PhysicsEventContactRemoved(pipeline, body0, shape0, body1, shape1)                
-//
-//#endif
 
 enum ds_PhysicsEventType
 {

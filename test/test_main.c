@@ -70,7 +70,8 @@ static void run_suite(struct suite_Correctness *suite, struct test_Environment *
 	{
 		ThreadXoshiro256InitSequence(test_stream++);
 		RngPushState();
-		struct test_Output out;
+		/* a count of 0 runs nothing: a pass */
+		struct test_Output out = { .id = "(count 0)", .success = 1 };
 		u32 t;
 		for (t = 0; t < suite->repetition_test[i].count; ++t)
 		{

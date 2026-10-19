@@ -117,10 +117,9 @@ if (DEFINED EMSCRIPTEN)
 	add_compile_options(-pthread)
 	add_link_options(-pthread -sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency)
 
+	# lib/'s external projects (SDL3, freetype) get CMAKE_C_FLAGS, not add_compile_options: without -pthread
+	# their objects lack atomics and wasm-ld refuses the shared-memory link
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread")
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --embed-file=../assets@../assets")
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --embed-file=../asset_components@../asset_components")
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --embed-file=../config@../config")
 
     #add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 	#	COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${PROJECT_NAME}>/src
@@ -201,6 +200,11 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 		string(REPLACE "/RTC1" "" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
 		string(REPLACE "/RTC1" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
 	endif ()
+
+	# CMake's default /W3 (policy CMP0092 is OLD below 3.15): the engine's level comes from Dreamscape::Define
+	# (include/CMakeLists.txt), where a second /W would be overridden with warning D9025; lib/ keeps the compiler's
+	string(REGEX REPLACE "/W[0-4]" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+	string(REGEX REPLACE "/W[0-4]" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 
 	# avoids x87 fp-instructions entirely (extended precision bad for consistency)
 	add_compile_options(/arch:SSE2)
@@ -303,6 +307,12 @@ if (DS_TEST)
 
 		set(CMAKE_EXECUTABLE_SUFFIX ".html")
 		add_executable(${DS_TEST_EXECUTABLE} "${DS_TEST_MODULE_PATH}/wasm/main.c")
+
+		# the files the executable reads, in its virtual file system: link options (emcc warns at every compile)
+		target_link_options(${DS_TEST_EXECUTABLE} PRIVATE
+			"--embed-file=../assets@../assets"
+			"--embed-file=../asset_components@../asset_components"
+			"--embed-file=../config@../config")
 
 		if (DS_TEST_DETERMINISM)
 			# test files to and from the build directory, see host_files.js

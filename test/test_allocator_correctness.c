@@ -43,7 +43,7 @@ static struct test_Output PowerOfTwoTest(struct test_Environment *env)
         const u64 p = (u64) 1 << k;
         const u64 n = RngU64Range(p/2 + 1, p);
         TEST_EQUAL(p, PowerOfTwoCeil(n));
-        TEST_EQUAL((n == p), PowerOfTwoCheck(n));
+        TEST_EQUAL((u32) (n == p), PowerOfTwoCheck(n));
     }
 
 	return output;
@@ -597,7 +597,7 @@ static struct test_Output PoolTest(struct test_Environment *env)
             : ds_PoolAlloc(NULL, pool, (variant == 1) ? 100 : 1, (variant == 2) ? GROWABLE : NOT_GROWABLE);
         TEST_EQUAL(1, allocated);
         TEST_NOT_EQUAL(NULL, pool.buf);
-        TEST_TRUE((variant == 0) ? pool.length == 100 : pool.length >= ((variant == 1) ? 100 : 1));
+        TEST_TRUE((variant == 0) ? pool.length == 100 : pool.length >= ((variant == 1) ? 100u : 1u));
 
         memset(alive, 0, POOL_TEST_MAX);
         u32 count = 0;
