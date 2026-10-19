@@ -164,11 +164,7 @@ extern struct sprite *	g_sprite;
 struct assetPng
 {
 	const char *	filepath;	/* relative file path */
-	u32 		width;		/* pixel width */
-	u32 		height;		/* pixel height */
 	u32		sprite_width;	/* hardcoded sprite width for each png component */
-	u32		valid;		/* is the asset valid? */
-	file_handle	handle;		/* set to FILE_HANDLE_INVALID if not loaded */
 };
 
 #endif

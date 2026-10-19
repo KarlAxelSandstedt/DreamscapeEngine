@@ -29,11 +29,7 @@ static struct assetPng led_png_arr[] =
 {
 	{
 		.filepath = "../asset_components/textures/led_sprite_sheet.png",
-		.width = 0,
-		.height = 0,
 		.sprite_width = 64,
-		.valid = 0,
-		.handle = FILE_HANDLE_INVALID,
 	},
 };
 
@@ -41,11 +37,7 @@ static struct assetPng dynamic_png_arr[] =
 {
 	{
 		.filepath = "../asset_components/textures/sorcerer_hero_sprite_sheet.png",
-		.width = 0,
-		.height = 0,
 		.sprite_width = 64,
-		.valid = 0,
-		.handle = FILE_HANDLE_INVALID,
 	},
 };
 
