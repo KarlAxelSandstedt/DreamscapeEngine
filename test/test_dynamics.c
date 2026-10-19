@@ -50,6 +50,12 @@ islands that fall asleep at different frames is snapshotted at several frames. E
 A lone box is removed before one check (pools with free slots), and the last check first wakes every sleeping
 set in the original and in the copies. A restore points the dynamics globals at the copy, so the test points
 them back at the original (ds_DynamicsSetGlobals) before calling into it outside a tick.
+
+Solver sets (DynamicsSleepTest): a two-box stack and a lone box fall asleep into one set each (one island, the
+bodies' simulation state without compute state, the contacts with their caches, all in the set's arena; the
+active set empty). Waking a fixed set or the null index does nothing. Removing the top box wakes the stack's
+set (slot freed, the bottom box active with compute state and a reset sleep timer, the lone box still asleep);
+the bottom box sleeps again into the freed slot; disabling sleeping wakes everything.
 */
 
 #define DYNAMICS_TEST_SETTLE_TICKS      120     /* 2 s at 60 Hz */
@@ -1095,6 +1101,113 @@ static struct test_Output DynamicsIslandTest(struct test_Environment *env)
     return output;
 }
 
+/* the solver sets' sleep and wake bookkeeping (file comment) */
+static struct test_Output DynamicsSleepTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 1;
+
+    /* a ground, a two-box stack and a lone box: two islands that fall asleep */
+    const v3 hw = V3(0.5f, 0.5f, 0.5f);
+    const struct dynamics_TestBox scene[4] =
+    {
+        { .position = V3(0.0f, -1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(16.0f, 1.0f, 16.0f), .dynamic = 0, .friction = 0.5f },
+        { .position = V3(-4.0f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+        { .position = V3(-4.0f, 1.5f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+        { .position = V3(4.0f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+    };
+    ds_BodyId id[4];
+    for (u32 i = 0; i < 4; ++i)
+    {
+        id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
+    }
+    const struct ds_Body *bottom = ds_BodyLookup(&pipeline, id[1]).address;
+    const struct ds_Body *top = ds_BodyLookup(&pipeline, id[2]).address;
+    const struct ds_Body *lone = ds_BodyLookup(&pipeline, id[3]).address;
+    const u32 bottom_index = ds_BodyLookup(&pipeline, id[1]).index;
+
+    u32 t;
+    for (t = 0; t < 600 && (bottom->set < SOLVER_SET_SLEEPING_FIRST || lone->set < SOLVER_SET_SLEEPING_FIRST); ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(t < 600);
+    TEST_NOT_ZERO(top->set == bottom->set && bottom->set != lone->set);
+    TEST_NOT_ZERO(SnapshotTestSleepingSetCount(&pipeline) == 2);
+
+    /* the active set is empty; each sleeping set holds one island, its bodies' simulation state without compute state, and its contacts with their caches, in one arena */
+    const struct ds_SolverSet *active = pipeline.solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    TEST_NOT_ZERO(active->island_pool.count == 0 && active->body_sim_pool.count == 0 && active->body_compute_pool.count == 0);
+    for (u32 i = SOLVER_SET_SLEEPING_FIRST; i < pipeline.solver_set_pool.count_max; ++i)
+    {
+        const struct ds_SolverSet *set = pipeline.solver_set_pool.buf + i;
+        if (!ds_PoolSlotAllocated(set))
+        {
+            continue;
+        }
+        TEST_NOT_ZERO(set->island_pool.count == 1 && set->mem.mem_size != 0);
+        const struct ds_Island *island = pipeline.island_pool.buf + set->island_pool.buf[0];
+        TEST_NOT_ZERO(island->set == i && island->set_island_index == 0);
+        TEST_NOT_ZERO(set->body_sim_pool.count == island->body_list.count && set->body_compute_pool.count == 0);
+        TEST_NOT_ZERO(set->contact_pool.count == island->contact_list.count && set->contact_compute_pool.count == island->contact_list.count);
+        ds_SolverSetValidate(&pipeline, i);
+    }
+    ds_IslandValidateAll(&pipeline);
+    const struct ds_SolverSet *stack_set = pipeline.solver_set_pool.buf + bottom->set;
+    const struct ds_SolverSet *lone_set = pipeline.solver_set_pool.buf + lone->set;
+    TEST_NOT_ZERO(stack_set->body_sim_pool.count == 2 && stack_set->contact_pool.count == 2);
+    TEST_NOT_ZERO(lone_set->body_sim_pool.count == 1 && lone_set->contact_pool.count == 1);
+    TEST_NOT_ZERO(stack_set->body_sim_pool.buf[bottom->sim].body == bottom_index);
+
+    /* waking a set that is not sleeping is a no-op */
+    ds_SolverSetWakeUp(&pipeline, SOLVER_SET_ACTIVE);
+    ds_SolverSetWakeUp(&pipeline, SOLVER_SET_STATIC);
+    ds_SolverSetWakeUp(&pipeline, SOLVER_SET_NULL);
+    active = pipeline.solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    TEST_NOT_ZERO(SnapshotTestSleepingSetCount(&pipeline) == 2 && active->body_sim_pool.count == 0);
+
+    /* removing the top box wakes the stack's set: the bottom box is active again with fresh compute state and a reset sleep timer; the lone box still sleeps */
+    const u32 stack_set_index = bottom->set;
+    ds_BodyRemove(&mem, &pipeline, id[2]);
+    active = pipeline.solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    TEST_NOT_ZERO(!ds_PoolSlotAllocated(pipeline.solver_set_pool.buf + stack_set_index));
+    TEST_NOT_ZERO(bottom->set == SOLVER_SET_ACTIVE && lone->set >= SOLVER_SET_SLEEPING_FIRST);
+    TEST_NOT_ZERO(active->body_sim_pool.count == 1 && active->body_compute_pool.count == 1 && active->island_pool.count == 1);
+    TEST_NOT_ZERO(active->body_sim_pool.buf[bottom->sim].body == bottom_index && bottom->low_velocity_time == 0.0f);
+    ds_SolverSetValidate(&pipeline, SOLVER_SET_ACTIVE);
+    ds_IslandValidateAll(&pipeline);
+
+    /* the bottom box rests and sleeps again, into the freed set slot */
+    for (t = 0; t < 600 && bottom->set < SOLVER_SET_SLEEPING_FIRST; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(t < 600 && bottom->set == stack_set_index && SnapshotTestSleepingSetCount(&pipeline) == 2);
+
+    /* disabling sleeping wakes everything */
+    g_solver_config->pending_sleep_enabled = 0;
+    SnapshotTestTick(&pipeline);
+    active = pipeline.solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    TEST_NOT_ZERO(SnapshotTestSleepingSetCount(&pipeline) == 0 && bottom->set == SOLVER_SET_ACTIVE && lone->set == SOLVER_SET_ACTIVE);
+    TEST_NOT_ZERO(active->body_sim_pool.count == 2 && active->body_compute_pool.count == 2 && active->island_pool.count == 2);
+    ds_SolverSetValidate(&pipeline, SOLVER_SET_ACTIVE);
+    ds_IslandValidateAll(&pipeline);
+
+    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
 {
     DynamicsRestingBoxTest,
@@ -1105,6 +1218,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsBodyTest,
     DynamicsContactTest,
     DynamicsIslandTest,
+    DynamicsSleepTest,
 };
 
 struct suite_Correctness m_dynamics_suite =
