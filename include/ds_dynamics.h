@@ -78,8 +78,9 @@ struct ds_NumericsConfig
     f32 face_parallel_cos;
 
     /*
-     * Edge-edge SAT queries (hull-capsule; hull-hull when refactored): maximum degrees between two edges (a hull
-     * edge and a capsule core) for them to count as parallel and be skipped (their cross product is noise).
+     * Edge-edge SAT queries (hull-capsule, hull-hull, hull-triangle): maximum degrees between two edges (hull
+     * edges, a capsule core, triangle edges) for them to count as parallel and be skipped (their cross product is
+     * noise).
      * Derived: sin^2 of the angle; parallel iff |d1 x d2|^2 < sin_sq * |d1|^2 |d2|^2.
      */
     f32 edge_parallel_max_degrees_pending;
@@ -87,7 +88,7 @@ struct ds_NumericsConfig
     f32 edge_parallel_sin_sq;
 
     /*
-     * SAT face vs edge choice (hull-capsule; hull-hull when refactored): the edge contact replaces the face
+     * SAT face vs edge choice (hull-capsule, hull-hull, hull-triangle): the edge contact replaces the face
      * contact only if it separates more by this margin (m). Biases towards the face (two points, stable normal)
      * so rounding can't flip the choice every tick. Absolute (Box3D: linear slop, 0.005 m).
      */
@@ -177,7 +178,7 @@ struct ds_DynamicsMetrics
 void    ds_DynamicsMetricsFlush(struct ds_DynamicsMetrics *metrics);
 /* Add statistics */
 void    ds_DynamicsMetricsAdd(struct ds_DynamicsMetrics *sum, const struct ds_DynamicsMetrics *metrics);
-/* Add statistics */
+/* Print statistics */
 void    ds_DynamicsMetricsPrint(FILE *file, const struct ds_DynamicsMetrics *metrics);
 
 
@@ -564,7 +565,7 @@ DEFINE_CPOOL_STRUCT(ds_BodyCompute);
 ds_BodyId  ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *prefab, const ds_TransformWorld *t_world, const u32 entity);
 /* Free the given body */
 void            ds_BodyRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, const ds_BodyId id);
-/* Lookup the given body and return it. If it does not exist, return DS_ID_NULL.  */
+/* Lookup the given body and return it. If it does not exist, return (NULL, POOL_NULL). */
 struct slot	    ds_BodyLookup(const struct ds_Dynamics *pipeline, const ds_BodyId id);
 /* Process the body's shape list and set its internal mass properties accordingly. */
 void		    ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId id);
@@ -744,7 +745,7 @@ struct slot ds_ContactAdd(struct ds_Dynamics *pipeline, const struct ds_ContactK
 void 	    ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 contact_index);
 /* Return the contact associated with the given id. If no such contact is found, return (U32_MAX, NULL) */
 struct slot ds_ContactLookup(const struct ds_Dynamics *pipeline, const ds_ContactId id);
-/* Update contact at the given slot and update pipeline state. */
+/* Return the contact with the given key. If no such contact is found, return (U32_MAX, NULL) */
 struct slot ds_ContactKeyLookup(const struct ds_Dynamics *pipeline, const struct ds_ContactKey key);
 
 /* Internal: Return 1 if contact shape bvh nodes still overlap, otherwise return 0. */
@@ -786,7 +787,7 @@ Stores data needed for warming up the constraint in the next frame.
 struct ds_ContactConstraintCache
 {
 	v3 			        normal;                     /* Cached contact normal                */
-	v3 			        tangent[2];                 /* Froms Contact basis with normal      */
+	v3 			        tangent[2];                 /* Forms the contact basis with normal  */
 	v3 			        r1[4];			            /* previous local frame arm levers      */
     v3                      r2[4];                   
 	f32 			        tangent_impulse[4][2];
@@ -840,8 +841,6 @@ struct ds_Joint
     u32                 body[2];        /* bodies sharing ownership of joint                                */
     struct DLLNode   edge_node[2];   /* Each body stores the joint its dll; b == body[i] => edge_node[i] 
                                            is part of body b's dll.                                         */
-
-    //TODO u32         island;     /* */
 
     u32         set;                    /* index to joint's set                                             */
     u32         color;                  /* edge color (or CG_COLOR_NOT_SET)                                 */
@@ -1481,8 +1480,6 @@ u32 ds_RemovalJobPhaseDispatch(const ds_JobId job);
 =================================================================================================================
 */
 
-#define COLLISION_MARGIN_DEFAULT 5.0f * DS_UNIT_MM 
-
 #define UNIFORM_SIZE 256
 #define GRAVITY_CONSTANT_DEFAULT 9.80665f
 
@@ -1668,7 +1665,7 @@ struct ds_Dynamics
 /**************** PHYISCS PIPELINE API ****************/
 
 /* Initialize a new growable physics pipeline; ns_tick is the duration of a physics frame. */
-struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, ds_SDB(c_Shape) *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_cont, const u64 worker_frame_size);
+struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, ds_SDB(c_Shape) *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size);
 /* free pipeline resources */
 void 			ds_DynamicsFree(struct ds_Dynamics *pipeline);
 /* Return the required size when serializing the pipeline. */
