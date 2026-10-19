@@ -285,17 +285,18 @@ void CmdQueueExecute(void)
 {
 	struct arena *tmp = ArenaPushScratch();
 
-	u32 next = U32_MAX;
+	i32 next = LL_SENTINEL;
 	for (i32 i = g_queue->cmd_list.first; i != LL_SENTINEL; i = next)
 	{
 		g_queue->cmd_exec = g_queue->cmd_pool.buf + i;
-		next = g_queue->cmd_exec->next;
 		if (g_queue->cmd_exec->args_type == CMD_ARGS_TOKEN)
 		{
 			//Utf8DebugPrint(g_queue->cmd_exec->string);
 			CmdTokenizeString(tmp, g_queue->cmd_exec);
 		}
 		g_queue->cmd_exec->function->call();
+		/* the call may have appended to the list and grown the pool */
+		next = g_queue->cmd_pool.buf[i].next;
 		ds_PoolRemove(g_queue->cmd_pool, i);
 	}
 
@@ -308,8 +309,8 @@ void CmdQueueExecute(void)
 void CmdQueueFlush(struct cmdQueue *queue)
 {
 	ds_PoolFlush(queue->cmd_pool);
-	LLFlush(g_queue->cmd_list);
-	LLFlush(g_queue->cmd_list_next_frame);
+	LLFlush(queue->cmd_list);
+	LLFlush(queue->cmd_list_next_frame);
 }
 
 struct slot CmdFunctionRegister(const utf8 name, const u32 args_count, void (*call)(void))
