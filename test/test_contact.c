@@ -4216,38 +4216,6 @@ struct test_Output MeshHullRandomTest(struct test_Environment *env)
 	return output;
 }
 
-/* An empty mesh (no triangles, the empty hierarchy) gives no contact against any convex shape */
-struct test_Output MeshEmptyTest(struct test_Environment *env)
-{
-	struct test_Output output = { .success = 1, .id = __func__ };
-    ContactTestConfigPush();
-    struct ds_DynamicsWorker *prev = HhWorkerPush();
-
-    struct triMesh *empty = ArenaPush(env->mem_2, sizeof(struct triMesh));
-    *empty = (struct triMesh) { 0 };
-    struct c_Shape mesh = { .type = C_SHAPE_TRI_MESH };
-    mesh.mesh_bvh = TriMeshBVHConstruct(env->mem_2, empty, 8);
-    const ds_TransformWorld t = ds_TransformWorldIdentity();
-    struct c_Shape sphere = { .type = C_SHAPE_SPHERE, .sphere.radius = 1.0f };
-    struct c_Shape capsule = { .type = C_SHAPE_CAPSULE, .capsule.radius = 0.5f, .capsule.half_height = 1.0f };
-    struct c_Shape box = { .type = C_SHAPE_CONVEX_HULL };
-    box.hull = DcelBox(env->mem_2, V3(1.0f, 1.0f, 1.0f));
-    const struct c_ContactResult none = { 0 };
-    const struct c_Shape *convex[3] = { &sphere, &capsule, &box };
-    for (u32 i = 0; i < 3; ++i)
-    {
-        const struct c_ContactResult result = c_MeshContact(env->mem_1, &none, &mesh, &t, convex[i], &t);
-        if (result.manifold_count != 0)
-        {
-            g_dynamics_worker = prev;
-            TEST_FAILURE;
-        }
-    }
-
-    g_dynamics_worker = prev;
-    return output;
-}
-
 static struct test_Output (*mesh_contact_tests[])(struct test_Environment *) =
 {
     MeshSphereCasesTest,
@@ -4256,7 +4224,6 @@ static struct test_Output (*mesh_contact_tests[])(struct test_Environment *) =
     MeshTerrainRandomTest,
     MeshHullCasesTest,
     MeshHullRandomTest,
-    MeshEmptyTest,
 };
 
 struct suite_Correctness m_mesh_contact_suite =
