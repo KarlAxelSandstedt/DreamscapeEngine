@@ -32,25 +32,18 @@ extern "C" {
 /***************************** SPIRTE SHEET FILE FORMAT *****************************/
 
 /*
- * Sprite Sheet File Format (.ssff): Fully compact, no padding 
+ * Sprite Sheet File Format (.ssff): fully compact, no padding; every offset is from the start of the file
  *
  * 	ssff_header
  * 	collection[0]
  * 	...
- * 	collection[N1]
- * 	color_table[0]
- * 	collection[0].sprite[0]
+ * 	collection[N-1]
+ * 	color_table[0]					collection[0].color_offset
+ * 	collection[0].sprite[0 .. sprite_count-1]		collection[0].sprite_offset
  * 	...
- * 	collection[0].sprite[collection[0].color_count-1]
- * 	...
- * 	...
- * 	...
- * 	...
- * 	color_table[N1]
- * 	collection[N1].sprite[0]
- * 	...
- * 	collection[N1].sprite[collection[N1].color_count-1];
- * 	pixel_data[]	
+ * 	color_table[N-1]
+ * 	collection[N-1].sprite[0 .. sprite_count-1]
+ * 	pixel block of each sprite, collection by collection	sprite.pixel_offset, bit_depth*width*height/8 + 1 bytes
  */
 
 /*

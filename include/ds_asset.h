@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025, 2026 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -21,19 +21,35 @@
 #define __DS_ASSET_PUBLIC_H__
 
 #ifdef __cplusplus
-extern "C" { 
+extern "C" {
 #endif
 
 #include "ds_platform.h"
 #include "ds_font.h"
 
 /*
+Assets: sprite sheets (.ssff, assets/sprites) and fonts (.kasfnt, assets/fonts), each a hardcoded entry of the
+asset database (asset_init.c lists them with their file paths, texture ids and, with DS_DEV, their sources under
+asset_components/). File paths are relative to the working directory: run from a build directory.
 
- * TODO: currently we build ssff's by loading png's containing collections of sprites in a row. This is 
- * 	 the wanted behaviour pngs constructed when animating, but for the purpose of creating a "static"
- * 	 sprite sheet, say for a level editor, this is not the absolute best. Instead, we actually want 
- * 	 to just hardcode each sprite's position in the sheet, as their positions are unlikely to change.
- */
+A request (AssetRequestSsff, AssetRequestFont) returns the database's own entry, loaded on the first request
+and kept until AssetFlush. The entries are static; the caller never frees them. The asset system runs on the
+main thread only.
+
+DS_DEV (CMakeLists.txt: every build type but Release): the first request of a process rebuilds the asset
+from its sources (PNG sheets with stb_image, TTF fonts with freetype) and rewrites the file under assets/,
+then loads it. A missing source is fatal. Without DS_DEV the files are only read.
+
+A missing, unreadable or corrupt file is logged (S_ERROR) and the entry is loaded as a stub until the next
+flush: a transparent texture for a sheet (its sprites keep SPRITE_NONE's sheet and so draw nothing), a font
+with one empty glyph for a font (layouts run and show nothing).
+
+Sections: ids, the sprite table, sheets, fonts, the database, init.
+*/
+
+/********************************** ids **********************************/
+
+/* the renderer's shader programs; here because the texture ids below are its texture units */
 enum rProgramId
 {
 	PROGRAM_PROXY3D,
@@ -43,6 +59,7 @@ enum rProgramId
 	PROGRAM_COUNT
 };
 
+/* the renderer's texture units; each loaded asset has one */
 enum rTextureId
 {
 	TEXTURE_STUB,
@@ -54,6 +71,10 @@ enum rTextureId
 	TEXTURE_COUNT
 };
 
+/*
+ * Sprites, in the order of their sheet's PNG cells (left to right); the sheet's parameter setter in
+ * asset_init.c hardcodes that order. A new sprite goes into its sheet's run and into the setter.
+ */
 enum spriteId
 {
 	SPRITE_NONE,
@@ -89,7 +110,7 @@ enum spriteId
 	SPRITE_COUNT
 };
 
-/* sprite sheet material id */
+/* animations of the dynamic sheet (no user yet) */
 enum animationId
 {
 	ANIMATION_SORCERER_IDLE,
@@ -100,7 +121,7 @@ enum animationId
 	ANIMATION_COUNT
 };
 
-/* sprite sheet material id */
+/* sprite sheets; SSFF_NONE_ID is the one-pixel transparent sheet every sprite belongs to before its sheet is loaded */
 enum ssffId
 {
 	SSFF_NONE_ID = 0,
@@ -109,6 +130,7 @@ enum ssffId
 	SSFF_COUNT
 };
 
+/* fonts; FONT_NONE has no entry (NULL in the database) */
 enum fontId
 {
 	FONT_NONE,
@@ -117,7 +139,7 @@ enum fontId
 	FONT_COUNT
 };
 
-/***************************** GLOBAL SPRITE ARRAY *****************************/
+/***************************** the sprite table *****************************/
 
 struct sprite
 {
@@ -127,12 +149,18 @@ struct sprite
 	v2		tr;		/* upper-right uv coordinate	*/
 };
 
+/*
+ * g_sprite[SPRITE_COUNT], indexed by enum spriteId. An entry is set by its sheet's request (uv in the
+ * sheet's texture) and stays through flushes; before that it is zero: SSFF_NONE_ID, no size. Read-only
+ * outside the asset system.
+ */
 extern struct sprite *	g_sprite;
 
-/***************************** PNG ASSET DEFINITIONS AND GLOBALS *****************************/
+/***************************** sprite sheets *****************************/
 
 #ifdef	DS_DEV
 
+/* a PNG source of a sheet: a row of equally wide cells, one sprite each, cell order = sprite order */
 struct assetPng
 {
 	const char *	filepath;	/* relative file path */
@@ -140,48 +168,50 @@ struct assetPng
 	u32 		height;		/* pixel height */
 	u32		sprite_width;	/* hardcoded sprite width for each png component */
 	u32		valid;		/* is the asset valid? */
-	file_handle	handle;		/* set to FILE_HANDLE_INVALID if not loaded */ 
-};	
+	file_handle	handle;		/* set to FILE_HANDLE_INVALID if not loaded */
+};
 
-#endif 
-
-/***************************** SSFF ASSET DEFINITIONS AND GLOBALS *****************************/
+#endif
 
 struct assetSsff
 {
 	const char *		filepath;	/* relative file path */
 	u32			loaded;		/* is the asset loaded? */
 	/* if loaded and valid */
-	u32			width;
+	u32			width;		/* texture size, hardcoded; the sheet's collections stack as rows in it */
 	u32			height;
-	void *			pixel;		/* pixel opengl texture data 			*/
+	void *			pixel;		/* width x height RGBA8 texture, heap (ds_Alloc), freed by the next flush */
 	enum rTextureId	texture_id;	/* texture id to use in draw command pipeline   */
 #ifdef	DS_DEV
 	u32			valid;		/* is the asset valid? (if not, we must rebuilt it) */
 	u32			png_count;	/* number of png sources that this ssff is constructed from */
 	struct assetPng *	png;		/* png sources  */
 #endif
-}; 
+};
 
-/* Return valid to use asset_ssff. If request fails, the returned asset is a dummy with dummy pixel parameters */
+/*
+ * Return the sheet's database entry, loaded (a stub if its file cannot be used: summary). tmp is scratch for
+ * the request, used inside a record: the sheet file and the sprite table (tens of KB); with DS_DEV the PNG
+ * build runs on it too (the decoded PNGs are heap). The sheet's g_sprite entries are set on a
+ * successful load.
+ */
 struct assetSsff *	AssetRequestSsff(struct arena *tmp, const enum ssffId id);
-/* return texture id of sprite */
+/* return the texture id of the sprite's sheet: TEXTURE_NONE until the sheet's request */
 enum rTextureId		AssetSpriteGetTextureId(const enum spriteId sprite);
 
-/***************************** TTF ASSET DEFINITIONS AND GLOBALS *****************************/
+/***************************** fonts *****************************/
 
 #ifdef	DS_DEV
 
+/* a TTF source of a font */
 struct assetTtf
 {
 	const char *		filepath;	/* relative file path */
 	u32			valid;		/* is the asset valid? */
-	file_handle		handle;		/* set to FILE_HANDLE_INVALID if not loaded */ 
-};	
+	file_handle		handle;		/* set to FILE_HANDLE_INVALID if not loaded */
+};
 
-#endif 
-
-/***************************** SSFF ASSET DEFINITIONS AND GLOBALS *****************************/
+#endif
 
 struct fontGlyph
 {
@@ -193,6 +223,7 @@ struct fontGlyph
 	v2		tr;		/* upper-right uv coordinate	*/
 };
 
+/* a loaded font: glyph metrics and uv in its alpha pixmap, the pixmap, and the codepoint map (asset_local.h: file format) */
 struct font
 {
 	u64 			size;			/* sizeof(header) + sizeof(data[]) */
@@ -207,7 +238,7 @@ struct font
 
 	u32			pixmap_width;
 	u32			pixmap_height;
-	void *			pixmap;			/* pixmap  */
+	void *			pixmap;			/* pixmap_width x pixmap_height alpha bytes, bottom row first */
 
 	u8			data[];
 };
@@ -216,41 +247,49 @@ struct assetFont
 {
 	const char *		filepath;	/* relative file path */
 	u32			loaded;		/* is the asset loaded? */
-	const struct font *	font;		/* loaded ssff header  */
-	const u32 		pixel_glyph_height;
+	const struct font *	font;		/* the loaded font (heap), freed by the next flush */
+	const u32 		pixel_glyph_height;	/* glyph height the font is rasterized at (DS_DEV) and the stub's line height */
 	/* if loaded and valid */
 	enum rTextureId	texture_id;	/* texture id to use in draw command pipeline   */
 #ifdef	DS_DEV
 	u32			valid;		/* is the asset valid? (if not, we must rebuilt it) */
 	struct assetTtf *	ttf;		/* ttf source  */
 #endif
-}; 
+};
 
-/* Return valid to use asset_ssff. If request fails, the returned asset is a dummy with dummy pixel parameters */
+/*
+ * Return the font's database entry, loaded (a stub if its file cannot be used: summary). tmp as for
+ * AssetRequestSsff (the file is mapped, not dumped); with DS_DEV the TTF build renders every glyph and the
+ * pixmap onto it (hundreds of KB). id != FONT_NONE.
+ */
 struct assetFont *	AssetRequestFont(struct arena *tmp, const enum fontId id);
-/* return glyph metrics of the corresponding codepoint. */
+/* return the glyph of the codepoint, or the font's unknown glyph */
 const struct fontGlyph *GlyphLookup(const struct font *font, const u32 codepoint);
 
-/******************** ASSET DATABASE ********************/
+/******************** the database ********************/
 
 struct assetDatabase
 {
-	struct assetSsff **ssff;	/* immutable ssff array, indexable with SSFF_**_ID */
-	struct assetFont **font;	/* immutable ssff array, indexable with FONT_**_ID */
+	struct assetSsff **ssff;	/* immutable array, indexable with SSFF_**_ID */
+	struct assetFont **font;	/* immutable array, indexable with FONT_**_ID; [FONT_NONE] is NULL */
 };
 
 extern struct assetDatabase *g_asset_db;
 
-/* Full flush of asset database; all assets will be reloaded (and rebuilt if DS_DEV) on next request */
+/*
+ * Unload every sheet and font (their heap data is freed: no pointer to a loaded texture or font survives);
+ * the next request loads, and with DS_DEV rebuilds, the asset again. g_sprite keeps its entries.
+ */
 void 	AssetFlush(void);
 
 /******************** asset_init.c ********************/
 
+/* ds_Init/ds_Shutdown call these: the database's tables on mem_persistent, freetype with DS_DEV */
 void AssetInit(struct arena *mem_persistent);
 void AssetShutdown(void);
 
 #ifdef __cplusplus
-} 
+}
 #endif
 
 #endif
