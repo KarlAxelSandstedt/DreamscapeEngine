@@ -540,6 +540,10 @@ enum fsError DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct
 		ArenaPopRecord(mem);
 		ds_CPoolPopBatch(*vec, vec->count - vec_record);
 	}
+	else
+	{
+		ArenaRemoveRecord(mem);	/* the listing stays; the record must not */
+	}
 	closedir(dir_stream);
 	*dir = FileNull();
 	return ret;
