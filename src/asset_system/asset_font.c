@@ -302,12 +302,17 @@ const struct font *FontDeserialize(struct assetFont *asset)
 		return NULL;
 	}
 
-	struct font *font = malloc(sizeof(struct font));
+	struct font *font = ds_Alloc(sizeof(struct font), sizeof(u64));
+	if (!font)
+	{
+		LogString(T_ASSET, S_FATAL, "Failed to allocate a font");
+		FatalCleanupAndExit();
+	}
 	font->size = ss_ReadU64Be(&ss);
 
 	if (ss_BytesLeft(&ss) < font->size-8)
 	{
-		free(font);
+		ds_Free(font);
 		return NULL;
 	}
 
@@ -318,8 +323,13 @@ const struct font *FontDeserialize(struct assetFont *asset)
 	font->pixmap_height = ss_ReadU32Be(&ss);
 	font->glyph_unknown_index = ss_ReadU32Be(&ss);
 	font->glyph_count = ss_ReadU32Be(&ss);
-	font->glyph = malloc(font->glyph_count * sizeof(struct fontGlyph));
-	font->pixmap = malloc(font->pixmap_width * font->pixmap_height);
+	font->glyph = ds_Alloc(font->glyph_count * sizeof(struct fontGlyph), sizeof(u32));
+	font->pixmap = ds_Alloc(font->pixmap_width * font->pixmap_height, sizeof(u8));
+	if (!font->glyph || !font->pixmap)
+	{
+		LogString(T_ASSET, S_FATAL, "Failed to allocate a font's glyphs or pixmap");
+		FatalCleanupAndExit();
+	}
 
 	for (u32 i = 0; i < font->glyph_count; ++i)
 	{
@@ -380,9 +390,9 @@ struct assetFont *AssetRequestFont(struct arena *tmp, const enum fontId id)
 	{
 		if (asset->loaded)
 		{
-			free(asset->font->pixmap);
-			free(asset->font->glyph);
-			free((void *) asset->font);
+			ds_Free(asset->font->pixmap);
+			ds_Free(asset->font->glyph);
+			ds_Free((void *) asset->font);
 		}
 
 		FontBuild(tmp, id);

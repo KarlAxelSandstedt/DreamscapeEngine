@@ -288,7 +288,7 @@ void SsffBuild(struct arena *mem, const u32 ssff_id)
 	SsffSave(info, header);
 	for (u32 i = 0; i < info->png_count; ++i)
 	{
-		free(pixel[i]);
+		stbi_image_free(pixel[i]);
 	}
 	
 	ArenaPopRecord(mem);
@@ -327,7 +327,12 @@ struct ssffTextureReturn SsffTexture(struct arena *mem, const struct ssff_header
 	//	1.0f / (2.0f * width),
 	//	1.0f / (2.0f * height),
 	//};
-	u8 *pixel = malloc(width*height*sizeof(u32));
+	u8 *pixel = ds_Alloc(width*height*sizeof(u32), sizeof(u32));
+	if (!pixel)
+	{
+		LogString(T_ASSET, S_FATAL, "Failed to allocate a sprite sheet texture");
+		FatalCleanupAndExit();
+	}
 	memset(pixel, 0, width*height*sizeof(u32));	/* outside the sprites: transparent, not garbage (the mipmaps sample it) */
 	struct ssffTextureReturn ret = 
 	{
@@ -448,7 +453,7 @@ struct assetSsff *AssetRequestSsff(struct arena *tmp, const enum ssffId id)
 	{
 		if (asset->loaded)
 		{
-			free(asset->pixel);
+			ds_Free(asset->pixel);
 			asset->pixel = NULL;
 		}
 

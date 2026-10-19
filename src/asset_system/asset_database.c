@@ -30,7 +30,7 @@ void AssetFlush(void)
 #endif
 		if (asset->loaded)
 		{
-			free(asset->pixel);
+			ds_Free(asset->pixel);
 		}
 		asset->loaded = 0;
 	}
