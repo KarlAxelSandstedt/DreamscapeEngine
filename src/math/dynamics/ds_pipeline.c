@@ -1521,6 +1521,12 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
         }
     }
 
+    /* with sleeping disabled ds_SolverSetSleep is a no-op: a resting island would stay active and the loop below never advance */
+    if (!g_solver_config->sleep_enabled)
+    {
+        return;
+    }
+
     for (u64 block = 0; block < pipeline->island_high_energy_set.block_count; ++block)
 	{
         const u64 sleep_block = ~pipeline->island_high_energy_set.bits[block];
