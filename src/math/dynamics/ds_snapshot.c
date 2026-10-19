@@ -18,7 +18,7 @@
 */
 
 /*
-Used for serialiing/deserializing the physics state.
+Used for serializing/deserializing the physics state.
 
 Example (repetition testing):
 

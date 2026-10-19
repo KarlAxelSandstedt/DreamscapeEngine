@@ -111,9 +111,12 @@ extern struct ds_NumericsConfig *g_numerics_config;
 
 /* Return default config */
 struct ds_NumericsConfig    ds_NumericsConfigDefault(void);
-/* Update any pending values in config and push config to global */
+/*
+ * Apply the pending values (clamped to their ranges, the derived trigonometric values recomputed) and make
+ * config the global one. The pipeline does this at the start of every tick.
+ */
 void                        ds_NumericsConfigPush(struct ds_NumericsConfig *config);
-/* Pop global config */
+/* Clear the global config (NULL) */
 void                        ds_NumericsConfigPop(void);
 
 
@@ -1693,7 +1696,9 @@ u64             ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline);
 void            ds_DynamicsSerialize(struct ss *ss, const struct ds_Dynamics *pipeline);
 /*
  * Returns 1 on success and 0 on failure. mem holds the pipeline shell (as in ds_DynamicsAlloc); everything 
- * else is heap allocated, so always free the pipeline with ds_DynamicsFree.
+ * else is heap allocated, so always free the pipeline with ds_DynamicsFree. The solver config
+ * (g_solver_config) is process state, not part of the snapshot. On failure the stream position and mem are
+ * as before the call and the pipeline is zeroed.
  */
 u32             ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynamics *pipeline, ds_SDB(c_Shape) *cshape_db);
 /*
