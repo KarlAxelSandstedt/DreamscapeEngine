@@ -17,10 +17,6 @@
 ==========================================================================
 */
 
-#include <stdlib.h>
-#include <string.h>
-
-#include "ds_float.h"
 #include "ds_float.h"
 #include "ds_vector.h"
 #include "ds_job.h"
@@ -215,9 +211,9 @@ void ds_DynamicsFlush(struct ds_Dynamics *pipeline)
     memset(pipeline->profile_buf, 0, pipeline->profile_length*sizeof(struct ds_DynamicsProfile));
     pipeline->profile_next = pipeline->profile_length;
 
-    ds_SolverSetFlush(pipeline, 0);
-    ds_SolverSetFlush(pipeline, 1);
-    ds_SolverSetFlush(pipeline, 2);
+    ds_SolverSetFlush(pipeline, SOLVER_SET_DISABLED);
+    ds_SolverSetFlush(pipeline, SOLVER_SET_STATIC);
+    ds_SolverSetFlush(pipeline, SOLVER_SET_ACTIVE);
     for (u32 i = SOLVER_SET_SLEEPING_FIRST; i < pipeline->solver_set_pool.count_max; ++i)
     {
         const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + i;
@@ -669,7 +665,6 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
             {
                 ProfZoneNamed("Color");
 
-                struct ds_CGraphColor *color = pipeline->cgraph.color + ci;
                 const u32 pfi = i*CG_COLOR_COUNT + ci;
                 pf = chain->parallel_for + pfi;
                 ds_ParallelFor(pf, range_index)
@@ -725,7 +720,6 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
             {
                 ProfZoneNamed("Color");
 
-                struct ds_CGraphColor *color = pipeline->cgraph.color + ci;
                 const u32 pfi = i*CG_COLOR_COUNT + ci;
                 pf = chain->parallel_for + pfi;
                 ds_ParallelFor(pf, range_index)
@@ -1210,14 +1204,6 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
             ds_ParallelForInit(pfcw + ci, cc_count, cc_per_range);
             ds_ParallelForInit(pfcp + ci, cc_count, cc_per_range);
 
-            //const f32 d = (f32) cc_count / (cc_per_range * g_scheduler->worker_count);
-            //if (ci == 0)
-            //  fprintf(stderr, "range distribution: \n {");
-
-            //(ci+1 < CG_COLOR_COUNT)
-            //    ? fprintf(stderr, " %f,", d)
-            //    : fprintf(stderr, " %f }\n", d);
-
             for (u32 pgsi = 0; pgsi < g_solver_config->pgs_iteration_count; ++pgsi)
             {
                 const u32 pfi = pgsi*CG_COLOR_COUNT + ci;
@@ -1577,12 +1563,6 @@ void ds_DynamicsSleepEnable(struct ds_Dynamics *pipeline)
         struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
         if (ds_PoolSlotAllocated(set))
         {
-            for (u32 k = 0; k < set->island_pool.count; ++k)
-            {
-                const u32 island_index = set->island_pool.buf[k];
-        	    struct ds_Island *is = pipeline->island_pool.buf + k;
-            }
-
             ds_SolverSetWakeUp(pipeline, set_index);
         }
     }
@@ -1602,12 +1582,6 @@ void ds_DynamicsSleepDisable(struct ds_Dynamics *pipeline)
         struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
         if (ds_PoolSlotAllocated(set))
         {
-            for (u32 k = 0; k < set->island_pool.count; ++k)
-            {
-                const u32 island_index = set->island_pool.buf[k];
-	    	    struct ds_Island *is = pipeline->island_pool.buf + k;
-            }
-
             ds_SolverSetWakeUp(pipeline, set_index);
         }
 	}
