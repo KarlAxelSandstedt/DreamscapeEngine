@@ -17,7 +17,6 @@
 ==========================================================================
 */
 
-#include <string.h>
 #include <inttypes.h>
 
 #include "ui_local.h"
@@ -326,7 +325,7 @@ struct ui_NodeCache ui_ListEntryAllocCached(struct ui_List *list, const utf8 id,
 	{
 		if (list->selection_type == UI_SELECTION_UNIQUE 
 				&& list->last_selection_happened + 1 >= g_ui->frame
-				&& list->last_selected)
+				&& list->last_selected != new_cache.index)
 		{
 			struct ui_Node *prev = g_ui->node_hierarchy.pool.buf + list->last_selected;
 			prev->inter &= ~UI_INTER_SELECT;
@@ -346,15 +345,15 @@ struct ui_NodeCache ui_ListEntryAllocCached(struct ui_List *list, const utf8 id,
 //U+3bc == 01110 111100
 //	=> 1100 1110  1011 1100
 
-u8 buf_ns[] = { 'n', 's', '\0' };
-u8 buf_us[] = { 0xce, 0xbc, 's', '\0' };
-u8 buf_ms[] = { 'm', 's', '\0' };
-u8 buf_s[]  = { 's', '\0' };
+static u8 buf_ns[] = { 'n', 's', '\0' };
+static u8 buf_us[] = { 0xce, 0xbc, 's', '\0' };
+static u8 buf_ms[] = { 'm', 's', '\0' };
+static u8 buf_s[]  = { 's', '\0' };
 
-const utf8 utf8_ns = { .buf = buf_ns, .len = 2 , .size = 2};
-const utf8 utf8_us = { .buf = buf_us, .len = 2 , .size = 3};
-const utf8 utf8_ms = { .buf = buf_ms, .len = 2 , .size = 2};
-const utf8 utf8_s  = { .buf = buf_s,  .len = 1 , .size = 1};
+static const utf8 utf8_ns = { .buf = buf_ns, .len = 2 , .size = 2};
+static const utf8 utf8_us = { .buf = buf_us, .len = 2 , .size = 3};
+static const utf8 utf8_ms = { .buf = buf_ms, .len = 2 , .size = 2};
+static const utf8 utf8_s  = { .buf = buf_s,  .len = 1 , .size = 1};
 
 static void TimeUnitConfigGenerate(struct ui_TimelineConfig *config)
 {
@@ -738,7 +737,7 @@ void ui_PopupBuild(void)
 			ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
 			{
 				ui_Height(ui_SizePixel(96.0f, 0.0f))
-				ui_NodeAllocF(UI_DRAW_TEXT, "%k###popup_display1_%u", &popup->display1);
+				ui_NodeAllocF(UI_DRAW_TEXT, "%k###popup_display1_%u", &popup->display1, popup->window);
 
 				ui_ChildLayoutAxis(AXIS_2_X)
 				ui_Height(ui_SizePixel(48.0f, 1.0f))
