@@ -342,6 +342,7 @@ void ds_TestMainCorrectness(void)
     run_suite(gjk_correctness_suite, &env, 1);
     run_suite(shape_correctness_suite, &env, 1);
     run_suite(raycast_correctness_suite, &env, 1);
+    run_suite(bvh_correctness_suite, &env, 1);
     run_suite(config_correctness_suite, &env, 1);
     run_suite(dynamics_correctness_suite, &env, 1);
     run_suite(rng_correctness_suite, &env, 1);

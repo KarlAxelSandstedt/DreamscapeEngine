@@ -7,6 +7,7 @@ add_library(DreamscapeTestAPI
 	test_asset.c
 	test_shape.c
 	test_raycast.c
+	test_bvh.c
     test_job.c
     #test_container.c
     #test_math.c
