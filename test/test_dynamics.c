@@ -929,6 +929,85 @@ static struct test_Output DynamicsBodyTest(struct test_Environment *env)
     return output;
 }
 
+
+/********************************** contacts (ds_contact.c) **********************************/
+
+/*
+Contacts: two dynamic boxes resting on a static ground after one tick; the pair's contacts are found by key and by
+id, the shapes list them, the bodies share an island, the validation holds; removing a body takes its contacts with
+it, its ids die, and the rest validates.
+*/
+static struct test_Output DynamicsContactTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 0;
+
+    /* ground, and two unit boxes side by side on it, overlapping each other slightly */
+    const struct dynamics_TestBox box[3] =
+    {
+        { .position = V3(0.0f, -1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(5.0f, 1.0f, 5.0f), .dynamic = 0, .friction = 0.5f },
+        { .position = V3(-0.49f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.5f },
+        { .position = V3(0.49f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.5f },
+    };
+    ds_BodyId body[3];
+    for (u32 i = 0; i < 3; ++i)
+    {
+        body[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, box + i, (v3f64) { 0 }, i);
+    }
+    ds_DynamicsTick(&pipeline);
+    ds_PoolFlush(pipeline.event_pool);
+    DLLFlush(pipeline.event_list);
+    ds_ContactValidateAll(&pipeline);
+
+    /* the pair's contact by key and by id */
+    const struct ds_Body *b1 = ds_BodyLookup(&pipeline, body[1]).address;
+    const struct ds_Body *b2 = ds_BodyLookup(&pipeline, body[2]).address;
+    TEST_NOT_ZERO(b1 && b2 && b1->shape_list.count == 1 && b2->shape_list.count == 1);
+    const u32 s1 = b1->shape_list.first, s2 = b2->shape_list.first;
+    const struct ds_ContactKey key = ds_ContactKeyCanonical(s2, s1);
+    TEST_NOT_ZERO(key.shape[0] < key.shape[1] && ds_ContactKeyEquivalence(key, ds_ContactKeyCanonical(s1, s2)));
+    const struct slot found = ds_ContactKeyLookup(&pipeline, key);
+    const struct ds_Contact *c = found.address;
+    TEST_NOT_ZERO(c != NULL && ds_ContactKeyEquivalence(c->key, key));
+    TEST_NOT_ZERO(ds_ContactLookup(&pipeline, c->id).address == c);
+    TEST_NOT_ZERO(ds_ContactLookup(&pipeline, c->id + DS_IDF_GENERATION_INCREMENT).address == NULL);
+    TEST_NOT_ZERO(ds_ContactLookup(&pipeline, DS_IDF_NULL).address == NULL);
+    const ds_ContactId contact_id = c->id;
+
+    /* the shapes list it (each with the ground's contact too), and the touching boxes share an island */
+    const struct ds_Shape *shape1 = pipeline.shape_pool.buf + s1;
+    const struct ds_Shape *shape2 = pipeline.shape_pool.buf + s2;
+    TEST_NOT_ZERO(shape1->contact_list.count == 2 && shape2->contact_list.count == 2);
+    TEST_NOT_ZERO(c->narrowphase.manifold_count > 0 && c->set == SOLVER_SET_NULL && c->color != CG_INVALID_COLOR);
+    TEST_NOT_ZERO(b1->island == b2->island && c->island == b1->island);
+    TEST_NOT_ZERO(pipeline.contact_pool.count == 3);
+
+    /* removing box 2 takes its contacts: box 1 keeps the ground's */
+    ds_BodyRemove(&mem, &pipeline, body[2]);
+    ds_ContactValidateAll(&pipeline);
+    TEST_NOT_ZERO(ds_ContactLookup(&pipeline, contact_id).address == NULL && ds_ContactKeyLookup(&pipeline, key).address == NULL);
+    TEST_NOT_ZERO(shape1->contact_list.count == 1 && pipeline.contact_pool.count == 1);
+    ds_DynamicsTick(&pipeline);
+    ds_PoolFlush(pipeline.event_pool);
+    DLLFlush(pipeline.event_list);
+    ds_ContactValidateAll(&pipeline);
+    TEST_NOT_ZERO(pipeline.contact_pool.count == 1 && ds_BodyLookup(&pipeline, body[1]).address != NULL);
+
+    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
 {
     DynamicsRestingBoxTest,
@@ -937,6 +1016,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsSnapshotTest,
     DynamicsShapeTest,
     DynamicsBodyTest,
+    DynamicsContactTest,
 };
 
 struct suite_Correctness m_dynamics_suite =
