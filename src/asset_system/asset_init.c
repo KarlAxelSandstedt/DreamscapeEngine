@@ -233,14 +233,14 @@ static struct assetSsff **InternalAssetSsffArrayInit(struct arena *mem_persisten
 
 static struct assetFont **InternalAssetFontArrayInit(struct arena *mem_persistent)
 {
-	struct assetFont **font = ArenaPush(mem_persistent, SSFF_COUNT * sizeof(struct assetFont *));
+	struct assetFont **font = ArenaPush(mem_persistent, FONT_COUNT * sizeof(struct assetFont *));
 	if (font == NULL)
 	{
 		LogString(T_ASSET, S_FATAL, "Failed to alloc asset font array");
 		FatalCleanupAndExit();
 	}
 
-	font[FONT_NONE] = NULL, 
+	font[FONT_NONE] = NULL;
 	font[FONT_DEFAULT_SMALL] = &default_font_small;
 	font[FONT_DEFAULT_MEDIUM] = &default_font_medium;
 
