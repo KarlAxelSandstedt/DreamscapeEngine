@@ -1342,8 +1342,7 @@ void led_WallSmashSimulationSetup(struct led *led)
     led_NodeAttachRigidBodyPrefab(led, tagged_id, Utf8Inline("rb_mesh"));
     led_NodeSetColor(led, tagged_id, mesh_color, 1.0f);
     struct led_Node *led_mesh = led->node_hierarchy.pool.buf + ds_IdIndex(tagged_id);
-	v3 axis = V3(0.6f, 1.0f, 0.6f);
-	axis = V3Scale(axis, 1.0f / F32Sqrt(V3Length(axis)));
+	const v3 axis = V3(0.6f, 1.0f, 0.6f);	/* QAxisAngle normalizes */
 	const f32 angle = F32_PI / 16.0f;
 	led_mesh->transform.rotation = QAxisAngle(axis, angle);
 
