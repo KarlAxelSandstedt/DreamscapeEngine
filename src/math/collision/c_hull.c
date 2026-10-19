@@ -1140,7 +1140,7 @@ struct dcel DcelConvexHull(struct arena *mem, const v3 *v, const u32 v_count)
 	};
 	const u32 pools = ds_PoolAlloc(tmp1, ddcel.face_pool, face_count_upper_bound, NOT_GROWABLE)
 		& ds_PoolAlloc(tmp1, ddcel.edge_pool, edge_count_upper_bound, NOT_GROWABLE)
-		& ds_PoolAlloc(tmp2, ddcel.ce_pool, (tmp2->mem_size / sizeof(struct conflictEdge))-1, NOT_GROWABLE);
+		& ds_PoolAlloc(tmp2, ddcel.ce_pool, (u32) (tmp2->mem_size / sizeof(struct conflictEdge))-1, NOT_GROWABLE);
 
 	ddcel.tmp1 = *ArenaPushScratch();
 	if (!pools || !ddcel.cv || !ddcel.hv

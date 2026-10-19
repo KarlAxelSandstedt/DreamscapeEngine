@@ -287,7 +287,7 @@ u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
 		    {
                 ArenaPushRecord(tmp);
 
-                const u32 si = ds_BitBlockNext(&it);
+                const u32 si = (u32) ds_BitBlockNext(&it);
                 const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
                 const struct BVHNode *node = pipeline->dynamic_bvh.pool.buf + shape->proxy;
                 const struct BVHQuerySet dynamic_query = BVHQueryAndFilterOnBody(tmp, &pipeline->dynamic_bvh, node);
@@ -421,7 +421,7 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
         broad_phase->pf = ds_ParallelForChainAlloc(&pipeline->frame, 1); 
         
         //TODO: this range size is random hardcoded value, change
-        ds_ParallelForInit(broad_phase->pf.parallel_for, pipeline->shape_dirty_set.block_count, 1);
+        ds_ParallelForInit(broad_phase->pf.parallel_for, (u32) pipeline->shape_dirty_set.block_count, 1);
 
         broad_phase->pipeline = pipeline;
         broad_phase->job_count = g_scheduler->worker_count;
@@ -459,7 +459,7 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
             struct ds_BitBlock it = ds_BitBlockInit(dirty->bits[block], block);
 		    while (ds_BitBlockHasNext(&it))
 		    {
-                const u32 si = ds_BitBlockNext(&it);
+                const u32 si = (u32) ds_BitBlockNext(&it);
                 const struct ds_ProxyQuery *query = pipeline->dirty_shape_query.buf + si;
 
                 for (u32 q = 0; q < query->dynamic_count; ++q)
@@ -1123,7 +1123,7 @@ u32 ds_RemovalJobPhaseDispatch(const ds_JobId job_id)
             struct ds_BitBlock it = ds_BitBlockInit(dirty->bits[bi], bi);
             while (ds_BitBlockHasNext(&it))
             {
-                const u32 si = ds_BitBlockNext(&it);
+                const u32 si = (u32) ds_BitBlockNext(&it);
                 const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
                 i32 ci = shape->contact_list.first;
                 while (ci != DLL_SENTINEL)
@@ -1299,7 +1299,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                             struct ds_BitBlock it = ds_BitBlockInit(leaf_usage->bits[block], block);
                             while (ds_BitBlockHasNext(&it))
                             {
-                                rebuild_phase->leaf_buf[li++].index = ds_BitBlockNext(&it);
+                                rebuild_phase->leaf_buf[li++].index = (u32) ds_BitBlockNext(&it);
                             }
                         }
 
@@ -1319,7 +1319,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                             struct ds_BitBlock it = ds_BitBlockInit(internal_usage->bits[block], block);
                             while (ds_BitBlockHasNext(&it))
                             {
-                                rebuild_phase->internal_buf[ii++] = ds_BitBlockNext(&it);
+                                rebuild_phase->internal_buf[ii++] = (u32) ds_BitBlockNext(&it);
                             }
                         }
 
@@ -1348,7 +1348,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
 
                     struct memArray range_arr = ArenaPushAlignedAll(&pipeline->frame, sizeof(struct ds_RebuildJob), DS_CACHE_LINE);
                     rebuild_phase->range_job = range_arr.addr;
-                    rebuild_phase->range_job_length = range_arr.len;
+                    rebuild_phase->range_job_length = (u32) range_arr.len;
 
                     ds_JobPhaseReserve(&rebuild_phase->phase, REBUILD_JOB_SETUP, rebuild_phase->setup_job_length);
 
@@ -1398,7 +1398,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
 
                 removal_phase->pipeline = pipeline;
                 removal_phase->pf = ds_ParallelForChainAlloc(&pipeline->frame, 1); 
-                ds_ParallelForInit(removal_phase->pf.parallel_for, pipeline->shape_dirty_set.block_count, 1);
+                ds_ParallelForInit(removal_phase->pf.parallel_for, (u32) pipeline->shape_dirty_set.block_count, 1);
                 removal_phase->job_count = g_scheduler->worker_count;
                 removal_phase->job = ArenaPushZero(&pipeline->frame, removal_phase->job_count*sizeof(struct ds_RemovalJob));
 
@@ -1434,7 +1434,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                         struct ds_BitBlock it = ds_BitBlockInit(block, bi);
                         while (ds_BitBlockHasNext(&it))
                         {
-                            ds_ContactRemove(pipeline, ds_BitBlockNext(&it));
+                            ds_ContactRemove(pipeline, (u32) ds_BitBlockNext(&it));
                         }
                     }
 
@@ -1512,7 +1512,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
 		while (ds_BitBlockHasNext(&it))
 		{
 
-            const u32 i = ds_BitBlockPeekNext(&it);
+            const u32 i = (u32) ds_BitBlockPeekNext(&it);
             if (i >= active->island_pool.count)
             {
                 goto DONE;
@@ -1625,7 +1625,7 @@ void ds_DynamicsSimulateFrame(struct ds_Dynamics *pipeline)
 static void ds_DynamicsProfileBegin(struct ds_Dynamics *pipeline)
 {
     ds_Assert(PowerOfTwoCheck(pipeline->profile_length));
-    const u32 pi = pipeline->profile_next & (pipeline->profile_length-1);
+    const u32 pi = (u32) (pipeline->profile_next & (pipeline->profile_length-1));
     pipeline->profile = pipeline->profile_buf + pi;
     pipeline->profile_next += 1;
 }

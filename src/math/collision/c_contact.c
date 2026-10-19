@@ -1587,7 +1587,7 @@ static void c_MeshContactInit(struct c_MeshContactHelper *helper, const struct c
     struct memArray records = ArenaPushAlignedAll(helper->tmp_records, sizeof(struct c_MeshTri), 8);
     helper->record = records.addr;
     helper->record_count = 0;
-    helper->record_len = records.len;
+    helper->record_len = (u32) records.len;
 }
 
 /*

@@ -664,7 +664,7 @@ struct triMeshBVH TriMeshBVHConstruct(struct arena *mem, const struct triMesh *m
 
 	u32 *node_stack = arr.addr;	
     u32 *depth_stack = depth_arr.addr;
-	u32 node_stack_size = arr.len;
+	u32 node_stack_size = (u32) arr.len;
 	u32 sc = 1;
     struct slot root = ds_PoolAdd(mesh_bvh.bvh.pool);
 	BTAddRoot(mesh_bvh.bvh.bt, mesh_bvh.bvh.pool.buf, root.index);
