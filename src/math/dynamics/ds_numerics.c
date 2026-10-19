@@ -44,7 +44,8 @@ void ds_NumericsConfigPush(struct ds_NumericsConfig *config)
 {
     g_numerics_config = config;
 
-    config->dbvh_reinsert_threshold = F32Clamp(config->dbvh_reinsert_threshold_pending, 0.0f, 1.0f);
+    config->dbvh_reinsert_threshold_pending = F32Clamp(config->dbvh_reinsert_threshold_pending, 0.0f, 1.0f);
+    config->dbvh_reinsert_threshold = config->dbvh_reinsert_threshold_pending;
 
     config->cache_count_max = config->cache_count_max_pending;
 
