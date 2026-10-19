@@ -111,8 +111,11 @@ static struct test_Output OverflowTest(struct test_Environment *env)
 
     for (u32 i = 0; i < 1000; ++i)
     {
-        const u64 a = RngU64() >> RngU64Range(0, 63);
-        const u64 b = RngU64() >> RngU64Range(0, 63);
+        /* one draw per statement: the operands' order is the compiler's (springclean #200) */
+        const u64 a_bits = RngU64();
+        const u64 a = a_bits >> RngU64Range(0, 63);
+        const u64 b_bits = RngU64();
+        const u64 b = b_bits >> RngU64Range(0, 63);
         TEST_EQUAL((a + b < a), !!U64AddReturnOverflow(&dst, a, b));
         TEST_EQUAL(a + b, dst);
         const u32 overflow = (a != 0 && b > U64_MAX / a);
