@@ -1134,8 +1134,8 @@ struct solverConfig
 	v3 	    gravity;
 	f32 	baumgarte_constant;  	/* Range[0.0, 1.0] : Determine how quickly contacts are resolved, 1.0f max speed */
     f32     max_linear_correction;           /* Range[0.0, inf] : max linear correction of constraint per iteration in the position solver */
-    f32     max_linear_velocity_magnitude_inv;   /* Range[0.0, inf) :  max units (m) per second a body may travel */
-    f32     max_angular_velocity_magnitude_inv;  /* Range[0.0, inf) : max units (radians) per second a body may travel */
+    f32     max_linear_velocity_magnitude_inv;   /* 1 / the speed (m/s) a body may move at per step; faster bodies move at the limit. 0: no limit */
+    f32     max_angular_velocity_magnitude_inv;  /* 1 / the rate (rad/s) a body may turn at per step; 0: no limit */
 	f32 	linear_dampening;	/* Range[0.0, inf] : coefficient in diff. eq. dv/dt = -coeff*v */
 	f32 	angular_dampening;	/* Range[0.0, inf] : coefficient in diff. eq. dv/dt = -coeff*v */
 	f32 	linear_slop;		/* Range[0.0, inf] : Allowed penetration before velocity steering gradually

@@ -60,11 +60,12 @@ void SolverConfigInit(const u32 pgs_iteration_count, const u32 ngs_iteration_cou
 	g_solver_config->gravity = gravity;
 	g_solver_config->baumgarte_constant = baumgarte_constant;
 	g_solver_config->max_linear_correction = max_linear_correction;
+    /* a limit of 0 is no limit: the inverse 0 makes every speed ratio 0 (an infinite inverse froze moving bodies and made 0*inf NaN at rest) */
     g_solver_config->max_linear_velocity_magnitude_inv = (0.0f == max_linear_velocity_magnitude)
-                                                        ? F32_INFINITY
+                                                        ? 0.0f
                                                         : 1.0f / max_linear_velocity_magnitude;
     g_solver_config->max_angular_velocity_magnitude_inv = (0.0f == max_angular_velocity_magnitude)
-                                                        ? F32_INFINITY
+                                                        ? 0.0f
                                                         : 1.0f / max_angular_velocity_magnitude;
 	g_solver_config->linear_dampening = linear_dampening;
 	g_solver_config->angular_dampening = angular_dampening;
