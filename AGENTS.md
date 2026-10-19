@@ -91,6 +91,9 @@ produce bit-identical results. Hence:
   no contraction (-ffp-contract=off, MSVC /fp:precise); never add -march,
   -mfma, -ffast-math, /fp:fast or /fp:contract. The baseline's integer-only
   flags (-mpopcnt -mlzcnt -mbmi) are the exception.
+- no absolute value by (x < 0) ? -x : x, which MSVC compiles to a sign-bit
+  clear under every /fp mode while GCC and Clang return -0 for -0. Use F32Abs
+  (f64: clear bit 63).
 
 Numerical Robustness
 ====================
