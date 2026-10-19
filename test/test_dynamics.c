@@ -1238,6 +1238,93 @@ static struct test_Output DynamicsSleepTest(struct test_Environment *env)
 }
 
 /*
+ * The broadphase after the dirty-set change: once every island sleeps, no shape queries (the dirty set is empty
+ * after a tick) and the sleeping contacts persist; a box dropped onto the sleeping stack, with a larger body
+ * index than every sleeping body, is paired with the top box by its own query and wakes the stack through that
+ * contact; the three then rest and sleep as one island.
+ */
+static struct test_Output DynamicsWakeByContactTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 1;
+
+    const v3 hw = V3(0.5f, 0.5f, 0.5f);
+    const struct dynamics_TestBox scene[4] =
+    {
+        { .position = V3(0.0f, -1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(16.0f, 1.0f, 16.0f), .dynamic = 0, .friction = 0.5f },
+        { .position = V3(0.0f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+        { .position = V3(0.0f, 1.5f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+        { .position = V3(0.0f, 4.0f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+    };
+    ds_BodyId id[4];
+    for (u32 i = 0; i < 3; ++i)
+    {
+        id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
+    }
+    const struct ds_Body *bottom = ds_BodyLookup(&pipeline, id[1]).address;
+    const struct ds_Body *top = ds_BodyLookup(&pipeline, id[2]).address;
+
+    u32 t;
+    for (t = 0; t < 600 && bottom->set < SOLVER_SET_SLEEPING_FIRST; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(t < 600 && top->set == bottom->set);
+    const u32 stack_set_index = bottom->set;
+    const struct ds_SolverSet *stack_set = pipeline.solver_set_pool.buf + stack_set_index;
+    TEST_NOT_ZERO(stack_set->contact_pool.count == 2);
+
+    /* asleep: nothing is dirty after a tick, and the sleeping contacts stay */
+    for (t = 0; t < 60; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    u64 dirty_bits = 0;
+    for (u64 block = 0; block < pipeline.shape_dirty_set.block_count; ++block)
+    {
+        dirty_bits |= pipeline.shape_dirty_set.bits[block];
+    }
+    TEST_NOT_ZERO(dirty_bits == 0);
+    TEST_NOT_ZERO(bottom->set == stack_set_index && stack_set->contact_pool.count == 2);
+
+    /* the dropped box has the largest body index: its own query must report the pair with the sleeping top box */
+    id[3] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + 3, (v3f64) { 0 }, 3);
+    const struct ds_Body *dropped = ds_BodyLookup(&pipeline, id[3]).address;
+    TEST_NOT_ZERO(ds_BodyLookup(&pipeline, id[3]).index > ds_BodyLookup(&pipeline, id[2]).index);
+    for (t = 0; t < 600 && bottom->set != SOLVER_SET_ACTIVE; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(t < 600 && top->set == SOLVER_SET_ACTIVE && dropped->set == SOLVER_SET_ACTIVE);
+    const struct ds_ContactKey key = ds_ContactKeyCanonical((u32) dropped->shape_list.first, (u32) top->shape_list.first);
+    TEST_NOT_ZERO(ds_ContactKeyLookup(&pipeline, key).address != NULL);
+    ds_IslandValidateAll(&pipeline);
+
+    /* the three rest and sleep as one island */
+    for (t = 0; t < 900 && dropped->set < SOLVER_SET_SLEEPING_FIRST; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(t < 900 && dropped->set == bottom->set && top->set == bottom->set);
+    TEST_NOT_ZERO(SnapshotTestSleepingSetCount(&pipeline) == 1);
+    ds_SolverSetValidate(&pipeline, bottom->set);
+    ds_IslandValidateAll(&pipeline);
+
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
+/*
  * The constraint graph's invariants: every coloured contact is between an active island's bodies, a static
  * colour holds static-dynamic contacts and a dynamic colour dynamic-dynamic ones, no dynamic body has two
  * contacts of one colour, and a colour's body bit set marks exactly the dynamic bodies with a contact in it.
@@ -1746,6 +1833,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsContactTest,
     DynamicsIslandTest,
     DynamicsSleepTest,
+    DynamicsWakeByContactTest,
     DynamicsGraphTest,
     DynamicsJointTest,
     DynamicsSlideTest,
