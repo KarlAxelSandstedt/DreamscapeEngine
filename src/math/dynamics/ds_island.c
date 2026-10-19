@@ -70,11 +70,16 @@ static struct slot ds_IslandAlloc(struct ds_Dynamics *pipeline, const u32 set)
 struct slot ds_IslandLookup(struct ds_Dynamics *pipeline, const ds_IslandId id)
 {
     struct slot slot = { .address = NULL, .index = U32_MAX };
-    struct ds_Island *island = pipeline->island_pool.buf + ds_IdIndex(id);
-    if (ds_PoolSlotAllocated(island) && island->id == id)
+    /* the index is bounded before the slot is read (as ds_BodyLookup) */
+    const u32 index = ds_IdIndex(id);
+    if (index < pipeline->island_pool.count_max)
     {
-        slot.address = island;
-        slot.index = ds_IdIndex(id);
+        struct ds_Island *island = pipeline->island_pool.buf + index;
+        if (ds_PoolSlotAllocated(island) && island->id == id)
+        {
+            slot.address = island;
+            slot.index = index;
+        }
     }
 
     return slot;
