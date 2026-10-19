@@ -254,7 +254,7 @@ f32     GJK(v3 *c0, v3 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKC
 /* world transforms; c0, c1 world (f64), n world */
 f32     GJKWorld(v3f64 *c0, v3f64 *c1, v3 *n, struct GJKCache *cache_out, const struct GJKCache *cache_in, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1, const f32 cutoff_distance);
 
-/* distance between the surfaces (>= 0); c0, c1 the closest points (world, f64) */
+/* distance between the surfaces (>= 0); c0, c1 the closest points (world, f64), set only for a distance > 0 */
 f32     c_SphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
 f32     c_CapsuleSphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
 f32     c_CapsuleDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);

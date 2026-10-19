@@ -537,7 +537,7 @@ f32 c_SphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_Tr
     const v3 n = V3Scale(delta, 1.0f / dist);
     *c0 = V3F64Add(t0->position, V3Promote(V3Scale(n, s0->sphere.radius)));
     *c1 = V3F64Add(t1->position, V3Promote(V3Scale(n, -s1->sphere.radius)));
-    return F32Max(0.0f, dist - r_sum);
+    return F32Max(0.0f, dist - r_sum);	/* >= 0 by the check above only if the root is correctly rounded: not assumed */
 }
 
 f32 c_CapsuleSphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
@@ -562,7 +562,7 @@ f32 c_CapsuleSphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, cons
     const v3 n = V3Scale(V3Sub(p, c), 1.0f / dist);
     *c0 = V3F64Add(t0->position, V3Promote(V3AddScaled(c, n, cap->radius)));
     *c1 = V3F64Add(t1->position, V3Promote(V3Scale(n, -s1->sphere.radius)));
-    return F32Max(0.0f, dist - r_sum);
+    return F32Max(0.0f, dist - r_sum);	/* >= 0 by the check above only if the root is correctly rounded: not assumed */
 }
 
 f32 c_CapsuleDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
@@ -590,7 +590,7 @@ f32 c_CapsuleDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_T
     const v3 n = V3Scale(V3Sub(q1, q0), 1.0f / dist);
     *c0 = V3F64Add(t0->position, V3Promote(V3AddScaled(q0, n, cap0->radius)));
     *c1 = V3F64Add(t0->position, V3Promote(V3AddScaled(q1, n, -cap1->radius)));
-    return F32Max(0.0f, dist - r_sum);
+    return F32Max(0.0f, dist - r_sum);	/* >= 0 by the check above only if the root is correctly rounded: not assumed */
 }
 
 f32 c_HullSphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
