@@ -804,7 +804,7 @@ void		ui_FrameEnd(void);				/* end ui frame 		*/
 
 
 /* add layout node padding given number of pixels according to stack_pad (non-cacheable) */
-u32	ui_Pad();
+u32	ui_Pad(void);
 /* add layout node padding given number of pixels (non-cacheable) */
 u32	ui_PadPixel(const f32 pixels);
 /* add layout node padding given percentage of parent (non-cacheable) */
@@ -929,11 +929,11 @@ void 	ui_SpriteSet(const enum spriteId sprite);
 void 	ui_SpritePop(void);
 
 void 	ui_TextAlignXPush(const enum alignment_x align);
-void 	ui_TextAlignX_set(const enum alignment_x align);
+void 	ui_TextAlignXSet(const enum alignment_x align);
 void 	ui_TextAlignXPop(void);
 
 void 	ui_TextAlignYPush(const enum alignment_y align);
-void 	ui_TextAlignY_set(const enum alignment_y align);
+void 	ui_TextAlignYSet(const enum alignment_y align);
 void 	ui_TextAlignYPop(void);
 
 void 	ui_TextPadPush(const enum axis_2 axis, const f32 pad);
@@ -957,14 +957,14 @@ void	ui_FixedDepthPop(void);
 
 void	ui_ExternalTextPush(const utf32 text);
 void	ui_ExternalTextSet(const utf32 text);
-void	ui_ExternalTextPop();
+void	ui_ExternalTextPop(void);
 
 void	ui_ExternalTextLayoutPush(struct textLayout *textLayout, const utf32 text);
 void	ui_ExternalTextLayoutSet(struct textLayout *textLayout, const utf32 text);
-void	ui_ExternalTextLayoutPop();
+void	ui_ExternalTextLayoutPop(void);
 
 void	ui_ExternalTextInputPush(struct ui_TextInput *text_input);
-void	ui_ExternalTextInputPop();
+void	ui_ExternalTextInputPop(void);
 
 /********************************************************************************************************/
 /*					  SIZES AND AUTOLAYOUT						*/
