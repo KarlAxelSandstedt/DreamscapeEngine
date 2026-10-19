@@ -162,8 +162,8 @@ void				FontBuild(struct arena *mem, const u32 font_id);
 /* save font to disk  */
 void 				FontSerialize(const struct assetFont *asset, const struct font *font);
 #endif
-/* heap allocate and load font from disk on success, return NULL on failure */
-const struct font *		FontDeserialize(struct assetFont *asset);
+/* heap allocate and load the font; NULL (logged) if the file is missing, unreadable or corrupt */
+const struct font *		FontDeserialize(const struct assetFont *asset);
 /* debug print .kasfnt file to console */
 void 				FontDebugPrint(FILE *out, const struct font *font);
 

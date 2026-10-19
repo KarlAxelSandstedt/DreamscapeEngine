@@ -283,39 +283,58 @@ void FontSerialize(const struct assetFont *asset, const struct font *font)
 
 #endif
 
-const struct font *FontDeserialize(struct assetFont *asset)
+/* free a deserialized or stub font (heap: ds_Alloc and a heap hash map) */
+static void InternalFontFree(struct font *font)
+{
+	if (font)
+	{
+		ds_HashMapDealloc(&font->codepoint_to_glyph_map);
+		ds_Free(font->pixmap);
+		ds_Free(font->glyph);
+		ds_Free(font);
+	}
+}
+
+/*
+ * The whole file is checked against its counts before anything is read from it, so a short or corrupt file
+ * gives NULL, never a partial font or a read outside the mapping.
+ */
+const struct font *FontDeserialize(const struct assetFont *asset)
 {
 	struct arena *tmp = ArenaPushScratch();
 	struct file file = FileNull();
+	struct font *font = NULL;
+	void *buf = NULL;
+	u64 size = 0;
+	u32 ok = 0;
+
 	FileTryOpenAtCwd(tmp, &file, asset->filepath, FILE_READ);
 	if (file.handle == FILE_HANDLE_INVALID)
 	{
-		return NULL;
+		Log(T_ASSET, S_ERROR, "%s: cannot open the font", asset->filepath);
+		goto end;
 	}
-
-	u64 size = 0;
-	void *buf = FileMemoryMap(&size, &file, FS_PROT_READ, FS_MAP_SHARED);
-	struct ss ss = ss_Buffered(buf, size);
-
-	if (ss_BytesLeft(&ss) < 8)
+	buf = FileMemoryMap(&size, &file, FS_PROT_READ, FS_MAP_SHARED);
+	if (!buf)
 	{
-		return NULL;
+		Log(T_ASSET, S_ERROR, "%s: cannot map the font", asset->filepath);
+		goto end;
 	}
 
-	struct font *font = ds_Alloc(sizeof(struct font), sizeof(u64));
+	struct ss ss = ss_Buffered(buf, size);
+	const u64 header_size = sizeof(u64) + 3*sizeof(f32) + 4*sizeof(u32);
+	if (ss_BytesLeft(&ss) < header_size || ss_ReadU64Be(&ss) > size)
+	{
+		goto corrupt;
+	}
+
+	font = ds_Alloc(sizeof(struct font), sizeof(u64));
 	if (!font)
 	{
 		LogString(T_ASSET, S_FATAL, "Failed to allocate a font");
 		FatalCleanupAndExit();
 	}
-	font->size = ss_ReadU64Be(&ss);
-
-	if (ss_BytesLeft(&ss) < font->size-8)
-	{
-		ds_Free(font);
-		return NULL;
-	}
-
+	*font = (struct font) { .size = size };
 	font->ascent = ss_ReadF32Be(&ss);
 	font->descent = ss_ReadF32Be(&ss);
 	font->linespace = ss_ReadF32Be(&ss);
@@ -323,14 +342,20 @@ const struct font *FontDeserialize(struct assetFont *asset)
 	font->pixmap_height = ss_ReadU32Be(&ss);
 	font->glyph_unknown_index = ss_ReadU32Be(&ss);
 	font->glyph_count = ss_ReadU32Be(&ss);
-	font->glyph = ds_Alloc(font->glyph_count * sizeof(struct fontGlyph), sizeof(u32));
-	font->pixmap = ds_Alloc(font->pixmap_width * font->pixmap_height, sizeof(u8));
-	if (!font->glyph || !font->pixmap)
+	/* each serialized glyph: 4 i32, 2 u32, 4 f32 */
+	if (font->glyph_count == 0 || font->glyph_unknown_index >= font->glyph_count
+		|| ss_BytesLeft(&ss) < (u64) font->glyph_count * 10*sizeof(u32)
+		|| font->pixmap_width == 0 || font->pixmap_height == 0)
 	{
-		LogString(T_ASSET, S_FATAL, "Failed to allocate a font's glyphs or pixmap");
-		FatalCleanupAndExit();
+		goto corrupt;
 	}
 
+	font->glyph = ds_Alloc(font->glyph_count * sizeof(struct fontGlyph), sizeof(u32));
+	if (!font->glyph)
+	{
+		LogString(T_ASSET, S_FATAL, "Failed to allocate a font's glyphs");
+		FatalCleanupAndExit();
+	}
 	for (u32 i = 0; i < font->glyph_count; ++i)
 	{
 		font->glyph[i].size.x = ss_ReadI32Be(&ss);
@@ -345,17 +370,77 @@ const struct font *FontDeserialize(struct assetFont *asset)
 		font->glyph[i].tr.y = ss_ReadF32Be(&ss);
 	}
 
-	if (!ds_HashMapTryDeserialize(NULL, &ss, &font->codepoint_to_glyph_map, NOT_GROWABLE))
+	if (!ds_HashMapTryDeserialize(NULL, &ss, &font->codepoint_to_glyph_map, NOT_GROWABLE)
+		|| ss_BytesLeft(&ss) < (u64) font->pixmap_width * font->pixmap_height)
 	{
-		LogString(T_ASSET, S_ERROR, "Failed to deserialize font codepoint map");
+		goto corrupt;
+	}
+	font->pixmap = ds_Alloc((u64) font->pixmap_width * font->pixmap_height, sizeof(u8));
+	if (!font->pixmap)
+	{
+		LogString(T_ASSET, S_FATAL, "Failed to allocate a font's pixmap");
+		FatalCleanupAndExit();
 	}
 	ss_Read8N(&ss, font->pixmap, font->pixmap_height * font->pixmap_width);
+	ok = 1;
+	goto end;
 
-	FileMemoryUnmap(buf, size);
-	FileClose(&file);
+corrupt:
+	Log(T_ASSET, S_ERROR, "%s: the font file is corrupt (shorter than its counts claim)", asset->filepath);
+end:
+	if (!ok)
+	{
+		InternalFontFree(font);
+		font = NULL;
+	}
+	if (buf)
+	{
+		FileMemoryUnmap(buf, size);
+	}
+	if (file.handle != FILE_HANDLE_INVALID)
+	{
+		FileClose(&file);
+	}
+	ArenaPopScratch();
+	return font;
+}
 
-    ArenaPopScratch();
-	asset->loaded = 1;
+/*
+ * A font without glyphs: every codepoint maps to one empty glyph half a glyph height wide, the pixmap is one
+ * transparent pixel, so layouts and draws run and show nothing.
+ */
+static const struct font *FontStub(const struct assetFont *asset)
+{
+	struct font *font = ds_Alloc(sizeof(struct font), sizeof(u64));
+	struct fontGlyph *glyph = ds_Alloc(sizeof(struct fontGlyph), sizeof(u32));
+	u8 *pixmap = ds_Alloc(1, sizeof(u8));
+	if (!font || !glyph || !pixmap)
+	{
+		LogString(T_ASSET, S_FATAL, "Failed to allocate a stub font");
+		FatalCleanupAndExit();
+	}
+
+	const f32 height = (f32) asset->pixel_glyph_height;
+	*glyph = (struct fontGlyph) { .advance = asset->pixel_glyph_height / 2 };
+	*pixmap = 0;
+	*font = (struct font)
+	{
+		.ascent = height,
+		.descent = 0.0f,
+		.linespace = height,
+		.codepoint_to_glyph_map = ds_HashMapAlloc(NULL, 1, 1, NOT_GROWABLE),
+		.glyph = glyph,
+		.glyph_count = 1,
+		.glyph_unknown_index = 0,
+		.pixmap_width = 1,
+		.pixmap_height = 1,
+		.pixmap = pixmap,
+	};
+	if (!font->codepoint_to_glyph_map.hash)
+	{
+		LogString(T_ASSET, S_FATAL, "Failed to allocate a stub font's map");
+		FatalCleanupAndExit();
+	}
 	return font;
 }
 
@@ -403,7 +488,12 @@ struct assetFont *AssetRequestFont(struct arena *tmp, const enum fontId id)
 	if (!asset->loaded)
 	{
 		asset->font = FontDeserialize(asset);
-		//FontDebugPrint(stderr, asset->font);
+		if (!asset->font)
+		{
+			Log(T_ASSET, S_ERROR, "%s: the font is replaced by a stub without glyphs", asset->filepath);
+			asset->font = FontStub(asset);
+		}
+		asset->loaded = 1;
 	}
 
 	ArenaPopRecord(tmp);

@@ -313,9 +313,57 @@ void SsffSave(const struct assetSsff *asset, const struct ssff_header *header)
 
 #endif
 
+/* Every table and pixel block the sheet points at lies inside its size bytes */
+static u32 SsffCheck(const struct ssff_header *ssff, const u64 size)
+{
+	if (size < sizeof(struct ssff_header) || ssff->size != size
+		|| ssff->collection_offset > size
+		|| (u64) ssff->collection_count * sizeof(struct ssff_collection) > size - ssff->collection_offset)
+	{
+		return 0;
+	}
+
+	const struct ssff_collection *c = (const struct ssff_collection *) (((const u8 *) ssff) + ssff->collection_offset);
+	for (u32 i = 0; i < ssff->collection_count; ++i)
+	{
+		if (c[i].bit_depth > 32
+			|| c[i].color_offset > size || (u64) c[i].color_count * sizeof(u32) > size - c[i].color_offset
+			|| c[i].sprite_offset > size || (u64) c[i].sprite_count * sizeof(struct ssffSprite) > size - c[i].sprite_offset)
+		{
+			return 0;
+		}
+
+		const struct ssffSprite *sprite = (const struct ssffSprite *) (((const u8 *) ssff) + c[i].sprite_offset);
+		for (u32 j = 0; j < c[i].sprite_count; ++j)
+		{
+			const u64 width = (u64) sprite[j].x1 - sprite[j].x0 + 1;
+			const u64 height = (u64) sprite[j].y1 - sprite[j].y0 + 1;
+			if (sprite[j].x1 < sprite[j].x0 || sprite[j].y1 < sprite[j].y0
+				|| sprite[j].pixel_offset > size || c[i].bit_depth*width*height / 8 + 1 > size - sprite[j].pixel_offset)
+			{
+				return 0;
+			}
+		}
+	}
+
+	return 1;
+}
+
 const struct ssff_header *SsffLoad(struct arena *mem, const struct assetSsff *asset)
 {
-	return (const struct ssff_header *) FileDumpAtCwd(mem, asset->filepath).data;
+	const struct dsBuffer buf = FileDumpAtCwd(mem, asset->filepath);
+	const struct ssff_header *ssff = (const struct ssff_header *) buf.data;
+	if (!ssff)
+	{
+		Log(T_ASSET, S_ERROR, "%s: cannot read the sprite sheet", asset->filepath);
+		return NULL;
+	}
+	if (!SsffCheck(ssff, buf.size))
+	{
+		Log(T_ASSET, S_ERROR, "%s: the sprite sheet is corrupt (a table or pixel block lies outside the file)", asset->filepath);
+		return NULL;
+	}
+	return ssff;
 }
 
 struct ssffTextureReturn SsffTexture(struct arena *mem, const struct ssff_header *ssff, const u32 width, const u32 height)
@@ -361,7 +409,7 @@ struct ssffTextureReturn SsffTexture(struct arena *mem, const struct ssff_header
 				{
 					ds_AssertString(x_offset + x < width, "trying to write outside of row");
 					const u32 ci = ss_ReadU32Partial(&stream, c->bit_depth);
-					const u32 color = color_table[ci];
+					const u32 color = (ci < c->color_count) ? color_table[ci] : 0;	/* corrupt index: transparent */
 					pixel[4*((y_offset + y)*width + (x_offset + x)) + 0] = (u8) (color >> 24);
 					pixel[4*((y_offset + y)*width + (x_offset + x)) + 1] = (u8) (color >> 16);
 					pixel[4*((y_offset + y)*width + (x_offset + x)) + 2] = (u8) (color >>  8);
@@ -465,12 +513,29 @@ struct assetSsff *AssetRequestSsff(struct arena *tmp, const enum ssffId id)
 	if (!asset->loaded)
 	{
 		const struct ssff_header *ssff = SsffLoad(tmp, asset);
-		const struct ssffTextureReturn ret = SsffTexture(tmp, ssff, asset->width, asset->height);
-		switch (id)
+		const struct ssffTextureReturn ret = (ssff)
+			? SsffTexture(tmp, ssff, asset->width, asset->height)
+			: (struct ssffTextureReturn) { 0 };
+		if (ret.pixel)
 		{
-			case SSFF_DYNAMIC_ID: { DynamicSsffSetSpriteParameters(asset, &ret); } break;
-			case SSFF_LED_ID: { LedSsffSetSpriteParameters(asset, &ret); } break;
-			default: { ds_AssertString(0, "unhandled sprite sheet parameter setting"); } break;
+			switch (id)
+			{
+				case SSFF_DYNAMIC_ID: { DynamicSsffSetSpriteParameters(asset, &ret); } break;
+				case SSFF_LED_ID: { LedSsffSetSpriteParameters(asset, &ret); } break;
+				default: { ds_AssertString(0, "unhandled sprite sheet parameter setting"); } break;
+			}
+		}
+		else
+		{
+			/* stub: a transparent texture; the sheet's sprites keep their last parameters (none: SPRITE_NONE's sheet) */
+			Log(T_ASSET, S_ERROR, "%s: the sprite sheet is replaced by a transparent texture until the next flush", asset->filepath);
+			asset->pixel = ds_Alloc(asset->width*asset->height*sizeof(u32), sizeof(u32));
+			if (!asset->pixel)
+			{
+				LogString(T_ASSET, S_FATAL, "Failed to allocate a sprite sheet texture");
+				FatalCleanupAndExit();
+			}
+			memset(asset->pixel, 0, asset->width*asset->height*sizeof(u32));
 		}
 		asset->loaded = 1;
 	}
