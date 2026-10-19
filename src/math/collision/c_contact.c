@@ -402,11 +402,6 @@ static u32 HullFaceContact(struct arena *mem_tmp, struct c_Manifold *cm, sat_Fea
     sat_FeatureId *features;
     PolygonCcwClipNegativeFaceAndProject(mem_tmp, &features, &cp, &depth, &deepest_point, &cp_count, max_depth, max_feature, h, v, f, b_f, query->normal);
 
-	//for (u32 i = 0; i < cp_count; ++i)
-	//{
-	//	ds_DynamicsDrawDebugSegment(Segment(cp[i], cp[(i+1) % cp_count]), V4(0.8f, 0.6f, 0.1f, 1.0f));
-	//}
-
     u32 collision;
     if (b_f == ref)
     {
@@ -462,12 +457,10 @@ void c_ContactResultSortTriangles(struct arena *frame, struct c_ContactResult *r
         return;
     }
 
-    //ProfZoneNamed("Bad Triangle Sorting");
-
     result->tri_manifold = ArenaPushPacked(frame, result->manifold_count*sizeof(u32));
     if (!result->tri_manifold)
     {
-	    Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
+	    Log(T_SYSTEM, S_FATAL, "Out of memory in %s", __func__);
 	    FatalCleanupAndExit();
     }
 
@@ -492,8 +485,6 @@ void c_ContactResultSortTriangles(struct arena *frame, struct c_ContactResult *r
             m[i] = m_tmp;
         }
     }
-
-    //ProfZoneEnd;
 }
 
 /********************************** SHAPE CONTACTS **********************************/
@@ -1657,7 +1648,7 @@ static struct c_MeshTri *c_MeshContactPush(struct c_MeshContactHelper *helper, c
 {
     if (helper->record_count == helper->record_len)
     {
-        Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
+        Log(T_SYSTEM, S_FATAL, "Out of memory in %s", __func__);
         FatalCleanupAndExit();
     }
 
@@ -2042,9 +2033,10 @@ static void c_MeshContactFinish(struct arena *frame, struct c_ContactResult *res
     result->tri = ArenaPush(frame, contact_count*sizeof(u32));
     u32 *delayed = ArenaPush(helper->tmp, delayed_count*sizeof(u32));
     struct ds_BitSet void_bitset = ds_BitSetAlloc(helper->tmp, helper->mesh->v_count, 0, NOT_GROWABLE);
-    if ((contact_count && (!result->contact_manifold || !result->tri)) || (delayed_count && !delayed) || (cache_len && !result->cache))
+    if ((contact_count && (!result->contact_manifold || !result->tri)) || (delayed_count && !delayed) || (cache_len && !result->cache)
+        || (helper->mesh->v_count && !void_bitset.bits))
     {
-        Log(T_SYSTEM, S_FATAL, "Out of memory in %s\n", __func__);
+        Log(T_SYSTEM, S_FATAL, "Out of memory in %s", __func__);
         FatalCleanupAndExit();
     }
 

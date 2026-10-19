@@ -322,7 +322,11 @@ struct c_ContactResult  c_CapsuleContact(struct arena *frame, const struct c_Con
 struct c_ContactResult  c_HullSphereContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
 struct c_ContactResult  c_HullCapsuleContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
 struct c_ContactResult  c_HullContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
-/* mesh and convex shape: one local manifold per contacting triangle, in the convex shape's frame (n from it to the mesh) */
+/*
+ * mesh and convex shape: one local manifold per contacting triangle, in the convex shape's frame (n from it to the
+ * mesh). The query records every candidate triangle on one of the thread's scratch arenas: more than it holds (about
+ * 8,700 at the default 1 MiB) is fatal.
+ */
 struct c_ContactResult  c_MeshContact(struct arena *frame, const struct c_ContactResult *cached_result, const struct c_Shape *mesh, const ds_TransformWorld *t_mesh, const struct c_Shape *convex, const ds_TransformWorld *t_convex);
 
 /********************************** RAYCASTS **********************************/
