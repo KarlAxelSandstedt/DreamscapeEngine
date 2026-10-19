@@ -1857,7 +1857,6 @@ static void led_EngineRun(struct led *led)
 				}
 			} break;
 
-//#ifdef DS_PHYSICS_DEBUG
 			case PHYSICS_EVENT_ISLAND_NEW:
 			{
 				struct ds_Island *is = ds_IslandLookup(&led->physics, event->island).address;
@@ -1879,7 +1878,6 @@ static void led_EngineRun(struct led *led)
 				}
 			} break;
 
-//#endif
 			case PHYSICS_EVENT_ISLAND_AWAKE:
 			{
 				if (led->body_color_mode == RB_COLOR_MODE_SLEEP)
