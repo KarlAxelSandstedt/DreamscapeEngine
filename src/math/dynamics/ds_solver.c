@@ -17,8 +17,6 @@
 ==========================================================================
 */
 
-#include <stdlib.h>
-
 #include "ds_collision.h"
 #include "ds_float.h"
 #include "ds_vector.h"
@@ -653,7 +651,6 @@ void ds_PositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 c
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
 
-    f32 min_separation = -F32_INFINITY;
     for (u32 ci = low; ci < high; ++ci)
 	{			
 	    struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + ci;
@@ -702,7 +699,6 @@ void ds_PositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 c
                  */
                 const v3 delta = V3Add(V3Sub(bcomp[1]->delta_position, bcomp[0]->delta_position), V3Sub(r1, r0));
                 const f32 distance = ccp->com_separation + V3Dot(delta, cc->normal);
-                min_separation = F32Max(min_separation, distance);
                 const f32 biased_slop_distance = g_solver_config->baumgarte_constant * (distance + g_solver_config->linear_slop);
 
                 const f32 C = F32Clamp(biased_slop_distance, -g_solver_config->max_linear_correction, 0.0f);
