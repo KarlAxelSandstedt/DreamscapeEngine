@@ -111,7 +111,7 @@ void ds_ShapeDynamicRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, c
 	ds_PoolRemove(pipeline->shape_pool, shape_index);
 }
 
-void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, struct ds_Body *body, const u32 index)
+void ds_ShapeStaticRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, const u32 index)
 {
 	struct ds_Shape *shape = pipeline->shape_pool.buf + index;
 
@@ -203,7 +203,7 @@ struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct d
 
 /********************************** LOOKUP TABLES FOR SHAPES **********************************/
 
-u32 (*c_shape_tests[C_SHAPE_COUNT][C_SHAPE_COUNT])(const struct c_Shape *, const ds_TransformWorld *, const struct c_Shape *, const ds_TransformWorld *) =
+static u32 (*c_shape_tests[C_SHAPE_COUNT][C_SHAPE_COUNT])(const struct c_Shape *, const ds_TransformWorld *, const struct c_Shape *, const ds_TransformWorld *) =
 {
 	{ c_SphereTest, 		    0, 				            0, 			            0, },
 	{ c_CapsuleSphereTest,	    c_CapsuleTest, 			    0, 			            0, },
@@ -211,7 +211,7 @@ u32 (*c_shape_tests[C_SHAPE_COUNT][C_SHAPE_COUNT])(const struct c_Shape *, const
 	{ c_TriMeshBVHSphereTest,   c_TriMeshBVHCapsuleTest,    c_TriMeshBVHHullTest,	0, },
 };
 
-f32 (*c_distance_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(v3f64 *c0, v3f64 *c1, const struct c_Shape *, const ds_TransformWorld *, const struct c_Shape *, const ds_TransformWorld *) =
+static f32 (*c_distance_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(v3f64 *c0, v3f64 *c1, const struct c_Shape *, const ds_TransformWorld *, const struct c_Shape *, const ds_TransformWorld *) =
 {
 	{ c_SphereDistance,	 	        0,				                0, 			                0, },
 	{ c_CapsuleSphereDistance,	    c_CapsuleDistance, 		        0, 			                0, },
@@ -219,7 +219,7 @@ f32 (*c_distance_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(v3f64 *c0, v3f64 *c1, co
 	{ c_TriMeshBVHSphereDistance,	c_TriMeshBVHCapsuleDistance, 	c_TriMeshBVHHullDistance,	0, },
 };
 
-f32 (*c_raycast_parameter_methods[C_SHAPE_COUNT])(const struct c_Shape *, const ds_TransformWorld *, const struct rayWorld *) =
+static f32 (*c_raycast_parameter_methods[C_SHAPE_COUNT])(const struct c_Shape *, const ds_TransformWorld *, const struct rayWorld *) =
 {
 	c_SphereRaycastParameter,
 	c_CapsuleRaycastParameter,

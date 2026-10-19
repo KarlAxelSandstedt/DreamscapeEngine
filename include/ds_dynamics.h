@@ -386,7 +386,7 @@ void        ds_ShapeDynamicRemove(struct ds_Dynamics *pipeline, struct ds_Body *
 /* 
  * INTERNAL: Remove the specified shape of a STATIC body and update the physics state into a valid state. 
  */
-void        ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, struct ds_Body *body, const u32 index);
+void        ds_ShapeStaticRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, const u32 index);
 /*
  * Lookup the specified shape and return it if found. Otherwise return (NULL, POOL_NULL).
  */

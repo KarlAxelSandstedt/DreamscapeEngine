@@ -140,7 +140,7 @@ void ds_BodyRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, const ds
 	{
         while (body->shape_list.count)
         {
-			ds_ShapeStaticRemove(mem_tmp, pipeline, body, body->shape_list.first);
+			ds_ShapeStaticRemove(pipeline, body, body->shape_list.first);
         }
 
         while (body->joint_list.count)
