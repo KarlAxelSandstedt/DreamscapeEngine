@@ -28,7 +28,7 @@ if [ "$BUILD_ID" != "$BUILD_ID_CURRENT" ]; then
     echo "$BUILD_ID" | tee "$BUILD_CONFIG"
 fi
 
-source "$EMSDK/emsdk.sh"
+source "$EMSDK/emsdk_env.sh"
 emcmake cmake -S . -B build \
      -DCMAKE_TOOLCHAIN_FILE=$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake \
     -DCMAKE_FIND_ROOT_PATH=$EMSDK/upstream/emscripten/cache/sysroot \
