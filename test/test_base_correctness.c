@@ -1213,6 +1213,17 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
     const struct dsBuffer dump_empty = FileDump(mem, "empty.txt", &dir);
     TEST_TRUE(dump_empty.data == NULL && dump_empty.size == 0 && mem->mem_left == mem_left_empty);
 
+    /* #167: a file open for writing can be dumped and opened for writing again, as on Linux */
+    struct file writer = FileNull();
+    TEST_EQUAL(FS_SUCCESS, FileTryOpen(mem, &writer, "a.txt", &dir, FILE_WRITE));
+    const struct dsBuffer dump_open = FileDump(mem, "a.txt", &dir);
+    struct file writer_2 = FileNull();
+    const enum fsError writer_2_err = FileTryOpen(mem, &writer_2, "a.txt", &dir, FILE_WRITE);
+    if (writer_2.handle != FILE_HANDLE_INVALID) { FileClose(&writer_2); }
+    FileClose(&writer);
+    TEST_TRUE(dump_open.size == 11 && memcmp(dump_open.data, "Jello world", 11) == 0);
+    TEST_EQUAL(FS_SUCCESS, writer_2_err);
+
     /* #163: a regular file is no directory */
     struct file not_dir = FileNull();
     const enum fsError not_dir_err = DirectoryTryOpen(mem, &not_dir, "a.txt", &dir);

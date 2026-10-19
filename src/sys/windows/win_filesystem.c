@@ -119,7 +119,7 @@ enum fsError FileTryCreate(struct arena *mem, struct file *file, const char *fil
 
 			file->handle = CreateFileW(w_absolute_path
 				, GENERIC_READ | GENERIC_WRITE
-				, FILE_SHARE_READ
+				, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE
 				, NULL
 				, creationDisposition
 				, FILE_ATTRIBUTE_NORMAL
@@ -134,6 +134,7 @@ enum fsError FileTryCreate(struct arena *mem, struct file *file, const char *fil
 					case ERROR_ALREADY_EXISTS: { err = FS_ALREADY_EXISTS; } break;
 					case ERROR_FILE_NOT_FOUND:
 					case ERROR_PATH_NOT_FOUND: { err = FS_PATH_INVALID; } break;
+					case ERROR_SHARING_VIOLATION:
 					case ERROR_ACCESS_DENIED: { err = FS_PERMISSION_DENIED; } break;
 					case ERROR_DIRECTORY: { err = FS_FILE_IS_NOT_DIRECTORY; } break;
 					default: { err = FS_ERROR_UNSPECIFIED; LogSystemError(S_ERROR); } break;
@@ -178,7 +179,7 @@ enum fsError FileTryOpen(struct arena *mem, struct file *file, const char *filen
 
 			file->handle = CreateFileW(w_absolute_path
 				, desiredAccess
-				, FILE_SHARE_READ
+				, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE
 				, NULL
 				, OPEN_EXISTING
 				, FILE_ATTRIBUTE_NORMAL
@@ -190,6 +191,7 @@ enum fsError FileTryOpen(struct arena *mem, struct file *file, const char *filen
 				{
 					case ERROR_FILE_NOT_FOUND:
 					case ERROR_PATH_NOT_FOUND: { err = FS_PATH_INVALID; } break;
+					case ERROR_SHARING_VIOLATION:
 					case ERROR_ACCESS_DENIED: { err = FS_PERMISSION_DENIED; } break;
 					case ERROR_DIRECTORY: { err = FS_FILE_IS_NOT_DIRECTORY; } break;
 					default: { err = FS_ERROR_UNSPECIFIED; LogSystemError(S_ERROR); } break;
@@ -232,7 +234,7 @@ enum fsError DirectoryTryCreate(struct arena *mem, struct file *dir, const char 
 			{
 				dir->handle = CreateFileW(w_absolute_path
 					, GENERIC_READ | FILE_LIST_DIRECTORY
-					, FILE_SHARE_READ
+					, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE
 					, NULL
 					, OPEN_EXISTING
 					, FILE_FLAG_BACKUP_SEMANTICS
@@ -246,6 +248,7 @@ enum fsError DirectoryTryCreate(struct arena *mem, struct file *dir, const char 
 					case ERROR_ALREADY_EXISTS: { err = FS_ALREADY_EXISTS; } break;
 					case ERROR_FILE_NOT_FOUND:
 					case ERROR_PATH_NOT_FOUND: { err = FS_PATH_INVALID; } break;
+					case ERROR_SHARING_VIOLATION:
 					case ERROR_ACCESS_DENIED: { err = FS_PERMISSION_DENIED; } break;
 					case ERROR_DIRECTORY: { err = FS_FILE_IS_NOT_DIRECTORY; } break;
 					default: { err = FS_ERROR_UNSPECIFIED; LogSystemError(S_ERROR); } break;
@@ -286,7 +289,7 @@ enum fsError DirectoryTryOpen(struct arena *mem, struct file *dir, const char *f
 		{
 			dir->handle = CreateFileW(w_absolute_path
 				, GENERIC_READ | FILE_LIST_DIRECTORY
-				, FILE_SHARE_READ
+				, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE
 				, NULL
 				, OPEN_EXISTING
 				, FILE_FLAG_BACKUP_SEMANTICS
@@ -298,6 +301,7 @@ enum fsError DirectoryTryOpen(struct arena *mem, struct file *dir, const char *f
 				{
 					case ERROR_FILE_NOT_FOUND:
 					case ERROR_PATH_NOT_FOUND: { err = FS_PATH_INVALID; } break;
+					case ERROR_SHARING_VIOLATION:
 					case ERROR_ACCESS_DENIED: { err = FS_PERMISSION_DENIED; } break;
 					case ERROR_DIRECTORY: { err = FS_FILE_IS_NOT_DIRECTORY; } break;
 					default: { err = FS_ERROR_UNSPECIFIED; LogSystemError(S_ERROR); } break;
