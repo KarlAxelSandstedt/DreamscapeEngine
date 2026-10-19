@@ -43,7 +43,7 @@ void ds_PlatformApiInit(struct arena *mem, const u64 framesize, const u64 scratc
 	Log(T_SYSTEM, S_NOTE, "Rdtsc estimated frequency (GHz): %3f", (f32) TscFrequency() / 1000000000);
 	for (u32 i = 0; i < g_arch_config->logical_core_count; ++i)
 	{
-		Log(T_SYSTEM, S_NOTE, "core %u tsc skew (reltive to core 0): %lu", i, g_tsc_skew[i]);
+		Log(T_SYSTEM, S_NOTE, "core %u tsc skew (relative to core 0): %li", i, (i64) g_tsc_skew[i]);
 	}
 #endif
 #ifdef DS_PERFORMANCE_MEASUREMENT_API

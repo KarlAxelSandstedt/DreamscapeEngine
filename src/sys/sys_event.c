@@ -106,12 +106,10 @@ void ds_ProcessEvents(void)
 				if (event.scroll.direction == MOUSE_SCROLL_UP)
 				{
 					sys_win->ui->inter.scroll_up_count += event.scroll.count;
-					fprintf(stderr, "Scroll up\n");
 				}
 				else
 				{
 					sys_win->ui->inter.scroll_down_count += event.scroll.count;
-					fprintf(stderr, "Scroll down\n");
 				}
 			} break;
 
@@ -243,9 +241,9 @@ void ds_ProcessEvents(void)
 				}
 				else
 				{
-					struct slot slot = ds_PoolAdd(sys_win->ui->event_pool);
-					DLLAppend(sys_win->ui->event_list, sys_win->ui->event_pool.buf, slot.index, node);
-					struct ds_Event *new = slot.address;
+					const struct slot event_slot = ds_PoolAdd(sys_win->ui->event_pool);
+					DLLAppend(sys_win->ui->event_list, sys_win->ui->event_pool.buf, event_slot.index, node);
+					struct ds_Event *new = event_slot.address;
 					new->scancode = event.scancode;
 					new->keycode = event.keycode;
 					new->ns_timestamp = event.ns_timestamp;
@@ -262,9 +260,9 @@ void ds_ProcessEvents(void)
 				}
 				else
 				{
-					struct slot slot = ds_PoolAdd(sys_win->ui->event_pool);
-					DLLAppend(sys_win->ui->event_list, sys_win->ui->event_pool.buf, slot.index, node);
-					struct ds_Event *new = slot.address;
+					const struct slot event_slot = ds_PoolAdd(sys_win->ui->event_pool);
+					DLLAppend(sys_win->ui->event_list, sys_win->ui->event_pool.buf, event_slot.index, node);
+					struct ds_Event *new = event_slot.address;
 					new->scancode = event.scancode;
 					new->keycode = event.keycode;
 					new->ns_timestamp = event.ns_timestamp;
@@ -331,7 +329,6 @@ void ds_ProcessEvents(void)
 
 			case DS_NO_EVENT:
 			{
-				fprintf(stderr, "DS_NO_EVENT\n");
 			} break;
 		}
 
