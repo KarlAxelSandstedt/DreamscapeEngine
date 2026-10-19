@@ -247,6 +247,7 @@ void ds_DynamicsFlush(struct ds_Dynamics *pipeline)
 	ArenaFlush(&pipeline->frame);
 	pipeline->frames_completed = 0;
 	pipeline->ns_elapsed = 0;
+    pipeline->island_to_split = DS_ID_NULL;
 }
 
 void ds_DynamicsValidate(const struct ds_Dynamics *pipeline)
