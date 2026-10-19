@@ -66,7 +66,8 @@ void FontBuild(struct arena *mem, const u32 id)
 	i32 total_glyph_width = 0;
 	i32 glyph_width_max = 0;	/* the atlas packs rows glyph_height_max apart: a glyph may be taller than the pixel size */
 	i32 glyph_height_max = 0;
-	const u32 glyph_max_count = 4096;
+	/* the not-found glyph and the ranges below; the pools are exact, so no push can fail */
+	const u32 glyph_max_count = 1 + (0x7e - 0x20 + 1) + (0x24f - 0xa0 + 1) + (0x3ff - 0x370 + 1);
     ds_CPool(voidptr) stack_pixels;
     ds_CPool(fontGlyph) stack_glyph;
     ds_CPoolAlloc(mem, stack_pixels, glyph_max_count, NOT_GROWABLE);
@@ -94,16 +95,19 @@ void FontBuild(struct arena *mem, const u32 id)
 		.codepoint = 0,
 	}));
 
-	/* load ascii, Latin-1 Suplement, Latin Extend A, Latin Extend B  */
-	for (u32 c = 0x1; c <= 0x024f; ++c)
+	/* printable ASCII, Latin-1 Supplement, Latin Extended-A and B (the C0 and C1 control codes skipped) */
+	for (u32 c = 0x20; c <= 0x024f; ++c)
 	{
+		if (c == 0x7f)
+		{
+			c = 0xa0;
+		}
 		/* load embeded bitmap if found, otherwise load native image of glyph and 
 		 * render anti-aliased coverage bitmap (8bit pixmap) */
-		//error = FT_Load_Char(face, c, FT_LOAD_RENDER | FT_LOAD_FORCE_AUTOHINT | FT_LOAD_TARGET_NORMAL | FT_RENDER_MODE_NORMAL);
 		error = FT_Load_Char(face, c, FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL);
 		if (error)
 		{
-			LogString(T_ASSET, S_ERROR, "Failed to load glyph");
+			Log(T_ASSET, S_ERROR, "%s: failed to load the glyph of U+%04X", asset->ttf->filepath, c);
 			continue;
 		}
 
@@ -124,13 +128,10 @@ void FontBuild(struct arena *mem, const u32 id)
 	/* Greek and Coptic */
 	for (u32 c = 0x0370; c <= 0x03ff; ++c)
 	{
-		/* load embeded bitmap if found, otherwise load native image of glyph and 
-		 * render anti-aliased coverage bitmap (8bit pixmap) */
-		//error = FT_Load_Char(face, c, FT_LOAD_RENDER | FT_LOAD_FORCE_AUTOHINT | FT_LOAD_TARGET_NORMAL | FT_RENDER_MODE_NORMAL);
-		error = FT_Load_Char(face, c, FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL | FT_RENDER_MODE_NORMAL);
+		error = FT_Load_Char(face, c, FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL);
 		if (error)
 		{
-			LogString(T_ASSET, S_ERROR, "Failed to load glyph");
+			Log(T_ASSET, S_ERROR, "%s: failed to load the glyph of U+%04X", asset->ttf->filepath, c);
 			continue;
 		}
 
@@ -156,9 +157,7 @@ void FontBuild(struct arena *mem, const u32 id)
 	font->glyph = stack_glyph.buf;
 
 	font->ascent = (f32) face->size->metrics.ascender / 64;
-	font->descent = (face->size->metrics.descender > 0.0f)
-			? (f32) -face->size->metrics.descender / 64
-			: (f32) face->size->metrics.descender / 64;
+	font->descent = (f32) face->size->metrics.descender / 64;	/* negative: FreeType's convention, and the struct's */
 	font->linespace = (f32) face->size->metrics.height / 64;
 
 	font->size = 0;
@@ -238,7 +237,7 @@ void FontBuild(struct arena *mem, const u32 id)
 
 	if (FT_HAS_KERNING(face))
 	{
-		ds_AssertString(0, "Font supports kerning, but we do not!\n");
+		Log(T_ASSET, S_WARNING, "%s has kerning, which the layout ignores", asset->ttf->filepath);
 	}
 
 	FontSerialize(asset, font);
