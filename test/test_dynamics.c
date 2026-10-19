@@ -1008,6 +1008,93 @@ static struct test_Output DynamicsContactTest(struct test_Environment *env)
     return output;
 }
 
+
+/********************************** islands (ds_island.c) **********************************/
+
+/*
+Islands: a lone dynamic body's island; its id dies with the body and a body in the reused slot gets another
+generation; three boxes in a row share one island, and removing the middle one splits the rest into two valid
+islands on the next tick.
+*/
+static struct test_Output DynamicsIslandTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 0;
+
+    /* a lone body: its island, its island's id, and the id's death */
+    const struct dynamics_TestBox lone = { .position = V3(0.0f, 10.0f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.5f };
+    const ds_BodyId a = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, &lone, (v3f64) { 0 }, 0);
+    const struct ds_Body *body_a = ds_BodyLookup(&pipeline, a).address;
+    const u32 island_a = body_a->island;
+    const ds_IslandId island_a_id = pipeline.island_pool.buf[island_a].id;
+    TEST_NOT_ZERO(ds_IslandLookup(&pipeline, island_a_id).index == island_a);
+    TEST_NOT_ZERO(ds_IslandLookup(&pipeline, island_a_id + DS_ID_GENERATION_INCREMENT).address == NULL);
+    TEST_NOT_ZERO(ds_IslandLookup(&pipeline, DS_ID_NULL).address == NULL);
+    ds_IslandValidateAll(&pipeline);
+
+    ds_BodyRemove(&mem, &pipeline, a);
+    TEST_NOT_ZERO(pipeline.island_pool.count == 0 && ds_IslandLookup(&pipeline, island_a_id).address == NULL);
+    const ds_BodyId b = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, &lone, (v3f64) { 0 }, 1);
+    const struct ds_Body *body_b = ds_BodyLookup(&pipeline, b).address;
+    const ds_IslandId island_b_id = pipeline.island_pool.buf[body_b->island].id;
+    if (island_b_id == island_a_id || ds_IslandLookup(&pipeline, island_a_id).address != NULL)
+    {
+        fprintf(stderr, "island: the removed island's id %llx is alive again as %llx\n", (long long unsigned int) island_a_id, (long long unsigned int) island_b_id);
+        TEST_FAILURE;
+    }
+    ds_BodyRemove(&mem, &pipeline, b);
+
+    /* three boxes in a row on a ground: one island; without the middle one, two */
+    const struct dynamics_TestBox row[4] =
+    {
+        { .position = V3(0.0f, -1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(8.0f, 1.0f, 8.0f), .dynamic = 0, .friction = 0.5f },
+        { .position = V3(-0.98f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.5f },
+        { .position = V3(0.0f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.5f },
+        { .position = V3(0.98f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.5f },
+    };
+    ds_BodyId body[4];
+    for (u32 i = 0; i < 4; ++i)
+    {
+        body[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, row + i, (v3f64) { 0 }, 2 + i);
+    }
+    ds_DynamicsTick(&pipeline);
+    ds_PoolFlush(pipeline.event_pool);
+    DLLFlush(pipeline.event_list);
+    ds_IslandValidateAll(&pipeline);
+    const struct ds_Body *left = ds_BodyLookup(&pipeline, body[1]).address;
+    const struct ds_Body *middle = ds_BodyLookup(&pipeline, body[2]).address;
+    const struct ds_Body *right = ds_BodyLookup(&pipeline, body[3]).address;
+    TEST_NOT_ZERO(left->island == middle->island && middle->island == right->island);
+    TEST_NOT_ZERO(pipeline.island_pool.buf[left->island].body_list.count == 3 && pipeline.island_pool.count == 1);
+
+    ds_BodyRemove(&mem, &pipeline, body[2]);
+    /* the pipeline splits a flagged island once its bodies have rested for the sleep time threshold: let them settle */
+    for (u32 t = 0; t < 600 && pipeline.island_pool.count < 2; ++t)
+    {
+        ds_DynamicsTick(&pipeline);
+        ds_PoolFlush(pipeline.event_pool);
+        DLLFlush(pipeline.event_list);
+        ds_IslandValidateAll(&pipeline);
+    }
+    TEST_NOT_ZERO(left->island != right->island && pipeline.island_pool.count == 2);
+    TEST_NOT_ZERO(pipeline.island_pool.buf[left->island].body_list.count == 1 && pipeline.island_pool.buf[right->island].body_list.count == 1);
+    TEST_NOT_ZERO(pipeline.island_pool.buf[left->island].contact_list.count == 1 && pipeline.island_pool.buf[right->island].contact_list.count == 1);
+
+    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
 {
     DynamicsRestingBoxTest,
@@ -1017,6 +1104,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsShapeTest,
     DynamicsBodyTest,
     DynamicsContactTest,
+    DynamicsIslandTest,
 };
 
 struct suite_Correctness m_dynamics_suite =
