@@ -64,6 +64,8 @@ void FontBuild(struct arena *mem, const u32 id)
 	}
 
 	i32 total_glyph_width = 0;
+	i32 glyph_width_max = 0;	/* the atlas packs rows glyph_height_max apart: a glyph may be taller than the pixel size */
+	i32 glyph_height_max = 0;
 	const u32 glyph_max_count = 4096;
     ds_CPool(voidptr) stack_pixels;
     ds_CPool(fontGlyph) stack_glyph;
@@ -79,6 +81,8 @@ void FontBuild(struct arena *mem, const u32 id)
 	}
 
 	total_glyph_width += face->glyph->bitmap.width;
+	glyph_width_max = (i32) face->glyph->bitmap.width;
+	glyph_height_max = (i32) face->glyph->bitmap.rows;
 	u8 *pixels = ArenaPushMemcpy(mem, face->glyph->bitmap.buffer, face->glyph->bitmap.width * face->glyph->bitmap.rows);
 	ds_CPoolPushValue(stack_pixels, pixels);
 	const u32 glyph_unknown_index = stack_glyph.count;
@@ -104,6 +108,8 @@ void FontBuild(struct arena *mem, const u32 id)
 		}
 
 		total_glyph_width += face->glyph->bitmap.width;
+		glyph_width_max = ((i32) face->glyph->bitmap.width > glyph_width_max) ? (i32) face->glyph->bitmap.width : glyph_width_max;
+		glyph_height_max = ((i32) face->glyph->bitmap.rows > glyph_height_max) ? (i32) face->glyph->bitmap.rows : glyph_height_max;
 		pixels = ArenaPushMemcpy(mem, face->glyph->bitmap.buffer, face->glyph->bitmap.width * face->glyph->bitmap.rows);
 		ds_CPoolPushValue(stack_pixels, pixels);
 		ds_CPoolPushValue(stack_glyph, ((struct fontGlyph)
@@ -129,6 +135,8 @@ void FontBuild(struct arena *mem, const u32 id)
 		}
 
 		total_glyph_width += face->glyph->bitmap.width;
+		glyph_width_max = ((i32) face->glyph->bitmap.width > glyph_width_max) ? (i32) face->glyph->bitmap.width : glyph_width_max;
+		glyph_height_max = ((i32) face->glyph->bitmap.rows > glyph_height_max) ? (i32) face->glyph->bitmap.rows : glyph_height_max;
 		pixels = ArenaPushMemcpy(mem, face->glyph->bitmap.buffer, face->glyph->bitmap.width * face->glyph->bitmap.rows);
 		ds_CPoolPushValue(stack_pixels, pixels);
 		ds_CPoolPushValue(stack_glyph, ((struct fontGlyph)
@@ -158,7 +166,12 @@ void FontBuild(struct arena *mem, const u32 id)
 	font->pixmap_height = 0;
 	font->pixmap = NULL;
 
-	/* find mininum square fitting all bitmaps */
+	/* find the minimum square fitting all bitmaps: rows glyph_height_max apart, each losing at most one glyph width */
+	const u32 row_height = (u32) glyph_height_max;
+	while (font->pixmap_width < (u32) glyph_width_max || font->pixmap_width < row_height)
+	{
+		font->pixmap_width *= 2;
+	}
 	while (1)
 	{
 		/* rows needed if we allowed partial fitting of bitmaps; */
@@ -166,13 +179,13 @@ void FontBuild(struct arena *mem, const u32 id)
 				? 1 + (total_glyph_width / font->pixmap_width)
 				: (total_glyph_width / font->pixmap_width);
 
-		const u32 total_glyph_width_padded = total_glyph_width + clipped_rows_required*asset->pixel_glyph_height;
+		const u32 total_glyph_width_padded = total_glyph_width + clipped_rows_required*glyph_width_max;
 		/* for every clipped row, pad an additional glyph to make sure we get a correct upper bound */
 		const u32 rows_required = (total_glyph_width_padded % font->pixmap_width)
 				? 1 + (total_glyph_width_padded / font->pixmap_width)
 				: (total_glyph_width_padded / font->pixmap_width);
 
-		const u32 pixmap_height_required = rows_required * asset->pixel_glyph_height;
+		const u32 pixmap_height_required = rows_required * row_height;
 		if (pixmap_height_required <= font->pixmap_width)
 		{
 			 break;
@@ -201,7 +214,7 @@ void FontBuild(struct arena *mem, const u32 id)
 		if (offset.x + g->size.x > font->pixmap_width)
 		{
 			offset.x = 0;		
-			offset.y += asset->pixel_glyph_height;
+			offset.y += row_height;
 		}
 		ds_Assert(offset.y + g->size.y <= font->pixmap_height);
 
