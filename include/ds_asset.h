@@ -151,13 +151,10 @@ struct assetSsff
 {
 	const char *		filepath;	/* relative file path */
 	u32			loaded;		/* is the asset loaded? */
-	const struct ssff_header *ssff;		/* loaded ssff header  */
 	/* if loaded and valid */
 	u32			width;
 	u32			height;
 	void *			pixel;		/* pixel opengl texture data 			*/
-	struct sprite *		sprite_info;	/* sprite information is order of sprite generation */
-	u32 			count;		/* uv[count] 					*/
 	enum rTextureId	texture_id;	/* texture id to use in draw command pipeline   */
 #ifdef	DS_DEV
 	u32			valid;		/* is the asset valid? (if not, we must rebuilt it) */

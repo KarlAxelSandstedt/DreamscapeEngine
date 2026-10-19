@@ -313,15 +313,9 @@ void SsffSave(const struct assetSsff *asset, const struct ssff_header *header)
 
 #endif
 
-const struct ssff_header *SsffLoad(struct assetSsff *asset)
+const struct ssff_header *SsffLoad(struct arena *mem, const struct assetSsff *asset)
 {
-	struct arena *tmp = ArenaPushScratch();
-
-	const struct ssff_header *header = (const struct ssff_header *) FileDumpAtCwd(tmp, asset->filepath).data;
-	asset->loaded = (header) ? 1 : 0;
-
-    ArenaPopScratch();
-	return header;
+	return (const struct ssff_header *) FileDumpAtCwd(mem, asset->filepath).data;
 }
 
 struct ssffTextureReturn SsffTexture(struct arena *mem, const struct ssff_header *ssff, const u32 width, const u32 height)
@@ -465,8 +459,8 @@ struct assetSsff *AssetRequestSsff(struct arena *tmp, const enum ssffId id)
 #endif
 	if (!asset->loaded)
 	{
-		asset->ssff = SsffLoad(asset);
-		const struct ssffTextureReturn ret = SsffTexture(tmp, asset->ssff, asset->width, asset->height);
+		const struct ssff_header *ssff = SsffLoad(tmp, asset);
+		const struct ssffTextureReturn ret = SsffTexture(tmp, ssff, asset->width, asset->height);
 		switch (id)
 		{
 			case SSFF_DYNAMIC_ID: { DynamicSsffSetSpriteParameters(asset, &ret); } break;

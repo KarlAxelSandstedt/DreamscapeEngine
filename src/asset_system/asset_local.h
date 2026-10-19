@@ -116,8 +116,8 @@ void				SsffBuild(struct arena *mem, const u32 ssff_id);
 /* save ssff to disk  */
 void 				SsffSave(const struct assetSsff *asset, const struct ssff_header *ssff);
 #endif
-/* heap allocate and load ssff from disk on success, return NULL on failure */
-const struct ssff_header *	SsffLoad(struct assetSsff *asset);
+/* dump the sheet onto mem; NULL if the file cannot be read */
+const struct ssff_header *	SsffLoad(struct arena *mem, const struct assetSsff *asset);
 /* heap allocate and construct texture with given width and height from ssff data. push, in order of generation, texture coordinates onto arena, and return values. */
 struct ssffTextureReturn 	SsffTexture(struct arena *mem, const struct ssff_header *ssff, const u32 width, const u32 height);
 /* verbosely print ssff contents */

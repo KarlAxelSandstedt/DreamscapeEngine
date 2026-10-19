@@ -63,12 +63,9 @@ static struct assetSsff none_ssff =
 { 
 	.filepath = "",
 	.loaded = 1,
-	.ssff = NULL,
 	.width = 1,
 	.height = 1,
 	.pixel = none_ssff_pixel,
-	.sprite_info = &sprite_storage[SPRITE_NONE],
-	.count = 1,
 	.texture_id = TEXTURE_NONE,
 #ifdef DS_DEV
 	.valid = 1,
@@ -80,10 +77,7 @@ static struct assetSsff led_ssff =
 	.filepath = "../assets/sprites/led.ssff",
 	.texture_id = TEXTURE_LED,
 	.loaded = 0,
-	.ssff = NULL,
 	.pixel = NULL,
-	.sprite_info = NULL,
-	.count = 0,
 	.width = 512,
 	.height = 512,
 #ifdef DS_DEV
@@ -98,10 +92,7 @@ static struct assetSsff dynamic_ssff =
 	.filepath = "../assets/sprites/dynamic.ssff",
 	.texture_id = TEXTURE_DYNAMIC,
 	.loaded = 0,
-	.ssff = NULL,
 	.pixel = NULL,
-	.sprite_info = NULL,
-	.count = 0,
 	.width = 512,
 	.height = 512,
 #ifdef DS_DEV
@@ -146,8 +137,6 @@ static struct assetFont default_font_medium =
 void DynamicSsffSetSpriteParameters(struct assetSsff *dynamic_ssff, const struct ssffTextureReturn *param)
 {
 	dynamic_ssff->pixel = param->pixel;
-	dynamic_ssff->count = param->count;
-	dynamic_ssff->sprite_info = param->sprite;
 
 	u32 count = 0;
 	g_sprite[SPRITE_SORCERER_IDLE_1] = param->sprite[count++];
@@ -192,8 +181,6 @@ void DynamicSsffSetSpriteParameters(struct assetSsff *dynamic_ssff, const struct
 void LedSsffSetSpriteParameters(struct assetSsff *led_ssff, const struct ssffTextureReturn *param)
 {
 	led_ssff->pixel = param->pixel;
-	led_ssff->count = param->count;
-	led_ssff->sprite_info = param->sprite;
 
 	u32 count = 0;
 	g_sprite[SPRITE_LED_REFRESH_BUTTON] = param->sprite[count++];
