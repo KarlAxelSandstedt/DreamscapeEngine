@@ -76,6 +76,11 @@ its downhill speed matches the per-tick recurrence v = (v + g sin(a) dt) / (1 + 
 and damping within 1 % (the contacts cancel only the normal part), nothing across the slope, no spin. A box
 dropped flat with restitution 1 leaves the ground with its impact speed (within the tick's gravity), one with
 restitution 0 keeps less than 5 % of it.
+
+Pipeline (DynamicsFirstTickTest, DynamicsFlushTest): 101 bodies added to a pipeline of initial size 64 tick once
+and every contact is coloured (the per-colour body bit sets must have grown with the body pool before the first
+tick). A flushed pipeline is empty, forgets a split it had flagged, and simulates a new scene whose islands reuse
+the old slots and ids.
 */
 
 #define DYNAMICS_TEST_SETTLE_TICKS      120     /* 2 s at 60 Hz */
@@ -1581,6 +1586,115 @@ static struct test_Output DynamicsBounceTest(struct test_Environment *env)
     return output;
 }
 
+/* the first tick with more bodies than the pipeline's initial size (file comment) */
+static struct test_Output DynamicsFirstTickTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 0;
+
+    /* a ground and a 10 by 10 grid of boxes on it: 101 bodies, the pools grow past 64 before the first tick */
+    const struct dynamics_TestBox ground = { .position = V3(0.0f, -1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(16.0f, 1.0f, 16.0f), .dynamic = 0, .friction = 0.5f };
+    DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, &ground, (v3f64) { 0 }, 0);
+    for (u32 i = 0; i < 100; ++i)
+    {
+        const struct dynamics_TestBox box = { .position = V3(-13.5f + 3.0f * (f32) (i % 10), 0.5f, -13.5f + 3.0f * (f32) (i / 10)), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.5f };
+        DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, &box, (v3f64) { 0 }, 1 + i);
+    }
+    TEST_NOT_ZERO(pipeline.body_pool.length > 64 && pipeline.body_pool.count == 101);
+
+    SnapshotTestTick(&pipeline);
+    ds_CGraphValidate(&pipeline);
+    ds_IslandValidateAll(&pipeline);
+    TEST_NOT_ZERO(GraphTestCheck(&pipeline) == 100 && pipeline.island_pool.count == 100);
+    for (u32 c = 0; c < CG_COLOR_COUNT; ++c)
+    {
+        TEST_NOT_ZERO(c == CG_SERIAL_COLOR || pipeline.cgraph.color[c].body_bitset.bit_count >= pipeline.body_pool.length);
+    }
+
+    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
+/* a flushed pipeline is empty and simulates again; a split flagged before the flush does not survive it (file comment) */
+static struct test_Output DynamicsFlushTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 0;
+
+    /* three boxes in a row on a ground; without the middle one the island is flagged, and once rested, chosen for a split */
+    const struct dynamics_TestBox row[4] =
+    {
+        { .position = V3(0.0f, -1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(8.0f, 1.0f, 8.0f), .dynamic = 0, .friction = 0.5f },
+        { .position = V3(-0.98f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.5f },
+        { .position = V3(0.0f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.5f },
+        { .position = V3(0.98f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.5f },
+    };
+    ds_BodyId body[4];
+    for (u32 i = 0; i < 4; ++i)
+    {
+        body[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, row + i, (v3f64) { 0 }, i);
+    }
+    SnapshotTestTick(&pipeline);
+    ds_BodyRemove(&mem, &pipeline, body[2]);
+    u32 t;
+    for (t = 0; t < 600 && pipeline.island_to_split == DS_ID_NULL; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(t < 600 && pipeline.island_to_split != DS_ID_NULL);
+
+    /* the flush empties everything, the flagged split included */
+    ds_DynamicsFlush(&pipeline);
+    TEST_NOT_ZERO(pipeline.body_pool.count == 0 && pipeline.shape_pool.count == 0 && pipeline.contact_pool.count == 0 && pipeline.island_pool.count == 0);
+    TEST_NOT_ZERO(pipeline.frames_completed == 0 && pipeline.island_to_split == DS_ID_NULL);
+    TEST_NOT_ZERO(SnapshotTestSleepingSetCount(&pipeline) == 0 && pipeline.solver_set_pool.buf[SOLVER_SET_ACTIVE].body_sim_pool.count == 0);
+
+    /* three lone boxes take the island slots the row had, with the ids a fresh pipeline gives; the ticks after the flush must not split any of them */
+    for (u32 i = 0; i < 4; ++i)
+    {
+        const struct dynamics_TestBox box = { .position = V3(-4.0f + 2.0f * (f32) i, 0.5f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = (i != 0), .friction = 0.5f };
+        if (i == 0)
+        {
+            DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, row + 0, (v3f64) { 0 }, 4);
+        }
+        else
+        {
+            DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, &box, (v3f64) { 0 }, 4 + i);
+        }
+    }
+    for (t = 0; t < 60; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+        ds_IslandValidateAll(&pipeline);
+    }
+    TEST_NOT_ZERO(pipeline.island_pool.count == 3 && GraphTestCheck(&pipeline) == 3);
+
+    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
 {
     DynamicsRestingBoxTest,
@@ -1596,6 +1710,8 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsJointTest,
     DynamicsSlideTest,
     DynamicsBounceTest,
+    DynamicsFirstTickTest,
+    DynamicsFlushTest,
 };
 
 struct suite_Correctness m_dynamics_suite =
