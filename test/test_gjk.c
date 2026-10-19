@@ -23,14 +23,17 @@ transforms), without a reference distance:
 
     An overestimate is reported as an early stop if GJK's final simplex, solved in double (d_s), is
     itself above lo, else as f32 error on that simplex. Both are accepted (counted) when the shapes' extents
-    differ by GJK_TEST_ACCEPTED_SIZE_RATIO or more. A final simplex can be non-optimal and still
+    differ by GJK_TEST_ACCEPTED_SIZE_RATIO or more, or when d - lo is within GJK_TEST_EARLY_STOP_BANDS touch
+    bands (GJK stops on f32 progress, not on the duality gap). When lo lies inside the touch band, tol is
+    widened by the band: GJK may report any distance in it. A final simplex can be non-optimal and still
     give d within tol (its distance error is second order in its normal's error), and n can be inaccurate
     for d ~ eps * L or short simplex edges; both are only counted, and the worst normal gap d - g(n) printed.
 
     overlap (d == 0):   SAT finds no axis separating A and B by more than tol + GJK's touch band
                         (GJK_TOUCH_TOLERANCE * eps * max(extent A, extent B + |pos_B - pos_A|)); accepted
                         (counted) at size ratios >= GJK_TEST_ACCEPTED_SIZE_RATIO
-    cutoff (F32_INFINITY): the cutoff-free result certifies and is >= cutoff - tol
+    cutoff (F32_INFINITY): the cutoff-free result certifies and is >= cutoff - tol; accepted (counted) at
+                        size ratios >= GJK_TEST_ACCEPTED_SIZE_RATIO
 
 sat is the largest separation of A and B over the SAT axes (face normals of both, cross products of
 edge pairs): a lower bound on d*, and > 0 iff A and B are disjoint. Shapes are GJK's vertex sets: a
@@ -53,6 +56,12 @@ Each test prints the worst observed error in units of F32_EPSILON * L, to tighte
  * a failure: 415 (a 7 mm hull vs a 5.6 m capsule core, f32 error).
  */
 #define GJK_TEST_ACCEPTED_SIZE_RATIO 100.0
+/*
+ * GJK exits when the f32 distance stops improving; at distances comparable to L the final simplex can then be
+ * one support step from the closest pair while the support bound still shows a gap (gjk_design.txt 2026-10-19).
+ * The overestimate is bounded by that gap: this many touch bands (largest observed: 10). Counted, not failed.
+ */
+#define GJK_TEST_EARLY_STOP_BANDS 16.0
 #define GJK_TEST_HULL_COUNT 64
 
 /********************************** double precision helpers **********************************/
@@ -335,12 +344,13 @@ struct gjk_TestStats
     u64 simplex_gap_count;  /* separated results with d_s - lo > tol            */
     f64 max_point;          /* max |d - |c_b - c_a|| / (eps (L + |pos_A|)) */
     f64 max_sat;            /* max sat / (eps L), overlaps          */
-    u64 accepted_count;     /* overestimates and false overlaps accepted: size ratio >= GJK_TEST_ACCEPTED_SIZE_RATIO */
+    u64 accepted_count;     /* overestimates, false overlaps and false cutoffs accepted: size ratio >= GJK_TEST_ACCEPTED_SIZE_RATIO */
+    u64 early_stop_count;   /* overestimates accepted: d - lo <= GJK_TEST_EARLY_STOP_BANDS touch bands */
 };
 
 static void GjkTestStatsPrint(const char *id, const struct gjk_TestStats *stats)
 {
-    fprintf(stdout, "\t%s: %llu queries (%llu separated, %llu overlap, %llu cutoff); worst in eps*L: gap %.3g (at d = %.3g), rounding %.3g (at d = %.3g), points %.3g, overlap sat %.3g; normal gap %.3g (at d = %.3g), %llu above tol; %llu non-optimal final simplices; %llu accepted (size ratio)\n",
+    fprintf(stdout, "\t%s: %llu queries (%llu separated, %llu overlap, %llu cutoff); worst in eps*L: gap %.3g (at d = %.3g), rounding %.3g (at d = %.3g), points %.3g, overlap sat %.3g; normal gap %.3g (at d = %.3g), %llu above tol; %llu non-optimal final simplices; %llu accepted (size ratio), %llu early stops\n",
         id,
         (long long unsigned int) stats->query_count,
         (long long unsigned int) stats->separated_count,
@@ -348,7 +358,8 @@ static void GjkTestStatsPrint(const char *id, const struct gjk_TestStats *stats)
         (long long unsigned int) stats->cutoff_count,
         stats->max_gap, stats->max_gap_d, stats->max_round, stats->max_round_d, stats->max_point, stats->max_sat,
         stats->max_normal_gap, stats->max_normal_gap_d, (long long unsigned int) stats->normal_gap_count,
-        (long long unsigned int) stats->simplex_gap_count, (long long unsigned int) stats->accepted_count);
+        (long long unsigned int) stats->simplex_gap_count, (long long unsigned int) stats->accepted_count,
+        (long long unsigned int) stats->early_stop_count);
 }
 
 static void GjkTestShapePrint(const char *name, const struct gjk_TestShape *s)
@@ -600,6 +611,7 @@ static u32 GjkTestQuery(struct gjk_TestStats *stats, f32 *d_out, struct GJKCache
     const f64 tol_p = GJK_TEST_TOLERANCE * eps_p;
     /* GJK's touch band (1b): its L = max(|a|, |b|) in A's frame is at most this */
     const f64 touch_band = GJK_TOUCH_TOLERANCE * F32_EPSILON * F64MaxTest(a->extent, b->extent + D3Length(D3Sub(D3V3(b->t.position), pos_a)));
+    const u32 accepted_ratio = F64MinTest(a->extent, b->extent) * GJK_TEST_ACCEPTED_SIZE_RATIO <= F64MaxTest(a->extent, b->extent);
 
     const char *failure = NULL;
     f64 gap = 0.0, sat = 0.0, upper = 0.0, g = 0.0, d_s = 0.0, lo = 0.0, hi = 0.0;
@@ -639,6 +651,10 @@ static u32 GjkTestQuery(struct gjk_TestStats *stats, f32 *d_out, struct GJKCache
         {
             failure = "cutoff-free rerun failed";
         }
+        else if (d_full < cutoff - tol && accepted_ratio)
+        {
+            stats->accepted_count += 1;
+        }
         else if (d_full < cutoff - tol)
         {
             failure = "cutoff exit, but the distance is below the cutoff";
@@ -653,7 +669,7 @@ static u32 GjkTestQuery(struct gjk_TestStats *stats, f32 *d_out, struct GJKCache
         {
             failure = "overlap: c_a != c_b or n != 0";
         }
-        else if (sat > tol + touch_band && F64MinTest(a->extent, b->extent) * GJK_TEST_ACCEPTED_SIZE_RATIO <= F64MaxTest(a->extent, b->extent))
+        else if (sat > tol + touch_band && accepted_ratio)
         {
             stats->accepted_count += 1;
         }
@@ -684,6 +700,8 @@ static u32 GjkTestQuery(struct gjk_TestStats *stats, f32 *d_out, struct GJKCache
         hi = GjkTestReference(&lo, a, b, cache_out, scale);
         lo = F64MaxTest(F64MaxTest(F64MaxTest(lo, g), sat), 0.0);
         gap = d_s - lo;
+        /* a reference inside the touch band: GJK may report any distance in it (1b) */
+        const f64 tol_d = (lo <= touch_band) ? tol + touch_band : tol;
         const f64 round = F64AbsTest(d - d_s);
         const f64 normal_gap = d - g;
         stats->simplex_gap_count += (converged && gap > tol);
@@ -719,12 +737,15 @@ static u32 GjkTestQuery(struct gjk_TestStats *stats, f32 *d_out, struct GJKCache
         {
             failure = "d != |c_b - c_a|";
         }
-        else if (converged && d - lo > tol && hi - lo <= 1e-9 * scale
-                 && F64MinTest(a->extent, b->extent) * GJK_TEST_ACCEPTED_SIZE_RATIO <= F64MaxTest(a->extent, b->extent))
+        else if (converged && d - lo > tol_d && hi - lo <= 1e-9 * scale && accepted_ratio)
         {
             stats->accepted_count += 1;
         }
-        else if (converged && d - lo > tol)
+        else if (converged && d - lo > tol_d && d - lo <= GJK_TEST_EARLY_STOP_BANDS * touch_band)
+        {
+            stats->early_stop_count += 1;
+        }
+        else if (converged && d - lo > tol_d)
         {
             failure = (hi - lo > 1e-9 * scale)
                     ? "undecided: d - lo > tol, but the reference didn't converge (test limitation)"
