@@ -17,8 +17,6 @@
 ==========================================================================
 */
 
-#include <stdlib.h> 
-
 #include "cmd.h"
 #include "ds_hash_map.h"
 
@@ -29,12 +27,9 @@ struct cmdQueue *g_queue = NULL;
 static ds_CPool(cmdFunction) g_cmd_f;
 u32			  g_cmd_internal_debug_print_index;	
 
-//TODO REMOVE mallocs/free in debug printing
-
 static void CmdDebugPrint(void)
 {
 	Utf8DebugPrint(g_queue->cmd_exec->arg[0].utf8);
-	free(g_queue->cmd_exec->arg[0].utf8.buf);
 }
 
 void ds_CmdApiInit(void)
@@ -112,8 +107,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 	if (cmd->function == NULL)
 	{
 		cmd->function = g_cmd_f.buf + g_cmd_internal_debug_print_index;
-		u8 *buf = malloc(256);
-		cmd->arg[0].utf8 = Utf8FormatBuffered(buf, 256, "Error in tokenizing %k: invalid command name", (char *) &cmd->string); 
+		cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: invalid command name", (char *) &cmd->string);
 		return;
 	}
 
@@ -132,8 +126,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 
 		if (token_count == cmd->function->args_count)
 		{
-			u8 *buf = malloc(256);
-			cmd->arg[0].utf8 = Utf8FormatBuffered(buf, 256, "Error in tokenizing %k: command expects %u arguments.", &cmd->string, cmd->function->args_count); 
+			cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: command expects %u arguments.", &cmd->string, cmd->function->args_count);
 			cmd->function = g_cmd_f.buf + g_cmd_internal_debug_print_index;
 			break;
 		}
@@ -158,8 +151,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 			if (text[i] != '"')
 			{
 				cmd->function = g_cmd_f.buf + g_cmd_internal_debug_print_index;
-				u8 *buf = malloc(256);
-				cmd->arg[0].utf8 = Utf8FormatBuffered(buf, 256, "Error in tokenizing %k: non-closed string beginning.", &cmd->string); 
+				cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: non-closed string beginning.", &cmd->string);
 				break;
 			}
 
@@ -259,22 +251,21 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 		if (ret.op_result != PARSE_SUCCESS)
 		{
 			cmd->function = g_cmd_f.buf + g_cmd_internal_debug_print_index;
-			u8 *buf = malloc(256);
 			switch (ret.op_result)
 			{
 				case PARSE_UNDERFLOW: 
 				{ 
-					cmd->arg[0].utf8 = Utf8FormatBuffered(buf, 256, "Error in tokenizing %k: signed integer underflow in argument %u", &cmd->string, token_count); 
+					cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: signed integer underflow in argument %u", &cmd->string, token_count);
 				} break;
 
 				case PARSE_OVERFLOW: 
 				{ 
-					cmd->arg[0].utf8 = Utf8FormatBuffered(buf, 256, "Error in tokenizing %k: integer overflow in argument %u", &cmd->string, token_count); 
+					cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: integer overflow in argument %u", &cmd->string, token_count);
 				} break;
 
 				case PARSE_STRING_INVALID: 
 				{ 
-					g_queue->cmd_exec->arg[0].utf8 = Utf8FormatBuffered(buf, 256, "Error in tokenizing %k: unexpected character in argument %k", &cmd->string, &token_string); 
+					g_queue->cmd_exec->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: unexpected character in argument %k", &cmd->string, &token_string);
 				} break;
 			}
 			break;
