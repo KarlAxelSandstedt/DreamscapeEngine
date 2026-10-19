@@ -22,6 +22,8 @@
 
 #include "ds_test.h"
 #include "ds_asset.h"
+#include "ds_font.h"
+#include "ds_float.h"
 
 /*
 Request every sprite sheet. In a DS_DEV build the request rebuilds the sheet from its PNGs and saves it
@@ -126,12 +128,94 @@ struct test_Output AssetFlushReloadTest(struct test_Environment *env)
 	return output;
 }
 
+/*
+The glyph atlas of each font: every glyph's rectangle lies inside the pixmap and no two overlap (a glyph taller than
+the row stride bleeds into the next row), and the unknown glyph has pixels and an advance (an unmapped codepoint shows
+a box, not nothing).
+*/
+struct test_Output FontAtlasTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+	const enum fontId id[] = { FONT_DEFAULT_SMALL, FONT_DEFAULT_MEDIUM };
+	for (u32 k = 0; k < sizeof(id) / sizeof(id[0]); ++k)
+	{
+		const struct font *font = AssetRequestFont(env->mem_1, id[k])->font;
+		const f32 w = (f32) font->pixmap_width;
+		const f32 h = (f32) font->pixmap_height;
+		u32 overlaps = 0;
+		for (u32 i = 0; i < font->glyph_count; ++i)
+		{
+			const struct fontGlyph *g = font->glyph + i;
+			TEST_NOT_ZERO(g->bl.x >= 0.0f && g->bl.y >= 0.0f && g->tr.x <= 1.0f && g->tr.y <= 1.0f);
+			TEST_NOT_ZERO(g->tr.x - g->bl.x >= 0.0f && g->tr.y - g->bl.y >= 0.0f);
+			for (u32 j = i + 1; j < font->glyph_count; ++j)
+			{
+				const struct fontGlyph *o = font->glyph + j;
+				/* strict overlap in pixels; shared edges are fine */
+				if (g->bl.x*w < o->tr.x*w - 0.5f && o->bl.x*w < g->tr.x*w - 0.5f
+					&& g->bl.y*h < o->tr.y*h - 0.5f && o->bl.y*h < g->tr.y*h - 0.5f)
+				{
+					if (overlaps == 0)
+					{
+						fprintf(stderr, "font %u: glyph U+%04X (%i x %i) overlaps glyph U+%04X (%i x %i) in the atlas\n",
+							id[k], g->codepoint, g->size.x, g->size.y, o->codepoint, o->size.x, o->size.y);
+					}
+					overlaps += 1;
+				}
+			}
+		}
+		if (overlaps)
+		{
+			fprintf(stderr, "font %u: %u overlapping glyph pairs\n", id[k], overlaps);
+			TEST_FAILURE;
+		}
+
+		const struct fontGlyph *unknown = font->glyph + font->glyph_unknown_index;
+		TEST_NOT_ZERO(unknown->size.x > 0 && unknown->size.y > 0 && unknown->advance > 0);
+		TEST_NOT_ZERO(GlyphLookup(font, 0x10FFFF) == unknown);
+	}
+
+	return output;
+}
+
+/* A layout's width is its widest line's extent, whatever the line width and the trailing whitespace */
+struct test_Output TextLayoutWidthTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+	const struct font *font = AssetRequestFont(env->mem_1, FONT_DEFAULT_SMALL)->font;
+	const f32 abc = (f32) (3 * GlyphLookup(font, (u32) 'a')->advance);	/* monospace */
+	const struct { const char *text; f32 line_width; f32 width; u32 lines; } c[] =
+	{
+		{ "abc",      F32_INFINITY, abc, 1 },
+		{ "abc\n",    F32_INFINITY, abc, 1 },
+		{ "abc\n",    200.0f,       abc, 1 },
+		{ "ab\ncd",   F32_INFINITY, abc * 2.0f / 3.0f, 2 },
+		{ "abc\nabcd", F32_INFINITY, abc * 4.0f / 3.0f, 2 },
+	};
+	for (u32 i = 0; i < sizeof(c) / sizeof(c[0]); ++i)
+	{
+		const utf32 str = Utf32Cstr(env->mem_1, c[i].text);
+		const struct textLayout *layout = Utf32TextLayout(env->mem_1, &str, c[i].line_width, 4, font);
+		if (layout->line_count != c[i].lines || layout->width != c[i].width)
+		{
+			fprintf(stderr, "layout %u: %u lines, width %g (expected %u lines, width %g)\n", i, layout->line_count, layout->width, c[i].lines, c[i].width);
+			TEST_FAILURE;
+		}
+	}
+
+	return output;
+}
+
 static struct test_Output (*asset_tests[])(struct test_Environment *) =
 {
 	SsffRequestTest,
 	FontRequestTest,
 	SpriteTableTest,
 	AssetFlushReloadTest,
+	FontAtlasTest,
+	TextLayoutWidthTest,
 };
 
 struct suite_Correctness m_asset_suite =
