@@ -42,11 +42,19 @@ void RngSystem(void *buf, const u64 size)
 		FatalCleanupAndExit();
 	}
 
-	status = BCryptGenRandom(hAlgorithm, buf, size, 0);
-	if (!BCRYPT_SUCCESS(status))
+	/* BCryptGenRandom takes a ULONG size */
+	u64 bytes_left = size;
+	while (bytes_left)
 	{
-		Log(T_SYSTEM, S_FATAL, "Couldn't generate BCrypt randomness: %08x\n", status);
-		FatalCleanupAndExit();
+		const u64 offset = size - bytes_left;
+		const ULONG chunk = (ULONG) ((bytes_left < U32_MAX) ? bytes_left : U32_MAX);
+		status = BCryptGenRandom(hAlgorithm, ((u8 *) buf) + offset, chunk, 0);
+		if (!BCRYPT_SUCCESS(status))
+		{
+			Log(T_SYSTEM, S_FATAL, "Couldn't generate BCrypt randomness: %08x\n", status);
+			FatalCleanupAndExit();
+		}
+		bytes_left -= chunk;
 	}
 
 	status = BCryptCloseAlgorithmProvider(hAlgorithm, 0);
