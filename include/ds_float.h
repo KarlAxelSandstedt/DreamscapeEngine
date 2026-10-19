@@ -154,6 +154,8 @@ static ds_ForceInline f32 F32Asin(const f32 f);
 static ds_ForceInline f32 F32Tan(const f32 f);
 /* atanf (radians): not correctly rounded, may differ in the last bit between platforms */
 static ds_ForceInline f32 F32Atan(const f32 f);
+/* atan2f(y, x) (radians, in [-pi, pi]; (0, 0) gives 0): not correctly rounded, may differ in the last bit between platforms */
+static ds_ForceInline f32 F32Atan2(const f32 y, const f32 x);
 
 /*********************** directed rounding from f64 ************************/
 
@@ -359,6 +361,11 @@ static ds_ForceInline f32 F32Tan(const f32 f)
 static ds_ForceInline f32 F32Atan(const f32 f)
 {
 	return atanf(f);
+}
+
+static ds_ForceInline f32 F32Atan2(const f32 y, const f32 x)
+{
+	return atan2f(y, x);
 }
 
 /*************** directed rounding from f64: inline definitions ***************/

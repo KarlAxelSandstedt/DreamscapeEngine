@@ -69,16 +69,13 @@ struct r_Camera r_CameraInit(const v3f64 position, const v3 direction, const f32
 	 *
 	 *      (cos(pitch) sin(yaw), -sin(pitch), cos(pitch) cos(yaw)),
 	 *
-	 * so yaw is the angle of the horizontal part from +z (its sign that of x) and pitch = -asin(y / |direction|),
-	 * clamped as r_CameraUpdateAngles clamps it. Straight up or down the yaw is undefined: 0.
+	 * so yaw is the angle of the horizontal part from +z toward +x, atan2(x, z), and pitch = -asin(y / |direction|),
+	 * clamped as r_CameraUpdateAngles clamps it. Straight up or down the yaw is undefined: 0. atan2 is well
+	 * conditioned everywhere; acos(z / len_xz) is not near +-z (its slope is infinite at 1), where one f32
+	 * rounding of the quotient moved the yaw by 3.5e-4.
 	 */
 	const f32 len = V3Length(direction);
-	const f32 len_xz = F32Sqrt(direction.x*direction.x + direction.z*direction.z);
-	if (len_xz > 0.001f * len)
-	{
-		const f32 yaw = F32Acos(F32Clamp(direction.z / len_xz, -1.0f, 1.0f));
-		cam.yaw = (direction.x < 0.0f) ? -yaw : yaw;
-	}
+	cam.yaw = (direction.x != 0.0f || direction.z != 0.0f) ? F32Atan2(direction.x, direction.z) : 0.0f;
 	const f32 pitch_max = F32_PI / 2.0f - 0.50f;
 	cam.pitch = F32Clamp(-F32Asin(F32Clamp(direction.y / len, -1.0f, 1.0f)), -pitch_max, pitch_max);
 	r_CameraUpdateAxes(&cam);
