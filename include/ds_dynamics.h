@@ -1641,8 +1641,8 @@ struct ds_Dynamics
 	struct BVH 		                dynamic_bvh;            /* bvh of dynamic shapes */
 	struct BVH 		                static_bvh;             /* bvh of static shapes */
 
-    struct ds_BitSet                shape_dirty_set;    
-    ds_CPool(ds_ProxyQuery)         dirty_shape_query;
+    struct ds_BitSet                shape_dirty_set;        /* the dynamic shapes the broadphase queries */
+    ds_CPool(ds_ProxyQuery)         dirty_shape_query;      /* per shape index: the broadphase's new pairs of the frame */
 
     ds_Pool(ds_Joint)             joint_pool;
 
@@ -1663,7 +1663,7 @@ struct ds_Dynamics
 	struct ds_HashMap	            contact_map;		
     struct ds_BitSet                contact_usage_set;
 
-    ds_IslandId                     island_to_split;            /* */
+    ds_IslandId                     island_to_split;            /* the island the next tick splits, chosen at the end of the solve (DS_ID_NULL: none) */
 	ds_Pool(ds_Island)            island_pool;	    
     struct ds_BitSet                island_high_energy_set;   /* High energy islands per-frame. */
 
@@ -1685,7 +1685,7 @@ struct ds_Dynamics
 
 /* Initialize a new growable physics pipeline; ns_tick is the duration of a physics frame. */
 struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, ds_SDB(c_Shape) *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size);
-/* free pipeline resources */
+/* Free the pipeline's heap resources (the shell stays on its arena) */
 void 			ds_DynamicsFree(struct ds_Dynamics *pipeline);
 /* Return the required size when serializing the pipeline. */
 u64             ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline);
@@ -1696,9 +1696,16 @@ void            ds_DynamicsSerialize(struct ss *ss, const struct ds_Dynamics *pi
  * else is heap allocated, so always free the pipeline with ds_DynamicsFree.
  */
 u32             ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynamics *pipeline, ds_SDB(c_Shape) *cshape_db);
-/* flush pipeline resources */
+/*
+ * Empty the pipeline: every body, shape, contact, island, joint, event, sleeping set and the frame memory go;
+ * the frame count restarts and a flagged split is forgotten. Configuration and capacities stay.
+ */
 void			ds_DynamicsFlush(struct ds_Dynamics *pipeline);
-/* pipeline main method: simulate a single physics frame and update internal state  */
+/*
+ * Simulate one physics frame of ns_tick: pending config, broadphase and narrowphase over the dirty shapes,
+ * contact promotion/demotion, at most one island split, the solver, proxy updates (or a rebuild of the
+ * dynamic BVH), contact removal, the sleep bookkeeping. Sets the dynamics globals to this pipeline.
+ */
 void 			ds_DynamicsTick(struct ds_Dynamics *pipeline);
 /* Hash bodies in order from low to high and return the final hash  */
 u64             ds_DynamicsOrientationHash(const struct ds_Dynamics *pipeline);
@@ -1709,9 +1716,11 @@ void			ds_DynamicsValidate(const struct ds_Dynamics *pipeline);
  * (U32_MAX, F32_INFINITY) on no hit or if |ray->dir|^2 == 0. The ray is in world space.
  */
 u32f32 			ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const struct rayWorld *ray);
-/* enable sleeping in pipeline */
+/*
+ * Internal: switch sleeping on or off at once and wake every sleeping set. Callers set
+ * g_solver_config->pending_sleep_enabled instead; the next tick applies it through these.
+ */
 void 			ds_DynamicsSleepEnable(struct ds_Dynamics *pipeline);
-/* disable sleeping in pipeline */
 void 			ds_DynamicsSleepDisable(struct ds_Dynamics *pipeline);
 /* Print resource usage */
 void            ds_DynamicsPrintUsage(const struct ds_Dynamics *pipeline);

@@ -399,24 +399,23 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
      * Achieving Determinism and Parallelization in the Broadphase
      * ===========================================================
      *
-     * All moving or new shapes from the last frame are dirty and have their corresponding index
-     * bit set in the shape_dirty_set. The broadphase can then be transformed into a parallel-for,
-     * in which each thread process a range in the dirty bitset and queries its shapes against the
-     * pipeline's bounding volume hierarchies. In order to to get duplicate collisions reported from
-     * two moving shapes, or from shapes sharing the same body, we enforce a filter for the dynamic
-     * bvh queries that looks something like:
+     * Every dynamic shape is dirty: its bit in shape_dirty_set is set when the shape is added and
+     * cleared when the shape is removed, nowhere else. The broadphase is a parallel-for over the
+     * bitset: each thread takes a range of blocks and queries their shapes against the pipeline's
+     * bounding volume hierarchies. The dynamic bvh query reports a pair once, from the shape of the
+     * smaller body index, and never two shapes of one body:
      *
      *          overlap : (s0, s1)  => (shape[s0].body < shape[s1].body)
      *
-     * When a DBVHRebuild is triggered due to a high number of re-insertions required in
-     * the previous frame, all dynamic shapes are treated as dirty.
-     * 
-     * To achieve determinism, after a thread has queried a moving shape si, in stores the resulting 
-     * query data in 
+     * This needs both shapes of a pair queried, which holds since every shape is. After a rebuild
+     * of the dynamic bvh the set is reset to the dynamic shapes in use.
      *
-     *      pipeline->shape_query.buf[si],
+     * To achieve determinism, after a thread has queried a shape si, it stores the resulting query
+     * data in
      *
-     * The master thread can then traverse the results from low to high, adding the contact in a 
+     *      pipeline->dirty_shape_query.buf[si],
+     *
+     * and the master thread then traverses the results from low to high, adding the contacts in a
      * canonical way.
      */
     struct ds_BroadJobPhase *broad_phase = pipeline->broad_phase;
