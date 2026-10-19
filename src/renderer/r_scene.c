@@ -390,12 +390,17 @@ void r_SceneBucketListGenerate(void)
 
 			case R_INSTANCE_MESH:
 			{
+				const u64 bytes = instance->mesh->vertex_count * instance->mesh->local_stride;
+				if (bytes > g_scene->mem_frame->mem_left)
+				{
+					Log(T_RENDERER, S_ERROR, "mesh %k: %lu B does not fit the scene's frame arena (%lu B left), drawn as the stub box", &instance->mesh->id, bytes, g_scene->mem_frame->mem_left);
+					instance->mesh = &g_r_core->mesh_stub_color;
+				}
 				r_BufferConstructorBufferAddSize(&buf_constructor,
 						instance->mesh->vertex_count * instance->mesh->local_stride,
 						0,
 						0,
 						0);
-				ds_AssertMessage(buf_constructor.last->local_size <= 10000000, "ID: %k", &instance->mesh->id);
 			} break;
 
 			default:
@@ -709,6 +714,12 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 				buf->shared_data = NULL;
 				buf->index_data = NULL;
 				buf->local_data = ArenaPush(g_scene->mem_frame, buf->local_size);
+				if (buf->local_data == NULL)
+				{
+					Log(T_RENDERER, S_ERROR, "a mesh bucket of %lu B does not fit the scene's frame arena: not drawn", buf->local_size);
+					buf->local_size = 0;
+					break;
+				}
 				u8 *local_data = buf->local_data;
 				for (u32 i = buf->c_l; i <= buf->c_h; ++i)
 				{

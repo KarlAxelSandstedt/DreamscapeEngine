@@ -121,6 +121,7 @@ struct r_Core
 	struct r_Texture	texture[TEXTURE_COUNT];
 
 	ds_SDB(r_Mesh) *         mesh_database;		/* mesh storage (external) */
+	struct r_Mesh		mesh_stub_color;	/* drawn in place of a debug mesh that does not fit its arena */
 
 	HI(r_Proxy3d) 		proxy3d_hierarchy;	/* proxy3d storage */
 	u32			        proxy3d_root;

@@ -92,6 +92,8 @@ static struct r_Mesh *BoundingBoxesMesh(struct arena *mem, const struct ds_Dynam
 	if (!tmp || !vertex_data) 
 	{ 
 		ArenaPopRecord(mem);
+		Log(T_RENDERER, S_ERROR, "bounding boxes: %u vertices do not fit the renderer's frame arena, drawn as the stub box", vertex_count);
+		mesh = &g_r_core->mesh_stub_color;
 		goto end;
 	}
 	ArenaRemoveRecord(mem);
@@ -140,6 +142,8 @@ static struct r_Mesh *BVHMesh(struct arena *mem, const struct BVH *bvh, const v3
 	u8 *vertex_data = ArenaPush(mem, vertex_count * L_COLOR_STRIDE);
 	if (!tmp || !vertex_data) 
 	{ 
+		Log(T_RENDERER, S_ERROR, "bvh: %u vertices do not fit the renderer's frame arena, drawn as the stub box", vertex_count);
+		mesh = &g_r_core->mesh_stub_color;
 		goto end;
 	}
 	ArenaRemoveRecord(mem);

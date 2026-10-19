@@ -251,6 +251,7 @@ void r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_siz
 	g_r_core->mesh_database = mesh_database; 
 	struct r_Mesh *stub = g_r_core->mesh_database->pool.buf + SDB_STUB;
 	r_MeshStubBox(stub);
+	r_MeshStubColorBox(&g_r_core->mesh_stub_color);
 
 
 

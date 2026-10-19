@@ -530,6 +530,8 @@ void		r_SceneFrameEnd(void);
  */
 /* setup mesh stub: a unit box from static data, no allocation */
 void 		r_MeshStubBox(struct r_Mesh *mesh_stub);
+/* setup the stub for a debug mesh that does not fit its arena: the unit box's edges as magenta lines (L_COLOR layout), static data */
+void 		r_MeshStubColorBox(struct r_Mesh *mesh);
 /* setup mesh from sphere parameters: refinement >= 3 strips of 2 refinement points */
 void 		r_MeshSphere(struct arena *mem, struct r_Mesh *mesh, const f32 radius, const u32 refinement);
 /* setup mesh from capsule parameters: the axis is y, half_height and radius > 0, refinement >= 2 rings per hemisphere */

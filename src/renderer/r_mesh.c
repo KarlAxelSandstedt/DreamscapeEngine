@@ -60,6 +60,45 @@ static u32 stub_indices[] =
 	16 + 1, 16 + 4, 16 + 7, 16 + 1, 16 + 7, 16 + 2,
 };
 
+/* the 12 edges of the unit box as lines, position and magenta color per vertex (L_COLOR layout) */
+static f32 stub_color_vertices[] =
+{
+	 -0.5f,  -0.5f,  -0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	 -0.5f,  -0.5f,   0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	 -0.5f,  -0.5f,  -0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	 -0.5f,   0.5f,  -0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	 -0.5f,  -0.5f,  -0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	  0.5f,  -0.5f,  -0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	 -0.5f,  -0.5f,   0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	 -0.5f,   0.5f,   0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	 -0.5f,  -0.5f,   0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	  0.5f,  -0.5f,   0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	 -0.5f,   0.5f,  -0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	 -0.5f,   0.5f,   0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	 -0.5f,   0.5f,  -0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	  0.5f,   0.5f,  -0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	 -0.5f,   0.5f,   0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	  0.5f,   0.5f,   0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	  0.5f,  -0.5f,  -0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	  0.5f,  -0.5f,   0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	  0.5f,  -0.5f,  -0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	  0.5f,   0.5f,  -0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	  0.5f,  -0.5f,   0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	  0.5f,   0.5f,   0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	  0.5f,   0.5f,  -0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+	  0.5f,   0.5f,   0.5f,  1.0f, 0.0f, 1.0f, 1.0f,
+};
+
+void r_MeshStubColorBox(struct r_Mesh *mesh)
+{
+	mesh->index_count = 0;
+	mesh->index_data = NULL;
+	mesh->index_max_used = 0;
+	mesh->vertex_count = sizeof(stub_color_vertices) / (7*sizeof(f32));
+	mesh->vertex_data = stub_color_vertices;
+	mesh->local_stride = 7*sizeof(f32);
+}
+
 void r_MeshStubBox(struct r_Mesh *mesh_stub)
 {
 	mesh_stub->index_max_used = 16 + 7;
