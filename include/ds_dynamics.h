@@ -1182,7 +1182,10 @@ void    SolverConfigInit(const u32 pgs_iteration_count,
 /*
 ds_CGraphColor
 ==============
-ds_CGraphColor stores the relevant physics data of active constraints, tightly packed for quick iterations.
+ds_CGraphColor stores the solver data of the active constraints of one colour, tightly packed for the solver's
+ranges: contact i of the colour is contact_pool[i] (its pipeline index) with its solver state in
+contact_compute_pool[i]; contact->compute is i and contact->color the colour. body_bitset marks the dynamic
+bodies with a constraint in the colour (unused for CG_SERIAL_COLOR).
 */
 struct ds_CGraphColor
 {
@@ -1219,13 +1222,16 @@ from either a contact or a joint. Whenever a new constraint is added between two
 assigned a unique color from all the other constraints that shares bodies (vertices) with it. If
 we have exhausted the available colors, we assign the constraint to the serial color. 
 
-Now that we have every constraint colored, We pay process all constraints with the same color in
-parallel (expect the serial color). For good information on this, see Erin Catto's post "SIMD Matters".
+Now that we have every constraint colored, we may process all constraints with the same color in
+parallel (except the serial color, solved in one range). For good information on this, see Erin Catto's
+post "SIMD Matters". A static body never moves, so it takes no colour bit: static-dynamic constraints only
+need colours distinct per dynamic body and get the static colours; dynamic-dynamic constraints get the
+dynamic colours.
 
-Furthermore, similar to Box3D, in order to mitigate ghost collisions, we prioritize static-dynamic 
-constraints by processing them first in each solver iteration. This yields a process ordering:
+Furthermore, in order to mitigate ghost collisions, static-dynamic constraints are processed first in each
+solver iteration. The solver runs the colours in index order:
 
-    CG_SERIAL_COLOR => CG_STATIC_COLOR_1 => ... => CG_STATIC_COLOR_N => CG_DYNAMIC_1 => .. CG_DYNAMIC_M
+    CG_STATIC_COLOR_FIRST .. CG_STATIC_COLOR_LAST => CG_DYNAMIC_COLOR_FIRST .. CG_DYNAMIC_COLOR_LAST => CG_SERIAL_COLOR
 */
 struct ds_CGraph
 {
@@ -1246,7 +1252,7 @@ u32                     ds_CGraphTryDeserialize(struct ss *ss, struct ds_Dynamic
 void                    ds_CGraphFlush(struct ds_Dynamics *pipeline);
 /* Validate the state of the pipeline's constraint graph */
 void                    ds_CGraphValidate(const struct ds_Dynamics *pipeline);
-/* Prepare the pipeline's constraint graph for the new frame, allocating and setting up new resources if necessary. */
+/* Prepare the pipeline's constraint graph for the new frame: the body bit sets grow with the body pool. */
 void                    ds_CGraphFramePrepare(struct ds_Dynamics *pipeline);
 /* Allocate and setup a new ds_JointSim */
 struct ds_JointSim *    ds_CGraphJointAdd(struct ds_Dynamics *pipeline, struct ds_Joint *joint);
@@ -1257,7 +1263,7 @@ void                    ds_CGraphJointRemove(struct ds_Dynamics *pipeline, struc
  * data in sleeper sets is copied onto the frame. 
  */
 void                    ds_CGraphContactAdd(struct arena *frame, struct ds_Dynamics *pipeline, struct ds_Contact *contact);
-/* Remove conttact from the constraint graph. */
+/* Remove the contact from the constraint graph; the last contact of its colour takes its slot (compute index updated). */
 void                    ds_CGraphContactRemove(struct ds_Dynamics *pipeline, struct ds_Contact *contact);
 
 
