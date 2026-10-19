@@ -1247,6 +1247,16 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
     const utf8 cwd = CwdGet(mem);
     TEST_TRUE(cwd.size > 0 && !PathIsRelativeA(CstrUtf8(mem, cwd)));
 
+    /* #164: the process cwd inside the non-ASCII directory, CwdGet returns it in UTF-8 */
+    WCHAR w_cwd[MAX_PATH];
+    TEST_TRUE(GetCurrentDirectoryW(MAX_PATH, w_cwd) != 0);
+    TEST_TRUE(SetCurrentDirectoryW(L"ds_filesystem_test\\" FS_TEST_NON_ASCII_W) != 0);
+    const utf8 cwd_non_ascii = CwdGet(mem);
+    SetCurrentDirectoryW(w_cwd);
+    const u32 suffix = sizeof(FS_TEST_NON_ASCII) - 1;
+    TEST_TRUE(cwd_non_ascii.size >= suffix
+            && memcmp(cwd_non_ascii.buf + cwd_non_ascii.size - suffix, FS_TEST_NON_ASCII, suffix) == 0);
+
     FilesystemTestCleanup();
 
 	return output;

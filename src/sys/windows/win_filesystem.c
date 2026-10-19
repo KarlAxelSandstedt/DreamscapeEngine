@@ -582,26 +582,41 @@ utf8 CwdGet(struct arena *mem)
 {
 	utf8 str = Utf8Empty();
 
-	const DWORD req_size = GetCurrentDirectory(0, NULL);
-	void *buf = ArenaPush(mem, req_size);
+	/* the W form: the A form returns the ANSI code page, not UTF-8 */
+	WCHAR w_path[MAX_PATH];
+	const DWORD w_len = GetCurrentDirectoryW(MAX_PATH, w_path);
+	if (w_len == 0)
+	{
+		LogSystemError(S_ERROR);
+		return str;
+	}
+
+	/* the path did not fit: w_len is the size required */
+	if (MAX_PATH <= w_len)
+	{
+		LogString(T_SYSTEM, S_ERROR, "CwdGet: the working directory is longer than MAX_PATH");
+		return str;
+	}
+
+	const int size = WideCharToMultiByte(CP_UTF8, 0, w_path, (int) w_len, NULL, 0, NULL, NULL);
+	if (size == 0)
+	{
+		LogSystemError(S_ERROR);
+		return str;
+	}
+
+	/* terminated, as GetCurrentDirectory left it */
+	u8 *buf = ArenaPush(mem, (u64) size + 1);
 	if (buf)
 	{
-		const DWORD len = GetCurrentDirectory(req_size, buf);
-		if (len)
+		WideCharToMultiByte(CP_UTF8, 0, w_path, (int) w_len, (char *) buf, size, NULL, NULL);
+		buf[size] = '\0';
+		str = (utf8) { .buf = buf, .size = (u32) size, .len = 0 };
+		for (u64 offset = 0; offset < str.size; str.len += 1)
 		{
-			/* len bytes (ANSI, not necessarily UTF-8): count the codepoints as decoding reads them */
-			str = (utf8) { .buf = buf, .size = (u32) len, .len = 0 };
-			for (u64 offset = 0; offset < str.size; str.len += 1)
-			{
-				Utf8ReadCodepoint(&offset, &str, offset);
-			}
-		}
-		else
-		{
-			LogSystemError(S_ERROR);
+			Utf8ReadCodepoint(&offset, &str, offset);
 		}
 	}
-	
 
 	return str;
 }
