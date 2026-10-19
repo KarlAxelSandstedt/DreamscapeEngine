@@ -436,7 +436,7 @@ void FileClose(struct file *file)
 	{
 		LogSystemError(S_ERROR);
 	}
-	file->handle = FILE_HANDLE_INVALID;
+	*file = FileNull();
 }
 
 

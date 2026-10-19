@@ -1247,6 +1247,9 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
     const struct dsBuffer dump = FileDump(mem, "a.txt", &dir);
     TEST_TRUE(dump.data != NULL && dump.size == 11 && memcmp(dump.data, "Jello world", 11) == 0);
 
+    /* #173: a closed file is FileNull: no handle, type or path */
+    TEST_TRUE(file.handle == FILE_HANDLE_INVALID && file.type == FILE_NONE && file.path.size == 0);
+
     /* #166: an empty file dumps as the empty buffer, mem unchanged (no path copy left on it) */
     struct file empty = FileNull();
     TEST_EQUAL(FS_SUCCESS, FileTryCreate(mem, &empty, "empty.txt", &dir, 0));
