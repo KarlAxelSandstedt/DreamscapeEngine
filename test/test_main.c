@@ -325,7 +325,7 @@ void ds_TestMainCorrectness(void)
 	run_suite(jobscheduler_correctness_suite, &env, 1);
 	run_suite(container_correctness_suite, &env, 1);
 	run_suite(kas_string_correctness_suite, &env, 1);
-	//run_suite(serialize_correctness_suite, &env, 1);
+	run_suite(serialize_correctness_suite, &env, 1);
     run_suite(contact_correctness_suite, &env, 1);
     run_suite(mesh_contact_correctness_suite, &env, 1);
     run_suite(geometry_correctness_suite, &env, 1);
