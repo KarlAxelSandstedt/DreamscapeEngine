@@ -126,7 +126,7 @@ void ds_WSDequeAlloc(struct ds_WSDeque *deque, const u32 owner, const u64 len)
     deque->mem[0].id = ds_Alloc(deque->mem[0].len*sizeof(ds_JobId), DS_CACHE_LINE);
     if (!deque->mem[0].id) 
 	{
-		LogString(T_SYSTEM, S_FATAL, "Failed to reallocate memSlot in ds_Alloc, exiting.");
+		LogString(T_SYSTEM, S_FATAL, "Failed to allocate the deque, exiting.");
 		FatalCleanupAndExit();
 	}
 
@@ -180,7 +180,7 @@ void ds_WSDequeDealloc(struct ds_WSDeque *deque)
 
 void ds_WSDequePushBottom(struct ds_WSDeque *deque, const ds_JobId id)
 {
-    ds_Assert(deque->owner == ds_ThreadSelfIndex() || 0 == ds_ThreadSelfIndex());
+    ds_Assert(deque->owner == ds_ThreadSelfIndex());
 
     u32 local_mem_count = AtomicLoadRlx32(&deque->a_mem_count);
     const u64 local_bottom = AtomicLoadRlx64(&deque->a_bottom);
@@ -227,7 +227,8 @@ ds_JobId ds_WSDequeTryPopBottom(struct ds_WSDeque *deque)
      *      local_bottom_t0 - local_top_t0 >= local_bottom_t0 - local_top_t1, 
      *
      * which enables the safe CAS-less pop for the common case of a filled Deque.
-     * TODO: Seem to be some crazy links here with stealer's Fence in PopBottom.
+     * The fence orders the store of a_bottom before the load of a_top; with the stealer's fence (PopTop) the
+     * two sides cannot both miss each other's write (a store-load pair needs seq_cst, Le et al.).
      */
     AtomicStoreRlx64(&deque->a_bottom, local_bottom_t0);
     ds_MemoryFenceSeqCst;
@@ -241,7 +242,7 @@ ds_JobId ds_WSDequeTryPopBottom(struct ds_WSDeque *deque)
         if (local_top_t1 == local_bottom_t0)
         {
             /* We contend with stealers for the last element */
-            //TODO why seq_cst on success?
+            /* seq_cst: with the fences, the CASes on a_top form one total order, so a pop and a steal never both take the last id */
             if (!AtomicCompareExchangeSeqCstRlx64(&deque->a_top, &local_top_t1, local_top_t1+1))
             {
                 id = DS_JOB_ID_NULL;
@@ -262,8 +263,8 @@ ds_JobId ds_WSDequeTrySteal(struct ds_WSDeque *deque)
     u32 id = DS_JOB_ID_NULL;
     u64 local_top = AtomicLoadRlx64(&deque->a_top);
     /*
-     * TODO Hmm.. me no understand the necessity but experts say...
-     * Seem to be some crazy links here with the owner's Fence in PopBottom.
+     * The fence orders the load of a_top before the load of a_bottom against the owner's store-fence-load in
+     * PopBottom: one of the two sides sees the other's write (Le et al.).
      */
     ds_MemoryFenceSeqCst;
     const u64 local_bottom = AtomicLoadAcq64(&deque->a_bottom);
@@ -276,7 +277,7 @@ ds_JobId ds_WSDequeTrySteal(struct ds_WSDeque *deque)
         const u32 local_mem_count = AtomicLoadAcq32(&deque->a_mem_count);
         const struct ds_WSDequeMem *mem = deque->mem + local_mem_count - 1;
         id = AtomicLoadRlx32(&mem->id[local_top & mem->mask]);
-        //TODO why SeqCstRlx?
+        /* seq_cst: the CASes on a_top form one total order with the owner's (PopBottom) */
         if (!AtomicCompareExchangeSeqCstRlx64(&deque->a_top, &local_top, local_top+1))
         {
             id = DS_JOB_ID_NULL;
@@ -286,7 +287,7 @@ ds_JobId ds_WSDequeTrySteal(struct ds_WSDeque *deque)
     return id;
 }
 
-void ds_WorkerRunJob(const ds_JobId job)
+static void ds_WorkerRunJob(const ds_JobId job)
 {
     struct ds_WSDeque *deque = g_scheduler->deque + ds_ThreadSelfIndex();
     const u32 job_diff = g_scheduler->phase->dispatch(job);
@@ -306,7 +307,7 @@ void ds_WorkerRunJob(const ds_JobId job)
     }
 }
 
-void ds_TrySeedAndRunJobs(struct ds_Worker *w, const u32 thread)
+static void ds_TrySeedAndRunJobs(struct ds_Worker *w, const u32 thread)
 {
     if (AtomicLoadRlx32(&w->a_mem_frame_switch))
     {
@@ -504,7 +505,6 @@ void ds_JobPhaseBegin(struct ds_JobPhase *phase)
 
     g_scheduler->phase = phase;
     ds_Assert(AtomicLoadRlx32(&phase->a_jobs_remaining) == 0);
-    AtomicStoreRlx32(&phase->a_jobs_remaining, 0);
     for (u32 i = 0; i < phase->next_len; ++i)
     {
         AtomicStoreRlx32(&phase->next[i].a_counter, 0); 
