@@ -37,7 +37,8 @@ static struct slot ds_IslandAlloc(struct ds_Dynamics *pipeline, const u32 set)
 {
     ds_Assert(set != SOLVER_SET_STATIC);
 
-    const u32 old_max = pipeline->island_pool.count;
+    /* count_max, the high-water mark: a reused slot keeps its id and only advances the generation (as ds_BodyAdd) */
+    const u32 old_max = pipeline->island_pool.count_max;
 	struct slot slot = ds_PoolAdd(pipeline->island_pool);
     if (pipeline->island_high_energy_set.bit_count < pipeline->island_pool.count)
     {
@@ -50,7 +51,7 @@ static struct slot ds_IslandAlloc(struct ds_Dynamics *pipeline, const u32 set)
     DLLFlush(is->joint_list);
 	is->constraint_remove_count = 0;
 
-    if (old_max != pipeline->island_pool.count)
+    if (old_max != pipeline->island_pool.count_max)
     {
         is->id = ds_IdConstruct(slot.index, 0);
     }
