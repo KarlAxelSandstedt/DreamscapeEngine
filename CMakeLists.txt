@@ -118,9 +118,6 @@ if (DEFINED EMSCRIPTEN)
 	add_link_options(-pthread -sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency)
 
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread")
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --embed-file=../assets@../assets")
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --embed-file=../asset_components@../asset_components")
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --embed-file=../config@../config")
 
     #add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 	#	COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${PROJECT_NAME}>/src
@@ -308,6 +305,12 @@ if (DS_TEST)
 
 		set(CMAKE_EXECUTABLE_SUFFIX ".html")
 		add_executable(${DS_TEST_EXECUTABLE} "${DS_TEST_MODULE_PATH}/wasm/main.c")
+
+		# the files the executable reads, in its virtual file system: link options (emcc warns at every compile)
+		target_link_options(${DS_TEST_EXECUTABLE} PRIVATE
+			"--embed-file=../assets@../assets"
+			"--embed-file=../asset_components@../asset_components"
+			"--embed-file=../config@../config")
 
 		if (DS_TEST_DETERMINISM)
 			# test files to and from the build directory, see host_files.js
