@@ -204,30 +204,40 @@ utf8 Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 cod
 {
 	ds_Assert(bufsize > 0);
 
-	utf8 err_str =
+	/*
+	 * English, as Linux's strerror in the C locale; the user's language where English messages aren't installed.
+	 * The W form: the A form gives the ANSI code page, not UTF-8.
+	 */
+	WCHAR w_msg[ERROR_BUFSIZE];
+	const DWORD flags = FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS;
+	DWORD w_len = FormatMessageW(flags, NULL, (DWORD) code, MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US), w_msg, ERROR_BUFSIZE, NULL);
+	if (w_len == 0 && GetLastError() == ERROR_RESOURCE_LANG_NOT_FOUND)
 	{
-		.buf = buf,
-		.size = 0,
-		.len = 0,
-	};
-
-	/* system messages are ASCII: byte count == codepoint count */
-	err_str.len  = FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM |FORMAT_MESSAGE_IGNORE_INSERTS,
-					 NULL,
-					 (DWORD) code,
-					 0,
-					 (char *) buf,
-					 (DWORD) bufsize,
-					 NULL);
+		w_len = FormatMessageW(flags, NULL, (DWORD) code, 0, w_msg, ERROR_BUFSIZE, NULL);
+	}
 
 	/* drop the trailing "\r\n" */
-	while (err_str.len > 0 && (buf[err_str.len - 1] == '\n' || buf[err_str.len - 1] == '\r'))
+	while (w_len > 0 && (w_msg[w_len - 1] == L'\n' || w_msg[w_len - 1] == L'\r'))
 	{
-		err_str.len -= 1;
+		w_len -= 1;
 	}
-	err_str.size = err_str.len;
 
-	return (err_str.len > 0) ? err_str : Utf8Empty();
+	/* a text longer than buf is no text, as on Linux */
+	const int size = (w_len > 0)
+		? WideCharToMultiByte(CP_UTF8, 0, w_msg, (int) w_len, (char *) buf, (int) bufsize, NULL, NULL)
+		: 0;
+	if (size == 0)
+	{
+		return Utf8Empty();
+	}
+
+	utf8 err_str = { .buf = buf, .size = (u32) size, .len = 0 };
+	for (u64 offset = 0; offset < err_str.size; err_str.len += 1)
+	{
+		Utf8ReadCodepoint(&offset, &err_str, offset);
+	}
+
+	return err_str;
 }
 
 #endif

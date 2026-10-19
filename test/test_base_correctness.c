@@ -1618,6 +1618,49 @@ static struct test_Output PerfBlockTest(struct test_Environment *env)
 }
 #endif
 
+/*
+ * springclean windows_backlog #58: Utf8SystemErrorCodeStringBuffered gives valid UTF-8, len its codepoint count and
+ * no trailing newline, for every code the system has a message for (Windows 0 .. 15999, Linux and web 0 .. 255);
+ * a text that doesn't fit the buffer is empty. On an English-only Windows the messages are ASCII, so the encoding
+ * part can only fail where other languages are installed.
+ */
+static struct test_Output SystemErrorStringTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+#if __DS_PLATFORM__ == __DS_WIN64__
+    const u32 code_count = 16000;
+#else
+    const u32 code_count = 256;
+#endif
+    u8 buf[ERROR_BUFSIZE];
+    u32 with_text = 0;
+    for (u32 code = 0; code < code_count; ++code)
+    {
+        const utf8 str = Utf8SystemErrorCodeStringBuffered(buf, ERROR_BUFSIZE, code);
+        if (str.size == 0)
+        {
+            continue;
+        }
+
+        with_text += 1;
+        u32 len = 0;
+        u32 valid = 1;
+        for (u64 offset = 0; offset < str.size; ++len)
+        {
+            valid = valid && Utf8ReadCodepoint(&offset, &str, offset) != UTF8_BAD_CODEPOINT;
+        }
+        TEST_TRUE(valid && len == str.len && str.buf[str.size - 1] != '\n' && str.buf[str.size - 1] != '\r');
+    }
+    TEST_TRUE(with_text > 0);
+
+    /* code 2 (ENOENT, ERROR_FILE_NOT_FOUND) has a text longer than 4 bytes */
+    u8 tiny_buf[4];
+    TEST_EQUAL(0, Utf8SystemErrorCodeStringBuffered(tiny_buf, sizeof(tiny_buf), 2).size);
+
+	return output;
+}
+
 static struct test_Output (*base_tests[])(struct test_Environment *) =
 {
 #ifdef DS_PERFORMANCE_MEASUREMENT_API
@@ -1635,6 +1678,7 @@ static struct test_Output (*base_tests[])(struct test_Environment *) =
 #if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__ || __DS_PLATFORM__ == __DS_WIN64__
     FilesystemTest,
 #endif
+    SystemErrorStringTest,
     BitCountTest,
     OverflowTest,
     AtomicSingleThreadTest,
