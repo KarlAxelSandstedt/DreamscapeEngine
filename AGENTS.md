@@ -28,8 +28,11 @@ wherever they are called from):
     determinism.(sh/bat) - fresh reference + replay at several thread counts
         (tests one build). An old .bin is only valid for the version that
         recorded it.
-    run.(sh/bat) - optimized build
+    run.(sh/bat) - optimized build with Tracy profiling
+    release.(sh/bat) - optimized build without profiling (the web's optimized
+        build)
     debug.(sh/bat) - debugging build
+    test.(sh/bat) - correctness suites, debugging build, under gdb/raddbg
     address_sanitize.(sh/bat) - memory corruption detection + poisoning with ASan
     thread_sanitize.sh - thread race detection with TSan
     undefined_behaviour_sanitize.sh - undefined behaviour detection with UBSan
@@ -81,7 +84,7 @@ normal. Full list (frames, camera, UI): the summary of include/ds_math.h.
 Determinism
 ===========
 
-1. Deterministic physics is required: given the same input state, the physics
+Deterministic physics is required: given the same input state, the physics
 must produce the same output. The goal is cross-platform determinism (in the
 spirit of Erin Catto's box3d): builds from all supported compilers and platforms
 produce bit-identical results. Hence:
@@ -105,7 +108,7 @@ zero-length) are detected and what is returned then: always something
 workable. Example: GJK falls back to the previous simplex when a divisor is
 <= 0. Avoid ill-conditioned questions instead of guarding their answers:
 decide regions from signs, then divide only where the result is bounded
-(see src/math/common/ds_voronoi.h). Inaccurate results are acceptable;
+(see include/ds_voronoi.h). Inaccurate results are acceptable;
 Inf/NaN from finite input is not. Don't hide NaN input; assert on it in
 debug. Document what a function returns for degenerate input; WARNING only
 for cases it doesn't handle.
@@ -149,7 +152,8 @@ fixed-size, or in a ds_Alloc'd block if it grows.
    - DEFINE_POOL(T) -> ds_Pool(T), ds_PoolAdd/Remove/...: stable
      indices; use them as handles, never addresses (addresses move when a
      growable pool grows). Use when others hold references.
-   - ds_CPool(T), ds_CPoolPush/Pop/...: compact, removal moves the last
+   - DEFINE_CPOOL_STRUCT/NATIVE(T) -> ds_CPool(T),
+     ds_CPoolPush/Pop/RemoveAndSwap/...: compact, removal moves the last
      element into the hole. Use for dense data iterated as an array;
      whoever holds the moved element's index updates it.
 
@@ -163,7 +167,7 @@ frame arena(s). Such arenas may be per-system and/or per-thread.
 
 6. Temporary, thread-local data (function call lifetimes, ...) should be
 allocated on scratch arenas. You push and pop scratch arenas in a LIFO fashion
-using ArenaPushScratch and ArenaPopScratch.
+using ArenaPushScratch and ArenaPopScratch (ds_thread.h).
 
 7. Functions taking (struct arena *mem, ..., growable): mem is optional.
 Arena memory can't grow, so the valid combinations are (arena, NOT_GROWABLE)
@@ -177,17 +181,18 @@ Severities: enum severity_id (ds_types.h). The Log API is thread-safe.
 1. S_FATAL: unrecoverable errors, e.g. memory allocation failure. Log, then
 call FatalCleanupAndExit().
 
-2. S_ERROR: recoverable errors; continue with a fallback. Examples: a missing
-asset is logged and replaced by a stub asset; the physics engine exceeds its
-frame time budget (1/60 s).
+2. S_ERROR: recoverable errors; continue with a fallback. Examples: a glyph
+that fails to load is logged and drawn as the font's unknown glyph; the physics
+engine exceeds its frame time budget (its tick, 1/60 s in the editor).
 
 3. S_WARNING: valid but noteworthy states. Example: the editor rejects a node
 whose id already exists.
 
 4. ds_Realloc logs and exits on failure itself; ds_Alloc returns NULL. Arena
-pushes return NULL (also for size 0) and full non-growable pools {NULL, U32_MAX};
-most arena pushes are assumed never to fail, so only check where overflow is
-likely.
+pushes return NULL (also for size 0). Full non-growable pools return index
+U32_MAX: ds_Pool with address NULL, ds_CPool with its stub's address, so check
+the index. Most arena pushes are assumed never to fail, so only check where
+overflow is likely.
 
 Naming
 ======
@@ -197,12 +202,13 @@ Conventions, not rules: follow them in new code; don't rename old code.
 - ds_Type, ds_TypeFunction: engine types and the public/physics API.
 - prefix_Function: subsystem API. r_ renderer, ui_ UI, led_ editor,
   c_ collision, gl_ OpenGL, sat_ collision algorithms, ss_ serial
-  stream, hi_ hierarchy index.
+  stream.
 - Small common types: short lowercase type + uppercase function family
-  (v3 -> V3Add, dll -> DLLAppend).
+  (v3 -> V3Add, m3 -> M3Mul).
 - Small engine containers: a short uppercase name without ds_ for the type
   and its functions (HI, DLL, LL, BT, MQ: struct BT, BTAddRoot, MQPush).
-- ds_Try...: may fail, returns a failure state. ...Check: returns a boolean.
+- Try before the verb (FileTryOpen, ds_ConfigTryRead): may fail, returns a
+  failure state. ...Check: returns a boolean.
 
 Comments
 ========
