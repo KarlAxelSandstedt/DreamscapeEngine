@@ -88,7 +88,7 @@ static f32 StaticsLineIntegrals(const v2 p0, const v2 p1, const v2 p2, const u32
 /*
  *  alpha beta gamma CCW
  */ 
-static void StaticsCalculateFaceIntegrals(f32 integrals[10], const struct c_Shape *shape, const u32 fi)
+static void StaticsCalculateFaceIntegrals(f32 integrals[10], const struct c_Shape *shape, const u32 fi, const v3 origin)
 {
 	f32 P_1   = 0.0f;
 	f32 P_a   = 0.0f;
@@ -103,9 +103,12 @@ static void StaticsCalculateFaceIntegrals(f32 integrals[10], const struct c_Shap
 
 	const v3 *v = shape->hull.v;
 	const struct dcelFace *f = shape->hull.f + fi;
-	/* the face's plane n.x + d = 0, as stored (from all of its vertices: accurate where its first triangle is thin) */
+	/*
+	 * the face's plane n.x + d = 0, as stored (from all of its vertices: accurate where its first triangle is thin),
+	 * with the vertices taken relative to origin: n.(x - origin) + (d + n.origin) = 0
+	 */
 	const v3 n = shape->hull.plane[fi].normal;
-	const f32 d = -shape->hull.plane[fi].signed_distance;
+	const f32 d = -shape->hull.plane[fi].signed_distance + V3Dot(n, origin);
 
 	u32 max_index = 0;
 	if (n.buf[max_index]*n.buf[max_index] < n.y*n.y) { max_index = 1; }
@@ -128,9 +131,9 @@ static void StaticsCalculateFaceIntegrals(f32 integrals[10], const struct c_Shap
 		const struct dcelEdge *e1 = shape->hull.e + f->first + 1 + i;
 		const struct dcelEdge *e2 = shape->hull.e + f->first + 2 + i;
 
-		const v2 p0 = V2(v[e0->origin].buf[a_i], v[e0->origin].buf[b_i]);
-		const v2 p1 = V2(v[e1->origin].buf[a_i], v[e1->origin].buf[b_i]);
-		const v2 p2 = V2(v[e2->origin].buf[a_i], v[e2->origin].buf[b_i]);
+		const v2 p0 = V2(v[e0->origin].buf[a_i] - origin.buf[a_i], v[e0->origin].buf[b_i] - origin.buf[b_i]);
+		const v2 p1 = V2(v[e1->origin].buf[a_i] - origin.buf[a_i], v[e1->origin].buf[b_i] - origin.buf[b_i]);
+		const v2 p2 = V2(v[e2->origin].buf[a_i] - origin.buf[a_i], v[e2->origin].buf[b_i] - origin.buf[b_i]);
 		
 		const v3 delta_a = V3(p1.x - p0.x,
 				      p2.x - p1.x,
@@ -226,10 +229,15 @@ void c_ShapeUpdateMassProperties(struct c_Shape *shape)
 
 	if (shape->type == C_SHAPE_CONVEX_HULL)
 	{
+		/*
+		 * integrate about the hull's box center: the tensor about the center of mass is the difference of the
+		 * integrals and V com^2, which cancels badly for a hull far from its local origin
+		 */
+		const v3 origin = V3Scale(V3Add(shape->hull.bbox.min, shape->hull.bbox.max), 0.5f);
 		f32 integrals[10] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }; 
 		for (u32 fi = 0; fi < shape->hull.f_count; ++fi)
 		{
-			StaticsCalculateFaceIntegrals(integrals, shape, fi);
+			StaticsCalculateFaceIntegrals(integrals, shape, fi, origin);
 		}
 
 		//		fprintf(stderr, "c_hull Volume integrals: %f, %f, %f, %f, %f, %f, %f, %f, %f, %f\n",
@@ -259,7 +267,7 @@ void c_ShapeUpdateMassProperties(struct c_Shape *shape)
 		com = V3(integrals[T_X] / shape->volume,
 			 integrals[T_Y] / shape->volume,
 			 integrals[T_Z] / shape->volume);
-		shape->center_of_mass = com;
+		shape->center_of_mass = V3Add(com, origin);	/* the tensor below is about com either way */
 
 		I_xx = integrals[T_YY] + integrals[T_ZZ] - shape->volume*(com.y*com.y + com.z*com.z);
 		I_yy = integrals[T_XX] + integrals[T_ZZ] - shape->volume*(com.x*com.x + com.z*com.z);
