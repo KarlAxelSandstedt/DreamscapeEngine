@@ -276,7 +276,7 @@ static u32 CtVerify(struct ct_Stats *stats, const struct ct_Manifold *m, const s
     {
         stats->undecided += 1;
     }
-    else if (m->contact != (dist < r_sum))
+    else if (m->contact != (u32) (dist < r_sum))
     {
         fail = "contact";
     }
@@ -1132,7 +1132,7 @@ static u32 ChVerify(struct ch_Stats *stats, const u32 contact, const struct c_Ma
         {
             stats->undecided += 1;
         }
-        else if (contact != (sd < r))
+        else if (contact != (u32) (sd < r))
         {
             fail = "contact";
         }
@@ -2647,7 +2647,7 @@ static const char *SpVerify(struct sp_Stats *stats, const struct c_ContactResult
     {
         stats->undecided += 1;
     }
-    else if (ref->exact && contact != (ref->sd < r_sum))
+    else if (ref->exact && contact != (u32) (ref->sd < r_sum))
     {
         return "contact";
     }

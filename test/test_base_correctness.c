@@ -119,7 +119,7 @@ static struct test_Output OverflowTest(struct test_Environment *env)
         TEST_EQUAL((a + b < a), !!U64AddReturnOverflow(&dst, a, b));
         TEST_EQUAL(a + b, dst);
         const u32 overflow = (a != 0 && b > U64_MAX / a);
-        TEST_EQUAL(overflow, !!U64MulReturnOverflow(&dst, a, b));
+        TEST_EQUAL(overflow, (u32) !!U64MulReturnOverflow(&dst, a, b));
         TEST_EQUAL(a * b, dst);
     }
 
@@ -397,11 +397,11 @@ static struct test_Output FloatTest(struct test_Environment *env)
                 TEST_EQUAL(exponent, F32ExponentBits(f));
                 TEST_EQUAL(significand, F32MantissaBits(f));
                 TEST_EQUAL(nan, F32TestNan(f));
-                TEST_EQUAL(!nan && !inf, F32FiniteCheck(f));
-                TEST_EQUAL(inf && !sign, F32TestPositiveInf(f));
-                TEST_EQUAL(inf && sign, F32TestNegativeInf(f));
-                TEST_EQUAL(zero && !sign, F32TestPositiveZero(f));
-                TEST_EQUAL(zero && sign, F32TestNegativeZero(f));
+                TEST_EQUAL((u32) (!nan && !inf), F32FiniteCheck(f));
+                TEST_EQUAL((u32) (inf && !sign), F32TestPositiveInf(f));
+                TEST_EQUAL((u32) (inf && sign), F32TestNegativeInf(f));
+                TEST_EQUAL((u32) (zero && !sign), F32TestPositiveZero(f));
+                TEST_EQUAL((u32) (zero && sign), F32TestNegativeZero(f));
                 TEST_EQUAL(normal, F32TestNormal(f));
                 TEST_EQUAL(subnormal, F32TestSubnormal(f));
                 TEST_EQUAL(type, F32Classify(f));
@@ -1440,7 +1440,7 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
         else if (Utf8Equivalence(e->path, Utf8Inline("link_file")))         { found |= 64; TEST_EQUAL(FILE_REGULAR, e->type); }
     }
     ds_CPoolDealloc(entries);
-    TEST_EQUAL(7 + 16 + 32 + ((have_link) ? 8 : 0) + ((have_file_link) ? 64 : 0), found);
+    TEST_EQUAL(7u + 16u + 32u + ((have_link) ? 8u : 0u) + ((have_file_link) ? 64u : 0u), found);
 
     /* #173 (4): FileStatusPath follows a link, a dangling one fails; a directory opened through a link is the target */
     struct file dir_again = FileNull();

@@ -1892,7 +1892,7 @@ struct test_Output PlaneRandomTest(struct test_Environment *env)
         const f32 d0 = PlanePointSignedDistance(&pl, p0);
         const f32 d1 = PlanePointSignedDistance(&pl, p1);
         const u32 one_side = (0.0f < d0 && 0.0f < d1) || (d0 < 0.0f && d1 < 0.0f);
-        TEST_EQUAL(!one_side, PlaneSegmentTest(&pl, &s));
+        TEST_EQUAL((u32) !one_side, PlaneSegmentTest(&pl, &s));
         if (!one_side && d0 != d1)
         {
             const f32 t = PlaneSegmentClipParameter(&pl, &s);
