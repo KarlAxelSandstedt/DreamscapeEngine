@@ -30,12 +30,36 @@ extern "C" {
 #include "ds_geometry.h"
 #include "ds_list.h"
 
+/*
+ds_renderer.h
+=============
+The renderer: meshes, the camera, proxies (3d objects drawn with motion speculated between physics ticks), a
+scene of draw commands per window and the GL state. Implemented in src/renderer, one section per file below;
+the window and GL context are ds_graphics.h's, the GL loader ds_gl.h's.
+
+A frame (r_EditorMain, once per elapsed render tick): for every window, r_SceneFrameBegin, the window's UI
+(r_UiDraw, r_local.h) and for the root window the editor's 3d scene, r_SceneFrameEnd and the GL draw. Everything
+drawn is an r_Instance with a draw command key (r_CommandKey). The keys sort descending, a larger key is drawn
+first: screen layer, then transparency, depth, material, primitive, instanced, elements. A run of sorted
+commands equal in every key field but depth and elements is one bucket, drawn with one draw call per buffer.
+Proxy instances are cached by unit across frames and pruned after a frame that did not add them; UI and
+immediate mesh instances live one frame. 3d draw data is uploaded relative to g_scene->view_origin (the
+camera's position: only offsets from the eye are f32).
+
+Conventions: metres, radians, right-handed, +y up; the camera looks along +z with +x to its left at
+yaw = pitch = 0 (ds_math.h). Mesh triangles are CCW about their outward normal.
+*/
+
 /********************************************************
  *			r_mesh.c			*
  ********************************************************/
 
 #define R_MESH_BUFSIZE  32
 
+/*
+ * a mesh in the mesh database (ds_SDB(r_Mesh), named by id_buf): vertex_count vertices of local_stride bytes,
+ * drawn through index_data when index_count > 0 (R_CMD_ELEMENTS) and as arrays otherwise
+ */
 struct r_Mesh
 {
     u8      id_buf[R_MESH_BUFSIZE];
@@ -53,7 +77,13 @@ DEFINE_SDB(r_Mesh);
  *			r_Init.c			*
  ********************************************************/
 
-/* initiate render state; ns_tick is ns per draw frame (> 0: r_EditorMain redraws once per elapsed tick) */
+/*
+ * initiate render state: the four shader programs (fatal when one fails to read, compile or link; needs the GL
+ * context current), the renderer's frame arena of frame_size bytes on mem_persistent (fatal on failure), the
+ * proxy hierarchy with core_unit_count slots (growable) and its root PROXY3D_ROOT, the mesh database with the
+ * stub box as its stub mesh. ns_tick is ns per draw frame (> 0: r_EditorMain redraws once per elapsed tick).
+ * Called by the program's main after ds_Init and the window creation (the GL context).
+ */
 void 	r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u32 core_unit_count, ds_SDB(r_Mesh) *mesh_database);
 
 /********************************************************
@@ -62,13 +92,21 @@ void 	r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_si
 
 struct led;
 
-/* rendering entrypoint (level editor) */
+/*
+ * rendering entrypoint (level editor): sets the renderer's clock from led->ns and, when at least one render tick
+ * has elapsed since the last draw, draws every window that is not tagged for destruction (its scene's frame,
+ * its UI; the root window also the editor's 3d scene) and leaves the root window's GL context current.
+ */
 void 	r_EditorMain(const struct led *led);
 
 /********************************************************
  *			r_camera.c			*
  ********************************************************/
 
+/*
+ * the camera: position in world, the axes r_CameraUpdateAxes derives from yaw (about +y, in (-pi, pi]) then
+ * pitch (about the camera's left, in (-pi/2 + 0.5, pi/2 - 0.5)), and the frustum
+ */
 struct r_Camera 
 {
 	v3f64 position;     /* world; 3d draw data is uploaded relative to it (camera-relative rendering) */
@@ -84,14 +122,16 @@ struct r_Camera
 };
 
 /*
- * setups up camera for 3d rendering 
+ * setups up camera for 3d rendering from the given axes and angles, stored as they are (not checked against
+ * each other, not normalized)
  *
  * position - position in world
  * left, up, forward - normalized vectors representing orthogonal axes of camera
- * fov_x - field of view in radians
- * fz_near - distance to nearest frustum plane (AFFECTS Depth calculations, see Z-fighting)
- * fz_far - distance to farther frustum plane (AFFECTS Depth calculations, see Z-fighting)
- * aspect_ratio - w/h
+ * yaw, pitch - the angles the axes correspond to
+ * fov_x - field of view in radians, in (0, pi)
+ * fz_near - distance to nearest frustum plane, > 0 (AFFECTS Depth calculations, see Z-fighting)
+ * fz_far - distance to farther frustum plane, > fz_near (AFFECTS Depth calculations, see Z-fighting)
+ * aspect_ratio - w/h, > 0
  */
 void r_CameraConstruct(struct r_Camera *cam,
 		const v3f64 position,
@@ -110,15 +150,15 @@ void r_CameraConstruct(struct r_Camera *cam,
  * position - position in world
  * direction - direction of camera lense in world (any length > 0); sets yaw and pitch so that r_CameraUpdateAxes
  *             gives this frame; pitch is clamped as in r_CameraUpdateAngles (straight up/down: yaw 0, pitch at the limit)
- * fov_x - field of view in radians
- * fz_near - distance to nearest frustum plane (AFFECTS Depth calculations, see Z-fighting)
- * fz_far - distance to farther frustum plane (AFFECTS Depth calculations, see Z-fighting)
- * aspect_ratio - w/h
+ * fov_x - field of view in radians, in (0, pi)
+ * fz_near - distance to nearest frustum plane, > 0 (AFFECTS Depth calculations, see Z-fighting)
+ * fz_far - distance to farther frustum plane, > fz_near (AFFECTS Depth calculations, see Z-fighting)
+ * aspect_ratio - w/h, > 0
  */
 struct r_Camera	r_CameraInit(const v3f64 position, const v3 direction, const f32 fz_near, const f32 fz_far, const f32 aspect_ratio, const f32 fov_x);
-/* update camera axes from its rotation */
+/* update camera axes from its rotation: left, up, forward from yaw and pitch */
 void 		r_CameraUpdateAxes(struct r_Camera *cam);
-/* update camera angles */
+/* update camera angles by the deltas: yaw wrapped into (-pi, pi], pitch clamped to (-pi/2 + 0.5, pi/2 - 0.5); the axes are not updated */
 void 		r_CameraUpdateAngles(struct r_Camera *cam, const f32 yaw_delta, const f32 pitch_delta);
 /* camera print state to stderr */
 void 		r_CameraDebugPrint(const struct r_Camera *cam);
@@ -128,35 +168,38 @@ void 		r_CameraDebugPrint(const struct r_Camera *cam);
  *
  * return W_to_AS: Column-Major matrix applying the transform [-w/2, -h/2] x [w/2, h/2] => [-1.0f, -1.0f] x [1.0f, 1.0f]
  * view_center: center of viewable zone 
- * view_size: size of viewable zone 
+ * view_height, view_aspect_ratio: size of viewable zone, h and w/h
  */
 m3 		r_Camera2dTransform(const v2 view_center, const f32 view_height, const f32 view_aspect_ratio);
 
-/* Retrieve side lengths of frustum projection plane */
+/* Retrieve side lengths of frustum projection plane: the frustum's cross-section at plane_distance, width 2 d tan(fov_x / 2), height width / aspect_ratio */
 void 		FrustumProjectionPlaneSides(f32 *width, f32 *height, const f32 plane_distance, const f32 fov_x, const f32 aspect_ratio);
-/* Retreive camera frustum plane in world space coordinates */
+/* Retreive camera frustum plane in world space coordinates: the near plane's bottom-left and upper-right corners, seen from the camera */
 void 		FrustumProjectionPlaneWorldSpace(v3f64 *bottom_left, v3f64 *upper_right, const struct r_Camera *cam);
-/* Retreive camera frustum plane in camera space coordinates */
+/* Retreive camera frustum plane in camera space coordinates (+x left, +y up, +z forward): bottom_left is (w/2, -h/2, fz_near) */
 void 		FrustumProjectionPlaneCameraSpace(v3 *bottom_left, v3 *upper_right, const struct r_Camera *cam);
 
-/* maps window pixel to position in world (on the near plane) */
+/* maps window pixel to position in world (on the near plane): (0, 0) is the plane's bottom-left corner, win_size its upper-right */
 v3f64 		WindowSpaceToWorldSpace(const v2 pixel, const v2 win_size, const struct r_Camera *cam);
 
 /************************************** Draw Command Key Layout and Macros ***************************************/
 
 /* r_command : draw command for a r_unit. Sortable for draw ordering. 
- * Larger values indicates priority in drawing.  
+ * Larger values indicates priority in drawing: the fields below, screen layer the most significant.
  */
 
 struct r_Command
 {
-	u64	key;		/* render command key, see render command layout and discussion above 	*/
+	u64	key;		/* render command key, see the field macros below 				*/
 	u32	instance;	/* render instance index 						*/
 	u32	allocated;	/* boolean : is the command allocated 					*/
 };
 
+/* the key of the fields; every field must fit its bits (asserted): the R_CMD_* values below, a material from r_MaterialConstruct */
 u64 	r_CommandKey(const u64 screen, const u64 depth, const u64 transparency, const u64 material, const u64 primitive, const u64 instanced, const u64 elements);
+/* print the key's fields to stderr */
 void 	r_CommandKeyPrint(const u64 key);
+/* the material field: a program (PROGRAM_*, r_local.h), a mesh database index (MESH_NONE when the instance brings its own) and a texture; program and texture must fit their bits (asserted) */
 u64 	r_MaterialConstruct(const u64 program, const u64 mesh, const u64 texture);
 
 #define	R_CMD_SCREEN_LAYER_BITS		1
@@ -242,7 +285,10 @@ u64 	r_MaterialConstruct(const u64 program, const u64 mesh, const u64 texture);
 r_proxy3d
 =========
 Contains data for speculative movement; Since the physics engine runs at a fixed resolution, go get smooth movements
-we must speculate on future positions. 
+we must speculate on future positions. A proxy is a node of a hierarchy under PROXY3D_ROOT, drawn with a mesh of
+the mesh database, a color and a blend; it is addressed by its index (addresses move when the hierarchy grows).
+A proxy with a parent other than the root is relative: its position and rotation are in the parent's frame and
+composed with the parent's speculated pose every frame.
 */
 
 #define PROXY3D_NULL                HI_ROOT
@@ -259,6 +305,7 @@ we must speculate on future positions.
 					                  | PROXY3D_SPECULATE_LINEAR	\
 					                )
 
+/* what r_Proxy3dAlloc takes: the parent (PROXY3D_ROOT for a top-level proxy), the pose at ns_time with the velocities, the look */
 struct r_Proxy3d_config
 {
 	u64	ns_time;
@@ -271,7 +318,7 @@ struct r_Proxy3d_config
 
 	v4 	color;
 	f32	blend;		/* percentage of color vs. texture */
-	utf8	mesh;
+	utf8	mesh;		/* the mesh's name in the mesh database; unknown: the stub box */
 };
 
 /*
@@ -304,13 +351,17 @@ typedef struct r_Proxy3d
 } r_Proxy3d;
 DEFINE_HI(r_Proxy3d);
 
-/* return the handle of a newly allocated proxy3d. */
+/* return the handle of a newly allocated proxy3d, under config->parent, drawn, referencing its mesh, with r_Proxy3dLinearSpeculationSet applied */
 u32 			r_Proxy3dAlloc(const struct r_Proxy3d_config *config);
-/* dealloc the given proxy3d unit. */
+/* dealloc the given proxy3d unit and its whole subtree, dereferencing their meshes (tmp: scratch for the walk); PROXY3D_NULL does nothing */
 void			r_Proxy3dDealloc(struct arena *tmp, const u32 proxy);
-/* return the proxy3d of the unit given that the unit exist and has a proxy3d; otherwise return NULL. */
+/* return the proxy3d's address (not checked; valid until the hierarchy grows) */
 struct r_Proxy3d *	r_Proxy3dAddress(const u32 proxy);
-/* set the proxy */
+/*
+ * set the proxy's pose at ns_time and the velocities it is extrapolated with: position + v t and the rotation
+ * integrated by w for the time since ns_time at every draw; MOVING when any velocity is non-zero. For a relative
+ * proxy the pose is in the parent's frame.
+ */
 void 			r_Proxy3dLinearSpeculationSet(const v3f64 position, const q rotation, const v3 linear_velocity, const v3 angular_velocity, const u64 ns_time, const u32 proxy);
 
 /********************************************************
@@ -325,6 +376,7 @@ enum r_instance_type
 	R_INSTANCE_COUNT
 };
 
+/* something to draw this frame: its command (on the scene's frame arena) and, by type, the proxy, UI bucket or mesh it draws */
 struct r_Instance
 {
     POOL_NODE;
@@ -348,11 +400,12 @@ DEFINE_POOL(r_Instance);
  * re-sorts it) and pruned at the end of a frame that did not draw it. At most once per unit and frame.
  */
 struct r_Instance *	r_InstanceAdd(const u32 unit, const u64 cmd);
-/* add non cached instance with no unit (immediate mode: it lives this frame only); the caller sets type and data */
+/* add non cached instance with no unit (immediate mode: it lives this frame only); the caller sets type (R_INSTANCE_UI or R_INSTANCE_MESH) and its data */
 struct r_Instance *	r_InstanceAddNonCached(const u64 cmd);
 
 /********************** Render Buffer  *************************/
 
+/* the GL buffers of a range of a bucket's commands: the per-vertex (local), per-instance (shared) and index data uploaded for them */
 struct r_Buffer
 {
 	struct r_Buffer *	next;
@@ -376,7 +429,7 @@ struct r_Buffer
 
 /********************** Render Buffer Constructor  *************************/
  
-/* r_buffer_constructor - utility to construct r_buffer arrays for r_buckets.  */
+/* r_buffer_constructor - utility to construct r_buffer arrays for r_buckets (used by the bucket generation; the buffers go on the scene's frame arena). */
 struct r_BufferConstructor
 {
 	struct r_Buffer *first;
@@ -387,17 +440,18 @@ struct r_BufferConstructor
 
 /* reset a r_buffer array constructor */
 void			r_BufferConstructorReset(struct r_BufferConstructor *constructor);
-/* Alloc the next r_buffer beginning at command c_l and finish (if exists) the current r_buffer */
+/* Alloc the next r_buffer beginning at command c_new_l and finish (if exists) the current r_buffer at c_new_l - 1 */
 void			r_BufferConstructorBufferAlloc(struct r_BufferConstructor *constructor, const u32 c_new_l);
-/* add size to the current buffer being constructed  */
+/* add size to the current buffer being constructed (one must exist) */
 void 			r_BufferConstructorBufferAddSize(struct r_BufferConstructor *constructor, const u64 local_size, const u64 shared_size, const u32 instance_count, const u32 index_count);
-/* finish constructing the current r_buffer array with its upper bound draw command */
+/* finish constructing the current r_buffer array with its upper bound draw command: the array of the buffers so far (frame arena; NULL when none), the last one ending at c_h */
 struct r_Buffer **	r_BufferConstructorFinish( struct r_BufferConstructor *constructor, const u32 c_h);
 
 /********************** Render Bucket *************************
  * r_bucket - A render bucket is a set of render commands or draw commands that can be drawn in a single 
  * 	      draw call. A bucket contains zero or more draw call instructions that determines how to draw
- * 	      the vertex data inside the bucket.
+ * 	      the vertex data inside the bucket. The commands [c_l, c_h] of a bucket are consecutive in the
+ * 	      sorted order and equal in screen layer, transparency, material, primitive and instanced.
  */
 struct r_Bucket
 {
@@ -420,7 +474,8 @@ struct r_Bucket
 /********************** Render Scene  *************************/
 /* r_scene : A set of instances to be drawn. The structure is partially immediate; Every frame the user specifies
  * a set of draw commands for some render units. Each frame caches its new r_instances, and prunes ant instaces 
- * not recreated during the frame. */
+ * not recreated during the frame. One per window; the frame's commands, buffers and buckets live on the frame
+ * arena of the frame (double-buffered: the previous frame's sorted commands, cmd_cache, are still readable). */
 
 struct r_Scene
 {
@@ -444,42 +499,60 @@ struct r_Scene
 
 extern struct r_Scene *g_scene;
 
-/* alloc r_scene resources 				*/
+/* alloc r_scene resources on the heap (two 64 MB frame arenas; fatal on failure) */
 struct r_Scene *r_SceneAlloc(void);
 /* free r_scene resources 				*/
 void		r_SceneDealloc(struct r_Scene *scene);
-/* set scene to be the current global scene 		*/
+/* set scene to be the current global scene (g_scene, what the functions below and r_InstanceAdd act on) */
 void		r_SceneSetGlobal(struct r_Scene *scene);
-/* begin new frame 					*/
+/* begin new frame: switch and flush the frame arena, last frame's commands become the cache, view_origin is zero until set */
 void		r_SceneFrameBegin(void);
-/* set global scene to NULL and process draw commands  	*/
+/*
+ * process draw commands: sort this frame's commands (descending key, the cached ones merged), prune the
+ * instances not added this frame, build the buckets and their draw data on the frame arena. The GL draw is
+ * r_SceneRender (r_local.h). g_scene stays set.
+ */
 void		r_SceneFrameEnd(void);
 
 
 /**************** TEMPORARY: quick and dirty mesh generation *****************/
 
-/* setup mesh stub */
+/*
+ * Every mesh built here has (position, normal) vertices, 6 f32 per vertex. The sphere and capsule are indexed
+ * (their data pushed on mem), the hull and tri mesh are triangle lists without indices, one (position, normal)
+ * per corner, pushed packed on mem from mem's current position: nothing else may push on mem during the call.
+ */
+/* setup mesh stub: a unit box from static data, no allocation */
 void 		r_MeshStubBox(struct r_Mesh *mesh_stub);
-/* setup mesh from sphere parameters */
+/* setup mesh from sphere parameters: refinement >= 3 strips of 2 refinement points */
 void 		r_MeshSphere(struct arena *mem, struct r_Mesh *mesh, const f32 radius, const u32 refinement);
-/* setup mesh from capsule parameters */
+/* setup mesh from capsule parameters: the axis is y, half_height and radius > 0, refinement >= 2 rings per hemisphere */
 void 		r_MeshCapsule(struct arena *mem, struct r_Mesh *mesh, const f32 half_height, const f32 radius, const u32 refinement);
-/* setup mesh from collison hull */
+/* setup mesh from collison hull: each face fanned into triangles with the face's normal */
 void 		r_MeshHull(struct arena *mem, struct r_Mesh *mesh, const struct dcel *hull);
-/* setup mesh from tri mesh */
+/* setup mesh from tri mesh: one triangle per tri with its normal */
 void 		r_MeshTriMesh(struct arena *mem, struct r_Mesh *mesh, const struct triMesh *tri_mesh);
 
 /********************************************************
  *			r_gl.c				*
  ********************************************************/
 
-/* alloc global gl state list */
+/*
+ * A gl_State is the renderer's record of one GL context's state (functions, blending, texture unit bindings);
+ * the current one (gl_StateSetCurrent) is what the ds_gl* calls act on. Textures are shared by all states;
+ * texture index 0 is the stub, what the *Texture calls return on failure.
+ */
+/* alloc global gl state list: the texture, state and binding pools (heap, growable); before any gl_StateAlloc */
 void 	gl_StateMemAlloc(void);
 /* free global gl state list */
 void 	gl_StateMemDealloc(void);
-/* alloc a new gl_state; its texture units are pushed on mem, which must outlive it (gl_StateDealloc) */
+/*
+ * alloc a new gl_state for the current GL context and make it current: loads the context's GL functions (the
+ * first call also reads the GL limits and logs the vendor and version) and sets blending off, GL_FUNC_ADD,
+ * GL_SRC_ALPHA / GL_ONE_MINUS_SRC_ALPHA. Its texture units are pushed on mem, which must outlive it (gl_StateDealloc).
+ */
 u32	gl_StateAlloc(struct arena *mem);
-/* free a gl_state  */
+/* free a gl_state, unbinding its texture units; no state is current afterwards if it was */
 void 	gl_StateDealloc(const u32 gl_state);
 /* set gl state to current global */
 void 	gl_StateSetCurrent(const u32 gl_state);
