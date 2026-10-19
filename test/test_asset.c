@@ -228,6 +228,11 @@ struct test_Output TextLayoutNewlineTest(struct test_Environment *env)
 	TEST_NOT_ZERO(second->glyph[1].codepoint == (u32) 'c' && second->glyph[1].x == space);
 	TEST_NOT_ZERO(layout->width == 3.0f * space);	/* " cd", monospace */
 
+	/* a glyph wider than the line overflows it: one glyph per line, nothing dropped */
+	const utf32 wide = Utf32Cstr(env->mem_1, "WW");
+	layout = Utf32TextLayout(env->mem_1, &wide, 3.0f, 4, font);
+	TEST_NOT_ZERO(layout->line_count == 2 && layout->line->glyph_count == 2 && layout->line->next->glyph_count == 1);
+
 	const utf32 trailing = Utf32Cstr(env->mem_1, "abc\n");
 	layout = Utf32TextLayoutIncludeWhitespace(env->mem_1, &trailing, F32_INFINITY, 4, font);
 	TEST_NOT_ZERO(layout->line_count == 2 && layout->line->next->glyph_count == 0);

@@ -52,6 +52,12 @@ static utf32 FontStreamSubstringOnRow(utf32 *text, u32 *x_new_offset, const stru
 		sub.len = substring_with_wordbreak_len;
 		substring_pixels = (substring_with_wordbreak_len) ? substring_pixels_with_wordbreak : 0;
 	}
+	/* nothing fits an empty line: one glyph overflows it, so every glyph is placed and the word advances */
+	if (sub.len == 0 && x_offset == 0 && text->len)
+	{
+		sub.len = 1;
+		substring_pixels = GlyphLookup(font, text->buf[0])->advance;
+	}
 
 	*x_new_offset = x_offset + substring_pixels;
 	text->len -= sub.len;
@@ -173,11 +179,6 @@ static struct textLayout *FontLayout(struct arena *mem, const utf32 *str, const 
 			if (word.len)
 			{
 				wrap = 1;
-				if (sub.len == 0 && x_offset == 0)
-				{
-					/* nothing of the word fits an empty line: it is dropped */
-					break;
-				}
 				if (sub.len)
 				{
 					FontLayoutGlyphPush(mem, line, x_offset, (u32) '-');
