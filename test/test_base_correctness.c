@@ -1204,6 +1204,12 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
     const struct dsBuffer dump = FileDump(mem, "a.txt", &dir);
     TEST_TRUE(dump.data != NULL && dump.size == 11 && memcmp(dump.data, "Jello world", 11) == 0);
 
+    /* #163: a regular file is no directory */
+    struct file not_dir = FileNull();
+    const enum fsError not_dir_err = DirectoryTryOpen(mem, &not_dir, "a.txt", &dir);
+    if (not_dir.handle != FILE_HANDLE_INVALID) { FileClose(&not_dir); }
+    TEST_EQUAL(FS_TYPE_INVALID, not_dir_err);
+
     struct file sub = FileNull();
     TEST_EQUAL(FS_SUCCESS, DirectoryTryCreate(mem, &sub, "sub", &dir));
     TEST_EQUAL(FILE_DIRECTORY, sub.type);

@@ -303,6 +303,25 @@ enum fsError DirectoryTryOpen(struct arena *mem, struct file *dir, const char *f
 					default: { err = FS_ERROR_UNSPECIFIED; LogSystemError(S_ERROR); } break;
 				}
 			}
+			else
+			{
+				/* FILE_FLAG_BACKUP_SEMANTICS opens regular files too */
+				BY_HANDLE_FILE_INFORMATION info;
+				if (!GetFileInformationByHandle(dir->handle, &info))
+				{
+					err = FS_ERROR_UNSPECIFIED;
+					LogSystemError(S_ERROR);
+				}
+				else if (!(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+				{
+					err = FS_TYPE_INVALID;
+				}
+
+				if (err != FS_SUCCESS)
+				{
+					FileClose(dir);
+				}
+			}
 		}
 	}
 
