@@ -160,7 +160,8 @@ static void ds_ConfigParse(struct ds_Config *config, struct ds_ConfigReport *rep
     u32 seen[DS_CONFIG_FIELD_COUNT] = { 0 };
 
     u32 line = 0;
-    u64 i = 0;
+    /* a UTF-8 byte order mark (some Windows editors) is not part of the first key */
+    u64 i = (size >= 3 && text[0] == 0xEF && text[1] == 0xBB && text[2] == 0xBF) ? 3 : 0;
     while (i < size)
     {
         line += 1;

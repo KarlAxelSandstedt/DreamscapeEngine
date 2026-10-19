@@ -93,7 +93,7 @@ struct test_Output ConfigPartialTest(struct test_Environment *env)
 
     struct ds_Config config = ConfigTestBase();
     TEST_EQUAL(1, ConfigTestReadText(env->mem_1, &config,
-        "# comment line\r\n"
+        "\xEF\xBB\xBF# comment line\r\n"                    /* a byte order mark before the first line */
         "\r\n"
         "   \t\n"
         "  thread_count \t:   7   # trailing comment\r\n"
