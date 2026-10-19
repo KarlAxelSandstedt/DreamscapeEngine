@@ -313,7 +313,8 @@ u32 FileSetSize(const struct file *file, const u64 size)
 
 void FileClose(struct file *file)
 {
-	if (close(file->handle) == -1)
+	/* nothing to close for FileNull() or the working directory's AT_FDCWD */
+	if (file->handle != FILE_HANDLE_INVALID && file->handle != AT_FDCWD && close(file->handle) == -1)
 	{
 		LogSystemError(S_ERROR);
 	}
@@ -578,7 +579,7 @@ void FileStatusDebugPrint(const file_status *stat)
 	switch (stat->st_mode & S_IFMT)
 	{
 		case S_IFREG: { fprintf(stderr, 	"regular file\n"); 	} break;
-		case S_IFDIR: { fprintf(stderr, 	"drectory\n"); 		} break;
+		case S_IFDIR: { fprintf(stderr, 	"directory\n"); 		} break;
 		case S_IFCHR: { fprintf(stderr, 	"character device\n"); 	} break;
 		case S_IFBLK: { fprintf(stderr, 	"block device\n"); 	} break;
 		case S_IFIFO: { fprintf(stderr, 	"fifo or pipe\n"); 	} break;
@@ -619,7 +620,7 @@ void FileStatusDebugPrint(const file_status *stat)
 	}
       
 	fprintf(stderr, "\tsize: %lli\n", (long long) stat->st_size);
-	fprintf(stderr, "\toptimation I/O block size: %li\n", (long) stat->st_blksize);
+	fprintf(stderr, "\toptimal I/O block size: %li\n", (long) stat->st_blksize);
 	fprintf(stderr, "\t512B blocks allocated: %lli\n", (long long) stat->st_blocks);
 
 	fprintf(stderr, "\tlast file access:        %s", ctime(&stat->st_atime));
