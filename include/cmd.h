@@ -25,18 +25,22 @@ extern "C" {
 #endif
 
 /*
-   ========================================== CMP API ==========================================
+   ========================================== CMD API ==========================================
 
    User submit commands either by utf8 command string or by the command's registered index. For the second case, we
-   also have to push register values before submitting the command. command_submit then reads for each of it's 
-   arguments the corresponding register, beginning with reg_0.
+   also have to push register values before submitting the command. CmdSubmit then reads for each of it's
+   arguments the corresponding register, beginning with regs[0]. The command reads its arguments from
+   g_queue->cmd_exec->arg[i] when called.
 
 	Suppose we have the triple  { cmd_func : u32, str(func) : utf8, func() : void(*)(void) } where func() 
 	normally would take in 2 arguments. For utf8, we format and submit a command executing the function by
 	calling either one of the two following methods:
 
-   		CmdSubmitUtf8_f("func %arg0 %arg1", arg0, arg1)
-   		CmdSubmitUtf8("func str(arg0) str(arg1)")
+		CmdSubmitFormat(mem, "func %arg0 %arg1", arg0, arg1)
+		CmdSubmitUtf8("func str(arg0) str(arg1)")
+
+	The string is referenced, not copied: it (and mem) must live until the queue executes, one CmdQueueExecute
+	later for the ...NextFrame variants. String arguments passed to the command point into it.
 	
 	The format string should, if the command in registered at compile time, determined at the same time. So
 	we extend our triple to 
@@ -46,8 +50,8 @@ extern "C" {
 	If we wish to sumbit a command using function's index, we manually "push" arguments by
 	setting the registers to their corresponding arguments before calling CmdSubmit:
 
-		g_cmd_q->reg[0].arg0_type = arg0;
-		g_cmd_q->reg[1].arg1_type = arg1;
+		g_queue->regs[0].arg0_type = arg0;
+		g_queue->regs[1].arg1_type = arg1;
 		CmdSubmit(cmd_index)
  */
 
@@ -128,12 +132,17 @@ struct cmdQueue 	CmdQueueAlloc(void);
 void 			CmdQueueDealloc(struct cmdQueue *queue);
 /* set queue to current global queue */
 void			CmdQueueSet(struct cmdQueue *queue);
-/* Execute commands in global queue */
+/*
+ * Execute commands in global queue. A string command is tokenized first: the name, then arguments separated by
+ * whitespace, each a quoted string, an integer (I64 with a '-', U64 without) or a decimal (F64). An unknown
+ * name, a malformed argument or a wrong argument count prints an error instead of calling the command.
+ * Commands submitted during execution run in the same pass (the ...NextFrame variants in the next one).
+ */
 void 			CmdQueueExecute(void);
 /* flush any commands in queue */
 void 			CmdQueueFlush(struct cmdQueue *queue);
 
-/* Register the command function (or overwrite existing one) */
+/* Register the command function (or overwrite existing one); args_count > CMD_REGISTER_COUNT: { U32_MAX, NULL } */
 struct slot		CmdFunctionRegister(const utf8 name, const u32 args_count, void (*call)(void));
 /* Lookup command function; if function not found, return { .index = U32_MAX, .address = NULL } */
 struct slot 		CmdFunctionLookup(const utf8 name);

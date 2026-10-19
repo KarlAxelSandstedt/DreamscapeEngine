@@ -25,7 +25,7 @@ DEFINE_CPOOL_STRUCT(cmdFunction);
 static struct ds_HashMap g_name_to_cmd_f_map;
 struct cmdQueue *g_queue = NULL;
 static ds_CPool(cmdFunction) g_cmd_f;
-u32			  g_cmd_internal_debug_print_index;	
+static u32 g_cmd_internal_debug_print_index;
 
 static void CmdDebugPrint(void)
 {
@@ -108,7 +108,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 	if (cmd->function == NULL)
 	{
 		cmd->function = g_cmd_f.buf + g_cmd_internal_debug_print_index;
-		cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: invalid command name", (char *) &cmd->string);
+		cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: invalid command name", &cmd->string);
 		return;
 	}
 
@@ -196,7 +196,6 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 
 			if ((sign + 1 + 2*fraction <= token_length) && '0' <= text[i-1] && text[i-1] <= '9')
 			{
-				u32 min_length = 1 + sign + fraction*2;
 				if (fraction)
 				{
 					token_type = CMD_TOKEN_F64;
@@ -267,7 +266,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 
 				case PARSE_STRING_INVALID: 
 				{ 
-					g_queue->cmd_exec->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: unexpected character in argument %k", &cmd->string, &token_string);
+					cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: unexpected character in argument %k", &cmd->string, &token_string);
 				} break;
 			}
 			break;
