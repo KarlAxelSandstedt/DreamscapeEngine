@@ -407,7 +407,6 @@ void ds_Init(const char *config_path, const char *log_path)
     {
         config->thread_count = (core_count > 2) ? core_count - 2 : 1;
     }
-    config->thread_count = (config->thread_count < 1) ? 1 : config->thread_count;
     config->thread_count = (config->thread_count > core_count) ? core_count : config->thread_count;
     config->thread_count = (config->thread_count > DS_THREAD_COUNT_MAX) ? DS_THREAD_COUNT_MAX : config->thread_count;
     g_config = config;
