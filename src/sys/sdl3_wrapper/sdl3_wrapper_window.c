@@ -128,7 +128,7 @@ static u32 sdl3_NativeCursorUnlock(struct nativeWindow *native)
 	return unlock;
 }
 
-void sdl3_NativeCursorSetRectangle(struct nativeWindow *native, const v2 nat_position, const v2 size)
+static void sdl3_NativeCursorSetRectangle(struct nativeWindow *native, const v2 nat_position, const v2 size)
 {
 	const SDL_Rect rect = 
 	{ 
@@ -144,7 +144,7 @@ void sdl3_NativeCursorSetRectangle(struct nativeWindow *native, const v2 nat_pos
 	}
 }
 
-void sdl3_NativeCursorUnsetRectangle(struct nativeWindow *native)
+static void sdl3_NativeCursorUnsetRectangle(struct nativeWindow *native)
 {
 	if (!SDL_SetWindowMouseRect(native->sdl_win, NULL))
 	{
