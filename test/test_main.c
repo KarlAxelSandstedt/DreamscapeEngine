@@ -348,6 +348,13 @@ void ds_TestMainCorrectness(void)
 	//run_suite(array_list_correctness_suite, &env, 1);
 	//run_suite(hierarchy_correctness_index_suite, &env, 1);
 	//run_suite(math_correctness_suite, &env, 1);
+
+	ArenaFree(&mem_1);
+	ArenaFree(&mem_2);
+	ArenaFree(&mem_3);
+	ArenaFree(&mem_4);
+	ArenaFree(&mem_5);
+	ArenaFree(&mem_6);
 }
 
 #ifdef DS_PERFORMANCE_MEASUREMENT_API

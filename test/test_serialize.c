@@ -146,6 +146,7 @@ static struct test_Output ss_randomized_aligned_array(void)
 	while (size_left)
 	{
 		u64 count = RngU64Range(1, MAX_COUNT);
+		count = (count > MAX_COUNT) ? MAX_COUNT : count;	/* the bound where GCC can see it (-Wstringop-overflow) */
 		enum ss_Type type = RngU64Range(SS_WRITE8, SS_COUNT-1);
 		if (size_left < count*ss_type_size[type])
 		{
