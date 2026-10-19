@@ -1646,7 +1646,7 @@ static struct test_Output SystemErrorStringTest(struct test_Environment *env)
         with_text += 1;
         u32 len = 0;
         u32 valid = 1;
-        for (u64 offset = 0; offset < str.size; ++len)
+        for (u32 offset = 0; offset < str.size; ++len)
         {
             valid = valid && Utf8ReadCodepoint(&offset, &str, offset) != UTF8_BAD_CODEPOINT;
         }

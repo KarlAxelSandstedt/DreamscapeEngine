@@ -586,10 +586,10 @@ static struct test_Output utf8_format_regressions(struct test_Environment *env)
 }
 
 /* Decode bytes[0, size) at offset; check the codepoint and the new offset. */
-static u32 DecodeTestCheck(const char *bytes, const u32 size, const u64 offset, const u32 expected, const u64 expected_offset)
+static u32 DecodeTestCheck(const char *bytes, const u32 size, const u32 offset, const u32 expected, const u32 expected_offset)
 {
 	const utf8 str = { .buf = (u8 *) bytes, .size = size, .len = 0 };
-	u64 new_offset = 0;
+	u32 new_offset = 0;
 	const u32 codepoint = Utf8ReadCodepoint(&new_offset, &str, offset);
 	return codepoint == expected && new_offset == expected_offset;
 }
@@ -689,10 +689,10 @@ static struct test_Output utf8_decode_and_parse_regressions(struct test_Environm
 		}
 
 		const utf8 str = { .buf = bytes, .size = size, .len = 0 };
-		u64 offset = 0;
+		u32 offset = 0;
 		while (offset < size)
 		{
-			u64 new_offset;
+			u32 new_offset;
 			const u32 codepoint = Utf8ReadCodepoint(&new_offset, &str, offset);
 			TEST_TRUE(offset < new_offset && new_offset <= size);
 			if (codepoint == UTF8_BAD_CODEPOINT)
@@ -761,7 +761,7 @@ static struct test_Output utf8_decode_and_parse_regressions(struct test_Environm
 /* decoding the len codepoints of str ends exactly at its byte count */
 static u32 BytesExact(const utf8 str)
 {
-	u64 offset = 0;
+	u32 offset = 0;
 	for (u32 i = 0; i < str.len; ++i)
 	{
 		Utf8ReadCodepoint(&offset, &str, offset);
@@ -876,7 +876,7 @@ static void *string_PerfInit(void)
 		else              { in->text_buf[n++] = (u8) ('a' + i % 26); }
 	}
 	in->text = (utf8) { .buf = in->text_buf, .size = n, .len = 0 };
-	u64 offset = 0;
+	u32 offset = 0;
 	for (in->text.len = 0; offset < n; in->text.len += 1)
 	{
 		Utf8ReadCodepoint(&offset, &in->text, offset);

@@ -1650,11 +1650,11 @@ struct slot ui_NodeAlloc(const u64 flags, const utf8 *formatted)
 	u32 hash_count = 0;
 	u32 hash_begin_index = 0;
 	u32 hash_begin_offset = 0;
-	u64 offset = 0;
+	u32 offset = 0;
 	u32 text_len = formatted->len;
 	/* bytes of the text_len codepoints: codepoint_start keeps the byte offsets of the last three codepoints */
 	u32 text_bytes = formatted->size;
-	u64 codepoint_start[3] = { 0 };
+	u32 codepoint_start[3] = { 0 };
 	for (u32 i = 0; i < formatted->len; ++i)
 	{
 		codepoint_start[i % 3] = offset;

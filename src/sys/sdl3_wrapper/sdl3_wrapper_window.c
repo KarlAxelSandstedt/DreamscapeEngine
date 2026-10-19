@@ -359,7 +359,7 @@ utf8 sdl3_Utf8GetClipboard(struct arena *mem)
 		{
 			utf8_null.size = (u32) strlen((const char *) utf8_null.buf);
 			u32 len = 0;
-			for (u64 offset = 0; offset < utf8_null.size; len += 1)
+			for (u32 offset = 0; offset < utf8_null.size; len += 1)
 			{
 				Utf8ReadCodepoint(&offset, &utf8_null, offset);
 			}

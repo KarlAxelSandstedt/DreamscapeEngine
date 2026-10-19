@@ -171,7 +171,7 @@ u32		            Utf8Equivalence(const utf8 str1, const utf8 str2);
  * sequence cut off by size, a bad lead or continuation byte, overlong forms, surrogates and > U+10FFFF; a
  * bad sequence advances new_offset by one byte.
  */
-u32 	            Utf8ReadCodepoint(u64 *new_offset, const utf8 *str, const u64 offset);
+u32 	            Utf8ReadCodepoint(u32 *new_offset, const utf8 *str, const u32 offset);
 /* return length written into buf, or 0 if buf is too small. A codepoint without a UTF-8 form (a surrogate, > U+10FFFF, UTF8_BAD_CODEPOINT) is written as U+FFFD. */
 u32		            Utf8WriteCodepoint(u8 *buf, const u32 bufsize, const u32 codepoint);
 

@@ -232,7 +232,7 @@ utf8 Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 cod
 	}
 
 	utf8 err_str = { .buf = buf, .size = (u32) size, .len = 0 };
-	for (u64 offset = 0; offset < err_str.size; err_str.len += 1)
+	for (u32 offset = 0; offset < err_str.size; err_str.len += 1)
 	{
 		Utf8ReadCodepoint(&offset, &err_str, offset);
 	}

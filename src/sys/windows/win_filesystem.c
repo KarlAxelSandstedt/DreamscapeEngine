@@ -709,7 +709,7 @@ utf8 CwdGet(struct arena *mem)
 		WideCharToMultiByte(CP_UTF8, 0, w_path, (int) w_len, (char *) buf, size, NULL, NULL);
 		buf[size] = '\0';
 		str = (utf8) { .buf = buf, .size = (u32) size, .len = 0 };
-		for (u64 offset = 0; offset < str.size; str.len += 1)
+		for (u32 offset = 0; offset < str.size; str.len += 1)
 		{
 			Utf8ReadCodepoint(&offset, &str, offset);
 		}

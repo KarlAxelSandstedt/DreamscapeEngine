@@ -485,7 +485,7 @@ utf8 CwdGet(struct arena *mem)
 	}
 
 	utf8 cwd = { .buf = buf, .size = (u32) strlen((char *) buf), .len = 0 };
-	for (u64 offset = 0; offset < cwd.size; cwd.len += 1)
+	for (u32 offset = 0; offset < cwd.size; cwd.len += 1)
 	{
 		Utf8ReadCodepoint(&offset, &cwd, offset);
 	}

@@ -83,7 +83,7 @@ enum cmdToken
 
 static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 {
-	u64 i = 0;
+	u32 i = 0;
 	u32 token_count = 0;
 	u8 *text = cmd->string.buf;
 	u32 codepoints_left = cmd->string.len;

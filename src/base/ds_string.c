@@ -88,7 +88,7 @@ utf32 Utf32StreamConsumeNonWhitespace(utf32 *stream)
 	return sub;
 }
 
-u32 Utf8ReadCodepoint(u64 *new_offset, const utf8 *str, const u64 offset)
+u32 Utf8ReadCodepoint(u32 *new_offset, const utf8 *str, const u32 offset)
 {
 	/* a bad sequence consumes one byte, so decoding resynchronizes at the next lead byte */
 	*new_offset = offset + 1;
@@ -110,7 +110,7 @@ u32 Utf8ReadCodepoint(u64 *new_offset, const utf8 *str, const u64 offset)
 	 * bad. Measured faster than a branch-free form (clamped reads, blended result) on ASCII, Latin and
 	 * mixed text: the sequence size is well predicted.
 	 */
-	const u64 left = str->size - offset;
+	const u32 left = str->size - offset;
 	/* never 0: the low 24 bits are ones */
 	const u32 sequence_size = Clz32(~(b0 << 24));
 	u32 decoded;
@@ -730,7 +730,7 @@ utf32 Utf32Buffered(u32 buf[], const u32 len)
 
 void Utf8DebugPrint(const utf8 str)
 {
-	u64 offset = 0;
+	u32 offset = 0;
 	for (u64 i = 0; i < str.len; ++i)
 	{
 		fprintf(stderr, "%c", Utf8ReadCodepoint(&offset, &str, offset));
@@ -883,9 +883,9 @@ static enum string_token internal_determine_format_parameter(const char *format,
 						available += 1;
 					}
 					const utf8 sequence = { .buf = (u8 *) format + i, .size = available, .len = 0 };
-					u64 sequence_end;
+					u32 sequence_end;
 					Utf8ReadCodepoint(&sequence_end, &sequence, 0);
-					i += (u32) sequence_end;
+					i += sequence_end;
 				}
 				count += 1;
 			}
@@ -1019,7 +1019,7 @@ utf8 Utf8FormatBufferedVariadic(u32 *reqsize, u8 *buf, const u32 bufsize, const 
 					count = 0;
 					for (;;)
 					{
-						u64 next;
+						u32 next;
 						Utf8ReadCodepoint(&next, &run, bytes);
 						if (next > bufsize - offset)
 						{
@@ -1123,7 +1123,7 @@ utf8 Utf8CstrBuffered(u8 buf[], const u32 bufsize, const char *cstr)
 	{
 		ret = (utf8) { .len = 0, .size = (u32) bytes, .buf = buf };
 		memcpy(buf, cstr, bytes);
-		for (u64 offset = 0; offset < bytes; ret.len += 1)
+		for (u32 offset = 0; offset < ret.size; ret.len += 1)
 		{
 			Utf8ReadCodepoint(&offset, &ret, offset);
 		}
@@ -1141,7 +1141,7 @@ utf8 Utf8Cstr(struct arena *mem, const char *cstr)
 	{
 		ret = (utf8) { .len = 0, .size = (u32) bytes, .buf = buf };
 		memcpy(buf, cstr, bytes);
-		for (u64 offset = 0; offset < bytes; ret.len += 1)
+		for (u32 offset = 0; offset < ret.size; ret.len += 1)
 		{
 			Utf8ReadCodepoint(&offset, &ret, offset);
 		}
@@ -1156,7 +1156,7 @@ utf32 Utf32CstrBuffered(u32 buf[], const u32 buflen, const char *cstr)
 	const utf8 str = { .len = 0, .size = (u32) bytes, .buf = (u8 *) cstr };
 	utf32 ret = (utf32) { .len = 0, .max_len = buflen, .buf = buf };
 
-	for (u64 offset = 0; offset < bytes; ret.len += 1)
+	for (u32 offset = 0; offset < str.size; ret.len += 1)
 	{
 		if (ret.len == ret.max_len)
 		{
@@ -1249,7 +1249,7 @@ utf32 Utf32Utf8(struct arena *mem, const utf8 str)
 	u32 *buf = ArenaPush(mem, str.len*sizeof(u32));
 	if (buf)
 	{
-		u64 offset = 0;
+		u32 offset = 0;
 		for (u32 i = 0; i < str.len; ++i)
 		{
 			buf[i] = (offset < str.size && str.buf[offset] < 0x80) ? str.buf[offset++] : Utf8ReadCodepoint(&offset, &str, offset);	
@@ -1265,7 +1265,7 @@ utf32 Utf32Utf8Buffered(u32 buf[], const u32 buflen, const utf8 str)
 	utf32 conv = Utf32Empty();
 	if (str.len <= buflen)
 	{
-		u64 offset = 0;
+		u32 offset = 0;
 		for (u32 i = 0; i < str.len; ++i)
 		{
 			buf[i] = (offset < str.size && str.buf[offset] < 0x80) ? str.buf[offset++] : Utf8ReadCodepoint(&offset, &str, offset);	
@@ -1485,7 +1485,7 @@ u32 Utf8LookupSubstring(struct kmpSubstring *kmp_substring, const utf8 str)
 	}
 
 	u32 found = 0;
-	u64 offset = 0;
+	u32 offset = 0;
 	u32 si = U32_MAX;
 	for (u32 i = 0; i < str.len; ++i)
 	{

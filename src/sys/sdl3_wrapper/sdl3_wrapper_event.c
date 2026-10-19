@@ -38,7 +38,7 @@ u32 sdl3_EventConsume(struct ds_Event *event)
 				event->utf8.buf = (u8 *) ev.text.text;
 				event->utf8.len = 0;
 				event->utf8.size = (u32) strlen(ev.text.text);
-				for (u64 offset = 0; offset < event->utf8.size; event->utf8.len += 1)
+				for (u32 offset = 0; offset < event->utf8.size; event->utf8.len += 1)
 				{
 					Utf8ReadCodepoint(&offset, &event->utf8, offset);
 				}
