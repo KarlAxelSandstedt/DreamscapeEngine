@@ -17,8 +17,6 @@
 ==========================================================================
 */
 
-#include <string.h>
-
 #include "r_local.h"
 
 //TODO MOVE into asset_manager

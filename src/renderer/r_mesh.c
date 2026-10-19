@@ -17,12 +17,10 @@
 ==========================================================================
 */
 
-#include <string.h>
-
 #include "r_local.h"
 
 
-f32 stub_vertices[] =
+static f32 stub_vertices[] =
 {
 		 0.5f, -0.5f, -0.5f, 0.0f, 0.0f, -1.0f, 
 		-0.5f, -0.5f, -0.5f, 0.0f, 0.0f, -1.0f,
@@ -52,7 +50,7 @@ f32 stub_vertices[] =
 		-0.5f,  0.5f,  0.5f, -1.0f, 0.0f, 0.0f,
 };
 
-u32 stub_indices[] = 
+static u32 stub_indices[] = 
 {
 	0, 1, 2, 0, 2, 3,
 	6, 7, 4, 6, 4, 5,
@@ -334,7 +332,7 @@ void r_MeshHull(struct arena *mem, struct r_Mesh *mesh, const struct dcel *hull)
 			mesh->index_count += 3;
 		}
 
-		ds_Assert((u64) m_i + offset <= U32_MAX)
+		ds_Assert((u64) m_i + offset <= U32_MAX);
 		m_i += offset;
 	}
 
@@ -348,8 +346,6 @@ void r_MeshTriMesh(struct arena *mem, struct r_Mesh *mesh, const struct triMesh 
 	mesh->index_count = 0;
 	mesh->index_data = NULL;
 	mesh->local_stride = sizeof(v3) /* + sizeof(v4) */ + sizeof(v3);
-
-	const v4 color = V4(0.5f, 0.5f, 0.8f, 0.7f);
 
 	for (u32 t = 0; t < tri_mesh->tri_count; ++t)
 	{

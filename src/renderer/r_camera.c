@@ -38,7 +38,7 @@ m3 r_Camera2dTransform(const v2 view_center, const f32 view_height, const f32 vi
 void r_CameraDebugPrint(const struct r_Camera *cam)
 {
 	fprintf(stderr, "POS: (%f, %f, %f)\n", cam->position.x, cam->position.y, cam->position.z);
-	fprintf(stderr, "RIGHT: (%f, %f, %f)\n", cam->left.x, cam->left.y, cam->left.z);
+	fprintf(stderr, "LEFT: (%f, %f, %f)\n", cam->left.x, cam->left.y, cam->left.z);
 	fprintf(stderr, "UP: (%f, %f, %f)\n", cam->up.x, cam->up.y, cam->up.z);
 	fprintf(stderr, "DIR: (%f, %f, %f)\n", cam->forward.x, cam->forward.y, cam->forward.z);
 	fprintf(stderr, "ASPECT, FOV_X, FZ_NEAR, FZ_FAR: (%f, %f, %f, %f)\n", cam->aspect_ratio, cam->fov_x, cam->fz_near, cam->fz_far);

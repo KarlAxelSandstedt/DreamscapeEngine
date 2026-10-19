@@ -253,7 +253,6 @@ void		ds_glClear(GLbitfield mask);
 void		ds_glClearColor(GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha);
 
 void		ds_glViewport(GLint x, GLint y, GLsizei width, GLsizei height);
-void		ds_glPolygonMode(GLenum face, GLenum mode);
 
 void 		ds_glGenBuffers(GLsizei n, GLuint *buffers);
 void 		ds_glBindBuffer(GLenum target, GLuint buffer);
@@ -281,7 +280,6 @@ void 		ds_glEnableVertexAttribArray(GLuint index);
 void 		ds_glDisableVertexAttribArray(GLuint index);
 void 		ds_glVertexAttribPointer(GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const void *pointer);
 void 		ds_glVertexAttribIPointer(GLuint index, GLint size, GLenum type, GLsizei stride, const void *pointer);
-void 		ds_glVertexAttribLPointer(GLuint index, GLint size, GLenum type, GLsizei stride, const void *pointer);
 void		ds_glVertexAttribDivisor(GLuint index, GLuint divisor);
 
 GLuint		ds_glGetUniformLocation(GLuint program, const GLchar *name);
