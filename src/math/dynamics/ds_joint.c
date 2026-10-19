@@ -137,8 +137,9 @@ void ds_JointRemove(struct ds_Dynamics *pipeline, const ds_JointId id)
 
 struct slot ds_JointLookup(const struct ds_Dynamics *pipeline, const ds_JointId id)
 {
-    const u32 index = DS_ID_INDEX_MASK & id;
-    if (index <= pipeline->joint_pool.count_max)
+    /* the index is bounded before the slot is read (as ds_BodyLookup) */
+    const u32 index = ds_IdIndex(id);
+    if (index >= pipeline->joint_pool.count_max)
     {
         return (struct slot) { .index = U32_MAX, .address = NULL };
     }

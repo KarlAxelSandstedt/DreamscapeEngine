@@ -846,12 +846,12 @@ struct ds_Joint
     struct DLLNode   edge_node[2];   /* Each body stores the joint its dll; b == body[i] => edge_node[i] 
                                            is part of body b's dll.                                         */
 
-    u32         set;                    /* index to joint's set                                             */
-    u32         color;                  /* edge color (or CG_COLOR_NOT_SET)                                 */
+    u32         set;                    /* index to joint's set (SOLVER_SET_NULL while in the graph)        */
+    u32         color;                  /* edge color (or CG_INVALID_COLOR)                                 */
     u32         sim;                    /* owned ds_JointSim. If color is a valid color, the JointSim is 
-                                           found in in the given color of the ds_CGraph. if 
-                                           color == CG_COLOR_NOT_SET, sim is an index into the joint's 
-                                           set->jointsim_pool.                                              */
+                                           found in the given color of the ds_CGraph. If
+                                           color == CG_INVALID_COLOR, sim is an index into the joint's
+                                           set->joint_sim_pool.                                             */
 };
 DEFINE_POOL(ds_Joint);
 
