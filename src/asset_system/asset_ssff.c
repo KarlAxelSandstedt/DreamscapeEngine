@@ -29,60 +29,6 @@
 
 #ifdef DS_DEV
 
-/*
- * Handling sprite-to-ssff mappings:
- * 
- * Option 1: 
- * 	For each collection of sprites, say SorcererHero_SpriteSheet, we have a local ordering of sprites;
- * 	The ordering goes from left-right, top-down. For example, we may have the ordering
- *
- * 		"SORCERER_WALK_1" => "SORCERER_WALK_2"
- *
- * 	This identification must be hardcoded, so if we wish to change the order of sprites, or add/del sprites,
- * 	we must recompile with the new identifcation scheme.
- *
- * 	With the requirements of LOCAL identification done, we must also have a GLOBAL identification between
- * 	sprite and ssff. This is partly due to us wanting to be able to reload and regenerate .ssff files if an
- * 	asset_component has been updated.
- *
- * 	Suppose we want to grab the sprite SORCERER_WALK_1 when doing some drawing. In the code, we should simply
- * 	be able to do something like
- * 			
- * 			r_entity_alloc(..., material = SORCERER_WALK_1);
- *
- * 	In the backend, we must
- * 			
- * 			1. Use global identifier to identify which .ssff is needed
- * 			2. If not loaded, load
- * 			   Else if handle invalid, Reload
- *			3. Identify which sprite in .ssff is the one requested
- *			4. Get sprite data 
- *
- *	In order to determine how to implement the backed, we first determine what constants we have.
- *
- *	1. the sprite <-> .ssff mapping is immutable and determined at compile time.
- *	2. the sprite identifier is constant (either just unique id or unique (material, local_id)
- *
- * 	Assume for now that all materials are some sprite collection.
- * 
- * 	MATERIAL_SORCERER_ID = 1	//HARDCODED ID
- * 	SSFF_ID = 0 			//HARDCODED ID
- * 	SORCERER_WALK_1 = 0		//HARDCODED ID
- * 	SORCERER_WALK_2 = 1		//HARDCODED ID
- *
- * #if defined(DS_DEV)
- * 	material[MATERIAL_SORCERER_ID].source = DS_COMPILE_TIME_STRING(filepath);	//HARDCODED
- * #endif
- * 	material[MATERIAL_SORCERER_ID].ssff = SSFF_ID			// HARDCODED MAPPING
- *	material[MATERIAL_SORCERER_ID].collection_id = index;		// SET ON STARTUP (less error-prone, tedious).
- *
- * 	ssff[SSFF_ID].collection[index].id == MATERIAL_SORCERER_ID;	// HARDCODED MAPPING
- * 	ssff[SSFF_ID].collection[index].sprite[SORCERER_WALK_1] = ...;  // DYNAMIC
- * 	ssff[SSFF_ID].collection[index].sprite[SORCERER_WALK_2] = ...;  // DYNAMIC
- *
- *	SsffBuild(SSFF_ID) -> Rebuild ssff completely; if first build, set collection_id for each used material.
- */
-
 /* return 0 for a cell of clip color only: it is stored as its first pixel (one transparent pixel) */
 static u32 internal_get_sprite_parameters(struct arena *mem, struct ssffSprite *sprite, u32 *color_count, u32 *color, const u8 *pixel, const u32 pixels_per_line, const u32 sprite_width, const u32 sprite_height, const u32 sprite_index)
 {
