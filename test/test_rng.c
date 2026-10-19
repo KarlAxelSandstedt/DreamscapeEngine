@@ -173,7 +173,8 @@ struct test_Output RngThreadTest(struct test_Environment *env)
 
 /*
  * RngSystem fills the whole buffer: 4 KiB pre-filled with 0xa5 come back with every 64-byte block changed (a block
- * left as it was by chance: 2^-512) and two fills differ. Size 0 leaves the buffer as it was.
+ * left as it was by chance: 2^-512) and two fills differ. Size 0 leaves the buffer as it was, and is no error with a
+ * NULL buffer either (#197: fatal on Windows).
  */
 struct test_Output RngSystemTest(struct test_Environment *env)
 {
@@ -205,6 +206,7 @@ struct test_Output RngSystemTest(struct test_Environment *env)
     u32 untouched = 1;
     for (u32 i = 0; i < sizeof(c); ++i) { untouched = untouched && c[i] == 0xa5; }
     TEST_TRUE(untouched);
+    RngSystem(NULL, 0);
 
 	return output;
 }

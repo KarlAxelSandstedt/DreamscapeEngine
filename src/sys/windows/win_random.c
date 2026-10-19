@@ -25,6 +25,12 @@
 
 void RngSystem(void *buf, const u64 size)
 {
+	/* as on Linux; BCryptGenRandom fails on a NULL buffer even at size 0 */
+	if (size == 0)
+	{
+		return;
+	}
+
 	BCRYPT_ALG_HANDLE hAlgorithm;
 	LPCWSTR pszAlgId = BCRYPT_RNG_ALGORITHM;
 	LPCWSTR pszImplementation = NULL;
