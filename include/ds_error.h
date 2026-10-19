@@ -46,7 +46,7 @@ Breakpoint (a debugger stops there), then exit(1). Other
 threads calling it meanwhile wait for that exit; a fatal error during the cleanup exits at once. Safe
 before any engine init.
 */
-void 	FatalCleanupAndExit(void);
+ds_NoReturn void 	FatalCleanupAndExit(void);
 
 /* Write the text of a system error code into buf and return it (UTF-8, in English where the system has English
  * messages); empty on failure or when it does not fit. Thread-safe. */
