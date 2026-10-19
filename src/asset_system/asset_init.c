@@ -157,7 +157,7 @@ void DynamicSsffSetSpriteParameters(struct assetSsff *dynamic_ssff, const struct
 	g_sprite[SPRITE_SORCERER_CAST_TRANSITION_1] = param->sprite[count++];
 	g_sprite[SPRITE_SORCERER_CAST_TRANSITION_1].ssff_id = SSFF_DYNAMIC_ID;
 	g_sprite[SPRITE_SORCERER_STAND_CAST_1] = param->sprite[count++];
-	g_sprite[SPRITE_SORCERER_STAND_CAST_2].ssff_id = SSFF_DYNAMIC_ID;
+	g_sprite[SPRITE_SORCERER_STAND_CAST_1].ssff_id = SSFF_DYNAMIC_ID;
 	g_sprite[SPRITE_SORCERER_STAND_CAST_2] = param->sprite[count++];
 	g_sprite[SPRITE_SORCERER_STAND_CAST_2].ssff_id = SSFF_DYNAMIC_ID;
 	g_sprite[SPRITE_SORCERER_STAND_CAST_3] = param->sprite[count++];
