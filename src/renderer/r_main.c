@@ -373,7 +373,7 @@ end:
 	return mesh;
 }
 
-static struct r_Mesh *bvh_Mesh(struct arena *mem, const struct bvh *bvh, const v3f64 position, const q rotation, const v3f64 origin, const v4 color)
+static struct r_Mesh *BVHMesh(struct arena *mem, const struct BVH *bvh, const v3f64 position, const q rotation, const v3f64 origin, const v4 color)
 {
 	const m3 rot = M3QUnit(rotation);
 
@@ -402,7 +402,7 @@ static struct r_Mesh *bvh_Mesh(struct arena *mem, const struct bvh *bvh, const v
 	u32 sc = 1;
     stack[0] = bvh->bt.root;
 
-	const struct bvhNode *nodes = bvh->pool.buf;
+	const struct BVHNode *nodes = bvh->pool.buf;
 	u64 mem_left = vertex_count*L_COLOR_STRIDE;
 	while (sc--)
 	{
@@ -498,7 +498,7 @@ static void r_EditorDraw(const struct led *led)
 		const v3 axis = V3(0.0f, 1.0f, 0.0f);
 		const f32 angle = 0.0f;
 		const q rotation = QAxisAngle(axis, angle);
-		struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &led->physics.dynamic_bvh, position, rotation, g_scene->view_origin, led->dbvh_color);
+		struct r_Mesh *mesh = BVHMesh(&g_r_core->frame, &led->physics.dynamic_bvh, position, rotation, g_scene->view_origin, led->dbvh_color);
 		if (mesh)
 		{
 			struct r_Instance *instance = r_InstanceAddNonCached(cmd);
@@ -529,7 +529,7 @@ static void r_EditorDraw(const struct led *led)
                 ds_ShapeWorldTransform(&transform, &led->physics, s);
 
 			    const struct c_Shape *shape = led->physics.cshape_db->pool.buf + s->cshape_handle;
-			    struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &shape->mesh_bvh.bvh, transform.position, transform.rotation, g_scene->view_origin, led->sbvh_color);
+			    struct r_Mesh *mesh = BVHMesh(&g_r_core->frame, &shape->mesh_bvh.bvh, transform.position, transform.rotation, g_scene->view_origin, led->sbvh_color);
 			    if (mesh)
 			    {
 			    	struct r_Instance *instance = r_InstanceAddNonCached(cmd);

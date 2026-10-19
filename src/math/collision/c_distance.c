@@ -637,19 +637,19 @@ f32 c_HullDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_Tran
 	return GJKWorld(c0, c1, &n, &cache, NULL, s0, t0, s1, t1, F32_INFINITY);
 }
 
-f32 c_TriMeshBvhSphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
+f32 c_TriMeshBVHSphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
 	ds_AssertString(0, "implement");
 	return 0.0f;
 }
 
-f32 c_TriMeshBvhCapsuleDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
+f32 c_TriMeshBVHCapsuleDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
 	ds_AssertString(0, "implement");
 	return 0.0f;
 }
 
-f32 c_TriMeshBvhHullDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
+f32 c_TriMeshBVHHullDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
 	ds_AssertString(0, "implement");
 	return 0.0f;

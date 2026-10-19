@@ -95,20 +95,20 @@ u32 c_HullTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const stru
     return GJKWorld(&c0, &c1, &n, &cache, NULL, s0, t0, s1, t1, 0.0f) == 0.0f;
 }
 
-u32 c_TriMeshBvhSphereTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
+u32 c_TriMeshBVHSphereTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
     v3f64 c0, c1;
-    return c_TriMeshBvhSphereDistance(&c0, &c1, s0, t0, s1, t1) == 0.0f;
+    return c_TriMeshBVHSphereDistance(&c0, &c1, s0, t0, s1, t1) == 0.0f;
 }
 
-u32 c_TriMeshBvhCapsuleTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
+u32 c_TriMeshBVHCapsuleTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
     v3f64 c0, c1;
-    return c_TriMeshBvhCapsuleDistance(&c0, &c1, s0, t0, s1, t1) == 0.0f;
+    return c_TriMeshBVHCapsuleDistance(&c0, &c1, s0, t0, s1, t1) == 0.0f;
 }
 
-u32 c_TriMeshBvhHullTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
+u32 c_TriMeshBVHHullTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1)
 {
     v3f64 c0, c1;
-    return c_TriMeshBvhHullDistance(&c0, &c1, s0, t0, s1, t1) == 0.0f;
+    return c_TriMeshBVHHullDistance(&c0, &c1, s0, t0, s1, t1) == 0.0f;
 }

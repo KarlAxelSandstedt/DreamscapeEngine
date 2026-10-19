@@ -52,75 +52,75 @@ extern "C" {
 /********************************** BVH **********************************/
 
 /*
-A struct bvh is a binary tree of boxes; a leaf holds a shape index and a body index (struct bvhNode).
-    Dbvh*                   dynamic: leaves are inserted and removed one at a time
-    TriMeshBvhConstruct     static, over a triangle mesh: built once; the leaves index mesh_bvh.tri
+A struct BVH is a binary tree of boxes; a leaf holds a shape index and a body index (struct BVHNode).
+    DBVH*                   dynamic: leaves are inserted and removed one at a time
+    TriMeshBVHConstruct     static, over a triangle mesh: built once; the leaves index mesh_bvh.tri
 */
 
-struct bvhNode
+struct BVHNode
 {
     /* If leaf, bt_right == body_index, bt_left == shape index */
 	BT_NODE;
     POOL_NODE;
 	struct aabb bbox;
 };
-DEFINE_POOL(bvhNode);
+DEFINE_POOL(BVHNode);
 
-struct bvh
+struct BVH
 {
     struct BT        bt;  
     struct ds_BitSet    leaf_set;       /* dynamic specific */
     struct ds_BitSet    internal_set;   /* dynamic specific */
-    ds_Pool(bvhNode)  pool;
+    ds_Pool(BVHNode)  pool;
 	struct MQA	    cost_queue;	    /* dynamic specific */
 	u32			        heap_allocated;
 };
 
-struct bvh_QuerySet
+struct BVHQuerySet
 {
     u32     count;
     u32 *   shape;
 };
 
 /* free allocated resources */
-void 		        BvhFree(struct bvh *tree);
+void 		        BVHFree(struct BVH *tree);
 /* Return the required size when serializing the bvh. */
-u64                 BvhSerializeSize(const struct bvh *bvh);
+u64                 BVHSerializeSize(const struct BVH *bvh);
 /* Serialize the bvh. WARNING: Assumes bvh fits in the stream. */
-void                BvhSerialize(struct ss *ss, const struct bvh *bvh);
-/* Returns 1 on success and 0 on failure. Part of the bvh is always heap allocated: free it with BvhFree. */
-u32                 BvhTryDeserialize(struct arena *mem, struct ss *ss, struct bvh *bvh, const u32 growable);
+void                BVHSerialize(struct ss *ss, const struct BVH *bvh);
+/* Returns 1 on success and 0 on failure. Part of the bvh is always heap allocated: free it with BVHFree. */
+u32                 BVHTryDeserialize(struct arena *mem, struct ss *ss, struct BVH *bvh, const u32 growable);
 /* Derive all internal bounding boxes from the leaves' bounding boxes */
-void                BvhPropagateBoundingBoxesFromLeaves(struct bvh *bvh);
+void                BVHPropagateBoundingBoxesFromLeaves(struct BVH *bvh);
 /* validate (ds_Assert) internal coherence of bvh */
-void 		        BvhValidate(const struct bvh *bvh);
+void 		        BVHValidate(const struct BVH *bvh);
 /* return the tree's cost, a quality measure (lower is better) */
-f32 		        BvhCost(const struct bvh *bvh);
+f32 		        BVHCost(const struct BVH *bvh);
 /* the shapes whose leaf boxes overlap node's box */
-struct bvh_QuerySet BvhQuery(struct arena *mem, const struct bvh *bvh, const struct bvhNode *node);
-/* BvhQuery, only shapes with a body index > node's (bt_right) */
-struct bvh_QuerySet BvhQueryAndFilterOnBody(struct arena *mem, const struct bvh *bvh, const struct bvhNode *node);
+struct BVHQuerySet BVHQuery(struct arena *mem, const struct BVH *bvh, const struct BVHNode *node);
+/* BVHQuery, only shapes with a body index > node's (bt_right) */
+struct BVHQuerySet BVHQueryAndFilterOnBody(struct arena *mem, const struct BVH *bvh, const struct BVHNode *node);
 
 /* an empty dynamic bvh */
-struct bvh		    DbvhAlloc(struct arena *mem, const u32 initial_length, const u32 growable);
+struct BVH		    DBVHAlloc(struct arena *mem, const u32 initial_length, const u32 growable);
 /* flush / reset the hierarchy  */
-void 			    DbvhFlush(struct bvh *bvh);
-/* insert a leaf for (body, shape) with box bbox; return its node index (the handle for DbvhRemove) */
-u32 			    DbvhInsert(struct bvh *bvh, const u32 body, const u32 shape, const struct aabb *bbox);
-/* remove the leaf at node index index (DbvhInsert's return) */
-void 			    DbvhRemove(struct bvh *bvh, const u32 index);
+void 			    DBVHFlush(struct BVH *bvh);
+/* insert a leaf for (body, shape) with box bbox; return its node index (the handle for DBVHRemove) */
+u32 			    DBVHInsert(struct BVH *bvh, const u32 body, const u32 shape, const struct aabb *bbox);
+/* remove the leaf at node index index (DBVHInsert's return) */
+void 			    DBVHRemove(struct BVH *bvh, const u32 index);
 
-struct triMeshBvh
+struct triMeshBVH
 {
 	const struct triMesh *	mesh;		
-	struct bvh		        bvh;
+	struct BVH		        bvh;
 	u32 *			        tri;		/* tri[tri_count]: the mesh's triangle indices in leaf order; a leaf's shape index indexes it */
 	u32			            tri_count;	/* = mesh->tri_count */
     u32                     depth;      /* the deepest leaf's depth, root = 0 */
 };
 
 /* Return the mesh's bvh (bin_count: split candidates per axis, build quality); empty for an empty mesh. */
-struct triMeshBvh   TriMeshBvhConstruct(struct arena *mem, const struct triMesh *mesh, const u32 bin_count);
+struct triMeshBVH   TriMeshBVHConstruct(struct arena *mem, const struct triMesh *mesh, const u32 bin_count);
 
 /********************************** SHAPES **********************************/
 
@@ -164,7 +164,7 @@ struct c_Shape
 		struct sphere 		sphere;
 		struct capsule 		capsule;
 		struct dcel		    hull;
-		struct triMeshBvh 	mesh_bvh;
+		struct triMeshBVH 	mesh_bvh;
 	};
 };
 DEFINE_SDB(c_Shape);
@@ -199,9 +199,9 @@ u32     c_CapsuleTest(const struct c_Shape *s0, const ds_TransformWorld *t0, con
 u32     c_HullSphereTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
 u32     c_HullCapsuleTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
 u32     c_HullTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
-u32     c_TriMeshBvhSphereTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
-u32     c_TriMeshBvhCapsuleTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
-u32     c_TriMeshBvhHullTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+u32     c_TriMeshBVHSphereTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+u32     c_TriMeshBVHCapsuleTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+u32     c_TriMeshBVHHullTest(const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
 
 /********************************** DISTANCES **********************************/
 
@@ -262,9 +262,9 @@ f32     c_HullSphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, con
 f32     c_HullCapsuleDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
 f32     c_HullDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
 /* not implemented (debug: assert; release: 0) */
-f32     c_TriMeshBvhSphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
-f32     c_TriMeshBvhCapsuleDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
-f32     c_TriMeshBvhHullDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+f32     c_TriMeshBVHSphereDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+f32     c_TriMeshBVHCapsuleDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
+f32     c_TriMeshBVHHullDistance(v3f64 *c0, v3f64 *c1, const struct c_Shape *s0, const ds_TransformWorld *t0, const struct c_Shape *s1, const ds_TransformWorld *t1);
 
 /********************************** CONTACTS **********************************/
 
@@ -335,10 +335,10 @@ Two-sided: an origin inside a solid returns its exit. Three forms with the same 
     c_XRaycastParameter         the world form on a c_Shape
 Precondition: |ray->dir|^2 > 0 (asserted).
 
-Raycasting your own primitives in a BVH's leaves (BvhRaycastInit takes all of mem: pass a scratch arena):
+Raycasting your own primitives in a BVH's leaves (BVHRaycastInit takes all of mem: pass a scratch arena):
 
     struct arena *mem = ArenaPushScratch();
-    struct bvhRaycastInfo info = BvhRaycastInit(mem, bvh, ray);
+    struct BVHRaycastInfo info = BVHRaycastInit(mem, bvh, ray);
     while (info.hit_queue.count)
     {
         const u32f32 tuple = MQPop(&info.hit_queue);
@@ -358,7 +358,7 @@ Raycasting your own primitives in a BVH's leaves (BvhRaycastInit takes all of me
         }
         else
         {
-            BvhRaycastTestAndPushChildren(&info, tuple);
+            BVHRaycastTestAndPushChildren(&info, tuple);
         }
     }
     ArenaPopScratch();
@@ -379,19 +379,19 @@ struct rayAabb  RayAabb(const struct ray *ray);
  */
 intv            AabbRaycastInterval(const struct rayAabb *ray, const struct aabb *aabb);
 
-struct bvhRaycastInfo
+struct BVHRaycastInfo
 {
 	u32f32			hit;
 	struct rayAabb	ray;
 	struct MQ	hit_queue;
-	const struct bvh *	bvh;
-	const struct bvhNode *	node;
+	const struct BVH *	bvh;
+	const struct BVHNode *	node;
 };
 
 /* Return the traversal state with the root queued if the ray hits its box; uses all of mem for the queue */
-struct bvhRaycastInfo	BvhRaycastInit(struct arena *mem, const struct bvh *bvh, const struct ray *ray);
+struct BVHRaycastInfo	BVHRaycastInit(struct arena *mem, const struct BVH *bvh, const struct ray *ray);
 /* Queue the popped node's children whose boxes the ray hits, keyed by their entry t */
-void 			        BvhRaycastTestAndPushChildren(struct bvhRaycastInfo *info, const u32f32 popped_tuple);
+void 			        BVHRaycastTestAndPushChildren(struct BVHRaycastInfo *info, const u32f32 popped_tuple);
 
 /* the ray prepared for many triangle tests (TriRaycastParameterEx); hits never fall through shared edges */
 struct rayWoop
@@ -412,7 +412,7 @@ f32 CapsuleRaycastParameter(const struct capsule *capsule, const struct ray *ray
 /* hull: a closed convex polyhedron with planar faces */
 f32 HullRaycastParameter(const struct dcel *hull, const struct ray *ray);
 f32 AabbRaycastParameter(const struct aabb *aabb, const struct ray *ray);
-f32 TriMeshBvhRaycastParameter(const struct triMeshBvh *mesh_bvh, const struct ray *ray);
+f32 TriMeshBVHRaycastParameter(const struct triMeshBVH *mesh_bvh, const struct ray *ray);
 /* triangle abc, any winding (no culling) */
 f32 TriRaycastParameter(const v3 a, const v3 b, const v3 c, const struct ray *ray);
 /* TriRaycastParameter with the ray set up once (RayWoop) for many triangles, e.g. a mesh */
@@ -423,14 +423,14 @@ f32 SphereRaycastWorldParameter(const struct sphere *sphere, const ds_TransformW
 f32 CapsuleRaycastWorldParameter(const struct capsule *capsule, const ds_TransformWorld *transform, const struct rayWorld *ray);
 f32 HullRaycastWorldParameter(const struct dcel *hull, const ds_TransformWorld *transform, const struct rayWorld *ray);
 f32 AabbRaycastWorldParameter(const struct aabb *aabb, const ds_TransformWorld *transform, const struct rayWorld *ray);
-f32 TriMeshBvhRaycastWorldParameter(const struct triMeshBvh *mesh_bvh, const ds_TransformWorld *transform, const struct rayWorld *ray);
+f32 TriMeshBVHRaycastWorldParameter(const struct triMeshBVH *mesh_bvh, const ds_TransformWorld *transform, const struct rayWorld *ray);
 f32 TriRaycastWorldParameter(const v3 a, const v3 b, const v3 c, const ds_TransformWorld *transform, const struct rayWorld *ray);
 
 /* the world functions above on a c_Shape of the matching type */
 f32 c_SphereRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
 f32 c_CapsuleRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
 f32 c_HullRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
-f32 c_TriMeshBvhRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
+f32 c_TriMeshBVHRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
 
 #ifdef __cplusplus
 } 

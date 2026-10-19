@@ -77,11 +77,11 @@ ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab
 		bbox_proxy.max = V3AddConstant(bbox_proxy.max, shape->margin);
         ds_BitSetSet(&pipeline->shape_dynamic_usage_set, shape_slot.index, 1);
         ds_BitSetSet(&pipeline->shape_dirty_set, shape_slot.index, 1);
-        shape->proxy = DbvhInsert(&pipeline->dynamic_bvh, shape->body, shape_slot.index, &bbox_proxy);
+        shape->proxy = DBVHInsert(&pipeline->dynamic_bvh, shape->body, shape_slot.index, &bbox_proxy);
     }
     else
     {
-        shape->proxy = DbvhInsert(&pipeline->static_bvh, shape->body, shape_slot.index, &bbox_proxy);
+        shape->proxy = DBVHInsert(&pipeline->static_bvh, shape->body, shape_slot.index, &bbox_proxy);
     }
     
     ds_BodyUpdateMassProperties(pipeline, body_id);
@@ -107,7 +107,7 @@ void ds_ShapeDynamicRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, c
     ds_BitSetSet(&pipeline->shape_dirty_set, shape_index, 0);
     DLLRemove(body->shape_list, pipeline->shape_pool.buf, shape_index, body_shape);
 	ds_SDBDereference(*pipeline->cshape_db, shape->cshape_handle);
-	DbvhRemove(&pipeline->dynamic_bvh, shape->proxy);
+	DBVHRemove(&pipeline->dynamic_bvh, shape->proxy);
 	ds_PoolRemove(pipeline->shape_pool, shape_index);
 }
 
@@ -123,7 +123,7 @@ void ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, s
     ds_BitSetSet(&pipeline->shape_dirty_set, index, 0);
     DLLRemove(body->shape_list, pipeline->shape_pool.buf, index, body_shape);
 	ds_SDBDereference(*pipeline->cshape_db, shape->cshape_handle);
-	DbvhRemove(&pipeline->static_bvh, shape->proxy);
+	DBVHRemove(&pipeline->static_bvh, shape->proxy);
 	ds_PoolRemove(pipeline->shape_pool, index);
 }
 
@@ -189,7 +189,7 @@ struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct d
 		// mesh shape to have position 0 and no rotation.
         ds_Assert(V3Length(shape->t_local.position) == 0.0f);
         ds_Assert(shape->t_local.rotation.w == 1.0f);
-		const struct bvhNode *node = cshape->mesh_bvh.bvh.pool.buf;
+		const struct BVHNode *node = cshape->mesh_bvh.bvh.pool.buf;
 		const struct aabb bbox = BboxRotate(node[cshape->mesh_bvh.bvh.bt.root].bbox, rot);
 		min = bbox.min;
 		max = bbox.max;
@@ -208,7 +208,7 @@ u32 (*c_shape_tests[C_SHAPE_COUNT][C_SHAPE_COUNT])(const struct c_Shape *, const
 	{ c_SphereTest, 		    0, 				            0, 			            0, },
 	{ c_CapsuleSphereTest,	    c_CapsuleTest, 			    0, 			            0, },
 	{ c_HullSphereTest, 		c_HullCapsuleTest,		    c_HullTest,		        0, },
-	{ c_TriMeshBvhSphereTest,   c_TriMeshBvhCapsuleTest,    c_TriMeshBvhHullTest,	0, },
+	{ c_TriMeshBVHSphereTest,   c_TriMeshBVHCapsuleTest,    c_TriMeshBVHHullTest,	0, },
 };
 
 f32 (*c_distance_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(v3f64 *c0, v3f64 *c1, const struct c_Shape *, const ds_TransformWorld *, const struct c_Shape *, const ds_TransformWorld *) =
@@ -216,7 +216,7 @@ f32 (*c_distance_methods[C_SHAPE_COUNT][C_SHAPE_COUNT])(v3f64 *c0, v3f64 *c1, co
 	{ c_SphereDistance,	 	        0,				                0, 			                0, },
 	{ c_CapsuleSphereDistance,	    c_CapsuleDistance, 		        0, 			                0, },
 	{ c_HullSphereDistance, 		c_HullCapsuleDistance, 		    c_HullDistance,		        0, },
-	{ c_TriMeshBvhSphereDistance,	c_TriMeshBvhCapsuleDistance, 	c_TriMeshBvhHullDistance,	0, },
+	{ c_TriMeshBVHSphereDistance,	c_TriMeshBVHCapsuleDistance, 	c_TriMeshBVHHullDistance,	0, },
 };
 
 f32 (*c_raycast_parameter_methods[C_SHAPE_COUNT])(const struct c_Shape *, const ds_TransformWorld *, const struct rayWorld *) =
@@ -224,7 +224,7 @@ f32 (*c_raycast_parameter_methods[C_SHAPE_COUNT])(const struct c_Shape *, const 
 	c_SphereRaycastParameter,
 	c_CapsuleRaycastParameter,
 	c_HullRaycastParameter,
-	c_TriMeshBvhRaycastParameter,
+	c_TriMeshBVHRaycastParameter,
 };
 
 u32 ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, const struct ds_Shape *s1)

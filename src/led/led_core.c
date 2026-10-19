@@ -469,7 +469,7 @@ struct slot led_CollisionDcelAdd(struct led *led, const utf8 id, struct dcel *dc
     return slot;
 }
 
-struct slot led_CollisionTriMeshBvhAdd(struct led *led, const utf8 id, struct triMeshBvh *mesh_bvh)
+struct slot led_CollisionTriMeshBVHAdd(struct led *led, const utf8 id, struct triMeshBVH *mesh_bvh)
 {
     struct slot slot = empty_slot;
 	if (mesh_bvh->mesh->v_count && mesh_bvh->bvh.bt.count)
@@ -1215,14 +1215,14 @@ void led_WallSmashSimulationSetup(struct led *led)
 
 	struct triMesh *mesh = ArenaPush(&led->mem_persistent, sizeof(struct triMesh));
 	*mesh = TriMeshPerlinNoise(&led->mem_persistent, 64, 200.0f);
-	struct triMeshBvh *mesh_bvh = ArenaPush(&led->mem_persistent, sizeof(struct triMeshBvh));
+	struct triMeshBVH *mesh_bvh = ArenaPush(&led->mem_persistent, sizeof(struct triMeshBVH));
 	f32 best_cost = F32_INFINITY;
 	u32 best_bin_count = 8;
 	for (u32 i = 8; i < 16; ++i)
 	{
 		ArenaPushRecord(&led->mem_persistent);
-		*mesh_bvh = TriMeshBvhConstruct(&led->mem_persistent, mesh, i);
-		const f32 cost = BvhCost(&mesh_bvh->bvh);
+		*mesh_bvh = TriMeshBVHConstruct(&led->mem_persistent, mesh, i);
+		const f32 cost = BVHCost(&mesh_bvh->bvh);
 		if (cost < best_cost)
 		{
 			best_cost = cost;
@@ -1230,9 +1230,9 @@ void led_WallSmashSimulationSetup(struct led *led)
 		}
 		ArenaPopRecord(&led->mem_persistent);
 	}
-	*mesh_bvh = TriMeshBvhConstruct(&led->mem_persistent, mesh, best_bin_count);
+	*mesh_bvh = TriMeshBVHConstruct(&led->mem_persistent, mesh, best_bin_count);
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_mesh");
-    led_CollisionTriMeshBvhAdd(led, id, mesh_bvh);
+    led_CollisionTriMeshBVHAdd(led, id, mesh_bvh);
 
     const u32 rb_static = 0;
     const u32 rb_dynamic = 1;

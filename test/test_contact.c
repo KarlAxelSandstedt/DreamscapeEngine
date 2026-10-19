@@ -2965,7 +2965,7 @@ static struct c_Shape McTerrain(struct arena *mem, const f32 cell, const f32 rel
     }
 
     struct c_Shape shape = { .type = C_SHAPE_TRI_MESH };
-    shape.mesh_bvh = TriMeshBvhConstruct(mem, mesh, 8);
+    shape.mesh_bvh = TriMeshBVHConstruct(mem, mesh, 8);
     return shape;
 }
 
@@ -2983,7 +2983,7 @@ static struct c_Shape McOneTriangle(struct arena *mem, const v3 t0, const v3 t1,
     mesh->tri[0] = (v3u32) { .buf = { 0, 1, 2 } };
 
     struct c_Shape shape = { .type = C_SHAPE_TRI_MESH };
-    shape.mesh_bvh = TriMeshBvhConstruct(mem, mesh, 8);
+    shape.mesh_bvh = TriMeshBVHConstruct(mem, mesh, 8);
     return shape;
 }
 

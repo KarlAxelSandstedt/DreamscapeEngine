@@ -201,7 +201,7 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
         {
             shape = pipeline->shape_pool.buf + j;
             dirty->bbox = ds_ShapeWorldBbox(pipeline, shape);
-            struct bvhNode *node = pipeline->dynamic_bvh.pool.buf + shape->proxy;
+            struct BVHNode *node = pipeline->dynamic_bvh.pool.buf + shape->proxy;
             struct aabb *proxy = &node->bbox;
             
             if (!AabbContains(proxy, &dirty->bbox))
@@ -212,7 +212,7 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
                 if (!BTRootCheck(node))
                 {
                     const u32 parent_index = node->bt_parent & BT_INDEX_MASK;
-                    const struct bvhNode *parent = pipeline->dynamic_bvh.pool.buf + parent_index;
+                    const struct BVHNode *parent = pipeline->dynamic_bvh.pool.buf + parent_index;
                     const struct aabb enlarged_proxy = BboxUnion(*proxy, dirty->bbox);
                     if (AabbContains(&parent->bbox, &enlarged_proxy))
                     {

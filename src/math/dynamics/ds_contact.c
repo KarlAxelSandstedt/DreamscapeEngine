@@ -175,7 +175,7 @@ struct slot ds_ContactLookup(const struct ds_Dynamics *pipeline, const ds_Contac
     return slot;
 }
 
-u32 ds_ContactCheckBvhOverlap(const struct ds_Dynamics *pipeline, const u32 contact_index)
+u32 ds_ContactCheckBVHOverlap(const struct ds_Dynamics *pipeline, const u32 contact_index)
 {
     const struct ds_Contact *contact = pipeline->contact_pool.buf + contact_index;
 
@@ -185,8 +185,8 @@ u32 ds_ContactCheckBvhOverlap(const struct ds_Dynamics *pipeline, const u32 cont
         pipeline->shape_pool.buf + contact->key.shape[1],
     };
     
-    const struct bvhNode *s_node = pipeline->static_bvh.pool.buf;
-    const struct bvhNode *d_node = pipeline->dynamic_bvh.pool.buf;
+    const struct BVHNode *s_node = pipeline->static_bvh.pool.buf;
+    const struct BVHNode *d_node = pipeline->dynamic_bvh.pool.buf;
 
     const struct aabb *bbox[2];
     bbox[0] = ds_ShapeDynamicCheck(shape[0]) 

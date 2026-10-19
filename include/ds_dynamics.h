@@ -143,7 +143,7 @@ struct ds_DynamicsProfile
     u64 ns_solverphase_end;               
     u64 ns_solverphase_duration;          
 
-    /* Dbvh rebuilding / updating timings (ns) */
+    /* DBVH rebuilding / updating timings (ns) */
     u64 ns_rebuildphase_start;    
     u64 ns_rebuildphase_end;    
     u64 ns_rebuildphase_duration;    
@@ -168,7 +168,7 @@ struct ds_DynamicsMetrics
     u32 hull_cache_probe_count;     /* Number of existing caches probed         */
     u32 hull_cache_eviction_count;  /* Number of evicted caches                 */
 
-    u32 mesh_call_count;            /* Number of calls to TriMeshBvhHullContact */
+    u32 mesh_call_count;            /* Number of calls to TriMeshBVHHullContact */
     u32 mesh_cache_probe_count;     /* Number of existing caches probed         */
     u32 mesh_cache_eviction_count;  /* Number of evicted caches                 */
 };
@@ -748,7 +748,7 @@ struct slot ds_ContactLookup(const struct ds_Dynamics *pipeline, const ds_Contac
 struct slot ds_ContactKeyLookup(const struct ds_Dynamics *pipeline, const struct ds_ContactKey key);
 
 /* Internal: Return 1 if contact shape bvh nodes still overlap, otherwise return 0. */
-u32         ds_ContactCheckBvhOverlap(const struct ds_Dynamics *pipeline, const u32 contact);
+u32         ds_ContactCheckBVHOverlap(const struct ds_Dynamics *pipeline, const u32 contact);
 /* Internal: Promote contact from non-touching active set to color in constraint graph */
 void        ds_ContactPromote(struct ds_Dynamics *pipeline, const u32 contact);
 /* Internal: Demote contact to non-touching active set from color in constraint graph */
@@ -1622,8 +1622,8 @@ struct ds_Dynamics
 
 	ds_Pool(ds_Shape)	            shape_pool;
     struct ds_BitSet                shape_dynamic_usage_set;/* Shapes in use */
-	struct bvh 		                dynamic_bvh;            /* bvh of dynamic shapes */
-	struct bvh 		                static_bvh;             /* bvh of static shapes */
+	struct BVH 		                dynamic_bvh;            /* bvh of dynamic shapes */
+	struct BVH 		                static_bvh;             /* bvh of static shapes */
 
     struct ds_BitSet                shape_dirty_set;    
     ds_CPool(ds_ProxyQuery)         dirty_shape_query;

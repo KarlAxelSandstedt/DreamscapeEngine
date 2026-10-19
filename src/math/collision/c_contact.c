@@ -1515,14 +1515,14 @@ struct c_MeshTri
 struct c_MeshContactHelper
 {
     const struct triMesh *      mesh;
-    const struct triMeshBvh *   mesh_bvh;
+    const struct triMeshBVH *   mesh_bvh;
     m3                          rot_inv;    /* convex_to_mesh's inverse: x_convex = rot_inv (x_mesh - pos) */
     v3                          pos;
     struct aabb                 bbox;       /* the convex shape's box in mesh space */
     struct aabb                 local;      /* the convex shape's box in its own frame */
 
-    const struct bvhNode *      node;
-    const struct bvhNode **     stack;
+    const struct BVHNode *      node;
+    const struct BVHNode **     stack;
     u32                         stack_count;
     u32                         leaf_next;  /* the current leaf's remaining triangles: leaf_next .. leaf_last */
     u32                         leaf_last;
@@ -1583,11 +1583,11 @@ static void c_MeshContactInit(struct c_MeshContactHelper *helper, const struct c
     helper->tmp_records = ArenaPushScratch();
     helper->tmp = ArenaPushScratch();
     helper->node = helper->mesh_bvh->bvh.pool.buf;
-    helper->stack = ArenaPush(helper->tmp, (helper->mesh_bvh->depth + 1)*sizeof(struct bvhNode *));
+    helper->stack = ArenaPush(helper->tmp, (helper->mesh_bvh->depth + 1)*sizeof(struct BVHNode *));
     helper->stack_count = 0;
     helper->leaf_next = 1;
     helper->leaf_last = 0;
-    const struct bvhNode *root = helper->node + helper->mesh_bvh->bvh.bt.root;
+    const struct BVHNode *root = helper->node + helper->mesh_bvh->bvh.bt.root;
     if (AabbTest(&helper->bbox, &root->bbox))
     {
         helper->stack[helper->stack_count++] = root;
@@ -1615,7 +1615,7 @@ static u32 c_MeshContactNext(struct c_MeshContactHelper *helper, u32 *tri_index,
                 return 0;
             }
 
-            const struct bvhNode *node = helper->stack[--helper->stack_count];
+            const struct BVHNode *node = helper->stack[--helper->stack_count];
             if (BTLeafCheck(node))
             {
                 helper->leaf_next = node->bt_child[0];
@@ -1623,8 +1623,8 @@ static u32 c_MeshContactNext(struct c_MeshContactHelper *helper, u32 *tri_index,
                 continue;
             }
 
-            const struct bvhNode *left = helper->node + node->bt_child[0];
-            const struct bvhNode *right = helper->node + node->bt_child[1];
+            const struct BVHNode *left = helper->node + node->bt_child[0];
+            const struct BVHNode *right = helper->node + node->bt_child[1];
             if (AabbTest(&helper->bbox, &right->bbox))
             {
                 ds_Assert(helper->stack_count < helper->mesh_bvh->depth + 1);

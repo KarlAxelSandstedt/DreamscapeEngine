@@ -116,8 +116,8 @@ u64 ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline)
 		+ ds_PoolSerializeSize(pipeline->joint_pool)
 		+ ds_PoolSerializeSize(pipeline->shape_pool)
 		+ ds_BitSetSerializeSize(&pipeline->shape_dynamic_usage_set)
-		+ BvhSerializeSize(&pipeline->dynamic_bvh)
-		+ BvhSerializeSize(&pipeline->static_bvh)
+		+ BVHSerializeSize(&pipeline->dynamic_bvh)
+		+ BVHSerializeSize(&pipeline->static_bvh)
 		+ ds_BitSetSerializeSize(&pipeline->shape_dirty_set)
 		+ ds_CPoolSerializeSize(pipeline->dirty_shape_query)
 		+ ds_PoolSerializeSize(pipeline->event_pool)
@@ -177,8 +177,8 @@ void ds_DynamicsSerialize(struct ss *ss, const struct ds_Dynamics *pipeline)
 	ds_PoolSerialize(ss, pipeline->joint_pool);
 	ds_PoolSerialize(ss, pipeline->shape_pool);
 	ds_BitSetSerialize(ss, &pipeline->shape_dynamic_usage_set);
-	BvhSerialize(ss, &pipeline->dynamic_bvh);
-	BvhSerialize(ss, &pipeline->static_bvh);
+	BVHSerialize(ss, &pipeline->dynamic_bvh);
+	BVHSerialize(ss, &pipeline->static_bvh);
 	ds_BitSetSerialize(ss, &pipeline->shape_dirty_set);
 	ds_CPoolSerialize(ss, pipeline->dirty_shape_query);
 	ds_PoolSerialize(ss, pipeline->event_pool);
@@ -248,8 +248,8 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynami
 		|| !ds_PoolTryDeserialize(NULL, ss, pipeline->joint_pool, GROWABLE)
 		|| !ds_PoolTryDeserialize(NULL, ss, pipeline->shape_pool, GROWABLE)
 		|| !ds_BitSetTryDeserialize(NULL, ss, &pipeline->shape_dynamic_usage_set, GROWABLE)
-		|| !BvhTryDeserialize(NULL, ss, &pipeline->dynamic_bvh, GROWABLE)
-		|| !BvhTryDeserialize(NULL, ss, &pipeline->static_bvh, GROWABLE)
+		|| !BVHTryDeserialize(NULL, ss, &pipeline->dynamic_bvh, GROWABLE)
+		|| !BVHTryDeserialize(NULL, ss, &pipeline->static_bvh, GROWABLE)
 		|| !ds_BitSetTryDeserialize(NULL, ss, &pipeline->shape_dirty_set, GROWABLE)
 		|| !ds_CPoolTryDeserialize(NULL, ss, pipeline->dirty_shape_query, GROWABLE)
 		|| !ds_PoolTryDeserialize(NULL, ss, pipeline->event_pool, GROWABLE)
