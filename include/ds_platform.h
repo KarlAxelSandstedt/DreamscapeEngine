@@ -275,7 +275,7 @@ enum fsError	FileStatusPath(file_status *status, const char *path, const struct 
 /* Return the absolute path of the current working directory (on mem); string is set to empty on error, also when mem is too small. */
 utf8		CwdGet(struct arena *mem);
 
-/* Set g_sys_env->cwd and update process' internal current working directory.
+/* Set g_sys_env->cwd and update process' internal current working directory. On failure, both stay as they were.
  *
  * RETURNS:
  *	FS_SUCCESS on success,

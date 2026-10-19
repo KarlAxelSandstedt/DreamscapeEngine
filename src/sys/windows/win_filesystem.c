@@ -623,37 +623,69 @@ utf8 CwdGet(struct arena *mem)
 
 enum fsError CwdSet(struct arena *mem, const char *path)
 {
-	enum fsError err = FS_SUCCESS;
-	HANDLE handle = CreateFileA((char *) path
+	WCHAR w_path[MAX_PATH];
+	if (!MultiByteToWideChar(CP_UTF8, 0, path, -1, w_path, MAX_PATH))
+	{
+		LogSystemError(S_ERROR);
+		return FS_PATH_INVALID;
+	}
+
+	HANDLE handle = CreateFileW(w_path
 			, GENERIC_READ
 			, FILE_SHARE_READ | FILE_SHARE_WRITE
 			, NULL
 			, OPEN_EXISTING
 			, FILE_FLAG_BACKUP_SEMANTICS
 			, NULL);
-	
+
+	enum fsError err = FS_SUCCESS;
 	if (handle == INVALID_HANDLE_VALUE)
 	{
-		g_sys_env->cwd.handle = FILE_HANDLE_INVALID;
+		switch (GetLastError())
+		{
+			case ERROR_FILE_NOT_FOUND:
+			case ERROR_PATH_NOT_FOUND: { err = FS_PATH_INVALID; } break;
+			case ERROR_ACCESS_DENIED: { err = FS_PERMISSION_DENIED; } break;
+			default: { err = FS_ERROR_UNSPECIFIED; LogSystemError(S_ERROR); } break;
+		}
+		return err;
+	}
+
+	/* FILE_FLAG_BACKUP_SEMANTICS opens regular files too */
+	BY_HANDLE_FILE_INFORMATION info;
+	if (!GetFileInformationByHandle(handle, &info))
+	{
 		err = FS_ERROR_UNSPECIFIED;
 		LogSystemError(S_ERROR);
 	}
-	else
+	else if (!(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
 	{
-		if (!SetCurrentDirectory((char *) path))
+		err = FS_PATH_INVALID;
+	}
+	else if (!SetCurrentDirectoryW(w_path))
+	{
+		switch (GetLastError())
 		{
-			/* We shouldn't use the underlying system cwd; instead, all *_at_cwd operations
-			 * go through g_sys_env on windows, so a WARNING is sufficient. */
-			err = FS_ERROR_UNSPECIFIED;
-			LogSystemError(S_WARNING);
+			case ERROR_ACCESS_DENIED: { err = FS_PERMISSION_DENIED; } break;
+			default: { err = FS_ERROR_UNSPECIFIED; LogSystemError(S_ERROR); } break;
 		}
-
-		g_sys_env->cwd.handle = handle;
-		g_sys_env->cwd.type = FILE_DIRECTORY;
-		g_sys_env->cwd.path = CwdGet(mem);	
 	}
 
-	return err;
+	/* g_sys_env->cwd changes only on success */
+	if (err != FS_SUCCESS)
+	{
+		if (!CloseHandle(handle))
+		{
+			LogSystemError(S_ERROR);
+		}
+		return err;
+	}
+
+	g_sys_env->cwd.handle = handle;
+	g_sys_env->cwd.type = FILE_DIRECTORY;
+	g_sys_env->cwd.path = CwdGet(mem);
+
+	return FS_SUCCESS;
 }
 
 enum fsError DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct file *dir)

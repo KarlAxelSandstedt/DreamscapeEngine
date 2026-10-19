@@ -1257,6 +1257,25 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
     TEST_TRUE(cwd_non_ascii.size >= suffix
             && memcmp(cwd_non_ascii.buf + cwd_non_ascii.size - suffix, FS_TEST_NON_ASCII, suffix) == 0);
 
+    /* #165: CwdSet into the non-ASCII directory succeeds; on a regular file it fails and keeps the cwd */
+    const struct file cwd_before = g_sys_env->cwd;
+    const enum fsError cwd_dir_err = CwdSet(mem, FS_TEST_DIR "\\" FS_TEST_NON_ASCII);
+    const struct file cwd_dir = g_sys_env->cwd;
+    if (cwd_dir.handle != cwd_before.handle && cwd_dir.handle != FILE_HANDLE_INVALID) { CloseHandle(cwd_dir.handle); }
+    g_sys_env->cwd = cwd_before;
+    SetCurrentDirectoryW(w_cwd);
+    TEST_EQUAL(FS_SUCCESS, cwd_dir_err);
+    TEST_TRUE(cwd_dir.path.size >= suffix
+            && memcmp(cwd_dir.path.buf + cwd_dir.path.size - suffix, FS_TEST_NON_ASCII, suffix) == 0);
+
+    const enum fsError cwd_file_err = CwdSet(mem, FS_TEST_DIR "\\a.txt");
+    const struct file cwd_file = g_sys_env->cwd;
+    if (cwd_file.handle != cwd_before.handle && cwd_file.handle != FILE_HANDLE_INVALID) { CloseHandle(cwd_file.handle); }
+    g_sys_env->cwd = cwd_before;
+    SetCurrentDirectoryW(w_cwd);
+    TEST_EQUAL(FS_PATH_INVALID, cwd_file_err);
+    TEST_TRUE(cwd_file.handle == cwd_before.handle && cwd_file.type == FILE_DIRECTORY);
+
     FilesystemTestCleanup();
 
 	return output;
