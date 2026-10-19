@@ -181,11 +181,10 @@ void SsffBuild(struct arena *mem, const u32 ssff_id)
 	{
 		u32 comp;
 		pixel[i] = stbi_load((char *) info->png[i].filepath, (i32 *) png_width + i, (i32 *) png_height + i, (i32 *) &comp, 0);
-i32 wi, he, co;
 		if (!pixel[i])
 		{
-			LogString(T_SYSTEM, S_FATAL, stbi_failure_reason());
-			ds_Assert(0);
+			Log(T_ASSET, S_FATAL, "%s: %s", info->png[i].filepath, stbi_failure_reason());
+			FatalCleanupAndExit();
 		}
 
 		ds_Assert(comp == 4);
@@ -213,24 +212,9 @@ i32 wi, he, co;
 		c[i].color_count = color_count[i];
 		c[i].sprite_count = sprite_count[i];
 
-		u32 lb = U32_MAX;
-		u32 hb = U32_MAX;
-		for (u32 bi = 0; c[i].color_count >> bi; ++bi)
-		{
-			if ((c[i].color_count >> bi) & 0x1)
-			{
-				if (lb == U32_MAX)
-				{
-					lb = bi;
-				}
-				hb = bi;
-			}
-		}
-
-		ds_Assert(lb != U32_MAX);
-		c[i].bit_depth = (hb == lb)
-			? hb
-			: hb + 1;
+		/* bits for the indices 0 .. color_count-1 */
+		ds_Assert(c[i].color_count);
+		c[i].bit_depth = (c[i].color_count > 1) ? 32 - Clz32(c[i].color_count - 1) : 0;
 
 		header->size += c[i].color_count * sizeof(u32) + c[i].sprite_count * sizeof(struct ssffSprite);
 		u32 *color_table = ArenaPushPacked(mem, c[i].color_count * sizeof(u32));
@@ -289,7 +273,7 @@ i32 wi, he, co;
 							break;	
 						}
 					}
-					//TODO ds_Assert(ci != U32_MAX);
+					ds_Assert(ci != U32_MAX);	/* the table was built from these pixels */
 					ss_WriteU32Partial(&stream, ci, c[i].bit_depth);
 				}
 			}
@@ -409,55 +393,55 @@ struct ssffTextureReturn SsffTexture(struct arena *mem, const struct ssff_header
 
 void SsffDebugPrint(FILE *out, const struct ssff_header *ssff)
 {
-	fprintf(stderr, "ssff[%p]\n{\n", ssff);
+	fprintf(out, "ssff[%p]\n{\n", ssff);
 
-	fprintf(stderr, "\theader[0]\n\t{\n");
-	fprintf(stderr, "\t\t.size = %" PRIu64 "\n", ssff->size);
-	fprintf(stderr, "\t\t.collection_count = %u\n", ssff->collection_count);
-	fprintf(stderr, "\t\t.collection_offset = %u\n", ssff->collection_offset);
-	fprintf(stderr, "\t}\n");
+	fprintf(out, "\theader[0]\n\t{\n");
+	fprintf(out, "\t\t.size = %" PRIu64 "\n", ssff->size);
+	fprintf(out, "\t\t.collection_count = %u\n", ssff->collection_count);
+	fprintf(out, "\t\t.collection_offset = %u\n", ssff->collection_offset);
+	fprintf(out, "\t}\n");
 	
-	fprintf(stderr, "\tcollection_array[%u]\n\t{\n", ssff->collection_offset);
+	fprintf(out, "\tcollection_array[%u]\n\t{\n", ssff->collection_offset);
 	const struct ssff_collection *c = (const struct ssff_collection *) (((u8 *) ssff) + ssff->collection_offset);
 	for (u32 i = 0; i < ssff->collection_count; ++i)
 	{
-		fprintf(stderr, "\t\tcollection[%u]\n\t\t{\n", i);
-		fprintf(stderr, "\t\t\t.color_count = %u\n", c[i].color_count);
-		fprintf(stderr, "\t\t\t.color_offset = %u\n", c[i].color_offset);
-		fprintf(stderr, "\t\t\t.bit_depth = %u\n", c[i].bit_depth);
-		fprintf(stderr, "\t\t\t.sprite_count = %u\n", c[i].sprite_count);
-		fprintf(stderr, "\t\t\t.sprite_offset = %u\n", c[i].sprite_offset);
-		fprintf(stderr, "\t\t\t.width = %u\n", c[i].width);
-		fprintf(stderr, "\t\t\t.height = %u\n", c[i].height);
-		fprintf(stderr, "\t\t}\n");
+		fprintf(out, "\t\tcollection[%u]\n\t\t{\n", i);
+		fprintf(out, "\t\t\t.color_count = %u\n", c[i].color_count);
+		fprintf(out, "\t\t\t.color_offset = %u\n", c[i].color_offset);
+		fprintf(out, "\t\t\t.bit_depth = %u\n", c[i].bit_depth);
+		fprintf(out, "\t\t\t.sprite_count = %u\n", c[i].sprite_count);
+		fprintf(out, "\t\t\t.sprite_offset = %u\n", c[i].sprite_offset);
+		fprintf(out, "\t\t\t.width = %u\n", c[i].width);
+		fprintf(out, "\t\t\t.height = %u\n", c[i].height);
+		fprintf(out, "\t\t}\n");
 	}
-	fprintf(stderr, "\t}\n");
+	fprintf(out, "\t}\n");
 	for (u32 i = 0; i < ssff->collection_count; ++i)
 	{
 		const u32 *color = (u32 *) (((u8 *) ssff) + c[i].color_offset);
 		const struct ssffSprite *sprite = (const struct ssffSprite *) (((u8 *) ssff) + c[i].sprite_offset);
-		fprintf(stderr, "\tcolor_table[%u]\n\t{\n", c[i].color_offset);
+		fprintf(out, "\tcolor_table[%u]\n\t{\n", c[i].color_offset);
 		for (u32 j = 0; j < c[i].color_count; ++j)
 		{
-			fprintf(stderr, "\t\tcolor[%u] = { %u, %u, %u, %u }\n"
+			fprintf(out, "\t\tcolor[%u] = { %u, %u, %u, %u }\n"
 				, j
 				, (color[j] >> 24) & 0xff
 				, (color[j] >> 16) & 0xff
 				, (color[j] >>  8) & 0xff
 				, (color[j] >>  0) & 0xff);
 		}
-		fprintf(stderr, "\t}\n");
-		fprintf(stderr, "\tsprite_table[%u]\n\t{\n", c[i].sprite_offset);
+		fprintf(out, "\t}\n");
+		fprintf(out, "\tsprite_table[%u]\n\t{\n", c[i].sprite_offset);
 		for (u32 j = 0; j < c[i].sprite_count; ++j)
 		{
-			fprintf(stderr, "\t\tsprite[%u]\n\t\t{\n", j);
-			fprintf(stderr, "\t\t\t.x0 = %u\n", sprite[j].x0);
-			fprintf(stderr, "\t\t\t.x1 = %u\n", sprite[j].x1);
-			fprintf(stderr, "\t\t\t.y0 = %u\n", sprite[j].y0);
-			fprintf(stderr, "\t\t\t.y1 = %u\n", sprite[j].y1);
-			fprintf(stderr, "\t\t}\n");
+			fprintf(out, "\t\tsprite[%u]\n\t\t{\n", j);
+			fprintf(out, "\t\t\t.x0 = %u\n", sprite[j].x0);
+			fprintf(out, "\t\t\t.x1 = %u\n", sprite[j].x1);
+			fprintf(out, "\t\t\t.y0 = %u\n", sprite[j].y0);
+			fprintf(out, "\t\t\t.y1 = %u\n", sprite[j].y1);
+			fprintf(out, "\t\t}\n");
 		}
-		fprintf(stderr, "\t}\n");
+		fprintf(out, "\t}\n");
 	}
 }
 

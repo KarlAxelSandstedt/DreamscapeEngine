@@ -260,14 +260,14 @@ void AssetInit(struct arena *mem_persistent)
 	g_asset_db->ssff = InternalAssetSsffArrayInit(mem_persistent);
 	g_asset_db->font = InternalAssetFontArrayInit(mem_persistent);
 
-#if	DS_DEV
+#ifdef	DS_DEV
 	InternalFreetypeInit();
 #endif
 }
 
 void AssetShutdown(void)
 {
-#if	DS_DEV
+#ifdef	DS_DEV
 	InternalFreetypeFree();
 #endif
 }
