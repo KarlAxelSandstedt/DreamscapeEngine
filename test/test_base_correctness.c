@@ -1165,10 +1165,39 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
 #define FS_TEST_NON_ASCII_W L"\x00e5\x00e4\x00f6"
 /* a file name longer than a 64-byte arena */
 #define FS_TEST_LONG_NAME 150
+/* an absolute path that fits MAX_PATH, while "\\?\" + it (GetFinalPathNameByHandleW's form) does not */
+#define FS_TEST_LONG_PATH 257
+
+/*
+ * Write "\\?\" + the absolute path of a directory under FS_TEST_DIR whose absolute path is FS_TEST_LONG_PATH units
+ * long and return the length of its name; 0 if the working directory is too long for one.
+ */
+static u32 FilesystemTestLongDir(WCHAR w_path[MAX_PATH + 8])
+{
+    WCHAR cwd[MAX_PATH];
+    const u32 cwd_len = (u32) GetCurrentDirectoryW(MAX_PATH, cwd);
+    const u32 used = cwd_len + (u32) sizeof("\\" FS_TEST_DIR "\\") - 1;
+    if (cwd_len == 0 || MAX_PATH <= cwd_len || FS_TEST_LONG_PATH <= used || 255 < FS_TEST_LONG_PATH - used)
+    {
+        return 0;
+    }
+
+    const u32 name_len = FS_TEST_LONG_PATH - used;
+    u32 n = 0;
+    for (const WCHAR *c = L"\\\\?\\"; *c; ++c) { w_path[n++] = *c; }
+    for (u32 i = 0; i < cwd_len; ++i) { w_path[n++] = cwd[i]; }
+    for (const WCHAR *c = L"\\ds_filesystem_test\\"; *c; ++c) { w_path[n++] = *c; }
+    for (u32 i = 0; i < name_len; ++i) { w_path[n++] = L'd'; }
+    w_path[n] = L'\0';
+    return name_len;
+}
 
 /* remove what FilesystemTest creates (also the leftovers of an interrupted run); OS API, test only */
 static void FilesystemTestCleanup(void)
 {
+    WCHAR w_long_dir[MAX_PATH + 8];
+    if (FilesystemTestLongDir(w_long_dir)) { RemoveDirectoryW(w_long_dir); }
+
     WCHAR long_file[sizeof("ds_filesystem_test\\sub\\") + FS_TEST_LONG_NAME];
     u32 n = 0;
     for (const WCHAR *c = L"ds_filesystem_test\\sub\\"; *c; ++c) { long_file[n++] = *c; }
@@ -1286,6 +1315,31 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
     }
     ds_CPoolDealloc(entries);
     TEST_EQUAL((have_link) ? 15 : 7, found);
+
+    /*
+     * #170: the final path of a directory doesn't fit MAX_PATH ("\\?\" + its 257 units): nothing is joined to it
+     * (FS_PATH_INVALID) and its status is not read (FS_ERROR_UNSPECIFIED)
+     */
+    WCHAR w_long_dir[MAX_PATH + 8];
+    const u32 long_dir_len = FilesystemTestLongDir(w_long_dir);
+    if (long_dir_len)
+    {
+        TEST_TRUE(CreateDirectoryW(w_long_dir, NULL) != 0);
+        char long_dir[MAX_PATH] = FS_TEST_DIR "\\";
+        const u32 long_dir_prefix = sizeof(FS_TEST_DIR "\\") - 1;
+        memset(long_dir + long_dir_prefix, 'd', long_dir_len);
+        long_dir[long_dir_prefix + long_dir_len] = '\0';
+        struct file deep = FileNull();
+        TEST_EQUAL(FS_SUCCESS, DirectoryTryOpenAtCwd(mem, &deep, long_dir));
+        struct file in_deep = FileNull();
+        const enum fsError in_deep_err = FileTryCreate(mem, &in_deep, "x", &deep, 0);
+        if (in_deep.handle != FILE_HANDLE_INVALID) { FileClose(&in_deep); }
+        file_status deep_status;
+        const enum fsError deep_status_err = FileStatusFile(&deep_status, &deep);
+        FileClose(&deep);
+        TEST_EQUAL(FS_PATH_INVALID, in_deep_err);
+        TEST_EQUAL(FS_ERROR_UNSPECIFIED, deep_status_err);
+    }
 
     struct arena tiny = ArenaAlloc(NULL, 4);
     TEST_TRUE(tiny.stack_ptr != NULL);

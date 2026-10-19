@@ -39,29 +39,38 @@ static enum fsError WAbsolutePathFromRelativePathAndDirectory(WCHAR w_absolute_p
 	if (!len_relative)
 	{
 		LogSystemError(S_ERROR);
-		return FS_HANDLE_INVALID;
+		return FS_PATH_INVALID;
 	}
 
 	if (dir == NULL)
 	{
 		const DWORD len_absolute = GetFullPathNameW(w_relative_path, MAX_PATH, w_absolute_path, NULL);
-		if (len_absolute == 0 || MAX_PATH <= len_absolute)
+		if (len_absolute == 0)
 		{
 			LogSystemError(S_ERROR);
-			return FS_HANDLE_INVALID;
+			return FS_PATH_INVALID;
 		}
-		return FS_SUCCESS;
+
+		/* the path did not fit: len_absolute is the size required */
+		return (len_absolute < MAX_PATH) ? FS_SUCCESS : FS_PATH_INVALID;
 	}
 
-	if (!GetFinalPathNameByHandleW(dir->handle, w_directory_path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS))
+	const DWORD len_directory = GetFinalPathNameByHandleW(dir->handle, w_directory_path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+	if (len_directory == 0)
 	{
 		LogSystemError(S_ERROR);
 		return FS_HANDLE_INVALID;
 	}
 
+	/* the path did not fit: len_directory is the size required, and nothing was written */
+	if (MAX_PATH <= len_directory)
+	{
+		return FS_PATH_INVALID;
+	}
+
 	if (PathCchCombine(w_absolute_path, MAX_PATH, w_directory_path, w_relative_path) != S_OK)
 	{
-		return FS_HANDLE_INVALID;
+		return FS_PATH_INVALID;
 	}
 
 	return FS_SUCCESS;
@@ -771,9 +780,16 @@ enum fsError DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct
 enum fsError FileStatusFile(file_status *status, const struct file *file)
 {
 	WCHAR w_path[MAX_PATH];
-	if (!GetFinalPathNameByHandleW(file->handle, w_path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS))
+	const DWORD len = GetFinalPathNameByHandleW(file->handle, w_path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+	if (len == 0)
 	{
 		LogSystemError(S_ERROR);
+		return FS_ERROR_UNSPECIFIED;
+	}
+
+	/* the path did not fit: len is the size required, and nothing was written */
+	if (MAX_PATH <= len)
+	{
 		return FS_ERROR_UNSPECIFIED;
 	}
 

@@ -159,7 +159,9 @@ u32		Utf8PathRelativeCheck(const utf8 path);
 /*
  * Paths are relative to dir (or the cwd): FileTryCreate, FileTryOpen, DirectoryTryCreate and DirectoryTryOpen
  * return FS_PATH_INVALID for an absolute path. Platforms differ: FileDump accepts absolute paths on Linux and web
- * (Windows goes through FileTryOpen); FileStatusPath rejects them on Linux.
+ * (Windows goes through FileTryOpen); FileStatusPath rejects them on Linux. On Windows, the joined absolute path (dir's
+ * in its "\\?\" form, then the relative one) must fit MAX_PATH (260 UTF-16 units with the terminator), else
+ * FS_PATH_INVALID.
  *
  * The Try functions below expect *file closed (FILE_HANDLE_INVALID; asserted), copy the path onto mem and set the
  * type from the opened file. Errors besides those named: FS_PATH_INVALID (nothing at the path), FS_PERMISSION_DENIED,
