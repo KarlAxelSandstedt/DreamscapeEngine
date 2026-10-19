@@ -707,6 +707,7 @@ enum fsError DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct
 	WCHAR w_path[MAX_PATH];
 	if (WAbsolutePathFromRelativePathAndDirectory(w_path, "*", dir) != FS_SUCCESS)
 	{
+		FileClose(dir);
 		return FS_ERROR_UNSPECIFIED;
 	}
 
@@ -715,6 +716,7 @@ enum fsError DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct
 	if (handle == INVALID_HANDLE_VALUE)
 	{
 		LogSystemError(S_ERROR);
+		FileClose(dir);
 		return FS_ERROR_UNSPECIFIED;
 	}
 	
@@ -723,7 +725,6 @@ enum fsError DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct
 	const u32 vec_record = vec->count;
 
 	enum fsError ret = FS_SUCCESS;
-	file_status status;
 	char cstr_filename[4*MAX_PATH];
 	do
 	{
@@ -738,16 +739,22 @@ enum fsError DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct
 		}
 
 		file->path = Utf8Cstr(mem, cstr_filename);
-		if (FileStatusPath(&status, cstr_filename, dir) != FS_SUCCESS)
+		if (file->path.len == 0)
 		{
-			ret = FS_ERROR_UNSPECIFIED;
+			ret = FS_BUFFER_TO_SMALL;
 			break;
 		}
 
+		/* the listing's own attributes: no second lookup that can fail (pagefile.sys, an entry removed meanwhile) */
+		const file_status status = { .dwFileAttributes = file_info.dwFileAttributes };
 		file->type = FileStatusGetType(&status);
-
-
 	} while (FindNextFileW(handle, &file_info) != 0);
+
+	if (ret == FS_SUCCESS && GetLastError() != ERROR_NO_MORE_FILES)
+	{
+		LogSystemError(S_ERROR);
+		ret = FS_ERROR_UNSPECIFIED;
+	}
 
 	if (ret != FS_SUCCESS)
 	{

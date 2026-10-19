@@ -1163,10 +1163,19 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
 /* U+00E5 U+00E4 U+00F6 as UTF-8 and UTF-16, escaped: MSVC reads the source in the ANSI code page */
 #define FS_TEST_NON_ASCII "\xc3\xa5\xc3\xa4\xc3\xb6"
 #define FS_TEST_NON_ASCII_W L"\x00e5\x00e4\x00f6"
+/* a file name longer than a 64-byte arena */
+#define FS_TEST_LONG_NAME 150
 
 /* remove what FilesystemTest creates (also the leftovers of an interrupted run); OS API, test only */
 static void FilesystemTestCleanup(void)
 {
+    WCHAR long_file[sizeof("ds_filesystem_test\\sub\\") + FS_TEST_LONG_NAME];
+    u32 n = 0;
+    for (const WCHAR *c = L"ds_filesystem_test\\sub\\"; *c; ++c) { long_file[n++] = *c; }
+    for (u32 i = 0; i < FS_TEST_LONG_NAME; ++i) { long_file[n++] = L'l'; }
+    long_file[n] = L'\0';
+    DeleteFileW(long_file);
+
     DeleteFileW(L"ds_filesystem_test\\a.txt");
     DeleteFileW(L"ds_filesystem_test\\empty.txt");
     RemoveDirectoryW(L"ds_filesystem_test\\dangling");
@@ -1233,7 +1242,26 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
     struct file sub = FileNull();
     TEST_EQUAL(FS_SUCCESS, DirectoryTryCreate(mem, &sub, "sub", &dir));
     TEST_EQUAL(FILE_DIRECTORY, sub.type);
-    FileClose(&sub);
+
+    /* #168: a listing out of memory is FS_BUFFER_TO_SMALL, the directory closed, entries and mem as before */
+    char long_name[FS_TEST_LONG_NAME + 1];
+    memset(long_name, 'l', FS_TEST_LONG_NAME);
+    long_name[FS_TEST_LONG_NAME] = '\0';
+    struct file long_file = FileNull();
+    TEST_EQUAL(FS_SUCCESS, FileTryCreate(mem, &long_file, long_name, &sub, 0));
+    FileClose(&long_file);
+    struct arena tiny_list = ArenaAlloc(NULL, 64);
+    TEST_TRUE(tiny_list.stack_ptr != NULL);
+    const u64 tiny_list_left = tiny_list.mem_left;
+    ds_CPool(file) few;
+    ds_CPoolAlloc(NULL, few, 8, GROWABLE);
+    const enum fsError few_err = DirectoryPushEntries(&tiny_list, &few, &sub);
+    const u32 few_count = few.count;
+    const u64 tiny_list_after = tiny_list.mem_left;
+    ds_CPoolDealloc(few);
+    ArenaFree(&tiny_list);
+    TEST_EQUAL(FS_BUFFER_TO_SMALL, few_err);
+    TEST_TRUE(sub.handle == FILE_HANDLE_INVALID && few_count == 0 && tiny_list_after == tiny_list_left);
 
     struct file non_ascii = FileNull();
     TEST_EQUAL(FS_SUCCESS, DirectoryTryCreate(mem, &non_ascii, FS_TEST_NON_ASCII, &dir));
