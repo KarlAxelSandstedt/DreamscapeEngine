@@ -2,7 +2,6 @@
 #include "ds_random.h"
 
 ds_ThreadLocal u64 tl_xoshiro_256[4];
-ds_ThreadLocal u64 tl_pushed_state[4];
 
 /* xoshiro_256** base state: stream 0; set by Xoshiro256Init before any other thread starts */
 u64 g_xoshiro_256[4];

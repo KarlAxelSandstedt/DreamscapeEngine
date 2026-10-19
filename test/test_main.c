@@ -220,7 +220,8 @@ static void run_performance_suite(struct suite_Performance *suite)
 		RTWave(&tester, suite->parallel_test[i].size, retry_s);
 		do
 		{
-			RngPushState();
+			/* every iteration draws the same numbers */
+			ThreadXoshiro256InitSequence(test_stream);
 			ArenaPushRecord(mem);
 			AtomicStoreRel32(&phase.a_barrier, 0);
 
@@ -258,8 +259,8 @@ static void run_performance_suite(struct suite_Performance *suite)
             }
 
 			ArenaPopRecord(mem);
-			RngPopState();
 		} while (RTTestingCheck(&tester));
+		test_stream += 1;
 
 		if (suite->parallel_test[i].test_free)
 		{
@@ -284,7 +285,7 @@ static void run_performance_suite(struct suite_Performance *suite)
 		RTWave(&tester, suite->serial_test[i].size, retry_s);
 		do
 		{
-			RngPushState();
+			ThreadXoshiro256InitSequence(test_stream);
 			if (suite->serial_test[i].test_reset)
 			{
 				suite->serial_test[i].test_reset(args);
@@ -293,9 +294,8 @@ static void run_performance_suite(struct suite_Performance *suite)
 			RTBeginTime(&tester);	
 			suite->serial_test[i].test(args);	
 			RTEndTime(&tester);
-		
-			RngPopState();
 		} while (RTTestingCheck(&tester));
+		test_stream += 1;
 
 		if (suite->serial_test[i].test_free)
 		{

@@ -1721,8 +1721,8 @@ void                        ds_DynamicsAllocShell(struct arena *mem, struct ds_D
 /*
  * Internal: Read size bytes of frame data into a random worker frame (the next one if it is full) and set *dst.
  * Spreading the data leaves room in every worker frame, so a restore inside a tick doesn't starve a worker of
- * frame memory. Uses the thread's rng: callers wrap deserialization in RngPushState/RngPopState (one slot, not
- * a stack). Returns 1 on success and 0 on failure.
+ * frame memory. The worker is chosen by a local generator seeded by the stream position, so the thread's numbers
+ * are untouched. Returns 1 on success and 0 on failure.
  */
 u32                         ds_DynamicsFrameDataTryDeserialize(struct ss *ss, void **dst, struct ds_Dynamics *pipeline, const u64 size);
 /* Internal: Read size bytes of heap data (a sleeping set's arena) into mem and set *dst. Returns 1 on success and 0 on failure. */

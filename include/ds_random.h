@@ -23,7 +23,8 @@ ds_random.h
 Pseudo-random numbers from xoshiro256** (not cryptographic): a generator per thread, seeded by ds_Init, and
 local generators (struct rng) seeded by their user. Integer arithmetic only, so a seed gives the same u64
 numbers on every platform and compiler. The simulation never draws from either; the engine's users are the
-job scheduler (steal victims), TPool (free-list choice), snapshot restores (worker arena) and the editor.
+job scheduler (steal victims), TPool (free-list choice), snapshot restores (a local generator) and the editor.
+The thread state cannot be saved and restored: code that must not disturb it uses a local generator.
 
 Sections: thread generator, local generator, initialization; inline definitions at the bottom.
 */
@@ -47,10 +48,6 @@ extern "C" {
  * A thread never seeded (not started by the job system) has the all-zero state and draws 0 forever.
  */
 
-/* push current thread local rng state: one saved state, not a stack (a second push overwrites the first) */
-static ds_ForceInline void RngPushState(void);
-/* pop old rng state: the state of the last push */
-static ds_ForceInline void RngPopState(void);
 /* gen [0, U64_MAX] random number */
 static ds_ForceInline u64 RngU64(void);
 /* gen [min, max] random number; min <= max (asserted), [0, U64_MAX] allowed; min + r % (max - min + 1): uniform up to a bias of (max - min + 1) / 2^64 */
@@ -98,7 +95,6 @@ u64 	TestXoshiro256Next(void);
 
 /* the thread generator's state and its pushed copy (ds_random.c), used by the inline functions below */
 extern ds_ThreadLocal u64 tl_xoshiro_256[4];
-extern ds_ThreadLocal u64 tl_pushed_state[4];
 
 /*************************** xoshiro256**: inline definitions ***************************/
 
@@ -123,22 +119,6 @@ static ds_ForceInline u64 Xoshiro256Next(u64 s[4])
 }
 
 /*************************** THREAD-SAFE RNG API: inline definitions ***************************/
-
-static ds_ForceInline void RngPushState(void)
-{
-	tl_pushed_state[0] = tl_xoshiro_256[0];
-	tl_pushed_state[1] = tl_xoshiro_256[1];
-	tl_pushed_state[2] = tl_xoshiro_256[2];
-	tl_pushed_state[3] = tl_xoshiro_256[3];
-}
-
-static ds_ForceInline void RngPopState(void)
-{
-	tl_xoshiro_256[0] = tl_pushed_state[0];
-	tl_xoshiro_256[1] = tl_pushed_state[1];
-	tl_xoshiro_256[2] = tl_pushed_state[2];
-	tl_xoshiro_256[3] = tl_pushed_state[3];
-}
 
 static ds_ForceInline u64 RngU64(void)
 {

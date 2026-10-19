@@ -66,7 +66,10 @@ u32 ds_DynamicsFrameDataTryDeserialize(struct ss *ss, void **dst, struct ds_Dyna
 		return 0;
 	}
 
-	const u32 start = (u32) RngU64Range(0, pipeline->worker_count - 1);
+	/* a local generator seeded by the stream position: spread without touching the thread's numbers */
+	struct rng rng;
+	RngLocalInit(&rng, ss->bit_index);
+	const u32 start = (u32) RngLocalU64Range(&rng, 0, pipeline->worker_count - 1);
 	for (u32 i = 0; i < pipeline->worker_count && !*dst; ++i)
 	{
 		*dst = ArenaPushAligned(pipeline->worker[(start + i) % pipeline->worker_count].frame, size, 1);
@@ -204,15 +207,12 @@ void ds_DynamicsSerialize(struct ss *ss, const struct ds_Dynamics *pipeline)
 u32 ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynamics *pipeline, ds_SDB(c_Shape) *cshape_db)
 {
 	ds_Assert(mem && ss->bit_index % 8 == 0);
-	/* frame data placement uses the rng; restore its state so deserialization doesn't affect the simulation */
-	RngPushState();
 
 	const u64 bit_index = ss->bit_index;
 	const u64 mem_left = mem->mem_left;
 	*pipeline = (struct ds_Dynamics) { 0 };
 	if (ss_BytesLeft(ss) < DS_SNAPSHOT_HEADER_SIZE)
 	{
-		RngPopState();
 		return 0;
 	}
 
@@ -223,7 +223,6 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynami
 	if (worker_count == 0)
 	{
 		ss->bit_index = bit_index;
-		RngPopState();
 		return 0;
 	}
 
@@ -285,7 +284,6 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynami
 		}
 	}
 
-	RngPopState();
 	return 1;
 
 failure:
@@ -293,6 +291,5 @@ failure:
 	ArenaPopPacked(mem, mem_left - mem->mem_left);
 	*pipeline = (struct ds_Dynamics) { 0 };
 	ss->bit_index = bit_index;
-	RngPopState();
 	return 0;
 }

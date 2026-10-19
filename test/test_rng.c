@@ -55,10 +55,9 @@ struct test_Output RngLocalTest(struct test_Environment *env)
         }
     }
 
-    /* the thread's next number, before and after using a local generator */
-    RngPushState();
-    const u64 thread_before = RngU64();
-    RngPopState();
+    /* the thread's state before and after using a local generator */
+    u64 thread_before[4];
+    for (u32 i = 0; i < 4; ++i) { thread_before[i] = tl_xoshiro_256[i]; }
 
     struct rng a, b;
     RngLocalInit(&a, 42);
@@ -74,10 +73,7 @@ struct test_Output RngLocalTest(struct test_Environment *env)
         TEST_TRUE(RngLocalU64Range(&a, 0, U64_MAX) == RngLocalU64Range(&b, 0, U64_MAX));
     }
 
-    RngPushState();
-    const u64 thread_after = RngU64();
-    RngPopState();
-    TEST_TRUE(thread_before == thread_after);
+    for (u32 i = 0; i < 4; ++i) { TEST_TRUE(thread_before[i] == tl_xoshiro_256[i]); }
 
 	return output;
 }
@@ -89,8 +85,8 @@ extern u64 g_xoshiro_256[4];
  * The thread generator's streams against reference values computed independently: xoshiro256**'s state update is
  * linear over GF(2), so stream k's state is T^(k * 2^128) s, with T^(2^128) found by squaring the 256x256 matrix.
  * Xoshiro256Init seeds the calling thread with stream 0; TestXoshiro256Next advances the base, so a stream seeded
- * afterwards starts one number later; a pop restores the state of the last push. The thread's state and the base
- * are restored before checking, so the test leaves both as it found them.
+ * afterwards starts one number later. The thread's state and the base are restored before checking, so the test
+ * leaves both as it found them.
  */
 struct test_Output RngThreadTest(struct test_Environment *env)
 {
@@ -105,15 +101,8 @@ struct test_Output RngThreadTest(struct test_Environment *env)
     const u64 stream_first[3] = { 0x6666666666666c65, 0x83dbe1a347859f12, 0xd0a354ef5e6e8139 };
     const u64 stream_0_second = 0xd90633608dbae0aa;
 
-    /* a pop restores the pushed state */
-    RngPushState();
-    const u64 pushed_first = RngU64();
-    const u64 pushed_second = RngU64();
-    RngPopState();
-
-    RngPushState();
-    const u64 popped_first = RngU64();
-    const u64 popped_second = RngU64();
+    u64 thread_saved[4];
+    for (u32 i = 0; i < 4; ++i) { thread_saved[i] = tl_xoshiro_256[i]; }
 
     u64 base[4];
     for (u32 i = 0; i < 4; ++i) { base[i] = g_xoshiro_256[i]; }
@@ -155,9 +144,8 @@ struct test_Output RngThreadTest(struct test_Environment *env)
     }
 
     Xoshiro256Init(base);
-    RngPopState();
+    for (u32 i = 0; i < 4; ++i) { tl_xoshiro_256[i] = thread_saved[i]; }
 
-    TEST_TRUE(pushed_first == popped_first && pushed_second == popped_second);
     TEST_TRUE(init_first == stream_first[0] && init_second == stream_0_second);
     TEST_TRUE(stream_ok);
     TEST_TRUE(first[0] == stream_first[0] && first[1] == stream_first[1] && first[2] == stream_first[2]);
