@@ -73,27 +73,50 @@ void FontBuild(struct arena *mem, const u32 id)
     ds_CPoolAlloc(mem, stack_pixels, glyph_max_count, NOT_GROWABLE);
     ds_CPoolAlloc(mem, stack_glyph, glyph_max_count, NOT_GROWABLE);
 	
-	/* the not-found glyph (.notdef, the box), rendered like the others */
-	error = FT_Load_Char(face, 0, FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL);
+	/* the not-found glyph: glyph index 0 (.notdef, usually a box; FT_Load_Char(0) would give the cmap's empty .null) */
+	error = FT_Load_Glyph(face, 0, FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL);
 	if (error)
 	{
 		LogString(T_ASSET, S_FATAL, "Failed to load the not-found glyph");
 		FatalCleanupAndExit();
 	}
 
-	total_glyph_width += face->glyph->bitmap.width;
-	glyph_width_max = (i32) face->glyph->bitmap.width;
-	glyph_height_max = (i32) face->glyph->bitmap.rows;
-	u8 *pixels = ArenaPushMemcpy(mem, face->glyph->bitmap.buffer, face->glyph->bitmap.width * face->glyph->bitmap.rows);
-	ds_CPoolPushValue(stack_pixels, pixels);
-	const u32 glyph_unknown_index = stack_glyph.count;
-	ds_CPoolPushValue(stack_glyph, ((struct fontGlyph)
+	struct fontGlyph unknown =
 	{
 		.size = V2I32((i32) face->glyph->bitmap.width, (i32) face->glyph->bitmap.rows),
 		.bearing = V2I32(face->glyph->bitmap_left, face->glyph->bitmap_top),
 		.advance = (i32) face->glyph->advance.x >> 6,
 		.codepoint = 0,
-	}));
+	};
+	u8 *pixels;
+	if (unknown.size.x > 0 && unknown.size.y > 0)
+	{
+		pixels = ArenaPushMemcpy(mem, face->glyph->bitmap.buffer, face->glyph->bitmap.width * face->glyph->bitmap.rows);
+	}
+	else
+	{
+		/* a font whose .notdef is empty: an unmapped codepoint must show something, so draw a box */
+		const i32 w = ((i32) asset->pixel_glyph_height + 1) / 2;
+		const i32 h = (i32) (face->size->metrics.ascender >> 6);
+		unknown.size = V2I32(w, h);
+		unknown.bearing = V2I32(1, h);
+		unknown.advance = (u32) w + 2;
+		pixels = ArenaPush(mem, (u64) w*h);
+		memset(pixels, 0, (u64) w*h);
+		for (i32 y = 0; y < h; ++y)
+		{
+			for (i32 x = 0; x < w; ++x)
+			{
+				pixels[y*w + x] = (y == 0 || y == h - 1 || x == 0 || x == w - 1) ? 255 : 0;
+			}
+		}
+	}
+	total_glyph_width += unknown.size.x;
+	glyph_width_max = unknown.size.x;
+	glyph_height_max = unknown.size.y;
+	ds_CPoolPushValue(stack_pixels, pixels);
+	const u32 glyph_unknown_index = stack_glyph.count;
+	ds_CPoolPushValue(stack_glyph, unknown);
 
 	/* printable ASCII, Latin-1 Supplement, Latin Extended-A and B (the C0 and C1 control codes skipped) */
 	for (u32 c = 0x20; c <= 0x024f; ++c)
@@ -101,6 +124,10 @@ void FontBuild(struct arena *mem, const u32 id)
 		if (c == 0x7f)
 		{
 			c = 0xa0;
+		}
+		if (FT_Get_Char_Index(face, c) == 0)
+		{
+			continue;	/* not in the font: the lookup falls back to the not-found glyph */
 		}
 		/* load embeded bitmap if found, otherwise load native image of glyph and 
 		 * render anti-aliased coverage bitmap (8bit pixmap) */
@@ -128,6 +155,10 @@ void FontBuild(struct arena *mem, const u32 id)
 	/* Greek and Coptic */
 	for (u32 c = 0x0370; c <= 0x03ff; ++c)
 	{
+		if (FT_Get_Char_Index(face, c) == 0)
+		{
+			continue;
+		}
 		error = FT_Load_Char(face, c, FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL);
 		if (error)
 		{
