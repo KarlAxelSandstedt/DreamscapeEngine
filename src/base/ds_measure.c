@@ -72,14 +72,14 @@ void PerfCyclesThreadInit(void)
 		const char *reason = (errno == EACCES || errno == EPERM) ? "not permitted (kernel.perf_event_paranoid > 2?)"
 				   : (errno == ENOENT || errno == ENODEV || errno == EOPNOTSUPP) ? "no cycle counter (VM?)"
 				   : "perf_event_open failed";
-		Log(T_SYSTEM, S_NOTE, "PerfCycles unavailable on thread %u: %s (errno %d)", ds_ThreadSelfIndex(), reason, errno);
+		Log(T_SYSTEM, S_NOTE, "PerfCycles unavailable on thread %u: %s (errno %i)", ds_ThreadSelfIndex(), reason, errno);
 		return;
 	}
 
 	struct perf_event_mmap_page *page = mmap(NULL, (size_t) sysconf(_SC_PAGESIZE), PROT_READ, MAP_SHARED, fd, 0);
 	if (page == MAP_FAILED)
 	{
-		Log(T_SYSTEM, S_NOTE, "PerfCycles unavailable on thread %u: mmap failed (errno %d)", ds_ThreadSelfIndex(), errno);
+		Log(T_SYSTEM, S_NOTE, "PerfCycles unavailable on thread %u: mmap failed (errno %i)", ds_ThreadSelfIndex(), errno);
 		close(fd);
 		return;
 	}

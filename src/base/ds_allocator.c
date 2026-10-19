@@ -782,7 +782,7 @@ void RingDealloc(struct ring *ring)
 {
 	if (munmap(ring->buf, 2*ring->mem_total) == -1)
 	{
-		Log(T_SYSTEM, S_ERROR, "%s:%d - %s", __FILE__, __LINE__, strerror(errno));
+		Log(T_SYSTEM, S_ERROR, "%s:%i - %s", __FILE__, __LINE__, strerror(errno));
 	}
 	*ring = RingEmpty();
 }
