@@ -20,43 +20,6 @@
 #include "ds_font.h"
 #include "ds_float.h"
 
-static u32 FontUtf32WhitespaceWidth(const struct font *font, const utf32 *whitespace, const u32 tab_size)
-{
-	u32 pixels = 0;
-
-	const struct fontGlyph *glyph = GlyphLookup(font, (u32) ' ');
-	const u32 space_pixels = glyph->advance;
-	const u32 tab_pixels = tab_size*space_pixels;
-	u32 new_line = 0;
-	for (u32 i = 0; i < whitespace->len; ++i)
-	{
-		switch (whitespace->buf[i])
-		{
-			case ' ':
-			{
-				pixels += space_pixels;
-			} break;
-
-			case '\t':
-			{
-				pixels += tab_pixels;
-			} break;
-
-			case '\n':
-			{
-				new_line = 1;
-			} break;
-
-			default:
-			{
-				ds_Assert(0 && "whitespace string contains non-whitespace");
-			}
-		}
-	}
-
-	return (new_line) ? U32_MAX : pixels;
-}
-
 static utf32 FontStreamSubstringOnRow(utf32 *text, u32 *x_new_offset, const struct font *font, const u32 x_offset, const u32 line_width)
 {
 	utf32 sub = { .len = 0, .buf = text->buf };
@@ -96,192 +59,145 @@ static utf32 FontStreamSubstringOnRow(utf32 *text, u32 *x_new_offset, const stru
 	return sub;
 }
 
-struct textLayout *Utf32TextLayout(struct arena *mem, const utf32 *str, const f32 line_width, const u32 tab_size, const struct font *font)
+/* append a line; its glyphs are pushed packed right behind it, so nothing else may push on mem meanwhile */
+static struct textLine *FontLayoutLineNew(struct arena *mem, struct textLayout *layout, struct textLine *line)
 {
-	struct textLayout *layout = ArenaPush(mem, sizeof(struct textLayout));
-	layout->line_count = 1;
-	layout->line = ArenaPush(mem, sizeof(struct textLine));
-	layout->line->next = NULL;
-	layout->line->glyph_count = 0;
-	layout->line->glyph = (void *) mem->stack_ptr;
-	struct textLine *line = layout->line;
-
-	const u32 line_pixels = (line_width == F32_INFINITY) ? U32_MAX : (u32) line_width;
-
-	u32 x_offset = 0;
-	u32 begin_new_line = 0;
-	utf32 stream = *str;
-	while (stream.len)
+	struct textLine *next = ArenaPush(mem, sizeof(struct textLine));
+	next->next = NULL;
+	next->glyph_count = 0;
+	next->glyph = (void *) mem->stack_ptr;
+	if (line)
 	{
-		utf32 whitespace = Utf32StreamConsumeWhitespace(&stream);
-		const u32 pixels = FontUtf32WhitespaceWidth(font, &whitespace, tab_size);
-		x_offset = (pixels == U32_MAX || x_offset + pixels > (u32) line_pixels) ? line_pixels : x_offset + pixels;
-
-		utf32 word = Utf32StreamConsumeNonWhitespace(&stream);
-		/* fill row(s) with word */
-		while (word.len)
-		{
-			if (begin_new_line)
-			{
-				layout->line_count += 1;
-				line->next = ArenaPush(mem, sizeof(struct textLine));
-				line = line->next;
-				line->next = NULL;
-				line->glyph_count = 0;
-				line->glyph = (void *) mem->stack_ptr;
-				begin_new_line = 0;
-			}
-
-			u32 x = x_offset;
-			/* find substring of word that fits on row, advance substring */
-			utf32 sub = FontStreamSubstringOnRow(&word, &x_offset, font, x_offset, line_pixels);
-			for (u32 i = 0; i < sub.len; ++i)
-			{
-				ArenaPushPacked(mem, sizeof(struct textGlyph));
-				line->glyph[line->glyph_count].x = x;
-				line->glyph[line->glyph_count].codepoint = sub.buf[i];
-				line->glyph_count += 1;
-				x += GlyphLookup(font, sub.buf[i])->advance;
-			}
-
-			/* couldn't fit whole word on row */
-			if (word.len)
-			{
-				begin_new_line = 1;
-				if (sub.len == 0)
-				{
-					if (x_offset == 0)
-					{
-						break;
-					}
-				}
-				else
-				{
-					ArenaPushPacked(mem, sizeof(struct textGlyph));
-					line->glyph[line->glyph_count].x = x_offset;
-					line->glyph[line->glyph_count].codepoint = (u32) '-';
-					line->glyph_count += 1;
-				}
-				x_offset = 0;	
-			}
-		}
+		line->next = next;
 	}
-
-	layout->width = (layout->line_count > 1)
-		? line_width
-		: (f32) x_offset;
-	return layout;
+	else
+	{
+		layout->line = next;
+	}
+	layout->line_count += 1;
+	return next;
 }
 
-struct textLayout *Utf32TextLayoutIncludeWhitespace(struct arena *mem, const utf32 *str, const f32 line_width, const u32 tab_size, const struct font *font)
+static void FontLayoutGlyphPush(struct arena *mem, struct textLine *line, const u32 x, const u32 codepoint)
+{
+	ArenaPushPacked(mem, sizeof(struct textGlyph));
+	line->glyph[line->glyph_count].x = (f32) x;
+	line->glyph[line->glyph_count].codepoint = codepoint;
+	line->glyph_count += 1;
+}
+
+/*
+ * Lines are filled word by word. A word that does not fit after the line's pen starts the next line; a word
+ * longer than a line is split where it stops fitting, with a '-' when the hyphen fits. Whitespace advances the
+ * pen (and, with include_whitespace, becomes glyphs); a '\n' ends its line at once, so a text ending in '\n'
+ * ends with an empty line. The width is the widest line's extent: the pen after its last glyph or whitespace,
+ * never past line_width.
+ */
+static struct textLayout *FontLayout(struct arena *mem, const utf32 *str, const f32 line_width, const u32 tab_size, const struct font *font, const u32 include_whitespace)
 {
 	struct textLayout *layout = ArenaPush(mem, sizeof(struct textLayout));
-	layout->line_count = 1;
-	layout->line = ArenaPush(mem, sizeof(struct textLine));
-	layout->line->next = NULL;
-	layout->line->glyph_count = 0;
-	layout->line->glyph = (void *) mem->stack_ptr;
-	struct textLine *line = layout->line;
+	layout->line = NULL;
+	layout->line_count = 0;
+	layout->width = 0.0f;
+	struct textLine *line = FontLayoutLineNew(mem, layout, NULL);
 
 	const u32 line_pixels = (line_width == F32_INFINITY) ? U32_MAX : (u32) line_width;
-
-	const struct fontGlyph *glyph = GlyphLookup(font, (u32) ' ');
-	const u32 space_pixels = glyph->advance;
+	const u32 space_pixels = GlyphLookup(font, (u32) ' ')->advance;
 	const u32 tab_pixels = tab_size*space_pixels;
+	const struct fontGlyph *hyphen = GlyphLookup(font, (u32) '-');
 
-	u32 x_offset = 0;
-	u32 begin_new_line = 0;
+	u32 x_offset = 0;	/* the line's pen */
+	u32 widest = 0;		/* the widest line's extent */
+	u32 wrap = 0;		/* the line is full: the next word starts a new one */
 	utf32 stream = *str;
 	while (stream.len)
 	{
 		utf32 whitespace = Utf32StreamConsumeWhitespace(&stream);
-
-		u32 pixels = 0;
-		u32 new_line = 0;
 		for (u32 i = 0; i < whitespace.len; ++i)
 		{
-			ArenaPushPacked(mem, sizeof(struct textGlyph));
-			line->glyph[line->glyph_count].x = x_offset;
-			line->glyph[line->glyph_count].codepoint = whitespace.buf[i];
-			line->glyph_count += 1;
-
+			if (include_whitespace)
+			{
+				FontLayoutGlyphPush(mem, line, x_offset, whitespace.buf[i]);
+			}
 			switch (whitespace.buf[i])
 			{
 				case ' ':
 				{
 					x_offset += space_pixels;
 				} break;
-		
+
 				case '\t':
 				{
 					x_offset += tab_pixels;
 				} break;
-		
+
 				case '\n':
 				{
-					new_line = 1;
+					widest = (x_offset > widest) ? x_offset : widest;
+					line = FontLayoutLineNew(mem, layout, line);
+					x_offset = 0;
+					wrap = 0;
 				} break;
-		
+
 				default:
 				{
 					ds_Assert(0 && "whitespace string contains non-whitespace");
 				}
 			}
+			/* whitespace past the end of the line fills it: the next word wraps */
+			x_offset = (x_offset > line_pixels) ? line_pixels : x_offset;
 		}
-		x_offset = (new_line || x_offset > (u32) line_pixels) ? line_pixels : x_offset;
+		widest = (x_offset > widest) ? x_offset : widest;
 
 		utf32 word = Utf32StreamConsumeNonWhitespace(&stream);
 		/* fill row(s) with word */
 		while (word.len)
 		{
-			if (begin_new_line)
-			{	
-				layout->line_count += 1;
-				line->next = ArenaPush(mem, sizeof(struct textLine));
-				line = line->next;
-				line->next = NULL;
-				line->glyph_count = 0;
-				line->glyph = (void *) mem->stack_ptr;
-				begin_new_line = 0;
+			if (wrap)
+			{
+				line = FontLayoutLineNew(mem, layout, line);
+				x_offset = 0;
+				wrap = 0;
 			}
 
 			u32 x = x_offset;
 			/* find substring of word that fits on row, advance substring */
-			utf32 sub = FontStreamSubstringOnRow(&word, &x_offset, font, x_offset, line_pixels);
+			const utf32 sub = FontStreamSubstringOnRow(&word, &x_offset, font, x_offset, line_pixels);
 			for (u32 i = 0; i < sub.len; ++i)
 			{
-				ArenaPushPacked(mem, sizeof(struct textGlyph));
-				line->glyph[line->glyph_count].x = x;
-				line->glyph[line->glyph_count].codepoint = sub.buf[i];
-				line->glyph_count += 1;
+				FontLayoutGlyphPush(mem, line, x, sub.buf[i]);
 				x += GlyphLookup(font, sub.buf[i])->advance;
 			}
 
-			/* couldn't fit whole word on row */
+			/* the rest of the word goes to the next line */
 			if (word.len)
 			{
-				begin_new_line = 1;
-				if (sub.len == 0)
+				wrap = 1;
+				if (sub.len == 0 && x_offset == 0)
 				{
-					if (x_offset == 0)
-					{
-						break;
-					}
+					/* nothing of the word fits an empty line: it is dropped */
+					break;
 				}
-				else
+				if (sub.len)
 				{
-					ArenaPushPacked(mem, sizeof(struct textGlyph));
-					line->glyph[line->glyph_count].x = x_offset;
-					line->glyph[line->glyph_count].codepoint = (u32) '-';
-					line->glyph_count += 1;
+					FontLayoutGlyphPush(mem, line, x_offset, (u32) '-');
+					x_offset += hyphen->advance;
 				}
-				x_offset = 0;	
 			}
+			widest = (x_offset > widest) ? x_offset : widest;
 		}
 	}
 
-	layout->width = (layout->line_count > 1)
-		? line_width
-		: (f32) x_offset;
+	layout->width = (f32) widest;
 	return layout;
+}
+
+struct textLayout *Utf32TextLayout(struct arena *mem, const utf32 *str, const f32 line_width, const u32 tab_size, const struct font *font)
+{
+	return FontLayout(mem, str, line_width, tab_size, font, 0);
+}
+
+struct textLayout *Utf32TextLayoutIncludeWhitespace(struct arena *mem, const utf32 *str, const f32 line_width, const u32 tab_size, const struct font *font)
+{
+	return FontLayout(mem, str, line_width, tab_size, font, 1);
 }

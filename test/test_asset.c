@@ -179,7 +179,7 @@ struct test_Output FontAtlasTest(struct test_Environment *env)
 	return output;
 }
 
-/* A layout's width is its widest line's extent, whatever the line width and the trailing whitespace */
+/* A layout's width is its widest line's extent; a '\n' ends its line, so a trailing one leaves an empty line */
 struct test_Output TextLayoutWidthTest(struct test_Environment *env)
 {
 	struct test_Output output = { .success = 1, .id = __func__ };
@@ -189,8 +189,8 @@ struct test_Output TextLayoutWidthTest(struct test_Environment *env)
 	const struct { const char *text; f32 line_width; f32 width; u32 lines; } c[] =
 	{
 		{ "abc",      F32_INFINITY, abc, 1 },
-		{ "abc\n",    F32_INFINITY, abc, 1 },
-		{ "abc\n",    200.0f,       abc, 1 },
+		{ "abc\n",    F32_INFINITY, abc, 2 },
+		{ "abc\n",    200.0f,       abc, 2 },
 		{ "ab\ncd",   F32_INFINITY, abc * 2.0f / 3.0f, 2 },
 		{ "abc\nabcd", F32_INFINITY, abc * 4.0f / 3.0f, 2 },
 	};
@@ -208,6 +208,33 @@ struct test_Output TextLayoutWidthTest(struct test_Environment *env)
 	return output;
 }
 
+/*
+The whitespace-including layout (cursors, selections): every codepoint is a glyph on the line it belongs to, a '\n'
+ends its line and whitespace after it starts the next line at x = 0.
+*/
+struct test_Output TextLayoutNewlineTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+	const struct font *font = AssetRequestFont(env->mem_1, FONT_DEFAULT_SMALL)->font;
+	const f32 space = (f32) GlyphLookup(font, (u32) ' ')->advance;
+	const utf32 str = Utf32Cstr(env->mem_1, "ab\n cd");
+	const struct textLayout *layout = Utf32TextLayoutIncludeWhitespace(env->mem_1, &str, F32_INFINITY, 4, font);
+	TEST_NOT_ZERO(layout->line_count == 2);
+	const struct textLine *first = layout->line;
+	const struct textLine *second = first->next;
+	TEST_NOT_ZERO(first->glyph_count == 3 && first->glyph[2].codepoint == (u32) '\n');
+	TEST_NOT_ZERO(second->glyph_count == 3 && second->glyph[0].codepoint == (u32) ' ' && second->glyph[0].x == 0.0f);
+	TEST_NOT_ZERO(second->glyph[1].codepoint == (u32) 'c' && second->glyph[1].x == space);
+	TEST_NOT_ZERO(layout->width == 3.0f * space);	/* " cd", monospace */
+
+	const utf32 trailing = Utf32Cstr(env->mem_1, "abc\n");
+	layout = Utf32TextLayoutIncludeWhitespace(env->mem_1, &trailing, F32_INFINITY, 4, font);
+	TEST_NOT_ZERO(layout->line_count == 2 && layout->line->next->glyph_count == 0);
+
+	return output;
+}
+
 static struct test_Output (*asset_tests[])(struct test_Environment *) =
 {
 	SsffRequestTest,
@@ -216,6 +243,7 @@ static struct test_Output (*asset_tests[])(struct test_Environment *) =
 	AssetFlushReloadTest,
 	FontAtlasTest,
 	TextLayoutWidthTest,
+	TextLayoutNewlineTest,
 };
 
 struct suite_Correctness m_asset_suite =
