@@ -456,31 +456,30 @@ struct BVHQuerySet BVHQuery(struct arena *mem, const struct BVH *bvh, const stru
         const struct BVHNode *n = nodes + node_stack[ sc ];
         if (BTLeafCheck(n))
         {
-            query.shape[ query.count ] = n->bt_child[0];
-            query.count += 1;
-            if (query.count >= mem_arr.len)
+            if (query.count == mem_arr.len)
             {
 				LogString(T_PHYSICS, S_FATAL, "out-of-memory in query set, increase arena size!");		
 				FatalCleanupAndExit();
             }
+            query.shape[ query.count++ ] = n->bt_child[0];
         }
         else
         {
+            /* room for both children before either is pushed */
+            if (sc + 2 > stack_arr.len)
+            {
+				LogString(T_PHYSICS, S_FATAL, "out-of-memory in query stack, increase arena size!");		
+				FatalCleanupAndExit();
+            }
         	const struct BVHNode *left = nodes + n->bt_child[0];
         	const struct BVHNode *right = nodes + n->bt_child[1];
         	if (AabbTest(&node->bbox, &right->bbox))
         	{
         		node_stack[ sc++ ] = n->bt_child[1];
         	}
-        
         	if (AabbTest(&node->bbox, &left->bbox))
             {
         		node_stack[ sc++ ] = n->bt_child[0];
-                if (sc >= stack_arr.len)
-                {
-					LogString(T_PHYSICS, S_FATAL, "out-of-memory in query stack, increase arena size!");		
-					FatalCleanupAndExit();
-                }
             }
         }
     }
@@ -522,32 +521,31 @@ struct BVHQuerySet BVHQueryAndFilterOnBody(struct arena *mem, const struct BVH *
         {
             if (node->bt_child[1] < n->bt_child[1])
             {
-                query.shape[ query.count ] = n->bt_child[0];
-                query.count += 1;
-                if (query.count >= mem_arr.len)
+                if (query.count == mem_arr.len)
                 {
 			    	LogString(T_PHYSICS, S_FATAL, "out-of-memory in query set, increase arena size!");		
 			    	FatalCleanupAndExit();
                 }
+                query.shape[ query.count++ ] = n->bt_child[0];
             }
         }
         else
         {
+            /* room for both children before either is pushed */
+            if (sc + 2 > stack_arr.len)
+            {
+				LogString(T_PHYSICS, S_FATAL, "out-of-memory in query stack, increase arena size!");		
+				FatalCleanupAndExit();
+            }
         	const struct BVHNode *left = nodes + n->bt_child[0];
         	const struct BVHNode *right = nodes + n->bt_child[1];
         	if (AabbTest(&node->bbox, &right->bbox))
         	{
         		node_stack[ sc++ ] = n->bt_child[1];
         	}
-        
         	if (AabbTest(&node->bbox, &left->bbox))
             {
         		node_stack[ sc++ ] = n->bt_child[0];
-                if (sc >= stack_arr.len)
-                {
-					LogString(T_PHYSICS, S_FATAL, "out-of-memory in query stack, increase arena size!");		
-					FatalCleanupAndExit();
-                }
             }
         }
     }
