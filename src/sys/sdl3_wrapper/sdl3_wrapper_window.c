@@ -294,12 +294,39 @@ static void sdl3_CreateGlContext(struct nativeWindow *native)
 	{
 		once = 0;
 		SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
+
+		/* the attributes read back from a current context are the context's actual version, not the request */
+		i32 major = 0;
+		i32 minor = 0;
+		if (!SDL_GL_GetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, &major) || !SDL_GL_GetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, &minor))
+		{
+			LogString(T_SYSTEM, S_FATAL, SDL_GetError());
+			FatalCleanupAndExit();
+		}
+#if __DS_PLATFORM__ == __DS_WEB__
+		if (major < 3)
+		{
+			Log(T_SYSTEM, S_FATAL, "Requires GLES 3.0 or greater, got %i.%i, exiting", major, minor);
+			FatalCleanupAndExit();
+		}
+#else
+		if (major < 3 || (major == 3 && minor < 3))
+		{
+			Log(T_SYSTEM, S_FATAL, "Requires GL 3.3 or greater, got %i.%i, exiting", major, minor);
+			FatalCleanupAndExit();
+		}
+#endif
 	}
 }
 
 static struct nativeWindow *sdl3_NativeWindowCreate(struct arena *mem, const char *title, const v2u32 position, const v2u32 size)
 {
 	struct nativeWindow *native = ArenaPush(mem, sizeof(struct nativeWindow));
+	if (native == NULL)
+	{
+		LogString(T_SYSTEM, S_FATAL, "sdl3_NativeWindowCreate: out of window memory");
+		FatalCleanupAndExit();
+	}
 	native->sdl_win = SDL_CreateWindow(title, (i32) size.x, (i32) size.y, SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
 	if (native->sdl_win == NULL)
 	{
@@ -415,14 +442,6 @@ void sdl3_WrapperInit(void)
 		FatalCleanupAndExit();
 	}
 
-	i32 major, minor;
-	SDL_GL_GetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, &major);
-	SDL_GL_GetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, &minor);
-	if (major < 3 || minor < 3)
-	{
-		LogString(T_SYSTEM, S_FATAL, "Requires GL 3.3 or greater, exiting\n");
-		FatalCleanupAndExit();
-	}
 #elif __DS_PLATFORM__ == __DS_WEB__
 	SDL_SetHint(SDL_HINT_OPENGL_ES_DRIVER, "1");
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
@@ -435,14 +454,6 @@ void sdl3_WrapperInit(void)
 		FatalCleanupAndExit();
 	}
 
-	i32 major, minor;
-	SDL_GL_GetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, &major);
-	SDL_GL_GetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, &minor);
-	if (major < 3)
-	{
-		LogString(T_SYSTEM, S_FATAL, "Requires GLES 3.0 or greater, exiting\n");
-		FatalCleanupAndExit();
-	}
 #endif
 	/* Must be done after initalizing the video driver but before creating any opengl windows */
 	if (!SDL_GL_LoadLibrary(NULL))
