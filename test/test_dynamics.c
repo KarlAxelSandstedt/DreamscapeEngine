@@ -70,6 +70,12 @@ bodies' lists, coloured static and dynamic with their sims pointing back and the
 by id empties the lists, the colour and the lookup, a second one is a no-op; a reused slot gets a new
 generation; a body's removal takes its joints. No tick runs with a joint alive (the joints are not in any
 island yet, which the debug validation would catch).
+
+Solver (DynamicsSlideTest, DynamicsBounceTest): a frictionless box on a 30 degree slope slides for a second;
+its downhill speed matches the per-tick recurrence v = (v + g sin(a) dt) / (1 + d dt) of the solver's gravity
+and damping within 1 % (the contacts cancel only the normal part), nothing across the slope, no spin. A box
+dropped flat with restitution 1 leaves the ground with its impact speed (within the tick's gravity), one with
+restitution 0 keeps less than 5 % of it.
 */
 
 #define DYNAMICS_TEST_SETTLE_TICKS      120     /* 2 s at 60 Hz */
@@ -99,6 +105,7 @@ struct dynamics_TestBox
     v3      hw;
     u32     dynamic;
     f32     friction;
+    f32     restitution;
 };
 
 struct dynamics_TestScene
@@ -166,7 +173,7 @@ static ds_BodyId DynamicsTestBoxAdd(struct arena *mem, struct ds_Dynamics *pipel
     {
         .cshape = slot.index,
         .density = 1.0f,
-        .restitution = 0.0f,
+        .restitution = box->restitution,
         .friction = box->friction,
         .margin = 0.5f,
     };
@@ -1444,6 +1451,136 @@ static struct test_Output DynamicsJointTest(struct test_Environment *env)
     return output;
 }
 
+static v3 SolverTestVelocity(const struct ds_Dynamics *pipeline, const ds_BodyId id)
+{
+    const struct ds_Body *body = ds_BodyLookup(pipeline, id).address;
+    const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    ds_Assert(body->set == SOLVER_SET_ACTIVE);
+    return active->body_compute_pool.buf[body->sim].linear_velocity;
+}
+
+/* a frictionless box sliding down a 30 degree slope against the damped free-slide recurrence (file comment) */
+static struct test_Output DynamicsSlideTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 0;
+
+    const f32 angle = 30.0f * F32_PI / 180.0f;
+    const q slope = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), angle);
+    const v3 n = QUnitRotate(slope, V3(0.0f, 1.0f, 0.0f));
+    const v3 gravity = g_solver_config->gravity;
+    const v3 downhill = V3Normalize(V3Sub(gravity, V3Scale(n, V3Dot(n, gravity))));
+    const struct dynamics_TestBox scene[2] =
+    {
+        { .position = V3Scale(n, -0.5f), .rotation = slope, .hw = V3(8.0f, 0.5f, 4.0f), .dynamic = 0, .friction = 0.0f },
+        { .position = V3Scale(n, 0.5f), .rotation = slope, .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.0f },
+    };
+    ds_BodyId id[2];
+    for (u32 i = 0; i < 2; ++i)
+    {
+        id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
+    }
+
+    /* each tick adds the downhill gravity and damps (ds_BodyUpdateSolverDataRange); the contacts only cancel the normal part */
+    const f32 g_t = V3Dot(gravity, downhill);
+    const f32 damp = 1.0f / (1.0f + g_solver_config->linear_dampening * pipeline.timestep);
+    f32 expected = 0.0f;
+    for (u32 t = 0; t < 60; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+        expected = (expected + g_t * pipeline.timestep) * damp;
+    }
+    const v3 v = SolverTestVelocity(&pipeline, id[1]);
+    const f32 along = V3Dot(v, downhill);
+    const v3 across = V3Sub(v, V3Scale(downhill, along));
+    if (!(F32Abs(along - expected) <= 0.01f * expected && V3Length(across) <= 0.01f * expected))
+    {
+        fprintf(stderr, "slide: speed %f downhill (expected %f), %f across\n", along, expected, V3Length(across));
+        TEST_FAILURE;
+    }
+    const struct ds_Body *box = ds_BodyLookup(&pipeline, id[1]).address;
+    const v3 w = pipeline.solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.buf[box->sim].angular_velocity;
+    TEST_NOT_ZERO(V3Length(w) <= 0.01f);
+
+    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
+/* a box dropped flat on the ground with restitution 1 bounces with its impact speed, with 0 it stops (file comment) */
+static struct test_Output DynamicsBounceTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 0;
+
+    const struct dynamics_TestBox scene[3] =
+    {
+        { .position = V3(0.0f, -1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(16.0f, 1.0f, 16.0f), .dynamic = 0, .friction = 0.5f, .restitution = 0.0f },
+        { .position = V3(-4.0f, 3.0f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.5f, .restitution = 1.0f },
+        { .position = V3(4.0f, 3.0f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.5f, .restitution = 0.0f },
+    };
+    ds_BodyId id[3];
+    for (u32 i = 0; i < 3; ++i)
+    {
+        id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
+    }
+
+    /* tick until the bouncy box moves up; the impact speed is the last downward speed plus one tick of gravity */
+    const f32 g_dt = -g_solver_config->gravity.y * pipeline.timestep;
+    f32 down = 0.0f;
+    f32 up = 0.0f;
+    u32 t;
+    for (t = 0; t < 120; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+        const f32 vy = SolverTestVelocity(&pipeline, id[1]).y;
+        if (vy > 0.0f)
+        {
+            up = vy;
+            break;
+        }
+        down = -vy;
+    }
+    TEST_NOT_ZERO(t < 120 && down > 5.0f);
+    if (!(0.9f * down <= up && up <= 1.05f * (down + g_dt)))
+    {
+        fprintf(stderr, "bounce: impact speed at least %f, bounced at %f\n", down, up);
+        TEST_FAILURE;
+    }
+    /* the dead box, dropped at the same time, has no bounce: its speed after the impact tick stays within a few percent of the impact speed */
+    const f32 dead = F32Abs(SolverTestVelocity(&pipeline, id[2]).y);
+    TEST_NOT_ZERO(dead <= 0.05f * down);
+    for (u32 k = 0; k < 30; ++k)
+    {
+        SnapshotTestTick(&pipeline);
+        TEST_NOT_ZERO(F32Abs(SolverTestVelocity(&pipeline, id[2]).y) <= 0.05f * down);
+    }
+
+    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
 {
     DynamicsRestingBoxTest,
@@ -1457,6 +1594,8 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsSleepTest,
     DynamicsGraphTest,
     DynamicsJointTest,
+    DynamicsSlideTest,
+    DynamicsBounceTest,
 };
 
 struct suite_Correctness m_dynamics_suite =
