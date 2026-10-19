@@ -281,7 +281,7 @@ static u64 AabbPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *
 static struct r_Mesh *BoundingBoxesMesh(struct arena *mem, const struct ds_Dynamics *pipeline, const v3f64 origin, const v4 color)
 {
 	ArenaPushRecord(mem);
-	const u32 vertex_count = 3*8*pipeline->body_pool.count;
+	const u32 vertex_count = 24*pipeline->shape_pool.count;
 	struct r_Mesh *mesh = NULL;
  	struct r_Mesh *tmp = ArenaPush(mem, sizeof(struct r_Mesh));
 	u8 *vertex_data = ArenaPush(mem, vertex_count * L_COLOR_STRIDE);
@@ -439,7 +439,6 @@ static void r_EditorDraw(const struct led *led)
 		
 		r_InstanceAdd(index, command);
 	}
-	ArenaPopRecord(&g_r_core->frame);
 
 	if (led->draw_dbvh)
 	{
