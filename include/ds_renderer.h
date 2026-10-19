@@ -53,7 +53,7 @@ DEFINE_SDB(r_Mesh);
  *			r_Init.c			*
  ********************************************************/
 
-/* initiate render state, ns_tick is ns per draw frame, or, if 0, redraw on every r_main() entry,  should be a power of 2 */
+/* initiate render state; ns_tick is ns per draw frame (> 0: r_EditorMain redraws once per elapsed tick) */
 void 	r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u32 core_unit_count, ds_SDB(r_Mesh) *mesh_database);
 
 /********************************************************
@@ -235,7 +235,7 @@ u64 	r_MaterialConstruct(const u64 program, const u64 mesh, const u64 texture);
 #define MATERIAL_TEXTURE_GET(material)	((material & MATERIAL_TEXTURE_MASK) >> MATERIAL_TEXTURE_LOW_BIT)
 
 /********************************************************
- *			r_core.c			*
+ *			r_proxy3d.c			*
  ********************************************************/
 
 /*
@@ -343,10 +343,13 @@ struct r_Instance
 };
 DEFINE_POOL(r_Instance);
 
+/*
+ * Draw the proxy3d unit with cmd this frame. The instance is cached across frames by unit (a changed cmd
+ * re-sorts it) and pruned at the end of a frame that did not draw it. At most once per unit and frame.
+ */
 struct r_Instance *	r_InstanceAdd(const u32 unit, const u64 cmd);
-struct r_Instance *	r_InstanceAddNonCached(const u64 cmd); /* add non cached instance with no unit. This
-								     gives us an immediate mode option that can
-								     simplify what we want. */
+/* add non cached instance with no unit (immediate mode: it lives this frame only); the caller sets type and data */
+struct r_Instance *	r_InstanceAddNonCached(const u64 cmd);
 
 /********************** Render Buffer  *************************/
 
