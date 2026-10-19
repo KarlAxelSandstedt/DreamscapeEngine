@@ -96,13 +96,17 @@ typedef struct cmdFunction
 	void	(*call)(void);
 } cmdFunction;
 
-/* a queued command: string until a CMD_ARGS_TOKEN command is tokenized, arg[0..args_count) once it has been or for CMD_ARGS_REGISTER */
+/*
+ * a queued command: function is the command's index in the table (resolved at execution, so the table may grow
+ * meanwhile); string until a CMD_ARGS_TOKEN command is tokenized, arg[0..args_count) once it has been or for
+ * CMD_ARGS_REGISTER
+ */
 struct cmd
 {
 	POOL_NODE;
 	i32                         next;
 
-	const struct cmdFunction *	function;
+	u32				            function;
 	utf8				        string;				        /* defined if args_type == TOKEN */
 	union cmdRegister		    arg[CMD_REGISTER_COUNT];	/* defined if args_type == REGISTER */
 	enum cmdArgsType		    args_type;	

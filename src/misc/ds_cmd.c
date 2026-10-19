@@ -103,11 +103,11 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 	}
 
 	token_string = (utf8) { .buf = token_start, .len = token_length, .size = (u32) ((text + i) - token_start) };
-	cmd->function = CmdFunctionLookup(token_string).address;
+	cmd->function = CmdFunctionLookup(token_string).index;
 
-	if (cmd->function == NULL)
+	if (cmd->function == U32_MAX)
 	{
-		cmd->function = g_cmd_f.buf + g_cmd_internal_debug_print_index;
+		cmd->function = g_cmd_internal_debug_print_index;
 		cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: invalid command name", &cmd->string);
 		return;
 	}
@@ -125,10 +125,10 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 			break;
 		}
 
-		if (token_count == cmd->function->args_count)
+		if (token_count == g_cmd_f.buf[cmd->function].args_count)
 		{
-			cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: command expects %u arguments.", &cmd->string, cmd->function->args_count);
-			cmd->function = g_cmd_f.buf + g_cmd_internal_debug_print_index;
+			cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: command expects %u arguments.", &cmd->string, g_cmd_f.buf[cmd->function].args_count);
+			cmd->function = g_cmd_internal_debug_print_index;
 			error = 1;
 			break;
 		}
@@ -152,7 +152,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 
 			if (text[i] != '"')
 			{
-				cmd->function = g_cmd_f.buf + g_cmd_internal_debug_print_index;
+				cmd->function = g_cmd_internal_debug_print_index;
 				cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: non-closed string beginning.", &cmd->string);
 				error = 1;
 				break;
@@ -250,7 +250,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 
 		if (ret.op_result != PARSE_SUCCESS)
 		{
-			cmd->function = g_cmd_f.buf + g_cmd_internal_debug_print_index;
+			cmd->function = g_cmd_internal_debug_print_index;
 			error = 1;
 			switch (ret.op_result)
 			{
@@ -273,10 +273,10 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 		}
 	}
 
-	if (!error && token_count < cmd->function->args_count)
+	if (!error && token_count < g_cmd_f.buf[cmd->function].args_count)
 	{
-		cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: command expects %u arguments.", &cmd->string, cmd->function->args_count);
-		cmd->function = g_cmd_f.buf + g_cmd_internal_debug_print_index;
+		cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: command expects %u arguments.", &cmd->string, g_cmd_f.buf[cmd->function].args_count);
+		cmd->function = g_cmd_internal_debug_print_index;
 	}
 }
 
@@ -293,7 +293,7 @@ void CmdQueueExecute(void)
 			//Utf8DebugPrint(g_queue->cmd_exec->string);
 			CmdTokenizeString(tmp, g_queue->cmd_exec);
 		}
-		g_queue->cmd_exec->function->call();
+		g_cmd_f.buf[g_queue->cmd_exec->function].call();
 		/* the call may have appended to the list and grown the pool */
 		next = g_queue->cmd_pool.buf[i].next;
 		ds_PoolRemove(g_queue->cmd_pool, i);
@@ -398,9 +398,9 @@ void CmdQueueSubmit(struct cmdQueue *queue, const u32 cmdFunction)
 	struct slot slot = ds_PoolAdd(queue->cmd_pool);
 	struct cmd *cmd = slot.address;
 	cmd->args_type = CMD_ARGS_REGISTER;
-	cmd->function = g_cmd_f.buf + cmdFunction;
+	cmd->function = cmdFunction;
 
-	for (u32 i = 0; i < cmd->function->args_count; ++i)
+	for (u32 i = 0; i < g_cmd_f.buf[cmd->function].args_count; ++i)
 	{
 		cmd->arg[i] = queue->regs[i];
 	}
@@ -413,9 +413,9 @@ void CmdQueueSubmitNextFrame(struct cmdQueue *queue, const u32 cmdFunction)
 	struct slot slot = ds_PoolAdd(queue->cmd_pool);
 	struct cmd *cmd = slot.address;
 	cmd->args_type = CMD_ARGS_REGISTER;
-	cmd->function = g_cmd_f.buf + cmdFunction;
+	cmd->function = cmdFunction;
 
-	for (u32 i = 0; i < cmd->function->args_count; ++i)
+	for (u32 i = 0; i < g_cmd_f.buf[cmd->function].args_count; ++i)
 	{
 		cmd->arg[i] = queue->regs[i];
 	}
