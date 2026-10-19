@@ -1153,6 +1153,8 @@ static u32 ChVerify(struct ch_Stats *stats, const u32 contact, const struct c_Ma
             const f64 edge_tol = tol / F64SqrtTest(g_numerics_config->edge_parallel_sin_sq);
             /* touching without intersecting (GJK's touch band, deep path): positions known to the band */
             const f64 core_tol = (!shallow && sat > -tol) ? F64MaxTest(tol, 2.0*GJK_TOUCH_TOLERANCE*eps_l) : tol;
+            /* the deep path's touching fallback reports depth r for a gap anywhere in GJK's touch band */
+            const f64 depth_tol = (!shallow && sat > -tol) ? F64MaxTest(tol, GJK_TOUCH_TOLERANCE*eps_l) : tol;
             if (edge && core > edge_tol)
             {
                 clamped = 1;
@@ -1167,7 +1169,7 @@ static u32 ChVerify(struct ch_Stats *stats, const u32 contact, const struct c_Ma
                 stats->worst_core = F64MaxTest(stats->worst_core, core / eps_l);
             }
 
-            if (m->depth[i] > r - sep + tol)
+            if (m->depth[i] > r - sep + depth_tol)
             {
                 fail = "depth deeper than the separation along n";
             }
