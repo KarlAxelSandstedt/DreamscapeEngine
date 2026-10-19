@@ -192,7 +192,7 @@ void ds_WSDequePushBottom(struct ds_WSDeque *deque, const ds_JobId id)
         local_mem_count = AtomicLoadRlx32(&deque->a_mem_count);
     }
 
-    const u32 index = (deque->to_publish + local_bottom) & deque->mem[local_mem_count-1].mask;
+    const u32 index = (u32) ((deque->to_publish + local_bottom) & deque->mem[local_mem_count-1].mask);
     deque->to_publish += 1;
     AtomicStoreRlx32(&deque->mem[local_mem_count-1].id[index], id);
 }
@@ -353,7 +353,7 @@ RUN_JOBS:
 
     for (u32 i = 0; i < g_scheduler->steal_attempts; ++i)
     {
-        const u32 index = RngU64Range(0, g_scheduler->worker_count-1);
+        const u32 index = (u32) RngU64Range(0, g_scheduler->worker_count-1);
         if (index != thread && (job = ds_WSDequeTrySteal(g_scheduler->deque + index)) != DS_JOB_ID_NULL)
         {
             ds_WorkerRunJob(job);
