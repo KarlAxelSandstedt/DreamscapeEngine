@@ -162,7 +162,7 @@ static void DbvhInternalBalanceNode(struct bvh *bvh, const u32 node)
 	struct aabb box_union;
 	f32 cost_rotation, cost_original, cost_best = F32_INFINITY;
 			
-	u32 upper_rotation; /* child to rotate */
+	u32 upper_rotation = BT_INDEX_NULL; /* child to rotate */
 	u32 best_rotation = BT_INDEX_NULL; /* best grandchild to rotate */
 	if (!BTLeafCheck(nodes + left))
 	{
@@ -748,7 +748,7 @@ struct triMeshBvh TriMeshBvhConstruct(struct arena *mem, const struct triMesh *m
 			}
 
 			//TODO simplify bbox constructing by creating bbox array before loop so we can easily just bbox_left = [], bbox_right = [] 
-			struct aabb bbox_left;
+			struct aabb bbox_left = { 0 };
 			u32 left_count = 0;
 			for (u32 split = 0; split < bin_count-1; ++split)
 			{

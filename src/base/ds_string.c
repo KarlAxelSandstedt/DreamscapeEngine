@@ -897,7 +897,7 @@ utf8 Utf8FormatBufferedVariadic(u64 *reqsize, u8 *buf, const u64 bufsize, const 
 		return Utf8Empty();
 	}
 
-	utf8 pstr;
+	utf8 pstr = Utf8Empty();
 
 	enum string_token token;
 	u32 token_length;
