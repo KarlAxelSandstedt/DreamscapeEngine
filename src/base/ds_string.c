@@ -1175,7 +1175,7 @@ utf32 Utf32Cstr(struct arena *mem, const char *cstr)
 	utf32 ret = Utf32CstrBuffered(alloc.addr, internal_StringCapacity(alloc.len), cstr);
 	
 	(ret.len)
-		? ArenaPopPacked(mem, sizeof(u32) * (ret.max_len - ret.len))
+		? ArenaPopPacked(mem, sizeof(u32) * (alloc.len - ret.len))
 		: ArenaPopPacked(mem, alloc.memPushed);
 
 	ret.max_len = ret.len;
