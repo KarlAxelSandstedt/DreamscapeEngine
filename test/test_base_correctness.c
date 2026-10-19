@@ -1378,6 +1378,13 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
     TEST_EQUAL(FS_PATH_INVALID, cwd_file_err);
     TEST_TRUE(cwd_file.handle == cwd_before.handle && cwd_file.type == FILE_DIRECTORY);
 
+    /* #171: a path of exactly MAX_PATH units (its terminator went past the buffer) and the empty path are relative */
+    u8 max_path[MAX_PATH];
+    memset(max_path, 'a', MAX_PATH);
+    TEST_EQUAL(1, Utf8PathRelativeCheck((utf8) { .buf = max_path, .size = MAX_PATH, .len = MAX_PATH }));
+    TEST_EQUAL(1, Utf8PathRelativeCheck(Utf8Empty()));
+    TEST_EQUAL(0, Utf8PathRelativeCheck(Utf8Inline("C:\\x")));
+
     FilesystemTestCleanup();
 
 	return output;

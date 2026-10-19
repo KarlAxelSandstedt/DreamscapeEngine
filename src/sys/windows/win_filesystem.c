@@ -83,8 +83,15 @@ u32 SystemAdminCheck(void)
 
 u32 Utf8PathRelativeCheck(const utf8 path)
 {
+	/* as on Linux; MultiByteToWideChar fails on 0 bytes */
+	if (path.size == 0)
+	{
+		return 1;
+	}
+
 	const u32 req_size = (u32) Utf8SizeRequired(path);
-	WCHAR w_path[MAX_PATH];
+	/* + 1: the terminator after MAX_PATH converted units */
+	WCHAR w_path[MAX_PATH + 1];
 	const int len_relative = MultiByteToWideChar(CP_UTF8, 0, (char *) path.buf, req_size, w_path, MAX_PATH);
 	u32 relative = 0;
 	if (!len_relative)
