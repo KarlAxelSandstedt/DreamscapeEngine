@@ -652,12 +652,182 @@ static struct test_Output DynamicsSnapshotTest(struct test_Environment *env)
 	return output;
 }
 
+
+/********************************** shapes (ds_shape.c) **********************************/
+
+/* a world point's containment in an f32 box, in f64 (the box is rounded outward from f64) */
+static u32 DynamicsTestBboxContains(const struct aabb *box, const v3f64 p)
+{
+    return (f64) box->min.x <= p.x && p.x <= (f64) box->max.x
+        && (f64) box->min.y <= p.y && p.y <= (f64) box->max.y
+        && (f64) box->min.z <= p.z && p.z <= (f64) box->max.z;
+}
+
+/*
+Shapes on a body far from the origin: lookups by id, the id's generation after a removal and a slot reuse, world
+boxes containing the shapes' extreme points (f64), the pair queries symmetric in their arguments, the raycast equal
+to the collision raycast on the shape's world pose.
+*/
+static struct test_Output DynamicsShapeTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);	/* the pipeline's frame memory comes from it */
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    ds_DynamicsSetGlobals(&pipeline);	/* the pair queries read the pipeline's numerics config through the globals */
+
+    /* three collision shapes */
+    const char *name[3] = { "sphere", "capsule", "box" };
+    u32 cshape_index[3];
+    for (u32 i = 0; i < 3; ++i)
+    {
+        const utf8 id = Utf8Format(&mem, "%s", name[i]);
+        const struct slot slot = ds_SDBAddAlias(cshape_db, id);
+        struct c_Shape *cshape = slot.address;
+        cshape->id = Utf8CopyBuffered(cshape->id_buf, C_SHAPE_ID_SIZE, id);
+        switch (i)
+        {
+            case 0: { cshape->type = C_SHAPE_SPHERE; cshape->sphere.radius = 0.3f; } break;
+            case 1: { cshape->type = C_SHAPE_CAPSULE; cshape->capsule.radius = 0.2f; cshape->capsule.half_height = 0.5f; } break;
+            default: { cshape->type = C_SHAPE_CONVEX_HULL; cshape->hull = DcelBox(&mem, V3(0.5f, 0.3f, 0.2f)); } break;
+        }
+        c_ShapeUpdateMassProperties(cshape);
+        cshape_index[i] = slot.index;
+    }
+
+    const struct ds_BodyPrefab body_prefab = { .dynamic = 1 };
+    const ds_TransformWorld t_body = { .rotation = QNormalize(Q(0.3f, -0.5f, 0.1f, 0.8f)), .position = V3F64(1e6, -1e6, 1e6) };
+    const ds_BodyId body_id = ds_BodyAdd(&pipeline, &body_prefab, &t_body, 0);
+    struct ds_Body *body = ds_BodyLookup(&pipeline, body_id).address;
+    TEST_NOT_ZERO(body != NULL);
+
+    ds_ShapeId shape_id[3];
+    const ds_Transform t_local[3] =
+    {
+        { .rotation = QIdentity(), .position = V3(1.0f, 0.0f, 0.0f) },
+        { .rotation = QNormalize(Q(0.7f, 0.1f, -0.2f, 0.6f)), .position = V3(0.0f, 1.0f, 0.0f) },
+        { .rotation = QNormalize(Q(-0.2f, 0.4f, 0.4f, 0.8f)), .position = V3(0.0f, 0.0f, 1.0f) },
+    };
+    for (u32 i = 0; i < 3; ++i)
+    {
+        const struct ds_ShapePrefab prefab = { .cshape = cshape_index[i], .density = 1.0f, .friction = 0.5f, .margin = 0.1f };
+        shape_id[i] = ds_ShapeAdd(&pipeline, &prefab, &t_local[i], body_id);
+        TEST_NOT_ZERO(shape_id[i] != DS_ID_NULL);
+    }
+    TEST_NOT_ZERO(body->shape_list.count == 3 && body->mass > 0.0f);
+
+    /* lookups, and the world box contains each shape's extreme points */
+    const struct ds_Shape *shape[3];
+    for (u32 i = 0; i < 3; ++i)
+    {
+        const struct slot slot = ds_ShapeLookup(&pipeline, shape_id[i]);
+        shape[i] = slot.address;
+        TEST_NOT_ZERO(shape[i] != NULL && slot.index == ds_IdIndex(shape_id[i]) && shape[i]->body == ds_IdIndex(body_id));
+
+        ds_TransformWorld t;
+        ds_ShapeWorldTransform(&t, &pipeline, shape[i]);
+        const struct aabb box = ds_ShapeWorldBbox(&pipeline, shape[i]);
+        const struct c_Shape *cshape = cshape_db.pool.buf + shape[i]->cshape_handle;
+        u32 contained = 1;
+        if (cshape->type == C_SHAPE_CONVEX_HULL)
+        {
+            for (u32 v = 0; v < cshape->hull.v_count; ++v)
+            {
+                contained &= DynamicsTestBboxContains(&box, ds_TransformWorldPointToWorld(&t, cshape->hull.v[v]));
+            }
+        }
+        else
+        {
+            const f32 r = (cshape->type == C_SHAPE_SPHERE) ? cshape->sphere.radius : cshape->capsule.radius;
+            const f32 h = (cshape->type == C_SHAPE_SPHERE) ? 0.0f : cshape->capsule.half_height;
+            for (u32 k = 0; k < 6; ++k)
+            {
+                /* the six axis-extreme points of the sphere or the two caps */
+                v3 local = V3Zero();
+                local.buf[k % 3] = (k < 3) ? r : -r;
+                local.y += (k < 3) ? h : -h;
+                contained &= DynamicsTestBboxContains(&box, ds_TransformWorldPointToWorld(&t, local));
+                local.y -= (k < 3) ? 2.0f*h : -2.0f*h;
+                contained &= DynamicsTestBboxContains(&box, ds_TransformWorldPointToWorld(&t, local));
+            }
+        }
+        if (!contained)
+        {
+            fprintf(stderr, "shape %s: world box does not contain its extreme points\n", name[i]);
+            TEST_FAILURE;
+        }
+    }
+
+    /* pair queries: symmetric in their arguments */
+    for (u32 a = 0; a < 3; ++a)
+    for (u32 b = a + 1; b < 3; ++b)
+    {
+        TEST_NOT_ZERO(ds_ShapeTest(&pipeline, shape[a], shape[b]) == ds_ShapeTest(&pipeline, shape[b], shape[a]));
+        v3f64 c0, c1, d0, d1;
+        const f32 dab = ds_ShapeDistance(&c0, &c1, &pipeline, shape[a], shape[b]);
+        const f32 dba = ds_ShapeDistance(&d0, &d1, &pipeline, shape[b], shape[a]);
+        TEST_NOT_ZERO(F32Abs(dab - dba) <= 1e-5f * (1.0f + dab));
+        if (dab > 0.0f)
+        {
+            TEST_NOT_ZERO(DynamicsTestDistanceSquared(c0, d1) <= 1e-8 && DynamicsTestDistanceSquared(c1, d0) <= 1e-8);
+            TEST_NOT_ZERO((ds_ShapeTest(&pipeline, shape[a], shape[b]) == 0));
+        }
+    }
+
+    /* raycasts: the pipeline's shape raycast is the collision raycast on the shape's world pose */
+    for (u32 i = 0; i < 3; ++i)
+    {
+        ds_TransformWorld t;
+        ds_ShapeWorldTransform(&t, &pipeline, shape[i]);
+        const struct c_Shape *cshape = cshape_db.pool.buf + shape[i]->cshape_handle;
+        for (u32 k = 0; k < 50; ++k)
+        {
+            const struct rayWorld ray =
+            {
+                .origin = V3F64Add(t.position, V3Promote(V3(RngF32Range(-3.0f, 3.0f), RngF32Range(-3.0f, 3.0f), RngF32Range(-3.0f, 3.0f)))),
+                .dir = V3(RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f), RngF32Range(-1.0f, 1.0f)),
+            };
+            if (V3LengthSquared(ray.dir) == 0.0f) { continue; }
+            const f32 expected = (cshape->type == C_SHAPE_SPHERE) ? c_SphereRaycastParameter(cshape, &t, &ray)
+                               : (cshape->type == C_SHAPE_CAPSULE) ? c_CapsuleRaycastParameter(cshape, &t, &ray)
+                               : c_HullRaycastParameter(cshape, &t, &ray);
+            TEST_NOT_ZERO(ds_ShapeRaycastParameter(&pipeline, shape[i], &ray) == expected);
+        }
+    }
+
+    /* removal: the id dies, a new shape in the reused slot gets another generation */
+    const ds_ShapeId removed = shape_id[1];
+    const u32 removed_index = ds_IdIndex(removed);
+    ds_ShapeDynamicRemove(&pipeline, body, removed_index, 1);
+    TEST_NOT_ZERO(ds_ShapeLookup(&pipeline, removed).address == NULL && body->shape_list.count == 2);
+    const struct ds_ShapePrefab again = { .cshape = cshape_index[1], .density = 1.0f, .friction = 0.5f, .margin = 0.1f };
+    const ds_ShapeId reused = ds_ShapeAdd(&pipeline, &again, &t_local[1], body_id);
+    TEST_NOT_ZERO(reused != DS_ID_NULL && reused != removed);
+    TEST_NOT_ZERO(ds_ShapeLookup(&pipeline, removed).address == NULL && ds_ShapeLookup(&pipeline, reused).address != NULL);
+    TEST_NOT_ZERO(ds_ShapeLookup(&pipeline, DS_ID_NULL).address == NULL);
+    TEST_NOT_ZERO(body->shape_list.count == 3);
+
+    ds_BodyRemove(&mem, &pipeline, body_id);
+    TEST_NOT_ZERO(pipeline.shape_pool.count == 0 && ds_ShapeLookup(&pipeline, reused).address == NULL);
+
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
 {
     DynamicsRestingBoxTest,
     DynamicsRestingStackTest,
     DynamicsRestingSlopeTest,
     DynamicsSnapshotTest,
+    DynamicsShapeTest,
 };
 
 struct suite_Correctness m_dynamics_suite =
