@@ -202,9 +202,12 @@ static void TscEstimateSkew(struct arena *persistent)
 	}
 
 	pthread_t thread1, thread2;
-	if (pthread_create(&thread1, &attr, PingPongReference, (void *) &data) != 0
-	    || pthread_create(&thread2, &attr, PingPongCoreIterator, (void *) &data) != 0)
-
+	if (pthread_create(&thread1, &attr, PingPongReference, (void *) &data) != 0)
+	{
+		LogSystemError(S_FATAL);	
+		FatalCleanupAndExit();
+	}
+	if (pthread_create(&thread2, &attr, PingPongCoreIterator, (void *) &data) != 0)
 	{
 		LogSystemError(S_FATAL);	
 		FatalCleanupAndExit();
