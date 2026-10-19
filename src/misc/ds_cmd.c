@@ -84,6 +84,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 	u32 codepoints_left = cmd->string.len;
 	u8 *token_start = NULL;
 	u32 token_length = 0;
+	u32 error = 0;
 	utf8 token_string;
 
 	while (codepoints_left && (text[i] == ' ' || text[i] == '\t' || text[i] == '\n'))
@@ -128,6 +129,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 		{
 			cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: command expects %u arguments.", &cmd->string, cmd->function->args_count);
 			cmd->function = g_cmd_f.buf + g_cmd_internal_debug_print_index;
+			error = 1;
 			break;
 		}
 
@@ -152,6 +154,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 			{
 				cmd->function = g_cmd_f.buf + g_cmd_internal_debug_print_index;
 				cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: non-closed string beginning.", &cmd->string);
+				error = 1;
 				break;
 			}
 
@@ -207,10 +210,8 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 					token_type = CMD_TOKEN_U64;
 				}
 			}
-			ds_Assert(token_type != CMD_TOKEN_INVALID);
 		}
 
-		ds_Assert(!codepoints_left || text[i] == ' ' || text[i] == '\t' || text[i] == '\n');
 		if (codepoints_left && (text[i] != ' ' && text[i] != '\t' && text[i] != '\n'))
 		{
 			token_type = CMD_TOKEN_INVALID;
@@ -251,6 +252,7 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 		if (ret.op_result != PARSE_SUCCESS)
 		{
 			cmd->function = g_cmd_f.buf + g_cmd_internal_debug_print_index;
+			error = 1;
 			switch (ret.op_result)
 			{
 				case PARSE_UNDERFLOW: 
@@ -270,6 +272,12 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 			}
 			break;
 		}
+	}
+
+	if (!error && token_count < cmd->function->args_count)
+	{
+		cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: command expects %u arguments.", &cmd->string, cmd->function->args_count);
+		cmd->function = g_cmd_f.buf + g_cmd_internal_debug_print_index;
 	}
 }
 
