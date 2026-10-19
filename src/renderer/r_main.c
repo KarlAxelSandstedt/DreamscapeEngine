@@ -734,7 +734,13 @@ static void r_SceneRender(const struct led *led, const u32 window)
 		{
 			case R_CMD_PRIMITIVE_LINE: { mode = GL_LINES; } break;
 			case R_CMD_PRIMITIVE_TRIANGLE: { mode = GL_TRIANGLES; } break;
-			default: { ds_AssertString(0, "Unexpected draw primitive"); } break;
+			default:
+			{
+				/* no mode to draw with: skip the bucket */
+				ds_AssertString(0, "Unexpected draw primitive");
+				ProfZoneEnd;
+				continue;
+			}
 		}
 
 		u32 vao;
