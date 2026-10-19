@@ -226,7 +226,6 @@ struct led
     u32			            draw_bounding_box;
     u32			            draw_dbvh;
     u32			            draw_sbvh;
-    u32			            draw_manifold;
 
     v3f64                   scene_origin;   /* world position the setup scenes are built around (default 0); set before the first led_Main */
 };
