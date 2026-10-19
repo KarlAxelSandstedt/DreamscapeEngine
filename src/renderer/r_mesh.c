@@ -67,9 +67,9 @@ void r_MeshStubBox(struct r_Mesh *mesh_stub)
 	mesh_stub->index_max_used = 16 + 7;
 	mesh_stub->index_count = sizeof(stub_indices) / sizeof(stub_indices[0]); 
 	mesh_stub->index_data = stub_indices;
-	mesh_stub->vertex_count = sizeof(stub_vertices) / sizeof(stub_vertices[0]);
+	mesh_stub->vertex_count = sizeof(stub_vertices) / (6*sizeof(f32));	/* position and normal per vertex */
 	mesh_stub->vertex_data = stub_vertices;
-	mesh_stub->local_stride = sizeof(stub_vertices[0]);
+	mesh_stub->local_stride = 6*sizeof(f32);
 }
 
 static void r_InternalMeshSphere(u32 *b_i, u8 *vertex_data, u32 *index_data, const f32 radius, const v3 translation, const u32 refinement)
