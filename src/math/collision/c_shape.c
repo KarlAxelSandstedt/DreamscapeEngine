@@ -56,6 +56,17 @@ static u32 Comb(const u32 o, const u32 u)
 	return v1 / v2;
 }
 
+/* x^n by multiplication: one rounding per product, the same bits on every platform (F32Pow is the C library's) */
+static f32 PowU(const f32 x, const u32 n)
+{
+	f32 r = 1.0f;
+	for (u32 i = 0; i < n; ++i)
+	{
+		r *= x;
+	}
+	return r;
+}
+
 static f32 StaticsLineIntegrals(const v2 p0, const v2 p1, const v2 p2, const u32 p, const u32 q, const v3 int_scalars)
 {
        ds_Assert(p <= 4 && q <= 4);
@@ -65,9 +76,9 @@ static f32 StaticsLineIntegrals(const v2 p0, const v2 p1, const v2 p2, const u32
        {
                for (u32 j = 0; j <= q; ++j)
                {
-                       sum += int_scalars.x * Comb(p, i) * Comb(q, j) * F32Pow(p1.x, (f32) i) * F32Pow(p0.x, (f32) (p-i)) * F32Pow(p1.y, (f32) j) * F32Pow(p0.y, (f32) (q-j)) / Comb(p+q, i+j);
-                       sum += int_scalars.y * Comb(p, i) * Comb(q, j) * F32Pow(p2.x, (f32) i) * F32Pow(p1.x, (f32) (p-i)) * F32Pow(p2.y, (f32) j) * F32Pow(p1.y, (f32) (q-j)) / Comb(p+q, i+j);
-                       sum += int_scalars.z * Comb(p, i) * Comb(q, j) * F32Pow(p0.x, (f32) i) * F32Pow(p2.x, (f32) (p-i)) * F32Pow(p0.y, (f32) j) * F32Pow(p2.y, (f32) (q-j)) / Comb(p+q, i+j);
+                       sum += int_scalars.x * Comb(p, i) * Comb(q, j) * PowU(p1.x, i) * PowU(p0.x, (p-i)) * PowU(p1.y, j) * PowU(p0.y, (q-j)) / Comb(p+q, i+j);
+                       sum += int_scalars.y * Comb(p, i) * Comb(q, j) * PowU(p2.x, i) * PowU(p1.x, (p-i)) * PowU(p2.y, j) * PowU(p1.y, (q-j)) / Comb(p+q, i+j);
+                       sum += int_scalars.z * Comb(p, i) * Comb(q, j) * PowU(p0.x, i) * PowU(p2.x, (p-i)) * PowU(p0.y, j) * PowU(p2.y, (q-j)) / Comb(p+q, i+j);
                }
        }
 
