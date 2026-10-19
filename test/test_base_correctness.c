@@ -1074,7 +1074,7 @@ static struct test_Output InputNameTest(struct test_Environment *env)
 static void FilesystemTestCleanup(void)
 {
     const char *entry[] = { FS_TEST_DIR "/a.txt", FS_TEST_DIR "/dangling", FS_TEST_DIR "/link_file", FS_TEST_DIR "/link_dir",
-        FS_TEST_DIR "/sub" };
+        FS_TEST_DIR "/map.txt", FS_TEST_DIR "/sub" };
     for (u32 i = 0; i < sizeof(entry) / sizeof(entry[0]); ++i)
     {
         unlink(entry[i]);
@@ -1165,6 +1165,30 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
     TEST_EQUAL(0, cwd_small.size);
     const utf8 cwd = CwdGet(mem);
     TEST_TRUE(cwd.size > 0 && cwd.buf[0] == '/');
+
+    /*
+     * #209: a partial mapping at any offset, as on Windows (mmap itself needs a page-aligned one); a shared mapping
+     * writes through, a private one does not; mapping past the end grows the file
+     */
+    TEST_EQUAL(FS_SUCCESS, DirectoryTryOpenAtCwd(mem, &dir, FS_TEST_DIR));
+    struct file map_file = FileNull();
+    TEST_EQUAL(FS_SUCCESS, FileTryCreate(mem, &map_file, "map.txt", &dir, 0));
+    TEST_EQUAL(10, FileWriteAppend(&map_file, (const u8 *) "0123456789", 10));
+    u8 *shared = FileMemoryMapPartial(&map_file, 4, 3, FS_PROT_READ | FS_PROT_WRITE, FS_MAP_SHARED);
+    TEST_TRUE(shared != NULL && memcmp(shared, "3456", 4) == 0);
+    shared[0] = 'a';
+    FileMemorySyncUnmap(shared, 4);
+    u8 *copy = FileMemoryMapPartial(&map_file, 5, 5, FS_PROT_READ | FS_PROT_WRITE, FS_MAP_PRIVATE);
+    TEST_TRUE(copy != NULL && memcmp(copy, "56789", 5) == 0);
+    copy[0] = 'b';
+    FileMemoryUnmap(copy, 5);
+    const u8 *grown = FileMemoryMapPartial(&map_file, 8, 9, FS_PROT_READ, FS_MAP_PRIVATE);
+    TEST_TRUE(grown != NULL && grown[0] == '9');
+    FileMemoryUnmap((void *) grown, 8);
+    FileClose(&map_file);
+    const struct dsBuffer map_dump = FileDump(mem, "map.txt", &dir);
+    TEST_TRUE(map_dump.size == 17 && memcmp(map_dump.data, "012a456789", 10) == 0);
+    FileClose(&dir);
 
     FilesystemTestCleanup();
 

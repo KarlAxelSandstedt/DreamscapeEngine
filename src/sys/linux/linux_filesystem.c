@@ -426,11 +426,17 @@ void *FileMemoryMapPartial(const struct file *file, const u64 length, const u64 
 		return NULL;
 	}
 
-	void *addr = mmap(NULL, length, prot, flags, file->handle, (off_t) offset);
+	/* mmap needs a page-aligned offset: map from the page and return the address inside it, as Windows does */
+	const u64 mod = offset % (u64) sysconf(_SC_PAGESIZE);
+	void *addr = mmap(NULL, length + mod, prot, flags, file->handle, (off_t) (offset - mod));
 	if (addr == MAP_FAILED)
 	{
 		LogSystemError(S_ERROR);
 		addr = NULL;
+	}
+	else
+	{
+		addr = (u8 *) addr + mod;
 	}
 
 	return addr;
@@ -438,7 +444,8 @@ void *FileMemoryMapPartial(const struct file *file, const u64 length, const u64 
 
 void FileMemoryUnmap(void *addr, const u64 length)
 {
-	if (munmap(addr, length) == -1)
+	const u64 mod = (u64) addr % (u64) sysconf(_SC_PAGESIZE);
+	if (munmap((u8 *) addr - mod, length + mod) == -1)
 	{
 		LogSystemError(S_ERROR);
 	}
@@ -446,12 +453,13 @@ void FileMemoryUnmap(void *addr, const u64 length)
 
 void FileMemorySyncUnmap(void *addr, const u64 length)
 {
-	if (msync(addr, length, MS_SYNC) == -1)
+	const u64 mod = (u64) addr % (u64) sysconf(_SC_PAGESIZE);
+	if (msync((u8 *) addr - mod, length + mod, MS_SYNC) == -1)
 	{
 		LogSystemError(S_ERROR);
 	}
 
-	if (munmap(addr, length) == -1)
+	if (munmap((u8 *) addr - mod, length + mod) == -1)
 	{
 		LogSystemError(S_ERROR);
 	}
