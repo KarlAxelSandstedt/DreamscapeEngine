@@ -117,6 +117,8 @@ if (DEFINED EMSCRIPTEN)
 	add_compile_options(-pthread)
 	add_link_options(-pthread -sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency)
 
+	# lib/'s external projects (SDL3, freetype) get CMAKE_C_FLAGS, not add_compile_options: without -pthread
+	# their objects lack atomics and wasm-ld refuses the shared-memory link
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread")
 
     #add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
