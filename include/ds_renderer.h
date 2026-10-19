@@ -54,7 +54,7 @@ DEFINE_SDB(r_Mesh);
  ********************************************************/
 
 /* initiate render state, ns_tick is ns per draw frame, or, if 0, redraw on every r_main() entry,  should be a power of 2 */
-void 	r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u64 core_unit_count, ds_SDB(r_Mesh) *mesh_database);
+void 	r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u32 core_unit_count, ds_SDB(r_Mesh) *mesh_database);
 
 /********************************************************
  *			r_main.c			*

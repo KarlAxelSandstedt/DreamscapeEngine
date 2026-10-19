@@ -700,7 +700,7 @@ static void r_SceneRender(const struct led *led, const u32 window)
 
 				if (!b->instanced)
 				{
-					ds_glDrawArrays(mode, 0, buf->local_size / g_r_core->program[program].local_stride);
+					ds_glDrawArrays(mode, 0, (GLsizei) (buf->local_size / g_r_core->program[program].local_stride));
 				}
 				else
 				{
@@ -709,7 +709,7 @@ static void r_SceneRender(const struct led *led, const u32 window)
 					ds_glBufferData(GL_ARRAY_BUFFER, buf->shared_size, buf->shared_data, GL_STATIC_DRAW);
 					g_r_core->program[program].buffer_shared_layout_setter();
 
-					ds_glDrawArraysInstanced(mode, 0, buf->local_size / g_r_core->program[program].local_stride, buf->instance_count);
+					ds_glDrawArraysInstanced(mode, 0, (GLsizei) (buf->local_size / g_r_core->program[program].local_stride), buf->instance_count);
 					ds_glDeleteBuffers(1, &buf->shared_vbo);
 
 				}
