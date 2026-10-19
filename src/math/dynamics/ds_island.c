@@ -88,7 +88,6 @@ struct slot ds_IslandLookup(struct ds_Dynamics *pipeline, const ds_IslandId id)
 void ds_IslandPrint(FILE *file, const struct ds_Dynamics *pipeline, const u32 island, const char *desc)
 {
 	const struct ds_Island *is = pipeline->island_pool.buf + island;
-	if (!is) { return; }
 
 	const struct ds_Contact *c;
 	const struct ds_Body *b;
@@ -216,8 +215,8 @@ void ds_IslandMerge(struct ds_Dynamics *pipeline, const u32 expand_index, const 
 	struct ds_Island *expand = pipeline->island_pool.buf + expand_index;
 	struct ds_Island *merge = pipeline->island_pool.buf + merge_index;
     
-    ds_Assert(expand->set == SOLVER_SET_ACTIVE)
-    ds_Assert(expand_index != merge_index)
+    ds_Assert(expand->set == SOLVER_SET_ACTIVE);
+    ds_Assert(expand_index != merge_index);
 
     ds_SolverSetWakeUp(pipeline, merge->set);
 
