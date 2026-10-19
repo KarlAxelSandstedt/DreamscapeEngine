@@ -870,12 +870,12 @@ static struct test_Output TransformTest(struct test_Environment *env)
 
     const f32 aspect = 16.0f / 9.0f;
     const f32 fov_x = F32_PI / 2.5f;
-    const f32 near = 0.1f;
-    const f32 far = 100.0f;
+    const f32 z_near = 0.1f;
+    const f32 z_far = 100.0f;
     const f32 t = F32Tan(fov_x / 2.0f);
-    const m4 projection = M4Perspective(aspect, fov_x, near, far);
-    const v4 p_near = TransformTestApply(projection, V3(0.0f, 0.0f, -near));
-    const v4 p_far = TransformTestApply(projection, V3(0.0f, 0.0f, -far));
+    const m4 projection = M4Perspective(aspect, fov_x, z_near, z_far);
+    const v4 p_near = TransformTestApply(projection, V3(0.0f, 0.0f, -z_near));
+    const v4 p_far = TransformTestApply(projection, V3(0.0f, 0.0f, -z_far));
     const v4 p_side = TransformTestApply(projection, V3(t * 7.0f, 0.0f, -7.0f));
     const v4 p_top = TransformTestApply(projection, V3(0.0f, -t * 7.0f / aspect, -7.0f));
     TEST_TRUE(F32Abs(p_near.z / p_near.w + 1.0f) <= 1e-5f && F32Abs(p_far.z / p_far.w - 1.0f) <= 1e-5f);
@@ -1155,6 +1155,97 @@ static struct test_Output FilesystemTest(struct test_Environment *env)
 	return output;
 }
 
+#elif __DS_PLATFORM__ == __DS_WIN64__
+
+#include <shlwapi.h>
+
+#define FS_TEST_DIR "ds_filesystem_test"
+/* U+00E5 U+00E4 U+00F6 as UTF-8 and UTF-16, escaped: MSVC reads the source in the ANSI code page */
+#define FS_TEST_NON_ASCII "\xc3\xa5\xc3\xa4\xc3\xb6"
+#define FS_TEST_NON_ASCII_W L"\x00e5\x00e4\x00f6"
+
+/* remove what FilesystemTest creates (also the leftovers of an interrupted run); OS API, test only */
+static void FilesystemTestCleanup(void)
+{
+    DeleteFileW(L"ds_filesystem_test\\a.txt");
+    RemoveDirectoryW(L"ds_filesystem_test\\dangling");
+    DeleteFileW(L"ds_filesystem_test\\dangling");
+    RemoveDirectoryW(L"ds_filesystem_test\\sub");
+    RemoveDirectoryW(L"ds_filesystem_test\\" FS_TEST_NON_ASCII_W);
+    RemoveDirectoryW(L"ds_filesystem_test");
+}
+
+/*
+ * The Windows twin of the Linux FilesystemTest, plus UTF-8 names: a non-ASCII directory name round-trips through
+ * DirectoryTryCreate and DirectoryPushEntries. A dangling symbolic link (only if this account may create one:
+ * developer mode or admin) is listed as FILE_UNRECOGNIZED. Checks for a springclean finding name it.
+ */
+static struct test_Output FilesystemTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+    struct arena *mem = env->mem_1;
+
+    FilesystemTestCleanup();
+    struct file dir = FileNull();
+    TEST_EQUAL(FS_SUCCESS, DirectoryTryCreateAtCwd(mem, &dir, FS_TEST_DIR));
+    TEST_EQUAL(FILE_DIRECTORY, dir.type);
+
+    struct file file = FileNull();
+    TEST_EQUAL(FS_SUCCESS, FileTryCreate(mem, &file, "a.txt", &dir, 0));
+    TEST_EQUAL(FILE_REGULAR, file.type);
+    TEST_EQUAL(5, FileWriteAppend(&file, (const u8 *) "hello", 5));
+    TEST_EQUAL(6, FileWriteAppend(&file, (const u8 *) " world", 6));
+    TEST_EQUAL(1, FileWriteOffset(&file, (const u8 *) "J", 1, 0));
+    FileClose(&file);
+
+    struct file again = FileNull();
+    TEST_EQUAL(FS_ALREADY_EXISTS, FileTryCreate(mem, &again, "a.txt", &dir, 0));
+
+    const struct dsBuffer dump = FileDump(mem, "a.txt", &dir);
+    TEST_TRUE(dump.data != NULL && dump.size == 11 && memcmp(dump.data, "Jello world", 11) == 0);
+
+    struct file sub = FileNull();
+    TEST_EQUAL(FS_SUCCESS, DirectoryTryCreate(mem, &sub, "sub", &dir));
+    TEST_EQUAL(FILE_DIRECTORY, sub.type);
+    FileClose(&sub);
+
+    struct file non_ascii = FileNull();
+    TEST_EQUAL(FS_SUCCESS, DirectoryTryCreate(mem, &non_ascii, FS_TEST_NON_ASCII, &dir));
+    FileClose(&non_ascii);
+
+    const u32 have_link = CreateSymbolicLinkW(L"ds_filesystem_test\\dangling", L"does_not_exist",
+            SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != 0;
+
+    const utf8 non_ascii_name = { .buf = (u8 *) FS_TEST_NON_ASCII, .size = sizeof(FS_TEST_NON_ASCII) - 1, .len = 3 };
+    ds_CPool(file) entries;
+    ds_CPoolAlloc(NULL, entries, 8, GROWABLE);
+    TEST_EQUAL(FS_SUCCESS, DirectoryPushEntries(mem, &entries, &dir));
+    TEST_EQUAL(FILE_HANDLE_INVALID, dir.handle);
+    u32 found = 0;
+    for (u32 i = 0; i < entries.count; ++i)
+    {
+        const struct file *e = entries.buf + i;
+        if (Utf8Equivalence(e->path, Utf8Inline("a.txt")))                  { found |= 1; TEST_EQUAL(FILE_REGULAR, e->type); }
+        else if (Utf8Equivalence(e->path, Utf8Inline("sub")))               { found |= 2; TEST_EQUAL(FILE_DIRECTORY, e->type); }
+        else if (Utf8Equivalence(e->path, non_ascii_name))                 { found |= 4; TEST_EQUAL(FILE_DIRECTORY, e->type); }
+        else if (Utf8Equivalence(e->path, Utf8Inline("dangling")))          { found |= 8; TEST_EQUAL(FILE_UNRECOGNIZED, e->type); }
+    }
+    ds_CPoolDealloc(entries);
+    TEST_EQUAL((have_link) ? 15 : 7, found);
+
+    struct arena tiny = ArenaAlloc(NULL, 4);
+    TEST_TRUE(tiny.stack_ptr != NULL);
+    const utf8 cwd_small = CwdGet(&tiny);
+    ArenaFree(&tiny);
+    TEST_EQUAL(0, cwd_small.size);
+    const utf8 cwd = CwdGet(mem);
+    TEST_TRUE(cwd.size > 0 && !PathIsRelativeA(CstrUtf8(mem, cwd)));
+
+    FilesystemTestCleanup();
+
+	return output;
+}
+
 #endif
 
 /*
@@ -1253,7 +1344,7 @@ static struct test_Output (*base_tests[])(struct test_Environment *) =
     PoseTest,
     CameraTest,
     InputNameTest,
-#if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
+#if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__ || __DS_PLATFORM__ == __DS_WIN64__
     FilesystemTest,
 #endif
     BitCountTest,
