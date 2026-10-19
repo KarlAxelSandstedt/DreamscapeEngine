@@ -56,6 +56,13 @@ bodies' simulation state without compute state, the contacts with their caches, 
 active set empty). Waking a fixed set or the null index does nothing. Removing the top box wakes the stack's
 set (slot freed, the bottom box active with compute state and a reset sleep timer, the lone box still asleep);
 the bottom box sleeps again into the freed slot; disabling sleeping wakes everything.
+
+Constraint graph (DynamicsGraphTest): a three-box row and a slab carrying nine boxes, more than the dynamic
+colours. After a tick every contact is coloured and the invariants hold (GraphTestCheck: static colours hold
+static-dynamic contacts, dynamic colours dynamic-dynamic ones, one contact per dynamic body and colour, a
+colour's body bits mark exactly its dynamic bodies), the slab fills every dynamic colour and the rest of its
+contacts are serial. Removing the slab clears its bits and keeps the rest coloured; once the small boxes
+have landed on the ground, only the row's two contacts are in dynamic colours and none is serial.
 */
 
 #define DYNAMICS_TEST_SETTLE_TICKS      120     /* 2 s at 60 Hz */
@@ -1208,6 +1215,139 @@ static struct test_Output DynamicsSleepTest(struct test_Environment *env)
     return output;
 }
 
+/*
+ * The constraint graph's invariants: every coloured contact is between an active island's bodies, a static
+ * colour holds static-dynamic contacts and a dynamic colour dynamic-dynamic ones, no dynamic body has two
+ * contacts of one colour, and a colour's body bit set marks exactly the dynamic bodies with a contact in it.
+ * Returns the number of contacts in the colours, or U32_MAX on a violation.
+ */
+static u32 GraphTestCheck(const struct ds_Dynamics *pipeline)
+{
+    struct arena *tmp = ArenaPushScratch();
+    u32 *colour_count = ArenaPush(tmp, pipeline->body_pool.count_max*sizeof(u32));
+    u32 total = 0;
+    u32 ok = 1;
+    for (u32 c = 0; c < CG_COLOR_COUNT && ok; ++c)
+    {
+        const struct ds_CGraphColor *colour = pipeline->cgraph.color + c;
+        for (u32 i = 0; i < pipeline->body_pool.count_max; ++i)
+        {
+            colour_count[i] = 0;
+        }
+        for (u32 i = 0; i < colour->contact_pool.count; ++i)
+        {
+            const struct ds_Contact *contact = pipeline->contact_pool.buf + colour->contact_pool.buf[i];
+            const struct ds_Shape *shape[2] = { pipeline->shape_pool.buf + contact->key.shape[0], pipeline->shape_pool.buf + contact->key.shape[1] };
+            const struct ds_Body *body[2] = { pipeline->body_pool.buf + shape[0]->body, pipeline->body_pool.buf + shape[1]->body };
+            const u32 dynamic = (ds_BodyDynamicCheck(body[0]) != 0) + (ds_BodyDynamicCheck(body[1]) != 0);
+            ok &= (contact->color == c && contact->compute == i && contact->set == SOLVER_SET_NULL);
+            ok &= (pipeline->island_pool.buf[contact->island].set == SOLVER_SET_ACTIVE);
+            ok &= (c > CG_STATIC_COLOR_LAST || dynamic == 1);
+            ok &= (c < CG_DYNAMIC_COLOR_FIRST || c > CG_DYNAMIC_COLOR_LAST || dynamic == 2);
+            for (u32 k = 0; k < 2; ++k)
+            {
+                if (ds_BodyDynamicCheck(body[k]))
+                {
+                    colour_count[shape[k]->body] += 1;
+                }
+            }
+            total += 1;
+        }
+        if (c == CG_SERIAL_COLOR)
+        {
+            continue;
+        }
+        for (u32 i = 0; i < pipeline->body_pool.count_max; ++i)
+        {
+            ok &= (colour_count[i] <= 1);
+            ok &= (ds_BitSetGet(&colour->body_bitset, i) == (colour_count[i] == 1));
+        }
+    }
+    ArenaPopScratch();
+    return (ok) ? total : U32_MAX;
+}
+
+/* the constraint graph's colouring (file comment) */
+static struct test_Output DynamicsGraphTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 0;
+
+    /* a ground, a three-box row touching along x, and a slab carrying nine small boxes: more neighbours than dynamic colours */
+    const v3 hw = V3(0.5f, 0.5f, 0.5f);
+    struct dynamics_TestBox scene[14];
+    u32 count = 0;
+    scene[count++] = (struct dynamics_TestBox) { .position = V3(0.0f, -1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(16.0f, 1.0f, 16.0f), .dynamic = 0, .friction = 0.5f };
+    for (u32 i = 0; i < 3; ++i)
+    {
+        scene[count++] = (struct dynamics_TestBox) { .position = V3(-8.0f + 0.98f * ((f32) i - 1.0f), 0.5f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f };
+    }
+    const u32 slab = count;
+    scene[count++] = (struct dynamics_TestBox) { .position = V3(6.0f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = V3(4.0f, 0.5f, 4.0f), .dynamic = 1, .friction = 0.5f };
+    for (u32 i = 0; i < 9; ++i)
+    {
+        const f32 x = 6.0f + 2.5f * ((f32) (i % 3) - 1.0f);
+        const f32 z = 2.5f * ((f32) (i / 3) - 1.0f);
+        scene[count++] = (struct dynamics_TestBox) { .position = V3(x, 1.5f, z), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f };
+    }
+    ds_Assert(count == 14 && CG_DYNAMIC_COLOR_COUNT < 9);
+    ds_BodyId id[14];
+    for (u32 i = 0; i < count; ++i)
+    {
+        id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
+    }
+
+    /* after a tick every contact is coloured: 4 with the ground, 2 in the row, 9 on the slab; at least two of the slab's overflow into the serial colour */
+    SnapshotTestTick(&pipeline);
+    ds_CGraphValidate(&pipeline);
+    TEST_NOT_ZERO(GraphTestCheck(&pipeline) == 15);
+    TEST_NOT_ZERO(pipeline.cgraph.color[CG_SERIAL_COLOR].contact_pool.count >= 9 - CG_DYNAMIC_COLOR_COUNT);
+    const u32 slab_index = ds_BodyLookup(&pipeline, id[slab]).index;
+    u32 slab_dynamic_colours = 0;
+    for (u32 c = CG_DYNAMIC_COLOR_FIRST; c <= CG_DYNAMIC_COLOR_LAST; ++c)
+    {
+        slab_dynamic_colours += ds_BitSetGet(&pipeline.cgraph.color[c].body_bitset, slab_index);
+    }
+    TEST_NOT_ZERO(slab_dynamic_colours == CG_DYNAMIC_COLOR_COUNT);
+
+    /* removing the slab takes its ten contacts out of the colours and clears its bits; the rest stay coloured */
+    ds_BodyRemove(&mem, &pipeline, id[slab]);
+    ds_CGraphValidate(&pipeline);
+    TEST_NOT_ZERO(GraphTestCheck(&pipeline) == 5);
+    for (u32 c = 0; c < CG_COLOR_COUNT; ++c)
+    {
+        TEST_NOT_ZERO(c == CG_SERIAL_COLOR || ds_BitSetGet(&pipeline.cgraph.color[c].body_bitset, slab_index) == 0);
+    }
+
+    /* the small boxes land on the ground: twelve static-dynamic contacts, the row's two dynamic ones, nothing serial */
+    for (u32 t = 0; t < 120; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    ds_CGraphValidate(&pipeline);
+    TEST_NOT_ZERO(GraphTestCheck(&pipeline) == 14);
+    u32 dynamic_contacts = 0;
+    for (u32 c = CG_DYNAMIC_COLOR_FIRST; c <= CG_DYNAMIC_COLOR_LAST; ++c)
+    {
+        dynamic_contacts += pipeline.cgraph.color[c].contact_pool.count;
+    }
+    TEST_NOT_ZERO(dynamic_contacts == 2 && pipeline.cgraph.color[CG_SERIAL_COLOR].contact_pool.count == 0);
+
+    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
 {
     DynamicsRestingBoxTest,
@@ -1219,6 +1359,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsContactTest,
     DynamicsIslandTest,
     DynamicsSleepTest,
+    DynamicsGraphTest,
 };
 
 struct suite_Correctness m_dynamics_suite =
