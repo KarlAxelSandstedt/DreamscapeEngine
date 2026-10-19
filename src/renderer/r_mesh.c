@@ -110,7 +110,7 @@ static void r_InternalMeshSphere(u32 *b_i, u8 *vertex_data, u32 *index_data, con
 	}
 
 	vertex = V3Add(V3(0.0f, -radius, 0.0f), translation);
-	n = V3Normalize(vertex);
+	n = V3(0.0f, -1.0f, 0.0f);
 	memcpy(vertex_data + offset + p_offset, &vertex, sizeof(v3));
 	//memcpy(vertex_data + offset + c_offset, &color, sizeof(v4));
 	memcpy(vertex_data + offset + n_offset, &n, sizeof(v3));
