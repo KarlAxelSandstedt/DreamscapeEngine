@@ -32,7 +32,7 @@ u32 ds_ContactKeyHash(const struct ds_ContactKey key)
 
 u32 ds_ContactKeyEquivalence(const struct ds_ContactKey key0, const struct ds_ContactKey key1)
 {
-    return memcmp(&key0, &key1, sizeof(struct ds_ContactKey)) == 0;
+    return key0.shape[0] == key1.shape[0] && key0.shape[1] == key1.shape[1];
 }
 
 void ds_ContactKeyAddress(struct ds_Body **b0, struct ds_Shape **s0, struct ds_Body **b1, struct ds_Shape **s1, const struct ds_Dynamics *pipeline, const struct ds_ContactKey key)
@@ -165,11 +165,16 @@ struct slot ds_ContactKeyLookup(const struct ds_Dynamics *pipeline, const struct
 struct slot ds_ContactLookup(const struct ds_Dynamics *pipeline, const ds_ContactId id)
 {
     struct slot slot = { .address = NULL, .index = U32_MAX };
-    struct ds_Contact *c = pipeline->contact_pool.buf + ds_IdFIndex(id);
-    if (id != DS_IDF_NULL && ds_PoolSlotAllocated(c) && c->id == id)
+    /* the index is bounded before the slot is read (as ds_BodyLookup) */
+    const u32 index = ds_IdFIndex(id);
+    if (index < pipeline->contact_pool.count_max)
     {
-        slot.address = c;
-        slot.index = ds_IdFIndex(id);
+        struct ds_Contact *c = pipeline->contact_pool.buf + index;
+        if (ds_PoolSlotAllocated(c) && c->id == id)
+        {
+            slot.address = c;
+            slot.index = index;
+        }
     }
 
     return slot;
@@ -281,10 +286,10 @@ void ds_ContactDemote(struct ds_Dynamics *pipeline, const u32 contact)
 u64 ds_ContactMemoryRequirement(const struct ds_Dynamics *pipeline, const u32 contact)
 {
     const struct ds_Contact *c = pipeline->contact_pool.buf + contact;
+    ds_Assert(c->color != CG_INVALID_COLOR);
     const struct ds_CGraphColor *color = pipeline->cgraph.color + c->color;
     const struct ds_ContactCompute *compute = color->contact_compute_pool.buf + c->compute;
 
-    ds_Assert(c->color != CG_INVALID_COLOR);
     const u64 mem_req_manifold = c->narrowphase.manifold_count*sizeof(struct ds_SolverManifold);
     const u64 mem_req_cache = c->narrowphase.cache_count*sizeof(struct c_SatCache);
     const u64 mem_req_compute = compute->ccache_count*sizeof(struct ds_ContactConstraintCache);

@@ -129,9 +129,7 @@ void ds_ShapeStaticRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, co
 
 struct slot ds_ShapeLookup(const struct ds_Dynamics *pipeline, const ds_ShapeId shape_id)
 {
-
     struct slot slot = { .address = NULL, .index = U32_MAX };
-    /* the index is bounded before the slot is read (as ds_BodyLookup) */
     const u32 index = ds_IdIndex(shape_id);
     if (index < pipeline->shape_pool.count_max)
     {
