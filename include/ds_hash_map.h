@@ -237,6 +237,7 @@ static ds_ForceInline void ds_THashMapRemoveInternal(const struct ds_THashState 
 /* link value with the tag incremented: a changed link never compares equal to an old snapshot (no ABA) */
 #define THASH_RETAG(link)   (((link) & THASH_TAG_MASK) + THASH_TAG_ONE)
 
+/* Internal: the address of slot index's link word (tag | next) */
 static ds_ForceInline u64 *ds_THashLinkInternal(const struct ds_TPoolState *pool, void *const *block, const u32 index, const u64 slot_size, const u64 link_offset)
 {
 	return (u64 *) (ds_TPoolAddressInternal(pool, block, index, slot_size) + link_offset);
