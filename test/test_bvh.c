@@ -94,7 +94,7 @@ struct test_Output DBVHQueryTest(struct test_Environment *env)
     for (u32 i = 0; i < count; ++i)
     {
         leaf[i].box = BVHTestRandomBox(10.0f, (i % 8 == 0) ? 4.0f : 0.5f);
-        leaf[i].body = RngU64Range(0, 63);	/* several shapes per body */
+        leaf[i].body = (u32) RngU64Range(0, 63);	/* several shapes per body */
         leaf[i].node = DBVHInsert(&bvh, leaf[i].body, i, &leaf[i].box);
     }
     BVHValidate(&bvh);
