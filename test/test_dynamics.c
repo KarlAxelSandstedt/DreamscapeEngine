@@ -2034,6 +2034,127 @@ static struct test_Output DynamicsWarmStartMetricsTest(struct test_Environment *
     return output;
 }
 
+
+/*
+ * Warm start on sliding contacts (agent_notes/warm_start_design.txt): a box, a sphere and a capsule lying across
+ * the fall line on a static 20 degree slope added first (shape 0 of every contact), friction 0.3 (tan 20 deg = 0.36:
+ * the box slides, the others roll). Prints, over the run, the final downhill speed (the box against the Coulomb
+ * recurrence v = (v + (g sin a - mu g cos a) dt) / (1 + d dt) from rest), the height above the slope's surface
+ * (min, max), its largest tick-to-tick change, the box's largest angular speed and the rollers' v / (w r).
+ * A measurement: no bounds.
+ */
+static f64 SlideWarmAbs(const f64 a) { return (a < 0.0) ? -a : a; }
+
+static ds_BodyId SlideWarmAdd(struct arena *mem, struct ds_Dynamics *pipeline, ds_SDB(c_Shape) *cshape_db, const enum c_ShapeType type, const v3 hw, const f32 radius, const f32 half_height, const v3 position, const q rotation, const u32 dynamic, const f32 friction, const u32 index)
+{
+    const utf8 id = Utf8Format(mem, "slide%u", index);
+    const struct slot slot = ds_SDBAddAlias(*cshape_db, id);
+    struct c_Shape *cshape = slot.address;
+    cshape->id = Utf8CopyBuffered(cshape->id_buf, C_SHAPE_ID_SIZE, id);
+    cshape->type = type;
+    switch (type)
+    {
+        case C_SHAPE_SPHERE:    cshape->sphere.radius = radius; break;
+        case C_SHAPE_CAPSULE:   cshape->capsule.radius = radius; cshape->capsule.half_height = half_height; break;
+        default:                cshape->hull = DcelBox(mem, hw); break;
+    }
+    c_ShapeUpdateMassProperties(cshape);
+
+    const struct ds_BodyPrefab body_prefab = { .dynamic = dynamic };
+    const ds_TransformWorld t_world = { .rotation = rotation, .position = V3Promote(position) };
+    const ds_BodyId body = ds_BodyAdd(pipeline, &body_prefab, &t_world, index);
+    const struct ds_ShapePrefab shape_prefab = { .cshape = slot.index, .density = 1.0f, .restitution = 0.0f, .friction = friction, .margin = 0.5f };
+    const ds_Transform t_local = ds_TransformIdentity();
+    ds_ShapeAdd(pipeline, &shape_prefab, &t_local, body);
+    return body;
+}
+
+static struct test_Output DynamicsSlideWarmTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+    (void) env;
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 0;
+
+    const f32 angle = 20.0f * F32_PI / 180.0f;
+    const f32 mu = 0.3f;
+    const q slope = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), angle);
+    const v3 n = QUnitRotate(slope, V3(0.0f, 1.0f, 0.0f));
+    const v3 up = QUnitRotate(slope, V3(1.0f, 0.0f, 0.0f));
+    const v3 gravity = g_solver_config->gravity;
+    const v3 downhill = V3Normalize(V3Sub(gravity, V3Scale(n, V3Dot(n, gravity))));
+    const q across = QMul(slope, QUnitAxisAngle(V3(1.0f, 0.0f, 0.0f), 0.5f * F32_PI));   /* the capsule's axis along z */
+
+    /* the slope's top surface is the plane n . x = 0 */
+    SlideWarmAdd(&mem, &pipeline, &cshape_db, C_SHAPE_CONVEX_HULL, V3(60.0f, 0.5f, 10.0f), 0.0f, 0.0f, V3Scale(n, -0.5f), slope, 0, mu, 0);
+    const v3 start = V3Scale(up, 40.0f);
+    const char *name[3] = { "box", "sphere", "capsule" };
+    const f32 offset[3] = { 0.5f, 0.3f, 0.25f };    /* height of the center above the surface when touching */
+    ds_BodyId body[3];
+    body[0] = SlideWarmAdd(&mem, &pipeline, &cshape_db, C_SHAPE_CONVEX_HULL, V3(0.5f, 0.5f, 0.5f), 0.0f, 0.0f, V3Add(start, V3Add(V3Scale(n, offset[0]), V3(0.0f, 0.0f, -4.0f))), slope, 1, mu, 1);
+    body[1] = SlideWarmAdd(&mem, &pipeline, &cshape_db, C_SHAPE_SPHERE, V3(0.0f, 0.0f, 0.0f), 0.3f, 0.0f, V3Add(start, V3Scale(n, offset[1])), QIdentity(), 1, mu, 2);
+    body[2] = SlideWarmAdd(&mem, &pipeline, &cshape_db, C_SHAPE_CAPSULE, V3(0.0f, 0.0f, 0.0f), 0.25f, 0.5f, V3Add(start, V3Add(V3Scale(n, offset[2]), V3(0.0f, 0.0f, 4.0f))), across, 1, mu, 3);
+
+    const u32 ticks = 240;
+    f64 h_min[3] = { 1e30, 1e30, 1e30 }, h_max[3] = { -1e30, -1e30, -1e30 }, dh_max[3] = { 0.0, 0.0, 0.0 }, h_prev[3] = { 0.0, 0.0, 0.0 };
+    f32 w_max[3] = { 0.0f, 0.0f, 0.0f };
+    u32 dh_tick[3] = { 0, 0, 0 };
+    f32 coulomb = 0.0f;
+    const f32 g_t = V3Dot(gravity, downhill);
+    const f32 g_n = -V3Dot(gravity, n);
+    const f32 damp = 1.0f / (1.0f + g_solver_config->linear_dampening * pipeline.timestep);
+    for (u32 t = 0; t < ticks; ++t)
+    {
+        ds_DynamicsTick(&pipeline);
+        ds_PoolFlush(pipeline.event_pool);
+        DLLFlush(pipeline.event_list);
+        coulomb = (coulomb + (g_t - mu * g_n) * pipeline.timestep) * damp;
+        for (u32 i = 0; i < 3; ++i)
+        {
+            const ds_TransformWorld pose = DynamicsTestPose(&pipeline, body[i]);
+            const f64 h = (f64) n.x * pose.position.x + (f64) n.y * pose.position.y + (f64) n.z * pose.position.z - (f64) offset[i];
+            if (t && dh_max[i] < SlideWarmAbs(h - h_prev[i]))
+            {
+                dh_max[i] = SlideWarmAbs(h - h_prev[i]);
+                dh_tick[i] = t;
+            }
+            h_prev[i] = h;
+            h_min[i] = (h < h_min[i]) ? h : h_min[i];
+            h_max[i] = (h_max[i] < h) ? h : h_max[i];
+            const struct ds_Body *b = ds_BodyLookup(&pipeline, body[i]).address;
+            const v3 w = pipeline.solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.buf[b->sim].angular_velocity;
+            w_max[i] = F32Max(w_max[i], V3Length(w));
+        }
+    }
+
+    for (u32 i = 0; i < 3; ++i)
+    {
+        const v3 v = SolverTestVelocity(&pipeline, body[i]);
+        const struct ds_Body *b = ds_BodyLookup(&pipeline, body[i]).address;
+        const v3 w = pipeline.solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.buf[b->sim].angular_velocity;
+        const f32 along = V3Dot(v, downhill);
+        const f32 across_v = V3Length(V3Sub(v, V3Scale(downhill, along)));
+        const f32 r = (i == 1) ? 0.3f : 0.25f;
+        fprintf(stdout, "\tslide warm, %s: v %.4f m/s downhill (%.4f across); height above slope min %.3e max %.3e, max tick change %.3e at tick %u; w max %.4f",
+                name[i], along, across_v, h_min[i], h_max[i], dh_max[i], dh_tick[i], w_max[i]);
+        if (i == 0) { fprintf(stdout, "; coulomb %.4f\n", coulomb); }
+        else        { fprintf(stdout, "; v / (w r) %.4f\n", along / (V3Length(w) * r)); }
+    }
+
+    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
 {
     DynamicsRestingBoxTest,
@@ -2053,6 +2174,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsFirstTickTest,
     DynamicsFlushTest,
     DynamicsNumericsConfigTest,
+    DynamicsSlideWarmTest,
     DynamicsWarmStartMetricsTest,
 };
 
