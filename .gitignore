@@ -4,6 +4,10 @@ build_agent
 build_agent_det
 build_agent_tsan
 build_agent_gjk
+build_agent_perf
+build_agent_clang
+build_agent_ubsan
+build_agent_clang_dbg
 log
 asset_components/led_projects
 **Makefile
@@ -22,3 +26,6 @@ CMakeSettings.json
 agent_notes/
 .claude/settings.local.json
 CLAUDE.local.md
+build_agent_cor
+build_agent_perf32
+build_agent_asan
