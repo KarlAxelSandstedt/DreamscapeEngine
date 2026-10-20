@@ -480,7 +480,7 @@ static u32 SnapshotTestEqual(const struct ds_Dynamics *a, const struct ds_Dynami
             continue;
         }
 
-        if (body_a->id != body_b->id || body_a->set != body_b->set || body_a->sim != body_b->sim || body_a->island != body_b->island
+        if (!ds_BodyIdEqual(body_a->id, body_b->id) || body_a->set != body_b->set || body_a->sim != body_b->sim || body_a->island != body_b->island
             || memcmp(&body_a->low_velocity_time, &body_b->low_velocity_time, sizeof(f32)) != 0)
         {
             return 0;
@@ -751,7 +751,7 @@ static struct test_Output DynamicsShapeTest(struct test_Environment *env)
     {
         const struct ds_ShapePrefab prefab = { .cshape = cshape_index[i], .density = 1.0f, .friction = 0.5f, .margin = 0.1f };
         shape_id[i] = ds_ShapeAdd(&pipeline, &prefab, &t_local[i], body_id);
-        TEST_NOT_ZERO(shape_id[i] != DS_ID_NULL);
+        TEST_NOT_ZERO(!ds_ShapeIdNullCheck(shape_id[i]));
     }
     TEST_NOT_ZERO(body->shape_list.count == 3 && body->mass > 0.0f);
 
@@ -761,7 +761,7 @@ static struct test_Output DynamicsShapeTest(struct test_Environment *env)
     {
         const struct slot slot = ds_ShapeLookup(&pipeline, shape_id[i]);
         shape[i] = slot.address;
-        TEST_NOT_ZERO(shape[i] != NULL && slot.index == ds_IdIndex(shape_id[i]) && shape[i]->body == ds_IdIndex(body_id));
+        TEST_NOT_ZERO(shape[i] != NULL && slot.index == ds_ShapeIdIndex(shape_id[i]) && shape[i]->body == ds_BodyIdIndex(body_id));
 
         ds_TransformWorld t;
         ds_ShapeWorldTransform(&t, &pipeline, shape[i]);
@@ -836,14 +836,14 @@ static struct test_Output DynamicsShapeTest(struct test_Environment *env)
 
     /* removal: the id dies, a new shape in the reused slot gets another generation */
     const ds_ShapeId removed = shape_id[1];
-    const u32 removed_index = ds_IdIndex(removed);
+    const u32 removed_index = ds_ShapeIdIndex(removed);
     ds_ShapeDynamicRemove(&pipeline, body, removed_index, 1);
     TEST_NOT_ZERO(ds_ShapeLookup(&pipeline, removed).address == NULL && body->shape_list.count == 2);
     const struct ds_ShapePrefab again = { .cshape = cshape_index[1], .density = 1.0f, .friction = 0.5f, .margin = 0.1f };
     const ds_ShapeId reused = ds_ShapeAdd(&pipeline, &again, &t_local[1], body_id);
-    TEST_NOT_ZERO(reused != DS_ID_NULL && reused != removed);
+    TEST_NOT_ZERO(!ds_ShapeIdNullCheck(reused) && !ds_ShapeIdEqual(reused, removed));
     TEST_NOT_ZERO(ds_ShapeLookup(&pipeline, removed).address == NULL && ds_ShapeLookup(&pipeline, reused).address != NULL);
-    TEST_NOT_ZERO(ds_ShapeLookup(&pipeline, DS_ID_NULL).address == NULL);
+    TEST_NOT_ZERO(ds_ShapeLookup(&pipeline, ds_ShapeIdNull()).address == NULL);
     TEST_NOT_ZERO(body->shape_list.count == 3);
 
     ds_BodyRemove(&mem, &pipeline, body_id);
@@ -897,16 +897,16 @@ static struct test_Output DynamicsBodyTest(struct test_Environment *env)
     const ds_TransformWorld t_b = { .rotation = QNormalize(Q(0.1f, 0.2f, 0.3f, 0.9f)), .position = V3F64(-5.0, 0.0, 5.0) };
     const ds_BodyId a = ds_BodyAdd(&pipeline, &dynamic_prefab, &t_a, 0);
     const ds_BodyId b = ds_BodyAdd(&pipeline, &static_prefab, &t_b, 1);
-    TEST_NOT_ZERO(a != DS_ID_NULL && b != DS_ID_NULL && a != b);
+    TEST_NOT_ZERO(!ds_BodyIdNullCheck(a) && !ds_BodyIdNullCheck(b) && !ds_BodyIdEqual(a, b));
 
     /* two spheres on a: density 1 at x = +1, density 3 at x = -1 */
     const struct ds_ShapePrefab light = { .cshape = slot.index, .density = 1.0f, .friction = 0.5f, .margin = 0.1f };
     const struct ds_ShapePrefab heavy = { .cshape = slot.index, .density = 3.0f, .friction = 0.5f, .margin = 0.1f };
     const ds_Transform at_plus = { .rotation = QIdentity(), .position = V3(1.0f, 0.0f, 0.0f) };
     const ds_Transform at_minus = { .rotation = QIdentity(), .position = V3(-1.0f, 0.0f, 0.0f) };
-    TEST_NOT_ZERO(ds_ShapeAdd(&pipeline, &light, &at_plus, a) != DS_ID_NULL);
-    TEST_NOT_ZERO(ds_ShapeAdd(&pipeline, &heavy, &at_minus, a) != DS_ID_NULL);
-    TEST_NOT_ZERO(ds_ShapeAdd(&pipeline, &heavy, &at_minus, b) != DS_ID_NULL);
+    TEST_NOT_ZERO(!ds_ShapeIdNullCheck(ds_ShapeAdd(&pipeline, &light, &at_plus, a)));
+    TEST_NOT_ZERO(!ds_ShapeIdNullCheck(ds_ShapeAdd(&pipeline, &heavy, &at_minus, a)));
+    TEST_NOT_ZERO(!ds_ShapeIdNullCheck(ds_ShapeAdd(&pipeline, &heavy, &at_minus, b)));
 
     /* closed forms: masses V and 3V, com at -0.5; I_xx = 2/5 (4V) r^2, I_yy = I_zz = I_xx + V 1.5^2 + 3V 0.5^2 */
     const f32 mass = 4.0f * volume;
@@ -934,11 +934,11 @@ static struct test_Output DynamicsBodyTest(struct test_Environment *env)
     }
 
     /* lookups: another generation of the same index is not found */
-    TEST_NOT_ZERO(ds_BodyLookup(&pipeline, a + DS_ID_GENERATION_INCREMENT).address == NULL);
-    TEST_NOT_ZERO(ds_BodyLookup(&pipeline, DS_ID_NULL).address == NULL);
+    TEST_NOT_ZERO(ds_BodyLookup(&pipeline, ds_BodyIdNextGeneration(a)).address == NULL);
+    TEST_NOT_ZERO(ds_BodyLookup(&pipeline, ds_BodyIdNull()).address == NULL);
 
     /* removal: the usage bit goes, the id dies, and removing it again changes nothing */
-    const u32 index_a = ds_IdIndex(a);
+    const u32 index_a = ds_BodyIdIndex(a);
     ds_BodyRemove(&mem, &pipeline, a);
     TEST_NOT_ZERO(ds_BodyLookup(&pipeline, a).address == NULL && pipeline.body_pool.count == 1 && pipeline.shape_pool.count == 1);
     TEST_NOT_ZERO(ds_BitSetGet(&pipeline.body_usage_set, index_a) == 0);
@@ -951,7 +951,7 @@ static struct test_Output DynamicsBodyTest(struct test_Environment *env)
 
     /* the slot is reusable with a new generation */
     const ds_BodyId c = ds_BodyAdd(&pipeline, &dynamic_prefab, &t_a, 2);
-    TEST_NOT_ZERO(c != DS_ID_NULL && c != a && ds_BodyLookup(&pipeline, a).address == NULL && ds_BodyLookup(&pipeline, c).address != NULL);
+    TEST_NOT_ZERO(!ds_BodyIdNullCheck(c) && !ds_BodyIdEqual(c, a) && ds_BodyLookup(&pipeline, a).address == NULL && ds_BodyLookup(&pipeline, c).address != NULL);
 
     ds_BodyRemove(&mem, &pipeline, b);
     ds_BodyRemove(&mem, &pipeline, c);
@@ -1012,8 +1012,8 @@ static struct test_Output DynamicsContactTest(struct test_Environment *env)
     const struct ds_Contact *c = found.address;
     TEST_NOT_ZERO(c != NULL && ds_ContactKeyEquivalence(c->key, key));
     TEST_NOT_ZERO(ds_ContactLookup(&pipeline, c->id).address == c);
-    TEST_NOT_ZERO(ds_ContactLookup(&pipeline, c->id + DS_IDF_GENERATION_INCREMENT).address == NULL);
-    TEST_NOT_ZERO(ds_ContactLookup(&pipeline, DS_IDF_NULL).address == NULL);
+    TEST_NOT_ZERO(ds_ContactLookup(&pipeline, ds_ContactIdNextGeneration(c->id)).address == NULL);
+    TEST_NOT_ZERO(ds_ContactLookup(&pipeline, ds_ContactIdNull()).address == NULL);
     const ds_ContactId contact_id = c->id;
 
     /* the shapes list it (each with the ground's contact too), and the touching boxes share an island */
@@ -1070,8 +1070,8 @@ static struct test_Output DynamicsIslandTest(struct test_Environment *env)
     const u32 island_a = body_a->island;
     const ds_IslandId island_a_id = pipeline.island_pool.buf[island_a].id;
     TEST_NOT_ZERO(ds_IslandLookup(&pipeline, island_a_id).index == island_a);
-    TEST_NOT_ZERO(ds_IslandLookup(&pipeline, island_a_id + DS_ID_GENERATION_INCREMENT).address == NULL);
-    TEST_NOT_ZERO(ds_IslandLookup(&pipeline, DS_ID_NULL).address == NULL);
+    TEST_NOT_ZERO(ds_IslandLookup(&pipeline, ds_IslandIdNextGeneration(island_a_id)).address == NULL);
+    TEST_NOT_ZERO(ds_IslandLookup(&pipeline, ds_IslandIdNull()).address == NULL);
     ds_IslandValidateAll(&pipeline);
 
     ds_BodyRemove(&mem, &pipeline, a);
@@ -1079,9 +1079,9 @@ static struct test_Output DynamicsIslandTest(struct test_Environment *env)
     const ds_BodyId b = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, &lone, (v3f64) { 0 }, 1);
     const struct ds_Body *body_b = ds_BodyLookup(&pipeline, b).address;
     const ds_IslandId island_b_id = pipeline.island_pool.buf[body_b->island].id;
-    if (island_b_id == island_a_id || ds_IslandLookup(&pipeline, island_a_id).address != NULL)
+    if (ds_IslandIdEqual(island_b_id, island_a_id) || ds_IslandLookup(&pipeline, island_a_id).address != NULL)
     {
-        fprintf(stderr, "island: the removed island's id %llx is alive again as %llx\n", (long long unsigned int) island_a_id, (long long unsigned int) island_b_id);
+        fprintf(stderr, "island: the removed island's id %llx is alive again as %llx\n", (long long unsigned int) island_a_id.val, (long long unsigned int) island_b_id.val);
         TEST_FAILURE;
     }
     ds_BodyRemove(&mem, &pipeline, b);
@@ -1498,13 +1498,13 @@ static struct test_Output DynamicsJointTest(struct test_Environment *env)
     const ds_Transform frame_b = { .rotation = QIdentity(), .position = V3(-0.5f, 0.0f, 0.0f) };
     const ds_JointId j0 = ds_JointAdd(&pipeline, id[0], &frame_ground, id[1], &frame_a);
     const ds_JointId j1 = ds_JointAdd(&pipeline, id[1], &frame_a, id[2], &frame_b);
-    TEST_NOT_ZERO(j0 != DS_ID_NULL && j1 != DS_ID_NULL && j0 != j1);
-    TEST_NOT_ZERO(ds_JointAdd(&pipeline, id[0], &frame_ground, DS_ID_NULL, &frame_a) == DS_ID_NULL);
-    TEST_NOT_ZERO(ds_JointLookup(&pipeline, DS_ID_NULL).address == NULL);
-    TEST_NOT_ZERO(ds_JointLookup(&pipeline, j0 + DS_ID_GENERATION_INCREMENT).address == NULL);
+    TEST_NOT_ZERO(!ds_JointIdNullCheck(j0) && !ds_JointIdNullCheck(j1) && !ds_JointIdEqual(j0, j1));
+    TEST_NOT_ZERO(ds_JointIdNullCheck(ds_JointAdd(&pipeline, id[0], &frame_ground, ds_BodyIdNull(), &frame_a)));
+    TEST_NOT_ZERO(ds_JointLookup(&pipeline, ds_JointIdNull()).address == NULL);
+    TEST_NOT_ZERO(ds_JointLookup(&pipeline, ds_JointIdNextGeneration(j0)).address == NULL);
     const struct slot s0 = ds_JointLookup(&pipeline, j0);
     const struct slot s1 = ds_JointLookup(&pipeline, j1);
-    TEST_NOT_ZERO(s0.address != NULL && s1.address != NULL && s0.index == ds_IdIndex(j0) && s1.index == ds_IdIndex(j1));
+    TEST_NOT_ZERO(s0.address != NULL && s1.address != NULL && s0.index == ds_JointIdIndex(j0) && s1.index == ds_JointIdIndex(j1));
     const struct ds_Joint *joint0 = s0.address;
     const struct ds_Joint *joint1 = s1.address;
     TEST_NOT_ZERO(joint0->body[0] == index[0] && joint0->body[1] == index[1] && joint1->body[0] == index[1] && joint1->body[1] == index[2]);
@@ -1528,7 +1528,7 @@ static struct test_Output DynamicsJointTest(struct test_Environment *env)
 
     /* a reused slot gets a new generation; removing a body takes its joints */
     const ds_JointId j2 = ds_JointAdd(&pipeline, id[0], &frame_ground, id[2], &frame_b);
-    TEST_NOT_ZERO(ds_IdIndex(j2) == ds_IdIndex(j0) && j2 != j0 && ds_JointLookup(&pipeline, j0).address == NULL);
+    TEST_NOT_ZERO(ds_JointIdIndex(j2) == ds_JointIdIndex(j0) && !ds_JointIdEqual(j2, j0) && ds_JointLookup(&pipeline, j0).address == NULL);
     TEST_NOT_ZERO(b->joint_list.count == 2 && ground->joint_list.count == 1);
     ds_BodyRemove(&mem, &pipeline, id[2]);
     TEST_NOT_ZERO(pipeline.joint_pool.count == 0 && ground->joint_list.count == 0 && a->joint_list.count == 0);
@@ -1745,16 +1745,16 @@ static struct test_Output DynamicsFlushTest(struct test_Environment *env)
     SnapshotTestTick(&pipeline);
     ds_BodyRemove(&mem, &pipeline, body[2]);
     u32 t;
-    for (t = 0; t < 600 && pipeline.island_to_split == DS_ID_NULL; ++t)
+    for (t = 0; t < 600 && ds_IslandIdNullCheck(pipeline.island_to_split); ++t)
     {
         SnapshotTestTick(&pipeline);
     }
-    TEST_NOT_ZERO(t < 600 && pipeline.island_to_split != DS_ID_NULL);
+    TEST_NOT_ZERO(t < 600 && !ds_IslandIdNullCheck(pipeline.island_to_split));
 
     /* the flush empties everything, the flagged split included */
     ds_DynamicsFlush(&pipeline);
     TEST_NOT_ZERO(pipeline.body_pool.count == 0 && pipeline.shape_pool.count == 0 && pipeline.contact_pool.count == 0 && pipeline.island_pool.count == 0);
-    TEST_NOT_ZERO(pipeline.frames_completed == 0 && pipeline.island_to_split == DS_ID_NULL);
+    TEST_NOT_ZERO(pipeline.frames_completed == 0 && ds_IslandIdNullCheck(pipeline.island_to_split));
     TEST_NOT_ZERO(SnapshotTestSleepingSetCount(&pipeline) == 0 && pipeline.solver_set_pool.buf[SOLVER_SET_ACTIVE].body_sim_pool.count == 0);
 
     /* three lone boxes take the island slots the row had, with the ids a fresh pipeline gives; the ticks after the flush must not split any of them */
@@ -1851,3 +1851,156 @@ struct suite_Correctness m_dynamics_suite =
 };
 
 struct suite_Correctness *dynamics_correctness_suite = &m_dynamics_suite;
+
+/********************************** Performance **********************************/
+
+#ifdef DS_PERFORMANCE_MEASUREMENT_API
+
+/*
+Contact prep (ds_ContactConstraintInitRange) on a settled box pyramid: the real function, every color's full
+range on the main thread, per repetition. Inputs are the post-tick state (sims, computes, manifolds), constant
+across repetitions; the prep only writes its constraints on the main thread's frame, popped back per repetition.
+Checksum: the sum of every point's effective masses.
+*/
+
+#define DYNAMICS_PERF_PYRAMID_LAYERS    5
+#define DYNAMICS_PERF_SETTLE_TICKS      240
+
+struct dynamics_PerfPrep
+{
+    struct arena            mem;
+    ds_SDB(c_Shape)         cshape_db;
+    ds_SDB(ds_BodyPrefab)   prefab_db;
+    struct ds_Dynamics      pipeline;
+    struct arena *          frame;          /* the main thread's worker frame */
+    u32                     contact_count;
+    u32                     manifold_count;
+    u32                     point_count;
+    f64                     checksum;
+};
+
+static void *DynamicsPerfPrepInit(void)
+{
+    struct dynamics_PerfPrep *in = malloc(sizeof(struct dynamics_PerfPrep));
+    memset(in, 0, sizeof(*in));
+    in->mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDBAlloc(NULL, in->cshape_db, 256, GROWABLE);
+    ds_SDBAlloc(NULL, in->prefab_db, 32, GROWABLE);
+    in->pipeline = ds_DynamicsAlloc(&in->mem, 256, NSEC_PER_SEC / 60, 16*1024*1024, &in->cshape_db, &in->prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 0;
+
+    const u32 layers = DYNAMICS_PERF_PYRAMID_LAYERS;
+    u32 index = 0;
+    const struct dynamics_TestBox floor = { .position = V3(0.0f, -0.5f, 0.0f), .rotation = QIdentity(), .hw = V3((f32) layers + 2.0f, 0.5f, (f32) layers + 2.0f), .dynamic = 0, .friction = 0.8f };
+    DynamicsTestBoxAdd(&in->mem, &in->pipeline, &in->cshape_db, &floor, V3F64(0.0, 0.0, 0.0), index++);
+    for (u32 k = 0; k < layers; ++k)
+    {
+        const u32 n = layers - k;
+        const f32 offset = -0.5f * (f32) (n - 1);
+        for (u32 i = 0; i < n; ++i)
+        {
+            for (u32 j = 0; j < n; ++j)
+            {
+                const struct dynamics_TestBox box = { .position = V3(offset + (f32) i, (f32) k + 0.5f, offset + (f32) j), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.8f };
+                DynamicsTestBoxAdd(&in->mem, &in->pipeline, &in->cshape_db, &box, V3F64(0.0, 0.0, 0.0), index++);
+            }
+        }
+    }
+
+    for (u32 t = 0; t < DYNAMICS_PERF_SETTLE_TICKS; ++t)
+    {
+        ds_DynamicsTick(&in->pipeline);
+        ds_PoolFlush(in->pipeline.event_pool);
+        DLLFlush(in->pipeline.event_list);
+    }
+
+    for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
+    {
+        const struct ds_CGraphColor *color = in->pipeline.cgraph.color + ci;
+        for (u32 i = 0; i < color->contact_pool.count; ++i)
+        {
+            const struct ds_Contact *c = in->pipeline.contact_pool.buf + color->contact_pool.buf[i];
+            in->contact_count += 1;
+            in->manifold_count += c->narrowphase.manifold_count;
+            for (u32 m = 0; m < c->narrowphase.manifold_count; ++m)
+            {
+                in->point_count += c->narrowphase.manifold[m].point_count;
+            }
+        }
+    }
+    fprintf(stdout, "\tbodies %u, contacts %u, manifolds %u, points %u; sizes: contact %u, compute %u, manifold %u, constraint %u, point %u, sim %u, bcomp %u, shape %u\n",
+            index, in->contact_count, in->manifold_count, in->point_count,
+            (u32) sizeof(struct ds_Contact), (u32) sizeof(struct ds_ContactCompute), (u32) sizeof(struct ds_SolverManifold),
+            (u32) sizeof(struct ds_ContactConstraint), (u32) sizeof(struct ds_ContactConstraintPoint),
+            (u32) sizeof(struct ds_BodySim), (u32) sizeof(struct ds_BodyCompute), (u32) sizeof(struct ds_Shape));
+
+    in->frame = in->pipeline.worker[ds_ThreadSelfIndex()].frame;
+    ArenaPushRecord(in->frame);
+    return in;
+}
+
+static void DynamicsPerfPrepReset(void *args)
+{
+    struct dynamics_PerfPrep *in = args;
+    ArenaPopRecord(in->frame);
+    ArenaPushRecord(in->frame);
+}
+
+static void DynamicsPerfPrepTest(void *args)
+{
+    struct dynamics_PerfPrep *in = args;
+    for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
+    {
+        ds_ContactConstraintInitRange(&in->pipeline, ci, 0, in->pipeline.cgraph.color[ci].contact_pool.count);
+    }
+}
+
+static void DynamicsPerfPrepFree(void *args)
+{
+    struct dynamics_PerfPrep *in = args;
+    for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
+    {
+        const struct ds_CGraphColor *color = in->pipeline.cgraph.color + ci;
+        for (u32 i = 0; i < color->contact_pool.count; ++i)
+        {
+            const struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + i;
+            for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
+            {
+                const struct ds_ContactConstraint *cc = ccomp->cc + cci;
+                for (u32 p = 0; p < cc->ccp_count; ++p)
+                {
+                    in->checksum += cc->ccp[p].normal_mass + cc->ccp[p].tangent_mass[0] + cc->ccp[p].tangent_mass[1];
+                }
+            }
+        }
+    }
+    fprintf(stdout, "\tchecksum %.9e\n", in->checksum);
+
+    ArenaPopRecord(in->frame);
+    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsSleepEnable(&in->pipeline);
+    ds_DynamicsFree(&in->pipeline);
+    ds_SDBDealloc(in->prefab_db);
+    ds_SDBDealloc(in->cshape_db);
+    ArenaFree(&in->mem);
+    free(in);
+}
+
+/* bytes per repetition: filled in from the first run's counts (see the report in agent_notes) */
+#define DYNAMICS_PERF_PREP_BYTES    1
+
+struct test_PerformanceSerial dynamics_serial_test[] =
+{
+    { .id = "contact_prep_pyramid", .size = DYNAMICS_PERF_PREP_BYTES, .test = &DynamicsPerfPrepTest, .test_init = &DynamicsPerfPrepInit, .test_reset = &DynamicsPerfPrepReset, .test_free = &DynamicsPerfPrepFree },
+};
+
+struct suite_Performance m_dynamics_performance_suite =
+{
+    .id = "dynamics",
+    .serial_test = dynamics_serial_test,
+    .serial_test_count = sizeof(dynamics_serial_test) / sizeof(dynamics_serial_test[0]),
+};
+
+struct suite_Performance *dynamics_performance_suite = &m_dynamics_performance_suite;
+
+#endif /* DS_PERFORMANCE_MEASUREMENT_API */

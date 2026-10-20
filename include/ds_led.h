@@ -76,7 +76,7 @@ DEFINE_HI(led_Node);
 
 
 /* Add a new node on success. If the parent_id is not empty, the new node will be a child of the parent node. 
- * If the allocation failed, return DS_ID_NULL. */
+ * If the allocation failed, return the null id. */
 ds_Id               led_NodeAdd(struct led *led, const utf8 id, const utf8 parent_id);
 /* Remove the node and its subhierarchy, and release all of their resources, if the node exist. Otherwise no-op. */
 void                led_NodeRemoveId(struct led *led, const utf8 id);

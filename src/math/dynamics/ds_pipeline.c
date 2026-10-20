@@ -21,7 +21,6 @@
 #include "ds_vector.h"
 #include "ds_job.h"
 
-
 struct ds_DynamicsWorker *g_dynamics_worker;
 
 void ds_DynamicsStaticAssert(void)
@@ -41,7 +40,7 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
         .timestep = (f32) ns_tick / NSEC_PER_SEC,
 		.frame = ArenaAlloc(mem, frame_memory),
 		.cshape_db = cshape_db,
-		.island_to_split = DS_ID_NULL,
+		.island_to_split = ds_IslandIdNull(),
 	};
 	DLLFlush(pipeline->event_list);
 
@@ -240,7 +239,7 @@ void ds_DynamicsFlush(struct ds_Dynamics *pipeline)
 	ArenaFlush(&pipeline->frame);
 	pipeline->frames_completed = 0;
 	pipeline->ns_elapsed = 0;
-    pipeline->island_to_split = DS_ID_NULL;
+    pipeline->island_to_split = ds_IslandIdNull();
 }
 
 void ds_DynamicsValidate(const struct ds_Dynamics *pipeline)
@@ -578,13 +577,13 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
     }
 
     {
-        if (pipeline->island_to_split != DS_ID_NULL)
+        if (!ds_IslandIdNullCheck(pipeline->island_to_split))
         {
     	    ProfZoneNamed("Island Split");
     
-            const u32 split_index = ds_IdIndex(pipeline->island_to_split);
+            const u32 split_index = ds_IslandIdIndex(pipeline->island_to_split);
             if (ds_PoolSlotAllocated(pipeline->island_pool.buf + split_index) 
-                    && pipeline->island_to_split == pipeline->island_pool.buf[split_index].id)
+                    && ds_IslandIdEqual(pipeline->island_to_split, pipeline->island_pool.buf[split_index].id))
             {
                 ds_IslandSplit(pipeline, split_index);
             }
@@ -1467,7 +1466,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
         
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     ds_BitSetClear(&pipeline->island_high_energy_set, 0);
-    pipeline->island_to_split = DS_ID_NULL; 
+    pipeline->island_to_split = ds_IslandIdNull(); 
     f32 global_max_low_velocity_time = F32_MIN_NEGATIVE_NORMAL;
     for (u32 i = 0; i < active->island_pool.count; ++i)
     {

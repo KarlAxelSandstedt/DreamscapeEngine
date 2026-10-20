@@ -29,20 +29,20 @@ ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab
     struct ds_Body *body = body_slot.address;
     if (!body)
     {
-        return DS_ID_NULL;
+        return ds_ShapeIdNull();
     }
 
-    ds_ShapeId id = DS_ID_NULL;
+    ds_ShapeId id = ds_ShapeIdNull();
     const u32 old_max = pipeline->shape_pool.count_max;
     const struct slot shape_slot = ds_PoolAdd(pipeline->shape_pool);
 	struct ds_Shape *shape = shape_slot.address;
 
     if (old_max != pipeline->shape_pool.count_max)
     {
-        shape->id = ds_IdConstruct(shape_slot.index, 0);
+        shape->id = ds_ShapeIdInit(shape_slot.index, 0);
         ds_CPoolPush(pipeline->dirty_shape_query);
     }
-    shape->id += DS_ID_GENERATION_INCREMENT;
+    shape->id = ds_ShapeIdNextGeneration(shape->id);
 
     if (pipeline->shape_dirty_set.bit_count <= shape_slot.index)
     {
@@ -57,7 +57,7 @@ ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab
 	DLLAppend(body->shape_list, pipeline->shape_pool.buf, shape_slot.index, body_shape);
 
     shape->flags = body->flags & SHAPE_FLAG_ALL;
-	shape->body = ds_IdIndex(body_id);
+	shape->body = ds_BodyIdIndex(body_id);
 	shape->density = prefab->density;
 	shape->restitution = prefab->restitution;
 	shape->friction = prefab->friction;
@@ -130,11 +130,11 @@ void ds_ShapeStaticRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, co
 struct slot ds_ShapeLookup(const struct ds_Dynamics *pipeline, const ds_ShapeId shape_id)
 {
     struct slot slot = { .address = NULL, .index = U32_MAX };
-    const u32 index = ds_IdIndex(shape_id);
+    const u32 index = ds_ShapeIdIndex(shape_id);
     if (index < pipeline->shape_pool.count_max)
     {
         struct ds_Shape *shape = pipeline->shape_pool.buf + index;
-        if (ds_PoolSlotAllocated(shape) && shape->id == shape_id)
+        if (ds_PoolSlotAllocated(shape) && ds_ShapeIdEqual(shape->id, shape_id))
         {
             slot.address = shape;
             slot.index = index;
@@ -285,6 +285,7 @@ static void ds_ContactResultToSolver(struct c_ContactResult *result, const ds_Tr
                        : local.v[i];
             solver->anchor0[i] = V3Add(M3V3Mul(rot, v), offset);
             solver->depth[i] = local.depth[i];
+            solver->id[i] = local.id[i];
         }
         solver->normal = M3V3Mul(rot, (flip) ? V3Negate(local.n) : local.n);
         solver->point_count = local.v_count;

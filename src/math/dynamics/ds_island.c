@@ -53,10 +53,10 @@ static struct slot ds_IslandAlloc(struct ds_Dynamics *pipeline, const u32 set)
 
     if (old_max != pipeline->island_pool.count_max)
     {
-        is->id = ds_IdConstruct(slot.index, 0);
+        is->id = ds_IslandIdInit(slot.index, 0);
     }
             
-    is->id += DS_ID_GENERATION_INCREMENT;
+    is->id = ds_IslandIdNextGeneration(is->id);
 
     struct ds_SolverSet *s = pipeline->solver_set_pool.buf + set;
     is->set = set;
@@ -71,11 +71,11 @@ struct slot ds_IslandLookup(struct ds_Dynamics *pipeline, const ds_IslandId id)
 {
     struct slot slot = { .address = NULL, .index = U32_MAX };
     /* the index is bounded before the slot is read (as ds_BodyLookup) */
-    const u32 index = ds_IdIndex(id);
+    const u32 index = ds_IslandIdIndex(id);
     if (index < pipeline->island_pool.count_max)
     {
         struct ds_Island *island = pipeline->island_pool.buf + index;
-        if (ds_PoolSlotAllocated(island) && island->id == id)
+        if (ds_PoolSlotAllocated(island) && ds_IslandIdEqual(island->id, id))
         {
             slot.address = island;
             slot.index = index;

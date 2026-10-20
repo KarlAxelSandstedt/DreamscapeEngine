@@ -283,14 +283,48 @@ v[i] - depth[i] n. The c_*Contact functions return local manifolds, in the refer
 ds_ShapeContact converts each in place to the solver form (ds_SolverManifold, ds_dynamics.h), hence the union
 in c_ContactResult. cached_result: the pair's previous result, or an empty result (zeroed) for none; never NULL.
 The new result's arrays are pushed onto frame.
+
+Point ids: the solver's warm start matches a manifold's points to the previous tick's by id. Contract: an id is
+unique within its manifold, and a point keeps its id across ticks while the same features produce it; a feature
+switch (another reference face, a face contact becoming an edge contact) gives a new id and the old impulse is not
+inherited. Laid out in 32 bits as the point's two features, each a type (C_POINT_*) and an index:
+
+    31                                              0
+    [ Type0(2) | index0(14) | Type1(2) | index1(14) ]
+
+Points made analytically rather than by features (spheres, capsule ends) take c_PointIdConstant(k), k the rule's
+point number: both types ANALYTICAL, so a constant never collides with a feature id.
+
+Internal: TODO Expplain concisely my thoughts on why caches exist and work 
+    () apply cached impulses to same normals
+    () while normal may stay the same, levers change => different rotation, which may be fine
+    () In case of analytical collision functions (sphere-sphere, capsule,capsule), we can
+       argue that normals stay mostly continous and may therefore use a single identifier,
+       or 2 identifiers in the case of parallel case of capsules
 */
+typedef struct c_PointId
+{
+    u32 val;
+} c_PointId;
+
+/* The shape feature type of one of the halves in c_PointId.  */
+#define C_POINT_ANALYTICAL  0x0
+#define C_POINT_VERTEX      0x1
+#define C_POINT_EDGE        0x2
+#define C_POINT_FACE        0x3
+
+/* Initialize identifier from its two features */
+static ds_ForceInline c_PointId c_PointIdInit(const u32 type0, const u32 index0, const u32 type1, const u32 index1);
+/* Initialize identifier with given constant */
+static ds_ForceInline c_PointId c_PointIdConstant(const u32 constant);
 
 struct c_Manifold
 {
-	v3 	    v[4];       /* contact point on the reference shape surface     */
-	f32 	depth[4];   /* Contact point penetration depth (0.0f, INFINITY) */
-	v3 	    n;		    /* Contact normal: Points away from reference       */
-	u32 	v_count;    /* Contact point count                              */
+	v3 	        v[4];       /* contact point on the reference shape surface     */
+	f32 	    depth[4];   /* Contact point penetration depth (0.0f, INFINITY) */
+	v3 	        n;		    /* Contact normal: Points away from reference       */
+	u32 	    v_count;    /* Contact point count                              */
+	c_PointId   id[4];      /* contact point geometric identifier               */
 };
 
 /* Print manifold to file stderr */
@@ -442,6 +476,19 @@ f32 c_SphereRaycastParameter(const struct c_Shape *shape, const ds_TransformWorl
 f32 c_CapsuleRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
 f32 c_HullRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
 f32 c_TriMeshBVHRaycastParameter(const struct c_Shape *shape, const ds_TransformWorld *transform, const struct rayWorld *ray);
+
+/********************************** CONTACTS: definitions **********************************/
+
+static ds_ForceInline c_PointId c_PointIdInit(const u32 type0, const u32 index0, const u32 type1, const u32 index1)
+{
+    ds_Assert(type0 <= 0x3 && type1 <= 0x3 && index0 <= 0x3fff && index1 <= 0x3fff);
+    return (struct c_PointId) { .val = (((type0 << 14) | index0) << 16) | ((type1 << 14) | index1) };
+}
+
+static ds_ForceInline c_PointId c_PointIdConstant(const u32 constant)
+{
+    return (struct c_PointId) { .val = constant };
+}
 
 #ifdef __cplusplus
 } 

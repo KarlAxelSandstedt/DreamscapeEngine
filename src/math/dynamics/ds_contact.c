@@ -59,7 +59,7 @@ struct slot ds_ContactAdd(struct ds_Dynamics *pipeline, const struct ds_ContactK
     struct ds_Contact *c = contact_slot.address;
     if (old_max != pipeline->contact_pool.count_max)
     {
-        c->id = ds_IdFConstruct(contact_slot.index, 0);
+        c->id = ds_ContactIdInit(contact_slot.index, 0);
     }
 
     if (pipeline->contact_usage_set.bit_count <= contact_slot.index)
@@ -70,7 +70,7 @@ struct slot ds_ContactAdd(struct ds_Dynamics *pipeline, const struct ds_ContactK
 
     c->key = key;
     c->island = U32_MAX;
-    c->id += DS_IDF_GENERATION_INCREMENT;
+    c->id = ds_ContactIdNextGeneration(c->id);
     c->narrowphase = (struct c_ContactResult) { 0 };
     c->com_offset = V3Zero();
 
@@ -166,11 +166,11 @@ struct slot ds_ContactLookup(const struct ds_Dynamics *pipeline, const ds_Contac
 {
     struct slot slot = { .address = NULL, .index = U32_MAX };
     /* the index is bounded before the slot is read (as ds_BodyLookup) */
-    const u32 index = ds_IdFIndex(id);
+    const u32 index = ds_ContactIdIndex(id);
     if (index < pipeline->contact_pool.count_max)
     {
         struct ds_Contact *c = pipeline->contact_pool.buf + index;
-        if (ds_PoolSlotAllocated(c) && c->id == id)
+        if (ds_PoolSlotAllocated(c) && ds_ContactIdEqual(c->id, id))
         {
             slot.address = c;
             slot.index = index;

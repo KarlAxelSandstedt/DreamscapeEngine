@@ -26,7 +26,7 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const ds_BodyId b0_id, cons
     struct ds_Body *b1 = slot_b1.address;
     if (!b0 || !b1)
     {
-        return DS_ID_NULL;
+        return ds_JointIdNull();
     }
 
     const u32 old_max = pipeline->joint_pool.count_max;
@@ -34,9 +34,9 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const ds_BodyId b0_id, cons
     struct ds_Joint *joint = slot_joint.address;
     if (old_max != pipeline->joint_pool.count_max)
     {
-        joint->id = ds_IdConstruct(slot_joint.index, 0);
+        joint->id = ds_JointIdInit(slot_joint.index, 0);
     }
-    joint->id += DS_ID_GENERATION_INCREMENT;
+    joint->id = ds_JointIdNextGeneration(joint->id);
 
     //TODO does order matter here?
     //TODO should static have slot 1 reserved?...
@@ -138,14 +138,14 @@ void ds_JointRemove(struct ds_Dynamics *pipeline, const ds_JointId id)
 struct slot ds_JointLookup(const struct ds_Dynamics *pipeline, const ds_JointId id)
 {
     /* the index is bounded before the slot is read (as ds_BodyLookup) */
-    const u32 index = ds_IdIndex(id);
+    const u32 index = ds_JointIdIndex(id);
     if (index >= pipeline->joint_pool.count_max)
     {
         return (struct slot) { .index = U32_MAX, .address = NULL };
     }
             
     struct ds_Joint *joint = pipeline->joint_pool.buf + index;
-    return  (ds_PoolSlotAllocated(joint) && joint->id == id)
+    return  (ds_PoolSlotAllocated(joint) && ds_JointIdEqual(joint->id, id))
         ? (struct slot) { .index = index, .address = joint }
         : (struct slot) { .index = U32_MAX, .address = NULL };
 }
@@ -157,12 +157,12 @@ void ds_DistanceJointPrefabDefault(struct ds_DistanceJointPrefab *prefab)
 ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_DistanceJointPrefab *prefab, const ds_BodyId b0, const ds_Transform *local_frame0, const ds_BodyId b1, const ds_Transform *local_frame1)
 {
     const ds_JointId id = ds_JointAdd(pipeline, b0, local_frame0, b1, local_frame1);
-    if (id == DS_ID_NULL)
+    if (ds_JointIdNullCheck(id))
     {
-        return DS_ID_NULL;
+        return ds_JointIdNull();
     }
 
-    struct ds_Joint *joint = pipeline->joint_pool.buf + ds_IdIndex(id);
+    struct ds_Joint *joint = pipeline->joint_pool.buf + ds_JointIdIndex(id);
     struct ds_CGraphColor *color = pipeline->cgraph.color + joint->color;
     struct ds_JointSim *sim = color->joint_sim_pool.buf + joint->sim;
 

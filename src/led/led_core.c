@@ -41,7 +41,7 @@ struct slot led_NodeLookupId(struct led *led, const utf8 id)
 
 struct slot led_NodeLookup(struct led *led, const ds_Id id)
 {
-    if (id == DS_ID_NULL)
+    if (ds_IdNullCheck(id))
     {
         return empty_slot;        
     }
@@ -50,14 +50,14 @@ struct slot led_NodeLookup(struct led *led, const ds_Id id)
     slot.index = ds_IdIndex(id);
     slot.address = led->node_hierarchy.pool.buf + slot.index;
     struct led_Node *node = slot.address;
-    return (node->tagged_id == id)
+    return ds_IdEqual(node->tagged_id, id)
         ? slot 
         : empty_slot;
 }
 
 static ds_Id led_NodeInitalize(struct led_Node *node, const u32 node_index, const u64 flags)
 {
-    node->tagged_id = ((node->tagged_id & DS_ID_TAG_MASK) + DS_ID_GENERATION_INCREMENT) | node_index; 
+    node->tagged_id = ds_IdNextGeneration(ds_IdInit(node_index, ds_IdGeneration(node->tagged_id)));
 	node->flags = flags;
 	node->body_prefab = SDB_STUB;
     node->shape_prefab = SDB_STUB;
@@ -71,10 +71,10 @@ static ds_Id led_NodeInitalize(struct led_Node *node, const u32 node_index, cons
 static ds_Id led_NodeAnonymousAdd(struct led *led, const ds_Id parent_id)
 {
     struct led_Node *node = led_NodeLookup(led, parent_id).address;
-    ds_Assert(parent_id == DS_ID_NULL || node);
+    ds_Assert(ds_IdNullCheck(parent_id) || node);
 
     u32 parent = LED_NODE_ROOT;
-    if (parent_id != DS_ID_NULL)
+    if (!ds_IdNullCheck(parent_id))
     {
         parent = ds_IdIndex(parent_id);
     }
@@ -88,13 +88,13 @@ ds_Id led_NodeAdd(struct led *led, const utf8 id, const utf8 parent_id)
     if (!id.len)
 	{
 		LogString(T_LED, S_WARNING, "Failed to allocate led_node: id must not be empty");
-        return DS_ID_NULL;
+        return ds_IdNull();
 	} 
 
 	if (led_NodeLookupId(led, id).address != NULL) 
 	{
 		LogString(T_LED, S_WARNING, "Failed to allocate led_node: node with given id already exist");
-        return DS_ID_NULL;
+        return ds_IdNull();
 	}
 
     u32 parent = LED_NODE_ROOT;
@@ -106,14 +106,14 @@ ds_Id led_NodeAdd(struct led *led, const utf8 id, const utf8 parent_id)
     else if (parent_id.len)
     {
 		LogString(T_LED, S_WARNING, "Failed to allocate led_node: parent with given id does not exist");
-        return DS_ID_NULL;
+        return ds_IdNull();
     }
 
     struct slot slot = HIAdd(led->node_hierarchy, parent);
     if (!slot.address)
     {
 		LogString(T_LED, S_WARNING, "Failed to allocate led_node: node hierarchy is full");
-        return DS_ID_NULL;
+        return ds_IdNull();
     }
     struct led_Node *node = slot.address;
 	node->id = Utf8CopyBuffered(node->id_buf, LED_NODE_ID_SIZE, id);	
@@ -121,7 +121,7 @@ ds_Id led_NodeAdd(struct led *led, const utf8 id, const utf8 parent_id)
 	{
         HIRemove(&led->frame, led->node_hierarchy, slot.index);
 		Log(T_LED, S_WARNING, "Failed to allocate led_node: id size must be <= %luB", LED_NODE_ID_SIZE);
-        return DS_ID_NULL;
+        return ds_IdNull();
 	} 
 	const u32 hash = Utf8Hash(node->id);
 	ds_HashMapAdd(&led->node_map, hash, slot.index);
@@ -163,7 +163,7 @@ void led_NodeRemoveId(struct led *led, const utf8 id)
 void led_NodeRemove(struct led *led, const ds_Id id)
 {
     struct led_Node *node = led_NodeLookup(led, id).address;
-    if (node && node->tagged_id == id)
+    if (node && ds_IdEqual(node->tagged_id, id))
     {
         HIApplyCustomFreeAndRemove(&led->frame, led->node_hierarchy, ds_IdIndex(id), &led_NodeRemoveResources, led);
     }

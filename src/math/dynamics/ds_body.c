@@ -31,9 +31,9 @@ ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *p
 
     if (old_max != pipeline->body_pool.count_max)
     {
-        body->id = ds_IdConstruct(body_slot.index, 0);
+        body->id = ds_BodyIdInit(body_slot.index, 0);
     }
-    body->id += DS_ID_GENERATION_INCREMENT;
+    body->id = ds_BodyIdNextGeneration(body->id);
 	PhysicsEventBodyNew(pipeline, body->id);
 
     if (pipeline->body_usage_set.bit_count <= body_slot.index)
@@ -101,7 +101,7 @@ ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *p
 void ds_BodyRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, const ds_BodyId id)
 {
     /* a dead id (removed, its slot not reused) still matches the slot's id: the lookup also checks the slot is live */
-    const u32 body_index = ds_IdIndex(id);
+    const u32 body_index = ds_BodyIdIndex(id);
 	struct ds_Body *body = ds_BodyLookup(pipeline, id).address;
     if (!body)
     {
@@ -129,7 +129,7 @@ void ds_BodyRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, const ds
             ds_JointDynamicRemove(pipeline, body, body->joint_list.first);
         }
 
-    	DLLRemove(island->body_list, pipeline->body_pool.buf, ds_IdIndex(id), island_body); 
+    	DLLRemove(island->body_list, pipeline->body_pool.buf, ds_BodyIdIndex(id), island_body); 
     	if (island->body_list.count == 0)
     	{
     		ds_Assert(island->body_list.first == DLL_SENTINEL);
@@ -174,12 +174,12 @@ void ds_BodyRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, const ds
 struct slot ds_BodyLookup(const struct ds_Dynamics *pipeline, const ds_BodyId id)
 {
     struct slot slot = { .address = NULL, .index = U32_MAX };
-    /* the index is bounded before the slot is read: DS_ID_NULL, or an id from another pipeline, must not read past the pool */
-    const u32 index = ds_IdIndex(id);
+    /* the index is bounded before the slot is read: the null id, or an id from another pipeline, must not read past the pool */
+    const u32 index = ds_BodyIdIndex(id);
     if (index < pipeline->body_pool.count_max)
     {
         struct ds_Body *body = pipeline->body_pool.buf + index;
-        if (ds_PoolSlotAllocated(body) && body->id == id)
+        if (ds_PoolSlotAllocated(body) && ds_BodyIdEqual(body->id, id))
         {
             slot.address = body;
             slot.index = index;
@@ -191,8 +191,8 @@ struct slot ds_BodyLookup(const struct ds_Dynamics *pipeline, const ds_BodyId id
 
 void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId id)
 {
-	struct ds_Body *body = pipeline->body_pool.buf + ds_IdIndex(id);
-    if (!ds_PoolSlotAllocated(body) || id != body->id)
+	struct ds_Body *body = pipeline->body_pool.buf + ds_BodyIdIndex(id);
+    if (!ds_PoolSlotAllocated(body) || !ds_BodyIdEqual(id, body->id))
     {
         return;
     }

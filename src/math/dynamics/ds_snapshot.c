@@ -173,7 +173,7 @@ void ds_DynamicsSerialize(struct ss *ss, const struct ds_Dynamics *pipeline)
 	ss_Write8N(ss, (const b8 *) &pipeline->gravity, sizeof(pipeline->gravity));
 	ss_WriteU32Le(ss, pipeline->margin_on);
 	ss_Write8N(ss, (const b8 *) &pipeline->margin, sizeof(pipeline->margin));
-	ss_WriteU64Le(ss, pipeline->island_to_split);
+	ss_WriteU64Le(ss, pipeline->island_to_split.val);
 
 	ds_PoolSerialize(ss, pipeline->body_pool);
 	ds_BitSetSerialize(ss, &pipeline->body_usage_set);
@@ -232,7 +232,7 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynami
 	ss_Read8N(ss, (b8 *) &pipeline->gravity, sizeof(pipeline->gravity));
 	pipeline->margin_on = ss_ReadU32Le(ss);
 	ss_Read8N(ss, (b8 *) &pipeline->margin, sizeof(pipeline->margin));
-	pipeline->island_to_split = ss_ReadU64Le(ss);
+	pipeline->island_to_split = (ds_IslandId) { ss_ReadU64Le(ss) };
 
 	/* frame data goes into the buffer the next tick reads (and does not flush) */
 	const u64 f = pipeline->frames_completed & 0x1;
