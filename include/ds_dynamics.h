@@ -176,6 +176,9 @@ struct ds_DynamicsMetrics
     u32 mesh_call_count;            /* Number of calls to TriMeshBVHHullContact */
     u32 mesh_cache_probe_count;     /* Number of existing caches probed         */
     u32 mesh_cache_eviction_count;  /* Number of evicted caches                 */
+
+    u32 warm_point_count;           /* constraint points with a cache to search     */
+    u32 warm_match_id;              /* a cached point with the same id found        */
 };
 
 /* Flush statistics */
@@ -784,13 +787,13 @@ Stores data needed for warming up the constraint in the next frame.
 */
 struct ds_ContactConstraintCache
 {
-	v3 			        normal;                     /* Cached contact normal                */
-	v3 			        tangent[2];                 /* Forms the contact basis with normal  */
-	v3 			        r1[4];			            /* previous local frame arm levers      */
-    v3                      r2[4];                   
+	v3 			        tangent[2];                 /* the contact basis the tangent impulses
+                                                           are in                               */
 	f32 			        tangent_impulse[4][2];
 	f32 			        normal_impulse[4];	        /* contact_solver solution to contact 
                                                            constraint, or 0.0f                  */
+    c_PointId               id[4];                      /* the points' ids: the warm start
+                                                           matches by them                      */
     u32                     v_count;                    /* Number of vertices in cache          */
     u32                     tri;                        /* 0 if non-mesh contact                */
 };

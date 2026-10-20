@@ -1822,6 +1822,218 @@ static struct test_Output DynamicsNumericsConfigTest(struct test_Environment *en
     return output;
 }
 
+
+/*
+ * Warm start by id (agent_notes/warm_start_design.txt): the metrics count the constraint points with a cache and
+ * those matched. Three scenes, the static ground always shape 0 of its contacts (added first): the aligned four-box
+ * stack (degenerate clipping: vertices on the side planes), a resting pile (box pyramid, lying and standing
+ * capsules, spheres) and a 20 degree slope with a box, a capsule and a sphere sliding and rolling down. Every
+ * manifold's ids must be unique; prints the match rates over the measured ticks and checks their consistency.
+ */
+struct dynamics_WarmShape
+{
+    struct c_Shape  shape;      /* type and its parameters; the hull is built from hw */
+    v3              hw;
+    v3              position;
+    q               rotation;
+    u32             dynamic;
+    f32             friction;
+};
+
+static ds_BodyId DynamicsWarmShapeAdd(struct arena *mem, struct ds_Dynamics *pipeline, ds_SDB(c_Shape) *cshape_db, const struct dynamics_WarmShape *ws, const u32 index)
+{
+    const utf8 id = Utf8Format(mem, "warm%u", index);
+    const struct slot slot = ds_SDBAddAlias(*cshape_db, id);
+    struct c_Shape *cshape = slot.address;
+    cshape->id = Utf8CopyBuffered(cshape->id_buf, C_SHAPE_ID_SIZE, id);
+    cshape->type = ws->shape.type;
+    switch (cshape->type)
+    {
+        case C_SHAPE_SPHERE:    cshape->sphere = ws->shape.sphere; break;
+        case C_SHAPE_CAPSULE:   cshape->capsule = ws->shape.capsule; break;
+        default:                cshape->hull = DcelBox(mem, ws->hw); break;
+    }
+    c_ShapeUpdateMassProperties(cshape);
+
+    const struct ds_BodyPrefab body_prefab = { .dynamic = ws->dynamic };
+    const ds_TransformWorld t_world = { .rotation = ws->rotation, .position = V3Promote(ws->position) };
+    const ds_BodyId body = ds_BodyAdd(pipeline, &body_prefab, &t_world, index);
+    const struct ds_ShapePrefab shape_prefab = { .cshape = slot.index, .density = 1.0f, .restitution = 0.0f, .friction = ws->friction, .margin = 0.5f };
+    const ds_Transform t_local = ds_TransformIdentity();
+    ds_ShapeAdd(pipeline, &shape_prefab, &t_local, body);
+    return body;
+}
+
+#define DYNAMICS_WARM_SHAPE_MAX 64
+
+struct dynamics_WarmScene
+{
+    struct dynamics_WarmShape   shape[DYNAMICS_WARM_SHAPE_MAX];
+    u32                         count;
+};
+
+static void DynamicsWarmSceneAdd(struct dynamics_WarmScene *scene, const struct dynamics_WarmShape *ws)
+{
+    if (scene->count < DYNAMICS_WARM_SHAPE_MAX)
+    {
+        scene->shape[scene->count++] = *ws;
+    }
+}
+
+/* run the scene settle + measure ticks; metrics summed over the measured ticks */
+static void DynamicsWarmSceneRun(struct ds_DynamicsMetrics *sum, const struct dynamics_WarmScene *scene, const u32 settle_ticks, const u32 measure_ticks)
+{
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 128, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 128, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 0;
+
+    for (u32 i = 0; i < scene->count; ++i)
+    {
+        DynamicsWarmShapeAdd(&mem, &pipeline, &cshape_db, scene->shape + i, i);
+    }
+
+    ds_DynamicsMetricsFlush(sum);
+    u32 duplicate_manifolds = 0;
+    u32 manifolds = 0;
+    for (u32 t = 0; t < settle_ticks + measure_ticks; ++t)
+    {
+        ds_DynamicsTick(&pipeline);
+        ds_PoolFlush(pipeline.event_pool);
+        DLLFlush(pipeline.event_list);
+        if (settle_ticks <= t)
+        {
+            ds_DynamicsMetricsAdd(sum, &pipeline.metrics);
+        }
+
+        /* ids unique within every manifold */
+        for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
+        {
+            const struct ds_CGraphColor *color = pipeline.cgraph.color + ci;
+            for (u32 i = 0; i < color->contact_pool.count; ++i)
+            {
+                const struct ds_Contact *c = pipeline.contact_pool.buf + color->contact_pool.buf[i];
+                for (u32 mi = 0; mi < c->narrowphase.manifold_count; ++mi)
+                {
+                    const struct ds_SolverManifold *m = c->narrowphase.manifold + mi;
+                    u32 duplicate = 0;
+                    for (u32 a = 0; a < m->point_count; ++a)
+                    {
+                        for (u32 b = a + 1; b < m->point_count; ++b)
+                        {
+                            duplicate |= c_PointIdEqual(m->id[a], m->id[b]);
+                        }
+                    }
+                    manifolds += 1;
+                    if (duplicate)
+                    {
+                        if (duplicate_manifolds < 4)
+                        {
+                            fprintf(stdout, "\tduplicate ids, tick %u, %u points:", t, m->point_count);
+                            for (u32 a = 0; a < m->point_count; ++a) { fprintf(stdout, " %08x", m->id[a].val); }
+                            fprintf(stdout, "\n");
+                        }
+                        duplicate_manifolds += 1;
+                    }
+                }
+            }
+        }
+    }
+    fprintf(stdout, "\tmanifolds with duplicate ids: %u of %u\n", duplicate_manifolds, manifolds);
+
+    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsSleepEnable(&pipeline);
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(prefab_db);
+    ds_SDBDealloc(cshape_db);
+    ArenaFree(&mem);
+}
+
+static u32 DynamicsWarmMetricsReport(const char *name, const struct ds_DynamicsMetrics *m, const u32 ticks)
+{
+    const f32 points = (f32) m->warm_point_count;
+    fprintf(stdout, "\twarm start, %s: %u points over %u ticks (%.1f per tick); matched by id %.2f%%\n",
+            name, m->warm_point_count, ticks, points / (f32) ticks, 100.0f * (f32) m->warm_match_id / points);
+    return m->warm_point_count != 0 && m->warm_match_id <= m->warm_point_count;
+}
+
+static struct test_Output DynamicsWarmStartMetricsTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+    (void) env;
+
+    const struct c_Shape box = { .type = C_SHAPE_CONVEX_HULL };
+    const struct c_Shape capsule = { .type = C_SHAPE_CAPSULE, .capsule = { .half_height = 0.5f, .radius = 0.25f } };
+    const struct c_Shape sphere = { .type = C_SHAPE_SPHERE, .sphere = { .radius = 0.3f } };
+    const q lying = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), 0.5f * F32_PI);
+
+    /* resting pile: the ground first (shape 0 of every ground contact) */
+    struct dynamics_WarmScene pile = { 0 };
+    DynamicsWarmSceneAdd(&pile, &(struct dynamics_WarmShape) { .shape = box, .hw = V3(10.0f, 0.5f, 10.0f), .position = V3(0.0f, -0.5f, 0.0f), .rotation = QIdentity(), .dynamic = 0, .friction = 0.6f });
+    const u32 layers = 4;
+    for (u32 k = 0; k < layers; ++k)
+    {
+        const u32 n = layers - k;
+        const f32 offset = -0.5f * (f32) (n - 1);
+        for (u32 i = 0; i < n; ++i)
+        {
+            for (u32 j = 0; j < n; ++j)
+            {
+                DynamicsWarmSceneAdd(&pile, &(struct dynamics_WarmShape) { .shape = box, .hw = V3(0.5f, 0.5f, 0.5f), .position = V3(offset + (f32) i, (f32) k + 0.5f, offset + (f32) j), .rotation = QIdentity(), .dynamic = 1, .friction = 0.6f });
+            }
+        }
+    }
+    for (u32 i = 0; i < 4; ++i)
+    {
+        const f32 x = 4.0f + 1.5f * (f32) i;
+        DynamicsWarmSceneAdd(&pile, &(struct dynamics_WarmShape) { .shape = capsule, .position = V3(x, 0.25f, 3.0f), .rotation = lying, .dynamic = 1, .friction = 0.6f });
+        DynamicsWarmSceneAdd(&pile, &(struct dynamics_WarmShape) { .shape = capsule, .position = V3(x, 0.75f, -3.0f), .rotation = QIdentity(), .dynamic = 1, .friction = 0.6f });
+        DynamicsWarmSceneAdd(&pile, &(struct dynamics_WarmShape) { .shape = sphere, .position = V3(-x, 0.3f, 3.0f), .rotation = QIdentity(), .dynamic = 1, .friction = 0.6f });
+        DynamicsWarmSceneAdd(&pile, &(struct dynamics_WarmShape) { .shape = box, .hw = V3(0.5f, 0.5f, 0.5f), .position = V3(-x, 0.5f, -3.0f), .rotation = QIdentity(), .dynamic = 1, .friction = 0.6f });
+    }
+    /* a box on a lying capsule and a sphere on a box: dynamic-dynamic pairs of mixed types */
+    DynamicsWarmSceneAdd(&pile, &(struct dynamics_WarmShape) { .shape = box, .hw = V3(0.5f, 0.5f, 0.5f), .position = V3(4.0f, 1.0f, 3.0f), .rotation = QIdentity(), .dynamic = 1, .friction = 0.6f });
+    DynamicsWarmSceneAdd(&pile, &(struct dynamics_WarmShape) { .shape = sphere, .position = V3(-4.0f, 1.3f, -3.0f), .rotation = QIdentity(), .dynamic = 1, .friction = 0.6f });
+
+    /* slope: 20 degrees, the ground first; low friction so the box keeps sliding; the capsule lies across the fall line */
+    const f32 angle = 20.0f * F32_PI / 180.0f;
+    const q slope = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), angle);
+    const v3 n = QUnitRotate(slope, V3(0.0f, 1.0f, 0.0f));
+    const v3 up = QUnitRotate(slope, V3(1.0f, 0.0f, 0.0f));     /* uphill along the slope */
+    struct dynamics_WarmScene ramp = { 0 };
+    DynamicsWarmSceneAdd(&ramp, &(struct dynamics_WarmShape) { .shape = box, .hw = V3(60.0f, 0.5f, 10.0f), .position = V3Scale(n, -0.5f), .rotation = slope, .dynamic = 0, .friction = 0.1f });
+    for (u32 i = 0; i < 4; ++i)
+    {
+        const v3 base = V3Scale(up, 40.0f - 3.0f * (f32) i);
+        DynamicsWarmSceneAdd(&ramp, &(struct dynamics_WarmShape) { .shape = box, .hw = V3(0.5f, 0.5f, 0.5f), .position = V3Add(base, V3Add(V3Scale(n, 0.5f), V3(0.0f, 0.0f, -4.0f))), .rotation = slope, .dynamic = 1, .friction = 0.1f });
+        DynamicsWarmSceneAdd(&ramp, &(struct dynamics_WarmShape) { .shape = capsule, .position = V3Add(base, V3Add(V3Scale(n, 0.25f), V3(0.0f, 0.0f, 0.0f))), .rotation = QMul(slope, lying), .dynamic = 1, .friction = 0.1f });
+        DynamicsWarmSceneAdd(&ramp, &(struct dynamics_WarmShape) { .shape = sphere, .position = V3Add(base, V3Add(V3Scale(n, 0.3f), V3(0.0f, 0.0f, 4.0f))), .rotation = QIdentity(), .dynamic = 1, .friction = 0.1f });
+    }
+
+    /* the aligned four-box stack of DynamicsRestingStackTest: coincident edges, degenerate clipping */
+    struct dynamics_WarmScene stack = { 0 };
+    DynamicsWarmSceneAdd(&stack, &(struct dynamics_WarmShape) { .shape = box, .hw = V3(5.0f, 0.5f, 5.0f), .position = V3(0.0f, -0.5f, 0.0f), .rotation = QIdentity(), .dynamic = 0, .friction = 0.8f });
+    for (u32 i = 1; i < 5; ++i)
+    {
+        DynamicsWarmSceneAdd(&stack, &(struct dynamics_WarmShape) { .shape = box, .hw = V3(0.5f, 0.5f, 0.5f), .position = V3(0.0f, (f32) i - 0.5f, 0.0f), .rotation = QIdentity(), .dynamic = 1, .friction = 1.0f });
+    }
+
+    struct ds_DynamicsMetrics m;
+    DynamicsWarmSceneRun(&m, &stack, 0, DYNAMICS_TEST_SETTLE_TICKS);
+    TEST_NOT_ZERO(DynamicsWarmMetricsReport("aligned stack, settling", &m, DYNAMICS_TEST_SETTLE_TICKS));
+    DynamicsWarmSceneRun(&m, &stack, DYNAMICS_TEST_SETTLE_TICKS, DYNAMICS_TEST_MEASURE_TICKS);
+    TEST_NOT_ZERO(DynamicsWarmMetricsReport("aligned stack", &m, DYNAMICS_TEST_MEASURE_TICKS));
+    DynamicsWarmSceneRun(&m, &pile, DYNAMICS_TEST_SETTLE_TICKS, DYNAMICS_TEST_MEASURE_TICKS);
+    TEST_NOT_ZERO(DynamicsWarmMetricsReport("resting pile", &m, DYNAMICS_TEST_MEASURE_TICKS));
+    DynamicsWarmSceneRun(&m, &ramp, 30, 150);
+    TEST_NOT_ZERO(DynamicsWarmMetricsReport("slope", &m, 150));
+
+    return output;
+}
+
 static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
 {
     DynamicsRestingBoxTest,
@@ -1841,6 +2053,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsFirstTickTest,
     DynamicsFlushTest,
     DynamicsNumericsConfigTest,
+    DynamicsWarmStartMetricsTest,
 };
 
 struct suite_Correctness m_dynamics_suite =

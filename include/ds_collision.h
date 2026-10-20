@@ -290,8 +290,12 @@ switch (another reference face, a face contact becoming an edge contact) gives a
 inherited. Laid out in 32 bits as the point's two features, each a type (C_POINT_*) and an index:
 
     31                                              0
-    [ Type0(2) | index0(14) | Type1(2) | index1(14) ]
+    [ Type0(3) | index0(13) | Type1(3) | index1(13) ]
 
+Half i is shape i's feature, except for a clipped face contact, whose point is where two edges meet: half 0 the
+edge entering the point, half 1 the edge leaving it, each an EDGE_OF_0 or EDGE_OF_1 (the shape it belongs to).
+An incident vertex is its two incident edges, a clipped point an incident edge and a reference edge, a reference
+corner its two reference edges: no two points of a clip share both edges.
 Points made analytically rather than by features (spheres, capsule ends) take c_PointIdConstant(k), k the rule's
 point number: both types ANALYTICAL, so a constant never collides with a feature id.
 
@@ -308,15 +312,19 @@ typedef struct c_PointId
 } c_PointId;
 
 /* The shape feature type of one of the halves in c_PointId.  */
-#define C_POINT_ANALYTICAL  0x0
-#define C_POINT_VERTEX      0x1
-#define C_POINT_EDGE        0x2
-#define C_POINT_FACE        0x3
+#define C_POINT_ANALYTICAL      0x0
+#define C_POINT_VERTEX          0x1
+#define C_POINT_EDGE            0x2
+#define C_POINT_FACE            0x3
+#define C_POINT_EDGE_OF_0       0x4     /* a clipped face contact: an edge of shape 0, ... */
+#define C_POINT_EDGE_OF_1       0x5     /* ... of shape 1 (EDGE_OF_0 + the shape index) */
 
 /* Initialize identifier from its two features */
 static ds_ForceInline c_PointId c_PointIdInit(const u32 type0, const u32 index0, const u32 type1, const u32 index1);
 /* Initialize identifier with given constant */
 static ds_ForceInline c_PointId c_PointIdConstant(const u32 constant);
+/* 1 if the identifiers are equal */
+static ds_ForceInline u32       c_PointIdEqual(const c_PointId a, const c_PointId b);
 
 struct c_Manifold
 {
@@ -481,13 +489,18 @@ f32 c_TriMeshBVHRaycastParameter(const struct c_Shape *shape, const ds_Transform
 
 static ds_ForceInline c_PointId c_PointIdInit(const u32 type0, const u32 index0, const u32 type1, const u32 index1)
 {
-    ds_Assert(type0 <= 0x3 && type1 <= 0x3 && index0 <= 0x3fff && index1 <= 0x3fff);
-    return (struct c_PointId) { .val = (((type0 << 14) | index0) << 16) | ((type1 << 14) | index1) };
+    ds_Assert(type0 <= 0x7 && type1 <= 0x7 && index0 <= 0x1fff && index1 <= 0x1fff);
+    return (struct c_PointId) { .val = (((type0 << 13) | index0) << 16) | ((type1 << 13) | index1) };
 }
 
 static ds_ForceInline c_PointId c_PointIdConstant(const u32 constant)
 {
     return (struct c_PointId) { .val = constant };
+}
+
+static ds_ForceInline u32 c_PointIdEqual(const c_PointId a, const c_PointId b)
+{
+    return a.val == b.val;
 }
 
 #ifdef __cplusplus

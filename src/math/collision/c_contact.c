@@ -537,6 +537,8 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
                 m->n = ref_pl->normal;
                 m->v[0] = V3Sub(ref_clip.p[0], V3Scale(ref_pl->normal, d0));
                 m->v[1] = V3Sub(ref_clip.p[1], V3Scale(ref_pl->normal, d1));
+                m->id[0] = c_PointIdConstant(0);
+                m->id[1] = c_PointIdConstant(1);
                 m->depth[0] = radius - d0;
                 m->depth[1] = radius - d1;
                 return result;
@@ -546,6 +548,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
         m->v_count = 1;
         m->n = n;
         m->v[0] = c[0];
+        m->id[0] = c_PointIdConstant(0);
         m->depth[0] = radius - distance;
         return result;
     }
@@ -597,6 +600,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
             m->v_count = 1;
             m->n = e_query.normal;
             m->v[0] = SegmentBc(&e_query.s1, t_edge);
+            m->id[0] = c_PointIdInit(C_POINT_EDGE, e_query.e1, C_POINT_ANALYTICAL, 0);
             m->depth[0] = F32Max(0.0f, radius - e_query.depth);
             return result;
         }
@@ -612,6 +616,8 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
             m->v_count = 2;
             m->v[0] = V3Sub(clip.p[0], V3Scale(pl->normal, depth[0]));
             m->v[1] = V3Sub(clip.p[1], V3Scale(pl->normal, depth[1]));
+            m->id[0] = c_PointIdConstant(0);
+            m->id[1] = c_PointIdConstant(1);
             m->depth[0] = radius - depth[0];
             m->depth[1] = radius - depth[1];
             return result;
@@ -619,6 +625,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
 
         m->v_count = 1;
         m->v[0] = V3Sub(clip.p[deeper], V3Scale(pl->normal, depth[deeper]));
+        m->id[0] = c_PointIdConstant(deeper);
         m->depth[0] = radius - depth[deeper];
         return result;
     }
@@ -631,6 +638,7 @@ struct c_ContactResult c_HullCapsuleContact(struct arena *frame, const struct c_
      */
     m->v_count = 1;
     m->v[0] = c[0];
+    m->id[0] = c_PointIdConstant(0);
     m->depth[0] = radius;
 
     return result;
@@ -787,6 +795,7 @@ static u32 HullEdgeContact(struct c_Manifold *m, struct c_SatCache *cache, const
 	m->n = query->normal;
 	m->v[0] = SegmentBc(&query->s1, t1);
 	m->depth[0] = F32Max(0.0f, -query->depth);
+	m->id[0] = c_PointIdInit(C_POINT_EDGE, query->e1, C_POINT_EDGE, query->e2);
 
 	cache->type = SAT_CACHE_CONTACT_EE;
 	cache->depth = m->depth[0];
@@ -875,12 +884,28 @@ static u32 HullTriangleEdgeQuery(struct sat_EdgeQuery *query, const struct dcel 
 }
 
 typedef struct PolygonClipPoint PolygonClipPoint;
+/*
+ * A vertex of the polygon being clipped: the point where the polygon edge entering it and the one leaving it
+ * meet. edge[0] / owner[0] is the entering edge (a half-edge of hull owner), edge[1] / owner[1] the leaving one;
+ * they make the point's id. feature[index] is the sat feature: the incident vertex (index 0) or the incident
+ * edge a crossing was made on (index 1).
+ */
 struct PolygonClipPoint
 {
-    u32             index;   /* index == 0 => vertex, index == 1 => edge */
+    u32             index;      /* index == 0 => vertex, index == 1 => edge */
     u32             feature[2];
+    u32             edge[2];
+    u32             owner[2];
     v3              v;
 };
+
+/* a point id from hull b's feature and the other hull's, in shape order (half 0 is shape 0's feature) */
+static c_PointId c_PointIdPair(const u32 b, const u32 type_b, const u32 index_b, const u32 type_other, const u32 index_other)
+{
+    return (b == 0)
+        ? c_PointIdInit(type_b, index_b, type_other, index_other)
+        : c_PointIdInit(type_other, index_other, type_b, index_b);
+}
 
 /*
  * Sutherland-Hodgman 3D polygon clipping + negative face voronoi region projection: 
@@ -891,7 +916,7 @@ struct PolygonClipPoint
  *  
  *            fv: Expected to be filled with face vertices in counter-clockwise order.
  */
-static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureId **features, v3 **cp, f32 **cp_depth, u32 *cp_deepest, u32 *cp_count, f32 *max_depth, u32 *deepest_feature, const struct dcel *const h[2], const v3 *const v[2], const u32 f[2], const u32 b_f, const v3 face_normal)
+static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureId **features, c_PointId **ids, v3 **cp, f32 **cp_depth, u32 *cp_deepest, u32 *cp_count, f32 *max_depth, u32 *deepest_feature, const struct dcel *const h[2], const v3 *const v[2], const u32 f[2], const u32 b_f, const v3 face_normal)
 {
     const u32 b_v = 1 - b_f;
 	const struct dcelFace *ref_face = h[b_f]->f + f[b_f];
@@ -908,6 +933,7 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureI
 	*cp = ArenaPush(mem, count*sizeof(v3));
 	*cp_depth = ArenaPush(mem, count*sizeof(f32));
 	*features = ArenaPush(mem, count*sizeof(sat_FeatureId));
+	*ids = ArenaPush(mem, count*sizeof(c_PointId));
 
 	v3 ref_center = V3(0.0f, 0.0f, 0.0f);
 	for (u32 i = 0; i < ref_face->count; ++i)
@@ -928,6 +954,8 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureI
             .index = 0,
             .feature[0] = sat_FeatureIdConstruct(vi, SAT_FEATURE_TYPE_VERTEX),
             .feature[1] = sat_FeatureIdConstruct(inc_face->first + i, SAT_FEATURE_TYPE_EDGE),
+            .edge = { inc_face->first + (i + inc_face->count - 1) % inc_face->count, inc_face->first + i },
+            .owner = { b_v, b_v },
         };
         pcp.v = v[b_v][vi];
 		poly[cur][poly_count[cur]++] = pcp;
@@ -957,6 +985,25 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureI
                     /* signs strictly opposite: d1 - d2 != 0 and the fraction lies in (0, 1); v1's edge feature */
                     struct PolygonClipPoint crossing = v1;
                     crossing.index = 1;
+                    /*
+                     * The crossing keeps the polygon edge v1 -> v2 on the inside and gets reference edge j on
+                     * the outside: leaving (d1 < 0), the crossed edge enters it (v2's entering edge) and j
+                     * leaves; entering, j enters and the crossed edge leaves (v1's leaving edge).
+                     */
+                    if (d1 < 0.0f)
+                    {
+                        crossing.edge[0] = v2.edge[0];
+                        crossing.owner[0] = v2.owner[0];
+                        crossing.edge[1] = ref_face->first + j;
+                        crossing.owner[1] = b_f;
+                    }
+                    else
+                    {
+                        crossing.edge[0] = ref_face->first + j;
+                        crossing.owner[0] = b_f;
+                        crossing.edge[1] = v1.edge[1];
+                        crossing.owner[1] = v1.owner[1];
+                    }
                     crossing.v = V3Add(v1.v, V3Scale(V3Sub(v2.v, v1.v), d1 / (d1 - d2)));
                     out[out_count++] = crossing;
                 }
@@ -986,6 +1033,7 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureI
 		if ((*cp_depth)[*cp_count] >= 0.0f)
 		{
             (*features)[*cp_count] = pcp->feature[ pcp->index ];
+            (*ids)[*cp_count] = c_PointIdInit(C_POINT_EDGE_OF_0 + pcp->owner[0], pcp->edge[0], C_POINT_EDGE_OF_0 + pcp->owner[1], pcp->edge[1]);
 			(*cp)[*cp_count] = V3AddScaled((*cp)[*cp_count], ref_plane.normal, (*cp_depth)[*cp_count]);
 			if (*max_depth < (*cp_depth)[ *cp_count ])
 			{
@@ -1000,7 +1048,7 @@ static void PolygonCcwClipNegativeFaceAndProject(struct arena *mem, sat_FeatureI
     ds_Assert(*cp_count <= count);
 }
 
-static u32 PolygonCcwContact(struct c_Manifold *cm, sat_FeatureId cm_features[4], const v3 cm_n, const sat_FeatureId *features, const v3 *cp, const f32 *depth, const u32 cp_deepest, const u32 cp_count)
+static u32 PolygonCcwContact(struct c_Manifold *cm, sat_FeatureId cm_features[4], const v3 cm_n, const sat_FeatureId *features, const c_PointId *ids, const v3 *cp, const f32 *depth, const u32 cp_deepest, const u32 cp_count)
 {
 	u32 collision = 1;
 	cm->n = cm_n;
@@ -1018,6 +1066,7 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, sat_FeatureId cm_features[4]
 			cm->v[0] = cp[0];
 			cm->depth[0] = depth[0];
             cm_features[0] = features[0];
+            cm->id[0] = ids[0];
 		} break;
 
 		case 2:
@@ -1028,7 +1077,9 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, sat_FeatureId cm_features[4]
 			cm->depth[0] = depth[0];
 			cm->depth[1] = depth[1];
             cm_features[0] = features[0];
+            cm->id[0] = ids[0];
             cm_features[1] = features[1];
+            cm->id[1] = ids[1];
 		} break;
 
 		case 3:
@@ -1044,8 +1095,11 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, sat_FeatureId cm_features[4]
 				cm->depth[1] = depth[1];
 				cm->depth[2] = depth[2];
                 cm_features[0] = features[0];
+                cm->id[0] = ids[0];
                 cm_features[1] = features[1];
+                cm->id[1] = ids[1];
                 cm_features[2] = features[2];
+                cm->id[2] = ids[2];
 			}
 			else
 			{
@@ -1056,8 +1110,11 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, sat_FeatureId cm_features[4]
 				cm->depth[2] = depth[1];
 				cm->depth[1] = depth[2];
                 cm_features[0] = features[0];
+                cm->id[0] = ids[0];
                 cm_features[2] = features[1];
+                cm->id[2] = ids[1];
                 cm_features[1] = features[2];
+                cm->id[1] = ids[2];
 			}
 		} break;
 
@@ -1068,6 +1125,7 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, sat_FeatureId cm_features[4]
 			cm->v[0] = cp[cp_deepest];
 			cm->depth[0] = depth[cp_deepest];
             cm_features[0] = features[cp_deepest];
+            cm->id[0] = ids[cp_deepest];
 			/* (2) Third point is point furthest away from deepest point */
 			f32 max_dist = 0.0f;
 			u32 max_i = (cp_deepest + 2) % cp_count;
@@ -1088,6 +1146,7 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, sat_FeatureId cm_features[4]
 			cm->v[2] = cp[max_i];
 			cm->depth[2] = depth[max_i];
             cm_features[2] = features[max_i];
+            cm->id[2] = ids[max_i];
 
 			/* (3, 4) Second point and forth is point that gives largest (in magnitude) 
 			 * areas with the previous points on each side of the previous segment 
@@ -1136,7 +1195,9 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, sat_FeatureId cm_features[4]
 				cm->depth[3] = depth[max_pos_i];
 				cm->depth[1] = depth[max_neg_i];
                 cm_features[3] = features[max_pos_i];
+                cm->id[3] = ids[max_pos_i];
                 cm_features[1] = features[max_neg_i];
+                cm->id[1] = ids[max_neg_i];
 			}
 			else
 			{
@@ -1145,7 +1206,9 @@ static u32 PolygonCcwContact(struct c_Manifold *cm, sat_FeatureId cm_features[4]
 				cm->depth[3] = depth[max_neg_i];
 				cm->depth[1] = depth[max_pos_i];
                 cm_features[3] = features[max_neg_i];
+                cm->id[3] = ids[max_neg_i];
                 cm_features[1] = features[max_pos_i];
+                cm->id[1] = ids[max_pos_i];
 			}
 		} break;
 	}
@@ -1180,17 +1243,18 @@ static u32 HullFaceContact(struct arena *mem_tmp, struct c_Manifold *cm, sat_Fea
     v3 *cp = NULL;
     f32 *depth = NULL;
     sat_FeatureId *features;
-    PolygonCcwClipNegativeFaceAndProject(mem_tmp, &features, &cp, &depth, &deepest_point, &cp_count, max_depth, max_feature, h, v, f, b_f, query->normal);
+    c_PointId *ids;
+    PolygonCcwClipNegativeFaceAndProject(mem_tmp, &features, &ids, &cp, &depth, &deepest_point, &cp_count, max_depth, max_feature, h, v, f, b_f, query->normal);
 
     u32 collision;
     if (b_f == ref)
     {
-        collision = PolygonCcwContact(cm, cm_features, query->normal, features, cp, depth, deepest_point, cp_count);
+        collision = PolygonCcwContact(cm, cm_features, query->normal, features, ids, cp, depth, deepest_point, cp_count);
     }
     else
     {
         const v3 cm_n = V3Scale(query->normal, -1.0f);
-        collision = PolygonCcwContact(cm, cm_features, cm_n, features, cp, depth, deepest_point, cp_count);
+        collision = PolygonCcwContact(cm, cm_features, cm_n, features, ids, cp, depth, deepest_point, cp_count);
         for (u32 i = 0; i < cm->v_count; ++i)
         {
             cm->v[i] = V3AddScaled(cm->v[i], cm->n, cm->depth[i]);
@@ -1392,6 +1456,7 @@ static u32 sat_PairContact(struct c_Manifold *m, sat_FeatureId features[4], stru
 		m->n = V3Negate(fq->normal);
 		m->v[0] = p;
 	}
+	m->id[0] = c_PointIdPair(b_f, C_POINT_FACE, fq->fi, C_POINT_VERTEX, fq->vi);
 	cache->type = SAT_CACHE_NONE;
 	cache->feature[b_f] = sat_FeatureIdConstruct(fq->fi, SAT_FEATURE_TYPE_FACE);
 	cache->feature[b_v] = sat_FeatureIdConstruct(fq->vi, SAT_FEATURE_TYPE_VERTEX);
@@ -1790,6 +1855,8 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
                     m->n = V3Scale(f, -1.0f);
                     m->v[0] = V3Add(clip.p[0], V3Scale(m->n, radius));
                     m->v[1] = V3Add(clip.p[1], V3Scale(m->n, radius));
+                    m->id[0] = c_PointIdConstant(0);
+                    m->id[1] = c_PointIdConstant(1);
                     m->depth[0] = radius - d0;
                     m->depth[1] = radius - d1;
                     r->depth = c_ManifoldDeepest(m);
@@ -1800,6 +1867,7 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
             m->v_count = 1;
             m->n = n;
             m->v[0] = V3Add(c_s, V3Scale(n, radius));
+            m->id[0] = c_PointIdConstant(0);
             m->depth[0] = radius - distance;
             r->depth = m->depth[0];
             c_MeshTriRegionMaskDelayed(r, delayed_region);
@@ -1866,6 +1934,7 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
                 m->v_count = 1;
                 m->n = V3Scale(edge_axis, -1.0f);
                 m->v[0] = V3Add(SegmentBc(&core, t_core), V3Scale(m->n, radius));
+                m->id[0] = c_PointIdInit(C_POINT_ANALYTICAL, 0, C_POINT_EDGE, edge);
                 m->depth[0] = F32Max(0.0f, radius - edge_separation);
                 r->depth = m->depth[0];
                 c_MeshTriRegionMaskDelayed(r, (1u << edge) | (1u << ((edge + 1) % 3)));
@@ -1883,6 +1952,8 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
                 m->v_count = 2;
                 m->v[0] = V3Add(clip.p[0], V3Scale(m->n, radius));
                 m->v[1] = V3Add(clip.p[1], V3Scale(m->n, radius));
+                m->id[0] = c_PointIdConstant(0);
+                m->id[1] = c_PointIdConstant(1);
                 m->depth[0] = radius - depth[0];
                 m->depth[1] = radius - depth[1];
                 r->depth = c_ManifoldDeepest(m);
@@ -1891,6 +1962,7 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
 
             m->v_count = 1;
             m->v[0] = V3Add(clip.p[deeper], V3Scale(m->n, radius));
+            m->id[0] = c_PointIdConstant(deeper);
             m->depth[0] = radius - depth[deeper];
             r->depth = m->depth[0];
             continue;
@@ -1902,6 +1974,7 @@ static void c_MeshCapsuleTriangles(struct c_MeshContactHelper *helper, const str
          */
         m->v_count = 1;
         m->v[0] = V3Add(c_s, V3Scale(m->n, radius));
+        m->id[0] = c_PointIdConstant(0);
         m->depth[0] = radius;
         r->depth = radius;
         c_MeshTriRegionMaskDelayed(r, delayed_region);

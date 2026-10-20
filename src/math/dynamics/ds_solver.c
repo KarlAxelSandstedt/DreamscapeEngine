@@ -366,6 +366,7 @@ void ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 col
 {
     ProfZone;
 
+    struct ds_DynamicsMetrics *metrics = &g_dynamics_worker[ds_ThreadSelfIndex()].metrics;
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     struct ds_CGraph *cg = &pipeline->cgraph;
     struct ds_CGraphColor *color = cg->color + color_index;
@@ -412,35 +413,28 @@ void ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 col
             if (ccache)
             {
                 /*
-                 * If the cached contact's normal differ to musch from current, evict whole cache. 
-                 * Note that we do not reuse the contact normal, but reuse cached r1, r2.
+                 * A point takes the impulse of the cached point with its id (the first unclaimed one: ids are
+                 * unique per manifold), applied along the new basis with the fresh levers.
                  */
-                if (V3Dot(m->normal, ccache->normal) < 0.9f)
-                {
-                    continue;
-                }
-
-                const q body0_inverse_rotation = QConj(sim[0]->world.rotation);
+                u32 claimed = 0;    /* cached points already matched: bit k */
 
                 for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
                 {
                 	struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
-                    const v3 r = QUnitRotate(body0_inverse_rotation, ccp->r[0]);
 
-                    //TODO Make this test better
-	            	u32 best = U32_MAX;
-	            	f32 closest_dist_sq = 0.01f * 0.01f;
+                    u32 best = U32_MAX;
 	            	for (u32 k = 0; k < ccache->v_count; ++k)
 	            	{
-	            		const v3 diff = V3Sub(r, ccache->r1[k]);
-	            		const f32 dist_sq = V3Dot(diff, diff);
-	            		if (dist_sq < closest_dist_sq)
-	            		{
-	            			best = k;
-	            			closest_dist_sq = dist_sq;
-	            		}
-	            	}
+                        if (!(claimed & (1u << k)) && c_PointIdEqual(m->id[ccpi], ccache->id[k]))
+                        {
+                            best = k;
+                            claimed |= 1u << k;
+                            break;
+                        }
+                    }
 
+                    metrics->warm_point_count += 1;
+                    metrics->warm_match_id += (best != U32_MAX);
 	            	if (best != U32_MAX)
 	            	{
 	            		const v3 old_tangent_impulse = V3AddScaled(V3Scale(ccache->tangent[0], ccache->tangent_impulse[best][0]),
@@ -459,9 +453,6 @@ void ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 col
 
 	            		bcomp[0]->linear_velocity = V3AddScaled(bcomp[0]->linear_velocity, total_cached_impulse, -sim[0]->inv_mass);
 	            		bcomp[1]->linear_velocity = V3AddScaled(bcomp[1]->linear_velocity, total_cached_impulse, sim[1]->inv_mass);
-
-                        ccp->r[0] = QUnitRotate(sim[0]->world.rotation, ccache->r1[best]);
-                        ccp->r[1] = QUnitRotate(sim[1]->world.rotation, ccache->r2[best]);
 
 	            		const v3 delta_w0 = M3V3Mul(sim[0]->world_inv_inertia, V3Cross(ccp->r[0], total_cached_impulse));
 	            		bcomp[0]->angular_velocity = V3Sub(bcomp[0]->angular_velocity, delta_w0);
@@ -611,29 +602,30 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline
                         : 0;
 
 		    ccache->v_count = cc->ccp_count;
-		    ccache->normal = cc->normal;
 		    ccache->tangent[0] = cc->tangent[0];
 		    ccache->tangent[1] = cc->tangent[1];
 
             /*
-             * The levers are world vectors of the step's start rotation R_s: r = R_s r_b. Both the cache and
-             * the position solver store the body vector r_b = R_s^T r; the position solver then rotates it by
-             * the current rotation, which starts at the integrated one R_e, so its levers move with the step's
-             * rotation (converting with R_e^T instead would give back r unrotated).
+             * The levers are world vectors of the step's start rotation R_s: r = R_s r_b. The position solver
+             * stores the body vector r_b = R_s^T r and rotates it by the current rotation, which starts at the
+             * integrated one R_e, so its levers move with the step's rotation (converting with R_e^T instead
+             * would give back r unrotated).
              */
             const q sim_inv_rotation[2] =
             {
                 QConj(sim[0]->world.rotation),
                 QConj(sim[1]->world.rotation),
             };
+            const struct ds_SolverManifold *m = (c->narrowphase.tri)
+                                              ? c->narrowphase.manifold + c->narrowphase.tri_manifold[cci]
+                                              : c->narrowphase.manifold + cci;
 		    for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
 		    {
                 struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
                 ccp->r[0] = QUnitRotate(sim_inv_rotation[0], ccp->r[0]);
                 ccp->r[1] = QUnitRotate(sim_inv_rotation[1], ccp->r[1]);
 
-		    	ccache->r1[ccpi] = ccp->r[0];
-		    	ccache->r2[ccpi] = ccp->r[1];
+		    	ccache->id[ccpi] = m->id[ccpi];
 		    	ccache->normal_impulse[ccpi] = ccp->normal_impulse;
 		    	ccache->tangent_impulse[ccpi][0] = ccp->tangent_impulse[0];
 		    	ccache->tangent_impulse[ccpi][1] = ccp->tangent_impulse[1];
