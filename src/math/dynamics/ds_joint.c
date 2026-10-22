@@ -17,24 +17,6 @@
 ==========================================================================
 */
 
-/*
- * TODO: 
- * API: 
- *  (O)
- *
- * Infrastructure:
- *  (O) (general) On joint add: add to island
- *  (O) (general) On joint removal: removal from island
- *  (O) (wakeup) On joint add: set wakeup
- *  (O) (wakeup) On joint remove: set wakeup
- *  (O) (split)  On joint remove: island constraint removal
- *  (O) (merge)  On joint add: island merge 
- *  () (validation) Island validation
- *  () (validation) Set validation
- *  () (validation) Cgraph validation
- */
-
-
 ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType type, const u32 collide_connected, const ds_BodyId b0_id, const ds_Transform *local_frame0, const ds_BodyId b1_id, const ds_Transform *local_frame1)
 {
     struct slot slot_b0 = ds_BodyLookup(pipeline, b0_id);
@@ -158,6 +140,73 @@ void ds_JointRemove(struct ds_Dynamics *pipeline, const ds_JointId id)
     {
         ds_JointRemoveEx(pipeline, slot.index);
     }
+}
+
+void ds_JointValidateAll(const struct ds_Dynamics *pipeline)
+{
+    u32 joint_count = 0;
+    for (u32 i = 0; i < pipeline->joint_pool.count_max; ++i)
+    {
+        const struct ds_Joint *joint = pipeline->joint_pool.buf + i;
+        if (!ds_PoolSlotAllocated(joint))
+        {
+            continue;
+        }
+        joint_count += 1;
+
+        ds_Assert(ds_JointIdIndex(joint->id) == i);
+        ds_Assert(joint->body[0] != joint->body[1]);
+        ds_Assert(ds_PoolSlotAllocated(pipeline->body_pool.buf + joint->body[0]));
+        ds_Assert(ds_PoolSlotAllocated(pipeline->body_pool.buf + joint->body[1]));
+
+        const struct ds_Island *island = pipeline->island_pool.buf + joint->island;
+        ds_Assert(joint->island < pipeline->island_pool.count_max && ds_PoolSlotAllocated(island));
+
+        /* the sim lives in the graph colour while awake, in the island's set while asleep; both point back */
+        const struct ds_JointSim *sim;
+        if (joint->set == SOLVER_SET_NULL)
+        {
+            ds_Assert(island->set == SOLVER_SET_ACTIVE);
+            ds_Assert(joint->color < CG_COLOR_COUNT);
+            const struct ds_CGraphColor *color = pipeline->cgraph.color + joint->color;
+            ds_Assert(joint->sim < color->joint_sim_pool.count);
+            sim = color->joint_sim_pool.buf + joint->sim;
+        }
+        else
+        {
+            ds_Assert(island->set == joint->set);
+            ds_Assert(joint->color == CG_INVALID_COLOR);
+            const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + joint->set;
+            ds_Assert(joint->sim < set->joint_sim_pool.count);
+            sim = set->joint_sim_pool.buf + joint->sim;
+        }
+        ds_Assert(sim->joint == i);
+        ds_Assert(DS_JOINT_TYPE_NONE < sim->type && sim->type < DS_JOINT_TYPE_COUNT);
+    }
+
+    /* every body's joint list holds exactly the joints attached to it: each joint is walked once per end */
+    u32 edge_count = 0;
+    for (u32 bi = 0; bi < pipeline->body_pool.count_max; ++bi)
+    {
+        const struct ds_Body *body = pipeline->body_pool.buf + bi;
+        if (!ds_PoolSlotAllocated(body))
+        {
+            continue;
+        }
+
+        u32 list_length = 0;
+        const struct ds_Joint *joint = NULL;
+        for (u32 ji = body->joint_list.first; (i32) ji != DLL_SENTINEL; ji = joint->edge_node[bi == joint->body[1]].next)
+        {
+            list_length += 1;
+            joint = pipeline->joint_pool.buf + ji;
+            ds_Assert(ds_PoolSlotAllocated(joint));
+            ds_Assert(joint->body[0] == bi || joint->body[1] == bi);
+        }
+        ds_Assert(list_length == body->joint_list.count);
+        edge_count += list_length;
+    }
+    ds_Assert(edge_count == 2*joint_count);
 }
 
 struct slot ds_JointLookup(const struct ds_Dynamics *pipeline, const ds_JointId id)

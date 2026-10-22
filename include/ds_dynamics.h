@@ -1005,6 +1005,11 @@ void        ds_JointRemoveEx(struct ds_Dynamics *pipeline, const u32 joint_index
  * On success, return the joint corresponding to the id. If the wasn't found, return an empty slot (U32_MAX, NULL)
  */
 struct slot ds_JointLookup(const struct ds_Dynamics *pipeline, const ds_JointId id);
+/*
+ * Validate every joint's bookkeeping: id, bodies, island, the set/colour sim back reference and the bodies'
+ * joint lists.
+ */
+void        ds_JointValidateAll(const struct ds_Dynamics *pipeline);
 
 /*
 ds_JointSim

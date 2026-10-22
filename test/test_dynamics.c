@@ -68,8 +68,14 @@ Joints (DynamicsJointTest; the finished bookkeeping only, agent_notes/joint_desi
 static-dynamic and a dynamic-dynamic joint found by id and not by a dead generation or the null id, in both
 bodies' lists, coloured static and dynamic with their sims pointing back and the local frames copied; a removal
 by id empties the lists, the colour and the lookup, a second one is a no-op; a reused slot gets a new
-generation; a body's removal takes its joints. No tick runs with a joint alive (the joints are not in any
-island yet, which the debug validation would catch).
+generation; a body's removal takes its joints. No tick runs with a joint alive.
+
+Joints and islands (DynamicsJointIslandTest): three resting boxes in their own islands. A joint merges two of
+them (the joint in the merged island's list), a second joint merges the third; removing the second marks the
+island and the split, once it rests, keeps the still jointed pair together; removing the last joint splits the
+pair. With sleeping on, the jointed pair's set carries the joint (its sim in the set's pool, no colour); a joint
+to the sleeping third box wakes both sets and merges; removing a sleeping jointed body takes its joints and
+wakes the rest. Each step ticks under the debug validation.
 
 Solver (DynamicsSlideTest, DynamicsBounceTest): a frictionless box on a 30 degree slope slides for a second;
 its downhill speed matches the per-tick recurrence v = (v + g sin(a) dt) / (1 + d dt) of the solver's gravity
@@ -1548,6 +1554,142 @@ static struct test_Output DynamicsJointTest(struct test_Environment *env)
     return output;
 }
 
+static struct test_Output DynamicsJointIslandTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 0;
+
+    /* a ground and three boxes resting on it, far enough apart never to touch */
+    const v3 hw = V3(0.5f, 0.5f, 0.5f);
+    const struct dynamics_TestBox scene[4] =
+    {
+        { .position = V3(0.0f, -1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(16.0f, 1.0f, 16.0f), .dynamic = 0, .friction = 0.5f },
+        { .position = V3(-4.0f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+        { .position = V3(0.0f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+        { .position = V3(4.0f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+    };
+    ds_BodyId id[4];
+    for (u32 i = 0; i < 4; ++i)
+    {
+        id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
+    }
+    const struct ds_Body *a = ds_BodyLookup(&pipeline, id[1]).address;
+    const struct ds_Body *b = ds_BodyLookup(&pipeline, id[2]).address;
+    const struct ds_Body *c = ds_BodyLookup(&pipeline, id[3]).address;
+    const ds_Transform frame = { .rotation = QIdentity(), .position = V3(0.0f, 0.0f, 0.0f) };
+    struct ds_DistanceJointPrefab prefab;
+    ds_DistanceJointPrefab(&prefab, 4.0f);
+    u32 t;
+
+    /* each box rests in its own island */
+    for (t = 0; t < 5; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(a->island != b->island && b->island != c->island && a->island != c->island);
+
+    /* a joint merges a and b: one island holding both bodies and the joint */
+    const ds_JointId jab = ds_DistanceJointAdd(&pipeline, &prefab, id[1], &frame, id[2], &frame);
+    const struct ds_Joint *joint_ab = ds_JointLookup(&pipeline, jab).address;
+    TEST_NOT_ZERO(joint_ab != NULL && a->island == b->island && joint_ab->island == a->island);
+    const struct ds_Island *island = pipeline.island_pool.buf + a->island;
+    TEST_NOT_ZERO(island->body_list.count == 2 && island->joint_list.count == 1 && island->joint_list.first == (i32) ds_JointIdIndex(jab));
+    ds_DynamicsValidate(&pipeline);
+    SnapshotTestTick(&pipeline);
+
+    /* a second joint merges c; removing it marks the island, and the split keeps the jointed pair together */
+    const ds_JointId jbc = ds_DistanceJointAdd(&pipeline, &prefab, id[2], &frame, id[3], &frame);
+    island = pipeline.island_pool.buf + a->island;
+    TEST_NOT_ZERO(a->island == c->island && island->body_list.count == 3 && island->joint_list.count == 2);
+    ds_DynamicsValidate(&pipeline);
+    SnapshotTestTick(&pipeline);
+    ds_JointRemove(&pipeline, jbc);
+    island = pipeline.island_pool.buf + a->island;
+    TEST_NOT_ZERO(island->constraint_remove_count == 1 && island->joint_list.count == 1 && b->joint_list.count == 1 && c->joint_list.count == 0);
+    for (t = 0; t < 600 && a->island == c->island; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(t < 600 && a->island == b->island && a->island != c->island);
+    joint_ab = ds_JointLookup(&pipeline, jab).address;
+    island = pipeline.island_pool.buf + a->island;
+    TEST_NOT_ZERO(joint_ab != NULL && joint_ab->island == a->island && island->joint_list.count == 1 && island->body_list.count == 2);
+    TEST_NOT_ZERO((pipeline.island_pool.buf + c->island)->joint_list.count == 0 && (pipeline.island_pool.buf + c->island)->body_list.count == 1);
+    ds_DynamicsValidate(&pipeline);
+
+    /* removing the last joint splits the pair */
+    ds_JointRemove(&pipeline, jab);
+    for (t = 0; t < 600 && a->island == b->island; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(t < 600 && (pipeline.island_pool.buf + a->island)->joint_list.count == 0 && (pipeline.island_pool.buf + b->island)->joint_list.count == 0);
+    ds_DynamicsValidate(&pipeline);
+
+    /* with sleeping on, the jointed pair's set carries the joint: in the set's pool, out of the colours */
+    const ds_JointId jab2 = ds_DistanceJointAdd(&pipeline, &prefab, id[1], &frame, id[2], &frame);
+    g_solver_config->pending_sleep_enabled = 1;
+    for (t = 0; t < 600 && (a->set < SOLVER_SET_SLEEPING_FIRST || c->set < SOLVER_SET_SLEEPING_FIRST); ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(t < 600 && a->set == b->set && a->set != c->set);
+    const struct ds_Joint *joint_ab2 = ds_JointLookup(&pipeline, jab2).address;
+    TEST_NOT_ZERO(joint_ab2 != NULL && joint_ab2->set == a->set && joint_ab2->color == CG_INVALID_COLOR && joint_ab2->island == a->island);
+    const struct ds_SolverSet *set_ab = pipeline.solver_set_pool.buf + a->set;
+    TEST_NOT_ZERO(set_ab->joint_sim_pool.count == 1 && joint_ab2->sim == 0);
+    TEST_NOT_ZERO(set_ab->joint_sim_pool.buf[0].joint == ds_JointIdIndex(jab2) && set_ab->joint_sim_pool.buf[0].type == DS_JOINT_TYPE_DISTANCE);
+    TEST_NOT_ZERO(set_ab->joint_sim_pool.buf[0].distance.target == 4.0f);
+    for (u32 colour = 0; colour < CG_COLOR_COUNT; ++colour)
+    {
+        TEST_NOT_ZERO(pipeline.cgraph.color[colour].joint_sim_pool.count == 0);
+    }
+    ds_DynamicsValidate(&pipeline);
+
+    /* a joint to the sleeping third box wakes both sets and merges the islands; both joints are coloured again */
+    const ds_JointId jbc2 = ds_DistanceJointAdd(&pipeline, &prefab, id[2], &frame, id[3], &frame);
+    joint_ab2 = ds_JointLookup(&pipeline, jab2).address;
+    const struct ds_Joint *joint_bc2 = ds_JointLookup(&pipeline, jbc2).address;
+    TEST_NOT_ZERO(joint_ab2 != NULL && joint_bc2 != NULL);
+    TEST_NOT_ZERO(a->set == SOLVER_SET_ACTIVE && b->set == SOLVER_SET_ACTIVE && c->set == SOLVER_SET_ACTIVE && a->island == c->island);
+    TEST_NOT_ZERO(joint_ab2->set == SOLVER_SET_NULL && joint_ab2->color != CG_INVALID_COLOR && joint_ab2->island == a->island);
+    TEST_NOT_ZERO(joint_bc2->set == SOLVER_SET_NULL && joint_bc2->color != CG_INVALID_COLOR && joint_bc2->island == a->island);
+    island = pipeline.island_pool.buf + a->island;
+    TEST_NOT_ZERO(island->joint_list.count == 2 && island->body_list.count == 3 && SnapshotTestSleepingSetCount(&pipeline) == 0);
+    TEST_NOT_ZERO(pipeline.cgraph.color[joint_ab2->color].joint_sim_pool.buf[joint_ab2->sim].distance.target == 4.0f);
+    ds_DynamicsValidate(&pipeline);
+
+    /* removing a sleeping jointed body takes its joints and wakes the others */
+    for (t = 0; t < 600 && a->set < SOLVER_SET_SLEEPING_FIRST; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(t < 600 && a->set == c->set && (pipeline.solver_set_pool.buf + a->set)->joint_sim_pool.count == 2);
+    ds_BodyRemove(&mem, &pipeline, id[2]);
+    TEST_NOT_ZERO(pipeline.joint_pool.count == 0 && a->joint_list.count == 0 && c->joint_list.count == 0);
+    TEST_NOT_ZERO(a->set == SOLVER_SET_ACTIVE && c->set == SOLVER_SET_ACTIVE && ds_JointLookup(&pipeline, jab2).address == NULL && ds_JointLookup(&pipeline, jbc2).address == NULL);
+    ds_DynamicsValidate(&pipeline);
+    for (t = 0; t < 600 && a->island == c->island; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(t < 600);
+    ds_DynamicsValidate(&pipeline);
+
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 static v3 SolverTestVelocity(const struct ds_Dynamics *pipeline, const ds_BodyId id)
 {
     const struct ds_Body *body = ds_BodyLookup(pipeline, id).address;
@@ -2171,6 +2313,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsWakeByContactTest,
     DynamicsGraphTest,
     DynamicsJointTest,
+    DynamicsJointIslandTest,
     DynamicsSlideTest,
     DynamicsBounceTest,
     DynamicsFirstTickTest,

@@ -309,14 +309,21 @@ void ds_CGraphValidate(const struct ds_Dynamics *pipeline)
             ds_StaticAssert(CG_STATIC_COLOR_FIRST == 0, "");
             if (c <= CG_STATIC_COLOR_LAST)
             {
-                ds_Assert(ds_BodyDynamicCheck(body0) && ds_BodyDynamicCheck(body1));
-                ds_Assert(body0->set == SOLVER_SET_ACTIVE);
-                ds_Assert(body1->set == SOLVER_SET_ACTIVE);
+                ds_Assert((!ds_BodyDynamicCheck(body0)
+                         && ds_BodyDynamicCheck(body1)
+                         && body0->set == SOLVER_SET_STATIC
+                         && body1->set == SOLVER_SET_ACTIVE)
+                    ||
+                       (ds_BodyDynamicCheck(body0)
+                         && !ds_BodyDynamicCheck(body1)
+                         && body1->set == SOLVER_SET_STATIC
+                         && body0->set == SOLVER_SET_ACTIVE));
             }
             else if (CG_DYNAMIC_COLOR_FIRST <= c && c <= CG_DYNAMIC_COLOR_LAST)
             {
-                ds_Assert((!ds_BodyDynamicCheck(body0) &&  ds_BodyDynamicCheck(body1))
-                       || ( ds_BodyDynamicCheck(body0) && !ds_BodyDynamicCheck(body1)));
+                ds_Assert(ds_BodyDynamicCheck(body0) && ds_BodyDynamicCheck(body1));
+                ds_Assert(body0->set == SOLVER_SET_ACTIVE);
+                ds_Assert(body1->set == SOLVER_SET_ACTIVE);
             }
         }
     } 

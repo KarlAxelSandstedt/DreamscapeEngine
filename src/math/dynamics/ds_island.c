@@ -142,19 +142,6 @@ void ds_IslandValidateAll(const struct ds_Dynamics *pipeline)
             continue;
         }
 
- 	    /* 1. verify body-island map count == island.body_list.count */
-	    u32 count = 0;
-	    for (u32 j = 0; j < pipeline->body_pool.count_max; ++j)
-	    {
-	    	const struct ds_Body *b = pipeline->body_pool.buf + j;
-	    	if (ds_PoolSlotAllocated(b) && b->island == index)
-	    	{
-	    		count += 1;
-	    	}	
-	    }
-	    
-	    ds_Assert(count == is->body_list.count && "Body count of island should be equal to the number of bodies mapped to the island");
- 
 	    u32 list_length = 0; 
 	    for (u32 bi = is->body_list.first; (i32) bi != DLL_SENTINEL; bi = body->island_body.next)
 	    {
@@ -194,6 +181,30 @@ void ds_IslandValidateAll(const struct ds_Dynamics *pipeline)
         {
 	        ds_Assert(colored_contacts == is->contact_list.count);
         }
+
+        u32 joint_list_length = 0;
+        const struct ds_Joint *joint = NULL;
+        for (u32 ji = is->joint_list.first; (i32) ji != DLL_SENTINEL; ji = joint->island_joint.next)
+        {
+            joint_list_length += 1;
+            joint = pipeline->joint_pool.buf + ji;
+            ds_Assert(ds_PoolSlotAllocated(joint));
+            ds_Assert(joint->island == index);
+            const struct ds_Body *b0 = pipeline->body_pool.buf + joint->body[0];
+            const struct ds_Body *b1 = pipeline->body_pool.buf + joint->body[1];
+            ds_Assert((b0->island == index) || ds_BodyStaticCheck(b0));
+            ds_Assert((b1->island == index) || ds_BodyStaticCheck(b1));
+            ds_Assert(ds_BodyDynamicCheck(b0) || ds_BodyDynamicCheck(b1));
+            if (is->set == SOLVER_SET_ACTIVE)
+            {
+                ds_Assert(joint->set == SOLVER_SET_NULL && joint->color != CG_INVALID_COLOR);
+            }
+            else
+            {
+                ds_Assert(joint->set == is->set && joint->color == CG_INVALID_COLOR);
+            }
+        }
+        ds_Assert(joint_list_length == is->joint_list.count);
 	}
 
 	/* 5. verify no body points to invalid island */

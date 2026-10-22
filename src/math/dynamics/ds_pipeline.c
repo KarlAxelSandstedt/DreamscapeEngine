@@ -257,6 +257,7 @@ void ds_DynamicsValidate(const struct ds_Dynamics *pipeline)
 
     ds_CGraphValidate(pipeline);
 	ds_ContactValidateAll(pipeline);
+	ds_JointValidateAll(pipeline);
 	ds_IslandValidateAll(pipeline);
 
 	ProfZoneEnd;
