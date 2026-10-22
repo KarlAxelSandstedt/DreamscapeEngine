@@ -223,6 +223,9 @@ void ds_IslandMerge(struct ds_Dynamics *pipeline, const u32 expand_index, const 
     {
         struct ds_Contact *expand_last = pipeline->contact_pool.buf + expand->contact_list.last;
         struct ds_Contact *merge_first = pipeline->contact_pool.buf + merge->contact_list.first;
+	    ds_Assert(expand->contact_list.count == 0 || expand_last->island_contact.next == DLL_SENTINEL);
+	    ds_Assert(merge->contact_list.count == 0 || merge_first->island_contact.prev == DLL_SENTINEL);
+
         expand_last->island_contact.next = merge->contact_list.first;
         merge_first->island_contact.prev = expand->contact_list.last;
 
@@ -242,29 +245,60 @@ void ds_IslandMerge(struct ds_Dynamics *pipeline, const u32 expand_index, const 
             merge_contact = pipeline->contact_pool.buf + i;
             merge_contact->island = expand_index;
         }
+
+        expand->contact_list.count += merge->contact_list.count;
     }
 
     {
-	    struct ds_Body *expand_body_last = pipeline->body_pool.buf + expand->body_list.last;
-	    struct ds_Body *merge_body_first = pipeline->body_pool.buf + merge->body_list.first;
-	    ds_Assert(expand_body_last->island_body.next == DLL_SENTINEL);
-	    ds_Assert(merge_body_first->island_body.prev == DLL_SENTINEL);
+        struct ds_Joint *expand_last = pipeline->joint_pool.buf + expand->joint_list.last;
+        struct ds_Joint *merge_first = pipeline->joint_pool.buf + merge->joint_list.first;
+	    ds_Assert(expand->joint_list.count == 0 || expand_last->island_joint.next == DLL_SENTINEL);
+	    ds_Assert(merge->joint_list.count == 0 || merge_first->island_joint.prev == DLL_SENTINEL);
 
-	    expand_body_last->island_body.next = merge->body_list.first;
-	    merge_body_first->island_body.prev = expand->body_list.last;
+        expand_last->island_joint.next = merge->joint_list.first;
+        merge_first->island_joint.prev = expand->joint_list.last;
+
+        if (expand->joint_list.count == 0)
+        {
+            expand->joint_list.first = merge->joint_list.first;
+        }
+
+        if (merge->joint_list.count > 0)
+        {
+            expand->joint_list.last = merge->joint_list.last;
+        }
+
+        struct ds_Joint *merge_joint;
+        for (i32 i = merge->joint_list.first; i != DLL_SENTINEL; i = merge_joint->island_joint.next)
+        {
+            merge_joint = pipeline->joint_pool.buf + i;
+            merge_joint->island = expand_index;
+        }
+
+        expand->joint_list.count += merge->joint_list.count;
+    }
+
+    {
+	    struct ds_Body *expand_last = pipeline->body_pool.buf + expand->body_list.last;
+	    struct ds_Body *merge_first = pipeline->body_pool.buf + merge->body_list.first;
+	    ds_Assert(expand_last->island_body.next == DLL_SENTINEL);
+	    ds_Assert(merge_first->island_body.prev == DLL_SENTINEL);
+
+	    expand_last->island_body.next = merge->body_list.first;
+	    merge_first->island_body.prev = expand->body_list.last;
+
         struct ds_Body *body;
 	    for (i32 i = merge->body_list.first; i != DLL_SENTINEL; i = body->island_body.next)
 	    {
 	    	body = pipeline->body_pool.buf + i;
 	    	body->island = expand_index;
 	    }
+	
+        expand->body_list.count += merge->body_list.count;
+	    expand->body_list.last = merge->body_list.last;
     }
 
     expand->constraint_remove_count += merge->constraint_remove_count;
-	expand->contact_list.count += merge->contact_list.count;
-	expand->body_list.count += merge->body_list.count;
-	expand->body_list.last = merge->body_list.last;
-    
 	ds_IslandRemove(pipeline, merge_index);
 	
     ProfZoneEnd;
@@ -321,7 +355,7 @@ void ds_IslandSplit(struct ds_Dynamics *pipeline, const u32 island_to_split)
         while (sc--)
         {
             const u32 body_index = body_stack[sc];
-			struct ds_Body *body = pipeline->body_pool.buf + body_index;
+			const struct ds_Body * const body = pipeline->body_pool.buf + body_index;
             struct ds_Shape *shape;
             for (i32 si = body->shape_list.first; si != DLL_SENTINEL; si = shape->body_shape.next)
             {
@@ -330,11 +364,11 @@ void ds_IslandSplit(struct ds_Dynamics *pipeline, const u32 island_to_split)
                 while (ci != DLL_SENTINEL)
                 {
 		    	    struct ds_Contact *c = pipeline->contact_pool.buf + ci;
-                    const u32 n = ((u32) si == c->key.shape[1]);
-                    const i32 ci_next = c->shape_contact[n].next;
+                    const u32 neighbour_index = ((u32) si == c->key.shape[0]);
+                    const i32 ci_next = c->shape_contact[1-neighbour_index].next;
                     if (c->island == island_to_split)
                     {
-                        const struct ds_Shape *neighbour_shape = pipeline->shape_pool.buf + c->key.shape[1-n]; 
+                        const struct ds_Shape *neighbour_shape = pipeline->shape_pool.buf + c->key.shape[neighbour_index]; 
                         const struct ds_Body *neighbour_body = pipeline->body_pool.buf + neighbour_shape->body; 
                         if (neighbour_body->island == island_to_split)
                         {
@@ -348,11 +382,31 @@ void ds_IslandSplit(struct ds_Dynamics *pipeline, const u32 island_to_split)
                     ci = ci_next;
                 }
             }
+
+            i32 ji = body->joint_list.first;
+            while (ji != DLL_SENTINEL)
+            {
+                struct ds_Joint *j = pipeline->joint_pool.buf + ji;
+                const u32 neighbour_index = ((u32) body_index == j->body[0]);
+                const u32 neighbour_body_index = j->body[neighbour_index];
+                const i32 ji_next = j->edge_node[1-neighbour_index].next;
+                if (j->island == island_to_split)
+                {
+                    const struct ds_Body *neighbour_body = pipeline->body_pool.buf + neighbour_body_index;
+                    if (neighbour_body->island == island_to_split)
+                    {
+                        DLLRemove(split->body_list, pipeline->body_pool.buf, neighbour_body_index, island_body);
+                        ds_IslandAddBody(pipeline, new_island_index, neighbour_body_index);
+                        body_stack[sc++] = neighbour_body_index;
+                    }
+                    DLLAppend(new_island->joint_list, pipeline->joint_pool.buf, (u32) ji, island_joint);
+                    j->island = new_island_index;
+                }
+                ji = ji_next;
+            }
         }
 	}
 
-    //TODO issue: joints/(bodies???) in old island, need to update 
-    
 	ds_IslandRemove(pipeline, island_to_split);
     ArenaPopScratch();
     
