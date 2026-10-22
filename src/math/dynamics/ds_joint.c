@@ -19,15 +19,16 @@
 
 /*
  * TODO: 
- * API:
+ * API: 
+ *  (O)
  *
  * Infrastructure:
- *  () (wakeup) On joint add: set wakeup
- *  () (wakeup) On joint remove: set wakeup
- *  () (split)  On joint remove: island constraint removal
- *  () (merge)  On joint add: island merge 
- *  () (general) On joint add: add to island
- *  () (general) On joint removal: removal from island
+ *  (O) (general) On joint add: add to island
+ *  (O) (general) On joint removal: removal from island
+ *  (O) (wakeup) On joint add: set wakeup
+ *  (O) (wakeup) On joint remove: set wakeup
+ *  (O) (split)  On joint remove: island constraint removal
+ *  (O) (merge)  On joint add: island merge 
  *  () (validation) Island validation
  *  () (validation) Set validation
  *  () (validation) Cgraph validation
@@ -38,11 +39,34 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
 {
     struct slot slot_b0 = ds_BodyLookup(pipeline, b0_id);
     struct slot slot_b1 = ds_BodyLookup(pipeline, b1_id);
-    struct ds_Body *b0 = slot_b0.address;
-    struct ds_Body *b1 = slot_b1.address;
-    if (!b0 || !b1)
+    struct ds_Body *b[2] = { slot_b0.address, slot_b1.address };
+    if (!b[0] || !b[1])
     {
+        Log(T_PHYSICS, S_WARNING, "joint add rejected: body %u or %u does not exist", ds_BodyIdIndex(b0_id), ds_BodyIdIndex(b1_id));
         return ds_JointIdNull();
+    }
+
+    if (slot_b0.index == slot_b1.index)
+    {
+        Log(T_PHYSICS, S_WARNING, "joint add rejected: both ends on body %u", slot_b0.index);
+        return ds_JointIdNull();
+    }
+
+    const u32 dynamic[2] = { ds_BodyDynamicBit(b[0]), ds_BodyDynamicBit(b[1]) };
+    const u32 expand_index = b[ dynamic[1] ]->island;
+    const u32 merge_index = b[ 1-dynamic[1] ]->island;
+    if (!dynamic[0] && !dynamic[1])
+    {
+        Log(T_PHYSICS, S_WARNING, "joint add rejected: bodies %u and %u are both static", slot_b0.index, slot_b1.index);
+        return ds_JointIdNull();
+    }
+
+	struct ds_Island *expand = pipeline->island_pool.buf + expand_index;
+    ds_SolverSetWakeUp(pipeline, expand->set);
+
+    if (dynamic[0] && dynamic[1] && expand_index != merge_index)
+    {
+		ds_IslandMerge(pipeline, expand_index, merge_index);
     }
 
     const u32 old_max = pipeline->joint_pool.count_max;
@@ -59,10 +83,12 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
     //TODO should static have slot 1 reserved?...
     joint->body[0] = slot_b0.index;
     joint->body[1] = slot_b1.index;
-    const u32 i0 = (joint->body[0] == pipeline->joint_pool.buf[b0->joint_list.last].body[1]);
-    const u32 i1 = (joint->body[1] == pipeline->joint_pool.buf[b1->joint_list.last].body[1]);
-    DLLAppendEx(b0->joint_list, pipeline->joint_pool.buf, slot_joint.index, edge_node[i0], edge_node[0]);
-    DLLAppendEx(b1->joint_list, pipeline->joint_pool.buf, slot_joint.index, edge_node[i1], edge_node[1]);
+    joint->island = expand_index;
+    const u32 i0 = (joint->body[0] == pipeline->joint_pool.buf[b[0]->joint_list.last].body[1]);
+    const u32 i1 = (joint->body[1] == pipeline->joint_pool.buf[b[1]->joint_list.last].body[1]);
+    DLLAppendEx(b[0]->joint_list, pipeline->joint_pool.buf, slot_joint.index, edge_node[i0], edge_node[0]);
+    DLLAppendEx(b[1]->joint_list, pipeline->joint_pool.buf, slot_joint.index, edge_node[i1], edge_node[1]);
+	DLLAppend(expand->joint_list, pipeline->joint_pool.buf, slot_joint.index, island_joint);
     //TODO does order matter here?
     //TODO should static have slot 1 reserved?...
     struct ds_JointSim *sim = ds_CGraphJointAdd(pipeline, joint);
@@ -88,46 +114,41 @@ static void ds_JointUnlink(struct ds_Dynamics *pipeline, const struct ds_Joint *
         const u32 ni = (bi == joint_next->body[1]);
         DLLRemoveEx(body->joint_list, pipeline->joint_pool.buf, joint_index, edge_node[pi], edge_node[i], edge_node[ni]);
     }
+
+    struct ds_Island *island = pipeline->island_pool.buf + joint->island;
+    island->constraint_remove_count += 1;
+    DLLRemove(island->joint_list, pipeline->joint_pool.buf, joint_index, island_joint);
 }
 
-void ds_JointStaticRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, const u32 index)
+void ds_JointRemoveEx(struct ds_Dynamics *pipeline, const u32 index)
 {
     struct ds_Joint *joint = pipeline->joint_pool.buf + index;
-    if (joint->set == SOLVER_SET_NULL)
+    ds_SolverSetWakeUp(pipeline, joint->set);
+
+    ds_AssertString(joint->set == SOLVER_SET_NULL, "May implement INACTIVE joints later");
+    //if (joint->set == SOLVER_SET_NULL)
     {
         ds_CGraphJointRemove(pipeline, joint);
     }
-    else
-    {
-        ds_Assert(joint->color >= CG_INVALID_COLOR);
-        struct ds_SolverSet *set = pipeline->solver_set_pool.buf + joint->set;
-    
-        ds_CPoolRemoveAndSwap(set->joint_sim_pool, joint->sim);
-        if (joint->sim < set->joint_sim_pool.count)
-        {
-            const struct ds_JointSim *moved_sim = set->joint_sim_pool.buf + joint->sim;
-            struct ds_Joint *moved_joint = pipeline->joint_pool.buf + moved_sim->joint;
-            ds_Assert(moved_joint->sim == set->joint_sim_pool.count);
-            moved_joint->sim = joint->sim;
-        }
-    }
+    //else
+    //{
+    //    ds_Assert(joint->color >= CG_INVALID_COLOR);
+    //    struct ds_SolverSet *set = pipeline->solver_set_pool.buf + joint->set;
+    //
+    //    ds_CPoolRemoveAndSwap(set->joint_sim_pool, joint->sim);
+    //    if (joint->sim < set->joint_sim_pool.count)
+    //    {
+    //        const struct ds_JointSim *moved_sim = set->joint_sim_pool.buf + joint->sim;
+    //        struct ds_Joint *moved_joint = pipeline->joint_pool.buf + moved_sim->joint;
+    //        ds_Assert(moved_joint->sim == set->joint_sim_pool.count);
+    //        moved_joint->sim = joint->sim;
+    //    }
+    //}
+
     ds_JointUnlink(pipeline, joint, index);
     ds_PoolRemove(pipeline->joint_pool, index);
 
     //TODO signal affected island for wakeup / slip
-}
-
-void ds_JointDynamicRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, const u32 index)
-{
-    //TODO for now, it seems like Static and Dynamic remove is the same...
-    ds_JointStaticRemove(pipeline, body, index);
-   
-    //struct ds_Joint *joint = pipeline->joint_pool.buf + index;
-    //ds_CGraphJointRemove(pipeline, joint);
-    //ds_JointUnlink(pipeline, joint, index);
-    //ds_PoolRemove(pipeline->joint_pool, index);
-
-    ////TODO signal affected island for wakeup / slip
 }
 
 void ds_JointRemove(struct ds_Dynamics *pipeline, const ds_JointId id)
@@ -135,21 +156,7 @@ void ds_JointRemove(struct ds_Dynamics *pipeline, const ds_JointId id)
     struct slot slot = ds_JointLookup(pipeline, id);
     if (slot.address)
     {
-        struct ds_Joint *joint = slot.address;
-        struct ds_Body *b0 = pipeline->body_pool.buf + joint->body[0];
-        struct ds_Body *b1 = pipeline->body_pool.buf + joint->body[1];
-        if (ds_BodyStaticCheck(b0))
-        {
-            ds_JointStaticRemove(pipeline, b0, slot.index);
-        }
-        else if (ds_BodyStaticCheck(b1))
-        {
-            ds_JointStaticRemove(pipeline, b1, slot.index);
-        }
-        else
-        {
-            ds_JointDynamicRemove(pipeline, b0, slot.index);
-        }
+        ds_JointRemoveEx(pipeline, slot.index);
     }
 }
 

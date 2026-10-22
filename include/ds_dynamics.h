@@ -724,8 +724,9 @@ struct ds_Contact
                                                        contacts are treated as a single 
                                                        constraint!)                             */
 
-    struct DLLNode           island_contact;     /* island->contact_list node                */
-    struct DLLNode           shape_contact[2];   /* [i] is part of shape i's contact list    */
+	struct DLLNode              island_joint;       /* island->joint_list node                  */
+    struct DLLNode              island_contact;     /* island->contact_list node                */
+    struct DLLNode              shape_contact[2];   /* [i] is part of shape i's contact list    */
 
     /* 
      * The following data is regenerated per-frame and is alive for 2 frames. All data is 
@@ -997,17 +998,13 @@ ds_JointId  ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType ty
  */
 void        ds_JointRemove(struct ds_Dynamics *pipeline, const ds_JointId id);
 /* 
+ * INTERNAL: Remove the specified joint and update the pipeline into a valid state.
+ */
+void        ds_JointRemoveEx(struct ds_Dynamics *pipeline, const u32 joint_index);
+/* 
  * On success, return the joint corresponding to the id. If the wasn't found, return an empty slot (U32_MAX, NULL)
  */
 struct slot ds_JointLookup(const struct ds_Dynamics *pipeline, const ds_JointId id);
-/* 
- * INTERNAL: Remove the specified joint of a STATIC-DYNAMIC body pair and update the pipeline into a valid state.
- */
-void        ds_JointStaticRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, const u32 index);
-/* 
- * INTERNAL: Remove the specified joint of a DYNAMIC-DYNAMIC body pair and update the pipeline into a valid state.
- */
-void        ds_JointDynamicRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, const u32 index);
 
 /*
 ds_JointSim
@@ -1147,9 +1144,9 @@ struct ds_Island
     u32             set;                        /* ds_SolverSet index */
     u32             set_island_index;           /* index into set.island_pool */
 
-	struct DLL	body_list;
-	struct DLL	contact_list;
-    struct DLL   joint_list;
+	struct DLL	    body_list;
+	struct DLL	    contact_list;
+    struct DLL      joint_list;
 
 //TODO RMEOVE
 	v4 color;

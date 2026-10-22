@@ -223,6 +223,10 @@ void ds_ContactPromote(struct ds_Dynamics *pipeline, const u32 contact)
         moved->compute = compute;
     }
 
+    /* 
+     * TODO: This code is repeated often in engine, can we simplify contacts/joints to
+     * skip the pointer chase, at least a little, and simplify the code using flags? 
+     */
     const struct ds_Shape *shape[2] =
     {
         pipeline->shape_pool.buf + c->key.shape[0],

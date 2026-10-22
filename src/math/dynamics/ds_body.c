@@ -126,7 +126,7 @@ void ds_BodyRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, const ds
 
         while (body->joint_list.count)
         {
-            ds_JointDynamicRemove(pipeline, body, body->joint_list.first);
+            ds_JointRemoveEx(pipeline, body->joint_list.first);
         }
 
     	DLLRemove(island->body_list, pipeline->body_pool.buf, ds_BodyIdIndex(id), island_body); 
@@ -146,7 +146,7 @@ void ds_BodyRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, const ds
 
         while (body->joint_list.count)
         {
-            ds_JointStaticRemove(pipeline, body, body->joint_list.first);
+            ds_JointRemoveEx(pipeline, body->joint_list.first);
         }
 	}
 
