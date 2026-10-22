@@ -403,7 +403,7 @@ typedef struct intv
 		f32	v[2];
 	};
 } intv;
-#define intv_inline(_low, _high) (intv) { .low = (_low), .high = (_high) }
+#define Intv(_low, _high) (intv) { .low = (_low), .high = (_high) }
 
 typedef struct
 {
@@ -418,7 +418,7 @@ typedef struct
 		u64	v[2];
 	};
 } intvu64;
-#define intvu64_inline(_low, _high) (intvu64) { .low = (_low), .high = (_high) }
+#define Intvu64(_low, _high) (intvu64) { .low = (_low), .high = (_high) }
 
 typedef struct
 {
@@ -433,7 +433,7 @@ typedef struct
 		i64	v[2];
 	};
 } intvi64;
-#define intvi64_inline(_low, _high) (intvi64) { .low = (_low), .high = (_high) }
+#define Intvi64(_low, _high) (intvi64) { .low = (_low), .high = (_high) }
 
 typedef struct
 {

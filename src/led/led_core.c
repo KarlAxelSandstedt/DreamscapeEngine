@@ -1066,8 +1066,8 @@ void led_RopeSetup(struct led *led)
     rope_t[0].position = V3Sub(ceil_transform, rope_base);
 
     struct ds_DistanceJointPrefab prefab;
-    ds_DistanceJointPrefabDefault(&prefab);
     const f32 distance = 0.0f;
+    ds_DistanceJointPrefab(&prefab, distance);
 
 	for (u32 i = 0; i < ROPE_COUNT; ++i)
 	{	

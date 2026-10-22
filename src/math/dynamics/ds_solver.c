@@ -69,6 +69,7 @@ void SolverConfigInit(const u32 pgs_iteration_count, const u32 ngs_iteration_cou
                                                         : 1.0f / max_angular_velocity_magnitude;
 	g_solver_config->linear_dampening = linear_dampening;
 	g_solver_config->angular_dampening = angular_dampening;
+	ds_Assert(linear_slop > 0.0f);
 	g_solver_config->linear_slop = linear_slop;
 	g_solver_config->restitution_threshold = restitution_threshold;
 

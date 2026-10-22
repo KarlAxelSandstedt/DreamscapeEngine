@@ -421,7 +421,7 @@ void ui_Timeline(struct ui_TimelineConfig *config)
 	ui_Parent(ui_NodeAllocNonHashed(UI_DRAW_BORDER).index)
 	ui_BackgroundColor(config->background_color)
 	ui_SpriteColor(config->text_color)
-	ui_IntvViewableX(intv_inline(config->ns_interval_start, config->ns_interval_end))
+	ui_IntvViewableX(Intv(config->ns_interval_start, config->ns_interval_end))
 	{
 		ui_Height(ui_SizeChildsum(0.0f))
 		config->timeline = ui_NodeAllocF(UI_DRAW_BACKGROUND, "timeline_rows_%p", config).index;
@@ -449,7 +449,7 @@ void ui_Timeline(struct ui_TimelineConfig *config)
 				for (u64 i = 0; i < config->unit_line_count; ++i)
 				{
 					const u64 ns_line = config->unit_line_first + i*config->unit_line_interval;
-					ui_Width(ui_SizeUnit(intv_inline(ns_line - config->unit_line_width * config->ns_half_pixel, ns_line + config->unit_line_width * config->ns_half_pixel)))
+					ui_Width(ui_SizeUnit(Intv(ns_line - config->unit_line_width * config->ns_half_pixel, ns_line + config->unit_line_width * config->ns_half_pixel)))
 					ui_NodeAllocNonHashed(UI_DRAW_BACKGROUND);
 				}
 
@@ -462,7 +462,7 @@ void ui_Timeline(struct ui_TimelineConfig *config)
 						for (u64 j = 1; j <= config->sublines_per_line; ++j)
 						{
 							const u64 ns_subline = ns_line + j * config->unit_line_interval / config->sublines_per_line;
-							ui_Width(ui_SizeUnit(intv_inline(ns_subline - config->subline_width * config->ns_half_pixel, ns_subline + config->subline_width * config->ns_half_pixel)))
+							ui_Width(ui_SizeUnit(Intv(ns_subline - config->subline_width * config->ns_half_pixel, ns_subline + config->subline_width * config->ns_half_pixel)))
 							ui_NodeAllocNonHashed(UI_DRAW_BACKGROUND);
 						}
 					}
@@ -485,13 +485,13 @@ void ui_Timeline(struct ui_TimelineConfig *config)
 				{
 					const u64 ns_line = config->unit_line_first + i*config->unit_line_interval;
 					ui_ChildLayoutAxis(AXIS_2_Y)
-					ui_Width(ui_SizeUnit(intv_inline(ns_line - config->ns_half_pixel, ns_line + config->ns_half_pixel)))
+					ui_Width(ui_SizeUnit(Intv(ns_line - config->ns_half_pixel, ns_line + config->ns_half_pixel)))
 					ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
 					ui_Width(ui_SizePerc(1.0f))
 					ui_Height(ui_SizePerc(0.25f))
 					ui_NodeAllocNonHashed(UI_DRAW_BACKGROUND);
 					
-					ui_Width(ui_SizeUnit(intv_inline(
+					ui_Width(ui_SizeUnit(Intv(
 							  ns_line - config->unit_line_interval / 2
 							, ns_line + config->unit_line_interval / 2)))
 					ui_NodeAllocF(UI_DRAW_TEXT, "%lu%k##%p", ns_line / config->unit_to_ns_multiplier, &config->unit, config);
@@ -511,7 +511,7 @@ void ui_TimelineRowPush(struct ui_TimelineConfig *config, const u32 row, const c
 	ui_GradientColorPush(BOX_CORNER_TR, config->task_gradient_tr);
 	ui_GradientColorPush(BOX_CORNER_TL, config->task_gradient_tl);
 	ui_GradientColorPush(BOX_CORNER_BL, config->task_gradient_bl);
-	ui_IntvViewablePush(AXIS_2_X, intv_inline(config->ns_interval_start, config->ns_interval_end));
+	ui_IntvViewablePush(AXIS_2_X, Intv(config->ns_interval_start, config->ns_interval_end));
 	ui_IntvViewablePush(AXIS_2_Y, row_config->depth_visible);
 	ui_ChildLayoutAxisPush(AXIS_2_X);
 	ui_NodePush(config->timeline);

@@ -1589,6 +1589,7 @@ static void UpdateSolverConfig(struct ds_Dynamics *pipeline)
 	g_solver_config->warmup_solver = g_solver_config->pending_warmup_solver;
 	g_solver_config->pgs_iteration_count = g_solver_config->pending_pgs_iteration_count;
 	g_solver_config->ngs_iteration_count = g_solver_config->pending_ngs_iteration_count;
+	ds_Assert(g_solver_config->pending_linear_slop > 0.0f);
 	g_solver_config->linear_slop = g_solver_config->pending_linear_slop;
 	g_solver_config->baumgarte_constant = g_solver_config->pending_baumgarte_constant;
 	g_solver_config->restitution_threshold = g_solver_config->pending_restitution_threshold;

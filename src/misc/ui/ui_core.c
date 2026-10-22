@@ -655,8 +655,8 @@ static void ui_LayoutAbsolutePosition(void)
 	node->pixel_position.y = node->layout_position.y;
 	node->pixel_size.x = node->layout_size.x;
 	node->pixel_size.y = node->layout_size.y;
-	node->pixel_visible[0] = intv_inline(node->pixel_position.x, node->pixel_position.x + node->pixel_size.x);
-	node->pixel_visible[1] = intv_inline(node->pixel_position.y, node->pixel_position.y + node->pixel_size.y);
+	node->pixel_visible[0] = Intv(node->pixel_position.x, node->pixel_position.x + node->pixel_size.x);
+	node->pixel_visible[1] = Intv(node->pixel_position.y, node->pixel_position.y + node->pixel_size.y);
 
     HII it;
     HIIInit(it, g_ui->node_hierarchy, g_ui->root);
@@ -740,12 +740,12 @@ static void ui_LayoutAbsolutePosition(void)
 		       		: child->layout_position.y + node->pixel_position.y;
 
 			child->pixel_visible[AXIS_2_X] = (child->flags & UI_FLOATING_X)
-				? intv_inline(child->pixel_position.x, child->pixel_position.x + child->pixel_size.x)
-				: intv_inline(F32Max(child->pixel_position.x, node->pixel_visible[0].low),
+				? Intv(child->pixel_position.x, child->pixel_position.x + child->pixel_size.x)
+				: Intv(F32Max(child->pixel_position.x, node->pixel_visible[0].low),
 					      F32Min(child->pixel_position.x + child->pixel_size.x, node->pixel_visible[AXIS_2_X].high));
 			child->pixel_visible[AXIS_2_Y] = (child->flags & UI_FLOATING_Y)
-				? intv_inline(child->pixel_position.y, child->pixel_position.y + child->pixel_size.y)
-				: intv_inline(F32Max(child->pixel_position.y, node->pixel_visible[1].low),
+				? Intv(child->pixel_position.y, child->pixel_position.y + child->pixel_size.y)
+				: Intv(F32Max(child->pixel_position.y, node->pixel_visible[1].low),
 					      F32Min(child->pixel_position.y + child->pixel_size.y, node->pixel_visible[AXIS_2_Y].high));
 
 			if (child->flags & UI_TEXT_LAYOUT_POSTPONED)
@@ -902,8 +902,8 @@ void ui_FrameBegin(const v2u32 window_size, const struct ui_Visual *base)
 	ui_Height(ui_SizePixel((f32) g_ui->window_size.y, 1.0f))
 	g_ui->root = ui_RootF("###root_%p", &g_ui->root).index;
 	struct ui_Node *root = g_ui->node_hierarchy.pool.buf + g_ui->root;
-	root->pixel_visible[AXIS_2_X] = intv_inline(0.0f, (f32) window_size.x);
-	root->pixel_visible[AXIS_2_Y] = intv_inline(0.0f, (f32) window_size.y);
+	root->pixel_visible[AXIS_2_X] = Intv(0.0f, (f32) window_size.x);
+	root->pixel_visible[AXIS_2_Y] = Intv(0.0f, (f32) window_size.y);
 	
 	ui_NodePush(g_ui->root);
 }

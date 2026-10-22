@@ -17,8 +17,24 @@
 ==========================================================================
 */
 
+/*
+ * TODO: 
+ * API:
+ *
+ * Infrastructure:
+ *  () (wakeup) On joint add: set wakeup
+ *  () (wakeup) On joint remove: set wakeup
+ *  () (split)  On joint remove: island constraint removal
+ *  () (merge)  On joint add: island merge 
+ *  () (general) On joint add: add to island
+ *  () (general) On joint removal: removal from island
+ *  () (validation) Island validation
+ *  () (validation) Set validation
+ *  () (validation) Cgraph validation
+ */
 
-ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const ds_BodyId b0_id, const ds_Transform *local_frame0, const ds_BodyId b1_id, const ds_Transform *local_frame1)
+
+ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType type, const u32 collide_connected, const ds_BodyId b0_id, const ds_Transform *local_frame0, const ds_BodyId b1_id, const ds_Transform *local_frame1)
 {
     struct slot slot_b0 = ds_BodyLookup(pipeline, b0_id);
     struct slot slot_b1 = ds_BodyLookup(pipeline, b1_id);
@@ -37,6 +53,7 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const ds_BodyId b0_id, cons
         joint->id = ds_JointIdInit(slot_joint.index, 0);
     }
     joint->id = ds_JointIdNextGeneration(joint->id);
+    joint->collide_connected = collide_connected;
 
     //TODO does order matter here?
     //TODO should static have slot 1 reserved?...
@@ -51,6 +68,7 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const ds_BodyId b0_id, cons
     struct ds_JointSim *sim = ds_CGraphJointAdd(pipeline, joint);
     sim->local_frame[0] = *local_frame0;
     sim->local_frame[1] = *local_frame1;
+    sim->type = type;
 
     return joint->id;
 }
@@ -150,13 +168,71 @@ struct slot ds_JointLookup(const struct ds_Dynamics *pipeline, const ds_JointId 
         : (struct slot) { .index = U32_MAX, .address = NULL };
 }
 
-void ds_DistanceJointPrefabDefault(struct ds_DistanceJointPrefab *prefab)
+/*
+ * A distance below linear_slop leaves the joint no axis to act along, so the prefabs keep every length at or
+ * above it. The lower bound is what holds the anchors apart; at linear_slop it is as good as no bound.
+ */
+static f32 ds_DistanceJointClampLength(const f32 length, const char *name)
 {
+    const f32 slop = g_solver_config->linear_slop;
+    if (length < slop)
+    {
+        Log(T_PHYSICS, S_WARNING, "distance joint prefab: %s %f below linear_slop %f, using linear_slop", name, length, slop);
+        return slop;
+    }
+    return length;
+}
+
+static intv ds_DistanceJointClampRange(const intv range)
+{
+    intv clamped;
+    clamped.low = ds_DistanceJointClampLength(range.low, "range.low");
+    clamped.high = range.high;
+    if (clamped.high < clamped.low)
+    {
+        Log(T_PHYSICS, S_WARNING, "distance joint prefab: range.high %f below range.low %f, using range.low", clamped.high, clamped.low);
+        clamped.high = clamped.low;
+    }
+    return clamped;
+}
+
+void ds_DistanceJointPrefab(struct ds_DistanceJointPrefab *prefab, const f32 distance)
+{
+    *prefab = (struct ds_DistanceJointPrefab) { 0 };
+    prefab->target = ds_DistanceJointClampLength(distance, "distance");
+    prefab->range = Intv(prefab->target, prefab->target);
+}
+
+void ds_DistanceJointPrefabRange(struct ds_DistanceJointPrefab *prefab, const intv range)
+{
+    *prefab = (struct ds_DistanceJointPrefab) { 0 };
+    prefab->range = ds_DistanceJointClampRange(range);
+    prefab->target = prefab->range.low;
+}
+
+void ds_DistanceJointPrefabSpring(struct ds_DistanceJointPrefab *prefab, const f32 distance, const f32 hertz, const f32 damping_ratio)
+{
+    *prefab = (struct ds_DistanceJointPrefab) { 0 };
+    prefab->target = ds_DistanceJointClampLength(distance, "distance");
+    prefab->range = Intv(g_solver_config->linear_slop, F32_INFINITY);
+    prefab->enable_spring = 1;
+    prefab->hertz = hertz;
+    prefab->damping_ratio = damping_ratio;
+}
+
+void ds_DistanceJointPrefabRangeSpring(struct ds_DistanceJointPrefab *prefab, const intv range, const f32 hertz, const f32 damping_ratio)
+{
+    *prefab = (struct ds_DistanceJointPrefab) { 0 };
+    prefab->range = ds_DistanceJointClampRange(range);
+    prefab->target = 0.5f*(prefab->range.low + prefab->range.high);
+    prefab->enable_spring = 1;
+    prefab->hertz = hertz;
+    prefab->damping_ratio = damping_ratio;
 }
 
 ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_DistanceJointPrefab *prefab, const ds_BodyId b0, const ds_Transform *local_frame0, const ds_BodyId b1, const ds_Transform *local_frame1)
 {
-    const ds_JointId id = ds_JointAdd(pipeline, b0, local_frame0, b1, local_frame1);
+    const ds_JointId id = ds_JointAdd(pipeline, DS_JOINT_TYPE_DISTANCE, prefab->collide_connected, b0, local_frame0, b1, local_frame1);
     if (ds_JointIdNullCheck(id))
     {
         return ds_JointIdNull();
@@ -165,6 +241,19 @@ ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_Dis
     struct ds_Joint *joint = pipeline->joint_pool.buf + ds_JointIdIndex(id);
     struct ds_CGraphColor *color = pipeline->cgraph.color + joint->color;
     struct ds_JointSim *sim = color->joint_sim_pool.buf + joint->sim;
+
+    /* the prefab constructors clamp these; hand-written prefabs must respect the same bounds */
+    ds_Assert(prefab->target >= g_solver_config->linear_slop);
+    ds_Assert(prefab->range.low >= g_solver_config->linear_slop);
+    ds_Assert(prefab->range.high >= prefab->range.low);
+
+    /* per-tick data is computed by prepare; the cached impulses start at zero */
+    sim->distance = (struct ds_DistanceJoint) { 0 };
+    sim->distance.target = prefab->target;
+    sim->distance.range = prefab->range;
+    sim->distance.enable_spring = prefab->enable_spring;
+    sim->distance.hertz = prefab->hertz;
+    sim->distance.damping_ratio = prefab->damping_ratio;
 
     return id;
 }

@@ -454,8 +454,6 @@ struct ds_BodyPrefab
     SDB_NODE;
 
     struct DLL   shape_list;         /* shape prefab instance list */
-    ds_BodyId  body;
-    
 	u32	            dynamic;	        /* dynamic body is true, static if false */
 
     //TODO pre-compute...?
@@ -814,6 +812,139 @@ struct ds_ContactCompute
 };
 DEFINE_CPOOL_STRUCT(ds_ContactCompute);
 
+/* ---------- Distance Joints ---------- */
+
+/*
+ds_DistanceJoint
+================
+Keeps the distance between the two joint frames' origins inside range, and with the spring enabled also pulls
+it towards target. The range is always enforced; the configuration names are temporary:
+    rigid:          range = [d, d]: the distance is held at d exactly, forces in both directions.
+    range:          low < high: no force inside [low, high]; at a bound the joint pushes back like a contact.
+                    target is unused.
+    spring:         range = [linear_slop, inf) and enable_spring: the distance oscillates about target;
+                    hertz = oscillations per second, damping_ratio = how fast the oscillation dies out (0 never,
+                    1 settles without overshoot).
+    range spring:   the spring inside a finite range: soft about target, but never outside [low, high]
+                    (a suspension with end stops).
+//TODO
+
+Internals: TODO: move somewhere appropriate and cleanup 
+
+Spring Force:  Proportional to the distance, pulling towards the target.
+Damping Force: Proportional to the distance rate-of-change, opposite direction to change.
+
+*/
+
+/*
+ * TODO (agent) the sim's data falls in three groups, all POD (the sleep memcpy copies it whole):
+ *  () configuration from the prefab; keep hertz + damping_ratio, not stiffness: masses can change, convert in prepare
+ *  () accumulated impulses (target row, lower, upper): persist across frames for the warm start and through sleep
+ *  () per-step data from prepare: levers, axis, length, effective mass; soft mass, gamma, bias when the spring is on
+ *  () decided: anchors closer than linear_slop give no axis; prepare skips the joint that step (axis 0, effective
+ *     mass 0) and zeroes its accumulated impulses so no stale direction is warm started (Box2D v2.4)
+ */
+struct ds_DistanceJoint
+{
+    /* Config */ 
+    f32     target;             /* Target distance                                      */
+    intv    range;              /* Allowed distance [low, high]                         */
+    u32     enable_spring;      /* Enable spring behaviour                              */
+    f32     hertz;              /* Oscillation speed                                    */
+    f32     damping_ratio;      /* Damping speed, 
+                                   = 0.0f => oscillates forever,
+                                   < 1.0f => oscillate about target, each swing smaller
+                                   = 1.0f => returns to target, no overshoot 
+                                   > 1.0f => returns to target, but creeps in slower    */
+
+    /* Per-tick solver data */
+    v3      r[2];               /* COM levers (world-space) of joint frames in body0, 1.*/
+    v3      n;                  /* Normal direction: joint frame 0 -> joint frame 1     */
+    f32     distance;           /* distance between joint frame 0 and joint frame 1     */
+	f32	    normal_mass;	    /* 1.0f / row(J,i)*Inv(M)*J^T                           */
+    f32     soft_mass;          /* TODO: docs (spring)                                  */
+    f32     gamma;              /* TODO: docs (spring)                                  */
+    f32     bias;               /* TODO: docs (spring)                                  */
+
+    /* Per-iteration solver data, warm started from the previous tick */
+    f32     impulse;            /* Cached Rigid/Spring impulse                          */
+    f32     impulse_low;        /* Cached Range low impulse                             */
+    f32     impulse_high;       /* Cached Range high impulse                            */
+};
+
+//TODO docs 
+struct ds_DistanceJointPrefab
+{
+    u32     collide_connected;  /* Boolean: collide linked bodies               */
+    f32     target;             /* Target distance                              */
+    intv    range;              /* Allowed distance [low, high]                 */
+    u32     enable_spring;
+    f32     hertz;
+    f32     damping_ratio;
+};
+
+/* TODO: docs */
+void    ds_DistanceJointPrefab(struct ds_DistanceJointPrefab *prefab, const f32 distance);
+/* TODO: docs */
+void    ds_DistanceJointPrefabRange(struct ds_DistanceJointPrefab *prefab, const intv range);
+/* TODO: docs */
+void    ds_DistanceJointPrefabSpring(struct ds_DistanceJointPrefab *prefab, const f32 distance, const f32 hertz, const f32 damping_ratio);
+/* TODO: docs */
+void    ds_DistanceJointPrefabRangeSpring(struct ds_DistanceJointPrefab *prefab, const intv range, const f32 hertz, const f32 damping_ratio);
+
+/* ---------- Mouse Joints ---------- */
+
+/*
+ * TODO: we fix distance joints first, and handle more difficult joints later. Many decisions
+ * goes here when setting up a reasonable API; 
+ */
+struct ds_MouseJointPrefab
+{
+    //TODO
+    v3f64   origin; /* TODO: origin of mouse lever (camera?) */
+    v3f64   target; /* TODO: target (I presume if we view the lever creating a sphere around the origin,
+                             then target is the mouse position on that sphere, so the body essentially is
+                             distance linked to that target */
+    //TODO  Understand and implement later
+    u32             enable_spring;      //TODO (agent) a u32 flags field once the joints get a few more booleans
+    f32             hertz;
+    f32             damping_ratio;
+};
+
+//TODO docs 
+void        ds_MouseJointPrefabDefault(struct ds_MouseJointPrefab *prefab);
+
+/* ---------- Revolute Joints ---------- */
+
+/*
+ * TODO: we fix distance joints first, and handle more difficult joints later. Many decisions
+ * goes here when setting up a reasonable API; 
+ *  () Communicate clearly where angle/joint limits begin in the local joint space
+ *  () what about world-space API? We create  stuff in world-space, so we need both good 
+ *      visual representations as well as good APIs...
+ */
+struct ds_RevoluteJointPrefab
+{
+    //TODO  Understand and implement later
+    u32     enable_limit;
+    intv    limit;    /* What units? */
+    u32     enable_motor;
+    f32     motor_speed;
+    f32     motor_max_torque;
+};
+
+//TODO docs 
+void        ds_RevoluteJointPrefabDefault(struct ds_RevoluteJointPrefab *prefab);
+
+/* ---------- Joints ---------- */
+
+/* Setup joint in engine. Return non-null id on success, and null id on failure. */
+ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_DistanceJointPrefab *prefab, const ds_BodyId b0, const ds_Transform *local_frame0, const ds_BodyId b1, const ds_Transform *local_frame1);
+ds_JointId ds_RevoluteJointAdd(struct ds_Dynamics *pipeline, const struct ds_RevoluteJointPrefab *prefab, const ds_BodyId b0, const ds_Transform *local_frame0, const ds_BodyId b1, const ds_Transform *local_frame1);
+ds_JointId ds_MouseJointAdd(struct ds_Dynamics *pipeline, const struct ds_MouseJointPrefab *prefab, const ds_BodyId anchor, const ds_BodyId b1, const ds_Transform *local_frame1);
+
+
+
 
 /*
 ds_Joint
@@ -828,6 +959,8 @@ enum ds_JointType
 {
     DS_JOINT_TYPE_NONE,
     DS_JOINT_TYPE_DISTANCE,
+    DS_JOINT_TYPE_REVOLUTE,
+    DS_JOINT_TYPE_MOUSE,
     DS_JOINT_TYPE_COUNT
 };
 
@@ -849,14 +982,16 @@ struct ds_Joint
                                            found in the given color of the ds_CGraph. If
                                            color == CG_INVALID_COLOR, sim is an index into the joint's
                                            set->joint_sim_pool.                                             */
+    
+    u32         collide_connected;      /* Boolean: collide connected bodies                                */
 };
 DEFINE_POOL(ds_Joint);
 
 /* 
- * Setup a joint between bodies b0 and b1 with anchors defined by the input local_frames. On success, 
+ * INTERNAL: Setup a joint between bodies b0 and b1 with anchors defined by the input local_frames. On success, 
  * a valid ds_JointId is returned. On failure, the null id is returned.
  */
-ds_JointId  ds_JointAdd(struct ds_Dynamics *pipeline, const ds_BodyId b0, const ds_Transform *t0, const ds_BodyId b1, const ds_Transform *t1);
+ds_JointId  ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType type, const u32 collide_connected, const ds_BodyId b0, const ds_Transform *t0, const ds_BodyId b1, const ds_Transform *t1);
 /*
  * Remove the specified joint corresponding to the id. If the joint no longer exist, the call becomes a NO-OP.
  */
@@ -875,33 +1010,6 @@ void        ds_JointStaticRemove(struct ds_Dynamics *pipeline, struct ds_Body *b
 void        ds_JointDynamicRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, const u32 index);
 
 /*
-ds_DistanceJoint
-================
-//TODO
-*/
-
-struct ds_DistanceJointPrefab
-{
-    u32 tmp;
-};
-
-//TODO
-struct ds_DistanceJoint
-{
-    u32 tmp;
-};
-
-/*
- * Set prefab to the default distance joint values.
- */
-void    ds_DistanceJointPrefabDefault(struct ds_DistanceJointPrefab *prefab);
-/* 
- * Setup a joint between bodies b0 and b1 with anchors defined by the input local_frames. On success, 
- * a valid ds_JointId is returned. On failure, the null id is returned.
- */
-ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_DistanceJointPrefab *prefab, const ds_BodyId b0, const ds_Transform *local_frame0, const ds_BodyId b1, const ds_Transform *local_frame1);
-
-/*
 ds_JointSim
 ===========
 ds_JointSim is a discriminating union storing all different types of physical joints. 
@@ -912,7 +1020,7 @@ struct ds_JointSim
     ds_Transform        local_frame[2];
     
     u32                 joint;      /* index of general joint owning the struct */
-    enum ds_JointType   type;
+    enum ds_JointType   type;       //TODO (agent) set by the per-type add; ds_JointAdd does not know the type
     union
     {
         struct ds_DistanceJoint distance;
@@ -1135,7 +1243,7 @@ struct solverConfig
     f32     max_angular_velocity_magnitude_inv;  /* 1 / the rate (rad/s) a body may turn at per step; 0: no limit */
 	f32 	linear_dampening;	/* Range[0.0, inf] : coefficient in diff. eq. dv/dt = -coeff*v */
 	f32 	angular_dampening;	/* Range[0.0, inf] : coefficient in diff. eq. dv/dt = -coeff*v */
-	f32 	linear_slop;		/* Range[0.0, inf] : Allowed penetration before velocity steering gradually
+	f32 	linear_slop;		/* Range(0.0, inf] : Allowed penetration before velocity steering gradually
 					   sets in. */
 	f32 	restitution_threshold; 	/* Range[0.0, inf] : If -seperating_velocity >= threshold, we apply the 
 					   restitution effect */

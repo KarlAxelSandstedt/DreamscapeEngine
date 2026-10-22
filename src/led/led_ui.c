@@ -210,10 +210,10 @@ static void led_UiTest(struct led *led, const struct ui_Visual *visual)
 				ui_SpriteColor(V4(0.4f, 0.15f, 0.75f, 0.7f))
 				ui_Sprite(SPRITE_LED_FOLDER)
 				ui_BackgroundColor(V4(204.0f/256.0f, 48.0f/256.0f, 110.0f/256.0f, 0.7f))
-				ui_IntvViewableX(intv_inline(100.0f, 200.0f))	
+				ui_IntvViewableX(Intv(100.0f, 200.0f))	
 				for (u32 i = 0; i <= 10; ++i)
 				{
-					ui_Width(ui_SizeUnit(intv_inline(95.0f + i*10.0f, 105.0f + i*10.0f)))
+					ui_Width(ui_SizeUnit(Intv(95.0f + i*10.0f, 105.0f + i*10.0f)))
 					ui_Height(ui_SizePerc(1.0f))
 					(i % 2) 
 						? ui_NodeAllocF(UI_DRAW_BACKGROUND | UI_DRAW_GRADIENT | UI_DRAW_BORDER | UI_DRAW_ROUNDED_CORNERS, "###box_%u_%u", r, i)
@@ -619,7 +619,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, "radius: ###sph_rad");
 
 									ui_Width(ui_SizePerc(1.0f))
-									shape->sphere.radius = ui_FieldF32F(shape->sphere.radius, intv_inline(0.0125f, 100.0f), "%f###sph_rad_in", shape->sphere.radius);
+									shape->sphere.radius = ui_FieldF32F(shape->sphere.radius, Intv(0.0125f, 100.0f), "%f###sph_rad_in", shape->sphere.radius);
 								}
 
 							} break;
@@ -638,14 +638,14 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_Width(ui_SizePixel(64.0f, 1.0f))
 									ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, "height: ###cap_height");
 									ui_Width(ui_SizePerc(1.0f))
-									shape->capsule.half_height = ui_FieldF32F(shape->capsule.half_height, intv_inline(0.0125f, 100.0f), "%f###cap_height_in", shape->capsule.half_height);
+									shape->capsule.half_height = ui_FieldF32F(shape->capsule.half_height, Intv(0.0125f, 100.0f), "%f###cap_height_in", shape->capsule.half_height);
 									//ui_ChildLayoutAxis(AXIS_2_Y)
 									//ui_Height(ui_SizePerc(1.0f))
 									//ui_Width(ui_SizePerc(1.0f))
 									//ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
 									//{
-									//	shape->capsule.radius = ui_FieldF32F(shape->capsule.radius, intv_inline(0.0125f, 100.0f), "%f###cap_rad", shape->capsule.radius);
-									//	shape->capsule.half_height = ui_FieldF32F(shape->capsule.half_height, intv_inline(0.0125f, 100.0f), "%f###cap_height", shape->capsule.half_height);
+									//	shape->capsule.radius = ui_FieldF32F(shape->capsule.radius, Intv(0.0125f, 100.0f), "%f###cap_rad", shape->capsule.radius);
+									//	shape->capsule.half_height = ui_FieldF32F(shape->capsule.half_height, Intv(0.0125f, 100.0f), "%f###cap_height", shape->capsule.half_height);
 
 									//}
 								}
@@ -657,7 +657,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_Width(ui_SizePixel(64.0f, 1.0f))
 									ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, "radius: ###cap_rad");
 									ui_Width(ui_SizePerc(1.0f))
-									shape->capsule.radius = ui_FieldF32F(shape->capsule.radius, intv_inline(0.0125f, 100.0f), "%f###cap_rad_in", shape->capsule.radius);
+									shape->capsule.radius = ui_FieldF32F(shape->capsule.radius, Intv(0.0125f, 100.0f), "%f###cap_rad_in", shape->capsule.radius);
 								}
 
 							} break;
@@ -757,7 +757,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 				//				//ui_Flags(UI_DRAW_BORDER)
 				//				//ui_Width(ui_SizePixel(110.0f, 1.0f))
-				//				//prefab->density = ui_FieldF32F(prefab->density, intv_inline(0.00125f, 1000000.0f), "%f###s_density", prefab->density);
+				//				//prefab->density = ui_FieldF32F(prefab->density, Intv(0.00125f, 1000000.0f), "%f###s_density", prefab->density);
 				//			}
 				//			
 				//			ui_Pad();
@@ -771,7 +771,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 				//				//ui_Flags(UI_DRAW_BORDER)
 				//				//ui_Width(ui_SizePixel(110.0f, 1.0f))
-				//				//prefab->restitution = ui_FieldF32F(prefab->restitution, intv_inline(0.0f, 1.0f), "%f###s_restitution", prefab->restitution);
+				//				//prefab->restitution = ui_FieldF32F(prefab->restitution, Intv(0.0f, 1.0f), "%f###s_restitution", prefab->restitution);
 				//			}
 				//			
 				//			ui_Pad();
@@ -785,7 +785,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 				//				//ui_Flags(UI_DRAW_BORDER)
 				//				//ui_Width(ui_SizePixel(110.0f, 1.0f))
-				//				//prefab->friction = ui_FieldF32F(prefab->friction, intv_inline(0.0f, 1.0f), "%f###s_friction", prefab->friction);
+				//				//prefab->friction = ui_FieldF32F(prefab->friction, Intv(0.0f, 1.0f), "%f###s_friction", prefab->friction);
 				//			}
 				//			
 				//			ui_Pad();
@@ -799,7 +799,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 				//				ui_Flags(UI_DRAW_BORDER)
 				//				ui_Width(ui_SizePixel(110.0f, 1.0f))
-				//				prefab->dynamic = (u32) ui_FieldU64F(prefab->dynamic, intvu64_inline(0, 1), "%u###s_dynamic", prefab->dynamic);
+				//				prefab->dynamic = (u32) ui_FieldU64F(prefab->dynamic, Intvu64(0, 1), "%u###s_dynamic", prefab->dynamic);
 				//			}
 
 				//			ui_Pad();
@@ -1020,9 +1020,9 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 					//				
 					//				vec3 p;
 					//				Vec3Copy(p, node->position);
-					//				node->position[0] = ui_FieldF32F(node->position[0], intv_inline(-1000000.0f, 1000000.0f), "%f###field_x_%u", node->position[0], i);
-					//				node->position[1] = ui_FieldF32F(node->position[1], intv_inline(-1000000.0f, 1000000.0f), "%f###field_y_%u", node->position[1], i);
-					//				node->position[2] = ui_FieldF32F(node->position[2], intv_inline(-1000000.0f, 1000000.0f), "%f###field_z_%u", node->position[2], i);
+					//				node->position[0] = ui_FieldF32F(node->position[0], Intv(-1000000.0f, 1000000.0f), "%f###field_x_%u", node->position[0], i);
+					//				node->position[1] = ui_FieldF32F(node->position[1], Intv(-1000000.0f, 1000000.0f), "%f###field_y_%u", node->position[1], i);
+					//				node->position[2] = ui_FieldF32F(node->position[2], Intv(-1000000.0f, 1000000.0f), "%f###field_z_%u", node->position[2], i);
 
 					//				if (p[0] != node->position[0] || p[1] != node->position[1] || p[2] != node->position[2])
 					//				{

@@ -1496,10 +1496,12 @@ static struct test_Output DynamicsJointTest(struct test_Environment *env)
     const ds_Transform frame_ground = { .rotation = QIdentity(), .position = V3(-2.0f, 1.0f, 0.0f) };
     const ds_Transform frame_a = { .rotation = QUnitAxisAngle(V3(0.0f, 1.0f, 0.0f), 0.5f), .position = V3(0.0f, -0.5f, 0.0f) };
     const ds_Transform frame_b = { .rotation = QIdentity(), .position = V3(-0.5f, 0.0f, 0.0f) };
-    const ds_JointId j0 = ds_JointAdd(&pipeline, id[0], &frame_ground, id[1], &frame_a);
-    const ds_JointId j1 = ds_JointAdd(&pipeline, id[1], &frame_a, id[2], &frame_b);
+    struct ds_DistanceJointPrefab prefab;
+    ds_DistanceJointPrefab(&prefab, 1.0f);
+    const ds_JointId j0 = ds_DistanceJointAdd(&pipeline, &prefab, id[0], &frame_ground, id[1], &frame_a);
+    const ds_JointId j1 = ds_DistanceJointAdd(&pipeline, &prefab, id[1], &frame_a, id[2], &frame_b);
     TEST_NOT_ZERO(!ds_JointIdNullCheck(j0) && !ds_JointIdNullCheck(j1) && !ds_JointIdEqual(j0, j1));
-    TEST_NOT_ZERO(ds_JointIdNullCheck(ds_JointAdd(&pipeline, id[0], &frame_ground, ds_BodyIdNull(), &frame_a)));
+    TEST_NOT_ZERO(ds_JointIdNullCheck(ds_DistanceJointAdd(&pipeline, &prefab, id[0], &frame_ground, ds_BodyIdNull(), &frame_a)));
     TEST_NOT_ZERO(ds_JointLookup(&pipeline, ds_JointIdNull()).address == NULL);
     TEST_NOT_ZERO(ds_JointLookup(&pipeline, ds_JointIdNextGeneration(j0)).address == NULL);
     const struct slot s0 = ds_JointLookup(&pipeline, j0);
@@ -1513,7 +1515,7 @@ static struct test_Output DynamicsJointTest(struct test_Environment *env)
     TEST_NOT_ZERO(joint1->set == SOLVER_SET_NULL && CG_DYNAMIC_COLOR_FIRST <= joint1->color && joint1->color <= CG_DYNAMIC_COLOR_LAST);
     const struct ds_JointSim *sim0 = pipeline.cgraph.color[joint0->color].joint_sim_pool.buf + joint0->sim;
     const struct ds_JointSim *sim1 = pipeline.cgraph.color[joint1->color].joint_sim_pool.buf + joint1->sim;
-    TEST_NOT_ZERO(sim0->joint == s0.index && sim1->joint == s1.index);
+    TEST_NOT_ZERO(sim0->joint == s0.index && sim1->joint == s1.index && sim0->type == DS_JOINT_TYPE_DISTANCE && sim1->type == DS_JOINT_TYPE_DISTANCE);
     TEST_NOT_ZERO(JointTestV3Equal(sim0->local_frame[0].position, frame_ground.position) && JointTestV3Equal(sim0->local_frame[1].position, frame_a.position));
     TEST_NOT_ZERO(sim1->local_frame[0].rotation.x == frame_a.rotation.x && sim1->local_frame[0].rotation.w == frame_a.rotation.w && JointTestV3Equal(sim1->local_frame[1].position, frame_b.position));
 
@@ -1527,7 +1529,7 @@ static struct test_Output DynamicsJointTest(struct test_Environment *env)
     TEST_NOT_ZERO(pipeline.joint_pool.count == 1 && a->joint_list.first == (i32) s1.index);
 
     /* a reused slot gets a new generation; removing a body takes its joints */
-    const ds_JointId j2 = ds_JointAdd(&pipeline, id[0], &frame_ground, id[2], &frame_b);
+    const ds_JointId j2 = ds_DistanceJointAdd(&pipeline, &prefab, id[0], &frame_ground, id[2], &frame_b);
     TEST_NOT_ZERO(ds_JointIdIndex(j2) == ds_JointIdIndex(j0) && !ds_JointIdEqual(j2, j0) && ds_JointLookup(&pipeline, j0).address == NULL);
     TEST_NOT_ZERO(b->joint_list.count == 2 && ground->joint_list.count == 1);
     ds_BodyRemove(&mem, &pipeline, id[2]);

@@ -412,7 +412,7 @@ intv AabbRaycastInterval(const struct rayAabb *ray, const struct aabb *aabb)
 		t_max = F32Min(t_far, t_max);
 	}
 
-	return intv_inline(t_min, t_max);
+	return Intv(t_min, t_max);
 }
 
 f32 AabbRaycastParameter(const struct aabb *aabb, const struct ray *ray)
