@@ -637,6 +637,152 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline
     ProfZoneEnd;
 } 
 
+/*
+ * Joint stages. Each resolves the two bodies the way the contact stages do: a static body maps to
+ * ACTIVE_BODY_DUMMY_INDEX and the thread-local zero-mass sims. The per-type work is the switch; a type with no
+ * case yet is skipped.
+ */
+void ds_JointConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 low, const u32 high)
+{
+    ProfZone;
+
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+    for (u32 ji = low; ji < high; ++ji)
+    {
+        struct ds_JointSim *jsim = color->joint_sim_pool.buf + ji;
+        const struct ds_Joint *joint = pipeline->joint_pool.buf + jsim->joint;
+        const struct ds_Body *b[2] = { pipeline->body_pool.buf + joint->body[0], pipeline->body_pool.buf + joint->body[1] };
+
+        jsim->body_sim[0] = ds_BodyDynamicCheck(b[0]) ? b[0]->sim : ACTIVE_BODY_DUMMY_INDEX;
+        jsim->body_sim[1] = ds_BodyDynamicCheck(b[1]) ? b[1]->sim : ACTIVE_BODY_DUMMY_INDEX;
+
+        struct ds_BodySim *sim[2] =
+        {
+            ((jsim->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + jsim->body_sim[0]),
+            ((jsim->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + jsim->body_sim[1]),
+        };
+
+        struct ds_BodyCompute *bcomp[2] =
+        {
+            ((jsim->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + jsim->body_sim[0]),
+            ((jsim->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + jsim->body_sim[1]),
+        };
+
+        switch (jsim->type)
+        {
+            case DS_JOINT_TYPE_DISTANCE:
+            {
+            } break;
+            default: break;
+        }
+    }
+
+    ProfZoneEnd;
+}
+
+void ds_JointConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 low, const u32 high)
+{
+    ProfZone;
+
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+    for (u32 ji = low; ji < high; ++ji)
+    {
+        struct ds_JointSim *jsim = color->joint_sim_pool.buf + ji;
+
+        struct ds_BodySim *sim[2] =
+        {
+            ((jsim->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + jsim->body_sim[0]),
+            ((jsim->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + jsim->body_sim[1]),
+        };
+
+        struct ds_BodyCompute *bcomp[2] =
+        {
+            ((jsim->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + jsim->body_sim[0]),
+            ((jsim->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + jsim->body_sim[1]),
+        };
+
+        switch (jsim->type)
+        {
+            case DS_JOINT_TYPE_DISTANCE:
+            {
+            } break;
+            default: break;
+        }
+    }
+
+    ProfZoneEnd;
+}
+
+void ds_JointConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 low, const u32 high)
+{
+    ProfZone;
+
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+    for (u32 ji = low; ji < high; ++ji)
+    {
+        struct ds_JointSim *jsim = color->joint_sim_pool.buf + ji;
+
+        struct ds_BodySim *sim[2] =
+        {
+            ((jsim->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + jsim->body_sim[0]),
+            ((jsim->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + jsim->body_sim[1]),
+        };
+
+        struct ds_BodyCompute *bcomp[2] =
+        {
+            ((jsim->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + jsim->body_sim[0]),
+            ((jsim->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + jsim->body_sim[1]),
+        };
+
+        switch (jsim->type)
+        {
+            case DS_JOINT_TYPE_DISTANCE:
+            {
+            } break;
+            default: break;
+        }
+    }
+
+    ProfZoneEnd;
+}
+
+void ds_JointPositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 low, const u32 high)
+{
+    ProfZone;
+
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+    for (u32 ji = low; ji < high; ++ji)
+    {
+        struct ds_JointSim *jsim = color->joint_sim_pool.buf + ji;
+
+        struct ds_BodySim *sim[2] =
+        {
+            ((jsim->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + jsim->body_sim[0]),
+            ((jsim->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + jsim->body_sim[1]),
+        };
+
+        struct ds_BodyCompute *bcomp[2] =
+        {
+            ((jsim->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + jsim->body_sim[0]),
+            ((jsim->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + jsim->body_sim[1]),
+        };
+
+        switch (jsim->type)
+        {
+            case DS_JOINT_TYPE_DISTANCE:
+            {
+            } break;
+            default: break;
+        }
+    }
+
+    ProfZoneEnd;
+}
+
 void ds_PositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 low, const u32 high)
 {    
     ProfZone;

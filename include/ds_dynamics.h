@@ -1046,7 +1046,9 @@ struct ds_JointSim
     ds_Transform        local_frame[2];
     
     u32                 joint;      /* index of general joint owning the struct */
-    enum ds_JointType   type;       //TODO (agent) set by the per-type add; ds_JointAdd does not know the type
+    enum ds_JointType   type;
+    u32                 body_sim[2];/* body->sim of the two bodies (ACTIVE_BODY_DUMMY_INDEX: static); set by
+                                       the prepare stage each tick                                           */
     union
     {
         struct ds_DistanceJoint distance;
@@ -1250,6 +1252,19 @@ void    ds_ContactConstraintIterateRange(struct ds_Dynamics *pipeline, const u32
 void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 /* Compute a solver iteration over the given color for position constraints in range [low, high) */
 void ds_PositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
+
+/*
+ * The joint stages, each over the range [low, high) of the colour's joint_sim_pool. A colour's joints and
+ * contacts share no body, so within a colour they run in any order; across colours the chain orders them.
+ */
+/* Resolve the body sims and compute the per-tick solver data of the joints */
+void    ds_JointConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
+/* Apply the joints' cached impulses from the previous tick */
+void    ds_JointConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
+/* One velocity (PGS) iteration over the joints */
+void    ds_JointConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
+/* One position (NGS) iteration over the joints */
+void    ds_JointPositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 
 /*
 contact_solver_config
@@ -1513,11 +1528,13 @@ struct ds_SolverJobPhase
 
     struct ds_ParallelForChain      pf_body_update;
     struct ds_ParallelForChain      pf_contact_init;
+    struct ds_ParallelForChain      pf_joint_init;
     struct ds_ParallelForChain      pf_contact_warmup;
-    struct ds_ParallelForChain      pf_velocity_solve;
+    struct ds_ParallelForChain      pf_joint_warmup;
+    struct ds_ParallelForChain      pf_velocity_solve;      /* per iteration and colour: the colour's joints, then its contacts */
     struct ds_ParallelForChain      pf_integrate;
     struct ds_ParallelForChain      pf_cache_impulse_and_position_init;
-    struct ds_ParallelForChain      pf_position_solve;
+    struct ds_ParallelForChain      pf_position_solve;      /* per iteration and colour: the colour's joints, then its contacts */
 
     struct ds_ParallelForChain      pf_orientation;
     struct ds_ProxyRange *          proxy_range;
