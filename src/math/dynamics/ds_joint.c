@@ -59,7 +59,6 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
         joint->id = ds_JointIdInit(slot_joint.index, 0);
     }
     joint->id = ds_JointIdNextGeneration(joint->id);
-    joint->collide_connected = collide_connected;
 
     //TODO does order matter here?
     //TODO should static have slot 1 reserved?...
@@ -71,6 +70,16 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
     DLLAppendEx(b[0]->joint_list, pipeline->joint_pool.buf, slot_joint.index, edge_node[i0], edge_node[0]);
     DLLAppendEx(b[1]->joint_list, pipeline->joint_pool.buf, slot_joint.index, edge_node[i1], edge_node[1]);
 	DLLAppend(expand->joint_list, pipeline->joint_pool.buf, slot_joint.index, island_joint);
+
+    /* Wonky but important: if collide_connected, we need not do anything; but if
+     * !collide_connected, we must call Disable with joint->collide_connected = 1,
+     * since the call otherwise become a no-op. */
+    joint->collide_connected = 1;
+    if (!collide_connected)
+    {
+        ds_JointCollisionDisable(pipeline, joint->id);
+    }
+
     //TODO does order matter here?
     //TODO should static have slot 1 reserved?...
     struct ds_JointSim *sim = ds_CGraphJointAdd(pipeline, joint);
@@ -126,7 +135,8 @@ void ds_JointRemoveEx(struct ds_Dynamics *pipeline, const u32 index)
     //        moved_joint->sim = joint->sim;
     //    }
     //}
-
+    
+    ds_JointCollisionEnable(pipeline, joint->id);
     ds_JointUnlink(pipeline, joint, index);
     ds_PoolRemove(pipeline->joint_pool, index);
 
@@ -140,6 +150,113 @@ void ds_JointRemove(struct ds_Dynamics *pipeline, const ds_JointId id)
     {
         ds_JointRemoveEx(pipeline, slot.index);
     }
+}
+
+void ds_JointCollisionEnable(struct ds_Dynamics *pipeline, const ds_JointId id)
+{
+    struct slot slot = ds_JointLookup(pipeline, id);
+    struct ds_Joint *joint = slot.address;
+    if (!joint || joint->collide_connected)
+    {
+        return;
+    }
+
+    joint->collide_connected = 1;
+    if (ds_BodyPairMayCollide(pipeline, joint->body[0], joint->body[1]))
+    {
+        const struct ds_Body *body[2] = 
+        {
+            pipeline->body_pool.buf + joint->body[0],
+            pipeline->body_pool.buf + joint->body[1],
+        };
+
+        if (ds_BodyDynamicCheck(body[0]))
+        {
+            i32 si = body[0]->shape_list.first;
+            while (si != DLL_SENTINEL)
+            {
+                ds_BitSetSet(&pipeline->shape_dirty_set, si, 1);
+                si = pipeline->shape_pool.buf[si].body_shape.next;
+            }
+        }
+
+        if (ds_BodyDynamicCheck(body[1]))
+        {
+            i32 si = body[1]->shape_list.first;
+            while (si != DLL_SENTINEL)
+            {
+                ds_BitSetSet(&pipeline->shape_dirty_set, si, 1);
+                si = pipeline->shape_pool.buf[si].body_shape.next;
+            }
+        }
+    }
+}
+
+void ds_JointCollisionDisable(struct ds_Dynamics *pipeline, const ds_JointId id)
+{
+    struct slot slot = ds_JointLookup(pipeline, id);
+    struct ds_Joint *joint = slot.address;
+    if (!joint || !joint->collide_connected)
+    {
+        return;
+    }
+
+    if (ds_BodyPairMayCollide(pipeline, joint->body[0], joint->body[1]))
+    {
+        const struct ds_Body *b[2] =
+        {
+            pipeline->body_pool.buf + joint->body[0],
+            pipeline->body_pool.buf + joint->body[1],
+        };
+
+        const u32 dynamic[2] =
+        {
+            ds_BodyDynamicBit(b[0]),
+            ds_BodyDynamicBit(b[1]),
+        };
+
+        /* Pick any dynamic body as a first guess. If both are dynamic, we
+         * choose the body with the least amount of shapes. */
+        u32 body_slot_index = dynamic[1];
+        if (dynamic[0] && dynamic[1])
+        {
+            body_slot_index = (b[0]->shape_list.count <= b[1]->shape_list.count)
+                              ? 0
+                              : 1;
+        }
+            
+        const u32 body_index = joint->body[ body_slot_index ];
+        const u32 body_neighbour_index = joint->body[ 1 - body_slot_index ];
+
+        struct ds_Body *body = pipeline->body_pool.buf + body_index;
+        ds_Assert(ds_BodyDynamicCheck(body));
+
+        i32 si = body->shape_list.first; 
+        while (si != DLL_SENTINEL)
+        {
+            const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
+
+            i32 ci = shape->contact_list.first;
+            while (ci != DLL_SENTINEL)
+            {
+                struct ds_Contact *contact = pipeline->contact_pool.buf + ci;
+                const u32 neighbour_index = (contact->key.shape[0] == (u32) si)
+                            ? 1
+                            : 0;
+                const u32 ci_next = contact->shape_contact[1-neighbour_index].next;
+
+                const struct ds_Shape *neighbour_shape = pipeline->shape_pool.buf + contact->key.shape[neighbour_index];
+                if (neighbour_shape->body == body_neighbour_index)
+                {
+                    ds_ContactRemove(pipeline, ci, 0);
+                }
+                ci = ci_next;
+            }
+            si = shape->body_shape.next;
+        }
+    }
+
+    joint->collide_connected = 0;
 }
 
 void ds_JointValidateAll(const struct ds_Dynamics *pipeline)

@@ -44,7 +44,7 @@ void ds_ContactKeyAddress(struct ds_Body **b0, struct ds_Shape **s0, struct ds_B
     *b1 = pipeline->body_pool.buf + (*s1)->body;
 }
 
-struct slot ds_ContactAdd(struct ds_Dynamics *pipeline, const struct ds_ContactKey key)
+struct slot ds_ContactTryAdd(struct ds_Dynamics *pipeline, const struct ds_ContactKey key)
 {
     ds_Assert(ds_ContactKeyLookup(pipeline, key).address == NULL);
 
@@ -53,6 +53,11 @@ struct slot ds_ContactAdd(struct ds_Dynamics *pipeline, const struct ds_ContactK
         pipeline->shape_pool.buf + key.shape[0],
         pipeline->shape_pool.buf + key.shape[1],
     };
+
+    if (!ds_BodyPairMayCollide(pipeline, shape[0]->body, shape[1]->body))
+    {
+        return (struct slot) { .index = U32_MAX, .address = NULL };
+    }
 
     const u32 old_max = pipeline->contact_pool.count_max;
 	const struct slot contact_slot = ds_PoolAdd(pipeline->contact_pool);
@@ -95,8 +100,10 @@ struct slot ds_ContactAdd(struct ds_Dynamics *pipeline, const struct ds_ContactK
     return contact_slot;
 }
 
-void ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 index)
+void ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 index, const u32 increment_constraint_remove_count)
 {
+    ds_Assert(increment_constraint_remove_count <= 1);
+
     struct ds_Contact *buf = pipeline->contact_pool.buf;
 	struct ds_Contact *c = buf + index;
     ds_Assert(ds_PoolSlotAllocated(c));
@@ -113,7 +120,7 @@ void ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 index)
         ds_CGraphContactRemove(pipeline, c);
 
         struct ds_Island *island = pipeline->island_pool.buf + c->island;
-        island->constraint_remove_count += 1;
+        island->constraint_remove_count += increment_constraint_remove_count;
         DLLRemove(island->contact_list, pipeline->contact_pool.buf, index, island_contact);
         c->island = U32_MAX;
     }

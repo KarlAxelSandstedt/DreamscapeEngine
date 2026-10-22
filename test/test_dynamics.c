@@ -77,6 +77,12 @@ pair. With sleeping on, the jointed pair's set carries the joint (its sim in the
 to the sleeping third box wakes both sets and merges; removing a sleeping jointed body takes its joints and
 wakes the rest. Each step ticks under the debug validation.
 
+Joint collision filter (DynamicsJointCollisionTest): a box stacked on a box. A joint with collide_connected = 0
+removes their contact at once without counting a constraint removal, ds_BodyPairMayCollide says 0, and ticks do
+not bring the contact back; a second joint with the flag 1 changes nothing (0 wins); removing the suppressing
+joint dirties the shapes and the next tick recreates the contact; a joint with the flag 1 alone leaves the
+contact in place. Ground contacts stay throughout.
+
 Solver (DynamicsSlideTest, DynamicsBounceTest): a frictionless box on a 30 degree slope slides for a second;
 its downhill speed matches the per-tick recurrence v = (v + g sin(a) dt) / (1 + d dt) of the solver's gravity
 and damping within 1 % (the contacts cancel only the normal part), nothing across the slope, no spin. A box
@@ -1690,6 +1696,107 @@ static struct test_Output DynamicsJointIslandTest(struct test_Environment *env)
     return output;
 }
 
+/* the contact between the two bodies' first shapes, or NULL */
+static const struct ds_Contact *JointTestContact(const struct ds_Dynamics *pipeline, const struct ds_Body *a, const struct ds_Body *b)
+{
+    const struct ds_ContactKey key = ds_ContactKeyCanonical((u32) a->shape_list.first, (u32) b->shape_list.first);
+    return ds_ContactKeyLookup(pipeline, key).address;
+}
+
+static struct test_Output DynamicsJointCollisionTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 0;
+
+    /* a ground, a box on it and a box on that: the stacked pair touches */
+    const v3 hw = V3(0.5f, 0.5f, 0.5f);
+    const struct dynamics_TestBox scene[3] =
+    {
+        { .position = V3(0.0f, -1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(16.0f, 1.0f, 16.0f), .dynamic = 0, .friction = 0.5f },
+        { .position = V3(0.0f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+        { .position = V3(0.0f, 1.5f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+    };
+    ds_BodyId id[3];
+    for (u32 i = 0; i < 3; ++i)
+    {
+        id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
+    }
+    const struct ds_Body *ground = ds_BodyLookup(&pipeline, id[0]).address;
+    const struct ds_Body *a = ds_BodyLookup(&pipeline, id[1]).address;
+    const struct ds_Body *b = ds_BodyLookup(&pipeline, id[2]).address;
+    const u32 ia = ds_BodyLookup(&pipeline, id[1]).index;
+    const u32 ib = ds_BodyLookup(&pipeline, id[2]).index;
+    const ds_Transform frame = { .rotation = QIdentity(), .position = V3(0.0f, 0.0f, 0.0f) };
+    struct ds_DistanceJointPrefab suppress, allow;
+    ds_DistanceJointPrefab(&suppress, 1.0f);
+    ds_DistanceJointPrefab(&allow, 1.0f);
+    allow.collide_connected = 1;
+    u32 t;
+
+    for (t = 0; t < 3; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(JointTestContact(&pipeline, a, b) != NULL && JointTestContact(&pipeline, ground, a) != NULL);
+    TEST_NOT_ZERO(ds_BodyPairMayCollide(&pipeline, ia, ib) == 1 && a->island == b->island);
+    const u32 contact_count = pipeline.contact_pool.count;
+
+    /* a suppressing joint removes the pair's contact at once, without a counted constraint removal, and ticks do not bring it back */
+    const ds_JointId j0 = ds_DistanceJointAdd(&pipeline, &suppress, id[1], &frame, id[2], &frame);
+    TEST_NOT_ZERO(!ds_JointIdNullCheck(j0) && ds_BodyPairMayCollide(&pipeline, ia, ib) == 0);
+    TEST_NOT_ZERO(JointTestContact(&pipeline, a, b) == NULL && JointTestContact(&pipeline, ground, a) != NULL);
+    TEST_NOT_ZERO(pipeline.contact_pool.count == contact_count - 1 && a->island == b->island);
+    TEST_NOT_ZERO((pipeline.island_pool.buf + a->island)->constraint_remove_count == 0);
+    ds_DynamicsValidate(&pipeline);
+    for (t = 0; t < 3; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(JointTestContact(&pipeline, a, b) == NULL && pipeline.contact_pool.count == contact_count - 1);
+
+    /* a second joint allowing collision changes nothing: the suppressing one wins */
+    const ds_JointId j1 = ds_DistanceJointAdd(&pipeline, &allow, id[1], &frame, id[2], &frame);
+    TEST_NOT_ZERO(!ds_JointIdNullCheck(j1) && ds_BodyPairMayCollide(&pipeline, ia, ib) == 0);
+    for (t = 0; t < 3; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(JointTestContact(&pipeline, a, b) == NULL);
+
+    /* removing the suppressing joint dirties the shapes: the next tick recreates the contact */
+    ds_JointRemove(&pipeline, j0);
+    TEST_NOT_ZERO(ds_BodyPairMayCollide(&pipeline, ia, ib) == 1 && ds_BitSetGet(&pipeline.shape_dirty_set, (u32) a->shape_list.first));
+    SnapshotTestTick(&pipeline);
+    TEST_NOT_ZERO(JointTestContact(&pipeline, a, b) != NULL && pipeline.contact_pool.count == contact_count);
+    ds_DynamicsValidate(&pipeline);
+
+    /* a joint allowing collision alone leaves the contact in place; removing it changes nothing either */
+    for (t = 0; t < 3; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(JointTestContact(&pipeline, a, b) != NULL && pipeline.contact_pool.count == contact_count);
+    ds_JointRemove(&pipeline, j1);
+    TEST_NOT_ZERO(ds_BodyPairMayCollide(&pipeline, ia, ib) == 1 && JointTestContact(&pipeline, a, b) != NULL);
+    SnapshotTestTick(&pipeline);
+    TEST_NOT_ZERO(JointTestContact(&pipeline, a, b) != NULL && pipeline.contact_pool.count == contact_count);
+    ds_DynamicsValidate(&pipeline);
+
+    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 static v3 SolverTestVelocity(const struct ds_Dynamics *pipeline, const ds_BodyId id)
 {
     const struct ds_Body *body = ds_BodyLookup(pipeline, id).address;
@@ -2314,6 +2421,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsGraphTest,
     DynamicsJointTest,
     DynamicsJointIslandTest,
+    DynamicsJointCollisionTest,
     DynamicsSlideTest,
     DynamicsBounceTest,
     DynamicsFirstTickTest,

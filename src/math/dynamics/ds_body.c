@@ -275,3 +275,44 @@ void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId i
     
     ArenaPopScratch();
 }
+
+u32 ds_BodyPairMayCollide(const struct ds_Dynamics *pipeline, const u32 body_index0, const u32 body_index1)
+{
+    const u32 bi[2] = { body_index0, body_index1 };
+
+    struct ds_Body *body[2] =
+    {
+	    pipeline->body_pool.buf + bi[0],
+	    pipeline->body_pool.buf + bi[1],
+    };
+
+    const u32 l = (body[0]->joint_list.count <= body[1]->joint_list.count)
+                ? 0
+                : 1;
+
+    u32 collide_connected = 1;
+    i32 ji = body[l]->joint_list.first; 
+    while (collide_connected && ji != DLL_SENTINEL)
+    {
+        const struct ds_Joint *joint = pipeline->joint_pool.buf + ji;
+
+        if (joint->body[0] == bi[l])
+        {
+            ji = joint->edge_node[0].next;
+            if (joint->body[1] == bi[1-l])
+            {
+                collide_connected &= joint->collide_connected;
+            }
+        }
+        else
+        {
+            ji = joint->edge_node[1].next;
+            if (joint->body[0] == bi[1-l])
+            {
+                collide_connected &= joint->collide_connected;
+            }
+        }
+    }
+
+    return collide_connected;
+}

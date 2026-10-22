@@ -95,7 +95,7 @@ void ds_ShapeDynamicRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, c
 
     while (shape->contact_list.count)
 	{
-        ds_ContactRemove(pipeline, shape->contact_list.first);
+        ds_ContactRemove(pipeline, shape->contact_list.first, 1);
     }
 
     if (mass_properties_update)
@@ -117,7 +117,7 @@ void ds_ShapeStaticRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, co
 
     while (shape->contact_list.count)
 	{
-        ds_ContactRemove(pipeline, shape->contact_list.first);
+        ds_ContactRemove(pipeline, shape->contact_list.first, 0);
     }
 
     ds_BitSetSet(&pipeline->shape_dirty_set, index, 0);

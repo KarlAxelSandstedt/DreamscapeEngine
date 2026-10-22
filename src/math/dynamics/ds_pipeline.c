@@ -468,13 +468,13 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
                 for (u32 q = 0; q < query->dynamic_count; ++q)
                 {
                     const struct ds_ContactKey key = ds_ContactKeyCanonical(si, query->dynamic_query[q]);
-                    ds_ContactAdd(pipeline, key);
+                    ds_ContactTryAdd(pipeline, key);
                 }
 
                 for (u32 q = 0; q < query->static_count; ++q)
                 {
                     const struct ds_ContactKey key = ds_ContactKeyCanonical(si, query->static_query[q]);
-                    ds_ContactAdd(pipeline, key);
+                    ds_ContactTryAdd(pipeline, key);
                 }
 		    }
         }
@@ -1440,7 +1440,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                         struct ds_BitBlock it = ds_BitBlockInit(block, bi);
                         while (ds_BitBlockHasNext(&it))
                         {
-                            ds_ContactRemove(pipeline, (u32) ds_BitBlockNext(&it));
+                            ds_ContactRemove(pipeline, (u32) ds_BitBlockNext(&it), 1);
                         }
                     }
 

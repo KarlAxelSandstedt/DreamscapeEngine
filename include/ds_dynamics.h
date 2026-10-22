@@ -567,6 +567,8 @@ struct slot	    ds_BodyLookup(const struct ds_Dynamics *pipeline, const ds_BodyI
 /* Process the body's shape list and set its internal mass properties accordingly. */
 void		    ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId id);
 
+/* Internal: Return 1 if the bodies may collide, 0 otherwise. */
+u32             ds_BodyPairMayCollide(const struct ds_Dynamics *pipeline, const u32 body_index0, const u32 body_index1);
 /* Internal: Refresh and update rigid body simulation and compute/solver data in range [low, high) before solving */
 void            ds_BodyUpdateSolverDataRange(struct ds_Dynamics *pipeline, const u32 low, const u32 high);
 /* Internal: Integrate body velocites in range [low, high) */
@@ -739,13 +741,23 @@ struct ds_Contact
 };
 DEFINE_POOL(ds_Contact);
 
-/* Add and return new contact with unique key and update pipeline state */
-struct slot ds_ContactAdd(struct ds_Dynamics *pipeline, const struct ds_ContactKey key);
-/* Remove contact at the given index and update pipeline state */
-void 	    ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 contact_index);
-/* Return the contact associated with the given id. If no such contact is found, return (U32_MAX, NULL) */
+/*
+ * Add the contact with the given unique key and return its slot. If the shapes' bodies may not collide
+ * (ds_BodyPairMayCollide), nothing is added and the empty slot (U32_MAX, NULL) is returned.
+ */
+struct slot ds_ContactTryAdd(struct ds_Dynamics *pipeline, const struct ds_ContactKey key);
+/* 
+ * Internal: Remove contact at the given index and update pipeline state. increments island
+ * constraint counter if 1 (and if applicable), otherwise must be 0. 
+ */
+void 	    ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 contact_index, const u32 increment_constraint_remove_counter);
+/* 
+ * Return the contact associated with the given id. If no such contact is found, return (U32_MAX, NULL) 
+ */
 struct slot ds_ContactLookup(const struct ds_Dynamics *pipeline, const ds_ContactId id);
-/* Return the contact with the given key. If no such contact is found, return (U32_MAX, NULL) */
+/* 
+ * Return the contact with the given key. If no such contact is found, return (U32_MAX, NULL) 
+ */
 struct slot ds_ContactKeyLookup(const struct ds_Dynamics *pipeline, const struct ds_ContactKey key);
 
 /* Internal: Return 1 if contact shape bvh nodes still overlap, otherwise return 0. */
@@ -1005,6 +1017,18 @@ void        ds_JointRemoveEx(struct ds_Dynamics *pipeline, const u32 joint_index
  * On success, return the joint corresponding to the id. If the wasn't found, return an empty slot (U32_MAX, NULL)
  */
 struct slot ds_JointLookup(const struct ds_Dynamics *pipeline, const ds_JointId id);
+/*
+ * Enable collision between joint body-pair. NO-OP if invalid id or collision is already 
+ * enabled.
+ * NOTE: collision is only enabled when all joints agree; if one joint has collision
+ *       disabled, collision stays disabled.
+ */
+void        ds_JointCollisionEnable(struct ds_Dynamics *pipeline, const ds_JointId id);
+/*
+ * Disable collision between joint body-pair. NO-OP if invalid id or collision is already
+ * disabled.
+ */
+void        ds_JointCollisionDisable(struct ds_Dynamics *pipeline, const ds_JointId id);
 /*
  * Validate every joint's bookkeeping: id, bodies, island, the set/colour sim back reference and the bodies'
  * joint lists.
