@@ -1242,22 +1242,26 @@ struct ds_ContactConstraint
 DEFINE_CPOOL_STRUCT(ds_ContactConstraint);
 
 
-/* Initalize the given range [low, high) of ds_ContactConstraints in the constraint graph */
+/*
+ * Initalize the given range [low, high) of ds_ContactConstraints in the constraint graph. Canonical slot: a static
+ * body is put in slot 0 of the compute (body sims, levers and axes swapped), whatever the contact key's order.
+ */
 void 	ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 /* Warmup Range [low, high) of applicable ds_ContactConstraints for the given color in the constraint graph */
 void 	ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 /* Compute a solver iteration over the given color for contact constraints */
 void    ds_ContactConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color, const u32 cc_low, const u32 cc_high);
 /*
- * The same iteration for a static colour (every contact has exactly one static body): the static body's terms
- * are dropped and only the dynamic body is read and written. Results equal ds_ContactConstraintIterateRange's.
+ * The same iteration for a static colour (every contact has exactly one static body, in slot 0): the static
+ * body's terms are dropped and only the dynamic body is read and written. Results equal
+ * ds_ContactConstraintIterateRange's.
  */
 void    ds_ContactConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const u32 color, const u32 cc_low, const u32 cc_high);
 /* Cache contact impulses and initialize position constraints in the range [low, high) for the given color */
 void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 /* Compute a solver iteration over the given color for position constraints in range [low, high) */
 void ds_PositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
-/* The same iteration for a static colour (one static body per contact); results equal ds_PositionConstraintIterateRange's. */
+/* The same iteration for a static colour (one static body per contact, in slot 0); results equal ds_PositionConstraintIterateRange's. */
 void ds_PositionConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 
 /*

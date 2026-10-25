@@ -358,6 +358,32 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
                     : 0.0f;
 		    }
         }
+
+        /*
+         * Canonical slot: a static body sits in slot 0, so the static stages read one body in slot 1 with body 1's
+         * signs. The swap flips the axes and exchanges the levers; the point impulses are scalars along the axes,
+         * com_separation and velocity_bias are products of two flipped factors, so all keep their values, and a
+         * body never changes between static and dynamic, so the form is the same every tick (warm start cache).
+         */
+        if (ccomp->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX)
+        {
+            ccomp->body_sim[1] = ccomp->body_sim[0];
+            ccomp->body_sim[0] = ACTIVE_BODY_DUMMY_INDEX;
+            for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
+            {
+                struct ds_ContactConstraint *cc = ccomp->cc + cci;
+                cc->normal = V3Negate(cc->normal);
+                cc->tangent[0] = V3Negate(cc->tangent[0]);
+                cc->tangent[1] = V3Negate(cc->tangent[1]);
+                for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
+                {
+                    struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
+                    const v3 r0 = ccp->r[0];
+                    ccp->r[0] = ccp->r[1];
+                    ccp->r[1] = r0;
+                }
+            }
+        }
 	}
     
     ProfZoneEnd;
@@ -570,17 +596,10 @@ void ds_ContactConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const 
     for (u32 ci = cc_low; ci < cc_high; ++ci)
     {
         struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + ci;
-        ds_Assert((ccomp->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) != (ccomp->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX));
-
-        /*
-         * The dynamic body may sit in either slot (the contact key's order). With the axes negated for slot 0 the
-         * rows read as if it were body 1, and the point impulses keep their meaning: scalars along the contact's
-         * normal and tangents. The static body's terms (zero mass, zero velocity) are dropped.
-         */
-        const u32 dyn = (ccomp->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? 1 : 0;
-        const f32 sign = (dyn) ? 1.0f : -1.0f;
-        const struct ds_BodySim *sim = active->body_sim_pool.buf + ccomp->body_sim[dyn];
-        struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + ccomp->body_sim[dyn];
+        /* the static body is slot 0 (prepare's canonical slot); its terms are dropped */
+        ds_Assert(ccomp->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX && ccomp->body_sim[1] != ACTIVE_BODY_DUMMY_INDEX);
+        const struct ds_BodySim *sim = active->body_sim_pool.buf + ccomp->body_sim[1];
+        struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + ccomp->body_sim[1];
         const f32 inv_mass = sim->inv_mass;
         const m3 inv_inertia = sim->world_inv_inertia;
 
@@ -588,25 +607,22 @@ void ds_ContactConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const 
         for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
         {
             struct ds_ContactConstraint *cc = ccomp->cc + cci;
-            const v3 tangent[2] = { V3Scale(cc->tangent[0], sign), V3Scale(cc->tangent[1], sign) };
-            const v3 normal = V3Scale(cc->normal, sign);
-
             for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
             {
                 struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
-                const v3 r = ccp->r[dyn];
+                const v3 r = ccp->r[1];
                 const f32 impulse_bound = cc->friction * ccp->normal_impulse;
                 for (u32 k = 0; k < 2; ++k)
                 {
                     const v3 relative_velocity = V3Add(bcomp->linear_velocity, V3Cross(bcomp->angular_velocity, r));
-                    const f32 separating_velocity = V3Dot(tangent[k], relative_velocity);
+                    const f32 separating_velocity = V3Dot(cc->tangent[k], relative_velocity);
 
                     f32 delta_impulse = -ccp->tangent_mass[k] * separating_velocity;
                     const f32 old_impulse = ccp->tangent_impulse[k];
                     ccp->tangent_impulse[k] = F32Clamp(ccp->tangent_impulse[k] + delta_impulse, -impulse_bound, impulse_bound);
                     delta_impulse = ccp->tangent_impulse[k] - old_impulse;
 
-                    const v3 impulse = V3Scale(tangent[k], delta_impulse);
+                    const v3 impulse = V3Scale(cc->tangent[k], delta_impulse);
                     bcomp->linear_velocity = V3AddScaled(bcomp->linear_velocity, impulse, inv_mass);
                     bcomp->angular_velocity = V3Add(bcomp->angular_velocity, M3V3Mul(inv_inertia, V3Cross(r, impulse)));
                 }
@@ -615,16 +631,16 @@ void ds_ContactConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const 
             for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
             {
                 struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
-                const v3 r = ccp->r[dyn];
+                const v3 r = ccp->r[1];
                 const v3 relative_velocity = V3Add(bcomp->linear_velocity, V3Cross(bcomp->angular_velocity, r));
-                const f32 separating_velocity = V3Dot(normal, relative_velocity);
+                const f32 separating_velocity = V3Dot(cc->normal, relative_velocity);
 
                 f32 delta_impulse = ccp->normal_mass * (ccp->velocity_bias - separating_velocity);
                 const f32 old_impulse = ccp->normal_impulse;
                 ccp->normal_impulse = F32Max(0.0f, ccp->normal_impulse + delta_impulse);
                 delta_impulse = ccp->normal_impulse - old_impulse;
 
-                const v3 impulse = V3Scale(normal, delta_impulse);
+                const v3 impulse = V3Scale(cc->normal, delta_impulse);
                 bcomp->linear_velocity = V3AddScaled(bcomp->linear_velocity, impulse, inv_mass);
                 bcomp->angular_velocity = V3Add(bcomp->angular_velocity, M3V3Mul(inv_inertia, V3Cross(r, impulse)));
             }
@@ -950,13 +966,10 @@ void ds_PositionConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const
     for (u32 ci = low; ci < high; ++ci)
     {
         struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + ci;
-        ds_Assert((ccomp->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) != (ccomp->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX));
-
-        /* the dynamic body as if it were body 1 (sign, as in ds_ContactConstraintIterateStaticRange) */
-        const u32 dyn = (ccomp->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? 1 : 0;
-        const f32 sign = (dyn) ? 1.0f : -1.0f;
-        struct ds_BodySim *sim = active->body_sim_pool.buf + ccomp->body_sim[dyn];
-        struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + ccomp->body_sim[dyn];
+        /* the static body is slot 0 (prepare's canonical slot); its lever stays as stored, it does not rotate */
+        ds_Assert(ccomp->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX && ccomp->body_sim[1] != ACTIVE_BODY_DUMMY_INDEX);
+        struct ds_BodySim *sim = active->body_sim_pool.buf + ccomp->body_sim[1];
+        struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + ccomp->body_sim[1];
         const f32 inv_mass = sim->inv_mass;
 
         for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
@@ -970,17 +983,13 @@ void ds_PositionConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const
                 const m3 inv_inertia = M3Mul(M3Mul(rot, sim->local_inv_inertia), M3Transpose(rot));
                 sim->world_inv_inertia = inv_inertia;
 
-                /* the static lever stays as stored: its body does not rotate */
-                const v3 r = QUnitRotate(bcomp->rotation, ccp->r[dyn]);
-                const v3 rs = ccp->r[dyn ^ 1];
-                const v3 rn = V3Cross(r, cc->normal);
-                const f32 K = inv_mass + V3Dot(M3V3Mul(inv_inertia, rn), rn);
+                const v3 r0 = ccp->r[0];
+                const v3 r1 = QUnitRotate(bcomp->rotation, ccp->r[1]);
+                const v3 rn1 = V3Cross(r1, cc->normal);
+                const f32 K = inv_mass + V3Dot(M3V3Mul(inv_inertia, rn1), rn1);
 
-                /*
-                 * distance = com_separation + dot((delta_position_1 - delta_position_0) + (r1 - r0), n)
-                 *          = com_separation + dot(sign * (delta_position + (r - rs)), n)
-                 */
-                const v3 delta = V3AddScaled(V3Scale(V3Sub(r, rs), sign), bcomp->delta_position, sign);
+                /* distance = com_separation + dot(delta_position_1 + (r1 - r0), n): body 0 does not move */
+                const v3 delta = V3Add(bcomp->delta_position, V3Sub(r1, r0));
                 const f32 distance = ccp->com_separation + V3Dot(delta, cc->normal);
                 const f32 biased_slop_distance = g_solver_config->baumgarte_constant * (distance + g_solver_config->linear_slop);
 
@@ -990,12 +999,12 @@ void ds_PositionConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const
                     ? -C/K
                     : 0.0f;
 
-                const v3 impulse_vector = V3Scale(cc->normal, sign*impulse);
+                const v3 impulse_vector = V3Scale(cc->normal, impulse);
                 bcomp->delta_position = V3AddScaled(bcomp->delta_position, impulse_vector, inv_mass);
                 /* instantaneous torque, assume delta_t = 1; small angle quaternion */
-                const v3 w = M3V3Mul(inv_inertia, V3Cross(r, impulse_vector));
-                const q quat_angle = Q(w.x/2.0f, w.y/2.0f, w.z/2.0f, 1.0f);
-                bcomp->rotation = QNormalize(QMul(quat_angle, bcomp->rotation));
+                const v3 w1 = M3V3Mul(inv_inertia, V3Cross(r1, impulse_vector));
+                const q quat_angle1 = Q(w1.x/2.0f, w1.y/2.0f, w1.z/2.0f, 1.0f);
+                bcomp->rotation = QNormalize(QMul(quat_angle1, bcomp->rotation));
             }
         }
     }

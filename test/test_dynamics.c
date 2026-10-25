@@ -2950,6 +2950,7 @@ DYNAMICS_PERF_SOLVE_INIT_SPECIAL(DynamicsPerfPositionStaticPyramidSpecInit,  DYN
 DYNAMICS_PERF_SOLVE_INIT_SPECIAL(DynamicsPerfIterateStaticTerrainSpecInit,   DYNAMICS_PERF_SCENE_TERRAIN, DYNAMICS_PERF_STAGE_VELOCITY, DYNAMICS_PERF_GROUP_STATIC,  DYNAMICS_PERF_VARIANT_STATIC)
 DYNAMICS_PERF_SOLVE_INIT_SPECIAL(DynamicsPerfPositionStaticTerrainSpecInit,  DYNAMICS_PERF_SCENE_TERRAIN, DYNAMICS_PERF_STAGE_POSITION, DYNAMICS_PERF_GROUP_STATIC,  DYNAMICS_PERF_VARIANT_STATIC)
 
+
 #define DYNAMICS_PERF_SOLVE_TEST(name, init)                                                                    \
     { .id = name, .size = 1, .test = &DynamicsPerfSolveTest, .test_init = &init, .test_reset = &DynamicsPerfSolveReset, .test_free = &DynamicsPerfSolveFree }
 
