@@ -3001,7 +3001,7 @@ Terrain: a height field grid (CCW, upward faces), random pose; flat (relief 0) f
 static struct ds_DynamicsWorker mc_worker[DS_THREAD_COUNT_MAX];
 
 /* relief 0: a flat grid (y = 0); rotation (optional): the grid rotated in mesh space (not axis-aligned there) */
-static struct c_Shape McTerrain(struct arena *mem, const f32 cell, const f32 relief, const q *rotation)
+struct c_Shape McTerrain(struct arena *mem, const f32 cell, const f32 relief, const q *rotation)
 {
     const u32 n = MC_GRID + 1;
     struct triMesh *mesh = ArenaPush(mem, sizeof(struct triMesh));

@@ -1401,9 +1401,16 @@ static struct test_Output DynamicsGraphTest(struct test_Environment *env)
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
     g_solver_config->pending_sleep_enabled = 0;
 
-    /* a ground, a three-box row touching along x, and a slab carrying nine small boxes: more neighbours than dynamic colours */
+    /*
+     * A ground, a three-box row touching along x, and a slab carrying two more small boxes than there are dynamic
+     * colours, on a grid of 2.5 m: more neighbours than dynamic colours.
+     */
+    #define GRAPH_TEST_SLAB_BOXES   (CG_DYNAMIC_COLOR_COUNT + 2)
+    #define GRAPH_TEST_SLAB_SIDE    5                           /* grid side: side^2 >= GRAPH_TEST_SLAB_BOXES */
+    #define GRAPH_TEST_BOXES        (5 + GRAPH_TEST_SLAB_BOXES)      /* ground, row, slab, small boxes */
+    ds_Assert(GRAPH_TEST_SLAB_SIDE*GRAPH_TEST_SLAB_SIDE >= GRAPH_TEST_SLAB_BOXES);
     const v3 hw = V3(0.5f, 0.5f, 0.5f);
-    struct dynamics_TestBox scene[14];
+    struct dynamics_TestBox scene[GRAPH_TEST_BOXES];
     u32 count = 0;
     scene[count++] = (struct dynamics_TestBox) { .position = V3(0.0f, -1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(16.0f, 1.0f, 16.0f), .dynamic = 0, .friction = 0.5f };
     for (u32 i = 0; i < 3; ++i)
@@ -1411,25 +1418,26 @@ static struct test_Output DynamicsGraphTest(struct test_Environment *env)
         scene[count++] = (struct dynamics_TestBox) { .position = V3(-8.0f + 0.98f * ((f32) i - 1.0f), 0.5f, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f };
     }
     const u32 slab = count;
-    scene[count++] = (struct dynamics_TestBox) { .position = V3(6.0f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = V3(4.0f, 0.5f, 4.0f), .dynamic = 1, .friction = 0.5f };
-    for (u32 i = 0; i < 9; ++i)
+    const f32 slab_hw = 0.5f + 2.5f * 0.5f * (f32) GRAPH_TEST_SLAB_SIDE;
+    scene[count++] = (struct dynamics_TestBox) { .position = V3(6.0f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = V3(slab_hw, 0.5f, slab_hw), .dynamic = 1, .friction = 0.5f };
+    for (u32 i = 0; i < GRAPH_TEST_SLAB_BOXES; ++i)
     {
-        const f32 x = 6.0f + 2.5f * ((f32) (i % 3) - 1.0f);
-        const f32 z = 2.5f * ((f32) (i / 3) - 1.0f);
+        const f32 x = 6.0f + 2.5f * ((f32) (i % GRAPH_TEST_SLAB_SIDE) - 0.5f * (f32) (GRAPH_TEST_SLAB_SIDE - 1));
+        const f32 z = 2.5f * ((f32) (i / GRAPH_TEST_SLAB_SIDE) - 0.5f * (f32) (GRAPH_TEST_SLAB_SIDE - 1));
         scene[count++] = (struct dynamics_TestBox) { .position = V3(x, 1.5f, z), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f };
     }
-    ds_Assert(count == 14 && CG_DYNAMIC_COLOR_COUNT < 9);
-    ds_BodyId id[14];
+    ds_Assert(count == GRAPH_TEST_BOXES);
+    ds_BodyId id[GRAPH_TEST_BOXES];
     for (u32 i = 0; i < count; ++i)
     {
         id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
     }
 
-    /* after a tick every contact is coloured: 4 with the ground, 2 in the row, 9 on the slab; at least two of the slab's overflow into the serial colour */
+    /* after a tick every contact is coloured: 4 with the ground, 2 in the row, one per small box on the slab; at least two of the slab's overflow into the serial colour */
     SnapshotTestTick(&pipeline);
     ds_CGraphValidate(&pipeline);
-    TEST_NOT_ZERO(GraphTestCheck(&pipeline) == 15);
-    TEST_NOT_ZERO(pipeline.cgraph.color[CG_SERIAL_COLOR].contact_pool.count >= 9 - CG_DYNAMIC_COLOR_COUNT);
+    TEST_NOT_ZERO(GraphTestCheck(&pipeline) == 6 + GRAPH_TEST_SLAB_BOXES);
+    TEST_NOT_ZERO(pipeline.cgraph.color[CG_SERIAL_COLOR].contact_pool.count >= GRAPH_TEST_SLAB_BOXES - CG_DYNAMIC_COLOR_COUNT);
     const u32 slab_index = ds_BodyLookup(&pipeline, id[slab]).index;
     u32 slab_dynamic_colours = 0;
     for (u32 c = CG_DYNAMIC_COLOR_FIRST; c <= CG_DYNAMIC_COLOR_LAST; ++c)
@@ -1438,7 +1446,7 @@ static struct test_Output DynamicsGraphTest(struct test_Environment *env)
     }
     TEST_NOT_ZERO(slab_dynamic_colours == CG_DYNAMIC_COLOR_COUNT);
 
-    /* removing the slab takes its ten contacts out of the colours and clears its bits; the rest stay coloured */
+    /* removing the slab takes its contacts out of the colours and clears its bits; the rest stay coloured */
     ds_BodyRemove(&mem, &pipeline, id[slab]);
     ds_CGraphValidate(&pipeline);
     TEST_NOT_ZERO(GraphTestCheck(&pipeline) == 5);
@@ -1447,13 +1455,13 @@ static struct test_Output DynamicsGraphTest(struct test_Environment *env)
         TEST_NOT_ZERO(c == CG_SERIAL_COLOR || ds_BitSetGet(&pipeline.cgraph.color[c].body_bitset, slab_index) == 0);
     }
 
-    /* the small boxes land on the ground: twelve static-dynamic contacts, the row's two dynamic ones, nothing serial */
+    /* the small boxes land on the ground: static-dynamic contacts for them and the row, the row's two dynamic ones, nothing serial */
     for (u32 t = 0; t < 120; ++t)
     {
         SnapshotTestTick(&pipeline);
     }
     ds_CGraphValidate(&pipeline);
-    TEST_NOT_ZERO(GraphTestCheck(&pipeline) == 14);
+    TEST_NOT_ZERO(GraphTestCheck(&pipeline) == 5 + GRAPH_TEST_SLAB_BOXES);
     u32 dynamic_contacts = 0;
     for (u32 c = CG_DYNAMIC_COLOR_FIRST; c <= CG_DYNAMIC_COLOR_LAST; ++c)
     {
@@ -2574,12 +2582,399 @@ static void DynamicsPerfPrepFree(void *args)
     free(in);
 }
 
+/*
+Solver stage baselines on a serialized scene: ns per constraint point of the contact velocity iterate and the
+position iterate, per colour group (static colours, dynamic colours, the serial colour), the real range functions
+on the main thread. A scene is built and settled once, serialized, and every test deserializes the same bytes:
+every stage, group and variant sees identical data. The init then runs the tick's stages up to the measured one
+(body update, contact init, warm start; for the position stage also the velocity iterations, the velocity
+integration and the position init) and snapshots the compute pool; a repetition restores it (memcpy), then runs
+the measured stage over the group's colours, full ranges. Checksum: the sum of the velocities (velocity stage) or
+of the position deltas and rotations (position stage) after the last repetition. The bytes line printed by the
+init is the data a repetition touches (constraints and both bodies' sim and compute state per contact).
+Variants (dynamics_perf_iterate / dynamics_perf_position): the functions compared on the same ranges; adding
+one is a table entry. 2026-10-25: the static-colour stages measured 10-12 % (velocity) and 26 % (position) below
+the generic ones per point, a dynamic-colour copy without the dummy select nothing (agent_notes/solver_perf.txt).
+*/
+
+#define DYNAMICS_PERF_TERRAIN_CELL      2.0f
+#define DYNAMICS_PERF_TERRAIN_RELIEF    0.5f
+#define DYNAMICS_PERF_TERRAIN_BOXES     8       /* per side */
+
+/* test/test_contact.c: a MC_GRID x MC_GRID cell triangle grid, relief in cells, optional rotation */
+struct c_Shape McTerrain(struct arena *mem, const f32 cell, const f32 relief, const q *rotation);
+
+enum dynamics_PerfScene { DYNAMICS_PERF_SCENE_PYRAMID, DYNAMICS_PERF_SCENE_TERRAIN, DYNAMICS_PERF_SCENE_COUNT };
+enum dynamics_PerfStage { DYNAMICS_PERF_STAGE_VELOCITY, DYNAMICS_PERF_STAGE_POSITION };
+enum dynamics_PerfGroup { DYNAMICS_PERF_GROUP_STATIC, DYNAMICS_PERF_GROUP_DYNAMIC, DYNAMICS_PERF_GROUP_SERIAL };
+
+typedef void (*dynamics_PerfStageRange)(struct ds_Dynamics *, const u32, const u32, const u32);
+
+struct dynamics_PerfVariant
+{
+    const char *            id;
+    dynamics_PerfStageRange range;
+};
+
+/* the generic stage runs on any colour; the static stage only on the static colours (one static body per contact) */
+enum dynamics_PerfVariantIndex { DYNAMICS_PERF_VARIANT_GENERIC, DYNAMICS_PERF_VARIANT_STATIC };
+
+static const struct dynamics_PerfVariant dynamics_perf_iterate[] =
+{
+    { .id = "generic", .range = &ds_ContactConstraintIterateRange },
+    { .id = "static",  .range = &ds_ContactConstraintIterateStaticRange },
+};
+
+static const struct dynamics_PerfVariant dynamics_perf_position[] =
+{
+    { .id = "generic", .range = &ds_PositionConstraintIterateRange },
+    { .id = "static",  .range = &ds_PositionConstraintIterateStaticRange },
+};
+
+struct dynamics_PerfSnapshot
+{
+    struct arena            mem;
+    ds_SDB(c_Shape)         cshape_db;
+    ds_SDB(ds_BodyPrefab)   prefab_db;
+    struct ss               ss;
+    u32                     built;
+};
+
+static struct dynamics_PerfSnapshot dynamics_perf_snapshot[DYNAMICS_PERF_SCENE_COUNT];
+
+static void DynamicsPerfSnapshotBuild(const enum dynamics_PerfScene scene)
+{
+    struct dynamics_PerfSnapshot *snap = dynamics_perf_snapshot + scene;
+    if (snap->built)
+    {
+        return;
+    }
+    snap->built = 1;
+    snap->mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDBAlloc(NULL, snap->cshape_db, 256, GROWABLE);
+    ds_SDBAlloc(NULL, snap->prefab_db, 32, GROWABLE);
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 256, NSEC_PER_SEC / 60, 16*1024*1024, &snap->cshape_db, &snap->prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 0;
+    /* the terrain's relief draws random numbers: the same scene whatever ran before */
+    ThreadXoshiro256InitSequence(1000 + scene);
+
+    u32 index = 0;
+    if (scene == DYNAMICS_PERF_SCENE_PYRAMID)
+    {
+        const u32 layers = DYNAMICS_PERF_PYRAMID_LAYERS;
+        const struct dynamics_TestBox floor = { .position = V3(0.0f, -0.5f, 0.0f), .rotation = QIdentity(), .hw = V3((f32) layers + 2.0f, 0.5f, (f32) layers + 2.0f), .dynamic = 0, .friction = 0.8f };
+        DynamicsTestBoxAdd(&snap->mem, &pipeline, &snap->cshape_db, &floor, V3F64(0.0, 0.0, 0.0), index++);
+        for (u32 k = 0; k < layers; ++k)
+        {
+            const u32 n = layers - k;
+            const f32 offset = -0.5f * (f32) (n - 1);
+            for (u32 i = 0; i < n; ++i)
+            {
+                for (u32 j = 0; j < n; ++j)
+                {
+                    const struct dynamics_TestBox box = { .position = V3(offset + (f32) i, (f32) k + 0.5f, offset + (f32) j), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.8f };
+                    DynamicsTestBoxAdd(&snap->mem, &pipeline, &snap->cshape_db, &box, V3F64(0.0, 0.0, 0.0), index++);
+                }
+            }
+        }
+    }
+    else
+    {
+        /* the terrain mesh on a static body at the origin (mesh shapes sit at the body origin, unrotated) */
+        const utf8 id = Utf8Inline("terrain");
+        const struct slot slot = ds_SDBAddAlias(snap->cshape_db, id);
+        struct c_Shape *cshape = slot.address;
+        const struct c_Shape terrain = McTerrain(&snap->mem, DYNAMICS_PERF_TERRAIN_CELL, DYNAMICS_PERF_TERRAIN_RELIEF, NULL);
+        cshape->id = Utf8CopyBuffered(cshape->id_buf, C_SHAPE_ID_SIZE, id);
+        cshape->type = terrain.type;    /* the database's node fields live inside c_Shape: never assign the whole struct */
+        cshape->mesh_bvh = terrain.mesh_bvh;
+        const struct ds_BodyPrefab body_prefab = { .dynamic = 0 };
+        const ds_TransformWorld t_world = { .rotation = QIdentity(), .position = V3F64(0.0, 0.0, 0.0) };
+        const ds_BodyId body = ds_BodyAdd(&pipeline, &body_prefab, &t_world, index++);
+        const struct ds_ShapePrefab shape_prefab = { .cshape = slot.index, .density = 1.0f, .restitution = 0.0f, .friction = 0.8f, .margin = 0.5f };
+        const ds_Transform t_local = ds_TransformIdentity();
+        ds_ShapeAdd(&pipeline, &shape_prefab, &t_local, body);
+
+        /* a grid of boxes dropped onto it, inside the grid's extent */
+        const f32 extent = DYNAMICS_PERF_TERRAIN_CELL * 12.0f;
+        const f32 spacing = (extent - 4.0f) / (f32) (DYNAMICS_PERF_TERRAIN_BOXES - 1);
+        for (u32 i = 0; i < DYNAMICS_PERF_TERRAIN_BOXES; ++i)
+        {
+            for (u32 j = 0; j < DYNAMICS_PERF_TERRAIN_BOXES; ++j)
+            {
+                const struct dynamics_TestBox box = { .position = V3(2.0f + spacing * (f32) i, 4.0f, 2.0f + spacing * (f32) j), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.8f };
+                DynamicsTestBoxAdd(&snap->mem, &pipeline, &snap->cshape_db, &box, V3F64(0.0, 0.0, 0.0), index++);
+            }
+        }
+    }
+
+    for (u32 t = 0; t < DYNAMICS_PERF_SETTLE_TICKS; ++t)
+    {
+        ds_DynamicsTick(&pipeline);
+        ds_PoolFlush(pipeline.event_pool);
+        DLLFlush(pipeline.event_list);
+    }
+
+    const u64 size = ds_DynamicsSerializeSize(&pipeline);
+    snap->ss = ss_Alloc(&snap->mem, size);
+    ds_DynamicsSerialize(&snap->ss, &pipeline);
+    ds_Assert(snap->ss.bit_index == 8*size);
+    snap->ss.bit_count = snap->ss.bit_index;
+    fprintf(stdout, "\tscene %u: %u bodies, %llu snapshot bytes\n", scene, index, (unsigned long long) size);
+
+    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsSleepEnable(&pipeline);
+    ds_DynamicsFree(&pipeline);
+    ArenaFree(&mem);
+}
+
+struct dynamics_PerfSolve
+{
+    struct arena            mem;
+    struct ds_Dynamics      pipeline;
+    struct arena *          frame;          /* the main thread's worker frame */
+    enum dynamics_PerfScene scene;
+    enum dynamics_PerfStage stage;
+    enum dynamics_PerfGroup group;
+    u32                     variant;
+    u32                     color_first;
+    u32                     color_last;
+    struct ds_BodyCompute * snapshot;       /* the compute pool before the measured stage */
+    struct ds_ContactConstraint *cc_snapshot;/* every colour's constraints before the measured stage (the velocity
+                                               iterate accumulates impulses in them), in colour and contact order */
+    u32                     cc_total;
+    u32                     body_count;
+    u32                     contact_count;
+    u32                     manifold_count;
+    u32                     point_count;
+};
+
+/* to_snapshot: the colours' constraints into snapshot; else snapshot back into them (same order both ways) */
+static void DynamicsPerfSolveConstraintsCopy(struct ds_ContactConstraint *snapshot, struct ds_Dynamics *pipeline, const u32 to_snapshot)
+{
+    u32 n = 0;
+    for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
+    {
+        const struct ds_CGraphColor *color = pipeline->cgraph.color + ci;
+        for (u32 i = 0; i < color->contact_pool.count; ++i)
+        {
+            const struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + i;
+            const u64 bytes = ccomp->cc_count*sizeof(struct ds_ContactConstraint);
+            if (to_snapshot)
+            {
+                memcpy(snapshot + n, ccomp->cc, bytes);
+            }
+            else
+            {
+                memcpy(ccomp->cc, snapshot + n, bytes);
+            }
+            n += ccomp->cc_count;
+        }
+    }
+}
+
+static void *DynamicsPerfSolveInit(const enum dynamics_PerfScene scene, const enum dynamics_PerfStage stage, const enum dynamics_PerfGroup group, const u32 variant)
+{
+    DynamicsPerfSnapshotBuild(scene);
+    struct dynamics_PerfSnapshot *snap = dynamics_perf_snapshot + scene;
+
+    struct dynamics_PerfSolve *in = malloc(sizeof(struct dynamics_PerfSolve));
+    memset(in, 0, sizeof(*in));
+    in->mem = ArenaAlloc(NULL, 64*1024*1024);
+    in->scene = scene;
+    in->stage = stage;
+    in->group = group;
+    in->variant = variant;
+
+    struct ss view = snap->ss;
+    view.bit_index = 0;
+    const u32 restored = ds_DynamicsTryDeserialize(&in->mem, &view, &in->pipeline, &snap->cshape_db);
+    ds_Assert(restored);
+    if (!restored)
+    {
+        fprintf(stdout, "\tdeserialize failed\n");
+        return in;
+    }
+    struct ds_Dynamics *pipeline = &in->pipeline;
+    g_solver_config->pending_sleep_enabled = 0;
+    ds_DynamicsSetGlobals(pipeline);
+    ds_NumericsConfigPush(&pipeline->numerics_config);
+    ds_CGraphFramePrepare(pipeline);
+    in->frame = pipeline->worker[ds_ThreadSelfIndex()].frame;
+    ArenaPushRecord(in->frame);
+
+    /* the tick's stages up to the measured one, every colour's full range on this thread */
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    in->body_count = active->body_sim_pool.count;
+    ds_BodyUpdateSolverDataRange(pipeline, 0, in->body_count);
+    for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
+    {
+        ds_ContactConstraintInitRange(pipeline, ci, 0, pipeline->cgraph.color[ci].contact_pool.count);
+    }
+    if (g_solver_config->warmup_solver)
+    {
+        for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
+        {
+            ds_ContactConstraintWarmupRange(pipeline, ci, 0, pipeline->cgraph.color[ci].contact_pool.count);
+        }
+    }
+    if (stage == DYNAMICS_PERF_STAGE_POSITION)
+    {
+        for (u32 i = 0; i < g_solver_config->pgs_iteration_count; ++i)
+        {
+            for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
+            {
+                ds_ContactConstraintIterateRange(pipeline, ci, 0, pipeline->cgraph.color[ci].contact_pool.count);
+            }
+        }
+        ds_BodyIntegrateVelocitiesRange(pipeline, 0, in->body_count);
+        for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
+        {
+            ds_PositionConstraintInitAndCacheImpulsesRange(pipeline, ci, 0, pipeline->cgraph.color[ci].contact_pool.count);
+        }
+    }
+
+    in->snapshot = ArenaPush(&in->mem, in->body_count*sizeof(struct ds_BodyCompute));
+    memcpy(in->snapshot, active->body_compute_pool.buf, in->body_count*sizeof(struct ds_BodyCompute));
+    for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
+    {
+        const struct ds_CGraphColor *color = pipeline->cgraph.color + ci;
+        for (u32 i = 0; i < color->contact_pool.count; ++i)
+        {
+            in->cc_total += color->contact_compute_pool.buf[i].cc_count;
+        }
+    }
+    in->cc_snapshot = ArenaPush(&in->mem, in->cc_total*sizeof(struct ds_ContactConstraint));
+    DynamicsPerfSolveConstraintsCopy(in->cc_snapshot, pipeline, 1);
+
+    switch (group)
+    {
+        case DYNAMICS_PERF_GROUP_STATIC:    in->color_first = CG_STATIC_COLOR_FIRST;    in->color_last = CG_STATIC_COLOR_LAST;  break;
+        case DYNAMICS_PERF_GROUP_DYNAMIC:   in->color_first = CG_DYNAMIC_COLOR_FIRST;   in->color_last = CG_DYNAMIC_COLOR_LAST; break;
+        default:                            in->color_first = CG_SERIAL_COLOR;          in->color_last = CG_SERIAL_COLOR;       break;
+    }
+
+    u64 bytes = 0;
+    for (u32 ci = in->color_first; ci <= in->color_last; ++ci)
+    {
+        const struct ds_CGraphColor *color = pipeline->cgraph.color + ci;
+        for (u32 i = 0; i < color->contact_pool.count; ++i)
+        {
+            const struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + i;
+            in->contact_count += 1;
+            in->manifold_count += ccomp->cc_count;
+            bytes += sizeof(struct ds_ContactCompute) + ccomp->cc_count*sizeof(struct ds_ContactConstraint) + 2*(sizeof(struct ds_BodySim) + sizeof(struct ds_BodyCompute));
+            for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
+            {
+                in->point_count += ccomp->cc[cci].ccp_count;
+            }
+        }
+    }
+    fprintf(stdout, "\tscene %u, stage %u, group %u, variant %s: %u active bodies, %u contacts, %u manifolds, %u points, %llu bytes per repetition\n",
+            scene, stage, group, (stage == DYNAMICS_PERF_STAGE_VELOCITY) ? dynamics_perf_iterate[variant].id : dynamics_perf_position[variant].id,
+            in->body_count, in->contact_count, in->manifold_count, in->point_count, (unsigned long long) bytes);
+    return in;
+}
+
+static void DynamicsPerfSolveReset(void *args)
+{
+    struct dynamics_PerfSolve *in = args;
+    struct ds_SolverSet *active = in->pipeline.solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    memcpy(active->body_compute_pool.buf, in->snapshot, in->body_count*sizeof(struct ds_BodyCompute));
+    DynamicsPerfSolveConstraintsCopy(in->cc_snapshot, &in->pipeline, 0);
+}
+
+static void DynamicsPerfSolveTest(void *args)
+{
+    struct dynamics_PerfSolve *in = args;
+    const dynamics_PerfStageRange range = (in->stage == DYNAMICS_PERF_STAGE_VELOCITY)
+        ? dynamics_perf_iterate[in->variant].range
+        : dynamics_perf_position[in->variant].range;
+    for (u32 ci = in->color_first; ci <= in->color_last; ++ci)
+    {
+        range(&in->pipeline, ci, 0, in->pipeline.cgraph.color[ci].contact_pool.count);
+    }
+}
+
+static void DynamicsPerfSolveFree(void *args)
+{
+    struct dynamics_PerfSolve *in = args;
+    const struct ds_SolverSet *active = in->pipeline.solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    f64 checksum = 0.0;
+    for (u32 i = 0; i < in->body_count; ++i)
+    {
+        const struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + i;
+        if (in->stage == DYNAMICS_PERF_STAGE_VELOCITY)
+        {
+            checksum += bcomp->linear_velocity.x + bcomp->linear_velocity.y + bcomp->linear_velocity.z
+                      + bcomp->angular_velocity.x + bcomp->angular_velocity.y + bcomp->angular_velocity.z;
+        }
+        else
+        {
+            checksum += bcomp->delta_position.x + bcomp->delta_position.y + bcomp->delta_position.z
+                      + bcomp->rotation.x + bcomp->rotation.y + bcomp->rotation.z + bcomp->rotation.w;
+        }
+    }
+    fprintf(stdout, "\tchecksum %.9e (%u points)\n", checksum, in->point_count);
+
+    ArenaPopRecord(in->frame);
+    ds_NumericsConfigPop();
+    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsSleepEnable(&in->pipeline);
+    ds_DynamicsFree(&in->pipeline);
+    ArenaFree(&in->mem);
+    free(in);
+}
+
+#define DYNAMICS_PERF_SOLVE_INIT(name, scene, stage, group)                                 \
+    static void *name(void) { return DynamicsPerfSolveInit(scene, stage, group, DYNAMICS_PERF_VARIANT_GENERIC); }
+#define DYNAMICS_PERF_SOLVE_INIT_SPECIAL(name, scene, stage, group, variant)                \
+    static void *name(void) { return DynamicsPerfSolveInit(scene, stage, group, variant); }
+DYNAMICS_PERF_SOLVE_INIT(DynamicsPerfIterateStaticPyramidInit,   DYNAMICS_PERF_SCENE_PYRAMID, DYNAMICS_PERF_STAGE_VELOCITY, DYNAMICS_PERF_GROUP_STATIC)
+DYNAMICS_PERF_SOLVE_INIT(DynamicsPerfIterateDynamicPyramidInit,  DYNAMICS_PERF_SCENE_PYRAMID, DYNAMICS_PERF_STAGE_VELOCITY, DYNAMICS_PERF_GROUP_DYNAMIC)
+DYNAMICS_PERF_SOLVE_INIT(DynamicsPerfIterateSerialPyramidInit,   DYNAMICS_PERF_SCENE_PYRAMID, DYNAMICS_PERF_STAGE_VELOCITY, DYNAMICS_PERF_GROUP_SERIAL)
+DYNAMICS_PERF_SOLVE_INIT(DynamicsPerfPositionStaticPyramidInit,  DYNAMICS_PERF_SCENE_PYRAMID, DYNAMICS_PERF_STAGE_POSITION, DYNAMICS_PERF_GROUP_STATIC)
+DYNAMICS_PERF_SOLVE_INIT(DynamicsPerfPositionDynamicPyramidInit, DYNAMICS_PERF_SCENE_PYRAMID, DYNAMICS_PERF_STAGE_POSITION, DYNAMICS_PERF_GROUP_DYNAMIC)
+DYNAMICS_PERF_SOLVE_INIT(DynamicsPerfPositionSerialPyramidInit,  DYNAMICS_PERF_SCENE_PYRAMID, DYNAMICS_PERF_STAGE_POSITION, DYNAMICS_PERF_GROUP_SERIAL)
+DYNAMICS_PERF_SOLVE_INIT(DynamicsPerfIterateStaticTerrainInit,   DYNAMICS_PERF_SCENE_TERRAIN, DYNAMICS_PERF_STAGE_VELOCITY, DYNAMICS_PERF_GROUP_STATIC)
+DYNAMICS_PERF_SOLVE_INIT(DynamicsPerfIterateDynamicTerrainInit,  DYNAMICS_PERF_SCENE_TERRAIN, DYNAMICS_PERF_STAGE_VELOCITY, DYNAMICS_PERF_GROUP_DYNAMIC)
+DYNAMICS_PERF_SOLVE_INIT(DynamicsPerfIterateSerialTerrainInit,   DYNAMICS_PERF_SCENE_TERRAIN, DYNAMICS_PERF_STAGE_VELOCITY, DYNAMICS_PERF_GROUP_SERIAL)
+DYNAMICS_PERF_SOLVE_INIT(DynamicsPerfPositionStaticTerrainInit,  DYNAMICS_PERF_SCENE_TERRAIN, DYNAMICS_PERF_STAGE_POSITION, DYNAMICS_PERF_GROUP_STATIC)
+DYNAMICS_PERF_SOLVE_INIT(DynamicsPerfPositionDynamicTerrainInit, DYNAMICS_PERF_SCENE_TERRAIN, DYNAMICS_PERF_STAGE_POSITION, DYNAMICS_PERF_GROUP_DYNAMIC)
+DYNAMICS_PERF_SOLVE_INIT(DynamicsPerfPositionSerialTerrainInit,  DYNAMICS_PERF_SCENE_TERRAIN, DYNAMICS_PERF_STAGE_POSITION, DYNAMICS_PERF_GROUP_SERIAL)
+
+DYNAMICS_PERF_SOLVE_INIT_SPECIAL(DynamicsPerfIterateStaticPyramidSpecInit,   DYNAMICS_PERF_SCENE_PYRAMID, DYNAMICS_PERF_STAGE_VELOCITY, DYNAMICS_PERF_GROUP_STATIC,  DYNAMICS_PERF_VARIANT_STATIC)
+DYNAMICS_PERF_SOLVE_INIT_SPECIAL(DynamicsPerfPositionStaticPyramidSpecInit,  DYNAMICS_PERF_SCENE_PYRAMID, DYNAMICS_PERF_STAGE_POSITION, DYNAMICS_PERF_GROUP_STATIC,  DYNAMICS_PERF_VARIANT_STATIC)
+DYNAMICS_PERF_SOLVE_INIT_SPECIAL(DynamicsPerfIterateStaticTerrainSpecInit,   DYNAMICS_PERF_SCENE_TERRAIN, DYNAMICS_PERF_STAGE_VELOCITY, DYNAMICS_PERF_GROUP_STATIC,  DYNAMICS_PERF_VARIANT_STATIC)
+DYNAMICS_PERF_SOLVE_INIT_SPECIAL(DynamicsPerfPositionStaticTerrainSpecInit,  DYNAMICS_PERF_SCENE_TERRAIN, DYNAMICS_PERF_STAGE_POSITION, DYNAMICS_PERF_GROUP_STATIC,  DYNAMICS_PERF_VARIANT_STATIC)
+
+#define DYNAMICS_PERF_SOLVE_TEST(name, init)                                                                    \
+    { .id = name, .size = 1, .test = &DynamicsPerfSolveTest, .test_init = &init, .test_reset = &DynamicsPerfSolveReset, .test_free = &DynamicsPerfSolveFree }
+
 /* bytes per repetition: filled in from the first run's counts (see the report in agent_notes) */
 #define DYNAMICS_PERF_PREP_BYTES    1
 
 struct test_PerformanceSerial dynamics_serial_test[] =
 {
     { .id = "contact_prep_pyramid", .size = DYNAMICS_PERF_PREP_BYTES, .test = &DynamicsPerfPrepTest, .test_init = &DynamicsPerfPrepInit, .test_reset = &DynamicsPerfPrepReset, .test_free = &DynamicsPerfPrepFree },
+    DYNAMICS_PERF_SOLVE_TEST("iterate_static_pyramid",         DynamicsPerfIterateStaticPyramidInit),
+    DYNAMICS_PERF_SOLVE_TEST("iterate_static_pyramid_static",  DynamicsPerfIterateStaticPyramidSpecInit),
+    DYNAMICS_PERF_SOLVE_TEST("iterate_dynamic_pyramid",        DynamicsPerfIterateDynamicPyramidInit),
+    DYNAMICS_PERF_SOLVE_TEST("iterate_serial_pyramid",         DynamicsPerfIterateSerialPyramidInit),
+    DYNAMICS_PERF_SOLVE_TEST("position_static_pyramid",        DynamicsPerfPositionStaticPyramidInit),
+    DYNAMICS_PERF_SOLVE_TEST("position_static_pyramid_static", DynamicsPerfPositionStaticPyramidSpecInit),
+    DYNAMICS_PERF_SOLVE_TEST("position_dynamic_pyramid",       DynamicsPerfPositionDynamicPyramidInit),
+    DYNAMICS_PERF_SOLVE_TEST("position_serial_pyramid",        DynamicsPerfPositionSerialPyramidInit),
+    DYNAMICS_PERF_SOLVE_TEST("iterate_static_terrain",         DynamicsPerfIterateStaticTerrainInit),
+    DYNAMICS_PERF_SOLVE_TEST("iterate_static_terrain_static",  DynamicsPerfIterateStaticTerrainSpecInit),
+    DYNAMICS_PERF_SOLVE_TEST("iterate_dynamic_terrain",        DynamicsPerfIterateDynamicTerrainInit),
+    DYNAMICS_PERF_SOLVE_TEST("iterate_serial_terrain",         DynamicsPerfIterateSerialTerrainInit),
+    DYNAMICS_PERF_SOLVE_TEST("position_static_terrain",        DynamicsPerfPositionStaticTerrainInit),
+    DYNAMICS_PERF_SOLVE_TEST("position_static_terrain_static", DynamicsPerfPositionStaticTerrainSpecInit),
+    DYNAMICS_PERF_SOLVE_TEST("position_dynamic_terrain",       DynamicsPerfPositionDynamicTerrainInit),
+    DYNAMICS_PERF_SOLVE_TEST("position_serial_terrain",        DynamicsPerfPositionSerialTerrainInit),
 };
 
 struct suite_Performance m_dynamics_performance_suite =

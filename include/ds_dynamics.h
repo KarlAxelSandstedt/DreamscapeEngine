@@ -1248,10 +1248,17 @@ void 	ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 colo
 void 	ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 /* Compute a solver iteration over the given color for contact constraints */
 void    ds_ContactConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color, const u32 cc_low, const u32 cc_high);
+/*
+ * The same iteration for a static colour (every contact has exactly one static body): the static body's terms
+ * are dropped and only the dynamic body is read and written. Results equal ds_ContactConstraintIterateRange's.
+ */
+void    ds_ContactConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const u32 color, const u32 cc_low, const u32 cc_high);
 /* Cache contact impulses and initialize position constraints in the range [low, high) for the given color */
 void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 /* Compute a solver iteration over the given color for position constraints in range [low, high) */
 void ds_PositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
+/* The same iteration for a static colour (one static body per contact); results equal ds_PositionConstraintIterateRange's. */
+void ds_PositionConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 
 /*
  * The joint stages, each over the range [low, high) of the colour's joint_sim_pool. A colour's joints and
@@ -1353,7 +1360,7 @@ void                    ds_CGraphColorSerialize(struct ss *ss, const struct ds_D
 u32                     ds_CGraphColorTryDeserialize(struct ss *ss, struct ds_Dynamics *pipeline, const u32 color);
 
 
-#define CG_COLOR_COUNT          12
+#define CG_COLOR_COUNT          24
 #define CG_STATIC_COLOR_COUNT   4
 #define CG_DYNAMIC_COLOR_COUNT  (CG_COLOR_COUNT - CG_STATIC_COLOR_COUNT - 1) 
 #define CG_STATIC_COLOR_FIRST   0
@@ -1379,7 +1386,9 @@ need colours distinct per dynamic body and get the static colours; dynamic-dynam
 dynamic colours.
 
 Furthermore, in order to mitigate ghost collisions, static-dynamic constraints are processed first in each
-solver iteration. The solver runs the colours in index order:
+solver iteration, by the static variants of the contact stages (ds_ContactConstraintIterateStaticRange,
+ds_PositionConstraintIterateStaticRange: one static body per contact, its terms dropped). The solver runs the
+colours in index order:
 
     CG_STATIC_COLOR_FIRST .. CG_STATIC_COLOR_LAST => CG_DYNAMIC_COLOR_FIRST .. CG_DYNAMIC_COLOR_LAST => CG_SERIAL_COLOR
 */
