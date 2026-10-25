@@ -451,10 +451,18 @@ void ds_DistanceJointConstraintInit(struct ds_JointSim *jsim, struct ds_BodyComp
 
     const v3 diff = V3Sub(V3Add(jsim->com_diff, jsim->r[1]), jsim->r[0]);
     dj->distance = V3Length(diff);
-
-    dj->n = (dj->distance > g_solver_config->linear_slop) 
-                ? V3Scale(diff, 1.0f/dj->distance)
-                : V3(0, 0, 0);
+    
+    if (dj->distance > g_solver_config->linear_slop)
+    {
+        dj->n = V3Scale(diff, 1.0f/dj->distance);
+    }
+    else
+    {
+        dj->n = V3(0.0f, 0.0f, 0.0f);
+        dj->impulse = 0.0f;
+        dj->impulse_low = 0.0f;
+        dj->impulse_high = 0.0f;
+    }
 
     const v3 cross[2] = 
     {
@@ -469,20 +477,99 @@ void ds_DistanceJointConstraintInit(struct ds_JointSim *jsim, struct ds_BodyComp
     };
 
     const f32 k = bsim[0]->inv_mass + bsim[1]->inv_mass + V3Dot(cross[0], tmp[0]) + V3Dot(cross[1], tmp[1]);
-    dj->normal_mass = (k > 0.0f)
+    dj->normal_mass = (k > 0.0f) 
                     ? 1.0f / k
                     : 0.0f;
 }
 
-
 void ds_DistanceJointConstraintWarmup(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2])
 {
+    struct ds_DistanceJoint *dj = &jsim->distance;
+
+    const v3 cached_impulse = V3Scale(dj->n, dj->impulse);
+    bcomp[0]->linear_velocity = V3AddScaled(bcomp[0]->linear_velocity, cached_impulse, -bsim[0]->inv_mass);
+    bcomp[1]->linear_velocity = V3AddScaled(bcomp[1]->linear_velocity, cached_impulse, bsim[1]->inv_mass);
+
+    const v3 delta_w0 = M3V3Mul(bsim[0]->world_inv_inertia, V3Cross(jsim->r[0], cached_impulse));
+    bcomp[0]->angular_velocity = V3Sub(bcomp[0]->angular_velocity, delta_w0);
+
+    const v3 delta_w1 = M3V3Mul(bsim[1]->world_inv_inertia, V3Cross(jsim->r[1], cached_impulse));
+    bcomp[1]->angular_velocity = V3Add(bcomp[1]->angular_velocity, delta_w1);
 }
 
 void ds_DistanceJointConstraintIterate(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2])
 {
+    struct ds_DistanceJoint *dj = &jsim->distance;
+
+    /* Calculate separating velocity at point: JV */
+    v3 relative_velocity = V3Sub(bcomp[1]->linear_velocity, bcomp[0]->linear_velocity);
+    relative_velocity = V3Add(relative_velocity, V3Cross(bcomp[1]->angular_velocity, jsim->r[1]));
+    relative_velocity = V3Sub(relative_velocity, V3Cross(bcomp[0]->angular_velocity, jsim->r[0]));
+    const f32 separating_velocity = V3Dot(dj->n, relative_velocity);
+
+    const f32 delta_impulse = -dj->normal_mass * separating_velocity;
+    dj->impulse += delta_impulse;
+
+    /* update body velocities */
+    const v3 impulse = V3Scale(dj->n, delta_impulse);
+
+    const v3 delta_w0 = M3V3Mul(bsim[0]->world_inv_inertia, V3Cross(jsim->r[0], impulse));
+    bcomp[0]->linear_velocity = V3AddScaled(bcomp[0]->linear_velocity, impulse, -bsim[0]->inv_mass);
+    bcomp[0]->angular_velocity = V3Sub(bcomp[0]->angular_velocity, delta_w0);
+
+    const v3 delta_w1 = M3V3Mul(bsim[1]->world_inv_inertia, V3Cross(jsim->r[1], impulse));
+    bcomp[1]->linear_velocity = V3AddScaled(bcomp[1]->linear_velocity, impulse, bsim[1]->inv_mass);
+    bcomp[1]->angular_velocity = V3Add(bcomp[1]->angular_velocity, delta_w1);
 }
 
 void ds_DistanceJointPositionConstraintIterate(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2])
 {
+    struct ds_DistanceJoint *dj = &jsim->distance;
+
+    const m3 rot0 = M3QUnit(bcomp[0]->rotation);
+    const m3 inv_inertia0 = M3Mul(M3Mul(rot0, bsim[0]->local_inv_inertia), M3Transpose(rot0));
+    bsim[0]->world_inv_inertia = inv_inertia0;
+
+    const m3 rot1 = M3QUnit(bcomp[1]->rotation);
+    const m3 inv_inertia1 = M3Mul(M3Mul(rot1, bsim[1]->local_inv_inertia), M3Transpose(rot1));
+    bsim[1]->world_inv_inertia = inv_inertia1;
+
+    const v3 r0 = QUnitRotate(bcomp[0]->rotation, V3Sub(jsim->local_frame[0].position, bsim[0]->local_center_of_mass));
+    const v3 r1 = (jsim->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX)
+                ? jsim->r[1]
+                : QUnitRotate(bcomp[1]->rotation, V3Sub(jsim->local_frame[1].position, bsim[1]->local_center_of_mass));
+    const v3 delta = V3Add(V3Sub(bcomp[1]->delta_position, bcomp[0]->delta_position), V3Sub(r1, r0));
+    
+    const v3 diff = V3Add(jsim->com_diff, delta);
+    const f32 distance = V3Length(diff);
+    
+    const v3 n = (distance > g_solver_config->linear_slop)
+          ? V3Scale(diff, 1.0f/distance)
+          : V3(0.0f, 0.0f, 0.0f);
+
+    const v3 rn0 = V3Cross(r0, n);
+    const v3 rn1 = V3Cross(r1, n);
+
+    /* inverse effective mass? */
+    const f32 K = bsim[0]->inv_mass + bsim[1]->inv_mass + V3Dot(M3V3Mul(inv_inertia0, rn0), rn0) + V3Dot(M3V3Mul(inv_inertia1, rn1), rn1);
+
+    const f32 C = F32Clamp(distance - dj->target, -g_solver_config->max_linear_correction, g_solver_config->max_linear_correction);
+
+    const f32 impulse = (K > 0.0f)
+        ? -C/K
+        : 0.0f;
+
+    const v3 impulse_vector = V3Scale(n, impulse);
+    bcomp[0]->delta_position = V3AddScaled(bcomp[0]->delta_position, impulse_vector, -bsim[0]->inv_mass);
+    bcomp[1]->delta_position = V3AddScaled(bcomp[1]->delta_position, impulse_vector,  bsim[1]->inv_mass);
+    /* flipped cross for correct sign! */
+    /* instantaneous torque, assume delta_t = 1 */
+    const v3 w0 = M3V3Mul(inv_inertia0, V3Cross(impulse_vector, r0));
+    /* Taylor expansion for sin, cos around 0 yields following approximation */
+    const q quat_angle0 = Q(w0.x/2.0f, w0.y/2.0f, w0.z/2.0f, 1.0f);
+    bcomp[0]->rotation = QNormalize(QMul(quat_angle0, bcomp[0]->rotation));
+
+    const v3 w1 = M3V3Mul(inv_inertia1, V3Cross(r1, impulse_vector));
+    const q quat_angle1 = Q(w1.x/2.0f, w1.y/2.0f, w1.z/2.0f, 1.0f);
+    bcomp[1]->rotation = QNormalize(QMul(quat_angle1, bcomp[1]->rotation));
 }

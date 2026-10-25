@@ -83,6 +83,12 @@ not bring the contact back; a second joint with the flag 1 changes nothing (0 wi
 joint dirties the shapes and the next tick recreates the contact; a joint with the flag 1 alone leaves the
 contact in place. Ground contacts stay throughout.
 
+Pendulum (DynamicsPendulumTest): a box on a rigid distance joint to a static pivot, both frames at the
+centres of mass, released 0.1 rad off the vertical, 10 s of swing. The length holds to linear_slop, the bob
+neither spins nor leaves the swing plane, the period from the interpolated zero crossings matches
+2 pi sqrt(L / g) within 1 %, and the swing maxima decay as the solver's velocity damping predicts (sqrt of the
+per-tick factor per tick) within 0.02.
+
 Solver (DynamicsSlideTest, DynamicsBounceTest): a frictionless box on a 30 degree slope slides for a second;
 its downhill speed matches the per-tick recurrence v = (v + g sin(a) dt) / (1 + d dt) of the solver's gravity
 and damping within 1 % (the contacts cancel only the normal part), nothing across the slope, no spin. A box
@@ -1814,6 +1820,115 @@ static v3 SolverTestVelocity(const struct ds_Dynamics *pipeline, const ds_BodyId
     return active->body_compute_pool.buf[body->sim].linear_velocity;
 }
 
+/* a box hanging from a static pivot on a rigid distance joint: length held, period and decay of a damped pendulum (file comment) */
+static struct test_Output DynamicsPendulumTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 0;
+
+    /* the bob's frame is its centre of mass: no torque on it, so it swings as a point mass on a string of length L */
+    const f32 L = 2.0f;
+    const f32 angle_0 = 0.1f;
+    const v3 pivot = V3(0.0f, 6.0f, 0.0f);
+    const v3 bob = V3Add(pivot, V3Scale(V3(F32Sin(angle_0), -F32Cos(angle_0), 0.0f), L));
+    const struct dynamics_TestBox scene[2] =
+    {
+        { .position = pivot, .rotation = QIdentity(), .hw = V3(0.25f, 0.25f, 0.25f), .dynamic = 0, .friction = 0.5f },
+        { .position = bob, .rotation = QIdentity(), .hw = V3(0.25f, 0.25f, 0.25f), .dynamic = 1, .friction = 0.5f },
+    };
+    ds_BodyId id[2];
+    for (u32 i = 0; i < 2; ++i)
+    {
+        id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
+    }
+    const ds_Transform frame = ds_TransformIdentity();
+    struct ds_DistanceJointPrefab prefab;
+    ds_DistanceJointPrefab(&prefab, L);
+    TEST_NOT_ZERO(!ds_JointIdNullCheck(ds_DistanceJointAdd(&pipeline, &prefab, id[0], &frame, id[1], &frame)));
+
+    /*
+     * 10 s of swing. The length error, the bob's spin and its motion out of the swing plane stay small; the
+     * period comes from the zero crossings of x (interpolated between ticks) and the decay from the ratio of
+     * successive swing maxima, against the solver's velocity damping v <- v / (1 + d dt) (amplitude ~ exp(-d t / 2)).
+     */
+    const f32 dt = pipeline.timestep;
+    const u32 tick_count = 600;
+    f32 length_error = 0.0f;
+    f32 spin = 0.0f;
+    f32 out_of_plane = 0.0f;
+    f32 x_prev = L * F32Sin(angle_0);
+    f32 crossing_first = 0.0f;
+    f32 crossing_last = 0.0f;
+    u32 crossing_count = 0;
+    f32 max_current = x_prev;
+    f32 max_first = 0.0f;
+    f32 max_last = 0.0f;
+    u32 max_count = 0;
+    for (u32 t = 1; t <= tick_count; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+        const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id[1]);
+        const v3 d = V3F64Demote(V3F64Sub(pose.position, V3Promote(pivot)));
+        length_error = F32Max(length_error, F32Abs(V3Length(d) - L));
+        spin = F32Max(spin, DynamicsTestAngle(QIdentity(), pose.rotation));
+        out_of_plane = F32Max(out_of_plane, F32Abs(d.z));
+
+        const f32 x = d.x;
+        if ((x_prev < 0.0f) != (x < 0.0f))
+        {
+            const f32 crossing = ((f32) (t - 1) + x_prev / (x_prev - x)) * dt;
+            crossing_first = (crossing_count == 0) ? crossing : crossing_first;
+            crossing_last = crossing;
+            crossing_count += 1;
+
+            /* the swing that just ended peaked at max_current */
+            if (max_count > 0)
+            {
+                max_first = (max_count == 1) ? max_current : max_first;
+                max_last = max_current;
+            }
+            max_current = 0.0f;
+            max_count += 1;
+        }
+        max_current = F32Max(max_current, F32Abs(x));
+        x_prev = x;
+    }
+
+    const f32 period_expected = F32_PI2 * F32Sqrt(L / -g_solver_config->gravity.y);
+    const f32 period = (crossing_count >= 2) ? 2.0f * (crossing_last - crossing_first) / (f32) (crossing_count - 1) : 0.0f;
+    /*
+     * max_first is the peak of the first full half swing, max_last that of the last complete one, (max_count - 2) half
+     * periods apart; velocity damping by damp per tick decays the amplitude by sqrt(damp) per tick
+     */
+    const f32 decay_expected = (max_count >= 3) ? F32Pow(1.0f / (1.0f + g_solver_config->linear_dampening * dt), 0.25f * (f32) (max_count - 2) * period / dt) : 1.0f;
+    const f32 decay = (max_count >= 3 && max_first > 0.0f) ? max_last / max_first : 0.0f;
+    const u32 ok = crossing_count >= 6 && max_count >= 3
+                && length_error <= g_solver_config->linear_slop
+                && spin <= 1e-3f && out_of_plane <= 1e-3f
+                && F32Abs(period - period_expected) <= 0.01f * period_expected
+                && F32Abs(decay - decay_expected) <= 0.02f;
+    if (!ok)
+    {
+        fprintf(stderr, "pendulum: length error %g, spin %g, out of plane %g, period %f (expected %f, %u crossings), decay %f (expected %f, %u maxima)\n",
+                length_error, spin, out_of_plane, period, period_expected, crossing_count, decay, decay_expected, max_count);
+    }
+    TEST_NOT_ZERO(ok);
+
+    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 /* a frictionless box sliding down a 30 degree slope against the damped free-slide recurrence (file comment) */
 static struct test_Output DynamicsSlideTest(struct test_Environment *env)
 {
@@ -2431,6 +2546,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsJointTest,
     DynamicsJointIslandTest,
     DynamicsJointCollisionTest,
+    DynamicsPendulumTest,
     DynamicsSlideTest,
     DynamicsBounceTest,
     DynamicsFirstTickTest,
