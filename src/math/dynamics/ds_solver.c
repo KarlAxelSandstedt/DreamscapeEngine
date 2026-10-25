@@ -360,15 +360,15 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
         }
 
         /*
-         * Canonical slot: a static body sits in slot 0, so the static stages read one body in slot 1 with body 1's
+         * Canonical slot: a static body sits in slot 1, so the static stages read one body in slot 0 with body 0's
          * signs. The swap flips the axes and exchanges the levers; the point impulses are scalars along the axes,
          * com_separation and velocity_bias are products of two flipped factors, so all keep their values, and a
          * body never changes between static and dynamic, so the form is the same every tick (warm start cache).
          */
-        if (ccomp->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX)
+        if (ccomp->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX)
         {
-            ccomp->body_sim[1] = ccomp->body_sim[0];
-            ccomp->body_sim[0] = ACTIVE_BODY_DUMMY_INDEX;
+            ccomp->body_sim[0] = ccomp->body_sim[1];
+            ccomp->body_sim[1] = ACTIVE_BODY_DUMMY_INDEX;
             for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
             {
                 struct ds_ContactConstraint *cc = ccomp->cc + cci;
@@ -596,10 +596,10 @@ void ds_ContactConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const 
     for (u32 ci = cc_low; ci < cc_high; ++ci)
     {
         struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + ci;
-        /* the static body is slot 0 (prepare's canonical slot); its terms are dropped */
-        ds_Assert(ccomp->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX && ccomp->body_sim[1] != ACTIVE_BODY_DUMMY_INDEX);
-        const struct ds_BodySim *sim = active->body_sim_pool.buf + ccomp->body_sim[1];
-        struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + ccomp->body_sim[1];
+        /* the static body is slot 1 (prepare's canonical slot); its terms are dropped */
+        ds_Assert(ccomp->body_sim[0] != ACTIVE_BODY_DUMMY_INDEX && ccomp->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX);
+        const struct ds_BodySim *sim = active->body_sim_pool.buf + ccomp->body_sim[0];
+        struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + ccomp->body_sim[0];
         const f32 inv_mass = sim->inv_mass;
         const m3 inv_inertia = sim->world_inv_inertia;
 
@@ -610,12 +610,13 @@ void ds_ContactConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const 
             for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
             {
                 struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
-                const v3 r = ccp->r[1];
+                const v3 r = ccp->r[0];
                 const f32 impulse_bound = cc->friction * ccp->normal_impulse;
                 for (u32 k = 0; k < 2; ++k)
                 {
-                    const v3 relative_velocity = V3Add(bcomp->linear_velocity, V3Cross(bcomp->angular_velocity, r));
-                    const f32 separating_velocity = V3Dot(cc->tangent[k], relative_velocity);
+                    /* body 0's row: the relative velocity is -(v0 + w0 x r0), the sign taken on the scalar */
+                    const v3 velocity = V3Add(bcomp->linear_velocity, V3Cross(bcomp->angular_velocity, r));
+                    const f32 separating_velocity = -V3Dot(cc->tangent[k], velocity);
 
                     f32 delta_impulse = -ccp->tangent_mass[k] * separating_velocity;
                     const f32 old_impulse = ccp->tangent_impulse[k];
@@ -623,17 +624,17 @@ void ds_ContactConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const 
                     delta_impulse = ccp->tangent_impulse[k] - old_impulse;
 
                     const v3 impulse = V3Scale(cc->tangent[k], delta_impulse);
-                    bcomp->linear_velocity = V3AddScaled(bcomp->linear_velocity, impulse, inv_mass);
-                    bcomp->angular_velocity = V3Add(bcomp->angular_velocity, M3V3Mul(inv_inertia, V3Cross(r, impulse)));
+                    bcomp->linear_velocity = V3AddScaled(bcomp->linear_velocity, impulse, -inv_mass);
+                    bcomp->angular_velocity = V3Sub(bcomp->angular_velocity, M3V3Mul(inv_inertia, V3Cross(r, impulse)));
                 }
             }
 
             for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
             {
                 struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
-                const v3 r = ccp->r[1];
-                const v3 relative_velocity = V3Add(bcomp->linear_velocity, V3Cross(bcomp->angular_velocity, r));
-                const f32 separating_velocity = V3Dot(cc->normal, relative_velocity);
+                const v3 r = ccp->r[0];
+                const v3 velocity = V3Add(bcomp->linear_velocity, V3Cross(bcomp->angular_velocity, r));
+                const f32 separating_velocity = -V3Dot(cc->normal, velocity);
 
                 f32 delta_impulse = ccp->normal_mass * (ccp->velocity_bias - separating_velocity);
                 const f32 old_impulse = ccp->normal_impulse;
@@ -641,8 +642,8 @@ void ds_ContactConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const 
                 delta_impulse = ccp->normal_impulse - old_impulse;
 
                 const v3 impulse = V3Scale(cc->normal, delta_impulse);
-                bcomp->linear_velocity = V3AddScaled(bcomp->linear_velocity, impulse, inv_mass);
-                bcomp->angular_velocity = V3Add(bcomp->angular_velocity, M3V3Mul(inv_inertia, V3Cross(r, impulse)));
+                bcomp->linear_velocity = V3AddScaled(bcomp->linear_velocity, impulse, -inv_mass);
+                bcomp->angular_velocity = V3Sub(bcomp->angular_velocity, M3V3Mul(inv_inertia, V3Cross(r, impulse)));
             }
         }
     }
@@ -744,18 +745,25 @@ void ds_JointConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color_i
         const struct ds_Joint *joint = pipeline->joint_pool.buf + jsim->joint;
         const struct ds_Body *b[2] = { pipeline->body_pool.buf + joint->body[0], pipeline->body_pool.buf + joint->body[1] };
 
-        jsim->body_sim[0] = ds_BodyDynamicCheck(b[0]) ? b[0]->sim : ACTIVE_BODY_DUMMY_INDEX;
+        /* canonical slot (ds_JointAdd): a static body is body 1 */
+        ds_Assert(ds_BodyDynamicCheck(b[0]));
+        jsim->body_sim[0] = b[0]->sim;
         jsim->body_sim[1] = ds_BodyDynamicCheck(b[1]) ? b[1]->sim : ACTIVE_BODY_DUMMY_INDEX;
 
-        struct ds_BodySim *sim[2] =
+        /*
+         * The real sims, a static body's from the static set: the prepare needs its pose, which the dummy lacks.
+         * Static sims carry zero inverse mass and inertia, so the mass terms read the same as from the dummy. The
+         * later stages take the dummies (zero velocity write sink), as the contact stages do.
+         */
+        struct ds_BodySim *bsim[2] =
         {
-            ((jsim->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + jsim->body_sim[0]),
-            ((jsim->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + jsim->body_sim[1]),
+            pipeline->solver_set_pool.buf[b[0]->set].body_sim_pool.buf + b[0]->sim,
+            pipeline->solver_set_pool.buf[b[1]->set].body_sim_pool.buf + b[1]->sim,
         };
 
         struct ds_BodyCompute *bcomp[2] =
         {
-            ((jsim->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + jsim->body_sim[0]),
+            active->body_compute_pool.buf + jsim->body_sim[0],
             ((jsim->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + jsim->body_sim[1]),
         };
 
@@ -763,8 +771,12 @@ void ds_JointConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color_i
         {
             case DS_JOINT_TYPE_DISTANCE:
             {
+                ds_DistanceJointConstraintInit(jsim, bcomp, bsim);
             } break;
-            default: break;
+
+            default:
+            {
+            } break;
         }
     }
 
@@ -781,7 +793,7 @@ void ds_JointConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 color
     {
         struct ds_JointSim *jsim = color->joint_sim_pool.buf + ji;
 
-        struct ds_BodySim *sim[2] =
+        struct ds_BodySim *bsim[2] =
         {
             ((jsim->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + jsim->body_sim[0]),
             ((jsim->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + jsim->body_sim[1]),
@@ -797,8 +809,12 @@ void ds_JointConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 color
         {
             case DS_JOINT_TYPE_DISTANCE:
             {
+                ds_DistanceJointConstraintWarmup(jsim, bcomp, bsim);
             } break;
-            default: break;
+
+            default:
+            {
+            } break;
         }
     }
 
@@ -815,7 +831,7 @@ void ds_JointConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 colo
     {
         struct ds_JointSim *jsim = color->joint_sim_pool.buf + ji;
 
-        struct ds_BodySim *sim[2] =
+        struct ds_BodySim *bsim[2] =
         {
             ((jsim->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + jsim->body_sim[0]),
             ((jsim->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + jsim->body_sim[1]),
@@ -831,8 +847,12 @@ void ds_JointConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 colo
         {
             case DS_JOINT_TYPE_DISTANCE:
             {
+                ds_DistanceJointConstraintIterate(jsim, bcomp, bsim);
             } break;
-            default: break;
+
+            default:
+            {
+            } break;
         }
     }
 
@@ -849,7 +869,7 @@ void ds_JointPositionConstraintIterateRange(struct ds_Dynamics *pipeline, const 
     {
         struct ds_JointSim *jsim = color->joint_sim_pool.buf + ji;
 
-        struct ds_BodySim *sim[2] =
+        struct ds_BodySim *bsim[2] =
         {
             ((jsim->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + jsim->body_sim[0]),
             ((jsim->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + jsim->body_sim[1]),
@@ -865,8 +885,12 @@ void ds_JointPositionConstraintIterateRange(struct ds_Dynamics *pipeline, const 
         {
             case DS_JOINT_TYPE_DISTANCE:
             {
+                ds_DistanceJointPositionConstraintIterate(jsim, bcomp, bsim);
             } break;
-            default: break;
+
+            default:
+            {
+            } break;
         }
     }
 
@@ -966,10 +990,10 @@ void ds_PositionConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const
     for (u32 ci = low; ci < high; ++ci)
     {
         struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + ci;
-        /* the static body is slot 0 (prepare's canonical slot); its lever stays as stored, it does not rotate */
-        ds_Assert(ccomp->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX && ccomp->body_sim[1] != ACTIVE_BODY_DUMMY_INDEX);
-        struct ds_BodySim *sim = active->body_sim_pool.buf + ccomp->body_sim[1];
-        struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + ccomp->body_sim[1];
+        /* the static body is slot 1 (prepare's canonical slot); its lever stays as stored, it does not rotate */
+        ds_Assert(ccomp->body_sim[0] != ACTIVE_BODY_DUMMY_INDEX && ccomp->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX);
+        struct ds_BodySim *sim = active->body_sim_pool.buf + ccomp->body_sim[0];
+        struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + ccomp->body_sim[0];
         const f32 inv_mass = sim->inv_mass;
 
         for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
@@ -983,13 +1007,13 @@ void ds_PositionConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const
                 const m3 inv_inertia = M3Mul(M3Mul(rot, sim->local_inv_inertia), M3Transpose(rot));
                 sim->world_inv_inertia = inv_inertia;
 
-                const v3 r0 = ccp->r[0];
-                const v3 r1 = QUnitRotate(bcomp->rotation, ccp->r[1]);
-                const v3 rn1 = V3Cross(r1, cc->normal);
-                const f32 K = inv_mass + V3Dot(M3V3Mul(inv_inertia, rn1), rn1);
+                const v3 r0 = QUnitRotate(bcomp->rotation, ccp->r[0]);
+                const v3 r1 = ccp->r[1];
+                const v3 rn0 = V3Cross(r0, cc->normal);
+                const f32 K = inv_mass + V3Dot(M3V3Mul(inv_inertia, rn0), rn0);
 
-                /* distance = com_separation + dot(delta_position_1 + (r1 - r0), n): body 0 does not move */
-                const v3 delta = V3Add(bcomp->delta_position, V3Sub(r1, r0));
+                /* distance = com_separation + dot((r1 - r0) - delta_position_0, n): body 1 does not move */
+                const v3 delta = V3Sub(V3Sub(r1, r0), bcomp->delta_position);
                 const f32 distance = ccp->com_separation + V3Dot(delta, cc->normal);
                 const f32 biased_slop_distance = g_solver_config->baumgarte_constant * (distance + g_solver_config->linear_slop);
 
@@ -1000,11 +1024,11 @@ void ds_PositionConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const
                     : 0.0f;
 
                 const v3 impulse_vector = V3Scale(cc->normal, impulse);
-                bcomp->delta_position = V3AddScaled(bcomp->delta_position, impulse_vector, inv_mass);
-                /* instantaneous torque, assume delta_t = 1; small angle quaternion */
-                const v3 w1 = M3V3Mul(inv_inertia, V3Cross(r1, impulse_vector));
-                const q quat_angle1 = Q(w1.x/2.0f, w1.y/2.0f, w1.z/2.0f, 1.0f);
-                bcomp->rotation = QNormalize(QMul(quat_angle1, bcomp->rotation));
+                bcomp->delta_position = V3AddScaled(bcomp->delta_position, impulse_vector, -inv_mass);
+                /* flipped cross for body 0's sign; instantaneous torque, assume delta_t = 1; small angle quaternion */
+                const v3 w0 = M3V3Mul(inv_inertia, V3Cross(impulse_vector, r0));
+                const q quat_angle0 = Q(w0.x/2.0f, w0.y/2.0f, w0.z/2.0f, 1.0f);
+                bcomp->rotation = QNormalize(QMul(quat_angle0, bcomp->rotation));
             }
         }
     }

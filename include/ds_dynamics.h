@@ -871,7 +871,6 @@ struct ds_DistanceJoint
                                    > 1.0f => returns to target, but creeps in slower    */
 
     /* Per-tick solver data */
-    v3      r[2];               /* COM levers (world-space) of joint frames in body0, 1.*/
     v3      n;                  /* Normal direction: joint frame 0 -> joint frame 1     */
     f32     distance;           /* distance between joint frame 0 and joint frame 1     */
 	f32	    normal_mass;	    /* 1.0f / row(J,i)*Inv(M)*J^T                           */
@@ -1002,7 +1001,8 @@ DEFINE_POOL(ds_Joint);
 
 /* 
  * INTERNAL: Setup a joint between bodies b0 and b1 with anchors defined by the input local_frames. On success, 
- * a valid ds_JointId is returned. On failure, the null id is returned.
+ * a valid ds_JointId is returned. On failure, the null id is returned. Canonical slot: a static body becomes
+ * body 1 (its frame with it), whatever the caller's order; joint->body[] and the sim's local_frame[] follow it.
  */
 ds_JointId  ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType type, const u32 collide_connected, const ds_BodyId b0, const ds_Transform *t0, const ds_BodyId b1, const ds_Transform *t1);
 /*
@@ -1049,6 +1049,10 @@ struct ds_JointSim
     enum ds_JointType   type;
     u32                 body_sim[2];/* body->sim of the two bodies (ACTIVE_BODY_DUMMY_INDEX: static); set by
                                        the prepare stage each tick                                           */
+
+    /* Per-tick solver data shared by every joint type, set by the prepare stage */
+    v3                  r[2];       /* world levers from the bodies' centers of mass to their joint frames */
+    v3                  com_diff;   /* COM1 - COM0                                                */
     union
     {
         struct ds_DistanceJoint distance;
@@ -1244,7 +1248,7 @@ DEFINE_CPOOL_STRUCT(ds_ContactConstraint);
 
 /*
  * Initalize the given range [low, high) of ds_ContactConstraints in the constraint graph. Canonical slot: a static
- * body is put in slot 0 of the compute (body sims, levers and axes swapped), whatever the contact key's order.
+ * body is put in slot 1 of the compute (body sims, levers and axes swapped), whatever the contact key's order.
  */
 void 	ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 /* Warmup Range [low, high) of applicable ds_ContactConstraints for the given color in the constraint graph */
@@ -1252,7 +1256,7 @@ void 	ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 co
 /* Compute a solver iteration over the given color for contact constraints */
 void    ds_ContactConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color, const u32 cc_low, const u32 cc_high);
 /*
- * The same iteration for a static colour (every contact has exactly one static body, in slot 0): the static
+ * The same iteration for a static colour (every contact has exactly one static body, in slot 1): the static
  * body's terms are dropped and only the dynamic body is read and written. Results equal
  * ds_ContactConstraintIterateRange's.
  */
@@ -1261,7 +1265,7 @@ void    ds_ContactConstraintIterateStaticRange(struct ds_Dynamics *pipeline, con
 void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 /* Compute a solver iteration over the given color for position constraints in range [low, high) */
 void ds_PositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
-/* The same iteration for a static colour (one static body per contact, in slot 0); results equal ds_PositionConstraintIterateRange's. */
+/* The same iteration for a static colour (one static body per contact, in slot 1); results equal ds_PositionConstraintIterateRange's. */
 void ds_PositionConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 
 /*
@@ -1276,6 +1280,15 @@ void    ds_JointConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 co
 void    ds_JointConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 /* One position (NGS) iteration over the joints */
 void    ds_JointPositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
+
+/*
+ * The per-type procedures the stages above call for one joint: jsim is the joint's sim in its colour, bcomp[i]
+ * and bsim[i] the two bodies' compute and simulation state (the static dummies for a static body).
+ */
+void    ds_DistanceJointConstraintInit(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2]);
+void    ds_DistanceJointConstraintWarmup(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2]);
+void    ds_DistanceJointConstraintIterate(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2]);
+void    ds_DistanceJointPositionConstraintIterate(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2]);
 
 /*
 contact_solver_config

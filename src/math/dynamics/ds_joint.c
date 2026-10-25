@@ -34,6 +34,19 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
         return ds_JointIdNull();
     }
 
+    /* canonical slot: a static body is body 1 (as in the contact constraints), whatever the caller's order */
+    if (!ds_BodyDynamicBit(b[0]))
+    {
+        const struct slot slot_tmp = slot_b0;
+        slot_b0 = slot_b1;
+        slot_b1 = slot_tmp;
+        b[0] = slot_b0.address;
+        b[1] = slot_b1.address;
+        const ds_Transform *frame_tmp = local_frame0;
+        local_frame0 = local_frame1;
+        local_frame1 = frame_tmp;
+    }
+
     const u32 dynamic[2] = { ds_BodyDynamicBit(b[0]), ds_BodyDynamicBit(b[1]) };
     const u32 expand_index = b[ dynamic[1] ]->island;
     const u32 merge_index = b[ 1-dynamic[1] ]->island;
@@ -60,8 +73,6 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
     }
     joint->id = ds_JointIdNextGeneration(joint->id);
 
-    //TODO does order matter here?
-    //TODO should static have slot 1 reserved?...
     joint->body[0] = slot_b0.index;
     joint->body[1] = slot_b1.index;
     joint->island = expand_index;
@@ -80,8 +91,6 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
         ds_JointCollisionDisable(pipeline, joint->id);
     }
 
-    //TODO does order matter here?
-    //TODO should static have slot 1 reserved?...
     struct ds_JointSim *sim = ds_CGraphJointAdd(pipeline, joint);
     sim->local_frame[0] = *local_frame0;
     sim->local_frame[1] = *local_frame1;
@@ -429,4 +438,51 @@ ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_Dis
     sim->distance.damping_ratio = prefab->damping_ratio;
 
     return id;
+}
+
+void ds_DistanceJointConstraintInit(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2])
+{
+    struct ds_DistanceJoint *dj = &jsim->distance;
+
+    jsim->r[0] = QUnitRotate(bsim[0]->world.rotation, V3Sub(jsim->local_frame[0].position, bsim[0]->local_center_of_mass));
+    jsim->r[1] = QUnitRotate(bsim[1]->world.rotation, V3Sub(jsim->local_frame[1].position, bsim[1]->local_center_of_mass));
+    /* computed, not the field: a static sim's world_center_of_mass is never written (ds_BodyUpdateSolverDataRange runs over the active set) */
+    jsim->com_diff = V3F64Demote(V3F64Sub(ds_BodySimWorldCenterOfMass(bsim[1]), ds_BodySimWorldCenterOfMass(bsim[0])));
+
+    const v3 diff = V3Sub(V3Add(jsim->com_diff, jsim->r[1]), jsim->r[0]);
+    dj->distance = V3Length(diff);
+
+    dj->n = (dj->distance > g_solver_config->linear_slop) 
+                ? V3Scale(diff, 1.0f/dj->distance)
+                : V3(0, 0, 0);
+
+    const v3 cross[2] = 
+    {
+        V3Cross(jsim->r[0], dj->n),
+        V3Cross(jsim->r[1], dj->n),
+    };
+
+    const v3 tmp[2] =
+    {
+        M3V3Mul(bsim[0]->world_inv_inertia, cross[0]),
+        M3V3Mul(bsim[1]->world_inv_inertia, cross[1]),
+    };
+
+    const f32 k = bsim[0]->inv_mass + bsim[1]->inv_mass + V3Dot(cross[0], tmp[0]) + V3Dot(cross[1], tmp[1]);
+    dj->normal_mass = (k > 0.0f)
+                    ? 1.0f / k
+                    : 0.0f;
+}
+
+
+void ds_DistanceJointConstraintWarmup(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2])
+{
+}
+
+void ds_DistanceJointConstraintIterate(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2])
+{
+}
+
+void ds_DistanceJointPositionConstraintIterate(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2])
+{
 }

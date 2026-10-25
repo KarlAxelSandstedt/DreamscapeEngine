@@ -94,6 +94,8 @@ ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *p
     sim->inv_mass = 0.0f;
     sim->local_center_of_mass = V3Zero();
     sim->local_inv_inertia = M3Scale(M3Identity(), 0.0f);
+    /* a static sim's world inverse inertia is read by the joint prepare and never updated per tick */
+    sim->world_inv_inertia = sim->local_inv_inertia;
 
 	return body->id;
 }
@@ -213,6 +215,7 @@ void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId i
         sim->local_inv_inertia = M3(0.0f, 0.0f, 0.0f,
                                     0.0f, 0.0f, 0.0f,
                                     0.0f, 0.0f, 0.0f);
+        sim->world_inv_inertia = sim->local_inv_inertia;
         ArenaPopScratch();
         return;
     }

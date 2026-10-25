@@ -1529,14 +1529,15 @@ static struct test_Output DynamicsJointTest(struct test_Environment *env)
     TEST_NOT_ZERO(s0.address != NULL && s1.address != NULL && s0.index == ds_JointIdIndex(j0) && s1.index == ds_JointIdIndex(j1));
     const struct ds_Joint *joint0 = s0.address;
     const struct ds_Joint *joint1 = s1.address;
-    TEST_NOT_ZERO(joint0->body[0] == index[0] && joint0->body[1] == index[1] && joint1->body[0] == index[1] && joint1->body[1] == index[2]);
+    /* the add's canonical slot: the static ground is body 1 of joint0 although it was passed first */
+    TEST_NOT_ZERO(joint0->body[0] == index[1] && joint0->body[1] == index[0] && joint1->body[0] == index[1] && joint1->body[1] == index[2]);
     TEST_NOT_ZERO(ground->joint_list.count == 1 && a->joint_list.count == 2 && b->joint_list.count == 1);
     TEST_NOT_ZERO(joint0->set == SOLVER_SET_NULL && joint0->color <= CG_STATIC_COLOR_LAST);
     TEST_NOT_ZERO(joint1->set == SOLVER_SET_NULL && CG_DYNAMIC_COLOR_FIRST <= joint1->color && joint1->color <= CG_DYNAMIC_COLOR_LAST);
     const struct ds_JointSim *sim0 = pipeline.cgraph.color[joint0->color].joint_sim_pool.buf + joint0->sim;
     const struct ds_JointSim *sim1 = pipeline.cgraph.color[joint1->color].joint_sim_pool.buf + joint1->sim;
     TEST_NOT_ZERO(sim0->joint == s0.index && sim1->joint == s1.index && sim0->type == DS_JOINT_TYPE_DISTANCE && sim1->type == DS_JOINT_TYPE_DISTANCE);
-    TEST_NOT_ZERO(JointTestV3Equal(sim0->local_frame[0].position, frame_ground.position) && JointTestV3Equal(sim0->local_frame[1].position, frame_a.position));
+    TEST_NOT_ZERO(JointTestV3Equal(sim0->local_frame[0].position, frame_a.position) && JointTestV3Equal(sim0->local_frame[1].position, frame_ground.position));
     TEST_NOT_ZERO(sim1->local_frame[0].rotation.x == frame_a.rotation.x && sim1->local_frame[0].rotation.w == frame_a.rotation.w && JointTestV3Equal(sim1->local_frame[1].position, frame_b.position));
 
     /* removing one by id: gone from the lists, its colour and the lookup; a second removal is a no-op */
