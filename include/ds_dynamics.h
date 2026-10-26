@@ -835,7 +835,7 @@ it towards target. The range is always enforced; the configuration names are tem
     rigid:          range = [d, d]: the distance is held at d exactly, forces in both directions.
     range:          low < high: no force inside [low, high]; at a bound the joint pushes back like a contact.
                     target is unused.
-    spring:         range = [linear_slop, inf) and enable_spring: the distance oscillates about target;
+    spring:         range = [linear_slop, JOINT_LENGTH_MAX] and enable_spring: the distance oscillates about target;
                     hertz = oscillations per second, damping_ratio = how fast the oscillation dies out (0 never,
                     1 settles without overshoot).
     range spring:   the spring inside a finite range: soft about target, but never outside [low, high]
@@ -877,6 +877,8 @@ struct ds_DistanceJoint
     f32     soft_mass;          /* TODO: docs (spring)                                  */
     f32     gamma;              /* TODO: docs (spring)                                  */
     f32     bias;               /* TODO: docs (spring)                                  */
+    f32     allowed_separation_velocity_min;    /* <= 0: reaches range.low at the end of the tick       */
+    f32     allowed_separation_velocity_max;    /* >= 0: reaches range.high at the end of the tick      */
 
     /* Per-iteration solver data, warm started from the previous tick */
     f32     impulse;            /* Cached Rigid/Spring impulse                          */
@@ -1283,9 +1285,10 @@ void    ds_JointPositionConstraintIterateRange(struct ds_Dynamics *pipeline, con
 
 /*
  * The per-type procedures the stages above call for one joint: jsim is the joint's sim in its colour, bcomp[i]
- * and bsim[i] the two bodies' compute and simulation state (the static dummies for a static body).
+ * and bsim[i] the two bodies' compute and simulation state (the static dummies for a static body); timestep is the
+ * tick length in seconds (the range rows' speculative bias is a gap per tick).
  */
-void    ds_DistanceJointConstraintInit(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2]);
+void    ds_DistanceJointConstraintInit(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2], const f32 timestep);
 void    ds_DistanceJointConstraintWarmup(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2]);
 void    ds_DistanceJointConstraintIterate(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2]);
 void    ds_DistanceJointPositionConstraintIterate(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2]);
@@ -1688,6 +1691,8 @@ u32 ds_RemovalJobPhaseDispatch(const ds_JobId job);
 
 #define UNIFORM_SIZE 256
 #define GRAVITY_CONSTANT_DEFAULT 9.80665f
+/* Longest joint length and range bound, meters; an "unbounded" range ends here (ds_DistanceJointClampRange) */
+#define JOINT_LENGTH_MAX 1.0e5f
 
 #define PHYSICS_EVENT_ISLAND(pipeline, event_type, island_index)					        \
 	{												                                        \

@@ -365,11 +365,18 @@ static f32 ds_DistanceJointClampLength(const f32 length, const char *name)
     return length;
 }
 
+/*
+ * range.high is capped at JOINT_LENGTH_MAX instead of allowing infinity. The user loses nothing: a bound of 100 km
+ * is never reached, so the high row stays inactive exactly as an infinite one would. The solver gains finite
+ * arithmetic everywhere: the high row's speculative bias (C / h), a zero effective mass times that bias
+ * (0 * inf = NaN) and the range spring's target (low + high) / 2 all stay finite, and no stage needs an
+ * infinity check.
+ */
 static intv ds_DistanceJointClampRange(const intv range)
 {
     intv clamped;
     clamped.low = ds_DistanceJointClampLength(range.low, "range.low");
-    clamped.high = range.high;
+    clamped.high = F32Min(range.high, JOINT_LENGTH_MAX);
     if (clamped.high < clamped.low)
     {
         Log(T_PHYSICS, S_WARNING, "distance joint prefab: range.high %f below range.low %f, using range.low", clamped.high, clamped.low);
@@ -396,7 +403,7 @@ void ds_DistanceJointPrefabSpring(struct ds_DistanceJointPrefab *prefab, const f
 {
     *prefab = (struct ds_DistanceJointPrefab) { 0 };
     prefab->target = ds_DistanceJointClampLength(distance, "distance");
-    prefab->range = Intv(g_solver_config->linear_slop, F32_INFINITY);
+    prefab->range = Intv(g_solver_config->linear_slop, JOINT_LENGTH_MAX);
     prefab->enable_spring = 1;
     prefab->hertz = hertz;
     prefab->damping_ratio = damping_ratio;
@@ -440,7 +447,7 @@ ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_Dis
     return id;
 }
 
-void ds_DistanceJointConstraintInit(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2])
+void ds_DistanceJointConstraintInit(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2], const f32 timestep)
 {
     struct ds_DistanceJoint *dj = &jsim->distance;
 
@@ -451,6 +458,13 @@ void ds_DistanceJointConstraintInit(struct ds_JointSim *jsim, struct ds_BodyComp
 
     const v3 diff = V3Sub(V3Add(jsim->com_diff, jsim->r[1]), jsim->r[0]);
     dj->distance = V3Length(diff);
+
+    /* 
+     * Allowed approach speed towards each bound, as we get closer to bound from within,
+     * the allowed speed approaches zero. 
+     */
+    dj->allowed_separation_velocity_min = -F32Max(0.0f, dj->distance - dj->range.low) / timestep;
+    dj->allowed_separation_velocity_max = F32Max(0.0f, dj->range.high - dj->distance) / timestep;
     
     if (dj->distance > g_solver_config->linear_slop)
     {
@@ -477,16 +491,16 @@ void ds_DistanceJointConstraintInit(struct ds_JointSim *jsim, struct ds_BodyComp
     };
 
     const f32 k = bsim[0]->inv_mass + bsim[1]->inv_mass + V3Dot(cross[0], tmp[0]) + V3Dot(cross[1], tmp[1]);
-    dj->normal_mass = (k > 0.0f) 
-                    ? 1.0f / k
-                    : 0.0f;
+    /* body 0 is dynamic with mass, so k >= inv_mass0 > 0; a jointed dynamic body without shapes is a setup bug */
+    ds_Assert(k > 0.0f);
+    dj->normal_mass = 1.0f / k;
 }
 
 void ds_DistanceJointConstraintWarmup(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2])
 {
     struct ds_DistanceJoint *dj = &jsim->distance;
 
-    const v3 cached_impulse = V3Scale(dj->n, dj->impulse);
+    const v3 cached_impulse = V3Scale(dj->n, dj->impulse + dj->impulse_low - dj->impulse_high);
     bcomp[0]->linear_velocity = V3AddScaled(bcomp[0]->linear_velocity, cached_impulse, -bsim[0]->inv_mass);
     bcomp[1]->linear_velocity = V3AddScaled(bcomp[1]->linear_velocity, cached_impulse, bsim[1]->inv_mass);
 
@@ -507,8 +521,39 @@ void ds_DistanceJointConstraintIterate(struct ds_JointSim *jsim, struct ds_BodyC
     relative_velocity = V3Sub(relative_velocity, V3Cross(bcomp[0]->angular_velocity, jsim->r[0]));
     const f32 separating_velocity = V3Dot(dj->n, relative_velocity);
 
-    const f32 delta_impulse = -dj->normal_mass * separating_velocity;
-    dj->impulse += delta_impulse;
+    f32 delta_impulse = 0.0f;
+    if (dj->range.low == dj->range.high)
+    {
+        delta_impulse = -dj->normal_mass * separating_velocity;
+        dj->impulse += delta_impulse;
+    }
+    else
+    {
+        /* 
+         * delta_impulse_low >  0.0f when velocity <  min => apply impulse
+         *                   <= 0.0f when velocity >= min  => release impulse
+         */
+        f32 delta_impulse_low = dj->normal_mass * (dj->allowed_separation_velocity_min - separating_velocity);
+        const f32 new_impulse_low = F32Max(0.0f, dj->impulse_low + delta_impulse_low);
+        delta_impulse_low = new_impulse_low - dj->impulse_low;
+        dj->impulse_low = new_impulse_low;
+
+        /* 
+         * delta_impulse_high >  0.0f when velocity >  max => apply impulse
+         *                    <= 0.0f when velocity <= max  => release impulse
+         *
+         * separating velocity need to account for updated low impulse velocity;
+         *
+         *                  sep_new =             sep + delta_impulse_low / normal_mass
+         *  =>  normal_mass*sep_new = normal_mass*sep + delta_impulse_low
+         */
+        f32 delta_impulse_high = dj->normal_mass * (separating_velocity - dj->allowed_separation_velocity_max) + delta_impulse_low;
+        const f32 new_impulse_high = F32Max(0.0f, dj->impulse_high + delta_impulse_high);
+        delta_impulse_high = new_impulse_high - dj->impulse_high;
+        dj->impulse_high = new_impulse_high;
+
+        delta_impulse = delta_impulse_low - delta_impulse_high;
+    }
 
     /* update body velocities */
     const v3 impulse = V3Scale(dj->n, delta_impulse);
@@ -553,11 +598,13 @@ void ds_DistanceJointPositionConstraintIterate(struct ds_JointSim *jsim, struct 
     /* inverse effective mass? */
     const f32 K = bsim[0]->inv_mass + bsim[1]->inv_mass + V3Dot(M3V3Mul(inv_inertia0, rn0), rn0) + V3Dot(M3V3Mul(inv_inertia1, rn1), rn1);
 
-    const f32 C = F32Clamp(distance - dj->target, -g_solver_config->max_linear_correction, g_solver_config->max_linear_correction);
+    /* range is set to [target, target] for basic distance joint */
+    const f32 correction = distance - F32Clamp(distance, dj->range.low, dj->range.high);
+    const f32 C = F32Clamp(correction, -g_solver_config->max_linear_correction, g_solver_config->max_linear_correction);
 
-    const f32 impulse = (K > 0.0f)
-        ? -C/K
-        : 0.0f;
+    /* body 0 is dynamic with mass, so K >= inv_mass0 > 0 */
+    ds_Assert(K > 0.0f);
+    const f32 impulse = -C/K;
 
     const v3 impulse_vector = V3Scale(n, impulse);
     bcomp[0]->delta_position = V3AddScaled(bcomp[0]->delta_position, impulse_vector, -bsim[0]->inv_mass);

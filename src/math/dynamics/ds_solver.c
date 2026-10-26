@@ -771,7 +771,7 @@ void ds_JointConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color_i
         {
             case DS_JOINT_TYPE_DISTANCE:
             {
-                ds_DistanceJointConstraintInit(jsim, bcomp, bsim);
+                ds_DistanceJointConstraintInit(jsim, bcomp, bsim, pipeline->timestep);
             } break;
 
             default:
@@ -956,9 +956,9 @@ void ds_PositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 c
 
                 const f32 C = F32Clamp(biased_slop_distance, -g_solver_config->max_linear_correction, 0.0f);
 
-                const f32 impulse = (K > 0.0f)
-                    ? -C/K
-                    : 0.0f;
+                /* one body is dynamic with mass, so K >= its inv_mass > 0 */
+                ds_Assert(K > 0.0f);
+                const f32 impulse = -C/K;
 
                 const v3 impulse_vector = V3Scale(cc->normal, impulse);
                 bcomp[0]->delta_position = V3AddScaled(bcomp[0]->delta_position, impulse_vector, -sim[0]->inv_mass);
@@ -1019,9 +1019,9 @@ void ds_PositionConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const
 
                 const f32 C = F32Clamp(biased_slop_distance, -g_solver_config->max_linear_correction, 0.0f);
 
-                const f32 impulse = (K > 0.0f)
-                    ? -C/K
-                    : 0.0f;
+                /* one body is dynamic with mass, so K >= its inv_mass > 0 */
+                ds_Assert(K > 0.0f);
+                const f32 impulse = -C/K;
 
                 const v3 impulse_vector = V3Scale(cc->normal, impulse);
                 bcomp->delta_position = V3AddScaled(bcomp->delta_position, impulse_vector, -inv_mass);

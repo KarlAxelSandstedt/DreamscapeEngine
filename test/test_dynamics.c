@@ -89,6 +89,12 @@ neither spins nor leaves the swing plane, the period from the interpolated zero 
 2 pi sqrt(L / g) within 1 %, and the swing maxima decay as the solver's velocity damping predicts (sqrt of the
 per-tick factor per tick) within 0.02.
 
+Slack rope (DynamicsSlackRopeTest): a box 2 m below a static anchor on a range joint [1, 3] m, both frames at
+the centres of mass, thrown upwards at 6 m/s. It stops at range.low, falls freely, stops at range.high and hangs
+there. The distance follows the one-dimensional model (gravity and damping, then the separating velocity clamped
+so a bound is reached exactly at the end of the tick) within 1 mm, both bounds are reached and never violated
+beyond linear_slop, the box rests at range.high for the last second, and it neither spins nor drifts sideways.
+
 Solver (DynamicsSlideTest, DynamicsBounceTest): a frictionless box on a 30 degree slope slides for a second;
 its downhill speed matches the per-tick recurrence v = (v + g sin(a) dt) / (1 + d dt) of the solver's gravity
 and damping within 1 % (the contacts cancel only the normal part), nothing across the slope, no spin. A box
@@ -1929,6 +1935,106 @@ static struct test_Output DynamicsPendulumTest(struct test_Environment *env)
     return output;
 }
 
+/* a box thrown up on a slack rope: free between the bounds, stopped at each bound by the range rows (file comment) */
+static struct test_Output DynamicsSlackRopeTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 0;
+
+    /* frames at the centres of mass: no torque, the motion stays on the anchor's vertical */
+    const intv range = Intv(1.0f, 3.0f);
+    const f32 distance_0 = 2.0f;
+    const f32 throw_speed = 6.0f;
+    const v3 anchor = V3(0.0f, 8.0f, 0.0f);
+    const struct dynamics_TestBox scene[2] =
+    {
+        { .position = anchor, .rotation = QIdentity(), .hw = V3(0.25f, 0.25f, 0.25f), .dynamic = 0, .friction = 0.5f },
+        { .position = V3Sub(anchor, V3(0.0f, distance_0, 0.0f)), .rotation = QIdentity(), .hw = V3(0.25f, 0.25f, 0.25f), .dynamic = 1, .friction = 0.5f },
+    };
+    ds_BodyId id[2];
+    for (u32 i = 0; i < 2; ++i)
+    {
+        id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
+    }
+    const ds_Transform frame = ds_TransformIdentity();
+    struct ds_DistanceJointPrefab prefab;
+    ds_DistanceJointPrefabRange(&prefab, range);
+    TEST_NOT_ZERO(!ds_JointIdNullCheck(ds_DistanceJointAdd(&pipeline, &prefab, id[0], &frame, id[1], &frame)));
+    {
+        const struct ds_Body *body = ds_BodyLookup(&pipeline, id[1]).address;
+        TEST_NOT_ZERO(body->set == SOLVER_SET_ACTIVE);
+        pipeline.solver_set_pool.buf[body->set].body_compute_pool.buf[body->sim].linear_velocity = V3(0.0f, throw_speed, 0.0f);
+    }
+
+    /*
+     * 5 s. The model is the distance along the anchor's vertical: the solver's gravity and damping step
+     * v <- (v + g dt) / (1 + d dt), then the range rows clamp the separating velocity to what reaches a bound at
+     * the end of the tick, -(distance - low) / dt <= v <= (high - distance) / dt; inside the range, far from the
+     * bounds, the joint applies nothing.
+     */
+    const f32 dt = pipeline.timestep;
+    const f32 g = -g_solver_config->gravity.y;
+    const f32 damp = 1.0f / (1.0f + g_solver_config->linear_dampening * dt);
+    const u32 tick_count = 300;
+    const u32 rest_ticks = 60;
+    f32 distance_model = distance_0;
+    f32 velocity_model = -throw_speed;
+    f32 model_error = 0.0f;
+    f32 violation = 0.0f;
+    f32 low_gap = range.high;
+    f32 high_gap = range.high;
+    f32 rest_error = 0.0f;
+    f32 lateral = 0.0f;
+    f32 spin = 0.0f;
+    for (u32 t = 1; t <= tick_count; ++t)
+    {
+        velocity_model = (velocity_model + g * dt) * damp;
+        const f32 velocity_min = -F32Max(0.0f, distance_model - range.low) / dt;
+        const f32 velocity_max = F32Max(0.0f, range.high - distance_model) / dt;
+        velocity_model = F32Clamp(velocity_model, velocity_min, velocity_max);
+        distance_model += velocity_model * dt;
+
+        SnapshotTestTick(&pipeline);
+        const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id[1]);
+        const v3 d = V3F64Demote(V3F64Sub(pose.position, V3Promote(anchor)));
+        const f32 distance = V3Length(d);
+        model_error = F32Max(model_error, F32Abs(distance - distance_model));
+        violation = F32Max(violation, F32Max(range.low - distance, distance - range.high));
+        low_gap = F32Min(low_gap, F32Abs(distance - range.low));
+        high_gap = F32Min(high_gap, F32Abs(distance - range.high));
+        rest_error = (t > tick_count - rest_ticks) ? F32Max(rest_error, F32Abs(distance - range.high)) : rest_error;
+        lateral = F32Max(lateral, F32Max(F32Abs(d.x), F32Abs(d.z)));
+        spin = F32Max(spin, DynamicsTestAngle(QIdentity(), pose.rotation));
+    }
+
+    const f32 slop = g_solver_config->linear_slop;
+    const u32 ok = model_error <= 1e-3f
+                && violation <= slop
+                && low_gap <= slop && high_gap <= slop
+                && rest_error <= slop
+                && lateral <= 1e-3f && spin <= 1e-3f;
+    if (!ok)
+    {
+        fprintf(stderr, "slack rope: model error %g, violation %g, gap to low %g, to high %g, rest error %g, lateral %g, spin %g\n",
+                model_error, violation, low_gap, high_gap, rest_error, lateral, spin);
+    }
+    TEST_NOT_ZERO(ok);
+
+    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 /* a frictionless box sliding down a 30 degree slope against the damped free-slide recurrence (file comment) */
 static struct test_Output DynamicsSlideTest(struct test_Environment *env)
 {
@@ -2547,6 +2653,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsJointIslandTest,
     DynamicsJointCollisionTest,
     DynamicsPendulumTest,
+    DynamicsSlackRopeTest,
     DynamicsSlideTest,
     DynamicsBounceTest,
     DynamicsFirstTickTest,
