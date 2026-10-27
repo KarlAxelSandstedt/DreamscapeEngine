@@ -399,14 +399,31 @@ void ds_DistanceJointPrefabRange(struct ds_DistanceJointPrefab *prefab, const in
     prefab->target = prefab->range.low;
 }
 
+/* a spring at 0 Hz is no spring: disable it; a negative damping ratio would feed energy in */
+static void ds_DistanceJointPrefabSpringSet(struct ds_DistanceJointPrefab *prefab, const f32 hertz, const f32 damping_ratio)
+{
+    prefab->enable_spring = 1;
+    prefab->hertz = hertz;
+    prefab->damping_ratio = damping_ratio;
+    if (hertz <= 0.0f)
+    {
+        Log(T_PHYSICS, S_WARNING, "distance joint prefab: hertz %f not positive, spring disabled", hertz);
+        prefab->enable_spring = 0;
+        prefab->hertz = 0.0f;
+    }
+    if (damping_ratio < 0.0f)
+    {
+        Log(T_PHYSICS, S_WARNING, "distance joint prefab: damping_ratio %f negative, using 0", damping_ratio);
+        prefab->damping_ratio = 0.0f;
+    }
+}
+
 void ds_DistanceJointPrefabSpring(struct ds_DistanceJointPrefab *prefab, const f32 distance, const f32 hertz, const f32 damping_ratio)
 {
     *prefab = (struct ds_DistanceJointPrefab) { 0 };
     prefab->target = ds_DistanceJointClampLength(distance, "distance");
     prefab->range = Intv(g_solver_config->linear_slop, JOINT_LENGTH_MAX);
-    prefab->enable_spring = 1;
-    prefab->hertz = hertz;
-    prefab->damping_ratio = damping_ratio;
+    ds_DistanceJointPrefabSpringSet(prefab, hertz, damping_ratio);
 }
 
 void ds_DistanceJointPrefabRangeSpring(struct ds_DistanceJointPrefab *prefab, const intv range, const f32 hertz, const f32 damping_ratio)
@@ -414,9 +431,7 @@ void ds_DistanceJointPrefabRangeSpring(struct ds_DistanceJointPrefab *prefab, co
     *prefab = (struct ds_DistanceJointPrefab) { 0 };
     prefab->range = ds_DistanceJointClampRange(range);
     prefab->target = 0.5f*(prefab->range.low + prefab->range.high);
-    prefab->enable_spring = 1;
-    prefab->hertz = hertz;
-    prefab->damping_ratio = damping_ratio;
+    ds_DistanceJointPrefabSpringSet(prefab, hertz, damping_ratio);
 }
 
 ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_DistanceJointPrefab *prefab, const ds_BodyId b0, const ds_Transform *local_frame0, const ds_BodyId b1, const ds_Transform *local_frame1)
@@ -435,6 +450,8 @@ ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_Dis
     ds_Assert(prefab->target >= g_solver_config->linear_slop);
     ds_Assert(prefab->range.low >= g_solver_config->linear_slop);
     ds_Assert(prefab->range.high >= prefab->range.low);
+    /* the spring block of prepare divides by c + h k, which these make positive */
+    ds_Assert(!prefab->enable_spring || (prefab->hertz > 0.0f && prefab->damping_ratio >= 0.0f));
 
     /* per-tick data is computed by prepare; the cached impulses start at zero */
     sim->distance = (struct ds_DistanceJoint) { 0 };
@@ -490,10 +507,28 @@ void ds_DistanceJointConstraintInit(struct ds_JointSim *jsim, struct ds_BodyComp
         M3V3Mul(bsim[1]->world_inv_inertia, cross[1]),
     };
 
-    const f32 k = bsim[0]->inv_mass + bsim[1]->inv_mass + V3Dot(cross[0], tmp[0]) + V3Dot(cross[1], tmp[1]);
-    /* body 0 is dynamic with mass, so k >= inv_mass0 > 0; a jointed dynamic body without shapes is a setup bug */
-    ds_Assert(k > 0.0f);
-    dj->normal_mass = 1.0f / k;
+    const f32 inv_normal_mass = bsim[0]->inv_mass + bsim[1]->inv_mass + V3Dot(cross[0], tmp[0]) + V3Dot(cross[1], tmp[1]);
+    /* body 0 is dynamic with mass, so inv_mass >= inv_mass0 > 0; a jointed dynamic body without shapes is a setup bug */
+    ds_Assert(inv_normal_mass > 0.0f);
+    dj->normal_mass = 1.0f / inv_normal_mass;
+
+    dj->gamma = 0.0f;
+    dj->bias_velocity = 0.0f;
+    dj->soft_mass = 0.0f;
+    if (dj->enable_spring)
+    {
+        const f32 angular_frequency = dj->hertz * F32_PI2;
+        const f32 k = dj->normal_mass * angular_frequency * angular_frequency;
+        const f32 c = 2.0f * dj->normal_mass * dj->damping_ratio * angular_frequency;
+        dj->gamma = 1.0f / (timestep *(c + k*timestep));
+        const f32 beta = timestep * k * dj->gamma;
+        dj->bias_velocity = beta * (dj->distance - dj->target);
+        dj->soft_mass = 1.0f / (inv_normal_mass + dj->gamma);
+    }
+    /* the row toward target: rigid for a point range, the spring when enabled, none for a free range */
+    dj->target_mass = (dj->range.low == dj->range.high) ? dj->normal_mass
+                    : (dj->enable_spring)                ? dj->soft_mass
+                    :                                      0.0f;
 }
 
 void ds_DistanceJointConstraintWarmup(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2])
@@ -521,38 +556,47 @@ void ds_DistanceJointConstraintIterate(struct ds_JointSim *jsim, struct ds_BodyC
     relative_velocity = V3Sub(relative_velocity, V3Cross(bcomp[0]->angular_velocity, jsim->r[0]));
     const f32 separating_velocity = V3Dot(dj->n, relative_velocity);
 
-    f32 delta_impulse = 0.0f;
-    if (dj->range.low == dj->range.high)
-    {
-        delta_impulse = -dj->normal_mass * separating_velocity;
-        dj->impulse += delta_impulse;
-    }
-    else
+    /*
+     * target_mass == normal_mass for rigid distance joints
+     *             == 0.0f        for range distance joints
+     *             == soft_mass   for spring and spring range joints 
+     *
+     * Softness terms are initialized to 0.0f for non-springs.
+     */
+    f32 delta_impulse = -dj->target_mass * (separating_velocity + dj->bias_velocity + dj->gamma*dj->impulse);
+    dj->impulse += delta_impulse;
+
+    if (dj->range.low < dj->range.high)
     {
         /* 
          * delta_impulse_low >  0.0f when velocity <  min => apply impulse
          *                   <= 0.0f when velocity >= min  => release impulse
+         *
+         * separating velocity need to account for updated target impulse velocity;
+         *
+         *                  sep_new =             sep + delta_impulse / normal_mass
+         *  =>  normal_mass*sep_new = normal_mass*sep + delta_impulse
          */
-        f32 delta_impulse_low = dj->normal_mass * (dj->allowed_separation_velocity_min - separating_velocity);
+        f32 delta_impulse_low = dj->normal_mass * (dj->allowed_separation_velocity_min - separating_velocity) - delta_impulse;
         const f32 new_impulse_low = F32Max(0.0f, dj->impulse_low + delta_impulse_low);
         delta_impulse_low = new_impulse_low - dj->impulse_low;
+        delta_impulse += delta_impulse_low;
         dj->impulse_low = new_impulse_low;
 
         /* 
          * delta_impulse_high >  0.0f when velocity >  max => apply impulse
          *                    <= 0.0f when velocity <= max  => release impulse
          *
-         * separating velocity need to account for updated low impulse velocity;
+         * separating velocity need to account for updated target and low impulse velocity;
          *
-         *                  sep_new =             sep + delta_impulse_low / normal_mass
-         *  =>  normal_mass*sep_new = normal_mass*sep + delta_impulse_low
+         *                  sep_new =             sep + delta_impulse / normal_mass
+         *  =>  normal_mass*sep_new = normal_mass*sep + delta_impulse
          */
-        f32 delta_impulse_high = dj->normal_mass * (separating_velocity - dj->allowed_separation_velocity_max) + delta_impulse_low;
+        f32 delta_impulse_high = dj->normal_mass * (separating_velocity - dj->allowed_separation_velocity_max) + delta_impulse;
         const f32 new_impulse_high = F32Max(0.0f, dj->impulse_high + delta_impulse_high);
         delta_impulse_high = new_impulse_high - dj->impulse_high;
+        delta_impulse += -delta_impulse_high;
         dj->impulse_high = new_impulse_high;
-
-        delta_impulse = delta_impulse_low - delta_impulse_high;
     }
 
     /* update body velocities */

@@ -95,6 +95,16 @@ there. The distance follows the one-dimensional model (gravity and damping, then
 so a bound is reached exactly at the end of the tick) within 1 mm, both bounds are reached and never violated
 beyond linear_slop, the box rests at range.high for the last second, and it neither spins nor drifts sideways.
 
+Spring (DynamicsSpringTest, DynamicsRangeSpringTest): a box hanging from a static anchor on a spring joint,
+frames at the centres of mass, released at the target. Every run is compared tick by tick with a one-dimensional
+emulation of the solver along the vertical (gravity and damping, warm start, the target row and the two bound rows
+over the velocity iterations, the position pass) within 0.1 mm. Spring, hertz 1, damping ratio 0.2: the period
+from the first maxima matches 1 / (hertz sqrt(1 - zeta^2)) within 5 %, the maxima decrease, and the box settles
+g / omega^2 below the target within 10 % (the implicit step rests slightly closer). Damping ratio 1: the distance
+grows monotonically to the same rest, no overshoot. Range spring [1.5, 2.2] m at hertz 0.5: the spring's own rest
+point lies 1 m below the target, beyond range.high, so the box comes to rest on range.high within linear_slop
+and never passes it by more.
+
 Solver (DynamicsSlideTest, DynamicsBounceTest): a frictionless box on a 30 degree slope slides for a second;
 its downhill speed matches the per-tick recurrence v = (v + g sin(a) dt) / (1 + d dt) of the solver's gravity
 and damping within 1 % (the contacts cancel only the normal part), nothing across the slope, no spin. A box
@@ -2035,6 +2045,256 @@ static struct test_Output DynamicsSlackRopeTest(struct test_Environment *env)
     return output;
 }
 
+struct dynamics_SpringModel
+{
+    f32 x;              /* distance below the anchor */
+    f32 v;              /* separating velocity, positive away from the anchor */
+    f32 impulse;
+    f32 impulse_low;
+    f32 impulse_high;
+};
+
+/*
+ * one tick of the solver on a body hanging from a static anchor along the vertical, the distance joint's rows as in
+ * ds_DistanceJointConstraintInit / Iterate / PositionConstraintIterate; the effective mass is the body's mass
+ */
+static void DynamicsSpringModelTick(struct dynamics_SpringModel *m, const struct ds_DistanceJointPrefab *prefab, const f32 mass, const f32 dt)
+{
+    const f32 g = -g_solver_config->gravity.y;
+    const f32 damp = 1.0f / (1.0f + g_solver_config->linear_dampening * dt);
+    const f32 inv_mass = 1.0f / mass;
+    const f32 low = prefab->range.low;
+    const f32 high = prefab->range.high;
+
+    m->v = (m->v + g * dt) * damp;
+
+    /* prepare */
+    const f32 C = m->x - prefab->target;
+    const f32 velocity_min = -F32Max(0.0f, m->x - low) / dt;
+    const f32 velocity_max = F32Max(0.0f, high - m->x) / dt;
+    f32 gamma = 0.0f;
+    f32 bias_velocity = 0.0f;
+    f32 soft_mass = 0.0f;
+    if (prefab->enable_spring)
+    {
+        const f32 omega = F32_PI2 * prefab->hertz;
+        const f32 k = mass * omega * omega;
+        const f32 c = 2.0f * mass * prefab->damping_ratio * omega;
+        gamma = 1.0f / (dt * (c + k * dt));
+        bias_velocity = dt * k * gamma * C;
+        soft_mass = 1.0f / (inv_mass + gamma);
+    }
+    const f32 target_mass = (low == high) ? mass : (prefab->enable_spring ? soft_mass : 0.0f);
+
+    /* warm start */
+    m->v += (m->impulse + m->impulse_low - m->impulse_high) * inv_mass;
+
+    for (u32 i = 0; i < g_solver_config->pgs_iteration_count; ++i)
+    {
+        f32 delta = -target_mass * (m->v + bias_velocity + gamma * m->impulse);
+        m->impulse += delta;
+        if (low < high)
+        {
+            f32 delta_low = mass * (velocity_min - m->v) - delta;
+            const f32 new_low = F32Max(0.0f, m->impulse_low + delta_low);
+            delta_low = new_low - m->impulse_low;
+            delta += delta_low;
+            m->impulse_low = new_low;
+
+            f32 delta_high = mass * (m->v - velocity_max) + delta;
+            const f32 new_high = F32Max(0.0f, m->impulse_high + delta_high);
+            delta_high = new_high - m->impulse_high;
+            delta -= delta_high;
+            m->impulse_high = new_high;
+        }
+        m->v += delta * inv_mass;
+    }
+
+    m->x += m->v * dt;
+
+    /* position pass: K = inv_mass, the correction moves the body by -C */
+    for (u32 i = 0; i < g_solver_config->ngs_iteration_count; ++i)
+    {
+        const f32 error = m->x - F32Clamp(m->x, low, high);
+        m->x -= F32Clamp(error, -g_solver_config->max_linear_correction, g_solver_config->max_linear_correction);
+    }
+}
+
+struct dynamics_SpringRun
+{
+    f32 model_error;    /* largest |distance - emulation| over the run */
+    f32 lateral;        /* largest sideways offset from the anchor's vertical */
+    f32 spin;           /* largest rotation of the box */
+};
+
+/*
+ * a box (half width 0.25) hanging distance_0 below a static anchor on the prefab's joint, both frames at the centres
+ * of mass, released at rest; distance[t] is the distance after tick t + 1
+ */
+static struct dynamics_SpringRun DynamicsSpringRun(f32 *distance, const u32 tick_count, const struct ds_DistanceJointPrefab *prefab, const f32 distance_0)
+{
+    struct dynamics_SpringRun run = { 0 };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 0;
+
+    const v3 anchor = V3(0.0f, 8.0f, 0.0f);
+    const struct dynamics_TestBox scene[2] =
+    {
+        { .position = anchor, .rotation = QIdentity(), .hw = V3(0.25f, 0.25f, 0.25f), .dynamic = 0, .friction = 0.5f },
+        { .position = V3Sub(anchor, V3(0.0f, distance_0, 0.0f)), .rotation = QIdentity(), .hw = V3(0.25f, 0.25f, 0.25f), .dynamic = 1, .friction = 0.5f },
+    };
+    ds_BodyId id[2];
+    for (u32 i = 0; i < 2; ++i)
+    {
+        id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
+    }
+    const ds_Transform frame = ds_TransformIdentity();
+    const ds_JointId joint = ds_DistanceJointAdd(&pipeline, prefab, id[0], &frame, id[1], &frame);
+    ds_Assert(!ds_JointIdNullCheck(joint));
+    const struct ds_Body *body = ds_BodyLookup(&pipeline, id[1]).address;
+    const f32 mass = body->mass;
+
+    struct dynamics_SpringModel model = { .x = distance_0 };
+    for (u32 t = 0; t < tick_count; ++t)
+    {
+        DynamicsSpringModelTick(&model, prefab, mass, pipeline.timestep);
+        SnapshotTestTick(&pipeline);
+        const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id[1]);
+        const v3 d = V3F64Demote(V3F64Sub(pose.position, V3Promote(anchor)));
+        distance[t] = V3Length(d);
+        run.model_error = F32Max(run.model_error, F32Abs(distance[t] - model.x));
+        run.lateral = F32Max(run.lateral, F32Max(F32Abs(d.x), F32Abs(d.z)));
+        run.spin = F32Max(run.spin, DynamicsTestAngle(QIdentity(), pose.rotation));
+    }
+
+    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return run;
+}
+
+/* a box hanging on a spring joint: period, decay and rest point for damping ratio 0.2, no overshoot for 1 (file comment) */
+static struct test_Output DynamicsSpringTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    const f32 L = 2.0f;
+    const f32 hertz = 1.0f;
+    const u32 tick_count = 600;
+    const f32 dt = 1.0f / 60.0f;
+    const f32 g = -g_solver_config->gravity.y;
+    const f32 omega = F32_PI2 * hertz;
+    const f32 sag_expected = g / (omega * omega);
+    f32 distance[600];
+
+    /* underdamped: period from the spacing of the first three maxima, which must decrease */
+    {
+        const f32 zeta = 0.2f;
+        struct ds_DistanceJointPrefab prefab;
+        ds_DistanceJointPrefabSpring(&prefab, L, hertz, zeta);
+        const struct dynamics_SpringRun run = DynamicsSpringRun(distance, tick_count, &prefab, L);
+
+        u32 max_count = 0;
+        f32 max_time[3] = { 0 };
+        f32 max_value[3] = { 0 };
+        for (u32 t = 1; t + 1 < tick_count && max_count < 3; ++t)
+        {
+            if (distance[t - 1] < distance[t] && distance[t] >= distance[t + 1])
+            {
+                max_time[max_count] = (f32) t * dt;
+                max_value[max_count] = distance[t];
+                max_count += 1;
+            }
+        }
+        const f32 period_expected = 1.0f / (hertz * F32Sqrt(1.0f - zeta * zeta));
+        const f32 period = (max_count == 3) ? 0.5f * (max_time[2] - max_time[0]) : 0.0f;
+        const f32 sag = distance[tick_count - 1] - L;
+        const u32 ok = max_count == 3
+                    && max_value[0] > max_value[1] && max_value[1] > max_value[2]
+                    && F32Abs(period - period_expected) <= 0.05f * period_expected
+                    && F32Abs(sag - sag_expected) <= 0.1f * sag_expected
+                    && run.model_error <= 1e-4f && run.lateral <= 1e-3f && run.spin <= 1e-3f;
+        if (!ok)
+        {
+            fprintf(stderr, "spring zeta 0.2: %u maxima (%g %g %g), period %f (expected %f), sag %f (expected %f), model error %g, lateral %g, spin %g\n",
+                    max_count, max_value[0], max_value[1], max_value[2], period, period_expected, sag, sag_expected, run.model_error, run.lateral, run.spin);
+        }
+        TEST_NOT_ZERO(ok);
+    }
+
+    /* critically damped: monotone approach to the same rest point */
+    {
+        struct ds_DistanceJointPrefab prefab;
+        ds_DistanceJointPrefabSpring(&prefab, L, hertz, 1.0f);
+        const struct dynamics_SpringRun run = DynamicsSpringRun(distance, tick_count, &prefab, L);
+
+        f32 backstep = 0.0f;
+        for (u32 t = 1; t < tick_count; ++t)
+        {
+            backstep = F32Max(backstep, distance[t - 1] - distance[t]);
+        }
+        const f32 sag = distance[tick_count - 1] - L;
+        const u32 ok = backstep <= 1e-6f
+                    && F32Abs(sag - sag_expected) <= 0.1f * sag_expected
+                    && run.model_error <= 1e-4f && run.lateral <= 1e-3f && run.spin <= 1e-3f;
+        if (!ok)
+        {
+            fprintf(stderr, "spring zeta 1: backstep %g, sag %f (expected %f), model error %g, lateral %g, spin %g\n",
+                    backstep, sag, sag_expected, run.model_error, run.lateral, run.spin);
+        }
+        TEST_NOT_ZERO(ok);
+    }
+
+    return output;
+}
+
+/* a box hanging on a range spring whose rest point lies beyond range.high: it comes to rest on the bound (file comment) */
+static struct test_Output DynamicsRangeSpringTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    const intv range = Intv(1.5f, 2.2f);
+    const f32 hertz = 0.5f;
+    const u32 tick_count = 600;
+    const u32 rest_ticks = 60;
+    const f32 g = -g_solver_config->gravity.y;
+    const f32 omega = F32_PI2 * hertz;
+    f32 distance[600];
+
+    struct ds_DistanceJointPrefab prefab;
+    ds_DistanceJointPrefabRangeSpring(&prefab, range, hertz, 0.2f);
+    /* the free spring would rest g / omega^2 below the target, past the upper bound */
+    ds_Assert(prefab.target + g / (omega * omega) > range.high);
+    const struct dynamics_SpringRun run = DynamicsSpringRun(distance, tick_count, &prefab, prefab.target);
+
+    f32 violation = 0.0f;
+    f32 rest_error = 0.0f;
+    for (u32 t = 0; t < tick_count; ++t)
+    {
+        violation = F32Max(violation, F32Max(range.low - distance[t], distance[t] - range.high));
+        rest_error = (t + rest_ticks >= tick_count) ? F32Max(rest_error, F32Abs(distance[t] - range.high)) : rest_error;
+    }
+    const f32 slop = g_solver_config->linear_slop;
+    const u32 ok = violation <= slop && rest_error <= slop
+                && run.model_error <= 1e-4f && run.lateral <= 1e-3f && run.spin <= 1e-3f;
+    if (!ok)
+    {
+        fprintf(stderr, "range spring: violation %g, rest error %g, model error %g, lateral %g, spin %g\n",
+                violation, rest_error, run.model_error, run.lateral, run.spin);
+    }
+    TEST_NOT_ZERO(ok);
+
+    return output;
+}
+
 /* a frictionless box sliding down a 30 degree slope against the damped free-slide recurrence (file comment) */
 static struct test_Output DynamicsSlideTest(struct test_Environment *env)
 {
@@ -2654,6 +2914,8 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsJointCollisionTest,
     DynamicsPendulumTest,
     DynamicsSlackRopeTest,
+    DynamicsSpringTest,
+    DynamicsRangeSpringTest,
     DynamicsSlideTest,
     DynamicsBounceTest,
     DynamicsFirstTickTest,

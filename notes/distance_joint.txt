@@ -1,0 +1,288 @@
+Distance Joint
+==============
+
+Enforces a distance constraint between two joint frames. There are four different versions:
+
+1. Basic distance joint, enforces the desired distance.
+
+2. Spring distance joint, enforces the desired distance, ocillating around
+   the target.
+
+3. Distance range joint, enforces a desired distance region.
+
+4. Spring range distance joint, combines the spring behaviour together with a wanted distance 
+   range, and the spring forces create oscillations around a target within the range.
+
+
+Constraints
+-----------
+
+From here and on, A is the reference joint frame, and B the incident joint frame.
+
+h  - the tick length in seconds 
+pA - position of frame A
+rA - lever from center of mass comA to pA (world orientation, rotates with the body)
+vA - linear velocity of body A's center of mass
+wA - angular velocity of body A
+
+Similar notation holds for B.
+
+1.  Let L be the desired distance and d = pB - pA. We have an equality constraint (in t)
+
+    C  = 0 (desired)
+    C  = |d| - L
+
+    With n = d / |d| the unit axis from A to B, and p'(t) = v(t) + w(t) x r(t),
+
+    C' = n . d'                                   (d/dt |d| = n . d')
+       = n . (pB' - pA')
+       = n . (vB + wB x rB - vA - wA x rA)
+
+    Shuffling around terms (n . (w x r) = w . (r x n)), we get the usual constraint row form:
+
+        J = [ -n^T  -(rA x n)  n^T  (rB x n) ],       C' = J [ vA wA vB wB ]^T
+
+    The constraint is a scalar, so J is a single row and everything below is scalar.
+
+Ranges
+------
+
+One can imagine a range constraint could look something like:
+
+    |d| <= low, apply force.
+
+From the previous section, except with an inequality constraint, we have
+
+                 C_low >= 0
+    <=>      |d| - low >= 0
+
+                C_high <= 0
+    <=>     |d| - high <= 0
+
+This is not perfect; consider the case when we are leaving the range quickly and overshoots
+the low-limit by a large amount. In that case, we won't apply forces before being a long way
+away from the limit. This gives reason to why we add a speculative bias; we bias our constraint
+to activate before we reach the limit by taking into account the future position with our
+current velocity.
+
+            C_L >= 0
+            C_L = C_low + h*C_low'
+                = C_low + h*C'
+
+            C_H <= 0
+            C_H = C_high + h*C_high'
+                = C_high + h*C'
+
+Thus we get new constraints C_L, C_H which takes the current velocity along the distance
+joint's normal into account that activate once we're estimated to leave the range. Both add
+the same speculative velocity term; only the inequality is reversed, since both are stated as
+
+            C  = |d| - L,
+
+and the high bound is valid below zero. Dividing the constraints by h yields the wanted
+velocity constraints for the solver.
+
+            C' >= -C_low / h,
+            C' <= -C_high / h.
+    
+To understand these constraints, it helps to think of them as follows: C_L allows us to be
+anywhere above low, which yields a limit on the permissive velocity:
+
+            C' >= -C_low / h.
+    
+the permissive velocity (along the normal) is of course the velocity that moves us from the
+current distance to the lower range limit. Anything less "extreme" is allowed, and we impose
+no impulse on the bodies while that is the case. This yields:
+
+            permissive_velocity_low = -max(0.0f, C_low / h) 
+                                    = -max(0.0f, |d| - low / h) 
+                                    = 0.0f                          , |d| <= low
+                                    = (low - |d|)/ h)               , |d| >  low
+
+When the permissive_velocity_low is 0.0f, we are outside the bound and must impose an impulse
+to stop further distancing (position resolution is left to the position solver). If it is 
+positive, we must impose an impulse not to leave the bounds.  Similar reasoning holds for the
+upper bound:
+
+            permissive_velocity_high = max(0.0f, -C_high / h) 
+                                     = max(0.0f, (high - |d|) / h)
+                                     = 0.0f                         , |d| >= high
+                                     = (high - |d|) / h             , |d| < high
+
+Springs
+-------
+
+Damped Harmonic Oscillator:
+
+    mx'' + cx'+ kx = 0
+    (1)    (2)  (3)
+
+m           - mass
+c = m / t   - viscous damping coefficient
+k = m / t^2 - spring stiffness
+(1)         - acceleration term
+(2)         - damping force (changes with velocity)
+(3)         - spring force  (changes with position)
+
+Taking into account the external forces, and re-writing in Newton's second law form yields:
+
+    mx'' = F_external + -cx' - kx
+
+c, k engineering values, hard to understand and use, we want something more appropriate
+for designers. By removing mass from terms (1), (2), (3), we get more appropriate values:
+
+w0 = sqrt(k / m)        - undamped angular frequency of the oscillator
+P = c / (2*sqrt(m*k))   - damping ratio
+
+        d^2x/dt^2 + 2*P*w0 dx/dt + w0^2x = 0
+            (1)           (2)       (3)
+
+P:
+
+Overdamping:       P > 1, system returns to steady state without oscillating, velocity damped
+Critically Damped: P == 1, return to steady state as quickly as possible without oscillating
+Underdamped:       P < 1, The system oscillates, with velocity amplitude gradually going to 0
+
+Basic Interpretation: 
+
+Removing the external force for a second, we imagine pulling the spring away from its origin.
+As we let go, the spring term forces an immediate acceleration, and the acceleration switches
+sign, increasing in magnitude once we pass the origin.
+
+    mx'' = -kx
+
+If we add back the external force, perhaps gravity, Newton gives:
+
+    mx'' = F_external - kx
+ 
+When the spring term equals the external force, the acceleration is 0, which is our equilibrium.
+Essentially, the origin has been shifted according to the external force and the spring's stiffness.
+Greater stiffness yield smaller shifts, since greater stiffness provide greater counter forces
+for the same origin offset.
+
+By adding in the damping force, and removing the external force, Newton yields:
+
+    mx'' = - cx' - kx
+
+Proportial to the velocity of x, the damping force is always applied in the opposite direction
+of motion. Thus, as soon aw we leave one of the oscillating extremes, the damping force 
+immediately begin pushing towards it. Below we see a table representing the signs of the spring
+and damping terms, depending on the position of x relative to spring (over, under), and the
+velocity sign of x (upwards, downwards):
+    
+                   kx  cx
+--------------------------
+over,  upwards   | + | + |
+--------------------------
+over,  downwards | + | - |
+--------------------------
+under, downwards | - | - |
+--------------------------
+under, upwards   | - | + |
+--------------------------
+
+Need to argue for why the magnitude of the spring should decrease for each oscillation when c > 0.
+I presume we need to actually solve the differential equation, and inspect the function x(t).
+For reasons, we may write the energy in the system as
+
+    E  = 1/2 m x'^2 + 1/2 k x^2
+    E' = x'(mx'' + kx) = x'(-cx') = -cx'^2
+
+As we are only working with c >= 0.0f, the energy is monotone decreasing, leading to an eventual
+equlibirum in the case of strictly positive c.
+
+Constraints: 
+
+We've stated things in terms of acceleration, but in reality we will adjust constraints based
+on velocity. The oscillator's x becomes the joint's position error, and the mass becomes the
+effective mass of the row:
+
+    C  = |d| - L            (target L; C = 0 is the relaxed spring)
+    C' = n . d'             (as in the rigid row)
+    m  = normal_mass        (1 / (J Inv(M) J^T): the mass the row feels along n)
+
+With the oscillator written in these terms, m C'' = -c C' - k C, and the designer values give
+
+    w = 2 pi hertz
+    k = m w^2
+    c = 2 P m w
+
+A solver row applies an impulse lambda along n. An impulse changes the row's velocity by
+
+    C'_new = C' + lambda / m                                                            (1)
+
+(apply lambda n to both bodies with the row's J and sum: J Inv(M) J^T lambda = lambda / m).
+
+Explicit attempt. Take the force at the start of the tick and apply it over the tick:
+
+    lambda = h F = -h (k C + c C')
+
+Check it with c = 0 and C' = 0 (released from rest at offset C):
+
+    C'_new = -h k C / m = -h w^2 C
+    C_new  = C + h C'_new = C (1 - (h w)^2)
+
+For h w > sqrt(2) the new offset is on the other side and larger than the old one, and every
+tick multiplies it by |1 - (h w)^2| > 1: the spring blows up. With damping the bound moves, but
+there is always a hertz above which this happens. The reason is that the force was computed
+from where we were, not from where the impulse puts us.
+
+Implicit step. Take the force at the end of the tick instead, i.e. from the position and
+velocity the impulse produces:
+
+    F      = -k C_new - c C'_new                                                        (2)
+    lambda = h F                                                                        (3)
+    C_new  = C + h C'_new                                                               (4)
+
+Substitute (4) into (2), then (2) into (3), and collect the C'_new terms:
+
+    lambda = -h k (C + h C'_new) - h c C'_new
+           = -h k C - h (c + h k) C'_new                                                (5)
+
+The solver solves for velocities, so rewrite (5) as "velocity + terms = 0" by dividing by
+h (c + h k):
+
+    C'_new + beta C + gamma lambda = 0                                                  (6)
+
+    beta  = k / (c + h k)                   (unit 1/s: beta C is a velocity)
+    gamma = 1 / (h (c + h k))               (unit s/kg: gamma lambda is a velocity)
+
+The h inside gamma is the h from (3): lambda is h times a force, and turning the lambda term
+back into a velocity divides it out again. Both beta and gamma depend on k and c together.
+
+Solving (6) for the impulse. Put (1) into (6):
+
+    C' + lambda / m + beta C + gamma lambda = 0
+    lambda (1/m + gamma) = -(C' + beta C)
+    lambda = -(C' + beta C) / (1/m + gamma)
+
+The solver iterates, so the row is solved several times per tick and each solve adds an
+increment. With lambda_old already applied, the current velocity C' already contains
+lambda_old / m, and the total impulse lambda_old + delta must satisfy (6):
+
+    C' + delta / m + beta C + gamma (lambda_old + delta) = 0
+    delta = -(C' + beta C + gamma lambda_old) / (1/m + gamma)
+
+which is the row in Init/Iterate form:
+
+    soft_mass     = 1 / (1/m + gamma)
+    bias_velocity = beta C                  (C is fixed for the tick, computed in Init)
+    delta         = -soft_mass (C' + bias_velocity + gamma lambda_old)
+    lambda_old   += delta, apply delta n
+
+Checks:
+
+    k -> inf:   beta -> 1/h, gamma -> 0, soft_mass -> m:  delta = -m (C' + C/h), the rigid row
+                with the whole error removed in one tick.
+    k, c -> 0:  gamma -> inf, soft_mass -> 0:  no impulse, the bodies are free.
+    h -> 0:     lambda / h -> -(k C + c C'), the oscillator's force.
+
+Equilibrium under a constant external force (gravity on a hanging body): the row settles
+where the spring force balances it, C = F_external / k, not at C = 0. The spring row therefore
+gets no position pass; a spring resting away from its target is correct.
+
+-----------------------------------------------------------------------------------------------
+
+    //TODO: semi-implicit euler yields rule-of-thump: at least 4 timesteps per oscillation, otherwise
+            you run risk of blow-up. (Erin Catto, gdc 2011: Soft Constraints)
+. Range spring: stages 2 and 3 together; only the test is new.

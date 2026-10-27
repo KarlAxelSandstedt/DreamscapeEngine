@@ -837,7 +837,8 @@ it towards target. The range is always enforced; the configuration names are tem
                     target is unused.
     spring:         range = [linear_slop, JOINT_LENGTH_MAX] and enable_spring: the distance oscillates about target;
                     hertz = oscillations per second, damping_ratio = how fast the oscillation dies out (0 never,
-                    1 settles without overshoot).
+                    1 settles without overshoot). The spring prefabs disable the spring for hertz <= 0 and use
+                    0 for a negative damping_ratio, with a warning; the add asserts both on a hand-written prefab.
     range spring:   the spring inside a finite range: soft about target, but never outside [low, high]
                     (a suspension with end stops).
 //TODO
@@ -875,8 +876,10 @@ struct ds_DistanceJoint
     f32     distance;           /* distance between joint frame 0 and joint frame 1     */
 	f32	    normal_mass;	    /* 1.0f / row(J,i)*Inv(M)*J^T                           */
     f32     soft_mass;          /* TODO: docs (spring)                                  */
+    f32     target_mass;        /* mass of the row toward target: normal_mass (rigid),
+                                   soft_mass (spring), 0 (free range: no such row)     */
     f32     gamma;              /* TODO: docs (spring)                                  */
-    f32     bias;               /* TODO: docs (spring)                                  */
+    f32     bias_velocity;      /* TODO: docs (spring)                                  */
     f32     allowed_separation_velocity_min;    /* <= 0: reaches range.low at the end of the tick       */
     f32     allowed_separation_velocity_max;    /* >= 0: reaches range.high at the end of the tick      */
 
