@@ -437,34 +437,6 @@ void ds_DistanceJointPrefabRangeSpring(struct ds_DistanceJointPrefab *prefab, co
 
 ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_DistanceJointPrefab *prefab, const ds_BodyId b0, const ds_Transform *local_frame0, const ds_BodyId b1, const ds_Transform *local_frame1)
 {
-    /*
-     * Anchors within linear_slop give the joint no axis, and prepare keeps the previous one; a joint that starts
-     * there with a lower bound demanding separation has no previous axis to push along, so it is rejected.
-     * A free lower bound (ropes, springs) may start there: the joint applies nothing until the anchors separate.
-     */
-    const f32 slop = g_solver_config->linear_slop;
-    if (prefab->range.low > slop)
-    {
-        const struct ds_Body *b[2] = { ds_BodyLookup(pipeline, b0).address, ds_BodyLookup(pipeline, b1).address };
-        if (b[0] && b[1])
-        {
-            const ds_Transform *local_frame[2] = { local_frame0, local_frame1 };
-            v3f64 anchor[2];
-            for (u32 i = 0; i < 2; ++i)
-            {
-                const struct ds_BodySim *bsim = pipeline->solver_set_pool.buf[b[i]->set].body_sim_pool.buf + b[i]->sim;
-                anchor[i] = V3F64Add(bsim->world.position, V3Promote(QUnitRotate(bsim->world.rotation, local_frame[i]->position)));
-            }
-
-            const f32 distance = V3Length(V3F64Demote(V3F64Sub(anchor[1], anchor[0])));
-            if (distance <= slop)
-            {
-                Log(T_PHYSICS, S_WARNING, "distance joint add rejected: anchors %f apart (within linear_slop %f) with range.low %f", distance, slop, prefab->range.low);
-                return ds_JointIdNull();
-            }
-        }
-    }
-
     const ds_JointId id = ds_JointAdd(pipeline, DS_JOINT_TYPE_DISTANCE, prefab->collide_connected, b0, local_frame0, b1, local_frame1);
     if (ds_JointIdNullCheck(id))
     {
@@ -484,6 +456,33 @@ ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_Dis
 
     /* per-tick data is computed by prepare; the cached impulses start at zero */
     sim->distance = (struct ds_DistanceJoint) { 0 };
+
+    /*
+     * Anchors within linear_slop give the joint no axis, and prepare keeps the previous one. A joint that starts
+     * there gets an arbitrary first axis, +x, so a lower bound above linear_slop has a direction to push along;
+     * the joint stays valid, only the direction of that first push is made up. A free lower bound sees no push.
+     */
+    {
+        const f32 slop = g_solver_config->linear_slop;
+        v3f64 anchor[2];
+        for (u32 i = 0; i < 2; ++i)
+        {
+            /* the sim's frames, not the caller's: the add may have swapped the slots (static body in slot 1) */
+            const struct ds_Body *body = pipeline->body_pool.buf + joint->body[i];
+            const struct ds_BodySim *bsim = pipeline->solver_set_pool.buf[body->set].body_sim_pool.buf + body->sim;
+            anchor[i] = V3F64Add(bsim->world.position, V3Promote(QUnitRotate(bsim->world.rotation, sim->local_frame[i].position)));
+        }
+
+        const f32 distance = V3Length(V3F64Demote(V3F64Sub(anchor[1], anchor[0])));
+        if (distance <= slop)
+        {
+            if (prefab->range.low > slop)
+            {
+                Log(T_PHYSICS, S_WARNING, "distance joint add: anchors %f apart (within linear_slop %f) with range.low %f, first push along +x", distance, slop, prefab->range.low);
+            }
+            sim->distance.n = V3(1.0f, 0.0f, 0.0f);
+        }
+    }
     sim->distance.target = prefab->target;
     sim->distance.range = prefab->range;
     sim->distance.enable_spring = prefab->enable_spring;
@@ -520,9 +519,9 @@ void ds_DistanceJointConstraintInit(struct ds_JointSim *jsim, struct ds_BodyComp
     dj->allowed_separation_velocity_max = F32Max(0.0f, dj->range.high - dj->distance) / timestep;
     
     /*
-     * Below linear_slop the anchors give no axis; keep the previous tick's n (the add keeps it from being
-     * zero whenever a bound demands separation), so the rows and the position pass still push along the
-     * direction the anchors came from. The cached impulses keep their meaning along it.
+     * Below linear_slop the anchors give no axis; keep the previous tick's n (the add sets one when the anchors
+     * start there), so the rows and the position pass still push along the direction the anchors came from.
+     * The cached impulses keep their meaning along it.
      */
     if (dj->distance > g_solver_config->linear_slop)
     {

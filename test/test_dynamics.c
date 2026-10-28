@@ -105,13 +105,21 @@ grows monotonically to the same rest, no overshoot. Range spring [1.5, 2.2] m at
 point lies 1 m below the target, beyond range.high, so the box comes to rest on range.high within linear_slop
 and never passes it by more.
 
-Coincident anchors (DynamicsCoincidentAnchorsTest): both anchors on one point give the joint no axis. The add
-rejects a rigid joint and a range with range.low above linear_slop there (nothing to push along), and accepts a
-rope [linear_slop, 3] and a spring; the spring applies nothing until gravity separates the anchors, then settles
-the box g / omega^2 below its target, straight under the point. A rigid joint of length 2 m along +x whose box
-is then put on the anchor keeps +x as its axis: after one tick the position pass has pushed the box out along
-it by at least half max_linear_correction (gravity alone would drop it straight down), the length is back within
-10 ticks and holds to 2 linear_slop through the swing that follows, with no motion out of the plane.
+Coincident anchors (DynamicsCoincidentAnchorsTest): both anchors on one point give the joint no axis, and the
+add gives it +x. A rigid joint of 2 m added there pushes its box out along +x in the first tick, by at least
+half max_linear_correction (gravity alone would drop it straight down), and holds 2 m a second later. A spring
+added there gets the same first push and then swings on the spring; five seconds later the box hangs below the
+point between the target and the spring's rest plus the swing's stretch. A rigid joint of 2 m along +x whose box is then put on the anchor keeps +x as its axis: after one
+tick the box has moved out along it, the length is back within 10 ticks and holds to 2 linear_slop through the
+swing that follows, with no motion out of the plane.
+
+Joint sleep (DynamicsJointSleepTest): three boxes hang still from a static pivot on rigid joints 1 m apart and
+fall asleep as one island: the set holds the three joint sims, the joints leave the colours, and each cached
+impulse is the tick's weight below it, (3 - i) m g h less the damping's share, within 2 %. Waking the set puts
+the joints back in the colours with the same impulses, and the warm start keeps the chain within 0.1 mm for the
+next 10 ticks. Asleep again, a joint to a fourth box wakes it and merges the islands (4 joints); the longer chain
+sleeps with four impulses (4 - i) m g h. Removing the sleeping bottom joint wakes the chain: the fourth box falls
+to the ground, the island splits, and both parts sleep, the chain at its length.
 
 Solver (DynamicsSlideTest, DynamicsBounceTest): a frictionless box on a 30 degree slope slides for a second;
 its downhill speed matches the per-tick recurrence v = (v + g sin(a) dt) / (1 + d dt) of the solver's gravity
@@ -2345,39 +2353,67 @@ static struct test_Output DynamicsCoincidentAnchorsTest(struct test_Environment 
     const ds_Transform frame = ds_TransformIdentity();
     const f32 slop = g_solver_config->linear_slop;
 
-    /* both anchors at P: a rigid joint and a range with low above linear_slop are rejected, free lower bounds accepted */
-    struct ds_DistanceJointPrefab rigid, range, rope, spring;
-    ds_DistanceJointPrefab(&rigid, L);
-    ds_DistanceJointPrefabRange(&range, Intv(1.0f, 3.0f));
-    ds_DistanceJointPrefabRange(&rope, Intv(slop, 3.0f));
-    ds_DistanceJointPrefabSpring(&spring, L, 1.0f, 1.0f);
-    TEST_NOT_ZERO(ds_JointIdNullCheck(ds_DistanceJointAdd(&pipeline, &rigid, id[0], &frame_static, id[1], &frame_up)));
-    TEST_NOT_ZERO(ds_JointIdNullCheck(ds_DistanceJointAdd(&pipeline, &range, id[0], &frame_static, id[1], &frame_up)));
-    TEST_NOT_ZERO(pipeline.joint_pool.count == 0);
-    const ds_JointId rope_id = ds_DistanceJointAdd(&pipeline, &rope, id[0], &frame_static, id[1], &frame_up);
-    TEST_NOT_ZERO(!ds_JointIdNullCheck(rope_id));
-    ds_JointRemove(&pipeline, rope_id);
-    const ds_JointId spring_id = ds_DistanceJointAdd(&pipeline, &spring, id[0], &frame_static, id[1], &frame_up);
-    TEST_NOT_ZERO(!ds_JointIdNullCheck(spring_id));
-
     /*
-     * The spring applies nothing while the anchors coincide; gravity separates them within two ticks and the
-     * critically damped spring then settles the box g / omega^2 below the target, straight under P.
+     * Both anchors at P: a rigid joint starts with +x as its axis (warning) and the position pass pushes the box
+     * out along it in the first tick, gravity alone would drop it straight down; the box is caught at L.
      */
-    const f32 omega = F32_PI2 * spring.hertz;
-    const f32 rest = L - g_solver_config->gravity.y / (omega * omega);
-    for (u32 t = 0; t < 180; ++t)
+    struct ds_DistanceJointPrefab rigid, spring;
+    ds_DistanceJointPrefab(&rigid, L);
+    ds_DistanceJointPrefabSpring(&spring, L, 1.0f, 1.0f);
+    const ds_JointId rigid_id = ds_DistanceJointAdd(&pipeline, &rigid, id[0], &frame_static, id[1], &frame_up);
+    TEST_NOT_ZERO(!ds_JointIdNullCheck(rigid_id));
+    SnapshotTestTick(&pipeline);
+    {
+        /* the anchor, not the centre: 3 m above it, the push mostly turns the box; the sign follows the slot order */
+        const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id[1]);
+        const v3 d = V3Add(V3F64Demote(V3F64Sub(pose.position, V3Promote(P))), QUnitRotate(pose.rotation, frame_up.position));
+        const u32 ok = F32Abs(d.x) >= 0.5f * g_solver_config->max_linear_correction && F32Abs(d.z) <= 1.0e-6f;
+        if (!ok)
+        {
+            fprintf(stderr, "coincident anchors, rigid at add: after one tick the anchor moved (%f, %f, %f), max_linear_correction %f\n", d.x, d.y, d.z, g_solver_config->max_linear_correction);
+        }
+        TEST_NOT_ZERO(ok);
+    }
+    for (u32 t = 0; t < 60; ++t)
     {
         SnapshotTestTick(&pipeline);
     }
     {
         const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id[1]);
-        const v3 anchor = V3F64Demote(V3F64Sub(pose.position, V3Promote(P)));
-        const v3 d = V3Add(anchor, QUnitRotate(pose.rotation, frame_up.position));
-        const u32 ok = F32Abs(V3Length(d) - rest) <= 0.02f && F32Abs(d.x) <= 1.0e-3f && F32Abs(d.z) <= 1.0e-3f && d.y < 0.0f;
+        const v3 d = V3Add(V3F64Demote(V3F64Sub(pose.position, V3Promote(P))), QUnitRotate(pose.rotation, frame_up.position));
+        const u32 ok = F32Abs(V3Length(d) - L) <= 2.0f * slop;
         if (!ok)
         {
-            fprintf(stderr, "coincident anchors, spring: distance %f (expected %f), d = (%f, %f, %f)\n", V3Length(d), rest, d.x, d.y, d.z);
+            fprintf(stderr, "coincident anchors, rigid at add: distance %f after 61 ticks\n", V3Length(d));
+        }
+        TEST_NOT_ZERO(ok);
+    }
+    ds_JointRemove(&pipeline, rigid_id);
+
+    /* a spring with its free lower bound starts there without a warning */
+    DynamicsTestTeleport(&pipeline, id[1], scene[1].position);
+    const ds_JointId spring_id = ds_DistanceJointAdd(&pipeline, &spring, id[0], &frame_static, id[1], &frame_up);
+    TEST_NOT_ZERO(!ds_JointIdNullCheck(spring_id));
+
+    /*
+     * The spring's first axis is +x too: its first tick pushes the box out sideways, after which it swings as a
+     * damped pendulum on a spring. The run stays finite, and five seconds later the box hangs below P at a
+     * distance the spring can hold (its rest g / omega^2 below the target, plus the swing's centripetal stretch).
+     */
+    const f32 omega = F32_PI2 * spring.hertz;
+    const f32 rest = L - g_solver_config->gravity.y / (omega * omega);
+    for (u32 t = 0; t < 300; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    {
+        const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id[1]);
+        const v3 d = V3Add(V3F64Demote(V3F64Sub(pose.position, V3Promote(P))), QUnitRotate(pose.rotation, frame_up.position));
+        const f32 distance = V3Length(d);
+        const u32 ok = F32FiniteCheck(distance) && d.y < 0.0f && distance >= L && distance <= rest + 1.0f;
+        if (!ok)
+        {
+            fprintf(stderr, "coincident anchors, spring: distance %f (rest %f), d = (%f, %f, %f)\n", distance, rest, d.x, d.y, d.z);
         }
         TEST_NOT_ZERO(ok);
     }
@@ -2385,8 +2421,8 @@ static struct test_Output DynamicsCoincidentAnchorsTest(struct test_Environment 
 
     /*
      * A rigid joint of length L along +x, one tick to make that its axis, then the box is put on P. The next
-     * tick finds no axis and keeps +x: the position pass pushes the box out along it (gravity alone would drop
-     * it straight down). The length is back within a few ticks, and holds through the swing that follows.
+     * tick finds no axis and keeps +x: the position pass pushes the box out along it. The length is back within
+     * a few ticks, and holds through the swing that follows.
      */
     DynamicsTestTeleport(&pipeline, id[1], V3Add(P, V3(L, 0.0f, 0.0f)));
     TEST_NOT_ZERO(!ds_JointIdNullCheck(ds_DistanceJointAdd(&pipeline, &rigid, id[0], &frame_static, id[1], &frame)));
@@ -2428,6 +2464,188 @@ static struct test_Output DynamicsCoincidentAnchorsTest(struct test_Environment 
     }
 
     g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
+/* the cached target-row impulse of a distance joint, wherever its sim lives (a colour of the graph, or a sleeping set) */
+static f32 DynamicsTestJointImpulse(const struct ds_Dynamics *pipeline, const ds_JointId id)
+{
+    const struct ds_Joint *joint = ds_JointLookup(pipeline, id).address;
+    const struct ds_JointSim *sim = (joint->set == SOLVER_SET_NULL)
+        ? pipeline->cgraph.color[joint->color].joint_sim_pool.buf + joint->sim
+        : pipeline->solver_set_pool.buf[joint->set].joint_sim_pool.buf + joint->sim;
+    return sim->distance.impulse;
+}
+
+/* a hanging chain sleeps under load: the joint sims and their impulses move with the island, the warm start holds it after waking (file comment) */
+static struct test_Output DynamicsJointSleepTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 1;
+
+    /*
+     * A static pivot and four boxes 1 m apart under it, at rest where the chain hangs; the fourth joins later and
+     * is dropped onto the ground at the end (an island splits only once all of it rests: it has to land).
+     */
+    const f32 L = 1.0f;
+    const v3 pivot = V3(0.0f, 6.0f, 0.0f);
+    const v3 hw = V3(0.25f, 0.25f, 0.25f);
+    const struct dynamics_TestBox scene[6] =
+    {
+        { .position = pivot, .rotation = QIdentity(), .hw = hw, .dynamic = 0, .friction = 0.5f },
+        { .position = V3Sub(pivot, V3(0.0f, 1.0f*L, 0.0f)), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+        { .position = V3Sub(pivot, V3(0.0f, 2.0f*L, 0.0f)), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+        { .position = V3Sub(pivot, V3(0.0f, 3.0f*L, 0.0f)), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+        { .position = V3Sub(pivot, V3(0.0f, 4.0f*L, 0.0f)), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+        { .position = V3(0.0f, -1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(16.0f, 1.0f, 16.0f), .dynamic = 0, .friction = 0.5f },
+    };
+    ds_BodyId id[4];
+    for (u32 i = 0; i < 4; ++i)
+    {
+        id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
+    }
+    DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + 5, (v3f64) { 0 }, 5);
+    const ds_Transform frame = ds_TransformIdentity();
+    struct ds_DistanceJointPrefab prefab;
+    ds_DistanceJointPrefab(&prefab, L);
+    ds_JointId jid[4];
+    for (u32 i = 0; i < 3; ++i)
+    {
+        jid[i] = ds_DistanceJointAdd(&pipeline, &prefab, id[i], &frame, id[i + 1], &frame);
+        TEST_NOT_ZERO(!ds_JointIdNullCheck(jid[i]));
+    }
+    const struct ds_Body *box[4] = { ds_BodyLookup(&pipeline, id[1]).address, ds_BodyLookup(&pipeline, id[2]).address, ds_BodyLookup(&pipeline, id[3]).address, NULL };
+    const f32 mass = box[0]->mass;
+    const f32 g = -g_solver_config->gravity.y;
+    const f32 h = pipeline.timestep;
+
+    /* the chain hangs still and falls asleep as one island with its three joints in the set, out of the colours */
+    u32 t;
+    for (t = 0; t < 600 && box[0]->set < SOLVER_SET_SLEEPING_FIRST; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(t < 600 && box[1]->set == box[0]->set && box[2]->set == box[0]->set);
+    const u32 chain_set = box[0]->set;
+    const struct ds_SolverSet *set = pipeline.solver_set_pool.buf + chain_set;
+    TEST_NOT_ZERO(set->joint_sim_pool.count == 3 && set->body_sim_pool.count == 3);
+    for (u32 i = 0; i < 3; ++i)
+    {
+        const struct ds_Joint *joint = ds_JointLookup(&pipeline, jid[i]).address;
+        TEST_NOT_ZERO(joint->set == chain_set && joint->color == CG_INVALID_COLOR && joint->island == box[0]->island);
+    }
+    ds_DynamicsValidate(&pipeline);
+
+    /*
+     * Each joint's cached impulse is the tick's weight below it: (3 - i) m g h, less the velocity damping's share
+     * (the solver damps the gravity velocity before the rows see it), negative since the rows push apart.
+     */
+    const f32 damp = 1.0f / (1.0f + g_solver_config->linear_dampening * h);
+    f32 impulse_sleeping[3];
+    for (u32 i = 0; i < 3; ++i)
+    {
+        impulse_sleeping[i] = DynamicsTestJointImpulse(&pipeline, jid[i]);
+        const f32 expected = -(f32) (3 - i) * mass * g * h * damp;
+        const u32 ok = F32Abs(impulse_sleeping[i] - expected) <= 0.02f * F32Abs(expected);
+        if (!ok)
+        {
+            fprintf(stderr, "joint sleep: joint %u sleeping impulse %g, expected %g\n", i, impulse_sleeping[i], expected);
+        }
+        TEST_NOT_ZERO(ok);
+    }
+
+    /* waking the set puts the joints back in the colours with their impulses; the warm start holds the chain still */
+    v3 position_before[3];
+    for (u32 i = 0; i < 3; ++i)
+    {
+        position_before[i] = V3F64Demote(DynamicsTestPose(&pipeline, id[i + 1]).position);
+    }
+    ds_SolverSetWakeUp(&pipeline, chain_set);
+    TEST_NOT_ZERO(box[0]->set == SOLVER_SET_ACTIVE && box[1]->set == SOLVER_SET_ACTIVE && box[2]->set == SOLVER_SET_ACTIVE);
+    for (u32 i = 0; i < 3; ++i)
+    {
+        const struct ds_Joint *joint = ds_JointLookup(&pipeline, jid[i]).address;
+        TEST_NOT_ZERO(joint->set == SOLVER_SET_NULL && joint->color != CG_INVALID_COLOR);
+        TEST_NOT_ZERO(DynamicsTestJointImpulse(&pipeline, jid[i]) == impulse_sleeping[i]);
+    }
+    ds_DynamicsValidate(&pipeline);
+    f32 drift = 0.0f;
+    for (t = 0; t < 10; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+        for (u32 i = 0; i < 3; ++i)
+        {
+            const v3 d = V3Sub(V3F64Demote(DynamicsTestPose(&pipeline, id[i + 1]).position), position_before[i]);
+            drift = F32Max(drift, V3Length(d));
+        }
+    }
+    if (drift > 1.0e-4f)
+    {
+        fprintf(stderr, "joint sleep: the chain drifted %g in the 10 ticks after waking\n", drift);
+    }
+    TEST_NOT_ZERO(drift <= 1.0e-4f);
+
+    /* it sleeps again; a joint to a fourth box wakes it and merges the islands; the longer chain sleeps with four joints */
+    for (t = 0; t < 600 && box[0]->set < SOLVER_SET_SLEEPING_FIRST; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(t < 600);
+    ds_BodyId id4 = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + 4, (v3f64) { 0 }, 4);
+    box[3] = ds_BodyLookup(&pipeline, id4).address;
+    jid[3] = ds_DistanceJointAdd(&pipeline, &prefab, id[3], &frame, id4, &frame);
+    TEST_NOT_ZERO(!ds_JointIdNullCheck(jid[3]));
+    TEST_NOT_ZERO(box[0]->set == SOLVER_SET_ACTIVE && box[3]->set == SOLVER_SET_ACTIVE && box[3]->island == box[0]->island);
+    TEST_NOT_ZERO((pipeline.island_pool.buf + box[0]->island)->joint_list.count == 4 && SnapshotTestSleepingSetCount(&pipeline) == 0);
+    ds_DynamicsValidate(&pipeline);
+    for (t = 0; t < 600 && box[0]->set < SOLVER_SET_SLEEPING_FIRST; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(t < 600 && box[3]->set == box[0]->set);
+    set = pipeline.solver_set_pool.buf + box[0]->set;
+    TEST_NOT_ZERO(set->joint_sim_pool.count == 4 && set->body_sim_pool.count == 4);
+    for (u32 i = 0; i < 4; ++i)
+    {
+        const f32 expected = -(f32) (4 - i) * mass * g * h * damp;
+        const f32 impulse = DynamicsTestJointImpulse(&pipeline, jid[i]);
+        const u32 ok = F32Abs(impulse - expected) <= 0.02f * F32Abs(expected);
+        if (!ok)
+        {
+            fprintf(stderr, "joint sleep: joint %u sleeping impulse %g after the merge, expected %g\n", i, impulse, expected);
+        }
+        TEST_NOT_ZERO(ok);
+    }
+    ds_DynamicsValidate(&pipeline);
+
+    /* removing the sleeping bottom joint wakes the chain: the fourth box drops to the ground, the island splits, both parts sleep */
+    const f32 y4 = (f32) DynamicsTestPose(&pipeline, id4).position.y;
+    ds_JointRemove(&pipeline, jid[3]);
+    TEST_NOT_ZERO(box[0]->set == SOLVER_SET_ACTIVE && box[3]->set == SOLVER_SET_ACTIVE && SnapshotTestSleepingSetCount(&pipeline) == 0);
+    ds_DynamicsValidate(&pipeline);
+    for (t = 0; t < 600 && (box[0]->set < SOLVER_SET_SLEEPING_FIRST || box[3]->set < SOLVER_SET_SLEEPING_FIRST); ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    TEST_NOT_ZERO(t < 600 && box[3]->set != box[0]->set && box[3]->island != box[0]->island);
+    set = pipeline.solver_set_pool.buf + box[0]->set;
+    TEST_NOT_ZERO(set->joint_sim_pool.count == 3 && set->body_sim_pool.count == 3);
+    TEST_NOT_ZERO((f32) DynamicsTestPose(&pipeline, id4).position.y < y4 - 1.0f);
+    const v3 d_top = V3F64Demote(V3F64Sub(DynamicsTestPose(&pipeline, id[1]).position, V3Promote(pivot)));
+    TEST_NOT_ZERO(F32Abs(V3Length(d_top) - L) <= g_solver_config->linear_slop);
+    ds_DynamicsValidate(&pipeline);
+
     ds_DynamicsFree(&pipeline);
     ds_SDBDealloc(cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -3057,6 +3275,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsSpringTest,
     DynamicsRangeSpringTest,
     DynamicsCoincidentAnchorsTest,
+    DynamicsJointSleepTest,
     DynamicsSlideTest,
     DynamicsBounceTest,
     DynamicsFirstTickTest,

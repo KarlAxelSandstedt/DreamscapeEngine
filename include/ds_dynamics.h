@@ -857,8 +857,8 @@ Damping Force: Proportional to the distance rate-of-change, opposite direction t
  *  () accumulated impulses (target row, lower, upper): persist across frames for the warm start and through sleep
  *  () per-step data from prepare: levers, axis, length, effective mass; soft mass, gamma, bias when the spring is on
  *  () decided: anchors closer than linear_slop give no axis; prepare keeps the previous tick's n and the
- *     cached impulses, and the position pass pushes along it. The add rejects a start inside linear_slop
- *     when range.low is above it (no previous axis, nowhere to push); a free lower bound may start there.
+ *     cached impulses, and the position pass pushes along it. A start inside linear_slop gets +x as its
+ *     first axis (a warning when range.low is above linear_slop: that first push has a made-up direction).
  */
 struct ds_DistanceJoint
 {
@@ -963,7 +963,8 @@ void        ds_RevoluteJointPrefabDefault(struct ds_RevoluteJointPrefab *prefab)
 
 /*
  * Setup joint in engine. Return non-null id on success, and null id on failure (a missing body, both ends on
- * one body, both static, or anchors within linear_slop while range.low is above it: nothing to push along).
+ * one body, both static). Anchors within linear_slop get +x as the joint's first axis, with a warning when
+ * range.low is above linear_slop (the first push along it has a made-up direction).
  */
 ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_DistanceJointPrefab *prefab, const ds_BodyId b0, const ds_Transform *local_frame0, const ds_BodyId b1, const ds_Transform *local_frame1);
 ds_JointId ds_RevoluteJointAdd(struct ds_Dynamics *pipeline, const struct ds_RevoluteJointPrefab *prefab, const ds_BodyId b0, const ds_Transform *local_frame0, const ds_BodyId b1, const ds_Transform *local_frame1);
