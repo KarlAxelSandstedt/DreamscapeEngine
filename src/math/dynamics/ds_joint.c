@@ -95,6 +95,7 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
     sim->local_frame[0] = *local_frame0;
     sim->local_frame[1] = *local_frame1;
     sim->type = type;
+    joint->type = type;
 
     return joint->id;
 }
@@ -699,18 +700,96 @@ void ds_DistanceJointPositionConstraintIterate(struct ds_JointSim *jsim, struct 
     bcomp[1]->rotation = QNormalize(QMul(quat_angle1, bcomp[1]->rotation));
 }
 
-/* ---------- Mouse Joints ---------- */
+/*
+ * The value functions turn a user's parameter into one the solver accepts: the parameter when it is valid,
+ * otherwise default_value with a warning (a prefab passes its default, a setter the joint's current value).
+ * The prefab constructors, the add and the setters share them. The hertz cap is the pipeline's, so it is a
+ * separate function for the callers that have one.
+ */
+static f32 ds_MouseJointHertzValue(const f32 hertz, const f32 default_value)
+{
+    if (hertz <= 0.0f)
+    {
+        Log(T_PHYSICS, S_WARNING, "mouse joint: hertz %f not positive, using %f", hertz, default_value);
+        return default_value;
+    }
+    return hertz;
+}
+
+static f32 ds_MouseJointHertzCap(const struct ds_Dynamics *pipeline, const f32 hertz)
+{
+    if (hertz > pipeline->joint_hertz_max)
+    {
+        Log(T_PHYSICS, S_WARNING, "mouse joint: hertz %f above joint_hertz_max %f, using the bound", hertz, pipeline->joint_hertz_max);
+        return pipeline->joint_hertz_max;
+    }
+    return hertz;
+}
+
+static f32 ds_MouseJointDampingRatioValue(const f32 damping_ratio, const f32 default_value)
+{
+    if (damping_ratio < 0.0f)
+    {
+        Log(T_PHYSICS, S_WARNING, "mouse joint: damping_ratio %f negative, using %f", damping_ratio, default_value);
+        return default_value;
+    }
+    return damping_ratio;
+}
+
+static f32 ds_MouseJointMaxForceValue(const f32 max_force, const f32 default_value)
+{
+    if (max_force < 0.0f)
+    {
+        Log(T_PHYSICS, S_WARNING, "mouse joint: max_force %f negative, using %f", max_force, default_value);
+        return default_value;
+    }
+    return max_force;
+}
+
+static f32 ds_MouseJointMaxTorqueValue(const f32 max_torque, const f32 default_value)
+{
+    if (max_torque < 0.0f)
+    {
+        Log(T_PHYSICS, S_WARNING, "mouse joint: max_torque %f negative, using %f", max_torque, default_value);
+        return default_value;
+    }
+    return max_torque;
+}
 
 void ds_MouseJointPrefab(struct ds_MouseJointPrefab *prefab, const v3f64 target, const f32 hertz, const f32 damping_ratio, const f32 max_force, const f32 max_torque)
 {
-    //TODO
     *prefab = (struct ds_MouseJointPrefab) { 0 };
+
+    prefab->target = target;
+    prefab->hertz = ds_MouseJointHertzValue(hertz, 1.0f);
+    prefab->damping_ratio = ds_MouseJointDampingRatioValue(damping_ratio, 1.0f);
+    prefab->max_force = ds_MouseJointMaxForceValue(max_force, 0.0f);
+    prefab->max_torque = ds_MouseJointMaxTorqueValue(max_torque, 0.0f);
 }
 
 void ds_MouseJointPrefabFromBody(struct ds_MouseJointPrefab *prefab, const struct ds_Dynamics *pipeline, const ds_BodyId body, const v3f64 target, const f32 hertz, const f32 damping_ratio, const f32 force_scale, const f32 torque_scale)
 {
-    //TODO
-    *prefab = (struct ds_MouseJointPrefab) { 0 };
+    const struct ds_Body *b = ds_BodyLookup(pipeline, body).address;
+    if (!b || !ds_BodyDynamicCheck(b))
+    {
+        /* a prefab that pulls with nothing: the joint can still be added, and does nothing */
+        Log(T_PHYSICS, S_WARNING, "mouse joint prefab: body %u missing or not dynamic, the prefab pulls with no force", ds_BodyIdIndex(body));
+        ds_MouseJointPrefab(prefab, target, hertz, damping_ratio, 0.0f, 0.0f);
+        return;
+    }
+
+    const struct ds_BodySim *bsim = pipeline->solver_set_pool.buf[b->set].body_sim_pool.buf + b->sim;
+    const f32 weight = b->mass * V3Length(g_solver_config->gravity);
+
+    /* radius of gyration sqrt(trace(I) / (3 m)); the sim stores Inv(I), and a dynamic body's inertia inverts */
+    //TODO(Research): i do not understand
+    m3 inertia;
+    const f32 det = M3Inverse(&inertia, bsim->local_inv_inertia);
+    ds_Assert(det > 0.0f);
+    const f32 trace = inertia.a11 + inertia.a22 + inertia.a33;
+    const f32 lever = F32Sqrt(trace / (3.0f * b->mass));
+
+    ds_MouseJointPrefab(prefab, target, hertz, damping_ratio, force_scale * weight, torque_scale * lever * weight);
 }
 
 ds_JointId ds_MouseJointAdd(struct ds_Dynamics *pipeline, const struct ds_MouseJointPrefab *prefab, const ds_BodyId anchor, const ds_BodyId b1, const ds_Transform *local_frame1)
@@ -719,24 +798,50 @@ ds_JointId ds_MouseJointAdd(struct ds_Dynamics *pipeline, const struct ds_MouseJ
     return ds_JointIdNull();
 }
 
+/* the setters write the sim of an awake mouse joint: wake its set first (a NO-OP for an awake island) */
 void ds_MouseJointTargetSet(struct ds_Dynamics *pipeline, const ds_JointId id, const v3f64 target)
 {
-    //TODO
+    struct ds_Joint *j = ds_JointLookup(pipeline, id).address;
+    if (j && j->type == DS_JOINT_TYPE_MOUSE)
+    {
+        ds_SolverSetWakeUp(pipeline, j->set);
+        struct ds_JointSim *sim = pipeline->cgraph.color[j->color].joint_sim_pool.buf + j->sim;
+        sim->mouse.target = target;
+    }
 }
 
 void ds_MouseJointSpringSet(struct ds_Dynamics *pipeline, const ds_JointId id, const f32 hertz, const f32 damping_ratio)
 {
-    //TODO
+    struct ds_Joint *j = ds_JointLookup(pipeline, id).address;
+    if (j && j->type == DS_JOINT_TYPE_MOUSE)
+    {
+        ds_SolverSetWakeUp(pipeline, j->set);
+        struct ds_JointSim *sim = pipeline->cgraph.color[j->color].joint_sim_pool.buf + j->sim;
+        sim->mouse.hertz = ds_MouseJointHertzCap(pipeline, ds_MouseJointHertzValue(hertz, sim->mouse.hertz));
+        sim->mouse.damping_ratio = ds_MouseJointDampingRatioValue(damping_ratio, sim->mouse.damping_ratio);
+    }
 }
 
 void ds_MouseJointStrengthSet(struct ds_Dynamics *pipeline, const ds_JointId id, const f32 max_force)
 {
-    //TODO
+    struct ds_Joint *j = ds_JointLookup(pipeline, id).address;
+    if (j && j->type == DS_JOINT_TYPE_MOUSE)
+    {
+        ds_SolverSetWakeUp(pipeline, j->set);
+        struct ds_JointSim *sim = pipeline->cgraph.color[j->color].joint_sim_pool.buf + j->sim;
+        sim->mouse.max_force = ds_MouseJointMaxForceValue(max_force, sim->mouse.max_force);
+    }
 }
 
 void ds_MouseJointFrictionSet(struct ds_Dynamics *pipeline, const ds_JointId id, const f32 max_torque)
 {
-    //TODO
+    struct ds_Joint *j = ds_JointLookup(pipeline, id).address;
+    if (j && j->type == DS_JOINT_TYPE_MOUSE)
+    {
+        ds_SolverSetWakeUp(pipeline, j->set);
+        struct ds_JointSim *sim = pipeline->cgraph.color[j->color].joint_sim_pool.buf + j->sim;
+        sim->mouse.max_torque = ds_MouseJointMaxTorqueValue(max_torque, sim->mouse.max_torque);
+    }
 }
 
 void ds_MouseJointConstraintInit(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2], const f32 timestep)

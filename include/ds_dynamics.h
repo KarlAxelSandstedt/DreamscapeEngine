@@ -970,7 +970,7 @@ struct ds_MouseJointPrefab
 /* 
  * Return a mouse prefab that pulls towards target with the given strength.
  *
- * hertz: Gives the oscillations per second. hertz <= 0 disables the pull. The add enforces
+ * hertz: Gives the oscillations per second. hertz <= 0 is replaced by 1. The add enforces
  *
  *          hertz <= physics_ticks_per_second / 4.0f.
  *
@@ -1069,6 +1069,7 @@ struct ds_Joint
 {
     POOL_NODE;
     ds_JointId          id;                    /* generational identifier */
+    enum ds_JointType   type;
 
     u32                 island;
     struct DLLNode   island_joint;
