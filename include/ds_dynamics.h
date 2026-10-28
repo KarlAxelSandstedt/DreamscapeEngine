@@ -878,11 +878,15 @@ struct ds_DistanceJoint
                                    kept from the previous tick within linear_slop       */
     f32     distance;           /* distance between joint frame 0 and joint frame 1     */
 	f32	    normal_mass;	    /* 1.0f / row(J,i)*Inv(M)*J^T                           */
-    f32     soft_mass;          /* TODO: docs (spring)                                  */
+    f32     soft_mass;          /* 1.0f / (1.0f / normal_mass + gamma), the spring row's
+                                   mass: the softer the spring, the less of a velocity
+                                   error one impulse removes                            */
     f32     target_mass;        /* mass of the row toward target: normal_mass (rigid),
                                    soft_mass (spring), 0 (free range: no such row)     */
-    f32     gamma;              /* TODO: docs (spring)                                  */
-    f32     bias_velocity;      /* TODO: docs (spring)                                  */
+    f32     gamma;              /* 1.0f / (h*(c + h*k)): velocity per unit of accumulated
+                                   impulse the spring row feeds back (0.0f: rigid)      */
+    f32     bias_velocity;      /* beta*(distance - target), beta = k / (c + h*k): the
+                                   velocity the spring row wants to add this tick       */
     f32     allowed_separation_velocity_min;    /* <= 0: reaches range.low at the end of the tick       */
     f32     allowed_separation_velocity_max;    /* >= 0: reaches range.high at the end of the tick      */
 
