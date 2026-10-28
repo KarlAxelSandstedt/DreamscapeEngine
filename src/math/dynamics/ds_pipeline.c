@@ -38,6 +38,7 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
 	{
 		.ns_tick = ns_tick,
         .timestep = (f32) ns_tick / NSEC_PER_SEC,
+        .joint_hertz_max = 1.0f / (JOINT_OSCILLATION_TICKS_MIN * ((f32) ns_tick / NSEC_PER_SEC)),
 		.frame = ArenaAlloc(mem, frame_memory),
 		.cshape_db = cshape_db,
 		.island_to_split = ds_IslandIdNull(),

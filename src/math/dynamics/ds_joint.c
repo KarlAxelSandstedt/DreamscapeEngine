@@ -411,6 +411,7 @@ static void ds_DistanceJointPrefabSpringSet(struct ds_DistanceJointPrefab *prefa
         prefab->enable_spring = 0;
         prefab->hertz = 0.0f;
     }
+
     if (damping_ratio < 0.0f)
     {
         Log(T_PHYSICS, S_WARNING, "distance joint prefab: damping_ratio %f negative, using 0", damping_ratio);
@@ -436,6 +437,34 @@ void ds_DistanceJointPrefabRangeSpring(struct ds_DistanceJointPrefab *prefab, co
 
 ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_DistanceJointPrefab *prefab, const ds_BodyId b0, const ds_Transform *local_frame0, const ds_BodyId b1, const ds_Transform *local_frame1)
 {
+    /*
+     * Anchors within linear_slop give the joint no axis, and prepare keeps the previous one; a joint that starts
+     * there with a lower bound demanding separation has no previous axis to push along, so it is rejected.
+     * A free lower bound (ropes, springs) may start there: the joint applies nothing until the anchors separate.
+     */
+    const f32 slop = g_solver_config->linear_slop;
+    if (prefab->range.low > slop)
+    {
+        const struct ds_Body *b[2] = { ds_BodyLookup(pipeline, b0).address, ds_BodyLookup(pipeline, b1).address };
+        if (b[0] && b[1])
+        {
+            const ds_Transform *local_frame[2] = { local_frame0, local_frame1 };
+            v3f64 anchor[2];
+            for (u32 i = 0; i < 2; ++i)
+            {
+                const struct ds_BodySim *bsim = pipeline->solver_set_pool.buf[b[i]->set].body_sim_pool.buf + b[i]->sim;
+                anchor[i] = V3F64Add(bsim->world.position, V3Promote(QUnitRotate(bsim->world.rotation, local_frame[i]->position)));
+            }
+
+            const f32 distance = V3Length(V3F64Demote(V3F64Sub(anchor[1], anchor[0])));
+            if (distance <= slop)
+            {
+                Log(T_PHYSICS, S_WARNING, "distance joint add rejected: anchors %f apart (within linear_slop %f) with range.low %f", distance, slop, prefab->range.low);
+                return ds_JointIdNull();
+            }
+        }
+    }
+
     const ds_JointId id = ds_JointAdd(pipeline, DS_JOINT_TYPE_DISTANCE, prefab->collide_connected, b0, local_frame0, b1, local_frame1);
     if (ds_JointIdNullCheck(id))
     {
@@ -446,7 +475,7 @@ ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_Dis
     struct ds_CGraphColor *color = pipeline->cgraph.color + joint->color;
     struct ds_JointSim *sim = color->joint_sim_pool.buf + joint->sim;
 
-    /* the prefab constructors clamp these; hand-written prefabs must respect the same bounds */
+    /* the prefab constructors clamp these; prefabs come from them only (header WARNING), so a violation is a bug, not input */
     ds_Assert(prefab->target >= g_solver_config->linear_slop);
     ds_Assert(prefab->range.low >= g_solver_config->linear_slop);
     ds_Assert(prefab->range.high >= prefab->range.low);
@@ -460,6 +489,13 @@ ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_Dis
     sim->distance.enable_spring = prefab->enable_spring;
     sim->distance.hertz = prefab->hertz;
     sim->distance.damping_ratio = prefab->damping_ratio;
+
+    const f32 hertz_max = pipeline->joint_hertz_max;
+    if (prefab->enable_spring && prefab->hertz > hertz_max)
+    {
+        Log(T_PHYSICS, S_WARNING, "distance joint add: hertz %f above joint_hertz_max %f, using the bound", prefab->hertz, hertz_max);
+        sim->distance.hertz = hertz_max;
+    }
 
     return id;
 }
@@ -483,16 +519,14 @@ void ds_DistanceJointConstraintInit(struct ds_JointSim *jsim, struct ds_BodyComp
     dj->allowed_separation_velocity_min = -F32Max(0.0f, dj->distance - dj->range.low) / timestep;
     dj->allowed_separation_velocity_max = F32Max(0.0f, dj->range.high - dj->distance) / timestep;
     
+    /*
+     * Below linear_slop the anchors give no axis; keep the previous tick's n (the add keeps it from being
+     * zero whenever a bound demands separation), so the rows and the position pass still push along the
+     * direction the anchors came from. The cached impulses keep their meaning along it.
+     */
     if (dj->distance > g_solver_config->linear_slop)
     {
         dj->n = V3Scale(diff, 1.0f/dj->distance);
-    }
-    else
-    {
-        dj->n = V3(0.0f, 0.0f, 0.0f);
-        dj->impulse = 0.0f;
-        dj->impulse_low = 0.0f;
-        dj->impulse_high = 0.0f;
     }
 
     const v3 cross[2] = 
@@ -632,9 +666,10 @@ void ds_DistanceJointPositionConstraintIterate(struct ds_JointSim *jsim, struct 
     const v3 diff = V3Add(jsim->com_diff, delta);
     const f32 distance = V3Length(diff);
     
+    /* below linear_slop: the axis prepare kept (see ds_DistanceJointConstraintInit) */
     const v3 n = (distance > g_solver_config->linear_slop)
           ? V3Scale(diff, 1.0f/distance)
-          : V3(0.0f, 0.0f, 0.0f);
+          : dj->n;
 
     const v3 rn0 = V3Cross(r0, n);
     const v3 rn1 = V3Cross(r1, n);

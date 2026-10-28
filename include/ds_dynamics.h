@@ -838,7 +838,8 @@ it towards target. The range is always enforced; the configuration names are tem
     spring:         range = [linear_slop, JOINT_LENGTH_MAX] and enable_spring: the distance oscillates about target;
                     hertz = oscillations per second, damping_ratio = how fast the oscillation dies out (0 never,
                     1 settles without overshoot). The spring prefabs disable the spring for hertz <= 0 and use
-                    0 for a negative damping_ratio, with a warning; the add asserts both on a hand-written prefab.
+                    0 for a negative damping_ratio, with a warning; the add asserts both, and clamps hertz to
+                    the pipeline's joint_hertz_max with a warning.
     range spring:   the spring inside a finite range: soft about target, but never outside [low, high]
                     (a suspension with end stops).
 //TODO
@@ -855,8 +856,9 @@ Damping Force: Proportional to the distance rate-of-change, opposite direction t
  *  () configuration from the prefab; keep hertz + damping_ratio, not stiffness: masses can change, convert in prepare
  *  () accumulated impulses (target row, lower, upper): persist across frames for the warm start and through sleep
  *  () per-step data from prepare: levers, axis, length, effective mass; soft mass, gamma, bias when the spring is on
- *  () decided: anchors closer than linear_slop give no axis; prepare skips the joint that step (axis 0, effective
- *     mass 0) and zeroes its accumulated impulses so no stale direction is warm started (Box2D v2.4)
+ *  () decided: anchors closer than linear_slop give no axis; prepare keeps the previous tick's n and the
+ *     cached impulses, and the position pass pushes along it. The add rejects a start inside linear_slop
+ *     when range.low is above it (no previous axis, nowhere to push); a free lower bound may start there.
  */
 struct ds_DistanceJoint
 {
@@ -872,7 +874,8 @@ struct ds_DistanceJoint
                                    > 1.0f => returns to target, but creeps in slower    */
 
     /* Per-tick solver data */
-    v3      n;                  /* Normal direction: joint frame 0 -> joint frame 1     */
+    v3      n;                  /* Normal direction: joint frame 0 -> joint frame 1;
+                                   kept from the previous tick within linear_slop       */
     f32     distance;           /* distance between joint frame 0 and joint frame 1     */
 	f32	    normal_mass;	    /* 1.0f / row(J,i)*Inv(M)*J^T                           */
     f32     soft_mass;          /* TODO: docs (spring)                                  */
@@ -890,6 +893,7 @@ struct ds_DistanceJoint
 };
 
 //TODO docs 
+/* WARNING: fill only through the ds_DistanceJointPrefab* constructors below; a hand-filled prefab is asserted at add, not checked */
 struct ds_DistanceJointPrefab
 {
     u32     collide_connected;  /* Boolean: collide linked bodies               */
@@ -914,6 +918,7 @@ void    ds_DistanceJointPrefabRangeSpring(struct ds_DistanceJointPrefab *prefab,
 /*
  * TODO: we fix distance joints first, and handle more difficult joints later. Many decisions
  * goes here when setting up a reasonable API; 
+ * WARNING: fill only through ds_MouseJointPrefabDefault; a hand-filled prefab is not checked
  */
 struct ds_MouseJointPrefab
 {
@@ -939,6 +944,7 @@ void        ds_MouseJointPrefabDefault(struct ds_MouseJointPrefab *prefab);
  *  () Communicate clearly where angle/joint limits begin in the local joint space
  *  () what about world-space API? We create  stuff in world-space, so we need both good 
  *      visual representations as well as good APIs...
+ * WARNING: fill only through ds_RevoluteJointPrefabDefault; a hand-filled prefab is not checked
  */
 struct ds_RevoluteJointPrefab
 {
@@ -955,7 +961,10 @@ void        ds_RevoluteJointPrefabDefault(struct ds_RevoluteJointPrefab *prefab)
 
 /* ---------- Joints ---------- */
 
-/* Setup joint in engine. Return non-null id on success, and null id on failure. */
+/*
+ * Setup joint in engine. Return non-null id on success, and null id on failure (a missing body, both ends on
+ * one body, both static, or anchors within linear_slop while range.low is above it: nothing to push along).
+ */
 ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_DistanceJointPrefab *prefab, const ds_BodyId b0, const ds_Transform *local_frame0, const ds_BodyId b1, const ds_Transform *local_frame1);
 ds_JointId ds_RevoluteJointAdd(struct ds_Dynamics *pipeline, const struct ds_RevoluteJointPrefab *prefab, const ds_BodyId b0, const ds_Transform *local_frame0, const ds_BodyId b1, const ds_Transform *local_frame1);
 ds_JointId ds_MouseJointAdd(struct ds_Dynamics *pipeline, const struct ds_MouseJointPrefab *prefab, const ds_BodyId anchor, const ds_BodyId b1, const ds_Transform *local_frame1);
@@ -1696,6 +1705,13 @@ u32 ds_RemovalJobPhaseDispatch(const ds_JobId job);
 #define GRAVITY_CONSTANT_DEFAULT 9.80665f
 /* Longest joint length and range bound, meters; an "unbounded" range ends here (ds_DistanceJointClampRange) */
 #define JOINT_LENGTH_MAX 1.0e5f
+/*
+ * Fewest ticks per spring oscillation: a joint's hertz is clamped to 1 / (JOINT_OSCILLATION_TICKS_MIN * timestep),
+ * ds_Dynamics.joint_hertz_max, at add. Erin Catto, GDC 2011 "Soft Constraints": a spring needs at least 4 steps per oscillation, below that an
+ * explicitly stepped spring blows up and a spring is indistinguishable from a rigid constraint anyway. The soft
+ * row is implicit and does not blow up, but past that rate hertz no longer describes the motion.
+ */
+#define JOINT_OSCILLATION_TICKS_MIN 4.0f
 
 #define PHYSICS_EVENT_ISLAND(pipeline, event_type, island_index)					        \
 	{												                                        \
@@ -1808,6 +1824,8 @@ struct ds_Dynamics
 	u64 			                frames_completed;	    /* number of completed physics frames */ 
 
     f32                             timestep;
+    f32                             joint_hertz_max;        /* 1 / (JOINT_OSCILLATION_TICKS_MIN * timestep): a joint spring's hertz is clamped to it at add.
+                                                               TODO: move somewhere suitable (the solver config is one global shared by every pipeline) */
 
 	ds_SDB(c_Shape) *	            cshape_db;		        /* externally owned */
 	ds_SDB(ds_BodyPrefab) *	        body_prefab_db;		    /* externally owned */

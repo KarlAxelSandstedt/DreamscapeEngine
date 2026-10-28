@@ -105,6 +105,14 @@ grows monotonically to the same rest, no overshoot. Range spring [1.5, 2.2] m at
 point lies 1 m below the target, beyond range.high, so the box comes to rest on range.high within linear_slop
 and never passes it by more.
 
+Coincident anchors (DynamicsCoincidentAnchorsTest): both anchors on one point give the joint no axis. The add
+rejects a rigid joint and a range with range.low above linear_slop there (nothing to push along), and accepts a
+rope [linear_slop, 3] and a spring; the spring applies nothing until gravity separates the anchors, then settles
+the box g / omega^2 below its target, straight under the point. A rigid joint of length 2 m along +x whose box
+is then put on the anchor keeps +x as its axis: after one tick the position pass has pushed the box out along
+it by at least half max_linear_correction (gravity alone would drop it straight down), the length is back within
+10 ticks and holds to 2 linear_slop through the swing that follows, with no motion out of the plane.
+
 Solver (DynamicsSlideTest, DynamicsBounceTest): a frictionless box on a 30 degree slope slides for a second;
 its downhill speed matches the per-tick recurrence v = (v + g sin(a) dt) / (1 + d dt) of the solver's gravity
 and damping within 1 % (the contacts cancel only the normal part), nothing across the slope, no spin. A box
@@ -2295,6 +2303,138 @@ static struct test_Output DynamicsRangeSpringTest(struct test_Environment *env)
     return output;
 }
 
+/* teleport a body to position with zero velocity; the next tick reads the pose from the sim (ds_BodyUpdateSolverDataRange) */
+static void DynamicsTestTeleport(struct ds_Dynamics *pipeline, const ds_BodyId id, const v3 position)
+{
+    const struct ds_Body *body = ds_BodyLookup(pipeline, id).address;
+    ds_Assert(body->set == SOLVER_SET_ACTIVE);
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + body->set;
+    active->body_sim_pool.buf[body->sim].world.position = V3Promote(position);
+    active->body_compute_pool.buf[body->sim].linear_velocity = V3Zero();
+    active->body_compute_pool.buf[body->sim].angular_velocity = V3Zero();
+}
+
+/* anchors on one point: the add rejects a bound that demands separation, a free bound waits; a rigid joint pushes along its kept axis (file comment) */
+static struct test_Output DynamicsCoincidentAnchorsTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 0;
+
+    /* the anchor point P is 2 m below the static box and 3 m above the dynamic one: the boxes never touch */
+    const f32 L = 2.0f;
+    const v3 P = V3(0.0f, 6.0f, 0.0f);
+    const struct dynamics_TestBox scene[2] =
+    {
+        { .position = V3Add(P, V3(0.0f, 2.0f, 0.0f)), .rotation = QIdentity(), .hw = V3(0.25f, 0.25f, 0.25f), .dynamic = 0, .friction = 0.5f },
+        { .position = V3Sub(P, V3(0.0f, 3.0f, 0.0f)), .rotation = QIdentity(), .hw = V3(0.25f, 0.25f, 0.25f), .dynamic = 1, .friction = 0.5f },
+    };
+    ds_BodyId id[2];
+    for (u32 i = 0; i < 2; ++i)
+    {
+        id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
+    }
+    const ds_Transform frame_static = { .rotation = QIdentity(), .position = V3(0.0f, -2.0f, 0.0f) };
+    const ds_Transform frame_up = { .rotation = QIdentity(), .position = V3(0.0f, 3.0f, 0.0f) };
+    const ds_Transform frame = ds_TransformIdentity();
+    const f32 slop = g_solver_config->linear_slop;
+
+    /* both anchors at P: a rigid joint and a range with low above linear_slop are rejected, free lower bounds accepted */
+    struct ds_DistanceJointPrefab rigid, range, rope, spring;
+    ds_DistanceJointPrefab(&rigid, L);
+    ds_DistanceJointPrefabRange(&range, Intv(1.0f, 3.0f));
+    ds_DistanceJointPrefabRange(&rope, Intv(slop, 3.0f));
+    ds_DistanceJointPrefabSpring(&spring, L, 1.0f, 1.0f);
+    TEST_NOT_ZERO(ds_JointIdNullCheck(ds_DistanceJointAdd(&pipeline, &rigid, id[0], &frame_static, id[1], &frame_up)));
+    TEST_NOT_ZERO(ds_JointIdNullCheck(ds_DistanceJointAdd(&pipeline, &range, id[0], &frame_static, id[1], &frame_up)));
+    TEST_NOT_ZERO(pipeline.joint_pool.count == 0);
+    const ds_JointId rope_id = ds_DistanceJointAdd(&pipeline, &rope, id[0], &frame_static, id[1], &frame_up);
+    TEST_NOT_ZERO(!ds_JointIdNullCheck(rope_id));
+    ds_JointRemove(&pipeline, rope_id);
+    const ds_JointId spring_id = ds_DistanceJointAdd(&pipeline, &spring, id[0], &frame_static, id[1], &frame_up);
+    TEST_NOT_ZERO(!ds_JointIdNullCheck(spring_id));
+
+    /*
+     * The spring applies nothing while the anchors coincide; gravity separates them within two ticks and the
+     * critically damped spring then settles the box g / omega^2 below the target, straight under P.
+     */
+    const f32 omega = F32_PI2 * spring.hertz;
+    const f32 rest = L - g_solver_config->gravity.y / (omega * omega);
+    for (u32 t = 0; t < 180; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    {
+        const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id[1]);
+        const v3 anchor = V3F64Demote(V3F64Sub(pose.position, V3Promote(P)));
+        const v3 d = V3Add(anchor, QUnitRotate(pose.rotation, frame_up.position));
+        const u32 ok = F32Abs(V3Length(d) - rest) <= 0.02f && F32Abs(d.x) <= 1.0e-3f && F32Abs(d.z) <= 1.0e-3f && d.y < 0.0f;
+        if (!ok)
+        {
+            fprintf(stderr, "coincident anchors, spring: distance %f (expected %f), d = (%f, %f, %f)\n", V3Length(d), rest, d.x, d.y, d.z);
+        }
+        TEST_NOT_ZERO(ok);
+    }
+    ds_JointRemove(&pipeline, spring_id);
+
+    /*
+     * A rigid joint of length L along +x, one tick to make that its axis, then the box is put on P. The next
+     * tick finds no axis and keeps +x: the position pass pushes the box out along it (gravity alone would drop
+     * it straight down). The length is back within a few ticks, and holds through the swing that follows.
+     */
+    DynamicsTestTeleport(&pipeline, id[1], V3Add(P, V3(L, 0.0f, 0.0f)));
+    TEST_NOT_ZERO(!ds_JointIdNullCheck(ds_DistanceJointAdd(&pipeline, &rigid, id[0], &frame_static, id[1], &frame)));
+    SnapshotTestTick(&pipeline);
+    DynamicsTestTeleport(&pipeline, id[1], P);
+    SnapshotTestTick(&pipeline);
+    {
+        const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id[1]);
+        const v3 d = V3F64Demote(V3F64Sub(pose.position, V3Promote(P)));
+        const u32 ok = d.x >= 0.5f * g_solver_config->max_linear_correction && F32Abs(d.z) <= 1.0e-6f;
+        if (!ok)
+        {
+            fprintf(stderr, "coincident anchors, rigid: after one tick d = (%f, %f, %f), max_linear_correction %f\n", d.x, d.y, d.z, g_solver_config->max_linear_correction);
+        }
+        TEST_NOT_ZERO(ok);
+    }
+    f32 length_error = 0.0f;
+    f32 out_of_plane = 0.0f;
+    u32 t;
+    for (t = 0; t < 10; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    for (; t < 120; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+        const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id[1]);
+        const v3 d = V3F64Demote(V3F64Sub(pose.position, V3Promote(P)));
+        length_error = F32Max(length_error, F32Abs(V3Length(d) - L));
+        out_of_plane = F32Max(out_of_plane, F32Abs(d.z));
+    }
+    {
+        const u32 ok = length_error <= 2.0f * slop && out_of_plane <= 1.0e-4f;
+        if (!ok)
+        {
+            fprintf(stderr, "coincident anchors, rigid: length error %g, out of plane %g\n", length_error, out_of_plane);
+        }
+        TEST_NOT_ZERO(ok);
+    }
+
+    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 /* a frictionless box sliding down a 30 degree slope against the damped free-slide recurrence (file comment) */
 static struct test_Output DynamicsSlideTest(struct test_Environment *env)
 {
@@ -2916,6 +3056,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsSlackRopeTest,
     DynamicsSpringTest,
     DynamicsRangeSpringTest,
+    DynamicsCoincidentAnchorsTest,
     DynamicsSlideTest,
     DynamicsBounceTest,
     DynamicsFirstTickTest,
