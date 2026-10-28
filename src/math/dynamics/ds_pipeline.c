@@ -38,7 +38,7 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
 	{
 		.ns_tick = ns_tick,
         .timestep = (f32) ns_tick / NSEC_PER_SEC,
-        .joint_hertz_max = 1.0f / (JOINT_OSCILLATION_TICKS_MIN * ((f32) ns_tick / NSEC_PER_SEC)),
+        .spring_hertz_max = 1.0f / (JOINT_OSCILLATION_TICKS_MIN * ((f32) ns_tick / NSEC_PER_SEC)),
 		.frame = ArenaAlloc(mem, frame_memory),
 		.cshape_db = cshape_db,
 		.island_to_split = ds_IslandIdNull(),
@@ -99,6 +99,16 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
 
 }
 
+/* the mouse joints' anchor gets the fixed id DS_BODY_MOUSE_ANCHOR_ID: the first add into an empty pool */
+static void ds_DynamicsMouseAnchorAdd(struct ds_Dynamics *pipeline)
+{
+    ds_Assert(pipeline->body_pool.count == 0);
+    const struct ds_BodyPrefab prefab = { .dynamic = 0 };
+    const ds_TransformWorld t_world = ds_TransformWorldIdentity();
+    const ds_BodyId id = ds_BodyAdd(pipeline, &prefab, &t_world, U32_MAX);
+    ds_Assert(ds_BodyIdEqual(id, DS_BODY_MOUSE_ANCHOR_ID));
+}
+
 struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, ds_SDB(c_Shape) *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size)
 {
 	struct ds_Dynamics pipeline;
@@ -145,6 +155,8 @@ struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, c
     ds_Assert(set_disabled.index == SOLVER_SET_DISABLED);
     ds_Assert(set_static.index == SOLVER_SET_STATIC);
     ds_Assert(set_active.index == SOLVER_SET_ACTIVE);
+
+    ds_DynamicsMouseAnchorAdd(&pipeline);
 
 	return pipeline;
 }
@@ -241,6 +253,8 @@ void ds_DynamicsFlush(struct ds_Dynamics *pipeline)
 	pipeline->frames_completed = 0;
 	pipeline->ns_elapsed = 0;
     pipeline->island_to_split = ds_IslandIdNull();
+
+    ds_DynamicsMouseAnchorAdd(pipeline);
 }
 
 void ds_DynamicsValidate(const struct ds_Dynamics *pipeline)

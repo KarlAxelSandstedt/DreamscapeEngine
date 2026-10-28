@@ -558,6 +558,13 @@ struct ds_BodyCompute
 };
 DEFINE_CPOOL_STRUCT(ds_BodyCompute);
 
+/*
+ * The mouse joints' anchor: a static body without shapes at a fixed index, added by ds_DynamicsAlloc and
+ * ds_DynamicsFlush and restored with the body pool by a snapshot. It takes no part in collision; its only
+ * purpose is to be the second body of every mouse joint. It cannot be removed.
+ */
+#define DS_BODY_MOUSE_ANCHOR_ID ds_BodyIdInit(0,1)
+
 /* Add a new rigid body with the prefab properties, and return its unique identifier. */
 ds_BodyId  ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *prefab, const ds_TransformWorld *t_world, const u32 entity);
 /* Free the given body */
@@ -839,7 +846,7 @@ it towards target. The range is always enforced; the configuration names are tem
                     hertz = oscillations per second, damping_ratio = how fast the oscillation dies out (0 never,
                     1 settles without overshoot). The spring prefabs disable the spring for hertz <= 0 and use
                     0 for a negative damping_ratio, with a warning; the add asserts both, and clamps hertz to
-                    the pipeline's joint_hertz_max with a warning.
+                    the pipeline's spring_hertz_max with a warning.
     range spring:   the spring inside a finite range: soft about target, but never outside [low, high]
                     (a suspension with end stops).
 */
@@ -1032,17 +1039,16 @@ void        ds_RevoluteJointPrefabDefault(struct ds_RevoluteJointPrefab *prefab)
 /*
  * Add a distance joint between b0 and b1, anchored at the origins of the given body-local frames. On success,
  * return the joint's id. On failure (a missing body, both anchors on one body, both bodies static), return
- * the null id. The prefab's hertz is clamped to the pipeline's joint_hertz_max. Anchors closer than
+ * the null id. The prefab's hertz is clamped to the pipeline's spring_hertz_max. Anchors closer than
  * linear_slop get +x as the joint's first axis.
  */
 ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_DistanceJointPrefab *prefab, const ds_BodyId b0, const ds_Transform *local_frame0, const ds_BodyId b1, const ds_Transform *local_frame1);
 ds_JointId ds_RevoluteJointAdd(struct ds_Dynamics *pipeline, const struct ds_RevoluteJointPrefab *prefab, const ds_BodyId b0, const ds_Transform *local_frame0, const ds_BodyId b1, const ds_Transform *local_frame1);
 /*
- * Add a mouse joint pulling body b1 at local_frame1's origin towards the prefab's target. anchor is a static
- * body without shapes. On success, return the joint's id. On failure (a missing body, anchor not static,
- * b1 not dynamic), return the null id.
+ * Add a mouse joint pulling body at local_frame's origin towards the prefab's target. On success, return the
+ * joint's id. On failure (a missing body, body not dynamic), return the null id.
  */
-ds_JointId ds_MouseJointAdd(struct ds_Dynamics *pipeline, const struct ds_MouseJointPrefab *prefab, const ds_BodyId anchor, const ds_BodyId b1, const ds_Transform *local_frame1);
+ds_JointId ds_MouseJointAdd(struct ds_Dynamics *pipeline, const struct ds_MouseJointPrefab *prefab, const ds_BodyId body, const ds_Transform *local_frame);
 
 
 
@@ -1788,7 +1794,7 @@ u32 ds_RemovalJobPhaseDispatch(const ds_JobId job);
 #define JOINT_LENGTH_MAX 1.0e5f
 /*
  * Fewest ticks per spring oscillation: a joint's hertz is clamped to 1 / (JOINT_OSCILLATION_TICKS_MIN * timestep),
- * ds_Dynamics.joint_hertz_max, at add. Erin Catto, GDC 2011 "Soft Constraints": a spring needs at least 4 steps per oscillation, below that an
+ * ds_Dynamics.spring_hertz_max, at add. Erin Catto, GDC 2011 "Soft Constraints": a spring needs at least 4 steps per oscillation, below that an
  * explicitly stepped spring blows up and a spring is indistinguishable from a rigid constraint anyway. The soft
  * row is implicit and does not blow up, but past that rate hertz no longer describes the motion.
  */
@@ -1905,7 +1911,7 @@ struct ds_Dynamics
 	u64 			                frames_completed;	    /* number of completed physics frames */ 
 
     f32                             timestep;
-    f32                             joint_hertz_max;        /* 1 / (JOINT_OSCILLATION_TICKS_MIN * timestep): a joint spring's hertz is clamped to it at add.
+    f32                             spring_hertz_max;        /* 1 / (JOINT_OSCILLATION_TICKS_MIN * timestep): a joint spring's hertz is clamped to it at add.
                                                                TODO: move somewhere suitable (the solver config is one global shared by every pipeline) */
 
 	ds_SDB(c_Shape) *	            cshape_db;		        /* externally owned */

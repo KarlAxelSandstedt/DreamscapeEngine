@@ -109,6 +109,11 @@ void ds_BodyRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, const ds
     {
         return;
     }
+    if (ds_BodyIdEqual(id, DS_BODY_MOUSE_ANCHOR_ID))
+    {
+        Log(T_PHYSICS, S_WARNING, "body remove rejected: body %u is the mouse joints' anchor", body_index);
+        return;
+    }
     ds_Assert(ds_BitSetGet(&pipeline->body_usage_set, body_index));
 
     const u32 mass_properties_update = 0;

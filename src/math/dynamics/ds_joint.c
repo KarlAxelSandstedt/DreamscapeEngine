@@ -351,6 +351,17 @@ struct slot ds_JointLookup(const struct ds_Dynamics *pipeline, const ds_JointId 
         : (struct slot) { .index = U32_MAX, .address = NULL };
 }
 
+/* a joint spring's hertz is bounded by the pipeline's tick (spring_hertz_max); every spring joint applies it at add and set */
+static f32 ds_SpringHertzBound(const struct ds_Dynamics *pipeline, const f32 hertz)
+{
+    if (hertz > pipeline->spring_hertz_max)
+    {
+        Log(T_PHYSICS, S_WARNING, "joint spring: hertz %f above spring_hertz_max %f, using the bound", hertz, pipeline->spring_hertz_max);
+        return pipeline->spring_hertz_max;
+    }
+    return hertz;
+}
+
 /*
  * A distance below linear_slop leaves the joint no axis to act along, so the prefabs keep every length at or
  * above it. The lower bound is what holds the anchors apart; at linear_slop it is as good as no bound.
@@ -487,15 +498,8 @@ ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_Dis
     sim->distance.target = prefab->target;
     sim->distance.range = prefab->range;
     sim->distance.enable_spring = prefab->enable_spring;
-    sim->distance.hertz = prefab->hertz;
+    sim->distance.hertz = prefab->enable_spring ? ds_SpringHertzBound(pipeline, prefab->hertz) : prefab->hertz;
     sim->distance.damping_ratio = prefab->damping_ratio;
-
-    const f32 hertz_max = pipeline->joint_hertz_max;
-    if (prefab->enable_spring && prefab->hertz > hertz_max)
-    {
-        Log(T_PHYSICS, S_WARNING, "distance joint add: hertz %f above joint_hertz_max %f, using the bound", prefab->hertz, hertz_max);
-        sim->distance.hertz = hertz_max;
-    }
 
     return id;
 }
@@ -703,8 +707,7 @@ void ds_DistanceJointPositionConstraintIterate(struct ds_JointSim *jsim, struct 
 /*
  * The value functions turn a user's parameter into one the solver accepts: the parameter when it is valid,
  * otherwise default_value with a warning (a prefab passes its default, a setter the joint's current value).
- * The prefab constructors, the add and the setters share them. The hertz cap is the pipeline's, so it is a
- * separate function for the callers that have one.
+ * The prefab constructors, the add and the setters share them; the hertz cap is ds_SpringHertzBound.
  */
 static f32 ds_MouseJointHertzValue(const f32 hertz, const f32 default_value)
 {
@@ -712,16 +715,6 @@ static f32 ds_MouseJointHertzValue(const f32 hertz, const f32 default_value)
     {
         Log(T_PHYSICS, S_WARNING, "mouse joint: hertz %f not positive, using %f", hertz, default_value);
         return default_value;
-    }
-    return hertz;
-}
-
-static f32 ds_MouseJointHertzCap(const struct ds_Dynamics *pipeline, const f32 hertz)
-{
-    if (hertz > pipeline->joint_hertz_max)
-    {
-        Log(T_PHYSICS, S_WARNING, "mouse joint: hertz %f above joint_hertz_max %f, using the bound", hertz, pipeline->joint_hertz_max);
-        return pipeline->joint_hertz_max;
     }
     return hertz;
 }
@@ -792,12 +785,6 @@ void ds_MouseJointPrefabFromBody(struct ds_MouseJointPrefab *prefab, const struc
     ds_MouseJointPrefab(prefab, target, hertz, damping_ratio, force_scale * weight, torque_scale * lever * weight);
 }
 
-ds_JointId ds_MouseJointAdd(struct ds_Dynamics *pipeline, const struct ds_MouseJointPrefab *prefab, const ds_BodyId anchor, const ds_BodyId b1, const ds_Transform *local_frame1)
-{
-    //TODO
-    return ds_JointIdNull();
-}
-
 /* the setters write the sim of an awake mouse joint: wake its set first (a NO-OP for an awake island) */
 void ds_MouseJointTargetSet(struct ds_Dynamics *pipeline, const ds_JointId id, const v3f64 target)
 {
@@ -817,7 +804,7 @@ void ds_MouseJointSpringSet(struct ds_Dynamics *pipeline, const ds_JointId id, c
     {
         ds_SolverSetWakeUp(pipeline, j->set);
         struct ds_JointSim *sim = pipeline->cgraph.color[j->color].joint_sim_pool.buf + j->sim;
-        sim->mouse.hertz = ds_MouseJointHertzCap(pipeline, ds_MouseJointHertzValue(hertz, sim->mouse.hertz));
+        sim->mouse.hertz = ds_SpringHertzBound(pipeline, ds_MouseJointHertzValue(hertz, sim->mouse.hertz));
         sim->mouse.damping_ratio = ds_MouseJointDampingRatioValue(damping_ratio, sim->mouse.damping_ratio);
     }
 }
@@ -842,6 +829,31 @@ void ds_MouseJointFrictionSet(struct ds_Dynamics *pipeline, const ds_JointId id,
         struct ds_JointSim *sim = pipeline->cgraph.color[j->color].joint_sim_pool.buf + j->sim;
         sim->mouse.max_torque = ds_MouseJointMaxTorqueValue(max_torque, sim->mouse.max_torque);
     }
+}
+
+ds_JointId ds_MouseJointAdd(struct ds_Dynamics *pipeline, const struct ds_MouseJointPrefab *prefab, const ds_BodyId body, const ds_Transform *local_frame)
+{
+    const ds_Transform anchor_frame = ds_TransformIdentity();
+    const ds_JointId id = ds_JointAdd(pipeline, DS_JOINT_TYPE_MOUSE, 0, body, local_frame, DS_BODY_MOUSE_ANCHOR_ID, &anchor_frame);
+    if (ds_JointIdNullCheck(id))
+    {
+        return ds_JointIdNull();
+    }
+
+    struct ds_Joint *joint = pipeline->joint_pool.buf + ds_JointIdIndex(id);
+    struct ds_CGraphColor *color = pipeline->cgraph.color + joint->color;
+    struct ds_JointSim *sim = color->joint_sim_pool.buf + joint->sim;
+
+    ds_Assert(prefab->hertz > 0.0f && prefab->damping_ratio >= 0.0f);
+    sim->mouse = (struct ds_MouseJoint) { 0 };
+
+    sim->mouse.target = prefab->target;
+    sim->mouse.hertz = ds_SpringHertzBound(pipeline, prefab->hertz);
+    sim->mouse.damping_ratio = prefab->damping_ratio;
+    sim->mouse.max_force = prefab->max_force;
+    sim->mouse.max_torque = prefab->max_torque;
+
+    return id;
 }
 
 void ds_MouseJointConstraintInit(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2], const f32 timestep)

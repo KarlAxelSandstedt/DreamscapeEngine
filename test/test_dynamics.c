@@ -990,14 +990,14 @@ static struct test_Output DynamicsBodyTest(struct test_Environment *env)
     /* removal: the usage bit goes, the id dies, and removing it again changes nothing */
     const u32 index_a = ds_BodyIdIndex(a);
     ds_BodyRemove(&mem, &pipeline, a);
-    TEST_NOT_ZERO(ds_BodyLookup(&pipeline, a).address == NULL && pipeline.body_pool.count == 1 && pipeline.shape_pool.count == 1);
+    TEST_NOT_ZERO(ds_BodyLookup(&pipeline, a).address == NULL && pipeline.body_pool.count == 2 && pipeline.shape_pool.count == 1);
     TEST_NOT_ZERO(ds_BitSetGet(&pipeline.body_usage_set, index_a) == 0);
     const struct ds_Body *body_b = ds_BodyLookup(&pipeline, b).address;
     const u32 sim_b = body_b->sim;
     ds_BodyRemove(&mem, &pipeline, a);
-    TEST_NOT_ZERO(pipeline.body_pool.count == 1 && ds_BodyLookup(&pipeline, b).address == body_b && body_b->sim == sim_b);
+    TEST_NOT_ZERO(pipeline.body_pool.count == 2 && ds_BodyLookup(&pipeline, b).address == body_b && body_b->sim == sim_b);
     const struct ds_SolverSet *static_set = pipeline.solver_set_pool.buf + SOLVER_SET_STATIC;
-    TEST_NOT_ZERO(static_set->body_sim_pool.count == 1 && static_set->body_sim_pool.buf[sim_b].world.position.x == -5.0);
+    TEST_NOT_ZERO(static_set->body_sim_pool.count == 2 && static_set->body_sim_pool.buf[sim_b].world.position.x == -5.0);
 
     /* the slot is reusable with a new generation */
     const ds_BodyId c = ds_BodyAdd(&pipeline, &dynamic_prefab, &t_a, 2);
@@ -1005,7 +1005,11 @@ static struct test_Output DynamicsBodyTest(struct test_Environment *env)
 
     ds_BodyRemove(&mem, &pipeline, b);
     ds_BodyRemove(&mem, &pipeline, c);
-    TEST_NOT_ZERO(pipeline.body_pool.count == 0 && pipeline.shape_pool.count == 0);
+    TEST_NOT_ZERO(pipeline.body_pool.count == 1 && pipeline.shape_pool.count == 0);
+
+    /* the mouse anchor stays: its removal is refused */
+    ds_BodyRemove(&mem, &pipeline, DS_BODY_MOUSE_ANCHOR_ID);
+    TEST_NOT_ZERO(pipeline.body_pool.count == 1 && ds_BodyLookup(&pipeline, DS_BODY_MOUSE_ANCHOR_ID).address != NULL);
 
     ds_DynamicsFree(&pipeline);
     ds_SDBDealloc(cshape_db);
@@ -2796,7 +2800,7 @@ static struct test_Output DynamicsFirstTickTest(struct test_Environment *env)
         const struct dynamics_TestBox box = { .position = V3(-13.5f + 3.0f * (f32) (i % 10), 0.5f, -13.5f + 3.0f * (f32) (i / 10)), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.5f };
         DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, &box, (v3f64) { 0 }, 1 + i);
     }
-    TEST_NOT_ZERO(pipeline.body_pool.length > 64 && pipeline.body_pool.count == 101);
+    TEST_NOT_ZERO(pipeline.body_pool.length > 64 && pipeline.body_pool.count == 102);
 
     SnapshotTestTick(&pipeline);
     ds_CGraphValidate(&pipeline);
@@ -2852,7 +2856,7 @@ static struct test_Output DynamicsFlushTest(struct test_Environment *env)
 
     /* the flush empties everything, the flagged split included */
     ds_DynamicsFlush(&pipeline);
-    TEST_NOT_ZERO(pipeline.body_pool.count == 0 && pipeline.shape_pool.count == 0 && pipeline.contact_pool.count == 0 && pipeline.island_pool.count == 0);
+    TEST_NOT_ZERO(pipeline.body_pool.count == 1 && pipeline.shape_pool.count == 0 && pipeline.contact_pool.count == 0 && pipeline.island_pool.count == 0);
     TEST_NOT_ZERO(pipeline.frames_completed == 0 && ds_IslandIdNullCheck(pipeline.island_to_split));
     TEST_NOT_ZERO(SnapshotTestSleepingSetCount(&pipeline) == 0 && pipeline.solver_set_pool.buf[SOLVER_SET_ACTIVE].body_sim_pool.count == 0);
 
