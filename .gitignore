@@ -3,6 +3,7 @@ build
 build_agent
 build_agent_det
 build_agent_tsan
+build_agent_phys
 build_agent_gjk
 build_agent_perf
 build_agent_clang
