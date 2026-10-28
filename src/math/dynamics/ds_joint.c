@@ -698,3 +698,58 @@ void ds_DistanceJointPositionConstraintIterate(struct ds_JointSim *jsim, struct 
     const q quat_angle1 = Q(w1.x/2.0f, w1.y/2.0f, w1.z/2.0f, 1.0f);
     bcomp[1]->rotation = QNormalize(QMul(quat_angle1, bcomp[1]->rotation));
 }
+
+/* ---------- Mouse Joints ---------- */
+
+void ds_MouseJointPrefab(struct ds_MouseJointPrefab *prefab, const v3f64 target, const f32 hertz, const f32 damping_ratio, const f32 max_force, const f32 max_torque)
+{
+    //TODO
+    *prefab = (struct ds_MouseJointPrefab) { 0 };
+}
+
+void ds_MouseJointPrefabFromBody(struct ds_MouseJointPrefab *prefab, const struct ds_Dynamics *pipeline, const ds_BodyId body, const v3f64 target, const f32 hertz, const f32 damping_ratio, const f32 force_scale, const f32 torque_scale)
+{
+    //TODO
+    *prefab = (struct ds_MouseJointPrefab) { 0 };
+}
+
+ds_JointId ds_MouseJointAdd(struct ds_Dynamics *pipeline, const struct ds_MouseJointPrefab *prefab, const ds_BodyId anchor, const ds_BodyId b1, const ds_Transform *local_frame1)
+{
+    //TODO
+    return ds_JointIdNull();
+}
+
+void ds_MouseJointTargetSet(struct ds_Dynamics *pipeline, const ds_JointId id, const v3f64 target)
+{
+    //TODO
+}
+
+void ds_MouseJointSpringSet(struct ds_Dynamics *pipeline, const ds_JointId id, const f32 hertz, const f32 damping_ratio)
+{
+    //TODO
+}
+
+void ds_MouseJointStrengthSet(struct ds_Dynamics *pipeline, const ds_JointId id, const f32 max_force)
+{
+    //TODO
+}
+
+void ds_MouseJointFrictionSet(struct ds_Dynamics *pipeline, const ds_JointId id, const f32 max_torque)
+{
+    //TODO
+}
+
+void ds_MouseJointConstraintInit(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2], const f32 timestep)
+{
+    //TODO
+}
+
+void ds_MouseJointConstraintWarmup(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2])
+{
+    //TODO
+}
+
+void ds_MouseJointConstraintIterate(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2])
+{
+    //TODO
+}

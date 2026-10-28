@@ -842,24 +842,8 @@ it towards target. The range is always enforced; the configuration names are tem
                     the pipeline's joint_hertz_max with a warning.
     range spring:   the spring inside a finite range: soft about target, but never outside [low, high]
                     (a suspension with end stops).
-//TODO
-
-Internals: TODO: move somewhere appropriate and cleanup 
-
-Spring Force:  Proportional to the distance, pulling towards the target.
-Damping Force: Proportional to the distance rate-of-change, opposite direction to change.
-
 */
 
-/*
- * TODO (agent) the sim's data falls in three groups, all POD (the sleep memcpy copies it whole):
- *  () configuration from the prefab; keep hertz + damping_ratio, not stiffness: masses can change, convert in prepare
- *  () accumulated impulses (target row, lower, upper): persist across frames for the warm start and through sleep
- *  () per-step data from prepare: levers, axis, length, effective mass; soft mass, gamma, bias when the spring is on
- *  () decided: anchors closer than linear_slop give no axis; prepare keeps the previous tick's n and the
- *     cached impulses, and the position pass pushes along it. A start inside linear_slop gets +x as its
- *     first axis (a warning when range.low is above linear_slop: that first push has a made-up direction).
- */
 struct ds_DistanceJoint
 {
     /* Config */ 
@@ -896,49 +880,129 @@ struct ds_DistanceJoint
     f32     impulse_high;       /* Cached Range high impulse                            */
 };
 
-//TODO docs 
 /* WARNING: fill only through the ds_DistanceJointPrefab* constructors below; a hand-filled prefab is asserted at add, not checked */
 struct ds_DistanceJointPrefab
 {
-    u32     collide_connected;  /* Boolean: collide linked bodies               */
-    f32     target;             /* Target distance                              */
-    intv    range;              /* Allowed distance [low, high]                 */
-    u32     enable_spring;
-    f32     hertz;
-    f32     damping_ratio;
+    u32     collide_connected;  
+    f32     target;             
+    intv    range;              
+    u32     enable_spring;      
+    f32     hertz;              
+    f32     damping_ratio;      
 };
 
-/* TODO: docs */
+/* 
+ * Return a distance prefab that enforces the given distance. A distance below linear_slop is
+ * raised to it.
+ */
 void    ds_DistanceJointPrefab(struct ds_DistanceJointPrefab *prefab, const f32 distance);
-/* TODO: docs */
+/*
+ * Return a distance prefab that enforces the given allowed distance range. The range must
+ * be within [linear_slop, JOINT_LENGTH_MAX], and is clamped against it.
+ */
 void    ds_DistanceJointPrefabRange(struct ds_DistanceJointPrefab *prefab, const intv range);
-/* TODO: docs */
+/*
+ * Return a distance prefab that enforces the given distance with spring behaviour. A distance
+ * below linear_slop is raised to it.
+ *
+ * hertz: Gives the oscillations per second. hertz <= 0 disables the spring. The add enforces
+ *          
+ *          hertz <= physics_ticks_per_second / 4.0f.
+ *
+ * damping_ratio: damping behaviour of the velocity; a negative value becomes 0.
+ *
+ *          = 0.0f => oscillates forever,
+ *          < 1.0f => oscillate about target, each swing smaller
+ *          = 1.0f => returns to target, no overshoot 
+ *          > 1.0f => returns to target, but creeps in slower
+ */
 void    ds_DistanceJointPrefabSpring(struct ds_DistanceJointPrefab *prefab, const f32 distance, const f32 hertz, const f32 damping_ratio);
-/* TODO: docs */
+/*
+ * Return a distance prefab that enforces the given allowed distance range, with spring
+ * behaviour towards the range's middle point. The range is clamped as in
+ * ds_DistanceJointPrefabRange, the spring as in ds_DistanceJointPrefabSpring.
+ */
 void    ds_DistanceJointPrefabRangeSpring(struct ds_DistanceJointPrefab *prefab, const intv range, const f32 hertz, const f32 damping_ratio);
 
 /* ---------- Mouse Joints ---------- */
 
 /*
- * TODO: we fix distance joints first, and handle more difficult joints later. Many decisions
- * goes here when setting up a reasonable API; 
- * WARNING: fill only through ds_MouseJointPrefabDefault; a hand-filled prefab is not checked
- */
-struct ds_MouseJointPrefab
+ds_MouseJoint
+=============
+Drags a dynamic body by one of its points: the joint frame's origin is pulled to a world target, as if held by
+a hand. Move the target every frame (ds_MouseJointTargetSet) and the body follows it, lagging a little.
+    hertz, damping_ratio:   how tightly the body follows; as the distance joint spring, with the same hertz cap.
+    max_force:              the hand's strength: a heavy body lags more, one too heavy to lift stays down.
+    max_torque:             how fast the body stops spinning while held; 0 lets it spin freely.
+*/
+struct ds_MouseJoint
 {
-    //TODO
-    v3f64   origin; /* TODO: origin of mouse lever (camera?) */
-    v3f64   target; /* TODO: target (I presume if we view the lever creating a sphere around the origin,
-                             then target is the mouse position on that sphere, so the body essentially is
-                             distance linked to that target */
-    //TODO  Understand and implement later
-    u32             enable_spring;      //TODO (agent) a u32 flags field once the joints get a few more booleans
-    f32             hertz;
-    f32             damping_ratio;
+    /* Config */
+    v3f64   target;             /* Target point (world)                                 */
+    f32     hertz;              /* Oscillation speed                                    */
+    f32     damping_ratio;      /* Damping speed, see ds_DistanceJoint                  */
+    f32     max_force;          /* Largest pull force, Newton                           */
+    f32     max_torque;         /* Largest spin braking torque, Newton metres (0.0f: none) */
+
+    /* Per-tick solver data */
+    m3      soft_mass;          /* Inv(J*Inv(M)*J^T + gamma*I), the three spring rows   */
+    f32     gamma;              /* 1.0f / (h*(c + h*k))                                 */
+    v3      bias_velocity;      /* beta*(joint frame 0 - target), beta = k / (c + h*k)  */
+    m3      angular_mass;       /* Inv(world inverse inertia), the three braking rows   */
+    f32     max_impulse;        /* h*max_force                                          */
+    f32     max_angular_impulse;/* h*max_torque                                         */
+
+    /* Per-iteration solver data, warm started from the previous tick */
+    v3      impulse;            /* Cached spring impulse, |impulse| <= max_impulse      */
+    v3      angular_impulse;    /* Cached braking impulse, bounded alike                */
 };
 
-//TODO docs 
-void        ds_MouseJointPrefabDefault(struct ds_MouseJointPrefab *prefab);
+/* WARNING: fill only through the ds_MouseJointPrefab* constructors below; a hand-filled prefab is asserted at add, not checked */
+struct ds_MouseJointPrefab
+{
+    v3f64   target;             /* World point the grabbed point is pulled to           */
+    f32     hertz;              /* Oscillation speed                                    */
+    f32     damping_ratio;      /* Damping speed                                        */
+    f32     max_force;          /* Largest pull force, Newton                           */
+    f32     max_torque;         /* Largest spin braking torque, Newton metres (0: none) */
+};
+
+/* 
+ * Return a mouse prefab that pulls towards target with the given strength.
+ *
+ * hertz: Gives the oscillations per second. hertz <= 0 disables the pull. The add enforces
+ *
+ *          hertz <= physics_ticks_per_second / 4.0f.
+ *
+ * damping_ratio: damping behaviour of the velocity, see ds_DistanceJointPrefabSpring.
+ * max_force: largest pull force in Newton.
+ * max_torque: largest torque in Newton metres, braking the body's spin; 0 lets it spin freely.
+ */
+void    ds_MouseJointPrefab(struct ds_MouseJointPrefab *prefab, const v3f64 target, const f32 hertz, const f32 damping_ratio, const f32 max_force, const f32 max_torque);
+/* 
+ * Return a mouse prefab whose strength is scaled to the given dynamic body, so that every body
+ * follows the target alike: 
+ *          max_force = force_scale * weight, 
+ *          max_torque = torque_scale * weight * radius of gyration. 
+ *          hertz and damping_ratio as in ds_MouseJointPrefab.
+ */
+void    ds_MouseJointPrefabFromBody(struct ds_MouseJointPrefab *prefab, const struct ds_Dynamics *pipeline, const ds_BodyId body, const v3f64 target, const f32 hertz, const f32 damping_ratio, const f32 force_scale, const f32 torque_scale);
+/* 
+ * Move the joint's target. NO-OP if the joint no longer exists. 
+ */
+void    ds_MouseJointTargetSet(struct ds_Dynamics *pipeline, const ds_JointId id, const v3f64 target);
+/* 
+ * Set the joint's spring; hertz and damping_ratio as in ds_MouseJointPrefab. NO-OP if the joint no longer exists. 
+ */
+void    ds_MouseJointSpringSet(struct ds_Dynamics *pipeline, const ds_JointId id, const f32 hertz, const f32 damping_ratio);
+/* 
+ * Set the joint's largest pull force in Newton. NO-OP if the joint no longer exists. 
+ */
+void    ds_MouseJointStrengthSet(struct ds_Dynamics *pipeline, const ds_JointId id, const f32 max_force);
+/* 
+ * Set the joint's largest braking torque in Newton metres; 0 lets the body spin freely. NO-OP if the joint no longer exists. 
+ */
+void    ds_MouseJointFrictionSet(struct ds_Dynamics *pipeline, const ds_JointId id, const f32 max_torque);
 
 /* ---------- Revolute Joints ---------- */
 
@@ -966,12 +1030,18 @@ void        ds_RevoluteJointPrefabDefault(struct ds_RevoluteJointPrefab *prefab)
 /* ---------- Joints ---------- */
 
 /*
- * Setup joint in engine. Return non-null id on success, and null id on failure (a missing body, both ends on
- * one body, both static). Anchors within linear_slop get +x as the joint's first axis, with a warning when
- * range.low is above linear_slop (the first push along it has a made-up direction).
+ * Add a distance joint between b0 and b1, anchored at the origins of the given body-local frames. On success,
+ * return the joint's id. On failure (a missing body, both anchors on one body, both bodies static), return
+ * the null id. The prefab's hertz is clamped to the pipeline's joint_hertz_max. Anchors closer than
+ * linear_slop get +x as the joint's first axis.
  */
 ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_DistanceJointPrefab *prefab, const ds_BodyId b0, const ds_Transform *local_frame0, const ds_BodyId b1, const ds_Transform *local_frame1);
 ds_JointId ds_RevoluteJointAdd(struct ds_Dynamics *pipeline, const struct ds_RevoluteJointPrefab *prefab, const ds_BodyId b0, const ds_Transform *local_frame0, const ds_BodyId b1, const ds_Transform *local_frame1);
+/*
+ * Add a mouse joint pulling body b1 at local_frame1's origin towards the prefab's target. anchor is a static
+ * body without shapes. On success, return the joint's id. On failure (a missing body, anchor not static,
+ * b1 not dynamic), return the null id.
+ */
 ds_JointId ds_MouseJointAdd(struct ds_Dynamics *pipeline, const struct ds_MouseJointPrefab *prefab, const ds_BodyId anchor, const ds_BodyId b1, const ds_Transform *local_frame1);
 
 
@@ -1075,6 +1145,7 @@ struct ds_JointSim
     union
     {
         struct ds_DistanceJoint distance;
+        struct ds_MouseJoint    mouse;
     };
 };
 DEFINE_CPOOL_STRUCT(ds_JointSim);
@@ -1309,6 +1380,10 @@ void    ds_DistanceJointConstraintInit(struct ds_JointSim *jsim, struct ds_BodyC
 void    ds_DistanceJointConstraintWarmup(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2]);
 void    ds_DistanceJointConstraintIterate(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2]);
 void    ds_DistanceJointPositionConstraintIterate(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2]);
+/* the mouse joint has no position pass */
+void    ds_MouseJointConstraintInit(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2], const f32 timestep);
+void    ds_MouseJointConstraintWarmup(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2]);
+void    ds_MouseJointConstraintIterate(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2]);
 
 /*
 contact_solver_config
