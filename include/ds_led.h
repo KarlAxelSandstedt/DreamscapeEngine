@@ -142,6 +142,17 @@ struct led_Joint
 DEFINE_CPOOL_STRUCT(led_Joint);
 
 /*
+ * The viewport's drag: a left press on a dynamic body adds a mouse joint at the hit point, held while the button
+ * is down. The target stays at the hit's distance along the current pick ray (the cursor, or the view direction
+ * while the cursor is locked), so moving the mouse or the camera moves the body.
+ */
+struct led_Grab
+{
+    ds_JointId  joint;          /* the mouse joint, the null id when nothing is held     */
+    f32         distance;       /* pick ray parameter of the hit at the press            */
+};
+
+/*
 led
 ===
 level editor main structure
@@ -182,6 +193,7 @@ struct led
 
     //TODO tmp
     ds_CPool(led_Joint)     joint_pool;
+    struct led_Grab         grab;
 
 	/* TODO move stuff into led project/led_Core or something */
 	struct arena 		    frame;

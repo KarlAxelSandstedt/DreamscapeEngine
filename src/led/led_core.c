@@ -2297,6 +2297,7 @@ static void led_EngineRun(struct led *led)
 static void led_EngineFlush(struct led *led)
 {
 	ds_DynamicsFlush(&led->physics);
+	led->grab.joint = ds_JointIdNull();
 
     HII it; 
     HIIInit(it, led->node_hierarchy, LED_NODE_ROOT);

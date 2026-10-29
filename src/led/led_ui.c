@@ -318,6 +318,73 @@ static void led_UiTest(struct led *led, const struct ui_Visual *visual)
 	ui_FrameEnd();
 }
 
+/* the grab's hand: 7.5 Hz critically damped, a pull of 100 weights, spin braking of half a weight times the lever */
+#define LED_GRAB_HERTZ          7.5f
+#define LED_GRAB_DAMPING_RATIO  1.0f
+#define LED_GRAB_FORCE_SCALE    100.0f
+#define LED_GRAB_TORQUE_SCALE   0.5f
+
+/* the pick ray through the cursor, or through the viewport's centre while the cursor is locked (the view direction) */
+static struct rayWorld led_ViewportPickRay(const struct led *led, const struct ui_Node *viewport, struct ds_Window *win)
+{
+	v2 pixel;
+	if (ds_CursorLockedCheck(win))
+	{
+		pixel = V2(0.5f * viewport->pixel_size.x, 0.5f * viewport->pixel_size.y);
+	}
+	else
+	{
+		pixel = V2(g_ui->inter.cursor_position.x - viewport->pixel_position.x,
+			   g_ui->inter.cursor_position.y - viewport->pixel_position.y);
+	}
+
+	const v3f64 pixel_world = WindowSpaceToWorldSpace(pixel, viewport->pixel_size, &led->cam);
+	v3 dir = V3F64Demote(V3F64Sub(pixel_world, led->cam.position));
+	dir = V3Scale(dir, 1.0f / V3Length(dir));
+	return (struct rayWorld) { .origin = led->cam.position, .dir = dir };
+}
+
+/* grab the body under the ray at its hit: the joint pulls the hit point, and the target starts there */
+static void led_GrabBegin(struct led *led, const struct rayWorld *ray, const u32f32 hit)
+{
+	const struct ds_Shape *shape = led->physics.shape_pool.buf + hit.u;
+	const struct ds_Body *body = led->physics.body_pool.buf + shape->body;
+	if (!ds_BodyDynamicCheck(body))
+	{
+		return;
+	}
+
+	const v3f64 target = V3F64Add(ray->origin, V3Promote(V3Scale(ray->dir, hit.f)));
+	const struct ds_BodySim *bsim = led->physics.solver_set_pool.buf[body->set].body_sim_pool.buf + body->sim;
+	ds_Transform local_frame = ds_TransformIdentity();
+	local_frame.position = ds_TransformWorldPointToLocal(&bsim->world, target);
+
+	struct ds_MouseJointPrefab prefab;
+	ds_MouseJointPrefabFromBody(&prefab, &led->physics, body->id, target, LED_GRAB_HERTZ, LED_GRAB_DAMPING_RATIO, LED_GRAB_FORCE_SCALE, LED_GRAB_TORQUE_SCALE);
+	led->grab.joint = ds_MouseJointAdd(&led->physics, &prefab, body->id, &local_frame);
+	led->grab.distance = hit.f;
+}
+
+/* while the left button is held the target follows the ray at the grab's distance; a release, or a joint that is gone, ends the grab */
+static void led_GrabUpdate(struct led *led, const struct rayWorld *ray)
+{
+	if (ds_JointIdNullCheck(led->grab.joint))
+	{
+		return;
+	}
+
+	if (g_ui->inter.button_pressed[MOUSE_BUTTON_LEFT] && ds_JointLookup(&led->physics, led->grab.joint).address)
+	{
+		const v3f64 target = V3F64Add(ray->origin, V3Promote(V3Scale(ray->dir, led->grab.distance)));
+		ds_MouseJointTargetSet(&led->physics, led->grab.joint, target);
+	}
+	else
+	{
+		ds_JointRemove(&led->physics, led->grab.joint);
+		led->grab.joint = ds_JointIdNull();
+	}
+}
+
 static void led_InputHandler(struct led *led, struct ui_Node *viewport)
 {
 	viewport->border_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
@@ -485,15 +552,9 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 				ui_Parent(slot.index)
 				{
 					struct ui_Node *node = slot.address;
+					const struct rayWorld ray = led_ViewportPickRay(led, node, win);
 					if (node->inter & UI_INTER_HOVER)
 					{
-						const v2 cursor_viewport_position = V2(
-							g_ui->inter.cursor_position.x - node->pixel_position.x,
-							g_ui->inter.cursor_position.y - node->pixel_position.y);
-						const v3f64 pixel_world = WindowSpaceToWorldSpace(cursor_viewport_position, node->pixel_size, &led->cam);
-						v3 dir = V3F64Demote(V3F64Sub(pixel_world, led->cam.position));
-						dir = V3Scale(dir, 1.0f / V3Length(dir));
-						const struct rayWorld ray = { .origin = led->cam.position, .dir = dir };
 						const u32f32 hit = ds_DynamicsRaycastParameter(&led->physics, &ray);
 						if (hit.f < F32_INFINITY)
 						{
@@ -508,12 +569,14 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 							ui_Height(ui_SizePixel(24.0f, 1.0f))
 							ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW | UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_SKIP_HOVER_SEARCH, "%k##%u", &entity->id, body->entity);
 
-                            if (node->inter & UI_INTER_LEFT_CLICK)
-                            {
-                                ds_BodyRemove(g_ui->mem_frame, &led->physics, body->id);
-                            }
+							if ((node->inter & UI_INTER_LEFT_CLICK) && ds_JointIdNullCheck(led->grab.joint))
+							{
+								led_GrabBegin(led, &ray, hit);
+							}
 						}
 					}
+
+					led_GrabUpdate(led, &ray);
 
 					if (node->inter & UI_INTER_FOCUS)
 					{	
