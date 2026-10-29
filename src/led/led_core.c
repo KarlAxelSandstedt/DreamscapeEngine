@@ -1930,8 +1930,13 @@ void led_CoreInitCommands(void)
 	cmd_led_stop = CmdFunctionRegister(Utf8Inline("led_Stop"), 0, &led_StopCmd).index;
 }
 
+/* index U32_MAX: a body without an editor node (the pipeline's mouse anchor), nothing to colour */
 static void led_NodeColorProxies(struct led *led, const u32 index, const v4 color)
 {
+    if (index == U32_MAX)
+    {
+        return;
+    }
     const struct led_Node *node = led->node_hierarchy.pool.buf + index;
     const struct led_Node *child = NULL;
     for (i32 i = node->hi_first; i != HI_NULL; i = child->hi_next)
@@ -2027,6 +2032,10 @@ static void led_EngineRun(struct led *led)
                     while (ds_BitBlockHasNext(&it))
                     {
                         const struct ds_Body *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);
+                        if (body->entity == U32_MAX)
+                        {
+                            continue;
+                        }
                         const struct led_Node *node = led->node_hierarchy.pool.buf + body->entity;
                         led_NodeColorProxies(led, body->entity, node->color);
                     }
@@ -2042,6 +2051,10 @@ static void led_EngineRun(struct led *led)
                     while (ds_BitBlockHasNext(&it))
                     {
 				        const struct ds_Body *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);
+                        if (body->entity == U32_MAX)
+                        {
+                            continue;
+                        }
                         const struct led_Node *node = led->node_hierarchy.pool.buf + body->entity;
 					    if (ds_BodyDynamicCheck(body))
 					    {
@@ -2089,6 +2102,10 @@ static void led_EngineRun(struct led *led)
                     while (ds_BitBlockHasNext(&it))
                     {
 				        const struct ds_Body *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);
+                        if (body->entity == U32_MAX)
+                        {
+                            continue;
+                        }
                         const struct led_Node *node = led->node_hierarchy.pool.buf + body->entity;
 					    if (ds_BodyStaticCheck(body))
 					    {
