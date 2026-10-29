@@ -318,11 +318,13 @@ static void led_UiTest(struct led *led, const struct ui_Visual *visual)
 	ui_FrameEnd();
 }
 
-/* the grab's hand: 3 Hz critically damped, a pull of 100 weights, spin braking of half a weight times the lever */
+/* the grab's hand: 3 Hz critically damped, a pull of 10 weights, spin braking of half a weight times the lever */
 #define LED_GRAB_HERTZ          3.0f
 #define LED_GRAB_DAMPING_RATIO  1.0f
-#define LED_GRAB_FORCE_SCALE    100.0f
+#define LED_GRAB_FORCE_SCALE    10.0f
 #define LED_GRAB_TORQUE_SCALE   0.5f
+/* the target's lag behind the ray's point, seconds: a first order filter, a = dt / (dt + lag) per frame */
+#define LED_GRAB_LAG            0.1f
 
 /* the pick ray through a window pixel of the viewport */
 static struct rayWorld led_ViewportPickRay(const struct led *led, const struct ui_Node *viewport, const v2 pointer)
@@ -353,9 +355,10 @@ static void led_GrabBegin(struct led *led, const struct rayWorld *ray, const u32
 	ds_MouseJointPrefabFromBody(&prefab, &led->physics, body->id, target, LED_GRAB_HERTZ, LED_GRAB_DAMPING_RATIO, LED_GRAB_FORCE_SCALE, LED_GRAB_TORQUE_SCALE);
 	led->grab.joint = ds_MouseJointAdd(&led->physics, &prefab, body->id, &local_frame);
 	led->grab.distance = hit.f;
+	led->grab.target = target;
 }
 
-/* while the left button is held the target follows the ray at the grab's distance; a release, or a joint that is gone, ends the grab */
+/* while the left button is held the target follows the ray's point at the grab's distance, lagging; a release, or a joint that is gone, ends the grab */
 static void led_GrabUpdate(struct led *led, const struct rayWorld *ray)
 {
 	if (ds_JointIdNullCheck(led->grab.joint))
@@ -365,8 +368,11 @@ static void led_GrabUpdate(struct led *led, const struct rayWorld *ray)
 
 	if (g_ui->inter.button_pressed[MOUSE_BUTTON_LEFT] && ds_JointLookup(&led->physics, led->grab.joint).address)
 	{
-		const v3f64 target = V3F64Add(ray->origin, V3Promote(V3Scale(ray->dir, led->grab.distance)));
-		ds_MouseJointTargetSet(&led->physics, led->grab.joint, target);
+		const v3f64 point = V3F64Add(ray->origin, V3Promote(V3Scale(ray->dir, led->grab.distance)));
+		const f32 dt = (f32) led->ns_delta / NSEC_PER_SEC;
+		const f32 a = dt / (dt + LED_GRAB_LAG);
+		led->grab.target = V3F64Add(led->grab.target, V3Promote(V3Scale(V3F64Demote(V3F64Sub(point, led->grab.target)), a)));
+		ds_MouseJointTargetSet(&led->physics, led->grab.joint, led->grab.target);
 	}
 	else
 	{

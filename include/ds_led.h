@@ -143,13 +143,15 @@ DEFINE_CPOOL_STRUCT(led_Joint);
 
 /*
  * The viewport's drag: a left press on a dynamic body adds a mouse joint at the hit point, held while the button
- * is down. The target stays at the hit's distance along the current pick ray (the cursor, or the view direction
- * while the cursor is locked), so moving the mouse or the camera moves the body.
+ * is down. The target follows the point at the hit's distance along the current pick ray (the cursor, or the
+ * view direction while the cursor is locked) with a short lag, so moving the mouse or the camera moves the body
+ * and the hand's jitter, which the pick ray scales by the distance, does not.
  */
 struct led_Grab
 {
     ds_JointId  joint;          /* the mouse joint, the null id when nothing is held     */
     f32         distance;       /* pick ray parameter of the hit at the press            */
+    v3f64       target;         /* the joint's target, lagging behind the ray's point    */
 };
 
 /*
