@@ -318,8 +318,8 @@ static void led_UiTest(struct led *led, const struct ui_Visual *visual)
 	ui_FrameEnd();
 }
 
-/* the grab's hand: 7.5 Hz critically damped, a pull of 100 weights, spin braking of half a weight times the lever */
-#define LED_GRAB_HERTZ          7.5f
+/* the grab's hand: 3 Hz critically damped, a pull of 100 weights, spin braking of half a weight times the lever */
+#define LED_GRAB_HERTZ          3.0f
 #define LED_GRAB_DAMPING_RATIO  1.0f
 #define LED_GRAB_FORCE_SCALE    100.0f
 #define LED_GRAB_TORQUE_SCALE   0.5f
@@ -582,7 +582,8 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 							ui_Height(ui_SizePixel(24.0f, 1.0f))
 							ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW | UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_SKIP_HOVER_SEARCH, "%k##%u", &entity->id, body->entity);
 
-							if ((node->inter & UI_INTER_LEFT_CLICK) && ds_JointIdNullCheck(led->grab.joint))
+							/* the click that focuses the viewport only focuses: the pointer moves to the centre on the next frame */
+							if ((node->inter & UI_INTER_LEFT_CLICK) && !(node->inter & UI_INTER_FOCUS_IN) && ds_JointIdNullCheck(led->grab.joint))
 							{
 								led_GrabBegin(led, &ray, hit);
 							}

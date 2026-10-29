@@ -1151,7 +1151,7 @@ void led_JointSetup(struct led *led)
     const f32 capsule_radius = 0.2f;
     const f32 capsule_half_height = 0.2f;
     const f32 link_length = 2.0f * (capsule_half_height + capsule_radius);
-    const f32 link_gap = 0.02f;
+    const f32 link_gap = 0.05f;
     const f32 bar_y = 8.0f;
     const v3 bar_hw = V3(16.0f, 0.25f, 0.25f);
     const v3 floor_hw = V3(20.0f, 0.5f, 10.0f);
