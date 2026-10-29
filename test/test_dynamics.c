@@ -121,6 +121,18 @@ next 10 ticks. Asleep again, a joint to a fourth box wakes it and merges the isl
 sleeps with four impulses (4 - i) m g h. Removing the sleeping bottom joint wakes the chain: the fourth box falls
 to the ground, the island splits, and both parts sleep, the chain at its length.
 
+Mouse joint (DynamicsMouseJointTest, DynamicsMouseJointSleepTest): a box alone in the air, held at its centre by
+a mouse joint (ds_MouseJointPrefabFromBody: critically damped, 100 weights of pull). At rest it hangs g / omega^2
+below the target within 10 % (1 Hz and 4 Hz), straight down and unturned, the joint pulling the tick's weight
+within 5 %. A target step of 1 m up moves it there with no descent and no sideways motion, 90 % of the way in
+3.89 / omega within a quarter (37 ticks at 1 Hz, 9 at 4 Hz). A hand of half the weight cannot hold it: it falls
+over 2 m in a second with the pull pinned at the cap; two weights lift it to the target less the sag. A box
+spinning at 5 rad/s held with no braking keeps its spin but for the solver's damping within 2 %; braking of one
+weight times the lever is at its cap on the first tick and stops it within a second. With sleep on, the held box
+sleeps with its joint sim in the set, out of the colours; a target move wakes it at once and it follows 1 m to
+the side within 1 cm; a strength set wakes it; removing the sleeping joint wakes it and it falls, and the setters
+on the removed joint are NO-OPs.
+
 Solver (DynamicsSlideTest, DynamicsBounceTest): a frictionless box on a 30 degree slope slides for a second;
 its downhill speed matches the per-tick recurrence v = (v + g sin(a) dt) / (1 + d dt) of the solver's gravity
 and damping within 1 % (the contacts cancel only the normal part), nothing across the slope, no spin. A box
@@ -2657,6 +2669,297 @@ static struct test_Output DynamicsJointSleepTest(struct test_Environment *env)
     return output;
 }
 
+/* one dynamic box (half width 0.25) alone in the air, held by nothing yet; sleep as asked */
+struct dynamics_MouseRig
+{
+    struct arena mem;
+    ds_SDB(c_Shape) cshape_db;
+    ds_SDB(ds_BodyPrefab) prefab_db;
+    struct ds_Dynamics pipeline;
+    ds_BodyId box;
+    const struct ds_Body *body;
+};
+
+static struct dynamics_MouseRig DynamicsMouseRigAlloc(const v3 position, const u32 sleep_enabled)
+{
+    struct dynamics_MouseRig rig = { 0 };
+    rig.mem = ArenaAlloc(NULL, 64*1024*1024);
+    ds_SDBAlloc(NULL, rig.cshape_db, 32, GROWABLE);
+    ds_SDBAlloc(NULL, rig.prefab_db, 32, GROWABLE);
+    rig.pipeline = ds_DynamicsAlloc(&rig.mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &rig.cshape_db, &rig.prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = sleep_enabled;
+
+    const struct dynamics_TestBox box = { .position = position, .rotation = QIdentity(), .hw = V3(0.25f, 0.25f, 0.25f), .dynamic = 1, .friction = 0.5f };
+    rig.box = DynamicsTestBoxAdd(&rig.mem, &rig.pipeline, &rig.cshape_db, &box, (v3f64) { 0 }, 0);
+    rig.body = ds_BodyLookup(&rig.pipeline, rig.box).address;
+    return rig;
+}
+
+static void DynamicsMouseRigFree(struct dynamics_MouseRig *rig)
+{
+    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsFree(&rig->pipeline);
+    ds_SDBDealloc(rig->cshape_db);
+    ds_SDBDealloc(rig->prefab_db);
+    ArenaFree(&rig->mem);
+}
+
+/* the box's velocities, valid while it is awake */
+static struct ds_BodyCompute *DynamicsMouseRigCompute(struct dynamics_MouseRig *rig)
+{
+    ds_Assert(rig->body->set == SOLVER_SET_ACTIVE);
+    return rig->pipeline.solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.buf + rig->body->sim;
+}
+
+static const struct ds_MouseJoint *DynamicsTestMouseSim(const struct ds_Dynamics *pipeline, const ds_JointId id)
+{
+    const struct ds_Joint *joint = ds_JointLookup(pipeline, id).address;
+    const struct ds_JointSim *sim = (joint->set == SOLVER_SET_NULL)
+        ? pipeline->cgraph.color[joint->color].joint_sim_pool.buf + joint->sim
+        : pipeline->solver_set_pool.buf[joint->set].joint_sim_pool.buf + joint->sim;
+    return &sim->mouse;
+}
+
+/* the box's centre after tick_count ticks */
+static v3 DynamicsMouseRigRun(struct dynamics_MouseRig *rig, const u32 tick_count)
+{
+    for (u32 t = 0; t < tick_count; ++t)
+    {
+        SnapshotTestTick(&rig->pipeline);
+    }
+    return V3F64Demote(DynamicsTestPose(&rig->pipeline, rig->box).position);
+}
+
+/*
+ * A step of the target by 1 m up from rest: the ticks until the box has covered 90 % of the way, whether it ever
+ * moved down meanwhile, and its largest sideways offset and rotation
+ */
+struct dynamics_MouseStep
+{
+    u32 rise_ticks;
+    f32 descent;
+    f32 lateral;
+    f32 spin;
+};
+
+static struct dynamics_MouseStep DynamicsMouseRigStep(struct dynamics_MouseRig *rig, const ds_JointId joint, v3f64 *target, const u32 tick_count)
+{
+    struct dynamics_MouseStep step = { .rise_ticks = U32_MAX };
+    const v3 start = V3F64Demote(DynamicsTestPose(&rig->pipeline, rig->box).position);
+    *target = V3F64Add(*target, V3F64(0.0, 1.0, 0.0));
+    ds_MouseJointTargetSet(&rig->pipeline, joint, *target);
+
+    f32 y_prev = start.y;
+    for (u32 t = 0; t < tick_count; ++t)
+    {
+        SnapshotTestTick(&rig->pipeline);
+        const ds_TransformWorld pose = DynamicsTestPose(&rig->pipeline, rig->box);
+        const v3 p = V3F64Demote(pose.position);
+        step.descent = F32Max(step.descent, y_prev - p.y);
+        step.lateral = F32Max(step.lateral, F32Max(F32Abs(p.x - start.x), F32Abs(p.z - start.z)));
+        step.spin = F32Max(step.spin, DynamicsTestAngle(QIdentity(), pose.rotation));
+        if (step.rise_ticks == U32_MAX && p.y - start.y >= 0.9f)
+        {
+            step.rise_ticks = t + 1;
+        }
+        y_prev = p.y;
+    }
+    return step;
+}
+
+/* a box held at its centre by a mouse joint: the sag, the lag against hertz, the cap, the spin braking (file comment) */
+static struct test_Output DynamicsMouseJointTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    const f32 g = -g_solver_config->gravity.y;
+    const v3 start = V3(0.0f, 4.0f, 0.0f);
+    const ds_Transform frame = ds_TransformIdentity();
+
+    /* hold: at rest the box hangs g / omega^2 below the target, straight down, unturned */
+    for (u32 pass = 0; pass < 2; ++pass)
+    {
+        const f32 hertz = (pass == 0) ? 1.0f : 4.0f;
+        struct dynamics_MouseRig rig = DynamicsMouseRigAlloc(start, 0);
+        v3f64 target = V3Promote(start);
+        struct ds_MouseJointPrefab prefab;
+        ds_MouseJointPrefabFromBody(&prefab, &rig.pipeline, rig.box, target, hertz, 1.0f, 100.0f, 0.0f);
+        const ds_JointId joint = ds_MouseJointAdd(&rig.pipeline, &prefab, rig.box, &frame);
+        TEST_NOT_ZERO(!ds_JointIdNullCheck(joint));
+
+        const f32 omega = 2.0f * F32_PI * hertz;
+        const f32 sag = g / (omega * omega);
+        const v3 rest = DynamicsMouseRigRun(&rig, 180);
+        const f32 sag_measured = start.y - rest.y;
+        if (!(F32Abs(sag_measured - sag) <= 0.1f * sag)) { fprintf(stderr, "mouse joint: failed: F32Abs(sag_measured - sag) <= 0.1f * sag\n"); }
+        TEST_NOT_ZERO(F32Abs(sag_measured - sag) <= 0.1f * sag);
+        TEST_NOT_ZERO(F32Abs(rest.x) < 1e-4f && F32Abs(rest.z) < 1e-4f);
+        TEST_NOT_ZERO(DynamicsTestAngle(QIdentity(), DynamicsTestPose(&rig.pipeline, rig.box).rotation) < 1e-4f);
+
+        /* the joint pulls the tick's weight at rest: |impulse| = m g h */
+        const struct ds_MouseJoint *mouse = DynamicsTestMouseSim(&rig.pipeline, joint);
+        const f32 weight_tick = rig.body->mass * g * rig.pipeline.timestep;
+        TEST_NOT_ZERO(F32Abs(V3Length(mouse->impulse) - weight_tick) <= 0.05f * weight_tick);
+
+        /* a step of 1 m up: critically damped, so no descent, no sideways motion; the rise is measured below */
+        const struct dynamics_MouseStep step = DynamicsMouseRigStep(&rig, joint, &target, 240);
+        TEST_NOT_ZERO(step.rise_ticks != U32_MAX && step.descent < 1e-4f && step.lateral < 1e-4f && step.spin < 1e-4f);
+        const f32 after = V3F64Demote(DynamicsTestPose(&rig.pipeline, rig.box).position).y;
+        TEST_NOT_ZERO(F32Abs((after - rest.y) - 1.0f) < 0.01f);
+
+        /* the critically damped rise to 90 % takes 3.89 / omega: 37 ticks at 1 Hz, 9 at 4 Hz, within a quarter */
+        const f32 rise_expected = 3.89f / omega / rig.pipeline.timestep;
+        if (!(F32Abs((f32) step.rise_ticks - rise_expected) <= 0.25f * rise_expected + 1.0f)) { fprintf(stderr, "mouse joint: failed: F32Abs((f32) step.rise_ticks - rise_expected) <= 0.25f * rise_expected + 1.0f\n"); }
+        TEST_NOT_ZERO(F32Abs((f32) step.rise_ticks - rise_expected) <= 0.25f * rise_expected + 1.0f);
+
+        DynamicsMouseRigFree(&rig);
+    }
+
+    /* the cap: a hand of half the weight cannot hold the box, it falls at g / 2 with the pull at the cap; two weights lift it */
+    for (u32 pass = 0; pass < 2; ++pass)
+    {
+        const f32 force_scale = (pass == 0) ? 0.5f : 2.0f;
+        struct dynamics_MouseRig rig = DynamicsMouseRigAlloc(start, 0);
+        const v3f64 target = V3F64Add(V3Promote(start), V3F64(0.0, 1.0, 0.0));
+        struct ds_MouseJointPrefab prefab;
+        ds_MouseJointPrefabFromBody(&prefab, &rig.pipeline, rig.box, target, 2.0f, 1.0f, force_scale, 0.0f);
+        const ds_JointId joint = ds_MouseJointAdd(&rig.pipeline, &prefab, rig.box, &frame);
+        TEST_NOT_ZERO(!ds_JointIdNullCheck(joint));
+        const f32 weight = rig.body->mass * g;
+        TEST_NOT_ZERO(F32Abs(prefab.max_force - force_scale * weight) <= 1e-5f * weight);
+
+        const v3 after = DynamicsMouseRigRun(&rig, 60);
+        const struct ds_MouseJoint *mouse = DynamicsTestMouseSim(&rig.pipeline, joint);
+        if (pass == 0)
+        {
+            /* one second of g / 2 less the velocity damping: well over 2 m down, with the pull pinned at the cap */
+            if (!(start.y - after.y > 2.0f)) { fprintf(stderr, "mouse joint: failed: start.y - after.y > 2.0f\n"); }
+        TEST_NOT_ZERO(start.y - after.y > 2.0f);
+            TEST_NOT_ZERO(F32Abs(V3Length(mouse->impulse) - mouse->max_impulse) <= 1e-6f * mouse->max_impulse);
+        }
+        else
+        {
+            const f32 omega = 2.0f * F32_PI * 2.0f;
+            const f32 sag = g / (omega * omega);
+            if (!(F32Abs(after.y - (start.y + 1.0f - sag)) < 0.02f)) { fprintf(stderr, "mouse joint: failed: F32Abs(after.y - (start.y + 1.0f - sag)) < 0.02f\n"); }
+        TEST_NOT_ZERO(F32Abs(after.y - (start.y + 1.0f - sag)) < 0.02f);
+            TEST_NOT_ZERO(V3Length(mouse->impulse) < mouse->max_impulse);
+        }
+        DynamicsMouseRigFree(&rig);
+    }
+
+    /* spin: a box spinning at 5 rad/s held at its centre keeps spinning (the solver's damping aside); with braking it stops */
+    for (u32 pass = 0; pass < 2; ++pass)
+    {
+        const f32 torque_scale = (pass == 0) ? 0.0f : 1.0f;
+        struct dynamics_MouseRig rig = DynamicsMouseRigAlloc(start, 0);
+        struct ds_MouseJointPrefab prefab;
+        ds_MouseJointPrefabFromBody(&prefab, &rig.pipeline, rig.box, V3Promote(start), 2.0f, 1.0f, 100.0f, torque_scale);
+        const ds_JointId joint = ds_MouseJointAdd(&rig.pipeline, &prefab, rig.box, &frame);
+        TEST_NOT_ZERO(!ds_JointIdNullCheck(joint));
+        const f32 w0 = 5.0f;
+        DynamicsMouseRigCompute(&rig)->angular_velocity = V3(0.0f, 0.0f, w0);
+
+        SnapshotTestTick(&rig.pipeline);
+        const struct ds_MouseJoint *mouse = DynamicsTestMouseSim(&rig.pipeline, joint);
+        if (pass == 0)
+        {
+            TEST_NOT_ZERO(mouse->max_angular_impulse == 0.0f && V3Length(mouse->angular_impulse) == 0.0f);
+        }
+        else
+        {
+            /* the first tick's braking is at the cap: the spin's momentum is many ticks of max torque */
+            TEST_NOT_ZERO(mouse->max_angular_impulse > 0.0f);
+            TEST_NOT_ZERO(F32Abs(V3Length(mouse->angular_impulse) - mouse->max_angular_impulse) <= 1e-6f * mouse->max_angular_impulse);
+        }
+
+        DynamicsMouseRigRun(&rig, 59);
+        const f32 w = V3Length(DynamicsMouseRigCompute(&rig)->angular_velocity);
+        const f32 damped = w0 * F32Pow(1.0f / (1.0f + g_solver_config->angular_dampening * rig.pipeline.timestep), 60.0f);
+        if (pass == 0)
+        {
+            if (!(F32Abs(w - damped) <= 0.02f * damped)) { fprintf(stderr, "mouse joint: failed: F32Abs(w - damped) <= 0.02f * damped\n"); }
+        TEST_NOT_ZERO(F32Abs(w - damped) <= 0.02f * damped);
+        }
+        else
+        {
+            if (!(w < 1e-3f)) { fprintf(stderr, "mouse joint: failed: w < 1e-3f\n"); }
+        TEST_NOT_ZERO(w < 1e-3f);
+        }
+        DynamicsMouseRigFree(&rig);
+    }
+
+    return output;
+}
+
+/* a held box sleeps with its joint, a target move wakes it, the removal of the sleeping joint drops it (file comment) */
+static struct test_Output DynamicsMouseJointSleepTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+
+    const f32 g = -g_solver_config->gravity.y;
+    const v3 start = V3(0.0f, 4.0f, 0.0f);
+    const ds_Transform frame = ds_TransformIdentity();
+    struct dynamics_MouseRig rig = DynamicsMouseRigAlloc(start, 1);
+    v3f64 target = V3Promote(start);
+    struct ds_MouseJointPrefab prefab;
+    ds_MouseJointPrefabFromBody(&prefab, &rig.pipeline, rig.box, target, 2.0f, 1.0f, 100.0f, 0.0f);
+    const ds_JointId joint = ds_MouseJointAdd(&rig.pipeline, &prefab, rig.box, &frame);
+    TEST_NOT_ZERO(!ds_JointIdNullCheck(joint));
+    const f32 sag = g / (4.0f * F32_PI * F32_PI * 4.0f);
+
+    /* the box settles and sleeps: the joint sim moves into the set, out of the colours, holding the tick's weight */
+    u32 t;
+    for (t = 0; t < 600 && rig.body->set < SOLVER_SET_SLEEPING_FIRST; ++t)
+    {
+        SnapshotTestTick(&rig.pipeline);
+    }
+    TEST_NOT_ZERO(t < 600);
+    const struct ds_Joint *j = ds_JointLookup(&rig.pipeline, joint).address;
+    TEST_NOT_ZERO(j->set == rig.body->set && j->color == CG_INVALID_COLOR);
+    TEST_NOT_ZERO(rig.pipeline.solver_set_pool.buf[rig.body->set].joint_sim_pool.count == 1);
+    const f32 weight_tick = rig.body->mass * g * rig.pipeline.timestep;
+    TEST_NOT_ZERO(F32Abs(V3Length(DynamicsTestMouseSim(&rig.pipeline, joint)->impulse) - weight_tick) <= 0.05f * weight_tick);
+    ds_DynamicsValidate(&rig.pipeline);
+
+    /* a target move wakes the set at once and the box follows: 1 m to the side within 2 s, then sleeps again */
+    target = V3F64Add(target, V3F64(1.0, 0.0, 0.0));
+    ds_MouseJointTargetSet(&rig.pipeline, joint, target);
+    TEST_NOT_ZERO(rig.body->set == SOLVER_SET_ACTIVE && j->color != CG_INVALID_COLOR);
+    const v3 moved = DynamicsMouseRigRun(&rig, 120);
+    if (!(F32Abs(moved.x - 1.0f) < 0.01f && F32Abs(moved.y - (start.y - sag)) < 0.01f)) { fprintf(stderr, "mouse joint: failed: F32Abs(moved.x - 1.0f) < 0.01f && F32Abs(moved.y - (start.y - sag)) < 0.01f\n"); }
+        TEST_NOT_ZERO(F32Abs(moved.x - 1.0f) < 0.01f && F32Abs(moved.y - (start.y - sag)) < 0.01f);
+    for (t = 0; t < 600 && rig.body->set < SOLVER_SET_SLEEPING_FIRST; ++t)
+    {
+        SnapshotTestTick(&rig.pipeline);
+    }
+    TEST_NOT_ZERO(t < 600);
+    ds_DynamicsValidate(&rig.pipeline);
+
+    /* the setters on a sleeping joint wake it; a removed joint makes them NO-OPs */
+    ds_MouseJointStrengthSet(&rig.pipeline, joint, 2.0f * prefab.max_force);
+    TEST_NOT_ZERO(rig.body->set == SOLVER_SET_ACTIVE && DynamicsTestMouseSim(&rig.pipeline, joint)->max_force == 2.0f * prefab.max_force);
+    for (t = 0; t < 600 && rig.body->set < SOLVER_SET_SLEEPING_FIRST; ++t)
+    {
+        SnapshotTestTick(&rig.pipeline);
+    }
+    TEST_NOT_ZERO(t < 600);
+
+    /* removing the sleeping joint wakes the box, which falls */
+    const f32 y_held = V3F64Demote(DynamicsTestPose(&rig.pipeline, rig.box).position).y;
+    ds_JointRemove(&rig.pipeline, joint);
+    TEST_NOT_ZERO(ds_JointLookup(&rig.pipeline, joint).address == NULL && rig.body->set == SOLVER_SET_ACTIVE);
+    TEST_NOT_ZERO(rig.pipeline.solver_set_pool.buf[SOLVER_SET_ACTIVE].joint_sim_pool.count == 0);
+    ds_MouseJointTargetSet(&rig.pipeline, joint, target);
+    const v3 fallen = DynamicsMouseRigRun(&rig, 30);
+    if (!(y_held - fallen.y > 0.5f)) { fprintf(stderr, "mouse joint: failed: y_held - fallen.y > 0.5f\n"); }
+        TEST_NOT_ZERO(y_held - fallen.y > 0.5f);
+    ds_DynamicsValidate(&rig.pipeline);
+
+    DynamicsMouseRigFree(&rig);
+    return output;
+}
+
 /* a frictionless box sliding down a 30 degree slope against the damped free-slide recurrence (file comment) */
 static struct test_Output DynamicsSlideTest(struct test_Environment *env)
 {
@@ -3280,6 +3583,8 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsRangeSpringTest,
     DynamicsCoincidentAnchorsTest,
     DynamicsJointSleepTest,
+    DynamicsMouseJointTest,
+    DynamicsMouseJointSleepTest,
     DynamicsSlideTest,
     DynamicsBounceTest,
     DynamicsFirstTickTest,

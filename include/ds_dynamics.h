@@ -953,7 +953,7 @@ struct ds_MouseJoint
 
     /* Per-tick solver data */
     m3      soft_mass;          /* Inv(J*Inv(M)*J^T + gamma*I), the three spring rows   */
-    f32     gamma;              /* 1.0f / (h*(c + h*k))                                 */
+    m3      gamma;              /* Inv(c + h*k) / h = Inv(NormalMass) / (h*omega*(2*zeta + h*omega)) */
     v3      bias_velocity;      /* beta*(joint frame 0 - target), beta = k / (c + h*k)  */
     m3      angular_mass;       /* Inv(world inverse inertia), the three braking rows   */
     f32     max_impulse;        /* h*max_force                                          */

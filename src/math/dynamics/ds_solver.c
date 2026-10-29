@@ -774,6 +774,11 @@ void ds_JointConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color_i
                 ds_DistanceJointConstraintInit(jsim, bcomp, bsim, pipeline->timestep);
             } break;
 
+            case DS_JOINT_TYPE_MOUSE:
+            {
+                ds_MouseJointConstraintInit(jsim, bcomp, bsim, pipeline->timestep);
+            } break;
+
             default:
             {
             } break;
@@ -812,6 +817,11 @@ void ds_JointConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 color
                 ds_DistanceJointConstraintWarmup(jsim, bcomp, bsim);
             } break;
 
+            case DS_JOINT_TYPE_MOUSE:
+            {
+                ds_MouseJointConstraintWarmup(jsim, bcomp, bsim);
+            } break;
+
             default:
             {
             } break;
@@ -848,6 +858,11 @@ void ds_JointConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 colo
             case DS_JOINT_TYPE_DISTANCE:
             {
                 ds_DistanceJointConstraintIterate(jsim, bcomp, bsim);
+            } break;
+
+            case DS_JOINT_TYPE_MOUSE:
+            {
+                ds_MouseJointConstraintIterate(jsim, bcomp, bsim);
             } break;
 
             default:

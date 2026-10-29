@@ -564,9 +564,11 @@ void ds_DistanceJointConstraintInit(struct ds_JointSim *jsim, struct ds_BodyComp
         dj->soft_mass = 1.0f / (inv_normal_mass + dj->gamma);
     }
     /* the row toward target: rigid for a point range, the spring when enabled, none for a free range */
-    dj->target_mass = (dj->range.low == dj->range.high) ? dj->normal_mass
-                    : (dj->enable_spring)                ? dj->soft_mass
-                    :                                      0.0f;
+    dj->target_mass = (dj->range.low == dj->range.high) 
+                    ? dj->normal_mass
+                    : (dj->enable_spring)                
+                        ? dj->soft_mass
+                        : 0.0f;
 }
 
 void ds_DistanceJointConstraintWarmup(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2])
@@ -858,15 +860,76 @@ ds_JointId ds_MouseJointAdd(struct ds_Dynamics *pipeline, const struct ds_MouseJ
 
 void ds_MouseJointConstraintInit(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2], const f32 timestep)
 {
-    //TODO
+    struct ds_MouseJoint *mj = &jsim->mouse;
+
+    mj->max_impulse = timestep*mj->max_force;
+    mj->max_angular_impulse = timestep*mj->max_torque;
+
+    jsim->r[0] = QUnitRotate(bsim[0]->world.rotation, V3Sub(jsim->local_frame[0].position, bsim[0]->local_center_of_mass));
+
+    const v3f64 p = V3F64Add(ds_BodySimWorldCenterOfMass(bsim[0]), V3Promote(jsim->r[0]));
+    const v3 C = V3F64Demote(V3F64Sub(mj->target, p));
+
+    const m3 m = M3Scale(M3Identity(), bsim[0]->inv_mass);
+    const m3 cr = M3(
+                 0.0f,          -jsim->r[0].z,    jsim->r[0].y,
+                 jsim->r[0].z,   0.0f,           -jsim->r[0].x,
+                -jsim->r[0].y,   jsim->r[0].x,    0.0f
+            );
+    m3 normal_mass;
+    const m3 inv_normal_mass = M3Sub(m, M3Mul(cr, M3Mul(bsim[0]->world_inv_inertia, cr)));
+    const f32 det = M3Inverse(&normal_mass, inv_normal_mass);
+    ds_Assert(det > 0.0f);
+
+    const f32 angular_frequency = mj->hertz * F32_PI2;
+    const m3 k = M3Scale(normal_mass, angular_frequency * angular_frequency);
+
+    mj->gamma = M3Scale(inv_normal_mass, 1.0f / (timestep*angular_frequency*(2.0f*mj->damping_ratio + timestep*angular_frequency)));
+    const m3 beta = M3Scale(M3Mul(k, mj->gamma), timestep);
+    mj->bias_velocity = M3V3Mul(beta, C);
+    const f32 det2 = M3Inverse(&mj->soft_mass, M3Add(inv_normal_mass, mj->gamma));
+    ds_Assert(det2 > 0.0f);
+    const f32 det3 = M3Inverse(&mj->angular_mass, bsim[0]->world_inv_inertia);
+    ds_Assert(det3 > 0.0f);
 }
 
 void ds_MouseJointConstraintWarmup(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2])
 {
-    //TODO
+    struct ds_MouseJoint *mj = &jsim->mouse;
+
+    bcomp[0]->linear_velocity = V3AddScaled(bcomp[0]->linear_velocity, mj->impulse, -bsim[0]->inv_mass);
+    const v3 delta_w0 = M3V3Mul(bsim[0]->world_inv_inertia, V3Add(V3Cross(jsim->r[0], mj->impulse), mj->angular_impulse));
+    bcomp[0]->angular_velocity = V3Sub(bcomp[0]->angular_velocity, delta_w0);
 }
 
 void ds_MouseJointConstraintIterate(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2])
 {
-    //TODO
+    struct ds_MouseJoint *mj = &jsim->mouse;
+
+    /* spring rows: C' = -(v + w x r) */
+    const v3 separating_velocity = V3Scale(V3Add(bcomp[0]->linear_velocity, V3Cross(bcomp[0]->angular_velocity, jsim->r[0])), -1.0f);
+    const v3 rhs = V3Add(V3Add(separating_velocity, mj->bias_velocity), M3V3Mul(mj->gamma, mj->impulse));
+    v3 new_impulse = V3Sub(mj->impulse, M3V3Mul(mj->soft_mass, rhs));
+    f32 impulse_sq = V3LengthSquared(new_impulse);
+    if (impulse_sq > mj->max_impulse * mj->max_impulse)
+    {
+        new_impulse = V3Scale(new_impulse, mj->max_impulse / F32Sqrt(impulse_sq));
+    }
+    const v3 delta_impulse = V3Sub(new_impulse, mj->impulse);
+    mj->impulse = new_impulse;
+
+    bcomp[0]->linear_velocity = V3AddScaled(bcomp[0]->linear_velocity, delta_impulse, -bsim[0]->inv_mass);
+    bcomp[0]->angular_velocity = V3Sub(bcomp[0]->angular_velocity, M3V3Mul(bsim[0]->world_inv_inertia, V3Cross(jsim->r[0], delta_impulse)));
+
+    /* braking rows: C' = -w, no bias */
+    v3 new_angular_impulse = V3Add(mj->angular_impulse, M3V3Mul(mj->angular_mass, bcomp[0]->angular_velocity));
+    impulse_sq = V3LengthSquared(new_angular_impulse);
+    if (impulse_sq > mj->max_angular_impulse * mj->max_angular_impulse)
+    {
+        new_angular_impulse = V3Scale(new_angular_impulse, mj->max_angular_impulse / F32Sqrt(impulse_sq));
+    }
+    const v3 delta_angular_impulse = V3Sub(new_angular_impulse, mj->angular_impulse);
+    mj->angular_impulse = new_angular_impulse;
+
+    bcomp[0]->angular_velocity = V3Sub(bcomp[0]->angular_velocity, M3V3Mul(bsim[0]->world_inv_inertia, delta_angular_impulse));
 }
