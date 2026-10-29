@@ -324,20 +324,10 @@ static void led_UiTest(struct led *led, const struct ui_Visual *visual)
 #define LED_GRAB_FORCE_SCALE    100.0f
 #define LED_GRAB_TORQUE_SCALE   0.5f
 
-/* the pick ray through the cursor, or through the viewport's centre while the cursor is locked (the view direction) */
-static struct rayWorld led_ViewportPickRay(const struct led *led, const struct ui_Node *viewport, struct ds_Window *win)
+/* the pick ray through a window pixel of the viewport */
+static struct rayWorld led_ViewportPickRay(const struct led *led, const struct ui_Node *viewport, const v2 pointer)
 {
-	v2 pixel;
-	if (ds_CursorLockedCheck(win))
-	{
-		pixel = V2(0.5f * viewport->pixel_size.x, 0.5f * viewport->pixel_size.y);
-	}
-	else
-	{
-		pixel = V2(g_ui->inter.cursor_position.x - viewport->pixel_position.x,
-			   g_ui->inter.cursor_position.y - viewport->pixel_position.y);
-	}
-
+	const v2 pixel = V2(pointer.x - viewport->pixel_position.x, pointer.y - viewport->pixel_position.y);
 	const v3f64 pixel_world = WindowSpaceToWorldSpace(pixel, viewport->pixel_size, &led->cam);
 	v3 dir = V3F64Demote(V3F64Sub(pixel_world, led->cam.position));
 	dir = V3Scale(dir, 1.0f / V3Length(dir));
@@ -552,7 +542,30 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 				ui_Parent(slot.index)
 				{
 					struct ui_Node *node = slot.address;
-					const struct rayWorld ray = led_ViewportPickRay(led, node, win);
+					/* locked cursor: the pointer is the viewport's centre (the view direction), drawn as a crosshair */
+					const u32 locked = ds_CursorLockedCheck(win);
+					const v2 pointer = (locked)
+						? V2(node->pixel_position.x + 0.5f * node->pixel_size.x, node->pixel_position.y + 0.5f * node->pixel_size.y)
+						: g_ui->inter.cursor_position;
+					if (locked)
+					{
+						ui_BackgroundColor(V4(0.9f, 0.9f, 0.9f, 0.8f))
+						{
+							ui_FixedX(pointer.x - 8.0f)
+							ui_FixedY(pointer.y - 1.0f)
+							ui_Width(ui_SizePixel(16.0f, 1.0f))
+							ui_Height(ui_SizePixel(2.0f, 1.0f))
+							ui_NodeAllocNonHashed(UI_DRAW_BACKGROUND);
+
+							ui_FixedX(pointer.x - 1.0f)
+							ui_FixedY(pointer.y - 8.0f)
+							ui_Width(ui_SizePixel(2.0f, 1.0f))
+							ui_Height(ui_SizePixel(16.0f, 1.0f))
+							ui_NodeAllocNonHashed(UI_DRAW_BACKGROUND);
+						}
+					}
+
+					const struct rayWorld ray = led_ViewportPickRay(led, node, pointer);
 					if (node->inter & UI_INTER_HOVER)
 					{
 						const u32f32 hit = ds_DynamicsRaycastParameter(&led->physics, &ray);
@@ -563,8 +576,8 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 							const struct led_Node *entity = led->node_hierarchy.pool.buf + body->entity;
 							const char *body_id = CstrUtf8(g_ui->mem_frame, entity->id);
 
-							ui_FixedX(g_ui->inter.cursor_position.x)
-							ui_FixedY(g_ui->inter.cursor_position.y)
+							ui_FixedX(pointer.x)
+							ui_FixedY(pointer.y)
 							ui_Width(ui_SizeText(128.0f, 1.0f))
 							ui_Height(ui_SizePixel(24.0f, 1.0f))
 							ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW | UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_SKIP_HOVER_SEARCH, "%k##%u", &entity->id, body->entity);

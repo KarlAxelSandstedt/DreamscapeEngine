@@ -272,7 +272,11 @@ void ds_ProcessEvents(void)
 
 			case DS_CURSOR_POSITION:
 			{
-				sys_win->ui->inter.cursor_position = WindowPositionNativeToEngine(sys_win->native, event.native_cursor_window_position);
+				/* locked: the native position keeps accumulating the deltas, so only the delta means anything */
+				if (!ds_CursorLockedCheck(sys_win))
+				{
+					sys_win->ui->inter.cursor_position = WindowPositionNativeToEngine(sys_win->native, event.native_cursor_window_position);
+				}
 				const v2 cursor_delta = V2(event.native_cursor_window_delta.x, -event.native_cursor_window_delta.y);
 				sys_win->ui->inter.cursor_delta = V2Add(sys_win->ui->inter.cursor_delta, cursor_delta);
 			} break;
