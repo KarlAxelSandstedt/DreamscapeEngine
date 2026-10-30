@@ -273,7 +273,9 @@ struct ds_DynamicsDrawConfig
     u32     draw_constraint_points; /* every manifold point (body 0's side) and joint anchor (r_PointWorld) */
     u32     draw_contact_normals;
     u32     draw_contact_forces;    /* per manifold point: the normal force and the two friction forces on body 0 (ds_ForceDraw) */
-    u32     draw_joints;
+    u32     draw_joints;            /* the segment between a joint's anchors: a distance joint color_joint inside its range,
+                                       blending to color_joint_error at joint_error_max metres outside it; a mouse joint
+                                       anchor to target in color_mouse_joint */
     enum ds_DrawPointColorMode point_color_mode;
     u32     draw_on_top;            /* points and segments through the scene (no depth test); else only where visible */
     u32     draw_body_axes;         /* every active body: its mass centre (point) and frame axes (x red, y green, z blue) */
@@ -281,6 +283,7 @@ struct ds_DynamicsDrawConfig
 
     f32     force_scale;            /* metres per newton */
     f32     point_size;             /* pixels; read at draw */
+    f32     joint_error_max;        /* metres outside the range at which a distance joint is drawn fully color_joint_error */
     f32     axis_length;
     u32     refinement;             /* sphere and capsule meshes (r_MeshShape); read when a mesh is built */
     f32     energy_max;             /* DRAW_COLOR_VELOCITY: the linear kinetic energy (J) drawn fully red */
@@ -309,6 +312,8 @@ struct ds_DynamicsDrawConfig
     v4      color_friction_force;
     v4      color_joint_force;
     v4      color_joint;
+    v4      color_mouse_joint;
+    v4      color_joint_error;
     v4      color_mass_center;
 };
 
@@ -2149,9 +2154,10 @@ struct ds_PhysicsEvent *	ds_PhysicsEventPush(struct ds_Dynamics *pipeline);
  */
 void                        ds_ContactDrawRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 /*
- * Internal: push every awake joint under draw_constraint_points and draw_joint_forces: its anchors as points (a mouse
- * joint's body anchor only) and its force on each dynamic body at that body's anchor; after the solve. Zero forces
- * are skipped.
+ * Internal: push every awake joint under draw_constraint_points, draw_joint_forces and draw_joints: its anchors as
+ * points (a mouse joint's: body anchor and target), its force on each dynamic body at that body's anchor, and its
+ * segment between the anchors coloured by its error; after the solve, so the anchors are the final pose's. Zero
+ * forces are skipped.
  */
 void                        ds_JointDrawPush(struct ds_Dynamics *pipeline);
 /*

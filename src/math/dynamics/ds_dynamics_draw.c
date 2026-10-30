@@ -38,6 +38,23 @@ static v4 PointColor(const struct ds_DynamicsDrawConfig *config, const u32 color
     return (config->point_color_mode == DRAW_POINT_GRAPH_COLOR) ? config->color_graph[color_index] : uniform;
 }
 
+/* the joint frame's world position from the body's final pose (a static body through its own set) */
+static v3f64 JointAnchor(const struct ds_Dynamics *pipeline, const struct ds_SolverSet *active, const struct ds_JointSim *jsim, const u32 b)
+{
+    const struct ds_BodySim *sim;
+    if (jsim->body_sim[b] != ACTIVE_BODY_DUMMY_INDEX)
+    {
+        sim = active->body_sim_pool.buf + jsim->body_sim[b];
+    }
+    else
+    {
+        const struct ds_Joint *joint = pipeline->joint_pool.buf + jsim->joint;
+        const struct ds_Body *body = pipeline->body_pool.buf + joint->body[b];
+        sim = pipeline->solver_set_pool.buf[body->set].body_sim_pool.buf + body->sim;
+    }
+    return V3F64Add(sim->world.position, V3Promote(QUnitRotate(sim->world.rotation, jsim->local_frame[b].position)));
+}
+
 void ds_ContactDrawRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 low, const u32 high)
 {
     struct ds_DynamicsDraw *draw = &g_dynamics_worker[ds_ThreadSelfIndex()].draw;
@@ -115,35 +132,45 @@ void ds_JointDrawPush(struct ds_Dynamics *pipeline)
                 } break;
             }
 
-            /* the mouse joint's body 1 is the shapeless mouse anchor; its lever is never set */
-            const u32 anchor_count = (jsim->type == DS_JOINT_TYPE_MOUSE) ? 1 : 2;
-            for (u32 b = 0; b < anchor_count; ++b)
+            /* the mouse joint's body 1 is the shapeless mouse anchor: its second point is the target */
+            const u32 mouse = (jsim->type == DS_JOINT_TYPE_MOUSE);
+            v3f64 anchor[2];
+            for (u32 b = 0; b < 2; ++b)
             {
-                v3f64 anchor;
-                if (jsim->body_sim[b] != ACTIVE_BODY_DUMMY_INDEX)
-                {
-                    const struct ds_BodySim *sim = active->body_sim_pool.buf + jsim->body_sim[b];
-                    const struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + jsim->body_sim[b];
-                    anchor = V3F64Add(V3F64Add(sim->world_center_of_mass, V3Promote(bcomp->delta_position)), V3Promote(jsim->r[b]));
-                    if (config->draw_joint_forces)
-                    {
-                        ForceDrawPush(&draw->force, anchor, (b == 0) ? V3Negate(force) : force, config->color_joint_force);
-                    }
-                }
-                else
-                {
-                    /* a static body: its sim is in its own set and never moves */
-                    const struct ds_Joint *joint = pipeline->joint_pool.buf + jsim->joint;
-                    const struct ds_Body *body = pipeline->body_pool.buf + joint->body[b];
-                    const struct ds_BodySim *sim = pipeline->solver_set_pool.buf[body->set].body_sim_pool.buf + body->sim;
-                    anchor = V3F64Add(ds_BodySimWorldCenterOfMass(sim), V3Promote(jsim->r[b]));
-                }
+                anchor[b] = (mouse && b == 1) ? jsim->mouse.target : JointAnchor(pipeline, active, jsim, b);
 
                 if (config->draw_constraint_points)
                 {
-                    const struct r_PointWorld record = { .p = anchor, .color = point_color };
+                    const struct r_PointWorld record = { .p = anchor[b], .color = point_color };
                     ds_CPoolPushValue(draw->primitive.point, record);
                 }
+
+                if (config->draw_joint_forces && jsim->body_sim[b] != ACTIVE_BODY_DUMMY_INDEX)
+                {
+                    ForceDrawPush(&draw->force, anchor[b], (b == 0) ? V3Negate(force) : force, config->color_joint_force);
+                }
+            }
+
+            if (config->draw_joints && (jsim->type == DS_JOINT_TYPE_DISTANCE || mouse))
+            {
+                /* a distance joint: the distance outside the range, as a fraction of joint_error_max, picks the colour */
+                v4 color = config->color_mouse_joint;
+                if (!mouse)
+                {
+                    const intv range = jsim->distance.range;
+                    const f32 distance = V3Length(V3F64Demote(V3F64Sub(anchor[1], anchor[0])));
+                    const f32 error = F32Abs(distance - F32Clamp(distance, range.low, range.high));
+                    const f32 t = F32Clamp(error / config->joint_error_max, 0.0f, 1.0f);
+                    color = V4AddScaled(config->color_joint, V4Sub(config->color_joint_error, config->color_joint), t);
+                }
+
+                const struct r_SegmentWorld segment =
+                {
+                    .p0 = anchor[0],
+                    .p1 = anchor[1],
+                    .color = color,
+                };
+                ds_CPoolPushValue(draw->primitive.segment, segment);
             }
         }
     }

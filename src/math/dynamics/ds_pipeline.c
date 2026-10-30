@@ -107,6 +107,7 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
         .force_scale = 0.05f,
         .point_size = 6.0f,
         .draw_on_top = 1,
+        .joint_error_max = 0.02f,           /* four linear slops: a held joint stays near color_joint, a failing one goes red */
         .axis_length = 0.25f,
         .refinement = 12,
         .color_dbvh = V4(0.8f, 0.1f, 0.0f, 0.6f),
@@ -156,7 +157,9 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
         .color_contact_force = V4(1.0f, 0.9f, 0.1f, 1.0f),
         .color_friction_force = V4(0.6f, 1.0f, 1.0f, 1.0f),
         .color_joint_force = V4(1.0f, 0.6f, 1.0f, 1.0f),
-        .color_joint = V4(0.0f, 1.0f, 1.0f, 1.0f),
+        .color_joint = V4(0.5f, 0.8f, 1.0f, 1.0f),
+        .color_mouse_joint = V4(0.8f, 0.6f, 1.0f, 1.0f),
+        .color_joint_error = V4(0.8f, 0.0f, 0.0f, 1.0f),
         .color_mass_center = V4(1.0f, 1.0f, 1.0f, 1.0f),
     };
 
@@ -1805,7 +1808,7 @@ void ds_DynamicsSimulateFrame(struct ds_Dynamics *pipeline)
 	/* broadphase => narrowphase => solve => integrate */
     CollisionDetection(pipeline);
 	SolveConstraints(pipeline);
-    if (pipeline->draw_config.draw_constraint_points || pipeline->draw_config.draw_joint_forces)
+    if (pipeline->draw_config.draw_constraint_points || pipeline->draw_config.draw_joint_forces || pipeline->draw_config.draw_joints)
     {
         ds_JointDrawPush(pipeline);
     }
