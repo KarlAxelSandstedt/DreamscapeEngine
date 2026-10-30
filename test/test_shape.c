@@ -506,8 +506,9 @@ struct test_Output ShapeDistanceTest(struct test_Environment *env)
 }
 
 /*
- * c_ShapeDB: the stub is the unit box; Add computes mass properties and returns the slot, the stub's slot for an
- * empty, present or over-long id; Remove refuses a referenced shape and removes it once dereferenced.
+ * c_ShapeDB: the stub is the unit box; Add copies the shape, computes mass properties and returns the slot, the
+ * stub's slot for an empty, present or over-long id; Remove refuses a referenced shape and removes it once
+ * dereferenced; the copies survive the database growing and the sources dying.
  */
 static struct test_Output ShapeDatabaseTest(struct test_Environment *env)
 {
@@ -548,6 +549,34 @@ static struct test_Output ShapeDatabaseTest(struct test_Environment *env)
     TEST_EQUAL(1, c_ShapeDBRemove(&db, Utf8Inline("sphere")));
     TEST_EQUAL(SDB_STUB, c_ShapeDBLookup(&db, Utf8Inline("sphere")).index);
     TEST_EQUAL(1, db.sdb.pool.count);
+
+    /* the slots own their copies: grow past the initial length, then clobber the sources and look everything up */
+    const u32 count = 12;
+    u32 index[12];
+    for (u32 i = 0; i < count; ++i)
+    {
+        const v3 hw = V3(0.5f + (f32) i, 0.5f, 0.25f);
+        struct c_Shape box = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(env->mem_1, hw) };
+        index[i] = c_ShapeDBAdd(&db, Utf8Format(env->mem_1, "box_%u", i), &box).index;
+        TEST_TRUE(index[i] != SDB_STUB);
+        memset(box.hull.v, 0xff, box.hull.v_count*sizeof(v3));
+        memset(box.hull.plane, 0xff, box.hull.f_count*sizeof(struct plane));
+    }
+    for (u32 i = 0; i < count; ++i)
+    {
+        const utf8 id = Utf8Format(env->mem_1, "box_%u", i);
+        const struct slot found = c_ShapeDBLookup(&db, id);
+        TEST_EQUAL(index[i], found.index);
+        const struct c_Shape *shape = c_ShapeDBShape(&db, found.index);
+        TEST_TRUE(Utf8Equivalence(id, shape->id));
+        TEST_EQUAL(8, shape->hull.v_count);
+        TEST_TRUE(ShapeTestNear(shape->volume, 8.0f * (0.5f + (f32) i) * 0.5f * 0.25f, 1.0f));
+        TEST_TRUE(ShapeTestNear(shape->hull.bbox.max.x, 0.5f + (f32) i, 1.0f));
+        TEST_TRUE(shape->render_mesh == NULL);
+    }
+    TEST_EQUAL(1, c_ShapeDBRemove(&db, Utf8Inline("box_3")));
+    TEST_EQUAL(SDB_STUB, c_ShapeDBLookup(&db, Utf8Inline("box_3")).index);
+    TEST_EQUAL(index[4], c_ShapeDBLookup(&db, Utf8Inline("box_4")).index);
 
     c_ShapeDBDealloc(&db);
 	return output;

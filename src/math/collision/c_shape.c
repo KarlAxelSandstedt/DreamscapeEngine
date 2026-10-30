@@ -313,10 +313,19 @@ void c_ShapeUpdateMassProperties(struct c_Shape *shape)
 	}
 }
 
+/* free what the slot owns: its block and the renderer's mesh (ds_Free takes NULL) */
+static void c_ShapeSlotFree(const struct c_Shape *shape)
+{
+    ds_Free(shape->mem);
+    ds_Free(shape->render_mesh);
+}
+
 void c_ShapeDBAlloc(struct arena *mem, struct c_ShapeDB *db, const u32 length, const u32 growable)
 {
     ds_SDBAlloc(mem, db->sdb, length, growable);
     struct c_Shape *stub = db->sdb.pool.buf + SDB_STUB;
+    stub->mem = NULL;
+    stub->render_mesh = NULL;
     stub->type = C_SHAPE_CONVEX_HULL;
     stub->hull = DcelBoxStub();
     c_ShapeUpdateMassProperties(stub);
@@ -324,12 +333,110 @@ void c_ShapeDBAlloc(struct arena *mem, struct c_ShapeDB *db, const u32 length, c
 
 void c_ShapeDBDealloc(struct c_ShapeDB *db)
 {
+    for (u32 i = 0; i < db->sdb.pool.count_max; ++i)
+    {
+        const struct c_Shape *shape = db->sdb.pool.buf + i;
+        if (ds_PoolSlotAllocated(shape))
+        {
+            c_ShapeSlotFree(shape);
+        }
+    }
     ds_SDBDealloc(db->sdb);
 }
 
 static struct slot c_ShapeDBStubSlot(const struct c_ShapeDB *db)
 {
     return (struct slot) { .address = db->sdb.pool.buf + SDB_STUB, .index = SDB_STUB };
+}
+
+/* account for a push of size bytes at *offset: the arena pads to its alignment before a push, never after */
+static void c_ShapeBlockPush(u64 *offset, const u64 size)
+{
+    ds_StaticAssert((DEFAULT_MEMORY_ALIGNMENT & (DEFAULT_MEMORY_ALIGNMENT - 1)) == 0, "the rounding mask needs a power of two");
+    if (size)
+    {
+        *offset = ((*offset + DEFAULT_MEMORY_ALIGNMENT - 1) & ~(DEFAULT_MEMORY_ALIGNMENT - 1)) + size;
+    }
+}
+
+/* exact bytes of the slot's block: the id, the geometry arrays and a mesh's BVH pool, in c_ShapeGeometryCopy's order */
+static u64 c_ShapeBlockSize(const utf8 id, const struct c_Shape *src)
+{
+    u64 size = 0;
+    c_ShapeBlockPush(&size, id.size);
+    switch (src->type)
+    {
+        case C_SHAPE_CONVEX_HULL:
+        {
+            const struct dcel *h = &src->hull;
+            c_ShapeBlockPush(&size, h->f_count*sizeof(struct dcelFace));
+            c_ShapeBlockPush(&size, h->e_count*sizeof(struct dcelEdge));
+            c_ShapeBlockPush(&size, h->v_count*sizeof(v3));
+            c_ShapeBlockPush(&size, h->f_count*sizeof(struct plane));
+        } break;
+
+        case C_SHAPE_TRI_MESH:
+        {
+            const struct triMesh *mesh = src->mesh_bvh.mesh;
+            if (mesh)
+            {
+                c_ShapeBlockPush(&size, sizeof(struct triMesh));
+                c_ShapeBlockPush(&size, mesh->v_count*sizeof(v3));
+                c_ShapeBlockPush(&size, mesh->tri_count*sizeof(v3u32));
+                c_ShapeBlockPush(&size, src->mesh_bvh.tri_count*sizeof(u32));
+                c_ShapeBlockPush(&size, ((u64) src->mesh_bvh.bvh.pool.length + 1)*sizeof(struct BVHNode));
+            }
+        } break;
+
+        default: break;
+    }
+    return size;
+}
+
+/* copy src's geometry onto block (sized by c_ShapeBlockSize); a mesh's BVH pool slot by slot, the tree is all indices */
+static void c_ShapeGeometryCopy(struct arena *block, struct c_Shape *shape, const struct c_Shape *src)
+{
+    shape->type = src->type;
+    switch (src->type)
+    {
+        case C_SHAPE_SPHERE:    { shape->sphere = src->sphere; } break;
+        case C_SHAPE_CAPSULE:   { shape->capsule = src->capsule; } break;
+
+        case C_SHAPE_CONVEX_HULL:
+        {
+            const struct dcel *s = &src->hull;
+            shape->hull = *s;
+            shape->hull.f = ArenaPushMemcpy(block, s->f, s->f_count*sizeof(struct dcelFace));
+            shape->hull.e = ArenaPushMemcpy(block, s->e, s->e_count*sizeof(struct dcelEdge));
+            shape->hull.v = ArenaPushMemcpy(block, s->v, s->v_count*sizeof(v3));
+            shape->hull.plane = ArenaPushMemcpy(block, s->plane, s->f_count*sizeof(struct plane));
+        } break;
+
+        case C_SHAPE_TRI_MESH:
+        {
+            const struct triMeshBVH *s = &src->mesh_bvh;
+            shape->mesh_bvh = *s;
+            if (s->mesh)
+            {
+                struct triMesh *mesh = ArenaPushMemcpy(block, s->mesh, sizeof(struct triMesh));
+                mesh->v = ArenaPushMemcpy(block, s->mesh->v, s->mesh->v_count*sizeof(v3));
+                mesh->tri = ArenaPushMemcpy(block, s->mesh->tri, s->mesh->tri_count*sizeof(v3u32));
+                shape->mesh_bvh.mesh = mesh;
+                shape->mesh_bvh.tri = ArenaPushMemcpy(block, s->tri, s->tri_count*sizeof(u32));
+                /* a built BVH has no holes: slot i of the copy is slot i of the source (unused slots are poisoned) */
+                ds_Assert(s->bvh.pool.count == s->bvh.pool.count_max);
+                ds_PoolAlloc(block, shape->mesh_bvh.bvh.pool, s->bvh.pool.length, NOT_GROWABLE);
+                for (u32 i = 0; i < s->bvh.pool.count_max; ++i)
+                {
+                    const struct slot node = ds_PoolAdd(shape->mesh_bvh.bvh.pool);
+                    ds_Assert(node.index == i);
+                    memcpy(node.address, s->bvh.pool.buf + i, sizeof(struct BVHNode));
+                }
+            }
+        } break;
+
+        default: { ds_Assert(0); } break;
+    }
 }
 
 struct slot c_ShapeDBAdd(struct c_ShapeDB *db, const utf8 id, const struct c_Shape *src)
@@ -339,36 +446,41 @@ struct slot c_ShapeDBAdd(struct c_ShapeDB *db, const utf8 id, const struct c_Sha
         LogString(T_PHYSICS, S_WARNING, "shape database: empty id, the stub is returned");
         return c_ShapeDBStubSlot(db);
     }
+
+    if (id.size > C_SHAPE_ID_SIZE)
+    {
+        Log(T_PHYSICS, S_WARNING, "shape database: id longer than %u bytes, the stub is returned", C_SHAPE_ID_SIZE);
+        return c_ShapeDBStubSlot(db);
+    }
+
     if (ds_SDBLookup(db->sdb, id).index != SDB_STUB)
     {
         Log(T_PHYSICS, S_WARNING, "shape database: \"%k\" exists, the stub is returned", &id);
         return c_ShapeDBStubSlot(db);
     }
-    u8 buf[C_SHAPE_ID_SIZE];
-    const utf8 copy = Utf8CopyBuffered(buf, C_SHAPE_ID_SIZE, id);
-    if (!copy.len)
+
+    /* the block, carved by a heap arena; only its base is kept */
+    struct arena block = ArenaAlloc(NULL, c_ShapeBlockSize(id, src));
+    void *base = block.stack_ptr;
+    if (!base)
     {
-        Log(T_PHYSICS, S_WARNING, "shape database: id longer than %u bytes, the stub is returned", C_SHAPE_ID_SIZE);
+        Log(T_PHYSICS, S_WARNING, "shape database: out of memory, \"%k\" not added, the stub is returned", &id);
         return c_ShapeDBStubSlot(db);
     }
-    const struct slot slot = ds_SDBAddAlias(db->sdb, copy);
+
+    const struct slot slot = ds_SDBAddAlias(db->sdb, Utf8Copy(&block, id));
     if (slot.index == U32_MAX)
     {
+        ds_Free(base);
         Log(T_PHYSICS, S_WARNING, "shape database: full, \"%k\" not added, the stub is returned", &id);
         return c_ShapeDBStubSlot(db);
     }
 
     struct c_Shape *shape = slot.address;
-    shape->id = Utf8CopyBuffered(shape->id_buf, C_SHAPE_ID_SIZE, copy);
-    shape->type = src->type;
-    switch (src->type)
-    {
-        case C_SHAPE_SPHERE:        { shape->sphere = src->sphere; } break;
-        case C_SHAPE_CAPSULE:       { shape->capsule = src->capsule; } break;
-        case C_SHAPE_CONVEX_HULL:   { shape->hull = src->hull; } break;
-        case C_SHAPE_TRI_MESH:      { shape->mesh_bvh = src->mesh_bvh; } break;
-        default:                    { ds_Assert(0); } break;
-    }
+    shape->mem = base;
+    shape->render_mesh = NULL;
+    c_ShapeGeometryCopy(&block, shape, src);
+    ds_Assert(block.mem_left == 0);
     if (src->type != C_SHAPE_TRI_MESH)
     {
         c_ShapeUpdateMassProperties(shape);
@@ -378,12 +490,25 @@ struct slot c_ShapeDBAdd(struct c_ShapeDB *db, const utf8 id, const struct c_Sha
 
 u32 c_ShapeDBRemove(struct c_ShapeDB *db, const utf8 id)
 {
-    return ds_SDBRemove(db->sdb, id);
+    const struct slot slot = ds_SDBLookup(db->sdb, id);
+    const struct c_Shape copy = *(const struct c_Shape *) slot.address;
+    if (slot.index == SDB_STUB || !ds_SDBRemove(db->sdb, id))
+    {
+        return 0;
+    }
+    c_ShapeSlotFree(&copy);
+    return 1;
 }
 
 void c_ShapeDBForceRemove(struct c_ShapeDB *db, const utf8 id)
 {
-    ds_SDBForceRemove(db->sdb, id);
+    const struct slot slot = ds_SDBLookup(db->sdb, id);
+    if (slot.index != SDB_STUB)
+    {
+        const struct c_Shape copy = *(const struct c_Shape *) slot.address;
+        ds_SDBForceRemove(db->sdb, id);
+        c_ShapeSlotFree(&copy);
+    }
 }
 
 struct slot c_ShapeDBLookup(const struct c_ShapeDB *db, const utf8 id)

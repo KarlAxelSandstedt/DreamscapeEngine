@@ -107,6 +107,7 @@ u32 ds_SDBRemoveInternal(const struct ds_SDBPool pool, struct ds_HashMap *hash, 
 	{
 		return 0;
 	}
+
 	const u8 *node = internal_SdbNode(pool, layout, slot.index);
 	const u32 reference_count = *(const u32 *) (node + layout.reference_count_offset);
 	if (reference_count && !force)
@@ -114,6 +115,7 @@ u32 ds_SDBRemoveInternal(const struct ds_SDBPool pool, struct ds_HashMap *hash, 
 		Log(T_SYSTEM, S_WARNING, "string database: \"%k\" has %u references, not removed", &str, reference_count);
 		return 0;
 	}
+
 	ds_HashMapRemove(hash, *(const u32 *) (node + layout.id_hash_offset), slot.index);
 	ds_PoolRemoveInternal(*pool.buf, pool.count, pool.next_free, *pool.count_max, slot.index, layout.slot_size, layout.pool_slot_offset);
 	return 1;

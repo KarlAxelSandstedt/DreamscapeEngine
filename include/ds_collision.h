@@ -149,8 +149,9 @@ enum c_ShapeType
 #define C_SHAPE_ID_SIZE     128
 struct c_Shape
 {
-    u8                      id_buf[C_SHAPE_ID_SIZE];
     SDB_NODE;
+    void *                  mem;                /* one ds_Alloc block: the id and the geometry (c_ShapeDBAdd) */
+    void *                  render_mesh;        /* the renderer's wire mesh, one ds_Alloc block; NULL until it builds one */
     struct DLLNode          led_shape_node;     /* the editor's list of shapes (led.cs_shape_list) */
 
 	m3	                    inertia_tensor;		/* local shape frame intertia tensor (Assumes density=1.0, 
@@ -177,7 +178,8 @@ void	c_ShapeUpdateMassProperties(struct c_Shape *shape);
 c_ShapeDB
 ---------
 c_Shapes under string ids, shared by pipelines; constant during a tick. SDB_STUB is the unit box: what a missing
-id resolves to. Shapes and prefabs hold the reference counts; a referenced shape is not removed.
+id resolves to. Shapes and prefabs hold the reference counts; a referenced shape is not removed. A slot owns its
+id, geometry and render mesh: all freed with it.
 */
 struct c_ShapeDB
 {
@@ -189,8 +191,8 @@ void        c_ShapeDBAlloc(struct arena *mem, struct c_ShapeDB *db, const u32 le
 /* Free all memory allocated by the database */
 void        c_ShapeDBDealloc(struct c_ShapeDB *db);
 /*
- * Add src under id (copied, <= C_SHAPE_ID_SIZE) with its mass properties; bad id or full: warning, the stub's slot.
- * WARNING: the geometry is aliased, it must outlive the slot.
+ * Add a copy of src (id <= C_SHAPE_ID_SIZE bytes; a mesh's BVH as TriMeshBVHConstruct built it) with its mass
+ * properties; bad id, full or out of memory: warning, the stub's slot.
  */
 struct slot c_ShapeDBAdd(struct c_ShapeDB *db, const utf8 id, const struct c_Shape *src);
 /* 1 if removed; 0 if absent or referenced (warning) */
