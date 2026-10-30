@@ -101,10 +101,10 @@ struct led;
 void 	r_EditorMain(const struct led *led);
 
 /********************************************************
- *			r_primitive.c			*
+ *			debug records (r_main.c)		*
  ********************************************************/
 
-/* Debug primitives in world space (f64 positions), drawn as lines and points (a point is point_size pixels, the draw config's); the renderer tessellates the shapes. */
+/* what physics pushes for the renderer's segment and point walk (ds_DynamicsDraw): world space, f64 positions; a point is point_size pixels */
 struct r_SegmentWorld
 {
     v3f64   p0;
@@ -118,61 +118,8 @@ struct r_PointWorld
     v4      color;
 };
 
-/* wire */
-struct r_SphereWorld
-{
-    v3f64   center;
-    f32     radius;
-    v4      color;
-};
-
-/* wire; the axis p0 to p1 */
-struct r_CapsuleWorld
-{
-    v3f64   p0;
-    v3f64   p1;
-    f32     radius;
-    v4      color;
-};
-
-/* wire; half widths about t */
-struct r_BoxWorld
-{
-    ds_TransformWorld   t;
-    v3                  hw;
-    v4                  color;
-};
-
-/* axes: x red, y green, z blue */
-struct r_TransformWorld
-{
-    ds_TransformWorld   t;
-    f32                 axis_length;
-};
-
 DEFINE_CPOOL_STRUCT(r_SegmentWorld);
 DEFINE_CPOOL_STRUCT(r_PointWorld);
-DEFINE_CPOOL_STRUCT(r_SphereWorld);
-DEFINE_CPOOL_STRUCT(r_CapsuleWorld);
-DEFINE_CPOOL_STRUCT(r_BoxWorld);
-DEFINE_CPOOL_STRUCT(r_TransformWorld);
-
-/* one pool per primitive; written by one thread at a time */
-struct r_PrimitiveWorldBuffer
-{
-    ds_CPool(r_SegmentWorld)    segment;
-    ds_CPool(r_PointWorld)      point;
-    ds_CPool(r_SphereWorld)     sphere;
-    ds_CPool(r_CapsuleWorld)    capsule;
-    ds_CPool(r_BoxWorld)        box;
-    ds_CPool(r_TransformWorld)  transform;
-};
-
-/* every pool as ds_CPoolAlloc(mem, pool, length, growable); fatal on failure */
-void    r_PrimitiveWorldBufferAlloc(struct arena *mem, struct r_PrimitiveWorldBuffer *buffer, const u32 length, const u32 growable);
-void    r_PrimitiveWorldBufferFree(struct r_PrimitiveWorldBuffer *buffer);
-/* empty every pool, keeping their memory */
-void    r_PrimitiveWorldBufferFlush(struct r_PrimitiveWorldBuffer *buffer);
 
 /********************************************************
  *			r_camera.c			*

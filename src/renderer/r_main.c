@@ -468,8 +468,8 @@ static void r_InternalDrawSegments(const struct led *led)
 	for (u32 i = 0; i < source_count; ++i)
 	{
 		const struct ds_DynamicsDraw *draw = (i < pipeline->worker_count) ? &pipeline->worker[i].draw : &pipeline->draw;
-		segment_vertex_count += 2*draw->primitive.segment.count + 2*draw->force.count;
-		point_vertex_count += draw->primitive.point.count;
+		segment_vertex_count += 2*draw->segment.count + 2*draw->force.count;
+		point_vertex_count += draw->point.count;
 	}
 
 	struct r_Mesh *segments = (segment_vertex_count) ? ColorMeshFrame(segment_vertex_count, "segments") : NULL;
@@ -483,9 +483,9 @@ static void r_InternalDrawSegments(const struct led *led)
 
 		if (segment)
 		{
-			for (u32 k = 0; k < draw->primitive.segment.count; ++k)
+			for (u32 k = 0; k < draw->segment.count; ++k)
 			{
-				const struct r_SegmentWorld *s = draw->primitive.segment.buf + k;
+				const struct r_SegmentWorld *s = draw->segment.buf + k;
 				segment = SegmentWrite(segment, ViewRelative(s->p0, origin), ViewRelative(s->p1, origin), s->color);
 			}
 
@@ -499,9 +499,9 @@ static void r_InternalDrawSegments(const struct led *led)
 
 		if (point)
 		{
-			for (u32 k = 0; k < draw->primitive.point.count; ++k)
+			for (u32 k = 0; k < draw->point.count; ++k)
 			{
-				const struct r_PointWorld *s = draw->primitive.point.buf + k;
+				const struct r_PointWorld *s = draw->point.buf + k;
 				point = LineVertexWrite(point, ViewRelative(s->p, origin), s->color);
 			}
 		}
