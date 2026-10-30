@@ -91,10 +91,12 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
     {
         pipeline->worker[i].frame_arr[0] = ArenaAlloc(NULL, worker_frame_size);
         pipeline->worker[i].frame_arr[1] = ArenaAlloc(NULL, worker_frame_size);
-        r_PrimitiveWorldBufferAlloc(NULL, &pipeline->worker[i].draw.primitive, 0, GROWABLE);
+        ds_CPoolAlloc(NULL, pipeline->worker[i].draw.segment, 0, GROWABLE);
+        ds_CPoolAlloc(NULL, pipeline->worker[i].draw.point, 0, GROWABLE);
         ds_CPoolAlloc(NULL, pipeline->worker[i].draw.force, 0, GROWABLE);
     }
-    r_PrimitiveWorldBufferAlloc(NULL, &pipeline->draw.primitive, 0, GROWABLE);
+    ds_CPoolAlloc(NULL, pipeline->draw.segment, 0, GROWABLE);
+    ds_CPoolAlloc(NULL, pipeline->draw.point, 0, GROWABLE);
     ds_CPoolAlloc(NULL, pipeline->draw.force, 0, GROWABLE);
     pipeline->draw_config = (struct ds_DynamicsDrawConfig)
     {
@@ -153,7 +155,6 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
             V4(0.00f, 1.00f, 0.50f, 1.0f),
             V4(0.40f, 0.20f, 1.00f, 1.0f),
         },
-        .color_contact_normal = V4(1.0f, 1.0f, 0.0f, 1.0f),
         .color_contact_force = V4(1.0f, 0.9f, 0.1f, 1.0f),
         .color_friction_force = V4(0.6f, 1.0f, 1.0f, 1.0f),
         .color_joint_force = V4(1.0f, 0.6f, 1.0f, 1.0f),
@@ -237,10 +238,12 @@ void ds_DynamicsFree(struct ds_Dynamics *pipeline)
     {
         ArenaFree(pipeline->worker[i].frame_arr + 0);
         ArenaFree(pipeline->worker[i].frame_arr + 1);
-        r_PrimitiveWorldBufferFree(&pipeline->worker[i].draw.primitive);
+        ds_CPoolDealloc(pipeline->worker[i].draw.segment);
+        ds_CPoolDealloc(pipeline->worker[i].draw.point);
         ds_CPoolDealloc(pipeline->worker[i].draw.force);
     }
-    r_PrimitiveWorldBufferFree(&pipeline->draw.primitive);
+    ds_CPoolDealloc(pipeline->draw.segment);
+    ds_CPoolDealloc(pipeline->draw.point);
     ds_CPoolDealloc(pipeline->draw.force);
 
     ds_BitSetDealloc(&pipeline->shape_dynamic_usage_set);
@@ -1892,10 +1895,12 @@ void ds_DynamicsTick(struct ds_Dynamics *pipeline)
     ds_NumericsConfigPush(&pipeline->numerics_config);
     for (u32 i = 0; i < pipeline->worker_count; ++i)
     {
-        r_PrimitiveWorldBufferFlush(&pipeline->worker[i].draw.primitive);
+        ds_CPoolFlush(pipeline->worker[i].draw.segment);
+        ds_CPoolFlush(pipeline->worker[i].draw.point);
         ds_CPoolFlush(pipeline->worker[i].draw.force);
     }
-    r_PrimitiveWorldBufferFlush(&pipeline->draw.primitive);
+    ds_CPoolFlush(pipeline->draw.segment);
+    ds_CPoolFlush(pipeline->draw.point);
     ds_CPoolFlush(pipeline->draw.force);
 
 	if (pipeline->frames_completed)

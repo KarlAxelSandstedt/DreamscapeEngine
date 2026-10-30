@@ -83,7 +83,7 @@ void ds_ContactDrawRange(struct ds_Dynamics *pipeline, const u32 color_index, co
                 if (config->draw_constraint_points)
                 {
                     const struct r_PointWorld record = { .p = point, .color = point_color };
-                    ds_CPoolPushValue(draw->primitive.point, record);
+                    ds_CPoolPushValue(draw->point, record);
                 }
 
                 if (config->draw_contact_forces)
@@ -142,7 +142,7 @@ void ds_JointDrawPush(struct ds_Dynamics *pipeline)
                 if (config->draw_constraint_points)
                 {
                     const struct r_PointWorld record = { .p = anchor[b], .color = point_color };
-                    ds_CPoolPushValue(draw->primitive.point, record);
+                    ds_CPoolPushValue(draw->point, record);
                 }
 
                 if (config->draw_joint_forces && jsim->body_sim[b] != ACTIVE_BODY_DUMMY_INDEX)
@@ -170,7 +170,7 @@ void ds_JointDrawPush(struct ds_Dynamics *pipeline)
                     .p1 = anchor[1],
                     .color = color,
                 };
-                ds_CPoolPushValue(draw->primitive.segment, segment);
+                ds_CPoolPushValue(draw->segment, segment);
             }
         }
     }
@@ -191,7 +191,7 @@ void ds_BodyDrawRange(struct ds_Dynamics *pipeline, const u32 low, const u32 hig
         const v3f64 com = V3F64Add(sim->world_center_of_mass, V3Promote(bcomp->delta_position));
 
         const struct r_PointWorld point = { .p = com, .color = config->color_mass_center };
-        ds_CPoolPushValue(draw->primitive.point, point);
+        ds_CPoolPushValue(draw->point, point);
 
         for (u32 a = 0; a < 3; ++a)
         {
@@ -201,7 +201,7 @@ void ds_BodyDrawRange(struct ds_Dynamics *pipeline, const u32 low, const u32 hig
                 .p1 = V3F64Add(com, V3Promote(V3Scale(QUnitRotate(bcomp->rotation, axis[a]), config->axis_length))),
                 .color = axis_color[a],
             };
-            ds_CPoolPushValue(draw->primitive.segment, segment);
+            ds_CPoolPushValue(draw->segment, segment);
         }
     }
 }

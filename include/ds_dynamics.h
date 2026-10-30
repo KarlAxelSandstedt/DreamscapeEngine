@@ -194,8 +194,8 @@ void    ds_DynamicsMetricsPrint(FILE *file, const struct ds_DynamicsMetrics *met
 ds_DynamicsDraw
 ===============
 Debug draw records pushed during a tick, one struct per worker and one for the serial phases; flushed at tick start.
-Records state what physics knows (a force in newtons); the renderer decides how it is drawn, so draw settings
-apply while paused. The primitive buffer is for ad hoc pushes, drawn as pushed. Never read by physics.
+Segments and points are drawn as pushed; a force is a vector the renderer scales at draw, so force_scale applies
+while paused. Never read by physics.
 */
 
 /* a force (N) at a world point; the colour is the config's at the push */
@@ -209,8 +209,9 @@ DEFINE_CPOOL_STRUCT(ds_ForceDraw);
 
 struct ds_DynamicsDraw
 {
-    struct r_PrimitiveWorldBuffer   primitive;
-    ds_CPool(ds_ForceDraw)          force;
+    ds_CPool(r_SegmentWorld)    segment;
+    ds_CPool(r_PointWorld)      point;
+    ds_CPool(ds_ForceDraw)      force;
 };
 
 /*
@@ -271,7 +272,6 @@ struct ds_DynamicsDrawConfig
     u32     draw_bounds;            /* every shape's proxy box, per frame */
     u32     draw_mesh_bvh;          /* every tri mesh's BVH, built once per shape (c_Shape.render_bvh) */
     u32     draw_constraint_points; /* every manifold point (body 0's side) and joint anchor (r_PointWorld) */
-    u32     draw_contact_normals;
     u32     draw_contact_forces;    /* per manifold point: the normal force and the two friction forces on body 0 (ds_ForceDraw) */
     u32     draw_joints;            /* the segment between a joint's anchors: a distance joint color_joint inside its range,
                                        blending to color_joint_error at joint_error_max metres outside it; a mouse joint
@@ -307,7 +307,6 @@ struct ds_DynamicsDrawConfig
     v4      color_not_touching;
     v4      color_constraint_point;
     v4      color_graph[DRAW_GRAPH_COLOR_COUNT];    /* GRAPH_COLOR: by constraint graph colour */
-    v4      color_contact_normal;
     v4      color_contact_force;
     v4      color_friction_force;
     v4      color_joint_force;
