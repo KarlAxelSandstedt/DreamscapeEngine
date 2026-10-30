@@ -627,6 +627,13 @@ void 		r_MeshHull(struct arena *mem, struct r_Mesh *mesh, const struct dcel *hul
 /* setup mesh from tri mesh: one triangle per tri with its normal */
 void 		r_MeshTriMesh(struct arena *mem, struct r_Mesh *mesh, const struct triMesh *tri_mesh);
 
+struct c_Shape;
+/*
+ * the shape's render mesh (shape->render_mesh): built on the first call by the constructor of its type into one
+ * ds_Alloc block the shape owns (its database frees it); refinement for spheres and capsules. NULL if out of memory.
+ */
+struct r_Mesh *	r_MeshShape(struct c_Shape *shape, const u32 refinement);
+
 /********************************************************
  *			r_gl.c				*
  ********************************************************/

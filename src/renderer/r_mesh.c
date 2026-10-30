@@ -18,6 +18,7 @@
 */
 
 #include "r_local.h"
+#include "ds_collision.h"
 
 
 static f32 stub_vertices[] =
@@ -405,4 +406,47 @@ void r_MeshTriMesh(struct arena *mem, struct r_Mesh *mesh, const struct triMesh 
 
 	mesh->index_max_used = 0;
 	//mesh->index_max_used = mesh->index_count-1;
+}
+
+struct r_Mesh *r_MeshShape(struct c_Shape *shape, const u32 refinement)
+{
+	if (shape->render_mesh)
+	{
+		return shape->render_mesh;
+	}
+
+	struct arena *tmp = ArenaPushScratch();
+	struct r_Mesh built = { .id = Utf8Empty() };
+	switch (shape->type)
+	{
+		case C_SHAPE_SPHERE:        { r_MeshSphere(tmp, &built, shape->sphere.radius, refinement); } break;
+		case C_SHAPE_CAPSULE:       { r_MeshCapsule(tmp, &built, shape->capsule.half_height, shape->capsule.radius, refinement); } break;
+		case C_SHAPE_CONVEX_HULL:   { r_MeshHull(tmp, &built, &shape->hull); } break;
+		case C_SHAPE_TRI_MESH:      { r_MeshTriMesh(tmp, &built, shape->mesh_bvh.mesh); } break;
+		default:                    { ds_Assert(0); } break;
+	}
+
+	/* one block: the mesh, its vertex data, its index data */
+	const u64 vertex_bytes = (u64) built.vertex_count * built.local_stride;
+	const u64 index_bytes = (u64) built.index_count * sizeof(u32);
+	const u64 mesh_offset = 0;
+	const u64 vertex_offset = sizeof(struct r_Mesh);
+	const u64 index_offset = vertex_offset + ((vertex_bytes + 7) & ~(u64) 7);
+	u8 *block = ds_Alloc(index_offset + index_bytes, DEFAULT_MEMORY_ALIGNMENT);
+	if (block)
+	{
+		struct r_Mesh *mesh = (struct r_Mesh *) (block + mesh_offset);
+		*mesh = built;
+		mesh->vertex_data = block + vertex_offset;
+		mesh->index_data = (index_bytes) ? (u32 *) (block + index_offset) : NULL;
+		memcpy(mesh->vertex_data, built.vertex_data, vertex_bytes);
+		memcpy(block + index_offset, built.index_data, index_bytes);
+		shape->render_mesh = mesh;
+	}
+	else
+	{
+		Log(T_RENDERER, S_ERROR, "shape %k: no memory for its render mesh (%lu B)", &shape->id, index_offset + index_bytes);
+	}
+	ArenaPopScratch();
+	return shape->render_mesh;
 }

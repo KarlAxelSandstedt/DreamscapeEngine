@@ -190,6 +190,51 @@ end:
 	return mesh;
 }
 
+/* the colour of a body's shapes under the config's mode; modes not yet derived fall back to the uniform colour */
+static v4 r_InternalShapeColor(const struct ds_DynamicsDrawConfig *config, const struct ds_Body *body)
+{
+	switch (config->shape_color_mode)
+	{
+		case DRAW_COLOR_BODY_TYPE:
+		{
+			const f32 a = config->color_shape.w;
+			return ds_BodyKinematicCheck(body) ? V4(0.3f, 0.5f, 1.0f, a)
+			     : ds_BodyDynamicCheck(body)   ? V4(1.0f, 1.0f, 1.0f, a)
+			     :                               V4(0.5f, 0.5f, 0.5f, a);
+		}
+
+		default: { return config->color_shape; }
+	}
+}
+
+/* draw_shapes: every shape's render mesh (built on first sight) and colour; the draw command is to come (notes/debug_draw.txt) */
+static void r_InternalDrawShapes(const struct led *led)
+{
+	ProfZone;
+	const struct ds_Dynamics *pipeline = &led->physics;
+	const struct ds_DynamicsDrawConfig *config = &pipeline->draw_config;
+	for (u64 bi = 0; bi < pipeline->body_usage_set.block_count; ++bi)
+	{
+		struct ds_BitBlock it = ds_BitBlockInit(pipeline->body_usage_set.bits[bi], bi);
+		while (ds_BitBlockHasNext(&it))
+		{
+			const struct ds_Body *body = pipeline->body_pool.buf + ds_BitBlockNext(&it);
+			const v4 color = r_InternalShapeColor(config, body);
+			const struct ds_Shape *shape = NULL;
+			for (i32 si = body->shape_list.first; si != DLL_SENTINEL; si = shape->body_shape.next)
+			{
+				shape = pipeline->shape_pool.buf + si;
+				struct c_Shape *cshape = c_ShapeDBShape(pipeline->cshape_db, shape->cshape_handle);
+				const struct r_Mesh *mesh = r_MeshShape(cshape, config->refinement);
+				ds_TransformWorld transform;
+				ds_ShapeWorldTransform(&transform, pipeline, shape);
+				(void) mesh; (void) color; (void) transform;   /* TODO the draw command */
+			}
+		}
+	}
+	ProfZoneEnd;
+}
+
 static void r_EditorDraw(const struct led *led)
 {
 	ProfZone;
@@ -297,6 +342,11 @@ static void r_EditorDraw(const struct led *led)
 			    }
             }
         }
+	}
+
+	if (led->physics.draw_config.draw_shapes)
+	{
+		r_InternalDrawShapes(led);
 	}
 
 	if (led->draw_bounding_box)

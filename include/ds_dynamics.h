@@ -242,7 +242,7 @@ struct ds_DynamicsDrawConfig
     f32     force_scale;            /* metres per newton */
     f32     point_size;
     f32     axis_length;
-    u32     circle_segments;        /* per wire circle */
+    u32     refinement;             /* sphere and capsule meshes (r_MeshShape); read when a mesh is built */
 
     v4      color_shape;
     v4      color_contact_point;
@@ -521,12 +521,15 @@ ds_BodyCompute.
 */
 
 #define BODY_FLAG_DYNAMIC_BIT    0
+#define BODY_FLAG_KINEMATIC_BIT  1
 
 #define BODY_FLAG_DYNAMIC		((u32) 1 << BODY_FLAG_DYNAMIC_BIT)
+#define BODY_FLAG_KINEMATIC		((u32) 1 << BODY_FLAG_KINEMATIC_BIT)   /* not simulated yet: drawn only */
 #define BODY_FLAG_ALL           (BODY_FLAG_DYNAMIC)
 
 #define ds_BodyStaticCheck(b)	(!((b)->flags & BODY_FLAG_DYNAMIC))
 #define ds_BodyDynamicCheck(b)	((b)->flags & BODY_FLAG_DYNAMIC)
+#define ds_BodyKinematicCheck(b)	((b)->flags & BODY_FLAG_KINEMATIC)
 
 #define ds_BodyDynamicBit(b)    (((b)->flags & BODY_FLAG_DYNAMIC) >> BODY_FLAG_DYNAMIC_BIT)
 
