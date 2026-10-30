@@ -1475,6 +1475,21 @@ void led_MeshSetup(struct led *led)
         led_RigidBodyPrefabAttachShape(led, rb, sp, l, &identity);
     }
 
+    /* heavy box and sphere: density 50, so their contact forces are 50 times the others' */
+    const char *heavy[2] = { "box", "sphere" };
+    for (u32 i = 0; i < 2; ++i)
+    {
+        const utf8 c = Utf8Format(sys_win->ui->mem_frame, "c_%s", heavy[i]);
+        const utf8 rm = Utf8Format(sys_win->ui->mem_frame, "rm_%s", heavy[i]);
+        const utf8 sp = Utf8Format(sys_win->ui->mem_frame, "s_heavy_%s", heavy[i]);
+        const utf8 rb = Utf8Format(sys_win->ui->mem_frame, "rb_heavy_%s", heavy[i]);
+        const utf8 l = Utf8Format(sys_win->ui->mem_frame, "l_s_heavy_%s", heavy[i]);
+        led_RigidBodyPrefabAdd(led, rb, rb_dynamic);
+        led_ShapePrefabAdd(led, sp, c, 50.0f, 0.0f, 0.5f, 0.5f);
+        led_ShapePrefabAttachRenderMesh(led, sp, rm);
+        led_RigidBodyPrefabAttachShape(led, rb, sp, l, &identity);
+    }
+
     const f32 mesh_x[3] = { -25.0f, 0.0f, 25.0f };
     const char *mesh_rb[3] = { "rb_waves", "rb_bowl", "rb_steps" };
     for (u32 m = 0; m < 3; ++m)
@@ -1488,6 +1503,27 @@ void led_MeshSetup(struct led *led)
                 const char *rb = ((i + j) & 1) ? "rb_sphere" : "rb_box";
                 led_JointSceneNodeAdd(led, "drop", m*16 + i*4 + j, position, Utf8Cstr(sys_win->ui->mem_frame, rb), dynamic_color);
             }
+        }
+
+        /* a stack of three heavy boxes in one back corner, a heavy sphere in the other */
+        for (u32 k = 0; k < 3; ++k)
+        {
+            led_JointSceneNodeAdd(led, "heavy", m*4 + k, V3(mesh_x[m] - 8.0f, 10.0f + 1.2f * (f32) k, 8.0f), Utf8Inline("rb_heavy_box"), dynamic_color);
+        }
+        led_JointSceneNodeAdd(led, "heavy", m*4 + 3, V3(mesh_x[m] + 8.0f, 10.0f, 8.0f), Utf8Inline("rb_heavy_sphere"), dynamic_color);
+    }
+
+    /* one mesh shape instanced four times, each turned and tilted differently, in a row behind */
+    for (u32 k = 0; k < 4; ++k)
+    {
+        const v3 position = V3(-37.5f + 25.0f * k, 0.0f, 30.0f);
+        const ds_Id node = led_JointSceneNodeAdd(led, "waves", k, position, Utf8Inline("rb_waves"), static_color);
+        struct led_Node *led_node = led->node_hierarchy.pool.buf + ds_IdIndex(node);
+        led_node->transform.rotation = QAxisAngle(V3(0.3f, 1.0f, 0.2f * (f32) k), F32_PI * (f32) k / 5.0f);     /* QAxisAngle normalizes */
+        for (u32 i = 0; i < 4; ++i)
+        {
+            const v3 drop = V3(position.x - 3.0f + 2.0f * i, 9.0f, position.z + 2.0f * (f32) i - 3.0f);
+            led_JointSceneNodeAdd(led, "waves_drop", k*4 + i, drop, Utf8Inline("rb_box"), dynamic_color);
         }
     }
 }
