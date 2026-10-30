@@ -1173,13 +1173,36 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_Width(ui_SizePixel(24.0f, 1.0f))
 									node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_7").address;
 									ui_Pad();
-									ui_NodeAllocF(UI_DRAW_TEXT, "draw contact points");
+									ui_NodeAllocF(UI_DRAW_TEXT, "draw constraint points");
 									if (node->inter & UI_INTER_LEFT_CLICK)
 									{
-										led->physics.draw_config.draw_contact_points = !led->physics.draw_config.draw_contact_points;
+										led->physics.draw_config.draw_constraint_points = !led->physics.draw_config.draw_constraint_points;
 									}
 
-									if (led->physics.draw_config.draw_contact_points)
+									if (led->physics.draw_config.draw_constraint_points)
+									{
+										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
+									}
+
+									if (node->inter & UI_INTER_HOVER)
+									{
+										node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
+									}
+								}
+
+								ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+								{
+									ui_Pad();
+									ui_Width(ui_SizePixel(24.0f, 1.0f))
+									node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_8").address;
+									ui_Pad();
+									ui_NodeAllocF(UI_DRAW_TEXT, "draw on top");
+									if (node->inter & UI_INTER_LEFT_CLICK)
+									{
+										led->physics.draw_config.draw_on_top = !led->physics.draw_config.draw_on_top;
+									}
+
+									if (led->physics.draw_config.draw_on_top)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}

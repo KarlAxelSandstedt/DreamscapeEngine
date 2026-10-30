@@ -425,11 +425,13 @@ static struct r_Mesh *ColorMeshFrame(const u64 vertex_count, const char *what)
 	return mesh;
 }
 
-static void ColorMeshDraw(const struct r_Mesh *mesh, const u64 primitive)
+/* the HUD layer draws after the game layer without depth testing, before the UI (smaller depths sort later) */
+static void ColorMeshDraw(const struct r_Mesh *mesh, const u64 primitive, const u32 on_top)
 {
 	const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 	const u64 depth = 0x7fffff;
-	const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, primitive, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
+	const u64 layer = (on_top) ? R_CMD_SCREEN_LAYER_HUD : R_CMD_SCREEN_LAYER_GAME;
+	const u64 cmd = r_CommandKey(layer, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, primitive, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
 	struct r_Instance *instance = r_InstanceAddNonCached(cmd);
 	instance->type = R_INSTANCE_MESH;
 	instance->mesh = (struct r_Mesh *) mesh;
@@ -508,13 +510,13 @@ static void r_InternalDrawSegments(const struct led *led)
 	if (segments)
 	{
 		ds_Assert((u64) (segment - (u8 *) segments->vertex_data) == segment_vertex_count * L_COLOR_STRIDE);
-		ColorMeshDraw(segments, R_CMD_PRIMITIVE_LINE);
+		ColorMeshDraw(segments, R_CMD_PRIMITIVE_LINE, config->draw_on_top);
 	}
 
 	if (points)
 	{
 		ds_Assert((u64) (point - (u8 *) points->vertex_data) == point_vertex_count * L_COLOR_STRIDE);
-		ColorMeshDraw(points, R_CMD_PRIMITIVE_POINT);
+		ColorMeshDraw(points, R_CMD_PRIMITIVE_POINT, config->draw_on_top);
 	}
 	ProfZoneEnd;
 }

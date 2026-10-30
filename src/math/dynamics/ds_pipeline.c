@@ -105,7 +105,8 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
         .shape_saturation = 0.85f,
         .shape_lightness = 0.85f,
         .force_scale = 0.05f,
-        .point_size = 12.0f,
+        .point_size = 6.0f,
+        .draw_on_top = 1,
         .axis_length = 0.25f,
         .refinement = 12,
         .color_dbvh = V4(0.8f, 0.1f, 0.0f, 0.6f),
@@ -122,16 +123,34 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
         .color_velocity_high = V4(1.0f, 0.2f, 0.2f, 0.9f),
         .color_touching = V4(1.0f, 0.8f, 0.2f, 0.9f),
         .color_not_touching = V4(0.35f, 0.35f, 0.35f, 0.9f),
-        .color_contact_point = V4(1.0f, 0.0f, 0.0f, 1.0f),
+        .color_constraint_point = V4(1.0f, 0.0f, 0.0f, 1.0f),
         /* static colours muted, the dynamic ones a cycle of distinct hues, the serial colour white */
         .color_graph =
         {
-            V4(0.6f, 0.6f, 0.6f, 1.0f), V4(0.6f, 0.5f, 0.4f, 1.0f), V4(0.4f, 0.6f, 0.5f, 1.0f), V4(0.5f, 0.4f, 0.6f, 1.0f),
-            V4(1.0f, 0.2f, 0.2f, 1.0f), V4(1.0f, 0.6f, 0.1f, 1.0f), V4(1.0f, 1.0f, 0.2f, 1.0f), V4(0.5f, 1.0f, 0.2f, 1.0f),
-            V4(0.1f, 0.9f, 0.3f, 1.0f), V4(0.2f, 1.0f, 0.8f, 1.0f), V4(0.2f, 0.8f, 1.0f, 1.0f), V4(0.3f, 0.4f, 1.0f, 1.0f),
-            V4(0.6f, 0.3f, 1.0f, 1.0f), V4(0.9f, 0.3f, 1.0f, 1.0f), V4(1.0f, 0.3f, 0.7f, 1.0f), V4(1.0f, 0.5f, 0.5f, 1.0f),
-            V4(0.8f, 0.7f, 0.4f, 1.0f), V4(0.6f, 0.8f, 0.3f, 1.0f), V4(0.3f, 0.7f, 0.6f, 1.0f), V4(0.4f, 0.6f, 0.9f, 1.0f),
-            V4(0.7f, 0.5f, 0.9f, 1.0f), V4(0.9f, 0.5f, 0.7f, 1.0f), V4(0.8f, 0.8f, 0.8f, 1.0f), V4(1.0f, 1.0f, 1.0f, 1.0f),
+            V4(0.6f, 0.6f, 0.6f, 1.0f),
+            V4(0.6f, 0.5f, 0.4f, 1.0f),
+            V4(0.4f, 0.6f, 0.5f, 1.0f),
+            V4(0.5f, 0.4f, 0.6f, 1.0f),
+            V4(1.0f, 0.2f, 0.2f, 1.0f),
+            V4(1.0f, 0.6f, 0.1f, 1.0f),
+            V4(1.0f, 1.0f, 0.2f, 1.0f),
+            V4(0.5f, 1.0f, 0.2f, 1.0f),
+            V4(0.1f, 0.9f, 0.3f, 1.0f),
+            V4(0.2f, 1.0f, 0.8f, 1.0f),
+            V4(0.2f, 0.8f, 1.0f, 1.0f),
+            V4(0.3f, 0.4f, 1.0f, 1.0f),
+            V4(0.6f, 0.3f, 1.0f, 1.0f),
+            V4(0.9f, 0.3f, 1.0f, 1.0f),
+            V4(1.0f, 0.3f, 0.7f, 1.0f),
+            V4(1.0f, 0.5f, 0.5f, 1.0f),
+            V4(0.8f, 0.7f, 0.4f, 1.0f),
+            V4(0.6f, 0.8f, 0.3f, 1.0f),
+            V4(0.3f, 0.7f, 0.6f, 1.0f),
+            V4(0.4f, 0.6f, 0.9f, 1.0f),
+            V4(0.7f, 0.5f, 0.9f, 1.0f),
+            V4(0.9f, 0.5f, 0.7f, 1.0f),
+            V4(0.8f, 0.8f, 0.8f, 1.0f),
+            V4(1.0f, 1.0f, 1.0f, 1.0f),
         },
         .color_contact_normal = V4(1.0f, 1.0f, 0.0f, 1.0f),
         .color_contact_force = V4(1.0f, 0.5f, 0.0f, 1.0f),
@@ -812,7 +831,7 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
             ds_ParallelFor(pf, range_index)
             {
                 ds_ParallelForRange(&low, &high, pf, range_index);
-                if (pipeline->draw_config.draw_contact_points || pipeline->draw_config.draw_contact_forces)
+                if (pipeline->draw_config.draw_constraint_points || pipeline->draw_config.draw_contact_forces)
                 {
                     ds_ContactDrawRange(pipeline, ci, low, high);
                 }
@@ -1782,9 +1801,9 @@ void ds_DynamicsSimulateFrame(struct ds_Dynamics *pipeline)
 	/* broadphase => narrowphase => solve => integrate */
     CollisionDetection(pipeline);
 	SolveConstraints(pipeline);
-    if (pipeline->draw_config.draw_joint_forces)
+    if (pipeline->draw_config.draw_constraint_points || pipeline->draw_config.draw_joint_forces)
     {
-        ds_JointForceDrawPush(pipeline);
+        ds_JointDrawPush(pipeline);
     }
 
     for (u32 i = 0; i < pipeline->worker_count; ++i)

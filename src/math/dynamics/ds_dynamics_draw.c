@@ -45,7 +45,7 @@ void ds_ContactDrawRange(struct ds_Dynamics *pipeline, const u32 color_index, co
     const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     const struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
     const f32 timestep_inv = 1.0f / pipeline->timestep;
-    const v4 point_color = PointColor(config, color_index, config->color_contact_point);
+    const v4 point_color = PointColor(config, color_index, config->color_constraint_point);
 
     for (u32 ci = low; ci < high; ++ci)
     {
@@ -63,7 +63,7 @@ void ds_ContactDrawRange(struct ds_Dynamics *pipeline, const u32 color_index, co
                 const struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
                 const v3f64 point = V3F64Add(com, V3Promote(ccp->r[0]));
 
-                if (config->draw_contact_points)
+                if (config->draw_constraint_points)
                 {
                     const struct r_PointWorld record = { .p = point, .color = point_color };
                     ds_CPoolPushValue(draw->primitive.point, record);
@@ -81,9 +81,9 @@ void ds_ContactDrawRange(struct ds_Dynamics *pipeline, const u32 color_index, co
     }
 }
 
-void ds_JointForceDrawPush(struct ds_Dynamics *pipeline)
+void ds_JointDrawPush(struct ds_Dynamics *pipeline)
 {
-    ds_CPool(ds_ForceDraw) *pool = &pipeline->draw.force;
+    struct ds_DynamicsDraw *draw = &pipeline->draw;
     const struct ds_DynamicsDrawConfig *config = &pipeline->draw_config;
     const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     const f32 timestep_inv = 1.0f / pipeline->timestep;
@@ -91,6 +91,7 @@ void ds_JointForceDrawPush(struct ds_Dynamics *pipeline)
     for (u32 color_index = 0; color_index < CG_COLOR_COUNT; ++color_index)
     {
         const struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+        const v4 point_color = PointColor(config, color_index, config->color_constraint_point);
         for (u32 ji = 0; ji < color->joint_sim_pool.count; ++ji)
         {
             const struct ds_JointSim *jsim = color->joint_sim_pool.buf + ji;
@@ -114,17 +115,35 @@ void ds_JointForceDrawPush(struct ds_Dynamics *pipeline)
                 } break;
             }
 
-            for (u32 b = 0; b < 2; ++b)
+            /* the mouse joint's body 1 is the shapeless mouse anchor; its lever is never set */
+            const u32 anchor_count = (jsim->type == DS_JOINT_TYPE_MOUSE) ? 1 : 2;
+            for (u32 b = 0; b < anchor_count; ++b)
             {
-                if (jsim->body_sim[b] == ACTIVE_BODY_DUMMY_INDEX)
+                v3f64 anchor;
+                if (jsim->body_sim[b] != ACTIVE_BODY_DUMMY_INDEX)
                 {
-                    continue;
+                    const struct ds_BodySim *sim = active->body_sim_pool.buf + jsim->body_sim[b];
+                    const struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + jsim->body_sim[b];
+                    anchor = V3F64Add(V3F64Add(sim->world_center_of_mass, V3Promote(bcomp->delta_position)), V3Promote(jsim->r[b]));
+                    if (config->draw_joint_forces)
+                    {
+                        ForceDrawPush(&draw->force, anchor, (b == 0) ? V3Negate(force) : force, config->color_joint_force);
+                    }
+                }
+                else
+                {
+                    /* a static body: its sim is in its own set and never moves */
+                    const struct ds_Joint *joint = pipeline->joint_pool.buf + jsim->joint;
+                    const struct ds_Body *body = pipeline->body_pool.buf + joint->body[b];
+                    const struct ds_BodySim *sim = pipeline->solver_set_pool.buf[body->set].body_sim_pool.buf + body->sim;
+                    anchor = V3F64Add(ds_BodySimWorldCenterOfMass(sim), V3Promote(jsim->r[b]));
                 }
 
-                const struct ds_BodySim *sim = active->body_sim_pool.buf + jsim->body_sim[b];
-                const struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + jsim->body_sim[b];
-                const v3f64 anchor = V3F64Add(V3F64Add(sim->world_center_of_mass, V3Promote(bcomp->delta_position)), V3Promote(jsim->r[b]));
-                ForceDrawPush(pool, anchor, (b == 0) ? V3Negate(force) : force, config->color_joint_force);
+                if (config->draw_constraint_points)
+                {
+                    const struct r_PointWorld record = { .p = anchor, .color = point_color };
+                    ds_CPoolPushValue(draw->primitive.point, record);
+                }
             }
         }
     }
