@@ -121,11 +121,10 @@ A scheduler worker: its thread, and a_mem_frame_switch, set by ds_JobSchedulerFr
 flushes its frame arena before it next runs jobs.
 */
 
-struct ds_Worker
+struct ds_Align(DS_CACHE_LINE) ds_Worker
 {
 	ds_Thread *	    thr;
 	u32 		    a_mem_frame_switch;	/* atomic sync-point: if set, on next task run flush mem_frame. */
-    u8              pad[64 - sizeof(void *) - sizeof(u32)];
 };
 
 /* main loop for slave workers */
@@ -164,15 +163,14 @@ Each phase allocates the maximum number of jobs of every type up front (why: ds_
             of jobs created within the job minus 1, i.e. If no jobs are created, U32_MAX is to be returned.
 */
 
-struct ds_PaddedCounter
+struct ds_Align(DS_CACHE_LINE) ds_PaddedCounter
 {
     u32     a_counter;
-    u8      pad[64 - sizeof(u32)];
 };
 
 typedef u32 (*ds_JobDispatchFunction)(const ds_JobId job);
 
-struct ds_JobPhase
+struct ds_Align(DS_CACHE_LINE) ds_JobPhase
 {
     ds_JobDispatchFunction      dispatch;
 
@@ -180,7 +178,6 @@ struct ds_JobPhase
     u32                         next_len;
     u8                          pad1[64 - 2*sizeof(void *) - sizeof(u32)];
     u32                         a_jobs_remaining;
-    u8                          pad2[64 - sizeof(u32)];
 };
 
 /* Allocate and initialize phase resources (job_type_count index counters on mem) and set the dispatch function. */
@@ -247,7 +244,7 @@ Usage Sketch:
     ds_JobPhaseEnd();
 */
 
-struct ds_JobScheduler
+struct ds_Align(DS_CACHE_LINE) ds_JobScheduler
 {
 	struct ds_Worker *  worker;
     struct ds_WSDeque * deque;              /* worker[i] owns deque[i] */
@@ -270,7 +267,6 @@ struct ds_JobScheduler
     u8                  pad4[64 - sizeof(u32)];
 
     semaphore           phase_completed;
-    u8                  pad5[64 - sizeof(semaphore)];
 };
 
 extern struct ds_JobScheduler *g_scheduler;
@@ -351,7 +347,7 @@ loop i+1 depends on loop i; the ds_ParallelFor API is built to make this easy.
 ds_ParallelForChain ends in a dummy loop (why: ds_job.c).
 */
 
-struct ds_ParallelFor
+struct ds_Align(DS_CACHE_LINE) ds_ParallelFor
 {
     u32 a_ready;
     u8  pad0[DS_CACHE_LINE - 4];
@@ -363,7 +359,6 @@ struct ds_ParallelFor
     u32 index_count;
     u32 range_count;
     u32 range_index_count_max;
-    u8  pad3[DS_CACHE_LINE - 12];
 };
 
 struct ds_ParallelForChain

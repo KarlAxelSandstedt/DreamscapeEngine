@@ -28,6 +28,9 @@ void ds_DynamicsStaticAssert(void)
     ds_StaticAssert(sizeof(struct ds_BodyCompute) == DS_CACHE_LINE, "");
     ds_StaticAssert(sizeof(struct ds_RebuildThreadCompute) == DS_CACHE_LINE, "");
     ds_StaticAssert(sizeof(struct ds_RebuildJob) == DS_CACHE_LINE, "");
+    ds_StaticAssert(sizeof(struct ds_RemovalJob) == DS_CACHE_LINE, "");
+    ds_StaticAssert(sizeof(struct ds_RebuildJobPhase) % DS_CACHE_LINE == 0, "");
+    ds_StaticAssert(sizeof(struct ds_DynamicsWorker) % DS_CACHE_LINE == 0, "");
     /* ds_ShapeContact converts c_ContactResult.contact_manifold in place into .manifold */
     ds_StaticAssert(sizeof(struct ds_SolverManifold) == sizeof(struct c_Manifold), "");
 }
@@ -80,10 +83,6 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
     ds_JobPhaseAlloc(mem, &pipeline->rebuild_phase->phase, REBUILD_JOB_COUNT, ds_RebuildJobPhaseDispatch);
     ds_JobPhaseAlloc(mem, &pipeline->removal_phase->phase, REMOVAL_JOB_COUNT, ds_RemovalJobPhaseDispatch);
 
-    /* &frame_arr[1] as frame_arr + sizeof: MSVC rejects subscripts in constant expressions */
-    ds_StaticAssert((u64) &((struct ds_DynamicsWorker *)0)->frame_arr + sizeof(struct arena) < (u64) &((struct ds_DynamicsWorker *)0)->pad, "");
-    ds_StaticAssert((u64) &((struct ds_DynamicsWorker *)0)->frame < (u64) &((struct ds_DynamicsWorker *)0)->pad, "");
-    ds_StaticAssert((u64) &((struct ds_DynamicsWorker *)0)->metrics < (u64) &((struct ds_DynamicsWorker *)0)->pad, "");
     pipeline->worker = ArenaPushAligned(mem, worker_count*sizeof(struct ds_DynamicsWorker), DS_CACHE_LINE);
     pipeline->worker_count = worker_count;
     g_dynamics_worker = pipeline->worker;
@@ -1426,7 +1425,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                     rebuild_phase->small_leaf_limit = 256;
                     rebuild_phase->pipeline = pipeline;
                     rebuild_phase->setup_job_length = g_scheduler->worker_count;
-                    rebuild_phase->setup_job = ArenaPushZero(&pipeline->frame, rebuild_phase->setup_job_length*sizeof(struct ds_RebuildJob));
+                    rebuild_phase->setup_job = ArenaPushAlignedZero(&pipeline->frame, rebuild_phase->setup_job_length*sizeof(struct ds_RebuildJob), DS_CACHE_LINE);
                     AtomicStoreRlx32(&rebuild_phase->a_setup_completed, 0);
                     AtomicStoreRlx32(&rebuild_phase->a_leaves_completed, 0);
                     AtomicStoreRlx32(&rebuild_phase->a_internal_next, 0);
@@ -1493,7 +1492,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                 removal_phase->pf = ds_ParallelForChainAlloc(&pipeline->frame, 1); 
                 ds_ParallelForInit(removal_phase->pf.parallel_for, (u32) pipeline->shape_dirty_set.block_count, 1);
                 removal_phase->job_count = g_scheduler->worker_count;
-                removal_phase->job = ArenaPushZero(&pipeline->frame, removal_phase->job_count*sizeof(struct ds_RemovalJob));
+                removal_phase->job = ArenaPushAlignedZero(&pipeline->frame, removal_phase->job_count*sizeof(struct ds_RemovalJob), DS_CACHE_LINE);
 
                 ds_JobPhaseReserve(&removal_phase->phase, REMOVAL_JOB, removal_phase->job_count);
                 for (u32 i = 0; i < removal_phase->job_count; ++i)

@@ -196,14 +196,12 @@ Worker owned dynamics data. Core to the pipeline here is the worker's double-buf
 Many parts of the pipeline pushes cached data onto the frame. 
 */
 
-struct ds_DynamicsWorker
+struct ds_Align(DS_CACHE_LINE) ds_DynamicsWorker
 {
     struct arena                frame_arr[2]; /* Double-buffered; Master thread switches arena on new frame */
     struct arena *              frame;
     
     struct ds_DynamicsMetrics   metrics;
-
-    u8                          pad[DS_CACHE_LINE];
 };
 
 /* indexed by workers using their thread indices (ds_ThreadSelfIndex()) */
@@ -546,7 +544,7 @@ ds_BodyCompute
 ==============
 Active rigid body velocity and other computational data used in the solver
 */
-struct ds_BodyCompute
+struct ds_Align(DS_CACHE_LINE) ds_BodyCompute
 {
 	v3 		        linear_velocity;        /* linear velocity of body */
 	v3 		        angular_velocity;       /* angular velocity of body (about local center of mass,
@@ -554,8 +552,6 @@ struct ds_BodyCompute
     v3              delta_position;         /* center of mass displacement since the step's start */
     q               rotation;
     u32             flags;
-
-    u8              pad[8];
 };
 DEFINE_CPOOL_STRUCT(ds_BodyCompute);
 
@@ -1701,22 +1697,20 @@ struct ds_RebuildRange
     f32 pivot;
 };
 
-struct ds_RebuildThreadCompute
+struct ds_Align(DS_CACHE_LINE) ds_RebuildThreadCompute
 {
     u32     count[2];
     v3      min[2];
     v3      max[2];
-    u8      pad[DS_CACHE_LINE - 2*sizeof(u32) - 4*sizeof(v3)];
 };
 
-struct ds_RebuildJob
+struct ds_Align(DS_CACHE_LINE) ds_RebuildJob
 {
     u32                     a_range_ready;      /* Only used for setup jobs */
     struct ds_RebuildRange  range;
-    u8                      pad[DS_CACHE_LINE - sizeof(u32) - sizeof(struct ds_RebuildRange)];
 };
 
-struct ds_RebuildJobPhase
+struct ds_Align(DS_CACHE_LINE) ds_RebuildJobPhase
 {
     struct ds_JobPhase              phase;
     struct ds_RebuildJob *          setup_job;
@@ -1748,7 +1742,6 @@ struct ds_RebuildJobPhase
     u8                              pad3[DS_CACHE_LINE];
 
     u32                             a_range_seed_count;
-    u8                              pad4[DS_CACHE_LINE];
 };
 
 /* see ds_BroadJobPhaseDispatch; the job's tag (ds_JobIdTag) selects the setup, range or leaf job */
@@ -1765,10 +1758,9 @@ enum ds_RemovalJobType
     REMOVAL_JOB_COUNT
 };
 
-struct ds_RemovalJob
+struct ds_Align(DS_CACHE_LINE) ds_RemovalJob
 {
     struct ds_BitSet    removal_set;
-    u8                  pad[DS_CACHE_LINE - sizeof(struct ds_BitSet)];
 };
 
 struct ds_RemovalJobPhase
