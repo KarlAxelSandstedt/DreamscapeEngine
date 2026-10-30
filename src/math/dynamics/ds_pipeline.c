@@ -121,10 +121,11 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
         .color_velocity_high = V4(1.0f, 0.2f, 0.2f, 0.9f),
         .color_touching = V4(1.0f, 0.8f, 0.2f, 0.9f),
         .color_not_touching = V4(0.35f, 0.35f, 0.35f, 0.9f),
-        .color_force = V4(1.0f, 0.55f, 0.1f, 1.0f),
         .color_contact_point = V4(1.0f, 0.0f, 0.0f, 1.0f),
         .color_contact_normal = V4(1.0f, 1.0f, 0.0f, 1.0f),
         .color_contact_force = V4(1.0f, 0.5f, 0.0f, 1.0f),
+        .color_friction_force = V4(0.2f, 0.9f, 1.0f, 1.0f),
+        .color_joint_force = V4(1.0f, 0.3f, 0.9f, 1.0f),
         .color_joint = V4(0.0f, 1.0f, 1.0f, 1.0f),
         .color_mass_center = V4(1.0f, 1.0f, 1.0f, 1.0f),
     };
@@ -666,10 +667,6 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
         ds_ParallelFor(pf, range_index)
         {
             ds_ParallelForRange(&low, &high, pf, range_index);
-            if (phase->velocity_start)
-            {
-                ds_ForceDrawVelocityStartRange(phase->velocity_start, pipeline, low, high);
-            }
             ds_BodyUpdateSolverDataRange(pipeline, low, high);
         }
         ProfZoneEnd;
@@ -790,10 +787,6 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
         {
             ds_ParallelForRange(&low, &high, pf, range_index);
             ds_BodyIntegrateVelocitiesRange(pipeline, low, high);
-            if (phase->velocity_start)
-            {
-                ds_ForceDrawRange(pipeline, phase->velocity_start, low, high);
-            }
         }
         ProfZoneEnd;
     }
@@ -808,6 +801,10 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
             ds_ParallelFor(pf, range_index)
             {
                 ds_ParallelForRange(&low, &high, pf, range_index);
+                if (pipeline->draw_config.draw_contact_forces)
+                {
+                    ds_ContactForceDrawRange(pipeline, ci, low, high);
+                }
                 ds_PositionConstraintInitAndCacheImpulsesRange(pipeline, ci, low, high);
             }
         }
@@ -1305,9 +1302,6 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
         ds_ParallelForInit(pfin + 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.count, 32);
         ds_ParallelForInit(pfo + 0, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.count, 32);
         solver_phase->proxy_range = ArenaPush(&pipeline->frame, pfo->range_count*sizeof(struct ds_ProxyRange));
-        solver_phase->velocity_start = (pipeline->draw_config.draw_forces)
-            ? ArenaPush(&pipeline->frame, pipeline->solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.count*sizeof(v3))
-            : NULL;
 
         struct ds_ParallelFor *pfci = solver_phase->pf_contact_init.parallel_for;
         struct ds_ParallelFor *pfji = solver_phase->pf_joint_init.parallel_for;
@@ -1777,6 +1771,10 @@ void ds_DynamicsSimulateFrame(struct ds_Dynamics *pipeline)
 	/* broadphase => narrowphase => solve => integrate */
     CollisionDetection(pipeline);
 	SolveConstraints(pipeline);
+    if (pipeline->draw_config.draw_joint_forces)
+    {
+        ds_JointForceDrawPush(pipeline);
+    }
 
     for (u32 i = 0; i < pipeline->worker_count; ++i)
     {

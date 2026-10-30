@@ -398,7 +398,7 @@ static void r_InternalDrawShapes(const struct led *led)
 /*
  * The segments pushed during the tick (ds_DynamicsDraw: the pipeline's and every worker's) as one line mesh on
  * the renderer's frame arena and one line instance; skipped when there is nothing to draw or the mesh does not
- * fit. A force is a segment of force_scale metres per newton in color_force. Positions are written relative to
+ * fit. A force is a segment of force_scale metres per newton in its colour. Positions are written relative to
  * the view origin.
  */
 static u8 *LineVertexWrite(u8 *vertex, const v3 p, const v4 color)
@@ -467,7 +467,7 @@ static void r_InternalDrawSegments(const struct led *led)
 		{
 			const struct ds_ForceDraw *s = draw->force.buf + k;
 			const v3 p = ViewRelative(s->origin, origin);
-			vertex = SegmentWrite(vertex, p, V3AddScaled(p, s->direction, s->magnitude * config->force_scale), config->color_force);
+			vertex = SegmentWrite(vertex, p, V3AddScaled(p, s->force, config->force_scale), s->color);
 		}
 	}
 	ds_Assert((u64) (vertex - vertex_begin) == vertex_count * L_COLOR_STRIDE);

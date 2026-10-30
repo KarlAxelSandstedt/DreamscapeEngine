@@ -19,37 +19,97 @@
 
 /* Physics debug drawing: the pushes behind ds_DynamicsDrawConfig. */
 
-void ds_ForceDrawVelocityStartRange(v3 *velocity_start, const struct ds_Dynamics *pipeline, const u32 low, const u32 high)
+static void ForceDrawPush(ds_CPool(ds_ForceDraw) *pool, const v3f64 origin, const v3 force, const v4 color)
 {
-    const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
-    for (u32 i = low; i < high; ++i)
+    if (V3Dot(force, force) > 0.0f)
     {
-        velocity_start[i] = active->body_compute_pool.buf[i].linear_velocity;
+        const struct ds_ForceDraw record =
+        {
+            .origin = origin,
+            .force = force,
+            .color = color,
+        };
+        ds_CPoolPushValue(*pool, record);
     }
 }
 
-void ds_ForceDrawRange(struct ds_Dynamics *pipeline, const v3 *velocity_start, const u32 low, const u32 high)
+void ds_ContactForceDrawRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 low, const u32 high)
 {
     ds_CPool(ds_ForceDraw) *pool = &g_dynamics_worker[ds_ThreadSelfIndex()].draw.force;
+    const struct ds_DynamicsDrawConfig *config = &pipeline->draw_config;
+    const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    const struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+    const f32 timestep_inv = 1.0f / pipeline->timestep;
+
+    for (u32 ci = low; ci < high; ++ci)
+    {
+        const struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + ci;
+        /* slot 0 is never static (the prepare's canonical slot) */
+        const struct ds_BodySim *sim = active->body_sim_pool.buf + ccomp->body_sim[0];
+        const struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + ccomp->body_sim[0];
+        const v3f64 com = V3F64Add(sim->world_center_of_mass, V3Promote(bcomp->delta_position));
+
+        for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
+        {
+            const struct ds_ContactConstraint *cc = ccomp->cc + cci;
+            for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
+            {
+                const struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
+                const v3f64 point = V3F64Add(com, V3Promote(ccp->r[0]));
+                /* the solver applies -impulse to body 0; friction per tangent */
+                ForceDrawPush(pool, point, V3Scale(cc->normal, -ccp->normal_impulse * timestep_inv), config->color_contact_force);
+                ForceDrawPush(pool, point, V3Scale(cc->tangent[0], -ccp->tangent_impulse[0] * timestep_inv), config->color_friction_force);
+                ForceDrawPush(pool, point, V3Scale(cc->tangent[1], -ccp->tangent_impulse[1] * timestep_inv), config->color_friction_force);
+            }
+        }
+    }
+}
+
+void ds_JointForceDrawPush(struct ds_Dynamics *pipeline)
+{
+    ds_CPool(ds_ForceDraw) *pool = &pipeline->draw.force;
+    const struct ds_DynamicsDrawConfig *config = &pipeline->draw_config;
     const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     const f32 timestep_inv = 1.0f / pipeline->timestep;
-    for (u32 i = low; i < high; ++i)
-    {
-        const struct ds_BodySim *sim = active->body_sim_pool.buf + i;
-        const struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + i;
 
-        /* f = m dv / dt; the active set holds dynamic bodies only, so the mass is finite */
-        const v3 force = V3Scale(V3Sub(bcomp->linear_velocity, velocity_start[i]), timestep_inv / sim->inv_mass);
-        const f32 magnitude = V3Length(force);
-        if (magnitude > 0.0f)
+    for (u32 color_index = 0; color_index < CG_COLOR_COUNT; ++color_index)
+    {
+        const struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+        for (u32 ji = 0; ji < color->joint_sim_pool.count; ++ji)
         {
-            const struct ds_ForceDraw record =
+            const struct ds_JointSim *jsim = color->joint_sim_pool.buf + ji;
+
+            /* the force on body 1; body 0 gets the opposite */
+            v3 force;
+            switch (jsim->type)
             {
-                .origin = V3F64Add(sim->world_center_of_mass, V3Promote(bcomp->delta_position)),
-                .direction = V3Scale(force, 1.0f / magnitude),
-                .magnitude = magnitude,
-            };
-            ds_CPoolPushValue(*pool, record);
+                case DS_JOINT_TYPE_DISTANCE:
+                {
+                    const struct ds_DistanceJoint *dj = &jsim->distance;
+                    force = V3Scale(dj->n, (dj->impulse + dj->impulse_low - dj->impulse_high) * timestep_inv);
+                } break;
+                case DS_JOINT_TYPE_MOUSE:
+                {
+                    force = V3Scale(jsim->mouse.impulse, timestep_inv);
+                } break;
+                default:
+                {
+                    force = V3Zero();
+                } break;
+            }
+
+            for (u32 b = 0; b < 2; ++b)
+            {
+                if (jsim->body_sim[b] == ACTIVE_BODY_DUMMY_INDEX)
+                {
+                    continue;
+                }
+
+                const struct ds_BodySim *sim = active->body_sim_pool.buf + jsim->body_sim[b];
+                const struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + jsim->body_sim[b];
+                const v3f64 anchor = V3F64Add(V3F64Add(sim->world_center_of_mass, V3Promote(bcomp->delta_position)), V3Promote(jsim->r[b]));
+                ForceDrawPush(pool, anchor, (b == 0) ? V3Negate(force) : force, config->color_joint_force);
+            }
         }
     }
 }
