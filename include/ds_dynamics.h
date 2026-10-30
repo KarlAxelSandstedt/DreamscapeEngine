@@ -191,6 +191,29 @@ void    ds_DynamicsMetricsPrint(FILE *file, const struct ds_DynamicsMetrics *met
 
 
 /*
+ds_DynamicsDraw
+===============
+Debug draw records pushed during a tick, one struct per worker and one for the serial phases; flushed at tick start.
+Records state what physics knows (a force in newtons); the renderer decides how it is drawn, so draw settings
+apply while paused. The primitive buffer is for ad hoc pushes, drawn as pushed. Never read by physics.
+*/
+
+/* direction unit */
+struct ds_ForceDraw
+{
+    v3f64   origin;
+    v3      direction;
+    f32     magnitude;
+};
+DEFINE_CPOOL_STRUCT(ds_ForceDraw);
+
+struct ds_DynamicsDraw
+{
+    struct r_PrimitiveWorldBuffer   primitive;
+    ds_CPool(ds_ForceDraw)          force;
+};
+
+/*
 ds_DynamicsWorker
 =================
 Worker owned dynamics data. Core to the pipeline here is the worker's double-buffered frame memory. 
@@ -203,7 +226,7 @@ struct ds_Align(DS_CACHE_LINE) ds_DynamicsWorker
     struct arena *              frame;
     
     struct ds_DynamicsMetrics   metrics;
-    struct r_PrimitiveWorldBuffer draw;         /* debug drawing from jobs; flushed each tick */
+    struct ds_DynamicsDraw      draw;         /* debug drawing from jobs; flushed each tick */
 };
 
 /* indexed by workers using their thread indices (ds_ThreadSelfIndex()) */
@@ -1965,7 +1988,7 @@ struct ds_Dynamics
 
     struct ds_DynamicsMetrics       metrics;
     struct ds_DynamicsWorker *      worker;
-    struct r_PrimitiveWorldBuffer   draw;                   /* debug drawing: what the serial phases push */
+    struct ds_DynamicsDraw          draw;                   /* debug drawing: what the serial phases push */
     struct ds_DynamicsDrawConfig    draw_config;
     u32                             worker_count;
 

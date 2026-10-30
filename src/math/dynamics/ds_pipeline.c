@@ -90,9 +90,11 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
     {
         pipeline->worker[i].frame_arr[0] = ArenaAlloc(NULL, worker_frame_size);
         pipeline->worker[i].frame_arr[1] = ArenaAlloc(NULL, worker_frame_size);
-        r_PrimitiveWorldBufferAlloc(NULL, &pipeline->worker[i].draw, 0, GROWABLE);
+        r_PrimitiveWorldBufferAlloc(NULL, &pipeline->worker[i].draw.primitive, 0, GROWABLE);
+        ds_CPoolAlloc(NULL, pipeline->worker[i].draw.force, 0, GROWABLE);
     }
-    r_PrimitiveWorldBufferAlloc(NULL, &pipeline->draw, 0, GROWABLE);
+    r_PrimitiveWorldBufferAlloc(NULL, &pipeline->draw.primitive, 0, GROWABLE);
+    ds_CPoolAlloc(NULL, pipeline->draw.force, 0, GROWABLE);
     pipeline->draw_config = (struct ds_DynamicsDrawConfig)
     {
         .draw_shapes = 1,
@@ -200,9 +202,11 @@ void ds_DynamicsFree(struct ds_Dynamics *pipeline)
     {
         ArenaFree(pipeline->worker[i].frame_arr + 0);
         ArenaFree(pipeline->worker[i].frame_arr + 1);
-        r_PrimitiveWorldBufferFree(&pipeline->worker[i].draw);
+        r_PrimitiveWorldBufferFree(&pipeline->worker[i].draw.primitive);
+        ds_CPoolDealloc(pipeline->worker[i].draw.force);
     }
-    r_PrimitiveWorldBufferFree(&pipeline->draw);
+    r_PrimitiveWorldBufferFree(&pipeline->draw.primitive);
+    ds_CPoolDealloc(pipeline->draw.force);
 
     ds_BitSetDealloc(&pipeline->shape_dynamic_usage_set);
     ds_BitSetDealloc(&pipeline->shape_dirty_set);
@@ -1843,9 +1847,11 @@ void ds_DynamicsTick(struct ds_Dynamics *pipeline)
     ds_NumericsConfigPush(&pipeline->numerics_config);
     for (u32 i = 0; i < pipeline->worker_count; ++i)
     {
-        r_PrimitiveWorldBufferFlush(&pipeline->worker[i].draw);
+        r_PrimitiveWorldBufferFlush(&pipeline->worker[i].draw.primitive);
+        ds_CPoolFlush(pipeline->worker[i].draw.force);
     }
-    r_PrimitiveWorldBufferFlush(&pipeline->draw);
+    r_PrimitiveWorldBufferFlush(&pipeline->draw.primitive);
+    ds_CPoolFlush(pipeline->draw.force);
 
 	if (pipeline->frames_completed)
 	{
