@@ -477,7 +477,6 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 		//led->rb_prefab_list = ui_ListInit(AXIS_2_Y, 200.0f, 24.0f, UI_SELECTION_UNIQUE);
 		//led->rb_prefab_mesh_menu = ui_DropdownMenuInit(150.0f, Vec2Inline(110.0f, 24.0f), UI_DROPDOWN_ABOVE);
 		
-		led->rb_color_mode_menu = ui_DropdownMenuInit(120.0f, V2(196.0f, 24.0f), UI_DROPDOWN_BELOW);
 		led->shape_color_mode_menu = ui_DropdownMenuInit(120.0f, V2(196.0f, 24.0f), UI_DROPDOWN_BELOW);
 	}
 
@@ -936,29 +935,6 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 				ui_Parent(ui_NodeAllocNonHashed(UI_DRAW_BACKGROUND).index)
 				ui_Flags(UI_DRAW_ROUNDED_CORNERS | UI_TEXT_ALLOW_OVERFLOW)
 				{
-					if (ui_DropdownMenuF(&led->rb_color_mode_menu, "%s###%p_color_mode", body_color_mode_str[led->body_color_mode], &led->rb_color_mode_menu))
-					{
-						ui_DropdownMenuPush(&led->rb_color_mode_menu);
-
-						for (u32 i = 0; i < RB_COLOR_MODE_COUNT; ++i)
-						{
-							struct ui_Node *drop;
-							ui_Flags(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW)
-							drop = ui_DropdownMenuEntryF(&led->rb_color_mode_menu, "%s###%p_%u", 
-									body_color_mode_str[i], 
-									&led->rb_color_mode_menu, 
-									i).address;
-							if (drop->inter & UI_INTER_SELECT)
-							{
-								led->pending_body_color_mode = i;
-							}
-						}
-
-						ui_DropdownMenuPop(&led->rb_color_mode_menu);
-					}
-
-					ui_Pad(); 
-
 					if (ui_DropdownMenuF(&led->shape_color_mode_menu, "%s###%p_shape_color_mode", shape_color_mode_str[led->physics.draw_config.shape_color_mode], &led->shape_color_mode_menu))
 					{
 						ui_DropdownMenuPush(&led->shape_color_mode_menu);

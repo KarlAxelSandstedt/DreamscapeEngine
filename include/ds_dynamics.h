@@ -216,7 +216,7 @@ ds_DynamicsDrawConfig
 Debug drawing configuration (per-pipeline).
 */
 
-/* shape colouring; static bodies grey except in UNIFORM and RANDOM */
+/* shape colouring; static bodies grey and opaque except in UNIFORM */
 enum ds_DrawColorMode
 {
     DRAW_COLOR_UNIFORM = 0,         /* color_shape */
@@ -244,8 +244,20 @@ struct ds_DynamicsDrawConfig
     f32     axis_length;
     u32     refinement;             /* sphere and capsule meshes (r_MeshShape); read when a mesh is built */
     f32     energy_max;             /* DRAW_COLOR_VELOCITY: the linear kinetic energy (J) drawn fully red */
+    f32     shape_alpha;            /* RANDOM and ISLAND: the dynamic shapes' alpha */
+    f32     shape_saturation;       /* RANDOM and ISLAND: HSL saturation, 0 grey ... */
+    f32     shape_lightness;        /* ... and lightness, 1/2 the pure hue, 1 white */
 
-    v4      color_shape;
+    v4      color_shape;            /* UNIFORM */
+    v4      color_static;           /* static bodies in every mode but UNIFORM */
+    v4      color_kinematic;        /* BODY_TYPE */
+    v4      color_dynamic;
+    v4      color_sleeping;         /* SLEEP */
+    v4      color_awake;
+    v4      color_velocity_low;     /* VELOCITY: at rest ... */
+    v4      color_velocity_high;    /* ... and at energy_max */
+    v4      color_touching;         /* TOUCHING */
+    v4      color_not_touching;
     v4      color_contact_point;
     v4      color_contact_normal;
     v4      color_contact_force;

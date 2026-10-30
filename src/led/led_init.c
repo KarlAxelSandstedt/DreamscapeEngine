@@ -46,15 +46,6 @@ void led_ProjectMenuDealloc(struct led_ProjectMenu *menu)
 	DirectoryNavigatorDealloc(&menu->dir_nav);
 }
 
-const char *body_color_mode_str_buf[RB_COLOR_MODE_COUNT] = 
-{
-	"RB_COLOR_MODE_BODY",
-	"RB_COLOR_MODE_COLLISION",
-	"RB_COLOR_MODE_ISLAND",
-	"RB_COLOR_MODE_SLEEP",
-};
-const char **body_color_mode_str = body_color_mode_str_buf;
-
 const char *shape_color_mode_str_buf[DRAW_COLOR_MODE_COUNT] =
 {
 	"DRAW_COLOR_UNIFORM",
