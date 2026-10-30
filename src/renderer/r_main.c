@@ -287,7 +287,7 @@ static void r_EditorDraw(const struct led *led)
                 ds_TransformWorld transform;
                 ds_ShapeWorldTransform(&transform, &led->physics, s);
 
-			    const struct c_Shape *shape = led->physics.cshape_db->pool.buf + s->cshape_handle;
+			    const struct c_Shape *shape = c_ShapeDBShape(led->physics.cshape_db, s->cshape_handle);
 			    struct r_Mesh *mesh = BVHMesh(&g_r_core->frame, &shape->mesh_bvh.bvh, transform.position, transform.rotation, g_scene->view_origin, led->sbvh_color);
 			    if (mesh)
 			    {

@@ -32,7 +32,8 @@ the id's hash to indices. T is a struct with SDB_NODE among its members.
     struct slot ds_SDBAdd(mem, db, str)             a node whose id is a copy of str on mem
     struct slot ds_SDBAddAlias(db, str)             a node whose id aliases str's bytes (kept alive by the
                                                     caller for as long as the node exists)
-    void        ds_SDBRemove(db, str)               remove str's node if present, whatever its count
+    u32         ds_SDBRemove(db, str)               1 if removed; 0 if absent or referenced (warning)
+    void        ds_SDBForceRemove(db, str)          WARNING: removes a referenced node
     struct slot ds_SDBLookup(db, str)               str's slot, or the stub's (SDB_STUB) if not present
     struct slot ds_SDBReference(db, str)            lookup, then increment the found node's count
     void        ds_SDBDereference(db, index)        decrement the node's count (index: a node or SDB_STUB)
@@ -95,7 +96,10 @@ do                                                                              
 	ds_SDBAddInternal(NULL, ds_SDBPoolFields(db), &(db).hash, ds_SDBLayout(db), (str))
 
 #define ds_SDBRemove(db, str)                                                                           \
-	ds_SDBRemoveInternal(ds_SDBPoolFields(db), &(db).hash, ds_SDBLayout(db), (str))
+	ds_SDBRemoveInternal(ds_SDBPoolFields(db), &(db).hash, ds_SDBLayout(db), (str), 0)
+
+#define ds_SDBForceRemove(db, str)                                                                      \
+	((void) ds_SDBRemoveInternal(ds_SDBPoolFields(db), &(db).hash, ds_SDBLayout(db), (str), 1))
 
 #define ds_SDBLookup(db, str)                                                                           \
 	ds_SDBLookupInternal((db).pool.buf, &(db).hash, ds_SDBLayout(db), (str))
@@ -153,7 +157,7 @@ void        ds_SDBAllocInternal(struct arena *mem, const struct ds_SDBPool pool,
 void        ds_SDBFlushInternal(const struct ds_SDBPool pool, struct ds_HashMap *hash, const struct ds_SDBLayout layout);
 /* mem == NULL: alias str */
 struct slot ds_SDBAddInternal(struct arena *mem, const struct ds_SDBPool pool, struct ds_HashMap *hash, const struct ds_SDBLayout layout, const utf8 str);
-void        ds_SDBRemoveInternal(const struct ds_SDBPool pool, struct ds_HashMap *hash, const struct ds_SDBLayout layout, const utf8 str);
+u32         ds_SDBRemoveInternal(const struct ds_SDBPool pool, struct ds_HashMap *hash, const struct ds_SDBLayout layout, const utf8 str, const u32 force);
 static ds_ForceInline struct slot ds_SDBLookupInternal(void *buf, const struct ds_HashMap *hash, const struct ds_SDBLayout layout, const utf8 str);
 static ds_ForceInline struct slot ds_SDBReferenceInternal(void *buf, const struct ds_HashMap *hash, const struct ds_SDBLayout layout, const utf8 str);
 

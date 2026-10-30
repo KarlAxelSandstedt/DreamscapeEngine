@@ -312,3 +312,91 @@ void c_ShapeUpdateMassProperties(struct c_Shape *shape)
 						 -I_xz_up, -I_yz_up,  I_zz_up);
 	}
 }
+
+void c_ShapeDBAlloc(struct arena *mem, struct c_ShapeDB *db, const u32 length, const u32 growable)
+{
+    ds_SDBAlloc(mem, db->sdb, length, growable);
+    struct c_Shape *stub = db->sdb.pool.buf + SDB_STUB;
+    stub->type = C_SHAPE_CONVEX_HULL;
+    stub->hull = DcelBoxStub();
+    c_ShapeUpdateMassProperties(stub);
+}
+
+void c_ShapeDBDealloc(struct c_ShapeDB *db)
+{
+    ds_SDBDealloc(db->sdb);
+}
+
+static struct slot c_ShapeDBStubSlot(const struct c_ShapeDB *db)
+{
+    return (struct slot) { .address = db->sdb.pool.buf + SDB_STUB, .index = SDB_STUB };
+}
+
+struct slot c_ShapeDBAdd(struct c_ShapeDB *db, const utf8 id, const struct c_Shape *src)
+{
+    if (!id.len)
+    {
+        LogString(T_PHYSICS, S_WARNING, "shape database: empty id, the stub is returned");
+        return c_ShapeDBStubSlot(db);
+    }
+    if (ds_SDBLookup(db->sdb, id).index != SDB_STUB)
+    {
+        Log(T_PHYSICS, S_WARNING, "shape database: \"%k\" exists, the stub is returned", &id);
+        return c_ShapeDBStubSlot(db);
+    }
+    u8 buf[C_SHAPE_ID_SIZE];
+    const utf8 copy = Utf8CopyBuffered(buf, C_SHAPE_ID_SIZE, id);
+    if (!copy.len)
+    {
+        Log(T_PHYSICS, S_WARNING, "shape database: id longer than %u bytes, the stub is returned", C_SHAPE_ID_SIZE);
+        return c_ShapeDBStubSlot(db);
+    }
+    const struct slot slot = ds_SDBAddAlias(db->sdb, copy);
+    if (slot.index == U32_MAX)
+    {
+        Log(T_PHYSICS, S_WARNING, "shape database: full, \"%k\" not added, the stub is returned", &id);
+        return c_ShapeDBStubSlot(db);
+    }
+
+    struct c_Shape *shape = slot.address;
+    shape->id = Utf8CopyBuffered(shape->id_buf, C_SHAPE_ID_SIZE, copy);
+    shape->type = src->type;
+    switch (src->type)
+    {
+        case C_SHAPE_SPHERE:        { shape->sphere = src->sphere; } break;
+        case C_SHAPE_CAPSULE:       { shape->capsule = src->capsule; } break;
+        case C_SHAPE_CONVEX_HULL:   { shape->hull = src->hull; } break;
+        case C_SHAPE_TRI_MESH:      { shape->mesh_bvh = src->mesh_bvh; } break;
+        default:                    { ds_Assert(0); } break;
+    }
+    if (src->type != C_SHAPE_TRI_MESH)
+    {
+        c_ShapeUpdateMassProperties(shape);
+    }
+    return slot;
+}
+
+u32 c_ShapeDBRemove(struct c_ShapeDB *db, const utf8 id)
+{
+    return ds_SDBRemove(db->sdb, id);
+}
+
+void c_ShapeDBForceRemove(struct c_ShapeDB *db, const utf8 id)
+{
+    ds_SDBForceRemove(db->sdb, id);
+}
+
+struct slot c_ShapeDBLookup(const struct c_ShapeDB *db, const utf8 id)
+{
+    return ds_SDBLookup(db->sdb, id);
+}
+
+struct slot c_ShapeDBReference(struct c_ShapeDB *db, const utf8 id)
+{
+    return ds_SDBReference(db->sdb, id);
+}
+
+void c_ShapeDBDereference(struct c_ShapeDB *db, const u32 handle)
+{
+    ds_SDBDereference(db->sdb, handle);
+}

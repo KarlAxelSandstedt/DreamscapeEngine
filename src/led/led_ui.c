@@ -650,7 +650,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 					ui_list(&led->cs_list, "###%p", &led->cs_list)
 					for (i32 i = led->cs_shape_list.first; i != DLL_SENTINEL; i = shape->led_shape_node.next)
 					{
-						shape = led->cs_db.pool.buf + i;
+						shape = c_ShapeDBShape(&led->cs_db, i);
 						struct slot entry = ui_ListEntryAllocF(&led->cs_list, "###%p_%u", &led->cs_list, i);
 						if (entry.index)
 						ui_Parent(entry.index)
@@ -679,7 +679,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 					{
 						ui_Pad();
 
-						struct c_Shape *shape = led->cs_db.pool.buf + shape_selected;
+						struct c_Shape *shape = c_ShapeDBShape(&led->cs_db, shape_selected);
 						ui_Height(ui_SizePixel(24.0f, 1.0f))
 						ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW | UI_DRAW_BORDER, "%k##shape_selected", &shape->id);
 

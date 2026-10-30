@@ -361,60 +361,11 @@ void led_NodeDetachRigidBodyPrefab(struct led *led, const ds_Id id)
 
 static struct slot led_CollisionShapeAdd(struct led *led, const struct c_Shape *shape)
 {
-	struct slot slot = empty_slot;
-	if (!shape->id.len)
+	const struct slot slot = c_ShapeDBAdd(&led->cs_db, shape->id, shape);
+	if (slot.index != SDB_STUB)
 	{
-		LogString(T_LED, S_WARNING, "Failed to allocate collision shape: shape->id must not be empty");
-	} 
-	else if (ds_SDBLookup(led->cs_db, shape->id).index != SDB_STUB) 
-	{
-		LogString(T_LED, S_WARNING, "Failed to allocate collision shape: shape with given id already exist");
+		DLLAppend(led->cs_shape_list, led->cs_db.sdb.pool.buf, slot.index, led_shape_node);
 	}
-	else
-	{ 
-		u8 buf[C_SHAPE_ID_SIZE];
-		const utf8 copy = Utf8CopyBuffered(buf, C_SHAPE_ID_SIZE, shape->id);	
-		if (!copy.len)
-		{
-			Log(T_LED, S_WARNING, "Failed to allocate collision shape: shape->id size must be <= %luB", C_SHAPE_ID_SIZE);
-		}
-		else
-		{
-			slot = ds_SDBAddAlias(led->cs_db, copy);
-			DLLAppend(led->cs_shape_list, led->cs_db.pool.buf, slot.index, led_shape_node);
-			struct c_Shape *new_shape = slot.address;
-            new_shape->id = Utf8CopyBuffered(new_shape->id_buf, C_SHAPE_ID_SIZE, copy);
-			new_shape->type = shape->type;
-			switch (shape->type)
-			{
-				case C_SHAPE_SPHERE: 
-				{ 
-					new_shape->sphere = shape->sphere; 
-				} break;
-
-				case C_SHAPE_CAPSULE: 
-				{ 
-					new_shape->capsule = shape->capsule; 
-				} break;
-
-				case C_SHAPE_CONVEX_HULL: 
-				{ 
-					new_shape->hull = shape->hull; 
-				} break;
-
-				case C_SHAPE_TRI_MESH: 
-				{ 
-					new_shape->mesh_bvh = shape->mesh_bvh; 
-				} break;
-			};
-
-			if (shape->type != C_SHAPE_TRI_MESH)
-			{
-				c_ShapeUpdateMassProperties(new_shape);
-			}
-		}
-	}
-
 	return slot;
 }
 
@@ -546,14 +497,14 @@ void led_CollisionShapeRemove(struct led *led, const utf8 id)
 	if (slot.index != SDB_STUB && shape->reference_count == 0)
 	{
 		void *buf = shape->id.buf;
-		DLLRemove(led->cs_shape_list, led->cs_db.pool.buf, slot.index, led_shape_node);
-		ds_SDBRemove(led->cs_db, id);
+		DLLRemove(led->cs_shape_list, led->cs_db.sdb.pool.buf, slot.index, led_shape_node);
+		c_ShapeDBRemove(&led->cs_db, id);
 	}
 }
 
 struct slot led_CollisionShapeLookup(struct led *led, const utf8 id)
 {
-	return ds_SDBLookup(led->cs_db, id);
+	return c_ShapeDBLookup(&led->cs_db, id);
 }
 
 struct slot led_ShapePrefabAdd(struct led *led, const utf8 id, const utf8 cshape, const f32 density, const f32 restitution, const f32 friction, const f32 margin)
@@ -577,7 +528,7 @@ struct slot led_ShapePrefabAdd(struct led *led, const utf8 id, const utf8 cshape
 		}
 		else
 		{
-			struct slot ref = ds_SDBReference(led->cs_db, cshape);
+			struct slot ref = c_ShapeDBReference(&led->cs_db, cshape);
 			if (ref.index == SDB_STUB)
 			{
 				LogString(T_LED, S_WARNING, "In ds_ShapePrefab: shape not found, stub_shape chosen");
@@ -604,7 +555,7 @@ void led_ShapePrefabRemove(struct led *led, const utf8 id)
 	struct ds_ShapePrefab *prefab = slot.address;
 	if (slot.index != SDB_STUB && prefab->reference_count == 0)
 	{
-		ds_SDBDereference(led->cs_db, prefab->cshape);
+		c_ShapeDBDereference(&led->cs_db, prefab->cshape);
         ds_SDBDereference(led->render_mesh_db, prefab->render_mesh);
 		ds_SDBRemove(led->shape_prefab_db, id);
 	}	
@@ -807,7 +758,7 @@ struct slot led_RenderMeshAdd(struct led *led, const utf8 id, const utf8 shape)
 			struct r_Mesh *mesh = slot.address;
             mesh->id = Utf8CopyBuffered(mesh->id_buf, R_MESH_BUFSIZE, copy);
 
-			struct slot ref = ds_SDBLookup(led->cs_db, shape);
+			struct slot ref = c_ShapeDBLookup(&led->cs_db, shape);
 			if (ref.index == SDB_STUB)
 			{
 				LogString(T_LED, S_WARNING, "In render_mesh_add: shape not found, stub chosen");

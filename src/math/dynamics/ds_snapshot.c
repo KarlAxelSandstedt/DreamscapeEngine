@@ -204,7 +204,7 @@ void ds_DynamicsSerialize(struct ss *ss, const struct ds_Dynamics *pipeline)
 	}
 }
 
-u32 ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynamics *pipeline, ds_SDB(c_Shape) *cshape_db)
+u32 ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynamics *pipeline, struct c_ShapeDB *cshape_db)
 {
 	ds_Assert(mem && ss->bit_index % 8 == 0);
 

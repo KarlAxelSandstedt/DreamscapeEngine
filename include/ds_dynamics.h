@@ -1955,7 +1955,7 @@ struct ds_Dynamics
     f32                             spring_hertz_max;        /* 1 / (JOINT_OSCILLATION_TICKS_MIN * timestep): a joint spring's hertz is clamped to it at add.
                                                                TODO: move somewhere suitable (the solver config is one global shared by every pipeline) */
 
-	ds_SDB(c_Shape) *	            cshape_db;		        /* externally owned */
+	struct c_ShapeDB *	            cshape_db;		        /* externally owned; constant during a tick */
 	ds_SDB(ds_BodyPrefab) *	        body_prefab_db;		    /* externally owned */
 
 	ds_Pool(ds_Body)              body_pool;
@@ -2009,7 +2009,7 @@ struct ds_Dynamics
 /**************** PHYISCS PIPELINE API ****************/
 
 /* Initialize a new growable physics pipeline; ns_tick is the duration of a physics frame. */
-struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, ds_SDB(c_Shape) *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size);
+struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size);
 /* Free the pipeline's heap resources (the shell stays on its arena) */
 void 			ds_DynamicsFree(struct ds_Dynamics *pipeline);
 /* Return the required size when serializing the pipeline. */
@@ -2022,7 +2022,7 @@ void            ds_DynamicsSerialize(struct ss *ss, const struct ds_Dynamics *pi
  * (g_solver_config) is process state, not part of the snapshot. On failure the stream position and mem are
  * as before the call and the pipeline is zeroed.
  */
-u32             ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynamics *pipeline, ds_SDB(c_Shape) *cshape_db);
+u32             ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynamics *pipeline, struct c_ShapeDB *cshape_db);
 /*
  * Empty the pipeline: every body, shape, contact, island, joint, event, sleeping set and the frame memory go;
  * the frame count restarts and a flagged split is forgotten. Configuration and capacities stay.
@@ -2061,7 +2061,7 @@ void            ds_DynamicsPrintUsage(const struct ds_Dynamics *pipeline);
 /**************** PHYISCS PIPELINE INTERNAL API ****************/
 
 /* Internal: Allocate the pipeline without its simulation state (containers, gravity, margin, numerics). */
-void                        ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, const u64 ns_tick, const u64 frame_memory, ds_SDB(c_Shape) *cshape_db, const u32 worker_count, const u64 worker_frame_size);
+void                        ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, const u64 ns_tick, const u64 frame_memory, struct c_ShapeDB *cshape_db, const u32 worker_count, const u64 worker_frame_size);
 /*
  * Internal: Read size bytes of frame data into a random worker frame (the next one if it is full) and set *dst.
  * Spreading the data leaves room in every worker frame, so a restore inside a tick doesn't starve a worker of

@@ -120,7 +120,7 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 	ds_SDBAlloc(NULL, g_editor->shape_prefab_db, 32, GROWABLE);
     ds_PoolAlloc(NULL, g_editor->shape_prefab_instance_pool, 16384, GROWABLE);
 	ds_SDBAlloc(NULL, g_editor->body_prefab_db, 32, GROWABLE);
-	ds_SDBAlloc(NULL, g_editor->cs_db, 32, GROWABLE);
+	c_ShapeDBAlloc(NULL, &g_editor->cs_db, 32, GROWABLE);
 	DLLFlush(g_editor->cs_shape_list);
 	g_editor->physics = ds_DynamicsAlloc(&g_editor->mem_persistent, 1024, NSEC_PER_SEC / (u64) 60, 16*1024*1024, &g_editor->cs_db, &g_editor->body_prefab_db, thread_count, thread_framesize);
     ds_CPoolAlloc(NULL, g_editor->joint_pool, 256, GROWABLE);
@@ -137,13 +137,8 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 	struct r_Mesh *r_mesh_stub = g_editor->render_mesh_db.pool.buf + SDB_STUB;
 	r_MeshStubBox(r_mesh_stub);
 
-	struct c_Shape *cshape_stub = g_editor->cs_db.pool.buf + SDB_STUB;
-	cshape_stub->type = C_SHAPE_CONVEX_HULL;
-	cshape_stub->hull = DcelBox(&sys_win->mem_persistent, V3(0.5f, 0.5f, 0.5f));
-	c_ShapeUpdateMassProperties(cshape_stub);
-
     struct ds_ShapePrefab *shape_stub = g_editor->shape_prefab_db.pool.buf + SDB_STUB;
-    shape_stub->cshape = ds_SDBReference(g_editor->cs_db, Utf8Empty()).index;
+    shape_stub->cshape = c_ShapeDBReference(&g_editor->cs_db, Utf8Empty()).index;
 	shape_stub->density = 1.0f;
 	shape_stub->restitution = 0.0f;
 	shape_stub->friction = 0.0f;

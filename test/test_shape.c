@@ -505,8 +505,57 @@ struct test_Output ShapeDistanceTest(struct test_Environment *env)
     return output;
 }
 
+/*
+ * c_ShapeDB: the stub is the unit box; Add computes mass properties and returns the slot, the stub's slot for an
+ * empty, present or over-long id; Remove refuses a referenced shape and removes it once dereferenced.
+ */
+static struct test_Output ShapeDatabaseTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct c_ShapeDB db = { 0 };
+    c_ShapeDBAlloc(NULL, &db, 4, GROWABLE);
+    const struct c_Shape *stub = c_ShapeDBShape(&db, SDB_STUB);
+    TEST_EQUAL(C_SHAPE_CONVEX_HULL, stub->type);
+    TEST_TRUE(ShapeTestNear(stub->volume, 1.0f, 1.0f));
+    TEST_EQUAL(SDB_STUB, c_ShapeDBLookup(&db, Utf8Inline("sphere")).index);
+
+    const f32 r = 0.5f;
+    const struct c_Shape sphere = { .type = C_SHAPE_SPHERE, .sphere.radius = r };
+    const struct slot s = c_ShapeDBAdd(&db, Utf8Inline("sphere"), &sphere);
+    TEST_TRUE(s.index != SDB_STUB && s.index != U32_MAX);
+    TEST_EQUAL(s.index, c_ShapeDBLookup(&db, Utf8Inline("sphere")).index);
+    const struct c_Shape *added = c_ShapeDBShape(&db, s.index);
+    TEST_EQUAL(C_SHAPE_SPHERE, added->type);
+    TEST_TRUE(Utf8Equivalence(Utf8Inline("sphere"), added->id));
+    const f32 volume = 4.0f / 3.0f * F32_PI * r * r * r;
+    TEST_TRUE(ShapeTestNear(added->volume, volume, volume));
+
+    /* the stub's slot for a bad id */
+    TEST_EQUAL(SDB_STUB, c_ShapeDBAdd(&db, Utf8Empty(), &sphere).index);
+    TEST_EQUAL(SDB_STUB, c_ShapeDBAdd(&db, Utf8Inline("sphere"), &sphere).index);
+    u8 long_buf[C_SHAPE_ID_SIZE + 8];
+    memset(long_buf, 'x', sizeof(long_buf));
+    const utf8 long_id = { .buf = long_buf, .size = sizeof(long_buf), .len = sizeof(long_buf) };
+    TEST_EQUAL(SDB_STUB, c_ShapeDBAdd(&db, long_id, &sphere).index);
+    TEST_EQUAL(2, db.sdb.pool.count);
+
+    /* referenced: not removed; dereferenced: removed */
+    TEST_EQUAL(s.index, c_ShapeDBReference(&db, Utf8Inline("sphere")).index);
+    TEST_EQUAL(0, c_ShapeDBRemove(&db, Utf8Inline("sphere")));
+    TEST_EQUAL(s.index, c_ShapeDBLookup(&db, Utf8Inline("sphere")).index);
+    c_ShapeDBDereference(&db, s.index);
+    TEST_EQUAL(1, c_ShapeDBRemove(&db, Utf8Inline("sphere")));
+    TEST_EQUAL(SDB_STUB, c_ShapeDBLookup(&db, Utf8Inline("sphere")).index);
+    TEST_EQUAL(1, db.sdb.pool.count);
+
+    c_ShapeDBDealloc(&db);
+	return output;
+}
+
 static struct test_Output (*shape_tests[])(struct test_Environment *) =
 {
+    ShapeDatabaseTest,
     ShapeMassBoxTest,
     ShapeMassHullPlacedTest,
     ShapeMassSphereTest,

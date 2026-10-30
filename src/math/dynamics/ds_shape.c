@@ -72,8 +72,8 @@ ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab
 	shape->margin = prefab->margin;
 	DLLFlush(shape->contact_list);
 
-	const struct c_Shape *cshape = pipeline->cshape_db->pool.buf + prefab->cshape;
-	const struct slot cshape_slot = ds_SDBReference(*pipeline->cshape_db, cshape->id);
+	const struct c_Shape *cshape = c_ShapeDBShape(pipeline->cshape_db, prefab->cshape);
+	const struct slot cshape_slot = c_ShapeDBReference(pipeline->cshape_db, cshape->id);
 	shape->cshape_handle = cshape_slot.index;
 	shape->cshape_type = cshape->type;
 
@@ -113,7 +113,7 @@ void ds_ShapeDynamicRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, c
     ds_BitSetSet(&pipeline->shape_dynamic_usage_set, shape_index, 0);
     ds_BitSetSet(&pipeline->shape_dirty_set, shape_index, 0);
     DLLRemove(body->shape_list, pipeline->shape_pool.buf, shape_index, body_shape);
-	ds_SDBDereference(*pipeline->cshape_db, shape->cshape_handle);
+	c_ShapeDBDereference(pipeline->cshape_db, shape->cshape_handle);
 	DBVHRemove(&pipeline->dynamic_bvh, shape->proxy);
 	ds_PoolRemove(pipeline->shape_pool, shape_index);
 }
@@ -129,7 +129,7 @@ void ds_ShapeStaticRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, co
 
     ds_BitSetSet(&pipeline->shape_dirty_set, index, 0);
     DLLRemove(body->shape_list, pipeline->shape_pool.buf, index, body_shape);
-	ds_SDBDereference(*pipeline->cshape_db, shape->cshape_handle);
+	c_ShapeDBDereference(pipeline->cshape_db, shape->cshape_handle);
 	DBVHRemove(&pipeline->static_bvh, shape->proxy);
 	ds_PoolRemove(pipeline->shape_pool, index);
 }
@@ -164,7 +164,7 @@ struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct d
 	v3 min = V3(F32_INFINITY, F32_INFINITY, F32_INFINITY);
 	v3 max = V3(-F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
 
-	const struct c_Shape *cshape = pipeline->cshape_db->pool.buf + shape->cshape_handle;
+	const struct c_Shape *cshape = c_ShapeDBShape(pipeline->cshape_db, shape->cshape_handle);
 
     ds_TransformWorld t_world;
     ds_ShapeWorldTransform(&t_world, pipeline, shape);
@@ -239,8 +239,8 @@ static f32 (*c_raycast_parameter_methods[C_SHAPE_COUNT])(const struct c_Shape *,
 
 u32 ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, const struct ds_Shape *s1)
 {
- 	const struct c_Shape *c_s0 = pipeline->cshape_db->pool.buf + s0->cshape_handle;
-	const struct c_Shape *c_s1 = pipeline->cshape_db->pool.buf + s1->cshape_handle;
+ 	const struct c_Shape *c_s0 = c_ShapeDBShape(pipeline->cshape_db, s0->cshape_handle);
+	const struct c_Shape *c_s1 = c_ShapeDBShape(pipeline->cshape_db, s1->cshape_handle);
 
     ds_TransformWorld t0, t1;
     ds_ShapeWorldTransform(&t0, pipeline, s0);
@@ -253,8 +253,8 @@ u32 ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, 
 
 f32 ds_ShapeDistance(v3f64 *c0, v3f64 *c1, const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, const struct ds_Shape *s1)
 {
- 	const struct c_Shape *c_s0 = pipeline->cshape_db->pool.buf + s0->cshape_handle;
-	const struct c_Shape *c_s1 = pipeline->cshape_db->pool.buf + s1->cshape_handle;
+ 	const struct c_Shape *c_s0 = c_ShapeDBShape(pipeline->cshape_db, s0->cshape_handle);
+	const struct c_Shape *c_s1 = c_ShapeDBShape(pipeline->cshape_db, s1->cshape_handle);
 
     ds_TransformWorld t0, t1;
     ds_ShapeWorldTransform(&t0, pipeline, s0);
@@ -325,8 +325,8 @@ void ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, co
 
     const struct c_Shape *c_s[2] =
     {
-        pipeline->cshape_db->pool.buf + s[0]->cshape_handle,
-        pipeline->cshape_db->pool.buf + s[1]->cshape_handle,
+        c_ShapeDBShape(pipeline->cshape_db, s[0]->cshape_handle),
+        c_ShapeDBShape(pipeline->cshape_db, s[1]->cshape_handle),
     };
 
     const u32 more_complex = (c_s[0]->type >= c_s[1]->type)
@@ -382,7 +382,7 @@ f32 ds_ShapeRaycastParameter(const struct ds_Dynamics *pipeline, const struct ds
     ds_Assert(V3Dot(ray->dir, ray->dir) > 0.0f);
     ds_TransformWorld transform;
     ds_ShapeWorldTransform(&transform, pipeline, shape);
-    const struct c_Shape *c_shape = pipeline->cshape_db->pool.buf + shape->cshape_handle;
+    const struct c_Shape *c_shape = c_ShapeDBShape(pipeline->cshape_db, shape->cshape_handle);
 
 	return c_raycast_parameter_methods[c_shape->type](c_shape, &transform, ray);
 }
