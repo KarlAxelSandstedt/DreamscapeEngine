@@ -265,6 +265,7 @@ struct ds_DynamicsDrawConfig
     u32     draw_contact_forces;
     u32     draw_joints;
     u32     draw_mass_centers;
+    u32     draw_forces;            /* every active body's net force over the tick, at its mass centre (ds_ForceDraw) */
 
     f32     force_scale;            /* metres per newton */
     f32     point_size;
@@ -294,6 +295,7 @@ struct ds_DynamicsDrawConfig
     v4      color_contact_force;
     v4      color_joint;
     v4      color_mass_center;
+    v4      color_force;
 };
 
 
@@ -1756,6 +1758,7 @@ struct ds_SolverJobPhase
 
     struct ds_ParallelForChain      pf_orientation;
     struct ds_ProxyRange *          proxy_range;
+    v3 *                            velocity_start;     /* draw_forces: the active bodies' velocities at the tick's start, by sim index; else NULL */
 };
 
 /* see ds_BroadJobPhaseDispatch */
@@ -2123,6 +2126,13 @@ void                        ds_DynamicsSetGlobals(struct ds_Dynamics *pipeline);
 
 /* push physics event into pipeline memory and return pointer to allocated event */
 struct ds_PhysicsEvent *	ds_PhysicsEventPush(struct ds_Dynamics *pipeline);
+
+/**************** ds_dynamics_draw.c: pushes into the worker's ds_DynamicsDraw ****************/
+
+/* Internal: copy the active bodies' linear velocities [low, high) into velocity_start; before the solver touches them. */
+void                        ds_ForceDrawVelocityStartRange(v3 *velocity_start, const struct ds_Dynamics *pipeline, const u32 low, const u32 high);
+/* Internal: push each active body's net force m dv / timestep at its mass centre; after the velocity solve. Zero forces are skipped. */
+void                        ds_ForceDrawRange(struct ds_Dynamics *pipeline, const v3 *velocity_start, const u32 low, const u32 high);
 
 #ifdef __cplusplus
 } 

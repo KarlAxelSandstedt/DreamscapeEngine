@@ -18,3 +18,38 @@
 */
 
 /* Physics debug drawing: the pushes behind ds_DynamicsDrawConfig. */
+
+void ds_ForceDrawVelocityStartRange(v3 *velocity_start, const struct ds_Dynamics *pipeline, const u32 low, const u32 high)
+{
+    const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    for (u32 i = low; i < high; ++i)
+    {
+        velocity_start[i] = active->body_compute_pool.buf[i].linear_velocity;
+    }
+}
+
+void ds_ForceDrawRange(struct ds_Dynamics *pipeline, const v3 *velocity_start, const u32 low, const u32 high)
+{
+    ds_CPool(ds_ForceDraw) *pool = &g_dynamics_worker[ds_ThreadSelfIndex()].draw.force;
+    const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    const f32 timestep_inv = 1.0f / pipeline->timestep;
+    for (u32 i = low; i < high; ++i)
+    {
+        const struct ds_BodySim *sim = active->body_sim_pool.buf + i;
+        const struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + i;
+
+        /* f = m dv / dt; the active set holds dynamic bodies only, so the mass is finite */
+        const v3 force = V3Scale(V3Sub(bcomp->linear_velocity, velocity_start[i]), timestep_inv / sim->inv_mass);
+        const f32 magnitude = V3Length(force);
+        if (magnitude > 0.0f)
+        {
+            const struct ds_ForceDraw record =
+            {
+                .origin = V3F64Add(sim->world_center_of_mass, V3Promote(bcomp->delta_position)),
+                .direction = V3Scale(force, 1.0f / magnitude),
+                .magnitude = magnitude,
+            };
+            ds_CPoolPushValue(*pool, record);
+        }
+    }
+}
