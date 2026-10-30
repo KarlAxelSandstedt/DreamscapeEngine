@@ -104,11 +104,7 @@ void 	r_EditorMain(const struct led *led);
  *			r_primitive.c			*
  ********************************************************/
 
-/*
- * Debug primitives in world space (f64 positions, as ds_TransformWorld): what the physics, the editor and the
- * game push to draw for a frame. The renderer draws a buffer of them as lines and points relative to the
- * camera. The wire shapes are tessellated by the renderer, so a shape is one record.
- */
+/* Debug primitives in world space (f64 positions), drawn as lines and points; the renderer tessellates the shapes. */
 struct r_SegmentWorld
 {
     v3f64   p0;
@@ -131,7 +127,7 @@ struct r_SphereWorld
     v4      color;
 };
 
-/* wire; p0, p1 the axis' ends */
+/* wire; the axis p0 to p1 */
 struct r_CapsuleWorld
 {
     v3f64   p0;
@@ -148,14 +144,14 @@ struct r_BoxWorld
     v4                  color;
 };
 
-/* 3 axis segments of axis_length: x red, y green, z blue */
+/* axes: x red, y green, z blue */
 struct r_TransformWorld
 {
     ds_TransformWorld   t;
     f32                 axis_length;
 };
 
-/* text at p's window position; NUL-terminated, truncated to fit */
+/* drawn at p's window position */
 struct r_StringWorld
 {
     v3f64   p;
@@ -171,11 +167,7 @@ DEFINE_CPOOL_STRUCT(r_BoxWorld);
 DEFINE_CPOOL_STRUCT(r_TransformWorld);
 DEFINE_CPOOL_STRUCT(r_StringWorld);
 
-/*
- * a buffer of primitives, one pool per kind (heap, growable, allocated with length 0 so a pool stays empty until
- * its first push): the pushes append, a flush empties the pools and keeps their memory. Written by one thread at
- * a time.
- */
+/* one pool per primitive; written by one thread at a time */
 struct r_PrimitiveWorldBuffer
 {
     ds_CPool(r_SegmentWorld)    segment;
@@ -187,14 +179,10 @@ struct r_PrimitiveWorldBuffer
     ds_CPool(r_StringWorld)     string;
 };
 
-/*
- * allocate every pool with length slots in mem (fixed) or on the heap (mem == NULL; growable allowed), as
- * ds_CPoolAlloc does; length 0 is valid, the first push then grows a growable pool. Fatal when a heap pool fails.
- */
+/* every pool as ds_CPoolAlloc(mem, pool, length, growable); fatal on failure */
 void    r_PrimitiveWorldBufferAlloc(struct arena *mem, struct r_PrimitiveWorldBuffer *buffer, const u32 length, const u32 growable);
-/* free the heap pools (arena memory stays with the arena); the buffer becomes empty */
 void    r_PrimitiveWorldBufferFree(struct r_PrimitiveWorldBuffer *buffer);
-/* empty every pool of the buffer; their memory stays */
+/* empty every pool, keeping their memory */
 void    r_PrimitiveWorldBufferFlush(struct r_PrimitiveWorldBuffer *buffer);
 
 /********************************************************

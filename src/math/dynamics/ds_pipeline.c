@@ -99,6 +99,7 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
         .point_size = 0.05f,
         .axis_length = 0.25f,
         .circle_segments = 16,
+        .color_shape = V4(0.3f, 1.0f, 0.3f, 1.0f),
         .color_contact_point = V4(1.0f, 0.0f, 0.0f, 1.0f),
         .color_contact_normal = V4(1.0f, 1.0f, 0.0f, 1.0f),
         .color_contact_force = V4(1.0f, 0.5f, 0.0f, 1.0f),

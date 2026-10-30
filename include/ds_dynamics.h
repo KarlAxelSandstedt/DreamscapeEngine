@@ -203,7 +203,7 @@ struct ds_Align(DS_CACHE_LINE) ds_DynamicsWorker
     struct arena *              frame;
     
     struct ds_DynamicsMetrics   metrics;
-    struct r_PrimitiveWorldBuffer draw;         /* debug drawing: what temporary debugging code inside jobs pushes */
+    struct r_PrimitiveWorldBuffer draw;         /* debug drawing from jobs; flushed each tick */
 };
 
 /* indexed by workers using their thread indices (ds_ThreadSelfIndex()) */
@@ -216,8 +216,23 @@ ds_DynamicsDrawConfig
 Debug drawing configuration (per-pipeline).
 */
 
+/* shape colouring; static bodies grey except in UNIFORM and RANDOM */
+enum ds_DrawColorMode
+{
+    DRAW_COLOR_UNIFORM = 0,         /* color_shape */
+    DRAW_COLOR_RANDOM,              /* hue hashed from the body index */
+    DRAW_COLOR_ISLAND,              /* hue hashed from the island id */
+    DRAW_COLOR_SLEEP,               /* green awake, red sleeping */
+    DRAW_COLOR_BODY_TYPE,           /* kinematic blue, dynamic white */
+    DRAW_COLOR_VELOCITY,            /* blue to red by speed */
+    DRAW_COLOR_TOUCHING,            /* lit while in contact */
+    DRAW_COLOR_MODE_COUNT
+};
+
 struct ds_DynamicsDrawConfig
 {
+    u32     draw_shapes;            /* wire shapes */
+    enum ds_DrawColorMode shape_color_mode;
     u32     draw_contact_points;
     u32     draw_contact_normals;
     u32     draw_contact_forces;
@@ -227,8 +242,9 @@ struct ds_DynamicsDrawConfig
     f32     force_scale;            /* metres per newton */
     f32     point_size;
     f32     axis_length;
-    u32     circle_segments;        /* segments per circle of a wire sphere or capsule */
+    u32     circle_segments;        /* per wire circle */
 
+    v4      color_shape;
     v4      color_contact_point;
     v4      color_contact_normal;
     v4      color_contact_force;

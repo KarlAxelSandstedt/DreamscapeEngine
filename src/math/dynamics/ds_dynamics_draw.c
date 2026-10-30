@@ -17,7 +17,4 @@
 ==========================================================================
 */
 
-/*
- * Physics debug drawing: the pipeline's draw config and buffers (ds_dynamics.h), the centralized pushes run by the
- * tick's serial phases behind the config's booleans, and the push functions temporary debugging code calls.
- */
+/* Physics debug drawing: the pushes behind ds_DynamicsDrawConfig. */
