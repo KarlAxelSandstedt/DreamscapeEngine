@@ -1,6 +1,6 @@
 /*
 ==========================================================================
-    Copyright (C) 2025, 2026 Axel Sandstedt 
+    Copyright (C) 2025, 2026 Axel Sandstedt
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,17 +17,25 @@
 ==========================================================================
 */
 
+/*
+ds_graphics.h
+=============
+The process's windows. A ds_Window owns a native window with its own GL context (sharing the root window's
+objects), a UI, a command queue and console, a render scene and a 1 MB persistent arena. Windows form a
+hierarchy (ds_hierarchy.h): the process root window is HI_ROOT's only child, every other window a child of
+the window it was opened from, and freeing a window frees its sub-hierarchy. Windows are referred to by
+index. Not thread-safe (main thread).
+*/
+
 #ifndef __DS_GRAPHICS_H__
 #define __DS_GRAPHICS_H__
 
 #ifdef __cplusplus
-extern "C" { 
+extern "C" {
 #endif
 
 #include "ds_base.h"
-#include "ds_string.h"
-#include "ds_hash_map.h"
-#include "hierarchy_index.h"
+#include "ds_hierarchy.h"
 #include "cmd.h"
 
 /*
@@ -51,19 +59,23 @@ extern "C" {
  *		|	(X)
  *		|------->
  *	       /
- *            / 
+ *            /
  *	     V (Z)
  */
 
 struct r_Scene;
 struct nativeWindow;
 
-/* init function pointers */
+/* init function pointers: set up the window hierarchy and the GL state memory (and SDL). ds_Init calls it unless headless. */
 void 	ds_GraphicsApiInit(void);
-/* free any graphics resources */
+/* free any graphics resources: every window, the GL state memory and the hierarchy (and quit SDL). ds_Shutdown calls it unless headless. */
 void 	ds_GraphicsApiShutdown(void);
 
-extern struct ds_WindowHI *	g_window_hierarchy;
+/*
+ * g_window_hierarchy: all windows. g_process_root_window: the root window's index; HI_NULL before
+ * ds_RootWindowAlloc and after the root window is freed. g_window: the current window (ds_WindowSetGlobal).
+ */
+extern struct HI(ds_Window) *	g_window_hierarchy;
 extern i32 		g_process_root_window;
 extern i32 		g_window;
 
@@ -75,58 +87,72 @@ typedef struct ds_Window
 	struct cmdQueue 	cmd_queue;		/* local command queue */
 	struct ui_CmdConsole *	cmd_console;		/* console */
 	struct r_Scene *	r_scene;
-	struct arena 		mem_persistent;		/* peristent 1MB arena */
+	struct arena 		mem_persistent;		/* persistent 1MB arena, freed with the window */
 
-	u32			tagged_for_destruction; /* If tagged, free on next start of frame */
-	u32			text_input_mode;	/* If on, window is receiving text input events */ 
-	vec2u32			position;
-	vec2u32			size;
+	u32			tagged_for_destruction; /* If tagged, free on next start of frame (ds_DeallocTaggedWindows) */
+	u32			text_input_mode;	/* If on, window is receiving text input events */
+	v2u32			position;		/* native position, as of the last ds_WindowConfigUpdate */
+	v2u32			size;			/* size in pixels, as of the last ds_WindowConfigUpdate */
 
-	u32			gl_state;
+	u32			gl_state;		/* the window's gl_State index (r_gl.c) */
 } ds_Window;
-HI_DECLARE(ds_Window);
+DEFINE_HI(ds_Window);
 
-/* alloc system_window resources, if no gl context exist, allocate context as well. */
-u32 			ds_WindowAlloc(const char *title, const vec2u32 position, const vec2u32 size, const u32 parent);
-/* alloc system_window resources AND set window to global root process window, if no gl context exist, allocate context as well. */
-u32 			ds_RootWindowAlloc(const char *title, const vec2u32 position, const vec2u32 size);
-/* handle sys_win->ui events */
+/*
+ * alloc system_window resources, if no gl context exist, allocate context as well. The window becomes parent's
+ * last child; returns its index (fatal on failure). parent is a window; only the root window goes under HI_ROOT
+ * (ds_RootWindowAlloc). position is the window's top-left corner on screen (native coordinates; ignored on the web
+ * and where the OS refuses it). The root window's GL context is current afterwards.
+ */
+u32 			ds_WindowAlloc(const char *title, const v2u32 position, const v2u32 size, const u32 parent);
+/* alloc system_window resources AND set window to global root process window (once), if no gl context exist, allocate context as well; its GL context and state are current afterwards. */
+u32 			ds_RootWindowAlloc(const char *title, const v2u32 position, const v2u32 size);
+/* handle sys_win->ui events: the debug keys on key presses (L cursor lock, F10 cursor visibility, F11 fullscreen, F12 border, C close) */
 void 			ds_WindowEventHandler(struct ds_Window *sys_win);
-/* Tag sub-hierachy of root (including root itself) for destruction on next frame. */
+/*
+ * Tag sub-hierachy of root (including root itself) for destruction on next frame. The windows live until the next
+ * ds_DeallocTaggedWindows; whoever holds their indices checks tagged_for_destruction and lets go.
+ */
 void 			ds_WindowTagSubHierarchyForDestruction(const u32 root);
-/* free system windows tagged for destruction */
+/*
+ * free system windows tagged for destruction, with their sub-hierarchies (call at the start of a frame). Freeing
+ * the root window frees all windows and sets g_process_root_window and g_window to HI_NULL.
+ */
 void			ds_DeallocTaggedWindows(void);
 /* get system window index  */
 u32			ds_WindowIndex(const struct ds_Window *sys_win);
 /* get system window address  */
 struct ds_Window *	ds_WindowAddress(const u32 index);
-/* Return system window containing the given native window handle, or an empty allocation slot if no window found */
+/*
+ * Return system window containing the given native window handle (SDL: its SDL_Window pointer) as
+ * { address, index }, or an empty allocation slot { NULL, U32_MAX } if no window found (also without a root window)
+ */
 struct slot		ds_WindowLookup(const u64 native_handle);
-/* Set window to current (global pointers to window, ui and cmd_queue is set) */
+/* Set window to current (global pointers to window, ui and cmd_queue is set: g_window, ui_Set, CmdQueueSet) */
 void			ds_WindowSetGlobal(const u32 window);
-/* enable text input mode for current window */
+/* enable text input mode for current window (its text_input_mode says whether it is on afterwards) */
 void 			ds_WindowTextInputModeEnable(void);
 /* disable text input mode for current window */
 void 			ds_WindowTextInputModeDisable(void);
-/* Set system window to be the current gl context */
+/* Set system window to be the current gl context (and its GL state) */
 void			ds_WindowSetCurrentGlContext(const u32 window);
 /* opengl swap buffers */
 void 			ds_WindowSwapGlBuffers(const u32 window);
-/* update system_window configuration */
+/* update system_window configuration: read its native position and size */
 void			ds_WindowConfigUpdate(const u32 window);
-/* get system_window size */
-void			ds_WindowSize(vec2u32 size, const u32 window);
+/* get system_window size (as of the last ds_WindowConfigUpdate) */
+v2u32			ds_WindowSize(const u32 window);
 
 
-/* set rectangle within window that cursor is restricted to */
-void 			ds_CursorSetRectangle(struct ds_Window *sys_win, const vec2 sys_position, const vec2 size);
+/* set rectangle within window that cursor is restricted to (top-left corner sys_position, in window coordinates) */
+void 			ds_CursorSetRectangle(struct ds_Window *sys_win, const v2 sys_position, const v2 size);
 /* release any rectangle restriction */
 void 			ds_CursorUnsetRectangle(struct ds_Window *sys_win);
-/* return 1 if cursor is locked, 0 otherwise */
+/* return 1 if cursor is locked (hidden, reporting only motion), 0 otherwise */
 u32  			ds_CursorLockedCheck(struct ds_Window *sys_win);
-/* return 1 on success, 0 otherwise */
+/* lock the cursor to sys_win; return 1 on success, 0 otherwise */
 u32 			ds_CursorLock(struct ds_Window *sys_win);
-/* return 1 on success, 0 otherwise */
+/* release the cursor rectangle and unlock the cursor; return 1 on success, 0 otherwise */
 u32 			ds_CursorUnlock(struct ds_Window *sys_win);
 /* return 1 if cursor is visible, 0 otherwise */
 u32 			ds_CursorVisibleCheck(struct ds_Window *sys_win);
@@ -136,7 +162,7 @@ void 			ds_CursorShow(struct ds_Window *sys_win);
 void 			ds_CursorHide(struct ds_Window *sys_win);
 
 #ifdef __cplusplus
-} 
+}
 #endif
 
 #endif

@@ -17,8 +17,6 @@
 ==========================================================================
 */
 
-#include <string.h>
-
 #include "r_local.h"
 
 //TODO MOVE into asset_manager
@@ -110,29 +108,29 @@ static void r_MaterialStaticAssert(void)
 
 static void r_ShaderSourceAndCompile(GLuint shader, const char *filepath)
 {
-	FILE *file = fopen(filepath, "r");
+	struct arena *tmp = ArenaPushScratch();
+	const struct dsBuffer source = FileDumpAtCwd(tmp, filepath);
+	if (source.data == NULL)
+	{
+		Log(T_RENDERER, S_FATAL, "Failed to read shader %s", filepath);
+		FatalCleanupAndExit();
+	}
 
-	char buf[4096];
-	memset(buf, 0, sizeof(buf));
-	fseek(file, 0, SEEK_END);
-	long int size = ftell(file);
-	fseek(file, 0, SEEK_SET);
-	fread(buf, 1, size, file);
+	/* the file is not NUL-terminated: pass its length; glShaderSource copies the source */
+	const GLchar *source_ptr = (const GLchar *) source.data;
+	const GLint source_len = (GLint) source.size;
+	ds_glShaderSource(shader, 1, &source_ptr, &source_len);
+	ArenaPopScratch();
 
-	const GLchar *buf_ptr = buf;
-	ds_glShaderSource(shader, 1, &buf_ptr, 0);
-
-	fclose(file);
-
-	ds_glCompileShader(shader);	
+	ds_glCompileShader(shader);
 
 	GLint compiled;
 	ds_glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
 	if (compiled == GL_FALSE)
 	{
+		char buf[4096];
 		GLsizei len = 0;
-		ds_glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &len);
-		ds_glGetShaderInfoLog(shader, len, &len, buf);
+		ds_glGetShaderInfoLog(shader, sizeof(buf), &len, buf);
 		Log(T_RENDERER, S_FATAL, "Failed to compile %s, %s", filepath, buf);
 		FatalCleanupAndExit();
 	}
@@ -158,8 +156,7 @@ void r_ShaderCompile(u32 *prg, const char *v_filepath, const char *f_filepath)
 	{
 		char buf[4096];
 		GLsizei len = 0;
-		ds_glGetProgramiv(*prg, GL_INFO_LOG_LENGTH, &len);
-		ds_glGetProgramInfoLog(*prg, len, &len, buf);
+		ds_glGetProgramInfoLog(*prg, sizeof(buf), &len, buf);
 		Log(T_RENDERER, S_FATAL, "Failed to Link program: %s", buf);
 		FatalCleanupAndExit();
 	}
@@ -176,10 +173,10 @@ void r_ColorBufferLayoutSetter(void)
 	ds_glEnableVertexAttribArray(0);
 	ds_glEnableVertexAttribArray(1);
 
-	const u64 stride = sizeof(vec3) + sizeof(vec4);
+	const u64 stride = sizeof(v3) + sizeof(v4);
 
 	ds_glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, (GLsizei)  stride, 0);
-	ds_glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, (GLsizei)  stride, (void *)(sizeof(vec3)));
+	ds_glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, (GLsizei)  stride, (void *)(sizeof(v3)));
 }
 
 void r_LightningBufferLayoutSetter(void)
@@ -188,14 +185,14 @@ void r_LightningBufferLayoutSetter(void)
 	ds_glEnableVertexAttribArray(1);
 	ds_glEnableVertexAttribArray(2);
 
-	const u64 stride = 2*sizeof(vec3) + sizeof(vec4);
+	const u64 stride = 2*sizeof(v3) + sizeof(v4);
 
 	ds_glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, (GLsizei)  stride, 0);
-	ds_glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, (GLsizei)  stride, (void *)(sizeof(vec3)));
-	ds_glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, (GLsizei)  stride, (void *)(sizeof(vec3) + sizeof(vec4)));
+	ds_glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, (GLsizei)  stride, (void *)(sizeof(v3)));
+	ds_glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, (GLsizei)  stride, (void *)(sizeof(v3) + sizeof(v4)));
 }
 
-void r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u64 core_unit_count, r_MeshSDB *mesh_database)
+void r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_size, const u32 core_unit_count, ds_SDB(r_Mesh) *mesh_database)
 {
 	g_r_core->frames_elapsed = 0;	
 	g_r_core->ns_elapsed = 0;	
@@ -232,29 +229,29 @@ void r_Init(struct arena *mem_persistent, const u64 ns_tick, const u64 frame_siz
 		FatalCleanupAndExit();
 	}
 
-	g_r_core->proxy3d_hierarchy = r_Proxy3dHIAlloc(NULL, core_unit_count, GROWABLE);
+	HIAlloc(NULL, g_r_core->proxy3d_hierarchy, core_unit_count, GROWABLE);
 	if (g_r_core->proxy3d_hierarchy.pool.length == 0)
 	{
 		LogString(T_SYSTEM, S_FATAL, "Failed to allocate r_core unit hierarchy, exiting.");
 		FatalCleanupAndExit();
 	}
 
-	struct slot slot3d = r_Proxy3dHIAdd(&g_r_core->proxy3d_hierarchy, HI_ROOT);
+	struct slot slot3d = HIAdd(g_r_core->proxy3d_hierarchy, HI_ROOT);
 	g_r_core->proxy3d_root = slot3d.index;
 	ds_Assert(g_r_core->proxy3d_root == PROXY3D_ROOT);
 	struct r_Proxy3d *stub3d = slot3d.address;
-	Vec3Set(stub3d->position, 0.0f, 0.0f, 0.0f);
-	Vec3Set(stub3d->spec_position, 0.0f, 0.0f, 0.0f);
-	const vec3 axis = { 0.0f, 1.0f, 0.0f };
-	QuatUnitAxisAngle(stub3d->rotation, axis, 0.0f);
-	QuatCopy(stub3d->spec_rotation, stub3d->rotation);
-	Vec3Set(stub3d->linear.linear_velocity, 0.0f, 0.0f, 0.0f);
-	Vec3Set(stub3d->linear.angular_velocity, 0.0f, 0.0f, 0.0f);
+	stub3d->position = V3F64(0.0, 0.0, 0.0);
+	stub3d->spec_position = V3F64(0.0, 0.0, 0.0);
+	stub3d->rotation = QUnitAxisAngle(V3(0.0f, 1.0f, 0.0f), 0.0f);
+	stub3d->spec_rotation = stub3d->rotation;
+	stub3d->linear.linear_velocity = V3Zero();
+	stub3d->linear.angular_velocity = V3Zero();
 	stub3d->flags = 0;
 
 	g_r_core->mesh_database = mesh_database; 
 	struct r_Mesh *stub = g_r_core->mesh_database->pool.buf + SDB_STUB;
 	r_MeshStubBox(stub);
+	r_MeshStubColorBox(&g_r_core->mesh_stub_color);
 
 
 
@@ -327,17 +324,16 @@ void r_CoreFlush(void)
 	g_r_core->frames_elapsed = 0;	
 	g_r_core->ns_elapsed = 0;	
 
-	r_Proxy3dHIFlush(&g_r_core->proxy3d_hierarchy);
-	struct slot slot3d = r_Proxy3dHIAdd(&g_r_core->proxy3d_hierarchy, HI_ROOT);
+	HIFlush(g_r_core->proxy3d_hierarchy);
+	struct slot slot3d = HIAdd(g_r_core->proxy3d_hierarchy, HI_ROOT);
 	g_r_core->proxy3d_root = slot3d.index;
 	ds_Assert(g_r_core->proxy3d_root == PROXY3D_ROOT);
 	struct r_Proxy3d *stub3d = slot3d.address;
-	Vec3Set(stub3d->position, 0.0f, 0.0f, 0.0f);
-	Vec3Set(stub3d->spec_position, 0.0f, 0.0f, 0.0f);
-	const vec3 axis = { 0.0f, 1.0f, 0.0f };
-	QuatUnitAxisAngle(stub3d->rotation, axis, 0.0f);
-	QuatCopy(stub3d->spec_rotation, stub3d->rotation);
-	Vec3Set(stub3d->linear.linear_velocity, 0.0f, 0.0f, 0.0f);
-	Vec3Set(stub3d->linear.angular_velocity, 0.0f, 0.0f, 0.0f);
+	stub3d->position = V3F64(0.0, 0.0, 0.0);
+	stub3d->spec_position = V3F64(0.0, 0.0, 0.0);
+	stub3d->rotation = QUnitAxisAngle(V3(0.0f, 1.0f, 0.0f), 0.0f);
+	stub3d->spec_rotation = stub3d->rotation;
+	stub3d->linear.linear_velocity = V3Zero();
+	stub3d->linear.angular_velocity = V3Zero();
 	stub3d->flags = 0;
 }

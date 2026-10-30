@@ -25,7 +25,6 @@ extern "C" {
 #endif
 
 #include <stdio.h>
-#include <stdlib.h>
 
 #include "ds_base.h"
 #include "ds_asset.h"
@@ -33,25 +32,18 @@ extern "C" {
 /***************************** SPIRTE SHEET FILE FORMAT *****************************/
 
 /*
- * Sprite Sheet File Format (.ssff): Fully compact, no padding 
+ * Sprite Sheet File Format (.ssff): fully compact, no padding; every offset is from the start of the file
  *
  * 	ssff_header
  * 	collection[0]
  * 	...
- * 	collection[N1]
- * 	color_table[0]
- * 	collection[0].sprite[0]
+ * 	collection[N-1]
+ * 	color_table[0]					collection[0].color_offset
+ * 	collection[0].sprite[0 .. sprite_count-1]		collection[0].sprite_offset
  * 	...
- * 	collection[0].sprite[collection[0].color_count-1]
- * 	...
- * 	...
- * 	...
- * 	...
- * 	color_table[N1]
- * 	collection[N1].sprite[0]
- * 	...
- * 	collection[N1].sprite[collection[N1].color_count-1];
- * 	pixel_data[]	
+ * 	color_table[N-1]
+ * 	collection[N-1].sprite[0 .. sprite_count-1]
+ * 	pixel block of each sprite, collection by collection	sprite.pixel_offset, bit_depth*width*height/8 + 1 bytes
  */
 
 /*
@@ -116,9 +108,13 @@ void				SsffBuild(struct arena *mem, const u32 ssff_id);
 /* save ssff to disk  */
 void 				SsffSave(const struct assetSsff *asset, const struct ssff_header *ssff);
 #endif
-/* heap allocate and load ssff from disk on success, return NULL on failure */
-const struct ssff_header *	SsffLoad(struct assetSsff *asset);
-/* heap allocate and construct texture with given width and height from ssff data. push, in order of generation, texture coordinates onto arena, and return values. */
+/* dump the sheet onto mem; NULL if the file cannot be read */
+const struct ssff_header *	SsffLoad(struct arena *mem, const struct assetSsff *asset);
+/*
+ * heap allocate (ds_Alloc) and construct the width x height texture from ssff data; push, in order of generation,
+ * the sprites' texture coordinates onto mem and return them. A sheet that does not fit the texture gives pixel NULL
+ * (logged), nothing pushed.
+ */
 struct ssffTextureReturn 	SsffTexture(struct arena *mem, const struct ssff_header *ssff, const u32 width, const u32 height);
 /* verbosely print ssff contents */
 void				SsffDebugPrint(FILE *out, const struct ssff_header *ssff);
@@ -139,12 +135,12 @@ void				SsffDebugPrint(FILE *out, const struct ssff_header *ssff);
 	}	
 	glyph[glyph_count] 
 	{
-		vec2i32	size;		; i32 (be)	
-		vec2i32	bearing;	; i32 (be)	
+		v2i32	size;		; i32 (be)	
+		v2i32	bearing;	; i32 (be)	
 		u32	advance;	; u32 (be)
 		u32	codepoint;	; u32 (be)
-		vec2	bl;		; f32 (be)
-		vec2	tr;		; f32 (be)
+		v2	bl;		; f32 (be)
+		v2	tr;		; f32 (be)
 
 	}
 
@@ -163,8 +159,10 @@ void				FontBuild(struct arena *mem, const u32 font_id);
 /* save font to disk  */
 void 				FontSerialize(const struct assetFont *asset, const struct font *font);
 #endif
-/* heap allocate and load font from disk on success, return NULL on failure */
-const struct font *		FontDeserialize(struct assetFont *asset);
+/* heap allocate and load the font; NULL (logged) if the file is missing, unreadable or corrupt */
+const struct font *		FontDeserialize(const struct assetFont *asset);
+/* free a loaded font (deserialized or stub) and mark the asset unloaded */
+void				FontFree(struct assetFont *asset);
 /* debug print .kasfnt file to console */
 void 				FontDebugPrint(FILE *out, const struct font *font);
 

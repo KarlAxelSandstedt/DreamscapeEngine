@@ -61,7 +61,9 @@ enum fsError FileTryCreate(struct arena *mem, struct file *file, const char *fil
 	}
 	else
 	{
-		file->handle = openat(dir->handle, filename, O_CREAT | (O_TRUNC * (!!truncate)) | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP);
+		/* O_EXCL without truncate: an existing file is an error (EEXIST) */
+		const int flags = (truncate) ? O_CREAT | O_TRUNC | O_RDWR : O_CREAT | O_EXCL | O_RDWR;
+		file->handle = openat(dir->handle, filename, flags, S_IRUSR | S_IWUSR | S_IRGRP);
 		if (file->handle == FILE_HANDLE_INVALID)
 		{
 			switch (errno)
@@ -82,15 +84,17 @@ enum fsError FileTryCreate(struct arena *mem, struct file *file, const char *fil
 	if (err == FS_SUCCESS)
 	{
 		file_status status;
-		FileStatusFile(&status, file);
 		file->path = Utf8Cstr(mem, filename);
-		file->type = FileStatusGetType(&status);
+		file->type = (FileStatusFile(&status, file) == FS_SUCCESS)
+			? FileStatusGetType(&status)
+			: FILE_UNRECOGNIZED;
 	}
 
 	return err;
 }
 
-enum fsError FileTryOpen(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 writeable)
+/* openat with flags; type from fstat. A directory open (O_DIRECTORY) of something else, and a file open of a directory, give FS_TYPE_INVALID */
+static enum fsError FileTryOpenFlags(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const int flags)
 {
 	ds_Assert(file->handle == FILE_HANDLE_INVALID);
 	file->handle = FILE_HANDLE_INVALID;
@@ -102,7 +106,7 @@ enum fsError FileTryOpen(struct arena *mem, struct file *file, const char *filen
 	}
 	else
 	{
-		file->handle = openat(dir->handle, filename, (writeable) ? O_RDWR : O_RDONLY, S_IRUSR | S_IWUSR | S_IRGRP);
+		file->handle = openat(dir->handle, filename, flags);
 		if (file->handle == FILE_HANDLE_INVALID)
 		{
 			switch (errno)
@@ -111,21 +115,41 @@ enum fsError FileTryOpen(struct arena *mem, struct file *file, const char *filen
 				/* A directory component in pathname does not exist or is a dangling symbolic link */
 				case ENOENT: { err = FS_PATH_INVALID; } break;
 				/* path is relative but dirfd != FDCWD nor a valid file descriptor */
-				case EBADF: 
-				case ENOTDIR: { err = FS_FILE_IS_NOT_DIRECTORY; } break;
+				case EBADF: { err = FS_FILE_IS_NOT_DIRECTORY; } break;
+				/* O_DIRECTORY on something else, or a path component is not a directory */
+				case ENOTDIR: { err = (flags & O_DIRECTORY) ? FS_TYPE_INVALID : FS_FILE_IS_NOT_DIRECTORY; } break;
+				/* a directory opened for writing */
+				case EISDIR: { err = FS_TYPE_INVALID; } break;
 				default: { err = FS_ERROR_UNSPECIFIED; } break;
 			}
 		}
-	
+
 	}
 
 	if (err == FS_SUCCESS)
 	{
-		file->path = Utf8Cstr(mem, filename);
-		file->type = FILE_REGULAR;
+		file_status status;
+		file->type = (FileStatusFile(&status, file) == FS_SUCCESS)
+			? FileStatusGetType(&status)
+			: FILE_UNRECOGNIZED;
+		/* a directory opens read-only, but FileTryOpen opens no directories: DirectoryTryOpen does */
+		if (!(flags & O_DIRECTORY) && file->type == FILE_DIRECTORY)
+		{
+			FileClose(file);
+			err = FS_TYPE_INVALID;
+		}
+		else
+		{
+			file->path = Utf8Cstr(mem, filename);
+		}
 	}
 
 	return err;
+}
+
+enum fsError FileTryOpen(struct arena *mem, struct file *file, const char *filename, const struct file *dir, const u32 writeable)
+{
+	return FileTryOpenFlags(mem, file, filename, dir, (writeable) ? O_RDWR : O_RDONLY);
 }
 
 enum fsError DirectoryTryCreate(struct arena *mem, struct file *dir, const char *filename, const struct file *parent_dir)
@@ -143,7 +167,7 @@ enum fsError DirectoryTryCreate(struct arena *mem, struct file *dir, const char 
 		const mode_t mode = S_IRWXU | S_IRGRP | S_IROTH;
 		if (mkdirat(parent_dir->handle, filename, mode) == 0)
 		{
-			err = FileTryOpen(mem, dir, filename, parent_dir, FILE_READ);
+			err = DirectoryTryOpen(mem, dir, filename, parent_dir);
 		}
 		else
 		{
@@ -204,12 +228,19 @@ enum fsError DirectoryTryCreateAtCwd(struct arena *mem, struct file *dir, const 
 
 enum fsError DirectoryTryOpen(struct arena *mem, struct file *dir, const char *filename, const struct file *parent_dir)
 {
-	return FileTryOpen(mem, dir, filename, parent_dir, 0);
+	return FileTryOpenFlags(mem, dir, filename, parent_dir, O_RDONLY | O_DIRECTORY);
 }
 
 enum fsError DirectoryTryOpenAtCwd(struct arena *mem, struct file *dir, const char *filename)
 {
-	return FileTryOpenAtCwd(mem, dir, filename, 0);
+	const struct file cwd = 
+	{
+		.handle = AT_FDCWD,
+		.type = FILE_DIRECTORY,
+		.path = Utf8Empty(),
+	};
+
+	return DirectoryTryOpen(mem, dir, filename, &cwd);
 }
 
 struct dsBuffer FileDump(struct arena *mem, const char *path, const struct file *dir)
@@ -245,19 +276,30 @@ struct dsBuffer FileDump(struct arena *mem, const char *path, const struct file 
 		return ds_buffer_empty;	
 	}
 
-	u64 bytes_left = buf.size;
-	i64 bytes_read_in_call;
-	while (0 < bytes_left)
+	u64 bytes_read = 0;
+	while (bytes_read < buf.size)
 	{
-		bytes_read_in_call = read(handle, buf.data + (buf.size - bytes_left), bytes_left);
-		if (bytes_read_in_call == -1)
+		const ssize_t count = read(handle, buf.data + bytes_read, buf.size - bytes_read);
+		if (count == -1)
 		{
+			if (errno == EINTR)
+			{
+				continue;
+			}
 			LogSystemError(S_ERROR);
 			buf = ds_buffer_empty;
 			*mem = record;
 			break;
 		}
-		bytes_left -= (u64) bytes_read_in_call;	
+
+		/* end of file before the fstat size: the file shrank meanwhile, keep what was read */
+		if (count == 0)
+		{
+			buf.size = bytes_read;
+			buf.mem_left = bytes_read;
+			break;
+		}
+		bytes_read += (u64) count;
 	}
 		
 	close(handle);
@@ -283,7 +325,8 @@ u32 FileSetSize(const struct file *file, const u64 size)
 
 void FileClose(struct file *file)
 {
-	if (close(file->handle) == -1)
+	/* nothing to close for FileNull() or the working directory's AT_FDCWD */
+	if (file->handle != FILE_HANDLE_INVALID && file->handle != AT_FDCWD && close(file->handle) == -1)
 	{
 		LogSystemError(S_ERROR);
 	}
@@ -310,6 +353,10 @@ u64 FileWriteOffset(const struct file *file, const u8 *buf, const u64 bufsize, c
 		count = write(file->handle, buf + total, left);
 		if (count == -1)
 		{
+			if (errno == EINTR)
+			{
+				continue;
+			}
 			LogSystemError(S_ERROR);
 			break;
 		}
@@ -340,6 +387,10 @@ u64 FileWriteAppend(const struct file *file, const u8 *buf, const u64 bufsize)
 		count = write(file->handle, buf + total, left);
 		if (count == -1)
 		{
+			if (errno == EINTR)
+			{
+				continue;
+			}
 			LogSystemError(S_ERROR);
 			break;
 		}
@@ -353,7 +404,10 @@ u64 FileWriteAppend(const struct file *file, const u8 *buf, const u64 bufsize)
 
 void FileSync(const struct file *file)
 {
-	fsync(file->handle);
+	if (fsync(file->handle) == -1)
+	{
+		LogSystemError(S_ERROR);
+	}
 }
 
 void *FileMemoryMap(u64 *size, const struct file *file, const u32 prot, const u32 flags)
@@ -384,11 +438,17 @@ void *FileMemoryMapPartial(const struct file *file, const u64 length, const u64 
 		return NULL;
 	}
 
-	void *addr = mmap(NULL, length, prot, flags, file->handle, (off_t) offset);
+	/* mmap needs a page-aligned offset: map from the page and return the address inside it, as Windows does */
+	const u64 mod = offset % (u64) sysconf(_SC_PAGESIZE);
+	void *addr = mmap(NULL, length + mod, prot, flags, file->handle, (off_t) (offset - mod));
 	if (addr == MAP_FAILED)
 	{
 		LogSystemError(S_ERROR);
 		addr = NULL;
+	}
+	else
+	{
+		addr = (u8 *) addr + mod;
 	}
 
 	return addr;
@@ -396,7 +456,8 @@ void *FileMemoryMapPartial(const struct file *file, const u64 length, const u64 
 
 void FileMemoryUnmap(void *addr, const u64 length)
 {
-	if (munmap(addr, length) == -1)
+	const u64 mod = (u64) addr % (u64) sysconf(_SC_PAGESIZE);
+	if (munmap((u8 *) addr - mod, length + mod) == -1)
 	{
 		LogSystemError(S_ERROR);
 	}
@@ -404,12 +465,13 @@ void FileMemoryUnmap(void *addr, const u64 length)
 
 void FileMemorySyncUnmap(void *addr, const u64 length)
 {
-	if (msync(addr, length, MS_SYNC) == -1)
+	const u64 mod = (u64) addr % (u64) sysconf(_SC_PAGESIZE);
+	if (msync((u8 *) addr - mod, length + mod, MS_SYNC) == -1)
 	{
 		LogSystemError(S_ERROR);
 	}
 
-	if (munmap(addr, length) == -1)
+	if (munmap((u8 *) addr - mod, length + mod) == -1)
 	{
 		LogSystemError(S_ERROR);
 	}
@@ -417,33 +479,35 @@ void FileMemorySyncUnmap(void *addr, const u64 length)
 
 utf8 CwdGet(struct arena *mem)
 {
-	utf8 cwd =
-	{
-		.size = 256,
-	};
-
+	u64 capacity = 256;
 	const u64 record = mem->mem_left;
-	cwd.buf = ArenaPush(mem, cwd.size);
-	while ((cwd.buf = (u8*) getcwd((char*) cwd.buf, cwd.size)) == NULL)
+	/* never pass getcwd a NULL buffer: glibc would malloc the path itself, outside the arena */
+	u8 *buf = ArenaPush(mem, capacity);
+	if (!buf)
 	{
+		return Utf8Empty();
+	}
+	while (getcwd((char*) buf, capacity) == NULL)
+	{
+		const int error = errno;
 		ArenaPopPacked(mem, record - mem->mem_left);
-		cwd.size *= 2;	
-		if (errno != ENOMEM || cwd.size > mem->mem_left)
+		capacity *= 2;
+		/* ERANGE: the path does not fit, retry with twice the capacity; any other error fails */
+		if (error != ERANGE || capacity > mem->mem_left)
 		{
 			return Utf8Empty();
 		}
-		cwd.buf = ArenaPush(mem, cwd.size);
+		buf = ArenaPush(mem, capacity);
+		if (!buf)
+		{
+			return Utf8Empty();
+		}
 	}
 
-	u64 offset = 0;
-	while (1)
+	utf8 cwd = { .buf = buf, .size = (u32) strlen((char *) buf), .len = 0 };
+	for (u32 offset = 0; offset < cwd.size; cwd.len += 1)
 	{
-		const u32 codepoint = Utf8ReadCodepoint(&offset, &cwd, offset);
-		if (codepoint == '\0')
-		{
-			break;
-		}
-		cwd.len += 1;
+		Utf8ReadCodepoint(&offset, &cwd, offset);
 	}
 	return cwd;
 }
@@ -477,6 +541,7 @@ enum fsError DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct
 	DIR *dir_stream = fdopendir(dir->handle);
 	if (dir_stream == NULL)
 	{
+		FileClose(dir);
 		return FS_ERROR_UNSPECIFIED;
 	}
 
@@ -495,19 +560,20 @@ enum fsError DirectoryPushEntries(struct arena *mem, ds_CPool(file) *vec, struct
 			break;
 		}
 
-		if (FileStatusPath(&status, ent->d_name, dir) != FS_SUCCESS)
-		{
-			ret = FS_ERROR_UNSPECIFIED;
-			break;
-		}
-
-		file->type = FileStatusGetType(&status);
+		/* fstatat follows links: a dangling link (or a vanished entry) is listed as unrecognized */
+		file->type = (fstatat(dir->handle, ent->d_name, &status, 0) == 0)
+			? FileStatusGetType(&status)
+			: FILE_UNRECOGNIZED;
 	}
 
 	if (ret != FS_SUCCESS)
 	{
 		ArenaPopRecord(mem);
 		ds_CPoolPopBatch(*vec, vec->count - vec_record);
+	}
+	else
+	{
+		ArenaRemoveRecord(mem);	/* the listing stays; the record must not */
 	}
 	closedir(dir_stream);
 	*dir = FileNull();
@@ -548,7 +614,7 @@ void FileStatusDebugPrint(const file_status *stat)
 	switch (stat->st_mode & S_IFMT)
 	{
 		case S_IFREG: { fprintf(stderr, 	"regular file\n"); 	} break;
-		case S_IFDIR: { fprintf(stderr, 	"drectory\n"); 		} break;
+		case S_IFDIR: { fprintf(stderr, 	"directory\n"); 		} break;
 		case S_IFCHR: { fprintf(stderr, 	"character device\n"); 	} break;
 		case S_IFBLK: { fprintf(stderr, 	"block device\n"); 	} break;
 		case S_IFIFO: { fprintf(stderr, 	"fifo or pipe\n"); 	} break;
@@ -589,7 +655,7 @@ void FileStatusDebugPrint(const file_status *stat)
 	}
       
 	fprintf(stderr, "\tsize: %lli\n", (long long) stat->st_size);
-	fprintf(stderr, "\toptimation I/O block size: %li\n", (long) stat->st_blksize);
+	fprintf(stderr, "\toptimal I/O block size: %li\n", (long) stat->st_blksize);
 	fprintf(stderr, "\t512B blocks allocated: %lli\n", (long long) stat->st_blocks);
 
 	fprintf(stderr, "\tlast file access:        %s", ctime(&stat->st_atime));

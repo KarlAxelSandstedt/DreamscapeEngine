@@ -27,11 +27,11 @@ extern "C" {
 #include "ds_base.h"
 #include "ds_dynamics.h"
 #include "ds_hash_map.h"
-#include "list.h"
+#include "ds_list.h"
 #include "cmd.h"
 #include "ds_renderer.h"
 #include "ds_ui.h"
-#include "hierarchy_index.h"
+#include "ds_hierarchy.h"
 
 /*
 led_Node
@@ -47,6 +47,8 @@ level editor fat struct node that interfaces with all sub-systems.
 
 
 #define LED_NODE_ID_SIZE    128
+/* bytes of the new-project name buffer (utf8_new_project; the popup writes at most this many) */
+#define LED_PROJECT_NAME_BUFSIZE    (32*sizeof(u32))
 #define LED_NODE_ROOT       2
 
 typedef struct led_Node
@@ -57,24 +59,24 @@ typedef struct led_Node
     u8              id_buf[LED_NODE_ID_SIZE];
 	utf8			id;             /* User-provided identifier */
 
-    ds_Transform    transform;      /* Transform relative to parent (or world origin if no parent) */
+    ds_TransformWorld transform;    /* Transform relative to parent (or world origin if no parent) */
 
 	u32			    body_prefab; 
     u32             shape_prefab;
 
     u32             proxy;
-	vec4			color;
+	v4			color;
     f32             blend;
 
     //TODO only used by shit joint on init temporarily
     ds_BodyId  body;
 } led_Node;
-HI_DECLARE(led_Node);
+DEFINE_HI(led_Node);
 
 
 
 /* Add a new node on success. If the parent_id is not empty, the new node will be a child of the parent node. 
- * If the allocation failed, return DS_ID_NULL. */
+ * If the allocation failed, return the null id. */
 ds_Id               led_NodeAdd(struct led *led, const utf8 id, const utf8 parent_id);
 /* Remove the node and its subhierarchy, and release all of their resources, if the node exist. Otherwise no-op. */
 void                led_NodeRemoveId(struct led *led, const utf8 id);
@@ -85,13 +87,13 @@ struct slot         led_NodeLookupId(struct led *led, const utf8 id);
 /* Return node with the given ds_Id if it exist; otherwise return (NULL, U32_MAX).  */
 struct slot         led_NodeLookup(struct led *led, const ds_Id id);
 /* Set node position if it exist. */
-void		        led_NodeSetPositionId(struct led *led, const utf8 id, const vec3 position);
+void		        led_NodeSetPositionId(struct led *led, const utf8 id, const v3f64 position);
 /* Set node position if it exist. */
-void		        led_NodeSetColor(struct led *led, const ds_Id id, const vec4 color, const f32 blend);
+void		        led_NodeSetColor(struct led *led, const ds_Id id, const v4 color, const f32 blend);
 /* Set node color and blend factor if it exist. */
-void		        led_NodeSetColorId(struct led *led, const utf8 id, const vec4 color, const f32 blend);
+void		        led_NodeSetColorId(struct led *led, const utf8 id, const v4 color, const f32 blend);
 /* Set node color and blend factor if it exist. */
-void		        led_NodeSetPosition(struct led *led, const ds_Id id, const vec3 position);
+void		        led_NodeSetPosition(struct led *led, const ds_Id id, const v3f64 position);
 /* Set node to contain a rigid body if the node and the prefab exist */
 void		        led_NodeAttachRigidBodyPrefabId(struct led *led, const utf8 id, const utf8 prefab);
 /* Set node to contain a rigid body if the node and the prefab exist */
@@ -140,6 +142,19 @@ struct led_Joint
 DEFINE_CPOOL_STRUCT(led_Joint);
 
 /*
+ * The viewport's drag: a left press on a dynamic body adds a mouse joint at the hit point, held while the button
+ * is down. The target follows the point at the hit's distance along the current pick ray (the cursor, or the
+ * view direction while the cursor is locked) with a short lag, so moving the mouse or the camera moves the body
+ * and the hand's jitter, which the pick ray scales by the distance, does not.
+ */
+struct led_Grab
+{
+    ds_JointId  joint;          /* the mouse joint, the null id when nothing is held     */
+    f32         distance;       /* pick ray parameter of the hit at the press            */
+    v3f64       target;         /* the joint's target, lagging behind the ray's point    */
+};
+
+/*
 led
 ===
 level editor main structure
@@ -175,56 +190,58 @@ struct led
 	u32			            engine_initalized;
 
 	utf8		           	viewport_id;
-	vec2		           	viewport_position;
-	vec2		           	viewport_size;
+	v2		           	viewport_position;
+	v2		           	viewport_size;
 
     //TODO tmp
     ds_CPool(led_Joint)     joint_pool;
+    struct led_Grab         grab;
 
 	/* TODO move stuff into led project/led_Core or something */
 	struct arena 		    frame;
 	struct ui_List 		    brush_list;
 
 	struct ds_Dynamics physics;
-    c_ShapeSDB 		        cs_db;	
+    ds_SDB(c_Shape) 		        cs_db;
+	struct DLL				cs_shape_list;		/* the shapes added to cs_db, in order (c_Shape.led_shape_node) */
 	struct ui_List 		    cs_list;
 	struct ui_DropdownMenu  cs_mesh_menu;
 	struct ui_DropdownMenu  rb_color_mode_menu;
 
-	ds_ShapePrefabSDB       shape_prefab_db;
-    ds_ShapePrefabInstancePool shape_prefab_instance_pool;    
+	ds_SDB(ds_ShapePrefab)       shape_prefab_db;
+    ds_Pool(ds_ShapePrefabInstance) shape_prefab_instance_pool;    
 
-	ds_BodyPrefabSDB   body_prefab_db;
+	ds_SDB(ds_BodyPrefab)   body_prefab_db;
 	struct ui_List 		    body_prefab_list;
 	struct ui_DropdownMenu  body_prefab_mesh_menu;
 
-    r_MeshSDB			    render_mesh_db;
+    ds_SDB(r_Mesh)			    render_mesh_db;
 
 	struct ds_HashMap 		node_map;
-	led_NodeHI		        node_hierarchy;
+	HI(led_Node)		        node_hierarchy;
 
-	struct ds_DLL		    node_selected_list;
+	struct DLL		    node_selected_list;
 	struct ui_List		    node_ui_list;
 	struct ui_List		    node_selected_ui_list;
 
 	/* debug */
 	enum rigidBodyColorMode	pending_body_color_mode;
 	enum rigidBodyColorMode	body_color_mode;
-	vec4			        collision_color;
-	vec4			        static_color;
-	vec4			        sleep_color;
-	vec4			        awake_color;
+	v4			        collision_color;
+	v4			        static_color;
+	v4			        sleep_color;
+	v4			        awake_color;
 
-	vec4			        bounding_box_color;
-	vec4			        dbvh_color;
-	vec4			        sbvh_color;
-	vec4			        manifold_color;
+	v4			        bounding_box_color;
+	v4			        dbvh_color;
+	v4			        sbvh_color;
+	v4			        manifold_color;
     
     u32			            draw_bounding_box;
     u32			            draw_dbvh;
     u32			            draw_sbvh;
-    u32			            draw_manifold;
-    u32			            draw_lines;
+
+    v3f64                   scene_origin;   /* world position the setup scenes are built around (default 0); set before the first led_Main */
 };
 
 extern const char **body_color_mode_str;

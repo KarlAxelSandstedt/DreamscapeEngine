@@ -1,0 +1,136 @@
+Constraint
+----------
+
+p - joint position
+t - target
+
+    C  = 0 (Wanted)
+    C  = t - p
+    C' = -v - (w x r)
+       = -v - (wy*rz - wz*ry)i - (wz*rx-wx*rz)j - (wx*ry-wy*rx)k
+
+Then
+
+    C' = -E3*v - CR*w
+
+where 
+
+    E3 =                CR =
+    {                   {
+        1   0   0           0   rz -ry
+        0   1   0          -rz  0   rx
+        0   0   1           ry -rx  0
+    }                   }
+        
+Thus J becomes the (3 x 6) matrix (3 constraint rows):
+
+    J  = [ -E3  -CR ]   (3 x 6)
+
+    V  =                (6 x 1)
+    {
+        v    
+        w
+    }
+
+    C' = JV             (3 x 1)
+
+We note that CR^T = -CR, so the matrix of w cross multipliers 
+is skew-symmetric.
+
+Effective Mass (Normal Mass)
+----------------------------
+
+    K = J M^-1 J^T  (3 x 6) (6 x 6) (6 x 3) = (3 x 3)
+
+      = [ -E3/mass -CR (I^-1) ] [ -E3   ] 
+                                [ -CR^T ]
+
+      (CR skew-symmetric)
+      
+      = [ -E3/mass -CR (I^-1) ] [ -E3  ] 
+                                [  CR  ]
+
+        
+      = E3/mass - CR (I^-1) CR
+
+One can show that K is symmetric positive definite (assuming dynamic body with non-zero mass),
+so K^-1 always exists.
+
+Springs
+-------
+
+c = m / t   - viscous damping coefficient   (matrix n x n, n >= 1)
+k = m / t^2 - spring stiffness              (matrix n x n, n >= 1)
+
+The spring sees the effective mass K^-1, so hertz is the frequency in every direction:
+
+    omega = 2 pi hertz
+    k     = omega^2 K^-1
+    c     = 2 zeta omega K^-1
+
+The derivation below is written as if k, c were scalars. It holds for the matrices under
+two conditions:
+
+    1. A division by a matrix is a multiplication by its inverse: k/beta is k Inv(beta)... 
+       c + h k = omega (2 zeta + h omega) K^-1 is invertible, since 
+       
+            omega (2 zeta + h omega) > 0 for hertz > 0 (zeta = 0 included).
+
+    2. All matrices commute: k, c, gamma, beta, K and E3 are each a scalar times K^-1 or
+       a scalar times E3, so every reordering below is legal. The scalar case is K = 1/m.
+
+    F       = -k C_new - c C_new'       
+    lambda  = -h k C_new - h c C_new'
+    C_new   ~ C_old + h C_new'          (semi-implicit euler)
+
+=>
+    lambda  ~ -h k (C_old + h C_new') - h c C_new'
+            = - h k C_old - h (h k + c) C_new'
+            = c C_old - (c + h k) C_old - h (c + h k) C_new'
+            = c C_old - (k/beta) C_old - (1/gamma) C_new'
+
+=> 
+    lambda gamma - c gamma C_old + (k * gamma/beta) C_old + C_new' ~ 0
+    
+Since k * gamma/beta = 1/h, we get the equation
+
+    lambda*gamma - c gamma C_old +  C_old / h + C_new' ~ 0
+
+Finally, we have that
+
+
+    1/h - c gamma = (c + h k) / (h(c + h k)) - c / (h(c + h k))
+                  = hk / (h( c + h k))
+                  = k / (c + h k)
+                  = beta
+
+Now we end up with with the usual form we work with:
+
+    lambda*gamma + beta C_old + C_new' = 0
+
+which we solve in order to find a velocity solving our constraints.
+
+NOTE: the semi-implicit euler step with c / k, has something to do
+with implicit euler solution to something related (see Erin Catto, 
+Soft-Constraints 2011).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

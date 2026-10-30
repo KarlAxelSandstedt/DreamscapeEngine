@@ -24,7 +24,6 @@
 #include "ds_ui.h"
 #include "sys_local.h"
 
-POOL_DEFINE(ds_Event);
 
 void ds_WindowEventHandler(struct ds_Window *sys_win)
 {
@@ -32,6 +31,12 @@ void ds_WindowEventHandler(struct ds_Window *sys_win)
 	for (i32 i = sys_win->ui->event_list.first; i != DLL_SENTINEL; i = event->node.next)
 	{
 		event = sys_win->ui->event_pool.buf + i;
+		/* the list also holds key releases: a release must not repeat the press's toggle */
+		if (event->type != DS_KEY_PRESSED)
+		{
+			continue;
+		}
+
 		switch (event->keycode)
 		{
 			case DS_L:
@@ -67,10 +72,7 @@ void ds_WindowEventHandler(struct ds_Window *sys_win)
 				ds_WindowTagSubHierarchyForDestruction(ds_WindowIndex(sys_win));
 			} break;	
 
-			default:
-			{
-				fprintf(stderr, "Unhandled Press: %s\n", CstrDsKeycode(event->keycode));
-			} break;
+			default: { } break;
 		}
 	}
 }
@@ -104,12 +106,10 @@ void ds_ProcessEvents(void)
 				if (event.scroll.direction == MOUSE_SCROLL_UP)
 				{
 					sys_win->ui->inter.scroll_up_count += event.scroll.count;
-					fprintf(stderr, "Scroll up\n");
 				}
 				else
 				{
 					sys_win->ui->inter.scroll_down_count += event.scroll.count;
-					fprintf(stderr, "Scroll down\n");
 				}
 			} break;
 
@@ -241,9 +241,9 @@ void ds_ProcessEvents(void)
 				}
 				else
 				{
-					struct slot slot = ds_EventPoolAdd(&sys_win->ui->event_pool);
-					ds_DLLAppend(sys_win->ui->event_list, sys_win->ui->event_pool.buf, slot.index, node);
-					struct ds_Event *new = slot.address;
+					const struct slot event_slot = ds_PoolAdd(sys_win->ui->event_pool);
+					DLLAppend(sys_win->ui->event_list, sys_win->ui->event_pool.buf, event_slot.index, node);
+					struct ds_Event *new = event_slot.address;
 					new->scancode = event.scancode;
 					new->keycode = event.keycode;
 					new->ns_timestamp = event.ns_timestamp;
@@ -260,9 +260,9 @@ void ds_ProcessEvents(void)
 				}
 				else
 				{
-					struct slot slot = ds_EventPoolAdd(&sys_win->ui->event_pool);
-					ds_DLLAppend(sys_win->ui->event_list, sys_win->ui->event_pool.buf, slot.index, node);
-					struct ds_Event *new = slot.address;
+					const struct slot event_slot = ds_PoolAdd(sys_win->ui->event_pool);
+					DLLAppend(sys_win->ui->event_list, sys_win->ui->event_pool.buf, event_slot.index, node);
+					struct ds_Event *new = event_slot.address;
 					new->scancode = event.scancode;
 					new->keycode = event.keycode;
 					new->ns_timestamp = event.ns_timestamp;
@@ -272,10 +272,13 @@ void ds_ProcessEvents(void)
 
 			case DS_CURSOR_POSITION:
 			{
-				vec2 cursor_delta;
-				WindowPositionNativeToEngine(sys_win->ui->inter.cursor_position, sys_win->native, event.native_cursor_window_position);
-				Vec2Set(cursor_delta, event.native_cursor_window_delta[0], -event.native_cursor_window_delta[1]);
-				Vec2Translate(sys_win->ui->inter.cursor_delta, cursor_delta);
+				/* locked: the native position keeps accumulating the deltas, so only the delta means anything */
+				if (!ds_CursorLockedCheck(sys_win))
+				{
+					sys_win->ui->inter.cursor_position = WindowPositionNativeToEngine(sys_win->native, event.native_cursor_window_position);
+				}
+				const v2 cursor_delta = V2(event.native_cursor_window_delta.x, -event.native_cursor_window_delta.y);
+				sys_win->ui->inter.cursor_delta = V2Add(sys_win->ui->inter.cursor_delta, cursor_delta);
 			} break;
 
 			case DS_WINDOW_CLOSE:
@@ -319,7 +322,7 @@ void ds_ProcessEvents(void)
 
 			case DS_WINDOW_CONFIG:
 			{
-				ds_WindowConfigUpdate(ds_WindowPoolIndex(&g_window_hierarchy->pool, sys_win));
+				ds_WindowConfigUpdate(ds_PoolIndex(g_window_hierarchy->pool, sys_win));
 			} break;
 
 			//case DS_WINDOW_MINIMIZE:
@@ -330,7 +333,6 @@ void ds_ProcessEvents(void)
 
 			case DS_NO_EVENT:
 			{
-				fprintf(stderr, "DS_NO_EVENT\n");
 			} break;
 		}
 

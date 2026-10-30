@@ -25,35 +25,6 @@
 #include <emscripten/console.h>
 #endif
 
-/*
- * message_write:
- * 	if (!SemaphoreTryWait(msg_mem_left))	<--- if no mem, spin try to write to disk, until memory acquired
- * 	{
- *		message_write_batch_to_disk()
- * 	}
- *	SemaphoreWait(msg_mem_left)
- * 	--------------------------------------- <-- we know there exist msg slot for thread, and that slot
- * 					            has had its memory pushed to disk. TODO: inspect assembly
- * 					            to ensure correct memory barriers, should be good enough
- * 					            with semaphore
- * 	index = atomic_relaxed_fetch_add(msg_count) % msg_max_count;
- * 	timestamp = timer_miliseconds()
- * 	format_msg_to_memory()
- *	atomic_release(msg_finished, 1);	<--- msg_finished == 1 <=> all memory has been written 
- *
- * message_write_batch_to_disk:
- * 	if (atomic_cmp_exchange_relaxed(disk_io_in_progress, 0, 1))
- * 	{
- * 		consume messages until we reach one that is not ready
- * 		while (atomic_cmp_exchange_acquire(next_msg->msg_finished, 1, 0) == 1)
- * 		{
- * 			write shit to disk
- * 		}
- * 		atomic_store_relaxed(disk_io_in_progress, 0);
- * 		semaphore_release(consume_count)
- * 	}
- */
-
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
@@ -69,9 +40,7 @@ struct Log_message
 	u32 	system;
 	u32 	severity;
 	u32 	thread_id;
-	u32 	a_completed;		/* atomic to signal message has been completed */
-	u32 	len;			/* length of message (without null termination) */
-	u64	size_req;
+	u64	size;			/* bytes in buf (without null termination) */
 	u8 	buf[LOG_MAX_MESSAGE_SIZE];	
 	u32 	a_in_use_and_completed;	/* ready to be sent of to disk and reused */
 };
@@ -81,18 +50,22 @@ struct Log
 	struct Log_message *	msg;
 	struct ticketFactory 	tf;    			/* index factory */
 	u32 			a_writing_to_disk;
-	u32 			a_shutting_down;	/* when set, any further calls to message_write will immediately return */
 	u32 			has_file;		/* If not, simply skip file IO */ 
 	FILE *			file;
+	u32			initialized;		/* set by LogInit (before any worker exists); until then messages go to stderr */
+	u32			a_shut_down;		/* set by LogShutdown: later messages are dropped (thread memory may be freed) */
 };
 
 static struct Log g_log;
+/* tickets this thread holds unfinished: a fatal error while formatting (an assert) must not wait on them */
+static ds_ThreadLocal u32 tl_tickets_held = 0;
 
-void LogInit(struct arena *mem, const char *filepath)
+static void LogNamesInit(void)
 {
 	systems[T_SYSTEM] = Utf8Inline("System");
 	systems[T_RENDERER] = Utf8Inline("Renderer");
 	systems[T_PHYSICS] = Utf8Inline("Physics");
+	systems[T_CSG] = Utf8Inline("Csg");
 	systems[T_ASSET] = Utf8Inline("Asset");
 	systems[T_UTILITY] = Utf8Inline("Utility");
 	systems[T_PROFILER] = Utf8Inline("Profiler");
@@ -106,19 +79,36 @@ void LogInit(struct arena *mem, const char *filepath)
 	severities[S_WARNING] = Utf8Inline("warning");
 	severities[S_ERROR] = Utf8Inline("error");
 	severities[S_FATAL] = Utf8Inline("fatal");
+}
+
+void LogInit(struct arena *mem, const char *filepath)
+{
+	LogNamesInit();
 
 	g_log.msg = ArenaPush(mem, LOG_MAX_MESSAGES * sizeof(struct Log_message));
 	TicketFactoryInit(&g_log.tf, LOG_MAX_MESSAGES);
-	g_log.file = fopen(filepath, "w+");
+	g_log.file = (filepath) ? fopen(filepath, "w+") : NULL;
 	g_log.has_file = g_log.file != NULL;
 	AtomicStoreRel32(&g_log.a_writing_to_disk, 0);
+	AtomicStoreRel32(&g_log.a_shut_down, 0);
+	g_log.initialized = 1;
 }
 
-static void LogTryWriteToDisk(void)
+/*
+ * A ticket factory hands out the LOG_MAX_MESSAGES slots as a ring. A thread that finds no free slot
+ * (or wrote an S_FATAL message) tries to become the disk writer.
+ *
+ * The thread winning the CAS on a_writing_to_disk writes completed slots in order until
+ * one is still being formatted, returns that many tickets, flushes the file if asked, and
+ * releases a_writing_to_disk. Returns 1 if it won. LogShutdown takes a_writing_to_disk for
+ * good before closing the file, so no writer touches a closed file.
+ */
+static u32 LogTryWriteToDisk(const u32 flush)
 {
 	u32 desired = 0;
-	/* If we fail, try to write messages to disk and re-publish them  */
-	if (AtomicCompareExchangeAcqRlx32(&g_log.a_writing_to_disk, &desired, 1))
+	/* become the single disk writer unless another thread is */
+	const u32 won = AtomicCompareExchangeAcqRlx32(&g_log.a_writing_to_disk, &desired, 1);
+	if (won)
 	{
 		u32 count = 0;
 		/* we are the single owner of a_serve: sync with any previous disk-writer */
@@ -128,17 +118,23 @@ static void LogTryWriteToDisk(void)
 		{
 			struct Log_message *msg = g_log.msg + serving;
 
-			if (g_log.has_file && msg->len)
+			if (g_log.has_file && msg->size)
 			{
-				fwrite(msg->buf, 1, msg->size_req, g_log.file);
+				fwrite(msg->buf, 1, msg->size, g_log.file);
 			}
 			serving = (serving + 1) % LOG_MAX_MESSAGES;
 			count += 1;
 		}
 
 		TicketFactoryReturnTickets(&g_log.tf, count);
+		if (flush && g_log.has_file)
+		{
+			fflush(g_log.file);
+		}
 		AtomicStoreRel32(&g_log.a_writing_to_disk, 0);
 	}
+
+	return won;
 }
 
 static void internal_write_to_disk(void)
@@ -146,27 +142,85 @@ static void internal_write_to_disk(void)
 	/* spin until all tickets have finished and the messages have been written to disk */
 	while (AtomicLoadAcq32(&g_log.tf.a_serve) != AtomicLoadAcq32(&g_log.tf.a_next))
 	{
-		LogTryWriteToDisk();
+		LogTryWriteToDisk(0);
 	}
 }
 
 void LogShutdown()
 {
 	LogString(T_SYSTEM, S_NOTE, "Log system initiated shutdown");
+	/*
+	 * the first caller shuts down; a later one returns: a fatal error after ds_Shutdown (the slots may be
+	 * freed) or racing it must not write the slots or close the file again
+	 */
+	u32 running = 0;
+	if (!AtomicCompareExchangeAcqRelAcq32(&g_log.a_shut_down, &running, 1))
+	{
+		return;
+	}
+
+	if (!g_log.initialized)
+	{
+		/* FatalCleanupAndExit before LogInit */
+		return;
+	}
 
 	AtomicStoreRel32(&g_log.tf.a_open, 0);
 	if (g_log.has_file)
 	{
-		internal_write_to_disk();
+		if (tl_tickets_held)
+		{
+			/* our own slot never completes: write the completed slots before it and stop */
+			LogTryWriteToDisk(0);
+		}
+		else
+		{
+			internal_write_to_disk();
+		}
+
+		/* a fatal message's writer may still try to write and flush: keep it out for good */
+		u32 desired = 0;
+		while (!AtomicCompareExchangeAcqRlx32(&g_log.a_writing_to_disk, &desired, 1))
+		{
+			desired = 0;
+		}
 		fclose(g_log.file);
 	}
 	TicketFactoryDestroy(&g_log.tf);
 }
 
+/*
+ * Spin on TicketFactoryTryGetTicket, writing completed slots to disk while none is free
+ * (LogTryWriteToDisk); format into slot ticket % LOG_MAX_MESSAGES, print it, then release-store
+ * a_in_use_and_completed = 1.
+ */
 void LogWriteMessage(const enum system_id system, const enum severity_id severity, const char *format, ... )
 {
 	ProfZone;
-	
+
+	if (AtomicLoadAcq32(&g_log.a_shut_down))
+	{
+		goto end;
+	}
+
+	/* before LogInit or ds_ThreadMasterInit: no message slots, timer or thread index yet */
+	if (!g_log.initialized || g_tl_self == NULL)
+	{
+		LogNamesInit();
+		u8 early_buf[LOG_MAX_MESSAGE_SIZE];
+		u32 early_req_size;
+		va_list early_args;
+		va_start(early_args, format);
+		const utf8 early = Utf8FormatBufferedVariadic(&early_req_size, early_buf, LOG_MAX_MESSAGE_SIZE, format, early_args);
+		va_end(early_args);
+		fprintf(stderr, "[%s] %.*s %.*s: %.*s\n",
+			(g_log.initialized) ? "no engine thread" : "before log init",
+			(int) systems[system].len, (const char *) systems[system].buf,
+			(int) severities[severity].len, (const char *) severities[severity].buf,
+			(int) Utf8SizeRequired(early), (const char *) early.buf);
+		goto end;
+	}
+
 	const u32 thread_id = ds_ThreadSelfIndex();
 	/* spin until a new msg slot is up for grabs for us to publish */
 	u32 ticket;
@@ -178,10 +232,11 @@ void LogWriteMessage(const enum system_id system, const enum severity_id severit
 		 * instead ensure that all threads have terminated before we even call
 		 * LogShutdown();
 		 */
-		LogTryWriteToDisk();
+		LogTryWriteToDisk(0);
 	}
 
 	if (ret == TICKET_FACTORY_CLOSED) { goto end; }
+	tl_tickets_held += 1;
 
 	struct Log_message *msg = g_log.msg + (ticket % LOG_MAX_MESSAGES);
 
@@ -192,30 +247,29 @@ void LogWriteMessage(const enum system_id system, const enum severity_id severit
 	msg->severity = severity;
 	msg->thread_id = thread_id;
 
-	/* TODO: hacky, but good enough for now... */
-	u8 buf[LOG_MAX_MESSAGE_SIZE]  = { 0 };
-	u64 req_size;
-	va_list args;
-	va_start(args, format);
-	utf8 formatted = Utf8FormatBufferedVariadic(&req_size, buf, LOG_MAX_MESSAGE_SIZE, format, args);
-	va_end(args);
-
-#if __DS_PLATFORM__ == __DS_WEB__
-	utf8 str = Utf8FormatBuffered(msg->buf, LOG_MAX_MESSAGE_SIZE-1, "[%lu.%lu%lu%lus] %k %k - Thread %u: %k",
-#else
-	utf8 str = Utf8FormatBuffered(msg->buf, LOG_MAX_MESSAGE_SIZE-1, "[%lu.%lu%lu%lus] %k %k - Thread %u: %k\n",
-#endif
+	/* prefix, then text, straight into the slot; 2 bytes stay free for '\n' and '\0' */
+	const u32 capacity = LOG_MAX_MESSAGE_SIZE - 2;
+	u32 size = Utf8SizeRequired(Utf8FormatBuffered(msg->buf, capacity, "[%lu.%lu%lu%lus] %k %k - Thread %u: ",
 		ms / 1000,
 		(ms / 100) % 10,
 		(ms / 10) % 10,
 		ms % 10,
 		systems + system,
 		severities + severity,
-		thread_id,
-		&formatted);
-	msg->size_req = Utf8SizeRequired(str);
-	msg->len = str.len;
-	msg->buf[msg->size_req] = '\0';
+		thread_id));
+
+	u32 text_size;
+	va_list args;
+	va_start(args, format);
+	Utf8FormatBufferedVariadic(&text_size, msg->buf + size, capacity - size, format, args);
+	va_end(args);
+	size += text_size;
+
+#if __DS_PLATFORM__ != __DS_WEB__
+	msg->buf[size++] = '\n';
+#endif
+	msg->buf[size] = '\0';
+	msg->size = size;
 
 #if __DS_PLATFORM__ == __DS_WEB__
 	emscripten_out((char *) msg->buf);
@@ -224,8 +278,39 @@ void LogWriteMessage(const enum system_id system, const enum severity_id severit
 #endif
 	/* sync-point, msg ready for writing */
 	AtomicStoreRel32(&msg->a_in_use_and_completed, 1);
+	tl_tickets_held -= 1;
+
+	/*
+	 * a fatal message must reach the file even if the process dies before LogShutdown (an assert's
+	 * Breakpoint without a debugger): wait until our slot is written, then flush. A slot we still hold
+	 * (fatal while formatting a message) never completes, so then write what we can.
+	 */
+	if (severity == S_FATAL && g_log.has_file)
+	{
+		if (tl_tickets_held)
+		{
+			LogTryWriteToDisk(1);
+		}
+		else
+		{
+			/* once LogShutdown has begun, it writes our slot and closes (flushes) the file */
+			while (!AtomicLoadAcq32(&g_log.a_shut_down))
+			{
+				if (LogTryWriteToDisk(1) && (i32) (AtomicLoadAcq32(&g_log.tf.a_serve) - (ticket + 1)) >= 0)
+				{
+					break;
+				}
+			}
+		}
+	}
 end:
 	ProfZoneEnd;
 }
+
+#else
+
+void LogInit(struct arena *mem, const char *filepath) {}
+void LogShutdown(void) {}
+void LogWriteMessage(const enum system_id system, const enum severity_id severity, const char *format, ... ) {}
 
 #endif

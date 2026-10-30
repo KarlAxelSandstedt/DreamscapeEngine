@@ -17,25 +17,19 @@
 ==========================================================================
 */
 
-#include <stdlib.h> 
-
 #include "cmd.h"
 #include "ds_hash_map.h"
 
-POOL_DEFINE(cmd);
 DEFINE_CPOOL_STRUCT(cmdFunction);
 
 static struct ds_HashMap g_name_to_cmd_f_map;
 struct cmdQueue *g_queue = NULL;
 static ds_CPool(cmdFunction) g_cmd_f;
-u32			  g_cmd_internal_debug_print_index;	
-
-//TODO REMOVE mallocs/free in debug printing
+static u32 g_cmd_internal_debug_print_index;
 
 static void CmdDebugPrint(void)
 {
 	Utf8DebugPrint(g_queue->cmd_exec->arg[0].utf8);
-	free(g_queue->cmd_exec->arg[0].utf8.buf);
 }
 
 void ds_CmdApiInit(void)
@@ -56,15 +50,15 @@ void ds_CmdApiShutdown(void)
 struct cmdQueue CmdQueueAlloc(void)
 {
 	struct cmdQueue queue = { 0 };
-	queue.cmd_pool = cmdPoolAlloc(NULL, 64, GROWABLE);
-	ds_LLFlush(queue.cmd_list);
-	ds_LLFlush(queue.cmd_list_next_frame);
+	ds_PoolAlloc(NULL, queue.cmd_pool, 64, GROWABLE);
+	LLFlush(queue.cmd_list);
+	LLFlush(queue.cmd_list_next_frame);
 	return queue;
 }
 
 void CmdQueueDealloc(struct cmdQueue *queue)
 {
-	cmdPoolDealloc(&queue->cmd_pool);
+	ds_PoolDealloc(queue->cmd_pool);
 }
 
 void CmdQueueSet(struct cmdQueue *queue)
@@ -84,12 +78,13 @@ enum cmdToken
 
 static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 {
-	u64 i = 0;
+	u32 i = 0;
 	u32 token_count = 0;
 	u8 *text = cmd->string.buf;
 	u32 codepoints_left = cmd->string.len;
 	u8 *token_start = NULL;
 	u32 token_length = 0;
+	u32 error = 0;
 	utf8 token_string;
 
 	while (codepoints_left && (text[i] == ' ' || text[i] == '\t' || text[i] == '\n'))
@@ -98,7 +93,8 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 		codepoints_left -= 1;
 	}
 
-	token_start = text;
+	/* the command name starts after the leading whitespace */
+	token_start = text + i;
 	while (codepoints_left && (text[i] != ' ' && text[i] != '\t' && text[i] != '\n'))
 	{
 		Utf8ReadCodepoint(&i, &cmd->string, i);
@@ -106,14 +102,13 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 		codepoints_left -= 1;
 	}
 
-	token_string = (utf8) { .buf = token_start, .len = token_length, .size = token_length };
-	cmd->function = CmdFunctionLookup(token_string).address;
+	token_string = (utf8) { .buf = token_start, .len = token_length, .size = (u32) ((text + i) - token_start) };
+	cmd->function = CmdFunctionLookup(token_string).index;
 
-	if (cmd->function == NULL)
+	if (cmd->function == U32_MAX)
 	{
-		cmd->function = g_cmd_f.buf + g_cmd_internal_debug_print_index;
-		u8 *buf = malloc(256);
-		cmd->arg[0].utf8 = Utf8FormatBuffered(buf, 256, "Error in tokenizing %k: invalid command name", (char *) &cmd->string); 
+		cmd->function = g_cmd_internal_debug_print_index;
+		cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: invalid command name", &cmd->string);
 		return;
 	}
 
@@ -130,16 +125,18 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 			break;
 		}
 
-		if (token_count == cmd->function->args_count)
+		if (token_count == g_cmd_f.buf[cmd->function].args_count)
 		{
-			u8 *buf = malloc(256);
-			cmd->arg[0].utf8 = Utf8FormatBuffered(buf, 256, "Error in tokenizing %k: command expects %u arguments.", &cmd->string, cmd->function->args_count); 
-			cmd->function = g_cmd_f.buf + g_cmd_internal_debug_print_index;
+			cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: command expects %u arguments.", &cmd->string, g_cmd_f.buf[cmd->function].args_count);
+			cmd->function = g_cmd_internal_debug_print_index;
+			error = 1;
 			break;
 		}
 
 		enum cmdToken token_type = CMD_TOKEN_INVALID;
 		u8 *token_start = text + i;
+		/* set for a quoted token: it ends before its closing quote */
+		u8 *token_end = NULL;
 		token_length = 0;
 		if (text[i] == '"')
 		{
@@ -155,12 +152,13 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 
 			if (text[i] != '"')
 			{
-				cmd->function = g_cmd_f.buf + g_cmd_internal_debug_print_index;
-				u8 *buf = malloc(256);
-				cmd->arg[0].utf8 = Utf8FormatBuffered(buf, 256, "Error in tokenizing %k: non-closed string beginning.", &cmd->string); 
+				cmd->function = g_cmd_internal_debug_print_index;
+				cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: non-closed string beginning.", &cmd->string);
+				error = 1;
 				break;
 			}
-				
+
+			token_end = text + i;
 			i += 1;
 			codepoints_left -= 1;
 			token_type = CMD_TOKEN_STRING;
@@ -198,7 +196,6 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 
 			if ((sign + 1 + 2*fraction <= token_length) && '0' <= text[i-1] && text[i-1] <= '9')
 			{
-				u32 min_length = 1 + sign + fraction*2;
 				if (fraction)
 				{
 					token_type = CMD_TOKEN_F64;
@@ -212,16 +209,14 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 					token_type = CMD_TOKEN_U64;
 				}
 			}
-			ds_Assert(token_type != CMD_TOKEN_INVALID);
 		}
 
-		ds_Assert(!codepoints_left || text[i] == ' ' || text[i] == '\t' || text[i] == '\n');
 		if (codepoints_left && (text[i] != ' ' && text[i] != '\t' && text[i] != '\n'))
 		{
 			token_type = CMD_TOKEN_INVALID;
 		}
 
-		token_string = (utf8) { .buf = token_start, .len = token_length, .size = token_length };
+		token_string = (utf8) { .buf = token_start, .len = token_length, .size = (u32) (((token_end) ? token_end : text + i) - token_start) };
 		struct parseRetval ret = { .op_result = PARSE_SUCCESS };
 		switch (token_type)
 		{
@@ -255,27 +250,33 @@ static void CmdTokenizeString(struct arena *tmp, struct cmd *cmd)
 
 		if (ret.op_result != PARSE_SUCCESS)
 		{
-			cmd->function = g_cmd_f.buf + g_cmd_internal_debug_print_index;
-			u8 *buf = malloc(256);
+			cmd->function = g_cmd_internal_debug_print_index;
+			error = 1;
 			switch (ret.op_result)
 			{
 				case PARSE_UNDERFLOW: 
 				{ 
-					cmd->arg[0].utf8 = Utf8FormatBuffered(buf, 256, "Error in tokenizing %k: signed integer underflow in argument %u", &cmd->string, token_count); 
+					cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: signed integer underflow in argument %u", &cmd->string, token_count);
 				} break;
 
 				case PARSE_OVERFLOW: 
 				{ 
-					cmd->arg[0].utf8 = Utf8FormatBuffered(buf, 256, "Error in tokenizing %k: integer overflow in argument %u", &cmd->string, token_count); 
+					cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: integer overflow in argument %u", &cmd->string, token_count);
 				} break;
 
 				case PARSE_STRING_INVALID: 
 				{ 
-					g_queue->cmd_exec->arg[0].utf8 = Utf8FormatBuffered(buf, 256, "Error in tokenizing %k: unexpected character in argument %k", &cmd->string, &token_string); 
+					cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: unexpected character in argument %k", &cmd->string, &token_string);
 				} break;
 			}
 			break;
 		}
+	}
+
+	if (!error && token_count < g_cmd_f.buf[cmd->function].args_count)
+	{
+		cmd->arg[0].utf8 = Utf8Format(tmp, "Error in tokenizing %k: command expects %u arguments.", &cmd->string, g_cmd_f.buf[cmd->function].args_count);
+		cmd->function = g_cmd_internal_debug_print_index;
 	}
 }
 
@@ -283,31 +284,32 @@ void CmdQueueExecute(void)
 {
 	struct arena *tmp = ArenaPushScratch();
 
-	u32 next = U32_MAX;
+	i32 next = LL_SENTINEL;
 	for (i32 i = g_queue->cmd_list.first; i != LL_SENTINEL; i = next)
 	{
 		g_queue->cmd_exec = g_queue->cmd_pool.buf + i;
-		next = g_queue->cmd_exec->next;
 		if (g_queue->cmd_exec->args_type == CMD_ARGS_TOKEN)
 		{
 			//Utf8DebugPrint(g_queue->cmd_exec->string);
 			CmdTokenizeString(tmp, g_queue->cmd_exec);
 		}
-		g_queue->cmd_exec->function->call();
-		cmdPoolRemove(&g_queue->cmd_pool, i);
+		g_cmd_f.buf[g_queue->cmd_exec->function].call();
+		/* the call may have appended to the list and grown the pool */
+		next = g_queue->cmd_pool.buf[i].next;
+		ds_PoolRemove(g_queue->cmd_pool, i);
 	}
 
 	g_queue->cmd_list = g_queue->cmd_list_next_frame;
-	ds_LLFlush(g_queue->cmd_list_next_frame);
+	LLFlush(g_queue->cmd_list_next_frame);
 
 	ArenaPopScratch();
 }
 
 void CmdQueueFlush(struct cmdQueue *queue)
 {
-	cmdPoolFlush(&queue->cmd_pool);
-	ds_LLFlush(g_queue->cmd_list);
-	ds_LLFlush(g_queue->cmd_list_next_frame);
+	ds_PoolFlush(queue->cmd_pool);
+	LLFlush(queue->cmd_list);
+	LLFlush(queue->cmd_list_next_frame);
 }
 
 struct slot CmdFunctionRegister(const utf8 name, const u32 args_count, void (*call)(void))
@@ -378,12 +380,12 @@ void CmdSubmitUtf8(const utf8 string)
 
 void CmdQueueSubmitUtf8(struct cmdQueue *queue, const utf8 string)
 {
-	struct slot slot = cmdPoolAdd(&queue->cmd_pool);
+	struct slot slot = ds_PoolAdd(queue->cmd_pool);
 	struct cmd *cmd = slot.address;
 	cmd->args_type = CMD_ARGS_TOKEN;
 	cmd->string = string;
 
-	ds_LLAppend(queue->cmd_list, queue->cmd_pool.buf, slot.index, next);
+	LLAppend(queue->cmd_list, queue->cmd_pool.buf, slot.index, next);
 }
 
 void CmdSubmit(const u32 cmdFunction)
@@ -393,32 +395,32 @@ void CmdSubmit(const u32 cmdFunction)
 
 void CmdQueueSubmit(struct cmdQueue *queue, const u32 cmdFunction)
 {
-	struct slot slot = cmdPoolAdd(&queue->cmd_pool);
+	struct slot slot = ds_PoolAdd(queue->cmd_pool);
 	struct cmd *cmd = slot.address;
 	cmd->args_type = CMD_ARGS_REGISTER;
-	cmd->function = g_cmd_f.buf + cmdFunction;
+	cmd->function = cmdFunction;
 
-	for (u32 i = 0; i < cmd->function->args_count; ++i)
+	for (u32 i = 0; i < g_cmd_f.buf[cmd->function].args_count; ++i)
 	{
 		cmd->arg[i] = queue->regs[i];
 	}
 
-	ds_LLAppend(queue->cmd_list, queue->cmd_pool.buf, slot.index, next);
+	LLAppend(queue->cmd_list, queue->cmd_pool.buf, slot.index, next);
 }
 
 void CmdQueueSubmitNextFrame(struct cmdQueue *queue, const u32 cmdFunction)
 {
-	struct slot slot = cmdPoolAdd(&queue->cmd_pool);
+	struct slot slot = ds_PoolAdd(queue->cmd_pool);
 	struct cmd *cmd = slot.address;
 	cmd->args_type = CMD_ARGS_REGISTER;
-	cmd->function = g_cmd_f.buf + cmdFunction;
+	cmd->function = cmdFunction;
 
-	for (u32 i = 0; i < cmd->function->args_count; ++i)
+	for (u32 i = 0; i < g_cmd_f.buf[cmd->function].args_count; ++i)
 	{
 		cmd->arg[i] = queue->regs[i];
 	}
 
-	ds_LLAppend(queue->cmd_list_next_frame, queue->cmd_pool.buf, slot.index, next);
+	LLAppend(queue->cmd_list_next_frame, queue->cmd_pool.buf, slot.index, next);
 }
 
 void CmdSubmitNextFrame(const u32 cmdFunction)
@@ -448,12 +450,12 @@ void CmdSubmitFormatNextFrame(struct arena *mem, const char *format, ...)
 
 void CmdQueueSubmitUtf8NextFrame(struct cmdQueue *queue, const utf8 string)
 {
-	struct slot slot = cmdPoolAdd(&queue->cmd_pool);
+	struct slot slot = ds_PoolAdd(queue->cmd_pool);
 	struct cmd *cmd = slot.address;
 	cmd->args_type = CMD_ARGS_TOKEN;
 	cmd->string = string;
 
-	ds_LLAppend(queue->cmd_list_next_frame, queue->cmd_pool.buf, slot.index, next);
+	LLAppend(queue->cmd_list_next_frame, queue->cmd_pool.buf, slot.index, next);
 }
 
 void CmdSubmitUtf8NextFrame(const utf8 string)

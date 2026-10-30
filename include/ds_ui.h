@@ -28,15 +28,17 @@ extern "C" {
 #include "ds_math.h"
 #include "ds_graphics.h"
 #include "ds_asset.h"
-#include "hierarchy_index.h"
-#include "list.h"
+#include "ds_hierarchy.h"
+#include "ds_list.h"
 
 #define UI_SCOPE(PUSH, POP)	for (i32 __i = ((PUSH), 0); __i < 1; ++__i, (POP))
 
 #define TAB_SIZE	8
 
-/* allocate ui resources */
+/* register the UI commands (needs ds_CmdApiInit) */
 void	ds_UiApiInit(void);
+/* nothing to free: the commands go with ds_CmdApiShutdown */
+void	ds_UiApiShutdown(void);
 
 /*
 ui_visual
@@ -47,10 +49,10 @@ ui_visual
 struct ui_Visual
 {
 	/* default colors */
-	vec4			background_color;
-	vec4			border_color;
-	vec4			gradient_color[BOX_CORNER_COUNT];
-	vec4			sprite_color;
+	v4			background_color;
+	v4			border_color;
+	v4			gradient_color[BOX_CORNER_COUNT];
+	v4			sprite_color;
 
 	/* default pixel padding */
 	f32			pad;
@@ -68,10 +70,10 @@ struct ui_Visual
 	f32			text_pad_y;
 };
 
-struct ui_Visual ui_VisualInit(const vec4 background_color
-		, const vec4 border_color
-		, const vec4 gradient_color[BOX_CORNER_COUNT]
-		, const vec4 sprite_color
+struct ui_Visual ui_VisualInit(const v4 background_color
+		, const v4 border_color
+		, const v4 gradient_color[BOX_CORNER_COUNT]
+		, const v4 sprite_color
 		, const f32 pad
 		, const f32 edge_softness
 		, const f32 corner_radius
@@ -197,7 +199,7 @@ struct ui_DropdownMenu
 
 	u32				root;
 
-	vec2				entry_size;
+	v2				entry_size;
 	f32				max_dropdown_height;
 	f32				dropdown_x;
 	f32				dropdown_y;
@@ -205,7 +207,7 @@ struct ui_DropdownMenu
 	struct ui_List			list;
 };
 
-struct ui_DropdownMenu 	ui_DropdownMenuInit(const f32 max_dropdown_height, const vec2 entry_size, const enum ui_DropdownPosition position);
+struct ui_DropdownMenu 	ui_DropdownMenuInit(const f32 max_dropdown_height, const v2 entry_size, const enum ui_DropdownPosition position);
 u32			ui_DropdownMenu(struct ui_DropdownMenu *menu, const utf8 id);
 u32			ui_DropdownMenuF(struct ui_DropdownMenu *menu, const char *format, ...);
 void			ui_DropdownMenuPush(struct ui_DropdownMenu *menu);
@@ -271,16 +273,16 @@ struct ui_TimelineConfig
 	u32	unit_line_preferred_count; /* prefered number of unit lines, may not correspond to actual count */
 
 	/* colors */
-	vec4 	unit_line_color;	/* color of unit lines */
-	vec4	subline_color;		/* color of sub lines */
-	vec4	text_color;		/* color of displayed times */
-	vec4	background_color;	/* color of timeline background */
-	vec4	draggable_color;	/* color of row y-draggable bar */
+	v4 	unit_line_color;	/* color of unit lines */
+	v4	subline_color;		/* color of sub lines */
+	v4	text_color;		/* color of displayed times */
+	v4	background_color;	/* color of timeline background */
+	v4	draggable_color;	/* color of row y-draggable bar */
 
-	vec4	task_gradient_br;	/* gradient color at br of task */
-	vec4	task_gradient_tr;	/* gradient color at tr of task */
-	vec4	task_gradient_tl;	/* gradient color at tl of task */
-	vec4	task_gradient_bl;	/* gradient color at bl of task */
+	v4	task_gradient_br;	/* gradient color at br of task */
+	v4	task_gradient_tr;	/* gradient color at tr of task */
+	v4	task_gradient_tl;	/* gradient color at tl of task */
+	v4	task_gradient_bl;	/* gradient color at bl of task */
 
 	/* booleans */
 	u8	draw_sublines;		/* Draw sublines (less visible lines without units) */
@@ -330,6 +332,7 @@ struct ui_Popup
 
 	struct ui_TextInput	*prompt;
 	utf8			*input;
+	u32			input_capacity;	/* bytes at input->buf */
 
 	union
 	{
@@ -352,7 +355,7 @@ struct ui_Popup ui_PopupNull(void);
 void		ui_PopupTryDestroyAndSetToNull(struct ui_Popup *popup);
 
 void 		ui_PopupUtf8Display(struct ui_Popup *popup, const utf8 display, const char *title, const struct ui_Visual *visual);
-void 		ui_PopupUtf8Input(struct ui_Popup *popup, utf8 *input, struct ui_TextInput *line, const utf8 description, const utf8 prefix, const char *title, const struct ui_Visual *visual);
+void 		ui_PopupUtf8Input(struct ui_Popup *popup, utf8 *input, struct ui_TextInput *line, const u32 input_capacity, const utf8 description, const utf8 prefix, const char *title, const struct ui_Visual *visual);
 void 		ui_PopupChoice(struct ui_Popup *popup, const utf8 description, const utf8 positive, const utf8 negative, const char *title, const struct ui_Visual *visual);
 
 /********************************************************************************************************/
@@ -390,7 +393,7 @@ typedef struct ui_TextSelection
 {
 	const struct ui_Node *	node;
 	struct textLayout *	layout;
-	vec4			color;
+	v4			color;
 	u32			low;
 	u32			high;
 } ui_TextSelection;
@@ -406,7 +409,7 @@ struct ui_DrawNode
 
 struct ui_DrawBucket
 {
-    struct ds_DLLNode   node;
+    struct DLLNode   node;
 	u32 			    cmd;
 	u32 			    count;
 	struct ui_DrawNode *list;
@@ -453,8 +456,8 @@ struct ui_Interaction
 	utf8			text_edit_id;		
 	struct ui_TextInput *	text_edit;	/* aliasing external ui_TextInput. */
 
-	vec2	cursor_delta;
-	vec2 	cursor_position;    /* window bottom left = (0.0f, 0.0f) */
+	v2	cursor_delta;
+	v2 	cursor_position;    /* window bottom left = (0.0f, 0.0f) */
 
 	/* keyboard state */
 	u32 	key_clicked[DS_KEY_COUNT];	/* frame : Was key clicked this frame? [DS_KEYCODE_COUNT] 	*/
@@ -662,29 +665,29 @@ typedef struct ui_Node
 	/* text layout values */
 	enum alignment_x	text_align_x;
 	enum alignment_y	text_align_y;
-	vec2			text_pad;
+	v2			text_pad;
 	struct textLayout *	layout_text;
 
 	/* building position (relative) and size (in pixels); not taking into account the hierarchy */
-	vec2		layout_position;	
-	vec2		layout_size;
+	v2		layout_position;	
+	v2		layout_size;
 
 	/* final window position (absolute) and size (in pixels) */
-	vec2		pixel_position;	
-	vec2		pixel_size;
+	v2		pixel_position;	
+	v2		pixel_size;
 
 	/* visible pixel interval (subset of pixel_position + pixel_size */
 	intv		pixel_visible[AXIS_2_COUNT];
 
-	vec4		background_color;
-	vec4		border_color;
-	vec4		sprite_color;
-	vec4		gradient_color[BOX_CORNER_COUNT];
+	v4		background_color;
+	v4		border_color;
+	v4		sprite_color;
+	v4		gradient_color[BOX_CORNER_COUNT];
 	f32		border_size;
 	f32		edge_softness;
 	f32		corner_radius;
 } ui_Node;
-HI_DECLARE(ui_Node);
+DEFINE_HI(ui_Node);
 
 struct ui_NodeCache
 {
@@ -722,32 +725,31 @@ struct ui_Node *ui_NodeTop(void);
 /* Per window ui struct */
 struct ui
 {
-	struct ds_MemSlot		mem_slot;
 	struct ui_Interaction	inter;
 
 	ds_CPool(ui_DrawBucket)	bucket_pool;
-	struct ds_DLL           bucket_list;
+	struct DLL           bucket_list;
 	struct ds_HashMap 	    bucket_map;
 	u32			            bucket_cache;	/* for quick cmd check */
 	u32			            bucket_count;
 
-	struct ds_EventPool		event_pool;
-	struct ds_DLL		    event_list;
+	ds_Pool(ds_Event)		event_pool;
+	struct DLL		    event_list;
 
 	/* node map for all u's  */
 	/* Shared allocator for all nodes  */
-	struct ui_NodeHI 		node_hierarchy;
+	HI(ui_Node) 		node_hierarchy;
 	struct ds_HashMap 		node_map;
 
 	ds_CPool(ui_TextSelection)	frame_text_selection;
-	vec4			text_cursor_color;
-	vec4			text_selection_color;
+	v4			text_cursor_color;
+	v4			text_selection_color;
 
 	u64		frame;
 	struct arena 	mem_frame_arr[2];
 	struct arena *	mem_frame;
 
-	vec2u32		window_size;
+	v2u32		window_size;
 
 	u32		node_count_frame;
 	u32		node_count_prev_frame;
@@ -781,10 +783,10 @@ struct ui
     ds_CPool(ui_Size)	ui_size[AXIS_2_COUNT];
 	ds_CPool(intv)	    viewable[AXIS_2_COUNT];
 	ds_CPool(u32)	    child_layout_axis;
-	ds_CPool(vec4)	    background_color;
-	ds_CPool(vec4)	    border_color;
-	ds_CPool(vec4)	    gradient_color[BOX_CORNER_COUNT];
-	ds_CPool(vec4)	    sprite_color;
+	ds_CPool(v4)	    background_color;
+	ds_CPool(v4)	    border_color;
+	ds_CPool(v4)	    gradient_color[BOX_CORNER_COUNT];
+	ds_CPool(v4)	    sprite_color;
 	ds_CPool(f32)	    edge_softness;
 	ds_CPool(f32)	    corner_radius;
 	ds_CPool(f32)	    border_size;
@@ -795,14 +797,14 @@ extern struct ui *g_ui;
 struct ui *	ui_Alloc(void);					/* allocate a new ui 		*/
 void		ui_Dealloc(struct ui *ui);			/* dealloc an ui 		*/
 void		ui_Set(struct ui *ui);				/* set global ui within ui_*.c 	*/
-void		ui_FrameBegin(const vec2u32 window_size, const struct ui_Visual *base); /* begin new ui frame */
+void		ui_FrameBegin(const v2u32 window_size, const struct ui_Visual *base); /* begin new ui frame */
 void		ui_FrameEnd(void);				/* end ui frame 		*/
 
 
 
 
 /* add layout node padding given number of pixels according to stack_pad (non-cacheable) */
-u32	ui_Pad();
+u32	ui_Pad(void);
 /* add layout node padding given number of pixels (non-cacheable) */
 u32	ui_PadPixel(const f32 pixels);
 /* add layout node padding given percentage of parent (non-cacheable) */
@@ -890,20 +892,20 @@ void 	ui_IntvViewablePop(const enum axis_2 axis);
 #define ui_IntvViewableXSet(inv)	ui_IntvViewableSet(AXIS_2_X, inv)
 #define ui_IntvViewableYSet(inv)	ui_IntvViewableSet(AXIS_2_Y, inv)
 
-void 	ui_BackgroundColorPush(const vec4 color);
-void 	ui_BackgroundColorSet(const vec4 color);
+void 	ui_BackgroundColorPush(const v4 color);
+void 	ui_BackgroundColorSet(const v4 color);
 void 	ui_BackgroundColorPop(void);
 
-void 	ui_BorderColorPush(const vec4 color);
-void 	ui_BorderColorSet(const vec4 color);
+void 	ui_BorderColorPush(const v4 color);
+void 	ui_BorderColorSet(const v4 color);
 void 	ui_BorderColorPop(void);
 
-void 	ui_SpriteColorPush(const vec4 color);
-void 	ui_SpriteColorSet(const vec4 color);
+void 	ui_SpriteColorPush(const v4 color);
+void 	ui_SpriteColorSet(const v4 color);
 void 	ui_SpriteColorPop(void);
 
-void 	ui_GradientColorPush(const enum box_corner, const vec4 color);
-void 	ui_GradientColorSet(const enum box_corner, const vec4 color);
+void 	ui_GradientColorPush(const enum box_corner, const v4 color);
+void 	ui_GradientColorSet(const enum box_corner, const v4 color);
 void 	ui_GradientColorPop(const enum box_corner);
 
 void 	ui_FontPush(const enum fontId font);
@@ -927,11 +929,11 @@ void 	ui_SpriteSet(const enum spriteId sprite);
 void 	ui_SpritePop(void);
 
 void 	ui_TextAlignXPush(const enum alignment_x align);
-void 	ui_TextAlignX_set(const enum alignment_x align);
+void 	ui_TextAlignXSet(const enum alignment_x align);
 void 	ui_TextAlignXPop(void);
 
 void 	ui_TextAlignYPush(const enum alignment_y align);
-void 	ui_TextAlignY_set(const enum alignment_y align);
+void 	ui_TextAlignYSet(const enum alignment_y align);
 void 	ui_TextAlignYPop(void);
 
 void 	ui_TextPadPush(const enum axis_2 axis, const f32 pad);
@@ -955,14 +957,14 @@ void	ui_FixedDepthPop(void);
 
 void	ui_ExternalTextPush(const utf32 text);
 void	ui_ExternalTextSet(const utf32 text);
-void	ui_ExternalTextPop();
+void	ui_ExternalTextPop(void);
 
 void	ui_ExternalTextLayoutPush(struct textLayout *textLayout, const utf32 text);
 void	ui_ExternalTextLayoutSet(struct textLayout *textLayout, const utf32 text);
-void	ui_ExternalTextLayoutPop();
+void	ui_ExternalTextLayoutPop(void);
 
 void	ui_ExternalTextInputPush(struct ui_TextInput *text_input);
-void	ui_ExternalTextInputPop();
+void	ui_ExternalTextInputPop(void);
 
 /********************************************************************************************************/
 /*					  SIZES AND AUTOLAYOUT						*/
@@ -983,7 +985,7 @@ we require some ordering of how we compute each node's size.
 
 --- sizes ---
 
-UI_SIZE_PIXEL is easy; if a node is of the type, we simply grab the current global (vec2) preferred_size and preferred
+UI_SIZE_PIXEL is easy; if a node is of the type, we simply grab the current global (v2) preferred_size and preferred
 position at node creation, and we are done.
 
 Similarily, For nodes of type UI_SIZE_TEXT, we can compute on node creation the required size for displaying the
@@ -1324,7 +1326,7 @@ we need several values. The process looks like
 	if (TEXT_ATTACHED && FLAG_TEXT_LAYOUT_POSTPONED)
 		line_width = (FLAG_TEXT_ALLOW_LINE_OVERFLOW)
 			   ? F32_INFINITY
-			   : f32_max(node->pixel_size[0] - 2.0f-pad[0], 0.0f);
+			   : F32Max(node->pixel_size.x - 2.0f-pad[0], 0.0f);
 		node->textLayout = textLayout_calulcations
 	
 	

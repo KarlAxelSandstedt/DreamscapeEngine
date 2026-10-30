@@ -22,18 +22,12 @@
 
 void r_UiDraw(struct ui *ui)
 {
-	const vec4 zero4 = { 0.0f, 0.0f, 0.0f, 0.0f };
-	const vec3 zero3 = { 0.0f, 0.0f, 0.0f };
-
 	struct ui_DrawBucket *b = ui->bucket_pool.buf + ui->bucket_list.first;
 	for (i32 i = b->node.next; i != DLL_SENTINEL; i = b->node.next) 
 	{
 		b = ui->bucket_pool.buf + i;
 		/* we reverse depth since in ui, larger depths goes infront, but in renderer lower depths drawn last */
 		const u64 depth = ((1 << R_CMD_DEPTH_BITS) - 1) - (ui_CmdDepthGet(b->cmd) << UI_CMD_LAYER_BITS);
-		const u64 transparency = (ui_CmdDepthGet(b->cmd) == UI_CMD_LAYER_TEXT_SELECTION)
-			? R_CMD_TRANSPARENCY_SUBTRACTIVE
-			: R_CMD_TRANSPARENCY_ADDITIVE;
 		struct r_Instance *instance = r_InstanceAddNonCached(
 				r_CommandKey(
 					R_CMD_SCREEN_LAYER_HUD,
@@ -48,7 +42,7 @@ void r_UiDraw(struct ui *ui)
 
 		if (ui_CmdLayerGet(b->cmd) == UI_CMD_LAYER_TEXT)
 		{
-			u64 total_glyph_count = 0;
+			u32 total_glyph_count = 0;
 			struct ui_DrawNode *draw_node = instance->ui_bucket->list;
 			for (u32 i = 0; i < instance->ui_bucket->count; ++i)
 			{

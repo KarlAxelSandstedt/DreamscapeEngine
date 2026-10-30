@@ -25,17 +25,12 @@
 #include <errno.h>
 #include <stdio.h>
 
-#define SEM_SHARED 1
 #define SEM_NOT_SHARED 0
 
 void SemaphoreInit(semaphore *sem, const u32 val)
 {
-#if __DS_PLATFORM__ == __DS_WEB__
-	/* emscripten recommends "inter-process sharing" for thread safety? */
-	if (sem_init(sem, SEM_SHARED, val) == -1)
-#else
-	if (sem_init(sem, SEM_NOT_SHARED, val) == -1)
-#endif
+	/* != 0: emscripten returns ENOTSUP for pshared != 0 (not -1) and leaves sem uninitialized */
+	if (sem_init(sem, SEM_NOT_SHARED, val) != 0)
 	{
 		LogSystemError(S_FATAL);
 		FatalCleanupAndExit();
@@ -91,7 +86,8 @@ u32 SemaphoreTryWait(semaphore *sem)
 
 #elif __DS_PLATFORM__ == __DS_WIN64__
 
-#define SEM_MAX U16_MAX
+/* the same limit as glibc's SEM_VALUE_MAX: posting past 2^16 - 1 (the old maximum) was fatal on Windows only */
+#define SEM_MAX LONG_MAX
 
 void SemaphoreInit(semaphore *sem, const u32 val)	
 {
@@ -117,8 +113,7 @@ void SemaphoreDestroy(semaphore *sem)
 
 void SemaphorePost(semaphore *sem)
 {
-	u32 sem_val;
-	if (!ReleaseSemaphore(*sem, 1, &sem_val))
+	if (!ReleaseSemaphore(*sem, 1, NULL))
 	{
 		LogSystemError(S_FATAL);
 		FatalCleanupAndExit();

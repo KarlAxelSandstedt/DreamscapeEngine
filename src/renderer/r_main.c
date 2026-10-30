@@ -23,261 +23,77 @@
 #include "transform.h"
 #include "ds_led.h"
 
-POOL_DEFINE(r_Instance);
 
-static struct r_Mesh *DebugContactManifoldSegmentsMesh(struct arena *mem, const struct led *led)
+/*
+ * The first vertex_count vertices (L_COLOR layout) hold positions in a frame located at position (world); move
+ * them into the view's frame (camera-relative): one f64 subtraction per vertex.
+ */
+static void ColorVerticesToView(void *vertex_data, const u64 vertex_count, const v3f64 position, const v3f64 origin)
 {
-    ds_AssertString(0, "Reimplement");
-	struct r_Mesh *mesh = NULL;
-//    const struct ds_Dynamics *pipeline = &led->physics;
-//	const u32 cm_count = pipeline->contact_pool.count-1;
-//
-//	ArenaPushRecord(mem);
-//
-//	const u32 vertex_count = 2*cm_count;
-// 	struct r_Mesh *tmp = ArenaPush(mem, sizeof(struct r_Mesh));
-//	u8 *vertex_data = ArenaPush(mem, vertex_count*L_COLOR_STRIDE);
-//	if (!tmp || !vertex_data) 
-//	{ 
-//		ArenaPopRecord(mem);
-//		goto end;
-//	}
-//	ArenaRemoveRecord(mem);
-//
-//	mesh = tmp;
-//	mesh->index_count = 0;
-//	mesh->index_max_used = 0;
-//	mesh->index_data = NULL;
-//	mesh->vertex_count = vertex_count; 
-//	mesh->vertex_data = vertex_data;
-//	mesh->local_stride = L_COLOR_STRIDE;
-//
-//    u32 i = 0; 
-//    u32 ci = 1;
-//	while (i < cm_count)
-//	{
-//        const struct ds_Contact *c = pipeline->contact_pool.buf + ci;
-//        ci += 1;
-//        if (!ds_PoolSlotAllocated(c))
-//        {
-//            continue;
-//        }
-//	    const struct c_Manifold *cm = &c->cm;
-//		vec3 n0, n1;
-//		switch (cm->v_count)
-//		{
-//			case 1:
-//			{
-//				Vec3Copy(n0, cm->v[0]);
-//				Vec3Add(n1, n0, cm->n);
-//			} break;
-//
-//			case 2:
-//			{
-//				Vec3Interpolate(n0, cm->v[0], cm->v[1], 0.5f);
-//				Vec3Add(n1, n0, cm->n);
-//			} break;
-//
-//			case 3:
-//			{
-//				Vec3Scale(n0, cm->v[0], 1.0f/3.0f);
-//				Vec3TranslateScaled(n0, cm->v[1], 1.0f/3.0f);
-//				Vec3TranslateScaled(n0, cm->v[2], 1.0f/3.0f);
-//				Vec3Add(n1, n0, cm->n);
-//			} break;
-//
-//			case 4:
-//			{
-//				Vec3Scale(n0, cm->v[0], 1.0f/4.0f);
-//				Vec3TranslateScaled(n0, cm->v[1], 1.0f/4.0f);
-//				Vec3TranslateScaled(n0, cm->v[2], 1.0f/4.0f);
-//				Vec3TranslateScaled(n0, cm->v[3], 1.0f/4.0f);
-//				Vec3Add(n1, n0, cm->n);
-//			} break;
-//
-//			default:
-//			{
-//                ds_Assert(0);
-//				continue;
-//			} break;
-//		}
-//
-//		Vec3Copy((f32 *) vertex_data +  0, n0);
-//		Vec4Copy((f32 *) vertex_data +  3, led->manifold_color);
-//		Vec3Copy((f32 *) vertex_data +  7, n1);
-//		Vec4Copy((f32 *) vertex_data + 10, led->manifold_color);
-//		vertex_data += 2*(sizeof(vec3) + sizeof(vec4));
-//        ++i;
-//	}
-//end:
-	return mesh;
+	const v3f64 translation = V3F64Sub(position, origin);
+	u8 *vertex = vertex_data;
+	for (u64 i = 0; i < vertex_count; ++i)
+	{
+		v3 p;
+		memcpy(&p, vertex, sizeof(v3));
+		p = V3F64Demote(V3F64Add(translation, V3Promote(p)));
+		memcpy(vertex, &p, sizeof(v3));
+		vertex += L_COLOR_STRIDE;
+	}
 }
 
-static struct r_Mesh *DebugContactManifoldTrianglesMesh(struct arena *mem, const struct led *led)
+/*
+ * Write the 12 edges of box as 24 line vertices (L_COLOR layout: position, color), the corners rotated by rotation.
+ * Return the bytes written: 24*L_COLOR_STRIDE, or 0 if bufsize is smaller.
+ */
+static u64 AabbTransformPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const m3 rotation, const v4 color)
 {
-    ds_AssertString(0, "Reimplement");
-	struct r_Mesh *mesh = NULL;
-//    const struct ds_Dynamics *pipeline = &led->physics;
-//	const u32 cm_count = pipeline->contact_pool.count-1;
-//
-//	ArenaPushRecord(mem);
-//
-//	u32 vertex_count = 6*cm_count;
-//
-// 	struct r_Mesh *tmp = ArenaPush(mem, sizeof(struct r_Mesh));
-//	u8 *vertex_data = ArenaPush(mem, vertex_count*L_COLOR_STRIDE);
-//	if (!tmp || !vertex_data) 
-//	{ 
-//		ArenaPopRecord(mem);
-//		goto end;
-//	}
-//	ArenaRemoveRecord(mem);
-//
-//	mesh = tmp;
-//	mesh->index_count = 0;
-//	mesh->index_max_used = 0;
-//	mesh->index_data = NULL;
-//	mesh->vertex_count = 0; 
-//	mesh->vertex_data = vertex_data;
-//	mesh->local_stride = L_COLOR_STRIDE;
-//
-//	vec3 v[4];
-//	u32 cm_triangles = 0;
-//	u32 cm_planes = 0;
-//    u32 i = 0; 
-//    u32 ci = 1;
-//	while (i < cm_count)
-//	{
-//        const struct ds_Contact *c = pipeline->contact_pool.buf + ci;
-//        ci += 1;
-//        if (!ds_PoolSlotAllocated(c))
-//        {
-//            continue;
-//        }
-//        i += 1;
-//	    const struct c_Manifold *cm = &c->cm;
-//		switch (cm->v_count)
-//		{
-//            case 1:
-//            case 2:
-//            {
-//                continue;
-//            };
-//
-//			case 3:
-//			{
-//				Vec3Copy(v[0], cm->v[0]);
-//				Vec3Copy(v[1], cm->v[1]);
-//				Vec3Copy(v[2], cm->v[2]);
-//				Vec3TranslateScaled(v[0], cm->n, 0.005f);
-//				Vec3TranslateScaled(v[1], cm->n, 0.005f);
-//				Vec3TranslateScaled(v[2], cm->n, 0.005f);
-//
-//				Vec3Copy((f32 *) vertex_data +  0, v[0]);
-//				Vec4Copy((f32 *) vertex_data +  3, led->manifold_color);
-//				Vec3Copy((f32 *) vertex_data +  7, v[1]);
-//				Vec4Copy((f32 *) vertex_data + 10, led->manifold_color);
-//				Vec3Copy((f32 *) vertex_data + 14, v[2]);
-//				Vec4Copy((f32 *) vertex_data + 17, led->manifold_color);
-//				vertex_data += 3*(sizeof(vec3) + sizeof(vec4));
-//				mesh->vertex_count += 3; 
-//			} break;
-//
-//			case 4:
-//			{
-//				Vec3Copy(v[0], cm->v[0]);
-//				Vec3Copy(v[1], cm->v[1]);
-//				Vec3Copy(v[2], cm->v[2]);
-//				Vec3Copy(v[3], cm->v[3]);
-//				Vec3TranslateScaled(v[0], cm->n, 0.005f);
-//				Vec3TranslateScaled(v[1], cm->n, 0.005f);
-//				Vec3TranslateScaled(v[2], cm->n, 0.005f);
-//				Vec3TranslateScaled(v[3], cm->n, 0.005f);
-//
-//				Vec3Copy((f32 *) vertex_data +  0, v[0]);
-//				Vec4Copy((f32 *) vertex_data +  3, led->manifold_color);
-//				Vec3Copy((f32 *) vertex_data +  7, v[1]);
-//				Vec4Copy((f32 *) vertex_data + 10, led->manifold_color);
-//				Vec3Copy((f32 *) vertex_data + 14, v[2]);
-//				Vec4Copy((f32 *) vertex_data + 17, led->manifold_color);
-//				Vec3Copy((f32 *) vertex_data + 21, v[0]);
-//				Vec4Copy((f32 *) vertex_data + 24, led->manifold_color);
-//				Vec3Copy((f32 *) vertex_data + 28, v[2]);
-//				Vec4Copy((f32 *) vertex_data + 31, led->manifold_color);
-//				Vec3Copy((f32 *) vertex_data + 35, v[3]);
-//				Vec4Copy((f32 *) vertex_data + 38, led->manifold_color);
-//				vertex_data += 6*(sizeof(vec3) + sizeof(vec4));
-//				mesh->vertex_count += 6; 
-//			} break;
-//
-//			default:
-//			{
-//                ds_Assert(0);
-//				continue;
-//			} break;
-//		}
-//	}
-//end:
-	return mesh;
-}
-
-static struct r_Mesh *DebugLinesMesh(struct arena *mem, const struct ds_Dynamics *pipeline)
-{
-	ArenaPushRecord(mem);
-
-	u32 vertex_count = 0;
-	for (u32 i = 0; i < pipeline->worker_count; ++i)
+	const u64 bytes_written = 24*L_COLOR_STRIDE;
+	if (bufsize < bytes_written)
 	{
-		vertex_count += 2*pipeline->worker[i].draw.debug_segment_pool.count;
+		return 0;
 	}
 
-	struct r_Mesh *mesh = NULL;
- 	struct r_Mesh *tmp = ArenaPush(mem, sizeof(struct r_Mesh));
-	u8 *vertex_data = ArenaPush(mem, vertex_count*L_COLOR_STRIDE);
-	if (!tmp || !vertex_data) 
-	{ 
-		ArenaPopRecord(mem);
-		goto end;
-	}
-	ArenaRemoveRecord(mem);
-
-	mesh = tmp;
-	mesh->index_count = 0;
-	mesh->index_max_used = 0;
-	mesh->index_data = NULL;
-	mesh->vertex_count = vertex_count; 
-	mesh->vertex_data = vertex_data;
-	mesh->local_stride = L_COLOR_STRIDE;
-
-	u64 mem_left = mesh->vertex_count * L_COLOR_STRIDE;
-
-	for (u32 i = 0; i < pipeline->worker_count; ++i)
+	/* corner i takes the max on the axes whose bit is set in i; an edge joins corners one bit apart */
+	v3 corner[8];
+	for (u32 i = 0; i < 8; ++i)
 	{
-		for (u32 j = 0; j < pipeline->worker[i].draw.debug_segment_pool.count; ++j)
+		const v3 c = V3((i & 1) ? box->max.x : box->min.x, (i & 2) ? box->max.y : box->min.y, (i & 4) ? box->max.z : box->min.z);
+		corner[i] = M3V3Mul(rotation, c);
+	}
+
+	static const u8 edge[12][2] = { {0,1}, {2,3}, {4,5}, {6,7}, {0,2}, {1,3}, {4,6}, {5,7}, {0,4}, {1,5}, {2,6}, {3,7} };
+	u8 *vertex = buf;
+	for (u32 e = 0; e < 12; ++e)
+	{
+		for (u32 k = 0; k < 2; ++k)
 		{
-			Vec3Copy((f32 *) vertex_data +  0, pipeline->worker[i].draw.debug_segment_pool.buf[j].segment.p[0]);
-			Vec4Copy((f32 *) vertex_data +  3, pipeline->worker[i].draw.debug_segment_pool.buf[j].color);
-			Vec3Copy((f32 *) vertex_data +  7, pipeline->worker[i].draw.debug_segment_pool.buf[j].segment.p[1]);
-			Vec4Copy((f32 *) vertex_data + 10, pipeline->worker[i].draw.debug_segment_pool.buf[j].color);
-			vertex_data += 2*(sizeof(vec3) + sizeof(vec4));
-			mem_left -= 2*(sizeof(vec3) + sizeof(vec4));
+			memcpy(vertex, corner + edge[e][k], sizeof(v3));
+			memcpy(vertex + sizeof(v3), &color, sizeof(v4));
+			vertex += L_COLOR_STRIDE;
 		}
 	}
-	ds_Assert(mem_left == 0);
-end:
-	return mesh;
+
+	return bytes_written;
 }
 
-static struct r_Mesh *BoundingBoxesMesh(struct arena *mem, const struct ds_Dynamics *pipeline, const vec4 color)
+static u64 AabbPushLinesBuffered(u8 *buf, const u64 bufsize, const struct aabb *box, const v4 color)
+{
+	return AabbTransformPushLinesBuffered(buf, bufsize, box, M3Identity(), color);
+}
+
+static struct r_Mesh *BoundingBoxesMesh(struct arena *mem, const struct ds_Dynamics *pipeline, const v3f64 origin, const v4 color)
 {
 	ArenaPushRecord(mem);
-	const u32 vertex_count = 3*8*pipeline->body_pool.count;
+	const u32 vertex_count = 24*pipeline->shape_pool.count;
 	struct r_Mesh *mesh = NULL;
  	struct r_Mesh *tmp = ArenaPush(mem, sizeof(struct r_Mesh));
 	u8 *vertex_data = ArenaPush(mem, vertex_count * L_COLOR_STRIDE);
 	if (!tmp || !vertex_data) 
 	{ 
 		ArenaPopRecord(mem);
+		Log(T_RENDERER, S_ERROR, "bounding boxes: %u vertices do not fit the renderer's frame arena, drawn as the stub box", vertex_count);
+		mesh = &g_r_core->mesh_stub_color;
 		goto end;
 	}
 	ArenaRemoveRecord(mem);
@@ -308,16 +124,16 @@ static struct r_Mesh *BoundingBoxesMesh(struct arena *mem, const struct ds_Dynam
             }
         }
     }
+	ColorVerticesToView(mesh->vertex_data, (mesh->vertex_count*L_COLOR_STRIDE - mem_left) / L_COLOR_STRIDE, V3F64(0.0, 0.0, 0.0), origin);
 
 	ds_Assert(mem_left == 0);
 end:
 	return mesh;
 }
 
-static struct r_Mesh *bvh_Mesh(struct arena *mem, const struct bvh *bvh, const vec3 translation, const quat rotation, const vec4 color)
+static struct r_Mesh *BVHMesh(struct arena *mem, const struct BVH *bvh, const v3f64 position, const q rotation, const v3f64 origin, const v4 color)
 {
-	mat3 rot;
-	Mat3Quat(rot, rotation);
+	const m3 rot = M3QUnit(rotation);
 
 	ArenaPushRecord(mem);
 	const u32 vertex_count = 3*8*bvh->pool.count;
@@ -326,6 +142,8 @@ static struct r_Mesh *bvh_Mesh(struct arena *mem, const struct bvh *bvh, const v
 	u8 *vertex_data = ArenaPush(mem, vertex_count * L_COLOR_STRIDE);
 	if (!tmp || !vertex_data) 
 	{ 
+		Log(T_RENDERER, S_ERROR, "bvh: %u vertices do not fit the renderer's frame arena, drawn as the stub box", vertex_count);
+		mesh = &g_r_core->mesh_stub_color;
 		goto end;
 	}
 	ArenaRemoveRecord(mem);
@@ -344,18 +162,18 @@ static struct r_Mesh *bvh_Mesh(struct arena *mem, const struct bvh *bvh, const v
 	u32 sc = 1;
     stack[0] = bvh->bt.root;
 
-	const struct bvhNode *nodes = bvh->pool.buf;
+	const struct BVHNode *nodes = bvh->pool.buf;
 	u64 mem_left = vertex_count*L_COLOR_STRIDE;
 	while (sc--)
 	{
 	    u32 i = stack[sc];
-		const u64 bytes_written = AabbTransformPushLinesBuffered(vertex_data, mem_left, &nodes[i].bbox, translation, rot, color);
+		const u64 bytes_written = AabbTransformPushLinesBuffered(vertex_data, mem_left, &nodes[i].bbox, rot, color);
 
         ds_Assert(bytes_written == 24*L_COLOR_STRIDE);
 		vertex_data += bytes_written;
 		mem_left -= bytes_written;
 
-		if (!ds_BTLeafCheck(nodes + i))
+		if (!BTLeafCheck(nodes + i))
 		{
 			if (sc+2 > arr.len)
 			{
@@ -365,6 +183,7 @@ static struct r_Mesh *bvh_Mesh(struct arena *mem, const struct bvh *bvh, const v
 			stack[sc++] = nodes[i].bt_child[1];
 		}
 	}
+	ColorVerticesToView(mesh->vertex_data, (mesh->vertex_count*L_COLOR_STRIDE - mem_left) / L_COLOR_STRIDE, position, origin);
 	ds_Assert(mem_left == 0);
 end:
 	ArenaPopRecord(mem);
@@ -389,8 +208,10 @@ static void r_EditorDraw(const struct led *led)
 	//	}
 	//}
 
-	const u32 depth_exponent = 1 + f32_exponent_bits(led->cam.fz_far);
+	const u32 depth_exponent = 1 + F32ExponentBits(led->cam.fz_far);
 	ds_Assert(depth_exponent >= 23);
+
+	g_scene->view_origin = led->cam.position;
 
 	r_Proxy3dHierarchySpeculate(&g_r_core->frame, led->ns - led->ns_engine_paused);
 
@@ -408,13 +229,13 @@ static void r_EditorDraw(const struct led *led)
             continue;
         }
 
-		const f32 dist = Vec3Distance(proxy->spec_position, led->cam.position);
-		const u32 unit_exponent = f32_exponent_bits(dist);
+		const f32 dist = V3Length(V3F64Demote(V3F64Sub(proxy->spec_position, led->cam.position)));
+		const u32 unit_exponent = F32ExponentBits(dist);
 		const u64 depth = (unit_exponent <= depth_exponent && unit_exponent > (depth_exponent - 23))
-			? (0x00800000 | f32_mantissa_bits(dist)) >> (depth_exponent - unit_exponent + 1)
+			? (0x00800000 | F32MantissaBits(dist)) >> (depth_exponent - unit_exponent + 1)
 			: 0;
 
-		const u64 transparency = (proxy->color[3] == 1.0f)
+		const u64 transparency = (proxy->color.w == 1.0f)
 			? R_CMD_TRANSPARENCY_OPAQUE
 			: R_CMD_TRANSPARENCY_ADDITIVE;
 
@@ -426,19 +247,17 @@ static void r_EditorDraw(const struct led *led)
 		
 		r_InstanceAdd(index, command);
 	}
-	ArenaPopRecord(&g_r_core->frame);
 
 	if (led->draw_dbvh)
 	{
 		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
 		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		quat rotation;
-		const vec3 translation = { 0 };
-		vec3 axis = { 0.0f, 1.0f, 0.0f };
+		const v3f64 position = V3F64(0.0, 0.0, 0.0);
+		const v3 axis = V3(0.0f, 1.0f, 0.0f);
 		const f32 angle = 0.0f;
-		QuatAxisAngle(rotation, axis, angle);
-		struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &led->physics.dynamic_bvh, translation, rotation, led->dbvh_color);
+		const q rotation = QAxisAngle(axis, angle);
+		struct r_Mesh *mesh = BVHMesh(&g_r_core->frame, &led->physics.dynamic_bvh, position, rotation, g_scene->view_origin, led->dbvh_color);
 		if (mesh)
 		{
 			struct r_Instance *instance = r_InstanceAddNonCached(cmd);
@@ -465,11 +284,11 @@ static void r_EditorDraw(const struct led *led)
 			    	continue;
 			    }
 
-                ds_Transform transform;
+                ds_TransformWorld transform;
                 ds_ShapeWorldTransform(&transform, &led->physics, s);
 
 			    const struct c_Shape *shape = led->physics.cshape_db->pool.buf + s->cshape_handle;
-			    struct r_Mesh *mesh = bvh_Mesh(&g_r_core->frame, &shape->mesh_bvh.bvh, transform.position, transform.rotation, led->sbvh_color);
+			    struct r_Mesh *mesh = BVHMesh(&g_r_core->frame, &shape->mesh_bvh.bvh, transform.position, transform.rotation, g_scene->view_origin, led->sbvh_color);
 			    if (mesh)
 			    {
 			    	struct r_Instance *instance = r_InstanceAddNonCached(cmd);
@@ -485,7 +304,7 @@ static void r_EditorDraw(const struct led *led)
 		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
 		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		struct r_Mesh *mesh = BoundingBoxesMesh(&g_r_core->frame, &led->physics, led->bounding_box_color);
+		struct r_Mesh *mesh = BoundingBoxesMesh(&g_r_core->frame, &led->physics, g_scene->view_origin, led->bounding_box_color);
 		if (mesh)
 		{
 			struct r_Instance *instance = r_InstanceAddNonCached(cmd);
@@ -493,55 +312,15 @@ static void r_EditorDraw(const struct led *led)
 			instance->mesh = mesh;
 		}
 	}
-
-	if (led->draw_lines)
-	{
-		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
-		const u64 depth = 0x7fffff;
-		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		struct r_Mesh *mesh = DebugLinesMesh(&g_r_core->frame, &led->physics);
-		if (mesh)
-		{
-			struct r_Instance *instance = r_InstanceAddNonCached(cmd);
-			instance->type = R_INSTANCE_MESH;
-			instance->mesh = mesh;
-		}
-	}
-
-	if (led->draw_manifold)
-	{
-
-		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
-		const u64 depth = 0x7fffff;
-
-		const u64 cmd1 = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_TRIANGLE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		struct r_Mesh *mesh = DebugContactManifoldTrianglesMesh(&g_r_core->frame, led);
-		if (mesh)
-		{
-			struct r_Instance *instance = r_InstanceAddNonCached(cmd1);
-			instance->type = R_INSTANCE_MESH;
-			instance->mesh = mesh;
-		}
-
-		const u64 cmd2 = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		mesh = DebugContactManifoldSegmentsMesh(&g_r_core->frame, led);
-		if (mesh)
-		{
-			struct r_Instance *instance = r_InstanceAddNonCached(cmd2);
-			instance->type = R_INSTANCE_MESH;
-			instance->mesh = mesh;
-		}
-	}
-
 	ProfZoneEnd;
 }
 
 static void r_InternalProxy3dUniforms(const struct led *led, const u32 window)
 {
-	mat4 perspective, view;
 	const struct r_Camera *cam = &led->cam;
-	mat4Perspective(perspective, cam->aspect_ratio, cam->fov_x, cam->fz_near, cam->fz_far);
-	mat4View(view, cam->position, cam->left, cam->up, cam->forward);
+	const m4 perspective = M4Perspective(cam->aspect_ratio, cam->fov_x, cam->fz_near, cam->fz_far);
+	/* 3d draw data is uploaded relative to the camera (g_scene->view_origin): the view only rotates, and the light (at the camera) is at the origin */
+	const m4 view = M4View(V3Zero(), cam->left, cam->up, cam->forward);
 	
 	ds_glUseProgram(g_r_core->program[PROGRAM_PROXY3D].gl_program);
 	GLint aspect_ratio_addr, view_addr, perspective_addr, light_position_addr;
@@ -550,9 +329,9 @@ static void r_InternalProxy3dUniforms(const struct led *led, const u32 window)
 	perspective_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_PROXY3D].gl_program, "perspective");
 	light_position_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_PROXY3D].gl_program, "light_position");
 	ds_glUniform1f(aspect_ratio_addr, (f32) cam->aspect_ratio);
-	ds_glUniform3f(light_position_addr, cam->position[0], cam->position[1], cam->position[2]);
-	ds_glUniformMatrix4fv(perspective_addr, 1, GL_FALSE, (f32 *) perspective);
-	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, (f32 *) view);
+	ds_glUniform3f(light_position_addr, 0.0f, 0.0f, 0.0f);
+	ds_glUniformMatrix4fv(perspective_addr, 1, GL_FALSE, perspective.buf);
+	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, view.buf);
 
 	ds_glUseProgram(g_r_core->program[PROGRAM_LIGHTNING].gl_program);
 	aspect_ratio_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_LIGHTNING].gl_program, "aspect_ratio");
@@ -560,9 +339,9 @@ static void r_InternalProxy3dUniforms(const struct led *led, const u32 window)
 	perspective_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_LIGHTNING].gl_program, "perspective");
 	light_position_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_LIGHTNING].gl_program, "light_position");
 	ds_glUniform1f(aspect_ratio_addr, (f32) cam->aspect_ratio);
-	ds_glUniform3f(light_position_addr, cam->position[0], cam->position[1], cam->position[2]);
-	ds_glUniformMatrix4fv(perspective_addr, 1, GL_FALSE, (f32 *) perspective);
-	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, (f32 *) view);
+	ds_glUniform3f(light_position_addr, 0.0f, 0.0f, 0.0f);
+	ds_glUniformMatrix4fv(perspective_addr, 1, GL_FALSE, perspective.buf);
+	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, view.buf);
 	
 	
 	ds_glUseProgram(g_r_core->program[PROGRAM_COLOR].gl_program);
@@ -570,18 +349,17 @@ static void r_InternalProxy3dUniforms(const struct led *led, const u32 window)
 	view_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_COLOR].gl_program, "view");
 	perspective_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_COLOR].gl_program, "perspective");
 	ds_glUniform1f(aspect_ratio_addr, (f32) cam->aspect_ratio);
-	ds_glUniformMatrix4fv(perspective_addr, 1, GL_FALSE, (f32 *) perspective);
-	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, (f32 *) view);
+	ds_glUniformMatrix4fv(perspective_addr, 1, GL_FALSE, perspective.buf);
+	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, view.buf);
 }
 
 static void r_InternalUiUniforms(const u32 window)
 {
-	vec2u32 resolution;
-	ds_WindowSize(resolution, window);
+	const v2u32 resolution = ds_WindowSize(window);
 
 	ds_glUseProgram(g_r_core->program[PROGRAM_UI].gl_program);
 	GLint resolution_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_UI].gl_program, "resolution");
-	ds_glUniform2f(resolution_addr, (f32) resolution[0], (f32) resolution[1]);
+	ds_glUniform2f(resolution_addr, (f32) resolution.x, (f32) resolution.y);
 }
 
 static void r_SceneRender(const struct led *led, const u32 window)
@@ -589,7 +367,7 @@ static void r_SceneRender(const struct led *led, const u32 window)
 	ProfZone;
 
 	struct ds_Window *sys_win = ds_WindowAddress(window);
-	ds_glViewport(0, 0, (i32) sys_win->size[0], (i32) sys_win->size[1]); 
+	ds_glViewport(0, 0, (i32) sys_win->size.x, (i32) sys_win->size.y); 
 
 	ds_glClearColor(0.08f, 0.08f, 0.08f, 1.0f);
 	ds_glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -653,19 +431,19 @@ static void r_SceneRender(const struct led *led, const u32 window)
 				ds_glActiveTexture(GL_TEXTURE0 + tx_index);
 				//TODO setup compile time arrays as with g_r_core->program[program].gl_program (?????)
 				ds_glBindTexture(GL_TEXTURE_2D, g_r_core->texture[texture].handle);
-				const i32 texture_addr = ds_glGetUniformLocation(g_r_core->program[program].gl_program, "texture");
+				const i32 texture_addr = ds_glGetUniformLocation(g_r_core->program[program].gl_program, "texture_atlas");
 				ds_glUniform1i(texture_addr, tx_index);
-				ds_glViewport(0, 0, (i32) sys_win->size[0], (i32) sys_win->size[1]); 
+				ds_glViewport(0, 0, (i32) sys_win->size.x, (i32) sys_win->size.y); 
 			} break;
 
 			case PROGRAM_LIGHTNING:
 			case PROGRAM_COLOR:
 			case PROGRAM_PROXY3D:
 			{
-				ds_glViewport(led->viewport_position[0]
-					       , led->viewport_position[1]
-					       , led->viewport_size[0]
-					       , led->viewport_size[1]
+				ds_glViewport(led->viewport_position.x
+					       , led->viewport_position.y
+					       , led->viewport_size.x
+					       , led->viewport_size.y
 					       ); 
 			} break;
 		}
@@ -675,7 +453,13 @@ static void r_SceneRender(const struct led *led, const u32 window)
 		{
 			case R_CMD_PRIMITIVE_LINE: { mode = GL_LINES; } break;
 			case R_CMD_PRIMITIVE_TRIANGLE: { mode = GL_TRIANGLES; } break;
-			default: { ds_AssertString(0, "Unexpected draw primitive"); } break;
+			default:
+			{
+				/* no mode to draw with: skip the bucket */
+				ds_AssertString(0, "Unexpected draw primitive");
+				ProfZoneEnd;
+				continue;
+			}
 		}
 
 		u32 vao;
@@ -697,7 +481,7 @@ static void r_SceneRender(const struct led *led, const u32 window)
 
 				if (!b->instanced)
 				{
-					ds_glDrawArrays(mode, 0, buf->local_size / g_r_core->program[program].local_stride);
+					ds_glDrawArrays(mode, 0, (GLsizei) (buf->local_size / g_r_core->program[program].local_stride));
 				}
 				else
 				{
@@ -706,7 +490,7 @@ static void r_SceneRender(const struct led *led, const u32 window)
 					ds_glBufferData(GL_ARRAY_BUFFER, buf->shared_size, buf->shared_data, GL_STATIC_DRAW);
 					g_r_core->program[program].buffer_shared_layout_setter();
 
-					ds_glDrawArraysInstanced(mode, 0, buf->local_size / g_r_core->program[program].local_stride, buf->instance_count);
+					ds_glDrawArraysInstanced(mode, 0, (GLsizei) (buf->local_size / g_r_core->program[program].local_stride), buf->instance_count);
 					ds_glDeleteBuffers(1, &buf->shared_vbo);
 
 				}

@@ -19,7 +19,7 @@
 
 #include "ds_base.h"
 
-struct dsArchConfig config = { 0 };
+static struct dsArchConfig config = { 0 };
 const struct dsArchConfig *g_arch_config = &config;
 
 #if __DS_PLATFORM__ == __DS_LINUX__ || __DS_PLATFORM__ == __DS_WEB__
@@ -162,6 +162,8 @@ static void dsArchConfig_log(void)
 	Log(T_SYSTEM, S_NOTE, "avx : Supported(%s)", (config.avx) ? yes : no);
 	Log(T_SYSTEM, S_NOTE, "avx2 : Supported(%s)", (config.avx2) ? yes : no);
 	Log(T_SYSTEM, S_NOTE, "bmi1 : Supported(%s)", (config.bmi1) ? yes : no);
+	Log(T_SYSTEM, S_NOTE, "popcnt : Supported(%s)", (config.popcnt) ? yes : no);
+	Log(T_SYSTEM, S_NOTE, "lzcnt : Supported(%s)", (config.lzcnt) ? yes : no);
 	Log(T_SYSTEM, S_NOTE, "Rdtsc : Supported(%s)", (config.Rdtsc) ? yes : no);
 	Log(T_SYSTEM, S_NOTE, "Rdtscp : Supported(%s)", (config.Rdtscp) ? yes : no);
 	Log(T_SYSTEM, S_NOTE, "tsc_invariant : Supported(%s)", (config.tsc_invariant) ? yes : no);
@@ -221,20 +223,23 @@ static u32 internal_get_amd_arch_config(struct arena *mem)
 	config.sse4_1 = (ecx >> 19) & 0x1;
 	config.sse4_2 = (ecx >> 20) & 0x1;
 	config.avx = (ecx >> 28) & 0x1;
+	config.popcnt = (ecx >> 23) & 0x1;
 
 	ds_CpuidEx(&eax, &ebx, &ecx, &edx, bmi_avx2_func, 0);
 	config.bmi1 = (ebx >> 3) & 0x1;
 	config.avx2 = (ebx >> 5) & 0x1;
 
 	config.Rdtscp = 0;
-	if (Rdtscp_func < largest_extended_function_number)
+	config.lzcnt = 0;
+	if (Rdtscp_func <= largest_extended_function_number)
 	{
 		ds_Cpuid(&eax, &ebx, &ecx, &edx, Rdtscp_func);
 		config.Rdtscp = (edx >> 27) & 0x1;
+		config.lzcnt = (ecx >> 5) & 0x1;
 	}
 
 	config.tsc_invariant = 0;
-	if (tsc_invariant_func < largest_extended_function_number)
+	if (tsc_invariant_func <= largest_extended_function_number)
 	{
 		ds_Cpuid(&eax, &ebx, &ecx, &edx, tsc_invariant_func);
 		config.tsc_invariant = (edx >> 8) & 0x1;
@@ -341,33 +346,33 @@ static void internal_intel_determine_cache_attributes(const u32 largest_standard
 
 	if ((eax & (1u << 31)) == 0)
 	{
-		no_report = internal_intel_determine_cache_attribute_byte((eax >> 8 ) & 0xff);
-		no_report = internal_intel_determine_cache_attribute_byte((eax >> 16) & 0xff);
-		no_report = internal_intel_determine_cache_attribute_byte((eax >> 24) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((eax >> 8 ) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((eax >> 16) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((eax >> 24) & 0xff);
 	}
 
 	if ((ebx & (1u << 31)) == 0)
 	{
-		no_report = internal_intel_determine_cache_attribute_byte((ebx      ) & 0xff);
-		no_report = internal_intel_determine_cache_attribute_byte((ebx >> 8 ) & 0xff);
-		no_report = internal_intel_determine_cache_attribute_byte((ebx >> 16) & 0xff);
-		no_report = internal_intel_determine_cache_attribute_byte((ebx >> 24) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((ebx      ) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((ebx >> 8 ) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((ebx >> 16) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((ebx >> 24) & 0xff);
 	}
 
 	if ((ecx & (1u << 31)) == 0)
 	{
-		no_report = internal_intel_determine_cache_attribute_byte((ecx      ) & 0xff);
-		no_report = internal_intel_determine_cache_attribute_byte((ecx >> 8 ) & 0xff);
-		no_report = internal_intel_determine_cache_attribute_byte((ecx >> 16) & 0xff);
-		no_report = internal_intel_determine_cache_attribute_byte((ecx >> 24) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((ecx      ) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((ecx >> 8 ) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((ecx >> 16) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((ecx >> 24) & 0xff);
 	}
 
 	if ((edx & (1u << 31)) == 0)
 	{
-		no_report = internal_intel_determine_cache_attribute_byte((edx      ) & 0xff);
-		no_report = internal_intel_determine_cache_attribute_byte((edx >> 8 ) & 0xff);
-		no_report = internal_intel_determine_cache_attribute_byte((edx >> 16) & 0xff);
-		no_report = internal_intel_determine_cache_attribute_byte((edx >> 24) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((edx      ) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((edx >> 8 ) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((edx >> 16) & 0xff);
+		no_report |= internal_intel_determine_cache_attribute_byte((edx >> 24) & 0xff);
 	}
 
 	if (config.cacheline == 0 || no_report)
@@ -382,8 +387,8 @@ static void internal_intel_determine_cache_attributes(const u32 largest_standard
 				if (type == 0) { break; }
 				else if (type == 1)
 				{
-					ds_AssertString((eax & 0xe0) == 1, "Expects first indexable data cache to be level 1");
-					config.cacheline = ebx & 0xfff;
+					ds_AssertString(((eax >> 5) & 0x7) == 1, "Expects first indexable data cache to be level 1");
+					config.cacheline = (ebx & 0xfff) + 1;	/* EBX[11:0]: line size - 1 */
 					break;
 				}
 			}	
@@ -392,7 +397,7 @@ static void internal_intel_determine_cache_attributes(const u32 largest_standard
 		if (config.cacheline == 0)
 		{
 			config.cacheline = 64;
-			Log(T_SYSTEM, S_WARNING, 0, "Failed to find cacheline size; defaulting to %luB", config.cacheline);
+			Log(T_SYSTEM, S_WARNING, "Failed to find cacheline size; defaulting to %luB", config.cacheline);
 		}
 	}
 }
@@ -435,20 +440,23 @@ static u32 internal_get_intel_arch_config(struct arena *mem)
 	config.sse4_1 = (ecx >> 19) & 0x1;
 	config.sse4_2 = (ecx >> 20) & 0x1;
 	config.avx = (ecx >> 28) & 0x1;
+	config.popcnt = (ecx >> 23) & 0x1;
 
 	ds_CpuidEx(&eax, &ebx, &ecx, &edx, bmi_avx2_func, 0);
 	config.bmi1 = (ebx >> 3) & 0x1;
 	config.avx2 = (ebx >> 5) & 0x1;
 
 	config.Rdtscp = 0;
-	if (Rdtscp_func < largest_extended_function_number)
+	config.lzcnt = 0;
+	if (Rdtscp_func <= largest_extended_function_number)
 	{
 		ds_Cpuid(&eax, &ebx, &ecx, &edx, Rdtscp_func);
 		config.Rdtscp = (edx >> 27) & 0x1;
+		config.lzcnt = (ecx >> 5) & 0x1;
 	}
 
 	config.tsc_invariant = 0;
-	if (tsc_invariant_func < largest_extended_function_number)
+	if (tsc_invariant_func <= largest_extended_function_number)
 	{
 		ds_Cpuid(&eax, &ebx, &ecx, &edx, tsc_invariant_func);
 		config.tsc_invariant = (edx >> 8) & 0x1;
@@ -482,6 +490,34 @@ static u32 internal_get_intel_arch_config(struct arena *mem)
 	dsArchConfig_log();
 
 	return 1;
+}
+
+u32 ds_ArchBaselineCheck(void)
+{
+#if __DS_PLATFORM__ == __DS_WEB__
+	return 1;
+#else
+	/* the same leaves and bits on Intel and AMD */
+	u32 eax, ebx, ecx, edx;
+	ds_Cpuid(&eax, &ebx, &ecx, &edx, 0);
+	const u32 largest_standard_function_number = eax;
+	ds_Cpuid(&eax, &ebx, &ecx, &edx, (1u << 31));
+	const u32 largest_extended_function_number = eax;
+	if (largest_standard_function_number < 7 || largest_extended_function_number < (1u << 31) + 1)
+	{
+		return 0;
+	}
+
+	ds_Cpuid(&eax, &ebx, &ecx, &edx, 1);
+	const u32 sse2 = (edx >> 26) & 0x1;
+	const u32 popcnt = (ecx >> 23) & 0x1;
+	ds_CpuidEx(&eax, &ebx, &ecx, &edx, 7, 0);
+	const u32 bmi1 = (ebx >> 3) & 0x1;
+	ds_Cpuid(&eax, &ebx, &ecx, &edx, (1u << 31) + 1);
+	const u32 lzcnt = (ecx >> 5) & 0x1;
+
+	return sse2 & popcnt & bmi1 & lzcnt;
+#endif
 }
 
 u32 ds_ArchConfigInit(struct arena *mem)
@@ -532,7 +568,18 @@ u32 ds_ArchConfigInit(struct arena *mem)
 	}
 	else
 	{
-		Log(T_SYSTEM, S_NOTE, 0, "cpu signature - %k [supported (N)]", &config.vendor_string);
+		Log(T_SYSTEM, S_FATAL, "cpu signature - %k [supported (N)]", &config.vendor_string);
+		requirements_fullfilled = 0;
+	}
+
+	/* the build emits these unconditionally (AGENTS.md, CPU baseline) */
+	if (requirements_fullfilled && !(config.sse2 && config.popcnt && config.lzcnt && config.bmi1))
+	{
+		Log(T_SYSTEM, S_FATAL, "cpu lacks the baseline: sse2 (%s), popcnt (%s), lzcnt (%s), bmi1 (%s)",
+			(config.sse2) ? "Y" : "N",
+			(config.popcnt) ? "Y" : "N",
+			(config.lzcnt) ? "Y" : "N",
+			(config.bmi1) ? "Y" : "N");
 		requirements_fullfilled = 0;
 	}
 #endif

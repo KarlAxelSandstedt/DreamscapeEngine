@@ -17,20 +17,23 @@
 ==========================================================================
 */
 
-POOL_DEFINE(ds_Body);
-SDB_DEFINE(ds_BodyPrefab);
+#include "ds_float.h"
+#include "ds_vector.h"
+#include "ds_quaternion.h"
+#include "ds_matrix.h"
 
-ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *prefab, const ds_Transform *world, const u32 entity)
+
+ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *prefab, const ds_TransformWorld *world, const u32 entity)
 {
     const u32 old_max = pipeline->body_pool.count_max;
-	const struct slot body_slot = ds_BodyPoolAdd(&pipeline->body_pool);
+	const struct slot body_slot = ds_PoolAdd(pipeline->body_pool);
 	struct ds_Body *body = body_slot.address;
 
     if (old_max != pipeline->body_pool.count_max)
     {
-        body->id = ds_IdConstruct(body_slot.index, 0);
+        body->id = ds_BodyIdInit(body_slot.index, 0);
     }
-    body->id += DS_ID_GENERATION_INCREMENT;
+    body->id = ds_BodyIdNextGeneration(body->id);
 	PhysicsEventBodyNew(pipeline, body->id);
 
     if (pipeline->body_usage_set.bit_count <= body_slot.index)
@@ -39,8 +42,8 @@ ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *p
     }
     ds_BitSetSet(&pipeline->body_usage_set, body_slot.index, 1);
 
-    ds_DLLFlush(body->joint_list);
-    ds_DLLFlush(body->shape_list);
+    DLLFlush(body->joint_list);
+    DLLFlush(body->shape_list);
 
 	body->entity = entity;
 
@@ -64,13 +67,13 @@ ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *p
 
         struct ds_BodyCompute *compute = compute_slot.address;
         compute->flags = body->flags;
-	    Vec3Set(compute->linear_velocity, 0.0f, 0.0f, 0.0f);
-	    Vec3Set(compute->angular_velocity, 0.0f, 0.0f, 0.0f);
+	    compute->linear_velocity = V3Zero();
+	    compute->angular_velocity = V3Zero();
 
 	    const struct slot island_slot = ds_IslandAlloc(pipeline, SOLVER_SET_ACTIVE);
 	    struct ds_Island *island = island_slot.address;
 	    body->island = island_slot.index;
-	    ds_DLLAppend(island->body_list, pipeline->body_pool.buf, body_slot.index, island_body);
+	    DLLAppend(island->body_list, pipeline->body_pool.buf, body_slot.index, island_body);
 	}
 	else
 	{
@@ -86,21 +89,29 @@ ds_BodyId ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *p
 	}
 
     sim->body = body_slot.index;
-    sim->flags = body->flags;
     sim->world = *world;
+    /* no shapes yet: no mass, and no inertia either (ds_BodyUpdateMassProperties sets both from the shapes) */
     sim->inv_mass = 0.0f;
-    Vec3Set(sim->local_center_of_mass, 0.0f, 0.0f, 0.0f);
-    Mat3Identity(sim->local_inv_inertia);
-	
+    sim->local_center_of_mass = V3Zero();
+    sim->local_inv_inertia = M3Scale(M3Identity(), 0.0f);
+    /* a static sim's world inverse inertia is read by the joint prepare and never updated per tick */
+    sim->world_inv_inertia = sim->local_inv_inertia;
+
 	return body->id;
 }
 
 void ds_BodyRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, const ds_BodyId id)
 {
-    const u32 body_index = ds_IdIndex(id);
-	struct ds_Body *body = pipeline->body_pool.buf + body_index;
-    if (body->id != id)
+    /* a dead id (removed, its slot not reused) still matches the slot's id: the lookup also checks the slot is live */
+    const u32 body_index = ds_BodyIdIndex(id);
+	struct ds_Body *body = ds_BodyLookup(pipeline, id).address;
+    if (!body)
     {
+        return;
+    }
+    if (ds_BodyIdEqual(id, DS_BODY_MOUSE_ANCHOR_ID))
+    {
+        Log(T_PHYSICS, S_WARNING, "body remove rejected: body %u is the mouse joints' anchor", body_index);
         return;
     }
     ds_Assert(ds_BitSetGet(&pipeline->body_usage_set, body_index));
@@ -122,10 +133,10 @@ void ds_BodyRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, const ds
 
         while (body->joint_list.count)
         {
-            ds_JointDynamicRemove(pipeline, body, body->joint_list.first);
+            ds_JointRemoveEx(pipeline, body->joint_list.first);
         }
 
-    	ds_DLLRemove(island->body_list, pipeline->body_pool.buf, ds_IdIndex(id), island_body); 
+    	DLLRemove(island->body_list, pipeline->body_pool.buf, ds_BodyIdIndex(id), island_body); 
     	if (island->body_list.count == 0)
     	{
     		ds_Assert(island->body_list.first == DLL_SENTINEL);
@@ -137,12 +148,12 @@ void ds_BodyRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, const ds
 	{
         while (body->shape_list.count)
         {
-			ds_ShapeStaticRemove(mem_tmp, pipeline, body, body->shape_list.first);
+			ds_ShapeStaticRemove(pipeline, body, body->shape_list.first);
         }
 
         while (body->joint_list.count)
         {
-            ds_JointStaticRemove(pipeline, body, body->joint_list.first);
+            ds_JointRemoveEx(pipeline, body->joint_list.first);
         }
 	}
 
@@ -162,33 +173,33 @@ void ds_BodyRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, const ds
     {
         ds_CPoolRemoveAndSwap(set->body_compute_pool, body->sim);
     }
-	ds_BodyPoolRemove(&pipeline->body_pool, ds_IdIndex(id));
+    ds_BitSetSet(&pipeline->body_usage_set, body_index, 0);
+	ds_PoolRemove(pipeline->body_pool, body_index);
 	PhysicsEventBodyRemoved(pipeline, entity);
 }
 
 struct slot ds_BodyLookup(const struct ds_Dynamics *pipeline, const ds_BodyId id)
 {
     struct slot slot = { .address = NULL, .index = U32_MAX };
-    struct ds_Body *body = pipeline->body_pool.buf + ds_IdIndex(id);
-    if (ds_PoolSlotAllocated(body) && body->id == id)
+    /* the index is bounded before the slot is read: the null id, or an id from another pipeline, must not read past the pool */
+    const u32 index = ds_BodyIdIndex(id);
+    if (index < pipeline->body_pool.count_max)
     {
-        slot.address = body;
-        slot.index = ds_IdIndex(id);
+        struct ds_Body *body = pipeline->body_pool.buf + index;
+        if (ds_PoolSlotAllocated(body) && ds_BodyIdEqual(body->id, id))
+        {
+            slot.address = body;
+            slot.index = index;
+        }
     }
 
     return slot;
 }
 
-void ds_BodyUpdateLocalFrame(struct ds_Dynamics *pipeline, const u32 body, const ds_Transform t_apply_to_local)
-{
-	//TODO
-	ds_Assert(0);
-}
-
 void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId id)
 {
-	struct ds_Body *body = pipeline->body_pool.buf + ds_IdIndex(id);
-    if (!ds_PoolSlotAllocated(body) || id != body->id)
+	struct ds_Body *body = pipeline->body_pool.buf + ds_BodyIdIndex(id);
+    if (!ds_PoolSlotAllocated(body) || !ds_BodyIdEqual(id, body->id))
     {
         return;
     }
@@ -199,19 +210,28 @@ void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId i
     struct ds_BodySim *sim = set->body_sim_pool.buf + body->sim;
 	ds_Assert(ds_PoolSlotAllocated(body));
 
-	vec3 vtmp;
-    mat3 body_inertia_tensor, rot_local, rot_local_inv, tmp1, tmp2;
-
 	body->mass = 0.0f;
-    Vec3Set(sim->local_center_of_mass, 0.0f, 0.0f, 0.0f);
-	Mat3Set(body_inertia_tensor, 
-			0.0f, 0.0f, 0.0f, 
-			0.0f, 0.0f, 0.0f, 
-			0.0f, 0.0f, 0.0f);
+    sim->local_center_of_mass = V3Zero();
+
+    /* static bodies and bodies without shapes: zero mass, center of mass at the body origin */
+    if (!ds_BodyDynamicCheck(body) || body->shape_list.count == 0)
+    {
+        sim->inv_mass = 0.0f;
+        sim->local_inv_inertia = M3(0.0f, 0.0f, 0.0f,
+                                    0.0f, 0.0f, 0.0f,
+                                    0.0f, 0.0f, 0.0f);
+        sim->world_inv_inertia = sim->local_inv_inertia;
+        ArenaPopScratch();
+        return;
+    }
+
+	m3 body_inertia_tensor = M3(0.0f, 0.0f, 0.0f,
+				    0.0f, 0.0f, 0.0f,
+				    0.0f, 0.0f, 0.0f);
 
 	f32 *mass = ArenaPush(tmp, body->shape_list.count*sizeof(f32));
-	vec3ptr center_of_mass = ArenaPush(tmp, body->shape_list.count*sizeof(vec3));
-	mat3ptr inertia_tensor = ArenaPush(tmp, body->shape_list.count*sizeof(mat3));
+	v3 *center_of_mass = ArenaPush(tmp, body->shape_list.count*sizeof(v3));
+	m3 *inertia_tensor = ArenaPush(tmp, body->shape_list.count*sizeof(m3));
 
 	struct ds_Shape *shape = NULL;
 	u32 s = body->shape_list.first;
@@ -225,44 +245,82 @@ void ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId i
 		body->mass += mass[i];
 
 		/* R, R^-1 */
-		Mat3Quat(rot_local, shape->t_local.rotation);
-		Mat3Transpose(rot_local_inv, rot_local);
+		const m3 rot_local = M3QUnit(shape->t_local.rotation);
+		const m3 rot_local_inv = M3Transpose(rot_local);
 
 		/* center_of_mass_Shape[i] = R*shape_center_of_mass + pos */
-		Vec3Copy(vtmp, cshape->center_of_mass);
-		Mat3VecMul(center_of_mass[i], rot_local, vtmp);
-		Vec3Translate(center_of_mass[i], shape->t_local.position);
-		Vec3TranslateScaled(sim->local_center_of_mass, center_of_mass[i], mass[i]);
+		center_of_mass[i] = V3Add(M3V3Mul(rot_local, cshape->center_of_mass), shape->t_local.position);
+		sim->local_center_of_mass = V3AddScaled(sim->local_center_of_mass, center_of_mass[i], mass[i]);
 
 		/* I_Shape(i) = R * Shape_Inertia * R^-1 */
-		Mat3Scale(tmp1, *((mat3ptr) &cshape->inertia_tensor), shape->density);
-		Mat3Mul(tmp2, rot_local, tmp1);
-		Mat3Mul(inertia_tensor[i], tmp2, rot_local_inv);
+		const m3 shape_inertia = M3Scale(cshape->inertia_tensor, shape->density);
+		inertia_tensor[i] = M3Mul(M3Mul(rot_local, shape_inertia), rot_local_inv);
 	}
 
+    /* zero volume or density on a dynamic body (TODO: c_Shape / body checker) */
+    ds_Assert(body->mass > 0.0f);
     sim->inv_mass = 1.0f / body->mass;
-	Vec3ScaleSelf(sim->local_center_of_mass, sim->inv_mass);
+	sim->local_center_of_mass = V3Scale(sim->local_center_of_mass, sim->inv_mass);
 
-	/* 
+	/*
 	 * d(i) = center_of_mass_Shape(i) - center_of_mass_Body
-	 * I_Body = sum { I_Shape(i) + mass_Shape(i) * (Identity*DOT(d(i),d(i) - OUTER(d(i),d(i)))) } 
+	 * I_Body = sum { I_Shape(i) + mass_Shape(i) * (Identity*DOT(d(i),d(i) - OUTER(d(i),d(i)))) }
 	 */
-	vec3 d;
 	for (u32 i = 0; i < body->shape_list.count; ++i)
 	{
-		Vec3Sub(d, center_of_mass[i], sim->local_center_of_mass);
+		const v3 d = V3Sub(center_of_mass[i], sim->local_center_of_mass);
 
-		Mat3Identity(tmp1);
-		Mat3ScaleSelf(tmp1, mass[i]*Vec3Dot(d, d));
+		const m3 tmp1 = M3Scale(M3Identity(), mass[i]*V3Dot(d, d));
+		const m3 tmp2 = M3Scale(M3OuterProduct(d, d), mass[i]);
 
-		Mat3OuterProduct(tmp2, d, d);
-		Mat3ScaleSelf(tmp2, mass[i]);
-
-		Mat3AddSelf(body_inertia_tensor, inertia_tensor[i]);
-		Mat3AddSelf(body_inertia_tensor, tmp1);
-		Mat3SubSelf(body_inertia_tensor, tmp2);
+		body_inertia_tensor = M3Add(body_inertia_tensor, inertia_tensor[i]);
+		body_inertia_tensor = M3Add(body_inertia_tensor, tmp1);
+		body_inertia_tensor = M3Sub(body_inertia_tensor, tmp2);
 	}
-    Mat3Inverse(sim->local_inv_inertia, body_inertia_tensor);
+    /* positive mass gives a positive definite tensor; det <= 0 or NaN would make the inverse inf/NaN */
+    const f32 det = M3Inverse(&sim->local_inv_inertia, body_inertia_tensor);
+    ds_Assert(det > 0.0f);
     
     ArenaPopScratch();
+}
+
+u32 ds_BodyPairMayCollide(const struct ds_Dynamics *pipeline, const u32 body_index0, const u32 body_index1)
+{
+    const u32 bi[2] = { body_index0, body_index1 };
+
+    struct ds_Body *body[2] =
+    {
+	    pipeline->body_pool.buf + bi[0],
+	    pipeline->body_pool.buf + bi[1],
+    };
+
+    const u32 l = (body[0]->joint_list.count <= body[1]->joint_list.count)
+                ? 0
+                : 1;
+
+    u32 collide_connected = 1;
+    i32 ji = body[l]->joint_list.first; 
+    while (collide_connected && ji != DLL_SENTINEL)
+    {
+        const struct ds_Joint *joint = pipeline->joint_pool.buf + ji;
+
+        if (joint->body[0] == bi[l])
+        {
+            ji = joint->edge_node[0].next;
+            if (joint->body[1] == bi[1-l])
+            {
+                collide_connected &= joint->collide_connected;
+            }
+        }
+        else
+        {
+            ji = joint->edge_node[1].next;
+            if (joint->body[0] == bi[1-l])
+            {
+                collide_connected &= joint->collide_connected;
+            }
+        }
+    }
+
+    return collide_connected;
 }

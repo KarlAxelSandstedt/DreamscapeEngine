@@ -17,23 +17,18 @@
 ==========================================================================
 */
 
-#include <stdlib.h>
-
 #include "r_local.h"
 
-POOL_DEFINE(gl_State);
-POOL_DEFINE(gl_Texture);
-POOL_DEFINE(gl_TextureUnitBinding);
 
 struct gl_Limits gl_limits_storage = { 0 };
 struct gl_Limits *g_gl_limits = &gl_limits_storage;
 
 u32 g_gl_state = U32_MAX;
-struct gl_StatePool g_gl_state_pool = { 0 };
-struct gl_TextureUnitBindingPool g_binding_pool = { 0 };
+ds_Pool(gl_State) g_gl_state_pool = { 0 };
+ds_Pool(gl_TextureUnitBinding) g_binding_pool = { 0 };
 
 u32 tx_in_use = 0;	/* number of texture names currently allocated (glGen*, glDel*) */
-struct gl_TexturePool tx_pool = { 0 };
+ds_Pool(gl_Texture) tx_pool = { 0 };
 
 #ifdef DS_GL_DEBUG
 
@@ -663,18 +658,18 @@ void ds_glGenTextures(const GLsizei count, GLuint tx[])
 	GLsizei i = 0;
 	for (; i < count; ++i)
 	{
-		tx[i] = gl_TexturePoolAdd(&tx_pool).index;
+		tx[i] = ds_PoolAdd(tx_pool).index;
 		struct gl_Texture *tx_ptr = tx_pool.buf + tx[i];
 		gl_state->func.glGenTextures(1, &tx_ptr->name);
 		if (tx_ptr->name == 0)
 		{
-			gl_TexturePoolRemove(&tx_pool, tx[i]);
+			ds_PoolRemove(tx_pool, tx[i]);
 			LogString(T_RENDERER, S_ERROR, "GL internal; glGenTexture failed");
 			break;
 		}
 
 		tx_in_use += 1;
-		ds_DLLFlush(tx_ptr->binding_list);
+		DLLFlush(tx_ptr->binding_list);
 		tx_ptr->wrap_s = GL_REPEAT;
 		tx_ptr->wrap_t = GL_REPEAT;
 		tx_ptr->mag_filter = GL_LINEAR;
@@ -709,7 +704,7 @@ void ds_glDeleteTextures(const GLsizei count, const GLuint tx[])
 			}
 			tx_in_use -= 1;
 			gl_state->func.glDeleteTextures(1, &tx_ptr->name);
-			gl_TexturePoolRemove(&tx_pool, tx[i]);
+			ds_PoolRemove(tx_pool, tx[i]);
 		}
 	}
 }
@@ -754,8 +749,8 @@ void ds_glBindTexture(const GLenum target, const GLuint tx)
 			texture->binding_list.first = binding->texture_binding.next;
 		}
 		//fprintf(stderr, "context; %p\t DEL binding (UNIT,TEXTURE) : (%u,%u)\n", g_gl_state, gl_state->tx_unit_active, texture->name);
-		ds_DLLRemove(texture->binding_list, g_binding_pool.buf, unit->binding, texture_binding);
-		gl_TextureUnitBindingPoolRemove(&g_binding_pool, unit->binding);
+		DLLRemove(texture->binding_list, g_binding_pool.buf, unit->binding, texture_binding);
+		ds_PoolRemove(g_binding_pool, unit->binding);
 		unit->binding = DLL_SENTINEL;
 	}
 
@@ -786,8 +781,8 @@ void ds_glBindTexture(const GLenum target, const GLuint tx)
 					}
 					gl_state->tx_unit[binding->tx_unit].binding = DLL_SENTINEL;
 
-					ds_DLLRemove(texture->binding_list, g_binding_pool.buf, i, texture_binding);
-					gl_TextureUnitBindingPoolRemove(&g_binding_pool, i);
+					DLLRemove(texture->binding_list, g_binding_pool.buf, i, texture_binding);
+					ds_PoolRemove(g_binding_pool, i);
 					//fprintf(stderr, "context; %p\t DEL binding (UNIT,TEXTURE) : (%u,%u)\n", g_gl_state, binding->tx_unit, texture->name);
 				//}
 				break;
@@ -795,8 +790,8 @@ void ds_glBindTexture(const GLenum target, const GLuint tx)
 		}
 
 		struct slot slot;
-		slot = gl_TextureUnitBindingPoolAdd(&g_binding_pool);
-	 	ds_DLLPrepend(texture->binding_list, g_binding_pool.buf, slot.index, texture_binding);
+		slot = ds_PoolAdd(g_binding_pool);
+	 	DLLPrepend(texture->binding_list, g_binding_pool.buf, slot.index, texture_binding);
 		
 		binding = slot.address;
 		binding->context = g_gl_state;
@@ -849,7 +844,7 @@ void ds_glTexImage2D(const GLenum target,
 	struct gl_Texture *tx = InternalTxUnitGetTarget(target);
 
 	tx->level = level;
-	tx->internalformat = format;
+	tx->internalformat = internalformat;
 	tx->width = width;
 	tx->height = height;
 	tx->format = format;
@@ -914,7 +909,6 @@ void ds_glTexParameterf(const GLenum target, const GLenum pname, const GLfloat p
 void ds_glTexParameteriv(const GLenum target, const GLenum pname, const GLint *params)
 {
 	struct gl_State *gl_state = g_gl_state_pool.buf + g_gl_state;
-	struct gl_Texture *tx = InternalTxUnitGetTarget(target);
 
 	switch (pname)
 	{
@@ -927,7 +921,6 @@ void ds_glTexParameteriv(const GLenum target, const GLenum pname, const GLint *p
 void ds_glTexParameterfv(const GLenum target, const GLenum pname, const GLfloat *params)
 {
 	struct gl_State *gl_state = g_gl_state_pool.buf + g_gl_state;
-	struct gl_Texture *tx = InternalTxUnitGetTarget(target);
 
 	switch (pname)
 	{
@@ -1002,10 +995,10 @@ void ds_glGetProgramInfoLog(GLuint program, GLsizei bufSize, GLsizei *length, GL
 	gl_state->func.glGetProgramInfoLog(program, bufSize, length, infoLog);
 }
 
-u32 gl_StateAlloc(void)
+u32 gl_StateAlloc(struct arena *mem)
 {
 	const u32 g_gl_state_prev = g_gl_state;
-	struct slot slot = gl_StatePoolAdd(&g_gl_state_pool);
+	struct slot slot = ds_PoolAdd(g_gl_state_pool);
 	g_gl_state = slot.index;
 	struct gl_State *gl_state = slot.address;
 	GlFunctionsInit(&gl_state->func);
@@ -1083,7 +1076,7 @@ u32 gl_StateAlloc(void)
 	ds_glActiveTexture(GL_TEXTURE0 + 0);
 	ds_Assert(gl_state->tx_unit_active == 0);
 
-	gl_state->tx_unit = malloc(g_gl_limits->tx_unit_count * sizeof(struct gl_TextureUnit));
+	gl_state->tx_unit = ArenaPush(mem, g_gl_limits->tx_unit_count * sizeof(struct gl_TextureUnit));
 	for (GLuint i = 0; i < g_gl_limits->tx_unit_count; ++i)
 	{
 		gl_state->tx_unit[i].binding = DLL_SENTINEL;
@@ -1113,13 +1106,12 @@ void gl_StateDealloc(const u32 gl_state_index)
 				struct gl_TextureUnitBinding *binding = g_binding_pool.buf + texture->binding_list.first;
 				texture->binding_list.first = binding->texture_binding.next;
 			}
-			ds_DLLRemove(texture->binding_list, g_binding_pool.buf, gl_state->tx_unit[i].binding, texture_binding);
-			gl_TextureUnitBindingPoolRemove(&g_binding_pool, gl_state->tx_unit[i].binding);
+			DLLRemove(texture->binding_list, g_binding_pool.buf, gl_state->tx_unit[i].binding, texture_binding);
+			ds_PoolRemove(g_binding_pool, gl_state->tx_unit[i].binding);
 		}
 	}
 
-	free(gl_state->tx_unit);
-	gl_StatePoolRemove(&g_gl_state_pool, gl_state_index);
+	ds_PoolRemove(g_gl_state_pool, gl_state_index);
 
 	if (g_gl_state == gl_state_index)
 	{
@@ -1130,21 +1122,20 @@ void gl_StateDealloc(const u32 gl_state_index)
 void gl_StateSetCurrent(const u32 gl_state_index)
 {
 	g_gl_state = gl_state_index;
-	struct gl_State *gl_state = g_gl_state_pool.buf + gl_state_index;
 }
 
 void gl_StateMemAlloc(void)
 {
-	tx_pool = gl_TexturePoolAlloc(NULL, 256, GROWABLE);
-	const GLuint stub_index = gl_TexturePoolAdd(&tx_pool).index;
+	ds_PoolAlloc(NULL, tx_pool, 256, GROWABLE);
+	const GLuint stub_index = ds_PoolAdd(tx_pool).index;
 	ds_AssertString(stub_index == 0, "Reserve first index for stub, that we we can return 0 of *Texture calls to indicate error"); 
-	g_gl_state_pool = gl_StatePoolAlloc(NULL, 8, GROWABLE);
-	g_binding_pool = gl_TextureUnitBindingPoolAlloc(NULL, 192, GROWABLE);
+	ds_PoolAlloc(NULL, g_gl_state_pool, 8, GROWABLE);
+	ds_PoolAlloc(NULL, g_binding_pool, 192, GROWABLE);
 }
 
 void gl_StateMemDealloc(void)
 {
-	gl_TexturePoolDealloc(&tx_pool);
-	gl_StatePoolDealloc(&g_gl_state_pool);
-	gl_TextureUnitBindingPoolDealloc(&g_binding_pool);
+	ds_PoolDealloc(tx_pool);
+	ds_PoolDealloc(g_gl_state_pool);
+	ds_PoolDealloc(g_binding_pool);
 }

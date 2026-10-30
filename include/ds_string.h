@@ -17,6 +17,49 @@
 ==========================================================================
 */
 
+/*
+ds_string.h
+===========
+UTF-8 and UTF-32 strings in caller memory (buffers or arenas): codepoint decoding and encoding, conversion
+to and from numbers, a printf-like formatter and substring search.
+
+Contents (in this order):
+    Types       utf8 (bytes, not null-terminated), utf32 (codepoints); Utf8Inline for ASCII literals.
+    Helpers     struct parseRetval (parser results), WordbreakCheck, Utf32Stream whitespace splitting.
+    C strings   CstrHash, CstrUtf8, F32Cstr/F64Cstr.
+    UTF-8       Utf8ReadCodepoint/Utf8WriteCodepoint, constructors, copies and conversions, parsers.
+    Substring   Utf8LookupSubstringInit/Utf8LookupSubstring (Knuth-Morris-Pratt).
+    Formatting  Utf8Format family (%s %k %i %u %li %lu %(d)f %p %%).
+    UTF-32      the same constructors, conversions and parsers for utf32.
+
+Strings
+-------
+- utf8: buf[0, size) holds exactly the len codepoints; size is the string's bytes, never a capacity (the
+  owner of a buffer keeps that). Decoding never reads past size, and hashing, comparing and copying use
+  size directly.
+- Bad UTF-8 (cut off by size, a bad lead or continuation byte, overlong, a surrogate, > U+10FFFF) decodes
+  as UTF8_BAD_CODEPOINT, one byte at a time. Lengths count it as one codepoint, so a string's len and its
+  size always agree, and text from files can't make a reader run past its data. Encoding writes a bad
+  codepoint as U+FFFD, so utf32 -> utf8 never fails on content, only on a full buffer.
+- A utf8 built by hand must keep that: size = the bytes of exactly len codepoints.
+- utf32: len codepoints in buf[max_len].
+- Sizes, lengths and buffer lengths are u32: a string holds at most U32_MAX bytes or codepoints, and so
+  does a C string passed in (cstr).
+
+Results
+-------
+- ...Buffered(buf, bufsize, ...): writes at most bufsize bytes; size is the bytes written (for utf32,
+  max_len is the buffer's length). Too small: an empty string. The formatter instead keeps the tokens
+  before the first one that does not fit.
+- Arena versions take exactly the bytes they need (writing into at most U32_MAX of the arena's free
+  bytes); on failure an empty string.
+- Utf8Alloc / Utf8Buffered return an empty string over a buffer; the caller keeps its capacity.
+- Integer parsers return a struct parseRetval: PARSE_SUCCESS and the value, or a failure and 0. F32/F64
+  parsers return the correctly rounded value, 0 for empty input.
+- Formatting F32/F64 with decimals > 0 rounds correctly (ties to even); decimals 0 gives the shortest
+  digits that read back to the same value.
+*/
+
 #ifndef __DS_STRING_H__
 #define __DS_STRING_H__
 
@@ -28,29 +71,20 @@
 extern "C" { 
 #endif
 
-/*
- *	String Library 
- *
- *	utf8 - NOT null-terminated unicode string
- *	utf32 - 32bit unicode string
- *
- *	Initialization needed for dtoa/strtod multithreading locks
- */
-void ds_StringApiInit(const u32 thread_count);
-
+/* string literal to utf8; len counts bytes, so ASCII literals only */
 #define Utf8Inline(cstr) (utf8)  		\
 	{					\
 		.buf =  (u8 *) cstr,		\
-		.size =	sizeof(cstr),		\
+		.size = sizeof(cstr)-1,	\
 		.len =	sizeof(cstr)-1,		\
 	}
 
 typedef struct utf8 utf8;
 struct utf8 
 {
-	u8 *	buf;	
-	u32 	size;		/* Number of bytes in buffer */
-	u32 	len;		/* Length of string (not bytes) (not including **POSSIBLE** '\0') */
+	u8 *	buf;
+	u32 	size;		/* bytes of the len codepoints: buf[0, size) holds exactly the string; no capacity */
+	u32 	len;		/* codepoints (a possible trailing '\0' not included) */
 };
 DEFINE_CPOOL_STRUCT(utf8);
 
@@ -124,36 +158,41 @@ f64		F64Cstr(char **new_offset, const char *str);
 
 /************************************** UTF8 ***************************************/
 
-/* return required size to hold ut8.buf[len] */
-u64                 Utf8SizeRequired(const utf8 utf8);
+/* the bytes of the string (utf8.size) */
+u32                 Utf8SizeRequired(const utf8 utf8);
 /* Hash utf8 string */
 u32	                Utf8Hash(const utf8 utf8);
 /* return 1 if utf8 contents are equivalent, 0 otherwise */
 u32		            Utf8Equivalence(const utf8 str1, const utf8 str2);	
 
 #define			UTF8_BAD_CODEPOINT	U32_MAX
-/* return utf32 codepoint on success, or UTF8_BAD_CODEPOINT on bad offset */
-u32 	            Utf8ReadCodepoint(u64 *new_offset, const utf8 *str, const u64 offset);	
-/* return length written into buf, or 0 of failure. */
+/*
+ * Decode the codepoint at byte offset and set new_offset past it. UTF8_BAD_CODEPOINT for offset >= size, a
+ * sequence cut off by size, a bad lead or continuation byte, overlong forms, surrogates and > U+10FFFF; a
+ * bad sequence advances new_offset by one byte.
+ */
+u32 	            Utf8ReadCodepoint(u32 *new_offset, const utf8 *str, const u32 offset);
+/* return length written into buf, or 0 if buf is too small. A codepoint without a UTF-8 form (a surrogate, > U+10FFFF, UTF8_BAD_CODEPOINT) is written as U+FFFD. */
 u32		            Utf8WriteCodepoint(u8 *buf, const u32 bufsize, const u32 codepoint);
 
 void 	            Utf8DebugPrint(const utf8 str);
 
 utf8 	            Utf8Empty(void);
-utf8 	            Utf8Alloc(struct arena *mem, const u64 bufsize);
-utf8 	            Utf8Buffered(u8 buf[], const u64 bufsize);
+/* an empty string over bufsize bytes (pushed on mem, or buf); the caller keeps the capacity */
+utf8 	            Utf8Alloc(struct arena *mem, const u32 bufsize);
+utf8 	            Utf8Buffered(u8 buf[], const u32 bufsize);
 
-utf8 	            Utf8CopyBuffered(u8 buf[], const u64 bufsize, const utf8 str);
-utf8 	            Utf8CopyBufferedAndReturnRequiredSize(u64 *reqsize, u8 buf[], const u64 bufsize, const utf8 str);
-utf8 	            Utf8CstrBuffered(u8 buf[], const u64 bufsize, const char *cstr);
-utf8 	            Utf8F32Buffered(u8 buf[], const u64 bufsize, const u32 decimals, const f32 val);
-utf8 	            Utf8F64Buffered(u8 buf[], const u64 bufsize, const u32 decimals, const f64 val);
-utf8 	            Utf8U64Buffered(u8 buf[], const u64 bufsize, const u64 val);
-utf8 	            Utf8I64Buffered(u8 buf[], const u64 bufsize, const i64 val);
-utf8 	            Utf8Utf32Buffered(u8 buf[], const u64 bufsize, const utf32 str);
-utf8 	            Utf8Utf32BufferedNullTerminated(u8 buf[], const u64 bufsize, const utf32 str);
-utf8 	            Utf8Utf32BufferedAndReturnRequiredSize(u64 *reqsize, u8 buf[], const u64 bufsize, const utf32 str);
-utf8 	            Utf8Utf32BufferedNullTerminatedAndReturnRequiredSize(u64 *reqsize, u8 buf[], const u64 bufsize, const utf32 str);
+utf8 	            Utf8CopyBuffered(u8 buf[], const u32 bufsize, const utf8 str);
+utf8 	            Utf8CopyBufferedAndReturnRequiredSize(u32 *reqsize, u8 buf[], const u32 bufsize, const utf8 str);
+utf8 	            Utf8CstrBuffered(u8 buf[], const u32 bufsize, const char *cstr);
+utf8 	            Utf8F32Buffered(u8 buf[], const u32 bufsize, const u32 decimals, const f32 val);
+utf8 	            Utf8F64Buffered(u8 buf[], const u32 bufsize, const u32 decimals, const f64 val);
+utf8 	            Utf8U64Buffered(u8 buf[], const u32 bufsize, const u64 val);
+utf8 	            Utf8I64Buffered(u8 buf[], const u32 bufsize, const i64 val);
+utf8 	            Utf8Utf32Buffered(u8 buf[], const u32 bufsize, const utf32 str);
+utf8 	            Utf8Utf32BufferedNullTerminated(u8 buf[], const u32 bufsize, const utf32 str);
+utf8 	            Utf8Utf32BufferedAndReturnRequiredSize(u32 *reqsize, u8 buf[], const u32 bufsize, const utf32 str);
+utf8 	            Utf8Utf32BufferedNullTerminatedAndReturnRequiredSize(u32 *reqsize, u8 buf[], const u32 bufsize, const utf32 str);
 
 utf8	            Utf8Copy(struct arena *mem, const utf8 str);
 utf8	            Utf8Cstr(struct arena *mem, const char *cstr);
@@ -166,8 +205,9 @@ utf8	            Utf8Utf32NullTerminated(struct arena *mem, const utf32 str);
 
 f32		            F32Utf8(struct arena *tmp, const utf8 str);
 f64		            F64Utf8(struct arena *tmp, const utf8 str);
-struct parseRetval 	U64Utf8(const utf8 str);	/* on overflow, return u64 value 0 		*/
-struct parseRetval 	I64Utf8(const utf8 str); 	/* on under/overflow, return i64 value 0 	*/
+/* decimal digits ('-' first for I64); "" and "-" are PARSE_STRING_INVALID; on any failure the value is 0 */
+struct parseRetval 	U64Utf8(const utf8 str);
+struct parseRetval 	I64Utf8(const utf8 str);
 
 /******************************** UTF8 substring lookup *******************************/
 
@@ -175,7 +215,7 @@ struct kmpSubstring
 {
 	utf32	substring;
 	u32 *	backtrack;	/* backtrack[substring.len] : KMP backtracking indices  */
-	u32	start;		/* if utf8, (start byte) else if utf32 (start index) */
+	u32	start;		/* codepoint index of the first match in str; U32_MAX for an empty substring (always found) */
 };
 /* initialize substring helper for substring matching using Knuth-Morris-Pratt algorithm (KMP) */
 struct kmpSubstring	Utf8LookupSubstringInit(struct arena *mem, const utf8 str);
@@ -193,19 +233,22 @@ u32			Utf8LookupSubstring(struct kmpSubstring *kmp_substring, const utf8 str);
  * 	%k 	- utf8 ptr
  * 	%i	- i32
  * 	%u	- u32
- * 	%(d)f  	- f64, optionally replace (d) with number of decimals, defaults to 7
+ * 	%(d)f  	- f64, rounded to (d) decimals, defaults to 7; %0f: shortest digits that read back exactly
  * 	%li 	- i64
  * 	%lu 	- u64
  * 	%p	- Pointer
- * Note: 
+ * 	%%	- '%'
+ * Other characters of the format are copied as UTF-8 (a bad byte as one bad codepoint). Output stops at
+ * the first token that does not fit, or an unknown % token.
+ * Note:
  * 	As variadic arguments will promote themselves (or self-promote), dangers arise when the function expects 64 bit values and the user gives 32 bit values or less.
  * 	The smaller values such as char, unsigned int, floats, will be promoted to some type (perhaps self-promotions) and generate storage for that type. Thus, formatting
  * 	chars or perhaps ints as %lli will result in undefined behaviour as the function will grab 64 bits from a 32 bit storage, generating garbage. Explicit casting removes this error.
  */
 utf8 			Utf8Format(struct arena *mem, const char *format, ...); 
 utf8 			Utf8FormatVariadic(struct arena *mem, const char *format, va_list args); 
-utf8 			Utf8FormatBuffered(u8 *buf, const u64 bufsize, const char *format, ...); 
-utf8 			Utf8FormatBufferedVariadic(u64 *reqsize, u8 *buf, const u64 bufsize, const char *format, va_list args);
+utf8 			Utf8FormatBuffered(u8 *buf, const u32 bufsize, const char *format, ...);
+utf8 			Utf8FormatBufferedVariadic(u32 *reqsize, u8 *buf, const u32 bufsize, const char *format, va_list args);
 
 /************************************** UTF32 ***************************************/
 
@@ -215,13 +258,13 @@ utf32 			Utf32Empty(void);
 utf32			Utf32Alloc(struct arena *mem, const u32 len);
 utf32			Utf32Buffered(u32 buf[], const u32 len);
 
-utf32			Utf32CopyBuffered(u32 buf[], const u64 buflen, const utf32 str);
-utf32			Utf32CstrBuffered(u32 buf[], const u64 buflen, const char *cstr);
-utf32			Utf32F32Buffered(u32 buf[], const u64 buflen, const u32 decimals, const f32 val);
-utf32			Utf32F64Buffered(u32 buf[], const u64 buflen, const u32 decimals, const f64 val);
-utf32			Utf32U64Buffered(u32 buf[], const u64 buflen, const u64 val);
-utf32			Utf32I64Buffered(u32 buf[], const u64 buflen, const i64 val);
-utf32			Utf32Utf8Buffered(u32 buf[], const u64 buflen, const utf8 str);
+utf32			Utf32CopyBuffered(u32 buf[], const u32 buflen, const utf32 str);
+utf32			Utf32CstrBuffered(u32 buf[], const u32 buflen, const char *cstr);
+utf32			Utf32F32Buffered(u32 buf[], const u32 buflen, const u32 decimals, const f32 val);
+utf32			Utf32F64Buffered(u32 buf[], const u32 buflen, const u32 decimals, const f64 val);
+utf32			Utf32U64Buffered(u32 buf[], const u32 buflen, const u64 val);
+utf32			Utf32I64Buffered(u32 buf[], const u32 buflen, const i64 val);
+utf32			Utf32Utf8Buffered(u32 buf[], const u32 buflen, const utf8 str);
 
 utf32			Utf32Copy(struct arena *mem, const utf32 str);
 utf32			Utf32Cstr(struct arena *mem, const char *cstr);
@@ -233,8 +276,9 @@ utf32			Utf32Utf8(struct arena *mem, const utf8 str);
 
 f32			F32Utf32(struct arena *tmp, const utf32 str);
 f64			F64Utf32(struct arena *tmp, const utf32 str);
-struct parseRetval	U64Utf32(const utf32 str);	/* on overflow, return u64 value 0 		*/
-struct parseRetval	I64Utf32(const utf32 str); 	/* on under/overflow, return i64 value 0 	*/
+/* as U64Utf8 / I64Utf8 */
+struct parseRetval	U64Utf32(const utf32 str);
+struct parseRetval	I64Utf32(const utf32 str);
 
 #ifdef __cplusplus
 } 

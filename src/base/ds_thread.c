@@ -19,9 +19,10 @@
 
 #define _GNU_SOURCE
 #include "ds_base.h"
+#include "dtoa.h"
 
 ds_ThreadLocal struct ds_Thread *g_tl_self = NULL;
-u32 a_index_counter = 1;
+static u32 a_index_counter = 1;
 
 const char *thread_profiler_id[] = 
 {
@@ -34,6 +35,7 @@ const char *thread_profiler_id[] =
     "Worker 48", "Worker 49", "Worker 50", "Worker 51", "Worker 52", "Worker 53", "Worker 54", "Worker 55",
     "Worker 56", "Worker 57", "Worker 58", "Worker 59", "Worker 60", "Worker 61", "Worker 62", "Worker 63",
 };
+ds_StaticAssert(sizeof(thread_profiler_id) / sizeof(thread_profiler_id[0]) == DS_THREAD_COUNT_MAX, "one profiler name per thread index");
 
 
 static void ds_ThreadAllocMemory(struct arena *mem, struct ds_Thread *thr, const u64 frame_size, const u64 scratch_size, const u32 scratch_count)
@@ -97,8 +99,8 @@ static void *ds_ThreadCloneStart(void *void_thr)
 	thr->ppid = getppid();
 	thr->gtid = getpid();
 	thr->tid = gettid();
-	thr->index = AtomicFetchAddRlx32(&a_index_counter, 1);
 	ProfThreadNamed(thread_profiler_id[thr->index]);
+	DmgDtoaThreadInit(thr->index);
 	thr->start(thr);
 
 	return NULL;
@@ -106,12 +108,15 @@ static void *ds_ThreadCloneStart(void *void_thr)
 
 void ds_ThreadMasterInit(struct arena *mem, const u64 frame_size, const u64 scratch_size, const u32 scratch_count)
 {
+	ds_AssertString(g_tl_self == NULL, "ds_ThreadMasterInit runs once");
+	ds_AssertString(AtomicLoadRlx32(&a_index_counter) == 1, "no ds_ThreadClone before ds_ThreadMasterInit (ds_Init)");
 	g_tl_self = ArenaPush(mem, sizeof(struct ds_Thread));
 	g_tl_self->ppid = getppid();
 	g_tl_self->gtid = getpid();
 	g_tl_self->tid = gettid();
 	g_tl_self->index = 0;
     ds_ThreadAllocMemory(mem, g_tl_self, frame_size, scratch_size, scratch_count);
+	DmgDtoaThreadInit(0);
 
 	ProfThreadNamed(thread_profiler_id[g_tl_self->index]);
 }
@@ -139,6 +144,9 @@ ds_Thread *ds_ThreadClone(struct arena *mem, void (*start)(ds_Thread *), void *a
 	thr->args = args;
 	thr->ret = NULL;
 	thr->ret_size = 0;
+	/* in clone order, on the cloning thread: thread creation publishes it to the new thread */
+	thr->index = AtomicFetchAddRlx32(&a_index_counter, 1);
+	ds_AssertString(thr->index < DS_THREAD_COUNT_MAX, "more threads than DS_THREAD_COUNT_MAX");
 	thr->stack_size = (stack_size % g_arch_config->pagesize == 0) 
 				? stack_size 
 				: stack_size + (g_arch_config->pagesize - stack_size % g_arch_config->pagesize);
@@ -186,10 +194,11 @@ void ds_ThreadWait(const ds_Thread *thr)
 {
 	void *garbage;
 
-	i32 status = pthread_join(thr->pthread, &garbage);
+	/* pthread_join returns its error number (errno is not set) */
+	const i32 status = pthread_join(thr->pthread, &garbage);
 	if (status != 0)
 	{
-		LogString(T_SYSTEM, S_FATAL, "Failed to alloc thread memory, aborting.");
+		LogSystemErrorCode(S_FATAL, (u32) status);
 		FatalCleanupAndExit();
 	}
 }
@@ -206,8 +215,8 @@ DWORD WINAPI ds_ThreadCloneStart(LPVOID void_thr)
 	g_tl_self = void_thr;
 	struct ds_Thread *thr = void_thr;
 	thr->tid = GetCurrentThreadId();
-	thr->index = AtomicFetchAddRlx32(&a_index_counter, 1);
 	ProfThreadNamed(thread_profiler_id[thr->index]);
+	DmgDtoaThreadInit(thr->index);
 	thr->start(thr);
 
 	return 0;
@@ -215,10 +224,13 @@ DWORD WINAPI ds_ThreadCloneStart(LPVOID void_thr)
 
 void ds_ThreadMasterInit(struct arena *mem, const u64 frame_size, const u64 scratch_size, const u32 scratch_count)
 {
+	ds_AssertString(g_tl_self == NULL, "ds_ThreadMasterInit runs once");
+	ds_AssertString(AtomicLoadRlx32(&a_index_counter) == 1, "no ds_ThreadClone before ds_ThreadMasterInit (ds_Init)");
 	g_tl_self = ArenaPush(mem, sizeof(struct ds_Thread));
 	g_tl_self->tid = GetCurrentThreadId();
 	g_tl_self->index = 0;
     ds_ThreadAllocMemory(mem, g_tl_self, frame_size, scratch_size, scratch_count);
+	DmgDtoaThreadInit(0);
 
 	ProfThreadNamed(thread_profiler_id[g_tl_self->index]);
 }
@@ -246,6 +258,9 @@ ds_Thread *ds_ThreadClone(struct arena *mem, void (*start)(ds_Thread *), void *a
 	thr->args = args;
 	thr->ret = NULL;
 	thr->ret_size = 0;
+	/* in clone order, on the cloning thread: thread creation publishes it to the new thread */
+	thr->index = AtomicFetchAddRlx32(&a_index_counter, 1);
+	ds_AssertString(thr->index < DS_THREAD_COUNT_MAX, "more threads than DS_THREAD_COUNT_MAX");
 	thr->stack_size = (stack_size % g_arch_config->pagesize == 0) 
 				? stack_size 
 				: stack_size + (g_arch_config->pagesize - stack_size % g_arch_config->pagesize);
@@ -253,7 +268,7 @@ ds_Thread *ds_ThreadClone(struct arena *mem, void (*start)(ds_Thread *), void *a
 
   	LPSECURITY_ATTRIBUTES   lpThreadAttributes = NULL; 	/* default attributes */
   	DWORD                   dwCreationFlags = 0;		/* default creation flags */
-	thr->native = CreateThread(lpThreadAttributes, stack_size, ds_ThreadCloneStart, thr, dwCreationFlags, NULL);
+	thr->native = CreateThread(lpThreadAttributes, thr->stack_size, ds_ThreadCloneStart, thr, dwCreationFlags, NULL);
 	if (!thr->native)
 	{
 		LogSystemError(S_FATAL);
@@ -282,7 +297,7 @@ void ds_ThreadWait(const ds_Thread *thr)
 		}
 		else
 		{
-			LogString(T_SYSTEM, S_ERROR, "Unexpected disruption of thread wait in ds_ThreadWait\n");
+			LogString(T_SYSTEM, S_ERROR, "Unexpected disruption of thread wait in ds_ThreadWait");
 			return;
 		}
 	}

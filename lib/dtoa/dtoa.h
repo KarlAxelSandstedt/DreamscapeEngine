@@ -22,8 +22,12 @@
 
 #include "ds_types.h"
 
-/* Initalize dtoa/strod locks and thread count */
-void	DmgDtoaInit(const u32 max_thread_count);
+/*
+ * Give the calling thread its own conversion state: thread_index < DS_THREAD_COUNT_MAX converts without
+ * locks, using slot thread_index (one thread per slot). Threads that never call it, or pass a larger
+ * index, share one state under locks. Called by the engine for every thread it creates.
+ */
+void	DmgDtoaThreadInit(const u32 thread_index);
 
 /*
  * Returns nearest machine number to the input decimal string. Ties are broken by the IEEE round-even rule.

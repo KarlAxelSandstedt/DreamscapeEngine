@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.14.3)
 
 add_library(collision STATIC
-	"${DS_INCLUDE_PATH}/collision.h"
+	"${DS_INCLUDE_PATH}/ds_collision.h"
     ds_collision.c
 )
 add_library(Dreamscape::Collision ALIAS collision)

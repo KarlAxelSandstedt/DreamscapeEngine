@@ -17,8 +17,7 @@
 ==========================================================================
 */
 
-#include <stdlib.h>
-#include <string.h>
+#include <inttypes.h>
 
 #include "r_local.h"
 #define XXH_INLINE_ALL
@@ -28,16 +27,21 @@ struct r_Scene *g_scene = NULL;
 
 struct r_Scene *r_SceneAlloc(void)
 {
-	struct r_Scene *scene = malloc(sizeof(struct r_Scene));
+	struct r_Scene *scene = ds_Alloc(sizeof(struct r_Scene), 16);
+	if (!scene)
+	{
+		LogString(T_RENDERER, S_FATAL, "Failed to allocate the render scene");
+		FatalCleanupAndExit();
+	}
 	scene->mem_frame_arr[0] = ArenaAlloc(NULL, 64*1024*1024);
 	scene->mem_frame_arr[1] = ArenaAlloc(NULL, 64*1024*1024);
 	scene->mem_frame = scene->mem_frame_arr + 0;
 	scene->frame = 0;
 
 	scene->proxy3d_to_instance_map = ds_HashMapAlloc(NULL, 4096, 4096, GROWABLE);
-	scene->instance_pool = r_InstancePoolAlloc(NULL, 4096, GROWABLE);
+	ds_PoolAlloc(NULL, scene->instance_pool, 4096, GROWABLE);
 
-	ds_LLFlush(scene->instance_new_list);
+	LLFlush(scene->instance_new_list);
 
 	scene->cmd_cache = NULL;
 	scene->cmd_cache_count = 0;
@@ -49,11 +53,11 @@ struct r_Scene *r_SceneAlloc(void)
 
 void r_SceneDealloc(struct r_Scene *scene)
 {
-	r_InstancePoolDealloc(&scene->instance_pool);
+	ds_PoolDealloc(scene->instance_pool);
 	ds_HashMapDealloc(&scene->proxy3d_to_instance_map);
-	ArenaFree(scene->mem_frame_arr + 0),
-	ArenaFree(scene->mem_frame_arr + 1),
-	free(scene);
+	ArenaFree(scene->mem_frame_arr + 0);
+	ArenaFree(scene->mem_frame_arr + 1);
+	ds_Free(scene);
 }
 
 void r_SceneSetGlobal(struct r_Scene *scene)
@@ -66,12 +70,13 @@ void r_SceneFrameBegin(void)
 	g_scene->frame += 1;
 	g_scene->mem_frame = g_scene->mem_frame_arr + (g_scene->frame & 0x1);	
 	
-	ds_LLFlush(g_scene->instance_new_list);
+	LLFlush(g_scene->instance_new_list);
 	g_scene->cmd_cache = g_scene->cmd_frame;
 	g_scene->cmd_cache_count = g_scene->cmd_frame_count;
 	g_scene->cmd_frame = NULL;
 	g_scene->cmd_frame_count = 0;
 	g_scene->frame_bucket_list = NULL;
+	g_scene->view_origin = V3F64(0.0, 0.0, 0.0);
 
 	ArenaFlush(g_scene->mem_frame);
 }
@@ -189,7 +194,7 @@ static void r_scene_sort_commands_and_prune_instances(void)
 					const u32 hash = (u32) XXH3_64bits(&cached_instance->unit, sizeof(u32));
 					ds_HashMapRemove(&g_scene->proxy3d_to_instance_map, hash, index);
 				}
-				r_InstancePoolRemove(&g_scene->instance_pool, index);
+				ds_PoolRemove(g_scene->instance_pool, index);
 				g_scene->cmd_cache[cache_i].allocated = 0;
 			}
 
@@ -228,7 +233,7 @@ static void r_scene_sort_commands_and_prune_instances(void)
 				const u32 hash = (u32) XXH3_64bits(&cached_instance->unit, sizeof(u32));
 				ds_HashMapRemove(&g_scene->proxy3d_to_instance_map, hash, index);
 			}
-			r_InstancePoolRemove(&g_scene->instance_pool, index);
+			ds_PoolRemove(g_scene->instance_pool, index);
 			g_scene->cmd_cache[cache_i].allocated = 0;
 		}
 	}
@@ -251,6 +256,9 @@ void r_BufferConstructorBufferAlloc(struct r_BufferConstructor *constructor, con
 	struct r_Buffer *buf = ArenaPush(g_scene->mem_frame, sizeof(struct r_Buffer));
 	buf->next = NULL;
 	buf->c_l = c_new_l;
+	buf->local_vbo = 0;
+	buf->shared_vbo = 0;
+	buf->ebo = 0;
 	buf->local_size = 0;
 	buf->shared_size = 0;
 	buf->index_count = 0;
@@ -382,12 +390,17 @@ void r_SceneBucketListGenerate(void)
 
 			case R_INSTANCE_MESH:
 			{
+				const u64 bytes = instance->mesh->vertex_count * instance->mesh->local_stride;
+				if (bytes > g_scene->mem_frame->mem_left)
+				{
+					Log(T_RENDERER, S_ERROR, "mesh %k: %lu B does not fit the scene's frame arena (%lu B left), drawn as the stub box", &instance->mesh->id, bytes, g_scene->mem_frame->mem_left);
+					instance->mesh = &g_r_core->mesh_stub_color;
+				}
 				r_BufferConstructorBufferAddSize(&buf_constructor,
 						instance->mesh->vertex_count * instance->mesh->local_stride,
 						0,
 						0,
 						0);
-				ds_AssertMessage(buf_constructor.last->local_size <= 10000000, "ID: %k", &instance->mesh->id);
 			} break;
 
 			default:
@@ -409,8 +422,8 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 {
 	ProfZone;
 
-	const vec4 zero4 = { 0.0f, 0.0f, 0.0f, 0.0f };
-	const vec3 zero3 = { 0.0f, 0.0f, 0.0f };
+	const v4 zero4 = V4(0.0f, 0.0f, 0.0f, 0.0f);
+	const v3 zero3 = V3(0.0f, 0.0f, 0.0f);
 
 	const struct r_Command *r_cmd = g_scene->cmd_frame + b->c_l;
 	const struct r_Instance *instance = g_scene->instance_pool.buf + r_cmd->instance;
@@ -449,30 +462,28 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 						{
 							const struct ui_Node *n = g_ui->node_hierarchy.pool.buf + draw_node->index;
 							draw_node = draw_node->next;
-							const vec4 visible_rect =
-							{
+							const v4 visible_rect = V4(
 								(n->pixel_visible[AXIS_2_X].high + n->pixel_visible[AXIS_2_X].low) / 2.0f,
 								(n->pixel_visible[AXIS_2_Y].high + n->pixel_visible[AXIS_2_Y].low) / 2.0f,
 								(n->pixel_visible[AXIS_2_X].high - n->pixel_visible[AXIS_2_X].low) / 2.0f,
-								(n->pixel_visible[AXIS_2_Y].high - n->pixel_visible[AXIS_2_Y].low) / 2.0f,
-							};
+								(n->pixel_visible[AXIS_2_Y].high - n->pixel_visible[AXIS_2_Y].low) / 2.0f);
 
-							vec2 global_offset = { 0 };
+							v2 global_offset = V2(0.0f, 0.0f);
 							switch (n->text_align_x)
 							{
 								case ALIGN_X_CENTER: 
 								{ 
-									global_offset[0] = n->pixel_position[0] + (n->pixel_size[0] - n->layout_text->width) / 2.0f; 
+									global_offset.x = n->pixel_position.x + (n->pixel_size.x - n->layout_text->width) / 2.0f; 
 								} break;
 
 								case ALIGN_LEFT: 
 								{ 
-									global_offset[0] = n->pixel_position[0] + n->text_pad[0]; 
+									global_offset.x = n->pixel_position.x + n->text_pad.x; 
 								} break;
 
 								case ALIGN_RIGHT: 
 								{ 
-									global_offset[0] = n->pixel_position[0] + n->pixel_size[0] - n->text_pad[0] - n->layout_text->width; 
+									global_offset.x = n->pixel_position.x + n->pixel_size.x - n->text_pad.x - n->layout_text->width; 
 								} break;
 							}	
 
@@ -480,66 +491,58 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 							{
 								case ALIGN_Y_CENTER: 
 								{ 
-									global_offset[1] = n->pixel_position[1] + (n->pixel_size[1] + n->font->linespace*n->layout_text->line_count) / 2.0f; 
+									global_offset.y = n->pixel_position.y + (n->pixel_size.y + n->font->linespace*n->layout_text->line_count) / 2.0f; 
 								} break;
 
 								case ALIGN_TOP: 
 								{ 
-									global_offset[1] = n->pixel_position[1] + n->pixel_size[1] - n->text_pad[1]; 
+									global_offset.y = n->pixel_position.y + n->pixel_size.y - n->text_pad.y; 
 								} break;
 
 								case ALIGN_BOTTOM: 
 								{ 
-									global_offset[1] = n->pixel_position[1] + n->font->linespace*n->layout_text->line_count + n->text_pad[1]; 
+									global_offset.y = n->pixel_position.y + n->font->linespace*n->layout_text->line_count + n->text_pad.y; 
 								} break;
 							}
 
-							global_offset[0] = f32_round(global_offset[0]);
-							global_offset[1] = f32_round(global_offset[1]);
+							global_offset.x = F32Round(global_offset.x);
+							global_offset.y = F32Round(global_offset.y);
 
 							struct textLine *line = n->layout_text->line;
 							for (u32 l = 0; l < n->layout_text->line_count; ++l, line = line->next)
 							{
-								vec2 global_baseline =
-								{
-									global_offset[0],
-									global_offset[1] - n->font->ascent - l*n->font->linespace,
-								};
+								v2 global_baseline = V2(
+									global_offset.x,
+									global_offset.y - n->font->ascent - l*n->font->linespace);
 									
 								i += line->glyph_count;
 								for (u32 t = 0; t < line->glyph_count; ++t)
 								{
 									const struct fontGlyph *glyph = GlyphLookup(n->font, line->glyph[t].codepoint);
-									const vec2 local_offset = 
-									{ 
-										global_baseline[0] + (f32) glyph->bearing[0] + line->glyph[t].x,
-										global_baseline[1] + (f32) glyph->bearing[1],
-									};
+									const v2 local_offset = V2(
+										global_baseline.x + (f32) glyph->bearing.x + line->glyph[t].x,
+										global_baseline.y + (f32) glyph->bearing.y);
 
-									const vec4 glyph_rect =
-									{
-										(2*local_offset[0] + (f32) glyph->size[0]) / 2.0f,
-										(2*local_offset[1] - (f32) glyph->size[1]) / 2.0f,
-										(f32) glyph->size[0] / 2.0f,
-										(f32) glyph->size[1] / 2.0f,
-									};	
+									const v4 glyph_rect = V4(
+										(2*local_offset.x + (f32) glyph->size.x) / 2.0f,
+										(2*local_offset.y - (f32) glyph->size.y) / 2.0f,
+										(f32) glyph->size.x / 2.0f,
+										(f32) glyph->size.y / 2.0f);	
 
-									const vec4 uv_rect = 
-									{
-										(glyph->tr[0] + glyph->bl[0]) / 2.0f,
-										(glyph->tr[1] + glyph->bl[1]) / 2.0f,
-										(glyph->tr[0] - glyph->bl[0]) / 2.0f,
-										(glyph->tr[1] - glyph->bl[1]) / 2.0f,
-									};
+									const v4 uv_rect = V4(
+										(glyph->tr.x + glyph->bl.x) / 2.0f,
+										(glyph->tr.y + glyph->bl.y) / 2.0f,
+										(glyph->tr.x - glyph->bl.x) / 2.0f,
+										(glyph->tr.y - glyph->bl.y) / 2.0f);
 
-									memcpy(shared_data + S_NODE_RECT_OFFSET, glyph_rect, sizeof(vec4));
-									memcpy(shared_data + S_VISIBLE_RECT_OFFSET, visible_rect, sizeof(vec4));
-									memcpy(shared_data + S_UV_RECT_OFFSET, uv_rect, sizeof(vec4));
-									memcpy(shared_data + S_BACKGROUND_COLOR_OFFSET, zero4, sizeof(vec4));
-									memcpy(shared_data + S_BORDER_COLOR_OFFSET, zero4, sizeof(vec4));
-									memcpy(shared_data + S_SPRITE_COLOR_OFFSET, n->sprite_color, sizeof(vec4));
-									memcpy(shared_data + S_EXTRA_OFFSET, zero3, sizeof(vec3));
-									memset(shared_data + S_GRADIENT_COLOR_BR_OFFSET, 0, 4*sizeof(vec4));
+									memcpy(shared_data + S_NODE_RECT_OFFSET, &glyph_rect, sizeof(v4));
+									memcpy(shared_data + S_VISIBLE_RECT_OFFSET, &visible_rect, sizeof(v4));
+									memcpy(shared_data + S_UV_RECT_OFFSET, &uv_rect, sizeof(v4));
+									memcpy(shared_data + S_BACKGROUND_COLOR_OFFSET, &zero4, sizeof(v4));
+									memcpy(shared_data + S_BORDER_COLOR_OFFSET, &zero4, sizeof(v4));
+									memcpy(shared_data + S_SPRITE_COLOR_OFFSET, &n->sprite_color, sizeof(v4));
+									memcpy(shared_data + S_EXTRA_OFFSET, &zero3, sizeof(v3));
+									memset(shared_data + S_GRADIENT_COLOR_BR_OFFSET, 0, 4*sizeof(v4));
 									shared_data += S_UI_STRIDE;
 								}
 							}
@@ -553,22 +556,22 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 							const struct ui_Node *n = sel->node;
 							draw_node = draw_node->next;
 
-							vec2 global_offset = { 0 };
+							v2 global_offset = V2(0.0f, 0.0f);
 							switch (n->text_align_x)
 							{
 								case ALIGN_X_CENTER: 
 								{ 
-									global_offset[0] = n->pixel_position[0] + (n->pixel_size[0] - n->layout_text->width) / 2.0f; 
+									global_offset.x = n->pixel_position.x + (n->pixel_size.x - n->layout_text->width) / 2.0f; 
 								} break;
 
 								case ALIGN_LEFT: 
 								{ 
-									global_offset[0] = n->pixel_position[0] + n->text_pad[0]; 
+									global_offset.x = n->pixel_position.x + n->text_pad.x; 
 								} break;
 
 								case ALIGN_RIGHT: 
 								{ 
-									global_offset[0] = n->pixel_position[0] + n->pixel_size[0] - n->text_pad[0] - n->layout_text->width; 
+									global_offset.x = n->pixel_position.x + n->pixel_size.x - n->text_pad.x - n->layout_text->width; 
 								} break;
 							}	
 
@@ -576,22 +579,22 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 							{
 								case ALIGN_Y_CENTER: 
 								{ 
-									global_offset[1] = n->pixel_position[1] + (n->pixel_size[1] + n->font->linespace*n->layout_text->line_count) / 2.0f; 
+									global_offset.y = n->pixel_position.y + (n->pixel_size.y + n->font->linespace*n->layout_text->line_count) / 2.0f; 
 								} break;
 
 								case ALIGN_TOP: 
 								{ 
-									global_offset[1] = n->pixel_position[1] + n->pixel_size[1] - n->text_pad[1]; 
+									global_offset.y = n->pixel_position.y + n->pixel_size.y - n->text_pad.y; 
 								} break;
 
 								case ALIGN_BOTTOM: 
 								{ 
-									global_offset[1] = n->pixel_position[1] + n->font->linespace*n->layout_text->line_count + n->text_pad[1]; 
+									global_offset.y = n->pixel_position.y + n->font->linespace*n->layout_text->line_count + n->text_pad.y; 
 								} break;
 							}
 
-							global_offset[0] = f32_round(global_offset[0]);
-							global_offset[1] = f32_round(global_offset[1]);
+							global_offset.x = F32Round(global_offset.x);
+							global_offset.y = F32Round(global_offset.y);
 
 							struct textLine *line = sel->layout->line;
 							ds_Assert(sel->layout->line_count == 1);
@@ -608,42 +611,36 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 							if (0 < sel->low && sel->low <= line->glyph_count)
 							{
 								const struct fontGlyph *end_glyph = GlyphLookup(n->font, line->glyph[sel->low-1].codepoint);
-								global_offset[0] += line->glyph[sel->low-1].x + end_glyph->advance;
+								global_offset.x += line->glyph[sel->low-1].x + end_glyph->advance;
 							}
 
-							const vec4 highlight_rect =
-							{
-								(2*global_offset[0] + width) / 2.0f,
-								(2*global_offset[1] - height) / 2.0f,
+							const v4 highlight_rect = V4(
+								(2*global_offset.x + width) / 2.0f,
+								(2*global_offset.y - height) / 2.0f,
 								width / 2.0f,
-								height / 2.0f,
-							};	
+								height / 2.0f);	
 
-							const vec4 visible_rect =
-							{
+							const v4 visible_rect = V4(
 								(n->pixel_visible[AXIS_2_X].high + n->pixel_visible[AXIS_2_X].low) / 2.0f,
 								(n->pixel_visible[AXIS_2_Y].high + n->pixel_visible[AXIS_2_Y].low) / 2.0f,
 								(n->pixel_visible[AXIS_2_X].high - n->pixel_visible[AXIS_2_X].low) / 2.0f,
-								(n->pixel_visible[AXIS_2_Y].high - n->pixel_visible[AXIS_2_Y].low) / 2.0f,
-							};
+								(n->pixel_visible[AXIS_2_Y].high - n->pixel_visible[AXIS_2_Y].low) / 2.0f);
 	
 							const struct sprite *spr = g_sprite + n->sprite;
-							const vec4 uv_rect = 
-							{
-								(spr->tr[0] + spr->bl[0]) / 2.0f,
-								(spr->tr[1] + spr->bl[1]) / 2.0f,
-								(spr->tr[0] - spr->bl[0]) / 2.0f,
-								(spr->tr[1] - spr->bl[1]) / 2.0f,
-							};
+							const v4 uv_rect = V4(
+								(spr->tr.x + spr->bl.x) / 2.0f,
+								(spr->tr.y + spr->bl.y) / 2.0f,
+								(spr->tr.x - spr->bl.x) / 2.0f,
+								(spr->tr.y - spr->bl.y) / 2.0f);
 
-							memcpy(shared_data + S_NODE_RECT_OFFSET, highlight_rect, sizeof(vec4));
-							memcpy(shared_data + S_VISIBLE_RECT_OFFSET, visible_rect, sizeof(vec4));
-							memcpy(shared_data + S_UV_RECT_OFFSET, uv_rect, sizeof(vec4));
-							memcpy(shared_data + S_BACKGROUND_COLOR_OFFSET, sel->color, sizeof(vec4));
-							memcpy(shared_data + S_BORDER_COLOR_OFFSET, zero4, sizeof(vec4));
-							memcpy(shared_data + S_SPRITE_COLOR_OFFSET, zero4, sizeof(vec4));
-							memcpy(shared_data + S_EXTRA_OFFSET, zero3, sizeof(vec3));
-							memset(shared_data + S_GRADIENT_COLOR_BR_OFFSET, 0, 4*sizeof(vec4));
+							memcpy(shared_data + S_NODE_RECT_OFFSET, &highlight_rect, sizeof(v4));
+							memcpy(shared_data + S_VISIBLE_RECT_OFFSET, &visible_rect, sizeof(v4));
+							memcpy(shared_data + S_UV_RECT_OFFSET, &uv_rect, sizeof(v4));
+							memcpy(shared_data + S_BACKGROUND_COLOR_OFFSET, &sel->color, sizeof(v4));
+							memcpy(shared_data + S_BORDER_COLOR_OFFSET, &zero4, sizeof(v4));
+							memcpy(shared_data + S_SPRITE_COLOR_OFFSET, &zero4, sizeof(v4));
+							memcpy(shared_data + S_EXTRA_OFFSET, &zero3, sizeof(v3));
+							memset(shared_data + S_GRADIENT_COLOR_BR_OFFSET, 0, 4*sizeof(v4));
 							shared_data += S_UI_STRIDE;
 						}
 					}
@@ -654,40 +651,34 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 							const struct ui_Node *n = g_ui->node_hierarchy.pool.buf + draw_node->index;
 							draw_node = draw_node->next;
 							const struct sprite *spr = g_sprite + n->sprite;
-							const vec4 node_rect =
-							{
-								n->pixel_position[0] + n->pixel_size[0] / 2.0f,
-								n->pixel_position[1] + n->pixel_size[1] / 2.0f,
-								n->pixel_size[0] / 2.0f,
-								n->pixel_size[1] / 2.0f,
-							};
+							const v4 node_rect = V4(
+								n->pixel_position.x + n->pixel_size.x / 2.0f,
+								n->pixel_position.y + n->pixel_size.y / 2.0f,
+								n->pixel_size.x / 2.0f,
+								n->pixel_size.y / 2.0f);
 
-							const vec4 visible_rect =
-							{
+							const v4 visible_rect = V4(
 								(n->pixel_visible[AXIS_2_X].high + n->pixel_visible[AXIS_2_X].low) / 2.0f,
 								(n->pixel_visible[AXIS_2_Y].high + n->pixel_visible[AXIS_2_Y].low) / 2.0f,
 								(n->pixel_visible[AXIS_2_X].high - n->pixel_visible[AXIS_2_X].low) / 2.0f,
-								(n->pixel_visible[AXIS_2_Y].high - n->pixel_visible[AXIS_2_Y].low) / 2.0f,
-							};
+								(n->pixel_visible[AXIS_2_Y].high - n->pixel_visible[AXIS_2_Y].low) / 2.0f);
 
-							const vec4 uv_rect = 
-							{
-								(spr->tr[0] + spr->bl[0]) / 2.0f,
-								(spr->tr[1] + spr->bl[1]) / 2.0f,
-								(spr->tr[0] - spr->bl[0]) / 2.0f,
-								(spr->tr[1] - spr->bl[1]) / 2.0f,
-							};
+							const v4 uv_rect = V4(
+								(spr->tr.x + spr->bl.x) / 2.0f,
+								(spr->tr.y + spr->bl.y) / 2.0f,
+								(spr->tr.x - spr->bl.x) / 2.0f,
+								(spr->tr.y - spr->bl.y) / 2.0f);
 
 
-							const vec3 extra = { n->border_size, n->corner_radius, n->edge_softness };
-							memcpy(shared_data + S_NODE_RECT_OFFSET, node_rect, sizeof(vec4));
-							memcpy(shared_data + S_VISIBLE_RECT_OFFSET, visible_rect, sizeof(vec4));
-							memcpy(shared_data + S_UV_RECT_OFFSET, uv_rect, sizeof(vec4));
-							memcpy(shared_data + S_BACKGROUND_COLOR_OFFSET, n->background_color, sizeof(vec4));
-							memcpy(shared_data + S_BORDER_COLOR_OFFSET, n->border_color, sizeof(vec4));
-							memcpy(shared_data + S_SPRITE_COLOR_OFFSET, n->sprite_color, sizeof(vec4));
-							memcpy(shared_data + S_EXTRA_OFFSET, extra, sizeof(vec3));
-							memcpy(shared_data + S_GRADIENT_COLOR_BR_OFFSET, n->gradient_color, 4*sizeof(vec4));
+							const v3 extra = V3(n->border_size, n->corner_radius, n->edge_softness);
+							memcpy(shared_data + S_NODE_RECT_OFFSET, &node_rect, sizeof(v4));
+							memcpy(shared_data + S_VISIBLE_RECT_OFFSET, &visible_rect, sizeof(v4));
+							memcpy(shared_data + S_UV_RECT_OFFSET, &uv_rect, sizeof(v4));
+							memcpy(shared_data + S_BACKGROUND_COLOR_OFFSET, &n->background_color, sizeof(v4));
+							memcpy(shared_data + S_BORDER_COLOR_OFFSET, &n->border_color, sizeof(v4));
+							memcpy(shared_data + S_SPRITE_COLOR_OFFSET, &n->sprite_color, sizeof(v4));
+							memcpy(shared_data + S_EXTRA_OFFSET, &extra, sizeof(v3));
+							memcpy(shared_data + S_GRADIENT_COLOR_BR_OFFSET, n->gradient_color, 4*sizeof(v4));
 							shared_data += S_UI_STRIDE;
 						}
 					}
@@ -709,10 +700,11 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 					instance = g_scene->instance_pool.buf + r_cmd->instance;
 					proxy = r_Proxy3dAddress(instance->unit);
 
-					memcpy(shared_data + S_PROXY3D_TRANSLATION_BLEND_OFFSET, proxy->spec_position, sizeof(vec3));
-					memcpy(shared_data + S_PROXY3D_TRANSLATION_BLEND_OFFSET + sizeof(vec3), &proxy->blend, sizeof(f32));
-					memcpy(shared_data + S_PROXY3D_ROTATION_OFFSET, proxy->spec_rotation, sizeof(quat));
-					memcpy(shared_data + S_PROXY3D_COLOR_OFFSET, proxy->color, sizeof(vec4));
+					const v3 translation = V3F64Demote(V3F64Sub(proxy->spec_position, g_scene->view_origin));
+					memcpy(shared_data + S_PROXY3D_TRANSLATION_BLEND_OFFSET, &translation, sizeof(v3));
+					memcpy(shared_data + S_PROXY3D_TRANSLATION_BLEND_OFFSET + sizeof(v3), &proxy->blend, sizeof(f32));
+					memcpy(shared_data + S_PROXY3D_ROTATION_OFFSET, &proxy->spec_rotation, sizeof(q));
+					memcpy(shared_data + S_PROXY3D_COLOR_OFFSET, &proxy->color, sizeof(v4));
 					shared_data += S_PROXY3D_STRIDE;
 				}
 			} break;
@@ -722,6 +714,12 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 				buf->shared_data = NULL;
 				buf->index_data = NULL;
 				buf->local_data = ArenaPush(g_scene->mem_frame, buf->local_size);
+				if (buf->local_data == NULL)
+				{
+					Log(T_RENDERER, S_ERROR, "a mesh bucket of %lu B does not fit the scene's frame arena: not drawn", buf->local_size);
+					buf->local_size = 0;
+					break;
+				}
 				u8 *local_data = buf->local_data;
 				for (u32 i = buf->c_l; i <= buf->c_h; ++i)
 				{
@@ -772,9 +770,9 @@ struct r_Instance *r_InstanceAdd(const u32 unit, const u64 cmd)
 
 	if (index == HASH_NULL)
 	{
-		struct slot slot = r_InstancePoolAdd(&g_scene->instance_pool);
+		struct slot slot = ds_PoolAdd(g_scene->instance_pool);
 		ds_HashMapAdd(&g_scene->proxy3d_to_instance_map, hash, slot.index);
-		ds_LLPrepend(g_scene->instance_new_list, g_scene->instance_pool.buf, slot.index, next);
+		LLPrepend(g_scene->instance_new_list, g_scene->instance_pool.buf, slot.index, next);
 
 		instance = g_scene->instance_pool.buf + slot.index;
 		instance->unit = unit;
@@ -785,7 +783,7 @@ struct r_Instance *r_InstanceAdd(const u32 unit, const u64 cmd)
 	}
 	else if (instance->cmd->key != cmd)
 	{
-		ds_LLPrepend(g_scene->instance_new_list, g_scene->instance_pool.buf, index, next);
+		LLPrepend(g_scene->instance_new_list, g_scene->instance_pool.buf, index, next);
 
 		instance->cmd->allocated = 0;
 		instance->cmd = ArenaPush(g_scene->mem_frame, sizeof(struct r_Command));
@@ -803,8 +801,8 @@ struct r_Instance *r_InstanceAdd(const u32 unit, const u64 cmd)
 
 struct r_Instance *r_InstanceAddNonCached(const u64 cmd)
 {
-	struct slot slot = r_InstancePoolAdd(&g_scene->instance_pool);
-	ds_LLPrepend(g_scene->instance_new_list, g_scene->instance_pool.buf, slot.index, next);
+	struct slot slot = ds_PoolAdd(g_scene->instance_pool);
+	LLPrepend(g_scene->instance_new_list, g_scene->instance_pool.buf, slot.index, next);
 
 	struct r_Instance *instance = g_scene->instance_pool.buf + slot.index;
 	instance->cmd = ArenaPush(g_scene->mem_frame, sizeof(struct r_Command));
@@ -844,13 +842,13 @@ u64 r_CommandKey(const u64 screen, const u64 depth, const u64 transparency, cons
 		| ((u64) elements << R_CMD_ELEMENTS_LOW_BIT);
 }
 
-const char *screen_str_table[1 << R_CMD_SCREEN_LAYER_BITS] =
+static const char *screen_str_table[1 << R_CMD_SCREEN_LAYER_BITS] =
 {
 	"SCREEN_LAYER_HUD",
 	"SCREEN_LAYER_GAME",
 };
 
-const char *transparency_str_table[1 << R_CMD_TRANSPARENCY_BITS] =
+static const char *transparency_str_table[1 << R_CMD_TRANSPARENCY_BITS] =
 {
 	"TRANSPARENCY_NORMAL",
 	"TRANSPARENCY_SUBTRACTIVE",
@@ -858,19 +856,19 @@ const char *transparency_str_table[1 << R_CMD_TRANSPARENCY_BITS] =
 	"TRANSPARENCY_OPAQUE",
 };
 
-const char *primitive_str_table[1 << R_CMD_PRIMITIVE_BITS] =
+static const char *primitive_str_table[1 << R_CMD_PRIMITIVE_BITS] =
 {
 	"PRIMITIVE_TRIANGLE",
 	"PRIMITIVE_LINE",
 };
 
-const char *instanced_str_table[1 << R_CMD_INSTANCED_BITS] =
+static const char *instanced_str_table[1 << R_CMD_INSTANCED_BITS] =
 {
 	"NON_INSTANCED",
 	"INSTANCED",
 };
 
-const char *elements_str_table[1 << R_CMD_ELEMENTS_BITS] =
+static const char *elements_str_table[1 << R_CMD_ELEMENTS_BITS] =
 {
 	"ARRAYS",
 	"ELEMENTS",
@@ -886,9 +884,9 @@ void r_CommandKeyPrint(const u64 key)
 
 	fprintf(stderr, "render command key:\n");
 	fprintf(stderr, "\tscreen: %s\n", screen_str);
-	fprintf(stderr, "\tdepth: %lu\n", R_CMD_DEPTH_GET(key));
+	fprintf(stderr, "\tdepth: %" PRIu64 "\n", (u64) R_CMD_DEPTH_GET(key));
 	fprintf(stderr, "\ttransparency: %s\n", transparency_str);
-	fprintf(stderr, "\tmaterial: %lu\n", R_CMD_MATERIAL_GET(key));
+	fprintf(stderr, "\tmaterial: %" PRIu64 "\n", (u64) R_CMD_MATERIAL_GET(key));
 	fprintf(stderr, "\tprimitive: %s\n", primitive_str);
 	fprintf(stderr, "\tinstanced: %s\n", instanced_str);
 	fprintf(stderr, "\tlayout: %s\n", elements_str);

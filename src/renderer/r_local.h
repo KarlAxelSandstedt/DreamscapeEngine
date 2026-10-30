@@ -33,31 +33,31 @@ extern "C" {
 #include "ds_gl.h"
 
 #define L_POSITION_OFFSET	0
-#define L_COLOR_OFFSET		(sizeof(vec3))
-#define L_NORMAL_OFFSET		(sizeof(vec3) + sizeof(vec4))
+#define L_COLOR_OFFSET		(sizeof(v3))
+#define L_NORMAL_OFFSET		(sizeof(v3) + sizeof(v4))
 
 #define S_COLOR_STRIDE		0
-#define L_COLOR_STRIDE		(sizeof(vec3) + sizeof(vec4))
+#define L_COLOR_STRIDE		(sizeof(v3) + sizeof(v4))
 
 #define S_LIGHTNING_STRIDE	0
-#define L_LIGHTNING_STRIDE	(2*sizeof(vec3) + sizeof(vec4))
+#define L_LIGHTNING_STRIDE	(2*sizeof(v3) + sizeof(v4))
 
 /********************************************************
  *			r_ui.c				*
  ********************************************************/
 
-#define S_NODE_RECT_OFFSET		(0*sizeof(vec4))
-#define S_VISIBLE_RECT_OFFSET		(1*sizeof(vec4))
-#define S_UV_RECT_OFFSET		(2*sizeof(vec4))
-#define S_BACKGROUND_COLOR_OFFSET	(3*sizeof(vec4))
-#define S_BORDER_COLOR_OFFSET 		(4*sizeof(vec4))
-#define S_SPRITE_COLOR_OFFSET 		(5*sizeof(vec4))
-#define S_EXTRA_OFFSET			(6*sizeof(vec4))
-#define S_GRADIENT_COLOR_BR_OFFSET	(6*sizeof(vec4) + sizeof(vec3))
-#define S_GRADIENT_COLOR_TR_OFFSET	(7*sizeof(vec4) + sizeof(vec3))
-#define S_GRADIENT_COLOR_TL_OFFSET	(8*sizeof(vec4) + sizeof(vec3))
-#define S_GRADIENT_COLOR_BL_OFFSET	(9*sizeof(vec4) + sizeof(vec3))
-#define S_UI_STRIDE 			(10*sizeof(vec4) + sizeof(vec3))
+#define S_NODE_RECT_OFFSET		(0*sizeof(v4))
+#define S_VISIBLE_RECT_OFFSET		(1*sizeof(v4))
+#define S_UV_RECT_OFFSET		(2*sizeof(v4))
+#define S_BACKGROUND_COLOR_OFFSET	(3*sizeof(v4))
+#define S_BORDER_COLOR_OFFSET 		(4*sizeof(v4))
+#define S_SPRITE_COLOR_OFFSET 		(5*sizeof(v4))
+#define S_EXTRA_OFFSET			(6*sizeof(v4))
+#define S_GRADIENT_COLOR_BR_OFFSET	(6*sizeof(v4) + sizeof(v3))
+#define S_GRADIENT_COLOR_TR_OFFSET	(7*sizeof(v4) + sizeof(v3))
+#define S_GRADIENT_COLOR_TL_OFFSET	(8*sizeof(v4) + sizeof(v3))
+#define S_GRADIENT_COLOR_BL_OFFSET	(9*sizeof(v4) + sizeof(v3))
+#define S_UI_STRIDE 			(10*sizeof(v4) + sizeof(v3))
 
 #define L_UI_STRIDE 			(0)
 
@@ -120,9 +120,10 @@ struct r_Core
 	struct r_Program	program[PROGRAM_COUNT];
 	struct r_Texture	texture[TEXTURE_COUNT];
 
-	r_MeshSDB *         mesh_database;		/* mesh storage (external) */
+	ds_SDB(r_Mesh) *         mesh_database;		/* mesh storage (external) */
+	struct r_Mesh		mesh_stub_color;	/* drawn in place of a debug mesh that does not fit its arena */
 
-	r_Proxy3dHI 		proxy3d_hierarchy;	/* proxy3d storage */
+	HI(r_Proxy3d) 		proxy3d_hierarchy;	/* proxy3d storage */
 	u32			        proxy3d_root;
 };
 extern struct r_Core *g_r_core;
@@ -135,13 +136,13 @@ void	r_CoreFlush(void);
  ********************************************************/
 
 #define S_PROXY3D_TRANSLATION_BLEND_OFFSET	(0)
-#define S_PROXY3D_ROTATION_OFFSET		(1*sizeof(vec4))
-#define S_PROXY3D_COLOR_OFFSET			(2*sizeof(vec4))
-#define S_PROXY3D_STRIDE			(3*sizeof(vec4))
+#define S_PROXY3D_ROTATION_OFFSET		(1*sizeof(v4))
+#define S_PROXY3D_COLOR_OFFSET			(2*sizeof(v4))
+#define S_PROXY3D_STRIDE			(3*sizeof(v4))
 
 #define L_PROXY3D_POSITION_OFFSET		(0)
-#define L_PROXY3D_NORMAL_OFFSET			(1*sizeof(vec3))
-#define L_PROXY3D_STRIDE			(2*sizeof(vec3))
+#define L_PROXY3D_NORMAL_OFFSET			(1*sizeof(v3))
+#define L_PROXY3D_STRIDE			(2*sizeof(v3))
 
 /* proxy3d opengl buffer local layout setter */
 void 	r_Proxy3dBufferLocalLayoutSet(void);
@@ -203,23 +204,23 @@ struct gl_State
 
 	struct gl_Functions	func;
 };
-POOL_DECLARE(gl_State);
+DEFINE_POOL(gl_State);
 
 struct gl_TextureUnitBinding
 {
 	u32 			context;
 	GLuint 			tx_unit;
 
-	struct ds_DLLNode texture_binding;
+	struct DLLNode texture_binding;
 	POOL_NODE;
 };
-POOL_DECLARE(gl_TextureUnitBinding);
+DEFINE_POOL(gl_TextureUnitBinding);
 
 struct gl_Texture
 {
     POOL_NODE;
 	GLuint 		name;
-	struct ds_DLL 	binding_list;
+	struct DLL 	binding_list;
 
 	GLenum 		target;
 	GLint 		wrap_s;
@@ -234,7 +235,7 @@ struct gl_Texture
 	GLenum		format;
 	GLenum		type;
 };
-POOL_DECLARE(gl_Texture);
+DEFINE_POOL(gl_Texture);
 
 struct gl_TextureUnit
 {
@@ -253,7 +254,6 @@ void		ds_glClear(GLbitfield mask);
 void		ds_glClearColor(GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha);
 
 void		ds_glViewport(GLint x, GLint y, GLsizei width, GLsizei height);
-void		ds_glPolygonMode(GLenum face, GLenum mode);
 
 void 		ds_glGenBuffers(GLsizei n, GLuint *buffers);
 void 		ds_glBindBuffer(GLenum target, GLuint buffer);
@@ -281,7 +281,6 @@ void 		ds_glEnableVertexAttribArray(GLuint index);
 void 		ds_glDisableVertexAttribArray(GLuint index);
 void 		ds_glVertexAttribPointer(GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const void *pointer);
 void 		ds_glVertexAttribIPointer(GLuint index, GLint size, GLenum type, GLsizei stride, const void *pointer);
-void 		ds_glVertexAttribLPointer(GLuint index, GLint size, GLenum type, GLsizei stride, const void *pointer);
 void		ds_glVertexAttribDivisor(GLuint index, GLuint divisor);
 
 GLuint		ds_glGetUniformLocation(GLuint program, const GLchar *name);

@@ -37,6 +37,7 @@ set(DS_FORWARD_VARS
     -DCMAKE_INSTALL_PREFIX=${DS_INSTALL_PATH}
     -DCMAKE_INSTALL_LIBDIR=${CMAKE_INSTALL_LIBDIR}
     -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
+    -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
     -DCMAKE_C_FLAGS=${CMAKE_C_FLAGS}
     -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
     -DCMAKE_EXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}
@@ -70,10 +71,21 @@ if (WIN32)
     target_link_libraries(SDL3::SDL3 INTERFACE imm32)
 endif()
 
-if (CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(FREETYPE "freetype")
-else()
+# the font builder renders TrueType only: no system zlib, bzip2, png, harfbuzz or brotli, which freetype
+# would otherwise detect on the host and leave as undefined references in its static library
+list(APPEND DS_FREETYPE_VARS
+    -DFT_DISABLE_ZLIB=TRUE
+    -DFT_DISABLE_BZIP2=TRUE
+    -DFT_DISABLE_PNG=TRUE
+    -DFT_DISABLE_HARFBUZZ=TRUE
+    -DFT_DISABLE_BROTLI=TRUE
+)
+
+# freetype appends its "d" postfix only for Debug (CMAKE_DEBUG_POSTFIX), not for empty or other types
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(FREETYPE "freetyped")
+else()
+    set(FREETYPE "freetype")
 endif()
 
 ExternalProject_Add(freetype

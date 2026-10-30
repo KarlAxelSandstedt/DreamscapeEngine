@@ -23,65 +23,14 @@
 #undef Log
 #endif
 
+#include <inttypes.h>
+
 #include "asset_local.h"
 
 #ifdef DS_DEV
 
-/*
- * Handling sprite-to-ssff mappings:
- * 
- * Option 1: 
- * 	For each collection of sprites, say SorcererHero_SpriteSheet, we have a local ordering of sprites;
- * 	The ordering goes from left-right, top-down. For example, we may have the ordering
- *
- * 		"SORCERER_WALK_1" => "SORCERER_WALK_2"
- *
- * 	This identification must be hardcoded, so if we wish to change the order of sprites, or add/del sprites,
- * 	we must recompile with the new identifcation scheme.
- *
- * 	With the requirements of LOCAL identification done, we must also have a GLOBAL identification between
- * 	sprite and ssff. This is partly due to us wanting to be able to reload and regenerate .ssff files if an
- * 	asset_component has been updated.
- *
- * 	Suppose we want to grab the sprite SORCERER_WALK_1 when doing some drawing. In the code, we should simply
- * 	be able to do something like
- * 			
- * 			r_entity_alloc(..., material = SORCERER_WALK_1);
- *
- * 	In the backend, we must
- * 			
- * 			1. Use global identifier to identify which .ssff is needed
- * 			2. If not loaded, load
- * 			   Else if handle invalid, Reload
- *			3. Identify which sprite in .ssff is the one requested
- *			4. Get sprite data 
- *
- *	In order to determine how to implement the backed, we first determine what constants we have.
- *
- *	1. the sprite <-> .ssff mapping is immutable and determined at compile time.
- *	2. the sprite identifier is constant (either just unique id or unique (material, local_id)
- *
- * 	Assume for now that all materials are some sprite collection.
- * 
- * 	MATERIAL_SORCERER_ID = 1	//HARDCODED ID
- * 	SSFF_ID = 0 			//HARDCODED ID
- * 	SORCERER_WALK_1 = 0		//HARDCODED ID
- * 	SORCERER_WALK_2 = 1		//HARDCODED ID
- *
- * #if defined(DS_DEV)
- * 	material[MATERIAL_SORCERER_ID].source = DS_COMPILE_TIME_STRING(filepath);	//HARDCODED
- * #endif
- * 	material[MATERIAL_SORCERER_ID].ssff = SSFF_ID			// HARDCODED MAPPING
- *	material[MATERIAL_SORCERER_ID].collection_id = index;		// SET ON STARTUP (less error-prone, tedious).
- *
- * 	ssff[SSFF_ID].collection[index].id == MATERIAL_SORCERER_ID;	// HARDCODED MAPPING
- * 	ssff[SSFF_ID].collection[index].sprite[SORCERER_WALK_1] = ...;  // DYNAMIC
- * 	ssff[SSFF_ID].collection[index].sprite[SORCERER_WALK_2] = ...;  // DYNAMIC
- *
- *	SsffBuild(SSFF_ID) -> Rebuild ssff completely; if first build, set collection_id for each used material.
- */
-
-static void internal_get_sprite_parameters(struct arena *mem, struct ssffSprite *sprite, u32 *color_count, u32 *color, const u8 *pixel, const u32 pixels_per_line, const u32 sprite_width, const u32 sprite_height, const u32 sprite_index)
+/* return 0 for a cell of clip color only: it is stored as its first pixel (one transparent pixel) */
+static u32 internal_get_sprite_parameters(struct arena *mem, struct ssffSprite *sprite, u32 *color_count, u32 *color, const u8 *pixel, const u32 pixels_per_line, const u32 sprite_width, const u32 sprite_height, const u32 sprite_index)
 {
 	//TODO  How to handle?
 	const u32 clip_color = 0x0;
@@ -143,6 +92,13 @@ static void internal_get_sprite_parameters(struct arena *mem, struct ssffSprite 
 		}
 	}
 
+	const u32 empty = (min_x > max_x);
+	if (empty)
+	{
+		min_x = max_x = sprite_index * sprite_width;
+		min_y = max_y = 0;
+	}
+
 	sprite->x0 = min_x;
 	sprite->x1 = max_x;
 	sprite->y0 = min_y;
@@ -154,6 +110,7 @@ static void internal_get_sprite_parameters(struct arena *mem, struct ssffSprite 
 	//		, sprite->y0
 	//		, sprite->y1
 	//		);
+	return !empty;
 }
 
 /*
@@ -177,17 +134,18 @@ void SsffBuild(struct arena *mem, const u32 ssff_id)
 
 	for (u32 i = 0; i < info->png_count; ++i)
 	{
-		u32 comp;
-		pixel[i] = stbi_load((char *) info->png[i].filepath, (i32 *) png_width + i, (i32 *) png_height + i, (i32 *) &comp, 0);
-i32 wi, he, co;
+		i32 comp;	/* the file's channels; stb converts to the 4 requested */
+		pixel[i] = stbi_load((char *) info->png[i].filepath, (i32 *) png_width + i, (i32 *) png_height + i, &comp, 4);
 		if (!pixel[i])
 		{
-			LogString(T_SYSTEM, S_FATAL, stbi_failure_reason());
-			ds_Assert(0);
+			Log(T_ASSET, S_FATAL, "%s: %s", info->png[i].filepath, stbi_failure_reason());
+			FatalCleanupAndExit();
 		}
-
-		ds_Assert(comp == 4);
-		ds_Assert(png_width[i] % info->png[i].sprite_width == 0);
+		if (png_width[i] % info->png[i].sprite_width != 0)
+		{
+			Log(T_ASSET, S_FATAL, "%s: width %u is not a multiple of the sprite width %u", info->png[i].filepath, png_width[i], info->png[i].sprite_width);
+			FatalCleanupAndExit();
+		}
 		sprite_count[i] = png_width[i] / info->png[i].sprite_width;
 		sprite[i] = ArenaPushPacked(mem, sprite_count[i] * sizeof(struct ssffSprite));
 		color[i] = (void *) mem->stack_ptr;
@@ -195,7 +153,10 @@ i32 wi, he, co;
 
 		for (u32 s = 0; s < sprite_count[i]; ++s)
 		{
-			internal_get_sprite_parameters(mem, sprite[i] + s, color_count + i, color[i], pixel[i], png_width[i], info->png[i].sprite_width, png_height[i], s);
+			if (!internal_get_sprite_parameters(mem, sprite[i] + s, color_count + i, color[i], pixel[i], png_width[i], info->png[i].sprite_width, png_height[i], s))
+			{
+				Log(T_ASSET, S_WARNING, "%s: sprite %u is clip color only, stored as one transparent pixel", info->png[i].filepath, s);
+			}
 		}
 	}
 
@@ -211,24 +172,9 @@ i32 wi, he, co;
 		c[i].color_count = color_count[i];
 		c[i].sprite_count = sprite_count[i];
 
-		u32 lb = U32_MAX;
-		u32 hb = U32_MAX;
-		for (u32 bi = 0; c[i].color_count >> bi; ++bi)
-		{
-			if ((c[i].color_count >> bi) & 0x1)
-			{
-				if (lb == U32_MAX)
-				{
-					lb = bi;
-				}
-				hb = bi;
-			}
-		}
-
-		ds_Assert(lb != U32_MAX);
-		c[i].bit_depth = (hb == lb)
-			? hb
-			: hb + 1;
+		/* bits for the indices 0 .. color_count-1 */
+		ds_Assert(c[i].color_count);
+		c[i].bit_depth = (c[i].color_count > 1) ? 32 - Clz32(c[i].color_count - 1) : 0;
 
 		header->size += c[i].color_count * sizeof(u32) + c[i].sprite_count * sizeof(struct ssffSprite);
 		u32 *color_table = ArenaPushPacked(mem, c[i].color_count * sizeof(u32));
@@ -267,7 +213,7 @@ i32 wi, he, co;
 			struct ssffSprite *spr = (struct ssffSprite *) (((u8 *) header) + c[i].sprite_offset);
 			spr[s].pixel_offset = (u32) ((u64) sprite_pixel - (u64) header);
 
-			struct ss stream = ss_Buffered(sprite_pixel, c[i].bit_depth*width*height);
+			struct ss stream = ss_Buffered(sprite_pixel, c[i].bit_depth*width*height / 8 + 1);	/* the block's bytes */
 			
 			for (u32 y = sprite[i][s].y0; y <= sprite[i][s].y1; ++y)
 			{
@@ -287,8 +233,8 @@ i32 wi, he, co;
 							break;	
 						}
 					}
-					//TODO ds_Assert(ci != U32_MAX);
-					ss_WriteU32BePartial(&stream, ci, c[i].bit_depth);
+					ds_Assert(ci != U32_MAX);	/* the table was built from these pixels */
+					ss_WriteU32Partial(&stream, ci, c[i].bit_depth);
 				}
 			}
 
@@ -302,7 +248,7 @@ i32 wi, he, co;
 	SsffSave(info, header);
 	for (u32 i = 0; i < info->png_count; ++i)
 	{
-		free(pixel[i]);
+		stbi_image_free(pixel[i]);
 	}
 	
 	ArenaPopRecord(mem);
@@ -327,15 +273,57 @@ void SsffSave(const struct assetSsff *asset, const struct ssff_header *header)
 
 #endif
 
-const struct ssff_header *SsffLoad(struct assetSsff *asset)
+/* Every table and pixel block the sheet points at lies inside its size bytes */
+static u32 SsffCheck(const struct ssff_header *ssff, const u64 size)
 {
-	struct arena *tmp = ArenaPushScratch();
+	if (size < sizeof(struct ssff_header) || ssff->size != size
+		|| ssff->collection_offset > size
+		|| (u64) ssff->collection_count * sizeof(struct ssff_collection) > size - ssff->collection_offset)
+	{
+		return 0;
+	}
 
-	const struct ssff_header *header = (const struct ssff_header *) FileDumpAtCwd(tmp, asset->filepath).data;
-	asset->loaded = (header) ? 1 : 0;
+	const struct ssff_collection *c = (const struct ssff_collection *) (((const u8 *) ssff) + ssff->collection_offset);
+	for (u32 i = 0; i < ssff->collection_count; ++i)
+	{
+		if (c[i].bit_depth > 32
+			|| c[i].color_offset > size || (u64) c[i].color_count * sizeof(u32) > size - c[i].color_offset
+			|| c[i].sprite_offset > size || (u64) c[i].sprite_count * sizeof(struct ssffSprite) > size - c[i].sprite_offset)
+		{
+			return 0;
+		}
 
-    ArenaPopScratch();
-	return header;
+		const struct ssffSprite *sprite = (const struct ssffSprite *) (((const u8 *) ssff) + c[i].sprite_offset);
+		for (u32 j = 0; j < c[i].sprite_count; ++j)
+		{
+			const u64 width = (u64) sprite[j].x1 - sprite[j].x0 + 1;
+			const u64 height = (u64) sprite[j].y1 - sprite[j].y0 + 1;
+			if (sprite[j].x1 < sprite[j].x0 || sprite[j].y1 < sprite[j].y0
+				|| sprite[j].pixel_offset > size || c[i].bit_depth*width*height / 8 + 1 > size - sprite[j].pixel_offset)
+			{
+				return 0;
+			}
+		}
+	}
+
+	return 1;
+}
+
+const struct ssff_header *SsffLoad(struct arena *mem, const struct assetSsff *asset)
+{
+	const struct dsBuffer buf = FileDumpAtCwd(mem, asset->filepath);
+	const struct ssff_header *ssff = (const struct ssff_header *) buf.data;
+	if (!ssff)
+	{
+		Log(T_ASSET, S_ERROR, "%s: cannot read the sprite sheet", asset->filepath);
+		return NULL;
+	}
+	if (!SsffCheck(ssff, buf.size))
+	{
+		Log(T_ASSET, S_ERROR, "%s: the sprite sheet is corrupt (a table or pixel block lies outside the file)", asset->filepath);
+		return NULL;
+	}
+	return ssff;
 }
 
 struct ssffTextureReturn SsffTexture(struct arena *mem, const struct ssff_header *ssff, const u32 width, const u32 height)
@@ -347,7 +335,37 @@ struct ssffTextureReturn SsffTexture(struct arena *mem, const struct ssff_header
 	//	1.0f / (2.0f * width),
 	//	1.0f / (2.0f * height),
 	//};
-	u8 *pixel = malloc(width*height*sizeof(u32));
+	/* the collections stack as rows of the texture: each must fit in the row, the rows in the height */
+	u64 height_required = 0;
+	for (u32 i = 0; i < ssff->collection_count; ++i)
+	{
+		const struct ssff_collection *c = (struct ssff_collection *)(((u8 *) ssff) + ssff->collection_offset) + i;
+		const struct ssffSprite *sprite = (struct ssffSprite *)(((u8 *) ssff) + c->sprite_offset);
+		u64 row_width = 0;
+		u64 row_height = 0;
+		for (u32 j = 0; j < c->sprite_count; ++j)
+		{
+			row_width += (u64) sprite[j].x1 - sprite[j].x0 + 1;
+			const u64 sprite_height = (u64) sprite[j].y1 - sprite[j].y0 + 1;
+			row_height = (row_height < sprite_height) ? sprite_height : row_height;
+		}
+		height_required += c->height;
+		if (row_width > width || row_height > c->height || height_required > height)
+		{
+			Log(T_ASSET, S_ERROR, "sprite sheet collection %u (%llu x %llu, rows to %llu) does not fit the %u x %u texture",
+				i, (long long unsigned int) row_width, (long long unsigned int) row_height,
+				(long long unsigned int) height_required, width, height);
+			return (struct ssffTextureReturn) { 0 };
+		}
+	}
+
+	u8 *pixel = ds_Alloc(width*height*sizeof(u32), sizeof(u32));
+	if (!pixel)
+	{
+		LogString(T_ASSET, S_FATAL, "Failed to allocate a sprite sheet texture");
+		FatalCleanupAndExit();
+	}
+	memset(pixel, 0, width*height*sizeof(u32));	/* outside the sprites: transparent, not garbage (the mipmaps sample it) */
 	struct ssffTextureReturn ret = 
 	{
 		.pixel = pixel,
@@ -360,22 +378,21 @@ struct ssffTextureReturn SsffTexture(struct arena *mem, const struct ssff_header
 		const struct ssff_collection *c = (struct ssff_collection *)(((u8 *) ssff) + ssff->collection_offset) + i;
 		const u32 *color_table = (u32 *)(((u8 *) ssff) + c->color_offset);
 		const struct ssffSprite *sprite = (struct ssffSprite *)(((u8 *) ssff) + c->sprite_offset);
-		ArenaPushPacked(mem, c[i].sprite_count * sizeof(struct sprite));
+		ArenaPushPacked(mem, c->sprite_count * sizeof(struct sprite));
 		u32 x_offset = 0;
 		u32 y_offset = 0;
-		for (u32 j = 0; j < c[i].sprite_count; ++j)
+		for (u32 j = 0; j < c->sprite_count; ++j)
 		{
 			const u32 sprite_width = sprite[j].x1 - sprite[j].x0 + 1;
 			const u32 sprite_height = sprite[j].y1 - sprite[j].y0 + 1;
 			void *sprite_pixel = (((u8 *) ssff) + sprite[j].pixel_offset);
-			struct ss stream = ss_Buffered(sprite_pixel, c[i].bit_depth*width*height);
+			struct ss stream = ss_Buffered(sprite_pixel, c->bit_depth*sprite_width*sprite_height / 8 + 1);	/* the block's bytes */
 			for (u32 y = 0; y < sprite_height; ++y)
 			{
 				for (u32 x = 0; x < sprite_width; ++x)
 				{
-					ds_AssertString(x_offset + x < width, "trying to write outside of row");
-					const u32 ci = ss_ReadU32BePartial(&stream, c->bit_depth);
-					const u32 color = color_table[ci];
+					const u32 ci = ss_ReadU32Partial(&stream, c->bit_depth);
+					const u32 color = (ci < c->color_count) ? color_table[ci] : 0;	/* corrupt index: transparent */
 					pixel[4*((y_offset + y)*width + (x_offset + x)) + 0] = (u8) (color >> 24);
 					pixel[4*((y_offset + y)*width + (x_offset + x)) + 1] = (u8) (color >> 16);
 					pixel[4*((y_offset + y)*width + (x_offset + x)) + 2] = (u8) (color >>  8);
@@ -389,18 +406,16 @@ struct ssffTextureReturn SsffTexture(struct arena *mem, const struct ssff_header
 			//Vec2Set(ret.uv[ret.count + j].tr,
 			//		ret.uv[ret.count + j].bl[0] + (f32) (sprite_width-1) / width,
 			//		pixel_hw[1] + (f32) y_offset / height);
-			Vec2Set(ret.sprite[ret.count + j].bl, 
-					(f32) x_offset / width, 
-					(f32) (y_offset + sprite_height) / height);
-			Vec2Set(ret.sprite[ret.count + j].tr,
-					ret.sprite[ret.count + j].bl[0] + (f32) sprite_width / width,
-					(f32) y_offset / height);
-			Vec2U32Set(ret.sprite[ret.count + j].pixel_size, sprite_width, sprite_height);
+			ret.sprite[ret.count + j].bl = V2((f32) x_offset / width, 
+							   (f32) (y_offset + sprite_height) / height);
+			ret.sprite[ret.count + j].tr = V2(ret.sprite[ret.count + j].bl.x + (f32) sprite_width / width,
+							   (f32) y_offset / height);
+			ret.sprite[ret.count + j].pixel_size = V2U32(sprite_width, sprite_height);
 			x_offset += sprite_width;
 		}
 
 		y_offset += c->height;
-		ret.count += c[i].sprite_count;
+		ret.count += c->sprite_count;
 	}
 
 	return ret;
@@ -408,55 +423,55 @@ struct ssffTextureReturn SsffTexture(struct arena *mem, const struct ssff_header
 
 void SsffDebugPrint(FILE *out, const struct ssff_header *ssff)
 {
-	fprintf(stderr, "ssff[%p]\n{\n", ssff);
+	fprintf(out, "ssff[%p]\n{\n", ssff);
 
-	fprintf(stderr, "\theader[0]\n\t{\n");
-	fprintf(stderr, "\t\t.size = %lu\n", ssff->size);
-	fprintf(stderr, "\t\t.collection_count = %u\n", ssff->collection_count);
-	fprintf(stderr, "\t\t.collection_offset = %u\n", ssff->collection_offset);
-	fprintf(stderr, "\t}\n");
+	fprintf(out, "\theader[0]\n\t{\n");
+	fprintf(out, "\t\t.size = %" PRIu64 "\n", ssff->size);
+	fprintf(out, "\t\t.collection_count = %u\n", ssff->collection_count);
+	fprintf(out, "\t\t.collection_offset = %u\n", ssff->collection_offset);
+	fprintf(out, "\t}\n");
 	
-	fprintf(stderr, "\tcollection_array[%u]\n\t{\n", ssff->collection_offset);
+	fprintf(out, "\tcollection_array[%u]\n\t{\n", ssff->collection_offset);
 	const struct ssff_collection *c = (const struct ssff_collection *) (((u8 *) ssff) + ssff->collection_offset);
 	for (u32 i = 0; i < ssff->collection_count; ++i)
 	{
-		fprintf(stderr, "\t\tcollection[%u]\n\t\t{\n", i);
-		fprintf(stderr, "\t\t\t.color_count = %u\n", c[i].color_count);
-		fprintf(stderr, "\t\t\t.color_offset = %u\n", c[i].color_offset);
-		fprintf(stderr, "\t\t\t.bit_depth = %u\n", c[i].bit_depth);
-		fprintf(stderr, "\t\t\t.sprite_count = %u\n", c[i].sprite_count);
-		fprintf(stderr, "\t\t\t.sprite_offset = %u\n", c[i].sprite_offset);
-		fprintf(stderr, "\t\t\t.width = %u\n", c[i].width);
-		fprintf(stderr, "\t\t\t.height = %u\n", c[i].height);
-		fprintf(stderr, "\t\t}\n");
+		fprintf(out, "\t\tcollection[%u]\n\t\t{\n", i);
+		fprintf(out, "\t\t\t.color_count = %u\n", c[i].color_count);
+		fprintf(out, "\t\t\t.color_offset = %u\n", c[i].color_offset);
+		fprintf(out, "\t\t\t.bit_depth = %u\n", c[i].bit_depth);
+		fprintf(out, "\t\t\t.sprite_count = %u\n", c[i].sprite_count);
+		fprintf(out, "\t\t\t.sprite_offset = %u\n", c[i].sprite_offset);
+		fprintf(out, "\t\t\t.width = %u\n", c[i].width);
+		fprintf(out, "\t\t\t.height = %u\n", c[i].height);
+		fprintf(out, "\t\t}\n");
 	}
-	fprintf(stderr, "\t}\n");
+	fprintf(out, "\t}\n");
 	for (u32 i = 0; i < ssff->collection_count; ++i)
 	{
 		const u32 *color = (u32 *) (((u8 *) ssff) + c[i].color_offset);
 		const struct ssffSprite *sprite = (const struct ssffSprite *) (((u8 *) ssff) + c[i].sprite_offset);
-		fprintf(stderr, "\tcolor_table[%u]\n\t{\n", c[i].color_offset);
+		fprintf(out, "\tcolor_table[%u]\n\t{\n", c[i].color_offset);
 		for (u32 j = 0; j < c[i].color_count; ++j)
 		{
-			fprintf(stderr, "\t\tcolor[%u] = { %u, %u, %u, %u }\n"
+			fprintf(out, "\t\tcolor[%u] = { %u, %u, %u, %u }\n"
 				, j
 				, (color[j] >> 24) & 0xff
 				, (color[j] >> 16) & 0xff
 				, (color[j] >>  8) & 0xff
 				, (color[j] >>  0) & 0xff);
 		}
-		fprintf(stderr, "\t}\n");
-		fprintf(stderr, "\tsprite_table[%u]\n\t{\n", c[i].sprite_offset);
+		fprintf(out, "\t}\n");
+		fprintf(out, "\tsprite_table[%u]\n\t{\n", c[i].sprite_offset);
 		for (u32 j = 0; j < c[i].sprite_count; ++j)
 		{
-			fprintf(stderr, "\t\tsprite[%u]\n\t\t{\n", j);
-			fprintf(stderr, "\t\t\t.x0 = %u\n", sprite[j].x0);
-			fprintf(stderr, "\t\t\t.x1 = %u\n", sprite[j].x1);
-			fprintf(stderr, "\t\t\t.y0 = %u\n", sprite[j].y0);
-			fprintf(stderr, "\t\t\t.y1 = %u\n", sprite[j].y1);
-			fprintf(stderr, "\t\t}\n");
+			fprintf(out, "\t\tsprite[%u]\n\t\t{\n", j);
+			fprintf(out, "\t\t\t.x0 = %u\n", sprite[j].x0);
+			fprintf(out, "\t\t\t.x1 = %u\n", sprite[j].x1);
+			fprintf(out, "\t\t\t.y0 = %u\n", sprite[j].y0);
+			fprintf(out, "\t\t\t.y1 = %u\n", sprite[j].y1);
+			fprintf(out, "\t\t}\n");
 		}
-		fprintf(stderr, "\t}\n");
+		fprintf(out, "\t}\n");
 	}
 }
 
@@ -469,7 +484,7 @@ struct assetSsff *AssetRequestSsff(struct arena *tmp, const enum ssffId id)
 	{
 		if (asset->loaded)
 		{
-			free(asset->pixel);
+			ds_Free(asset->pixel);
 			asset->pixel = NULL;
 		}
 
@@ -480,13 +495,30 @@ struct assetSsff *AssetRequestSsff(struct arena *tmp, const enum ssffId id)
 #endif
 	if (!asset->loaded)
 	{
-		asset->ssff = SsffLoad(asset);
-		const struct ssffTextureReturn ret = SsffTexture(tmp, asset->ssff, asset->width, asset->height);
-		switch (id)
+		const struct ssff_header *ssff = SsffLoad(tmp, asset);
+		const struct ssffTextureReturn ret = (ssff)
+			? SsffTexture(tmp, ssff, asset->width, asset->height)
+			: (struct ssffTextureReturn) { 0 };
+		if (ret.pixel)
 		{
-			case SSFF_DYNAMIC_ID: { DynamicSsffSetSpriteParameters(asset, &ret); } break;
-			case SSFF_LED_ID: { LedSsffSetSpriteParameters(asset, &ret); } break;
-			default: { ds_AssertString(0, "unhandled sprite sheet parameter setting"); } break;
+			switch (id)
+			{
+				case SSFF_DYNAMIC_ID: { DynamicSsffSetSpriteParameters(asset, &ret); } break;
+				case SSFF_LED_ID: { LedSsffSetSpriteParameters(asset, &ret); } break;
+				default: { ds_AssertString(0, "unhandled sprite sheet parameter setting"); } break;
+			}
+		}
+		else
+		{
+			/* stub: a transparent texture; the sheet's sprites keep their last parameters (none: SPRITE_NONE's sheet) */
+			Log(T_ASSET, S_ERROR, "%s: the sprite sheet is replaced by a transparent texture until the next flush", asset->filepath);
+			asset->pixel = ds_Alloc(asset->width*asset->height*sizeof(u32), sizeof(u32));
+			if (!asset->pixel)
+			{
+				LogString(T_ASSET, S_FATAL, "Failed to allocate a sprite sheet texture");
+				FatalCleanupAndExit();
+			}
+			memset(asset->pixel, 0, asset->width*asset->height*sizeof(u32));
 		}
 		asset->loaded = 1;
 	}

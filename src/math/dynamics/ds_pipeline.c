@@ -17,34 +17,33 @@
 ==========================================================================
 */
 
-#include <stdlib.h>
-#include <string.h>
-
-#include "float32.h"
+#include "ds_float.h"
+#include "ds_vector.h"
 #include "ds_job.h"
-
-POOL_DEFINE(ds_PhysicsEvent);
 
 struct ds_DynamicsWorker *g_dynamics_worker;
 
 void ds_DynamicsStaticAssert(void)
 {
     ds_StaticAssert(sizeof(struct ds_BodyCompute) == DS_CACHE_LINE, "");
-    ds_StaticAssert(sizeof(struct ds_RebuildThread) == DS_CACHE_LINE, "");
+    ds_StaticAssert(sizeof(struct ds_RebuildThreadCompute) == DS_CACHE_LINE, "");
+    ds_StaticAssert(sizeof(struct ds_RebuildJob) == DS_CACHE_LINE, "");
+    /* ds_ShapeContact converts c_ContactResult.contact_manifold in place into .manifold */
+    ds_StaticAssert(sizeof(struct ds_SolverManifold) == sizeof(struct c_Manifold), "");
 }
 
-struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, c_ShapeSDB *cshape_db, ds_BodyPrefabSDB *prefab_db, const u32 worker_count, const u64 worker_frame_size)
+void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, const u64 ns_tick, const u64 frame_memory, ds_SDB(c_Shape) *cshape_db, const u32 worker_count, const u64 worker_frame_size)
 {
-	struct ds_Dynamics pipeline =
+	*pipeline = (struct ds_Dynamics)
 	{
-		.gravity = { 0.0f, -GRAVITY_CONSTANT_DEFAULT, 0.0f },
 		.ns_tick = ns_tick,
         .timestep = (f32) ns_tick / NSEC_PER_SEC,
-		.ns_elapsed = 0,
-		.ns_start = 0,
+        .spring_hertz_max = 1.0f / (JOINT_OSCILLATION_TICKS_MIN * ((f32) ns_tick / NSEC_PER_SEC)),
 		.frame = ArenaAlloc(mem, frame_memory),
-		.frames_completed = 0,
+		.cshape_db = cshape_db,
+		.island_to_split = ds_IslandIdNull(),
 	};
+	DLLFlush(pipeline->event_list);
 
 	static u32 init_solver_once = 0;
 	if (!init_solver_once)
@@ -56,7 +55,7 @@ struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, c
 		const u32 pgs_iteration_count = 8;
 		const u32 ngs_iteration_count = 3;
 		const u32 warmup_solver = 1;
-		const vec3 gravity = { 0.0f, -GRAVITY_CONSTANT_DEFAULT, 0.0f };
+		const v3 gravity = V3(0.0f, -GRAVITY_CONSTANT_DEFAULT, 0.0f);
        	const f32 baumgarte_constant = 0.1f;
         const f32 max_linear_correction = 0.2f;
 		const f32 linear_dampening = 0.1f;
@@ -70,47 +69,86 @@ struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, c
 		SolverConfigInit(pgs_iteration_count, ngs_iteration_count, warmup_solver, gravity, baumgarte_constant, max_linear_correction, max_linear_velocity_magnitude, max_angular_velocity_magnitude, linear_dampening, angular_dampening, linear_slop, restitution_threshold, sleep_enabled, sleep_time_threshold, sleep_linear_velocity_sq_limit, sleep_angular_velocity_sq_limit);
 	}
 
+    pipeline->broad_phase = ArenaPushAligned(mem, sizeof(struct ds_BroadJobPhase), DS_CACHE_LINE);
+    pipeline->narrow_phase = ArenaPushAligned(mem, sizeof(struct ds_NarrowJobPhase), DS_CACHE_LINE);
+    pipeline->solver_phase = ArenaPushAligned(mem, sizeof(struct ds_SolverJobPhase), DS_CACHE_LINE);
+    pipeline->rebuild_phase = ArenaPushAligned(mem, sizeof(struct ds_RebuildJobPhase), DS_CACHE_LINE);
+    pipeline->removal_phase = ArenaPushAligned(mem, sizeof(struct ds_RemovalJobPhase), DS_CACHE_LINE);
+    ds_JobPhaseAlloc(mem, &pipeline->broad_phase->phase, BROAD_JOB_COUNT, ds_BroadJobPhaseDispatch);
+    ds_JobPhaseAlloc(mem, &pipeline->narrow_phase->phase, NARROW_JOB_COUNT, ds_NarrowJobPhaseDispatch);
+    ds_JobPhaseAlloc(mem, &pipeline->solver_phase->phase, SOLVER_JOB_COUNT, ds_SolverJobPhaseDispatch);
+    ds_JobPhaseAlloc(mem, &pipeline->rebuild_phase->phase, REBUILD_JOB_COUNT, ds_RebuildJobPhaseDispatch);
+    ds_JobPhaseAlloc(mem, &pipeline->removal_phase->phase, REMOVAL_JOB_COUNT, ds_RemovalJobPhaseDispatch);
+
+    /* &frame_arr[1] as frame_arr + sizeof: MSVC rejects subscripts in constant expressions */
+    ds_StaticAssert((u64) &((struct ds_DynamicsWorker *)0)->frame_arr + sizeof(struct arena) < (u64) &((struct ds_DynamicsWorker *)0)->pad, "");
+    ds_StaticAssert((u64) &((struct ds_DynamicsWorker *)0)->frame < (u64) &((struct ds_DynamicsWorker *)0)->pad, "");
+    ds_StaticAssert((u64) &((struct ds_DynamicsWorker *)0)->metrics < (u64) &((struct ds_DynamicsWorker *)0)->pad, "");
+    pipeline->worker = ArenaPushAligned(mem, worker_count*sizeof(struct ds_DynamicsWorker), DS_CACHE_LINE);
+    pipeline->worker_count = worker_count;
+    g_dynamics_worker = pipeline->worker;
+    for (u32 i = 0; i < pipeline->worker_count; ++i)
+    {
+        pipeline->worker[i].frame_arr[0] = ArenaAlloc(NULL, worker_frame_size);
+        pipeline->worker[i].frame_arr[1] = ArenaAlloc(NULL, worker_frame_size);
+    }
+
+    pipeline->profile_length = 8192;
+    pipeline->profile_next = pipeline->profile_length;
+    pipeline->profile_buf = ArenaPushZero(mem, pipeline->profile_length*sizeof(struct ds_DynamicsProfile));
+
+}
+
+/* the mouse joints' anchor gets the fixed id DS_BODY_MOUSE_ANCHOR_ID: the first add into an empty pool */
+static void ds_DynamicsMouseAnchorAdd(struct ds_Dynamics *pipeline)
+{
+    ds_Assert(pipeline->body_pool.count == 0);
+    const struct ds_BodyPrefab prefab = { .dynamic = 0 };
+    const ds_TransformWorld t_world = ds_TransformWorldIdentity();
+    const ds_BodyId id = ds_BodyAdd(pipeline, &prefab, &t_world, U32_MAX);
+    ds_Assert(ds_BodyIdEqual(id, DS_BODY_MOUSE_ANCHOR_ID));
+}
+
+struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, ds_SDB(c_Shape) *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size)
+{
+	struct ds_Dynamics pipeline;
+	ds_DynamicsAllocShell(mem, &pipeline, ns_tick, frame_memory, cshape_db, worker_count, worker_frame_size);
+	pipeline.gravity = V3(0.0f, -GRAVITY_CONSTANT_DEFAULT, 0.0f);
+
 	ds_AssertString(PowerOfTwoCheck(initial_size), "For simplicity of future data structures, expect pipeline sizes to be powers of two");
 
-	pipeline.body_pool = ds_BodyPoolAlloc(NULL, initial_size, GROWABLE);
+	ds_PoolAlloc(NULL, pipeline.body_pool, initial_size, GROWABLE);
     pipeline.body_usage_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
 
-    pipeline.joint_pool = ds_JointPoolAlloc(NULL, initial_size, GROWABLE);
+    ds_PoolAlloc(NULL, pipeline.joint_pool, initial_size, GROWABLE);
 
-	pipeline.shape_pool = ds_ShapePoolAlloc(NULL, initial_size, GROWABLE);
+	ds_PoolAlloc(NULL, pipeline.shape_pool, initial_size, GROWABLE);
     pipeline.shape_dynamic_usage_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
-	pipeline.dynamic_bvh = DbvhAlloc(NULL, 2*initial_size, GROWABLE);
-	pipeline.static_bvh = DbvhAlloc(NULL, 2*initial_size, GROWABLE);
+	pipeline.dynamic_bvh = DBVHAlloc(NULL, 2*initial_size, GROWABLE);
+	pipeline.static_bvh = DBVHAlloc(NULL, 2*initial_size, GROWABLE);
     pipeline.shape_dirty_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
     ds_CPoolAlloc(NULL, pipeline.dirty_shape_query, initial_size, GROWABLE);
 
-	pipeline.event_pool = ds_PhysicsEventPoolAlloc(NULL, 256, GROWABLE);
-	ds_DLLFlush(pipeline.event_list);
+	ds_PoolAlloc(NULL, pipeline.event_pool, 256, GROWABLE);
 
-	pipeline.cshape_db = cshape_db;
-
-    pipeline.contact_pool = ds_ContactPoolAlloc(NULL, 8*initial_size, GROWABLE);
+    ds_PoolAlloc(NULL, pipeline.contact_pool, 8*initial_size, GROWABLE);
     pipeline.contact_map = ds_HashMapAlloc(NULL, 8*initial_size, 8*initial_size, GROWABLE);
+    pipeline.contact_usage_set = ds_BitSetAlloc(NULL, 8*initial_size, 0, GROWABLE);
 
-	pipeline.island_pool = ds_IslandPoolAlloc(NULL, initial_size, GROWABLE);
+	ds_PoolAlloc(NULL, pipeline.island_pool, initial_size, GROWABLE);
     pipeline.island_high_energy_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
 
     pipeline.margin_on = 0;
 	pipeline.margin = COLLISION_DEFAULT_MARGIN;
 
-    pipeline.broad_phase = ArenaPushAligned(mem, sizeof(struct ds_BroadJobPhase), DS_CACHE_LINE);
-    pipeline.narrow_phase = ArenaPushAligned(mem, sizeof(struct ds_NarrowJobPhase), DS_CACHE_LINE);
-    pipeline.solver_phase = ArenaPushAligned(mem, sizeof(struct ds_SolverJobPhase), DS_CACHE_LINE);
-    pipeline.rebuild_phase = ArenaPushAligned(mem, sizeof(struct ds_RebuildJobPhase), DS_CACHE_LINE);
-    ds_JobPhaseAlloc(mem, &pipeline.broad_phase->phase, BROAD_JOB_COUNT, ds_BroadJobPhaseDispatch);
-    ds_JobPhaseAlloc(mem, &pipeline.narrow_phase->phase, NARROW_JOB_COUNT, ds_NarrowJobPhaseDispatch);
-    ds_JobPhaseAlloc(mem, &pipeline.solver_phase->phase, SOLVER_JOB_COUNT, ds_SolverJobPhaseDispatch);
-    ds_JobPhaseAlloc(mem, &pipeline.rebuild_phase->phase, REBUILD_JOB_COUNT, ds_RebuildJobPhaseDispatch);
-
     ds_CGraphAlloc(&pipeline, 4096);
+    /* the defaults applied (the pending values resolved), so queries before the first tick see them; the global stays the caller's */
     pipeline.numerics_config = ds_NumericsConfigDefault();
+    struct ds_NumericsConfig *numerics_prev = g_numerics_config;
+    ds_NumericsConfigPush(&pipeline.numerics_config);
+    g_numerics_config = numerics_prev;
 
-    pipeline.solver_set_pool = ds_SolverSetPoolAlloc(NULL, 4096, GROWABLE);
+    ds_PoolAlloc(NULL, pipeline.solver_set_pool, 4096, GROWABLE);
     const struct slot set_disabled = ds_SolverSetAdd(NULL, &pipeline, 0, 0, 0, 0, 0,  0);
     const struct slot set_static = ds_SolverSetAdd(NULL, &pipeline, 256, 0, 0, 0, 0, 0);
     const struct slot set_active = ds_SolverSetAdd(NULL, &pipeline, 4096, 4096, 4096, 0, 0, 4096);
@@ -118,24 +156,7 @@ struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, c
     ds_Assert(set_static.index == SOLVER_SET_STATIC);
     ds_Assert(set_active.index == SOLVER_SET_ACTIVE);
 
-    pipeline.island_to_split = DS_ID_NULL; 
-
-    ds_StaticAssert((u64) &((struct ds_DynamicsWorker *)0)->frame_arr[1] < (u64) &((struct ds_DynamicsWorker *)0)->pad, "");
-    ds_StaticAssert((u64) &((struct ds_DynamicsWorker *)0)->frame < (u64) &((struct ds_DynamicsWorker *)0)->pad, "");
-    ds_StaticAssert((u64) &((struct ds_DynamicsWorker *)0)->metrics < (u64) &((struct ds_DynamicsWorker *)0)->pad, "");
-    pipeline.worker = ArenaPushAligned(mem, worker_count*sizeof(struct ds_DynamicsWorker), DS_CACHE_LINE);
-    pipeline.worker_count = worker_count;
-    g_dynamics_worker = pipeline.worker;
-    for (u32 i = 0; i < pipeline.worker_count; ++i)
-    {
-        pipeline.worker[i].frame_arr[0] = ArenaAlloc(NULL, worker_frame_size);
-        pipeline.worker[i].frame_arr[1] = ArenaAlloc(NULL, worker_frame_size);
-        ds_CPoolAlloc(NULL, pipeline.worker[i].draw.debug_segment_pool, 4096, GROWABLE);
-    }
-
-    pipeline.profile_length = 8192;
-    pipeline.profile_next = pipeline.profile_length;
-    pipeline.profile_buf = ArenaPushZero(mem, pipeline.profile_length*sizeof(struct ds_DynamicsProfile));
+    ds_DynamicsMouseAnchorAdd(&pipeline);
 
 	return pipeline;
 }
@@ -146,22 +167,22 @@ void ds_DynamicsFree(struct ds_Dynamics *pipeline)
     {
         ArenaFree(pipeline->worker[i].frame_arr + 0);
         ArenaFree(pipeline->worker[i].frame_arr + 1);
-        ds_CPoolDealloc(pipeline->worker[i].draw.debug_segment_pool);
     }
 
     ds_BitSetDealloc(&pipeline->shape_dynamic_usage_set);
     ds_BitSetDealloc(&pipeline->shape_dirty_set);
     ds_CPoolDealloc(pipeline->dirty_shape_query);
-	BvhFree(&pipeline->dynamic_bvh);
-	BvhFree(&pipeline->static_bvh);
-    ds_ContactPoolDealloc(&pipeline->contact_pool);
+	BVHFree(&pipeline->dynamic_bvh);
+	BVHFree(&pipeline->static_bvh);
+    ds_PoolDealloc(pipeline->contact_pool);
     ds_HashMapDealloc(&pipeline->contact_map);
-	ds_IslandPoolDealloc(&pipeline->island_pool);
+    ds_BitSetDealloc(&pipeline->contact_usage_set);
+	ds_PoolDealloc(pipeline->island_pool);
     ds_BitSetDealloc(&pipeline->island_high_energy_set);
-	ds_BodyPoolDealloc(&pipeline->body_pool);
-	ds_PhysicsEventPoolDealloc(&pipeline->event_pool);
-	ds_ShapePoolDealloc(&pipeline->shape_pool);
-    ds_JointPoolDealloc(&pipeline->joint_pool);
+	ds_PoolDealloc(pipeline->body_pool);
+	ds_PoolDealloc(pipeline->event_pool);
+	ds_PoolDealloc(pipeline->shape_pool);
+    ds_PoolDealloc(pipeline->joint_pool);
     ds_CGraphDealloc(pipeline);
     ds_BitSetDealloc(&pipeline->body_usage_set);
     
@@ -173,17 +194,12 @@ void ds_DynamicsFree(struct ds_Dynamics *pipeline)
             ds_SolverSetRemove(pipeline, i);
         }
     }
-    ds_SolverSetPoolDealloc(&pipeline->solver_set_pool);
+    ds_PoolDealloc(pipeline->solver_set_pool);
 }
 
 static void ds_DynamicsClearFrame(struct ds_Dynamics *pipeline)
 {
-	for (u32 i = 0; i < pipeline->worker_count; ++i)
-	{
-        ds_CPoolFlush(pipeline->worker[i].draw.debug_segment_pool);
-	}
 	ArenaFlush(&pipeline->frame);
-    ds_CGraphFramePrepare(pipeline);
     ds_BitSetClear(&pipeline->island_high_energy_set, 0);
 }
 
@@ -194,15 +210,14 @@ void ds_DynamicsFlush(struct ds_Dynamics *pipeline)
     {
         ArenaFlush(pipeline->worker[i].frame_arr + 0);
         ArenaFlush(pipeline->worker[i].frame_arr + 1);
-        ds_CPoolFlush(pipeline->worker[i].draw.debug_segment_pool);
     }
 
     memset(pipeline->profile_buf, 0, pipeline->profile_length*sizeof(struct ds_DynamicsProfile));
     pipeline->profile_next = pipeline->profile_length;
 
-    ds_SolverSetFlush(pipeline, 0);
-    ds_SolverSetFlush(pipeline, 1);
-    ds_SolverSetFlush(pipeline, 2);
+    ds_SolverSetFlush(pipeline, SOLVER_SET_DISABLED);
+    ds_SolverSetFlush(pipeline, SOLVER_SET_STATIC);
+    ds_SolverSetFlush(pipeline, SOLVER_SET_ACTIVE);
     for (u32 i = SOLVER_SET_SLEEPING_FIRST; i < pipeline->solver_set_pool.count_max; ++i)
     {
         const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + i;
@@ -212,29 +227,34 @@ void ds_DynamicsFlush(struct ds_Dynamics *pipeline)
         }
     }
 
-    ds_ContactPoolFlush(&pipeline->contact_pool);
+    ds_PoolFlush(pipeline->contact_pool);
     ds_HashMapFlush(&pipeline->contact_map);
-	ds_IslandPoolFlush(&pipeline->island_pool);
+    ds_BitSetClear(&pipeline->contact_usage_set, 0);
+
+	ds_PoolFlush(pipeline->island_pool);
 	
-	ds_BodyPoolFlush(&pipeline->body_pool);
+	ds_PoolFlush(pipeline->body_pool);
     ds_BitSetClear(&pipeline->body_usage_set, 0);
 
     ds_BitSetClear(&pipeline->shape_dynamic_usage_set, 0);
     ds_BitSetClear(&pipeline->shape_dirty_set, 0);
     ds_CPoolFlush(pipeline->dirty_shape_query);
-	DbvhFlush(&pipeline->dynamic_bvh);
-	DbvhFlush(&pipeline->static_bvh);
-	ds_ShapePoolFlush(&pipeline->shape_pool);
+	DBVHFlush(&pipeline->dynamic_bvh);
+	DBVHFlush(&pipeline->static_bvh);
+	ds_PoolFlush(pipeline->shape_pool);
 
-	ds_PhysicsEventPoolFlush(&pipeline->event_pool);
-	ds_DLLFlush(pipeline->event_list);
+	ds_PoolFlush(pipeline->event_pool);
+	DLLFlush(pipeline->event_list);
 
-    ds_JointPoolFlush(&pipeline->joint_pool);
+    ds_PoolFlush(pipeline->joint_pool);
     ds_CGraphFlush(pipeline);
 
 	ArenaFlush(&pipeline->frame);
 	pipeline->frames_completed = 0;
 	pipeline->ns_elapsed = 0;
+    pipeline->island_to_split = ds_IslandIdNull();
+
+    ds_DynamicsMouseAnchorAdd(pipeline);
 }
 
 void ds_DynamicsValidate(const struct ds_Dynamics *pipeline)
@@ -252,6 +272,7 @@ void ds_DynamicsValidate(const struct ds_Dynamics *pipeline)
 
     ds_CGraphValidate(pipeline);
 	ds_ContactValidateAll(pipeline);
+	ds_JointValidateAll(pipeline);
 	ds_IslandValidateAll(pipeline);
 
 	ProfZoneEnd;
@@ -281,11 +302,11 @@ u32 ds_BroadJobPhaseDispatch(const ds_JobId job)
 		    {
                 ArenaPushRecord(tmp);
 
-                const u32 si = ds_BitBlockNext(&it);
+                const u32 si = (u32) ds_BitBlockNext(&it);
                 const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
-                const struct bvhNode *node = pipeline->dynamic_bvh.pool.buf + shape->proxy;
-                const struct bvh_QuerySet dynamic_query = BvhQueryAndFilterOnBody(tmp, &pipeline->dynamic_bvh, node);
-                const struct bvh_QuerySet static_query = BvhQuery(tmp, &pipeline->static_bvh, node);
+                const struct BVHNode *node = pipeline->dynamic_bvh.pool.buf + shape->proxy;
+                const struct BVHQuerySet dynamic_query = BVHQueryAndFilterOnBody(tmp, &pipeline->dynamic_bvh, node, dirty);
+                const struct BVHQuerySet static_query = BVHQuery(tmp, &pipeline->static_bvh, node);
                 
                 query[si].dynamic_count = 0;
                 query[si].dynamic_query = ArenaPushPacked(frame, dynamic_query.count*sizeof(u32));
@@ -386,24 +407,26 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
      * Achieving Determinism and Parallelization in the Broadphase
      * ===========================================================
      *
-     * All moving or new shapes from the last frame are dirty and have their corresponding index
-     * bit set in the shape_dirty_set. The broadphase can then be transformed into a parallel-for,
-     * in which each thread process a range in the dirty bitset and queries its shapes against the
-     * pipeline's bounding volume hierarchies. In order to to get duplicate collisions reported from
-     * two moving shapes, or from shapes sharing the same body, we enforce a filter for the dynamic
-     * bvh queries that looks something like:
+     * A shape is dirty when its proxy box changed since the last broadphase: its bit in
+     * shape_dirty_set is set when the shape is added, when its proxy moves (the rebuild phase) and
+     * for every shape in use after a rebuild of the dynamic bvh; the set is cleared below once the
+     * contacts are added. The broadphase is a parallel-for over the bitset: each thread takes a
+     * range of blocks and queries their shapes against the pipeline's bounding volume hierarchies.
+     * Only dirty shapes query, so a sleeping island costs nothing here. The dynamic bvh query
+     * reports a pair once, and never two shapes of one body:
      *
-     *          overlap : (s0, s1)  => (shape[s0].body < shape[s1].body)
+     *          overlap : (s0, s1)  => (shape[s0].body < shape[s1].body) || (dirty[s0] && !dirty[s1])
      *
-     * When a DbvhRebuild is triggered due to a high number of re-insertions required in
-     * the previous frame, all dynamic shapes are treated as dirty.
-     * 
-     * To achieve determinism, after a thread has queried a moving shape si, in stores the resulting 
-     * query data in 
+     * so a pair of two dirty shapes is reported by the smaller body index and a pair with one dirty
+     * shape by that shape, since the other does not query. Two proxy boxes that did not change
+     * cannot start overlapping, so the shapes that are not dirty find no new pairs.
      *
-     *      pipeline->shape_query.buf[si],
+     * To achieve determinism, after a thread has queried a shape si, it stores the resulting query
+     * data in
      *
-     * The master thread can then traverse the results from low to high, adding the contact in a 
+     *      pipeline->dirty_shape_query.buf[si],
+     *
+     * and the master thread then traverses the results from low to high, adding the contacts in a
      * canonical way.
      */
     struct ds_BroadJobPhase *broad_phase = pipeline->broad_phase;
@@ -416,7 +439,7 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
         broad_phase->pf = ds_ParallelForChainAlloc(&pipeline->frame, 1); 
         
         //TODO: this range size is random hardcoded value, change
-        ds_ParallelForInit(broad_phase->pf.parallel_for, pipeline->shape_dirty_set.block_count, 1);
+        ds_ParallelForInit(broad_phase->pf.parallel_for, (u32) pipeline->shape_dirty_set.block_count, 1);
 
         broad_phase->pipeline = pipeline;
         broad_phase->job_count = g_scheduler->worker_count;
@@ -454,22 +477,25 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
             struct ds_BitBlock it = ds_BitBlockInit(dirty->bits[block], block);
 		    while (ds_BitBlockHasNext(&it))
 		    {
-                const u32 si = ds_BitBlockNext(&it);
+                const u32 si = (u32) ds_BitBlockNext(&it);
                 const struct ds_ProxyQuery *query = pipeline->dirty_shape_query.buf + si;
 
                 for (u32 q = 0; q < query->dynamic_count; ++q)
                 {
                     const struct ds_ContactKey key = ds_ContactKeyCanonical(si, query->dynamic_query[q]);
-                    ds_ContactAdd(pipeline, key);
+                    ds_ContactTryAdd(pipeline, key);
                 }
 
                 for (u32 q = 0; q < query->static_count; ++q)
                 {
                     const struct ds_ContactKey key = ds_ContactKeyCanonical(si, query->static_query[q]);
-                    ds_ContactAdd(pipeline, key);
+                    ds_ContactTryAdd(pipeline, key);
                 }
 		    }
         }
+
+        /* consumed: the rebuild phase marks the shapes whose proxies move this tick */
+        ds_BitSetClear(&pipeline->shape_dirty_set, 0);
 
         ProfZoneEnd;
     }
@@ -567,13 +593,13 @@ static void CollisionDetection(struct ds_Dynamics *pipeline)
     }
 
     {
-        if (pipeline->island_to_split != DS_ID_NULL)
+        if (!ds_IslandIdNullCheck(pipeline->island_to_split))
         {
     	    ProfZoneNamed("Island Split");
     
-            const u32 split_index = ds_IdIndex(pipeline->island_to_split);
+            const u32 split_index = ds_IslandIdIndex(pipeline->island_to_split);
             if (ds_PoolSlotAllocated(pipeline->island_pool.buf + split_index) 
-                    && pipeline->island_to_split == pipeline->island_pool.buf[split_index].id)
+                    && ds_IslandIdEqual(pipeline->island_to_split, pipeline->island_pool.buf[split_index].id))
             {
                 ds_IslandSplit(pipeline, split_index);
             }
@@ -623,6 +649,22 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
     }
     ds_ParallelForChainWait(chain);
 
+    chain = &phase->pf_joint_init;
+    {
+        ProfZoneNamed("Joint Initialization");
+        for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
+        {
+            pf = chain->parallel_for + ci;
+            ds_ParallelFor(pf, range_index)
+            {
+                ds_ParallelForRange(&low, &high, pf, range_index);
+                ds_JointConstraintInitRange(pipeline, ci, low, high);
+            }
+        }
+        ProfZoneEnd;
+    }
+    ds_ParallelForChainWait(chain);
+
     if (g_solver_config->warmup_solver)
     {
         chain = &phase->pf_contact_warmup;
@@ -640,6 +682,22 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
             ProfZoneEnd;
         }
         ds_ParallelForChainWait(chain);
+
+        chain = &phase->pf_joint_warmup;
+        {
+            ProfZoneNamed("Joint Warmup");
+            for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
+            {
+                pf = chain->parallel_for + ci;
+                ds_ParallelFor(pf, range_index)
+                {
+                    ds_ParallelForRange(&low, &high, pf, range_index);
+                    ds_JointConstraintWarmupRange(pipeline, ci, low, high);
+                }
+            }
+            ProfZoneEnd;
+        }
+        ds_ParallelForChainWait(chain);
     }
 
     chain = &phase->pf_velocity_solve;
@@ -652,13 +710,26 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
             {
                 ProfZoneNamed("Color");
 
-                struct ds_CGraphColor *color = pipeline->cgraph.color + ci;
-                const u32 pfi = i*CG_COLOR_COUNT + ci;
+                const u32 pfi = 2*(i*CG_COLOR_COUNT + ci);
                 pf = chain->parallel_for + pfi;
                 ds_ParallelFor(pf, range_index)
                 {
                     ds_ParallelForRange(&low, &high, pf, range_index);
-                    ds_ContactConstraintIterateRange(pipeline, ci, low, high); 
+                    ds_JointConstraintIterateRange(pipeline, ci, low, high);
+                }
+
+                pf = chain->parallel_for + pfi + 1;
+                ds_ParallelFor(pf, range_index)
+                {
+                    ds_ParallelForRange(&low, &high, pf, range_index);
+                    if (ci <= CG_STATIC_COLOR_LAST)
+                    {
+                        ds_ContactConstraintIterateStaticRange(pipeline, ci, low, high);
+                    }
+                    else
+                    {
+                        ds_ContactConstraintIterateRange(pipeline, ci, low, high);
+                    }
                 }
                 ProfZoneEnd;
             }
@@ -708,13 +779,25 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
             {
                 ProfZoneNamed("Color");
 
-                struct ds_CGraphColor *color = pipeline->cgraph.color + ci;
-                const u32 pfi = i*CG_COLOR_COUNT + ci;
+                const u32 pfi = 2*(i*CG_COLOR_COUNT + ci);
                 pf = chain->parallel_for + pfi;
                 ds_ParallelFor(pf, range_index)
                 {
                     ds_ParallelForRange(&low, &high, pf, range_index);
-                    ds_PositionConstraintIterateRange(pipeline, ci, low, high); 
+                    ds_JointPositionConstraintIterateRange(pipeline, ci, low, high);
+                }
+                pf = chain->parallel_for + pfi + 1;
+                ds_ParallelFor(pf, range_index)
+                {
+                    ds_ParallelForRange(&low, &high, pf, range_index);
+                    if (ci <= CG_STATIC_COLOR_LAST)
+                    {
+                        ds_PositionConstraintIterateStaticRange(pipeline, ci, low, high);
+                    }
+                    else
+                    {
+                        ds_PositionConstraintIterateRange(pipeline, ci, low, high);
+                    }
                 }
                 ProfZoneEnd;
             }
@@ -743,7 +826,17 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
     return U32_MAX;
 }
 
-static struct ds_RebuildRange ds_RebuildRangeInit(const u32 node_index, const u32 base, const u32 count, const u32 depth, const u32 axis, const f32 pivot)
+static void ds_RebuildThreadComputeInit(struct ds_RebuildThreadCompute *t)
+{
+    t->count[0] = 0;
+    t->count[1] = 0;
+    t->min[0] = V3(F32_INFINITY, F32_INFINITY, F32_INFINITY);
+    t->max[0] = V3(-F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
+    t->min[1] = V3(F32_INFINITY, F32_INFINITY, F32_INFINITY);
+    t->max[1] = V3(-F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
+}
+
+static struct ds_RebuildRange ds_RebuildRangeInit(const u32 node_index, const u32 base, const u32 count, const u32 axis, const f32 pivot)
 {
     struct ds_RebuildRange range =
     {
@@ -752,202 +845,217 @@ static struct ds_RebuildRange ds_RebuildRangeInit(const u32 node_index, const u3
         .internal_index = node_index,
         .axis = axis,
         .pivot = pivot,
-        .depth = depth,
     };
 
     return range;
 }
 
-static void ds_RebuildProduceFatWork(struct arena *mem, struct ds_RebuildJobPhase *phase, const u32 node_index, const u32 base, const u32 count, const u32 depth, const u32 axis, const f32 pivot)
+static void ds_RebuildJobPushDeque(struct ds_RebuildJobPhase *phase, const struct ds_RebuildRange *range)
 {
-    const u32 wi = phase->a_fat_work_counter;
-    AtomicFetchAddRlx32(&phase->a_fat_work_counter, 1);
-    if (wi >= phase->fat_work_max_count)
+    const u32 i = ds_JobPhaseReserve(&phase->phase, REBUILD_JOB_RANGE, 1);
+    if (i >= phase->range_job_length)
     {
-        LogString(T_PHYSICS, S_FATAL, "RebuildPhase: fat_work_max_count reached, Exiting.");
+        LogString(T_PHYSICS, S_FATAL, "RebuildPhase: range job max count reached, Exiting.");
         FatalCleanupAndExit();
     }
 
-    struct ds_RebuildFatWork *new_range = phase->fat_work + wi;
-    new_range->range = ds_RebuildRangeInit(node_index, base, count, depth, axis, pivot);
-    new_range->a_low_count = 0;
-    new_range->a_high_count = 0;
-    new_range->pf = ds_ParallelForChainAlloc(mem, 1);
-    new_range->thread = ArenaPushAligned(mem, phase->job_count*sizeof(struct ds_RebuildThread), DS_CACHE_LINE);
-    for (u32 i = 0; i < phase->job_count; ++i)
-    {
-        ds_RebuildThreadInit(new_range->thread + i);
-    }
+    struct ds_RebuildJob *job = phase->range_job + i;
+    job->range = *range;
 
-    ds_ParallelForInit(new_range->pf.parallel_for, count, phase->fat_leaf_limit);
+    ds_WSDequePushBottom(g_scheduler->deque + ds_ThreadSelfIndex(), ds_JobIdInit(REBUILD_JOB_RANGE, i));
 }
 
-static void ds_RebuildLeafSetMinMax(vec3 min, vec3 max, const struct ds_RebuildLeaf *base, const u32 count)
+static u32 ds_RebuildJobPush(struct ds_RebuildJobPhase *phase, const struct ds_RebuildRange *range)
 {
-	Vec3Set(min, F32_INFINITY, F32_INFINITY, F32_INFINITY);
-	Vec3Set(max, -F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
+    u32 job_pushed = 0;
+    u32 seed_count = AtomicLoadRlx32(&phase->a_range_seed_count);
+    if (seed_count < phase->setup_job_length)
+    {
+        seed_count = AtomicFetchAddRlx32(&phase->a_range_seed_count, 1); 
+    }
+
+    if (seed_count < phase->setup_job_length)
+    {
+        u32 i = 0;
+        for (; i < phase->setup_job_length; ++i)
+        {
+            struct ds_RebuildJob *job = phase->setup_job + i;
+            u32 lock = 0;
+            if (AtomicCompareExchangeRlxRlx32(&job->a_range_ready, &lock, U32_MAX))
+            {
+                job->range = *range;
+                AtomicStoreRel32(&job->a_range_ready, 1);
+                break;
+            }
+        }
+        ds_Assert(i < phase->setup_job_length);
+    }
+    else
+    {
+        job_pushed += 1;
+        ds_RebuildJobPushDeque(phase, range);
+    }
+
+    return job_pushed;
+}
+
+static void ds_RebuildLeafSetMinMax(v3 *min, v3 *max, const struct ds_RebuildLeaf *base, const u32 count)
+{
+	*min = V3(F32_INFINITY, F32_INFINITY, F32_INFINITY);
+	*max = V3(-F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
 	for (u32 i = 0; i < count; ++i)
 	{
-        Vec3MinSelf(min, base[i].center);
-        Vec3MaxSelf(max, base[i].center);
+        *min = V3Min(*min, base[i].center);
+        *max = V3Max(*max, base[i].center);
 	}
 }
 
-static void ds_RebuildAxisPivot(u32 axis[2], f32 pivot[2], const vec3 min[2], const vec3 max[2])
+static void ds_RebuildAxisPivot(u32 axis[2], f32 pivot[2], const v3 min[2], const v3 max[2])
 {
     for (u32 i = 0; i < 2; ++i)
     {
-        vec3 diff;
-        Vec3Sub(diff, max[i], min[i]);
+        const v3 diff = V3Sub(max[i], min[i]);
         axis[i] = 0;
         for (u32 a = 1; a < 3; ++a)
         {
-            if (diff[axis[i]] < diff[a])
+            if (diff.buf[axis[i]] < diff.buf[a])
             {
                 axis[i] = a;
             }
         }
-        pivot[i] = min[i][axis[i]] + diff[axis[i]] / 2.0f;
+        pivot[i] = min[i].buf[axis[i]] + diff.buf[axis[i]] / 2.0f;
     }
 }
 
-static void ds_RebuildThreadGather(u32 axis[2], f32 pivot[2], const struct ds_RebuildThread *thread, const u32 thread_count)
+static u32 ds_RebuildJobSetup(const u32 job_index)
 {
-    vec3 min[2] = 
-    {
-        { F32_INFINITY, F32_INFINITY, F32_INFINITY },
-        { F32_INFINITY, F32_INFINITY, F32_INFINITY },
-    };
+    /*
+     *  Dispatch Strategy:
+     *
+     *      After the initial bounding boxes calculations, each worker waits until either the rebuild phase
+     *      has been completed (The dynamic bvh has been rebuilt), or it is assigned an initial range to work 
+     *      within (which will seed the worker's work-stealing deque with new range jobs). The worker that 
+     *      finalizes the bounding box pass is the first to be assigned range work.
+     *
+     *      Any further work generated is first prioritized to seed waiting workers, after which any remaining
+     *      work generated by a worker is pushed onto its work-stealing deque.
+     */
 
-    vec3 max[2] = 
-    {
-        { -F32_INFINITY, -F32_INFINITY, -F32_INFINITY },
-        { -F32_INFINITY, -F32_INFINITY, -F32_INFINITY },
-    };
+    ProfZone;
 
-    for (u32 t = 0; t < thread_count; ++t)
-    {
-        Vec3MinSelf(min[0], thread[t].min[0]);
-        Vec3MaxSelf(max[0], thread[t].max[0]);
-        Vec3MinSelf(min[1], thread[t].min[1]);
-        Vec3MaxSelf(max[1], thread[t].max[1]);
-    }
+    struct ds_RebuildJobPhase *phase = (struct ds_RebuildJobPhase *) g_scheduler->phase;
+    struct ds_RebuildJob *job = phase->setup_job + job_index;
+    struct ds_Dynamics *pipeline = phase->pipeline;
+    struct ds_ParallelForChain *chain;
+    struct ds_ParallelFor *pf;
+    u32 low, high;
 
-    ds_RebuildAxisPivot(axis, pivot, min, max);
-}
-
-static void ds_RebuildProduceWork(struct arena *phase_mem, struct ds_RebuildJobPhase *phase, struct ds_RebuildJob *job, struct ds_RebuildLeaf *leaf_write, const struct ds_RebuildLeaf *leaf_read, const struct ds_RebuildFatWork *work)
-{
-    const struct ds_Dynamics *pipeline = phase->pipeline;
-    struct bvhNode *node_buf = pipeline->dynamic_bvh.pool.buf;
-    const struct ds_RebuildRange *range = &work->range;
-
-    u32 count[2] = 
-    { 
-        work->a_low_count, 
-        work->a_high_count,
-    };
-
-    f32 pivot[2];
-    u32 axis[2];
-    if (count[0] == 0 || count[1] == 0)
-    {
-        //TODO Setup deterministic copy over
-        Breakpoint(1);
-        /* leaf_write is non-deterministically ordered, so we are required to make it deterministic */
-        memcpy(leaf_write + range->low, leaf_read + range->low, (count[0] + count[1])*sizeof(struct ds_RebuildLeaf));
-        vec3 min[2], max[2];
-        count[0] = (range->high - range->low) / 2;
-        count[1] = range->high - range->low - count[0];
-        ds_RebuildLeafSetMinMax(min[0], max[0], leaf_write + range->low, count[0]);
-        ds_RebuildLeafSetMinMax(min[1], max[1], leaf_write + range->low + count[0], count[1]);
-        ds_RebuildAxisPivot(axis, pivot, min, max);
-    }
-    else
-    {
-        ds_RebuildThreadGather(axis, pivot, work->thread, phase->job_count);
-    }
-
-    const u32 base[2] = { range->low, range->low + count[0] };
-
-    for (u32 i = 0; i < 2; ++i)
-    {        
-        const u32 child_index = (count[i] == 1)
-                                ? leaf_write[ base[i] ].index
-                                : phase->internal_buf[AtomicFetchAddRlx32(&phase->a_internal_counter, 1)];
-
-        struct bvhNode *parent = node_buf + range->internal_index;
-        struct bvhNode *child = node_buf + child_index;
-
-        parent->bt_child[i] = child_index;
-        child->bt_parent = range->internal_index;
-
-        if (count[i] == 1)
-        {
-            child->bt_parent |= BT_LEAF_MASK;
-            continue;
-        }
-
-        if (count[i] <= phase->small_leaf_limit)
-        {
-            job->thin_range[i] = ds_RebuildRangeInit(child_index, base[i], count[i], range->depth+1, axis[i], pivot[i]);
-        }
-        else
-        {
-            ds_RebuildProduceFatWork(phase_mem, phase, child_index, base[i], count[i], range->depth+1, axis[i], pivot[i]);
-        }
-    }
-}
-
-static void ds_RebuildFatWorkBlock(struct ds_RebuildFatWork *work, struct ds_RebuildLeaf *leaf_write, const struct ds_RebuildJobPhase *phase, const u32 job_index, const struct ds_RebuildLeaf *leaf_read, const u32 low, const u32 high)
-{
-    const struct ds_Dynamics *pipeline = phase->pipeline;
-    const struct ds_RebuildJob *job = phase->job + job_index;
-    struct ds_RebuildThread *t = work->thread + job_index;
-    struct ds_RebuildRange *range = &work->range;
-
-    ds_RebuildThreadBlockInit(t);
-    for (u32 i = low; i < high; ++i)
-    {
-        const struct bvhNode *node = pipeline->dynamic_bvh.pool.buf + leaf_read[i].index;
-        const u32 si = (node->bbox.center[range->axis] >= range->pivot);
-        Vec3MinSelf(t->min[si], node->bbox.center);
-        Vec3MaxSelf(t->max[si], node->bbox.center);
+    ds_Assert(pipeline->dynamic_bvh.pool.count >= 2);
     
-        const u32 index = t->count[si];
-        Vec3Copy(job->leaf[si][index].center, node->bbox.center);
-        job->leaf[si][index].index = leaf_read[i].index;
-        t->count[si] += 1;
+    /* Update DBVH leaf bounding boxes */
+    chain = &phase->pf_proxy_update;
+    {
+        ProfZoneNamed("Leaf Array Setup");
+
+        struct ds_RebuildThreadCompute *thread = phase->setup_compute + job_index;
+
+        pf = chain->parallel_for + 0;
+        ds_ParallelFor(pf, range_index)
+        {
+            ds_ParallelForRange(&low, &high, pf, range_index);
+            for (u32 li = low; li < high; ++li)
+            {
+                struct ds_RebuildLeaf *leaf = phase->leaf_buf + li;
+                struct BVHNode *node = pipeline->dynamic_bvh.pool.buf + leaf->index;
+                const struct ds_Shape *shape = pipeline->shape_pool.buf + node->bt_child[0];
+                node->bbox = ds_ShapeWorldBbox(pipeline, shape);
+                node->bbox.min = V3AddConstant(node->bbox.min, -shape->margin);
+                node->bbox.max = V3AddConstant(node->bbox.max, shape->margin);
+                leaf->center = V3Scale(V3Add(node->bbox.min, node->bbox.max), 0.5f);
+                thread->min[0] = V3Min(thread->min[0], leaf->center);
+                thread->max[0] = V3Max(thread->max[0], leaf->center);
+            }
+        }
+
+        ProfZoneEnd;
+    }
+    ds_ParallelForChainWait(chain);
+
+    u32 lock = 0;
+    if (AtomicCompareExchangeRlxRlx32(&phase->a_setup_completed, &lock, U32_MAX))
+    {
+        v3 min[2] = 
+        {
+            V3(F32_INFINITY, F32_INFINITY, F32_INFINITY),
+            V3(F32_INFINITY, F32_INFINITY, F32_INFINITY),
+        };
+    
+        v3 max[2] = 
+        {
+            V3(-F32_INFINITY, -F32_INFINITY, -F32_INFINITY),
+            V3(-F32_INFINITY, -F32_INFINITY, -F32_INFINITY),
+        };
+    
+        for (u32 t = 0; t < phase->setup_job_length; ++t)
+        {
+            min[0] = V3Min(min[0], phase->setup_compute[t].min[0]);
+            max[0] = V3Max(max[0], phase->setup_compute[t].max[0]);
+        }
+
+        u32 axis[2];
+        f32 pivot[2];
+        ds_RebuildAxisPivot(axis, pivot, min, max);
+
+        const u32 next = AtomicFetchAddRlx32(&phase->a_internal_next, 1);
+        const u32 index = phase->internal_buf[next];
+        ds_Assert(next < phase->internal_count);
+        pipeline->dynamic_bvh.bt.root = index;
+        pipeline->dynamic_bvh.pool.buf[index].bt_parent = BT_INDEX_NULL;
+
+        job->range = ds_RebuildRangeInit(index, 0, phase->leaf_count, axis[0], pivot[0]);
+        AtomicFetchAddRlx32(&phase->a_range_seed_count, 1);
+        AtomicStoreRlx32(&job->a_range_ready, 1);
     }
 
-    if (t->count[0])
+    u32 push_job;
+    ds_Spin(    (push_job = AtomicLoadAcq32(&job->a_range_ready)) != 1
+             && AtomicLoadRlx32(&phase->a_leaves_completed) < phase->leaf_count
+            , 64
+            , U32_MAX);
+
+    if (push_job)
     {
-        const u32 lbase = range->low + AtomicFetchAddRlx32(&work->a_low_count, t->count[0]);
-        memcpy(leaf_write + lbase, job->leaf[0], t->count[0]*sizeof(struct ds_RebuildLeaf));
+        ds_RebuildJobPushDeque(phase, &job->range);
     }
 
-    if (t->count[1])
-    {
-        const u32 hbase = range->high - AtomicAddFetchRlx32(&work->a_high_count, t->count[1]);
-        memcpy(leaf_write + hbase, job->leaf[1], t->count[1]*sizeof(struct ds_RebuildLeaf));
-    }
+    ProfZoneEnd;
+
+    return push_job;
 }
 
-static void ds_RebuildRangeCompute(struct ds_RebuildJobPhase *phase, struct ds_RebuildRange *buf, struct ds_RebuildRange *start)
+static u32 ds_RebuildJobRange(const u32 job_index)
 {
-    ProfZoneNamed("ThinRange");
+    ProfZone;
 
-    struct ds_RebuildLeaf *leaf = phase->leaf_buf[start->depth & 0x1];
+    struct ds_RebuildJobPhase *phase = (struct ds_RebuildJobPhase *) g_scheduler->phase;
+    struct ds_RebuildJob *job = phase->range_job + job_index;
+    struct ds_RebuildLeaf *leaf = phase->leaf_buf;
+    struct ds_Dynamics *pipeline = phase->pipeline;
 
-    buf[0] = *start;
+    struct arena *mem = ArenaPushScratch();
+    const struct memArray range_arr = ArenaPushAlignedAll(mem, sizeof(struct ds_RebuildRange), 4);
+    struct ds_RebuildRange *range_buf = range_arr.addr;
+
+    range_buf[0] = job->range;
     u32 work_count = 1;
+    u32 jobs_pushed = 0;
+    u32 leaves_completed = 0;
     while (work_count--)
     {
-        //May not use shared t.variables here, they may be read by other fat range threads
-        struct ds_RebuildThread t;
-        ds_RebuildThreadInit(&t);
+        struct ds_RebuildThreadCompute t;
+        ds_RebuildThreadComputeInit(&t);
         
-        const struct ds_RebuildRange *range = buf + work_count;
+        const struct ds_RebuildRange *range = range_buf + work_count;
         u32 low = range->low;
         u32 high = range->high;
 
@@ -955,34 +1063,34 @@ static void ds_RebuildRangeCompute(struct ds_RebuildJobPhase *phase, struct ds_R
         {
             while (low < high)
             {
-                if (leaf[low].center[range->axis] >= range->pivot)
+                if (leaf[low].center.buf[range->axis] >= range->pivot)
                 {
                     break;
                 }
 
-                Vec3MinSelf(t.min[0], leaf[low].center);
-                Vec3MaxSelf(t.max[0], leaf[low].center);
+                t.min[0] = V3Min(t.min[0], leaf[low].center);
+                t.max[0] = V3Max(t.max[0], leaf[low].center);
                 low += 1;
             }
 
             while (low < high)
             {
-                if (leaf[high-1].center[range->axis] < range->pivot)
+                if (leaf[high-1].center.buf[range->axis] < range->pivot)
                 {
                     const struct ds_RebuildLeaf tmp = leaf[low];
                     leaf[low] = leaf[high-1];
                     leaf[high-1] = tmp;
-                    Vec3MinSelf(t.min[0], leaf[low].center);
-                    Vec3MaxSelf(t.max[0], leaf[low].center);
-                    Vec3MinSelf(t.min[1], leaf[high-1].center);
-                    Vec3MaxSelf(t.max[1], leaf[high-1].center);
+                    t.min[0] = V3Min(t.min[0], leaf[low].center);
+                    t.max[0] = V3Max(t.max[0], leaf[low].center);
+                    t.min[1] = V3Min(t.min[1], leaf[high-1].center);
+                    t.max[1] = V3Max(t.max[1], leaf[high-1].center);
                     low += 1;
                     high -= 1;
                     break;
                 }
 
-                Vec3MinSelf(t.min[1], leaf[high-1].center);
-                Vec3MaxSelf(t.max[1], leaf[high-1].center);
+                t.min[1] = V3Min(t.min[1], leaf[high-1].center);
+                t.max[1] = V3Max(t.max[1], leaf[high-1].center);
                 high -= 1;
             }
         }
@@ -993,8 +1101,8 @@ static void ds_RebuildRangeCompute(struct ds_RebuildJobPhase *phase, struct ds_R
         {
             t.count[0] = (range->high - range->low) / 2;
             t.count[1] = range->high - range->low - t.count[0];
-            ds_RebuildLeafSetMinMax(t.min[0], t.max[0], leaf + range->low, t.count[0]);
-            ds_RebuildLeafSetMinMax(t.min[1], t.max[1], leaf + range->low + t.count[0], t.count[1]);
+            ds_RebuildLeafSetMinMax(&t.min[0], &t.max[0], leaf + range->low, t.count[0]);
+            ds_RebuildLeafSetMinMax(&t.min[1], &t.max[1], leaf + range->low + t.count[0], t.count[1]);
         }
  
         const u32 parent = range->internal_index;
@@ -1007,262 +1115,120 @@ static void ds_RebuildRangeCompute(struct ds_RebuildJobPhase *phase, struct ds_R
         u32 axis[2];
         f32 pivot[2];
         ds_RebuildAxisPivot(axis, pivot, t.min, t.max);
-        
+
         for (u32 s = 0; s < 2; ++s)
         {
             if (t.count[s] <= 1)
             {
+                leaves_completed += 1;
                 const u32 index = leaf[base[s]].index;
                 phase->pipeline->dynamic_bvh.pool.buf[parent].bt_child[s] = index;
                 phase->pipeline->dynamic_bvh.pool.buf[index].bt_parent = BT_LEAF_MASK | parent;
             }
             else
             {
-                ds_Assert(t.count[s] <= phase->small_leaf_limit);
-                const u32 index = phase->internal_buf[AtomicFetchAddRlx32(&phase->a_internal_counter, 1)];
+                const u32 next = AtomicFetchAddRlx32(&phase->a_internal_next, 1);
+                const u32 index = phase->internal_buf[next];
+                ds_Assert(next < phase->internal_count);
                 phase->pipeline->dynamic_bvh.pool.buf[parent].bt_child[s] = index;
                 phase->pipeline->dynamic_bvh.pool.buf[index].bt_parent = parent;
-                buf[ work_count++ ] = ds_RebuildRangeInit(index, base[s], t.count[s], range->depth + 1, axis[s], pivot[s]);
+                if (t.count[s] <= phase->small_leaf_limit || work_count == 0)
+                {
+                    range_buf[ work_count++ ] = ds_RebuildRangeInit(index, base[s], t.count[s], axis[s], pivot[s]);
+                }
+                else
+                {
+                    struct ds_RebuildRange new_range = ds_RebuildRangeInit(index, base[s], t.count[s], axis[s], pivot[s]);
+                    jobs_pushed += ds_RebuildJobPush(phase, &new_range);
+                }
             }
         }
     }
 
-    ProfZoneEnd;
-}
-
-u32 ds_RebuildJobPhaseDispatch(const ds_JobId job_id)
-{
-    ProfZone;
-
-    struct arena *phase_mem = ArenaPushScratch();
-    struct ds_RebuildJobPhase *phase = (struct ds_RebuildJobPhase *) g_scheduler->phase;
-    struct ds_Dynamics *pipeline = phase->pipeline;
-    struct ds_ParallelForChain *chain;
-    struct ds_ParallelFor *pf;
-    const u32 job_index = ds_JobIdIndex(job_id);
-    struct ds_RebuildJob *job = phase->job + job_index;
-    u32 low, high;
-
-    struct ds_RebuildRange *thin_range_buf = ArenaPush(phase_mem, phase->small_leaf_limit*sizeof(struct ds_RebuildRange));
-    u32 *local_internal_buf = ArenaPush(phase_mem, 64*phase->leaf_blocks_per_proxy_update*sizeof(u32));
-    ds_Assert(pipeline->dynamic_bvh.pool.count >= 2);
-
-    /*
-     * Threads begin by setting up one of the two shared ds_RebuildLeaf arrays which 
-     * the threads will be working on. 
-     */
-    chain = &phase->pf_proxy_update;
-    {
-        ProfZoneNamed("Leaf Array Setup");
-    
-        const struct ds_BitSet *leaf_usage = &pipeline->dynamic_bvh.leaf_set;
-        const struct ds_BitSet *internal_usage = &pipeline->dynamic_bvh.internal_set;
-
-        struct ds_RebuildFatWork *work = phase->fat_work_setup;
-        struct ds_RebuildThread *thread = work->thread + job_index;
-        pf = chain->parallel_for + 0;
-        ds_ParallelFor(pf, range_index)
-        {
-            ds_ParallelForRange(&low, &high, pf, range_index);
-            for (u32 block = low; block < high; ++block)
-            {
-                ds_RebuildThreadBlockInit(thread);
-                struct ds_BitBlock it;
-                {
-                    ProfZoneNamed("Leaf Block");
-
-                    it = ds_BitBlockInit(leaf_usage->bits[block], block);
-                    while (ds_BitBlockHasNext(&it))
-                    {
-                        const u32 pi = ds_BitBlockNext(&it);
-                        struct bvhNode *node = pipeline->dynamic_bvh.pool.buf + pi;
-                        const struct ds_Shape *shape = pipeline->shape_pool.buf + node->bt_child[0];
-                        node->bbox = ds_ShapeWorldBbox(pipeline, shape);
-                        node->bbox.hw[0] += shape->margin;
-                        node->bbox.hw[1] += shape->margin;
-                        node->bbox.hw[2] += shape->margin;
-
-                        Vec3MinSelf(thread->min[0], node->bbox.center);
-                        Vec3MaxSelf(thread->max[0], node->bbox.center);
-                        Vec3Copy(job->leaf[0][ thread->count[0] ].center, node->bbox.center);
-                        job->leaf[0][ thread->count[0] ].index = pi;
-                        thread->count[0] += 1;
-                    }
-
-                    ProfZoneEnd;
-                }
-
-                if (thread->count[0])
-                {
-                    const u32 base = AtomicFetchAddRlx32(&work->a_low_count, thread->count[0]);
-                    memcpy(phase->leaf_buf[0] + base, job->leaf[0], thread->count[0]*sizeof(struct ds_RebuildLeaf));
-                }
-
-                ds_RebuildThreadBlockInit(thread);
-                it = ds_BitBlockInit(internal_usage->bits[block], block);
-                while (ds_BitBlockHasNext(&it))
-                {
-                    local_internal_buf[thread->count[0]++] = ds_BitBlockNext(&it);
-                }
-
-                if (thread->count[0])
-                {
-                    const u32 base = AtomicFetchAddRlx32(&phase->a_internal_counter, thread->count[0]);
-                    memcpy(phase->internal_buf + base, local_internal_buf, thread->count[0]*sizeof(u32));
-                }
-            }
-        }
-
-        ProfZoneEnd;
-    }
-    ds_ParallelForChainWait(chain);
-
-    /* 
-     * One thread gets to finalize the setup, setup the new tree root, and initialize 
-     * the first thin or fat work.
-     */
-    u32 lock = 0;
-    if (AtomicCompareExchangeRlxRlx32(&phase->a_setup_completed, &lock, U32_MAX))
-    {
-        ds_Assert(phase->a_internal_counter == phase->internal_count);
-        AtomicStoreRlx32(&phase->a_internal_counter, 0);
-
-        u32 axis[2];
-        f32 pivot[2];
-        ds_RebuildThreadGather(axis, pivot, phase->fat_work_setup->thread, phase->job_count);
-        const u32 node_index = phase->internal_buf[AtomicFetchAddRlx32(&phase->a_internal_counter, 1)];
-        pipeline->dynamic_bvh.bt.root = node_index;
-        pipeline->dynamic_bvh.pool.buf[node_index].bt_parent = BT_INDEX_NULL;
-
-        if (phase->leaf_count <= phase->small_leaf_limit)
-        {
-            job->thin_range[0] = ds_RebuildRangeInit(node_index, 0, phase->leaf_count, 0, axis[0], pivot[0]);
-            ds_RebuildRangeCompute(phase, thin_range_buf, job->thin_range + 0);
-        }
-        else
-        {
-            ds_RebuildProduceFatWork(phase_mem, phase, node_index, 0, phase->leaf_count, 0, axis[0], pivot[0]);
-        }
-        
-        AtomicStoreRel32(&phase->a_setup_completed, 1);
-    }
-    ds_Spin(AtomicLoadAcq32(&phase->a_setup_completed) != 1, 32, U32_MAX);
-
-    /*
-     * the Work queue is a FIFO queue, which ensures us that we will work on ranges in increasing depth order.
-     * This allows us to work with only two leaf buffers. Depending on the depth, one is viewed as read-only,
-     * while the other is write-only:
-     *
-     *          const u32 d = range->depth;
-     *          const ds_RebuildLeaf *read_buf = phase->leaf_buffer + (d & 0x1);
-     *                ds_RebuildLeaf *write_buf = phase->leaf_buffer + (1 - (d & 0x1));
-     *
-     *  Any thread that recieves a thin range can safely work solely within read_buf generated from the
-     *  thin ranges' depth.
-     */
-    ds_Assert(PowerOfTwoCheck(phase->fat_work_max_count));
-    const u32 mask = phase->fat_work_max_count - 1;
-
-    u32 local_completed = AtomicLoadAcq32(&phase->a_fat_work_completed);
-    u32 local_counter = AtomicLoadAcq32(&phase->a_fat_work_counter);
-    while (local_completed < local_counter)
-    {
-        const u32 wi = local_completed & mask;
-        struct ds_RebuildFatWork *work = phase->fat_work + wi;
-        struct ds_RebuildRange *range = &work->range;
-        struct ds_RebuildThread *thread = work->thread + job_index;
-
-        const u32 ri = (range->depth & 0x1);
-        const struct ds_RebuildLeaf *leaf_read = phase->leaf_buf[ri];
-        struct ds_RebuildLeaf *leaf_write = phase->leaf_buf[1-ri];
-        u32 winner = 0;
-
-        chain = &work->pf;
-        {
-            pf = chain->parallel_for + 0;
-            ds_ParallelFor(pf, range_index)
-            {
-                ProfZoneNamed("FatRangeBlock");
-
-                ds_ParallelForRange(&low, &high, pf, range_index);
-                ds_RebuildFatWorkBlock(work, leaf_write, phase, job_index, leaf_read, low + range->low, high + range->low);
-                if (range->low + high == range->high)
-                {
-                    winner = 1;
-                }
-
-                ProfZoneEnd;
-            }
-        }
-        ds_ParallelForChainWait(chain);
-
-        /* Winner updates dynamic tree, setup new work, and runs any thin ranges created . */
-        if (winner)
-        {
-            /* 
-             * From now on, other threads may poke our job, so we must make sure it is flushed 
-             * while we do thin range work. (It is flushed within ds_RebuildProduceWork).
-             */
-            ds_RebuildProduceWork(phase_mem, phase, job, leaf_write, leaf_read, work);
-            AtomicFetchAddRel32(&phase->a_fat_work_completed, 1);
-
-            /* Run any newly produced thin jobs */
-            if (ds_RebuildRangeCheck(job->thin_range + 0))
-            {
-                ds_RebuildRangeCompute(phase, thin_range_buf, job->thin_range + 0);
-            }
-
-            /* Run any newly produced thin jobs */
-            if (ds_RebuildRangeCheck(job->thin_range + 1))
-            {
-                ds_RebuildRangeCompute(phase, thin_range_buf, job->thin_range + 1);
-            }
-        }
-
-        u32 tmp_completed = local_completed+1;
-        ds_Spin((local_completed = AtomicLoadAcq32(&phase->a_fat_work_completed)) < tmp_completed, 32, U32_MAX);
-        local_counter = AtomicLoadRlx32(&phase->a_fat_work_counter);
-    }
+    AtomicFetchAddRlx32(&phase->a_leaves_completed, leaves_completed);
 
     ArenaPopScratch();
 
     ProfZoneEnd;
 
-    return U32_MAX;
+    return jobs_pushed;
 }
 
-static void ds_DynamicsRemoveContacts(struct ds_Dynamics *pipeline)
+u32 ds_RebuildJobPhaseDispatch(const ds_JobId job_id)
 {
-    //TODO Traversing all dirty shapes can of course be done in parallel; only the removal itself
-    //should be serial.
+    const u32 job_index = ds_JobIdIndex(job_id);
 
-    ProfZoneNamed("Contact Removal");
-    struct ds_BitSet *dirty = &pipeline->shape_dirty_set;
-    for (u64 block = 0; block < dirty->block_count; ++block)
+    u32 jobs_pushed = 0;
+    switch (ds_JobIdTag(job_id))
     {
-        struct ds_BitBlock it = ds_BitBlockInit(dirty->bits[block], block);
-        while (ds_BitBlockHasNext(&it))
+        case REBUILD_JOB_SETUP:
         {
-            const u32 si = ds_BitBlockNext(&it);
-            const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
-            i32 ci = shape->contact_list.first;
-            while (ci != DLL_SENTINEL)
+            jobs_pushed = ds_RebuildJobSetup(job_index);
+        } break;
+
+        case REBUILD_JOB_RANGE:
+        {
+            jobs_pushed = ds_RebuildJobRange(job_index);
+        } break;
+
+        default:
+        { 
+            ds_AssertString(0, "Unreachable");
+        } break;
+    }
+
+    return U32_MAX + jobs_pushed;
+}
+
+u32 ds_RemovalJobPhaseDispatch(const ds_JobId job_id)
+{
+    ProfZone;
+
+    struct ds_RemovalJobPhase *phase = (struct ds_RemovalJobPhase *) g_scheduler->phase;
+    struct ds_ParallelForChain *chain = &phase->pf;
+    struct ds_ParallelFor *pf = chain->parallel_for + 0;
+    struct ds_RemovalJob *job = phase->job + ds_JobIdIndex(job_id);
+    struct ds_Dynamics *pipeline = phase->pipeline;
+    u32 low, high;
+
+    struct arena *frame = g_dynamics_worker[ ds_ThreadSelfIndex() ].frame;
+    job->removal_set = ds_BitSetAlloc(frame, pipeline->contact_usage_set.bit_count, 0, NOT_GROWABLE);
+
+    struct ds_BitSet *dirty = &pipeline->shape_dirty_set;
+    ds_ParallelFor(pf, range_index)
+    {
+        ds_ParallelForRange(&low, &high, pf, range_index);
+        for (u32 bi = low; bi < high; ++bi)
+        {
+            struct ds_BitBlock it = ds_BitBlockInit(dirty->bits[bi], bi);
+            while (ds_BitBlockHasNext(&it))
             {
-                struct ds_Contact *c = pipeline->contact_pool.buf + ci;
-                const i32 next = (si == c->key.shape[0])
-                               ? c->shape_contact[0].next
-                               : c->shape_contact[1].next;
-                if (!ds_ContactCheckBvhOverlap(pipeline, ci))
+                const u32 si = (u32) ds_BitBlockNext(&it);
+                const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
+                i32 ci = shape->contact_list.first;
+                while (ci != DLL_SENTINEL)
                 {
-                    ProfZoneNamed("ds_ContactRemove");
-                    ds_ContactRemove(pipeline, ci);
-                    ProfZoneEnd;
+                    /*
+                     * TODO If both shapes dynamic, we can skip overlap check
+                     * if we are iterating over shape 1. 
+                     */
+                    struct ds_Contact *c = pipeline->contact_pool.buf + ci;
+                    const i32 next = (si == c->key.shape[0])
+                                   ? c->shape_contact[0].next
+                                   : c->shape_contact[1].next;
+                    if (!ds_ContactCheckBVHOverlap(pipeline, ci))
+                    {
+                        ds_BitSetSet(&job->removal_set, ci, 1);
+                    }
+                    ci = next;
                 }
-                ci = next;
             }
         }
     }
+
     ProfZoneEnd;
+
+    return U32_MAX;
 }
 
 static void SolveConstraints(struct ds_Dynamics *pipeline) 
@@ -1276,11 +1242,13 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
 
         solver_phase->pf_body_update = ds_ParallelForChainAlloc(&pipeline->frame, 1);
         solver_phase->pf_contact_init = ds_ParallelForChainAlloc(&pipeline->frame, CG_COLOR_COUNT);
+        solver_phase->pf_joint_init = ds_ParallelForChainAlloc(&pipeline->frame, CG_COLOR_COUNT);
         solver_phase->pf_contact_warmup = ds_ParallelForChainAlloc(&pipeline->frame, CG_COLOR_COUNT);
-        solver_phase->pf_velocity_solve = ds_ParallelForChainAlloc(&pipeline->frame, g_solver_config->pgs_iteration_count*CG_COLOR_COUNT);
+        solver_phase->pf_joint_warmup = ds_ParallelForChainAlloc(&pipeline->frame, CG_COLOR_COUNT);
+        solver_phase->pf_velocity_solve = ds_ParallelForChainAlloc(&pipeline->frame, 2*g_solver_config->pgs_iteration_count*CG_COLOR_COUNT);
         solver_phase->pf_integrate = ds_ParallelForChainAlloc(&pipeline->frame, 1);
         solver_phase->pf_cache_impulse_and_position_init = ds_ParallelForChainAlloc(&pipeline->frame, CG_COLOR_COUNT);
-        solver_phase->pf_position_solve = ds_ParallelForChainAlloc(&pipeline->frame, g_solver_config->ngs_iteration_count*CG_COLOR_COUNT);
+        solver_phase->pf_position_solve = ds_ParallelForChainAlloc(&pipeline->frame, 2*g_solver_config->ngs_iteration_count*CG_COLOR_COUNT);
         solver_phase->pf_orientation = ds_ParallelForChainAlloc(&pipeline->frame, 1);
 
         struct ds_ParallelFor *pfb = solver_phase->pf_body_update.parallel_for;
@@ -1293,7 +1261,9 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
         solver_phase->proxy_range = ArenaPush(&pipeline->frame, pfo->range_count*sizeof(struct ds_ProxyRange));
 
         struct ds_ParallelFor *pfci = solver_phase->pf_contact_init.parallel_for;
+        struct ds_ParallelFor *pfji = solver_phase->pf_joint_init.parallel_for;
         struct ds_ParallelFor *pfcw = solver_phase->pf_contact_warmup.parallel_for;
+        struct ds_ParallelFor *pfjw = solver_phase->pf_joint_warmup.parallel_for;
         struct ds_ParallelFor *pfvs = solver_phase->pf_velocity_solve.parallel_for;
         struct ds_ParallelFor *pfcp = solver_phase->pf_cache_impulse_and_position_init.parallel_for;
         struct ds_ParallelFor *pfps = solver_phase->pf_position_solve.parallel_for;
@@ -1301,33 +1271,34 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
         {
             struct ds_CGraphColor *color = pipeline->cgraph.color + ci;
             const u32 cc_count = color->contact_pool.count;
+            const u32 js_count = color->joint_sim_pool.count;
             //TODO: this range size is random hardcoded value, change
             u32 cc_per_range = (ci == CG_SERIAL_COLOR)
                 ? cc_count + 1
                 : 8;
+            u32 js_per_range = (ci == CG_SERIAL_COLOR)
+                ? js_count + 1
+                : 8;
 
             ds_ParallelForInit(pfci + ci, cc_count, cc_per_range);
+            ds_ParallelForInit(pfji + ci, js_count, js_per_range);
             ds_ParallelForInit(pfcw + ci, cc_count, cc_per_range);
+            ds_ParallelForInit(pfjw + ci, js_count, js_per_range);
             ds_ParallelForInit(pfcp + ci, cc_count, cc_per_range);
 
-            //const f32 d = (f32) cc_count / (cc_per_range * g_scheduler->worker_count);
-            //if (ci == 0)
-            //  fprintf(stderr, "range distribution: \n {");
-
-            //(ci+1 < CG_COLOR_COUNT)
-            //    ? fprintf(stderr, " %f,", d)
-            //    : fprintf(stderr, " %f }\n", d);
-
+            /* the iteration chains hold the colour's joints at 2*(iteration*colours + colour), its contacts after */
             for (u32 pgsi = 0; pgsi < g_solver_config->pgs_iteration_count; ++pgsi)
             {
-                const u32 pfi = pgsi*CG_COLOR_COUNT + ci;
-                ds_ParallelForInit(pfvs + pfi, cc_count, cc_per_range);
+                const u32 pfi = 2*(pgsi*CG_COLOR_COUNT + ci);
+                ds_ParallelForInit(pfvs + pfi, js_count, js_per_range);
+                ds_ParallelForInit(pfvs + pfi + 1, cc_count, cc_per_range);
             }
 
             for (u32 pgsi = 0; pgsi < g_solver_config->ngs_iteration_count; ++pgsi)
             {
-                const u32 pfi = pgsi*CG_COLOR_COUNT + ci;
-                ds_ParallelForInit(pfps + pfi, cc_count, cc_per_range);
+                const u32 pfi = 2*(pgsi*CG_COLOR_COUNT + ci);
+                ds_ParallelForInit(pfps + pfi, js_count, js_per_range);
+                ds_ParallelForInit(pfps + pfi + 1, cc_count, cc_per_range);
             }
         }
 
@@ -1358,8 +1329,6 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
     }
 
     {
-        struct arena *tmp = ArenaPushScratch();
-
         struct ds_ParallelFor *pf = solver_phase->pf_orientation.parallel_for + 0;
         f32 dirty_count = 0; 
         f32 reinsert_count = 0;
@@ -1376,7 +1345,8 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
             pipeline->profile->ns_rebuildphase_start = ds_TimeNs();
 
             const f32 reinsert_fraction = reinsert_count / dirty_count;
-            if (dirty_count <= 1 || reinsert_fraction < g_numerics_config->dbvh_reinsert_threshold)
+            const u32 rebuild = !(dirty_count <= 1 || reinsert_fraction < g_numerics_config->dbvh_reinsert_threshold);
+            if (!rebuild)
             {
                 ProfZoneNamed("DBVH Update");
                 for (u32 ri = 0; ri < pf->range_count; ++ri)
@@ -1390,14 +1360,13 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                         {
                             ProfZoneNamed("Reinsert");
                             struct ds_Shape *shape = pipeline->shape_pool.buf + dirty->shape;
-                    	    DbvhRemove(&pipeline->dynamic_bvh, shape->proxy);
-                    	    shape->proxy = DbvhInsert(&pipeline->dynamic_bvh, shape->body, dirty->shape, &dirty->bbox);
+                    	    DBVHRemove(&pipeline->dynamic_bvh, shape->proxy);
+                    	    shape->proxy = DBVHInsert(&pipeline->dynamic_bvh, shape->body, dirty->shape, &dirty->bbox);
                             ProfZoneEnd;
                         }
                     }
                 }
                 ProfZoneEnd;
-                ds_DynamicsRemoveContacts(pipeline);
             }
             else
             {       
@@ -1405,59 +1374,84 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                 {
                 	ProfZoneNamed("JobPhase(Rebuild)");
 
+                    ArenaPushRecord(&pipeline->frame);
+
                     ds_JobPhaseBegin(&rebuild_phase->phase);
 
                     rebuild_phase->pf_proxy_update = ds_ParallelForChainAlloc(&pipeline->frame, 1); 
-                    
-                    //TODO: this range size is random hardcoded value, change
-                    rebuild_phase->leaf_blocks_per_proxy_update = 1;
-                    rebuild_phase->fat_leaf_limit = 32;
+                    {
+                        ProfZoneNamed("LeafArray Ordering");
+
+                        const struct ds_BitSet *leaf_usage = &pipeline->dynamic_bvh.leaf_set;
+                        rebuild_phase->leaf_count = BTLeafCount(pipeline->dynamic_bvh.bt);
+                        rebuild_phase->leaf_buf = ArenaPushAligned(&pipeline->frame, rebuild_phase->leaf_count*sizeof(struct ds_RebuildLeaf), DS_CACHE_LINE);
+
+                        u32 li = 0;
+                        for (u32 block = 0; block < leaf_usage->block_count; ++block)
+                        {
+                            struct ds_BitBlock it = ds_BitBlockInit(leaf_usage->bits[block], block);
+                            while (ds_BitBlockHasNext(&it))
+                            {
+                                rebuild_phase->leaf_buf[li++].index = (u32) ds_BitBlockNext(&it);
+                            }
+                        }
+
+                        ProfZoneEnd;
+                    }
+
+                    {
+                        ProfZoneNamed("InternalArray Setup");
+
+                        const struct ds_BitSet *internal_usage = &pipeline->dynamic_bvh.internal_set;
+                        rebuild_phase->internal_count = pipeline->dynamic_bvh.bt.count - rebuild_phase->leaf_count;
+                        rebuild_phase->internal_buf = ArenaPushAligned(&pipeline->frame, rebuild_phase->internal_count*sizeof(u32), DS_CACHE_LINE);
+
+                        u32 ii = 0;
+                        for (u32 block = 0; block < internal_usage->block_count; ++block)
+                        {
+                            struct ds_BitBlock it = ds_BitBlockInit(internal_usage->bits[block], block);
+                            while (ds_BitBlockHasNext(&it))
+                            {
+                                rebuild_phase->internal_buf[ii++] = (u32) ds_BitBlockNext(&it);
+                            }
+                        }
+
+                        ProfZoneEnd;
+                    }
+
+                    //TODO: this range size and limit are non-tested values (for performance)
+                    rebuild_phase->leaf_block_size = 8;
+                    ds_ParallelForInit(rebuild_phase->pf_proxy_update.parallel_for, rebuild_phase->leaf_count, rebuild_phase->leaf_block_size);
+
                     rebuild_phase->small_leaf_limit = 256;
-                    ds_ParallelForInit(rebuild_phase->pf_proxy_update.parallel_for, pipeline->dynamic_bvh.leaf_set.block_count, rebuild_phase->leaf_blocks_per_proxy_update);
-
                     rebuild_phase->pipeline = pipeline;
-                    rebuild_phase->job_count = g_scheduler->worker_count;
-                    rebuild_phase->job = ArenaPushZero(&pipeline->frame, rebuild_phase->job_count*sizeof(struct ds_RebuildJob));
-                    rebuild_phase->leaf_count = ds_BTLeafCount(pipeline->dynamic_bvh.bt);
-                    rebuild_phase->leaf_buf[0] = ArenaPushAligned(&pipeline->frame, rebuild_phase->leaf_count*sizeof(struct ds_RebuildLeaf), DS_CACHE_LINE);
-                    rebuild_phase->leaf_buf[1] = ArenaPushAligned(&pipeline->frame, rebuild_phase->leaf_count*sizeof(struct ds_RebuildLeaf), DS_CACHE_LINE);
-                    rebuild_phase->fat_work_max_count = 256;
-                    rebuild_phase->fat_work = ArenaPush(&pipeline->frame, rebuild_phase->fat_work_max_count*sizeof(struct ds_RebuildFatWork));
-                    AtomicStoreRlx32(&rebuild_phase->a_fat_work_counter, 0);
-                    AtomicStoreRlx32(&rebuild_phase->a_fat_work_completed, 0);
+                    rebuild_phase->setup_job_length = g_scheduler->worker_count;
+                    rebuild_phase->setup_job = ArenaPushZero(&pipeline->frame, rebuild_phase->setup_job_length*sizeof(struct ds_RebuildJob));
                     AtomicStoreRlx32(&rebuild_phase->a_setup_completed, 0);
+                    AtomicStoreRlx32(&rebuild_phase->a_leaves_completed, 0);
+                    AtomicStoreRlx32(&rebuild_phase->a_internal_next, 0);
+                    AtomicStoreRlx32(&rebuild_phase->a_range_seed_count, 0);
 
-                    AtomicStoreRlx32(&rebuild_phase->a_internal_counter, 0);
-                    rebuild_phase->internal_count = pipeline->dynamic_bvh.bt.count - rebuild_phase->leaf_count;
-                    rebuild_phase->internal_buf = ArenaPushAligned(&pipeline->frame, rebuild_phase->internal_count*sizeof(u32), DS_CACHE_LINE);
-
-                    struct memArray thin_arr = ArenaPushAlignedAll(tmp, sizeof(struct ds_RebuildRange), 8);
-                    AtomicStoreRlx32(&rebuild_phase->a_thin_range_count, 0);
-                    AtomicStoreRlx32(&rebuild_phase->a_thin_range_next, 0);
-
-                    rebuild_phase->fat_work_setup = ArenaPushAligned(&pipeline->frame, sizeof(struct ds_RebuildFatWork), DS_CACHE_LINE);
-                    memset(rebuild_phase->fat_work_setup, 0, sizeof(struct ds_RebuildFatWork));
-                    rebuild_phase->fat_work_setup->thread = ArenaPushAligned(&pipeline->frame, rebuild_phase->job_count*sizeof(struct ds_RebuildThread), DS_CACHE_LINE);
-                    for (u32 i = 0; i < rebuild_phase->job_count; ++i)
+                    rebuild_phase->setup_compute = ArenaPushAligned(&pipeline->frame, rebuild_phase->setup_job_length*sizeof(struct ds_RebuildThreadCompute), DS_CACHE_LINE);
+                    for (u32 i = 0; i < rebuild_phase->setup_job_length; ++i)
                     {
-                        ds_RebuildThreadInit(rebuild_phase->fat_work_setup->thread + i);
+                        AtomicStoreRlx32(&rebuild_phase->setup_job[i].a_range_ready, 0);
+                        ds_RebuildThreadComputeInit(rebuild_phase->setup_compute + i);
                     }
 
-                    for (u32 i = 0; i < rebuild_phase->job_count; ++i)
+                    struct memArray range_arr = ArenaPushAlignedAll(&pipeline->frame, sizeof(struct ds_RebuildJob), DS_CACHE_LINE);
+                    rebuild_phase->range_job = range_arr.addr;
+                    rebuild_phase->range_job_length = (u32) range_arr.len;
+
+                    ds_JobPhaseReserve(&rebuild_phase->phase, REBUILD_JOB_SETUP, rebuild_phase->setup_job_length);
+
+                    for (u32 i = 0; i < rebuild_phase->setup_job_length; ++i)
                     {
-                        rebuild_phase->job[i].leaf[0] = ArenaPushAligned(&pipeline->frame, rebuild_phase->small_leaf_limit*sizeof(struct ds_RebuildLeaf), DS_CACHE_LINE);
-                        rebuild_phase->job[i].leaf[1] = ArenaPushAligned(&pipeline->frame, rebuild_phase->small_leaf_limit*sizeof(struct ds_RebuildLeaf), DS_CACHE_LINE);
+                        ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(REBUILD_JOB_SETUP, i));
                     }
 
-                    ds_JobPhaseReserve(&rebuild_phase->phase, REBUILD_JOB_SEED, rebuild_phase->job_count);
-
-                    for (u32 i = 0; i < rebuild_phase->job_count; ++i)
-                    {
-                        ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(REBUILD_JOB_SEED, i));
-                    }
-
-                    AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, rebuild_phase->job_count);
-                    ds_JobPhaseAddFetchRemaining(&rebuild_phase->phase, rebuild_phase->job_count);
+                    AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, rebuild_phase->setup_job_length);
+                    ds_JobPhaseAddFetchRemaining(&rebuild_phase->phase, rebuild_phase->setup_job_length);
                     ds_WSDequePublish(g_scheduler->seed_deque);
                     for (u32 i = 1; i < g_scheduler->worker_count; ++i)
                     {
@@ -1469,47 +1463,122 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                     ds_JobPhaseEnd();
 
                     /* 
-                     * TODO: We can essentially make this cost-free by extending RebuildPhase to also
+                     * Note: We can essentially make this cost-free by extending RebuildPhase to also
                      * have threads doing thin range work derive the root-box withing that thin range.
                      * The master thread would then gather all thin boxes + necessary leaves and from
-                     * there propagate bounding boxes up to the root.
+                     * there propagate bounding boxes up to the root. However, the serial propagation 
+                     * is quite cheap so we skip the parallelization work for now.
                      */
-                    BvhPropagateBoundingBoxesFromLeaves(&pipeline->dynamic_bvh);
+                    BVHPropagateBoundingBoxesFromLeaves(&pipeline->dynamic_bvh);
+
+                    ArenaPopRecord(&pipeline->frame);
 
                     ProfZoneEnd;
                 }
+            } 
+
+            pipeline->profile->ns_rebuildphase_end = ds_TimeNs();
+
+            pipeline->profile->ns_removalphase_start = ds_TimeNs();
+
+            struct ds_RemovalJobPhase *removal_phase = pipeline->removal_phase;
+            {
+            	ProfZoneNamed("JobPhase(ContactRemoval)");
+
+                ArenaPushRecord(&pipeline->frame);
+
+                ds_JobPhaseBegin(&removal_phase->phase);
+
+                removal_phase->pipeline = pipeline;
+                removal_phase->pf = ds_ParallelForChainAlloc(&pipeline->frame, 1); 
+                ds_ParallelForInit(removal_phase->pf.parallel_for, (u32) pipeline->shape_dirty_set.block_count, 1);
+                removal_phase->job_count = g_scheduler->worker_count;
+                removal_phase->job = ArenaPushZero(&pipeline->frame, removal_phase->job_count*sizeof(struct ds_RemovalJob));
+
+                ds_JobPhaseReserve(&removal_phase->phase, REMOVAL_JOB, removal_phase->job_count);
+                for (u32 i = 0; i < removal_phase->job_count; ++i)
+                {
+                    ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(REMOVAL_JOB, i));
+                }
+
+                AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, removal_phase->job_count);
+                ds_JobPhaseAddFetchRemaining(&removal_phase->phase, removal_phase->job_count);
+                ds_WSDequePublish(g_scheduler->seed_deque);
+                for (u32 i = 1; i < g_scheduler->worker_count; ++i)
+                {
+                    SemaphorePost(&g_scheduler->jobs_are_available);
+                }
+
+	            ds_MasterRunAvailableJobs();
                 
-                ds_DynamicsRemoveContacts(pipeline);
+                ds_JobPhaseEnd();
+
+                {
+                    ProfZoneNamed("Contact Deallocation");
+
+                    for (u64 bi = 0; bi < pipeline->contact_usage_set.block_count; ++bi)
+                    {
+                        u64 block = removal_phase->job[0].removal_set.bits[bi];
+                        for (u32 ji = 1; ji < g_scheduler->worker_count; ++ji)
+                        {
+                            block |= removal_phase->job[ji].removal_set.bits[bi];
+                        }
+
+                        struct ds_BitBlock it = ds_BitBlockInit(block, bi);
+                        while (ds_BitBlockHasNext(&it))
+                        {
+                            ds_ContactRemove(pipeline, (u32) ds_BitBlockNext(&it), 1);
+                        }
+                    }
+
+                    ProfZoneEnd;
+                }
+
+                ArenaPopRecord(&pipeline->frame);
+
+                ProfZoneEnd;
+            } 
+
+            if (rebuild)
+            {
                 const struct ds_BitSet *usage = &pipeline->shape_dynamic_usage_set;
                 for (u64 block = 0; block < usage->block_count; ++block)
                 {
                     pipeline->shape_dirty_set.bits[block] = usage->bits[block];
                 }
-            } 
+            }
 
-            pipeline->profile->ns_rebuildphase_end = ds_TimeNs();
+            pipeline->profile->ns_removalphase_end = ds_TimeNs();
         }
-
-        ArenaPopScratch();
     }
         
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     ds_BitSetClear(&pipeline->island_high_energy_set, 0);
-    pipeline->island_to_split = DS_ID_NULL; 
+    pipeline->island_to_split = ds_IslandIdNull(); 
+
+    /*
+     * Fallback split candidate: a high-energy island with a removed constraint holding a body that has rested
+     * past the threshold. The island may have fallen apart (a cut rope, a box rolled off a pile), and the
+     * resting part can only sleep once the split has made it its own island. The sleepiest body wins.
+     */
+    ds_IslandId fallback_island = ds_IslandIdNull();
+    f32 fallback_low_velocity_time = F32_MIN_NEGATIVE_NORMAL;
     f32 global_max_low_velocity_time = F32_MIN_NEGATIVE_NORMAL;
+
     for (u32 i = 0; i < active->island_pool.count; ++i)
     {
         const u32 isi = active->island_pool.buf[i];
         const struct ds_Island *island = pipeline->island_pool.buf + isi; 
 		f32 min_low_velocity_time = F32_MAX_POSITIVE_NORMAL;
+		f32 max_low_velocity_time = F32_MIN_NEGATIVE_NORMAL;
 
         struct ds_Body *body;
         for (i32 bi = island->body_list.first; bi != DLL_SENTINEL; bi = body->island_body.next)
         {
             body = pipeline->body_pool.buf + bi;
             const struct ds_BodyCompute *compute = active->body_compute_pool.buf + body->sim;
-			const f32 lv_sq = Vec3Dot(compute->linear_velocity, compute->linear_velocity);
-			const f32 av_sq = Vec3Dot(compute->angular_velocity, compute->angular_velocity);
+			const f32 lv_sq = V3Dot(compute->linear_velocity, compute->linear_velocity);
+			const f32 av_sq = V3Dot(compute->angular_velocity, compute->angular_velocity);
 			if (lv_sq <= g_solver_config->sleep_linear_velocity_sq_limit && av_sq <= g_solver_config->sleep_angular_velocity_sq_limit)
 			{
 				body->low_velocity_time += pipeline->timestep;
@@ -1518,19 +1587,39 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
             {
                 body->low_velocity_time = 0.0f;
             }
-			min_low_velocity_time = f32_min(min_low_velocity_time, body->low_velocity_time);
+			min_low_velocity_time = F32Min(min_low_velocity_time, body->low_velocity_time);
+			max_low_velocity_time = F32Max(max_low_velocity_time, body->low_velocity_time);
         }
 
         /* integrate final solver velocities and update bodies and find lowest low_velocity time */
 	    if (min_low_velocity_time < g_solver_config->sleep_time_threshold)
 	    {
             ds_BitSetSet(&pipeline->island_high_energy_set, i, 1);
+            if (island->constraint_remove_count
+                    && max_low_velocity_time >= g_solver_config->sleep_time_threshold
+                    && fallback_low_velocity_time < max_low_velocity_time)
+            {
+                fallback_low_velocity_time = max_low_velocity_time;
+                fallback_island = island->id;
+            }
 	    }
         else if (global_max_low_velocity_time < min_low_velocity_time && island->constraint_remove_count)
         {
             global_max_low_velocity_time = min_low_velocity_time;
             pipeline->island_to_split = island->id; 
         }
+    }
+
+    /* a low-energy island first: it sleeps right after its split */
+    if (ds_IslandIdNullCheck(pipeline->island_to_split))
+    {
+        pipeline->island_to_split = fallback_island;
+    }
+
+    /* with sleeping disabled ds_SolverSetSleep is a no-op: a resting island would stay active and the loop below never advance */
+    if (!g_solver_config->sleep_enabled)
+    {
+        return;
     }
 
     for (u64 block = 0; block < pipeline->island_high_energy_set.block_count; ++block)
@@ -1540,7 +1629,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
 		while (ds_BitBlockHasNext(&it))
 		{
 
-            const u32 i = ds_BitBlockPeekNext(&it);
+            const u32 i = (u32) ds_BitBlockPeekNext(&it);
             if (i >= active->island_pool.count)
             {
                 goto DONE;
@@ -1566,7 +1655,7 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
             }
 		}
 	}
-DONE:
+DONE:;
 }
 
 void ds_DynamicsSleepEnable(struct ds_Dynamics *pipeline)
@@ -1583,12 +1672,6 @@ void ds_DynamicsSleepEnable(struct ds_Dynamics *pipeline)
         struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
         if (ds_PoolSlotAllocated(set))
         {
-            for (u32 k = 0; k < set->island_pool.count; ++k)
-            {
-                const u32 island_index = set->island_pool.buf[k];
-        	    struct ds_Island *is = pipeline->island_pool.buf + k;
-            }
-
             ds_SolverSetWakeUp(pipeline, set_index);
         }
     }
@@ -1608,12 +1691,6 @@ void ds_DynamicsSleepDisable(struct ds_Dynamics *pipeline)
         struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
         if (ds_PoolSlotAllocated(set))
         {
-            for (u32 k = 0; k < set->island_pool.count; ++k)
-            {
-                const u32 island_index = set->island_pool.buf[k];
-	    	    struct ds_Island *is = pipeline->island_pool.buf + k;
-            }
-
             ds_SolverSetWakeUp(pipeline, set_index);
         }
 	}
@@ -1624,6 +1701,7 @@ static void UpdateSolverConfig(struct ds_Dynamics *pipeline)
 	g_solver_config->warmup_solver = g_solver_config->pending_warmup_solver;
 	g_solver_config->pgs_iteration_count = g_solver_config->pending_pgs_iteration_count;
 	g_solver_config->ngs_iteration_count = g_solver_config->pending_ngs_iteration_count;
+	ds_Assert(g_solver_config->pending_linear_slop > 0.0f);
 	g_solver_config->linear_slop = g_solver_config->pending_linear_slop;
 	g_solver_config->baumgarte_constant = g_solver_config->pending_baumgarte_constant;
 	g_solver_config->restitution_threshold = g_solver_config->pending_restitution_threshold;
@@ -1655,7 +1733,7 @@ void ds_DynamicsSimulateFrame(struct ds_Dynamics *pipeline)
     {
         ds_DynamicsMetricsAdd(&pipeline->metrics, &pipeline->worker[i].metrics);
     }
-    ds_DynamicsMetricsPrint(stderr, &pipeline->metrics);
+    //ds_DynamicsMetricsPrint(stderr, &pipeline->metrics);
 
 	PHYSICS_PIPELINE_VALIDATE(pipeline);
 
@@ -1665,7 +1743,7 @@ void ds_DynamicsSimulateFrame(struct ds_Dynamics *pipeline)
 static void ds_DynamicsProfileBegin(struct ds_Dynamics *pipeline)
 {
     ds_Assert(PowerOfTwoCheck(pipeline->profile_length));
-    const u32 pi = pipeline->profile_next & (pipeline->profile_length-1);
+    const u32 pi = (u32) (pipeline->profile_next & (pipeline->profile_length-1));
     pipeline->profile = pipeline->profile_buf + pi;
     pipeline->profile_next += 1;
 }
@@ -1679,8 +1757,9 @@ static void ds_DynamicsProfileEnd(struct ds_Dynamics *pipeline)
     p->ns_narrowphase_duration = p->ns_narrowphase_end - p->ns_narrowphase_start;
     p->ns_solverphase_duration = p->ns_solverphase_end - p->ns_solverphase_start;
     p->ns_rebuildphase_duration = p->ns_rebuildphase_end - p->ns_rebuildphase_start;
+    p->ns_removalphase_duration = p->ns_removalphase_end - p->ns_removalphase_start;
 
-    ds_DynamicsProfilePrint(stderr, p);
+    //ds_DynamicsProfilePrint(stderr, p);
 
     if (p->ns_frame_duration > pipeline->ns_tick)
     {
@@ -1697,11 +1776,13 @@ void ds_DynamicsProfilePrint(FILE *file, const struct ds_DynamicsProfile *p)
     const f32 ms_narrowphase_duration = (f32) p->ns_narrowphase_duration / NSEC_PER_MSEC;
     const f32 ms_solverphase_duration = (f32) p->ns_solverphase_duration / NSEC_PER_MSEC;
     const f32 ms_rebuildphase_duration = (f32) p->ns_rebuildphase_duration / NSEC_PER_MSEC;
+    const f32 ms_removalphase_duration = (f32) p->ns_removalphase_duration / NSEC_PER_MSEC;
 
     const f32 ms_broadphase_perc = 100.0f * ms_broadphase_duration / ms_frame_duration;
     const f32 ms_narrowphase_perc = 100.0f * ms_narrowphase_duration / ms_frame_duration;
     const f32 ms_solverphase_perc = 100.0f * ms_solverphase_duration / ms_frame_duration;
     const f32 ms_rebuildphase_perc = 100.0f * ms_rebuildphase_duration / ms_frame_duration;
+    const f32 ms_removalphase_perc = 100.0f * ms_removalphase_duration / ms_frame_duration;
 
     fprintf(file, "================= Profile ==============\n");
     fprintf(file, "        Time: %fms (100.0%%)\n", ms_frame_duration);
@@ -1709,19 +1790,29 @@ void ds_DynamicsProfilePrint(FILE *file, const struct ds_DynamicsProfile *p)
     fprintf(file, " Narrowphase: %fms (%f%%)\n", ms_narrowphase_duration, ms_narrowphase_perc);
     fprintf(file, " Solverphase: %fms (%f%%)\n", ms_solverphase_duration, ms_solverphase_perc);
     fprintf(file, "Rebuildphase: %fms (%f%%)\n", ms_rebuildphase_duration, ms_rebuildphase_perc);
+    fprintf(file, "Removalphase: %fms (%f%%)\n", ms_removalphase_duration, ms_removalphase_perc);
 }
 
+
+void ds_DynamicsSetGlobals(struct ds_Dynamics *pipeline)
+{
+    g_dynamics_worker = pipeline->worker;
+    g_numerics_config = &pipeline->numerics_config;
+}
 
 void ds_DynamicsTick(struct ds_Dynamics *pipeline)
 {
 	ProfZone;
 
+    ds_DynamicsSetGlobals(pipeline);
     ds_NumericsConfigPush(&pipeline->numerics_config);
 
 	if (pipeline->frames_completed)
 	{
 		ds_DynamicsClearFrame(pipeline);
 	}
+    /* before the first tick too: the body pool may have grown since the alloc */
+    ds_CGraphFramePrepare(pipeline);
 	pipeline->frames_completed += 1;
 
     const u64 f = pipeline->frames_completed & 0x1;
@@ -1767,13 +1858,13 @@ u64 ds_DynamicsOrientationHash(const struct ds_Dynamics *pipeline)
 
         XXH3_64bits_update(state, &i, sizeof(u32));
         XXH3_64bits_update(state, &body->flags, sizeof(body->flags));
-        XXH3_64bits_update(state, sim->world.position, sizeof(vec3));
-        XXH3_64bits_update(state, sim->world.rotation, sizeof(quat));
+        XXH3_64bits_update(state, &sim->world.position, sizeof(v3f64));
+        XXH3_64bits_update(state, &sim->world.rotation, sizeof(q));
         if (body->set == SOLVER_SET_ACTIVE)
         {
             const struct ds_BodyCompute *compute = set->body_compute_pool.buf + body->sim;
-            XXH3_64bits_update(state, compute->linear_velocity, sizeof(vec3));
-            XXH3_64bits_update(state, compute->angular_velocity, sizeof(vec3));
+            XXH3_64bits_update(state, &compute->linear_velocity, sizeof(v3));
+            XXH3_64bits_update(state, &compute->angular_velocity, sizeof(v3));
         }
     }
 
@@ -1782,20 +1873,29 @@ u64 ds_DynamicsOrientationHash(const struct ds_Dynamics *pipeline)
     return hash;
 }
 
-u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const struct ray *ray)
+u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const struct rayWorld *ray)
 {
+    /* the one direction check for the whole query: the per-shape raycasts assume dir != 0 (a NaN
+     * direction passes on to their asserts instead of being hidden as a miss) */
+    if (V3Dot(ray->dir, ray->dir) <= 0.0f)
+    {
+        return u32f32_inline(U32_MAX, F32_INFINITY);
+    }
+
+    /* the BVHs hold f32 world boxes, searched with the demoted ray; shapes test the f64 ray */
+    const struct ray ray_bvh = { .origin = V3F64Demote(ray->origin), .dir = ray->dir };
     struct arena *tmp = ArenaPushScratch();
 
-	struct bvhRaycastInfo d_info = BvhRaycastInit(tmp, &pipeline->dynamic_bvh, ray);
+	struct BVHRaycastInfo d_info = BVHRaycastInit(tmp, &pipeline->dynamic_bvh, &ray_bvh);
 	while (d_info.hit_queue.count)
 	{
-		const u32f32 tuple = MinQueueFixedPop(&d_info.hit_queue);
+		const u32f32 tuple = MQPop(&d_info.hit_queue);
 		if (d_info.hit.f < tuple.f)
 		{
 			break;	
 		}
 
-		if (ds_BTLeafCheck(d_info.node + tuple.u))
+		if (BTLeafCheck(d_info.node + tuple.u))
 		{
 			const u32 si = d_info.node[tuple.u].bt_child[0];
 			const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
@@ -1807,22 +1907,22 @@ u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const str
 		}
 		else
 		{
-			BvhRaycastTestAndPushChildren(&d_info, tuple);
+			BVHRaycastTestAndPushChildren(&d_info, tuple);
 		}
 	}
 
     ArenaFlush(tmp);
 
-	struct bvhRaycastInfo s_info = BvhRaycastInit(tmp, &pipeline->static_bvh, ray);
+	struct BVHRaycastInfo s_info = BVHRaycastInit(tmp, &pipeline->static_bvh, &ray_bvh);
 	while (s_info.hit_queue.count)
 	{
-		const u32f32 tuple = MinQueueFixedPop(&s_info.hit_queue);
+		const u32f32 tuple = MQPop(&s_info.hit_queue);
 		if (s_info.hit.f < tuple.f)
 		{
 			break;	
 		}
 
-		if (ds_BTLeafCheck(s_info.node + tuple.u))
+		if (BTLeafCheck(s_info.node + tuple.u))
 		{
 			const u32 si = s_info.node[tuple.u].bt_child[0];
 			const struct ds_Shape *shape = pipeline->shape_pool.buf + si;
@@ -1834,7 +1934,7 @@ u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const str
 		}
 		else
 		{
-			BvhRaycastTestAndPushChildren(&s_info, tuple);
+			BVHRaycastTestAndPushChildren(&s_info, tuple);
 		}
 	}
 
@@ -1847,8 +1947,8 @@ u32f32 ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const str
 
 struct ds_PhysicsEvent *ds_PhysicsEventPush(struct ds_Dynamics *pipeline)
 {
-	struct slot slot = ds_PhysicsEventPoolAdd(&pipeline->event_pool);
-    ds_DLLAppend(pipeline->event_list, pipeline->event_pool.buf, slot.index, node);
+	struct slot slot = ds_PoolAdd(pipeline->event_pool);
+    DLLAppend(pipeline->event_list, pipeline->event_pool.buf, slot.index, node);
 	struct ds_PhysicsEvent *event = slot.address;
 	event->ns = pipeline->ns_start + pipeline->frames_completed * pipeline->ns_tick;
 	return event;

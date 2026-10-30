@@ -12,5 +12,5 @@ out vec4 out_color;
 void main()
 {
 	out_color = color;
- 	gl_Position = perspective * view * vec4(position, 1.0f);
+ 	gl_Position = perspective * view * vec4(position, 1.0);
 }

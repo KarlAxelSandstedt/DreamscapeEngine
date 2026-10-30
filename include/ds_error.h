@@ -17,6 +17,16 @@
 ==========================================================================
 */
 
+/*
+ds_error.h
+==========
+Fatal-error exit and system error messages.
+
+Usage:
+    Log(T_SYSTEM, S_FATAL, "out of memory in %s", __func__);
+    FatalCleanupAndExit();
+*/
+
 #ifndef __DREAMSCAPE_ERROR_H__
 #define __DREAMSCAPE_ERROR_H__
 
@@ -28,10 +38,18 @@ extern "C" {
 
 #include "ds_string.h"
 
-/* Generate stacktrace and shutdown log gracefully, then exits */
-void 	FatalCleanupAndExit(void);
+/*
+Never returns. The first caller writes a crash report (Linux: stack trace on stderr; web: call stack on
+stderr; Windows: minidump <executable>_<version>_latest.dmp in the working directory: stacks, globals and the
+memory they point to, not the whole heap), shuts down the log (LogShutdown) and ends the process:
+Breakpoint (a debugger stops there), then exit(1). Other
+threads calling it meanwhile wait for that exit; a fatal error during the cleanup exits at once. Safe
+before any engine init.
+*/
+ds_NoReturn void 	FatalCleanupAndExit(void);
 
-/* thread safe last system error or code message generation */
+/* Write the text of a system error code into buf and return it (UTF-8, in English where the system has English
+ * messages); empty on failure or when it does not fit. Thread-safe. */
 utf8	Utf8SystemErrorCodeStringBuffered(u8 *buf, const u32 bufsize, const u32 code);
 
 

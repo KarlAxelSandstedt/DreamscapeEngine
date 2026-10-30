@@ -22,6 +22,13 @@
 
 #include "ds_test.h"
 
+/*
+Every test's random inputs depend on the config seed and the test's ordinal only: the main thread is reseeded
+with its own stream before each test (streams are 2^128 draws apart; 1024 keeps clear of the workers' indices),
+so neither the tests before it nor the parallel tests' scheduling-dependent draws reach it (springclean #105).
+*/
+static u32 test_stream = 1024;
+
 static void run_suite(struct suite_Correctness *suite, struct test_Environment *env, const u64 verbose)
 {
 	if (verbose) { fprintf(stdout, ":::::::::: Running suite %s ::::::::::\n", suite->id); }
@@ -36,6 +43,7 @@ static void run_suite(struct suite_Correctness *suite, struct test_Environment *
 		struct arena record_5 = *env->mem_5;
 		struct arena record_6 = *env->mem_6;
 
+		ThreadXoshiro256InitSequence(test_stream++);
 		struct test_Output out = suite->unit_test[i](env);
 		if (out.success)
 		{
@@ -60,8 +68,9 @@ static void run_suite(struct suite_Correctness *suite, struct test_Environment *
 
 	for (u64 i = 0; i < suite->repetition_test_count; ++i)
 	{
-		RngPushState();
-		struct test_Output out;
+		ThreadXoshiro256InitSequence(test_stream++);
+		/* a count of 0 runs nothing: a pass */
+		struct test_Output out = { .id = "(count 0)", .success = 1 };
 		u32 t;
 		for (t = 0; t < suite->repetition_test[i].count; ++t)
 		{
@@ -85,7 +94,6 @@ static void run_suite(struct suite_Correctness *suite, struct test_Environment *
 		{
 			fprintf(stdout, "\tTest %s iteration (%u/%u)\tfailed: %s:%llu\n", out.id, (t+1), suite->repetition_test[i].count, out.file, (long long unsigned int) out.line);
 		}
-		RngPopState();
 	}
 
 	if (verbose) { fprintf(stdout, "Tests passed: (%llu/%llu)\n",  
@@ -137,12 +145,51 @@ u32 ds_TestJobPhaseDispatch(const ds_JobId job)
     return job_diff;
 }
 
+void ds_TestRunParallel(void (*test)(void *), void *args)
+{
+	struct arena *mem = ArenaPushScratch();
+
+	struct ds_TestJobPhase phase;
+	ds_JobPhaseAlloc(mem, &phase.phase, TEST_JOB_COUNT, ds_TestJobPhaseDispatch);
+	phase.count = g_scheduler->worker_count;
+	phase.job = ArenaPush(mem, phase.count * sizeof(struct ds_TestJob));
+	for (u32 k = 0; k < phase.count; ++k)
+	{
+		phase.job[k].test = test;
+		phase.job[k].args = args;
+	}
+
+	/* the jobs wait at the barrier until all are published, so they start together */
+	AtomicStoreRel32(&phase.a_barrier, 0);
+	ds_JobPhaseBegin(&phase.phase);
+	for (u32 k = 0; k < phase.count; ++k)
+	{
+		ds_WSDequePushBottom(g_scheduler->seed_deque, ds_JobIdInit(TEST_JOB, k));
+	}
+	ds_JobPhaseReserve(&phase.phase, TEST_JOB, phase.count);
+	AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, phase.count);
+	ds_JobPhaseAddFetchRemaining(&phase.phase, phase.count);
+	ds_WSDequePublish(g_scheduler->seed_deque);
+	for (u32 i = 1; i < phase.count; ++i)
+	{
+		SemaphorePost(&g_scheduler->jobs_are_available);
+	}
+	AtomicStoreRel32(&phase.a_barrier, 1);
+
+	ds_MasterRunAvailableJobs();
+	ds_JobPhaseEnd();
+
+	ArenaPopScratch();
+}
+
+#ifdef DS_PERFORMANCE_MEASUREMENT_API
+
 static void run_performance_suite(struct suite_Performance *suite)
 {
 	fprintf(stdout, ":::::::::: Running peformance suite %s ::::::::::\n", suite->id);
 
-	const u64 max_time_without_improvement = 10*TscFrequency();
-	struct rt tester;
+	const f64 retry_s = 10.0;
+	struct RT tester;
 	struct arena *mem = ArenaPushScratch();
 
 	for (u32 i = 0; i < suite->parallel_test_count; ++i)
@@ -167,10 +214,12 @@ static void run_performance_suite(struct suite_Performance *suite)
                 : NULL;
 		}
 
-		rt_Wave(&tester, suite->parallel_test[i].size, TscFrequency(), max_time_without_improvement, 1);
+		/* the cycles printed are the master's own: its counter stops while it waits for the workers */
+		RTWave(&tester, suite->parallel_test[i].size, retry_s);
 		do
 		{
-			RngPushState();
+			/* every iteration draws the same numbers */
+			ThreadXoshiro256InitSequence(test_stream);
 			ArenaPushRecord(mem);
 			AtomicStoreRel32(&phase.a_barrier, 0);
 
@@ -199,17 +248,17 @@ static void run_performance_suite(struct suite_Performance *suite)
                 }
 			    AtomicStoreRel32(&phase.a_barrier, 1);
 
-			    rt_BeginTime(&tester);	
+			    RTBeginTime(&tester);	
 
                 ds_MasterRunAvailableJobs();
                 ds_JobPhaseEnd();
 			    
-                rt_EndTime(&tester);
+                RTEndTime(&tester);
             }
 
 			ArenaPopRecord(mem);
-			RngPopState();
-		} while (rt_TestingCheck(&tester));
+		} while (RTTestingCheck(&tester));
+		test_stream += 1;
 
 		if (suite->parallel_test[i].test_free)
 		{
@@ -219,7 +268,7 @@ static void run_performance_suite(struct suite_Performance *suite)
 			}
 		}
 
-		rt_PrintStatistics(&tester, stdout);
+		RTPrintStatistics(&tester, stdout);
 	}
 
     for (u32 i = 0; i < suite->serial_test_count; ++i)
@@ -231,31 +280,32 @@ static void run_performance_suite(struct suite_Performance *suite)
 			? suite->serial_test[i].test_init()
 			: NULL;
 
-		rt_Wave(&tester, suite->serial_test[i].size, TscFrequency(), max_time_without_improvement, 1);
+		RTWave(&tester, suite->serial_test[i].size, retry_s);
 		do
 		{
-			RngPushState();
+			ThreadXoshiro256InitSequence(test_stream);
 			if (suite->serial_test[i].test_reset)
 			{
 				suite->serial_test[i].test_reset(args);
 			}		
 
-			rt_BeginTime(&tester);	
+			RTBeginTime(&tester);	
 			suite->serial_test[i].test(args);	
-			rt_EndTime(&tester);
-		
-			RngPopState();
-		} while (rt_TestingCheck(&tester));
+			RTEndTime(&tester);
+		} while (RTTestingCheck(&tester));
+		test_stream += 1;
 
 		if (suite->serial_test[i].test_free)
 		{
 			suite->serial_test[i].test_free(args);
 		}
-		rt_PrintStatistics(&tester, stdout);
+		RTPrintStatistics(&tester, stdout);
 	}
 
     ArenaPopScratch();
 }
+
+#endif /* DS_PERFORMANCE_MEASUREMENT_API */
 
 void ds_TestMainCorrectness(void)
 {
@@ -277,23 +327,58 @@ void ds_TestMainCorrectness(void)
 		.seed = 2984395893,
 	};
 
-	//run_suite(jobscheduler_correctness_suite, &env, 1);
-	//run_suite(THashMap_correctness_suite, &env, 1);
-	//run_suite(allocator_correctness_suite, &env, 1);
-	//run_suite(kas_string_correctness_suite, &env, 1);
-	//run_suite(serialize_correctness_suite, &env, 1);
+	run_suite(THashMap_correctness_suite, &env, 1);
+	run_suite(base_correctness_suite, &env, 1);
+	run_suite(allocator_correctness_suite, &env, 1);
+	run_suite(jobscheduler_correctness_suite, &env, 1);
+	run_suite(container_correctness_suite, &env, 1);
+	run_suite(kas_string_correctness_suite, &env, 1);
+	run_suite(serialize_correctness_suite, &env, 1);
+    run_suite(contact_correctness_suite, &env, 1);
+    run_suite(mesh_contact_correctness_suite, &env, 1);
     run_suite(geometry_correctness_suite, &env, 1);
-	//run_suite(array_list_correctness_suite, &env, 1);
-	//run_suite(hierarchy_correctness_index_suite, &env, 1);
-	//run_suite(math_correctness_suite, &env, 1);
+    run_suite(voronoi_correctness_suite, &env, 1);
+    run_suite(gjk_correctness_suite, &env, 1);
+    run_suite(shape_correctness_suite, &env, 1);
+    run_suite(raycast_correctness_suite, &env, 1);
+    run_suite(bvh_correctness_suite, &env, 1);
+    run_suite(renderer_correctness_suite, &env, 1);
+    run_suite(ui_correctness_suite, &env, 1);
+    run_suite(cmd_correctness_suite, &env, 1);
+    run_suite(config_correctness_suite, &env, 1);
+    run_suite(dynamics_correctness_suite, &env, 1);
+    run_suite(rng_correctness_suite, &env, 1);
+    run_suite(asset_correctness_suite, &env, 1);
+
+	ArenaFree(&mem_1);
+	ArenaFree(&mem_2);
+	ArenaFree(&mem_3);
+	ArenaFree(&mem_4);
+	ArenaFree(&mem_5);
+	ArenaFree(&mem_6);
 }
+
+#ifdef DS_PERFORMANCE_MEASUREMENT_API
 
 void ds_TestMainPerformance(void)
 {
 	//run_performance_suite(jobscheduler_performance_suite);
-	//run_performance_suite(THashMap_performance_suite);
-	//run_performance_suite(allocator_performance_suite);
+	run_performance_suite(THashMap_performance_suite);
+	run_performance_suite(allocator_performance_suite);
 	//run_performance_suite(hash_performance_suite);
 	//run_performance_suite(rng_performance_suite);
 	run_performance_suite(serialize_performance_suite);
+	run_performance_suite(string_performance_suite);
+	run_performance_suite(hierarchy_performance_suite);
+	run_performance_suite(memory_performance_suite);
+	run_performance_suite(dynamics_performance_suite);
 }
+
+#else
+
+void ds_TestMainPerformance(void)
+{
+	fprintf(stdout, "performance tests need DS_PERFORMANCE_MEASUREMENT_API (DS_TEST_PERFORMANCE defines it)\n");
+}
+
+#endif

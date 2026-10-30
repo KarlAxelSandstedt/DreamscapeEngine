@@ -17,7 +17,6 @@
 ==========================================================================
 */
 
-POOL_DEFINE(ds_Contact);
 
 struct ds_ContactKey ds_ContactKeyCanonical(const u32 shape0, const u32 shape1)
 {
@@ -33,7 +32,7 @@ u32 ds_ContactKeyHash(const struct ds_ContactKey key)
 
 u32 ds_ContactKeyEquivalence(const struct ds_ContactKey key0, const struct ds_ContactKey key1)
 {
-    return memcmp(&key0, &key1, sizeof(struct ds_ContactKey)) == 0;
+    return key0.shape[0] == key1.shape[0] && key0.shape[1] == key1.shape[1];
 }
 
 void ds_ContactKeyAddress(struct ds_Body **b0, struct ds_Shape **s0, struct ds_Body **b1, struct ds_Shape **s1, const struct ds_Dynamics *pipeline, const struct ds_ContactKey key)
@@ -45,7 +44,7 @@ void ds_ContactKeyAddress(struct ds_Body **b0, struct ds_Shape **s0, struct ds_B
     *b1 = pipeline->body_pool.buf + (*s1)->body;
 }
 
-struct slot ds_ContactAdd(struct ds_Dynamics *pipeline, const struct ds_ContactKey key)
+struct slot ds_ContactTryAdd(struct ds_Dynamics *pipeline, const struct ds_ContactKey key)
 {
     ds_Assert(ds_ContactKeyLookup(pipeline, key).address == NULL);
 
@@ -55,18 +54,30 @@ struct slot ds_ContactAdd(struct ds_Dynamics *pipeline, const struct ds_ContactK
         pipeline->shape_pool.buf + key.shape[1],
     };
 
+    if (!ds_BodyPairMayCollide(pipeline, shape[0]->body, shape[1]->body))
+    {
+        return (struct slot) { .index = U32_MAX, .address = NULL };
+    }
+
     const u32 old_max = pipeline->contact_pool.count_max;
-	const struct slot contact_slot = ds_ContactPoolAdd(&pipeline->contact_pool);
+	const struct slot contact_slot = ds_PoolAdd(pipeline->contact_pool);
     struct ds_Contact *c = contact_slot.address;
     if (old_max != pipeline->contact_pool.count_max)
     {
-        c->id = ds_IdFConstruct(contact_slot.index, 0);
+        c->id = ds_ContactIdInit(contact_slot.index, 0);
     }
+
+    if (pipeline->contact_usage_set.bit_count <= contact_slot.index)
+    {
+        ds_BitSetIncreaseSize(&pipeline->contact_usage_set, pipeline->contact_usage_set.bit_count << 1, 0);
+    }
+    ds_BitSetSet(&pipeline->contact_usage_set, contact_slot.index, 1);
 
     c->key = key;
     c->island = U32_MAX;
-    c->id += DS_IDF_GENERATION_INCREMENT;
+    c->id = ds_ContactIdNextGeneration(c->id);
     c->narrowphase = (struct c_ContactResult) { 0 };
+    c->com_offset = V3Zero();
 
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     c->compute = ds_CPoolPush(active->contact_pool).index;
@@ -79,8 +90,8 @@ struct slot ds_ContactAdd(struct ds_Dynamics *pipeline, const struct ds_ContactK
     struct ds_Contact *c1 = buf + shape[1]->contact_list.last; 
     const i32 prev0 = (c0->key.shape[1] == c->key.shape[0]);
     const i32 prev1 = (c1->key.shape[1] == c->key.shape[1]);
-    ds_DLLAppendEx(shape[0]->contact_list, buf, contact_slot.index, shape_contact[prev0], shape_contact[0]);
-    ds_DLLAppendEx(shape[1]->contact_list, buf, contact_slot.index, shape_contact[prev1], shape_contact[1]);
+    DLLAppendEx(shape[0]->contact_list, buf, contact_slot.index, shape_contact[prev0], shape_contact[0]);
+    DLLAppendEx(shape[1]->contact_list, buf, contact_slot.index, shape_contact[prev1], shape_contact[1]);
 
 	ds_HashMapAdd(&pipeline->contact_map, ds_ContactKeyHash(key), contact_slot.index);
 
@@ -89,8 +100,10 @@ struct slot ds_ContactAdd(struct ds_Dynamics *pipeline, const struct ds_ContactK
     return contact_slot;
 }
 
-void ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 index)
+void ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 index, const u32 increment_constraint_remove_count)
 {
+    ds_Assert(increment_constraint_remove_count <= 1);
+
     struct ds_Contact *buf = pipeline->contact_pool.buf;
 	struct ds_Contact *c = buf + index;
     ds_Assert(ds_PoolSlotAllocated(c));
@@ -107,8 +120,8 @@ void ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 index)
         ds_CGraphContactRemove(pipeline, c);
 
         struct ds_Island *island = pipeline->island_pool.buf + c->island;
-        island->constraint_remove_count += 1;
-        ds_DLLRemove(island->contact_list, pipeline->contact_pool.buf, index, island_contact);
+        island->constraint_remove_count += increment_constraint_remove_count;
+        DLLRemove(island->contact_list, pipeline->contact_pool.buf, index, island_contact);
         c->island = U32_MAX;
     }
     else
@@ -131,10 +144,11 @@ void ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 index)
     const i32 prev1 = (c->key.shape[1] == buf[ c->shape_contact[1].prev ].key.shape[1]);
     const i32 next0 = (c->key.shape[0] == buf[ c->shape_contact[0].next ].key.shape[1]);
     const i32 next1 = (c->key.shape[1] == buf[ c->shape_contact[1].next ].key.shape[1]);
-    ds_DLLRemoveEx(shape0->contact_list, buf, index, shape_contact[prev0], shape_contact[0], shape_contact[next0]);
-    ds_DLLRemoveEx(shape1->contact_list, buf, index, shape_contact[prev1], shape_contact[1], shape_contact[next1]);
+    DLLRemoveEx(shape0->contact_list, buf, index, shape_contact[prev0], shape_contact[0], shape_contact[next0]);
+    DLLRemoveEx(shape1->contact_list, buf, index, shape_contact[prev1], shape_contact[1], shape_contact[next1]);
         
-    ds_ContactPoolRemove(&pipeline->contact_pool, index);
+    ds_PoolRemove(pipeline->contact_pool, index);
+    ds_BitSetSet(&pipeline->contact_usage_set, index, 0);
 }
 
 struct slot ds_ContactKeyLookup(const struct ds_Dynamics *pipeline, const struct ds_ContactKey key)
@@ -158,17 +172,22 @@ struct slot ds_ContactKeyLookup(const struct ds_Dynamics *pipeline, const struct
 struct slot ds_ContactLookup(const struct ds_Dynamics *pipeline, const ds_ContactId id)
 {
     struct slot slot = { .address = NULL, .index = U32_MAX };
-    struct ds_Contact *c = pipeline->contact_pool.buf + ds_IdFIndex(id);
-    if (id != DS_IDF_NULL && ds_PoolSlotAllocated(c) && c->id == id)
+    /* the index is bounded before the slot is read (as ds_BodyLookup) */
+    const u32 index = ds_ContactIdIndex(id);
+    if (index < pipeline->contact_pool.count_max)
     {
-        slot.address = c;
-        slot.index = ds_IdFIndex(id);
+        struct ds_Contact *c = pipeline->contact_pool.buf + index;
+        if (ds_PoolSlotAllocated(c) && ds_ContactIdEqual(c->id, id))
+        {
+            slot.address = c;
+            slot.index = index;
+        }
     }
 
     return slot;
 }
 
-u32 ds_ContactCheckBvhOverlap(const struct ds_Dynamics *pipeline, const u32 contact_index)
+u32 ds_ContactCheckBVHOverlap(const struct ds_Dynamics *pipeline, const u32 contact_index)
 {
     const struct ds_Contact *contact = pipeline->contact_pool.buf + contact_index;
 
@@ -178,8 +197,8 @@ u32 ds_ContactCheckBvhOverlap(const struct ds_Dynamics *pipeline, const u32 cont
         pipeline->shape_pool.buf + contact->key.shape[1],
     };
     
-    const struct bvhNode *s_node = pipeline->static_bvh.pool.buf;
-    const struct bvhNode *d_node = pipeline->dynamic_bvh.pool.buf;
+    const struct BVHNode *s_node = pipeline->static_bvh.pool.buf;
+    const struct BVHNode *d_node = pipeline->dynamic_bvh.pool.buf;
 
     const struct aabb *bbox[2];
     bbox[0] = ds_ShapeDynamicCheck(shape[0]) 
@@ -211,6 +230,10 @@ void ds_ContactPromote(struct ds_Dynamics *pipeline, const u32 contact)
         moved->compute = compute;
     }
 
+    /* 
+     * TODO: This code is repeated often in engine, can we simplify contacts/joints to
+     * skip the pointer chase, at least a little, and simplify the code using flags? 
+     */
     const struct ds_Shape *shape[2] =
     {
         pipeline->shape_pool.buf + c->key.shape[0],
@@ -237,7 +260,7 @@ void ds_ContactPromote(struct ds_Dynamics *pipeline, const u32 contact)
     }
 
     c->island = expand_index;
-	ds_DLLAppend(expand->contact_list, pipeline->contact_pool.buf, contact, island_contact);
+	DLLAppend(expand->contact_list, pipeline->contact_pool.buf, contact, island_contact);
 	PhysicsEventIslandExpanded(pipeline, expand->id);	
 }
 
@@ -263,7 +286,7 @@ void ds_ContactDemote(struct ds_Dynamics *pipeline, const u32 contact)
 	PhysicsEventContactRemoved(pipeline, body[0]->id, shape[0]->id, body[1]->id, shape[1]->id);
 
     island->constraint_remove_count += 1;
-    ds_DLLRemove(island->contact_list, pipeline->contact_pool.buf, contact, island_contact);
+    DLLRemove(island->contact_list, pipeline->contact_pool.buf, contact, island_contact);
 
     c->island = U32_MAX;
     c->set = SOLVER_SET_ACTIVE;
@@ -274,13 +297,15 @@ void ds_ContactDemote(struct ds_Dynamics *pipeline, const u32 contact)
 u64 ds_ContactMemoryRequirement(const struct ds_Dynamics *pipeline, const u32 contact)
 {
     const struct ds_Contact *c = pipeline->contact_pool.buf + contact;
+    ds_Assert(c->color != CG_INVALID_COLOR);
     const struct ds_CGraphColor *color = pipeline->cgraph.color + c->color;
     const struct ds_ContactCompute *compute = color->contact_compute_pool.buf + c->compute;
 
-    ds_Assert(c->color != CG_INVALID_COLOR);
-    const u64 mem_req_manifold = c->narrowphase.manifold_count*sizeof(struct c_Manifold);
+    const u64 mem_req_manifold = c->narrowphase.manifold_count*sizeof(struct ds_SolverManifold);
     const u64 mem_req_cache = c->narrowphase.cache_count*sizeof(struct c_SatCache);
     const u64 mem_req_compute = compute->ccache_count*sizeof(struct ds_ContactConstraintCache);
+
+    const u64 mem_req_gjk_cache = (c->narrowphase.gjk_cache) ? sizeof(struct GJKCache) : 0;
 
     u64 mem_req_tri = 0;
     u64 mem_req_tri_manifold = 0;
@@ -290,7 +315,7 @@ u64 ds_ContactMemoryRequirement(const struct ds_Dynamics *pipeline, const u32 co
         mem_req_tri_manifold = c->narrowphase.manifold_count*sizeof(u32);
     }
 
-    return mem_req_manifold + mem_req_cache + mem_req_tri + mem_req_tri_manifold + mem_req_compute;
+    return mem_req_manifold + mem_req_cache + mem_req_gjk_cache + mem_req_tri + mem_req_tri_manifold + mem_req_compute;
 }
 
 void ds_ContactWakeUp(struct arena *frame, struct ds_Dynamics *pipeline, const u32 contact_index)
@@ -299,11 +324,16 @@ void ds_ContactWakeUp(struct arena *frame, struct ds_Dynamics *pipeline, const u
     ds_Assert(c->set >= SOLVER_SET_SLEEPING_FIRST && c->color == CG_INVALID_COLOR);
 
     ds_Assert(c->narrowphase.manifold_count);
-    c->narrowphase.manifold = ArenaPushAlignedMemcpy(frame, c->narrowphase.manifold, c->narrowphase.manifold_count*sizeof(struct c_Manifold), 1);
+    c->narrowphase.manifold = ArenaPushAlignedMemcpy(frame, c->narrowphase.manifold, c->narrowphase.manifold_count*sizeof(struct ds_SolverManifold), 1);
 
     if (c->narrowphase.cache)
     {
         c->narrowphase.cache = ArenaPushAlignedMemcpy(frame, c->narrowphase.cache, c->narrowphase.cache_count*sizeof(struct c_SatCache), 1);
+    }
+
+    if (c->narrowphase.gjk_cache)
+    {
+        c->narrowphase.gjk_cache = ArenaPushAlignedMemcpy(frame, c->narrowphase.gjk_cache, sizeof(struct GJKCache), 1);
     }
 
     if (c->narrowphase.tri)
@@ -337,13 +367,18 @@ void ds_ContactSleep(struct arena *mem_sleep, struct ds_Dynamics *pipeline, cons
 
     ds_CGraphContactRemove(pipeline, c); 
 
-    const u64 mem_req_manifold = c->narrowphase.manifold_count*sizeof(struct c_Manifold);
+    const u64 mem_req_manifold = c->narrowphase.manifold_count*sizeof(struct ds_SolverManifold);
     c->narrowphase.manifold = ArenaPushAlignedMemcpy(mem_sleep, c->narrowphase.manifold, mem_req_manifold, 1);
 
     if (c->narrowphase.cache)
     {
         const u64 mem_req_cache = c->narrowphase.cache_count*sizeof(struct c_SatCache);
         c->narrowphase.cache = ArenaPushAlignedMemcpy(mem_sleep, c->narrowphase.cache, mem_req_cache, 1);
+    }
+
+    if (c->narrowphase.gjk_cache)
+    {
+        c->narrowphase.gjk_cache = ArenaPushAlignedMemcpy(mem_sleep, c->narrowphase.gjk_cache, sizeof(struct GJKCache), 1);
     }
 
     if (c->narrowphase.tri)
@@ -406,4 +441,116 @@ void ds_ContactValidateAll(const struct ds_Dynamics *pipeline)
             }
         }
     }
+}
+
+#define DS_CONTACT_NARROWPHASE_CACHE     0x1
+#define DS_CONTACT_NARROWPHASE_TRI       0x2
+#define DS_CONTACT_NARROWPHASE_GJK_CACHE 0x4
+
+u64 ds_ContactNarrowphaseSerializeSize(const struct ds_Dynamics *pipeline, const u32 contact)
+{
+	const struct c_ContactResult *r = &pipeline->contact_pool.buf[contact].narrowphase;
+	u64 size = sizeof(u32) + (u64) r->manifold_count*sizeof(struct ds_SolverManifold);
+	if (r->cache)
+	{
+		size += (u64) r->cache_count*sizeof(struct c_SatCache);
+	}
+	if (r->gjk_cache)
+	{
+		size += sizeof(struct GJKCache);
+	}
+	if (r->tri)
+	{
+		size += 2*(u64) r->manifold_count*sizeof(u32);
+	}
+	return size;
+}
+
+void ds_ContactNarrowphaseSerialize(struct ss *ss, const struct ds_Dynamics *pipeline, const u32 contact)
+{
+	const struct c_ContactResult *r = &pipeline->contact_pool.buf[contact].narrowphase;
+	const u32 flags = ((r->cache) ? DS_CONTACT_NARROWPHASE_CACHE : 0)
+                    | ((r->tri) ? DS_CONTACT_NARROWPHASE_TRI : 0)
+                    | ((r->gjk_cache) ? DS_CONTACT_NARROWPHASE_GJK_CACHE : 0);
+	ss_WriteU32Le(ss, flags);
+	ss_Write8N(ss, (const b8 *) r->manifold, (u64) r->manifold_count*sizeof(struct ds_SolverManifold));
+	if (r->cache)
+	{
+		ss_Write8N(ss, (const b8 *) r->cache, (u64) r->cache_count*sizeof(struct c_SatCache));
+	}
+	if (r->gjk_cache)
+	{
+		ss_Write8N(ss, (const b8 *) r->gjk_cache, sizeof(struct GJKCache));
+	}
+	if (r->tri)
+	{
+		ss_Write8N(ss, (const b8 *) r->tri, (u64) r->manifold_count*sizeof(u32));
+		ss_Write8N(ss, (const b8 *) r->tri_manifold, (u64) r->manifold_count*sizeof(u32));
+	}
+}
+
+u32 ds_ContactNarrowphaseFrameTryDeserialize(struct ss *ss, struct ds_Dynamics *pipeline, const u32 contact)
+{
+	struct c_ContactResult *r = &pipeline->contact_pool.buf[contact].narrowphase;
+	r->manifold = NULL;
+	r->cache = NULL;
+	r->gjk_cache = NULL;
+	r->tri = NULL;
+	r->tri_manifold = NULL;
+	if (ss_BytesLeft(ss) < sizeof(u32))
+	{
+		return 0;
+	}
+
+	const u32 flags = ss_ReadU32Le(ss);
+	return ds_DynamicsFrameDataTryDeserialize(ss, (void **) &r->manifold, pipeline, (u64) r->manifold_count*sizeof(struct ds_SolverManifold))
+		&& (!(flags & DS_CONTACT_NARROWPHASE_CACHE) || ds_DynamicsFrameDataTryDeserialize(ss, (void **) &r->cache, pipeline, (u64) r->cache_count*sizeof(struct c_SatCache)))
+		&& (!(flags & DS_CONTACT_NARROWPHASE_GJK_CACHE) || ds_DynamicsFrameDataTryDeserialize(ss, (void **) &r->gjk_cache, pipeline, sizeof(struct GJKCache)))
+		&& (!(flags & DS_CONTACT_NARROWPHASE_TRI) || ds_DynamicsFrameDataTryDeserialize(ss, (void **) &r->tri, pipeline, (u64) r->manifold_count*sizeof(u32)))
+		&& (!(flags & DS_CONTACT_NARROWPHASE_TRI) || ds_DynamicsFrameDataTryDeserialize(ss, (void **) &r->tri_manifold, pipeline, (u64) r->manifold_count*sizeof(u32)));
+}
+
+u32 ds_ContactNarrowphaseHeapTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynamics *pipeline, const u32 contact)
+{
+	struct c_ContactResult *r = &pipeline->contact_pool.buf[contact].narrowphase;
+	r->manifold = NULL;
+	r->cache = NULL;
+	r->gjk_cache = NULL;
+	r->tri = NULL;
+	r->tri_manifold = NULL;
+	if (ss_BytesLeft(ss) < sizeof(u32))
+	{
+		return 0;
+	}
+
+	const u32 flags = ss_ReadU32Le(ss);
+	return ds_DynamicsHeapDataTryDeserialize(mem, ss, (void **) &r->manifold, (u64) r->manifold_count*sizeof(struct ds_SolverManifold))
+		&& (!(flags & DS_CONTACT_NARROWPHASE_CACHE) || ds_DynamicsHeapDataTryDeserialize(mem, ss, (void **) &r->cache, (u64) r->cache_count*sizeof(struct c_SatCache)))
+		&& (!(flags & DS_CONTACT_NARROWPHASE_GJK_CACHE) || ds_DynamicsHeapDataTryDeserialize(mem, ss, (void **) &r->gjk_cache, sizeof(struct GJKCache)))
+		&& (!(flags & DS_CONTACT_NARROWPHASE_TRI) || ds_DynamicsHeapDataTryDeserialize(mem, ss, (void **) &r->tri, (u64) r->manifold_count*sizeof(u32)))
+		&& (!(flags & DS_CONTACT_NARROWPHASE_TRI) || ds_DynamicsHeapDataTryDeserialize(mem, ss, (void **) &r->tri_manifold, (u64) r->manifold_count*sizeof(u32)));
+}
+
+u64 ds_ContactComputeCacheSerializeSize(const struct ds_ContactCompute *compute)
+{
+	return (u64) compute->ccache_count*sizeof(struct ds_ContactConstraintCache);
+}
+
+void ds_ContactComputeCacheSerialize(struct ss *ss, const struct ds_ContactCompute *compute)
+{
+	ss_Write8N(ss, (const b8 *) compute->ccache, ds_ContactComputeCacheSerializeSize(compute));
+}
+
+u32 ds_ContactComputeCacheFrameTryDeserialize(struct ss *ss, struct ds_ContactCompute *compute, struct ds_Dynamics *pipeline)
+{
+	/* cc is rebuilt every solve */
+	compute->cc = NULL;
+	return ds_DynamicsFrameDataTryDeserialize(ss, (void **) &compute->ccache, pipeline, ds_ContactComputeCacheSerializeSize(compute));
+}
+
+u32 ds_ContactComputeCacheHeapTryDeserialize(struct arena *mem, struct ss *ss, struct ds_ContactCompute *compute)
+{
+	/* cc is rebuilt every solve */
+	compute->cc = NULL;
+	return ds_DynamicsHeapDataTryDeserialize(mem, ss, (void **) &compute->ccache, ds_ContactComputeCacheSerializeSize(compute));
 }

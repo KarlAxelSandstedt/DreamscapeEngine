@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.14.3)
 project(Dreamscape LANGUAGES C CXX)
 set(CPACK_PACKAGE_MAJOR "0")
 set(CPACK_PACKAGE_MINOR "1")
-set(CPACK_PACKAGE_PATCH "2")
+set(CPACK_PACKAGE_PATCH "4")
 set(CPACK_PACKAGE_VERSION "${CPACK_PACKAGE_MAJOR}.${CPACK_PACKAGE_MINOR}.${CPACK_PACKAGE_PATCH}")
 
 set(DS_TEST_EXECUTABLE "DreamscapeTest")
@@ -36,6 +36,8 @@ option(DS_PROFILE "DS_PROFILE enables internal profiling and the profiling API w
 		OFF)
 
 option(DS_LOG "DS_LOG enabled the logging API and internal logging points in the library." ON)
+
+option(DS_PERFORMANCE_MEASUREMENT_API "DS_PERFORMANCE_MEASUREMENT_API enables the Perf block timers (ds_time.h) and their per-thread setup." OFF)
 
 option(DS_ASAN "DS_ASAN builds the library with Asan address sanitizing. If the user wishes to
 		use Asan, the user should compile his or her code with Asan, AND set DS_ASAN;
@@ -102,7 +104,10 @@ if (DEFINED EMSCRIPTEN)
 		add_compile_options(-O0)
 	endif ()	
 	
-	add_compile_options(-W -Wall -Wextra -Wno-switch -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function)
+	add_compile_options(-W -Wall -Wextra -Wno-switch -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function)
+
+	# determinism: never fuse a*b + c into an FMA (wasm relaxed-simd has FMA)
+	add_compile_options(-ffp-contract=off)
 
 	add_link_options(--emrun)
 	add_link_options(-sALLOW_MEMORY_GROWTH)
@@ -112,9 +117,9 @@ if (DEFINED EMSCRIPTEN)
 	add_compile_options(-pthread)
 	add_link_options(-pthread -sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency)
 
+	# lib/'s external projects (SDL3, freetype) get CMAKE_C_FLAGS, not add_compile_options: without -pthread
+	# their objects lack atomics and wasm-ld refuses the shared-memory link
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread")
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --embed-file=../assets@../assets")
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --embed-file=../asset_components@../asset_components")
 
     #add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 	#	COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${PROJECT_NAME}>/src
@@ -152,7 +157,13 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 	# avoids x87 fp-instructions entirely (extended precision bad for consistency)
 	add_compile_options(-mfpmath=sse)
 
-	add_compile_options(-W -Wall -Wextra -Wno-switch -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function)
+	# CPU baseline (AGENTS.md): lzcnt, tzcnt, popcnt for ds_atomic.h's bit ops; integer only, float results unchanged
+	add_compile_options(-mpopcnt -mlzcnt -mbmi)
+
+	# determinism: never fuse a*b + c into an FMA (GCC's default in GNU C mode is -ffp-contract=fast)
+	add_compile_options(-ffp-contract=off)
+
+	add_compile_options(-W -Wall -Wextra -Wno-switch -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function)
 
 elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 
@@ -162,23 +173,69 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 		add_compile_options(/Zi)
 	endif ()
 
-	if (DS_DEBUG)
-		add_compile_definitions(DS_DEBUG)
-		add_compile_options(/Od /Zi)
+	# MSVC has neither: say so instead of building without them
+	if (DS_TSAN OR DS_UBSAN)
+		message(WARNING "DS_TSAN and DS_UBSAN are not supported on Windows (MSVC); building without them.")
+		set(DS_TSAN OFF)
+		set(DS_UBSAN OFF)
 	endif ()
 
+	if (DS_DEBUG)
+		add_compile_options(/Zi)
+	endif ()
+
+	# as on Linux, DS_OPTIMIZE alone sets the optimization level
 	if (DS_OPTIMIZE)
 		add_compile_options(/O2)
-	endif ()	
+	else ()
+		add_compile_options(/Od)
+	endif ()
+
+	# CMake's MSVC Debug defaults: /Od conflicts with /O2 (warning D9025), /RTC1 is incompatible with /O2 and /fsanitize=address
+	if (DS_OPTIMIZE)
+		string(REPLACE "/Od" "" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
+		string(REPLACE "/Od" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+	endif ()
+	if (DS_OPTIMIZE OR DS_ASAN)
+		string(REPLACE "/RTC1" "" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
+		string(REPLACE "/RTC1" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+	endif ()
+
+	# CMake's default /W3 (policy CMP0092 is OLD below 3.15): the engine's level comes from Dreamscape::Define
+	# (include/CMakeLists.txt), where a second /W would be overridden with warning D9025; lib/ keeps the compiler's
+	string(REGEX REPLACE "/W[0-4]" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+	string(REGEX REPLACE "/W[0-4]" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 
 	# avoids x87 fp-instructions entirely (extended precision bad for consistency)
 	add_compile_options(/arch:SSE2)
+
+	# CPU baseline (AGENTS.md): MSVC's _lzcnt/_tzcnt/__popcnt intrinsics need no flag, clang-cl's builtins do
+	if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
+		add_compile_options(/clang:-mpopcnt /clang:-mlzcnt /clang:-mbmi)
+	endif ()
+
+	# determinism: IEEE-preserving optimizations only, no FMA contraction (don't add /fp:fast or /fp:contract)
+	if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
+		# clang-cl maps /fp:precise to -ffp-contract=on, so pass clang's own flag
+		add_compile_options(/clang:-ffp-contract=off)
+	else ()
+		add_compile_options(/fp:precise)
+	endif ()
 
 	add_compile_options(/std:c11 /experimental:c11atomics)
 	#parallel compilation
 	add_compile_options(/MP)
 
+	# the platform layer and printf-family calls use the C library on purpose; MSVC's *_s variants are not portable (C4996)
+	add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+
 endif ()
+
+# before the subdirectories: add_compile_definitions only reaches targets created after it
+#TODO remove, consider using DS_DEBUG instead, or if required, add DS_DEV
+if (NOT CMAKE_BUILD_TYPE STREQUAL "Release")
+	add_compile_definitions(DS_DEV)
+endif()
 
 add_subdirectory("${DS_INCLUDE_PATH}")
 add_subdirectory("${DS_SRC_PATH}/base")
@@ -196,6 +253,7 @@ add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 
 target_link_libraries(${PROJECT_NAME} 
 	INTERFACE 
+		"${PROJECT_NAME}::Init"
 		"${PROJECT_NAME}::Base"
 		"${PROJECT_NAME}::Containers"
 		"${PROJECT_NAME}::Math"
@@ -209,11 +267,6 @@ target_link_libraries(${PROJECT_NAME}
 		"${PROJECT_NAME}::Editor"
 		"${PROJECT_NAME}::Asset"
 )
-
-#TODO remove, consider using DS_DEBUG instead, or if required, add DS_DEV
-if (NOT CMAKE_BUILD_TYPE STREQUAL "Release")
-	add_compile_definitions(DS_DEV)
-endif()
 
 ######################### Testing ###########################
 
@@ -239,11 +292,15 @@ endif ()
 if (DS_TEST_PERFORMANCE)
 	set(DS_TEST ON)
 	set(DS_TEST_MODULE_PATH "${DS_TEST_PATH}/performance")
+	# the repetition tester measures with ds_measure.h
+	target_compile_definitions(DreamscapeDefine INTERFACE DS_PERFORMANCE_MEASUREMENT_API)
 endif ()
 
 if (DS_TEST_DETERMINISM)
 	set(DS_TEST ON)
 	set(DS_TEST_MODULE_PATH "${DS_TEST_PATH}/determinism")
+	# the editor selects the determinism scene
+	target_compile_definitions(DreamscapeDefine INTERFACE DS_TEST_DETERMINISM)
 endif ()
 
 
@@ -253,24 +310,33 @@ if (DS_TEST)
 		set(CMAKE_EXECUTABLE_SUFFIX ".html")
 		add_executable(${DS_TEST_EXECUTABLE} "${DS_TEST_MODULE_PATH}/wasm/main.c")
 
+		# the files the executable reads, in its virtual file system: link options (emcc warns at every compile)
+		target_link_options(${DS_TEST_EXECUTABLE} PRIVATE
+			"--embed-file=../assets@../assets"
+			"--embed-file=../asset_components@../asset_components"
+			"--embed-file=../config@../config")
+
+		if (DS_TEST_DETERMINISM)
+			# test files to and from the build directory, see host_files.js
+			set(DS_HOST_FILES_JS "${DS_TEST_MODULE_PATH}/wasm/host_files.js")
+			target_link_options(${DS_TEST_EXECUTABLE} PRIVATE "--pre-js=${DS_HOST_FILES_JS}")
+			set_property(TARGET ${DS_TEST_EXECUTABLE} APPEND PROPERTY LINK_DEPENDS "${DS_HOST_FILES_JS}")
+		endif ()
+
 	elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 
 		add_executable(${DS_TEST_EXECUTABLE} "${DS_TEST_MODULE_PATH}/linux/main.c")
 		
 	elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 
-		add_executable(${DS_TEST_EXECUTABLE} WIN32 "${DS_TEST_MODULE_PATH}/windows/WinMain.c")
+		# console subsystem: stderr (logging before LogInit, test results) must be visible
+		add_executable(${DS_TEST_EXECUTABLE} "${DS_TEST_MODULE_PATH}/windows/main.c")
 
 	endif()
 
     add_subdirectory(${DS_TEST_PATH})
     target_link_libraries(${DS_TEST_EXECUTABLE} PRIVATE Dreamscape::Test)
 	target_link_libraries(${DS_TEST_EXECUTABLE} PRIVATE Dreamscape)
-	
-	add_custom_command(TARGET ${DS_TEST_EXECUTABLE} POST_BUILD
-		COMMAND ${CMAKE_COMMAND} -E copy_if_different
-		$<TARGET_FILE:SDL3::SDL3>
-		$<TARGET_FILE_DIR:${DS_TEST_EXECUTABLE}>)
 endif ()
 
 # For CPack and installation process, good information can be found at:

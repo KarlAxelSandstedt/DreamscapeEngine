@@ -1,14 +1,16 @@
-attribute vec3 a_position;      	/* local:  vertex position	*/
-attribute vec4 a_color;         	/* local: instance color	*/
-attribute vec3 a_normal;        	/* local:  vertex normal	*/
+#version 300 es
 
-uniform float aspect_ratio;
-uniform mat4 view;
-uniform mat4 perspective;
+layout(location = 0) in vec3 a_position;		/* local:  vertex position 	*/
+layout(location = 1) in vec4 a_color;			/* local: instance color	*/
+layout(location = 2) in vec3 a_normal;			/* local:  vertex normal	*/
 
-varying vec3 FragPos;
-varying vec4 color;
-varying vec3 normal;
+uniform float 	aspect_ratio;
+uniform mat4 	view;
+uniform mat4 	perspective;
+
+out vec3 	FragPos;
+out vec4 	color;
+out vec3 	normal;
 
 void main()
 {

@@ -17,6 +17,13 @@
 ==========================================================================
 */
 
+/*
+ds_semaphore.h
+==============
+Counting semaphores for threads of one process (POSIX sem_t, Windows semaphore objects). Every OS error is
+fatal, so the functions return only on success.
+*/
+
 #ifndef __DREAMSCAPE_SEMAPHORE_H__
 #define __DREAMSCAPE_SEMAPHORE_H__
 
@@ -39,16 +46,16 @@ extern "C" {
 
 #endif
 
-/* Initiate the semaphore with a given value: NOTE: initializing an already initiated semaphore is UB */
-void 	SemaphoreInit(semaphore *sem, const u32 val); 
-/* Destroy the given semaphore. NOTE: destroying a semaphore at which threads are waiting is UB */
+/* Initialize sem (not yet initialized) to val (<= 2^31 - 1). */
+void 	SemaphoreInit(semaphore *sem, const u32 val);
+/* Destroy sem; no thread may be waiting on it. */
 void 	SemaphoreDestroy(semaphore *sem);
-/* increment semaphore */
-void 	SemaphorePost(semaphore *sem);	
-/* Block until the semaphore has been signaled */
-void 	SemaphoreWait(semaphore *sem);	
-/* return 1 on successful lock aquisition, 0 otherwise. */
-u32 	SemaphoreTryWait(semaphore *sem);	
+/* Increment sem, waking one waiter if any. The count stays <= 2^31 - 1. */
+void 	SemaphorePost(semaphore *sem);
+/* Block until sem is positive, then decrement it. */
+void 	SemaphoreWait(semaphore *sem);
+/* Decrement sem and return 1 if it is positive; else return 0 at once (Linux: also 0 if a signal interrupts). */
+u32 	SemaphoreTryWait(semaphore *sem);
 
 
 #ifdef __cplusplus

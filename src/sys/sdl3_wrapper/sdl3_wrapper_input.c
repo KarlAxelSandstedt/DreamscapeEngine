@@ -80,7 +80,7 @@ enum dsKeycode sdl3_DsKeycode(const SDL_Keycode sdl_key)
 	else if (sdl_key == SDLK_RIGHT) { key = DS_RIGHT; }
 	else if (sdl_key == SDLK_PLUS) { key = DS_PLUS; }
 	else if (sdl_key == SDLK_MINUS) { key = DS_MINUS; }
-	else if (sdl_key == SDL_SCANCODE_END) { key = DS_END; }
+	else if (sdl_key == SDLK_END) { key = DS_END; }
 
 	return key;
 }

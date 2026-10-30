@@ -26,9 +26,8 @@ extern "C" {
 
 #include "ds_allocator.h"
 #include "ds_math.h"
-#include "ds_renderer.h"
-#include "list.h"
-#include "collision.h"
+#include "ds_list.h"
+#include "ds_collision.h"
 #include "ds_hash_map.h"
 #include "ds_bitset.h"
 #include "ds_job.h"
@@ -52,27 +51,6 @@ ds_NumericsConfig stores configurable values to be used in numerical calculation
 
 struct ds_NumericsConfig
 {
-    /* Maximum degrees allowed between two vectors for them to be considered parallel */
-    f32 vec3_parallel_check_max_degrees_pending;
-    f32 vec3_parallel_check_max_degrees;
-    f32 vec3_parallel_check_eps;
-
-    /* Maximum degrees allowed for temporal consistency between a cached and new manifold normal */
-    f32 manifold_cache_normal_parallel_check_max_degrees_pending;
-    f32 manifold_cache_normal_parallel_check_max_degrees;
-    f32 manifold_cache_normal_parallel_check_eps;
-
-    /* Maximum difference allowed for temporal consistency between a cached and new manifold depth */
-    f32 manifold_cache_depth_max_diff_allowed_pending;
-    f32 manifold_cache_depth_max_diff_allowed;
-
-    /* 
-     * Maximum velocity along the contact normal  allowed for temporal consistency between a cached and 
-     * new manifold 
-     */
-    f32 manifold_cache_linear_velocity_max_diff_allowed_pending;
-    f32 manifold_cache_linear_velocity_max_diff_allowed;
-
     /* Fraction of dirty dbvh proxies that may be re-inserted before triggering a dbvh rebuild  */
     f32 dbvh_reinsert_threshold_pending;
     f32 dbvh_reinsert_threshold;
@@ -80,20 +58,71 @@ struct ds_NumericsConfig
     /* Max s_SatCache count per contact (Applies to mesh contacts in which we cache triangle ops)  */
     u32 cache_count_max_pending;
     u32 cache_count_max;
+
+    /*
+     * Capsule vs capsule: maximum degrees between the two cores for a two-point (side by side) manifold.
+     * Derived: tan^2 of the angle; the cores are parallel iff |e_xz|^2 < tan_sq * e_y^2 (e = core 1's axis in
+     * capsule 0's frame, core 0 along y).
+     */
+    f32 capsule_parallel_max_degrees_pending;
+    f32 capsule_parallel_max_degrees;
+    f32 capsule_parallel_tan_sq;
+
+    /*
+     * Hull vs capsule (shallow): maximum degrees between the GJK normal and the reference face's normal for
+     * clipping the core to that face (two points). Derived: cos of the angle; aligned iff n_face . n > cos.
+     */
+    f32 face_parallel_max_degrees_pending;
+    f32 face_parallel_max_degrees;
+    f32 face_parallel_cos;
+
+    /*
+     * Edge-edge SAT queries (hull-capsule, hull-hull, hull-triangle): maximum degrees between two edges (hull
+     * edges, a capsule core, triangle edges) for them to count as parallel and be skipped (their cross product is
+     * noise).
+     * Derived: sin^2 of the angle; parallel iff |d1 x d2|^2 < sin_sq * |d1|^2 |d2|^2.
+     */
+    f32 edge_parallel_max_degrees_pending;
+    f32 edge_parallel_max_degrees;
+    f32 edge_parallel_sin_sq;
+
+    /*
+     * SAT face vs edge choice (hull-capsule, hull-hull, hull-triangle): the edge contact replaces the face
+     * contact only if it separates more by this margin (m). Biases towards the face (two points, stable normal)
+     * so rounding can't flip the choice every tick. Absolute (Box3D: linear slop, 0.005 m).
+     */
+    f32 sat_face_bias_pending;
+    f32 sat_face_bias;
+
+    /*
+     * SAT cache (sat_CacheTryReuse): a cached contact is rebuilt from its features and reused while its depth moved by
+     * less than this (m) since the last tick (Box3D: linear slop). A cached separating axis is reused while it
+     * separates.
+     */
+    f32 sat_cache_tolerance_pending;
+    f32 sat_cache_tolerance;
+
+    /* Max GJK iterations (support point evaluations) per distance query; at least 1 */
+    u32 gjk_max_iterations_pending;
+    u32 gjk_max_iterations;
 };
 extern struct ds_NumericsConfig *g_numerics_config;
 
 /* Return default config */
 struct ds_NumericsConfig    ds_NumericsConfigDefault(void);
-/* Update any pending values in config and push config to global */
+/*
+ * Apply the pending values (clamped to their ranges, the derived trigonometric values recomputed) and make
+ * config the global one. The pipeline does this at the start of every tick.
+ */
 void                        ds_NumericsConfigPush(struct ds_NumericsConfig *config);
-/* Pop global config */
+/* Clear the global config (NULL) */
 void                        ds_NumericsConfigPop(void);
 
 
 /*
 ds_DynamicsProfile
 ==================
+The tick's timings, ns: the frame and each of its five phases (start, end, duration), filled by ds_DynamicsTick.
 */
 
 struct ds_DynamicsProfile
@@ -118,12 +147,18 @@ struct ds_DynamicsProfile
     u64 ns_solverphase_end;               
     u64 ns_solverphase_duration;          
 
-    /* Dbvh rebuilding / updating timings (ns) */
+    /* DBVH rebuilding / updating timings (ns) */
     u64 ns_rebuildphase_start;    
     u64 ns_rebuildphase_end;    
     u64 ns_rebuildphase_duration;    
+
+    /* Contact removal timings (ns) */
+    u64 ns_removalphase_start;    
+    u64 ns_removalphase_end;    
+    u64 ns_removalphase_duration;    
 };
 
+/* print the frame's duration and each phase's duration and share of it, in ms, to file */
 void    ds_DynamicsProfilePrint(FILE *file, const struct ds_DynamicsProfile *profile);
 
 /*
@@ -138,36 +173,20 @@ struct ds_DynamicsMetrics
     u32 hull_cache_probe_count;     /* Number of existing caches probed         */
     u32 hull_cache_eviction_count;  /* Number of evicted caches                 */
 
-    u32 mesh_call_count;            /* Number of calls to TriMeshBvhHullContact */
+    u32 mesh_call_count;            /* Number of calls to TriMeshBVHHullContact */
     u32 mesh_cache_probe_count;     /* Number of existing caches probed         */
     u32 mesh_cache_eviction_count;  /* Number of evicted caches                 */
+
+    u32 warm_point_count;           /* constraint points with a cache to search     */
+    u32 warm_match_id;              /* a cached point with the same id found        */
 };
 
 /* Flush statistics */
 void    ds_DynamicsMetricsFlush(struct ds_DynamicsMetrics *metrics);
 /* Add statistics */
 void    ds_DynamicsMetricsAdd(struct ds_DynamicsMetrics *sum, const struct ds_DynamicsMetrics *metrics);
-/* Add statistics */
+/* Print statistics */
 void    ds_DynamicsMetricsPrint(FILE *file, const struct ds_DynamicsMetrics *metrics);
-
-
-/*
-ds_DynamicsDraw
-===============
-Per-thread dynamics debug/information draw data of frame.
-*/
-
-struct ds_DynamicsDraw 
-{
-	ds_CPool(r_ColorSegment)	debug_segment_pool;
-};
-
-#ifdef DS_PHYSICS_DEBUG
-#define ds_DynamicsDrawDebugSegment(segment, color)							\
-	ds_CPoolPushValue(g_dynamics_worker[ds_ThreadSelfIndex()].draw.debug_segment_pool,  r_ColorSegmentConstruct(segment, color))
-#else
-#define ds_DynamicsDrawDebugSegment(segment, color)
-#endif
 
 
 /*
@@ -183,7 +202,6 @@ struct ds_DynamicsWorker
     struct arena *              frame;
     
     struct ds_DynamicsMetrics   metrics;
-    struct ds_DynamicsDraw      draw;
 
     u8                          pad[DS_CACHE_LINE];
 };
@@ -195,37 +213,45 @@ extern struct ds_DynamicsWorker *g_dynamics_worker;
 /*
 ds_Id
 =====
-Opaque generation based handles for user-interfacing structures. ds_Id supports
-16-bit generations, and 32-bit indices. ds_IdF (frequent) supports 32-bit 
-generations and 32-bit indices.
+Opaque generation-based handles for user-facing structures. Two layouts in 64 bits:
+    ds_Id   (bits 48..63 generation, 32..47 unused, 0..31 index): ds_ShapeId, ds_BodyId, ds_IslandId, ds_JointId,
+            and ds_Id itself (the editor's nodes)
+    ds_IdF  (frequent: bits 32..63 generation, 0..31 index), for slots that are removed and reused often:
+            ds_ContactId
+Every handle type T has the same functions, generated by DS_DEFINE_ID:
+    TInit(index, generation)        the handle; the generation must fit the layout (asserted)
+    TIndex(id), TGeneration(id)
+    TNull()                         the null handle (every bit set); TNullCheck(id): 1 if id is null
+    TEqual(a, b)                    1 if the handles are the same
+    TNextGeneration(id)             the same index, generation + 1 (wraps to 0 at the layout's width, silently)
 */
 
-typedef u64     ds_Id;
-typedef u64     ds_IdF; /* ds_IdF (frequent) */
+#define DS_ID_GENERATION_SHIFT      48
+#define DS_ID_GENERATION_MAX        0xffffu
+#define DS_IDF_GENERATION_SHIFT     32
+#define DS_IDF_GENERATION_MAX       0xffffffffu
 
-typedef ds_Id   ds_ShapeId;
-typedef ds_Id   ds_BodyId;
-typedef ds_Id   ds_IslandId;
-typedef ds_Id   ds_JointId;
-typedef ds_IdF  ds_ContactId;
+#define DS_DEFINE_ID(T, GENERATION_SHIFT, GENERATION_MAX)                                                         \
+typedef struct T { u64 val; } T;                                                                                  \
+static ds_ForceInline T T##Init(const u32 index, const u32 generation)                                            \
+{                                                                                                                 \
+    ds_Assert(generation <= GENERATION_MAX);                                                                      \
+    return (T) { (((u64) generation) << GENERATION_SHIFT) | (u64) index };                                        \
+}                                                                                                                 \
+static ds_ForceInline u32 T##Index(const T id)              { return (u32) id.val; }                              \
+static ds_ForceInline u32 T##Generation(const T id)         { return (u32) (id.val >> GENERATION_SHIFT); }        \
+static ds_ForceInline T T##Null(void)                       { return (T) { U64_MAX }; }                           \
+static ds_ForceInline u32 T##NullCheck(const T id)          { return id.val == U64_MAX; }                         \
+static ds_ForceInline u32 T##Equal(const T a, const T b)    { return a.val == b.val; }                            \
+static ds_ForceInline T T##NextGeneration(const T id)       { return (T) { id.val + (((u64) 1) << GENERATION_SHIFT) }; }
 
-#define DS_ID_NULL                      U64_MAX
-#define DS_ID_INDEX_MASK                ((u64) 0x00000000ffffffff)
-#define DS_ID_TAG_MASK                  ((u64) 0xffffffff00000000)
-#define DS_ID_GENERATION_INCREMENT      ((u64) 0x0001000000000000)
-
-#define ds_IdTag(id)                    ((u32) ((id) >> 32))
-#define ds_IdIndex(id)                  ((u32) (id))
-#define ds_IdConstruct(index, tag)      ((((u64) (tag)) << 32) | (u64) (index))
-
-#define DS_IDF_NULL                     U64_MAX
-#define DS_IDF_INDEX_MASK               ((u64) 0x00000000ffffffff)
-#define DS_IDF_GENERATION_MASK          ((u64) 0xffffffff00000000)
-#define DS_IDF_GENERATION_INCREMENT     ((u64) 0x0000000100000000)
-
-#define ds_IdFGeneration(id)            ((u32) ((id) >> 32))
-#define ds_IdFIndex(id)                 ((u32) (id))
-#define ds_IdFConstruct(index, tag)     ((((u64) (tag)) << 32) | (u64) (index))
+DS_DEFINE_ID(ds_Id,         DS_ID_GENERATION_SHIFT,  DS_ID_GENERATION_MAX)
+DS_DEFINE_ID(ds_IdF,        DS_IDF_GENERATION_SHIFT, DS_IDF_GENERATION_MAX)
+DS_DEFINE_ID(ds_ShapeId,    DS_ID_GENERATION_SHIFT,  DS_ID_GENERATION_MAX)
+DS_DEFINE_ID(ds_BodyId,     DS_ID_GENERATION_SHIFT,  DS_ID_GENERATION_MAX)
+DS_DEFINE_ID(ds_IslandId,   DS_ID_GENERATION_SHIFT,  DS_ID_GENERATION_MAX)
+DS_DEFINE_ID(ds_JointId,    DS_ID_GENERATION_SHIFT,  DS_ID_GENERATION_MAX)
+DS_DEFINE_ID(ds_ContactId,  DS_IDF_GENERATION_SHIFT, DS_IDF_GENERATION_MAX)
 
 /*
 ds_Shape
@@ -260,7 +286,7 @@ transform, ds_Body must also store its center of mass:
 	{
 		(...)
 		ds_Transform	transform;	    // Local frame to World transform
-		vec3            center_of_mass;	
+		v3              center_of_mass;	
 	}
 */
 
@@ -274,13 +300,13 @@ transform, ds_Body must also store its center of mass:
 struct ds_Shape
 {
 	POOL_NODE;
-    struct ds_DLLNode body_shape;
+    struct DLLNode body_shape;
 
     ds_ShapeId      id;                 /* Generational identifier                          */
     u32             flags;              /* Shape flags (BODY_FLAG_DYNAMIC)                       */
 	u32 			body;		        /* ds_Body owner of node 			                */
 	u32			    proxy;		        /* BVH index 					                    */
-    struct ds_DLL   contact_list;       /* list of the shape's contacts                     */
+    struct DLL   contact_list;       /* list of the shape's contacts                     */
 
 	enum c_ShapeType cshape_type;	    /* collisionShape type 				                */
 	u32			    cshape_handle;	    /* handle to referenced collisionShape 		        */
@@ -293,7 +319,7 @@ struct ds_Shape
 
 	ds_Transform	t_local;	        /* local body frame transform 			            */
 };
-POOL_DECLARE(ds_Shape);
+DEFINE_POOL(ds_Shape);
 
 /*
 ds_ShapePrefab  
@@ -322,7 +348,7 @@ struct ds_ShapePrefab
      * simplicity in led, we store the mesh reference in prefab. */
     u32 render_mesh;
 };
-SDB_DECLARE(ds_ShapePrefab);
+DEFINE_SDB(ds_ShapePrefab);
 
 /*
 ds_ShapePrefabInstance
@@ -335,17 +361,18 @@ ds_BodyPrefab, a local transform, and a reference to the instanced ds_Shape.
 struct ds_ShapePrefabInstance
 {
     POOL_NODE;
-    struct ds_DLLNode   body_shape;
+    struct DLLNode   body_shape;
     u8                  id_buf[PREFAB_BUFSIZE];
     utf8                id;         /* local identifier within a body    */
     u32                 shape_prefab;
 	ds_Transform	    t_local;	/* local body frame transform        */
 };
-POOL_DECLARE(ds_ShapePrefabInstance);
+DEFINE_POOL(ds_ShapePrefabInstance);
 
 /* 
  * Allocates a shape according to the values set in Prefab and with given local body frame transform. On success, 
- * an identifier to the shape is returned. On failure, DS_ID_NULL is return. 
+ * an identifier to the shape is returned. On failure (a missing body, or a dynamic body with a density that is
+ * not finite and positive), the null id is returned. 
  */
 ds_ShapeId  ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab *prefab, const ds_Transform *t, const ds_BodyId body);
 /* 
@@ -355,7 +382,7 @@ void        ds_ShapeDynamicRemove(struct ds_Dynamics *pipeline, struct ds_Body *
 /* 
  * INTERNAL: Remove the specified shape of a STATIC body and update the physics state into a valid state. 
  */
-void        ds_ShapeStaticRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, struct ds_Body *body, const u32 index);
+void        ds_ShapeStaticRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, const u32 index);
 /*
  * Lookup the specified shape and return it if found. Otherwise return (NULL, POOL_NULL).
  */
@@ -363,33 +390,58 @@ struct slot ds_ShapeLookup(const struct ds_Dynamics *pipeline, const ds_ShapeId 
 /*
  * Calculate the world transform of the shape.
  */
-void        ds_ShapeWorldTransform(ds_Transform *t, const struct ds_Dynamics *pipeline, const struct ds_Shape *shape);
+void        ds_ShapeWorldTransform(ds_TransformWorld *t, const struct ds_Dynamics *pipeline, const struct ds_Shape *shape);
 /* 
  * Calculate the world bounding box of the shape, taking into account the shape and its body's Transform. 
+ * f32, rounded outward from the f64 position: it contains the shape at any distance from the origin.
  */
 struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape);
+/*
+ * The pair queries below read the pipeline's numerics config through the globals ds_DynamicsSetGlobals sets (a tick
+ * sets them for its pipeline).
+ */
 /* 
  * Test for intersection between shapes. returns 1 if intersecting, else 0 
  */
-u32	        ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
+u32	        ds_ShapeTest(const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, const struct ds_Shape *s1);
 /* 
- * Return, if no intersection was found, the distance between shapes s1 and s2 and their respective
- * closest points c1 and c2. If the shapes are intersecting, return 0.0f. 
+ * Return, if no intersection was found, the distance between shapes s0 and s1 and their respective
+ * closest points c0 and c1. If the shapes are intersecting, return 0.0f. 
  */
-f32 	    ds_ShapeDistance(vec3 c1, vec3 c2, const struct ds_Dynamics *pipeline, const struct ds_Shape *s1, const struct ds_Shape *s2);
-/* 
- * Run the contact's collision computation and set its manifold(s) and cache(s).
+f32 	    ds_ShapeDistance(v3f64 *c0, v3f64 *c1, const struct ds_Dynamics *pipeline, const struct ds_Shape *s0, const struct ds_Shape *s1);
+/*
+Contact pipeline
+----------------
+TODO: move/cleanup (central notes on the narrowphase -> solver contract during the contact refactor).
+
+Pair order (the narrowphase computes in the frame of the first shape):
+    convex pairs    the more complex shape first: hull > capsule > sphere; equal types: the contact key's
+                    order (lower shape index first).
+    mesh pairs      (mesh, convex), computed in the convex shape's frame. Mesh vs mesh is not supported.
+
+Reference: the solver form's reference is the contact key's shape[0], whose body is the solver's body 0
+(ds_ContactKeyAddress). Contacts between the same two bodies may therefore have opposite normals.
+
+Assumptions:
+    caches          SAT and GJK caches belong to the ordered pair (first -> second shape), so the pair order
+                    must stay the same between frames. TODO: cached normals in the local frame or in world.
+    static meshes   mesh pair manifolds are local to the convex shape, so the mesh-side anchor is ~ the
+                    distance to the mesh's origin; harmless only because the mesh body has 0 inverse mass.
+    mesh extent     mesh contacts carry a surface error of ~eps*d (d = distance from the mesh's origin; 0.06 mm
+                    at 1 km, 1.2 mm at 10 km) that no frame choice removes: chunk large meshes.
+*/
+
+/*
+ * The pipeline's contact entry: the pair's contact local to one shape (convex pairs: the more complex shape,
+ * c_*Contact; mesh pairs: the convex shape, c_MeshContact), converted to the solver form (ds_SolverManifold).
  */
 void        ds_ShapeContact(struct arena *frame, const struct ds_Dynamics *pipeline, const u32 contact_index);
-/* 
- * Return, if ray intersects shape, t such that ray.origin + t*ray.dir == closest point on shape. 
- *         Otherwise, return F32_INFINITY.
+/*
+ * Return the smallest t >= 0 at which ray.origin + t*ray.dir is on the shape's surface (the first surface hit,
+ * two-sided, see ds_collision.h), or F32_INFINITY. The ray is in world space. Precondition: |ray->dir|^2 > 0
+ * (asserted).
  */
-f32 	    ds_ShapeRaycastParameter(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct ray *ray);
-/* 
- * Return 1 if ray hit shape, 0 otherwise. If hit, we return the closest intersection point 
- */
-u32 	    ds_ShapeRaycast(vec3 intersection, const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct ray *ray);
+f32 	    ds_ShapeRaycastParameter(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape, const struct rayWorld *ray);
 
 
 /*
@@ -402,16 +454,14 @@ struct ds_BodyPrefab
     u8              id_buf[PREFAB_BUFSIZE];
     SDB_NODE;
 
-    struct ds_DLL   shape_list;         /* shape prefab instance list */
-    ds_BodyId  body;
-    
+    struct DLL   shape_list;         /* shape prefab instance list */
 	u32	            dynamic;	        /* dynamic body is true, static if false */
 
     //TODO pre-compute...?
 	//f32 	        mass;			    /* total body mass */
 	//mat3 	        inv_inertia_tensor;
 };
-SDB_DECLARE(ds_BodyPrefab);
+DEFINE_SDB(ds_BodyPrefab);
 
 /*
 ds_Body
@@ -440,7 +490,7 @@ ds_BodyCompute.
 struct ds_Body
 {
 	POOL_NODE;
-	struct ds_DLLNode island_body;	            /* island body_list node                                */
+	struct DLLNode island_body;	            /* island body_list node                                */
 
     ds_BodyId  id;                         /* generational identifier                              */
 	u32 		    flags;
@@ -451,17 +501,17 @@ struct ds_Body
 	f32 		    low_velocity_time;	        /* Current uninterrupted time body has been in a low 
                                                    velocity state                                       */
 
-    struct ds_DLL   joint_list;                 /* list of ds_Joint's attached to the body. Each joint is
+    struct DLL   joint_list;                 /* list of ds_Joint's attached to the body. Each joint is
                                                    shared with one other body. */
 
-	struct ds_DLL   shape_list;		            /* list of convex shapes constructing the rigid body 	*/
+	struct DLL   shape_list;		            /* list of convex shapes constructing the rigid body 	*/
 
 	f32 		    mass;			            /* total body mass                                      */
 
     //TODO temporary
 	u32 	        entity;
 };
-POOL_DECLARE(ds_Body);
+DEFINE_POOL(ds_Body);
 
 
 /*
@@ -474,14 +524,21 @@ struct ds_BodySim
     u32             body;                       /* RigidBody index                                      */
     u32             flags;
     f32             inv_mass;                   /* Inverse mass                                         */
-	ds_Transform    world;		                /* local body frame to world transform. Rotation is 
+	ds_TransformWorld world;	                /* local body frame to world transform. Rotation is 
                                                    about the local origin (not center of mass!)         */
-	vec3		    local_center_of_mass;	    /* local body frame center of mass                      */
-	vec3		    world_center_of_mass;	    /* world body frame center of mass                      */
-	mat3 		    local_inv_inertia;          /* local inertia tensor                                 */
-	mat3 		    world_inv_inertia;          /* world inertia tensor                                 */
+	v3		        local_center_of_mass;	    /* local body frame center of mass                      */
+	v3f64	        world_center_of_mass;	    /* world center of mass at the step's start; the solver
+                                                   moves it by ds_BodyCompute.delta_position            */
+	m3 		        local_inv_inertia;          /* local inertia tensor                                 */
+	m3 		        world_inv_inertia;          /* world inertia tensor                                 */
 };
 DEFINE_CPOOL_STRUCT(ds_BodySim);
+
+/* Return the world center of mass of the sim's pose: world.position + R*local_center_of_mass, summed in f64. */
+static inline v3f64 ds_BodySimWorldCenterOfMass(const struct ds_BodySim *sim)
+{
+    return V3F64Add(sim->world.position, V3Promote(QUnitRotate(sim->world.rotation, sim->local_center_of_mass)));
+}
 
 
 /*
@@ -491,26 +548,35 @@ Active rigid body velocity and other computational data used in the solver
 */
 struct ds_BodyCompute
 {
-	vec3 		    linear_velocity;        /* linear velocity of body */
-	vec3 		    angular_velocity;       /* angular velocity of body (about local center of mass,
+	v3 		        linear_velocity;        /* linear velocity of body */
+	v3 		        angular_velocity;       /* angular velocity of body (about local center of mass,
                                                not local origin!)                                   */
-    vec3            center_of_mass;         /* world-space  */
-    quat            rotation;
+    v3              delta_position;         /* center of mass displacement since the step's start */
+    q               rotation;
     u32             flags;
 
     u8              pad[8];
 };
 DEFINE_CPOOL_STRUCT(ds_BodyCompute);
 
+/*
+ * The mouse joints' anchor: a static body without shapes at a fixed index, added by ds_DynamicsAlloc and
+ * ds_DynamicsFlush and restored with the body pool by a snapshot. It takes no part in collision; its only
+ * purpose is to be the second body of every mouse joint. It cannot be removed.
+ */
+#define DS_BODY_MOUSE_ANCHOR_ID ds_BodyIdInit(0,1)
+
 /* Add a new rigid body with the prefab properties, and return its unique identifier. */
-ds_BodyId  ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *prefab, const ds_Transform *t_world, const u32 entity);
+ds_BodyId  ds_BodyAdd(struct ds_Dynamics *pipeline, const struct ds_BodyPrefab *prefab, const ds_TransformWorld *t_world, const u32 entity);
 /* Free the given body */
 void            ds_BodyRemove(struct arena *mem_tmp, struct ds_Dynamics *pipeline, const ds_BodyId id);
-/* Lookup the given body and return it. If it does not exist, return DS_ID_NULL.  */
+/* Lookup the given body and return it. If it does not exist, return (NULL, POOL_NULL). */
 struct slot	    ds_BodyLookup(const struct ds_Dynamics *pipeline, const ds_BodyId id);
 /* Process the body's shape list and set its internal mass properties accordingly. */
 void		    ds_BodyUpdateMassProperties(struct ds_Dynamics *pipeline, const ds_BodyId id);
 
+/* Internal: Return 1 if the bodies may collide, 0 otherwise. */
+u32             ds_BodyPairMayCollide(const struct ds_Dynamics *pipeline, const u32 body_index0, const u32 body_index1);
 /* Internal: Refresh and update rigid body simulation and compute/solver data in range [low, high) before solving */
 void            ds_BodyUpdateSolverDataRange(struct ds_Dynamics *pipeline, const u32 low, const u32 high);
 /* Internal: Integrate body velocites in range [low, high) */
@@ -527,23 +593,8 @@ the contact results may be re-used the next frame if a set of conditions are ful
 
 ::: Internals :::
 
-To ensure temporal coherence when reusing contact information, we currently test:
-
-  1. A penetration check for the cached features: Are we even still penetrating for the given features?
-
-  2. Has the new contact normal drifted to much from the cached normal? The number of degrees-drift per frame 
-     is found in ds_NumericsConfig.
-
-  3. Is the cached feature that produced the deepest point still the deepest feature in the new contact? This
-     test is only relevant for face contacts, as the deepest point may come from the incident body's vertex set
-     or from the body's edge set as a clipped point.
-
-  4. We allow a maximum change in penetration depth per frame, governed by a value in ds_NumericsConfig. This test
-     may be unnecessary as we are already doing a linear velocity check.
-
-  5. We allow a maximum difference in velocity between the two bodies along the contact normal. If the separating
-     velocity is high, the chances are that our manifold is not coherent and we may as well not even try to rebuilt
-     it (a rather costly endevaour). As in the other case, the max difference is found in ds_NumericsConfig.
+sat_CacheTryReuse (c_contact.c): a separating axis is reused while it still separates; a contact is rebuilt from its
+cached features and reused while its depth changed by less than sat_cache_tolerance (ds_NumericsConfig).
 */
 
 enum sat_CacheType
@@ -551,6 +602,7 @@ enum sat_CacheType
 	SAT_CACHE_SEPARATION,   /* Seperation axis found    */
 	SAT_CACHE_CONTACT_FV,   /* Face-Vertex Contact      */
 	SAT_CACHE_CONTACT_EE,   /* Edge-Edge Contact        */
+	SAT_CACHE_NONE,         /* Nothing to cache (fallback contact); never stored in a c_ContactResult */
 	SAT_CACHE_COUNT,
 };
 
@@ -590,12 +642,43 @@ struct c_SatCache
      * type == SEPARATION:
      *      normal == separation axis pointing from reference body 
      *      depth == separation distance (positive)
+     *
+     * type == NONE:
+     *  feature[i].type == FACE => i has the reference face
+     *  feature[i].type == VERTEX => i has the deepest vertex
      */
     sat_FeatureId   feature[2];
     f32             depth;      
-    vec3            normal;     
+    v3            normal;     
 };
 
+
+/*
+ds_SolverManifold
+=================
+A contact manifold in the solver's form: ds_ShapeContact converts the narrowphase's local manifolds
+(c_ContactResult.contact_manifold) in place, so ds_Contact.narrowphase.manifold names the same memory in this
+form; the two structs have the same size (ds_DynamicsStaticAssert). Body 0 is the body of the contact key's
+shape[0] (the reference), body 1 the body of shape[1]. Every vector is f32 in world axes, and none is a world
+position: points are offsets from a body's center of mass.
+
+    normal          unit, from body 0 to body 1
+    anchor0[i]      contact point i on body 0's surface, relative to body 0's center of mass
+    depth[i]        penetration depth (>= 0) of point i: body 1's deepest point is anchor0[i] - depth[i]*normal
+    id[i]           point i's c_PointId: the warm start matches points by it
+
+Body 1's anchors follow from ds_Contact.com_offset (com1 - com0, world axes):
+
+    anchor1[i] = anchor0[i] - com_offset - depth[i]*normal      (relative to body 1's center of mass)
+*/
+struct ds_SolverManifold
+{
+    v3      anchor0[4];     /* contact points on body 0's surface, relative to body 0's center of mass */
+    f32     depth[4];       /* penetration depths (>= 0)                                              */
+    v3      normal;         /* unit, from body 0 to body 1                                            */
+    u32     point_count;
+    c_PointId id[4];        /* point ids                                                              */
+};
 
 /*
 ds_ContactKey
@@ -651,29 +734,42 @@ struct ds_Contact
                                                        contacts are treated as a single 
                                                        constraint!)                             */
 
-    struct ds_DLLNode           island_contact;     /* island->contact_list node                */
-    struct ds_DLLNode           shape_contact[2];   /* [i] is part of shape i's contact list    */
+	struct DLLNode              island_joint;       /* island->joint_list node                  */
+    struct DLLNode              island_contact;     /* island->contact_list node                */
+    struct DLLNode              shape_contact[2];   /* [i] is part of shape i's contact list    */
 
     /* 
      * The following data is regenerated per-frame and is alive for 2 frames. All data is 
      * pushed onto thread's current frame arena (double buffered). If the contact is sleeping,
      * the narrowphase is stored on the heap.
      */
-    struct c_ContactResult      narrowphase;
+    struct c_ContactResult      narrowphase;        /* manifold: solver form (ds_ShapeContact converted the
+                                                       narrowphase's contact_manifold in place)            */
+    v3                          com_offset;         /* com1 - com0 (world axes, f32 from an f64 subtraction) */
 };
-POOL_DECLARE(ds_Contact);
+DEFINE_POOL(ds_Contact);
 
-/* Add and return new contact with unique key and update pipeline state */
-struct slot ds_ContactAdd(struct ds_Dynamics *pipeline, const struct ds_ContactKey key);
-/* Remove contact at the given index and update pipeline state */
-void 	    ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 contact_index);
-/* Return the contact associated with the given id. If no such contact is found, return (U32_MAX, NULL) */
+/*
+ * Add the contact with the given unique key and return its slot. If the shapes' bodies may not collide
+ * (ds_BodyPairMayCollide), nothing is added and the empty slot (U32_MAX, NULL) is returned.
+ */
+struct slot ds_ContactTryAdd(struct ds_Dynamics *pipeline, const struct ds_ContactKey key);
+/* 
+ * Internal: Remove contact at the given index and update pipeline state. increments island
+ * constraint counter if 1 (and if applicable), otherwise must be 0. 
+ */
+void 	    ds_ContactRemove(struct ds_Dynamics *pipeline, const u32 contact_index, const u32 increment_constraint_remove_counter);
+/* 
+ * Return the contact associated with the given id. If no such contact is found, return (U32_MAX, NULL) 
+ */
 struct slot ds_ContactLookup(const struct ds_Dynamics *pipeline, const ds_ContactId id);
-/* Update contact at the given slot and update pipeline state. */
+/* 
+ * Return the contact with the given key. If no such contact is found, return (U32_MAX, NULL) 
+ */
 struct slot ds_ContactKeyLookup(const struct ds_Dynamics *pipeline, const struct ds_ContactKey key);
 
 /* Internal: Return 1 if contact shape bvh nodes still overlap, otherwise return 0. */
-u32         ds_ContactCheckBvhOverlap(const struct ds_Dynamics *pipeline, const u32 contact);
+u32         ds_ContactCheckBVHOverlap(const struct ds_Dynamics *pipeline, const u32 contact);
 /* Internal: Promote contact from non-touching active set to color in constraint graph */
 void        ds_ContactPromote(struct ds_Dynamics *pipeline, const u32 contact);
 /* Internal: Demote contact to non-touching active set from color in constraint graph */
@@ -684,6 +780,23 @@ void        ds_ContactWakeUp(struct arena *frame, struct ds_Dynamics *pipeline, 
 void        ds_ContactSleep(struct arena *mem_sleep, struct ds_Dynamics *pipeline, const u32 contact, const u32 set);
 /* Internal: Return bytes required to store contact narrowphase results */
 u64         ds_ContactMemoryRequirement(const struct ds_Dynamics *pipeline, const u32 contact);
+struct ds_ContactCompute;
+/* Internal: Return the required size when serializing the contact's narrowphase arrays. */
+u64         ds_ContactNarrowphaseSerializeSize(const struct ds_Dynamics *pipeline, const u32 contact);
+/* Internal: Serialize the contact's narrowphase arrays. WARNING: Assumes they fit in the stream. */
+void        ds_ContactNarrowphaseSerialize(struct ss *ss, const struct ds_Dynamics *pipeline, const u32 contact);
+/* Internal: Read the contact's narrowphase arrays into worker frames (awake contacts). Returns 1 on success and 0 on failure. */
+u32         ds_ContactNarrowphaseFrameTryDeserialize(struct ss *ss, struct ds_Dynamics *pipeline, const u32 contact);
+/* Internal: Read the contact's narrowphase arrays into mem (sleeping contacts). Returns 1 on success and 0 on failure. */
+u32         ds_ContactNarrowphaseHeapTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynamics *pipeline, const u32 contact);
+/* Internal: Return the required size when serializing the compute's ccache. */
+u64         ds_ContactComputeCacheSerializeSize(const struct ds_ContactCompute *compute);
+/* Internal: Serialize the compute's ccache. WARNING: Assumes it fits in the stream. */
+void        ds_ContactComputeCacheSerialize(struct ss *ss, const struct ds_ContactCompute *compute);
+/* Internal: Read the compute's ccache into worker frames (awake contacts). Returns 1 on success and 0 on failure. */
+u32         ds_ContactComputeCacheFrameTryDeserialize(struct ss *ss, struct ds_ContactCompute *compute, struct ds_Dynamics *pipeline);
+/* Internal: Read the compute's ccache into mem (sleeping contacts). Returns 1 on success and 0 on failure. */
+u32         ds_ContactComputeCacheHeapTryDeserialize(struct arena *mem, struct ss *ss, struct ds_ContactCompute *compute);
 
 
 /*
@@ -693,13 +806,13 @@ Stores data needed for warming up the constraint in the next frame.
 */
 struct ds_ContactConstraintCache
 {
-	vec3 			        normal;                     /* Cached contact normal                */
-	vec3 			        tangent[2];                 /* Froms Contact basis with normal      */
-	vec3 			        r1[4];			            /* previous local frame arm levers      */
-    vec3                    r2[4];                   
+	v3 			        tangent[2];                 /* the contact basis the tangent impulses
+                                                           are in                               */
 	f32 			        tangent_impulse[4][2];
 	f32 			        normal_impulse[4];	        /* contact_solver solution to contact 
                                                            constraint, or 0.0f                  */
+    c_PointId               id[4];                      /* the points' ids: the warm start
+                                                           matches by them                      */
     u32                     v_count;                    /* Number of vertices in cache          */
     u32                     tri;                        /* 0 if non-mesh contact                */
 };
@@ -720,6 +833,226 @@ struct ds_ContactCompute
 };
 DEFINE_CPOOL_STRUCT(ds_ContactCompute);
 
+/* ---------- Distance Joints ---------- */
+
+/*
+ds_DistanceJoint
+================
+Keeps the distance between the two joint frames' origins inside range, and with the spring enabled also pulls
+it towards target. The range is always enforced; the configuration names are temporary:
+    rigid:          range = [d, d]: the distance is held at d exactly, forces in both directions.
+    range:          low < high: no force inside [low, high]; at a bound the joint pushes back like a contact.
+                    target is unused.
+    spring:         range = [linear_slop, JOINT_LENGTH_MAX] and enable_spring: the distance oscillates about target;
+                    hertz = oscillations per second, damping_ratio = how fast the oscillation dies out (0 never,
+                    1 settles without overshoot). The spring prefabs disable the spring for hertz <= 0 and use
+                    0 for a negative damping_ratio, with a warning; the add asserts both, and clamps hertz to
+                    the pipeline's spring_hertz_max with a warning.
+    range spring:   the spring inside a finite range: soft about target, but never outside [low, high]
+                    (a suspension with end stops).
+*/
+
+struct ds_DistanceJoint
+{
+    /* Config */ 
+    f32     target;             /* Target distance                                      */
+    intv    range;              /* Allowed distance [low, high]                         */
+    u32     enable_spring;      /* Enable spring behaviour                              */
+    f32     hertz;              /* Oscillation speed                                    */
+    f32     damping_ratio;      /* Damping speed, 
+                                   = 0.0f => oscillates forever,
+                                   < 1.0f => oscillate about target, each swing smaller
+                                   = 1.0f => returns to target, no overshoot 
+                                   > 1.0f => returns to target, but creeps in slower    */
+
+    /* Per-tick solver data */
+    v3      n;                  /* Normal direction: joint frame 0 -> joint frame 1;
+                                   kept from the previous tick within linear_slop       */
+    f32     distance;           /* distance between joint frame 0 and joint frame 1     */
+	f32	    normal_mass;	    /* 1.0f / row(J,i)*Inv(M)*J^T                           */
+    f32     soft_mass;          /* 1.0f / (1.0f / normal_mass + gamma), the spring row's
+                                   mass: the softer the spring, the less of a velocity
+                                   error one impulse removes                            */
+    f32     target_mass;        /* mass of the row toward target: normal_mass (rigid),
+                                   soft_mass (spring), 0 (free range: no such row)     */
+    f32     gamma;              /* 1.0f / (h*(c + h*k)): velocity per unit of accumulated
+                                   impulse the spring row feeds back (0.0f: rigid)      */
+    f32     bias_velocity;      /* beta*(distance - target), beta = k / (c + h*k): the
+                                   velocity the spring row wants to add this tick       */
+    f32     allowed_separation_velocity_min;    /* <= 0: reaches range.low at the end of the tick       */
+    f32     allowed_separation_velocity_max;    /* >= 0: reaches range.high at the end of the tick      */
+
+    /* Per-iteration solver data, warm started from the previous tick */
+    f32     impulse;            /* Cached Rigid/Spring impulse                          */
+    f32     impulse_low;        /* Cached Range low impulse                             */
+    f32     impulse_high;       /* Cached Range high impulse                            */
+};
+
+/* WARNING: fill only through the ds_DistanceJointPrefab* constructors below; a hand-filled prefab is asserted at add, not checked */
+struct ds_DistanceJointPrefab
+{
+    u32     collide_connected;  
+    f32     target;             
+    intv    range;              
+    u32     enable_spring;      
+    f32     hertz;              
+    f32     damping_ratio;      
+};
+
+/* 
+ * Return a distance prefab that enforces the given distance. A distance below linear_slop is
+ * raised to it.
+ */
+void    ds_DistanceJointPrefab(struct ds_DistanceJointPrefab *prefab, const f32 distance);
+/*
+ * Return a distance prefab that enforces the given allowed distance range. The range must
+ * be within [linear_slop, JOINT_LENGTH_MAX], and is clamped against it.
+ */
+void    ds_DistanceJointPrefabRange(struct ds_DistanceJointPrefab *prefab, const intv range);
+/*
+ * Return a distance prefab that enforces the given distance with spring behaviour. A distance
+ * below linear_slop is raised to it.
+ *
+ * hertz: Gives the oscillations per second. hertz <= 0 disables the spring. The add enforces
+ *          
+ *          hertz <= physics_ticks_per_second / 4.0f.
+ *
+ * damping_ratio: damping behaviour of the velocity; a negative value becomes 0.
+ *
+ *          = 0.0f => oscillates forever,
+ *          < 1.0f => oscillate about target, each swing smaller
+ *          = 1.0f => returns to target, no overshoot 
+ *          > 1.0f => returns to target, but creeps in slower
+ */
+void    ds_DistanceJointPrefabSpring(struct ds_DistanceJointPrefab *prefab, const f32 distance, const f32 hertz, const f32 damping_ratio);
+/*
+ * Return a distance prefab that enforces the given allowed distance range, with spring
+ * behaviour towards the range's middle point. The range is clamped as in
+ * ds_DistanceJointPrefabRange, the spring as in ds_DistanceJointPrefabSpring.
+ */
+void    ds_DistanceJointPrefabRangeSpring(struct ds_DistanceJointPrefab *prefab, const intv range, const f32 hertz, const f32 damping_ratio);
+
+/* ---------- Mouse Joints ---------- */
+
+/*
+ds_MouseJoint
+=============
+Drags a dynamic body by one of its points: the joint frame's origin is pulled to a world target, as if held by
+a hand. Move the target every frame (ds_MouseJointTargetSet) and the body follows it, lagging a little.
+    hertz, damping_ratio:   how tightly the body follows; as the distance joint spring, with the same hertz cap.
+    max_force:              the hand's strength: a heavy body lags more, one too heavy to lift stays down.
+    max_torque:             how fast the body stops spinning while held; 0 lets it spin freely.
+*/
+struct ds_MouseJoint
+{
+    /* Config */
+    v3f64   target;             /* Target point (world)                                 */
+    f32     hertz;              /* Oscillation speed                                    */
+    f32     damping_ratio;      /* Damping speed, see ds_DistanceJoint                  */
+    f32     max_force;          /* Largest pull force, Newton                           */
+    f32     max_torque;         /* Largest spin braking torque, Newton metres (0.0f: none) */
+
+    /* Per-tick solver data */
+    m3      soft_mass;          /* Inv(J*Inv(M)*J^T + gamma*I), the three spring rows   */
+    m3      gamma;              /* Inv(c + h*k) / h = Inv(NormalMass) / (h*omega*(2*zeta + h*omega)) */
+    v3      bias_velocity;      /* beta*(joint frame 0 - target), beta = k / (c + h*k)  */
+    m3      angular_mass;       /* Inv(world inverse inertia), the three braking rows   */
+    f32     max_impulse;        /* h*max_force                                          */
+    f32     max_angular_impulse;/* h*max_torque                                         */
+
+    /* Per-iteration solver data, warm started from the previous tick */
+    v3      impulse;            /* Cached spring impulse, |impulse| <= max_impulse      */
+    v3      angular_impulse;    /* Cached braking impulse, bounded alike                */
+};
+
+/* WARNING: fill only through the ds_MouseJointPrefab* constructors below; a hand-filled prefab is asserted at add, not checked */
+struct ds_MouseJointPrefab
+{
+    v3f64   target;             /* World point the grabbed point is pulled to           */
+    f32     hertz;              /* Oscillation speed                                    */
+    f32     damping_ratio;      /* Damping speed                                        */
+    f32     max_force;          /* Largest pull force, Newton                           */
+    f32     max_torque;         /* Largest spin braking torque, Newton metres (0: none) */
+};
+
+/* 
+ * Return a mouse prefab that pulls towards target with the given strength.
+ *
+ * hertz: Gives the oscillations per second. hertz <= 0 is replaced by 1. The add enforces
+ *
+ *          hertz <= physics_ticks_per_second / 4.0f.
+ *
+ * damping_ratio: damping behaviour of the velocity, see ds_DistanceJointPrefabSpring.
+ * max_force: largest pull force in Newton.
+ * max_torque: largest torque in Newton metres, braking the body's spin; 0 lets it spin freely.
+ */
+void    ds_MouseJointPrefab(struct ds_MouseJointPrefab *prefab, const v3f64 target, const f32 hertz, const f32 damping_ratio, const f32 max_force, const f32 max_torque);
+/* 
+ * Return a mouse prefab whose strength is scaled to the given dynamic body, so that every body
+ * follows the target alike: 
+ *          max_force = force_scale * weight, 
+ *          max_torque = torque_scale * weight * radius of gyration. 
+ *          hertz and damping_ratio as in ds_MouseJointPrefab.
+ */
+void    ds_MouseJointPrefabFromBody(struct ds_MouseJointPrefab *prefab, const struct ds_Dynamics *pipeline, const ds_BodyId body, const v3f64 target, const f32 hertz, const f32 damping_ratio, const f32 force_scale, const f32 torque_scale);
+/* 
+ * Move the joint's target. NO-OP if the joint no longer exists. 
+ */
+void    ds_MouseJointTargetSet(struct ds_Dynamics *pipeline, const ds_JointId id, const v3f64 target);
+/* 
+ * Set the joint's spring; hertz and damping_ratio as in ds_MouseJointPrefab. NO-OP if the joint no longer exists. 
+ */
+void    ds_MouseJointSpringSet(struct ds_Dynamics *pipeline, const ds_JointId id, const f32 hertz, const f32 damping_ratio);
+/* 
+ * Set the joint's largest pull force in Newton. NO-OP if the joint no longer exists. 
+ */
+void    ds_MouseJointStrengthSet(struct ds_Dynamics *pipeline, const ds_JointId id, const f32 max_force);
+/* 
+ * Set the joint's largest braking torque in Newton metres; 0 lets the body spin freely. NO-OP if the joint no longer exists. 
+ */
+void    ds_MouseJointFrictionSet(struct ds_Dynamics *pipeline, const ds_JointId id, const f32 max_torque);
+
+/* ---------- Revolute Joints ---------- */
+
+/*
+ * TODO: we fix distance joints first, and handle more difficult joints later. Many decisions
+ * goes here when setting up a reasonable API; 
+ *  () Communicate clearly where angle/joint limits begin in the local joint space
+ *  () what about world-space API? We create  stuff in world-space, so we need both good 
+ *      visual representations as well as good APIs...
+ * WARNING: fill only through ds_RevoluteJointPrefabDefault; a hand-filled prefab is not checked
+ */
+struct ds_RevoluteJointPrefab
+{
+    //TODO  Understand and implement later
+    u32     enable_limit;
+    intv    limit;    /* What units? */
+    u32     enable_motor;
+    f32     motor_speed;
+    f32     motor_max_torque;
+};
+
+//TODO docs 
+void        ds_RevoluteJointPrefabDefault(struct ds_RevoluteJointPrefab *prefab);
+
+/* ---------- Joints ---------- */
+
+/*
+ * Add a distance joint between b0 and b1, anchored at the origins of the given body-local frames. On success,
+ * return the joint's id. On failure (a missing body, both anchors on one body, both bodies static, a dynamic
+ * body without mass), return the null id. The prefab's hertz is clamped to the pipeline's spring_hertz_max. Anchors closer than
+ * linear_slop get +x as the joint's first axis.
+ */
+ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_DistanceJointPrefab *prefab, const ds_BodyId b0, const ds_Transform *local_frame0, const ds_BodyId b1, const ds_Transform *local_frame1);
+ds_JointId ds_RevoluteJointAdd(struct ds_Dynamics *pipeline, const struct ds_RevoluteJointPrefab *prefab, const ds_BodyId b0, const ds_Transform *local_frame0, const ds_BodyId b1, const ds_Transform *local_frame1);
+/*
+ * Add a mouse joint pulling body at local_frame's origin towards the prefab's target. On success, return the
+ * joint's id. On failure (a missing body, body not dynamic or without mass), return the null id.
+ */
+ds_JointId ds_MouseJointAdd(struct ds_Dynamics *pipeline, const struct ds_MouseJointPrefab *prefab, const ds_BodyId body, const ds_Transform *local_frame);
+
+
+
 
 /*
 ds_Joint
@@ -734,6 +1067,8 @@ enum ds_JointType
 {
     DS_JOINT_TYPE_NONE,
     DS_JOINT_TYPE_DISTANCE,
+    DS_JOINT_TYPE_REVOLUTE,
+    DS_JOINT_TYPE_MOUSE,
     DS_JOINT_TYPE_COUNT
 };
 
@@ -741,73 +1076,62 @@ struct ds_Joint
 {
     POOL_NODE;
     ds_JointId          id;                    /* generational identifier */
+    enum ds_JointType   type;
 
     u32                 island;
-    struct ds_DLLNode   island_joint;
+    struct DLLNode   island_joint;
 
     u32                 body[2];        /* bodies sharing ownership of joint                                */
-    struct ds_DLLNode   edge_node[2];   /* Each body stores the joint its dll; b == body[i] => edge_node[i] 
+    struct DLLNode   edge_node[2];   /* Each body stores the joint its dll; b == body[i] => edge_node[i] 
                                            is part of body b's dll.                                         */
 
-    //TODO u32         island;     /* */
-
-    u32         set;                    /* index to joint's set                                             */
-    u32         color;                  /* edge color (or CG_COLOR_NOT_SET)                                 */
+    u32         set;                    /* index to joint's set (SOLVER_SET_NULL while in the graph)        */
+    u32         color;                  /* edge color (or CG_INVALID_COLOR)                                 */
     u32         sim;                    /* owned ds_JointSim. If color is a valid color, the JointSim is 
-                                           found in in the given color of the ds_CGraph. if 
-                                           color == CG_COLOR_NOT_SET, sim is an index into the joint's 
-                                           set->jointsim_pool.                                              */
+                                           found in the given color of the ds_CGraph. If
+                                           color == CG_INVALID_COLOR, sim is an index into the joint's
+                                           set->joint_sim_pool.                                             */
+    
+    u32         collide_connected;      /* Boolean: collide connected bodies                                */
 };
-POOL_DECLARE(ds_Joint);
+DEFINE_POOL(ds_Joint);
 
 /* 
- * Setup a joint between bodies b0 and b1 with anchors defined by the input local_frames. On success, 
- * a valid ds_JointId is returned. On Failure, DS_ID_NULL is returned.
+ * INTERNAL: Setup a joint between bodies b0 and b1 with anchors defined by the input local_frames. On success, 
+ * a valid ds_JointId is returned. On failure (a missing body, both ends on one body, both bodies static, a
+ * dynamic body without mass), the null id is returned. Canonical slot: a static body becomes
+ * body 1 (its frame with it), whatever the caller's order; joint->body[] and the sim's local_frame[] follow it.
  */
-ds_JointId  ds_JointAdd(struct ds_Dynamics *pipeline, const ds_BodyId b0, const ds_Transform *t0, const ds_BodyId b1, const ds_Transform *t1);
+ds_JointId  ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType type, const u32 collide_connected, const ds_BodyId b0, const ds_Transform *t0, const ds_BodyId b1, const ds_Transform *t1);
 /*
  * Remove the specified joint corresponding to the id. If the joint no longer exist, the call becomes a NO-OP.
  */
 void        ds_JointRemove(struct ds_Dynamics *pipeline, const ds_JointId id);
 /* 
+ * INTERNAL: Remove the specified joint and update the pipeline into a valid state.
+ */
+void        ds_JointRemoveEx(struct ds_Dynamics *pipeline, const u32 joint_index);
+/* 
  * On success, return the joint corresponding to the id. If the wasn't found, return an empty slot (U32_MAX, NULL)
  */
 struct slot ds_JointLookup(const struct ds_Dynamics *pipeline, const ds_JointId id);
-/* 
- * INTERNAL: Remove the specified joint of a STATIC-DYNAMIC body pair and update the pipeline into a valid state.
- */
-void        ds_JointStaticRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, const u32 index);
-/* 
- * INTERNAL: Remove the specified joint of a DYNAMIC-DYNAMIC body pair and update the pipeline into a valid state.
- */
-void        ds_JointDynamicRemove(struct ds_Dynamics *pipeline, struct ds_Body *body, const u32 index);
-
 /*
-ds_DistanceJoint
-================
-//TODO
-*/
-
-struct ds_DistanceJointPrefab
-{
-    u32 tmp;
-};
-
-//TODO
-struct ds_DistanceJoint
-{
-    u32 tmp;
-};
-
+ * Enable collision between joint body-pair. NO-OP if invalid id or collision is already 
+ * enabled.
+ * NOTE: collision is only enabled when all joints agree; if one joint has collision
+ *       disabled, collision stays disabled.
+ */
+void        ds_JointCollisionEnable(struct ds_Dynamics *pipeline, const ds_JointId id);
 /*
- * Set prefab to the default distance joint values.
+ * Disable collision between joint body-pair. NO-OP if invalid id or collision is already
+ * disabled.
  */
-void    ds_DistanceJointPrefabDefault(struct ds_DistanceJointPrefab *prefab);
-/* 
- * Setup a joint between bodies b0 and b1 with anchors defined by the input local_frames. On success, 
- * a valid ds_JointId is returned. On Failure, DS_ID_NULL is returned.
+void        ds_JointCollisionDisable(struct ds_Dynamics *pipeline, const ds_JointId id);
+/*
+ * Validate every joint's bookkeeping: id, bodies, island, the set/colour sim back reference and the bodies'
+ * joint lists.
  */
-ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_DistanceJointPrefab *prefab, const ds_BodyId b0, const ds_Transform *local_frame0, const ds_BodyId b1, const ds_Transform *local_frame1);
+void        ds_JointValidateAll(const struct ds_Dynamics *pipeline);
 
 /*
 ds_JointSim
@@ -821,9 +1145,16 @@ struct ds_JointSim
     
     u32                 joint;      /* index of general joint owning the struct */
     enum ds_JointType   type;
+    u32                 body_sim[2];/* body->sim of the two bodies (ACTIVE_BODY_DUMMY_INDEX: static); set by
+                                       the prepare stage each tick                                           */
+
+    /* Per-tick solver data shared by every joint type, set by the prepare stage */
+    v3                  r[2];       /* world levers from the bodies' centers of mass to their joint frames */
+    v3                  com_diff;   /* COM1 - COM0                                                */
     union
     {
         struct ds_DistanceJoint distance;
+        struct ds_MouseJoint    mouse;
     };
 };
 DEFINE_CPOOL_STRUCT(ds_JointSim);
@@ -831,26 +1162,28 @@ DEFINE_CPOOL_STRUCT(ds_JointSim);
 /*
 ds_SolverSet
 ============
-//TODO 
+A solver set holds the simulation state of a group of islands: the bodies' simulation state (ds_BodySim) and,
+in the active set only, their solver state (ds_BodyCompute), the contacts' solver caches (ds_ContactCompute)
+and the joints' simulation state (ds_JointSim), in compact pools. The owners index them: body->sim,
+contact->compute and joint->sim are slots in the pools of the set named by body->set, contact->set and
+joint->set; island->set_island_index is the island's slot in its set's island_pool. A compact pool's removal
+moves the last element into the hole, and the moved owner's slot is updated with it.
 
-::: Internals :::
+The fixed sets live on the heap with growable pools:
+SOLVER_SET_DISABLED: reserved for bodies taken out of the simulation; unused so far.
+SOLVER_SET_STATIC: the static bodies' simulation state; no compute state, no islands, no contacts.
+SOLVER_SET_ACTIVE: every simulated island with its bodies' simulation and compute state. Its contacts are in
+    the constraint graph's colours (contact->set is SOLVER_SET_NULL there); its contact_pool holds only the
+    contacts not promoted yet.
+SOLVER_SET_SLEEPING_FIRST and up: one set per sleeping island, created by ds_SolverSetSleep in one heap arena
+    (mem) sized by ds_SolverSetSleepMemoryRequirement: the pools, the contacts' solver caches and narrowphase
+    data copied off the constraint graph and the frame arenas. ds_SolverSetWakeUp copies them back onto the
+    current worker frame and into the graph, and frees the set; the slot is reused.
 
-Context: Unlike Box3d, we do not store non-touching contacts; instead, we run a full dynamic tree search for
-potential contacts, and then run narrowphase on overlapping leaves. For any new contacts we then merge islands.
-For any contact that has disappeared, we flag the merged/persistent island for splitting. Then we try to split
-any flagged island. Then we solve any awake island. This is a simplified physics solver for now, so we try to
-keep this structure unless you recommend us switching.
-
-Furthermore, we do not at the moment store body data in the sets, only contact indices for sleeping sets
-and ds_JoinSim for sleeping/disabled sets, and any islands in the set.  we will expand this struct as needed.
-
-SOLVER_SET_DISABLED: TODO
-
-SOLVER_SET_ACTIVE: TODO
-
-SOLVER_SET_STATIC: TODO
-
-SOLVER_SET_SLEEPING: TODO
+Only the pipeline sleeps and wakes islands: at the end of SolveConstraints an island whose bodies have all
+rested for sleep_time_threshold and that is not flagged for a split goes to sleep; a set wakes when one of its
+bodies or contacts is removed, a new contact touches one of its bodies (ds_IslandMerge), or sleeping is
+disabled. While sleeping is disabled ds_SolverSetSleep is a no-op.
 */
 
 enum ds_SolverSetType
@@ -859,8 +1192,8 @@ enum ds_SolverSetType
     SOLVER_SET_STATIC,
     SOLVER_SET_ACTIVE,
     SOLVER_SET_SLEEPING_FIRST,
-    SOLVER_SET_NULL = U32_MAX,
 };
+#define SOLVER_SET_NULL U32_MAX
 
 #define ACTIVE_BODY_DUMMY_INDEX U32_MAX
 
@@ -868,46 +1201,62 @@ struct ds_SolverSet
 {
     POOL_NODE;
 
-    /* Sleeping set memory */
-    struct arena                    mem;
+    /* a sleeping set's arena (mem_size 0 for the fixed sets) */
+    struct arena                mem;
 
     /* Body simulation state */
-    ds_CPool(ds_BodySim)       body_sim_pool;
+    ds_CPool(ds_BodySim)        body_sim_pool;
 
-    /* Body solver computation state */
-    ds_CPool(ds_BodyCompute)   body_compute_pool;
+    /* Body solver computation state (the active set only) */
+    ds_CPool(ds_BodyCompute)    body_compute_pool;
 
-    /* Contact indices.  */
-    ds_CPool(u32)                   contact_pool;
+    /* Contact indices: a sleeping set's contacts; the active set's contacts not promoted into the constraint graph */
+    ds_CPool(u32)               contact_pool;
     
-    /* Disabled/Sleep set stores non-active contacts that has been removed from the constraint graph */
-    ds_CPool(ds_ContactCompute)     contact_compute_pool;
+    /* A sleeping set's contact solver caches, in contact_pool's order */
+    ds_CPool(ds_ContactCompute) contact_compute_pool;
 
-    /* Disabled/Sleep set stores non-active joints that has been removed from the constraint graph */
-    ds_CPool(ds_JointSim)           joint_sim_pool;
+    /* A sleeping or disabled set's joints, out of the constraint graph */
+    ds_CPool(ds_JointSim)       joint_sim_pool;
 
     /* Islands in set */
-    ds_CPool(u32)                   island_pool;
+    ds_CPool(u32)               island_pool;
 };
-POOL_DECLARE(ds_SolverSet);
+DEFINE_POOL(ds_SolverSet);
 
 
-/* Allocate and setup a ds_SolverSet. If mem_set is provided, it will be used for allocating resources */
+/*
+ * Allocate and set up a ds_SolverSet. The pools are allocated on mem_set (fixed size; the set keeps the arena
+ * as its mem) or, with mem_set NULL, on the heap (growable). A pool with initial count 0 is left empty.
+ */
 struct slot ds_SolverSetAdd(struct arena *mem_set, struct ds_Dynamics *pipeline, const u32 initial_body_sim_count, const u32 initial_body_compute_count, const u32 initial_contact_count, const u32 initial_contact_compute_count,  const u32 initial_joint_count, const u32 initial_island_count);
-/* Deallocate a the given ds_SolverSet */
+/* Deallocate the given ds_SolverSet: its arena, or its heap pools */
 void        ds_SolverSetRemove(struct ds_Dynamics *pipeline, const u32 index);
-/* Flush the given ds_SolverSet */
+/* Empty the given ds_SolverSet's pools; their memory is kept */
 void        ds_SolverSetFlush(struct ds_Dynamics *pipeline, const u32 index);
-/* Wake up the given sleeping ds_SolverSet. If the solver set is not sleeping set, the call becomes a NO-OP. */
+/*
+ * Wake up the given sleeping ds_SolverSet: its contacts go back into the constraint graph (narrowphase data and
+ * caches copied onto the current worker frame), its bodies and islands into the active set with zero velocity
+ * and a reset sleep timer, and the set is removed. A fixed set or SOLVER_SET_NULL: no-op.
+ */
 void        ds_SolverSetWakeUp(struct ds_Dynamics *pipeline, const u32 index);
-/* Try put the given island to sleep. On success, the island is moved from the active set to a sleeping set. */
+/* Move the given active island into a new sleeping set. No-op while sleeping is disabled. */
 void        ds_SolverSetSleep(struct ds_Dynamics *pipeline, const u32 island);
-/* Return the required memory size for putting the given island to sleep */
+/* Return the arena size ds_SolverSetSleep needs for the given island */
 u64         ds_SolverSetSleepMemoryRequirement(const struct ds_Dynamics *pipeline, const u32 island);
+/* Return the required size when serializing the set (memory, pools and its contacts' frame data). */
+u64         ds_SolverSetSerializeSize(const struct ds_Dynamics *pipeline, const u32 set);
+/* Serialize the set. WARNING: Assumes set fits in the stream. */
+void        ds_SolverSetSerialize(struct ss *ss, const struct ds_Dynamics *pipeline, const u32 set);
+/*
+ * Deserialize into the allocated, zeroed set slot. The contact pool and the worker frames must already be
+ * restored. Returns 1 on success and 0 on failure; on failure the slot is zeroed again.
+ */
+u32         ds_SolverSetTryDeserialize(struct ss *ss, struct ds_Dynamics *pipeline, const u32 set);
 /* Debug validation for the given set */
 void        ds_SolverSetValidate(const struct ds_Dynamics *pipeline, const u32 set_index);
 
-/* Internal: Move the body to the given set (Assumes the body is NOT part off the set) */
+/* Internal: Move the body's simulation state to the given set (assumes the body is not in it); into the active set with zero velocity */
 void        ds_SolverSetMoveBody(struct ds_Dynamics *pipeline, const u32 body, const u32 set);
 
 
@@ -929,14 +1278,14 @@ struct ds_Island
     u32             set;                        /* ds_SolverSet index */
     u32             set_island_index;           /* index into set.island_pool */
 
-	struct ds_DLL	body_list;
-	struct ds_DLL	contact_list;
-    struct ds_DLL   joint_list;
+	struct DLL	    body_list;
+	struct DLL	    contact_list;
+    struct DLL      joint_list;
 
 //TODO RMEOVE
-	vec4 color;
+	v4 color;
 };
-POOL_DECLARE(ds_Island);
+DEFINE_POOL(ds_Island);
 
 /*  Return the island corresponding the id; If it doesn't exist, return (NULL, U32_MAX). */
 struct slot ds_IslandLookup(struct ds_Dynamics *pipeline, const ds_IslandId id);
@@ -959,8 +1308,11 @@ Individual constraint point within a contact constraint.
 */
 struct ds_ContactConstraintPoint 
 {
-    vec3    v;                  /* contact point                                */
-    vec3    r[2];               /* levers: body center to contact_point         */
+    v3      r[2];               /* levers: body i's center of mass to its contact point (body 1: its deepest
+                                   point). World axes from contact prep through the velocity phase; body
+                                   axes from ds_PositionConstraintInitAndCacheImpulsesRange on (NGS rotates
+                                   them by the current rotation)                                        */
+    f32     com_separation;     /* dot(com1 - com0, n) at the step's start (ds_Contact.com_offset)      */
 	f32 	normal_impulse;	    /* Normal impulse produced by the contact       */
 	f32	    velocity_bias;	    /* scale of velocity_bias along contact normal  */
 	f32	    normal_mass;	    /* 1.0f / row(J,i)*Inv(M)*J^T                   */
@@ -983,26 +1335,64 @@ struct ds_ContactConstraint
 	struct ds_ContactConstraintPoint ccp[4];
 
 	/* contact base axes */
-	vec3 	normal;		/* Currently shared contact manifold normal between all point constraints */
-	vec3	tangent[2];	/* normalized friction directions of contact */
+	v3 	normal;		/* Currently shared contact manifold normal between all point constraints */
+	v3	tangent[2];	/* normalized friction directions of contact */
 
 	f32	    restitution;	/* Range[0.0f, 1.0f] : higher => bouncy */
-	f32	    friction;	/* TODO: friction = f32_max(b1->friction, b2->friction) */
+	f32	    friction;	/* TODO: friction = F32Max(b1->friction, b2->friction) */
 	//f32	tangent_impulse_bound;	/* TODO: contact_friction * gravity_constant * point_mass */
 };
 DEFINE_CPOOL_STRUCT(ds_ContactConstraint);
 
 
-/* Initalize the given range [low, high) of ds_ContactConstraints in the constraint graph */
+/*
+ * Initalize the given range [low, high) of ds_ContactConstraints in the constraint graph. Canonical slot: a static
+ * body is put in slot 1 of the compute (body sims, levers and axes swapped), whatever the contact key's order.
+ */
 void 	ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 /* Warmup Range [low, high) of applicable ds_ContactConstraints for the given color in the constraint graph */
 void 	ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 /* Compute a solver iteration over the given color for contact constraints */
 void    ds_ContactConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color, const u32 cc_low, const u32 cc_high);
+/*
+ * The same iteration for a static colour (every contact has exactly one static body, in slot 1): the static
+ * body's terms are dropped and only the dynamic body is read and written. Results equal
+ * ds_ContactConstraintIterateRange's.
+ */
+void    ds_ContactConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const u32 color, const u32 cc_low, const u32 cc_high);
 /* Cache contact impulses and initialize position constraints in the range [low, high) for the given color */
 void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 /* Compute a solver iteration over the given color for position constraints in range [low, high) */
 void ds_PositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
+/* The same iteration for a static colour (one static body per contact, in slot 1); results equal ds_PositionConstraintIterateRange's. */
+void ds_PositionConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
+
+/*
+ * The joint stages, each over the range [low, high) of the colour's joint_sim_pool. A colour's joints and
+ * contacts share no body, so within a colour they run in any order; across colours the chain orders them.
+ */
+/* Resolve the body sims and compute the per-tick solver data of the joints */
+void    ds_JointConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
+/* Apply the joints' cached impulses from the previous tick */
+void    ds_JointConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
+/* One velocity (PGS) iteration over the joints */
+void    ds_JointConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
+/* One position (NGS) iteration over the joints */
+void    ds_JointPositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
+
+/*
+ * The per-type procedures the stages above call for one joint: jsim is the joint's sim in its colour, bcomp[i]
+ * and bsim[i] the two bodies' compute and simulation state (the static dummies for a static body); timestep is the
+ * tick length in seconds (the range rows' speculative bias is a gap per tick).
+ */
+void    ds_DistanceJointConstraintInit(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2], const f32 timestep);
+void    ds_DistanceJointConstraintWarmup(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2]);
+void    ds_DistanceJointConstraintIterate(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2]);
+void    ds_DistanceJointPositionConstraintIterate(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2]);
+/* the mouse joint has no position pass */
+void    ds_MouseJointConstraintInit(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2], const f32 timestep);
+void    ds_MouseJointConstraintWarmup(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2]);
+void    ds_MouseJointConstraintIterate(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2]);
 
 /*
 contact_solver_config
@@ -1015,14 +1405,14 @@ struct solverConfig
 	u32 	pgs_iteration_count;	/* velocity solver iteration count */
 	u32 	ngs_iteration_count;	/* position solver iteration count */
 	u32 	warmup_solver;		/* bool : Should warmup solver when applicable */
-	vec3 	gravity;
+	v3 	    gravity;
 	f32 	baumgarte_constant;  	/* Range[0.0, 1.0] : Determine how quickly contacts are resolved, 1.0f max speed */
     f32     max_linear_correction;           /* Range[0.0, inf] : max linear correction of constraint per iteration in the position solver */
-    f32     max_linear_velocity_magnitude_inv;   /* Range[0.0, inf) :  max units (m) per second a body may travel */
-    f32     max_angular_velocity_magnitude_inv;  /* Range[0.0, inf) : max units (radians) per second a body may travel */
+    f32     max_linear_velocity_magnitude_inv;   /* 1 / the speed (m/s) a body may move at per step; faster bodies move at the limit. 0: no limit */
+    f32     max_angular_velocity_magnitude_inv;  /* 1 / the rate (rad/s) a body may turn at per step; 0: no limit */
 	f32 	linear_dampening;	/* Range[0.0, inf] : coefficient in diff. eq. dv/dt = -coeff*v */
 	f32 	angular_dampening;	/* Range[0.0, inf] : coefficient in diff. eq. dv/dt = -coeff*v */
-	f32 	linear_slop;		/* Range[0.0, inf] : Allowed penetration before velocity steering gradually
+	f32 	linear_slop;		/* Range(0.0, inf] : Allowed penetration before velocity steering gradually
 					   sets in. */
 	f32 	restitution_threshold; 	/* Range[0.0, inf] : If -seperating_velocity >= threshold, we apply the 
 					   restitution effect */
@@ -1046,10 +1436,14 @@ struct solverConfig
 
 extern struct solverConfig *g_solver_config;
 
+/*
+ * set every field of g_solver_config (must point at a config) from the arguments, the pending copies equal to
+ * them; the iteration counts must be >= 1 (asserted), a velocity magnitude of 0 means no limit (inverse 0)
+ */
 void    SolverConfigInit(const u32 pgs_iteration_count, 
                          const u32 ngs_iteration_count, 
                          const u32 warmup_solver, 
-                         const vec3 gravity, 
+                         const v3 gravity, 
                          const f32 baumgarte_constant, 
                          const f32 max_linear_correction, 
                          const f32 max_linear_velocity_magnitude, 
@@ -1066,7 +1460,10 @@ void    SolverConfigInit(const u32 pgs_iteration_count,
 /*
 ds_CGraphColor
 ==============
-ds_CGraphColor stores the relevant physics data of active constraints, tightly packed for quick iterations.
+ds_CGraphColor stores the solver data of the active constraints of one colour, tightly packed for the solver's
+ranges: contact i of the colour is contact_pool[i] (its pipeline index) with its solver state in
+contact_compute_pool[i]; contact->compute is i and contact->color the colour. body_bitset marks the dynamic
+bodies with a constraint in the colour (unused for CG_SERIAL_COLOR).
 */
 struct ds_CGraphColor
 {
@@ -1076,7 +1473,15 @@ struct ds_CGraphColor
     ds_CPool(ds_JointSim)           joint_sim_pool;
 };
 
-#define CG_COLOR_COUNT          12
+/* Return the required size when serializing the color (pools, body bitset and its contacts' frame data). */
+u64                     ds_CGraphColorSerializeSize(const struct ds_Dynamics *pipeline, const u32 color);
+/* Serialize the color. WARNING: Assumes color fits in the stream. */
+void                    ds_CGraphColorSerialize(struct ss *ss, const struct ds_Dynamics *pipeline, const u32 color);
+/* Deserialize the color. The contact pool and the worker frames must already be restored. Returns 1 on success and 0 on failure. */
+u32                     ds_CGraphColorTryDeserialize(struct ss *ss, struct ds_Dynamics *pipeline, const u32 color);
+
+
+#define CG_COLOR_COUNT          24
 #define CG_STATIC_COLOR_COUNT   4
 #define CG_DYNAMIC_COLOR_COUNT  (CG_COLOR_COUNT - CG_STATIC_COLOR_COUNT - 1) 
 #define CG_STATIC_COLOR_FIRST   0
@@ -1095,13 +1500,18 @@ from either a contact or a joint. Whenever a new constraint is added between two
 assigned a unique color from all the other constraints that shares bodies (vertices) with it. If
 we have exhausted the available colors, we assign the constraint to the serial color. 
 
-Now that we have every constraint colored, We pay process all constraints with the same color in
-parallel (expect the serial color). For good information on this, see Erin Catto's post "SIMD Matters".
+Now that we have every constraint colored, we may process all constraints with the same color in
+parallel (except the serial color, solved in one range). For good information on this, see Erin Catto's
+post "SIMD Matters". A static body never moves, so it takes no colour bit: static-dynamic constraints only
+need colours distinct per dynamic body and get the static colours; dynamic-dynamic constraints get the
+dynamic colours.
 
-Furthermore, similar to Box3D, in order to mitigate ghost collisions, we prioritize static-dynamic 
-constraints by processing them first in each solver iteration. This yields a process ordering:
+Furthermore, in order to mitigate ghost collisions, static-dynamic constraints are processed first in each
+solver iteration, by the static variants of the contact stages (ds_ContactConstraintIterateStaticRange,
+ds_PositionConstraintIterateStaticRange: one static body per contact, its terms dropped). The solver runs the
+colours in index order:
 
-    CG_SERIAL_COLOR => CG_STATIC_COLOR_1 => ... => CG_STATIC_COLOR_N => CG_DYNAMIC_1 => .. CG_DYNAMIC_M
+    CG_STATIC_COLOR_FIRST .. CG_STATIC_COLOR_LAST => CG_DYNAMIC_COLOR_FIRST .. CG_DYNAMIC_COLOR_LAST => CG_SERIAL_COLOR
 */
 struct ds_CGraph
 {
@@ -1112,11 +1522,17 @@ struct ds_CGraph
 void                    ds_CGraphAlloc(struct ds_Dynamics *pipeline, const u32 initial_count);
 /* Deallocate the pipeline's constraint graph */
 void                    ds_CGraphDealloc(struct ds_Dynamics *pipeline);
+/* Return the required size when serializing the constraint graph. */
+u64                     ds_CGraphSerializeSize(const struct ds_Dynamics *pipeline);
+/* Serialize the constraint graph. WARNING: Assumes graph fits in the stream. */
+void                    ds_CGraphSerialize(struct ss *ss, const struct ds_Dynamics *pipeline);
+/* Deserialize the constraint graph. The contact pool and the worker frames must already be restored. Returns 1 on success and 0 on failure. */
+u32                     ds_CGraphTryDeserialize(struct ss *ss, struct ds_Dynamics *pipeline);
 /* Flush the pipeline's constraint graph data */
 void                    ds_CGraphFlush(struct ds_Dynamics *pipeline);
 /* Validate the state of the pipeline's constraint graph */
 void                    ds_CGraphValidate(const struct ds_Dynamics *pipeline);
-/* Prepare the pipeline's constraint graph for the new frame, allocating and setting up new resources if necessary. */
+/* Prepare the pipeline's constraint graph for the new frame: the body bit sets grow with the body pool. */
 void                    ds_CGraphFramePrepare(struct ds_Dynamics *pipeline);
 /* Allocate and setup a new ds_JointSim */
 struct ds_JointSim *    ds_CGraphJointAdd(struct ds_Dynamics *pipeline, struct ds_Joint *joint);
@@ -1127,7 +1543,7 @@ void                    ds_CGraphJointRemove(struct ds_Dynamics *pipeline, struc
  * data in sleeper sets is copied onto the frame. 
  */
 void                    ds_CGraphContactAdd(struct arena *frame, struct ds_Dynamics *pipeline, struct ds_Contact *contact);
-/* Remove conttact from the constraint graph. */
+/* Remove the contact from the constraint graph; the last contact of its colour takes its slot (compute index updated). */
 void                    ds_CGraphContactRemove(struct ds_Dynamics *pipeline, struct ds_Contact *contact);
 
 
@@ -1156,6 +1572,11 @@ struct ds_BroadJobPhase
     struct ds_Dynamics *            pipeline;
 };
 
+/*
+ * The phases' dispatch functions (ds_JobDispatchFunction, ds_job.h): run the job of the phase g_scheduler->phase
+ * points at and return the number of jobs it pushed minus 1 (U32_MAX for none). Set by ds_JobPhaseAlloc in the
+ * pipeline's allocation; the scheduler calls them, nothing else does.
+ */
 u32 ds_BroadJobPhaseDispatch(const ds_JobId job);
 
 /*
@@ -1183,6 +1604,7 @@ struct ds_NarrowJobPhase
     struct ds_Dynamics *            pipeline;
 };
 
+/* see ds_BroadJobPhaseDispatch */
 u32 ds_NarrowJobPhaseDispatch(const ds_JobId job);
 
 
@@ -1236,16 +1658,19 @@ struct ds_SolverJobPhase
 
     struct ds_ParallelForChain      pf_body_update;
     struct ds_ParallelForChain      pf_contact_init;
+    struct ds_ParallelForChain      pf_joint_init;
     struct ds_ParallelForChain      pf_contact_warmup;
-    struct ds_ParallelForChain      pf_velocity_solve;
+    struct ds_ParallelForChain      pf_joint_warmup;
+    struct ds_ParallelForChain      pf_velocity_solve;      /* per iteration and colour: the colour's joints, then its contacts */
     struct ds_ParallelForChain      pf_integrate;
     struct ds_ParallelForChain      pf_cache_impulse_and_position_init;
-    struct ds_ParallelForChain      pf_position_solve;
+    struct ds_ParallelForChain      pf_position_solve;      /* per iteration and colour: the colour's joints, then its contacts */
 
     struct ds_ParallelForChain      pf_orientation;
     struct ds_ProxyRange *          proxy_range;
 };
 
+/* see ds_BroadJobPhaseDispatch */
 u32 ds_SolverJobPhaseDispatch(const ds_JobId job);
 
 /*
@@ -1255,13 +1680,14 @@ ds_RebuildJobPhase
 
 enum ds_RebuildJobType
 {
-    REBUILD_JOB_SEED,
+    REBUILD_JOB_SETUP,
+    REBUILD_JOB_RANGE,
     REBUILD_JOB_COUNT
 };
 
 struct ds_RebuildLeaf 
 {
-    vec3    center;
+    v3      center;
     u32     index;
 };
 
@@ -1270,107 +1696,92 @@ struct ds_RebuildRange
 {
     u32 low;
     u32 high;
-    u32 depth;
     u32 internal_index;
     u32 axis;
     f32 pivot;
 };
 
-static void ds_RebuildRangeSetNull(struct ds_RebuildRange *range)
+struct ds_RebuildThreadCompute
 {
-    range->internal_index = U32_MAX;
-}
-
-static u32 ds_RebuildRangeCheck(struct ds_RebuildRange *range)
-{
-    return (range->internal_index != U32_MAX);
-}
-
-struct ds_RebuildFatWork
-{
-    struct ds_ParallelForChain  pf;
-    struct ds_RebuildRange      range;
-    struct ds_RebuildThread *   thread;
-
-    u8                          pad0[DS_CACHE_LINE];
-    u32                         a_low_count;
-    u8                          pad1[DS_CACHE_LINE];
-    u32                         a_high_count;
-    u8                          pad2[DS_CACHE_LINE];
-
-};
-
-struct ds_RebuildThread
-{
-    /* 8 + 24 + 24 + */
     u32     count[2];
-    vec3    min[2];
-    vec3    max[2];
-    u8      pad[DS_CACHE_LINE - 2*sizeof(u32) - 4*sizeof(vec3)];
+    v3      min[2];
+    v3      max[2];
+    u8      pad[DS_CACHE_LINE - 2*sizeof(u32) - 4*sizeof(v3)];
 };
-
-static void ds_RebuildThreadInit(struct ds_RebuildThread *t)
-{
-    t->count[0] = 0;
-    t->count[1] = 0;
-    Vec3Set(t->min[0], F32_INFINITY, F32_INFINITY, F32_INFINITY);
-    Vec3Set(t->max[0], -F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
-    Vec3Set(t->min[1], F32_INFINITY, F32_INFINITY, F32_INFINITY);
-    Vec3Set(t->max[1], -F32_INFINITY, -F32_INFINITY, -F32_INFINITY);
-}
-
-static void ds_RebuildThreadBlockInit(struct ds_RebuildThread *t)
-{
-    t->count[0] = 0;
-    t->count[1] = 0;
-}
 
 struct ds_RebuildJob
 {
-    struct ds_RebuildLeaf * leaf[2];
-    struct ds_RebuildRange  thin_range[2];
-    u8                      pad[DS_CACHE_LINE];
+    u32                     a_range_ready;      /* Only used for setup jobs */
+    struct ds_RebuildRange  range;
+    u8                      pad[DS_CACHE_LINE - sizeof(u32) - sizeof(struct ds_RebuildRange)];
 };
 
 struct ds_RebuildJobPhase
 {
     struct ds_JobPhase              phase;
-    struct ds_RebuildJob *          job;
-    u32                             job_count;
+    struct ds_RebuildJob *          setup_job;
+    struct ds_RebuildJob *          range_job;
+    u32                             setup_job_length;
+    u32                             range_job_length;
     struct ds_ParallelForChain      pf_proxy_update;
     struct ds_Dynamics *            pipeline;
 
     u32 *                           internal_buf;
     u32                             internal_count;
-    struct ds_RebuildLeaf *         leaf_buf[2];
-    u32                             leaf_count;
-    u32                             leaf_blocks_per_proxy_update; 
-    u32                             small_leaf_limit; 
-    u32                             fat_leaf_limit; 
 
-    struct ds_RebuildFatWork *      fat_work_setup;
-    struct ds_RebuildFatWork *      fat_work;
-    u32                             fat_work_max_count;
+    struct ds_RebuildLeaf *         leaf_buf;
+    u32                             leaf_count;
+    u32                             leaf_block_size; 
+
+    u32                             small_leaf_limit; 
+
+    struct ds_RebuildThreadCompute *setup_compute;
 
     u8                              pad0[DS_CACHE_LINE];
-    u32                             a_fat_work_counter;
+    u32                             a_setup_completed;     
     u8                              pad1[DS_CACHE_LINE];
-    u32                             a_fat_work_completed;
+
+    u32                             a_internal_next;
     u8                              pad2[DS_CACHE_LINE];
 
-    u32                             a_thin_range_count;
+    u32                             a_leaves_completed;
     u8                              pad3[DS_CACHE_LINE];
-    u32                             a_thin_range_next;
+
+    u32                             a_range_seed_count;
     u8                              pad4[DS_CACHE_LINE];
-
-    u32                             a_setup_completed;     
-    u8                              pad5[DS_CACHE_LINE];
-
-    u32                             a_internal_counter;
-    u8                              pad6[DS_CACHE_LINE];
 };
 
+/* see ds_BroadJobPhaseDispatch; the job's tag (ds_JobIdTag) selects the setup, range or leaf job */
 u32 ds_RebuildJobPhaseDispatch(const ds_JobId job);
+
+/*
+ds_RemovalJobPhase
+=================
+*/
+
+enum ds_RemovalJobType
+{
+    REMOVAL_JOB,
+    REMOVAL_JOB_COUNT
+};
+
+struct ds_RemovalJob
+{
+    struct ds_BitSet    removal_set;
+    u8                  pad[DS_CACHE_LINE - sizeof(struct ds_BitSet)];
+};
+
+struct ds_RemovalJobPhase
+{
+    struct ds_JobPhase              phase;
+    struct ds_RemovalJob *          job;
+    u32                             job_count;
+    struct ds_ParallelForChain      pf;
+    struct ds_Dynamics *            pipeline;
+};
+
+/* see ds_BroadJobPhaseDispatch */
+u32 ds_RemovalJobPhaseDispatch(const ds_JobId job);
 
 
 /*
@@ -1379,10 +1790,17 @@ u32 ds_RebuildJobPhaseDispatch(const ds_JobId job);
 =================================================================================================================
 */
 
-#define COLLISION_MARGIN_DEFAULT 5.0f * DS_UNIT_MM 
-
 #define UNIFORM_SIZE 256
 #define GRAVITY_CONSTANT_DEFAULT 9.80665f
+/* Longest joint length and range bound, meters; an "unbounded" range ends here (ds_DistanceJointClampRange) */
+#define JOINT_LENGTH_MAX 1.0e5f
+/*
+ * Fewest ticks per spring oscillation: a joint's hertz is clamped to 1 / (JOINT_OSCILLATION_TICKS_MIN * timestep),
+ * ds_Dynamics.spring_hertz_max, at add. Erin Catto, GDC 2011 "Soft Constraints": a spring needs at least 4 steps per oscillation, below that an
+ * explicitly stepped spring blows up and a spring is indistinguishable from a rigid constraint anyway. The soft
+ * row is implicit and does not blow up, but past that rate hertz no longer describes the motion.
+ */
+#define JOINT_OSCILLATION_TICKS_MIN 4.0f
 
 #define PHYSICS_EVENT_ISLAND(pipeline, event_type, island_index)					        \
 	{												                                        \
@@ -1390,8 +1808,6 @@ u32 ds_RebuildJobPhaseDispatch(const ds_JobId job);
 		__physics_debug_event->type = event_type;						                    \
 		__physics_debug_event->island = island_index;						                \
 	}
-
-//#ifdef DS_PHYSICS_DEBUG
 
 #define	PhysicsEventBodyNew(pipeline, _body)		                                        \
 	{												                                        \
@@ -1426,20 +1842,6 @@ u32 ds_RebuildJobPhaseDispatch(const ds_JobId job);
 		__physics_debug_event->contact_removed_shapes[1] = shape1;				            \
 	}
 
-//#else
-//
-//#define	PhysicsEventBodyNew(pipeline, body)
-//#define	PhysicsEventBodyRemoved(pipeline, entity)
-//#define	PhysicsEventIslandAsleep(pipeline, island)
-//#define	PhysicsEventIslandAwake(pipeline, island) 
-//#define	PhysicsEventIslandNew(pipeline, island)   
-//#define	PhysicsEventIslandRemoved(pipeline, island)
-//#define   PhysicsEventIslandExpanded(pipeline, island) 
-//#define PhysicsEventContactNew(pipeline, contact)
-//#define PhysicsEventContactRemoved(pipeline, body0, shape0, body1, shape1)                
-//
-//#endif
-
 enum ds_PhysicsEventType
 {
 	PHYSICS_EVENT_CONTACT_NEW,
@@ -1457,7 +1859,7 @@ enum ds_PhysicsEventType
 struct ds_PhysicsEvent
 {
 	POOL_NODE;
-    struct ds_DLLNode   node;
+    struct DLLNode   node;
 
 	u64			ns;	/* time of event */
 	enum ds_PhysicsEventType type;
@@ -1475,7 +1877,7 @@ struct ds_PhysicsEvent
         };
 	};
 };
-POOL_DECLARE(ds_PhysicsEvent);
+DEFINE_POOL(ds_PhysicsEvent);
 
 enum rigidBodyColorMode
 {
@@ -1511,29 +1913,31 @@ struct ds_Dynamics
 	u64 			                frames_completed;	    /* number of completed physics frames */ 
 
     f32                             timestep;
+    f32                             spring_hertz_max;        /* 1 / (JOINT_OSCILLATION_TICKS_MIN * timestep): a joint spring's hertz is clamped to it at add.
+                                                               TODO: move somewhere suitable (the solver config is one global shared by every pipeline) */
 
-	c_ShapeSDB *	                cshape_db;		        /* externally owned */
-	ds_BodyPrefabSDB *	            body_prefab_db;		    /* externally owned */
+	ds_SDB(c_Shape) *	            cshape_db;		        /* externally owned */
+	ds_SDB(ds_BodyPrefab) *	        body_prefab_db;		    /* externally owned */
 
-	struct ds_BodyPool              body_pool;
+	ds_Pool(ds_Body)              body_pool;
     struct ds_BitSet                body_usage_set;         /* Bodies in use */
 
-	struct ds_ShapePool	            shape_pool;
+	ds_Pool(ds_Shape)	            shape_pool;
     struct ds_BitSet                shape_dynamic_usage_set;/* Shapes in use */
-	struct bvh 		                dynamic_bvh;            /* bvh of dynamic shapes */
-	struct bvh 		                static_bvh;             /* bvh of static shapes */
+	struct BVH 		                dynamic_bvh;            /* bvh of dynamic shapes */
+	struct BVH 		                static_bvh;             /* bvh of static shapes */
 
-    struct ds_BitSet                shape_dirty_set;    
-    ds_CPool(ds_ProxyQuery)         dirty_shape_query;
+    struct ds_BitSet                shape_dirty_set;        /* the shapes whose proxy box changed since the last broadphase: they query for pairs, then the set is cleared */
+    ds_CPool(ds_ProxyQuery)         dirty_shape_query;      /* per shape index: the broadphase's new pairs of the frame */
 
-    struct ds_JointPool             joint_pool;
+    ds_Pool(ds_Joint)             joint_pool;
 
-	struct ds_PhysicsEventPool      event_pool;
-	struct ds_DLL		            event_list;
+	ds_Pool(ds_PhysicsEvent)      event_pool;
+	struct DLL		            event_list;
 
     struct ds_CGraph                cgraph;
 
-    struct ds_SolverSetPool         solver_set_pool;        /* index 0,1,2 reserved for DISABLED,STATIC,ACTIVE sets */
+    ds_Pool(ds_SolverSet)         solver_set_pool;        /* index 0,1,2 reserved for DISABLED,STATIC,ACTIVE sets */
 
     /* contact net list nodes are owned as follows:
 	 *
@@ -1541,15 +1945,16 @@ struct ds_Dynamics
 	 *  contact->key.shape1 owns slot 1
 	 *
 	 * i.e. the smaller index owns slot 0 and the larger index owns slot 1.  */
-    struct ds_ContactPool           contact_pool;   
+    ds_Pool(ds_Contact)           contact_pool;   
 	struct ds_HashMap	            contact_map;		
+    struct ds_BitSet                contact_usage_set;
 
-    ds_IslandId                     island_to_split;            /* */
-	struct ds_IslandPool            island_pool;	    
+    ds_IslandId                     island_to_split;            /* the island the next tick splits, chosen at the end of the solve (null: none) */
+	ds_Pool(ds_Island)            island_pool;	    
     struct ds_BitSet                island_high_energy_set;   /* High energy islands per-frame. */
 
 	//TODO temporary, move somewhere else.
-	vec3 			                gravity;	/* gravity constant */
+	v3 			                    gravity;	/* gravity constant */
 
 	u32			                    margin_on;
 	f32			                    margin;
@@ -1558,27 +1963,52 @@ struct ds_Dynamics
     struct ds_NarrowJobPhase *      narrow_phase;
     struct ds_SolverJobPhase *      solver_phase;
     struct ds_RebuildJobPhase *     rebuild_phase;
+    struct ds_RemovalJobPhase *     removal_phase;
 };
+
 
 /**************** PHYISCS PIPELINE API ****************/
 
 /* Initialize a new growable physics pipeline; ns_tick is the duration of a physics frame. */
-struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, c_ShapeSDB *cshape_db, ds_BodyPrefabSDB *prefab_db, const u32 worker_cont, const u64 worker_frame_size);
-/* free pipeline resources */
-void 			ds_DynamicsFree(struct ds_Dynamics *physics_pipeline);
-/* flush pipeline resources */
-void			ds_DynamicsFlush(struct ds_Dynamics *physics_pipeline);
-/* pipeline main method: simulate a single physics frame and update internal state  */
+struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, ds_SDB(c_Shape) *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size);
+/* Free the pipeline's heap resources (the shell stays on its arena) */
+void 			ds_DynamicsFree(struct ds_Dynamics *pipeline);
+/* Return the required size when serializing the pipeline. */
+u64             ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline);
+/* Serialize the pipeline. WARNING: Assumes pipeline fits in the stream. */
+void            ds_DynamicsSerialize(struct ss *ss, const struct ds_Dynamics *pipeline);
+/*
+ * Returns 1 on success and 0 on failure. mem holds the pipeline shell (as in ds_DynamicsAlloc); everything 
+ * else is heap allocated, so always free the pipeline with ds_DynamicsFree. The solver config
+ * (g_solver_config) is process state, not part of the snapshot. On failure the stream position and mem are
+ * as before the call and the pipeline is zeroed.
+ */
+u32             ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynamics *pipeline, ds_SDB(c_Shape) *cshape_db);
+/*
+ * Empty the pipeline: every body, shape, contact, island, joint, event, sleeping set and the frame memory go;
+ * the frame count restarts and a flagged split is forgotten. Configuration and capacities stay.
+ */
+void			ds_DynamicsFlush(struct ds_Dynamics *pipeline);
+/*
+ * Simulate one physics frame of ns_tick: pending config, broadphase and narrowphase over the dirty shapes,
+ * contact promotion/demotion, at most one island split, the solver, proxy updates (or a rebuild of the
+ * dynamic BVH), contact removal, the sleep bookkeeping. Sets the dynamics globals to this pipeline.
+ */
 void 			ds_DynamicsTick(struct ds_Dynamics *pipeline);
 /* Hash bodies in order from low to high and return the final hash  */
 u64             ds_DynamicsOrientationHash(const struct ds_Dynamics *pipeline);
 /* validate and ds_Assert internal state of physics pipeline */
 void			ds_DynamicsValidate(const struct ds_Dynamics *pipeline);
-/* If hit, return parameter (shape,t) of ray at first collision. Otherwise return (U32_MAX, F32_INFINITY) */
-u32f32 			ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const struct ray *ray);
-/* enable sleeping in pipeline */
+/*
+ * Return (shape index, t) of the first surface hit over all shapes (see ds_ShapeRaycastParameter), or
+ * (U32_MAX, F32_INFINITY) on no hit or if |ray->dir|^2 == 0. The ray is in world space.
+ */
+u32f32 			ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const struct rayWorld *ray);
+/*
+ * Internal: switch sleeping on or off at once and wake every sleeping set. Callers set
+ * g_solver_config->pending_sleep_enabled instead; the next tick applies it through these.
+ */
 void 			ds_DynamicsSleepEnable(struct ds_Dynamics *pipeline);
-/* disable sleeping in pipeline */
 void 			ds_DynamicsSleepDisable(struct ds_Dynamics *pipeline);
 /* Print resource usage */
 void            ds_DynamicsPrintUsage(const struct ds_Dynamics *pipeline);
@@ -1590,6 +2020,20 @@ void            ds_DynamicsPrintUsage(const struct ds_Dynamics *pipeline);
 #endif
 
 /**************** PHYISCS PIPELINE INTERNAL API ****************/
+
+/* Internal: Allocate the pipeline without its simulation state (containers, gravity, margin, numerics). */
+void                        ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, const u64 ns_tick, const u64 frame_memory, ds_SDB(c_Shape) *cshape_db, const u32 worker_count, const u64 worker_frame_size);
+/*
+ * Internal: Read size bytes of frame data into a random worker frame (the next one if it is full) and set *dst.
+ * Spreading the data leaves room in every worker frame, so a restore inside a tick doesn't starve a worker of
+ * frame memory. The worker is chosen by a local generator seeded by the stream position, so the thread's numbers
+ * are untouched. Returns 1 on success and 0 on failure.
+ */
+u32                         ds_DynamicsFrameDataTryDeserialize(struct ss *ss, void **dst, struct ds_Dynamics *pipeline, const u64 size);
+/* Internal: Read size bytes of heap data (a sleeping set's arena) into mem and set *dst. Returns 1 on success and 0 on failure. */
+u32                         ds_DynamicsHeapDataTryDeserialize(struct arena *mem, struct ss *ss, void **dst, const u64 size);
+/* Internal: Set pipeline globals inside engine. */
+void                        ds_DynamicsSetGlobals(struct ds_Dynamics *pipeline);
 
 /* push physics event into pipeline memory and return pointer to allocated event */
 struct ds_PhysicsEvent *	ds_PhysicsEventPush(struct ds_Dynamics *pipeline);

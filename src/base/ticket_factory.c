@@ -53,9 +53,12 @@ u32 TicketFactoryTryGetTicket(u32 *ticket, struct ticketFactory *tf)
 u32 TicketFactoryGetTicket(struct ticketFactory *tf)
 {
 	u32 ticket;
-	while (!TicketFactoryTryGetTicket(&ticket, tf));
+	u32 ret;
+	/* spins: closing the factory must end the wait, which a blocking SemaphoreWait would not */
+	while (!(ret = TicketFactoryTryGetTicket(&ticket, tf)));
 
-	return ticket;
+	/* closed: ticket was never written */
+	return (ret == TICKET_FACTORY_CLOSED) ? TICKET_FACTORY_CLOSED : ticket;
 }
 
 void TicketFactoryReturnTickets(struct ticketFactory *tf, const u32 count)

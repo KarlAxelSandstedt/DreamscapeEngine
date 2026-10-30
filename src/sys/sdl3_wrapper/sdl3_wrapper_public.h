@@ -26,7 +26,14 @@ extern "C" {
 
 #include "ds_gl.h"
 
+/*
+ * SDL_Init (video, events), the GL attributes (3.3 core; web: GLES 3.0), SDL_GL_LoadLibrary, and every native window,
+ * cursor, clipboard, input and event function pointer of the platform layer (fatal on failure). Called by
+ * ds_GraphicsApiInit.
+ */
 void	sdl3_WrapperInit(void);
+/* SDL_Quit: closes the display connection and restores what SDL changed (screensaver, video modes) */
+void	sdl3_WrapperShutdown(void);
 
 #ifdef __cplusplus
 }

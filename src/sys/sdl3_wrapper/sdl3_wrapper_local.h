@@ -31,11 +31,20 @@ extern "C" {
 #include "ds_platform.h"
 #include "sdl3_wrapper_public.h"
 
+/* load every GL function of func through SDL_GL_GetProcAddress; a missing one is fatal */
 void			sdl3_GlFunctionsInit(struct gl_Functions *func);
+/*
+ * If an SDL event the engine handles is pending, translate it into *event and return 1; skips the others; 0 when
+ * none is left. A text input event's utf8 points into SDL's event storage: valid until the next call.
+ */
 u32 			sdl3_EventConsume(struct ds_Event *event);
+/* the current KEY_MOD_* bits (SDL_GetModState) */
 u32 			sdl3_KeyModifiers(void);
+/* SDL mouse button to the engine's; MOUSE_BUTTON_NONMAPPED for buttons other than left, right and middle */
 enum mouseButton	sdl3_DsMouseButton(const u8 mouse_button);
+/* SDL keycode (layout dependent) to the engine's key; DS_NO_SYMBOL for keys the engine doesn't map */
 enum dsKeycode		sdl3_DsKeycode(const SDL_Keycode sdl_key);
+/* SDL scancode (physical key) to the engine's key; DS_NO_SYMBOL for keys the engine doesn't map */
 enum dsKeycode 	sdl3_DsScancode(const SDL_Scancode sdl_key);
 
 #ifdef __cplusplus

@@ -61,7 +61,7 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 	led_CoreInitCommands();
 	g_editor->mem_persistent = ArenaAlloc(NULL,64*1024*1024);
 
-	g_editor->window = ds_RootWindowAlloc("Level Editor", Vec2U32Inline(400,400), Vec2U32Inline(1280, 720));
+	g_editor->window = ds_RootWindowAlloc("Level Editor", V2U32(400, 400), V2U32(1280, 720));
 
 	g_editor->frame = ArenaAlloc(NULL, 16*1024*1024);
 	g_editor->project_menu = led_ProjectMenuAlloc();
@@ -74,12 +74,12 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 	//const vec3 up = {0.0f, 1.0f, 0.0f};
 	//const vec3 dir = {1.0f, 0.0f, 0.0f};
 	
-	const vec3 position = {10.0f, 1.0f, 5.0f};
-	//const vec3 position = {3.0f, 1.0f, -3.0f};
-	const vec3 left = {1.0f, 0.0f, 0.0f};
-	const vec3 up = {0.0f, 1.0f, 0.0f};
-	const vec3 dir = {0.0f, 0.0f, 1.0f};
-	vec2 size = { 1280.0f, 720.0f };
+	const v3f64 position = V3F64(10.0, 1.0, 5.0);
+	//const v3 position = V3(3.0f, 1.0f, -3.0f);
+	const v3 left = V3(1.0f, 0.0f, 0.0f);
+	const v3 up = V3(0.0f, 1.0f, 0.0f);
+	const v3 dir = V3(0.0f, 0.0f, 1.0f);
+	const v2 size = V2(1280.0f, 720.0f);
 	r_CameraConstruct(&g_editor->cam, 
 			position, 
 			left,
@@ -89,7 +89,7 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 			0.0f,
 			0.0250f,
 			1024.0f,
-			(f32) size[0] / size[1],
+			(f32) size.x / size.y,
 			2.0f * F32_PI / 3.0f );
 
 	g_editor->cam_left_velocity = 0.0f;
@@ -113,16 +113,18 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 	}
 	
 	g_editor->viewport_id = Utf8Format(&sys_win->mem_persistent, "viewport_%u", g_editor->window);
-	g_editor->node_hierarchy = led_NodeHIAlloc(NULL, 16384, GROWABLE);
+	HIAlloc(NULL, g_editor->node_hierarchy, 16384, GROWABLE);
 	g_editor->node_map = ds_HashMapAlloc(NULL, 16384, 16384, GROWABLE);
 	//g_editor->node_selected_list = dll2_Init(struct led_Node);
-	g_editor->render_mesh_db = r_MeshSDBAlloc(NULL, 32, GROWABLE);
-	g_editor->shape_prefab_db = ds_ShapePrefabSDBAlloc(NULL, 32, GROWABLE);
-    g_editor->shape_prefab_instance_pool = ds_ShapePrefabInstancePoolAlloc(NULL, 16384, GROWABLE);
-	g_editor->body_prefab_db = ds_BodyPrefabSDBAlloc(NULL, 32, GROWABLE);
-	g_editor->cs_db = c_ShapeSDBAlloc(NULL, 32, GROWABLE);
+	ds_SDBAlloc(NULL, g_editor->render_mesh_db, 32, GROWABLE);
+	ds_SDBAlloc(NULL, g_editor->shape_prefab_db, 32, GROWABLE);
+    ds_PoolAlloc(NULL, g_editor->shape_prefab_instance_pool, 16384, GROWABLE);
+	ds_SDBAlloc(NULL, g_editor->body_prefab_db, 32, GROWABLE);
+	ds_SDBAlloc(NULL, g_editor->cs_db, 32, GROWABLE);
+	DLLFlush(g_editor->cs_shape_list);
 	g_editor->physics = ds_DynamicsAlloc(&g_editor->mem_persistent, 1024, NSEC_PER_SEC / (u64) 60, 16*1024*1024, &g_editor->cs_db, &g_editor->body_prefab_db, thread_count, thread_framesize);
     ds_CPoolAlloc(NULL, g_editor->joint_pool, 256, GROWABLE);
+    g_editor->grab.joint = ds_JointIdNull();
 
 	g_editor->pending_engine_running = 0;
 	g_editor->pending_engine_initalized = 0;
@@ -137,47 +139,47 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 
 	struct c_Shape *cshape_stub = g_editor->cs_db.pool.buf + SDB_STUB;
 	cshape_stub->type = C_SHAPE_CONVEX_HULL;
-	cshape_stub->hull = DcelBox(&sys_win->mem_persistent, Vec3Inline(0.5f, 0.5f, 0.5f));
+	cshape_stub->hull = DcelBox(&sys_win->mem_persistent, V3(0.5f, 0.5f, 0.5f));
 	c_ShapeUpdateMassProperties(cshape_stub);
 
     struct ds_ShapePrefab *shape_stub = g_editor->shape_prefab_db.pool.buf + SDB_STUB;
-    shape_stub->cshape = c_ShapeSDBReference(&g_editor->cs_db, Utf8Empty()).index;
+    shape_stub->cshape = ds_SDBReference(g_editor->cs_db, Utf8Empty()).index;
 	shape_stub->density = 1.0f;
 	shape_stub->restitution = 0.0f;
 	shape_stub->friction = 0.0f;
-    shape_stub->render_mesh = r_MeshSDBReference(&g_editor->render_mesh_db, Utf8Empty()).index;
+    shape_stub->render_mesh = ds_SDBReference(g_editor->render_mesh_db, Utf8Empty()).index;
 
-    struct slot slot = ds_ShapePrefabInstancePoolAdd(&g_editor->shape_prefab_instance_pool);
+    struct slot slot = ds_PoolAdd(g_editor->shape_prefab_instance_pool);
     const u32 instance_index = slot.index;
     struct ds_ShapePrefabInstance *instance = slot.address;
     instance->id = Utf8CstrBuffered(instance->id_buf, PREFAB_BUFSIZE, "Stub");
-	instance->shape_prefab = ds_ShapePrefabSDBReference(&g_editor->shape_prefab_db, Utf8Empty()).index;
+	instance->shape_prefab = ds_SDBReference(g_editor->shape_prefab_db, Utf8Empty()).index;
     instance->t_local = ds_TransformIdentity();
 
 	struct ds_BodyPrefab *prefab_stub = g_editor->body_prefab_db.pool.buf + SDB_STUB;
 	prefab_stub->dynamic = 1;
-    ds_DLLFlush(prefab_stub->shape_list);
-    ds_DLLAppend(prefab_stub->shape_list, g_editor->shape_prefab_instance_pool.buf, instance_index, body_shape);
+    DLLFlush(prefab_stub->shape_list);
+    DLLAppend(prefab_stub->shape_list, g_editor->shape_prefab_instance_pool.buf, instance_index, body_shape);
 
-    slot = led_NodeHIAdd(&g_editor->node_hierarchy, HI_ROOT);
+    slot = HIAdd(g_editor->node_hierarchy, HI_ROOT);
     ds_Assert(slot.index == LED_NODE_ROOT);
 
 	g_editor->body_color_mode = RB_COLOR_MODE_BODY;
 	g_editor->pending_body_color_mode = RB_COLOR_MODE_ISLAND;
-	Vec4Set(g_editor->collision_color, 1.0f, 0.1f, 0.1f, 0.5f);
-	Vec4Set(g_editor->static_color, 0.6f, 0.6f, 0.6f, 0.5f);
-	Vec4Set(g_editor->sleep_color, 113.0f/256.0f, 241.0f/256.0f, 157.0f/256.0f, 0.7f);
-	Vec4Set(g_editor->awake_color, 255.0f/256.0f, 36.0f/256.0f, 48.0f/256.0f, 0.7f);
-	Vec4Set(g_editor->manifold_color, 0.6f, 0.6f, 0.9f, 1.0f);
-	Vec4Set(g_editor->dbvh_color, 0.8f, 0.1f, 0.0f, 0.6f);
-	Vec4Set(g_editor->sbvh_color, 0.0f, 0.8f, 0.1f, 0.6f);
-	Vec4Set(g_editor->bounding_box_color, 0.8f, 0.1f, 0.6f, 1.0f);
+	g_editor->collision_color = V4(1.0f, 0.1f, 0.1f, 0.5f);
+	g_editor->static_color = V4(0.6f, 0.6f, 0.6f, 0.5f);
+	g_editor->sleep_color = V4(113.0f/256.0f, 241.0f/256.0f, 157.0f/256.0f, 0.7f);
+	g_editor->awake_color = V4(255.0f/256.0f, 36.0f/256.0f, 48.0f/256.0f, 0.7f);
+	g_editor->manifold_color = V4(0.6f, 0.6f, 0.9f, 1.0f);
+	g_editor->dbvh_color = V4(0.8f, 0.1f, 0.0f, 0.6f);
+	g_editor->sbvh_color = V4(0.0f, 0.8f, 0.1f, 0.6f);
+	g_editor->bounding_box_color = V4(0.8f, 0.1f, 0.6f, 1.0f);
 
 	g_editor->draw_bounding_box = 0;
 	g_editor->draw_dbvh = 0;
 	g_editor->draw_sbvh = 0;
-	g_editor->draw_manifold = 0;
-	g_editor->draw_lines = 1;
+
+	g_editor->scene_origin = V3F64(0.0, 0.0, 0.0);
 
 	return g_editor;
 }
@@ -186,10 +188,10 @@ void led_Dealloc(struct led *led)
 {
 	ds_DynamicsFree(&g_editor->physics);
 	led_ProjectMenuDealloc(&led->project_menu);
-    ds_ShapePrefabInstancePoolDealloc(&led->shape_prefab_instance_pool);
+    ds_PoolDealloc(led->shape_prefab_instance_pool);
     ds_CPoolDealloc(g_editor->joint_pool);
 	ds_HashMapDealloc(&led->node_map);
-	led_NodeHIDealloc(&led->node_hierarchy);
+	HIDealloc(led->node_hierarchy);
 	ArenaFree(&led->frame);
 	ArenaFree(&led->mem_persistent);
 }

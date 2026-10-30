@@ -17,19 +17,21 @@
 ==========================================================================
 */
 
-#include <stdlib.h>
-
-#include "collision.h"
+#include "ds_collision.h"
+#include "ds_float.h"
+#include "ds_vector.h"
+#include "ds_quaternion.h"
+#include "ds_matrix.h"
 
 struct solverConfig config_storage = { 0 };
 struct solverConfig *g_solver_config = &config_storage;
 
 static ds_ThreadLocal struct ds_BodyCompute tl_static_bcomp = 
 {
-    .linear_velocity = { 0, 0, 0 },
-    .angular_velocity = { 0, 0, 0 },
-    .center_of_mass = { 0, 0, 0, },
-    .rotation = { 0, 0, 0, 1 },
+    .linear_velocity = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
+    .angular_velocity = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
+    .delta_position = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
+    .rotation = { .x = 0.0f, .y = 0.0f, .z = 0.0f, .w = 1.0f },
     .flags = 0,
 };
 
@@ -38,16 +40,16 @@ static ds_ThreadLocal struct ds_BodySim tl_static_body_sim =
     .body = 0,
     .flags = 0,
     .inv_mass = 0,
-    .world.position = { 0, 0, 0, },
-    .world.rotation = { 0, 0, 0, 1 },
-    .local_center_of_mass = { 0, 0, 0 },
-    .world_center_of_mass = { 0, 0, 0 },
-    .local_inv_inertia = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }},
-    .world_inv_inertia = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }},
+    .world.position = { .x = 0.0, .y = 0.0, .z = 0.0 },
+    .world.rotation = { .x = 0.0f, .y = 0.0f, .z = 0.0f, .w = 1.0f },
+    .local_center_of_mass = { .x = 0.0f, .y = 0.0f, .z = 0.0f },
+    .world_center_of_mass = { .x = 0.0, .y = 0.0, .z = 0.0 },
+    .local_inv_inertia = { .buf = { 0.0f } },
+    .world_inv_inertia = { .buf = { 0.0f } },
 };
 
 
-void SolverConfigInit(const u32 pgs_iteration_count, const u32 ngs_iteration_count, const u32 warmup_solver, const vec3 gravity, const f32 baumgarte_constant, const f32 max_linear_correction, const f32 max_linear_velocity_magnitude, const f32 max_angular_velocity_magnitude, const f32 linear_dampening, const f32 angular_dampening, const f32 linear_slop, const f32 restitution_threshold, const u32 sleep_enabled, const f32 sleep_time_threshold, const f32 sleep_linear_velocity_sq_limit, const f32 sleep_angular_velocity_sq_limit)
+void SolverConfigInit(const u32 pgs_iteration_count, const u32 ngs_iteration_count, const u32 warmup_solver, const v3 gravity, const f32 baumgarte_constant, const f32 max_linear_correction, const f32 max_linear_velocity_magnitude, const f32 max_angular_velocity_magnitude, const f32 linear_dampening, const f32 angular_dampening, const f32 linear_slop, const f32 restitution_threshold, const u32 sleep_enabled, const f32 sleep_time_threshold, const f32 sleep_linear_velocity_sq_limit, const f32 sleep_angular_velocity_sq_limit)
 {
 	ds_Assert(pgs_iteration_count >= 1);
 	ds_Assert(ngs_iteration_count >= 1);
@@ -55,17 +57,19 @@ void SolverConfigInit(const u32 pgs_iteration_count, const u32 ngs_iteration_cou
 	g_solver_config->pgs_iteration_count = pgs_iteration_count;
 	g_solver_config->ngs_iteration_count = ngs_iteration_count;
 	g_solver_config->warmup_solver = warmup_solver;
-	Vec3Copy(g_solver_config->gravity, gravity);
+	g_solver_config->gravity = gravity;
 	g_solver_config->baumgarte_constant = baumgarte_constant;
 	g_solver_config->max_linear_correction = max_linear_correction;
+    /* a limit of 0 is no limit: the inverse 0 makes every speed ratio 0 (an infinite inverse froze moving bodies and made 0*inf NaN at rest) */
     g_solver_config->max_linear_velocity_magnitude_inv = (0.0f == max_linear_velocity_magnitude)
-                                                        ? F32_INFINITY
+                                                        ? 0.0f
                                                         : 1.0f / max_linear_velocity_magnitude;
     g_solver_config->max_angular_velocity_magnitude_inv = (0.0f == max_angular_velocity_magnitude)
-                                                        ? F32_INFINITY
+                                                        ? 0.0f
                                                         : 1.0f / max_angular_velocity_magnitude;
 	g_solver_config->linear_dampening = linear_dampening;
 	g_solver_config->angular_dampening = angular_dampening;
+	ds_Assert(linear_slop > 0.0f);
 	g_solver_config->linear_slop = linear_slop;
 	g_solver_config->restitution_threshold = restitution_threshold;
 
@@ -111,26 +115,24 @@ void ds_BodyUpdateSolverDataRange(struct ds_Dynamics *pipeline, const u32 low, c
 	const f32 linear_damp = 1.0f / (1.0f + g_solver_config->linear_dampening * pipeline->timestep);
 	const f32 angular_damp = 1.0f / (1.0f + g_solver_config->angular_dampening * pipeline->timestep);
 
-    mat3 tmp, rot, rot_inv;
     for (u32 i = low; i < high; ++i)
     {
         struct ds_BodySim *sim = active->body_sim_pool.buf + i;
         struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + i;
 
 		/* setup inverted world inertia tensors and center of massses */
-		Mat3Quat(rot, sim->world.rotation);
-		Mat3Transpose(rot_inv, rot);
-        Mat3Mul(tmp, rot, sim->local_inv_inertia);
-        Mat3Mul(sim->world_inv_inertia, tmp, rot_inv);
+		const m3 rot = M3QUnit(sim->world.rotation);
+		const m3 rot_inv = M3Transpose(rot);
+        sim->world_inv_inertia = M3Mul(M3Mul(rot, sim->local_inv_inertia), rot_inv);
 
-        QuatCopy(bcomp->rotation, sim->world.rotation);
-        Mat3VecMul(bcomp->center_of_mass, rot, sim->local_center_of_mass);
-        Vec3Translate(bcomp->center_of_mass, sim->world.position);
+        bcomp->rotation = sim->world.rotation;
+        sim->world_center_of_mass = ds_BodySimWorldCenterOfMass(sim);
+        bcomp->delta_position = V3Zero();
 
         /* integrate new velocities using external forces */
-		Vec3TranslateScaled(bcomp->linear_velocity, g_solver_config->gravity, pipeline->timestep);
-		Vec3ScaleSelf(bcomp->linear_velocity, linear_damp);
-		Vec3ScaleSelf(bcomp->angular_velocity, angular_damp);
+        const v3 linear_velocity = V3AddScaled(bcomp->linear_velocity, g_solver_config->gravity, pipeline->timestep);
+		bcomp->linear_velocity = V3Scale(linear_velocity, linear_damp);
+		bcomp->angular_velocity = V3Scale(bcomp->angular_velocity, angular_damp);
     }
 
     ProfZoneEnd;
@@ -147,23 +149,22 @@ void ds_BodyIntegrateVelocitiesRange(struct ds_Dynamics *pipeline, const u32 low
         struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + i;
 
         /* update velocity and world center of mass */
-        const f32 div_linear = Vec3Length(bcomp->linear_velocity) * g_solver_config->max_linear_velocity_magnitude_inv;
-        const f32 div_angular = Vec3Length(bcomp->angular_velocity) * g_solver_config->max_angular_velocity_magnitude_inv;
-        const f32 t_linear = 1.0f / f32_clamp(div_linear, 1.0f, F32_INFINITY);
-        const f32 t_angular = 1.0f / f32_clamp(div_angular, 1.0f, F32_INFINITY);
+        const v3 linear_velocity = bcomp->linear_velocity;
+        const v3 angular_velocity = bcomp->angular_velocity;
+        const f32 div_linear = V3Length(linear_velocity) * g_solver_config->max_linear_velocity_magnitude_inv;
+        const f32 div_angular = V3Length(angular_velocity) * g_solver_config->max_angular_velocity_magnitude_inv;
+        const f32 t_linear = 1.0f / F32Clamp(div_linear, 1.0f, F32_INFINITY);
+        const f32 t_angular = 1.0f / F32Clamp(div_angular, 1.0f, F32_INFINITY);
 
-	    Vec3TranslateScaled(bcomp->center_of_mass, bcomp->linear_velocity, pipeline->timestep * t_linear);	
+	    bcomp->delta_position = V3AddScaled(bcomp->delta_position, linear_velocity, pipeline->timestep * t_linear);
 
-        quat a_vel_quat, rot_delta;
-	    QuatSet(a_vel_quat, 
-	    		bcomp->angular_velocity[0] * t_angular, 
-	    		bcomp->angular_velocity[1] * t_angular, 
-	    		bcomp->angular_velocity[2] * t_angular,
-	    	      	0.0f);
-	    QuatMul(rot_delta, a_vel_quat, bcomp->rotation);
-	    QuatScale(rot_delta, pipeline->timestep / 2.0f);
-	    QuatTranslate(bcomp->rotation, rot_delta);
-	    QuatNormalize(bcomp->rotation);
+        const q rotation = bcomp->rotation;
+        const q a_vel_quat = Q(angular_velocity.x * t_angular,
+                               angular_velocity.y * t_angular,
+                               angular_velocity.z * t_angular,
+                               0.0f);
+	    const q rot_delta = QScale(QMul(a_vel_quat, rotation), pipeline->timestep / 2.0f);
+	    bcomp->rotation = QNormalize(QAdd(rotation, rot_delta));
     }
 
     ProfZoneEnd;
@@ -190,16 +191,17 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
         const struct ds_Body *body = pipeline->body_pool.buf + sim->body;
     
         /* derive new world transform from updated angle and world center of mass */
-        vec3 rotated_local_center_of_mass;
-        QuatVec3Rotate(rotated_local_center_of_mass, bcomp->rotation, sim->local_center_of_mass);
-        Vec3Sub(sim->world.position, bcomp->center_of_mass, rotated_local_center_of_mass);
-        QuatCopy(sim->world.rotation, bcomp->rotation);
+        const q rotation = bcomp->rotation;
+        const v3 rotated_local_center_of_mass = QUnitRotate(rotation, sim->local_center_of_mass);
+        const v3f64 center_of_mass = V3F64Add(sim->world_center_of_mass, V3Promote(bcomp->delta_position));
+        sim->world.position = V3F64Sub(center_of_mass, V3Promote(rotated_local_center_of_mass));
+        sim->world.rotation = rotation;
 
         for (u32 j = body->shape_list.first; (i32) j != DLL_SENTINEL; j = shape->body_shape.next)
         {
             shape = pipeline->shape_pool.buf + j;
             dirty->bbox = ds_ShapeWorldBbox(pipeline, shape);
-            struct bvhNode *node = pipeline->dynamic_bvh.pool.buf + shape->proxy;
+            struct BVHNode *node = pipeline->dynamic_bvh.pool.buf + shape->proxy;
             struct aabb *proxy = &node->bbox;
             
             if (!AabbContains(proxy, &dirty->bbox))
@@ -207,12 +209,11 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
                 dirty->shape = j;
                 dirty->reinsert = 1;
 
-                if (!ds_BTRootCheck(node))
+                if (!BTRootCheck(node))
                 {
                     const u32 parent_index = node->bt_parent & BT_INDEX_MASK;
-                    const struct bvhNode *parent = pipeline->dynamic_bvh.pool.buf + parent_index;
-                    struct aabb enlarged_proxy;
-                    AabbUnion(&enlarged_proxy, proxy, &dirty->bbox);
+                    const struct BVHNode *parent = pipeline->dynamic_bvh.pool.buf + parent_index;
+                    const struct aabb enlarged_proxy = BboxUnion(*proxy, dirty->bbox);
                     if (AabbContains(&parent->bbox, &enlarged_proxy))
                     {
                         *proxy = enlarged_proxy;
@@ -223,9 +224,8 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
                 if (dirty->reinsert)
                 {
                     proxy_range->reinsert_count += 1;
-                    dirty->bbox.hw[0] += shape->margin;
-            	    dirty->bbox.hw[1] += shape->margin;
-            	    dirty->bbox.hw[2] += shape->margin;
+                    dirty->bbox.min = V3AddConstant(dirty->bbox.min, -shape->margin);
+                    dirty->bbox.max = V3AddConstant(dirty->bbox.max, shape->margin);
                 }
 
                 proxy_range->count += 1;
@@ -252,10 +252,6 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     struct ds_CGraph *cg = &pipeline->cgraph;
     struct arena *frame = pipeline->worker[ds_ThreadSelfIndex()].frame;
-
-	vec3 tmp1, tmp2, tmp3, tmp4;
-	vec3 ccp_Ic; 	/* Temporary storage for Inw(I_1)(r1 x n) */
-	vec3 ccp_c;	    /* Temporary storage for(r1 x n) */
 
     struct ds_CGraphColor *color = cg->color + color_index;
     for (u32 ci = low; ci < high; ++ci)
@@ -296,18 +292,18 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
 
         for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
         {
-            const struct c_Manifold *m = (c->narrowphase.tri)
-                                       ? c->narrowphase.manifold + c->narrowphase.tri_manifold[cci]
-                                       : c->narrowphase.manifold + cci;
+            const struct ds_SolverManifold *m = (c->narrowphase.tri)
+                                              ? c->narrowphase.manifold + c->narrowphase.tri_manifold[cci]
+                                              : c->narrowphase.manifold + cci;
 
     	    struct ds_ContactConstraint *cc = ccomp->cc + cci;
 
-		    cc->restitution = f32_max(s[0]->restitution, s[1]->restitution);
-		    cc->friction = f32_sqrt(s[0]->friction*s[1]->friction);
-            Vec3Copy(cc->normal, m->n);
-		    Vec3CreateBasis(cc->tangent[0], cc->tangent[1], cc->normal);
+		    cc->restitution = F32Max(s[0]->restitution, s[1]->restitution);
+		    cc->friction = F32Sqrt(s[0]->friction*s[1]->friction);
+            cc->normal = m->normal;
+		    V3CreateBasis(&cc->tangent[0], &cc->tangent[1], cc->normal);
 
-		    cc->ccp_count = m->v_count;
+		    cc->ccp_count = m->point_count;
             for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
 		    {
 		    	struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
@@ -315,41 +311,34 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
 		    	ccp->tangent_impulse[0] = 0.0f;
 		    	ccp->tangent_impulse[1] = 0.0f;
 
-                Vec3Copy(ccp->v, m->v[ccpi]);
-		    	Vec3Sub(ccp->r[0], ccp->v, bcomp[0]->center_of_mass);
-		    	Vec3Sub(ccp->r[1], ccp->v, bcomp[1]->center_of_mass);
-                Vec3TranslateScaled(ccp->r[1], m->n, -m->depth[ccpi]);
+		    	ccp->r[0] = m->anchor0[ccpi];
+		    	ccp->r[1] = V3Sub(V3AddScaled(m->anchor0[ccpi], m->normal, -m->depth[ccpi]), c->com_offset);
+                ccp->com_separation = V3Dot(c->com_offset, m->normal);
 
-                /*
-                 * Currently, we use a sentinel with COM = origin for static bodies. This becomes problematic
-                 * for large levers r[0]/r[1]. Consider the case when the static body is the reference; we check
-                 * the new r[0]=ccp->v, against the cached lever. For large enough r[0], it will always hold
-                 * that |r[0] - r[0]_cached|^2 = 0.0f <= limit_sq, so we will continue alias the old contact despite
-                 * moving far away from it.
-                 */
-                ds_Assert(Vec3Dot(ccp->v, ccp->v) < 10000.0f*10000.0f);
+                const m3 inv_inertia0 = sim[0]->world_inv_inertia;
+                const m3 inv_inertia1 = sim[1]->world_inv_inertia;
 
-		    	Vec3Cross(ccp_c, ccp->r[0], cc->normal);
-		    	Mat3VecMul(ccp_Ic, sim[0]->world_inv_inertia, ccp_c);
-		    	ccp->normal_mass = sim[0]->inv_mass + Vec3Dot(ccp_Ic, ccp_c);
+		    	v3 ccp_c = V3Cross(ccp->r[0], cc->normal);	/* (r1 x n) */
+		    	v3 ccp_Ic = M3V3Mul(inv_inertia0, ccp_c);	/* Inw(I_1)(r1 x n) */
+		    	ccp->normal_mass = sim[0]->inv_mass + V3Dot(ccp_Ic, ccp_c);
 
-		    	Vec3Cross(tmp1, ccp->r[0], cc->tangent[0]);
-		    	Vec3Cross(tmp3, ccp->r[0], cc->tangent[1]);
-		    	Mat3VecMul(tmp2, sim[0]->world_inv_inertia, tmp1);
-		    	Mat3VecMul(tmp4, sim[0]->world_inv_inertia, tmp3);
-		    	ccp->tangent_mass[0] = sim[0]->inv_mass + Vec3Dot(tmp1, tmp2);
-		    	ccp->tangent_mass[1] = sim[0]->inv_mass + Vec3Dot(tmp3, tmp4);
+		    	v3 tmp1 = V3Cross(ccp->r[0], cc->tangent[0]);
+		    	v3 tmp3 = V3Cross(ccp->r[0], cc->tangent[1]);
+		    	v3 tmp2 = M3V3Mul(inv_inertia0, tmp1);
+		    	v3 tmp4 = M3V3Mul(inv_inertia0, tmp3);
+		    	ccp->tangent_mass[0] = sim[0]->inv_mass + V3Dot(tmp1, tmp2);
+		    	ccp->tangent_mass[1] = sim[0]->inv_mass + V3Dot(tmp3, tmp4);
 
-		    	Vec3Cross(ccp_c, ccp->r[1], cc->normal);
-		    	Mat3VecMul(ccp_Ic, sim[1]->world_inv_inertia, ccp_c);
-		    	ccp->normal_mass += sim[1]->inv_mass + Vec3Dot(ccp_Ic, ccp_c);
+		    	ccp_c = V3Cross(ccp->r[1], cc->normal);
+		    	ccp_Ic = M3V3Mul(inv_inertia1, ccp_c);
+		    	ccp->normal_mass += sim[1]->inv_mass + V3Dot(ccp_Ic, ccp_c);
 
-		    	Vec3Cross(tmp1, ccp->r[1], cc->tangent[0]);
-		    	Vec3Cross(tmp3, ccp->r[1], cc->tangent[1]);
-		    	Mat3VecMul(tmp2, sim[1]->world_inv_inertia, tmp1);
-		    	Mat3VecMul(tmp4, sim[1]->world_inv_inertia, tmp3);
-		    	ccp->tangent_mass[0] += sim[1]->inv_mass + Vec3Dot(tmp1, tmp2);
-		    	ccp->tangent_mass[1] += sim[1]->inv_mass + Vec3Dot(tmp3, tmp4);
+		    	tmp1 = V3Cross(ccp->r[1], cc->tangent[0]);
+		    	tmp3 = V3Cross(ccp->r[1], cc->tangent[1]);
+		    	tmp2 = M3V3Mul(inv_inertia1, tmp1);
+		    	tmp4 = M3V3Mul(inv_inertia1, tmp3);
+		    	ccp->tangent_mass[0] += sim[1]->inv_mass + V3Dot(tmp1, tmp2);
+		    	ccp->tangent_mass[1] += sim[1]->inv_mass + V3Dot(tmp3, tmp4);
 
 		    	ccp->normal_mass = 1.0f / ccp->normal_mass;
 		    	ccp->tangent_mass[0] = 1.0f / ccp->tangent_mass[0];
@@ -358,21 +347,42 @@ void ds_ContactConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color
 		    	/* TODO: This will run immediately again on the first iteration of the solver,
 		    	 * could somehow remove it here, but would make stuff more complex than needed
 		    	 * at this current point. */
-		    	vec3 relative_velocity;
-		    	Vec3Sub(relative_velocity, 
-		    			bcomp[1]->linear_velocity,
-		    			bcomp[0]->linear_velocity);
-		    	Vec3Cross(tmp1, bcomp[1]->angular_velocity, ccp->r[1]);
-		    	Vec3Cross(tmp2, bcomp[0]->angular_velocity, ccp->r[0]);
-		    	Vec3Translate(relative_velocity, tmp1);
-		    	Vec3TranslateScaled(relative_velocity, tmp2, -1.0f);
-		    	const f32 separating_velocity = Vec3Dot(cc->normal, relative_velocity);
+		    	v3 relative_velocity = V3Sub(bcomp[1]->linear_velocity, bcomp[0]->linear_velocity);
+		    	relative_velocity = V3Add(relative_velocity, V3Cross(bcomp[1]->angular_velocity, ccp->r[1]));
+		    	relative_velocity = V3Sub(relative_velocity, V3Cross(bcomp[0]->angular_velocity, ccp->r[0]));
+		    	const f32 separating_velocity = V3Dot(cc->normal, relative_velocity);
 
 		    	/* if sufficiently fast collision happening, so apply the restitution effect */
 		    	ccp->velocity_bias = (separating_velocity < -g_solver_config->restitution_threshold)
                     ? -separating_velocity * cc->restitution
                     : 0.0f;
 		    }
+        }
+
+        /*
+         * Canonical slot: a static body sits in slot 1, so the static stages read one body in slot 0 with body 0's
+         * signs. The swap flips the axes and exchanges the levers; the point impulses are scalars along the axes,
+         * com_separation and velocity_bias are products of two flipped factors, so all keep their values, and a
+         * body never changes between static and dynamic, so the form is the same every tick (warm start cache).
+         */
+        if (ccomp->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX)
+        {
+            ccomp->body_sim[0] = ccomp->body_sim[1];
+            ccomp->body_sim[1] = ACTIVE_BODY_DUMMY_INDEX;
+            for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
+            {
+                struct ds_ContactConstraint *cc = ccomp->cc + cci;
+                cc->normal = V3Negate(cc->normal);
+                cc->tangent[0] = V3Negate(cc->tangent[0]);
+                cc->tangent[1] = V3Negate(cc->tangent[1]);
+                for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
+                {
+                    struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
+                    const v3 r0 = ccp->r[0];
+                    ccp->r[0] = ccp->r[1];
+                    ccp->r[1] = r0;
+                }
+            }
         }
 	}
     
@@ -383,9 +393,7 @@ void ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 col
 {
     ProfZone;
 
-    quat body0_inverse_rotation;
-	vec3 r, tmp1, tmp2, tmp3, old_tangent_impulse, total_cached_impulse;
-
+    struct ds_DynamicsMetrics *metrics = &g_dynamics_worker[ds_ThreadSelfIndex()].metrics;
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     struct ds_CGraph *cg = &pipeline->cgraph;
     struct ds_CGraphColor *color = cg->color + color_index;
@@ -410,7 +418,7 @@ void ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 col
         {
     	    struct ds_ContactConstraint *cc = ccomp->cc + cci;
             struct ds_ContactConstraintCache *ccache = ccomp->ccache;
-            struct c_Manifold *m = c->narrowphase.manifold;
+            const struct ds_SolverManifold *m = c->narrowphase.manifold;
             if (c->narrowphase.tri)
             {
                 ccache = NULL;
@@ -432,64 +440,52 @@ void ds_ContactConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 col
             if (ccache)
             {
                 /*
-                 * If the cached contact's normal differ to musch from current, evict whole cache. 
-                 * Note that we do not reuse the contact normal, but reuse cached r1, r2.
+                 * A point takes the impulse of the cached point with its id (the first unclaimed one: ids are
+                 * unique per manifold), applied along the new basis with the fresh levers.
                  */
-                if (Vec3Dot(m->n, ccache->normal) < 0.9f)
-                {
-                    continue;
-                }
-    
-                QuatInverse(body0_inverse_rotation, sim[0]->world.rotation);
+                u32 claimed = 0;    /* cached points already matched: bit k */
 
                 for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
                 {
                 	struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
-                    QuatVec3Rotate(r, body0_inverse_rotation, ccp->r[0]);
 
-                    //TODO Make this test better
-	            	u32 best = U32_MAX;
-	            	f32 closest_dist_sq = 0.01f * 0.01f;
+                    u32 best = U32_MAX;
 	            	for (u32 k = 0; k < ccache->v_count; ++k)
 	            	{
-	            		Vec3Sub(tmp1, r, ccache->r1[k]);
-	            		const f32 dist_sq = Vec3Dot(tmp1, tmp1);
-	            		if (dist_sq < closest_dist_sq)
-	            		{
-	            			best = k;
-	            			closest_dist_sq = dist_sq;
-	            		}
-	            	}
+                        if (!(claimed & (1u << k)) && c_PointIdEqual(m->id[ccpi], ccache->id[k]))
+                        {
+                            best = k;
+                            claimed |= 1u << k;
+                            break;
+                        }
+                    }
 
+                    metrics->warm_point_count += 1;
+                    metrics->warm_match_id += (best != U32_MAX);
 	            	if (best != U32_MAX)
 	            	{
-	            		Vec3Scale(old_tangent_impulse, ccache->tangent[0], ccache->tangent_impulse[best][0]);
-	            		Vec3TranslateScaled(old_tangent_impulse, ccache->tangent[1], ccache->tangent_impulse[best][1]);
+	            		const v3 old_tangent_impulse = V3AddScaled(V3Scale(ccache->tangent[0], ccache->tangent_impulse[best][0]),
+	            		                                           ccache->tangent[1], ccache->tangent_impulse[best][1]);
 
 	            		ccp->normal_impulse = ccache->normal_impulse[best];
 	                    const f32 impulse_bound = cc->friction * ccp->normal_impulse;
-	            		ccp->tangent_impulse[0] = Vec3Dot(cc->tangent[0], old_tangent_impulse);
-	            		ccp->tangent_impulse[1] = Vec3Dot(cc->tangent[1], old_tangent_impulse);
-	            		ccp->tangent_impulse[0] = f32_clamp(ccp->tangent_impulse[0], -impulse_bound, impulse_bound);
-	            		ccp->tangent_impulse[1] = f32_clamp(ccp->tangent_impulse[1], -impulse_bound, impulse_bound);
+	            		ccp->tangent_impulse[0] = V3Dot(cc->tangent[0], old_tangent_impulse);
+	            		ccp->tangent_impulse[1] = V3Dot(cc->tangent[1], old_tangent_impulse);
+	            		ccp->tangent_impulse[0] = F32Clamp(ccp->tangent_impulse[0], -impulse_bound, impulse_bound);
+	            		ccp->tangent_impulse[1] = F32Clamp(ccp->tangent_impulse[1], -impulse_bound, impulse_bound);
 
-	            		Vec3Scale(total_cached_impulse, cc->normal, ccp->normal_impulse);
-	            		Vec3TranslateScaled(total_cached_impulse, cc->tangent[0], ccp->tangent_impulse[0]);
-	            		Vec3TranslateScaled(total_cached_impulse, cc->tangent[1], ccp->tangent_impulse[1]);
+	            		v3 total_cached_impulse = V3Scale(cc->normal, ccp->normal_impulse);
+	            		total_cached_impulse = V3AddScaled(total_cached_impulse, cc->tangent[0], ccp->tangent_impulse[0]);
+	            		total_cached_impulse = V3AddScaled(total_cached_impulse, cc->tangent[1], ccp->tangent_impulse[1]);
 
-	            		Vec3TranslateScaled(bcomp[0]->linear_velocity, total_cached_impulse, -sim[0]->inv_mass);
-	            		Vec3TranslateScaled(bcomp[1]->linear_velocity, total_cached_impulse, sim[1]->inv_mass);
+	            		bcomp[0]->linear_velocity = V3AddScaled(bcomp[0]->linear_velocity, total_cached_impulse, -sim[0]->inv_mass);
+	            		bcomp[1]->linear_velocity = V3AddScaled(bcomp[1]->linear_velocity, total_cached_impulse, sim[1]->inv_mass);
 
-                        QuatVec3Rotate(ccp->r[0], sim[0]->world.rotation, ccache->r1[best]);
-                        QuatVec3Rotate(ccp->r[1], sim[1]->world.rotation, ccache->r2[best]);
+	            		const v3 delta_w0 = M3V3Mul(sim[0]->world_inv_inertia, V3Cross(ccp->r[0], total_cached_impulse));
+	            		bcomp[0]->angular_velocity = V3Sub(bcomp[0]->angular_velocity, delta_w0);
 
-	            		Vec3Cross(tmp2, ccp->r[0], total_cached_impulse);
-	            		Mat3VecMul(tmp3, sim[0]->world_inv_inertia, tmp2);
-	            		Vec3TranslateScaled(bcomp[0]->angular_velocity, tmp3, -1.0f);
-
-	            		Vec3Cross(tmp2, ccp->r[1], total_cached_impulse);
-	            		Mat3VecMul(tmp3, sim[1]->world_inv_inertia, tmp2);
-	            		Vec3Translate(bcomp[1]->angular_velocity, tmp3);
+	            		const v3 delta_w1 = M3V3Mul(sim[1]->world_inv_inertia, V3Cross(ccp->r[1], total_cached_impulse));
+	            		bcomp[1]->angular_velocity = V3Add(bcomp[1]->angular_velocity, delta_w1);
 	            	}
                 }
             }
@@ -505,10 +501,6 @@ void ds_ContactConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 co
 
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
-
-	vec4 b, new_total_impulse;
-	vec3 tmp1, tmp2, tmp3;
-	vec3 relative_velocity;
 
     for (u32 ci = cc_low; ci < cc_high; ++ci)
 	{			
@@ -537,31 +529,27 @@ void ds_ContactConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 co
 		    	for (u32 k = 0; k < 2; ++k)
 		    	{
 		    	    /* Calculate separating velocity at point: JV */
-		    	    Vec3Sub(relative_velocity, bcomp[1]->linear_velocity, bcomp[0]->linear_velocity);
-		    	    Vec3Cross(tmp2, bcomp[1]->angular_velocity, ccp->r[1]);
-		    	    Vec3Cross(tmp3, bcomp[0]->angular_velocity, ccp->r[0]);
-		    	    Vec3Translate(relative_velocity, tmp2);
-		    	    Vec3TranslateScaled(relative_velocity, tmp3, -1.0f);
-		    	    const f32 separating_velocity = Vec3Dot(cc->tangent[k], relative_velocity);
+		    	    v3 relative_velocity = V3Sub(bcomp[1]->linear_velocity, bcomp[0]->linear_velocity);
+		    	    relative_velocity = V3Add(relative_velocity, V3Cross(bcomp[1]->angular_velocity, ccp->r[1]));
+		    	    relative_velocity = V3Sub(relative_velocity, V3Cross(bcomp[0]->angular_velocity, ccp->r[0]));
+		    	    const f32 separating_velocity = V3Dot(cc->tangent[k], relative_velocity);
 
 		    	    /* update constraint point tangent impulse */
 		    	    f32 delta_impulse = -ccp->tangent_mass[k] * separating_velocity;
 		    	    const f32 old_impulse = ccp->tangent_impulse[k];
-		    	    ccp->tangent_impulse[k] = f32_clamp(ccp->tangent_impulse[k] + delta_impulse, -impulse_bound, impulse_bound);
+		    	    ccp->tangent_impulse[k] = F32Clamp(ccp->tangent_impulse[k] + delta_impulse, -impulse_bound, impulse_bound);
 		    	    delta_impulse = ccp->tangent_impulse[k] - old_impulse;
 
 		    	    /* update body velocities */
-		    	    Vec3Scale(tmp1, cc->tangent[k], delta_impulse);
+		    	    const v3 impulse = V3Scale(cc->tangent[k], delta_impulse);
 
-		    	    Vec3Cross(tmp2, ccp->r[0], tmp1);
-		    	    Mat3VecMul(tmp3, sim[0]->world_inv_inertia, tmp2);
-		    	    Vec3TranslateScaled(bcomp[0]->linear_velocity, tmp1, -sim[0]->inv_mass);
-		    	    Vec3TranslateScaled(bcomp[0]->angular_velocity, tmp3, -1.0f);
+		    	    const v3 delta_w0 = M3V3Mul(sim[0]->world_inv_inertia, V3Cross(ccp->r[0], impulse));
+		    	    bcomp[0]->linear_velocity = V3AddScaled(bcomp[0]->linear_velocity, impulse, -sim[0]->inv_mass);
+		    	    bcomp[0]->angular_velocity = V3Sub(bcomp[0]->angular_velocity, delta_w0);
 
-		    	    Vec3Cross(tmp2, ccp->r[1], tmp1);
-		    	    Mat3VecMul(tmp3, sim[1]->world_inv_inertia, tmp2);
-		    	    Vec3TranslateScaled(bcomp[1]->linear_velocity, tmp1,  sim[1]->inv_mass);
-		    	    Vec3Translate(bcomp[1]->angular_velocity, tmp3);
+		    	    const v3 delta_w1 = M3V3Mul(sim[1]->world_inv_inertia, V3Cross(ccp->r[1], impulse));
+		    	    bcomp[1]->linear_velocity = V3AddScaled(bcomp[1]->linear_velocity, impulse, sim[1]->inv_mass);
+		    	    bcomp[1]->angular_velocity = V3Add(bcomp[1]->angular_velocity, delta_w1);
                 }
 		    }
 
@@ -570,31 +558,92 @@ void ds_ContactConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 co
                 struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
 
 		    	/* Calculate separating velocity at point: JV */
-		    	Vec3Sub(relative_velocity, bcomp[1]->linear_velocity, bcomp[0]->linear_velocity);
-		    	Vec3Cross(tmp2, bcomp[1]->angular_velocity, ccp->r[1]);
-		    	Vec3Cross(tmp3, bcomp[0]->angular_velocity, ccp->r[0]);
-		    	Vec3Translate(relative_velocity, tmp2);
-		    	Vec3TranslateScaled(relative_velocity, tmp3, -1.0f);
-		    	const f32 separating_velocity = Vec3Dot(cc->normal, relative_velocity);
+		    	v3 relative_velocity = V3Sub(bcomp[1]->linear_velocity, bcomp[0]->linear_velocity);
+		    	relative_velocity = V3Add(relative_velocity, V3Cross(bcomp[1]->angular_velocity, ccp->r[1]));
+		    	relative_velocity = V3Sub(relative_velocity, V3Cross(bcomp[0]->angular_velocity, ccp->r[0]));
+		    	const f32 separating_velocity = V3Dot(cc->normal, relative_velocity);
 
 		    	/* update constraint point normal impulse */
 		    	f32 delta_impulse = ccp->normal_mass * (ccp->velocity_bias - separating_velocity);
 		    	const f32 old_impulse = ccp->normal_impulse;
-		    	ccp->normal_impulse = f32_max(0.0f, ccp->normal_impulse + delta_impulse);
+		    	ccp->normal_impulse = F32Max(0.0f, ccp->normal_impulse + delta_impulse);
 		    	delta_impulse = ccp->normal_impulse - old_impulse;
 
 		    	/* update body velocities */
-		    	Vec3Scale(tmp1, cc->normal, delta_impulse);
+		    	const v3 impulse = V3Scale(cc->normal, delta_impulse);
 
-		    	Vec3Cross(tmp2, ccp->r[0], tmp1);
-		    	Mat3VecMul(tmp3, sim[0]->world_inv_inertia, tmp2);
-		    	Vec3TranslateScaled(bcomp[0]->linear_velocity, tmp1, -sim[0]->inv_mass);
-		    	Vec3TranslateScaled(bcomp[0]->angular_velocity, tmp3, -1.0f);
+		    	const v3 delta_w0 = M3V3Mul(sim[0]->world_inv_inertia, V3Cross(ccp->r[0], impulse));
+		    	bcomp[0]->linear_velocity = V3AddScaled(bcomp[0]->linear_velocity, impulse, -sim[0]->inv_mass);
+		    	bcomp[0]->angular_velocity = V3Sub(bcomp[0]->angular_velocity, delta_w0);
 
-		    	Vec3Cross(tmp2, ccp->r[1], tmp1);
-		    	Mat3VecMul(tmp3, sim[1]->world_inv_inertia, tmp2);
-		    	Vec3TranslateScaled(bcomp[1]->linear_velocity, tmp1, sim[1]->inv_mass);
-		    	Vec3Translate(bcomp[1]->angular_velocity, tmp3);
+		    	const v3 delta_w1 = M3V3Mul(sim[1]->world_inv_inertia, V3Cross(ccp->r[1], impulse));
+		    	bcomp[1]->linear_velocity = V3AddScaled(bcomp[1]->linear_velocity, impulse, sim[1]->inv_mass);
+		    	bcomp[1]->angular_velocity = V3Add(bcomp[1]->angular_velocity, delta_w1);
+            }
+        }
+    }
+
+    ProfZoneEnd;
+}
+
+void ds_ContactConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 cc_low, const u32 cc_high)
+{
+    ProfZone;
+
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+
+    for (u32 ci = cc_low; ci < cc_high; ++ci)
+    {
+        struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + ci;
+        /* the static body is slot 1 (prepare's canonical slot); its terms are dropped */
+        ds_Assert(ccomp->body_sim[0] != ACTIVE_BODY_DUMMY_INDEX && ccomp->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX);
+        const struct ds_BodySim *sim = active->body_sim_pool.buf + ccomp->body_sim[0];
+        struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + ccomp->body_sim[0];
+        const f32 inv_mass = sim->inv_mass;
+        const m3 inv_inertia = sim->world_inv_inertia;
+
+        /* solve friction constraints first, since normal constraints are more important */
+        for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
+        {
+            struct ds_ContactConstraint *cc = ccomp->cc + cci;
+            for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
+            {
+                struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
+                const v3 r = ccp->r[0];
+                const f32 impulse_bound = cc->friction * ccp->normal_impulse;
+                for (u32 k = 0; k < 2; ++k)
+                {
+                    /* body 0's row: the relative velocity is -(v0 + w0 x r0), the sign taken on the scalar */
+                    const v3 velocity = V3Add(bcomp->linear_velocity, V3Cross(bcomp->angular_velocity, r));
+                    const f32 separating_velocity = -V3Dot(cc->tangent[k], velocity);
+
+                    f32 delta_impulse = -ccp->tangent_mass[k] * separating_velocity;
+                    const f32 old_impulse = ccp->tangent_impulse[k];
+                    ccp->tangent_impulse[k] = F32Clamp(ccp->tangent_impulse[k] + delta_impulse, -impulse_bound, impulse_bound);
+                    delta_impulse = ccp->tangent_impulse[k] - old_impulse;
+
+                    const v3 impulse = V3Scale(cc->tangent[k], delta_impulse);
+                    bcomp->linear_velocity = V3AddScaled(bcomp->linear_velocity, impulse, -inv_mass);
+                    bcomp->angular_velocity = V3Sub(bcomp->angular_velocity, M3V3Mul(inv_inertia, V3Cross(r, impulse)));
+                }
+            }
+
+            for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
+            {
+                struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
+                const v3 r = ccp->r[0];
+                const v3 velocity = V3Add(bcomp->linear_velocity, V3Cross(bcomp->angular_velocity, r));
+                const f32 separating_velocity = -V3Dot(cc->normal, velocity);
+
+                f32 delta_impulse = ccp->normal_mass * (ccp->velocity_bias - separating_velocity);
+                const f32 old_impulse = ccp->normal_impulse;
+                ccp->normal_impulse = F32Max(0.0f, ccp->normal_impulse + delta_impulse);
+                delta_impulse = ccp->normal_impulse - old_impulse;
+
+                const v3 impulse = V3Scale(cc->normal, delta_impulse);
+                bcomp->linear_velocity = V3AddScaled(bcomp->linear_velocity, impulse, -inv_mass);
+                bcomp->angular_velocity = V3Sub(bcomp->angular_velocity, M3V3Mul(inv_inertia, V3Cross(r, impulse)));
             }
         }
     }
@@ -611,9 +660,6 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline
     struct ds_CGraphColor *color = cg->color + color_index;
     struct arena *frame = pipeline->worker[ds_ThreadSelfIndex()].frame;
 
-    quat sim_inv_rotation[2];
-    quat bcomp_inv_rotation[2];
-    vec3 tmp1, tmp2, relative_velocity;
     for (u32 ci = low; ci < high; ++ci)
     {			
         struct ds_Contact *c = pipeline->contact_pool.buf + color->contact_pool.buf[ci];
@@ -648,33 +694,223 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline
                         : 0;
 
 		    ccache->v_count = cc->ccp_count;
-		    Vec3Copy(ccache->normal, cc->normal);
-		    Vec3Copy(ccache->tangent[0], cc->tangent[0]);
-		    Vec3Copy(ccache->tangent[1], cc->tangent[1]);
+		    ccache->tangent[0] = cc->tangent[0];
+		    ccache->tangent[1] = cc->tangent[1];
 
-            QuatInverse(sim_inv_rotation[0], sim[0]->world.rotation);
-            QuatInverse(sim_inv_rotation[1], sim[1]->world.rotation);
-            QuatInverse(bcomp_inv_rotation[0], bcomp[0]->rotation);
-            QuatInverse(bcomp_inv_rotation[1], bcomp[1]->rotation);
+            /*
+             * The levers are world vectors of the step's start rotation R_s: r = R_s r_b. The position solver
+             * stores the body vector r_b = R_s^T r and rotates it by the current rotation, which starts at the
+             * integrated one R_e, so its levers move with the step's rotation (converting with R_e^T instead
+             * would give back r unrotated).
+             */
+            const q sim_inv_rotation[2] =
+            {
+                QConj(sim[0]->world.rotation),
+                QConj(sim[1]->world.rotation),
+            };
+            const struct ds_SolverManifold *m = (c->narrowphase.tri)
+                                              ? c->narrowphase.manifold + c->narrowphase.tri_manifold[cci]
+                                              : c->narrowphase.manifold + cci;
 		    for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
 		    {
-                /* Cache */
                 struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
-		    	QuatVec3Rotate(ccache->r1[ccpi], sim_inv_rotation[0], ccp->r[0]);
-		    	QuatVec3Rotate(ccache->r2[ccpi], sim_inv_rotation[1], ccp->r[1]);
+                ccp->r[0] = QUnitRotate(sim_inv_rotation[0], ccp->r[0]);
+                ccp->r[1] = QUnitRotate(sim_inv_rotation[1], ccp->r[1]);
+
+		    	ccache->id[ccpi] = m->id[ccpi];
 		    	ccache->normal_impulse[ccpi] = ccp->normal_impulse;
 		    	ccache->tangent_impulse[ccpi][0] = ccp->tangent_impulse[0];
 		    	ccache->tangent_impulse[ccpi][1] = ccp->tangent_impulse[1];
-
-                /* Init Position */
-                QuatVec3RotateSelf(ccp->r[0], bcomp_inv_rotation[0]);
-                QuatVec3RotateSelf(ccp->r[1], bcomp_inv_rotation[1]);
             }
         }
     }
 
     ProfZoneEnd;
 } 
+
+/*
+ * Joint stages. Each resolves the two bodies the way the contact stages do: a static body maps to
+ * ACTIVE_BODY_DUMMY_INDEX and the thread-local zero-mass sims. The per-type work is the switch; a type with no
+ * case yet is skipped.
+ */
+void ds_JointConstraintInitRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 low, const u32 high)
+{
+    ProfZone;
+
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+    for (u32 ji = low; ji < high; ++ji)
+    {
+        struct ds_JointSim *jsim = color->joint_sim_pool.buf + ji;
+        const struct ds_Joint *joint = pipeline->joint_pool.buf + jsim->joint;
+        const struct ds_Body *b[2] = { pipeline->body_pool.buf + joint->body[0], pipeline->body_pool.buf + joint->body[1] };
+
+        /* canonical slot (ds_JointAdd): a static body is body 1 */
+        ds_Assert(ds_BodyDynamicCheck(b[0]));
+        jsim->body_sim[0] = b[0]->sim;
+        jsim->body_sim[1] = ds_BodyDynamicCheck(b[1]) ? b[1]->sim : ACTIVE_BODY_DUMMY_INDEX;
+
+        /*
+         * The real sims, a static body's from the static set: the prepare needs its pose, which the dummy lacks.
+         * Static sims carry zero inverse mass and inertia, so the mass terms read the same as from the dummy. The
+         * later stages take the dummies (zero velocity write sink), as the contact stages do.
+         */
+        struct ds_BodySim *bsim[2] =
+        {
+            pipeline->solver_set_pool.buf[b[0]->set].body_sim_pool.buf + b[0]->sim,
+            pipeline->solver_set_pool.buf[b[1]->set].body_sim_pool.buf + b[1]->sim,
+        };
+
+        struct ds_BodyCompute *bcomp[2] =
+        {
+            active->body_compute_pool.buf + jsim->body_sim[0],
+            ((jsim->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + jsim->body_sim[1]),
+        };
+
+        switch (jsim->type)
+        {
+            case DS_JOINT_TYPE_DISTANCE:
+            {
+                ds_DistanceJointConstraintInit(jsim, bcomp, bsim, pipeline->timestep);
+            } break;
+
+            case DS_JOINT_TYPE_MOUSE:
+            {
+                ds_MouseJointConstraintInit(jsim, bcomp, bsim, pipeline->timestep);
+            } break;
+
+            default:
+            {
+            } break;
+        }
+    }
+
+    ProfZoneEnd;
+}
+
+void ds_JointConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 low, const u32 high)
+{
+    ProfZone;
+
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+    for (u32 ji = low; ji < high; ++ji)
+    {
+        struct ds_JointSim *jsim = color->joint_sim_pool.buf + ji;
+
+        struct ds_BodySim *bsim[2] =
+        {
+            ((jsim->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + jsim->body_sim[0]),
+            ((jsim->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + jsim->body_sim[1]),
+        };
+
+        struct ds_BodyCompute *bcomp[2] =
+        {
+            ((jsim->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + jsim->body_sim[0]),
+            ((jsim->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + jsim->body_sim[1]),
+        };
+
+        switch (jsim->type)
+        {
+            case DS_JOINT_TYPE_DISTANCE:
+            {
+                ds_DistanceJointConstraintWarmup(jsim, bcomp, bsim);
+            } break;
+
+            case DS_JOINT_TYPE_MOUSE:
+            {
+                ds_MouseJointConstraintWarmup(jsim, bcomp, bsim);
+            } break;
+
+            default:
+            {
+            } break;
+        }
+    }
+
+    ProfZoneEnd;
+}
+
+void ds_JointConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 low, const u32 high)
+{
+    ProfZone;
+
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+    for (u32 ji = low; ji < high; ++ji)
+    {
+        struct ds_JointSim *jsim = color->joint_sim_pool.buf + ji;
+
+        struct ds_BodySim *bsim[2] =
+        {
+            ((jsim->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + jsim->body_sim[0]),
+            ((jsim->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + jsim->body_sim[1]),
+        };
+
+        struct ds_BodyCompute *bcomp[2] =
+        {
+            ((jsim->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + jsim->body_sim[0]),
+            ((jsim->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + jsim->body_sim[1]),
+        };
+
+        switch (jsim->type)
+        {
+            case DS_JOINT_TYPE_DISTANCE:
+            {
+                ds_DistanceJointConstraintIterate(jsim, bcomp, bsim);
+            } break;
+
+            case DS_JOINT_TYPE_MOUSE:
+            {
+                ds_MouseJointConstraintIterate(jsim, bcomp, bsim);
+            } break;
+
+            default:
+            {
+            } break;
+        }
+    }
+
+    ProfZoneEnd;
+}
+
+void ds_JointPositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 low, const u32 high)
+{
+    ProfZone;
+
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+    for (u32 ji = low; ji < high; ++ji)
+    {
+        struct ds_JointSim *jsim = color->joint_sim_pool.buf + ji;
+
+        struct ds_BodySim *bsim[2] =
+        {
+            ((jsim->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + jsim->body_sim[0]),
+            ((jsim->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_body_sim : active->body_sim_pool.buf + jsim->body_sim[1]),
+        };
+
+        struct ds_BodyCompute *bcomp[2] =
+        {
+            ((jsim->body_sim[0] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + jsim->body_sim[0]),
+            ((jsim->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX) ? &tl_static_bcomp : active->body_compute_pool.buf + jsim->body_sim[1]),
+        };
+
+        switch (jsim->type)
+        {
+            case DS_JOINT_TYPE_DISTANCE:
+            {
+                ds_DistanceJointPositionConstraintIterate(jsim, bcomp, bsim);
+            } break;
+
+            default:
+            {
+            } break;
+        }
+    }
+
+    ProfZoneEnd;
+}
 
 void ds_PositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 low, const u32 high)
 {    
@@ -683,12 +919,6 @@ void ds_PositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 c
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
 
-    mat3ptr mi;
-    mat3 mat_tmp, rot, rot_inv;
-	vec3 diff, r[2], rn[2], tmp[2], impulse_vector;
-    quat quat_tmp, quat_angle;
-
-    f32 min_separation = -F32_INFINITY;
     for (u32 ci = low; ci < high; ++ci)
 	{			
 	    struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + ci;
@@ -712,60 +942,108 @@ void ds_PositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 c
 	        {
 	        	struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
 
-		        Mat3Quat(rot, bcomp[0]->rotation);
-		        Mat3Transpose(rot_inv, rot);
-		        Mat3Mul(mat_tmp, rot, sim[0]->local_inv_inertia);
-		        Mat3Mul(sim[0]->world_inv_inertia, mat_tmp, rot_inv);
+		        const m3 rot0 = M3QUnit(bcomp[0]->rotation);
+		        const m3 inv_inertia0 = M3Mul(M3Mul(rot0, sim[0]->local_inv_inertia), M3Transpose(rot0));
+		        sim[0]->world_inv_inertia = inv_inertia0;
 
-		        Mat3Quat(rot, bcomp[1]->rotation);
-		        Mat3Transpose(rot_inv, rot);
-		        Mat3Mul(mat_tmp, rot, sim[1]->local_inv_inertia);
-		        Mat3Mul(sim[1]->world_inv_inertia, mat_tmp, rot_inv);
+		        const m3 rot1 = M3QUnit(bcomp[1]->rotation);
+		        const m3 inv_inertia1 = M3Mul(M3Mul(rot1, sim[1]->local_inv_inertia), M3Transpose(rot1));
+		        sim[1]->world_inv_inertia = inv_inertia1;
 
-                QuatVec3Rotate(r[0], bcomp[0]->rotation, ccp->r[0]);
-                QuatVec3Rotate(r[1], bcomp[1]->rotation, ccp->r[1]);
+                const v3 r0 = QUnitRotate(bcomp[0]->rotation, ccp->r[0]);
+                const v3 r1 = QUnitRotate(bcomp[1]->rotation, ccp->r[1]);
 
-		    	Vec3Cross(rn[0], r[0], cc->normal);
-		    	Vec3Cross(rn[1], r[1], cc->normal);
-
-		    	Mat3VecMul(tmp[0], sim[0]->world_inv_inertia, rn[0]);
-		    	Mat3VecMul(tmp[1], sim[1]->world_inv_inertia, rn[1]);
+		    	const v3 rn0 = V3Cross(r0, cc->normal);
+		    	const v3 rn1 = V3Cross(r1, cc->normal);
 
                 /* inverse effective mass? */
-                const f32 K = sim[0]->inv_mass + sim[1]->inv_mass + Vec3Dot(tmp[0], rn[0]) + Vec3Dot(tmp[1], rn[1]);
+                const f32 K = sim[0]->inv_mass + sim[1]->inv_mass + V3Dot(M3V3Mul(inv_inertia0, rn0), rn0) + V3Dot(M3V3Mul(inv_inertia1, rn1), rn1);
 
                 /* constraint */
-                Vec3Add(tmp[0], r[0], bcomp[0]->center_of_mass);
-                Vec3Add(tmp[1], r[1], bcomp[1]->center_of_mass);
-                const f32 distance = Vec3Dot(tmp[1], cc->normal) - Vec3Dot(tmp[0], cc->normal); 
-                min_separation = f32_max(min_separation, distance);
+                /*
+                 * p_i = com_i + r_i with com_i = com_i(step start) + delta_position_i:
+                 *      distance = dot(p1 - p0, n)
+                 *               = com_separation + dot((delta_position_1 - delta_position_0) + (r1 - r0), n)
+                 */
+                const v3 delta = V3Add(V3Sub(bcomp[1]->delta_position, bcomp[0]->delta_position), V3Sub(r1, r0));
+                const f32 distance = ccp->com_separation + V3Dot(delta, cc->normal);
                 const f32 biased_slop_distance = g_solver_config->baumgarte_constant * (distance + g_solver_config->linear_slop);
 
-                const f32 C = f32_clamp(biased_slop_distance, -g_solver_config->max_linear_correction, 0.0f);
+                const f32 C = F32Clamp(biased_slop_distance, -g_solver_config->max_linear_correction, 0.0f);
 
-                const f32 impulse = (K > 0.0f) 
-                    ? -C/K 
-                    : 0.0f;
+                /* one body is dynamic with mass, so K >= its inv_mass > 0 */
+                ds_Assert(K > 0.0f);
+                const f32 impulse = -C/K;
 
-                Vec3Scale(impulse_vector, cc->normal, impulse);
-                Vec3TranslateScaled(bcomp[0]->center_of_mass, impulse_vector, -sim[0]->inv_mass);
-                Vec3TranslateScaled(bcomp[1]->center_of_mass, impulse_vector,  sim[1]->inv_mass);
+                const v3 impulse_vector = V3Scale(cc->normal, impulse);
+                bcomp[0]->delta_position = V3AddScaled(bcomp[0]->delta_position, impulse_vector, -sim[0]->inv_mass);
+                bcomp[1]->delta_position = V3AddScaled(bcomp[1]->delta_position, impulse_vector,  sim[1]->inv_mass);
                 /* flipped cross for correct sign! */
-                Vec3Cross(tmp[0], impulse_vector, r[0]);
                 /* instantaneous torque, assume delta_t = 1 */
-                Mat3VecMul(tmp[1], sim[0]->world_inv_inertia, tmp[0]);
+                const v3 w0 = M3V3Mul(inv_inertia0, V3Cross(impulse_vector, r0));
                 /* Taylor expansion for sin, cos around 0 yields following approximation */
-                QuatSet(quat_angle, tmp[1][0]/2.0f, tmp[1][1]/2.0f, tmp[1][2]/2.0f, 1.0f);
-                QuatCopy(quat_tmp, bcomp[0]->rotation);
-                QuatMul(bcomp[0]->rotation, quat_angle, quat_tmp);
-                QuatNormalize(bcomp[0]->rotation);
+                const q quat_angle0 = Q(w0.x/2.0f, w0.y/2.0f, w0.z/2.0f, 1.0f);
+                bcomp[0]->rotation = QNormalize(QMul(quat_angle0, bcomp[0]->rotation));
 
-                Vec3Cross(tmp[0], r[1], impulse_vector);
-                Mat3VecMul(tmp[1], sim[1]->world_inv_inertia, tmp[0]);
-                QuatSet(quat_angle, tmp[1][0]/2.0f, tmp[1][1]/2.0f, tmp[1][2]/2.0f, 1.0f);
-                QuatCopy(quat_tmp, bcomp[1]->rotation);
-                QuatMul(bcomp[1]->rotation, quat_angle, quat_tmp);
-                QuatNormalize(bcomp[1]->rotation);
+                const v3 w1 = M3V3Mul(inv_inertia1, V3Cross(r1, impulse_vector));
+                const q quat_angle1 = Q(w1.x/2.0f, w1.y/2.0f, w1.z/2.0f, 1.0f);
+                bcomp[1]->rotation = QNormalize(QMul(quat_angle1, bcomp[1]->rotation));
+            }
+        }
+    }
+
+    ProfZoneEnd;
+}
+
+void ds_PositionConstraintIterateStaticRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 low, const u32 high)
+{
+    ProfZone;
+
+    struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+
+    for (u32 ci = low; ci < high; ++ci)
+    {
+        struct ds_ContactCompute *ccomp = color->contact_compute_pool.buf + ci;
+        /* the static body is slot 1 (prepare's canonical slot); its lever stays as stored, it does not rotate */
+        ds_Assert(ccomp->body_sim[0] != ACTIVE_BODY_DUMMY_INDEX && ccomp->body_sim[1] == ACTIVE_BODY_DUMMY_INDEX);
+        struct ds_BodySim *sim = active->body_sim_pool.buf + ccomp->body_sim[0];
+        struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + ccomp->body_sim[0];
+        const f32 inv_mass = sim->inv_mass;
+
+        for (u32 cci = 0; cci < ccomp->cc_count; ++cci)
+        {
+            struct ds_ContactConstraint *cc = ccomp->cc + cci;
+            for (u32 ccpi = 0; ccpi < cc->ccp_count; ++ccpi)
+            {
+                struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
+
+                const m3 rot = M3QUnit(bcomp->rotation);
+                const m3 inv_inertia = M3Mul(M3Mul(rot, sim->local_inv_inertia), M3Transpose(rot));
+                sim->world_inv_inertia = inv_inertia;
+
+                const v3 r0 = QUnitRotate(bcomp->rotation, ccp->r[0]);
+                const v3 r1 = ccp->r[1];
+                const v3 rn0 = V3Cross(r0, cc->normal);
+                const f32 K = inv_mass + V3Dot(M3V3Mul(inv_inertia, rn0), rn0);
+
+                /* distance = com_separation + dot((r1 - r0) - delta_position_0, n): body 1 does not move */
+                const v3 delta = V3Sub(V3Sub(r1, r0), bcomp->delta_position);
+                const f32 distance = ccp->com_separation + V3Dot(delta, cc->normal);
+                const f32 biased_slop_distance = g_solver_config->baumgarte_constant * (distance + g_solver_config->linear_slop);
+
+                const f32 C = F32Clamp(biased_slop_distance, -g_solver_config->max_linear_correction, 0.0f);
+
+                /* one body is dynamic with mass, so K >= its inv_mass > 0 */
+                ds_Assert(K > 0.0f);
+                const f32 impulse = -C/K;
+
+                const v3 impulse_vector = V3Scale(cc->normal, impulse);
+                bcomp->delta_position = V3AddScaled(bcomp->delta_position, impulse_vector, -inv_mass);
+                /* flipped cross for body 0's sign; instantaneous torque, assume delta_t = 1; small angle quaternion */
+                const v3 w0 = M3V3Mul(inv_inertia, V3Cross(impulse_vector, r0));
+                const q quat_angle0 = Q(w0.x/2.0f, w0.y/2.0f, w0.z/2.0f, 1.0f);
+                bcomp->rotation = QNormalize(QMul(quat_angle0, bcomp->rotation));
             }
         }
     }

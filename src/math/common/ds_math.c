@@ -1,8 +1,12 @@
-#include "matrix.c"
-#include "vector.c"
-#include "float32.c"
-#include "geometry.c"
-#include "quaternion.c"
+#include <float.h>
+#include "ds_matrix.c"
+#include "ds_geometry.c"
+#include "ds_voronoi.c"
 #include "transform.c"
 #include "ds_random.c"
+
+static void ds_FloatStaticAssert(void)
+{
+	ds_StaticAssert(F32_EPSILON == FLT_EPSILON, "Our machine epsilon does not equate to FLT_EPSILON");
+}
 

@@ -17,18 +17,14 @@
 ==========================================================================
 */
 
-#include <stdlib.h>
-#include <string.h>
-
 #include "ds_graphics.h"
 #include "ds_ui.h"
 #include "sys_local.h"
 #include "ds_renderer.h"
 
-HI_DEFINE(ds_Window);
 
-struct ds_WindowHI g_window_hierarchy_storage = { 0 };
-struct ds_WindowHI *g_window_hierarchy = &g_window_hierarchy_storage;
+HI(ds_Window) g_window_hierarchy_storage = { 0 };
+HI(ds_Window) *g_window_hierarchy = &g_window_hierarchy_storage;
 i32 g_window = HI_NULL;
 i32 g_process_root_window = HI_NULL;
 
@@ -42,15 +38,20 @@ static void ds_WindowDealloc(struct ds_Window *sys_win)
 	ArenaFree(&sys_win->mem_persistent);
 }
 
-u32 ds_WindowAlloc(const char *title, const vec2u32 position, const vec2u32 size, const u32 parent)
+u32 ds_WindowAlloc(const char *title, const v2u32 position, const v2u32 size, const u32 parent)
 {
-	struct slot slot = ds_WindowHIAdd(g_window_hierarchy, parent);
+	struct slot slot = HIAdd(*g_window_hierarchy, parent);
 	ds_Assert(parent != HI_ROOT || slot.index == 2);
 
 	struct ds_Window *sys_win = slot.address;
 
 	sys_win->mem_persistent = ArenaAlloc(NULL, 1024*1024);
-	sys_win->native = NativeWindowCreate(&sys_win->mem_persistent, (const char *) title, position, size);
+	if (!sys_win->mem_persistent.stack_ptr)
+	{
+		LogString(T_SYSTEM, S_FATAL, "Failed to allocate a window's persistent arena");
+		FatalCleanupAndExit();
+	}
+	sys_win->native = NativeWindowCreate(&sys_win->mem_persistent, title, position, size);
 
 	sys_win->ui = ui_Alloc();
 	sys_win->r_scene = r_SceneAlloc();
@@ -61,7 +62,7 @@ u32 ds_WindowAlloc(const char *title, const vec2u32 position, const vec2u32 size
 	sys_win->text_input_mode = 0;
 	
 	NativeWindowGlSetCurrent(sys_win->native);
-	sys_win->gl_state = gl_StateAlloc();
+	sys_win->gl_state = gl_StateAlloc(&sys_win->mem_persistent);
 	if (slot.index == 2)
 	{
 		/* root window */
@@ -94,14 +95,20 @@ void ds_WindowTagSubHierarchyForDestruction(const u32 root)
     while (it.at != (i32) root);
 }
 
-static void ds_InternalWindowDealloc(const struct ds_WindowHI *hi, const u32 index, void *data)
+static void ds_InternalWindowDealloc(void *node, const u32 index, void *data)
 {
-	struct ds_Window *win = hi->pool.buf + index;
+	struct ds_Window *win = node;
 	ds_WindowDealloc(win);
 }
 
 void ds_DeallocTaggedWindows(void)
 {
+	/* no windows yet (or headless): nothing to iterate from */
+	if (g_process_root_window == HI_NULL)
+	{
+		return;
+	}
+
 	struct arena *tmp = ArenaPushScratch();
 
     HII it;
@@ -113,8 +120,14 @@ void ds_DeallocTaggedWindows(void)
 		if (sys_win->tagged_for_destruction)
 		{
             HIISkip(it, *g_window_hierarchy);
-			ds_WindowHIApplyCustomFreeAndRemove(tmp, g_window_hierarchy, index, ds_InternalWindowDealloc, NULL);
-
+			HIApplyCustomFreeAndRemove(tmp, *g_window_hierarchy, index, ds_InternalWindowDealloc, NULL);
+			/* the root went with its whole hierarchy: nothing left to iterate, nor to free at shutdown */
+			if ((i32) index == g_process_root_window)
+			{
+				g_process_root_window = HI_NULL;
+				g_window = HI_NULL;
+				break;
+			}
 		}
         HIIAdvance(it, *g_window_hierarchy);
 	}
@@ -126,6 +139,10 @@ void ds_DeallocTaggedWindows(void)
 struct slot ds_WindowLookup(const u64 native_handle)
 {
     struct slot slot = { .index = U32_MAX, .address = NULL };
+	if (g_process_root_window == HI_NULL)
+	{
+		return slot;
+	}
 
     HII it;
     HIIInit(it, *g_window_hierarchy, g_process_root_window);
@@ -145,7 +162,7 @@ struct slot ds_WindowLookup(const u64 native_handle)
 	return slot;
 }
 
-u32 ds_RootWindowAlloc(const char *title, const vec2u32 position, const vec2u32 size)
+u32 ds_RootWindowAlloc(const char *title, const v2u32 position, const v2u32 size)
 {
 	ds_Assert(g_process_root_window == HI_NULL);
 	g_process_root_window = ds_WindowAlloc(title, position, size, HI_ROOT);
@@ -156,14 +173,13 @@ u32 ds_RootWindowAlloc(const char *title, const vec2u32 position, const vec2u32 
 void ds_WindowConfigUpdate(const u32 window)
 {
 	struct ds_Window *sys_win = g_window_hierarchy->pool.buf + window;
-	NativeWindowConfigUpdate(sys_win->position, sys_win->size, sys_win->native);
+	NativeWindowConfigUpdate(&sys_win->position, &sys_win->size, sys_win->native);
 }
 
-void ds_WindowSize(vec2u32 size, const u32 window)
+v2u32 ds_WindowSize(const u32 window)
 {
-	struct ds_Window *sys_win = g_window_hierarchy->pool.buf + window;
-	size[0] = sys_win->size[0];
-	size[1] = sys_win->size[1];
+	const struct ds_Window *sys_win = g_window_hierarchy->pool.buf + window;
+	return sys_win->size;
 }
 
 struct ds_Window *ds_WindowAddress(const u32 index)
@@ -173,7 +189,7 @@ struct ds_Window *ds_WindowAddress(const u32 index)
 
 u32 ds_WindowIndex(const struct ds_Window *win)
 {
-	return ds_WindowPoolIndex(&g_window_hierarchy->pool, win);
+	return ds_PoolIndex(g_window_hierarchy->pool, win);
 }
 
 void ds_WindowSetCurrentGlContext(const u32 window)
@@ -202,22 +218,28 @@ void ds_GraphicsApiInit(void)
 #if __GAPI__ == __DS_SDL3__
 	sdl3_WrapperInit();
 #endif
-	ds_CmdApiInit();
-	ds_UiApiInit();
-	g_window_hierarchy_storage = ds_WindowHIAlloc(NULL, 8, GROWABLE);
+	HIAlloc(NULL, g_window_hierarchy_storage, 8, GROWABLE);
 	
 	gl_StateMemAlloc();
 }
 
 void ds_GraphicsApiShutdown(void)
 {
-	struct arena *tmp = ArenaPushScratch();
-	ds_WindowHIApplyCustomFreeAndRemove(tmp, g_window_hierarchy, g_process_root_window, ds_InternalWindowDealloc, NULL);
-    ArenaPopScratch();
+	/* a program may shut down before creating its root window */
+	if (g_process_root_window != HI_NULL)
+	{
+		struct arena *tmp = ArenaPushScratch();
+		HIApplyCustomFreeAndRemove(tmp, *g_window_hierarchy, g_process_root_window, ds_InternalWindowDealloc, NULL);
+		ArenaPopScratch();
+		g_process_root_window = HI_NULL;
+		g_window = HI_NULL;
+	}
 
 	gl_StateMemDealloc();
-	ds_WindowHIDealloc(g_window_hierarchy);
-	ds_CmdApiShutdown();
+	HIDealloc(*g_window_hierarchy);
+#if __GAPI__ == __DS_SDL3__
+	sdl3_WrapperShutdown();
+#endif
 }
 
 void ds_WindowTextInputModeEnable(void)
@@ -277,10 +299,9 @@ void ds_CursorHide(struct ds_Window *sys_win)
 	NativeCursorHide(sys_win->native);
 }
 
-void ds_CursorSetRectangle(struct ds_Window *sys_win, const vec2 sys_position, const vec2 size)
+void ds_CursorSetRectangle(struct ds_Window *sys_win, const v2 sys_position, const v2 size)
 {
-	vec2 nat_pos;
-	WindowPositionEngineToNative(nat_pos, sys_win->native, sys_position);
+	const v2 nat_pos = WindowPositionEngineToNative(sys_win->native, sys_position);
 	NativeCursorSetRectangle(sys_win->native, nat_pos, size);
 }
 

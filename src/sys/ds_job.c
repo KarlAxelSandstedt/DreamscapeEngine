@@ -25,6 +25,40 @@
 
 struct ds_JobScheduler *g_scheduler = NULL;
 
+/*
+Internals
+=========
+Work-stealing deque: when the owner grows a deque, the old block is not freed. That greatly simplifies the
+synchronization with stealers, which may still read the old block, and costs little: the size doubles each time,
+so the old blocks add up to at most the current one (2^0 + 2^1 + ... + 2^(n-1) = 2^n - 1 <= 2^n). Ideally the
+initial size is tuned so that no growth happens; ds_WSDequeDealloc frees every block.
+
+Phases: sharing growable job arrays between threads is nasty business, so each phase allocates the maximum number
+of jobs of every type up front, at the cost of reserving more memory than used.
+
+Parallel-for chains end in a dummy loop so that "loop i finished" always has a loop i + 1 to release:
+    (1) thread T1 reaches loop i + 1 and spins acquiring loop[i + 1].a_ready,
+    (2) thread T2 works in loop i,
+    (3) T2 finishes loop i and releases loop[i + 1].a_ready.
+The last loop releases the dummy, which ds_ParallelForChainWait waits on.
+
+Open questions on PFWait (owner's notes, moved from ds_job.h):
+    2. Can we simplify the exponential pause stuff, or is it fine to only use << 1 increments?
+
+    3. We need to make sched_yield platform idependent,
+
+         PLATFORMS REQUIRED:
+
+                 Windows
+                 Linux
+                 WebAssembly + Emscripten
+
+         POSSIBLE FUTURE PLATFORMS
+
+                 modern game consoles
+*/
+
+
 static void ds_WSDequeStaticAssert(void)
 {
     ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->a_top == 0, "");
@@ -32,7 +66,7 @@ static void ds_WSDequeStaticAssert(void)
     ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->a_mem_count == 128, "");
     ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->owner == 132, "");
     ds_StaticAssert((u64) &((struct ds_WSDeque *)0)->to_publish == 136, "");
-    ds_StaticAssert(sizeof(struct ds_WSDeque) == 27*DS_CACHE_LINE, "Unexpected size of ds_WSDeque");
+    ds_StaticAssert(sizeof(struct ds_WSDeque) == 15*DS_CACHE_LINE, "Unexpected size of ds_WSDeque");
 }
 
 static void ds_WorkerStaticAssert(void)
@@ -89,10 +123,10 @@ void ds_WSDequeAlloc(struct ds_WSDeque *deque, const u32 owner, const u64 len)
     deque->to_publish = 0;
     deque->mem[0].len = PowerOfTwoCeil(len);
     deque->mem[0].mask = deque->mem[0].len - 1;
-    deque->mem[0].id = ds_Alloc(&deque->mem[0].mem, deque->mem[0].len*sizeof(ds_JobId), NO_HUGE_PAGES);
+    deque->mem[0].id = ds_Alloc(deque->mem[0].len*sizeof(ds_JobId), DS_CACHE_LINE);
     if (!deque->mem[0].id) 
 	{
-		LogString(T_SYSTEM, S_FATAL, "Failed to reallocate memSlot in ds_Alloc, exiting.");
+		LogString(T_SYSTEM, S_FATAL, "Failed to allocate the deque, exiting.");
 		FatalCleanupAndExit();
 	}
 
@@ -110,9 +144,7 @@ static void ds_WSDequeRealloc(struct ds_WSDeque *deque)
 
     deque->mem[local_mem_count].len = 2*deque->mem[local_mem_count - 1].len;
     deque->mem[local_mem_count].mask = deque->mem[local_mem_count].len - 1;
-    deque->mem[local_mem_count].id = ds_Alloc(&deque->mem[local_mem_count].mem 
-                                              ,deque->mem[local_mem_count].len*sizeof(ds_JobId)
-                                              ,NO_HUGE_PAGES);
+    deque->mem[local_mem_count].id = ds_Alloc(deque->mem[local_mem_count].len*sizeof(ds_JobId), DS_CACHE_LINE);
     if (!deque->mem[local_mem_count].id)
     {
 		LogString(T_SYSTEM, S_FATAL, "Failed to reallocate memSlot in ds_Realloc, exiting.");
@@ -142,25 +174,29 @@ void ds_WSDequeDealloc(struct ds_WSDeque *deque)
 
     for (u32 i = 0; i < local_mem_count; ++i)
     {
-        ds_Free(&deque->mem[i].mem);
+        ds_Free(deque->mem[i].id);
     }
 }
 
 void ds_WSDequePushBottom(struct ds_WSDeque *deque, const ds_JobId id)
 {
-    ds_Assert(deque->owner == ds_ThreadSelfIndex() || 0 == ds_ThreadSelfIndex());
+    ds_Assert(deque->owner == ds_ThreadSelfIndex());
 
     u32 local_mem_count = AtomicLoadRlx32(&deque->a_mem_count);
     const u64 local_bottom = AtomicLoadRlx64(&deque->a_bottom);
-    /* Note: Paper uses Acquire here, not sure why as only a_top itself is modified by guest threads. */
-    const u64 local_top = AtomicLoadRlx64(&deque->a_top);
+    /*
+     * acquire (Le et al.): a stealer reads slot t, then CASes a_top to t + 1 (seq_cst). Seeing that a_top here
+     * orders its read of the slot before the owner's later write of a new id into the same physical slot
+     * (index t + len); relaxed, a weakly ordered core may let the stealer read the new id and still succeed.
+     */
+    const u64 local_top = AtomicLoadAcq64(&deque->a_top);
     if (deque->to_publish + local_bottom - local_top >= deque->mem[local_mem_count-1].len)
     {
         ds_WSDequeRealloc(deque);
         local_mem_count = AtomicLoadRlx32(&deque->a_mem_count);
     }
 
-    const u32 index = (deque->to_publish + local_bottom) & deque->mem[local_mem_count-1].mask;
+    const u32 index = (u32) ((deque->to_publish + local_bottom) & deque->mem[local_mem_count-1].mask);
     deque->to_publish += 1;
     AtomicStoreRlx32(&deque->mem[local_mem_count-1].id[index], id);
 }
@@ -191,7 +227,8 @@ ds_JobId ds_WSDequeTryPopBottom(struct ds_WSDeque *deque)
      *      local_bottom_t0 - local_top_t0 >= local_bottom_t0 - local_top_t1, 
      *
      * which enables the safe CAS-less pop for the common case of a filled Deque.
-     * TODO: Seem to be some crazy links here with stealer's Fence in PopBottom.
+     * The fence orders the store of a_bottom before the load of a_top; with the stealer's fence (PopTop) the
+     * two sides cannot both miss each other's write (a store-load pair needs seq_cst, Le et al.).
      */
     AtomicStoreRlx64(&deque->a_bottom, local_bottom_t0);
     ds_MemoryFenceSeqCst;
@@ -205,7 +242,7 @@ ds_JobId ds_WSDequeTryPopBottom(struct ds_WSDeque *deque)
         if (local_top_t1 == local_bottom_t0)
         {
             /* We contend with stealers for the last element */
-            //TODO why seq_cst on success?
+            /* seq_cst: with the fences, the CASes on a_top form one total order, so a pop and a steal never both take the last id */
             if (!AtomicCompareExchangeSeqCstRlx64(&deque->a_top, &local_top_t1, local_top_t1+1))
             {
                 id = DS_JOB_ID_NULL;
@@ -226,8 +263,8 @@ ds_JobId ds_WSDequeTrySteal(struct ds_WSDeque *deque)
     u32 id = DS_JOB_ID_NULL;
     u64 local_top = AtomicLoadRlx64(&deque->a_top);
     /*
-     * TODO Hmm.. me no understand the necessity but experts say...
-     * Seem to be some crazy links here with the owner's Fence in PopBottom.
+     * The fence orders the load of a_top before the load of a_bottom against the owner's store-fence-load in
+     * PopBottom: one of the two sides sees the other's write (Le et al.).
      */
     ds_MemoryFenceSeqCst;
     const u64 local_bottom = AtomicLoadAcq64(&deque->a_bottom);
@@ -240,7 +277,7 @@ ds_JobId ds_WSDequeTrySteal(struct ds_WSDeque *deque)
         const u32 local_mem_count = AtomicLoadAcq32(&deque->a_mem_count);
         const struct ds_WSDequeMem *mem = deque->mem + local_mem_count - 1;
         id = AtomicLoadRlx32(&mem->id[local_top & mem->mask]);
-        //TODO why SeqCstRlx?
+        /* seq_cst: the CASes on a_top form one total order with the owner's (PopBottom) */
         if (!AtomicCompareExchangeSeqCstRlx64(&deque->a_top, &local_top, local_top+1))
         {
             id = DS_JOB_ID_NULL;
@@ -250,7 +287,7 @@ ds_JobId ds_WSDequeTrySteal(struct ds_WSDeque *deque)
     return id;
 }
 
-void ds_WorkerRunJob(const ds_JobId job)
+static void ds_WorkerRunJob(const ds_JobId job)
 {
     struct ds_WSDeque *deque = g_scheduler->deque + ds_ThreadSelfIndex();
     const u32 job_diff = g_scheduler->phase->dispatch(job);
@@ -270,7 +307,7 @@ void ds_WorkerRunJob(const ds_JobId job)
     }
 }
 
-void ds_TrySeedAndRunJobs(struct ds_Worker *w, const u32 thread)
+static void ds_TrySeedAndRunJobs(struct ds_Worker *w, const u32 thread)
 {
     if (AtomicLoadRlx32(&w->a_mem_frame_switch))
     {
@@ -321,7 +358,7 @@ RUN_JOBS:
 
     for (u32 i = 0; i < g_scheduler->steal_attempts; ++i)
     {
-        const u32 index = RngU64Range(0, g_scheduler->worker_count-1);
+        const u32 index = (u32) RngU64Range(0, g_scheduler->worker_count-1);
         if (index != thread && (job = ds_WSDequeTrySteal(g_scheduler->deque + index)) != DS_JOB_ID_NULL)
         {
             ds_WorkerRunJob(job);
@@ -333,14 +370,18 @@ RUN_JOBS:
 void ds_WorkerMain(ds_Thread *thr)
 {
 	struct ds_Worker *w = ds_ThreadArguments(thr);
+	ds_AssertString(w == g_scheduler->worker + ds_ThreadSelfIndex(), "worker slot i belongs to thread index i");
 
-	ThreadXoshiro256InitSequence();
+	ThreadXoshiro256InitSequence(ds_ThreadSelfIndex());
+#ifdef DS_PERFORMANCE_MEASUREMENT_API
+	PerfCyclesThreadInit();
+#endif
 
 	while (AtomicLoadAcq32(&g_scheduler->a_running) == 0);
 
 	w->thr = thr;
 	AtomicFetchAddSeqCst32(&g_scheduler->a_running, 1);
-	LogString(T_SYSTEM, S_NOTE, "ds_Worker setup fished");
+	LogString(T_SYSTEM, S_NOTE, "ds_Worker setup finished");
 
     const u32 index_self = ds_ThreadSelfIndex();
 	while (AtomicLoadRlx32(&g_scheduler->a_running))
@@ -358,6 +399,10 @@ void ds_WorkerMain(ds_Thread *thr)
 
         ds_TrySeedAndRunJobs(g_scheduler->worker + index_self, index_self);
 	}
+
+#ifdef DS_PERFORMANCE_MEASUREMENT_API
+	PerfCyclesThreadShutdown();
+#endif
 }
 
 void ds_MasterRunAvailableJobs(void)
@@ -371,9 +416,10 @@ void ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, c
 {
 	Log(T_SYSTEM, S_NOTE, "ds_JobScheduler worker count: %u", thread_count);
 
-    g_scheduler = ArenaPushAligned(mem_persistent, sizeof(struct ds_JobScheduler), DS_CACHE_LINE);
+    /* zeroed: workers read a_running and a_mem_frame_switch as soon as they start */
+    g_scheduler = ArenaPushAlignedZero(mem_persistent, sizeof(struct ds_JobScheduler), DS_CACHE_LINE);
     g_scheduler->worker_count = thread_count;
-	g_scheduler->worker = ArenaPushAligned(mem_persistent, thread_count*sizeof(struct ds_Worker), DS_CACHE_LINE);	
+	g_scheduler->worker = ArenaPushAlignedZero(mem_persistent, thread_count*sizeof(struct ds_Worker), DS_CACHE_LINE);	
     g_scheduler->deque = ArenaPushAligned(mem_persistent, thread_count*sizeof(struct ds_WSDeque), DS_CACHE_LINE);
     g_scheduler->seed_deque = ArenaPushAligned(mem_persistent, sizeof(struct ds_WSDeque), DS_CACHE_LINE);
     g_scheduler->phase = NULL;
@@ -391,15 +437,23 @@ void ds_JobSchedulerInit(struct arena *mem_persistent, const u32 thread_count, c
         ds_WSDequeAlloc(g_scheduler->deque + i, i, initial_deque_size);
 	}
 
+    AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, 0);
+    AtomicStoreRlx32(&g_scheduler->a_workers_waiting, 0);
+    AtomicStoreRlx32(&g_scheduler->a_running, 0);
+
 	/* NOTE: worker 0: reserved for main thread */
     g_scheduler->worker[0].thr = g_tl_self;
 	for (u32 i = 1; i < thread_count; ++i)
 	{
-		ds_ThreadClone(mem_persistent, ds_WorkerMain, g_scheduler->worker + i, stacksize, framesize, scratchsize, scratch_count);
+		/* indices are assigned in clone order, so clone i is thread index i */
+		const ds_Thread *thr = ds_ThreadClone(mem_persistent, ds_WorkerMain, g_scheduler->worker + i, stacksize, framesize, scratchsize, scratch_count);
+		ds_AssertString(ds_ThreadIndex(thr) == i, "no other ds_ThreadClone before the scheduler's workers");
 	}
 
-    AtomicStoreRlx32(&g_scheduler->a_seeds_remaining, 0);
-    AtomicStoreRlx32(&g_scheduler->a_workers_waiting, 0);
+    /*
+     * Start handshake: a_running 0 -> 1 releases the workers; each sets its thr and increments it, so
+     * a_running == worker_count once every worker has registered.
+     */
 	AtomicFetchAddRel32(&g_scheduler->a_running, 1);
 
 	while ((u32) AtomicLoadSeqCst32(&g_scheduler->a_running) < g_scheduler->worker_count);
@@ -451,7 +505,6 @@ void ds_JobPhaseBegin(struct ds_JobPhase *phase)
 
     g_scheduler->phase = phase;
     ds_Assert(AtomicLoadRlx32(&phase->a_jobs_remaining) == 0);
-    AtomicStoreRlx32(&phase->a_jobs_remaining, 0);
     for (u32 i = 0; i < phase->next_len; ++i)
     {
         AtomicStoreRlx32(&phase->next[i].a_counter, 0); 

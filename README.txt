@@ -56,7 +56,9 @@ Requirements: Some modern version of CMake.
 
 git clone --recurse-submodules https://github.com/KarlAxelSandstedt/DreamscapeEngine.git
 
-2. Compile and run the codebase by calling any of the following options.
+2. Compile and run the codebase by calling any of the following scripts in script/linux
+(script/windows and script/web hold the Windows and web versions). Executables take a
+config file as their first argument; the scripts pass config/default.cfg.
 
 run.sh:
 Compile the code with optimization options turned on.

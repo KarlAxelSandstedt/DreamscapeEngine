@@ -25,6 +25,12 @@
 
 void RngSystem(void *buf, const u64 size)
 {
+	/* as on Linux; BCryptGenRandom fails on a NULL buffer even at size 0 */
+	if (size == 0)
+	{
+		return;
+	}
+
 	BCRYPT_ALG_HANDLE hAlgorithm;
 	LPCWSTR pszAlgId = BCRYPT_RNG_ALGORITHM;
 	LPCWSTR pszImplementation = NULL;
@@ -32,21 +38,29 @@ void RngSystem(void *buf, const u64 size)
 	NTSTATUS status = BCryptOpenAlgorithmProvider(&hAlgorithm, pszAlgId, pszImplementation, dwFlags);
 	if (!BCRYPT_SUCCESS(status))
 	{
-		Log(T_SYSTEM, S_FATAL, "Couldn't open algorithm provider: %08x\n", status);
+		Log(T_SYSTEM, S_FATAL, "Couldn't open algorithm provider: NTSTATUS %u", (u32) status);
 		FatalCleanupAndExit();
 	}
 
-	status = BCryptGenRandom(hAlgorithm, buf, size, 0);
-	if (!BCRYPT_SUCCESS(status))
+	/* BCryptGenRandom takes a ULONG size */
+	u64 bytes_left = size;
+	while (bytes_left)
 	{
-		Log(T_SYSTEM, S_FATAL, "Couldn't generate BCrypt randomness: %08x\n", status);
-		FatalCleanupAndExit();
+		const u64 offset = size - bytes_left;
+		const ULONG chunk = (ULONG) ((bytes_left < U32_MAX) ? bytes_left : U32_MAX);
+		status = BCryptGenRandom(hAlgorithm, ((u8 *) buf) + offset, chunk, 0);
+		if (!BCRYPT_SUCCESS(status))
+		{
+			Log(T_SYSTEM, S_FATAL, "Couldn't generate BCrypt randomness: NTSTATUS %u", (u32) status);
+			FatalCleanupAndExit();
+		}
+		bytes_left -= chunk;
 	}
 
 	status = BCryptCloseAlgorithmProvider(hAlgorithm, 0);
 	if (!BCRYPT_SUCCESS(status))
 	{
-		Log(T_SYSTEM, S_FATAL, "Couldn't close algorithm provider: %08x\n", status);
+		Log(T_SYSTEM, S_FATAL, "Couldn't close algorithm provider: NTSTATUS %u", (u32) status);
 		FatalCleanupAndExit();
 	}
 }

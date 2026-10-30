@@ -41,10 +41,22 @@ void ds_PlatformApiInit(struct arena *mem, const u64 framesize, const u64 scratc
 #if __DS_PLATFORM__ != __DS_WEB__
 	Log(T_SYSTEM, S_NOTE, "clock resolution (us): %3f", (f64) NsResolution() / 1000.0);
 	Log(T_SYSTEM, S_NOTE, "Rdtsc estimated frequency (GHz): %3f", (f32) TscFrequency() / 1000000000);
-	for (u32 i = 0; i < thread_count; ++i)
+	for (u32 i = 0; i < g_arch_config->logical_core_count; ++i)
 	{
-		Log(T_SYSTEM, S_NOTE, "core %u tsc skew (reltive to core 0): %lu", i, g_tsc_skew[i]);
+		Log(T_SYSTEM, S_NOTE, "core %u tsc skew (relative to core 0): %li", i, (i64) g_tsc_skew[i]);
 	}
+#endif
+#ifdef DS_PERFORMANCE_MEASUREMENT_API
+	Log(T_SYSTEM, S_NOTE, "PerfWallClock empty pair: %lu %s", g_perf_wall_clock_overhead, (__DS_PLATFORM__ == __DS_WEB__) ? "ns" : "ticks");
+	if (PerfCyclesThreadAvailable())
+	{
+		Log(T_SYSTEM, S_NOTE, "PerfCycles empty pair: %lu cycles", g_perf_cycles_overhead);
+	}
+	else
+	{
+		LogString(T_SYSTEM, S_NOTE, "PerfCycles unavailable");
+	}
+	Log(T_SYSTEM, S_NOTE, "PerfBegin/PerfEnd empty pair: %lu ticks, %lu cycles", g_perf_overhead_ticks, g_perf_overhead_cycles);
 #endif
     const u64 stacksize = 64*1024;
     const u64 initial_deque_size = 4096;

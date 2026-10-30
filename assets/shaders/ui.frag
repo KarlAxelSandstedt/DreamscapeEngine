@@ -2,7 +2,7 @@
 
 uniform vec2		resolution;
 
-uniform sampler2D	texture;
+uniform sampler2D	texture_atlas;
 
 in vec2 	uv;
 in vec2 	n_rect_center;
@@ -17,7 +17,7 @@ in float 	border_size;
 in float 	corner_radius;
 in float 	edge_softness;
 
-uniform sampler2D texture_atlas;
+out vec4	fragColor;
 
 /*
  *	returns distance of point from inner rectangle formed by corners of a given corner radius, minus radius
@@ -47,7 +47,7 @@ void main()
 		|| gl_FragCoord.y > v_rect_center.y + v_rect_halfsize.y
 		)
 	{
-		gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
+		fragColor = vec4(0.0, 0.0, 0.0, 0.0);
 	}
 	else
 	{
@@ -64,19 +64,19 @@ void main()
 
 		if (distance > -border_size + softness_padding) 
 		{
-			gl_FragColor = br_color;
+			fragColor = br_color;
 		} else 
 		{
-			gl_FragColor = mix(bg_color, gr_color, gr_color.w);
+			fragColor = mix(bg_color, gr_color, gr_color.w);
 		}
 
 		/* undefined if second parameter is <= first parameter, so we force it to be positive .*/
 		const float epsilon = 0.001;
 		float sdf_factor = 1.0 - smoothstep(0.0, 2.0*edge_softness + epsilon, distance);
-		gl_FragColor = gl_FragColor * sdf_factor;
+		fragColor = fragColor * sdf_factor;
 
-		vec4 sampled = texture2D(texture, uv);
+		vec4 sampled = texture(texture_atlas, uv);
 		sampled = vec4(mix(sampled.xyz, sp_color.xyz, sp_color.w), sampled.w);
-		gl_FragColor = mix(gl_FragColor, sampled, sampled.w);
+		fragColor = mix(fragColor, sampled, sampled.w);
 	}
 }

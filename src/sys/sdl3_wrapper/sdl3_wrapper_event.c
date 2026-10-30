@@ -37,12 +37,11 @@ u32 sdl3_EventConsume(struct ds_Event *event)
 				//event->utf32 = decode_utf8_null_terminated_buffered(ThreadAlloc256B(), 256 / 4, (u8 *) ev.text.text);
 				event->utf8.buf = (u8 *) ev.text.text;
 				event->utf8.len = 0;
-				u64 offset = 0;
-				while (Utf8ReadCodepoint(&offset, &event->utf8, offset))
+				event->utf8.size = (u32) strlen(ev.text.text);
+				for (u32 offset = 0; offset < event->utf8.size; event->utf8.len += 1)
 				{
-					event->utf8.len += 1;
+					Utf8ReadCodepoint(&offset, &event->utf8, offset);
 				}
-				event->utf8.size = event->utf8.len + 1;
 			} break;
 
 			case SDL_EVENT_WINDOW_MOUSE_ENTER:
@@ -74,8 +73,8 @@ u32 sdl3_EventConsume(struct ds_Event *event)
 			case SDL_EVENT_MOUSE_MOTION:
 			{
 				event->type = DS_CURSOR_POSITION;
-				Vec2Set(event->native_cursor_window_position, ev.motion.x, ev.motion.y);
-				Vec2Set(event->native_cursor_window_delta,  ev.motion.xrel, ev.motion.yrel);
+				event->native_cursor_window_position = V2(ev.motion.x, ev.motion.y);
+				event->native_cursor_window_delta = V2(ev.motion.xrel, ev.motion.yrel);
 			} break;
 
 			case SDL_EVENT_MOUSE_WHEEL:

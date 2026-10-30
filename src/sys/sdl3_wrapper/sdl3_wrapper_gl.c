@@ -74,10 +74,11 @@ void GlDebugInit(void)
 
 SDL_FunctionPointer LoadProc(const char *proc)
 {
-	SDL_FunctionPointer fp = SDL_GL_GetProcAddress(proc); 				
-	if (fp == NULL) 									
-	{											
-		Log(T_SYSTEM, S_ERROR, 0, "Failed to load %s: %s\n", proc, SDL_GetError());	
+	SDL_FunctionPointer fp = SDL_GL_GetProcAddress(proc);
+	if (fp == NULL)
+	{
+		Log(T_SYSTEM, S_FATAL, "Failed to load %s: %s", proc, SDL_GetError());
+		FatalCleanupAndExit();
 	}
 	return fp;
 }

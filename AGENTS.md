@@ -1,0 +1,237 @@
+DreamscapeEngine
+================
+
+A C game engine with deterministic physics, an editor (led) and an OpenGL
+renderer.
+
+Platform and Builds
+===================
+
+Architectures: 64-bit x86
+CPU baseline (2013: Intel Haswell, AMD Piledriver): SSE2, POPCNT, LZCNT, BMI1.
+CMakeLists.txt passes -mpopcnt -mlzcnt -mbmi (Linux, clang-cl; MSVC needs no
+flag); ds_ArchConfigInit refuses to start without them.
+Synchronization: use ds_atomic.h with explicit orderings; never rely on x86's
+strong memory ordering (other architectures may be added).
+Platforms: Linux, Windows, and Web through Emscripten.
+Compilers: GCC, MSVC, Clang
+Graphics: OpenGL 3.3 core (Linux, Windows) and WebGL 2.0 (OpenGL ES 3.0, web).
+One renderer serves both, so it uses only the subset that works on both: no GL
+call, format, extension or limit that WebGL 2 lacks. Every shader exists twice,
+assets/shaders/<name> (#version 330 core) and gles_<name> (#version 300 es);
+change both.
+External libraries: SDL3, dtoa, freetype, stb_image, tracy, xxHash.
+
+Useful builds (script/linux/*.sh, script/windows/*.bat, script/web/*.sh, and
+script/web/*.bat for web builds on Windows; they run from the repository root
+wherever they are called from):
+    determinism.(sh/bat) - fresh reference + replay at several thread counts
+        (tests one build). An old .bin is only valid for the version that
+        recorded it.
+    run.(sh/bat) - optimized build with Tracy profiling
+    release.(sh/bat) - optimized build without profiling (the web's optimized
+        build)
+    debug.(sh/bat) - debugging build
+    test.(sh/bat) - correctness suites, debugging build, under gdb/raddbg
+    address_sanitize.(sh/bat) - memory corruption detection + poisoning with ASan
+    thread_sanitize.sh - thread race detection with TSan
+    undefined_behaviour_sanitize.sh - undefined behaviour detection with UBSan
+
+Every executable takes a config file as its first argument
+(./DreamscapeTest config/<name>.cfg; none: engine defaults). Configs live in
+config/; the format is documented in include/ds_init.h.
+
+All scripts share build/. For your own builds, use a separate directory
+(cmake -B build_agent ...) unless told otherwise. Configure your builds with
+-DDS_PROFILE=OFF (Tracy); you cannot read its output. Sanitizer builds must be
+optimized (-DDS_OPTIMIZE=ON). DS_DEBUG=ON validates the whole physics pipeline
+every tick (slow).
+
+ds_Assert and Breakpoint(condition) are diligently used when debugging. Note
+that -DDS_DEBUG=OFF compiles them out, so they must not contain side effects or
+error handling. The same holds for Log (compiled out with -DDS_LOG=OFF).
+
+Every ProfZone/ProfZoneNamed needs a ProfZoneEnd on every return path (use
+goto end). Your builds have profiling off, so you will not notice a mismatch.
+
+Workflow
+========
+
+- Never commit, stage or push; the owner does.
+- Bugs found outside the current task: report them with a concise summary
+  (math if needed); the owner decides who fixes them.
+- ../agent_notes/ (a separate git repo next to this one, shared by the owner's
+  machines; setup in its README.md, conventions in its CLAUDE.md) holds
+  design docs, audits, backlogs and todos. Read the relevant one before
+  changing that system. Shareable lists go there, nothing private. Agents
+  commit and push their changes to it (the no-commit rule above is for this
+  repo). "agent_notes/x.txt" in comments and notes means that repo's file.
+- Test only what your change affects: the suites covering the changed code.
+  No determinism, sanitizer or full-suite runs unless there is a reason
+  (e.g. the change touches the simulation, threading or memory handling).
+  Documentation and header-layout changes need no tests; at most a compile
+  when code moved.
+
+Conventions
+===========
+
+Units: 1.0f = 1 m, radians. Right-handed, +Y up (gravity (0, -g, 0)).
+Quaternions (x, y, z, w), w the scalar part, Hamilton product, right-hand rule;
+QMul(a, b) rotates by b first. Matrices are column-major and M3(...) takes its
+arguments column by column. Triangles and faces are CCW about their outward
+normal. Full list (frames, camera, UI): the summary of include/ds_math.h.
+
+Determinism
+===========
+
+Deterministic physics is required: given the same input state, the physics
+must produce the same output. The goal is cross-platform determinism (in the
+spirit of Erin Catto's box3d): builds from all supported compilers and platforms
+produce bit-identical results. Hence:
+- no output dependence on thread scheduling, randomness or wall-clock time;
+- no code whose float results depend on compiler choices (FMA contraction,
+  fast-math, intrinsics with differing precision). CMakeLists.txt enforces
+  no contraction (-ffp-contract=off, MSVC /fp:precise); never add -march,
+  -mfma, -ffast-math, /fp:fast or /fp:contract. The baseline's integer-only
+  flags (-mpopcnt -mlzcnt -mbmi) are the exception.
+- no absolute value by (x < 0) ? -x : x, which MSVC compiles to a sign-bit
+  clear under every /fp mode while GCC and Clang return -0 for -0. Use F32Abs
+  (f64: clear bit 63).
+
+Numerical Robustness
+====================
+
+Stability is extremely important. Whenever code constructs or consumes
+geometric primitives (segments, triangles, tetrahedra, simplices, planes,
+hulls), decide where degenerate cases (coincident, collinear, coplanar,
+zero-length) are detected and what is returned then: always something
+workable. Example: GJK falls back to the previous simplex when a divisor is
+<= 0. Avoid ill-conditioned questions instead of guarding their answers:
+decide regions from signs, then divide only where the result is bounded
+(see include/ds_voronoi.h). Inaccurate results are acceptable;
+Inf/NaN from finite input is not. Don't hide NaN input; assert on it in
+debug. Document what a function returns for degenerate input; WARNING only
+for cases it doesn't handle.
+
+API
+===
+
+1. New functions, files, abstractions, APIs, and refactors of nearby code within
+the engine are proposed, never implemented, unless the task explicitly asks for
+it. Reason: the owner must understand the entire engine, so it is written mostly
+by a human. Exception: in test/ (shared with the owner), add any tests you deem
+useful without asking. Never delete or repurpose the owner's files there (the
+per-platform main.c entrypoints and other debug/run files). Random tests must
+reproduce from their seed on every compiler.
+
+2. Strongly prefer the engine API in include/ over external libraries. The C
+standard library is banned (incl. math.h). The only exceptions are the printf
+family, memset and memcpy. Only the platform layer (src/sys/, src/base/ and
+their headers, e.g. ds_platform.h, ds_thread.h, ds_float.h) may call it or OS
+APIs directly. Freestanding headers (stddef.h, stdint.h, float.h, ...) are fine.
+If no engine API exists, make a proposal. Reason: keeping dependencies low.
+
+3. If engine API documentation you relied upon is wrong or sparse, provide
+correct and concise proposals.
+
+4. Parameter order: allocator first, then written parameters (outputs, and
+e.g. a stream whose position advances), then read-only inputs:
+func(mem, out1, ..., outN, in1, ..., inM). Serialization functions put the
+stream right after the allocator: func(mem, ss, outputs, inputs).
+
+Memory and Lifetime Handling (ds_allocator.h)
+=============================================
+
+1. General-purpose allocation (ds_Alloc, ds_Realloc) is only allowed in rules 2
+and 4. Reason: avoid complicated lifetimes as far as possible.
+
+2. Persistent data (program or subsystem lifetime) goes on a persistent arena if
+fixed-size, or in a ds_Alloc'd block if it grows.
+
+3. Unknown-lifetime objects go in a typed, macro-generated pool:
+   - DEFINE_POOL(T) -> ds_Pool(T), ds_PoolAdd/Remove/...: stable
+     indices; use them as handles, never addresses (addresses move when a
+     growable pool grows). Use when others hold references.
+   - DEFINE_CPOOL_STRUCT/NATIVE(T) -> ds_CPool(T),
+     ds_CPoolPush/Pop/RemoveAndSwap/...: compact, removal moves the last
+     element into the hole. Use for dense data iterated as an array;
+     whoever holds the moved element's index updates it.
+
+4. Unknown-lifetime data that fits no pool (unusual form, lifetime of a large
+and unknown number of frames) uses ds_Alloc/ds_Realloc. Example: sleeping
+island data in the physics engine; arrays of varying lengths and types that
+live while the island sleeps.
+
+5. Subsystem frame data should be stored on the system's single/double-buffered
+frame arena(s). Such arenas may be per-system and/or per-thread.
+
+6. Temporary, thread-local data (function call lifetimes, ...) should be
+allocated on scratch arenas. You push and pop scratch arenas in a LIFO fashion
+using ArenaPushScratch and ArenaPopScratch (ds_thread.h).
+
+7. Functions taking (struct arena *mem, ..., growable): mem is optional.
+Arena memory can't grow, so the valid combinations are (arena, NOT_GROWABLE)
+and (NULL = heap, GROWABLE or NOT_GROWABLE).
+
+Error Handling
+==============
+
+Severities: enum severity_id (ds_types.h). The Log API is thread-safe.
+
+1. S_FATAL: unrecoverable errors, e.g. memory allocation failure. Log, then
+call FatalCleanupAndExit().
+
+2. S_ERROR: recoverable errors; continue with a fallback. Examples: a glyph
+that fails to load is logged and drawn as the font's unknown glyph; the physics
+engine exceeds its frame time budget (its tick, 1/60 s in the editor).
+
+3. S_WARNING: valid but noteworthy states. Example: the editor rejects a node
+whose id already exists.
+
+4. ds_Realloc logs and exits on failure itself; ds_Alloc returns NULL. Arena
+pushes return NULL (also for size 0). Full non-growable pools return index
+U32_MAX: ds_Pool with address NULL, ds_CPool with its stub's address, so check
+the index. Most arena pushes are assumed never to fail, so only check where
+overflow is likely.
+
+Naming
+======
+
+Conventions, not rules: follow them in new code; don't rename old code.
+
+- ds_Type, ds_TypeFunction: engine types and the public/physics API.
+- prefix_Function: subsystem API. r_ renderer, ui_ UI, led_ editor,
+  c_ collision, gl_ OpenGL, sat_ collision algorithms, ss_ serial
+  stream.
+- Small common types: short lowercase type + uppercase function family
+  (v3 -> V3Add, m3 -> M3Mul).
+- Small engine containers: a short uppercase name without ds_ for the type
+  and its functions (HI, DLL, LL, BT, MQ: struct BT, BTAddRoot, MQPush).
+- Try before the verb (FileTryOpen, ds_ConfigTryRead): may fail, returns a
+  failure state. ...Check: returns a boolean.
+
+Comments
+========
+
+Short; state only what a reader would otherwise get wrong, never the obvious.
+Multi-line comments: /* on its own line, then the text, then */ on its own line.
+
+Header documentation states what a function (or family of functions) does, its
+contracts (assumptions on the inputs), side effects and outputs. Internals are
+written very sparingly there; explanations of internals go in .c files.
+Exceptions, kept as they are: include/ds_voronoi.h and include/ds_init.h, whose
+internals the owner wrote to understand them deeply.
+
+Header layout, in this order:
+    header summary (what the file is for, its conventions, its sections)
+    API 1: docs and declarations
+    API 2: docs and declarations
+    ...
+    API 1: inline definitions
+    API 2: inline definitions
+    ...
+Inline functions are declared up front with the rest of their API
+(static ds_ForceInline ...;) and defined at the bottom, one block per API, so
+all APIs and their docs come first. Macros are declared by their commented-out
+#define (//#define Name(args)) under their docs; the real #define goes with
+the inline definitions.

@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include "ds_base.h" 
+#include "ds_init.h"
 #include "ds_math.h"
 #include "ds_platform.h"
 #include "ds_graphics.h"
@@ -31,45 +32,17 @@
 
 #include "ds_test.h"
 
+/* ./DreamscapeTest [config_path] */
 int main(int argc, char *argv[])
-{	
-	u64 seed[4];
-	RngSystem(seed, sizeof(seed));
-	Xoshiro256Init(seed);
-		
-	ds_MemApiInit();
+{
+	ds_Init((argc > 1) ? argv[1] : NULL, "log.txt");
 
-	struct arena persistent = ArenaAlloc(NULL, 128*1024*1024);
-	LogInit(&persistent, "log.txt");
-
-	ds_TimeApiInit(&persistent);
-
-    const u64 thread_framesize = 4*1024*1024;
-    const u64 thread_scratchsize = 1*1024*1024;
-    const u64 scratch_count = 5;
-	ds_ThreadMasterInit(&persistent, thread_framesize, thread_scratchsize, scratch_count);
-	ds_ArchConfigInit(&persistent);
-
-	ds_StringApiInit(g_arch_config->logical_core_count);
-
-	ds_PlatformApiInit(&persistent, thread_framesize, thread_scratchsize, scratch_count);
-
-	ds_GraphicsApiInit();
-
-	ds_UiApiInit();
-
-	AssetInit(&persistent);
-
-	struct led *editor = led_Alloc();
+	struct led *editor = led_Alloc(g_config->thread_count, g_config->thread_framesize);
 
     ds_TestMainCorrectness();
-	
+
 	led_Dealloc(editor);
-	AssetShutdown();
-	ds_GraphicsApiShutdown();
-	ds_PlatformApiShutdown();
-	LogShutdown();
-	ds_MemApiShutdown();
+	ds_Shutdown();
 
 	return 0;
 }

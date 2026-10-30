@@ -17,6 +17,13 @@
 ==========================================================================
 */
 
+/*
+ds_base.h
+=========
+The base layer in one include, plus the Tracy profiler macros (empty without DS_PROFILE; a ProfZone
+declares ctx, so one zone per scope). src/base/ds_base.c builds src/base as one translation unit.
+*/
+
 #ifndef __DREAMSCAPE_BASE_H__
 #define __DREAMSCAPE_BASE_H__
 
@@ -26,6 +33,7 @@ extern "C" {
 
 #include "ds_define.h"
 #include "ds_types.h"
+#include "ds_assert.h"
 #include "ds_atomic.h"
 #include "ds_serialize.h"
 #include "ds_allocator.h"
@@ -33,6 +41,7 @@ extern "C" {
 #include "ds_error.h"
 #include "ds_arch.h"
 #include "ds_time.h"
+#include "ds_measure.h"
 #include "ds_semaphore.h"
 #include "ds_thread.h"
 #include "ds_log.h"
@@ -50,48 +59,6 @@ extern "C" {
 	#define ProfZoneNamed(str)
 	#define ProfZoneEnd	
 	#define ProfThreadNamed(str)
-#endif
-
-#ifdef DS_ASSERT_DEBUG
-
-	#define ds_Assert(ds_Assertion)			_ds_assert(ds_Assertion, __FILE__, __LINE__, __func__)
-	#define ds_AssertString(ds_Assertion, cstr)	_ds_assert_string(ds_Assertion, __FILE__, __LINE__, __func__, cstr) 
-	#define ds_AssertMessage(ds_Assertion, msg, ...)	_ds_assert_message(ds_Assertion, __FILE__, __LINE__, __func__, msg, __VA_ARGS__)
-	
-	#define _ds_assert(ds_Assertion, file, line, func)								\
-		if (ds_Assertion) { }										\
-		else												\
-		{												\
-			Log(T_ASSERT, S_FATAL, "ds_Assertion failed at %s:%u in function %s", file, line, func);	\
-			Breakpoint(1);										\
- 			FatalCleanupAndExit();									\
-		}
-	
-	#define _ds_assert_string(ds_Assertion, file, line, func, cstr)						\
-		if (ds_Assertion) { }			     							\
-		else												\
-		{												\
-			Log(T_ASSERT, S_FATAL, "ds_Assertion failed at %s:%u in function %s - %s", file, line, func, cstr); \
-			Breakpoint(1);										\
- 			FatalCleanupAndExit();									\
-		}
-	
-	#define _ds_assert_message(ds_Assertion, file, line, func, msg, ...)					\
-		if (ds_Assertion) { }										\
-		else												\
-		{												\
-			u8 __msg_buf[LOG_MAX_MESSAGE_SIZE];							\
-			const utf8 __fmsg = Utf8FormatBuffered(__msg_buf, LOG_MAX_MESSAGE_SIZE, msg, __VA_ARGS__); \
-			Log(T_ASSERT, S_FATAL, "ds_Assertion failed at %s:%u in function %s - %k", file, line, func, &__fmsg); \
-			Breakpoint(1);										\
- 			FatalCleanupAndExit();									\
-		}
-#else
-
-#define ds_Assert(ds_Assertion)
-#define ds_AssertString(ds_Assertion, str)
-#define ds_AssertMessage(ds_Assertion, msg, ...)
-
 #endif
 
 //TODO move to timers

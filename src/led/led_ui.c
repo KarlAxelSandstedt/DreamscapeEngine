@@ -110,7 +110,7 @@ static void led_ProjectMenuUi(struct led *led, const struct ui_Visual *visual)
 
 			if ((ui_ButtonF(UI_DRAW_TEXT | UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_DRAW_ROUNDED_CORNERS, "New Project") & UI_INTER_LEFT_CLICK) && menu->popup_new_project.state == UI_POPUP_STATE_NULL)
 			{
-				ui_PopupUtf8Input(&menu->popup_new_project, &menu->utf8_new_project, &menu->input_line_new_project, Utf8Inline("Please enter the new project's name"), Utf8Inline("New Project:"), "New Project", visual);
+				ui_PopupUtf8Input(&menu->popup_new_project, &menu->utf8_new_project, &menu->input_line_new_project, LED_PROJECT_NAME_BUFSIZE, Utf8Inline("Please enter the new project's name"), Utf8Inline("New Project:"), "New Project", visual);
 			} 
 			else if (menu->popup_new_project.state == UI_POPUP_STATE_PENDING_VERIFICATION)
 			{
@@ -140,7 +140,7 @@ static void led_ProjectMenuUi(struct led *led, const struct ui_Visual *visual)
 					}
 					else
 					{
-						err = FileTryCreate(&project_window->mem_persistent, &led->project.file, cstr_project_name, &led->project.folder, !FILE_TRUNCATE);
+						err = FileTryCreate(&project_window->mem_persistent, &led->project.file, cstr_project_name, &led->project.folder, FILE_FLAGS_NONE);
 						if (err != FS_SUCCESS)
 						{
 							switch (err)
@@ -207,13 +207,13 @@ static void led_UiTest(struct led *led, const struct ui_Visual *visual)
 			ui_Height(ui_SizePerc(0.1f))
 			ui_Parent(ui_NodeAllocF(UI_FLAG_NONE, "###row_%u", r).index)
 			{
-				ui_SpriteColor(Vec4Inline(0.4f, 0.15f, 0.75f, 0.7f))
+				ui_SpriteColor(V4(0.4f, 0.15f, 0.75f, 0.7f))
 				ui_Sprite(SPRITE_LED_FOLDER)
-				ui_BackgroundColor(Vec4Inline(204.0f/256.0f, 48.0f/256.0f, 110.0f/256.0f, 0.7f))
-				ui_IntvViewableX(intv_inline(100.0f, 200.0f))	
+				ui_BackgroundColor(V4(204.0f/256.0f, 48.0f/256.0f, 110.0f/256.0f, 0.7f))
+				ui_IntvViewableX(Intv(100.0f, 200.0f))	
 				for (u32 i = 0; i <= 10; ++i)
 				{
-					ui_Width(ui_SizeUnit(intv_inline(95.0f + i*10.0f, 105.0f + i*10.0f)))
+					ui_Width(ui_SizeUnit(Intv(95.0f + i*10.0f, 105.0f + i*10.0f)))
 					ui_Height(ui_SizePerc(1.0f))
 					(i % 2) 
 						? ui_NodeAllocF(UI_DRAW_BACKGROUND | UI_DRAW_GRADIENT | UI_DRAW_BORDER | UI_DRAW_ROUNDED_CORNERS, "###box_%u_%u", r, i)
@@ -230,12 +230,12 @@ static void led_UiTest(struct led *led, const struct ui_Visual *visual)
 				for (u32 i = 0; i < 8; ++i)
 				{
 					ui_Width(ui_SizePixel(400, 1.0f / (2 << i)))
-					ui_BackgroundColor(Vec4Inline((214.0f - i*30.0f)/256.0f, (48.0f + i*30.0f)/256.0f, (44.0f + i*30.0f)/256.0f, 0.7f))
+					ui_BackgroundColor(V4((214.0f - i*30.0f)/256.0f, (48.0f + i*30.0f)/256.0f, (44.0f + i*30.0f)/256.0f, 0.7f))
 					ui_NodeAllocF(UI_DRAW_BACKGROUND, "###box_%u_%u", 6, i);
 				}
 
 				ui_Width(ui_SizePixel(400, 1.0f / (2 << 8)))
-				ui_BackgroundColor(Vec4Inline((204.0f- 8*20.0f)/256.0f, (48.0f + 8*20.0f)/256.0f, (110.0f + 8*10.0f)/256.0f, 0.7f))
+				ui_BackgroundColor(V4((204.0f- 8*20.0f)/256.0f, (48.0f + 8*20.0f)/256.0f, (110.0f + 8*10.0f)/256.0f, 0.7f))
 				ui_NodeAllocF(UI_DRAW_BACKGROUND, "###box_%u_%u", 6, 8);
 			}
 		}
@@ -250,13 +250,13 @@ static void led_UiTest(struct led *led, const struct ui_Visual *visual)
 				ui_Height(ui_SizePixel(80, 1.0f))
 				ui_FixedX(220.0f)
 				ui_FixedY(220.0f)
-				ui_BackgroundColor(Vec4Inline(0.1f, 0.3f, 0.6f, 0.7f))
+				ui_BackgroundColor(V4(0.1f, 0.3f, 0.6f, 0.7f))
 				ui_NodeAllocF(UI_DRAW_BACKGROUND, "###box_%u_%u", 7, 0);
 			}
 		}
 
 		ui_Height(ui_SizePerc(0.1f))
-		ui_SpriteColor(Vec4Inline(1.0f, 1.0f, 1.0f, 1.0f))
+		ui_SpriteColor(V4(1.0f, 1.0f, 1.0f, 1.0f))
 		ui_Parent(ui_NodeAllocF(UI_FLAG_NONE, "###row_%u", 8).index)
 		{
 			ui_Width(ui_SizeText(F32_INFINITY, 1.0f))
@@ -298,18 +298,18 @@ static void led_UiTest(struct led *led, const struct ui_Visual *visual)
 		}
 
 		ui_Height(ui_SizePerc(0.1f))
-		ui_SpriteColor(Vec4Inline(1.0f, 1.0f, 1.0f, 1.0f))
+		ui_SpriteColor(V4(1.0f, 1.0f, 1.0f, 1.0f))
 		ui_Font(FONT_DEFAULT_SMALL)
 		ui_Parent(ui_NodeAllocF(UI_FLAG_NONE, "###row_%u", 9).index)
 		{
 			ui_Width(ui_SizeText(F32_INFINITY, 1.0f))
 			ui_Height(ui_SizePerc(1.0f))
-			ui_BackgroundColor(Vec4Inline(0.2f, 0.2, 0.4f, 0.7f))
+			ui_BackgroundColor(V4(0.2f, 0.2, 0.4f, 0.7f))
 			ui_NodeAllocF(UI_DRAW_TEXT | UI_DRAW_BACKGROUND | UI_DRAW_BORDER, "###box_%u_%u", 9, 0);
 
 			ui_Width(ui_SizeText(F32_INFINITY, 1.0f))
 			ui_Height(ui_SizePerc(1.0f))
-			ui_BackgroundColor(Vec4Inline(0.2f, 0.2, 0.4f, 0.7f))
+			ui_BackgroundColor(V4(0.2f, 0.2, 0.4f, 0.7f))
 			ui_NodeAllocF(UI_DRAW_TEXT | UI_DRAW_BACKGROUND | UI_DRAW_BORDER, "awd###box_%u_%u", 9, 1);
 		}
 	}
@@ -318,9 +318,72 @@ static void led_UiTest(struct led *led, const struct ui_Visual *visual)
 	ui_FrameEnd();
 }
 
+/* the grab's hand: 3 Hz critically damped, a pull of 10 weights, spin braking of half a weight times the lever */
+#define LED_GRAB_HERTZ          3.0f
+#define LED_GRAB_DAMPING_RATIO  1.0f
+#define LED_GRAB_FORCE_SCALE    10.0f
+#define LED_GRAB_TORQUE_SCALE   0.5f
+/* the target's lag behind the ray's point, seconds: a first order filter, a = dt / (dt + lag) per frame */
+#define LED_GRAB_LAG            0.1f
+
+/* the pick ray through a window pixel of the viewport */
+static struct rayWorld led_ViewportPickRay(const struct led *led, const struct ui_Node *viewport, const v2 pointer)
+{
+	const v2 pixel = V2(pointer.x - viewport->pixel_position.x, pointer.y - viewport->pixel_position.y);
+	const v3f64 pixel_world = WindowSpaceToWorldSpace(pixel, viewport->pixel_size, &led->cam);
+	v3 dir = V3F64Demote(V3F64Sub(pixel_world, led->cam.position));
+	dir = V3Scale(dir, 1.0f / V3Length(dir));
+	return (struct rayWorld) { .origin = led->cam.position, .dir = dir };
+}
+
+/* grab the body under the ray at its hit: the joint pulls the hit point, and the target starts there */
+static void led_GrabBegin(struct led *led, const struct rayWorld *ray, const u32f32 hit)
+{
+	const struct ds_Shape *shape = led->physics.shape_pool.buf + hit.u;
+	const struct ds_Body *body = led->physics.body_pool.buf + shape->body;
+	if (!ds_BodyDynamicCheck(body))
+	{
+		return;
+	}
+
+	const v3f64 target = V3F64Add(ray->origin, V3Promote(V3Scale(ray->dir, hit.f)));
+	const struct ds_BodySim *bsim = led->physics.solver_set_pool.buf[body->set].body_sim_pool.buf + body->sim;
+	ds_Transform local_frame = ds_TransformIdentity();
+	local_frame.position = ds_TransformWorldPointToLocal(&bsim->world, target);
+
+	struct ds_MouseJointPrefab prefab;
+	ds_MouseJointPrefabFromBody(&prefab, &led->physics, body->id, target, LED_GRAB_HERTZ, LED_GRAB_DAMPING_RATIO, LED_GRAB_FORCE_SCALE, LED_GRAB_TORQUE_SCALE);
+	led->grab.joint = ds_MouseJointAdd(&led->physics, &prefab, body->id, &local_frame);
+	led->grab.distance = hit.f;
+	led->grab.target = target;
+}
+
+/* while the left button is held the target follows the ray's point at the grab's distance, lagging; a release, or a joint that is gone, ends the grab */
+static void led_GrabUpdate(struct led *led, const struct rayWorld *ray)
+{
+	if (ds_JointIdNullCheck(led->grab.joint))
+	{
+		return;
+	}
+
+	if (g_ui->inter.button_pressed[MOUSE_BUTTON_LEFT] && ds_JointLookup(&led->physics, led->grab.joint).address)
+	{
+		const v3f64 point = V3F64Add(ray->origin, V3Promote(V3Scale(ray->dir, led->grab.distance)));
+		const f32 dt = (f32) led->ns_delta / NSEC_PER_SEC;
+		const f32 a = dt / (dt + LED_GRAB_LAG);
+		led->grab.target = V3F64Add(led->grab.target, V3Promote(V3Scale(V3F64Demote(V3F64Sub(point, led->grab.target)), a)));
+		ds_MouseJointTargetSet(&led->physics, led->grab.joint, led->grab.target);
+	}
+	else
+	{
+		ds_JointRemove(&led->physics, led->grab.joint);
+		led->grab.joint = ds_JointIdNull();
+	}
+}
+
 static void led_InputHandler(struct led *led, struct ui_Node *viewport)
 {
-	Vec4Set(viewport->border_color, 0.9f, 0.9f, 0.9f, 1.0f);
+	viewport->border_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 	struct ds_Window *sys_win = ds_WindowAddress(led->window);
 
 	for (i32 i = sys_win->ui->event_list.first; i != DLL_SENTINEL; )
@@ -356,8 +419,8 @@ static void led_InputHandler(struct led *led, struct ui_Node *viewport)
 
 		if (event_consumed)
 		{
-			ds_DLLRemove(sys_win->ui->event_list, sys_win->ui->event_pool.buf, i, node);
-			ds_EventPoolRemove(&sys_win->ui->event_pool, i);
+			DLLRemove(sys_win->ui->event_list, sys_win->ui->event_pool.buf, i, node);
+			ds_PoolRemove(sys_win->ui->event_pool, i);
 		}
 		i = next;
 	}
@@ -382,11 +445,11 @@ static void led_InputHandler(struct led *led, struct ui_Node *viewport)
 	    	led->cam_left_velocity -= 9.0f; 
 	} 
 
-	r_CameraUpdateAngles(&led->cam, -sys_win->ui->inter.cursor_delta[0] / 300.0f, -sys_win->ui->inter.cursor_delta[1] / 300.0f);
+	r_CameraUpdateAngles(&led->cam, -sys_win->ui->inter.cursor_delta.x / 300.0f, -sys_win->ui->inter.cursor_delta.y / 300.0f);
 	r_CameraUpdateAxes(&led->cam);
 
-	sys_win->ui->inter.cursor_delta[0] = 0.0f;
-	sys_win->ui->inter.cursor_delta[1] = 0.0f;
+	sys_win->ui->inter.cursor_delta.x = 0.0f;
+	sys_win->ui->inter.cursor_delta.y = 0.0f;
 }
 
 static void led_Ui(struct led *led, const struct ui_Visual *visual)
@@ -409,12 +472,12 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 		led->node_ui_list = ui_ListInit(AXIS_2_Y, 256.0f, 24.0f, UI_SELECTION_MULTI); 
 		led->node_selected_ui_list = ui_ListInit(AXIS_2_Y, 512.0f, 24.0f + 3*24.0f + 12.0f, UI_SELECTION_NONE);
 		led->cs_list = ui_ListInit(AXIS_2_Y, 200.0f, 24.0f, UI_SELECTION_UNIQUE);
-		led->cs_mesh_menu = ui_DropdownMenuInit(150.0f, Vec2Inline(110.0f, 24.0f), UI_DROPDOWN_BELOW);
+		led->cs_mesh_menu = ui_DropdownMenuInit(150.0f, V2(110.0f, 24.0f), UI_DROPDOWN_BELOW);
 
 		//led->rb_prefab_list = ui_ListInit(AXIS_2_Y, 200.0f, 24.0f, UI_SELECTION_UNIQUE);
 		//led->rb_prefab_mesh_menu = ui_DropdownMenuInit(150.0f, Vec2Inline(110.0f, 24.0f), UI_DROPDOWN_ABOVE);
 		
-		led->rb_color_mode_menu = ui_DropdownMenuInit(120.0f, Vec2Inline(196.0f, 24.0f), UI_DROPDOWN_BELOW);
+		led->rb_color_mode_menu = ui_DropdownMenuInit(120.0f, V2(196.0f, 24.0f), UI_DROPDOWN_BELOW);
 	}
 
 	ui_TextAlignX(ALIGN_LEFT)
@@ -432,18 +495,18 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 			{
 				ui_PadFill();
 
-				ui_BackgroundColor(Vec4Inline(0.0f, 0.125f, 0.125f, 1.0f))
+				ui_BackgroundColor(V4(0.0f, 0.125f, 0.125f, 1.0f))
 				ui_Flags(UI_DRAW_BACKGROUND)
 				{
 					struct ui_Node *button;
 					ui_Width(ui_SizePixel(32.0f, 1.0f))
 					ui_Flags(UI_DRAW_SPRITE)
-					ui_BackgroundColor(Vec4Inline(0.5f, 0.5f, 0.5f, 0.5f))
-					ui_SpriteColor(Vec4Inline(0.0f, 0.0f, 0.0f, 0.1f))
+					ui_BackgroundColor(V4(0.5f, 0.5f, 0.5f, 0.5f))
+					ui_SpriteColor(V4(0.0f, 0.0f, 0.0f, 0.1f))
 					ui_Sprite(SPRITE_LED_PLAY)
 					if (ui_ButtonF(UI_DRAW_BACKGROUND | UI_DRAW_SPRITE, "###play") & UI_INTER_LEFT_CLICK)
 					{
-						//ui_BackgroundColor(Vec4Inline(0.0f, 0.5f, 0.5f, 0.5f))
+						//ui_BackgroundColor(V4(0.0f, 0.5f, 0.5f, 0.5f))
 						CmdSubmitFormat(g_ui->mem_frame, "led_Compile");
 						CmdSubmitFormat(g_ui->mem_frame, "led_Run");
 					}
@@ -452,7 +515,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 					ui_Width(ui_SizePixel(32.0f, 1.0f))
 					ui_Flags(UI_DRAW_SPRITE)
-					ui_SpriteColor(Vec4Inline(0.0f, 0.0f, 0.0f, 0.1f))
+					ui_SpriteColor(V4(0.0f, 0.0f, 0.0f, 0.1f))
 					ui_Sprite(SPRITE_LED_PAUSE)
 					if (ui_ButtonF(UI_DRAW_SPRITE, "###pause") & UI_INTER_LEFT_CLICK)
 					{
@@ -463,7 +526,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 					ui_Width(ui_SizePixel(32.0f, 1.0f))
 					ui_Flags(UI_DRAW_SPRITE)
-					ui_SpriteColor(Vec4Inline(0.0f, 0.0f, 0.0f, 0.1f))
+					ui_SpriteColor(V4(0.0f, 0.0f, 0.0f, 0.1f))
 					ui_Sprite(SPRITE_LED_STOP)
 					if (ui_ButtonF(UI_DRAW_SPRITE, "###stop") & UI_INTER_LEFT_CLICK)
 					{
@@ -485,18 +548,32 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 				ui_Parent(slot.index)
 				{
 					struct ui_Node *node = slot.address;
+					/* locked cursor: the pointer is the viewport's centre (the view direction), drawn as a crosshair */
+					const u32 locked = ds_CursorLockedCheck(win);
+					const v2 pointer = (locked)
+						? V2(node->pixel_position.x + 0.5f * node->pixel_size.x, node->pixel_position.y + 0.5f * node->pixel_size.y)
+						: g_ui->inter.cursor_position;
+					if (locked)
+					{
+						ui_BackgroundColor(V4(0.9f, 0.9f, 0.9f, 0.8f))
+						{
+							ui_FixedX(pointer.x - 8.0f)
+							ui_FixedY(pointer.y - 1.0f)
+							ui_Width(ui_SizePixel(16.0f, 1.0f))
+							ui_Height(ui_SizePixel(2.0f, 1.0f))
+							ui_NodeAllocNonHashed(UI_DRAW_BACKGROUND);
+
+							ui_FixedX(pointer.x - 1.0f)
+							ui_FixedY(pointer.y - 8.0f)
+							ui_Width(ui_SizePixel(2.0f, 1.0f))
+							ui_Height(ui_SizePixel(16.0f, 1.0f))
+							ui_NodeAllocNonHashed(UI_DRAW_BACKGROUND);
+						}
+					}
+
+					const struct rayWorld ray = led_ViewportPickRay(led, node, pointer);
 					if (node->inter & UI_INTER_HOVER)
 					{
-						vec3 dir; 
-						const vec2 cursor_viewport_position =
-						{
-							g_ui->inter.cursor_position[0] - node->pixel_position[0],
-							g_ui->inter.cursor_position[1] - node->pixel_position[1],
-						};
-						WindowSpaceToWorldSpace(dir, cursor_viewport_position, node->pixel_size, &led->cam);
-						Vec3TranslateScaled(dir, led->cam.position, -1.0f);
-						Vec3ScaleSelf(dir, 1.0f / Vec3Length(dir));
-						const struct ray ray = RayConstruct(led->cam.position, dir);
 						const u32f32 hit = ds_DynamicsRaycastParameter(&led->physics, &ray);
 						if (hit.f < F32_INFINITY)
 						{
@@ -505,26 +582,27 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 							const struct led_Node *entity = led->node_hierarchy.pool.buf + body->entity;
 							const char *body_id = CstrUtf8(g_ui->mem_frame, entity->id);
 
-							ui_FixedX(g_ui->inter.cursor_position[0])
-							ui_FixedY(g_ui->inter.cursor_position[1])
+							ui_FixedX(pointer.x)
+							ui_FixedY(pointer.y)
 							ui_Width(ui_SizeText(128.0f, 1.0f))
 							ui_Height(ui_SizePixel(24.0f, 1.0f))
 							ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW | UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_SKIP_HOVER_SEARCH, "%k##%u", &entity->id, body->entity);
 
-                            if (node->inter & UI_INTER_LEFT_CLICK)
-                            {
-                                ds_BodyRemove(g_ui->mem_frame, &led->physics, body->id);
-                            }
+							/* the click that focuses the viewport only focuses: the pointer moves to the centre on the next frame */
+							if ((node->inter & UI_INTER_LEFT_CLICK) && !(node->inter & UI_INTER_FOCUS_IN) && ds_JointIdNullCheck(led->grab.joint))
+							{
+								led_GrabBegin(led, &ray, hit);
+							}
 						}
 					}
 
+					led_GrabUpdate(led, &ray);
+
 					if (node->inter & UI_INTER_FOCUS)
 					{	
-						const vec2 pos = 
-						{
-							node->pixel_position[0],
-							node->pixel_position[1] + node->pixel_size[1],
-						};
+						const v2 pos = V2(
+							node->pixel_position.x,
+							node->pixel_position.y + node->pixel_size.y);
 						ds_CursorSetRectangle(win, pos, node->pixel_size);
 						led_InputHandler(led, node);
 					}
@@ -570,7 +648,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 					const struct c_Shape *shape;
 					ui_list(&led->cs_list, "###%p", &led->cs_list)
-					for (i32 i = led->cs_db.allocated_list.first; i != DLL_SENTINEL; i = shape->strdb_allocated.next)
+					for (i32 i = led->cs_shape_list.first; i != DLL_SENTINEL; i = shape->led_shape_node.next)
 					{
 						shape = led->cs_db.pool.buf + i;
 						struct slot entry = ui_ListEntryAllocF(&led->cs_list, "###%p_%u", &led->cs_list, i);
@@ -624,7 +702,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, "radius: ###sph_rad");
 
 									ui_Width(ui_SizePerc(1.0f))
-									shape->sphere.radius = ui_FieldF32F(shape->sphere.radius, intv_inline(0.0125f, 100.0f), "%f###sph_rad_in", shape->sphere.radius);
+									shape->sphere.radius = ui_FieldF32F(shape->sphere.radius, Intv(0.0125f, 100.0f), "%f###sph_rad_in", shape->sphere.radius);
 								}
 
 							} break;
@@ -643,14 +721,14 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_Width(ui_SizePixel(64.0f, 1.0f))
 									ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, "height: ###cap_height");
 									ui_Width(ui_SizePerc(1.0f))
-									shape->capsule.half_height = ui_FieldF32F(shape->capsule.half_height, intv_inline(0.0125f, 100.0f), "%f###cap_height_in", shape->capsule.half_height);
+									shape->capsule.half_height = ui_FieldF32F(shape->capsule.half_height, Intv(0.0125f, 100.0f), "%f###cap_height_in", shape->capsule.half_height);
 									//ui_ChildLayoutAxis(AXIS_2_Y)
 									//ui_Height(ui_SizePerc(1.0f))
 									//ui_Width(ui_SizePerc(1.0f))
 									//ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
 									//{
-									//	shape->capsule.radius = ui_FieldF32F(shape->capsule.radius, intv_inline(0.0125f, 100.0f), "%f###cap_rad", shape->capsule.radius);
-									//	shape->capsule.half_height = ui_FieldF32F(shape->capsule.half_height, intv_inline(0.0125f, 100.0f), "%f###cap_height", shape->capsule.half_height);
+									//	shape->capsule.radius = ui_FieldF32F(shape->capsule.radius, Intv(0.0125f, 100.0f), "%f###cap_rad", shape->capsule.radius);
+									//	shape->capsule.half_height = ui_FieldF32F(shape->capsule.half_height, Intv(0.0125f, 100.0f), "%f###cap_height", shape->capsule.half_height);
 
 									//}
 								}
@@ -662,7 +740,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									ui_Width(ui_SizePixel(64.0f, 1.0f))
 									ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW, "radius: ###cap_rad");
 									ui_Width(ui_SizePerc(1.0f))
-									shape->capsule.radius = ui_FieldF32F(shape->capsule.radius, intv_inline(0.0125f, 100.0f), "%f###cap_rad_in", shape->capsule.radius);
+									shape->capsule.radius = ui_FieldF32F(shape->capsule.radius, Intv(0.0125f, 100.0f), "%f###cap_rad_in", shape->capsule.radius);
 								}
 
 							} break;
@@ -762,7 +840,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 				//				//ui_Flags(UI_DRAW_BORDER)
 				//				//ui_Width(ui_SizePixel(110.0f, 1.0f))
-				//				//prefab->density = ui_FieldF32F(prefab->density, intv_inline(0.00125f, 1000000.0f), "%f###s_density", prefab->density);
+				//				//prefab->density = ui_FieldF32F(prefab->density, Intv(0.00125f, 1000000.0f), "%f###s_density", prefab->density);
 				//			}
 				//			
 				//			ui_Pad();
@@ -776,7 +854,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 				//				//ui_Flags(UI_DRAW_BORDER)
 				//				//ui_Width(ui_SizePixel(110.0f, 1.0f))
-				//				//prefab->restitution = ui_FieldF32F(prefab->restitution, intv_inline(0.0f, 1.0f), "%f###s_restitution", prefab->restitution);
+				//				//prefab->restitution = ui_FieldF32F(prefab->restitution, Intv(0.0f, 1.0f), "%f###s_restitution", prefab->restitution);
 				//			}
 				//			
 				//			ui_Pad();
@@ -790,7 +868,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 				//				//ui_Flags(UI_DRAW_BORDER)
 				//				//ui_Width(ui_SizePixel(110.0f, 1.0f))
-				//				//prefab->friction = ui_FieldF32F(prefab->friction, intv_inline(0.0f, 1.0f), "%f###s_friction", prefab->friction);
+				//				//prefab->friction = ui_FieldF32F(prefab->friction, Intv(0.0f, 1.0f), "%f###s_friction", prefab->friction);
 				//			}
 				//			
 				//			ui_Pad();
@@ -804,7 +882,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 				//				ui_Flags(UI_DRAW_BORDER)
 				//				ui_Width(ui_SizePixel(110.0f, 1.0f))
-				//				prefab->dynamic = (u32) ui_FieldU64F(prefab->dynamic, intvu64_inline(0, 1), "%u###s_dynamic", prefab->dynamic);
+				//				prefab->dynamic = (u32) ui_FieldU64F(prefab->dynamic, Intvu64(0, 1), "%u###s_dynamic", prefab->dynamic);
 				//			}
 
 				//			ui_Pad();
@@ -900,12 +978,12 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 							if (led->draw_dbvh)
 							{
-								Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
+								node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 							}
 
 							if (node->inter & UI_INTER_HOVER)
 							{
-								Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
+								node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
 							}
 						}
 
@@ -923,12 +1001,12 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 							if (led->draw_sbvh)
 							{
-								Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
+								node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 							}
 
 							if (node->inter & UI_INTER_HOVER)
 							{
-								Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
+								node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
 							}
 						}
 
@@ -946,58 +1024,12 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 
 							if (led->draw_bounding_box)
 							{
-								Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
+								node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 							}
 
 							if (node->inter & UI_INTER_HOVER)
 							{
-								Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
-							}
-						}
-
-						ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
-						{
-							ui_Pad();
-							ui_Width(ui_SizePixel(24.0f, 1.0f))
-							node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_3").address;
-							ui_Pad();
-							ui_NodeAllocF(UI_DRAW_TEXT, "draw collision manifolds");
-							if (node->inter & UI_INTER_LEFT_CLICK)
-							{
-								led->draw_manifold = !led->draw_manifold;
-							}
-
-							if (led->draw_manifold)
-							{
-								Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
-							}
-
-							if (node->inter & UI_INTER_HOVER)
-							{
-								Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
-							}
-						}
-
-						ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
-						{
-							ui_Pad();
-							ui_Width(ui_SizePixel(24.0f, 1.0f))
-							node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_4").address;
-							ui_Pad();
-							ui_NodeAllocF(UI_DRAW_TEXT, "draw debug lines");
-							if (node->inter & UI_INTER_LEFT_CLICK)
-							{
-								led->draw_lines = !led->draw_lines;
-							}
-
-							if (led->draw_lines)
-							{
-								Vec4Set(node->background_color, 0.9f, 0.9f, 0.9f, 1.0f);
-							}
-
-							if (node->inter & UI_INTER_HOVER)
-							{
-								Vec4Set(node->background_color, 0.3f, 0.3f, 0.4f, 1.0f);
+								node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
 							}
 						}
 					}
@@ -1071,9 +1103,9 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 					//				
 					//				vec3 p;
 					//				Vec3Copy(p, node->position);
-					//				node->position[0] = ui_FieldF32F(node->position[0], intv_inline(-1000000.0f, 1000000.0f), "%f###field_x_%u", node->position[0], i);
-					//				node->position[1] = ui_FieldF32F(node->position[1], intv_inline(-1000000.0f, 1000000.0f), "%f###field_y_%u", node->position[1], i);
-					//				node->position[2] = ui_FieldF32F(node->position[2], intv_inline(-1000000.0f, 1000000.0f), "%f###field_z_%u", node->position[2], i);
+					//				node->position[0] = ui_FieldF32F(node->position[0], Intv(-1000000.0f, 1000000.0f), "%f###field_x_%u", node->position[0], i);
+					//				node->position[1] = ui_FieldF32F(node->position[1], Intv(-1000000.0f, 1000000.0f), "%f###field_y_%u", node->position[1], i);
+					//				node->position[2] = ui_FieldF32F(node->position[2], Intv(-1000000.0f, 1000000.0f), "%f###field_z_%u", node->position[2], i);
 
 					//				if (p[0] != node->position[0] || p[1] != node->position[1] || p[2] != node->position[2])
 					//				{
@@ -1113,16 +1145,16 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 	ui_FrameEnd();
 
 	struct ui_Node *node = ui_NodeLookup(&led->viewport_id).address;
-	led->viewport_position[0] = node->pixel_position[0];
-	led->viewport_position[1] = node->pixel_position[1];
-	led->viewport_size[0] = node->pixel_size[0];
-	led->viewport_size[1] = node->pixel_size[1];
+	led->viewport_position.x = node->pixel_position.x;
+	led->viewport_position.y = node->pixel_position.y;
+	led->viewport_size.x = node->pixel_size.x;
+	led->viewport_size.y = node->pixel_size.y;
 
 	const f32 delta = (f32) led->ns_delta / NSEC_PER_SEC;
-	led->cam.position[0] += delta * (led->cam_left_velocity * led->cam.left[0] + led->cam_forward_velocity * led->cam.forward[0]);
-	led->cam.position[1] += delta * (led->cam_left_velocity * led->cam.left[1] + led->cam_forward_velocity * led->cam.forward[1]);
-	led->cam.position[2] += delta * (led->cam_left_velocity * led->cam.left[2] + led->cam_forward_velocity * led->cam.forward[2]);
-	led->cam.aspect_ratio =  (f32) led->viewport_size[0] / led->viewport_size[1];
+	led->cam.position.x += delta * (led->cam_left_velocity * led->cam.left.x + led->cam_forward_velocity * led->cam.forward.x);
+	led->cam.position.y += delta * (led->cam_left_velocity * led->cam.left.y + led->cam_forward_velocity * led->cam.forward.y);
+	led->cam.position.z += delta * (led->cam_left_velocity * led->cam.left.z + led->cam_forward_velocity * led->cam.forward.z);
+	led->cam.aspect_ratio =  (f32) led->viewport_size.x / led->viewport_size.y;
 
 	led->cam_left_velocity = 0.0f;
 	led->cam_forward_velocity = 0.0f;
@@ -1139,16 +1171,16 @@ void led_UiMain(struct led *led)
 {
 	ProfZone;
 
-	const vec4 bg = { 0.0625f, 0.0625f, 0.0625f, 1.0f };
-	const vec4 br = { 0.0f, 0.15f, 0.25f, 1.0f };
-	const vec4 gr[BOX_CORNER_COUNT] = 
+	const v4 bg = V4(0.0625f, 0.0625f, 0.0625f, 1.0f);
+	const v4 br = V4(0.0f, 0.15f, 0.25f, 1.0f);
+	const v4 gr[BOX_CORNER_COUNT] = 
 	{
-		{0.0f, 0.15f, 0.8f, 0.8f },
-		{0.0f, 0.7f, 0.25f, 0.8f },
-		{0.0f, 0.7f, 0.25f, 0.8f },
-		{0.0f, 0.15f, 0.8f, 0.8f },
+		V4(0.0f, 0.15f, 0.8f, 0.8f),
+		V4(0.0f, 0.7f, 0.25f, 0.8f),
+		V4(0.0f, 0.7f, 0.25f, 0.8f),
+		V4(0.0f, 0.15f, 0.8f, 0.8f),
 	};
-	const vec4 sp = { 0.9f, 0.9f, 0.9f, 1.0f };
+	const v4 sp = V4(0.9f, 0.9f, 0.9f, 1.0f);
 
 	const f32 pad = 8.0f;
 	const f32 edge_softness = 0.0f;
