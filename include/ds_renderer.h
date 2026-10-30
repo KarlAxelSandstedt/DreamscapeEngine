@@ -33,7 +33,7 @@ extern "C" {
 /*
 ds_renderer.h
 =============
-The renderer: meshes, debug primitives (world-space segments, points, wire shapes and strings pushed per frame),
+The renderer: meshes, debug primitives (world-space segments, points and wire shapes pushed per frame),
 the camera, proxies (3d objects drawn with motion speculated between physics ticks), a
 scene of draw commands per window and the GL state. Implemented in src/renderer, one section per file below;
 the window and GL context are ds_graphics.h's, the GL loader ds_gl.h's.
@@ -151,21 +151,12 @@ struct r_TransformWorld
     f32                 axis_length;
 };
 
-/* drawn at p's window position */
-struct r_StringWorld
-{
-    v3f64   p;
-    v4      color;
-    char    text[24];
-};
-
 DEFINE_CPOOL_STRUCT(r_SegmentWorld);
 DEFINE_CPOOL_STRUCT(r_PointWorld);
 DEFINE_CPOOL_STRUCT(r_SphereWorld);
 DEFINE_CPOOL_STRUCT(r_CapsuleWorld);
 DEFINE_CPOOL_STRUCT(r_BoxWorld);
 DEFINE_CPOOL_STRUCT(r_TransformWorld);
-DEFINE_CPOOL_STRUCT(r_StringWorld);
 
 /* one pool per primitive; written by one thread at a time */
 struct r_PrimitiveWorldBuffer
@@ -176,7 +167,6 @@ struct r_PrimitiveWorldBuffer
     ds_CPool(r_CapsuleWorld)    capsule;
     ds_CPool(r_BoxWorld)        box;
     ds_CPool(r_TransformWorld)  transform;
-    ds_CPool(r_StringWorld)     string;
 };
 
 /* every pool as ds_CPoolAlloc(mem, pool, length, growable); fatal on failure */

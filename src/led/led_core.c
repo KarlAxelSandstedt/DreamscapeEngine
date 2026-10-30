@@ -1384,6 +1384,114 @@ void led_JointSetup(struct led *led)
     }
 }
 
+enum led_MeshKind
+{
+    LED_MESH_WAVES,     /* a rolling field */
+    LED_MESH_BOWL,      /* a paraboloid, 5 m deep at the rim */
+    LED_MESH_STEPS      /* 2.5 m treads, 0.5 m risers, climbing along x */
+};
+
+/* a heightfield of n x n vertices over width x width metres, centred on the origin, y = f(x, z) by kind */
+static struct triMesh TriMeshHeightfield(struct arena *mem, const u32 n, const f32 width, const enum led_MeshKind kind)
+{
+	struct triMesh mesh = { .v_count = n*n, .tri_count = 2*(n-1)*(n-1) };
+	mesh.v = ArenaPush(mem, mesh.v_count*sizeof(v3));
+	mesh.tri = ArenaPush(mem, mesh.tri_count*sizeof(v3u32));
+	ds_Assert(mesh.v && mesh.tri);
+
+	const f32 unit = width / (f32) (n - 1);
+	for (u32 x = 0; x < n; ++x)
+	{
+		for (u32 z = 0; z < n; ++z)
+		{
+			const f32 px = -0.5f * width + x*unit;
+			const f32 pz = -0.5f * width + z*unit;
+			f32 py = 0.0f;
+			switch (kind)
+			{
+				case LED_MESH_WAVES: { py = 0.6f * F32Sin(0.8f * px) * F32Cos(0.8f * pz); } break;
+				case LED_MESH_BOWL:  { py = 0.05f * (px*px + pz*pz); } break;
+				case LED_MESH_STEPS: { py = 0.5f * (f32) (u32) ((px + 0.5f * width) / 2.5f); } break;
+			}
+			mesh.v[x*n + z] = V3(px, py, pz);
+		}
+	}
+
+	/* CCW about +y, as TriMeshPerlinNoise */
+	for (u32 x = 0; x < n-1; ++x)
+	{
+		for (u32 z = 0; z < n-1; ++z)
+		{
+			mesh.tri[2*(x*(n-1) + z) + 0] = V3U32(x*n + z, x*n + z+1, (x+1)*n + z);
+			mesh.tri[2*(x*(n-1) + z) + 1] = V3U32((x+1)*n + z, x*n + z+1, (x+1)*n + z+1);
+		}
+	}
+	return mesh;
+}
+
+/* a tri mesh collision shape from a heightfield, its BVH built with 8 bins */
+static void led_MeshSceneShapeAdd(struct led *led, const char *id, const enum led_MeshKind kind)
+{
+	struct ds_Window *sys_win = ds_WindowAddress(g_editor->window);
+	struct triMesh *mesh = ArenaPush(&led->mem_persistent, sizeof(struct triMesh));
+	*mesh = TriMeshHeightfield(&led->mem_persistent, 32, 20.0f, kind);
+	struct triMeshBVH *mesh_bvh = ArenaPush(&led->mem_persistent, sizeof(struct triMeshBVH));
+	*mesh_bvh = TriMeshBVHConstruct(&led->mem_persistent, mesh, 8);
+	led_CollisionTriMeshBVHAdd(led, Utf8Cstr(sys_win->ui->mem_frame, id), mesh_bvh);
+}
+
+/* tri mesh shapes: three heightfields side by side with boxes and spheres dropped on them */
+void led_MeshSetup(struct led *led)
+{
+    ds_CPoolFlush(led->joint_pool);
+	struct ds_Window *sys_win = ds_WindowAddress(g_editor->window);
+
+	const f32 alpha = 0.6f;
+	const v4 static_color = V4(0.8f, 0.6f, 0.6f, alpha);
+	const v4 dynamic_color = V4(154.0f/256.0f, 101.0f/256.0f, 182.0f/256.0f, alpha);
+
+    led_CollisionBoxAdd(led, Utf8Cstr(sys_win->ui->mem_frame, "c_box"), V3(0.5f, 0.5f, 0.5f));
+    led_CollisionSphereAdd(led, Utf8Cstr(sys_win->ui->mem_frame, "c_sphere"), 0.5f);
+	led_MeshSceneShapeAdd(led, "c_waves", LED_MESH_WAVES);
+	led_MeshSceneShapeAdd(led, "c_bowl", LED_MESH_BOWL);
+	led_MeshSceneShapeAdd(led, "c_steps", LED_MESH_STEPS);
+
+    const u32 rb_static = 0;
+    const u32 rb_dynamic = 1;
+    const char *shape[5] = { "box", "sphere", "waves", "bowl", "steps" };
+    const u32 dynamic[5] = { rb_dynamic, rb_dynamic, rb_static, rb_static, rb_static };
+    const ds_Transform identity = ds_TransformIdentity();
+    for (u32 i = 0; i < 5; ++i)
+    {
+        const utf8 c = Utf8Format(sys_win->ui->mem_frame, "c_%s", shape[i]);
+        const utf8 rm = Utf8Format(sys_win->ui->mem_frame, "rm_%s", shape[i]);
+        const utf8 sp = Utf8Format(sys_win->ui->mem_frame, "s_%s", shape[i]);
+        const utf8 rb = Utf8Format(sys_win->ui->mem_frame, "rb_%s", shape[i]);
+        const utf8 l = Utf8Format(sys_win->ui->mem_frame, "l_s_%s", shape[i]);
+        led_RigidBodyPrefabAdd(led, rb, dynamic[i]);
+        led_RenderMeshAdd(led, rm, c);
+        led_ShapePrefabAdd(led, sp, c, 1.0f, 0.0f, 0.5f, 0.5f);
+        led_ShapePrefabAttachRenderMesh(led, sp, rm);
+        led_RigidBodyPrefabAttachShape(led, rb, sp, l, &identity);
+    }
+
+    const f32 mesh_x[3] = { -25.0f, 0.0f, 25.0f };
+    const char *mesh_rb[3] = { "rb_waves", "rb_bowl", "rb_steps" };
+    for (u32 m = 0; m < 3; ++m)
+    {
+        led_JointSceneNodeAdd(led, "mesh", m, V3(mesh_x[m], 0.0f, 0.0f), Utf8Cstr(sys_win->ui->mem_frame, mesh_rb[m]), static_color);
+        for (u32 i = 0; i < 4; ++i)
+        {
+            for (u32 j = 0; j < 4; ++j)
+            {
+                const v3 position = V3(mesh_x[m] - 6.0f + 4.0f * i, 8.0f + 1.5f * (f32) ((i + j) & 1), -6.0f + 4.0f * j);
+                const char *rb = ((i + j) & 1) ? "rb_sphere" : "rb_box";
+                led_JointSceneNodeAdd(led, "drop", m*16 + i*4 + j, position, Utf8Cstr(sys_win->ui->mem_frame, rb), dynamic_color);
+            }
+        }
+    }
+}
+
 void led_WallSmashSimulationSetup(struct led *led)
 {
 	struct ds_Window *sys_win = ds_WindowAddress(g_editor->window);
@@ -2456,7 +2564,8 @@ void led_Core(struct led *led)
 		/* the determinism run's scene: every body sleeps, the run ends */
 		led_WallSmashSimulationSetup(led);
 #else
-		led_JointSetup(led);
+		led_MeshSetup(led);
+		//led_JointSetup(led);
 		//led_WallSmashSimulationSetup(led);
 		//led_RopeSetup(led);
 #endif
