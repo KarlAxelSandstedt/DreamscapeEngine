@@ -31,6 +31,7 @@ extern "C" {
 #include "ds_hash_map.h"
 #include "ds_bitset.h"
 #include "ds_job.h"
+#include "ds_renderer.h"
 
 //TODO 
 struct ds_Dynamics;
@@ -202,10 +203,38 @@ struct ds_Align(DS_CACHE_LINE) ds_DynamicsWorker
     struct arena *              frame;
     
     struct ds_DynamicsMetrics   metrics;
+    struct r_PrimitiveWorldBuffer draw;         /* debug drawing: what temporary debugging code inside jobs pushes */
 };
 
 /* indexed by workers using their thread indices (ds_ThreadSelfIndex()) */
 extern struct ds_DynamicsWorker *g_dynamics_worker;
+
+
+/*
+ds_DynamicsDrawConfig
+=====================
+Debug drawing configuration (per-pipeline).
+*/
+
+struct ds_DynamicsDrawConfig
+{
+    u32     draw_contact_points;
+    u32     draw_contact_normals;
+    u32     draw_contact_forces;
+    u32     draw_joints;
+    u32     draw_mass_centers;
+
+    f32     force_scale;            /* metres per newton */
+    f32     point_size;
+    f32     axis_length;
+    u32     circle_segments;        /* segments per circle of a wire sphere or capsule */
+
+    v4      color_contact_point;
+    v4      color_contact_normal;
+    v4      color_contact_force;
+    v4      color_joint;
+    v4      color_mass_center;
+};
 
 
 /*
@@ -1896,6 +1925,8 @@ struct ds_Dynamics
 
     struct ds_DynamicsMetrics       metrics;
     struct ds_DynamicsWorker *      worker;
+    struct r_PrimitiveWorldBuffer   draw;                   /* debug drawing: what the serial phases push */
+    struct ds_DynamicsDrawConfig    draw_config;
     u32                             worker_count;
 
 

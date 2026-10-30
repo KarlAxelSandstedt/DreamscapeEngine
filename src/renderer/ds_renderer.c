@@ -1,5 +1,6 @@
 #include "r_init.c"
 #include "r_main.c"
+#include "r_primitive.c"
 #include "r_mesh.c"
 #include "r_camera.c"
 #include "r_proxy3d.c"

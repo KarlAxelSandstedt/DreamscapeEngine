@@ -33,7 +33,8 @@ extern "C" {
 /*
 ds_renderer.h
 =============
-The renderer: meshes, the camera, proxies (3d objects drawn with motion speculated between physics ticks), a
+The renderer: meshes, debug primitives (world-space segments, points, wire shapes and strings pushed per frame),
+the camera, proxies (3d objects drawn with motion speculated between physics ticks), a
 scene of draw commands per window and the GL state. Implemented in src/renderer, one section per file below;
 the window and GL context are ds_graphics.h's, the GL loader ds_gl.h's.
 
@@ -98,6 +99,103 @@ struct led;
  * its UI; the root window also the editor's 3d scene) and leaves the root window's GL context current.
  */
 void 	r_EditorMain(const struct led *led);
+
+/********************************************************
+ *			r_primitive.c			*
+ ********************************************************/
+
+/*
+ * Debug primitives in world space (f64 positions, as ds_TransformWorld): what the physics, the editor and the
+ * game push to draw for a frame. The renderer draws a buffer of them as lines and points relative to the
+ * camera. The wire shapes are tessellated by the renderer, so a shape is one record.
+ */
+struct r_SegmentWorld
+{
+    v3f64   p0;
+    v3f64   p1;
+    v4      color;
+};
+
+struct r_PointWorld
+{
+    v3f64   p;
+    f32     size;
+    v4      color;
+};
+
+/* wire */
+struct r_SphereWorld
+{
+    v3f64   center;
+    f32     radius;
+    v4      color;
+};
+
+/* wire; p0, p1 the axis' ends */
+struct r_CapsuleWorld
+{
+    v3f64   p0;
+    v3f64   p1;
+    f32     radius;
+    v4      color;
+};
+
+/* wire; half widths about t */
+struct r_BoxWorld
+{
+    ds_TransformWorld   t;
+    v3                  hw;
+    v4                  color;
+};
+
+/* 3 axis segments of axis_length: x red, y green, z blue */
+struct r_TransformWorld
+{
+    ds_TransformWorld   t;
+    f32                 axis_length;
+};
+
+/* text at p's window position; NUL-terminated, truncated to fit */
+struct r_StringWorld
+{
+    v3f64   p;
+    v4      color;
+    char    text[24];
+};
+
+DEFINE_CPOOL_STRUCT(r_SegmentWorld);
+DEFINE_CPOOL_STRUCT(r_PointWorld);
+DEFINE_CPOOL_STRUCT(r_SphereWorld);
+DEFINE_CPOOL_STRUCT(r_CapsuleWorld);
+DEFINE_CPOOL_STRUCT(r_BoxWorld);
+DEFINE_CPOOL_STRUCT(r_TransformWorld);
+DEFINE_CPOOL_STRUCT(r_StringWorld);
+
+/*
+ * a buffer of primitives, one pool per kind (heap, growable, allocated with length 0 so a pool stays empty until
+ * its first push): the pushes append, a flush empties the pools and keeps their memory. Written by one thread at
+ * a time.
+ */
+struct r_PrimitiveWorldBuffer
+{
+    ds_CPool(r_SegmentWorld)    segment;
+    ds_CPool(r_PointWorld)      point;
+    ds_CPool(r_SphereWorld)     sphere;
+    ds_CPool(r_CapsuleWorld)    capsule;
+    ds_CPool(r_BoxWorld)        box;
+    ds_CPool(r_TransformWorld)  transform;
+    ds_CPool(r_StringWorld)     string;
+};
+
+/*
+ * allocate every pool with length slots in mem (fixed) or on the heap (mem == NULL; growable allowed), as
+ * ds_CPoolAlloc does; length 0 is valid, the first push then grows a growable pool. Fatal when a heap pool fails.
+ */
+void    r_PrimitiveWorldBufferAlloc(struct arena *mem, struct r_PrimitiveWorldBuffer *buffer, const u32 length, const u32 growable);
+/* free the heap pools (arena memory stays with the arena); the buffer becomes empty */
+void    r_PrimitiveWorldBufferFree(struct r_PrimitiveWorldBuffer *buffer);
+/* empty every pool of the buffer; their memory stays */
+void    r_PrimitiveWorldBufferFlush(struct r_PrimitiveWorldBuffer *buffer);
 
 /********************************************************
  *			r_camera.c			*

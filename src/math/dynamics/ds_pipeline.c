@@ -90,7 +90,21 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
     {
         pipeline->worker[i].frame_arr[0] = ArenaAlloc(NULL, worker_frame_size);
         pipeline->worker[i].frame_arr[1] = ArenaAlloc(NULL, worker_frame_size);
+        r_PrimitiveWorldBufferAlloc(NULL, &pipeline->worker[i].draw, 0, GROWABLE);
     }
+    r_PrimitiveWorldBufferAlloc(NULL, &pipeline->draw, 0, GROWABLE);
+    pipeline->draw_config = (struct ds_DynamicsDrawConfig)
+    {
+        .force_scale = 0.01f,
+        .point_size = 0.05f,
+        .axis_length = 0.25f,
+        .circle_segments = 16,
+        .color_contact_point = V4(1.0f, 0.0f, 0.0f, 1.0f),
+        .color_contact_normal = V4(1.0f, 1.0f, 0.0f, 1.0f),
+        .color_contact_force = V4(1.0f, 0.5f, 0.0f, 1.0f),
+        .color_joint = V4(0.0f, 1.0f, 1.0f, 1.0f),
+        .color_mass_center = V4(1.0f, 1.0f, 1.0f, 1.0f),
+    };
 
     pipeline->profile_length = 8192;
     pipeline->profile_next = pipeline->profile_length;
@@ -166,7 +180,9 @@ void ds_DynamicsFree(struct ds_Dynamics *pipeline)
     {
         ArenaFree(pipeline->worker[i].frame_arr + 0);
         ArenaFree(pipeline->worker[i].frame_arr + 1);
+        r_PrimitiveWorldBufferFree(&pipeline->worker[i].draw);
     }
+    r_PrimitiveWorldBufferFree(&pipeline->draw);
 
     ds_BitSetDealloc(&pipeline->shape_dynamic_usage_set);
     ds_BitSetDealloc(&pipeline->shape_dirty_set);
@@ -1805,6 +1821,11 @@ void ds_DynamicsTick(struct ds_Dynamics *pipeline)
 
     ds_DynamicsSetGlobals(pipeline);
     ds_NumericsConfigPush(&pipeline->numerics_config);
+    for (u32 i = 0; i < pipeline->worker_count; ++i)
+    {
+        r_PrimitiveWorldBufferFlush(&pipeline->worker[i].draw);
+    }
+    r_PrimitiveWorldBufferFlush(&pipeline->draw);
 
 	if (pipeline->frames_completed)
 	{
