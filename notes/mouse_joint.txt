@@ -1,14 +1,3 @@
-TODO:
-    (O) Skeleton
-    (O) docs
-    (O) Prefab
-    (O) Add
-    () notes
-    () Init
-    () Warmup
-    () Iterate
-    () notes soft constraints
-
 Constraint
 ----------
 
