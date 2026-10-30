@@ -2501,9 +2501,14 @@ void led_Core(struct led *led)
 	if (once && sys_win)
 	{
 		once = 0;
+#ifdef DS_TEST_DETERMINISM
+		/* the determinism run's scene: every body sleeps, the run ends */
+		led_WallSmashSimulationSetup(led);
+#else
 		led_JointSetup(led);
 		//led_WallSmashSimulationSetup(led);
 		//led_RopeSetup(led);
+#endif
         /* the camera starts at the same place relative to the scene */
         led->cam.position = V3F64Add(led->scene_origin, led->cam.position);
         led_Refresh(led);

@@ -299,6 +299,8 @@ endif ()
 if (DS_TEST_DETERMINISM)
 	set(DS_TEST ON)
 	set(DS_TEST_MODULE_PATH "${DS_TEST_PATH}/determinism")
+	# the editor selects the determinism scene
+	target_compile_definitions(DreamscapeDefine INTERFACE DS_TEST_DETERMINISM)
 endif ()
 
 
