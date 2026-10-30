@@ -224,7 +224,7 @@ enum ds_DrawColorMode
     DRAW_COLOR_ISLAND,              /* hue hashed from the island id */
     DRAW_COLOR_SLEEP,               /* green awake, red sleeping */
     DRAW_COLOR_BODY_TYPE,           /* kinematic blue, dynamic white */
-    DRAW_COLOR_VELOCITY,            /* blue to red by speed */
+    DRAW_COLOR_VELOCITY,            /* blue to red by linear kinetic energy, energy_max red */
     DRAW_COLOR_TOUCHING,            /* lit while in contact */
     DRAW_COLOR_MODE_COUNT
 };
@@ -243,6 +243,7 @@ struct ds_DynamicsDrawConfig
     f32     point_size;
     f32     axis_length;
     u32     refinement;             /* sphere and capsule meshes (r_MeshShape); read when a mesh is built */
+    f32     energy_max;             /* DRAW_COLOR_VELOCITY: the linear kinetic energy (J) drawn fully red */
 
     v4      color_shape;
     v4      color_contact_point;

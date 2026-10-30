@@ -95,6 +95,9 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
     r_PrimitiveWorldBufferAlloc(NULL, &pipeline->draw, 0, GROWABLE);
     pipeline->draw_config = (struct ds_DynamicsDrawConfig)
     {
+        .draw_shapes = 1,
+        .shape_color_mode = DRAW_COLOR_RANDOM,
+        .energy_max = 50.0f,
         .force_scale = 0.01f,
         .point_size = 0.05f,
         .axis_length = 0.25f,

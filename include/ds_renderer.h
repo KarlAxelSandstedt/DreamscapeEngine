@@ -293,6 +293,8 @@ u64 	r_CommandKey(const u64 screen, const u64 depth, const u64 transparency, con
 void 	r_CommandKeyPrint(const u64 key);
 /* the material field: a program (PROGRAM_*, r_local.h), a mesh database index (MESH_NONE when the instance brings its own) and a texture; program and texture must fit their bits (asserted) */
 u64 	r_MaterialConstruct(const u64 program, const u64 mesh, const u64 texture);
+/* the material of a raw instanced mesh (R_INSTANCE_RAW3D): equal batch numbers share one draw; batch must fit the mesh bits (asserted) */
+u64 	r_MaterialConstructRaw(const u64 program, const u64 batch, const u64 texture);
 
 #define	R_CMD_SCREEN_LAYER_BITS		1
 #define	R_CMD_DEPTH_BITS		23
@@ -351,23 +353,29 @@ u64 	r_MaterialConstruct(const u64 program, const u64 mesh, const u64 texture);
 #define MATERIAL_PROGRAM_BITS		2
 #define MATERIAL_MESH_BITS		10
 #define MATERIAL_TEXTURE_BITS		3
-#define MATERIAL_UNUSED_BITS 		(R_CMD_MATERIAL_BITS - MATERIAL_PROGRAM_BITS - MATERIAL_TEXTURE_BITS - MATERIAL_MESH_BITS)
+#define MATERIAL_SOURCE_BITS		1
+#define MATERIAL_UNUSED_BITS 		(R_CMD_MATERIAL_BITS - MATERIAL_PROGRAM_BITS - MATERIAL_TEXTURE_BITS - MATERIAL_MESH_BITS - MATERIAL_SOURCE_BITS)
+#define MATERIAL_SOURCE_DB		((u64) 0)	/* the mesh field is a mesh database index */
+#define MATERIAL_SOURCE_RAW		((u64) 1)	/* the mesh field is a batch number of raw meshes (R_INSTANCE_RAW3D) */
 #define MESH_NONE			0
 #define MESH_STUB			0
 
 #define MATERIAL_TEXTURE_LOW_BIT	0
 #define MATERIAL_MESH_LOW_BIT		(MATERIAL_TEXTURE_BITS)
 #define MATERIAL_PROGRAM_LOW_BIT	(MATERIAL_TEXTURE_BITS + MATERIAL_MESH_BITS)
-#define MATERIAL_UNUSED_LOW_BIT		(MATERIAL_TEXTURE_BITS + MATERIAL_PROGRAM_BITS + MATERIAL_MESH_BITS)
+#define MATERIAL_SOURCE_LOW_BIT		(MATERIAL_TEXTURE_BITS + MATERIAL_PROGRAM_BITS + MATERIAL_MESH_BITS)
+#define MATERIAL_UNUSED_LOW_BIT		(MATERIAL_TEXTURE_BITS + MATERIAL_PROGRAM_BITS + MATERIAL_MESH_BITS + MATERIAL_SOURCE_BITS)
 
 #define MATERIAL_PROGRAM_MASK		((((u64) 1 << MATERIAL_PROGRAM_BITS) - (u64) 1) << MATERIAL_PROGRAM_LOW_BIT)
 #define MATERIAL_MESH_MASK		((((u64) 1 << MATERIAL_MESH_BITS) - (u64) 1) << MATERIAL_MESH_LOW_BIT)
 #define MATERIAL_TEXTURE_MASK		((((u64) 1 << MATERIAL_TEXTURE_BITS) - (u64) 1) << MATERIAL_TEXTURE_LOW_BIT)
+#define MATERIAL_SOURCE_MASK		((((u64) 1 << MATERIAL_SOURCE_BITS) - (u64) 1) << MATERIAL_SOURCE_LOW_BIT)
 #define MATERIAL_UNUSED_MASK		((((u64) 1 << MATERIAL_UNUSED_BITS) - (u64) 1) << MATERIAL_UNUSED_LOW_BIT)
 
 #define MATERIAL_PROGRAM_GET(material)	((material & MATERIAL_PROGRAM_MASK) >> MATERIAL_PROGRAM_LOW_BIT)
 #define MATERIAL_MESH_GET(material)	((material & MATERIAL_MESH_MASK) >> MATERIAL_MESH_LOW_BIT)
 #define MATERIAL_TEXTURE_GET(material)	((material & MATERIAL_TEXTURE_MASK) >> MATERIAL_TEXTURE_LOW_BIT)
+#define MATERIAL_SOURCE_GET(material)	((material & MATERIAL_SOURCE_MASK) >> MATERIAL_SOURCE_LOW_BIT)
 
 /********************************************************
  *			r_proxy3d.c			*
@@ -465,10 +473,21 @@ enum r_instance_type
 	R_INSTANCE_PROXY3D,	/* instance of a proxy3d	*/
 	R_INSTANCE_UI, 		/* instance of a ui bucket	*/
 	R_INSTANCE_MESH,	/* instance of a mesh		*/
+	R_INSTANCE_RAW3D,	/* instance of a raw mesh (r_Raw3d) */
 	R_INSTANCE_COUNT
 };
 
-/* something to draw this frame: its command (on the scene's frame arena) and, by type, the proxy, UI bucket or mesh it draws */
+/* an instanced raw mesh: the proxy program's per-instance data without a proxy; on the scene's frame arena */
+struct r_Raw3d
+{
+	const struct r_Mesh *	mesh;
+	v3f64			position;
+	q			rotation;
+	v4			color;
+	f32			blend;
+};
+
+/* something to draw this frame: its command (on the scene's frame arena) and, by type, the proxy, UI bucket, mesh or raw mesh it draws */
 struct r_Instance
 {
     POOL_NODE;
@@ -483,6 +502,7 @@ struct r_Instance
 		u32		       unit;	
 		struct ui_DrawBucket *ui_bucket;
 		struct r_Mesh	      *mesh;
+		struct r_Raw3d	      *raw3d;
 	};
 };
 DEFINE_POOL(r_Instance);

@@ -55,6 +55,18 @@ const char *body_color_mode_str_buf[RB_COLOR_MODE_COUNT] =
 };
 const char **body_color_mode_str = body_color_mode_str_buf;
 
+const char *shape_color_mode_str_buf[DRAW_COLOR_MODE_COUNT] =
+{
+	"DRAW_COLOR_UNIFORM",
+	"DRAW_COLOR_RANDOM",
+	"DRAW_COLOR_ISLAND",
+	"DRAW_COLOR_SLEEP",
+	"DRAW_COLOR_BODY_TYPE",
+	"DRAW_COLOR_VELOCITY",
+	"DRAW_COLOR_TOUCHING",
+};
+const char **shape_color_mode_str = shape_color_mode_str_buf;
+
 
 struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 {

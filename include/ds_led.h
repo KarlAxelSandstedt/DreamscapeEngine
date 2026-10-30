@@ -207,6 +207,7 @@ struct led
 	struct ui_List 		    cs_list;
 	struct ui_DropdownMenu  cs_mesh_menu;
 	struct ui_DropdownMenu  rb_color_mode_menu;
+	struct ui_DropdownMenu  shape_color_mode_menu;      /* draw_config.shape_color_mode */
 
 	ds_SDB(ds_ShapePrefab)       shape_prefab_db;
     ds_Pool(ds_ShapePrefabInstance) shape_prefab_instance_pool;    
@@ -245,6 +246,7 @@ struct led
 };
 
 extern const char **body_color_mode_str;
+extern const char **shape_color_mode_str;               /* [DRAW_COLOR_MODE_COUNT] */
 
 extern u32	cmd_led_compile;
 extern u32	cmd_led_run;
