@@ -56,6 +56,17 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
         return ds_JointIdNull();
     }
 
+    /* the solvers divide by the dynamic bodies' mass; a dynamic body without shapes has none */
+    const u32 index[2] = { slot_b0.index, slot_b1.index };
+    for (u32 i = 0; i < 2; ++i)
+    {
+        if (dynamic[i] && !(b[i]->mass > 0.0f))
+        {
+            Log(T_PHYSICS, S_WARNING, "joint add rejected: dynamic body %u has no mass (no shapes)", index[i]);
+            return ds_JointIdNull();
+        }
+    }
+
 	struct ds_Island *expand = pipeline->island_pool.buf + expand_index;
     ds_SolverSetWakeUp(pipeline, expand->set);
 
@@ -765,10 +776,10 @@ void ds_MouseJointPrefab(struct ds_MouseJointPrefab *prefab, const v3f64 target,
 void ds_MouseJointPrefabFromBody(struct ds_MouseJointPrefab *prefab, const struct ds_Dynamics *pipeline, const ds_BodyId body, const v3f64 target, const f32 hertz, const f32 damping_ratio, const f32 force_scale, const f32 torque_scale)
 {
     const struct ds_Body *b = ds_BodyLookup(pipeline, body).address;
-    if (!b || !ds_BodyDynamicCheck(b))
+    if (!b || !ds_BodyDynamicCheck(b) || !(b->mass > 0.0f))
     {
-        /* a prefab that pulls with nothing: the joint can still be added, and does nothing */
-        Log(T_PHYSICS, S_WARNING, "mouse joint prefab: body %u missing or not dynamic, the prefab pulls with no force", ds_BodyIdIndex(body));
+        /* a prefab that pulls with nothing; the add refuses such a body anyway */
+        Log(T_PHYSICS, S_WARNING, "mouse joint prefab: body %u missing, not dynamic or without mass, the prefab pulls with no force", ds_BodyIdIndex(body));
         ds_MouseJointPrefab(prefab, target, hertz, damping_ratio, 0.0f, 0.0f);
         return;
     }

@@ -3561,6 +3561,68 @@ static struct test_Output DynamicsSlideWarmTest(struct test_Environment *env)
     return output;
 }
 
+/*
+ * Mass at the source (DynamicsMassRejectTest): a shape whose density is not finite and positive is refused on a
+ * dynamic body and accepted on a static one; a joint on a dynamic body without mass (no shapes) is refused; both
+ * succeed once the body has a shape.
+ */
+static struct test_Output DynamicsMassRejectTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+    struct arena mem = ArenaAlloc(NULL, 16*1024*1024);
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 8, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 8, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 16, NSEC_PER_SEC / 60, 4*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+
+    const utf8 id = Utf8Inline("mass_box");
+    const struct slot slot = ds_SDBAddAlias(cshape_db, id);
+    struct c_Shape *cshape = slot.address;
+    cshape->id = Utf8CopyBuffered(cshape->id_buf, C_SHAPE_ID_SIZE, id);
+    cshape->type = C_SHAPE_CONVEX_HULL;
+    cshape->hull = DcelBox(&mem, V3(0.5f, 0.5f, 0.5f));
+    c_ShapeUpdateMassProperties(cshape);
+
+    const struct ds_BodyPrefab dynamic_prefab = { .dynamic = 1 };
+    const struct ds_BodyPrefab static_prefab = { .dynamic = 0 };
+    const ds_TransformWorld t_dynamic = { .rotation = QIdentity(), .position = V3F64(0.0, 0.0, 0.0) };
+    const ds_TransformWorld t_static = { .rotation = QIdentity(), .position = V3F64(0.0, 3.0, 0.0) };
+    const ds_BodyId dynamic = ds_BodyAdd(&pipeline, &dynamic_prefab, &t_dynamic, 0);
+    const ds_BodyId fixed = ds_BodyAdd(&pipeline, &static_prefab, &t_static, 1);
+    const ds_Transform t_local = ds_TransformIdentity();
+    struct ds_ShapePrefab prefab = { .cshape = slot.index, .density = 0.0f, .restitution = 0.0f, .friction = 0.5f, .margin = 0.5f };
+
+    /* density zero, negative and NaN: refused on the dynamic body; the static body takes any */
+    volatile f32 zero = 0.0f;
+    TEST_NOT_ZERO(ds_ShapeIdNullCheck(ds_ShapeAdd(&pipeline, &prefab, &t_local, dynamic)));
+    prefab.density = -1.0f;
+    TEST_NOT_ZERO(ds_ShapeIdNullCheck(ds_ShapeAdd(&pipeline, &prefab, &t_local, dynamic)));
+    prefab.density = zero / zero;
+    TEST_NOT_ZERO(ds_ShapeIdNullCheck(ds_ShapeAdd(&pipeline, &prefab, &t_local, dynamic)));
+    prefab.density = 0.0f;
+    TEST_NOT_ZERO(!ds_ShapeIdNullCheck(ds_ShapeAdd(&pipeline, &prefab, &t_local, fixed)));
+
+    /* joints on the shapeless dynamic body: refused; with a shape: accepted */
+    struct ds_DistanceJointPrefab distance_prefab;
+    ds_DistanceJointPrefab(&distance_prefab, 1.0f);
+    struct ds_MouseJointPrefab mouse_prefab;
+    ds_MouseJointPrefab(&mouse_prefab, V3F64(0.0, 1.0, 0.0), 2.0f, 1.0f, 10.0f, 1.0f);
+    TEST_NOT_ZERO(ds_JointIdNullCheck(ds_DistanceJointAdd(&pipeline, &distance_prefab, dynamic, &t_local, fixed, &t_local)));
+    TEST_NOT_ZERO(ds_JointIdNullCheck(ds_DistanceJointAdd(&pipeline, &distance_prefab, fixed, &t_local, dynamic, &t_local)));
+    TEST_NOT_ZERO(ds_JointIdNullCheck(ds_MouseJointAdd(&pipeline, &mouse_prefab, dynamic, &t_local)));
+    prefab.density = 1.0f;
+    TEST_NOT_ZERO(!ds_ShapeIdNullCheck(ds_ShapeAdd(&pipeline, &prefab, &t_local, dynamic)));
+    TEST_NOT_ZERO(!ds_JointIdNullCheck(ds_DistanceJointAdd(&pipeline, &distance_prefab, dynamic, &t_local, fixed, &t_local)));
+    TEST_NOT_ZERO(!ds_JointIdNullCheck(ds_MouseJointAdd(&pipeline, &mouse_prefab, dynamic, &t_local)));
+
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
 {
     DynamicsRestingBoxTest,
@@ -3585,6 +3647,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsJointSleepTest,
     DynamicsMouseJointTest,
     DynamicsMouseJointSleepTest,
+    DynamicsMassRejectTest,
     DynamicsSlideTest,
     DynamicsBounceTest,
     DynamicsFirstTickTest,

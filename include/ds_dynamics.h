@@ -371,7 +371,8 @@ DEFINE_POOL(ds_ShapePrefabInstance);
 
 /* 
  * Allocates a shape according to the values set in Prefab and with given local body frame transform. On success, 
- * an identifier to the shape is returned. On failure, the null id is returned. 
+ * an identifier to the shape is returned. On failure (a missing body, or a dynamic body with a density that is
+ * not finite and positive), the null id is returned. 
  */
 ds_ShapeId  ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab *prefab, const ds_Transform *t, const ds_BodyId body);
 /* 
@@ -1038,15 +1039,15 @@ void        ds_RevoluteJointPrefabDefault(struct ds_RevoluteJointPrefab *prefab)
 
 /*
  * Add a distance joint between b0 and b1, anchored at the origins of the given body-local frames. On success,
- * return the joint's id. On failure (a missing body, both anchors on one body, both bodies static), return
- * the null id. The prefab's hertz is clamped to the pipeline's spring_hertz_max. Anchors closer than
+ * return the joint's id. On failure (a missing body, both anchors on one body, both bodies static, a dynamic
+ * body without mass), return the null id. The prefab's hertz is clamped to the pipeline's spring_hertz_max. Anchors closer than
  * linear_slop get +x as the joint's first axis.
  */
 ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_DistanceJointPrefab *prefab, const ds_BodyId b0, const ds_Transform *local_frame0, const ds_BodyId b1, const ds_Transform *local_frame1);
 ds_JointId ds_RevoluteJointAdd(struct ds_Dynamics *pipeline, const struct ds_RevoluteJointPrefab *prefab, const ds_BodyId b0, const ds_Transform *local_frame0, const ds_BodyId b1, const ds_Transform *local_frame1);
 /*
  * Add a mouse joint pulling body at local_frame's origin towards the prefab's target. On success, return the
- * joint's id. On failure (a missing body, body not dynamic), return the null id.
+ * joint's id. On failure (a missing body, body not dynamic or without mass), return the null id.
  */
 ds_JointId ds_MouseJointAdd(struct ds_Dynamics *pipeline, const struct ds_MouseJointPrefab *prefab, const ds_BodyId body, const ds_Transform *local_frame);
 
@@ -1097,7 +1098,8 @@ DEFINE_POOL(ds_Joint);
 
 /* 
  * INTERNAL: Setup a joint between bodies b0 and b1 with anchors defined by the input local_frames. On success, 
- * a valid ds_JointId is returned. On failure, the null id is returned. Canonical slot: a static body becomes
+ * a valid ds_JointId is returned. On failure (a missing body, both ends on one body, both bodies static, a
+ * dynamic body without mass), the null id is returned. Canonical slot: a static body becomes
  * body 1 (its frame with it), whatever the caller's order; joint->body[] and the sim's local_frame[] follow it.
  */
 ds_JointId  ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType type, const u32 collide_connected, const ds_BodyId b0, const ds_Transform *t0, const ds_BodyId b1, const ds_Transform *t1);

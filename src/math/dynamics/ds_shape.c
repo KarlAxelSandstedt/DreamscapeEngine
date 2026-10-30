@@ -32,6 +32,13 @@ ds_ShapeId ds_ShapeAdd(struct ds_Dynamics *pipeline, const struct ds_ShapePrefab
         return ds_ShapeIdNull();
     }
 
+    /* a dynamic body's mass is density times volume, and the solvers divide by it */
+    if (ds_BodyDynamicCheck(body) && !(F32FiniteCheck(prefab->density) && prefab->density > 0.0f))
+    {
+        Log(T_PHYSICS, S_WARNING, "shape add rejected: density %f on dynamic body %u, it must be finite and positive", prefab->density, ds_BodyIdIndex(body_id));
+        return ds_ShapeIdNull();
+    }
+
     ds_ShapeId id = ds_ShapeIdNull();
     const u32 old_max = pipeline->shape_pool.count_max;
     const struct slot shape_slot = ds_PoolAdd(pipeline->shape_pool);
