@@ -176,13 +176,5 @@ void ds_BodyDrawRange(struct ds_Dynamics *pipeline, const u32 low, const u32 hig
             };
             ds_CPoolPushValue(draw->primitive.segment, segment);
         }
-
-        const struct r_SegmentWorld velocity =
-        {
-            .p0 = com,
-            .p1 = V3F64Add(com, V3Promote(V3Scale(bcomp->linear_velocity, config->velocity_scale))),
-            .color = config->color_velocity,
-        };
-        ds_CPoolPushValue(draw->primitive.segment, velocity);
     }
 }

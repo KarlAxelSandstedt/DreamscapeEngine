@@ -107,7 +107,6 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
         .force_scale = 0.05f,
         .point_size = 6.0f,
         .draw_on_top = 1,
-        .velocity_scale = 0.25f,
         .axis_length = 0.25f,
         .refinement = 12,
         .color_dbvh = V4(0.8f, 0.1f, 0.0f, 0.6f),
@@ -154,12 +153,11 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
             V4(0.40f, 0.20f, 1.00f, 1.0f),
         },
         .color_contact_normal = V4(1.0f, 1.0f, 0.0f, 1.0f),
-        .color_contact_force = V4(1.0f, 0.5f, 0.0f, 1.0f),
-        .color_friction_force = V4(0.2f, 0.9f, 1.0f, 1.0f),
-        .color_joint_force = V4(1.0f, 0.3f, 0.9f, 1.0f),
+        .color_contact_force = V4(1.0f, 0.9f, 0.1f, 1.0f),
+        .color_friction_force = V4(0.6f, 1.0f, 1.0f, 1.0f),
+        .color_joint_force = V4(1.0f, 0.6f, 1.0f, 1.0f),
         .color_joint = V4(0.0f, 1.0f, 1.0f, 1.0f),
         .color_mass_center = V4(1.0f, 1.0f, 1.0f, 1.0f),
-        .color_velocity = V4(1.0f, 0.55f, 0.1f, 1.0f),
     };
 
     pipeline->profile_length = 8192;
