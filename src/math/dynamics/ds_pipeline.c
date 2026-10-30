@@ -1555,12 +1555,22 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
     struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     ds_BitSetClear(&pipeline->island_high_energy_set, 0);
     pipeline->island_to_split = ds_IslandIdNull(); 
+
+    /*
+     * Fallback split candidate: a high-energy island with a removed constraint holding a body that has rested
+     * past the threshold. The island may have fallen apart (a cut rope, a box rolled off a pile), and the
+     * resting part can only sleep once the split has made it its own island. The sleepiest body wins.
+     */
+    ds_IslandId fallback_island = ds_IslandIdNull();
+    f32 fallback_low_velocity_time = F32_MIN_NEGATIVE_NORMAL;
     f32 global_max_low_velocity_time = F32_MIN_NEGATIVE_NORMAL;
+
     for (u32 i = 0; i < active->island_pool.count; ++i)
     {
         const u32 isi = active->island_pool.buf[i];
         const struct ds_Island *island = pipeline->island_pool.buf + isi; 
 		f32 min_low_velocity_time = F32_MAX_POSITIVE_NORMAL;
+		f32 max_low_velocity_time = F32_MIN_NEGATIVE_NORMAL;
 
         struct ds_Body *body;
         for (i32 bi = island->body_list.first; bi != DLL_SENTINEL; bi = body->island_body.next)
@@ -1578,18 +1588,32 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
                 body->low_velocity_time = 0.0f;
             }
 			min_low_velocity_time = F32Min(min_low_velocity_time, body->low_velocity_time);
+			max_low_velocity_time = F32Max(max_low_velocity_time, body->low_velocity_time);
         }
 
         /* integrate final solver velocities and update bodies and find lowest low_velocity time */
 	    if (min_low_velocity_time < g_solver_config->sleep_time_threshold)
 	    {
             ds_BitSetSet(&pipeline->island_high_energy_set, i, 1);
+            if (island->constraint_remove_count
+                    && max_low_velocity_time >= g_solver_config->sleep_time_threshold
+                    && fallback_low_velocity_time < max_low_velocity_time)
+            {
+                fallback_low_velocity_time = max_low_velocity_time;
+                fallback_island = island->id;
+            }
 	    }
         else if (global_max_low_velocity_time < min_low_velocity_time && island->constraint_remove_count)
         {
             global_max_low_velocity_time = min_low_velocity_time;
             pipeline->island_to_split = island->id; 
         }
+    }
+
+    /* a low-energy island first: it sleeps right after its split */
+    if (ds_IslandIdNullCheck(pipeline->island_to_split))
+    {
+        pipeline->island_to_split = fallback_island;
     }
 
     /* with sleeping disabled ds_SolverSetSleep is a no-op: a resting island would stay active and the loop below never advance */

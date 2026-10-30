@@ -3623,6 +3623,75 @@ static struct test_Output DynamicsMassRejectTest(struct test_Environment *env)
     return output;
 }
 
+/*
+ * Island split with a moving partner (DynamicsIslandSplitTest): two boxes joined by a distance joint rest on a
+ * frictionless floor; the joint is removed and one box is pushed. The island has a removed constraint and a
+ * moving body, so it stays awake until the sleep pass nominates it for a split from its resting body; after the
+ * split the resting box sleeps while the pushed one keeps sliding.
+ */
+static struct test_Output DynamicsIslandSplitTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+    struct arena mem = ArenaAlloc(NULL, 32*1024*1024);
+    ds_SDB(c_Shape) cshape_db = { 0 };
+    ds_SDBAlloc(NULL, cshape_db, 8, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 8, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 16, NSEC_PER_SEC / 60, 4*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 1;
+
+    const struct dynamics_TestBox floor = { .position = V3(0.0f, -0.5f, 0.0f), .rotation = QIdentity(), .hw = V3(50.0f, 0.5f, 50.0f), .dynamic = 0, .friction = 0.0f };
+    const struct dynamics_TestBox box_a = { .position = V3(0.0f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.0f };
+    const struct dynamics_TestBox box_b = { .position = V3(2.0f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.0f };
+    DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, &floor, (v3f64) { 0 }, 0);
+    const ds_BodyId a = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, &box_a, (v3f64) { 0 }, 1);
+    const ds_BodyId b = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, &box_b, (v3f64) { 0 }, 2);
+    struct ds_DistanceJointPrefab prefab;
+    ds_DistanceJointPrefab(&prefab, 2.0f);
+    const ds_Transform frame = ds_TransformIdentity();
+    const ds_JointId joint = ds_DistanceJointAdd(&pipeline, &prefab, a, &frame, b, &frame);
+    TEST_NOT_ZERO(!ds_JointIdNullCheck(joint));
+
+    /* 10 ticks of rest (below the sleep threshold), then cut and push */
+    for (u32 t = 0; t < 10; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+    }
+    const struct ds_Body *body_a = ds_BodyLookup(&pipeline, a).address;
+    const struct ds_Body *body_b = ds_BodyLookup(&pipeline, b).address;
+    TEST_NOT_ZERO(body_a->set == SOLVER_SET_ACTIVE && body_b->set == SOLVER_SET_ACTIVE && body_a->island == body_b->island);
+    ds_JointRemove(&pipeline, joint);
+    {
+        struct ds_BodyCompute *compute = pipeline.solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.buf + body_b->sim;
+        compute->linear_velocity = V3(1.0f, 0.0f, 0.0f);
+    }
+
+    /* the threshold is 0.5 s: within 60 ticks the island splits and box a sleeps; box b slides on */
+    u32 slept_tick = U32_MAX;
+    for (u32 t = 0; t < 120; ++t)
+    {
+        SnapshotTestTick(&pipeline);
+        body_a = ds_BodyLookup(&pipeline, a).address;
+        body_b = ds_BodyLookup(&pipeline, b).address;
+        if (slept_tick == U32_MAX && body_a->set != SOLVER_SET_ACTIVE)
+        {
+            slept_tick = t;
+        }
+    }
+    const struct ds_BodySim *sim_b = pipeline.solver_set_pool.buf[body_b->set].body_sim_pool.buf + body_b->sim;
+    if (slept_tick > 60 || body_b->set != SOLVER_SET_ACTIVE || body_a->island == body_b->island || sim_b->world.position.x < 3.5)
+    {
+        fprintf(stderr, "island split: box a slept at tick %u, box b set %u x %f, islands %u %u\n", slept_tick, body_b->set, sim_b->world.position.x, body_a->island, body_b->island);
+        TEST_NOT_ZERO(0);
+    }
+
+    ds_DynamicsFree(&pipeline);
+    ds_SDBDealloc(cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
 {
     DynamicsRestingBoxTest,
@@ -3648,6 +3717,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsMouseJointTest,
     DynamicsMouseJointSleepTest,
     DynamicsMassRejectTest,
+    DynamicsIslandSplitTest,
     DynamicsSlideTest,
     DynamicsBounceTest,
     DynamicsFirstTickTest,
