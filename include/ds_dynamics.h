@@ -231,8 +231,12 @@ enum ds_DrawColorMode
 
 struct ds_DynamicsDrawConfig
 {
-    u32     draw_shapes;            /* wire shapes */
+    u32     draw_shapes;
     enum ds_DrawColorMode shape_color_mode;
+    u32     draw_dbvh;              /* the dynamic proxy tree, per frame */
+    u32     draw_sbvh;              /* the static proxy tree, per frame */
+    u32     draw_bounds;            /* every shape's proxy box, per frame */
+    u32     draw_mesh_bvh;          /* every tri mesh's BVH, built once per shape (c_Shape.render_bvh) */
     u32     draw_contact_points;
     u32     draw_contact_normals;
     u32     draw_contact_forces;
@@ -248,6 +252,10 @@ struct ds_DynamicsDrawConfig
     f32     shape_saturation;       /* RANDOM and ISLAND: HSL saturation, 0 grey ... */
     f32     shape_lightness;        /* ... and lightness, 1/2 the pure hue, 1 white */
 
+    v4      color_dbvh;
+    v4      color_sbvh;
+    v4      color_bounds;
+    v4      color_mesh_bvh;
     v4      color_shape;            /* UNIFORM */
     v4      color_static;           /* static bodies in every mode but UNIFORM */
     v4      color_kinematic;        /* BODY_TYPE */

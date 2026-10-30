@@ -151,7 +151,8 @@ struct c_Shape
 {
     SDB_NODE;
     void *                  mem;                /* one ds_Alloc block: the id and the geometry (c_ShapeDBAdd) */
-    void *                  render_mesh;        /* the renderer's wire mesh, one ds_Alloc block; NULL until it builds one */
+    void *                  render_mesh;        /* the renderer's mesh, one ds_Alloc block; NULL until it builds one */
+    void *                  render_bvh;         /* the renderer's lines of a mesh's BVH, likewise */
     struct DLLNode          led_shape_node;     /* the editor's list of shapes (led.cs_shape_list) */
 
 	m3	                    inertia_tensor;		/* local shape frame intertia tensor (Assumes density=1.0, 

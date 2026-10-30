@@ -232,14 +232,8 @@ struct led
 	v4			        sleep_color;
 	v4			        awake_color;
 
-	v4			        bounding_box_color;
-	v4			        dbvh_color;
-	v4			        sbvh_color;
 	v4			        manifold_color;
     
-    u32			            draw_bounding_box;
-    u32			            draw_dbvh;
-    u32			            draw_sbvh;
 
     v3f64                   scene_origin;   /* world position the setup scenes are built around (default 0); set before the first led_Main */
 };

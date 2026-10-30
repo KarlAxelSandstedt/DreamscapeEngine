@@ -643,6 +643,8 @@ struct c_Shape;
  * ds_Alloc block the shape owns (its database frees it); refinement for spheres and capsules. NULL if out of memory.
  */
 struct r_Mesh *	r_MeshShape(struct c_Shape *shape, const u32 refinement);
+/* a tri mesh shape's BVH as lines (shape->render_bvh, as r_MeshShape): every node's box, zero normals; NULL for no nodes or memory */
+struct r_Mesh *	r_MeshShapeBvh(struct c_Shape *shape);
 
 /********************************************************
  *			r_gl.c				*

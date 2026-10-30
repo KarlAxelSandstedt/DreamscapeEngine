@@ -370,6 +370,25 @@ static void r_InternalDrawShapes(const struct led *led)
 				struct r_Instance *instance = r_InstanceAddNonCached(cmd);
 				instance->type = R_INSTANCE_RAW3D;
 				instance->raw3d = raw;
+
+				/* a tri mesh's BVH: its lines, built once per shape, instanced with the body */
+				const struct r_Mesh *bvh_mesh = (config->draw_mesh_bvh) ? r_MeshShapeBvh(cshape) : NULL;
+				if (bvh_mesh)
+				{
+					const u64 transparency_bvh = (config->color_mesh_bvh.w == 1.0f) ? R_CMD_TRANSPARENCY_OPAQUE : R_CMD_TRANSPARENCY_ADDITIVE;
+					const u64 cmd_bvh = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, transparency_bvh, material, R_CMD_PRIMITIVE_LINE, R_CMD_INSTANCED, R_CMD_ELEMENTS);
+					struct r_Raw3d *raw_bvh = ArenaPush(g_scene->mem_frame, sizeof(struct r_Raw3d));
+					if (!raw_bvh)
+					{
+						Log(T_RENDERER, S_ERROR, "shape %k: no frame memory for its BVH instance, not drawn", &cshape->id);
+						continue;
+					}
+
+					*raw_bvh = (struct r_Raw3d) { .mesh = bvh_mesh, .position = transform.position, .rotation = transform.rotation, .color = config->color_mesh_bvh, .blend = 1.0f };
+					struct r_Instance *instance_bvh = r_InstanceAddNonCached(cmd_bvh);
+					instance_bvh->type = R_INSTANCE_RAW3D;
+					instance_bvh->raw3d = raw_bvh;
+				}
 			}
 		}
 	}
@@ -435,16 +454,22 @@ static void r_EditorDraw(const struct led *led)
 	//		r_InstanceAdd(index, command);
 	//	}
 
-	if (led->draw_dbvh)
+	/* the proxy trees, in world space: rebuilt every frame */
+	const struct ds_DynamicsDrawConfig *draw_config = &led->physics.draw_config;
+	const struct BVH *tree[2] = { &led->physics.dynamic_bvh, &led->physics.static_bvh };
+	const u32 draw_tree[2] = { draw_config->draw_dbvh, draw_config->draw_sbvh };
+	const v4 tree_color[2] = { draw_config->color_dbvh, draw_config->color_sbvh };
+	for (u32 t = 0; t < 2; ++t)
 	{
+		if (!draw_tree[t])
+		{
+			continue;
+		}
+
 		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
 		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		const v3f64 position = V3F64(0.0, 0.0, 0.0);
-		const v3 axis = V3(0.0f, 1.0f, 0.0f);
-		const f32 angle = 0.0f;
-		const q rotation = QAxisAngle(axis, angle);
-		struct r_Mesh *mesh = BVHMesh(&g_r_core->frame, &led->physics.dynamic_bvh, position, rotation, g_scene->view_origin, led->dbvh_color);
+		struct r_Mesh *mesh = BVHMesh(&g_r_core->frame, tree[t], V3F64(0.0, 0.0, 0.0), QIdentity(), g_scene->view_origin, tree_color[t]);
 		if (mesh)
 		{
 			struct r_Instance *instance = r_InstanceAddNonCached(cmd);
@@ -453,50 +478,17 @@ static void r_EditorDraw(const struct led *led)
 		}
 	}
 
-	if (led->draw_sbvh)
-	{
-		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
-		const u64 depth = 0x7fffff;
-		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		struct ds_Body *body = NULL;
-        for (u64 bi = 0; bi < led->physics.body_usage_set.block_count; ++bi)
-        {
-            struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi);
-            while (ds_BitBlockHasNext(&it))
-            {
-                const struct ds_Body *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);
-                const struct ds_Shape *s = led->physics.shape_pool.buf + body->shape_list.first;
-			    if (s->cshape_type != C_SHAPE_TRI_MESH)
-			    {
-			    	continue;
-			    }
-
-                ds_TransformWorld transform;
-                ds_ShapeWorldTransform(&transform, &led->physics, s);
-
-			    const struct c_Shape *shape = c_ShapeDBShape(led->physics.cshape_db, s->cshape_handle);
-			    struct r_Mesh *mesh = BVHMesh(&g_r_core->frame, &shape->mesh_bvh.bvh, transform.position, transform.rotation, g_scene->view_origin, led->sbvh_color);
-			    if (mesh)
-			    {
-			    	struct r_Instance *instance = r_InstanceAddNonCached(cmd);
-			    	instance->type = R_INSTANCE_MESH;
-			    	instance->mesh = mesh;
-			    }
-            }
-        }
-	}
-
 	if (led->physics.draw_config.draw_shapes)
 	{
 		r_InternalDrawShapes(led);
 	}
 
-	if (led->draw_bounding_box)
+	if (draw_config->draw_bounds)
 	{
 		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
 		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		struct r_Mesh *mesh = BoundingBoxesMesh(&g_r_core->frame, &led->physics, g_scene->view_origin, led->bounding_box_color);
+		struct r_Mesh *mesh = BoundingBoxesMesh(&g_r_core->frame, &led->physics, g_scene->view_origin, draw_config->color_bounds);
 		if (mesh)
 		{
 			struct r_Instance *instance = r_InstanceAddNonCached(cmd);

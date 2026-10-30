@@ -318,6 +318,7 @@ static void c_ShapeSlotFree(const struct c_Shape *shape)
 {
     ds_Free(shape->mem);
     ds_Free(shape->render_mesh);
+    ds_Free(shape->render_bvh);
 }
 
 void c_ShapeDBAlloc(struct arena *mem, struct c_ShapeDB *db, const u32 length, const u32 growable)
@@ -326,6 +327,7 @@ void c_ShapeDBAlloc(struct arena *mem, struct c_ShapeDB *db, const u32 length, c
     struct c_Shape *stub = db->sdb.pool.buf + SDB_STUB;
     stub->mem = NULL;
     stub->render_mesh = NULL;
+    stub->render_bvh = NULL;
     stub->type = C_SHAPE_CONVEX_HULL;
     stub->hull = DcelBoxStub();
     c_ShapeUpdateMassProperties(stub);
@@ -479,6 +481,7 @@ struct slot c_ShapeDBAdd(struct c_ShapeDB *db, const utf8 id, const struct c_Sha
     struct c_Shape *shape = slot.address;
     shape->mem = base;
     shape->render_mesh = NULL;
+    shape->render_bvh = NULL;
     c_ShapeGeometryCopy(&block, shape, src);
     ds_Assert(block.mem_left == 0);
     if (src->type != C_SHAPE_TRI_MESH)
