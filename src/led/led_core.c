@@ -2600,8 +2600,8 @@ void led_Core(struct led *led)
 		/* the determinism run's scene: every body sleeps, the run ends */
 		led_WallSmashSimulationSetup(led);
 #else
-		led_MeshSetup(led);
-		//led_JointSetup(led);
+		led_JointSetup(led);
+		//led_MeshSetup(led);
 		//led_WallSmashSimulationSetup(led);
 		//led_RopeSetup(led);
 #endif
