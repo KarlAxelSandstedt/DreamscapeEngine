@@ -395,6 +395,100 @@ static void r_InternalDrawShapes(const struct led *led)
 	ProfZoneEnd;
 }
 
+/*
+ * The segments pushed during the tick (ds_DynamicsDraw: the pipeline's and every worker's) as one line mesh on
+ * the renderer's frame arena and one line instance; skipped when there is nothing to draw or the mesh does not
+ * fit. A force is a segment of force_scale metres per newton in color_force. Positions are written relative to
+ * the view origin.
+ */
+static u8 *LineVertexWrite(u8 *vertex, const v3 p, const v4 color)
+{
+	memcpy(vertex, &p, sizeof(v3));
+	memcpy(vertex + L_COLOR_OFFSET, &color, sizeof(v4));
+	return vertex + L_COLOR_STRIDE;
+}
+
+static u8 *SegmentWrite(u8 *vertex, const v3 p0, const v3 p1, const v4 color)
+{
+	vertex = LineVertexWrite(vertex, p0, color);
+	return LineVertexWrite(vertex, p1, color);
+}
+
+static v3 ViewRelative(const v3f64 p, const v3f64 origin)
+{
+	return V3F64Demote(V3F64Sub(p, origin));
+}
+
+static void r_InternalDrawSegments(const struct led *led)
+{
+	ProfZone;
+
+	const struct ds_Dynamics *pipeline = &led->physics;
+	const struct ds_DynamicsDrawConfig *config = &pipeline->draw_config;
+	const u32 source_count = pipeline->worker_count + 1;
+
+	u64 vertex_count = 0;
+	for (u32 i = 0; i < source_count; ++i)
+	{
+		const struct ds_DynamicsDraw *draw = (i < pipeline->worker_count) ? &pipeline->worker[i].draw : &pipeline->draw;
+		vertex_count += 2*draw->primitive.segment.count + 2*draw->force.count;
+	}
+
+	if (vertex_count == 0)
+	{
+		goto end;
+	}
+
+	struct arena *mem = &g_r_core->frame;
+	ArenaPushRecord(mem);
+	struct r_Mesh *mesh = ArenaPush(mem, sizeof(struct r_Mesh));
+	u8 *vertex = ArenaPush(mem, vertex_count * L_COLOR_STRIDE);
+	if (!mesh || !vertex)
+	{
+		ArenaPopRecord(mem);
+		Log(T_RENDERER, S_ERROR, "segments: %lu vertices do not fit the renderer's frame arena, not drawn", vertex_count);
+		goto end;
+	}
+	ArenaRemoveRecord(mem);
+
+	const v3f64 origin = g_scene->view_origin;
+	u8 *const vertex_begin = vertex;
+	for (u32 i = 0; i < source_count; ++i)
+	{
+		const struct ds_DynamicsDraw *draw = (i < pipeline->worker_count) ? &pipeline->worker[i].draw : &pipeline->draw;
+
+		for (u32 k = 0; k < draw->primitive.segment.count; ++k)
+		{
+			const struct r_SegmentWorld *s = draw->primitive.segment.buf + k;
+			vertex = SegmentWrite(vertex, ViewRelative(s->p0, origin), ViewRelative(s->p1, origin), s->color);
+		}
+
+		for (u32 k = 0; k < draw->force.count; ++k)
+		{
+			const struct ds_ForceDraw *s = draw->force.buf + k;
+			const v3 p = ViewRelative(s->origin, origin);
+			vertex = SegmentWrite(vertex, p, V3AddScaled(p, s->direction, s->magnitude * config->force_scale), config->color_force);
+		}
+	}
+	ds_Assert((u64) (vertex - vertex_begin) == vertex_count * L_COLOR_STRIDE);
+
+	mesh->index_count = 0;
+	mesh->index_max_used = 0;
+	mesh->index_data = NULL;
+	mesh->vertex_count = (u32) vertex_count;
+	mesh->vertex_data = vertex_begin;
+	mesh->local_stride = L_COLOR_STRIDE;
+
+	const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
+	const u64 depth = 0x7fffff;
+	const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
+	struct r_Instance *instance = r_InstanceAddNonCached(cmd);
+	instance->type = R_INSTANCE_MESH;
+	instance->mesh = mesh;
+end:
+	ProfZoneEnd;
+}
+
 static void r_EditorDraw(const struct led *led)
 {
 	ProfZone;
@@ -482,6 +576,8 @@ static void r_EditorDraw(const struct led *led)
 	{
 		r_InternalDrawShapes(led);
 	}
+
+	r_InternalDrawSegments(led);
 
 	if (draw_config->draw_bounds)
 	{
