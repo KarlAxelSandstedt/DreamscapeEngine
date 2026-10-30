@@ -148,3 +148,41 @@ void ds_JointDrawPush(struct ds_Dynamics *pipeline)
         }
     }
 }
+
+void ds_BodyDrawRange(struct ds_Dynamics *pipeline, const u32 low, const u32 high)
+{
+    struct ds_DynamicsDraw *draw = &g_dynamics_worker[ds_ThreadSelfIndex()].draw;
+    const struct ds_DynamicsDrawConfig *config = &pipeline->draw_config;
+    const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
+    const v4 axis_color[3] = { V4(1.0f, 0.0f, 0.0f, 1.0f), V4(0.0f, 1.0f, 0.0f, 1.0f), V4(0.0f, 0.0f, 1.0f, 1.0f) };
+    const v3 axis[3] = { V3(1.0f, 0.0f, 0.0f), V3(0.0f, 1.0f, 0.0f), V3(0.0f, 0.0f, 1.0f) };
+
+    for (u32 i = low; i < high; ++i)
+    {
+        const struct ds_BodySim *sim = active->body_sim_pool.buf + i;
+        const struct ds_BodyCompute *bcomp = active->body_compute_pool.buf + i;
+        const v3f64 com = V3F64Add(sim->world_center_of_mass, V3Promote(bcomp->delta_position));
+
+        const struct r_PointWorld point = { .p = com, .color = config->color_mass_center };
+        ds_CPoolPushValue(draw->primitive.point, point);
+
+        for (u32 a = 0; a < 3; ++a)
+        {
+            const struct r_SegmentWorld segment =
+            {
+                .p0 = com,
+                .p1 = V3F64Add(com, V3Promote(V3Scale(QUnitRotate(bcomp->rotation, axis[a]), config->axis_length))),
+                .color = axis_color[a],
+            };
+            ds_CPoolPushValue(draw->primitive.segment, segment);
+        }
+
+        const struct r_SegmentWorld velocity =
+        {
+            .p0 = com,
+            .p1 = V3F64Add(com, V3Promote(V3Scale(bcomp->linear_velocity, config->velocity_scale))),
+            .color = config->color_velocity,
+        };
+        ds_CPoolPushValue(draw->primitive.segment, velocity);
+    }
+}

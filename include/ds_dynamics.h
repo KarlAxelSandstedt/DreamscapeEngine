@@ -276,11 +276,12 @@ struct ds_DynamicsDrawConfig
     u32     draw_joints;
     enum ds_DrawPointColorMode point_color_mode;
     u32     draw_on_top;            /* points and segments through the scene (no depth test); else only where visible */
-    u32     draw_mass_centers;
+    u32     draw_body_axes;         /* every active body: its mass centre (point), frame axes (x red, y green, z blue) and velocity */
     u32     draw_joint_forces;
 
     f32     force_scale;            /* metres per newton */
     f32     point_size;             /* pixels; read at draw */
+    f32     velocity_scale;         /* seconds: a velocity segment is the displacement over this time */
     f32     axis_length;
     u32     refinement;             /* sphere and capsule meshes (r_MeshShape); read when a mesh is built */
     f32     energy_max;             /* DRAW_COLOR_VELOCITY: the linear kinetic energy (J) drawn fully red */
@@ -310,6 +311,7 @@ struct ds_DynamicsDrawConfig
     v4      color_joint_force;
     v4      color_joint;
     v4      color_mass_center;
+    v4      color_velocity;
 };
 
 
@@ -2154,6 +2156,11 @@ void                        ds_ContactDrawRange(struct ds_Dynamics *pipeline, co
  * are skipped.
  */
 void                        ds_JointDrawPush(struct ds_Dynamics *pipeline);
+/*
+ * Internal: push the active bodies [low, high) under draw_body_axes: the mass centre as a point, the frame axes from it
+ * (axis_length) and the linear velocity (velocity_scale) as segments; after the integrate stage (the end pose).
+ */
+void                        ds_BodyDrawRange(struct ds_Dynamics *pipeline, const u32 low, const u32 high);
 
 #ifdef __cplusplus
 } 
