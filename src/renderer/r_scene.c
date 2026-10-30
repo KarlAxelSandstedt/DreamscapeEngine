@@ -897,6 +897,8 @@ static const char *primitive_str_table[1 << R_CMD_PRIMITIVE_BITS] =
 {
 	"PRIMITIVE_TRIANGLE",
 	"PRIMITIVE_LINE",
+	"PRIMITIVE_POINT",
+	"PRIMITIVE_UNUSED",
 };
 
 static const char *instanced_str_table[1 << R_CMD_INSTANCED_BITS] =

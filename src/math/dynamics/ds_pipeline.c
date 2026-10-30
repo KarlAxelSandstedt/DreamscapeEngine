@@ -26,6 +26,7 @@ struct ds_DynamicsWorker *g_dynamics_worker;
 void ds_DynamicsStaticAssert(void)
 {
     ds_StaticAssert(sizeof(struct ds_BodyCompute) == DS_CACHE_LINE, "");
+    ds_StaticAssert(DRAW_GRAPH_COLOR_COUNT == CG_COLOR_COUNT, "the draw config's graph palette covers every constraint graph colour");
     ds_StaticAssert(sizeof(struct ds_RebuildThreadCompute) == DS_CACHE_LINE, "");
     ds_StaticAssert(sizeof(struct ds_RebuildJob) == DS_CACHE_LINE, "");
     ds_StaticAssert(sizeof(struct ds_RemovalJob) == DS_CACHE_LINE, "");
@@ -103,8 +104,8 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
         .shape_alpha = 0.8f,
         .shape_saturation = 0.85f,
         .shape_lightness = 0.85f,
-        .force_scale = 0.01f,
-        .point_size = 0.05f,
+        .force_scale = 0.05f,
+        .point_size = 12.0f,
         .axis_length = 0.25f,
         .refinement = 12,
         .color_dbvh = V4(0.8f, 0.1f, 0.0f, 0.6f),
@@ -122,6 +123,16 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
         .color_touching = V4(1.0f, 0.8f, 0.2f, 0.9f),
         .color_not_touching = V4(0.35f, 0.35f, 0.35f, 0.9f),
         .color_contact_point = V4(1.0f, 0.0f, 0.0f, 1.0f),
+        /* static colours muted, the dynamic ones a cycle of distinct hues, the serial colour white */
+        .color_graph =
+        {
+            V4(0.6f, 0.6f, 0.6f, 1.0f), V4(0.6f, 0.5f, 0.4f, 1.0f), V4(0.4f, 0.6f, 0.5f, 1.0f), V4(0.5f, 0.4f, 0.6f, 1.0f),
+            V4(1.0f, 0.2f, 0.2f, 1.0f), V4(1.0f, 0.6f, 0.1f, 1.0f), V4(1.0f, 1.0f, 0.2f, 1.0f), V4(0.5f, 1.0f, 0.2f, 1.0f),
+            V4(0.1f, 0.9f, 0.3f, 1.0f), V4(0.2f, 1.0f, 0.8f, 1.0f), V4(0.2f, 0.8f, 1.0f, 1.0f), V4(0.3f, 0.4f, 1.0f, 1.0f),
+            V4(0.6f, 0.3f, 1.0f, 1.0f), V4(0.9f, 0.3f, 1.0f, 1.0f), V4(1.0f, 0.3f, 0.7f, 1.0f), V4(1.0f, 0.5f, 0.5f, 1.0f),
+            V4(0.8f, 0.7f, 0.4f, 1.0f), V4(0.6f, 0.8f, 0.3f, 1.0f), V4(0.3f, 0.7f, 0.6f, 1.0f), V4(0.4f, 0.6f, 0.9f, 1.0f),
+            V4(0.7f, 0.5f, 0.9f, 1.0f), V4(0.9f, 0.5f, 0.7f, 1.0f), V4(0.8f, 0.8f, 0.8f, 1.0f), V4(1.0f, 1.0f, 1.0f, 1.0f),
+        },
         .color_contact_normal = V4(1.0f, 1.0f, 0.0f, 1.0f),
         .color_contact_force = V4(1.0f, 0.5f, 0.0f, 1.0f),
         .color_friction_force = V4(0.2f, 0.9f, 1.0f, 1.0f),
@@ -801,9 +812,9 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
             ds_ParallelFor(pf, range_index)
             {
                 ds_ParallelForRange(&low, &high, pf, range_index);
-                if (pipeline->draw_config.draw_contact_forces)
+                if (pipeline->draw_config.draw_contact_points || pipeline->draw_config.draw_contact_forces)
                 {
-                    ds_ContactForceDrawRange(pipeline, ci, low, high);
+                    ds_ContactDrawRange(pipeline, ci, low, high);
                 }
                 ds_PositionConstraintInitAndCacheImpulsesRange(pipeline, ci, low, high);
             }

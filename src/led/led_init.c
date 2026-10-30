@@ -58,6 +58,13 @@ const char *shape_color_mode_str_buf[DRAW_COLOR_MODE_COUNT] =
 };
 const char **shape_color_mode_str = shape_color_mode_str_buf;
 
+const char *point_color_mode_str_buf[DRAW_POINT_COLOR_MODE_COUNT] =
+{
+	"DRAW_POINT_UNIFORM",
+	"DRAW_POINT_GRAPH_COLOR",
+};
+const char **point_color_mode_str = point_color_mode_str_buf;
+
 
 struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 {

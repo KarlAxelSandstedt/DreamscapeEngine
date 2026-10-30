@@ -33,13 +33,19 @@ static void ForceDrawPush(ds_CPool(ds_ForceDraw) *pool, const v3f64 origin, cons
     }
 }
 
-void ds_ContactForceDrawRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 low, const u32 high)
+static v4 PointColor(const struct ds_DynamicsDrawConfig *config, const u32 color_index, const v4 uniform)
 {
-    ds_CPool(ds_ForceDraw) *pool = &g_dynamics_worker[ds_ThreadSelfIndex()].draw.force;
+    return (config->point_color_mode == DRAW_POINT_GRAPH_COLOR) ? config->color_graph[color_index] : uniform;
+}
+
+void ds_ContactDrawRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 low, const u32 high)
+{
+    struct ds_DynamicsDraw *draw = &g_dynamics_worker[ds_ThreadSelfIndex()].draw;
     const struct ds_DynamicsDrawConfig *config = &pipeline->draw_config;
     const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     const struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
     const f32 timestep_inv = 1.0f / pipeline->timestep;
+    const v4 point_color = PointColor(config, color_index, config->color_contact_point);
 
     for (u32 ci = low; ci < high; ++ci)
     {
@@ -56,10 +62,20 @@ void ds_ContactForceDrawRange(struct ds_Dynamics *pipeline, const u32 color_inde
             {
                 const struct ds_ContactConstraintPoint *ccp = cc->ccp + ccpi;
                 const v3f64 point = V3F64Add(com, V3Promote(ccp->r[0]));
-                /* the solver applies -impulse to body 0; friction per tangent */
-                ForceDrawPush(pool, point, V3Scale(cc->normal, -ccp->normal_impulse * timestep_inv), config->color_contact_force);
-                ForceDrawPush(pool, point, V3Scale(cc->tangent[0], -ccp->tangent_impulse[0] * timestep_inv), config->color_friction_force);
-                ForceDrawPush(pool, point, V3Scale(cc->tangent[1], -ccp->tangent_impulse[1] * timestep_inv), config->color_friction_force);
+
+                if (config->draw_contact_points)
+                {
+                    const struct r_PointWorld record = { .p = point, .color = point_color };
+                    ds_CPoolPushValue(draw->primitive.point, record);
+                }
+
+                if (config->draw_contact_forces)
+                {
+                    /* the solver applies -impulse to body 0; friction per tangent */
+                    ForceDrawPush(&draw->force, point, V3Scale(cc->normal, -ccp->normal_impulse * timestep_inv), config->color_contact_force);
+                    ForceDrawPush(&draw->force, point, V3Scale(cc->tangent[0], -ccp->tangent_impulse[0] * timestep_inv), config->color_friction_force);
+                    ForceDrawPush(&draw->force, point, V3Scale(cc->tangent[1], -ccp->tangent_impulse[1] * timestep_inv), config->color_friction_force);
+                }
             }
         }
     }

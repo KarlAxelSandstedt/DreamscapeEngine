@@ -252,6 +252,16 @@ enum ds_DrawColorMode
     DRAW_COLOR_MODE_COUNT
 };
 
+/* contact and joint points */
+enum ds_DrawPointColorMode
+{
+    DRAW_POINT_UNIFORM = 0,         /* color_contact_point */
+    DRAW_POINT_GRAPH_COLOR,         /* color_graph[the constraint's colour] */
+    DRAW_POINT_COLOR_MODE_COUNT
+};
+
+#define DRAW_GRAPH_COLOR_COUNT  24      /* CG_COLOR_COUNT (asserted in ds_pipeline.c) */
+
 struct ds_DynamicsDrawConfig
 {
     u32     draw_shapes;
@@ -260,15 +270,16 @@ struct ds_DynamicsDrawConfig
     u32     draw_sbvh;              /* the static proxy tree, per frame */
     u32     draw_bounds;            /* every shape's proxy box, per frame */
     u32     draw_mesh_bvh;          /* every tri mesh's BVH, built once per shape (c_Shape.render_bvh) */
-    u32     draw_contact_points;
+    u32     draw_contact_points;    /* every manifold point, body 0's side (r_PointWorld) */
     u32     draw_contact_normals;
     u32     draw_contact_forces;    /* per manifold point: the normal force and the two friction forces on body 0 (ds_ForceDraw) */
     u32     draw_joints;
+    enum ds_DrawPointColorMode point_color_mode;
     u32     draw_mass_centers;
     u32     draw_joint_forces;
 
     f32     force_scale;            /* metres per newton */
-    f32     point_size;
+    f32     point_size;             /* pixels; read at draw */
     f32     axis_length;
     u32     refinement;             /* sphere and capsule meshes (r_MeshShape); read when a mesh is built */
     f32     energy_max;             /* DRAW_COLOR_VELOCITY: the linear kinetic energy (J) drawn fully red */
@@ -291,6 +302,7 @@ struct ds_DynamicsDrawConfig
     v4      color_touching;         /* TOUCHING */
     v4      color_not_touching;
     v4      color_contact_point;
+    v4      color_graph[DRAW_GRAPH_COLOR_COUNT];    /* GRAPH_COLOR: by constraint graph colour */
     v4      color_contact_normal;
     v4      color_contact_force;
     v4      color_friction_force;
@@ -2130,10 +2142,11 @@ struct ds_PhysicsEvent *	ds_PhysicsEventPush(struct ds_Dynamics *pipeline);
 /**************** ds_dynamics_draw.c: pushes into the worker's ds_DynamicsDraw ****************/
 
 /*
- * Internal: push the colour's contacts [low, high): per manifold point the normal force and the friction force along
- * each tangent, on body 0 (impulse / timestep) at the point. After the velocity solve, before the levers leave world axes. Zero forces are skipped.
+ * Internal: push the colour's contacts [low, high) under the draw_contact_* gates: per manifold point (body 0's side)
+ * the point, and the normal force and the friction force along each tangent on body 0 (impulse / timestep).
+ * After the velocity solve, before the levers leave world axes. Zero forces are skipped.
  */
-void                        ds_ContactForceDrawRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
+void                        ds_ContactDrawRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 /* Internal: push every awake joint's force on each of its dynamic bodies at the body's anchor; after the solve. Zero forces are skipped. */
 void                        ds_JointForceDrawPush(struct ds_Dynamics *pipeline);
 

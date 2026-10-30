@@ -6,6 +6,7 @@ layout(location = 1) in vec4 color;
 uniform float aspect_ratio;
 uniform mat4 view;
 uniform mat4 perspective;
+uniform float point_size;
 
 out vec4 out_color;
 
@@ -13,4 +14,5 @@ void main()
 {
 	out_color = color;
  	gl_Position = perspective * view * vec4(position, 1.0);
+	gl_PointSize = point_size;
 }

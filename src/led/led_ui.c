@@ -478,6 +478,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 		//led->rb_prefab_mesh_menu = ui_DropdownMenuInit(150.0f, Vec2Inline(110.0f, 24.0f), UI_DROPDOWN_ABOVE);
 		
 		led->shape_color_mode_menu = ui_DropdownMenuInit(120.0f, V2(196.0f, 24.0f), UI_DROPDOWN_BELOW);
+		led->point_color_mode_menu = ui_DropdownMenuInit(120.0f, V2(196.0f, 24.0f), UI_DROPDOWN_BELOW);
 	}
 
 	ui_TextAlignX(ALIGN_LEFT)
@@ -956,6 +957,29 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 						ui_DropdownMenuPop(&led->shape_color_mode_menu);
 					}
 
+					ui_Pad();
+
+					if (ui_DropdownMenuF(&led->point_color_mode_menu, "%s###%p_point_color_mode", point_color_mode_str[led->physics.draw_config.point_color_mode], &led->point_color_mode_menu))
+					{
+						ui_DropdownMenuPush(&led->point_color_mode_menu);
+
+						for (u32 i = 0; i < DRAW_POINT_COLOR_MODE_COUNT; ++i)
+						{
+							struct ui_Node *drop;
+							ui_Flags(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW)
+							drop = ui_DropdownMenuEntryF(&led->point_color_mode_menu, "%s###%p_%u", 
+									point_color_mode_str[i], 
+									&led->point_color_mode_menu, 
+									i).address;
+							if (drop->inter & UI_INTER_SELECT)
+							{
+								led->physics.draw_config.point_color_mode = i;
+							}
+						}
+
+						ui_DropdownMenuPop(&led->point_color_mode_menu);
+					}
+
 					ui_Pad(); 
 
 					/* TODO: Make checkbox one-lines */
@@ -1142,8 +1166,44 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 										node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
 									}
 								}
+
+								ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+								{
+									ui_Pad();
+									ui_Width(ui_SizePixel(24.0f, 1.0f))
+									node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_7").address;
+									ui_Pad();
+									ui_NodeAllocF(UI_DRAW_TEXT, "draw contact points");
+									if (node->inter & UI_INTER_LEFT_CLICK)
+									{
+										led->physics.draw_config.draw_contact_points = !led->physics.draw_config.draw_contact_points;
+									}
+
+									if (led->physics.draw_config.draw_contact_points)
+									{
+										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
+									}
+
+									if (node->inter & UI_INTER_HOVER)
+									{
+										node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
+									}
+								}
 							}
 						}
+					}
+
+					ui_Pad();
+
+					ui_Height(ui_SizePixel(24.0f, 1.0f))
+					ui_ChildLayoutAxis(AXIS_2_X)
+					ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+					{
+						ui_Pad();
+						ui_Width(ui_SizePixel(80.0f, 1.0f))
+						led->physics.draw_config.force_scale = ui_FieldF32F(led->physics.draw_config.force_scale, Intv(0.0001f, 100.0f), "%f###force_scale_in", led->physics.draw_config.force_scale);
+						ui_Pad();
+						ui_NodeAllocF(UI_DRAW_TEXT, "force scale (m/N)");
 					}
 
 					//struct led_Node *node = NULL;

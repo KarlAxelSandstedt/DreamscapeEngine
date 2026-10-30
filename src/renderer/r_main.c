@@ -396,11 +396,45 @@ static void r_InternalDrawShapes(const struct led *led)
 }
 
 /*
- * The segments pushed during the tick (ds_DynamicsDraw: the pipeline's and every worker's) as one line mesh on
- * the renderer's frame arena and one line instance; skipped when there is nothing to draw or the mesh does not
- * fit. A force is a segment of force_scale metres per newton in its colour. Positions are written relative to
- * the view origin.
+ * The segments and points pushed during the tick (ds_DynamicsDraw: the pipeline's and every worker's) as one line
+ * mesh and one point mesh on the renderer's frame arena, one non-cached instance each; skipped when there is
+ * nothing to draw or the mesh does not fit. A force is a segment of force_scale metres per newton in its colour;
+ * a point is one GL point of the config's point_size pixels. Positions are written relative to the view origin.
  */
+/* an L_COLOR mesh of vertex_count vertices on the renderer's frame arena, NULL (logged) if it does not fit */
+static struct r_Mesh *ColorMeshFrame(const u64 vertex_count, const char *what)
+{
+	struct arena *mem = &g_r_core->frame;
+	ArenaPushRecord(mem);
+	struct r_Mesh *mesh = ArenaPush(mem, sizeof(struct r_Mesh));
+	u8 *vertex = ArenaPush(mem, vertex_count * L_COLOR_STRIDE);
+	if (!mesh || !vertex)
+	{
+		ArenaPopRecord(mem);
+		Log(T_RENDERER, S_ERROR, "%s: %lu vertices do not fit the renderer's frame arena, not drawn", what, vertex_count);
+		return NULL;
+	}
+	ArenaRemoveRecord(mem);
+
+	mesh->index_count = 0;
+	mesh->index_max_used = 0;
+	mesh->index_data = NULL;
+	mesh->vertex_count = (u32) vertex_count;
+	mesh->vertex_data = vertex;
+	mesh->local_stride = L_COLOR_STRIDE;
+	return mesh;
+}
+
+static void ColorMeshDraw(const struct r_Mesh *mesh, const u64 primitive)
+{
+	const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
+	const u64 depth = 0x7fffff;
+	const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, primitive, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
+	struct r_Instance *instance = r_InstanceAddNonCached(cmd);
+	instance->type = R_INSTANCE_MESH;
+	instance->mesh = (struct r_Mesh *) mesh;
+}
+
 static u8 *LineVertexWrite(u8 *vertex, const v3 p, const v4 color)
 {
 	memcpy(vertex, &p, sizeof(v3));
@@ -427,65 +461,61 @@ static void r_InternalDrawSegments(const struct led *led)
 	const struct ds_DynamicsDrawConfig *config = &pipeline->draw_config;
 	const u32 source_count = pipeline->worker_count + 1;
 
-	u64 vertex_count = 0;
+	u64 segment_vertex_count = 0;
+	u64 point_vertex_count = 0;
 	for (u32 i = 0; i < source_count; ++i)
 	{
 		const struct ds_DynamicsDraw *draw = (i < pipeline->worker_count) ? &pipeline->worker[i].draw : &pipeline->draw;
-		vertex_count += 2*draw->primitive.segment.count + 2*draw->force.count;
+		segment_vertex_count += 2*draw->primitive.segment.count + 2*draw->force.count;
+		point_vertex_count += draw->primitive.point.count;
 	}
 
-	if (vertex_count == 0)
-	{
-		goto end;
-	}
-
-	struct arena *mem = &g_r_core->frame;
-	ArenaPushRecord(mem);
-	struct r_Mesh *mesh = ArenaPush(mem, sizeof(struct r_Mesh));
-	u8 *vertex = ArenaPush(mem, vertex_count * L_COLOR_STRIDE);
-	if (!mesh || !vertex)
-	{
-		ArenaPopRecord(mem);
-		Log(T_RENDERER, S_ERROR, "segments: %lu vertices do not fit the renderer's frame arena, not drawn", vertex_count);
-		goto end;
-	}
-	ArenaRemoveRecord(mem);
-
+	struct r_Mesh *segments = (segment_vertex_count) ? ColorMeshFrame(segment_vertex_count, "segments") : NULL;
+	struct r_Mesh *points = (point_vertex_count) ? ColorMeshFrame(point_vertex_count, "points") : NULL;
+	u8 *segment = (segments) ? segments->vertex_data : NULL;
+	u8 *point = (points) ? points->vertex_data : NULL;
 	const v3f64 origin = g_scene->view_origin;
-	u8 *const vertex_begin = vertex;
 	for (u32 i = 0; i < source_count; ++i)
 	{
 		const struct ds_DynamicsDraw *draw = (i < pipeline->worker_count) ? &pipeline->worker[i].draw : &pipeline->draw;
 
-		for (u32 k = 0; k < draw->primitive.segment.count; ++k)
+		if (segment)
 		{
-			const struct r_SegmentWorld *s = draw->primitive.segment.buf + k;
-			vertex = SegmentWrite(vertex, ViewRelative(s->p0, origin), ViewRelative(s->p1, origin), s->color);
+			for (u32 k = 0; k < draw->primitive.segment.count; ++k)
+			{
+				const struct r_SegmentWorld *s = draw->primitive.segment.buf + k;
+				segment = SegmentWrite(segment, ViewRelative(s->p0, origin), ViewRelative(s->p1, origin), s->color);
+			}
+
+			for (u32 k = 0; k < draw->force.count; ++k)
+			{
+				const struct ds_ForceDraw *s = draw->force.buf + k;
+				const v3 p = ViewRelative(s->origin, origin);
+				segment = SegmentWrite(segment, p, V3AddScaled(p, s->force, config->force_scale), s->color);
+			}
 		}
 
-		for (u32 k = 0; k < draw->force.count; ++k)
+		if (point)
 		{
-			const struct ds_ForceDraw *s = draw->force.buf + k;
-			const v3 p = ViewRelative(s->origin, origin);
-			vertex = SegmentWrite(vertex, p, V3AddScaled(p, s->force, config->force_scale), s->color);
+			for (u32 k = 0; k < draw->primitive.point.count; ++k)
+			{
+				const struct r_PointWorld *s = draw->primitive.point.buf + k;
+				point = LineVertexWrite(point, ViewRelative(s->p, origin), s->color);
+			}
 		}
 	}
-	ds_Assert((u64) (vertex - vertex_begin) == vertex_count * L_COLOR_STRIDE);
 
-	mesh->index_count = 0;
-	mesh->index_max_used = 0;
-	mesh->index_data = NULL;
-	mesh->vertex_count = (u32) vertex_count;
-	mesh->vertex_data = vertex_begin;
-	mesh->local_stride = L_COLOR_STRIDE;
+	if (segments)
+	{
+		ds_Assert((u64) (segment - (u8 *) segments->vertex_data) == segment_vertex_count * L_COLOR_STRIDE);
+		ColorMeshDraw(segments, R_CMD_PRIMITIVE_LINE);
+	}
 
-	const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
-	const u64 depth = 0x7fffff;
-	const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-	struct r_Instance *instance = r_InstanceAddNonCached(cmd);
-	instance->type = R_INSTANCE_MESH;
-	instance->mesh = mesh;
-end:
+	if (points)
+	{
+		ds_Assert((u64) (point - (u8 *) points->vertex_data) == point_vertex_count * L_COLOR_STRIDE);
+		ColorMeshDraw(points, R_CMD_PRIMITIVE_POINT);
+	}
 	ProfZoneEnd;
 }
 
@@ -628,9 +658,11 @@ static void r_InternalProxy3dUniforms(const struct led *led, const u32 window)
 	aspect_ratio_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_COLOR].gl_program, "aspect_ratio");
 	view_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_COLOR].gl_program, "view");
 	perspective_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_COLOR].gl_program, "perspective");
+	const GLint point_size_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_COLOR].gl_program, "point_size");
 	ds_glUniform1f(aspect_ratio_addr, (f32) cam->aspect_ratio);
 	ds_glUniformMatrix4fv(perspective_addr, 1, GL_FALSE, perspective.buf);
 	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, view.buf);
+	ds_glUniform1f(point_size_addr, led->physics.draw_config.point_size);
 }
 
 static void r_InternalUiUniforms(const u32 window)
@@ -733,6 +765,7 @@ static void r_SceneRender(const struct led *led, const u32 window)
 		{
 			case R_CMD_PRIMITIVE_LINE: { mode = GL_LINES; } break;
 			case R_CMD_PRIMITIVE_TRIANGLE: { mode = GL_TRIANGLES; } break;
+			case R_CMD_PRIMITIVE_POINT: { mode = GL_POINTS; } break;
 			default:
 			{
 				/* no mode to draw with: skip the bucket */

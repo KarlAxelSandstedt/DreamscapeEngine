@@ -104,7 +104,7 @@ void 	r_EditorMain(const struct led *led);
  *			r_primitive.c			*
  ********************************************************/
 
-/* Debug primitives in world space (f64 positions), drawn as lines and points; the renderer tessellates the shapes. */
+/* Debug primitives in world space (f64 positions), drawn as lines and points (a point is point_size pixels, the draw config's); the renderer tessellates the shapes. */
 struct r_SegmentWorld
 {
     v3f64   p0;
@@ -115,7 +115,6 @@ struct r_SegmentWorld
 struct r_PointWorld
 {
     v3f64   p;
-    f32     size;
     v4      color;
 };
 
@@ -292,7 +291,7 @@ u64 	r_MaterialConstructRaw(const u64 program, const u64 batch, const u64 textur
 #define	R_CMD_MATERIAL_BITS		30
 #define R_CMD_ELEMENTS_BITS		1
 #define	R_CMD_INSTANCED_BITS		1
-#define	R_CMD_PRIMITIVE_BITS		1
+#define	R_CMD_PRIMITIVE_BITS		2
 #define R_CMD_UNUSED_BITS		(64 - R_CMD_SCREEN_LAYER_BITS - R_CMD_DEPTH_BITS - R_CMD_TRANSPARENCY_BITS - R_CMD_MATERIAL_BITS - R_CMD_PRIMITIVE_BITS - R_CMD_INSTANCED_BITS - R_CMD_ELEMENTS_BITS)
 
 #define R_CMD_SCREEN_LAYER_LOW_BIT	(R_CMD_DEPTH_BITS + R_CMD_TRANSPARENCY_BITS + R_CMD_MATERIAL_BITS + R_CMD_PRIMITIVE_BITS + R_CMD_INSTANCED_BITS + R_CMD_ELEMENTS_BITS)
@@ -338,6 +337,7 @@ u64 	r_MaterialConstructRaw(const u64 program, const u64 batch, const u64 textur
 #define R_CMD_ARRAYS			((u64) 0)
 
 #define R_CMD_PRIMITIVE_LINE		((u64) 1)
+#define R_CMD_PRIMITIVE_POINT		((u64) 2)
 #define R_CMD_PRIMITIVE_TRIANGLE	((u64) 0)
 
 #define MATERIAL_PROGRAM_BITS		2
