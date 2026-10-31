@@ -26,7 +26,6 @@ struct ds_DynamicsWorker *g_dynamics_worker;
 void ds_DynamicsStaticAssert(void)
 {
     ds_StaticAssert(sizeof(struct ds_BodyCompute) == DS_CACHE_LINE, "");
-    ds_StaticAssert(DRAW_GRAPH_COLOR_COUNT == CG_COLOR_COUNT, "the draw config's graph palette covers every constraint graph colour");
     ds_StaticAssert(sizeof(struct ds_RebuildThreadCompute) == DS_CACHE_LINE, "");
     ds_StaticAssert(sizeof(struct ds_RebuildJob) == DS_CACHE_LINE, "");
     ds_StaticAssert(sizeof(struct ds_RemovalJob) == DS_CACHE_LINE, "");
@@ -98,71 +97,7 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
     ds_CPoolAlloc(NULL, pipeline->draw.segment, 0, GROWABLE);
     ds_CPoolAlloc(NULL, pipeline->draw.point, 0, GROWABLE);
     ds_CPoolAlloc(NULL, pipeline->draw.force, 0, GROWABLE);
-    pipeline->draw_config = (struct ds_DynamicsDrawConfig)
-    {
-        .draw_shapes = 1,
-        .shape_color_mode = DRAW_COLOR_RANDOM,
-        .energy_max = 50.0f,
-        .shape_alpha = 0.8f,
-        .shape_saturation = 0.85f,
-        .shape_lightness = 0.85f,
-        .force_scale = 0.05f,
-        .point_size = 6.0f,
-        .draw_on_top = 1,
-        .joint_error_max = 0.02f,           /* four linear slops: a held joint stays near color_joint, a failing one goes red */
-        .axis_length = 0.25f,
-        .refinement = 12,
-        .color_dbvh = V4(0.8f, 0.1f, 0.0f, 0.6f),
-        .color_sbvh = V4(0.0f, 0.8f, 0.1f, 0.6f),
-        .color_bounds = V4(0.8f, 0.1f, 0.6f, 1.0f),
-        .color_mesh_bvh = V4(0.0f, 0.8f, 0.1f, 0.6f),
-        .color_shape = V4(0.7f, 0.7f, 0.7f, 1.0f),
-        .color_static = V4(0.7f, 0.7f, 0.7f, 1.0f),
-        .color_kinematic = V4(0.3f, 0.5f, 1.0f, 0.9f),
-        .color_dynamic = V4(1.0f, 1.0f, 1.0f, 0.9f),
-        .color_sleeping = V4(0.6f, 0.95f, 0.6f, 0.9f),
-        .color_awake = V4(0.90f, 0.4f, 0.4f, 0.9f),
-        .color_velocity_low = V4(0.2f, 0.2f, 1.0f, 0.9f),
-        .color_velocity_high = V4(1.0f, 0.2f, 0.2f, 0.9f),
-        .color_touching = V4(1.0f, 0.8f, 0.2f, 0.9f),
-        .color_not_touching = V4(0.35f, 0.35f, 0.35f, 0.9f),
-        .color_constraint_point = V4(1.0f, 0.0f, 0.0f, 1.0f),
-        /* saturated hues, spread so index neighbours differ */
-        .color_graph =
-        {
-            V4(1.00f, 0.00f, 0.00f, 1.0f),
-            V4(0.40f, 1.00f, 0.20f, 1.0f),
-            V4(0.00f, 0.50f, 1.00f, 1.0f),
-            V4(1.00f, 0.20f, 0.80f, 1.0f),
-            V4(1.00f, 1.00f, 0.00f, 1.0f),
-            V4(0.20f, 1.00f, 0.80f, 1.0f),
-            V4(0.50f, 0.00f, 1.00f, 1.0f),
-            V4(1.00f, 0.40f, 0.20f, 1.0f),
-            V4(0.00f, 1.00f, 0.00f, 1.0f),
-            V4(0.20f, 0.40f, 1.00f, 1.0f),
-            V4(1.00f, 0.00f, 0.50f, 1.0f),
-            V4(0.80f, 1.00f, 0.20f, 1.0f),
-            V4(0.00f, 1.00f, 1.00f, 1.0f),
-            V4(0.80f, 0.20f, 1.00f, 1.0f),
-            V4(1.00f, 0.50f, 0.00f, 1.0f),
-            V4(0.20f, 1.00f, 0.40f, 1.0f),
-            V4(0.00f, 0.00f, 1.00f, 1.0f),
-            V4(1.00f, 0.20f, 0.40f, 1.0f),
-            V4(0.50f, 1.00f, 0.00f, 1.0f),
-            V4(0.20f, 0.80f, 1.00f, 1.0f),
-            V4(1.00f, 0.00f, 1.00f, 1.0f),
-            V4(1.00f, 0.80f, 0.20f, 1.0f),
-            V4(0.00f, 1.00f, 0.50f, 1.0f),
-            V4(0.40f, 0.20f, 1.00f, 1.0f),
-        },
-        .color_contact_force = V4(1.0f, 0.9f, 0.1f, 1.0f),
-        .color_friction_force = V4(0.6f, 1.0f, 1.0f, 1.0f),
-        .color_joint_force = V4(1.0f, 0.6f, 1.0f, 1.0f),
-        .color_joint = V4(0.5f, 0.8f, 1.0f, 1.0f),
-        .color_mouse_joint = V4(0.8f, 0.6f, 1.0f, 1.0f),
-        .color_joint_error = V4(0.8f, 0.0f, 0.0f, 1.0f),
-        .color_mass_center = V4(1.0f, 1.0f, 1.0f, 1.0f),
-    };
+    pipeline->draw_config = ds_DynamicsDrawConfigDefault();
 
     pipeline->profile_length = 8192;
     pipeline->profile_next = pipeline->profile_length;
@@ -823,10 +758,6 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
         {
             ds_ParallelForRange(&low, &high, pf, range_index);
             ds_BodyIntegrateVelocitiesRange(pipeline, low, high);
-            if (pipeline->draw_config.draw_body_axes)
-            {
-                ds_BodyDrawRange(pipeline, low, high);
-            }
         }
         ProfZoneEnd;
     }
@@ -841,10 +772,6 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
             ds_ParallelFor(pf, range_index)
             {
                 ds_ParallelForRange(&low, &high, pf, range_index);
-                if (pipeline->draw_config.draw_constraint_points || pipeline->draw_config.draw_contact_forces)
-                {
-                    ds_ContactDrawRange(pipeline, ci, low, high);
-                }
                 ds_PositionConstraintInitAndCacheImpulsesRange(pipeline, ci, low, high);
             }
         }
@@ -1811,10 +1738,8 @@ void ds_DynamicsSimulateFrame(struct ds_Dynamics *pipeline)
 	/* broadphase => narrowphase => solve => integrate */
     CollisionDetection(pipeline);
 	SolveConstraints(pipeline);
-    if (pipeline->draw_config.draw_constraint_points || pipeline->draw_config.draw_joint_forces || pipeline->draw_config.draw_joints)
-    {
-        ds_JointDrawPush(pipeline);
-    }
+
+    ds_DynamicsDrawFrameEnd(pipeline);
 
     for (u32 i = 0; i < pipeline->worker_count; ++i)
     {
