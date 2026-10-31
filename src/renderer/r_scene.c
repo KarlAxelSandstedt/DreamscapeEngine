@@ -388,6 +388,14 @@ void r_SceneBucketListGenerate(void)
 				
 			} break;
 
+			case R_INSTANCE_RAW3D:
+			{
+				const struct r_Mesh *mesh = instance->raw3d->mesh;
+				buf_constructor.last->index_count = mesh->index_count;
+				buf_constructor.last->local_size = mesh->vertex_count * L_PROXY3D_STRIDE;
+				r_BufferConstructorBufferAddSize(&buf_constructor, 0, S_PROXY3D_STRIDE, 1, 0);
+			} break;
+
 			case R_INSTANCE_MESH:
 			{
 				const u64 bytes = instance->mesh->vertex_count * instance->mesh->local_stride;
@@ -709,6 +717,29 @@ static void r_scene_bucket_generate_draw_data(struct r_Bucket *b)
 				}
 			} break;
 
+			case R_INSTANCE_RAW3D:
+			{
+				const struct r_Mesh *mesh = instance->raw3d->mesh;
+				buf->shared_data = ArenaPush(g_scene->mem_frame, buf->shared_size);
+				buf->local_data = mesh->vertex_data;
+				buf->index_data = mesh->index_data;
+
+				u8 *shared_data = buf->shared_data;
+				for (u32 i = buf->c_l; i <= buf->c_h; ++i)
+				{
+					r_cmd = g_scene->cmd_frame + i;
+					instance = g_scene->instance_pool.buf + r_cmd->instance;
+					const struct r_Raw3d *raw = instance->raw3d;
+
+					const v3 translation = V3F64Demote(V3F64Sub(raw->position, g_scene->view_origin));
+					memcpy(shared_data + S_PROXY3D_TRANSLATION_BLEND_OFFSET, &translation, sizeof(v3));
+					memcpy(shared_data + S_PROXY3D_TRANSLATION_BLEND_OFFSET + sizeof(v3), &raw->blend, sizeof(f32));
+					memcpy(shared_data + S_PROXY3D_ROTATION_OFFSET, &raw->rotation, sizeof(q));
+					memcpy(shared_data + S_PROXY3D_COLOR_OFFSET, &raw->color, sizeof(v4));
+					shared_data += S_PROXY3D_STRIDE;
+				}
+			} break;
+
 			case R_INSTANCE_MESH:
 			{
 				buf->shared_data = NULL;
@@ -823,6 +854,12 @@ u64 r_MaterialConstruct(const u64 program, const u64 mesh, const u64 texture)
 	return (program << MATERIAL_PROGRAM_LOW_BIT) | (mesh << MATERIAL_MESH_LOW_BIT) | (texture << MATERIAL_TEXTURE_LOW_BIT);
 }
 
+u64 r_MaterialConstructRaw(const u64 program, const u64 batch, const u64 texture)
+{
+	ds_Assert(batch <= (MATERIAL_MESH_MASK >> MATERIAL_MESH_LOW_BIT));
+	return r_MaterialConstruct(program, batch, texture) | (MATERIAL_SOURCE_RAW << MATERIAL_SOURCE_LOW_BIT);
+}
+
 u64 r_CommandKey(const u64 screen, const u64 depth, const u64 transparency, const u64 material, const u64 primitive, const u64 instanced, const u64 elements)
 {
 	ds_Assert(screen <= (((u64) 1 << R_CMD_SCREEN_LAYER_BITS) - (u64) 1));
@@ -860,6 +897,8 @@ static const char *primitive_str_table[1 << R_CMD_PRIMITIVE_BITS] =
 {
 	"PRIMITIVE_TRIANGLE",
 	"PRIMITIVE_LINE",
+	"PRIMITIVE_POINT",
+	"PRIMITIVE_UNUSED",
 };
 
 static const char *instanced_str_table[1 << R_CMD_INSTANCED_BITS] =

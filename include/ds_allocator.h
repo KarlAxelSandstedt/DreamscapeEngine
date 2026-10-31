@@ -686,10 +686,9 @@ A TPool must stay below 2^31 slots (asserted in debug builds only).
 #define TSTACK_NULL		U64_MAX
 
 /* A free list, alone on its cache line. */
-struct ds_TStack
+struct ds_Align(DS_CACHE_LINE) ds_TStack
 {
 	u64	a_head;
-	u8	pad[DS_CACHE_LINE - sizeof(u64)];
 };
 
 /* Internal: the type-independent part of a TPool. */

@@ -361,60 +361,11 @@ void led_NodeDetachRigidBodyPrefab(struct led *led, const ds_Id id)
 
 static struct slot led_CollisionShapeAdd(struct led *led, const struct c_Shape *shape)
 {
-	struct slot slot = empty_slot;
-	if (!shape->id.len)
+	const struct slot slot = c_ShapeDBAdd(&led->cs_db, shape->id, shape);
+	if (slot.index != SDB_STUB)
 	{
-		LogString(T_LED, S_WARNING, "Failed to allocate collision shape: shape->id must not be empty");
-	} 
-	else if (ds_SDBLookup(led->cs_db, shape->id).index != SDB_STUB) 
-	{
-		LogString(T_LED, S_WARNING, "Failed to allocate collision shape: shape with given id already exist");
+		DLLAppend(led->cs_shape_list, led->cs_db.sdb.pool.buf, slot.index, led_shape_node);
 	}
-	else
-	{ 
-		u8 buf[C_SHAPE_ID_SIZE];
-		const utf8 copy = Utf8CopyBuffered(buf, C_SHAPE_ID_SIZE, shape->id);	
-		if (!copy.len)
-		{
-			Log(T_LED, S_WARNING, "Failed to allocate collision shape: shape->id size must be <= %luB", C_SHAPE_ID_SIZE);
-		}
-		else
-		{
-			slot = ds_SDBAddAlias(led->cs_db, copy);
-			DLLAppend(led->cs_shape_list, led->cs_db.pool.buf, slot.index, led_shape_node);
-			struct c_Shape *new_shape = slot.address;
-            new_shape->id = Utf8CopyBuffered(new_shape->id_buf, C_SHAPE_ID_SIZE, copy);
-			new_shape->type = shape->type;
-			switch (shape->type)
-			{
-				case C_SHAPE_SPHERE: 
-				{ 
-					new_shape->sphere = shape->sphere; 
-				} break;
-
-				case C_SHAPE_CAPSULE: 
-				{ 
-					new_shape->capsule = shape->capsule; 
-				} break;
-
-				case C_SHAPE_CONVEX_HULL: 
-				{ 
-					new_shape->hull = shape->hull; 
-				} break;
-
-				case C_SHAPE_TRI_MESH: 
-				{ 
-					new_shape->mesh_bvh = shape->mesh_bvh; 
-				} break;
-			};
-
-			if (shape->type != C_SHAPE_TRI_MESH)
-			{
-				c_ShapeUpdateMassProperties(new_shape);
-			}
-		}
-	}
-
 	return slot;
 }
 
@@ -546,14 +497,14 @@ void led_CollisionShapeRemove(struct led *led, const utf8 id)
 	if (slot.index != SDB_STUB && shape->reference_count == 0)
 	{
 		void *buf = shape->id.buf;
-		DLLRemove(led->cs_shape_list, led->cs_db.pool.buf, slot.index, led_shape_node);
-		ds_SDBRemove(led->cs_db, id);
+		DLLRemove(led->cs_shape_list, led->cs_db.sdb.pool.buf, slot.index, led_shape_node);
+		c_ShapeDBRemove(&led->cs_db, id);
 	}
 }
 
 struct slot led_CollisionShapeLookup(struct led *led, const utf8 id)
 {
-	return ds_SDBLookup(led->cs_db, id);
+	return c_ShapeDBLookup(&led->cs_db, id);
 }
 
 struct slot led_ShapePrefabAdd(struct led *led, const utf8 id, const utf8 cshape, const f32 density, const f32 restitution, const f32 friction, const f32 margin)
@@ -577,7 +528,7 @@ struct slot led_ShapePrefabAdd(struct led *led, const utf8 id, const utf8 cshape
 		}
 		else
 		{
-			struct slot ref = ds_SDBReference(led->cs_db, cshape);
+			struct slot ref = c_ShapeDBReference(&led->cs_db, cshape);
 			if (ref.index == SDB_STUB)
 			{
 				LogString(T_LED, S_WARNING, "In ds_ShapePrefab: shape not found, stub_shape chosen");
@@ -604,7 +555,7 @@ void led_ShapePrefabRemove(struct led *led, const utf8 id)
 	struct ds_ShapePrefab *prefab = slot.address;
 	if (slot.index != SDB_STUB && prefab->reference_count == 0)
 	{
-		ds_SDBDereference(led->cs_db, prefab->cshape);
+		c_ShapeDBDereference(&led->cs_db, prefab->cshape);
         ds_SDBDereference(led->render_mesh_db, prefab->render_mesh);
 		ds_SDBRemove(led->shape_prefab_db, id);
 	}	
@@ -807,7 +758,7 @@ struct slot led_RenderMeshAdd(struct led *led, const utf8 id, const utf8 shape)
 			struct r_Mesh *mesh = slot.address;
             mesh->id = Utf8CopyBuffered(mesh->id_buf, R_MESH_BUFSIZE, copy);
 
-			struct slot ref = ds_SDBLookup(led->cs_db, shape);
+			struct slot ref = c_ShapeDBLookup(&led->cs_db, shape);
 			if (ref.index == SDB_STUB)
 			{
 				LogString(T_LED, S_WARNING, "In render_mesh_add: shape not found, stub chosen");
@@ -1429,6 +1380,150 @@ void led_JointSetup(struct led *led)
             const ds_Id box = led_JointSceneNodeAdd(led, "range_spring_chain", i, V3(x, hang_y - prefab.target * (f32) (i + 1), row2_z), Utf8Inline("rb_box"), range_spring_color);
             led_JointSceneJointAdd(led, &prefab, prev, box);
             prev = box;
+        }
+    }
+}
+
+enum led_MeshKind
+{
+    LED_MESH_WAVES,     /* a rolling field */
+    LED_MESH_BOWL,      /* a paraboloid, 5 m deep at the rim */
+    LED_MESH_STEPS      /* 2.5 m treads, 0.5 m risers, climbing along x */
+};
+
+/* a heightfield of n x n vertices over width x width metres, centred on the origin, y = f(x, z) by kind */
+static struct triMesh TriMeshHeightfield(struct arena *mem, const u32 n, const f32 width, const enum led_MeshKind kind)
+{
+	struct triMesh mesh = { .v_count = n*n, .tri_count = 2*(n-1)*(n-1) };
+	mesh.v = ArenaPush(mem, mesh.v_count*sizeof(v3));
+	mesh.tri = ArenaPush(mem, mesh.tri_count*sizeof(v3u32));
+	ds_Assert(mesh.v && mesh.tri);
+
+	const f32 unit = width / (f32) (n - 1);
+	for (u32 x = 0; x < n; ++x)
+	{
+		for (u32 z = 0; z < n; ++z)
+		{
+			const f32 px = -0.5f * width + x*unit;
+			const f32 pz = -0.5f * width + z*unit;
+			f32 py = 0.0f;
+			switch (kind)
+			{
+				case LED_MESH_WAVES: { py = 0.6f * F32Sin(0.8f * px) * F32Cos(0.8f * pz); } break;
+				case LED_MESH_BOWL:  { py = 0.05f * (px*px + pz*pz); } break;
+				case LED_MESH_STEPS: { py = 0.5f * (f32) (u32) ((px + 0.5f * width) / 2.5f); } break;
+			}
+			mesh.v[x*n + z] = V3(px, py, pz);
+		}
+	}
+
+	/* CCW about +y, as TriMeshPerlinNoise */
+	for (u32 x = 0; x < n-1; ++x)
+	{
+		for (u32 z = 0; z < n-1; ++z)
+		{
+			mesh.tri[2*(x*(n-1) + z) + 0] = V3U32(x*n + z, x*n + z+1, (x+1)*n + z);
+			mesh.tri[2*(x*(n-1) + z) + 1] = V3U32((x+1)*n + z, x*n + z+1, (x+1)*n + z+1);
+		}
+	}
+	return mesh;
+}
+
+/* a tri mesh collision shape from a heightfield, its BVH built with 8 bins */
+static void led_MeshSceneShapeAdd(struct led *led, const char *id, const enum led_MeshKind kind)
+{
+	struct ds_Window *sys_win = ds_WindowAddress(g_editor->window);
+	struct triMesh *mesh = ArenaPush(&led->mem_persistent, sizeof(struct triMesh));
+	*mesh = TriMeshHeightfield(&led->mem_persistent, 32, 20.0f, kind);
+	struct triMeshBVH *mesh_bvh = ArenaPush(&led->mem_persistent, sizeof(struct triMeshBVH));
+	*mesh_bvh = TriMeshBVHConstruct(&led->mem_persistent, mesh, 8);
+	led_CollisionTriMeshBVHAdd(led, Utf8Cstr(sys_win->ui->mem_frame, id), mesh_bvh);
+}
+
+/* tri mesh shapes: three heightfields side by side with boxes and spheres dropped on them */
+void led_MeshSetup(struct led *led)
+{
+    ds_CPoolFlush(led->joint_pool);
+	struct ds_Window *sys_win = ds_WindowAddress(g_editor->window);
+
+	const f32 alpha = 0.6f;
+	const v4 static_color = V4(0.8f, 0.6f, 0.6f, alpha);
+	const v4 dynamic_color = V4(154.0f/256.0f, 101.0f/256.0f, 182.0f/256.0f, alpha);
+
+    led_CollisionBoxAdd(led, Utf8Cstr(sys_win->ui->mem_frame, "c_box"), V3(0.5f, 0.5f, 0.5f));
+    led_CollisionSphereAdd(led, Utf8Cstr(sys_win->ui->mem_frame, "c_sphere"), 0.5f);
+	led_MeshSceneShapeAdd(led, "c_waves", LED_MESH_WAVES);
+	led_MeshSceneShapeAdd(led, "c_bowl", LED_MESH_BOWL);
+	led_MeshSceneShapeAdd(led, "c_steps", LED_MESH_STEPS);
+
+    const u32 rb_static = 0;
+    const u32 rb_dynamic = 1;
+    const char *shape[5] = { "box", "sphere", "waves", "bowl", "steps" };
+    const u32 dynamic[5] = { rb_dynamic, rb_dynamic, rb_static, rb_static, rb_static };
+    const ds_Transform identity = ds_TransformIdentity();
+    for (u32 i = 0; i < 5; ++i)
+    {
+        const utf8 c = Utf8Format(sys_win->ui->mem_frame, "c_%s", shape[i]);
+        const utf8 rm = Utf8Format(sys_win->ui->mem_frame, "rm_%s", shape[i]);
+        const utf8 sp = Utf8Format(sys_win->ui->mem_frame, "s_%s", shape[i]);
+        const utf8 rb = Utf8Format(sys_win->ui->mem_frame, "rb_%s", shape[i]);
+        const utf8 l = Utf8Format(sys_win->ui->mem_frame, "l_s_%s", shape[i]);
+        led_RigidBodyPrefabAdd(led, rb, dynamic[i]);
+        led_RenderMeshAdd(led, rm, c);
+        led_ShapePrefabAdd(led, sp, c, 1.0f, 0.0f, 0.5f, 0.5f);
+        led_ShapePrefabAttachRenderMesh(led, sp, rm);
+        led_RigidBodyPrefabAttachShape(led, rb, sp, l, &identity);
+    }
+
+    /* heavy box and sphere: density 50, so their contact forces are 50 times the others' */
+    const char *heavy[2] = { "box", "sphere" };
+    for (u32 i = 0; i < 2; ++i)
+    {
+        const utf8 c = Utf8Format(sys_win->ui->mem_frame, "c_%s", heavy[i]);
+        const utf8 rm = Utf8Format(sys_win->ui->mem_frame, "rm_%s", heavy[i]);
+        const utf8 sp = Utf8Format(sys_win->ui->mem_frame, "s_heavy_%s", heavy[i]);
+        const utf8 rb = Utf8Format(sys_win->ui->mem_frame, "rb_heavy_%s", heavy[i]);
+        const utf8 l = Utf8Format(sys_win->ui->mem_frame, "l_s_heavy_%s", heavy[i]);
+        led_RigidBodyPrefabAdd(led, rb, rb_dynamic);
+        led_ShapePrefabAdd(led, sp, c, 50.0f, 0.0f, 0.5f, 0.5f);
+        led_ShapePrefabAttachRenderMesh(led, sp, rm);
+        led_RigidBodyPrefabAttachShape(led, rb, sp, l, &identity);
+    }
+
+    const f32 mesh_x[3] = { -25.0f, 0.0f, 25.0f };
+    const char *mesh_rb[3] = { "rb_waves", "rb_bowl", "rb_steps" };
+    for (u32 m = 0; m < 3; ++m)
+    {
+        led_JointSceneNodeAdd(led, "mesh", m, V3(mesh_x[m], 0.0f, 0.0f), Utf8Cstr(sys_win->ui->mem_frame, mesh_rb[m]), static_color);
+        for (u32 i = 0; i < 4; ++i)
+        {
+            for (u32 j = 0; j < 4; ++j)
+            {
+                const v3 position = V3(mesh_x[m] - 6.0f + 4.0f * i, 8.0f + 1.5f * (f32) ((i + j) & 1), -6.0f + 4.0f * j);
+                const char *rb = ((i + j) & 1) ? "rb_sphere" : "rb_box";
+                led_JointSceneNodeAdd(led, "drop", m*16 + i*4 + j, position, Utf8Cstr(sys_win->ui->mem_frame, rb), dynamic_color);
+            }
+        }
+
+        /* a stack of three heavy boxes in one back corner, a heavy sphere in the other */
+        for (u32 k = 0; k < 3; ++k)
+        {
+            led_JointSceneNodeAdd(led, "heavy", m*4 + k, V3(mesh_x[m] - 8.0f, 10.0f + 1.2f * (f32) k, 8.0f), Utf8Inline("rb_heavy_box"), dynamic_color);
+        }
+        led_JointSceneNodeAdd(led, "heavy", m*4 + 3, V3(mesh_x[m] + 8.0f, 10.0f, 8.0f), Utf8Inline("rb_heavy_sphere"), dynamic_color);
+    }
+
+    /* one mesh shape instanced four times, each turned and tilted differently, in a row behind */
+    for (u32 k = 0; k < 4; ++k)
+    {
+        const v3 position = V3(-37.5f + 25.0f * k, 0.0f, 30.0f);
+        const ds_Id node = led_JointSceneNodeAdd(led, "waves", k, position, Utf8Inline("rb_waves"), static_color);
+        struct led_Node *led_node = led->node_hierarchy.pool.buf + ds_IdIndex(node);
+        led_node->transform.rotation = QAxisAngle(V3(0.3f, 1.0f, 0.2f * (f32) k), F32_PI * (f32) k / 5.0f);     /* QAxisAngle normalizes */
+        for (u32 i = 0; i < 4; ++i)
+        {
+            const v3 drop = V3(position.x - 3.0f + 2.0f * i, 9.0f, position.z + 2.0f * (f32) i - 3.0f);
+            led_JointSceneNodeAdd(led, "waves_drop", k*4 + i, drop, Utf8Inline("rb_box"), dynamic_color);
         }
     }
 }
@@ -2506,6 +2601,7 @@ void led_Core(struct led *led)
 		led_WallSmashSimulationSetup(led);
 #else
 		led_JointSetup(led);
+		//led_MeshSetup(led);
 		//led_WallSmashSimulationSetup(led);
 		//led_RopeSetup(led);
 #endif

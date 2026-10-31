@@ -18,6 +18,7 @@
 */
 
 #include "r_local.h"
+#include "ds_collision.h"
 
 
 static f32 stub_vertices[] =
@@ -405,4 +406,118 @@ void r_MeshTriMesh(struct arena *mem, struct r_Mesh *mesh, const struct triMesh 
 
 	mesh->index_max_used = 0;
 	//mesh->index_max_used = mesh->index_count-1;
+}
+
+struct r_Mesh *r_MeshShape(struct c_Shape *shape, const u32 refinement)
+{
+	if (shape->render_mesh)
+	{
+		return shape->render_mesh;
+	}
+
+	struct arena *tmp = ArenaPushScratch();
+	struct r_Mesh built = { .id = Utf8Empty() };
+	switch (shape->type)
+	{
+		case C_SHAPE_SPHERE:        { r_MeshSphere(tmp, &built, shape->sphere.radius, refinement); } break;
+		case C_SHAPE_CAPSULE:       { r_MeshCapsule(tmp, &built, shape->capsule.half_height, shape->capsule.radius, refinement); } break;
+		case C_SHAPE_CONVEX_HULL:   { r_MeshHull(tmp, &built, &shape->hull); } break;
+		case C_SHAPE_TRI_MESH:      { r_MeshTriMesh(tmp, &built, shape->mesh_bvh.mesh); } break;
+		default:                    { ds_Assert(0); } break;
+	}
+
+	/* one block: the mesh, its vertex data, its index data */
+	const u64 vertex_bytes = (u64) built.vertex_count * built.local_stride;
+	const u64 index_bytes = (u64) built.index_count * sizeof(u32);
+	const u64 mesh_offset = 0;
+	const u64 vertex_offset = sizeof(struct r_Mesh);
+	const u64 index_offset = vertex_offset + ((vertex_bytes + 7) & ~(u64) 7);
+	u8 *block = ds_Alloc(index_offset + index_bytes, DEFAULT_MEMORY_ALIGNMENT);
+	if (block)
+	{
+		struct r_Mesh *mesh = (struct r_Mesh *) (block + mesh_offset);
+		*mesh = built;
+		mesh->vertex_data = block + vertex_offset;
+		mesh->index_data = (index_bytes) ? (u32 *) (block + index_offset) : NULL;
+		memcpy(mesh->vertex_data, built.vertex_data, vertex_bytes);
+		memcpy(block + index_offset, built.index_data, index_bytes);
+		shape->render_mesh = mesh;
+	}
+	else
+	{
+		Log(T_RENDERER, S_ERROR, "shape %k: no memory for its render mesh (%lu B)", &shape->id, index_offset + index_bytes);
+	}
+	ArenaPopScratch();
+	return shape->render_mesh;
+}
+
+struct r_Mesh *r_MeshShapeBvh(struct c_Shape *shape)
+{
+	if (shape->render_bvh || shape->type != C_SHAPE_TRI_MESH)
+	{
+		return shape->render_bvh;
+	}
+
+	const struct BVH *bvh = &shape->mesh_bvh.bvh;
+	const u32 node_count = bvh->pool.count;
+	if (!node_count)
+	{
+		return NULL;
+	}
+
+	/* one block: the mesh, 8 corners per node (position, zero normal), 12 edges per node as index pairs */
+	const u64 vertex_bytes = (u64) node_count * 8 * L_PROXY3D_STRIDE;
+	const u64 index_bytes = (u64) node_count * 24 * sizeof(u32);
+	const u64 vertex_offset = sizeof(struct r_Mesh);
+	const u64 index_offset = vertex_offset + ((vertex_bytes + 7) & ~(u64) 7);
+	u8 *block = ds_Alloc(index_offset + index_bytes, DEFAULT_MEMORY_ALIGNMENT);
+	if (!block)
+	{
+		Log(T_RENDERER, S_ERROR, "shape %k: no memory for its BVH lines (%lu B)", &shape->id, index_offset + index_bytes);
+		return NULL;
+	}
+
+	struct r_Mesh *mesh = (struct r_Mesh *) block;
+	*mesh = (struct r_Mesh) { .id = Utf8Empty(), .vertex_count = 8 * node_count, .index_count = 24 * node_count, .local_stride = L_PROXY3D_STRIDE };
+	mesh->vertex_data = block + vertex_offset;
+	mesh->index_data = (u32 *) (block + index_offset);
+
+	const v3 zero = V3Zero();
+	u8 *vertex = mesh->vertex_data;
+	u32 *index = mesh->index_data;
+	u32 base = 0;
+	for (u32 ni = 0; ni < bvh->pool.count_max; ++ni)
+	{
+		const struct BVHNode *node = bvh->pool.buf + ni;
+		if (!ds_PoolSlotAllocated(node))
+		{
+			continue;
+		}
+
+		/* corner c has bit 0 for x, 1 for y, 2 for z at the max */
+		for (u32 c = 0; c < 8; ++c)
+		{
+			const v3 corner = V3((c & 1) ? node->bbox.max.x : node->bbox.min.x,
+			                     (c & 2) ? node->bbox.max.y : node->bbox.min.y,
+			                     (c & 4) ? node->bbox.max.z : node->bbox.min.z);
+			memcpy(vertex + L_PROXY3D_POSITION_OFFSET, &corner, sizeof(v3));
+			memcpy(vertex + L_PROXY3D_NORMAL_OFFSET, &zero, sizeof(v3));
+			vertex += L_PROXY3D_STRIDE;
+		}
+		for (u32 c = 0; c < 8; ++c)
+		{
+			for (u32 bit = 1; bit < 8; bit <<= 1)
+			{
+				if (!(c & bit))
+				{
+					*index++ = base + c;
+					*index++ = base + (c | bit);
+				}
+			}
+		}
+		base += 8;
+	}
+	ds_Assert(base == 8 * node_count);
+	shape->render_bvh = mesh;
+	return mesh;
 }

@@ -46,14 +46,24 @@ void led_ProjectMenuDealloc(struct led_ProjectMenu *menu)
 	DirectoryNavigatorDealloc(&menu->dir_nav);
 }
 
-const char *body_color_mode_str_buf[RB_COLOR_MODE_COUNT] = 
+const char *shape_color_mode_str_buf[DRAW_COLOR_MODE_COUNT] =
 {
-	"RB_COLOR_MODE_BODY",
-	"RB_COLOR_MODE_COLLISION",
-	"RB_COLOR_MODE_ISLAND",
-	"RB_COLOR_MODE_SLEEP",
+	"DRAW_COLOR_UNIFORM",
+	"DRAW_COLOR_RANDOM",
+	"DRAW_COLOR_ISLAND",
+	"DRAW_COLOR_SLEEP",
+	"DRAW_COLOR_BODY_TYPE",
+	"DRAW_COLOR_VELOCITY",
+	"DRAW_COLOR_TOUCHING",
 };
-const char **body_color_mode_str = body_color_mode_str_buf;
+const char **shape_color_mode_str = shape_color_mode_str_buf;
+
+const char *point_color_mode_str_buf[DRAW_POINT_COLOR_MODE_COUNT] =
+{
+	"DRAW_POINT_UNIFORM",
+	"DRAW_POINT_GRAPH_COLOR",
+};
+const char **point_color_mode_str = point_color_mode_str_buf;
 
 
 struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
@@ -120,7 +130,7 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 	ds_SDBAlloc(NULL, g_editor->shape_prefab_db, 32, GROWABLE);
     ds_PoolAlloc(NULL, g_editor->shape_prefab_instance_pool, 16384, GROWABLE);
 	ds_SDBAlloc(NULL, g_editor->body_prefab_db, 32, GROWABLE);
-	ds_SDBAlloc(NULL, g_editor->cs_db, 32, GROWABLE);
+	c_ShapeDBAlloc(NULL, &g_editor->cs_db, 32, GROWABLE);
 	DLLFlush(g_editor->cs_shape_list);
 	g_editor->physics = ds_DynamicsAlloc(&g_editor->mem_persistent, 1024, NSEC_PER_SEC / (u64) 60, 16*1024*1024, &g_editor->cs_db, &g_editor->body_prefab_db, thread_count, thread_framesize);
     ds_CPoolAlloc(NULL, g_editor->joint_pool, 256, GROWABLE);
@@ -137,13 +147,8 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 	struct r_Mesh *r_mesh_stub = g_editor->render_mesh_db.pool.buf + SDB_STUB;
 	r_MeshStubBox(r_mesh_stub);
 
-	struct c_Shape *cshape_stub = g_editor->cs_db.pool.buf + SDB_STUB;
-	cshape_stub->type = C_SHAPE_CONVEX_HULL;
-	cshape_stub->hull = DcelBox(&sys_win->mem_persistent, V3(0.5f, 0.5f, 0.5f));
-	c_ShapeUpdateMassProperties(cshape_stub);
-
     struct ds_ShapePrefab *shape_stub = g_editor->shape_prefab_db.pool.buf + SDB_STUB;
-    shape_stub->cshape = ds_SDBReference(g_editor->cs_db, Utf8Empty()).index;
+    shape_stub->cshape = c_ShapeDBReference(&g_editor->cs_db, Utf8Empty()).index;
 	shape_stub->density = 1.0f;
 	shape_stub->restitution = 0.0f;
 	shape_stub->friction = 0.0f;
@@ -171,13 +176,7 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 	g_editor->sleep_color = V4(113.0f/256.0f, 241.0f/256.0f, 157.0f/256.0f, 0.7f);
 	g_editor->awake_color = V4(255.0f/256.0f, 36.0f/256.0f, 48.0f/256.0f, 0.7f);
 	g_editor->manifold_color = V4(0.6f, 0.6f, 0.9f, 1.0f);
-	g_editor->dbvh_color = V4(0.8f, 0.1f, 0.0f, 0.6f);
-	g_editor->sbvh_color = V4(0.0f, 0.8f, 0.1f, 0.6f);
-	g_editor->bounding_box_color = V4(0.8f, 0.1f, 0.6f, 1.0f);
 
-	g_editor->draw_bounding_box = 0;
-	g_editor->draw_dbvh = 0;
-	g_editor->draw_sbvh = 0;
 
 	g_editor->scene_origin = V3F64(0.0, 0.0, 0.0);
 

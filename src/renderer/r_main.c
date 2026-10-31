@@ -190,6 +190,337 @@ end:
 	return mesh;
 }
 
+/*
+ * HSL to rgb. The hue walks the colour wheel: red at 0, green at 1/3, blue at 2/3, back to red at 1. Lightness
+ * is the mean of the brightest and darkest channel, 0 black, 1 white, 1/2 the pure colour; saturation is how far
+ * the channels spread about that mean, 0 grey. So "lighter" is a larger lightness, "paler" a smaller saturation.
+ *
+ * The spread (chroma) is the largest the lightness allows times the saturation:
+ *     c = (1 - |2 l - 1|) s
+ * The wheel has six sectors of 60 degrees. In each, one channel is at the top of the spread, one at the bottom,
+ * and the third ramps linearly between them:
+ *     h' = 6 h                    sector = floor(h'), f = h' - sector
+ *     x = c (1 - |(h' mod 2) - 1|)       the ramping channel, up on even sectors, down on odd ones
+ *     sector 0: (c, x, 0)  1: (x, c, 0)  2: (0, c, x)  3: (0, x, c)  4: (x, 0, c)  5: (c, 0, x)
+ * Finally everything is lifted so the mean lands on the lightness:
+ *     m = l - c / 2,  rgb = (r, g, b) + m
+ */
+static v3 r_InternalHsl(const f32 hue, const f32 saturation, const f32 lightness)
+{
+	const f32 c = (1.0f - F32Abs(2.0f * lightness - 1.0f)) * saturation;
+	const f32 h6 = hue * 6.0f;
+	const u32 sector = (u32) h6 % 6;
+	const f32 x = c * (1.0f - F32Abs((h6 - 2.0f * (f32) (sector / 2)) - 1.0f));     /* h' mod 2 */
+	const f32 m = lightness - 0.5f * c;
+	v3 rgb;
+	switch (sector)
+	{
+		case 0:  rgb = V3(c, x, 0.0f); break;
+		case 1:  rgb = V3(x, c, 0.0f); break;
+		case 2:  rgb = V3(0.0f, c, x); break;
+		case 3:  rgb = V3(0.0f, x, c); break;
+		case 4:  rgb = V3(x, 0.0f, c); break;
+		default: rgb = V3(c, 0.0f, x); break;
+	}
+	return V3(rgb.x + m, rgb.y + m, rgb.z + m);
+}
+
+/*
+ * A colour from an id, stable while the id is. Not a hash: hashed hues cluster, and the eye tells only some
+ * fifteen hues apart at one saturation and lightness. The golden ratio sequence
+ *     hue_i = frac(i * (sqrt(5) - 1) / 2)
+ * puts every next id 137.5 degrees further round the wheel, the spacing that stays as even as possible for any
+ * count of ids. A second such sequence (the plastic ratio) moves the lightness by up to +-0.08, so ids that land
+ * on neighbouring hues still differ.
+ */
+static v4 r_InternalIdColor(const u32 id, const f32 saturation, const f32 lightness, const f32 alpha)
+{
+	const f32 golden = 0.6180339887f;
+	const f32 plastic = 0.7548776662f;
+	const f32 hue_turn = (f32) id * golden;
+	const f32 light_turn = (f32) id * plastic;
+	const f32 hue = hue_turn - (f32) (u32) hue_turn;
+	const f32 light = lightness + 0.16f * ((light_turn - (f32) (u32) light_turn) - 0.5f);
+	const v3 rgb = r_InternalHsl(hue, saturation, F32Clamp(light, 0.0f, 1.0f));
+	return V4(rgb.x, rgb.y, rgb.z, alpha);
+}
+
+/* 1 if any of the shape's contacts has a manifold point */
+static u32 r_InternalShapeTouching(const struct ds_Dynamics *pipeline, const u32 shape_index)
+{
+	const struct ds_Shape *shape = pipeline->shape_pool.buf + shape_index;
+	for (i32 ci = shape->contact_list.first; ci != DLL_SENTINEL; )
+	{
+		const struct ds_Contact *contact = pipeline->contact_pool.buf + ci;
+		const u32 side = (contact->key.shape[0] == shape_index) ? 0 : 1;
+		ci = contact->shape_contact[side].next;
+		for (u32 m = 0; m < contact->narrowphase.manifold_count; ++m)
+		{
+			if (contact->narrowphase.manifold[m].point_count)
+			{
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+
+/* the colour of a body's shape under the config's mode: derived from the body's state, nothing stored */
+static v4 r_InternalShapeColor(const struct ds_Dynamics *pipeline, const struct ds_DynamicsDrawConfig *config, const struct ds_Body *body, const u32 shape_index)
+{
+	if (config->shape_color_mode != DRAW_COLOR_UNIFORM && ds_BodyStaticCheck(body))
+	{
+		return config->color_static;
+	}
+
+	switch (config->shape_color_mode)
+	{
+		case DRAW_COLOR_RANDOM:
+		{
+			return r_InternalIdColor((u32) (body - pipeline->body_pool.buf), config->shape_saturation, config->shape_lightness, config->shape_alpha);
+		}
+
+		case DRAW_COLOR_ISLAND:
+		{
+			return r_InternalIdColor(body->island, config->shape_saturation, config->shape_lightness, config->shape_alpha);
+		}
+
+		case DRAW_COLOR_SLEEP:
+		{
+			return (body->set >= SOLVER_SET_SLEEPING_FIRST) ? config->color_sleeping : config->color_awake;
+		}
+
+		case DRAW_COLOR_BODY_TYPE:
+		{
+			return ds_BodyKinematicCheck(body) ? config->color_kinematic : config->color_dynamic;
+		}
+
+		case DRAW_COLOR_VELOCITY:
+		{
+			/* a sleeping body rests; an active one has its compute state */
+			f32 energy = 0.0f;
+			if (body->set == SOLVER_SET_ACTIVE)
+			{
+				const struct ds_SolverSet *set = pipeline->solver_set_pool.buf + body->set;
+				const struct ds_BodyCompute *compute = set->body_compute_pool.buf + body->sim;
+				energy = 0.5f * body->mass * V3Dot(compute->linear_velocity, compute->linear_velocity);
+			}
+			const f32 t = F32Clamp(energy / config->energy_max, 0.0f, 1.0f);
+			return V4Add(V4Scale(config->color_velocity_low, 1.0f - t), V4Scale(config->color_velocity_high, t));
+		}
+
+		case DRAW_COLOR_TOUCHING:
+		{
+			return r_InternalShapeTouching(pipeline, shape_index) ? config->color_touching : config->color_not_touching;
+		}
+
+		default: { return config->color_shape; }
+	}
+}
+
+/*
+ * draw_shapes: every shape as an instanced raw mesh (built on first sight) at the tick's pose, bodies sharing a
+ * c_Shape in one draw (the batch number is the shape's slot); the colour by the config's mode
+ */
+static void r_InternalDrawShapes(const struct led *led)
+{
+	ProfZone;
+	const struct ds_Dynamics *pipeline = &led->physics;
+	const struct ds_DynamicsDrawConfig *config = &pipeline->draw_config;
+	const u32 depth_exponent = 1 + F32ExponentBits(led->cam.fz_far);
+	for (u64 bi = 0; bi < pipeline->body_usage_set.block_count; ++bi)
+	{
+		struct ds_BitBlock it = ds_BitBlockInit(pipeline->body_usage_set.bits[bi], bi);
+		while (ds_BitBlockHasNext(&it))
+		{
+			const struct ds_Body *body = pipeline->body_pool.buf + ds_BitBlockNext(&it);
+			const struct ds_Shape *shape = NULL;
+			for (i32 si = body->shape_list.first; si != DLL_SENTINEL; si = shape->body_shape.next)
+			{
+				shape = pipeline->shape_pool.buf + si;
+				const v4 color = r_InternalShapeColor(pipeline, config, body, (u32) si);
+				struct c_Shape *cshape = c_ShapeDBShape(pipeline->cshape_db, shape->cshape_handle);
+				const struct r_Mesh *mesh = r_MeshShape(cshape, config->refinement);
+				if (!mesh)
+				{
+					continue;
+				}
+
+				ds_TransformWorld transform;
+				ds_ShapeWorldTransform(&transform, pipeline, shape);
+
+				const f32 dist = V3Length(V3F64Demote(V3F64Sub(transform.position, led->cam.position)));
+				const u32 unit_exponent = F32ExponentBits(dist);
+				const u64 depth = (unit_exponent <= depth_exponent && unit_exponent > (depth_exponent - 23))
+					? (0x00800000 | F32MantissaBits(dist)) >> (depth_exponent - unit_exponent + 1)
+					: 0;
+				const u64 transparency = (color.w == 1.0f) ? R_CMD_TRANSPARENCY_OPAQUE : R_CMD_TRANSPARENCY_ADDITIVE;
+				const u64 material = r_MaterialConstructRaw(PROGRAM_PROXY3D, shape->cshape_handle, TEXTURE_NONE);
+				const u64 elements = (mesh->index_data) ? R_CMD_ELEMENTS : R_CMD_ARRAYS;
+				const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, transparency, material, R_CMD_PRIMITIVE_TRIANGLE, R_CMD_INSTANCED, elements);
+
+				struct r_Raw3d *raw = ArenaPush(g_scene->mem_frame, sizeof(struct r_Raw3d));
+				if (!raw)
+				{
+					Log(T_RENDERER, S_ERROR, "shape %k: no frame memory for its instance, not drawn", &cshape->id);
+					continue;
+				}
+
+				*raw = (struct r_Raw3d) { .mesh = mesh, .position = transform.position, .rotation = transform.rotation, .color = color, .blend = 1.0f };
+				struct r_Instance *instance = r_InstanceAddNonCached(cmd);
+				instance->type = R_INSTANCE_RAW3D;
+				instance->raw3d = raw;
+
+				/* a tri mesh's BVH: its lines, built once per shape, instanced with the body */
+				const struct r_Mesh *bvh_mesh = (config->draw_mesh_bvh) ? r_MeshShapeBvh(cshape) : NULL;
+				if (bvh_mesh)
+				{
+					const u64 transparency_bvh = (config->color_mesh_bvh.w == 1.0f) ? R_CMD_TRANSPARENCY_OPAQUE : R_CMD_TRANSPARENCY_ADDITIVE;
+					const u64 cmd_bvh = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, transparency_bvh, material, R_CMD_PRIMITIVE_LINE, R_CMD_INSTANCED, R_CMD_ELEMENTS);
+					struct r_Raw3d *raw_bvh = ArenaPush(g_scene->mem_frame, sizeof(struct r_Raw3d));
+					if (!raw_bvh)
+					{
+						Log(T_RENDERER, S_ERROR, "shape %k: no frame memory for its BVH instance, not drawn", &cshape->id);
+						continue;
+					}
+
+					*raw_bvh = (struct r_Raw3d) { .mesh = bvh_mesh, .position = transform.position, .rotation = transform.rotation, .color = config->color_mesh_bvh, .blend = 1.0f };
+					struct r_Instance *instance_bvh = r_InstanceAddNonCached(cmd_bvh);
+					instance_bvh->type = R_INSTANCE_RAW3D;
+					instance_bvh->raw3d = raw_bvh;
+				}
+			}
+		}
+	}
+	ProfZoneEnd;
+}
+
+/*
+ * The segments and points pushed during the tick (ds_DynamicsDraw: the pipeline's and every worker's) as one line
+ * mesh and one point mesh on the renderer's frame arena, one non-cached instance each; skipped when there is
+ * nothing to draw or the mesh does not fit. A force is a segment of force_scale metres per newton in its colour;
+ * a point is one GL point of the config's point_size pixels. Positions are written relative to the view origin.
+ */
+/* an L_COLOR mesh of vertex_count vertices on the renderer's frame arena, NULL (logged) if it does not fit */
+static struct r_Mesh *ColorMeshFrame(const u64 vertex_count, const char *what)
+{
+	struct arena *mem = &g_r_core->frame;
+	ArenaPushRecord(mem);
+	struct r_Mesh *mesh = ArenaPush(mem, sizeof(struct r_Mesh));
+	u8 *vertex = ArenaPush(mem, vertex_count * L_COLOR_STRIDE);
+	if (!mesh || !vertex)
+	{
+		ArenaPopRecord(mem);
+		Log(T_RENDERER, S_ERROR, "%s: %lu vertices do not fit the renderer's frame arena, not drawn", what, vertex_count);
+		return NULL;
+	}
+	ArenaRemoveRecord(mem);
+
+	mesh->index_count = 0;
+	mesh->index_max_used = 0;
+	mesh->index_data = NULL;
+	mesh->vertex_count = (u32) vertex_count;
+	mesh->vertex_data = vertex;
+	mesh->local_stride = L_COLOR_STRIDE;
+	return mesh;
+}
+
+/* the HUD layer draws after the game layer without depth testing, before the UI (smaller depths sort later) */
+static void ColorMeshDraw(const struct r_Mesh *mesh, const u64 primitive, const u32 on_top)
+{
+	const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
+	const u64 depth = 0x7fffff;
+	const u64 layer = (on_top) ? R_CMD_SCREEN_LAYER_HUD : R_CMD_SCREEN_LAYER_GAME;
+	const u64 cmd = r_CommandKey(layer, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, primitive, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
+	struct r_Instance *instance = r_InstanceAddNonCached(cmd);
+	instance->type = R_INSTANCE_MESH;
+	instance->mesh = (struct r_Mesh *) mesh;
+}
+
+static u8 *LineVertexWrite(u8 *vertex, const v3 p, const v4 color)
+{
+	memcpy(vertex, &p, sizeof(v3));
+	memcpy(vertex + L_COLOR_OFFSET, &color, sizeof(v4));
+	return vertex + L_COLOR_STRIDE;
+}
+
+static u8 *SegmentWrite(u8 *vertex, const v3 p0, const v3 p1, const v4 color)
+{
+	vertex = LineVertexWrite(vertex, p0, color);
+	return LineVertexWrite(vertex, p1, color);
+}
+
+static v3 ViewRelative(const v3f64 p, const v3f64 origin)
+{
+	return V3F64Demote(V3F64Sub(p, origin));
+}
+
+static void r_InternalDrawSegments(const struct led *led)
+{
+	ProfZone;
+
+	const struct ds_Dynamics *pipeline = &led->physics;
+	const struct ds_DynamicsDrawConfig *config = &pipeline->draw_config;
+	const u32 source_count = pipeline->worker_count + 1;
+
+	u64 segment_vertex_count = 0;
+	u64 point_vertex_count = 0;
+	for (u32 i = 0; i < source_count; ++i)
+	{
+		const struct ds_DynamicsDraw *draw = (i < pipeline->worker_count) ? &pipeline->worker[i].draw : &pipeline->draw;
+		segment_vertex_count += 2*draw->segment.count + 2*draw->force.count;
+		point_vertex_count += draw->point.count;
+	}
+
+	struct r_Mesh *segments = (segment_vertex_count) ? ColorMeshFrame(segment_vertex_count, "segments") : NULL;
+	struct r_Mesh *points = (point_vertex_count) ? ColorMeshFrame(point_vertex_count, "points") : NULL;
+	u8 *segment = (segments) ? segments->vertex_data : NULL;
+	u8 *point = (points) ? points->vertex_data : NULL;
+	const v3f64 origin = g_scene->view_origin;
+	for (u32 i = 0; i < source_count; ++i)
+	{
+		const struct ds_DynamicsDraw *draw = (i < pipeline->worker_count) ? &pipeline->worker[i].draw : &pipeline->draw;
+
+		if (segment)
+		{
+			for (u32 k = 0; k < draw->segment.count; ++k)
+			{
+				const struct r_SegmentWorld *s = draw->segment.buf + k;
+				segment = SegmentWrite(segment, ViewRelative(s->p0, origin), ViewRelative(s->p1, origin), s->color);
+			}
+
+			for (u32 k = 0; k < draw->force.count; ++k)
+			{
+				const struct ds_ForceDraw *s = draw->force.buf + k;
+				const v3 p = ViewRelative(s->origin, origin);
+				segment = SegmentWrite(segment, p, V3AddScaled(p, s->force, config->force_scale), s->color);
+			}
+		}
+
+		if (point)
+		{
+			for (u32 k = 0; k < draw->point.count; ++k)
+			{
+				const struct r_PointWorld *s = draw->point.buf + k;
+				point = LineVertexWrite(point, ViewRelative(s->p, origin), s->color);
+			}
+		}
+	}
+
+	if (segments)
+	{
+		ds_Assert((u64) (segment - (u8 *) segments->vertex_data) == segment_vertex_count * L_COLOR_STRIDE);
+		ColorMeshDraw(segments, R_CMD_PRIMITIVE_LINE, config->draw_on_top);
+	}
+
+	if (points)
+	{
+		ds_Assert((u64) (point - (u8 *) points->vertex_data) == point_vertex_count * L_COLOR_STRIDE);
+		ColorMeshDraw(points, R_CMD_PRIMITIVE_POINT, config->draw_on_top);
+	}
+	ProfZoneEnd;
+}
+
 static void r_EditorDraw(const struct led *led)
 {
 	ProfZone;
@@ -215,49 +546,56 @@ static void r_EditorDraw(const struct led *led)
 
 	r_Proxy3dHierarchySpeculate(&g_r_core->frame, led->ns - led->ns_engine_paused);
 
-    HII it;
-    HIIInit(it, g_r_core->proxy3d_hierarchy, PROXY3D_ROOT);
-	// skip root stub 
-    HIIAdvance(it, g_r_core->proxy3d_hierarchy);
-	while (it.at != PROXY3D_ROOT)
+	/* the proxies: off while the physics shapes are drawn in their place (z-fighting) */
+	//    HII it;
+	//    HIIInit(it, g_r_core->proxy3d_hierarchy, PROXY3D_ROOT);
+	//	// skip root stub 
+	//    HIIAdvance(it, g_r_core->proxy3d_hierarchy);
+	//	while (it.at != PROXY3D_ROOT)
+	//	{
+	//		const u32 index = it.at;
+	//        HIIAdvance(it, g_r_core->proxy3d_hierarchy);
+	//		struct r_Proxy3d *proxy = r_Proxy3dAddress(index);
+	//        if ((proxy->flags & PROXY3D_DRAW) == 0)
+	//        {
+	//            continue;
+	//        }
+	//
+	//		const f32 dist = V3Length(V3F64Demote(V3F64Sub(proxy->spec_position, led->cam.position)));
+	//		const u32 unit_exponent = F32ExponentBits(dist);
+	//		const u64 depth = (unit_exponent <= depth_exponent && unit_exponent > (depth_exponent - 23))
+	//			? (0x00800000 | F32MantissaBits(dist)) >> (depth_exponent - unit_exponent + 1)
+	//			: 0;
+	//
+	//		const u64 transparency = (proxy->color.w == 1.0f)
+	//			? R_CMD_TRANSPARENCY_OPAQUE
+	//			: R_CMD_TRANSPARENCY_ADDITIVE;
+	//
+	//		const u64 material = r_MaterialConstruct(PROGRAM_PROXY3D, proxy->mesh, TEXTURE_NONE);
+	//		const struct r_Mesh *r_mesh = led->render_mesh_db.pool.buf + proxy->mesh;
+	//		const u64 command = (r_mesh->index_data)
+	//			? r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, transparency, material, R_CMD_PRIMITIVE_TRIANGLE, R_CMD_INSTANCED, R_CMD_ELEMENTS)
+	//			: r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, transparency, material, R_CMD_PRIMITIVE_TRIANGLE, R_CMD_INSTANCED, R_CMD_ARRAYS);
+	//
+	//		r_InstanceAdd(index, command);
+	//	}
+
+	/* the proxy trees, in world space: rebuilt every frame */
+	const struct ds_DynamicsDrawConfig *draw_config = &led->physics.draw_config;
+	const struct BVH *tree[2] = { &led->physics.dynamic_bvh, &led->physics.static_bvh };
+	const u32 draw_tree[2] = { draw_config->draw_dbvh, draw_config->draw_sbvh };
+	const v4 tree_color[2] = { draw_config->color_dbvh, draw_config->color_sbvh };
+	for (u32 t = 0; t < 2; ++t)
 	{
-		const u32 index = it.at;
-        HIIAdvance(it, g_r_core->proxy3d_hierarchy);
-		struct r_Proxy3d *proxy = r_Proxy3dAddress(index);
-        if ((proxy->flags & PROXY3D_DRAW) == 0)
-        {
-            continue;
-        }
+		if (!draw_tree[t])
+		{
+			continue;
+		}
 
-		const f32 dist = V3Length(V3F64Demote(V3F64Sub(proxy->spec_position, led->cam.position)));
-		const u32 unit_exponent = F32ExponentBits(dist);
-		const u64 depth = (unit_exponent <= depth_exponent && unit_exponent > (depth_exponent - 23))
-			? (0x00800000 | F32MantissaBits(dist)) >> (depth_exponent - unit_exponent + 1)
-			: 0;
-
-		const u64 transparency = (proxy->color.w == 1.0f)
-			? R_CMD_TRANSPARENCY_OPAQUE
-			: R_CMD_TRANSPARENCY_ADDITIVE;
-
-		const u64 material = r_MaterialConstruct(PROGRAM_PROXY3D, proxy->mesh, TEXTURE_NONE);
-		const struct r_Mesh *r_mesh = led->render_mesh_db.pool.buf + proxy->mesh;
-		const u64 command = (r_mesh->index_data)
-			? r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, transparency, material, R_CMD_PRIMITIVE_TRIANGLE, R_CMD_INSTANCED, R_CMD_ELEMENTS)
-			: r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, transparency, material, R_CMD_PRIMITIVE_TRIANGLE, R_CMD_INSTANCED, R_CMD_ARRAYS);
-		
-		r_InstanceAdd(index, command);
-	}
-
-	if (led->draw_dbvh)
-	{
 		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
 		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		const v3f64 position = V3F64(0.0, 0.0, 0.0);
-		const v3 axis = V3(0.0f, 1.0f, 0.0f);
-		const f32 angle = 0.0f;
-		const q rotation = QAxisAngle(axis, angle);
-		struct r_Mesh *mesh = BVHMesh(&g_r_core->frame, &led->physics.dynamic_bvh, position, rotation, g_scene->view_origin, led->dbvh_color);
+		struct r_Mesh *mesh = BVHMesh(&g_r_core->frame, tree[t], V3F64(0.0, 0.0, 0.0), QIdentity(), g_scene->view_origin, tree_color[t]);
 		if (mesh)
 		{
 			struct r_Instance *instance = r_InstanceAddNonCached(cmd);
@@ -266,45 +604,19 @@ static void r_EditorDraw(const struct led *led)
 		}
 	}
 
-	if (led->draw_sbvh)
+	if (led->physics.draw_config.draw_shapes)
 	{
-		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
-		const u64 depth = 0x7fffff;
-		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		struct ds_Body *body = NULL;
-        for (u64 bi = 0; bi < led->physics.body_usage_set.block_count; ++bi)
-        {
-            struct ds_BitBlock it = ds_BitBlockInit(led->physics.body_usage_set.bits[bi], bi);
-            while (ds_BitBlockHasNext(&it))
-            {
-                const struct ds_Body *body = led->physics.body_pool.buf + ds_BitBlockNext(&it);
-                const struct ds_Shape *s = led->physics.shape_pool.buf + body->shape_list.first;
-			    if (s->cshape_type != C_SHAPE_TRI_MESH)
-			    {
-			    	continue;
-			    }
-
-                ds_TransformWorld transform;
-                ds_ShapeWorldTransform(&transform, &led->physics, s);
-
-			    const struct c_Shape *shape = led->physics.cshape_db->pool.buf + s->cshape_handle;
-			    struct r_Mesh *mesh = BVHMesh(&g_r_core->frame, &shape->mesh_bvh.bvh, transform.position, transform.rotation, g_scene->view_origin, led->sbvh_color);
-			    if (mesh)
-			    {
-			    	struct r_Instance *instance = r_InstanceAddNonCached(cmd);
-			    	instance->type = R_INSTANCE_MESH;
-			    	instance->mesh = mesh;
-			    }
-            }
-        }
+		r_InternalDrawShapes(led);
 	}
 
-	if (led->draw_bounding_box)
+	r_InternalDrawSegments(led);
+
+	if (draw_config->draw_bounds)
 	{
 		const u64 material = r_MaterialConstruct(PROGRAM_COLOR, MESH_NONE, TEXTURE_NONE);
 		const u64 depth = 0x7fffff;
 		const u64 cmd = r_CommandKey(R_CMD_SCREEN_LAYER_GAME, depth, R_CMD_TRANSPARENCY_ADDITIVE, material, R_CMD_PRIMITIVE_LINE, R_CMD_NON_INSTANCED, R_CMD_ARRAYS);
-		struct r_Mesh *mesh = BoundingBoxesMesh(&g_r_core->frame, &led->physics, g_scene->view_origin, led->bounding_box_color);
+		struct r_Mesh *mesh = BoundingBoxesMesh(&g_r_core->frame, &led->physics, g_scene->view_origin, draw_config->color_bounds);
 		if (mesh)
 		{
 			struct r_Instance *instance = r_InstanceAddNonCached(cmd);
@@ -348,9 +660,11 @@ static void r_InternalProxy3dUniforms(const struct led *led, const u32 window)
 	aspect_ratio_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_COLOR].gl_program, "aspect_ratio");
 	view_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_COLOR].gl_program, "view");
 	perspective_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_COLOR].gl_program, "perspective");
+	const GLint point_size_addr = ds_glGetUniformLocation(g_r_core->program[PROGRAM_COLOR].gl_program, "point_size");
 	ds_glUniform1f(aspect_ratio_addr, (f32) cam->aspect_ratio);
 	ds_glUniformMatrix4fv(perspective_addr, 1, GL_FALSE, perspective.buf);
 	ds_glUniformMatrix4fv(view_addr, 1, GL_FALSE, view.buf);
+	ds_glUniform1f(point_size_addr, led->physics.draw_config.point_size);
 }
 
 static void r_InternalUiUniforms(const u32 window)
@@ -453,6 +767,7 @@ static void r_SceneRender(const struct led *led, const u32 window)
 		{
 			case R_CMD_PRIMITIVE_LINE: { mode = GL_LINES; } break;
 			case R_CMD_PRIMITIVE_TRIANGLE: { mode = GL_TRIANGLES; } break;
+			case R_CMD_PRIMITIVE_POINT: { mode = GL_POINTS; } break;
 			default:
 			{
 				/* no mode to draw with: skip the bucket */

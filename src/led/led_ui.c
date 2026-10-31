@@ -477,7 +477,8 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 		//led->rb_prefab_list = ui_ListInit(AXIS_2_Y, 200.0f, 24.0f, UI_SELECTION_UNIQUE);
 		//led->rb_prefab_mesh_menu = ui_DropdownMenuInit(150.0f, Vec2Inline(110.0f, 24.0f), UI_DROPDOWN_ABOVE);
 		
-		led->rb_color_mode_menu = ui_DropdownMenuInit(120.0f, V2(196.0f, 24.0f), UI_DROPDOWN_BELOW);
+		led->shape_color_mode_menu = ui_DropdownMenuInit(120.0f, V2(196.0f, 24.0f), UI_DROPDOWN_BELOW);
+		led->point_color_mode_menu = ui_DropdownMenuInit(120.0f, V2(196.0f, 24.0f), UI_DROPDOWN_BELOW);
 	}
 
 	ui_TextAlignX(ALIGN_LEFT)
@@ -650,7 +651,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 					ui_list(&led->cs_list, "###%p", &led->cs_list)
 					for (i32 i = led->cs_shape_list.first; i != DLL_SENTINEL; i = shape->led_shape_node.next)
 					{
-						shape = led->cs_db.pool.buf + i;
+						shape = c_ShapeDBShape(&led->cs_db, i);
 						struct slot entry = ui_ListEntryAllocF(&led->cs_list, "###%p_%u", &led->cs_list, i);
 						if (entry.index)
 						ui_Parent(entry.index)
@@ -679,7 +680,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 					{
 						ui_Pad();
 
-						struct c_Shape *shape = led->cs_db.pool.buf + shape_selected;
+						struct c_Shape *shape = c_ShapeDBShape(&led->cs_db, shape_selected);
 						ui_Height(ui_SizePixel(24.0f, 1.0f))
 						ui_NodeAllocF(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW | UI_DRAW_BORDER, "%k##shape_selected", &shape->id);
 
@@ -931,29 +932,52 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 				//}
 
 				ui_ChildLayoutAxis(AXIS_2_Y)
-				ui_Width(ui_SizePixel(230.0f, 1.0f))
+				ui_Width(ui_SizePixel(460.0f, 1.0f))
 				ui_Parent(ui_NodeAllocNonHashed(UI_DRAW_BACKGROUND).index)
 				ui_Flags(UI_DRAW_ROUNDED_CORNERS | UI_TEXT_ALLOW_OVERFLOW)
 				{
-					if (ui_DropdownMenuF(&led->rb_color_mode_menu, "%s###%p_color_mode", body_color_mode_str[led->body_color_mode], &led->rb_color_mode_menu))
+					if (ui_DropdownMenuF(&led->shape_color_mode_menu, "%s###%p_shape_color_mode", shape_color_mode_str[led->physics.draw_config.shape_color_mode], &led->shape_color_mode_menu))
 					{
-						ui_DropdownMenuPush(&led->rb_color_mode_menu);
+						ui_DropdownMenuPush(&led->shape_color_mode_menu);
 
-						for (u32 i = 0; i < RB_COLOR_MODE_COUNT; ++i)
+						for (u32 i = 0; i < DRAW_COLOR_MODE_COUNT; ++i)
 						{
 							struct ui_Node *drop;
 							ui_Flags(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW)
-							drop = ui_DropdownMenuEntryF(&led->rb_color_mode_menu, "%s###%p_%u", 
-									body_color_mode_str[i], 
-									&led->rb_color_mode_menu, 
+							drop = ui_DropdownMenuEntryF(&led->shape_color_mode_menu, "%s###%p_%u", 
+									shape_color_mode_str[i], 
+									&led->shape_color_mode_menu, 
 									i).address;
 							if (drop->inter & UI_INTER_SELECT)
 							{
-								led->pending_body_color_mode = i;
+								led->physics.draw_config.shape_color_mode = i;
 							}
 						}
 
-						ui_DropdownMenuPop(&led->rb_color_mode_menu);
+						ui_DropdownMenuPop(&led->shape_color_mode_menu);
+					}
+
+					ui_Pad();
+
+					if (ui_DropdownMenuF(&led->point_color_mode_menu, "%s###%p_point_color_mode", point_color_mode_str[led->physics.draw_config.point_color_mode], &led->point_color_mode_menu))
+					{
+						ui_DropdownMenuPush(&led->point_color_mode_menu);
+
+						for (u32 i = 0; i < DRAW_POINT_COLOR_MODE_COUNT; ++i)
+						{
+							struct ui_Node *drop;
+							ui_Flags(UI_DRAW_TEXT | UI_TEXT_ALLOW_OVERFLOW)
+							drop = ui_DropdownMenuEntryF(&led->point_color_mode_menu, "%s###%p_%u", 
+									point_color_mode_str[i], 
+									&led->point_color_mode_menu, 
+									i).address;
+							if (drop->inter & UI_INTER_SELECT)
+							{
+								led->physics.draw_config.point_color_mode = i;
+							}
+						}
+
+						ui_DropdownMenuPop(&led->point_color_mode_menu);
 					}
 
 					ui_Pad(); 
@@ -961,77 +985,294 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 					/* TODO: Make checkbox one-lines */
 					/* TODO: Make center one-lines */
 					struct ui_Node *node;
+					/* two columns of checkboxes, the world and shapes, the forces; as tall as the longer column (strict, or the panel shrinks it) */
+					ui_Height(ui_SizePixel(6.0f*24.0f, 1.0f))
+					ui_ChildLayoutAxis(AXIS_2_X)
+					ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+					{
+						ui_ChildLayoutAxis(AXIS_2_Y)
+						ui_Width(ui_SizePixel(230.0f, 1.0f))
+						ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+						{
+							ui_Height(ui_SizePixel(24.0f, 1.0f))
+							ui_ChildLayoutAxis(AXIS_2_X)
+							{
+								ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+								{
+									ui_Pad();
+									ui_Width(ui_SizePixel(24.0f, 1.0f))
+									node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_0").address;
+									ui_Pad();
+									ui_NodeAllocF(UI_DRAW_TEXT, "draw DBVT");
+									if (node->inter & UI_INTER_LEFT_CLICK)
+									{
+										led->physics.draw_config.draw_dbvh = !led->physics.draw_config.draw_dbvh;
+									}
+
+									if (led->physics.draw_config.draw_dbvh)
+									{
+										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
+									}
+
+									if (node->inter & UI_INTER_HOVER)
+									{
+										node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
+									}
+								}
+
+								ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+								{
+									ui_Pad();
+									ui_Width(ui_SizePixel(24.0f, 1.0f))
+									node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_1").address;
+									ui_Pad();
+									ui_NodeAllocF(UI_DRAW_TEXT, "draw SBVT");
+									if (node->inter & UI_INTER_LEFT_CLICK)
+									{
+										led->physics.draw_config.draw_sbvh = !led->physics.draw_config.draw_sbvh;
+									}
+
+									if (led->physics.draw_config.draw_sbvh)
+									{
+										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
+									}
+
+									if (node->inter & UI_INTER_HOVER)
+									{
+										node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
+									}
+								}
+
+								ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+								{
+									ui_Pad();
+									ui_Width(ui_SizePixel(24.0f, 1.0f))
+									node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_2").address;
+									ui_Pad();
+									ui_NodeAllocF(UI_DRAW_TEXT, "draw bounding boxes");
+									if (node->inter & UI_INTER_LEFT_CLICK)
+									{
+										led->physics.draw_config.draw_bounds = !led->physics.draw_config.draw_bounds;
+									}
+
+									if (led->physics.draw_config.draw_bounds)
+									{
+										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
+									}
+
+									if (node->inter & UI_INTER_HOVER)
+									{
+										node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
+									}
+								}
+
+								ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+								{
+									ui_Pad();
+									ui_Width(ui_SizePixel(24.0f, 1.0f))
+									node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_3").address;
+									ui_Pad();
+									ui_NodeAllocF(UI_DRAW_TEXT, "draw shapes");
+									if (node->inter & UI_INTER_LEFT_CLICK)
+									{
+										led->physics.draw_config.draw_shapes = !led->physics.draw_config.draw_shapes;
+									}
+
+									if (led->physics.draw_config.draw_shapes)
+									{
+										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
+									}
+
+									if (node->inter & UI_INTER_HOVER)
+									{
+										node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
+									}
+								}
+
+								ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+								{
+									ui_Pad();
+									ui_Width(ui_SizePixel(24.0f, 1.0f))
+									node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_4").address;
+									ui_Pad();
+									ui_NodeAllocF(UI_DRAW_TEXT, "draw mesh BVHs");
+									if (node->inter & UI_INTER_LEFT_CLICK)
+									{
+										led->physics.draw_config.draw_mesh_bvh = !led->physics.draw_config.draw_mesh_bvh;
+									}
+
+									if (led->physics.draw_config.draw_mesh_bvh)
+									{
+										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
+									}
+
+									if (node->inter & UI_INTER_HOVER)
+									{
+										node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
+									}
+								}
+							}
+						}
+
+						ui_ChildLayoutAxis(AXIS_2_Y)
+						ui_Width(ui_SizePixel(230.0f, 1.0f))
+						ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+						{
+							ui_Height(ui_SizePixel(24.0f, 1.0f))
+							ui_ChildLayoutAxis(AXIS_2_X)
+							{
+								ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+								{
+									ui_Pad();
+									ui_Width(ui_SizePixel(24.0f, 1.0f))
+									node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_5").address;
+									ui_Pad();
+									ui_NodeAllocF(UI_DRAW_TEXT, "draw contact forces");
+									if (node->inter & UI_INTER_LEFT_CLICK)
+									{
+										led->physics.draw_config.draw_contact_forces = !led->physics.draw_config.draw_contact_forces;
+									}
+
+									if (led->physics.draw_config.draw_contact_forces)
+									{
+										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
+									}
+
+									if (node->inter & UI_INTER_HOVER)
+									{
+										node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
+									}
+								}
+
+								ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+								{
+									ui_Pad();
+									ui_Width(ui_SizePixel(24.0f, 1.0f))
+									node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_6").address;
+									ui_Pad();
+									ui_NodeAllocF(UI_DRAW_TEXT, "draw joint forces");
+									if (node->inter & UI_INTER_LEFT_CLICK)
+									{
+										led->physics.draw_config.draw_joint_forces = !led->physics.draw_config.draw_joint_forces;
+									}
+
+									if (led->physics.draw_config.draw_joint_forces)
+									{
+										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
+									}
+
+									if (node->inter & UI_INTER_HOVER)
+									{
+										node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
+									}
+								}
+
+								ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+								{
+									ui_Pad();
+									ui_Width(ui_SizePixel(24.0f, 1.0f))
+									node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_7").address;
+									ui_Pad();
+									ui_NodeAllocF(UI_DRAW_TEXT, "draw constraint points");
+									if (node->inter & UI_INTER_LEFT_CLICK)
+									{
+										led->physics.draw_config.draw_constraint_points = !led->physics.draw_config.draw_constraint_points;
+									}
+
+									if (led->physics.draw_config.draw_constraint_points)
+									{
+										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
+									}
+
+									if (node->inter & UI_INTER_HOVER)
+									{
+										node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
+									}
+								}
+
+								ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+								{
+									ui_Pad();
+									ui_Width(ui_SizePixel(24.0f, 1.0f))
+									node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_8").address;
+									ui_Pad();
+									ui_NodeAllocF(UI_DRAW_TEXT, "draw on top");
+									if (node->inter & UI_INTER_LEFT_CLICK)
+									{
+										led->physics.draw_config.draw_on_top = !led->physics.draw_config.draw_on_top;
+									}
+
+									if (led->physics.draw_config.draw_on_top)
+									{
+										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
+									}
+
+									if (node->inter & UI_INTER_HOVER)
+									{
+										node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
+									}
+								}
+
+								ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+								{
+									ui_Pad();
+									ui_Width(ui_SizePixel(24.0f, 1.0f))
+									node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_9").address;
+									ui_Pad();
+									ui_NodeAllocF(UI_DRAW_TEXT, "draw body axes");
+									if (node->inter & UI_INTER_LEFT_CLICK)
+									{
+										led->physics.draw_config.draw_body_axes = !led->physics.draw_config.draw_body_axes;
+									}
+
+									if (led->physics.draw_config.draw_body_axes)
+									{
+										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
+									}
+
+									if (node->inter & UI_INTER_HOVER)
+									{
+										node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
+									}
+								}
+
+								ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+								{
+									ui_Pad();
+									ui_Width(ui_SizePixel(24.0f, 1.0f))
+									node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_10").address;
+									ui_Pad();
+									ui_NodeAllocF(UI_DRAW_TEXT, "draw joints");
+									if (node->inter & UI_INTER_LEFT_CLICK)
+									{
+										led->physics.draw_config.draw_joints = !led->physics.draw_config.draw_joints;
+									}
+
+									if (led->physics.draw_config.draw_joints)
+									{
+										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
+									}
+
+									if (node->inter & UI_INTER_HOVER)
+									{
+										node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
+									}
+								}
+							}
+						}
+					}
+
+					ui_Pad();
+
 					ui_Height(ui_SizePixel(24.0f, 1.0f))
 					ui_ChildLayoutAxis(AXIS_2_X)
+					ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
 					{
-						ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
-						{
-							ui_Pad();
-							ui_Width(ui_SizePixel(24.0f, 1.0f))
-							node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_0").address;
-							ui_Pad();
-							ui_NodeAllocF(UI_DRAW_TEXT, "draw DBVT");
-							if (node->inter & UI_INTER_LEFT_CLICK)
-							{
-								led->draw_dbvh = !led->draw_dbvh;
-							}
-
-							if (led->draw_dbvh)
-							{
-								node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
-							}
-
-							if (node->inter & UI_INTER_HOVER)
-							{
-								node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
-							}
-						}
-
-						ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
-						{
-							ui_Pad();
-							ui_Width(ui_SizePixel(24.0f, 1.0f))
-							node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_1").address;
-							ui_Pad();
-							ui_NodeAllocF(UI_DRAW_TEXT, "draw SBVT");
-							if (node->inter & UI_INTER_LEFT_CLICK)
-							{
-								led->draw_sbvh = !led->draw_sbvh;
-							}
-
-							if (led->draw_sbvh)
-							{
-								node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
-							}
-
-							if (node->inter & UI_INTER_HOVER)
-							{
-								node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
-							}
-						}
-
-						ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
-						{
-							ui_Pad();
-							ui_Width(ui_SizePixel(24.0f, 1.0f))
-							node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_2").address;
-							ui_Pad();
-							ui_NodeAllocF(UI_DRAW_TEXT, "draw bounding boxes");
-							if (node->inter & UI_INTER_LEFT_CLICK)
-							{
-								led->draw_bounding_box = !led->draw_bounding_box;
-							}
-
-							if (led->draw_bounding_box)
-							{
-								node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
-							}
-
-							if (node->inter & UI_INTER_HOVER)
-							{
-								node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
-							}
-						}
+						ui_Pad();
+						ui_Width(ui_SizePixel(80.0f, 1.0f))
+						led->physics.draw_config.force_scale = ui_FieldF32F(led->physics.draw_config.force_scale, Intv(0.0001f, 100.0f), "%f###force_scale_in", led->physics.draw_config.force_scale);
+						ui_Pad();
+						ui_NodeAllocF(UI_DRAW_TEXT, "force scale (m/N)");
 					}
 
 					//struct led_Node *node = NULL;

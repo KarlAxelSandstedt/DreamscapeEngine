@@ -33,7 +33,8 @@ extern "C" {
 /*
 ds_renderer.h
 =============
-The renderer: meshes, the camera, proxies (3d objects drawn with motion speculated between physics ticks), a
+The renderer: meshes, debug primitives (world-space segments, points and wire shapes pushed per frame),
+the camera, proxies (3d objects drawn with motion speculated between physics ticks), a
 scene of draw commands per window and the GL state. Implemented in src/renderer, one section per file below;
 the window and GL context are ds_graphics.h's, the GL loader ds_gl.h's.
 
@@ -98,6 +99,27 @@ struct led;
  * its UI; the root window also the editor's 3d scene) and leaves the root window's GL context current.
  */
 void 	r_EditorMain(const struct led *led);
+
+/********************************************************
+ *			debug records (r_main.c)		*
+ ********************************************************/
+
+/* what physics pushes for the renderer's segment and point walk (ds_DynamicsDraw): world space, f64 positions; a point is point_size pixels */
+struct r_SegmentWorld
+{
+    v3f64   p0;
+    v3f64   p1;
+    v4      color;
+};
+
+struct r_PointWorld
+{
+    v3f64   p;
+    v4      color;
+};
+
+DEFINE_CPOOL_STRUCT(r_SegmentWorld);
+DEFINE_CPOOL_STRUCT(r_PointWorld);
 
 /********************************************************
  *			r_camera.c			*
@@ -207,6 +229,8 @@ u64 	r_CommandKey(const u64 screen, const u64 depth, const u64 transparency, con
 void 	r_CommandKeyPrint(const u64 key);
 /* the material field: a program (PROGRAM_*, r_local.h), a mesh database index (MESH_NONE when the instance brings its own) and a texture; program and texture must fit their bits (asserted) */
 u64 	r_MaterialConstruct(const u64 program, const u64 mesh, const u64 texture);
+/* the material of a raw instanced mesh (R_INSTANCE_RAW3D): equal batch numbers share one draw; batch must fit the mesh bits (asserted) */
+u64 	r_MaterialConstructRaw(const u64 program, const u64 batch, const u64 texture);
 
 #define	R_CMD_SCREEN_LAYER_BITS		1
 #define	R_CMD_DEPTH_BITS		23
@@ -214,7 +238,7 @@ u64 	r_MaterialConstruct(const u64 program, const u64 mesh, const u64 texture);
 #define	R_CMD_MATERIAL_BITS		30
 #define R_CMD_ELEMENTS_BITS		1
 #define	R_CMD_INSTANCED_BITS		1
-#define	R_CMD_PRIMITIVE_BITS		1
+#define	R_CMD_PRIMITIVE_BITS		2
 #define R_CMD_UNUSED_BITS		(64 - R_CMD_SCREEN_LAYER_BITS - R_CMD_DEPTH_BITS - R_CMD_TRANSPARENCY_BITS - R_CMD_MATERIAL_BITS - R_CMD_PRIMITIVE_BITS - R_CMD_INSTANCED_BITS - R_CMD_ELEMENTS_BITS)
 
 #define R_CMD_SCREEN_LAYER_LOW_BIT	(R_CMD_DEPTH_BITS + R_CMD_TRANSPARENCY_BITS + R_CMD_MATERIAL_BITS + R_CMD_PRIMITIVE_BITS + R_CMD_INSTANCED_BITS + R_CMD_ELEMENTS_BITS)
@@ -260,28 +284,35 @@ u64 	r_MaterialConstruct(const u64 program, const u64 mesh, const u64 texture);
 #define R_CMD_ARRAYS			((u64) 0)
 
 #define R_CMD_PRIMITIVE_LINE		((u64) 1)
+#define R_CMD_PRIMITIVE_POINT		((u64) 2)
 #define R_CMD_PRIMITIVE_TRIANGLE	((u64) 0)
 
 #define MATERIAL_PROGRAM_BITS		2
 #define MATERIAL_MESH_BITS		10
 #define MATERIAL_TEXTURE_BITS		3
-#define MATERIAL_UNUSED_BITS 		(R_CMD_MATERIAL_BITS - MATERIAL_PROGRAM_BITS - MATERIAL_TEXTURE_BITS - MATERIAL_MESH_BITS)
+#define MATERIAL_SOURCE_BITS		1
+#define MATERIAL_UNUSED_BITS 		(R_CMD_MATERIAL_BITS - MATERIAL_PROGRAM_BITS - MATERIAL_TEXTURE_BITS - MATERIAL_MESH_BITS - MATERIAL_SOURCE_BITS)
+#define MATERIAL_SOURCE_DB		((u64) 0)	/* the mesh field is a mesh database index */
+#define MATERIAL_SOURCE_RAW		((u64) 1)	/* the mesh field is a batch number of raw meshes (R_INSTANCE_RAW3D) */
 #define MESH_NONE			0
 #define MESH_STUB			0
 
 #define MATERIAL_TEXTURE_LOW_BIT	0
 #define MATERIAL_MESH_LOW_BIT		(MATERIAL_TEXTURE_BITS)
 #define MATERIAL_PROGRAM_LOW_BIT	(MATERIAL_TEXTURE_BITS + MATERIAL_MESH_BITS)
-#define MATERIAL_UNUSED_LOW_BIT		(MATERIAL_TEXTURE_BITS + MATERIAL_PROGRAM_BITS + MATERIAL_MESH_BITS)
+#define MATERIAL_SOURCE_LOW_BIT		(MATERIAL_TEXTURE_BITS + MATERIAL_PROGRAM_BITS + MATERIAL_MESH_BITS)
+#define MATERIAL_UNUSED_LOW_BIT		(MATERIAL_TEXTURE_BITS + MATERIAL_PROGRAM_BITS + MATERIAL_MESH_BITS + MATERIAL_SOURCE_BITS)
 
 #define MATERIAL_PROGRAM_MASK		((((u64) 1 << MATERIAL_PROGRAM_BITS) - (u64) 1) << MATERIAL_PROGRAM_LOW_BIT)
 #define MATERIAL_MESH_MASK		((((u64) 1 << MATERIAL_MESH_BITS) - (u64) 1) << MATERIAL_MESH_LOW_BIT)
 #define MATERIAL_TEXTURE_MASK		((((u64) 1 << MATERIAL_TEXTURE_BITS) - (u64) 1) << MATERIAL_TEXTURE_LOW_BIT)
+#define MATERIAL_SOURCE_MASK		((((u64) 1 << MATERIAL_SOURCE_BITS) - (u64) 1) << MATERIAL_SOURCE_LOW_BIT)
 #define MATERIAL_UNUSED_MASK		((((u64) 1 << MATERIAL_UNUSED_BITS) - (u64) 1) << MATERIAL_UNUSED_LOW_BIT)
 
 #define MATERIAL_PROGRAM_GET(material)	((material & MATERIAL_PROGRAM_MASK) >> MATERIAL_PROGRAM_LOW_BIT)
 #define MATERIAL_MESH_GET(material)	((material & MATERIAL_MESH_MASK) >> MATERIAL_MESH_LOW_BIT)
 #define MATERIAL_TEXTURE_GET(material)	((material & MATERIAL_TEXTURE_MASK) >> MATERIAL_TEXTURE_LOW_BIT)
+#define MATERIAL_SOURCE_GET(material)	((material & MATERIAL_SOURCE_MASK) >> MATERIAL_SOURCE_LOW_BIT)
 
 /********************************************************
  *			r_proxy3d.c			*
@@ -379,10 +410,21 @@ enum r_instance_type
 	R_INSTANCE_PROXY3D,	/* instance of a proxy3d	*/
 	R_INSTANCE_UI, 		/* instance of a ui bucket	*/
 	R_INSTANCE_MESH,	/* instance of a mesh		*/
+	R_INSTANCE_RAW3D,	/* instance of a raw mesh (r_Raw3d) */
 	R_INSTANCE_COUNT
 };
 
-/* something to draw this frame: its command (on the scene's frame arena) and, by type, the proxy, UI bucket or mesh it draws */
+/* an instanced raw mesh: the proxy program's per-instance data without a proxy; on the scene's frame arena */
+struct r_Raw3d
+{
+	const struct r_Mesh *	mesh;
+	v3f64			position;
+	q			rotation;
+	v4			color;
+	f32			blend;
+};
+
+/* something to draw this frame: its command (on the scene's frame arena) and, by type, the proxy, UI bucket, mesh or raw mesh it draws */
 struct r_Instance
 {
     POOL_NODE;
@@ -397,6 +439,7 @@ struct r_Instance
 		u32		       unit;	
 		struct ui_DrawBucket *ui_bucket;
 		struct r_Mesh	      *mesh;
+		struct r_Raw3d	      *raw3d;
 	};
 };
 DEFINE_POOL(r_Instance);
@@ -540,6 +583,15 @@ void 		r_MeshCapsule(struct arena *mem, struct r_Mesh *mesh, const f32 half_heig
 void 		r_MeshHull(struct arena *mem, struct r_Mesh *mesh, const struct dcel *hull);
 /* setup mesh from tri mesh: one triangle per tri with its normal */
 void 		r_MeshTriMesh(struct arena *mem, struct r_Mesh *mesh, const struct triMesh *tri_mesh);
+
+struct c_Shape;
+/*
+ * the shape's render mesh (shape->render_mesh): built on the first call by the constructor of its type into one
+ * ds_Alloc block the shape owns (its database frees it); refinement for spheres and capsules. NULL if out of memory.
+ */
+struct r_Mesh *	r_MeshShape(struct c_Shape *shape, const u32 refinement);
+/* a tri mesh shape's BVH as lines (shape->render_bvh, as r_MeshShape): every node's box, zero normals; NULL for no nodes or memory */
+struct r_Mesh *	r_MeshShapeBvh(struct c_Shape *shape);
 
 /********************************************************
  *			r_gl.c				*

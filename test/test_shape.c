@@ -505,8 +505,100 @@ struct test_Output ShapeDistanceTest(struct test_Environment *env)
     return output;
 }
 
+/*
+ * c_ShapeDB: the stub is the unit box; Add copies the shape, computes mass properties and returns the slot, the
+ * stub's slot for an empty, present or over-long id; Remove refuses a referenced shape and removes it once
+ * dereferenced; the copies survive the database growing and the sources dying.
+ */
+static struct test_Output ShapeDatabaseTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct c_ShapeDB db = { 0 };
+    c_ShapeDBAlloc(NULL, &db, 4, GROWABLE);
+    const struct c_Shape *stub = c_ShapeDBShape(&db, SDB_STUB);
+    TEST_EQUAL(C_SHAPE_CONVEX_HULL, stub->type);
+    TEST_TRUE(ShapeTestNear(stub->volume, 1.0f, 1.0f));
+    TEST_EQUAL(SDB_STUB, c_ShapeDBLookup(&db, Utf8Inline("sphere")).index);
+
+    const f32 r = 0.5f;
+    const struct c_Shape sphere = { .type = C_SHAPE_SPHERE, .sphere.radius = r };
+    const struct slot s = c_ShapeDBAdd(&db, Utf8Inline("sphere"), &sphere);
+    TEST_TRUE(s.index != SDB_STUB && s.index != U32_MAX);
+    TEST_EQUAL(s.index, c_ShapeDBLookup(&db, Utf8Inline("sphere")).index);
+    const struct c_Shape *added = c_ShapeDBShape(&db, s.index);
+    TEST_EQUAL(C_SHAPE_SPHERE, added->type);
+    TEST_TRUE(Utf8Equivalence(Utf8Inline("sphere"), added->id));
+    const f32 volume = 4.0f / 3.0f * F32_PI * r * r * r;
+    TEST_TRUE(ShapeTestNear(added->volume, volume, volume));
+
+    /* the stub's slot for a bad id */
+    TEST_EQUAL(SDB_STUB, c_ShapeDBAdd(&db, Utf8Empty(), &sphere).index);
+    TEST_EQUAL(SDB_STUB, c_ShapeDBAdd(&db, Utf8Inline("sphere"), &sphere).index);
+    u8 long_buf[C_SHAPE_ID_SIZE + 8];
+    memset(long_buf, 'x', sizeof(long_buf));
+    const utf8 long_id = { .buf = long_buf, .size = sizeof(long_buf), .len = sizeof(long_buf) };
+    TEST_EQUAL(SDB_STUB, c_ShapeDBAdd(&db, long_id, &sphere).index);
+    TEST_EQUAL(2, db.sdb.pool.count);
+
+    /* the stub's slot for a shape c_ShapeValidate rejects: no volume, or a mesh without triangles */
+    const struct c_Shape flat_sphere = { .type = C_SHAPE_SPHERE, .sphere.radius = 0.0f };
+    TEST_EQUAL(SDB_STUB, c_ShapeDBAdd(&db, Utf8Inline("flat_sphere"), &flat_sphere).index);
+    const struct c_Shape nan_sphere = { .type = C_SHAPE_SPHERE, .sphere.radius = F32Nan() };
+    TEST_EQUAL(SDB_STUB, c_ShapeDBAdd(&db, Utf8Inline("nan_sphere"), &nan_sphere).index);
+    const struct c_Shape thin_capsule = { .type = C_SHAPE_CAPSULE, .capsule = { .half_height = 1.0f, .radius = 0.0f } };
+    TEST_EQUAL(SDB_STUB, c_ShapeDBAdd(&db, Utf8Inline("thin_capsule"), &thin_capsule).index);
+    const struct c_Shape empty_hull = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelEmpty() };
+    TEST_EQUAL(SDB_STUB, c_ShapeDBAdd(&db, Utf8Inline("empty_hull"), &empty_hull).index);
+    const struct triMesh empty = { 0 };
+    const struct c_Shape empty_mesh = { .type = C_SHAPE_TRI_MESH, .mesh_bvh = TriMeshBVHConstruct(env->mem_1, &empty, 8) };
+    TEST_EQUAL(SDB_STUB, c_ShapeDBAdd(&db, Utf8Inline("empty_mesh"), &empty_mesh).index);
+    TEST_EQUAL(2, db.sdb.pool.count);
+
+    /* referenced: not removed; dereferenced: removed */
+    TEST_EQUAL(s.index, c_ShapeDBReference(&db, Utf8Inline("sphere")).index);
+    TEST_EQUAL(0, c_ShapeDBRemove(&db, Utf8Inline("sphere")));
+    TEST_EQUAL(s.index, c_ShapeDBLookup(&db, Utf8Inline("sphere")).index);
+    c_ShapeDBDereference(&db, s.index);
+    TEST_EQUAL(1, c_ShapeDBRemove(&db, Utf8Inline("sphere")));
+    TEST_EQUAL(SDB_STUB, c_ShapeDBLookup(&db, Utf8Inline("sphere")).index);
+    TEST_EQUAL(1, db.sdb.pool.count);
+
+    /* the slots own their copies: grow past the initial length, then clobber the sources and look everything up */
+    const u32 count = 12;
+    u32 index[12];
+    for (u32 i = 0; i < count; ++i)
+    {
+        const v3 hw = V3(0.5f + (f32) i, 0.5f, 0.25f);
+        struct c_Shape box = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(env->mem_1, hw) };
+        index[i] = c_ShapeDBAdd(&db, Utf8Format(env->mem_1, "box_%u", i), &box).index;
+        TEST_TRUE(index[i] != SDB_STUB);
+        memset(box.hull.v, 0xff, box.hull.v_count*sizeof(v3));
+        memset(box.hull.plane, 0xff, box.hull.f_count*sizeof(struct plane));
+    }
+    for (u32 i = 0; i < count; ++i)
+    {
+        const utf8 id = Utf8Format(env->mem_1, "box_%u", i);
+        const struct slot found = c_ShapeDBLookup(&db, id);
+        TEST_EQUAL(index[i], found.index);
+        const struct c_Shape *shape = c_ShapeDBShape(&db, found.index);
+        TEST_TRUE(Utf8Equivalence(id, shape->id));
+        TEST_EQUAL(8, shape->hull.v_count);
+        TEST_TRUE(ShapeTestNear(shape->volume, 8.0f * (0.5f + (f32) i) * 0.5f * 0.25f, 1.0f));
+        TEST_TRUE(ShapeTestNear(shape->hull.bbox.max.x, 0.5f + (f32) i, 1.0f));
+        TEST_TRUE(shape->render_mesh == NULL);
+    }
+    TEST_EQUAL(1, c_ShapeDBRemove(&db, Utf8Inline("box_3")));
+    TEST_EQUAL(SDB_STUB, c_ShapeDBLookup(&db, Utf8Inline("box_3")).index);
+    TEST_EQUAL(index[4], c_ShapeDBLookup(&db, Utf8Inline("box_4")).index);
+
+    c_ShapeDBDealloc(&db);
+	return output;
+}
+
 static struct test_Output (*shape_tests[])(struct test_Environment *) =
 {
+    ShapeDatabaseTest,
     ShapeMassBoxTest,
     ShapeMassHullPlacedTest,
     ShapeMassSphereTest,

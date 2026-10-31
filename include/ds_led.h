@@ -202,11 +202,12 @@ struct led
 	struct ui_List 		    brush_list;
 
 	struct ds_Dynamics physics;
-    ds_SDB(c_Shape) 		        cs_db;
+    struct c_ShapeDB 		        cs_db;
 	struct DLL				cs_shape_list;		/* the shapes added to cs_db, in order (c_Shape.led_shape_node) */
 	struct ui_List 		    cs_list;
 	struct ui_DropdownMenu  cs_mesh_menu;
-	struct ui_DropdownMenu  rb_color_mode_menu;
+	struct ui_DropdownMenu  shape_color_mode_menu;      /* draw_config.shape_color_mode */
+	struct ui_DropdownMenu  point_color_mode_menu;      /* draw_config.point_color_mode */
 
 	ds_SDB(ds_ShapePrefab)       shape_prefab_db;
     ds_Pool(ds_ShapePrefabInstance) shape_prefab_instance_pool;    
@@ -232,19 +233,14 @@ struct led
 	v4			        sleep_color;
 	v4			        awake_color;
 
-	v4			        bounding_box_color;
-	v4			        dbvh_color;
-	v4			        sbvh_color;
 	v4			        manifold_color;
     
-    u32			            draw_bounding_box;
-    u32			            draw_dbvh;
-    u32			            draw_sbvh;
 
     v3f64                   scene_origin;   /* world position the setup scenes are built around (default 0); set before the first led_Main */
 };
 
-extern const char **body_color_mode_str;
+extern const char **shape_color_mode_str;               /* [DRAW_COLOR_MODE_COUNT] */
+extern const char **point_color_mode_str;               /* [DRAW_POINT_COLOR_MODE_COUNT] */
 
 extern u32	cmd_led_compile;
 extern u32	cmd_led_run;

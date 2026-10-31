@@ -38,3 +38,4 @@
 #include "ds_joint.c"
 #include "ds_constraint_graph.c"
 #include "ds_solver_set.c"
+#include "ds_dynamics_draw.c"

@@ -31,6 +31,7 @@ extern "C" {
 #include "ds_hash_map.h"
 #include "ds_bitset.h"
 #include "ds_job.h"
+#include "ds_renderer.h"
 
 //TODO 
 struct ds_Dynamics;
@@ -160,55 +161,6 @@ struct ds_DynamicsProfile
 
 /* print the frame's duration and each phase's duration and share of it, in ms, to file */
 void    ds_DynamicsProfilePrint(FILE *file, const struct ds_DynamicsProfile *profile);
-
-/*
-ds_DynamicsMetrics
-==================
-Pipeline metrics data.
-*/
-
-struct ds_DynamicsMetrics
-{
-    u32 hull_call_count;            /* Number of calls to HullContact           */ 
-    u32 hull_cache_probe_count;     /* Number of existing caches probed         */
-    u32 hull_cache_eviction_count;  /* Number of evicted caches                 */
-
-    u32 mesh_call_count;            /* Number of calls to TriMeshBVHHullContact */
-    u32 mesh_cache_probe_count;     /* Number of existing caches probed         */
-    u32 mesh_cache_eviction_count;  /* Number of evicted caches                 */
-
-    u32 warm_point_count;           /* constraint points with a cache to search     */
-    u32 warm_match_id;              /* a cached point with the same id found        */
-};
-
-/* Flush statistics */
-void    ds_DynamicsMetricsFlush(struct ds_DynamicsMetrics *metrics);
-/* Add statistics */
-void    ds_DynamicsMetricsAdd(struct ds_DynamicsMetrics *sum, const struct ds_DynamicsMetrics *metrics);
-/* Print statistics */
-void    ds_DynamicsMetricsPrint(FILE *file, const struct ds_DynamicsMetrics *metrics);
-
-
-/*
-ds_DynamicsWorker
-=================
-Worker owned dynamics data. Core to the pipeline here is the worker's double-buffered frame memory. 
-Many parts of the pipeline pushes cached data onto the frame. 
-*/
-
-struct ds_DynamicsWorker
-{
-    struct arena                frame_arr[2]; /* Double-buffered; Master thread switches arena on new frame */
-    struct arena *              frame;
-    
-    struct ds_DynamicsMetrics   metrics;
-
-    u8                          pad[DS_CACHE_LINE];
-};
-
-/* indexed by workers using their thread indices (ds_ThreadSelfIndex()) */
-extern struct ds_DynamicsWorker *g_dynamics_worker;
-
 
 /*
 ds_Id
@@ -478,12 +430,15 @@ ds_BodyCompute.
 */
 
 #define BODY_FLAG_DYNAMIC_BIT    0
+#define BODY_FLAG_KINEMATIC_BIT  1
 
 #define BODY_FLAG_DYNAMIC		((u32) 1 << BODY_FLAG_DYNAMIC_BIT)
+#define BODY_FLAG_KINEMATIC		((u32) 1 << BODY_FLAG_KINEMATIC_BIT)   /* not simulated yet: drawn only */
 #define BODY_FLAG_ALL           (BODY_FLAG_DYNAMIC)
 
 #define ds_BodyStaticCheck(b)	(!((b)->flags & BODY_FLAG_DYNAMIC))
 #define ds_BodyDynamicCheck(b)	((b)->flags & BODY_FLAG_DYNAMIC)
+#define ds_BodyKinematicCheck(b)	((b)->flags & BODY_FLAG_KINEMATIC)
 
 #define ds_BodyDynamicBit(b)    (((b)->flags & BODY_FLAG_DYNAMIC) >> BODY_FLAG_DYNAMIC_BIT)
 
@@ -546,7 +501,7 @@ ds_BodyCompute
 ==============
 Active rigid body velocity and other computational data used in the solver
 */
-struct ds_BodyCompute
+struct ds_Align(DS_CACHE_LINE) ds_BodyCompute
 {
 	v3 		        linear_velocity;        /* linear velocity of body */
 	v3 		        angular_velocity;       /* angular velocity of body (about local center of mass,
@@ -554,8 +509,6 @@ struct ds_BodyCompute
     v3              delta_position;         /* center of mass displacement since the step's start */
     q               rotation;
     u32             flags;
-
-    u8              pad[8];
 };
 DEFINE_CPOOL_STRUCT(ds_BodyCompute);
 
@@ -1491,6 +1444,166 @@ u32                     ds_CGraphColorTryDeserialize(struct ss *ss, struct ds_Dy
 #define CG_SERIAL_COLOR         (CG_COLOR_COUNT-1) 
 #define CG_INVALID_COLOR        CG_COLOR_COUNT
 
+
+/*
+ds_DynamicsMetrics
+==================
+Pipeline metrics data.
+*/
+
+struct ds_DynamicsMetrics
+{
+    u32 hull_call_count;            /* Number of calls to HullContact           */ 
+    u32 hull_cache_probe_count;     /* Number of existing caches probed         */
+    u32 hull_cache_eviction_count;  /* Number of evicted caches                 */
+
+    u32 mesh_call_count;            /* Number of calls to TriMeshBVHHullContact */
+    u32 mesh_cache_probe_count;     /* Number of existing caches probed         */
+    u32 mesh_cache_eviction_count;  /* Number of evicted caches                 */
+
+    u32 warm_point_count;           /* constraint points with a cache to search     */
+    u32 warm_match_id;              /* a cached point with the same id found        */
+};
+
+/* Flush statistics */
+void    ds_DynamicsMetricsFlush(struct ds_DynamicsMetrics *metrics);
+/* Add statistics */
+void    ds_DynamicsMetricsAdd(struct ds_DynamicsMetrics *sum, const struct ds_DynamicsMetrics *metrics);
+/* Print statistics */
+void    ds_DynamicsMetricsPrint(FILE *file, const struct ds_DynamicsMetrics *metrics);
+
+
+/*
+ds_DynamicsDraw
+===============
+Debug records of a tick: one struct per worker (parallel pushes) and one in the pipeline (serial).
+The structs are flushed at start of each physics tick.
+
+Constraint points and forces are at the step's start pose, where the solver applied them; joint
+segments and body axes at the end pose. The renderer scales forces by force_scale.
+*/
+
+/* Force (N) at a world point; the colour is the config's at the push */
+struct ds_ForceDraw
+{
+    v3f64   origin;
+    v3      force;
+    v4      color;
+};
+DEFINE_CPOOL_STRUCT(ds_ForceDraw);
+
+struct ds_DynamicsDraw
+{
+    ds_CPool(r_SegmentWorld)    segment;
+    ds_CPool(r_PointWorld)      point;
+    ds_CPool(ds_ForceDraw)      force;
+};
+
+/*
+ds_DynamicsDrawConfig
+=====================
+Debug drawing configuration (per-pipeline).
+*/
+
+/* shape colouring; static bodies grey and opaque except in UNIFORM */
+enum ds_ShapeColorMode
+{
+    DRAW_COLOR_UNIFORM = 0,         /* uniform color for all shapes */
+    DRAW_COLOR_RANDOM,              /* hue hashed from the body index */
+    DRAW_COLOR_ISLAND,              /* hue hashed from the island index */
+    DRAW_COLOR_SLEEP,               /* green awake, red sleeping */
+    DRAW_COLOR_BODY_TYPE,           /* kinematic blue, dynamic white */
+    DRAW_COLOR_VELOCITY,            /* blue to red by linear kinetic energy, energy_max red */
+    DRAW_COLOR_TOUCHING,            /* lit while in contact */
+    DRAW_COLOR_MODE_COUNT
+};
+
+/* contact and joint points */
+enum ds_PointColorMode
+{
+    DRAW_POINT_UNIFORM = 0,         /* uniform color for all points */
+    DRAW_POINT_GRAPH_COLOR,         /* by the constraint graph colour */
+    DRAW_POINT_COLOR_MODE_COUNT
+};
+
+#define DRAW_POINT_COLOR_COUNT  (CG_COLOR_COUNT + DRAW_POINT_COLOR_MODE_COUNT)
+
+struct ds_DynamicsDrawConfig
+{
+    u32     draw_shapes;
+    enum ds_ShapeColorMode shape_color_mode;
+    u32     draw_dbvh;              /* the dynamic proxy tree, per frame */
+    u32     draw_sbvh;              /* the static proxy tree, per frame */
+    u32     draw_bounds;            /* every shape's proxy box, per frame */
+    u32     draw_mesh_bvh;          /* every tri mesh's BVH, built once per shape (c_Shape.render_bvh) */
+    u32     draw_constraint_points; /* every manifold point (body 0's side) and joint anchor (r_PointWorld) */
+    u32     draw_contact_forces;    /* per manifold point: the normal force and the two friction forces on body 0 (ds_ForceDraw) */
+    u32     draw_joints;            /* the segment between a joint's anchors: a distance joint color_joint inside its range,
+                                       blending to color_joint_error at joint_error_max metres outside it; a mouse joint
+                                       anchor to target in color_mouse_joint */
+    enum ds_PointColorMode point_color_mode;
+    u32     draw_on_top;            /* points and segments through the scene (no depth test); else only where visible */
+    u32     draw_body_axes;         /* every active body: its mass centre (point) and frame axes (x red, y green, z blue) */
+    u32     draw_joint_forces;
+
+    f32     force_scale;            /* metres per newton */
+    f32     point_size;             /* pixels; read at draw */
+    f32     joint_error_max;        /* metres outside the range at which a distance joint is drawn fully color_joint_error */
+    f32     axis_length;
+    u32     refinement;             /* sphere and capsule meshes (r_MeshShape); read when a mesh is built */
+    f32     energy_max;             /* DRAW_COLOR_VELOCITY: the linear kinetic energy (J) drawn fully red */
+    f32     shape_alpha;            /* RANDOM and ISLAND: the dynamic shapes' alpha */
+    f32     shape_saturation;       /* RANDOM and ISLAND: HSL saturation, 0 grey ... */
+    f32     shape_lightness;        /* ... and lightness, 1/2 the pure hue, 1 white */
+
+    v4      color_dbvh;
+    v4      color_sbvh;
+    v4      color_bounds;
+    v4      color_mesh_bvh;
+    v4      color_shape;            /* UNIFORM */
+    v4      color_static;           /* static bodies in every mode but UNIFORM */
+    v4      color_kinematic;        /* BODY_TYPE */
+    v4      color_dynamic;
+    v4      color_sleeping;         /* SLEEP */
+    v4      color_awake;
+    v4      color_velocity_low;     /* VELOCITY: at rest ... */
+    v4      color_velocity_high;    /* ... and at energy_max */
+    v4      color_touching;         /* TOUCHING */
+    v4      color_not_touching;
+    v4      color_point[DRAW_POINT_COLOR_COUNT];    /* [constraint colour] under GRAPH_COLOR; else [CG_COLOR_COUNT + mode] */
+    v4      color_contact_force;
+    v4      color_friction_force;
+    v4      color_joint_force;
+    v4      color_joint;
+    v4      color_mouse_joint;
+    v4      color_joint_error;
+    v4      color_mass_center;
+};
+
+/* the editor's defaults: shapes on, random colours, everything else off */
+struct ds_DynamicsDrawConfig ds_DynamicsDrawConfigDefault(void);
+
+
+/*
+ds_DynamicsWorker
+=================
+Worker owned dynamics data. Core to the pipeline here is the worker's double-buffered frame memory. 
+Many parts of the pipeline pushes cached data onto the frame. 
+*/
+
+struct ds_Align(DS_CACHE_LINE) ds_DynamicsWorker
+{
+    struct arena                frame_arr[2]; /* Double-buffered; Master thread switches arena on new frame */
+    struct arena *              frame;
+    
+    struct ds_DynamicsMetrics   metrics;
+    struct ds_DynamicsDraw      draw;         /* debug drawing from jobs; flushed each tick */
+};
+
+/* indexed by workers using their thread indices (ds_ThreadSelfIndex()) */
+extern struct ds_DynamicsWorker *g_dynamics_worker;
+
+
 /*
 ds_CGraph
 =========
@@ -1701,22 +1814,20 @@ struct ds_RebuildRange
     f32 pivot;
 };
 
-struct ds_RebuildThreadCompute
+struct ds_Align(DS_CACHE_LINE) ds_RebuildThreadCompute
 {
     u32     count[2];
     v3      min[2];
     v3      max[2];
-    u8      pad[DS_CACHE_LINE - 2*sizeof(u32) - 4*sizeof(v3)];
 };
 
-struct ds_RebuildJob
+struct ds_Align(DS_CACHE_LINE) ds_RebuildJob
 {
     u32                     a_range_ready;      /* Only used for setup jobs */
     struct ds_RebuildRange  range;
-    u8                      pad[DS_CACHE_LINE - sizeof(u32) - sizeof(struct ds_RebuildRange)];
 };
 
-struct ds_RebuildJobPhase
+struct ds_Align(DS_CACHE_LINE) ds_RebuildJobPhase
 {
     struct ds_JobPhase              phase;
     struct ds_RebuildJob *          setup_job;
@@ -1748,7 +1859,6 @@ struct ds_RebuildJobPhase
     u8                              pad3[DS_CACHE_LINE];
 
     u32                             a_range_seed_count;
-    u8                              pad4[DS_CACHE_LINE];
 };
 
 /* see ds_BroadJobPhaseDispatch; the job's tag (ds_JobIdTag) selects the setup, range or leaf job */
@@ -1765,10 +1875,9 @@ enum ds_RemovalJobType
     REMOVAL_JOB_COUNT
 };
 
-struct ds_RemovalJob
+struct ds_Align(DS_CACHE_LINE) ds_RemovalJob
 {
     struct ds_BitSet    removal_set;
-    u8                  pad[DS_CACHE_LINE - sizeof(struct ds_BitSet)];
 };
 
 struct ds_RemovalJobPhase
@@ -1904,6 +2013,8 @@ struct ds_Dynamics
 
     struct ds_DynamicsMetrics       metrics;
     struct ds_DynamicsWorker *      worker;
+    struct ds_DynamicsDraw          draw;                   /* debug drawing: what the serial phases push */
+    struct ds_DynamicsDrawConfig    draw_config;
     u32                             worker_count;
 
 
@@ -1916,7 +2027,7 @@ struct ds_Dynamics
     f32                             spring_hertz_max;        /* 1 / (JOINT_OSCILLATION_TICKS_MIN * timestep): a joint spring's hertz is clamped to it at add.
                                                                TODO: move somewhere suitable (the solver config is one global shared by every pipeline) */
 
-	ds_SDB(c_Shape) *	            cshape_db;		        /* externally owned */
+	struct c_ShapeDB *	            cshape_db;		        /* externally owned; constant during a tick */
 	ds_SDB(ds_BodyPrefab) *	        body_prefab_db;		    /* externally owned */
 
 	ds_Pool(ds_Body)              body_pool;
@@ -1970,7 +2081,7 @@ struct ds_Dynamics
 /**************** PHYISCS PIPELINE API ****************/
 
 /* Initialize a new growable physics pipeline; ns_tick is the duration of a physics frame. */
-struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, ds_SDB(c_Shape) *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size);
+struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size);
 /* Free the pipeline's heap resources (the shell stays on its arena) */
 void 			ds_DynamicsFree(struct ds_Dynamics *pipeline);
 /* Return the required size when serializing the pipeline. */
@@ -1983,7 +2094,7 @@ void            ds_DynamicsSerialize(struct ss *ss, const struct ds_Dynamics *pi
  * (g_solver_config) is process state, not part of the snapshot. On failure the stream position and mem are
  * as before the call and the pipeline is zeroed.
  */
-u32             ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynamics *pipeline, ds_SDB(c_Shape) *cshape_db);
+u32             ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynamics *pipeline, struct c_ShapeDB *cshape_db);
 /*
  * Empty the pipeline: every body, shape, contact, island, joint, event, sleeping set and the frame memory go;
  * the frame count restarts and a flagged split is forgotten. Configuration and capacities stay.
@@ -2022,7 +2133,7 @@ void            ds_DynamicsPrintUsage(const struct ds_Dynamics *pipeline);
 /**************** PHYISCS PIPELINE INTERNAL API ****************/
 
 /* Internal: Allocate the pipeline without its simulation state (containers, gravity, margin, numerics). */
-void                        ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, const u64 ns_tick, const u64 frame_memory, ds_SDB(c_Shape) *cshape_db, const u32 worker_count, const u64 worker_frame_size);
+void                        ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, const u64 ns_tick, const u64 frame_memory, struct c_ShapeDB *cshape_db, const u32 worker_count, const u64 worker_frame_size);
 /*
  * Internal: Read size bytes of frame data into a random worker frame (the next one if it is full) and set *dst.
  * Spreading the data leaves room in every worker frame, so a restore inside a tick doesn't starve a worker of
@@ -2037,6 +2148,15 @@ void                        ds_DynamicsSetGlobals(struct ds_Dynamics *pipeline);
 
 /* push physics event into pipeline memory and return pointer to allocated event */
 struct ds_PhysicsEvent *	ds_PhysicsEventPush(struct ds_Dynamics *pipeline);
+
+/**************** ds_dynamics_draw.c: pushes into ds_DynamicsDraw ****************/
+
+/* Internal: the colour's contacts [low, high): manifold points and the forces on body 0; from the cache stage, the levers still in world axes */
+void                        ds_ContactDrawRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
+/* Internal: the active bodies [low, high): mass centre and frame axes; from the orientation stage */
+void                        ds_BodyDrawRange(struct ds_Dynamics *pipeline, const u32 low, const u32 high);
+/* Internal: after the solve: every awake joint's anchors, forces and segment; sims through the body, the sleep pass has run */
+void                        ds_DynamicsDrawFrameEnd(struct ds_Dynamics *pipeline);
 
 #ifdef __cplusplus
 } 

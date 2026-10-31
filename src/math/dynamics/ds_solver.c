@@ -241,6 +241,11 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
     }
 
     ArenaPopPacked(frame, sizeof(struct ds_ProxyDirty)*(arr.len - proxy_range->count));
+
+    if (pipeline->draw_config.draw_body_axes)
+    {
+        ds_BodyDrawRange(pipeline, low, high);
+    }
      
     ProfZoneEnd;
 }
@@ -659,6 +664,12 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline
     struct ds_CGraph *cg = &pipeline->cgraph;
     struct ds_CGraphColor *color = cg->color + color_index;
     struct arena *frame = pipeline->worker[ds_ThreadSelfIndex()].frame;
+
+    /* the levers leave world axes below */
+    if (pipeline->draw_config.draw_constraint_points || pipeline->draw_config.draw_contact_forces)
+    {
+        ds_ContactDrawRange(pipeline, color_index, low, high);
+    }
 
     for (u32 ci = low; ci < high; ++ci)
     {			

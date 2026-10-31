@@ -1190,7 +1190,11 @@ static struct test_Output StringDatabaseTest(struct test_Environment *env)
 	return output;
 }
 
-/* Reference / Dereference count found nodes only; the stub is a default callers reference freely. */
+/*
+ * Reference / Dereference count found nodes only; the stub is a default callers reference freely. Remove refuses a
+ * referenced node (0, nothing changes), removes an unreferenced one (1) and reports an absent id (0); ForceRemove
+ * removes a referenced node.
+ */
 static struct test_Output StringDatabaseReferenceTest(struct test_Environment *env)
 {
 	struct test_Output output = { .success = 1, .id = __func__ };
@@ -1212,6 +1216,19 @@ static struct test_Output StringDatabaseReferenceTest(struct test_Environment *e
     ds_SDBDereference(db, SDB_STUB);
     ds_SDBDereference(db, SDB_STUB);
     TEST_EQUAL(0, db.pool.buf[SDB_STUB].reference_count);
+
+    /* remove: refused while referenced, done once dereferenced, 0 for an absent id; force ignores the count */
+    TEST_EQUAL(0, ds_SDBRemove(db, Utf8Inline("a")));
+    TEST_EQUAL(a.index, ds_SDBLookup(db, Utf8Inline("a")).index);
+    TEST_EQUAL(1, db.pool.buf[a.index].reference_count);
+    ds_SDBDereference(db, a.index);
+    TEST_EQUAL(1, ds_SDBRemove(db, Utf8Inline("a")));
+    TEST_EQUAL(SDB_STUB, ds_SDBLookup(db, Utf8Inline("a")).index);
+    TEST_EQUAL(0, ds_SDBRemove(db, Utf8Inline("a")));
+    const struct slot b = ds_SDBAdd(env->mem_1, db, Utf8Inline("b"));
+    TEST_EQUAL(b.index, ds_SDBReference(db, Utf8Inline("b")).index);
+    ds_SDBForceRemove(db, Utf8Inline("b"));
+    TEST_EQUAL(SDB_STUB, ds_SDBLookup(db, Utf8Inline("b")).index);
 
     /* growable: many adds stay findable */
     for (u32 i = 0; i < 100; ++i)
