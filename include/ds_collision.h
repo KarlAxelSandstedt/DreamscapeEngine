@@ -193,7 +193,8 @@ void        c_ShapeDBAlloc(struct arena *mem, struct c_ShapeDB *db, const u32 le
 void        c_ShapeDBDealloc(struct c_ShapeDB *db);
 /*
  * Add a copy of src (id <= C_SHAPE_ID_SIZE bytes; a mesh's BVH as TriMeshBVHConstruct built it) with its mass
- * properties; bad id, full or out of memory: warning, the stub's slot.
+ * properties; bad id, a convex shape without volume, a mesh without triangles, full or out of memory: warning,
+ * the stub's slot.
  */
 struct slot c_ShapeDBAdd(struct c_ShapeDB *db, const utf8 id, const struct c_Shape *src);
 /* 1 if removed; 0 if absent or referenced (warning) */

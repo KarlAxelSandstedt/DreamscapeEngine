@@ -351,43 +351,38 @@ static struct slot c_ShapeDBStubSlot(const struct c_ShapeDB *db)
     return (struct slot) { .address = db->sdb.pool.buf + SDB_STUB, .index = SDB_STUB };
 }
 
-/* account for a push of size bytes at *offset: the arena pads to its alignment before a push, never after */
-static void c_ShapeBlockPush(u64 *offset, const u64 size)
+/* the bytes a size-byte piece adds at offset: the arena pads to its alignment before a push, never after */
+static u64 c_ShapeBlockOffset(const u64 offset, const u64 size)
 {
+    ds_Assert(size);
     ds_StaticAssert((DEFAULT_MEMORY_ALIGNMENT & (DEFAULT_MEMORY_ALIGNMENT - 1)) == 0, "the rounding mask needs a power of two");
-    if (size)
-    {
-        *offset = ((*offset + DEFAULT_MEMORY_ALIGNMENT - 1) & ~(DEFAULT_MEMORY_ALIGNMENT - 1)) + size;
-    }
+    return ((offset + DEFAULT_MEMORY_ALIGNMENT - 1) & ~(DEFAULT_MEMORY_ALIGNMENT - 1)) - offset + size;
 }
 
-/* exact bytes of the slot's block: the id, the geometry arrays and a mesh's BVH pool, in c_ShapeGeometryCopy's order */
-static u64 c_ShapeBlockSize(const utf8 id, const struct c_Shape *src)
+/* exact bytes of the slot's block: the id, the geometry arrays and a mesh's BVH pool, in c_ShapeCopy's order */
+static u64 c_ShapeBlockSizeRequired(const utf8 id, const struct c_Shape *src)
 {
     u64 size = 0;
-    c_ShapeBlockPush(&size, id.size);
+    size += c_ShapeBlockOffset(size, id.size);
     switch (src->type)
     {
         case C_SHAPE_CONVEX_HULL:
         {
             const struct dcel *h = &src->hull;
-            c_ShapeBlockPush(&size, h->f_count*sizeof(struct dcelFace));
-            c_ShapeBlockPush(&size, h->e_count*sizeof(struct dcelEdge));
-            c_ShapeBlockPush(&size, h->v_count*sizeof(v3));
-            c_ShapeBlockPush(&size, h->f_count*sizeof(struct plane));
+            size += c_ShapeBlockOffset(size, h->f_count*sizeof(struct dcelFace));
+            size += c_ShapeBlockOffset(size, h->e_count*sizeof(struct dcelEdge));
+            size += c_ShapeBlockOffset(size, h->v_count*sizeof(v3));
+            size += c_ShapeBlockOffset(size, h->f_count*sizeof(struct plane));
         } break;
 
         case C_SHAPE_TRI_MESH:
         {
             const struct triMesh *mesh = src->mesh_bvh.mesh;
-            if (mesh)
-            {
-                c_ShapeBlockPush(&size, sizeof(struct triMesh));
-                c_ShapeBlockPush(&size, mesh->v_count*sizeof(v3));
-                c_ShapeBlockPush(&size, mesh->tri_count*sizeof(v3u32));
-                c_ShapeBlockPush(&size, src->mesh_bvh.tri_count*sizeof(u32));
-                c_ShapeBlockPush(&size, ((u64) src->mesh_bvh.bvh.pool.length + 1)*sizeof(struct BVHNode));
-            }
+            size += c_ShapeBlockOffset(size, sizeof(struct triMesh));
+            size += c_ShapeBlockOffset(size, mesh->v_count*sizeof(v3));
+            size += c_ShapeBlockOffset(size, mesh->tri_count*sizeof(v3u32));
+            size += c_ShapeBlockOffset(size, src->mesh_bvh.tri_count*sizeof(u32));
+            size += c_ShapeBlockOffset(size, ((u64) src->mesh_bvh.bvh.pool.length + 1)*sizeof(struct BVHNode));
         } break;
 
         default: break;
@@ -395,8 +390,7 @@ static u64 c_ShapeBlockSize(const utf8 id, const struct c_Shape *src)
     return size;
 }
 
-/* copy src's geometry onto block (sized by c_ShapeBlockSize); a mesh's BVH pool slot by slot, the tree is all indices */
-static void c_ShapeGeometryCopy(struct arena *block, struct c_Shape *shape, const struct c_Shape *src)
+static void c_ShapeCopy(struct arena *block, struct c_Shape *shape, const struct c_Shape *src)
 {
     shape->type = src->type;
     switch (src->type)
@@ -416,29 +410,69 @@ static void c_ShapeGeometryCopy(struct arena *block, struct c_Shape *shape, cons
 
         case C_SHAPE_TRI_MESH:
         {
+            /* a built BVH has no holes: slot i of the copy is slot i of the source (unused slots are poisoned) */
             const struct triMeshBVH *s = &src->mesh_bvh;
+            ds_Assert(s->bvh.pool.count == s->bvh.pool.count_max);
+
             shape->mesh_bvh = *s;
-            if (s->mesh)
+            struct triMesh *mesh = ArenaPushMemcpy(block, s->mesh, sizeof(struct triMesh));
+            mesh->v = ArenaPushMemcpy(block, s->mesh->v, s->mesh->v_count*sizeof(v3));
+            mesh->tri = ArenaPushMemcpy(block, s->mesh->tri, s->mesh->tri_count*sizeof(v3u32));
+            shape->mesh_bvh.mesh = mesh;
+            shape->mesh_bvh.tri = ArenaPushMemcpy(block, s->tri, s->tri_count*sizeof(u32));
+            ds_PoolAlloc(block, shape->mesh_bvh.bvh.pool, s->bvh.pool.length, NOT_GROWABLE);
+            for (u32 i = 0; i < s->bvh.pool.count_max; ++i)
             {
-                struct triMesh *mesh = ArenaPushMemcpy(block, s->mesh, sizeof(struct triMesh));
-                mesh->v = ArenaPushMemcpy(block, s->mesh->v, s->mesh->v_count*sizeof(v3));
-                mesh->tri = ArenaPushMemcpy(block, s->mesh->tri, s->mesh->tri_count*sizeof(v3u32));
-                shape->mesh_bvh.mesh = mesh;
-                shape->mesh_bvh.tri = ArenaPushMemcpy(block, s->tri, s->tri_count*sizeof(u32));
-                /* a built BVH has no holes: slot i of the copy is slot i of the source (unused slots are poisoned) */
-                ds_Assert(s->bvh.pool.count == s->bvh.pool.count_max);
-                ds_PoolAlloc(block, shape->mesh_bvh.bvh.pool, s->bvh.pool.length, NOT_GROWABLE);
-                for (u32 i = 0; i < s->bvh.pool.count_max; ++i)
-                {
-                    const struct slot node = ds_PoolAdd(shape->mesh_bvh.bvh.pool);
-                    ds_Assert(node.index == i);
-                    memcpy(node.address, s->bvh.pool.buf + i, sizeof(struct BVHNode));
-                }
+                const struct slot node = ds_PoolAdd(shape->mesh_bvh.bvh.pool);
+                ds_Assert(node.index == i);
+                memcpy(node.address, s->bvh.pool.buf + i, sizeof(struct BVHNode));
             }
         } break;
 
         default: { ds_Assert(0); } break;
     }
+}
+
+/* 1 if the shape is storable; 0 with a warning for a convex shape without volume or a mesh without its memory */
+static u32 c_ShapeValidate(const utf8 id, const struct c_Shape *src)
+{
+    const char *err_str = NULL;
+    switch (src->type)
+    {
+        case C_SHAPE_SPHERE:
+        {
+            if (!(src->sphere.radius > 0.0f)) { err_str = "sphere radius not positive"; }
+        } break;
+
+        case C_SHAPE_CAPSULE:
+        {
+            if (!(src->capsule.radius > 0.0f)) { err_str = "capsule radius not positive"; }
+            else if (!(src->capsule.half_height >= 0.0f)) { err_str = "capsule half height negative"; }
+        } break;
+
+        case C_SHAPE_CONVEX_HULL:
+        {
+            const struct dcel *h = &src->hull;
+            if (h->v_count < 4 || h->f_count < 4 || h->e_count < 12) { err_str = "hull with fewer vertices, faces or half edges than a tetrahedron"; }
+            else if (!h->v || !h->f || !h->e || !h->plane) { err_str = "hull without its arrays"; }
+        } break;
+
+        case C_SHAPE_TRI_MESH:
+        {
+            const struct triMeshBVH *m = &src->mesh_bvh;
+            if (!m->mesh || !m->mesh->tri_count) { err_str = "mesh without triangles"; }
+            else if (!m->mesh->v || !m->mesh->tri || !m->tri || !m->bvh.pool.buf) { err_str = "mesh without its arrays"; }
+            else if (m->tri_count != m->mesh->tri_count) { err_str = "mesh BVH built over another triangle count"; }
+        } break;
+
+        default: { err_str = "unknown shape type"; } break;
+    }
+
+    if (err_str)
+    {
+        Log(T_PHYSICS, S_WARNING, "shape database: \"%k\" rejected, %s, the stub is returned", &id, err_str);
+    }
+    return err_str == NULL;
 }
 
 struct slot c_ShapeDBAdd(struct c_ShapeDB *db, const utf8 id, const struct c_Shape *src)
@@ -461,8 +495,13 @@ struct slot c_ShapeDBAdd(struct c_ShapeDB *db, const utf8 id, const struct c_Sha
         return c_ShapeDBStubSlot(db);
     }
 
+    if (!c_ShapeValidate(id, src))
+    {
+        return c_ShapeDBStubSlot(db);
+    }
+
     /* the block, carved by a heap arena; only its base is kept */
-    struct arena block = ArenaAlloc(NULL, c_ShapeBlockSize(id, src));
+    struct arena block = ArenaAlloc(NULL, c_ShapeBlockSizeRequired(id, src));
     void *base = block.stack_ptr;
     if (!base)
     {
@@ -482,7 +521,7 @@ struct slot c_ShapeDBAdd(struct c_ShapeDB *db, const utf8 id, const struct c_Sha
     shape->mem = base;
     shape->render_mesh = NULL;
     shape->render_bvh = NULL;
-    c_ShapeGeometryCopy(&block, shape, src);
+    c_ShapeCopy(&block, shape, src);
     ds_Assert(block.mem_left == 0);
     if (src->type != C_SHAPE_TRI_MESH)
     {

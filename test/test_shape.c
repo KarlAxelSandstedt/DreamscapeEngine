@@ -541,6 +541,20 @@ static struct test_Output ShapeDatabaseTest(struct test_Environment *env)
     TEST_EQUAL(SDB_STUB, c_ShapeDBAdd(&db, long_id, &sphere).index);
     TEST_EQUAL(2, db.sdb.pool.count);
 
+    /* the stub's slot for a shape c_ShapeValidate rejects: no volume, or a mesh without triangles */
+    const struct c_Shape flat_sphere = { .type = C_SHAPE_SPHERE, .sphere.radius = 0.0f };
+    TEST_EQUAL(SDB_STUB, c_ShapeDBAdd(&db, Utf8Inline("flat_sphere"), &flat_sphere).index);
+    const struct c_Shape nan_sphere = { .type = C_SHAPE_SPHERE, .sphere.radius = F32Nan() };
+    TEST_EQUAL(SDB_STUB, c_ShapeDBAdd(&db, Utf8Inline("nan_sphere"), &nan_sphere).index);
+    const struct c_Shape thin_capsule = { .type = C_SHAPE_CAPSULE, .capsule = { .half_height = 1.0f, .radius = 0.0f } };
+    TEST_EQUAL(SDB_STUB, c_ShapeDBAdd(&db, Utf8Inline("thin_capsule"), &thin_capsule).index);
+    const struct c_Shape empty_hull = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelEmpty() };
+    TEST_EQUAL(SDB_STUB, c_ShapeDBAdd(&db, Utf8Inline("empty_hull"), &empty_hull).index);
+    const struct triMesh empty = { 0 };
+    const struct c_Shape empty_mesh = { .type = C_SHAPE_TRI_MESH, .mesh_bvh = TriMeshBVHConstruct(env->mem_1, &empty, 8) };
+    TEST_EQUAL(SDB_STUB, c_ShapeDBAdd(&db, Utf8Inline("empty_mesh"), &empty_mesh).index);
+    TEST_EQUAL(2, db.sdb.pool.count);
+
     /* referenced: not removed; dereferenced: removed */
     TEST_EQUAL(s.index, c_ShapeDBReference(&db, Utf8Inline("sphere")).index);
     TEST_EQUAL(0, c_ShapeDBRemove(&db, Utf8Inline("sphere")));
