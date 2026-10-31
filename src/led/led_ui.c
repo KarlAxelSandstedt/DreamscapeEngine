@@ -932,7 +932,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 				//}
 
 				ui_ChildLayoutAxis(AXIS_2_Y)
-				ui_Width(ui_SizePixel(460.0f, 1.0f))
+				ui_Width(ui_SizePixel(690.0f, 1.0f))
 				ui_Parent(ui_NodeAllocNonHashed(UI_DRAW_BACKGROUND).index)
 				ui_Flags(UI_DRAW_ROUNDED_CORNERS | UI_TEXT_ALLOW_OVERFLOW)
 				{
@@ -985,7 +985,7 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 					/* TODO: Make checkbox one-lines */
 					/* TODO: Make center one-lines */
 					struct ui_Node *node;
-					/* two columns of checkboxes, the world and shapes, the forces; as tall as the longer column (strict, or the panel shrinks it) */
+					/* three columns of checkboxes, the world and shapes, the forces, the joints; as tall as the longest column (strict, or the panel shrinks it) */
 					ui_Height(ui_SizePixel(6.0f*24.0f, 1.0f))
 					ui_ChildLayoutAxis(AXIS_2_X)
 					ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
@@ -1249,6 +1249,38 @@ static void led_Ui(struct led *led, const struct ui_Visual *visual)
 									}
 
 									if (led->physics.draw_config.draw_joints)
+									{
+										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
+									}
+
+									if (node->inter & UI_INTER_HOVER)
+									{
+										node->background_color = V4(0.3f, 0.3f, 0.4f, 1.0f);
+									}
+								}
+							}
+						}
+
+						ui_ChildLayoutAxis(AXIS_2_Y)
+						ui_Width(ui_SizePixel(230.0f, 1.0f))
+						ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+						{
+							ui_Height(ui_SizePixel(24.0f, 1.0f))
+							ui_ChildLayoutAxis(AXIS_2_X)
+							{
+								ui_Parent(ui_NodeAllocNonHashed(UI_FLAG_NONE).index)
+								{
+									ui_Pad();
+									ui_Width(ui_SizePixel(24.0f, 1.0f))
+									node = ui_NodeAllocF(UI_DRAW_BORDER | UI_DRAW_BACKGROUND | UI_INTER_LEFT_CLICK, "###draw_11").address;
+									ui_Pad();
+									ui_NodeAllocF(UI_DRAW_TEXT, "draw joint breakage");
+									if (node->inter & UI_INTER_LEFT_CLICK)
+									{
+										led->physics.draw_config.draw_joint_breakage = !led->physics.draw_config.draw_joint_breakage;
+									}
+
+									if (led->physics.draw_config.draw_joint_breakage)
 									{
 										node->background_color = V4(0.9f, 0.9f, 0.9f, 1.0f);
 									}

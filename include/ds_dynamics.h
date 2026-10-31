@@ -1565,6 +1565,8 @@ struct ds_DynamicsDrawConfig
     u32     draw_on_top;            /* points and segments through the scene (no depth test); else only where visible */
     u32     draw_body_axes;         /* every active body: its mass centre (point) and frame axes (x red, y green, z blue) */
     u32     draw_joint_forces;
+    u32     draw_joint_breakage;    /* with draw_joints: the segment mixes from its colour to color_joint_break by the joint's
+                                       force (torque) over its threshold; unbreakable joints keep their colour */
 
     f32     force_scale;            /* metres per newton */
     f32     point_size;             /* pixels; read at draw */
@@ -1597,6 +1599,7 @@ struct ds_DynamicsDrawConfig
     v4      color_joint;
     v4      color_mouse_joint;
     v4      color_joint_error;
+    v4      color_joint_break;
     v4      color_mass_center;
 };
 

@@ -82,8 +82,16 @@ struct ds_DynamicsDrawConfig ds_DynamicsDrawConfigDefault(void)
         .color_joint = V4(0.5f, 0.8f, 1.0f, 1.0f),
         .color_mouse_joint = V4(0.8f, 0.6f, 1.0f, 1.0f),
         .color_joint_error = V4(0.8f, 0.0f, 0.0f, 1.0f),
+        .color_joint_break = V4(0.45f, 0.0f, 0.05f, 1.0f),
         .color_mass_center = V4(1.0f, 1.0f, 1.0f, 1.0f),
     };
+}
+
+/* color mixed towards color_joint_break by the larger of force / force_threshold and torque / torque_threshold (0 for F32_INFINITY) */
+static v4 JointBreakageColor(const struct ds_DynamicsDrawConfig *config, const v4 color, const struct ds_JointSim *jsim, const f32 force, const f32 torque)
+{
+    const f32 ratio = F32Max(force / jsim->force_threshold, torque / jsim->torque_threshold);
+    return V4AddScaled(color, V4Sub(config->color_joint_break, color), F32Clamp(ratio, 0.0f, 1.0f));
 }
 
 static void ds_ForceDrawPush(ds_CPool(ds_ForceDraw) *pool, const v3f64 origin, const v3 force, const v4 color)
@@ -198,7 +206,9 @@ static void ds_DistanceJointDraw(struct ds_Dynamics *pipeline, const struct ds_J
         {
             .p0 = anchor[0],
             .p1 = anchor[1],
-            .color = V4AddScaled(config->color_joint, V4Sub(config->color_joint_error, config->color_joint), t),
+            .color = config->draw_joint_breakage
+                ? JointBreakageColor(config, config->color_joint, jsim, V3Length(force), 0.0f)
+                : V4AddScaled(config->color_joint, V4Sub(config->color_joint_error, config->color_joint), t),
         };
         ds_CPoolPushValue(draw->segment, segment);
     }
@@ -231,7 +241,9 @@ static void ds_MouseJointDraw(struct ds_Dynamics *pipeline, const struct ds_Join
         {
             .p0 = JointAnchorEnd(sim, jsim, 0),
             .p1 = jsim->mouse.target,
-            .color = config->color_mouse_joint,
+            .color = config->draw_joint_breakage
+                ? JointBreakageColor(config, config->color_mouse_joint, jsim, V3Length(force), V3Length(jsim->mouse.angular_impulse) / pipeline->timestep)
+                : config->color_mouse_joint,
         };
         ds_CPoolPushValue(draw->segment, segment);
     }
