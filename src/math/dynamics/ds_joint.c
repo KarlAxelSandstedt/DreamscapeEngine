@@ -17,8 +17,9 @@
 ==========================================================================
 */
 
-ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType type, const u32 collide_connected, const ds_BodyId b0_id, const ds_Transform *local_frame0, const ds_BodyId b1_id, const ds_Transform *local_frame1)
+ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType type, const u32 collide_connected, const struct ds_BreakageOption breakage, const ds_BodyId b0_id, const ds_Transform *local_frame0, const ds_BodyId b1_id, const ds_Transform *local_frame1)
 {
+    ds_Assert(breakage.force_threshold >= 0.0f && breakage.torque_threshold >= 0.0f);
     struct slot slot_b0 = ds_BodyLookup(pipeline, b0_id);
     struct slot slot_b1 = ds_BodyLookup(pipeline, b1_id);
     struct ds_Body *b[2] = { slot_b0.address, slot_b1.address };
@@ -84,6 +85,16 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
     }
     joint->id = ds_JointIdNextGeneration(joint->id);
 
+    struct ds_BitSet *set = &pipeline->worker[0].joint_breaking_set;
+    if (set->bit_count <= slot_joint.index)
+    {
+        for (u32 w = 0; w < pipeline->worker_count; ++w)
+        {
+            set = &pipeline->worker[w].joint_breaking_set;
+            ds_BitSetIncreaseSize(set, set->bit_count << 1, 0);
+        }
+    }
+
     joint->body[0] = slot_b0.index;
     joint->body[1] = slot_b1.index;
     joint->island = expand_index;
@@ -105,6 +116,8 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
     struct ds_JointSim *sim = ds_CGraphJointAdd(pipeline, joint);
     sim->local_frame[0] = *local_frame0;
     sim->local_frame[1] = *local_frame1;
+    sim->force_threshold = breakage.force_threshold;
+    sim->torque_threshold = breakage.torque_threshold;
     sim->type = type;
     joint->type = type;
 
@@ -347,6 +360,47 @@ void ds_JointValidateAll(const struct ds_Dynamics *pipeline)
     ds_Assert(edge_count == 2*joint_count);
 }
 
+/* the force and torque the joint applied over the tick, from its accumulated impulses, against its thresholds */
+static u32 JointBreakageCheck(const struct ds_JointSim *jsim, const f32 timestep_inv)
+{
+    f32 force = 0.0f;
+    f32 torque = 0.0f;
+    switch (jsim->type)
+    {
+        case DS_JOINT_TYPE_DISTANCE:
+        {
+            /* the three rows share the axis; the high row pulls against the other two */
+            const struct ds_DistanceJoint *dj = &jsim->distance;
+            force = F32Abs(dj->impulse + dj->impulse_low - dj->impulse_high) * timestep_inv;
+        } break;
+
+        case DS_JOINT_TYPE_MOUSE:
+        {
+            force = V3Length(jsim->mouse.impulse) * timestep_inv;
+            torque = V3Length(jsim->mouse.angular_impulse) * timestep_inv;
+        } break;
+
+        default: break;
+    }
+    return force > jsim->force_threshold || torque > jsim->torque_threshold;
+}
+
+void ds_JointBreakingCheckRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 low, const u32 high)
+{
+    struct ds_BitSet *set = &g_dynamics_worker[ds_ThreadSelfIndex()].joint_breaking_set;
+    const struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
+    const f32 timestep_inv = 1.0f / pipeline->timestep;
+
+    for (u32 ji = low; ji < high; ++ji)
+    {
+        const struct ds_JointSim *jsim = color->joint_sim_pool.buf + ji;
+        if (JointBreakageCheck(jsim, timestep_inv))
+        {
+            ds_BitSetSet(set, jsim->joint, 1);
+        }
+    }
+}
+
 struct slot ds_JointLookup(const struct ds_Dynamics *pipeline, const ds_JointId id)
 {
     /* the index is bounded before the slot is read (as ds_BodyLookup) */
@@ -408,16 +462,18 @@ static intv ds_DistanceJointClampRange(const intv range)
     return clamped;
 }
 
-void ds_DistanceJointPrefab(struct ds_DistanceJointPrefab *prefab, const f32 distance)
+void ds_DistanceJointPrefab(struct ds_DistanceJointPrefab *prefab, const f32 distance, const struct ds_BreakageOption breakage)
 {
     *prefab = (struct ds_DistanceJointPrefab) { 0 };
+    prefab->breakage = breakage;
     prefab->target = ds_DistanceJointClampLength(distance, "distance");
     prefab->range = Intv(prefab->target, prefab->target);
 }
 
-void ds_DistanceJointPrefabRange(struct ds_DistanceJointPrefab *prefab, const intv range)
+void ds_DistanceJointPrefabRange(struct ds_DistanceJointPrefab *prefab, const intv range, const struct ds_BreakageOption breakage)
 {
     *prefab = (struct ds_DistanceJointPrefab) { 0 };
+    prefab->breakage = breakage;
     prefab->range = ds_DistanceJointClampRange(range);
     prefab->target = prefab->range.low;
 }
@@ -442,17 +498,19 @@ static void ds_DistanceJointPrefabSpringSet(struct ds_DistanceJointPrefab *prefa
     }
 }
 
-void ds_DistanceJointPrefabSpring(struct ds_DistanceJointPrefab *prefab, const f32 distance, const f32 hertz, const f32 damping_ratio)
+void ds_DistanceJointPrefabSpring(struct ds_DistanceJointPrefab *prefab, const f32 distance, const f32 hertz, const f32 damping_ratio, const struct ds_BreakageOption breakage)
 {
     *prefab = (struct ds_DistanceJointPrefab) { 0 };
+    prefab->breakage = breakage;
     prefab->target = ds_DistanceJointClampLength(distance, "distance");
     prefab->range = Intv(g_solver_config->linear_slop, JOINT_LENGTH_MAX);
     ds_DistanceJointPrefabSpringSet(prefab, hertz, damping_ratio);
 }
 
-void ds_DistanceJointPrefabRangeSpring(struct ds_DistanceJointPrefab *prefab, const intv range, const f32 hertz, const f32 damping_ratio)
+void ds_DistanceJointPrefabRangeSpring(struct ds_DistanceJointPrefab *prefab, const intv range, const f32 hertz, const f32 damping_ratio, const struct ds_BreakageOption breakage)
 {
     *prefab = (struct ds_DistanceJointPrefab) { 0 };
+    prefab->breakage = breakage;
     prefab->range = ds_DistanceJointClampRange(range);
     prefab->target = 0.5f*(prefab->range.low + prefab->range.high);
     ds_DistanceJointPrefabSpringSet(prefab, hertz, damping_ratio);
@@ -460,7 +518,7 @@ void ds_DistanceJointPrefabRangeSpring(struct ds_DistanceJointPrefab *prefab, co
 
 ds_JointId ds_DistanceJointAdd(struct ds_Dynamics *pipeline, const struct ds_DistanceJointPrefab *prefab, const ds_BodyId b0, const ds_Transform *local_frame0, const ds_BodyId b1, const ds_Transform *local_frame1)
 {
-    const ds_JointId id = ds_JointAdd(pipeline, DS_JOINT_TYPE_DISTANCE, prefab->collide_connected, b0, local_frame0, b1, local_frame1);
+    const ds_JointId id = ds_JointAdd(pipeline, DS_JOINT_TYPE_DISTANCE, prefab->collide_connected, prefab->breakage, b0, local_frame0, b1, local_frame1);
     if (ds_JointIdNullCheck(id))
     {
         return ds_JointIdNull();
@@ -762,9 +820,10 @@ static f32 ds_MouseJointMaxTorqueValue(const f32 max_torque, const f32 default_v
     return max_torque;
 }
 
-void ds_MouseJointPrefab(struct ds_MouseJointPrefab *prefab, const v3f64 target, const f32 hertz, const f32 damping_ratio, const f32 max_force, const f32 max_torque)
+void ds_MouseJointPrefab(struct ds_MouseJointPrefab *prefab, const v3f64 target, const f32 hertz, const f32 damping_ratio, const f32 max_force, const f32 max_torque, const struct ds_BreakageOption breakage)
 {
     *prefab = (struct ds_MouseJointPrefab) { 0 };
+    prefab->breakage = breakage;
 
     prefab->target = target;
     prefab->hertz = ds_MouseJointHertzValue(hertz, 1.0f);
@@ -773,14 +832,14 @@ void ds_MouseJointPrefab(struct ds_MouseJointPrefab *prefab, const v3f64 target,
     prefab->max_torque = ds_MouseJointMaxTorqueValue(max_torque, 0.0f);
 }
 
-void ds_MouseJointPrefabFromBody(struct ds_MouseJointPrefab *prefab, const struct ds_Dynamics *pipeline, const ds_BodyId body, const v3f64 target, const f32 hertz, const f32 damping_ratio, const f32 force_scale, const f32 torque_scale)
+void ds_MouseJointPrefabFromBody(struct ds_MouseJointPrefab *prefab, const struct ds_Dynamics *pipeline, const ds_BodyId body, const v3f64 target, const f32 hertz, const f32 damping_ratio, const f32 force_scale, const f32 torque_scale, const struct ds_BreakageOption breakage)
 {
     const struct ds_Body *b = ds_BodyLookup(pipeline, body).address;
     if (!b || !ds_BodyDynamicCheck(b) || !(b->mass > 0.0f))
     {
         /* a prefab that pulls with nothing; the add refuses such a body anyway */
         Log(T_PHYSICS, S_WARNING, "mouse joint prefab: body %u missing, not dynamic or without mass, the prefab pulls with no force", ds_BodyIdIndex(body));
-        ds_MouseJointPrefab(prefab, target, hertz, damping_ratio, 0.0f, 0.0f);
+        ds_MouseJointPrefab(prefab, target, hertz, damping_ratio, 0.0f, 0.0f, breakage);
         return;
     }
 
@@ -795,7 +854,7 @@ void ds_MouseJointPrefabFromBody(struct ds_MouseJointPrefab *prefab, const struc
     const f32 trace = inertia.a11 + inertia.a22 + inertia.a33;
     const f32 lever = F32Sqrt(trace / (3.0f * b->mass));
 
-    ds_MouseJointPrefab(prefab, target, hertz, damping_ratio, force_scale * weight, torque_scale * lever * weight);
+    ds_MouseJointPrefab(prefab, target, hertz, damping_ratio, force_scale * weight, torque_scale * lever * weight, breakage);
 }
 
 /* the setters write the sim of an awake mouse joint: wake its set first (a NO-OP for an awake island) */
@@ -847,7 +906,7 @@ void ds_MouseJointFrictionSet(struct ds_Dynamics *pipeline, const ds_JointId id,
 ds_JointId ds_MouseJointAdd(struct ds_Dynamics *pipeline, const struct ds_MouseJointPrefab *prefab, const ds_BodyId body, const ds_Transform *local_frame)
 {
     const ds_Transform anchor_frame = ds_TransformIdentity();
-    const ds_JointId id = ds_JointAdd(pipeline, DS_JOINT_TYPE_MOUSE, 0, body, local_frame, DS_BODY_MOUSE_ANCHOR_ID, &anchor_frame);
+    const ds_JointId id = ds_JointAdd(pipeline, DS_JOINT_TYPE_MOUSE, 0, prefab->breakage, body, local_frame, DS_BODY_MOUSE_ANCHOR_ID, &anchor_frame);
     if (ds_JointIdNullCheck(id))
     {
         return ds_JointIdNull();

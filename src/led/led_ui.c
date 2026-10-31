@@ -352,7 +352,7 @@ static void led_GrabBegin(struct led *led, const struct rayWorld *ray, const u32
 	local_frame.position = ds_TransformWorldPointToLocal(&bsim->world, target);
 
 	struct ds_MouseJointPrefab prefab;
-	ds_MouseJointPrefabFromBody(&prefab, &led->physics, body->id, target, LED_GRAB_HERTZ, LED_GRAB_DAMPING_RATIO, LED_GRAB_FORCE_SCALE, LED_GRAB_TORQUE_SCALE);
+	ds_MouseJointPrefabFromBody(&prefab, &led->physics, body->id, target, LED_GRAB_HERTZ, LED_GRAB_DAMPING_RATIO, LED_GRAB_FORCE_SCALE, LED_GRAB_TORQUE_SCALE, ds_BreakageOptionNone());
 	led->grab.joint = ds_MouseJointAdd(&led->physics, &prefab, body->id, &local_frame);
 	led->grab.distance = hit.f;
 	led->grab.target = target;
