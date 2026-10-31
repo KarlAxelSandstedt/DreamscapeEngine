@@ -204,7 +204,7 @@ static void ds_DistanceJointDraw(struct ds_Dynamics *pipeline, const struct ds_J
     }
 }
 
-/* body 1 is the shapeless mouse anchor: its point is the target; the segment body anchor to target in color_mouse_joint */
+/* body 1 is the shapeless mouse anchor: no point there; the segment body anchor to target in color_mouse_joint */
 static void ds_MouseJointDraw(struct ds_Dynamics *pipeline, const struct ds_JointSim *jsim, const v4 point_color)
 {
     struct ds_DynamicsDraw *draw = &pipeline->draw;
@@ -216,13 +216,8 @@ static void ds_MouseJointDraw(struct ds_Dynamics *pipeline, const struct ds_Join
 
     if (config->draw_constraint_points)
     {
-        const struct r_PointWorld record[2] =
-        {
-            { .p = anchor_start, .color = point_color },
-            { .p = jsim->mouse.target, .color = point_color },
-        };
-        ds_CPoolPushValue(draw->point, record[0]);
-        ds_CPoolPushValue(draw->point, record[1]);
+        const struct r_PointWorld record = { .p = anchor_start, .color = point_color };
+        ds_CPoolPushValue(draw->point, record);
     }
 
     if (config->draw_joint_forces)
