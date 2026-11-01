@@ -93,7 +93,8 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
         ds_CPoolAlloc(NULL, pipeline->worker[i].draw.segment, 0, GROWABLE);
         ds_CPoolAlloc(NULL, pipeline->worker[i].draw.point, 0, GROWABLE);
         ds_CPoolAlloc(NULL, pipeline->worker[i].draw.force, 0, GROWABLE);
-        pipeline->worker[i].joint_breaking_set = ds_BitSetAlloc(NULL, DS_BITSET_BLOCK_BITCOUNT, 0, GROWABLE);
+        /* sized to the joint pool once it exists (ds_DynamicsAlloc, ds_DynamicsTryDeserialize) */
+        pipeline->worker[i].joint_breaking_set = (struct ds_BitSet) { .growable = GROWABLE };
     }
     ds_CPoolAlloc(NULL, pipeline->draw.segment, 0, GROWABLE);
     ds_CPoolAlloc(NULL, pipeline->draw.point, 0, GROWABLE);
@@ -128,6 +129,10 @@ struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, c
     pipeline.body_usage_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
 
     ds_PoolAlloc(NULL, pipeline.joint_pool, initial_size, GROWABLE);
+    for (u32 i = 0; i < pipeline.worker_count; ++i)
+    {
+        pipeline.worker[i].joint_breaking_set = ds_BitSetAlloc(NULL, pipeline.joint_pool.length, 0, GROWABLE);
+    }
 
 	ds_PoolAlloc(NULL, pipeline.shape_pool, initial_size, GROWABLE);
     pipeline.shape_dynamic_usage_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);

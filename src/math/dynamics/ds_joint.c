@@ -77,6 +77,7 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
     }
 
     const u32 old_max = pipeline->joint_pool.count_max;
+    const u32 old_length = pipeline->joint_pool.length;
     struct slot slot_joint = ds_PoolAdd(pipeline->joint_pool);
     struct ds_Joint *joint = slot_joint.address;
     if (old_max != pipeline->joint_pool.count_max)
@@ -85,13 +86,12 @@ ds_JointId ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType typ
     }
     joint->id = ds_JointIdNextGeneration(joint->id);
 
-    struct ds_BitSet *set = &pipeline->worker[0].joint_breaking_set;
-    if (set->bit_count <= slot_joint.index)
+    /* the workers' breaking sets follow the pool's capacity */
+    if (old_length != pipeline->joint_pool.length)
     {
         for (u32 w = 0; w < pipeline->worker_count; ++w)
         {
-            set = &pipeline->worker[w].joint_breaking_set;
-            ds_BitSetIncreaseSize(set, set->bit_count << 1, 0);
+            ds_BitSetIncreaseSize(&pipeline->worker[w].joint_breaking_set, pipeline->joint_pool.length, 0);
         }
     }
 

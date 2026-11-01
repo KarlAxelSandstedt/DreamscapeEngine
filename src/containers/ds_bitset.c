@@ -71,8 +71,12 @@ void ds_BitSetDealloc(struct ds_BitSet *set)
 
 void ds_BitSetIncreaseSize(struct ds_BitSet *set, const u64 bit_count, const u64 clear_bit)
 {
-	ds_Assert(set->bit_count < bit_count && clear_bit <= 1);
+	ds_Assert(clear_bit <= 1);
 	ds_Assert(set->growable);
+	if (bit_count <= set->bit_count)
+	{
+		return;
+	}
 
 	const u64 new_blocks_start = set->block_count;
 	const u64 new_block_count = (bit_count + DS_BITSET_BLOCK_BITCOUNT - 1) / DS_BITSET_BLOCK_BITCOUNT;
