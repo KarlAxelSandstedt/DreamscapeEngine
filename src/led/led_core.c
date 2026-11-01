@@ -1018,8 +1018,7 @@ void led_RopeSetup(struct led *led)
 
     struct ds_DistanceJointPrefab prefab;
     const f32 distance = 0.0f;
-    ds_DistanceJointPrefab(&prefab, distance);
-
+    ds_DistanceJointPrefab(&prefab, distance, ds_BreakageOptionNone());
 	for (u32 i = 0; i < ROPE_COUNT; ++i)
 	{	
 		v3 translation;
@@ -1108,6 +1107,7 @@ void led_JointSetup(struct led *led)
     const v3 floor_hw = V3(20.0f, 0.5f, 10.0f);
     const f32 row1_z = -5.0f;
     const f32 row2_z = -10.0f;
+    const f32 row3_z = -15.0f;
 
 	const f32 alpha = 0.6f;
 	const v4 static_color = V4(0.8f, 0.6f, 0.6f, alpha);
@@ -1115,6 +1115,7 @@ void led_JointSetup(struct led *led)
 	const v4 range_color = V4(54.0f/256.0f, 183.0f/256.0f, 122.0f/256.0f, alpha);
 	const v4 spring_color = V4(254.0f/256.0f, 181.0f/256.0f, 82.0f/256.0f, alpha);
 	const v4 range_spring_color = V4(0.1f, 0.4f, 0.8f, alpha);
+	const v4 breakable_color = V4(0.9f, 0.35f, 0.3f, alpha);
 
 	id = Utf8Cstr(sys_win->ui->mem_frame, "c_bar");
     led_CollisionBoxAdd(led, id, bar_hw);
@@ -1165,9 +1166,10 @@ void led_JointSetup(struct led *led)
     led_RigidBodyPrefabAttachShape(led, Utf8Inline("rb_capsule"), Utf8Inline("s_capsule"), Utf8Inline("l_s_capsule"), &identity);
 
     /* statics: the floor and one bar per row; a hang point on a bar is (x, -bar_hw.y, 0) in bar space */
-    led_JointSceneNodeAdd(led, "floor", 0, V3(0.0f, -floor_hw.y, 0.5f * (row1_z + row2_z)), Utf8Inline("rb_floor"), static_color);
+    led_JointSceneNodeAdd(led, "floor", 0, V3(0.0f, -floor_hw.y, 0.5f * (row1_z + row3_z)), Utf8Inline("rb_floor"), static_color);
     const ds_Id bar1 = led_JointSceneNodeAdd(led, "bar", 1, V3(0.0f, bar_y, row1_z), Utf8Inline("rb_bar"), static_color);
     const ds_Id bar2 = led_JointSceneNodeAdd(led, "bar", 2, V3(0.0f, bar_y, row2_z), Utf8Inline("rb_bar"), static_color);
+    const ds_Id bar3 = led_JointSceneNodeAdd(led, "bar", 3, V3(0.0f, bar_y, row3_z), Utf8Inline("rb_bar"), static_color);
     const f32 hang_y = bar_y - bar_hw.y;
     struct ds_DistanceJointPrefab prefab;
     u32 n = 0;
@@ -1180,7 +1182,7 @@ void led_JointSetup(struct led *led)
         const f32 L = 2.0f;
         const f32 angle = 30.0f * F32_PI / 180.0f;
         const ds_Id bob = led_JointSceneNodeAdd(led, "pendulum", n++, V3(x + L * F32Sin(angle), hang_y - L * F32Cos(angle), row1_z), Utf8Inline("rb_box"), rigid_color);
-        ds_DistanceJointPrefab(&prefab, L);
+        ds_DistanceJointPrefab(&prefab, L, ds_BreakageOptionNone());
         led_JointSceneHangAdd(led, &prefab, bar1, V3(x, -bar_hw.y, 0.0f), bob);
     }
 
@@ -1191,7 +1193,7 @@ void led_JointSetup(struct led *led)
         ds_Id prev = bar1;
         ds_Transform frame_prev = ds_TransformIdentity();
         frame_prev.position = V3(x, -bar_hw.y, 0.0f);
-        ds_DistanceJointPrefab(&prefab, link_gap);
+        ds_DistanceJointPrefab(&prefab, link_gap, ds_BreakageOptionNone());
         f32 top = hang_y - link_gap;
         for (u32 i = 0; i < link_count; ++i)
         {
@@ -1205,7 +1207,7 @@ void led_JointSetup(struct led *led)
         }
         const f32 weight_distance = 1.0f;
         const ds_Id weight = led_JointSceneNodeAdd(led, "rope_weight", 0, V3(x + weight_distance, top, row1_z), Utf8Inline("rb_box"), rigid_color);
-        ds_DistanceJointPrefab(&prefab, weight_distance);
+        ds_DistanceJointPrefab(&prefab, weight_distance, ds_BreakageOptionNone());
         const ds_Transform frame_weight = ds_TransformIdentity();
         led_DistanceJointAdd(led, &prefab, prev, &frame_prev, weight, &frame_weight, prefab.target);
     }
@@ -1216,7 +1218,7 @@ void led_JointSetup(struct led *led)
         const f32 L = 1.5f;
         const ds_Id upper = led_JointSceneNodeAdd(led, "double_pendulum", 0, V3(x, hang_y - L, row1_z), Utf8Inline("rb_box"), rigid_color);
         const ds_Id lower = led_JointSceneNodeAdd(led, "double_pendulum", 1, V3(x + L, hang_y - L, row1_z), Utf8Inline("rb_box"), rigid_color);
-        ds_DistanceJointPrefab(&prefab, L);
+        ds_DistanceJointPrefab(&prefab, L, ds_BreakageOptionNone());
         led_JointSceneHangAdd(led, &prefab, bar1, V3(x, -bar_hw.y, 0.0f), upper);
         led_JointSceneJointAdd(led, &prefab, upper, lower);
     }
@@ -1227,7 +1229,7 @@ void led_JointSetup(struct led *led)
         const f32 L = 1.5f;
         const ds_Id a = led_JointSceneNodeAdd(led, "dumbbell", 0, V3(x - 0.5f * L, 5.0f, row1_z), Utf8Inline("rb_box"), rigid_color);
         const ds_Id b = led_JointSceneNodeAdd(led, "dumbbell", 1, V3(x + 0.5f * L, 4.0f, row1_z), Utf8Inline("rb_box"), rigid_color);
-        ds_DistanceJointPrefab(&prefab, F32Sqrt(L * L + 1.0f));
+        ds_DistanceJointPrefab(&prefab, F32Sqrt(L * L + 1.0f), ds_BreakageOptionNone());
         led_JointSceneJointAdd(led, &prefab, a, b);
     }
 
@@ -1240,7 +1242,7 @@ void led_JointSetup(struct led *led)
         const f32 y = 3.0f;
         const ds_Id post0 = led_JointSceneNodeAdd(led, "post", 0, V3(x0, 1.5f, row1_z), Utf8Inline("rb_post"), static_color);
         const ds_Id post1 = led_JointSceneNodeAdd(led, "post", 1, V3(x0 + span, 1.5f, row1_z), Utf8Inline("rb_post"), static_color);
-        ds_DistanceJointPrefab(&prefab, pitch);
+        ds_DistanceJointPrefab(&prefab, pitch, ds_BreakageOptionNone());
         ds_Id prev = post0;
         ds_Transform frame_prev = ds_TransformIdentity();
         frame_prev.position = V3(0.0f, y - 1.5f, 0.0f);
@@ -1264,7 +1266,7 @@ void led_JointSetup(struct led *led)
         const f32 x = -2.0f;
         const intv range = Intv(1.0f, 3.0f);
         const ds_Id box = led_JointSceneNodeAdd(led, "slack", 0, V3(x, hang_y - range.low, row1_z), Utf8Inline("rb_box"), range_color);
-        ds_DistanceJointPrefabRange(&prefab, range);
+        ds_DistanceJointPrefabRange(&prefab, range, ds_BreakageOptionNone());
         led_JointSceneHangAdd(led, &prefab, bar1, V3(x, -bar_hw.y, 0.0f), box);
     }
 
@@ -1273,7 +1275,7 @@ void led_JointSetup(struct led *led)
         const f32 x = 1.0f;
         const u32 box_count = 5;
         const intv range = Intv(0.6f, 1.2f);
-        ds_DistanceJointPrefabRange(&prefab, range);
+        ds_DistanceJointPrefabRange(&prefab, range, ds_BreakageOptionNone());
         ds_Id prev = led_JointSceneNodeAdd(led, "slack_chain", 0, V3(x, hang_y - range.low, row1_z), Utf8Inline("rb_box"), range_color);
         led_JointSceneHangAdd(led, &prefab, bar1, V3(x, -bar_hw.y, 0.0f), prev);
         for (u32 i = 1; i < box_count; ++i)
@@ -1289,7 +1291,7 @@ void led_JointSetup(struct led *led)
         const f32 x = 4.0f;
         const ds_Id a = led_JointSceneNodeAdd(led, "tether", 0, V3(x - 0.5f, 6.0f, row1_z), Utf8Inline("rb_box"), range_color);
         const ds_Id b = led_JointSceneNodeAdd(led, "tether", 1, V3(x + 0.5f, 3.0f, row1_z), Utf8Inline("rb_box"), range_color);
-        ds_DistanceJointPrefabRange(&prefab, Intv(0.5f, 2.5f));
+        ds_DistanceJointPrefabRange(&prefab, Intv(0.5f, 2.5f), ds_BreakageOptionNone());
         led_JointSceneJointAdd(led, &prefab, a, b);
     }
 
@@ -1303,7 +1305,7 @@ void led_JointSetup(struct led *led)
         {
             const f32 x = -14.0f + 2.5f * (f32) i;
             const ds_Id box = led_JointSceneNodeAdd(led, "spring_hertz", i, V3(x, hang_y - L, row2_z), Utf8Inline("rb_box"), spring_color);
-            ds_DistanceJointPrefabSpring(&prefab, L, hertz[i], 0.1f);
+            ds_DistanceJointPrefabSpring(&prefab, L, hertz[i], 0.1f, ds_BreakageOptionNone());
             led_JointSceneHangAdd(led, &prefab, bar2, V3(x, -bar_hw.y, 0.0f), box);
         }
     }
@@ -1316,7 +1318,7 @@ void led_JointSetup(struct led *led)
         {
             const f32 x = -6.5f + 2.0f * (f32) i;
             const ds_Id box = led_JointSceneNodeAdd(led, "spring_damping", i, V3(x, hang_y - L, row2_z), Utf8Inline("rb_box"), spring_color);
-            ds_DistanceJointPrefabSpring(&prefab, L, 1.0f, damping_ratio[i]);
+            ds_DistanceJointPrefabSpring(&prefab, L, 1.0f, damping_ratio[i], ds_BreakageOptionNone());
             led_JointSceneHangAdd(led, &prefab, bar2, V3(x, -bar_hw.y, 0.0f), box);
         }
     }
@@ -1325,7 +1327,7 @@ void led_JointSetup(struct led *led)
     {
         const f32 x = 2.0f;
         const f32 L = 1.5f;
-        ds_DistanceJointPrefabSpring(&prefab, L, 1.0f, 0.2f);
+        ds_DistanceJointPrefabSpring(&prefab, L, 1.0f, 0.2f, ds_BreakageOptionNone());
         ds_Id prev = led_JointSceneNodeAdd(led, "spring_chain", 0, V3(x, hang_y - L, row2_z), Utf8Inline("rb_box"), spring_color);
         led_JointSceneHangAdd(led, &prefab, bar2, V3(x, -bar_hw.y, 0.0f), prev);
         for (u32 i = 1; i < 3; ++i)
@@ -1340,7 +1342,7 @@ void led_JointSetup(struct led *led)
     {
         const f32 x = 4.5f;
         const ds_Id box = led_JointSceneNodeAdd(led, "spring_lift", 0, V3(x, box_hw, row2_z), Utf8Inline("rb_box"), spring_color);
-        ds_DistanceJointPrefabSpring(&prefab, 2.0f, 0.3f, 0.1f);
+        ds_DistanceJointPrefabSpring(&prefab, 2.0f, 0.3f, 0.1f, ds_BreakageOptionNone());
         led_JointSceneHangAdd(led, &prefab, bar2, V3(x, -bar_hw.y, 0.0f), box);
     }
 
@@ -1353,7 +1355,7 @@ void led_JointSetup(struct led *led)
         for (u32 i = 0; i < 2; ++i)
         {
             const f32 x = 7.0f + 2.5f * (f32) i;
-            ds_DistanceJointPrefabRangeSpring(&prefab, range, hertz[i], 0.2f);
+            ds_DistanceJointPrefabRangeSpring(&prefab, range, hertz[i], 0.2f, ds_BreakageOptionNone());
             const ds_Id box = led_JointSceneNodeAdd(led, "range_spring", i, V3(x, hang_y - prefab.target, row2_z), Utf8Inline("rb_box"), range_spring_color);
             led_JointSceneHangAdd(led, &prefab, bar2, V3(x, -bar_hw.y, 0.0f), box);
         }
@@ -1363,16 +1365,70 @@ void led_JointSetup(struct led *led)
     {
         const f32 x = 12.0f;
         const intv range = Intv(1.0f, 3.0f);
-        ds_DistanceJointPrefabRangeSpring(&prefab, range, 1.0f, 0.0f);
+        ds_DistanceJointPrefabRangeSpring(&prefab, range, 1.0f, 0.0f, ds_BreakageOptionNone());
         const ds_Id box = led_JointSceneNodeAdd(led, "range_spring_bounce", 0, V3(x, hang_y - range.low, row2_z), Utf8Inline("rb_box"), range_spring_color);
         led_JointSceneHangAdd(led, &prefab, bar2, V3(x, -bar_hw.y, 0.0f), box);
+    }
+
+    /* --- row 3: breakable, thresholds in box weights; the grab pulls with up to LED_GRAB_FORCE_SCALE weights --- */
+
+    /* hangers: the rod breaks at 2, 4, 8 and 16 weights, the last never; pull a box down or sideways */
+    {
+        const f32 L = 2.0f;
+        const f32 box_weight = 8.0f * box_hw * box_hw * box_hw * density * V3Length(g_solver_config->gravity);
+        const f32 strength[5] = { 2.0f, 4.0f, 8.0f, 16.0f, F32_INFINITY };
+        for (u32 i = 0; i < 5; ++i)
+        {
+            const f32 x = -14.0f + 3.0f * (f32) i;
+            const ds_Id box = led_JointSceneNodeAdd(led, "breakable", i, V3(x, hang_y - L, row3_z), Utf8Inline("rb_box"), breakable_color);
+            ds_DistanceJointPrefab(&prefab, L, ds_BreakageOption(strength[i] * box_weight, F32_INFINITY));
+            led_JointSceneHangAdd(led, &prefab, bar3, V3(x, -bar_hw.y, 0.0f), box);
+        }
+    }
+
+    /* chain: four boxes, links 8, 5, 12 and 24 weights from the top (link k carries 4 - k boxes); pulled at the bottom the second link goes first */
+    {
+        const f32 x = 2.0f;
+        const f32 L = 1.5f;
+        const f32 box_weight = 8.0f * box_hw * box_hw * box_hw * density * V3Length(g_solver_config->gravity);
+        const f32 strength[4] = { 8.0f, 5.0f, 12.0f, 24.0f };
+        ds_DistanceJointPrefab(&prefab, L, ds_BreakageOption(strength[0] * box_weight, F32_INFINITY));
+        ds_Id prev = led_JointSceneNodeAdd(led, "breakable_chain", 0, V3(x, hang_y - L, row3_z), Utf8Inline("rb_box"), breakable_color);
+        led_JointSceneHangAdd(led, &prefab, bar3, V3(x, -bar_hw.y, 0.0f), prev);
+        for (u32 i = 1; i < 4; ++i)
+        {
+            const ds_Id box = led_JointSceneNodeAdd(led, "breakable_chain", i, V3(x, hang_y - L * (f32) (i + 1), row3_z), Utf8Inline("rb_box"), breakable_color);
+            ds_DistanceJointPrefab(&prefab, L, ds_BreakageOption(strength[i] * box_weight, F32_INFINITY));
+            led_JointSceneJointAdd(led, &prefab, prev, box);
+            prev = box;
+        }
+    }
+
+    /* tug: a box slung between two posts on rods of 3 and 9 weights, hanging in a shallow V (each rod carries ~1.4 weights); pulled sideways the weak rod goes */
+    {
+        const f32 x = 10.0f;
+        const f32 span = 6.0f;
+        const f32 rod = 3.2f;
+        const f32 box_weight = 8.0f * box_hw * box_hw * box_hw * density * V3Length(g_solver_config->gravity);
+        const f32 y = 3.0f;
+        const f32 sag = F32Sqrt(rod * rod - 0.25f * span * span);
+        const ds_Id post0 = led_JointSceneNodeAdd(led, "breakable_post", 0, V3(x - 0.5f * span, 1.5f, row3_z), Utf8Inline("rb_post"), static_color);
+        const ds_Id post1 = led_JointSceneNodeAdd(led, "breakable_post", 1, V3(x + 0.5f * span, 1.5f, row3_z), Utf8Inline("rb_post"), static_color);
+        const ds_Id box = led_JointSceneNodeAdd(led, "breakable_tug", 0, V3(x, y - sag, row3_z), Utf8Inline("rb_box"), breakable_color);
+        ds_Transform frame_post = ds_TransformIdentity();
+        frame_post.position = V3(0.0f, y - 1.5f, 0.0f);
+        const ds_Transform frame_box = ds_TransformIdentity();
+        ds_DistanceJointPrefab(&prefab, rod, ds_BreakageOption(3.0f * box_weight, F32_INFINITY));
+        led_DistanceJointAdd(led, &prefab, post0, &frame_post, box, &frame_box, prefab.target);
+        ds_DistanceJointPrefab(&prefab, rod, ds_BreakageOption(9.0f * box_weight, F32_INFINITY));
+        led_DistanceJointAdd(led, &prefab, box, &frame_box, post1, &frame_post, prefab.target);
     }
 
     /* range spring chain: three boxes, links [0.8, 1.5], 1.5 Hz, damping ratio 0.3 */
     {
         const f32 x = 14.5f;
         const intv range = Intv(0.8f, 1.5f);
-        ds_DistanceJointPrefabRangeSpring(&prefab, range, 1.5f, 0.3f);
+        ds_DistanceJointPrefabRangeSpring(&prefab, range, 1.5f, 0.3f, ds_BreakageOptionNone());
         ds_Id prev = led_JointSceneNodeAdd(led, "range_spring_chain", 0, V3(x, hang_y - prefab.target, row2_z), Utf8Inline("rb_box"), range_spring_color);
         led_JointSceneHangAdd(led, &prefab, bar2, V3(x, -bar_hw.y, 0.0f), prev);
         for (u32 i = 1; i < 3; ++i)
@@ -1919,7 +1975,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 		{
 			const f32 x = bar_translation.x - 4.0f;
 			const f32 gap = 0.1f;
-			ds_DistanceJointPrefab(&prefab, gap);
+			ds_DistanceJointPrefab(&prefab, gap, ds_BreakageOptionNone());
 			ds_Id prev = bar;
 			frame_bar.position = V3(-4.0f, -bar_hw.y, 0.0f);
 			ds_Transform frame_prev = frame_bar;
@@ -1950,7 +2006,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 			led_NodeSetPosition(led, bob, led_ScenePosition(led, V3(x + L * F32Sin(angle), hang_y - L * F32Cos(angle), bar_translation.z)));
 			led_NodeAttachRigidBodyPrefab(led, bob, Utf8Inline("rb_box"));
 			led_NodeSetColor(led, bob, joint_color, 1.0f);
-			ds_DistanceJointPrefab(&prefab, L);
+			ds_DistanceJointPrefab(&prefab, L, ds_BreakageOptionNone());
 			frame_bar.position = V3(-1.0f, -bar_hw.y, 0.0f);
 			frame_node = ds_TransformIdentity();
 			led_DistanceJointAdd(led, &prefab, bar, &frame_bar, bob, &frame_node, prefab.target);
@@ -1964,7 +2020,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 			led_NodeSetPosition(led, weight, led_ScenePosition(led, V3(x, hang_y - 3.0f, bar_translation.z)));
 			led_NodeAttachRigidBodyPrefab(led, weight, Utf8Inline("rb_box"));
 			led_NodeSetColor(led, weight, joint_color, 1.0f);
-			ds_DistanceJointPrefabSpring(&prefab, 2.0f, 2.0f, 1.0f);
+			ds_DistanceJointPrefabSpring(&prefab, 2.0f, 2.0f, 1.0f, ds_BreakageOptionNone());
 			frame_bar.position = V3(1.0f, -bar_hw.y, 0.0f);
 			led_DistanceJointAdd(led, &prefab, bar, &frame_bar, weight, &frame_node, prefab.target);
 		}
@@ -1977,7 +2033,7 @@ void led_WallSmashSimulationSetup(struct led *led)
 			led_NodeSetPosition(led, weight, led_ScenePosition(led, V3(x, hang_y - 6.0f, bar_translation.z)));
 			led_NodeAttachRigidBodyPrefab(led, weight, Utf8Inline("rb_box"));
 			led_NodeSetColor(led, weight, joint_color, 1.0f);
-			ds_DistanceJointPrefabRange(&prefab, Intv(1.0f, 8.0f));
+			ds_DistanceJointPrefabRange(&prefab, Intv(1.0f, 8.0f), ds_BreakageOptionNone());
 			frame_bar.position = V3(4.0f, -bar_hw.y, 0.0f);
 			led_DistanceJointAdd(led, &prefab, bar, &frame_bar, weight, &frame_node, prefab.target);
 		}
@@ -2474,6 +2530,11 @@ static void led_EngineRun(struct led *led)
 			case PHYSICS_EVENT_BODY_REMOVED:
 			{
                 led_NodeDontDrawProxies(led, event->entity);
+			} break;
+
+			case PHYSICS_EVENT_JOINT_BREAKING:
+			{
+				ds_JointRemove(&led->physics, event->joint);
 			} break;
 		}
 

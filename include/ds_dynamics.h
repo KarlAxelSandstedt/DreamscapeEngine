@@ -786,7 +786,22 @@ struct ds_ContactCompute
 };
 DEFINE_CPOOL_STRUCT(ds_ContactCompute);
 
-/* ---------- Distance Joints ---------- */
+/*
+ds_BreakageOption
+=================
+A joint's strength: the joint is reported breaking every tick its force or torque exceeds a threshold.
+*/
+
+struct ds_BreakageOption
+{
+    f32     force_threshold;    /* Newton */
+    f32     torque_threshold;   /* Newton metres */
+};
+
+/* negative thresholds become 0 */
+static ds_ForceInline struct ds_BreakageOption ds_BreakageOption(const f32 force_threshold, const f32 torque_threshold);
+/* unbreakable (F32_INFINITY) */
+static ds_ForceInline struct ds_BreakageOption ds_BreakageOptionNone(void);
 
 /*
 ds_DistanceJoint
@@ -850,18 +865,19 @@ struct ds_DistanceJointPrefab
     u32     enable_spring;      
     f32     hertz;              
     f32     damping_ratio;      
+    struct ds_BreakageOption breakage;
 };
 
 /* 
  * Return a distance prefab that enforces the given distance. A distance below linear_slop is
  * raised to it.
  */
-void    ds_DistanceJointPrefab(struct ds_DistanceJointPrefab *prefab, const f32 distance);
+void    ds_DistanceJointPrefab(struct ds_DistanceJointPrefab *prefab, const f32 distance, const struct ds_BreakageOption breakage);
 /*
  * Return a distance prefab that enforces the given allowed distance range. The range must
  * be within [linear_slop, JOINT_LENGTH_MAX], and is clamped against it.
  */
-void    ds_DistanceJointPrefabRange(struct ds_DistanceJointPrefab *prefab, const intv range);
+void    ds_DistanceJointPrefabRange(struct ds_DistanceJointPrefab *prefab, const intv range, const struct ds_BreakageOption breakage);
 /*
  * Return a distance prefab that enforces the given distance with spring behaviour. A distance
  * below linear_slop is raised to it.
@@ -877,15 +893,13 @@ void    ds_DistanceJointPrefabRange(struct ds_DistanceJointPrefab *prefab, const
  *          = 1.0f => returns to target, no overshoot 
  *          > 1.0f => returns to target, but creeps in slower
  */
-void    ds_DistanceJointPrefabSpring(struct ds_DistanceJointPrefab *prefab, const f32 distance, const f32 hertz, const f32 damping_ratio);
+void    ds_DistanceJointPrefabSpring(struct ds_DistanceJointPrefab *prefab, const f32 distance, const f32 hertz, const f32 damping_ratio, const struct ds_BreakageOption breakage);
 /*
  * Return a distance prefab that enforces the given allowed distance range, with spring
  * behaviour towards the range's middle point. The range is clamped as in
  * ds_DistanceJointPrefabRange, the spring as in ds_DistanceJointPrefabSpring.
  */
-void    ds_DistanceJointPrefabRangeSpring(struct ds_DistanceJointPrefab *prefab, const intv range, const f32 hertz, const f32 damping_ratio);
-
-/* ---------- Mouse Joints ---------- */
+void    ds_DistanceJointPrefabRangeSpring(struct ds_DistanceJointPrefab *prefab, const intv range, const f32 hertz, const f32 damping_ratio, const struct ds_BreakageOption breakage);
 
 /*
 ds_MouseJoint
@@ -926,6 +940,7 @@ struct ds_MouseJointPrefab
     f32     damping_ratio;      /* Damping speed                                        */
     f32     max_force;          /* Largest pull force, Newton                           */
     f32     max_torque;         /* Largest spin braking torque, Newton metres (0: none) */
+    struct ds_BreakageOption breakage;
 };
 
 /* 
@@ -939,7 +954,7 @@ struct ds_MouseJointPrefab
  * max_force: largest pull force in Newton.
  * max_torque: largest torque in Newton metres, braking the body's spin; 0 lets it spin freely.
  */
-void    ds_MouseJointPrefab(struct ds_MouseJointPrefab *prefab, const v3f64 target, const f32 hertz, const f32 damping_ratio, const f32 max_force, const f32 max_torque);
+void    ds_MouseJointPrefab(struct ds_MouseJointPrefab *prefab, const v3f64 target, const f32 hertz, const f32 damping_ratio, const f32 max_force, const f32 max_torque, const struct ds_BreakageOption breakage);
 /* 
  * Return a mouse prefab whose strength is scaled to the given dynamic body, so that every body
  * follows the target alike: 
@@ -947,7 +962,7 @@ void    ds_MouseJointPrefab(struct ds_MouseJointPrefab *prefab, const v3f64 targ
  *          max_torque = torque_scale * weight * radius of gyration. 
  *          hertz and damping_ratio as in ds_MouseJointPrefab.
  */
-void    ds_MouseJointPrefabFromBody(struct ds_MouseJointPrefab *prefab, const struct ds_Dynamics *pipeline, const ds_BodyId body, const v3f64 target, const f32 hertz, const f32 damping_ratio, const f32 force_scale, const f32 torque_scale);
+void    ds_MouseJointPrefabFromBody(struct ds_MouseJointPrefab *prefab, const struct ds_Dynamics *pipeline, const ds_BodyId body, const v3f64 target, const f32 hertz, const f32 damping_ratio, const f32 force_scale, const f32 torque_scale, const struct ds_BreakageOption breakage);
 /* 
  * Move the joint's target. NO-OP if the joint no longer exists. 
  */
@@ -983,10 +998,11 @@ struct ds_RevoluteJointPrefab
     u32     enable_motor;
     f32     motor_speed;
     f32     motor_max_torque;
+    struct ds_BreakageOption breakage;
 };
 
 //TODO docs 
-void        ds_RevoluteJointPrefabDefault(struct ds_RevoluteJointPrefab *prefab);
+void        ds_RevoluteJointPrefabDefault(struct ds_RevoluteJointPrefab *prefab, const struct ds_BreakageOption breakage);
 
 /* ---------- Joints ---------- */
 
@@ -1055,7 +1071,7 @@ DEFINE_POOL(ds_Joint);
  * dynamic body without mass), the null id is returned. Canonical slot: a static body becomes
  * body 1 (its frame with it), whatever the caller's order; joint->body[] and the sim's local_frame[] follow it.
  */
-ds_JointId  ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType type, const u32 collide_connected, const ds_BodyId b0, const ds_Transform *t0, const ds_BodyId b1, const ds_Transform *t1);
+ds_JointId  ds_JointAdd(struct ds_Dynamics *pipeline, const enum ds_JointType type, const u32 collide_connected, const struct ds_BreakageOption breakage, const ds_BodyId b0, const ds_Transform *t0, const ds_BodyId b1, const ds_Transform *t1);
 /*
  * Remove the specified joint corresponding to the id. If the joint no longer exist, the call becomes a NO-OP.
  */
@@ -1095,6 +1111,8 @@ struct ds_JointSim
 {
     /* joint frame to body frame transform */
     ds_Transform        local_frame[2];
+    f32                 force_threshold;    /* breaking force, Newton (F32_INFINITY: never) */
+    f32                 torque_threshold;   /* breaking torque, Newton metres */
     
     u32                 joint;      /* index of general joint owning the struct */
     enum ds_JointType   type;
@@ -1332,6 +1350,8 @@ void    ds_JointConstraintWarmupRange(struct ds_Dynamics *pipeline, const u32 co
 void    ds_JointConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 /* One position (NGS) iteration over the joints */
 void    ds_JointPositionConstraintIterateRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
+/* Flag the joints whose reaction exceeds a threshold in the worker's joint_breaking_set; the last velocity iteration */
+void    ds_JointBreakingCheckRange(struct ds_Dynamics *pipeline, const u32 color, const u32 low, const u32 high);
 
 /*
  * The per-type procedures the stages above call for one joint: jsim is the joint's sim in its colour, bcomp[i]
@@ -1545,6 +1565,8 @@ struct ds_DynamicsDrawConfig
     u32     draw_on_top;            /* points and segments through the scene (no depth test); else only where visible */
     u32     draw_body_axes;         /* every active body: its mass centre (point) and frame axes (x red, y green, z blue) */
     u32     draw_joint_forces;
+    u32     draw_joint_breakage;    /* with draw_joints: the segment mixes from its colour to color_joint_break by the joint's
+                                       force (torque) over its threshold; unbreakable joints keep their colour */
 
     f32     force_scale;            /* metres per newton */
     f32     point_size;             /* pixels; read at draw */
@@ -1577,6 +1599,7 @@ struct ds_DynamicsDrawConfig
     v4      color_joint;
     v4      color_mouse_joint;
     v4      color_joint_error;
+    v4      color_joint_break;
     v4      color_mass_center;
 };
 
@@ -1598,6 +1621,7 @@ struct ds_Align(DS_CACHE_LINE) ds_DynamicsWorker
     
     struct ds_DynamicsMetrics   metrics;
     struct ds_DynamicsDraw      draw;         /* debug drawing from jobs; flushed each tick */
+    struct ds_BitSet            joint_breaking_set; /* bit = joint index whose reaction exceeded a threshold this tick */
 };
 
 /* indexed by workers using their thread indices (ds_ThreadSelfIndex()) */
@@ -1935,6 +1959,12 @@ u32 ds_RemovalJobPhaseDispatch(const ds_JobId job);
 #define	PhysicsEventIslandNew(pipeline, island)		    PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_NEW, island)
 #define PhysicsEventIslandExpanded(pipeline, island)    PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_EXPANDED, island)
 #define PhysicsEventIslandRemoved(pipeline, island)         PHYSICS_EVENT_ISLAND(pipeline, PHYSICS_EVENT_ISLAND_REMOVED, island)
+#define PhysicsEventJointBreaking(pipeline, _joint)                                         \
+	{												                                        \
+		struct ds_PhysicsEvent *__physics_debug_event = ds_PhysicsEventPush(pipeline);	\
+		__physics_debug_event->type = PHYSICS_EVENT_JOINT_BREAKING;				            \
+		__physics_debug_event->joint = _joint;				                                \
+	}
 #define PhysicsEventContactNew(pipeline, _contact)					                        \
 	{												                                        \
 		struct ds_PhysicsEvent *__physics_debug_event = ds_PhysicsEventPush(pipeline);	\
@@ -1962,6 +1992,7 @@ enum ds_PhysicsEventType
 	PHYSICS_EVENT_ISLAND_ASLEEP,
 	PHYSICS_EVENT_BODY_NEW,
 	PHYSICS_EVENT_BODY_REMOVED,
+	PHYSICS_EVENT_JOINT_BREAKING,   /* the joint's reaction exceeded a threshold this tick */
 	PHYSICS_EVENT_COUNT
 };
 
@@ -1978,6 +2009,7 @@ struct ds_PhysicsEvent
 		ds_IslandId             island;
 		ds_BodyId          body;
         ds_ContactId            contact;
+        ds_JointId              joint;
         
         struct 
         {
@@ -2157,6 +2189,23 @@ void                        ds_ContactDrawRange(struct ds_Dynamics *pipeline, co
 void                        ds_BodyDrawRange(struct ds_Dynamics *pipeline, const u32 low, const u32 high);
 /* Internal: after the solve: every awake joint's anchors, forces and segment; sims through the body, the sleep pass has run */
 void                        ds_DynamicsDrawFrameEnd(struct ds_Dynamics *pipeline);
+
+/**************** ds_BreakageOption: inline definitions ****************/
+
+static ds_ForceInline struct ds_BreakageOption ds_BreakageOption(const f32 force_threshold, const f32 torque_threshold)
+{
+    ds_Assert(force_threshold == force_threshold && torque_threshold == torque_threshold);
+    return (struct ds_BreakageOption)
+    {
+        .force_threshold = F32Max(force_threshold, 0.0f),
+        .torque_threshold = F32Max(torque_threshold, 0.0f),
+    };
+}
+
+static ds_ForceInline struct ds_BreakageOption ds_BreakageOptionNone(void)
+{
+    return (struct ds_BreakageOption) { .force_threshold = F32_INFINITY, .torque_threshold = F32_INFINITY };
+}
 
 #ifdef __cplusplus
 } 

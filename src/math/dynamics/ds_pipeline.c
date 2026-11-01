@@ -93,6 +93,8 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
         ds_CPoolAlloc(NULL, pipeline->worker[i].draw.segment, 0, GROWABLE);
         ds_CPoolAlloc(NULL, pipeline->worker[i].draw.point, 0, GROWABLE);
         ds_CPoolAlloc(NULL, pipeline->worker[i].draw.force, 0, GROWABLE);
+        /* sized to the joint pool once it exists (ds_DynamicsAlloc, ds_DynamicsTryDeserialize) */
+        pipeline->worker[i].joint_breaking_set = (struct ds_BitSet) { .growable = GROWABLE };
     }
     ds_CPoolAlloc(NULL, pipeline->draw.segment, 0, GROWABLE);
     ds_CPoolAlloc(NULL, pipeline->draw.point, 0, GROWABLE);
@@ -127,6 +129,10 @@ struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, c
     pipeline.body_usage_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
 
     ds_PoolAlloc(NULL, pipeline.joint_pool, initial_size, GROWABLE);
+    for (u32 i = 0; i < pipeline.worker_count; ++i)
+    {
+        pipeline.worker[i].joint_breaking_set = ds_BitSetAlloc(NULL, pipeline.joint_pool.length, 0, GROWABLE);
+    }
 
 	ds_PoolAlloc(NULL, pipeline.shape_pool, initial_size, GROWABLE);
     pipeline.shape_dynamic_usage_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
@@ -176,6 +182,7 @@ void ds_DynamicsFree(struct ds_Dynamics *pipeline)
         ds_CPoolDealloc(pipeline->worker[i].draw.segment);
         ds_CPoolDealloc(pipeline->worker[i].draw.point);
         ds_CPoolDealloc(pipeline->worker[i].draw.force);
+        ds_BitSetDealloc(&pipeline->worker[i].joint_breaking_set);
     }
     ds_CPoolDealloc(pipeline->draw.segment);
     ds_CPoolDealloc(pipeline->draw.point);
@@ -222,6 +229,7 @@ void ds_DynamicsFlush(struct ds_Dynamics *pipeline)
     {
         ArenaFlush(pipeline->worker[i].frame_arr + 0);
         ArenaFlush(pipeline->worker[i].frame_arr + 1);
+        ds_BitSetClear(&pipeline->worker[i].joint_breaking_set, 0);
     }
 
     memset(pipeline->profile_buf, 0, pipeline->profile_length*sizeof(struct ds_DynamicsProfile));
@@ -727,6 +735,11 @@ u32 ds_SolverJobPhaseDispatch(const ds_JobId job)
                 {
                     ds_ParallelForRange(&low, &high, pf, range_index);
                     ds_JointConstraintIterateRange(pipeline, ci, low, high);
+                    /* the accumulated impulses are final after the last iteration */
+                    if (i + 1 == g_solver_config->pgs_iteration_count)
+                    {
+                        ds_JointBreakingCheckRange(pipeline, ci, low, high);
+                    }
                 }
 
                 pf = chain->parallel_for + pfi + 1;
@@ -1336,6 +1349,28 @@ static void SolveConstraints(struct ds_Dynamics *pipeline)
 
         pipeline->profile->ns_solverphase_end = ds_TimeNs();
     	ProfZoneEnd;
+    }
+
+    /* joint breaking events: OR the workers' sets block by block (clearing them), the bits walked in joint index order */
+    {
+        const struct ds_BitSet *set = &pipeline->worker[0].joint_breaking_set;
+        for (u64 b = 0; b < set->block_count; ++b)
+        {
+            u64 block = 0;
+            for (u32 w = 0; w < pipeline->worker_count; ++w)
+            {
+                u64 *bits = pipeline->worker[w].joint_breaking_set.bits + b;
+                block |= *bits;
+                *bits = 0;
+            }
+
+            struct ds_BitBlock it = ds_BitBlockInit(block, b);
+            while (ds_BitBlockHasNext(&it))
+            {
+                const u64 joint_index = ds_BitBlockNext(&it);
+                PhysicsEventJointBreaking(pipeline, pipeline->joint_pool.buf[joint_index].id);
+            }
+        }
     }
 
     {

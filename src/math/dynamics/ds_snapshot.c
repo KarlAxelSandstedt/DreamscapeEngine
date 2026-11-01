@@ -264,6 +264,11 @@ u32 ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynami
 		goto failure;
 	}
 
+	for (u32 i = 0; i < pipeline->worker_count; ++i)
+	{
+		pipeline->worker[i].joint_breaking_set = ds_BitSetAlloc(NULL, pipeline->joint_pool.length, 0, GROWABLE);
+	}
+
 	/* the pool restored the sets' raw bytes: clear all of them first, so ds_DynamicsFree is safe after a failure */
 	for (u32 i = 0; i < pipeline->solver_set_pool.count_max; ++i)
 	{

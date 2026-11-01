@@ -1562,7 +1562,7 @@ static struct test_Output DynamicsJointTest(struct test_Environment *env)
     const ds_Transform frame_a = { .rotation = QUnitAxisAngle(V3(0.0f, 1.0f, 0.0f), 0.5f), .position = V3(0.0f, -0.5f, 0.0f) };
     const ds_Transform frame_b = { .rotation = QIdentity(), .position = V3(-0.5f, 0.0f, 0.0f) };
     struct ds_DistanceJointPrefab prefab;
-    ds_DistanceJointPrefab(&prefab, 1.0f);
+    ds_DistanceJointPrefab(&prefab, 1.0f, ds_BreakageOptionNone());
     const ds_JointId j0 = ds_DistanceJointAdd(&pipeline, &prefab, id[0], &frame_ground, id[1], &frame_a);
     const ds_JointId j1 = ds_DistanceJointAdd(&pipeline, &prefab, id[1], &frame_a, id[2], &frame_b);
     TEST_NOT_ZERO(!ds_JointIdNullCheck(j0) && !ds_JointIdNullCheck(j1) && !ds_JointIdEqual(j0, j1));
@@ -1645,7 +1645,7 @@ static struct test_Output DynamicsJointIslandTest(struct test_Environment *env)
     const struct ds_Body *c = ds_BodyLookup(&pipeline, id[3]).address;
     const ds_Transform frame = { .rotation = QIdentity(), .position = V3(0.0f, 0.0f, 0.0f) };
     struct ds_DistanceJointPrefab prefab;
-    ds_DistanceJointPrefab(&prefab, 4.0f);
+    ds_DistanceJointPrefab(&prefab, 4.0f, ds_BreakageOptionNone());
     u32 t;
 
     /* each box rests in its own island */
@@ -1789,8 +1789,8 @@ static struct test_Output DynamicsJointCollisionTest(struct test_Environment *en
     const u32 ib = ds_BodyLookup(&pipeline, id[2]).index;
     const ds_Transform frame = { .rotation = QIdentity(), .position = V3(0.0f, 0.0f, 0.0f) };
     struct ds_DistanceJointPrefab suppress, allow;
-    ds_DistanceJointPrefab(&suppress, 1.0f);
-    ds_DistanceJointPrefab(&allow, 1.0f);
+    ds_DistanceJointPrefab(&suppress, 1.0f, ds_BreakageOptionNone());
+    ds_DistanceJointPrefab(&allow, 1.0f, ds_BreakageOptionNone());
     allow.collide_connected = 1;
     u32 t;
 
@@ -1889,7 +1889,7 @@ static struct test_Output DynamicsPendulumTest(struct test_Environment *env)
     }
     const ds_Transform frame = ds_TransformIdentity();
     struct ds_DistanceJointPrefab prefab;
-    ds_DistanceJointPrefab(&prefab, L);
+    ds_DistanceJointPrefab(&prefab, L, ds_BreakageOptionNone());
     TEST_NOT_ZERO(!ds_JointIdNullCheck(ds_DistanceJointAdd(&pipeline, &prefab, id[0], &frame, id[1], &frame)));
 
     /*
@@ -1998,7 +1998,7 @@ static struct test_Output DynamicsSlackRopeTest(struct test_Environment *env)
     }
     const ds_Transform frame = ds_TransformIdentity();
     struct ds_DistanceJointPrefab prefab;
-    ds_DistanceJointPrefabRange(&prefab, range);
+    ds_DistanceJointPrefabRange(&prefab, range, ds_BreakageOptionNone());
     TEST_NOT_ZERO(!ds_JointIdNullCheck(ds_DistanceJointAdd(&pipeline, &prefab, id[0], &frame, id[1], &frame)));
     {
         const struct ds_Body *body = ds_BodyLookup(&pipeline, id[1]).address;
@@ -2222,7 +2222,7 @@ static struct test_Output DynamicsSpringTest(struct test_Environment *env)
     {
         const f32 zeta = 0.2f;
         struct ds_DistanceJointPrefab prefab;
-        ds_DistanceJointPrefabSpring(&prefab, L, hertz, zeta);
+        ds_DistanceJointPrefabSpring(&prefab, L, hertz, zeta, ds_BreakageOptionNone());
         const struct dynamics_SpringRun run = DynamicsSpringRun(distance, tick_count, &prefab, L);
 
         u32 max_count = 0;
@@ -2256,7 +2256,7 @@ static struct test_Output DynamicsSpringTest(struct test_Environment *env)
     /* critically damped: monotone approach to the same rest point */
     {
         struct ds_DistanceJointPrefab prefab;
-        ds_DistanceJointPrefabSpring(&prefab, L, hertz, 1.0f);
+        ds_DistanceJointPrefabSpring(&prefab, L, hertz, 1.0f, ds_BreakageOptionNone());
         const struct dynamics_SpringRun run = DynamicsSpringRun(distance, tick_count, &prefab, L);
 
         f32 backstep = 0.0f;
@@ -2293,7 +2293,7 @@ static struct test_Output DynamicsRangeSpringTest(struct test_Environment *env)
     f32 distance[600];
 
     struct ds_DistanceJointPrefab prefab;
-    ds_DistanceJointPrefabRangeSpring(&prefab, range, hertz, 0.2f);
+    ds_DistanceJointPrefabRangeSpring(&prefab, range, hertz, 0.2f, ds_BreakageOptionNone());
     /* the free spring would rest g / omega^2 below the target, past the upper bound */
     ds_Assert(prefab.target + g / (omega * omega) > range.high);
     const struct dynamics_SpringRun run = DynamicsSpringRun(distance, tick_count, &prefab, prefab.target);
@@ -2365,8 +2365,8 @@ static struct test_Output DynamicsCoincidentAnchorsTest(struct test_Environment 
      * out along it in the first tick, gravity alone would drop it straight down; the box is caught at L.
      */
     struct ds_DistanceJointPrefab rigid, spring;
-    ds_DistanceJointPrefab(&rigid, L);
-    ds_DistanceJointPrefabSpring(&spring, L, 1.0f, 1.0f);
+    ds_DistanceJointPrefab(&rigid, L, ds_BreakageOptionNone());
+    ds_DistanceJointPrefabSpring(&spring, L, 1.0f, 1.0f, ds_BreakageOptionNone());
     const ds_JointId rigid_id = ds_DistanceJointAdd(&pipeline, &rigid, id[0], &frame_static, id[1], &frame_up);
     TEST_NOT_ZERO(!ds_JointIdNullCheck(rigid_id));
     SnapshotTestTick(&pipeline);
@@ -2525,7 +2525,7 @@ static struct test_Output DynamicsJointSleepTest(struct test_Environment *env)
     DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + 5, (v3f64) { 0 }, 5);
     const ds_Transform frame = ds_TransformIdentity();
     struct ds_DistanceJointPrefab prefab;
-    ds_DistanceJointPrefab(&prefab, L);
+    ds_DistanceJointPrefab(&prefab, L, ds_BreakageOptionNone());
     ds_JointId jid[4];
     for (u32 i = 0; i < 3; ++i)
     {
@@ -2774,7 +2774,7 @@ static struct test_Output DynamicsMouseJointTest(struct test_Environment *env)
         struct dynamics_MouseRig rig = DynamicsMouseRigAlloc(start, 0);
         v3f64 target = V3Promote(start);
         struct ds_MouseJointPrefab prefab;
-        ds_MouseJointPrefabFromBody(&prefab, &rig.pipeline, rig.box, target, hertz, 1.0f, 100.0f, 0.0f);
+        ds_MouseJointPrefabFromBody(&prefab, &rig.pipeline, rig.box, target, hertz, 1.0f, 100.0f, 0.0f, ds_BreakageOptionNone());
         const ds_JointId joint = ds_MouseJointAdd(&rig.pipeline, &prefab, rig.box, &frame);
         TEST_NOT_ZERO(!ds_JointIdNullCheck(joint));
 
@@ -2813,7 +2813,7 @@ static struct test_Output DynamicsMouseJointTest(struct test_Environment *env)
         struct dynamics_MouseRig rig = DynamicsMouseRigAlloc(start, 0);
         const v3f64 target = V3F64Add(V3Promote(start), V3F64(0.0, 1.0, 0.0));
         struct ds_MouseJointPrefab prefab;
-        ds_MouseJointPrefabFromBody(&prefab, &rig.pipeline, rig.box, target, 2.0f, 1.0f, force_scale, 0.0f);
+        ds_MouseJointPrefabFromBody(&prefab, &rig.pipeline, rig.box, target, 2.0f, 1.0f, force_scale, 0.0f, ds_BreakageOptionNone());
         const ds_JointId joint = ds_MouseJointAdd(&rig.pipeline, &prefab, rig.box, &frame);
         TEST_NOT_ZERO(!ds_JointIdNullCheck(joint));
         const f32 weight = rig.body->mass * g;
@@ -2845,7 +2845,7 @@ static struct test_Output DynamicsMouseJointTest(struct test_Environment *env)
         const f32 torque_scale = (pass == 0) ? 0.0f : 1.0f;
         struct dynamics_MouseRig rig = DynamicsMouseRigAlloc(start, 0);
         struct ds_MouseJointPrefab prefab;
-        ds_MouseJointPrefabFromBody(&prefab, &rig.pipeline, rig.box, V3Promote(start), 2.0f, 1.0f, 100.0f, torque_scale);
+        ds_MouseJointPrefabFromBody(&prefab, &rig.pipeline, rig.box, V3Promote(start), 2.0f, 1.0f, 100.0f, torque_scale, ds_BreakageOptionNone());
         const ds_JointId joint = ds_MouseJointAdd(&rig.pipeline, &prefab, rig.box, &frame);
         TEST_NOT_ZERO(!ds_JointIdNullCheck(joint));
         const f32 w0 = 5.0f;
@@ -2894,7 +2894,7 @@ static struct test_Output DynamicsMouseJointSleepTest(struct test_Environment *e
     struct dynamics_MouseRig rig = DynamicsMouseRigAlloc(start, 1);
     v3f64 target = V3Promote(start);
     struct ds_MouseJointPrefab prefab;
-    ds_MouseJointPrefabFromBody(&prefab, &rig.pipeline, rig.box, target, 2.0f, 1.0f, 100.0f, 0.0f);
+    ds_MouseJointPrefabFromBody(&prefab, &rig.pipeline, rig.box, target, 2.0f, 1.0f, 100.0f, 0.0f, ds_BreakageOptionNone());
     const ds_JointId joint = ds_MouseJointAdd(&rig.pipeline, &prefab, rig.box, &frame);
     TEST_NOT_ZERO(!ds_JointIdNullCheck(joint));
     const f32 sag = g / (4.0f * F32_PI * F32_PI * 4.0f);
@@ -3587,9 +3587,9 @@ static struct test_Output DynamicsMassRejectTest(struct test_Environment *env)
 
     /* joints on the shapeless dynamic body: refused; with a shape: accepted */
     struct ds_DistanceJointPrefab distance_prefab;
-    ds_DistanceJointPrefab(&distance_prefab, 1.0f);
+    ds_DistanceJointPrefab(&distance_prefab, 1.0f, ds_BreakageOptionNone());
     struct ds_MouseJointPrefab mouse_prefab;
-    ds_MouseJointPrefab(&mouse_prefab, V3F64(0.0, 1.0, 0.0), 2.0f, 1.0f, 10.0f, 1.0f);
+    ds_MouseJointPrefab(&mouse_prefab, V3F64(0.0, 1.0, 0.0), 2.0f, 1.0f, 10.0f, 1.0f, ds_BreakageOptionNone());
     TEST_NOT_ZERO(ds_JointIdNullCheck(ds_DistanceJointAdd(&pipeline, &distance_prefab, dynamic, &t_local, fixed, &t_local)));
     TEST_NOT_ZERO(ds_JointIdNullCheck(ds_DistanceJointAdd(&pipeline, &distance_prefab, fixed, &t_local, dynamic, &t_local)));
     TEST_NOT_ZERO(ds_JointIdNullCheck(ds_MouseJointAdd(&pipeline, &mouse_prefab, dynamic, &t_local)));
@@ -3629,7 +3629,7 @@ static struct test_Output DynamicsIslandSplitTest(struct test_Environment *env)
     const ds_BodyId a = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, &box_a, (v3f64) { 0 }, 1);
     const ds_BodyId b = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, &box_b, (v3f64) { 0 }, 2);
     struct ds_DistanceJointPrefab prefab;
-    ds_DistanceJointPrefab(&prefab, 2.0f);
+    ds_DistanceJointPrefab(&prefab, 2.0f, ds_BreakageOptionNone());
     const ds_Transform frame = ds_TransformIdentity();
     const ds_JointId joint = ds_DistanceJointAdd(&pipeline, &prefab, a, &frame, b, &frame);
     TEST_NOT_ZERO(!ds_JointIdNullCheck(joint));
@@ -3674,6 +3674,102 @@ static struct test_Output DynamicsIslandSplitTest(struct test_Environment *env)
     return output;
 }
 
+/*
+ * Joint breakage (DynamicsJointBreakingTest): two boxes hang still from a static anchor on rigid distance joints
+ * anchored at the centres of mass, so each joint carries its box's weight m*g and nothing else. The joint whose
+ * threshold is below it reports breaking every tick, the other never; removing the breaking joint between ticks
+ * (the game's response) ends the events and drops its box.
+ */
+static struct test_Output DynamicsJointBreakingTest(struct test_Environment *env)
+{
+    struct test_Output output = { .success = 1, .id = __func__ };
+    struct arena mem = ArenaAlloc(NULL, 32*1024*1024);
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 8, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 8, GROWABLE);
+    struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 16, NSEC_PER_SEC / 60, 4*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    g_solver_config->pending_sleep_enabled = 0;
+
+    const f32 L = 2.0f;
+    const v3 hw = V3(0.25f, 0.25f, 0.25f);
+    const struct dynamics_TestBox scene[3] =
+    {
+        { .position = V3(0.0f, 6.0f, 0.0f), .rotation = QIdentity(), .hw = V3(2.0f, 0.25f, 0.25f), .dynamic = 0, .friction = 0.5f },
+        { .position = V3(-1.0f, 6.0f - L, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+        { .position = V3(1.0f, 6.0f - L, 0.0f), .rotation = QIdentity(), .hw = hw, .dynamic = 1, .friction = 0.5f },
+    };
+    ds_BodyId id[3];
+    for (u32 i = 0; i < 3; ++i)
+    {
+        id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
+    }
+    const f32 weight = ((const struct ds_Body *) ds_BodyLookup(&pipeline, id[1]).address)->mass * V3Length(g_solver_config->gravity);
+
+    /* the anchor frames straight above each box's centre; strong holds 1.5 weights, weak 0.5 */
+    const ds_Transform frame = ds_TransformIdentity();
+    const ds_Transform anchor_strong = { .rotation = QIdentity(), .position = V3(-1.0f, 0.0f, 0.0f) };
+    const ds_Transform anchor_weak = { .rotation = QIdentity(), .position = V3(1.0f, 0.0f, 0.0f) };
+    struct ds_DistanceJointPrefab strong, weak;
+    ds_DistanceJointPrefab(&strong, L, ds_BreakageOption(1.5f * weight, F32_INFINITY));
+    ds_DistanceJointPrefab(&weak, L, ds_BreakageOption(0.5f * weight, F32_INFINITY));
+    const ds_JointId j_strong = ds_DistanceJointAdd(&pipeline, &strong, id[0], &anchor_strong, id[1], &frame);
+    const ds_JointId j_weak = ds_DistanceJointAdd(&pipeline, &weak, id[0], &anchor_weak, id[2], &frame);
+    TEST_NOT_ZERO(!ds_JointIdNullCheck(j_strong) && !ds_JointIdNullCheck(j_weak));
+
+    /* 60 ticks: every tick one event, the weak joint's */
+    u32 event_count = 0;
+    u32 event_weak_count = 0;
+    for (u32 t = 0; t < 60; ++t)
+    {
+        ds_DynamicsTick(&pipeline);
+        for (i32 ei = pipeline.event_list.first; ei != DLL_SENTINEL; ei = pipeline.event_pool.buf[ei].node.next)
+        {
+            const struct ds_PhysicsEvent *event = pipeline.event_pool.buf + ei;
+            if (event->type == PHYSICS_EVENT_JOINT_BREAKING)
+            {
+                event_count += 1;
+                event_weak_count += ds_JointIdEqual(event->joint, j_weak);
+            }
+        }
+        ds_PoolFlush(pipeline.event_pool);
+        DLLFlush(pipeline.event_list);
+    }
+    if (event_count != 60 || event_weak_count != 60)
+    {
+        fprintf(stderr, "joint breaking: %u events (%u weak) in 60 ticks\n", event_count, event_weak_count);
+        TEST_NOT_ZERO(0);
+    }
+
+    /* the game's response: the weak joint goes, no more events, its box falls while the other hangs */
+    ds_JointRemove(&pipeline, j_weak);
+    event_count = 0;
+    for (u32 t = 0; t < 30; ++t)
+    {
+        ds_DynamicsTick(&pipeline);
+        for (i32 ei = pipeline.event_list.first; ei != DLL_SENTINEL; ei = pipeline.event_pool.buf[ei].node.next)
+        {
+            event_count += (pipeline.event_pool.buf[ei].type == PHYSICS_EVENT_JOINT_BREAKING);
+        }
+        ds_PoolFlush(pipeline.event_pool);
+        DLLFlush(pipeline.event_list);
+    }
+    const f32 y_strong = (f32) DynamicsTestPose(&pipeline, id[1]).position.y;
+    const f32 y_weak = (f32) DynamicsTestPose(&pipeline, id[2]).position.y;
+    if (event_count != 0 || F32Abs(y_strong - (6.0f - L)) > g_solver_config->linear_slop || y_weak > 6.0f - L - 0.5f)
+    {
+        fprintf(stderr, "joint breaking after removal: %u events, y strong %f weak %f\n", event_count, y_strong, y_weak);
+        TEST_NOT_ZERO(0);
+    }
+
+    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsFree(&pipeline);
+    c_ShapeDBDealloc(&cshape_db);
+    ds_SDBDealloc(prefab_db);
+    ArenaFree(&mem);
+    return output;
+}
+
 static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
 {
     DynamicsRestingBoxTest,
@@ -3700,6 +3796,7 @@ static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
     DynamicsMouseJointSleepTest,
     DynamicsMassRejectTest,
     DynamicsIslandSplitTest,
+    DynamicsJointBreakingTest,
     DynamicsSlideTest,
     DynamicsBounceTest,
     DynamicsFirstTickTest,

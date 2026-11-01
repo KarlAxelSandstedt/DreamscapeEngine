@@ -71,8 +71,8 @@ struct ds_BitSet	ds_BitSetAllocEx(struct arena *mem, const u64 bit_count, const 
 /* Free a heap set's bits (an arena set's stay with the arena); the set becomes empty. */
 void 		        ds_BitSetDealloc(struct ds_BitSet *set);
 /*
-Grow a growable set to at least bit_count (> set->bit_count) bits; the new bits are clear_bit, the old
-ones kept. Fatal if the memory can't be allocated.
+Grow a growable set to at least bit_count bits; the new bits are clear_bit, the old ones kept. NO-OP if the
+set already holds bit_count bits. Fatal if the memory can't be allocated.
 */
 void 		        ds_BitSetIncreaseSize(struct ds_BitSet *set, const u64 bit_count, const u64 clear_bit);
 /* Set every bit to clear_bit (0 or 1). */
