@@ -179,6 +179,8 @@ struct led
 	u32			            running;
 
 	u64			            ns_engine_running;
+	u64			            ns_physics_start;       /* led->ns when the physics started: the proxies' speculation clock */
+	u64			            ns_physics_elapsed;     /* wall-clock ns the physics has to catch up with (ticks run while behind) */
 	u64			            ns_engine_paused;
 
 	u32			            pending_engine_paused;

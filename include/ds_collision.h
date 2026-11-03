@@ -47,7 +47,6 @@ extern "C" {
 #include "ds_binary_tree.h"
 #include "ds_bitset.h"
 
-#define COLLISION_DEFAULT_MARGIN	(100.0f * F32_EPSILON)
 
 /********************************** BVH **********************************/
 

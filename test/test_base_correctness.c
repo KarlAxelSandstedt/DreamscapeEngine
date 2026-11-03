@@ -276,6 +276,38 @@ static const i64 g_limits_min[4] = { I8_MIN, I16_MIN, I32_MIN, I64_MIN };
  * ds_types.h limits against stdint.h (springclean 19: I8/I16/I32_MIN were positive), their types, and the
  * layout the math unions promise (members alias buf, matrices column-major, no padding).
  */
+/* Min, Max and Clamp of every integer width: both orders, equal values, the limits, and Clamp at and past its bounds. */
+static struct test_Output IntegerMinMaxClampTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    TEST_EQUAL(3u, U32Min(3, 5));           TEST_EQUAL(3u, U32Min(5, 3));           TEST_EQUAL(7u, U32Min(7, 7));
+    TEST_EQUAL(5u, U32Max(3, 5));           TEST_EQUAL(5u, U32Max(5, 3));           TEST_EQUAL(0u, U32Max(0, 0));
+    TEST_EQUAL(0u, U32Min(0, U32_MAX));     TEST_EQUAL(U32_MAX, U32Max(0, U32_MAX));
+    TEST_EQUAL(2u, U32Clamp(1, 2, 8));      TEST_EQUAL(2u, U32Clamp(2, 2, 8));      TEST_EQUAL(5u, U32Clamp(5, 2, 8));
+    TEST_EQUAL(8u, U32Clamp(8, 2, 8));      TEST_EQUAL(8u, U32Clamp(U32_MAX, 2, 8));
+
+    TEST_EQUAL(3ull, U64Min(3, 5));         TEST_EQUAL(3ull, U64Min(5, 3));         TEST_EQUAL(7ull, U64Min(7, 7));
+    TEST_EQUAL(5ull, U64Max(3, 5));         TEST_EQUAL(5ull, U64Max(5, 3));
+    TEST_EQUAL(0ull, U64Min(0, U64_MAX));   TEST_EQUAL(U64_MAX, U64Max(0, U64_MAX));
+    TEST_EQUAL(2ull, U64Clamp(1, 2, 8));    TEST_EQUAL(2ull, U64Clamp(2, 2, 8));    TEST_EQUAL(5ull, U64Clamp(5, 2, 8));
+    TEST_EQUAL(8ull, U64Clamp(8, 2, 8));    TEST_EQUAL(8ull, U64Clamp(U64_MAX, 2, 8));
+
+    TEST_EQUAL(-5, I32Min(-5, 3));          TEST_EQUAL(-5, I32Min(3, -5));          TEST_EQUAL(-7, I32Min(-7, -7));
+    TEST_EQUAL(3, I32Max(-5, 3));           TEST_EQUAL(3, I32Max(3, -5));
+    TEST_EQUAL(I32_MIN, I32Min(I32_MIN, I32_MAX)); TEST_EQUAL(I32_MAX, I32Max(I32_MIN, I32_MAX));
+    TEST_EQUAL(-2, I32Clamp(-9, -2, 4));    TEST_EQUAL(-2, I32Clamp(-2, -2, 4));    TEST_EQUAL(0, I32Clamp(0, -2, 4));
+    TEST_EQUAL(4, I32Clamp(4, -2, 4));      TEST_EQUAL(4, I32Clamp(I32_MAX, -2, 4)); TEST_EQUAL(-2, I32Clamp(I32_MIN, -2, 4));
+
+    TEST_EQUAL(-5ll, I64Min(-5, 3));        TEST_EQUAL(-5ll, I64Min(3, -5));        TEST_EQUAL(-7ll, I64Min(-7, -7));
+    TEST_EQUAL(3ll, I64Max(-5, 3));         TEST_EQUAL(3ll, I64Max(3, -5));
+    TEST_EQUAL(I64_MIN, I64Min(I64_MIN, I64_MAX)); TEST_EQUAL(I64_MAX, I64Max(I64_MIN, I64_MAX));
+    TEST_EQUAL(-2ll, I64Clamp(-9, -2, 4));  TEST_EQUAL(-2ll, I64Clamp(-2, -2, 4));  TEST_EQUAL(0ll, I64Clamp(0, -2, 4));
+    TEST_EQUAL(4ll, I64Clamp(4, -2, 4));    TEST_EQUAL(4ll, I64Clamp(I64_MAX, -2, 4)); TEST_EQUAL(-2ll, I64Clamp(I64_MIN, -2, 4));
+
+	return output;
+}
+
 static struct test_Output TypesTest(struct test_Environment *env)
 {
 	struct test_Output output = { .success = 1, .id = __func__ };
@@ -1674,6 +1706,7 @@ static struct test_Output (*base_tests[])(struct test_Environment *) =
     PerfBlockTest,
 #endif
     TypesTest,
+    IntegerMinMaxClampTest,
     FloatTest,
     VectorTest,
     QuaternionTest,

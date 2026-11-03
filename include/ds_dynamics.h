@@ -53,11 +53,9 @@ ds_NumericsConfig stores configurable values to be used in numerical calculation
 struct ds_NumericsConfig
 {
     /* Fraction of dirty dbvh proxies that may be re-inserted before triggering a dbvh rebuild  */
-    f32 dbvh_reinsert_threshold_pending;
     f32 dbvh_reinsert_threshold;
 
     /* Max s_SatCache count per contact (Applies to mesh contacts in which we cache triangle ops)  */
-    u32 cache_count_max_pending;
     u32 cache_count_max;
 
     /*
@@ -65,7 +63,6 @@ struct ds_NumericsConfig
      * Derived: tan^2 of the angle; the cores are parallel iff |e_xz|^2 < tan_sq * e_y^2 (e = core 1's axis in
      * capsule 0's frame, core 0 along y).
      */
-    f32 capsule_parallel_max_degrees_pending;
     f32 capsule_parallel_max_degrees;
     f32 capsule_parallel_tan_sq;
 
@@ -73,7 +70,6 @@ struct ds_NumericsConfig
      * Hull vs capsule (shallow): maximum degrees between the GJK normal and the reference face's normal for
      * clipping the core to that face (two points). Derived: cos of the angle; aligned iff n_face . n > cos.
      */
-    f32 face_parallel_max_degrees_pending;
     f32 face_parallel_max_degrees;
     f32 face_parallel_cos;
 
@@ -83,7 +79,6 @@ struct ds_NumericsConfig
      * noise).
      * Derived: sin^2 of the angle; parallel iff |d1 x d2|^2 < sin_sq * |d1|^2 |d2|^2.
      */
-    f32 edge_parallel_max_degrees_pending;
     f32 edge_parallel_max_degrees;
     f32 edge_parallel_sin_sq;
 
@@ -92,7 +87,6 @@ struct ds_NumericsConfig
      * contact only if it separates more by this margin (m). Biases towards the face (two points, stable normal)
      * so rounding can't flip the choice every tick. Absolute (Box3D: linear slop, 0.005 m).
      */
-    f32 sat_face_bias_pending;
     f32 sat_face_bias;
 
     /*
@@ -100,21 +94,18 @@ struct ds_NumericsConfig
      * less than this (m) since the last tick (Box3D: linear slop). A cached separating axis is reused while it
      * separates.
      */
-    f32 sat_cache_tolerance_pending;
     f32 sat_cache_tolerance;
 
     /* Max GJK iterations (support point evaluations) per distance query; at least 1 */
-    u32 gjk_max_iterations_pending;
     u32 gjk_max_iterations;
 };
 extern struct ds_NumericsConfig *g_numerics_config;
 
 /* Return default config */
 struct ds_NumericsConfig    ds_NumericsConfigDefault(void);
-/*
- * Apply the pending values (clamped to their ranges, the derived trigonometric values recomputed) and make
- * config the global one. The pipeline does this at the start of every tick.
- */
+/* Recompute the derived values (the trigonometric ones) from the set ones; no range check (ds_DynamicsConfigCheck). */
+void                        ds_NumericsConfigDerive(struct ds_NumericsConfig *config);
+/* Derive and make config the global one (a test's own config; a pipeline's goes through ds_DynamicsConfigPush). */
 void                        ds_NumericsConfigPush(struct ds_NumericsConfig *config);
 /* Clear the global config (NULL) */
 void                        ds_NumericsConfigPop(void);
@@ -349,8 +340,8 @@ void        ds_ShapeWorldTransform(ds_TransformWorld *t, const struct ds_Dynamic
  */
 struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape);
 /*
- * The pair queries below read the pipeline's numerics config through the globals ds_DynamicsSetGlobals sets (a tick
- * sets them for its pipeline).
+ * The pair queries below read the pipeline's numerics config through the globals ds_DynamicsConfigPush sets (a tick
+ * pushes its pipeline; a host pushes its own once).
  */
 /* 
  * Test for intersection between shapes. returns 1 if intersecting, else 0 
@@ -1394,41 +1385,10 @@ struct solverConfig
 	f32 	sleep_time_threshold; /* Range(0.0, inf] :  Time threshold for which a body must have low velocity before being able to fall asleep */
 	f32 	sleep_linear_velocity_sq_limit; /* Range (0.0f, inf] : maximum linear velocity squared that a body falling asleep may have */
 	f32 	sleep_angular_velocity_sq_limit; /* Range (0.0f, inf] : maximum angular velocity squared that a body falling asleep may have */
-
-	/* Pending updates */
-	u32 	pending_warmup_solver;		
-	u32 	pending_sleep_enabled;		
-	u32 	pending_pgs_iteration_count;
-	u32 	pending_ngs_iteration_count;
-	f32 	pending_baumgarte_constant;
-	f32 	pending_linear_slop;
-	f32 	pending_restitution_threshold;
-	f32 	pending_linear_dampening;
-	f32 	pending_angular_dampening;
 };
 
+/* The pushed pipeline's resolved solver values (ds_DynamicsConfigPush); NULL outside. */
 extern struct solverConfig *g_solver_config;
-
-/*
- * set every field of g_solver_config (must point at a config) from the arguments, the pending copies equal to
- * them; the iteration counts must be >= 1 (asserted), a velocity magnitude of 0 means no limit (inverse 0)
- */
-void    SolverConfigInit(const u32 pgs_iteration_count, 
-                         const u32 ngs_iteration_count, 
-                         const u32 warmup_solver, 
-                         const v3 gravity, 
-                         const f32 baumgarte_constant, 
-                         const f32 max_linear_correction, 
-                         const f32 max_linear_velocity_magnitude, 
-                         const f32 max_angular_velocity_magnitude, 
-                         const f32 linear_dampening, 
-                         const f32 angular_dampening, 
-                         const f32 linear_slop, 
-                         const f32 restitution_threshold, 
-                         const u32 sleep_enabled, 
-                         const f32 sleep_time_threshold, 
-                         const f32 sleep_linear_velocity_sq_limit, 
-                         const f32 sleep_angular_velocity_sq_limit);
 
 /*
 ds_CGraphColor
@@ -1605,6 +1565,81 @@ struct ds_DynamicsDrawConfig
 
 /* the editor's defaults: shapes on, random colours, everything else off */
 struct ds_DynamicsDrawConfig ds_DynamicsDrawConfigDefault(void);
+
+/*
+ds_SolverConfig
+===============
+The solver's parameters as set (gravity is ds_DynamicsConfig's); struct solverConfig is the runtime form with the derived inverses.
+*/
+struct ds_SolverConfig
+{
+    u32     pgs_iteration_count;                /* velocity solver iterations, >= 1 */
+    u32     ngs_iteration_count;                /* position solver iterations, >= 1 */
+    u32     warmup_solver;                      /* bool */
+    f32     baumgarte_constant;                 /* [0, 1] */
+    f32     max_linear_correction;              /* >= 0, m per position iteration */
+    f32     max_linear_velocity_magnitude;      /* >= 0, m/s; 0: no limit */
+    f32     max_angular_velocity_magnitude;     /* >= 0, rad/s; 0: no limit */
+    f32     linear_dampening;                   /* >= 0 */
+    f32     angular_dampening;                  /* >= 0 */
+    f32     linear_slop;                        /* > 0, m */
+    f32     restitution_threshold;              /* >= 0, m/s */
+    u32     sleep_enabled;                      /* bool */
+    f32     sleep_time_threshold;               /* > 0, s */
+    f32     sleep_linear_velocity_sq_limit;     /* > 0 */
+    f32     sleep_angular_velocity_sq_limit;    /* > 0 */
+};
+
+/*
+ds_DynamicsConfig
+=================
+What a pipeline is set up from and runs with: its own values, the solver, numerics and debug draw configs.
+A pipeline holds two: config, what the ticks read, and config_pending, the host's edits buffered until applied.
+ds_DynamicsConfigUpdatePending moves pending to applied, every value checked against its range and kept at
+its applied value when out of it (a warning); the capacities (initial_size, frame_memory) are alloc-time only.
+*/
+struct ds_DynamicsConfig
+{
+    /* pipeline */
+    v3      gravity;
+    u32     initial_size;                       /* the pools' initial capacity (growable): a power of two */
+    u64     frame_memory;                       /* the pipeline's frame arena, bytes */
+
+    struct ds_SolverConfig          solver;
+    struct ds_NumericsConfig        numerics;
+    struct ds_DynamicsDrawConfig    draw;
+};
+
+/* Return a default config. */
+struct ds_DynamicsConfig    ds_DynamicsConfigDefault(void);
+/* 1 if every value is in its range (the fields' comments; numerics: fractions [0, 1], degrees [0, 45], counts >= 1; floats finite). */
+u32                         ds_DynamicsConfigCheck(const struct ds_DynamicsConfig *config);
+/* Return the required size when serializing the config. */
+u64                         ds_DynamicsConfigSerializeSize(const struct ds_DynamicsConfig *config);
+/* Serialize the config. WARNING: Assumes config fits in the stream. */
+void                        ds_DynamicsConfigSerialize(struct ss *ss, const struct ds_DynamicsConfig *config);
+/* Returns 1 on success and 0 on failure (a short stream, another version, ds_DynamicsConfigCheck fails): the stream position is as before the call and config is zeroed. */
+u32                         ds_DynamicsConfigTryDeserialize(struct ss *ss, struct ds_DynamicsConfig *config);
+
+/* The pushed pipeline's applied config; NULL outside a push. */
+extern const struct ds_DynamicsConfig *g_dynamics_config;
+
+/*
+ * Make pipeline's applied config, numerics and resolved solver values the globals (g_dynamics_config, g_numerics_config,
+ * g_solver_config, and g_dynamics_worker). Pushes nest (at most 8 deep): Pop restores the globals the Push replaced.
+ * A tick pushes its pipeline first and pops it last; a host pushes its pipeline once for the queries and prefab
+ * constructors between ticks.
+ */
+void                        ds_DynamicsConfigPush(struct ds_Dynamics *pipeline);
+/* Restore the globals pipeline's push replaced (pipeline must be the last pushed, asserted); g_dynamics_worker stays. */
+void                        ds_DynamicsConfigPop(struct ds_Dynamics *pipeline);
+/*
+ * Apply pipeline->config_pending: a value out of its range is logged and reset to its applied value, the capacities are reset,
+ * then the applied config, its derived values and the resolved solver values are set, and sleeping switched if it
+ * changed (every sleeping set wakes). Between ticks only: alloc does it once, a config command when it executes.
+ */
+void                        ds_DynamicsConfigUpdatePending(struct ds_Dynamics *pipeline);
+
 
 
 /*
@@ -2001,7 +2036,7 @@ struct ds_PhysicsEvent
 	POOL_NODE;
     struct DLLNode   node;
 
-	u64			ns;	/* time of event */
+	u64			ns;	/* time of event: the pipeline's own clock, frames_completed * ns_tick at the push */
 	enum ds_PhysicsEventType type;
 	union
 	{
@@ -2036,7 +2071,9 @@ struct ds_Dynamics
 {
 	struct arena 	                frame;			        /* frame memory */
 
-    struct ds_NumericsConfig        numerics_config;
+    struct ds_DynamicsConfig        config;                 /* what the ticks read (g_dynamics_config while pushed) */
+    struct ds_DynamicsConfig        config_pending;         /* the host's edits, buffered until ds_DynamicsConfigUpdatePending applies them */
+    struct solverConfig             solver;                 /* config's solver values resolved (g_solver_config while pushed) */
 
     struct ds_DynamicsProfile *     profile;                /* current profile          */
     struct ds_DynamicsProfile *     profile_buf;            /* profile buffer           */
@@ -2046,12 +2083,9 @@ struct ds_Dynamics
     struct ds_DynamicsMetrics       metrics;
     struct ds_DynamicsWorker *      worker;
     struct ds_DynamicsDraw          draw;                   /* debug drawing: what the serial phases push */
-    struct ds_DynamicsDrawConfig    draw_config;
     u32                             worker_count;
 
 
-	u64				                ns_start;		        /* external ns at start of physics pipeline */
-	u64				                ns_elapsed;		        /* actual ns elasped in pipeline (= 0 at start) */
 	u64				                ns_tick;		        /* ns per game tick */
 	u64 			                frames_completed;	    /* number of completed physics frames */ 
 
@@ -2097,10 +2131,6 @@ struct ds_Dynamics
     struct ds_BitSet                island_high_energy_set;   /* High energy islands per-frame. */
 
 	//TODO temporary, move somewhere else.
-	v3 			                    gravity;	/* gravity constant */
-
-	u32			                    margin_on;
-	f32			                    margin;
 
     struct ds_BroadJobPhase *       broad_phase;
     struct ds_NarrowJobPhase *      narrow_phase;
@@ -2109,10 +2139,14 @@ struct ds_Dynamics
     struct ds_RemovalJobPhase *     removal_phase;
 };
 
-
 /**************** PHYISCS PIPELINE API ****************/
 
-/* Initialize a new growable physics pipeline; ns_tick is the duration of a physics frame. */
+/*
+ * Initialize a new growable physics pipeline from config (ds_DynamicsConfigCheck asserted); ns_tick is the duration
+ * of a physics frame. The config is applied (as ds_DynamicsConfigUpdatePending) and nothing is pushed.
+ */
+struct ds_Dynamics ds_DynamicsAllocConfig(struct arena *mem, const struct ds_DynamicsConfig *config, const u64 ns_tick, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size);
+/* ds_DynamicsAllocConfig with the default config but initial_size and frame_memory. */
 struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size);
 /* Free the pipeline's heap resources (the shell stays on its arena) */
 void 			ds_DynamicsFree(struct ds_Dynamics *pipeline);
@@ -2122,9 +2156,8 @@ u64             ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline);
 void            ds_DynamicsSerialize(struct ss *ss, const struct ds_Dynamics *pipeline);
 /*
  * Returns 1 on success and 0 on failure. mem holds the pipeline shell (as in ds_DynamicsAlloc); everything 
- * else is heap allocated, so always free the pipeline with ds_DynamicsFree. The solver config
- * (g_solver_config) is process state, not part of the snapshot. On failure the stream position and mem are
- * as before the call and the pipeline is zeroed.
+ * else is heap allocated, so always free the pipeline with ds_DynamicsFree. On failure the stream position and
+ * mem are as before the call and the pipeline is zeroed.
  */
 u32             ds_DynamicsTryDeserialize(struct arena *mem, struct ss *ss, struct ds_Dynamics *pipeline, struct c_ShapeDB *cshape_db);
 /*
@@ -2148,8 +2181,8 @@ void			ds_DynamicsValidate(const struct ds_Dynamics *pipeline);
  */
 u32f32 			ds_DynamicsRaycastParameter(const struct ds_Dynamics *pipeline, const struct rayWorld *ray);
 /*
- * Internal: switch sleeping on or off at once and wake every sleeping set. Callers set
- * g_solver_config->pending_sleep_enabled instead; the next tick applies it through these.
+ * Internal: switch sleeping on or off at once and wake every sleeping set. Callers set config.solver.sleep_enabled
+ * instead; ds_DynamicsConfigUpdatePending applies it through these.
  */
 void 			ds_DynamicsSleepEnable(struct ds_Dynamics *pipeline);
 void 			ds_DynamicsSleepDisable(struct ds_Dynamics *pipeline);
@@ -2164,7 +2197,9 @@ void            ds_DynamicsPrintUsage(const struct ds_Dynamics *pipeline);
 
 /**************** PHYISCS PIPELINE INTERNAL API ****************/
 
-/* Internal: Allocate the pipeline without its simulation state (containers, gravity, margin, numerics). */
+/* Upper bound of the arena bytes ds_DynamicsAllocShell (so ds_DynamicsAllocConfig) pushes on mem: the frame arena and the shell. */
+u64                         ds_DynamicsShellMemoryRequirement(const u32 worker_count, const u64 frame_memory);
+/* Internal: Allocate the pipeline without its simulation state (containers, gravity, numerics). */
 void                        ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, const u64 ns_tick, const u64 frame_memory, struct c_ShapeDB *cshape_db, const u32 worker_count, const u64 worker_frame_size);
 /*
  * Internal: Read size bytes of frame data into a random worker frame (the next one if it is full) and set *dst.
@@ -2175,8 +2210,8 @@ void                        ds_DynamicsAllocShell(struct arena *mem, struct ds_D
 u32                         ds_DynamicsFrameDataTryDeserialize(struct ss *ss, void **dst, struct ds_Dynamics *pipeline, const u64 size);
 /* Internal: Read size bytes of heap data (a sleeping set's arena) into mem and set *dst. Returns 1 on success and 0 on failure. */
 u32                         ds_DynamicsHeapDataTryDeserialize(struct arena *mem, struct ss *ss, void **dst, const u64 size);
-/* Internal: Set pipeline globals inside engine. */
-void                        ds_DynamicsSetGlobals(struct ds_Dynamics *pipeline);
+/* Internal: config's derived numerics values and the resolved solver values from it (no range check, no wake-up). */
+void                        ds_DynamicsConfigDerive(struct ds_Dynamics *pipeline);
 
 /* push physics event into pipeline memory and return pointer to allocated event */
 struct ds_PhysicsEvent *	ds_PhysicsEventPush(struct ds_Dynamics *pipeline);

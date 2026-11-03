@@ -35,9 +35,8 @@ The four-box stack still creeps after settling (the same at every origin): its b
 regressions, they are not a goal. Rounding the body positions to f32 after every step (as with f32
 storage) fails all three: 1 mm off at 10 km, up to 6 cm (and a stack drifting 8 cm) at 100-1000 km.
 
-g_solver_config is shared by all pipelines, and each tick applies its pending_sleep_enabled (a direct
-ds_DynamicsSleepDisable would be undone): a run sets pending_sleep_enabled = 0, and before it returns sets it
-back and enables sleeping again.
+Sleeping is switched through the pipeline's config (config.solver.sleep_enabled, then
+ds_DynamicsConfigUpdatePending): a run switches it off after alloc.
 
 Snapshot round trip (DynamicsSnapshotTest; agent_notes/physics_serialization_design.txt): a scene with seven
 islands that fall asleep at different frames is snapshotted at several frames. Each snapshot must
@@ -49,7 +48,7 @@ islands that fall asleep at different frames is snapshotted at several frames. E
     - re-serialize from a copy to the same size.
 A lone box is removed before one check (pools with free slots), and the last check first wakes every sleeping
 set in the original and in the copies. A restore points the dynamics globals at the copy, so the test points
-them back at the original (ds_DynamicsSetGlobals) before calling into it outside a tick.
+them back at the original (ds_DynamicsConfigPush/Pop nest) before calling into it outside a tick.
 
 Solver sets (DynamicsSleepTest): a two-box stack and a lone box fall asleep into one set each (one island, the
 bodies' simulation state without compute state, the contacts with their caches, all in the set's arena; the
@@ -256,7 +255,9 @@ static void DynamicsTestRun(struct dynamics_TestResult *result, const struct dyn
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 0;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     ds_BodyId body[DYNAMICS_TEST_BOX_MAX];
     for (u32 i = 0; i < scene->box_count; ++i)
@@ -309,8 +310,9 @@ static void DynamicsTestRun(struct dynamics_TestResult *result, const struct dyn
         result->sink[i] = settled.x*n.x + settled.y*n.y + settled.z*n.z;
     }
 
-    g_solver_config->pending_sleep_enabled = 1;
-    ds_DynamicsSleepEnable(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 1;
+    ds_DynamicsConfigUpdatePending(&pipeline);
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     ds_SDBDealloc(prefab_db);
     c_ShapeDBDealloc(&cshape_db);
@@ -494,7 +496,7 @@ static u32 SnapshotTestSleepingSetCount(const struct ds_Dynamics *pipeline)
 /* Wake every sleeping set in index order; returns how many there were. */
 static u32 SnapshotTestWakeAll(struct ds_Dynamics *pipeline)
 {
-    ds_DynamicsSetGlobals(pipeline);
+    ds_DynamicsConfigPush(pipeline);
     u32 count = 0;
     for (u32 i = SOLVER_SET_SLEEPING_FIRST; i < pipeline->solver_set_pool.count_max; ++i)
     {
@@ -504,6 +506,7 @@ static u32 SnapshotTestWakeAll(struct ds_Dynamics *pipeline)
             count += 1;
         }
     }
+    ds_DynamicsConfigPop(pipeline);
     return count;
 }
 
@@ -632,7 +635,6 @@ static u32 SnapshotTestCheck(struct arena *mem, struct ds_Dynamics *original, st
             success = 0;
         }
     }
-    ds_DynamicsSetGlobals(original);
 
     if (copy_count && ds_DynamicsSerializeSize(copy) != size)
     {
@@ -680,7 +682,6 @@ static u32 SnapshotTestCheck(struct arena *mem, struct ds_Dynamics *original, st
     {
         ds_DynamicsFree(copy + c);
     }
-    ds_DynamicsSetGlobals(original);
     ArenaPopRecord(mem);
 
     fprintf(stdout, "  snapshot frame %3llu%s: %7llu B, %2u sleeping sets; %u truncated streams rejected, %u copies over %u ticks: %s\n",
@@ -697,7 +698,9 @@ static u32 SnapshotTestRun(void)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 1;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     struct dynamics_TestBox box[SNAPSHOT_TEST_BOX_MAX];
     const u32 box_count = SnapshotTestScene(box);
@@ -728,6 +731,7 @@ static u32 SnapshotTestRun(void)
         success &= SnapshotTestCheck(&mem, &pipeline, &cshape_db, k == check_count);
     }
 
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     ds_SDBDealloc(prefab_db);
     c_ShapeDBDealloc(&cshape_db);
@@ -771,7 +775,7 @@ static struct test_Output DynamicsShapeTest(struct test_Environment *env)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    ds_DynamicsSetGlobals(&pipeline);	/* the pair queries read the pipeline's numerics config through the globals */
+    ds_DynamicsConfigPush(&pipeline);
 
     /* three collision shapes */
     const char *name[3] = { "sphere", "capsule", "box" };
@@ -905,6 +909,7 @@ static struct test_Output DynamicsShapeTest(struct test_Environment *env)
     ds_BodyRemove(&mem, &pipeline, body_id);
     TEST_NOT_ZERO(pipeline.shape_pool.count == 0 && ds_ShapeLookup(&pipeline, reused).address == NULL);
 
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -935,7 +940,7 @@ static struct test_Output DynamicsBodyTest(struct test_Environment *env)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    ds_DynamicsSetGlobals(&pipeline);
+    ds_DynamicsConfigPush(&pipeline);
 
     const f32 r = 0.5f;
     const utf8 id = Utf8Format(&mem, "sphere");
@@ -1014,6 +1019,7 @@ static struct test_Output DynamicsBodyTest(struct test_Environment *env)
     ds_BodyRemove(&mem, &pipeline, DS_BODY_MOUSE_ANCHOR_ID);
     TEST_NOT_ZERO(pipeline.body_pool.count == 1 && ds_BodyLookup(&pipeline, DS_BODY_MOUSE_ANCHOR_ID).address != NULL);
 
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -1039,7 +1045,9 @@ static struct test_Output DynamicsContactTest(struct test_Environment *env)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 0;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     /* ground, and two unit boxes side by side on it, overlapping each other slightly */
     const struct dynamics_TestBox box[3] =
@@ -1092,7 +1100,7 @@ static struct test_Output DynamicsContactTest(struct test_Environment *env)
     ds_ContactValidateAll(&pipeline);
     TEST_NOT_ZERO(pipeline.contact_pool.count == 1 && ds_BodyLookup(&pipeline, body[1]).address != NULL);
 
-    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -1118,7 +1126,9 @@ static struct test_Output DynamicsIslandTest(struct test_Environment *env)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 0;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     /* a lone body: its island, its island's id, and the id's death */
     const struct dynamics_TestBox lone = { .position = V3(0.0f, 10.0f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.5f };
@@ -1179,7 +1189,7 @@ static struct test_Output DynamicsIslandTest(struct test_Environment *env)
     TEST_NOT_ZERO(pipeline.island_pool.buf[left->island].body_list.count == 1 && pipeline.island_pool.buf[right->island].body_list.count == 1);
     TEST_NOT_ZERO(pipeline.island_pool.buf[left->island].contact_list.count == 1 && pipeline.island_pool.buf[right->island].contact_list.count == 1);
 
-    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -1198,7 +1208,9 @@ static struct test_Output DynamicsSleepTest(struct test_Environment *env)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 1;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     /* a ground, a two-box stack and a lone box: two islands that fall asleep */
     const v3 hw = V3(0.5f, 0.5f, 0.5f);
@@ -1278,7 +1290,8 @@ static struct test_Output DynamicsSleepTest(struct test_Environment *env)
     TEST_NOT_ZERO(t < 600 && bottom->set == stack_set_index && SnapshotTestSleepingSetCount(&pipeline) == 2);
 
     /* disabling sleeping wakes everything */
-    g_solver_config->pending_sleep_enabled = 0;
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
     SnapshotTestTick(&pipeline);
     active = pipeline.solver_set_pool.buf + SOLVER_SET_ACTIVE;
     TEST_NOT_ZERO(SnapshotTestSleepingSetCount(&pipeline) == 0 && bottom->set == SOLVER_SET_ACTIVE && lone->set == SOLVER_SET_ACTIVE);
@@ -1286,7 +1299,7 @@ static struct test_Output DynamicsSleepTest(struct test_Environment *env)
     ds_SolverSetValidate(&pipeline, SOLVER_SET_ACTIVE);
     ds_IslandValidateAll(&pipeline);
 
-    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -1310,7 +1323,9 @@ static struct test_Output DynamicsWakeByContactTest(struct test_Environment *env
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 1;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     const v3 hw = V3(0.5f, 0.5f, 0.5f);
     const struct dynamics_TestBox scene[4] =
@@ -1374,6 +1389,7 @@ static struct test_Output DynamicsWakeByContactTest(struct test_Environment *env
     ds_SolverSetValidate(&pipeline, bottom->set);
     ds_IslandValidateAll(&pipeline);
 
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -1444,7 +1460,9 @@ static struct test_Output DynamicsGraphTest(struct test_Environment *env)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 0;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     /*
      * A ground, a three-box row touching along x, and a slab carrying two more small boxes than there are dynamic
@@ -1514,7 +1532,7 @@ static struct test_Output DynamicsGraphTest(struct test_Environment *env)
     }
     TEST_NOT_ZERO(dynamic_contacts == 2 && pipeline.cgraph.color[CG_SERIAL_COLOR].contact_pool.count == 0);
 
-    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -1538,7 +1556,9 @@ static struct test_Output DynamicsJointTest(struct test_Environment *env)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 0;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     const v3 hw = V3(0.5f, 0.5f, 0.5f);
     const struct dynamics_TestBox scene[3] =
@@ -1606,7 +1626,7 @@ static struct test_Output DynamicsJointTest(struct test_Environment *env)
         TEST_NOT_ZERO(pipeline.cgraph.color[c].joint_sim_pool.count == 0);
     }
 
-    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -1624,7 +1644,9 @@ static struct test_Output DynamicsJointIslandTest(struct test_Environment *env)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 0;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     /* a ground and three boxes resting on it, far enough apart never to touch */
     const v3 hw = V3(0.5f, 0.5f, 0.5f);
@@ -1695,7 +1717,8 @@ static struct test_Output DynamicsJointIslandTest(struct test_Environment *env)
 
     /* with sleeping on, the jointed pair's set carries the joint: in the set's pool, out of the colours */
     const ds_JointId jab2 = ds_DistanceJointAdd(&pipeline, &prefab, id[1], &frame, id[2], &frame);
-    g_solver_config->pending_sleep_enabled = 1;
+    pipeline.config_pending.solver.sleep_enabled = 1;
+    ds_DynamicsConfigUpdatePending(&pipeline);
     for (t = 0; t < 600 && (a->set < SOLVER_SET_SLEEPING_FIRST || c->set < SOLVER_SET_SLEEPING_FIRST); ++t)
     {
         SnapshotTestTick(&pipeline);
@@ -1743,6 +1766,7 @@ static struct test_Output DynamicsJointIslandTest(struct test_Environment *env)
     TEST_NOT_ZERO(t < 600);
     ds_DynamicsValidate(&pipeline);
 
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -1767,7 +1791,9 @@ static struct test_Output DynamicsJointCollisionTest(struct test_Environment *en
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 0;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     /* a ground, a box on it and a box on that: the stacked pair touches */
     const v3 hw = V3(0.5f, 0.5f, 0.5f);
@@ -1843,7 +1869,7 @@ static struct test_Output DynamicsJointCollisionTest(struct test_Environment *en
     TEST_NOT_ZERO(JointTestContact(&pipeline, a, b) != NULL && pipeline.contact_pool.count == contact_count);
     ds_DynamicsValidate(&pipeline);
 
-    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -1870,7 +1896,9 @@ static struct test_Output DynamicsPendulumTest(struct test_Environment *env)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 0;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     /* the bob's frame is its centre of mass: no torque on it, so it swings as a point mass on a string of length L */
     const f32 L = 2.0f;
@@ -1940,16 +1968,16 @@ static struct test_Output DynamicsPendulumTest(struct test_Environment *env)
         x_prev = x;
     }
 
-    const f32 period_expected = F32_PI2 * F32Sqrt(L / -g_solver_config->gravity.y);
+    const f32 period_expected = F32_PI2 * F32Sqrt(L / -pipeline.config.gravity.y);
     const f32 period = (crossing_count >= 2) ? 2.0f * (crossing_last - crossing_first) / (f32) (crossing_count - 1) : 0.0f;
     /*
      * max_first is the peak of the first full half swing, max_last that of the last complete one, (max_count - 2) half
      * periods apart; velocity damping by damp per tick decays the amplitude by sqrt(damp) per tick
      */
-    const f32 decay_expected = (max_count >= 3) ? F32Pow(1.0f / (1.0f + g_solver_config->linear_dampening * dt), 0.25f * (f32) (max_count - 2) * period / dt) : 1.0f;
+    const f32 decay_expected = (max_count >= 3) ? F32Pow(1.0f / (1.0f + pipeline.solver.linear_dampening * dt), 0.25f * (f32) (max_count - 2) * period / dt) : 1.0f;
     const f32 decay = (max_count >= 3 && max_first > 0.0f) ? max_last / max_first : 0.0f;
     const u32 ok = crossing_count >= 6 && max_count >= 3
-                && length_error <= g_solver_config->linear_slop
+                && length_error <= pipeline.solver.linear_slop
                 && spin <= 1e-3f && out_of_plane <= 1e-3f
                 && F32Abs(period - period_expected) <= 0.01f * period_expected
                 && F32Abs(decay - decay_expected) <= 0.02f;
@@ -1960,7 +1988,7 @@ static struct test_Output DynamicsPendulumTest(struct test_Environment *env)
     }
     TEST_NOT_ZERO(ok);
 
-    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -1979,7 +2007,9 @@ static struct test_Output DynamicsSlackRopeTest(struct test_Environment *env)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 0;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     /* frames at the centres of mass: no torque, the motion stays on the anchor's vertical */
     const intv range = Intv(1.0f, 3.0f);
@@ -2013,8 +2043,8 @@ static struct test_Output DynamicsSlackRopeTest(struct test_Environment *env)
      * bounds, the joint applies nothing.
      */
     const f32 dt = pipeline.timestep;
-    const f32 g = -g_solver_config->gravity.y;
-    const f32 damp = 1.0f / (1.0f + g_solver_config->linear_dampening * dt);
+    const f32 g = -pipeline.config.gravity.y;
+    const f32 damp = 1.0f / (1.0f + pipeline.solver.linear_dampening * dt);
     const u32 tick_count = 300;
     const u32 rest_ticks = 60;
     f32 distance_model = distance_0;
@@ -2047,7 +2077,7 @@ static struct test_Output DynamicsSlackRopeTest(struct test_Environment *env)
         spin = F32Max(spin, DynamicsTestAngle(QIdentity(), pose.rotation));
     }
 
-    const f32 slop = g_solver_config->linear_slop;
+    const f32 slop = pipeline.solver.linear_slop;
     const u32 ok = model_error <= 1e-3f
                 && violation <= slop
                 && low_gap <= slop && high_gap <= slop
@@ -2060,7 +2090,7 @@ static struct test_Output DynamicsSlackRopeTest(struct test_Environment *env)
     }
     TEST_NOT_ZERO(ok);
 
-    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -2081,10 +2111,10 @@ struct dynamics_SpringModel
  * one tick of the solver on a body hanging from a static anchor along the vertical, the distance joint's rows as in
  * ds_DistanceJointConstraintInit / Iterate / PositionConstraintIterate; the effective mass is the body's mass
  */
-static void DynamicsSpringModelTick(struct dynamics_SpringModel *m, const struct ds_DistanceJointPrefab *prefab, const f32 mass, const f32 dt)
+static void DynamicsSpringModelTick(struct dynamics_SpringModel *m, const struct ds_DynamicsConfig *config, const struct ds_DistanceJointPrefab *prefab, const f32 mass, const f32 dt)
 {
-    const f32 g = -g_solver_config->gravity.y;
-    const f32 damp = 1.0f / (1.0f + g_solver_config->linear_dampening * dt);
+    const f32 g = -config->gravity.y;
+    const f32 damp = 1.0f / (1.0f + config->solver.linear_dampening * dt);
     const f32 inv_mass = 1.0f / mass;
     const f32 low = prefab->range.low;
     const f32 high = prefab->range.high;
@@ -2112,7 +2142,7 @@ static void DynamicsSpringModelTick(struct dynamics_SpringModel *m, const struct
     /* warm start */
     m->v += (m->impulse + m->impulse_low - m->impulse_high) * inv_mass;
 
-    for (u32 i = 0; i < g_solver_config->pgs_iteration_count; ++i)
+    for (u32 i = 0; i < config->solver.pgs_iteration_count; ++i)
     {
         f32 delta = -target_mass * (m->v + bias_velocity + gamma * m->impulse);
         m->impulse += delta;
@@ -2136,10 +2166,10 @@ static void DynamicsSpringModelTick(struct dynamics_SpringModel *m, const struct
     m->x += m->v * dt;
 
     /* position pass: K = inv_mass, the correction moves the body by -C */
-    for (u32 i = 0; i < g_solver_config->ngs_iteration_count; ++i)
+    for (u32 i = 0; i < config->solver.ngs_iteration_count; ++i)
     {
         const f32 error = m->x - F32Clamp(m->x, low, high);
-        m->x -= F32Clamp(error, -g_solver_config->max_linear_correction, g_solver_config->max_linear_correction);
+        m->x -= F32Clamp(error, -config->solver.max_linear_correction, config->solver.max_linear_correction);
     }
 }
 
@@ -2164,7 +2194,9 @@ static struct dynamics_SpringRun DynamicsSpringRun(f32 *distance, const u32 tick
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 0;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     const v3 anchor = V3(0.0f, 8.0f, 0.0f);
     const struct dynamics_TestBox scene[2] =
@@ -2186,7 +2218,7 @@ static struct dynamics_SpringRun DynamicsSpringRun(f32 *distance, const u32 tick
     struct dynamics_SpringModel model = { .x = distance_0 };
     for (u32 t = 0; t < tick_count; ++t)
     {
-        DynamicsSpringModelTick(&model, prefab, mass, pipeline.timestep);
+        DynamicsSpringModelTick(&model, &pipeline.config, prefab, mass, pipeline.timestep);
         SnapshotTestTick(&pipeline);
         const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id[1]);
         const v3 d = V3F64Demote(V3F64Sub(pose.position, V3Promote(anchor)));
@@ -2196,7 +2228,7 @@ static struct dynamics_SpringRun DynamicsSpringRun(f32 *distance, const u32 tick
         run.spin = F32Max(run.spin, DynamicsTestAngle(QIdentity(), pose.rotation));
     }
 
-    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -2213,7 +2245,7 @@ static struct test_Output DynamicsSpringTest(struct test_Environment *env)
     const f32 hertz = 1.0f;
     const u32 tick_count = 600;
     const f32 dt = 1.0f / 60.0f;
-    const f32 g = -g_solver_config->gravity.y;
+    const f32 g = -ds_DynamicsConfigDefault().gravity.y;
     const f32 omega = F32_PI2 * hertz;
     const f32 sag_expected = g / (omega * omega);
     f32 distance[600];
@@ -2288,7 +2320,7 @@ static struct test_Output DynamicsRangeSpringTest(struct test_Environment *env)
     const f32 hertz = 0.5f;
     const u32 tick_count = 600;
     const u32 rest_ticks = 60;
-    const f32 g = -g_solver_config->gravity.y;
+    const f32 g = -ds_DynamicsConfigDefault().gravity.y;
     const f32 omega = F32_PI2 * hertz;
     f32 distance[600];
 
@@ -2305,7 +2337,7 @@ static struct test_Output DynamicsRangeSpringTest(struct test_Environment *env)
         violation = F32Max(violation, F32Max(range.low - distance[t], distance[t] - range.high));
         rest_error = (t + rest_ticks >= tick_count) ? F32Max(rest_error, F32Abs(distance[t] - range.high)) : rest_error;
     }
-    const f32 slop = g_solver_config->linear_slop;
+    const f32 slop = ds_DynamicsConfigDefault().solver.linear_slop;
     const u32 ok = violation <= slop && rest_error <= slop
                 && run.model_error <= 1e-4f && run.lateral <= 1e-3f && run.spin <= 1e-3f;
     if (!ok)
@@ -2340,7 +2372,9 @@ static struct test_Output DynamicsCoincidentAnchorsTest(struct test_Environment 
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 0;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     /* the anchor point P is 2 m below the static box and 3 m above the dynamic one: the boxes never touch */
     const f32 L = 2.0f;
@@ -2358,7 +2392,7 @@ static struct test_Output DynamicsCoincidentAnchorsTest(struct test_Environment 
     const ds_Transform frame_static = { .rotation = QIdentity(), .position = V3(0.0f, -2.0f, 0.0f) };
     const ds_Transform frame_up = { .rotation = QIdentity(), .position = V3(0.0f, 3.0f, 0.0f) };
     const ds_Transform frame = ds_TransformIdentity();
-    const f32 slop = g_solver_config->linear_slop;
+    const f32 slop = pipeline.solver.linear_slop;
 
     /*
      * Both anchors at P: a rigid joint starts with +x as its axis (warning) and the position pass pushes the box
@@ -2374,10 +2408,10 @@ static struct test_Output DynamicsCoincidentAnchorsTest(struct test_Environment 
         /* the anchor, not the centre: 3 m above it, the push mostly turns the box; the sign follows the slot order */
         const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id[1]);
         const v3 d = V3Add(V3F64Demote(V3F64Sub(pose.position, V3Promote(P))), QUnitRotate(pose.rotation, frame_up.position));
-        const u32 ok = F32Abs(d.x) >= 0.5f * g_solver_config->max_linear_correction && F32Abs(d.z) <= 1.0e-6f;
+        const u32 ok = F32Abs(d.x) >= 0.5f * pipeline.solver.max_linear_correction && F32Abs(d.z) <= 1.0e-6f;
         if (!ok)
         {
-            fprintf(stderr, "coincident anchors, rigid at add: after one tick the anchor moved (%f, %f, %f), max_linear_correction %f\n", d.x, d.y, d.z, g_solver_config->max_linear_correction);
+            fprintf(stderr, "coincident anchors, rigid at add: after one tick the anchor moved (%f, %f, %f), max_linear_correction %f\n", d.x, d.y, d.z, pipeline.solver.max_linear_correction);
         }
         TEST_NOT_ZERO(ok);
     }
@@ -2408,7 +2442,7 @@ static struct test_Output DynamicsCoincidentAnchorsTest(struct test_Environment 
      * distance the spring can hold (its rest g / omega^2 below the target, plus the swing's centripetal stretch).
      */
     const f32 omega = F32_PI2 * spring.hertz;
-    const f32 rest = L - g_solver_config->gravity.y / (omega * omega);
+    const f32 rest = L - pipeline.config.gravity.y / (omega * omega);
     for (u32 t = 0; t < 300; ++t)
     {
         SnapshotTestTick(&pipeline);
@@ -2439,10 +2473,10 @@ static struct test_Output DynamicsCoincidentAnchorsTest(struct test_Environment 
     {
         const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id[1]);
         const v3 d = V3F64Demote(V3F64Sub(pose.position, V3Promote(P)));
-        const u32 ok = d.x >= 0.5f * g_solver_config->max_linear_correction && F32Abs(d.z) <= 1.0e-6f;
+        const u32 ok = d.x >= 0.5f * pipeline.solver.max_linear_correction && F32Abs(d.z) <= 1.0e-6f;
         if (!ok)
         {
-            fprintf(stderr, "coincident anchors, rigid: after one tick d = (%f, %f, %f), max_linear_correction %f\n", d.x, d.y, d.z, g_solver_config->max_linear_correction);
+            fprintf(stderr, "coincident anchors, rigid: after one tick d = (%f, %f, %f), max_linear_correction %f\n", d.x, d.y, d.z, pipeline.solver.max_linear_correction);
         }
         TEST_NOT_ZERO(ok);
     }
@@ -2470,7 +2504,7 @@ static struct test_Output DynamicsCoincidentAnchorsTest(struct test_Environment 
         TEST_NOT_ZERO(ok);
     }
 
-    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -2499,7 +2533,9 @@ static struct test_Output DynamicsJointSleepTest(struct test_Environment *env)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 1;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     /*
      * A static pivot and four boxes 1 m apart under it, at rest where the chain hangs; the fourth joins later and
@@ -2534,7 +2570,7 @@ static struct test_Output DynamicsJointSleepTest(struct test_Environment *env)
     }
     const struct ds_Body *box[4] = { ds_BodyLookup(&pipeline, id[1]).address, ds_BodyLookup(&pipeline, id[2]).address, ds_BodyLookup(&pipeline, id[3]).address, NULL };
     const f32 mass = box[0]->mass;
-    const f32 g = -g_solver_config->gravity.y;
+    const f32 g = -pipeline.config.gravity.y;
     const f32 h = pipeline.timestep;
 
     /* the chain hangs still and falls asleep as one island with its three joints in the set, out of the colours */
@@ -2558,7 +2594,7 @@ static struct test_Output DynamicsJointSleepTest(struct test_Environment *env)
      * Each joint's cached impulse is the tick's weight below it: (3 - i) m g h, less the velocity damping's share
      * (the solver damps the gravity velocity before the rows see it), negative since the rows push apart.
      */
-    const f32 damp = 1.0f / (1.0f + g_solver_config->linear_dampening * h);
+    const f32 damp = 1.0f / (1.0f + pipeline.solver.linear_dampening * h);
     f32 impulse_sleeping[3];
     for (u32 i = 0; i < 3; ++i)
     {
@@ -2650,9 +2686,10 @@ static struct test_Output DynamicsJointSleepTest(struct test_Environment *env)
     TEST_NOT_ZERO(set->joint_sim_pool.count == 3 && set->body_sim_pool.count == 3);
     TEST_NOT_ZERO((f32) DynamicsTestPose(&pipeline, id4).position.y < y4 - 1.0f);
     const v3 d_top = V3F64Demote(V3F64Sub(DynamicsTestPose(&pipeline, id[1]).position, V3Promote(pivot)));
-    TEST_NOT_ZERO(F32Abs(V3Length(d_top) - L) <= g_solver_config->linear_slop);
+    TEST_NOT_ZERO(F32Abs(V3Length(d_top) - L) <= pipeline.solver.linear_slop);
     ds_DynamicsValidate(&pipeline);
 
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -2678,7 +2715,8 @@ static struct dynamics_MouseRig DynamicsMouseRigAlloc(const v3 position, const u
     c_ShapeDBAlloc(NULL, &rig.cshape_db, 32, GROWABLE);
     ds_SDBAlloc(NULL, rig.prefab_db, 32, GROWABLE);
     rig.pipeline = ds_DynamicsAlloc(&rig.mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &rig.cshape_db, &rig.prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = sleep_enabled;
+    rig.pipeline.config_pending.solver.sleep_enabled = sleep_enabled;
+    ds_DynamicsConfigUpdatePending(&rig.pipeline);
 
     const struct dynamics_TestBox box = { .position = position, .rotation = QIdentity(), .hw = V3(0.25f, 0.25f, 0.25f), .dynamic = 1, .friction = 0.5f };
     rig.box = DynamicsTestBoxAdd(&rig.mem, &rig.pipeline, &rig.cshape_db, &box, (v3f64) { 0 }, 0);
@@ -2688,7 +2726,6 @@ static struct dynamics_MouseRig DynamicsMouseRigAlloc(const v3 position, const u
 
 static void DynamicsMouseRigFree(struct dynamics_MouseRig *rig)
 {
-    g_solver_config->pending_sleep_enabled = 1;
     ds_DynamicsFree(&rig->pipeline);
     c_ShapeDBDealloc(&rig->cshape_db);
     ds_SDBDealloc(rig->prefab_db);
@@ -2763,7 +2800,7 @@ static struct test_Output DynamicsMouseJointTest(struct test_Environment *env)
 {
     struct test_Output output = { .success = 1, .id = __func__ };
 
-    const f32 g = -g_solver_config->gravity.y;
+    const f32 g = -ds_DynamicsConfigDefault().gravity.y;
     const v3 start = V3(0.0f, 4.0f, 0.0f);
     const ds_Transform frame = ds_TransformIdentity();
 
@@ -2866,7 +2903,7 @@ static struct test_Output DynamicsMouseJointTest(struct test_Environment *env)
 
         DynamicsMouseRigRun(&rig, 59);
         const f32 w = V3Length(DynamicsMouseRigCompute(&rig)->angular_velocity);
-        const f32 damped = w0 * F32Pow(1.0f / (1.0f + g_solver_config->angular_dampening * rig.pipeline.timestep), 60.0f);
+        const f32 damped = w0 * F32Pow(1.0f / (1.0f + rig.pipeline.solver.angular_dampening * rig.pipeline.timestep), 60.0f);
         if (pass == 0)
         {
             if (!(F32Abs(w - damped) <= 0.02f * damped)) { fprintf(stderr, "mouse joint: failed: F32Abs(w - damped) <= 0.02f * damped\n"); }
@@ -2888,7 +2925,7 @@ static struct test_Output DynamicsMouseJointSleepTest(struct test_Environment *e
 {
     struct test_Output output = { .success = 1, .id = __func__ };
 
-    const f32 g = -g_solver_config->gravity.y;
+    const f32 g = -ds_DynamicsConfigDefault().gravity.y;
     const v3 start = V3(0.0f, 4.0f, 0.0f);
     const ds_Transform frame = ds_TransformIdentity();
     struct dynamics_MouseRig rig = DynamicsMouseRigAlloc(start, 1);
@@ -2962,12 +2999,14 @@ static struct test_Output DynamicsSlideTest(struct test_Environment *env)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 0;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     const f32 angle = 30.0f * F32_PI / 180.0f;
     const q slope = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), angle);
     const v3 n = QUnitRotate(slope, V3(0.0f, 1.0f, 0.0f));
-    const v3 gravity = g_solver_config->gravity;
+    const v3 gravity = pipeline.solver.gravity;
     const v3 downhill = V3Normalize(V3Sub(gravity, V3Scale(n, V3Dot(n, gravity))));
     const struct dynamics_TestBox scene[2] =
     {
@@ -2982,7 +3021,7 @@ static struct test_Output DynamicsSlideTest(struct test_Environment *env)
 
     /* each tick adds the downhill gravity and damps (ds_BodyUpdateSolverDataRange); the contacts only cancel the normal part */
     const f32 g_t = V3Dot(gravity, downhill);
-    const f32 damp = 1.0f / (1.0f + g_solver_config->linear_dampening * pipeline.timestep);
+    const f32 damp = 1.0f / (1.0f + pipeline.solver.linear_dampening * pipeline.timestep);
     f32 expected = 0.0f;
     for (u32 t = 0; t < 60; ++t)
     {
@@ -3001,7 +3040,7 @@ static struct test_Output DynamicsSlideTest(struct test_Environment *env)
     const v3 w = pipeline.solver_set_pool.buf[SOLVER_SET_ACTIVE].body_compute_pool.buf[box->sim].angular_velocity;
     TEST_NOT_ZERO(V3Length(w) <= 0.01f);
 
-    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -3020,7 +3059,9 @@ static struct test_Output DynamicsBounceTest(struct test_Environment *env)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 0;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     const struct dynamics_TestBox scene[3] =
     {
@@ -3035,7 +3076,7 @@ static struct test_Output DynamicsBounceTest(struct test_Environment *env)
     }
 
     /* tick until the bouncy box moves up; the impact speed is the last downward speed plus one tick of gravity */
-    const f32 g_dt = -g_solver_config->gravity.y * pipeline.timestep;
+    const f32 g_dt = -pipeline.config.gravity.y * pipeline.timestep;
     f32 down = 0.0f;
     f32 up = 0.0f;
     u32 t;
@@ -3065,7 +3106,7 @@ static struct test_Output DynamicsBounceTest(struct test_Environment *env)
         TEST_NOT_ZERO(F32Abs(SolverTestVelocity(&pipeline, id[2]).y) <= 0.05f * down);
     }
 
-    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -3084,7 +3125,9 @@ static struct test_Output DynamicsFirstTickTest(struct test_Environment *env)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 0;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     /* a ground and a 10 by 10 grid of boxes on it: 101 bodies, the pools grow past 64 before the first tick */
     const struct dynamics_TestBox ground = { .position = V3(0.0f, -1.0f, 0.0f), .rotation = QIdentity(), .hw = V3(16.0f, 1.0f, 16.0f), .dynamic = 0, .friction = 0.5f };
@@ -3105,7 +3148,7 @@ static struct test_Output DynamicsFirstTickTest(struct test_Environment *env)
         TEST_NOT_ZERO(c == CG_SERIAL_COLOR || pipeline.cgraph.color[c].body_bitset.bit_count >= pipeline.body_pool.length);
     }
 
-    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -3124,7 +3167,9 @@ static struct test_Output DynamicsFlushTest(struct test_Environment *env)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 0;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     /* three boxes in a row on a ground; without the middle one the island is flagged, and once rested, chosen for a split */
     const struct dynamics_TestBox row[4] =
@@ -3174,7 +3219,7 @@ static struct test_Output DynamicsFlushTest(struct test_Environment *env)
     }
     TEST_NOT_ZERO(pipeline.island_pool.count == 3 && GraphTestCheck(&pipeline) == 3);
 
-    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -3192,26 +3237,19 @@ static struct test_Output DynamicsNumericsConfigTest(struct test_Environment *en
     struct ds_NumericsConfig config = ds_NumericsConfigDefault();
     ds_NumericsConfigPush(&config);
     TEST_NOT_ZERO(g_numerics_config == &config);
-    TEST_NOT_ZERO(config.dbvh_reinsert_threshold == config.dbvh_reinsert_threshold_pending && config.gjk_max_iterations == config.gjk_max_iterations_pending && config.gjk_max_iterations >= 1);
+    TEST_NOT_ZERO(config.dbvh_reinsert_threshold == 0.25f && config.gjk_max_iterations >= 1);
     TEST_NOT_ZERO(F32Abs(config.capsule_parallel_tan_sq - 0.00249579f) < 1e-6f);
     TEST_NOT_ZERO(F32Abs(config.face_parallel_cos - 0.99800475f) < 1e-6f);
     TEST_NOT_ZERO(F32Abs(config.edge_parallel_sin_sq - 7.6152422e-5f) < 1e-8f);
 
-    /* out-of-range pending values are clamped into the applied ones and back into the pending ones */
-    config.dbvh_reinsert_threshold_pending = 2.0f;
-    config.gjk_max_iterations_pending = 0;
-    config.capsule_parallel_max_degrees_pending = 90.0f;
-    config.face_parallel_max_degrees_pending = -1.0f;
-    config.edge_parallel_max_degrees_pending = 45.0f;
-    config.sat_face_bias_pending = -1.0f;
-    config.sat_cache_tolerance_pending = 3.0f;
-    ds_NumericsConfigPush(&config);
-    TEST_NOT_ZERO(config.dbvh_reinsert_threshold == 1.0f && config.dbvh_reinsert_threshold_pending == 1.0f);
-    TEST_NOT_ZERO(config.gjk_max_iterations == 1 && config.gjk_max_iterations_pending == 1);
-    TEST_NOT_ZERO(config.capsule_parallel_max_degrees == 45.0f && F32Abs(config.capsule_parallel_tan_sq - 1.0f) < 1e-5f);
-    TEST_NOT_ZERO(config.face_parallel_max_degrees == 0.0f && config.face_parallel_cos == 1.0f);
-    TEST_NOT_ZERO(config.edge_parallel_max_degrees == 45.0f && F32Abs(config.edge_parallel_sin_sq - 0.5f) < 1e-6f);
-    TEST_NOT_ZERO(config.sat_face_bias == 0.0f && config.sat_cache_tolerance == 3.0f);
+    /* the derived values follow the set ones */
+    config.capsule_parallel_max_degrees = 45.0f;
+    config.face_parallel_max_degrees = 0.0f;
+    config.edge_parallel_max_degrees = 45.0f;
+    ds_NumericsConfigDerive(&config);
+    TEST_NOT_ZERO(F32Abs(config.capsule_parallel_tan_sq - 1.0f) < 1e-5f);
+    TEST_NOT_ZERO(config.face_parallel_cos == 1.0f);
+    TEST_NOT_ZERO(F32Abs(config.edge_parallel_sin_sq - 0.5f) < 1e-6f);
 
     ds_NumericsConfigPop();
     TEST_NOT_ZERO(g_numerics_config == NULL);
@@ -3283,7 +3321,9 @@ static void DynamicsWarmSceneRun(struct ds_DynamicsMetrics *sum, const struct dy
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 128, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 0;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     for (u32 i = 0; i < scene->count; ++i)
     {
@@ -3338,8 +3378,9 @@ static void DynamicsWarmSceneRun(struct ds_DynamicsMetrics *sum, const struct dy
     }
     fprintf(stdout, "\tmanifolds with duplicate ids: %u of %u\n", duplicate_manifolds, manifolds);
 
-    g_solver_config->pending_sleep_enabled = 1;
-    ds_DynamicsSleepEnable(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 1;
+    ds_DynamicsConfigUpdatePending(&pipeline);
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     ds_SDBDealloc(prefab_db);
     c_ShapeDBDealloc(&cshape_db);
@@ -3471,14 +3512,16 @@ static struct test_Output DynamicsSlideWarmTest(struct test_Environment *env)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 0;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     const f32 angle = 20.0f * F32_PI / 180.0f;
     const f32 mu = 0.3f;
     const q slope = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), angle);
     const v3 n = QUnitRotate(slope, V3(0.0f, 1.0f, 0.0f));
     const v3 up = QUnitRotate(slope, V3(1.0f, 0.0f, 0.0f));
-    const v3 gravity = g_solver_config->gravity;
+    const v3 gravity = pipeline.solver.gravity;
     const v3 downhill = V3Normalize(V3Sub(gravity, V3Scale(n, V3Dot(n, gravity))));
     const q across = QMul(slope, QUnitAxisAngle(V3(1.0f, 0.0f, 0.0f), 0.5f * F32_PI));   /* the capsule's axis along z */
 
@@ -3499,7 +3542,7 @@ static struct test_Output DynamicsSlideWarmTest(struct test_Environment *env)
     f32 coulomb = 0.0f;
     const f32 g_t = V3Dot(gravity, downhill);
     const f32 g_n = -V3Dot(gravity, n);
-    const f32 damp = 1.0f / (1.0f + g_solver_config->linear_dampening * pipeline.timestep);
+    const f32 damp = 1.0f / (1.0f + pipeline.solver.linear_dampening * pipeline.timestep);
     for (u32 t = 0; t < ticks; ++t)
     {
         ds_DynamicsTick(&pipeline);
@@ -3538,7 +3581,7 @@ static struct test_Output DynamicsSlideWarmTest(struct test_Environment *env)
         else        { fprintf(stdout, "; v / (w r) %.4f\n", along / (V3Length(w) * r)); }
     }
 
-    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -3560,6 +3603,7 @@ static struct test_Output DynamicsMassRejectTest(struct test_Environment *env)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 8, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 16, NSEC_PER_SEC / 60, 4*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    ds_DynamicsConfigPush(&pipeline);
 
     const utf8 id = Utf8Inline("mass_box");
     const struct c_Shape src = { .type = C_SHAPE_CONVEX_HULL, .hull = DcelBox(&mem, V3(0.5f, 0.5f, 0.5f)) };
@@ -3598,6 +3642,7 @@ static struct test_Output DynamicsMassRejectTest(struct test_Environment *env)
     TEST_NOT_ZERO(!ds_JointIdNullCheck(ds_DistanceJointAdd(&pipeline, &distance_prefab, dynamic, &t_local, fixed, &t_local)));
     TEST_NOT_ZERO(!ds_JointIdNullCheck(ds_MouseJointAdd(&pipeline, &mouse_prefab, dynamic, &t_local)));
 
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -3620,7 +3665,9 @@ static struct test_Output DynamicsIslandSplitTest(struct test_Environment *env)
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 8, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 16, NSEC_PER_SEC / 60, 4*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 1;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     const struct dynamics_TestBox floor = { .position = V3(0.0f, -0.5f, 0.0f), .rotation = QIdentity(), .hw = V3(50.0f, 0.5f, 50.0f), .dynamic = 0, .friction = 0.0f };
     const struct dynamics_TestBox box_a = { .position = V3(0.0f, 0.5f, 0.0f), .rotation = QIdentity(), .hw = V3(0.5f, 0.5f, 0.5f), .dynamic = 1, .friction = 0.0f };
@@ -3667,6 +3714,7 @@ static struct test_Output DynamicsIslandSplitTest(struct test_Environment *env)
         TEST_NOT_ZERO(0);
     }
 
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -3689,7 +3737,9 @@ static struct test_Output DynamicsJointBreakingTest(struct test_Environment *env
     ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
     ds_SDBAlloc(NULL, prefab_db, 8, GROWABLE);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 16, NSEC_PER_SEC / 60, 4*1024*1024, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 0;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
 
     const f32 L = 2.0f;
     const v3 hw = V3(0.25f, 0.25f, 0.25f);
@@ -3704,7 +3754,7 @@ static struct test_Output DynamicsJointBreakingTest(struct test_Environment *env
     {
         id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
     }
-    const f32 weight = ((const struct ds_Body *) ds_BodyLookup(&pipeline, id[1]).address)->mass * V3Length(g_solver_config->gravity);
+    const f32 weight = ((const struct ds_Body *) ds_BodyLookup(&pipeline, id[1]).address)->mass * V3Length(pipeline.solver.gravity);
 
     /* the anchor frames straight above each box's centre; strong holds 1.5 weights, weak 0.5 */
     const ds_Transform frame = ds_TransformIdentity();
@@ -3756,13 +3806,13 @@ static struct test_Output DynamicsJointBreakingTest(struct test_Environment *env
     }
     const f32 y_strong = (f32) DynamicsTestPose(&pipeline, id[1]).position.y;
     const f32 y_weak = (f32) DynamicsTestPose(&pipeline, id[2]).position.y;
-    if (event_count != 0 || F32Abs(y_strong - (6.0f - L)) > g_solver_config->linear_slop || y_weak > 6.0f - L - 0.5f)
+    if (event_count != 0 || F32Abs(y_strong - (6.0f - L)) > pipeline.solver.linear_slop || y_weak > 6.0f - L - 0.5f)
     {
         fprintf(stderr, "joint breaking after removal: %u events, y strong %f weak %f\n", event_count, y_strong, y_weak);
         TEST_NOT_ZERO(0);
     }
 
-    g_solver_config->pending_sleep_enabled = 1;
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     c_ShapeDBDealloc(&cshape_db);
     ds_SDBDealloc(prefab_db);
@@ -3770,8 +3820,76 @@ static struct test_Output DynamicsJointBreakingTest(struct test_Environment *env
     return output;
 }
 
+/*
+ * ds_DynamicsAllocConfig applies every group of the config: the pools' capacity, gravity in the pipeline and the
+ * solver, the solver's values in g_solver_config (a velocity limit of 0 giving inverse 0), the numerics pending
+ * values resolved, the draw config. The default config is applied again afterwards, since the solver config is
+ * process state the later tests read.
+ */
+static struct test_Output DynamicsAllocConfigTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+
+    struct ds_DynamicsConfig config = ds_DynamicsConfigDefault();
+    config.initial_size = 32;
+    config.gravity = V3(1.0f, -2.0f, 3.0f);
+    config.solver.pgs_iteration_count = 5;
+    config.solver.ngs_iteration_count = 2;
+    config.solver.warmup_solver = 0;
+    config.solver.max_linear_velocity_magnitude = 0.0f;
+    config.solver.max_angular_velocity_magnitude = 4.0f;
+    config.solver.linear_slop = 0.002f;
+    config.solver.sleep_enabled = 0;
+    config.numerics.gjk_max_iterations = 9;
+    config.numerics.capsule_parallel_max_degrees = 10.0f;
+    config.draw.draw_shapes = 0;
+    config.draw.refinement = 5;
+    TEST_EQUAL(1, ds_DynamicsConfigCheck(&config));
+
+    struct ds_Dynamics pipeline = ds_DynamicsAllocConfig(&mem, &config, NSEC_PER_SEC / 60, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+
+    TEST_EQUAL(32u, pipeline.body_pool.length);
+    TEST_EQUAL(32u, pipeline.shape_pool.length);
+    TEST_TRUE(JointTestV3Equal(config.gravity, pipeline.config.gravity));
+    TEST_TRUE(JointTestV3Equal(config.gravity, pipeline.solver.gravity));
+    TEST_EQUAL(5u, pipeline.solver.pgs_iteration_count);
+    TEST_EQUAL(2u, pipeline.solver.ngs_iteration_count);
+    TEST_EQUAL(0u, pipeline.solver.warmup_solver);
+    TEST_EQUAL(0u, pipeline.solver.sleep_enabled);
+    TEST_TRUE(pipeline.solver.max_linear_velocity_magnitude_inv == 0.0f);
+    TEST_TRUE(pipeline.solver.max_angular_velocity_magnitude_inv == 0.25f);
+    TEST_TRUE(pipeline.solver.linear_slop == 0.002f);
+    TEST_EQUAL(9u, pipeline.config.numerics.gjk_max_iterations);
+    TEST_TRUE(pipeline.config.numerics.capsule_parallel_max_degrees == 10.0f);
+    TEST_EQUAL(0u, pipeline.config.draw.draw_shapes);
+    TEST_EQUAL(5u, pipeline.config.draw.refinement);
+
+    ds_DynamicsFree(&pipeline);
+
+    /* the defaults back into the process-global solver config */
+    const struct ds_DynamicsConfig def = ds_DynamicsConfigDefault();
+    pipeline = ds_DynamicsAllocConfig(&mem, &def, NSEC_PER_SEC / 60, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    TEST_EQUAL(def.solver.pgs_iteration_count, pipeline.solver.pgs_iteration_count);
+    TEST_EQUAL(def.solver.sleep_enabled, pipeline.solver.sleep_enabled);
+    TEST_TRUE(JointTestV3Equal(def.gravity, pipeline.solver.gravity));
+    TEST_EQUAL(def.initial_size, pipeline.body_pool.length);
+    ds_DynamicsFree(&pipeline);
+
+    ds_SDBDealloc(prefab_db);
+    c_ShapeDBDealloc(&cshape_db);
+    ArenaFree(&mem);
+	return output;
+}
+
 static struct test_Output (*dynamics_tests[])(struct test_Environment *) =
 {
+    DynamicsAllocConfigTest,
     DynamicsRestingBoxTest,
     DynamicsRestingStackTest,
     DynamicsRestingSlopeTest,
@@ -3850,7 +3968,8 @@ static void *DynamicsPerfPrepInit(void)
     c_ShapeDBAlloc(NULL, &in->cshape_db, 256, GROWABLE);
     ds_SDBAlloc(NULL, in->prefab_db, 32, GROWABLE);
     in->pipeline = ds_DynamicsAlloc(&in->mem, 256, NSEC_PER_SEC / 60, 16*1024*1024, &in->cshape_db, &in->prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 0;
+    in->pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&in->pipeline);
 
     const u32 layers = DYNAMICS_PERF_PYRAMID_LAYERS;
     u32 index = 0;
@@ -3940,8 +4059,8 @@ static void DynamicsPerfPrepFree(void *args)
     fprintf(stdout, "\tchecksum %.9e\n", in->checksum);
 
     ArenaPopRecord(in->frame);
-    g_solver_config->pending_sleep_enabled = 1;
-    ds_DynamicsSleepEnable(&in->pipeline);
+    in->pipeline.config_pending.solver.sleep_enabled = 1;
+    ds_DynamicsConfigUpdatePending(&in->pipeline);
     ds_DynamicsFree(&in->pipeline);
     ds_SDBDealloc(in->prefab_db);
     c_ShapeDBDealloc(&in->cshape_db);
@@ -4023,7 +4142,9 @@ static void DynamicsPerfSnapshotBuild(const enum dynamics_PerfScene scene)
 
     struct arena mem = ArenaAlloc(NULL, 64*1024*1024);
     struct ds_Dynamics pipeline = ds_DynamicsAlloc(&mem, 256, NSEC_PER_SEC / 60, 16*1024*1024, &snap->cshape_db, &snap->prefab_db, g_config->thread_count, g_config->thread_framesize);
-    g_solver_config->pending_sleep_enabled = 0;
+    ds_DynamicsConfigPush(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(&pipeline);
     /* the terrain's relief draws random numbers: the same scene whatever ran before */
     ThreadXoshiro256InitSequence(1000 + scene);
 
@@ -4087,8 +4208,9 @@ static void DynamicsPerfSnapshotBuild(const enum dynamics_PerfScene scene)
     snap->ss.bit_count = snap->ss.bit_index;
     fprintf(stdout, "\tscene %u: %u bodies, %llu snapshot bytes\n", scene, index, (unsigned long long) size);
 
-    g_solver_config->pending_sleep_enabled = 1;
-    ds_DynamicsSleepEnable(&pipeline);
+    pipeline.config_pending.solver.sleep_enabled = 1;
+    ds_DynamicsConfigUpdatePending(&pipeline);
+    ds_DynamicsConfigPop(&pipeline);
     ds_DynamicsFree(&pipeline);
     ArenaFree(&mem);
 }
@@ -4161,9 +4283,9 @@ static void *DynamicsPerfSolveInit(const enum dynamics_PerfScene scene, const en
         return in;
     }
     struct ds_Dynamics *pipeline = &in->pipeline;
-    g_solver_config->pending_sleep_enabled = 0;
-    ds_DynamicsSetGlobals(pipeline);
-    ds_NumericsConfigPush(&pipeline->numerics_config);
+    pipeline->config_pending.solver.sleep_enabled = 0;
+    ds_DynamicsConfigUpdatePending(pipeline);
+    ds_DynamicsConfigPush(pipeline);
     ds_CGraphFramePrepare(pipeline);
     in->frame = pipeline->worker[ds_ThreadSelfIndex()].frame;
     ArenaPushRecord(in->frame);
@@ -4176,7 +4298,7 @@ static void *DynamicsPerfSolveInit(const enum dynamics_PerfScene scene, const en
     {
         ds_ContactConstraintInitRange(pipeline, ci, 0, pipeline->cgraph.color[ci].contact_pool.count);
     }
-    if (g_solver_config->warmup_solver)
+    if (pipeline.solver.warmup_solver)
     {
         for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
         {
@@ -4185,7 +4307,7 @@ static void *DynamicsPerfSolveInit(const enum dynamics_PerfScene scene, const en
     }
     if (stage == DYNAMICS_PERF_STAGE_POSITION)
     {
-        for (u32 i = 0; i < g_solver_config->pgs_iteration_count; ++i)
+        for (u32 i = 0; i < pipeline.solver.pgs_iteration_count; ++i)
         {
             for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
             {
@@ -4283,9 +4405,9 @@ static void DynamicsPerfSolveFree(void *args)
     fprintf(stdout, "\tchecksum %.9e (%u points)\n", checksum, in->point_count);
 
     ArenaPopRecord(in->frame);
-    ds_NumericsConfigPop();
-    g_solver_config->pending_sleep_enabled = 1;
-    ds_DynamicsSleepEnable(&in->pipeline);
+    ds_DynamicsConfigPop(&in->pipeline);
+    in->pipeline.config_pending.solver.sleep_enabled = 1;
+    ds_DynamicsConfigUpdatePending(&in->pipeline);
     ds_DynamicsFree(&in->pipeline);
     ArenaFree(&in->mem);
     free(in);

@@ -23,8 +23,7 @@
 #include "ds_quaternion.h"
 #include "ds_matrix.h"
 
-struct solverConfig config_storage = { 0 };
-struct solverConfig *g_solver_config = &config_storage;
+struct solverConfig *g_solver_config = NULL;
 
 static ds_ThreadLocal struct ds_BodyCompute tl_static_bcomp = 
 {
@@ -48,46 +47,6 @@ static ds_ThreadLocal struct ds_BodySim tl_static_body_sim =
     .world_inv_inertia = { .buf = { 0.0f } },
 };
 
-
-void SolverConfigInit(const u32 pgs_iteration_count, const u32 ngs_iteration_count, const u32 warmup_solver, const v3 gravity, const f32 baumgarte_constant, const f32 max_linear_correction, const f32 max_linear_velocity_magnitude, const f32 max_angular_velocity_magnitude, const f32 linear_dampening, const f32 angular_dampening, const f32 linear_slop, const f32 restitution_threshold, const u32 sleep_enabled, const f32 sleep_time_threshold, const f32 sleep_linear_velocity_sq_limit, const f32 sleep_angular_velocity_sq_limit)
-{
-	ds_Assert(pgs_iteration_count >= 1);
-	ds_Assert(ngs_iteration_count >= 1);
-
-	g_solver_config->pgs_iteration_count = pgs_iteration_count;
-	g_solver_config->ngs_iteration_count = ngs_iteration_count;
-	g_solver_config->warmup_solver = warmup_solver;
-	g_solver_config->gravity = gravity;
-	g_solver_config->baumgarte_constant = baumgarte_constant;
-	g_solver_config->max_linear_correction = max_linear_correction;
-    /* a limit of 0 is no limit: the inverse 0 makes every speed ratio 0 (an infinite inverse froze moving bodies and made 0*inf NaN at rest) */
-    g_solver_config->max_linear_velocity_magnitude_inv = (0.0f == max_linear_velocity_magnitude)
-                                                        ? 0.0f
-                                                        : 1.0f / max_linear_velocity_magnitude;
-    g_solver_config->max_angular_velocity_magnitude_inv = (0.0f == max_angular_velocity_magnitude)
-                                                        ? 0.0f
-                                                        : 1.0f / max_angular_velocity_magnitude;
-	g_solver_config->linear_dampening = linear_dampening;
-	g_solver_config->angular_dampening = angular_dampening;
-	ds_Assert(linear_slop > 0.0f);
-	g_solver_config->linear_slop = linear_slop;
-	g_solver_config->restitution_threshold = restitution_threshold;
-
- 	g_solver_config->sleep_enabled = sleep_enabled;
-	g_solver_config->sleep_time_threshold = sleep_time_threshold;
-	g_solver_config->sleep_linear_velocity_sq_limit = sleep_linear_velocity_sq_limit;
-	g_solver_config->sleep_angular_velocity_sq_limit = sleep_angular_velocity_sq_limit;
-
-	g_solver_config->pending_warmup_solver = g_solver_config->warmup_solver;
-	g_solver_config->pending_sleep_enabled = g_solver_config->sleep_enabled;
-	g_solver_config->pending_pgs_iteration_count = g_solver_config->pgs_iteration_count;
-	g_solver_config->pending_ngs_iteration_count = g_solver_config->ngs_iteration_count;
-	g_solver_config->pending_linear_slop = g_solver_config->linear_slop;
-	g_solver_config->pending_baumgarte_constant = g_solver_config->baumgarte_constant;
-	g_solver_config->pending_restitution_threshold = g_solver_config->restitution_threshold;
-	g_solver_config->pending_linear_dampening = g_solver_config->linear_dampening;
-	g_solver_config->pending_angular_dampening = g_solver_config->angular_dampening;
-}
 
 void ds_BodyUpdateSolverDataRange(struct ds_Dynamics *pipeline, const u32 low, const u32 high)
 {
@@ -242,7 +201,7 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
 
     ArenaPopPacked(frame, sizeof(struct ds_ProxyDirty)*(arr.len - proxy_range->count));
 
-    if (pipeline->draw_config.draw_body_axes)
+    if (pipeline->config.draw.draw_body_axes)
     {
         ds_BodyDrawRange(pipeline, low, high);
     }
@@ -666,7 +625,7 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline
     struct arena *frame = pipeline->worker[ds_ThreadSelfIndex()].frame;
 
     /* the levers leave world axes below */
-    if (pipeline->draw_config.draw_constraint_points || pipeline->draw_config.draw_contact_forces)
+    if (pipeline->config.draw.draw_constraint_points || pipeline->config.draw.draw_contact_forces)
     {
         ds_ContactDrawRange(pipeline, color_index, low, high);
     }

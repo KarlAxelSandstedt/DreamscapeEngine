@@ -2249,10 +2249,10 @@ static void led_ColorIsland(struct led *led, const ds_IslandId id, const v4 colo
 
 static void led_EngineRun(struct led *led)
 {
-	led->physics.ns_elapsed += led->ns_delta;
+	led->ns_physics_elapsed += led->ns_delta;
 
 	//const u64 game_frames_to_run = (game->ns_elapsed - (game->frames_completed * game->ns_tick)) / game->ns_tick;
-	const u64 physics_frames_to_run = (led->physics.ns_elapsed - (led->physics.frames_completed * led->physics.ns_tick)) / led->physics.ns_tick;
+	const u64 physics_frames_to_run = (led->ns_physics_elapsed - (led->physics.frames_completed * led->physics.ns_tick)) / led->physics.ns_tick;
 
 	//u64 ns_next_game_frame = game->frames_completed * game->ns_tick;
 
@@ -2499,7 +2499,7 @@ static void led_EngineRun(struct led *led)
 
                         const v3 linear_velocity = V3Zero();
                         const v3 angular_velocity = V3Zero();
-                        const u64 ns = led->physics.ns_start + led->physics.frames_completed*led->physics.ns_tick; 
+                        const u64 ns = led->ns_physics_start + led->physics.frames_completed*led->physics.ns_tick;
 
 	                	r_Proxy3dLinearSpeculationSet(sim->world.position
 	                			, sim->world.rotation
@@ -2550,7 +2550,7 @@ static void led_EngineRun(struct led *led)
 	    	const struct ds_Body *body = led->physics.body_pool.buf + sim->body;
             const struct ds_BodyCompute *compute = active->body_compute_pool.buf + body->sim;
             const struct led_Node *node = led->node_hierarchy.pool.buf + body->entity;
-            const u64 ns = led->physics.ns_start + led->physics.frames_completed*led->physics.ns_tick; 
+            const u64 ns = led->ns_physics_start + led->physics.frames_completed*led->physics.ns_tick;
 
 	    	r_Proxy3dLinearSpeculationSet(sim->world.position
 	    			, sim->world.rotation
@@ -2603,9 +2603,9 @@ static void led_EngineInit(struct led *led)
 {
 	//TODO move this into engine flush
 	ds_DynamicsFlush(&led->physics);		
-	led->physics.ns_start = led->ns;
+	led->ns_physics_start = led->ns;
 	/* wraps on purpose: led_EngineRun's first += ns_delta makes it 0 */
-	led->physics.ns_elapsed = 0 - led->ns_delta;
+	led->ns_physics_elapsed = 0 - led->ns_delta;
 	led->ns_engine_paused = 0;
 
     HII it; 
@@ -2685,6 +2685,8 @@ void led_Core(struct led *led)
 	led->engine_initalized = led->pending_engine_initalized;
 	led->engine_running = led->pending_engine_running;
 	led->engine_paused = led->pending_engine_paused;
+	/* the frame's edits of the physics config (draw toggles, ...) take effect now, running or not */
+	ds_DynamicsConfigUpdatePending(&led->physics);
 	if (led->engine_running)
 	{
 		led->ns_engine_running += led->ns_delta;

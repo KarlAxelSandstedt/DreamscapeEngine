@@ -242,6 +242,7 @@ add_subdirectory("${DS_SRC_PATH}/base")
 add_subdirectory("${DS_SRC_PATH}/containers")
 add_subdirectory("${DS_SRC_PATH}/asset_system")
 add_subdirectory("${DS_SRC_PATH}/math")
+add_subdirectory("${DS_SRC_PATH}/simulation")
 add_subdirectory("${DS_SRC_PATH}/sys")
 add_subdirectory("${DS_SRC_PATH}/misc")
 add_subdirectory("${DS_SRC_PATH}/renderer")
@@ -262,6 +263,7 @@ target_link_libraries(${PROJECT_NAME}
 		"${PROJECT_NAME}::Job"
 		"${PROJECT_NAME}::Collision"
 		"${PROJECT_NAME}::Dynamics"
+		"${PROJECT_NAME}::Simulation"
 		"${PROJECT_NAME}::Graphics"
 		"${PROJECT_NAME}::Renderer"
 		"${PROJECT_NAME}::Editor"

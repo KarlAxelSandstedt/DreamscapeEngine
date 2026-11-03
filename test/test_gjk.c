@@ -788,7 +788,7 @@ static void GjkTestConfigPush(const u32 gjk_max_iterations)
     g_gjk_test_config = ds_NumericsConfigDefault();
     if (gjk_max_iterations)
     {
-        g_gjk_test_config.gjk_max_iterations_pending = gjk_max_iterations;
+        g_gjk_test_config.gjk_max_iterations = gjk_max_iterations;
     }
     ds_NumericsConfigPush(&g_gjk_test_config);
 }

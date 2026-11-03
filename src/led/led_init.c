@@ -133,6 +133,8 @@ struct led *led_Alloc(const u32 thread_count, const u64 thread_framesize)
 	c_ShapeDBAlloc(NULL, &g_editor->cs_db, 32, GROWABLE);
 	DLLFlush(g_editor->cs_shape_list);
 	g_editor->physics = ds_DynamicsAlloc(&g_editor->mem_persistent, 1024, NSEC_PER_SEC / (u64) 60, 16*1024*1024, &g_editor->cs_db, &g_editor->body_prefab_db, thread_count, thread_framesize);
+	/* the editor's queries and prefab constructors between ticks read the pushed config */
+	ds_DynamicsConfigPush(&g_editor->physics);
     ds_CPoolAlloc(NULL, g_editor->joint_pool, 256, GROWABLE);
     g_editor->grab.joint = ds_JointIdNull();
 

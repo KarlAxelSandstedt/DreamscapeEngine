@@ -24,7 +24,7 @@ The engine's basic types, usable from every header (needs only stdint.h and ds_d
 
 Contents (in this order):
     Scalars     u8..u64, i8..i64, f32, f64; unions b8..b64 reinterpret the bits; limits U*_MAX, I*_MAX
-                (plain literals) and I*_MIN (typed constant expressions).
+                (plain literals) and I*_MIN (typed constant expressions); U32/U64/I32/I64 Min, Max, Clamp.
     Allocator   struct slot { address, index }, what pool adds return; empty_slot = { NULL, U32_MAX }.
     Math        q (quaternion, w the real part), v2..v4 (f32), v3f64 (world positions), integer vectors
                 v{2,3,4}{u32,u64,i32,i64}; x, y, z, w alias buf[0..3]. Constructors V3(x, y, z), Q(...), ...
@@ -100,6 +100,20 @@ typedef union
 #define I16_MIN		((i16) (-I16_MAX - 1))
 #define I32_MIN		((i32) (-I32_MAX - 1))
 #define I64_MIN		((i64) (-I64_MAX - 1))
+
+/* the smaller / larger of a and b; Clamp: min if val <= min, max if val >= max, else val (min <= max is not checked) */
+static ds_ForceInline u32 U32Min(const u32 a, const u32 b);
+static ds_ForceInline u32 U32Max(const u32 a, const u32 b);
+static ds_ForceInline u32 U32Clamp(const u32 val, const u32 min, const u32 max);
+static ds_ForceInline u64 U64Min(const u64 a, const u64 b);
+static ds_ForceInline u64 U64Max(const u64 a, const u64 b);
+static ds_ForceInline u64 U64Clamp(const u64 val, const u64 min, const u64 max);
+static ds_ForceInline i32 I32Min(const i32 a, const i32 b);
+static ds_ForceInline i32 I32Max(const i32 a, const i32 b);
+static ds_ForceInline i32 I32Clamp(const i32 val, const i32 min, const i32 max);
+static ds_ForceInline i64 I64Min(const i64 a, const i64 b);
+static ds_ForceInline i64 I64Max(const i64 a, const i64 b);
+static ds_ForceInline i64 I64Clamp(const i64 val, const i64 min, const i64 max);
 
 /************** Allocator Helper **************/
 
@@ -527,6 +541,21 @@ enum severity_id
 };
 
 
+
+/************** Common Types: inline definitions **************/
+
+static ds_ForceInline u32 U32Min(const u32 a, const u32 b)                      { return (a < b) ? a : b; }
+static ds_ForceInline u32 U32Max(const u32 a, const u32 b)                      { return (a > b) ? a : b; }
+static ds_ForceInline u32 U32Clamp(const u32 val, const u32 min, const u32 max) { return (val <= min) ? min : (val >= max) ? max : val; }
+static ds_ForceInline u64 U64Min(const u64 a, const u64 b)                      { return (a < b) ? a : b; }
+static ds_ForceInline u64 U64Max(const u64 a, const u64 b)                      { return (a > b) ? a : b; }
+static ds_ForceInline u64 U64Clamp(const u64 val, const u64 min, const u64 max) { return (val <= min) ? min : (val >= max) ? max : val; }
+static ds_ForceInline i32 I32Min(const i32 a, const i32 b)                      { return (a < b) ? a : b; }
+static ds_ForceInline i32 I32Max(const i32 a, const i32 b)                      { return (a > b) ? a : b; }
+static ds_ForceInline i32 I32Clamp(const i32 val, const i32 min, const i32 max) { return (val <= min) ? min : (val >= max) ? max : val; }
+static ds_ForceInline i64 I64Min(const i64 a, const i64 b)                      { return (a < b) ? a : b; }
+static ds_ForceInline i64 I64Max(const i64 a, const i64 b)                      { return (a > b) ? a : b; }
+static ds_ForceInline i64 I64Clamp(const i64 val, const i64 min, const i64 max) { return (val <= min) ? min : (val >= max) ? max : val; }
 
 #ifdef __cplusplus
 }
