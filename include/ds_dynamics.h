@@ -103,12 +103,18 @@ extern struct ds_NumericsConfig *g_numerics_config;
 
 /* Return default config */
 struct ds_NumericsConfig    ds_NumericsConfigDefault(void);
-/* Recompute the derived values (the trigonometric ones) from the set ones; no range check (ds_DynamicsConfigCheck). */
-void                        ds_NumericsConfigDerive(struct ds_NumericsConfig *config);
-/* Derive and make config the global one (a test's own config; a pipeline's goes through ds_DynamicsConfigPush). */
+/* Return a valid and derived config from the provided config. */
+struct ds_NumericsConfig    ds_NumericsConfigDerive(const struct ds_NumericsConfig *config);
+/* Set global config. */
 void                        ds_NumericsConfigPush(struct ds_NumericsConfig *config);
-/* Clear the global config (NULL) */
+/* Clear global config. */
 void                        ds_NumericsConfigPop(void);
+/* Return the required size when serializing the config. */
+u64                         ds_NumericsConfigSerializeSize(const struct ds_NumericsConfig *config);
+/* Serialize the config. WARNING: Assumes config fits in the stream. */
+void                        ds_NumericsConfigSerialize(struct ss *ss, const struct ds_NumericsConfig *config);
+/* Returns 1 on success and 0 on failure (a short stream, another version): the stream position is as before the call and config is zeroed. */
+u32                         ds_NumericsConfigTryDeserialize(struct ss *ss, struct ds_NumericsConfig *config);
 
 
 /*
@@ -1359,36 +1365,49 @@ void    ds_MouseJointConstraintWarmup(struct ds_JointSim *jsim, struct ds_BodyCo
 void    ds_MouseJointConstraintIterate(struct ds_JointSim *jsim, struct ds_BodyCompute *bcomp[2], struct ds_BodySim *bsim[2]);
 
 /*
-contact_solver_config
-=====================
-Mumerical parameters configuration for solving islands.
+ds_SolverConfig
+===============
+Numerical parameters for solving islands. Derive clamps every value into its range and fills the derived ones.
 */
 
-struct solverConfig
+struct ds_SolverConfig
 {
-	u32 	pgs_iteration_count;	/* velocity solver iteration count */
-	u32 	ngs_iteration_count;	/* position solver iteration count */
+	u32 	pgs_iteration_count;	/* >= 1 : velocity solver iteration count */
+	u32 	ngs_iteration_count;	/* >= 1 : position solver iteration count */
 	u32 	warmup_solver;		/* bool : Should warmup solver when applicable */
-	v3 	    gravity;
-	f32 	baumgarte_constant;  	/* Range[0.0, 1.0] : Determine how quickly contacts are resolved, 1.0f max speed */
-    f32     max_linear_correction;           /* Range[0.0, inf] : max linear correction of constraint per iteration in the position solver */
-    f32     max_linear_velocity_magnitude_inv;   /* 1 / the speed (m/s) a body may move at per step; faster bodies move at the limit. 0: no limit */
-    f32     max_angular_velocity_magnitude_inv;  /* 1 / the rate (rad/s) a body may turn at per step; 0: no limit */
-	f32 	linear_dampening;	/* Range[0.0, inf] : coefficient in diff. eq. dv/dt = -coeff*v */
-	f32 	angular_dampening;	/* Range[0.0, inf] : coefficient in diff. eq. dv/dt = -coeff*v */
-	f32 	linear_slop;		/* Range(0.0, inf] : Allowed penetration before velocity steering gradually
-					   sets in. */
-	f32 	restitution_threshold; 	/* Range[0.0, inf] : If -seperating_velocity >= threshold, we apply the 
-					   restitution effect */
+	v3 	    gravity;		/* m/s^2, world frame */
+	f32 	baumgarte_constant;  	/* [0, 1] : fraction of the penetration past linear_slop removed per position iteration */
+    f32     max_linear_correction;           /* >= 0 : max linear correction (m) of a constraint per position iteration */
+    f32     max_linear_velocity_magnitude;       /* >= 0 : the speed (m/s) a body may move at per step; 0: no limit */
+    f32     max_linear_velocity_magnitude_inv;   /* Derived: 1 / max_linear_velocity_magnitude; 0: no limit */
+    f32     max_angular_velocity_magnitude;      /* >= 0 : the rate (rad/s) a body may turn at per step; 0: no limit */
+    f32     max_angular_velocity_magnitude_inv;  /* Derived: 1 / max_angular_velocity_magnitude; 0: no limit */
+	f32 	linear_dampening;	/* >= 0 : coefficient in diff. eq. dv/dt = -coeff*v */
+	f32 	angular_dampening;	/* >= 0 : coefficient in diff. eq. dv/dt = -coeff*v */
+	f32 	linear_slop;		/* > 0 : allowed penetration (m) before the position solver corrects */
+	f32 	restitution_threshold; 	/* >= 0 : restitution applies if separating_velocity < -threshold */
 
 	u32 	sleep_enabled;		/* bool : enable sleeping of bodies  */
-	f32 	sleep_time_threshold; /* Range(0.0, inf] :  Time threshold for which a body must have low velocity before being able to fall asleep */
-	f32 	sleep_linear_velocity_sq_limit; /* Range (0.0f, inf] : maximum linear velocity squared that a body falling asleep may have */
-	f32 	sleep_angular_velocity_sq_limit; /* Range (0.0f, inf] : maximum angular velocity squared that a body falling asleep may have */
+	f32 	sleep_time_threshold; /* > 0 : time (s) a body must have low velocity before it may fall asleep */
+	f32 	sleep_linear_velocity_sq_limit; /* > 0 : maximum linear velocity squared of a body falling asleep */
+	f32 	sleep_angular_velocity_sq_limit; /* > 0 : maximum angular velocity squared of a body falling asleep */
 };
+extern struct ds_SolverConfig *g_solver_config;
 
-/* The pushed pipeline's resolved solver values (ds_DynamicsConfigPush); NULL outside. */
-extern struct solverConfig *g_solver_config;
+/* Return default config */
+struct ds_SolverConfig      ds_SolverConfigDefault(void);
+/* Return a valid and derived config from the provided config. */
+struct ds_SolverConfig      ds_SolverConfigDerive(const struct ds_SolverConfig *config);
+/* Set global config. */
+void                        ds_SolverConfigPush(struct ds_SolverConfig *config);
+/* Clear global config. */
+void                        ds_SolverConfigPop(void);
+/* Return the required size when serializing the config. */
+u64                         ds_SolverConfigSerializeSize(const struct ds_SolverConfig *config);
+/* Serialize the config. WARNING: Assumes config fits in the stream. */
+void                        ds_SolverConfigSerialize(struct ss *ss, const struct ds_SolverConfig *config);
+/* Returns 1 on success and 0 on failure (a short stream, another version): the stream position is as before the call and config is zeroed. */
+u32                         ds_SolverConfigTryDeserialize(struct ss *ss, struct ds_SolverConfig *config);
 
 /*
 ds_CGraphColor
@@ -1482,7 +1501,8 @@ struct ds_DynamicsDraw
 /*
 ds_DynamicsDrawConfig
 =====================
-Debug drawing configuration (per-pipeline).
+Debug drawing configuration (per-pipeline). Derive clamps every value into its range: flags to 0/1, modes below
+their count, lengths and sizes to >= 0, fractions and colour components to [0, 1].
 */
 
 /* shape colouring; static bodies grey and opaque except in UNIFORM */
@@ -1563,82 +1583,48 @@ struct ds_DynamicsDrawConfig
     v4      color_mass_center;
 };
 
-/* the editor's defaults: shapes on, random colours, everything else off */
-struct ds_DynamicsDrawConfig ds_DynamicsDrawConfigDefault(void);
-
-/*
-ds_SolverConfig
-===============
-The solver's parameters as set (gravity is ds_DynamicsConfig's); struct solverConfig is the runtime form with the derived inverses.
-*/
-struct ds_SolverConfig
-{
-    u32     pgs_iteration_count;                /* velocity solver iterations, >= 1 */
-    u32     ngs_iteration_count;                /* position solver iterations, >= 1 */
-    u32     warmup_solver;                      /* bool */
-    f32     baumgarte_constant;                 /* [0, 1] */
-    f32     max_linear_correction;              /* >= 0, m per position iteration */
-    f32     max_linear_velocity_magnitude;      /* >= 0, m/s; 0: no limit */
-    f32     max_angular_velocity_magnitude;     /* >= 0, rad/s; 0: no limit */
-    f32     linear_dampening;                   /* >= 0 */
-    f32     angular_dampening;                  /* >= 0 */
-    f32     linear_slop;                        /* > 0, m */
-    f32     restitution_threshold;              /* >= 0, m/s */
-    u32     sleep_enabled;                      /* bool */
-    f32     sleep_time_threshold;               /* > 0, s */
-    f32     sleep_linear_velocity_sq_limit;     /* > 0 */
-    f32     sleep_angular_velocity_sq_limit;    /* > 0 */
-};
+/* Return default config (the editor's: shapes on, random colours, everything else off) */
+struct ds_DynamicsDrawConfig    ds_DynamicsDrawConfigDefault(void);
+/* Return a valid and derived config from the provided config. */
+struct ds_DynamicsDrawConfig    ds_DynamicsDrawConfigDerive(const struct ds_DynamicsDrawConfig *config);
+/* Return the required size when serializing the config. */
+u64                             ds_DynamicsDrawConfigSerializeSize(const struct ds_DynamicsDrawConfig *config);
+/* Serialize the config. WARNING: Assumes config fits in the stream. */
+void                            ds_DynamicsDrawConfigSerialize(struct ss *ss, const struct ds_DynamicsDrawConfig *config);
+/* Returns 1 on success and 0 on failure (a short stream, another version): the stream position is as before the call and config is zeroed. */
+u32                             ds_DynamicsDrawConfigTryDeserialize(struct ss *ss, struct ds_DynamicsDrawConfig *config);
 
 /*
 ds_DynamicsConfig
 =================
-What a pipeline is set up from and runs with: its own values, the solver, numerics and debug draw configs.
-A pipeline holds two: config, what the ticks read, and config_pending, the host's edits buffered until applied.
-ds_DynamicsConfigUpdatePending moves pending to applied, every value checked against its range and kept at
-its applied value when out of it (a warning); the capacities (initial_size, frame_memory) are alloc-time only.
+The pipeline's simulation parameters. Derive clamps every value into its range and derives the contained configs.
 */
 struct ds_DynamicsConfig
 {
-    /* pipeline */
-    v3      gravity;
-    u32     initial_size;                       /* the pools' initial capacity (growable): a power of two */
-    u64     frame_memory;                       /* the pipeline's frame arena, bytes */
+    u32     initial_size;                       /* alloc-time : the pools' initial capacity, a power of two */
+    u64     frame_memory;                       /* alloc-time : the frame arena (bytes) */
 
     struct ds_SolverConfig          solver;
     struct ds_NumericsConfig        numerics;
-    struct ds_DynamicsDrawConfig    draw;
 };
+extern const struct ds_DynamicsConfig *g_dynamics_config;
 
-/* Return a default config. */
+/* Return default config */
 struct ds_DynamicsConfig    ds_DynamicsConfigDefault(void);
-/* 1 if every value is in its range (the fields' comments; numerics: fractions [0, 1], degrees [0, 45], counts >= 1; floats finite). */
-u32                         ds_DynamicsConfigCheck(const struct ds_DynamicsConfig *config);
+/* Return a valid and derived config from the provided config. */
+struct ds_DynamicsConfig    ds_DynamicsConfigDerive(const struct ds_DynamicsConfig *config);
+/* Set global configs (config, solver, numerics, worker) from pipeline. */
+void                        ds_DynamicsConfigPush(struct ds_Dynamics *pipeline);
+/* Clear global configs. */
+void                        ds_DynamicsConfigPop(struct ds_Dynamics *pipeline);
+/* Derive and apply pipeline's config_pending (alloc-time values kept; sleeping switched if changed). */
+void                        ds_DynamicsConfigUpdatePending(struct ds_Dynamics *pipeline);
 /* Return the required size when serializing the config. */
 u64                         ds_DynamicsConfigSerializeSize(const struct ds_DynamicsConfig *config);
 /* Serialize the config. WARNING: Assumes config fits in the stream. */
 void                        ds_DynamicsConfigSerialize(struct ss *ss, const struct ds_DynamicsConfig *config);
-/* Returns 1 on success and 0 on failure (a short stream, another version, ds_DynamicsConfigCheck fails): the stream position is as before the call and config is zeroed. */
+/* Returns 1 on success and 0 on failure (a short stream, another version): the stream position is as before the call and config is zeroed. */
 u32                         ds_DynamicsConfigTryDeserialize(struct ss *ss, struct ds_DynamicsConfig *config);
-
-/* The pushed pipeline's applied config; NULL outside a push. */
-extern const struct ds_DynamicsConfig *g_dynamics_config;
-
-/*
- * Make pipeline's applied config, numerics and resolved solver values the globals (g_dynamics_config, g_numerics_config,
- * g_solver_config, and g_dynamics_worker). Pushes nest (at most 8 deep): Pop restores the globals the Push replaced.
- * A tick pushes its pipeline first and pops it last; a host pushes its pipeline once for the queries and prefab
- * constructors between ticks.
- */
-void                        ds_DynamicsConfigPush(struct ds_Dynamics *pipeline);
-/* Restore the globals pipeline's push replaced (pipeline must be the last pushed, asserted); g_dynamics_worker stays. */
-void                        ds_DynamicsConfigPop(struct ds_Dynamics *pipeline);
-/*
- * Apply pipeline->config_pending: a value out of its range is logged and reset to its applied value, the capacities are reset,
- * then the applied config, its derived values and the resolved solver values are set, and sleeping switched if it
- * changed (every sleeping set wakes). Between ticks only: alloc does it once, a config command when it executes.
- */
-void                        ds_DynamicsConfigUpdatePending(struct ds_Dynamics *pipeline);
 
 
 
@@ -2073,7 +2059,7 @@ struct ds_Dynamics
 
     struct ds_DynamicsConfig        config;                 /* what the ticks read (g_dynamics_config while pushed) */
     struct ds_DynamicsConfig        config_pending;         /* the host's edits, buffered until ds_DynamicsConfigUpdatePending applies them */
-    struct solverConfig             solver;                 /* config's solver values resolved (g_solver_config while pushed) */
+    struct ds_DynamicsDrawConfig    draw_config;            /* debug drawing; not simulation state, the host edits it freely */
 
     struct ds_DynamicsProfile *     profile;                /* current profile          */
     struct ds_DynamicsProfile *     profile_buf;            /* profile buffer           */
@@ -2142,13 +2128,13 @@ struct ds_Dynamics
 /**************** PHYISCS PIPELINE API ****************/
 
 /*
- * Initialize a new growable physics pipeline from config (ds_DynamicsConfigCheck asserted); ns_tick is the duration
- * of a physics frame. The config is applied (as ds_DynamicsConfigUpdatePending) and nothing is pushed.
+ * Initialize a new growable physics pipeline from config (derived first); ns_tick is the duration of a physics frame.
+ * The config is applied (as ds_DynamicsConfigUpdatePending) and nothing is pushed.
  */
 struct ds_Dynamics ds_DynamicsAllocConfig(struct arena *mem, const struct ds_DynamicsConfig *config, const u64 ns_tick, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size);
 /* ds_DynamicsAllocConfig with the default config but initial_size and frame_memory. */
 struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size);
-/* Free the pipeline's heap resources (the shell stays on its arena) */
+/* Free the pipeline's heap resources (the shell stays on its arena); pops the pipeline if it is the pushed one. */
 void 			ds_DynamicsFree(struct ds_Dynamics *pipeline);
 /* Return the required size when serializing the pipeline. */
 u64             ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline);
@@ -2210,8 +2196,6 @@ void                        ds_DynamicsAllocShell(struct arena *mem, struct ds_D
 u32                         ds_DynamicsFrameDataTryDeserialize(struct ss *ss, void **dst, struct ds_Dynamics *pipeline, const u64 size);
 /* Internal: Read size bytes of heap data (a sleeping set's arena) into mem and set *dst. Returns 1 on success and 0 on failure. */
 u32                         ds_DynamicsHeapDataTryDeserialize(struct arena *mem, struct ss *ss, void **dst, const u64 size);
-/* Internal: config's derived numerics values and the resolved solver values from it (no range check, no wake-up). */
-void                        ds_DynamicsConfigDerive(struct ds_Dynamics *pipeline);
 
 /* push physics event into pipeline memory and return pointer to allocated event */
 struct ds_PhysicsEvent *	ds_PhysicsEventPush(struct ds_Dynamics *pipeline);

@@ -131,7 +131,7 @@ static ds_ForceInline f32 F32Abs(const f32 f);
 static ds_ForceInline f32 F32Max(const f32 a, const f32 b);
 /* the smaller of a and b by one comparison: a NaN a gives b, a NaN b is returned */
 static ds_ForceInline f32 F32Min(const f32 a, const f32 b);
-/* min if val <= min, max if val >= max, else val (NaN passes through; min <= max is not checked) */
+/* min if val <= min, max if val >= max, else val (min <= max is not checked). NOTE: NaN clamps to min. */
 static ds_ForceInline f32 F32Clamp(const f32 val, const f32 min, const f32 max);
 /* the nearest integer, halves to even (0.5 -> 0, 1.5 -> 2, -0.5 -> -0) */
 static ds_ForceInline f32 F32Round(const f32 val);
@@ -310,7 +310,7 @@ static ds_ForceInline f32 F32Min(const f32 a, const f32 b)
 
 static ds_ForceInline f32 F32Clamp(const f32 val, const f32 min, const f32 max)
 {
-	if (val <= min) return min;
+	if (!(val > min)) return min;
 	if (val >= max) return max;
 
 	return val;

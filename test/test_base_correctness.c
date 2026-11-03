@@ -447,10 +447,10 @@ static struct test_Output FloatTest(struct test_Environment *env)
     TEST_TRUE(F32Max(1.0f, 2.0f) == 2.0f && F32Max(2.0f, 1.0f) == 2.0f);
     TEST_TRUE(F32Min(1.0f, 2.0f) == 1.0f && F32Min(2.0f, 1.0f) == 1.0f);
     TEST_TRUE(F32Clamp(-1.0f, 0.0f, 1.0f) == 0.0f && F32Clamp(2.0f, 0.0f, 1.0f) == 1.0f && F32Clamp(0.25f, 0.0f, 1.0f) == 0.25f);
-    /* a NaN first argument gives the second, a NaN second argument is returned; Clamp passes NaN through */
+    /* a NaN first argument gives the second, a NaN second argument is returned; Clamp gives min for NaN */
     TEST_TRUE(F32Max(nan, 1.0f) == 1.0f && F32TestNan(F32Max(1.0f, nan)));
     TEST_TRUE(F32Min(nan, 1.0f) == 1.0f && F32TestNan(F32Min(1.0f, nan)));
-    TEST_TRUE(F32TestNan(F32Clamp(nan, 0.0f, 1.0f)));
+    TEST_TRUE(F32Clamp(nan, 0.0f, 1.0f) == 0.0f && F32Clamp(nan, -1.0f, 1.0f) == -1.0f);
     /* ties to even */
     TEST_TRUE(F32Round(0.5f) == 0.0f && F32Round(1.5f) == 2.0f && F32Round(2.5f) == 2.0f && F32Round(-2.5f) == -2.0f);
     TEST_EQUAL(F32_SIGN_MASK, FloatTestBitsOf(F32Round(-0.5f)));

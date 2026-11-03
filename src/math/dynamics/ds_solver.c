@@ -23,7 +23,155 @@
 #include "ds_quaternion.h"
 #include "ds_matrix.h"
 
-struct solverConfig *g_solver_config = NULL;
+struct ds_SolverConfig *g_solver_config = NULL;
+
+struct ds_SolverConfig ds_SolverConfigDerive(const struct ds_SolverConfig *pending)
+{
+    struct ds_SolverConfig config = *pending;
+
+    config.pgs_iteration_count = U32Max(config.pgs_iteration_count, 1);
+    config.ngs_iteration_count = U32Max(config.ngs_iteration_count, 1);
+    config.warmup_solver = U32Min(config.warmup_solver, 1);
+    /* any finite gravity; a non-finite component is 0 */
+    config.gravity.x = (F32FiniteCheck(config.gravity.x)) ? config.gravity.x : 0.0f;
+    config.gravity.y = (F32FiniteCheck(config.gravity.y)) ? config.gravity.y : 0.0f;
+    config.gravity.z = (F32FiniteCheck(config.gravity.z)) ? config.gravity.z : 0.0f;
+    config.baumgarte_constant = F32Clamp(config.baumgarte_constant, 0.0f, 1.0f);
+    config.max_linear_correction = F32Clamp(config.max_linear_correction, 0.0f, F32MaxPositiveNormal());
+    config.max_linear_velocity_magnitude = F32Clamp(config.max_linear_velocity_magnitude, 0.0f, F32MaxPositiveNormal());
+    config.max_angular_velocity_magnitude = F32Clamp(config.max_angular_velocity_magnitude, 0.0f, F32MaxPositiveNormal());
+    config.linear_dampening = F32Clamp(config.linear_dampening, 0.0f, F32MaxPositiveNormal());
+    config.angular_dampening = F32Clamp(config.angular_dampening, 0.0f, F32MaxPositiveNormal());
+    config.linear_slop = F32Clamp(config.linear_slop, F32MinPositiveNormal(), F32MaxPositiveNormal());
+    config.restitution_threshold = F32Clamp(config.restitution_threshold, 0.0f, F32MaxPositiveNormal());
+    config.sleep_enabled = U32Min(config.sleep_enabled, 1);
+    config.sleep_time_threshold = F32Clamp(config.sleep_time_threshold, F32MinPositiveNormal(), F32MaxPositiveNormal());
+    config.sleep_linear_velocity_sq_limit = F32Clamp(config.sleep_linear_velocity_sq_limit, F32MinPositiveNormal(), F32MaxPositiveNormal());
+    config.sleep_angular_velocity_sq_limit = F32Clamp(config.sleep_angular_velocity_sq_limit, F32MinPositiveNormal(), F32MaxPositiveNormal());
+
+    /* a limit of 0 is no limit: the inverse 0 makes every speed ratio 0 (an infinite inverse froze moving bodies and made 0*inf NaN at rest) */
+    config.max_linear_velocity_magnitude_inv = (0.0f == config.max_linear_velocity_magnitude)
+                                             ? 0.0f
+                                             : 1.0f / config.max_linear_velocity_magnitude;
+    config.max_angular_velocity_magnitude_inv = (0.0f == config.max_angular_velocity_magnitude)
+                                              ? 0.0f
+                                              : 1.0f / config.max_angular_velocity_magnitude;
+
+    return config;
+}
+
+struct ds_SolverConfig ds_SolverConfigDefault(void)
+{
+    struct ds_SolverConfig config = { 0 };
+    config.pgs_iteration_count = 8;
+    config.ngs_iteration_count = 3;
+    config.warmup_solver = 1;
+    config.gravity = V3(0.0f, -GRAVITY_CONSTANT_DEFAULT, 0.0f);
+    config.baumgarte_constant = 0.1f;
+    config.max_linear_correction = 0.2f;
+    config.max_linear_velocity_magnitude = 400.0f;
+    config.max_angular_velocity_magnitude = 10.0f * F32_PI;
+    config.linear_dampening = 0.1f;
+    config.angular_dampening = 0.1f;
+    config.linear_slop = 0.005f;
+    config.restitution_threshold = 0.001f;
+    config.sleep_enabled = 1;
+    config.sleep_time_threshold = 0.5f;
+    config.sleep_linear_velocity_sq_limit = 0.01f*0.01f;
+    config.sleep_angular_velocity_sq_limit = 0.05f*0.05f;
+
+    config = ds_SolverConfigDerive(&config);
+    return config;
+}
+
+void ds_SolverConfigPush(struct ds_SolverConfig *config)
+{
+    g_solver_config = config;
+}
+
+void ds_SolverConfigPop(void)
+{
+    ds_Assert(g_solver_config);
+    g_solver_config = NULL;
+}
+
+#define DS_SOLVER_CONFIG_VERSION    1u
+/* version + 4 u32 + gravity + 11 f32 (the derived inverses are recomputed on read) */
+#define DS_SOLVER_CONFIG_SIZE       (4 + 4*4 + 12 + 11*4)
+
+u64 ds_SolverConfigSerializeSize(const struct ds_SolverConfig *config)
+{
+    return DS_SOLVER_CONFIG_SIZE;
+}
+
+void ds_SolverConfigSerialize(struct ss *ss, const struct ds_SolverConfig *config)
+{
+    ds_Assert(ss->bit_index % 8 == 0);
+    ds_Assert(ds_SolverConfigSerializeSize(config) <= ss_BytesLeft(ss));
+
+    ss_WriteU32Le(ss, DS_SOLVER_CONFIG_VERSION);
+    ss_WriteU32Le(ss, config->pgs_iteration_count);
+    ss_WriteU32Le(ss, config->ngs_iteration_count);
+    ss_WriteU32Le(ss, config->warmup_solver);
+    ss_WriteF32LeN(ss, config->gravity.buf, 3);
+    ss_WriteF32Le(ss, config->baumgarte_constant);
+    ss_WriteF32Le(ss, config->max_linear_correction);
+    ss_WriteF32Le(ss, config->max_linear_velocity_magnitude);
+    ss_WriteF32Le(ss, config->max_angular_velocity_magnitude);
+    ss_WriteF32Le(ss, config->linear_dampening);
+    ss_WriteF32Le(ss, config->angular_dampening);
+    ss_WriteF32Le(ss, config->linear_slop);
+    ss_WriteF32Le(ss, config->restitution_threshold);
+    ss_WriteU32Le(ss, config->sleep_enabled);
+    ss_WriteF32Le(ss, config->sleep_time_threshold);
+    ss_WriteF32Le(ss, config->sleep_linear_velocity_sq_limit);
+    ss_WriteF32Le(ss, config->sleep_angular_velocity_sq_limit);
+}
+
+u32 ds_SolverConfigTryDeserialize(struct ss *ss, struct ds_SolverConfig *config)
+{
+    const u64 bit_index = ss->bit_index;
+    u32 success = 0;
+
+    if (ss->bit_index % 8 != 0 || ss_BytesLeft(ss) < DS_SOLVER_CONFIG_SIZE)
+    {
+        goto end;
+    }
+
+    if (ss_ReadU32Le(ss) != DS_SOLVER_CONFIG_VERSION)
+    {
+        goto end;
+    }
+
+    *config = (struct ds_SolverConfig) { 0 };
+    config->pgs_iteration_count = ss_ReadU32Le(ss);
+    config->ngs_iteration_count = ss_ReadU32Le(ss);
+    config->warmup_solver = ss_ReadU32Le(ss);
+    ss_ReadF32LeN(ss, config->gravity.buf, 3);
+    config->baumgarte_constant = ss_ReadF32Le(ss);
+    config->max_linear_correction = ss_ReadF32Le(ss);
+    config->max_linear_velocity_magnitude = ss_ReadF32Le(ss);
+    config->max_angular_velocity_magnitude = ss_ReadF32Le(ss);
+    config->linear_dampening = ss_ReadF32Le(ss);
+    config->angular_dampening = ss_ReadF32Le(ss);
+    config->linear_slop = ss_ReadF32Le(ss);
+    config->restitution_threshold = ss_ReadF32Le(ss);
+    config->sleep_enabled = ss_ReadU32Le(ss);
+    config->sleep_time_threshold = ss_ReadF32Le(ss);
+    config->sleep_linear_velocity_sq_limit = ss_ReadF32Le(ss);
+    config->sleep_angular_velocity_sq_limit = ss_ReadF32Le(ss);
+    *config = ds_SolverConfigDerive(config);
+    success = 1;
+
+end:
+    if (!success)
+    {
+        ss->bit_index = bit_index;
+        *config = (struct ds_SolverConfig) { 0 };
+    }
+
+    return success;
+}
 
 static ds_ThreadLocal struct ds_BodyCompute tl_static_bcomp = 
 {
@@ -201,7 +349,7 @@ void ds_BodyUpdateOrientationRange(struct ds_Dynamics *pipeline, struct ds_Proxy
 
     ArenaPopPacked(frame, sizeof(struct ds_ProxyDirty)*(arr.len - proxy_range->count));
 
-    if (pipeline->config.draw.draw_body_axes)
+    if (pipeline->draw_config.draw_body_axes)
     {
         ds_BodyDrawRange(pipeline, low, high);
     }
@@ -625,7 +773,7 @@ void ds_PositionConstraintInitAndCacheImpulsesRange(struct ds_Dynamics *pipeline
     struct arena *frame = pipeline->worker[ds_ThreadSelfIndex()].frame;
 
     /* the levers leave world axes below */
-    if (pipeline->config.draw.draw_constraint_points || pipeline->config.draw.draw_contact_forces)
+    if (pipeline->draw_config.draw_constraint_points || pipeline->draw_config.draw_contact_forces)
     {
         ds_ContactDrawRange(pipeline, color_index, low, high);
     }

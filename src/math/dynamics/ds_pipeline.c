@@ -37,98 +37,123 @@ void ds_DynamicsStaticAssert(void)
 
 const struct ds_DynamicsConfig *g_dynamics_config = NULL;
 
-/* the globals a push replaced, restored by its pop; process state: one thread pushes and pops (the main thread today) */
-struct ds_DynamicsConfigGlobals
-{
-    const struct ds_DynamicsConfig *    config;
-    struct ds_NumericsConfig *          numerics;
-    struct solverConfig *               solver;
-};
-#define DS_DYNAMICS_CONFIG_PUSH_MAX 8
-static struct ds_DynamicsConfigGlobals  m_config_stack[DS_DYNAMICS_CONFIG_PUSH_MAX];
-static u32                              m_config_depth = 0;
-
 void ds_DynamicsConfigPush(struct ds_Dynamics *pipeline)
 {
-    ds_Assert(m_config_depth < DS_DYNAMICS_CONFIG_PUSH_MAX);
-    m_config_stack[m_config_depth] = (struct ds_DynamicsConfigGlobals) { g_dynamics_config, g_numerics_config, g_solver_config };
-    m_config_depth += 1;
-
     g_dynamics_worker = pipeline->worker;
     g_dynamics_config = &pipeline->config;
     g_numerics_config = &pipeline->config.numerics;
-    g_solver_config = &pipeline->solver;
+    g_solver_config = &pipeline->config.solver;
 }
 
 void ds_DynamicsConfigPop(struct ds_Dynamics *pipeline)
 {
-    ds_Assert(m_config_depth > 0 && g_dynamics_config == &pipeline->config);
-    m_config_depth -= 1;
-    g_dynamics_config = m_config_stack[m_config_depth].config;
-    g_numerics_config = m_config_stack[m_config_depth].numerics;
-    g_solver_config = m_config_stack[m_config_depth].solver;
+    ds_Assert(g_dynamics_config == &pipeline->config);
+    g_dynamics_config = NULL;
+    g_numerics_config = NULL;
+    g_solver_config = NULL;
 }
 
-void ds_DynamicsConfigDerive(struct ds_Dynamics *pipeline)
+#define DS_DYNAMICS_CONFIG_VERSION  1u
+/* version + initial_size + frame_memory, then the solver and numerics configs */
+#define DS_DYNAMICS_CONFIG_FIXED_SIZE   (4 + 4 + 8)
+
+struct ds_DynamicsConfig ds_DynamicsConfigDerive(const struct ds_DynamicsConfig *pending)
 {
-    const struct ds_DynamicsConfig *c = &pipeline->config;
-    struct solverConfig *s = &pipeline->solver;
+    struct ds_DynamicsConfig config = *pending;
 
-    ds_NumericsConfigDerive(&pipeline->config.numerics);
+    config.initial_size = (u32) PowerOfTwoCeil(U32Clamp(config.initial_size, 1, 1u << 31));
+    config.frame_memory = U64Max(config.frame_memory, 1);
+    config.solver = ds_SolverConfigDerive(&config.solver);
+    config.numerics = ds_NumericsConfigDerive(&config.numerics);
 
-    s->pgs_iteration_count = c->solver.pgs_iteration_count;
-    s->ngs_iteration_count = c->solver.ngs_iteration_count;
-    s->warmup_solver = c->solver.warmup_solver;
-    s->gravity = c->gravity;
-    s->baumgarte_constant = c->solver.baumgarte_constant;
-    s->max_linear_correction = c->solver.max_linear_correction;
-    /* a limit of 0 is no limit: the inverse 0 makes every speed ratio 0 (an infinite inverse froze moving bodies and made 0*inf NaN at rest) */
-    s->max_linear_velocity_magnitude_inv = (0.0f == c->solver.max_linear_velocity_magnitude)
-                                         ? 0.0f
-                                         : 1.0f / c->solver.max_linear_velocity_magnitude;
-    s->max_angular_velocity_magnitude_inv = (0.0f == c->solver.max_angular_velocity_magnitude)
-                                          ? 0.0f
-                                          : 1.0f / c->solver.max_angular_velocity_magnitude;
-    s->linear_dampening = c->solver.linear_dampening;
-    s->angular_dampening = c->solver.angular_dampening;
-    s->linear_slop = c->solver.linear_slop;
-    s->restitution_threshold = c->solver.restitution_threshold;
-    s->sleep_enabled = c->solver.sleep_enabled;
-    s->sleep_time_threshold = c->solver.sleep_time_threshold;
-    s->sleep_linear_velocity_sq_limit = c->solver.sleep_linear_velocity_sq_limit;
-    s->sleep_angular_velocity_sq_limit = c->solver.sleep_angular_velocity_sq_limit;
+    return config;
 }
 
-#define CFG_UPDATE(kind, m, valid)                                                                      \
-{                                                                                                       \
-    const CFG_TYPE_##kind v = pending->m;                                                                \
-    if (!(valid))                                                                                       \
-    {                                                                                                   \
-        Log(T_PHYSICS, S_WARNING, "dynamics config: %s out of range, kept at its applied value", #m);   \
-        memcpy(&pending->m, &applied->m, sizeof(pending->m));                                           \
-    }                                                                                                   \
+struct ds_DynamicsConfig ds_DynamicsConfigDefault(void)
+{
+    struct ds_DynamicsConfig config = { 0 };
+
+    config.initial_size = 1024;
+    config.frame_memory = 16*1024*1024;
+
+    config.solver = ds_SolverConfigDefault();
+    config.numerics = ds_NumericsConfigDefault();
+
+    config = ds_DynamicsConfigDerive(&config);
+    return config;
+}
+
+u64 ds_DynamicsConfigSerializeSize(const struct ds_DynamicsConfig *config)
+{
+    return DS_DYNAMICS_CONFIG_FIXED_SIZE
+         + ds_SolverConfigSerializeSize(&config->solver)
+         + ds_NumericsConfigSerializeSize(&config->numerics);
+}
+
+void ds_DynamicsConfigSerialize(struct ss *ss, const struct ds_DynamicsConfig *config)
+{
+    ds_Assert(ss->bit_index % 8 == 0);
+    ds_Assert(ds_DynamicsConfigSerializeSize(config) <= ss_BytesLeft(ss));
+
+    ss_WriteU32Le(ss, DS_DYNAMICS_CONFIG_VERSION);
+    ss_WriteU32Le(ss, config->initial_size);
+    ss_WriteU64Le(ss, config->frame_memory);
+    ds_SolverConfigSerialize(ss, &config->solver);
+    ds_NumericsConfigSerialize(ss, &config->numerics);
+}
+
+u32 ds_DynamicsConfigTryDeserialize(struct ss *ss, struct ds_DynamicsConfig *config)
+{
+    const u64 bit_index = ss->bit_index;
+    u32 success = 0;
+
+    if (ss->bit_index % 8 != 0 || ss_BytesLeft(ss) < DS_DYNAMICS_CONFIG_FIXED_SIZE)
+    {
+        goto end;
+    }
+
+    if (ss_ReadU32Le(ss) != DS_DYNAMICS_CONFIG_VERSION)
+    {
+        goto end;
+    }
+
+    *config = (struct ds_DynamicsConfig) { 0 };
+    config->initial_size = ss_ReadU32Le(ss);
+    config->frame_memory = ss_ReadU64Le(ss);
+    success = ds_SolverConfigTryDeserialize(ss, &config->solver)
+           && ds_NumericsConfigTryDeserialize(ss, &config->numerics);
+    if (success)
+    {
+        *config = ds_DynamicsConfigDerive(config);
+    }
+
+end:
+    if (!success)
+    {
+        ss->bit_index = bit_index;
+        *config = (struct ds_DynamicsConfig) { 0 };
+    }
+
+    return success;
 }
 
 void ds_DynamicsConfigUpdatePending(struct ds_Dynamics *pipeline)
 {
-    struct ds_DynamicsConfig *pending = &pipeline->config_pending;
-    const struct ds_DynamicsConfig *applied = &pipeline->config;
-
-    DS_DYNAMICS_CONFIG_FIELDS(CFG_UPDATE)
+    struct ds_DynamicsConfig config = ds_DynamicsConfigDerive(&pipeline->config_pending);
 
     /* alloc-time only */
-    pending->initial_size = applied->initial_size;
-    pending->frame_memory = applied->frame_memory;
+    config.initial_size = pipeline->config.initial_size;
+    config.frame_memory = pipeline->config.frame_memory;
 
-    if (pending->solver.sleep_enabled != pipeline->solver.sleep_enabled)
+    if (config.solver.sleep_enabled != pipeline->config.solver.sleep_enabled)
     {
-        (pending->solver.sleep_enabled)
+        (config.solver.sleep_enabled)
             ? ds_DynamicsSleepEnable(pipeline)
             : ds_DynamicsSleepDisable(pipeline);
     }
 
-    pipeline->config = *pending;
-    ds_DynamicsConfigDerive(pipeline);
+    pipeline->config = config;
+    pipeline->config_pending = config;
 }
 
 #define DS_DYNAMICS_PROFILE_LENGTH 8192
@@ -154,6 +179,7 @@ void ds_DynamicsAllocShell(struct arena *mem, struct ds_Dynamics *pipeline, cons
 		.frame = ArenaAlloc(mem, frame_memory),
 		.cshape_db = cshape_db,
 		.island_to_split = ds_IslandIdNull(),
+        .draw_config = ds_DynamicsDrawConfigDefault(),
 	};
 	DLLFlush(pipeline->event_list);
 
@@ -212,13 +238,13 @@ struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, c
 
 struct ds_Dynamics ds_DynamicsAllocConfig(struct arena *mem, const struct ds_DynamicsConfig *config, const u64 ns_tick, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size)
 {
-	ds_Assert(ds_DynamicsConfigCheck(config));
-	const u32 initial_size = config->initial_size;
+	const struct ds_DynamicsConfig derived = ds_DynamicsConfigDerive(config);
+	const u32 initial_size = derived.initial_size;
 
 	struct ds_Dynamics pipeline;
-	ds_DynamicsAllocShell(mem, &pipeline, ns_tick, config->frame_memory, cshape_db, worker_count, worker_frame_size);
-	pipeline.config_pending = *config;
-	pipeline.config = *config;
+	ds_DynamicsAllocShell(mem, &pipeline, ns_tick, derived.frame_memory, cshape_db, worker_count, worker_frame_size);
+	pipeline.config_pending = derived;
+	pipeline.config = derived;
 
 	ds_PoolAlloc(NULL, pipeline.body_pool, initial_size, GROWABLE);
     pipeline.body_usage_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
@@ -246,8 +272,6 @@ struct ds_Dynamics ds_DynamicsAllocConfig(struct arena *mem, const struct ds_Dyn
     pipeline.island_high_energy_set = ds_BitSetAlloc(NULL, initial_size, 0, GROWABLE);
 
     ds_CGraphAlloc(&pipeline, 4096);
-    /* the config resolved, so queries before the first tick see it; nothing is pushed */
-    ds_DynamicsConfigDerive(&pipeline);
 
     ds_PoolAlloc(NULL, pipeline.solver_set_pool, 4096, GROWABLE);
     const struct slot set_disabled = ds_SolverSetAdd(NULL, &pipeline, 0, 0, 0, 0, 0,  0);
@@ -264,6 +288,11 @@ struct ds_Dynamics ds_DynamicsAllocConfig(struct arena *mem, const struct ds_Dyn
 
 void ds_DynamicsFree(struct ds_Dynamics *pipeline)
 {
+    if (g_dynamics_config == &pipeline->config)
+    {
+        ds_DynamicsConfigPop(pipeline);
+    }
+
     for (u32 i = 0; i < pipeline->worker_count; ++i)
     {
         ArenaFree(pipeline->worker[i].frame_arr + 0);
@@ -1793,13 +1822,13 @@ DONE:;
 
 void ds_DynamicsSleepEnable(struct ds_Dynamics *pipeline)
 {
-	ds_Assert(pipeline->solver.sleep_enabled == 0);
-	if (pipeline->solver.sleep_enabled)
+	ds_Assert(pipeline->config.solver.sleep_enabled == 0);
+	if (pipeline->config.solver.sleep_enabled)
 	{
         return;
     }
 
-	pipeline->solver.sleep_enabled = 1;
+	pipeline->config.solver.sleep_enabled = 1;
     for (u32 set_index = 0; set_index < pipeline->solver_set_pool.count_max; ++set_index)
     {
         struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
@@ -1812,13 +1841,13 @@ void ds_DynamicsSleepEnable(struct ds_Dynamics *pipeline)
 
 void ds_DynamicsSleepDisable(struct ds_Dynamics *pipeline)
 {
-	ds_Assert(pipeline->solver.sleep_enabled == 1);
-	if (!pipeline->solver.sleep_enabled)
+	ds_Assert(pipeline->config.solver.sleep_enabled == 1);
+	if (!pipeline->config.solver.sleep_enabled)
     {
         return;
     }
 	
-	pipeline->solver.sleep_enabled = 0;
+	pipeline->config.solver.sleep_enabled = 0;
     for (u32 set_index = 0; set_index < pipeline->solver_set_pool.count_max; ++set_index)
     {
         struct ds_SolverSet *set = pipeline->solver_set_pool.buf + set_index;
@@ -1941,8 +1970,6 @@ void ds_DynamicsTick(struct ds_Dynamics *pipeline)
 	    ds_DynamicsSimulateFrame(pipeline);
     }
     ds_DynamicsProfileEnd(pipeline);
-
-    ds_DynamicsConfigPop(pipeline);
 
 	ProfZoneEnd;
 }

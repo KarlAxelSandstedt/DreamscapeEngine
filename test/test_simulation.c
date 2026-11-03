@@ -187,22 +187,22 @@ static u32 DynamicsConfigTestEqual(struct arena *mem, const struct ds_DynamicsCo
 }
 
 /*
- * The default config passes the check and round trips (the stream advances by exactly the serialize size, the
- * read-back is field-for-field the same), as does a config with the pipeline, solver, numerics and draw values
- * changed. Reads that fail with the config zeroed and the stream unchanged: truncated, off the byte boundary, a
- * wrong version, and out-of-range values from each group (gravity NaN, a capacity that is no power of two, zero
- * iterations, baumgarte above 1, zero slop, a numerics angle above 45, a draw flag of 2, a mode past its count,
- * a negative point size, a colour with an infinite component).
+ * The default config round trips (the stream advances by exactly the serialize size, the read-back is
+ * field-for-field the same), as does a config with the pipeline, solver and numerics values changed. Reads that
+ * fail with the config zeroed and the stream unchanged: truncated, off the byte boundary, a wrong version in the
+ * config and in each contained config. Out-of-range values are clamped by Derive, on read as well (a capacity
+ * rounds up to a power of two, zero iterations to one, baumgarte above 1 to 1, a NaN gravity to 0, an angle above
+ * 45 to 45). The draw config round trips on its own, clamped the same way (a flag of 2 to 1, a mode past its
+ * count to the last, a negative point size to 0, an infinite colour component to 1).
  */
 static struct test_Output DynamicsConfigSerializeTest(struct test_Environment *env)
 {
 	struct test_Output output = { .success = 1, .id = __func__ };
 
     const struct ds_DynamicsConfig def = ds_DynamicsConfigDefault();
-    TEST_EQUAL(1, ds_DynamicsConfigCheck(&def));
 
     struct ds_DynamicsConfig changed = def;
-    changed.gravity = V3(0.5f, -1.0f, 2.0f);
+    changed.solver.gravity = V3(0.5f, -1.0f, 2.0f);
     changed.initial_size = 64;
     changed.frame_memory = 1024;
     changed.solver.pgs_iteration_count = 2;
@@ -215,13 +215,7 @@ static struct test_Output DynamicsConfigSerializeTest(struct test_Environment *e
     changed.numerics.gjk_max_iterations = 7;
     changed.numerics.edge_parallel_max_degrees = 45.0f;
     changed.numerics.sat_face_bias = 0.0f;
-    changed.draw.draw_shapes = 0;
-    changed.draw.shape_color_mode = DRAW_COLOR_TOUCHING;
-    changed.draw.point_color_mode = DRAW_POINT_GRAPH_COLOR;
-    changed.draw.refinement = 3;
-    changed.draw.color_point[DRAW_POINT_COLOR_COUNT - 1] = V4(0.1f, 0.2f, 0.3f, 0.4f);
-    changed.draw.color_mass_center = V4(0.0f, 0.0f, 0.0f, 0.0f);
-    TEST_EQUAL(1, ds_DynamicsConfigCheck(&changed));
+    changed = ds_DynamicsConfigDerive(&changed);
     TEST_EQUAL(0, DynamicsConfigTestEqual(env->mem_1, &def, &changed));
 
     const struct ds_DynamicsConfig valid[2] = { def, changed };
@@ -250,46 +244,87 @@ static struct test_Output DynamicsConfigSerializeTest(struct test_Environment *e
         TEST_EQUAL(0, ds_DynamicsConfigTryDeserialize(&ss, &read));
         TEST_EQUAL(3, ss.bit_index);
 
-        ss.bit_index = 0;
-        ss_WriteU32Le(&ss, 0xffffffffu);
-        ss.bit_index = 0;
-        TEST_EQUAL(0, ds_DynamicsConfigTryDeserialize(&ss, &read));
-        TEST_EQUAL(0, ss.bit_index);
+        /* a wrong version word: the config's, then each contained config's (at their offsets in the stream) */
+        const u64 version_offset[3] =
+        {
+            0,
+            4 + 4 + 8,
+            4 + 4 + 8 + ds_SolverConfigSerializeSize(&valid[c].solver),
+        };
+        for (u32 v = 0; v < 3; ++v)
+        {
+            ss.bit_index = 8*version_offset[v];
+            const u32 version = ss_ReadU32Le(&ss);
+            ss.bit_index = 8*version_offset[v];
+            ss_WriteU32Le(&ss, 0xffffffffu);
+            ss.bit_index = 0;
+            TEST_EQUAL(0, ds_DynamicsConfigTryDeserialize(&ss, &read));
+            TEST_EQUAL(0, ss.bit_index);
+            ss.bit_index = 8*version_offset[v];
+            ss_WriteU32Le(&ss, version);
+        }
     }
 
     const f32 nan = (b32) { .u = 0x7fc00000u }.f;
     const f32 inf = (b32) { .u = 0x7f800000u }.f;
-    struct ds_DynamicsConfig invalid[10];
-    for (u32 i = 0; i < 10; ++i)
-    {
-        invalid[i] = def;
-    }
-    invalid[0].gravity.y = nan;
-    invalid[1].initial_size = 1000;
-    invalid[2].solver.pgs_iteration_count = 0;
-    invalid[3].solver.baumgarte_constant = 1.5f;
-    invalid[4].solver.linear_slop = 0.0f;
-    invalid[5].numerics.capsule_parallel_max_degrees = 46.0f;
-    invalid[6].draw.draw_joints = 2;
-    invalid[7].draw.shape_color_mode = DRAW_COLOR_MODE_COUNT;
-    invalid[8].draw.point_size = -1.0f;
-    invalid[9].draw.color_awake.z = inf;
+    struct ds_DynamicsConfig out = def;
+    out.solver.gravity.y = nan;
+    out.initial_size = 1000;
+    out.solver.pgs_iteration_count = 0;
+    out.solver.baumgarte_constant = 1.5f;
+    out.solver.linear_slop = 0.0f;
+    out.numerics.capsule_parallel_max_degrees = 46.0f;
 
-    for (u32 i = 0; i < 10; ++i)
-    {
-        TEST_EQUAL(0, ds_DynamicsConfigCheck(&invalid[i]));
+    const struct ds_DynamicsConfig derived = ds_DynamicsConfigDerive(&out);
+    const u64 size = ds_DynamicsConfigSerializeSize(&out);
+    struct ss ss = ss_Alloc(env->mem_1, size);
+    TEST_NOT_EQUAL(NULL, ss.buf);
+    ds_DynamicsConfigSerialize(&ss, &out);
+    ss.bit_index = 0;
+    struct ds_DynamicsConfig read = changed;
+    TEST_EQUAL(1, ds_DynamicsConfigTryDeserialize(&ss, &read));
+    TEST_EQUAL(8*size, ss.bit_index);
+    TEST_EQUAL(1, DynamicsConfigTestEqual(env->mem_1, &derived, &read));
 
-        const u64 size = ds_DynamicsConfigSerializeSize(&invalid[i]);
-        struct ss ss = ss_Alloc(env->mem_1, size);
-        TEST_NOT_EQUAL(NULL, ss.buf);
-        ds_DynamicsConfigSerialize(&ss, &invalid[i]);
-        ss.bit_index = 0;
+    TEST_TRUE(read.solver.gravity.y == 0.0f);
+    TEST_EQUAL(1024u, read.initial_size);
+    TEST_EQUAL(1u, read.solver.pgs_iteration_count);
+    TEST_TRUE(read.solver.baumgarte_constant == 1.0f);
+    TEST_TRUE(read.solver.linear_slop > 0.0f);
+    TEST_TRUE(read.numerics.capsule_parallel_max_degrees == 45.0f);
 
-        struct ds_DynamicsConfig read = changed;
-        TEST_EQUAL(0, ds_DynamicsConfigTryDeserialize(&ss, &read));
-        TEST_EQUAL(0, ss.bit_index);
-        TEST_EQUAL(0, read.initial_size | read.solver.pgs_iteration_count);
-    }
+    /* the draw config on its own */
+    struct ds_DynamicsDrawConfig draw = ds_DynamicsDrawConfigDefault();
+    draw.shape_color_mode = DRAW_COLOR_TOUCHING;
+    draw.point_color_mode = DRAW_POINT_GRAPH_COLOR;
+    draw.refinement = 3;
+    draw.color_point[DRAW_POINT_COLOR_COUNT - 1] = V4(0.1f, 0.2f, 0.3f, 0.4f);
+    draw.color_mass_center = V4(0.0f, 0.0f, 0.0f, 0.0f);
+    draw.draw_joints = 2;
+    draw.point_size = -1.0f;
+    draw.color_awake.z = inf;
+    const u64 draw_size = ds_DynamicsDrawConfigSerializeSize(&draw);
+    struct ss dss = ss_Alloc(env->mem_1, draw_size);
+    TEST_NOT_EQUAL(NULL, dss.buf);
+    ds_DynamicsDrawConfigSerialize(&dss, &draw);
+    TEST_EQUAL(8*draw_size, dss.bit_index);
+    dss.bit_index = 0;
+    struct ds_DynamicsDrawConfig draw_read = { 0 };
+    TEST_EQUAL(1, ds_DynamicsDrawConfigTryDeserialize(&dss, &draw_read));
+    TEST_EQUAL(8*draw_size, dss.bit_index);
+    TEST_EQUAL((u32) DRAW_COLOR_TOUCHING, (u32) draw_read.shape_color_mode);
+    TEST_EQUAL((u32) DRAW_POINT_GRAPH_COLOR, (u32) draw_read.point_color_mode);
+    TEST_EQUAL(3u, draw_read.refinement);
+    TEST_TRUE(draw_read.color_point[DRAW_POINT_COLOR_COUNT - 1].w == 0.4f && draw_read.color_mass_center.w == 0.0f);
+    TEST_EQUAL(1u, draw_read.draw_joints);
+    TEST_TRUE(draw_read.point_size == 0.0f);
+    TEST_TRUE(draw_read.color_awake.z == 1.0f);
+    dss.bit_index = 0;
+    ss_WriteU32Le(&dss, 0xffffffffu);
+    dss.bit_index = 0;
+    TEST_EQUAL(0, ds_DynamicsDrawConfigTryDeserialize(&dss, &draw_read));
+    TEST_EQUAL(0, dss.bit_index);
+    TEST_EQUAL(0u, draw_read.refinement);
 
 	return output;
 }

@@ -17,9 +17,74 @@
 ==========================================================================
 */
 
+/* every component in [0, 1] */
+static v4 ds_DynamicsDrawConfigColor(const v4 c)
+{
+    return V4(F32Clamp(c.x, 0.0f, 1.0f), F32Clamp(c.y, 0.0f, 1.0f), F32Clamp(c.z, 0.0f, 1.0f), F32Clamp(c.w, 0.0f, 1.0f));
+}
+
+struct ds_DynamicsDrawConfig ds_DynamicsDrawConfigDerive(const struct ds_DynamicsDrawConfig *pending)
+{
+    struct ds_DynamicsDrawConfig config = *pending;
+
+    config.draw_shapes = U32Min(config.draw_shapes, 1);
+    config.shape_color_mode = (enum ds_ShapeColorMode) U32Min(config.shape_color_mode, DRAW_COLOR_MODE_COUNT - 1);
+    config.draw_dbvh = U32Min(config.draw_dbvh, 1);
+    config.draw_sbvh = U32Min(config.draw_sbvh, 1);
+    config.draw_bounds = U32Min(config.draw_bounds, 1);
+    config.draw_mesh_bvh = U32Min(config.draw_mesh_bvh, 1);
+    config.draw_constraint_points = U32Min(config.draw_constraint_points, 1);
+    config.draw_contact_forces = U32Min(config.draw_contact_forces, 1);
+    config.draw_joints = U32Min(config.draw_joints, 1);
+    config.point_color_mode = (enum ds_PointColorMode) U32Min(config.point_color_mode, DRAW_POINT_COLOR_MODE_COUNT - 1);
+    config.draw_on_top = U32Min(config.draw_on_top, 1);
+    config.draw_body_axes = U32Min(config.draw_body_axes, 1);
+    config.draw_joint_forces = U32Min(config.draw_joint_forces, 1);
+    config.draw_joint_breakage = U32Min(config.draw_joint_breakage, 1);
+
+    config.force_scale = F32Clamp(config.force_scale, 0.0f, F32MaxPositiveNormal());
+    config.point_size = F32Clamp(config.point_size, 0.0f, F32MaxPositiveNormal());
+    config.joint_error_max = F32Clamp(config.joint_error_max, 0.0f, F32MaxPositiveNormal());
+    config.axis_length = F32Clamp(config.axis_length, 0.0f, F32MaxPositiveNormal());
+    config.refinement = U32Max(config.refinement, 1);
+    config.energy_max = F32Clamp(config.energy_max, 0.0f, F32MaxPositiveNormal());
+    config.shape_alpha = F32Clamp(config.shape_alpha, 0.0f, 1.0f);
+    config.shape_saturation = F32Clamp(config.shape_saturation, 0.0f, 1.0f);
+    config.shape_lightness = F32Clamp(config.shape_lightness, 0.0f, 1.0f);
+
+    config.color_dbvh = ds_DynamicsDrawConfigColor(config.color_dbvh);
+    config.color_sbvh = ds_DynamicsDrawConfigColor(config.color_sbvh);
+    config.color_bounds = ds_DynamicsDrawConfigColor(config.color_bounds);
+    config.color_mesh_bvh = ds_DynamicsDrawConfigColor(config.color_mesh_bvh);
+    config.color_shape = ds_DynamicsDrawConfigColor(config.color_shape);
+    config.color_static = ds_DynamicsDrawConfigColor(config.color_static);
+    config.color_kinematic = ds_DynamicsDrawConfigColor(config.color_kinematic);
+    config.color_dynamic = ds_DynamicsDrawConfigColor(config.color_dynamic);
+    config.color_sleeping = ds_DynamicsDrawConfigColor(config.color_sleeping);
+    config.color_awake = ds_DynamicsDrawConfigColor(config.color_awake);
+    config.color_velocity_low = ds_DynamicsDrawConfigColor(config.color_velocity_low);
+    config.color_velocity_high = ds_DynamicsDrawConfigColor(config.color_velocity_high);
+    config.color_touching = ds_DynamicsDrawConfigColor(config.color_touching);
+    config.color_not_touching = ds_DynamicsDrawConfigColor(config.color_not_touching);
+    for (u32 i = 0; i < DRAW_POINT_COLOR_COUNT; ++i)
+    {
+        config.color_point[i] = ds_DynamicsDrawConfigColor(config.color_point[i]);
+    }
+    config.color_contact_force = ds_DynamicsDrawConfigColor(config.color_contact_force);
+    config.color_friction_force = ds_DynamicsDrawConfigColor(config.color_friction_force);
+    config.color_joint_force = ds_DynamicsDrawConfigColor(config.color_joint_force);
+    config.color_joint = ds_DynamicsDrawConfigColor(config.color_joint);
+    config.color_mouse_joint = ds_DynamicsDrawConfigColor(config.color_mouse_joint);
+    config.color_joint_error = ds_DynamicsDrawConfigColor(config.color_joint_error);
+    config.color_joint_break = ds_DynamicsDrawConfigColor(config.color_joint_break);
+    config.color_mass_center = ds_DynamicsDrawConfigColor(config.color_mass_center);
+
+    return config;
+}
+
 struct ds_DynamicsDrawConfig ds_DynamicsDrawConfigDefault(void)
 {
-    return (struct ds_DynamicsDrawConfig)
+    struct ds_DynamicsDrawConfig config = (struct ds_DynamicsDrawConfig)
     {
         .draw_shapes = 1,
         .shape_color_mode = DRAW_COLOR_RANDOM,
@@ -85,6 +150,147 @@ struct ds_DynamicsDrawConfig ds_DynamicsDrawConfigDefault(void)
         .color_joint_break = V4(0.45f, 0.0f, 0.05f, 1.0f),
         .color_mass_center = V4(1.0f, 1.0f, 1.0f, 1.0f),
     };
+
+    config = ds_DynamicsDrawConfigDerive(&config);
+    return config;
+}
+
+#define DS_DYNAMICS_DRAW_CONFIG_VERSION 1u
+/* version + 15 u32 (flags, modes, refinement) + 8 f32 + 22 colours + the point palette */
+#define DS_DYNAMICS_DRAW_CONFIG_SIZE    (4 + 15*4 + 8*4 + (22 + DRAW_POINT_COLOR_COUNT)*16)
+
+u64 ds_DynamicsDrawConfigSerializeSize(const struct ds_DynamicsDrawConfig *config)
+{
+    return DS_DYNAMICS_DRAW_CONFIG_SIZE;
+}
+
+void ds_DynamicsDrawConfigSerialize(struct ss *ss, const struct ds_DynamicsDrawConfig *config)
+{
+    ds_Assert(ss->bit_index % 8 == 0);
+    ds_Assert(ds_DynamicsDrawConfigSerializeSize(config) <= ss_BytesLeft(ss));
+
+    ss_WriteU32Le(ss, DS_DYNAMICS_DRAW_CONFIG_VERSION);
+    ss_WriteU32Le(ss, config->draw_shapes);
+    ss_WriteU32Le(ss, (u32) config->shape_color_mode);
+    ss_WriteU32Le(ss, config->draw_dbvh);
+    ss_WriteU32Le(ss, config->draw_sbvh);
+    ss_WriteU32Le(ss, config->draw_bounds);
+    ss_WriteU32Le(ss, config->draw_mesh_bvh);
+    ss_WriteU32Le(ss, config->draw_constraint_points);
+    ss_WriteU32Le(ss, config->draw_contact_forces);
+    ss_WriteU32Le(ss, config->draw_joints);
+    ss_WriteU32Le(ss, (u32) config->point_color_mode);
+    ss_WriteU32Le(ss, config->draw_on_top);
+    ss_WriteU32Le(ss, config->draw_body_axes);
+    ss_WriteU32Le(ss, config->draw_joint_forces);
+    ss_WriteU32Le(ss, config->draw_joint_breakage);
+    ss_WriteF32Le(ss, config->force_scale);
+    ss_WriteF32Le(ss, config->point_size);
+    ss_WriteF32Le(ss, config->joint_error_max);
+    ss_WriteF32Le(ss, config->axis_length);
+    ss_WriteU32Le(ss, config->refinement);
+    ss_WriteF32Le(ss, config->energy_max);
+    ss_WriteF32Le(ss, config->shape_alpha);
+    ss_WriteF32Le(ss, config->shape_saturation);
+    ss_WriteF32Le(ss, config->shape_lightness);
+    ss_WriteF32LeN(ss, config->color_dbvh.buf, 4);
+    ss_WriteF32LeN(ss, config->color_sbvh.buf, 4);
+    ss_WriteF32LeN(ss, config->color_bounds.buf, 4);
+    ss_WriteF32LeN(ss, config->color_mesh_bvh.buf, 4);
+    ss_WriteF32LeN(ss, config->color_shape.buf, 4);
+    ss_WriteF32LeN(ss, config->color_static.buf, 4);
+    ss_WriteF32LeN(ss, config->color_kinematic.buf, 4);
+    ss_WriteF32LeN(ss, config->color_dynamic.buf, 4);
+    ss_WriteF32LeN(ss, config->color_sleeping.buf, 4);
+    ss_WriteF32LeN(ss, config->color_awake.buf, 4);
+    ss_WriteF32LeN(ss, config->color_velocity_low.buf, 4);
+    ss_WriteF32LeN(ss, config->color_velocity_high.buf, 4);
+    ss_WriteF32LeN(ss, config->color_touching.buf, 4);
+    ss_WriteF32LeN(ss, config->color_not_touching.buf, 4);
+    ss_WriteF32LeN(ss, config->color_point[0].buf, 4*DRAW_POINT_COLOR_COUNT);
+    ss_WriteF32LeN(ss, config->color_contact_force.buf, 4);
+    ss_WriteF32LeN(ss, config->color_friction_force.buf, 4);
+    ss_WriteF32LeN(ss, config->color_joint_force.buf, 4);
+    ss_WriteF32LeN(ss, config->color_joint.buf, 4);
+    ss_WriteF32LeN(ss, config->color_mouse_joint.buf, 4);
+    ss_WriteF32LeN(ss, config->color_joint_error.buf, 4);
+    ss_WriteF32LeN(ss, config->color_joint_break.buf, 4);
+    ss_WriteF32LeN(ss, config->color_mass_center.buf, 4);
+}
+
+u32 ds_DynamicsDrawConfigTryDeserialize(struct ss *ss, struct ds_DynamicsDrawConfig *config)
+{
+    const u64 bit_index = ss->bit_index;
+    u32 success = 0;
+
+    if (ss->bit_index % 8 != 0 || ss_BytesLeft(ss) < DS_DYNAMICS_DRAW_CONFIG_SIZE)
+    {
+        goto end;
+    }
+
+    if (ss_ReadU32Le(ss) != DS_DYNAMICS_DRAW_CONFIG_VERSION)
+    {
+        goto end;
+    }
+
+    *config = (struct ds_DynamicsDrawConfig) { 0 };
+    config->draw_shapes = ss_ReadU32Le(ss);
+    config->shape_color_mode = (enum ds_ShapeColorMode) ss_ReadU32Le(ss);
+    config->draw_dbvh = ss_ReadU32Le(ss);
+    config->draw_sbvh = ss_ReadU32Le(ss);
+    config->draw_bounds = ss_ReadU32Le(ss);
+    config->draw_mesh_bvh = ss_ReadU32Le(ss);
+    config->draw_constraint_points = ss_ReadU32Le(ss);
+    config->draw_contact_forces = ss_ReadU32Le(ss);
+    config->draw_joints = ss_ReadU32Le(ss);
+    config->point_color_mode = (enum ds_PointColorMode) ss_ReadU32Le(ss);
+    config->draw_on_top = ss_ReadU32Le(ss);
+    config->draw_body_axes = ss_ReadU32Le(ss);
+    config->draw_joint_forces = ss_ReadU32Le(ss);
+    config->draw_joint_breakage = ss_ReadU32Le(ss);
+    config->force_scale = ss_ReadF32Le(ss);
+    config->point_size = ss_ReadF32Le(ss);
+    config->joint_error_max = ss_ReadF32Le(ss);
+    config->axis_length = ss_ReadF32Le(ss);
+    config->refinement = ss_ReadU32Le(ss);
+    config->energy_max = ss_ReadF32Le(ss);
+    config->shape_alpha = ss_ReadF32Le(ss);
+    config->shape_saturation = ss_ReadF32Le(ss);
+    config->shape_lightness = ss_ReadF32Le(ss);
+    ss_ReadF32LeN(ss, config->color_dbvh.buf, 4);
+    ss_ReadF32LeN(ss, config->color_sbvh.buf, 4);
+    ss_ReadF32LeN(ss, config->color_bounds.buf, 4);
+    ss_ReadF32LeN(ss, config->color_mesh_bvh.buf, 4);
+    ss_ReadF32LeN(ss, config->color_shape.buf, 4);
+    ss_ReadF32LeN(ss, config->color_static.buf, 4);
+    ss_ReadF32LeN(ss, config->color_kinematic.buf, 4);
+    ss_ReadF32LeN(ss, config->color_dynamic.buf, 4);
+    ss_ReadF32LeN(ss, config->color_sleeping.buf, 4);
+    ss_ReadF32LeN(ss, config->color_awake.buf, 4);
+    ss_ReadF32LeN(ss, config->color_velocity_low.buf, 4);
+    ss_ReadF32LeN(ss, config->color_velocity_high.buf, 4);
+    ss_ReadF32LeN(ss, config->color_touching.buf, 4);
+    ss_ReadF32LeN(ss, config->color_not_touching.buf, 4);
+    ss_ReadF32LeN(ss, config->color_point[0].buf, 4*DRAW_POINT_COLOR_COUNT);
+    ss_ReadF32LeN(ss, config->color_contact_force.buf, 4);
+    ss_ReadF32LeN(ss, config->color_friction_force.buf, 4);
+    ss_ReadF32LeN(ss, config->color_joint_force.buf, 4);
+    ss_ReadF32LeN(ss, config->color_joint.buf, 4);
+    ss_ReadF32LeN(ss, config->color_mouse_joint.buf, 4);
+    ss_ReadF32LeN(ss, config->color_joint_error.buf, 4);
+    ss_ReadF32LeN(ss, config->color_joint_break.buf, 4);
+    ss_ReadF32LeN(ss, config->color_mass_center.buf, 4);
+    *config = ds_DynamicsDrawConfigDerive(config);
+    success = 1;
+
+end:
+    if (!success)
+    {
+        ss->bit_index = bit_index;
+        *config = (struct ds_DynamicsDrawConfig) { 0 };
+    }
+
+    return success;
 }
 
 /* color mixed towards color_joint_break by the larger of force / force_threshold and torque / torque_threshold (0 for F32_INFINITY) */
@@ -132,7 +338,7 @@ static v3f64 JointAnchorEnd(const struct ds_BodySim *sim, const struct ds_JointS
 void ds_ContactDrawRange(struct ds_Dynamics *pipeline, const u32 color_index, const u32 low, const u32 high)
 {
     struct ds_DynamicsDraw *draw = &g_dynamics_worker[ds_ThreadSelfIndex()].draw;
-    const struct ds_DynamicsDrawConfig *config = &pipeline->config.draw;
+    const struct ds_DynamicsDrawConfig *config = &pipeline->draw_config;
     const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     const struct ds_CGraphColor *color = pipeline->cgraph.color + color_index;
     const f32 timestep_inv = 1.0f / pipeline->timestep;
@@ -174,7 +380,7 @@ void ds_ContactDrawRange(struct ds_Dynamics *pipeline, const u32 color_index, co
 static void ds_DistanceJointDraw(struct ds_Dynamics *pipeline, const struct ds_JointSim *jsim, const v4 point_color)
 {
     struct ds_DynamicsDraw *draw = &pipeline->draw;
-    const struct ds_DynamicsDrawConfig *config = &pipeline->config.draw;
+    const struct ds_DynamicsDrawConfig *config = &pipeline->draw_config;
     const struct ds_DistanceJoint *dj = &jsim->distance;
     const struct ds_BodySim *sim[2] = { JointBodySim(pipeline, jsim, 0), JointBodySim(pipeline, jsim, 1) };
     /* the force on body 1; body 0 gets the opposite */
@@ -218,7 +424,7 @@ static void ds_DistanceJointDraw(struct ds_Dynamics *pipeline, const struct ds_J
 static void ds_MouseJointDraw(struct ds_Dynamics *pipeline, const struct ds_JointSim *jsim, const v4 point_color)
 {
     struct ds_DynamicsDraw *draw = &pipeline->draw;
-    const struct ds_DynamicsDrawConfig *config = &pipeline->config.draw;
+    const struct ds_DynamicsDrawConfig *config = &pipeline->draw_config;
     const struct ds_BodySim *sim = JointBodySim(pipeline, jsim, 0);
     const v3f64 anchor_start = JointAnchorStart(sim, jsim, 0);
     /* the solver applies -impulse to body 0 */
@@ -251,7 +457,7 @@ static void ds_MouseJointDraw(struct ds_Dynamics *pipeline, const struct ds_Join
 
 static void ds_JointDrawAll(struct ds_Dynamics *pipeline)
 {
-    const struct ds_DynamicsDrawConfig *config = &pipeline->config.draw;
+    const struct ds_DynamicsDrawConfig *config = &pipeline->draw_config;
 
     for (u32 color_index = 0; color_index < CG_COLOR_COUNT; ++color_index)
     {
@@ -273,7 +479,7 @@ static void ds_JointDrawAll(struct ds_Dynamics *pipeline)
 void ds_BodyDrawRange(struct ds_Dynamics *pipeline, const u32 low, const u32 high)
 {
     struct ds_DynamicsDraw *draw = &g_dynamics_worker[ds_ThreadSelfIndex()].draw;
-    const struct ds_DynamicsDrawConfig *config = &pipeline->config.draw;
+    const struct ds_DynamicsDrawConfig *config = &pipeline->draw_config;
     const struct ds_SolverSet *active = pipeline->solver_set_pool.buf + SOLVER_SET_ACTIVE;
     const v4 axis_color[3] = { V4(1.0f, 0.0f, 0.0f, 1.0f), V4(0.0f, 1.0f, 0.0f, 1.0f), V4(0.0f, 0.0f, 1.0f, 1.0f) };
     const v3 axis[3] = { V3(1.0f, 0.0f, 0.0f), V3(0.0f, 1.0f, 0.0f), V3(0.0f, 0.0f, 1.0f) };
@@ -301,7 +507,7 @@ void ds_BodyDrawRange(struct ds_Dynamics *pipeline, const u32 low, const u32 hig
 
 void ds_DynamicsDrawFrameEnd(struct ds_Dynamics *pipeline)
 {
-    const struct ds_DynamicsDrawConfig *config = &pipeline->config.draw;
+    const struct ds_DynamicsDrawConfig *config = &pipeline->draw_config;
     if (config->draw_constraint_points || config->draw_joint_forces || config->draw_joints)
     {
         ds_JointDrawAll(pipeline);

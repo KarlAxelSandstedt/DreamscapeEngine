@@ -48,7 +48,7 @@ islands that fall asleep at different frames is snapshotted at several frames. E
     - re-serialize from a copy to the same size.
 A lone box is removed before one check (pools with free slots), and the last check first wakes every sleeping
 set in the original and in the copies. A restore points the dynamics globals at the copy, so the test points
-them back at the original (ds_DynamicsConfigPush/Pop nest) before calling into it outside a tick.
+them back at the original (ds_DynamicsConfigPush) before calling into it outside a tick.
 
 Solver sets (DynamicsSleepTest): a two-box stack and a lone box fall asleep into one set each (one island, the
 bodies' simulation state without compute state, the contacts with their caches, all in the set's arena; the
@@ -493,7 +493,7 @@ static u32 SnapshotTestSleepingSetCount(const struct ds_Dynamics *pipeline)
     return count;
 }
 
-/* Wake every sleeping set in index order; returns how many there were. */
+/* Wake every sleeping set in index order; returns how many there were. Leaves pipeline pushed. */
 static u32 SnapshotTestWakeAll(struct ds_Dynamics *pipeline)
 {
     ds_DynamicsConfigPush(pipeline);
@@ -506,7 +506,6 @@ static u32 SnapshotTestWakeAll(struct ds_Dynamics *pipeline)
             count += 1;
         }
     }
-    ds_DynamicsConfigPop(pipeline);
     return count;
 }
 
@@ -683,6 +682,7 @@ static u32 SnapshotTestCheck(struct arena *mem, struct ds_Dynamics *original, st
         ds_DynamicsFree(copy + c);
     }
     ArenaPopRecord(mem);
+    ds_DynamicsConfigPush(original);    /* the copies' wakes and ticks pushed their own */
 
     fprintf(stdout, "  snapshot frame %3llu%s: %7llu B, %2u sleeping sets; %u truncated streams rejected, %u copies over %u ticks: %s\n",
         frame, (wake) ? " (all woken)" : "", (unsigned long long) size, sleeping, cut_count, copy_count,
@@ -1968,16 +1968,16 @@ static struct test_Output DynamicsPendulumTest(struct test_Environment *env)
         x_prev = x;
     }
 
-    const f32 period_expected = F32_PI2 * F32Sqrt(L / -pipeline.config.gravity.y);
+    const f32 period_expected = F32_PI2 * F32Sqrt(L / -pipeline.config.solver.gravity.y);
     const f32 period = (crossing_count >= 2) ? 2.0f * (crossing_last - crossing_first) / (f32) (crossing_count - 1) : 0.0f;
     /*
      * max_first is the peak of the first full half swing, max_last that of the last complete one, (max_count - 2) half
      * periods apart; velocity damping by damp per tick decays the amplitude by sqrt(damp) per tick
      */
-    const f32 decay_expected = (max_count >= 3) ? F32Pow(1.0f / (1.0f + pipeline.solver.linear_dampening * dt), 0.25f * (f32) (max_count - 2) * period / dt) : 1.0f;
+    const f32 decay_expected = (max_count >= 3) ? F32Pow(1.0f / (1.0f + pipeline.config.solver.linear_dampening * dt), 0.25f * (f32) (max_count - 2) * period / dt) : 1.0f;
     const f32 decay = (max_count >= 3 && max_first > 0.0f) ? max_last / max_first : 0.0f;
     const u32 ok = crossing_count >= 6 && max_count >= 3
-                && length_error <= pipeline.solver.linear_slop
+                && length_error <= pipeline.config.solver.linear_slop
                 && spin <= 1e-3f && out_of_plane <= 1e-3f
                 && F32Abs(period - period_expected) <= 0.01f * period_expected
                 && F32Abs(decay - decay_expected) <= 0.02f;
@@ -2043,8 +2043,8 @@ static struct test_Output DynamicsSlackRopeTest(struct test_Environment *env)
      * bounds, the joint applies nothing.
      */
     const f32 dt = pipeline.timestep;
-    const f32 g = -pipeline.config.gravity.y;
-    const f32 damp = 1.0f / (1.0f + pipeline.solver.linear_dampening * dt);
+    const f32 g = -pipeline.config.solver.gravity.y;
+    const f32 damp = 1.0f / (1.0f + pipeline.config.solver.linear_dampening * dt);
     const u32 tick_count = 300;
     const u32 rest_ticks = 60;
     f32 distance_model = distance_0;
@@ -2077,7 +2077,7 @@ static struct test_Output DynamicsSlackRopeTest(struct test_Environment *env)
         spin = F32Max(spin, DynamicsTestAngle(QIdentity(), pose.rotation));
     }
 
-    const f32 slop = pipeline.solver.linear_slop;
+    const f32 slop = pipeline.config.solver.linear_slop;
     const u32 ok = model_error <= 1e-3f
                 && violation <= slop
                 && low_gap <= slop && high_gap <= slop
@@ -2113,7 +2113,7 @@ struct dynamics_SpringModel
  */
 static void DynamicsSpringModelTick(struct dynamics_SpringModel *m, const struct ds_DynamicsConfig *config, const struct ds_DistanceJointPrefab *prefab, const f32 mass, const f32 dt)
 {
-    const f32 g = -config->gravity.y;
+    const f32 g = -config->solver.gravity.y;
     const f32 damp = 1.0f / (1.0f + config->solver.linear_dampening * dt);
     const f32 inv_mass = 1.0f / mass;
     const f32 low = prefab->range.low;
@@ -2245,7 +2245,7 @@ static struct test_Output DynamicsSpringTest(struct test_Environment *env)
     const f32 hertz = 1.0f;
     const u32 tick_count = 600;
     const f32 dt = 1.0f / 60.0f;
-    const f32 g = -ds_DynamicsConfigDefault().gravity.y;
+    const f32 g = -ds_DynamicsConfigDefault().solver.gravity.y;
     const f32 omega = F32_PI2 * hertz;
     const f32 sag_expected = g / (omega * omega);
     f32 distance[600];
@@ -2254,7 +2254,10 @@ static struct test_Output DynamicsSpringTest(struct test_Environment *env)
     {
         const f32 zeta = 0.2f;
         struct ds_DistanceJointPrefab prefab;
+        struct ds_SolverConfig solver = ds_SolverConfigDefault();    /* the prefab reads the pushed solver config */
+        ds_SolverConfigPush(&solver);
         ds_DistanceJointPrefabSpring(&prefab, L, hertz, zeta, ds_BreakageOptionNone());
+        ds_SolverConfigPop();
         const struct dynamics_SpringRun run = DynamicsSpringRun(distance, tick_count, &prefab, L);
 
         u32 max_count = 0;
@@ -2288,7 +2291,10 @@ static struct test_Output DynamicsSpringTest(struct test_Environment *env)
     /* critically damped: monotone approach to the same rest point */
     {
         struct ds_DistanceJointPrefab prefab;
+        struct ds_SolverConfig solver = ds_SolverConfigDefault();
+        ds_SolverConfigPush(&solver);
         ds_DistanceJointPrefabSpring(&prefab, L, hertz, 1.0f, ds_BreakageOptionNone());
+        ds_SolverConfigPop();
         const struct dynamics_SpringRun run = DynamicsSpringRun(distance, tick_count, &prefab, L);
 
         f32 backstep = 0.0f;
@@ -2320,12 +2326,15 @@ static struct test_Output DynamicsRangeSpringTest(struct test_Environment *env)
     const f32 hertz = 0.5f;
     const u32 tick_count = 600;
     const u32 rest_ticks = 60;
-    const f32 g = -ds_DynamicsConfigDefault().gravity.y;
+    const f32 g = -ds_DynamicsConfigDefault().solver.gravity.y;
     const f32 omega = F32_PI2 * hertz;
     f32 distance[600];
 
     struct ds_DistanceJointPrefab prefab;
+    struct ds_SolverConfig solver = ds_SolverConfigDefault();    /* the prefab reads the pushed solver config */
+    ds_SolverConfigPush(&solver);
     ds_DistanceJointPrefabRangeSpring(&prefab, range, hertz, 0.2f, ds_BreakageOptionNone());
+    ds_SolverConfigPop();
     /* the free spring would rest g / omega^2 below the target, past the upper bound */
     ds_Assert(prefab.target + g / (omega * omega) > range.high);
     const struct dynamics_SpringRun run = DynamicsSpringRun(distance, tick_count, &prefab, prefab.target);
@@ -2392,7 +2401,7 @@ static struct test_Output DynamicsCoincidentAnchorsTest(struct test_Environment 
     const ds_Transform frame_static = { .rotation = QIdentity(), .position = V3(0.0f, -2.0f, 0.0f) };
     const ds_Transform frame_up = { .rotation = QIdentity(), .position = V3(0.0f, 3.0f, 0.0f) };
     const ds_Transform frame = ds_TransformIdentity();
-    const f32 slop = pipeline.solver.linear_slop;
+    const f32 slop = pipeline.config.solver.linear_slop;
 
     /*
      * Both anchors at P: a rigid joint starts with +x as its axis (warning) and the position pass pushes the box
@@ -2408,10 +2417,10 @@ static struct test_Output DynamicsCoincidentAnchorsTest(struct test_Environment 
         /* the anchor, not the centre: 3 m above it, the push mostly turns the box; the sign follows the slot order */
         const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id[1]);
         const v3 d = V3Add(V3F64Demote(V3F64Sub(pose.position, V3Promote(P))), QUnitRotate(pose.rotation, frame_up.position));
-        const u32 ok = F32Abs(d.x) >= 0.5f * pipeline.solver.max_linear_correction && F32Abs(d.z) <= 1.0e-6f;
+        const u32 ok = F32Abs(d.x) >= 0.5f * pipeline.config.solver.max_linear_correction && F32Abs(d.z) <= 1.0e-6f;
         if (!ok)
         {
-            fprintf(stderr, "coincident anchors, rigid at add: after one tick the anchor moved (%f, %f, %f), max_linear_correction %f\n", d.x, d.y, d.z, pipeline.solver.max_linear_correction);
+            fprintf(stderr, "coincident anchors, rigid at add: after one tick the anchor moved (%f, %f, %f), max_linear_correction %f\n", d.x, d.y, d.z, pipeline.config.solver.max_linear_correction);
         }
         TEST_NOT_ZERO(ok);
     }
@@ -2442,7 +2451,7 @@ static struct test_Output DynamicsCoincidentAnchorsTest(struct test_Environment 
      * distance the spring can hold (its rest g / omega^2 below the target, plus the swing's centripetal stretch).
      */
     const f32 omega = F32_PI2 * spring.hertz;
-    const f32 rest = L - pipeline.config.gravity.y / (omega * omega);
+    const f32 rest = L - pipeline.config.solver.gravity.y / (omega * omega);
     for (u32 t = 0; t < 300; ++t)
     {
         SnapshotTestTick(&pipeline);
@@ -2473,10 +2482,10 @@ static struct test_Output DynamicsCoincidentAnchorsTest(struct test_Environment 
     {
         const ds_TransformWorld pose = DynamicsTestPose(&pipeline, id[1]);
         const v3 d = V3F64Demote(V3F64Sub(pose.position, V3Promote(P)));
-        const u32 ok = d.x >= 0.5f * pipeline.solver.max_linear_correction && F32Abs(d.z) <= 1.0e-6f;
+        const u32 ok = d.x >= 0.5f * pipeline.config.solver.max_linear_correction && F32Abs(d.z) <= 1.0e-6f;
         if (!ok)
         {
-            fprintf(stderr, "coincident anchors, rigid: after one tick d = (%f, %f, %f), max_linear_correction %f\n", d.x, d.y, d.z, pipeline.solver.max_linear_correction);
+            fprintf(stderr, "coincident anchors, rigid: after one tick d = (%f, %f, %f), max_linear_correction %f\n", d.x, d.y, d.z, pipeline.config.solver.max_linear_correction);
         }
         TEST_NOT_ZERO(ok);
     }
@@ -2570,7 +2579,7 @@ static struct test_Output DynamicsJointSleepTest(struct test_Environment *env)
     }
     const struct ds_Body *box[4] = { ds_BodyLookup(&pipeline, id[1]).address, ds_BodyLookup(&pipeline, id[2]).address, ds_BodyLookup(&pipeline, id[3]).address, NULL };
     const f32 mass = box[0]->mass;
-    const f32 g = -pipeline.config.gravity.y;
+    const f32 g = -pipeline.config.solver.gravity.y;
     const f32 h = pipeline.timestep;
 
     /* the chain hangs still and falls asleep as one island with its three joints in the set, out of the colours */
@@ -2594,7 +2603,7 @@ static struct test_Output DynamicsJointSleepTest(struct test_Environment *env)
      * Each joint's cached impulse is the tick's weight below it: (3 - i) m g h, less the velocity damping's share
      * (the solver damps the gravity velocity before the rows see it), negative since the rows push apart.
      */
-    const f32 damp = 1.0f / (1.0f + pipeline.solver.linear_dampening * h);
+    const f32 damp = 1.0f / (1.0f + pipeline.config.solver.linear_dampening * h);
     f32 impulse_sleeping[3];
     for (u32 i = 0; i < 3; ++i)
     {
@@ -2686,7 +2695,7 @@ static struct test_Output DynamicsJointSleepTest(struct test_Environment *env)
     TEST_NOT_ZERO(set->joint_sim_pool.count == 3 && set->body_sim_pool.count == 3);
     TEST_NOT_ZERO((f32) DynamicsTestPose(&pipeline, id4).position.y < y4 - 1.0f);
     const v3 d_top = V3F64Demote(V3F64Sub(DynamicsTestPose(&pipeline, id[1]).position, V3Promote(pivot)));
-    TEST_NOT_ZERO(F32Abs(V3Length(d_top) - L) <= pipeline.solver.linear_slop);
+    TEST_NOT_ZERO(F32Abs(V3Length(d_top) - L) <= pipeline.config.solver.linear_slop);
     ds_DynamicsValidate(&pipeline);
 
     ds_DynamicsConfigPop(&pipeline);
@@ -2715,6 +2724,7 @@ static struct dynamics_MouseRig DynamicsMouseRigAlloc(const v3 position, const u
     c_ShapeDBAlloc(NULL, &rig.cshape_db, 32, GROWABLE);
     ds_SDBAlloc(NULL, rig.prefab_db, 32, GROWABLE);
     rig.pipeline = ds_DynamicsAlloc(&rig.mem, 64, NSEC_PER_SEC / 60, 16*1024*1024, &rig.cshape_db, &rig.prefab_db, g_config->thread_count, g_config->thread_framesize);
+    ds_DynamicsConfigPush(&rig.pipeline);
     rig.pipeline.config_pending.solver.sleep_enabled = sleep_enabled;
     ds_DynamicsConfigUpdatePending(&rig.pipeline);
 
@@ -2800,7 +2810,7 @@ static struct test_Output DynamicsMouseJointTest(struct test_Environment *env)
 {
     struct test_Output output = { .success = 1, .id = __func__ };
 
-    const f32 g = -ds_DynamicsConfigDefault().gravity.y;
+    const f32 g = -ds_DynamicsConfigDefault().solver.gravity.y;
     const v3 start = V3(0.0f, 4.0f, 0.0f);
     const ds_Transform frame = ds_TransformIdentity();
 
@@ -2903,7 +2913,7 @@ static struct test_Output DynamicsMouseJointTest(struct test_Environment *env)
 
         DynamicsMouseRigRun(&rig, 59);
         const f32 w = V3Length(DynamicsMouseRigCompute(&rig)->angular_velocity);
-        const f32 damped = w0 * F32Pow(1.0f / (1.0f + rig.pipeline.solver.angular_dampening * rig.pipeline.timestep), 60.0f);
+        const f32 damped = w0 * F32Pow(1.0f / (1.0f + rig.pipeline.config.solver.angular_dampening * rig.pipeline.timestep), 60.0f);
         if (pass == 0)
         {
             if (!(F32Abs(w - damped) <= 0.02f * damped)) { fprintf(stderr, "mouse joint: failed: F32Abs(w - damped) <= 0.02f * damped\n"); }
@@ -2925,7 +2935,7 @@ static struct test_Output DynamicsMouseJointSleepTest(struct test_Environment *e
 {
     struct test_Output output = { .success = 1, .id = __func__ };
 
-    const f32 g = -ds_DynamicsConfigDefault().gravity.y;
+    const f32 g = -ds_DynamicsConfigDefault().solver.gravity.y;
     const v3 start = V3(0.0f, 4.0f, 0.0f);
     const ds_Transform frame = ds_TransformIdentity();
     struct dynamics_MouseRig rig = DynamicsMouseRigAlloc(start, 1);
@@ -3006,7 +3016,7 @@ static struct test_Output DynamicsSlideTest(struct test_Environment *env)
     const f32 angle = 30.0f * F32_PI / 180.0f;
     const q slope = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), angle);
     const v3 n = QUnitRotate(slope, V3(0.0f, 1.0f, 0.0f));
-    const v3 gravity = pipeline.solver.gravity;
+    const v3 gravity = pipeline.config.solver.gravity;
     const v3 downhill = V3Normalize(V3Sub(gravity, V3Scale(n, V3Dot(n, gravity))));
     const struct dynamics_TestBox scene[2] =
     {
@@ -3021,7 +3031,7 @@ static struct test_Output DynamicsSlideTest(struct test_Environment *env)
 
     /* each tick adds the downhill gravity and damps (ds_BodyUpdateSolverDataRange); the contacts only cancel the normal part */
     const f32 g_t = V3Dot(gravity, downhill);
-    const f32 damp = 1.0f / (1.0f + pipeline.solver.linear_dampening * pipeline.timestep);
+    const f32 damp = 1.0f / (1.0f + pipeline.config.solver.linear_dampening * pipeline.timestep);
     f32 expected = 0.0f;
     for (u32 t = 0; t < 60; ++t)
     {
@@ -3076,7 +3086,7 @@ static struct test_Output DynamicsBounceTest(struct test_Environment *env)
     }
 
     /* tick until the bouncy box moves up; the impact speed is the last downward speed plus one tick of gravity */
-    const f32 g_dt = -pipeline.config.gravity.y * pipeline.timestep;
+    const f32 g_dt = -pipeline.config.solver.gravity.y * pipeline.timestep;
     f32 down = 0.0f;
     f32 up = 0.0f;
     u32 t;
@@ -3246,7 +3256,7 @@ static struct test_Output DynamicsNumericsConfigTest(struct test_Environment *en
     config.capsule_parallel_max_degrees = 45.0f;
     config.face_parallel_max_degrees = 0.0f;
     config.edge_parallel_max_degrees = 45.0f;
-    ds_NumericsConfigDerive(&config);
+    config = ds_NumericsConfigDerive(&config);
     TEST_NOT_ZERO(F32Abs(config.capsule_parallel_tan_sq - 1.0f) < 1e-5f);
     TEST_NOT_ZERO(config.face_parallel_cos == 1.0f);
     TEST_NOT_ZERO(F32Abs(config.edge_parallel_sin_sq - 0.5f) < 1e-6f);
@@ -3521,7 +3531,7 @@ static struct test_Output DynamicsSlideWarmTest(struct test_Environment *env)
     const q slope = QUnitAxisAngle(V3(0.0f, 0.0f, 1.0f), angle);
     const v3 n = QUnitRotate(slope, V3(0.0f, 1.0f, 0.0f));
     const v3 up = QUnitRotate(slope, V3(1.0f, 0.0f, 0.0f));
-    const v3 gravity = pipeline.solver.gravity;
+    const v3 gravity = pipeline.config.solver.gravity;
     const v3 downhill = V3Normalize(V3Sub(gravity, V3Scale(n, V3Dot(n, gravity))));
     const q across = QMul(slope, QUnitAxisAngle(V3(1.0f, 0.0f, 0.0f), 0.5f * F32_PI));   /* the capsule's axis along z */
 
@@ -3542,7 +3552,7 @@ static struct test_Output DynamicsSlideWarmTest(struct test_Environment *env)
     f32 coulomb = 0.0f;
     const f32 g_t = V3Dot(gravity, downhill);
     const f32 g_n = -V3Dot(gravity, n);
-    const f32 damp = 1.0f / (1.0f + pipeline.solver.linear_dampening * pipeline.timestep);
+    const f32 damp = 1.0f / (1.0f + pipeline.config.solver.linear_dampening * pipeline.timestep);
     for (u32 t = 0; t < ticks; ++t)
     {
         ds_DynamicsTick(&pipeline);
@@ -3754,7 +3764,7 @@ static struct test_Output DynamicsJointBreakingTest(struct test_Environment *env
     {
         id[i] = DynamicsTestBoxAdd(&mem, &pipeline, &cshape_db, scene + i, (v3f64) { 0 }, i);
     }
-    const f32 weight = ((const struct ds_Body *) ds_BodyLookup(&pipeline, id[1]).address)->mass * V3Length(pipeline.solver.gravity);
+    const f32 weight = ((const struct ds_Body *) ds_BodyLookup(&pipeline, id[1]).address)->mass * V3Length(pipeline.config.solver.gravity);
 
     /* the anchor frames straight above each box's centre; strong holds 1.5 weights, weak 0.5 */
     const ds_Transform frame = ds_TransformIdentity();
@@ -3806,7 +3816,7 @@ static struct test_Output DynamicsJointBreakingTest(struct test_Environment *env
     }
     const f32 y_strong = (f32) DynamicsTestPose(&pipeline, id[1]).position.y;
     const f32 y_weak = (f32) DynamicsTestPose(&pipeline, id[2]).position.y;
-    if (event_count != 0 || F32Abs(y_strong - (6.0f - L)) > pipeline.solver.linear_slop || y_weak > 6.0f - L - 0.5f)
+    if (event_count != 0 || F32Abs(y_strong - (6.0f - L)) > pipeline.config.solver.linear_slop || y_weak > 6.0f - L - 0.5f)
     {
         fprintf(stderr, "joint breaking after removal: %u events, y strong %f weak %f\n", event_count, y_strong, y_weak);
         TEST_NOT_ZERO(0);
@@ -3838,7 +3848,7 @@ static struct test_Output DynamicsAllocConfigTest(struct test_Environment *env)
 
     struct ds_DynamicsConfig config = ds_DynamicsConfigDefault();
     config.initial_size = 32;
-    config.gravity = V3(1.0f, -2.0f, 3.0f);
+    config.solver.gravity = V3(1.0f, -2.0f, 3.0f);
     config.solver.pgs_iteration_count = 5;
     config.solver.ngs_iteration_count = 2;
     config.solver.warmup_solver = 0;
@@ -3848,36 +3858,32 @@ static struct test_Output DynamicsAllocConfigTest(struct test_Environment *env)
     config.solver.sleep_enabled = 0;
     config.numerics.gjk_max_iterations = 9;
     config.numerics.capsule_parallel_max_degrees = 10.0f;
-    config.draw.draw_shapes = 0;
-    config.draw.refinement = 5;
-    TEST_EQUAL(1, ds_DynamicsConfigCheck(&config));
 
     struct ds_Dynamics pipeline = ds_DynamicsAllocConfig(&mem, &config, NSEC_PER_SEC / 60, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
 
     TEST_EQUAL(32u, pipeline.body_pool.length);
     TEST_EQUAL(32u, pipeline.shape_pool.length);
-    TEST_TRUE(JointTestV3Equal(config.gravity, pipeline.config.gravity));
-    TEST_TRUE(JointTestV3Equal(config.gravity, pipeline.solver.gravity));
-    TEST_EQUAL(5u, pipeline.solver.pgs_iteration_count);
-    TEST_EQUAL(2u, pipeline.solver.ngs_iteration_count);
-    TEST_EQUAL(0u, pipeline.solver.warmup_solver);
-    TEST_EQUAL(0u, pipeline.solver.sleep_enabled);
-    TEST_TRUE(pipeline.solver.max_linear_velocity_magnitude_inv == 0.0f);
-    TEST_TRUE(pipeline.solver.max_angular_velocity_magnitude_inv == 0.25f);
-    TEST_TRUE(pipeline.solver.linear_slop == 0.002f);
+    TEST_TRUE(JointTestV3Equal(config.solver.gravity, pipeline.config.solver.gravity));
+    TEST_TRUE(JointTestV3Equal(config.solver.gravity, pipeline.config.solver.gravity));
+    TEST_EQUAL(5u, pipeline.config.solver.pgs_iteration_count);
+    TEST_EQUAL(2u, pipeline.config.solver.ngs_iteration_count);
+    TEST_EQUAL(0u, pipeline.config.solver.warmup_solver);
+    TEST_EQUAL(0u, pipeline.config.solver.sleep_enabled);
+    TEST_TRUE(pipeline.config.solver.max_linear_velocity_magnitude_inv == 0.0f);
+    TEST_TRUE(pipeline.config.solver.max_angular_velocity_magnitude_inv == 0.25f);
+    TEST_TRUE(pipeline.config.solver.linear_slop == 0.002f);
     TEST_EQUAL(9u, pipeline.config.numerics.gjk_max_iterations);
     TEST_TRUE(pipeline.config.numerics.capsule_parallel_max_degrees == 10.0f);
-    TEST_EQUAL(0u, pipeline.config.draw.draw_shapes);
-    TEST_EQUAL(5u, pipeline.config.draw.refinement);
+    TEST_EQUAL(1u, pipeline.draw_config.draw_shapes);     /* the draw config is the default, outside the simulation config */
 
     ds_DynamicsFree(&pipeline);
 
     /* the defaults back into the process-global solver config */
     const struct ds_DynamicsConfig def = ds_DynamicsConfigDefault();
     pipeline = ds_DynamicsAllocConfig(&mem, &def, NSEC_PER_SEC / 60, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
-    TEST_EQUAL(def.solver.pgs_iteration_count, pipeline.solver.pgs_iteration_count);
-    TEST_EQUAL(def.solver.sleep_enabled, pipeline.solver.sleep_enabled);
-    TEST_TRUE(JointTestV3Equal(def.gravity, pipeline.solver.gravity));
+    TEST_EQUAL(def.solver.pgs_iteration_count, pipeline.config.solver.pgs_iteration_count);
+    TEST_EQUAL(def.solver.sleep_enabled, pipeline.config.solver.sleep_enabled);
+    TEST_TRUE(JointTestV3Equal(def.solver.gravity, pipeline.config.solver.gravity));
     TEST_EQUAL(def.initial_size, pipeline.body_pool.length);
     ds_DynamicsFree(&pipeline);
 
@@ -4298,7 +4304,7 @@ static void *DynamicsPerfSolveInit(const enum dynamics_PerfScene scene, const en
     {
         ds_ContactConstraintInitRange(pipeline, ci, 0, pipeline->cgraph.color[ci].contact_pool.count);
     }
-    if (pipeline.solver.warmup_solver)
+    if (pipeline.config.solver.warmup_solver)
     {
         for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
         {
@@ -4307,7 +4313,7 @@ static void *DynamicsPerfSolveInit(const enum dynamics_PerfScene scene, const en
     }
     if (stage == DYNAMICS_PERF_STAGE_POSITION)
     {
-        for (u32 i = 0; i < pipeline.solver.pgs_iteration_count; ++i)
+        for (u32 i = 0; i < pipeline.config.solver.pgs_iteration_count; ++i)
         {
             for (u32 ci = 0; ci < CG_COLOR_COUNT; ++ci)
             {

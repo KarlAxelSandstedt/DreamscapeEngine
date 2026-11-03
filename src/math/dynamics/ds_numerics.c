@@ -22,6 +22,30 @@
 
 struct ds_NumericsConfig *g_numerics_config = NULL;
 
+struct ds_NumericsConfig ds_NumericsConfigDerive(const struct ds_NumericsConfig *pending)
+{
+    struct ds_NumericsConfig config = *pending;
+
+    config.dbvh_reinsert_threshold = F32Clamp(config.dbvh_reinsert_threshold, 0.0f, 1.0f);
+    config.cache_count_max = U32Max(config.cache_count_max, 1);
+    config.gjk_max_iterations = U32Max(config.gjk_max_iterations, 1);
+    config.capsule_parallel_max_degrees = F32Clamp(config.capsule_parallel_max_degrees, 0.0f, 45.0f);
+    config.face_parallel_max_degrees = F32Clamp(config.face_parallel_max_degrees, 0.0f, 45.0f);
+    config.edge_parallel_max_degrees = F32Clamp(config.edge_parallel_max_degrees, 0.0f, 45.0f);
+    config.sat_face_bias = F32Clamp(config.sat_face_bias, 0.0f, F32MaxPositiveNormal());
+    config.sat_cache_tolerance = F32Clamp(config.sat_cache_tolerance, 0.0f, F32MaxPositiveNormal());
+    
+    const f32 capsule_tan = F32Tan(config.capsule_parallel_max_degrees * F32_PI2 / 360);
+    config.capsule_parallel_tan_sq = capsule_tan*capsule_tan;
+
+    config.face_parallel_cos = F32Cos(config.face_parallel_max_degrees * F32_PI2 / 360);
+
+    const f32 edge_sin = F32Sin(config.edge_parallel_max_degrees * F32_PI2 / 360);
+    config.edge_parallel_sin_sq = edge_sin*edge_sin;
+   
+    return config;
+}
+
 struct ds_NumericsConfig ds_NumericsConfigDefault(void)
 {
     struct ds_NumericsConfig config = { 0 };
@@ -36,25 +60,13 @@ struct ds_NumericsConfig ds_NumericsConfigDefault(void)
     config.edge_parallel_max_degrees = 0.5f;
     config.sat_face_bias = 5.0f * DS_UNIT_MM;
     config.sat_cache_tolerance = 5.0f * DS_UNIT_MM;
-    ds_NumericsConfigDerive(&config);
 
+    config = ds_NumericsConfigDerive(&config);
     return config;
-}
-
-void ds_NumericsConfigDerive(struct ds_NumericsConfig *config)
-{
-    const f32 capsule_tan = F32Tan(config->capsule_parallel_max_degrees * F32_PI2 / 360);
-    config->capsule_parallel_tan_sq = capsule_tan*capsule_tan;
-
-    config->face_parallel_cos = F32Cos(config->face_parallel_max_degrees * F32_PI2 / 360);
-
-    const f32 edge_sin = F32Sin(config->edge_parallel_max_degrees * F32_PI2 / 360);
-    config->edge_parallel_sin_sq = edge_sin*edge_sin;
 }
 
 void ds_NumericsConfigPush(struct ds_NumericsConfig *config)
 {
-    ds_NumericsConfigDerive(config);
     g_numerics_config = config;
 }
 
@@ -62,4 +74,66 @@ void ds_NumericsConfigPop(void)
 {
     ds_Assert(g_numerics_config);
     g_numerics_config = NULL;
+}
+
+#define DS_NUMERICS_CONFIG_VERSION  1u
+/* version + 8 set values (the derived ones are recomputed on read) */
+#define DS_NUMERICS_CONFIG_SIZE     (4 + 8*4)
+
+u64 ds_NumericsConfigSerializeSize(const struct ds_NumericsConfig *config)
+{
+    return DS_NUMERICS_CONFIG_SIZE;
+}
+
+void ds_NumericsConfigSerialize(struct ss *ss, const struct ds_NumericsConfig *config)
+{
+    ds_Assert(ss->bit_index % 8 == 0);
+    ds_Assert(ds_NumericsConfigSerializeSize(config) <= ss_BytesLeft(ss));
+
+    ss_WriteU32Le(ss, DS_NUMERICS_CONFIG_VERSION);
+    ss_WriteF32Le(ss, config->dbvh_reinsert_threshold);
+    ss_WriteU32Le(ss, config->cache_count_max);
+    ss_WriteF32Le(ss, config->capsule_parallel_max_degrees);
+    ss_WriteF32Le(ss, config->face_parallel_max_degrees);
+    ss_WriteF32Le(ss, config->edge_parallel_max_degrees);
+    ss_WriteF32Le(ss, config->sat_face_bias);
+    ss_WriteF32Le(ss, config->sat_cache_tolerance);
+    ss_WriteU32Le(ss, config->gjk_max_iterations);
+}
+
+u32 ds_NumericsConfigTryDeserialize(struct ss *ss, struct ds_NumericsConfig *config)
+{
+    const u64 bit_index = ss->bit_index;
+    u32 success = 0;
+
+    if (ss->bit_index % 8 != 0 || ss_BytesLeft(ss) < DS_NUMERICS_CONFIG_SIZE)
+    {
+        goto end;
+    }
+
+    if (ss_ReadU32Le(ss) != DS_NUMERICS_CONFIG_VERSION)
+    {
+        goto end;
+    }
+
+    *config = (struct ds_NumericsConfig) { 0 };
+    config->dbvh_reinsert_threshold = ss_ReadF32Le(ss);
+    config->cache_count_max = ss_ReadU32Le(ss);
+    config->capsule_parallel_max_degrees = ss_ReadF32Le(ss);
+    config->face_parallel_max_degrees = ss_ReadF32Le(ss);
+    config->edge_parallel_max_degrees = ss_ReadF32Le(ss);
+    config->sat_face_bias = ss_ReadF32Le(ss);
+    config->sat_cache_tolerance = ss_ReadF32Le(ss);
+    config->gjk_max_iterations = ss_ReadU32Le(ss);
+    *config = ds_NumericsConfigDerive(config);
+    success = 1;
+
+end:
+    if (!success)
+    {
+        ss->bit_index = bit_index;
+        *config = (struct ds_NumericsConfig) { 0 };
+    }
+
+    return success;
 }
