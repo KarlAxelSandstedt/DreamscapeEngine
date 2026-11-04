@@ -59,7 +59,6 @@ enum ds_SimSystem
 
 #define DS_SIM_KEY_SYSTEM_BITS  4
 #define DS_SIM_TICK_US_MAX      1000000     /* slowest system: 1 Hz */
-#define DS_SIM_SPEED_MAX        1000.0
 
 /*
 ds_SimConfig
@@ -72,8 +71,6 @@ struct ds_SimConfig
     u64 seed[4];    /* simulation seed */
     
     u64 us_system_tick[SIM_SYSTEM_COUNT];
-
-    f64 speed;      /* simulation speed (scales wall-clock) */
 
     struct ds_DynamicsConfig dynamics;
 };
@@ -193,8 +190,9 @@ struct ds_Sim
     enum ds_SimMode  mode;
     //FILE                    record;           /* TODO Null if mode == NONE. */
     struct ds_SimConfig     config_seed;        /* the alloc-time config: the seed batch of ds_SimAlloc and ds_SimFlush */
+    u32                     initialized;        /* a ConfigLoad was applied since alloc/flush: the seed; later ones must keep the alloc-time values */
 
-    f64                     speed;              /* Simulation speed (scales wall-clock)     */
+    f64                     speed;              /* Simulation speed (scales wall-clock); host state, 1.0 at alloc */
     u64                     us_time;            /* Simulation time                          */
     u64                     us_delta;           /* Simulation time delta                    */
     u64                     ns_remainder;       /* Unaccounted time from previous frame     */

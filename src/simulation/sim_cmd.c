@@ -147,7 +147,27 @@ static u32 ds_SimCmdDataVerify(const struct ds_Sim *sim, const struct ds_SimCmd 
     {
         case SIM_CMD_CONFIG_LOAD:
         {
-            return 1;
+            /* the seed is accepted as is; afterwards the alloc-time values are fixed */
+            if (!sim->initialized)
+            {
+                return 1;
+            }
+
+            const struct ds_SimConfig *config = cmd->load_config.config;
+            const struct ds_SimConfig *seed = &sim->config_seed;
+            u32 valid = config->dynamics.initial_size == seed->dynamics.initial_size
+                     && config->dynamics.frame_memory == seed->dynamics.frame_memory;
+            for (u32 i = 0; i < 4; ++i)
+            {
+                valid = valid && config->seed[i] == seed->seed[i];
+            }
+
+            for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
+            {
+                valid = valid && config->us_system_tick[i] == seed->us_system_tick[i];
+            }
+
+            return valid;
         }
 
         default:
@@ -169,7 +189,10 @@ u32 ds_SimCmdTryExecute(struct ds_Sim *sim, const struct ds_SimCmd *cmd)
     {
         case SIM_CMD_CONFIG_LOAD:
         {
-            //TODO apply: dynamics config_pending = config.dynamics, ds_DynamicsConfigUpdatePending (game later)
+            /* the dynamics (the game later) */
+            sim->dynamics.config_pending = cmd->load_config.config->dynamics;
+            ds_DynamicsConfigUpdatePending(&sim->dynamics);
+            sim->initialized = 1;
         } break;
 
         default:

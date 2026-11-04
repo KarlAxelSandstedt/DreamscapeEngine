@@ -35,10 +35,6 @@ static u32 SimConfigTestEqual(const struct ds_SimConfig *a, const struct ds_SimC
         equal = equal && a->us_system_tick[i] == b->us_system_tick[i];
     }
 
-    const b64 speed_a = { .f = a->speed };
-    const b64 speed_b = { .f = b->speed };
-    equal = equal && speed_a.u == speed_b.u;
-
     return equal;
 }
 
@@ -46,8 +42,7 @@ static u32 SimConfigTestEqual(const struct ds_SimConfig *a, const struct ds_SimC
  * Round trip of the default config and of a config with every field changed (given and generated seeds);
  * the stream advances by exactly ds_SimConfigSerializeSize. Reads that must fail with the config zeroed and the
  * stream unchanged: a truncated stream, a wrong version word, a stream off its byte boundary, and every
- * out-of-range value (zero seed, nonzero external tick, zero and too-slow system ticks, negative, NaN and
- * too-fast speed).
+ * out-of-range value (zero seed, nonzero external tick, zero and too-slow system ticks).
  */
 static struct test_Output SimConfigSerializeTest(struct test_Environment *env)
 {
@@ -68,7 +63,6 @@ static struct test_Output SimConfigSerializeTest(struct test_Environment *env)
     {
         changed.us_system_tick[i] = 1000 * (i + 1);
     }
-    changed.speed = 0.25;
 
     struct ds_SimConfig generated = ds_SimConfigDefault();
     ds_SimConfigGenerateSeed(&generated);
@@ -111,8 +105,8 @@ static struct test_Output SimConfigSerializeTest(struct test_Environment *env)
     }
 
     /* out-of-range values survive the write and fail the read */
-    struct ds_SimConfig invalid[8];
-    for (u32 i = 0; i < 8; ++i)
+    struct ds_SimConfig invalid[4];
+    for (u32 i = 0; i < 4; ++i)
     {
         invalid[i] = changed;
     }
@@ -120,12 +114,8 @@ static struct test_Output SimConfigSerializeTest(struct test_Environment *env)
     invalid[1].us_system_tick[SIM_SYSTEM_EXTERNAL] = 1;
     invalid[2].us_system_tick[SIM_SYSTEM_DYNAMICS] = 0;
     invalid[3].us_system_tick[SIM_SYSTEM_GAME] = DS_SIM_TICK_US_MAX + 1;
-    invalid[4].speed = -1.0;
-    invalid[5].speed = (b64) { .u = 0x7ff8000000000000ull }.f;      /* NaN */
-    invalid[6].speed = DS_SIM_SPEED_MAX * 2.0;
-    invalid[7].speed = (b64) { .u = 0x7ff0000000000000ull }.f;      /* +inf */
 
-    for (u32 i = 0; i < 8; ++i)
+    for (u32 i = 0; i < 4; ++i)
     {
         const u64 size = ds_SimConfigSerializeSize(&invalid[i]);
         struct SS ss = SSAlloc(env->mem_1, size);
@@ -143,18 +133,6 @@ static struct test_Output SimConfigSerializeTest(struct test_Environment *env)
     struct ds_SimConfig edge = changed;
     edge.us_system_tick[SIM_SYSTEM_DYNAMICS] = 1;
     edge.us_system_tick[SIM_SYSTEM_GAME] = DS_SIM_TICK_US_MAX;
-    edge.speed = 0.0;
-    {
-        const u64 size = ds_SimConfigSerializeSize(&edge);
-        struct SS ss = SSAlloc(env->mem_1, size);
-        ds_SimConfigSerialize(&ss, &edge);
-        ss.bit_index = 0;
-        struct ds_SimConfig read = { 0 };
-        TEST_EQUAL(1, ds_SimConfigTryDeserialize(&ss, &read));
-        TEST_EQUAL(1, SimConfigTestEqual(&edge, &read));
-    }
-
-    edge.speed = DS_SIM_SPEED_MAX;
     {
         const u64 size = ds_SimConfigSerializeSize(&edge);
         struct SS ss = SSAlloc(env->mem_1, size);
@@ -552,7 +530,6 @@ static struct test_Output SimCmdSerializeTest(struct test_Environment *env)
 
     struct ds_SimConfig changed = ds_SimConfigDefault();
     changed.us_system_tick[SIM_SYSTEM_DYNAMICS] = 20000;
-    changed.speed = 0.25;
     const u64 seed[4] = { 7, 8, 9, 10 };
     ds_SimConfigSeed(&changed, seed);
     const u64 body_size = ds_SimConfigSerializeSize(&changed);
@@ -647,6 +624,69 @@ static struct test_Output SimCmdSerializeTest(struct test_Environment *env)
 	return output;
 }
 
+/*
+ * ConfigLoad through ds_SimCmdTryExecute (the tick does not execute batches yet): the first apply is the seed,
+ * accepted as is and setting initialized; a later one with more solver iterations is applied to the dynamics and
+ * leaves the tick periods alone; one with another dynamics period is rejected and changes nothing;
+ * ds_SimFlush clears initialized.
+ */
+static struct test_Output SimConfigLoadTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct c_ShapeDB cshape_db = { 0 };
+    c_ShapeDBAlloc(NULL, &cshape_db, 32, GROWABLE);
+    ds_SDB(ds_BodyPrefab) prefab_db = { 0 };
+    ds_SDBAlloc(NULL, prefab_db, 32, GROWABLE);
+
+    struct ds_SimConfig config = ds_SimConfigDefault();
+    config.dynamics.initial_size = 32;
+    const u32 iterations = config.dynamics.solver.pgs_iteration_count;
+    struct arena mem = ArenaAlloc(NULL, ds_DynamicsShellMemoryRequirement(g_config->thread_count, config.dynamics.frame_memory));
+    struct ds_Sim sim;
+    ds_SimAlloc(&mem, &sim, &config, 0, &cshape_db, &prefab_db, g_config->thread_count, g_config->thread_framesize);
+    TEST_EQUAL(0, sim.initialized);
+    TEST_EQUAL(iterations, sim.dynamics.config.solver.pgs_iteration_count);
+    ds_DynamicsConfigPush(&sim.dynamics);   /* outside a tick: what ds_SimTick does for the frame */
+
+    /* the seed */
+    struct ds_SimCmd cmd = { .type = SIM_CMD_CONFIG_LOAD, .load_config.config = &config };
+    TEST_EQUAL(1, ds_SimCmdTryExecute(&sim, &cmd));
+    TEST_EQUAL(1, sim.initialized);
+    TEST_EQUAL(iterations, sim.dynamics.config.solver.pgs_iteration_count);
+
+    /* a runtime load: more iterations */
+    struct ds_SimConfig runtime = config;
+    runtime.dynamics.solver.pgs_iteration_count = iterations + 3;
+    cmd.load_config.config = &runtime;
+    TEST_EQUAL(1, ds_SimCmdTryExecute(&sim, &cmd));
+    TEST_EQUAL(iterations + 3, sim.dynamics.config.solver.pgs_iteration_count);
+    TEST_EQUAL(iterations + 3, sim.dynamics.config_pending.solver.pgs_iteration_count);
+    TEST_TRUE(sim.speed == 1.0);
+
+    /* an alloc-time value changed: rejected whole */
+    struct ds_SimConfig rejected = runtime;
+    rejected.dynamics.solver.pgs_iteration_count = iterations + 7;
+    rejected.us_system_tick[SIM_SYSTEM_DYNAMICS] = 2 * config.us_system_tick[SIM_SYSTEM_DYNAMICS];
+    cmd.load_config.config = &rejected;
+    TEST_EQUAL(0, ds_SimCmdTryExecute(&sim, &cmd));
+    TEST_EQUAL(iterations + 3, sim.dynamics.config.solver.pgs_iteration_count);
+    TEST_EQUAL(config.us_system_tick[SIM_SYSTEM_DYNAMICS], sim.us_system_tick[SIM_SYSTEM_DYNAMICS]);
+    rejected = runtime;
+    rejected.dynamics.initial_size = 64;
+    TEST_EQUAL(0, ds_SimCmdTryExecute(&sim, &cmd));
+
+    ds_DynamicsConfigPop(&sim.dynamics);
+    ds_SimFlush(&sim);  /* its seed tick pushes and pops by itself */
+    TEST_EQUAL(0, sim.initialized);
+
+    ds_SimDealloc(&sim);
+    ArenaFree(&mem);
+    ds_SDBDealloc(prefab_db);
+    c_ShapeDBDealloc(&cshape_db);
+	return output;
+}
+
 static struct test_Output (*simulation_tests[])(struct test_Environment *) =
 {
     SimConfigSerializeTest,
@@ -654,6 +694,7 @@ static struct test_Output (*simulation_tests[])(struct test_Environment *) =
     SimCmdPayloadSerializeTest,
     SimCmdSerializeTest,
     SimTickTest,
+    SimConfigLoadTest,
 };
 
 struct suite_Correctness m_simulation_suite =

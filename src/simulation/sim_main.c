@@ -66,7 +66,7 @@ static enum ds_SimSystem ds_SimKeySystem(const ds_SimKey key)
 
 /**************** ds_SimConfig ****************/
 
-/* seed nonzero, external tick 0, other ticks in [1, DS_SIM_TICK_US_MAX], speed in [0, DS_SIM_SPEED_MAX] */
+/* seed nonzero, external tick 0, other ticks in [1, DS_SIM_TICK_US_MAX] */
 static u32 ds_SimConfigCheck(const struct ds_SimConfig *config)
 {
     if ((config->seed[0] | config->seed[1] | config->seed[2] | config->seed[3]) == 0)
@@ -87,12 +87,6 @@ static u32 ds_SimConfigCheck(const struct ds_SimConfig *config)
         }
     }
 
-    /* NaN fails both comparisons, inf the second */
-    if (!(config->speed >= 0.0 && config->speed <= DS_SIM_SPEED_MAX))
-    {
-        return 0;
-    }
-
     return 1;
 }
 
@@ -108,8 +102,6 @@ struct ds_SimConfig ds_SimConfigDefault(void)
     config.us_system_tick[SIM_SYSTEM_EXTERNAL] = 0;
     config.us_system_tick[SIM_SYSTEM_DYNAMICS] = 1000000 / 60;
     config.us_system_tick[SIM_SYSTEM_GAME]     = 1000000 / 60;
-
-    config.speed = 1.0;
 
     config.dynamics = ds_DynamicsConfigDefault();
 
@@ -139,9 +131,9 @@ void ds_SimConfigGenerateSeed(struct ds_SimConfig *config)
     } while ((config->seed[0] | config->seed[1] | config->seed[2] | config->seed[3]) == 0);
 }
 
-#define DS_SIM_CONFIG_VERSION       1u
-/* version + seed + ticks + speed */
-#define DS_SIM_CONFIG_FIXED_SIZE    (4 + 4*8 + SIM_SYSTEM_COUNT*8 + 8)
+#define DS_SIM_CONFIG_VERSION       2u
+/* version + seed + ticks */
+#define DS_SIM_CONFIG_FIXED_SIZE    (4 + 4*8 + SIM_SYSTEM_COUNT*8)
 
 u64 ds_SimConfigSerializeSize(const struct ds_SimConfig *config)
 {
@@ -163,8 +155,6 @@ void ds_SimConfigSerialize(struct SS *ss, const struct ds_SimConfig *config)
     {
         SSWriteU64Le(ss, config->us_system_tick[i]);
     }
-
-    SSWriteF64Le(ss, config->speed);
 
     ds_DynamicsConfigSerialize(ss, &config->dynamics);
 }
@@ -193,8 +183,6 @@ u32 ds_SimConfigTryDeserialize(struct SS *ss, struct ds_SimConfig *config)
     {
         config->us_system_tick[i] = SSReadU64Le(ss);
     }
-
-    config->speed = SSReadF64Le(ss);
 
     success = ds_DynamicsConfigTryDeserialize(ss, &config->dynamics) && ds_SimConfigCheck(config);
 
@@ -252,7 +240,7 @@ void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfi
     *sim = (struct ds_Sim) { 0 };
     sim->mode = (record) ? SIM_MODE_RECORD : SIM_MODE_NONE;
     sim->config_seed = *config;
-    sim->speed = config->speed;
+    sim->speed = 1.0;
 
     sim->ns_budget = 0;
     for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
@@ -265,7 +253,7 @@ void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfi
     ds_CPoolAlloc(NULL, sim->payload_pool, 16, GROWABLE);
 
     sim->dynamics = ds_DynamicsAllocConfig(mem, &config->dynamics, 1000 * config->us_system_tick[SIM_SYSTEM_DYNAMICS], cshape_db, prefab_db, worker_count, worker_frame_size);
-    //TODO record mode: open the record and write the config as its head
+    //TODO record mode: open the record (the seed batch is its head)
 
     ds_SimScheduleInit(sim);
     ds_SimSeed(sim, &sim->config_seed);
@@ -285,12 +273,15 @@ void ds_SimFlush(struct ds_Sim *sim)
     ds_CPoolFlush(sim->payload_pool);
     ds_DynamicsFlush(&sim->dynamics);
     ds_SimScheduleInit(sim);
+    sim->initialized = 0;
     //TODO record mode: restart the record
     ds_SimSeed(sim, &sim->config_seed);
 }
 
 void ds_SimTick(struct ds_Sim *sim, const u64 ns_delta)
 {
+    ds_DynamicsConfigPush(&sim->dynamics); 
+
     /* If external commands exist, they will be prioritized and executed immediately. */
     sim->sys_schedule[SIM_SYSTEM_EXTERNAL] = (sim->srv_frame_payload.cmd_count)
                                            ? ds_SimKeyInit(sim->us_time + 1, SIM_SYSTEM_EXTERNAL)
@@ -302,7 +293,7 @@ void ds_SimTick(struct ds_Sim *sim, const u64 ns_delta)
     sim->us_delta = ns_sim_delta / 1000;
     sim->us_time += sim->us_delta;
 
-    //TODO record batch_key + srv_frame_payload (RECORD); REPLAY: read the record's due entry instead
+    //TODO record the batch: its key (sys_schedule[SIM_SYSTEM_EXTERNAL]) + srv_frame_payload (RECORD); REPLAY: read the record's due entry instead
     //TODO decode srv_frame_payload's commands onto external_cmd_buf
     while (1)
     {
@@ -354,4 +345,6 @@ void ds_SimTick(struct ds_Sim *sim, const u64 ns_delta)
             } break;
         }
     }
+
+    ds_DynamicsConfigPop(&sim->dynamics);
 }

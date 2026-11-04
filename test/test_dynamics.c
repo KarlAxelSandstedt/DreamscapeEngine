@@ -478,6 +478,7 @@ static u32 SnapshotTestScene(struct dynamics_TestBox box[SNAPSHOT_TEST_BOX_MAX])
 
 static void SnapshotTestTick(struct ds_Dynamics *pipeline)
 {
+    ds_DynamicsConfigPush(pipeline);
     ds_DynamicsTick(pipeline);
     ds_PoolFlush(pipeline->event_pool);
     DLLFlush(pipeline->event_list);
@@ -682,7 +683,7 @@ static u32 SnapshotTestCheck(struct arena *mem, struct ds_Dynamics *original, st
         ds_DynamicsFree(copy + c);
     }
     ArenaPopRecord(mem);
-    ds_DynamicsConfigPush(original);    /* the copies' wakes and ticks pushed their own */
+    ds_DynamicsConfigPush(original);    /* the copies' wakes and ticks pushed their own (SnapshotTestWakeAll, SnapshotTestTick) */
 
     fprintf(stdout, "  snapshot frame %3llu%s: %7llu B, %2u sleeping sets; %u truncated streams rejected, %u copies over %u ticks: %s\n",
         frame, (wake) ? " (all woken)" : "", (unsigned long long) size, sleeping, cut_count, copy_count,
@@ -3974,6 +3975,7 @@ static void *DynamicsPerfPrepInit(void)
     c_ShapeDBAlloc(NULL, &in->cshape_db, 256, GROWABLE);
     ds_SDBAlloc(NULL, in->prefab_db, 32, GROWABLE);
     in->pipeline = ds_DynamicsAlloc(&in->mem, 256, NSEC_PER_SEC / 60, 16*1024*1024, &in->cshape_db, &in->prefab_db, g_config->thread_count, g_config->thread_framesize);
+    ds_DynamicsConfigPush(&in->pipeline);
     in->pipeline.config_pending.solver.sleep_enabled = 0;
     ds_DynamicsConfigUpdatePending(&in->pipeline);
 

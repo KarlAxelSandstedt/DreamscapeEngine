@@ -346,8 +346,8 @@ void        ds_ShapeWorldTransform(ds_TransformWorld *t, const struct ds_Dynamic
  */
 struct aabb ds_ShapeWorldBbox(const struct ds_Dynamics *pipeline, const struct ds_Shape *shape);
 /*
- * The pair queries below read the pipeline's numerics config through the globals ds_DynamicsConfigPush sets (a tick
- * pushes its pipeline; a host pushes its own once).
+ * The pair queries below read the pipeline's numerics config through the globals ds_DynamicsConfigPush sets (the
+ * host pushes its pipeline; ds_SimTick pushes its simulation's for the frame).
  */
 /* 
  * Test for intersection between shapes. returns 1 if intersecting, else 0 
@@ -1613,7 +1613,7 @@ extern const struct ds_DynamicsConfig *g_dynamics_config;
 struct ds_DynamicsConfig    ds_DynamicsConfigDefault(void);
 /* Return a valid and derived config from the provided config. */
 struct ds_DynamicsConfig    ds_DynamicsConfigDerive(const struct ds_DynamicsConfig *config);
-/* Set global configs (config, solver, numerics, worker) from pipeline. */
+/* Set global configs (config, solver, numerics, worker) from pipeline: required pushed by a tick, a config update and the pair queries. */
 void                        ds_DynamicsConfigPush(struct ds_Dynamics *pipeline);
 /* Clear global configs. */
 void                        ds_DynamicsConfigPop(struct ds_Dynamics *pipeline);
@@ -2134,7 +2134,7 @@ struct ds_Dynamics
 struct ds_Dynamics ds_DynamicsAllocConfig(struct arena *mem, const struct ds_DynamicsConfig *config, const u64 ns_tick, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size);
 /* ds_DynamicsAllocConfig with the default config but initial_size and frame_memory. */
 struct ds_Dynamics ds_DynamicsAlloc(struct arena *mem, const u32 initial_size, const u64 ns_tick, const u64 frame_memory, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size);
-/* Free the pipeline's heap resources (the shell stays on its arena); pops the pipeline if it is the pushed one. */
+/* Free the pipeline's heap resources (the shell stays on its arena). */
 void 			ds_DynamicsFree(struct ds_Dynamics *pipeline);
 /* Return the required size when serializing the pipeline. */
 u64             ds_DynamicsSerializeSize(const struct ds_Dynamics *pipeline);

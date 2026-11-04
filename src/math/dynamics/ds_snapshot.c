@@ -40,13 +40,14 @@ Example (repetition testing):
             struct ds_Dynamics copy;
             snap.bit_index = 0;                                 // rewind
             ds_DynamicsTryDeserialize(mem, &snap, &copy, pipeline->cshape_db);  // restore (setup, not measured)
+            ds_DynamicsConfigPush(&copy);
             ds_DynamicsTick(&copy);                             // zone of interest
             ds_DynamicsFree(&copy);                             // worker frames are heap allocated
             ArenaPopRecord(mem);
         }
 
         ArenaPopRecord(mem);
-        ds_DynamicsConfigPush(pipeline);                        // the copy's tick pushed its own
+        ds_DynamicsConfigPush(pipeline);                        // the copies were pushed for their ticks
     }
  */
 

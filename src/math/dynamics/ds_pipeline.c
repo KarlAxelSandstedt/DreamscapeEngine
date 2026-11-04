@@ -288,11 +288,6 @@ struct ds_Dynamics ds_DynamicsAllocConfig(struct arena *mem, const struct ds_Dyn
 
 void ds_DynamicsFree(struct ds_Dynamics *pipeline)
 {
-    if (g_dynamics_config == &pipeline->config)
-    {
-        ds_DynamicsConfigPop(pipeline);
-    }
-
     for (u32 i = 0; i < pipeline->worker_count; ++i)
     {
         ArenaFree(pipeline->worker[i].frame_arr + 0);
@@ -1937,7 +1932,7 @@ void ds_DynamicsTick(struct ds_Dynamics *pipeline)
 {
 	ProfZone;
 
-    ds_DynamicsConfigPush(pipeline);
+    ds_Assert(g_dynamics_config == &pipeline->config);    /* the host pushed the pipeline (ds_DynamicsConfigPush) */
     for (u32 i = 0; i < pipeline->worker_count; ++i)
     {
         ds_CPoolFlush(pipeline->worker[i].draw.segment);
