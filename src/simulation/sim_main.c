@@ -240,7 +240,7 @@ void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfi
     }
 
     ds_CPoolAlloc(NULL, sim->external_cmd_buf, 64, GROWABLE);
-    ds_CPoolAlloc(NULL, sim->cmd_payload_buf, 16, GROWABLE);
+    ds_CPoolAlloc(NULL, sim->payload_pool, 16, GROWABLE);
 
     sim->dynamics = ds_DynamicsAllocConfig(mem, &config->dynamics, 1000 * config->us_system_tick[SIM_SYSTEM_DYNAMICS], cshape_db, prefab_db, worker_count, worker_frame_size);
     //TODO record mode: open the record and write the config as its head
@@ -253,14 +253,14 @@ void ds_SimDealloc(struct ds_Sim *sim)
 {
     ds_DynamicsFree(&sim->dynamics);
     ds_CPoolDealloc(sim->external_cmd_buf);
-    ds_CPoolDealloc(sim->cmd_payload_buf);
+    ds_CPoolDealloc(sim->payload_pool);
     //TODO record mode: close the record
 }
 
 void ds_SimFlush(struct ds_Sim *sim)
 {
     ds_CPoolFlush(sim->external_cmd_buf);
-    ds_CPoolFlush(sim->cmd_payload_buf);
+    ds_CPoolFlush(sim->payload_pool);
     ds_DynamicsFlush(&sim->dynamics);
     ds_SimScheduleInit(sim);
     //TODO push the seed command again; record mode: restart the record
@@ -276,7 +276,7 @@ void ds_SimTick(struct ds_Sim *sim, const u64 ns_delta)
 
     if (sim->us_delta)
     {
-        //TODO sim.timestamp_record_and_dispatch_batch(); //May be empty => no-op.
+        //TODO execute the frame's batch (server level: srv_main.c), may be empty => no-op
         
         while (1)
         {
@@ -302,7 +302,7 @@ void ds_SimTick(struct ds_Sim *sim, const u64 ns_delta)
             {
                 case SIM_SYSTEM_EXTERNAL:
                 {
-                    //TODO  execute ds_SimCmd buffer
+                    //TODO execute ds_SimCmd buffer
 
                     ds_CPoolFlush(sim->external_cmd_buf);
                 } break;

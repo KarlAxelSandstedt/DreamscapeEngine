@@ -181,6 +181,10 @@ typedef u64 ds_SimKey;
 
 struct ds_Sim
 {
+    POOL_NODE;
+    struct DLLNode          srv_sim;            /* the server's list of simulations (ds_Server.sim_list) */
+    ds_SimId                id;                 /* generational identifier: the server's pool slot */
+
     enum ds_SimMode  mode;
     //FILE                    record;           /* TODO Null if mode == NONE. */
 
@@ -194,7 +198,8 @@ struct ds_Sim
 
 
     ds_CPool(ds_SimCmd)     external_cmd_buf;   /* external command batch, not yet stamped  */
-    ds_CPool(ds_SimCmdPayload) cmd_payload_buf;  /* arrived payloads, not yet stamped        */
+    ds_CPool(ds_SimCmdPayload) payload_pool;  /* arrived payloads, not yet stamped        */
+    struct ds_SimCmdPayload srv_frame_payload;  /* Lifetime: ds_ServerTick, external commands to be issued (if any): */
 
     struct ds_Dynamics      dynamics;
     //struct ds_Game          game;             /* TODO: ds_Game undefined */
@@ -203,6 +208,7 @@ struct ds_Sim
     u64                     us_system_tick[SIM_SYSTEM_COUNT];
     ds_SimKey               sys_schedule[SIM_SYSTEM_COUNT];
 };
+DEFINE_POOL(ds_Sim);
 
 /*
  * Allocate a new simulation from config (ds_SimConfigCheck asserted) at time 0: the systems' shells are pushed on mem

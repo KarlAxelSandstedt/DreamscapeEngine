@@ -1,0 +1,167 @@
+/*
+==========================================================================
+    Copyright (C) 2026 Axel Sandstedt
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+==========================================================================
+*/
+
+/*
+ds_server.h
+===========
+The server: the authoritative host of a pool of simulations, networked or not. It receives command payloads,
+routes them by destination, fuses, stamps and records each simulation's frame batch and ticks the simulations.
+Design: notes/replays.txt, src/simulation/sim_cmd.c.
+*/
+
+/*
+TODO: server notes (copied from sim_cmd.c; update to the decided design: no buffering in simulations, the
+server deserializes, routes by id, fuses, stamps on the simulation clock and records per simulation per frame)
+=================================================================================================================
+
+Every external source of input that affects the simulation state is generalized
+behind the ds_SimCmd API. By serializing all such commands, in order, to a file
+we gain the ability to fully replay any simulation. However, such APIs can quickly
+become cumbersome to use, so we discuss the issues and try to land on something
+reasonable.
+
+Judging from the words "external source" we can imagine these commands, in 
+serialized forms, being sent over networks, read from files, and so on. This seem
+like things that should be fully abstracted away and be part of the generalized
+command pipeline; every command arrives to the engine/server fully serialized:
+
+          File =>                               serialized(cmd) ---+
+                                                                   |
+       Network => Payload(serialized(cmd)) ---> serialized(cmd) ---+---> cmd.ValidateAndExecute()
+                                                                   |
+    LocalInput =>                               serialized(cmd) ---+
+
+The more complex question is how the external sources dispatch commands to the
+command queue. As in the previous case, this is preferable fully general, as and
+easy-to-use as possible. 
+
+We begin by acknowledging that any external command's destination is a specific
+simulation's command queue. This seems to be the correct abstraction level when
+specifying a command's destination; Presuming that a server generates a unique
+identifier (ds_SimId) per simulation, whenever we want to send a command(s) to a
+given simulation, we simply have to send an identifier with our command set:
+
+    Network:       Payload(sim_id, serialized(cmd[])) 
+    File:                  sim_id, serialized(cmd[])
+    LocalInput:            sim_id, serialized(cmd[])
+
+    struct ds_Core, struct ds_Engin
+    {
+        ds_Pool simulation_pool;    // One simulation = one game world...
+    
+        (...)
+    };
+
+
+    ServerHandleFramePayloads(...)
+    { 
+        server.payload = PayloadEmpty()
+        server.cmd_pool = CPoolEmpty();
+
+        // POSSIBLE FUNCTION 1 ABSTRACTION: payload = PayloadTryDeserializeAndVerify(&core, mem, ss)
+
+        ext_payload[count]);
+        for (i in stream_count)
+        {
+            ext_payload[i] = PayloadEmpty()
+
+            if (!PayloadTryDeserialize(ext_payload[i], ext_stream[i]) || PayloadHeaderVerify(&ext_payload))
+            {
+                continue;
+            }
+
+            success = 1; 
+            while (s.NotEmpty())
+            {
+                if (!CmdTryDeserialize(&cmd, ext_payload) || !CmdFormVerify(&cmd))
+                {
+                    server.cmd_pool.pop(push_count);
+                    ext_payload[count] = PayloadEmpty();
+                    break;
+                }
+
+                server.cmd_pool.push(cmd);
+                push_count += 1;
+            }
+        }
+
+        // POSSIBLE FUNCTION 2 ABSTRACTION: Append, we just append one payload onto another
+        
+        for (external in payload-streams[count])
+        {
+            payload.Append(external_payload);
+        }
+
+        // we now have commands in order to be executed, and a fused payload ready to be timestamped and recorded.
+    }
+
+Issues with above (memory lifetimes)
+
+Presume the engine recieves network payloads, and local payloads. 
+
+If we treat the engine's loop iteration as immediatelly applying
+any command payloads, we can make due with everything begin stored
+on a engine frame arena, and all payload handling happens outside
+the simulation. The simulations then execute these payloads 
+immediately.
+
+If we allow the engine to skip calls to ds_SimMain, we must store
+all non-fused (or one we continuously fuse to, without knowing the
+final size (complexity!)) payloads on simulation frame memory.
+
+Clearly, the first choice is the more clean process, with very
+predictable memory lifetimes (all payloads stays for a single engine 
+frame, but it does enforce us to immediately process and execute
+payloads.
+
+ */
+
+#ifndef __DS_SERVER_H__
+#define __DS_SERVER_H__
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include "ds_types.h"
+#include "ds_allocator.h"
+#include "ds_list.h"
+#include "ds_simulation.h"
+
+struct ds_Server
+{
+    struct arena        frame;      /* frame memory: flushed every tick */
+
+    ds_Pool(ds_Sim)     sim_pool;   
+    struct DLL          sim_list;   /* the active simulations */
+    ds_CPool(ds_SimCmdPayload) payload_pool;    /* the frame's arrived payloads, valid during the tick */
+};
+
+/* Allocate empty server. */
+void    ds_ServerAlloc(struct ds_Server *srv, const u64 frame_size, const u32 initial_sim_count);
+/* Deallocate server */
+void    ds_ServerDealloc(struct ds_Server *srv);
+/* Handle any incoming payloads after which every simulation is advanced by ns_delta of wall-clock time */
+void    ds_ServerTick(struct ds_Server *srv, const u64 ns_delta);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
