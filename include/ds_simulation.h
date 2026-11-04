@@ -187,6 +187,7 @@ struct ds_Sim
 
     enum ds_SimMode  mode;
     //FILE                    record;           /* TODO Null if mode == NONE. */
+    struct ds_SimConfig     config_seed;        /* the alloc-time config: the seed batch of ds_SimAlloc and ds_SimFlush */
 
     f64                     speed;              /* Simulation speed (scales wall-clock)     */
     u64                     us_time;            /* Simulation time                          */
@@ -221,7 +222,7 @@ void    ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimCo
 //void    ds_SimAllocReplay(struct ds_Sim *sim, struct ds_SimReplay *replay);
 /* Free the simulation's heap resources. */
 void    ds_SimDealloc(struct ds_Sim *sim);
-/* Flush the external command buffer and systems, and reset schedule to time=0. Config and capacities stay. */
+/* Flush the external command buffer and systems, reset schedule to time=0 and reseed (config_seed). Config and capacities stay. */
 void    ds_SimFlush(struct ds_Sim *sim);
 /* 
  * Advance the simulation by ns_delta of wall-clock time, scaled by speed and capped by the simulation's time budget.

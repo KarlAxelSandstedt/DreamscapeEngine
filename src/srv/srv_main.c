@@ -128,7 +128,7 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
         }
     }
 
-    /*************** Payload Timestamping and Recording ***************/
+    /*************** Simulation Execution ***************/
 
     /*
      * At this point the CPool holding external payloads may be flushed since 
@@ -136,15 +136,14 @@ void ds_ServerTick(struct ds_Server *srv, const u64 ns_delta)
      *
      * NOTE: This may change, be wary...
      */
-
     ds_CPoolFlush(srv->payload_pool); 
-
-    // TODO stamp + record per simulation
 
     for (i32 i = srv->sim_list.first; i != DLL_SENTINEL; i = srv->sim_pool.buf[i].srv_sim.next)
     {
+        ds_SimTick(srv->sim_pool.buf + i, ns_delta);
     }
 }
+
 
 /* Stamp and record the frame payload (RECORD), then execute external_cmd_buf in order and flush the frame's buffers. */
 static void ds_SimDispatchFramePayload(struct ds_Sim *sim)

@@ -217,11 +217,32 @@ static void ds_SimScheduleInit(struct ds_Sim *sim)
     sim->us_delta = 0;
     sim->ns_remainder = 0;
 
-    sim->sys_schedule[SIM_SYSTEM_EXTERNAL] = ds_SimKeyInit(0, SIM_SYSTEM_EXTERNAL);
+    sim->sys_schedule[SIM_SYSTEM_EXTERNAL] = ds_SimKeyNull();   /* the seed is a batch (ds_SimSeed) */
     for (u32 i = SIM_SYSTEM_EXTERNAL + 1; i < SIM_SYSTEM_COUNT; ++i)
     {
         sim->sys_schedule[i] = ds_SimKeyInit(sim->us_system_tick[i], (enum ds_SimSystem) i);
     }
+}
+
+/*
+ * Seed the simulation at time 0: the config, as a ConfigLoad batch, goes through an ordinary frame so that live and
+ * replay apply (and record) it the same way. Everything here lives within the call.
+ */
+static void ds_SimSeed(struct ds_Sim *sim, const struct ds_SimConfig *config)
+{
+    struct arena *tmp = ArenaPushScratch();
+
+    const struct ds_SimCmd seed = { .type = SIM_CMD_CONFIG_LOAD, .load_config.config = *config };
+
+    ds_CPool(ds_SimCmd) pool;
+    ds_CPoolAlloc(tmp, pool, 1, NOT_GROWABLE);
+    ds_CPoolPushValue(pool, seed);
+
+    /* Immediate execution of seed command without modfying simulation clock */
+    sim->srv_frame_payload = ds_SimCmdPayloadPushAll(tmp, sim->id, &pool);
+    ds_SimTick(sim, 0);     
+
+    ArenaPopScratch();
 }
 
 void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfig *config, const u32 record, struct c_ShapeDB *cshape_db, ds_SDB(ds_BodyPrefab) *prefab_db, const u32 worker_count, const u64 worker_frame_size)
@@ -230,6 +251,7 @@ void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfi
 
     *sim = (struct ds_Sim) { 0 };
     sim->mode = (record) ? SIM_MODE_RECORD : SIM_MODE_NONE;
+    sim->config_seed = *config;
     sim->speed = config->speed;
 
     sim->ns_budget = 0;
@@ -246,7 +268,7 @@ void ds_SimAlloc(struct arena *mem, struct ds_Sim *sim, const struct ds_SimConfi
     //TODO record mode: open the record and write the config as its head
 
     ds_SimScheduleInit(sim);
-    //TODO push the seed command (the config) into external_cmd_buf
+    ds_SimSeed(sim, &sim->config_seed);
 }
 
 void ds_SimDealloc(struct ds_Sim *sim)
@@ -263,65 +285,73 @@ void ds_SimFlush(struct ds_Sim *sim)
     ds_CPoolFlush(sim->payload_pool);
     ds_DynamicsFlush(&sim->dynamics);
     ds_SimScheduleInit(sim);
-    //TODO push the seed command again; record mode: restart the record
+    //TODO record mode: restart the record
+    ds_SimSeed(sim, &sim->config_seed);
 }
 
 void ds_SimTick(struct ds_Sim *sim, const u64 ns_delta)
 {
+    /* If external commands exist, they will be prioritized and executed immediately. */
+    sim->sys_schedule[SIM_SYSTEM_EXTERNAL] = (sim->srv_frame_payload.cmd_count)
+                                           ? ds_SimKeyInit(sim->us_time + 1, SIM_SYSTEM_EXTERNAL)
+                                           : ds_SimKeyNull();
+
     const u64 ns_wanted = sim->ns_remainder + (u64) (ns_delta*sim->speed);
     const u64 ns_sim_delta = U64Min(ns_wanted, sim->ns_budget);
     sim->ns_remainder = ns_sim_delta % 1000;
     sim->us_delta = ns_sim_delta / 1000;
     sim->us_time += sim->us_delta;
 
-    if (sim->us_delta)
+    //TODO record batch_key + srv_frame_payload (RECORD); REPLAY: read the record's due entry instead
+    //TODO decode srv_frame_payload's commands onto external_cmd_buf
+    while (1)
     {
-        //TODO execute the frame's batch (server level: srv_main.c), may be empty => no-op
-        
-        while (1)
+        ds_SimKey key = ds_SimKeyNull();
+        for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
         {
-            ds_SimKey key = ds_SimKeyNull();
-            for (u32 i = 0; i < SIM_SYSTEM_COUNT; ++i)
+            key = U64Min(key, sim->sys_schedule[i]);
+        }
+
+        const u64 us = ds_SimKeyUs(key);
+        const enum ds_SimSystem sys = ds_SimKeySystem(key);
+
+        /* 
+         * Last check comes from us always executing external command payloads
+         * even if us_old == us_new, i.e. because we allow multiple command
+         * payloads per time-unit (simplifies memory management in server).
+         */
+        if (sim->us_time < us && sys != SIM_SYSTEM_EXTERNAL)
+        {
+            break;
+        }
+
+        sim->sys_schedule[sys] = (sys == SIM_SYSTEM_EXTERNAL)
+                               ? ds_SimKeyNull()
+                               : ds_SimKeyInit(us + sim->us_system_tick[sys], sys);
+
+        switch (sys)
+        {
+            case SIM_SYSTEM_EXTERNAL:
             {
-                key = U64Min(key, sim->sys_schedule[i]);
-            }
-    
-            const u64 us = ds_SimKeyUs(key);
-            const enum ds_SimSystem sys = ds_SimKeySystem(key);
+                //TODO execute ds_SimCmd buffer
 
-            if (sim->us_time < us)
+                ds_CPoolFlush(sim->external_cmd_buf);
+            } break;
+
+            case SIM_SYSTEM_DYNAMICS:
             {
-                break;
-            }
+                ds_DynamicsTick(&sim->dynamics);
+            } break;
 
-            sim->sys_schedule[sys] = (sys == SIM_SYSTEM_EXTERNAL)
-                                      ? ds_SimKeyNull()
-                                      : ds_SimKeyInit(us + sim->us_system_tick[sys], sys);
-
-            switch (sys)
+            case SIM_SYSTEM_GAME:
             {
-                case SIM_SYSTEM_EXTERNAL:
-                {
-                    //TODO execute ds_SimCmd buffer
+                //TODO  execute game
+            } break;
 
-                    ds_CPoolFlush(sim->external_cmd_buf);
-                } break;
-
-                case SIM_SYSTEM_DYNAMICS:
-                {
-                    ds_DynamicsTick(&sim->dynamics);
-                } break;
-
-                case SIM_SYSTEM_GAME:
-                {
-                    //TODO  execute game
-                } break;
-
-                default:
-                {
-                    ds_AssertString(0, "Invalid system in ds_SimKey");
-                } break;
-            }
+            default:
+            {
+                ds_AssertString(0, "Invalid system in ds_SimKey");
+            } break;
         }
     }
 }

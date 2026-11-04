@@ -20,9 +20,9 @@
 /*
 ds_server.h
 ===========
-The server: the authoritative host of a pool of simulations, networked or not. It receives command payloads,
-routes them by destination, fuses, stamps and records each simulation's frame batch and ticks the simulations.
-Design: notes/replays.txt, src/simulation/sim_cmd.c.
+Authoritative host of a set of simulations. 
+//TODO can fill in more once we have more details settled 
+
 */
 
 /*

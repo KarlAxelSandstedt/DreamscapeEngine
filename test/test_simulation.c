@@ -330,8 +330,8 @@ static struct test_Output DynamicsConfigSerializeTest(struct test_Environment *e
 }
 
 /*
- * ds_SimAlloc from the default config then ds_SimTick with fake wall-clock deltas: nothing ticks at time 0, the seed
- * slot empties on the first advancing frame, a frame of one dynamics period runs one physics tick and a frame of two
+ * ds_SimAlloc from the default config (which runs the seed batch) then ds_SimTick with fake wall-clock deltas: nothing
+ * ticks at time 0, a frame of one dynamics period runs one physics tick and a frame of two
  * runs two, sub-microsecond deltas accumulate in the remainder until they make a microsecond, the budget caps a long
  * frame, speed 0 holds time still, and ds_SimFlush restarts at 0.
  */
@@ -355,25 +355,25 @@ static struct test_Output SimTickTest(struct test_Environment *env)
     TEST_EQUAL(0, sim.us_time);
     TEST_EQUAL(SIM_MODE_NONE, sim.mode);
     TEST_EQUAL(1000 * period, sim.dynamics.ns_tick);
-    TEST_EQUAL(0, sim.sys_schedule[SIM_SYSTEM_EXTERNAL]);
+    /* the seed batch ran inside ds_SimAlloc: the external slot is empty, time still 0 */
+    TEST_EQUAL(U64_MAX, sim.sys_schedule[SIM_SYSTEM_EXTERNAL]);
     TEST_EQUAL(0, sim.dynamics.frames_completed);
 
-    /* no time, nothing happens */
+    /* no time: no tick */
     ds_SimTick(&sim, 0);
     TEST_EQUAL(0, sim.us_time);
     TEST_EQUAL(0, sim.dynamics.frames_completed);
+    TEST_EQUAL(U64_MAX, sim.sys_schedule[SIM_SYSTEM_EXTERNAL]);
 
     /* sub-microsecond deltas: the remainder carries them */
     ds_SimTick(&sim, 600);
     TEST_EQUAL(0, sim.us_delta);
     TEST_EQUAL(600, sim.ns_remainder);
-    TEST_EQUAL(0, sim.sys_schedule[SIM_SYSTEM_EXTERNAL]);
     ds_SimTick(&sim, 600);
     TEST_EQUAL(1, sim.us_delta);
     TEST_EQUAL(200, sim.ns_remainder);
     TEST_EQUAL(1, sim.us_time);
-    /* the first advancing frame ran the seed slot, which is now empty, and no physics tick before its period */
-    TEST_EQUAL(U64_MAX, sim.sys_schedule[SIM_SYSTEM_EXTERNAL]);
+    /* no physics tick before its period */
     TEST_EQUAL(0, sim.dynamics.frames_completed);
 
     /* one period: the first physics tick */
@@ -400,7 +400,7 @@ static struct test_Output SimTickTest(struct test_Environment *env)
     ds_SimFlush(&sim);
     TEST_EQUAL(0, sim.us_time);
     TEST_EQUAL(0, sim.ns_remainder);
-    TEST_EQUAL(0, sim.sys_schedule[SIM_SYSTEM_EXTERNAL]);
+    TEST_EQUAL(U64_MAX, sim.sys_schedule[SIM_SYSTEM_EXTERNAL]);    /* reseeded: the seed batch ran */
     TEST_EQUAL(0, sim.dynamics.frames_completed);
 
     ds_SimDealloc(&sim);
