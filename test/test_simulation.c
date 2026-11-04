@@ -522,11 +522,137 @@ static struct test_Output SimCmdPayloadSerializeTest(struct test_Environment *en
 	return output;
 }
 
+/* Write a ConfigLoad by hand at ss's bit offset: type, size field, size bytes of body (then pad zero bytes). */
+static void SimCmdTestWriteConfigLoad(struct SS *ss, const u64 type, const u64 size_field, const u8 *body, const u64 size, const u64 pad)
+{
+    SSWriteU64Partial(ss, type, 8);
+    SSWriteU64Partial(ss, size_field, 32);
+    struct SS from = SSBuffered((void *) body, size);
+    while (SSBitsLeft(&from))
+    {
+        const u64 bit_count = U64Min(SSBitsLeft(&from), 64);
+        SSWriteU64Partial(ss, SSReadU64Partial(&from, bit_count), bit_count);
+    }
+
+    for (u64 i = 0; i < pad; ++i)
+    {
+        SSWriteU64Partial(ss, 0, 8);
+    }
+}
+
+/*
+ * ConfigLoad commands through ds_SimCmdPayloadPushAll and back through ds_SimCmdTryDeserialize: two commands pack to
+ * exactly their bit size and read back equal, the stream ends after them, and a read at a 3-bit offset works. Malformed
+ * commands are refused with the stream position untouched: unknown type, body size over the stream or over the cap,
+ * a truncated body, a body longer than the config and a body that is not a config.
+ */
+static struct test_Output SimCmdSerializeTest(struct test_Environment *env)
+{
+	struct test_Output output = { .success = 1, .id = __func__ };
+
+    struct ds_SimConfig changed = ds_SimConfigDefault();
+    changed.us_system_tick[SIM_SYSTEM_DYNAMICS] = 20000;
+    changed.speed = 0.25;
+    const u64 seed[4] = { 7, 8, 9, 10 };
+    ds_SimConfigSeed(&changed, seed);
+    const u64 body_size = ds_SimConfigSerializeSize(&changed);
+    const u64 cmd_bits = 8 + 32 + 8*body_size;
+
+    ds_CPool(ds_SimCmd) pool;
+    ds_CPoolAlloc(env->mem_1, pool, 2, NOT_GROWABLE);
+    const struct ds_SimConfig def = ds_SimConfigDefault();
+    const struct ds_SimCmd first = { .type = SIM_CMD_CONFIG_LOAD, .load_config.config = &def };
+    const struct ds_SimCmd second = { .type = SIM_CMD_CONFIG_LOAD, .load_config.config = &changed };
+    ds_CPoolPushValue(pool, first);
+    ds_CPoolPushValue(pool, second);
+
+    struct ds_SimCmdPayload payload = ds_SimCmdPayloadPushAll(env->mem_1, ds_SimIdInit(1, 0), &pool);
+    TEST_EQUAL(2, payload.cmd_count);
+    TEST_EQUAL(2*cmd_bits, payload.stream.bit_index);
+
+    /* read back in order, then the stream is empty */
+    struct SSView view;
+    TEST_EQUAL(1, SSTryView(&view, &payload.stream, 0, payload.stream.bit_index));
+    struct SS ss = SSSubstreamFromView(&view);
+    struct ds_SimCmd read = { 0 };
+    TEST_EQUAL(1, ds_SimCmdTryDeserialize(env->mem_1, &ss, &read));
+    TEST_EQUAL(SIM_CMD_CONFIG_LOAD, read.type);
+    TEST_EQUAL(1, SimConfigTestEqual(&def, read.load_config.config));
+    TEST_EQUAL(1, ds_SimCmdFormVerify(&read));
+    const struct ds_SimConfig *first_read = read.load_config.config;
+    TEST_EQUAL(1, ds_SimCmdTryDeserialize(env->mem_1, &ss, &read));
+    TEST_EQUAL(1, SimConfigTestEqual(&changed, read.load_config.config));
+    TEST_TRUE(first_read != read.load_config.config && SimConfigTestEqual(&def, first_read));  /* each decode has its own copy on mem */
+    TEST_EQUAL(0, SSBitsLeft(&ss));
+    TEST_EQUAL(0, ds_SimCmdTryDeserialize(env->mem_1, &ss, &read));
+    TEST_EQUAL(2*cmd_bits, ss.bit_index);
+
+    read.type = SIM_CMD_COUNT;
+    TEST_EQUAL(0, ds_SimCmdFormVerify(&read));
+
+    /* the serialized config by itself, for the hand-written cases */
+    struct SS body = SSAlloc(env->mem_1, body_size);
+    ds_SimConfigSerialize(&body, &changed);
+
+    /* at a 3-bit offset */
+    struct SS hand = SSAlloc(env->mem_1, body_size + 16);
+    SSWriteU64Partial(&hand, 5, 3);
+    SimCmdTestWriteConfigLoad(&hand, SIM_CMD_CONFIG_LOAD, body_size, body.buf, body_size, 0);
+    TEST_EQUAL(1, SSTryView(&view, &hand, 3, cmd_bits));
+    ss = SSSubstreamFromView(&view);
+    TEST_EQUAL(1, ds_SimCmdTryDeserialize(env->mem_1, &ss, &read));
+    TEST_EQUAL(1, SimConfigTestEqual(&changed, read.load_config.config));
+    TEST_EQUAL(0, SSBitsLeft(&ss));
+
+    /* unknown type */
+    hand.bit_index = 0;
+    SimCmdTestWriteConfigLoad(&hand, SIM_CMD_COUNT, body_size, body.buf, body_size, 0);
+    ss = SSBuffered(hand.buf, body_size + 16);
+    TEST_EQUAL(0, ds_SimCmdTryDeserialize(env->mem_1, &ss, &read));
+    TEST_EQUAL(0, ss.bit_index);
+
+    /* size over the stream, and over the cap */
+    hand.bit_index = 0;
+    SimCmdTestWriteConfigLoad(&hand, SIM_CMD_CONFIG_LOAD, body_size + 16, body.buf, body_size, 0);
+    ss = SSBuffered(hand.buf, body_size + 16);
+    TEST_EQUAL(0, ds_SimCmdTryDeserialize(env->mem_1, &ss, &read));
+    TEST_EQUAL(0, ss.bit_index);
+    hand.bit_index = 0;
+    SimCmdTestWriteConfigLoad(&hand, SIM_CMD_CONFIG_LOAD, U32_MAX, body.buf, body_size, 0);
+    ss = SSBuffered(hand.buf, body_size + 16);
+    TEST_EQUAL(0, ds_SimCmdTryDeserialize(env->mem_1, &ss, &read));
+
+    /* truncated: the stream ends inside the body */
+    hand.bit_index = 0;
+    SimCmdTestWriteConfigLoad(&hand, SIM_CMD_CONFIG_LOAD, body_size, body.buf, body_size, 0);
+    TEST_EQUAL(1, SSTryView(&view, &hand, 0, cmd_bits - 8));
+    ss = SSSubstreamFromView(&view);
+    TEST_EQUAL(0, ds_SimCmdTryDeserialize(env->mem_1, &ss, &read));
+    TEST_EQUAL(0, ss.bit_index);
+
+    /* a body one byte longer than the config, and a body that is no config (zeroed) */
+    hand.bit_index = 0;
+    SimCmdTestWriteConfigLoad(&hand, SIM_CMD_CONFIG_LOAD, body_size + 1, body.buf, body_size, 1);
+    ss = SSBuffered(hand.buf, body_size + 16);
+    TEST_EQUAL(0, ds_SimCmdTryDeserialize(env->mem_1, &ss, &read));
+    TEST_EQUAL(0, ss.bit_index);
+    u8 *zero = ArenaPush(env->mem_1, body_size);
+    memset(zero, 0, body_size);
+    hand.bit_index = 0;
+    SimCmdTestWriteConfigLoad(&hand, SIM_CMD_CONFIG_LOAD, body_size, zero, body_size, 0);
+    ss = SSBuffered(hand.buf, body_size + 16);
+    TEST_EQUAL(0, ds_SimCmdTryDeserialize(env->mem_1, &ss, &read));
+    TEST_EQUAL(0, ss.bit_index);
+
+	return output;
+}
+
 static struct test_Output (*simulation_tests[])(struct test_Environment *) =
 {
     SimConfigSerializeTest,
     DynamicsConfigSerializeTest,
     SimCmdPayloadSerializeTest,
+    SimCmdSerializeTest,
     SimTickTest,
 };
 

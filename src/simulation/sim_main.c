@@ -232,7 +232,7 @@ static void ds_SimSeed(struct ds_Sim *sim, const struct ds_SimConfig *config)
 {
     struct arena *tmp = ArenaPushScratch();
 
-    const struct ds_SimCmd seed = { .type = SIM_CMD_CONFIG_LOAD, .load_config.config = *config };
+    const struct ds_SimCmd seed = { .type = SIM_CMD_CONFIG_LOAD, .load_config.config = config };
 
     ds_CPool(ds_SimCmd) pool;
     ds_CPoolAlloc(tmp, pool, 1, NOT_GROWABLE);

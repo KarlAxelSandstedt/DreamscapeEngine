@@ -118,30 +118,19 @@ Can this be used for Denial-of-Service (malicious payloads degrading performance
 */
 
 
-/*
-
-TODO: go through
-
-The first command, ConfigLoad: a serialized ds_SimConfig. It is the seed batch at time 0 (the record's head
-re-applied) and, later, the host's apply of its pending edits; executing it derives the config (every value clamped
-into its range) and applies it to the systems (ds_DynamicsConfigUpdatePending for the dynamics). The alloc-time
-values (seed, tick periods, capacities) are ignored after time 0. TODO: implement.
-*/
-
 #include "ds_base.h"
 #include "ds_simulation.h"
 
 
 /**************** ds_SimCmd ****************/
 
-/* Return 1 if cmd is well-formed, 0 otherwise. */
-static u32 ds_SimCmdFormVerify(const struct ds_SimCmd *cmd)
+u32 ds_SimCmdFormVerify(const struct ds_SimCmd *cmd)
 {
     switch (cmd->type)
     {
         case SIM_CMD_CONFIG_LOAD:
         {
-            return ds_SimConfigCheck(&cmd->load_config.config);
+            return ds_SimConfigCheck(cmd->load_config.config);
         }
 
         default:
@@ -192,21 +181,140 @@ u32 ds_SimCmdTryExecute(struct ds_Sim *sim, const struct ds_SimCmd *cmd)
     return 1;
 }
 
+/*
+ * Serialized command: the type in DS_SIM_CMD_TYPE_BITS partial bits, then the type's body, bit-packed so that a
+ * command starts at any bit. A body serialized by a byte serializer (ConfigLoad: ds_SimConfigSerialize) is carried
+ * as its byte count in DS_SIM_CMD_SIZE_BITS and the bytes copied bit-exactly: the size is independent of the bit
+ * offset and the byte serializers stay aligned, on their own buffer.
+ */
+#define DS_SIM_CMD_TYPE_BITS        8
+#define DS_SIM_CMD_SIZE_BITS        32
+#define DS_SIM_CMD_BODY_SIZE_MAX    (1 << 16)   /* a byte body larger than this is rejected before any allocation */
+
+/* Copy size bytes of buf into ss at its bit offset. */
+static void ds_SimCmdWriteBytes(struct SS *ss, const u8 *buf, const u64 size)
+{
+    struct SS src = SSBuffered((void *) buf, size);
+    while (SSBitsLeft(&src))
+    {
+        const u64 bit_count = U64Min(SSBitsLeft(&src), 64);
+        SSWriteU64Partial(ss, SSReadU64Partial(&src, bit_count), bit_count);
+    }
+}
+
+/* Copy size bytes from ss's bit offset into buf. */
+static void ds_SimCmdReadBytes(struct SS *ss, u8 *buf, const u64 size)
+{
+    struct SS dst = SSBuffered(buf, size);
+    while (SSBitsLeft(&dst))
+    {
+        const u64 bit_count = U64Min(SSBitsLeft(&dst), 64);
+        SSWriteU64Partial(&dst, SSReadU64Partial(ss, bit_count), bit_count);
+    }
+}
+
 static u64 ds_SimCmdSerializeBitsize(const struct ds_SimCmd *cmd)
 {
-    //TODO
-    return 0;
+    switch (cmd->type)
+    {
+        case SIM_CMD_CONFIG_LOAD:
+        {
+            return DS_SIM_CMD_TYPE_BITS + DS_SIM_CMD_SIZE_BITS + 8*ds_SimConfigSerializeSize(cmd->load_config.config);
+        }
+
+        default:
+        {
+            ds_AssertString(0, "ds_SimCmdSerializeBitsize: unknown command type");
+            return 0;
+        }
+    }
 }
 
 static void ds_SimCmdSerialize(struct SS *ss, const struct ds_SimCmd *cmd)
 {
-    //TODO
+    ds_Assert(ds_SimCmdSerializeBitsize(cmd) <= SSBitsLeft(ss));
+
+    SSWriteU64Partial(ss, (u64) cmd->type, DS_SIM_CMD_TYPE_BITS);
+    switch (cmd->type)
+    {
+        case SIM_CMD_CONFIG_LOAD:
+        {
+            struct arena *tmp = ArenaPushScratch();
+            const u64 size = ds_SimConfigSerializeSize(cmd->load_config.config);
+            struct SS body = SSAlloc(tmp, size);
+            ds_SimConfigSerialize(&body, cmd->load_config.config);
+
+            SSWriteU64Partial(ss, size, DS_SIM_CMD_SIZE_BITS);
+            ds_SimCmdWriteBytes(ss, body.buf, size);
+            ArenaPopScratch();
+        } break;
+
+        default:
+        {
+            ds_AssertString(0, "ds_SimCmdSerialize: unknown command type");
+        } break;
+    }
 }
 
-static u32 ds_SimCmdTryDeserialize(struct SS *ss, struct ds_SimCmd *cmd)
+u32 ds_SimCmdTryDeserialize(struct arena *mem, struct SS *ss, struct ds_SimCmd *cmd)
 {
-    //TODO
-    return 0;
+    struct SS ss_mut = *ss;
+    if (SSBitsLeft(&ss_mut) < DS_SIM_CMD_TYPE_BITS)
+    {
+        return 0;
+    }
+
+    const u64 type = SSReadU64Partial(&ss_mut, DS_SIM_CMD_TYPE_BITS);
+    if (type >= SIM_CMD_COUNT)
+    {
+        return 0;
+    }
+
+    switch ((enum ds_SimCmdType) type)
+    {
+        case SIM_CMD_CONFIG_LOAD:
+        {
+            if (SSBitsLeft(&ss_mut) < DS_SIM_CMD_SIZE_BITS)
+            {
+                return 0;
+            }
+
+            const u64 size = SSReadU64Partial(&ss_mut, DS_SIM_CMD_SIZE_BITS);
+            if (size > DS_SIM_CMD_BODY_SIZE_MAX || 8*size > SSBitsLeft(&ss_mut))
+            {
+                return 0;
+            }
+
+            struct ds_SimConfig *config = ArenaPush(mem, sizeof(struct ds_SimConfig));
+            if (config == NULL)
+            {
+                Log(T_SYSTEM, S_ERROR, "ds_SimCmdTryDeserialize: no room for a ConfigLoad (%lu bytes)", (u64) sizeof(struct ds_SimConfig));
+                return 0;
+            }
+
+            struct arena *tmp = ArenaPushScratch();
+            struct SS body = SSAlloc(tmp, size);
+            ds_SimCmdReadBytes(&ss_mut, body.buf, size);
+            /* the whole body must be the config: a short or a long body is malformed */
+            const u32 success = ds_SimConfigTryDeserialize(&body, config) && body.bit_index == 8*size;
+            ArenaPopScratch();
+            if (!success)
+            {
+                return 0;
+            }
+
+            cmd->load_config.config = config;
+        } break;
+
+        default:
+        {
+            return 0;
+        }
+    }
+
+    cmd->type = (enum ds_SimCmdType) type;
+    *ss = ss_mut;
+    return 1;
 }
 
 /**************** ds_SimCmdPayload ****************/

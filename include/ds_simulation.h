@@ -37,6 +37,8 @@ extern "C" {
 #include "ds_serialize.h"
 #include "ds_dynamics.h"
 
+struct ds_Sim;
+
 enum ds_SimMode
 {
     SIM_MODE_NONE,   // Run new simulation without recording
@@ -108,16 +110,19 @@ struct ds_SimCmd
     {
         struct ds_LoadConfigCmd
         {
-            struct ds_SimConfig config;
+            const struct ds_SimConfig *config; 
         } load_config;
     };
 };
 DEFINE_CPOOL_STRUCT(ds_SimCmd);
 
-struct ds_Sim;
+/* Returns 1 on success (the command's data is pushed on mem). On failure return 0 (bad stream or bad command, or no room: logged) and reset the stream position. */
+u32     ds_SimCmdTryDeserialize(struct arena *mem, struct SS *ss, struct ds_SimCmd *cmd);
+/* Return 1 if cmd is well-formed (Is it actually a valid command in form), 0 otherwise. */
+u32     ds_SimCmdFormVerify(const struct ds_SimCmd *cmd);
 /*
- * Verify cmd against sim's state (ds_SimCmdDataVerify) and execute it. Returns 1 on success and 0 if cmd is rejected
- * (logged): sim is untouched.
+ * Verify cmd against sim's state (ds_SimCmdDataVerify) and execute it. Returns 1 on success and 
+ * 0 if cmd is rejected
  */
 u32     ds_SimCmdTryExecute(struct ds_Sim *sim, const struct ds_SimCmd *cmd);
 
